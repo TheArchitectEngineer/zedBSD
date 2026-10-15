@@ -1,0 +1,51 @@
+VK SWAPCHAIN direct=0 reason=disabled width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1280x720 of 16x16..1920x1088, level 9 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-720p60-10s.mp4 width=1280 height=720 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-720p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=0 reason=disabled width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=107 heard=0 written=0 consumed=0 pictures=2 late=0 eof=0 out=0 state=1
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=30 picture=1 gpu=1
+VK SWAPCHAIN direct=0 reason=disabled width=1280 height=720 images=3
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=34 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1118 heard=0 written=0 consumed=0 pictures=2 late=23 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=23 picture_us=4521 rest_us=28913 gpu=23 acquire_us=6434 submit_us=8130 wait_us=1782
+VIDEOPLAYER Vulkan Video: 101 pictures in 2030 ms, 4 in flight; avg_us submit 4920 wait 1554 copy 2584
+VIDEOPLAYER CLOCK time_ms=2150 heard=0 written=0 consumed=0 pictures=2 late=50 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=27 picture_us=1666 rest_us=27000 gpu=27 acquire_us=14518 submit_us=4851 wait_us=1851
+VIDEOPLAYER CLOCK time_ms=3159 heard=0 written=0 consumed=0 pictures=2 late=77 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=27 picture_us=148 rest_us=26814 gpu=27 acquire_us=16740 submit_us=4481 wait_us=1481
+VIDEOPLAYER FRAMES shown=100 time_ms=3316 late=100
+VIDEOPLAYER Vulkan Video: 110 pictures in 2000 ms, 4 in flight; avg_us submit 4100 wait 1627 copy 2509
+VIDEOPLAYER CLOCK time_ms=4182 heard=0 written=0 consumed=0 pictures=2 late=106 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=29 picture_us=137 rest_us=25586 gpu=29 acquire_us=14724 submit_us=4655 wait_us=1344
+VIDEOPLAYER CLOCK time_ms=5207 heard=0 written=0 consumed=0 pictures=2 late=135 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=29 picture_us=34 rest_us=24965 gpu=29 acquire_us=14000 submit_us=4758 wait_us=1551
+VIDEOPLAYER Vulkan Video: 111 pictures in 2006 ms, 4 in flight; avg_us submit 4126 wait 1558 copy 2522
+VIDEOPLAYER CLOCK time_ms=6227 heard=0 written=0 consumed=0 pictures=2 late=162 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=27 picture_us=148 rest_us=27222 gpu=27 acquire_us=17444 submit_us=4222 wait_us=1481
+VIDEOPLAYER CLOCK time_ms=7266 heard=0 written=0 consumed=0 pictures=2 late=191 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=29 picture_us=34 rest_us=25620 gpu=29 acquire_us=14655 submit_us=5103 wait_us=1724
+VIDEOPLAYER FRAMES shown=200 time_ms=6650 late=200
+VIDEOPLAYER Vulkan Video: 113 pictures in 2023 ms, 4 in flight; avg_us submit 4088 wait 1743 copy 2716
+VIDEOPLAYER CLOCK time_ms=8286 heard=0 written=0 consumed=0 pictures=2 late=220 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=29 picture_us=68 rest_us=25103 gpu=29 acquire_us=13551 submit_us=5068 wait_us=1551
+VIDEOPLAYER CLOCK time_ms=9308 heard=0 written=0 consumed=0 pictures=2 late=250 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=30 picture_us=66 rest_us=24000 gpu=30 acquire_us=13533 submit_us=5366 wait_us=1100
+VIDEOPLAYER Vulkan Video: 116 pictures in 2023 ms, 4 in flight; avg_us submit 3784 wait 1474 copy 2224
+VIDEOPLAYER CLOCK time_ms=10334 heard=0 written=0 consumed=0 pictures=2 late=279 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=29 picture_us=68 rest_us=25034 gpu=29 acquire_us=15034 submit_us=4655 wait_us=1551
+VIDEOPLAYER END reached dropped=0
+VIDEOPLAYER FRAMES shown=300 time_ms=9983 late=300
+VIDEOPLAYER FRAMES shown=300 time_ms=11030 late=300
+VIDEOPLAYER ENDED shown=300
+VIDEOPLAYER DONE reason=timeout shown=300
+VIDEOPLAYER FRAMES shown=300 time_ms=11030 late=300

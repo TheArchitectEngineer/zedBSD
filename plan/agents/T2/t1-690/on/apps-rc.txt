@@ -1,0 +1,15 @@
+== settings --timeout-s=8
+rc=0
+== settings --timeout-s=8 --width=900 --height=500
+rc=0
+== settings --timeout-s=8 --width=1100 --height=650
+rc=0
+== terminal --timeout-s=8
+rc=0
+== files --timeout-s=8
+rc=0
+== files --timeout-s=8 --width=700 --height=450
+rc=0
+== browser --width=800 --height=500 file:///etc/hostname
+rc=124
+708 xserver

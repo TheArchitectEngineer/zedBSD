@@ -1,0 +1,20 @@
+PID     TIME COMMAND
+  0 00:00:00 kernel
+  1 00:00:00 kernel
+  4 00:00:02 kernel
+  5 00:00:39 kernel
+  6 00:00:50 kernel
+  7 00:01:09 kernel
+  8 00:00:36 kernel
+ 10 00:01:05 kernel
+ 11 00:00:54 kernel
+ 20 00:00:38 kernel
+ 21 00:00:00 kernel
+ 23 00:00:45 kernel
+ 25 00:06:44 /bin/wayland
+ 36 00:00:43 /usr/libexec/keiland-ime
+ 37 00:00:44 /bin/files
+ 38 00:00:51 /bin/settings
+487 00:00:02 sh
+708 00:00:00 xserver
+919 00:00:00 ps

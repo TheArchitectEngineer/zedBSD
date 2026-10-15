@@ -1,0 +1,2044 @@
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=147 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=12 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=37 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1164 heard=0 written=0 consumed=0 pictures=2 late=17 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=18 picture_us=6833 rest_us=35388 gpu=17 acquire_us=12388 submit_us=6888 wait_us=2000
+VIDEOPLAYER DONE reason=timeout shown=37
+VIDEOPLAYER FRAMES shown=37 time_ms=2165 late=37
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=142 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=12 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1167 heard=0 written=0 consumed=0 pictures=2 late=20 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=22 picture_us=3681 rest_us=32818 gpu=21 acquire_us=12954 submit_us=6045 wait_us=1090
+VIDEOPLAYER DONE reason=timeout shown=44
+VIDEOPLAYER FRAMES shown=44 time_ms=2146 late=43
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER CLOCK time_ms=223 heard=0 written=0 consumed=0 pictures=2 late=0 eof=0 out=0 state=1
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=28 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1169 heard=0 written=0 consumed=0 pictures=2 late=19 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=19 picture_us=4473 rest_us=36105 gpu=19 acquire_us=14263 submit_us=5947 wait_us=1526
+VIDEOPLAYER DONE reason=timeout shown=40
+VIDEOPLAYER FRAMES shown=40 time_ms=2183 late=40
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=136 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=19 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1145 heard=0 written=0 consumed=0 pictures=2 late=20 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=22 picture_us=3818 rest_us=33590 gpu=21 acquire_us=14590 submit_us=5954 wait_us=1818
+VIDEOPLAYER DONE reason=timeout shown=45
+VIDEOPLAYER FRAMES shown=45 time_ms=2171 late=44
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=63 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=7 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=23 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1080 heard=0 written=0 consumed=0 pictures=2 late=16 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=18 picture_us=6500 rest_us=33277 gpu=17 acquire_us=12111 submit_us=5111 wait_us=1722
+VIDEOPLAYER DONE reason=timeout shown=38
+VIDEOPLAYER FRAMES shown=38 time_ms=2072 late=37
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=137 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=7 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER CLOCK time_ms=1187 heard=0 written=0 consumed=0 pictures=2 late=22 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=23 picture_us=3391 rest_us=32869 gpu=22 acquire_us=13000 submit_us=6217 wait_us=1391
+VIDEOPLAYER DONE reason=timeout shown=45
+VIDEOPLAYER FRAMES shown=45 time_ms=2142 late=45
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=138 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=17 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=30 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1142 heard=0 written=0 consumed=0 pictures=2 late=18 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=19 picture_us=5263 rest_us=34631 gpu=18 acquire_us=15052 submit_us=5473 wait_us=2789
+VIDEOPLAYER DONE reason=timeout shown=39
+VIDEOPLAYER FRAMES shown=39 time_ms=2176 late=39
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=63 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=7 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1070 heard=0 written=0 consumed=0 pictures=2 late=18 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=21 picture_us=3714 rest_us=31857 gpu=20 acquire_us=10857 submit_us=5380 wait_us=2000
+VIDEOPLAYER DONE reason=timeout shown=43
+VIDEOPLAYER FRAMES shown=43 time_ms=2064 late=41
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=137 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=7 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=20 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1140 heard=0 written=0 consumed=0 pictures=2 late=16 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=17 picture_us=4882 rest_us=32058 gpu=16 acquire_us=13117 submit_us=4941 wait_us=1352
+VIDEOPLAYER DONE reason=timeout shown=38
+VIDEOPLAYER FRAMES shown=38 time_ms=2181 late=38
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=61 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=11 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1097 heard=0 written=0 consumed=0 pictures=2 late=18 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=20 picture_us=4950 rest_us=32050 gpu=19 acquire_us=16000 submit_us=4600 wait_us=1350
+VIDEOPLAYER DONE reason=timeout shown=42
+VIDEOPLAYER FRAMES shown=42 time_ms=2084 late=41
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER CLOCK time_ms=218 heard=0 written=0 consumed=0 pictures=2 late=0 eof=0 out=0 state=1
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=34 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1144 heard=0 written=0 consumed=0 pictures=2 late=18 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=18 picture_us=5388 rest_us=38444 gpu=18 acquire_us=14500 submit_us=7111 wait_us=1388
+VIDEOPLAYER DONE reason=timeout shown=40
+VIDEOPLAYER FRAMES shown=40 time_ms=2146 late=40
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=63 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=11 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1079 heard=0 written=0 consumed=0 pictures=2 late=18 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=20 picture_us=4400 rest_us=31500 gpu=19 acquire_us=11150 submit_us=6050 wait_us=2000
+VIDEOPLAYER DONE reason=timeout shown=43
+VIDEOPLAYER FRAMES shown=43 time_ms=2102 late=42
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=136 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=14 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=22 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1165 heard=0 written=0 consumed=0 pictures=2 late=19 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=20 picture_us=6300 rest_us=32500 gpu=19 acquire_us=13450 submit_us=6550 wait_us=950
+VIDEOPLAYER DONE reason=timeout shown=42
+VIDEOPLAYER FRAMES shown=42 time_ms=2174 late=42
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=133 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=13 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1167 heard=0 written=0 consumed=0 pictures=2 late=20 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=22 picture_us=2954 rest_us=34000 gpu=21 acquire_us=14272 submit_us=5636 wait_us=1500
+VIDEOPLAYER DONE reason=timeout shown=45
+VIDEOPLAYER FRAMES shown=45 time_ms=2157 late=44
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=139 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=11 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=33 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1153 heard=0 written=0 consumed=0 pictures=2 late=18 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=19 picture_us=5947 rest_us=34052 gpu=18 acquire_us=13684 submit_us=6526 wait_us=1368
+VIDEOPLAYER DONE reason=timeout shown=39
+VIDEOPLAYER FRAMES shown=39 time_ms=2147 late=39
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=54 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=9 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1082 heard=0 written=0 consumed=0 pictures=2 late=19 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=21 picture_us=4000 rest_us=32952 gpu=20 acquire_us=11857 submit_us=6095 wait_us=1523
+VIDEOPLAYER DONE reason=timeout shown=40
+VIDEOPLAYER FRAMES shown=40 time_ms=2069 late=39
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=134 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=13 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=27 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1149 heard=0 written=0 consumed=0 pictures=2 late=18 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=19 picture_us=5263 rest_us=35052 gpu=18 acquire_us=16789 submit_us=5421 wait_us=1578
+VIDEOPLAYER DONE reason=timeout shown=39
+VIDEOPLAYER FRAMES shown=39 time_ms=2153 late=39
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=135 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=18 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1141 heard=0 written=0 consumed=0 pictures=2 late=20 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=22 picture_us=4681 rest_us=33227 gpu=21 acquire_us=13863 submit_us=5500 wait_us=1454
+VIDEOPLAYER DONE reason=timeout shown=45
+VIDEOPLAYER FRAMES shown=45 time_ms=2161 late=44
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=135 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=9 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=17 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1140 heard=0 written=0 consumed=0 pictures=2 late=18 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=19 picture_us=5263 rest_us=33315 gpu=18 acquire_us=14631 submit_us=4789 wait_us=1473
+VIDEOPLAYER DONE reason=timeout shown=39
+VIDEOPLAYER FRAMES shown=39 time_ms=2179 late=39
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=142 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=12 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1160 heard=0 written=0 consumed=0 pictures=2 late=19 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=22 picture_us=3454 rest_us=35272 gpu=21 acquire_us=15636 submit_us=5500 wait_us=1454
+VIDEOPLAYER DONE reason=timeout shown=44
+VIDEOPLAYER FRAMES shown=44 time_ms=2156 late=42
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=139 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=10 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=24 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1179 heard=0 written=0 consumed=0 pictures=2 late=19 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=20 picture_us=5650 rest_us=33300 gpu=19 acquire_us=13350 submit_us=6300 wait_us=1050
+VIDEOPLAYER DONE reason=timeout shown=40
+VIDEOPLAYER FRAMES shown=40 time_ms=2160 late=40
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=63 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=7 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1082 heard=0 written=0 consumed=0 pictures=2 late=19 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=21 picture_us=4380 rest_us=31476 gpu=20 acquire_us=13285 submit_us=5047 wait_us=1809
+VIDEOPLAYER DONE reason=timeout shown=44
+VIDEOPLAYER FRAMES shown=44 time_ms=2086 late=43
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER CLOCK time_ms=220 heard=0 written=0 consumed=0 pictures=2 late=0 eof=0 out=0 state=1
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=31 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1168 heard=0 written=0 consumed=0 pictures=2 late=19 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=19 picture_us=5421 rest_us=35578 gpu=19 acquire_us=15736 submit_us=5842 wait_us=1736
+VIDEOPLAYER DONE reason=timeout shown=40
+VIDEOPLAYER FRAMES shown=40 time_ms=2157 late=40
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=133 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=15 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1152 heard=0 written=0 consumed=0 pictures=2 late=18 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=20 picture_us=5750 rest_us=36650 gpu=19 acquire_us=10500 submit_us=7600 wait_us=3150
+VIDEOPLAYER DONE reason=timeout shown=43
+VIDEOPLAYER FRAMES shown=43 time_ms=2171 late=42
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=134 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=12 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=31 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1166 heard=0 written=0 consumed=0 pictures=2 late=18 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=19 picture_us=6526 rest_us=34000 gpu=18 acquire_us=11789 submit_us=6684 wait_us=2000
+VIDEOPLAYER DONE reason=timeout shown=38
+VIDEOPLAYER FRAMES shown=38 time_ms=2151 late=38
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=139 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=16 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER CLOCK time_ms=1196 heard=0 written=0 consumed=0 pictures=2 late=22 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=23 picture_us=3652 rest_us=33565 gpu=22 acquire_us=12913 submit_us=5782 wait_us=1826
+VIDEOPLAYER DONE reason=timeout shown=45
+VIDEOPLAYER FRAMES shown=45 time_ms=2170 late=45
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER CLOCK time_ms=224 heard=0 written=0 consumed=0 pictures=2 late=0 eof=0 out=0 state=1
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=22 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1186 heard=0 written=0 consumed=0 pictures=2 late=19 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=20 picture_us=5250 rest_us=34300 gpu=20 acquire_us=14600 submit_us=6200 wait_us=1850
+VIDEOPLAYER DONE reason=timeout shown=41
+VIDEOPLAYER FRAMES shown=41 time_ms=2186 late=40
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=139 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=15 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1168 heard=0 written=0 consumed=0 pictures=2 late=21 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=23 picture_us=3347 rest_us=32826 gpu=22 acquire_us=13521 submit_us=5391 wait_us=1260
+VIDEOPLAYER DONE reason=timeout shown=45
+VIDEOPLAYER FRAMES shown=45 time_ms=2161 late=44
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=136 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=15 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=28 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1146 heard=0 written=0 consumed=0 pictures=2 late=18 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=19 picture_us=4947 rest_us=34368 gpu=18 acquire_us=13210 submit_us=7157 wait_us=947
+VIDEOPLAYER DONE reason=timeout shown=40
+VIDEOPLAYER FRAMES shown=40 time_ms=2177 late=40
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=137 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=15 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1145 heard=0 written=0 consumed=0 pictures=2 late=20 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=22 picture_us=4545 rest_us=31545 gpu=21 acquire_us=13727 submit_us=5909 wait_us=1090
+VIDEOPLAYER DONE reason=timeout shown=46
+VIDEOPLAYER FRAMES shown=46 time_ms=2169 late=45
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=133 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=12 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=29 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1165 heard=0 written=0 consumed=0 pictures=2 late=19 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=20 picture_us=5400 rest_us=32600 gpu=19 acquire_us=14350 submit_us=4300 wait_us=1200
+VIDEOPLAYER DONE reason=timeout shown=39
+VIDEOPLAYER FRAMES shown=39 time_ms=2164 late=39
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=65 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=6 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1082 heard=0 written=0 consumed=0 pictures=2 late=17 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=21 picture_us=4476 rest_us=31714 gpu=20 acquire_us=12714 submit_us=6380 wait_us=1476
+VIDEOPLAYER DONE reason=timeout shown=43
+VIDEOPLAYER FRAMES shown=43 time_ms=2067 late=40
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=63 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=9 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=20 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1070 heard=0 written=0 consumed=0 pictures=2 late=17 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=18 picture_us=5611 rest_us=32833 gpu=17 acquire_us=11944 submit_us=6055 wait_us=944
+VIDEOPLAYER DONE reason=timeout shown=39
+VIDEOPLAYER FRAMES shown=39 time_ms=2087 late=39
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=63 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=6 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1067 heard=0 written=0 consumed=0 pictures=2 late=18 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=20 picture_us=3200 rest_us=33750 gpu=19 acquire_us=13100 submit_us=5950 wait_us=1350
+VIDEOPLAYER DONE reason=timeout shown=43
+VIDEOPLAYER FRAMES shown=43 time_ms=2068 late=42
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=137 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=11 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=34 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1178 heard=0 written=0 consumed=0 pictures=2 late=19 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=20 picture_us=4400 rest_us=34200 gpu=19 acquire_us=14950 submit_us=4950 wait_us=1250
+VIDEOPLAYER DONE reason=timeout shown=40
+VIDEOPLAYER FRAMES shown=40 time_ms=2169 late=40
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=66 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=7 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1101 heard=0 written=0 consumed=0 pictures=2 late=19 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=21 picture_us=4619 rest_us=31190 gpu=20 acquire_us=12285 submit_us=4666 wait_us=1142
+VIDEOPLAYER DONE reason=timeout shown=43
+VIDEOPLAYER FRAMES shown=43 time_ms=2077 late=42
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=138 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=13 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=30 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1153 heard=0 written=0 consumed=0 pictures=2 late=19 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=20 picture_us=4500 rest_us=34000 gpu=19 acquire_us=14250 submit_us=5950 wait_us=1300
+VIDEOPLAYER DONE reason=timeout shown=40
+VIDEOPLAYER FRAMES shown=40 time_ms=2170 late=40
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=61 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=10 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1074 heard=0 written=0 consumed=0 pictures=2 late=19 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=21 picture_us=3714 rest_us=31904 gpu=20 acquire_us=13190 submit_us=5380 wait_us=1666
+VIDEOPLAYER DONE reason=timeout shown=44
+VIDEOPLAYER FRAMES shown=44 time_ms=2083 late=43
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=134 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=12 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=30 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1151 heard=0 written=0 consumed=0 pictures=2 late=16 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=17 picture_us=5470 rest_us=40117 gpu=16 acquire_us=12647 submit_us=7941 wait_us=2117
+VIDEOPLAYER DONE reason=timeout shown=36
+VIDEOPLAYER FRAMES shown=36 time_ms=2170 late=36
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=64 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=19 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1088 heard=0 written=0 consumed=0 pictures=2 late=18 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=20 picture_us=4450 rest_us=33550 gpu=19 acquire_us=13100 submit_us=6150 wait_us=1200
+VIDEOPLAYER DONE reason=timeout shown=44
+VIDEOPLAYER FRAMES shown=44 time_ms=2100 late=43
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=132 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=9 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=28 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1165 heard=0 written=0 consumed=0 pictures=2 late=19 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=20 picture_us=5050 rest_us=32950 gpu=19 acquire_us=14350 submit_us=4800 wait_us=1600
+VIDEOPLAYER DONE reason=timeout shown=40
+VIDEOPLAYER FRAMES shown=40 time_ms=2179 late=40
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=139 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=11 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1180 heard=0 written=0 consumed=0 pictures=2 late=20 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=22 picture_us=4272 rest_us=33818 gpu=21 acquire_us=13909 submit_us=5681 wait_us=1409
+VIDEOPLAYER DONE reason=timeout shown=44
+VIDEOPLAYER FRAMES shown=44 time_ms=2139 late=43
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=144 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=12 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=18 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1156 heard=0 written=0 consumed=0 pictures=2 late=18 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=19 picture_us=5368 rest_us=35000 gpu=18 acquire_us=13315 submit_us=7368 wait_us=789
+VIDEOPLAYER DONE reason=timeout shown=40
+VIDEOPLAYER FRAMES shown=40 time_ms=2180 late=40
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=55 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=12 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1099 heard=0 written=0 consumed=0 pictures=2 late=19 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=21 picture_us=4428 rest_us=31523 gpu=20 acquire_us=12380 submit_us=6142 wait_us=1333
+VIDEOPLAYER DONE reason=timeout shown=43
+VIDEOPLAYER FRAMES shown=43 time_ms=2082 late=42
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=139 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=13 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=26 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1191 heard=0 written=0 consumed=0 pictures=2 late=19 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=20 picture_us=5700 rest_us=32950 gpu=19 acquire_us=14000 submit_us=5250 wait_us=1400
+VIDEOPLAYER DONE reason=timeout shown=40
+VIDEOPLAYER FRAMES shown=40 time_ms=2168 late=40
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=136 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=13 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER CLOCK time_ms=1149 heard=0 written=0 consumed=0 pictures=2 late=20 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=22 picture_us=3590 rest_us=33500 gpu=21 acquire_us=12772 submit_us=6500 wait_us=1409
+VIDEOPLAYER DONE reason=timeout shown=45
+VIDEOPLAYER FRAMES shown=45 time_ms=2157 late=44
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=71 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=6 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=27 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1100 heard=0 written=0 consumed=0 pictures=2 late=17 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=18 picture_us=4777 rest_us=34166 gpu=17 acquire_us=14944 submit_us=5111 wait_us=1111
+VIDEOPLAYER DONE reason=timeout shown=38
+VIDEOPLAYER FRAMES shown=38 time_ms=2109 late=38
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=139 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=12 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1164 heard=0 written=0 consumed=0 pictures=2 late=21 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=24 picture_us=3875 rest_us=30583 gpu=23 acquire_us=13916 submit_us=5041 wait_us=1291
+VIDEOPLAYER DONE reason=timeout shown=46
+VIDEOPLAYER FRAMES shown=46 time_ms=2144 late=44
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=138 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=11 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=23 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1151 heard=0 written=0 consumed=0 pictures=2 late=18 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=19 picture_us=6000 rest_us=34000 gpu=18 acquire_us=13736 submit_us=5578 wait_us=1473
+VIDEOPLAYER DONE reason=timeout shown=40
+VIDEOPLAYER FRAMES shown=40 time_ms=2173 late=40
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=50 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=11 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER CLOCK time_ms=1070 heard=0 written=0 consumed=0 pictures=2 late=18 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=20 picture_us=3250 rest_us=32000 gpu=19 acquire_us=14250 submit_us=5350 wait_us=1350
+VIDEOPLAYER DONE reason=timeout shown=42
+VIDEOPLAYER FRAMES shown=42 time_ms=2070 late=41
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=139 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=17 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=29 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1184 heard=0 written=0 consumed=0 pictures=2 late=19 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=20 picture_us=5500 rest_us=35050 gpu=19 acquire_us=15000 submit_us=6000 wait_us=1100
+VIDEOPLAYER DONE reason=timeout shown=40
+VIDEOPLAYER FRAMES shown=40 time_ms=2177 late=40
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=137 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=7 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1171 heard=0 written=0 consumed=0 pictures=2 late=21 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=23 picture_us=3913 rest_us=31391 gpu=22 acquire_us=13695 submit_us=4652 wait_us=1869
+VIDEOPLAYER DONE reason=timeout shown=45
+VIDEOPLAYER FRAMES shown=45 time_ms=2166 late=44
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER CLOCK time_ms=230 heard=0 written=0 consumed=0 pictures=2 late=0 eof=0 out=0 state=1
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=26 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1166 heard=0 written=0 consumed=0 pictures=2 late=19 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=19 picture_us=4894 rest_us=34894 gpu=19 acquire_us=15947 submit_us=5736 wait_us=1315
+VIDEOPLAYER DONE reason=timeout shown=41
+VIDEOPLAYER FRAMES shown=41 time_ms=2185 late=41
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=140 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=16 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1144 heard=0 written=0 consumed=0 pictures=2 late=18 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=21 picture_us=4095 rest_us=34380 gpu=20 acquire_us=14190 submit_us=6428 wait_us=1523
+VIDEOPLAYER DONE reason=timeout shown=43
+VIDEOPLAYER FRAMES shown=43 time_ms=2182 late=41
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=136 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=15 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=33 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1178 heard=0 written=0 consumed=0 pictures=2 late=19 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=20 picture_us=5250 rest_us=33400 gpu=19 acquire_us=13100 submit_us=5750 wait_us=1400
+VIDEOPLAYER Vulkan Video: 84 pictures in 2007 ms, 4 in flight; avg_us submit 3238 wait 3142 copy 2392
+VIDEOPLAYER DONE reason=timeout shown=40
+VIDEOPLAYER FRAMES shown=40 time_ms=2186 late=40
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=141 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=12 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1152 heard=0 written=0 consumed=0 pictures=2 late=20 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=22 picture_us=3681 rest_us=33272 gpu=21 acquire_us=15090 submit_us=5090 wait_us=1136
+VIDEOPLAYER DONE reason=timeout shown=44
+VIDEOPLAYER FRAMES shown=44 time_ms=2143 late=43
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER CLOCK time_ms=220 heard=0 written=0 consumed=0 pictures=2 late=0 eof=0 out=0 state=1
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=29 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1171 heard=0 written=0 consumed=0 pictures=2 late=19 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=19 picture_us=5157 rest_us=35315 gpu=19 acquire_us=19052 submit_us=4894 wait_us=947
+VIDEOPLAYER DONE reason=timeout shown=40
+VIDEOPLAYER FRAMES shown=40 time_ms=2155 late=40
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=64 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=10 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1093 heard=0 written=0 consumed=0 pictures=2 late=18 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=21 picture_us=4095 rest_us=32047 gpu=20 acquire_us=14809 submit_us=4666 wait_us=1523
+VIDEOPLAYER DONE reason=timeout shown=44
+VIDEOPLAYER FRAMES shown=44 time_ms=2078 late=42
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=46 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=5 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=32 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1058 heard=0 written=0 consumed=0 pictures=2 late=16 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=17 picture_us=5941 rest_us=33705 gpu=16 acquire_us=13294 submit_us=6235 wait_us=764
+VIDEOPLAYER DONE reason=timeout shown=37
+VIDEOPLAYER FRAMES shown=37 time_ms=2057 late=37
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=55 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=9 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1100 heard=0 written=0 consumed=0 pictures=2 late=19 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=21 picture_us=4380 rest_us=29904 gpu=20 acquire_us=13095 submit_us=4619 wait_us=1000
+VIDEOPLAYER DONE reason=timeout shown=43
+VIDEOPLAYER FRAMES shown=43 time_ms=2075 late=42
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=54 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=8 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=31 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1060 heard=0 written=0 consumed=0 pictures=2 late=16 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=17 picture_us=5058 rest_us=34588 gpu=16 acquire_us=13529 submit_us=5941 wait_us=1705
+VIDEOPLAYER DONE reason=timeout shown=37
+VIDEOPLAYER FRAMES shown=37 time_ms=2082 late=37
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=161 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=24 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1177 heard=0 written=0 consumed=0 pictures=2 late=19 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=21 picture_us=3761 rest_us=36000 gpu=20 acquire_us=15619 submit_us=6000 wait_us=1428
+VIDEOPLAYER DONE reason=timeout shown=43
+VIDEOPLAYER FRAMES shown=43 time_ms=2169 late=42
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=133 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=12 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=19 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1165 heard=0 written=0 consumed=0 pictures=2 late=18 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=19 picture_us=6368 rest_us=33473 gpu=18 acquire_us=14421 submit_us=5368 wait_us=1263
+VIDEOPLAYER DONE reason=timeout shown=38
+VIDEOPLAYER FRAMES shown=38 time_ms=2134 late=38
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=73 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=7 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1097 heard=0 written=0 consumed=0 pictures=2 late=19 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=21 picture_us=3571 rest_us=32142 gpu=20 acquire_us=13714 submit_us=5904 wait_us=1238
+VIDEOPLAYER DONE reason=timeout shown=43
+VIDEOPLAYER FRAMES shown=43 time_ms=2072 late=42
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=136 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=12 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=28 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1160 heard=0 written=0 consumed=0 pictures=2 late=19 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=20 picture_us=4900 rest_us=33900 gpu=19 acquire_us=13950 submit_us=5050 wait_us=1300
+VIDEOPLAYER DONE reason=timeout shown=40
+VIDEOPLAYER FRAMES shown=40 time_ms=2149 late=40
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=140 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=14 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1141 heard=0 written=0 consumed=0 pictures=2 late=20 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=23 picture_us=3652 rest_us=31304 gpu=22 acquire_us=11695 submit_us=6000 wait_us=1391
+VIDEOPLAYER DONE reason=timeout shown=46
+VIDEOPLAYER FRAMES shown=46 time_ms=2171 late=44
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=59 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=6 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=30 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1081 heard=0 written=0 consumed=0 pictures=2 late=17 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=18 picture_us=5833 rest_us=33555 gpu=17 acquire_us=13833 submit_us=5277 wait_us=1388
+VIDEOPLAYER DONE reason=timeout shown=39
+VIDEOPLAYER FRAMES shown=39 time_ms=2078 late=39
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=137 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=12 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1171 heard=0 written=0 consumed=0 pictures=2 late=21 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=23 picture_us=4217 rest_us=32173 gpu=22 acquire_us=11913 submit_us=6130 wait_us=1043
+VIDEOPLAYER DONE reason=timeout shown=45
+VIDEOPLAYER FRAMES shown=45 time_ms=2174 late=44
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=134 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=11 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=30 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1139 heard=0 written=0 consumed=0 pictures=2 late=18 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=19 picture_us=5315 rest_us=33157 gpu=18 acquire_us=13578 submit_us=5421 wait_us=1684
+VIDEOPLAYER DONE reason=timeout shown=38
+VIDEOPLAYER FRAMES shown=38 time_ms=2179 late=38
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=139 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=15 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1173 heard=0 written=0 consumed=0 pictures=2 late=21 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=23 picture_us=4347 rest_us=31739 gpu=22 acquire_us=11913 submit_us=6130 wait_us=1434
+VIDEOPLAYER DONE reason=timeout shown=45
+VIDEOPLAYER FRAMES shown=45 time_ms=2150 late=44
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=65 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=11 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=32 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1109 heard=0 written=0 consumed=0 pictures=2 late=18 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=19 picture_us=4473 rest_us=34473 gpu=18 acquire_us=12315 submit_us=6684 wait_us=1052
+VIDEOPLAYER DONE reason=timeout shown=39
+VIDEOPLAYER FRAMES shown=39 time_ms=2093 late=39
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=139 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=14 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER CLOCK time_ms=1159 heard=0 written=0 consumed=0 pictures=2 late=21 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=22 picture_us=3727 rest_us=32909 gpu=21 acquire_us=14454 submit_us=6136 wait_us=1181
+VIDEOPLAYER DONE reason=timeout shown=44
+VIDEOPLAYER FRAMES shown=44 time_ms=2164 late=44
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=54 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=12 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=17 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1067 heard=0 written=0 consumed=0 pictures=2 late=17 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=18 picture_us=6277 rest_us=33666 gpu=17 acquire_us=13555 submit_us=6277 wait_us=944
+VIDEOPLAYER DONE reason=timeout shown=38
+VIDEOPLAYER FRAMES shown=38 time_ms=2098 late=38
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=142 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=16 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1154 heard=0 written=0 consumed=0 pictures=2 late=20 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=22 picture_us=3818 rest_us=32181 gpu=21 acquire_us=15909 submit_us=5136 wait_us=1045
+VIDEOPLAYER DONE reason=timeout shown=44
+VIDEOPLAYER FRAMES shown=44 time_ms=2163 late=43
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=70 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=11 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=26 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1089 heard=0 written=0 consumed=0 pictures=2 late=17 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=18 picture_us=4500 rest_us=34111 gpu=17 acquire_us=13111 submit_us=5166 wait_us=944
+VIDEOPLAYER DONE reason=timeout shown=38
+VIDEOPLAYER FRAMES shown=38 time_ms=2090 late=38
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=135 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=17 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1188 heard=0 written=0 consumed=0 pictures=2 late=20 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=22 picture_us=4090 rest_us=33681 gpu=21 acquire_us=11272 submit_us=7954 wait_us=1545
+VIDEOPLAYER DONE reason=timeout shown=43
+VIDEOPLAYER FRAMES shown=43 time_ms=2142 late=42
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=47 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=9 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=31 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1058 heard=0 written=0 consumed=0 pictures=2 late=14 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=15 picture_us=7000 rest_us=38600 gpu=14 acquire_us=12266 submit_us=6733 wait_us=1600
+VIDEOPLAYER DONE reason=timeout shown=35
+VIDEOPLAYER FRAMES shown=35 time_ms=2057 late=35
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=65 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=11 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1103 heard=0 written=0 consumed=0 pictures=2 late=19 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=21 picture_us=3047 rest_us=33380 gpu=20 acquire_us=14047 submit_us=5666 wait_us=1476
+VIDEOPLAYER DONE reason=timeout shown=43
+VIDEOPLAYER FRAMES shown=43 time_ms=2090 late=42
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=133 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=14 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=27 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1147 heard=0 written=0 consumed=0 pictures=2 late=18 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=19 picture_us=5052 rest_us=34157 gpu=18 acquire_us=15368 submit_us=5684 wait_us=1263
+VIDEOPLAYER DONE reason=timeout shown=40
+VIDEOPLAYER FRAMES shown=40 time_ms=2169 late=40
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=61 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=12 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1097 heard=0 written=0 consumed=0 pictures=2 late=18 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=20 picture_us=4500 rest_us=32050 gpu=19 acquire_us=14100 submit_us=5800 wait_us=1050
+VIDEOPLAYER DONE reason=timeout shown=42
+VIDEOPLAYER FRAMES shown=42 time_ms=2077 late=41
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=137 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=11 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=36 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1171 heard=0 written=0 consumed=0 pictures=2 late=19 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=20 picture_us=6000 rest_us=33850 gpu=19 acquire_us=13000 submit_us=6100 wait_us=1450
+VIDEOPLAYER DONE reason=timeout shown=40
+VIDEOPLAYER FRAMES shown=40 time_ms=2147 late=40
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=146 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=18 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1147 heard=0 written=0 consumed=0 pictures=2 late=20 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=23 picture_us=4173 rest_us=31565 gpu=22 acquire_us=12304 submit_us=5739 wait_us=1260
+VIDEOPLAYER DONE reason=timeout shown=46
+VIDEOPLAYER FRAMES shown=46 time_ms=2171 late=44
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=62 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=6 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=25 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1067 heard=0 written=0 consumed=0 pictures=2 late=17 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=18 picture_us=5222 rest_us=35500 gpu=17 acquire_us=10111 submit_us=5666 wait_us=1388
+VIDEOPLAYER DONE reason=timeout shown=38
+VIDEOPLAYER FRAMES shown=38 time_ms=2064 late=38
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=138 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=13 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1151 heard=0 written=0 consumed=0 pictures=2 late=20 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=23 picture_us=3608 rest_us=31869 gpu=22 acquire_us=14173 submit_us=5652 wait_us=1130
+VIDEOPLAYER DONE reason=timeout shown=45
+VIDEOPLAYER FRAMES shown=45 time_ms=2159 late=43
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=58 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=7 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=21 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1060 heard=0 written=0 consumed=0 pictures=2 late=17 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=18 picture_us=5500 rest_us=33000 gpu=17 acquire_us=12944 submit_us=5277 wait_us=1500
+VIDEOPLAYER DONE reason=timeout shown=39
+VIDEOPLAYER FRAMES shown=39 time_ms=2088 late=39
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=61 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=12 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1086 heard=0 written=0 consumed=0 pictures=2 late=18 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=20 picture_us=4600 rest_us=32450 gpu=19 acquire_us=15500 submit_us=4100 wait_us=1800
+VIDEOPLAYER DONE reason=timeout shown=42
+VIDEOPLAYER FRAMES shown=42 time_ms=2089 late=41
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=46 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=11 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=25 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1047 heard=0 written=0 consumed=0 pictures=2 late=17 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=18 picture_us=5000 rest_us=33222 gpu=17 acquire_us=14444 submit_us=5277 wait_us=1388
+VIDEOPLAYER DONE reason=timeout shown=39
+VIDEOPLAYER FRAMES shown=39 time_ms=2061 late=39
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=137 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=13 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1154 heard=0 written=0 consumed=0 pictures=2 late=20 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=22 picture_us=4045 rest_us=33136 gpu=21 acquire_us=12545 submit_us=6363 wait_us=954
+VIDEOPLAYER DONE reason=timeout shown=43
+VIDEOPLAYER FRAMES shown=43 time_ms=2166 late=42
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=141 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=18 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=32 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1151 heard=0 written=0 consumed=0 pictures=2 late=17 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=18 picture_us=6611 rest_us=35277 gpu=17 acquire_us=14000 submit_us=6166 wait_us=1833
+VIDEOPLAYER DONE reason=timeout shown=39
+VIDEOPLAYER FRAMES shown=39 time_ms=2174 late=39
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=142 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=21 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER CLOCK time_ms=1149 heard=0 written=0 consumed=0 pictures=2 late=21 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=22 picture_us=4409 rest_us=32409 gpu=21 acquire_us=13454 submit_us=6772 wait_us=1090
+VIDEOPLAYER DONE reason=timeout shown=45
+VIDEOPLAYER FRAMES shown=45 time_ms=2146 late=45
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=140 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=12 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=28 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1178 heard=0 written=0 consumed=0 pictures=2 late=19 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=20 picture_us=5250 rest_us=33650 gpu=19 acquire_us=15850 submit_us=5250 wait_us=1000
+VIDEOPLAYER DONE reason=timeout shown=39
+VIDEOPLAYER FRAMES shown=39 time_ms=2154 late=39
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=130 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=10 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1186 heard=0 written=0 consumed=0 pictures=2 late=18 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=20 picture_us=4400 rest_us=38800 gpu=19 acquire_us=17600 submit_us=6550 wait_us=1600
+VIDEOPLAYER DONE reason=timeout shown=40
+VIDEOPLAYER FRAMES shown=40 time_ms=2137 late=39
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=139 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=12 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=28 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1156 heard=0 written=0 consumed=0 pictures=2 late=18 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=19 picture_us=6947 rest_us=33684 gpu=18 acquire_us=11684 submit_us=5894 wait_us=1473
+VIDEOPLAYER DONE reason=timeout shown=39
+VIDEOPLAYER FRAMES shown=39 time_ms=2185 late=39
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=140 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=14 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1180 heard=0 written=0 consumed=0 pictures=2 late=21 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=23 picture_us=4043 rest_us=32739 gpu=22 acquire_us=13260 submit_us=5652 wait_us=1521
+VIDEOPLAYER DONE reason=timeout shown=45
+VIDEOPLAYER FRAMES shown=45 time_ms=2147 late=44
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=141 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=18 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=28 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1143 heard=0 written=0 consumed=0 pictures=2 late=18 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=19 picture_us=6526 rest_us=34000 gpu=18 acquire_us=13736 submit_us=4526 wait_us=684
+VIDEOPLAYER DONE reason=timeout shown=39
+VIDEOPLAYER FRAMES shown=39 time_ms=2151 late=39
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=138 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=11 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1157 heard=0 written=0 consumed=0 pictures=2 late=20 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=22 picture_us=3954 rest_us=32636 gpu=21 acquire_us=14318 submit_us=5090 wait_us=1500
+VIDEOPLAYER DONE reason=timeout shown=44
+VIDEOPLAYER FRAMES shown=44 time_ms=2160 late=43
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=137 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=13 picture=0 gpu=0
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=29 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1171 heard=0 written=0 consumed=0 pictures=2 late=19 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=20 picture_us=5050 rest_us=33650 gpu=19 acquire_us=14100 submit_us=6950 wait_us=1100
+VIDEOPLAYER DONE reason=timeout shown=40
+VIDEOPLAYER FRAMES shown=40 time_ms=2143 late=40
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=72 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=6 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1103 heard=0 written=0 consumed=0 pictures=2 late=19 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=21 picture_us=4095 rest_us=30428 gpu=20 acquire_us=12619 submit_us=5142 wait_us=1285
+VIDEOPLAYER DONE reason=timeout shown=44
+VIDEOPLAYER FRAMES shown=44 time_ms=2078 late=43
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VK SWAPCHAIN direct=1 reason=none width=1280 height=720 images=3
+VIDEOPLAYER CLOCK time_ms=236 heard=0 written=0 consumed=0 pictures=2 late=0 eof=0 out=0 state=1
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=29 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1167 heard=0 written=0 consumed=0 pictures=2 late=19 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=19 picture_us=5105 rest_us=33736 gpu=19 acquire_us=15947 submit_us=5105 wait_us=684
+VIDEOPLAYER DONE reason=timeout shown=39
+VIDEOPLAYER FRAMES shown=39 time_ms=2143 late=39
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/tmp/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/tmp/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VK SWAPCHAIN direct=1 reason=none width=960 height=600 images=3
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=142 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=17 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1159 heard=0 written=0 consumed=0 pictures=2 late=20 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=22 picture_us=4318 rest_us=33590 gpu=21 acquire_us=12772 submit_us=6772 wait_us=1318
+VIDEOPLAYER DONE reason=timeout shown=44
+VIDEOPLAYER FRAMES shown=44 time_ms=2168 late=43

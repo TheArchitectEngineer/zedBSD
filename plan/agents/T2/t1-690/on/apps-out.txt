@@ -1,0 +1,59 @@
+ZSETTINGS DONE reason=handed-over page=
+ZSETTINGS DONE reason=handed-over page=
+ZSETTINGS DONE reason=handed-over page=
+VK SWAPCHAIN direct=1 reason=none width=916 height=600 images=3
+ZTERM SETTINGS run=term ambiguous_wide=0 font_size=16 theme=0
+ZTERM MENU state selection=0 clipboard=0 pixels=16 fullscreen=0 ambiguous_wide=0 theme=0 find=0
+ZTERM MENU ready items=39
+ZTERM TAB active id=1
+ZTERM TAB new run=term id=1 count=1
+ZTERM START run=term columns=90 rows=26 cell=10x22 window=916x600
+ZTERM TABS count=1 active=1 mode=0
+ZTERM TITLE tab=1 title=Terminal
+ZTERM CLIPBOARD selection text=0
+ZTERM PRIMARY offer text=0
+ZTERM DONE run=term reason=timeout
+ZTERM TAB closed run=term id=1 count=0
+VK SWAPCHAIN direct=1 reason=none width=1120 height=600 images=3
+VK SWAPCHAIN direct=1 reason=none width=1120 height=600 images=3
+ZFILES LOCATION kind=today path=/home/kei items=0 error=0
+ZFILES GLASS on
+ZFILES MENU state selection=0 folder=0 paste=0 undo=0 back=0 view=0 sort=0 openers=0
+ZFILES MENU ready items=67
+ZFILES TITLEBAR state back=0 forward=0 parts=1 last=Today view=0 preview=0 progress=-1 query= focus=0
+ZFILES TITLEBAR ready controls=8
+ZFILES PACING motion=1 frame=1 errno=0
+ZFILES DEVICES count=0
+ZFILES APPEARANCE appearance=0 accent=0
+ZFILES GLASS panels count=2
+ZFILES READY width=1120 height=600 token=-
+ZFILES HOME free path=/ available=0
+ZFILES MOUNTS count=6
+ZFILES HOME free result errno=0
+ZFILES MOUNTS result errno=0
+ZFILES DONE reason=timeout
+VK SWAPCHAIN direct=1 reason=none width=700 height=450 images=3
+VK SWAPCHAIN direct=1 reason=none width=700 height=450 images=3
+ZFILES LOCATION kind=today path=/home/kei items=0 error=0
+ZFILES GLASS on
+ZFILES MENU state selection=0 folder=0 paste=0 undo=0 back=0 view=0 sort=0 openers=0
+ZFILES MENU ready items=67
+ZFILES TITLEBAR state back=0 forward=0 parts=1 last=Today view=0 preview=0 progress=-1 query= focus=0
+ZFILES TITLEBAR ready controls=8
+ZFILES PACING motion=1 frame=1 errno=0
+ZFILES DEVICES count=0
+ZFILES APPEARANCE appearance=0 accent=0
+ZFILES GLASS panels count=2
+ZFILES READY width=700 height=450 token=-
+ZFILES HOME free path=/ available=0
+ZFILES MOUNTS count=6
+ZFILES HOME free result errno=0
+ZFILES MOUNTS result errno=0
+ZFILES DONE reason=timeout
+ZBROWSER ERROR load path=/etc/hostname error=No such file or directory tls=
+ZBROWSER MAIL listen error=0
+VK SWAPCHAIN direct=1 reason=none width=800 height=500 images=3
+ZBROWSER READY width=800 height=500 document=254
+ZBROWSER NAVIGATE path=data:text/html;charset=utf-8,%3C%21DOCTYPE%20html%3E%0A%3Chtml%20lang%3D%22en%22%3E%0A%3Chead%3E%0A%3Cmeta%20charset%3D%22utf-8%22%3E%0A%3Ctitle%3EPage%20not%20opened%3C%2Ftitle%3E%0A%3Cstyle%3E%0Abody%20%7B%20margin%3A%200%3B%20background%3A%20%23eef1f6%3B%20color%3A%20%231f2633%3B%20font-family%3A%20sans-serif%3B%20font-size%3A%2015px%3B%20line-height%3A%201.5%3B%20%7D%0A.main%20%7B%20max-width%3A%20640px%3B%20margin%3A%2048px%20auto%3B%20background%3A%20%23ffffff%3B%20border%3A%201px%20solid%20%23d3dae6%3B%20padding%3A%2014px%2022px%2016px%3B%20%7D%0Ah1%20%7B%20margin%3A%200%200%208px%3B%20font-size%3A%2022px%3B%20color%3A%20%231d2b45%3B%20%7D%0Ap%20%7B%20margin%3A%206px%200%3B%20word-wrap%3A%20break-word%3B%20%7D%0A.reason%20%7B%20color%3A%20%238a2b2b%3B%20%7D%0Aa%20%7B%20color%3A%20%232463b3%3B%20%7D%0A%3C%2Fstyle%3E%0A%3C%2Fhead%3E%0A%3Cbody%3E%0A%3Cdiv%20class%3D%22main%22%3E%0A%3Ch1%3EThe%20page%20could%20not%20be%20opened%3C%2Fh1%3E%0A%3Cp%3Efile%3A%2F%2F%2Fetc%2Fhostname%3C%2Fp%3E%0A%3Cp%20class%3D%22reason%22%3ENo%20such%20file%20or%20directory%3C%2Fp%3E%0A%3Cp%3E%3Ca%20href%3D%22file%3A%2F%2F%2Fetc%2Fhostname%22%3ETry%20again%3C%2Fa%3E%3C%2Fp%3E%0A%3C%2Fdiv%3E%0A%3C%2Fbody%3E%0A%3C%2Fhtml%3E%0A title=Page not opened
+ZBROWSER TITLEBAR back=0 forward=0 path=file:///etc/hostname
+ZBROWSER FRAME scroll=0 width=800 height=500
