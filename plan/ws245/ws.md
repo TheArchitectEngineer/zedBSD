@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
 Related: [WS244](../ws244/ws.md)（i915 の Linux 由来の code の整理、棚卸し plan/ws244/inventory.md・tests/inventory.py）、[Guardrail](../guardrail.md)「MIT・GPL の出典のデータの引用」
-Resume point: p001 の design-reviewer → 指摘の反映 → design.md 第 7 節の判断 14 件をユーザーに。Phase の表は design.md の 6.2 節（p002〜p012、36 LW）。
+Resume point: p001 の design.md をレビュー（design-review-1.md と design-review.md）とユーザーの決定 1〜4 で改訂 → 再レビュー → 残りの判断をユーザーに。Phase の表は design.md の 6.2 節（p002〜p012、36 LW）。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-16）
@@ -19,6 +19,14 @@ Resume point: p001 の design-reviewer → 指摘の反映 → design.md 第 7 �
 ## 対象（WS244 の棚卸しの「Gen12 の display の Linux 環境」の群、約 6 万行）
 
 `src/drivers/gpu/i915/display/` の ddi・dp・dp-sink・dp-internal.h・pipe・plane・clock・watermark・vbt・vbt.h・panel・panel-backlight・power・dmc・takeover・takeover-internal.h・hotplug・hotplug-internal.h・modeset・modeset-internal.h・internal.h・opregion・opregion-internal.h・aux・gmbus・hdmi・hdmi-mode・edid・edid-read・color・vblank・phy・state・diagnostics・dp-ext・dp-ext-kern・tc・dkl-phy。どれも「Derived from the Linux kernel v6.8.12」と Linux の型・関数の分け方・comment を持つ（ddi.c 107/111、dp.c 92/92、pipe.c 74/74、plane.c 43/44 の関数が写し）。intel/ の header のうち Gen12 だけが使う struct の配置（vbt-defs.h・ref.h・connector.h・wm.h）も含める。
+
+## ユーザーの決定（2026-10-16、design.md のレビューの後）
+
+「5は、(1) a、(2) 5330のみ、(3) Linuxのコードを参考にする、(4) Linuxを優先、でおねがいします。」
+1. 逃げ道の形は (a): 口（xd.h）を p002 で決め、own の file は最初からその口だけを呼ぶ。口の実装を旧（薄い adapter、p011 で削除）と xd で丸ごと切り替える（状態を混ぜない）。
+2. 対象は 5330（ADL-P）だけ。Tiger Lake（5320 など display 12）は支えない。
+3. 手順は Linux の code を参考にする（Tiger Lake・Alchemist の PRM は補助）。guardrail のまま、code・comment・構造は写さず、値は block ごとに Value(s) referenced:、参考にした手順は Procedure referenced: <版> <path> (<関数>) を付ける。
+4. PRM と Linux（5330 で動いている実績）の値・手順が食い違う時は Linux を優先する。
 
 ## 目的と完了の条件
 
