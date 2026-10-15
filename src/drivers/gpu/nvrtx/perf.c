@@ -42,18 +42,40 @@
 #define PERF_CTL_CURRENT_STATE		0x20802068U
 #define PERF_CTL_BOOST			0x2080200aU
 
-/* The current state's parameters: one word, a mask with one bit for the state (bit 0 for P0). */
+/*
+ * The current state's parameters: one word, a mask with one bit for the state
+ * (bit 0 for P0).
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080perf.h
+ * (NV2080_CTRL_PERF_GET_CURRENT_PSTATE_PARAMS, NV2080_CTRL_PERF_PSTATES_P0).
+ */
 #define PERF_CURRENT_STATE_BYTES	4U
 #define PERF_CURRENT_STATE_AT		0U
 
-/* The boost's parameters: the command (to the highest state) and its duration (until it is cleared). */
+/*
+ * The boost's parameters: the command (to the highest state) and its duration
+ * (until it is cleared).
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080perf.h
+ * (NV2080_CTRL_PERF_BOOST_PARAMS,
+ * NV2080_CTRL_PERF_BOOST_FLAGS_CMD_BOOST_TO_MAX,
+ * NV2080_CTRL_PERF_BOOST_DURATION_INFINITE).
+ */
 #define PERF_BOOST_BYTES		8U
 #define PERF_BOOST_FLAGS_AT		0U
 #define PERF_BOOST_DURATION_AT		4U
 #define PERF_BOOST_TO_MAX		2U
 #define PERF_BOOST_FOREVER		0xffffffffU
 
-/* The highest state number the mask can name. */
+/*
+ * The highest state number the mask can name.
+ *
+ * Value referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080perf.h
+ * (NV2080_CTRL_PERF_PSTATES_MAX).
+ */
 #define PERF_STATE_LAST			15U
 
 /* The boot word that asks for the boost, and where the boot's command line is found. */
