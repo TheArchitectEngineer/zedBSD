@@ -231,6 +231,7 @@ static int ax211_command_external_scrub(struct intel_ax211_transport *transport)
 static int ax211_command_external_matches(const struct intel_ax211_transport *transport, const struct intel_ax211_ring_token *token);
 static int ax211_poll_rx_idle(struct intel_ax211_transport *transport);
 
+
 /*
  * Initializes one exact AX211 Gen3 transport without touching hardware.
  */
@@ -242,14 +243,26 @@ drv_intel_ax211_transport_init(
 	const struct intel_ax211_mmio_profile *profile,
 	const struct intel_ax211_transport_ring_memory *memory)
 {
+	int valid;
 	int result;
 
-	/* Checks the ax211 ops valid result. */
-	if (transport == NULL || !ax211_ops_valid(ops))
+	/* Refuses a missing transport. */
+	if (transport == NULL)
 		return INTEL_AX211_TRANSPORT_INVALID;
 
-	/* Checks the ax211 profile valid result. */
-	if (!ax211_profile_valid(profile) || !ax211_memory_valid(memory))
+	/* Refuses incomplete controller operations. */
+	valid = ax211_ops_valid(ops);
+	if (!valid)
+		return INTEL_AX211_TRANSPORT_INVALID;
+
+	/* Refuses another device profile. */
+	valid = ax211_profile_valid(profile);
+	if (!valid)
+		return INTEL_AX211_TRANSPORT_INVALID;
+
+	/* Refuses ring memory of other sizes or alignments. */
+	valid = ax211_memory_valid(memory);
+	if (!valid)
 		return INTEL_AX211_TRANSPORT_INVALID;
 
 	/* Initializes an unpublished and fail-closed transport state. */
@@ -259,18 +272,16 @@ drv_intel_ax211_transport_init(
 	transport->profile = *profile;
 	transport->memory = *memory;
 
-	/* Checks the operation result. */
+	/* Initializes the command ring's bookkeeping. */
 	result = drv_intel_ax211_ring_init(&transport->command_ring,
 					   AX211_COMMAND_RING_ID,
 					   INTEL_AX211_COMMAND_RING_SIZE);
 	if (result != INTEL_AX211_SUCCESS) {
 		kern_memset(transport, 0, sizeof(*transport));
-
-		/* Returns the computed result. */
 		return INTEL_AX211_TRANSPORT_INVALID;
 	}
 
-	/* Returns the computed result. */
+	/* Succeeded: the transport is ready for MSI-X routing. */
 	return INTEL_AX211_TRANSPORT_OK;
 }
 
@@ -281,24 +292,24 @@ int
 drv_intel_ax211_transport_configure_msix(
 	struct intel_ax211_transport *transport)
 {
+	int valid;
 	int result;
 	int unlock_result;
 
-	/* Checks the ax211 transport valid result. */
-	if (!ax211_transport_valid(transport))
+	/* Refuses an uninitialized transport. */
+	valid = ax211_transport_valid(transport);
+	if (!valid)
 		return INTEL_AX211_TRANSPORT_INVALID;
 
-	/* Checks the operation status. */
+	/* Refuses a stopped or failed transport. */
 	if (transport->quiesced || transport->failed)
 		return INTEL_AX211_TRANSPORT_ORDER;
 
-	/* Handles the transport condition. */
+	/* Refuses a second routing. */
 	if (transport->msix_configured)
 		return INTEL_AX211_TRANSPORT_ORDER;
 
 	/* Selects MSI-X inside UMAC while NIC ownership is held. */
-
-	/* Checks the operation result. */
 	result = transport->ops->wake_hold(transport->argument);
 	if (result != 0)
 		return INTEL_AX211_TRANSPORT_IO;
@@ -307,44 +318,33 @@ drv_intel_ax211_transport_configure_msix(
 		transport->profile.upper_cpu_prph_base + AX211_PRPH_INTERRUPT_MODE,
 		AX211_INTERRUPT_MODE_MSIX);
 
-	/* Checks the operation result. */
+	/* Releases the NIC; a failed write or release fails the transport. */
 	unlock_result = transport->ops->wake_release(transport->argument);
 	if (result != 0 || unlock_result != 0) {
 		transport->failed = 1U;
 		transport->quiesced = 1U;
-
-		/* Returns the computed result. */
 		return INTEL_AX211_TRANSPORT_IO;
 	}
 
 	/* Keeps every cause masked while the vector map is changed. */
-
-	/* Checks the operation result. */
 	result = ax211_mask_all(transport);
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		transport->failed = 1U;
 		transport->quiesced = 1U;
-
-		/* Failed. */
 		return result;
 	}
 
 	/* Programs the single-vector routing table. */
-
-	/* Checks the operation result. */
 	result = ax211_configure_msix_routes(transport);
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		ax211_mask_all_best_effort(transport);
 		transport->failed = 1U;
 		transport->quiesced = 1U;
-
-		/* Failed. */
 		return result;
 	}
 
+	/* Succeeded: every routed cause reaches vector 0. */
 	transport->msix_configured = 1U;
-
-	/* Returns the computed result. */
 	return INTEL_AX211_TRANSPORT_OK;
 }
 
@@ -356,17 +356,19 @@ drv_intel_ax211_transport_initialize_rings(
 	struct intel_ax211_transport *transport)
 {
 	uint32_t shadow;
+	int valid;
 	int core_result;
 	int result;
 
-	/* Checks the ax211 transport valid result. */
-	if (!ax211_transport_valid(transport))
+	/* Refuses an uninitialized transport. */
+	valid = ax211_transport_valid(transport);
+	if (!valid)
 		return INTEL_AX211_TRANSPORT_INVALID;
 
-	/* Checks the operation status. */
-	if (transport->quiesced || transport->failed ||
+	/* Refuses a stopped or failed transport and a second setup. */
+	if (transport->quiesced ||
+	    transport->failed ||
 	    transport->rings_initialized) {
-		/* Returns the computed result. */
 		return INTEL_AX211_TRANSPORT_ORDER;
 	}
 
@@ -393,7 +395,7 @@ drv_intel_ax211_transport_initialize_rings(
 			       0U, transport->memory.command_tfd_size,
 			       INTEL_AX211_TRANSPORT_DMA_PREWRITE);
 
-	/* Checks the operation result. */
+	/* Publishes the byte-count table. */
 	if (result == INTEL_AX211_TRANSPORT_OK) {
 		result = ax211_dma_sync(
 			transport, INTEL_AX211_TRANSPORT_DMA_COMMAND_BYTE_COUNT,
@@ -401,7 +403,7 @@ drv_intel_ax211_transport_initialize_rings(
 			INTEL_AX211_TRANSPORT_DMA_PREWRITE);
 	}
 
-	/* Checks the operation result. */
+	/* Publishes the command slots. */
 	if (result == INTEL_AX211_TRANSPORT_OK) {
 		result = ax211_dma_sync(
 			transport, INTEL_AX211_TRANSPORT_DMA_COMMAND_SLOTS, 0U,
@@ -409,7 +411,7 @@ drv_intel_ax211_transport_initialize_rings(
 			INTEL_AX211_TRANSPORT_DMA_PREWRITE);
 	}
 
-	/* Checks the operation result. */
+	/* Publishes the external command buffer. */
 	if (result == INTEL_AX211_TRANSPORT_OK) {
 		result = ax211_dma_sync(
 			transport, INTEL_AX211_TRANSPORT_DMA_COMMAND_EXTERNAL,
@@ -417,18 +419,14 @@ drv_intel_ax211_transport_initialize_rings(
 			INTEL_AX211_TRANSPORT_DMA_PREWRITE);
 	}
 
-	/* Checks the operation result. */
+	/* A failed publication fails the transport. */
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		transport->failed = 1U;
 		transport->quiesced = 1U;
-
-		/* Failed. */
 		return result;
 	}
 
 	/* Arms device-write completion and status memory for DMA. */
-
-	/* Checks the operation result. */
 	result = ax211_dma_sync(transport,
 				INTEL_AX211_TRANSPORT_DMA_RX_COMPLETION, 0U,
 				transport->memory.rx_completion_size,
@@ -440,26 +438,20 @@ drv_intel_ax211_transport_initialize_rings(
 					INTEL_AX211_TRANSPORT_DMA_PREREAD);
 	}
 
-	/* Checks the operation result. */
+	/* A failed synchronization fails the transport. */
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		transport->failed = 1U;
 		transport->quiesced = 1U;
-
-		/* Failed. */
 		return result;
 	}
 
 	/* Resets host bookkeeping to command queue zero and RX index zero. */
-
-	/* Handles the core result condition. */
 	core_result = drv_intel_ax211_ring_init(&transport->command_ring,
 						AX211_COMMAND_RING_ID,
 						INTEL_AX211_COMMAND_RING_SIZE);
 	if (core_result != INTEL_AX211_SUCCESS) {
 		transport->failed = 1U;
 		transport->quiesced = 1U;
-
-		/* Returns the computed result. */
 		return INTEL_AX211_TRANSPORT_FAILED;
 	}
 
@@ -474,46 +466,36 @@ drv_intel_ax211_transport_initialize_rings(
 	transport->rx_last_credit = 0xffffU;
 
 	/* Applies the proven interrupt-coalescing and shadow-register setup. */
-
-	/* Checks the operation result. */
 	result = ax211_csr_write8(transport, AX211_CSR_INTERRUPT_DELAY,
 				  AX211_INTERRUPT_DELAY_DEFAULT);
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		transport->failed = 1U;
 		transport->quiesced = 1U;
-
-		/* Failed. */
 		return result;
 	}
 
-	/* Checks the operation result. */
+	/* Reads the shadowing register. */
 	result = ax211_csr_read(transport, AX211_CSR_WRITE_SHADOWING,
 				&shadow);
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		transport->failed = 1U;
 		transport->quiesced = 1U;
-
-		/* Failed. */
 		return result;
 	}
 
+	/* Enables the shadow registers. */
 	shadow |= AX211_WRITE_SHADOWING_ENABLE;
-
-	/* Checks the operation result. */
 	result = ax211_csr_write(transport, AX211_CSR_WRITE_SHADOWING,
 				 shadow);
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		transport->failed = 1U;
 		transport->quiesced = 1U;
-
-		/* Failed. */
 		return result;
 	}
 
+	/* Succeeded: the rings are ready for their descriptors. */
 	transport->rings_initialized = 1U;
 	transport->rx_dma_idle = 0U;
-
-	/* Returns the computed result. */
 	return INTEL_AX211_TRANSPORT_OK;
 }
 
@@ -526,22 +508,23 @@ drv_intel_ax211_transport_enable_firmware_interrupts(
 {
 	uint32_t queue_causes;
 	uint32_t hardware;
+	int valid;
 	int result;
 
-	/* Checks the ax211 transport valid result. */
-	if (!ax211_transport_valid(transport))
+	/* Refuses an uninitialized transport. */
+	valid = ax211_transport_valid(transport);
+	if (!valid)
 		return INTEL_AX211_TRANSPORT_INVALID;
 
-	/* Checks the operation status. */
-	if (!transport->msix_configured || !transport->rings_initialized ||
-	    transport->quiesced || transport->failed) {
-		/* Returns the computed result. */
+	/* Requires routing and rings, and refuses a stopped transport. */
+	if (!transport->msix_configured ||
+	    !transport->rings_initialized ||
+	    transport->quiesced ||
+	    transport->failed) {
 		return INTEL_AX211_TRANSPORT_ORDER;
 	}
 
 	/* Clears legacy and MSI-X stale state before clearing handshakes. */
-
-	/* Checks the operation result. */
 	result = ax211_csr_write(transport, AX211_CSR_INTERRUPT_CAUSE, UINT32_MAX);
 	if (result == INTEL_AX211_TRANSPORT_OK)
 		result = ax211_mask_all(transport);
@@ -551,14 +534,10 @@ drv_intel_ax211_transport_enable_firmware_interrupts(
 		ax211_mask_all_best_effort(transport);
 		transport->failed = 1U;
 		transport->quiesced = 1U;
-
-		/* Failed. */
 		return result;
 	}
 
 	/* Clears firmware RF-kill and blocked-command handshake bits. */
-
-	/* Checks the operation result. */
 	result = ax211_csr_write(transport, AX211_CSR_FIRMWARE_FLAGS_CLEAR,
 				 AX211_FIRMWARE_FLAG_RADIO_OFF);
 	if (result == INTEL_AX211_TRANSPORT_OK) {
@@ -566,32 +545,26 @@ drv_intel_ax211_transport_enable_firmware_interrupts(
 					 AX211_FIRMWARE_FLAG_COMMANDS_HELD);
 	}
 
-	/* Checks the operation result. */
+	/* Clears the legacy causes again; a failure fails the transport. */
 	if (result == INTEL_AX211_TRANSPORT_OK)
 		result = ax211_csr_write(transport, AX211_CSR_INTERRUPT_CAUSE, UINT32_MAX);
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		ax211_mask_all_best_effort(transport);
 		transport->failed = 1U;
 		transport->quiesced = 1U;
-
-		/* Failed. */
 		return result;
 	}
 
 	/* Re-acknowledges before exposing ALIVE and flow-handler delivery. */
-
-	/* Checks the operation result. */
 	result = ax211_ack_raw(transport, &queue_causes, &hardware);
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		ax211_mask_all_best_effort(transport);
 		transport->failed = 1U;
 		transport->quiesced = 1U;
-
-		/* Failed. */
 		return result;
 	}
 
-	/* Checks the operation result. */
+	/* Unmasks ALIVE and the routed queue causes. */
 	result = ax211_csr_write(transport, AX211_CSR_MSIX_EVENT_MASK,
 				 ~AX211_EVENT_CAUSE_ALIVE);
 	if (result == INTEL_AX211_TRANSPORT_OK) {
@@ -600,22 +573,19 @@ drv_intel_ax211_transport_enable_firmware_interrupts(
 					 ~AX211_QUEUE_CAUSES_ROUTED);
 	}
 
-	/* Checks the operation result. */
+	/* A failed unmask fails the transport. */
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		ax211_mask_all_best_effort(transport);
 		transport->failed = 1U;
 		transport->quiesced = 1U;
-
-		/* Failed. */
 		return result;
 	}
 
+	/* Succeeded: the firmware-load causes are enabled. */
 	transport->enabled_event_causes = AX211_EVENT_CAUSE_ALIVE;
 	transport->enabled_queue_causes = AX211_QUEUE_CAUSES_ROUTED;
 	transport->interrupts_enabled = 1U;
 	transport->firmware_load_mode = 1U;
-
-	/* Returns the computed result. */
 	return INTEL_AX211_TRANSPORT_OK;
 }
 
@@ -626,22 +596,23 @@ int
 drv_intel_ax211_transport_enable_runtime_interrupts(
 	struct intel_ax211_transport *transport)
 {
+	int valid;
 	int result;
 
-	/* Checks the ax211 transport valid result. */
-	if (!ax211_transport_valid(transport))
+	/* Refuses an uninitialized transport. */
+	valid = ax211_transport_valid(transport);
+	if (!valid)
 		return INTEL_AX211_TRANSPORT_INVALID;
 
-	/* Checks the operation status. */
-	if (!transport->msix_configured || !transport->rings_initialized ||
-	    transport->quiesced || transport->failed) {
-		/* Returns the computed result. */
+	/* Requires routing and rings, and refuses a stopped transport. */
+	if (!transport->msix_configured ||
+	    !transport->rings_initialized ||
+	    transport->quiesced ||
+	    transport->failed) {
 		return INTEL_AX211_TRANSPORT_ORDER;
 	}
 
 	/* Publishes both unmasked-cause sets before recording runtime mode. */
-
-	/* Checks the operation result. */
 	result = ax211_csr_write(transport, AX211_CSR_MSIX_QUEUE_MASK,
 				 ~AX211_QUEUE_CAUSES_ROUTED);
 	if (result == INTEL_AX211_TRANSPORT_OK) {
@@ -650,22 +621,19 @@ drv_intel_ax211_transport_enable_runtime_interrupts(
 					 ~AX211_EVENT_CAUSES_ROUTED);
 	}
 
-	/* Checks the operation result. */
+	/* A failed unmask fails the transport. */
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		ax211_mask_all_best_effort(transport);
 		transport->failed = 1U;
 		transport->quiesced = 1U;
-
-		/* Failed. */
 		return result;
 	}
 
+	/* Succeeded: every routed cause is enabled. */
 	transport->enabled_queue_causes = AX211_QUEUE_CAUSES_ROUTED;
 	transport->enabled_event_causes = AX211_EVENT_CAUSES_ROUTED;
 	transport->interrupts_enabled = 1U;
 	transport->firmware_load_mode = 0U;
-
-	/* Returns the computed result. */
 	return INTEL_AX211_TRANSPORT_OK;
 }
 
@@ -676,13 +644,15 @@ int
 drv_intel_ax211_transport_disable_interrupts(
 	struct intel_ax211_transport *transport)
 {
+	int valid;
 	int result;
 
-	/* Checks the ax211 transport valid result. */
-	if (!ax211_transport_valid(transport))
+	/* Refuses an uninitialized transport. */
+	valid = ax211_transport_valid(transport);
+	if (!valid)
 		return INTEL_AX211_TRANSPORT_INVALID;
 
-	/* Handles the transport condition. */
+	/* Refuses a transport without routing. */
 	if (!transport->msix_configured)
 		return INTEL_AX211_TRANSPORT_ORDER;
 
@@ -694,12 +664,10 @@ drv_intel_ax211_transport_disable_interrupts(
 	transport->firmware_load_mode = 0U;
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		transport->failed = 1U;
-
-		/* Failed. */
 		return result;
 	}
 
-	/* Returns the computed result. */
+	/* Succeeded: every cause is masked. */
 	return INTEL_AX211_TRANSPORT_OK;
 }
 
@@ -713,36 +681,38 @@ drv_intel_ax211_transport_interrupt_claim(
 {
 	uint32_t queue_causes;
 	uint32_t hardware;
+	int valid;
 	int result;
 
-	/* Checks the ax211 transport valid result. */
-	if (!ax211_transport_valid(transport) || causes == NULL)
+	/* Refuses an uninitialized transport. */
+	valid = ax211_transport_valid(transport);
+	if (!valid)
 		return INTEL_AX211_TRANSPORT_INVALID;
 
-	/* Checks the operation status. */
-	if (!transport->msix_configured || !transport->interrupts_enabled ||
-	    transport->quiesced || transport->failed) {
-		/* Returns the computed result. */
+	/* Refuses a missing output. */
+	if (causes == NULL)
+		return INTEL_AX211_TRANSPORT_INVALID;
+
+	/* Requires enabled interrupts, and refuses a stopped transport. */
+	if (!transport->msix_configured ||
+	    !transport->interrupts_enabled ||
+	    transport->quiesced ||
+	    transport->failed) {
 		return INTEL_AX211_TRANSPORT_ORDER;
 	}
 
 	/* Captures and W1C-acknowledges both cause banks before dispatch. */
-
-	/* Checks the operation result. */
 	result = ax211_ack_raw(transport, &queue_causes, &hardware);
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		transport->failed = 1U;
-
-		/* Failed. */
 		return result;
 	}
 
+	/* Succeeded: reports the admitted and the raw causes. */
 	causes->queue_causes = queue_causes & transport->enabled_queue_causes;
 	causes->hardware = hardware & transport->enabled_event_causes;
 	causes->raw_queue_causes = queue_causes;
 	causes->raw_hardware = hardware;
-
-	/* Returns the computed result. */
 	return INTEL_AX211_TRANSPORT_OK;
 }
 
@@ -753,29 +723,33 @@ int
 drv_intel_ax211_transport_interrupt_rearm(
 	struct intel_ax211_transport *transport)
 {
+	int valid;
 	int result;
 
-	/* Checks the ax211 transport valid result. */
-	if (!ax211_transport_valid(transport))
+	/* Refuses an uninitialized transport. */
+	valid = ax211_transport_valid(transport);
+	if (!valid)
 		return INTEL_AX211_TRANSPORT_INVALID;
 
-	/* Checks the operation status. */
-	if (!transport->msix_configured || !transport->interrupts_enabled ||
-	    transport->quiesced || transport->failed) {
-		/* Returns the computed result. */
+	/* Requires enabled interrupts, and refuses a stopped transport. */
+	if (!transport->msix_configured ||
+	    !transport->interrupts_enabled ||
+	    transport->quiesced ||
+	    transport->failed) {
 		return INTEL_AX211_TRANSPORT_ORDER;
 	}
 
-	/* Checks the operation result. */
+	/* Unmasks vector 0; a failed write fails the transport. */
 	result = ax211_csr_write(transport, AX211_CSR_MSIX_SELF_MASK_STATE,
 				 AX211_SELF_MASK_VECTOR0);
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		transport->failed = 1U;
 		transport->quiesced = 1U;
+		return result;
 	}
 
-	/* Returns the computed result. */
-	return result;
+	/* Succeeded: the vector can be raised again. */
+	return INTEL_AX211_TRANSPORT_OK;
 }
 
 /*
@@ -787,29 +761,35 @@ drv_intel_ax211_transport_publish_rx_descriptor(
 	uint16_t index,
 	uint64_t device_address)
 {
-	int error;
+	int valid;
+	int result;
 
-	/* Checks the ax211 transport valid result. */
-	if (!ax211_transport_valid(transport))
+	/* Refuses an uninitialized transport. */
+	valid = ax211_transport_valid(transport);
+	if (!valid)
 		return INTEL_AX211_TRANSPORT_INVALID;
 
-	/* Checks the operation status. */
-	if (!transport->rings_initialized || transport->rx_active ||
-	    transport->quiesced || transport->failed) {
-		/* Returns the computed result. */
+	/* Requires rings not yet active, and refuses a stopped transport. */
+	if (!transport->rings_initialized ||
+	    transport->rx_active ||
+	    transport->quiesced ||
+	    transport->failed) {
 		return INTEL_AX211_TRANSPORT_ORDER;
 	}
 
-	/* Checks the ax211 rx descriptor valid result. */
-	if (!ax211_rx_descriptor_valid(index, device_address))
+	/* Refuses an index or a buffer address the ring cannot take. */
+	valid = ax211_rx_descriptor_valid(index, device_address);
+	if (!valid)
 		return INTEL_AX211_TRANSPORT_INVALID;
 
-	/* Obtains the ax211 publish rx descriptor result. */
-	error =
+	/* Publishes the descriptor. */
+	result =
 		ax211_publish_rx_descriptor(transport, index, device_address);
+	if (result != INTEL_AX211_TRANSPORT_OK)
+		return result;
 
-	/* Returns the computed result. */
-	return error;
+	/* Succeeded: the descriptor is published. */
+	return INTEL_AX211_TRANSPORT_OK;
 }
 
 /*
@@ -819,21 +799,25 @@ int
 drv_intel_ax211_transport_activate_rx(
 	struct intel_ax211_transport *transport)
 {
+	int valid;
 	int result;
 
-	/* Checks the ax211 transport valid result. */
-	if (!ax211_transport_valid(transport))
+	/* Refuses an uninitialized transport. */
+	valid = ax211_transport_valid(transport);
+	if (!valid)
 		return INTEL_AX211_TRANSPORT_INVALID;
 
-	/* Checks the operation status. */
-	if (!transport->rings_initialized || transport->rx_active ||
-	    transport->quiesced || transport->failed) {
-		/* Returns the computed result. */
+	/* Requires rings not yet active, and refuses a stopped transport. */
+	if (!transport->rings_initialized ||
+	    transport->rx_active ||
+	    transport->quiesced ||
+	    transport->failed) {
 		return INTEL_AX211_TRANSPORT_ORDER;
 	}
 
-	/* Checks the ax211 all rx published result. */
-	if (!ax211_all_rx_published(transport))
+	/* Requires every receive descriptor. */
+	valid = ax211_all_rx_published(transport);
+	if (!valid)
 		return INTEL_AX211_TRANSPORT_ORDER;
 
 	/* Republishes the complete ring after firmware has configured RFH. */
@@ -842,25 +826,22 @@ drv_intel_ax211_transport_activate_rx(
 			       0U, transport->memory.rx_transfer_size,
 			       INTEL_AX211_TRANSPORT_DMA_PREWRITE);
 
-	/* Checks the operation result. */
+	/* Gives the first eight buffers to the device. */
 	if (result == INTEL_AX211_TRANSPORT_OK) {
 		result = ax211_csr_write(transport,
 					 AX211_CSR_RX_FREE_INDEX, 8U);
 	}
 
-	/* Checks the operation result. */
+	/* A failed publication or credit fails the transport. */
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		transport->failed = 1U;
 		transport->quiesced = 1U;
-
-		/* Failed. */
 		return result;
 	}
 
+	/* Succeeded: receiving is active. */
 	transport->rx_last_credit = 8U;
 	transport->rx_active = 1U;
-
-	/* Returns the computed result. */
 	return INTEL_AX211_TRANSPORT_OK;
 }
 
@@ -872,49 +853,43 @@ drv_intel_ax211_transport_rx_refresh(
 	struct intel_ax211_transport *transport)
 {
 	uint16_t hardware_head;
+	int valid;
 	int result;
 
-	/* Checks the ax211 transport valid result. */
-	if (!ax211_transport_valid(transport))
+	/* Refuses an uninitialized transport. */
+	valid = ax211_transport_valid(transport);
+	if (!valid)
 		return INTEL_AX211_TRANSPORT_INVALID;
 
-	/* Checks the operation status. */
+	/* Requires active receiving, and refuses a stopped transport. */
 	if (!transport->rx_active || transport->quiesced || transport->failed)
 		return INTEL_AX211_TRANSPORT_ORDER;
 
 	/* Acquires the device-written status word before decoding its head. */
-
-	/* Checks the operation result. */
 	result = ax211_dma_sync(transport, INTEL_AX211_TRANSPORT_DMA_RX_STATUS,
 				0U, AX211_RX_STATUS_SIZE,
 				INTEL_AX211_TRANSPORT_DMA_POSTREAD);
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		transport->failed = 1U;
 		transport->quiesced = 1U;
-
-		/* Failed. */
 		return result;
 	}
 
+	/* Reads the head and hands the word back to the device. */
 	hardware_head = ax211_get_le16(transport->memory.rx_status);
-
-	/* Checks the operation result. */
 	result = ax211_dma_sync(transport, INTEL_AX211_TRANSPORT_DMA_RX_STATUS,
 				0U, AX211_RX_STATUS_SIZE,
 				INTEL_AX211_TRANSPORT_DMA_PREREAD);
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		transport->failed = 1U;
 		transport->quiesced = 1U;
-
-		/* Failed. */
 		return result;
 	}
 
+	/* Succeeded: records the head within the ring. */
 	hardware_head &= 0x0fffU;
 	hardware_head &= INTEL_AX211_TRANSPORT_RX_DESCRIPTOR_COUNT - 1U;
 	transport->rx_head = hardware_head;
-
-	/* Returns the computed result. */
 	return INTEL_AX211_TRANSPORT_OK;
 }
 
@@ -930,55 +905,58 @@ drv_intel_ax211_transport_rx_next(
 	size_t offset;
 	uint16_t buffer_id;
 	uint8_t flags;
+	int valid;
+	int published;
 	int core_result;
 	int result;
 
-	/* Checks the ax211 transport valid result. */
-	if (!ax211_transport_valid(transport) || completion == NULL)
+	/* Refuses an uninitialized transport. */
+	valid = ax211_transport_valid(transport);
+	if (!valid)
 		return INTEL_AX211_TRANSPORT_INVALID;
 
-	/* Handles the transport condition. */
+	/* Refuses a missing output. */
+	if (completion == NULL)
+		return INTEL_AX211_TRANSPORT_INVALID;
+
+	/* Refuses a second completion before the first is replenished. */
 	if (transport->rx_pending)
 		return INTEL_AX211_TRANSPORT_ORDER;
 
 	/* Refreshes the device head before testing for one available entry. */
-
-	/* Checks the operation result. */
 	result = drv_intel_ax211_transport_rx_refresh(transport);
 	if (result != INTEL_AX211_TRANSPORT_OK)
 		return result;
 
-	/* Handles the transport condition. */
+	/* Nothing new has arrived. */
 	if (transport->rx_tail == transport->rx_head)
 		return INTEL_AX211_TRANSPORT_STALE;
 
 	/* Acquires and decodes exactly one completion descriptor. */
 	offset = (size_t)transport->rx_tail *
 		 INTEL_AX211_TRANSPORT_RX_COMPLETION_SIZE;
-
-	/* Checks the operation result. */
 	result = ax211_dma_sync(transport,
 				INTEL_AX211_TRANSPORT_DMA_RX_COMPLETION, offset,
 				INTEL_AX211_TRANSPORT_RX_COMPLETION_SIZE,
 				INTEL_AX211_TRANSPORT_DMA_POSTREAD);
 	if (result != INTEL_AX211_TRANSPORT_OK)
 		return result;
-	descriptor = transport->memory.rx_completion + offset;
 
-	/* Handles the core result condition. */
+	/* Refuses an undecodable descriptor and a buffer out of range. */
+	descriptor = transport->memory.rx_completion + offset;
 	core_result = drv_intel_ax211_rx_completion_descriptor_decode(
 		descriptor, &buffer_id, &flags);
 	if (core_result != INTEL_AX211_SUCCESS ||
 	    buffer_id >= INTEL_AX211_TRANSPORT_RX_DESCRIPTOR_COUNT) {
-		/* Returns the computed result. */
 		return INTEL_AX211_TRANSPORT_INVALID;
 	}
 
-	/* Checks the ax211 is published result. */
-	if (!ax211_is_published(transport, buffer_id))
+	/* Refuses a buffer the device does not own. */
+	published = ax211_is_published(transport, buffer_id);
+	if (!published)
 		return INTEL_AX211_TRANSPORT_STALE;
 
-	/* Transfers that buffer slot to the caller until it is replenished. */
+	/* Succeeded: lends the buffer to the caller until it is replenished. */
 	ax211_set_published(transport, buffer_id, 0);
 	transport->rx_pending = 1U;
 	transport->rx_pending_index = transport->rx_tail;
@@ -986,8 +964,6 @@ drv_intel_ax211_transport_rx_next(
 	completion->completion_index = transport->rx_tail;
 	completion->buffer_id = buffer_id;
 	completion->flags = flags;
-
-	/* Returns the computed result. */
 	return INTEL_AX211_TRANSPORT_OK;
 }
 
@@ -1002,44 +978,40 @@ drv_intel_ax211_transport_rx_replenish(
 	size_t completion_offset;
 	uint16_t credit;
 	uint16_t previous;
+	int valid;
 	int result;
 
-	/* Checks the ax211 transport valid result. */
-	if (!ax211_transport_valid(transport))
+	/* Refuses an uninitialized transport. */
+	valid = ax211_transport_valid(transport);
+	if (!valid)
 		return INTEL_AX211_TRANSPORT_INVALID;
 
-	/* Checks the operation status. */
+	/* Requires a pending completion, and refuses a stopped transport. */
 	if (!transport->rx_pending || transport->quiesced || transport->failed)
 		return INTEL_AX211_TRANSPORT_ORDER;
 
-	/* Handles the transport condition. */
+	/* Refuses a completion that is no longer the oldest. */
 	if (transport->rx_pending_index != transport->rx_tail)
 		return INTEL_AX211_TRANSPORT_STALE;
 
-	/* Checks the ax211 rx descriptor valid result. */
-	if (!ax211_rx_descriptor_valid(transport->rx_pending_buffer,
-				       device_address)) {
-		/* Returns the computed result. */
+	/* Refuses a buffer address the ring cannot take. */
+	valid = ax211_rx_descriptor_valid(transport->rx_pending_buffer,
+					  device_address);
+	if (!valid)
 		return INTEL_AX211_TRANSPORT_INVALID;
-	}
 
 	/* Re-encodes only the buffer owned by the pending completion. */
-
-	/* Checks the operation result. */
 	result = ax211_publish_rx_descriptor(
 		transport, transport->rx_pending_buffer, device_address);
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		transport->failed = 1U;
 		transport->quiesced = 1U;
-
-		/* Failed. */
 		return result;
 	}
 
+	/* Hands the completion entry back to the device. */
 	completion_offset = (size_t)transport->rx_pending_index *
 			    INTEL_AX211_TRANSPORT_RX_COMPLETION_SIZE;
-
-	/* Checks the operation result. */
 	result = ax211_dma_sync(
 		transport, INTEL_AX211_TRANSPORT_DMA_RX_COMPLETION,
 		completion_offset, INTEL_AX211_TRANSPORT_RX_COMPLETION_SIZE,
@@ -1047,8 +1019,6 @@ drv_intel_ax211_transport_rx_replenish(
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		transport->failed = 1U;
 		transport->quiesced = 1U;
-
-		/* Failed. */
 		return result;
 	}
 
@@ -1058,18 +1028,19 @@ drv_intel_ax211_transport_rx_replenish(
 		(uint16_t)((transport->rx_tail + 1U) &
 			   (INTEL_AX211_TRANSPORT_RX_DESCRIPTOR_COUNT - 1U));
 	transport->rx_pending = 0U;
-	credit = transport->rx_tail == 0U
-			 ? INTEL_AX211_TRANSPORT_RX_DESCRIPTOR_COUNT - 1U
-			 : transport->rx_tail - 1U;
+
+	/* Credits up to the entry before the tail, in groups of eight. */
+	if (transport->rx_tail == 0U)
+		credit = INTEL_AX211_TRANSPORT_RX_DESCRIPTOR_COUNT - 1U;
+	else
+		credit = transport->rx_tail - 1U;
 	credit &= (uint16_t)~7U;
 
-	/* Handles the credit condition. */
+	/* The device already has this credit. */
 	if (credit == transport->rx_last_credit)
 		return INTEL_AX211_TRANSPORT_OK;
 
 	/* Reports only a complete group of eight replenished descriptors. */
-
-	/* Checks the operation result. */
 	result = ax211_csr_write(transport, AX211_CSR_RX_FREE_INDEX,
 				 credit);
 	if (result != INTEL_AX211_TRANSPORT_OK) {
@@ -1077,14 +1048,11 @@ drv_intel_ax211_transport_rx_replenish(
 		transport->rx_pending = 1U;
 		transport->failed = 1U;
 		transport->quiesced = 1U;
-
-		/* Failed. */
 		return result;
 	}
 
+	/* Succeeded: the device has the new credit. */
 	transport->rx_last_credit = credit;
-
-	/* Returns the computed result. */
 	return INTEL_AX211_TRANSPORT_OK;
 }
 
@@ -1110,42 +1078,47 @@ drv_intel_ax211_transport_command_prepare_inline(
 	size_t tfd_offset;
 	size_t total_length;
 	size_t buffer_count;
+	int valid;
 	int core_result;
 	int result;
 
-	/* Checks the ax211 transport valid result. */
-	if (!ax211_transport_valid(transport) || command == NULL ||
-	    token == NULL) {
-		/* Returns the computed result. */
+	/* Refuses an uninitialized transport. */
+	valid = ax211_transport_valid(transport);
+	if (!valid)
 		return INTEL_AX211_TRANSPORT_INVALID;
-	}
 
-	/* Checks the operation status. */
-	if (!transport->rings_initialized || !transport->interrupts_enabled ||
-	    transport->quiesced || transport->failed ||
-	    transport->command_prepared || transport->command_reset_required) {
-		/* Returns the computed result. */
+	/* Refuses a missing command and a missing output. */
+	if (command == NULL || token == NULL)
+		return INTEL_AX211_TRANSPORT_INVALID;
+
+	/*
+	 * Requires rings and interrupts, and refuses a stopped transport, a
+	 * prepared command, and a pending reset.
+	 */
+	if (!transport->rings_initialized ||
+	    !transport->interrupts_enabled ||
+	    transport->quiesced ||
+	    transport->failed ||
+	    transport->command_prepared ||
+	    transport->command_reset_required) {
 		return INTEL_AX211_TRANSPORT_ORDER;
 	}
 
-	/* Handles the payload availability. */
+	/* Refuses a missing payload and one larger than a slot. */
 	if ((payload == NULL && payload_length != 0U) ||
 	    payload_length > INTEL_AX211_TRANSPORT_COMMAND_INLINE_PAYLOAD_MAX) {
-		/* Returns the computed result. */
 		return INTEL_AX211_TRANSPORT_INVALID;
 	}
 
 	/* Reserves a stable queue token before selecting its DMA slots. */
-
-	/* Handles the core result condition. */
 	core_result = drv_intel_ax211_ring_reserve(&transport->command_ring,
 						   &reserved);
 	if (core_result == INTEL_AX211_FULL)
 		return INTEL_AX211_TRANSPORT_FULL;
-
-	/* Handles the core result condition. */
 	if (core_result != INTEL_AX211_SUCCESS)
 		return INTEL_AX211_TRANSPORT_INVALID;
+
+	/* Locates the token's slot and TFD. */
 	slot_offset = (size_t)reserved.index *
 		      INTEL_AX211_TRANSPORT_COMMAND_SLOT_SIZE;
 	tfd_offset = (size_t)reserved.index * INTEL_AX211_TRANSFER_DESCRIPTOR_SIZE;
@@ -1162,8 +1135,6 @@ drv_intel_ax211_transport_command_prepare_inline(
 	 */
 	kern_memset(slot, 0, INTEL_AX211_TRANSPORT_COMMAND_SLOT_SIZE);
 	header_size = INTEL_AX211_WIDE_COMMAND_HEADER_SIZE;
-
-	/* Handles the command condition. */
 	if (command->group == AX211_COMMAND_FAMILY_CLASSIC) {
 		wire_command = *command;
 		wire_command.group = AX211_COMMAND_FAMILY_CLASSIC_WIDE;
@@ -1176,15 +1147,13 @@ drv_intel_ax211_transport_command_prepare_inline(
 			slot, command, (uint16_t)payload_length, &reserved);
 	}
 
-	/* Handles the core result condition. */
+	/* A failed encoding releases the token. */
 	if (core_result != INTEL_AX211_SUCCESS) {
 		ax211_command_rollback(transport);
-
-		/* Returns the computed result. */
 		return INTEL_AX211_TRANSPORT_INVALID;
 	}
 
-	/* Handles the payload length condition. */
+	/* Copies the payload after the header. */
 	if (payload_length != 0U)
 		kern_memcpy(slot + header_size, payload, payload_length);
 
@@ -1193,11 +1162,10 @@ drv_intel_ax211_transport_command_prepare_inline(
 	    UINT64_MAX - transport->memory.command_slots_device_address) {
 		kern_memset(slot, 0, INTEL_AX211_TRANSPORT_COMMAND_SLOT_SIZE);
 		ax211_command_rollback(transport);
-
-		/* Returns the computed result. */
 		return INTEL_AX211_TRANSPORT_INVALID;
 	}
 
+	/* Describes the command as one or two transfer buffers. */
 	slot_address = transport->memory.command_slots_device_address +
 		       (uint64_t)slot_offset;
 	total_length = header_size + payload_length;
@@ -1205,7 +1173,7 @@ drv_intel_ax211_transport_command_prepare_inline(
 	buffer[0].length = (uint16_t)total_length;
 	buffer_count = 1U;
 
-	/* Handles the total length condition. */
+	/* Splits a command longer than the first transfer buffer. */
 	if (total_length > AX211_COMMAND_FIRST_TRANSFER_SIZE) {
 		buffer[0].length = AX211_COMMAND_FIRST_TRANSFER_SIZE;
 		buffer[1].address =
@@ -1216,19 +1184,15 @@ drv_intel_ax211_transport_command_prepare_inline(
 		buffer_count = 2U;
 	}
 
-	/* Handles the core result condition. */
+	/* Encodes the TFD; a failure releases the token. */
 	core_result = drv_intel_ax211_tfd_encode(tfd, buffer, buffer_count);
 	if (core_result != INTEL_AX211_SUCCESS) {
 		kern_memset(slot, 0, INTEL_AX211_TRANSPORT_COMMAND_SLOT_SIZE);
 		ax211_command_rollback(transport);
-
-		/* Returns the computed result. */
 		return INTEL_AX211_TRANSPORT_INVALID;
 	}
 
 	/* Publishes command bytes before the TFD which references them. */
-
-	/* Checks the operation result. */
 	result = ax211_dma_sync(transport,
 				INTEL_AX211_TRANSPORT_DMA_COMMAND_SLOTS,
 				slot_offset, header_size + payload_length,
@@ -1240,26 +1204,28 @@ drv_intel_ax211_transport_command_prepare_inline(
 					INTEL_AX211_TRANSPORT_DMA_PREWRITE);
 	}
 
-	/* Checks the operation result. */
+	/* A failed publication clears both objects and releases the token. */
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		kern_memset(slot, 0, INTEL_AX211_TRANSPORT_COMMAND_SLOT_SIZE);
 		kern_memset(tfd, 0, INTEL_AX211_TRANSFER_DESCRIPTOR_SIZE);
 		ax211_command_rollback(transport);
-
-		/* Failed. */
 		return result;
 	}
 
-	/* Exposes the token only after both DMA objects are fully visible. */
+	/*
+	 * Succeeded: exposes the token only after both DMA objects are fully
+	 * visible.
+	 */
 	transport->command_prepared_token = reserved;
 	transport->command_prepared = 1U;
 	*token = reserved;
-	/* Returns the computed result. */
 	return INTEL_AX211_TRANSPORT_OK;
 }
 
 /*
- * Reserves one command and publishes a complete wide command from the controller-owned 4 KiB external DMA buffer.  The single buffer remains owned by this token until completion, an un-rung abort, or proven reset.
+ * Reserves one command and publishes a complete wide command from the
+ * controller-owned 4 KiB external DMA buffer.  The single buffer remains owned
+ * by this token until completion, an un-rung abort, or proven reset.
  */
 int
 drv_intel_ax211_transport_command_prepare_external(
@@ -1277,55 +1243,61 @@ drv_intel_ax211_transport_command_prepare_external(
 	size_t header_size;
 	size_t tfd_offset;
 	size_t total_length;
+	int valid;
 	int core_result;
 	int result;
 	int scrub_result;
 
-	/* Checks the ax211 transport valid result. */
-	if (!ax211_transport_valid(transport) || command == NULL ||
-	    token == NULL) {
-		/* Returns the computed result. */
+	/* Refuses an uninitialized transport. */
+	valid = ax211_transport_valid(transport);
+	if (!valid)
 		return INTEL_AX211_TRANSPORT_INVALID;
-	}
 
-	/* Checks the operation status. */
-	if (!transport->rings_initialized || !transport->interrupts_enabled ||
-	    transport->quiesced || transport->failed ||
-	    transport->command_prepared || transport->command_reset_required) {
-		/* Returns the computed result. */
+	/* Refuses a missing command and a missing output. */
+	if (command == NULL || token == NULL)
+		return INTEL_AX211_TRANSPORT_INVALID;
+
+	/*
+	 * Requires rings and interrupts, and refuses a stopped transport, a
+	 * prepared command, and a pending reset.
+	 */
+	if (!transport->rings_initialized ||
+	    !transport->interrupts_enabled ||
+	    transport->quiesced ||
+	    transport->failed ||
+	    transport->command_prepared ||
+	    transport->command_reset_required) {
 		return INTEL_AX211_TRANSPORT_ORDER;
 	}
 
-	/* Handles the transport condition. */
+	/* The one external buffer is in use. */
 	if (transport->command_external_active)
 		return INTEL_AX211_TRANSPORT_FULL;
 
-	/* Handles the payload availability. */
+	/* Refuses a payload that fits a slot or exceeds the buffer. */
 	if (payload == NULL ||
 	    payload_length <=
 		    INTEL_AX211_TRANSPORT_COMMAND_INLINE_PAYLOAD_MAX ||
 	    payload_length > INTEL_AX211_TRANSPORT_COMMAND_EXTERNAL_PAYLOAD_MAX) {
-		/* Returns the computed result. */
 		return INTEL_AX211_TRANSPORT_INVALID;
 	}
 
-	/* Handles the core result condition. */
+	/* Reserves a stable queue token. */
 	core_result = drv_intel_ax211_ring_reserve(&transport->command_ring,
 						   &reserved);
 	if (core_result == INTEL_AX211_FULL)
 		return INTEL_AX211_TRANSPORT_FULL;
-
-	/* Handles the core result condition. */
 	if (core_result != INTEL_AX211_SUCCESS)
 		return INTEL_AX211_TRANSPORT_INVALID;
+
+	/* Locates the token's TFD and the external buffer. */
 	tfd_offset = (size_t)reserved.index * INTEL_AX211_TRANSFER_DESCRIPTOR_SIZE;
 	external = transport->memory.command_external;
 	tfd = transport->memory.command_tfd + tfd_offset;
 
+	/* Encodes the header, carrying a classic command in the wide form. */
 	kern_memset(external, 0, transport->memory.command_external_size);
 	header_size = INTEL_AX211_WIDE_COMMAND_HEADER_SIZE;
-
-	/* Handles the command condition. */
 	if (command->group == AX211_COMMAND_FAMILY_CLASSIC) {
 		wire_command = *command;
 		wire_command.group = AX211_COMMAND_FAMILY_CLASSIC_WIDE;
@@ -1338,14 +1310,13 @@ drv_intel_ax211_transport_command_prepare_external(
 			external, command, (uint16_t)payload_length, &reserved);
 	}
 
-	/* Handles the core result condition. */
+	/* A failed encoding releases the token. */
 	if (core_result != INTEL_AX211_SUCCESS) {
 		ax211_command_rollback(transport);
-
-		/* Returns the computed result. */
 		return INTEL_AX211_TRANSPORT_INVALID;
 	}
 
+	/* Copies the payload and describes the command as two buffers. */
 	kern_memcpy(external + header_size, payload, payload_length);
 	total_length = header_size + payload_length;
 	buffer[0].address = transport->memory.command_external_device_address;
@@ -1355,17 +1326,15 @@ drv_intel_ax211_transport_command_prepare_external(
 	buffer[1].length =
 		(uint16_t)(total_length - AX211_COMMAND_FIRST_TRANSFER_SIZE);
 
-	/* Handles the core result condition. */
+	/* Encodes the TFD; a failure releases the token. */
 	core_result = drv_intel_ax211_tfd_encode(tfd, buffer, 2U);
 	if (core_result != INTEL_AX211_SUCCESS) {
 		kern_memset(external, 0, transport->memory.command_external_size);
 		ax211_command_rollback(transport);
-
-		/* Returns the computed result. */
 		return INTEL_AX211_TRANSPORT_INVALID;
 	}
 
-	/* Checks the operation result. */
+	/* Publishes the command bytes before the TFD which references them. */
 	result = ax211_dma_sync(
 		transport, INTEL_AX211_TRANSPORT_DMA_COMMAND_EXTERNAL, 0U,
 		total_length, INTEL_AX211_TRANSPORT_DMA_PREWRITE);
@@ -1376,12 +1345,12 @@ drv_intel_ax211_transport_command_prepare_external(
 					INTEL_AX211_TRANSPORT_DMA_PREWRITE);
 	}
 
-	/* Checks the operation result. */
+	/* A failed publication scrubs both objects and releases the token. */
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		kern_memset(external, 0, transport->memory.command_external_size);
 		kern_memset(tfd, 0, INTEL_AX211_TRANSFER_DESCRIPTOR_SIZE);
 
-		/* Handles the scrub result condition. */
+		/* Publishes the scrub of both objects. */
 		scrub_result = ax211_command_external_scrub(transport);
 		if (scrub_result == INTEL_AX211_TRANSPORT_OK) {
 			scrub_result = ax211_dma_sync(
@@ -1391,27 +1360,26 @@ drv_intel_ax211_transport_command_prepare_external(
 				INTEL_AX211_TRANSPORT_DMA_PREWRITE);
 		}
 
+		/* Releases the token. */
 		ax211_command_rollback(transport);
 
-		/* Handles the scrub result condition. */
+		/* A failed scrub fails the transport. */
 		if (scrub_result != INTEL_AX211_TRANSPORT_OK) {
 			transport->failed = 1U;
 			transport->quiesced = 1U;
-
-			/* Returns the computed result. */
 			return scrub_result;
 		}
 
-		/* Failed. */
+		/* Reports the failed publication. */
 		return result;
 	}
 
+	/* Succeeded: the token owns the external buffer. */
 	transport->command_external_token = reserved;
 	transport->command_external_active = 1U;
 	transport->command_prepared_token = reserved;
 	transport->command_prepared = 1U;
 	*token = reserved;
-	/* Returns the computed result. */
 	return INTEL_AX211_TRANSPORT_OK;
 }
 
@@ -1453,16 +1421,16 @@ drv_intel_ax211_transport_command_publish(
 	 * so only a proven device reset may discard this sequence.
 	 */
 	transport->command_write_sequence =
-	    (uint16_t)(transport->command_write_sequence + 1U);
+		(uint16_t)(transport->command_write_sequence + 1U);
 	write_pointer = ((uint32_t)token->queue << 16) |
 			transport->command_write_sequence;
-	result = ax211_csr_write(
-	    transport,
-	    AX211_CSR_QUEUE_WRITE_INDEX,
-	    write_pointer);
+	result = ax211_csr_write(transport, AX211_CSR_QUEUE_WRITE_INDEX,
+				 write_pointer);
 	transport->command_prepared = 0U;
 	if (result != INTEL_AX211_TRANSPORT_OK) {
-		/* Prevents reuse until reset resolves the ambiguous doorbell. */
+		/*
+		 * Prevents reuse until reset resolves the ambiguous doorbell.
+		 */
 		transport->command_reset_required = 1U;
 		return INTEL_AX211_TRANSPORT_AMBIGUOUS;
 	}
@@ -1482,25 +1450,30 @@ drv_intel_ax211_transport_command_abort_prepared(
 	size_t slot_offset;
 	size_t tfd_offset;
 	uint16_t newest;
+	int valid;
 	int external;
 	int result;
 
-	/* Checks the ax211 transport valid result. */
-	if (!ax211_transport_valid(transport) || token == NULL)
+	/* Refuses an uninitialized transport. */
+	valid = ax211_transport_valid(transport);
+	if (!valid)
 		return INTEL_AX211_TRANSPORT_INVALID;
 
-	/* Checks the operation status. */
+	/* Refuses a missing token. */
+	if (token == NULL)
+		return INTEL_AX211_TRANSPORT_INVALID;
+
+	/* Requires a prepared command, and refuses a failed transport. */
 	if (!transport->command_prepared || transport->failed)
 		return INTEL_AX211_TRANSPORT_ORDER;
 
-	/* Handles the token condition. */
+	/* Refuses a token that does not own the prepared command. */
 	if (token->queue != transport->command_prepared_token.queue ||
 	    token->index != transport->command_prepared_token.index) {
-		/* Returns the computed result. */
 		return INTEL_AX211_TRANSPORT_STALE;
 	}
 
-	/* Handles the newest condition. */
+	/* Refuses a token that is not the newest reservation. */
 	newest = (uint16_t)((transport->command_ring.head - 1U) &
 			    (transport->command_ring.capacity - 1U));
 	if (newest != token->index)
@@ -1516,7 +1489,7 @@ drv_intel_ax211_transport_command_abort_prepared(
 	kern_memset(transport->memory.command_tfd + tfd_offset, 0,
 	       INTEL_AX211_TRANSFER_DESCRIPTOR_SIZE);
 
-	/* Handles the external condition. */
+	/* Scrubs the external buffer the token owns, then the slot. */
 	result = INTEL_AX211_TRANSPORT_OK;
 	if (external)
 		result = ax211_command_external_scrub(transport);
@@ -1527,7 +1500,7 @@ drv_intel_ax211_transport_command_abort_prepared(
 			INTEL_AX211_TRANSPORT_DMA_PREWRITE);
 	}
 
-	/* Checks the operation result. */
+	/* Publishes the cleared TFD. */
 	if (result == INTEL_AX211_TRANSPORT_OK) {
 		result = ax211_dma_sync(transport,
 					INTEL_AX211_TRANSPORT_DMA_COMMAND_TFD,
@@ -1535,30 +1508,26 @@ drv_intel_ax211_transport_command_abort_prepared(
 					INTEL_AX211_TRANSPORT_DMA_PREWRITE);
 	}
 
-	/* Checks the operation result. */
+	/* A failed scrub fails the transport. */
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		transport->failed = 1U;
 		transport->quiesced = 1U;
-
-		/* Failed. */
 		return result;
 	}
 
+	/* Releases the token and the external buffer it owned. */
 	ax211_command_rollback(transport);
-
-	/* Handles the external condition. */
 	if (external) {
 		kern_memset(&transport->command_external_token, 0,
 		       sizeof(transport->command_external_token));
 		transport->command_external_active = 0U;
 	}
 
+	/* Succeeded: no command is prepared. */
 	kern_memset(&transport->command_prepared_token, 0,
 	       sizeof(transport->command_prepared_token));
 	transport->command_prepared = 0U;
 	transport->command_reset_required = 0U;
-
-	/* Returns the computed result. */
 	return INTEL_AX211_TRANSPORT_OK;
 }
 
@@ -1573,21 +1542,22 @@ drv_intel_ax211_transport_command_submit_inline(
 	size_t payload_length,
 	struct intel_ax211_ring_token *token)
 {
-	int error;
 	int result;
 
-	/* Checks the operation result. */
+	/* Prepares the command. */
 	result = drv_intel_ax211_transport_command_prepare_inline(
 		transport, command, payload, payload_length, token);
 	if (result != INTEL_AX211_TRANSPORT_OK)
 		return result;
 
-	/* Obtains the drv intel ax211 transport command publish result. */
-	error =
+	/* Rings its doorbell. */
+	result =
 		drv_intel_ax211_transport_command_publish(transport, token);
+	if (result != INTEL_AX211_TRANSPORT_OK)
+		return result;
 
-	/* Returns the computed result. */
-	return error;
+	/* Succeeded: the command is submitted. */
+	return INTEL_AX211_TRANSPORT_OK;
 }
 
 /*
@@ -1600,23 +1570,28 @@ drv_intel_ax211_transport_command_complete(
 {
 	size_t slot_offset;
 	size_t tfd_offset;
+	int valid;
 	int external;
 	int core_result;
 	int result;
 
-	/* Checks the ax211 transport valid result. */
-	if (!ax211_transport_valid(transport) || token == NULL)
+	/* Refuses an uninitialized transport. */
+	valid = ax211_transport_valid(transport);
+	if (!valid)
 		return INTEL_AX211_TRANSPORT_INVALID;
 
-	/* Checks the operation status. */
+	/* Refuses a missing token. */
+	if (token == NULL)
+		return INTEL_AX211_TRANSPORT_INVALID;
+
+	/* Refuses a stopped or failed transport. */
 	if (transport->quiesced || transport->failed)
 		return INTEL_AX211_TRANSPORT_ORDER;
 
-	/* Handles the transport condition. */
+	/* Refuses the prepared command, whose doorbell has not rung. */
 	if (transport->command_prepared &&
 	    token->queue == transport->command_prepared_token.queue &&
 	    token->index == transport->command_prepared_token.index) {
-		/* Returns the computed result. */
 		return INTEL_AX211_TRANSPORT_ORDER;
 	}
 
@@ -1624,9 +1599,10 @@ drv_intel_ax211_transport_command_complete(
 	if (transport->command_ring.used == 0U ||
 	    token->queue != transport->command_ring.queue ||
 	    token->index != (uint8_t)transport->command_ring.tail) {
-		/* Returns the computed result. */
 		return INTEL_AX211_TRANSPORT_STALE;
 	}
+
+	/* Locates the token's slot and TFD. */
 	slot_offset =
 		(size_t)token->index * INTEL_AX211_TRANSPORT_COMMAND_SLOT_SIZE;
 	tfd_offset = (size_t)token->index * INTEL_AX211_TRANSFER_DESCRIPTOR_SIZE;
@@ -1638,7 +1614,7 @@ drv_intel_ax211_transport_command_complete(
 	kern_memset(transport->memory.command_tfd + tfd_offset, 0,
 	       INTEL_AX211_TRANSFER_DESCRIPTOR_SIZE);
 
-	/* Handles the external condition. */
+	/* Scrubs the external buffer the token owns, then the slot. */
 	result = INTEL_AX211_TRANSPORT_OK;
 	if (external)
 		result = ax211_command_external_scrub(transport);
@@ -1649,7 +1625,7 @@ drv_intel_ax211_transport_command_complete(
 			INTEL_AX211_TRANSPORT_DMA_PREWRITE);
 	}
 
-	/* Checks the operation result. */
+	/* Publishes the cleared TFD. */
 	if (result == INTEL_AX211_TRANSPORT_OK) {
 		result = ax211_dma_sync(transport,
 					INTEL_AX211_TRANSPORT_DMA_COMMAND_TFD,
@@ -1657,36 +1633,30 @@ drv_intel_ax211_transport_command_complete(
 					INTEL_AX211_TRANSPORT_DMA_PREWRITE);
 	}
 
-	/* Checks the operation result. */
+	/* A failed scrub fails the transport. */
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		transport->failed = 1U;
 		transport->quiesced = 1U;
-
-		/* Failed. */
 		return result;
 	}
 
 	/* Retires the slot only after its scrub is DMA-visible. */
 	core_result =
 		drv_intel_ax211_ring_complete(&transport->command_ring, token);
-
-	/* Handles the core result condition. */
 	if (core_result != INTEL_AX211_SUCCESS) {
 		transport->failed = 1U;
 		transport->quiesced = 1U;
-
-		/* Returns the computed result. */
 		return INTEL_AX211_TRANSPORT_FAILED;
 	}
 
-	/* Handles the external condition. */
+	/* Releases the external buffer the token owned. */
 	if (external) {
 		kern_memset(&transport->command_external_token, 0,
 		       sizeof(transport->command_external_token));
 		transport->command_external_active = 0U;
 	}
 
-	/* Returns the computed result. */
+	/* Succeeded: the command is retired. */
 	return INTEL_AX211_TRANSPORT_OK;
 }
 
@@ -1697,11 +1667,14 @@ size_t
 drv_intel_ax211_transport_command_pending_count(
 	const struct intel_ax211_transport *transport)
 {
-	/* Checks the ax211 transport valid result. */
-	if (!ax211_transport_valid(transport))
+	int valid;
+
+	/* An uninitialized transport has no commands. */
+	valid = ax211_transport_valid(transport);
+	if (!valid)
 		return 0U;
 
-	/* Returns the computed result. */
+	/* Reports the number of outstanding commands. */
 	return transport->command_ring.used;
 }
 
@@ -1713,17 +1686,24 @@ drv_intel_ax211_transport_command_oldest(
 	const struct intel_ax211_transport *transport,
 	struct intel_ax211_ring_token *token)
 {
-	/* Checks the ax211 transport valid result. */
-	if (!ax211_transport_valid(transport) || token == NULL)
+	int valid;
+
+	/* Refuses an uninitialized transport. */
+	valid = ax211_transport_valid(transport);
+	if (!valid)
 		return INTEL_AX211_TRANSPORT_INVALID;
 
-	/* Handles the transport condition. */
+	/* Refuses a missing output. */
+	if (token == NULL)
+		return INTEL_AX211_TRANSPORT_INVALID;
+
+	/* No command is outstanding. */
 	if (transport->command_ring.used == 0U)
 		return INTEL_AX211_TRANSPORT_STALE;
+
+	/* Succeeded: reports the oldest token. */
 	token->queue = transport->command_ring.queue;
 	token->index = transport->command_ring.tail;
-
-	/* Returns the computed result. */
 	return INTEL_AX211_TRANSPORT_OK;
 }
 
@@ -1734,14 +1714,16 @@ int
 drv_intel_ax211_transport_command_after_device_reset(
 	struct intel_ax211_transport *transport)
 {
+	int valid;
 	int core_result;
 	int result;
 
-	/* Checks the ax211 transport valid result. */
-	if (!ax211_transport_valid(transport))
+	/* Refuses an uninitialized transport. */
+	valid = ax211_transport_valid(transport);
+	if (!valid)
 		return INTEL_AX211_TRANSPORT_INVALID;
 
-	/* Checks the operation status. */
+	/* Requires a stopped or failed transport. */
 	if (!transport->quiesced && !transport->failed)
 		return INTEL_AX211_TRANSPORT_ORDER;
 
@@ -1757,7 +1739,7 @@ drv_intel_ax211_transport_command_after_device_reset(
 	kern_memset(transport->memory.command_external, 0,
 	       transport->memory.command_external_size);
 
-	/* Checks the operation result. */
+	/* Publishes the cleared slots and TFDs. */
 	result = ax211_dma_sync(transport,
 				INTEL_AX211_TRANSPORT_DMA_COMMAND_SLOTS, 0U,
 				transport->memory.command_slots_size,
@@ -1769,7 +1751,7 @@ drv_intel_ax211_transport_command_after_device_reset(
 					INTEL_AX211_TRANSPORT_DMA_PREWRITE);
 	}
 
-	/* Checks the operation result. */
+	/* Publishes the cleared byte-count table. */
 	if (result == INTEL_AX211_TRANSPORT_OK) {
 		result = ax211_dma_sync(
 			transport, INTEL_AX211_TRANSPORT_DMA_COMMAND_BYTE_COUNT,
@@ -1777,31 +1759,32 @@ drv_intel_ax211_transport_command_after_device_reset(
 			INTEL_AX211_TRANSPORT_DMA_PREWRITE);
 	}
 
-	/* Checks the operation result. */
+	/*
+	 * Publishes the cleared external buffer; a failure fails the transport.
+	 */
 	if (result == INTEL_AX211_TRANSPORT_OK)
 		result = ax211_command_external_scrub(transport);
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		transport->failed = 1U;
-
-		/* Failed. */
 		return result;
 	}
 
-	/* Handles the core result condition. */
+	/* Resets the command ring's bookkeeping. */
 	core_result = drv_intel_ax211_ring_init(&transport->command_ring,
 						AX211_COMMAND_RING_ID,
 						INTEL_AX211_COMMAND_RING_SIZE);
 	if (core_result != INTEL_AX211_SUCCESS) {
 		transport->failed = 1U;
-
-		/* Returns the computed result. */
 		return INTEL_AX211_TRANSPORT_FAILED;
 	}
 
 	/* Discards prior doorbells only after the proven hardware reset. */
 	transport->command_write_sequence = 0U;
 
-	/* Releases prepared and external ownership after the DMA scrub. */
+	/*
+	 * Succeeded: releases prepared and external ownership after the DMA
+	 * scrub.
+	 */
 	kern_memset(&transport->command_prepared_token, 0,
 	       sizeof(transport->command_prepared_token));
 	kern_memset(&transport->command_external_token, 0,
@@ -1810,8 +1793,6 @@ drv_intel_ax211_transport_command_after_device_reset(
 	transport->command_external_active = 0U;
 	transport->command_reset_required = 0U;
 	transport->command_reset_completed = 1U;
-
-	/* Returns the computed result. */
 	return INTEL_AX211_TRANSPORT_OK;
 }
 
@@ -1824,41 +1805,44 @@ drv_intel_ax211_transport_quiesce(
 {
 	uint32_t queue_causes;
 	uint32_t hardware;
+	int valid;
 	int commands_outstanding;
 	int result;
 	int unlock_result;
 
-	/* Checks the ax211 transport valid result. */
-	if (!ax211_transport_valid(transport))
+	/* Refuses an uninitialized transport. */
+	valid = ax211_transport_valid(transport);
+	if (!valid)
 		return INTEL_AX211_TRANSPORT_INVALID;
 
-	/* Handles the transport condition. */
+	/* A transport already stopped with idle RX DMA has nothing to do. */
 	if (transport->quiesced && transport->rx_dma_idle)
 		return INTEL_AX211_TRANSPORT_OK;
 
 	/* Stops all new host submissions before changing device ownership. */
 	transport->quiesced = 1U;
-	commands_outstanding = transport->command_ring.used != 0U;
+	commands_outstanding = 0;
+	if (transport->command_ring.used != 0U)
+		commands_outstanding = 1;
 
-	/* Handles the transport condition. */
+	/* Masks and acknowledges every cause when routing exists. */
 	if (transport->msix_configured) {
+		/* Masks every cause; a failure fails the transport. */
 		result = ax211_mask_all(transport);
 		transport->interrupts_enabled = 0U;
 		transport->enabled_queue_causes = 0U;
 		transport->enabled_event_causes = 0U;
 		if (result != INTEL_AX211_TRANSPORT_OK) {
 			transport->failed = 1U;
-
-			/* Failed. */
 			return result;
 		}
 
-		/* Checks the operation result. */
+		/*
+		 * Acknowledges what is pending; a failure fails the transport.
+		 */
 		result = ax211_ack_raw(transport, &queue_causes, &hardware);
 		if (result != INTEL_AX211_TRANSPORT_OK) {
 			transport->failed = 1U;
-
-			/* Failed. */
 			return result;
 		}
 	}
@@ -1866,23 +1850,17 @@ drv_intel_ax211_transport_quiesce(
 	/* A state which never published rings has no device DMA to stop. */
 	if (!transport->rings_initialized) {
 		transport->rx_dma_idle = 1U;
-
-		/* Returns the computed result. */
 		return INTEL_AX211_TRANSPORT_OK;
 	}
 
 	/* Disables Gen3 RX DMA only inside one checked NIC ownership scope. */
-
-	/* Checks the operation result. */
 	result = transport->ops->wake_hold(transport->argument);
 	if (result != 0) {
 		transport->failed = 1U;
-
-		/* Returns the computed result. */
 		return INTEL_AX211_TRANSPORT_IO;
 	}
 
-	/* Checks the operation result. */
+	/* Stops receive DMA and waits for it to go idle. */
 	result = transport->ops->prph_write32(
 		transport->argument,
 		transport->profile.upper_cpu_prph_base +
@@ -1893,187 +1871,201 @@ drv_intel_ax211_transport_quiesce(
 	else
 		result = INTEL_AX211_TRANSPORT_IO;
 
-	/* Checks the operation result. */
+	/* Releases the NIC; a failure here fails the transport. */
 	unlock_result = transport->ops->wake_release(transport->argument);
 	if (result != INTEL_AX211_TRANSPORT_OK || unlock_result != 0) {
 		transport->failed = 1U;
 		transport->rx_dma_idle = 0U;
 
-		/* Checks the operation result. */
+		/* Reports the failed stop first. */
 		if (result != INTEL_AX211_TRANSPORT_OK)
 			return result;
 
-		/* Returns the computed result. */
+		/* Reports the failed release. */
 		return INTEL_AX211_TRANSPORT_IO;
 	}
 
+	/* An outstanding command fails the transport; it awaits a reset. */
 	transport->rx_dma_idle = 1U;
-
-	/* Handles the commands outstanding condition. */
 	if (commands_outstanding) {
 		transport->failed = 1U;
-
-		/* Returns the computed result. */
 		return INTEL_AX211_TRANSPORT_FAILED;
 	}
 
-	/* Returns the computed result. */
+	/* Succeeded: the transport is stopped and RX DMA is idle. */
 	return INTEL_AX211_TRANSPORT_OK;
 }
 
-/* Validates every checked operation required by this transport. */
+/*
+ * Reports whether every operation the transport calls is present: 1 when it
+ * is, 0 when not.
+ */
 static int
 ax211_ops_valid(
 	const struct intel_ax211_transport_ops *ops)
 {
-	/* Handles the ops availability. */
+	/* Rejects missing operations. */
 	if (ops == NULL)
 		return 0;
 
-	/* Handles the csr read32 availability. */
-	if (ops->csr_read32 == NULL || ops->csr_write32 == NULL ||
+	/* Rejects operations without register access. */
+	if (ops->csr_read32 == NULL ||
+	    ops->csr_write32 == NULL ||
 	    ops->csr_write8 == NULL) {
-		/* Succeeded. */
 		return 0;
 	}
 
-	/* Handles the nic lock availability. */
-	if (ops->wake_hold == NULL || ops->wake_release == NULL ||
-	    ops->prph_read32 == NULL || ops->prph_write32 == NULL) {
-		/* Succeeded. */
+	/* Rejects operations without NIC ownership or periphery access. */
+	if (ops->wake_hold == NULL ||
+	    ops->wake_release == NULL ||
+	    ops->prph_read32 == NULL ||
+	    ops->prph_write32 == NULL) {
 		return 0;
 	}
 
-	/* Handles the dma sync availability. */
-	if (ops->dma_sync == NULL || ops->delay_us == NULL ||
+	/* Rejects operations without DMA synchronization or time. */
+	if (ops->dma_sync == NULL ||
+	    ops->delay_us == NULL ||
 	    ops->clock_us == NULL) {
-		/* Succeeded. */
 		return 0;
 	}
 
-	/* Reports operation failure. */
+	/* The operations are complete. */
 	return 1;
 }
 
-/* Validates the exact P038 SO-or-SOF plus GF MMIO profile. */
+/*
+ * Reports whether profile is the exact SO-or-SOF plus GF MMIO profile: 1 when
+ * it is, 0 when not.
+ */
 static int
 ax211_profile_valid(
 	const struct intel_ax211_mmio_profile *profile)
 {
-	/* Handles the profile availability. */
+	/* Rejects a missing profile. */
 	if (profile == NULL)
 		return 0;
 
-	/* Handles the profile condition. */
+	/* Rejects another MAC. */
 	if (profile->mac_type != INTEL_AX211_MMIO_MAC_SO &&
 	    profile->mac_type != INTEL_AX211_MMIO_MAC_SOF) {
-		/* Succeeded. */
 		return 0;
 	}
 
-	/* Handles the profile condition. */
-	if (profile->rf_type != INTEL_AX211_MMIO_RF_GF || profile->concurrent_bands != 0U)
+	/* Rejects another radio and concurrent bands. */
+	if (profile->rf_type != INTEL_AX211_MMIO_RF_GF ||
+	    profile->concurrent_bands != 0U) {
 		return 0;
+	}
 
-	/* Handles the profile condition. */
+	/* Rejects an integrated device and another periphery base. */
 	if (profile->integrated != 0U ||
 	    profile->upper_cpu_prph_base != INTEL_AX211_MMIO_UPPER_CPU_PRPH_BASE) {
-		/* Succeeded. */
 		return 0;
 	}
 
-	/* Reports operation failure. */
+	/* The profile is the expected one. */
 	return 1;
 }
 
-/* Validates every fixed Gen3 ring allocation and command-slot address. */
+/*
+ * Reports whether every fixed Gen3 ring allocation and command-slot address
+ * is valid: 1 when it is, 0 when not.
+ */
 static int
 ax211_memory_valid(
 	const struct intel_ax211_transport_ring_memory *memory)
 {
-	/* Handles the memory availability. */
+	/* Rejects missing memory. */
 	if (memory == NULL)
 		return 0;
 
-	/* Handles the command tfd availability. */
+	/* Rejects a missing or other-sized TFD array. */
 	if (memory->command_tfd == NULL ||
 	    memory->command_tfd_size != AX211_COMMAND_TFD_SIZE) {
-		/* Succeeded. */
 		return 0;
 	}
 
-	/* Handles the command byte count availability. */
+	/* Rejects a missing or other-sized byte-count table. */
 	if (memory->command_byte_count == NULL ||
 	    memory->command_byte_count_size != AX211_COMMAND_BYTE_COUNT_SIZE) {
-		/* Succeeded. */
 		return 0;
 	}
 
-	/* Handles the command slots availability. */
+	/* Rejects command slots that are missing, misaligned or too high. */
 	if (memory->command_slots == NULL ||
 	    memory->command_slots_size != AX211_COMMAND_SLOTS_SIZE ||
 	    memory->command_slots_device_address == 0U ||
 	    (memory->command_slots_device_address & 63U) != 0U ||
 	    memory->command_slots_device_address >
 		    UINT64_MAX - AX211_COMMAND_SLOTS_SIZE) {
-		/* Succeeded. */
 		return 0;
 	}
 
-	/* Handles the command external availability. */
+	/*
+	 * Rejects an external buffer that is missing, misaligned or too high.
+	 */
 	if (memory->command_external == NULL ||
 	    memory->command_external_size != AX211_COMMAND_EXTERNAL_SIZE ||
 	    memory->command_external_device_address == 0U ||
 	    (memory->command_external_device_address & 63U) != 0U ||
 	    memory->command_external_device_address >
 		    UINT64_MAX - AX211_COMMAND_EXTERNAL_SIZE) {
-		/* Succeeded. */
 		return 0;
 	}
 
-	/* Handles the rx transfer availability. */
+	/* Rejects a missing or other-sized receive transfer ring. */
 	if (memory->rx_transfer == NULL ||
 	    memory->rx_transfer_size != AX211_RX_TRANSFER_SIZE) {
-		/* Succeeded. */
 		return 0;
 	}
 
-	/* Handles the rx completion availability. */
+	/* Rejects a missing or other-sized completion ring. */
 	if (memory->rx_completion == NULL ||
 	    memory->rx_completion_size != AX211_RX_COMPLETION_SIZE) {
-		/* Succeeded. */
 		return 0;
 	}
 
-	/* Handles the rx status availability. */
+	/* Rejects a missing or other-sized status word. */
 	if (memory->rx_status == NULL ||
 	    memory->rx_status_size != AX211_RX_STATUS_SIZE) {
-		/* Succeeded. */
 		return 0;
 	}
 
-	/* Reports operation failure. */
+	/* The memory is valid. */
 	return 1;
 }
 
-/* Validates one initialized private transport state. */
+/*
+ * Reports whether transport is one initialized private transport state: 1 when
+ * it is, 0 when not.
+ */
 static int
 ax211_transport_valid(
 	const struct intel_ax211_transport *transport)
 {
-	/* Checks the ax211 ops valid result. */
-	if (transport == NULL || !ax211_ops_valid(transport->ops))
+	int valid;
+
+	/* Rejects a missing transport. */
+	if (transport == NULL)
 		return 0;
 
-	/* Checks the ax211 profile valid result. */
-	if (!ax211_profile_valid(&transport->profile))
+	/* Rejects incomplete operations. */
+	valid = ax211_ops_valid(transport->ops);
+	if (!valid)
 		return 0;
 
-	/* Checks the ax211 memory valid result. */
-	if (!ax211_memory_valid(&transport->memory))
+	/* Rejects another profile. */
+	valid = ax211_profile_valid(&transport->profile);
+	if (!valid)
 		return 0;
 
-	/* Reports operation failure. */
+	/* Rejects invalid memory. */
+	valid = ax211_memory_valid(&transport->memory);
+	if (!valid)
+		return 0;
+
+	/* The transport is initialized. */
 	return 1;
 }
 
@@ -2085,17 +2077,20 @@ ax211_mask_all(
 	int first_result;
 	int second_result;
 
+	/* Masks both banks, attempting the second even if the first failed. */
 	first_result = ax211_csr_write(transport, AX211_CSR_MSIX_QUEUE_MASK,
 				       UINT32_MAX);
 	second_result = ax211_csr_write(
 		transport, AX211_CSR_MSIX_EVENT_MASK, UINT32_MAX);
 
-	/* Handles the first result condition. */
+	/* Reports the first failure. */
 	if (first_result != INTEL_AX211_TRANSPORT_OK)
 		return first_result;
+	if (second_result != INTEL_AX211_TRANSPORT_OK)
+		return second_result;
 
-	/* Returns the computed result. */
-	return second_result;
+	/* Succeeded: every cause is masked. */
+	return INTEL_AX211_TRANSPORT_OK;
 }
 
 /* Writes one checked 32-bit transport CSR. */
@@ -2105,14 +2100,15 @@ ax211_csr_write(
 	uint32_t offset,
 	uint32_t value)
 {
-	/* Checks the csr write32 result. */
-	if (transport->ops->csr_write32(transport->argument, offset, value) !=
-	    0) {
-		/* Returns the computed result. */
-		return INTEL_AX211_TRANSPORT_IO;
-	}
+	int result;
 
-	/* Returns the computed result. */
+	/* Writes the register. */
+	result = transport->ops->csr_write32(transport->argument, offset,
+					     value);
+	if (result != 0)
+		return INTEL_AX211_TRANSPORT_IO;
+
+	/* Succeeded. */
 	return INTEL_AX211_TRANSPORT_OK;
 }
 
@@ -2145,7 +2141,9 @@ ax211_configure_msix_routes(
 		if ((AX211_QUEUE_CAUSES_ROUTED & cause_mask) == 0U)
 			continue;
 
-		/* Selects the receive map for a queue and the cause map above. */
+		/*
+		 * Selects the receive map for a queue and the cause map above.
+		 */
 		if (cause_bit < 16U) {
 			map_offset = AX211_CSR_MSIX_RX_VECTOR_MAP + cause_bit;
 		} else {
@@ -2197,11 +2195,14 @@ ax211_csr_write8(
 	uint32_t offset,
 	uint8_t value)
 {
-	/* Checks the csr write8 result. */
-	if (transport->ops->csr_write8(transport->argument, offset, value) != 0)
+	int result;
+
+	/* Writes the byte. */
+	result = transport->ops->csr_write8(transport->argument, offset, value);
+	if (result != 0)
 		return INTEL_AX211_TRANSPORT_IO;
 
-	/* Returns the computed result. */
+	/* Succeeded. */
 	return INTEL_AX211_TRANSPORT_OK;
 }
 
@@ -2225,14 +2226,15 @@ ax211_dma_sync(
 	size_t length,
 	enum intel_ax211_transport_dma_direction direction)
 {
-	/* Checks the dma sync result. */
-	if (transport->ops->dma_sync(transport->argument, region, offset,
-				     length, direction) != 0) {
-		/* Returns the computed result. */
-		return INTEL_AX211_TRANSPORT_IO;
-	}
+	int result;
 
-	/* Returns the computed result. */
+	/* Synchronizes the range. */
+	result = transport->ops->dma_sync(transport->argument, region, offset,
+					  length, direction);
+	if (result != 0)
+		return INTEL_AX211_TRANSPORT_IO;
+
+	/* Succeeded. */
 	return INTEL_AX211_TRANSPORT_OK;
 }
 
@@ -2243,11 +2245,14 @@ ax211_csr_read(
 	uint32_t offset,
 	uint32_t *value)
 {
-	/* Checks the csr read32 result. */
-	if (transport->ops->csr_read32(transport->argument, offset, value) != 0)
+	int result;
+
+	/* Reads the register. */
+	result = transport->ops->csr_read32(transport->argument, offset, value);
+	if (result != 0)
 		return INTEL_AX211_TRANSPORT_IO;
 
-	/* Returns the computed result. */
+	/* Succeeded. */
 	return INTEL_AX211_TRANSPORT_OK;
 }
 
@@ -2258,49 +2263,54 @@ ax211_ack_raw(
 	uint32_t *queue_causes,
 	uint32_t *hardware)
 {
-	int error;
 	int result;
 
-	/* Checks the operation result. */
+	/* Reads the queue causes. */
 	result = ax211_csr_read(transport, AX211_CSR_MSIX_QUEUE_CAUSES,
 				queue_causes);
 	if (result != INTEL_AX211_TRANSPORT_OK)
 		return result;
 
-	/* Checks the operation result. */
+	/* Reads the event causes. */
 	result = ax211_csr_read(transport, AX211_CSR_MSIX_EVENT_CAUSES,
 				hardware);
 	if (result != INTEL_AX211_TRANSPORT_OK)
 		return result;
+
+	/* Clears the queue causes it read. */
 	result = ax211_csr_write(transport, AX211_CSR_MSIX_QUEUE_CAUSES,
 				 *queue_causes);
-	/* Checks the operation result. */
 	if (result != INTEL_AX211_TRANSPORT_OK)
 		return result;
 
-	/* Obtains the ax211 csr write result. */
-	error = ax211_csr_write(
+	/* Clears the event causes it read. */
+	result = ax211_csr_write(
 		transport, AX211_CSR_MSIX_EVENT_CAUSES, *hardware);
+	if (result != INTEL_AX211_TRANSPORT_OK)
+		return result;
 
-	/* Returns the computed result. */
-	return error;
+	/* Succeeded: *queue_causes and *hardware hold what was pending. */
+	return INTEL_AX211_TRANSPORT_OK;
 }
 
-/* Validates one fixed-size RX buffer mapping before DMA publication. */
+/*
+ * Reports whether one fixed-size RX buffer mapping can be published: 1 when it
+ * can, 0 when not.
+ */
 static int
 ax211_rx_descriptor_valid(
 	uint16_t index,
 	uint64_t device_address)
 {
-	/* Checks the current index. */
+	/* Rejects an index out of range and an unset or misaligned address. */
 	if (index >= INTEL_AX211_TRANSPORT_RX_DESCRIPTOR_COUNT ||
-	    device_address == 0U || (device_address & 0xfffU) != 0U ||
+	    device_address == 0U ||
+	    (device_address & 0xfffU) != 0U ||
 	    device_address > UINT64_MAX - 4095U) {
-		/* Succeeded. */
 		return 0;
 	}
 
-	/* Reports operation failure. */
+	/* The mapping is valid. */
 	return 1;
 }
 
@@ -2313,20 +2323,20 @@ ax211_publish_rx_descriptor(
 {
 	uint8_t *descriptor;
 	size_t offset;
+	int valid;
 	int core_result;
 	int result;
 
 	/*
 	 * Keeps the private boundary safe if an internal caller is added later.
 	 */
-	if (!ax211_rx_descriptor_valid(index, device_address))
+	valid = ax211_rx_descriptor_valid(index, device_address);
+	if (!valid)
 		return INTEL_AX211_TRANSPORT_INVALID;
 
 	/* Encodes the device address into its stable ring slot. */
 	offset = (size_t)index * INTEL_AX211_TRANSPORT_RX_DESCRIPTOR_SIZE;
 	descriptor = transport->memory.rx_transfer + offset;
-
-	/* Handles the core result condition. */
 	core_result = drv_intel_ax211_rx_transfer_descriptor_encode(
 		descriptor, index, device_address);
 	if (core_result != INTEL_AX211_SUCCESS)
@@ -2337,19 +2347,14 @@ ax211_publish_rx_descriptor(
 		ax211_dma_sync(transport, INTEL_AX211_TRANSPORT_DMA_RX_TRANSFER,
 			       offset, INTEL_AX211_TRANSPORT_RX_DESCRIPTOR_SIZE,
 			       INTEL_AX211_TRANSPORT_DMA_PREWRITE);
-
-	/* Checks the operation result. */
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		kern_memset(descriptor, 0, INTEL_AX211_TRANSPORT_RX_DESCRIPTOR_SIZE);
 		ax211_set_published(transport, index, 0);
-
-		/* Failed. */
 		return result;
 	}
 
+	/* Succeeded: the device owns the buffer. */
 	ax211_set_published(transport, index, 1);
-
-	/* Returns the computed result. */
 	return INTEL_AX211_TRANSPORT_OK;
 }
 
@@ -2363,9 +2368,8 @@ ax211_set_published(
 	uint8_t bit;
 	uint8_t *byte;
 
+	/* Sets or clears the descriptor's bit. */
 	bit = (uint8_t)(1U << (index & 7U));
-
-	/* Handles the published condition. */
 	byte = &transport->rx_published[index >> 3];
 	if (published)
 		*byte |= bit;
@@ -2373,7 +2377,10 @@ ax211_set_published(
 		*byte &= (uint8_t)~bit;
 }
 
-/* Requires every exact Gen3 RX descriptor before activation. */
+/*
+ * Reports whether every exact Gen3 RX descriptor is published: 1 when it is,
+ * 0 when not.
+ */
 static int
 ax211_all_rx_published(
 	const struct intel_ax211_transport *transport)
@@ -2382,12 +2389,12 @@ ax211_all_rx_published(
 
 	/* Verifies every full publication byte. */
 	for (index = 0U; index < sizeof(transport->rx_published); index++) {
-		/* Handles the transport condition. */
+		/* Rejects a byte with an unpublished descriptor. */
 		if (transport->rx_published[index] != 0xffU)
 			return 0;
 	}
 
-	/* Reports operation failure. */
+	/* Every descriptor is published. */
 	return 1;
 }
 
@@ -2396,11 +2403,13 @@ static uint16_t
 ax211_get_le16(
 	const uint8_t *bytes)
 {
-	/* Returns the computed result. */
+	/* Assembles the word from its two bytes, least significant first. */
 	return (uint16_t)((uint16_t)bytes[0] | ((uint16_t)bytes[1] << 8));
 }
 
-/* Tests one host-owned RX descriptor publication bit. */
+/*
+ * Reports whether one RX descriptor is published: 1 when it is, 0 when not.
+ */
 static int
 ax211_is_published(
 	const struct intel_ax211_transport *transport,
@@ -2408,10 +2417,13 @@ ax211_is_published(
 {
 	uint8_t bit;
 
+	/* Tests the descriptor's bit. */
 	bit = (uint8_t)(1U << (index & 7U));
+	if ((transport->rx_published[index >> 3] & bit) == 0U)
+		return 0;
 
-	/* Returns the computed result. */
-	return (transport->rx_published[index >> 3] & bit) != 0U;
+	/* The descriptor is published. */
+	return 1;
 }
 
 /* Rolls back only the newest command reservation before its doorbell. */
@@ -2419,9 +2431,11 @@ static void
 ax211_command_rollback(
 	struct intel_ax211_transport *transport)
 {
-	/* Handles the transport condition. */
+	/* Nothing is reserved. */
 	if (transport->command_ring.used == 0U)
 		return;
+
+	/* Releases the newest reservation. */
 	transport->command_ring.head =
 		(uint16_t)((transport->command_ring.head - 1U) &
 			   (transport->command_ring.capacity - 1U));
@@ -2433,34 +2447,43 @@ static int
 ax211_command_external_scrub(
 	struct intel_ax211_transport *transport)
 {
-	int error;
+	int result;
 
+	/* Clears and publishes the buffer. */
 	kern_memset(transport->memory.command_external, 0,
 	       transport->memory.command_external_size);
-
-	/* Obtains the ax211 dma sync result. */
-	error = ax211_dma_sync(
+	result = ax211_dma_sync(
 		transport, INTEL_AX211_TRANSPORT_DMA_COMMAND_EXTERNAL, 0U,
 		transport->memory.command_external_size,
 		INTEL_AX211_TRANSPORT_DMA_PREWRITE);
+	if (result != INTEL_AX211_TRANSPORT_OK)
+		return result;
 
-	/* Returns the computed result. */
-	return error;
+	/* Succeeded: the scrub is visible to the device. */
+	return INTEL_AX211_TRANSPORT_OK;
 }
 
-/* Tests whether the one external DMA buffer still belongs to this token. */
+/*
+ * Reports whether the one external DMA buffer still belongs to token: 1 when
+ * it does, 0 when not.
+ */
 static int
 ax211_command_external_matches(
 	const struct intel_ax211_transport *transport,
 	const struct intel_ax211_ring_token *token)
 {
-	/* Handles the transport condition. */
+	/* The buffer belongs to no token. */
 	if (!transport->command_external_active)
 		return 0;
 
-	/* Returns the computed result. */
-	return token->queue == transport->command_external_token.queue &&
-	       token->index == transport->command_external_token.index;
+	/* The buffer belongs to another token. */
+	if (token->queue != transport->command_external_token.queue ||
+	    token->index != transport->command_external_token.index) {
+		return 0;
+	}
+
+	/* The buffer belongs to token. */
+	return 1;
 }
 
 /* Polls Gen3 RX-DMA idle through one observable 10-ms deadline. */
@@ -2477,14 +2500,15 @@ ax211_poll_rx_idle(
 	int result;
 
 	/* Creates a checked absolute RX-idle deadline. */
-	if (transport->ops->clock_us(transport->argument, &start) != 0)
+	result = transport->ops->clock_us(transport->argument, &start);
+	if (result != 0)
 		return INTEL_AX211_TRANSPORT_CLOCK;
 
-	/* Handles the start condition. */
+	/* Refuses a deadline beyond the clock. */
 	if (start > UINT64_MAX - AX211_RX_IDLE_TIMEOUT_US)
 		return INTEL_AX211_TRANSPORT_CLOCK;
 
-	/* Handles the trace deadline availability. */
+	/* Reports the deadline to a tracer, when one is attached. */
 	deadline = start + AX211_RX_IDLE_TIMEOUT_US;
 	if (transport->ops->trace_deadline != NULL) {
 		transport->ops->trace_deadline(
@@ -2494,11 +2518,10 @@ ax211_poll_rx_idle(
 
 	/* Polls with independent elapsed-time and iteration bounds. */
 	previous = start;
-	/* Process each element required by the operation. */
 	for (iteration = 0U;
 	     iteration < AX211_RX_IDLE_TIMEOUT_US / AX211_RX_IDLE_POLL_US + 2U;
 	     iteration++) {
-		/* Checks the operation result. */
+		/* Reads the receive DMA status. */
 		result = transport->ops->prph_read32(
 			transport->argument,
 			transport->profile.upper_cpu_prph_base +
@@ -2507,45 +2530,42 @@ ax211_poll_rx_idle(
 		if (result != 0)
 			return INTEL_AX211_TRANSPORT_IO;
 
-		/* Checks the operation status. */
+		/* Succeeded: receive DMA is idle. */
 		if ((status & AX211_RX_DMA_STATUS_IDLE) != 0U)
 			return INTEL_AX211_TRANSPORT_OK;
 
-		/* Checks the clock us result. */
-		if (transport->ops->clock_us(transport->argument, &current) !=
-		    0) {
-			/* Returns the computed result. */
+		/* Reads the clock. */
+		result = transport->ops->clock_us(transport->argument,
+						  &current);
+		if (result != 0)
 			return INTEL_AX211_TRANSPORT_CLOCK;
-		}
 
-		/* Handles the current condition. */
+		/* Refuses a clock that went backwards. */
 		if (current < previous)
 			return INTEL_AX211_TRANSPORT_CLOCK;
 
-		/* Handles the current condition. */
+		/* The deadline passed. */
 		if (current >= deadline)
 			return INTEL_AX211_TRANSPORT_TIMEOUT;
 
-		/* Checks the delay us result. */
-		if (transport->ops->delay_us(transport->argument,
-					     AX211_RX_IDLE_POLL_US) != 0) {
-			/* Returns the computed result. */
+		/* Waits one poll interval. */
+		result = transport->ops->delay_us(transport->argument,
+						  AX211_RX_IDLE_POLL_US);
+		if (result != 0)
 			return INTEL_AX211_TRANSPORT_IO;
-		}
 
-		/* Checks the clock us result. */
-		if (transport->ops->clock_us(transport->argument, &current) !=
-		    0) {
-			/* Returns the computed result. */
+		/* Reads the clock again. */
+		result = transport->ops->clock_us(transport->argument,
+						  &current);
+		if (result != 0)
 			return INTEL_AX211_TRANSPORT_CLOCK;
-		}
 
-		/* Handles the current condition. */
+		/* Refuses a clock that did not advance. */
 		if (current <= previous)
 			return INTEL_AX211_TRANSPORT_CLOCK;
 		previous = current;
 	}
 
-	/* Returns the computed result. */
+	/* The iteration bound ran out. */
 	return INTEL_AX211_TRANSPORT_TIMEOUT;
 }

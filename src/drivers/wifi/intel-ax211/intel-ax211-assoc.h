@@ -160,6 +160,7 @@
 #define INTEL_AX211_ASSOC_LINK_SLOT 0U
 #define INTEL_AX211_ASSOC_PEER_SLOT 0U
 
+/* The results of the association session. */
 enum intel_ax211_assoc_result {
 	INTEL_AX211_ASSOC_OK = 0,
 	INTEL_AX211_ASSOC_INVALID = 1,
@@ -182,6 +183,10 @@ enum intel_ax211_assoc_result {
 	INTEL_AX211_ASSOC_BUFFER_TOO_SMALL = 18
 };
 
+/*
+ * Where the session is: the authentication stage, its end, the association
+ * stage, its end, the rollback, or a failed rollback.
+ */
 enum intel_ax211_assoc_phase {
 	INTEL_AX211_ASSOC_PHASE_IDLE = 0,
 	INTEL_AX211_ASSOC_PHASE_AUTH = 1,
@@ -192,6 +197,10 @@ enum intel_ax211_assoc_phase {
 	INTEL_AX211_ASSOC_PHASE_FAILED = 6
 };
 
+/*
+ * The commands of the session in the order they are sent: the authentication
+ * stage, the association stage, then the rollback's removals.
+ */
 enum intel_ax211_assoc_step {
 	INTEL_AX211_ASSOC_STEP_NONE = 0,
 	INTEL_AX211_ASSOC_STEP_MAC_ADD = 1,
@@ -215,11 +224,13 @@ enum intel_ax211_assoc_step {
 	INTEL_AX211_ASSOC_STEP_PHY_REMOVE = 19
 };
 
+/* The command header a command is sent with. */
 enum intel_ax211_assoc_header {
 	INTEL_AX211_ASSOC_HEADER_LEGACY = 0,
 	INTEL_AX211_ASSOC_HEADER_WIDE = 1
 };
 
+/* The kind of answer a command expects. */
 enum intel_ax211_assoc_response_kind {
 	INTEL_AX211_ASSOC_RESPONSE_EMPTY = 0,
 	INTEL_AX211_ASSOC_RESPONSE_STATUS_ZERO = 1,
@@ -227,6 +238,10 @@ enum intel_ax211_assoc_response_kind {
 	INTEL_AX211_ASSOC_RESPONSE_IGNORED = 3
 };
 
+/*
+ * One access category's parameters: the window exponents, AIFSN, and the TXOP
+ * limit in units of 32 microseconds.
+ */
 struct intel_ax211_assoc_edca {
 	uint8_t ecw_min;
 	uint8_t ecw_max;
@@ -234,6 +249,10 @@ struct intel_ax211_assoc_edca {
 	uint16_t txop_32us;
 };
 
+/*
+ * What the authentication stage needs: the addresses, the channel, the rates
+ * and timing of the network, and the management queue's DMA addresses.
+ */
 struct intel_ax211_assoc_profile {
 	uint8_t station_address[6];
 	uint8_t bssid[6];
@@ -252,6 +271,7 @@ struct intel_ax211_assoc_profile {
 	struct intel_ax211_assoc_edca edca[INTEL_AX211_ASSOC_EDCA_COUNT];
 };
 
+/* What the association stage adds from the access point's answer. */
 struct intel_ax211_assoc_update {
 	uint16_t association_id;
 	uint8_t dtim_period;
@@ -281,6 +301,7 @@ struct intel_ax211_assoc_command {
 	size_t payload_length;
 };
 
+/* The firmware's answer to one command, as exchange reports it. */
 struct intel_ax211_assoc_reply {
 	enum intel_ax211_assoc_step step;
 	uint8_t response_version;
@@ -292,6 +313,10 @@ struct intel_ax211_assoc_reply {
 	size_t payload_length;
 };
 
+/*
+ * One association session: the current step and its deadline, the firmware
+ * objects it has created, and the failure that started a rollback.
+ */
 struct intel_ax211_assoc_state {
 	struct intel_ax211_assoc_profile profile;
 	struct intel_ax211_assoc_update update;
@@ -366,23 +391,14 @@ int
 drv_intel_ax211_assoc_begin_update(
 	struct intel_ax211_assoc_state *state,
 	const struct intel_ax211_assoc_update *update,
-	uint64_t common_generation,
-	uint32_t hardware_epoch,
-	uint64_t now_us);
-
-int
-drv_intel_ax211_assoc_current(
-	const struct intel_ax211_assoc_state *state,
-	uint64_t now_us,
-	struct intel_ax211_assoc_command *command);
-
-int
-drv_intel_ax211_assoc_accept(
+	uint64_t common_generation, uint32_t hardware_epoch, uint64_t now_us);
+int drv_intel_ax211_assoc_current(const struct intel_ax211_assoc_state *state,
+				  uint64_t now_us,
+				  struct intel_ax211_assoc_command *command);
+int drv_intel_ax211_assoc_accept(
 	struct intel_ax211_assoc_state *state,
 	const struct intel_ax211_assoc_command *command,
-	const struct intel_ax211_assoc_reply *reply,
-	uint64_t now_us);
-
+	const struct intel_ax211_assoc_reply *reply, uint64_t now_us);
 /*
  * Accepts only an unsolicited v2-layout SESSION_PROTECTION_NOTIF from the
  * current firmware epoch.  SESSION_EXPIRED means a successful ASSOC
