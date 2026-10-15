@@ -1,6 +1,6 @@
 <!-- awesome-plan project=zedbsd record=ws245 -->
 
-# WS245: i915 の Gen12（ADL-P、Latitude 5330）の display の書き直し
+# WS245: i915 の Gen12 系（display 12・13）の display の書き直し
 
 <!-- awesome-plan-current:start -->
 Status: incomplete（2026-10-15 作成。p001 の [design.md](design.md) は改訂 2（P1、7cdf5879d、678 行、main 280c9fdba）。レビューは 2 回（[design-review-1.md](design-review-1.md) は反映済み、[design-review.md](design-review.md) は未反映））
@@ -24,9 +24,15 @@ Resume point: design-review.md（2 回目のレビュー、blocker 4・major 18�
 
 「5は、(1) a、(2) 5330のみ、(3) Linuxのコードを参考にする、(4) Linuxを優先、でおねがいします。」
 1. 逃げ道の形は (a): 口（xd.h）を p002 で決め、own の file は最初からその口だけを呼ぶ。口の実装を旧（薄い adapter、p011 で削除）と xd で丸ごと切り替える（状態を混ぜない）。
-2. 「5330のみ」。Q1 は当初「Tiger Lake（display 12）は支えない」と記録したが誤り（2026-10-15 ユーザーの補足「Tiger Lakeは実機で動作確認済みです。display 10,11以外は動作確認済みです。」「記録が食い違っているだけです。」）。display 9・12・13 は実機で動いている機能で落とさない。xd は display 12（Tiger Lake、5320）と display 13（ADL-P、5330）の両方を持つ。display 10・11 は今も支えていない（範囲外）。
+2. 「5330のみ」（意味は未確認。下の対象の方針が優先）。Q1 は当初「Tiger Lake（display 12）は支えない」と記録したが誤り（2026-10-15 ユーザーの補足「Tiger Lakeは実機で動作確認済みです。display 10,11以外は動作確認済みです。」「記録が食い違っているだけです。」）。display 9・12・13 は実機で動いている機能で落とさない。xd は display 12（Tiger Lake、5320）と display 13（ADL-P、5330）の両方を持つ。display 10・11 は今も支えていない（範囲外）。
 3. 手順は Linux の code を参考にする（Tiger Lake・Alchemist の PRM は補助）。guardrail のまま、code・comment・構造は写さず、値は block ごとに Value(s) referenced:、参考にした手順は Procedure referenced: <版> <path> (<関数>) を付ける。
 4. PRM と Linux（5330 で動いている実績）の値・手順が食い違う時は Linux を優先する。
+
+## 対象の機種（2026-10-15 ユーザー「すでに多数の機種で動作しており、5330を特別扱いはしません。Skylake～Raptor Lake Refreshまですべてサポートします。」）
+
+- WS245 は 5330 を特別扱いしない。対象は今の Gen12 の code が動かしている全機種: display 12（Tiger Lake・Rocket Lake・Alder Lake-S・Raptor Lake-S/HX と Raptor Lake Refresh のデスクトップ）と display 13（Alder Lake-P/U・Raptor Lake-P/U）。display 9（Skylake〜Comet Lake）は gen9-*.c（WS244）。
+- display 9・12・13 は実機で動作確認済み（ユーザー「display 10,11以外は動作確認済みです。」）。display 11（Ice Lake）と display 10 は今の code で支えていない。Skylake〜Raptor Lake Refresh の範囲に入る Ice Lake の扱いはユーザーに確かめる（未決）。
+- 下の「目的と完了の条件」の「5330」の記述（2026-10-15 の作成時）は、この方針で読み替える。実機の確かめは 5330 に限らない。
 
 ## 目的と完了の条件
 
@@ -34,7 +40,7 @@ Resume point: design-review.md（2 回目のレビュー、blocker 4・major 18�
 - register の offset・bit・表（DDI の buf trans、PLL・clock の表など）はデータとして独自の名前で残し、block ごとに「Value(s) referenced: <版> <path> (<名前>)」を付ける。file の上部には出典を書かない。
 - 外向きの口（display の API、Gen9 と共有の部分）は保つ。
 - 書き直しの後、`Derived from the Linux kernel` と Linux の MIT の表示は Gen12 の file から消え、`userland/base/licenses/i915-driver/` は WS244 の最後で整理する。
-- 完了: 5330 の実機で、起動・GOP の引き継ぎ・内蔵 panel（eDP）・backlight・外部の DP/HDMI（USB-C を含む）・hotplug・mode set・suspend の戻りが今と同じに動く（ユーザーの確かめ、試験の一覧に載せる）。
+- 完了（対象の機種の方針で読み替え: 5330 だけでなく display 12・13 の対象機種で）: 5330 の実機で、起動・GOP の引き継ぎ・内蔵 panel（eDP）・backlight・外部の DP/HDMI（USB-C を含む）・hotplug・mode set・suspend の戻りが今と同じに動く（ユーザーの確かめ、試験の一覧に載せる）。
 
 ## Phase（案、p001 で確定）
 

@@ -554,7 +554,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS242](ws242/ws.md) | MG006 | nvrtx の RTX 20/30/40 の全モデル（2026-10-15 ユーザー） | incomplete（p001・p002 in-progress、GTX 16・RTX 30・40 を既定で有効はユーザーの決定、未実装） | p001 の再開点 1〜4 |
 | [WS243](ws243/ws.md) | MG006 | nvrtx の NVDEC で H.264（Vulkan Video）（2026-10-15 ユーザー） | incomplete（p001 を途中で一時停止、実機は WS241 の後） | p001 の再開の点（design.md） |
 | [WS244](ws244/ws.md) | MG006 | i915 の Linux 由来の code の整理（Gen9 の display を guardrail に、GT・compiler・header・license）（2026-10-15 ユーザー） | incomplete（p001 の棚卸しを中断） | p001 の「残り」 |
-| [WS245](ws245/ws.md) | MG006 | i915 の Gen12（5330）display の書き直し（2026-10-15 ユーザー） | incomplete（p001 の design.md 改訂 2 は main、レビュー 2 の反映が残る） | ws.md の Resume point |
+| [WS245](ws245/ws.md) | MG006 | i915 の Gen12 系（display 12・13、Skylake〜Raptor Lake Refresh の方針で 5330 を特別扱いしない）の display の書き直し（2026-10-15 ユーザー） | incomplete（p001 の design.md 改訂 2 は main、レビュー 2 の反映が残る） | ws.md の Resume point |
 | [WS246](ws246/ws.md) | MG006 | nvrtx の compiler を sm75.h・sm75.c にまとめて refactor（2026-10-15 ユーザー） | incomplete（p001 cleared、出典の comment は ws247-p003 で済み） | p002（latency の表、構造） |
 | [WS247](ws247/ws.md) | MG006 | nvrtx の comment・log から開発の管理情報と出典の名前を除き、出典を block ごとに（2026-10-15 ユーザー） | incomplete（p001〜p003 cleared） | ユーザーの判断 2 点（path の省略、CUDA の出典） |
 

@@ -1,6 +1,6 @@
 <!-- awesome-plan project=zedbsd record=ws245-p001 -->
 
-# ws245-p001: Gen12（ADL-P、Latitude 5330）の display の書き直しの設計
+# ws245-p001: Gen12 系（display 12・13）の display の書き直しの設計
 
 Status: in-progress（q991、design.md の改訂 2 は main 280c9fdba、design-review.md の反映が残る）
 Parent: [WS245](../ws.md)

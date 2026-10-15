@@ -77,3 +77,5 @@ p3 の worktree（agent/p3-ws245、9b860c6d0）は使っていない。担当の
 - 動いている担当は無い。WS245 の次は design-review.md の反映（未着手）。
 
 - 訂正（2026-10-15）: WS245 の決定 2 の記録（Tiger Lake を支えない）は誤り。ユーザー「Tiger Lakeは実機で動作確認済みです。display 10,11以外は動作確認済みです。」。xd は display 12・13 を持つ。display 12 の差の設計はレビュー 2 の反映と一緒に次の改訂で。
+- 訂正（2026-10-15）: ユーザー「すでに多数の機種で動作しており、5330を特別扱いはしません。Skylake～Raptor Lake Refreshまですべてサポートします。」→ WS245 の対象は display 12・13 の全機種。ws245/ws.md・phase001・design.md の先頭・Master の一覧・WS244 を直した。design.md の本文（51 か所の 5330 前提）は次の改訂で。
+- 食い違い（未解決、ユーザーに確認中）: (1) 2026-10-14 のユーザーの判断「VBTはテスト用だったので、もう不要」で VBT・OpRegion の raw を削除した（531dfe8d4）が、plan/ws051/tests/m3-5330-20261007/debugfs/i915_vbt.txt（8704 byte、$VBT ALDERLAKE-P の binary）と i915_opregion.txt（8192 byte）が残っている。(2) Skylake〜Raptor Lake Refresh に入る Ice Lake（display 11）を今の code は支えていない。
