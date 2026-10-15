@@ -1,0 +1,14 @@
+#version 450
+// ws039-p007: the special functions: sine, cosine, powers and logarithms of two, square roots.
+layout(local_size_x = 32) in;
+layout(std430, set = 0, binding = 0) readonly buffer In { float x[]; };
+layout(std430, set = 0, binding = 1) buffer Out { float o[]; };
+void main()
+{
+	uint i = gl_GlobalInvocationID.x;
+	float v = x[i];
+	o[i * 4u] = sin(v) + cos(v * 0.5);
+	o[i * 4u + 1u] = exp2(v * 0.25) - log2(abs(v) + 1.0);
+	o[i * 4u + 2u] = inversesqrt(abs(v) + 0.5);
+	o[i * 4u + 3u] = 1.0 / (v * v + 1.0);
+}

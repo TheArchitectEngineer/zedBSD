@@ -1,0 +1,14 @@
+#version 450
+// ws039-p007: packing and unpacking pairs of 16-bit floats.
+layout(local_size_x = 32) in;
+layout(std430, set = 0, binding = 0) readonly buffer In { float x[]; };
+layout(std430, set = 0, binding = 1) buffer Out { uint o[]; };
+void main()
+{
+	uint i = gl_GlobalInvocationID.x;
+	uint packed = packHalf2x16(vec2(x[i], x[i + 1u] * 100.0));
+	vec2 back = unpackHalf2x16(packed ^ 0x00010000u);
+	o[i * 3u] = packed;
+	o[i * 3u + 1u] = floatBitsToUint(back.x);
+	o[i * 3u + 2u] = floatBitsToUint(back.y);
+}

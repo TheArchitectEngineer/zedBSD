@@ -109,8 +109,8 @@
 
 /*
  * The places of the fields of a buffer access: the opcode (25:18), the
- * coherent bit (14), the index (13) and offset (12) address bits and the
- * byte offset (11:0) in the first word; the SGPR offset (31:24), the
+ * device coherent bit (15), the coherent bit (14), the index (13) and
+ * offset (12) address bits and the byte offset (11:0) in the first word; the SGPR offset (31:24), the
  * descriptor's first SGPR divided by four (20:16), the data VGPR (15:8)
  * and the address VGPR (7:0) in the second.
  *
@@ -118,6 +118,7 @@
  * (emit_mubuf_instruction, the GFX10 case).
  */
 #define GFX10_BUFFER_OPCODE		18U
+#define GFX10_BUFFER_DEVICE_COHERENT	15U
 #define GFX10_BUFFER_COHERENT		14U
 #define GFX10_BUFFER_INDEXED		13U
 #define GFX10_BUFFER_OFFSETTED		12U
@@ -834,6 +835,8 @@ encode_buffer(
 	word |= (uint32_t)inst->opcode << GFX10_BUFFER_OPCODE;
 	if ((inst->flags & AMDRDNA_GFX10_FLAG_GLOBALLY_COHERENT) != 0U)
 		word |= 1U << GFX10_BUFFER_COHERENT;
+	if ((inst->flags & AMDRDNA_GFX10_FLAG_DEVICE_COHERENT) != 0U)
+		word |= 1U << GFX10_BUFFER_DEVICE_COHERENT;
 	if ((inst->flags & AMDRDNA_GFX10_FLAG_INDEX_ADDRESS) != 0U)
 		word |= 1U << GFX10_BUFFER_INDEXED;
 	if ((inst->flags & AMDRDNA_GFX10_FLAG_OFFSET_ADDRESS) != 0U)
