@@ -367,6 +367,31 @@ struct i915_xd_pll_desc {
 };
 
 /*
+ * One DDI and the DVO port codes a VBT may name it with (up to three;
+ * I915_XD_DVO_NONE fills the rest).
+ */
+struct i915_xd_vbt_dvo_row {
+	uint8_t ddi;
+	uint8_t codes[3];
+};
+
+/*
+ * How a platform's VBT numbers its ports and pins: the DVO port codes of
+ * each DDI; the VBT DDC pin code of each GMBUS pin (indexed by the GMBUS
+ * pin, 0 where the pin has none); and the VBT AUX channel code of each
+ * AUX channel (indexed by the AUX channel, 0 where it has none).  The
+ * platforms differ because some VBTs number by PHY and some by DDI.
+ */
+struct i915_xd_vbt_maps {
+	const struct i915_xd_vbt_dvo_row *dvo;
+	unsigned ndvo;
+	const uint8_t *ddc;
+	unsigned nddc;
+	const uint8_t *aux;
+	unsigned naux;
+};
+
+/*
  * One platform, or one subplatform where its tables differ: everything
  * the xd code needs to know about the hardware, as data.
  */
@@ -415,6 +440,7 @@ struct i915_xd_platform {
 	uint32_t pipedmc_base;
 	const struct i915_xd_swing_set *swing;
 	unsigned wa;
+	const struct i915_xd_vbt_maps *vbt_maps;
 };
 
 
