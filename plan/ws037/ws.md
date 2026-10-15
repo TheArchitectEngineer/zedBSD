@@ -3,14 +3,14 @@
 # WS037: nvrtx — NVIDIA GeForce RTX 2000 以降（Turing〜Blackwell）の GPU driver
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-14 ユーザー「事情が変わりました。16日夕方までに利用できるトークン量が、Max 20xプラン1週間分、増えました。つまり、RTX対応ができる可能性があります。やりましょう。」でブロックとベータ4 の指定を解き再開、目標はベータ2（10/16 夕）。既定 off で入れ、間に合わない部分は drop）。以前: planning（要検討・ブロック、2026-10-05）
+Status: incomplete（2026-10-14 開始。2026-10-15: パススルーで R8b〜R8d・R9v・R9k が PASS（desktop の描画）、方法 A（素の起動）で desktop の session 5/5（T1-684）、その後 T1-691 で P4m の間欠の失敗が再発。描画の速さは [WS241](../ws241/ws.md)、RTX 20/30/40 は [WS242](../ws242/ws.md)、NVDEC は [WS243](../ws243/ws.md)、compiler のまとめは [WS246](../ws246/ws.md)、出典の整理は [WS247](../ws247/ws.md) に独立。2026-10-15 記録の整合の点検で更新）
 Primary Milestone: MG006
 Related Milestones: なし
 Objectives: O2
 Parent: [Master](../master.md)
-Queue: q692（p001）、2026-10-14 から P1（Q1 の割当「P1: RTX」）
-Resume point（2026-10-14 P1）: p001 の判断の項目を締めた（ユーザーの判断の要る点は Q1 の回答 A〜D で決着）。firmware の package `nvidia-gsp-firmware`（既定 off）と p003（骨格・N0・N1、既定 n）を commit、build と host 試験まで。p004 の 4a〜4e（P0〜P3・P7）も実装済み（2026-10-14、build と host 試験まで）。p005 の copy の channel の道（P4〜P6）も実装済み。方式 B（awe@10.0.10.3 の Debian の VFIO、T2）で R0・R1 PASS、R2 は P7（FRTS だけの region に booter_unload）、R3 は P2b（init done が来ない、待ちの timeout も効かない）で止まった。2026-10-14 P1 が原因の解析と直し（P7 は GSP を止めた後だけ teardown、待ちは時計で測る、P2b の切り分けの印と dump の番地）を commit `1c1732db7`。再試験で R2 PASS、R3 は GSP の libos の init で停止（dump の解読で RMARGS の region が 0x48 だった所で止まった）。nouveau と P0〜P2 を照合し、違いの RMARGS の大きさを 0x1000 に合わせた（`714ab8477`）。その後 R3 は GSP-RM が動き、CPU sequencer の CORE_RESUME（opcode 8）が未実装で止まった。sequencer の全 opcode と RPC の番号・照合を nouveau と同じにした（`870aecf93`）。R3・R4 PASS（GSP-RM が実機で起動、P3 の objects・P7 の片付けまで）。R5 は P4 の SET_PAGE_DIRECTORY が NOT_SUPPORTED: RM の確保の RPC の header を 44 byte と誤っていた（正は 32）ため vaspace が外部所有にならなかった。直しと handle を nouveau の値に（`b8803ff5e`）。次は T2 の R5〜R7（[p005](phase005/phase.md) の「R5 の結果と直し」）。 2026-10-15 P1: R6・R7・R7g・P8a は実機 PASS（T1）。p006 の P8b（GOP の head の引き継ぎ・自前の surface・flip、`nvrtx.disp=1`）を実装（`b893faeb6`・`3d0f51784`）、R8b（rombar=1）は T 待ち（[p006](phase006/phase.md)）。 同日 P1（新しい世代）: R8b は FAIL（core の notifier なし・信号なし・unload 42）→ nouveau の初回の commit の順（disable → DFP_ASSIGN_SOR → enable）に直した（`476ca3ba5`、再試験 T1-645 待ち）。p005 の P4m（VRAM の allocator と BAR1、`7a60b2445`）、p006 の P8c（`nvrtx.resident=1` で GSP を残し GPU の device と display の ops を登録、`2c4d1a39f`、R8c は R8b の後）を実装、build と host 試験まで。 同日 P1: P8c の続き（DISPLAY_EVENTS（topology の sequence、固定の 1）・DISPLAY_CONTROL（refresh は head の frame counter、power は EOPNOTSUPP）・cursor の plane（PIO channel 0xc57a）・SHARE（blob の backing の参照）・scanout の表（SHARED と COPY、stride 64・offset 256））を `2791fc6e3`・`e6699aa70` で build と host 試験まで（probe `display-scanout`、run R8d は R8c の後、[p006](phase006/phase.md) の「P8c の続き」）。
-Target: ベータ2（2026-10-16 夕）に既定 off で入れる（2026-10-14 ユーザー、上の Status）。以前: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」）
+Queue: q692（p001）。2026-10-14 以降は Q1 の割当で進め、queue.md に行が無い（次の session で補う）
+Resume point（2026-10-15 Q1、記録の整合の点検）: (1) T1-691 の P4m の間欠の失敗（MMU の fault 00110802 at 0x1d0000、retry でも直らない）の解析の続き（[phase007](phase007/phase.md) の終わりの節）。(2) reboot の時の GSP の停止はメモだけ（ユーザー「WSにメモしておいて、あまり深追いしない」）。(3) `nvrtx.disp.own=1` を既定にするかはユーザーの判断待ち（Master の open-decisions）。(4) 各 Phase の clearance の判定（p006 は cleared の候補）は未。runtime の段の既定 on と GSP の firmware の image への収録が済んだかは、この点検では確かめていない。
+Target: ベータ2（2026-10-16 夕）。**既定は on**（2026-10-15 ユーザー、config/ci/config-amd64.mk と config/drivers/pci.drivers は y。ユーザーの config.mk は n でユーザーの意図どおり）。以前の「既定 off で入れる」（2026-10-14）と「ベータ4 以降」（2026-10-05）は置き換え。
 <!-- awesome-plan-current:end -->
 
 ## 単一目標

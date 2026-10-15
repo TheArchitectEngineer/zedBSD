@@ -3,12 +3,12 @@
 # WS236: Raspberry Pi 4（VideoCore VI）の動画の再生の hardware 支援
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-14 ユーザー「WS236を実装します。」、P3。code freeze の後だが「完了しなかったらDropが可能」の条件でベータ2 に向けて着手。driver は既定 off で入れ、実機の確かめが金曜 16 日の夕方のリリースまでに済まなければベータ3 へ）
+Status: incomplete（2026-10-14 着手、P3。2026-10-15 ユーザー: VCHIQ・VIDEO を既定で on（config/ci/config-rpi4.mk は y）。Pi 4 の再生は 720p30 が限界でゴールは 720p30 を遅れなく（T1-690 で達成の扱い）、1080p・60 fps は要件から外した、A3・A1 は revert（[phase012](phase012/phase.md) canceled）。2026-10-15 記録の整合の点検で更新）
 Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
 Related: [WS141](../ws141/ws.md)（VC6 の display と V3D）、[WS202](../ws202/ws.md)（libmedia の H.264・AAC の再生、今は software と i915 の Vulkan Video）、[WS207](../ws207/ws.md) p004（HDMI の音、同じ VCHIQ を使う）
-Resume point: p006（P3、2026-10-15、agent/p3-ws236 a7d79ec3e）: frame 0 は start の後の最初の picture を firmware が次の slice まで持つため、非参照の灰色の push picture を送って出す。1〜15 が 1 小さいのは firmware の NV12 の変換で、写す時に補正。遅さは uncached の 3 MB の読み 2 回と executor の塞がりと見て、MMAL の memory を cached・readback を cached の写しから・decode を step 化、計測の行を足した。BUG-314 の理由の log も。host 試験・build（warning 0）済み、T の実機待ち（[phase006](phase006/phase.md) の依頼）。p007 は試験の C の書き方と通しの見直しが残り。
+Resume point（2026-10-15 Q1、記録の整合の点検）: 残りは優先度が低い: Pi を main の libvulkan・wayland に戻して 720p30 を確かめる、Phase の状態の整理（p001〜p005・p007・p011 が in-progress、p006・p008 が uncleared、p009 は設計だけ）、p007。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-14）
