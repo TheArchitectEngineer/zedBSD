@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
 Related: [WS244](../ws244/ws.md)（i915 の Linux 由来の code の整理、棚卸し plan/ws244/inventory.md・tests/inventory.py）、[Guardrail](../guardrail.md)「MIT・GPL の出典のデータの引用」
-Resume point: q1207（P1、2026-10-15 夜）: p004（xd-vbt・xd-edid、[phase004](phase004/phase.md)）は実装と host 試験が完了し Q1 の判定待ち。次は p006（power・DMC・clock・TC の register）。以前: q1204（P1、2026-10-15 夕）: p002 の実装と host 試験は完了（branch agent/p1-ws245、d8134ee40・5084f1852 は main に merge 済み、3d476ca43・8e62fb89d とこの記録の commit）。残りは (f) T1 の boot-test と Q1 の判定、§7 #18・#22 の回答（[phase002](phase002/phase.md)）。次は p003（merge はデモの後: §7 #13）か p004/p006。以前: q1204 で p002 を実装中。以前: 2026-10-15 P1（q1200）: design.md 改訂 3a（多機種: display 12 の TGL・RKL・ADL-S/RPL-S と display 13 の ADL-P 系、display 11 は p014。Phase p002〜p015、80 LW ±40%、実機の往復は別枠 6〜10 LW。3 回目のレビュー blocker 2・major 17・minor 16 を全部反映）。次: §7 の判断 #0〜#22（特に #11 PRM の Notices、#13 merge の時期、#15 passthrough の scenario、#16 他の WS の Phase、#17 TGL の TC、#18 RKL・ADL-S の今の状態、#20 GT、#22 Gen9 の機械）をユーザーに → p001 の clearance（Q1）→ p002 から実装（Queue の承認が要る。p003 以降の merge はデモの後: #13）。
+Resume point: 2026-10-15 夜 中断。Phase の表を「段ごとに 5330 で回帰を確かめて書き換える」形に作り直す（ユーザーに確かめてから）。以前: q1207（P1、2026-10-15 夜）: p004（xd-vbt・xd-edid、[phase004](phase004/phase.md)）は実装と host 試験が完了し Q1 の判定待ち。次は p006（power・DMC・clock・TC の register）。以前: q1204（P1、2026-10-15 夕）: p002 の実装と host 試験は完了（branch agent/p1-ws245、d8134ee40・5084f1852 は main に merge 済み、3d476ca43・8e62fb89d とこの記録の commit）。残りは (f) T1 の boot-test と Q1 の判定、§7 #18・#22 の回答（[phase002](phase002/phase.md)）。次は p003（merge はデモの後: §7 #13）か p004/p006。以前: q1204 で p002 を実装中。以前: 2026-10-15 P1（q1200）: design.md 改訂 3a（多機種: display 12 の TGL・RKL・ADL-S/RPL-S と display 13 の ADL-P 系、display 11 は p014。Phase p002〜p015、80 LW ±40%、実機の往復は別枠 6〜10 LW。3 回目のレビュー blocker 2・major 17・minor 16 を全部反映）。次: §7 の判断 #0〜#22（特に #11 PRM の Notices、#13 merge の時期、#15 passthrough の scenario、#16 他の WS の Phase、#17 TGL の TC、#18 RKL・ADL-S の今の状態、#20 GT、#22 Gen9 の機械）をユーザーに → p001 の clearance（Q1）→ p002 から実装（Queue の承認が要る。p003 以降の merge はデモの後: #13）。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）
@@ -49,6 +49,13 @@ Resume point: q1207（P1、2026-10-15 夜）: p004（xd-vbt・xd-edid、[phase00
 - kernel の振る舞いは p009 まで変えない: p002・p004〜p008 は新しい file と host 試験だけ。p003 の adapter 以降も `i915.display=old` が既定で、xd は opt-in（design.md §7 #0、既定の切り替えは p011）。`old` は p013 まで逃げ道。
 - §7 の判断は既定の案で進める。#18（2026-10-15 ユーザー、クリック「今のまま（efifb）」）: RKL・ADL-S/RPL-S は device.c に足さず今の振る舞い（efifb）を保ち、xd の platform の表にだけ持つ。#22（2026-10-15 ユーザー、クリック）: Gen9 の実機は SV7（10.0.10.27）。
 - merge の時期（§7 #13、2026-10-15 夕 ユーザー「WS245はいつでもロールバックできるので、今マージします」）: デモの後まで待たず、p003 以降も Phase の成果ができ次第 main に merge する（既定の案の「p003 以降はデモの後」を置き換え）。戻す時は Phase の merge commit を revert する。
+
+## 進め方の改め（2026-10-15 夜 ユーザー、作業の即時中断の後）
+
+ユーザー:「待ってください、書き換えが一度に大幅すぎます。すべての作業を即時中断してください。」に続けて「まず、Intel GPUのディスプレイコントローラについては、ゴールとしてはSkylakeからRaptor Lake Refreshまですべてで動くようにします。ただし、各ステップで5330で動くかどうかをきちんとリグレッションテストしながら、ステップで書き換えていきます。そうでないと破綻します。」
+- design.md §6.2 の Phase の分け方（p002・p004〜p008 を host 試験だけで新しい file として作り、p009 で xd に切り替える）は、この方針に合わない。小さな段ごとに動いている道（5330）を書き換え、各段で 5330 の回帰の試験を通してから次へ進む形に、Phase の表を作り直す。
+- 既に main に入った p002（土台）・p004（VBT・EDID）の新しい file（呼ばれない）と、止めた p006 の途中の差分（p1 の worktree、未 commit）の扱いは、作り直しの中で決める（ユーザーに確かめる）。
+- 作り直すまで WS245 の実装は止める。
 
 ## §7 の回答（2026-10-15 夕 ユーザー、1 件ずつクリック）
 
