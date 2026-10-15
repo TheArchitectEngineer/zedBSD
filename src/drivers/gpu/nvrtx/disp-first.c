@@ -454,12 +454,12 @@ nvrtx_disp_first_window(
 }
 
 /*
- * Writes a later flip of the window: the notifier at its offset, the whole image (present control, size,
- * storage, format, pitch, object, offset, point and sizes), then a release
- * interlocked with this window and, when with_core is nonzero, with the
- * core (a flip that comes with a change of the head's view, which the
- * core's release interlocked with this window then completes).  storage is
- * as for nvrtx_disp_first_window.
+ * Writes a later flip of the window: the notifier at its offset, the whole
+ * image (present control, size, storage, format, pitch, object, offset, point
+ * and sizes), then a release interlocked with this window and, when with_core
+ * is nonzero, with the core (a flip that comes with a change of the head's
+ * view, which the core's release interlocked with this window then completes).
+ * storage is as for nvrtx_disp_first_window.
  *
  * Procedure referenced: Linux v6.19
  * drivers/gpu/drm/nouveau/dispnv50/wndwc57e.c and wndwc37e.c (the window's

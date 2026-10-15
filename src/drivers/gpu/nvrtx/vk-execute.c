@@ -118,10 +118,10 @@
  * The executor's own programs (a textured quad placed by push constants,
  * the draw-test draw's) and the session's run.
  *
- * token names the run to the node, cpu and va its two views; at is where
- * the push buffer goes on, constants, headers and samplers how much of
- * their parts the push buffer uses, draws and quads how many application
- * draws and own quads it holds (for the node's counts).  The programs are compiled once, into
+ * token names the run to the node, cpu and va its two views; at is where the
+ * push buffer goes on, constants, headers and samplers how much of their parts
+ * the push buffer uses, draws and quads how many application draws and own
+ * quads it holds (for the node's counts).  The programs are compiled once, into
  * a run of their own.
  */
 struct nvrtx_vk_execute {

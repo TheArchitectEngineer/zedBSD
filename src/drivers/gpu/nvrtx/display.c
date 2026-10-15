@@ -8,17 +8,16 @@
 /*
  * The display under the GSP (the display-client stage: bring-up).
  *
-  * The resource manager owns the display hardware's state machine.  The driver
-  * brings the display up in this order: the display's instance memory (64 KiB
-  * of VRAM) is given to the resource manager; the display gets a client,
-  * device and subdevice of its own with the common object the display controls
-  * go to; the windows, heads and outputs are read, each output's resource and
-  * connector; the hotplug and DisplayPort interrupt notifications are asked
-  * for; the hash table at the start of the instance memory is cleared; and the
-  * Turing display root is made.  Nothing here changes what is on the screen;
-  * the channels and the first commit on the head the firmware lit are stage
-  * takeover (scanout.c).  When takeover does not run, the heads the firmware
-  * lit are read for the log.
+ * The resource manager owns the display hardware's state machine.  The driver
+ * brings the display up in this order: the display's instance memory (64 KiB of
+ * VRAM) is given to the resource manager; the display gets a client, device and
+ * subdevice of its own with the common object the display controls go to; the
+ * windows, heads and outputs are read, each output's resource and connector;
+ * the hotplug and DisplayPort interrupt notifications are asked for; the hash
+ * table at the start of the instance memory is cleared; and the Turing display
+ * root is made.  Nothing here changes what is on the screen; the channels and
+ * the first commit on the head the firmware lit are stage takeover (scanout.c).
+ * When takeover does not run, the heads the firmware lit are read for the log.
  */
 
 #include <stdbool.h>
@@ -219,8 +218,8 @@ static void display_head(struct nvrtx_gpu *gpu, uint32_t head, uint32_t display_
 static const char *display_protocol_name(uint32_t protocol);
 
 /*
-  * Runs the display-client stage: the display's instance memory, its objects
-  * and the readout of the lit heads.
+ * Runs the display-client stage: the display's instance memory, its objects and
+ * the readout of the lit heads.
  *
  * A failure is returned; the finish's stop frees the objects that were made.
  *
@@ -257,7 +256,10 @@ nvrtx_display_start(
 
 	display->common_made = 1;
 
-	/* Reads the windows and heads, and declares DisplayPort handled by hand. */
+	/*
+	 * Reads the windows and heads, and declares DisplayPort handled by
+	 * hand.
+	 */
 	error = display_counts(gpu);
 	if (error != 0)
 		return error;
@@ -288,7 +290,10 @@ nvrtx_display_start(
 
 	display->root_made = 1;
 
-	/* Without the takeover the heads the firmware lit are read here for the log; with it, takeover reads them in its order. */
+	/*
+	 * Without the takeover the heads the firmware lit are read here for the
+	 * log; with it, takeover reads them in its order.
+	 */
 	takeover = nvrtx_stage_disp_wanted();
 	allowed = nvrtx_stage_allowed("takeover");
 	if (!takeover || !allowed)
@@ -429,11 +434,11 @@ display_instance(
 }
 
 /*
- * Finds the output the firmware lit and its head (the takeover stage): for each output with a resource, in the order of its
- * id, asks each head which display it drives until one drives this output,
- * then asks the output's resource and protocol.  The first lit output is
- * the one taken over.  Returns 0 (with gop_head_found clear when nothing
- * is lit) or the error of a control.
+ * Finds the output the firmware lit and its head (the takeover stage): for each
+ * output with a resource, in the order of its id, asks each head which display
+ * it drives until one drives this output, then asks the output's resource and
+ * protocol.  The first lit output is the one taken over.  Returns 0 (with
+ * gop_head_found clear when nothing is lit) or the error of a control.
  *
  * Procedure referenced: Linux v6.19
  * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/disp.c
@@ -504,10 +509,10 @@ nvrtx_display_inherit(
 }
 
 /*
- * Detects the connected outputs (the takeover stage): each output with a resource is asked whether a sink is connected;
- * a connected one is asked its flat-panel information, and a connected
- * TMDS output its EDID, which for the lit output gives the preferred
- * timing and the HDMI facts.
+ * Detects the connected outputs (the takeover stage): each output with a
+ * resource is asked whether a sink is connected; a connected one is asked its
+ * flat-panel information, and a connected TMDS output its EDID, which for the
+ * lit output gives the preferred timing and the HDMI facts.
  *
  * Procedure referenced: Linux v6.19
  * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/disp.c
@@ -795,7 +800,8 @@ display_event(
 }
 
 /*
- * Reads the windows and heads, loads the brightness state and takes DisplayPort by hand.
+ * Reads the windows and heads, loads the brightness state and takes DisplayPort
+ * by hand.
  *
  * The brightness state is "not supported" (the driver evaluates no ACPI
  * method for it).

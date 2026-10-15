@@ -128,7 +128,8 @@ nvrtx_rpc_send(
 	 * from zero, one sent before the GSP runs takes zero without using a
 	 * number.
 	 *
-	 * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/rpc.c
+	 * Procedure referenced: Linux v6.19
+	 * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/rpc.c
 	 * (r535_gsp_rpc_send).
 	 */
 	*sequence = 0U;
@@ -173,8 +174,9 @@ nvrtx_rpc_send(
  * its length.  Returns EIO when the reply carries an error result,
  * ETIMEDOUT when it did not come in time.
  *
- * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/rpc.c
- * (r535_gsp_msg_recv, r535_gsp_rpc_poll).
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/rpc.c (r535_gsp_msg_recv,
+ * r535_gsp_rpc_poll).
  */
 int
 nvrtx_rpc_wait(
@@ -244,7 +246,10 @@ nvrtx_rpc_wait(
 			continue;
 		}
 
-		/* A channel error is reported with its channel, its kind and the faulting address (channel-stop). */
+		/*
+		 * A channel error is reported with its channel, its kind and
+		 * the faulting address (channel-stop).
+		 */
 		if (got_function == NVRTX_EVENT_CHANNEL_ERROR && *length >= RPC_ERROR_BYTES) {
 			nvrtx_stage_mark("channel-stop channel error: eng %x chid %u type %u fault %08x%08x/%u",
 			    (unsigned)nvrtx_get32(gpu->reply, RPC_ERROR_ENGINE_AT),
@@ -256,7 +261,10 @@ nvrtx_rpc_wait(
 			continue;
 		}
 
-		/* The firmware's prints, bridge updates and crash records are dropped unseen. */
+		/*
+		 * The firmware's prints, bridge updates and crash records are
+		 * dropped unseen.
+		 */
 		if (got_function == NVRTX_EVENT_LIBOS_PRINT ||
 		    got_function == NVRTX_EVENT_BRIDGELESS ||
 		    got_function == NVRTX_EVENT_POST_NOCAT)
@@ -294,7 +302,8 @@ nvrtx_rm_allocate(
 }
 
 /*
- * Allocates one object under a given client and checks the status the firmware returns.
+ * Allocates one object under a given client and checks the status the firmware
+ * returns.
  *
  * Procedure referenced: Linux v6.19
  * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/alloc.c
@@ -346,7 +355,8 @@ nvrtx_rm_allocate_in(
 /*
  * Sends a control to an object and checks the status the firmware returns.
  *
- * The reply's parameters are left at *reply (inside gpu->reply) with their length.
+ * The reply's parameters are left at *reply (inside gpu->reply) with their
+ * length.
  *
  * Procedure referenced: Linux v6.19
  * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/ctrl.c
@@ -413,7 +423,8 @@ nvrtx_rm_free(
 }
 
 /*
- * Frees one object of a given client (the client itself when object is the client's handle).
+ * Frees one object of a given client (the client itself when object is the
+ * client's handle).
  *
  * Procedure referenced: Linux v6.19
  * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/alloc.c

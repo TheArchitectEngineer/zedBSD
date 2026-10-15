@@ -34,7 +34,8 @@
 #define NVRTX_GSP_PAGE_SHIFT		12U
 
 /*
- * The firmware container header at the start of the booter and bootloader files.
+ * The firmware container header at the start of the booter and bootloader
+ * files.
  *
  * Six little-endian words: magic, version, file size, offset of the inner
  * header, offset and size of the payload.
@@ -157,7 +158,8 @@
 #define NVRTX_WPRM_BOOT_COUNT_AT	200U
 
 /*
- * One memory region the GSP's operating system is told about at start, 32 bytes.
+ * One memory region the GSP's operating system is told about at start, 32
+ * bytes.
  *
  * An eight-character name packed into a word, the bus address, the size,
  * the kind (1 = one contiguous range) and the location (1 = system memory).
@@ -369,7 +371,8 @@ struct nvrtx_elf {
 };
 
 /*
- * The falcon bootloader's descriptor: the start tag, then the code's offset and size in the payload.
+ * The falcon bootloader's descriptor: the start tag, then the code's offset and
+ * size in the payload.
  *
  * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/include/nvfw/fw.h
  * (struct nvfw_bl_desc).

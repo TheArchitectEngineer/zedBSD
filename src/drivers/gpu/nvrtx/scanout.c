@@ -6,20 +6,20 @@
  */
 
 /*
-  * The takeover of the firmware's head (the takeover stage, on by default, off
-  * with nvrtx.disp=0).
+ * The takeover of the firmware's head (the takeover stage, on by default, off
+ * with nvrtx.disp=0).
  *
-  * After display-client found the head the firmware (GOP) lit, the driver
-  * makes the display's core channel and the head's first window channel
-  * through the resource manager, writes their context DMA objects and
-  * hash-table entries into the display's instance memory, and sends the head
-  * the state it is armed with: the same timing, the same output resource (SOR)
-  * and control, so the output keeps running.  The window then shows the
-  * firmware's console, kept at the VRAM's start (layout and vram-window), so
-  * the console goes on where it was; the GPU device (gpu-device) flips away
-  * from it and back.  With nvrtx.disp.test=1 the window shows a surface of the
-  * driver's own instead, a flip moves it to a second one, and each step waits
-  * 5 s so the monitor can be watched.
+ * After display-client found the head the firmware (GOP) lit, the driver makes
+ * the display's core channel and the head's first window channel through the
+ * resource manager, writes their context DMA objects and hash-table entries
+ * into the display's instance memory, and sends the head the state it is armed
+ * with: the same timing, the same output resource (SOR) and control, so the
+ * output keeps running.  The window then shows the firmware's console, kept at
+ * the VRAM's start (layout and vram-window), so the console goes on where it
+ * was; the GPU device (gpu-device) flips away from it and back.  With
+ * nvrtx.disp.test=1 the window shows a surface of the driver's own instead, a
+ * flip moves it to a second one, and each step waits 5 s so the monitor can be
+ * watched.
  *
  * The order: every channel is made first (the core, then for each head its
  * two windows with their window-immediate channels and its cursor), the
@@ -121,7 +121,10 @@
 #define SCANOUT_SURFACE_ALIGN		0x100000ULL
 #define SCANOUT_BAND_COUNT		8U
 
-/* The output resource a head can be driven by: the SOR's index from display-client, at most 8. */
+/*
+ * The output resource a head can be driven by: the SOR's index from
+ * display-client, at most 8.
+ */
 #define SCANOUT_SOR_MAX			8U
 
 /* The most words one frame's methods take in a window's push buffer (the image, the flip and the update). */
@@ -287,10 +290,10 @@ static int scanout_core_send_cursor(struct nvrtx_gpu *gpu);
 static int scanout_cursor_write(struct nvrtx_gpu *gpu, uint32_t method, uint32_t value);
 
 /*
-  * Runs the takeover stage: makes the display's channels, inherits the output
-  * the firmware lit, detects the sinks and commits the first mode on the lit
-  * head, showing the console on it (with the monitor test, a surface of bands
-  * and a flip).
+ * Runs the takeover stage: makes the display's channels, inherits the output
+ * the firmware lit, detects the sinks and commits the first mode on the lit
+ * head, showing the console on it (with the monitor test, a surface of bands
+ * and a flip).
  *
  * Without a head the firmware lit, or without a console the head can show,
  * nothing is committed (the scanout rule) and display.taken stays 0.  A
@@ -411,9 +414,8 @@ nvrtx_scanout_start(
 }
 
 /*
-  * Frees every channel takeover made before the display's root: the cursors,
-  * the window-immediate channels, the windows, the core.  Failures are only
-  * shown.
+ * Frees every channel takeover made before the display's root: the cursors, the
+ * window-immediate channels, the windows, the core.  Failures are only shown.
  */
 void
 nvrtx_scanout_stop(
@@ -659,9 +661,9 @@ nvrtx_scanout_frame_wait(
 }
 
 /*
-  * Reports whether the taken-over head has its cursor channel (the gpu-device
-  * stage): takeover makes every head's cursor channel with the others.
-  * Without it the display has no cursor plane.
+ * Reports whether the taken-over head has its cursor channel (the gpu-device
+ * stage): takeover makes every head's cursor channel with the others.  Without
+ * it the display has no cursor plane.
  *
  * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/head.c
  * (nv50_head_create).
@@ -972,10 +974,10 @@ scanout_surfaces(
 	}
 
 	/*
-	  * Takes two surfaces from the VRAM allocator (vram-window), mapped in
-	  * the CPU's window when there is one; without the allocator, under
-	  * the graphics and compute arenas' reserve in the last usable region,
-	  * as before.
+	 * Takes two surfaces from the VRAM allocator (vram-window), mapped in
+	 * the CPU's window when there is one; without the allocator, under the
+	 * graphics and compute arenas' reserve in the last usable region, as
+	 * before.
 	 */
 	span = (uint64_t)((width * 4U + SCANOUT_PITCH_ALIGN - 1U) & ~(SCANOUT_PITCH_ALIGN - 1U)) * height;
 	span = (span + SCANOUT_SURFACE_ALIGN - 1U) & ~(SCANOUT_SURFACE_ALIGN - 1U);
@@ -1024,12 +1026,12 @@ scanout_surfaces(
 /*
  * Describes the firmware's console as both surfaces (the second is never
  * flipped to without the test): its VRAM at the start, its size, pitch and
- * format.  The console is shown only when it was kept (layout, vram-window), is no
- * larger than the mode's visible size and has a pitch the window takes (a
- * multiple of 64 bytes); otherwise ENOTSUP leaves the head to the firmware.
- * A console smaller than the mode is enlarged by the head's scaler, as the
- * firmware itself shows it (a GOP mode of 640x480 on a monitor driven at
- * its own mode).
+ * format.  The console is shown only when it was kept (layout, vram-window), is
+ * no larger than the mode's visible size and has a pitch the window takes (a
+ * multiple of 64 bytes); otherwise ENOTSUP leaves the head to the firmware.  A
+ * console smaller than the mode is enlarged by the head's scaler, as the
+ * firmware itself shows it (a GOP mode of 640x480 on a monitor driven at its
+ * own mode).
  */
 static int
 scanout_console_surface(
@@ -1111,7 +1113,10 @@ scanout_surface_objects(
 		if (error != 0)
 			return error;
 
-		/* The CPU's view is for later frames; takeover paints through PRAMIN, so a missing window is no failure. */
+		/*
+		 * The CPU's view is for later frames; takeover paints through
+		 * PRAMIN, so a missing window is no failure.
+		 */
 		if (gpu->memory_state.bar1_ready != 0)
 			(void)nvrtx_bo_map(gpu, object);
 	}

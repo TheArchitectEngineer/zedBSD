@@ -6,8 +6,8 @@
  */
 
 /*
-  * The GPU device of the nvrtx driver: sessions and resources (the gpu-device
-  * stage).
+ * The GPU device of the nvrtx driver: sessions and resources (the gpu-device
+ * stage).
  *
  * By default (unless nvrtx.resident=0) with a head taken over (takeover), the
  * worker leaves the GSP up and registers the GPU with the GPU core.  The
@@ -93,9 +93,9 @@ static uint64_t node_perf_average(uint64_t total, uint64_t count);
 /*
  * Registers the GPU as a GPU device after the takeover (the gpu-device stage).
  *
- * Needs the CPU's window (vram-window) and the head taken over (takeover).  Returns 0
- * once the device is registered: the GSP must then stay up.  On a failure
- * nothing is registered and the caller stops the GSP as usual.
+ * Needs the CPU's window (vram-window) and the head taken over (takeover).
+ * Returns 0 once the device is registered: the GSP must then stay up.  On a
+ * failure nothing is registered and the caller stops the GSP as usual.
  */
 int
 nvrtx_node_start(
@@ -189,10 +189,11 @@ nvrtx_node_start(
 
 	/*
 	 * Starts the thread that takes the messages the GSP sends meanwhile
-	 * (channel errors, display events), so its queue never fills.  Without it the device still works for a
-	 * while, so a failure is only shown.
+	 * (channel errors, display events), so its queue never fills.  Without
+	 * it the device still works for a while, so a failure is only shown.
 	 *
-	 * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gsp.c
+	 * Procedure referenced: Linux v6.19
+	 * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gsp.c
 	 * (r535_gsp_msgq_work).
 	 */
 	error = kthread_create(node_drain, node, SCHED_PRIORITY_DEFAULT, &drain);

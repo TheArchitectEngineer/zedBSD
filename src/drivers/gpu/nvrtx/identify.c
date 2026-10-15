@@ -296,7 +296,8 @@ nvrtx_identify(
 	/*
 	 * A GPU switched to big-endian would need a write to switch back, and
 	 * identify never writes; anything else in the second register but the
-	 * little-endian zero and the virtual-function bits is not trusted either.
+	 * little-endian zero and the virtual-function bits is not trusted
+	 * either.
 	 */
 	if (ident1 == NVRTX_IDENT_1_BIG_ENDIAN)
 		return ENODEV;

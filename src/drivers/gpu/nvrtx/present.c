@@ -764,7 +764,10 @@ present_wait(
 	return 0;
 }
 
-/* Reports the head's refresh in millihertz from the pixel clock and raster of the mode takeover set. */
+/*
+ * Reports the head's refresh in millihertz from the pixel clock and raster of
+ * the mode takeover set.
+ */
 static uint32_t
 present_refresh(
 	const struct nvrtx_display_state *display)

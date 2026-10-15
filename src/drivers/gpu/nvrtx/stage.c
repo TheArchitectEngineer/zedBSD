@@ -13,24 +13,26 @@
  * firmware's framebuffer, and the kernel log, show how far the driver came.
  * Lines are cut to the console's width.
  *
- * The parameters are read from the raw boot command line, because the driver
- * attaches while the platform discovers its devices, before the kernel parses
- * the line:
- *
  * The stages that make the display work run by default (without them the
  * desktop does not run on a machine whose display is on the NVIDIA GPU): the
  * GSP boot, the VRAM window (vram-window), the display's readout, the
  * takeover of the firmware's head showing the console (takeover) and the GPU
  * device (gpu-device).  The test stages run only when asked.
  *
- *   nvrtx.off=1, nvrtx=off  the driver does not look at the GPU at all
+ * The parameters are read from the raw boot command line, because the driver
+ * attaches while the platform discovers its devices, before the kernel parses
+ * the line:
+ *
+ *   nvrtx.off=1, nvrtx=off
+ *                         the driver does not look at the GPU at all
  *   nvrtx.stop=<stage>    the driver stops before that stage
  *   nvrtx.gsp=0           the GPU is left to the firmware after console (the
  *                         stages that write never run); nvrtx.gsp=1 also
  *                         boots the GSP when the firmware's picture is
  *                         not on the GPU or cannot be kept (a test run)
  *   nvrtx.disp=0          the driver stops after the display's readout
- *                         (display-client) instead of taking the firmware's head over
+ *                         (display-client) instead of taking the firmware's
+ *                         head over
  *   nvrtx.resident=0      after the takeover the GSP is stopped instead of
  *                         staying up as a GPU device (gpu-device)
  *   nvrtx.disp.own=1      the takeover shows the driver's own surface (the
@@ -43,12 +45,13 @@
  *                         the monitor can be watched
  *   nvrtx.gr=1            after the copy channel, the driver has the
  *                         resource manager make the graphics golden context
- *                         (and the TU10x scrubber channel), the golden-context stage
+ *                         (and the TU10x scrubber channel), the golden-context
+ *                         stage
  *   nvrtx.compute=1       the first compute launch (compute-test, a test)
  *   nvrtx.draw=1          the first draw (draw-test, a test)
- *   nvrtx.work=1          the work channel the GPU device keeps (work-channel, with
- *                         the golden context it needs; the renderer implies
- *                         it)
+ *   nvrtx.work=1          the work channel the GPU device keeps (work-channel,
+ *                         with the golden context it needs; the renderer
+ *                         implies it)
  *   nvrtx.vk=0            the GPU device is a display alone; by default it
  *                         is also a renderer that takes the Vulkan
  *                         protocol's commands and runs them on the work
@@ -99,10 +102,16 @@
 /* The whole token that makes the GPU device a renderer. */
 #define STAGE_VK_OFF_TOKEN		"nvrtx.vk=0"
 
-/* The whole token that asks for the renderer's and the display's counts every 5 s. */
+/*
+ * The whole token that asks for the renderer's and the display's counts every
+ * 5 s.
+ */
 #define STAGE_VK_PERF_TOKEN		"nvrtx.vk.perf=1"
 
-/* The whole token that stops the GSP after the takeover instead of keeping the GPU device. */
+/*
+ * The whole token that stops the GSP after the takeover instead of keeping the
+ * GPU device.
+ */
 #define STAGE_RESIDENT_OFF_TOKEN	"nvrtx.resident=0"
 
 /* The longest stop token: "nvrtx.stop=" and a stage name. */

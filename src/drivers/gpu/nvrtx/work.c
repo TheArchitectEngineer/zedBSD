@@ -24,10 +24,10 @@
  *   4. a first submission that binds both classes to their subchannels,
  *      and its fence.
  *
- * Afterwards nvrtx_work_submit() hands a push buffer segment to the
- * channel followed by a fence of the driver's, nvrtx_work_wait() polls for
- * a fence, and the map calls write the space's page entries for a run and
- * drop the stale translations.  The stop undoes 3 and 2 before the graphics context's stop.
+ * Afterwards nvrtx_work_submit() hands a push buffer segment to the channel
+ * followed by a fence of the driver's, nvrtx_work_wait() polls for a fence, and
+ * the map calls write the space's page entries for a run and drop the stale
+ * translations.  The stop undoes 3 and 2 before the graphics context's stop.
  */
 
 #include <stdbool.h>
@@ -762,7 +762,10 @@ work_buffers(
 	if (error != 0)
 		return error;
 
-	/* The method buffer, as large as the resource manager asked for copy-channel's. */
+	/*
+	 * The method buffer, as large as the resource manager asked for
+	 * copy-channel's.
+	 */
 	error = nvrtx_buffer_alloc(gpu, gpu->engine.methods_size, &work->methods);
 	if (error != 0)
 		return error;

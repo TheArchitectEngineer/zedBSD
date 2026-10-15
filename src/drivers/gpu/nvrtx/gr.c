@@ -102,10 +102,11 @@ static bool gr_needs_scrubber(const struct nvrtx_gpu *gpu);
 static uint64_t gr_align(uint64_t value, uint32_t shift);
 
 /*
- * Runs the golden-context stage: the golden context, then the scrubber on the chips that need one.
+ * Runs the golden-context stage: the golden context, then the scrubber on the
+ * chips that need one.
  *
- * The copy channel of copy-channel is already running.  A failure is returned; the
- * finish's stop frees whatever objects were made.
+ * The copy channel of copy-channel is already running.  A failure is returned;
+ * the finish's stop frees whatever objects were made.
  *
  * Procedure referenced: Linux v6.19
  * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gr.c (r535_gr_oneinit,

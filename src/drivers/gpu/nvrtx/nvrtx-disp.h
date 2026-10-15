@@ -6,8 +6,8 @@
  */
 
 /*
-  * The records of the display channels (the takeover stage) that touch no
-  * hardware.
+ * The records of the display channels (the takeover stage) that touch no
+ * hardware.
  *
  * A display channel (the core channel and the window channels of the
  * Turing display) reads methods from a push buffer; this header names the
@@ -117,8 +117,9 @@
 /*
  * The resource manager's request to assign an output resource to a display.
  *
- * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/disp.c
- * (the output resource's acquire).
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/disp.c (the output resource's
+ * acquire).
  */
 #define NVRTX_DISP_ASSIGN_SOR_BYTES	80U
 #define NVRTX_DISP_SOR_NONE		0xffffffffU

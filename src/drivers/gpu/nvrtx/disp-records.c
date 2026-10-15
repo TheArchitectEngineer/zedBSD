@@ -6,8 +6,8 @@
  */
 
 /*
-  * The records of the display channels (the takeover stage) that touch no
-  * hardware.
+ * The records of the display channels (the takeover stage) that touch no
+ * hardware.
  *
  * The push-buffer methods of the core and window channels, the hash-table
  * entries and context DMA objects of the display's instance memory, and the
@@ -571,7 +571,8 @@ nvrtx_disp_pio_pushbuffer_params(
 }
 
 /*
- * Writes a PIO channel's allocation: its instance (the head), no notifier, no pointer.
+ * Writes a PIO channel's allocation: its instance (the head), no notifier, no
+ * pointer.
  *
  * Procedure referenced: Linux v6.19
  * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/disp.c (r535_curs_init).
@@ -756,7 +757,9 @@ nvrtx_disp_core_head_mode(
 	nvrtx_push_one(push, base + NVRTX_HEAD_RASTER_VERT_BLANK2, mode->vert_blank2);
 	nvrtx_push_one(push, base + NVRTX_HEAD_CONTROL, RECORDS_CONTROL_PROGRESSIVE);
 
-	/* The pixel clock, its maximum the same, and the head's usage bounds. */
+	/*
+	 * The pixel clock, its maximum the same, and the head's usage bounds.
+	 */
 	nvrtx_push_one(push, base + NVRTX_HEAD_PIXEL_CLOCK, mode->clock_hz & RECORDS_CLOCK_HERTZ_MASK);
 	nvrtx_push_one(push, base + NVRTX_HEAD_PIXEL_CLOCK_MAX, mode->clock_hz & RECORDS_CLOCK_HERTZ_MASK);
 	nvrtx_push_one(push, base + NVRTX_HEAD_USAGE_BOUNDS, RECORDS_HEAD_USAGE_BOUNDS);
@@ -770,8 +773,8 @@ nvrtx_disp_core_head_mode(
 /*
  * Derives a head's mode from the state the firmware armed it with.
  *
- * The visible size is the blank start less the blank end (as the readout
- * of display-client shows it), not the armed viewport, which may be a scaled one.
+ * The visible size is the blank start less the blank end (as the readout of
+ * display-client shows it), not the armed viewport, which may be a scaled one.
  */
 void
 nvrtx_disp_mode_from_armed(

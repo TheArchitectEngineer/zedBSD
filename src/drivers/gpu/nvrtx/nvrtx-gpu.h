@@ -108,7 +108,10 @@ struct nvrtx_node;
 #define NVRTX_HANDLE_COMPUTE_CHANNEL	0xf1f00003U
 #define NVRTX_HANDLE_COMPUTE		0xc5c00003U
 
-/* The first draw's 3D object (draw-test), on the compute launch's channel, in the same family. */
+/*
+ * The first draw's 3D object (draw-test), on the compute launch's channel, in
+ * the same family.
+ */
 #define NVRTX_HANDLE_DRAW		0x97000003U
 
 /*
@@ -143,7 +146,10 @@ struct nvrtx_node;
 #define NVRTX_GR_ARENA_RESERVE		0x8800000ULL
 #define NVRTX_COMPUTE_ARENA_RESERVE	0xa800000ULL
 
-/* The hash-table entries the display's channels add (takeover): two objects for each of two channels. */
+/*
+ * The hash-table entries the display's channels add (takeover): two objects for
+ * each of two channels.
+ */
 #define NVRTX_DISP_RAMHT_USED_MAX	24U
 
 /* How long a call to the resource manager waits for its reply. */
@@ -197,7 +203,8 @@ struct nvrtx_blob {
 };
 
 /*
- * The memory the GSP boot prepares in layout and keeps while the GSP may read it.
+ * The memory the GSP boot prepares in layout and keeps while the GSP may read
+ * it.
  *
  * Every buffer stays allocated until the GSP is stopped (unload) or, when the
  * boot never started the GSP, until the worker gives the preparation back.
@@ -403,15 +410,16 @@ struct nvrtx_draw_state {
 };
 
 /*
- * The VRAM the driver hands out and the CPU's window onto it (the vram-window stage).
+ * The VRAM the driver hands out and the CPU's window onto it (the vram-window
+ * stage).
  *
- * The VRAM allocator covers the last usable region below the fixed arenas
- * of address-space to compute-test; the BAR1 allocator covers the window the driver's page
- * tables map.  The BAR1 root (top level) is the resource
+ * The VRAM allocator covers the last usable region below the fixed arenas of
+ * address-space to compute-test; the BAR1 allocator covers the window the
+ * driver's page tables map.  The BAR1 root (top level) is the resource
  * manager's, from the static information; the driver writes its own lower
- * levels and the root's first entry.  lock serializes both allocators and
- * the page entries; it is taken before the GPU's window_lock.  The flags
- * say what exists, so the release gives back only that.
+ * levels and the root's first entry.  lock serializes both allocators and the
+ * page entries; it is taken before the GPU's window_lock.  The flags say what
+ * exists, so the release gives back only that.
  *
  * Procedure referenced: Linux v6.19
  * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/bar.c (the BAR1 root from
@@ -425,7 +433,10 @@ struct nvrtx_memory_state {
 	struct nvrtx_heap bar1;
 	uint64_t bar1_root;
 	uint64_t bar1_root_entry;
-	/* The root's first entry as vram-window writes it (at the driver's directories), checked when the window misbehaves. */
+	/*
+	 * The root's first entry as vram-window writes it (at the driver's
+	 * directories), checked when the window misbehaves.
+	 */
 	uint64_t bar1_root_ours;
 	uint64_t bar1_tables;
 	uint64_t bar1_window;
@@ -472,7 +483,10 @@ struct nvrtx_display_state {
 	int common_made;
 	int root_made;
 
-	/* display-client: the display's own client and objects, and each output's resource, type and protocol by id bit. */
+	/*
+	 * display-client: the display's own client and objects, and each
+	 * output's resource, type and protocol by id bit.
+	 */
 	int client_made;
 	int device_made;
 	int subdevice_made;
@@ -482,7 +496,10 @@ struct nvrtx_display_state {
 	uint32_t output_type[32];
 	uint32_t output_protocol[32];
 
-	/* takeover: the outputs connected, what the lit output's EDID says, and the LUTs' VRAM. */
+	/*
+	 * takeover: the outputs connected, what the lit output's EDID says, and
+	 * the LUTs' VRAM.
+	 */
 	uint32_t connected_mask;
 	struct nvrtx_disp_sink sink;
 	struct nvrtx_disp_timing timing;
@@ -492,7 +509,10 @@ struct nvrtx_display_state {
 	/* The window's notifier the next flip uses (its slot's two halves in turn). */
 	uint32_t window_ntfy;
 
-	/* takeover: the channels (the core, every window, window-immediate and cursor), their push buffers and what the takeover wrote. */
+	/*
+	 * takeover: the channels (the core, every window, window-immediate and
+	 * cursor), their push buffers and what the takeover wrote.
+	 */
 	struct nvrtx_buffer core_buffer;
 	struct nvrtx_buffer window_buffers[NVRTX_DISP_WINDOWS];
 	struct nvrtx_buffer wimm_buffers[NVRTX_DISP_WINDOWS];
@@ -524,23 +544,25 @@ struct nvrtx_display_state {
 	int window_made;
 	int cursor_made;
 	int core_pending;
-	/* Set once takeover shows its surface on the head: the GPU device (gpu-device) may take the display. */
+	/*
+	 * Set once takeover shows its surface on the head: the GPU device
+	 * (gpu-device) may take the display.
+	 */
 	int taken;
 };
 
 /*
- * The firmware's console on the GPU the machine boots on (the
- * native boot): the picture the GOP left at the start of the VRAM window,
- * which the window reaches in its physical mode until the resource manager
- * makes it virtual.  When the console is kept, the resource manager is told
- * its size (it keeps that much VRAM from offset 0, as for the vendor's
- * driver), vram-window maps the window's first pages back onto it, takeover shows it on
- * the taken-over head, and a GSP that stops leaves the window in physical
- * mode again.
+ * The firmware's console on the GPU the machine boots on (the native boot): the
+ * picture the GOP left at the start of the VRAM window, which the window
+ * reaches in its physical mode until the resource manager makes it virtual.
+ * When the console is kept, the resource manager is told its size (it keeps
+ * that much VRAM from offset 0, as for the vendor's driver), vram-window maps
+ * the window's first pages back onto it, takeover shows it on the taken-over
+ * head, and a GSP that stops leaves the window in physical mode again.
  *
  * kept says the GSP boot may go on with the console; mapped says the window
- * reaches it again (vram-window).  size is the VRAM it takes in whole 64 KiB, pitch
- * its row in bytes; bar1_block is the window's mode register as the
+ * reaches it again (vram-window).  size is the VRAM it takes in whole 64 KiB,
+ * pitch its row in bytes; bar1_block is the window's mode register as the
  * firmware left it.
  */
 struct nvrtx_console {
@@ -621,7 +643,10 @@ struct nvrtx_gpu {
 	/* The VRAM allocator and the BAR1 window. */
 	struct nvrtx_memory_state memory_state;
 
-	/* The firmware's console kept through the boot (written by the worker before layout, read after). */
+	/*
+	 * The firmware's console kept through the boot (written by the worker
+	 * before layout, read after).
+	 */
 	struct nvrtx_console console;
 
 	/*
@@ -631,14 +656,18 @@ struct nvrtx_gpu {
 	 */
 	struct mutex window_lock;
 
-	/* The static information static-info read, and the resource manager's own client and subdevice. */
+	/*
+	 * The static information static-info read, and the resource manager's
+	 * own client and subdevice.
+	 */
 	uint8_t *static_info;
 	uint32_t internal_client;
 	uint32_t internal_subdevice;
 
 	/*
-	 * The registered GPU device (the gpu-device stage), and whether the GSP stays up
-	 * for it: then detach refuses, and the GPU is kept until power-off.
+	 * The registered GPU device (the gpu-device stage), and whether the GSP
+	 * stays up for it: then detach refuses, and the GPU is kept until
+	 * power-off.
 	 */
 	struct nvrtx_node *node;
 	int resident;

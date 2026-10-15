@@ -775,7 +775,10 @@ nvrtx_exec_texture_header(
 	exec_field(header, 151U, 4U, TIC_TYPE_TWO_D_NO_MIPMAP);
 	exec_field(header, 160U, 16U, height - 1U);
 
-	/* The sector promotion, border from the sampler, normalized coordinates and spread functions. */
+	/*
+	 * The sector promotion, border from the sampler, normalized coordinates
+	 * and spread functions.
+	 */
 	exec_field(header, 155U, 2U, TIC_PROMOTE_TO_2_V);
 	exec_field(header, 157U, 3U, TIC_BORDER_SAMPLER_COLOR);
 	exec_field(header, 191U, 1U, 1U);
