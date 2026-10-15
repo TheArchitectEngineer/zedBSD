@@ -33,6 +33,7 @@ compiler/ は WS246 の範囲で、ここでは触らない。
 ## 結果
 
 - **q986 P3（cleared の候補、main に merge 046ce5e1c、提出 97f772767）**: 27 file を監査し 18 file の comment を変更。draw-push.c の上部の一覧（Mesa の 8 path と SHA-256・派生の宣言）を消し block ごとへ（Values 13・Procedure 11）。exec-push.c の method 47 件は clc597.h の NVC597_* と一致。cpp の比較 27/27 同じ、build rc 0・warning 0、監査の grep は referenced: の段落だけ。段の名前の残り（vk-dispatch.c の D2/D3、work.c の D1）も comment から除いた。
+- **q985 P2（cleared の候補、main に merge 7f159e376、提出 0adcc03a2・a3ffb1fa0・c0cd135d9）**: 11 file のうち 8 file。scanout.c 26（値 15・手順 11）、disp-records.c 34、nvrtx-disp.h 24、objects.c 17、display.c 10（既存 4 か所を関数名に具体化）、channel.c 7（PRAMIN・TLB・USERD・doorbell・copy の subchannel、channel_flush・channel_submit に Procedure）、present.c 2、share.c 1。scanout.c の上部の出典の段落を関数へ移し、本文の出典の名前 scanout.c 21・disp-records.c 16 を除いた。cursor.c・node.c・nvrtx-node.h は自前の値だけで 0。構造体の大きさ・field の位置は ogkm 570.144 の header を host で compile して一致を確かめた（表示 channel の push buffer の登録 56 bytes・channel の確保 40 bytes は 570.144 の layout なので ogkm と r570 を引く）。cpp の比較 11/11 同じ、build rc 0・warning 0、監査の grep は referenced: の段落の外で 0。
 - Q1: vk-node.c の log の段の名前 `D3` → `executor`（`D3 fail` → `executor fail`）。runtime.c の `D2` は P1 の merge の後に `renderer` へ。
 
 ## 出典の無い値
@@ -45,3 +46,5 @@ compiler/ は WS246 の範囲で、ここでは触らない。
 | gr.c | GR_CHIPSET_TU102/104/106 が scrubber を要すること | chipset の番号だけ出典あり、scrubber の対象の根拠なし |
 | image.c | IMAGE_ELF_*・IMAGE_SECTION_* | ELF の公開仕様（付けない） |
 | nvrtx-vk-objects.h | NVRTX_VK_IMAGE_SIDE_MAX（16384） | 自前の上限（NVK は 32768） |
+| scanout.c | SCANOUT_REG_SOR_CAPS（0x64013c） | **参照の tree に定義の無い番地**。SOR の caps は NV_PDISP_FE_SW_SOR_CAP(i)＝0x640144＋i*8（sorc37d_get_caps も 0x144＋or*8）。scanout.c:1273 で読んで値を捨てている。code の直しは WS247 の範囲外、WS037 の後続で判断（読みを消すか 0x640144＋or*8 に） |
+| channel.c | CHANNEL_VA_LIMIT（1<<47） | field（NV_RAMIN_ADR_LIMIT）は dev_ram.h にあるが 47 bit の出典なし、自前の選択 |
