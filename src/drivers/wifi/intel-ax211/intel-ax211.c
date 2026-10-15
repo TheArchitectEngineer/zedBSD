@@ -3303,9 +3303,12 @@ ax211_pci_reopen_request_locked(
 	struct ax211_pci_controller *controller)
 {
 	/* A closed, detaching, or stationless device has nothing to restart. */
-	if (!controller->net_opened || controller->detaching ||
-	    !controller->station_attached || controller->station == NULL)
+	if (!controller->net_opened ||
+	    controller->detaching ||
+	    !controller->station_attached ||
+	    controller->station == NULL) {
 		return;
+	}
 
 	/*
 	 * A run of restarts that never completed a scan is not repeated
@@ -3333,32 +3336,38 @@ ax211_pci_ltr_enabled(
 	unsigned capability;
 	int error;
 
-	/* Handles the controller availability. */
+	/* Refuses missing arguments. */
 	if (controller == NULL || enabled == NULL)
 		return EINVAL;
 	*enabled = 0;
 	capability = 0U;
 
-	/* Checks the operation status. */
+	/* A device without the PCIe capability has LTR off. */
 	error = drv_pci_device_find_capability(
 		controller->device, AX211_PCIE_CAPABILITY, &capability);
 	if (error == ENOENT)
 		return 0;
-	if (error != 0 || capability > UINT32_MAX - AX211_PCIE_DEVICE_CONTROL2)
-		return error != 0 ? error : EIO;
 
-	/* Checks the operation status. */
-	error = drv_pci_device_config_read16(
-		controller->device, capability + AX211_PCIE_DEVICE_CONTROL2,
-		&control);
-	if (error == 0)
-		*enabled = (control & AX211_PCIE_DEVICE_CONTROL2_LTR) != 0U;
-
-	/* Reports the failure. */
+	/* Reports a failed search. */
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Refuses a capability whose register lies beyond the space. */
+	if (capability > UINT32_MAX - AX211_PCIE_DEVICE_CONTROL2)
+		return EIO;
+
+	/* Reads the LTR enable bit. */
+	error = drv_pci_device_config_read16(
+		controller->device, capability + AX211_PCIE_DEVICE_CONTROL2,
+		&control);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: reports the bit. */
+	if ((control & AX211_PCIE_DEVICE_CONTROL2_LTR) != 0U)
+		*enabled = 1;
+	else
+		*enabled = 0;
 	return 0;
 }
 
@@ -3372,24 +3381,30 @@ ax211_pci_irq(
 	unsigned long enabled;
 	int schedule;
 
-	/* Handles the controller availability. */
+	/* An interrupt without a controller is not ours. */
 	controller = argument;
 	if (controller == NULL)
 		return 0;
+
+	/* Latches the interrupt and decides whether to poll. */
 	enabled = spin_lock_irqsave(&controller->interrupt_lock);
 
 	controller->irq_latched = 1U;
 	device = controller->net_device;
-	schedule = controller->receive_enabled && controller->runtime_active &&
-		   device != NULL;
+	schedule = 0;
+	if (controller->receive_enabled &&
+	    controller->runtime_active &&
+	    device != NULL) {
+		schedule = 1;
+	}
 
 	spin_unlock_irqrestore(&controller->interrupt_lock, enabled);
 
-	/* Handles the schedule condition. */
+	/* Schedules the poll. */
 	if (schedule)
 		net_device_schedule_poll(device);
 
-	/* Reports operation failure. */
+	/* The interrupt was ours. */
 	return 1;
 }
 
@@ -3403,10 +3418,12 @@ ax211_pci_receive_epoch_begin(
 	unsigned long enabled;
 	int result;
 
-	/* Handles the controller availability. */
+	/* Refuses a missing controller and an unset epoch. */
 	controller = argument;
 	if (controller == NULL || generation == 0U)
 		return -1;
+
+	/* Clears the receive state under the interrupt lock. */
 	enabled = spin_lock_irqsave(&controller->interrupt_lock);
 
 	controller->receive_enabled = 0U;
@@ -3417,9 +3434,10 @@ ax211_pci_receive_epoch_begin(
 	controller->last_receive_length = 0U;
 	controller->last_receive_version = 0U;
 
-	/* Checks the operation result. */
-	result = controller->irq_allocated || controller->irq_established ? -1
-									  : 0;
+	/* Admits the epoch only while no vector is held. */
+	result = 0;
+	if (controller->irq_allocated || controller->irq_established)
+		result = -1;
 	if (result == 0) {
 		controller->hardware_epoch = generation;
 		controller->receive_enabled = 1U;
@@ -3427,8 +3445,12 @@ ax211_pci_receive_epoch_begin(
 
 	spin_unlock_irqrestore(&controller->interrupt_lock, enabled);
 
-	/* Returns the computed result. */
-	return result;
+	/* Reports a held vector. */
+	if (result != 0)
+		return result;
+
+	/* Succeeded: events of the epoch are admitted. */
+	return 0;
 }
 
 /* Binds coherent rings and one exact MSI-X vector transactionally. */
@@ -3442,39 +3464,60 @@ ax211_pci_transport_bind(
 {
 	struct ax211_pci_controller *controller;
 	struct intel_ax211_transport_ring_memory memory;
+	struct drv_dma_device *pci_dma;
 	unsigned count;
 	unsigned long enabled;
 	int bus_master_enabled;
+	int coherent;
+	int disestablish_result;
+	int master_result;
 	int result;
 
-	/* Checks the drv pci device dma result. */
+	/*
+	 * Refuses missing arguments, another controller's MMIO or transport, and
+	 * an unset epoch.
+	 */
 	controller = argument;
-	if (controller == NULL || dma == NULL || mmio != &controller->mmio ||
-	    transport != &controller->transport || generation == 0U ||
-	    dma->device == NULL ||
-	    dma->device != drv_pci_device_dma(controller->device)) {
-		/* Reports operation failure. */
+	if (controller == NULL ||
+	    dma == NULL ||
+	    mmio != &controller->mmio ||
+	    transport != &controller->transport ||
+	    generation == 0U ||
+	    dma->device == NULL) {
 		return -1;
 	}
+
+	/* Refuses DMA memory of another device. */
+	pci_dma = drv_pci_device_dma(controller->device);
+	if (dma->device != pci_dma)
+		return -1;
+
+	/* Requires the epoch to be admitted and no vector to be held. */
 	enabled = spin_lock_irqsave(&controller->interrupt_lock);
 
-	result = !controller->receive_enabled ||
-				 controller->hardware_epoch != generation ||
-				 controller->irq_allocated ||
-				 controller->irq_established
-			 ? -1
-			 : 0;
+	result = 0;
+	if (!controller->receive_enabled ||
+	    controller->hardware_epoch != generation ||
+	    controller->irq_allocated ||
+	    controller->irq_established) {
+		result = -1;
+	}
 
 	spin_unlock_irqrestore(&controller->interrupt_lock, enabled);
 
-	/* Checks the drv dma device is coherent result. */
-	if (result != 0 || !drv_dma_device_is_coherent(dma->device))
+	/* Reports an epoch that is not admitted. */
+	if (result != 0)
+		return -1;
+
+	/* Refuses DMA memory that is not coherent. */
+	coherent = drv_dma_device_is_coherent(dma->device);
+	if (!coherent)
 		return -1;
 
 	kern_memset(&memory, 0, sizeof(memory));
 	bus_master_enabled = 0;
 
-	/* Checks the operation result. */
+	/* Turns bus mastering on and initializes the transport backend. */
 	result = drv_pci_device_set_bus_master(controller->device, true);
 	if (result == 0) {
 		bus_master_enabled = 1;
@@ -3483,13 +3526,13 @@ ax211_pci_transport_bind(
 			&controller->backend, dma);
 	}
 
-	/* Checks the operation result. */
+	/* Takes the backend's ring memory. */
 	if (result == INTEL_AX211_TRANSPORT_BACKEND_OK) {
 		result = drv_intel_ax211_transport_backend_ring_memory(
 			&controller->transport_backend, &memory);
 	}
 
-	/* Checks the operation result. */
+	/* Initializes the transport on the backend. */
 	if (result == INTEL_AX211_TRANSPORT_BACKEND_OK) {
 		result = drv_intel_ax211_transport_init(
 			transport, drv_intel_ax211_transport_backend_ops(),
@@ -3497,28 +3540,29 @@ ax211_pci_transport_bind(
 			&memory);
 	}
 
-	/* Checks the operation result. */
+	/* Allocates exactly one MSI-X vector. */
 	if (result == INTEL_AX211_TRANSPORT_OK) {
 		count = 0U;
 		result = drv_pci_device_allocate_irqs(
 			controller->device, DRV_PCI_IRQ_ALLOW_MSIX, 1U, 1U,
 			&controller->irq, &count);
 
-		/* Checks the remaining item count. */
+		/* Records what was allocated, even after a failure. */
 		if (count != 0U) {
 			controller->irq_count = count;
 			controller->irq_allocated = 1U;
 		}
 
-		/* Checks the operation result. */
+		/* Refuses anything but one MSI-X vector. */
 		if (result == 0 &&
-		    (count != 1U || controller->irq.type != DRV_PCI_IRQ_MSIX))
+		    (count != 1U || controller->irq.type != DRV_PCI_IRQ_MSIX)) {
 			result = EIO;
+		}
 	}
 
-	/* Checks the operation result. */
+	/* Establishes the handler. */
 	if (result == 0) {
-		/* Checks the operation result. */
+		/* Records the handler once it is established. */
 		result = drv_pci_device_establish_irq(
 			controller->device, &controller->irq, ax211_pci_irq,
 			controller, "intel-ax211", &controller->irq_cookie);
@@ -3526,7 +3570,7 @@ ax211_pci_transport_bind(
 			controller->irq_established = 1U;
 	}
 
-	/* Checks the operation result. */
+	/* Publishes the DMA memory to the interrupt path. */
 	if (result == 0) {
 		enabled = spin_lock_irqsave(&controller->interrupt_lock);
 		controller->active_dma = dma;
@@ -3536,17 +3580,18 @@ ax211_pci_transport_bind(
 		return 0;
 	}
 
-	/* Handles the controller condition. */
+	/* Disestablishes a handler of the failed bind. */
 	if (controller->irq_established) {
-		/* Checks the drv pci device disestablish irq checked result. */
-		if (drv_pci_device_disestablish_irq_checked(
-			    controller->device, controller->irq_cookie) == 0) {
+		/* Forgets the handler once it is gone. */
+		disestablish_result = drv_pci_device_disestablish_irq_checked(
+			controller->device, controller->irq_cookie);
+		if (disestablish_result == 0) {
 			controller->irq_cookie = NULL;
 			controller->irq_established = 0U;
 		}
 	}
 
-	/* Handles the controller condition. */
+	/* Frees a vector no handler uses. */
 	if (!controller->irq_established && controller->irq_allocated) {
 		drv_pci_device_free_irqs(controller->device, &controller->irq,
 					 controller->irq_count);
@@ -3554,10 +3599,16 @@ ax211_pci_transport_bind(
 		controller->irq_allocated = 0U;
 	}
 
-	/* Checks the drv pci device set bus master result. */
-	if (bus_master_enabled &&
-	    drv_pci_device_set_bus_master(controller->device, false) != 0)
-		result = EIO;
+	/* Turns bus mastering off again; a failure is an I/O failure. */
+	if (bus_master_enabled) {
+		/* Reports a failed turn-off. */
+		master_result = drv_pci_device_set_bus_master(controller->device,
+							      false);
+		if (master_result != 0)
+			result = EIO;
+	}
+
+	/* Closes the epoch's receive path. */
 	enabled = spin_lock_irqsave(&controller->interrupt_lock);
 
 	controller->receive_enabled = 0U;
@@ -3566,8 +3617,10 @@ ax211_pci_transport_bind(
 
 	spin_unlock_irqrestore(&controller->interrupt_lock, enabled);
 
-	/* Returns the computed result. */
-	return result == 0 ? -1 : result;
+	/* Reports the failure, never as a success. */
+	if (result == 0)
+		return -1;
+	return result;
 }
 
 /* Copies one exact event before returning its DMA buffer to firmware. */
@@ -3587,6 +3640,7 @@ ax211_pci_receive_event(
 	uint64_t remaining;
 	uint32_t frame_length;
 	uint32_t generation;
+	uint32_t delay;
 	size_t total_length;
 	unsigned long enabled;
 	int delay_result;
@@ -3595,31 +3649,35 @@ ax211_pci_receive_event(
 	int rearm_result;
 	int result;
 
-	/* Handles the controller availability. */
+	/* Refuses missing arguments. */
 	controller = argument;
-	if (controller == NULL || bytes == NULL || capacity == 0U ||
+	if (controller == NULL ||
+	    bytes == NULL ||
+	    capacity == 0U ||
 	    event == NULL) {
-		/* Returns the computed result. */
 		return INTEL_AX211_BOOT_RECEIVE_IO;
 	}
 	kern_memset(event, 0, sizeof(*event));
 	receive_result = INTEL_AX211_BOOT_RECEIVE_IO;
 
-	/* Continue until the operation reaches a terminal state. */
+	/* Polls until an event arrives, the deadline passes or a step fails. */
 	for (;;) {
+		/* Requires an admitted epoch with DMA memory. */
 		enabled = spin_lock_irqsave(&controller->interrupt_lock);
 		generation = controller->hardware_epoch;
-		result = controller->receive_enabled && generation != 0U &&
-					 controller->active_dma != NULL
-				 ? 0
-				 : -1;
+		result = -1;
+		if (controller->receive_enabled &&
+		    generation != 0U &&
+		    controller->active_dma != NULL) {
+			result = 0;
+		}
 		controller->irq_latched = 0U;
 		spin_unlock_irqrestore(&controller->interrupt_lock, enabled);
 		if (result != 0)
 			return INTEL_AX211_BOOT_RECEIVE_IO;
 		kern_memset(&causes, 0, sizeof(causes));
 
-		/* Checks the operation result. */
+		/* Claims the pending causes and records them. */
 		result = drv_intel_ax211_transport_interrupt_claim(
 			&controller->transport, &causes);
 		if (result != INTEL_AX211_TRANSPORT_OK)
@@ -3629,7 +3687,7 @@ ax211_pci_receive_event(
 		controller->command_raw_fh_causes |= causes.raw_queue_causes;
 		controller->command_raw_hw_causes |= causes.raw_hardware;
 
-		/* Checks the operation status. */
+		/* A fatal cause ends the receive. */
 		if ((causes.queue_causes &
 		     INTEL_AX211_TRANSPORT_QUEUE_CAUSE_FAULT) != 0U ||
 		    (causes.hardware & INTEL_AX211_TRANSPORT_EVENT_FATAL_CAUSES) !=
@@ -3640,7 +3698,7 @@ ax211_pci_receive_event(
 				   causes.raw_queue_causes,
 				   causes.raw_hardware);
 
-			/* Returns the computed result. */
+			/* Failed. */
 			return INTEL_AX211_BOOT_RECEIVE_IO;
 		}
 
@@ -3653,7 +3711,7 @@ ax211_pci_receive_event(
 		if (!controller->transport.rx_active &&
 		    (causes.hardware & INTEL_AX211_TRANSPORT_EVENT_CAUSE_ALIVE) !=
 			    0U) {
-			/* Checks the operation result. */
+			/* A failed activation ends the receive. */
 			result = drv_intel_ax211_transport_activate_rx(
 				&controller->transport);
 			if (result != INTEL_AX211_TRANSPORT_OK)
@@ -3662,28 +3720,35 @@ ax211_pci_receive_event(
 
 		kern_memset(&completion, 0, sizeof(completion));
 
-		/* Checks the operation result. */
-		result = controller->transport.rx_active
-				 ? drv_intel_ax211_transport_rx_next(
-					   &controller->transport, &completion)
-				 : INTEL_AX211_TRANSPORT_STALE;
+		/* Takes the next completion of an active receive ring. */
+		if (controller->transport.rx_active) {
+			result = drv_intel_ax211_transport_rx_next(
+				&controller->transport, &completion);
+		} else {
+			result = INTEL_AX211_TRANSPORT_STALE;
+		}
+
+		/* Copies the completed event and hands its buffer back. */
 		if (result == INTEL_AX211_TRANSPORT_OK) {
-			/* Handles the completion condition. */
+			/* Refuses a buffer beyond the DMA memory. */
 			if (completion.buffer_id >=
 			    controller->active_dma->rx_buffer_count) {
-				/* Returns the computed result. */
 				return INTEL_AX211_BOOT_RECEIVE_IO;
 			}
+
+			/* Reads the frame length the buffer starts with. */
 			buffer = &controller->active_dma
 					  ->rx_buffer[completion.buffer_id];
 			kern_io_read_barrier();
-			frame_length =
-				buffer->address == NULL || buffer->size < 4U
-					? 0U
-					: ax211_pci_get_le32(buffer->address) &
-						  0x3fffU;
+			if (buffer->address == NULL || buffer->size < 4U) {
+				frame_length = 0U;
+			} else {
+				frame_length =
+					ax211_pci_get_le32(buffer->address) &
+					0x3fffU;
+			}
 
-			/* Handles the frame length condition. */
+			/* Copies an event that fits every bound. */
 			total_length = (size_t)frame_length + 4U;
 			if (frame_length >= 4U &&
 			    total_length <= INTEL_AX211_BOOT_EVENT_CAPACITY &&
@@ -3695,6 +3760,7 @@ ax211_pci_receive_event(
 				receive_result = INTEL_AX211_BOOT_RECEIVE_IO;
 			}
 
+			/* Hands the buffer back and rearms the vector. */
 			replenish_result =
 				drv_intel_ax211_transport_rx_replenish(
 					&controller->transport,
@@ -3703,16 +3769,17 @@ ax211_pci_receive_event(
 				drv_intel_ax211_transport_interrupt_rearm(
 					&controller->transport);
 
-			/* Handles the replenish result condition. */
+			/* A failed hand-back or rearm ends the receive. */
 			if (replenish_result != INTEL_AX211_TRANSPORT_OK ||
 			    rearm_result != INTEL_AX211_TRANSPORT_OK) {
-				/* Returns the computed result. */
 				return INTEL_AX211_BOOT_RECEIVE_IO;
 			}
 
-			/* Handles the receive result condition. */
+			/* Reports an event that did not fit. */
 			if (receive_result != INTEL_AX211_BOOT_RECEIVE_OK)
 				return receive_result;
+
+			/* Describes the event and remembers its header. */
 			event->length = total_length;
 			event->generation = generation;
 			event->notification_version =
@@ -3724,34 +3791,37 @@ ax211_pci_receive_event(
 			controller->last_receive_version =
 				event->notification_version;
 
-			/* Returns the computed result. */
+			/* Succeeded: *event describes the copied event. */
 			return INTEL_AX211_BOOT_RECEIVE_OK;
 		}
 
-		/* Checks the operation result. */
+		/*
+		 * Rearms the vector; anything but an empty ring ends the wait.
+		 */
 		rearm_result = drv_intel_ax211_transport_interrupt_rearm(
 			&controller->transport);
 		if (result != INTEL_AX211_TRANSPORT_STALE ||
 		    rearm_result != INTEL_AX211_TRANSPORT_OK) {
-			/* Returns the computed result. */
 			return INTEL_AX211_BOOT_RECEIVE_IO;
 		}
 
-		/* Checks the ax211 pci clock us result. */
-		if (ax211_pci_clock_us(controller, &now) != 0)
+		/* Reads the clock. */
+		result = ax211_pci_clock_us(controller, &now);
+		if (result != 0)
 			return INTEL_AX211_BOOT_RECEIVE_IO;
 
-		/* Handles the now condition. */
+		/* The deadline passed. */
 		if (now >= deadline_us)
 			return INTEL_AX211_BOOT_RECEIVE_TIMEOUT;
 		remaining = deadline_us - now;
 
-		/* Handles the delay result condition. */
+		/* Waits one poll interval, or what is left of the wait. */
+		if (remaining < AX211_RECEIVE_POLL_DELAY_US)
+			delay = (uint32_t)remaining;
+		else
+			delay = (uint32_t)AX211_RECEIVE_POLL_DELAY_US;
 		delay_result = controller->mmio.ops->delay_us(
-			controller->mmio.argument,
-			(uint32_t)(remaining < AX211_RECEIVE_POLL_DELAY_US
-					   ? remaining
-					   : AX211_RECEIVE_POLL_DELAY_US));
+			controller->mmio.argument, delay);
 		if (delay_result != 0)
 			return INTEL_AX211_BOOT_RECEIVE_IO;
 	}
