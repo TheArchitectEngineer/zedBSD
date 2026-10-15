@@ -400,7 +400,35 @@ nvrtx_scanout_release(
 
 /*
  * Shows a surface on the taken-over head's window and waits until the flip
- * has begun (the GPU device's frames, stage P8c).
+ * has begun (the GPU device's frames, stage P8c): the flip is sent
+ * (nvrtx_scanout_frame_send()) and its notifier waited for
+ * (nvrtx_scanout_frame_wait()).  Returns as the two do.
+ */
+int
+nvrtx_scanout_frame(
+	struct nvrtx_gpu *gpu,
+	const struct nvrtx_disp_surface *surface)
+{
+	uint32_t notifier;
+	int error;
+
+	/* Sends the flip. */
+	error = nvrtx_scanout_frame_send(gpu, surface, &notifier);
+	if (error != 0)
+		return error;
+
+	/* Waits until the head has begun to show it. */
+	error = nvrtx_scanout_frame_wait(gpu, notifier);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the head shows the surface. */
+	return 0;
+}
+
+/*
+ * Sends the flip of the taken-over head's window to a surface; its
+ * notifier, which says when the flip has begun, is given in *notifier.
  *
  * The window gets the surface's whole image state, so its size, pitch and
  * format may differ from the last one's.  A surface of another size than
@@ -410,18 +438,18 @@ nvrtx_scanout_release(
  * with the core and the core's with the window, as nouveau's commit of a
  * head and its plane together.  When a push buffer has no room left it is
  * wound back to its start first (nouveau's wind).  The caller serializes
- * the frames and the cursor's core updates.  Returns ETIMEDOUT when the
- * flip does not begin in 2 s (the window then still reads the surface it
- * had or this one).
+ * the frames and the cursor's core updates, and waits for the notifier
+ * before the next flip is sent (the window's two notifiers alternate).
+ * Returns ETIMEDOUT when a change of the view does not finish in 2 s.
  */
 int
-nvrtx_scanout_frame(
+nvrtx_scanout_frame_send(
 	struct nvrtx_gpu *gpu,
-	const struct nvrtx_disp_surface *surface)
+	const struct nvrtx_disp_surface *surface,
+	uint32_t *notifier)
 {
 	struct nvrtx_display_state *display;
 	struct nvrtx_push *push;
-	uint32_t notifier;
 	uint32_t user;
 	uint32_t view_in;
 	int with_core;
@@ -473,12 +501,12 @@ nvrtx_scanout_frame(
 	}
 
 	/* Clears the window's next notifier, then sends the flip with it and the whole image, and the window's release. */
-	notifier = scanout_next_notifier(gpu);
-	error = scanout_notifier_reset(gpu, notifier);
+	*notifier = scanout_next_notifier(gpu);
+	error = scanout_notifier_reset(gpu, *notifier);
 	if (error != 0)
 		return error;
 
-	nvrtx_disp_first_window_flip(push, display->window, surface, notifier, with_core);
+	nvrtx_disp_first_window_flip(push, display->window, surface, *notifier, with_core);
 	error = scanout_kick(gpu, push, user);
 	if (error != 0)
 		return error;
@@ -497,6 +525,29 @@ nvrtx_scanout_frame(
 		    (unsigned)(display->mode.active & 0xffffU),
 		    (unsigned)(display->mode.active >> 16));
 	}
+
+	/* Succeeded: the flip is out; its notifier says when it has begun. */
+	return 0;
+}
+
+/*
+ * Waits until the flip sent with a notifier has begun: from then on the
+ * head reads the new surface and no longer the one before it.  The wait
+ * reads the notifier alone and touches no channel, so it needs only the
+ * caller's serialization of the frames, not the cursor's.  Returns
+ * ETIMEDOUT when the flip does not begin in 2 s (the window then still
+ * reads the surface it had or the new one).
+ */
+int
+nvrtx_scanout_frame_wait(
+	struct nvrtx_gpu *gpu,
+	uint32_t notifier)
+{
+	uint32_t user;
+	int error;
+
+	/* The window channel's user area, for the report of a notifier that does not come. */
+	user = scanout_window_user(gpu->display.window);
 
 	/* Waits until the flip has begun. */
 	error = scanout_notifier_wait(gpu, notifier, 1U, user, NULL);
