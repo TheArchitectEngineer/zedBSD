@@ -124,3 +124,6 @@ Phase disposition: normal
 - M8 回帰の範囲の抜け（libegl・xserver・terminal・notes・monitor・mview・display-events、turn・heads・VT・display の off/on・mode の変更・lock、nvrtx）。
 - minor: m1 acquire の安全の根拠の場所、m2 usage は vkGetPhysicalDeviceImageFormatProperties(LINEAR)、m3 CONCURRENT は direct にしない、m4 stub の host 試験 2 本、m5 単独の作成は明示の引数、m6 env で切れる・作成ごとの log、m7 独立の Phase。
 - Q1 の判断（2026-10-16、ユーザーは就寝中、製品の挙動を変えない形を選んだ）: M1 capset の bit（WS141 の範囲として許可）、M2 opt-in（第三者の KHR_display の app は今の道）、M3 印の意味を保つ、m7 ws236-p012。P3 は 849ea5b1a で全て対応（P3 の報告）。T2 の T1-690・T1 の T1-691 で確かめる。
+
+## 2026-10-16 ユーザーの決定
+「1080pは要件から外します。」「720p 30fpsがこのマシンの限界値です。」（T1-690 の A3 の有無の比較の後）→ Pi のビデオの要件は 720p30。60 fps・1080p に向けた作業は止める。A3（この Phase）を残すか revert するかはユーザーに確認中。
