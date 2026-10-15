@@ -2,7 +2,7 @@
 
 # ws245-p001: Gen12 系（display 12・13）の display の書き直しの設計
 
-Status: in-progress（q1209 P1: design.md の改訂 4（段ごとの置き換え）、レビュー 4 の反映の後に Q1 の clearance。§7 #0〜#22 の回答は反映済み、#23〜#29 は既定の案でユーザーに聞く）
+Status: in-progress（q1209-i02 P1: design.md の改訂 5（レビュー 4 の反映）。レビュー 5 の blocker の反映の後に Q1 の clearance。§7 #0〜#22 の回答は反映済み、#23〜#33 は既定の案でユーザーに聞く）
 Parent: [WS245](../ws.md)
 Approval: 2026-10-15 ユーザー「同時にサブエージェントで、i915のリライトをやります。WSがあると思います。」
 
@@ -41,4 +41,15 @@ ws.md の p001 の行のとおり: Intel の公開の PRM（Gen12・ADL-P）と 
 - 確かめた事実（2026-10-15、今の code）: 段の継ぎ目に使う口 `struct i915_lcd_emit`（`internal.h:2138`）と `drv_i915_lcd_kernel_bind_ops`（`modeset.c`）の実装の表（dpcd_read/write → aux.c、panel → panel.c、power_get/put → power.c、dbuf_slices_update、tc_*/dkl_*、vblank の event）、dp-sink.c の `aux->transfer`（1837・2235 行）、edid-read.c の `i915_i2c_transfer`、panel-backlight.c の PWM の register の部分（770〜855 行）、power.c の well の ops と domain の map、display.c の段（`i915_display_noirq_front`・`native_check`・`core_init`・`dmc_init`・`noirq_tail`・`nogem_front`・`setup_outputs`・`readout`・`driver_probe`）、modeset.c の `drv_i915_lcd_kernel_resident_run` の呼ぶ物、各旧 header の公開の関数の数（power 37、takeover 44、modeset 42、hotplug 27、tc 19、dp 18、clock 17 …）、旧 API の呼び手の file ごとの数。
 - 作業ツリー: q1207 で止めた p006 の途中の未 commit の差分を `plan/ws245/temp/p006-partial-20261015.patch`（追跡 5 file の差分 184 行の追加）と `temp/p006-partial-20261015-untracked/`（未追跡の xd-clock.h・xd-power.c/.h・xd-tc.c/.h）に保存し、追跡 file を `git checkout --` で戻してから main 5ac66395e を fast-forward した。未追跡の 5 file は Q1 が temp との一致を確かめて消した。
 - 未実施: build・host 試験・QEMU・実機（設計の Phase なので対象外）。
-- レビュー 4: design-reviewer（結果は [design-review-4.md](../design-review-4.md)、扱いは design.md §11.2）。
+- レビュー 4: design-reviewer（結果は [design-review-4.md](../design-review-4.md)、blocker 3・major 16・minor 15。扱いは design.md §11.2）。
+
+## 改訂 5（2026-10-15 夜、P1、q1209 / q1209-i02）
+
+- 承認: q1209 と同じ（Q1: 「design.md 改訂 4 へのレビュー 4 の反映。code は書かない」）。
+- ユーザーの判断（ws.md「レビュー 4 への判断」、クリック）: B3「register などの証拠で代える」、M7「常設できない」、M8「その都度自分で入れ直す」。
+- レビュー 4 の 34 件（blocker 3・major 16・minor 15）を全部扱った（直した 34、直さない 0。design.md §11.2 の表。事実は今の code で確かめ直し、レビューと食い違った物は無し。追加: m13 の `aux.c` の内側の再試行は実在（`aux.c:444`・`:509`））。
+- 主な変更（§11.3）: 継ぎ目を hardware に書く道に（B1）、p038 を p038・p048・p049・p050 の 4 段に、p039 を p039・p051、p040 を p040・p052 に分け、p047（回帰の証拠の道具: survey と `mmio.c` の書き込みの log）を最初の段に足した（B2・B3・M6・M12）。R9（外部出力の道をどの段でも壊さない、節目だけ一覧）と R10・表 R（共有の register の書き手: HIP_INDEX・DDI_BUF_CTL の所有 bit・DPCLKA・DC_STATE_DEBUG・DBUF_CTL・GMBUS0・PWR_WELL_CTL_AUX）。p016・p018・p021・p037 の継ぎ目の訂正（M1〜M3）、Dekel の窓は p040 まで旧の 1 つの lock（M4）、基準の起動と止まった時の扱い（M8・M9）、build の組と Tools の追従（M10）、§1.1・§3.1 を #18 に合わせ ICL の attach は #30 に（M13）。
+- 段の表: **37 段、156 LW（±40 %）**。5330 の起動は段の kernel で最少 37 回、見込み約 50 回（最大 70〜85 回）。
+- ユーザーに聞く点（§7、既定の案で進める）: #23〜#29 に加えて #30（ICL の attach の時期: 既定は p045 を host だけ、attach は WS252 の後）、#31（passthrough を使う master の Tools: 既定は残し、節目に T1 で 1 回）、#32（survey を ssh から任意の時に読む sysctl の口: 既定は作らない）、#33（display の start の guard: 既定は作らない）。
+- 確かめた事実（2026-10-15 夜、今の code）: §11.2 の「確かめた事実」の列。build・host 試験・QEMU・実機は流していない（設計の Phase）。
+- レビュー 5: design-reviewer（結果は [design-review-5.md](../design-review-5.md)。blocker は直し、major は直すか理由を書く）。
