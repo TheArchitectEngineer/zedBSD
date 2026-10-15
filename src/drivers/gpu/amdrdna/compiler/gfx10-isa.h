@@ -7,16 +7,10 @@
 
 /*
  * The facts of the RDNA1 (GFX10.1, gfx1010) instruction set the amdrdna
- * shader compiler uses (ws039-p007), and the program interface the compiler
- * and the driver agree on.
+ * shader compiler uses, and the program interface the compiler and the
+ * driver agree on.
  *
- * The opcode numbers, the operand codes and the places of the fields in an
- * instruction word are data of the hardware.  Each block below names where
- * its values were read.  "Mesa" is Mesa 25.0.7 (tarball SHA-256
- * 592272df3cf01e85e7db300c449df5061092574d099da275d19e97ef0510f8a6); the
- * values were also checked against LLVM's assembler (llvm-mc 19, -mcpu=gfx1010),
- * which the host test does again.  The program interface (AMDRDNA_GFX10_ABI_*)
- * is zedBSD's own.
+ * The program interface (AMDRDNA_GFX10_ABI_*) is zedBSD's own.
  */
 
 #ifndef DRIVERS_GPU_AMDRDNA_COMPILER_GFX10_ISA_H
@@ -30,10 +24,11 @@
  * instruction, or (from 256) a VGPR.  An 8-bit field holds the low bits of
  * a VGPR's code and a 9-bit source field holds the whole code.
  *
- * Source: the RDNA1 ISA's scalar and vector source operand tables, as
- * Mesa src/amd/compiler/aco_ir.h (PhysReg, lines 422-445: vcc 106, m0 124,
- * sgpr_null 125, exec 126) and aco_assembler.cpp (emit_instruction, the literal
- * code 255) use them.
+ * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_ir.h
+ * (the special registers m0, vcc, vcc_hi, sgpr_null, exec_lo, exec_hi,
+ * lines 422-446; Operand::c32_or_c64, the inline integers 128 + v and
+ * 192 - v and the literal 255, lines 586-616).
+ * Checked against llvm-mc 19 (-mcpu=gfx1010).
  */
 #define AMDRDNA_GFX10_SGPR_COUNT	106U
 #define AMDRDNA_GFX10_VCC_LO		106U
@@ -47,15 +42,6 @@
 #define AMDRDNA_GFX10_INT_LAST		192U
 #define AMDRDNA_GFX10_NEG_FIRST		193U
 #define AMDRDNA_GFX10_NEG_LAST		208U
-#define AMDRDNA_GFX10_HALF		240U
-#define AMDRDNA_GFX10_MINUS_HALF	241U
-#define AMDRDNA_GFX10_ONE		242U
-#define AMDRDNA_GFX10_MINUS_ONE		243U
-#define AMDRDNA_GFX10_TWO		244U
-#define AMDRDNA_GFX10_MINUS_TWO		245U
-#define AMDRDNA_GFX10_FOUR		246U
-#define AMDRDNA_GFX10_MINUS_FOUR	247U
-#define AMDRDNA_GFX10_INV_TWO_PI	248U
 #define AMDRDNA_GFX10_LITERAL		255U
 #define AMDRDNA_GFX10_VGPR_FIRST	256U
 #define AMDRDNA_GFX10_VGPR_COUNT	256U
@@ -65,11 +51,23 @@
 #define AMDRDNA_GFX10_V(n)		(AMDRDNA_GFX10_VGPR_FIRST + (unsigned)(n))
 
 /*
- * The bits of the float inline constants (codes 240 .. 248).
+ * The float inline constants: the operand code of each and the bits of
+ * the float it stands for.
  *
- * Source: the RDNA1 ISA's inline constant table; 1 / (2 pi) as Mesa
- * src/amd/compiler/aco_ir.h (Operand::c32, 0x3e22f983) gives it.
+ * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_ir.h
+ * (Operand::c32_or_c64, codes 240 .. 247 for 0.5, -0.5, 1.0, -1.0, 2.0,
+ * -2.0, 4.0, -4.0, lines 597-612; Operand::get_const, 1 / (2 pi) as code
+ * 248 and bits 0x3e22f983, lines 660-664).
  */
+#define AMDRDNA_GFX10_HALF		240U
+#define AMDRDNA_GFX10_MINUS_HALF	241U
+#define AMDRDNA_GFX10_ONE		242U
+#define AMDRDNA_GFX10_MINUS_ONE		243U
+#define AMDRDNA_GFX10_TWO		244U
+#define AMDRDNA_GFX10_MINUS_TWO		245U
+#define AMDRDNA_GFX10_FOUR		246U
+#define AMDRDNA_GFX10_MINUS_FOUR	247U
+#define AMDRDNA_GFX10_INV_TWO_PI	248U
 #define AMDRDNA_GFX10_BITS_HALF		0x3f000000U
 #define AMDRDNA_GFX10_BITS_ONE		0x3f800000U
 #define AMDRDNA_GFX10_BITS_TWO		0x40000000U
@@ -77,56 +75,61 @@
 #define AMDRDNA_GFX10_BITS_INV_TWO_PI	0x3e22f983U
 
 /*
- * ==== The encodings' fixed bits ====
+ * ==== The marks of the instruction forms ====
  *
- * The high bits that mark each instruction format in its first word.
+ * The high bits that say which form the first word of an instruction
+ * has: the scalar forms with two sources, a 16-bit constant, one source,
+ * a comparison and a program-control constant; the scalar load; the
+ * vector forms with one source, a comparison, two sources and the wide
+ * (64-bit) form; interpolation; the shared memory, buffer and image
+ * accesses; and the export.
  *
- * Source: Mesa src/amd/compiler/aco_assembler.cpp, emit_instruction (the
- * GFX10 cases of each format), checked against llvm-mc.
+ * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_assembler.cpp
+ * (emit_sop2_instruction 0b10 << 30, emit_sopk_instruction 0b1011 << 28,
+ * emit_sop1_instruction, emit_sopc_instruction and emit_sopp_instruction
+ * 0b101111101, 0b101111110, 0b101111111 << 23, emit_vop1_instruction
+ * 0b0111111 << 25, emit_vopc_instruction 0b0111110 << 25,
+ * emit_vintrp_instruction 0b110010 << 26, emit_ds_instruction,
+ * emit_mubuf_instruction, emit_mimg_instruction, emit_exp_instruction,
+ * emit_vop3_instruction and emit_smem_instruction, the GFX10 cases).
+ * Checked against llvm-mc 19 (-mcpu=gfx1010).
  */
-#define AMDRDNA_GFX10_ENC_SOP2		0x80000000U	/* bits 31:30 = 10 */
-#define AMDRDNA_GFX10_ENC_SOPK		0xb0000000U	/* bits 31:28 = 1011 */
-#define AMDRDNA_GFX10_ENC_SOP1		0xbe800000U	/* bits 31:23 = 101111101 */
-#define AMDRDNA_GFX10_ENC_SOPC		0xbf000000U	/* bits 31:23 = 101111110 */
-#define AMDRDNA_GFX10_ENC_SOPP		0xbf800000U	/* bits 31:23 = 101111111 */
-#define AMDRDNA_GFX10_ENC_SMEM		0xf4000000U	/* bits 31:26 = 111101 */
-#define AMDRDNA_GFX10_ENC_VOP1		0x7e000000U	/* bits 31:25 = 0111111 */
-#define AMDRDNA_GFX10_ENC_VOPC		0x7c000000U	/* bits 31:25 = 0111110 */
-#define AMDRDNA_GFX10_ENC_VOP2		0x00000000U	/* bit 31 = 0 */
-#define AMDRDNA_GFX10_ENC_VOP3		0xd4000000U	/* bits 31:26 = 110101 */
-#define AMDRDNA_GFX10_ENC_VINTRP	0xc8000000U	/* bits 31:26 = 110010 */
-#define AMDRDNA_GFX10_ENC_DS		0xd8000000U	/* bits 31:26 = 110110 */
-#define AMDRDNA_GFX10_ENC_MUBUF		0xe0000000U	/* bits 31:26 = 111000 */
-#define AMDRDNA_GFX10_ENC_MIMG		0xf0000000U	/* bits 31:26 = 111100 */
-#define AMDRDNA_GFX10_ENC_EXP		0xf8000000U	/* bits 31:26 = 111110 */
+#define AMDRDNA_GFX10_FORM_SCALAR_TWO		0x80000000U
+#define AMDRDNA_GFX10_FORM_SCALAR_CONSTANT	0xb0000000U
+#define AMDRDNA_GFX10_FORM_SCALAR_ONE		0xbe800000U
+#define AMDRDNA_GFX10_FORM_SCALAR_COMPARE	0xbf000000U
+#define AMDRDNA_GFX10_FORM_CONTROL		0xbf800000U
+#define AMDRDNA_GFX10_FORM_SCALAR_LOAD		0xf4000000U
+#define AMDRDNA_GFX10_FORM_VECTOR_ONE		0x7e000000U
+#define AMDRDNA_GFX10_FORM_VECTOR_COMPARE	0x7c000000U
+#define AMDRDNA_GFX10_FORM_VECTOR_TWO		0x00000000U
+#define AMDRDNA_GFX10_FORM_VECTOR_WIDE		0xd4000000U
+#define AMDRDNA_GFX10_FORM_INTERPOLATE		0xc8000000U
+#define AMDRDNA_GFX10_FORM_SHARED		0xd8000000U
+#define AMDRDNA_GFX10_FORM_BUFFER		0xe0000000U
+#define AMDRDNA_GFX10_FORM_IMAGE		0xf0000000U
+#define AMDRDNA_GFX10_FORM_EXPORT		0xf8000000U
 
 /*
- * A VOPC, VOP2 or VOP1 operation written in the VOP3 encoding takes its
- * opcode plus this offset.
+ * A comparison, a two-source or a one-source vector operation written in
+ * the wide form takes its opcode plus this offset.
  *
- * Source: Mesa src/amd/compiler/aco_assembler.cpp, emit_instruction
- * (lines 1053 and 1058: VOP2 + 0x100, VOP1 + 0x180) and README-ISA.md
- * ("VOP1 instructions encoded as VOP3": 0x180).
+ * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_assembler.cpp
+ * (emit_vop3_instruction, the GFX10 case: VOP2 + 0x100, VOP1 + 0x180,
+ * VOPC + 0) and src/amd/compiler/README-ISA.md ("VOP1 instructions
+ * encoded as VOP3").
  */
-#define AMDRDNA_GFX10_VOP3_FROM_VOPC	0x000U
-#define AMDRDNA_GFX10_VOP3_FROM_VOP2	0x100U
-#define AMDRDNA_GFX10_VOP3_FROM_VOP1	0x180U
+#define AMDRDNA_GFX10_WIDE_FROM_COMPARE	0x000U
+#define AMDRDNA_GFX10_WIDE_FROM_TWO	0x100U
+#define AMDRDNA_GFX10_WIDE_FROM_ONE	0x180U
 
 /*
- * The DPP control word of a VOP1 or VOP2 whose src0 is the code 250, and
- * the row and bank masks that enable every lane.
+ * ==== Scalar opcodes ====
  *
- * Source: the RDNA1 ISA's DPP table, as Mesa src/amd/compiler/aco_ir.h
- * (dpp_ctrl quad_perm 0x000 .. 0x0ff) and llvm-mc give it.
- */
-#define AMDRDNA_GFX10_DPP_SRC		250U
-#define AMDRDNA_GFX10_DPP_ALL_ROWS	0xff000000U
-
-/*
- * ==== Scalar opcodes (GFX10 numbers) ====
- *
- * Source: Mesa src/amd/compiler/aco_opcodes.py, the tables SOP2, SOPK,
- * SOP1, SOPC and SOPP (the gfx10 column).
+ * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_opcodes.py
+ * (the GFX10 numbers of the tables SOP2, lines 446-482; SOPK, lines
+ * 532-554; SOP1, lines 567-622; SOPC, lines 677-684; SOPP, lines
+ * 726-761).
  */
 #define AMDRDNA_GFX10_S_ADD_U32		0x00U
 #define AMDRDNA_GFX10_S_SUB_U32		0x01U
@@ -169,7 +172,8 @@
 /*
  * ==== Scalar memory opcodes ====
  *
- * Source: Mesa src/amd/compiler/aco_opcodes.py, the table SMEM (gfx10).
+ * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_opcodes.py
+ * (the GFX10 numbers of the table SMEM, lines 787-800).
  */
 #define AMDRDNA_GFX10_S_LOAD_DWORD	0x00U
 #define AMDRDNA_GFX10_S_LOAD_DWORDX2	0x01U
@@ -180,10 +184,12 @@
 /*
  * ==== Vector ALU opcodes ====
  *
- * Source: Mesa src/amd/compiler/aco_opcodes.py, the tables VOP2, VOP1 and
- * VOP3 (gfx10).  The VOPC numbers are the RDNA1 ISA's comparison table
- * (f32 0x00 .. 0x0f, i32 0x80 .. 0x87, u32 0xc0 .. 0xc7), which
- * aco_opcodes.py builds in its VOPC loop; llvm-mc agrees.
+ * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_opcodes.py
+ * (the GFX10 numbers of the tables VOP2, lines 896-966; VOP1, lines
+ * 984-1035; VOP3, lines 1260-1370; and the comparisons the loop after
+ * VOPC_CLASS builds, lines 1104-1162: the condition 0 .. 15 plus 0x00
+ * for f32, 0x80 for i32 and 0xc0 for u32).
+ * Checked against llvm-mc 19 (-mcpu=gfx1010).
  */
 #define AMDRDNA_GFX10_V_CNDMASK_B32	0x01U
 #define AMDRDNA_GFX10_V_ADD_F32		0x03U
@@ -191,6 +197,8 @@
 #define AMDRDNA_GFX10_V_MUL_F32		0x08U
 #define AMDRDNA_GFX10_V_MIN_F32		0x0fU
 #define AMDRDNA_GFX10_V_MAX_F32		0x10U
+#define AMDRDNA_GFX10_V_MIN_I32		0x11U
+#define AMDRDNA_GFX10_V_MAX_I32		0x12U
 #define AMDRDNA_GFX10_V_MIN_U32		0x13U
 #define AMDRDNA_GFX10_V_MAX_U32		0x14U
 #define AMDRDNA_GFX10_V_LSHRREV_B32	0x16U
@@ -204,6 +212,7 @@
 
 #define AMDRDNA_GFX10_V_NOP		0x00U
 #define AMDRDNA_GFX10_V_MOV_B32		0x01U
+#define AMDRDNA_GFX10_V_READFIRSTLANE_B32 0x02U
 #define AMDRDNA_GFX10_V_CVT_F32_I32	0x05U
 #define AMDRDNA_GFX10_V_CVT_F32_U32	0x06U
 #define AMDRDNA_GFX10_V_CVT_U32_F32	0x07U
@@ -236,27 +245,34 @@
 #define AMDRDNA_GFX10_V_CMP_NE_U32	0xc5U
 #define AMDRDNA_GFX10_V_CMP_GE_U32	0xc6U
 
+#define AMDRDNA_GFX10_V_MAD_U32_U24	0x143U
 #define AMDRDNA_GFX10_V_FMA_F32		0x14bU
 #define AMDRDNA_GFX10_V_MUL_LO_U32	0x169U
 #define AMDRDNA_GFX10_V_MUL_HI_U32	0x16aU
 #define AMDRDNA_GFX10_V_PACK_B32_F16	0x311U
 
 /*
- * The modifier bits of a VOP3 instruction: one negate and one absolute
- * value bit per source, and the clamp bit.
+ * The modifier bits of a wide vector instruction: one negate and one
+ * absolute value bit per source.
  *
- * Source: Mesa src/amd/compiler/aco_assembler.cpp, emit_instruction (VOP3:
- * abs 10:8, clamp 15 of the first word; neg 31:29 of the second).
+ * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_assembler.cpp
+ * (emit_vop3_instruction: abs in bits 10:8 of the first word, neg in
+ * bits 31:29 of the second, both one bit per source from the lowest).
  */
-#define AMDRDNA_GFX10_VOP3_NEG(n)	(1U << (n))
-#define AMDRDNA_GFX10_VOP3_ABS(n)	(1U << (3 + (n)))
+#define AMDRDNA_GFX10_WIDE_NEG(n)	(1U << (n))
+#define AMDRDNA_GFX10_WIDE_ABS(n)	(1U << (3 + (n)))
 
 /*
  * ==== Interpolation opcodes ====
  *
- * Source: Mesa src/amd/compiler/aco_opcodes.py, the table VINTRP (gfx10);
- * the parameter code of v_interp_mov_f32's P0 is the ISA's (2), which
- * llvm-mc writes for "p0".
+ * The parameter code of v_interp_mov_f32 that reads the attribute at the
+ * provoking vertex.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_opcodes.py
+ * (the GFX10 numbers of the table VINTRP, lines 1233-1235) and
+ * src/amd/compiler/aco_assembler.cpp (emit_vintrp_instruction: the
+ * parameter in the low bits of v_interp_mov_f32).
+ * Checked against llvm-mc 19, which writes the parameter 2 as "p0".
  */
 #define AMDRDNA_GFX10_V_INTERP_P1_F32	0x00U
 #define AMDRDNA_GFX10_V_INTERP_P2_F32	0x01U
@@ -266,10 +282,13 @@
 /*
  * ==== Local data share opcodes ====
  *
- * Source: Mesa src/amd/compiler/aco_opcodes.py, the table DS (gfx10).  A
- * compare-and-store takes the value compared in data0 and the value stored
- * in data1 (aco_instruction_selection.cpp, visit_shared_atomic: operand 1
- * the compare, operand 2 the data).
+ * A compare-and-store takes the value compared in data0 and the value
+ * stored in data1.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_opcodes.py
+ * (the GFX10 numbers of the table DS, lines 1477-1511) and
+ * src/amd/compiler/aco_instruction_selection.cpp (visit_shared_atomic:
+ * the compare before the data).
  */
 #define AMDRDNA_GFX10_DS_WRITE_B32	0x0dU
 #define AMDRDNA_GFX10_DS_ADD_RTN_U32	0x20U
@@ -288,11 +307,13 @@
 /*
  * ==== Buffer opcodes ====
  *
- * Source: Mesa src/amd/compiler/aco_opcodes.py, the table MUBUF (gfx10).
  * A compare-and-swap takes the value stored in vdata and the value
- * compared in vdata + 1, and returns the old value in vdata
- * (aco_instruction_selection.cpp, visit_image_atomic: the vector of the
- * data then the compare).
+ * compared in vdata + 1, and returns the old value in vdata.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_opcodes.py
+ * (the GFX10 numbers of the table MUBUF, lines 1647-1722) and
+ * src/amd/compiler/aco_instruction_selection.cpp (visit_image_atomic:
+ * the data vector before the compare).
  */
 #define AMDRDNA_GFX10_BUFFER_LOAD_FORMAT_XYZW 0x03U
 #define AMDRDNA_GFX10_BUFFER_LOAD_DWORD	0x0cU
@@ -314,9 +335,10 @@
 /*
  * ==== Image opcodes and the 2D dimension ====
  *
- * Source: Mesa src/amd/compiler/aco_opcodes.py, the table MIMG (gfx10);
- * the dimension code 1 (2D) is the ISA's, which llvm-mc writes for
- * dim:SQ_RSRC_IMG_2D.
+ * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_opcodes.py
+ * (the GFX10 numbers of the table MIMG, lines 1761-1816).
+ * Checked against llvm-mc 19, which writes the dimension 1 as
+ * "dim:SQ_RSRC_IMG_2D".
  */
 #define AMDRDNA_GFX10_IMAGE_LOAD_MIP	0x01U
 #define AMDRDNA_GFX10_IMAGE_SAMPLE	0x20U
@@ -327,59 +349,72 @@
 #define AMDRDNA_GFX10_IMAGE_SAMPLE_L_O	0x34U
 #define AMDRDNA_GFX10_IMAGE_SAMPLE_B_O	0x35U
 #define AMDRDNA_GFX10_IMAGE_SAMPLE_LZ_O	0x37U
-#define AMDRDNA_GFX10_DIM_2D		1U
+#define AMDRDNA_GFX10_IMAGE_DIM_2D	1U
 
 /*
  * ==== Export targets ====
  *
- * Source: Mesa src/amd/common/sid.h (V_008DFC_SQ_EXP_MRT 0, MRTZ 8,
- * NULL 9, POS 12, PARAM 32), checked against llvm-mc.
+ * Colour target 0 (the others follow it), nothing, position 0 and
+ * parameter 0.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/registers/gfx10-rsrc.json
+ * (the enum of the export targets, lines 169-174: 0, 9, 12 and 32).
+ * Checked against llvm-mc 19.
  */
-#define AMDRDNA_GFX10_EXP_MRT		0U
-#define AMDRDNA_GFX10_EXP_NULL		9U
-#define AMDRDNA_GFX10_EXP_POS		12U
-#define AMDRDNA_GFX10_EXP_PARAM		32U
+#define AMDRDNA_GFX10_EXPORT_COLOR	0U
+#define AMDRDNA_GFX10_EXPORT_NOTHING	9U
+#define AMDRDNA_GFX10_EXPORT_POSITION	12U
+#define AMDRDNA_GFX10_EXPORT_PARAMETER	32U
 
 /*
  * ==== The wait counters ====
  *
- * s_waitcnt's 16-bit immediate on GFX10: vmcnt in 3:0 with its high bits
- * in 15:14, expcnt in 6:4, lgkmcnt in 13:8; the value that waits for none
- * of a counter is its largest.  Stores are counted apart, by
- * s_waitcnt_vscnt.
+ * The 16-bit immediate of the counter wait: the vector memory count in
+ * bits 3:0 with its high bits in 15:14, the export count in 6:4, the
+ * local, scalar and message count in 13:8.  The value that waits for none
+ * of a counter is its largest.  Stores are counted apart, by the store
+ * counter wait.
  *
- * Source: Mesa src/amd/compiler/aco_insert_waitcnt.cpp and aco_ir.cpp
- * (wait_imm::pack, line 1177, the GFX10 layout), checked against llvm-mc.
+ * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_ir.cpp
+ * (wait_imm::pack, the GFX10 case, lines 1185-1188).
+ * Checked against llvm-mc 19.
  */
-#define AMDRDNA_GFX10_WAIT_NONE		0xff7fU	/* vmcnt 63, expcnt 7, lgkmcnt 63 */
-#define AMDRDNA_GFX10_WAIT_VM_MASK	0xc00fU
-#define AMDRDNA_GFX10_WAIT_EXP_MASK	0x0070U
-#define AMDRDNA_GFX10_WAIT_LGKM_MASK	0x3f00U
+#define AMDRDNA_GFX10_WAIT_NONE		0xff7fU
+#define AMDRDNA_GFX10_WAIT_VECTOR_MASK	0xc00fU
+#define AMDRDNA_GFX10_WAIT_EXPORT_MASK	0x0070U
+#define AMDRDNA_GFX10_WAIT_SCALAR_MASK	0x3f00U
 
 /*
- * The immediate of s_waitcnt_depctr that waits until the vector memory
- * instructions have read their scalar operands, the one VMEMtoScalarWrite
- * needs.
+ * The immediates of the dependency wait that let the vector memory
+ * instructions finish reading their scalar operands (needed before a
+ * scalar instruction writes one of them), and that let a non-vector
+ * instruction finish reading the lane mask (needed before a vector
+ * instruction writes it).
  *
- * Source: Mesa src/amd/compiler/aco_insert_NOPs.cpp,
- * handle_instruction_gfx10 (0xffe3).
+ * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_insert_NOPs.cpp
+ * (handle_instruction_gfx10: 0xffe3 for VMEMtoScalarWriteHazard, 0xfffe
+ * for VcmpxExecWARHazard).
  */
-#define AMDRDNA_GFX10_DEPCTR_VM_VSRC	0xffe3U
+#define AMDRDNA_GFX10_DEPEND_VECTOR_MEMORY_READS 0xffe3U
+#define AMDRDNA_GFX10_DEPEND_LANE_MASK_READS	0xfffeU
 
 /*
- * A branch whose offset is this value misbehaves on GFX10; one s_nop after
- * the branch moves the target.
+ * A branch whose distance (the words from the one after the branch to the
+ * target) is this value misbehaves on GFX10; an idle instruction after the
+ * branch moves the target.
  *
- * Source: Mesa src/amd/compiler/aco_assembler.cpp, fix_branches_gfx10.
+ * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_assembler.cpp
+ * (fix_branches_gfx10, lines 1505-1524).
  */
-#define AMDRDNA_GFX10_BAD_BRANCH_OFFSET	0x3fU
+#define AMDRDNA_GFX10_UNSAFE_BRANCH_DISTANCE 0x3fU
 
 /*
  * The words the instruction prefetcher may read past the end of a program:
  * three cache lines of 16 words.
  *
- * Source: Mesa src/amd/common/ac_binary.c,
- * ac_align_shader_binary_for_prefetch (GFX10: prefetch_distance 3).
+ * Values referenced: Mesa 25.0.7 src/amd/common/ac_binary.c
+ * (ac_align_shader_binary_for_prefetch: a distance of 3 lines of 64 bytes
+ * on GFX10, lines 135-146).
  */
 #define AMDRDNA_GFX10_PREFETCH_WORDS	48U
 
