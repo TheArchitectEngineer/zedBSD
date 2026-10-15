@@ -3,12 +3,12 @@
 # WS245: i915 の Gen12 系（display 12・13）の display の書き直し
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-15 作成。p001 の [design.md](design.md) は改訂 3a（P1、q1200、941 行）。レビューは 3 回（[design-review-1.md](design-review-1.md)・[design-review.md](design-review.md)・[design-review-3.md](design-review-3.md)、全部反映済み: design.md §8・§9・§10））
+Status: incomplete（2026-10-15 作成。p001 の [design.md](design.md) は**改訂 4**（P1、q1209: 段ごとの置き換え + 各段の 5330 の素の起動の回帰。31 段 p016〜p046、旧 p003・p005〜p015 は cancel）。レビューは 4 回（[design-review-1.md](design-review-1.md)・[design-review.md](design-review.md)・[design-review-3.md](design-review-3.md)・[design-review-4.md](design-review-4.md)））
 Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
 Related: [WS244](../ws244/ws.md)（i915 の Linux 由来の code の整理、棚卸し plan/ws244/inventory.md・tests/inventory.py）、[Guardrail](../guardrail.md)「MIT・GPL の出典のデータの引用」
-Resume point: 2026-10-15 夜 中断。Phase の表を「段ごとに 5330 で回帰を確かめて書き換える」形に作り直す（ユーザーに確かめてから）。以前: q1207（P1、2026-10-15 夜）: p004（xd-vbt・xd-edid、[phase004](phase004/phase.md)）は実装と host 試験が完了し Q1 の判定待ち。次は p006（power・DMC・clock・TC の register）。以前: q1204（P1、2026-10-15 夕）: p002 の実装と host 試験は完了（branch agent/p1-ws245、d8134ee40・5084f1852 は main に merge 済み、3d476ca43・8e62fb89d とこの記録の commit）。残りは (f) T1 の boot-test と Q1 の判定、§7 #18・#22 の回答（[phase002](phase002/phase.md)）。次は p003（merge はデモの後: §7 #13）か p004/p006。以前: q1204 で p002 を実装中。以前: 2026-10-15 P1（q1200）: design.md 改訂 3a（多機種: display 12 の TGL・RKL・ADL-S/RPL-S と display 13 の ADL-P 系、display 11 は p014。Phase p002〜p015、80 LW ±40%、実機の往復は別枠 6〜10 LW。3 回目のレビュー blocker 2・major 17・minor 16 を全部反映）。次: §7 の判断 #0〜#22（特に #11 PRM の Notices、#13 merge の時期、#15 passthrough の scenario、#16 他の WS の Phase、#17 TGL の TC、#18 RKL・ADL-S の今の状態、#20 GT、#22 Gen9 の機械）をユーザーに → p001 の clearance（Q1）→ p002 から実装（Queue の承認が要る。p003 以降の merge はデモの後: #13）。
+Resume point: 2026-10-15 夜 q1209（P1）: design.md 改訂 4（§6 の段の表 p016〜p046、§6.6 の見積もりと聞く点、§6.7 の p002/p004 の部品と p006 の途中の差分の使い方、§7 #23〜#29）。レビュー 4 の反映の後に p001 の clearance（Q1）→ ユーザーに §7 #23〜#29（既定の案で進めてよいか）→ p016（OpRegion の場所）から 1 段ずつ（Queue の承認が要る）。p006 の途中の差分は `plan/ws245/temp/p006-partial-20261015.patch` と `temp/p006-partial-20261015-untracked/`（git に入れない）。以前: q1207（P1）: p004 cleared（main 2d5b167aa）、p006 は途中で停止（ユーザーの即時中断）。q1204: p002 cleared（main a9925a4db）。q1200: 改訂 3a。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）
@@ -100,22 +100,57 @@ Resume point: 2026-10-15 夜 中断。Phase の表を「段ごとに 5330 で回
 
 → design.md の改訂 4 が要る（#0・#8・#11・#12・#21、Phase の表と p009〜p013 の受け入れ）。p001 はこの回答で判断が揃ったので、改訂 4 の後に cleared。
 
-## Phase（design.md §6.2、改訂 3a。p001 の clearance で確定）
+## Phase（design.md §6.2、改訂 4。p001 の clearance で確定）
+
+改訂 3a の p003・p005〜p015 は、2026-10-15 夜のユーザーの方針（「進め方の改め」）で**段ごとの置き換え**の表（p016〜p046）に置き換えて cancel した（disposition canceled。ID と履歴は残す。p006 は q1207 の attempt が途中で止まり uncleared: 差分は temp に保存、design.md §6.7）。各段の受け入れは「host 試験 + build warning 0 + 5330 の素の起動の回帰（上の手順 1〜3）に合格 → main に merge」。LCD の目視・外部の出力・suspend はユーザーの一覧。
 
 | ID | 内容 | 状態 |
 | --- | --- | --- |
-| [p001](phase001/phase.md) | 設計: Linux v6.8.12 の分岐（決定 3・4）と PRM（補助）から、display 11〜13 の model（platform の記述、pipe・transcoder・DDI・PHY（combo・Dekel・MG）・PLL・plane・watermark・DBUF・power well・DMC・AUX・GMBUS・VBT・opregion・Type-C の 2 つの流れ）、外向きの口と契約、データの表の引用の方法、書き直しの順序と Phase の分割、試験の道（host・T1 の 5330 passthrough・実機の一覧）、LW の見積もり。design-reviewer を 3 回通す | in-progress（design.md 改訂 3a。§7 の判断をユーザーに聞いてから clearance） |
-| [p002](phase002/phase.md) | 土台: register と表の header（記述の 9 行）、xd-io、xd-platform（RKL・ADL-S/RPL-S は記述の表だけ、`device.c` は #18 の回答まで不変）、host の試験の枠と own の register の model、own の型の分離、Gen9 の own への移設 | cleared（2026-10-15、(f) T1-699 PASS、(g) の実機は未実施） |
-| p003 | 口 `xd.h` と `struct i915_xd_ops`、旧 code への adapter `old-xd.c`、own の file の付け替え、`i915.display=xd|old`（kern/boot.c、Q1 の承認。既定 old） | planned（7 LW。merge はデモの後: design.md §7 #13） |
-| [p004](phase004/phase.md) | VBT（合成の fixture、4 platform の V2/V3/V4）・EDID | cleared（2026-10-15、host 試験、main 2d5b167aa） |
-| p005 | AUX・GMBUS | planned（3 LW、p006 の後） |
-| p006 | power（W1・W3、TGL の pcode の well、IRQ の hook、DC・DC9）・DMC（v2、載せる間の well）・clock（CDCLK の 4 表と crawl/relock、combo DPLL、TC PLL）・xd-tc の register の部分 | planned（8 LW） |
-| p007 | DDI（combo PHY、swing、DDI_BUF_CTL、DP_TP）・DP（訓練）・panel（PPS、backlight） | planned（6 LW） |
-| p008 | pipe・DBUF（2/4 slice、join、WM の level と調整、SAGV、relight の列）、init/uninit の全体の列 | planned（6 LW） |
-| p009 | screen・takeover・display の段・diag、xd の opt-in（既定は old）。T1 の passthrough（lcdb）、5330・5320 の実機の一覧 | planned（9 LW） |
-| p010 | hotplug・Type-C（流れ A/B）・外部 DP・HDMI・head（relight）、own の output.c の port の規則を platform の記述に。T1 の passthrough（hdmib・dual …）、5330・5320 の実機の一覧 | planned（10 LW） |
-| p011 | suspend の戻り・log の文言・`i915.display` の既定を xd（verified の行だけ。5330・5320 の確かめの後） | planned（4 LW） |
-| p012 | platform の網羅（記述の 9 行の host の列、RKL・ADL-S は「未確認」） | planned（3 LW） |
-| p013 | 旧 code の削除（adapter・tc-kern.c・dc9.c・ktest・旧 host 試験）と出典の監査 | planned（4 LW） |
-| p014 | display 11（Ice Lake）: MG PHY・MG PLL・transcoder EDP・ICL の well と TC の流れ・DMC v1。実機は無い（2026-10-15 ユーザー「display 11は、i915のリファクタリングの既存WSに最後の方のphaseとして入れてください。」） | planned（8 LW） |
-| p015 | 規約の全文の見直しと p014 の出典の監査 | planned（3 LW） |
+| [p001](phase001/phase.md) | 設計: display 11〜13 の model、外向きの口と契約、データの表の引用の方法、段の分割と順序、試験の道、LW。design-reviewer を通す（4 回） | in-progress（design.md 改訂 4。レビュー 4 の反映の後に clearance） |
+| [p002](phase002/phase.md) | 土台: register と表の header、xd-io、xd-platform、host の試験の枠と own の register の model、own の型の分離、Gen9 の own への移設 | cleared（2026-10-15、T1-699 PASS、U10 で 5330 の素の起動に合格） |
+| p003 | （改訂 3a）口 `xd.h` と adapter、`i915.display=` | **canceled**（2026-10-15 夜、段ごとの置き換えに置き換え。adapter と boot の語は作らない: design.md §6.1 R5） |
+| [p004](phase004/phase.md) | VBT（合成の fixture）・EDID の解析（呼ばれない部品） | cleared（2026-10-15、host 試験、main 2d5b167aa、U10 で 5330 に合格） |
+| p005 | （改訂 3a）AUX・GMBUS | **canceled**（→ p019・p020） |
+| p006 | （改訂 3a）power・DMC・clock・TC の register | **canceled**（→ p023〜p028・p040。q1207 の attempt は uncleared: 途中の差分は `temp/p006-partial-20261015.patch` と `temp/p006-partial-20261015-untracked/`、design.md §6.7） |
+| p007 | （改訂 3a）DDI・DP・panel | **canceled**（→ p021・p022・p029〜p031） |
+| p008 | （改訂 3a）pipe・DBUF | **canceled**（→ p032〜p035） |
+| p009 | （改訂 3a）screen・takeover・xd の opt-in | **canceled**（→ p036〜p038） |
+| p010 | （改訂 3a）hotplug・Type-C・外部 DP・HDMI・head | **canceled**（→ p039・p040） |
+| p011 | （改訂 3a）suspend・既定の切り替え | **canceled**（→ p041。既定の切り替えは無い） |
+| p012 | （改訂 3a）platform の網羅 | **canceled**（→ p044） |
+| p013 | （改訂 3a）旧 code の削除と出典の監査 | **canceled**（→ 各段で消す + p043） |
+| p014 | （改訂 3a）display 11 | **canceled**（→ p045） |
+| p015 | （改訂 3a）規約の全文 | **canceled**（→ p046） |
+| p016 | OpRegion の場所と map（xd-vbt の find、`struct i915_xd` と io・platform の用意）。opregion.c を消す | planned（2 LW） |
+| p017 | VBT の解析（xd-vbt を真に、旧 parser と影の比較を 1 段） | planned（4 LW） |
+| p018 | EDID の decode（xd-edid）+ vbt.c の削除 | planned（2 LW） |
+| p019 | AUX の transaction（xd-aux。well・DC off・VDD は呼ぶ側） | planned（4 LW） |
+| p020 | GMBUS と DDC の EDID の読み（xd-gmbus） | planned（3 LW。HDMI の plug はユーザーの一覧） |
+| p021 | backlight の PWM（xd-panel） | planned（2 LW） |
+| p022 | panel power（PPS、xd-panel） | planned（3 LW） |
+| p023 | power well の操作（W1、xd-power。p006 の差分を当て直す） | planned（5 LW） |
+| p024 | well の所属（W3）と refcount（xd-power） | planned（4 LW） |
+| p025 | DC state と DC9（xd-power、dc9.c を消す） | planned（3 LW） |
+| p026 | DMC（xd-dmc） | planned（4 LW） |
+| p027 | CDCLK（xd-clock） | planned（3 LW） |
+| p028 | combo DPLL（xd-clock） | planned（5 LW。5320 の節目） |
+| p029 | combo PHY（xd-ddi: init・lane・swing） | planned（4 LW） |
+| p030 | DDI の buffer（xd-ddi: BUF_CTL・DP_TP・idle） | planned（4 LW） |
+| p031 | DP の訓練（xd-dp） | planned（6 LW） |
+| p032 | transcoder と pipe（xd-pipe） | planned（5 LW） |
+| p033 | plane と flip（xd-pipe） | planned（3 LW） |
+| p034 | DBUF と watermark（xd-dbuf） | planned（7 LW。HDMI の 2 画面はユーザーの一覧） |
+| p035 | display の init/uninit の列（xd-power の司令） | planned（4 LW。5320 の節目） |
+| p036 | GOP の読み出しと判断（N0、xd-takeover。旧 N0 と影の比較） | planned（4 LW） |
+| p037 | 引き継ぎ（N1）と readout/sanitize（xd-takeover。takeover.c を消す） | planned（6 LW） |
+| p038 | screen と resident run（口 `xd.h`。modeset・state・internal.h の Linux の型と殻を消す） | planned（12 LW。5320・SV7 の節目、QEMU の boot-test） |
+| p039 | hotplug と HDMI の head（xd-hpd、output.c の port の規則を platform の記述に） | planned（8 LW。HDMI の plug はユーザーの一覧） |
+| p040 | Type-C（流れ A）と USB-C の DP（xd-tc、TC PLL、tc-kern.c・dp-ext*.c を消す） | planned（8 LW。USB-C の plug はユーザーの一覧） |
+| p041 | suspend の戻り（xd-display） | planned（4 LW。suspend はユーザーの一覧） |
+| p042 | display.c の段の縮約（§7 #12）・log の文言・xd-diag | planned（4 LW） |
+| p043 | 旧 code の残りの削除・試験の整理・出典の監査 | planned（4 LW。QEMU の boot-test、SV7） |
+| p044 | platform の網羅（display 12 の行）と TGL の TC（流れ B、host だけ）。#21 で全部 xd | planned（4 LW。5320 はユーザーの一覧） |
+| p045 | display 11（Ice Lake） | planned（8 LW。実機は無い） |
+| p046 | 規約の全文の見直しと p045 の出典の監査 | planned（3 LW） |
+
+合計 31 段、140 LW（±40 %）。5330 の素の起動は最少 31 回、見込み約 40 回（design.md §6.6）。

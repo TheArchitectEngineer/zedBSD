@@ -2,7 +2,7 @@
 
 # ws245-p001: Gen12 系（display 12・13）の display の書き直しの設計
 
-Status: in-progress（q1200 P1: design.md の改訂 3a は P1 の branch（efbd30ff5 の後）、3 回のレビューを全部反映。残りは §7 の判断のユーザーへの確認と Q1 の clearance）
+Status: in-progress（q1209 P1: design.md の改訂 4（段ごとの置き換え）、レビュー 4 の反映の後に Q1 の clearance。§7 #0〜#22 の回答は反映済み、#23〜#29 は既定の案でユーザーに聞く）
 Parent: [WS245](../ws.md)
 Approval: 2026-10-15 ユーザー「同時にサブエージェントで、i915のリライトをやります。WSがあると思います。」
 
@@ -32,3 +32,13 @@ ws.md の p001 の行のとおり: Intel の公開の PRM（Gen12・ADL-P）と 
 - Phase p002〜p015、合計 80 LW（±40 %。1 LW ≈ 15〜25 分）。実機の往復は別枠 6〜10 LW。
 - §7 の判断 #0〜#22 をユーザーに聞く（ws.md の Resume point）。主な既定: #0 既定の切り替えは p011、#11 PRM は照合だけ、#13 p003 以降の merge はデモの後、#15 passthrough の scenario 7 つを xd に書き直して残す、#17 TGL の TC を p010 に、#18 RKL・ADL-S は今 i915 が付かない（聞く）、#20 GT は起こさない、#21 未確認の platform は opt-in、#22 Gen9 の機械（聞く）。
 - 未実施: build・host 試験・QEMU・実機（設計の Phase なので対象外）。レビューの「確かめられなかった事」（pipe DMC の well、5320 の HDMI の port、試験の kernel の余裕）は §10 の末尾。
+
+## 改訂 4（2026-10-15 夜、P1、q1209 / q1209-i01）
+
+- 承認: 2026-10-15 夜 ユーザー「了解です。では合格にして進めましょう。続きはサブエージェントで実施しましょう。N=2で、AMD関連とi915関連で分けます。」（Q1: 「design.md の改訂 4。code は書かない」）。
+- 方針の出典: ws.md「進め方の改め」（ユーザー「書き換えが一度に大幅すぎます」「各ステップで5330で動くかどうかをきちんとリグレッションテストしながら、ステップで書き換えていきます」「5330で動作しないものをコミットしないでください」「ベアメタルにしましょう」）、guardrail「i915 の display の書き換えは 5330 で動く段ごとに」、ws.md「§7 の回答」。
+- 下書き 9d50d2727（Q1 が main に merge: 95f942c9d）。§6 を作り直した: 置き換えの方法の規則 R1〜R8（1 段 1 機能、旧 file は殻を残し中身だけ xd、置き換えた中身は同じ段で消す（影の比較の 2 段だけ次の段）、受け入れは host + build + 5330 の素の起動の回帰 → 合格後に main、boot の語 `i915.display=` と adapter は作らない、順は葉から根へ、継ぎ目は今の code の emit の hook と bind_ops）、段の表 p016〜p046（31 段、140 LW ±40 %、5330 の起動は最少 31 回・見込み約 40 回）、§6.3 の試験の道（passthrough を外す）、§6.6 の見積もりと聞く点、§6.7 の p002・p004 の部品の使い方と p006 の途中の差分（temp に保存）の当て直す段、§7 の #0〜#22 の反映と #23〜#29 の新しい質問、§11 の変更の一覧。改訂 3a の p003・p005〜p015 は cancel（ws.md の表）。
+- 確かめた事実（2026-10-15、今の code）: 段の継ぎ目に使う口 `struct i915_lcd_emit`（`internal.h:2138`）と `drv_i915_lcd_kernel_bind_ops`（`modeset.c`）の実装の表（dpcd_read/write → aux.c、panel → panel.c、power_get/put → power.c、dbuf_slices_update、tc_*/dkl_*、vblank の event）、dp-sink.c の `aux->transfer`（1837・2235 行）、edid-read.c の `i915_i2c_transfer`、panel-backlight.c の PWM の register の部分（770〜855 行）、power.c の well の ops と domain の map、display.c の段（`i915_display_noirq_front`・`native_check`・`core_init`・`dmc_init`・`noirq_tail`・`nogem_front`・`setup_outputs`・`readout`・`driver_probe`）、modeset.c の `drv_i915_lcd_kernel_resident_run` の呼ぶ物、各旧 header の公開の関数の数（power 37、takeover 44、modeset 42、hotplug 27、tc 19、dp 18、clock 17 …）、旧 API の呼び手の file ごとの数。
+- 作業ツリー: q1207 で止めた p006 の途中の未 commit の差分を `plan/ws245/temp/p006-partial-20261015.patch`（追跡 5 file の差分 184 行の追加）と `temp/p006-partial-20261015-untracked/`（未追跡の xd-clock.h・xd-power.c/.h・xd-tc.c/.h）に保存し、追跡 file を `git checkout --` で戻してから main 5ac66395e を fast-forward した。未追跡の 5 file は Q1 が temp との一致を確かめて消した。
+- 未実施: build・host 試験・QEMU・実機（設計の Phase なので対象外）。
+- レビュー 4: design-reviewer（結果は [design-review-4.md](../design-review-4.md)、扱いは design.md §11.2）。
