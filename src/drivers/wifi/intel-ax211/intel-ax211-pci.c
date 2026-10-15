@@ -179,6 +179,10 @@
 #define AX211_LMAC_ERROR_WORD_COUNT 30U
 #define AX211_UMAC_ERROR_WORD_COUNT 15U
 
+/*
+ * A key the common layer installed but has not activated: the request, and
+ * whether it is valid and already programmed into the firmware.
+ */
 struct ax211_pci_staged_key {
 	struct intel_ax211_key_request request;
 	uint8_t valid;
@@ -186,34 +190,14 @@ struct ax211_pci_staged_key {
 	uint8_t reserved[6];
 };
 
+/*
+ * One firmware event copied during a direct command, dispatched later from the
+ * poll.
+ */
 struct ax211_pci_deferred_event {
 	struct intel_ax211_boot_received_event received;
 	uint8_t bytes[INTEL_AX211_BOOT_EVENT_CAPACITY];
 };
-/*
- * The silicon revision and radio identity registers, read at attach.
- *
- * The MAC type is bits 15:4 of the silicon revision register (0x37 for So,
- * 0x43 for SoF); the radio kind is bits 23:12 of the radio identity register
- * (0x10d for Garfield Peak), and bit 28 of that register is set on a radio
- * that can run two bands at once.  The driver attaches only to an So or SoF
- * MAC with a single-band Garfield Peak radio, the combination the pinned
- * firmware and PNVM files are built for (ws004 p038).
- *
- * Values referenced: Linux v6.17 drivers/net/wireless/intel/iwlwifi/iwl-csr.h
- * (the two registers and the field positions) and
- * drivers/net/wireless/intel/iwlwifi/iwl-config.h (the MAC and radio codes).
- */
-#define AX211_CSR_SILICON_REVISION 0x028U
-#define AX211_CSR_RADIO_IDENTITY 0x09cU
-#define AX211_SILICON_FAMILY_MASK 0x0000fff0U
-#define AX211_SILICON_FAMILY_SHIFT 4U
-#define AX211_SILICON_FAMILY_SO 0x037U
-#define AX211_SILICON_FAMILY_SOF 0x043U
-#define AX211_RADIO_KIND_MASK 0x00fff000U
-#define AX211_RADIO_KIND_SHIFT 12U
-#define AX211_RADIO_KIND_GF 0x10dU
-#define AX211_RADIO_CONCURRENT_BANDS_FLAG 0x10000000U
 
 /*
  * The silicon revision and radio identity registers, read at attach.
@@ -240,6 +224,12 @@ struct ax211_pci_deferred_event {
 #define AX211_RADIO_KIND_GF 0x10dU
 #define AX211_RADIO_CONCURRENT_BANDS_FLAG 0x10000000U
 
+/*
+ * One AX211 PCI function: its PCI lease, the MMIO and transport layers, the
+ * firmware coordinators of the epoch, the scan, association and key state of
+ * the connection, the network device and the WLAN station, and the lifecycle
+ * flags that order them.
+ */
 struct ax211_pci_controller {
 	struct mutex lifecycle_lock;
 	struct spinlock interrupt_lock;
@@ -366,6 +356,10 @@ struct ax211_pci_controller {
 	unsigned suspended;
 };
 
+/*
+ * The registry of controllers: the list, its lock, the epoch of the last
+ * refresh, and whether the registry is set up.
+ */
 static struct ax211_pci_controller *ax211_controllers;
 static struct spinlock ax211_registry_lock;
 static unsigned ax211_refresh_epoch;
@@ -492,6 +486,7 @@ static int ax211_radio_quiesce(void *context);
 static int ax211_radio_stop_retry(void *context);
 static int ax211_radio_restart(void *context);
 
+/* The one PCI identity the driver binds. */
 static const struct drv_pci_id ax211_pci_ids[] = {
 	{
 		.vendor = AX211_PCI_VENDOR,
@@ -503,6 +498,7 @@ static const struct drv_pci_id ax211_pci_ids[] = {
 	},
 };
 
+/* The PCI driver of the AX211. */
 static struct drv_pci_driver ax211_pci_driver = {
 	.name = "intel-ax211",
 	.ids = ax211_pci_ids,
@@ -531,6 +527,7 @@ static const struct wlan_radio_ops ax211_radio_ops = {
 	.stop_retry = ax211_radio_stop_retry,
 	.restart = ax211_radio_restart};
 
+/* The network device operations of the AX211 interface. */
 static const struct net_device_ops ax211_net_ops = {
 	.open = ax211_net_open,
 	.close = ax211_net_close,
@@ -539,6 +536,10 @@ static const struct net_device_ops ax211_net_ops = {
 	.ioctl = ax211_net_ioctl,
 	.release = ax211_net_release};
 
+/*
+ * What the first-boot and operational coordinators call back into this
+ * controller for.
+ */
 static const struct intel_ax211_runtime_start_ops ax211_runtime_start_ops = {
 	.boot = {.receive_epoch_begin = ax211_pci_receive_epoch_begin,
 		 .transport_bind = ax211_pci_transport_bind,
@@ -551,10 +552,12 @@ static const struct intel_ax211_runtime_start_ops ax211_runtime_start_ops = {
 	.wake_hold = ax211_pci_wake_hold,
 	.wake_release = ax211_pci_wake_release};
 
+/* What the transmit ring calls back into this controller for. */
 static const struct intel_ax211_tx_ring_ops ax211_tx_ring_ops = {
 	.sync_for_device = ax211_pci_tx_sync_for_device,
 	.write32 = ax211_pci_tx_write32};
 
+/* What the association session calls back into this controller for. */
 static const struct intel_ax211_assoc_ops ax211_assoc_ops = {
 	.clock_us = ax211_pci_assoc_clock_us,
 	.exchange = ax211_pci_assoc_exchange};
@@ -812,7 +815,7 @@ ax211_pci_detach(
 	if (error != 0) {
 		mutex_unlock(&controller->lifecycle_lock);
 
-		/* Failed. */
+		/* Reports the failure. */
 		return error;
 	}
 
@@ -848,7 +851,7 @@ ax211_pci_detach(
 	if (error != 0) {
 		mutex_unlock(&controller->lifecycle_lock);
 
-		/* Failed. */
+		/* Reports the failure. */
 		return error;
 	}
 
@@ -858,7 +861,7 @@ ax211_pci_detach(
 		controller->quarantined = 1U;
 		mutex_unlock(&controller->lifecycle_lock);
 
-		/* Failed. */
+		/* Reports the failure. */
 		return error;
 	}
 
@@ -868,7 +871,7 @@ ax211_pci_detach(
 		controller->quarantined = 1U;
 		mutex_unlock(&controller->lifecycle_lock);
 
-		/* Failed. */
+		/* Reports the failure. */
 		return error;
 	}
 
@@ -883,7 +886,7 @@ ax211_pci_detach(
 	if (error != 0) {
 		mutex_unlock(&controller->lifecycle_lock);
 
-		/* Failed. */
+		/* Reports the failure. */
 		return error;
 	}
 
@@ -1334,7 +1337,7 @@ ax211_pci_list_remove(
 	if (controller->refresh_busy) {
 		spin_unlock_irqrestore(&ax211_registry_lock, enabled);
 
-		/* Failed. */
+		/* Reports the failure. */
 		return EBUSY;
 	}
 
@@ -1555,7 +1558,7 @@ ax211_pci_publish(
 		device->driver_data = NULL;
 		net_device_destroy(device);
 
-		/* Failed. */
+		/* Reports the failure. */
 		return error;
 	}
 
@@ -1586,7 +1589,7 @@ ax211_pci_publish(
 		if (gone_error != 0)
 			return gone_error;
 
-		/* Failed. */
+		/* Reports the failure. */
 		return error;
 	}
 
@@ -2648,7 +2651,7 @@ ax211_pci_receive_event(
 				   causes.raw_queue_causes,
 				   causes.raw_hardware);
 
-			/* Failed. */
+			/* Reports the failure. */
 			return INTEL_AX211_BOOT_RECEIVE_IO;
 		}
 
@@ -3868,7 +3871,7 @@ ax211_pci_runtime_event_dispatch(
 			return 0;
 		}
 
-		/* Failed. */
+		/* Reports the failure. */
 		return EIO;
 	}
 
@@ -4183,7 +4186,7 @@ ax211_pci_sram_read_locked(
 		if (result != 0) {
 			kern_memset(words, 0, count * sizeof(*words));
 
-			/* Failed. */
+			/* Reports the failure. */
 			return EIO;
 		}
 	}
@@ -4608,7 +4611,7 @@ ax211_pci_direct_command(
 	if (result == 0 && unlock_result != 0)
 		result = EIO;
 
-	/* Failed. */
+	/* Reports the failure. */
 	if (result != 0)
 		return result;
 
@@ -6045,7 +6048,7 @@ ax211_net_open(
 	if (busy) {
 		mutex_unlock(&controller->lifecycle_lock);
 
-		/* Failed. */
+		/* Reports the failure. */
 		return EBUSY;
 	}
 
@@ -6701,7 +6704,7 @@ ax211_net_transmit(
 	if (device == NULL) {
 		packet_buf_free(packet);
 
-		/* Failed. */
+		/* Reports the failure. */
 		return ENODEV;
 	}
 
@@ -6710,7 +6713,7 @@ ax211_net_transmit(
 	if (controller == NULL) {
 		packet_buf_free(packet);
 
-		/* Failed. */
+		/* Reports the failure. */
 		return ENODEV;
 	}
 
@@ -6738,7 +6741,7 @@ ax211_net_transmit(
 	if (station == NULL) {
 		packet_buf_free(packet);
 
-		/* Failed. */
+		/* Reports the failure. */
 		return error;
 	}
 
@@ -7102,7 +7105,7 @@ ax211_radio_scan_channel_start(
 			result = ENODEV;
 		mutex_unlock(&controller->lifecycle_lock);
 
-		/* Failed. */
+		/* Reports the failure. */
 		return result;
 	}
 
@@ -7110,7 +7113,7 @@ ax211_radio_scan_channel_start(
 	if (step_index >= controller->scan_session.full_profile.channel_count) {
 		mutex_unlock(&controller->lifecycle_lock);
 
-		/* Failed. */
+		/* Reports the failure. */
 		return EINVAL;
 	}
 
@@ -7119,7 +7122,7 @@ ax211_radio_scan_channel_start(
 	if (!present) {
 		mutex_unlock(&controller->lifecycle_lock);
 
-		/* Failed. */
+		/* Reports the failure. */
 		return EINVAL;
 	}
 
@@ -7202,7 +7205,7 @@ ax211_radio_scan_stop(
 	if (controller->recovery_pending && !controller->recovery_running) {
 		mutex_unlock(&controller->lifecycle_lock);
 
-		/* Failed. */
+		/* Reports the failure. */
 		return ENETDOWN;
 	}
 
@@ -7226,7 +7229,7 @@ ax211_radio_scan_stop(
 	if (controller->scan_session.common_generation != generation) {
 		mutex_unlock(&controller->lifecycle_lock);
 
-		/* Failed. */
+		/* Reports the failure. */
 		return ESTALE;
 	}
 
@@ -7268,7 +7271,7 @@ ax211_radio_scan_stop(
 	    result == INTEL_AX211_SCAN_SESSION_BUSY) {
 		mutex_unlock(&controller->lifecycle_lock);
 
-		/* Failed. */
+		/* Reports the failure. */
 		return EBUSY;
 	}
 
@@ -7306,7 +7309,7 @@ ax211_radio_scan_stop(
 
 		mutex_unlock(&controller->lifecycle_lock);
 
-		/* Failed. */
+		/* Reports the failure. */
 		if (error != 0)
 			return error;
 
@@ -7518,7 +7521,7 @@ ax211_radio_connect_start(
 
 	mutex_unlock(&controller->lifecycle_lock);
 
-	/* Failed. */
+	/* Reports the failure. */
 	if (result != 0)
 		return result;
 
@@ -7579,7 +7582,7 @@ ax211_radio_disconnect(
 
 	mutex_unlock(&controller->lifecycle_lock);
 
-	/* Failed. */
+	/* Reports the failure. */
 	if (result != 0)
 		return result;
 
@@ -7667,7 +7670,7 @@ ax211_radio_management_transmit(
 
 	mutex_unlock(&controller->lifecycle_lock);
 
-	/* Failed. */
+	/* Reports the failure. */
 	if (result != 0)
 		return result;
 
@@ -7810,7 +7813,7 @@ ax211_radio_association_set(
 
 	mutex_unlock(&controller->lifecycle_lock);
 
-	/* Failed. */
+	/* Reports the failure. */
 	if (result != 0)
 		return result;
 
@@ -7854,7 +7857,7 @@ ax211_radio_association_clear(
 
 	mutex_unlock(&controller->lifecycle_lock);
 
-	/* Failed. */
+	/* Reports the failure. */
 	if (result != 0)
 		return result;
 
@@ -7966,7 +7969,7 @@ ax211_radio_frame_transmit(
 
 	mutex_unlock(&controller->lifecycle_lock);
 
-	/* Failed. */
+	/* Reports the failure. */
 	if (result != 0)
 		return result;
 
