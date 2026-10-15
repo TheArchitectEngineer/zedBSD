@@ -2,7 +2,7 @@
 
 # ws039-p002: 骨格と認識（段 A0・A1・A1v、読むだけ）
 
-Status: in-progress（2026-10-16 P3、q1211 / q1211-i01）
+Status: in-progress（2026-10-16 P3、q1211 / q1211-i01。code・host 試験・USB の image まで済み、実機の電源の入れ直しと USB の差し込み待ち）
 Disposition: normal
 Parent: [WS039](../ws.md)
 実行者: P3（worktree `/home/awe/zedBSD-worktrees/p3`、branch `agent/p3-ws039`、base main `202d4ed03`）
@@ -79,5 +79,7 @@ driver の file: `amdrdna.c`（PCI の登録・attach・段の機械・bring-up 
 - [x] 骨格・device id の表・discovery・BAR0・GOP の readout・VBIOS・runtime DB・VRAM の配置・段の印・control の node・boot の parameter・register の表
 - [x] 監査の script と host 試験 (b)(f)(g)(i)
 - [x] build（warning 0）
-- [ ] USB の image（`plan/tools/guest/test-image.sh plan/ws039/tests/config.mk build/p3/usb AMDRDNA_RUN=A1v`）
+- [x] USB の image（`plan/tools/guest/test-image.sh plan/ws039/tests/config.mk build/p3/usb AMDRDNA_RUN=A1v`、tree 073d1a384、rc 0、`check-amd64-native-image` OK、`build/p3/usb/hdd-image.img` 2485125120 byte、SHA-256 `b36df12fa60ffe236829b082251bbb3e0458edc2bf7367de1f5d880353f62805`。Debian の `~/ws039/hdd-image.img` に写して一致を確かめた。warning は外部の package（openssl など）と perl の locale だけ）
+- [x] 実機の操作の道具 [tests/hw-run.sh](../tests/hw-run.sh)（write: USB へ dd、boot: BootNext と reboot、collect: zedBSD の SSH で status・dmesg・VBIOS を取る、debian: 戻る）。実機ではまだ流していない
+- [ ] 待ち（2026-10-16 00:57 に Q1 へ依頼、01:34 まで返事なし）: ユーザーが 10.0.10.3 の電源を入れ直し（amdgpu の load の後の cold）、2.5 GB 以上の USB を挿す。UEFI に USB の entry が無ければ `efibootmgr --create` の可否も Q1 経由で確かめる
 - [ ] 実機（電源の入れ直し・USB の差し込みはユーザー、Q1 経由）: A0・A1・A1v の ok
