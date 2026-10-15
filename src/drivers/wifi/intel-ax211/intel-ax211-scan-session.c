@@ -41,7 +41,8 @@ static int ax211_scan_session_ack(struct intel_ax211_scan_session *session, uint
 static int ax211_scan_session_terminal(struct intel_ax211_scan_session *session, int result);
 
 /*
- * Implements the drv intel ax211 scan session init operation.
+ * Binds a scan session to the command transaction of one firmware epoch and
+ * builds its full scan profile.
  */
 int
 drv_intel_ax211_scan_session_init(
@@ -53,54 +54,69 @@ drv_intel_ax211_scan_session_init(
 	const uint8_t station_address[6],
 	uint32_t hardware_epoch)
 {
-	int error;
 	struct intel_ax211_protocol_command_table copied;
+	size_t pending;
+	int poisoned;
 	int result;
 
-	/* Checks the drv intel ax211 command pending count result. */
-	if (session == NULL || commands == NULL || command_table == NULL ||
-	    command_table->bytes == NULL || nvm == NULL ||
-	    station_address == NULL || hardware_epoch == 0U ||
+	/*
+	 * Refuses missing arguments, a table of another length and a
+	 * transaction of another epoch.
+	 */
+	if (session == NULL ||
+	    commands == NULL ||
+	    command_table == NULL ||
+	    command_table->bytes == NULL ||
+	    nvm == NULL ||
+	    station_address == NULL ||
+	    hardware_epoch == 0U ||
 	    command_table->count != INTEL_AX211_PROTOCOL_API89_COMMAND_COUNT ||
 	    !commands->initialized ||
-	    commands->hardware_epoch != hardware_epoch ||
-	    drv_intel_ax211_command_pending_count(commands) != 0U ||
-	    drv_intel_ax211_command_is_poisoned(commands)) {
-		/* Returns the computed result. */
+	    commands->hardware_epoch != hardware_epoch) {
 		return INTEL_AX211_SCAN_SESSION_INVALID;
 	}
 
-	/* Reads which command versions the firmware offers. */
+	/* Refuses a transaction that still has commands pending. */
+	pending = drv_intel_ax211_command_pending_count(commands);
+	if (pending != 0U)
+		return INTEL_AX211_SCAN_SESSION_INVALID;
+
+	/* Refuses a transaction whose ring is no longer trusted. */
+	poisoned = drv_intel_ax211_command_is_poisoned(commands);
+	if (poisoned)
+		return INTEL_AX211_SCAN_SESSION_INVALID;
+
+	/* Keeps its own copy of the command versions the firmware offers. */
 	kern_memset(session, 0, sizeof(*session));
 	kern_memcpy(session->command_version_bytes, command_table->bytes,
 	       sizeof(session->command_version_bytes));
 
-	/* Checks the drv intel ax211 scan api89 validate result. */
+	/* Refuses a copy that does not parse as a command table. */
 	result = drv_intel_ax211_protocol_command_table_parse(
 		session->command_version_bytes,
 		sizeof(session->command_version_bytes), &copied);
-	if (result != INTEL_AX211_PROTOCOL_OK ||
-	    drv_intel_ax211_scan_api89_validate(&copied) !=
-		    INTEL_AX211_SCAN_OK) {
+	if (result != INTEL_AX211_PROTOCOL_OK) {
 		kern_memset(session, 0, sizeof(*session));
-
-		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_SESSION_UNSUPPORTED;
 	}
 
-	/* Checks the operation result. */
+	/* Refuses an image that does not list the scan commands as expected. */
+	result = drv_intel_ax211_scan_api89_validate(&copied);
+	if (result != INTEL_AX211_SCAN_OK) {
+		kern_memset(session, 0, sizeof(*session));
+		return INTEL_AX211_SCAN_SESSION_UNSUPPORTED;
+	}
+
+	/* Builds the full scan profile from the NVM and country answers. */
 	result = drv_intel_ax211_scan_profile_from_nvm(
 		nvm, mcc, station_address, &session->full_profile);
 	if (result != INTEL_AX211_SCAN_OK) {
 		kern_memset(session, 0, sizeof(*session));
-
-		/* Obtains the ax211 scan session scan result result. */
-		error = ax211_scan_session_scan_result(result);
-
-		/* Failed. */
-		return error;
+		result = ax211_scan_session_scan_result(result);
+		return result;
 	}
 
+	/* Binds the session; no scan runs yet. */
 	session->commands = commands;
 	session->command_table.bytes = session->command_version_bytes;
 	session->command_table.count = copied.count;
@@ -108,12 +124,12 @@ drv_intel_ax211_scan_session_init(
 	session->phase = INTEL_AX211_SCAN_SESSION_IDLE;
 	session->initialized = 1U;
 
-	/* Returns the computed result. */
+	/* Succeeded: the session accepts scans. */
 	return INTEL_AX211_SCAN_SESSION_OK;
 }
 
 /*
- * Implements the drv intel ax211 scan session begin channel operation.
+ * Starts the scan of one channel: encodes its request and submits it.
  */
 int
 drv_intel_ax211_scan_session_begin_channel(
@@ -122,60 +138,64 @@ drv_intel_ax211_scan_session_begin_channel(
 	uint8_t channel,
 	uint64_t now_us)
 {
-	int error;
+	size_t pending;
+	int live;
+	int poisoned;
 	int result;
 
-	/* Checks the ax211 scan session live result. */
-	if (!ax211_scan_session_live(session) || common_generation == 0U)
+	/* Refuses a session that is not bound to the live transaction. */
+	live = ax211_scan_session_live(session);
+	if (!live)
 		return INTEL_AX211_SCAN_SESSION_INVALID;
 
-	/* Handles the session condition. */
+	/* Refuses an unset common generation. */
+	if (common_generation == 0U)
+		return INTEL_AX211_SCAN_SESSION_INVALID;
+
+	/* Refuses a new scan while one is running. */
 	if (session->phase != INTEL_AX211_SCAN_SESSION_IDLE &&
 	    session->phase != INTEL_AX211_SCAN_SESSION_TERMINAL) {
-		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_SESSION_BUSY;
 	}
 
-	/* Handles the session condition. */
+	/*
+	 * Refuses a new scan after a timeout, which needs a device reset first.
+	 */
 	if (session->phase == INTEL_AX211_SCAN_SESSION_TERMINAL &&
 	    session->terminal_result == INTEL_AX211_SCAN_SESSION_TIMEOUT) {
-		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_SESSION_BUSY;
 	}
 
-	/* Checks the drv intel ax211 command pending count result. */
-	if (drv_intel_ax211_command_pending_count(session->commands) != 0U ||
-	    drv_intel_ax211_command_is_poisoned(session->commands)) {
-		/* Returns the computed result. */
+	/* Refuses a transaction that still has commands pending. */
+	pending = drv_intel_ax211_command_pending_count(session->commands);
+	if (pending != 0U)
 		return INTEL_AX211_SCAN_SESSION_COMMAND;
-	}
 
-	/* Checks the operation result. */
+	/* Refuses a transaction whose ring is no longer trusted. */
+	poisoned = drv_intel_ax211_command_is_poisoned(session->commands);
+	if (poisoned)
+		return INTEL_AX211_SCAN_SESSION_COMMAND;
+
+	/* Builds the one-channel profile. */
 	result = ax211_scan_session_channel_profile(session, channel);
 	if (result != INTEL_AX211_SCAN_SESSION_OK)
 		return result;
 
-	/* Checks the operation result. */
+	/* Encodes the request. */
 	result = drv_intel_ax211_scan_request_encode(&session->channel_profile,
 						     session->request);
 	if (result != INTEL_AX211_SCAN_OK) {
-		/* Obtains the ax211 scan session scan result result. */
-		error = ax211_scan_session_scan_result(result);
-
-		/* Failed. */
-		return error;
+		result = ax211_scan_session_scan_result(result);
+		return result;
 	}
 
-	/* Checks the operation result. */
+	/* Starts the scan bookkeeping. */
 	result = drv_intel_ax211_scan_begin(
 		&session->scan, &session->command_table,
 		&session->channel_profile, session->hardware_epoch, now_us);
 	if (result != INTEL_AX211_SCAN_OK) {
-		/* Obtains the ax211 scan session scan result result. */
-		error = ax211_scan_session_scan_result(result);
-
-		/* Failed. */
-		return error;
+		result = ax211_scan_session_scan_result(result);
+		return result;
 	}
 
 	/* Starts one channel's scan and waits for the acknowledgement. */
@@ -183,7 +203,7 @@ drv_intel_ax211_scan_session_begin_channel(
 	session->channel = channel;
 	session->terminal_result = INTEL_AX211_SCAN_SESSION_OK;
 
-	/* Checks the operation result. */
+	/* Submits the request; a failed submission ends the scan. */
 	result = ax211_scan_session_submit(
 		session, INTEL_AX211_SCAN_REQUEST_OPCODE, session->request,
 		sizeof(session->request), now_us,
@@ -193,14 +213,15 @@ drv_intel_ax211_scan_session_begin_channel(
 		kern_memset(&session->scan, 0, sizeof(session->scan));
 		session->phase = INTEL_AX211_SCAN_SESSION_TERMINAL;
 		session->terminal_result = (uint8_t)result;
+		return result;
 	}
 
-	/* Returns the computed result. */
-	return result;
+	/* Succeeded: the request waits for its acknowledgment. */
+	return INTEL_AX211_SCAN_SESSION_OK;
 }
 
 /*
- * Implements the drv intel ax211 scan session start ack operation.
+ * Takes the acknowledgment of the scan request and lets the scan run.
  */
 int
 drv_intel_ax211_scan_session_start_ack(
@@ -210,36 +231,36 @@ drv_intel_ax211_scan_session_start_ack(
 	uint32_t hardware_epoch,
 	uint64_t now_us)
 {
-	int error;
 	int result;
 
-	/* Checks the operation result. */
+	/* Completes the request command with its acknowledgment. */
 	result = ax211_scan_session_ack(
 		session, INTEL_AX211_SCAN_SESSION_WAIT_START_ACK, event_bytes,
 		event_length, hardware_epoch, now_us, NULL);
 	if (result != INTEL_AX211_SCAN_SESSION_OK)
 		return result;
 
-	/* Checks the operation result. */
+	/*
+	 * Moves the scan bookkeeping to running; a refusal ends the session's
+	 * scan.
+	 */
 	result = drv_intel_ax211_scan_request_ack(
 		&session->scan, session->hardware_epoch, now_us);
 	if (result != INTEL_AX211_SCAN_OK) {
-		/* Obtains the ax211 scan session terminal result. */
-		error = ax211_scan_session_terminal(
-			session, ax211_scan_session_scan_result(result));
-
-		/* Failed. */
-		return error;
+		result = ax211_scan_session_scan_result(result);
+		result = ax211_scan_session_terminal(session, result);
+		return result;
 	}
 
+	/* The scan runs. */
 	session->phase = INTEL_AX211_SCAN_SESSION_RUNNING;
 
-	/* Returns the computed result. */
+	/* Succeeded. */
 	return INTEL_AX211_SCAN_SESSION_OK;
 }
 
 /*
- * Implements the drv intel ax211 scan session notification operation.
+ * Takes one scan notification and reports it to the caller.
  */
 int
 drv_intel_ax211_scan_session_notification(
@@ -248,56 +269,58 @@ drv_intel_ax211_scan_session_notification(
 	uint64_t now_us,
 	struct intel_ax211_scan_session_event *event)
 {
-	int error;
 	struct intel_ax211_scan_event decoded;
+	int live;
 	int result;
 
-	/* Checks the ax211 scan session live result. */
-	if (!ax211_scan_session_live(session) || message == NULL ||
-	    event == NULL) {
-		/* Returns the computed result. */
+	/* Refuses a session that is not bound to the live transaction. */
+	live = ax211_scan_session_live(session);
+	if (!live)
 		return INTEL_AX211_SCAN_SESSION_INVALID;
-	}
 
-	/* Handles the session condition. */
+	/* Refuses missing arguments. */
+	if (message == NULL || event == NULL)
+		return INTEL_AX211_SCAN_SESSION_INVALID;
+
+	/* A notification after the scan ended is a repeat. */
 	if (session->phase == INTEL_AX211_SCAN_SESSION_TERMINAL)
 		return INTEL_AX211_SCAN_SESSION_DUPLICATE;
 
-	/* Handles the session condition. */
+	/* Refuses a notification while no scan runs or is being cancelled. */
 	if (session->phase != INTEL_AX211_SCAN_SESSION_RUNNING &&
 	    session->phase != INTEL_AX211_SCAN_SESSION_WAIT_ABORT_COMPLETE) {
-		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_SESSION_OUT_OF_ORDER;
 	}
 
-	/* Handles the session condition. */
+	/* Ends the session when the cancelled scan's completion is late. */
 	if (session->phase == INTEL_AX211_SCAN_SESSION_WAIT_ABORT_COMPLETE &&
 	    now_us >= session->command_deadline) {
-		/* Obtains the ax211 scan session terminal result. */
-		error = ax211_scan_session_terminal(
+		result = ax211_scan_session_terminal(
 			session, INTEL_AX211_SCAN_SESSION_TIMEOUT);
-
-		/* Failed. */
-		return error;
+		return result;
 	}
 
+	/* Decodes the notification. */
 	kern_memset(&decoded, 0, sizeof(decoded));
 	result = drv_intel_ax211_scan_event_accept(&session->scan, message,
 						   now_us, &decoded);
-
-	/* Checks the operation status. */
 	result = ax211_scan_session_scan_result(result);
+
+	/*
+	 * A completion, a cancel, a failure or a timeout ends the session's
+	 * scan.
+	 */
 	if (result == INTEL_AX211_SCAN_SESSION_COMPLETE ||
 	    result == INTEL_AX211_SCAN_SESSION_ABORTED ||
 	    result == INTEL_AX211_SCAN_SESSION_FAILED ||
 	    result == INTEL_AX211_SCAN_SESSION_TIMEOUT) {
-		/* Checks the operation result. */
+		/* Only a timeout still needs a cancel. */
 		if (result != INTEL_AX211_SCAN_SESSION_TIMEOUT)
 			session->scan.abort_required = 0U;
 		ax211_scan_session_terminal(session, result);
 	}
 
-	/* Checks the operation status. */
+	/* Hands a decoded notification to the caller. */
 	if (result == INTEL_AX211_SCAN_SESSION_COMPLETE ||
 	    result == INTEL_AX211_SCAN_SESSION_ABORTED ||
 	    result == INTEL_AX211_SCAN_SESSION_FAILED ||
@@ -308,12 +331,12 @@ drv_intel_ax211_scan_session_notification(
 		event->firmware = decoded;
 	}
 
-	/* Returns the computed result. */
+	/* Reports what the notification was. */
 	return result;
 }
 
 /*
- * Implements the drv intel ax211 scan session abort operation.
+ * Cancels the running scan, or a scan whose watchdog ended it.
  */
 int
 drv_intel_ax211_scan_session_abort(
@@ -321,57 +344,60 @@ drv_intel_ax211_scan_session_abort(
 	uint64_t common_generation,
 	uint64_t now_us)
 {
-	int error;
 	uint8_t payload[INTEL_AX211_SCAN_CANCEL_SIZE];
+	int live;
 	int result;
 
-	/* Checks the ax211 scan session live result. */
-	if (!ax211_scan_session_live(session) || common_generation == 0U)
+	/* Refuses a session that is not bound to the live transaction. */
+	live = ax211_scan_session_live(session);
+	if (!live)
 		return INTEL_AX211_SCAN_SESSION_INVALID;
 
-	/* Handles the common generation condition. */
+	/* Refuses an unset common generation. */
+	if (common_generation == 0U)
+		return INTEL_AX211_SCAN_SESSION_INVALID;
+
+	/* Refuses a cancel of another scan. */
 	if (common_generation != session->common_generation)
 		return INTEL_AX211_SCAN_SESSION_STALE;
 
-	/* Handles the session condition. */
+	/* A cancel of an ended scan that needs none is a repeat. */
 	if (session->phase == INTEL_AX211_SCAN_SESSION_TERMINAL &&
 	    !session->scan.abort_required) {
-		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_SESSION_DUPLICATE;
 	}
 
-	/* Handles the session condition. */
+	/*
+	 * Refuses a cancel unless the scan runs or its watchdog asked for one.
+	 */
 	if (session->phase != INTEL_AX211_SCAN_SESSION_RUNNING &&
 	    !(session->phase == INTEL_AX211_SCAN_SESSION_TERMINAL &&
 	      session->scan.abort_required)) {
-		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_SESSION_OUT_OF_ORDER;
 	}
 
-	/* Checks the drv intel ax211 scan abort encode result. */
-	if (drv_intel_ax211_scan_abort_encode(payload) != INTEL_AX211_SCAN_OK)
+	/* Encodes the cancel command. */
+	result = drv_intel_ax211_scan_abort_encode(payload);
+	if (result != INTEL_AX211_SCAN_OK)
 		return INTEL_AX211_SCAN_SESSION_FAILED;
 
-	/* Checks the operation result. */
+	/* Submits it; a failed submission ends the session's scan. */
 	result = ax211_scan_session_submit(
 		session, INTEL_AX211_SCAN_CANCEL_OPCODE, payload,
 		sizeof(payload), now_us,
 		INTEL_AX211_SCAN_SESSION_ABORT_TIMEOUT_US,
 		INTEL_AX211_SCAN_SESSION_WAIT_ABORT_ACK);
 	if (result != INTEL_AX211_SCAN_SESSION_OK) {
-		/* Obtains the ax211 scan session terminal result. */
-		error = ax211_scan_session_terminal(session, result);
-
-		/* Failed. */
-		return error;
+		result = ax211_scan_session_terminal(session, result);
+		return result;
 	}
 
-	/* Returns the computed result. */
+	/* Succeeded: the cancel waits for its answer. */
 	return INTEL_AX211_SCAN_SESSION_OK;
 }
 
 /*
- * Implements the drv intel ax211 scan session abort ack operation.
+ * Takes the answer to the scan cancel.
  */
 int
 drv_intel_ax211_scan_session_abort_ack(
@@ -381,40 +407,32 @@ drv_intel_ax211_scan_session_abort_ack(
 	uint32_t hardware_epoch,
 	uint64_t now_us)
 {
-	int error;
 	uint32_t abort_status;
 	int result;
 
-	/* Checks the operation result. */
+	/* Completes the cancel command and takes its status word. */
 	result = ax211_scan_session_ack(
 		session, INTEL_AX211_SCAN_SESSION_WAIT_ABORT_ACK, event_bytes,
 		event_length, hardware_epoch, now_us, &abort_status);
 	if (result != INTEL_AX211_SCAN_SESSION_OK)
 		return result;
 
-	/* Handles the abort status condition. */
+	/* Ends the session's scan on an unknown status. */
 	if (abort_status != AX211_SCAN_CANCEL_DONE &&
 	    abort_status != AX211_SCAN_CANCEL_PENDING &&
 	    abort_status != AX211_SCAN_CANCEL_NO_SCAN) {
-		/* Obtains the ax211 scan session terminal result. */
-		error = ax211_scan_session_terminal(
+		result = ax211_scan_session_terminal(
 			session, INTEL_AX211_SCAN_SESSION_COMMAND);
-
-		/* Failed. */
-		return error;
+		return result;
 	}
 
-	/* Handles the abort status condition. */
+	/* No scan was running: the scan ends as cancelled at once. */
 	if (abort_status == AX211_SCAN_CANCEL_NO_SCAN) {
 		session->scan.abort_required = 0U;
 		session->scan.phase = INTEL_AX211_SCAN_PHASE_TERMINAL;
-
-		/* Obtains the ax211 scan session terminal result. */
-		error = ax211_scan_session_terminal(
+		result = ax211_scan_session_terminal(
 			session, INTEL_AX211_SCAN_SESSION_ABORTED);
-
-		/* Failed. */
-		return error;
+		return result;
 	}
 
 	/* SUCCESS and IN_PROGRESS both complete through SCAN_COMPLETE_UMAC. */
@@ -422,171 +440,171 @@ drv_intel_ax211_scan_session_abort_ack(
 	session->scan.scan_deadline = session->command_deadline;
 	session->phase = INTEL_AX211_SCAN_SESSION_WAIT_ABORT_COMPLETE;
 
-	/* Returns the computed result. */
+	/* Succeeded: the cancelled scan's completion is awaited. */
 	return INTEL_AX211_SCAN_SESSION_OK;
 }
 
 /*
- * Implements the drv intel ax211 scan session expire operation.
+ * Ends the session's scan when the deadline of what it waits for has passed.
  */
 int
 drv_intel_ax211_scan_session_expire(
 	struct intel_ax211_scan_session *session,
 	uint64_t now_us)
 {
-	int error;
 	struct intel_ax211_command_handle expired;
+	int live;
 	int result;
 
-	/* Checks the ax211 scan session live result. */
-	if (!ax211_scan_session_live(session))
+	/* Refuses a session that is not bound to the live transaction. */
+	live = ax211_scan_session_live(session);
+	if (!live)
 		return INTEL_AX211_SCAN_SESSION_INVALID;
 
-	/* Handles the session condition. */
+	/* An ended scan cannot expire again. */
 	if (session->phase == INTEL_AX211_SCAN_SESSION_TERMINAL)
 		return INTEL_AX211_SCAN_SESSION_DUPLICATE;
 
-	/* Handles the session condition. */
+	/*
+	 * A command waiting for its answer expires through the command
+	 * transaction.
+	 */
 	if (session->phase == INTEL_AX211_SCAN_SESSION_WAIT_START_ACK ||
 	    session->phase == INTEL_AX211_SCAN_SESSION_WAIT_ABORT_ACK) {
-		/* Handles the now us condition. */
+		/* The command still has time. */
 		if (now_us < session->command_deadline)
 			return INTEL_AX211_SCAN_SESSION_OK;
-		kern_memset(&expired, 0, sizeof(expired));
 
-		/* Checks the operation result. */
+		/* Times out the oldest command. */
+		kern_memset(&expired, 0, sizeof(expired));
 		result = drv_intel_ax211_command_timeout_oldest(
 			session->commands, now_us, &expired);
 		if (result == INTEL_AX211_COMMAND_PENDING)
 			return INTEL_AX211_SCAN_SESSION_OK;
-		if (result != INTEL_AX211_COMMAND_TIMEOUT) {
-			/* Obtains the ax211 scan session terminal result. */
-			error = ax211_scan_session_terminal(
-				session,
-				ax211_scan_session_command_result(result));
 
-			/* Failed. */
-			return error;
+		/*
+		 * Ends the session's scan when the transaction failed
+		 * otherwise.
+		 */
+		if (result != INTEL_AX211_COMMAND_TIMEOUT) {
+			result = ax211_scan_session_command_result(result);
+			result = ax211_scan_session_terminal(session, result);
+			return result;
 		}
 
-		/* Handles the expired condition. */
+		/* Ends the session's scan when another command timed out. */
 		if (expired.token.queue !=
 			    session->command_handle.token.queue ||
 		    expired.token.index !=
 			    session->command_handle.token.index ||
 		    expired.generation != session->command_handle.generation) {
-			/* Obtains the ax211 scan session terminal result. */
-			error = ax211_scan_session_terminal(
+			result = ax211_scan_session_terminal(
 				session, INTEL_AX211_SCAN_SESSION_OUT_OF_ORDER);
-
-			/* Failed. */
-			return error;
+			return result;
 		}
 
-		/* Obtains the ax211 scan session terminal result. */
-		error = ax211_scan_session_terminal(
+		/* Ends the session's scan as timed out. */
+		result = ax211_scan_session_terminal(
 			session, INTEL_AX211_SCAN_SESSION_TIMEOUT);
-
-		/* Failed. */
-		return error;
+		return result;
 	}
 
-	/* Handles the session condition. */
+	/* A cancelled scan expires when its completion is late. */
 	if (session->phase == INTEL_AX211_SCAN_SESSION_WAIT_ABORT_COMPLETE) {
-		/* Handles the now us condition. */
+		/* The completion still has time. */
 		if (now_us < session->command_deadline)
 			return INTEL_AX211_SCAN_SESSION_OK;
+
+		/* Ends the scan; it still needs a cancel. */
 		session->scan.phase = INTEL_AX211_SCAN_PHASE_TERMINAL;
 		session->scan.abort_required = 1U;
-
-		/* Obtains the ax211 scan session terminal result. */
-		error = ax211_scan_session_terminal(
+		result = ax211_scan_session_terminal(
 			session, INTEL_AX211_SCAN_SESSION_TIMEOUT);
-
-		/* Failed. */
-		return error;
+		return result;
 	}
 
-	/* Handles the session condition. */
+	/* No other phase but a running scan has a deadline. */
 	if (session->phase != INTEL_AX211_SCAN_SESSION_RUNNING)
 		return INTEL_AX211_SCAN_SESSION_OUT_OF_ORDER;
+
+	/* Lets the scan bookkeeping check its watchdog. */
 	result = drv_intel_ax211_scan_expire(&session->scan, now_us);
-
-	/* Checks the operation result. */
 	result = ax211_scan_session_scan_result(result);
-	if (result == INTEL_AX211_SCAN_SESSION_TIMEOUT) {
-		/* Obtains the ax211 scan session terminal result. */
-		error = ax211_scan_session_terminal(session, result);
 
-		/* Failed. */
-		return error;
+	/* Ends the session's scan when the watchdog ran out. */
+	if (result == INTEL_AX211_SCAN_SESSION_TIMEOUT) {
+		result = ax211_scan_session_terminal(session, result);
+		return result;
 	}
 
-	/* Returns the computed result. */
+	/* Reports what the watchdog found. */
 	return result;
 }
 
-/* Supports the ax211 scan session scan result operation. */
+/* Maps a result of the scan codecs to the session's result. */
 static int
 ax211_scan_session_scan_result(
 	int result)
 {
-	/* Dispatch the selected operation case. */
+	/*
+	 * Each scan result has its session counterpart; the rest are failures.
+	 */
 	switch (result) {
 	case INTEL_AX211_SCAN_OK:
-		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_SESSION_OK;
 	case INTEL_AX211_SCAN_INVALID:
-		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_SESSION_INVALID;
 	case INTEL_AX211_SCAN_UNSUPPORTED:
-		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_SESSION_UNSUPPORTED;
 	case INTEL_AX211_SCAN_STALE:
-		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_SESSION_STALE;
 	case INTEL_AX211_SCAN_DUPLICATE:
-		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_SESSION_DUPLICATE;
 	case INTEL_AX211_SCAN_OUT_OF_ORDER:
-		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_SESSION_OUT_OF_ORDER;
 	case INTEL_AX211_SCAN_TIMED_OUT:
-		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_SESSION_TIMEOUT;
 	case INTEL_AX211_SCAN_COMPLETE:
-		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_SESSION_COMPLETE;
 	case INTEL_AX211_SCAN_ABORTED:
-		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_SESSION_ABORTED;
 	case INTEL_AX211_SCAN_TRUNCATED:
 	case INTEL_AX211_SCAN_OVERSIZED:
 	case INTEL_AX211_SCAN_FAILED:
 	default:
-		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_SESSION_FAILED;
 	}
 }
 
-/* Supports the ax211 scan session live operation. */
+/*
+ * Reports whether a session is bound to the live command transaction: 1 when
+ * it is, 0 when not.
+ */
 static int
 ax211_scan_session_live(
 	const struct intel_ax211_scan_session *session)
 {
-	/* Handles the session availability. */
-	if (session == NULL || !session->initialized ||
-	    session->commands == NULL || session->hardware_epoch == 0U) {
-		/* Succeeded. */
+	/* Rejects a missing or unbound session. */
+	if (session == NULL ||
+	    !session->initialized ||
+	    session->commands == NULL ||
+	    session->hardware_epoch == 0U) {
 		return 0;
 	}
 
-	/* Returns the computed result. */
-	return session->commands->initialized &&
-	       session->commands->hardware_epoch == session->hardware_epoch;
+	/* Rejects a transaction that is no longer initialized. */
+	if (!session->commands->initialized)
+		return 0;
+
+	/* Rejects a transaction of another firmware epoch. */
+	if (session->commands->hardware_epoch != session->hardware_epoch)
+		return 0;
+
+	/* The session is live. */
+	return 1;
 }
 
-/* Supports the ax211 scan session channel profile operation. */
+/* Builds the profile that scans one channel of the full profile. */
 static int
 ax211_scan_session_channel_profile(
 	struct intel_ax211_scan_session *session,
@@ -594,9 +612,9 @@ ax211_scan_session_channel_profile(
 {
 	size_t index;
 
-	/* Process each remaining element. */
+	/* Looks for the channel in the full profile. */
 	for (index = 0U; index < session->full_profile.channel_count; index++) {
-		/* Handles the session condition. */
+		/* Builds the one-channel profile from the matching entry. */
 		if (session->full_profile.channel[index] == channel) {
 			kern_memset(&session->channel_profile, 0,
 			       sizeof(session->channel_profile));
@@ -606,17 +624,18 @@ ax211_scan_session_channel_profile(
 				session->full_profile.channel_width_mhz;
 			session->channel_profile.channel[0] = channel;
 			session->channel_profile.channel_count = 1U;
-
-			/* Returns the computed result. */
 			return INTEL_AX211_SCAN_SESSION_OK;
 		}
 	}
 
-	/* Returns the computed result. */
+	/* The full profile does not allow the channel. */
 	return INTEL_AX211_SCAN_SESSION_UNSUPPORTED;
 }
 
-/* Supports the ax211 scan session submit operation. */
+/*
+ * Submits one scan command and moves the session to the phase that waits for
+ * it.
+ */
 static int
 ax211_scan_session_submit(
 	struct intel_ax211_scan_session *session,
@@ -630,20 +649,20 @@ ax211_scan_session_submit(
 	struct intel_ax211_command_request request;
 	int result;
 
-	/* Handles the now us condition. */
+	/* Refuses a deadline that overflows. */
 	if (now_us > UINT64_MAX - timeout_us)
 		return INTEL_AX211_SCAN_SESSION_INVALID;
+
+	/* API89 layouts are 17/1; the Gen3 wide-header wire version is zero. */
 	kern_memset(&request, 0, sizeof(request));
 	request.command.group = INTEL_AX211_SCAN_FAMILY_CLASSIC_WIDE;
 	request.command.opcode = opcode;
-
-	/* API89 layouts are 17/1; the Gen3 wide-header wire version is zero. */
 	request.command.version = 0U;
 	request.payload = payload;
 	request.payload_length = payload_length;
 	request.response_version = 0U;
 
-	/* Handles the opcode condition. */
+	/* The cancel is answered by one status word; the request by nothing. */
 	if (opcode == INTEL_AX211_SCAN_CANCEL_OPCODE) {
 		request.minimum_response_length =
 			AX211_SCAN_CANCEL_RESPONSE_SIZE;
@@ -654,57 +673,58 @@ ax211_scan_session_submit(
 		request.maximum_response_length = 0U;
 	}
 
+	/* Submits the command. */
 	result = drv_intel_ax211_command_submit(session->commands, &request,
 						now_us, timeout_us,
 						&session->command_handle);
-
-	/* Checks the operation result. */
 	result = ax211_scan_session_command_result(result);
 	if (result != INTEL_AX211_SCAN_SESSION_OK)
 		return result;
+
+	/* Waits for the answer until the deadline. */
 	session->command_deadline = now_us + timeout_us;
 	session->phase = phase;
 
-	/* Returns the computed result. */
+	/* Succeeded. */
 	return INTEL_AX211_SCAN_SESSION_OK;
 }
 
-/* Supports the ax211 scan session command result operation. */
+/* Maps a result of the command transaction to the session's result. */
 static int
 ax211_scan_session_command_result(
 	int result)
 {
-	/* Dispatch the selected operation case. */
+	/*
+	 * Each command result has its session counterpart; the rest are command
+	 * failures.
+	 */
 	switch (result) {
 	case INTEL_AX211_COMMAND_OK:
-		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_SESSION_OK;
 	case INTEL_AX211_COMMAND_STALE:
-		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_SESSION_STALE;
 	case INTEL_AX211_COMMAND_DUPLICATE:
-		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_SESSION_DUPLICATE;
 	case INTEL_AX211_COMMAND_OUT_OF_ORDER:
-		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_SESSION_OUT_OF_ORDER;
 	case INTEL_AX211_COMMAND_TIMEOUT:
-		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_SESSION_TIMEOUT;
 	case INTEL_AX211_COMMAND_FULL:
 	case INTEL_AX211_COMMAND_PENDING:
-		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_SESSION_BUSY;
 	case INTEL_AX211_COMMAND_INVALID:
-		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_SESSION_INVALID;
 	default:
-		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_SESSION_COMMAND;
 	}
 }
 
-/* Supports the ax211 scan session ack operation. */
+/*
+ * Completes the scan command the session waits for with the answer event.
+ *
+ * A cancel's status word is reported through abort_status, which must be given
+ * exactly when the session waits for the cancel's answer.
+ */
 static int
 ax211_scan_session_ack(
 	struct intel_ax211_scan_session *session,
@@ -715,32 +735,34 @@ ax211_scan_session_ack(
 	uint64_t now_us,
 	uint32_t *abort_status)
 {
-	int error;
 	struct intel_ax211_event event;
 	uint8_t response[AX211_SCAN_CANCEL_RESPONSE_SIZE];
 	void *response_bytes;
 	size_t response_capacity;
 	size_t response_length;
+	int live;
 	int result;
 
-	/* Checks the ax211 scan session live result. */
-	if (!ax211_scan_session_live(session) || event_bytes == NULL ||
-	    hardware_epoch == 0U) {
-		/* Returns the computed result. */
+	/* Refuses a session that is not bound to the live transaction. */
+	live = ax211_scan_session_live(session);
+	if (!live)
 		return INTEL_AX211_SCAN_SESSION_INVALID;
-	}
 
-	/* Handles the hardware epoch condition. */
+	/* Refuses a missing event and an unset epoch. */
+	if (event_bytes == NULL || hardware_epoch == 0U)
+		return INTEL_AX211_SCAN_SESSION_INVALID;
+
+	/* Refuses an answer of an earlier firmware epoch. */
 	if (hardware_epoch != session->hardware_epoch)
 		return INTEL_AX211_SCAN_SESSION_STALE;
 
-	/* Handles the session condition. */
+	/* An answer after the scan ended is a repeat. */
 	if (session->phase == INTEL_AX211_SCAN_SESSION_TERMINAL)
 		return INTEL_AX211_SCAN_SESSION_DUPLICATE;
 
-	/* Handles the session condition. */
+	/* An answer in another phase is a repeat when that phase follows it. */
 	if (session->phase != required_phase) {
-		/* Handles the required phase condition. */
+		/* The phase the answer leads to has already been reached. */
 		if ((required_phase ==
 			     INTEL_AX211_SCAN_SESSION_WAIT_START_ACK &&
 		     session->phase == INTEL_AX211_SCAN_SESSION_RUNNING) ||
@@ -748,47 +770,44 @@ ax211_scan_session_ack(
 			     INTEL_AX211_SCAN_SESSION_WAIT_ABORT_ACK &&
 		     session->phase ==
 			     INTEL_AX211_SCAN_SESSION_WAIT_ABORT_COMPLETE)) {
-			/* Returns the computed result. */
 			return INTEL_AX211_SCAN_SESSION_DUPLICATE;
 		}
 
-		/* Returns the computed result. */
+		/* Any other phase is out of order. */
 		return INTEL_AX211_SCAN_SESSION_OUT_OF_ORDER;
 	}
 
-	/* Handles the abort status availability. */
-	if ((required_phase == INTEL_AX211_SCAN_SESSION_WAIT_ABORT_ACK) !=
-	    (abort_status != NULL)) {
-		/* Returns the computed result. */
+	/* Refuses a cancel answer without a place for its status word. */
+	if (required_phase == INTEL_AX211_SCAN_SESSION_WAIT_ABORT_ACK &&
+	    abort_status == NULL) {
 		return INTEL_AX211_SCAN_SESSION_INVALID;
 	}
 
-	/* Handles the now us condition. */
+	/* Refuses a status word place for an answer that has none. */
+	if (required_phase != INTEL_AX211_SCAN_SESSION_WAIT_ABORT_ACK &&
+	    abort_status != NULL) {
+		return INTEL_AX211_SCAN_SESSION_INVALID;
+	}
+
+	/* A late answer is handled as an expiry. */
 	if (now_us >= session->command_deadline) {
-		/* Obtains the drv intel ax211 scan session expire result. */
-		error =
-			drv_intel_ax211_scan_session_expire(session, now_us);
-
-		/* Failed. */
-		return error;
+		result = drv_intel_ax211_scan_session_expire(session, now_us);
+		return result;
 	}
 
-	/* Checks the drv intel ax211 event decode result. */
-	if (drv_intel_ax211_event_decode(event_bytes, event_length, &event) !=
-	    INTEL_AX211_SUCCESS) {
-		/* Returns the computed result. */
+	/* Refuses an event that does not decode. */
+	result = drv_intel_ax211_event_decode(event_bytes, event_length, &event);
+	if (result != INTEL_AX211_SUCCESS)
 		return INTEL_AX211_SCAN_SESSION_COMMAND;
-	}
 
-	/* Handles the event condition. */
+	/* Refuses an answer from another ring slot. */
 	if (event.queue != session->command_handle.token.queue ||
 	    event.index != session->command_handle.token.index) {
-		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_SESSION_OUT_OF_ORDER;
 	}
-	response_bytes = NULL;
 
-	/* Handles the abort status availability. */
+	/* Gives a cancel's answer a buffer for its status word. */
+	response_bytes = NULL;
 	response_capacity = 0U;
 	if (abort_status != NULL) {
 		kern_memset(response, 0, sizeof(response));
@@ -796,62 +815,56 @@ ax211_scan_session_ack(
 		response_capacity = sizeof(response);
 	}
 
+	/* Completes the command; a failure ends the session's scan. */
 	response_length = 0U;
 	result = drv_intel_ax211_command_complete(
 		session->commands, event_bytes, event_length, hardware_epoch,
 		response_bytes, response_capacity, &response_length);
-
-	/* Checks the operation result. */
 	result = ax211_scan_session_command_result(result);
 	if (result != INTEL_AX211_SCAN_SESSION_OK) {
-		/* Obtains the ax211 scan session terminal result. */
-		error = ax211_scan_session_terminal(session, result);
-
-		/* Failed. */
-		return error;
+		result = ax211_scan_session_terminal(session, result);
+		return result;
 	}
 
-	/* Handles the abort status availability. */
+	/*
+	 * Ends the session's scan when the request was answered with a payload.
+	 */
 	if (abort_status == NULL && response_length != 0U) {
-		/* Obtains the ax211 scan session terminal result. */
-		error = ax211_scan_session_terminal(
+		result = ax211_scan_session_terminal(
 			session, INTEL_AX211_SCAN_SESSION_COMMAND);
-
-		/* Failed. */
-		return error;
+		return result;
 	}
 
-	/* Handles the abort status availability. */
+	/* Reports the cancel's status word. */
 	if (abort_status != NULL) {
-		/* Handles the response length condition. */
+		/* Ends the session's scan when the word is missing. */
 		if (response_length != sizeof(response)) {
-			/* Obtains the ax211 scan session terminal result. */
-			error = ax211_scan_session_terminal(
+			result = ax211_scan_session_terminal(
 				session, INTEL_AX211_SCAN_SESSION_COMMAND);
-
-			/* Failed. */
-			return error;
+			return result;
 		}
 
+		/* Assembles the little-endian word. */
 		*abort_status = (uint32_t)response[0U] |
 				((uint32_t)response[1U] << 8) |
 				((uint32_t)response[2U] << 16) |
 				((uint32_t)response[3U] << 24);
 	}
 
-	/* Returns the computed result. */
+	/* Succeeded: the command is complete. */
 	return INTEL_AX211_SCAN_SESSION_OK;
 }
 
-/* Supports the ax211 scan session terminal operation. */
+/* Ends the session's scan with a result, and reports that result. */
 static int
 ax211_scan_session_terminal(
 	struct intel_ax211_scan_session *session,
 	int result)
 {
+	/* Records the end and its result. */
 	session->phase = INTEL_AX211_SCAN_SESSION_TERMINAL;
 	session->terminal_result = (uint8_t)result;
 
-	/* Returns the computed result. */
+	/* Reports the result the scan ended with. */
 	return result;
 }
