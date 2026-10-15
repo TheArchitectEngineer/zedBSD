@@ -1,4 +1,4 @@
-/* -*- mode: c; c-file-style: "linux"; tab-width: 8; -*- */
+/* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
 
 /*
  * zedBSD Intel AX211 private first-boot coordinator
@@ -1120,7 +1120,12 @@ ax211_boot_send_stage_select(
 	request.command.opcode = INTEL_AX211_INIT_STAGE_SELECT_OPCODE;
 	request.command.group = INTEL_AX211_INIT_FAMILY_PLATFORM;
 
-	/* OpenBSD API89 uses zero in the wide-header wire-version byte. */
+	/*
+	 * Sends zero in the wide-header wire-version byte, as API 89 accepts.
+	 *
+	 * Procedure referenced: OpenBSD 0f464d413c50 sys/dev/pci/if_iwx.c
+	 * (iwx_send_cmd).
+	 */
 	request.command.version = 0U;
 	request.payload = payload;
 	request.payload_length = sizeof(payload);

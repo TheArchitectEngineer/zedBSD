@@ -9,24 +9,6 @@
 
 /*
  * Intel AX211 private DMA ownership.
- *
- * Sources of the values.  The register offsets, bit positions, command
- * numbers, firmware file record types and wire layouts in this file are facts
- * of the AX211 hardware and of its firmware interface.  Intel publishes no
- * register or host-command specification for this device, so the values were
- * collected with Intel's own driver headers as the primary source: Linux
- * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
- * pcie/iwl-context-info-v2.h and iwl-fh.h.  They were cross-checked against
- * OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c at commit 0f464d413c50.  Each
- * block of values below names the header it was taken from.
- *
- * This file is not an adaptation of those headers.  It collects the interface
- * values, gives them names of its own, and adds what the zedBSD driver
- * established about each of them while it was brought up on AX211 hardware:
- * where the value is used, what it means to the device or to the firmware,
- * the order the device requires, and how the firmware behaved.  It is written
- * as a reference that a developer of an AX211 driver for another operating
- * system can use on its own.
  */
 
 #include "intel-ax211-dma.h"
@@ -37,21 +19,23 @@
 /*
  * The layout of the scratch area, and the boot context's fixed fields.
  *
- * Source: Linux iwlwifi v6.17 pcie/iwl-context-info-v2.h (struct
- * iwl_prph_scratch and enum iwl_prph_scratch_flags), cross-checked with
- * OpenBSD if_iwxreg.h (struct iwx_prph_scratch).  ax211_scratch_build()
- * writes, from byte 0: the silicon revision as read from the device, a zero
- * layout version, the size of the area in 32-bit words and, at byte 8, the
- * control flags.  The flags used are 0x000f0000: receive buffers of 4 KiB
- * (bit 16), completions in the descriptor form (bit 17), and transfer
- * descriptors of 256 bytes (bits 19:18 set to 3), the forms the transport
- * implements.  Byte 16 holds the address of the PNVM address table and
- * byte 24 the total length of the copied PNVM sections, both written only
+ * ax211_scratch_build() writes, from byte 0: the silicon revision as read from
+ * the device, a zero layout version, the size of the area in 32-bit words and,
+ * at byte 8, the control flags.  The flags used are 0x000f0000: receive
+ * buffers of 4 KiB (bit 16), completions in the descriptor form (bit 17), and
+ * transfer descriptors of 256 bytes (bits 19:18 set to 3), the forms the
+ * transport implements.  Byte 16 holds the address of the PNVM address table
+ * and byte 24 the total length of the copied PNVM sections, both written only
  * once the firmware has named its board.  Byte 48 holds the address of the
  * receive transfer ring.  From byte 124 the area holds three lists of 64
- * section addresses (64-bit, 512 bytes each): the UMAC sections, then the
- * LMAC sections, then the paged sections.  The firmware copies its code
- * from those addresses; a boot with an empty group is refused.
+ * section addresses (64-bit, 512 bytes each): the UMAC sections, then the LMAC
+ * sections, then the paged sections.  The firmware copies its code from those
+ * addresses; a boot with an empty group is refused.
+ *
+ * Values referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/pcie/iwl-context-info-v2.h (struct
+ * iwl_prph_scratch and enum iwl_prph_scratch_flags) and OpenBSD 0f464d413c50
+ * sys/dev/pci/if_iwxreg.h (struct iwx_prph_scratch).
  */
 #define AX211_SCRATCH_CONTROL_FLAGS 0x000f0000U
 #define AX211_SCRATCH_PNVM_BASE_OFFSET 16U

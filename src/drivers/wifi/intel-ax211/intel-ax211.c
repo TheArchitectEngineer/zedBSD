@@ -11,24 +11,8 @@
 /*
  * Intel AX211 firmware and descriptor core.
  *
- * Sources of the values.  The register offsets, bit positions, command
- * numbers, firmware file record types and wire layouts in this file are facts
- * of the AX211 hardware and of its firmware interface.  Intel publishes no
- * register or host-command specification for this device, so the values were
- * collected with Intel's own driver headers as the primary source: Linux
- * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
- * fw/file.h, fw/pnvm.c, pcie/iwl-context-info-v2.h, iwl-fh.h and
- * fw/api/cmdhdr.h.  They were cross-checked against OpenBSD
- * sys/dev/pci/if_iwxreg.h and if_iwx.c at commit 0f464d413c50.  Each block of
- * values below names the header it was taken from.
- *
- * This file is not an adaptation of those headers.  It collects the interface
- * values, gives them names of its own, and adds what the zedBSD driver
- * established about each of them while it was brought up on AX211 hardware:
- * where the value is used, what it means to the device or to the firmware,
- * the order the device requires, and how the firmware behaved.  It is written
- * as a reference that a developer of an AX211 driver for another operating
- * system can use on its own.
+ * Parses the pinned firmware and PNVM files and encodes the descriptors and
+ * the boot context the device reads.
  */
 
 #include "intel-ax211-internal.h"
@@ -36,10 +20,6 @@
 
 /*
  * The record types of the firmware file and of the PNVM file.
- *
- * Source: Linux iwlwifi v6.17 fw/file.h (enum iwl_ucode_tlv_type),
- * cross-checked with OpenBSD sys/dev/pci/if_iwxreg.h at 0f464d413c50, which
- * also lists types 35, 53 and 59 that v6.17 no longer names.
  *
  * What the pinned API 89 image and its PNVM contain, and what the loaders in
  * this file do with each type:
@@ -78,6 +58,10 @@
  *   configuration records (0x1000005 to 0x100000a).  0x1000000 to 0x1000004,
  *   0x100000b, 0x100000c, 65, 69, 0x101 and 1092 are further types that
  *   ax211_ignored_firmware_tlv() skips by number.
+ *
+ * Values referenced: Linux v6.17 drivers/net/wireless/intel/iwlwifi/fw/file.h
+ * (enum iwl_ucode_tlv_type) and OpenBSD 0f464d413c50 sys/dev/pci/if_iwxreg.h
+ * (IWX_UCODE_TLV_*, which also names types 35, 53 and 59).
  */
 enum {
 	AX211_RECORD_PROBE_LIMIT = 6,
@@ -1236,20 +1220,8 @@ drv_intel_ax211_staging_clear(
 /*
  * Intel AX211 PCI/CNVio2 transport.
  *
- * Sources of the values.  The register offsets and bits, command numbers and
- * firmware table sizes in this part are facts of the AX211 hardware and of
- * its firmware interface, collected with Intel's own driver headers as the
- * primary source: Linux iwlwifi at tag v6.17, under
- * drivers/net/wireless/intel/iwlwifi/, in iwl-csr.h, iwl-prph.h, fw/img.h,
- * fw/dump.c and fw/api/commands.h, cross-checked against OpenBSD
- * sys/dev/pci/if_iwxreg.h at commit 0f464d413c50.  The PCI and PCI Express
- * values come from the PCI Local Bus and PCI Express Base specifications and
- * the 802.11 values from IEEE Std 802.11-2020.  Each block names its source.
- *
- * This part is not an adaptation of those headers.  It collects the
- * interface values, gives them names of its own, and adds what the zedBSD
- * driver established about them on AX211 hardware: where each value is used,
- * what it means, and how the device and the firmware behaved.
+ * Binds the PCI function, runs the firmware epochs and connects the device to
+ * the network interface and to the common WLAN layer.
  */
 
 #include <drivers/wifi/intel-ax211/pci-intel-ax211.h>
@@ -1283,12 +1255,15 @@ drv_intel_ax211_staging_clear(
 /*
  * The PCI identity and the PCI configuration values the probe checks.
  *
- * Source: the PCI ID database and the hardware intake of the test machines
- * (ws004 HW-T37) for the identity; the PCI Local Bus specification for the
- * class code (0x0280, other network controller) and the command register
- * bits (memory space 1, bus master 2).  BAR0 must map at least 16 KiB: the
- * MSI-X cause and vector registers this driver uses lie up to 0x2890, and
- * the receive free-index doorbell at 0x1c80.
+ * The identity is the one the hardware intake of the test machines (ws004
+ * HW-T37) found.  The class code is 0x0280 (other network controller) and the
+ * command register bits are memory space 1 and bus master 2.  BAR0 must map at
+ * least 16 KiB: the MSI-X cause and vector registers this driver uses lie up
+ * to 0x2890, and the receive free-index doorbell at 0x1c80.
+ *
+ * Values referenced: the PCI ID database (vendor 8086, device 51f0) for the
+ * identity, and the PCI Local Bus Specification (the class code and the
+ * command register bits).
  */
 #define AX211_PCI_VENDOR 0x8086U
 #define AX211_PCI_PRODUCT 0x51f0U
@@ -1323,13 +1298,17 @@ drv_intel_ax211_staging_clear(
  * The station slot of the access point, and the rate and capability bits of
  * the link.
  *
- * Source: IEEE Std 802.11-2020 for the capability bits (9.4.1.4: short
- * preamble bit 5, short slot time bit 10) and for the basic rates; the
- * firmware's rate bitmaps from Linux iwlwifi v6.17 fw/api/mac.h.  The CCK
- * bitmap 0x0f is 1, 2, 5.5 and 11 Mbit/s and the OFDM bitmap 0x15 is 6, 12
- * and 24 Mbit/s, the mandatory rates.  On 5 GHz the CCK bitmap is reduced to
- * bit 0, because the link command keeps a non-empty CCK set even where the
- * firmware sends no CCK frame.  The access point always takes station slot 0.
+ * The capability bits are short preamble at bit 5 and short slot time at bit
+ * 10.  The CCK bitmap 0x0f is 1, 2, 5.5 and 11 Mbit/s and the OFDM bitmap 0x15
+ * is 6, 12 and 24 Mbit/s, the mandatory rates.  On 5 GHz the CCK bitmap is
+ * reduced to bit 0, because the link command keeps a non-empty CCK set even
+ * where the firmware sends no CCK frame.  The access point always takes
+ * station slot 0.
+ *
+ * Values referenced: IEEE Std 802.11-2020 9.4.1.4 (the capability bits and
+ * the basic rates) and Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/fw/api/mac.h (the firmware's rate
+ * bitmaps).
  */
 #define AX211_PEER_SLOT 0U
 #define AX211_ASSOC_CCK_ACK_RATES 0x0fU
@@ -1340,12 +1319,15 @@ drv_intel_ax211_staging_clear(
 /*
  * The firmware's report that it rejected a command.
  *
- * Source: Linux iwlwifi v6.17 fw/api/commands.h (opcode 2 of the classic
- * family) and fw/api/alive.h (struct iwl_error_resp, 20 bytes).  The event
- * arrives unsolicited (bit 7 of the ring byte of its header set); the driver
- * logs the error type at byte 0, the rejected opcode at byte 4, the rejected
- * sequence number at byte 6, which names the ring slot of the command that
- * failed, and the word at byte 8.
+ * The event arrives unsolicited (bit 7 of the ring byte of its header set);
+ * the driver logs the error type at byte 0, the rejected opcode at byte 4, the
+ * rejected sequence number at byte 6, which names the ring slot of the command
+ * that failed, and the word at byte 8.
+ *
+ * Values referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/fw/api/commands.h (opcode 2 of the
+ * classic family) and drivers/net/wireless/intel/iwlwifi/fw/api/alive.h
+ * (struct iwl_error_resp, 20 bytes).
  */
 #define AX211_COMMAND_REJECTION_OPCODE 0x02U
 #define AX211_COMMAND_REJECTION_SIZE 20U
@@ -1353,13 +1335,14 @@ drv_intel_ax211_staging_clear(
 /*
  * The doorbell that tells the firmware the PNVM sections are in place.
  *
- * Source: Linux iwlwifi v6.17 iwl-prph.h (the doorbell register of the upper
- * CPU and its PNVM bit).  The register is in the periphery space of the upper
- * CPU, so it is written at the upper-CPU base (0x300000 on this device) plus
- * 0xa05c04, while the driver holds the device awake.  The driver rings it
- * after the PNVM sections and their address table have been written to DMA
- * memory and published in the scratch area; the firmware answers with the
- * PNVM-accepted notification.
+ * The register is in the periphery space of the upper CPU, so it is written at
+ * the upper-CPU base (0x300000 on this device) plus 0xa05c04, while the driver
+ * holds the device awake.  The driver rings it after the PNVM sections and
+ * their address table have been written to DMA memory and published in the
+ * scratch area; the firmware answers with the PNVM-accepted notification.
+ *
+ * Values referenced: Linux v6.17 drivers/net/wireless/intel/iwlwifi/iwl-prph.h
+ * (the doorbell register of the upper CPU and its PNVM bit).
  */
 #define AX211_PRPH_FIRMWARE_DOORBELL 0xa05c04U
 #define AX211_FIRMWARE_DOORBELL_PNVM_READY (1U << 20)
@@ -1367,10 +1350,12 @@ drv_intel_ax211_staging_clear(
 /*
  * The PCI Express latency tolerance (LTR) enable of the root port side.
  *
- * Source: PCI Express Base Specification (Device Control 2 at offset 0x28 of
- * the PCI Express capability, LTR mechanism enable at bit 10).  The driver
- * reads it to decide whether the firmware's latency tolerance command is
- * sent at runtime.
+ * Device Control 2 is at offset 0x28 of the PCI Express capability and its
+ * LTR mechanism enable is bit 10.  The driver reads it to decide whether the
+ * firmware's latency tolerance command is sent at runtime.
+ *
+ * Values referenced: the PCI Express Base Specification (Device Control 2,
+ * LTR Mechanism Enable).
  */
 #define AX211_PCIE_CAPABILITY 0x10U
 #define AX211_PCIE_DEVICE_CONTROL2 0x28U
@@ -1380,17 +1365,20 @@ drv_intel_ax211_staging_clear(
  * The window through which the host reads the firmware's internal SRAM, and
  * the error tables found there.
  *
- * Source: Linux iwlwifi v6.17 iwl-csr.h (the target memory read address and
- * data registers), fw/img.h (the cache-control tag bits of a firmware
- * pointer) and fw/dump.c (the LMAC error table of 30 words and the UMAC
- * error table of 15 words).  Writing an SRAM address to 0x40c and then
- * reading 0x41c repeatedly returns consecutive words; the address advances
- * by four bytes after each read.  The ALIVE notification gives the address
- * of each table; the UMAC pointer carries tag bits 31:30 that are not part of
- * the address and are masked off.  The driver refuses addresses below
- * 0x400000 as a sanity bound, and reads the tables only when a command failed
- * while a fault cause was raised, to log the error identifier, the data
- * words, the interrupt status words and the last host command.
+ * Writing an SRAM address to 0x40c and then reading 0x41c repeatedly returns
+ * consecutive words; the address advances by four bytes after each read.  The
+ * ALIVE notification gives the address of each table; the UMAC pointer carries
+ * tag bits 31:30 that are not part of the address and are masked off.  The
+ * driver refuses addresses below 0x400000 as a sanity bound, and reads the
+ * tables only when a command failed while a fault cause was raised, to log the
+ * error identifier, the data words, the interrupt status words and the last
+ * host command.
+ *
+ * Values referenced: Linux v6.17 drivers/net/wireless/intel/iwlwifi/iwl-csr.h
+ * (the target memory read address and data registers),
+ * drivers/net/wireless/intel/iwlwifi/fw/img.h (the cache-control tag bits of
+ * a firmware pointer) and drivers/net/wireless/intel/iwlwifi/fw/dump.c (the
+ * LMAC error table of 30 words and the UMAC error table of 15 words).
  */
 #define AX211_CSR_SRAM_READ_ADDRESS 0x40cU
 #define AX211_CSR_SRAM_READ_DATA 0x41cU
@@ -1414,14 +1402,16 @@ struct ax211_pci_deferred_event {
 /*
  * The silicon revision and radio identity registers, read at attach.
  *
- * Source: Linux iwlwifi v6.17 iwl-csr.h (the two registers and the field
- * positions) and iwl-config.h (the MAC and radio codes).  The MAC type is
- * bits 15:4 of the silicon revision register (0x37 for So, 0x43 for SoF);
- * the radio kind is bits 23:12 of the radio identity register (0x10d for
- * Garfield Peak), and bit 28 of that register is set on a radio that can run
- * two bands at once.  The driver attaches only to an So or SoF MAC with a
- * single-band Garfield Peak radio, the combination the pinned firmware and
- * PNVM files are built for (ws004 p038).
+ * The MAC type is bits 15:4 of the silicon revision register (0x37 for So,
+ * 0x43 for SoF); the radio kind is bits 23:12 of the radio identity register
+ * (0x10d for Garfield Peak), and bit 28 of that register is set on a radio
+ * that can run two bands at once.  The driver attaches only to an So or SoF
+ * MAC with a single-band Garfield Peak radio, the combination the pinned
+ * firmware and PNVM files are built for (ws004 p038).
+ *
+ * Values referenced: Linux v6.17 drivers/net/wireless/intel/iwlwifi/iwl-csr.h
+ * (the two registers and the field positions) and
+ * drivers/net/wireless/intel/iwlwifi/iwl-config.h (the MAC and radio codes).
  */
 #define AX211_CSR_SILICON_REVISION 0x028U
 #define AX211_CSR_RADIO_IDENTITY 0x09cU

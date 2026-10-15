@@ -1,4 +1,4 @@
-/* -*- mode: c; c-file-style: "linux"; tab-width: 8; -*- */
+/* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
 
 /*
  * zedBSD
@@ -9,29 +9,6 @@
 
 /*
  * Intel AX211 private API89 receive implementation.
- *
- * Sources of the values.  The register offsets, bit positions, command
- * numbers, firmware file record types and wire layouts in this file are facts
- * of the AX211 hardware and of its firmware interface.  Intel publishes no
- * register or host-command specification for this device, so the values were
- * collected with Intel's own driver headers as the primary source: Linux
- * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
- * fw/api/rx.h.  They were cross-checked against OpenBSD
- * sys/dev/pci/if_iwxreg.h and if_iwx.c at commit 0f464d413c50.  Each block of
- * values below names the header it was taken from.
- *
- * Values of the 802.11 frame itself (frame control bits, element identifiers,
- * rates and channel numbers) come from IEEE Std 802.11-2020, and the WMM
- * element from the Wi-Fi Alliance WMM specification; the blocks that hold
- * them say so.
- *
- * This file is not an adaptation of those headers.  It collects the interface
- * values, gives them names of its own, and adds what the zedBSD driver
- * established about each of them while it was brought up on AX211 hardware:
- * where the value is used, what it means to the device or to the firmware,
- * the order the device requires, and how the firmware behaved.  It is written
- * as a reference that a developer of an AX211 driver for another operating
- * system can use on its own.
  */
 
 #include "intel-ax211-rx.h"
@@ -43,13 +20,15 @@
 /*
  * The status word of the receive descriptor (bytes 12 to 15).
  *
- * Source: Linux iwlwifi v6.17 fw/api/rx.h (enum iwl_mvm_rx_status).  A frame
- * is delivered only when FCS_GOOD (bit 0, the frame check sequence was
- * right) and NO_OVERRUN (bit 1) are both set; a frame with REPEATED_FRAME
- * (bit 22, the firmware's duplicate detection) is dropped.  Bits 10:8 name
- * the cipher the firmware applied: 0 none, 2 CCMP.  A CCMP frame is
- * accepted only with PLAINTEXT_RESTORED (bit 11, the firmware decrypted it)
- * and MIC_GOOD (bit 6, its integrity check passed).
+ * A frame is delivered only when FCS_GOOD (bit 0, the frame check sequence was
+ * right) and NO_OVERRUN (bit 1) are both set; a frame with REPEATED_FRAME (bit
+ * 22, the firmware's duplicate detection) is dropped.  Bits 10:8 name the
+ * cipher the firmware applied: 0 none, 2 CCMP.  A CCMP frame is accepted only
+ * with PLAINTEXT_RESTORED (bit 11, the firmware decrypted it) and MIC_GOOD
+ * (bit 6, its integrity check passed).
+ *
+ * Values referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/fw/api/rx.h (enum iwl_mvm_rx_status).
  */
 #define AX211_RX_CHECK_FCS_GOOD 0x00000001U
 #define AX211_RX_CHECK_NO_OVERRUN 0x00000002U
@@ -63,20 +42,22 @@
 /*
  * The MAC flags and radio information of the receive descriptor.
  *
- * Source: Linux iwlwifi v6.17 fw/api/rx.h (the MAC flag bytes and the PHY
- * information word of struct iwl_rx_mpdu_desc).  Byte 3: PADDING (bit 5)
- * says the firmware inserted two bytes after the MAC header (and the CCMP
- * header) to align the body, which the driver removes; AMSDU (bit 6) marks
- * a frame of an aggregate, which the driver does not accept.  Bits 7:4 of
- * byte 2 give the length of the trailer the hardware left at the end, in
- * units of two bytes; the driver cuts it off and appends a zeroed 8-byte
- * MIC field in its place for a CCMP frame, so the frame handed on has the
- * usual 802.11 shape.  The 16-bit radio information at bytes 5 and 6 has
- * RADIO_TIME_REPLACED (bit 8) set when the 64-bit word at byte 48 holds
+ * Byte 3: PADDING (bit 5) says the firmware inserted two bytes after the MAC
+ * header (and the CCMP header) to align the body, which the driver removes;
+ * AMSDU (bit 6) marks a frame of an aggregate, which the driver does not
+ * accept.  Bits 7:4 of byte 2 give the length of the trailer the hardware left
+ * at the end, in units of two bytes; the driver cuts it off and appends a
+ * zeroed 8-byte MIC field in its place for a CCMP frame, so the frame handed
+ * on has the usual 802.11 shape.  The 16-bit radio information at bytes 5 and
+ * 6 has RADIO_TIME_REPLACED (bit 8) set when the 64-bit word at byte 48 holds
  * something other than the TSF; only otherwise is the TSF used.  The other
- * fields used are the two antennas' energies at bytes 40 and 41 (turned
- * into a signal strength), the channel at byte 42 and, at byte 44, the
- * device clock at the moment the frame started on the air.
+ * fields used are the two antennas' energies at bytes 40 and 41 (turned into a
+ * signal strength), the channel at byte 42 and, at byte 44, the device clock
+ * at the moment the frame started on the air.
+ *
+ * Values referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/fw/api/rx.h (the MAC flag bytes and the
+ * PHY information word of struct iwl_rx_mpdu_desc).
  */
 #define AX211_RX_MAC_FLAG_PADDING 0x20U
 #define AX211_RX_MAC_FLAG_AMSDU 0x40U
@@ -87,10 +68,12 @@
 /*
  * The 802.11 frame control field.
  *
- * Source: IEEE Std 802.11-2020 9.2.4.1 (frame control: protocol version,
- * type in bits 3:2, subtype in bits 7:4, To DS, From DS, Protected Frame and
- * +HTC/Order) and 9.2.4.1.3 (the control subtypes CTS 12 and ACK 13).  The
- * driver uses them to find the header length of a received frame.
+ * The driver uses them to find the header length of a received frame.
+ *
+ * Values referenced: IEEE Std 802.11-2020 9.2.4.1 (frame control: protocol
+ * version, type in bits 3:2, subtype in bits 7:4, To DS, From DS, Protected
+ * Frame and +HTC/Order) and 9.2.4.1.3 (the control subtypes CTS 12 and ACK
+ * 13).
  */
 #define AX211_FRAME_TYPE_MASK 0x000cU
 #define AX211_FRAME_TYPE_MANAGEMENT 0x0000U
@@ -108,9 +91,9 @@
 /*
  * The CCMP header and MIC.
  *
- * Source: IEEE Std 802.11-2020 12.5.3.2 (the 8-byte CCMP header with the
- * Ext IV bit, bit 5 of its fourth byte, always set, and the 8-byte MIC of
- * CCMP-128).
+ * Values referenced: IEEE Std 802.11-2020 12.5.3.2 (the 8-byte CCMP header
+ * with the Ext IV bit, bit 5 of its fourth byte, always set, and the 8-byte
+ * MIC of CCMP-128).
  */
 #define AX211_CCMP_HEADER_SIZE 8U
 #define AX211_CCMP_TAG_SIZE 8U

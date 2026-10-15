@@ -9,26 +9,6 @@
 
 /*
  * Intel AX211 private API89 association-session contract.
- *
- * Sources of the values.  The register offsets, bit positions, command
- * numbers, firmware file record types and wire layouts in this file are facts
- * of the AX211 hardware and of its firmware interface.  Intel publishes no
- * register or host-command specification for this device, so the values were
- * collected with Intel's own driver headers as the primary source: Linux
- * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
- * fw/api/mac-cfg.h, fw/api/phy-ctxt.h, fw/api/datapath.h,
- * fw/api/time-event.h, fw/api/power.h and fw/api/mac.h.  They were
- * cross-checked against OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c at
- * commit 0f464d413c50.  Each block of values below names the header it was
- * taken from.
- *
- * This file is not an adaptation of those headers.  It collects the interface
- * values, gives them names of its own, and adds what the zedBSD driver
- * established about each of them while it was brought up on AX211 hardware:
- * where the value is used, what it means to the device or to the firmware,
- * the order the device requires, and how the firmware behaved.  It is written
- * as a reference that a developer of an AX211 driver for another operating
- * system can use on its own.
  */
 
 #ifndef KERN_DRIVERS_INTEL_AX211_ASSOC_H
@@ -42,8 +22,10 @@
 /*
  * zedBSD's bounds of the association session: one second per command, at
  * most 32 commands in one session, the largest payload (the 208-byte link
- * setup), and a 20 MHz channel.  The four access categories of EDCA follow
- * IEEE Std 802.11-2020 9.4.2.28.
+ * setup), and a 20 MHz channel.  EDCA has four access categories.
+ *
+ * Value referenced: IEEE Std 802.11-2020 9.4.2.28 (the four access categories
+ * of EDCA).
  */
 #define INTEL_AX211_ASSOC_COMMAND_TIMEOUT_US 1000000U
 #define INTEL_AX211_ASSOC_COMMAND_LIMIT 32U
@@ -55,11 +37,14 @@
 /*
  * The command families of the association commands.
  *
- * Source: Linux iwlwifi v6.17 fw/api/commands.h (enum
- * iwl_mvm_command_groups): 0 the classic opcode space, 1 the same space
- * through the wide header, 3 the MAC configuration family (interfaces,
- * links, stations and time reservations), 5 the data path family (receive
- * chains, transmit queues and keys).
+ * 0 is the classic opcode space, 1 the same space through the wide header, 3
+ * the MAC configuration family (interfaces, links, stations and time
+ * reservations), 5 the data path family (receive chains, transmit queues and
+ * keys).
+ *
+ * Values referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/fw/api/commands.h (enum
+ * iwl_mvm_command_groups).
  */
 #define INTEL_AX211_ASSOC_FAMILY_CLASSIC 0U
 #define INTEL_AX211_ASSOC_FAMILY_CLASSIC_WIDE 1U
@@ -69,12 +54,10 @@
 /*
  * The association commands: opcodes, layout versions and payload sizes.
  *
- * Sources: Linux iwlwifi v6.17 fw/api/commands.h, fw/api/mac-cfg.h,
- * fw/api/phy-ctxt.h, fw/api/datapath.h, fw/api/time-event.h, fw/api/power.h
- * and fw/api/mac.h for the numbers and layouts; the versions are those the
- * pinned API 89 image lists, and the API 89 check refuses an image that
- * lists any of them differently.  Each command is named by family and
- * opcode; opcode 8 means three different commands in families 0, 3 and 5.
+ * Each command is named by family and opcode; opcode 8 means three different
+ * commands in families 0, 3 and 5.  The versions are those the pinned API 89
+ * image lists, and the API 89 check refuses an image that lists any of them
+ * differently.
  *
  * - CHANNEL_CONTEXT (0/0x08, v4, 32 bytes) adds or removes the channel the
  *   link runs on: action at byte 4, channel number as a 32-bit word at 8,
@@ -119,6 +102,15 @@
  *   seconds at 6.  The period is three DTIM intervals rounded up to whole
  *   seconds, and at least 25 s.  The firmware may answer with no payload or
  *   with one 32-bit status word that must be zero.
+ *
+ * Values referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/fw/api/commands.h,
+ * drivers/net/wireless/intel/iwlwifi/fw/api/mac-cfg.h,
+ * drivers/net/wireless/intel/iwlwifi/fw/api/phy-ctxt.h,
+ * drivers/net/wireless/intel/iwlwifi/fw/api/datapath.h,
+ * drivers/net/wireless/intel/iwlwifi/fw/api/time-event.h,
+ * drivers/net/wireless/intel/iwlwifi/fw/api/power.h and
+ * drivers/net/wireless/intel/iwlwifi/fw/api/mac.h (the numbers and layouts).
  */
 #define INTEL_AX211_ASSOC_CHANNEL_CONTEXT_OPCODE 0x08U
 #define INTEL_AX211_ASSOC_INTERFACE_SETUP_OPCODE 0x08U

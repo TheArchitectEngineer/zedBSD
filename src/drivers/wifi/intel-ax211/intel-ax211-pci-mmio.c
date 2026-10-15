@@ -9,14 +9,6 @@
 
 /*
  * Intel AX211 PCI BAR backend.
- *
- * Sources of the values.  The four registers of the periphery window below
- * are facts of the AX211 hardware, collected with Intel's own driver headers
- * as the primary source: Linux iwlwifi at tag v6.17, under
- * drivers/net/wireless/intel/iwlwifi/, in iwl-csr.h, cross-checked against
- * OpenBSD sys/dev/pci/if_iwxreg.h at commit 0f464d413c50.  This file is not
- * an adaptation of those headers: it gives the values names of its own and
- * says how the driver uses them.
  */
 
 #include "intel-ax211-pci-mmio.h"
@@ -35,14 +27,16 @@
 /*
  * The indirect window into the periphery (PRPH) register space.
  *
- * Source: Linux iwlwifi v6.17 iwl-csr.h (the target periphery write address,
- * read address, write data and read data registers).  Periphery registers
- * are not mapped in BAR0.  A read writes the 24-bit periphery address, with
- * the access size code 3 (a full 32-bit word) in bits 25:24, to READ_ADDRESS
- * and then reads READ_DATA; a write writes the address the same way to
- * WRITE_ADDRESS and then the value to WRITE_DATA.  The device must be held
- * awake for the whole access, which the MMIO layer checks before it calls
- * this backend.
+ * Periphery registers are not mapped in BAR0.  A read writes the 24-bit
+ * periphery address, with the access size code 3 (a full 32-bit word) in bits
+ * 25:24, to READ_ADDRESS and then reads READ_DATA; a write writes the address
+ * the same way to WRITE_ADDRESS and then the value to WRITE_DATA.  The device
+ * must be held awake for the whole access, which the MMIO layer checks before
+ * it calls this backend.
+ *
+ * Values referenced: Linux v6.17 drivers/net/wireless/intel/iwlwifi/iwl-csr.h
+ * (the target periphery write address, read address, write data and read data
+ * registers).
  */
 #define AX211_CSR_PRPH_WRITE_ADDRESS 0x0444U
 #define AX211_CSR_PRPH_READ_ADDRESS 0x0448U

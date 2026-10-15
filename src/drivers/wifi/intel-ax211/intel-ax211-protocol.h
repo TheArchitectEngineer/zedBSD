@@ -9,25 +9,6 @@
 
 /*
  * Intel AX211 private firmware protocol contract.
- *
- * Sources of the values.  The register offsets, bit positions, command
- * numbers, firmware file record types and wire layouts in this file are facts
- * of the AX211 hardware and of its firmware interface.  Intel publishes no
- * register or host-command specification for this device, so the values were
- * collected with Intel's own driver headers as the primary source: Linux
- * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
- * fw/api/alive.h, fw/api/nvm-reg.h, fw/api/commands.h and fw/api/cmdhdr.h.
- * They were cross-checked against OpenBSD sys/dev/pci/if_iwxreg.h and
- * if_iwx.c at commit 0f464d413c50.  Each block of values below names the
- * header it was taken from.
- *
- * This file is not an adaptation of those headers.  It collects the interface
- * values, gives them names of its own, and adds what the zedBSD driver
- * established about each of them while it was brought up on AX211 hardware:
- * where the value is used, what it means to the device or to the firmware,
- * the order the device requires, and how the firmware behaved.  It is written
- * as a reference that a developer of an AX211 driver for another operating
- * system can use on its own.
  */
 
 #ifndef KERN_DRIVERS_INTEL_AX211_PROTOCOL_H
@@ -39,16 +20,19 @@
 /*
  * The command version table and the limits of a command response.
  *
- * Source: Linux iwlwifi v6.17 fw/file.h (struct iwl_fw_cmd_version, the
- * body of record 48) and fw/api/cmdhdr.h (the failure bit of the event
- * header).  The table is a list of 4-byte entries: opcode, family, command
- * layout version, notification layout version.  The pinned image carries
- * 217 entries (868 bytes), and the parser refuses a longer table.  An entry
- * may say 99 where the firmware gives no version; the driver treats 99 as
- * "unknown" and does not accept a response whose layout version is
- * unknown.  Bit 6 of the event header's flags byte marks a response to a
- * command that the firmware failed.  A response may not exceed 4088 bytes,
- * one external command buffer less its header.
+ * The table is a list of 4-byte entries: opcode, family, command layout
+ * version, notification layout version.  The pinned image carries 217 entries
+ * (868 bytes), and the parser refuses a longer table.  An entry may say 99
+ * where the firmware gives no version; the driver treats 99 as "unknown" and
+ * does not accept a response whose layout version is unknown.  Bit 6 of the
+ * event header's flags byte marks a response to a command that the firmware
+ * failed.  A response may not exceed 4088 bytes, one external command buffer
+ * less its header.
+ *
+ * Values referenced: Linux v6.17 drivers/net/wireless/intel/iwlwifi/fw/file.h
+ * (struct iwl_fw_cmd_version, the body of record 48) and
+ * drivers/net/wireless/intel/iwlwifi/fw/api/cmdhdr.h (the failure bit of the
+ * event header).
  */
 #define INTEL_AX211_PROTOCOL_UNKNOWN_VERSION 99U
 #define INTEL_AX211_PROTOCOL_COMMAND_FAILED_MASK 0x40U
@@ -60,13 +44,17 @@
 /*
  * The command families (the "group" byte of the wide header) used here.
  *
- * Source: Linux iwlwifi v6.17 fw/api/commands.h (enum iwl_mvm_command_groups).
- * Family 0 is the classic opcode space and family 1 the same space through
- * the wide header; family 12 holds the regulatory and NVM commands.  Every
- * command and notification of the driver is identified by its family and
- * opcode together, so the same opcode can mean different commands in
- * different families (opcode 8, for instance, is three different commands
- * in families 0, 3 and 5; see intel-ax211-assoc.h).
+ * Every command and notification of the driver is identified by its family and
+ * opcode together, so the same opcode can mean different commands in different
+ * families (opcode 8, for instance, is three different commands in families 0,
+ * 3 and 5; see intel-ax211-assoc.h).
+ *
+ * Family 0 is the classic opcode space and family 1 the same space through the
+ * wide header; family 12 holds the regulatory and NVM commands.
+ *
+ * Values referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/fw/api/commands.h (enum
+ * iwl_mvm_command_groups).
  */
 #define INTEL_AX211_PROTOCOL_FAMILY_CLASSIC 0U
 #define INTEL_AX211_PROTOCOL_FAMILY_CLASSIC_WIDE 1U
@@ -75,10 +63,7 @@
 /*
  * The boot notifications and commands, with their layout versions and sizes.
  *
- * Source: Linux iwlwifi v6.17 fw/api/commands.h and fw/api/nvm-reg.h
- * (opcodes), fw/api/alive.h (struct iwl_alive_ntf_v6, 144 bytes) and
- * fw/api/nvm-reg.h (struct iwl_nvm_get_info_rsp, 468 bytes, and the PNVM
- * notification).  The order on the AX211, as the boot code drives it:
+ * The order on the AX211, as the boot code drives it:
  * - ALIVE (family 0, opcode 1, version 6) arrives first, after the upper CPU
  *   is started.  It carries a status word that must be 0xcafe (0xdead is the
  *   firmware's error status), the two LMAC records at bytes 4 and
@@ -98,6 +83,13 @@
  * - SCAN_SETUP and SCAN_START (family 1, opcodes 0x0c and 0x0d) are the scan
  *   commands; the runtime sends SCAN_SETUP once, and the command table check
  *   of API 89 requires versions 5 and 17 for them.
+ *
+ * Values referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/fw/api/commands.h (the opcodes),
+ * drivers/net/wireless/intel/iwlwifi/fw/api/alive.h (struct iwl_alive_ntf_v6,
+ * 144 bytes) and drivers/net/wireless/intel/iwlwifi/fw/api/nvm-reg.h (the
+ * opcodes, struct iwl_nvm_get_info_rsp, 468 bytes, and the PNVM
+ * notification).
  */
 #define INTEL_AX211_PROTOCOL_ALIVE_OPCODE 0x01U
 #define INTEL_AX211_PROTOCOL_INIT_FINISHED_OPCODE 0x04U
@@ -119,12 +111,16 @@
 /*
  * The channel list of the NVM answer.
  *
- * Source: Linux iwlwifi v6.17 fw/api/nvm-reg.h (the channel flag array of
- * 110 entries) and iwl-nvm-parse.c (the order of the channels); the channel
- * numbers are IEEE Std 802.11-2020 Annex E.  The first 14 flag words are
- * 2.4 GHz channels 1 to 14, the next 37 are the 5 GHz channels from 36 to
- * 181 in the order of the table in drv_intel_ax211_protocol_nvm_query_decode();
- * the rest (6 GHz) are not decoded.
+ * The first 14 flag words are 2.4 GHz channels 1 to 14, the next 37 are the 5
+ * GHz channels from 36 to 181 in the order of the table in
+ * drv_intel_ax211_protocol_nvm_query_decode(); the rest (6 GHz) are not
+ * decoded.
+ *
+ * Values referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/fw/api/nvm-reg.h (the channel flag array
+ * of 110 entries) and drivers/net/wireless/intel/iwlwifi/iwl-nvm-parse.c (the
+ * order of the channels) and IEEE Std 802.11-2020 Annex E (the channel
+ * numbers).
  */
 #define INTEL_AX211_PROTOCOL_NVM_CHANNEL_LIMIT 110U
 #define INTEL_AX211_PROTOCOL_24GHZ_CHANNEL_LIMIT 14U
@@ -137,17 +133,19 @@
 /*
  * The flags of the NVM answer.
  *
- * Source: Linux iwlwifi v6.17 fw/api/nvm-reg.h (the general flags and the
- * MAC SKU flags of struct iwl_nvm_get_info_rsp, and the channel flags).
- * FUSES_BLANK in the general flags means the radio's fuses were never
- * programmed; the driver refuses such a radio.  The standard flags say which
- * bands and 802.11 amendments the module may use and whether MIMO is
- * disabled; the driver requires 2.4 GHz.  In a channel's flag word, USABLE
- * (bit 0) means the channel exists on this module and MAY_TRANSMIT (bit 3)
- * that the driver may send probe requests on it (active scan); a 5 GHz
- * channel counts as usable only when the 5 GHz band is enabled.  When the
- * firmware runs its own regulatory domain, the country answer, not the
- * USABLE bit, decides which channels may be used.
+ * The standard flags say which bands and 802.11 amendments the module may use
+ * and whether MIMO is disabled; the driver requires 2.4 GHz.  In a channel's
+ * flag word, USABLE (bit 0) means the channel exists on this module and
+ * MAY_TRANSMIT (bit 3) that the driver may send probe requests on it (active
+ * scan); a 5 GHz channel counts as usable only when the 5 GHz band is enabled.
+ * When the firmware runs its own regulatory domain, the country answer, not
+ * the USABLE bit, decides which channels may be used.  FUSES_BLANK in the
+ * general flags means the radio's fuses were never programmed; the driver
+ * refuses such a radio.
+ *
+ * Values referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/fw/api/nvm-reg.h (the general flags and
+ * the MAC SKU flags of struct iwl_nvm_get_info_rsp, and the channel flags).
  */
 #define INTEL_AX211_PROTOCOL_NVM_FUSES_BLANK 0x01U
 #define INTEL_AX211_PROTOCOL_NVM_BAND_24_ENABLED 0x01U

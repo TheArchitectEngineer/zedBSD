@@ -9,24 +9,6 @@
 
 /*
  * Intel AX211 private API89 scan-session coordinator.
- *
- * Sources of the values.  The register offsets, bit positions, command
- * numbers, firmware file record types and wire layouts in this file are facts
- * of the AX211 hardware and of its firmware interface.  Intel publishes no
- * register or host-command specification for this device, so the values were
- * collected with Intel's own driver headers as the primary source: Linux
- * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
- * fw/api/scan.h.  They were cross-checked against OpenBSD
- * sys/dev/pci/if_iwxreg.h and if_iwx.c at commit 0f464d413c50.  Each block of
- * values below names the header it was taken from.
- *
- * This file is not an adaptation of those headers.  It collects the interface
- * values, gives them names of its own, and adds what the zedBSD driver
- * established about each of them while it was brought up on AX211 hardware:
- * where the value is used, what it means to the device or to the firmware,
- * the order the device requires, and how the firmware behaved.  It is written
- * as a reference that a developer of an AX211 driver for another operating
- * system can use on its own.
  */
 
 #include "intel-ax211-scan-session.h"
@@ -35,12 +17,15 @@
 /*
  * The answer to a scan cancel.
  *
- * Source: Linux iwlwifi v6.17 fw/api/scan.h (enum
- * iwl_umac_scan_abort_status).  The answer is one 32-bit status word: 0
- * means the scan was stopped, 1 that the stop is under way and a scan
- * completion will follow, 2 that no scan was running.  The session treats
- * status 2 as the end of the scan at once; after 0 or 1 it still waits for
- * the completion notification, which then reports the cancelled outcome.
+ * The answer is one 32-bit status word: 0 means the scan was stopped, 1 that
+ * the stop is under way and a scan completion will follow, 2 that no scan was
+ * running.  The session treats status 2 as the end of the scan at once; after
+ * 0 or 1 it still waits for the completion notification, which then reports
+ * the cancelled outcome.
+ *
+ * Values referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/fw/api/scan.h (enum
+ * iwl_umac_scan_abort_status).
  */
 #define AX211_SCAN_CANCEL_RESPONSE_SIZE 4U
 #define AX211_SCAN_CANCEL_DONE 0U

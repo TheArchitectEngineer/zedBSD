@@ -1,4 +1,4 @@
-/* -*- mode: c; c-file-style: "linux"; tab-width: 8; -*- */
+/* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
 
 /*
  * zedBSD
@@ -9,29 +9,6 @@
 
 /*
  * Intel AX211 private API89 transmit implementation.
- *
- * Sources of the values.  The register offsets, bit positions, command
- * numbers, firmware file record types and wire layouts in this file are facts
- * of the AX211 hardware and of its firmware interface.  Intel publishes no
- * register or host-command specification for this device, so the values were
- * collected with Intel's own driver headers as the primary source: Linux
- * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
- * fw/api/tx.h and fw/api/rs.h.  They were cross-checked against OpenBSD
- * sys/dev/pci/if_iwxreg.h and if_iwx.c at commit 0f464d413c50.  Each block of
- * values below names the header it was taken from.
- *
- * Values of the 802.11 frame itself (frame control bits, element identifiers,
- * rates and channel numbers) come from IEEE Std 802.11-2020, and the WMM
- * element from the Wi-Fi Alliance WMM specification; the blocks that hold
- * them say so.
- *
- * This file is not an adaptation of those headers.  It collects the interface
- * values, gives them names of its own, and adds what the zedBSD driver
- * established about each of them while it was brought up on AX211 hardware:
- * where the value is used, what it means to the device or to the firmware,
- * the order the device requires, and how the firmware behaved.  It is written
- * as a reference that a developer of an AX211 driver for another operating
- * system can use on its own.
  */
 
 #include "intel-ax211-tx.h"
@@ -43,10 +20,8 @@
 /*
  * The fields of the transmit command (version 10) that precede the frame.
  *
- * Source: Linux iwlwifi v6.17 fw/api/tx.h (struct iwl_tx_cmd_gen3, enum
- * iwl_tx_cmd_flags and the offload-assist bits) and fw/api/rs.h (the rate
- * word).  The 28-byte fixed part holds the frame length at byte 0 (without
- * the CCMP header, which the firmware inserts itself), the flags at 2, the
+ * The 28-byte fixed part holds the frame length at byte 0 (without the CCMP
+ * header, which the firmware inserts itself), the flags at 2, the
  * offload-assist word at 4 and the rate at 16; the MAC header follows from
  * byte 28, padded to four bytes.
  * - Flags: COMMAND_RATE (bit 0) makes the firmware use the rate in the
@@ -61,6 +36,11 @@
  *   whose code 0 is 6 Mbit/s; ANTENNA_A (bit 14) transmits on the first
  *   antenna.  The driver sends at 1 Mbit/s on 2.4 GHz and at 6 Mbit/s on
  *   5 GHz, where CCK is not allowed.
+ *
+ * Values referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/fw/api/tx.h (struct iwl_tx_cmd_gen3, enum
+ * iwl_tx_cmd_flags and the offload-assist bits) and
+ * drivers/net/wireless/intel/iwlwifi/fw/api/rs.h (the rate word).
  */
 #define AX211_TX_FLAG_COMMAND_RATE 0x0001U
 #define AX211_TX_FLAG_ENCRYPT_DISABLE 0x0002U
@@ -77,11 +57,11 @@
 /*
  * The 802.11 frame control field and the CCMP header.
  *
- * Source: IEEE Std 802.11-2020 9.2.4.1 (frame control) and 12.5.3.2 (the
- * 8-byte CCMP header with the Ext IV bit, bit 5 of its fourth byte).  The
- * driver uses them to find the header length of a frame to send and to
- * check that a frame it is asked to encrypt carries a well-formed CCMP
- * header.
+ * The driver uses them to find the header length of a frame to send and to
+ * check that a frame it is asked to encrypt carries a well-formed CCMP header.
+ *
+ * Values referenced: IEEE Std 802.11-2020 9.2.4.1 (frame control) and 12.5.3.2
+ * (the 8-byte CCMP header with the Ext IV bit, bit 5 of its fourth byte).
  */
 #define AX211_TX_FRAME_TYPE_MASK 0x000cU
 #define AX211_TX_FRAME_TYPE_MANAGEMENT 0x0000U
@@ -100,15 +80,18 @@
 /*
  * The transmit completion notification (version 7, 48 bytes for one frame).
  *
- * Source: Linux iwlwifi v6.17 fw/api/tx.h (struct iwl_tx_resp and enum
- * iwl_tx_status).  Byte 0 is the number of frames reported and must be 1;
- * bytes 2 and 3 are the RTS and frame retry counts; byte 28 is the sequence
- * control and byte 30 the byte count; byte 36 the queue; byte 40 the status
- * word, whose low byte is the outcome; byte 44 the scheduler sequence
- * number, which must be below 65536.  Outcome 1 means the frame was
- * delivered and acknowledged, 2 that it was sent without waiting for an
- * acknowledgment (as for a group-addressed frame); the driver counts both as
- * sent, and every other outcome as a failure.
+ * Byte 0 is the number of frames reported and must be 1; bytes 2 and 3 are the
+ * RTS and frame retry counts; byte 28 is the sequence control and byte 30 the
+ * byte count; byte 36 the queue; byte 40 the status word, whose low byte is
+ * the outcome; byte 44 the scheduler sequence number, which must be below
+ * 65536.  Outcome 1 means the frame was delivered and acknowledged, 2 that it
+ * was sent without waiting for an acknowledgment (as for a group-addressed
+ * frame); the driver counts both as sent, and every other outcome as a
+ * failure.
+ *
+ * Values referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/fw/api/tx.h (struct iwl_tx_resp and enum
+ * iwl_tx_status).
  */
 #define AX211_TX_RESPONSE_SIZE 48U
 #define AX211_TX_RESPONSE_STATUS_OFFSET 40U

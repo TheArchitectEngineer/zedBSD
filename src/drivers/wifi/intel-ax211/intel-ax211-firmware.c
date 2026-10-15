@@ -16,7 +16,11 @@
 #include "kern/kmem.h"
 #include "kern/vfs.h"
 
-/* The running state of one SHA-256 computation (FIPS 180-4). */
+/*
+ * The running state of one SHA-256 computation.
+ *
+ * Procedure referenced: FIPS 180-4, 6.2 (the SHA-256 hash computation).
+ */
 struct ax211_sha256_context {
 	uint32_t state[8];
 	uint64_t length;
@@ -27,9 +31,10 @@ struct ax211_sha256_context {
 /*
  * The 64 round constants of SHA-256.
  *
- * Source: FIPS 180-4, 4.2.2 (the first 32 bits of the fractional parts of
- * the cube roots of the first 64 primes).  The loader hashes each firmware
- * file before it parses it.
+ * The loader hashes each firmware file before it parses it.
+ *
+ * Values referenced: FIPS 180-4, 4.2.2 (the first 32 bits of the fractional
+ * parts of the cube roots of the first 64 primes).
  */
 static const uint32_t ax211_sha256_constants[64] = {
 	0x428a2f98U, 0x71374491U, 0xb5c0fbcfU, 0xe9b5dba5U, 0x3956c25bU,
@@ -49,8 +54,13 @@ static const uint32_t ax211_sha256_constants[64] = {
 /*
  * The SHA-256 digests of the pinned firmware image and PNVM file.
  *
- * Source: measured by zedBSD on the files of linux-firmware 20260410
- * (intel-ax211-internal.h); a file with another digest is not loaded.
+ * The digests were measured by zedBSD on the two files named in
+ * intel-ax211-internal.h; a file with another digest is not loaded.
+ *
+ * Values referenced: linux-firmware 20260410 (commit
+ * dc85ccedc9c973682fbcf4d628ca61174bcc3120)
+ * intel/iwlwifi/iwlwifi-so-a0-gf-a0-89.ucode and
+ * intel/iwlwifi/iwlwifi-so-a0-gf-a0.pnvm.
  */
 static const uint8_t ax211_ucode_digest[32] = {
 	0xc5U, 0x69U, 0xc4U, 0xb0U, 0xffU, 0xe2U, 0x05U, 0x4aU,

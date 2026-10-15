@@ -1,4 +1,4 @@
-/* -*- mode: c; c-file-style: "linux"; tab-width: 8; -*- */
+/* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
 
 /*
  * zedBSD
@@ -9,24 +9,6 @@
 
 /*
  * Intel AX211 private API89 CCMP key contract.
- *
- * Sources of the values.  The register offsets, bit positions, command
- * numbers, firmware file record types and wire layouts in this file are facts
- * of the AX211 hardware and of its firmware interface.  Intel publishes no
- * register or host-command specification for this device, so the values were
- * collected with Intel's own driver headers as the primary source: Linux
- * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
- * fw/api/datapath.h and fw/api/commands.h.  They were cross-checked against
- * OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c at commit 0f464d413c50.  Each
- * block of values below names the header it was taken from.
- *
- * This file is not an adaptation of those headers.  It collects the interface
- * values, gives them names of its own, and adds what the zedBSD driver
- * established about each of them while it was brought up on AX211 hardware:
- * where the value is used, what it means to the device or to the firmware,
- * the order the device requires, and how the firmware behaved.  It is written
- * as a reference that a developer of an AX211 driver for another operating
- * system can use on its own.
  */
 
 #ifndef KERN_DRIVERS_INTEL_AX211_KEY_H
@@ -40,12 +22,14 @@
 /*
  * The key command.
  *
- * Source: Linux iwlwifi v6.17 fw/api/datapath.h (SEC_KEY_CMD, opcode 0x18 of
- * the data path family 5, and struct iwl_sec_key_cmd); command version 1 is
- * the one the pinned API 89 image lists.  The command is 80 bytes; the wide
- * header carries 0 in its version byte and the answer has no version.  A
- * CCMP-128 key is 16 bytes (IEEE Std 802.11-2020 12.5.3), and the key index
- * is 0 to 3.
+ * The command is 80 bytes; the wide header carries 0 in its version byte and
+ * the answer has no version.  The command is opcode 0x18 of the data path
+ * family 5, and command version 1 is the one the pinned API 89 image lists.  A
+ * CCMP-128 key is 16 bytes, and the key index is 0 to 3.
+ *
+ * Values referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/fw/api/datapath.h (SEC_KEY_CMD and struct
+ * iwl_sec_key_cmd) and IEEE Std 802.11-2020 12.5.3 (the CCMP-128 key length).
  */
 #define INTEL_AX211_KEY_FAMILY 5U
 #define INTEL_AX211_KEY_OPCODE 0x18U
