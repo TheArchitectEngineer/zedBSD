@@ -20,11 +20,25 @@
 #include "drivers/gpu/nvrtx/nvrtx-disp.h"
 #include "drivers/gpu/nvrtx/nvrtx-gsp.h"
 
-/* A method header: the count in bits 27:18, the method's word offset in bits 13:2 (opcode 0: incrementing). */
+/*
+ * A method header: the count in bits 27:18, the method's word offset in bits
+ * 13:2 (opcode 0: incrementing).
+ *
+ * Values referenced: NVIDIA open-gpu-doc classes/display/clc57d.h
+ * (NVC57D_DMA_OPCODE_METHOD, NVC57D_DMA_METHOD_COUNT,
+ * NVC57D_DMA_METHOD_OFFSET).
+ */
 #define RECORDS_HEADER_COUNT_SHIFT	18U
 #define RECORDS_HEADER_METHOD_MASK	0x3ffcU
 
-/* The hash table's entry: the channel number goes in bits 31:25, the object's offset from bit 9, the client in bits 13:0. */
+/*
+ * The hash table's entry: the channel number goes in bits 31:25, the
+ * object's offset from bit 9, the client in bits 13:0.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/disp.c (r535_dmac_bind)
+ * and drivers/gpu/drm/nouveau/nvkm/core/ramht.c (nvkm_ramht_update).
+ */
 #define RECORDS_RAMHT_CHID_SHIFT	25U
 #define RECORDS_RAMHT_OBJECT_SHIFT	9U
 #define RECORDS_RAMHT_CLIENT_MASK	0x3fffU
@@ -32,13 +46,27 @@
 /* A context DMA object's first word: the VRAM target, read and write, small pages. */
 #define RECORDS_CONTEXT_DMA_FLAGS	NVRTX_DISP_CONTEXT_DMA_FLAGS
 
-/* The push buffer's registration: system memory, snooped, PCI-coherent, on subdevice 0. */
+/*
+ * The push buffer's registration: system memory, snooped, PCI-coherent, on
+ * subdevice 0.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/disp.c
+ * (r570_disp_chan_set_pushbuf) and r570/nvrm/disp.h (ADDR_SYSMEM,
+ * PBTARGETAPERTURE).
+ */
 #define RECORDS_SPACE_SYSTEM		1U
 #define RECORDS_CACHE_SNOOP		1U
 #define RECORDS_APERTURE_COHERENT	3U
 #define RECORDS_SUBDEVICE_FIRST		1U
 
-/* The registration's fields. */
+/*
+ * The registration's fields.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080internal.h
+ * (NV2080_CTRL_INTERNAL_DISPLAY_CHANNEL_PUSHBUFFER_PARAMS).
+ */
 #define RECORDS_PB_SPACE_AT		0U
 #define RECORDS_PB_ADDRESS_AT		8U
 #define RECORDS_PB_LIMIT_AT		16U
@@ -49,80 +77,187 @@
 #define RECORDS_PB_APERTURE_AT		40U
 #define RECORDS_PB_SUBDEVICE_AT		48U
 
-/* The channel allocation's fields. */
+/*
+ * The channel allocation's fields.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/nvos.h
+ * (NV50VAIO_CHANNELDMA_ALLOCATION_PARAMETERS).
+ */
 #define RECORDS_CHANNEL_INSTANCE_AT	0U
 #define RECORDS_CHANNEL_SUBDEVICE_AT	32U
 
-/* The output-resource assignment's fields (570.144's layout): the display, the excluded SORs, the assigned list. */
+/*
+ * The output-resource assignment's fields (570.144's layout): the display,
+ * the excluded SORs, the assigned list.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/ctrl/ctrl0073/ctrl0073dfp.h
+ * (NV0073_CTRL_DFP_ASSIGN_SOR_PARAMS,
+ * NV0073_CTRL_CMD_DFP_ASSIGN_SOR_MAX_SORS).
+ */
 #define RECORDS_ASSIGN_DISPLAY_AT	4U
 #define RECORDS_ASSIGN_EXCLUDE_AT	8U
 #define RECORDS_ASSIGN_TAGGED_AT	40U
 #define RECORDS_ASSIGN_TAGGED_BYTES	8U
 #define RECORDS_ASSIGN_SOR_MAX		4U
 
-/* The windows the core's bounds and owners name: at most 8 on the Turing display. */
+/*
+ * The windows the core's bounds and owners name: at most 8 on the Turing
+ * display.
+ *
+ * Value referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/corec57d.c
+ * (corec57d_init, the windows it bounds).
+ */
 #define RECORDS_WINDOW_MAX		8U
 
-/* The window's format bounds: the packed RGB formats of 1, 2, 4 and 8 bytes. */
+/*
+ * The window's format bounds: the packed RGB formats of 1, 2, 4 and 8 bytes.
+ *
+ * Value referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/corec57d.c
+ * (corec57d_init) and NVIDIA open-gpu-doc classes/display/clc57d.h.
+ */
 #define RECORDS_FORMAT_BOUNDS_RGB	0x0000000fU
 
-/* The window's usage bounds: 0x7fff pixels a line, the input LUT allowed, two scaler taps, no upscaling. */
+/*
+ * The window's usage bounds: 0x7fff pixels a line, the input LUT allowed,
+ * two scaler taps, no upscaling.
+ *
+ * Value referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/corec57d.c
+ * (corec57d_init) and NVIDIA open-gpu-doc classes/display/clc57d.h.
+ */
 #define RECORDS_USAGE_BOUNDS		0x00117fffU
 
-/* The head's cursor turned off, with the A8R8G8B8 format named. */
+/*
+ * The head's cursor turned off, with the A8R8G8B8 format named.
+ *
+ * Value referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/headc37d.c
+ * (headc37d_curs_clr) and NVIDIA open-gpu-doc classes/display/clc57d.h.
+ */
 #define RECORDS_CURSOR_OFF		0x000000cfU
 
-/* The core's notifier control: write the notifier at the offset (bits 11:4), notify on. */
+/*
+ * The core's notifier control: write the notifier at the offset (bits
+ * 11:4), notify on.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/corec37d.c
+ * (corec37d_update) and NVIDIA open-gpu-doc classes/display/clc57d.h
+ * (NVC57D_SET_NOTIFIER_CONTROL).
+ */
 #define RECORDS_NOTIFY_ENABLE		0x00001000U
 #define RECORDS_NOTIFIER_OFFSET_MASK	0x00000ff0U
 
-/* nouveau's head usage bounds: 256x256 cursors, the output LUT allowed, two output scaler taps, upscaling allowed. */
+/*
+ * The head's usage bounds: 256x256 cursors, the output LUT allowed, two
+ * output scaler taps, upscaling allowed.
+ *
+ * Value referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/headc57d.c
+ * (headc57d_mode) and NVIDIA open-gpu-doc classes/display/clc57d.h.
+ */
 #define RECORDS_HEAD_USAGE_BOUNDS	0x00001114U
 
-/* nouveau's processing: RGB, no chroma filter, the VESA range. */
+/*
+ * The head's processing: RGB, no chroma filter, the VESA range.
+ *
+ * Value referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/headc57d.c
+ * (headc57d_procamp) and NVIDIA open-gpu-doc classes/display/clc57d.h.
+ */
 #define RECORDS_PROCAMP_RGB		0x00000000U
 
-/* A progressive raster (the head control's structure). */
+/*
+ * A progressive raster (the head control's structure).
+ *
+ * Value referenced: NVIDIA open-gpu-doc classes/display/clc57d.h
+ * (NVC57D_HEAD_SET_CONTROL_STRUCTURE).
+ */
 #define RECORDS_CONTROL_PROGRESSIVE	0x00000000U
 
-/* The pixel clock's hertz (bits 30:0; bit 31 is the 1000/1001 adjustment). */
+/*
+ * The pixel clock's hertz (bits 30:0; bit 31 is the 1000/1001 adjustment).
+ *
+ * Value referenced: NVIDIA open-gpu-doc classes/display/clc57d.h
+ * (NVC57D_HEAD_SET_PIXEL_CLOCK_FREQUENCY_HERTZ,
+ * NVC57D_HEAD_SET_PIXEL_CLOCK_FREQUENCY_ADJ1000DIV1001).
+ */
 #define RECORDS_CLOCK_HERTZ_MASK	0x7fffffffU
 
-/* An update that releases the state the channel gathered. */
+/*
+ * An update that releases the state the channel gathered.
+ *
+ * Value referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/corec37d.c
+ * (corec37d_update) and wndwc37e.c (wndwc37e_update).
+ */
 #define RECORDS_UPDATE			0x00000001U
 
-/* The window's image: one frame between presents and a non-tearing flip; pitch layout; A8R8G8B8. */
+/*
+ * The window's image: one frame between presents and a non-tearing flip;
+ * pitch layout; A8R8G8B8.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/wndwc57e.c
+ * (wndwc57e_image_set) and NVIDIA open-gpu-doc classes/display/clc57e.h.
+ */
 #define RECORDS_PRESENT_NON_TEARING	0x00000001U
 #define RECORDS_STORAGE_PITCH		0x00000010U
 #define RECORDS_PITCH_SHIFT		6U
 #define RECORDS_OFFSET_SHIFT		8U
 
-/* An opaque window: depth 255, constant alpha 255, source times 1 over destination times 0. */
+/*
+ * An opaque window: depth 255, constant alpha 255, source times 1 over
+ * destination times 0.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/wndwc37e.c
+ * (wndwc37e_blend_set) and NVIDIA open-gpu-doc classes/display/clc57e.h.
+ */
 #define RECORDS_COMPOSITION_DEPTH	0x00000ff0U
 #define RECORDS_CONSTANT_ALPHA		0x000000ffU
 #define RECORDS_FACTOR_SELECT		0x00004422U
 #define RECORDS_KEY_FULL_RANGE		0xffff0000U
 
-/* The format coefficients of the identity matrix (1.0 is 0x10000), 3 rows of 4. */
+/*
+ * The format coefficients of the identity matrix (1.0 is 0x10000), 3 rows of
+ * 4.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/wndwc57e.c
+ * (wndwc57e_csc_clr).
+ */
 #define RECORDS_COEFFICIENT_COUNT	12U
 #define RECORDS_COEFFICIENT_ONE		0x00010000U
 
 /*
  * A shown cursor: enabled, A8R8G8B8, 64 by 64, its hot spot at the top left,
- * no de-gamma (nouveau's headc37d_curs_set for a 64-pixel image).
+ * no de-gamma.
+ *
+ * Value referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/headc37d.c
+ * (headc37d_curs_set) and NVIDIA open-gpu-doc classes/display/clc57d.h.
  */
 #define RECORDS_CURSOR_ON		0x800001cfU
 
 /*
  * The cursor's blending: K1 255, the cursor times K1 over the picture times
- * one less the cursor's alpha (premultiplied alpha, nouveau's composition).
+ * one less the cursor's alpha (premultiplied alpha).
+ *
+ * Value referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/headc37d.c
+ * (headc37d_curs_set) and NVIDIA open-gpu-doc classes/display/clc57d.h.
  */
 #define RECORDS_CURSOR_COMPOSITION	0x000072ffU
 
-/* Where a PIO channel's allocation names its instance. */
+/*
+ * Where a PIO channel's allocation names its instance.
+ *
+ * Value referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/nvos.h
+ * (NV50VAIO_CHANNELPIO_ALLOCATION_PARAMETERS).
+ */
 #define RECORDS_PIO_INSTANCE_AT		0U
 
-/* The cursor's position fields are 16 bits each; a position is held inside them. */
+/*
+ * The cursor's position fields are 16 bits each; a position is held inside
+ * them.
+ *
+ * Values referenced: NVIDIA open-gpu-doc classes/display/clc57a.h
+ * (NVC57A_SET_CURSOR_HOT_SPOT_POINT_OUT_X,
+ * NVC57A_SET_CURSOR_HOT_SPOT_POINT_OUT_Y).
+ */
 #define RECORDS_POINT_MIN		(-32768)
 #define RECORDS_POINT_MAX		32767
 #define RECORDS_POINT_FIELD_MASK	0xffffU
@@ -140,9 +275,12 @@
 /*
  * The head methods the takeover copies from the armed state.
  *
- * The same methods nouveau's head sets on a mode set (the view, the mode,
- * the output resource, the colour processing and the display id), so the
- * head keeps the timing and output the firmware gave it.
+ * The same methods a head is given on a mode set (the view, the mode, the
+ * output resource, the colour processing and the display id), so the head
+ * keeps the timing and output the firmware gave it.
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/head.c
+ * (nv50_head_flush_set).
  */
 const uint32_t nvrtx_disp_head_copied[NVRTX_DISP_HEAD_COPIED] = {
 	NVRTX_HEAD_VIEWPORT_SIZE_IN,
@@ -248,10 +386,13 @@ nvrtx_push_one(
 }
 
 /*
- * Writes a jump to a byte offset of the push buffer (nouveau's wind of a
- * display channel): the channel's fetch goes on from there.
+ * Writes a jump to a byte offset of the push buffer (the wind of a display
+ * channel): the channel's fetch goes on from there.
  *
  * A jump that does not fit writes nothing and sets the overflow flag.
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/disp.c
+ * (nv50_dmac_wind).
  */
 void
 nvrtx_push_jump(
@@ -273,7 +414,10 @@ nvrtx_push_jump(
  * Reports the hash-table slot an object's handle starts its search at.
  *
  * The handle is folded 10 bits at a time, and the channel number moves the
- * slot, as nouveau's hash does for the display's 1024-entry table.
+ * slot, for the display's 1024-entry table.
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/core/ramht.c
+ * (nvkm_ramht_hash).
  */
 uint32_t
 nvrtx_disp_ramht_hash(
@@ -406,8 +550,12 @@ nvrtx_disp_channel_params(
 
 /*
  * Writes the push-buffer registration of a PIO channel (the cursor's): no
- * memory and not valid, only the class, the instance and subdevice 0, as
- * nouveau's r570_disp_chan_set_pushbuf does without a buffer.
+ * memory and not valid, only the class, the instance and subdevice 0, the
+ * registration of a channel without a buffer.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/disp.c
+ * (r570_disp_chan_set_pushbuf).
  */
 void
 nvrtx_disp_pio_pushbuffer_params(
@@ -424,20 +572,27 @@ nvrtx_disp_pio_pushbuffer_params(
 
 /*
  * Writes a PIO channel's allocation: its instance (the head), no notifier, no pointer.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/disp.c (r535_curs_init).
  */
 void
 nvrtx_disp_pio_channel_params(
 	uint8_t *params,
 	uint32_t instance)
 {
-	/* The instance alone, as nouveau's r535_curs_init gives it. */
+	/* The instance alone. */
 	records_clear(params, NVRTX_DISP_PIO_CHANNEL_BYTES);
 	nvrtx_put32(params, RECORDS_PIO_INSTANCE_AT, instance);
 }
 
 /*
- * Writes the request that assigns an output resource to one display (nouveau's
- * acquire of a SOR under the GSP): subdevice 0, the display, the SORs not to use.
+ * Writes the request that assigns an output resource to one display (the
+ * acquire of a SOR under the GSP): subdevice 0, the display, the SORs not to
+ * use.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/disp.c (r535_outp_acquire).
  */
 void
 nvrtx_disp_assign_sor_params(
@@ -570,9 +725,12 @@ nvrtx_disp_core_display_id(
 }
 
 /*
- * Writes one head's mode set in nouveau's order (its head flush): the
- * viewport, the raster and clock, the dither, the processing and the output
- * resource's control.
+ * Writes one head's mode set in the order of a head's flush: the viewport,
+ * the raster and clock, the dither, the processing and the output resource's
+ * control.
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/head.c
+ * (nv50_head_flush_set).
  */
 void
 nvrtx_disp_core_head_mode(
@@ -598,7 +756,7 @@ nvrtx_disp_core_head_mode(
 	nvrtx_push_one(push, base + NVRTX_HEAD_RASTER_VERT_BLANK2, mode->vert_blank2);
 	nvrtx_push_one(push, base + NVRTX_HEAD_CONTROL, RECORDS_CONTROL_PROGRESSIVE);
 
-	/* The pixel clock, its maximum the same, and nouveau's usage bounds. */
+	/* The pixel clock, its maximum the same, and the head's usage bounds. */
 	nvrtx_push_one(push, base + NVRTX_HEAD_PIXEL_CLOCK, mode->clock_hz & RECORDS_CLOCK_HERTZ_MASK);
 	nvrtx_push_one(push, base + NVRTX_HEAD_PIXEL_CLOCK_MAX, mode->clock_hz & RECORDS_CLOCK_HERTZ_MASK);
 	nvrtx_push_one(push, base + NVRTX_HEAD_USAGE_BOUNDS, RECORDS_HEAD_USAGE_BOUNDS);
@@ -671,7 +829,10 @@ nvrtx_disp_core_update(
 
 /*
  * Writes one head's cursor on: its control and blending, the object it is
- * read through and its VRAM offset (nouveau's headc37d_curs_set).
+ * read through and its VRAM offset.
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/headc37d.c
+ * (headc37d_curs_set).
  */
 void
 nvrtx_disp_core_cursor_set(
@@ -697,7 +858,10 @@ nvrtx_disp_core_cursor_set(
 }
 
 /*
- * Writes one head's cursor off and without its object (nouveau's headc37d_curs_clr).
+ * Writes one head's cursor off and without its object.
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/headc37d.c
+ * (headc37d_curs_clr).
  */
 void
 nvrtx_disp_core_cursor_clear(
@@ -716,11 +880,13 @@ nvrtx_disp_core_cursor_clear(
 
 /*
  * Writes the core's update with its notifier and no interlock: the update
- * that shows or hides the cursor (nouveau's corec37d_update for a cursor
- * whose position changed, or one turned off).  The cursor channel's own
- * update is not interlocked with the core (its SET_INTERLOCK_FLAGS is never
- * written), so a core update interlocked with the cursor would wait for it
- * forever.
+ * that shows or hides the cursor (for a cursor whose position changed, or
+ * one turned off).  The cursor channel's own update is not interlocked with
+ * the core (its SET_INTERLOCK_FLAGS is never written), so a core update
+ * interlocked with the cursor would wait for it forever.
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/corec37d.c
+ * (corec37d_update).
  */
 void
 nvrtx_disp_core_update_cursor(
@@ -747,6 +913,9 @@ nvrtx_disp_core_update_cursor(
  * 31:16, each a 16-bit two's complement (a cursor partly left of or above
  * the output has a negative position).  A position outside 16 bits is held
  * at its nearest end.
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/cursc37a.c
+ * (cursc37a_point).
  */
 uint32_t
 nvrtx_disp_cursor_point(
@@ -768,7 +937,7 @@ nvrtx_disp_cursor_point(
 	else if (y > RECORDS_POINT_MAX)
 		y = RECORDS_POINT_MAX;
 
-	/* Each one's low 16 bits, as nouveau's NVVAL packs a crtc position. */
+	/* Each one's low 16 bits. */
 	field_x = (uint32_t)x & RECORDS_POINT_FIELD_MASK;
 	field_y = (uint32_t)y & RECORDS_POINT_FIELD_MASK;
 
