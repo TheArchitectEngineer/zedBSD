@@ -1,0 +1,196 @@
+COMPLETED_WITH_TESTS plan/ws005 25
+REGDIFF WS014 ws.md=incomplete master=None | ws:Status: closed（2026-10-13 ユーザー「WS014はクローズします。」。旧: incomplete、残りは p004 の最終 API と規約の全文だけで実装の残りは無かった） | reg:closed（2026-10-13 ユーザー）
+REGDIFF WS029 ws.md=completed master=incomplete | ws:Status: completed（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2.2）。旧: incomplete） | reg:incomplete
+PNOSTATUS plan/ws031/phase001/phase.md
+PNOSTATUS plan/ws031/phase002/phase.md
+PNOSTATUS plan/ws031/phase003/phase.md
+PNOSTATUS plan/ws031/phase004/phase.md
+PNOSTATUS plan/ws031/phase005/phase.md
+PNOSTATUS plan/ws031/phase006/phase.md
+PNOSTATUS plan/ws031/phase007/phase.md
+PNOSTATUS plan/ws031/phase008/phase.md
+PNOSTATUS plan/ws031/phase009/phase.md
+PNOSTATUS plan/ws031/phase010/phase.md
+PNOSTATUS plan/ws031/phase011/phase.md
+PNOSTATUS plan/ws031/phase012/phase.md
+PNOSTATUS plan/ws031/phase013/phase.md
+PNOSTATUS plan/ws031/phase014/phase.md
+PNOSTATUS plan/ws031/phase015/phase.md
+PNOSTATUS plan/ws031/phase016/phase.md
+PNOSTATUS plan/ws031/phase017/phase.md
+PNOSTATUS plan/ws031/phase018/phase.md
+TABLEDIFF plan/ws033/ws.md:54 p001 table=cleared phase.md=in-progress
+TABLEDIFF plan/ws034/ws.md:143 p058 table=planning phase.md=planned
+COMPLETED_WITH_PHASES plan/ws035 n=120 ['phase001:cleared', 'phase002:cleared', 'phase003:cleared', 'phase004:cleared', 'phase006:cleared', 'phase007:cleared']
+COMPLETED_WITH_TESTS plan/ws035 130
+REGDIFF WS037 ws.md=incomplete master=planned | ws:Status: incomplete（2026-10-14 開始。2026-10-15: パススルーで R8b〜R8d・R9v・R9k が PASS（desktop の描画）、方法 A（素の起動）で  | reg:planned（p001 から、q692）
+REGDIFF WS044 ws.md=planning master=None | ws:Status: closed（2026-10-13 ユーザー「WS044、WS048、WS118はクローズします。」。旧: planning（要検討・ブロック、2026-10-05）、その前は inc | reg:closed（2026-10-13 ユーザー）
+TABLEDIFF plan/ws046/ws.md:49 p009 table=cleared phase.md=uncleared
+REGDIFF WS048 ws.md=incomplete master=None | ws:Status: closed（2026-10-13 ユーザー「WS044、WS048、WS118はクローズします。」。旧: incomplete（p014 の後の実機の起動の成功はユーザー確認、USB | reg:closed（2026-10-13 ユーザー）
+COMPLETED_WITH_PHASES plan/ws049 n=17 ['phase001:cleared', 'phase002:cleared', 'phase003:cleared', 'phase004:cleared', 'phase005:cleared', 'phase006:cleared']
+COMPLETED_WITH_TESTS plan/ws049 21
+REGDIFF WS051 ws.md=incomplete master=planning | ws:Status: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc §2）: p001・p004a・p004b・p005a cleared。 2026-10-08  | reg:planning
+COMPLETED_WITH_PHASES plan/ws057 n=2 ['phase001:cleared', 'phase002:cleared']
+COMPLETED_WITH_PHASES plan/ws058 n=2 ['phase001:cleared', 'phase002:cleared']
+REGDIFF WS061 ws.md=completed master=incomplete | ws:Status: completed（2026-10-05 ユーザー「clearedにする：WS061」。受け入れの計測は達成済み（configure・cc・make が host の 2 倍以内）。u | reg:incomplete
+COMPLETED_WITH_PHASES plan/ws061 n=11 ['phase001:cleared', 'phase002:uncleared', 'phase003:uncleared', 'phase004:planned', 'phase005:cleared', 'phase006:cleared']
+COMPLETED_WITH_TESTS plan/ws061 1
+TABLEDIFF plan/ws061/ws.md:37 p007 table=in-progress phase.md=cleared
+REGDIFF WS066 ws.md=completed master=planning | ws:Status: completed（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2.2）。旧: incomplete） | reg:planning
+TABLEDIFF plan/ws068/ws.md:71 p004 table=in-progress phase.md=cleared
+TABLEDIFF plan/ws068/ws.md:83 p009 table=in-progress phase.md=cleared
+REGDIFF WS073 ws.md=completed master=incomplete | ws:Status: completed（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2.3）で閉じた。残りの uncleared の p025・p033・p040・p045 と  | reg:incomplete
+COMPLETED_WITH_PHASES plan/ws073 n=55 ['phase001:cleared', 'phase002:cleared', 'phase003:cleared', 'phase004:cleared', 'phase005:cleared', 'phase006:cleared']
+COMPLETED_WITH_TESTS plan/ws073 96
+PNOSTATUS plan/ws074/phase189/phase.md
+PNOSTATUS plan/ws074/phase217/phase.md
+PNOSTATUS plan/ws074/phase220/phase.md
+PNOSTATUS plan/ws074/phase225/phase.md
+PNOSTATUS plan/ws074/phase226/phase.md
+PNOSTATUS plan/ws074/phase227/phase.md
+PNOSTATUS plan/ws074/phase228/phase.md
+PNOSTATUS plan/ws074/phase230/phase.md
+PNOSTATUS plan/ws074/phase231/phase.md
+PNOSTATUS plan/ws074/phase232/phase.md
+PNOSTATUS plan/ws074/phase233/phase.md
+PNOSTATUS plan/ws074/phase234/phase.md
+PNOSTATUS plan/ws074/phase235/phase.md
+PNOSTATUS plan/ws074/phase236/phase.md
+PNOSTATUS plan/ws074/phase237/phase.md
+PNOSTATUS plan/ws074/phase238/phase.md
+PNOSTATUS plan/ws074/phase239/phase.md
+TABLEDIFF plan/ws074/ws.md:579 p200 table=cleared phase.md=in-progress
+TABLEDIFF plan/ws074/ws.md:580 p201 table=cleared phase.md=in-progress
+TABLEDIFF plan/ws074/ws.md:581 p202 table=cleared phase.md=in-progress
+REGDIFF WS078 ws.md=completed master=incomplete | ws:Status: completed（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2.2）。旧: incomplete） | reg:incomplete
+REGDIFF WS080 ws.md=planning master=incomplete | ws:Status: planning（要検討・ブロック、2026-10-05 ユーザー「要検討状態にしてブロックする」）。以前: incomplete | reg:incomplete（p001 の設計の文書まで、p004 in-progress・p005 planned、2026-10-04）
+WS_NOT_STARTED_BUT_EXEC plan/ws080 planning ['phase001:uncleared', 'phase004:in-progress']
+REGDIFF WS082 ws.md=planning master=incomplete | ws:Status: planning（最初に「アイディアだけ描く」Phase を実行しユーザーと議論、2026-10-05 ユーザー）。以前: incomplete | reg:incomplete
+REGDIFF WS085 ws.md=completed master=incomplete | ws:Status: completed（2026-10-06 夜 ユーザー「WS085、WS088、WS114はComplete、はすでにできており、Completeにしてください。」） | reg:incomplete
+COMPLETED_WITH_TESTS plan/ws086 0
+COMPLETED_WITH_TESTS plan/ws087 0
+REGDIFF WS088 ws.md=completed master=incomplete | ws:Status: completed（2026-10-06 夜 ユーザー「WS085、WS088、WS114はComplete、はすでにできており、Completeにしてください。」） | reg:incomplete
+TABLEDIFF plan/ws089/ws.md:59 p011 table=cleared phase.md=planned
+TABLEDIFF plan/ws089/ws.md:62 p014 table=cleared phase.md=planning
+COMPLETED_WITH_TESTS plan/ws091 0
+COMPLETED_WITH_TESTS plan/ws093 0
+TABLEDIFF plan/ws095/ws.md:53 p006 table=planned phase.md=cleared
+TABLEDIFF plan/ws095/ws.md:54 p007 table=planned phase.md=cleared
+COMPLETED_WITH_PHASES plan/ws100 n=12 ['phase001:cleared', 'phase002:cleared', 'phase003:cleared', 'phase004:cleared', 'phase005:cleared', 'phase006:cleared']
+COMPLETED_WITH_TESTS plan/ws100 17
+TABLEDIFF plan/ws101/ws.md:76 p013 table=planned phase.md=in-progress
+TABLEDIFF plan/ws102/ws.md:63 p010 table=in-progress phase.md=cleared
+REGDIFF WS114 ws.md=completed master=incomplete | ws:Status: completed（2026-10-06 夜 ユーザー「WS085、WS088、WS114はComplete、はすでにできており、Completeにしてください。」） | reg:incomplete
+REGDIFF WS115 ws.md=planning master=incomplete | ws:Status: planning | reg:incomplete
+WS_NOT_STARTED_BUT_EXEC plan/ws115 planning ['phase001:cleared', 'phase002:cleared', 'phase004:cleared', 'phase005:cleared', 'phase006:cleared', 'phase007:cleared', 'phase008:cleared', 'phase009:cleared', 'phase010:in-progress']
+REGDIFF WS117 ws.md=planned master=planning | ws:Status: planned（2026-10-07 ユーザー（クリック）: ベータ3 以降） | reg:planning
+REGDIFF WS118 ws.md=incomplete master=None | ws:Status: closed（2026-10-13 ユーザー「WS044、WS048、WS118はクローズします。」。旧: incomplete、Target はベータ4 以降） | reg:closed（2026-10-13 ユーザー）
+REGDIFF WS121 ws.md=incomplete master=planning | ws:Status: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2.3）: **ベータ3**（browser と一緒、WS074）。p001 は clear | reg:planning
+REGDIFF WS122 ws.md=completed master=planning | ws:Status: completed（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2.2）。旧: incomplete） | reg:planning
+REGDIFF WS123 ws.md=planning master=canceled | ws:Status: planning（canceled、2026-10-02 user「va-apiはキャンセルします。アプリからVulkan Videoを使ってもらいます。」） | reg:canceled（2026-10-02 user、アプリが Vulkan Video を直接使う）
+WS_NOT_STARTED_BUT_EXEC plan/ws125 planning ['phase002:cleared']
+WS_NOT_STARTED_BUT_EXEC plan/ws126 planning ['phase001:cleared', 'phase002:cleared', 'phase003:cleared']
+COMPLETED_WITH_PHASES plan/ws127 n=13 ['phase001:cleared', 'phase002:cleared', 'phase003:cleared', 'phase004:cleared', 'phase005:canceled', 'phase006:cleared']
+COMPLETED_WITH_TESTS plan/ws127 16
+COMPLETED_WITH_PHASES plan/ws128 n=12 ['phase001:cleared', 'phase002:cleared', 'phase003:cleared', 'phase004:cleared', 'phase005:cleared', 'phase006:cleared']
+COMPLETED_WITH_TESTS plan/ws128 31
+TABLEDIFF plan/ws129/ws.md:51 p002 table=planned phase.md=cleared
+REGDIFF WS132 ws.md=incomplete master=planning | ws:Status: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: p001 を cleared。2026-10-08 q910 P2 の照合: p00 | reg:planning（ベータ1 に入れる、2026-10-04 ユーザー）
+TABLEDIFF plan/ws132/ws.md:37 p009 table=planning phase.md=cleared
+TABLEDIFF plan/ws134/ws.md:26 p001 table=planning phase.md=cleared
+REGDIFF WS139 ws.md=incomplete master=None | ws:Status: closed（2026-10-13 ユーザー「WS139はクローズします。」。旧: incomplete、Target はベータ3） | reg:closed（2026-10-13 ユーザー）
+REGDIFF WS141 ws.md=incomplete master=planned | ws:Status: incomplete（display/V1〜V10/二device share/Normal NC/worker/SPIR-V compiler/typed Vulkan/native | reg:planned（p001 から、q691）
+TABLEDIFF plan/ws141/ws.md:77 p013 table=in-progress phase.md=planned
+COMPLETED_WITH_PHASES plan/ws142 n=11 ['phase001:cleared', 'phase002:cleared', 'phase003:cleared', 'phase004:cleared', 'phase005:cleared', 'phase006:cleared']
+COMPLETED_WITH_TESTS plan/ws142 17
+REGDIFF WS143 ws.md=incomplete master=planning | ws:Status: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc §2）: p004 cleared。p003・p005 は i02 以降まで保留。次は q904 | reg:planning（Queue なし）
+TABLEDIFF plan/ws143/ws.md:47 p008 table=planned phase.md=cleared
+REGDIFF WS145 ws.md=incomplete master=planning | ws:Status: incomplete（2026-10-08 q910 P2 の照合: p001〜p004・p007 cleared（2026-10-07・08）。残り: p005（Linux・Free | reg:planning（p001 から、Queue なし）
+REGDIFF WS148 ws.md=completed master=planning | ws:Status: completed（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2.2）。旧: incomplete） | reg:planning（p001 の検討から、Queue なし）
+REGDIFF WS149 ws.md=completed master=planning | ws:Status: completed（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2.2）。旧: incomplete） | reg:planning（p001 の検討から、Queue なし）
+REGDIFF WS151 ws.md=completed master=planning | ws:Status: completed（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2.2）。旧: incomplete） | reg:planning（p001 の検討から、Queue なし）
+WS_NOT_STARTED_BUT_EXEC plan/ws153 planning ['phase001:in-progress']
+TABLEDIFF plan/ws153/ws.md:30 p001 table=planning phase.md=in-progress
+REGDIFF WS156 ws.md=incomplete master=planning | ws:Status: incomplete | reg:planning（p001 から、Queue なし）
+REGDIFF WS158 ws.md=incomplete master=planning | ws:Status: incomplete | reg:planning（p001 から、Queue なし）
+REGDIFF WS160 ws.md=completed master=planning | ws:Status: completed（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2.2）。旧: incomplete） | reg:planning（**ベータ1**、q721）
+REGDIFF WS161 ws.md=incomplete master=planning | ws:Status: incomplete（2026-10-08 q902 P1 の照合: p002〜p005 cleared。残りは p006 の実機の UAT と p001 の判定。旧: plannin | reg:planning（**ベータ2**、2026-10-05）
+REGDIFF WS166 ws.md=completed master=planning | ws:Status: completed（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2.2）。旧: incomplete） | reg:planning（**ベータ2**、2026-10-05）
+REGDIFF WS167 ws.md=completed master=planning | ws:Status: completed（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2.2）。旧: incomplete） | reg:planning（**ベータ2**、2026-10-05）
+REGDIFF WS169 ws.md=incomplete master=planning | ws:Status: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: p000 を cleared。2026-10-08 q910 P2 の照合: p00 | reg:planning（**ベータ2**、2026-10-05 ユーザー）
+WS_NOT_STARTED_BUT_EXEC plan/ws171 planning ['phase001:cleared']
+TABLEDIFF plan/ws172/ws.md:39 p002 table=in-progress phase.md=cleared
+TABLEDIFF plan/ws172/ws.md:40 p003 table=uncleared phase.md=cleared
+TABLEDIFF plan/ws172/ws.md:41 p004 table=planning phase.md=in-progress
+REGDIFF WS175 ws.md=incomplete master=planning | ws:Status: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: p002・p010 は PNG の目視まで保留。2026-10-08 q910 P2 | reg:planning（ベータ2 の案）
+TABLEDIFF plan/ws175/ws.md:35 p010 table=planned phase.md=in-progress
+NOREG WS177 (incomplete)
+NOREG WS179 (completed)
+NOREG WS180 (planning)
+NOREG WS181 (incomplete)
+REGDIFF WS188 ws.md=completed master=planned | ws:Status: completed（2026-10-08 Q1 の判定（sweep-beta2-rc §2）: p001〜p004 cleared） | reg:planned
+COMPLETED_WITH_TESTS plan/ws188 0
+REGDIFF WS189 ws.md=incomplete master=planned | ws:Status: incomplete（2026-10-08 q902 P1 の照合: p001・p004 cleared、p002・p003 は T1 の手操作で大半を確認、残りの項目は T1 の束） | reg:planned
+REGDIFF WS190 ws.md=incomplete master=planned | ws:Status: incomplete | reg:planned
+TABLEDIFF plan/ws190/ws.md:40 p004 table=planned phase.md=cleared
+REGDIFF WS191 ws.md=incomplete master=planning | ws:Status: incomplete（2026-10-13 P2 q964 の照合: p001〜p004 は各 phase.md で cleared（2026-10-08 Q1、T1-444・T1-4 | reg:planning
+TABLEDIFF plan/ws191/ws.md:32 p005 table=planned phase.md=cleared
+REGDIFF WS192 ws.md=completed master=planned | ws:Status: completed（ベータ2 の範囲、2026-10-10 Q1。規約の全文の見直し p003 はベータ3） | reg:planned
+COMPLETED_WITH_PHASES plan/ws192 n=1 ['phase001:cleared']
+COMPLETED_WITH_TESTS plan/ws192 2
+REGDIFF WS193 ws.md=incomplete master=planned | ws:Status: incomplete（ベータ2 の範囲は完了 2026-10-13 Q1 判定: 完了の条件 1〜3 は満たした、RPi4 の実機の確かめはユーザーの UAT で済みとする（2026- | reg:planned
+WS_NOT_STARTED_BUT_EXEC plan/ws194 planned ['phase001:cleared']
+TABLEDIFF plan/ws194/ws.md:37 p001 table=planned phase.md=cleared
+TABLEDIFF plan/ws197/ws.md:49 p003 table=cleared phase.md=in-progress
+TABLEDIFF plan/ws197/ws.md:50 p004 table=cleared phase.md=planning
+TABLEDIFF plan/ws197/ws.md:63 p014 table=planned phase.md=in-progress
+WS_NOT_STARTED_BUT_EXEC plan/ws198 planning ['phase001:cleared']
+REGDIFF WS199 ws.md=completed master=planned | ws:Status: completed | reg:planned
+COMPLETED_WITH_PHASES plan/ws199 n=5 ['phase001:cleared', 'phase002:cleared', 'phase003:cleared', 'phase004:cleared', 'phase005:cleared']
+COMPLETED_WITH_TESTS plan/ws199 8
+REGDIFF WS202 ws.md=incomplete master=planning | ws:Status: incomplete（native再生softwareをmainへ統合、実機と全受入matrixは未確認） | reg:planning
+TABLEDIFF plan/ws202/ws.md:98 p013 table=cleared phase.md=planned
+NOREG WS203 (incomplete)
+REGDIFF WS204 ws.md=incomplete master=planning | ws:Status: incomplete（2026-10-11 P1 q929: p001 の設計） | reg:planning
+TABLEDIFF plan/ws204/ws.md:32 p003 table=planned phase.md=in-progress
+WS_NOT_STARTED_BUT_EXEC plan/ws205 planning ['phase001:in-progress', 'phase002:in-progress', 'phase003:in-progress']
+REGDIFF WS206 ws.md=incomplete master=planning | ws:Status: incomplete（p001 は第 3 版の review-3 と E2・E4・E6 の回答の後、clearance は Q1 の判断待ち。p002a は実装・host・build  | reg:planning
+WS_NOT_STARTED_BUT_EXEC plan/ws207 planning ['phase001:in-progress', 'phase002:in-progress']
+REGDIFF WS208 ws.md=incomplete master=planning | ws:Status: incomplete（2026-10-13 P6: p007 で Pi の 4 core の固まりの検出（stall watch）と SMP の 2 つの直し。Pi の再現待ち） | reg:planning
+WS_NOT_STARTED_BUT_EXEC plan/ws209 planning ['phase001:in-progress', 'phase002:in-progress', 'phase003:in-progress']
+WS_NOT_STARTED_BUT_EXEC plan/ws210 planning ['phase001:in-progress', 'phase002:in-progress', 'phase013:in-progress', 'phase014:in-progress']
+TABLEDIFF plan/ws210/ws.md:46 p013 table=planning phase.md=in-progress
+WS_NOT_STARTED_BUT_EXEC plan/ws211 planning ['phase005:in-progress', 'phase007:in-progress', 'phase008:in-progress', 'phase009:in-progress', 'phase010:in-progress', 'phase011:in-progress']
+TABLEDIFF plan/ws211/ws.md:40 p006 table=in-progress phase.md=planning
+WS_NOT_STARTED_BUT_EXEC plan/ws213 planning ['phase002:in-progress', 'phase003:in-progress', 'phase004:in-progress', 'phase005:in-progress', 'phase007:in-progress']
+WS_NOT_STARTED_BUT_EXEC plan/ws214 planning ['phase003a:in-progress', 'phase003b:in-progress', 'phase004:in-progress']
+REGDIFF WS215 ws.md=incomplete master=planning | ws:Status: incomplete（2026-10-12 Q1 作成。2026-10-13 P3: p001 の第 2 版を review-2 が「p002 可、p003 は条件つき」と判定、第 3 | reg:planning
+WS_NOT_STARTED_BUT_EXEC plan/ws216 planning ['phase001:in-progress', 'phase002:cleared', 'phase003:cleared', 'phase004:in-progress', 'phase005:in-progress', 'phase006:in-progress', 'phase007:in-progress']
+TABLEDIFF plan/ws216/ws.md:32 p002 table=planned phase.md=cleared
+TABLEDIFF plan/ws216/ws.md:33 p003 table=in-progress phase.md=cleared
+TABLEDIFF plan/ws216/ws.md:34 p004 table=cleared phase.md=in-progress
+TABLEDIFF plan/ws216/ws.md:35 p005 table=cleared phase.md=in-progress
+TABLEDIFF plan/ws216/ws.md:36 p006 table=cleared phase.md=in-progress
+WS_NOT_STARTED_BUT_EXEC plan/ws217 planning ['phase002a:cleared', 'phase002b:cleared', 'phase003:cleared', 'phase004:cleared']
+WS_NOT_STARTED_BUT_EXEC plan/ws218 planning ['phase001:in-progress', 'phase002:in-progress']
+TABLEDIFF plan/ws218/ws.md:30 p001 table=planned phase.md=in-progress
+REGDIFF WS219 ws.md=incomplete master=planning | ws:Status: incomplete（2026-10-13 P2 が p001 を実施、判断待ち。旧: planning（2026-10-13 Q1 作成）） | reg:planning
+TABLEDIFF plan/ws219/ws.md:41 p003 table=in-progress phase.md=cleared
+REGDIFF WS220 ws.md=incomplete master=planning | ws:Status: incomplete（2026-10-13 Q1 作成。P1 が p001 を実行: 読み・net.tcpstats・host の模型・直しの設計は済み、T1 の基線の測りと desi | reg:planning
+TABLEDIFF plan/ws220/ws.md:33 p003 table=cleared phase.md=in-progress
+TABLEDIFF plan/ws220/ws.md:34 p004 table=cleared phase.md=in-progress
+TABLEDIFF plan/ws220/ws.md:35 p005 table=cleared phase.md=in-progress
+REGDIFF WS221 ws.md=incomplete master=planning | ws:Status: incomplete（2026-10-13 Q1 作成。P2 が p001 を実行: 設計 [phase001/phase.md](phase001/phase.md) の第 2 版（ | reg:planning
+TABLEDIFF plan/ws229/ws.md:43 p005 table=planned phase.md=cleared
+REGDIFF WS231 ws.md=planned master=incomplete | ws:Status: planned（2026-10-14 Q1 作成） | reg:incomplete（p001・p002 cleared、NCQ・TRIM・hotplug・ATAPI は後）
+WS_NOT_STARTED_BUT_EXEC plan/ws231 planned ['phase001:cleared', 'phase002:cleared']
+REGDIFF WS232 ws.md=incomplete master=completed | ws:Status: incomplete（2026-10-14 P1: p004 を追加・実行中。以下は p001〜p003 の完了の時点の記録）（2026-10-14 Q1: menuconfig の  | reg:completed（2026-10-14）
+TABLEDIFF plan/ws232/ws.md:46 p001 table=cleared phase.md=in-progress
+NOREG WS233 (incomplete)
+NOREG WS234 (planning)
+NOREG WS235 (planning)
+NOREG WS236 (incomplete)
+NOREG WS237 (completed)
+COMPLETED_WITH_TESTS plan/ws237 10
+NOREG WS238 (incomplete)
+NOREG WS239 (incomplete)

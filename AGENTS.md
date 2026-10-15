@@ -692,6 +692,14 @@ primary docs for operational syntax:
 - 回帰試験では GPU を使わず、framebuffer で login prompt だけを確かめる。GPU の確認は GPU を扱う WS の Phase で行う。
 - QEMU の証拠と実機の証拠を分けて書く。やっていない確認は「未実施」と書く。
 
+## 記録の整合（2026-10-15 ユーザー、詳細は [plan/record-integrity.md](plan/record-integrity.md)）
+
+- 書く前に出力で確かめる: merge は `git log -1 --format='%h %p'`、担当の SHA は `git cat-file -t`、件数・試験の PASS は自分で数えて見る。報告と出力が食い違えば確かめ直す。確かめていない事は「未確認」と書く。
+- 日付は host の `date`。出来事は今日の日付、予定・期限は未来の日付のまま。
+- ユーザーの決定は原文を引用し、解釈と分けて、その日のうちに Master の decisions-log へ。曖昧な時・既存の事実と食い違う時は記録の前に聞く。
+- 本体と写しを同じ commit で直す（phase.md → ws.md の表・Queue、ws.md → Master の一覧、ticket → Bug Board、割当 → queue.md・registry、次の番号は Master の next だけ）。
+- 大きな merge の後とラップアップの前に `python3 -I plan/tools/record-audit/status.py` を流し、増えた食い違いを直すか引き継ぎに残す。
+
 ## コード
 
 - 新しいコードには [plan/coding-style.md](plan/coding-style.md) の全文を適用する。

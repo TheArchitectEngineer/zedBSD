@@ -11,7 +11,7 @@
 - 点検（2026-10-15 夕、Q1）: plan/ws245・ws247・ws242 と master の先頭の block に書いた commit は全部実在する（8ec351aeb・06f9e2830 は NVIDIA open-gpu-kernel-modules・Mesa の上流の commit で正常）。main の作業ツリーは clean、merge の途中ではない。
 - 日付: host の時計は 2026-10-15（木）JST。10-15 04:36 以降の記録が 1 日進んだ 2026-10-16 と書かれていたので、ユーザーの指示で出来事の日付を 2026-10-15 に直した（予定の記述の 7 行、例: ベータ2 の期限「2026-10-16 夕」は残した）。
 
-## 動いていた担当（この session の終わりで未完、結果は Q1 に届いていない）
+## 動いていた担当（〔15:20 以降は古い: 両方とも返り merge 済み、下の追記〕この session の終わりで未完、結果は Q1 に届いていない）
 
 | 担当 | 仕事 | worktree / branch | 基点 | 成果の置き場所 |
 | --- | --- | --- | --- | --- |
@@ -80,3 +80,11 @@ p3 の worktree（agent/p3-ws245、9b860c6d0）は使っていない。担当の
 - 訂正（2026-10-15）: ユーザー「すでに多数の機種で動作しており、5330を特別扱いはしません。Skylake～Raptor Lake Refreshまですべてサポートします。」→ WS245 の対象は display 12・13 の全機種。ws245/ws.md・phase001・design.md の先頭・Master の一覧・WS244 を直した。design.md の本文（51 か所の 5330 前提）は次の改訂で。
 - 食い違い（未解決、ユーザーに確認中）: (1) 2026-10-14 のユーザーの判断「VBTはテスト用だったので、もう不要」で VBT・OpRegion の raw を削除した（531dfe8d4）が、plan/ws051/tests/m3-5330-20261007/debugfs/i915_vbt.txt（8704 byte、$VBT ALDERLAKE-P の binary）と i915_opregion.txt（8192 byte）が残っている。(2) Skylake〜Raptor Lake Refresh に入る Ice Lake（display 11）を今の code は支えていない。
 - 解決（2026-10-15）: (1) 5330 の VBT・OpRegion の raw の残り（m3 の debugfs の 2 file と increment-results の patch 7 本）を削除（1eaa0a976、ws233 に記録）。vbt-decode.txt（解読の文章）もユーザーの指示で削除。(2) 2026-10-15 ユーザー「display 11は、i915のリファクタリングの既存WSに最後の方のphaseとして入れてください。」 → WS245 の最後の方の Phase（ws.md の表、番号は design.md の改訂で）。
+
+## 最終（2026-10-15 16:00 ごろ、Q1 のラップアップ）
+
+- 動いている担当は無い。全 worktree に未 merge の commit は無い（t1・t2・t3 に未追跡の作業 file だけ）。上の「動いていた担当」の節は古い。
+- 記録の調査の結果: [audit-20261015/report.md](audit-20261015/report.md)。この session で直した物と、次の session で直す物（担当に分ける、ユーザーの合意）の一覧がある。
+- 記録の整合の手順: [plan/record-integrity.md](../record-integrity.md)、AGENTS.md の「記録の整合」、点検の道具 `plan/tools/record-audit/status.py`（Master の Tools に登録）。
+- 今日のユーザーの決定は Master の decisions-log の先頭に入れた。
+- 次の session の最初: (1) report.md の「次の session で直す物」を担当に分ける、(2) WS245 はレビュー 2 の反映・display 12 の差・display 11 の Phase で design.md を改訂、(3) WS247 の判断 2 点、(4) WS242 の既定 on の実装。
