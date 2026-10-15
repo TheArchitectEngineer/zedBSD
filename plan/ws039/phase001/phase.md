@@ -2,7 +2,7 @@
 
 # ws039-p001: amdrdna の調べと設計（初期化の順・firmware・display・packet・段の印・license）
 
-Status: in-progress（2026-10-15 P3、q1202 で再開。design.md と amdrdna-license-audit.md を書いた。design-reviewer の review と指摘の反映の後に Q1 が clearance を判定）
+Status: in-progress（2026-10-15 P3、q1202 で再開。design.md・amdrdna-license-audit.md を書き、design-reviewer の review（blocker 3・major 10・minor 20）を全部反映した。clearance は Q1 の判定。設計の判断の項目 12 件はユーザー待ち）
 Disposition: normal
 Parent: [WS039](../ws.md)
 実行者: P3（code は書かない Phase。build の行だけ Q1 の依頼で先に入れた）
@@ -74,9 +74,12 @@ Parent: [WS039](../ws.md)
 2. p007 の 3 節（program の形）を読み、design の 9.2 で driver の側から合わせた（差分なし）。
 3. [design.md](../design.md): 段 A0〜A9（3 節）、firmware（4 節）、GMC・IH・CP・SDMA・DCN（5〜8 節）、executor と compiler の口（9 節）、interface の対応表（10 節）、回復（11 節）、試験の道（12 節）、出典の規則の守り方（13 節）、危険（14 節）、判断の項目 11 件（15 節）、Phase の表（16 節、p002〜p010、計 40〜65 LW）。
 4. [amdrdna-license-audit.md](../amdrdna-license-audit.md): Linux 106 file・Mesa 44 file・firmware 13 file の path・SHA-256・license・取るデータの表（temp の tsv と 2026-10-15 の再計算）。
-5. 未: design-reviewer の review（→ `plan/ws039/design-review.md`）と指摘の反映。
+5. design-reviewer の review（[design-review.md](../design-review.md)、blocker 3・major 10・minor 20）を全部反映した（扱いは同 file の末尾の「対応」の表）。大きな変更: 段の順を GMC・IH（A2）→ PSP（A3）に（PSP の buffer は GART の system memory、HDP の規則 5.1）、SOS が生きていれば A1 で止まる（cold power cycle）、登録は 1 回で renderer だけの登録を新しい p011（A5s）に、GOP の framebuffer を console の surface のまま残して A6 は flip だけ、compute の queue は作らない、isolate・reset は NULL、lock の表、VRAM の配置、SMU の mailbox と温度の監視、RLC の header の offset の直し、監査の表に 21 行を追加。Phase は p002〜p011（p011 は新規）、計 43〜70 LW。
+6. 未: Q1 の clearance の判定。ユーザーの判断の項目（design の 15 節、12 件、既定つき）。
 
-## 再開の点（resume point）
+## 再開の点（resume point、2026-10-15 夕の更新）
+
+p001 の残りは Q1 の clearance と判断の項目のユーザーの回答だけ。次の Phase は p002（design の 16 節）。以前の再開の点（参考）:
 
 1. `temp/notes/` の 6 つの note の有無と先頭の PARTIAL の印を確かめ、欠けた topic（b・d・e・f の残り）だけを調べ直す。temp は消えていない前提（worktree `/home/awe/zedBSD-worktrees/p3`、無ければ上の表の版で sparse に取り直す。取得は必ず `plan/ws039/temp` の中の明示の path で行う（2026-10-15 の事故: cwd の取り違えで main の checkout に clone を作り、mv で戻した））。
 2. P5 の [p007](../phase007/phase.md)（compiler が出す program の形: user SGPR・記述子・PS の入力・export・driver に渡す header）が main に入っていれば読み、design の口を合わせる。

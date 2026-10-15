@@ -20,7 +20,8 @@
 2. **Mesa の `src/amd` は MIT 563・表記なし 128**。表記なしの物（`registers/*.json`・`docs/license.rst`）は Mesa の既定（`docs/license.rst`: 大部分 MIT、file ごとに SPDX を見よ）に従う。
 3. **BLOB**: Navi10 の firmware は AMD の `LICENSE.amdgpu`（SHA-256 `572872598565dc3513470de971a32bf9db301f47afeef3636345eadae33b2eee`。要点: binary の形の再配布可、notice の再掲が条件、reverse engineering・decompile・disassemble の禁止。`WHENCE` の SHA-256 `c282239a5a2d849677e9304e6f361e475e1b6e71e7c771c03f8986f71b309527`）。base の system・kernel・repository の source には入れず、`userland/firmware/` の既定 off の package（design の 4.1）にし、driver が file から load する。driver は MIT の header（`amdgpu_ucode.h`）が定める container の欄だけを読み、payload を解析しない。source の中に firmware に当たる byte の配列は、取得範囲では golden の register の表（データ）だけで、BLOB は無い（p010 で再確認）。
 4. VBIOS（AtomBIOS）は読まない（post 済みの印と scratch の register だけ）。repository に入れない。
-5. **zedBSD の code は Zlib**。出典の copyright・MIT の表示は付けない（データの引用なので）。file の先頭に出典を書かず、block ごとに「Value(s) referenced:」「Procedure referenced:」を書く（design の 13.2）。
+5. **p007（compiler）の出典は Mesa 25.0.7**（P5 の tarball、SHA-256 は [phase007](phase007/phase.md) の表。下の Mesa 25.3.6 の表の同名の file は driver の側の参照で、p007 の block の comment と P5 の `amdrdna-compiler-license-audit.md` は 25.0.7 の版と SHA-256 を使う。review M9）。
+6. **zedBSD の code は Zlib**。出典の copyright・MIT の表示は付けない（データの引用なので）。file の先頭に出典を書かず、block ごとに「Value(s) referenced:」「Procedure referenced:」を書く（design の 13.2）。
 
 ## file ごとの表（作業の文書と design.md が参照した file）
 
@@ -137,6 +138,34 @@
 | `drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm_plane.c` | `171c8fd586827e079a1ebfb9b3f2e3b9e4555a5e4f1cc04b1637bdf5b8462c4f` | MIT | 値（cursor の属性） |
 | `drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm_crtc.c` | `04790c9b651b4fbea74a1fed5c1f118df0f4cc3f376bb29114ff86d298216571` | MIT | 読むだけ（cursor の最大） |
 | `include/uapi/drm/amdgpu_drm.h` | `31e52166e6124cfcc1abbad99d73f5199038f4cd4b48b9f133194a841b5498b3` | MIT | 値（family の番号） |
+| `drivers/gpu/drm/amd/amdgpu/amdgpu_discovery.h` | `b4583234ff25eef4e8cd19d322e5cae3315af7348916f63d906930a51b5737f6` | MIT | 値（discovery の表の位置と大きさ） |
+| `drivers/gpu/drm/amd/amdgpu/amdgpu_ih.h` | `61050183c8bed06be760d44200fc4f8b4bead290ccea239725ebf1cbfa10d9e2` | MIT | 値（IH の ring の大きさ） |
+| `drivers/gpu/drm/amd/amdgpu/amdgpu_ttm.c` | `083cf56ece9db47310dbc0e21b93e617bca13529b1beeb5fa96ef7b73942d461` | MIT | 読むだけ（VRAM の予約、BAR0 と VRAM の offset、GART の bind） |
+| `drivers/gpu/drm/amd/amdgpu/amdgpu.h` | `dbb825405ee17feab730401ad218dbf1a06f28aa88436aee8e8293766b32d6d1` | MIT | 値（timeout、予約の大きさ） |
+| `drivers/gpu/drm/amd/amdgpu/atom.c` | `56939066ae683215b79d2bf510194d72361ce530720a9ed0722be0d1db7418a9` | MIT | 読むだけ（AtomBIOS の interpreter、使わない） |
+| `drivers/gpu/drm/amd/amdgpu/amdgpu_bios.c` | `163546c7f5a664c5e181d28127591559dcdf90dcd8ea3998056e61c8b8b5bf3e` | MIT | 読むだけ（VBIOS の取得、使わない） |
+| `drivers/gpu/drm/amd/amdgpu/amdgpu_object.c` | `47dd9a3bee09d5d876ced5cd2b7076b1fc422ee45baf1bc7b5a91cb6a4724024` | MIT | 読むだけ（BO の GPU address） |
+| `drivers/gpu/drm/amd/amdgpu/amdgpu_ids.h` | `72d2f2e9d5ca1a5ca6a28890d33eefb2a003025e58572e46eec48b63547f764b` | MIT | 値（VMID の数） |
+| `drivers/gpu/drm/amd/amdgpu/gmc_v9_0.c` | `ce8588857b1d120b0e13653547dda1e363878461e0524c6a16db3e4251810a6c` | MIT | 読むだけ（translate_further が GFX9 だけである根拠） |
+| `drivers/gpu/drm/amd/amdgpu/amdgpu_cs.c` | `a69131afab6c27707b8c104b3c734216f308838969a64e28b58134e5fc020220` | MIT | 読むだけ（root の PD の address） |
+| `drivers/gpu/drm/amd/amdgpu/amdgpu_vcn.c` | `ca6e857d849244a40d1e9718d044392011ec07fcfc142c67e38c9b93d49085cc` | MIT | 読むだけ（VCN は範囲の外） |
+| `drivers/gpu/drm/amd/amdgpu/vcn_v2_0.c` | `06ef3b9aac1f636ea5def38d79acf14b27d82e22780f451225f88503a81b17ab` | MIT | 読むだけ（VCN は MMHUB） |
+| `drivers/gpu/drm/amd/amdgpu/soc21.c` | `362c549cec1efc14364cd89d234649a27e3747e8397e3071b84d103c98aea8fd` | MIT | 値（RDNA3 の external rev、認識だけ） |
+| `drivers/gpu/drm/amd/amdgpu/amdgpu_cgs.c` | `fd4dfa206d66d3c46279cb2a430018661c4267fcea7729436a81f3976e3f3e1c` | MIT | 読むだけ（DC の register access） |
+| `drivers/gpu/drm/amd/include/asic_reg/thm/thm_11_0_2_offset.h` | `233f62a308215ccf68c4ac8928ccc25bf4fcf8941661f64aff5a8f0a5a514b51` | MIT | 値（THM の温度の register） |
+| `drivers/gpu/drm/amd/include/asic_reg/thm/thm_11_0_2_sh_mask.h` | `b534a519a8488ddd929ff4a98f327fc08e5a8d47d4b07eb4c684a9de1fc93ef5` | MIT | 値（温度の field） |
+| `drivers/gpu/drm/amd/display/dc/dcn20/dcn20_vmid.c` | `baf71783929a93374ab4226e583d8e995546c9ea7e2308e7d9926390248f243f` | MIT | 読むだけ（DCN の VMID、使わない） |
+| `drivers/gpu/drm/amd/display/dc/core/dc_vm_helper.c` | `c88bf46f06671539b95f007435824d5a1c75fda21522e55a00327a51f2a87414` | MIT | 読むだけ |
+| `drivers/gpu/drm/amd/display/dc/dccg/dcn20/dcn20_dccg.c` | `ac064ac2c4bf420fd8b6e25042ef5eb0666876ef6609e651df780d0ad6ac7dd4` | MIT | 読むだけ（DPP の clock の DTO、触らない） |
+
+取得範囲に無く note が名前だけ挙げた file（読んでいない、値を取らない）: `amdgpu/amdgpu_dpm.c`、`include/amd_asic_type.h`、`include/uapi/linux/kfd_ioctl.h`、`amdgpu/{cik,si,vi}.c`。
+
+### host の表（値: device id・revision）
+
+| file | SHA-256 | license | 取るデータ |
+| --- | --- | --- | --- |
+| `/usr/share/misc/pci.ids`（Version 2025.06.09） | `3b5b98dcbe3e42011c4c1a61897a8e82edde3865ce97f0da00b63e38324ce916` | GPL-2.0-or-later または BSD-3-Clause の選択（file の先頭の表記、2026-10-15 に確認） | 値（RDNA3 の device id、製品の名前） |
+| libdrm `amdgpu.ids`（host の sysroot の写し、版 1.0.0 の表記） | `b752c65536b2de1fd01022ed1ae196788ce7c23f5f08071f87c39bb2821c0426` | 表記なし（libdrm の data file。libdrm は MIT。file 自体に license の行は無い、未確認） | 値（0x731F の revision ごとの製品） |
 
 ### Mesa 25.3.6（commit `06f9e28304d5d3f109c33535c1c25b9df5769af2`）
 
