@@ -22,7 +22,7 @@ ws.md の「完了の条件」のうち、この Phase の分。動作は変え�
 - symbol の名前: 出典の接頭辞（bwfm_・whd_・brcmf_・BWFM_・WHD_・SBSDIO・SDIOD・WLC_・WL_ など）の identifier は code に無い（comment を除いた identifier の一覧で確かめた）。出典と同じ名前は ws206-p005 の測定（cid.py、p005 の file で 0、p005b で chip.c の引数を付け直し済み）から増えていない。新たな付け直しは無し。
 - 出典の不明（推測で埋めていない物）:
   - Linux brcmfmac の `BRCMF_DCMD_SMLEN`（256）・`MAX_CAPS_BUFFER_SIZE`（768）（bcm43455.c の version・capability の読みの長さ）: file と版の記録が無かった。→ 解決（2026-10-15、ユーザーの回答（Q1 経由）「brcmfmacの定数はLinuxのドライバです。」）: 他の WS が取得した Linux 6.8.12 の tarball（`/home/awe/zedBSD-worktrees/p1/build/ws229-p001/linux/linux-6.8.12.tar.xz`）から brcm80211 だけを scratchpad に展開して確かめ、`brcmfmac/core.h:30` `BRCMF_DCMD_SMLEN 256`・`brcmfmac/feature.c:226` `MAX_CAPS_BUFFER_SIZE 768`（どちらも SPDX ISC）で値が一致した。citation を「Linux 6.8.12 drivers/net/wireless/broadcom/brcm80211/brcmfmac/core.h (…line 30…) and …/feature.c (…line 226…)」に直した（p002 の commit）。
-  - WHD の `whd_clm.c`・`whd_bus_sdio_protocol.c` は tree の中の path の記録が無いので file の名前だけ（ユーザーの回答待ち、2026-10-15 時点。他の WHD の file は `WHD/COMPONENT_WIFI6/inc/`・`src/include/`・`src/`・`src/bus_protocols/` の path）。
+  - WHD の `whd_clm.c`・`whd_bus_sdio_protocol.c` は tree の中の path の記録が無いので file の名前だけ（path は不明（ユーザー確認済み、2026-10-15、クリック「不明のままにする」）。取得はしない。他の WHD の file は `WHD/COMPONENT_WIFI6/inc/`・`src/include/`・`src/`・`src/bus_protocols/` の path）。
   - SD Association の SDIO Simplified Specification の版が無い（CCCR の値、hw.h）。版は不明（ユーザー確認済み、2026-10-15「バージョンは分からないです」）。名前だけのまま。
   - `request_clock` の `bwfm_sdio_htclk()`、`work_scan` の `bwfm_scan_v0()`・`whd_wifi_scan()` は行の番号の記録が無く、関数の名前だけ。
   - station.c の接続の順の「the join, lines 2433-2490」は p005 の表の行の範囲だけで、関数の名前の記録が無い。

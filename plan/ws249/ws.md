@@ -7,7 +7,7 @@ Status: incomplete（2026-10-15 作成。p001・p002 cleared。実機（Pi 4）�
 Primary Milestone: MG005
 Parent: [Master](../master.md)
 Related: [Guardrail](../guardrail.md)「MIT・GPL の出典のデータの引用」、[coding-style.md](../coding-style.md)、[WS248](../ws248/ws.md)（AX211 での同じ整理、手順の手本）、[WS215](../ws215/ws.md)（Pi 4 の Bluetooth、同じ chip）
-Resume point: T による Pi 4（10.0.30.2）の WiFi の確かめ（scan・WPA2 接続・通信）。その結果を Q1 が判定してから WS を完了する。WHD の 2 file の path はユーザーの回答待ち（p001 の結果）。
+Resume point: T による Pi 4（10.0.30.2）の WiFi の確かめ（scan・WPA2 接続・通信）。その結果を Q1 が判定してから WS を完了する。WHD の 2 file の path は不明のまま（ユーザー確認済み、p001 の結果）。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）
