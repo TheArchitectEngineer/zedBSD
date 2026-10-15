@@ -35,13 +35,23 @@
 
 #include "drivers/gpu/nvrtx/nvrtx-gpu.h"
 
-/* The DMA context the falcon bootloader reads FWSEC through. */
+/*
+ * The DMA context the falcon bootloader reads FWSEC through.
+ *
+ * Value referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/include/nvkm/engine/falcon.h
+ * (FALCON_DMAIDX_PHYS_SYS_NCOH) and nvkm/subdev/gsp/tu102.c
+ * (tu102_gsp_fwsec_load_bld).
+ */
 #define BOOT_DMA_CONTEXT_SYSTEM		4U
 
 /*
  * The descriptor the falcon bootloader reads from data memory 0, 84 bytes:
  * the DMA context, the code's bus address, the non-secure and secure code
  * ranges in the program, the entry point, and the data's bus address and size.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/include/nvfw/flcn.h
+ * (struct flcn_bl_dmem_desc_v2).
  */
 #define BOOT_BL_DESC_BYTES		84U
 #define BOOT_BL_CONTEXT_AT		32U
@@ -54,19 +64,43 @@
 #define BOOT_BL_DATA_BUS_AT		64U
 #define BOOT_BL_DATA_SIZE_AT		72U
 
-/* The secure processor's debug-fuse register: bit 20 set on a debug part, which takes the second signature. */
+/*
+ * The secure processor's debug-fuse register: bit 20 set on a debug part, which
+ * takes the second signature.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/engine/sec2/tu102.c (tu102_sec2_flcn, the debug
+ * register) and nvkm/falcon/gm200.c (gm200_flcn_fw_signature).
+ */
 #define BOOT_SEC2_DEBUG			0x408U
 #define BOOT_SEC2_DEBUG_FUSED		(1U << 20)
 
-/* The scratch registers FWSEC reports in: FRTS in the high half of 0x1438, SB in the low half of 0x1454. */
+/*
+ * The scratch registers FWSEC reports in: FRTS in the high half of 0x1438, SB
+ * in the low half of 0x1454.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/fwsec.c (nvkm_gsp_fwsec_frts,
+ * nvkm_gsp_fwsec_sb).
+ */
 #define BOOT_REG_FRTS_RESULT		0x001438U
 #define BOOT_REG_SB_RESULT		0x001454U
 
-/* The protected region's bounds (VRAM address bits 31:4 in 4 KiB units). */
+/*
+ * The protected region's bounds (VRAM address bits 31:4 in 4 KiB units).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/fwsec.c (nvkm_gsp_fwsec_frts).
+ */
 #define BOOT_REG_REGION_LOW		0x1fa824U
 #define BOOT_REG_REGION_HIGH		0x1fa828U
 
-/* The mailbox values booter_unload takes for a plain unload. */
+/*
+ * The mailbox values booter_unload takes for a plain unload.
+ *
+ * Value referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/subdev/gsp/tu102.c
+ * (tu102_gsp_fini).
+ */
 #define BOOT_UNLOAD_ARGUMENT		0xffU
 
 static int boot_fwsec_rom(struct nvrtx_gpu *gpu, const struct nvrtx_buffer *program);
@@ -78,6 +112,10 @@ static int boot_halt_result(const char *what, int error, uint32_t mailbox0, uint
  *
  * Returns 0 when the falcon halted with mailbox 0 at zero, EIO when it
  * halted with an error there, or ETIMEDOUT when it did not halt.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/tu102.c (tu102_gsp_fwsec_load_bld)
+ * and nvkm/subdev/gsp/fwsec.c (nvkm_gsp_fwsec_boot).
  */
 int
 nvrtx_fwsec_run(
@@ -171,6 +209,10 @@ nvrtx_fwsec_run(
  *
  * Returns 0 when the processor halted with mailbox 0 at zero, EIO when it
  * halted with an error there, or ETIMEDOUT when it did not halt.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/tu102.c (tu102_gsp_booter_ctor,
+ * tu102_gsp_booter_load) and nvkm/falcon/fw.c (nvkm_falcon_fw_ctor_hs).
  */
 int
 nvrtx_booter_run(
@@ -263,6 +305,10 @@ nvrtx_booter_run(
  * Returns 0 when the region is gone (or was never there), EIO when it
  * stays, or ETIMEDOUT when a program did not halt (its memory must then be
  * kept until the power is cut).
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/tu102.c (tu102_gsp_fini) and
+ * nvkm/subdev/gsp/fwsec.c (nvkm_gsp_fwsec_sb).
  */
 int
 nvrtx_region_tear_down(

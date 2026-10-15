@@ -31,7 +31,17 @@
 
 #include "drivers/gpu/nvrtx/nvrtx-gpu.h"
 
-/* The falcon registers, relative to the falcon's base. */
+/*
+ * The falcon registers, relative to the falcon's base.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/falcon/gm200.c
+ * (gm200_flcn_disable, gm200_flcn_enable, gm200_flcn_reset_wait_mem_scrubbing,
+ * gm200_flcn_fw_load, gm200_flcn_fw_boot), nvkm/falcon/v1.c
+ * (nvkm_falcon_v1_load_imem, nvkm_falcon_v1_load_dmem, nvkm_falcon_v1_start),
+ * nvkm/falcon/base.c (nvkm_falcon_oneinit), nvkm/falcon/gp102.c
+ * (gp102_flcn_reset_eng), nvkm/subdev/gsp/tu102.c (tu102_gsp_fwsec_load_bld)
+ * and nvkm/subdev/gsp/rm/r535/gsp.c (r535_gsp_init).
+ */
 #define FALCON_IRQ_CLEAR		0x004U
 #define FALCON_IRQ_MASK_CLEAR		0x014U
 #define FALCON_SCRUB_TOUCH		0x040U
@@ -54,7 +64,15 @@
 #define FALCON_DMA_CONTEXT		0x600U
 #define FALCON_FBIF_CONTROL		0x624U
 
-/* Bits of those registers. */
+/*
+ * Bits of those registers.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/falcon/gm200.c
+ * (gm200_flcn_reset_wait_mem_scrubbing, gm200_flcn_fw_load,
+ * gm200_flcn_fw_boot), nvkm/falcon/v1.c (nvkm_falcon_v1_load_imem,
+ * nvkm_falcon_v1_start), nvkm/falcon/base.c (nvkm_falcon_oneinit) and
+ * nvkm/subdev/gsp/tu102.c (tu102_gsp_fwsec_load_bld).
+ */
 #define FALCON_CPU_START		0x2U
 #define FALCON_CPU_HALTED		0x10U
 #define FALCON_CPU_ALIAS_ENABLED	0x40U
@@ -67,7 +85,12 @@
 #define FALCON_CODE_LIMIT_MASK		0x1ffU
 #define FALCON_IMEM_BLOCK		0x100U
 
-/* The PMC enable register, where SEC2 has a reset bit. */
+/*
+ * The PMC enable register, where SEC2 has a reset bit.
+ *
+ * Value referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/subdev/mc/nv04.c
+ * (nv04_mc_device_disable).
+ */
 #define FALCON_PMC_ENABLE		0x000200U
 
 /*
@@ -76,6 +99,13 @@
  * upper base, the second register block (base + 0x1000) with the boot ROM's
  * parameters, the RISC-V core's status, the register-block selection and
  * the RISC-V mode bits.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/falcon/ga102.c
+ * (ga102_flcn_reset_prep, ga102_flcn_reset_wait_mem_scrubbing,
+ * ga102_flcn_dma_init, ga102_flcn_dma_xfer, ga102_flcn_dma_done,
+ * ga102_flcn_fw_load, ga102_flcn_fw_boot, ga102_flcn_select,
+ * ga102_flcn_riscv_active), nvkm/falcon/tu102.c (tu102_flcn_riscv_active) and
+ * nvkm/subdev/gsp/ga102.c (ga102_gsp_reset).
  */
 #define FALCON_AMPERE_STATUS		0x0f4U
 #define FALCON_AMPERE_RESET_READY	0x80000000U
@@ -188,6 +218,10 @@ nvrtx_now_us(void)
  * Resets a falcon: disables it (and its PMC bit), then enables it again.
  *
  * Returns ETIMEDOUT when its memories are not scrubbed in time.
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/falcon/base.c
+ * (nvkm_falcon_reset) and nvkm/falcon/gm200.c (gm200_flcn_disable,
+ * gm200_flcn_enable).
  */
 int
 nvrtx_falcon_reset(
@@ -291,6 +325,9 @@ nvrtx_falcon_code_limit(
  *
  * The length is a whole number of 256-byte blocks; each block carries the
  * next tag, starting from the given one.  Secure code is marked so.
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/falcon/v1.c
+ * (nvkm_falcon_v1_load_imem).
  */
 int
 nvrtx_falcon_imem(
@@ -331,6 +368,9 @@ nvrtx_falcon_imem(
 
 /*
  * Writes data into a falcon's data memory.
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/falcon/v1.c
+ * (nvkm_falcon_v1_load_dmem).
  */
 int
 nvrtx_falcon_dmem(
@@ -361,6 +401,9 @@ nvrtx_falcon_dmem(
  * The mailboxes are written before the start and read after the halt.
  * Returns ETIMEDOUT when the falcon did not halt within 2 s; the mailboxes
  * are read either way.
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/falcon/gm200.c
+ * (gm200_flcn_fw_boot).
  */
 int
 nvrtx_falcon_boot(
@@ -398,6 +441,9 @@ nvrtx_falcon_boot(
 /*
  * Starts a falcon's CPU where it stands, through the alias register when the
  * CPU control says the alias is in use.
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/falcon/v1.c
+ * (nvkm_falcon_v1_start).
  */
 void
 nvrtx_falcon_start(
@@ -450,6 +496,9 @@ nvrtx_falcon_reset_engine(
 /*
  * Puts the GSP's falcon into its RISC-V mode: an engine reset, and on Ampere
  * and later the RISC-V mode bits of its second register block.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/ga102.c (ga102_gsp_reset).
  */
 int
 nvrtx_falcon_riscv_mode(
@@ -473,6 +522,9 @@ nvrtx_falcon_riscv_mode(
 
 /*
  * Reports whether the GSP's RISC-V core runs, with the status register read.
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/falcon/tu102.c
+ * (tu102_flcn_riscv_active) and nvkm/falcon/ga102.c (ga102_flcn_riscv_active).
  */
 bool
 nvrtx_falcon_riscv_running(
@@ -614,10 +666,13 @@ falcon_mask(
 	nvrtx_wr32(gpu, offset, (current & ~mask) | value);
 }
 
-/* Waits for a falcon's memories to finish scrubbing after a reset. *
+/*
+ * Waits for a falcon's memories to finish scrubbing after a reset.
+ *
  * Procedure referenced: Linux v6.19
  * drivers/gpu/drm/nouveau/nvkm/falcon/ga102.c
- * (ga102_flcn_reset_wait_mem_scrubbing).
+ * (ga102_flcn_reset_wait_mem_scrubbing) and nvkm/falcon/gm200.c
+ * (gm200_flcn_reset_wait_mem_scrubbing).
  */
 static int
 falcon_scrub_wait(

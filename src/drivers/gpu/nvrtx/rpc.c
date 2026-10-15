@@ -27,10 +27,22 @@
 
 #include "drivers/gpu/nvrtx/nvrtx-gpu.h"
 
-/* The GSP's doorbell for the command queue. */
+/*
+ * The GSP's doorbell for the command queue.
+ *
+ * Value referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/rpc.c (r535_gsp_cmdq_push).
+ */
 #define RPC_REG_DOORBELL		(NVRTX_FALCON_GSP_BASE + 0xc00U)
 
-/* The GSP falcon's CPU control and its halted bit, which the sequencer waits for. */
+/*
+ * The GSP falcon's CPU control and its halted bit, which the sequencer waits
+ * for.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gsp.c
+ * (r535_gsp_msg_run_cpu_sequencer).
+ */
 #define RPC_GSP_CPU_CONTROL		(NVRTX_FALCON_GSP_BASE + 0x100U)
 #define RPC_CPU_HALTED			0x10U
 
@@ -39,6 +51,10 @@
  * (the start page's address) and its application-version register, the
  * secure processor's mailbox 0 (its result), and the secure scratch register
  * whose bit 26 says the boot has handed over to the firmware.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gsp.c
+ * (r535_gsp_msg_run_cpu_sequencer).
  */
 #define RPC_GSP_MAILBOX0		(NVRTX_FALCON_GSP_BASE + 0x040U)
 #define RPC_GSP_MAILBOX1		(NVRTX_FALCON_GSP_BASE + 0x044U)
@@ -58,13 +74,22 @@
  * The firmware error report's fields: its kind, and its text of up to 256
  * bytes, of which the line shows what fits an 80-column screen after its
  * prefix ("Graphics Exception: Shader Program Header 17 Error" whole).
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/nvidia/generated/g_rpc-structures.h (rpc_os_error_log_v17_00).
  */
 #define RPC_ERROR_LOG_KIND_AT		0U
 #define RPC_ERROR_LOG_TEXT_AT		12U
 #define RPC_ERROR_LOG_TEXT_BYTES	256U
 #define RPC_ERROR_LOG_SHOWN		54U
 
-/* The channel-error event's fields: engine, channel, kind of exception, faulting address and fault kind. */
+/*
+ * The channel-error event's fields: engine, channel, kind of exception,
+ * faulting address and fault kind.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/nvidia/generated/g_rpc-structures.h (rpc_rc_triggered_v17_02).
+ */
 #define RPC_ERROR_ENGINE_AT		0U
 #define RPC_ERROR_CHANNEL_AT		4U
 #define RPC_ERROR_TYPE_AT		16U
@@ -270,6 +295,10 @@ nvrtx_rm_allocate(
 
 /*
  * Allocates one object under a given client and checks the status the firmware returns.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/alloc.c
+ * (r535_gsp_rpc_rm_alloc_get, r535_gsp_rpc_rm_alloc_push).
  */
 int
 nvrtx_rm_allocate_in(
@@ -318,6 +347,10 @@ nvrtx_rm_allocate_in(
  * Sends a control to an object and checks the status the firmware returns.
  *
  * The reply's parameters are left at *reply (inside gpu->reply) with their length.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/ctrl.c
+ * (r535_gsp_rpc_rm_ctrl_get, r535_gsp_rpc_rm_ctrl_push).
  */
 int
 nvrtx_rm_control(
@@ -381,6 +414,10 @@ nvrtx_rm_free(
 
 /*
  * Frees one object of a given client (the client itself when object is the client's handle).
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/alloc.c
+ * (r535_gsp_rpc_rm_free).
  */
 int
 nvrtx_rm_free_in(
@@ -443,7 +480,13 @@ rpc_exchange(
 	return 0;
 }
 
-/* Performs the register operations of one CPU sequencer message, in order. */
+/*
+ * Performs the register operations of one CPU sequencer message, in order.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gsp.c
+ * (r535_gsp_msg_run_cpu_sequencer).
+ */
 static int
 rpc_sequencer(
 	struct nvrtx_gpu *gpu,
@@ -561,6 +604,10 @@ rpc_error_log(
  * back into its RISC-V mode with the start page's address in its mailboxes,
  * and the secure processor's booter, still loaded from booter, is started
  * again to hand the core back to the firmware.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gsp.c
+ * (r535_gsp_msg_run_cpu_sequencer).
  */
 static int
 rpc_core_resume(
