@@ -3,13 +3,13 @@
 # WS039: AMD RDNA GPU対応
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-15 開始・一時停止の後、同日夕にユーザーの指示で再開。p001 は P3 が q1202、p007（P5）は停止のまま）
+Status: incomplete（2026-10-15 開始・一時停止の後、同日夕にユーザーの指示で再開。p001 cleared、p002 は P3 が q1211、p007（P5）は停止のまま）
 Primary Milestone: MG006
 Related Milestones: なし
 Objectives: O2
 Parent: [Master](../master.md)
-Queue: q1210（P3、ws039-p001 の design.md の改訂 2、2026-10-15 夜）
-Resume point: p001 cleared（2026-10-15 夜）。次は p002（実機で段ごと、N=1 で AMD に集中）。#7（256 MiB の窓で実装）・#11（control の node は開発の間だけ）を design.md に反映してから。以前: P3 が q1210 で [design.md](design.md) の改訂 2（§15 の回答 12 件と RX 5600 XT の到着を反映。段 A0〜A13、Phase p002〜p016、必須 75〜111 LW）を書き、design-reviewer の review（[design-review-2.md](design-review-2.md)、31 件）を全部反映した（2026-10-15 夜）。実機は 10.0.10.3（design 12.5）。次は Q1 の clearance の判定 → p002（A0・A1・A1v、実機で読むだけ。Linux の amdgpu の dump との照合は Q1 の許可の後）。design の 15 節の新しい問い 14 件（既定つき）はユーザー待ち。計画に無い依存: ACPI の table を署名で借りる公開の口（p002 で差分の案を Q1 へ）。調べの note は worktree /home/awe/zedBSD-worktrees/p3 の plan/ws039/temp/notes/（約 600 MB の source と note は消さない）。[p007](phase007/phase.md) の 7.8（P3 とのすり合わせは p008 の最初）。
+Queue: q1211（P3、ws039-p002 の段 A0・A1・A1v、2026-10-16 開始）
+Resume point: p002 in-progress（2026-10-16 P3、[phase002](phase002/phase.md)）: design.md の §15 #7（256 MiB の窓）・#11（control の node は開発の間だけ）を反映済み、10.0.10.3 の dump（cold と amdgpu の load の後）を取った。次は骨格と A0・A1・A1v の code、host 試験、build、実機（電源の入れ直しと USB はユーザー）。
 Target: 未定（2026-10-15 に開始・一時停止。以前の扱い: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」））
 <!-- awesome-plan-current:end -->
 
@@ -30,7 +30,7 @@ AMD RDNA世代のGPUのドライバを実装する。
 
 ## Phase一覧
 
-[design.md](design.md) の 16 節の表が正（改訂 2: p002〜p016、必須 75〜111 LW。下の「再開と計画」の表は 2026-10-15 昼の案で、段の順と p011 以降が違う）。作った Phase: [p001](phase001/phase.md) 調べと設計（in-progress、design.md 済み・review 待ち）、[p007](phase007/phase.md) GFX10 の shader の compiler（in-progress、一時停止）。
+[design.md](design.md) の 16 節の表が正（改訂 2: p002〜p016、必須 75〜111 LW。下の「再開と計画」の表は 2026-10-15 昼の案で、段の順と p011 以降が違う）。作った Phase: [p001](phase001/phase.md) 調べと設計（cleared）、[p002](phase002/phase.md) 骨格と認識 A0・A1・A1v（in-progress）、[p007](phase007/phase.md) GFX10 の shader の compiler（in-progress、一時停止）。
 
 ## 要検討・ブロック（2026-10-05）
 
