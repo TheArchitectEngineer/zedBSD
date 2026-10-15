@@ -1,0 +1,47 @@
+VK SWAPCHAIN direct=0 reason=renderer width=1120 height=720 images=3
+VK SWAPCHAIN direct=0 reason=renderer width=1120 height=720 images=3
+ZFILES LOCATION kind=today path=/home/kei items=0 error=0
+ZFILES GLASS on
+ZFILES MENU state selection=0 folder=0 paste=0 undo=0 back=0 view=0 sort=0 openers=0
+ZFILES MENU ready items=67
+ZFILES TITLEBAR state back=0 forward=0 parts=1 last=Today view=0 preview=0 progress=-1 query= focus=0
+ZFILES TITLEBAR ready controls=8
+ZFILES PACING motion=1 frame=1 errno=0
+ZFILES DEVICES count=0
+ZFILES APPEARANCE appearance=0 accent=0
+ZFILES GLASS panels count=2
+ZFILES READY width=1120 height=720 token=-
+ZFILES HOME free path=/ available=828637184
+ZFILES MOUNTS count=7
+ZFILES HOME free result errno=0
+ZFILES MOUNTS result errno=0
+VK SWAPCHAIN direct=0 reason=renderer width=916 height=632 images=3
+ZTERM SETTINGS run=term ambiguous_wide=0 font_size=16 theme=0
+ZTERM MENU state selection=0 clipboard=0 pixels=16 fullscreen=0 ambiguous_wide=0 theme=0 find=0
+ZTERM MENU ready items=39
+ZTERM TAB active id=1
+ZTERM TAB new run=term id=1 count=1
+ZTERM START run=term columns=90 rows=28 cell=10x22 window=916x632
+ZTERM TABS count=1 active=1 mode=0
+ZTERM TITLE tab=1 title=Terminal
+ZTERM CLIPBOARD selection text=0
+ZTERM PRIMARY offer text=0
+ZTERM CLIPBOARD selection text=0
+ZTERM PRIMARY offer text=0
+VK SWAPCHAIN direct=0 reason=renderer width=1120 height=720 images=3
+VK SWAPCHAIN direct=0 reason=renderer width=1120 height=720 images=3
+ZFILES LOCATION kind=today path=/home/kei items=0 error=0
+ZFILES GLASS on
+ZFILES MENU state selection=0 folder=0 paste=0 undo=0 back=0 view=0 sort=0 openers=0
+ZFILES MENU ready items=67
+ZFILES TITLEBAR state back=0 forward=0 parts=1 last=Today view=0 preview=0 progress=-1 query= focus=0
+ZFILES TITLEBAR ready controls=8
+ZFILES PACING motion=1 frame=1 errno=0
+ZFILES DEVICES count=0
+ZFILES APPEARANCE appearance=0 accent=0
+ZFILES GLASS panels count=2
+ZFILES READY width=1120 height=720 token=-
+ZFILES HOME free path=/ available=828628992
+ZFILES MOUNTS count=7
+ZFILES HOME free result errno=0
+ZFILES MOUNTS result errno=0

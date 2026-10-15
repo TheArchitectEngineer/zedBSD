@@ -1,0 +1,38 @@
+## a static
+-- kernel
+## a files
+KWL PERF compose frames=10 draw_ms=0.07 (acquire 2.47 submit+present 13.92) frame_ms=15.57
+KWL PERF rec frames=10 copied=0 begin=0.13 encode=0.06 end=0.47 submit=10.89 present=2.37 | max end=1.86 submit=13.43 present=2.92
+KWL PERF compose frames=1 draw_ms=0.07 (acquire 0.05 submit+present 11.41) frame_ms=11.79
+KWL PERF rec frames=1 copied=0 begin=0.11 encode=0.03 end=0.18 submit=8.83 present=2.25 | max end=0.18 submit=8.83 present=2.25
+-- kernel
+nvrtx: perf 5005ms: runs 28 avg 2968us, cpu copies 0 0KiB
+nvrtx: perf: frames 302 wait 2us held 561us, flips 10 avg 9532us
+nvrtx: perf: gpu 28 avg 2765us max 5615us, run max 6001us
+nvrtx: perf: draws 1068 quads 18 push 813KiB
+## a term+files
+KWL PERF compose frames=111 draw_ms=0.16 (acquire 6.60 submit+present 12.05) frame_ms=13.44
+KWL PERF rec frames=111 copied=0 begin=0.32 encode=0.10 end=0.39 submit=8.28 present=2.94 | max end=2.82 submit=22.91 present=10.77
+KWL PERF compose frames=125 draw_ms=0.17 (acquire 8.56 submit+present 22.25) frame_ms=24.00
+KWL PERF rec frames=125 copied=0 begin=0.27 encode=0.26 end=0.67 submit=18.41 present=2.61 | max end=2.96 submit=35.09 present=4.04
+KWL PERF compose frames=125 draw_ms=0.17 (acquire 9.23 submit+present 22.36) frame_ms=23.79
+KWL PERF rec frames=125 copied=0 begin=0.29 encode=0.24 end=0.70 submit=18.49 present=2.62 | max end=2.61 submit=35.60 present=4.27
+KWL PERF compose frames=122 draw_ms=0.16 (acquire 9.98 submit+present 23.21) frame_ms=24.68
+KWL PERF rec frames=122 copied=0 begin=0.25 encode=0.29 end=0.68 submit=19.37 present=2.61 | max end=4.33 submit=99.50 present=4.09
+-- kernel
+nvrtx: perf 5004ms: runs 248 avg 2143us, cpu copies 0 0KiB
+nvrtx: perf: frames 1294 wait 1us held 608us, flips 62 avg 9379us
+nvrtx: perf: gpu 248 avg 1953us max 4811us, run max 5720us
+nvrtx: perf: draws 2629 quads 124 push 2457KiB
+nvrtx: perf 5003ms: runs 552 avg 2643us, cpu copies 0 0KiB
+nvrtx: perf: frames 2412 wait 0us held 1225us, flips 136 avg 9673us
+nvrtx: perf: gpu 552 avg 2461us max 6003us, run max 6925us
+nvrtx: perf: draws 22854 quads 280 push 17093KiB
+nvrtx: perf 5003ms: runs 508 avg 2828us, cpu copies 0 0KiB
+nvrtx: perf: frames 2159 wait 0us held 1451us, flips 127 avg 9797us
+nvrtx: perf: gpu 508 avg 2644us max 6000us, run max 6968us
+nvrtx: perf: draws 25579 quads 254 push 19141KiB
+nvrtx: perf 5010ms: runs 496 avg 2795us, cpu copies 0 0KiB
+nvrtx: perf: frames 2108 wait 0us held 1442us, flips 124 avg 10623us
+nvrtx: perf: gpu 496 avg 2627us max 6044us, run max 7044us
+nvrtx: perf: draws 25172 quads 248 push 18689KiB
