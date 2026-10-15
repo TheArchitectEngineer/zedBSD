@@ -51,18 +51,3 @@ kern_rtc_read_counter(
 	/* The counter is absent. */
 	return false;
 }
-
-/*
- * Reports that no display reads any storage (ws236-p012's check of a
- * pass's output): this host model has no display.
- */
-bool
-bcm2711_display_flip_reads(
-	uint64_t physical,
-	uint64_t bytes)
-{
-	/* No display on this host model. */
-	(void)physical;
-	(void)bytes;
-	return false;
-}

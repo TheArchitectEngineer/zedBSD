@@ -298,7 +298,7 @@ VkResult vulkan_wsi_surface_retain(struct vulkan_surface *surface);
 void vulkan_wsi_surface_release(struct vulkan_surface *surface);
 
 VkResult vulkan_wsi_surface_publish(struct vulkan_surface *surface, VkSurfaceKHR *handle);
-VkResult vulkan_wsi_shared_image_create(struct VkDevice_T *device, VkFormat format, VkExtent2D extent, VkImageUsageFlags usage, const VkAllocationCallbacks *allocator, const struct gpu_placement *placement, VkImage *image, VkDeviceMemory *memory, int *fd, struct gpu_image_descriptor *descriptor);
+VkResult vulkan_wsi_shared_image_create(struct VkDevice_T *device, VkFormat format, VkExtent2D extent, const VkAllocationCallbacks *allocator, const struct gpu_placement *placement, VkImage *image, VkDeviceMemory *memory, int *fd, struct gpu_image_descriptor *descriptor);
 
 VkResult vulkan_wsi_shared_image_import(struct VkDevice_T *device, int fd, const VkAllocationCallbacks *allocator, VkImage *image, VkDeviceMemory *memory, struct gpu_image_descriptor *descriptor);
 

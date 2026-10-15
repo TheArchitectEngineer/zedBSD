@@ -65,7 +65,6 @@ struct fx_state {
 	int hold_next;
 	struct fx_fence *held;
 	struct gpu_image_descriptor last_descriptor;
-	int refuse_direct;
 };
 
 /* The fake kernel's output: three planes (primary, two overlays). */
@@ -146,9 +145,6 @@ main(
 	unsigned commits;
 	unsigned presents;
 	unsigned submits;
-	VkImage images[3];
-	uint32_t count;
-	uint32_t index;
 	VkResult error;
 
 	fx_setup();
@@ -405,66 +401,6 @@ main(
 	assert(fk.shown[1] == 0 && fk.shown[2] == 0 && fk.releases == 0U);
 	vkDestroySwapchainKHR((VkDevice)fx.device, primary, NULL);
 	assert(fk.releases == 1U);
-
-	/*
-	 * (x) ws236-p012: with the renderer's direct swapchain bit, a primary
-	 * chain made alone is direct only when its maker asks
-	 * (VULKAN_ZEDBSD_DIRECT_DISPLAY=1, the compositor).  Its images are
-	 * the shared images the display shows, a present submits only the
-	 * waits (no copy), and a display rectangle other than the whole image
-	 * is refused.  A chain whose shared image the renderer refuses falls
-	 * back to the copy, and a copying present after a bare one makes the
-	 * slot's command buffer it lacks.  Every scenario above has no bit.
-	 */
-	fx_context.direct_swapchain = VK_TRUE;
-	unsetenv("VULKAN_ZEDBSD_DIRECT_DISPLAY");
-	primary_surface = fx_surface(0U, FX_WIDTH, FX_HEIGHT);
-	primary = fx_swapchain(primary_surface, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, 3U, VK_NULL_HANDLE);
-	assert(swapchain_get(primary)->direct == VK_FALSE);
-	vkDestroySwapchainKHR((VkDevice)fx.device, primary, NULL);
-	assert(fk.releases == 2U);
-	setenv("VULKAN_ZEDBSD_DIRECT_DISPLAY", "1", 1);
-	primary_surface = fx_surface(0U, FX_WIDTH, FX_HEIGHT);
-	primary = fx_swapchain(primary_surface, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, 3U, VK_NULL_HANDLE);
-	assert(swapchain_get(primary)->direct == VK_TRUE);
-	assert(swapchain_get(primary)->group->borrowed == VK_TRUE);
-	count = 3U;
-	error = vkGetSwapchainImagesKHR((VkDevice)fx.device, primary, &count, images);
-	assert(error == VK_SUCCESS && count == 3U);
-	for (index = 0U; index < count; index++)
-		assert(images[index] == swapchain_get(primary)->presentation[index].shared_image);
-	submits = fx.submits;
-	commits = fx.wsi_copies;
-	presents = fk.presents;
-	fx_primary(primary, primary_acquired);
-	fx_settle();
-	assert(fx.submits == submits + 1U);
-	assert(fx.wsi_copies == commits);
-	assert(fk.presents == presents + 1U);
-	error = fx_acquire(primary, primary_acquired, 0U, &image);
-	assert(error == VK_SUCCESS);
-	error = fx_present(primary, image, primary_acquired, 1, 0, 0, 32U, 32U);
-	assert(error == VK_ERROR_INITIALIZATION_FAILED);
-	vkDestroySwapchainKHR((VkDevice)fx.device, primary, NULL);
-	assert(fk.releases == 3U);
-
-	/* The renderer refuses the direct chain's shared image: the copy, and a copying present on the slot the bare one left. */
-	fx.refuse_direct = 1;
-	primary_surface = fx_surface(0U, FX_WIDTH, FX_HEIGHT);
-	primary = fx_swapchain(primary_surface, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, 3U, VK_NULL_HANDLE);
-	assert(swapchain_get(primary)->direct == VK_FALSE);
-	assert(swapchain_get(primary)->gpu_present == VK_TRUE);
-	commits = fx.wsi_copies;
-	fx_primary(primary, primary_acquired);
-	fx_settle();
-	assert(fx.wsi_copies > commits);
-	vkDestroySwapchainKHR((VkDevice)fx.device, primary, NULL);
-	assert(fk.releases == 4U);
-	fx.refuse_direct = 0;
-	unsetenv("VULKAN_ZEDBSD_DIRECT_DISPLAY");
-	fx_context.direct_swapchain = VK_FALSE;
-	printf("(x) a direct primary presents without a copy, and falls back to it: ok\n");
-
 	vulkan_wsi_device_finish(fx.device);
 	printf("vulkan-overlay-host: PASS\n");
 	return 0;
@@ -1159,7 +1095,6 @@ vulkan_wsi_shared_image_create(
 	struct VkDevice_T *device,
 	VkFormat format,
 	VkExtent2D extent,
-	VkImageUsageFlags usage,
 	const VkAllocationCallbacks *allocator,
 	const struct gpu_placement *placement,
 	VkImage *image,
@@ -1173,10 +1108,6 @@ vulkan_wsi_shared_image_create(
 	(void)format;
 	(void)allocator;
 	(void)placement;
-
-	/* A direct chain's shared image (one made for the application's uses) the renderer refuses, when the scenario asks. */
-	if (usage != 0U && fx.refuse_direct)
-		return VK_ERROR_FORMAT_NOT_SUPPORTED;
 	created = calloc(1, sizeof(*created));
 	assert(created != NULL);
 	*image = (VkImage)(uintptr_t)created;
@@ -1220,7 +1151,7 @@ VKAPI_ATTR void VKAPI_CALL vkGetBufferMemoryRequirements(VkDevice device, VkBuff
 VKAPI_ATTR VkResult VKAPI_CALL vkMapMemory(VkDevice device, VkDeviceMemory memory, VkDeviceSize offset, VkDeviceSize size, VkMemoryMapFlags flags, void **data) { (void)device; (void)memory; (void)offset; (void)size; (void)flags; (void)data; return VK_ERROR_MEMORY_MAP_FAILED; }
 VKAPI_ATTR void VKAPI_CALL vkUnmapMemory(VkDevice device, VkDeviceMemory memory) { (void)device; (void)memory; }
 VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceFormatProperties(VkPhysicalDevice physical, VkFormat format, VkFormatProperties *properties) { (void)physical; (void)format; memset(properties, 0xff, sizeof(*properties)); }
-VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceImageFormatProperties(VkPhysicalDevice physical, VkFormat format, VkImageType type, VkImageTiling tiling, VkImageUsageFlags usage, VkImageCreateFlags flags, VkImageFormatProperties *properties) { (void)physical; (void)format; (void)type; (void)tiling; (void)usage; (void)flags; memset(properties, 0, sizeof(*properties)); properties->maxExtent.width = 16384U; properties->maxExtent.height = 16384U; properties->maxExtent.depth = 1U; properties->maxMipLevels = 1U; properties->maxArrayLayers = 1U; return VK_SUCCESS; }
+VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceImageFormatProperties(VkPhysicalDevice physical, VkFormat format, VkImageType type, VkImageTiling tiling, VkImageUsageFlags usage, VkImageCreateFlags flags, VkImageFormatProperties *properties) { (void)physical; (void)format; (void)type; (void)tiling; (void)usage; (void)flags; memset(properties, 0, sizeof(*properties)); return VK_SUCCESS; }
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateCommandPool(VkDevice device, const VkCommandPoolCreateInfo *info, const VkAllocationCallbacks *allocator, VkCommandPool *pool) { (void)device; (void)info; (void)allocator; *pool = (VkCommandPool)(uintptr_t)malloc(1); return VK_SUCCESS; }
 VKAPI_ATTR void VKAPI_CALL vkDestroyCommandPool(VkDevice device, VkCommandPool pool, const VkAllocationCallbacks *allocator) { (void)device; (void)allocator; free((void *)(uintptr_t)pool); }
 VKAPI_ATTR VkResult VKAPI_CALL vkAllocateCommandBuffers(VkDevice device, const VkCommandBufferAllocateInfo *info, VkCommandBuffer *buffers) { (void)device; (void)info; buffers[0] = (VkCommandBuffer)calloc(1, sizeof(struct fx_command)); return VK_SUCCESS; }

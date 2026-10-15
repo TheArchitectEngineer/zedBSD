@@ -506,16 +506,6 @@ compose_output_open_parked(
 	started = kwl_milliseconds();
 	readback = 1;
 	scene_supported = 1U;
-
-	/*
-	 * The output's swapchain asks zedBSD's libvulkan to be direct where the
-	 * renderer allows it (ws236-p012): the frames are drawn straight into
-	 * the images the display shows, with no copy at each present.  The
-	 * request is made only around this creation, so no other display
-	 * swapchain (the heads', a client's) and no program the compositor
-	 * starts inherits it; other Vulkan libraries ignore it.
-	 */
-	(void)setenv("VULKAN_ZEDBSD_DIRECT_DISPLAY", "1", 1);
 	result = vkdemo_display_create_swapchain_usage(
 		compose->physical,
 		compose->device,
@@ -537,7 +527,6 @@ compose_output_open_parked(
 		result = vkdemo_display_create_swapchain(compose->physical, compose->device, compose->family, &compose->output, 0);
 	}
 	compose->readback = (unsigned)readback;
-	(void)unsetenv("VULKAN_ZEDBSD_DIRECT_DISPLAY");
 
 	/* The images can take a fullscreen window's copy only with both transfer directions (ws236-p011). */
 	compose->copy_target = scene_supported;

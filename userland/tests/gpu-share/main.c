@@ -550,7 +550,7 @@ share_produce(
 	extent.height = SHARE_EDGE;
 	if (share_kind == SHARE_LINEAR) {
 		context->operation = "vulkan_wsi_shared_image_create";
-		result = vulkan_wsi_shared_image_create(context->device, VK_FORMAT_R8G8B8A8_UNORM, extent, 0U, NULL, NULL, &context->image, &context->image_memory, descriptor, &context->descriptor);
+		result = vulkan_wsi_shared_image_create(context->device, VK_FORMAT_R8G8B8A8_UNORM, extent, NULL, NULL, &context->image, &context->image_memory, descriptor, &context->descriptor);
 	} else {
 		/* The generic capability preserves allocation ownership without a linear display descriptor. */
 		result = share_allocation_create(context, descriptor);

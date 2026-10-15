@@ -34,7 +34,6 @@
 #define VULKAN_NATIVE_CAPSET_BYTES 176U
 #define VULKAN_NATIVE_CAPSET_MAGIC 0x5a4e4154U
 #define VULKAN_NATIVE_CAPSET_VIDEO_DECODE_H264 1U
-#define VULKAN_NATIVE_CAPSET_DIRECT_SWAPCHAIN 2U
 
 /* Retains mapped transport backing through growth, rollback and descriptor close. */
 struct vulkan_transport_storage {
@@ -224,11 +223,6 @@ vulkan_context_open(
 		if (native_magic == VULKAN_NATIVE_CAPSET_MAGIC &&
 		    (native_flags & VULKAN_NATIVE_CAPSET_VIDEO_DECODE_H264) != 0)
 			context->video_h264 = VK_TRUE;
-
-		/* The direct swapchain bit (ws236-p012). */
-		if (native_magic == VULKAN_NATIVE_CAPSET_MAGIC &&
-		    (native_flags & VULKAN_NATIVE_CAPSET_DIRECT_SWAPCHAIN) != 0)
-			context->direct_swapchain = VK_TRUE;
 	}
 
 	/* Succeeded: the caller owns one compatible session with no fixed reply allocation. */

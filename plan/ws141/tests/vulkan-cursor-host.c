@@ -1444,7 +1444,6 @@ vulkan_wsi_shared_image_create(
 	struct VkDevice_T *device,
 	VkFormat format,
 	VkExtent2D extent,
-	VkImageUsageFlags usage,
 	const VkAllocationCallbacks *allocator,
 	const struct gpu_placement *placement,
 	VkImage *image,
@@ -1456,7 +1455,6 @@ vulkan_wsi_shared_image_create(
 
 	(void)device;
 	(void)format;
-	(void)usage;
 	(void)extent;
 	(void)allocator;
 	(void)placement;

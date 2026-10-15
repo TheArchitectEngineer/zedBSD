@@ -417,9 +417,6 @@ bool bcm2711_display_flip_cursor_named(struct bcm2711_display *display, uint32_t
 #define BCM2711_FLIP_FRAME_RECORDED	2U
 unsigned bcm2711_display_flip_frame_use(struct bcm2711_display *display, uint64_t physical, uint64_t bytes);
 
-/* Tells whether the display reads a range of storage now (a list or the recorded primary names it), for the render executor's check (ws236-p012). */
-bool bcm2711_display_flip_reads(uint64_t physical, uint64_t bytes);
-
 /* Waits, at most 100 ms, until no list the hardware may read names the storage. */
 int bcm2711_display_flip_wait_unlisted(struct bcm2711_display *display, const struct bcm2711_flip_owner *owner, uint64_t physical, uint64_t bytes);
 

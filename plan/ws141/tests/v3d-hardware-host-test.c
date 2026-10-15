@@ -524,18 +524,6 @@ kern_mmio_write32(
 		test_pending = 4;
 }
 
-/* Reports that no display reads any storage: this host model has no display (ws236-p012). */
-bool
-bcm2711_display_flip_reads(
-	uint64_t physical,
-	uint64_t bytes)
-{
-	/* No display on this host model. */
-	(void)physical;
-	(void)bytes;
-	return false;
-}
-
 /*
  * Supplies elapsed counter time independently of the requested sleep interval.
  */

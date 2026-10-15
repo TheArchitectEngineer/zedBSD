@@ -131,14 +131,6 @@ static struct bcm2711_flip_cadence cadence_copy[BCM2711_FLIP_CADENCE_KINDS];
 static struct bcm2711_flip_time times_copy[BCM2711_FLIP_TIMES];
 
 /*
- * The display whose flip state answers bcm2711_display_flip_reads (the
- * render executor's check that no pass writes what the display reads,
- * ws236-p012).  Set once when the state initializes; the display outlives
- * every submission.
- */
-static struct bcm2711_display *flip_reader;
-
-/*
  * Initializes persistent IRQ state before installing source callback owners.
  * The enclosing display is zeroed at discovery and outlives all submissions.
  */
@@ -163,7 +155,6 @@ bcm2711_display_flip_init(
 	display->flip.active_list = FLIP_CONSOLE_LIST;
 	display->flip.active_slot = BCM2711_FLIP_NO_SLOT;
 	display->flip.initialized = true;
-	flip_reader = display;
 
 	/* Succeeded: the private flip state starts with no pending publication. */
 	return;
@@ -1057,33 +1048,6 @@ bcm2711_display_flip_frame_use(
 
 	/* Succeeded: the answer holds while the caller excludes other records of this storage. */
 	return use;
-}
-
-/*
- * Tells whether the display reads a range of storage now: a list the
- * hardware may read, or the recorded primary, names it.
- *
- * The render executor asks it for a pass's output (ws236-p012); before the
- * flip state exists nothing is read.
- */
-bool
-bcm2711_display_flip_reads(
-	uint64_t physical,
-	uint64_t bytes)
-{
-	unsigned use;
-
-	/* No display state, no reading. */
-	if (flip_reader == NULL)
-		return false;
-
-	/* The lists' and the primary's use of the range. */
-	use = bcm2711_display_flip_frame_use(flip_reader, physical, bytes);
-	if (use == BCM2711_FLIP_FRAME_FREE)
-		return false;
-
-	/* Succeeded: the display reads the range. */
-	return true;
 }
 
 /*

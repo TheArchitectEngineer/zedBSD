@@ -27,9 +27,6 @@
 /* All concurrently resident native pass/draw uploads share this submission-wide padded budget. */
 #define NATIVE_JOB_BYTES (256ULL * 1024U * 1024U)
 
-/* The most lines the check of a pass's output against what the display reads writes. */
-#define NATIVE_OUTPUT_LINES 8U
-
 /* The room of one window's cost report, formatted under the controller mutex and logged after it. */
 #define NATIVE_PERF_TEXT_BYTES 2048U
 
@@ -47,20 +44,12 @@ static char native_perf_text[NATIVE_PERF_TEXT_BYTES];
 static size_t native_perf_used;
 static int native_perf_state;
 
-/*
- * How many passes the output check (check_output, ws236-p012) has logged:
- * it stops at NATIVE_OUTPUT_LINES, so a steady fault cannot flood the log.
- * The executor's thread alone moves it.
- */
-static unsigned native_output_lines;
-
 static int release_job(struct bcm2711_vulkan_native_job *job);
 static int retire_closed_sessions(struct bcm2711_render_device *controller);
 static void report_perf(struct bcm2711_v3d_perf *perf);
 static bool perf_enabled(void);
 static void perf_append(const char *format, ...) __attribute__((format(printf, 1, 2)));
 static uint64_t average_us(uint64_t ticks, uint64_t count);
-static void check_output(const struct bcm2711_vulkan_native_pass *pass);
 
 /*
  * Prepares an independently pending primary graph before any native allocation or worker acceptance.
@@ -412,7 +401,6 @@ bcm2711_vulkan_native_job_step(
 			job->prepare_failed = true;
 		} else {
 			bcm2711_render_window_open(controller);
-			check_output(job->pass);
 			error = bcm2711_vulkan_native_pass_launch(job->pass, &completion);
 			closed = bcm2711_render_window_close(controller);
 			error = bcm2711_vulkan_native_pass_finish(job->pass, &completion, error);
@@ -651,41 +639,6 @@ release_job(
 
 	/* Succeeded: every independently pending primary and native pass input has retired once. */
 	return 0;
-}
-
-/*
- * Logs a pass whose output the display reads now (ws236-p012, a direct
- * swapchain's check): a frame drawn into the image on the screen would
- * tear.  Called with the window open (no controller mutex), a few times.
- */
-static void
-check_output(
-	const struct bcm2711_vulkan_native_pass *pass)
-{
-	struct bcm2711_buffer *buffer;
-	bool reading;
-
-	/* Only a pass with an output, until the lines run out. */
-	if (pass == NULL || pass->output == NULL || pass->output->buffer == NULL)
-		return;
-	if (native_output_lines >= NATIVE_OUTPUT_LINES)
-		return;
-
-	/* Whether the display reads the output's run. */
-	buffer = pass->output->buffer;
-	reading = bcm2711_display_flip_reads(buffer->memory.paddr, buffer->bytes);
-	if (!reading)
-		return;
-
-	/* The line. */
-	native_output_lines++;
-	kern_logf("v3d: a pass writes a run the display reads (run %llx, %llu bytes, draws %u)\n",
-		  (unsigned long long)buffer->memory.paddr,
-		  (unsigned long long)buffer->bytes,
-		  pass->draws);
-
-	/* Succeeded: the pass is logged. */
-	return;
 }
 
 /* Releases closed renderer descriptors only after their final Vulkan dependency graph and protocol arena can retire. */

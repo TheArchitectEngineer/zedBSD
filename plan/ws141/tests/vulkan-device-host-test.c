@@ -4287,13 +4287,13 @@ runtime_test(
 	assert(controller->operations.get_capset != NULL && controller->operations.command != NULL);
 	assert(controller->operations.commands != NULL && controller->operations.jobs != NULL);
 
-	/* Actual profile bytes select the unchanged client XML, opaque sharing, strict queue and quiescence, then the native word. */
+	/* Actual profile bytes select the unchanged client XML, opaque sharing, strict queue and quiescence; unused video words stay absent. */
 	memset(&capset, 0xa5, sizeof(capset));
 	capset.capset_id = 4;
 	capset.capset_version = 0;
 	capset.capacity = GPU_CAPSET_MAX;
 	error = controller->operations.get_capset(controller, runtime_session, &capset);
-	assert(error == 0 && capset.bytes == 176);
+	assert(error == 0 && capset.bytes == 168);
 	memset(&reader, 0, sizeof(reader));
 	reader.data = capset.data;
 	reader.bytes = capset.bytes;
@@ -4307,12 +4307,6 @@ runtime_test(
 	flags = vulkan_read_u32(&reader);
 	assert(timelines == 1 && unused == 0);
 	assert(magic == 0x5a424453 && flags == 7);
-
-	/* The native word follows: its magic, and the direct swapchain bit every session has (ws236-p012). */
-	magic = vulkan_read_u32(&reader);
-	flags = vulkan_read_u32(&reader);
-	assert(magic == 0x5a4e4154 && (flags & 2U) != 0U);
-	printf("ws236 p012 native word with the direct swapchain bit: PASS\n");
 	capset.capacity = 167;
 	error = controller->operations.get_capset(controller, runtime_session, &capset);
 	assert(error == EINVAL);
