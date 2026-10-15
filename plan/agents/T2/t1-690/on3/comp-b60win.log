@@ -1,0 +1,93 @@
+KWL CLIENT client=16 fd=25
+KWL INSET create client=16 inset=23 toplevel=21
+KWL EDIT create client=16 edit=25 toplevel=21
+KWL BOUNDS client=16 surface=19 width=1256 height=600
+KWL CONFIGURE client=16 surface=19 serial=77 width=0 height=0 fullscreen=0
+KWL SEAT client=16 pointer=1 keyboard=0 touch=0
+KWL SEAT client=16 pointer=1 keyboard=1 touch=0
+KWL SEAT client=16 pointer=1 keyboard=1 touch=1
+KWL CLIENT client=17 fd=37
+KWL AUDIO stream client=17 id=5 pid=189 create format=1 channels=2 rate=48000 buffer=24000 period=960
+KWL AUDIO stream client=17 id=5 ready capacity=24000 bytes=102400
+KWL AUDIO stream client=17 id=5 flush request=1 error=0
+KWL IMPORT client=16 buffer=34 width=960 height=600 bytes=2306048
+KWL IMPORT client=16 buffer=35 width=960 height=600 bytes=2306048
+KWL IMPORT client=16 buffer=36 width=960 height=600 bytes=2306048
+KWL MENU set client=16 place=38 menu=39
+KWL MENU commit client=16 menu=39 serial=1 items=12 generation=1
+KWL MENU commit client=16 menu=39 serial=2 items=12 generation=2
+KWL MENU commit client=16 menu=39 serial=3 items=12 generation=3
+KWL MENU commit client=16 menu=39 serial=4 items=12 generation=4
+KWL MENU commit client=16 menu=39 serial=5 items=12 generation=5
+KWL MENU commit client=16 menu=39 serial=6 items=12 generation=6
+KWL MENU commit client=16 menu=39 serial=7 items=12 generation=7
+KWL MENU commit client=16 menu=39 serial=8 items=12 generation=8
+KWL MENU commit client=16 menu=39 serial=9 items=12 generation=9
+KWL MENU commit client=16 menu=39 serial=10 items=12 generation=10
+KWL MENU commit client=16 menu=39 serial=11 items=12 generation=11
+KWL SLOW_PASS us=83000 at_ms=194634 input_us=0 clients_us=80552 frame_done_us=67 schedule_us=1866 flush_us=1 other_us=511 | adopt_us=27 shm_us=9 cursor_us=8 layers_us=0 draw_us=0 | walk_us=0 vk_outside_us=79291 frame=1869
+KWL IMPORT client=16 buffer=40 width=960 height=600 bytes=2306048
+KWL IMPORT client=16 buffer=41 width=960 height=600 bytes=2306048
+KWL IMPORT client=16 buffer=42 width=960 height=600 bytes=2306048
+KWL EDIT state client=16 edit=25 actions=0xff flags=0xd
+KWL SLOW_PASS us=40000 at_ms=194722 input_us=1 clients_us=37787 frame_done_us=39 schedule_us=1620 flush_us=1 other_us=548 | adopt_us=25 shm_us=0 cursor_us=3 layers_us=0 draw_us=0 | walk_us=0 vk_outside_us=35600 frame=1870
+KWL CONTENT surface=19 type=video client=16
+KWL DECORATION applied client=16 surface=19 mode=2
+KWL MAP client=16 surface=19 x=160 y=108
+KWL SURFACE enter surface=19 output=0 client=16
+KWL IME app key=app:videoplayer language=direct from=inherited
+KWL RENDER output=0 surfaces=19,19
+KWL MENU bar client=16 surface=19 where=floating item=1 offset=150 top=56 width=45 height=44
+KWL MENU bar client=16 surface=19 where=floating item=5 offset=197 top=56 width=78 height=44
+KWL MENU bar client=16 surface=19 where=floating item=11 offset=277 top=56 width=51 height=44
+KWL APPS bar count=2 hidden=0 desktop=2 apps=settings,videoplayer
+KWL APPS icon app=settings x=58 y=0 width=34 height=44 windows=1
+KWL APPS icon app=videoplayer x=92 y=0 width=34 height=44 windows=1
+KWL SYSTEM result client=3 object=40 request=188 applied=0
+KWL SYSTEM result client=3 object=40 request=189 applied=0
+KWL SYSTEM result client=3 object=40 request=190 applied=0
+KWL SYSTEM result client=3 object=40 request=191 applied=0
+KWL PERF 5011ms: passes=499 timeouts=263 | poll 60.0% work 27.9%
+KWL PERF compose frames=68 draw_ms=1.06 (acquire 3.16 submit+present 9.83) frame_ms=31.98
+KWL PERF rec frames=68 copied=0 begin=1.10 encode=0.23 end=1.37 submit=2.09 present=4.78 | max end=4.48 submit=10.06 present=16.92
+KWL PERF main ticks=481.1 input=0.7 clients=260.1 frame_done=58.2 schedule=850.8 flush=13.6 other=212.4 | schedule ticks=683.5 adopt=16.0 shm=2.7 cursor=1.6 layers=0.9 draw=72.5 | cursor presents=0 held=0 fence=0.0 acquire=0.0 copy=0.0 present=0.0 present_max=0.00
+KWL PERF pass passes=499 pass_p99_us=13882 pass_max_us=83036 walk_max_us=3748 vk_outside_max_us=79317
+KWL PERF walk drawings=68 dropped=0 | small n=65 p50=0.59 p90=1.12 max=3.75 | middle n=3 p50=0.77 p90=0.77 max=1.15 | large n=0 | replay n=68 p50=2.03 p90=4.35 max=9.05 | quiet n=0 | quiet_replay n=0
+KWL SYSTEM result client=3 object=40 request=192 applied=0
+KWL SYSTEM result client=3 object=40 request=193 applied=0
+KWL SYSTEM result client=3 object=40 request=194 applied=0
+KWL SYSTEM result client=3 object=40 request=195 applied=0
+KWL SYSTEM result client=3 object=40 request=196 applied=0
+KWL PERF 5008ms: passes=543 timeouts=241 | poll 56.7% work 28.2%
+KWL PERF compose frames=99 draw_ms=1.00 (acquire 2.53 submit+present 8.49) frame_ms=29.62
+KWL PERF rec frames=99 copied=0 begin=0.96 encode=0.14 end=1.10 submit=1.79 present=4.23 | max end=2.94 submit=4.00 present=9.40
+KWL PERF main ticks=608.3 input=0.9 clients=78.5 frame_done=69.4 schedule=994.2 flush=16.4 other=254.0 | schedule ticks=783.5 adopt=20.1 shm=3.0 cursor=2.2 layers=0.1 draw=99.5 | cursor presents=0 held=0 fence=0.0 acquire=0.0 copy=0.0 present=0.0 present_max=0.00
+KWL PERF pass passes=543 pass_p99_us=6177 pass_max_us=8460 walk_max_us=3433 vk_outside_max_us=484
+KWL PERF walk drawings=99 dropped=0 | small n=99 p50=0.50 p90=1.11 max=3.43 | middle n=0 | large n=0 | replay n=99 p50=1.99 p90=3.20 max=5.41 | quiet n=0 | quiet_replay n=0
+KWL SYSTEM result client=3 object=40 request=197 applied=0
+KWL SYSTEM result client=3 object=40 request=198 applied=0
+KWL SYSTEM result client=3 object=40 request=199 applied=0
+KWL SYSTEM result client=3 object=40 request=200 applied=0
+KWL SYSTEM result client=3 object=40 request=201 applied=0
+KWL PERF 5005ms: passes=534 timeouts=234 | poll 54.7% work 29.5%
+KWL PERF compose frames=96 draw_ms=1.02 (acquire 2.54 submit+present 8.43) frame_ms=29.93
+KWL PERF rec frames=96 copied=0 begin=1.13 encode=0.19 end=1.11 submit=1.84 present=3.91 | max end=2.96 submit=5.83 present=13.59
+KWL PERF main ticks=633.0 input=2.0 clients=85.7 frame_done=71.3 schedule=1038.5 flush=15.1 other=261.9 | schedule ticks=818.9 adopt=19.9 shm=4.1 cursor=2.9 layers=0.2 draw=98.9 | cursor presents=0 held=0 fence=0.0 acquire=0.0 copy=0.0 present=0.0 present_max=0.00
+KWL PERF pass passes=534 pass_p99_us=8580 pass_max_us=17532 walk_max_us=2727 vk_outside_max_us=928
+KWL PERF walk drawings=96 dropped=0 | small n=96 p50=0.51 p90=1.27 max=2.73 | middle n=0 | large n=0 | replay n=96 p50=2.02 p90=4.08 max=6.61 | quiet n=0 | quiet_replay n=0
+KWL SYSTEM result client=3 object=40 request=202 applied=0
+KWL AUDIO stream client=17 id=5 flush request=2 error=0
+KWL AUDIO stream client=17 id=5 closed
+KWL CLIENT gone client=17 reason=hangup
+KWL CLEANUP client=17 objects=2 unread_fds=0
+KWL CLEANUP done client=17 ms=7 quiesce=7 surfaces=0 shell=0 objects=0 queued=0 import_us=1000 backend_us=0
+KWL CLIENT gone client=16 reason=hangup
+KWL CLEANUP client=16 objects=13 unread_fds=0
+KWL CLEANUP done client=16 ms=1 quiesce=0 surfaces=0 shell=0 objects=1 queued=0 import_us=0 backend_us=0
+KWL IME app key=app:settings language=direct from=remembered
+KWL RENDER output=0 surfaces=19
+KWL APPS bar count=1 hidden=0 desktop=2 apps=settings
+KWL APPS icon app=settings x=58 y=0 width=34 height=44 windows=1
+KWL SYSTEM result client=3 object=40 request=203 applied=0
+KWL SYSTEM result client=3 object=40 request=204 applied=0
+KWL SYSTEM result client=3 object=40 request=205 applied=0

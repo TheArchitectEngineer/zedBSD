@@ -1,0 +1,3 @@
+v3d: memory kib=84540 max_kib=103404 budget_kib=524288 refused=0 last_kib=0
+v3d: alloc made=0 kib=0 pmem_us=0 zero_us=0 reused=5 kib=80 zero_us=0 kept=15 kib=1660
+v3d: memory kib=84540 max_kib=84540 budget_kib=524288 refused=0 last_kib=0

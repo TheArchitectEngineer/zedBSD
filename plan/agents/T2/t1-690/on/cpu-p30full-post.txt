@@ -1,0 +1,5 @@
+hw.cputimes: hz=1000 cpus=4
+hw.cputimes: cpu=0 user=17006 system=487451 idle=171140 other=0
+hw.cputimes: cpu=1 user=17921 system=490397 idle=166814 other=0
+hw.cputimes: cpu=2 user=19408 system=472902 idle=183261 other=0
+hw.cputimes: cpu=3 user=18446 system=431344 idle=225830 other=0
