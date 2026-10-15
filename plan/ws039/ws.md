@@ -3,7 +3,7 @@
 # WS039: AMD RDNA GPU対応
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-16 ユーザーが再開、計画だけ。以前: 2026-10-05「要検討状態にしてブロックする」）
+Status: incomplete（2026-10-16 ユーザーの決定で開始。driver P3・compiler P5、実機（RX 5600 XT、素の起動）は届いてから）
 Primary Milestone: MG006
 Related Milestones: なし
 Objectives: O2
@@ -76,3 +76,11 @@ AMD RDNA世代のGPUのドライバを実装する。
 3. 最初の到達点: NVIDIA と同じく「desktop が描ける」までか。動画（VCN）は後でよいか。
 4. 対象の世代: まず RDNA1（Navi1x）だけを動かし、RDNA2・3 は認識（device id）だけ先に入れるか。
 5. 担当の数（2 担当で並行してよいか）。
+
+### ユーザーの決定（2026-10-16、原文）
+1.「参考の source の扱いですが、値は事実として使い、名前・構造・comment は写さない、をこの WS にも広げます。」
+2.「RX 5600 XT を挿す機械と、試験の道は、ベアメタルでOKです。」
+3.「最初の到達点を「デスクトップが描ける」までにします。動画（VCN）は後にします。」
+4.「まず RDNA1 だけを動かし、RDNA2・3 は認識だけ先に入れます。」
+5.「担当を 2 人（driver と compiler）で並行してよいです。」
+→ 開始（Q1）: driver（p001 の設計 → p002〜p006・p008・p009）は P3、compiler（p007）は P5。設計（p001）の後に design-reviewer。
