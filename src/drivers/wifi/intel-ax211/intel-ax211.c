@@ -4316,17 +4316,31 @@ ax211_pci_event_message(
 	struct intel_ax211_event *event,
 	struct intel_ax211_protocol_message *message)
 {
-	/* Checks the drv intel ax211 event decode result. */
-	if (bytes == NULL || received == NULL || event == NULL ||
-	    message == NULL || received->generation == 0U ||
-	    received->length != length ||
-	    drv_intel_ax211_event_decode(bytes, length, event) !=
-		    INTEL_AX211_SUCCESS ||
-	    event->payload_offset > length ||
-	    event->payload_length != length - event->payload_offset) {
-		/* Failed. */
+	int tx_event;
+	int result;
+
+	/* Refuses missing arguments, an unset epoch and another length. */
+	if (bytes == NULL ||
+	    received == NULL ||
+	    event == NULL ||
+	    message == NULL ||
+	    received->generation == 0U ||
+	    received->length != length) {
 		return EIO;
 	}
+
+	/* Refuses an envelope that does not decode. */
+	result = drv_intel_ax211_event_decode(bytes, length, event);
+	if (result != INTEL_AX211_SUCCESS)
+		return EIO;
+
+	/* Refuses a payload that does not end where the event ends. */
+	if (event->payload_offset > length ||
+	    event->payload_length != length - event->payload_offset) {
+		return EIO;
+	}
+
+	/* Builds the message the protocol layers validate. */
 	kern_memset(message, 0, sizeof(*message));
 	message->opcode = event->command.opcode;
 	message->group = event->flags &
@@ -4339,13 +4353,14 @@ ax211_pci_event_message(
 	message->payload = bytes + event->payload_offset;
 	message->payload_length = event->payload_length;
 
-	/* Handles the ax211 pci tx event condition. */
-	if (ax211_pci_tx_event(event)) {
+	/* A transmit event takes the transmit family and version. */
+	tx_event = ax211_pci_tx_event(event);
+	if (tx_event) {
 		message->group = INTEL_AX211_TX_FAMILY;
 		message->version = INTEL_AX211_TX_NOTIFICATION_VERSION;
 	}
 
-	/* Succeeded. */
+	/* Succeeded: *message describes the event. */
 	return 0;
 }
 
@@ -4358,17 +4373,21 @@ ax211_pci_scan_command_dispatch(
 	uint64_t now)
 {
 	uint8_t phase;
+	unsigned opcode;
+	unsigned group;
+	unsigned slot;
+	unsigned queue;
 	int report_result;
 	int result;
 
-	/* Handles the controller condition. */
+	/* Nothing to deliver without a scan session. */
 	if (!controller->scan_initialized)
 		return 0;
 
-	/* Handles the phase condition. */
+	/* Delivers the acknowledgement the session waits for. */
 	phase = controller->scan_session.phase;
 	if (phase == INTEL_AX211_SCAN_SESSION_WAIT_START_ACK) {
-		/* Checks the operation result. */
+		/* Reports a started channel to the station. */
 		result = drv_intel_ax211_scan_session_start_ack(
 			&controller->scan_session, bytes, length,
 			controller->hardware_epoch, now);
@@ -4378,20 +4397,19 @@ ax211_pci_scan_command_dispatch(
 			 * wakes the worker; unlike TX completion, it cannot
 			 * synchronously call a radio op.
 			 */
-
-			/* Handles the report result condition. */
 			report_result = wlan_station_report_scan_channel_ready(
 				controller->station,
 				controller->scan_session.common_generation,
 				controller->scan_step_index);
-			if (report_result != 0 && report_result != ESTALE &&
+			if (report_result != 0 &&
+			    report_result != ESTALE &&
 			    report_result != ENODEV) {
 				ax211_pci_scan_report_error(
 					controller,
 					INTEL_AX211_SCAN_SESSION_FAILED);
 			}
 
-			/* Succeeded. */
+			/* Succeeded: the channel scan runs. */
 			return 0;
 		}
 	} else if (phase == INTEL_AX211_SCAN_SESSION_WAIT_ABORT_ACK) {
@@ -4399,31 +4417,44 @@ ax211_pci_scan_command_dispatch(
 			&controller->scan_session, bytes, length,
 			controller->hardware_epoch, now);
 	} else {
-		/* Succeeded. */
+		/* Nothing is awaited. */
 		return 0;
 	}
 
-	/* Checks the operation result. */
+	/* An aborted scan discards its staging set. */
 	if (result == INTEL_AX211_SCAN_SESSION_ABORTED)
 		ax211_pci_bss_staging_discard(controller);
 
-	/* Checks the operation result. */
+	/* An expected, repeated or stale acknowledgement is not a failure. */
 	if (result == INTEL_AX211_SCAN_SESSION_OK ||
 	    result == INTEL_AX211_SCAN_SESSION_ABORTED ||
 	    result == INTEL_AX211_SCAN_SESSION_DUPLICATE ||
 	    result == INTEL_AX211_SCAN_SESSION_STALE ||
 	    result == INTEL_AX211_SCAN_SESSION_OUT_OF_ORDER) {
-		/* Succeeded. */
 		return 0;
 	}
+
+	/* Takes the header bytes that arrived, for the log. */
+	opcode = 0U;
+	group = 0U;
+	slot = 0U;
+	queue = 0U;
+	if (length > 4U)
+		opcode = bytes[4U];
+	if (length > 5U)
+		group = bytes[5U];
+	if (length > 6U)
+		slot = bytes[6U];
+	if (length > 7U)
+		queue = bytes[7U];
+
+	/* Logs the failure and reports it to the station. */
 	kern_logf("intel-ax211: scan command failed phase=%u result=%d "
 		   "length=%u opcode=%02x group=%02x index=%02x queue=%02x\n",
-		   phase, result, (unsigned)length,
-		   length > 4U ? bytes[4U] : 0U, length > 5U ? bytes[5U] : 0U,
-		   length > 6U ? bytes[6U] : 0U, length > 7U ? bytes[7U] : 0U);
+		   phase, result, (unsigned)length, opcode, group, slot, queue);
 	ax211_pci_scan_report_error(controller, result);
 
-	/* Succeeded. */
+	/* The failure is reported through the scan error latch. */
 	return 0;
 }
 
@@ -4439,16 +4470,17 @@ ax211_pci_scan_notification_dispatch(
 	int result;
 	int report_result;
 
-	/* Handles the controller condition. */
+	/* Nothing to accept without a scan session. */
 	if (!controller->scan_initialized)
 		return 0;
 	kern_memset(&reported, 0, sizeof(reported));
 
-	/* Checks the operation status. */
+	/* Logs a notification the session refuses. */
 	result = drv_intel_ax211_scan_session_notification(
 		&controller->scan_session, message, now, &reported);
 	if (result == INTEL_AX211_SCAN_SESSION_FAILED &&
-	    message->payload != NULL && message->payload_length >= 16U) {
+	    message->payload != NULL &&
+	    message->payload_length >= 16U) {
 		payload = message->payload;
 
 		/* Reports a notification this driver does not recognize. */
@@ -4467,35 +4499,36 @@ ax211_pci_scan_notification_dispatch(
 			payload[13U], payload[14U], payload[15U]);
 	}
 
-	/* Checks the operation result. */
+	/* An aborted scan discards its staging set. */
 	if (result == INTEL_AX211_SCAN_SESSION_ABORTED)
 		ax211_pci_bss_staging_discard(controller);
 
 	/* Advances the common channel only after a validated firmware event. */
 	if (result == INTEL_AX211_SCAN_SESSION_COMPLETE) {
+		/* A refused report is a scan failure. */
 		report_result = wlan_station_report_scan_channel_complete(
 			controller->station,
 			reported.common_generation,
 			controller->scan_step_index);
-		if (report_result != 0 && report_result != ESTALE &&
+		if (report_result != 0 &&
+		    report_result != ESTALE &&
 		    report_result != ENODEV) {
 			ax211_pci_scan_report_error(controller,
 			    INTEL_AX211_SCAN_SESSION_FAILED);
 		}
 	}
 
-	/* Checks the operation result. */
+	/* An expected, repeated or stale notification is not a failure. */
 	if (result == INTEL_AX211_SCAN_SESSION_OK ||
 	    result == INTEL_AX211_SCAN_SESSION_COMPLETE ||
 	    result == INTEL_AX211_SCAN_SESSION_ABORTED ||
 	    result == INTEL_AX211_SCAN_SESSION_DUPLICATE ||
 	    result == INTEL_AX211_SCAN_SESSION_STALE) {
-		/* Succeeded. */
 		return 0;
 	}
 	ax211_pci_scan_report_error(controller, result);
 
-	/* Succeeded. */
+	/* The failure is reported through the scan error latch. */
 	return 0;
 }
 
@@ -4509,6 +4542,7 @@ ax211_pci_rx_dispatch(
 	struct intel_ax211_rx_delivery mpdu;
 	uint16_t frame_control;
 	uint16_t subtype;
+	int decode_result;
 	int dispatch_result;
 	int result;
 
@@ -4517,8 +4551,6 @@ ax211_pci_rx_dispatch(
 	kern_memset(&mpdu, 0, sizeof(mpdu));
 	ax211_pci_scrub(controller->runtime_frame,
 			sizeof(controller->runtime_frame));
-
-	/* Checks the operation result. */
 	result = drv_intel_ax211_rx_mpdu_decode(
 		message, controller->hardware_epoch, controller->runtime_frame,
 		sizeof(controller->runtime_frame), &mpdu);
@@ -4531,35 +4563,40 @@ ax211_pci_rx_dispatch(
 		ax211_pci_scrub(controller->runtime_frame,
 				sizeof(controller->runtime_frame));
 
-		/* Succeeded. */
+		/* Succeeded: the frame is dropped. */
 		return 0;
 	}
 
+	/* Reads the frame control field. */
 	frame_control = (uint16_t)((uint16_t)mpdu.frame[0U] |
 				   ((uint16_t)mpdu.frame[1U] << 8));
 	subtype = frame_control & 0x00f0U;
 
-	/* Handles the controller condition. */
+	/* Hands a beacon or probe response of a running scan to the scan. */
 	if (controller->scan_initialized &&
 	    controller->scan_session.phase ==
 		    INTEL_AX211_SCAN_SESSION_RUNNING &&
 	    (frame_control & 0x000cU) == 0U &&
 	    (subtype == 0x0080U || subtype == 0x0050U)) {
-		/* Checks the drv intel ax211 bss decode result. */
+		/* Records the BSS in the staging set of the scan generation. */
 		if (controller->bss_staging_initialized &&
 		    controller->bss_staging_generation ==
-			    controller->scan_session.common_generation &&
-		    drv_intel_ax211_bss_decode(
-			    &mpdu, controller->scan_session.common_generation,
-			    controller->hardware_epoch,
-			    &bss_entry) == INTEL_AX211_BSS_OK) {
-			/*
-			 * Use the same monotonic observation point immediately
-			 * before both private and common admission decisions.
-			 */
-			bss_entry.last_seen_ticks = clock_ticks();
-			(void)drv_intel_ax211_bss_cache_observe(
-				&controller->bss_staging_cache, &bss_entry);
+			    controller->scan_session.common_generation) {
+			/* Records a frame that decodes as a BSS. */
+			decode_result = drv_intel_ax211_bss_decode(
+				&mpdu, controller->scan_session.common_generation,
+				controller->hardware_epoch, &bss_entry);
+			if (decode_result == INTEL_AX211_BSS_OK) {
+				/*
+				 * Use the same monotonic observation point
+				 * immediately before both private and common
+				 * admission decisions.
+				 */
+				bss_entry.last_seen_ticks = clock_ticks();
+				(void)drv_intel_ax211_bss_cache_observe(
+					&controller->bss_staging_cache,
+					&bss_entry);
+			}
 		}
 
 		/*
@@ -4572,19 +4609,22 @@ ax211_pci_rx_dispatch(
 			mpdu.length, mpdu.rssi_dbm, mpdu.channel);
 	}
 
-	/* Handles the controller condition. */
+	/* Hands the frame to the connection, when there is one. */
 	dispatch_result = 0;
 	if (controller->connection_generation != 0U) {
 		dispatch_result = ax211_pci_connection_rx_dispatch(
 			controller, &mpdu, frame_control);
 	}
 
+	/* Clears the copies. */
 	ax211_pci_scrub(&bss_entry, sizeof(bss_entry));
 	ax211_pci_scrub(controller->runtime_frame,
 			sizeof(controller->runtime_frame));
+	if (dispatch_result != 0)
+		return dispatch_result;
 
-	/* Returns the computed result. */
-	return dispatch_result;
+	/* Succeeded. */
+	return 0;
 }
 
 /* Converts private coordinator outcomes to one common scan error latch. */
@@ -4595,15 +4635,15 @@ ax211_pci_scan_report_error(
 {
 	int error;
 
-	/* Handles the controller availability. */
-	if (controller == NULL || controller->station == NULL ||
+	/* Nothing to report without a running scan generation. */
+	if (controller == NULL ||
+	    controller->station == NULL ||
 	    !controller->scan_initialized ||
 	    controller->scan_session.common_generation == 0U) {
-		/* Returns the computed result. */
 		return;
 	}
 
-	/* Checks the operation status. */
+	/* Logs a failure, discards the staging set and latches the error. */
 	error = ax211_pci_scan_result_errno(result);
 	if (error != 0) {
 		kern_logf("intel-ax211: scan generation=%u failed result=%d "
@@ -4622,39 +4662,39 @@ ax211_pci_scan_report_error(
 	}
 }
 
-/* Supports the ax211 pci scan result errno operation. */
+/* Maps the scan session's results to errno values. */
 static int
 ax211_pci_scan_result_errno(
 	int result)
 {
-	/* Dispatch the selected operation case. */
+	/* Maps each result. */
 	switch (result) {
 	case INTEL_AX211_SCAN_SESSION_OK:
 	case INTEL_AX211_SCAN_SESSION_COMPLETE:
 	case INTEL_AX211_SCAN_SESSION_ABORTED:
-		/* Succeeded. */
+		/* A success, a completed or an aborted scan. */
 		return 0;
 	case INTEL_AX211_SCAN_SESSION_INVALID:
-		/* Failed. */
+		/* An invalid argument. */
 		return EINVAL;
 	case INTEL_AX211_SCAN_SESSION_UNSUPPORTED:
-		/* Failed. */
+		/* An unsupported firmware. */
 		return ENOTSUP;
 	case INTEL_AX211_SCAN_SESSION_BUSY:
-		/* Failed. */
+		/* A session still running. */
 		return EBUSY;
 	case INTEL_AX211_SCAN_SESSION_STALE:
 	case INTEL_AX211_SCAN_SESSION_DUPLICATE:
 	case INTEL_AX211_SCAN_SESSION_OUT_OF_ORDER:
-		/* Failed. */
+		/* An event that does not belong to the current scan. */
 		return ESTALE;
 	case INTEL_AX211_SCAN_SESSION_TIMEOUT:
-		/* Failed. */
+		/* A timeout. */
 		return ETIMEDOUT;
 	case INTEL_AX211_SCAN_SESSION_COMMAND:
 	case INTEL_AX211_SCAN_SESSION_FAILED:
 	default:
-		/* Failed. */
+		/* Any other failure is an I/O failure. */
 		return EIO;
 	}
 }
@@ -4667,79 +4707,90 @@ ax211_pci_runtime_event_dispatch(
 	size_t length,
 	const struct intel_ax211_boot_received_event *event)
 {
-	int error;
 	struct intel_ax211_event decoded;
 	struct intel_ax211_protocol_message message;
 	uint64_t now;
+	int tx_event;
 	int result;
 
-	/* Handles the controller availability. */
-	if (controller == NULL || bytes == NULL || event == NULL ||
+	/* Refuses missing arguments and an event of another epoch or length. */
+	if (controller == NULL ||
+	    bytes == NULL ||
+	    event == NULL ||
 	    event->generation == 0U ||
 	    event->generation != controller->hardware_epoch ||
 	    event->length != length) {
-		/* Failed. */
 		return EINVAL;
 	}
 	kern_memset(&decoded, 0, sizeof(decoded));
 	kern_memset(&message, 0, sizeof(message));
 
-	/* Checks the operation result. */
+	/* Decodes the event. */
 	result = ax211_pci_event_message(bytes, length, event, &decoded,
 					 &message);
 	if (result != 0)
 		return result;
 
-	/* Checks the ax211 pci clock us result. */
-	if (ax211_pci_clock_us(controller, &now) != 0)
+	/* Reads the clock. */
+	result = ax211_pci_clock_us(controller, &now);
+	if (result != 0)
 		return EIO;
 
-	/* Handles the ax211 pci tx event condition. */
-	if (ax211_pci_tx_event(&decoded)) {
-		/* Obtains the ax211 pci tx dispatch result. */
-		error = ax211_pci_tx_dispatch(controller, &message);
+	/* Hands a transmit event to the transmit ring. */
+	tx_event = ax211_pci_tx_event(&decoded);
+	if (tx_event) {
+		/* Reports a failed dispatch. */
+		result = ax211_pci_tx_dispatch(controller, &message);
+		if (result != 0)
+			return result;
 
-		/* Failed. */
-		return error;
+		/* Succeeded. */
+		return 0;
 	}
 
-	/* Handles the decoded condition. */
+	/* Hands a command answer to the scan session. */
 	if ((decoded.queue & 0x80U) == 0U) {
-		/* Obtains the ax211 pci scan command dispatch result. */
-		error = ax211_pci_scan_command_dispatch(
+		/* Reports a failed dispatch. */
+		result = ax211_pci_scan_command_dispatch(
 			controller, bytes, length, now);
+		if (result != 0)
+			return result;
 
-		/* Failed. */
-		return error;
+		/* Succeeded. */
+		return 0;
 	}
 
-	/* Handles the message condition. */
+	/* Hands a scan notification to the scan session. */
 	if (message.group == INTEL_AX211_SCAN_FAMILY_CLASSIC &&
 	    (message.opcode == INTEL_AX211_SCAN_FINISHED_OPCODE ||
 	     message.opcode == INTEL_AX211_SCAN_PASS_FINISHED_OPCODE)) {
-		/* Obtains the ax211 pci scan notification dispatch result. */
-		error = ax211_pci_scan_notification_dispatch(
+		/* Reports a failed dispatch. */
+		result = ax211_pci_scan_notification_dispatch(
 			controller, &message, now);
+		if (result != 0)
+			return result;
 
-		/* Failed. */
-		return error;
+		/* Succeeded. */
+		return 0;
 	}
 
-	/* Handles the message condition. */
+	/* Hands a received frame to the receive path. */
 	if (message.group == INTEL_AX211_RX_FRAME_FAMILY &&
 	    message.opcode == INTEL_AX211_RX_FRAME_OPCODE) {
-		/* Obtains the ax211 pci rx dispatch result. */
-		error = ax211_pci_rx_dispatch(controller, &message);
+		/* Reports a failed dispatch. */
+		result = ax211_pci_rx_dispatch(controller, &message);
+		if (result != 0)
+			return result;
 
-		/* Failed. */
-		return error;
+		/* Succeeded. */
+		return 0;
 	}
 
-	/* Handles the message condition. */
+	/* Hands a time reservation notice to the association session. */
 	if (message.group == INTEL_AX211_ASSOC_FAMILY_LINK_SETUP &&
 	    message.opcode == INTEL_AX211_ASSOC_TIME_RESERVATION_NOTICE_OPCODE &&
 	    controller->association_initialized) {
-		/* Checks the operation result. */
+		/* An expired, ignored, repeated or stale notice is accepted. */
 		result = drv_intel_ax211_assoc_session_event_accept(
 			&controller->association, &message,
 			controller->connection_generation,
@@ -4748,7 +4799,6 @@ ax211_pci_runtime_event_dispatch(
 		    result == INTEL_AX211_ASSOC_EVENT_IGNORED ||
 		    result == INTEL_AX211_ASSOC_DUPLICATE ||
 		    result == INTEL_AX211_ASSOC_STALE) {
-			/* Succeeded. */
 			return 0;
 		}
 
@@ -4756,7 +4806,7 @@ ax211_pci_runtime_event_dispatch(
 		return EIO;
 	}
 
-	/* Succeeded. */
+	/* Succeeded: any other event is ignored. */
 	return 0;
 }
 
@@ -4770,19 +4820,22 @@ ax211_pci_deferred_event_enqueue(
 	struct ax211_pci_deferred_event *slot;
 	unsigned index;
 
-	/* Handles the controller availability. */
-	if (controller == NULL || bytes == NULL || received == NULL ||
+	/* Refuses missing arguments and an event of another epoch or size. */
+	if (controller == NULL ||
+	    bytes == NULL ||
+	    received == NULL ||
 	    received->length == 0U ||
 	    received->length > INTEL_AX211_BOOT_EVENT_CAPACITY ||
 	    received->generation == 0U ||
 	    received->generation != controller->hardware_epoch) {
-		/* Failed. */
 		return EINVAL;
 	}
 
-	/* Handles the controller condition. */
+	/* Refuses an event when the queue is full. */
 	if (controller->deferred_event_count >= AX211_DEFERRED_EVENT_LIMIT)
 		return ENOBUFS;
+
+	/* Copies the event to the tail of the queue. */
 	index = (controller->deferred_event_head +
 		 controller->deferred_event_count) %
 		AX211_DEFERRED_EVENT_LIMIT;
@@ -4792,7 +4845,7 @@ ax211_pci_deferred_event_enqueue(
 	kern_memcpy(slot->bytes, bytes, received->length);
 	controller->deferred_event_count++;
 
-	/* Handles the net device availability. */
+	/* Asks for a poll to drain the queue. */
 	if (controller->net_device != NULL)
 		net_device_schedule_poll(controller->net_device);
 
@@ -4809,21 +4862,22 @@ ax211_pci_deferred_event_drain_one(
 	struct intel_ax211_boot_received_event received;
 	int result;
 
-	/* Handles the controller availability. */
+	/* Nothing to drain. */
 	if (controller == NULL || controller->deferred_event_count == 0U)
 		return ENOENT;
 
-	/* Handles the controller condition. */
+	/* A drain already runs. */
 	if (controller->deferred_event_draining)
 		return EBUSY;
 
-	/* Handles the slot condition. */
+	/* Refuses a slot of an invalid size. */
 	slot = &controller->deferred_event[controller->deferred_event_head];
 	if (slot->received.length == 0U ||
 	    slot->received.length > sizeof(controller->deferred_dispatch_event)) {
-		/* Failed. */
 		return EIO;
 	}
+
+	/* Takes the oldest event off the queue. */
 	received = slot->received;
 	kern_memcpy(controller->deferred_dispatch_event, slot->bytes,
 	       received.length);
@@ -4832,15 +4886,19 @@ ax211_pci_deferred_event_drain_one(
 		(controller->deferred_event_head + 1U) %
 		AX211_DEFERRED_EVENT_LIMIT;
 	controller->deferred_event_count--;
+
+	/* Dispatches the event and clears its copy. */
 	controller->deferred_event_draining = 1U;
 	result = ax211_pci_runtime_event_dispatch(
 		controller, controller->deferred_dispatch_event,
 		received.length, &received);
 	ax211_pci_scrub(controller->deferred_dispatch_event, received.length);
 	controller->deferred_event_draining = 0U;
+	if (result != 0)
+		return result;
 
-	/* Returns the computed result. */
-	return result;
+	/* Succeeded. */
+	return 0;
 }
 
 /* Scrubs every copied notification when its firmware epoch is retired. */
@@ -4848,9 +4906,11 @@ static void
 ax211_pci_deferred_event_clear(
 	struct ax211_pci_controller *controller)
 {
-	/* Handles the controller availability. */
+	/* Nothing to clear without a controller. */
 	if (controller == NULL)
 		return;
+
+	/* Empties the queue and clears every copy. */
 	controller->deferred_event_head = 0U;
 	controller->deferred_event_count = 0U;
 	controller->deferred_event_draining = 0U;
