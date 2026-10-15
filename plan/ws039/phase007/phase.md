@@ -2,7 +2,7 @@
 
 # ws039-p007: shader の compiler（SPIR-V → GFX10、RDNA1、Navi10 = gfx1010）
 
-Status: in-progress（2026-10-15 P5 着手・一時停止の後、同日夕に q1203 で P5 が再開）
+Status: in-progress（2026-10-15 P5 着手・一時停止の後、同日夕に q1203 / q1203-i01 で P5 が再開）
 Disposition: normal
 Parent: [WS039](../ws.md)
 Queue: Q1 の割当（2026-10-15、P5: 「WS039 の shader の compiler（ws039-p007）」。ユーザーの決定 2026-10-15「担当を 2 人（driver と compiler）で並行してよいです。」）
@@ -132,3 +132,10 @@ compiler が program ごとに配置を決め、結果の記述に byte の offs
 3. 規則（2026-10-15 ユーザー、Guardrail）: MIT でも code・comment・構造は写さない。data（encode・opcode・hazard の表・register の値）だけを使い、ブロックごとに出典を書く。copyright・MIT の notice は付けない。
 4. vmunix.mk: P3 が `CONFIG_DRIVER_PCI_AMDRDNA` の行を入れ、その下に P5 が compiler の file を別の commit で足す（Q1 の指示）。それまでは kernel の flag で単体の compile。
 5. 未実施: encode・lowering・試験・build・P3 との program の形のすり合わせ、license の監査の表。
+
+### 7.3 2026-10-15 P5（q1203 / q1203-i01、再開）
+
+- `gfx10-isa.h` を出典の規則（Guardrail「MIT・GPL の出典のデータの引用」、design 13 節）に合わせた: file の先頭の出典（Mesa の版・SHA-256）を消し、block ごとの複数行の「Values referenced: Mesa 25.0.7 <path> (<関数・表の名前、行>)」にした。形式の印は `AMDRDNA_GFX10_FORM_*`（独自の語）、出力先・待ち・hazard の値も独自の名前にした。命令の opcode・register の名前（`AMDRDNA_GFX10_V_ADD_F32` など ISA の mnemonic から作った名前）は、ユーザーの判断（AMD の公開の ISA の mnemonic が symbol の写しに当たるか）を Q1 が確かめ中なので、決まるまで今の形（2026-10-15 Q1）。DPP の値は使わないので消した。
+- `gfx10-encode.[ch]`: 機械の命令の record（`struct amdrdna_gfx10_inst`）、形式ごとの書き出し（scalar 2/1/比較/定数/control/分岐、scalar load、vector 1/2/比較/wide（短い形に収まらなければ wide へ自動で）、補間、shared、buffer、image、export）、読み書きする register の範囲と結果を待つ counter（`amdrdna_gfx10_describe`）。欄の位置は block ごとに `aco_assembler.cpp` の関数名を出典に書いた。
+- 試験 `plan/ws039/tests/amdrdna-compiler-host-test.sh`（`gfx10-encode-test.c`・`gfx10-compare-words.py`）: 85 個の命令を encode し、同じ命令の文を `llvm-mc-19 -mcpu=gfx1010 -show-encoding` で encode した語と比べる → **85 一致、0 差**。register の記述の 5 例も確かめる。
+- kernel の flag（clang `--target=x86_64-unknown-none`、amd64 の `AMD64_CFLAGS` と `-Wdeclaration-after-statement`、gcc `-std=c99 -fsyntax-only` も）で warning 0。
