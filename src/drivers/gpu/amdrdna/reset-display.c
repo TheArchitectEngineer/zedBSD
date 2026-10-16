@@ -681,8 +681,14 @@ display_interrupts_again(
 	if (!display->interrupts_on)
 		return;
 
-	/* The three, under the display's lock as the display's own switch takes them. */
+	/*
+	 * The three, under the display's lock as the display's own switch
+	 * takes them; the frame counter started again from 0, so the refresh
+	 * count takes its next reading as a new base (it never goes back).
+	 */
 	irq = spin_lock_irqsave(&display->lock);
+
+	display->frame_valid = false;
 
 	word = display_read(device, AMDRDNA_DCN_TIMING_SYNC_STATUS, device->gop.timing);
 	display_write(device, AMDRDNA_DCN_TIMING_SYNC_STATUS, device->gop.timing, amdrdna_sync_status_word(word, true, true));
