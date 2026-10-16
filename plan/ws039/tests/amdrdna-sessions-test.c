@@ -56,6 +56,7 @@ main(void)
 		return 1;
 	}
 
+	/* Every case passed. */
 	printf("PASS amdrdna-sessions-test\n");
 	return 0;
 }
@@ -169,6 +170,7 @@ test_lru(void)
 		amdrdna_context_submitted(&pool, grant.context, &request, owner, true);
 	}
 
+	/* Every run has ended; the fifteen contexts are the fifteen spaces'. */
 	passed[AMDRDNA_TRACKED_GRAPHICS] = 15U;
 	check(distinct && seen == 0xfffeU, "lru.fifteen", "the fifteen spaces did not get the fifteen contexts");
 
@@ -249,6 +251,7 @@ test_held(void)
 			amdrdna_context_hold(&pool, context);
 	}
 
+	/* One context is left, and it is granted. */
 	check(amdrdna_context_free_count(&pool) == 1U, "held.count", "the free contexts were not counted");
 	request_for(&request, 3U, 0U, AMDRDNA_TRACKED_GRAPHICS);
 	error = amdrdna_context_grant(&pool, &request, passed, &grant);
@@ -337,6 +340,7 @@ test_ids(void)
 			break;
 	}
 
+	/* All are taken; one more is refused. */
 	check(ids->count == AMDRDNA_SPACE_IDS - 1U, "ids.all", "not every identifier could be had");
 	error = amdrdna_space_id_take(ids, &id);
 	check(error == ENOSPC, "ids.full", "an identifier was had from a full set");
@@ -385,6 +389,12 @@ test_packets(void)
 	/* The fetcher's sync: header 0xc0004200 and a zero word. */
 	count = amdrdna_pm4_fetcher_sync(words);
 	check(count == 2U && words[0] == 0xc0004200U && words[1] == 0U, "packets.fetcher-sync", "the words differ");
+
+	/* A move through the level-2 cache: CP_SYNC, both selects 3 (control 0xe0300000), 8 bytes. */
+	count = amdrdna_pm4_move_cached(words, 0x100003000ULL, 0x100008000ULL, 8U);
+	check(count == 7U && words[0] == 0xc0055000U && words[1] == 0xe0300000U && words[2] == 0x3000U && words[3] == 1U &&
+	    words[4] == 0x8000U && words[5] == 1U && words[6] == 8U,
+	    "packets.move-cached", "the words differ");
 
 	/* An indirect buffer of context 3 on the graphics ring: size and context, no valid bit. */
 	count = amdrdna_pm4_indirect(words, 0x0000000100000000ULL, 64U, 3U, false);

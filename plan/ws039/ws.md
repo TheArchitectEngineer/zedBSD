@@ -9,7 +9,7 @@ Related Milestones: なし
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: q1216（P3、ws039-p011 の段 A5s、2026-10-16 開始）。以前 q1215（p005、cleared）・q1213（p004）・q1212（p003）・q1211（p002）
-Resume point: p011 in-progress（2026-10-16 P3、q1216-i01、[phase011](phase011/phase.md)）: session・pasid・動的な VMID・page table・BO・GPU device の登録を実装、host 試験と build まで。次は実機 10.0.10.3 で `advance A5s`（A5s の ok と `/dev/gpu0`）。以前: p005 cleared（main adef3571d）。
+Resume point: p011 in-progress（2026-10-16 P3、q1216-i01、[phase011](phase011/phase.md)）: 実機 10.0.10.3 で **A5s ok**（session の VA の IB で write・move・dispatch 1536 語、16 session で context の LRU（flush 17・取り上げ 2）、session の VM fault が pasid で名指し、`drv_gpu_register` で `/dev/gpu0`、`amdrdnactl gpu` で blob・storage・mapping・export/import ok）を最終の kernel で 3 回（warm reboot）。次は Q1 の merge と clearance の判定、その後 p008（executor、P5 の vk/ と bind）・p012（Tier F）・p006（display）。以前: p005 cleared（main adef3571d）。
 Target: 未定（2026-10-15 に開始・一時停止。以前の扱い: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」））
 <!-- awesome-plan-current:end -->
 

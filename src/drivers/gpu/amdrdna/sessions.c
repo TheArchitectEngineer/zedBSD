@@ -198,6 +198,9 @@ sessions_dispatch(
 	uint32_t expected;
 	uint32_t found;
 	uint32_t moved[2];
+	uint32_t written[2];
+	uint32_t buffer[2];
+	uint32_t first_output;
 	unsigned count;
 	unsigned index;
 	void *token;
@@ -233,7 +236,7 @@ sessions_dispatch(
 	/* The indirect buffer: the two writes, their move, the dispatch, padded. */
 	count = amdrdna_pm4_write_memory(words, va + SESSIONS_WRITTEN_AT, SESSIONS_FIRST_VALUE, false);
 	count += amdrdna_pm4_write_memory(words + count, va + SESSIONS_WRITTEN_AT + 4U, SESSIONS_SECOND_VALUE, false);
-	count += amdrdna_pm4_move(words + count, va + SESSIONS_WRITTEN_AT, va + SESSIONS_MOVED_AT, 8U);
+	count += amdrdna_pm4_move_cached(words + count, va + SESSIONS_WRITTEN_AT, va + SESSIONS_MOVED_AT, 8U);
 	count += amdrdna_check_commands(device, words + count, va + SESSIONS_PROGRAM_AT, groups, false);
 	count = sessions_pad(words, count);
 	sessions_put(cpu, words, count);
@@ -247,9 +250,16 @@ sessions_dispatch(
 		return error;
 	}
 
-	/* The moved words. */
+	/* The moved words, and for a failure's mark the written ones, the first output word and the buffer's start. */
 	moved[0] = kern_mmio_read32(cpu + SESSIONS_MOVED_AT);
 	moved[1] = kern_mmio_read32(cpu + SESSIONS_MOVED_AT + 4U);
+	written[0] = kern_mmio_read32(cpu + SESSIONS_WRITTEN_AT);
+	written[1] = kern_mmio_read32(cpu + SESSIONS_WRITTEN_AT + 4U);
+	first_output = kern_mmio_read32(cpu + SESSIONS_OUTPUT_AT);
+	buffer[0] = kern_mmio_read32(cpu);
+	buffer[1] = kern_mmio_read32(cpu + 4U);
+	if (moved[0] != SESSIONS_FIRST_VALUE)
+		amdrdna_space_describe(session->space, va);
 
 	/* The output, copied out of the window to be compared. */
 	output = kern_malloc((size_t)output_words * 4U);
@@ -271,7 +281,14 @@ sessions_dispatch(
 
 	/* Words that are not what the commands wrote fail the stage. */
 	if (moved[0] != SESSIONS_FIRST_VALUE || moved[1] != SESSIONS_SECOND_VALUE) {
-		amdrdna_mark("A5s fail: the moved words are 0x%08x 0x%08x", (unsigned)moved[0], (unsigned)moved[1]);
+		amdrdna_mark("A5s fail: the moved words are 0x%08x 0x%08x, written 0x%08x 0x%08x, output 0x%08x, buffer 0x%08x 0x%08x",
+		    (unsigned)moved[0],
+		    (unsigned)moved[1],
+		    (unsigned)written[0],
+		    (unsigned)written[1],
+		    (unsigned)first_output,
+		    (unsigned)buffer[0],
+		    (unsigned)buffer[1]);
 		return EIO;
 	}
 

@@ -1523,6 +1523,13 @@ amdrdna_pm4_partition(
 	uint32_t *words);
 
 unsigned
+amdrdna_pm4_move_cached(
+	uint32_t *words,
+	uint64_t source,
+	uint64_t destination,
+	uint32_t bytes);
+
+unsigned
 amdrdna_pm4_fetcher_write_register(
 	uint32_t *words,
 	uint32_t index,

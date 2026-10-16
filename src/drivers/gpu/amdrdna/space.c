@@ -85,6 +85,7 @@ static void space_changed(struct amdrdna_space *space);
 static void space_lose(struct amdrdna_space *space, int error);
 static uint64_t space_table_word(struct amdrdna_device *device, uint64_t vram);
 static bool space_quiet_locked(struct amdrdna_space *space);
+static uint32_t space_hub_read(struct amdrdna_device *device, enum amdrdna_hub_register which, unsigned instance);
 
 /*
  * Prepares the address spaces' lock, the context pool and the
@@ -625,6 +626,75 @@ amdrdna_space_fault(
 }
 
 /*
+ * Marks what the hub and the tables say about an address of a space, for
+ * a check that failed: the context the space holds, that context's table
+ * words and control word as the hub reads them, the done word of the
+ * graphics ring's invalidation engine, and the entry of each level the
+ * address goes through, read back through the CPU's window.
+ */
+void
+amdrdna_space_describe(
+	struct amdrdna_space *space,
+	uint64_t address)
+{
+	struct amdrdna_device *device;
+	struct amdrdna_table *table;
+	unsigned index[AMDRDNA_VM_LEVELS];
+	uint64_t entries[AMDRDNA_VM_LEVELS];
+	uint32_t base_low;
+	uint32_t base_high;
+	uint32_t control;
+	volatile uint8_t *cpu;
+	uint32_t done;
+	unsigned context;
+	unsigned level;
+
+	/* The context and the hub's words for it. */
+	device = space->device;
+	context = space->context;
+	base_low = space_hub_read(device, AMDRDNA_HUB_TABLE_BASE_LOW, context);
+	base_high = space_hub_read(device, AMDRDNA_HUB_TABLE_BASE_HIGH, context);
+	control = space_hub_read(device, AMDRDNA_HUB_CONTEXT_CONTROL, context);
+	done = space_hub_read(device, AMDRDNA_HUB_INVALIDATE_DONE, SPACE_ENGINE_GRAPHICS);
+
+	/* The entry of each level, as far as the tables go. */
+	amdrdna_vm_split(address, index);
+	table = space->root;
+	for (level = 0U; level < AMDRDNA_VM_LEVELS; level++) {
+		/* A level the tables do not reach reads as no entry. */
+		entries[level] = 0U;
+		if (table == NULL)
+			continue;
+
+		/* The entry, then the table below it. */
+		cpu = amdrdna_vram_cpu(device, table->vram);
+		entries[level] = kern_mmio_read64(cpu + (size_t)index[level] * SPACE_ENTRY_BYTES);
+		if (table->below == NULL) {
+			table = NULL;
+		} else {
+			table = table->below[index[level]];
+		}
+	}
+
+	/* One line for the hub, one for the tables. */
+	amdrdna_mark("space %u ctx=%u root=0x%llx hub base=0x%08x%08x control=0x%08x done=0x%08x",
+	    (unsigned)space->id,
+	    context,
+	    (unsigned long long)space->root_word,
+	    (unsigned)base_high,
+	    (unsigned)base_low,
+	    (unsigned)control,
+	    (unsigned)done);
+	amdrdna_mark("space %u at 0x%llx: 0x%llx 0x%llx 0x%llx 0x%llx",
+	    (unsigned)space->id,
+	    (unsigned long long)address,
+	    (unsigned long long)entries[0],
+	    (unsigned long long)entries[1],
+	    (unsigned long long)entries[2],
+	    (unsigned long long)entries[3]);
+}
+
+/*
  * Creates a backing: zeroed VRAM in the CPU's window, in whole 64 KiB
  * steps, held once by the caller.
  *
@@ -817,10 +887,13 @@ space_passed(
  * when they are stale (the context pointed at the space's root table, the
  * hub asked to drop them and waited for, the interrupt controller told the
  * context's space, the graphics ring's fetcher held until the engine
- * caught up), then the indirect buffer in the context.  Reports the words.
+ * caught up), the caches synced, then the indirect buffer in the context.
+ * Reports the words.
  *
  * Procedure referenced: Linux v6.19
- * drivers/gpu/drm/amd/amdgpu/gmc_v10_0.c (gmc_v10_0_emit_flush_gpu_tlb,
+ * drivers/gpu/drm/amd/amdgpu/amdgpu_ib.c (amdgpu_ib_schedule: the memory
+ * sync before a job's indirect buffers),
+ * gmc_v10_0.c (gmc_v10_0_emit_flush_gpu_tlb,
  * gmc_v10_0_emit_pasid_mapping) and gfx_v10_0.c
  * (gfx_v10_0_ring_emit_pipeline_sync, gfx_v10_0_ring_emit_vm_flush,
  * gfx_v10_0_ring_emit_ib_gfx, gfx_v10_0_ring_emit_ib_compute).
@@ -908,6 +981,13 @@ space_commands(
 		if (graphics)
 			count += amdrdna_pm4_fetcher_sync(commands + count);
 	}
+
+	/*
+	 * The GPU's caches dropped and written back, so the indirect buffer and
+	 * what it reads come from memory as the CPU last wrote them through the
+	 * window (which the level-2 cache does not see).
+	 */
+	count += amdrdna_pm4_cache_sync(commands + count, false);
 
 	/* The indirect buffer, in the context. */
 	count += amdrdna_pm4_indirect(commands + count, address, words, grant->context, compute);
@@ -1192,4 +1272,22 @@ space_quiet_locked(
 
 	/* Succeeded: nothing of the space runs. */
 	return true;
+}
+
+/* Reads one instance of a named register of the graphics hub. */
+static uint32_t
+space_hub_read(
+	struct amdrdna_device *device,
+	enum amdrdna_hub_register which,
+	unsigned instance)
+{
+	uint32_t index;
+	uint32_t value;
+
+	/* The register's index, then its value. */
+	index = amdrdna_hub_register(device, AMDRDNA_HUB_GRAPHICS, which, instance);
+	value = amdrdna_read(device, index);
+
+	/* Succeeded: the value. */
+	return value;
 }

@@ -941,6 +941,11 @@ amdrdna_space_fault(
 	const struct amdrdna_vm_fault *fault,
 	unsigned context);
 
+void
+amdrdna_space_describe(
+	struct amdrdna_space *space,
+	uint64_t address);
+
 int
 amdrdna_backing_create(
 	struct amdrdna_device *device,
