@@ -17,6 +17,7 @@
 | U9 | 5330（素の起動） | `build/uat/ws245-amd64/hdd-image.img`（U10 と同じ image） | AX211 で WiFi の AP に接続（Settings か `wifi wlan0 connect`） | 接続・IP の取得・通信ができる（AX211 の driver の出典と規約の整理の後。T1-700 の VFIO では整理の前も後も接続が失敗したので、素の起動での確かめが整理の完了の条件。2026-10-15 ユーザー「実機で接続を確かめてから完了」） |
 | U10 | 5330（素の起動） | `build/uat/ws245-amd64/hdd-image.img`（main 1716c14bc、config/ci/config-amd64.mk、2,485,125,120 byte、sha256 590efabeed28ecb8…） | USB に書いて起動 | i915 の display の書き直しの途中のコード（土台・VBT/EDID の解析、まだ呼ばれない）と Gen9 の移設が入った main で、今までと同じに起動・内蔵 LCD・backlight・desktop が動く（2026-10-15 夜 ユーザー「ベアメタルにしましょう。merge後のコードでUATイメージをビルドしてパスを教えてください。」。passthrough では VBT が無く panel が点かない）  **合格**（2026-10-15 夜 ユーザー「問題なく使えてます。」。Q1 が ssh で確かめた: 普通の起動で session・compositor・LCD・backlight brightness=100、GPU の投入 2〜4.6 ms、device lost 0） |
 | U11 | 5330（素の起動） | main 3e1e0c687 以降の amd64 の image | 普通に起動して desktop を使う | 内蔵 LCD に desktop が正しく映る、backlight が点く（i915 の display の書き直しの最初の段 p047 の後。ssh で取った register の証拠は合格、目視も 2026-10-16 15:00 ユーザーが合格「5330はデスクトップが起動しました。OKです。」。起動に約 1 分かかる件は WS253） |
+| U12 | SV7（Gen9、10.0.10.27） | main 9244ac507 以降の amd64 の image | 普通に起動して desktop を使う | 今までと同じに映り desktop が動く。dmesg に `i915: xd: no description of the device …` の 1 行が出て、OpRegion の行が前と同じ（i915 の表示の書き直し p016: OpRegion の読みの置き換えの後） |
 
 ## 日程
 
