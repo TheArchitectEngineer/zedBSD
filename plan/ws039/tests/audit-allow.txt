@@ -234,6 +234,7 @@ placement
 places
 platform
 pointer
+polarity
 poll
 port
 position

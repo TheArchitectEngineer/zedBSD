@@ -769,7 +769,8 @@ modeset_timing_now(
 
 /*
  * Chooses the other mode: 1280x720 when the monitor lists it and the
- * plan fits, else the first listed mode of another size the plan fits.
+ * plan fits, else the first listed mode of another size the plan fits
+ * (of the modes whose syncs are known).
  * Returns NULL when none does.
  */
 static const struct amdrdna_timing *
@@ -795,6 +796,8 @@ modeset_other(
 	for (at = 0U; at < pipe->sink->edid.mode_count; at++) {
 		mode = &pipe->sink->edid.modes[at];
 		if (mode->pixel_khz == 0U || mode->interlaced)
+			continue;
+		if (mode->h_pulse == 0U || mode->v_pulse == 0U)
 			continue;
 		if (mode->width == now->width && mode->height == now->height)
 			continue;

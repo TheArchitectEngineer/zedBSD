@@ -138,7 +138,9 @@ static const uint8_t edid_header[EDID_HEADER_BYTES] = { 0x00U, 0xffU, 0xffU, 0xf
 
 /*
  * The VESA monitor timings the established and standard timings name:
- * the size, the refresh, the totals and the pixel clock in kHz.  The
+ * the size, the refresh, the totals, the pixel clock in kHz, the front
+ * porches and sync widths (in pixels and lines) and the sync polarities
+ * (positive horizontal: bit 0, positive vertical: bit 1).  The
  * established timings' bits, from byte 35 bit 7 down to byte 37 bit 7,
  * index this list (an entry of 0 width is a bit the driver does not list:
  * the interlaced 1024x768).
@@ -146,8 +148,9 @@ static const uint8_t edid_header[EDID_HEADER_BYTES] = { 0x00U, 0xffU, 0xffU, 0xf
  * Values referenced: VESA E-EDID Release A, Revision 2, section 3.8
  * (table 3.18, the established timings I and II and the manufacturer's
  * timing), VESA and Industry Standards and Guidelines for Computer
- * Display Monitor Timing (DMT) Version 1.0, Revision 13 (the totals and
- * pixel clocks), and the IBM VGA and Apple timings the established bits
+ * Display Monitor Timing (DMT) Version 1.0, Revision 13 (the totals,
+ * pixel clocks, porches, sync widths and polarities; 1280x720 is the same
+ * as CTA-861-G's), and the IBM VGA and Apple timings the established bits
  * name (720x400 at 70 and 88 Hz, 640x480 at 67 Hz, 832x624 at 75 Hz,
  * 1152x870 at 75 Hz).
  */
@@ -158,45 +161,55 @@ struct monitor_timing {
 	uint16_t h_total;
 	uint16_t v_total;
 	uint32_t pixel_khz;
+	uint16_t h_front;
+	uint16_t h_sync;
+	uint16_t v_front;
+	uint16_t v_sync;
+	uint8_t polarity;
 };
+
+/* The polarity bits of a monitor timing. */
+#define MONITOR_H_POSITIVE		1U
+#define MONITOR_V_POSITIVE		2U
+#define MONITOR_BOTH_POSITIVE		3U
 
 #define ESTABLISHED_COUNT		17U
 
 static const struct monitor_timing established_timings[ESTABLISHED_COUNT] = {
-	{ 720U, 400U, 70U, 900U, 449U, 28322U },
-	{ 720U, 400U, 88U, 900U, 449U, 35500U },
-	{ 640U, 480U, 60U, 800U, 525U, 25175U },
-	{ 640U, 480U, 67U, 864U, 525U, 30240U },
-	{ 640U, 480U, 72U, 832U, 520U, 31500U },
-	{ 640U, 480U, 75U, 840U, 500U, 31500U },
-	{ 800U, 600U, 56U, 1024U, 625U, 36000U },
-	{ 800U, 600U, 60U, 1056U, 628U, 40000U },
-	{ 800U, 600U, 72U, 1040U, 666U, 50000U },
-	{ 800U, 600U, 75U, 1056U, 625U, 49500U },
-	{ 832U, 624U, 75U, 1152U, 667U, 57284U },
-	{ 0U, 0U, 0U, 0U, 0U, 0U },
-	{ 1024U, 768U, 60U, 1344U, 806U, 65000U },
-	{ 1024U, 768U, 70U, 1328U, 806U, 75000U },
-	{ 1024U, 768U, 75U, 1312U, 800U, 78750U },
-	{ 1280U, 1024U, 75U, 1688U, 1066U, 135000U },
-	{ 1152U, 870U, 75U, 1456U, 915U, 100000U }
+	{ 720U, 400U, 70U, 900U, 449U, 28322U, 18U, 108U, 12U, 2U, MONITOR_V_POSITIVE },
+	{ 720U, 400U, 88U, 900U, 449U, 35500U, 18U, 108U, 12U, 2U, MONITOR_V_POSITIVE },
+	{ 640U, 480U, 60U, 800U, 525U, 25175U, 16U, 96U, 10U, 2U, 0U },
+	{ 640U, 480U, 67U, 864U, 525U, 30240U, 64U, 64U, 3U, 3U, 0U },
+	{ 640U, 480U, 72U, 832U, 520U, 31500U, 24U, 40U, 9U, 3U, 0U },
+	{ 640U, 480U, 75U, 840U, 500U, 31500U, 16U, 64U, 1U, 3U, 0U },
+	{ 800U, 600U, 56U, 1024U, 625U, 36000U, 24U, 72U, 1U, 2U, MONITOR_BOTH_POSITIVE },
+	{ 800U, 600U, 60U, 1056U, 628U, 40000U, 40U, 128U, 1U, 4U, MONITOR_BOTH_POSITIVE },
+	{ 800U, 600U, 72U, 1040U, 666U, 50000U, 56U, 120U, 37U, 6U, MONITOR_BOTH_POSITIVE },
+	{ 800U, 600U, 75U, 1056U, 625U, 49500U, 16U, 80U, 1U, 3U, MONITOR_BOTH_POSITIVE },
+	{ 832U, 624U, 75U, 1152U, 667U, 57284U, 32U, 64U, 1U, 3U, 0U },
+	{ 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U },
+	{ 1024U, 768U, 60U, 1344U, 806U, 65000U, 24U, 136U, 3U, 6U, 0U },
+	{ 1024U, 768U, 70U, 1328U, 806U, 75000U, 24U, 136U, 3U, 6U, 0U },
+	{ 1024U, 768U, 75U, 1312U, 800U, 78750U, 16U, 96U, 1U, 3U, MONITOR_BOTH_POSITIVE },
+	{ 1280U, 1024U, 75U, 1688U, 1066U, 135000U, 16U, 144U, 1U, 3U, MONITOR_BOTH_POSITIVE },
+	{ 1152U, 870U, 75U, 1456U, 915U, 100000U, 32U, 128U, 3U, 3U, 0U }
 };
 
 #define STANDARD_KNOWN			12U
 
 static const struct monitor_timing standard_timings[STANDARD_KNOWN] = {
-	{ 1152U, 864U, 75U, 1600U, 900U, 108000U },
-	{ 1280U, 720U, 60U, 1650U, 750U, 74250U },
-	{ 1280U, 800U, 60U, 1680U, 831U, 83500U },
-	{ 1280U, 960U, 60U, 1800U, 1000U, 108000U },
-	{ 1280U, 1024U, 60U, 1688U, 1066U, 108000U },
-	{ 1366U, 768U, 60U, 1792U, 798U, 85500U },
-	{ 1440U, 900U, 60U, 1904U, 934U, 106500U },
-	{ 1600U, 900U, 60U, 1800U, 1000U, 108000U },
-	{ 1600U, 1200U, 60U, 2160U, 1250U, 162000U },
-	{ 1680U, 1050U, 60U, 2240U, 1089U, 146250U },
-	{ 1920U, 1080U, 60U, 2200U, 1125U, 148500U },
-	{ 1920U, 1200U, 60U, 2080U, 1235U, 154000U }
+	{ 1152U, 864U, 75U, 1600U, 900U, 108000U, 64U, 128U, 1U, 3U, MONITOR_BOTH_POSITIVE },
+	{ 1280U, 720U, 60U, 1650U, 750U, 74250U, 110U, 40U, 5U, 5U, MONITOR_BOTH_POSITIVE },
+	{ 1280U, 800U, 60U, 1680U, 831U, 83500U, 72U, 128U, 3U, 6U, MONITOR_V_POSITIVE },
+	{ 1280U, 960U, 60U, 1800U, 1000U, 108000U, 96U, 112U, 1U, 3U, MONITOR_BOTH_POSITIVE },
+	{ 1280U, 1024U, 60U, 1688U, 1066U, 108000U, 48U, 112U, 1U, 3U, MONITOR_BOTH_POSITIVE },
+	{ 1366U, 768U, 60U, 1792U, 798U, 85500U, 70U, 143U, 3U, 3U, MONITOR_BOTH_POSITIVE },
+	{ 1440U, 900U, 60U, 1904U, 934U, 106500U, 80U, 152U, 3U, 6U, MONITOR_V_POSITIVE },
+	{ 1600U, 900U, 60U, 1800U, 1000U, 108000U, 24U, 80U, 1U, 3U, MONITOR_BOTH_POSITIVE },
+	{ 1600U, 1200U, 60U, 2160U, 1250U, 162000U, 64U, 192U, 1U, 3U, MONITOR_BOTH_POSITIVE },
+	{ 1680U, 1050U, 60U, 2240U, 1089U, 146250U, 104U, 176U, 3U, 6U, MONITOR_V_POSITIVE },
+	{ 1920U, 1080U, 60U, 2200U, 1125U, 148500U, 88U, 44U, 4U, 5U, MONITOR_BOTH_POSITIVE },
+	{ 1920U, 1200U, 60U, 2080U, 1235U, 154000U, 48U, 32U, 3U, 6U, MONITOR_H_POSITIVE }
 };
 
 /* The millihertz of a hertz, and the hertz of a kHz. */
@@ -508,7 +521,7 @@ edid_standard(
 		refresh = (second & STANDARD_REFRESH_MASK) + STANDARD_REFRESH_BASE;
 
 		/* The monitor timing of the size and refresh, or the size alone. */
-		known = (struct monitor_timing){ (uint16_t)width, (uint16_t)height, (uint16_t)refresh, 0U, 0U, 0U };
+		known = (struct monitor_timing){ (uint16_t)width, (uint16_t)height, (uint16_t)refresh, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U };
 		for (entry = 0U; entry < STANDARD_KNOWN; entry++) {
 			if (standard_timings[entry].width == width &&
 			    standard_timings[entry].height == height &&
@@ -550,7 +563,7 @@ edid_add(
 	edid->mode_count++;
 }
 
-/* Makes a mode of a monitor timing: its size, totals and clock, or its nominal refresh when the clock is unknown. */
+/* Makes a mode of a monitor timing: its size, totals, porches, syncs and clock, or its nominal refresh when the clock is unknown. */
 static void
 edid_monitor_timing(
 	const struct monitor_timing *known,
@@ -567,6 +580,18 @@ edid_monitor_timing(
 		timing->h_blanking = (uint16_t)(known->h_total - known->width);
 	if (known->v_total > known->height)
 		timing->v_blanking = (uint16_t)(known->v_total - known->height);
+
+	/* The front porches, the syncs and their polarities. */
+	timing->h_porch = known->h_front;
+	timing->h_pulse = known->h_sync;
+	timing->v_porch = known->v_front;
+	timing->v_pulse = known->v_sync;
+	timing->h_positive = false;
+	if ((known->polarity & MONITOR_H_POSITIVE) != 0U)
+		timing->h_positive = true;
+	timing->v_positive = false;
+	if ((known->polarity & MONITOR_V_POSITIVE) != 0U)
+		timing->v_positive = true;
 
 	/* The refresh from the totals, or the nominal one. */
 	timing->refresh_millihz = (uint32_t)known->refresh * EDID_MILLI;
