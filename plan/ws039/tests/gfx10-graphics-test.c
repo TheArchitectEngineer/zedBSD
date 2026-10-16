@@ -297,14 +297,46 @@ setup_textures(
 	uint32_t index;
 	uint32_t width;
 	uint32_t height;
+	uint32_t depth;
+	uint32_t type;
+	uint32_t shape;
 	uint32_t format;
 	float number;
 
-	(void)ir;
 	texture_program = program;
 	for (slot = 0U; slot < program->texture_used; slot++) {
+		/* The image's shape is the one the program's texture instructions name. */
+		shape = DRV_GPU_IR_IMAGE_2D;
+		for (index = 0U; index < ir->instruction_count; index++) {
+			if (ir->instructions[index].op == DRV_GPU_IR_TEXTURE &&
+			    ir->instructions[index].location == program->textures[slot].set &&
+			    ir->instructions[index].immediate == program->textures[slot].binding)
+				shape = ir->instructions[index].image_shape;
+		}
 		width = 8U << (random_word(state) % 3U);
 		height = 4U << (random_word(state) % 3U);
+		depth = 1U;
+		type = TEXTURE_TYPE_2D;
+		if ((shape & DRV_GPU_IR_IMAGE_KIND_MASK) == DRV_GPU_IR_IMAGE_3D) {
+			/* A 3D image of 2 to 4 slices. */
+			width = 4U << (random_word(state) % 2U);
+			height = 4U << (random_word(state) % 2U);
+			depth = 2U + random_word(state) % 3U;
+			type = TEXTURE_TYPE_3D;
+		} else if ((shape & DRV_GPU_IR_IMAGE_KIND_MASK) == DRV_GPU_IR_IMAGE_CUBE) {
+			/* A cube (or an array of two) of square faces. */
+			width = 4U << (random_word(state) % 2U);
+			height = width;
+			if ((shape & DRV_GPU_IR_IMAGE_ARRAYED) != 0U)
+				depth = 2U;
+			type = TEXTURE_TYPE_CUBE;
+		} else if ((shape & DRV_GPU_IR_IMAGE_ARRAYED) != 0U) {
+			/* An array of 2 to 4 layers. */
+			width = 4U << (random_word(state) % 2U);
+			height = 4U << (random_word(state) % 2U);
+			depth = 2U + random_word(state) % 3U;
+			type = TEXTURE_TYPE_2D_ARRAY;
+		}
 		format = (random_word(state) & 1U) != 0U ? TEXTURE_FORMAT_FLOAT4 : TEXTURE_FORMAT_UNORM8X4;
 		if (format == TEXTURE_FORMAT_FLOAT4) {
 			for (index = 0U; index < sizeof(texture_bytes[slot]) / 4U; index++) {
@@ -318,6 +350,7 @@ setup_textures(
 		address = machine_add_region(memory, texture_bytes[slot], sizeof(texture_bytes[slot]));
 		texture_descriptors(texture_image[slot], texture_sampler[slot], address, width, height, format,
 				    (int)(random_word(state) & 3U), (int)(random_word(state) & 1U), random_word(state) & 7U);
+		texture_shape(texture_image[slot], type, depth);
 		memcpy(table_bytes + program->textures[slot].table_offset, texture_image[slot], 32U);
 		memcpy(table_bytes + program->textures[slot].table_offset + 32U, texture_sampler[slot], 16U);
 	}
@@ -642,7 +675,9 @@ pixel_trial(
 	reference_state.sample = reference_sample;
 	reference_state.lanes = 32U;
 	for (lane = 0U; lane < 32U; lane++) {
-		reference_state.run[lane] = (graphics.coverage >> lane) & 1U;
+		/* Every lane of a quad with a covered pixel runs; the uncovered ones are helpers. */
+		reference_state.run[lane] = ((graphics.coverage >> (lane & ~3U)) & 0xfU) != 0U;
+		reference_state.helper[lane] = ((graphics.coverage >> lane) & 1U) == 0U;
 		for (location = 0U; location < 32U; location++) {
 			input = NULL;
 			for (index = 0U; index < ir->input_count; index++) {
@@ -695,7 +730,7 @@ pixel_trial(
 	/* The pixels alive: covered and not discarded. */
 	alive = 0U;
 	for (lane = 0U; lane < 32U; lane++) {
-		if (reference_state.run[lane] != 0U && reference_state.killed[lane] == 0U)
+		if (reference_state.run[lane] != 0U && reference_state.helper[lane] == 0U && reference_state.killed[lane] == 0U)
 			alive |= 1U << lane;
 	}
 

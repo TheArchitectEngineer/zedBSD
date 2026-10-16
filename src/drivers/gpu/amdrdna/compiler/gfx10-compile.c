@@ -177,17 +177,38 @@
 #define GFX10_SAMPLER_SGPRS		4U
 
 /*
- * The most address VGPRs a sample takes (an offset, a bias, a depth
- * reference, four gradients, u, v and a level), and the bits of one
- * channel of a packed texel offset: 6 bits, the next channel 8 bits up.
+ * The most address VGPRs a sample takes (an offset, a depth reference,
+ * six gradients and three coordinates of a 3D image's; a bias, a layer
+ * and a level take the place of some), and the bits of one channel of a
+ * packed texel offset: 6 bits, the next channel 8 bits up.
  *
  * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_instruction_selection.cpp
  * (visit_tex: each constant offset & 0x3F shifted by 8 * i, lines
  * 9150-9160).
  */
-#define GFX10_SAMPLE_ADDRESSES		10U
+#define GFX10_SAMPLE_ADDRESSES		12U
 #define GFX10_OFFSET_CHANNEL_MASK	0x3fU
 #define GFX10_OFFSET_CHANNEL_SHIFT	8U
+
+/*
+ * The marks place_addresses() puts for the address VGPRs fill_addresses()
+ * computes: the packed offset, the rounded layer of an array, and a cube's
+ * face coordinates and face.
+ */
+#define GFX10_ADDRESS_OFFSET		0xffffffffU
+#define GFX10_ADDRESS_LAYER		0xfffffffeU
+#define GFX10_ADDRESS_CUBE		0xfffffffdU
+
+/*
+ * The floats 1.5, which moves a cube's face coordinates into [1, 2], and
+ * 8.0, the step of the face number from one cube of an array to the next.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/common/nir/ac_nir_lower_tex.c
+ * (prepare_cube_coords: nir_ffma_imm2 with 1.5 and nir_ffma_imm1 with
+ * 8.0, lines 138-145).
+ */
+#define GFX10_CUBE_CENTRE		0x3fc00000U
+#define GFX10_CUBE_LAYER_STRIDE		0x41000000U
 
 /*
  * The state of one compilation.
@@ -367,26 +388,36 @@ struct gfx10_lowering {
 
 /*
  * What one texture instruction asks of the image: the values of its
- * coordinate, depth reference, bias, level and gradients (du/dx, dv/dx,
- * du/dy, dv/dy), and which of them it has; a fetch of an integer texel, or
- * a size query of a level.
+ * coordinate (u, v and a 3D image's r, or a cube's direction), the layer
+ * of an array (GFX10_NOT_DEFINED for none), the depth reference, the bias,
+ * the level and the gradients (each coordinate's along x, then each one's
+ * along y), and which of them it has; the texel offset of u, v and r (4
+ * bits each, -8 .. 7); a gather and its channel, a fetch of an integer
+ * texel, or a size query of a level; and the image's shape.
  *
  * Lives on the stack of lower_sample().
  */
 struct gfx10_sample {
-	uint32_t u;
-	uint32_t v;
+	uint32_t coordinate[3];
+	uint32_t coordinate_count;
+	uint32_t layer;
 	uint32_t reference;
 	uint32_t bias;
 	uint32_t level;
-	uint32_t gradient[4];
+	uint32_t gradient[6];
+	uint32_t offset[3];
+	uint32_t channel;
 	int compared;
 	int biased;
 	int leveled;
 	int level_zero;
 	int gradients;
+	int gathered;
 	int fetch;
 	int size_query;
+	int volume;
+	int cube;
+	int arrayed;
 };
 
 static int refuse(struct gfx10_lowering *lowering, int error, const char *reason);
@@ -409,7 +440,17 @@ static int lower_input(struct gfx10_lowering *lowering, const struct drv_gpu_sha
 static int lower_output(struct gfx10_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction);
 static void lower_kill(struct gfx10_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction);
 static int lower_sample(struct gfx10_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction, uint32_t dst);
-static unsigned sample_opcode(const struct gfx10_sample *sample, int derivatives, int offset);
+static int read_sample(struct gfx10_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction, struct gfx10_sample *sample);
+static uint32_t place_addresses(const struct gfx10_sample *sample, uint32_t *addresses);
+static int fill_addresses(struct gfx10_lowering *lowering, const struct gfx10_sample *sample, const uint32_t *addresses, uint32_t count, uint32_t block);
+static int fill_cube(struct gfx10_lowering *lowering, const struct gfx10_sample *sample, uint32_t first);
+static void emit_modified(struct gfx10_lowering *lowering, unsigned opcode, unsigned dst, unsigned src, unsigned modifiers);
+static void emit_fused(struct gfx10_lowering *lowering, unsigned dst, unsigned a, unsigned b, uint32_t constant);
+static void emit_layer_face(struct gfx10_lowering *lowering, unsigned face, unsigned layer);
+static uint32_t sample_offset(const struct gfx10_sample *sample);
+static unsigned sample_dimension(const struct gfx10_sample *sample);
+static unsigned sample_opcode(const struct gfx10_sample *sample, int derivatives);
+static int lower_derivative(struct gfx10_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction, uint32_t dst);
 static void restrict_to_alive(struct gfx10_lowering *lowering);
 static int finish_exports(struct gfx10_lowering *lowering);
 static int export_location(struct gfx10_lowering *lowering, uint32_t target, uint32_t first_channel, uint32_t mask, uint32_t flags);
@@ -776,6 +817,10 @@ ir_sources(
 	case DRV_GPU_IR_LOOP_END:
 	case DRV_GPU_IR_STORE_OUTPUT:
 	case DRV_GPU_IR_KILL:
+	case DRV_GPU_IR_DDX:
+	case DRV_GPU_IR_DDX_FINE:
+	case DRV_GPU_IR_DDY:
+	case DRV_GPU_IR_DDY_FINE:
 		count = 1U;
 		break;
 	case DRV_GPU_IR_FADD:
@@ -1733,6 +1778,12 @@ lower(
 	case DRV_GPU_IR_SAMPLE_LOD:
 	case DRV_GPU_IR_TEXTURE:
 		error = lower_sample(lowering, instruction, dst);
+		break;
+	case DRV_GPU_IR_DDX:
+	case DRV_GPU_IR_DDX_FINE:
+	case DRV_GPU_IR_DDY:
+	case DRV_GPU_IR_DDY_FINE:
+		error = lower_derivative(lowering, instruction, dst);
 		break;
 	default:
 		error = refuse(lowering, ENOTSUP, "the operation is not compiled yet");
@@ -2756,6 +2807,17 @@ prepare_graphics(
 			continue;
 		}
 
+		/* A difference across the group of four is a pixel program's only, and runs whole quads. */
+		if (instruction->op == DRV_GPU_IR_DDX ||
+		    instruction->op == DRV_GPU_IR_DDX_FINE ||
+		    instruction->op == DRV_GPU_IR_DDY ||
+		    instruction->op == DRV_GPU_IR_DDY_FINE) {
+			if (ir->stage != DRV_GPU_STAGE_FRAGMENT)
+				return refuse(lowering, EINVAL, "a derivative outside a fragment shader");
+			lowering->whole_quads = 1;
+			continue;
+		}
+
 		/* A pixel program's sample with derivatives runs whole quads. */
 		if (ir->stage == DRV_GPU_STAGE_FRAGMENT) {
 			if (instruction->op == DRV_GPU_IR_SAMPLE || instruction->op == DRV_GPU_IR_SAMPLE_BIAS) {
@@ -3234,27 +3296,17 @@ restrict_to_alive(
 }
 
 /*
- * Lowers a sample of a sampled image, a fetch of one of its texels, or a
- * query of its size.
+ * Lowers a sample of a sampled image, a gather of four of its texels, a
+ * fetch of one texel, or a query of its size.
  *
- * The address VGPRs are copied in a row in the order the image access
- * takes them: the packed constant offset, the bias, the depth reference,
- * the gradients (du/dx, dv/dx, du/dy, dv/dy), u and v, the level; a size
- * query takes the level alone.  A pixel program samples with the
+ * The message's parameters are read by the image's shape (read_sample()),
+ * placed in the order the image access takes its address VGPRs
+ * (place_addresses()), copied into a block of VGPRs in a row
+ * (fill_addresses(), and fill_cube() for the face coordinates of a cube),
+ * and the image access is appended.  A pixel program samples with the
  * derivatives its whole quads give; another stage samples level 0 (or the
  * level given).  The channels go to the values from dst, which have
  * consecutive VGPRs: four, or for a depth compare the one result.
- *
- * Only a 2D image (or a 1D one, which the executor makes a 2D image one
- * texel high) is sampled: the IR does not say an image's dimension, which
- * the image access needs, so a message with the parameters of a 3D image,
- * a cube or an array is refused.
- *
- * Procedure referenced: Mesa 25.0.7
- * src/amd/compiler/aco_instruction_selection.cpp (visit_tex: the address
- * order offset, bias, compare, derivatives (ddx, then ddy), coordinates,
- * then the level, lines 9216 and 9411-9427; the size query with the level
- * alone and no sampler, line 9279).
  */
 static int
 lower_sample(
@@ -3269,20 +3321,12 @@ lower_sample(
 	uint32_t count;
 	uint32_t index;
 	uint32_t slot;
-	uint32_t message;
-	uint32_t first;
-	uint32_t params;
-	uint32_t expected;
-	uint32_t offset_bits;
-	uint32_t packed;
 	uint32_t block;
 	uint32_t inst_count;
-	int32_t offset_u;
-	int32_t offset_v;
 	int derivatives;
 	int error;
 
-	/* The sampled image named by (set, binding). */
+	/* Finds the sampled image named by (set, binding). */
 	slot = GFX10_NO_SLOT;
 	for (index = 0U; index < lowering->ir->uniform_count; index++) {
 		uniform = &lowering->ir->uniforms[index];
@@ -3291,120 +3335,15 @@ lower_sample(
 		    uniform->binding == instruction->immediate)
 			slot = lowering->slot[index];
 	}
+
+	/* Refuses a sample of an image the program does not bind. */
 	if (slot == GFX10_NO_SLOT)
 		return refuse(lowering, EINVAL, "a sample names no sampled image");
 
-	/* The sample's parameters, from the two-coordinate operations. */
-	kern_memset(&sample, 0, sizeof(sample));
-	sample.u = instruction->src[0];
-	sample.v = instruction->src[1];
-	offset_bits = (instruction->component >> 4) & 0xffU;
-	if (instruction->op == DRV_GPU_IR_SAMPLE_BIAS) {
-		sample.biased = 1;
-		sample.bias = instruction->src[2];
-	} else if (instruction->op == DRV_GPU_IR_SAMPLE_LOD) {
-		sample.leveled = 1;
-		sample.level = instruction->src[2];
-	}
-
-	/* A message's parameters in order, the offset in bits 23:8; the count says a 2D image. */
-	if (instruction->op == DRV_GPU_IR_TEXTURE) {
-		message = instruction->component & 0x1fU;
-		offset_bits = (instruction->component >> 12) & 0xffU;
-		first = instruction->src[0];
-		params = instruction->src[1];
-
-		/* Picks the parameters by the message. */
-		switch (message) {
-		case DRV_GPU_IR_TEXTURE_SAMPLE:
-			expected = 2U;
-			sample.u = first;
-			sample.v = first + 1U;
-			break;
-		case DRV_GPU_IR_TEXTURE_SAMPLE_BIAS:
-			expected = 3U;
-			sample.biased = 1;
-			sample.bias = first;
-			sample.u = first + 1U;
-			sample.v = first + 2U;
-			break;
-		case DRV_GPU_IR_TEXTURE_SAMPLE_LOD:
-			expected = 3U;
-			sample.leveled = 1;
-			sample.level = first;
-			sample.u = first + 1U;
-			sample.v = first + 2U;
-			break;
-		case DRV_GPU_IR_TEXTURE_SAMPLE_COMPARE:
-			expected = 3U;
-			sample.compared = 1;
-			sample.reference = first;
-			sample.u = first + 1U;
-			sample.v = first + 2U;
-			break;
-		case DRV_GPU_IR_TEXTURE_SAMPLE_BIAS_COMPARE:
-			expected = 4U;
-			sample.compared = 1;
-			sample.reference = first;
-			sample.biased = 1;
-			sample.bias = first + 1U;
-			sample.u = first + 2U;
-			sample.v = first + 3U;
-			break;
-		case DRV_GPU_IR_TEXTURE_SAMPLE_LOD_COMPARE:
-			expected = 4U;
-			sample.compared = 1;
-			sample.reference = first;
-			sample.leveled = 1;
-			sample.level = first + 1U;
-			sample.u = first + 2U;
-			sample.v = first + 3U;
-			break;
-		case DRV_GPU_IR_TEXTURE_SAMPLE_DERIVS:
-			/* u, du/dx, du/dy, v, dv/dx, dv/dy. */
-			expected = 6U;
-			sample.gradients = 1;
-			sample.u = first;
-			sample.gradient[0] = first + 1U;
-			sample.gradient[2] = first + 2U;
-			sample.v = first + 3U;
-			sample.gradient[1] = first + 4U;
-			sample.gradient[3] = first + 5U;
-			break;
-		case DRV_GPU_IR_TEXTURE_SAMPLE_DERIV_COMPARE:
-			expected = 7U;
-			sample.compared = 1;
-			sample.reference = first;
-			sample.gradients = 1;
-			sample.u = first + 1U;
-			sample.gradient[0] = first + 2U;
-			sample.gradient[2] = first + 3U;
-			sample.v = first + 4U;
-			sample.gradient[1] = first + 5U;
-			sample.gradient[3] = first + 6U;
-			break;
-		case DRV_GPU_IR_TEXTURE_LD:
-			expected = 3U;
-			sample.fetch = 1;
-			sample.u = first;
-			sample.v = first + 1U;
-			sample.leveled = 1;
-			sample.level = first + 2U;
-			break;
-		case DRV_GPU_IR_TEXTURE_RESINFO:
-			expected = 1U;
-			sample.size_query = 1;
-			sample.leveled = 1;
-			sample.level = first;
-			break;
-		default:
-			return refuse(lowering, ENOTSUP, "the texture message is not compiled yet");
-		}
-
-		/* More parameters than a 2D image's: a 3D image, a cube or an array. */
-		if (params != expected)
-			return refuse(lowering, ENOTSUP, "a texture message of an image other than 2D (the IR does not carry the image's dimension)");
-	}
+	/* Reads what the sample asks for. */
+	error = read_sample(lowering, instruction, &sample);
+	if (error != 0)
+		return error;
 
 	/* A sample at the constant level 0 takes the access without a level. */
 	if (sample.leveled != 0 &&
@@ -3415,70 +3354,388 @@ lower_sample(
 		sample.level_zero = 1;
 	}
 
-	/* The implicit derivatives a pixel program's whole quads give; a bias needs them. */
+	/* Decides whether the sample takes the implicit derivatives a pixel program's whole quads give. */
 	derivatives = 0;
 	if (lowering->ir->stage == DRV_GPU_STAGE_FRAGMENT &&
 	    sample.leveled == 0 &&
 	    sample.level_zero == 0 &&
 	    sample.gradients == 0 &&
-	    sample.size_query == 0)
+	    sample.size_query == 0 &&
+	    sample.gathered == 0)
 		derivatives = 1;
+
+	/* Refuses a bias where there are no derivatives to move. */
 	if (sample.biased != 0 && derivatives == 0)
 		return refuse(lowering, ENOTSUP, "a biased sample outside a fragment shader");
 
-	/* The constant offset: u in bits 7:4 and v in 3:0 of the IR's byte, each from -8 to 7. */
-	offset_u = (int32_t)((offset_bits >> 4) & 0xfU);
-	offset_v = (int32_t)(offset_bits & 0xfU);
-	if (offset_u >= 8)
-		offset_u -= 16;
-	if (offset_v >= 8)
-		offset_v -= 16;
-	packed = ((uint32_t)offset_u & GFX10_OFFSET_CHANNEL_MASK) |
-		 (((uint32_t)offset_v & GFX10_OFFSET_CHANNEL_MASK) << GFX10_OFFSET_CHANNEL_SHIFT);
-	if (sample.fetch != 0 || sample.size_query != 0)
-		packed = 0U;
+	/* Places the address VGPRs in the order the access takes them. */
+	count = place_addresses(&sample, addresses);
 
-	/* The address VGPRs in order. */
-	count = 0U;
-	if (sample.size_query != 0) {
-		addresses[count++] = sample.level;
-	} else {
-		if (packed != 0U)
-			addresses[count++] = GFX10_NOT_DEFINED;
-		if (sample.biased != 0)
-			addresses[count++] = sample.bias;
-		if (sample.compared != 0)
-			addresses[count++] = sample.reference;
-		if (sample.gradients != 0) {
-			for (index = 0U; index < 4U; index++)
-				addresses[count++] = sample.gradient[index];
-		}
-		addresses[count++] = sample.u;
-		addresses[count++] = sample.v;
-		if (sample.leveled != 0)
-			addresses[count++] = sample.level;
-	}
-
-	/* The coordinates alone already in two VGPRs in a row are the address as they are. */
+	/* Takes the coordinates as they are when they are the whole address and already in two VGPRs in a row. */
 	if (count == 2U &&
-	    addresses[0] == sample.u &&
-	    lowering->operand_code[sample.u] == GFX10_NO_OPERAND &&
-	    lowering->operand_code[sample.v] == GFX10_NO_OPERAND &&
-	    lowering->vgpr[sample.v] == lowering->vgpr[sample.u] + 1U) {
-		block = lowering->vgpr[sample.u];
-		count = 0U;
+	    addresses[0] == sample.coordinate[0] &&
+	    addresses[1] == sample.coordinate[1] &&
+	    lowering->operand_code[sample.coordinate[0]] == GFX10_NO_OPERAND &&
+	    lowering->operand_code[sample.coordinate[1]] == GFX10_NO_OPERAND &&
+	    lowering->vgpr[sample.coordinate[1]] == lowering->vgpr[sample.coordinate[0]] + 1U) {
+		block = lowering->vgpr[sample.coordinate[0]];
 		inst_count = 2U;
+		count = 0U;
 	} else {
-		/* A block of address VGPRs. */
+		/* Takes a block of address VGPRs. */
 		error = take_vgpr_block(lowering, count, &block);
 		if (error != 0)
 			return error;
 		inst_count = count;
 	}
 
-	/* The address VGPRs filled in order. */
+	/* Fills the address VGPRs in order. */
+	error = fill_addresses(lowering, &sample, addresses, count, block);
+	if (error != 0)
+		return error;
+
+	/* Builds the image access: the opcode by what the sample has; a fetch and a size query take no sampler. */
+	kern_memset(&inst, 0, sizeof(inst));
+	inst.kind = AMDRDNA_GFX10_KIND_IMAGE;
+	inst.opcode = (uint16_t)sample_opcode(&sample, derivatives);
+	inst.dst = (uint16_t)AMDRDNA_GFX10_V(dst);
+	inst.src[0] = (uint16_t)AMDRDNA_GFX10_V(block);
+	inst.src[1] = (uint16_t)lowering->image_sgpr[slot];
+	inst.src[2] = (uint16_t)lowering->sampler_sgpr[slot];
+	inst.mask = 0xfU;
+	inst.count = (uint8_t)inst_count;
+	inst.dimension = (uint8_t)sample_dimension(&sample);
+
+	/* A fetch reads at texel coordinates and, like a size query, without a sampler. */
+	if (sample.fetch != 0) {
+		inst.src[2] = AMDRDNA_GFX10_NULL;
+		inst.flags = AMDRDNA_GFX10_FLAG_UNNORMALIZED;
+	}
+	if (sample.size_query != 0)
+		inst.src[2] = AMDRDNA_GFX10_NULL;
+
+	/*
+	 * A compare returns its one result; a gather reads the one channel
+	 * its mask names from each of the four texels.
+	 */
+	if (sample.compared != 0) {
+		inst.mask = 0x1U;
+	} else if (sample.gathered != 0) {
+		inst.mask = (uint8_t)(1U << sample.channel);
+	}
+
+	/* Appends the access. */
+	emit(lowering, &inst);
+
+	/* Gives the address block back. */
+	for (index = 0U; index < count; index++)
+		give_vgpr(lowering, block + index);
+
+	/* Succeeded: the channels are in the values from dst. */
+	return 0;
+}
+
+/*
+ * Reads what one sample instruction asks of its image: the coordinate
+ * (u, v and for a 3D image r, or a cube's direction), the layer of an
+ * array, the depth reference, the bias, the level, the gradients, the
+ * gather's channel and the constant texel offset.
+ *
+ * A TEXTURE message takes its parameters in the order of its type
+ * (ir.h); the two-coordinate operations name theirs as sources.  A
+ * message whose parameters do not match its type and the image's shape,
+ * an image of a shape not compiled (a texel buffer, a multisampled image)
+ * and gradients of a cube are refused.
+ */
+static int
+read_sample(
+	struct gfx10_lowering *lowering,
+	const struct drv_gpu_shader_ir_inst *instruction,
+	struct gfx10_sample *sample)
+{
+	uint32_t message;
+	uint32_t first;
+	uint32_t next;
+	uint32_t kind;
+	uint32_t index;
+	uint32_t offset_bits;
+
+	/* Starts with a 2D sample of nothing. */
+	kern_memset(sample, 0, sizeof(*sample));
+	sample->layer = GFX10_NOT_DEFINED;
+	sample->coordinate_count = 2U;
+
+	/* Reads a two-coordinate operation: u, v, then the bias or the level; the offset in bits 7:0 of its component. */
+	if (instruction->op != DRV_GPU_IR_TEXTURE) {
+		sample->coordinate[0] = instruction->src[0];
+		sample->coordinate[1] = instruction->src[1];
+		if (instruction->op == DRV_GPU_IR_SAMPLE_BIAS) {
+			sample->biased = 1;
+			sample->bias = instruction->src[2];
+		} else if (instruction->op == DRV_GPU_IR_SAMPLE_LOD) {
+			sample->leveled = 1;
+			sample->level = instruction->src[2];
+		}
+		offset_bits = (instruction->component >> 4) & 0xffU;
+		sample->offset[0] = (offset_bits >> 4) & 0xfU;
+		sample->offset[1] = offset_bits & 0xfU;
+
+		/* Succeeded: the operation is read. */
+		return 0;
+	}
+
+	/* Refuses an image whose shape the access does not compile. */
+	kind = instruction->image_shape & DRV_GPU_IR_IMAGE_KIND_MASK;
+	if (kind == DRV_GPU_IR_IMAGE_BUFFER)
+		return refuse(lowering, ENOTSUP, "a fetch from a texel buffer is not compiled yet");
+	if ((instruction->image_shape & DRV_GPU_IR_IMAGE_MULTISAMPLED) != 0U)
+		return refuse(lowering, ENOTSUP, "a fetch from a multisampled image is not compiled yet");
+
+	/* Records the shape: a 3D image and a cube have three coordinates. */
+	sample->cube = 0;
+	if (kind == DRV_GPU_IR_IMAGE_CUBE)
+		sample->cube = 1;
+	if (kind == DRV_GPU_IR_IMAGE_3D || kind == DRV_GPU_IR_IMAGE_CUBE)
+		sample->coordinate_count = 3U;
+	sample->volume = 0;
+	if (kind == DRV_GPU_IR_IMAGE_3D)
+		sample->volume = 1;
+
+	/* The texel offset of u, v and r: bits 19:16, 15:12 and 11:8 of the component. */
+	sample->offset[0] = (instruction->component >> 16) & 0xfU;
+	sample->offset[1] = (instruction->component >> 12) & 0xfU;
+	sample->offset[2] = (instruction->component >> 8) & 0xfU;
+
+	/* Reads the parameters before the coordinate, by the message. */
+	message = instruction->component & DRV_GPU_IR_TEXTURE_MESSAGE_MASK;
+	first = instruction->src[0];
+	next = first;
+	switch (message) {
+	case DRV_GPU_IR_TEXTURE_SAMPLE:
+		break;
+	case DRV_GPU_IR_TEXTURE_SAMPLE_BIAS:
+		sample->biased = 1;
+		sample->bias = next;
+		next++;
+		break;
+	case DRV_GPU_IR_TEXTURE_SAMPLE_LOD:
+		sample->leveled = 1;
+		sample->level = next;
+		next++;
+		break;
+	case DRV_GPU_IR_TEXTURE_SAMPLE_COMPARE:
+		sample->compared = 1;
+		sample->reference = next;
+		next++;
+		break;
+	case DRV_GPU_IR_TEXTURE_SAMPLE_BIAS_COMPARE:
+		sample->compared = 1;
+		sample->reference = next;
+		sample->biased = 1;
+		sample->bias = next + 1U;
+		next += 2U;
+		break;
+	case DRV_GPU_IR_TEXTURE_SAMPLE_LOD_COMPARE:
+		sample->compared = 1;
+		sample->reference = next;
+		sample->leveled = 1;
+		sample->level = next + 1U;
+		next += 2U;
+		break;
+	case DRV_GPU_IR_TEXTURE_SAMPLE_DERIVS:
+		sample->gradients = 1;
+		break;
+	case DRV_GPU_IR_TEXTURE_SAMPLE_DERIV_COMPARE:
+		sample->compared = 1;
+		sample->reference = next;
+		sample->gradients = 1;
+		next++;
+		break;
+	case DRV_GPU_IR_TEXTURE_GATHER4:
+		sample->gathered = 1;
+		sample->channel = DRV_GPU_IR_TEXTURE_CHANNEL(instruction->component);
+		break;
+	case DRV_GPU_IR_TEXTURE_GATHER4_COMPARE:
+		sample->gathered = 1;
+		sample->compared = 1;
+		sample->reference = next;
+		next++;
+		break;
+	case DRV_GPU_IR_TEXTURE_LD:
+		sample->fetch = 1;
+		break;
+	case DRV_GPU_IR_TEXTURE_RESINFO:
+		sample->size_query = 1;
+		sample->leveled = 1;
+		sample->level = next;
+		next++;
+		break;
+	default:
+		return refuse(lowering, ENOTSUP, "the texture message is not compiled yet");
+	}
+
+	/* Refuses what a cube is not sampled with here: explicit gradients and a texel offset. */
+	if (sample->cube != 0 && sample->gradients != 0)
+		return refuse(lowering, ENOTSUP, "a cube sampled with explicit gradients is not compiled yet");
+	if (sample->cube != 0 && (instruction->component >> 8) != 0U)
+		return refuse(lowering, ENOTSUP, "a cube sampled with a texel offset");
+
+	/*
+	 * Reads the coordinate: a fetch's u, v and level, then r (a 3D
+	 * image's) or the layer; a sample's components each with its two
+	 * gradients when it has them; a size query's none.
+	 */
+	if (sample->fetch != 0) {
+		sample->coordinate[0] = next;
+		sample->coordinate[1] = next + 1U;
+		sample->leveled = 1;
+		sample->level = next + 2U;
+		next += 3U;
+		if (sample->volume != 0) {
+			sample->coordinate[2] = next;
+			next++;
+		}
+	} else if (sample->gradients != 0) {
+		for (index = 0U; index < sample->coordinate_count; index++) {
+			sample->coordinate[index] = next;
+			sample->gradient[index] = next + 1U;
+			sample->gradient[sample->coordinate_count + index] = next + 2U;
+			next += 3U;
+		}
+	} else if (sample->size_query == 0) {
+		for (index = 0U; index < sample->coordinate_count; index++) {
+			sample->coordinate[index] = next;
+			next++;
+		}
+	}
+
+	/* The layer of an array follows the coordinate. */
+	if ((instruction->image_shape & DRV_GPU_IR_IMAGE_ARRAYED) != 0U && sample->size_query == 0) {
+		sample->layer = next;
+		next++;
+	}
+
+	/* Records an array whose size is asked: the access then names the array. */
+	if ((instruction->image_shape & DRV_GPU_IR_IMAGE_ARRAYED) != 0U)
+		sample->arrayed = 1;
+
+	/* Refuses a message whose parameters are not the ones its type and the image's shape take. */
+	if (instruction->src[1] != next - first)
+		return refuse(lowering, ENOTSUP, "a texture message whose parameters do not match the image's shape");
+
+	/* Succeeded: the message is read. */
+	return 0;
+}
+
+/*
+ * Places the address VGPRs of a sample in the order the image access
+ * takes them, and reports how many there are: the packed offset, the
+ * bias, the depth reference, the gradients along x then along y, the
+ * coordinate (a cube's face coordinates and face), the layer, the level;
+ * a size query takes the level alone.  The offset, the layer and a cube's
+ * three are marks that fill_addresses() computes.
+ *
+ * Procedure referenced: Mesa 25.0.7
+ * src/amd/compiler/aco_instruction_selection.cpp (visit_tex: the address
+ * order offset, bias, compare, derivatives (all of d/dx, then all of
+ * d/dy), coordinates, then the level, lines 9216-9234 and 9411-9427; the
+ * size query with the level alone and no sampler, line 9279).
+ */
+static uint32_t
+place_addresses(
+	const struct gfx10_sample *sample,
+	uint32_t *addresses)
+{
+	uint32_t count;
+	uint32_t index;
+
+	/* A size query's level. */
+	count = 0U;
+	if (sample->size_query != 0) {
+		addresses[count] = sample->level;
+		count++;
+
+		/* Succeeded: the one address. */
+		return count;
+	}
+
+	/* The packed offset, the bias and the reference. */
+	if (sample_offset(sample) != 0U && sample->fetch == 0) {
+		addresses[count] = GFX10_ADDRESS_OFFSET;
+		count++;
+	}
+	if (sample->biased != 0) {
+		addresses[count] = sample->bias;
+		count++;
+	}
+	if (sample->compared != 0) {
+		addresses[count] = sample->reference;
+		count++;
+	}
+
+	/* The gradients: each coordinate's along x, then each one's along y. */
+	if (sample->gradients != 0) {
+		for (index = 0U; index < 2U * sample->coordinate_count; index++) {
+			addresses[count] = sample->gradient[index];
+			count++;
+		}
+	}
+
+	/* The coordinate: a cube's face coordinates and face, or the coordinate's components, then the layer. */
+	if (sample->cube != 0) {
+		addresses[count] = GFX10_ADDRESS_CUBE;
+		addresses[count + 1U] = GFX10_ADDRESS_CUBE;
+		addresses[count + 2U] = GFX10_ADDRESS_CUBE;
+		count += 3U;
+	} else {
+		for (index = 0U; index < sample->coordinate_count; index++) {
+			addresses[count] = sample->coordinate[index];
+			count++;
+		}
+		if (sample->layer != GFX10_NOT_DEFINED) {
+			addresses[count] = GFX10_ADDRESS_LAYER;
+			count++;
+		}
+	}
+
+	/* The level last. */
+	if (sample->leveled != 0) {
+		addresses[count] = sample->level;
+		count++;
+	}
+
+	/* Succeeded: the addresses are placed. */
+	return count;
+}
+
+/*
+ * Fills a block of address VGPRs: each value copied, the packed offset
+ * written, the layer of an array rounded to the nearest integer (a fetch's
+ * is an integer already), and a cube's face coordinates computed.
+ */
+static int
+fill_addresses(
+	struct gfx10_lowering *lowering,
+	const struct gfx10_sample *sample,
+	const uint32_t *addresses,
+	uint32_t count,
+	uint32_t block)
+{
+	uint32_t packed;
+	uint32_t index;
+	uint32_t cube;
+	unsigned layer_opcode;
+	int error;
+
+	/* Copies each address into its VGPR. */
+	cube = GFX10_NOT_DEFINED;
+	packed = sample_offset(sample);
+	layer_opcode = AMDRDNA_GFX10_V_RNDNE_F32;
+	if (sample->fetch != 0)
+		layer_opcode = AMDRDNA_GFX10_V_MOV_B32;
 	for (index = 0U; index < count; index++) {
-		if (addresses[index] == GFX10_NOT_DEFINED) {
+		if (addresses[index] == GFX10_ADDRESS_OFFSET) {
+			/* The packed offset is a constant. */
 			emit_vector_literal(lowering,
 					    AMDRDNA_GFX10_KIND_VECTOR_ONE,
 					    AMDRDNA_GFX10_V_MOV_B32,
@@ -3486,6 +3743,19 @@ lower_sample(
 					    constant_operand(packed),
 					    0U,
 					    packed);
+		} else if (addresses[index] == GFX10_ADDRESS_LAYER) {
+			/* A sample's layer is the nearest integer to the one given. */
+			emit_vector(lowering,
+				    AMDRDNA_GFX10_KIND_VECTOR_ONE,
+				    layer_opcode,
+				    AMDRDNA_GFX10_V(block + index),
+				    value_operand(lowering, sample->layer),
+				    0U,
+				    0U);
+		} else if (addresses[index] == GFX10_ADDRESS_CUBE) {
+			/* The face coordinates and the face are computed together after the others. */
+			if (cube == GFX10_NOT_DEFINED)
+				cube = block + index;
 		} else {
 			emit_vector(lowering,
 				    AMDRDNA_GFX10_KIND_VECTOR_ONE,
@@ -3497,46 +3767,236 @@ lower_sample(
 		}
 	}
 
-	/* The image access: the opcode by what the sample has; a fetch and a size query take no sampler. */
-	kern_memset(&inst, 0, sizeof(inst));
-	inst.kind = AMDRDNA_GFX10_KIND_IMAGE;
-	inst.opcode = (uint16_t)sample_opcode(&sample, derivatives, packed != 0U);
-	inst.dst = (uint16_t)AMDRDNA_GFX10_V(dst);
-	inst.src[0] = (uint16_t)AMDRDNA_GFX10_V(block);
-	inst.src[1] = (uint16_t)lowering->image_sgpr[slot];
-	inst.src[2] = (uint16_t)lowering->sampler_sgpr[slot];
-	inst.mask = 0xfU;
-	inst.count = (uint8_t)inst_count;
-	if (sample.fetch != 0) {
-		inst.src[2] = AMDRDNA_GFX10_NULL;
-		inst.flags = AMDRDNA_GFX10_FLAG_UNNORMALIZED;
+	/* Computes a cube's face coordinates and face into their three VGPRs. */
+	if (cube != GFX10_NOT_DEFINED) {
+		error = fill_cube(lowering, sample, cube);
+		if (error != 0)
+			return error;
 	}
-	if (sample.size_query != 0)
-		inst.src[2] = AMDRDNA_GFX10_NULL;
-	if (sample.compared != 0)
-		inst.mask = 0x1U;
-	emit(lowering, &inst);
 
-	/* The address block goes back. */
-	for (index = 0U; index < count; index++)
-		give_vgpr(lowering, block + index);
-
-	/* Succeeded: the channels are in the values from dst. */
+	/* Succeeded: the address block is filled. */
 	return 0;
 }
 
-/* Picks the image opcode of a sample by what it has: a compare, gradients, a level, a bias, the implicit derivatives, an offset. */
+/*
+ * Computes the address of a cube sample from its direction into three
+ * VGPRs from first: the two coordinates on the face the direction points
+ * at, each divided by the length along the face's axis and moved into
+ * [1, 2] (the face's coordinate plus 1, as the access takes it), and the
+ * face's number, plus 8 times the layer of an array of cubes.
+ *
+ * Procedure referenced: Mesa 25.0.7
+ * src/amd/common/nir/ac_nir_lower_tex.c (prepare_cube_coords: the face
+ * coordinates times 1 / |ma| plus 1.5, the face plus the layer times 8,
+ * lines 72-145) and src/amd/compiler/aco_instruction_selection.cpp
+ * (visit_alu, nir_op_cube_amd: v_cubema_f32, v_cubesc_f32, v_cubetc_f32
+ * and v_cubeid_f32, lines 2403-2412).
+ */
+static int
+fill_cube(
+	struct gfx10_lowering *lowering,
+	const struct gfx10_sample *sample,
+	uint32_t first)
+{
+	unsigned x;
+	unsigned y;
+	unsigned z;
+	unsigned s;
+	unsigned t;
+	unsigned face;
+	uint32_t layer;
+	int error;
+
+	/* The direction's components, and the three VGPRs the address takes. */
+	x = value_operand(lowering, sample->coordinate[0]);
+	y = value_operand(lowering, sample->coordinate[1]);
+	z = value_operand(lowering, sample->coordinate[2]);
+	s = AMDRDNA_GFX10_V(first);
+	t = AMDRDNA_GFX10_V(first + 1U);
+	face = AMDRDNA_GFX10_V(first + 2U);
+
+	/* The reciprocal of the length along the face's axis (the face VGPR holds it until the face is computed). */
+	emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_WIDE, AMDRDNA_GFX10_V_CUBEMA_F32, face, x, y, z);
+	emit_modified(lowering, AMDRDNA_GFX10_V_RCP_F32, face, face, AMDRDNA_GFX10_WIDE_ABS(0));
+
+	/* The face coordinates, scaled and moved into [1, 2]. */
+	emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_WIDE, AMDRDNA_GFX10_V_CUBESC_F32, s, x, y, z);
+	emit_fused(lowering, s, s, face, GFX10_CUBE_CENTRE);
+	emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_WIDE, AMDRDNA_GFX10_V_CUBETC_F32, t, x, y, z);
+	emit_fused(lowering, t, t, face, GFX10_CUBE_CENTRE);
+
+	/* The face's number. */
+	emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_WIDE, AMDRDNA_GFX10_V_CUBEID_F32, face, x, y, z);
+
+	/* An array of cubes adds 8 times the layer, rounded to the nearest integer, to the face. */
+	if (sample->layer != GFX10_NOT_DEFINED) {
+		error = take_vgpr(lowering, &layer);
+		if (error != 0)
+			return error;
+		emit_vector(lowering,
+			    AMDRDNA_GFX10_KIND_VECTOR_ONE,
+			    AMDRDNA_GFX10_V_RNDNE_F32,
+			    AMDRDNA_GFX10_V(layer),
+			    value_operand(lowering, sample->layer),
+			    0U,
+			    0U);
+		emit_layer_face(lowering, face, AMDRDNA_GFX10_V(layer));
+		give_vgpr(lowering, layer);
+	}
+
+	/* Succeeded: the cube's address is computed. */
+	return 0;
+}
+
+/* Appends a one-source vector operation with the wide form's modifier bits. */
+static void
+emit_modified(
+	struct gfx10_lowering *lowering,
+	unsigned opcode,
+	unsigned dst,
+	unsigned src,
+	unsigned modifiers)
+{
+	struct amdrdna_gfx10_inst inst;
+
+	/* Builds the instruction; a modifier makes it wide. */
+	kern_memset(&inst, 0, sizeof(inst));
+	inst.kind = AMDRDNA_GFX10_KIND_VECTOR_ONE;
+	inst.opcode = (uint16_t)opcode;
+	inst.dst = (uint16_t)dst;
+	inst.src[0] = (uint16_t)src;
+	inst.modifiers = (uint8_t)modifiers;
+
+	/* Places it. */
+	emit(lowering, &inst);
+}
+
+/* Appends dst = a * b + the float constant, the fused multiply-add with the constant as the literal. */
+static void
+emit_fused(
+	struct gfx10_lowering *lowering,
+	unsigned dst,
+	unsigned a,
+	unsigned b,
+	uint32_t constant)
+{
+	struct amdrdna_gfx10_inst inst;
+
+	/* Builds the instruction with its literal. */
+	kern_memset(&inst, 0, sizeof(inst));
+	inst.kind = AMDRDNA_GFX10_KIND_VECTOR_WIDE;
+	inst.opcode = AMDRDNA_GFX10_V_FMA_F32;
+	inst.dst = (uint16_t)dst;
+	inst.src[0] = (uint16_t)a;
+	inst.src[1] = (uint16_t)b;
+	inst.src[2] = AMDRDNA_GFX10_LITERAL;
+	inst.literal = constant;
+
+	/* Places it. */
+	emit(lowering, &inst);
+}
+
+/* Appends face = layer * 8 + face, an array of cubes' layer folded into the face number. */
+static void
+emit_layer_face(
+	struct gfx10_lowering *lowering,
+	unsigned face,
+	unsigned layer)
+{
+	struct amdrdna_gfx10_inst inst;
+
+	/* Builds the instruction with 8.0 as its literal. */
+	kern_memset(&inst, 0, sizeof(inst));
+	inst.kind = AMDRDNA_GFX10_KIND_VECTOR_WIDE;
+	inst.opcode = AMDRDNA_GFX10_V_FMA_F32;
+	inst.dst = (uint16_t)face;
+	inst.src[0] = (uint16_t)layer;
+	inst.src[1] = AMDRDNA_GFX10_LITERAL;
+	inst.src[2] = (uint16_t)face;
+	inst.literal = GFX10_CUBE_LAYER_STRIDE;
+
+	/* Places it. */
+	emit(lowering, &inst);
+}
+
+/*
+ * Reports a sample's constant texel offset packed as the access takes it
+ * (u, v and r 8 bits apart, each from -8 to 7 in 6 bits), 0 for none.
+ */
+static uint32_t
+sample_offset(
+	const struct gfx10_sample *sample)
+{
+	uint32_t packed;
+	uint32_t index;
+	uint32_t count;
+	int32_t moved;
+
+	/* Packs u and v, and a 3D image's r. */
+	packed = 0U;
+	count = 2U;
+	if (sample->volume != 0)
+		count = 3U;
+	for (index = 0U; index < count; index++) {
+		moved = (int32_t)sample->offset[index];
+		if (moved >= 8)
+			moved -= 16;
+		packed |= ((uint32_t)moved & GFX10_OFFSET_CHANNEL_MASK) << (GFX10_OFFSET_CHANNEL_SHIFT * index);
+	}
+
+	/* Succeeded: the packed offset. */
+	return packed;
+}
+
+/* Reports the dimension field of a sample's access: a 2D image, an array of them, a 3D image or a cube. */
+static unsigned
+sample_dimension(
+	const struct gfx10_sample *sample)
+{
+	/* A cube, an array of cubes included. */
+	if (sample->cube != 0)
+		return AMDRDNA_GFX10_IMAGE_DIM_CUBE;
+
+	/* A 3D image. */
+	if (sample->volume != 0)
+		return AMDRDNA_GFX10_IMAGE_DIM_3D;
+
+	/* An array of 2D images. */
+	if (sample->arrayed != 0)
+		return AMDRDNA_GFX10_IMAGE_DIM_2D_ARRAY;
+
+	/* Succeeded: a 2D image. */
+	return AMDRDNA_GFX10_IMAGE_DIM_2D;
+}
+
+/*
+ * Picks the image opcode of a sample by what it has: a gather, a compare,
+ * gradients, a level, a bias, the implicit derivatives, an offset.
+ */
 static unsigned
 sample_opcode(
 	const struct gfx10_sample *sample,
-	int derivatives,
-	int offset)
+	int derivatives)
 {
+	int offset;
+
 	/* A fetch and a size query. */
 	if (sample->fetch != 0)
 		return AMDRDNA_GFX10_IMAGE_LOAD_MIP;
 	if (sample->size_query != 0)
 		return AMDRDNA_GFX10_IMAGE_GET_RESINFO;
+
+	/* Whether the access carries an offset. */
+	offset = 0;
+	if (sample_offset(sample) != 0U)
+		offset = 1;
+
+	/* A gather at level 0. */
+	if (sample->gathered != 0) {
+		if (sample->compared != 0)
+			return offset != 0 ? AMDRDNA_GFX10_IMAGE_GATHER4_C_LZ_O : AMDRDNA_GFX10_IMAGE_GATHER4_C_LZ;
+		return offset != 0 ? AMDRDNA_GFX10_IMAGE_GATHER4_LZ_O : AMDRDNA_GFX10_IMAGE_GATHER4_LZ;
+	}
 
 	/* A depth compare. */
 	if (sample->compared != 0) {
@@ -3560,7 +4020,88 @@ sample_opcode(
 		return offset != 0 ? AMDRDNA_GFX10_IMAGE_SAMPLE_B_O : AMDRDNA_GFX10_IMAGE_SAMPLE_B;
 	if (derivatives != 0)
 		return offset != 0 ? AMDRDNA_GFX10_IMAGE_SAMPLE_O : AMDRDNA_GFX10_IMAGE_SAMPLE;
+
+	/* Succeeded: a sample at level 0. */
 	return offset != 0 ? AMDRDNA_GFX10_IMAGE_SAMPLE_LZ_O : AMDRDNA_GFX10_IMAGE_SAMPLE_LZ;
+}
+
+/*
+ * Lowers a difference across the pixel's group of four (a pixel
+ * program's derivative): every lane takes the value in the lane the
+ * difference ends at, less the one in the lane it starts at, both read
+ * across the group.  A value the same in every lane has no difference.
+ *
+ * Procedure referenced: Mesa 25.0.7
+ * src/amd/compiler/aco_instruction_selection.cpp (visit_intrinsic, the
+ * derivatives: the values read across the quad by two lane-permuted
+ * vector operations, lines 8027-8100).
+ */
+static int
+lower_derivative(
+	struct gfx10_lowering *lowering,
+	const struct drv_gpu_shader_ir_inst *instruction,
+	uint32_t dst)
+{
+	struct amdrdna_gfx10_inst inst;
+	unsigned source;
+	unsigned start;
+	unsigned end;
+
+	/* Only a pixel program's lanes are laid out in groups of four. */
+	if (lowering->ir->stage != DRV_GPU_STAGE_FRAGMENT)
+		return refuse(lowering, EINVAL, "a derivative outside a fragment shader");
+
+	/* A value without a VGPR of its own is uniform: its difference is 0. */
+	if (lowering->operand_code[instruction->src[0]] != GFX10_NO_OPERAND) {
+		emit_vector(lowering,
+			    AMDRDNA_GFX10_KIND_VECTOR_ONE,
+			    AMDRDNA_GFX10_V_MOV_B32,
+			    AMDRDNA_GFX10_V(dst),
+			    constant_operand(0U),
+			    0U,
+			    0U);
+		return 0;
+	}
+
+	/* The lanes the difference starts and ends at, by the operation. */
+	if (instruction->op == DRV_GPU_IR_DDX) {
+		start = AMDRDNA_GFX10_QUAD_ALL_LANE0;
+		end = AMDRDNA_GFX10_QUAD_ALL_LANE1;
+	} else if (instruction->op == DRV_GPU_IR_DDY) {
+		start = AMDRDNA_GFX10_QUAD_ALL_LANE0;
+		end = AMDRDNA_GFX10_QUAD_ALL_LANE2;
+	} else if (instruction->op == DRV_GPU_IR_DDX_FINE) {
+		start = AMDRDNA_GFX10_QUAD_ROW_LEFT;
+		end = AMDRDNA_GFX10_QUAD_ROW_RIGHT;
+	} else {
+		start = AMDRDNA_GFX10_QUAD_COLUMN_TOP;
+		end = AMDRDNA_GFX10_QUAD_COLUMN_BOTTOM;
+	}
+
+	/* Copies the start's value into the destination. */
+	source = AMDRDNA_GFX10_V(lowering->vgpr[instruction->src[0]]);
+	kern_memset(&inst, 0, sizeof(inst));
+	inst.kind = AMDRDNA_GFX10_KIND_VECTOR_ONE;
+	inst.opcode = AMDRDNA_GFX10_V_MOV_B32;
+	inst.dst = (uint16_t)AMDRDNA_GFX10_V(dst);
+	inst.src[0] = (uint16_t)source;
+	inst.quad_read = 1U;
+	inst.quad_pattern = (uint8_t)start;
+	emit(lowering, &inst);
+
+	/* Takes the end's value less the start's. */
+	kern_memset(&inst, 0, sizeof(inst));
+	inst.kind = AMDRDNA_GFX10_KIND_VECTOR_TWO;
+	inst.opcode = AMDRDNA_GFX10_V_SUB_F32;
+	inst.dst = (uint16_t)AMDRDNA_GFX10_V(dst);
+	inst.src[0] = (uint16_t)source;
+	inst.src[1] = (uint16_t)AMDRDNA_GFX10_V(dst);
+	inst.quad_read = 1U;
+	inst.quad_pattern = (uint8_t)end;
+	emit(lowering, &inst);
+
+	/* Succeeded: the difference is in dst. */
+	return 0;
 }
 
 /*
@@ -4456,8 +4997,10 @@ vector_reads(
 	case AMDRDNA_GFX10_KIND_VECTOR_COMPARE:
 		return 2U;
 	default:
-		/* The multiply-adds read three. */
+		/* The multiply-adds and the cube operations read three. */
 		if (inst->opcode == AMDRDNA_GFX10_V_FMA_F32 || inst->opcode == AMDRDNA_GFX10_V_MAD_U32_U24)
+			return 3U;
+		if (inst->opcode >= AMDRDNA_GFX10_V_CUBEID_F32 && inst->opcode <= AMDRDNA_GFX10_V_CUBEMA_F32)
 			return 3U;
 		return 2U;
 	}

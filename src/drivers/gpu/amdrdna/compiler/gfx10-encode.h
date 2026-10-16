@@ -18,7 +18,7 @@
 
 #include <stdint.h>
 
-/* The most words one instruction is written as: two, and a literal. */
+/* The most words one instruction is written as: two, and a literal or the lane pattern word. */
 #define AMDRDNA_GFX10_MAX_WORDS		3U
 
 /* The most register ranges one instruction reads, and writes. */
@@ -112,7 +112,10 @@ enum amdrdna_gfx10_counter {
  *   vector one, two, wide     dst = op(src[0], src[1], src[2]); a two-source
  *                             selection reads its condition from src[2];
  *                             a comparison writes its lane mask to dst
- *                             (VCC_LO or an SGPR)
+ *                             (VCC_LO or an SGPR); a short one or two-source
+ *                             operation with `quad_read` reads src[0] (a
+ *                             VGPR) from the lane of its group of four
+ *                             that `quad_pattern` names
  *   interpolate               dst = the attribute `target`, channel
  *                             `channel`, at the barycentric src[0]; the
  *                             flat move has the parameter code in src[0]
@@ -123,10 +126,12 @@ enum amdrdna_gfx10_counter {
  *                             data src[3]; a load writes `count` VGPRs from
  *                             dst; an atomic that returns writes dst, which
  *                             is src[3]
- *   image                     dst the first of the VGPRs `mask` selects;
- *                             the `count` address VGPRs from src[0]; image
- *                             descriptor src[1] (eight SGPRs), sampler
- *                             src[2] (four SGPRs, NULL for a load)
+ *   image                     dst the first of the VGPRs `mask` selects (a
+ *                             gather's four whatever its mask); the `count`
+ *                             address VGPRs from src[0]; image descriptor
+ *                             src[1] (eight SGPRs), sampler src[2] (four
+ *                             SGPRs, NULL for a load); `dimension` the
+ *                             image's dimension field
  *   export                    target `target`, the VGPRs src[0..3] of the
  *                             channels `mask` enables (a compressed one:
  *                             src[0] and src[1], two channels each)
@@ -160,6 +165,17 @@ struct amdrdna_gfx10_inst {
 
 	/* The registers a scalar load or a buffer load writes, the address registers an image access reads. */
 	uint8_t count;
+
+	/* An image access's dimension field (AMDRDNA_GFX10_IMAGE_DIM_*). */
+	uint8_t dimension;
+
+	/*
+	 * Nonzero when a short vector operation reads its first source from
+	 * another lane of its group of four, and the lane each lane reads
+	 * (two bits per lane, AMDRDNA_GFX10_QUAD_*).
+	 */
+	uint8_t quad_read;
+	uint8_t quad_pattern;
 };
 
 /*

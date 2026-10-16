@@ -300,6 +300,22 @@
 #define AMDRDNA_GFX10_V_PACK_B32_F16	0x311U
 
 /*
+ * The cube map operations, which take a direction x, y, z: the number of
+ * the face it points at (+x, -x, +y, -y, +z, -z as 0 .. 5), the two
+ * coordinates on that face before they are divided, and twice the
+ * component along the face's axis.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_opcodes.py
+ * (the GFX10 numbers of v_cubeid_f32, v_cubesc_f32, v_cubetc_f32 and
+ * v_cubema_f32 in the table VOP3, lines 1261-1264).
+ * Checked against llvm-mc 19 (-mcpu=gfx1010).
+ */
+#define AMDRDNA_GFX10_V_CUBEID_F32	0x144U
+#define AMDRDNA_GFX10_V_CUBESC_F32	0x145U
+#define AMDRDNA_GFX10_V_CUBETC_F32	0x146U
+#define AMDRDNA_GFX10_V_CUBEMA_F32	0x147U
+
+/*
  * The modifier bits of a wide vector instruction: one negate and one
  * absolute value bit per source.
  *
@@ -309,6 +325,45 @@
  */
 #define AMDRDNA_GFX10_WIDE_NEG(n)	(1U << (n))
 #define AMDRDNA_GFX10_WIDE_ABS(n)	(1U << (3 + (n)))
+
+/*
+ * A short vector instruction whose first source reads another lane of the
+ * same group of four: the source code that says so, then the word after
+ * the instruction (the source VGPR in 7:0, the lane pattern in 15:8 with
+ * two bits per lane of the group from the lowest, the bit that reads zero
+ * from a lane that does not run in 19, and the row and bank enables in
+ * 31:28 and 27:24, all four on).
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_assembler.cpp
+ * (emit_dpp16_instruction: the source code 250 and the fields of the
+ * second word, lines 999-1024) and src/amd/compiler/aco_builder_h.py
+ * (dpp_quad_perm: two bits per lane, lines 34-39).
+ * Checked against llvm-mc 19 (-mcpu=gfx1010).
+ */
+#define AMDRDNA_GFX10_QUAD_SOURCE	250U
+#define AMDRDNA_GFX10_QUAD_PATTERN_SHIFT 8U
+#define AMDRDNA_GFX10_QUAD_ZERO_IF_IDLE	(1U << 19)
+#define AMDRDNA_GFX10_QUAD_ENABLES	0xff000000U
+
+/*
+ * The lane patterns of the quad differences: the lane each lane of a
+ * group of four reads, the groups laid out with the right neighbour one
+ * lane up and the lower one two lanes up.  A coarse difference reads lane
+ * 0 against lane 1 (across) or 2 (down) in every lane; a fine one reads
+ * the lane's own row (0 and 1, or 2 and 3) or column.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_instruction_selection.cpp
+ * (visit_intrinsic, the derivatives: the quad patterns (0,0,0,0),
+ * (1,1,1,1), (2,2,2,2), (0,0,2,2), (1,1,3,3), (0,1,0,1) and (2,3,2,3),
+ * lines 8036-8060).
+ */
+#define AMDRDNA_GFX10_QUAD_ALL_LANE0	0x00U
+#define AMDRDNA_GFX10_QUAD_ALL_LANE1	0x55U
+#define AMDRDNA_GFX10_QUAD_ALL_LANE2	0xaaU
+#define AMDRDNA_GFX10_QUAD_ROW_LEFT	0xa0U
+#define AMDRDNA_GFX10_QUAD_ROW_RIGHT	0xf5U
+#define AMDRDNA_GFX10_QUAD_COLUMN_TOP	0x44U
+#define AMDRDNA_GFX10_QUAD_COLUMN_BOTTOM 0xeeU
 
 /*
  * ==== Interpolation opcodes ====
@@ -381,12 +436,12 @@
 #define AMDRDNA_GFX10_BUFFER_GL1_INV	0x72U
 
 /*
- * ==== Image opcodes and the 2D dimension ====
+ * ==== Image opcodes ====
  *
  * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_opcodes.py
- * (the GFX10 numbers of the table MIMG, lines 1761-1824).
- * Checked against llvm-mc 19, which writes the dimension 1 as
- * "dim:SQ_RSRC_IMG_2D".
+ * (the GFX10 numbers of the table MIMG, lines 1761-1824 and the gathers
+ * at level 0, lines 1849, 1855, 1861 and 1867).
+ * Checked against llvm-mc 19 (-mcpu=gfx1010).
  */
 #define AMDRDNA_GFX10_IMAGE_LOAD_MIP	0x01U
 #define AMDRDNA_GFX10_IMAGE_GET_RESINFO	0x0eU
@@ -410,7 +465,29 @@
 #define AMDRDNA_GFX10_IMAGE_SAMPLE_C_L_O	0x3cU
 #define AMDRDNA_GFX10_IMAGE_SAMPLE_C_B_O	0x3dU
 #define AMDRDNA_GFX10_IMAGE_SAMPLE_C_LZ_O	0x3fU
+#define AMDRDNA_GFX10_IMAGE_GATHER4_LZ	0x47U
+#define AMDRDNA_GFX10_IMAGE_GATHER4_C_LZ	0x4fU
+#define AMDRDNA_GFX10_IMAGE_GATHER4_LZ_O	0x57U
+#define AMDRDNA_GFX10_IMAGE_GATHER4_C_LZ_O	0x5fU
+
+/*
+ * The dimension field of an image access: a 2D image, a 3D one, a cube
+ * (whose address is the face coordinates and the face, each plus the
+ * cube's number times 8 in an array of cubes) and an array of 2D images.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/common/ac_shader_util.h
+ * (enum ac_image_dim: ac_image_2d 1, ac_image_3d 2, ac_image_cube 3,
+ * ac_image_2darray 5, lines 169-179) and
+ * src/amd/compiler/aco_assembler.cpp (emit_mimg_instruction, the GFX10
+ * case: the dimension in bits 5:3, line 767).
+ * Checked against llvm-mc 19, which writes them as "dim:SQ_RSRC_IMG_2D",
+ * "dim:SQ_RSRC_IMG_3D", "dim:SQ_RSRC_IMG_CUBE" and
+ * "dim:SQ_RSRC_IMG_2D_ARRAY".
+ */
 #define AMDRDNA_GFX10_IMAGE_DIM_2D	1U
+#define AMDRDNA_GFX10_IMAGE_DIM_3D	2U
+#define AMDRDNA_GFX10_IMAGE_DIM_CUBE	3U
+#define AMDRDNA_GFX10_IMAGE_DIM_2D_ARRAY 5U
 
 /*
  * ==== Export targets ====
