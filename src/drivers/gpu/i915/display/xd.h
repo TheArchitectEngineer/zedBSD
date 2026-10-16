@@ -34,13 +34,15 @@ struct mutex;
  * chosen is nonzero once a description of the device was found; it stays
  * zero on a device the xd code does not describe (Gen9, an unknown id),
  * whose display does not use the xd parts.  The OpRegion read is filled by
- * the OpRegion stage.
+ * the OpRegion stage, the VBT parse (vbt_parsed nonzero) by the VBT stage.
  */
 struct i915_xd {
 	struct i915_xd_io io;
 	struct i915_xd_choice choice;
 	int chosen;
 	struct i915_xd_opregion_read opregion;
+	struct i915_xd_vbt vbt;
+	int vbt_parsed;
 };
 
 void drv_i915_xd_start(struct i915_xd *xd, struct i915_mmio *mmio, struct mutex *mailbox_lock, uint16_t product, uint8_t revid);

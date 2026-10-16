@@ -172,7 +172,29 @@ struct i915_vbt_world {
 
 	/* The panel drv_i915_vbt_init_panel() fills; the mode it may allocate lives in the arena. */
 	struct intel_panel i915_vbt_init_panel_panel;
+
+	/*
+	 * The xd parse of the same VBT, whose values the display uses (NULL on a
+	 * device the xd display does not describe), and the ports whose panel
+	 * comparison was logged, one bit each.
+	 */
+	const struct i915_xd_vbt *xd_vbt;
+	unsigned xd_panel_logged;
 };
+
+/*
+ * One value the old parser and the xd parse both give: its name in the log
+ * and the two values, widened.
+ */
+struct i915_vbt_xd_field {
+	const char *name;
+	long old_value;
+	long xd_value;
+};
+
+/* How many values of one output, and of one panel, the old parser and the xd parse are compared on. */
+#define I915_VBT_XD_OUTPUT_FIELDS	18U
+#define I915_VBT_XD_PANEL_FIELDS	33U
 
 /*
  * One VBT child device as the parser keeps it (the Linux wrapper of the
@@ -334,6 +356,13 @@ static bool i915_bios_encoder_lane_reversal(const struct intel_bios_encoder_data
 static bool i915_bios_encoder_hpd_invert(const struct intel_bios_encoder_data *devdata);
 static const struct intel_bios_encoder_data *i915_bios_encoder_data_lookup(struct drm_i915_private *i915, enum port port);
 static void i915_bios_for_each_encoder(struct drm_i915_private *i915, void (*func)(struct drm_i915_private *i915, const struct intel_bios_encoder_data *devdata)) __attribute__((unused));
+static void i915_vbt_take_xd(struct i915_display *display, struct i915_vbt *old, const void *bytes, size_t size);
+static void i915_vbt_xd_output_fields(const struct i915_vbt_encoder *old, const struct i915_xd_vbt_child *child, struct i915_vbt_xd_field *fields);
+static void i915_vbt_xd_output_set(struct i915_vbt_encoder *old, const struct i915_xd_vbt_child *child);
+static void i915_vbt_xd_panel(struct i915_vbt_world *world, int port, const uint8_t *edid128, struct i915_vbt_panel *out);
+static void i915_vbt_xd_panel_fields(const struct i915_vbt_panel *old, const struct i915_xd_vbt *vbt, const struct i915_xd_vbt_panel *panel, struct i915_vbt_xd_field *fields);
+static void i915_vbt_xd_panel_set(struct i915_vbt_panel *old, const struct i915_xd_vbt *vbt, const struct i915_xd_vbt_panel *panel);
+static unsigned i915_vbt_xd_first_difference(const struct i915_vbt_xd_field *fields, unsigned count, unsigned *differences);
 
 /*
  * Creates the VBT parser's world of a display.
@@ -810,6 +839,10 @@ drv_i915_bios_init_ex(
 	vbt->version = vbt->parsed.bdb_version;
 	vbt->num_bdb_blocks = vbt->parsed.num_bdb_blocks;
 	vbt->missing_defaults_used = vbt->parsed.missing_defaults_used;
+
+	/* The xd parse of the same bytes gives the values the display uses; the old parse is compared with it. */
+	i915_vbt_take_xd(display, &vbt->parsed, vbt_buf, vbt_size);
+	vbt->version = vbt->parsed.bdb_version;
 
 	/*
 	 * Flattens the child devices.  They come from one place: the real VBT
@@ -1358,6 +1391,9 @@ drv_i915_vbt_init_panel(
 
 	/* Copies what the panel data says. */
 	i915_vbt_flatten_panel(world, panel, out);
+
+	/* The xd parse's panel gives the values the display uses; the old pass is compared with it. */
+	i915_vbt_xd_panel(world, port, edid128, out);
 
 	/* Copies the arena and message counters. */
 	v->arena_used = world->vbt_arena_used;
@@ -4975,4 +5011,482 @@ i915_bios_for_each_encoder(
 	list_for_each_entry(devdata, &i915->display.vbt.display_devices, node) {
 		func(i915, devdata);
 	}
+}
+
+/*
+ * Parses the VBT again with the xd parser, compares the old parser's outputs
+ * with it and puts the xd values in the old parser's result.
+ *
+ * The comparison is one log line: the two parsers agree, or the first value
+ * that differs and how many do.  The xd values are taken only when the two
+ * parses have the same outputs on the same DDIs; otherwise the old values
+ * stay.  A device the xd display does not describe keeps the old parse.
+ */
+static void
+i915_vbt_take_xd(
+	struct i915_display *display,
+	struct i915_vbt *old,
+	const void *bytes,
+	size_t size)
+{
+	struct i915_vbt_xd_field fields[I915_VBT_XD_OUTPUT_FIELDS];
+	struct i915_vbt_encoder *encoder;
+	struct i915_vbt_world *world;
+	const struct i915_xd_vbt_child *child;
+	struct i915_xd_vbt *xd_vbt;
+	unsigned differences;
+	unsigned outputs_differ;
+	unsigned first;
+	unsigned c;
+	int same_outputs;
+	int error;
+
+	/* A device without an xd description keeps the old parse. */
+	world = display->vbt_world;
+	if (world != NULL)
+		world->xd_vbt = NULL;
+	if (!display->xd.chosen)
+		return;
+
+	/* Parses the same bytes (none: the platform's defaults). */
+	xd_vbt = &display->xd.vbt;
+	error = drv_i915_xd_vbt_parse(display->xd.choice.platform, bytes, size, xd_vbt);
+	if (error != 0) {
+		kern_logf("i915: xd-vbt: the parse failed (%d): the old parser's values stand\n", error);
+		return;
+	}
+	display->xd.vbt_parsed = 1;
+	if (world != NULL) {
+		world->xd_vbt = xd_vbt;
+		world->xd_panel_logged = 0U;
+	}
+
+	/* Compares the general values. */
+	differences = 0U;
+	if ((long)old->bdb_version != (long)xd_vbt->version) {
+		kern_logf("i915: xd-vbt: differs from the old parser: version old %u xd %u\n", (unsigned)old->bdb_version, (unsigned)xd_vbt->version);
+		differences++;
+	}
+	if (old->int_lvds_support != xd_vbt->internal_panel ||
+	    old->display_clock_mode != xd_vbt->display_clock_mode ||
+	    old->lvds_use_ssc != xd_vbt->ssc ||
+	    (long)old->lvds_ssc_freq != (long)xd_vbt->ssc_khz) {
+		kern_logf("i915: xd-vbt: differs from the old parser: general features old %d/%d/%d/%d xd %d/%d/%d/%u\n",
+		    old->int_lvds_support,
+		    old->display_clock_mode,
+		    old->lvds_use_ssc,
+		    old->lvds_ssc_freq,
+		    xd_vbt->internal_panel,
+		    xd_vbt->display_clock_mode,
+		    xd_vbt->ssc,
+		    xd_vbt->ssc_khz);
+		differences++;
+	}
+
+	/* The two parses have the same outputs when every xd output has an old one on its DDI and the counts match. */
+	same_outputs = 1;
+	if (old->n_encoders != xd_vbt->nchildren)
+		same_outputs = 0;
+	for (c = 0U; same_outputs && c < xd_vbt->nchildren; c++) {
+		child = &xd_vbt->children[c];
+		encoder = (struct i915_vbt_encoder *)drv_i915_vbt_encoder_for_port(old, child->ddi);
+		if (child->ddi == I915_XD_VBT_NONE || encoder == NULL)
+			same_outputs = 0;
+	}
+	if (!same_outputs) {
+		kern_logf("i915: xd-vbt: differs from the old parser: outputs (old %u, xd %u): the old parser's values stand\n", old->n_encoders, xd_vbt->nchildren);
+		return;
+	}
+
+	/* Compares each output, then takes the xd values. */
+	outputs_differ = 0U;
+	for (c = 0U; c < xd_vbt->nchildren; c++) {
+		child = &xd_vbt->children[c];
+		encoder = (struct i915_vbt_encoder *)drv_i915_vbt_encoder_for_port(old, child->ddi);
+		i915_vbt_xd_output_fields(encoder, child, fields);
+		first = i915_vbt_xd_first_difference(fields, I915_VBT_XD_OUTPUT_FIELDS, &outputs_differ);
+		if (first < I915_VBT_XD_OUTPUT_FIELDS) {
+			kern_logf("i915: xd-vbt: differs from the old parser: output %u (DDI %c) %s old %ld xd %ld\n",
+			    c,
+			    (char)('A' + child->ddi),
+			    fields[first].name,
+			    fields[first].old_value,
+			    fields[first].xd_value);
+		}
+		i915_vbt_xd_output_set(encoder, child);
+	}
+	differences += outputs_differ;
+
+	/* The general values are the xd parse's too. */
+	old->bdb_version = xd_vbt->version;
+	old->int_lvds_support = xd_vbt->internal_panel;
+	old->display_clock_mode = xd_vbt->display_clock_mode;
+	old->lvds_use_ssc = xd_vbt->ssc;
+	old->lvds_ssc_freq = (int)xd_vbt->ssc_khz;
+
+	/* Reports the comparison. */
+	if (differences == 0U) {
+		kern_logf("i915: xd-vbt: agrees with the old parser (%u outputs, version %u, %s)\n",
+		    xd_vbt->nchildren,
+		    (unsigned)xd_vbt->version,
+		    xd_vbt->found ? "the VBT" : "the defaults");
+	} else {
+		kern_logf("i915: xd-vbt: %u values differ from the old parser; the xd values are used\n", differences);
+	}
+}
+
+/* Lists one output's values as the old parser and the xd parse give them. */
+static void
+i915_vbt_xd_output_fields(
+	const struct i915_vbt_encoder *old,
+	const struct i915_xd_vbt_child *child,
+	struct i915_vbt_xd_field *fields)
+{
+	long aux;
+
+	/* The AUX channel: none is -1 to the old parser. */
+	aux = -1;
+	if (child->aux_ch != I915_XD_VBT_NONE)
+		aux = (long)child->aux_ch;
+
+	/* The values, in the order of the log. */
+	fields[0].name = "aux_ch";
+	fields[0].old_value = old->aux_ch;
+	fields[0].xd_value = aux;
+	fields[1].name = "device_type";
+	fields[1].old_value = old->device_type;
+	fields[1].xd_value = child->device_type;
+	fields[2].name = "dvo_port";
+	fields[2].old_value = old->dvo_port;
+	fields[2].xd_value = child->dvo_port;
+	fields[3].name = "ddc_pin_raw";
+	fields[3].old_value = old->ddc_pin_raw;
+	fields[3].xd_value = child->ddc_code;
+	fields[4].name = "ddc_pin";
+	fields[4].old_value = old->ddc_pin;
+	fields[4].xd_value = child->gmbus_pin;
+	fields[5].name = "dp";
+	fields[5].old_value = old->supports_dp;
+	fields[5].xd_value = child->dp;
+	fields[6].name = "edp";
+	fields[6].old_value = old->supports_edp;
+	fields[6].xd_value = child->edp;
+	fields[7].name = "hdmi";
+	fields[7].old_value = old->supports_hdmi;
+	fields[7].xd_value = child->hdmi;
+	fields[8].name = "dvi";
+	fields[8].old_value = old->supports_dvi;
+	fields[8].xd_value = child->dvi;
+	fields[9].name = "type_c";
+	fields[9].old_value = old->supports_typec_usb;
+	fields[9].xd_value = child->type_c;
+	fields[10].name = "tbt";
+	fields[10].old_value = old->supports_tbt;
+	fields[10].xd_value = child->tbt;
+	fields[11].name = "lane_reversal";
+	fields[11].old_value = old->lane_reversal;
+	fields[11].xd_value = child->lane_reversal;
+	fields[12].name = "hpd_invert";
+	fields[12].old_value = old->hpd_invert;
+	fields[12].xd_value = child->hpd_invert;
+	fields[13].name = "dp_max_lanes";
+	fields[13].old_value = old->dp_max_lane_count;
+	fields[13].xd_value = child->dp_max_lanes;
+	fields[14].name = "dp_max_rate";
+	fields[14].old_value = old->dp_max_link_rate;
+	fields[14].xd_value = (long)child->dp_max_rate_khz;
+	fields[15].name = "dp_boost";
+	fields[15].old_value = old->dp_boost_level;
+	fields[15].xd_value = child->dp_boost;
+	fields[16].name = "hdmi_boost";
+	fields[16].old_value = old->hdmi_boost_level;
+	fields[16].xd_value = child->hdmi_boost;
+	fields[17].name = "hdmi_level_shift";
+	fields[17].old_value = old->hdmi_level_shift;
+	fields[17].xd_value = child->hdmi_level_shift;
+}
+
+/* Puts one xd output's values in the old parser's output. */
+static void
+i915_vbt_xd_output_set(
+	struct i915_vbt_encoder *old,
+	const struct i915_xd_vbt_child *child)
+{
+	/* The AUX channel: none is -1 to the old parser. */
+	old->aux_ch = -1;
+	if (child->aux_ch != I915_XD_VBT_NONE)
+		old->aux_ch = (int)child->aux_ch;
+
+	/* What the output is and how it is wired. */
+	old->device_type = child->device_type;
+	old->dvo_port = child->dvo_port;
+	old->ddc_pin_raw = child->ddc_code;
+	old->ddc_pin = child->gmbus_pin;
+	old->supports_dp = child->dp;
+	old->supports_edp = child->edp;
+	old->supports_hdmi = child->hdmi;
+	old->supports_dvi = child->dvi;
+	old->supports_typec_usb = child->type_c;
+	old->supports_tbt = child->tbt;
+	old->lane_reversal = child->lane_reversal;
+	old->hpd_invert = child->hpd_invert;
+
+	/* Its link limits and boosts. */
+	old->dp_max_lane_count = child->dp_max_lanes;
+	old->dp_max_link_rate = (int)child->dp_max_rate_khz;
+	old->dp_boost_level = child->dp_boost;
+	old->hdmi_boost_level = child->hdmi_boost;
+	old->hdmi_level_shift = child->hdmi_level_shift;
+}
+
+/*
+ * Compares a panel the old pass found with the xd parse's and puts the xd
+ * values in it.
+ *
+ * The first comparison of each port is logged.  A port the xd parse has no
+ * output on, or whose panel it cannot read, keeps the old values.
+ */
+static void
+i915_vbt_xd_panel(
+	struct i915_vbt_world *world,
+	int port,
+	const uint8_t *edid128,
+	struct i915_vbt_panel *out)
+{
+	struct i915_vbt_xd_field fields[I915_VBT_XD_PANEL_FIELDS];
+	const struct i915_xd_vbt_child *child;
+	struct i915_xd_vbt_panel panel;
+	unsigned differences;
+	unsigned first;
+	unsigned bit;
+	size_t edid_size;
+	int error;
+
+	/* Without an xd parse the old values stand. */
+	if (world->xd_vbt == NULL)
+		return;
+	if (port < 0 || port >= 32)
+		return;
+
+	/* The xd parse's panel on the port. */
+	child = drv_i915_xd_vbt_child(world->xd_vbt, (unsigned)port);
+	if (child == NULL)
+		return;
+	edid_size = 0U;
+	if (edid128 != NULL)
+		edid_size = 128U;
+	error = drv_i915_xd_vbt_panel(world->xd_vbt, child, edid128, edid_size, &panel);
+	if (error != 0)
+		return;
+
+	/* Compares the two and reports the first comparison of the port. */
+	i915_vbt_xd_panel_fields(out, world->xd_vbt, &panel, fields);
+	differences = 0U;
+	first = i915_vbt_xd_first_difference(fields, I915_VBT_XD_PANEL_FIELDS, &differences);
+	bit = 1U << (unsigned)port;
+	if ((world->xd_panel_logged & bit) == 0U) {
+		world->xd_panel_logged |= bit;
+		if (first < I915_VBT_XD_PANEL_FIELDS) {
+			kern_logf("i915: xd-vbt: panel on DDI %c: %u values differ from the old parser, first %s old %ld xd %ld; the xd values are used\n",
+			    (char)('A' + port),
+			    differences,
+			    fields[first].name,
+			    fields[first].old_value,
+			    fields[first].xd_value);
+		} else {
+			kern_logf("i915: xd-vbt: panel on DDI %c agrees with the old parser (panel type %u)\n", (char)('A' + port), panel.panel_type);
+		}
+	}
+
+	/* Takes the xd values. */
+	i915_vbt_xd_panel_set(out, world->xd_vbt, &panel);
+}
+
+/* Lists one panel's values as the old pass and the xd parse give them. */
+static void
+i915_vbt_xd_panel_fields(
+	const struct i915_vbt_panel *old,
+	const struct i915_xd_vbt *vbt,
+	const struct i915_xd_vbt_panel *panel,
+	struct i915_vbt_xd_field *fields)
+{
+	/* The panel row and the eDP link. */
+	fields[0].name = "panel_type";
+	fields[0].old_value = old->panel_type;
+	fields[0].xd_value = (long)panel->panel_type;
+	fields[1].name = "bpp";
+	fields[1].old_value = old->bpp;
+	fields[1].xd_value = panel->bpp;
+	fields[2].name = "edp_rate";
+	fields[2].old_value = old->edp_rate;
+	fields[2].xd_value = (long)panel->edp_rate_khz;
+	fields[3].name = "edp_lanes";
+	fields[3].old_value = old->edp_lanes;
+	fields[3].xd_value = panel->edp_lanes;
+	fields[4].name = "edp_preemphasis";
+	fields[4].old_value = old->edp_preemphasis;
+	fields[4].xd_value = (long)panel->edp_preemphasis << 3;
+	fields[5].name = "edp_vswing";
+	fields[5].old_value = old->edp_vswing;
+	fields[5].xd_value = panel->edp_vswing;
+	fields[6].name = "edp_low_vswing";
+	fields[6].old_value = old->edp_low_vswing;
+	fields[6].xd_value = panel->low_vswing;
+	fields[7].name = "edp_hobl";
+	fields[7].old_value = old->edp_hobl;
+	fields[7].xd_value = panel->hobl;
+	fields[8].name = "edp_max_link_rate";
+	fields[8].old_value = old->edp_max_link_rate;
+	fields[8].xd_value = (long)panel->edp_max_rate_khz;
+	fields[9].name = "override_afc_startup";
+	fields[9].old_value = old->override_afc_startup;
+	fields[9].xd_value = vbt->afc_override;
+
+	/* The power sequence. */
+	fields[10].name = "t1_t3";
+	fields[10].old_value = old->t1_t3;
+	fields[10].xd_value = panel->t1_t3;
+	fields[11].name = "t8";
+	fields[11].old_value = old->t8;
+	fields[11].xd_value = panel->t8;
+	fields[12].name = "t9";
+	fields[12].old_value = old->t9;
+	fields[12].xd_value = panel->t9;
+	fields[13].name = "t10";
+	fields[13].old_value = old->t10;
+	fields[13].xd_value = panel->t10;
+	fields[14].name = "t11_t12";
+	fields[14].old_value = old->t11_t12;
+	fields[14].xd_value = panel->t11_t12;
+
+	/* The backlight, the refresh rate switching and VRR. */
+	fields[15].name = "bl_present";
+	fields[15].old_value = old->bl_present;
+	fields[15].xd_value = panel->backlight;
+	fields[16].name = "bl_type";
+	fields[16].old_value = old->bl_type;
+	fields[16].xd_value = panel->backlight_type;
+	fields[17].name = "bl_controller";
+	fields[17].old_value = old->bl_controller;
+	fields[17].xd_value = panel->backlight_controller;
+	fields[18].name = "bl_active_low_pwm";
+	fields[18].old_value = old->bl_active_low_pwm;
+	fields[18].xd_value = panel->backlight_active_low;
+	fields[19].name = "bl_pwm_freq_hz";
+	fields[19].old_value = old->bl_pwm_freq_hz;
+	fields[19].xd_value = panel->backlight_hz;
+	fields[20].name = "bl_min_brightness";
+	fields[20].old_value = old->bl_min_brightness;
+	fields[20].xd_value = panel->backlight_min;
+	fields[21].name = "drrs_type";
+	fields[21].old_value = old->drrs_type;
+	fields[21].xd_value = (long)panel->drrs;
+	fields[22].name = "vrr";
+	fields[22].old_value = old->vrr;
+	fields[22].xd_value = panel->vrr;
+
+	/* The VBT's own mode. */
+	fields[23].name = "has_lfp_mode";
+	fields[23].old_value = old->has_lfp_mode;
+	fields[23].xd_value = panel->has_mode;
+	fields[24].name = "mode_clock_khz";
+	fields[24].old_value = old->mode_clock_khz;
+	fields[24].xd_value = (long)panel->mode.clock_khz;
+	fields[25].name = "hdisplay";
+	fields[25].old_value = old->hdisplay;
+	fields[25].xd_value = (long)panel->mode.hdisplay;
+	fields[26].name = "hsync_start";
+	fields[26].old_value = old->hsync_start;
+	fields[26].xd_value = (long)panel->mode.hsync_start;
+	fields[27].name = "hsync_end";
+	fields[27].old_value = old->hsync_end;
+	fields[27].xd_value = (long)panel->mode.hsync_end;
+	fields[28].name = "htotal";
+	fields[28].old_value = old->htotal;
+	fields[28].xd_value = (long)panel->mode.htotal;
+	fields[29].name = "vdisplay";
+	fields[29].old_value = old->vdisplay;
+	fields[29].xd_value = (long)panel->mode.vdisplay;
+	fields[30].name = "vsync_start";
+	fields[30].old_value = old->vsync_start;
+	fields[30].xd_value = (long)panel->mode.vsync_start;
+	fields[31].name = "vsync_end";
+	fields[31].old_value = old->vsync_end;
+	fields[31].xd_value = (long)panel->mode.vsync_end;
+	fields[32].name = "vtotal";
+	fields[32].old_value = old->vtotal;
+	fields[32].xd_value = (long)panel->mode.vtotal;
+}
+
+/* Puts one xd panel's values in the old pass's panel. */
+static void
+i915_vbt_xd_panel_set(
+	struct i915_vbt_panel *old,
+	const struct i915_xd_vbt *vbt,
+	const struct i915_xd_vbt_panel *panel)
+{
+	/* The panel row and the eDP link. */
+	old->panel_type = (int)panel->panel_type;
+	old->bpp = panel->bpp;
+	old->edp_rate = (int)panel->edp_rate_khz;
+	old->edp_lanes = panel->edp_lanes;
+	old->edp_preemphasis = (int)panel->edp_preemphasis << 3;
+	old->edp_vswing = panel->edp_vswing;
+	old->edp_low_vswing = panel->low_vswing;
+	old->edp_hobl = panel->hobl;
+	old->edp_max_link_rate = (int)panel->edp_max_rate_khz;
+	old->override_afc_startup = vbt->afc_override;
+
+	/* The power sequence. */
+	old->t1_t3 = panel->t1_t3;
+	old->t8 = panel->t8;
+	old->t9 = panel->t9;
+	old->t10 = panel->t10;
+	old->t11_t12 = panel->t11_t12;
+
+	/* The backlight, the refresh rate switching and VRR. */
+	old->bl_present = panel->backlight;
+	old->bl_type = panel->backlight_type;
+	old->bl_controller = panel->backlight_controller;
+	old->bl_active_low_pwm = panel->backlight_active_low;
+	old->bl_pwm_freq_hz = panel->backlight_hz;
+	old->bl_min_brightness = panel->backlight_min;
+	old->drrs_type = (int)panel->drrs;
+	old->vrr = panel->vrr;
+
+	/* The VBT's own mode. */
+	old->has_lfp_mode = panel->has_mode;
+	old->mode_clock_khz = (int)panel->mode.clock_khz;
+	old->hdisplay = (uint16_t)panel->mode.hdisplay;
+	old->hsync_start = (uint16_t)panel->mode.hsync_start;
+	old->hsync_end = (uint16_t)panel->mode.hsync_end;
+	old->htotal = (uint16_t)panel->mode.htotal;
+	old->vdisplay = (uint16_t)panel->mode.vdisplay;
+	old->vsync_start = (uint16_t)panel->mode.vsync_start;
+	old->vsync_end = (uint16_t)panel->mode.vsync_end;
+	old->vtotal = (uint16_t)panel->mode.vtotal;
+}
+
+/* Finds the first value that differs (count when none) and adds the number that differ to *differences. */
+static unsigned
+i915_vbt_xd_first_difference(
+	const struct i915_vbt_xd_field *fields,
+	unsigned count,
+	unsigned *differences)
+{
+	unsigned first;
+	unsigned index;
+
+	/* Counts every value that differs and remembers the first. */
+	first = count;
+	for (index = 0U; index < count; index++) {
+		if (fields[index].old_value == fields[index].xd_value)
+			continue;
+		if (first == count)
+			first = index;
+		(*differences)++;
+	}
+
+	/* Succeeded: the first difference, or count. */
+	return first;
 }
