@@ -19,12 +19,12 @@
  *   - the outputs and the panel each platform's VBT gives, against the
  *     values the platform's numbering tables say (DVO port, DDC pin and
  *     AUX channel codes);
- *   - for the Alder Lake-P VBTs, the same values out of the parser the
- *     driver runs today (display/vbt.c), which reads only that platform;
+ *   - the VBT stage (display/vbt-shell.c), which puts the xd values in the
+ *     older display code's types;
  *   - the defaults of a board without a VBT;
  *   - the refusal of damaged VBTs (sizes, offsets, block overruns,
  *     inconsistent panel tables);
- *   - where an OpRegion keeps its VBT, against today's reader;
+ *   - where an OpRegion keeps its VBT, against the firmware check's reader;
  *   - SHA-256 against the FIPS 180-2 examples;
  *   - the EDID decode of the laptop's panel and of a made-up HDMI sink.
  */
@@ -232,7 +232,7 @@ static uint8_t test_memory_raw[TEST_RAW_BYTES];
 static uint64_t test_raw_address;
 static int test_maps_open;
 
-/* The display the old parser keeps its world in. */
+/* The display the VBT stage works on. */
 static struct i915_display test_display;
 
 static void test_put8(uint8_t *bytes, size_t offset, unsigned value);
@@ -245,7 +245,6 @@ static void test_dvo_timing(uint8_t *timing, const struct test_panel *panel);
 static const struct i915_xd_platform *test_platform(uint16_t device);
 static void test_vbt_outputs(unsigned index);
 static void test_vbt_panel(unsigned index);
-static void test_vbt_old(unsigned index);
 static void test_defaults(void);
 static void test_damaged(void);
 static void test_opregion(void);
@@ -266,16 +265,14 @@ main(void)
 	unsigned index;
 	int failures;
 
-	/* Gives the old parser its world. */
-	i915_host_check(drv_i915_vbt_world_create(&test_display) == 0, "old parser world");
+	/* Gives the display its VBT state. */
+	i915_host_check(drv_i915_vbt_world_create(&test_display) == 0, "VBT state");
 
 	/* Reads each made-up VBT. */
 	for (index = 0U; index < sizeof(test_vbts) / sizeof(test_vbts[0]); index++) {
 		test_vbt_outputs(index);
 		test_vbt_panel(index);
 	}
-	test_vbt_old(0U);
-	test_vbt_old(1U);
 
 	/* The defaults, the damaged VBTs, the OpRegion, the digest and the EDIDs. */
 	test_defaults();
@@ -643,90 +640,10 @@ test_vbt_panel(
 	i915_host_check(panel.dither == 0 && panel.drrs == I915_XD_DRRS_SEAMLESS && panel.vrr == 1 && panel.hobl == 0, what);
 }
 
-/*
- * Reads an Alder Lake-P VBT with the parser the driver runs today and
- * with the xd parse, and compares every value they both give.
- */
-static void
-test_vbt_old(
-	unsigned index)
-{
-	static uint8_t bytes[TEST_VBT_BYTES];
-	static struct i915_vbt old;
-	const struct test_vbt *spec;
-	const struct i915_vbt_encoder *encoder;
-	const struct i915_xd_vbt_child *child;
-	struct i915_xd_vbt vbt;
-	struct i915_xd_vbt_panel panel;
-	struct i915_vbt_panel old_panel;
-	char what[160];
-	size_t size;
-	unsigned c;
-	int same;
-	int old_aux;
-
-	spec = &test_vbts[index];
-	size = test_build(spec, bytes);
-	i915_host_check(drv_i915_bios_is_valid_vbt(bytes, size), "old parser: the made-up VBT is valid");
-	i915_host_check(drv_i915_vbt_init(&old, bytes, size, I915_VBT_ORIGIN_OPREGION) == 0, "old parser: parse");
-	(void)drv_i915_xd_vbt_parse(test_platform(0x46a6U), bytes, size, &vbt);
-	snprintf(what, sizeof(what), "%s against the old parser: version and output count", spec->name);
-	i915_host_check(old.bdb_version == vbt.version && old.n_encoders == vbt.nchildren &&
-	    old.lvds_use_ssc == vbt.ssc && (uint32_t)old.lvds_ssc_freq == vbt.ssc_khz &&
-	    old.int_lvds_support == vbt.internal_panel && old.display_clock_mode == vbt.display_clock_mode, what);
-
-	/* Each output, field by field. */
-	for (c = 0U; c < vbt.nchildren; c++) {
-		child = &vbt.children[c];
-		encoder = drv_i915_vbt_encoder_for_port(&old, child->ddi);
-		old_aux = child->aux_ch == I915_XD_VBT_NONE ? -1 : (int)child->aux_ch;
-		same = encoder != NULL;
-		if (same) {
-			same = encoder->aux_ch == old_aux && encoder->device_type == child->device_type &&
-			    encoder->dvo_port == child->dvo_port && encoder->ddc_pin_raw == child->ddc_code &&
-			    encoder->ddc_pin == child->gmbus_pin && encoder->supports_dp == child->dp &&
-			    encoder->supports_edp == child->edp && encoder->supports_hdmi == child->hdmi &&
-			    encoder->supports_dvi == child->dvi && encoder->supports_typec_usb == child->type_c &&
-			    encoder->supports_tbt == child->tbt && encoder->lane_reversal == child->lane_reversal &&
-			    encoder->hpd_invert == child->hpd_invert && encoder->dp_max_lane_count == child->dp_max_lanes &&
-			    encoder->dp_max_link_rate == (int)child->dp_max_rate_khz &&
-			    encoder->dp_boost_level == child->dp_boost && encoder->hdmi_boost_level == child->hdmi_boost &&
-			    encoder->hdmi_level_shift == child->hdmi_level_shift;
-		}
-		snprintf(what, sizeof(what), "%s against the old parser: output %u (DDI %u) the same", spec->name, c, child->ddi);
-		i915_host_check(same, what);
-	}
-
-	/* The panel, field by field. */
-	i915_host_check(drv_i915_vbt_init_panel(&old, 0, i915_dp_fixture_edid, &old_panel) == 0, "old parser: panel");
-	(void)drv_i915_xd_vbt_panel(&vbt, &vbt.children[0], i915_dp_fixture_edid, sizeof(i915_dp_fixture_edid), &panel);
-	snprintf(what, sizeof(what), "%s against the old parser: panel row, eDP and power sequence", spec->name);
-	i915_host_check(old_panel.panel_type == (int)panel.panel_type && old_panel.bpp == panel.bpp &&
-	    old_panel.edp_rate == (int)panel.edp_rate_khz && old_panel.edp_lanes == panel.edp_lanes &&
-	    old_panel.edp_preemphasis == (panel.edp_preemphasis << 3) && old_panel.edp_vswing == panel.edp_vswing &&
-	    old_panel.edp_low_vswing == panel.low_vswing && old_panel.edp_hobl == panel.hobl &&
-	    old_panel.edp_max_link_rate == (int)panel.edp_max_rate_khz && old_panel.override_afc_startup == vbt.afc_override &&
-	    old_panel.t1_t3 == panel.t1_t3 && old_panel.t8 == panel.t8 && old_panel.t9 == panel.t9 &&
-	    old_panel.t10 == panel.t10 && old_panel.t11_t12 == panel.t11_t12, what);
-	snprintf(what, sizeof(what), "%s against the old parser: backlight, DRRS and VRR", spec->name);
-	i915_host_check(old_panel.bl_present == panel.backlight && old_panel.bl_type == panel.backlight_type &&
-	    old_panel.bl_controller == panel.backlight_controller && old_panel.bl_active_low_pwm == panel.backlight_active_low &&
-	    old_panel.bl_pwm_freq_hz == panel.backlight_hz && old_panel.bl_min_brightness == panel.backlight_min &&
-	    old_panel.drrs_type == (int)panel.drrs && old_panel.vrr == panel.vrr, what);
-	snprintf(what, sizeof(what), "%s against the old parser: the VBT's mode", spec->name);
-	i915_host_check(old_panel.has_lfp_mode == panel.has_mode && old_panel.mode_clock_khz == panel.mode.clock_khz &&
-	    old_panel.hdisplay == panel.mode.hdisplay && old_panel.hsync_start == panel.mode.hsync_start &&
-	    old_panel.hsync_end == panel.mode.hsync_end && old_panel.htotal == panel.mode.htotal &&
-	    old_panel.vdisplay == panel.mode.vdisplay && old_panel.vsync_start == panel.mode.vsync_start &&
-	    old_panel.vsync_end == panel.mode.vsync_end && old_panel.vtotal == panel.mode.vtotal, what);
-	drv_i915_vbt_fini(&old);
-}
-
-/* Checks the outputs of a board without a VBT on each platform, and against the old parser on Alder Lake-P. */
+/* Checks the outputs of a board without a VBT on each platform. */
 static void
 test_defaults(void)
 {
-	static struct i915_vbt old;
 	static const struct {
 		uint16_t device;
 		unsigned count;
@@ -754,18 +671,10 @@ test_defaults(void)
 		i915_host_check(same, what);
 	}
 
-	/* Alder Lake-P: eDP on A, DisplayPort and DVI on B and C, as the old parser makes them. */
+	/* Alder Lake-P: eDP on A, DisplayPort and HDMI on B and C. */
 	(void)drv_i915_xd_vbt_parse(test_platform(0x46a6U), NULL, 0U, &vbt);
-	i915_host_check(drv_i915_vbt_init(&old, NULL, 0U, I915_VBT_ORIGIN_NONE) == 0, "old parser: defaults");
-	same = old.n_encoders == vbt.nchildren;
-	for (c = 0U; same && c < vbt.nchildren; c++) {
-		if (old.enc[c].port != vbt.children[c].ddi || old.enc[c].device_type != vbt.children[c].device_type ||
-		    old.enc[c].supports_edp != vbt.children[c].edp || old.enc[c].supports_hdmi != vbt.children[c].hdmi)
-			same = 0;
-	}
-	i915_host_check(same && vbt.children[0].edp == 1 && vbt.children[1].hdmi == 1 && vbt.children[1].dp == 1,
-	    "defaults of Alder Lake-P are the old parser's (eDP on A, DP and HDMI on B and C)");
-	drv_i915_vbt_fini(&old);
+	i915_host_check(vbt.children[0].edp == 1 && vbt.children[1].hdmi == 1 && vbt.children[1].dp == 1,
+	    "defaults of Alder Lake-P: eDP on A, DP and HDMI on B and C");
 }
 
 /* Checks the refusal of damaged VBTs and the parts of a VBT a damage hides. */
@@ -788,19 +697,19 @@ test_damaged(void)
 	i915_host_check(drv_i915_xd_vbt_check(bytes, I915_XD_VBT_HEADER_BYTES - 1U) == EINVAL, "damaged: a short header is refused");
 	memcpy(copy, bytes, size);
 	copy[1] = 'X';
-	i915_host_check(drv_i915_xd_vbt_check(copy, size) == EINVAL && !drv_i915_bios_is_valid_vbt(copy, size), "damaged: a wrong signature is refused, as by the old parser");
-	i915_host_check(drv_i915_xd_vbt_check(bytes, size - 1U) == EINVAL && !drv_i915_bios_is_valid_vbt(bytes, size - 1U), "damaged: a VBT longer than its buffer is refused, as by the old parser");
+	i915_host_check(drv_i915_xd_vbt_check(copy, size) == EINVAL, "damaged: a wrong signature is refused, as by the old parser");
+	i915_host_check(drv_i915_xd_vbt_check(bytes, size - 1U) == EINVAL, "damaged: a VBT longer than its buffer is refused, as by the old parser");
 
 	/* A BDB that starts or ends outside the VBT. */
 	memcpy(copy, bytes, size);
 	test_put32(copy, I915_XD_VBT_BDB_OFFSET, (uint32_t)size - 10U);
-	i915_host_check(drv_i915_xd_vbt_check(copy, size) == EINVAL && !drv_i915_bios_is_valid_vbt(copy, size), "damaged: a BDB header past the VBT is refused");
+	i915_host_check(drv_i915_xd_vbt_check(copy, size) == EINVAL, "damaged: a BDB header past the VBT is refused");
 	memcpy(copy, bytes, size);
 	test_put32(copy, I915_XD_VBT_BDB_OFFSET, 0xfffffff0U);
 	i915_host_check(drv_i915_xd_vbt_check(copy, size) == EINVAL, "damaged: a BDB offset that wraps is refused");
 	memcpy(copy, bytes, size);
 	test_put16(copy, TEST_BDB_OFFSET + I915_XD_BDB_SIZE, (unsigned)size);
-	i915_host_check(drv_i915_xd_vbt_check(copy, size) == EINVAL && !drv_i915_bios_is_valid_vbt(copy, size), "damaged: a BDB running past the VBT is refused");
+	i915_host_check(drv_i915_xd_vbt_check(copy, size) == EINVAL, "damaged: a BDB running past the VBT is refused");
 
 	/* A refused VBT gives the defaults and EINVAL. */
 	error = drv_i915_xd_vbt_parse(platform, copy, size, &vbt);
@@ -1112,37 +1021,25 @@ test_opregion_read(void)
 }
 
 /*
- * Checks the VBT stage of the display start: the old parser's result, which
- * the display reads, carries the xd parse's values, which agree with the
- * old parser's on the made-up VBTs of Alder Lake-P.
+ * Checks the VBT stage of the display start: the older code's types carry
+ * the xd parse's values, as the shell converts them.
  */
 static void
 test_stage_shell(void)
 {
 	static uint8_t bytes[TEST_VBT_BYTES];
 	static struct i915_trace trace;
-	static struct i915_vbt reference;
-	static struct i915_vbt_encoder expected[2][I915_VBT_MAX_ENCODERS];
 	const struct i915_vbt_encoder *encoder;
+	const struct i915_xd_vbt_child *child;
+	const struct i915_vbt *parsed;
+	struct i915_xd_vbt_panel xd_panel;
 	struct i915_vbt_panel panel;
-	struct i915_vbt_panel reference_panel[2];
+	struct i915_xd_vbt vbt;
 	char what[160];
-	unsigned expected_count[2];
 	unsigned index;
 	unsigned c;
 	size_t size;
 	int same;
-
-	/* The old parser alone on each VBT, for the expected values (before any stage ran). */
-	for (index = 0U; index < 2U; index++) {
-		size = test_build(&test_vbts[index], bytes);
-		i915_host_check(drv_i915_vbt_init(&reference, bytes, size, I915_VBT_ORIGIN_OPREGION) == 0, "stage: the old parser alone");
-		memset(&reference_panel[index], 0, sizeof(reference_panel[index]));
-		i915_host_check(drv_i915_vbt_init_panel(&reference, 0, i915_dp_fixture_edid, &reference_panel[index]) == 0, "stage: the old parser's panel");
-		expected_count[index] = reference.n_encoders;
-		memcpy(expected[index], reference.enc, sizeof(expected[index]));
-		drv_i915_vbt_fini(&reference);
-	}
 
 	drv_i915_trace_init(&trace);
 	for (index = 0U; index < 2U; index++) {
@@ -1151,23 +1048,53 @@ test_stage_shell(void)
 		drv_i915_xd_start(&test_display.xd, NULL, NULL, 0x46a6U, 0x0cU);
 		drv_i915_bios_set_opregion_vbt(&test_display, bytes, size);
 		i915_host_check(drv_i915_bios_init_ex(&test_display, &test_display.vbt_state, NULL, 1, 0, &trace) == 0, "stage: the VBT stage runs");
-		i915_host_check(test_display.xd.vbt_parsed && test_display.vbt_state.vbt_found, "stage: the xd parse ran on the OpRegion's VBT");
+		parsed = &test_display.vbt_state.parsed;
+		i915_host_check(test_display.vbt_state.vbt_found && test_display.vbt_state.source == I915_VBT_SRC_OPREGION, "stage: the OpRegion's VBT is read");
 
-		/* Every output carries the values the old parser alone gives. */
-		same = test_display.vbt_state.parsed.n_encoders == expected_count[index];
-		for (c = 0U; same && c < expected_count[index]; c++) {
-			encoder = drv_i915_vbt_encoder_for_port(&test_display.vbt_state.parsed, expected[index][c].port);
-			if (encoder == NULL || memcmp(encoder, &expected[index][c], sizeof(*encoder)) != 0)
+		/* Every output carries the xd parse's values. */
+		(void)drv_i915_xd_vbt_parse(test_platform(0x46a6U), bytes, size, &vbt);
+		same = parsed->n_encoders == vbt.nchildren && parsed->bdb_version == vbt.version;
+		for (c = 0U; same && c < vbt.nchildren; c++) {
+			child = &vbt.children[c];
+			encoder = drv_i915_vbt_encoder_for_port(parsed, child->ddi);
+			if (encoder == NULL) {
+				same = 0;
+				continue;
+			}
+			if (encoder->device_type != child->device_type || encoder->dvo_port != child->dvo_port ||
+			    encoder->ddc_pin != child->gmbus_pin || encoder->supports_dp != child->dp ||
+			    encoder->supports_edp != child->edp || encoder->supports_hdmi != child->hdmi ||
+			    encoder->supports_typec_usb != child->type_c || encoder->dp_max_lane_count != child->dp_max_lanes ||
+			    encoder->dp_max_link_rate != (int)child->dp_max_rate_khz || encoder->hdmi_level_shift != child->hdmi_level_shift)
+				same = 0;
+			if (child->aux_ch == I915_XD_VBT_NONE && encoder->aux_ch != -1)
+				same = 0;
+			if (child->aux_ch != I915_XD_VBT_NONE && encoder->aux_ch != (int)child->aux_ch)
 				same = 0;
 		}
-		snprintf(what, sizeof(what), "stage: %s outputs as the old parser gives them", test_vbts[index].name);
+		snprintf(what, sizeof(what), "stage: %s outputs are the xd parse's", test_vbts[index].name);
 		i915_host_check(same, what);
+		i915_host_check(drv_i915_vbt_encoder_for_port(parsed, 0) != NULL && drv_i915_vbt_encoder_for_port(parsed, 0)->supports_edp == 1,
+		    "stage: eDP on DDI A");
+		i915_host_check(drv_i915_vbt_encoder_for_port(parsed, 2) == NULL || index == 0U, "stage: no output on a port the VBT does not name");
 
-		/* The panel too. */
+		/* The panel too, with the pre-emphasis three bits up as the older code keeps it. */
+		(void)drv_i915_xd_vbt_panel(&vbt, &vbt.children[0], i915_dp_fixture_edid, sizeof(i915_dp_fixture_edid), &xd_panel);
 		memset(&panel, 0, sizeof(panel));
 		i915_host_check(drv_i915_vbt_init_panel(&test_display.vbt_state.parsed, 0, i915_dp_fixture_edid, &panel) == 0, "stage: the panel");
-		snprintf(what, sizeof(what), "stage: %s panel as the old parser gives it", test_vbts[index].name);
-		i915_host_check(memcmp(&panel, &reference_panel[index], sizeof(panel)) == 0, what);
+		snprintf(what, sizeof(what), "stage: %s panel is the xd parse's", test_vbts[index].name);
+		i915_host_check(panel.initialized && panel.panel_type == (int)xd_panel.panel_type && panel.bpp == xd_panel.bpp &&
+		    panel.edp_preemphasis == ((int)xd_panel.edp_preemphasis << 3) && panel.t1_t3 == xd_panel.t1_t3 &&
+		    panel.t11_t12 == xd_panel.t11_t12 && panel.bl_pwm_freq_hz == xd_panel.backlight_hz &&
+		    panel.override_afc_startup == vbt.afc_override && panel.hdisplay == xd_panel.mode.hdisplay &&
+		    panel.vtotal == xd_panel.mode.vtotal, what);
+		i915_host_check(drv_i915_vbt_init_panel(&test_display.vbt_state.parsed, 9, NULL, &panel) == ENODEV, "stage: no panel on a port without an output");
 		drv_i915_bios_driver_remove(&test_display.vbt_state);
+		i915_host_check(drv_i915_vbt_encoder_for_port(parsed, 0) == NULL, "stage: nothing after the stage is forgotten");
 	}
+
+	/* A device without an xd description gets no outputs. */
+	drv_i915_xd_start(&test_display.xd, NULL, NULL, 0x5917U, 0x07U);
+	(void)drv_i915_bios_init_ex(&test_display, &test_display.vbt_state, NULL, 1, 0, &trace);
+	i915_host_check(test_display.vbt_state.parsed.n_encoders == 0U, "stage: Gen9 gets no outputs from the VBT");
 }

@@ -1636,6 +1636,8 @@ struct i915_vbt {
 	int int_lvds_support, display_clock_mode, lvds_use_ssc, lvds_ssc_freq, crt_ddc_pin;
 	unsigned arena_used, arena_peak, alloc_failures;
 	unsigned log_errors;              /* drm_err / WARN lines the reference emitted */
+	/* the xd parse the values come from (vbt-shell.c), or NULL */
+	const struct i915_xd_vbt *xd;
 };
 
 /*

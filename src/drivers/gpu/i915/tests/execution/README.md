@@ -50,8 +50,6 @@ were made for Gen12 only.
 - `runner.c` — the checkpoint and the scenario table.
 - `ktest.c`, `ktest.h` — the tally and the order of the unit test parts.
 - `ktest-sync.c` — completions, work queues, MSI vectors, write-combining, reset, PCODE, DRAM/bandwidth, runtime PM, sleep-range, preemption, late fuse.
-- `ktest-display.c` — DRM/vblank bookkeeping, VBT, VGA and power-domain map, power wells, combo PHY, CDCLK, power-domain init, DMC, display state.
-- `ktest-display-probe.c` — PCH, display interrupt reset/postinstall/ack/hooks, the nogem probe (watermarks, DPLLs, CRTCs, outputs, readout, sanitize).
 - `ktest-gt.c` — GT fuses and interrupts, workarounds/MOCS/PAT/RC6/RPS, GT memory, execlists, contexts, requests, defaults, PXP, HPD setup, the draw/texture fixtures and the page-table walk.
 - `eu-test.c`, `eu-internal.h`, `eu-test.h` — the compute test and the request path all GPU tests share.
 - `draw-test.c` — draw, R1, texture, T3 and bilinear tests.
@@ -87,25 +85,6 @@ keeps one check per old check otherwise, so the counts stay comparable.
 | Timer next-event / tick calculation (8) | the calculation (`timer_calc`) is retired with the diagnostic runner |
 | IRQ-context completion one-shot (4, skipped at run time) | `kern_diag_oneshot_arm` was a kernel hook built only with the removed `CONFIG_DRIVER_PCI_I915_PARITY`; the hook was deleted with the option |
 | Real preemption A/B (1, skipped at run time) | same one-shot hook |
-
-### ktest-display.c
-
-| Old test | Reason |
-| --- | --- |
-| DRM per-pipe worker-create failure unwind, dev_fini reclaim (2) | the worker-fail hook no longer exists |
-| Power well: time-base anomaly during the ACK wait (1) | scripted time source retired; the fault is driver-wide |
-| D3 D-FAULT stop and driver-remove (2) | same |
-| DMC-FINI(running) and DMC-FINI(MMIO fault) (4) | the loader's pause and fault-at test hooks were dropped from production |
-| DS-ENOMEM (1) | the global-state allocation can no longer fail and its failure hook is gone |
-| DS-QUIRKS forced-DMI sub-case (part of 1) | the DMI match hook no longer exists; the PCI sub-cases run |
-| `intel_bios_init` fallback (1; skipped at run time) | the VBT parser's world is a driver-wide pointer bound to the live display (`display/vbt.c` `i915_vbt_bound_world`): a second world gets EBUSY. The explicit-VBT group (VBT-EXPLICIT/CHILDREN/PANEL/DEFAULTS skips and the VBT-VALIDATE check) went with the captured Dell Latitude 5330 VBT and the `I915_TEST_VBT` build on 2026-10-14 (ws233-p001); the "second machine (1028:0a1f)" case went with the Dell Latitude 5320 VBT on 2026-09-22 |
-
-### ktest-display-probe.c
-
-| Old test | Reason |
-| --- | --- |
-| PCH-QEMU and the scripted-bridge parts of PCH-REAL/SKIP/NONE/NOP (1 whole, 1 partial) | production has no scripted ISA-bridge hook any more; `detect_pch` scans the real bus, which the test must not do on the live device |
-| IRQ-DRAIN-EIO (1) | time-base fault injection was removed from production |
 
 ### Execution tests and fixtures
 
