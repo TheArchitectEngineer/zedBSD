@@ -3,6 +3,7 @@
 # here; a name made of a source's own terms (a register, field, packet or function name) never does.
 # One word per line; reviewed by hand when a word is added.
 EINVAL
+above
 access
 action
 active
@@ -31,6 +32,7 @@ bottom
 break
 broken
 buffer
+byte
 bytes
 capabilities
 capability
@@ -65,6 +67,7 @@ data
 database
 default
 define
+depth
 description
 descriptor
 device
@@ -89,13 +92,16 @@ engines
 entries
 entry
 enum
+equal
 error
 execute
 expected
+failure
 false
 fault
 faults
 fence
+field
 fields
 file
 files
@@ -115,6 +121,7 @@ fused
 generation
 generic
 global
+going
 graphics
 group
 hardware
@@ -163,6 +170,7 @@ memory
 message
 middle
 minor
+missing
 mode
 moved
 mutex
@@ -176,6 +184,7 @@ number
 object
 offset
 opcode
+opcodes
 open
 opened
 operation
@@ -186,6 +195,7 @@ outside
 packets
 page
 parameter
+parameters
 part
 pass
 path
@@ -200,6 +210,7 @@ places
 platform
 pointer
 poll
+port
 position
 posted
 power
@@ -212,6 +223,7 @@ program
 programs
 range
 ratio
+read
 reading
 reads
 ready
@@ -313,5 +325,7 @@ whole
 width
 window
 word
+work
+write
 writing
 written

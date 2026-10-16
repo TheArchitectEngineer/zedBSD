@@ -124,6 +124,13 @@
 #define FIELD_BYTE24			7U
 #define FIELD_COUNT			8U
 
+/*
+ * Each field's mask and shift, the destination field of each source field
+ * and selector, and each source field's default destination selector.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/amd/amdgpu/atom.c
+ * (atom_arg_mask, atom_arg_shift, atom_dst_to_src, atom_def_dst).
+ */
 static const uint32_t field_masks[FIELD_COUNT] = {
 	0xffffffffU, 0x0000ffffU, 0x00ffff00U, 0xffff0000U, 0x000000ffU, 0x0000ff00U, 0x00ff0000U, 0xff000000U
 };
@@ -204,7 +211,13 @@ static const uint8_t program_lengths[PROGRAM_OPCODES] = { 1U, 2U, 3U, 3U, 3U, 3U
 #define BRANCH_ENTRY			0x63U
 #define BRANCH_END			0x5a5aU
 
-/* The value an operand read of a place that does not exist gives (the reference's placeholder). */
+/*
+ * The value an operand read of a place that does not exist gives (the
+ * reference's placeholder).
+ *
+ * Value referenced: Linux v6.19 drivers/gpu/drm/amd/amdgpu/atom.c
+ * (atom_get_src_int, atom_iio_execute: the value before a read).
+ */
 #define PLACEHOLDER			0xcdcdcdcdU
 
 /*

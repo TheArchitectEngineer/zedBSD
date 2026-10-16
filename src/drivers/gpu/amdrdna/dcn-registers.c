@@ -69,6 +69,23 @@ static const uint16_t pixel_processor_offsets[AMDRDNA_DISPLAY_PIPES] = {
 };
 
 /*
+ * The I2C engine's four transaction words (window 2); instances past the
+ * fourth name the last.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/asic_reg/dcn/dcn_2_0_0_offset.h
+ * (mmDC_I2C_TRANSACTION0 to mmDC_I2C_TRANSACTION3).
+ */
+static const uint16_t i2c_transaction_offsets[AMDRDNA_DISPLAY_PIPES] = {
+	0x1eaeU,
+	0x1eafU,
+	0x1eb0U,
+	0x1eb1U,
+	0x1eb1U,
+	0x1eb1U
+};
+
+/*
  * The place of every named display register, in the order of
  * enum amdrdna_dcn_register: the clock controls in window 1, the pipe
  * blocks in window 2, with the plane (0xdc apart), the blend units (0x1b),
@@ -116,6 +133,19 @@ static const uint16_t pixel_processor_offsets[AMDRDNA_DISPLAY_PIPES] = {
  * position, frame count and sync status (mmOTG0_OTG_STATUS_POSITION,
  * mmOTG0_OTG_STATUS_FRAME_COUNT, mmOTG0_OTG_GLOBAL_SYNC_STATUS) and the
  * hot-plug lines (mmHPD0_DC_HPD_INT_STATUS, mmHPD0_DC_HPD_INT_CONTROL).
+ * The registers the reading of the sinks adds, from the same header: the
+ * I2C engine's control, arbitration, status, each line's status, speed
+ * and setup, the data port (mmDC_I2C_CONTROL, mmDC_I2C_ARBITRATION,
+ * mmDC_I2C_SW_STATUS, mmDC_I2C_DDC1_HW_STATUS, mmDC_I2C_DDC1_SPEED,
+ * mmDC_I2C_DDC1_SETUP and the same of DDC2 to DDC6, mmDC_I2C_DATA), the
+ * microsecond time base (mmMICROSECOND_TIME_BASE_DIV), each line's pad
+ * mask (mmDC_GPIO_DDC1_MASK to mmDC_GPIO_DDC6_MASK), and each AUX
+ * channel's control, request control, arbitration, interrupt control,
+ * request status, data port and receiver control
+ * (mmDP_AUX0_AUX_CONTROL, mmDP_AUX0_AUX_SW_CONTROL,
+ * mmDP_AUX0_AUX_ARB_CONTROL, mmDP_AUX0_AUX_INTERRUPT_CONTROL,
+ * mmDP_AUX0_AUX_SW_STATUS, mmDP_AUX0_AUX_SW_DATA,
+ * mmDP_AUX0_AUX_DPHY_RX_CONTROL0 and the same of DP_AUX1 to DP_AUX5).
  * derived: the distances are the differences between the offsets of
  * instance 1 and instance 0 in the same header; a scaler register's
  * distance from its pixel processor's control word is the same in all six
@@ -187,7 +217,24 @@ static const struct dcn_place dcn_places[AMDRDNA_DCN_REGISTER_COUNT] = {
 	{ 2U, 0x1b4cU, 0x0080U, NULL },
 	{ 2U, 0x1b8aU, 0x0080U, NULL },
 	{ 2U, 0x1f14U, 0x0008U, NULL },
-	{ 2U, 0x1f15U, 0x0008U, NULL }
+	{ 2U, 0x1f15U, 0x0008U, NULL },
+	{ 2U, 0x1e98U, 0x0000U, NULL },
+	{ 2U, 0x1e99U, 0x0000U, NULL },
+	{ 2U, 0x1e9bU, 0x0000U, NULL },
+	{ 2U, 0x1e9cU, 0x0001U, NULL },
+	{ 2U, 0x1ea2U, 0x0002U, NULL },
+	{ 2U, 0x1ea3U, 0x0002U, NULL },
+	{ 2U, 0x0000U, 0x0000U, i2c_transaction_offsets },
+	{ 2U, 0x1eb2U, 0x0000U, NULL },
+	{ 1U, 0x007bU, 0x0000U, NULL },
+	{ 2U, 0x28d0U, 0x0004U, NULL },
+	{ 2U, 0x1f50U, 0x001cU, NULL },
+	{ 2U, 0x1f51U, 0x001cU, NULL },
+	{ 2U, 0x1f52U, 0x001cU, NULL },
+	{ 2U, 0x1f53U, 0x001cU, NULL },
+	{ 2U, 0x1f54U, 0x001cU, NULL },
+	{ 2U, 0x1f56U, 0x001cU, NULL },
+	{ 2U, 0x1f5aU, 0x001cU, NULL }
 };
 
 /*
