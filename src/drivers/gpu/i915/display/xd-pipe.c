@@ -65,6 +65,7 @@
 static uint32_t i915_xd_pipe_pair(uint32_t lower, uint32_t upper);
 static uint32_t i915_xd_pipe_vrr_word(const struct i915_xd_platform *platform, const struct i915_xd_vrr *vrr);
 static int i915_xd_pipe_scanline_moves(struct i915_xd_io *io, unsigned pipe);
+static uint32_t i915_xd_pipe_chicken(unsigned trans);
 
 /*
  * Writes a transcoder's DisplayPort M/N values: the data M with the
@@ -177,8 +178,9 @@ drv_i915_xd_pipe_configure(
 		drv_i915_xd_pipe_m_n(io, trans, &setup->m_n);
 	drv_i915_xd_pipe_timing(io, platform, trans, &setup->timing);
 
-	/* The vblank with the delay of the context latency, then the refresh words. */
-	drv_i915_xd_io_rmw(io, I915_XD_CHICKEN_TRANS(trans), 0U, I915_XD_CHICKEN_TRANS_VBLANK_DELAY);
+	/* The vblank with the delay of the context latency (display 12 and 13), then the refresh words. */
+	if (platform->display_ver >= 12U)
+		drv_i915_xd_io_rmw(io, i915_xd_pipe_chicken(trans), 0U, I915_XD_CHICKEN_TRANS_VBLANK_DELAY);
 	if (setup->vrr.flipline == 0U) {
 		drv_i915_xd_io_write(io, I915_XD_TRANS_VRR_CTL(trans), 0U);
 	} else {
@@ -190,7 +192,7 @@ drv_i915_xd_pipe_configure(
 
 	/* The pixel multiplier and the frame start delay, each less one. */
 	drv_i915_xd_io_write(io, I915_XD_TRANS_MULT(trans), setup->pixel_multiplier - 1U);
-	drv_i915_xd_io_rmw(io, I915_XD_CHICKEN_TRANS(trans), I915_XD_CHICKEN_TRANS_FRAME_START,
+	drv_i915_xd_io_rmw(io, i915_xd_pipe_chicken(trans), I915_XD_CHICKEN_TRANS_FRAME_START,
 		i915_xd_field_put(I915_XD_CHICKEN_TRANS_FRAME_START, setup->frame_start_delay - 1U));
 
 	/* The configuration word: kept enabled when it runs, the interlace field. */
@@ -464,6 +466,136 @@ drv_i915_xd_pipe_func_enable(
 }
 
 /*
+ * Computes a display 11 transcoder's DDI function word with its enable:
+ * the word of drv_i915_xd_pipe_func_word() with the DDI in display 11's
+ * select (the DDI index itself), and on the eDP transcoder the pipe it
+ * takes its input from (pipe A always on, B or C switched).
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (TRANS_DDI_SELECT_PORT, TRANS_DDI_EDP_INPUT_A_ON,
+ * TRANS_DDI_EDP_INPUT_B_ONOFF, TRANS_DDI_EDP_INPUT_C_ONOFF).
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (intel_ddi_transcoder_func_reg_val_get).
+ */
+uint32_t
+drv_i915_xd_pipe_func_word_11(
+	unsigned trans,
+	unsigned pipe,
+	const struct i915_xd_trans_func *func)
+{
+	uint32_t word;
+	uint32_t input;
+
+	/* The word, its DDI moved into display 11's select. */
+	word = drv_i915_xd_pipe_func_word(func);
+	word &= ~I915_XD_DDI_FUNC_SELECT;
+	word |= i915_xd_field_put(I915_XD_DDI_FUNC_SELECT_11, func->ddi);
+
+	/* Only the eDP transcoder names its pipe. */
+	if (trans != I915_XD_TRANS_EDP)
+		return word;
+
+	/* Pipe A keeps the panel on; pipes B and C switch it. */
+	switch (pipe) {
+	case 1U:
+		input = I915_XD_DDI_FUNC_EDP_INPUT_B_ONOFF;
+		break;
+	case 2U:
+		input = I915_XD_DDI_FUNC_EDP_INPUT_C_ONOFF;
+		break;
+	default:
+		input = I915_XD_DDI_FUNC_EDP_INPUT_A_ON;
+		break;
+	}
+	word |= i915_xd_field_put(I915_XD_DDI_FUNC_EDP_INPUT, input);
+
+	/* Succeeded: the word. */
+	return word;
+}
+
+/*
+ * Enables a display 11 transcoder's DDI function, as
+ * drv_i915_xd_pipe_func_enable() does with the display 11 word: the
+ * second word (the port sync master, or none) first, then the function
+ * word with its enable.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (intel_ddi_enable_transcoder_func).
+ */
+void
+drv_i915_xd_pipe_func_enable_11(
+	struct i915_xd_io *io,
+	unsigned trans,
+	unsigned pipe,
+	const struct i915_xd_trans_func *func)
+{
+	uint32_t second;
+	uint32_t word;
+
+	/* The port sync master selects its transcoder's index plus one. */
+	second = 0U;
+	if (func->sync_master != I915_XD_NO_TRANSCODER) {
+		second = I915_XD_DDI_FUNC2_PORT_SYNC |
+			 i915_xd_field_put(I915_XD_DDI_FUNC2_PORT_SYNC_MASTER, func->sync_master + 1U);
+	}
+	drv_i915_xd_io_write(io, I915_XD_TRANS_DDI_FUNC_CTL2(trans), second);
+
+	/* The function. */
+	word = drv_i915_xd_pipe_func_word_11(trans, pipe, func);
+	drv_i915_xd_io_write(io, I915_XD_TRANS_DDI_FUNC_CTL(trans), word);
+}
+
+/*
+ * Points a transcoder's clock at a DDI's: the DDI index plus one, in
+ * display 11's field or in the later one.  Display 11's eDP transcoder
+ * runs on DDI A's clock without a select and is left alone.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (TRANS_CLK_SEL_PORT, TGL_TRANS_CLK_SEL_PORT).
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (intel_ddi_enable_transcoder_clock).
+ */
+void
+drv_i915_xd_pipe_clock_on(
+	struct i915_xd_io *io,
+	const struct i915_xd_platform *platform,
+	unsigned trans,
+	unsigned ddi)
+{
+	uint32_t word;
+
+	/* The eDP transcoder has no select. */
+	if (trans == I915_XD_TRANS_EDP)
+		return;
+
+	/* The DDI index plus one in the platform's field. */
+	word = i915_xd_field_put(I915_XD_TRANS_CLK_SEL_FIELD, ddi + 1U);
+	if (platform->display_ver < 12U)
+		word = i915_xd_field_put(I915_XD_TRANS_CLK_SEL_FIELD_11, ddi + 1U);
+	drv_i915_xd_io_write(io, I915_XD_TRANS_CLK_SEL(trans), word);
+}
+
+/*
+ * Takes a transcoder's clock off its DDI.  Display 11's eDP transcoder
+ * has no select and is left alone.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (intel_ddi_disable_transcoder_clock).
+ */
+void
+drv_i915_xd_pipe_clock_off(
+	struct i915_xd_io *io,
+	unsigned trans)
+{
+	/* The eDP transcoder has no select. */
+	if (trans == I915_XD_TRANS_EDP)
+		return;
+
+	/* No DDI's clock. */
+	drv_i915_xd_io_write(io, I915_XD_TRANS_CLK_SEL(trans), I915_XD_TRANS_CLK_SEL_NONE);
+}
+
+/*
  * Writes a transcoder's DDI function without its enable, ahead of a
  * DisplayPort link's training.
  *
@@ -579,7 +711,7 @@ drv_i915_xd_pipe_stop(
 	/* The enable cleared, the FEC stall released. */
 	*was_running = 1;
 	drv_i915_xd_io_write(io, I915_XD_TRANS_CONF(trans), conf & ~I915_XD_TRANS_CONF_ENABLE);
-	drv_i915_xd_io_rmw(io, I915_XD_CHICKEN_TRANS(trans), I915_XD_CHICKEN_TRANS_FEC_STALL, 0U);
+	drv_i915_xd_io_rmw(io, i915_xd_pipe_chicken(trans), I915_XD_CHICKEN_TRANS_FEC_STALL, 0U);
 
 	/* The transcoder reports itself off. */
 	error = drv_i915_xd_io_poll(io, I915_XD_TRANS_CONF(trans), I915_XD_TRANS_CONF_STATE, 0U, I915_XD_PIPE_OFF_US, &last);
@@ -961,4 +1093,20 @@ i915_xd_pipe_scanline_moves(
 
 	/* Succeeded: the line moved. */
 	return 1;
+}
+
+/*
+ * Reports a transcoder's chicken word: display 11's eDP transcoder has
+ * its own, the others follow their index.
+ */
+static uint32_t
+i915_xd_pipe_chicken(
+	unsigned trans)
+{
+	/* The eDP transcoder's word lies apart. */
+	if (trans == I915_XD_TRANS_EDP)
+		return I915_XD_CHICKEN_TRANS_EDP;
+
+	/* Succeeded: the word of the index. */
+	return I915_XD_CHICKEN_TRANS(trans);
 }

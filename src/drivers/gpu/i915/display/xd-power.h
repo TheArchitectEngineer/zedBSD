@@ -53,15 +53,21 @@
  * and reports nonzero when the drain failed (the well then stays on).
  * vga_reset rewrites the VGA registers after the well that holds the VGA
  * plane came up.  tc_health waits for the microcontroller of a Type-C
- * port's PHY (0 for the first port) after its AUX well came up, and
- * reports 0, ETIMEDOUT (only noted) or EIO (the time base failed).  Any
- * hook may be NULL.
+ * port's Dekel PHY (0 for the first port) after its AUX well came up,
+ * and reports 0, ETIMEDOUT (only noted) or EIO (the time base failed).
+ * tc_legacy tells whether a Type-C port (0 for the first) has a legacy
+ * connector, whose AUX well on Ice Lake also asks the firmware to leave
+ * TC cold.  port_edp tells whether a DDI drives an eDP panel, whose
+ * combo AUX well on Ice Lake keeps its analog defaults.  Any hook may be
+ * NULL (a NULL tc_legacy or port_edp answers no).
  */
 struct i915_xd_power_hooks {
 	void (*pipes_up)(void *context, unsigned pipe_mask);
 	int (*pipes_down)(void *context, unsigned pipe_mask);
 	void (*vga_reset)(void *context);
 	int (*tc_health)(void *context, unsigned tc_port);
+	int (*tc_legacy)(void *context, unsigned tc_port);
+	int (*port_edp)(void *context, unsigned ddi);
 	void *context;
 };
 

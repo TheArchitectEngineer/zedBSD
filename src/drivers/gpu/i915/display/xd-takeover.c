@@ -321,8 +321,8 @@ drv_i915_xd_firmware_classify(
 		return;
 	}
 
-	/* DisplayPort SST on a Type-C port. */
-	if (port->phy_kind == I915_XD_PHY_DEKEL && firmware->output_mode == I915_XD_DDI_FUNC_MODE_DP_SST) {
+	/* DisplayPort SST on a Type-C port (a Dekel or an MG PHY). */
+	if (port->tc != 0U && firmware->output_mode == I915_XD_DDI_FUNC_MODE_DP_SST) {
 		firmware->output = I915_XD_FW_OUTPUT_DP_TC;
 		return;
 	}
@@ -496,7 +496,7 @@ drv_i915_xd_takeover_stop(
 	kern_memset(&link, 0, sizeof(link));
 	link.ddi = (unsigned)report->ddi;
 	link.trans = pipe;
-	link.tc = port->phy_kind == I915_XD_PHY_DEKEL;
+	link.tc = port->tc != 0U;
 	transport = drv_i915_xd_io_read(io, I915_XD_DP_TP_CTL(pipe));
 	if (dp && (transport & I915_XD_DP_TP_FEC) != 0U)
 		link.fec = 1;

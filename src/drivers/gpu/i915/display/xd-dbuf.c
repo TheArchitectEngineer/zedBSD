@@ -693,11 +693,14 @@ drv_i915_xd_dbuf_dbox_word(
 	uint32_t word;
 	uint32_t a;
 
-	/* The back-to-back transactions. */
+	/* The regulated back-to-back transactions (display 12 on; Ice Lake has a maximum of 0 and none). */
 	credit = platform->dbox;
-	word = i915_xd_field_put(I915_XD_DBOX_B2B_MAX, credit->b2b_max) |
-	       i915_xd_field_put(I915_XD_DBOX_B2B_DELAY, credit->b2b_delay) |
-	       I915_XD_DBOX_B2B_REGULATE;
+	word = 0U;
+	if (credit->b2b_max != 0U) {
+		word = i915_xd_field_put(I915_XD_DBOX_B2B_MAX, credit->b2b_max) |
+		       i915_xd_field_put(I915_XD_DBOX_B2B_DELAY, credit->b2b_delay) |
+		       I915_XD_DBOX_B2B_REGULATE;
+	}
 
 	/* The A credit, the BW and the B credits. */
 	a = credit->a_split;

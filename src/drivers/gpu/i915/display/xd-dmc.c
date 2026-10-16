@@ -294,12 +294,12 @@ drv_i915_xd_dmc_has(
  * Loads the taken programs into the DMCs.
  *
  * Where the platform needs it the pipe DMCs' clock gating is turned off
- * for every pipe (pipes A and B keep it off); the event handlers of
- * every DMC with a program are turned off; the programs are written,
- * dword by dword, with preemption off; then each program's registers,
- * a pipe DMC's event handlers (and on some platforms some of the main
- * DMC's) written as off; the DC state debug masks are set; and the
- * clock gating of pipes C and D is given back.  Without a main program
+ * for every pipe (pipes A and B keep it off); from display 12 on the
+ * event handlers of every DMC with a program are turned off; the
+ * programs are written, dword by dword, with preemption off; then each
+ * program's registers, a pipe DMC's event handlers (and on some
+ * platforms some of the main DMC's) written as off; the DC state debug
+ * masks are set; and the clock gating of pipes C and D is given back.  Without a main program
  * nothing is written.
  *
  * Procedure referenced: Linux v6.8.12
@@ -342,8 +342,8 @@ drv_i915_xd_dmc_load(
 			(void)drv_i915_xd_io_rmw(io, I915_XD_CLKGATE_DIS_PSL_EXT(pipe), 0U, I915_XD_CLKGATE_PSL_EXT_PIPEDMC);
 	}
 
-	/* Turns every event handler of each DMC with a program off. */
-	for (id = 0U; id < I915_XD_DMC_COUNT; id++) {
+	/* Turns every event handler of each DMC with a program off (display 12 on; display 11 keeps them). */
+	for (id = 0U; id < I915_XD_DMC_COUNT && platform->display_ver >= 12U; id++) {
 		has = drv_i915_xd_dmc_has(dmc, id);
 		if (!has)
 			continue;

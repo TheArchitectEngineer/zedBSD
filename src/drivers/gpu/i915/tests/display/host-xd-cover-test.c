@@ -6,15 +6,16 @@
  */
 
 /*
- * The host test of the platform descriptions over every display 12 and
+ * The host test of the platform descriptions over every display 11 to
  * 13 row (display/xd-platform.c and the parts that read the rows): each
  * row is found by its own PCI id; on each row the links of an eDP panel
  * on DDI A, of HDMI on a combo port and of DisplayPort on the first
- * Type-C connector are planned (display/xd-screen.c), with the combo PLL
- * or Type-C PLL words that give the link back (display/xd-clock.c), and a
- * CD clock step for them; the firmware's output on each row is classified
- * (display/xd-takeover.c: the desktops' Type-C connectors are combo
- * ports); and a PCI id no row has is refused.
+ * Type-C connector are planned (display/xd-screen.c), with the combo PLL,
+ * Dekel TC PLL or MG PLL words that give the link back
+ * (display/xd-clock.c), and a CD clock step for them; the firmware's
+ * output on each row is classified (display/xd-takeover.c: the desktops'
+ * Type-C connectors are combo ports); and a PCI id no row has is
+ * refused.
  */
 
 #include "host-test.h"
@@ -134,7 +135,7 @@ i915_xd_cover_test_combo(
 	return NULL;
 }
 
-/* The row's first Type-C connector (a Dekel port, or a combo port on a Type-C pin), or NULL. */
+/* The row's first Type-C connector (a Dekel or MG port, or a combo port on a Type-C pin), or NULL. */
 static const struct i915_xd_port_desc *
 i915_xd_cover_test_type_c(
 	const struct i915_xd_platform *platform)
@@ -171,7 +172,7 @@ i915_xd_cover_test_check(
  * One row: found by its first PCI id; the eDP panel on DDI A, HDMI on a
  * combo port and DisplayPort on the first Type-C connector planned, with
  * PLL words that give each link back; a CD clock step for 1080p60; the
- * Type-C flow where the row has Dekel ports.
+ * Type-C flow where the row has Dekel or MG ports.
  */
 static void
 i915_xd_cover_test_row(
@@ -179,6 +180,7 @@ i915_xd_cover_test_row(
 {
 	const struct i915_xd_port_desc *port;
 	struct i915_xd_tc_pll_words tc_words;
+	struct i915_xd_mg_pll_words mg_words;
 	struct i915_xd_dpll_words words;
 	struct i915_xd_plan_input input;
 	struct i915_display_mode mode;
@@ -233,6 +235,11 @@ i915_xd_cover_test_row(
 			port_khz = drv_i915_xd_tc_pll_port_khz(I915_XD_COVER_TEST_REF, &tc_words);
 			i915_xd_cover_test_check(plan.pll_set == 0 && error == 0 && port_khz == plan.rate_khz && platform->tc_flow != I915_XD_TC_FLOW_NONE,
 				platform, "a Dekel port: the TC PLL gives the rate, the row has a Type-C flow");
+		} else if (port->phy_kind == I915_XD_PHY_MG) {
+			error = drv_i915_xd_mg_pll_words(I915_XD_COVER_TEST_REF, plan.rate_khz, 0, &mg_words);
+			port_khz = drv_i915_xd_mg_pll_port_khz(I915_XD_COVER_TEST_REF, &mg_words);
+			i915_xd_cover_test_check(plan.pll_set == 0 && error == 0 && port_khz == plan.rate_khz && platform->tc_flow != I915_XD_TC_FLOW_NONE,
+				platform, "an MG port: the MG PLL gives the rate, the row has a Type-C flow");
 		} else {
 			port_khz = drv_i915_xd_dpll_port_khz(platform, I915_XD_COVER_TEST_REF, &plan.pll);
 			i915_xd_cover_test_check(plan.pll_set && port_khz == plan.rate_khz && platform->tc_flow == I915_XD_TC_FLOW_NONE,
@@ -277,19 +284,19 @@ i915_xd_cover_test_classify(
 	firmware.pipe[1].ddi_function = I915_XD_DDI_FUNC_ENABLE | i915_xd_field_put(I915_XD_DDI_FUNC_SELECT, port->ddi + 1U) |
 		i915_xd_field_put(I915_XD_DDI_FUNC_MODE, I915_XD_DDI_FUNC_MODE_DP_SST);
 	drv_i915_xd_firmware_classify(platform, 0, &firmware);
-	if (port->phy_kind == I915_XD_PHY_DEKEL) {
-		i915_xd_cover_test_check(firmware.output == I915_XD_FW_OUTPUT_DP_TC, platform, "the firmware's DisplayPort on a Dekel port");
+	if (port->tc != 0U) {
+		i915_xd_cover_test_check(firmware.output == I915_XD_FW_OUTPUT_DP_TC, platform, "the firmware's DisplayPort on a Dekel or MG port");
 	} else {
 		i915_xd_cover_test_check(firmware.output == I915_XD_FW_OUTPUT_DP_COMBO, platform,
 			"the firmware's DisplayPort on a combo Type-C connector");
 	}
 }
 
-/* PCI ids no row has: a Kaby Lake, an Ice Lake (until its row), a Meteor Lake. */
+/* PCI ids no row has: a Kaby Lake, a Coffee Lake, a Meteor Lake. */
 static void
 i915_xd_cover_test_unknown(void)
 {
-	static const uint16_t ids[] = { 0x5917U, 0x8a52U, 0x7d55U };
+	static const uint16_t ids[] = { 0x5917U, 0x3e92U, 0x7d55U };
 	struct i915_xd_choice choice;
 	unsigned index;
 	unsigned refused;
@@ -302,5 +309,5 @@ i915_xd_cover_test_unknown(void)
 		if (error == ENODEV && choice.platform == NULL)
 			refused++;
 	}
-	i915_host_check(refused == sizeof(ids) / sizeof(ids[0]), "unknown: Kaby Lake, Ice Lake and Meteor Lake ids have no row");
+	i915_host_check(refused == sizeof(ids) / sizeof(ids[0]), "unknown: Kaby Lake, Coffee Lake and Meteor Lake ids have no row");
 }

@@ -223,15 +223,16 @@ drv_i915_xd_combo_lanes(
 
 /*
  * Chooses the swing table of a combo port: HDMI's; for eDP above 5.4 GHz
- * the eDP high rate table, with the VBT's HOBL setting the HOBL table,
- * with its low swing the eDP low table, otherwise as DisplayPort; for
+ * the eDP high rate table, with the VBT's HOBL setting the HOBL table
+ * (on a platform that has one), with its low swing the eDP low table,
+ * otherwise as DisplayPort; for
  * DisplayPort the table above 2.7 GHz or the one up to it.
  *
  * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi_buf_trans.c
  * (tgl_get_combo_buf_trans, tgl_get_combo_buf_trans_edp,
  * tgl_get_combo_buf_trans_dp, adlp_get_combo_buf_trans,
  * adlp_get_combo_buf_trans_edp, adlp_get_combo_buf_trans_dp,
- * use_edp_hobl, use_edp_low_vswing).
+ * icl_get_combo_buf_trans_edp, use_edp_hobl, use_edp_low_vswing).
  */
 const struct i915_xd_combo_swing_table *
 drv_i915_xd_combo_swing_table(
@@ -251,7 +252,7 @@ drv_i915_xd_combo_swing_table(
 	if (kind == I915_XD_OUTPUT_EDP) {
 		if (rate_khz > 540000U)
 			return set->edp_hbr3;
-		if ((vbt & I915_XD_SWING_HOBL) != 0U)
+		if ((vbt & I915_XD_SWING_HOBL) != 0U && set->edp_hobl != NULL)
 			return set->edp_hobl;
 		if ((vbt & I915_XD_SWING_LOW) != 0U)
 			return set->edp_low_swing;

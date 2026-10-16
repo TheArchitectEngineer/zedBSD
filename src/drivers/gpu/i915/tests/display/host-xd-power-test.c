@@ -229,6 +229,8 @@ i915_xd_power_test_hooks(
 	hooks->pipes_down = i915_xd_power_test_pipes_down;
 	hooks->vga_reset = i915_xd_power_test_vga;
 	hooks->tc_health = i915_xd_power_test_health;
+	hooks->tc_legacy = NULL;
+	hooks->port_edp = NULL;
 	hooks->context = seen;
 }
 
