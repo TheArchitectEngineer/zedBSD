@@ -1270,6 +1270,8 @@ space_reset(
 		amdrdna_node_device_failed(device, EIO);
 		return;
 	}
+
+	/* Counted, and said. */
 	device->spaces.resets++;
 	amdrdna_mark("graphics queue reset for context %u in %llums, the queue runs again", context, (unsigned long long)taken);
 }
