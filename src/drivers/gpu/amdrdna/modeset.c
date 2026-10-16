@@ -233,6 +233,45 @@
 #define MODESET_PIPE_DIVIDER_FIELD	0x0000007fU
 
 /*
+ * The display clock generator's VCO register (the clock block's fourth
+ * window at 0x17200, word 0x0e) with its multiplier's integer (bits 8:0)
+ * and fraction (bits 31:16) of the 100 MHz reference, and the VCO to
+ * assume when it reads 0 (3.85 GHz).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/navi10_ip_offset.h (CLK_BASE__INST0_SEG3
+ * 0x00017200), include/asic_reg/clk/clk_11_0_0_offset.h
+ * (mmCLK3_0_CLK3_CLK_PLL_REQ 0x000e), clk_11_0_0_sh_mask.h
+ * (CLK3_0_CLK3_CLK_PLL_REQ: FbMult_int, FbMult_frac) and
+ * drivers/gpu/drm/amd/display/dc/clk_mgr/dcn20/dcn20_clk_mgr.c
+ * (dcn20_clk_mgr_construct: 100000, 3850000).
+ */
+#define MODESET_VCO_REGISTER		(0x17200U + 0x000eU)
+#define MODESET_VCO_WHOLE_FIELD		0x000001ffU
+#define MODESET_VCO_FRACTION_SHIFT	16U
+#define MODESET_VCO_REFERENCE_KHZ	100000U
+#define MODESET_VCO_DEFAULT_KHZ		3850000U
+
+/*
+ * The video BIOS's clock routine (its place in the command list: 41), its
+ * frequency command (0), and the clocks read through it: the data return
+ * clock (PLL 0, clock 5) and the memory clock (PLL 1, clock 0).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/atomfirmware.h
+ * (struct atom_master_list_of_command_functions_v2_1: getsmuclockinfo;
+ * GET_SMU_CLOCK_INFO_V3_1_GET_CLOCK_FREQ 0; SMU11_SYSPLL0_ID 0,
+ * SMU11_SYSPLL0_DCEFCLK_ID 5, SMU11_SYSPLL1_0_ID 1,
+ * SMU11_SYSPLL1_0_UCLKA_ID 0).
+ */
+#define MODESET_CLOCK_INFO_ROUTINE	41U
+#define MODESET_CLOCK_FREQUENCY		0U
+#define MODESET_RETURN_CLOCK_PLL	0U
+#define MODESET_RETURN_CLOCK_ID		5U
+#define MODESET_MEMORY_CLOCK_PLL	1U
+#define MODESET_MEMORY_CLOCK_ID		0U
+
+/*
  * The fabric clock from the memory clock: 1.08 times it, at least 506 MHz;
  * the memory's transfers a clock: 16.
  *
@@ -274,6 +313,7 @@ struct modeset_check {
 static int modeset_pipe(struct amdrdna_device *device, struct modeset_pipe *pipe);
 static int modeset_input(struct amdrdna_device *device, const struct amdrdna_timing *timing, struct amdrdna_mode_plan_input *input);
 static bool modeset_good(const struct modeset_check *check);
+static int modeset_bios_clock(struct amdrdna_device *device, uint32_t pll, uint32_t clock, uint32_t *khz);
 static uint32_t modeset_divider(uint32_t id);
 static void modeset_timing_now(struct amdrdna_device *device, const struct modeset_pipe *pipe, struct amdrdna_timing *timing);
 static const struct amdrdna_timing *modeset_other(struct amdrdna_device *device, const struct modeset_pipe *pipe, const struct amdrdna_timing *now);
@@ -299,10 +339,9 @@ static void modeset_write(struct amdrdna_device *device, enum amdrdna_dcn_regist
  * whole sequence.
  *
  * Returns 0; ENOENT before stage A10 read the output's path; ENOTSUP for
- * an output that is not TMDS; ENODEV without the power firmware's clock
- * readings; ERANGE when the plan refuses the firmware's mode or no other
- * mode fits; EIO when a step underflows or the picture stops; or the
- * error of a video BIOS routine.
+ * an output that is not TMDS; ERANGE when the plan refuses the firmware's
+ * mode or no other mode fits; EIO when a clock reads 0, a step underflows
+ * or the picture stops; or the error of a video BIOS routine.
  *
  * Procedure referenced: Linux v6.19
  * drivers/gpu/drm/amd/display/dc/hwss/dcn20/dcn20_hwseq.c
@@ -507,10 +546,12 @@ modeset_pipe(
 
 /*
  * Gives the plan's input for a timing at the clocks the board runs: the
- * hub's reference (the crystal over the hub timer's divider), the data
- * return clock and the display clock from the power firmware, the pipe
- * clock from the clock generator's dividers, the fabric and the memory
- * from the memory clock.  Returns 0, or ENODEV without the readings.
+ * hub's reference (the crystal over the hub timer's divider), the display
+ * and pipe clocks (the display clock generator's VCO over each one's
+ * divider), the data return clock and the memory clock (the video BIOS's
+ * clock routine, which reads them from the power controller's PLLs), the
+ * fabric and the memory's transfers from the memory clock.  Returns 0, or
+ * the clock routine's error.
  */
 static int
 modeset_input(
@@ -518,21 +559,14 @@ modeset_input(
 	const struct amdrdna_timing *timing,
 	struct amdrdna_mode_plan_input *input)
 {
-	struct amdrdna_power_readings speeds;
 	uint32_t word;
+	uint32_t vco_khz;
 	uint32_t display_divider;
 	uint32_t pipe_divider;
+	uint32_t memory_khz;
 	uint32_t fabric_mhz;
 	uint32_t crystal_khz;
-	bool clocked;
-
-	/* The clocks the power firmware read last. */
-	speeds = (struct amdrdna_power_readings){ 0 };
-	clocked = amdrdna_power_clocks(device, &speeds);
-	if (!clocked || speeds.return_clock == 0U || speeds.display_engine_clock == 0U || speeds.memory_clock == 0U) {
-		amdrdna_mark("A12 fail: no clock readings from the power firmware");
-		return ENODEV;
-	}
+	int error;
 
 	/* The mode and the surface (the plane's pitch word counts one less). */
 	*input = (struct amdrdna_mode_plan_input){ 0 };
@@ -554,22 +588,74 @@ modeset_input(
 	if ((word & MODESET_TIMER_DIVIDER_FIELD) == 2U)
 		input->reference_khz = crystal_khz / 2U;
 
-	/* The display clock, and the pipe clock by the ratio of their dividers. */
-	input->display_khz = speeds.display_engine_clock * 1000U;
+	/* The display clock generator's VCO: its multiplier (9 integer bits, 16 fraction bits) times 100 MHz. */
+	word = amdrdna_read(device, MODESET_VCO_REGISTER);
+	vco_khz = (word & MODESET_VCO_WHOLE_FIELD) * MODESET_VCO_REFERENCE_KHZ;
+	vco_khz += (uint32_t)(((uint64_t)(word >> MODESET_VCO_FRACTION_SHIFT) * MODESET_VCO_REFERENCE_KHZ) >> 16);
+	if (vco_khz == 0U)
+		vco_khz = MODESET_VCO_DEFAULT_KHZ;
+
+	/* The display and pipe clocks: the VCO over each divider (in quarters). */
 	word = modeset_read(device, AMDRDNA_DCN_DISPLAY_CLOCK_DIVIDER, 0U);
 	display_divider = modeset_divider(word & MODESET_DISPLAY_DIVIDER_FIELD);
 	pipe_divider = modeset_divider((word >> MODESET_PIPE_DIVIDER_SHIFT) & MODESET_PIPE_DIVIDER_FIELD);
-	input->pipe_khz = (uint32_t)((uint64_t)input->display_khz * display_divider / pipe_divider);
+	input->display_khz = (uint32_t)((uint64_t)vco_khz * 4U / display_divider);
+	input->pipe_khz = (uint32_t)((uint64_t)vco_khz * 4U / pipe_divider);
 
-	/* The data return clock, the fabric (1.08 times the memory clock, at least 506 MHz) and the memory's transfers. */
-	input->return_khz = speeds.return_clock * 1000U;
-	fabric_mhz = speeds.memory_clock * MODESET_FABRIC_PER_MILLE / 1000U;
+	/* The data return clock and the memory clock from the video BIOS. */
+	error = modeset_bios_clock(device, MODESET_RETURN_CLOCK_PLL, MODESET_RETURN_CLOCK_ID, &input->return_khz);
+	if (error != 0)
+		return error;
+	error = modeset_bios_clock(device, MODESET_MEMORY_CLOCK_PLL, MODESET_MEMORY_CLOCK_ID, &memory_khz);
+	if (error != 0)
+		return error;
+
+	/* The fabric (1.08 times the memory clock, at least 506 MHz) and the memory's transfers. */
+	fabric_mhz = (uint32_t)((uint64_t)memory_khz * MODESET_FABRIC_PER_MILLE / 1000000U);
 	if (fabric_mhz < MODESET_FABRIC_LEAST_MHZ)
 		fabric_mhz = MODESET_FABRIC_LEAST_MHZ;
 	input->fabric_khz = fabric_mhz * 1000U;
-	input->memory_mts = speeds.memory_clock * MODESET_TRANSFERS;
+	input->memory_mts = memory_khz * MODESET_TRANSFERS / 1000U;
 
 	/* Succeeded: the input is complete. */
+	return 0;
+}
+
+/*
+ * Reads a clock of the power controller's PLLs by the video BIOS's clock
+ * routine (the PLL, the clock, the frequency command, the divider from
+ * the register; the frequency in Hz comes back in the first word).
+ * Returns 0 or the routine's error; EIO for a clock that reads 0.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/pm/swsmu/smu11/smu_v11_0.c
+ * (smu_v11_0_atom_get_smu_clockinfo).
+ */
+static int
+modeset_bios_clock(
+	struct amdrdna_device *device,
+	uint32_t pll,
+	uint32_t clock,
+	uint32_t *khz)
+{
+	uint32_t words[AMDRDNA_COMMAND_WORDS];
+	unsigned index;
+	int error;
+
+	/* The parameters: the PLL, the clock, the frequency command and no divider. */
+	for (index = 0U; index < AMDRDNA_COMMAND_WORDS; index++)
+		words[index] = 0U;
+	words[0] = pll | (clock << 8) | (MODESET_CLOCK_FREQUENCY << 16);
+	error = modeset_routine(device, MODESET_CLOCK_INFO_ROUTINE, words, "clock info");
+	if (error != 0)
+		return error;
+
+	/* The frequency in Hz, as kHz. */
+	*khz = words[0] / 1000U;
+	if (*khz == 0U)
+		return EIO;
+
+	/* Succeeded: the clock is read. */
 	return 0;
 }
 
