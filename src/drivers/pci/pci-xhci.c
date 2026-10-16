@@ -35,8 +35,20 @@
 
 #define XHCI_USBCMD 0x00U
 
+/*
+ * The interrupter's moderation interval (IMODI), in units of 250 ns: the
+ * controller raises its interrupt at most once in this time.  160 is 40 us,
+ * as Linux sets it.  A mass storage command is three transfers (the CBW,
+ * the data and the CSW), each waiting for its own interrupt before the next
+ * is queued, so a long interval is paid three times a command: 4000 (1 ms)
+ * made a 4 KiB read take about 3 ms on real controllers, whose stick
+ * answers in well under a millisecond.  The earlier choice of 4000 had
+ * compared only the HID callback rate, which 160 and 0 left the same, and
+ * not the round trips of storage.  QEMU's xHCI does not model the
+ * interval.  A build can choose another with -DKERN_XHCI_IMOD=N.
+ */
 #ifndef KERN_XHCI_IMOD
-#define KERN_XHCI_IMOD 4000U
+#define KERN_XHCI_IMOD 160U
 #endif
 
 #define XHCI_USBSTS 0x04U
