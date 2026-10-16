@@ -2,10 +2,10 @@
 
 # ws039-p019 desktop の描画の速さ（app の window を開く animation が 1 fps 未満）
 
-Status: in-progress（2026-10-16 P5: code を読んだ見立てで一番重い道（app の frame の buffer → image の copy が CPU の窓を通る）を GPU の move に直し、host 試験と build まで。実機の測定（直す前後と i915 の 5330）は P3 への依頼待ち）
+Status: in-progress（2026-10-16 P5 2 段目 q1235-i02: 1 段目の A/B を読み、compose の 100〜1000 ms の残りは timing の印そのもの（kernel の text console の UC の再描画）と切り分けた。amdrdna の desktop の間の text console を止める修正と、GPU の timestamp の測定を足し、host 試験と build まで。実機の A/B は P3 への依頼待ち、9 節）
 Disposition: normal
 Parent: [WS039](../ws.md)
-Queue: q1235 / q1235-i01（承認 2026-10-16 ユーザー「appの起動時のウィンドウが開くアニメーションが1fpsも出ていないですので、高速化は必要です。」、Q1 の割当）
+Queue: q1235 / q1235-i01（1 段目）・q1235-i02（2 段目）（承認 2026-10-16 ユーザー「appの起動時のウィンドウが開くアニメーションが1fpsも出ていないですので、高速化は必要です。」、Q1 の割当）
 実行者: P5（phase-runner、worktree `/home/awe/zedBSD-worktrees/p5`、branch `agent/p5-ws039`）
 依存: p008（executor）・p009（desktop）・p017（窓の 1 GiB）は main に入っている（main f391e6b3c を cebb5882e で取り込んだ）。
 
@@ -59,8 +59,44 @@ kernel A = `ad83acfa9`（測定の道具だけ、copy は前の CPU の道）、
 
 比べる物: A と B の frames の合計・max、op 18（QUEUE_SUBMIT）の max、moves の数・KiB、gpu runs の数・待ち、streams の ms、memory の ms、`KWL PERF compose frame_ms`・`rec submit/present`。基準: i915（5330）で同じ 2・3 の手順の `KWL PERF` の行（timing の行は i915 には無い）。
 
-## 5. 残り・再開点
+## 4b. 1 段目の実機の A/B（P3、2026-10-16 20:42〜20:50）
 
+kernel A（CPU の copy）と B（DMA_DATA）、`amdrdna.vk.timing=5000`、4 節の手順。生の file は P3 の worktree の `build/tmp/p5-ab/{A,B}/`。
+- A: frames 2545 計 7464 ms max 787.8 | op18 311 回 計 7188 ms max 787.8 | gpu runs 333 待ち 2132 ms max 222.9 | memory 107 回 819 ms max 79.8。SLOW_PASS 5 回
+- B: frames 2484 計 2740 ms max 41.5 | op18 295 回 計 2534 ms max 41.5 | gpu runs 303 待ち 1852 ms max 19.8 | memory 100 回 378 ms max 33.2。SLOW_PASS 1 回（153 ms）
+- B でも compose の frame_ms が period により 100〜1000 ms（Q1 の要約）。
+
+## 6. 2 段目の切り分け（2026-10-16 P5、B の session.log と dmesg）
+
+- **compose の 100〜1000 ms は timing の印そのものだった**: A・B とも、`vk timing` の印を含む KWL PERF の 5 s の period には、`rec begin`（vkBeginCommandBuffer、kernel への 1 往復）が 1.9〜2.2 s かかる frame が 1 つずつある（`walk replay max` が 2015〜2231 ms、B は 1891〜2075 ms）。印の無い period（B の 425・969・995 行）は frame_ms 18〜28 ms、replay max 1 ms 前後。印の period の長さも 5000 ms の指定に対して 6245〜6606 ms（印を出す時間が次の period に入る）。
+- 仕組み: 印は `amdrdna_mark` → `kern_logf` → kernel の text console（pcat、`src/drivers/platform/pcat/graphics/text.c`）。amdrdna の display の lease（`present.c` の `present_claim`）は `kern_text_suspend` を呼ばない（i915 の `bootfb.c`・bcm2711 の `display-device.c` は呼ぶ）ので、desktop の間も console が GOP の framebuffer（VRAM、`backend.c` で UC の map）に描き続ける。行が最下行で scroll する度に 1920x1080 の全面を描き直す（UC の 4 byte の書き込み 200 万回）。印 8 行を node の lock の下（`vk_node_execute` の中）で出すので、その間 compositor の次の Vulkan の呼び出しが待つ。boot の行に `kmsg=quiet` が無い試験の image（`plan/ws039/tests/config.mk`）で起きる。印に限らず desktop の間の全ての kernel の行（例: session の始まりの input の行）が 1 行ごとに同じ時間を払う。
+- 印の分を除いた B の 1 frame: compositor の frame は submit 13〜19 ms・present 4 ms・acquire 5〜10 ms で 18〜28 ms（40〜55 fps 相当）。executor の QUEUE_SUBMIT 1 回 = 8.6 ms（2534/295）、うち GPU の run の待ち 6.1 ms（1852/303）、CPU 2.3 ms。待ちの仕組み（`cp.c` の `amdrdna_ring_wait`: 1〜2 ms の spin の後 1〜1.5 ms の sleep）の遅れは高々 1.5 ms なので、run の 4.5 ms 以上は GPU の実行（または submit から始まりまで）と見られるが未確認 → 7 節 2 の測定を足した。
+- 候補 2（stream の UC の読み）: B の streams は period に 0〜1 回、71〜80 KiB で 12〜16 ms（1 byte あたり約 0.2 µs）。回数が少ないので今は小さい。候補 6（確保の 0 埋め）: memory は app の起動の period に 6〜8 回・計 38〜44 ms・max 32〜33 ms。候補 3（間接 buffer の UC の書き込み）: QUEUE_SUBMIT の CPU の 2.3 ms に入る。どれも 1 frame の 18〜28 ms に比べて小さく、次に大きいのは GPU の run の 6 ms。2・3・6 は今回は直さない（根拠の測定が揃ってから）。4（user の map の WC）は BUG-331・p018 に関わるので案だけ: app の staging の書き込みと libvulkan の reply の読みを WC にする（p018 の後）。
+
+## 7. 2 段目の修正（2026-10-16 P5）
+
+1. **amdrdna の desktop の間は kernel の text console を描かない**（`present.c`、`amdrdna-node.h` に `text_held`）: lease の最初の frame の flip が始まったら `kern_text_suspend()`（i915・bcm2711 と同じ口）、lease の終わり（release・session の close・reboot の stop、`present_end_lease`）で `kern_text_resume()`（console が見えなかった間の行も含めて描き直す）。suspend の間 pcat の text は cell だけを更新し（`putc_locked` は `text_ready` が 0 なら描かない、scroll も描かない）、serial の mirror と dmesg の ring は前のまま。lease の途中で表示中の blob が消えて console の surface に戻った時（`amdrdna_present_resource_gone`）は resume しない（suspend 中の古い絵のまま、次の frame で lease の絵に戻る）。fatal の時は `kern_text_reveal_fatal` が `text_ready` に関わらず描く。
+2. **timing の道具に GPU 自身の時間**（`space.c`・`cp.c`・`command-format.c`・`amdrdna-hw.h`・`amdrdna-private.h`・`vk-node.c`）: timing が on の時（`amdrdna_spaces_stamp`）だけ、graphics の ring の run の前後に GPU の timestamp の counter を write-back の slot（ring ごとの 64 byte の語 8・12）に書く（前: COPY_DATA の counter→memory、後: event fence の data を counter に）。vk-node は run の後に差（`amdrdna_space_run_ticks`）を足し、counter の rate は period の最初と最後の run の counter と CPU の時刻から測る（固定の 100 MHz を仮定しない）。印の新しい行: `amdrdna: vk timing: gpu busy <runs> runs <ms> max <us> (<ticks> ticks, counter <kHz>) | run buffers <KiB>`（run buffers は間接 buffer の合計）。timing が off なら ring の中身は前と同じ。出典: Linux v6.19 `nvd.h`（PACKET3_COPY_DATA の欄の位置）、Mesa 25.0.7 `src/amd/common/sid.h`（COPY_DATA_TIMESTAMP・COPY_DATA_DST_MEM・COUNT_SEL・WR_CONFIRM・EOP_DATA_SEL_TIMESTAMP）、手順は `radv_query.c`（radv_write_timestamp）。後の stamp の event fence は cache の書き戻しを 1 回足す（timing の時だけの小さな乱れ）。
+- 他の担当との境: P3 の branch（cfd5d7801）も `space.c`・`vk-node.c`・`cp.c`・`amdrdna-private.h` を触るが、こちらは別の関数（`space_commands` の終わり・`amdrdna_space_lost` の後・`amdrdna_ring_fence_address` の後・timing の関数）に足した。`vk-execute.c`・`vk-state.c` は触っていない。
+
+## 8. 2 段目の試験（host）と build（2026-10-16 P5）
+
+- `make -j16 ZEDBSD_CONFIG=plan/ws039/tests/config.mk BUILD=build/p5/usb build/p5/usb/vmunix`: rc 0、warning 0、kernel include check PASS、amd64 vmunix check PASS。`git diff --check` 空。
+- `AMDRDNA_LINUX=<P3 の temp/linux> sh plan/ws039/tests/amdrdna-host-test.sh`: PASS（PASS の行 390、audit-symbols 48 file を含む）。
+- `sh plan/ws039/tests/amdrdna-vk-host-test.sh`: PASS（177 checks、0 failures）。`sh plan/ws039/tests/audit-vk.sh`: PASS（24 file）。
+- packet の形: `command-format.c` を host で小さな C から呼び、COPY_DATA は `c0044000 00110509 0 0 <lo> <hi>`（Linux の `PACKET3(PACKET3_COPY_DATA, 4)` と Mesa の radv_write_timestamp の top of pipe と同じ並び）、stamp の fence は既存の fence と第 3 語だけ違う（`60000000`、interrupt 無し）ことを見た（試験は残さない、`build/tmp/p19b-stamp/`）。
+- 未実施: 実機（9 節）。present.c の text の suspend・resume は host 試験の対象外（kernel の build だけ）。
+
+## 9. 実機の測定（2 段目、P3 への依頼、未実施）
+
+kernel A' = main `9f5ffb9a1`（1 段目の DMA_DATA まで）、kernel B' = この 2 段目の commit。4 節と同じ自動の手順（起動 → desktop で 10 s 何もしない → App Home の開閉 5 回 → app を 3 つ起動して各 5 s → 閉じる 1 回）を 3 回:
+1. B'、`amdrdna.vk.timing=5000`: 期待 = 印の period の長さが 5000〜5100 ms 前後（前は 6245〜6606）、KWL PERF の `walk replay max` に 2 s 前後の値が無い、compose の frame_ms が印の period でも 18〜30 ms。新しい `gpu busy` の行の counter の kHz（100000 前後の見込み）と busy の ms を、`gpu runs` の待ちの ms と比べる（busy ≒ 待ちなら GPU の実行が重い、busy が小さければ submit・待ちの側）。
+2. A'、`amdrdna.vk.timing` 無し、3. B'、`amdrdna.vk.timing` 無し: ユーザーが見た「印の無い時」の比べ。session.log の KWL PERF（compose frame_ms・rec begin・SLOW_PASS の数と us）を A' と B' で比べる。特に login の直後・session の始まり（input の行など kernel の行が出る所）の period。dmesg の `display lease 1 claimed` の後の行の数も数える（desktop の間の kernel の行の数）。
+取る物（各回）: `dmesg`、compositor の session.log、`amdrdnactl status`、目視の感想。lease の終わりの console の戻り（reboot の時に shutdown の行が画面に出る）も見られれば。
+
+## 10. 残り・再開点
+
+- （2 段目の後）9 節の実機の結果で、GPU の run の 6 ms の中身（`gpu busy` と待ちの比べ）を見て次を選ぶ: busy が大きければ GPU 側（clock の DPM、draw ごとの register の全書き、barrier の待ち、shader）、小さければ submit・待ちの側。
 - 実機の結果で、次に重い所（候補 2 の stream の UC の読み、3 の間接 buffer の UC の書き込み、4 の user の map）を選ぶ。2・3 は run の memory と stream を system memory（GART）に置くか、窓を WC にする形（BUG-331・p018 と関わる）が候補。
 - `kern_usleep_range` は busy の遅延なので run の待ちは CPU を使い続ける（速さには影響しないが、他の thread の時間を取る）。
 - 削除の依頼（Q1）: worktree の `build/tmp/vk-execute.keep`（わざとの誤りの試験の退避）と `build/tmp/` の試験の出力（`amdrdna-vk.*`・`amdrdna-host.*`・`p19-*.log`）。

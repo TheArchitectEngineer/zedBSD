@@ -345,6 +345,66 @@ amdrdna_pm4_fence(
 }
 
 /*
+ * Writes a packet that copies the GPU's timestamp counter, both words, to
+ * memory at address when the command processor reaches it.  Reports the
+ * words written.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/amd/vulkan/radv_query.c
+ * (radv_write_timestamp: the counter copied at the top of the pipe).
+ */
+unsigned
+amdrdna_pm4_stamp(
+	uint32_t *words,
+	uint64_t address,
+	bool compute)
+{
+	/* The header and the copy of the counter to memory, confirmed. */
+	words[0] = amdrdna_pm4_header(AMDRDNA_PM4_OP_COPY_WORDS, AMDRDNA_PM4_STAMP_WORDS - 1U, compute);
+	words[1] = AMDRDNA_PM4_COPY_COUNTER_TO_MEMORY;
+
+	/* The counter is the source: no source address. */
+	words[2] = 0U;
+	words[3] = 0U;
+
+	/* Where the two words go. */
+	words[4] = (uint32_t)address;
+	words[5] = (uint32_t)(address >> 32);
+
+	/* Succeeded: six words. */
+	return AMDRDNA_PM4_STAMP_WORDS;
+}
+
+/*
+ * Writes an event fence that writes the GPU's timestamp counter, both
+ * words, to memory at address once everything before it has finished,
+ * without an interrupt.  Reports the words written.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/amd/vulkan/radv_query.c
+ * (radv_write_timestamp: the counter written at the bottom of the pipe).
+ */
+unsigned
+amdrdna_pm4_stamp_done(
+	uint32_t *words,
+	uint64_t address,
+	bool compute)
+{
+	/* The header, the fence's event and its caches, and the counter as its data. */
+	words[0] = amdrdna_pm4_header(AMDRDNA_PM4_OP_EVENT_FENCE, 7U, compute);
+	words[1] = COMMAND_FENCE_EVENT;
+	words[2] = AMDRDNA_PM4_FENCE_DATA_COUNTER;
+
+	/* The address, then words the counter's data does not use. */
+	words[3] = (uint32_t)address;
+	words[4] = (uint32_t)(address >> 32);
+	words[5] = 0U;
+	words[6] = 0U;
+	words[7] = 0U;
+
+	/* Succeeded: eight words. */
+	return AMDRDNA_PM4_FENCE_WORDS;
+}
+
+/*
  * Writes a packet that invalidates the GPU's caches and writes the dirty
  * ones back, so what follows reads memory as the CPU and the earlier
  * commands left it.  Reports the words written.

@@ -100,11 +100,17 @@
 #define CP_BLOCK_WORDS			256U
 #define CP_COPY_BLOCK_WORDS		16U
 
-/* The words of a ring's write-back slot: the read pointer, the write pointer's copy, the fence, a test word. */
+/*
+ * The words of a ring's write-back slot: the read pointer, the write
+ * pointer's copy, the fence, a test word, and the GPU's timestamp counter
+ * at the start and at the end of a timed run (two words each).
+ */
 #define CP_WORD_READ			0U
 #define CP_WORD_WRITE			2U
 #define CP_WORD_FENCE			4U
 #define CP_WORD_TEST			6U
+#define CP_WORD_STAMP_START		8U
+#define CP_WORD_STAMP_END		12U
 
 /* The largest command the scheduler is handed at once: the resources and an attach per compute queue. */
 #define CP_SCHEDULER_WORDS		(AMDRDNA_PM4_RESOURCES_WORDS + AMDRDNA_COMPUTE_QUEUES * AMDRDNA_PM4_ATTACH_WORDS)
@@ -719,8 +725,9 @@ amdrdna_ring_test(
 
 /*
  * Reports the CPU's view of a word of a ring's write-back slot: the read
- * pointer (0), the write pointer's copy (2, two words), the fence (4) or
- * the test word (6).
+ * pointer (0), the write pointer's copy (2, two words), the fence (4),
+ * the test word (6) or a timed run's timestamps (8 and 12, two words
+ * each).
  */
 volatile uint32_t *
 amdrdna_ring_word(
@@ -786,6 +793,47 @@ amdrdna_ring_fence_address(
 
 	/* Succeeded: the address. */
 	return address;
+}
+
+/* Reports the GPU's address of where a timed run writes the timestamp counter, at its start or at its end. */
+uint64_t
+amdrdna_ring_stamp_address(
+	const struct amdrdna_device *device,
+	const struct amdrdna_ring *ring,
+	bool end)
+{
+	uint64_t address;
+
+	/* The pair of words of the slot for the start or the end. */
+	address = ring_gpu_word(device, ring, CP_WORD_STAMP_START);
+	if (end)
+		address = ring_gpu_word(device, ring, CP_WORD_STAMP_END);
+
+	/* Succeeded: the address. */
+	return address;
+}
+
+/*
+ * Reads the timestamp counter a timed run wrote at its start and at its
+ * end; the run's fence has passed, so both are written.
+ */
+void
+amdrdna_ring_stamps(
+	struct amdrdna_device *device,
+	const struct amdrdna_ring *ring,
+	uint64_t *started,
+	uint64_t *ended)
+{
+	volatile uint32_t *start;
+	volatile uint32_t *end;
+
+	/* The two pairs of words of the slot. */
+	start = amdrdna_ring_word(device, ring, CP_WORD_STAMP_START);
+	end = amdrdna_ring_word(device, ring, CP_WORD_STAMP_END);
+
+	/* Each counter, its low word first. */
+	*started = (uint64_t)start[0] | ((uint64_t)start[1] << 32);
+	*ended = (uint64_t)end[0] | ((uint64_t)end[1] << 32);
 }
 
 /* Reads a register of the graphics block. */

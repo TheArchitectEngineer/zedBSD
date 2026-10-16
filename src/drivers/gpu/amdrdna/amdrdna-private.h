@@ -500,6 +500,8 @@ struct amdrdna_space {
  * runs.  held counts the spaces kept with their tables because their
  * work could not be confirmed stopped; runs, lost and resets count the
  * runs submitted, the spaces lost and the graphics queue's resets.
+ * stamped says the graphics ring's runs write the GPU's timestamp counter
+ * at their start and end, for the executor's timing.
  */
 struct amdrdna_spaces {
 	struct spinlock lock;
@@ -510,6 +512,7 @@ struct amdrdna_spaces {
 	unsigned held;
 	bool ready;
 	bool faulted;
+	bool stamped;
 	uint64_t runs;
 	uint64_t lost;
 	uint64_t resets;
@@ -992,6 +995,19 @@ amdrdna_ring_fence_address(
 	const struct amdrdna_device *device,
 	const struct amdrdna_ring *ring);
 
+uint64_t
+amdrdna_ring_stamp_address(
+	const struct amdrdna_device *device,
+	const struct amdrdna_ring *ring,
+	bool end);
+
+void
+amdrdna_ring_stamps(
+	struct amdrdna_device *device,
+	const struct amdrdna_ring *ring,
+	uint64_t *started,
+	uint64_t *ended);
+
 /* space.c: the address spaces, their backings and their runs. */
 void
 amdrdna_spaces_init(
@@ -1042,6 +1058,16 @@ amdrdna_space_quiet(
 bool
 amdrdna_space_lost(
 	struct amdrdna_space *space);
+
+void
+amdrdna_spaces_stamp(
+	struct amdrdna_device *device,
+	bool on);
+
+uint64_t
+amdrdna_space_run_ticks(
+	struct amdrdna_space *space,
+	uint64_t *started);
 
 void
 amdrdna_space_fault(

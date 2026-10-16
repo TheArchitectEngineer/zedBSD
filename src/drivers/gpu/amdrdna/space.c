@@ -68,8 +68,8 @@
 #define SPACE_ENGINE_GRAPHICS		0U
 #define SPACE_ENGINE_COMPUTE_FIRST	4U
 
-/* The most words a run puts on its ring: a sync, a drop and the indirect buffer. */
-#define SPACE_RUN_COMMANDS		48U
+/* The most words a run puts on its ring: a sync, a drop, the indirect buffer and a timed run's two timestamps. */
+#define SPACE_RUN_COMMANDS		64U
 
 /* How often a run waits for a context before giving up. */
 #define SPACE_GRANT_TRIES		32U
@@ -567,6 +567,66 @@ amdrdna_space_lost(
 }
 
 /*
+ * Makes every later run on the graphics ring write the GPU's timestamp
+ * counter at its start and at its end (on), or not, for the executor's
+ * timing.
+ */
+void
+amdrdna_spaces_stamp(
+	struct amdrdna_device *device,
+	bool on)
+{
+	unsigned long irq;
+
+	/* Set under the spaces' lock, which every run's commands are built under. */
+	irq = spin_lock_irqsave(&device->spaces.lock);
+
+	device->spaces.stamped = on;
+
+	spin_unlock_irqrestore(&device->spaces.lock, irq);
+}
+
+/*
+ * Reports how many ticks of the GPU's timestamp counter the last run on
+ * the graphics ring took, from the command processor's start to its end,
+ * and the counter at its start; 0 and 0 when runs are not stamped.  The
+ * caller ran that run and nothing has run on the ring since (the node's
+ * lock keeps the executor's runs in turn).
+ */
+uint64_t
+amdrdna_space_run_ticks(
+	struct amdrdna_space *space,
+	uint64_t *started)
+{
+	struct amdrdna_device *device;
+	struct amdrdna_ring *ring;
+	uint64_t start;
+	uint64_t end;
+
+	/* Nothing was stamped without the timing. */
+	device = space->device;
+	*started = 0U;
+	if (!device->spaces.stamped)
+		return 0U;
+
+	/* Nor without the graphics ring. */
+	ring = space_ring(device, AMDRDNA_TRACKED_GRAPHICS);
+	if (ring == NULL)
+		return 0U;
+
+	/* The counter at the run's start and at its end. */
+	amdrdna_ring_stamps(device, ring, &start, &end);
+	*started = start;
+
+	/* A pair that does not go forward was not this run's. */
+	if (end < start)
+		return 0U;
+
+	/* Succeeded: the ticks between. */
+	return end - start;
+}
+
+/*
  * Takes a page fault a hub reported to the address space it belongs to:
  * the space the identifier names, or, without one, the space the faulting
  * context is handed to.  The space is lost and its session told; a fault
@@ -943,10 +1003,12 @@ space_commands(
 	uint32_t done;
 	uint32_t identifier;
 	uint32_t invalidate;
+	uint64_t stamp_address;
 	unsigned engine;
 	unsigned count;
 	bool graphics;
 	bool compute;
+	bool stamped;
 	int error;
 
 	/* The ring's kind and its invalidation engine: the graphics ring or a compute queue. */
@@ -1015,8 +1077,25 @@ space_commands(
 	 */
 	count += amdrdna_pm4_cache_sync(commands + count, false);
 
+	/* Only the graphics ring's runs are timed, and only while the executor's timing asks. */
+	stamped = false;
+	if (graphics && device->spaces.stamped)
+		stamped = true;
+
+	/* A timed run notes the GPU's counter as the command processor starts it. */
+	if (stamped) {
+		stamp_address = amdrdna_ring_stamp_address(device, ring, false);
+		count += amdrdna_pm4_stamp(commands + count, stamp_address, compute);
+	}
+
 	/* The indirect buffer, in the context. */
 	count += amdrdna_pm4_indirect(commands + count, address, words, grant->context, compute);
+
+	/* And again once everything the buffer started has finished. */
+	if (stamped) {
+		stamp_address = amdrdna_ring_stamp_address(device, ring, true);
+		count += amdrdna_pm4_stamp_done(commands + count, stamp_address, compute);
+	}
 
 	/* Succeeded: the words. */
 	return count;

@@ -941,9 +941,28 @@ struct amdrdna_psp_reply {
 #define AMDRDNA_PM4_SYNC_POLL			0x0000000aU
 #define AMDRDNA_PM4_FENCE_DATA_LOW		0x20000000U
 
+/*
+ * The GPU's free-running timestamp counter written to memory: the word
+ * copy's opcode, its control word with the counter as the source (9),
+ * memory as the destination (5 at bit 8), both words of the counter (bit
+ * 16) and the write confirmed (bit 20); and an event fence's data
+ * selector for the counter at the end of the pipe (3 at bit 29).
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/amd/amdgpu/nvd.h
+ * (PACKET3_COPY_DATA and its field positions) and Mesa 25.0.7
+ * src/amd/common/sid.h (COPY_DATA_TIMESTAMP, COPY_DATA_DST_MEM,
+ * COPY_DATA_COUNT_SEL, COPY_DATA_WR_CONFIRM, EOP_DATA_SEL_TIMESTAMP).
+ * derived: 9 | 5 << 8 | 1 << 16 | 1 << 20 = 0x00110509; 3 << 29 =
+ * 0x60000000.
+ */
+#define AMDRDNA_PM4_OP_COPY_WORDS		0x40U
+#define AMDRDNA_PM4_COPY_COUNTER_TO_MEMORY	0x00110509U
+#define AMDRDNA_PM4_FENCE_DATA_COUNTER		0x60000000U
+
 /* The words of the packets the driver builds. */
 #define AMDRDNA_PM4_WRITE_WORDS		5U
 #define AMDRDNA_PM4_FENCE_WORDS		8U
+#define AMDRDNA_PM4_STAMP_WORDS		6U
 #define AMDRDNA_PM4_SYNC_WORDS		8U
 #define AMDRDNA_PM4_MOVE_WORDS		7U
 #define AMDRDNA_PM4_DISPATCH_WORDS	5U
@@ -1756,6 +1775,18 @@ amdrdna_pm4_fence(
 	uint64_t address,
 	uint32_t value,
 	bool interrupt,
+	bool compute);
+
+unsigned
+amdrdna_pm4_stamp(
+	uint32_t *words,
+	uint64_t address,
+	bool compute);
+
+unsigned
+amdrdna_pm4_stamp_done(
+	uint32_t *words,
+	uint64_t address,
 	bool compute);
 
 unsigned

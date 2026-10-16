@@ -22,7 +22,9 @@
  * With amdrdna.vk.timing=N on the boot line, the executor's work is timed
  * and marked by the first frame after each N milliseconds: the frames,
  * the commands by opcode, the waits for the GPU, the command streams read
- * through the window, the memory made, and the copies moved.
+ * through the window, the memory made, and the copies moved.  The runs
+ * also write the GPU's timestamp counter at their start and end, so the
+ * time the GPU spent on them is told apart from the wait.
  */
 
 #include <stdbool.h>
@@ -45,6 +47,9 @@
 
 /* The opcodes a mark names, the longest first. */
 #define VK_NODE_TIMED_SHOWN		6U
+
+/* How far apart (microseconds) the stamped runs must be for the GPU counter's rate. */
+#define VK_NODE_RATE_MIN_US		100000U
 
 /*
  * The kinds of timed work, each a tally: the frames, the waits for the
@@ -77,22 +82,43 @@ struct vk_node_tally {
 };
 
 /*
+ * The GPU's own time on the runs of a period, in ticks of its timestamp
+ * counter: how many runs were stamped, their ticks and the longest; and
+ * the counter at the start of the period's first and last stamped run
+ * with the CPU's microseconds when each was submitted, which give the
+ * counter's rate.
+ */
+struct vk_node_busy {
+	uint64_t runs;
+	uint64_t ticks;
+	uint64_t most_ticks;
+	uint64_t first_stamp;
+	uint64_t first_us;
+	uint64_t last_stamp;
+	uint64_t last_us;
+};
+
+/*
  * The executor's timing: the period between marks and when the current
- * one began (microseconds), and the tallies of the period; lock guards
- * the tallies (the boot's own trials time outside the node's lock).
+ * one began (microseconds), and the tallies and the GPU's time of the
+ * period; lock guards the tallies and the GPU's time (the boot's own
+ * trials time outside the node's lock).
  */
 struct amdrdna_vk_timing {
 	struct spinlock lock;
 	uint64_t period_us;
 	uint64_t started_us;
 	struct vk_node_tally tallies[VK_NODE_TALLIES];
+	struct vk_node_busy busy;
 };
 
 static int vk_node_execute(struct amdrdna_session *session, const void *wire, uint32_t bytes);
 static uint64_t vk_node_timelines(struct amdrdna_session *session);
 static int vk_node_dispatch(struct amdrdna_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static void vk_node_count(struct amdrdna_node *node, uint32_t kind, uint64_t started_us, uint64_t bytes);
+static void vk_node_count_busy(struct amdrdna_session *session, uint64_t submitted_us);
 static void vk_node_report(struct amdrdna_node *node);
+static void vk_node_report_busy(const struct vk_node_busy *busy, uint64_t run_bytes);
 static void vk_node_report_opcodes(const struct vk_node_tally *tallies);
 static void vk_node_tally_add(struct vk_node_tally *tally, uint64_t us, uint64_t bytes);
 
@@ -128,6 +154,9 @@ amdrdna_vk_node_bind(
 	/* Published before the device is registered, so before any frame. */
 	node->vk_timing = timing;
 	amdrdna_mark("vk timing: marks every %u ms (at the next frame)", period_ms);
+
+	/* The graphics ring's runs note the GPU's counter from now on. */
+	amdrdna_spaces_stamp(node->device, true);
 }
 
 /*
@@ -641,10 +670,12 @@ amdrdna_vk_gpu_run(
 	if (bytes == 0U || (bytes & 3U) != 0U)
 		return EINVAL;
 
-	/* Runs the buffer in the session's space and waits for it, timed with its bytes. */
+	/* Runs the buffer in the session's space and waits for it, timed with its bytes and the GPU's own time. */
 	started_us = amdrdna_display_now_us();
 	error = amdrdna_space_run(session->space, AMDRDNA_TRACKED_GRAPHICS, va, bytes / 4U, VK_NODE_RUN_MS);
 	vk_node_count(session->node, VK_NODE_RUNS, started_us, bytes);
+	if (error == 0)
+		vk_node_count_busy(session, started_us);
 	if (error == EINVAL)
 		return EINVAL;
 	if (error != 0)
@@ -830,6 +861,50 @@ vk_node_count(
 	spin_unlock_irqrestore(&timing->lock, irq);
 }
 
+/* Adds the GPU's own time on the run a session just ran, submitted at submitted_us, to a timed node's period. */
+static void
+vk_node_count_busy(
+	struct amdrdna_session *session,
+	uint64_t submitted_us)
+{
+	struct amdrdna_vk_timing *timing;
+	struct vk_node_busy *busy;
+	unsigned long irq;
+	uint64_t ticks;
+	uint64_t stamp;
+
+	/* An untimed node counts nothing. */
+	timing = session->node->vk_timing;
+	if (timing == NULL)
+		return;
+
+	/* The run's ticks; a run that was not stamped counts nothing. */
+	ticks = amdrdna_space_run_ticks(session->space, &stamp);
+	if (stamp == 0U)
+		return;
+
+	/* Into the period, under the timing's lock. */
+	irq = spin_lock_irqsave(&timing->lock);
+
+	busy = &timing->busy;
+	busy->runs++;
+	busy->ticks += ticks;
+
+	/* The longest run so far. */
+	if (ticks > busy->most_ticks)
+		busy->most_ticks = ticks;
+
+	/* The period's first and last stamped runs give the counter's rate. */
+	if (busy->runs == 1U) {
+		busy->first_stamp = stamp;
+		busy->first_us = submitted_us;
+	}
+	busy->last_stamp = stamp;
+	busy->last_us = submitted_us;
+
+	spin_unlock_irqrestore(&timing->lock, irq);
+}
+
 /*
  * Marks a timed node's period once it has passed: the frames, the waits
  * for the GPU, the command streams read through the window, the memory
@@ -848,6 +923,7 @@ vk_node_report(
 	const struct vk_node_tally *moves;
 	struct vk_node_tally *taken;
 	struct amdrdna_vk_timing *timing;
+	struct vk_node_busy busy;
 	unsigned long irq;
 	uint64_t now_us;
 	uint64_t length_us;
@@ -869,6 +945,8 @@ vk_node_report(
 
 	kern_memcpy(taken, timing->tallies, sizeof(timing->tallies));
 	kern_memset(timing->tallies, 0, sizeof(timing->tallies));
+	busy = timing->busy;
+	kern_memset(&timing->busy, 0, sizeof(timing->busy));
 	timing->started_us = now_us;
 
 	spin_unlock_irqrestore(&timing->lock, irq);
@@ -890,9 +968,49 @@ vk_node_report(
 	    (unsigned long long)memory->count, (unsigned long long)(memory->bytes >> 10),
 	    (unsigned long long)(memory->us / 1000U), (unsigned long long)memory->most_us);
 
-	/* The opcodes that took longest. */
+	/* The GPU's own time on the runs, then the opcodes that took longest. */
+	vk_node_report_busy(&busy, runs->bytes);
 	vk_node_report_opcodes(taken + VK_NODE_OPCODE_FIRST);
 	kern_free(taken);
+}
+
+/*
+ * Marks the GPU's own time on the runs of a period, from the ticks of its
+ * timestamp counter, the counter's rate measured against the CPU's clock
+ * over the period, and the kilobytes of the runs' indirect buffers.  The
+ * rate needs stamped runs at least VK_NODE_RATE_MIN_US apart; without it
+ * the time is 0 and the ticks are marked as they are.
+ */
+static void
+vk_node_report_busy(
+	const struct vk_node_busy *busy,
+	uint64_t run_bytes)
+{
+	uint64_t kilohertz;
+	uint64_t span_us;
+	uint64_t busy_us;
+	uint64_t most_us;
+
+	/* The counter's rate in kilohertz, from the first and the last stamped run. */
+	kilohertz = 0U;
+	span_us = busy->last_us - busy->first_us;
+	if (busy->runs >= 2U &&
+	    span_us >= VK_NODE_RATE_MIN_US &&
+	    busy->last_stamp > busy->first_stamp)
+		kilohertz = (busy->last_stamp - busy->first_stamp) * 1000U / span_us;
+
+	/* The ticks as time at that rate. */
+	busy_us = 0U;
+	most_us = 0U;
+	if (kilohertz != 0U) {
+		busy_us = busy->ticks * 1000U / kilohertz;
+		most_us = busy->most_ticks * 1000U / kilohertz;
+	}
+
+	/* Its line. */
+	amdrdna_mark("vk timing: gpu busy %llu runs %llums max %lluus (%llu ticks, counter %llukHz) | run buffers %lluKiB",
+	    (unsigned long long)busy->runs, (unsigned long long)(busy_us / 1000U), (unsigned long long)most_us,
+	    (unsigned long long)busy->ticks, (unsigned long long)kilohertz, (unsigned long long)(run_bytes >> 10));
 }
 
 /* Marks the VK_NODE_TIMED_SHOWN opcodes of a period that took the most time, the longest first. */
