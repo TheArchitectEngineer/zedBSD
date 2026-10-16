@@ -63,6 +63,11 @@ Resume point: 2026-10-16 q1218（P1）の区切り: 次は **p018**（[phase018]
 - kernel の binary の比べ（Q1、sha256）: p002 の 2 つ目以降と p004 の xd の file は呼ばれず binary を変えない。binary を変えたのは p002 の 1 つ目（9e78e62f8、own の型の分離と Gen9 の移設）と AX211 の整理。
 - 観測（未解析）: Ctrl+Shift の console の起動で `/bin/wayland` を ssh から root で手で起動すると、GPU の仕事が 1 回約 2 秒（GPU 自身は 16 ms）で時間切れ → device lost。普通の起動では出ない。最初の普通の起動（boot-000001、log が 0 byte）で backlight が消えて何も写らなかった原因は不明。
 
+## merge の時に Q1 が消す物（全部の段の試験の後、branch を main に入れる時）
+
+- p025: src/drivers/gpu/i915/display/dc9.c・dc9.h（本番の呼び手 0、vmunix.mk から外し済み）、plan/ws052/tests/host-i915-dc9.c と plan/ws052/tests/Makefile の i915-dc9 の規則（期待値は host-xd-power-test の DC9 の check へ移した）。
+- p026: src/drivers/gpu/i915/display/dmc.c（中身は消して vmunix.mk から外し済み）。
+
 ## 全部を実装してから試験（2026-10-16 夕 ユーザー）
 
 ユーザー:「i915は、実装だけ先に終わらせ、全部マージしたものをテストして、動かなければ二分探索で半分マージしてテスト、だめならさらに半分、で進めます。まずはぜんぶ実装してください。」→ p020 以降の残りの段を全部実装して branch に積み、tip で 5330 の回帰（T1）。FAIL なら二分探索。下の「まとめて試験」は置き換えた。
