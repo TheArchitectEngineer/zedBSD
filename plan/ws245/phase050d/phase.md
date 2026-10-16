@@ -2,7 +2,7 @@
 
 # ws245-p050d: 口 xd.h と own の file の付け替え、旧 file と旧 host 試験の削除
 
-Status: planned（2026-10-16 Q1 の判断で p050 を p050a〜d に分けた。design の順のまま p039 の前に行う）
+Status: 分けた（2026-10-17 Q1 の判断、q1229-i08: [p050d1](../phase050d1/phase.md)〜[p050d4](../phase050d4/phase.md) の 4 段。この file は範囲と着手の手がかりの記録）
 Parent: [WS245](../ws.md)
 Queue: q1229-i06（P1）
 設計: [design.md](../design.md) §6.2 の p050 の行、§3.3、§4.2

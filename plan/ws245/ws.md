@@ -159,7 +159,11 @@ Resume point: 2026-10-16 の方針（ユーザー「i915は、実装だけ先に
 | [p050a](phase050a/phase.md) | takeover の readout と sanitize を xd-takeover の record と stop に（takeover.c の registry を消す）。2026-10-16 Q1 の判断で p050 を 4 段に分けた（design の 4 LW を大きく超えるため） | in-progress（2026-10-16 q1229-i06 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回） |
 | [p050b](phase050b/phase.md) | eDP の step の本体を xd の部品（PPS・backlight・AUX・DDI の IO power・訓練の DPCD・WM/DBUF の書き込み・vblank の event）を直に呼ぶ形に | in-progress（2026-10-17 q1229-i07 で実装・host 試験・build 済み（aa4374975、新しい xd-output.c と殻 output-shell.c）、5330 は全部の段の後に 1 回） |
 | [p050c](phase050c/phase.md) | HDMI と DP-TC の step の本体 | in-progress（2026-10-17 q1229-i07 で実装・host 試験・build 済み（81332cf8e）、5330 は全部の段の後に 1 回。hdmi-mode.c/.h の削除は merge の時に Q1） |
-| [p050d](phase050d/phase.md) | 口 `xd.h` と own の file の付け替え（backlight.c を含む）、旧 file（modeset・state・ddi・dp-sink・pipe・plane・aux・panel・panel-backlight・vblank・takeover の残り・internal.h の Linux の型）と旧 host 試験（host-dp-test・host-lcd-modeset-test）の削除、oracle の check を xd の試験へ | planned（5320・SV7 の節目、QEMU の boot-test） |
+| [p050d](phase050d/phase.md) | 口 `xd.h` と own の file の付け替え（backlight.c を含む）、旧 file（modeset・state・ddi・dp-sink・pipe・plane・aux・panel・panel-backlight・vblank・takeover の残り・internal.h の Linux の型）と旧 host 試験（host-dp-test・host-lcd-modeset-test）の削除、oracle の check を xd の試験へ | 4 段に分けた（2026-10-17 Q1、q1229-i08）: 下の p050d1〜d4 |
+| [p050d1](phase050d1/phase.md) | 内蔵 panel の sink の取得（PPS の用意・VDD・DPCD・EDID）と kernel の panel・DPCD の hook を xd の部品に（旧の Linux の eDP の world は旧 host 試験の間残す） | in-progress（2026-10-17 q1229-i08） |
+| [p050d2](phase050d2/phase.md) | prepare の check（state.c の compute・CDCLK）と WM/DBUF を xd-screen の plan・xd-dbuf に | planned |
+| [p050d3](phase050d3/phase.md) | plane・flip・vblank を xd-pipe・xd-screen に | planned |
+| [p050d4](phase050d4/phase.md) | 口 xd.h と own の file の付け替え、旧 file と旧 host 試験・ktest の削除（oracle を xd の試験へ） | planned（5320・SV7 の節目、QEMU の boot-test） |
 | p039 | hotplug（xd-hpd。hotplug.c を消す） | planned（6 LW。改訂 5 で p039 を p039・p051 に分けた。節目: HDMI の plug で 2 画面はユーザーの一覧） |
 | p051 | own の output.c の port の規則と head-rules の pipe の規則を platform の記述に（hdmi.c・hdmi-mode.c・head-rules.c を消す） | planned（3 LW） |
 | [p040](phase040/phase.md) | Dekel の窓と TC PHY、TC PLL（xd-tc の窓を dkl-phy.c と一緒に入れ替える、clock.c の残りを消す） | in-progress（5 LW。2026-10-17 P6 が q1236-i01 で並行に実装・host 試験・build 済み（806e0b063）。P1 の branch に merge（bd91827a5）し、xd-output の Type-C の DP mode・levels・PHY の WA・自前の TC PLL・swing の上限を xd-tc・xd-clock の直の呼びにした（6cbff0b73）。5330 は全部の段の後に 1 回。WS051 の host-tc.sh の DKL の行の直しは Q1） |
