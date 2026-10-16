@@ -221,7 +221,10 @@ AMD64_AMDRDNA_SOURCES += src/drivers/gpu/amdrdna/amdrdna.c src/drivers/gpu/amdrd
 	src/drivers/gpu/amdrdna/dcn-registers.c src/drivers/gpu/amdrdna/picture.c \
 	src/drivers/gpu/amdrdna/gmc.c src/drivers/gpu/amdrdna/ih.c src/drivers/gpu/amdrdna/span-pool.c \
 	src/drivers/gpu/amdrdna/hub-registers.c src/drivers/gpu/amdrdna/vm-format.c \
-	src/drivers/gpu/amdrdna/interrupt-format.c
+	src/drivers/gpu/amdrdna/interrupt-format.c src/drivers/gpu/amdrdna/firmware-format.c \
+	src/drivers/gpu/amdrdna/psp-format.c src/drivers/gpu/amdrdna/thermal-format.c \
+	src/drivers/gpu/amdrdna/firmware.c src/drivers/gpu/amdrdna/training.c src/drivers/gpu/amdrdna/psp.c \
+	src/drivers/gpu/amdrdna/smu.c
 endif
 # The i915 test build: checkpoints the production code calls through weak symbols.
 # The runner runs the scenario -DI915_TEST_SCENARIO=<name> (in ZEDBSD_TEST_CPPFLAGS) after the start;

@@ -50,6 +50,7 @@ static int control_advance(struct amdrdna_device *device, uintptr_t argument);
 static int control_vbios(struct amdrdna_device *device, uintptr_t argument);
 static void control_fill(struct amdrdna_device *device, struct amdrdna_status *status);
 static void control_fill_memory(struct amdrdna_device *device, struct amdrdna_status *status);
+static uint32_t control_fill_power(struct amdrdna_device *device, struct amdrdna_status *status);
 static uint32_t ip_version(const struct amdrdna_ip *ip);
 
 /* The device's operations: requests only. */
@@ -371,6 +372,10 @@ control_fill(
 	if (status->stage >= AMDRDNA_STAGE_A2)
 		control_fill_memory(device, status);
 
+	/* The training, the security processor and the power side, from stage A3t on. */
+	if (status->stage >= AMDRDNA_STAGE_A2)
+		flags |= control_fill_power(device, status);
+
 	/* Publishes the flags. */
 	status->flags = flags;
 }
@@ -402,6 +407,66 @@ control_fill_memory(
 	status->interrupt_signals = (uint32_t)device->interrupts.signals;
 	status->vm_faults = (uint32_t)device->interrupts.faults;
 	status->display_underflow = device->underflow_after;
+}
+
+/*
+ * Fills the status answer's part that stages A3t, A3 and A4 set up, and
+ * reports their state flags.
+ */
+static uint32_t
+control_fill_power(
+	struct amdrdna_device *device,
+	struct amdrdna_status *status)
+{
+	struct amdrdna_thermal *thermal;
+	unsigned long irq;
+	uint32_t flags;
+
+	/* The training's result. */
+	status->training_result = device->training.result;
+	status->training_reason = device->training.reason;
+	status->training_ms = device->training.milliseconds;
+
+	/* The security processor's side. */
+	status->region_kib = device->psp.region_bytes >> 10;
+	status->programs_loaded = device->psp.loaded;
+	status->secure_os_version = device->psp.secure_os_version;
+	status->security_warnings = device->psp.warnings;
+
+	/* The interrupt entries read and those no block took. */
+	status->interrupt_entries = (uint32_t)device->interrupts.entries;
+	status->interrupt_unknown = (uint32_t)device->interrupts.unknown;
+
+	/* The state flags of the three stages. */
+	flags = 0U;
+	if (device->interrupts.enabled)
+		flags |= AMDRDNA_STATUS_INTERRUPTS_ON;
+	if (device->psp.booted)
+		flags |= AMDRDNA_STATUS_SECURE_OS_OURS;
+
+	/* The power side, as one consistent view of what the watch publishes. */
+	thermal = &device->thermal;
+	irq = spin_lock_irqsave(&thermal->lock);
+
+	status->smu_version = thermal->smu_version;
+	status->smu_interface = thermal->interface_version;
+	status->fan_mode = thermal->mode;
+	status->fan_duty = thermal->duty_percent;
+	status->fan_rpm = thermal->fan_speed;
+	status->fan_driven = thermal->fan_driven;
+	status->temperature = thermal->temperature;
+	status->temperature_highest = thermal->highest;
+	status->temperature_limit = thermal->limit;
+	status->thermal_alerts = (uint32_t)(thermal->high_alerts + thermal->low_alerts + thermal->critical_alerts);
+	if (thermal->faulted)
+		flags |= AMDRDNA_STATUS_THERMAL_FAULT;
+	if (thermal->hung)
+		flags |= AMDRDNA_STATUS_SMU_HUNG;
+
+	spin_unlock_irqrestore(&thermal->lock, irq);
+
+	/* Succeeded: the flags of the three stages. */
+	return flags;
 }
 
 /* Packs an IP block's version as major << 16 | minor << 8 | step; 0 for an unlisted block. */

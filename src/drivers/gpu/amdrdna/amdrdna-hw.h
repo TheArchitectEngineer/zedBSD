@@ -81,6 +81,29 @@
 #define AMDRDNA_SOURCE_PAGE_FAULT	0x00U
 
 /*
+ * The interrupt clients and sources of the thermal stage: the thermal
+ * block's high alert (the temperature rose above the high threshold) and
+ * low alert (it fell below the low one), the critical-temperature trip the
+ * SMU's I/O block reports on its GPIO 19, and the software interrupt the
+ * system-management unit raises for the driver.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/soc15_ih_clientid.h
+ * (SOC15_IH_CLIENTID_THM, SOC15_IH_CLIENTID_ROM_SMUIO,
+ * SOC15_IH_CLIENTID_MP1), drivers/gpu/drm/amd/pm/swsmu/smu11/smu_v11_0.c
+ * (THM_11_0__SRCID__THM_DIG_THERM_L2H, THM_11_0__SRCID__THM_DIG_THERM_H2L,
+ * SMUIO_11_0__SRCID__SMUIO_GPIO19; smu_v11_0_set_irq_state: the software
+ * interrupt's ID 0xFE).
+ */
+#define AMDRDNA_CLIENT_THERMAL		0x0fU
+#define AMDRDNA_CLIENT_SMU_IO		0x16U
+#define AMDRDNA_CLIENT_SMU		0x1fU
+#define AMDRDNA_SOURCE_THERMAL_HIGH	0x00U
+#define AMDRDNA_SOURCE_THERMAL_LOW	0x01U
+#define AMDRDNA_SOURCE_CRITICAL		0x53U
+#define AMDRDNA_SOURCE_SMU_SOFT		0xfeU
+
+/*
  * The IP blocks the driver knows by name.  The GPU's block table lists
  * many more; the others are counted but not kept.
  */
@@ -542,6 +565,112 @@ struct amdrdna_vm_fault {
 	unsigned context;
 };
 
+/* The most pieces the driver cuts one firmware file into. */
+#define AMDRDNA_FIRMWARE_PIECES		4U
+
+/*
+ * The kinds of firmware file, by how the driver cuts them: the security
+ * processor's own file (its boot pieces), a file whose program is the one
+ * piece, a compute processor's file (the program and its jump table) and
+ * the run-list controller's file (its program and three lists).
+ */
+enum amdrdna_firmware_kind {
+	AMDRDNA_FIRMWARE_SECURE,
+	AMDRDNA_FIRMWARE_WHOLE,
+	AMDRDNA_FIRMWARE_COMPUTE,
+	AMDRDNA_FIRMWARE_RUN_LIST
+};
+
+/*
+ * The pieces' indexes: the security processor's system driver, secure
+ * OS, table of contents and key database; a compute processor's program
+ * and jump table; the run-list controller's program, control list, GPM
+ * list and SRM list.
+ */
+#define AMDRDNA_SECURE_SYSTEM_DRIVER	0U
+#define AMDRDNA_SECURE_OS		1U
+#define AMDRDNA_SECURE_CONTENTS		2U
+#define AMDRDNA_SECURE_KEYS		3U
+#define AMDRDNA_COMPUTE_PROGRAM		0U
+#define AMDRDNA_COMPUTE_JUMPS		1U
+#define AMDRDNA_RUN_LIST_PROGRAM	0U
+#define AMDRDNA_RUN_LIST_CONTROL	1U
+#define AMDRDNA_RUN_LIST_GPM		2U
+#define AMDRDNA_RUN_LIST_SRM		3U
+
+/* One piece of a firmware file: its offset in the file and its size. */
+struct amdrdna_firmware_piece {
+	uint32_t offset;
+	uint32_t bytes;
+};
+
+/*
+ * What a firmware file's header says: its layout version, the version of
+ * the program it carries, and the pieces the driver hands on.
+ */
+struct amdrdna_firmware_layout {
+	uint16_t header_major;
+	uint16_t header_minor;
+	uint32_t version;
+	unsigned piece_count;
+	struct amdrdna_firmware_piece pieces[AMDRDNA_FIRMWARE_PIECES];
+};
+
+/*
+ * The security processor's ring and command buffers: a frame of 64
+ * bytes, a ring of 4 KiB, a command of 1024 bytes; and the reserve at the
+ * top of VRAM memory training assumes without one from the video BIOS.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/psp_gfx_if.h (struct psp_gfx_rb_frame,
+ * struct psp_gfx_cmd_resp), amdgpu_psp.c (psp_ring_init: 0x1000) and
+ * drivers/gpu/drm/amd/amdgpu/amdgpu_discovery.h (DISCOVERY_TMR_OFFSET).
+ */
+#define AMDRDNA_PSP_FRAME_BYTES		64U
+#define AMDRDNA_PSP_RING_BYTES		4096U
+#define AMDRDNA_PSP_COMMAND_BYTES	1024U
+#define AMDRDNA_TRAINING_DEFAULT_RESERVE 0x10000U
+
+/*
+ * The program types the security processor loads: the graphics pipe's ME,
+ * PFP and CE, the compute processor, the run-list controller's program,
+ * the two copy engines, the system-management unit, and the run-list
+ * controller's GPM, SRM and control lists.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/psp_gfx_if.h (enum psp_gfx_fw_type:
+ * GFX_FW_TYPE_CP_ME, GFX_FW_TYPE_CP_PFP, GFX_FW_TYPE_CP_CE,
+ * GFX_FW_TYPE_CP_MEC, GFX_FW_TYPE_RLC_G, GFX_FW_TYPE_SDMA0,
+ * GFX_FW_TYPE_SDMA1, GFX_FW_TYPE_SMU,
+ * GFX_FW_TYPE_RLC_RESTORE_LIST_GPM_MEM,
+ * GFX_FW_TYPE_RLC_RESTORE_LIST_SRM_MEM,
+ * GFX_FW_TYPE_RLC_RESTORE_LIST_SRM_CNTL).
+ */
+#define AMDRDNA_PROGRAM_ME		1U
+#define AMDRDNA_PROGRAM_PFP		2U
+#define AMDRDNA_PROGRAM_CE		3U
+#define AMDRDNA_PROGRAM_COMPUTE		4U
+#define AMDRDNA_PROGRAM_RUN_LIST	8U
+#define AMDRDNA_PROGRAM_COPY0		9U
+#define AMDRDNA_PROGRAM_COPY1		10U
+#define AMDRDNA_PROGRAM_SMU		18U
+#define AMDRDNA_PROGRAM_LIST_GPM	20U
+#define AMDRDNA_PROGRAM_LIST_SRM	21U
+#define AMDRDNA_PROGRAM_LIST_CONTROL	22U
+
+/*
+ * The reply the secure OS writes into a command buffer: the status (0 is
+ * success), the session of a loaded application, where a loaded program
+ * went in the trusted region, and the region size the table of contents
+ * asks for.
+ */
+struct amdrdna_psp_reply {
+	uint32_t status;
+	uint32_t session;
+	uint64_t place;
+	uint32_t region_bytes;
+};
+
 uint16_t
 amdrdna_le16(
 	const uint8_t *bytes,
@@ -794,5 +923,118 @@ amdrdna_interrupt_offset(
 	uint32_t pointer,
 	uint32_t ring_bytes,
 	bool *overflowed);
+
+
+int
+amdrdna_firmware_layout(
+	enum amdrdna_firmware_kind kind,
+	const uint8_t *bytes,
+	size_t length,
+	struct amdrdna_firmware_layout *layout);
+
+void
+amdrdna_psp_frame(
+	uint8_t *frame,
+	uint64_t command,
+	uint64_t fence,
+	uint32_t fence_sequence);
+
+int
+amdrdna_psp_ring_step(
+	uint32_t write_pointer,
+	uint32_t *frame,
+	uint32_t *next);
+
+void
+amdrdna_psp_command(
+	uint8_t *command,
+	uint32_t id);
+
+void
+amdrdna_psp_command_program(
+	uint8_t *command,
+	uint64_t address,
+	uint32_t bytes,
+	uint32_t type);
+
+void
+amdrdna_psp_command_contents(
+	uint8_t *command,
+	uint64_t address,
+	uint32_t bytes);
+
+void
+amdrdna_psp_command_region(
+	uint8_t *command,
+	uint64_t address,
+	uint32_t bytes,
+	uint64_t physical);
+
+void
+amdrdna_psp_command_application(
+	uint8_t *command,
+	uint64_t address,
+	uint32_t bytes);
+
+void
+amdrdna_psp_command_unload(
+	uint8_t *command,
+	uint32_t session);
+
+void
+amdrdna_psp_command_plain(
+	uint8_t *command,
+	bool tear_down);
+
+void
+amdrdna_psp_reply_read(
+	const uint8_t *command,
+	struct amdrdna_psp_reply *reply);
+
+void
+amdrdna_training_place(
+	uint64_t vram_bytes,
+	uint64_t reserve_bytes,
+	uint64_t *driver_copy,
+	uint64_t *processor_copy);
+
+void
+amdrdna_temperature_read(
+	uint32_t word,
+	unsigned *sensor,
+	unsigned *highest);
+
+int
+amdrdna_fan_duty_word(
+	uint32_t old,
+	uint32_t limits,
+	unsigned percent,
+	uint32_t *word);
+
+uint32_t
+amdrdna_fan_mode_word(
+	uint32_t old);
+
+uint32_t
+amdrdna_fan_speed(
+	uint32_t tachometer);
+
+unsigned
+amdrdna_fan_driven(
+	uint32_t status,
+	uint32_t limits);
+
+uint32_t
+amdrdna_alert_word(
+	uint32_t old,
+	unsigned high,
+	unsigned low);
+
+uint32_t
+amdrdna_alert_off_word(
+	uint32_t old);
+
+uint32_t
+amdrdna_alert_clear_word(void);
 
 #endif

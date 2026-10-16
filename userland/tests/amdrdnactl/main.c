@@ -124,6 +124,13 @@ control_status(
 	int descriptor)
 {
 	struct amdrdna_status status;
+	unsigned posted;
+	unsigned on_gpu;
+	unsigned training;
+	unsigned ours;
+	unsigned irq_on;
+	unsigned fault;
+	unsigned hung;
 	int result;
 
 	/* Asks the driver for its state. */
@@ -133,6 +140,15 @@ control_status(
 	result = ioctl(descriptor, AMDRDNA_IOC_STATUS, &status);
 	if (result != 0)
 		return control_fail("status", errno);
+
+	/* Turns the flags the lines print into 0 or 1. */
+	posted = (status.flags & AMDRDNA_STATUS_POSTED) != 0U;
+	on_gpu = (status.flags & AMDRDNA_STATUS_GOP_ON_GPU) != 0U;
+	training = (status.flags & AMDRDNA_STATUS_TRAINING_ALLOWED) != 0U;
+	ours = (status.flags & AMDRDNA_STATUS_SECURE_OS_OURS) != 0U;
+	irq_on = (status.flags & AMDRDNA_STATUS_INTERRUPTS_ON) != 0U;
+	fault = (status.flags & AMDRDNA_STATUS_THERMAL_FAULT) != 0U;
+	hung = (status.flags & AMDRDNA_STATUS_SMU_HUNG) != 0U;
 
 	/* Prints the stage machine, the identity and what each stage read. */
 	printf("stage=%s\n", stage_name(status.stage));
@@ -150,7 +166,7 @@ control_status(
 	    (unsigned)status.vram_mib, (unsigned)status.bar0_mib, (unsigned)status.cpu_window_mib,
 	    (unsigned)status.rebar_capability, (unsigned)status.rebar_control);
 	printf("posted=%u sos=0x%08x boot=0x%08x smu=0x%08x grbm=0x%08x scratch7=0x%08x fb=0x%llx\n",
-	    (status.flags & AMDRDNA_STATUS_POSTED) != 0U ? 1U : 0U,
+	    posted,
 	    (unsigned)status.secure_os_word, (unsigned)status.boot_mailbox, (unsigned)status.power_firmware_state,
 	    (unsigned)status.engine_status, (unsigned)status.bios_scratch_7, (unsigned long long)status.frame_buffer_base);
 	printf("gop otg=%u hubp=%u dig=%u kind=%u %ux%u on %ux%u shape=%u pitch=0x%x format=%u vram=+0x%llx on_gpu=%u\n",
@@ -158,17 +174,32 @@ control_status(
 	    (unsigned)status.gop_source_width, (unsigned)status.gop_source_height,
 	    (unsigned)status.gop_width, (unsigned)status.gop_height, (unsigned)status.gop_shape,
 	    (unsigned)status.gop_pitch_word, (unsigned)status.gop_format,
-	    (unsigned long long)status.gop_vram_offset, (status.flags & AMDRDNA_STATUS_GOP_ON_GPU) != 0U ? 1U : 0U);
+	    (unsigned long long)status.gop_vram_offset, on_gpu);
 	printf("vbios source=%u length=%u fwinfo=%u.%u caps=0x%x pptid=%u shutdown=%uC training=%u\n",
 	    (unsigned)status.vbios_source, (unsigned)status.vbios_length,
 	    (unsigned)(status.firmware_table_version >> 8), (unsigned)(status.firmware_table_version & 0xffU),
 	    (unsigned)status.firmware_capability_bits, (unsigned)status.power_table_id, (unsigned)status.shutdown_temperature,
-	    (status.flags & AMDRDNA_STATUS_TRAINING_ALLOWED) != 0U ? 1U : 0U);
+	    training);
 	printf("memory gart=0x%llx+%uMiB cpu_free=%uMiB gpu_free=%uMiB irq=%u signals=%u faults=%u underflow=%u\n",
 	    (unsigned long long)status.gart_base, (unsigned)status.gart_mib,
 	    (unsigned)status.cpu_pool_free_mib, (unsigned)status.gpu_pool_free_mib,
 	    (unsigned)status.interrupt_kind, (unsigned)status.interrupt_signals,
 	    (unsigned)status.vm_faults, (unsigned)status.display_underflow);
+	printf("training result=%u reason=%u ms=%u\n",
+	    (unsigned)status.training_result, (unsigned)status.training_reason, (unsigned)status.training_ms);
+	printf("psp tmr=%uKiB programs=%u sos=0x%08x warnings=%u ours=%u irq_on=%u entries=%u unknown=%u\n",
+	    (unsigned)status.region_kib, (unsigned)status.programs_loaded, (unsigned)status.secure_os_version,
+	    (unsigned)status.security_warnings,
+	    ours,
+	    irq_on,
+	    (unsigned)status.interrupt_entries, (unsigned)status.interrupt_unknown);
+	printf("power smu=%u.%u.%u if=0x%x fan_mode=%u duty=%u%% fan=%urpm driven=%u%% temp=%uC max=%uC limit=%uC alerts=%u fault=%u hung=%u\n",
+	    (unsigned)((status.smu_version >> 16) & 0xffU), (unsigned)((status.smu_version >> 8) & 0xffU), (unsigned)(status.smu_version & 0xffU),
+	    (unsigned)status.smu_interface, (unsigned)status.fan_mode, (unsigned)status.fan_duty,
+	    (unsigned)status.fan_rpm, (unsigned)status.fan_driven, (unsigned)status.temperature,
+	    (unsigned)status.temperature_highest, (unsigned)status.temperature_limit, (unsigned)status.thermal_alerts,
+	    fault,
+	    hung);
 	return 0;
 }
 
