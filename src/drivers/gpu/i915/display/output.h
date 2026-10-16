@@ -39,7 +39,7 @@
  * report): the first lit pipe whose transcoder drives a port, and every
  * lit pipe.  Pure: reads only the report.
  */
-void drv_i915_gop_output_read(const struct i915_native_report *report, struct i915_gop_output *gop);
+void drv_i915_gop_output_read(const struct i915_xd_firmware *firmware, struct i915_gop_output *gop);
 
 /*
  * Names the firmware's output for the log ("eDP on DDI A", "HDMI on DDI B",

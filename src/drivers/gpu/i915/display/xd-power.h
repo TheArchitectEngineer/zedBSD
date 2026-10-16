@@ -224,6 +224,7 @@ int drv_i915_xd_power_dc9_enter(struct i915_xd_power *power, struct i915_xd_io *
 int drv_i915_xd_power_dc9_leave(struct i915_xd_power *power, struct i915_xd_io *io, struct i915_xd_dc_report *report);
 int drv_i915_xd_power_well_enable(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned well, const struct i915_xd_power_hooks *hooks, struct i915_xd_well_report *report);
 int drv_i915_xd_power_well_disable(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned well, const struct i915_xd_power_hooks *hooks, struct i915_xd_well_report *report);
+int drv_i915_xd_power_well_powered(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned well);
 int drv_i915_xd_power_well_owned(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned well);
 void drv_i915_xd_power_well_adopt(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned well);
 

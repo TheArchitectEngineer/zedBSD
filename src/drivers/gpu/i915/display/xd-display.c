@@ -14,9 +14,12 @@
 #include "display-internal.h"
 #include "xd.h"
 
+#include "bootloader/include/amd64-handoff.h"
+
 #include <hal/hal.h>
 #include <kern/kcrt.h>
 #include <kern/klog.h>
+#include <kern/platform.h>
 
 #include <uapi/errno.h>
 #include <stddef.h>
@@ -26,6 +29,9 @@ static int i915_xd_map_device(void *context, uint64_t address, size_t size, cons
 static void i915_xd_unmap_device(void *context, const volatile uint8_t *bytes, size_t size);
 static const char *i915_xd_south_name(int pch_kind);
 static const char *i915_xd_vbt_source_name(unsigned source);
+static int i915_xd_hypervisor(void);
+static int i915_xd_vtd_read(void *context, uint64_t base, uint32_t *version, uint32_t *status, uint32_t *protect);
+static int i915_xd_panel_ddi(const struct i915_xd *xd);
 
 /*
  * Prepares the xd display of a device and chooses its description.
@@ -173,6 +179,66 @@ drv_i915_xd_read_opregion(
 	return 0;
 }
 
+/*
+ * Reads the display the firmware left, before the driver's first display
+ * write, into xd->firmware: decides whether the display may be used and
+ * names the output the firmware lit (see xd-takeover.h).  The aperture,
+ * the GGTT size and the first GGTT page the driver writes, and the
+ * OpRegion's address (ASLS) are the device's.  Returns what
+ * drv_i915_xd_firmware_read() returns.
+ */
+int
+drv_i915_xd_check_firmware(
+	struct i915_xd *xd,
+	uint64_t aperture_base,
+	uint64_t aperture_size,
+	uint32_t ggtt_pages,
+	uint32_t driver_first_page,
+	uint32_t asls)
+{
+	const struct zbl6_framebuffer *framebuffer;
+	const struct i915_xd_platform *platform;
+	struct i915_xd_fw_env env;
+	int panel_ddi;
+	int error;
+
+	/* The machine, the GGTT the driver writes, and a reader of the VT-d unit. */
+	kern_memset(&env, 0, sizeof(env));
+	env.hypervisor = i915_xd_hypervisor();
+	env.aperture_base = aperture_base;
+	env.aperture_size = aperture_size;
+	env.ggtt_pages = ggtt_pages;
+	env.driver_first_page = driver_first_page;
+	env.vtd_read = i915_xd_vtd_read;
+	env.context = NULL;
+
+	/* The firmware's framebuffer from the boot handoff. */
+	framebuffer = kern_boot_handoff("pcat.framebuffer");
+	if (framebuffer != NULL) {
+		env.fb_present = 1;
+		env.fb_base = framebuffer->physical_base;
+		env.fb_size = framebuffer->size;
+	}
+
+	/* Reads and decides; a device without a description is recorded as one. */
+	platform = NULL;
+	if (xd->chosen)
+		platform = xd->choice.platform;
+	error = drv_i915_xd_firmware_read(&xd->io, platform, &env, asls, &xd->firmware);
+
+	/* Names the output by the panel's DDI in the VBT. */
+	panel_ddi = i915_xd_panel_ddi(xd);
+	drv_i915_xd_firmware_classify(platform, panel_ddi, &xd->firmware);
+	drv_i915_xd_firmware_log(&xd->firmware);
+
+	/* Reports a device without a description. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the record and its decision. */
+	return 0;
+}
+
 /* Maps device memory read-only for the OpRegion reader; 0, or EIO. */
 static int
 i915_xd_map_device(
@@ -242,4 +308,81 @@ i915_xd_vbt_source_name(
 
 	/* No VBT. */
 	return "nowhere";
+}
+
+/* Reports CPUID.1:ECX[31], the bit a hypervisor sets for its guests. */
+static int
+i915_xd_hypervisor(void)
+{
+	uint32_t eax;
+	uint32_t ebx;
+	uint32_t ecx;
+	uint32_t edx;
+
+	/* Asks CPUID leaf 1. */
+	eax = 1U;
+	__asm__ __volatile__("cpuid" : "+a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx));
+	(void)ebx;
+	(void)edx;
+
+	/* Succeeded: the hypervisor bit. */
+	return (int)((ecx >> 31) & 1U);
+}
+
+/*
+ * Reads the version, the global status and the protected memory enable
+ * of a VT-d unit through a read-only mapping; 0, or EIO when the unit
+ * cannot be mapped.
+ *
+ * Values referenced: Intel Virtualization Technology for Directed I/O
+ * Architecture Specification (VER_REG at 0x0, GSTS_REG at 0x1c, PMEN_REG
+ * at 0x64).
+ */
+static int
+i915_xd_vtd_read(
+	void *context,
+	uint64_t base,
+	uint32_t *version,
+	uint32_t *status,
+	uint32_t *protect)
+{
+	const volatile uint8_t *unit;
+	int error;
+
+	/* Maps the unit's page read-only. */
+	error = i915_xd_map_device(context, base, 0x1000U, &unit);
+	if (error != 0)
+		return error;
+
+	/* The three words. */
+	*version = *(const volatile uint32_t *)(unit + 0x00U);
+	*status = *(const volatile uint32_t *)(unit + 0x1cU);
+	*protect = *(const volatile uint32_t *)(unit + 0x64U);
+
+	/* Gives the mapping back. */
+	i915_xd_unmap_device(context, unit, 0x1000U);
+
+	/* Succeeded: the words are read. */
+	return 0;
+}
+
+/* Returns the DDI of the built-in panel the VBT names, or DDI A when the VBT names none (or was not parsed). */
+static int
+i915_xd_panel_ddi(
+	const struct i915_xd *xd)
+{
+	unsigned index;
+
+	/* Without a parsed VBT, the panel's DDI is A. */
+	if (!xd->vbt_parsed)
+		return 0;
+
+	/* The first output of the VBT that is an eDP. */
+	for (index = 0U; index < xd->vbt.nchildren; index++) {
+		if (xd->vbt.children[index].edp)
+			return (int)xd->vbt.children[index].ddi;
+	}
+
+	/* Succeeded: no eDP child, so DDI A. */
+	return 0;
 }

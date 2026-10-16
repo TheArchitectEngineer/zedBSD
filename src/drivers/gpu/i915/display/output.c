@@ -6,8 +6,7 @@
  */
 
 /*
- * The choice of the resident node's output (ws075-p012; the GPU scanout
- * rule since ws113-p002).
+ * The choice of the resident node's output by the GPU scanout rule.
  *
  * The resident node has one display, and it is the output the firmware
  * (GOP) was scanning out when the driver started: the driver starts no
@@ -79,7 +78,7 @@
 /*
  * With display=hdmi the sink is asked again for this long before the panel
  * takes its place: on bare metal the probe runs a few seconds after power-on,
- * before a USB-powered LCD's controller answers the EDID read (ws084).
+ * before a USB-powered LCD's controller answers the EDID read.
  */
 #define I915_OUTPUT_HDMI_WAIT_MS	6000U
 #define I915_OUTPUT_HDMI_RETRY_MS	250U
@@ -202,7 +201,7 @@ static void i915_output_edid_size(const uint8_t *edid, unsigned edid_size, struc
 static uint32_t i915_output_cvt_vsync(uint32_t width, uint32_t height);
 
 /*
- * Reads the firmware's output from the N0 report.
+ * Reads the firmware's output from the record of the firmware's display.
  *
  * Every lit pipe is recorded; the output is the first lit pipe whose
  * transcoder is enabled and drives a port (a firmware that clones onto two
@@ -210,10 +209,10 @@ static uint32_t i915_output_cvt_vsync(uint32_t width, uint32_t height);
  */
 void
 drv_i915_gop_output_read(
-	const struct i915_native_report *report,
+	const struct i915_xd_firmware *firmware,
 	struct i915_gop_output *gop)
 {
-	const struct i915_native_pipe *pipe;
+	const struct i915_xd_fw_pipe *pipe;
 	unsigned select;
 	unsigned index;
 	uint32_t function;
@@ -228,13 +227,13 @@ drv_i915_gop_output_read(
 	/* Each lit pipe; the first that drives a port is the output. */
 	for (index = 0U; index < I915_OUTPUT_PIPES; index++) {
 		/* A pipe the firmware did not light. */
-		pipe = &report->pipe[index];
-		if (pipe->cls != I915_N0_READABLE_ACTIVE)
+		pipe = &firmware->pipe[index];
+		if (pipe->state != I915_XD_FW_PIPE_LIT)
 			continue;
 		gop->pipes |= 1U << index;
 
 		/* A transcoder that is off or drives no port is not an output. */
-		function = pipe->trans_ddi_func;
+		function = pipe->ddi_function;
 		select = (function >> I915_OUTPUT_DDI_PORT_SHIFT) & I915_OUTPUT_DDI_PORT_MASK;
 		if ((function & I915_OUTPUT_DDI_FUNC_ENABLE) == 0U || select == 0U)
 			continue;
@@ -253,7 +252,7 @@ drv_i915_gop_output_read(
 		if (gop->port == I915_OUTPUT_PORT_B && (gop->mode == I915_OUTPUT_MODE_HDMI || gop->mode == I915_OUTPUT_MODE_DVI))
 			gop->kind = I915_GOP_HDMI;
 
-		/* A Type-C port's DDI in DP SST mode is the external DP path (ws051-p004c); its HDMI and DP MST are not. */
+		/* A Type-C port's DDI in DP SST mode is the external DP path; its HDMI and DP MST are not. */
 		if (gop->port >= I915_OUTPUT_PORT_TC1 &&
 		    gop->port < I915_OUTPUT_PORT_TC1 + I915_OUTPUT_PORT_TC_COUNT &&
 		    gop->mode == I915_OUTPUT_MODE_DP_SST)
@@ -305,7 +304,7 @@ drv_i915_display_output_select(
 	i915_output_choose(display);
 	i915_output_inventory(display);
 
-	/* The firmware's output, which comes back when a moved output's last hold ends (ws113-p011a). */
+	/* The firmware's output, which comes back when a moved output's last hold ends. */
 	display->gop_output = display->output;
 }
 
@@ -342,7 +341,7 @@ i915_output_choose(
 	}
 
 	/*
-	 * The firmware's DisplayPort display on a Type-C port (ws051-p004c):
+	 * The firmware's DisplayPort display on a Type-C port:
 	 * its sink is asked over the port's AUX channel before anything of the
 	 * firmware's display is stopped; when it cannot be driven the node has
 	 * no output and the firmware's picture stays (the GPU scanout rule).
@@ -482,9 +481,9 @@ drv_i915_display_output_name(
  *
  * The hotplug path never detects an eDP connector: its status stays
  * unknown and it reads no EDID for it.  Taken as it is, the panel would be
- * unplugged whenever another output is lit (the rest of BUG-250), and a
- * claim that brings the output back to the panel (the lid opened,
- * ws113-p011a) would be refused with ENXIO.  The panel's mode and size are
+ * unplugged whenever another output is lit, and a
+ * claim that brings the output back to the panel (the lid opened)
+ * would be refused with ENXIO.  The panel's mode and size are
  * the ones the resident dependencies read at the start (its EDID or the
  * VBT); a node without them leaves the connector as the hotplug path took
  * it.  0, or ENOENT for a connector the path does not have.
@@ -538,7 +537,7 @@ drv_i915_display_output_connector(
 }
 
 /*
- * Prepares another connected output for the resident run (ws113-p011a: a
+ * Prepares another connected output for the resident run (a
  * claim that moves the output while no lease is held): reads what the
  * connector is and fills output for it, without detecting it again or
  * writing the hardware.  Each kind of connector has its own preparation;
@@ -593,7 +592,7 @@ drv_i915_display_output_prepare(
 			return error;
 		break;
 	case I915_HPD_OUTPUT_DP:
-		/* An external DisplayPort display: only a Type-C port's is lit (ws051-p004b). */
+		/* An external DisplayPort display: only a Type-C port's is lit. */
 		error = i915_output_dp_ext(display, connector, found.port, output, reason);
 		if (error != 0)
 			return error;
@@ -916,7 +915,7 @@ i915_output_hdmi(
 	status = drv_i915_hpd_probe_connector(display, (unsigned)summary.hdmi_connector);
 #ifdef I915_TEST_HDMI_ABSENT
 	/*
-	 * The panel fallback test (ws075-p013): the probe ran, but its answer is
+	 * The panel fallback test: the probe ran, but its answer is
 	 * taken as a disconnected sink, the state an unplugged cable leaves.
 	 */
 	kern_logf("i915: display output: I915_TEST_HDMI_ABSENT takes the HDMI sink as absent (probe said %d)\n", status);
@@ -1006,7 +1005,7 @@ i915_output_hdmi_mode(
 /*
  * Makes the firmware's HDMI display the output: its sink is asked again
  * for a while (on bare metal the first probe can come before a USB-powered
- * LCD's controller answers the EDID read, ws084).  When it cannot be
+ * LCD's controller answers the EDID read).  When it cannot be
  * driven the node has no output: the panel does not take its place.
  */
 static void
@@ -1048,8 +1047,8 @@ i915_output_hdmi_wait(
 }
 
 /*
- * Makes the firmware's DisplayPort display on a Type-C port the output
- * (ws051-p004c): the DP connector of the firmware's port is found, and its
+ * Makes the firmware's DisplayPort display on a Type-C port the output:
+ * the DP connector of the firmware's port is found, and its
  * sink is prepared as a claim prepares it (i915_output_dp_ext: probed over
  * the port's AUX channel, its mode and link computed, nothing written).  A
  * sink not answering yet is asked again for a while, as the HDMI one is.
@@ -1129,10 +1128,10 @@ i915_output_dp_tc_wait(
 
 /*
  * Takes every connector's connection and preferred mode into the display
- * inventory once (ws113-p002): an HDMI connector other than the resident
+ * inventory once: an HDMI connector other than the resident
  * output's, and every DP connector, is detected first (it reads the sink's
  * EDID; a Type-C DP connector probes its sink over AUX and gives the
- * port's PHY back, ws051-p004a); the resident HDMI connector was detected
+ * port's PHY back); the resident HDMI connector was detected
  * by its choice.  No scanout starts.
  */
 static void
@@ -1381,8 +1380,8 @@ i915_output_cvt_vsync(
 }
 
 /*
- * Prepares an external DisplayPort display for the resident run
- * (ws051-p004b): a Type-C port's sink, probed again so the claim acts on
+ * Prepares an external DisplayPort display for the resident run:
+ * a Type-C port's sink, probed again so the claim acts on
  * what is plugged in now, its mode (display.mode=, else the EDID's
  * preferred timing, else CEA format 4), and the link and TC PLL that
  * carry it under the port's link limits.  Nothing is written to the

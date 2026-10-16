@@ -320,6 +320,44 @@ drv_i915_xd_power_well_owned(
 }
 
 /*
+ * Tells whether a well is on, whoever asked for it: its state bit is set.
+ * A well not switched through a request register (DC off, a mailbox
+ * well) gates no register and reads as on.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display_power.c
+ * (__intel_display_power_is_enabled, the readout's gate).
+ */
+int
+drv_i915_xd_power_well_powered(
+	struct i915_xd_io *io,
+	const struct i915_xd_platform *platform,
+	unsigned well)
+{
+	const struct i915_xd_well_desc *desc;
+	uint32_t control;
+	uint32_t value;
+
+	/* A well the table does not have powers nothing. */
+	desc = i915_xd_power_desc(platform, well);
+	if (desc == NULL)
+		return 0;
+
+	/* A well without a request register gates no register. */
+	control = i915_xd_power_control(desc->control);
+	if (control == 0U)
+		return 1;
+
+	/* The state alone. */
+	value = drv_i915_xd_io_read(io, control);
+	if ((value & I915_XD_PWR_WELL_STATE(desc->index)) == 0U)
+		return 0;
+
+	/* Succeeded: the well is on. */
+	return 1;
+}
+
+/*
  * Takes a well's request over from the BIOS: when the BIOS requests the
  * well, the driver's request is set first (when it is not set already)
  * and the BIOS's cleared after it, so the well never goes down between.

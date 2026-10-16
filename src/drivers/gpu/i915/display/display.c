@@ -176,6 +176,7 @@ static void i915_display_destroy_worlds(struct i915_display *display);
 static struct i915_display *i915_display_live(struct i915_device *device);
 static int i915_display_noirq_front(struct i915_device *device);
 static int i915_display_native_check(struct i915_device *device);
+static void i915_display_firmware_compare(struct i915_display *display);
 static int i915_display_core_init(struct i915_device *device);
 static void i915_display_dmc_init(struct i915_device *device);
 static int i915_display_noirq_tail(struct i915_device *device);
@@ -1815,8 +1816,12 @@ i915_display_native_check(
 		display->absent = 1;
 	}
 
+	/* The same check by the xd parts, compared with the one above. */
+	(void)drv_i915_xd_check_firmware(&display->xd, gt->gmadr_base, gt->gmadr_size, nd.ggtt_pages, nd.driver_ggtt_first, nd.asls);
+
 	/* The firmware's output, the only one the driver lights by itself (the GPU scanout rule). */
-	drv_i915_gop_output_read(&display->n0, &display->gop);
+	drv_i915_gop_output_read(&display->xd.firmware, &display->gop);
+	i915_display_firmware_compare(display);
 	drv_i915_gop_output_name(&display->gop, name, sizeof(name));
 	kern_logf("i915: N0: the firmware's output: %s (lit pipes 0x%x)\n", name, display->gop.pipes);
 
@@ -1828,6 +1833,66 @@ i915_display_native_check(
 
 	/* Succeeded: the check ran. */
 	return 0;
+}
+
+/*
+ * Compares the xd parts' record of the firmware's display with the older
+ * check's report, in one line: the decision, the takeover, the lit pipes,
+ * the GGTT overlap, each lit pipe's DDI function, and the output's kind.
+ */
+static void
+i915_display_firmware_compare(
+	struct i915_display *display)
+{
+	static const unsigned kinds[] = {
+		I915_XD_FW_OUTPUT_NONE,
+		I915_XD_FW_OUTPUT_PANEL,
+		I915_XD_FW_OUTPUT_HDMI,
+		I915_XD_FW_OUTPUT_OTHER,
+		I915_XD_FW_OUTPUT_DP_TC,
+	};
+	const struct i915_xd_firmware *firmware;
+	const struct i915_native_report *report;
+	const char *differs;
+	unsigned pipe;
+	int overlap;
+
+	/* The two records. */
+	firmware = &display->xd.firmware;
+	report = &display->n0;
+
+	/* The first field that differs, in the order of the decision. */
+	differs = NULL;
+	overlap = (firmware->walls & I915_XD_FW_WALL_OVERLAP) != 0U;
+	if (report->proceed != firmware->use)
+		differs = "the decision";
+	else if (report->takeover != firmware->take_over)
+		differs = "the takeover";
+	else if (report->active_pipes != firmware->lit_pipes)
+		differs = "the lit pipes";
+	else if (report->overlap != overlap)
+		differs = "the GGTT overlap";
+
+	/* Each lit pipe's DDI function. */
+	for (pipe = 0U; pipe < I915_XD_FW_PIPES; pipe++) {
+		if (differs != NULL)
+			break;
+		if ((report->active_pipes & (1U << pipe)) == 0U)
+			continue;
+		if (report->pipe[pipe].trans_ddi_func != firmware->pipe[pipe].ddi_function)
+			differs = "a lit pipe's DDI function";
+	}
+
+	/* The output's kind by the platform's ports against the driver's own rule. */
+	if (differs == NULL && display->gop.kind < sizeof(kinds) / sizeof(kinds[0]) && kinds[display->gop.kind] != firmware->output)
+		differs = "the output's kind";
+
+	/* One line either way. */
+	if (differs != NULL) {
+		kern_logf("i915: xd-takeover: differs from N0: %s\n", differs);
+		return;
+	}
+	kern_logf("i915: xd-takeover: agrees with N0\n");
 }
 
 /*

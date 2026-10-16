@@ -22,6 +22,7 @@
 #include "xd-io.h"
 #include "xd-platform.h"
 #include "xd-power.h"
+#include "xd-takeover.h"
 #include "xd-vbt.h"
 
 #include <stddef.h>
@@ -39,7 +40,8 @@ struct mutex;
  * the OpRegion stage, the VBT parse (vbt_parsed nonzero) by the VBT stage.
  * The power well counts are prepared with the power domains and kept
  * under their lock; the DMC firmware is parsed and loaded by the DMC
- * loader's work.
+ * loader's work.  The firmware's display is read once, before the first
+ * display write, by the firmware check.
  */
 struct i915_xd {
 	struct i915_xd_io io;
@@ -50,10 +52,12 @@ struct i915_xd {
 	int vbt_parsed;
 	struct i915_xd_power power;
 	struct i915_xd_dmc dmc;
+	struct i915_xd_firmware firmware;
 };
 
 void drv_i915_xd_start(struct i915_xd *xd, struct i915_mmio *mmio, struct mutex *mailbox_lock, uint16_t product, uint8_t revid);
 void drv_i915_xd_south(struct i915_xd *xd, uint16_t product, uint8_t revid, uint16_t pch_id);
+int drv_i915_xd_check_firmware(struct i915_xd *xd, uint64_t aperture_base, uint64_t aperture_size, uint32_t ggtt_pages, uint32_t driver_first_page, uint32_t asls);
 int drv_i915_xd_read_opregion(struct i915_xd *xd, uint32_t asls, uint8_t *opregion_copy, uint8_t *vbt_copy, size_t vbt_room);
 
 #endif /* DRIVERS_GPU_I915_DISPLAY_XD_H */
