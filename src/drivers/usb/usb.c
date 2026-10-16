@@ -26,6 +26,7 @@
 #include "kern/kmem.h"
 #include "kern/device-io.h"
 #include "kern/irq.h"
+#include "kern/sysctl.h"
 #include <kern/kcrt.h>
 
 #define USB_REQ_GET_DESCRIPTOR 6U
@@ -42,7 +43,7 @@
 /*
  * How many times a root port is reset and enumerated when a step times
  * out or fails on the wire.  A device that misses one request at boot
- * (BUG-036: the network adapter, error 42) was otherwise left unused until
+ * (the network adapter, error 42) was otherwise left unused until
  * it was plugged in again; other systems retry the same way.
  */
 #define USB_ENUMERATE_TRIES 3U
@@ -59,7 +60,7 @@
 #define USB_DISCONNECT_BARRIER_DONE 2U
 
 /*
- * The system's events (ws132-p002), which hear USB devices come and go.
+ * The system's events, which hear USB devices come and go.
  * Weak: the host fixtures of the USB core link without them.
  */
 extern void kern_system_event_post(uint32_t, uint32_t, int32_t, const char *, const char *) __attribute__((weak));
@@ -225,6 +226,13 @@ struct drv_usb_urb {
 	unsigned submit_commit_pending;
 	refcount_t references;
 	uintptr_t hcd_private[6];
+	/*
+	 * The times of the last submission while hw.usb.trace was on; all 0
+	 * for one submitted while it was off.  Written by the submitter, the
+	 * controller's driver and the completion, read by the submitter after
+	 * the transfer ended.
+	 */
+	struct drv_usb_urb_trace trace;
 };
 
 struct usb_driver_entry {
@@ -901,8 +909,84 @@ drv_usb_hcd_complete(
 	size_t actual)
 {
 	(void)hcd;
+
+	/* A traced transfer notes when its end was published. */
+	if (urb->trace.submitted_ns != 0U)
+		urb->trace.completed_ns = drv_usb_trace_now_ns();
 	(void)urb_publish_terminal(urb, status, actual);
 	urb_hcd_put(urb);
+}
+
+/*
+ * Reports whether hw.usb.trace has any of the given HW_USB_TRACE_ bits.
+ */
+int
+drv_usb_trace_enabled(
+	uint64_t bits)
+{
+	uint64_t enabled;
+
+	/* The bits root set. */
+	enabled = kern_usb_trace();
+	if ((enabled & bits) == 0U)
+		return 0;
+
+	/* Succeeded: one of the bits is on. */
+	return 1;
+}
+
+/*
+ * Reads the monotonic counter in nanoseconds, the clock of the traces.
+ */
+uint64_t
+drv_usb_trace_now_ns(
+	void)
+{
+	uint64_t counter;
+	uint64_t frequency;
+	uint64_t seconds;
+	uint64_t rest;
+	bool have;
+
+	/* The counter; a machine without one has only the clock's ticks. */
+	have = kern_rtc_read_counter(&counter, &frequency);
+	if (!have || frequency == 0U)
+		return sched_ticks() * (1000000000ULL / KERN_CLOCK_HZ);
+
+	/* Whole seconds, then the rest, so the product does not overflow. */
+	seconds = counter / frequency;
+	rest = counter % frequency;
+
+	/* Succeeded: the time. */
+	return seconds * 1000000000ULL + rest * 1000000000ULL / frequency;
+}
+
+/*
+ * Notes, for a traced transfer, that its controller reported it finished.
+ */
+void
+drv_usb_urb_trace_event(
+	struct drv_usb_urb *u)
+{
+	/* Only a traced transfer keeps times, and only the first report counts. */
+	if (u == NULL || u->trace.submitted_ns == 0U)
+		return;
+	if (u->trace.event_ns != 0U)
+		return;
+
+	u->trace.event_ns = drv_usb_trace_now_ns();
+}
+
+/*
+ * Copies the times of a transfer's last submission.
+ */
+void
+drv_usb_urb_trace_read(
+	const struct drv_usb_urb *u,
+	struct drv_usb_urb_trace *trace)
+{
+	/* The times as the submission, the controller and the completion left them. */
+	*trace = u->trace;
 }
 
 /*
@@ -2022,7 +2106,7 @@ drv_usb_urb_reserve_transfer(
 	int shared;
 	int error;
 
-	/* Validates the reservation owner and controller contract (an isochronous URB may reserve too, ws197-p007a1). */
+	/* Validates the reservation owner and controller contract (an isochronous URB may reserve too). */
 	if (urb == NULL || capacity == 0)
 		return EINVAL;
 
@@ -2429,6 +2513,7 @@ drv_usb_urb_submit(
 	struct usb_submit_commit commit;
 	struct usb_submit_commit *claimed = NULL;
 	bool irq_enabled;
+	int tracing;
 	int error;
 
 	/* Handles the urb availability. */
@@ -2511,6 +2596,12 @@ drv_usb_urb_submit(
 	 * never enter its callback ahead of the short-gate release.
 	 */
 	atomic_raw_store_release(&urb->status, DRV_USB_URB_PENDING);
+
+	/* A traced transfer notes when the controller was given it. */
+	kern_memset(&urb->trace, 0, sizeof(urb->trace));
+	tracing = drv_usb_trace_enabled(~(uint64_t)0);
+	if (tracing)
+		urb->trace.submitted_ns = drv_usb_trace_now_ns();
 	error = device->bus->hcd->ops->urb_enqueue(device->bus->hcd, urb);
 
 	/*
@@ -5529,7 +5620,7 @@ host_interface_enable(
 	/*
 	 * Configures each endpoint that carries data.  A zero-bandwidth
 	 * isochronous endpoint (packet size 0) can carry nothing and has no
-	 * context in the controller (BUG-275).
+	 * context in the controller.
 	 */
 	for (index = 0; index < alternate->endpoint_count; index++) {
 		zero = endpoint_zero_bandwidth(&alternate->endpoints[index]);
@@ -6456,7 +6547,7 @@ parse_configuration(
 			 * endpoint is how a default setting reserves no bus
 			 * time (USB 2.0 section 5.6.3), as a Bluetooth
 			 * controller's voice interface does in its setting 0
-			 * (Core 5.4 Vol 4 Part B section 2.1.1, BUG-275).
+			 * (Core 5.4 Vol 4 Part B section 2.1.1).
 			 */
 			empty_packet = 0;
 			if (endpoint_descriptor.maximum_packet_size == 0 &&
@@ -7771,7 +7862,7 @@ configuration_reset_endpoints(
 	     interface = interface->next) {
 		alternate_local = interface_active_alternate(interface);
 
-		/* Resets each configured endpoint (a zero-bandwidth one has no context to reset, BUG-275). */
+		/* Resets each configured endpoint (a zero-bandwidth one has no context to reset). */
 		for (index = 0; index < alternate_local->endpoint_count;
 		     index++) {
 			zero = endpoint_zero_bandwidth(&alternate_local->endpoints[index]);
@@ -8345,7 +8436,7 @@ host_interface_reset_endpoints(
 	/*
 	 * Keep every core latch closed until all host-side endpoint state
 	 * agrees with the confirmed device-side reset.  A zero-bandwidth
-	 * endpoint has no host-side state (BUG-275).  A partial HCD reset is
+	 * endpoint has no host-side state.  A partial HCD reset is
 	 * visible only inside a subsequently quarantined device.
 	 */
 	for (index = 0; index < alternate->endpoint_count; index++) {

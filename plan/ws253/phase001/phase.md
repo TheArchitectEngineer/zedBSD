@@ -130,3 +130,11 @@ commit: 71715e844（base 52c4b1e66）。
 | USB | 0 | 43 | 57 | 163 | 168 | 529 | 0.544 s | 4.213 s |
 
 （ms。QEMU の Venus は kern_gpu_attach を使わないので GPU の行は出ない。）
+
+## q1221-i04（2026-10-16 P2）: BUG-327 USB の stick の小さな読み込みの待ち
+
+commit: d3b388354（main c91056f4a を merge した上、fast-forward）、90cddaf43（BUG-327 の記録）。
+
+- 計測 `sysctl hw.usb.trace=1`（既定 0、root だけが書ける）: usb-storage の command ごとに `usb-storage-trace:` の 1 行（queue・total と、CBW・data・CSW の各 transfer の「controller に渡す→xHCI の event」「event→USB core の完了」「完了→待つ thread」の µs）。詳しくは [BUG-327](../../bugs/BUG-327.md)。
+- QEMU（USB の stick、qemu-xhci）: MSI で 1 command 約 0.4〜0.5 ms、INTx でも同じ。5330 の約 30 ms は QEMU では再現しない（QEMU の device は即座に答える）。原因の特定と修正は 5330 で上の行を取ってから（2026-10-16 ユーザー「P2はQEMUでテストをお願いします。実機は他のチケットに回します。」）。
+- 触った file（usb.c・usb.h・pci-xhci.c・kern/sysctl.h）の comment の WS・BUG の番号と design の節の符号を消した。log の文字列 `usb: URB completion contract q009-release-acquire-v1`（usb.c）は試験が読む可能性があるので残した。

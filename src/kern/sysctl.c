@@ -48,6 +48,7 @@ static const struct sysctl_leaf leaves[] = {
 	{{ CTL_HW, HW_MEMORY_STATS, 0 }, 2, "hw.memory.stats"},
 	{{ CTL_HW, HW_GPU_ATTACHING, 0 }, 2, "hw.gpu.attaching"},
 	{{ CTL_HW, HW_GPU_START, 0 }, 2, "hw.gpu.start"},
+	{{ CTL_HW, HW_USB_TRACE, 0 }, 2, "hw.usb.trace"},
 	{{ CTL_HW, HW_CPUTIMES, 0 }, 2, "hw.cputimes"},
 	{{ CTL_HW, HW_DISKSTATS, 0 }, 2, "hw.diskstats"},
 	{{ CTL_HW, HW_GPUTELEMETRY, 0 }, 2, "hw.gputelemetry"},
@@ -103,6 +104,13 @@ static atomic_uint_t gpu_attaching;
  * stay for the whole kernel lifetime.
  */
 static const struct kern_gpu_start_ops *gpu_start_ops;
+
+/*
+ * The HW_USB_TRACE_ bits of hw.usb.trace: which USB transfers the drivers
+ * describe in the kernel log.  0 from boot; only the superuser changes it,
+ * through the sysctl, and the drivers read it at each transfer.
+ */
+static volatile uint64_t usb_trace;
 static char hostname[KERN_HOST_NAME_MAX + 1U] = "zedbsd";
 
 /* The most GPUs hw.gputelemetry lists. */
@@ -148,6 +156,7 @@ static struct spinlock thermal_lock;
 
 static int sysctl_thermal(void *oldp, size_t *oldlenp, const void *newp, size_t newlen);
 static int sysctl_gpu_start(void *oldp, size_t *oldlenp, const void *newp, size_t newlen, int superuser);
+static int sysctl_usb_trace(void *oldp, size_t *oldlenp, const void *newp, size_t newlen, int superuser);
 static int sysctl_cputimes(void *oldp, size_t *oldlenp, const void *newp, size_t newlen);
 static int sysctl_diskstats(void *oldp, size_t *oldlenp, const void *newp, size_t newlen);
 static int sysctl_tcpstats(void *oldp, size_t *oldlenp, const void *newp, size_t newlen, int superuser);
@@ -321,6 +330,22 @@ kern_gpu_attach_end(
 }
 
 /*
+ * Reports which USB transfers the kernel log describes.
+ */
+uint64_t
+kern_usb_trace(
+	void)
+{
+	uint64_t bits;
+
+	/* The bits root set last. */
+	bits = atomic_u64_load_acquire(&usb_trace);
+
+	/* Succeeded: the bits. */
+	return bits;
+}
+
+/*
  * Installs the operations behind hw.gpu.start.
  */
 void
@@ -400,6 +425,18 @@ kern_sysctl(
 	if (namelen == 2 && name[0] == CTL_HW && name[1] == HW_GPU_START) {
 		error = sysctl_gpu_start(oldp, oldlenp, newp, newlen, superuser);
 		return error;
+	}
+
+	/* Reports or sets which USB transfers the log describes. */
+	if (namelen == 2 && name[0] == CTL_HW && name[1] == HW_USB_TRACE) {
+		error = sysctl_usb_trace(oldp, oldlenp, newp, newlen, superuser);
+
+		/* Reports why the setting could not be read or written. */
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the setting is reported and any new one is in force. */
+		return 0;
 	}
 
 	/* Reports each CPU's ticks by what it was doing. */
@@ -1121,6 +1158,49 @@ sysctl_thermal(
 	*oldlenp = sizeof(header) + (size_t)count * sizeof(struct thermal_entry);
 
 	/* Succeeded: the value is in the buffer. */
+	return 0;
+}
+
+/*
+ * Reads or sets hw.usb.trace, the HW_USB_TRACE_ bits; only the superuser
+ * may set them.
+ */
+static int
+sysctl_usb_trace(
+	void *oldp,
+	size_t *oldlenp,
+	const void *newp,
+	size_t newlen,
+	int superuser)
+{
+	uint64_t bits;
+	int error;
+
+	/* A length without a value asks for nothing that can be written. */
+	if (newp == NULL && newlen != 0)
+		return EINVAL;
+
+	/* Sets the bits when root gives new ones. */
+	if (newp != NULL) {
+		/* Only the superuser may turn the descriptions on or off. */
+		if (!superuser)
+			return EPERM;
+
+		/* The bits are one 64-bit word. */
+		if (newlen != sizeof(bits))
+			return EINVAL;
+
+		kern_memcpy(&bits, newp, sizeof(bits));
+		atomic_u64_store_release(&usb_trace, bits);
+	}
+
+	/* Reports the bits in force. */
+	bits = atomic_u64_load_acquire(&usb_trace);
+	error = sysctl_output(oldp, oldlenp, &bits, sizeof(bits));
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the bits are reported. */
 	return 0;
 }
 

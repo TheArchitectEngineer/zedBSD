@@ -223,7 +223,7 @@ struct drv_usb_control_request {
 /*
  * One packet of an isochronous transfer: where it is in the URB's buffer,
  * its length, and, when the transfer ends, how many bytes moved and how
- * it went (ws197-p007a1, design 2.1a X8).  A packet the controller could
+ * it went.  A packet the controller could
  * not serve in its interval is MISSED; the URB's own status is COMPLETE
  * unless the whole transfer was cancelled, disconnected or ended by a
  * halt's recovery (IO_ERROR), and its actual length is the packets' sum.
@@ -975,7 +975,7 @@ drv_usb_urb_setup_control_flags(
  * Describes the packets of an isochronous transfer whose buffer
  * drv_usb_urb_setup gave: each within the buffer and not empty.
  *
- * The isochronous contract (design 2.1a X5 and X9): the URB's callback
+ * The isochronous contract: the URB's callback
  * may run while the host controller's command gate is held, so it only
  * wakes a thread (it never submits, cancels or calls into the HCD).
  * Cancelling one URB of an isochronous endpoint ends every URB queued on
@@ -1044,7 +1044,7 @@ drv_usb_urb_drain(
  * Tells, without waiting, whether drv_usb_urb_drain would return 0 now:
  * the URB is terminal and the HCD has dropped it.  A thread above the
  * default priority waits on it asleep instead of draining, which yields
- * in a loop (ws197-p007a2, design 2.1b B-P1).
+ * in a loop.
  */
 int
 drv_usb_urb_retired(
@@ -1071,6 +1071,48 @@ drv_usb_urb_actual_length(
 void *
 drv_usb_urb_buffer(
 	const struct drv_usb_urb *u);
+
+/*
+ * The times of one transfer while hw.usb.trace is on, in nanoseconds of the
+ * monotonic counter: when it was handed to the host controller, when the
+ * controller reported it finished (0 when the controller's driver does not
+ * say), and when the USB core published its end.  All are 0 for a transfer
+ * submitted while tracing was off.
+ */
+struct drv_usb_urb_trace {
+	uint64_t submitted_ns;
+	uint64_t event_ns;
+	uint64_t completed_ns;
+};
+
+/*
+ * Reports whether hw.usb.trace has any of the given HW_USB_TRACE_ bits.
+ */
+int
+drv_usb_trace_enabled(
+	uint64_t bits);
+
+/*
+ * Reads the monotonic counter in nanoseconds, the clock of the traces.
+ */
+uint64_t
+drv_usb_trace_now_ns(void);
+
+/*
+ * Notes, for a traced transfer, that its controller reported it finished;
+ * a host controller driver calls it when it takes the transfer's event.
+ */
+void
+drv_usb_urb_trace_event(
+	struct drv_usb_urb *u);
+
+/*
+ * Copies the times of a transfer's last submission.
+ */
+void
+drv_usb_urb_trace_read(
+	const struct drv_usb_urb *u,
+	struct drv_usb_urb_trace *trace);
 
 size_t
 drv_usb_urb_length(

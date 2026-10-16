@@ -44,6 +44,13 @@ void
 kern_gpu_attach_end(void);
 
 /*
+ * Reports which USB transfers the kernel log describes (hw.usb.trace, the
+ * HW_USB_TRACE_ bits).
+ */
+uint64_t
+kern_usb_trace(void);
+
+/*
  * Installs the operations behind hw.gpu.start; called once, on the boot
  * thread, before user space runs.
  */
@@ -61,7 +68,7 @@ struct gpu_telemetry_entry;
 typedef int (*kern_gpu_telemetry_read_t)(void *context, struct gpu_telemetry_entry *entry);
 
 /*
- * Lists a GPU in hw.gputelemetry (ws134-p007): its driver's name, the
+ * Lists a GPU in hw.gputelemetry: its driver's name, the
  * function that reads it and its context, which must live as long as the
  * kernel.  The same context is listed once.  Returns 0, or ENOSPC when the
  * list is full.
@@ -82,7 +89,7 @@ struct thermal_entry;
 typedef int (*kern_thermal_read_t)(void *context, struct thermal_entry *entries, unsigned capacity, unsigned *count);
 
 /*
- * Lists a source of temperatures in hw.thermal (ws134-p009): the function
+ * Lists a source of temperatures in hw.thermal: the function
  * that reads its sensors and its context, which must live as long as the
  * kernel.  The same context is listed once.  Returns 0, ENOSPC when the
  * list is full, or EINVAL without a function.

@@ -47,7 +47,7 @@
  * stage waits for the whole command: the SCSI disk convention of 30 s per
  * command applies, and SYNCHRONIZE CACHE gets 60 s because writing back the
  * device's cache (for an emulated disk, fdatasync of the host image) can
- * take many seconds (BUG-030).
+ * take many seconds.
  */
 #define BOT_TIMEOUT_MS			30000U
 #define BOT_FLUSH_TIMEOUT_MS		60000U
@@ -81,6 +81,25 @@ struct bot_csw {
 struct storage_read_checkpoint {
 	uint32_t lba;
 	uint16_t blocks;
+};
+
+/* How many transfers of one traced command are kept: the CBW, the data and the CSW. */
+#define STORAGE_TRACE_STAGES	3U
+
+/*
+ * The times of one mass storage command while hw.usb.trace has
+ * HW_USB_TRACE_STORAGE: when the request arrived, when it got the device,
+ * and for each of its first transfers the USB core's times and when the
+ * waiting thread saw the end.  Kept in the device's state under its lock
+ * for the command running; active is 0 between traced commands.
+ */
+struct storage_trace {
+	unsigned active;
+	unsigned stages;
+	uint64_t arrived_ns;
+	uint64_t locked_ns;
+	struct drv_usb_urb_trace stage[STORAGE_TRACE_STAGES];
+	uint64_t returned_ns[STORAGE_TRACE_STAGES];
 };
 
 enum storage_media_state {
@@ -127,11 +146,13 @@ struct usb_storage {
 	unsigned media_retired;
 	/*
 	 * Set when a disk is published and its partition table has not been
-	 * read yet; the control worker reads it and clears this (BUG-258).
+	 * read yet; the control worker reads it and clears this.
 	 */
 	unsigned partitions_pending;
 	uint64_t command_deadline;
 	enum drv_usb_scsi_flush_policy flush_policy;
+	/* The command being traced, under lock. */
+	struct storage_trace trace;
 #ifdef KERN_TEST_CHECKPOINTS
 	unsigned checkpoint_read_sequence;
 #endif
@@ -167,6 +188,9 @@ static void scsi_configure_flush_policy(struct usb_storage *storage);
 static int scsi_probe(struct usb_storage *storage, int *medium_absent);
 static int storage_probe_luns(struct usb_storage *storage, int *medium_absent);
 static int storage_submit(struct disk *disk, struct bio *bio);
+static void storage_trace_note(struct usb_storage *storage, const struct drv_usb_urb *urb);
+static void storage_trace_report(struct usb_storage *storage, uint8_t opcode, const struct bio *bio, int error);
+static unsigned long storage_trace_us(uint64_t from, uint64_t to);
 static int storage_ioctl(struct disk *disk, unsigned long request, void *argument);
 static int storage_publish_disk(struct usb_storage *storage);
 static int storage_partitions_published(struct usb_storage *storage);
@@ -372,6 +396,10 @@ storage_urb_transfer(
 	/* Checks the operation status. */
 	if (error == 0)
 		error = drv_usb_urb_wait_reusable(urb);
+
+	/* A traced command keeps this transfer's times. */
+	if (storage->trace.active)
+		storage_trace_note(storage, urb);
 #ifdef KERN_TEST_CHECKPOINTS
 
 	/* Handles the checkpoint sequence condition. */
@@ -1435,7 +1463,7 @@ scsi_probe(
  * Probes the device's LUNs from 0 and keeps the first that holds a medium.
  *
  * A card reader puts each slot on its own LUN, so the card is found whatever
- * slot it is in (BUG-258).  The geometry the probe of that LUN read stays in
+ * slot it is in.  The geometry the probe of that LUN read stays in
  * the storage, and later commands go to that LUN.
  */
 static int
@@ -1498,10 +1526,27 @@ storage_submit(
 	uint8_t opcode = 0;
 	size_t actual = 0;
 	size_t expected = 0;
+	uint64_t arrived_ns;
+	int tracing;
 	int error;
 
 	kern_memset(&sense, 0, sizeof(sense));
+
+	/* A traced command notes when it arrived, before it waits for the device. */
+	arrived_ns = 0;
+	tracing = drv_usb_trace_enabled(HW_USB_TRACE_STORAGE);
+	if (tracing)
+		arrived_ns = drv_usb_trace_now_ns();
+
 	mutex_lock(&storage->lock);
+
+	/* And when it got the device. */
+	kern_memset(&storage->trace, 0, sizeof(storage->trace));
+	if (tracing) {
+		storage->trace.active = 1U;
+		storage->trace.arrived_ns = arrived_ns;
+		storage->trace.locked_ns = drv_usb_trace_now_ns();
+	}
 
 	/* Handles the storage condition. */
 	if (storage->media_state != STORAGE_ONLINE) {
@@ -1561,6 +1606,12 @@ storage_submit(
 
 out:
 
+	/* A traced command is described once it has ended. */
+	if (storage->trace.active) {
+		storage_trace_report(storage, opcode, bio, error);
+		storage->trace.active = 0U;
+	}
+
 	mutex_unlock(&storage->lock);
 
 	/* Checks the operation status. */
@@ -1599,6 +1650,101 @@ out:
 
 	/* Succeeded. */
 	return 0;
+}
+
+/* Keeps the times of one transfer of the traced command, up to the stages kept. */
+static void
+storage_trace_note(
+	struct usb_storage *storage,
+	const struct drv_usb_urb *urb)
+{
+	unsigned stage;
+
+	/* A command with more transfers (a REQUEST SENSE after it) keeps its first ones. */
+	stage = storage->trace.stages;
+	if (stage >= STORAGE_TRACE_STAGES)
+		return;
+
+	/* The USB core's times, and when this thread saw the end. */
+	drv_usb_urb_trace_read(urb, &storage->trace.stage[stage]);
+	storage->trace.returned_ns[stage] = drv_usb_trace_now_ns();
+	storage->trace.stages = stage + 1U;
+}
+
+/*
+ * Describes a traced command in the kernel log: how long it waited for the
+ * device, its whole time, and for each transfer (the CBW, the data, the
+ * CSW) three parts in microseconds: from the submission to the
+ * controller's report (the device and the controller), from that report to
+ * the end the USB core published (the drivers), and from that end to when
+ * the waiting thread saw it (the wake).  A part with no report is "-".
+ */
+static void
+storage_trace_report(
+	struct usb_storage *storage,
+	uint8_t opcode,
+	const struct bio *bio,
+	int error)
+{
+	char parts[STORAGE_TRACE_STAGES][48];
+	const struct drv_usb_urb_trace *times;
+	uint64_t now;
+	unsigned stage;
+
+	/* Each kept transfer's three parts. */
+	for (stage = 0; stage < STORAGE_TRACE_STAGES; stage++) {
+		times = &storage->trace.stage[stage];
+
+		/* A transfer the command did not make. */
+		if (stage >= storage->trace.stages) {
+			(void)kern_snprintf(parts[stage], sizeof(parts[stage]), "-");
+			continue;
+		}
+
+		/* A controller that did not report the transfer leaves its first two parts as one. */
+		if (times->event_ns == 0U) {
+			(void)kern_snprintf(parts[stage], sizeof(parts[stage]), "-/%lu/%lu",
+			    storage_trace_us(times->submitted_ns, times->completed_ns),
+			    storage_trace_us(times->completed_ns, storage->trace.returned_ns[stage]));
+			continue;
+		}
+
+		(void)kern_snprintf(parts[stage], sizeof(parts[stage]), "%lu/%lu/%lu",
+		    storage_trace_us(times->submitted_ns, times->event_ns),
+		    storage_trace_us(times->event_ns, times->completed_ns),
+		    storage_trace_us(times->completed_ns, storage->trace.returned_ns[stage]));
+	}
+
+	/* One line for the command. */
+	now = drv_usb_trace_now_ns();
+	kern_logf("usb-storage-trace: %s op=%02x lba=%llu blocks=%u error=%d "
+	    "queue_us=%lu total_us=%lu xfer1=%s xfer2=%s xfer3=%s\n",
+	    storage->disk != NULL ? storage->disk->d_name : "unpublished",
+	    (unsigned)opcode,
+	    (unsigned long long)bio->b_mapped_block,
+	    (unsigned)bio->b_block_count,
+	    error,
+	    storage_trace_us(storage->trace.arrived_ns, storage->trace.locked_ns),
+	    storage_trace_us(storage->trace.locked_ns, now),
+	    parts[0],
+	    parts[1],
+	    parts[2]);
+}
+
+/* Reports the microseconds between two traced times, 0 when either is missing or they are out of order. */
+static unsigned long
+storage_trace_us(
+	uint64_t from,
+	uint64_t to)
+{
+	/* A missing time or a reversed pair has no length. */
+	if (from == 0U || to == 0U)
+		return 0UL;
+	if (to < from)
+		return 0UL;
+
+	/* Succeeded: the length. */
+	return (unsigned long)((to - from) / 1000U);
 }
 
 /* Serves one control request against this device. */
@@ -1702,7 +1848,7 @@ storage_publish_disk(
 	disk->d_data = storage;
 	storage->disk = disk;
 
-	/* hw.diskstats lists it as a USB mass storage disk (ws134-p006). */
+	/* hw.diskstats lists it as a USB mass storage disk. */
 	disk_set_stats_kind(disk, DISK_STATS_KIND_USB);
 
 	/* Checks the operation status. */
@@ -1777,7 +1923,7 @@ storage_refresh_partitions(
 	/*
 	 * Asks whether the root is mounted.  The kernel mounts it only after the
 	 * boot scan of the disks, so until then that scan may still read this
-	 * disk and must not be raced (BUG-258).
+	 * disk and must not be raced.
 	 */
 	root = mount_root_get_ref();
 	root_mounted = 0;
@@ -2112,7 +2258,7 @@ storage_attach(
 		maximum_lun = 0;
 	}
 
-	/* Every probe pass tries LUN 0 up to this one (BUG-258). */
+	/* Every probe pass tries LUN 0 up to this one. */
 	storage->maximum_lun = maximum_lun;
 
 	/* Says that the medium is looked for on every LUN. */
@@ -2145,7 +2291,7 @@ storage_attach(
 		/*
 		 * The control worker reads the partition table of the disk
 		 * published here, without the command lock held, once the boot
-		 * scan of the disks is over (BUG-258).  Until this, a hot-plugged
+		 * scan of the disks is over.  Until this, a hot-plugged
 		 * stick with a table never got its partitions.
 		 */
 		storage->partitions_pending = 1;
@@ -2256,7 +2402,7 @@ storage_detach(
 			}
 
 			/*
-			 * A mounted disk whose device was pulled out (BUG-192): its
+			 * A mounted disk whose device was pulled out: its
 			 * medium is revoked and its going posted, so that volumed
 			 * sees it gone and unmounts it; the USB core tries this
 			 * detach again until the disk is idle.
