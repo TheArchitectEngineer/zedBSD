@@ -16,7 +16,9 @@
  * port with a branch's limits, and Tiger Lake's pixel rate rule; the
  * light's and the dark's order of steps, what a failed step skips, the
  * undo of a failed light, and a dark retained when its stop is not
- * confirmed.
+ * confirmed; the flips (refusals, a flip that latches, one whose event
+ * comes without the new buffer, one without an event, the poll and the
+ * settle) and the verdicts of a resident run.
  */
 
 #include "host-test.h"
@@ -28,6 +30,7 @@
 #include "../../display/xd-screen.h"
 #include "../../display/display-internal.h"
 
+#include <uapi/errno.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -76,6 +79,8 @@ static int i915_xd_screen_test_d9(void *context);
 static void i915_xd_screen_test_hooks(struct i915_xd_screen_hooks *hooks);
 static int i915_xd_screen_test_order(const unsigned *want, unsigned count);
 static void i915_xd_screen_test_sequencer(void);
+static void i915_xd_screen_test_flips(void);
+static void i915_xd_screen_test_runs(void);
 static const struct i915_xd_platform *i915_xd_screen_test_platform(uint16_t device, uint8_t revid);
 static void i915_xd_screen_test_mode(struct i915_display_mode *mode, int clock_khz);
 static void i915_xd_screen_test_panel_input(struct i915_xd_plan_input *input, const struct i915_xd_platform *platform, const struct i915_display_mode *mode);
@@ -102,6 +107,8 @@ main(void)
 	i915_xd_screen_test_dp();
 	i915_xd_screen_test_tgl();
 	i915_xd_screen_test_sequencer();
+	i915_xd_screen_test_flips();
+	i915_xd_screen_test_runs();
 
 	/* Reports the result. */
 	failures = i915_host_report("host_xd_screen_test");
@@ -756,4 +763,99 @@ i915_xd_screen_test_sequencer(void)
 	memset(&screen, 0, sizeof(screen));
 	error = drv_i915_xd_screen_light(&screen, &io, &hooks, 0);
 	i915_host_check(error == 0 && screen.ran == 12U && i915_xd_fake_writes() == 0U, "sequencer: without hooks every step runs and nothing is written");
+}
+
+/* The flips of a screen. */
+static void
+i915_xd_screen_test_flips(void)
+{
+	struct i915_xd_flip flip;
+	unsigned verdict;
+	int idle;
+	int error;
+
+	/* The refusals. */
+	memset(&flip, 0, sizeof(flip));
+	flip.current = 0x1000U;
+	i915_host_check(drv_i915_xd_flip_refused(&flip, 0, 0, 0x2000U) == I915_XD_FLIP_NOT_LIT, "flips: not lit");
+	i915_host_check(drv_i915_xd_flip_refused(&flip, 1, 1, 0x2000U) == I915_XD_FLIP_RETAINED, "flips: retained");
+	i915_host_check(drv_i915_xd_flip_refused(&flip, 1, 0, 0x1000U) == I915_XD_FLIP_SAME, "flips: the buffer displayed");
+	i915_host_check(drv_i915_xd_flip_refused(&flip, 1, 0, 0x2010U) == I915_XD_FLIP_UNALIGNED, "flips: not on a page");
+	i915_host_check(drv_i915_xd_flip_refused(&flip, 1, 0, 0x2000U) == I915_XD_FLIP_OK, "flips: a flip may be armed");
+
+	/* Armed: busy until it latches; the poll retires it. */
+	drv_i915_xd_flip_arm(&flip, 0x2000U);
+	i915_host_check(flip.armed && flip.pending == 0x2000U && flip.old == 0x1000U, "flips: armed, both buffers the display's");
+	i915_host_check(drv_i915_xd_flip_refused(&flip, 1, 0, 0x3000U) == I915_XD_FLIP_BUSY, "flips: a second flip while one is armed is refused");
+	idle = drv_i915_xd_flip_idle(&flip, 0x1000U);
+	i915_host_check(idle == 0 && flip.armed, "flips: the pipe still scans the old buffer: not idle");
+	idle = drv_i915_xd_flip_idle(&flip, 0x2000U);
+	i915_host_check(idle == 1 && !flip.armed && flip.current == 0x2000U, "flips: latched: retired, the new buffer is the current one");
+
+	/* A waited flip: done, not latched, no event. */
+	drv_i915_xd_flip_arm(&flip, 0x1000U);
+	verdict = drv_i915_xd_flip_judge(&flip, 0, 0x1000U);
+	i915_host_check(verdict == I915_XD_FLIP_DONE && flip.current == 0x1000U && !flip.stuck, "flips: the event and the new buffer: done");
+	drv_i915_xd_flip_arm(&flip, 0x2000U);
+	verdict = drv_i915_xd_flip_judge(&flip, 0, 0x1000U);
+	i915_host_check(verdict == I915_XD_FLIP_NOT_LATCHED && flip.stuck && flip.current == 0x1000U, "flips: the event without the new buffer: stuck");
+	i915_host_check(drv_i915_xd_flip_refused(&flip, 1, 0, 0x3000U) == I915_XD_FLIP_BUSY, "flips: a stuck screen refuses flips");
+	memset(&flip, 0, sizeof(flip));
+	flip.current = 0x1000U;
+	drv_i915_xd_flip_arm(&flip, 0x2000U);
+	verdict = drv_i915_xd_flip_judge(&flip, 5, 0x1000U);
+	i915_host_check(verdict == I915_XD_FLIP_TIMEOUT && flip.stuck && flip.armed, "flips: no event: stuck, still armed");
+	idle = drv_i915_xd_flip_idle(&flip, 0x2000U);
+	i915_host_check(idle == 1 && flip.armed, "flips: a stuck flip counts as idle for the poll, and is not retired");
+
+	/* The settle. */
+	memset(&flip, 0, sizeof(flip));
+	flip.current = 0x1000U;
+	drv_i915_xd_flip_arm(&flip, 0x2000U);
+	error = drv_i915_xd_flip_settled(&flip, 0, 0x2000U);
+	i915_host_check(error == 0 && flip.current == 0x2000U && !flip.armed, "flips: settled");
+	drv_i915_xd_flip_arm(&flip, 0x3000U);
+	error = drv_i915_xd_flip_settled(&flip, 0, 0x2000U);
+	i915_host_check(error == EIO && flip.stuck, "flips: not settled: stuck");
+}
+
+/* The verdicts of a resident run. */
+static void
+i915_xd_screen_test_runs(void)
+{
+	struct i915_xd_run_outcome outcome;
+	struct i915_xd_run_result result;
+	int error;
+
+	/* Served and given back. */
+	memset(&outcome, 0, sizeof(outcome));
+	outcome.passed = 1;
+	outcome.released = 1;
+	outcome.acquired = 1;
+	error = drv_i915_xd_screen_run_verdict(&outcome, &result);
+	i915_host_check(error == 0 && result.reason == I915_XD_RUN_SERVED && result.acquired, "runs: served");
+
+	/* A link lowered after a clean failure: again. */
+	outcome.passed = 0;
+	outcome.lowered = 1;
+	error = drv_i915_xd_screen_run_verdict(&outcome, &result);
+	i915_host_check(error == EAGAIN && result.reason == I915_XD_RUN_FAILED, "runs: an external link lowered: EAGAIN");
+
+	/* Lowered but power still held: failed. */
+	outcome.held = 1;
+	error = drv_i915_xd_screen_run_verdict(&outcome, &result);
+	i915_host_check(error == EIO, "runs: power still held: EIO even with a lowered link");
+
+	/* Unplugged: failed, the reason says why. */
+	memset(&outcome, 0, sizeof(outcome));
+	outcome.unplugged = 1;
+	outcome.released = 1;
+	error = drv_i915_xd_screen_run_verdict(&outcome, &result);
+	i915_host_check(error == EIO && result.reason == I915_XD_RUN_UNPLUGGED && !result.acquired, "runs: unplugged");
+
+	/* Passed but the buffers not released. */
+	memset(&outcome, 0, sizeof(outcome));
+	outcome.passed = 1;
+	error = drv_i915_xd_screen_run_verdict(&outcome, &result);
+	i915_host_check(error == EIO, "runs: buffers kept by the display: EIO");
 }

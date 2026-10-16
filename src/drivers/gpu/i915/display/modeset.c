@@ -190,6 +190,8 @@ static uint32_t i915_modeset_live_surf(struct i915_lcd_world *world);
 static uint32_t i915_modeset_frame_now(struct i915_lcd_world *world);
 static int i915_modeset_flip_arm(struct i915_display *display, uint32_t new_surf, struct i915_lcd_flip_result *res, int *dc_off);
 static void i915_modeset_flip_retire(struct i915_display *display);
+static void i915_modeset_flip_load(const struct i915_lcd_modeset *ms, struct i915_xd_flip *flip);
+static void i915_modeset_flip_store(struct i915_lcd_modeset *ms, const struct i915_xd_flip *flip);
 static int i915_modeset_prepare_state(struct i915_display *display, const struct i915_lcd_state *s, const struct i915_lcd_modeset_cfg *cfg, struct i915_lcd_emit *ops);
 static void i915_modeset_plan_check(const struct i915_lcd_state *s, const struct i915_lcd_modeset_cfg *cfg, const struct i915_lcd_modeset *ms, struct i915_xd_plan *plan);
 static void i915_modeset_plan_compare(const struct i915_xd_plan *plan, unsigned old_refused, const struct i915_lcd_modeset *ms);
@@ -1137,6 +1139,8 @@ drv_i915_lcd_modeset_flip(
 	struct i915_lcd_modeset *ms;
 	struct i915_lcd_emit *ms_ops;
 	struct i915_lcd_flip_result res;
+	struct i915_xd_flip flip;
+	unsigned verdict;
 	int dc_off;
 	int armed;
 
@@ -1160,26 +1164,21 @@ drv_i915_lcd_modeset_flip(
 	/* drm_atomic_helper_wait_for_flip_done() came first; then the commit drops DC_OFF (async, 17 ms). */
 	intel_display_power_put_async_delay(&ms->i915, POWER_DOMAIN_DC_OFF, dc_off, I915_LCD_DC_OFF_DELAY_MS);
 
-	/* Decides what the flip did. */
+	/* drm_send_event: when the event came, its vblank reference goes back (otherwise the completion may still come). */
 	if (res.event_rc == 0) {
-		/* drm_send_event: the event's vblank reference goes back. */
 		ms_ops->vblank_put(ms_ops->ctx, ms->crtc.pipe);
 		ms->flip_event_ref = 0;
-
-		/* The live surface decides whether the old buffer is free. */
-		if (res.live_after == new_surf) {
-			ms->cur_surf = new_surf;
-			ms->flip_pending = 0;
-			res.result = I915_LCD_FLIP_DONE;
-		} else {
-			ms->flip_stuck = 1;
-			res.result = I915_LCD_FLIP_NOT_LATCHED;
-		}
-	} else {
-		/* The event reference stays: the completion may still come. */
-		ms->flip_stuck = 1;
-		res.result = I915_LCD_FLIP_TIMEOUT;
 	}
+
+	/* The screen's flip judges what the flip did: the live surface decides whether the old buffer is free. */
+	i915_modeset_flip_load(ms, &flip);
+	verdict = drv_i915_xd_flip_judge(&flip, res.event_rc, res.live_after);
+	i915_modeset_flip_store(ms, &flip);
+	res.result = I915_LCD_FLIP_TIMEOUT;
+	if (verdict == I915_XD_FLIP_DONE)
+		res.result = I915_LCD_FLIP_DONE;
+	if (verdict == I915_XD_FLIP_NOT_LATCHED)
+		res.result = I915_LCD_FLIP_NOT_LATCHED;
 
 	/* Reports the details. */
 	if (out != NULL)
@@ -1266,7 +1265,9 @@ drv_i915_lcd_modeset_flip_poll(
 {
 	struct i915_lcd_world *world;
 	struct i915_lcd_modeset *ms;
+	struct i915_xd_flip flip;
 	uint32_t live;
+	int idle;
 
 	world = display->lcd_world;
 	ms = i915_modeset_selected_screen(world);
@@ -1275,13 +1276,16 @@ drv_i915_lcd_modeset_flip_poll(
 	if (!ms->flip_pending || ms->flip_stuck)
 		return 1;
 
-	/* The pipe still scans the old buffer: the flip waits for its vblank. */
+	/* The screen's flip asks the live surface. */
 	live = i915_modeset_live_surf(world);
-	if (live != ms->pend_surf)
+	i915_modeset_flip_load(ms, &flip);
+	idle = drv_i915_xd_flip_idle(&flip, live);
+	if (!idle)
 		return 0;
 
-	/* The flip has latched: completes it. */
+	/* The flip has latched: its event is given up, and the new buffer is the current one. */
 	i915_modeset_flip_retire(display);
+	i915_modeset_flip_store(ms, &flip);
 
 	/* No flip is pending any more. */
 	return 1;
@@ -1408,7 +1412,9 @@ drv_i915_lcd_modeset_flip_settle(
 	struct i915_lcd_world *world;
 	struct i915_lcd_modeset *ms;
 	struct i915_lcd_emit *ms_ops;
+	struct i915_xd_flip flip;
 	uint32_t live;
+	int settled;
 	int idle;
 	int event_rc;
 
@@ -1425,9 +1431,11 @@ drv_i915_lcd_modeset_flip_settle(
 	event_rc = ms_ops->wait_event(ms_ops->ctx, ms->crtc.pipe, I915_LCD_FLIP_EVENT_MS);
 	live = i915_modeset_live_surf(world);
 
-	/* An event that did not come, or a surface that did not latch, keeps both buffers. */
-	if (event_rc != 0 || live != ms->pend_surf) {
-		ms->flip_stuck = 1;
+	/* The screen's flip judges it: an event that did not come, or a surface that did not latch, keeps both buffers. */
+	i915_modeset_flip_load(ms, &flip);
+	settled = drv_i915_xd_flip_settled(&flip, event_rc, live);
+	i915_modeset_flip_store(ms, &flip);
+	if (settled != 0) {
 		kern_logf("i915: resident display: flip to 0x%08x did not complete: event_rc=%d live 0x%08x\n",
 		    ms->pend_surf,
 		    event_rc,
@@ -1435,11 +1443,9 @@ drv_i915_lcd_modeset_flip_settle(
 		return EIO;
 	}
 
-	/* drm_send_event: the event's vblank reference goes back, and the old buffer is free. */
+	/* drm_send_event: the event's vblank reference goes back. */
 	ms_ops->vblank_put(ms_ops->ctx, ms->crtc.pipe);
 	ms->flip_event_ref = 0;
-	ms->cur_surf = ms->pend_surf;
-	ms->flip_pending = 0;
 
 	/* Succeeded: no flip is pending. */
 	return 0;
@@ -1776,6 +1782,9 @@ drv_i915_lcd_kernel_resident_run(
 	int takeover_error;
 	int way_error;
 	int fallback_error;
+	struct i915_xd_run_outcome outcome;
+	struct i915_xd_run_result run;
+	int run_error;
 	int debug;
 	int unplugged;
 	int kept;
@@ -2004,15 +2013,22 @@ drv_i915_lcd_kernel_resident_run(
 	 * cleanly: the port's link limits are lowered and the run is to be
 	 * tried again at the lower link.
 	 */
+	kern_memset(&outcome, 0, sizeof(outcome));
 	if (!passed && released && held == 0 && display->output.kind == I915_OUTPUT_KIND_DP_EXT) {
 		fallback_error = i915_resident_dp_ext_fallback(display, &display->output, rep->enable_rc);
 		if (fallback_error == 0)
-			return EAGAIN;
+			outcome.lowered = 1;
 	}
 
-	/* A run that did not pass, did not give everything back or still holds power failed. */
-	if (!passed || !released || held != 0)
-		return EIO;
+	/* The screen's verdict on the run. */
+	outcome.passed = passed;
+	outcome.released = released;
+	outcome.held = held;
+	outcome.unplugged = unplugged;
+	outcome.acquired = rep->display_acquired;
+	run_error = drv_i915_xd_screen_run_verdict(&outcome, &run);
+	if (run_error != 0)
+		return run_error;
 
 	/* Succeeded: the panel came up, stopped and was released. */
 	return 0;
@@ -2659,10 +2675,12 @@ i915_modeset_flip_arm(
 	struct i915_lcd_world *world;
 	struct i915_lcd_modeset *ms;
 	struct i915_lcd_emit *ms_ops;
+	struct i915_xd_flip flip;
+	unsigned refused;
 	unsigned before;
 	int prepare_error;
 	int retained;
-	int refused;
+	int lit;
 
 	world = display->lcd_world;
 	ms = i915_modeset_selected_screen(world);
@@ -2680,24 +2698,19 @@ i915_modeset_flip_arm(
 	 * the vblank hooks.
 	 */
 	retained = drv_i915_lcd_modeset_retained(display);
-	refused = 0;
-	if (!ms->prepared || !ms->crtc.active || !ms->plane_armed) {
-		refused = 1;
-	} else if (retained || ms->flip_pending || ms->flip_stuck) {
-		refused = 1;
-	} else if (new_surf == ms->cur_surf || (new_surf & 0xfffU) != 0U) {
-		refused = 1;
-	} else if (ms_ops->vblank_get == NULL || ms_ops->wait_event == NULL) {
-		refused = 1;
-	}
-
-	if (refused)
+	lit = ms->prepared && ms->crtc.active && ms->plane_armed;
+	i915_modeset_flip_load(ms, &flip);
+	refused = drv_i915_xd_flip_refused(&flip, lit, retained, new_surf);
+	if (refused != I915_XD_FLIP_OK)
+		return I915_LCD_MS_NOT_PREPARED;
+	if (ms_ops->vblank_get == NULL || ms_ops->wait_event == NULL)
 		return I915_LCD_MS_NOT_PREPARED;
 
 	/* The flip's generation and the pipe as it is now. */
 	world->i915_lcd_cur_i915 = &ms->i915;
-	ms->flip_gen++;
-	res->gen = ms->flip_gen;
+	flip.gen++;
+	i915_modeset_flip_store(ms, &flip);
+	res->gen = flip.gen;
 	res->live_before = i915_modeset_live_surf(world);
 	res->frame_before = i915_modeset_frame_now(world);
 
@@ -2709,9 +2722,8 @@ i915_modeset_flip_arm(
 	}
 
 	/* From here both buffers may be read by the display until the completion is known. */
-	ms->old_surf = ms->cur_surf;
-	ms->pend_surf = new_surf;
-	ms->flip_pending = 1;
+	drv_i915_xd_flip_arm(&flip, new_surf);
+	i915_modeset_flip_store(ms, &flip);
 	before = world->ms_errors_pool[world->ms_sel];
 
 	/* intel_atomic_commit_tail(): DC states off around every commit, fastsets and other updates too. */
@@ -2743,15 +2755,11 @@ i915_modeset_flip_retire(
 	ms = i915_modeset_selected_screen(world);
 	ms_ops = world->ms_ops_pool[world->ms_sel];
 
-	/* The event will not be waited for; its reference goes back. */
+	/* The event will not be waited for; its reference goes back (the screen's flip has made the new buffer the current one). */
 	if (ms_ops->cancel_event != NULL)
 		ms_ops->cancel_event(ms_ops->ctx, ms->crtc.pipe);
 	ms_ops->vblank_put(ms_ops->ctx, ms->crtc.pipe);
 	ms->flip_event_ref = 0;
-
-	/* The new buffer is displayed; the old one is free. */
-	ms->cur_surf = ms->pend_surf;
-	ms->flip_pending = 0;
 }
 
 /* Reads the selected screen's hardware frame counter. */
@@ -4986,4 +4994,34 @@ i915_modeset_step_dark_settle(
 
 	/* Succeeded: the screen is off and everything is given back. */
 	return 0;
+}
+
+/* Loads a screen's flip from the modeset object's record of it. */
+static void
+i915_modeset_flip_load(
+	const struct i915_lcd_modeset *ms,
+	struct i915_xd_flip *flip)
+{
+	/* The buffers, the state and the generation. */
+	flip->current = ms->cur_surf;
+	flip->pending = ms->pend_surf;
+	flip->old = ms->old_surf;
+	flip->armed = ms->flip_pending;
+	flip->stuck = ms->flip_stuck;
+	flip->gen = ms->flip_gen;
+}
+
+/* Stores a screen's flip back into the modeset object's record of it. */
+static void
+i915_modeset_flip_store(
+	struct i915_lcd_modeset *ms,
+	const struct i915_xd_flip *flip)
+{
+	/* The buffers, the state and the generation. */
+	ms->cur_surf = flip->current;
+	ms->pend_surf = flip->pending;
+	ms->old_surf = flip->old;
+	ms->flip_pending = flip->armed;
+	ms->flip_stuck = flip->stuck;
+	ms->flip_gen = flip->gen;
 }

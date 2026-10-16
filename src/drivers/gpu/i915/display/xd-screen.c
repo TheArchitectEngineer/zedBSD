@@ -21,6 +21,7 @@
 
 #include <kern/kcrt.h>
 
+#include <uapi/errno.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -485,6 +486,173 @@ drv_i915_xd_screen_dark(
 	}
 
 	/* Succeeded: the screen is off. */
+	return 0;
+}
+
+/*
+ * Tells why a flip to a surface is refused (I915_XD_FLIP_OK when it is
+ * not): a screen that is not lit or is retained, a flip still armed or
+ * stuck, the buffer already displayed, a surface not on a 4 KiB page.
+ */
+unsigned
+drv_i915_xd_flip_refused(
+	const struct i915_xd_flip *flip,
+	int lit,
+	int retained,
+	uint32_t surface)
+{
+	/* The screen. */
+	if (!lit)
+		return I915_XD_FLIP_NOT_LIT;
+	if (retained)
+		return I915_XD_FLIP_RETAINED;
+
+	/* The flips. */
+	if (flip->armed)
+		return I915_XD_FLIP_BUSY;
+	if (flip->stuck)
+		return I915_XD_FLIP_STUCK;
+
+	/* The buffer. */
+	if (surface == flip->current)
+		return I915_XD_FLIP_SAME;
+	if ((surface & 0xfffU) != 0U)
+		return I915_XD_FLIP_UNALIGNED;
+
+	/* Succeeded: the flip may be armed. */
+	return I915_XD_FLIP_OK;
+}
+
+/*
+ * Records a flip armed to a surface: from here both buffers may be read
+ * by the display until the flip is known to have latched.
+ */
+void
+drv_i915_xd_flip_arm(
+	struct i915_xd_flip *flip,
+	uint32_t surface)
+{
+	/* The buffers (the caller counted the flip's generation when it passed the refusals). */
+	flip->old = flip->current;
+	flip->pending = surface;
+	flip->armed = 1;
+}
+
+/*
+ * Judges a flip whose event was waited for (event_error 0 when it came):
+ * done when the live surface is the new buffer (the new buffer is the
+ * current one, the old is free), otherwise stuck (not latched, or no
+ * event).  Returns I915_XD_FLIP_DONE, _NOT_LATCHED or _TIMEOUT.
+ */
+unsigned
+drv_i915_xd_flip_judge(
+	struct i915_xd_flip *flip,
+	int event_error,
+	uint32_t live)
+{
+	/* No event: the completion may still come; both buffers stay. */
+	if (event_error != 0) {
+		flip->stuck = 1;
+		return I915_XD_FLIP_TIMEOUT;
+	}
+
+	/* The event came without the new buffer. */
+	if (live != flip->pending) {
+		flip->stuck = 1;
+		return I915_XD_FLIP_NOT_LATCHED;
+	}
+
+	/* Succeeded: the new buffer is displayed. */
+	flip->current = flip->pending;
+	flip->armed = 0;
+	return I915_XD_FLIP_DONE;
+}
+
+/*
+ * Tells whether no flip is pending, retiring an armed flip the pipe has
+ * latched (the live surface is the new buffer).  Returns 1 when none is
+ * pending (a stuck one included), 0 while the armed flip waits for its
+ * vertical blank.
+ */
+int
+drv_i915_xd_flip_idle(
+	struct i915_xd_flip *flip,
+	uint32_t live)
+{
+	/* Nothing armed, or a flip that will never complete. */
+	if (!flip->armed || flip->stuck)
+		return 1;
+
+	/* The pipe still scans the old buffer. */
+	if (live != flip->pending)
+		return 0;
+
+	/* Succeeded: the flip latched; the new buffer is the current one. */
+	flip->current = flip->pending;
+	flip->armed = 0;
+	return 1;
+}
+
+/*
+ * Judges a flip waited for before the buffers change hands: 0 when it
+ * latched (the new buffer is the current one), EIO when the event did
+ * not come or the surface did not latch (stuck).
+ */
+int
+drv_i915_xd_flip_settled(
+	struct i915_xd_flip *flip,
+	int event_error,
+	uint32_t live)
+{
+	/* An event that did not come, or a surface that did not latch. */
+	if (event_error != 0 || live != flip->pending) {
+		flip->stuck = 1;
+		return EIO;
+	}
+
+	/* Succeeded: no flip is pending. */
+	flip->current = flip->pending;
+	flip->armed = 0;
+	return 0;
+}
+
+/*
+ * Gives a resident run's verdict: why it ended (served, unplugged, asked
+ * to light again, failed) and whether the display had the buffers.
+ * Returns 0 for a run that came up, stopped and gave everything back;
+ * EAGAIN for an external DisplayPort link lowered after a clean failure
+ * (the caller runs again); EIO otherwise.
+ */
+int
+drv_i915_xd_screen_run_verdict(
+	const struct i915_xd_run_outcome *outcome,
+	struct i915_xd_run_result *result)
+{
+	int clean;
+
+	/* Why it ended, and the buffers. */
+	result->acquired = outcome->acquired;
+	result->reason = I915_XD_RUN_FAILED;
+	if (outcome->unplugged) {
+		result->reason = I915_XD_RUN_UNPLUGGED;
+	} else if (outcome->relight) {
+		result->reason = I915_XD_RUN_RELIGHT;
+	} else if (outcome->passed) {
+		result->reason = I915_XD_RUN_SERVED;
+	}
+
+	/* A run that gave everything back. */
+	clean = outcome->released && outcome->held == 0;
+
+	/* A link lowered after a clean failure: run again. */
+	if (!outcome->passed && clean && outcome->lowered)
+		return EAGAIN;
+
+	/* A run that did not pass, did not give everything back or still holds power. */
+	if (!outcome->passed || !clean)
+		return EIO;
+
+	/* Succeeded: the run came up, stopped and was released. */
 	return 0;
 }
 

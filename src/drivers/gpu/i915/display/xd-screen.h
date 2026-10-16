@@ -29,6 +29,13 @@
  * rest but the settle of a light; a dark whose confirmation fails is
  * retained: its settle is skipped, so nothing is given back under a pipe
  * that may still run.
+ *
+ * A flip arms a new buffer on a lit screen; the pipe latches it at its
+ * next vertical blank, and only the live surface tells that the old
+ * buffer is free.  A flip whose event did not come, or came without the
+ * new buffer, is stuck.  A resident run ends served, unplugged, asked to
+ * light again for two pipes, or failed; an external DisplayPort link that
+ * did not train is lowered and the run is tried again (EAGAIN).
  */
 
 #ifndef DRIVERS_GPU_I915_DISPLAY_XD_SCREEN_H
@@ -190,11 +197,81 @@ struct i915_xd_screen {
 	int error;
 };
 
+/*
+ * A screen's flips: the buffer displayed, the one a flip armed (pending
+ * until the pipe latches it), the one it replaces, whether a flip is
+ * armed, whether one never completed (stuck: every later flip is refused
+ * and both buffers stay the display's until the screen stops), and the
+ * generation of the last flip.
+ */
+struct i915_xd_flip {
+	uint32_t current;
+	uint32_t pending;
+	uint32_t old;
+	int armed;
+	int stuck;
+	unsigned gen;
+};
+
+/* Why a flip is refused: the screen is not lit, retained, busy, stuck, the same buffer, an unaligned one. */
+#define I915_XD_FLIP_OK			0U
+#define I915_XD_FLIP_NOT_LIT		1U
+#define I915_XD_FLIP_RETAINED		2U
+#define I915_XD_FLIP_BUSY		3U
+#define I915_XD_FLIP_STUCK		4U
+#define I915_XD_FLIP_SAME		5U
+#define I915_XD_FLIP_UNALIGNED		6U
+
+/* What a waited flip did: latched (the old buffer is free), the event came without the new buffer, no event. */
+#define I915_XD_FLIP_DONE		0U
+#define I915_XD_FLIP_NOT_LATCHED	1U
+#define I915_XD_FLIP_TIMEOUT		2U
+
+/*
+ * Why a resident run ended: it served until the display was given back,
+ * its display was unplugged, the second output asked for it to be lit
+ * again for two pipes, or it failed.
+ */
+#define I915_XD_RUN_SERVED		0U
+#define I915_XD_RUN_UNPLUGGED		1U
+#define I915_XD_RUN_RELIGHT		2U
+#define I915_XD_RUN_FAILED		3U
+
+/*
+ * How a resident run went, as the caller saw it: whether the picture was
+ * up and stopped cleanly, the buffers released, the power references it
+ * still holds, the display unplugged, a relight asked for, whether the
+ * buffers were handed to the display, and whether an external
+ * DisplayPort link was lowered after it did not train (the run is to be
+ * tried again).
+ */
+struct i915_xd_run_outcome {
+	int passed;
+	int released;
+	int held;
+	int unplugged;
+	int relight;
+	int acquired;
+	int lowered;
+};
+
+/* The verdict of a resident run: why it ended and whether the display got the buffers. */
+struct i915_xd_run_result {
+	unsigned reason;
+	int acquired;
+};
+
 unsigned drv_i915_xd_screen_plan_link(const struct i915_xd_plan_input *input, struct i915_xd_plan *plan);
 unsigned drv_i915_xd_screen_plan_check(const struct i915_xd_plan_input *input, struct i915_xd_plan *plan);
 unsigned drv_i915_xd_screen_plan(const struct i915_xd_plan_input *input, struct i915_xd_plan *plan);
 const char *drv_i915_xd_screen_refusal_name(unsigned refused);
 int drv_i915_xd_screen_light(struct i915_xd_screen *screen, struct i915_xd_io *io, const struct i915_xd_screen_hooks *hooks, int undo);
 int drv_i915_xd_screen_dark(struct i915_xd_screen *screen, struct i915_xd_io *io, const struct i915_xd_screen_hooks *hooks);
+unsigned drv_i915_xd_flip_refused(const struct i915_xd_flip *flip, int lit, int retained, uint32_t surface);
+void drv_i915_xd_flip_arm(struct i915_xd_flip *flip, uint32_t surface);
+unsigned drv_i915_xd_flip_judge(struct i915_xd_flip *flip, int event_error, uint32_t live);
+int drv_i915_xd_flip_idle(struct i915_xd_flip *flip, uint32_t live);
+int drv_i915_xd_flip_settled(struct i915_xd_flip *flip, int event_error, uint32_t live);
+int drv_i915_xd_screen_run_verdict(const struct i915_xd_run_outcome *outcome, struct i915_xd_run_result *result);
 
 #endif /* DRIVERS_GPU_I915_DISPLAY_XD_SCREEN_H */
