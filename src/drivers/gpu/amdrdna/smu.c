@@ -311,8 +311,8 @@ amdrdna_a4_power(
 	if (thermal->features_on)
 		tier = "F";
 
-	/* Marks the result. */
-	amdrdna_mark("A4 ok if=0x%x smu=%u.%u.%u mode=%s features=0x%08x%08x duty=%u%% fan=%urpm tach=%urpm driven=%u%% temp=%uC hotspot=%uC mem=%uC thm=%uC max=%uC limit=%uC alert=%uC irq=%s",
+	/* Marks the result, and the readings on a line of their own (one mark line holds 160 columns). */
+	amdrdna_mark("A4 ok if=0x%x smu=%u.%u.%u mode=%s features=0x%08x%08x limit=%uC alert=%uC irq=%s",
 	    (unsigned)thermal->interface_version,
 	    (unsigned)((thermal->smu_version >> 16) & 0xffU),
 	    (unsigned)((thermal->smu_version >> 8) & 0xffU),
@@ -320,6 +320,10 @@ amdrdna_a4_power(
 	    tier,
 	    (unsigned)thermal->features_high,
 	    (unsigned)thermal->features_low,
+	    thermal->limit,
+	    thermal->high_alert,
+	    path);
+	amdrdna_mark("A4 readings duty=%u%% fan=%urpm tach=%urpm driven=%u%% temp=%uC hotspot=%uC mem=%uC thm=%uC max=%uC",
 	    thermal->duty_percent,
 	    (unsigned)thermal->fan_speed,
 	    (unsigned)thermal->tachometer_speed,
@@ -328,10 +332,7 @@ amdrdna_a4_power(
 	    thermal->hotspot,
 	    thermal->memory_temperature,
 	    thermal->sensor,
-	    thermal->highest,
-	    thermal->limit,
-	    thermal->high_alert,
-	    path);
+	    thermal->highest);
 
 	/* Succeeded: the fan turns under the firmware or at its duty, and the driver watches the temperature. */
 	return 0;
