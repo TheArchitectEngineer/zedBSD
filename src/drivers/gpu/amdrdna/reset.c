@@ -780,6 +780,9 @@ reset_stages(
 		error = amdrdna_a3_psp(device);
 		if (error != 0)
 			return error;
+
+		/* The display's events that came while the interrupt ring was off, acknowledged. */
+		amdrdna_reset_display_rearm(device);
 	}
 
 	/* The power unit, its watch started again. */

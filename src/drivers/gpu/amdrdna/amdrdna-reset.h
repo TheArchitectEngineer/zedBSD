@@ -179,6 +179,10 @@ int
 amdrdna_reset_display_restore(
 	struct amdrdna_device *device);
 
+void
+amdrdna_reset_display_rearm(
+	struct amdrdna_device *device);
+
 /* What the reset asks of the stages' files: gmc.c, ih.c, smu.c, space.c. */
 int
 amdrdna_gart_save(

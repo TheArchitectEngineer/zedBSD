@@ -296,6 +296,20 @@ amdrdna_reset_display_restore(
 	return 0;
 }
 
+/*
+ * Acknowledges the display's events again once the interrupt ring
+ * delivers (after stage A3 turned it on): an event that came while the
+ * ring was off left its status set, and the display raises no other
+ * until it is acknowledged.
+ */
+void
+amdrdna_reset_display_rearm(
+	struct amdrdna_device *device)
+{
+	/* The same switch as after the post: acknowledged and on. */
+	display_interrupts_again(device);
+}
+
 /* Gives the instance a kept word belongs to. */
 static uint32_t
 display_instance(
