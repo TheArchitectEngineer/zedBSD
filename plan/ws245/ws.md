@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
 Related: [WS244](../ws244/ws.md)（i915 の Linux 由来の code の整理、棚卸し plan/ws244/inventory.md・tests/inventory.py）、[Guardrail](../guardrail.md)「MIT・GPL の出典のデータの引用」
-Resume point: 2026-10-16 の方針（ユーザー「i915は、実装だけ先に終わらせ、全部マージしたものをテストして、動かなければ二分探索で半分マージしてテスト、だめならさらに半分、で進めます。まずはぜんぶ実装してください。」、Q1 経由）: p020 以降の段を design の順に p046 まで branch（agent/p1-ws245）に積む。各段は host 試験・build（既定と `I915_TESTS=y` の 5 組）warning 0・WIP commit・phase.md の記録。5330 の回帰は全部の後に 1 回（基準は main の kernel、段は branch の tip）、動かなければ下の「段の境の SHA」で二分探索。p019 は T1-704（機能の基準は合格、書き込みの順のずれは別の thread の相対の順: [phase019](phase019/phase.md)）。今の段: p020 の後は p021（backlight の PWM）。
+Resume point: 2026-10-16 の方針（ユーザー「i915は、実装だけ先に終わらせ、全部マージしたものをテストして、動かなければ二分探索で半分マージしてテスト、だめならさらに半分、で進めます。まずはぜんぶ実装してください。」、Q1 経由）: p020 以降の段を design の順に p046 まで branch（agent/p1-ws245）に積む。各段は host 試験・build（既定と `I915_TESTS=y` の 5 組）warning 0・WIP commit・phase.md の記録。5330 の回帰は全部の後に 1 回（基準は main の kernel、段は branch の tip）、動かなければ下の「段の境の SHA」で二分探索。p019 は T1-704（機能の基準は合格、書き込みの順のずれは別の thread の相対の順: [phase019](phase019/phase.md)）。今の段: p021 の後は p022（panel power、PPS: panel.c の register の部分を xd-panel に。殻は lock・power の参照・want_panel_vdd・遅延の VDD off の work・log）。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）
@@ -136,7 +136,7 @@ Resume point: 2026-10-16 の方針（ユーザー「i915は、実装だけ先に
 | [p053](phase053/phase.md) | EDID の decode を xd-edid に（`edid.c` の decode を消し、`state.c` の mode を xd-edid の first timing に。drm_modes の helper は edid.c に殻として残る）。p018 から分けた | cleared（2026-10-16 T1-702 で 5330 の回帰 PASS、全部の列の差 0、merge 7e3bf81cf） |
 | [p019](phase019/phase.md) | AUX の transaction（xd-aux。well・DC off・VDD は呼ぶ側） | in-progress（4 LW。2026-10-16 q1225-i02 で実装・host 試験・build 済み（343c8516a）、5330 の回帰を T1 に依頼（Q1 経由）） |
 | [p020](phase020/phase.md) | GMBUS と DDC の EDID の読み（xd-gmbus） | in-progress（3 LW。2026-10-16 q1228-i02 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回。HDMI の plug はユーザーの一覧） |
-| p021 | backlight の PWM（xd-panel） | planned（2 LW） |
+| [p021](phase021/phase.md) | backlight の PWM（xd-panel） | in-progress（2 LW。2026-10-16 実装・host 試験・build 済み、5330 は全部の段の後に 1 回） |
 | p022 | panel power（PPS、xd-panel） | planned（3 LW） |
 | p023 | power well の操作（W1、xd-power。p006 の差分を当て直す） | planned（5 LW） |
 | p024 | well の所属（W3）と refcount（xd-power） | planned（4 LW） |

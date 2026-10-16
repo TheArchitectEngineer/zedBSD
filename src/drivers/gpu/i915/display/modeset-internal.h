@@ -408,10 +408,10 @@ typedef uint64_t __u64;
 
 /*
  * IS_DISPLAY_VER(): whether the device's display version lies in [from,
- * until].  It answered a fixed 13 until ws118-p006; on Tiger Lake (12) that
- * made drv_i915_phy_is_combo() deny the combo PHYs, so the takeover's
- * readout found no PLL and its sanitize turned off the PLL the firmware's
- * pipe ran on.
+ * until].  It once answered a fixed 13; on Tiger Lake (12) that made
+ * drv_i915_phy_is_combo() deny the combo PHYs, so the takeover's readout
+ * found no PLL and its sanitize turned off the PLL the firmware's pipe ran
+ * on.
  */
 #define I915_LCD_IS_DISPLAY_VER(i915, from, until) \
 	(drv_i915_lcd_display_ver() >= (from) && drv_i915_lcd_display_ver() <= (until))
@@ -751,7 +751,7 @@ typedef uint64_t __u64;
 
 /*
  * intel_dp_configure_protocol_converter(): the sink's own AUX channel sets
- * up a branch's converter (an external DP port's, ws051-p004b); otherwise
+ * up a branch's converter (an external DP port's); otherwise
  * it returns for DPCD < 1.3 or a sink that is not a branch device.
  */
 #define intel_dp_configure_protocol_converter(intel_dp, cs) i915_lcd_dp_configure_protocol_converter(intel_dp)
@@ -946,8 +946,8 @@ typedef uint64_t __u64;
 
 /*
  * The Linux DPCD accessors on the sink of an AUX channel: the channel's
- * own hooks when its modeset object names them (an external DP port's,
- * ws051-p004b), otherwise the named device's backend hooks (the panel's).
+ * own hooks when its modeset object names them (an external DP port's),
+ * otherwise the named device's backend hooks (the panel's).
  */
 #define I915_LCD_DRM_DP_DPCD_READ(i915, aux, offset, buffer, size) i915_lcd_dpcd_read((i915), (aux), (offset), (buffer), (size))
 #define I915_LCD_DRM_DP_DPCD_WRITE(i915, aux, offset, buffer, size) i915_lcd_dpcd_write((i915), (aux), (offset), (buffer), (size))
@@ -1728,16 +1728,6 @@ struct drm_dp_aux {
 	struct drm_device *drm_dev;
 };
 
-/* The backlight hooks of a panel (intel_display_types.h). */
-struct intel_panel_bl_funcs {
-	int (*setup)(struct intel_connector *connector, enum pipe pipe);
-	u32 (*get)(struct intel_connector *connector, enum pipe pipe);
-	void (*set)(const struct drm_connector_state *conn_state, u32 level);
-	void (*disable)(const struct drm_connector_state *conn_state, u32 level);
-	void (*enable)(const struct intel_crtc_state *crtc_state, const struct drm_connector_state *conn_state, u32 level);
-	u32 (*hz_to_pwm)(struct intel_connector *connector, u32 hz);
-};
-
 /*
  * The panel behind a connector: the VBT data the modeset bodies read
  * (filled from the explicit VBT by the caller) and the backlight state.
@@ -1776,8 +1766,6 @@ struct intel_panel {
 				int power;
 			} props;
 		} *device;
-		const struct intel_panel_bl_funcs *funcs;
-		const struct intel_panel_bl_funcs *pwm_funcs;
 	} backlight;
 };
 
@@ -1895,7 +1883,7 @@ struct intel_atomic_state {
 	 */
 	struct i915_lcd_world *world;
 	/*
-	 * The encoders a disable of this state walks (ws051-p004b): the
+	 * The encoders a disable of this state walks: the
 	 * encoder at an index, NULL past the last, over walk.  NULL: the
 	 * world's bound encoder is the only one.  The takeover sets it in its
 	 * throw-away state, whose crtcs may each run on a different port.
@@ -2081,13 +2069,13 @@ struct i915_lcd_wm_ctx {
  */
 struct i915_lcd_modeset {
 	int output_hdmi;		/* the output this state drives: an HDMI sink instead of the eDP panel */
-	int output_dp_ext;		/* the output this state drives: an external DP sink on a Type-C port (ws051-p004b) */
+	int output_dp_ext;		/* the output this state drives: an external DP sink on a Type-C port */
 	int hdmi_level_shift;		/* intel_bios_hdmi_level_shift() of this port (< 0 = not in the VBT) */
 	int dpll_id;			/* the shared DPLL the reference's rule gave this crtc */
 	unsigned also_active_pipes;	/* the other pipes of this configuration (cfg) */
 	/*
-	 * The DPCD hooks of the port's own AUX channel (an external DP port's,
-	 * ws051-p004b), or NULL: the backend's DPCD hooks reach the sink (the
+	 * The DPCD hooks of the port's own AUX channel (an external DP port's),
+	 * or NULL: the backend's DPCD hooks reach the sink (the
 	 * panel's).  Its owner keeps it for as long as the object is used.
 	 */
 	const struct i915_lcd_aux_emit *aux_emit;
@@ -2255,7 +2243,7 @@ struct i915_lcd_world {
 
 	/*
 	 * The device's PLLs (I915_LCD_DPLL_POOL_SIZE: the two combo PLLs, the
-	 * Thunderbolt PLL and the four Type-C PLLs, ws051-p004b): one pool for
+	 * Thunderbolt PLL and the four Type-C PLLs): one pool for
 	 * the whole device, so two screens that want the same hardware state
 	 * share one object and its active_mask counts the pipes that drive it.
 	 * Built on first use (i915_lcd_dpll_pool_inited), cleared when the pool
@@ -2430,7 +2418,7 @@ int drv_i915_lcd_ms_evade_window(struct i915_lcd_modeset *ms, int *min, int *max
 void drv_i915_lcd_ms_set_acpi(struct i915_lcd_modeset *ms, u32 user_level, u32 user_max);
 
 /*
- * P1 exports: the power, clock, PHY and DMC functions the other modeset
+ * The power, clock, PHY and DMC functions the other modeset
  * files call, under the names they are exported by (power.c, clock.c,
  * phy.c, dmc.c).
  */

@@ -18,10 +18,13 @@
  * The panel backlight of the one-screen path (see panel-backlight.h).
  *
  * The functions follow the Linux 6.8.12 intel_backlight.c text for a
- * native-PWM eDP panel on a CNP+ PCH: the PWM hooks of the south display
- * (cnp_pwm_funcs), the generic PWM layer over them (pwm_bl_funcs), the
- * enable, disable and brightness paths with their scaling between the
- * user's range, the backlight range and the PWM range.  Around that text:
+ * native-PWM eDP panel on a CNP+ PCH: the enable, disable and brightness
+ * paths with their scaling between the user's range, the backlight range
+ * and the PWM range.  The PWM itself (its registers, the period of a
+ * frequency, the lowest duty, the scaling) is the xd panel's
+ * (xd-panel.c), driven through a register window whose accesses go to
+ * the device's backend hooks, so every backend (the device, a model, the
+ * recorder) sees the same register writes as before.  Around that text:
  * the backlight setup of the modeset object (what intel_backlight_setup()
  * and intel_backlight_init_funcs() do for this panel), the brightness,
  * ACPI and power entry points of the modeset object, and those of the
@@ -36,97 +39,46 @@
 #include "panel-backlight.h"
 #include "dp.h"
 #include "modeset.h"
+#include "xd-io.h"
+#include "xd-panel.h"
 
+/*
+ * The register window the backlight PWM is driven through.
+ *
+ * Its accesses go to the backend hooks of the device the call is about
+ * (set again by every call), so the device, a model and the recorder see
+ * the PWM writes as they always did.  It is used only under the
+ * backlight lock, which also keeps its record of the writes; it lives as
+ * long as the kernel and is prepared on first use.
+ */
+static struct i915_xd_io i915_backlight_io;
+
+/* Nonzero once i915_backlight_io is prepared. */
+static int i915_backlight_io_ready;
+
+static struct i915_xd_io *i915_backlight_window(struct drm_i915_private *i915);
+static uint32_t i915_backlight_window_read(void *context, uint32_t offset);
+static void i915_backlight_window_write(void *context, uint32_t offset, uint32_t value);
+static void i915_backlight_window_wait(void *context, unsigned microseconds);
+static void i915_backlight_pwm_state(const struct intel_panel *panel, struct i915_xd_backlight *pwm);
 static u32 i915_scale(u32 source_val, u32 source_min, u32 source_max, u32 target_min, u32 target_max);
 static u32 i915_clamp_user_to_hw(struct intel_connector *connector, u32 user_level, u32 user_max);
 static u32 i915_scale_hw_to_user(struct intel_connector *connector, u32 hw_level, u32 user_max);
 static u32 i915_backlight_invert_pwm_level(struct intel_connector *connector, u32 val);
 static void i915_backlight_set_pwm_level(const struct drm_connector_state *conn_state, u32 val);
-static u32 i915_bxt_get_backlight(struct intel_connector *connector, enum pipe unused);
-static void i915_bxt_set_backlight(const struct drm_connector_state *conn_state, u32 level);
-static void i915_cnp_disable_backlight(const struct drm_connector_state *old_conn_state, u32 val);
-static void i915_cnp_enable_backlight(const struct intel_crtc_state *crtc_state, const struct drm_connector_state *conn_state, u32 level);
-static int i915_cnp_num_backlight_controllers(struct drm_i915_private *i915);
-static bool i915_cnp_backlight_controller_is_valid(struct drm_i915_private *i915, int controller);
-static u32 i915_cnp_hz_to_pwm(struct intel_connector *connector, u32 pwm_freq_hz);
+static unsigned i915_cnp_num_backlight_controllers(struct drm_i915_private *i915);
 static u16 i915_get_vbt_pwm_freq(struct intel_connector *connector);
-static u32 i915_get_backlight_max_vbt(struct intel_connector *connector);
-static u32 i915_get_backlight_min_vbt(struct intel_connector *connector);
-static int i915_cnp_setup_backlight(struct intel_connector *connector, enum pipe unused);
-static u32 i915_pwm_get_backlight(struct intel_connector *connector, enum pipe pipe);
+static int i915_cnp_setup_backlight(struct intel_connector *connector);
+static u32 i915_pwm_get_backlight(struct intel_connector *connector);
 static void i915_pwm_set_backlight(const struct drm_connector_state *conn_state, u32 level);
-static void i915_pwm_enable_backlight(const struct intel_crtc_state *crtc_state, const struct drm_connector_state *conn_state, u32 level);
+static void i915_pwm_enable_backlight(const struct drm_connector_state *conn_state, u32 level);
 static void i915_pwm_disable_backlight(const struct drm_connector_state *conn_state, u32 level);
-static int i915_pwm_setup_backlight(struct intel_connector *connector, enum pipe pipe);
-static void i915_backlight_enable(const struct intel_crtc_state *crtc_state, const struct drm_connector_state *conn_state);
+static int i915_pwm_setup_backlight(struct intel_connector *connector);
+static void i915_backlight_enable(const struct drm_connector_state *conn_state);
 static void i915_panel_actually_set_backlight(const struct drm_connector_state *conn_state, u32 level);
 static u32 i915_scale_user_to_hw(struct intel_connector *connector, u32 user_level, u32 user_max);
 static void i915_panel_set_backlight(const struct drm_connector_state *conn_state, u32 user_level, u32 user_max);
 static struct i915_lcd_modeset *i915_selected_screen(struct i915_display *display);
-
-/*
- * Converts a backlight level to a PWM duty (the Linux
- * intel_backlight_level_to_pwm()): scaled from the backlight range to the
- * PWM range, then inverted where the panel needs it.
- */
-u32
-drv_i915_backlight_level_to_pwm(
-	struct intel_connector *connector,
-	u32 val)
-{
-	struct intel_panel *panel;
-	u32 pwm;
-
-	/* The connector's panel. */
-	panel = &connector->panel;
-
-	/* Both ranges must be known. */
-	I915_LCD_DRM_WARN_ON(connector->base.dev, panel->backlight.max == 0 || panel->backlight.pwm_level_max == 0);
-
-	/* Scales into the PWM range. */
-	val = i915_scale(val, panel->backlight.min, panel->backlight.max, panel->backlight.pwm_level_min, panel->backlight.pwm_level_max);
-
-	/* Inverts the duty where the panel needs it. */
-	pwm = i915_backlight_invert_pwm_level(connector, val);
-
-	/* Succeeded: reports the duty. */
-	return pwm;
-}
-
-/*
- * Converts a PWM duty to a backlight level (the Linux
- * intel_backlight_level_from_pwm()): un-inverted where the panel needs it,
- * then scaled from the PWM range to the backlight range.
- */
-u32
-drv_i915_backlight_level_from_pwm(
-	struct intel_connector *connector,
-	u32 val)
-{
-	struct drm_i915_private *i915;
-	struct intel_panel *panel;
-	u32 level;
-
-	/* Finds the device and the panel. */
-	i915 = i915_lcd_to_i915(connector->base.dev);
-	panel = &connector->panel;
-
-	/* Both ranges must be known. */
-	I915_LCD_DRM_WARN_ON(&i915->drm, panel->backlight.max == 0 || panel->backlight.pwm_level_max == 0);
-
-	/* An inverted panel's duty counts down from the maximum. */
-	if (i915->display.params.invert_brightness > 0) {
-		val = panel->backlight.pwm_level_max - (val - panel->backlight.pwm_level_min);
-	} else if (i915->display.params.invert_brightness == 0 && I915_LCD_INTEL_HAS_QUIRK(i915, QUIRK_INVERT_BRIGHTNESS)) {
-		val = panel->backlight.pwm_level_max - (val - panel->backlight.pwm_level_min);
-	}
-
-	/* Scales into the backlight range. */
-	level = i915_scale(val, panel->backlight.pwm_level_min, panel->backlight.pwm_level_max, panel->backlight.min, panel->backlight.max);
-
-	/* Succeeded: reports the level. */
-	return level;
-}
 
 /*
  * Enables the backlight of a panel (the Linux intel_backlight_enable()).
@@ -160,7 +112,7 @@ drv_i915_backlight_enable(
 	/* Enables the backlight under the backlight lock. */
 	I915_LCD_MUTEX_LOCK(i915, &i915->display.backlight.lock);
 
-	i915_backlight_enable(crtc_state, conn_state);
+	i915_backlight_enable(conn_state);
 
 	I915_LCD_MUTEX_UNLOCK(i915, &i915->display.backlight.lock);
 }
@@ -204,7 +156,7 @@ drv_i915_backlight_disable(
 	if (panel->backlight.device)
 		panel->backlight.device->props.power = FB_BLANK_POWERDOWN;
 	panel->backlight.enabled = false;
-	panel->backlight.funcs->disable(old_conn_state, 0);
+	i915_pwm_disable_backlight(old_conn_state, 0);
 
 	I915_LCD_MUTEX_UNLOCK(i915, &i915->display.backlight.lock);
 }
@@ -265,11 +217,9 @@ drv_i915_backlight_set_acpi(
 /*
  * Sets up the backlight of a modeset object's panel.
  *
- * What the Linux intel_backlight_setup() and intel_backlight_init_funcs()
- * do for a native-PWM eDP panel on a CNP+ PCH: pwm_funcs = cnp_pwm_funcs,
- * funcs = pwm_bl_funcs, then funcs->setup() under the backlight lock,
- * which reads the PWM registers and derives the range and the level, and
- * the backlight is present.  Without a VBT backlight block nothing is set
+ * What the Linux intel_backlight_setup() does for a native-PWM eDP panel
+ * on a CNP+ PCH: under the backlight lock the PWM registers are read and
+ * the range and the level derived, and the backlight is present.  Without a VBT backlight block nothing is set
  * up.  0, or the setup hook's negative Linux errno (the status reports it
  * as intel_backlight_setup() returned it).
  */
@@ -277,26 +227,6 @@ int
 drv_i915_lcd_ms_backlight_setup(
 	struct i915_lcd_modeset *ms)
 {
-	/* The PWM hooks of a CNP+ PCH (the Linux cnp_pwm_funcs), as far as this path uses them. */
-	static const struct intel_panel_bl_funcs cnp_pwm_funcs = {
-		i915_cnp_setup_backlight,
-		i915_bxt_get_backlight,
-		i915_bxt_set_backlight,
-		i915_cnp_disable_backlight,
-		i915_cnp_enable_backlight,
-		i915_cnp_hz_to_pwm,
-	};
-
-	/* The generic PWM layer over them (the Linux pwm_bl_funcs). */
-	static const struct intel_panel_bl_funcs pwm_bl_funcs = {
-		i915_pwm_setup_backlight,
-		i915_pwm_get_backlight,
-		i915_pwm_set_backlight,
-		i915_pwm_disable_backlight,
-		i915_pwm_enable_backlight,
-		NULL,
-	};
-
 	struct intel_panel *panel;
 	int ret;
 
@@ -307,14 +237,10 @@ drv_i915_lcd_ms_backlight_setup(
 	if (!panel->vbt.backlight.present)
 		return 0;
 
-	/* Binds the hooks. */
-	panel->backlight.pwm_funcs = &cnp_pwm_funcs;
-	panel->backlight.funcs = &pwm_bl_funcs;
-
 	/* Reads the PWM state under the backlight lock. */
 	I915_LCD_MUTEX_LOCK(&ms->i915, &ms->i915.display.backlight.lock);
 
-	ret = panel->backlight.funcs->setup(&ms->connector, ms->crtc.pipe);
+	ret = i915_pwm_setup_backlight(&ms->connector);
 
 	I915_LCD_MUTEX_UNLOCK(&ms->i915, &ms->i915.display.backlight.lock);
 
@@ -473,7 +399,7 @@ drv_i915_lcd_modeset_brightness(
  * Reports the brightness of the selected screen as a level of user_max.
  *
  * The hardware level scaled to the range, as the Linux backlight device
- * reports it (ws113-p013, the backlight device's GETSTATUS).
+ * reports it (the backlight device's GETSTATUS).
  * I915_LCD_MS_NOT_PREPARED when the screen is not running, is retained,
  * or the range is empty.
  */
@@ -607,11 +533,107 @@ drv_i915_lcd_modeset_backlight(
 }
 
 /*
+ * Returns the register window of the backlight PWM, reaching the backend
+ * hooks of a device (prepared on first use).
+ */
+static struct i915_xd_io *
+i915_backlight_window(
+	struct drm_i915_private *i915)
+{
+	struct i915_xd_io_hooks hooks;
+
+	/* Prepares the window once. */
+	if (i915_backlight_io_ready == 0) {
+		drv_i915_xd_io_init(&i915_backlight_io, NULL, NULL);
+		i915_backlight_io_ready = 1;
+	}
+
+	/* Points the window at this device's backend. */
+	hooks.read = i915_backlight_window_read;
+	hooks.write = i915_backlight_window_write;
+	hooks.wait = i915_backlight_window_wait;
+	hooks.lock = NULL;
+	hooks.context = i915;
+	drv_i915_xd_io_set_hooks(&i915_backlight_io, &hooks);
+
+	/* Succeeded: the window. */
+	return &i915_backlight_io;
+}
+
+/* Reads a register through the device's backend; the recorder, which cannot read, answers 0. */
+static uint32_t
+i915_backlight_window_read(
+	void *context,
+	uint32_t offset)
+{
+	struct drm_i915_private *i915;
+	uint32_t value;
+
+	/* The pure word recorder has no read hook. */
+	i915 = context;
+	if (i915->emit->read32 == NULL)
+		return 0u;
+
+	/* Reads the register. */
+	value = i915->emit->read32(i915->emit->ctx, offset);
+
+	/* Succeeded: the register's value. */
+	return value;
+}
+
+/* Writes a register through the device's backend. */
+static void
+i915_backlight_window_write(
+	void *context,
+	uint32_t offset,
+	uint32_t value)
+{
+	struct drm_i915_private *i915;
+
+	/* Writes the register. */
+	i915 = context;
+	i915->emit->write32(i915->emit->ctx, offset, value);
+}
+
+/* Lets time pass through the device's backend, when it keeps time. */
+static void
+i915_backlight_window_wait(
+	void *context,
+	unsigned microseconds)
+{
+	struct drm_i915_private *i915;
+
+	/* A backend without a clock lets no time pass. */
+	i915 = context;
+	if (i915->emit->usleep == NULL)
+		return;
+
+	/* Sleeps. */
+	i915->emit->usleep(i915->emit->ctx, microseconds);
+}
+
+/* Describes the panel's PWM to the xd panel from the backlight state. */
+static void
+i915_backlight_pwm_state(
+	const struct intel_panel *panel,
+	struct i915_xd_backlight *pwm)
+{
+	/* The controller, the period, the polarity and the enable as last known. */
+	pwm->controller = panel->backlight.controller;
+	pwm->period = panel->backlight.pwm_level_max;
+	pwm->active_low = 0;
+	if (panel->backlight.active_low_pwm)
+		pwm->active_low = 1;
+	pwm->running = 0;
+	if (panel->backlight.pwm_enabled)
+		pwm->running = 1;
+}
+
+/*
  * Scales a value from one range to another (the Linux scale()).
  *
- * The value is clamped into its range first (defensive), and the product
- * is taken in 64 bits to avoid overflows.  An empty source range or an
- * inverted target range answers the target minimum.
+ * An empty source range or an inverted target range is reported and
+ * answers the target minimum; the scaling itself is the xd panel's.
  */
 static u32
 i915_scale(
@@ -621,7 +643,7 @@ i915_scale(
 	u32 target_min,
 	u32 target_max)
 {
-	u64 target_val;
+	u32 target_val;
 	int warned;
 
 	/* Refuses an empty source range. */
@@ -634,13 +656,8 @@ i915_scale(
 	if (warned)
 		return target_min;
 
-	/* defensive */
-	source_val = I915_LCD_CLAMP(source_val, source_min, source_max);
-
-	/* avoid overflows */
-	target_val = mul_u32_u32(source_val - source_min, target_max - target_min);
-	target_val = DIV_ROUND_CLOSEST_ULL(target_val, source_max - source_min);
-	target_val += target_min;
+	/* Scales, rounded to the closest. */
+	target_val = drv_i915_xd_backlight_scale(source_val, source_min, source_max, target_min, target_max);
 
 	/* Succeeded: reports the scaled value. */
 	return target_val;
@@ -726,17 +743,21 @@ i915_backlight_invert_pwm_level(
 	return val;
 }
 
-/* Writes a PWM duty through the PWM hooks (the Linux intel_backlight_set_pwm_level()). */
+/* Sets the PWM duty of the panel's controller (the Linux intel_backlight_set_pwm_level()). */
 static void
 i915_backlight_set_pwm_level(
 	const struct drm_connector_state *conn_state,
 	u32 val)
 {
+	struct i915_xd_backlight pwm;
 	struct intel_connector *connector;
+	struct drm_i915_private *i915;
 	struct intel_panel *panel;
+	struct i915_xd_io *io;
 
-	/* Finds the connector and its panel. */
+	/* Finds the connector, its device and its panel. */
 	connector = I915_LCD_TO_INTEL_CONNECTOR(conn_state->connector);
+	i915 = i915_lcd_to_i915(connector->base.dev);
 	panel = &connector->panel;
 
 	/* Notes the duty. */
@@ -746,119 +767,17 @@ i915_backlight_set_pwm_level(
 			     connector->base.name,
 			     val);
 
-	/* Writes it. */
-	panel->backlight.pwm_funcs->set(conn_state, val);
-}
-
-/* Reads the PWM duty of the panel's controller (the Linux bxt_get_backlight()). */
-static u32
-i915_bxt_get_backlight(
-	struct intel_connector *connector,
-	enum pipe unused)
-{
-	struct drm_i915_private *i915;
-	struct intel_panel *panel;
-	u32 duty;
-
-	UNUSED_PARAMETER(unused);
-
-	/* Finds the device and the panel. */
-	i915 = i915_lcd_to_i915(connector->base.dev);
-	panel = &connector->panel;
-
-	/* Reads the duty register. */
-	duty = i915_lcd_intel_de_read(i915, BXT_BLC_PWM_DUTY(panel->backlight.controller));
-
-	/* Succeeded: reports the duty. */
-	return duty;
-}
-
-/* Writes the PWM duty of the panel's controller (the Linux bxt_set_backlight()). */
-static void
-i915_bxt_set_backlight(
-	const struct drm_connector_state *conn_state,
-	u32 level)
-{
-	struct intel_connector *connector;
-	struct drm_i915_private *i915;
-	struct intel_panel *panel;
-
-	/* Finds the connector, its device and its panel. */
-	connector = I915_LCD_TO_INTEL_CONNECTOR(conn_state->connector);
-	i915 = i915_lcd_to_i915(connector->base.dev);
-	panel = &connector->panel;
-
-	/* Writes the duty register. */
-	i915_lcd_intel_de_write(i915, BXT_BLC_PWM_DUTY(panel->backlight.controller), level);
-}
-
-/* Disables the PWM of the panel's controller after setting its duty (the Linux cnp_disable_backlight()). */
-static void
-i915_cnp_disable_backlight(
-	const struct drm_connector_state *old_conn_state,
-	u32 val)
-{
-	struct intel_connector *connector;
-	struct drm_i915_private *i915;
-	struct intel_panel *panel;
-
-	/* Finds the connector, its device and its panel. */
-	connector = I915_LCD_TO_INTEL_CONNECTOR(old_conn_state->connector);
-	i915 = i915_lcd_to_i915(connector->base.dev);
-	panel = &connector->panel;
-
-	/* Sets the duty, then clears the PWM enable. */
-	i915_backlight_set_pwm_level(old_conn_state, val);
-	i915_lcd_intel_de_rmw(i915, BXT_BLC_PWM_CTL(panel->backlight.controller), BXT_BLC_PWM_ENABLE, 0);
+	/* Writes it to the controller. */
+	i915_backlight_pwm_state(panel, &pwm);
+	io = i915_backlight_window(i915);
+	drv_i915_xd_backlight_set_duty(&pwm, io, val);
 }
 
 /*
- * Enables the PWM of the panel's controller (the Linux cnp_enable_backlight()).
- *
- * A PWM that is already on is turned off first; then the frequency, the
- * duty, the polarity and, after a posting read, the enable.
+ * Returns how many backlight controllers the PCH has (the Linux
+ * cnp_num_backlight_controllers()).
  */
-static void
-i915_cnp_enable_backlight(
-	const struct intel_crtc_state *crtc_state,
-	const struct drm_connector_state *conn_state,
-	u32 level)
-{
-	struct intel_connector *connector;
-	struct drm_i915_private *i915;
-	struct intel_panel *panel;
-	u32 pwm_ctl;
-
-	UNUSED_PARAMETER(crtc_state);
-
-	/* Finds the connector, its device and its panel. */
-	connector = I915_LCD_TO_INTEL_CONNECTOR(conn_state->connector);
-	i915 = i915_lcd_to_i915(connector->base.dev);
-	panel = &connector->panel;
-
-	/* A PWM that is already on is turned off first. */
-	pwm_ctl = i915_lcd_intel_de_read(i915, BXT_BLC_PWM_CTL(panel->backlight.controller));
-	if (pwm_ctl & BXT_BLC_PWM_ENABLE) {
-		I915_LCD_DRM_DBG_KMS(&i915->drm, "backlight already enabled\n");
-		pwm_ctl &= ~BXT_BLC_PWM_ENABLE;
-		i915_lcd_intel_de_write(i915, BXT_BLC_PWM_CTL(panel->backlight.controller), pwm_ctl);
-	}
-
-	/* The frequency, then the duty. */
-	i915_lcd_intel_de_write(i915, BXT_BLC_PWM_FREQ(panel->backlight.controller), panel->backlight.pwm_level_max);
-	i915_backlight_set_pwm_level(conn_state, level);
-
-	/* The polarity, flushed, then the enable. */
-	pwm_ctl = 0;
-	if (panel->backlight.active_low_pwm)
-		pwm_ctl |= BXT_BLC_PWM_POLARITY;
-	i915_lcd_intel_de_write(i915, BXT_BLC_PWM_CTL(panel->backlight.controller), pwm_ctl);
-	i915_lcd_intel_de_posting_read(i915, BXT_BLC_PWM_CTL(panel->backlight.controller));
-	i915_lcd_intel_de_write(i915, BXT_BLC_PWM_CTL(panel->backlight.controller), pwm_ctl | BXT_BLC_PWM_ENABLE);
-}
-
-/* Returns how many backlight controllers the PCH has (the Linux cnp_num_backlight_controllers()). */
-static int
+static unsigned
 i915_cnp_num_backlight_controllers(
 	struct drm_i915_private *i915)
 {
@@ -878,60 +797,6 @@ i915_cnp_num_backlight_controllers(
 
 	/* Succeeded: earlier PCHs have one. */
 	return 1;
-}
-
-/*
- * Tells whether a backlight controller can drive the panel (the Linux
- * cnp_backlight_controller_is_valid()).
- *
- * On ICP to ADP PCHs controller 1 is usable only when the second PPS I/O
- * is selected in SOUTH_CHICKEN1.
- */
-static bool
-i915_cnp_backlight_controller_is_valid(
-	struct drm_i915_private *i915,
-	int controller)
-{
-	int controllers;
-	u32 chicken;
-
-	/* A controller the PCH does not have. */
-	controllers = i915_cnp_num_backlight_controllers(i915);
-	if (controller < 0 || controller >= controllers)
-		return false;
-
-	/* Controller 1 of ICP..ADP depends on the pin muxing. */
-	if (controller == 1 &&
-	    INTEL_PCH_TYPE(i915) >= PCH_ICP &&
-	    INTEL_PCH_TYPE(i915) <= PCH_ADP) {
-		chicken = i915_lcd_intel_de_read(i915, SOUTH_CHICKEN1);
-		if (chicken & ICP_SECOND_PPS_IO_SELECT)
-			return true;
-
-		return false;
-	}
-
-	/* Succeeded: the controller exists. */
-	return true;
-}
-
-/*
- * Converts a PWM frequency to the PWM period (the Linux cnp_hz_to_pwm()).
- *
- * CNP: the PWM clock is the raw clock (19.2 MHz or 24 MHz), increment 1.
- */
-static u32
-i915_cnp_hz_to_pwm(
-	struct intel_connector *connector,
-	u32 pwm_freq_hz)
-{
-	struct drm_i915_private *i915;
-
-	/* Finds the device. */
-	i915 = i915_lcd_to_i915(connector->base.dev);
-
-	/* Succeeded: raw clock ticks per PWM period. */
-	return DIV_ROUND_CLOSEST(KHz(I915_LCD_DISPLAY_RUNTIME_INFO(i915)->rawclk_freq), pwm_freq_hz);
 }
 
 /* Returns the VBT's PWM frequency, or 200 Hz (the Linux get_vbt_pwm_freq()). */
@@ -957,106 +822,41 @@ i915_get_vbt_pwm_freq(
 }
 
 /*
- * Returns the PWM period of the VBT's frequency (the Linux
- * get_backlight_max_vbt()); 0 when it cannot be converted.
- */
-static u32
-i915_get_backlight_max_vbt(
-	struct intel_connector *connector)
-{
-	struct intel_panel *panel;
-	u16 pwm_freq_hz;
-	u32 pwm;
-
-	/* Finds the panel and the VBT's frequency. */
-	panel = &connector->panel;
-	pwm_freq_hz = i915_get_vbt_pwm_freq(connector);
-
-	/* The PWM hooks must convert frequencies. */
-	if (!panel->backlight.pwm_funcs->hz_to_pwm) {
-		I915_LCD_DRM_DBG_KMS(connector->base.dev, "backlight frequency conversion not supported\n");
-		return 0;
-	}
-
-	/* Converts the frequency. */
-	pwm = panel->backlight.pwm_funcs->hz_to_pwm(connector, pwm_freq_hz);
-	if (!pwm) {
-		I915_LCD_DRM_DBG_KMS(connector->base.dev, "backlight frequency conversion failed\n");
-		return 0;
-	}
-
-	/* Succeeded: reports the period. */
-	return pwm;
-}
-
-/*
- * Returns the minimum PWM duty of the VBT's minimum brightness (the Linux
- * get_backlight_min_vbt()).
- *
- * The VBT value is a coefficient in [0..255] of the PWM range.  A value of
- * 255 would make the minimum the maximum (such machines exist), so it is
- * clamped to 64, a quarter of the range.  The setup hooks cannot assume
- * the pipe is set.
- */
-static u32
-i915_get_backlight_min_vbt(
-	struct intel_connector *connector)
-{
-	struct intel_panel *panel;
-	int min;
-	u32 duty;
-
-	/* Finds the panel. */
-	panel = &connector->panel;
-
-	/* The PWM range must be known. */
-	I915_LCD_DRM_WARN_ON(connector->base.dev, panel->backlight.pwm_level_max == 0);
-
-	/* Clamps the VBT's coefficient to at most 64 of 255. */
-	min = I915_LCD_CLAMP_T(int, connector->panel.vbt.backlight.min_brightness, 0, 64);
-	if (min != connector->panel.vbt.backlight.min_brightness) {
-		I915_LCD_DRM_DBG_KMS(connector->base.dev,
-				     "clamping VBT min backlight %d/255 to %d/255\n",
-				     connector->panel.vbt.backlight.min_brightness,
-				     min);
-	}
-
-	/* Scales the coefficient into the PWM range. */
-	duty = i915_scale(min, 0, 255, 0, panel->backlight.pwm_level_max);
-
-	/* Succeeded: reports the minimum duty. */
-	return duty;
-}
-
-/*
  * Reads the PWM state of the panel's controller (the Linux
- * cnp_setup_backlight(), the setup hook of the CNP PWM).
+ * cnp_setup_backlight()).
  *
- * CNP has the BXT implementation of the backlight with one controller;
- * ICP+ can have two, depending on the pin muxing.  An invalid controller
- * of the VBT falls back to 0.  0, or the Linux -ENODEV when neither the
- * hardware nor the VBT gives a PWM frequency.
+ * The VBT names the controller; one the PCH cannot use falls back to 0.
+ * The period is the one the firmware programmed, or the VBT's frequency
+ * in raw clock ticks; the lowest duty is the VBT's minimum.  0, or the
+ * Linux -ENODEV when neither gives a period.
  */
 static int
 i915_cnp_setup_backlight(
-	struct intel_connector *connector,
-	enum pipe unused)
+	struct intel_connector *connector)
 {
+	struct i915_xd_backlight pwm;
 	struct drm_i915_private *i915;
 	struct intel_panel *panel;
-	u32 pwm_ctl;
-	bool valid;
+	struct i915_xd_io *io;
+	unsigned controllers;
+	int muxed;
+	int usable;
+	int min;
+	u16 pwm_freq_hz;
 
-	UNUSED_PARAMETER(unused);
-
-	/* Finds the device and the panel. */
+	/* Finds the device, the panel and the PWM's window. */
 	i915 = i915_lcd_to_i915(connector->base.dev);
 	panel = &connector->panel;
+	io = i915_backlight_window(i915);
 
-	/* The VBT's controller, or 0 when the PCH cannot use it. */
+	/* The VBT's controller, or 0 when the PCH cannot use it (ICP..ADP mux the second one's pins). */
 	panel->backlight.controller = connector->panel.vbt.backlight.controller;
-	valid = i915_cnp_backlight_controller_is_valid(i915, panel->backlight.controller);
-	if (!valid) {
+	controllers = i915_cnp_num_backlight_controllers(i915);
+	muxed = 0;
+	if (INTEL_PCH_TYPE(i915) >= PCH_ICP && INTEL_PCH_TYPE(i915) <= PCH_ADP)
+		muxed = 1;
+	usable = drv_i915_xd_backlight_controller_usable(io, panel->backlight.controller, controllers, muxed);
+	if (usable == 0) {
 		I915_LCD_DRM_DBG_KMS(&i915->drm,
 				     "[CONNECTOR:%d:%s] Invalid backlight controller %d, assuming 0\n",
 				     connector->base.base.id,
@@ -1066,21 +866,36 @@ i915_cnp_setup_backlight(
 	}
 
 	/* The polarity and the period the firmware programmed. */
-	pwm_ctl = i915_lcd_intel_de_read(i915, BXT_BLC_PWM_CTL(panel->backlight.controller));
-	panel->backlight.active_low_pwm = pwm_ctl & BXT_BLC_PWM_POLARITY;
-	panel->backlight.pwm_level_max = i915_lcd_intel_de_read(i915, BXT_BLC_PWM_FREQ(panel->backlight.controller));
+	drv_i915_xd_backlight_read(&pwm, io, panel->backlight.controller);
+	panel->backlight.active_low_pwm = false;
+	if (pwm.active_low != 0)
+		panel->backlight.active_low_pwm = true;
+	panel->backlight.pwm_level_max = pwm.period;
 
 	/* Without a programmed period, the VBT's frequency gives it. */
-	if (!panel->backlight.pwm_level_max)
-		panel->backlight.pwm_level_max = i915_get_backlight_max_vbt(connector);
+	if (!panel->backlight.pwm_level_max) {
+		pwm_freq_hz = i915_get_vbt_pwm_freq(connector);
+		panel->backlight.pwm_level_max = drv_i915_xd_backlight_period(I915_LCD_DISPLAY_RUNTIME_INFO(i915)->rawclk_freq, pwm_freq_hz);
+		if (!panel->backlight.pwm_level_max)
+			I915_LCD_DRM_DBG_KMS(connector->base.dev, "backlight frequency conversion failed\n");
+	}
 
 	/* Neither gives one: there is no usable backlight. */
 	if (!panel->backlight.pwm_level_max)
 		return -I915_LCD_ENODEV;
 
-	/* The minimum duty and whether the PWM runs. */
-	panel->backlight.pwm_level_min = i915_get_backlight_min_vbt(connector);
-	panel->backlight.pwm_enabled = pwm_ctl & BXT_BLC_PWM_ENABLE;
+	/* The lowest duty, from the VBT's minimum (at most 64 of 255). */
+	min = connector->panel.vbt.backlight.min_brightness;
+	if (min > (int)I915_XD_BACKLIGHT_MIN_LIMIT) {
+		I915_LCD_DRM_DBG_KMS(connector->base.dev,
+				     "clamping VBT min backlight %d/255 to %d/255\n",
+				     min,
+				     (int)I915_XD_BACKLIGHT_MIN_LIMIT);
+	}
+	panel->backlight.pwm_level_min = drv_i915_xd_backlight_min_duty(panel->backlight.pwm_level_max, (unsigned)min);
+	panel->backlight.pwm_enabled = false;
+	if (pwm.running != 0)
+		panel->backlight.pwm_enabled = true;
 
 	/* Notes the setup. */
 	I915_LCD_DRM_DBG_KMS(&i915->drm,
@@ -1093,95 +908,125 @@ i915_cnp_setup_backlight(
 	return 0;
 }
 
-/* Reads the backlight level through the PWM hooks (the Linux intel_pwm_get_backlight()). */
+/* Reads the backlight level of the PWM duty (the Linux intel_pwm_get_backlight()). */
 static u32
 i915_pwm_get_backlight(
-	struct intel_connector *connector,
-	enum pipe pipe)
+	struct intel_connector *connector)
 {
-	struct intel_panel *panel;
+	struct i915_xd_backlight pwm;
+	struct drm_i915_private *i915;
+	struct i915_xd_io *io;
 	u32 duty;
 	u32 level;
 
-	/* The connector's panel. */
-	panel = &connector->panel;
+	/* Reads the duty of the panel's controller. */
+	i915 = i915_lcd_to_i915(connector->base.dev);
+	i915_backlight_pwm_state(&connector->panel, &pwm);
+	io = i915_backlight_window(i915);
+	duty = drv_i915_xd_backlight_duty(&pwm, io);
 
-	/* Reads the duty and un-inverts it. */
-	duty = panel->backlight.pwm_funcs->get(connector, pipe);
+	/* Un-inverts it. */
 	level = i915_backlight_invert_pwm_level(connector, duty);
 
 	/* Succeeded: reports the level. */
 	return level;
 }
 
-/* Writes the backlight level through the PWM hooks (the Linux intel_pwm_set_backlight()). */
+/* Writes a backlight level as the PWM duty (the Linux intel_pwm_set_backlight()). */
 static void
 i915_pwm_set_backlight(
 	const struct drm_connector_state *conn_state,
 	u32 level)
 {
 	struct intel_connector *connector;
-	struct intel_panel *panel;
 	u32 duty;
 
-	/* Finds the connector and its panel. */
-	connector = I915_LCD_TO_INTEL_CONNECTOR(conn_state->connector);
-	panel = &connector->panel;
-
 	/* Inverts the level and writes it. */
+	connector = I915_LCD_TO_INTEL_CONNECTOR(conn_state->connector);
 	duty = i915_backlight_invert_pwm_level(connector, level);
-	panel->backlight.pwm_funcs->set(conn_state, duty);
+	i915_backlight_set_pwm_level(conn_state, duty);
 }
 
-/* Enables the backlight through the PWM hooks (the Linux intel_pwm_enable_backlight()). */
+/*
+ * Starts the PWM at a backlight level (the Linux
+ * intel_pwm_enable_backlight() and cnp_enable_backlight()).
+ */
 static void
 i915_pwm_enable_backlight(
-	const struct intel_crtc_state *crtc_state,
 	const struct drm_connector_state *conn_state,
 	u32 level)
 {
+	struct i915_xd_backlight pwm;
 	struct intel_connector *connector;
+	struct drm_i915_private *i915;
 	struct intel_panel *panel;
+	struct i915_xd_io *io;
 	u32 duty;
+	int was_running;
 
-	/* Finds the connector and its panel. */
+	/* Finds the connector, its device and its panel. */
 	connector = I915_LCD_TO_INTEL_CONNECTOR(conn_state->connector);
+	i915 = i915_lcd_to_i915(connector->base.dev);
 	panel = &connector->panel;
 
-	/* Inverts the level and enables the PWM with it. */
+	/* Starts the PWM at the inverted level. */
 	duty = i915_backlight_invert_pwm_level(connector, level);
-	panel->backlight.pwm_funcs->enable(crtc_state, conn_state, duty);
+	i915_backlight_pwm_state(panel, &pwm);
+	io = i915_backlight_window(i915);
+	was_running = drv_i915_xd_backlight_enable(&pwm, io, duty);
+
+	/* Notes a PWM found running and the duty. */
+	if (was_running)
+		I915_LCD_DRM_DBG_KMS(&i915->drm, "backlight already enabled\n");
+	I915_LCD_DRM_DBG_KMS(connector->base.dev,
+			     "[CONNECTOR:%d:%s] set backlight PWM = %d\n",
+			     connector->base.base.id,
+			     connector->base.name,
+			     duty);
 }
 
-/* Disables the backlight through the PWM hooks (the Linux intel_pwm_disable_backlight()). */
+/*
+ * Stops the PWM after setting a backlight level (the Linux
+ * intel_pwm_disable_backlight() and cnp_disable_backlight()).
+ */
 static void
 i915_pwm_disable_backlight(
 	const struct drm_connector_state *conn_state,
 	u32 level)
 {
+	struct i915_xd_backlight pwm;
 	struct intel_connector *connector;
+	struct drm_i915_private *i915;
 	struct intel_panel *panel;
+	struct i915_xd_io *io;
 	u32 duty;
 
-	/* Finds the connector and its panel. */
+	/* Finds the connector, its device and its panel. */
 	connector = I915_LCD_TO_INTEL_CONNECTOR(conn_state->connector);
+	i915 = i915_lcd_to_i915(connector->base.dev);
 	panel = &connector->panel;
 
-	/* Inverts the level and disables the PWM with it. */
+	/* Notes the duty, then stops the PWM with it. */
 	duty = i915_backlight_invert_pwm_level(connector, level);
-	panel->backlight.pwm_funcs->disable(conn_state, duty);
+	I915_LCD_DRM_DBG_KMS(connector->base.dev,
+			     "[CONNECTOR:%d:%s] set backlight PWM = %d\n",
+			     connector->base.base.id,
+			     connector->base.name,
+			     duty);
+	i915_backlight_pwm_state(panel, &pwm);
+	io = i915_backlight_window(i915);
+	drv_i915_xd_backlight_disable(&pwm, io, duty);
 }
 
 /*
- * Sets up the backlight over the PWM hooks (the Linux
+ * Sets up the backlight over the PWM (the Linux
  * intel_pwm_setup_backlight()): the backlight range is the PWM range, and
  * the level and the enable state are read back.  0, or the PWM setup's
  * negative Linux errno.
  */
 static int
 i915_pwm_setup_backlight(
-	struct intel_connector *connector,
-	enum pipe pipe)
+	struct intel_connector *connector)
 {
 	struct intel_panel *panel;
 	int ret;
@@ -1190,14 +1035,14 @@ i915_pwm_setup_backlight(
 	panel = &connector->panel;
 
 	/* Reads the PWM state. */
-	ret = panel->backlight.pwm_funcs->setup(connector, pipe);
+	ret = i915_cnp_setup_backlight(connector);
 	if (ret < 0)
 		return ret;
 
 	/* The backlight range is the PWM range; the level and the enable are read back. */
 	panel->backlight.min = panel->backlight.pwm_level_min;
 	panel->backlight.max = panel->backlight.pwm_level_max;
-	panel->backlight.level = i915_pwm_get_backlight(connector, pipe);
+	panel->backlight.level = i915_pwm_get_backlight(connector);
 	panel->backlight.enabled = panel->backlight.pwm_enabled;
 
 	/* Succeeded: the backlight is set up. */
@@ -1213,7 +1058,6 @@ i915_pwm_setup_backlight(
  */
 static void
 i915_backlight_enable(
-	const struct intel_crtc_state *crtc_state,
 	const struct drm_connector_state *conn_state)
 {
 	struct intel_connector *connector;
@@ -1237,24 +1081,22 @@ i915_backlight_enable(
 	}
 
 	/* Enables the backlight at the level. */
-	panel->backlight.funcs->enable(crtc_state, conn_state, panel->backlight.level);
+	i915_pwm_enable_backlight(conn_state, panel->backlight.level);
 	panel->backlight.enabled = true;
 	if (panel->backlight.device)
 		panel->backlight.device->props.power = FB_BLANK_UNBLANK;
 }
 
-/* Writes a backlight level through the backlight hooks (the Linux intel_panel_actually_set_backlight()). */
+/* Writes a backlight level (the Linux intel_panel_actually_set_backlight()). */
 static void
 i915_panel_actually_set_backlight(
 	const struct drm_connector_state *conn_state,
 	u32 level)
 {
 	struct intel_connector *connector;
-	struct intel_panel *panel;
 
-	/* Finds the connector and its panel. */
+	/* Finds the connector. */
 	connector = I915_LCD_TO_INTEL_CONNECTOR(conn_state->connector);
-	panel = &connector->panel;
 
 	/* Notes the level. */
 	I915_LCD_DRM_DBG_KMS(connector->base.dev,
@@ -1264,7 +1106,7 @@ i915_panel_actually_set_backlight(
 			     level);
 
 	/* Writes it. */
-	panel->backlight.funcs->set(conn_state, level);
+	i915_pwm_set_backlight(conn_state, level);
 }
 
 /* Scales a user level in [0..user_max] to [hw_min..hw_max] (the Linux scale_user_to_hw()). */

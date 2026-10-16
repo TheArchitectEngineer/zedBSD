@@ -43,8 +43,6 @@ int drv_i915_lcd_modeset_backlight(struct i915_display *display, int on);
 void drv_i915_backlight_enable(const struct intel_crtc_state *crtc_state, const struct drm_connector_state *conn_state);
 void drv_i915_backlight_disable(const struct drm_connector_state *old_conn_state);
 void drv_i915_backlight_set_acpi(const struct drm_connector_state *conn_state, u32 user_level, u32 user_max);
-u32 drv_i915_backlight_level_to_pwm(struct intel_connector *connector, u32 val);
-u32 drv_i915_backlight_level_from_pwm(struct intel_connector *connector, u32 val);
 
 #endif /* I915_DISPLAY_WORLD_MODESET */
 
