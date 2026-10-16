@@ -8,7 +8,7 @@
 # amd-navi-firmware cache when it exists; AMDRDNA_FIRMWARE overrides it), the packets, queue images, settings and
 # shape words of stage A5 and its first dispatch's program on the GFX10 interpreter (their image positions, register
 # offsets and settings against the Linux sources), the hub contexts, address-space identifiers and ring commands of
-# stage A5s, and the source audit.
+# stage A5s, the display's words of stages A6 to A8, and the source audit.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 #
 # usage: plan/ws039/tests/amdrdna-host-test.sh [DUMP-DIRECTORY]
@@ -34,6 +34,7 @@ cc $flags -include uapi/errno.h -o "$out/amdrdna-memory-test" "$tests/amdrdna-me
 	"$driver/hub-registers.c" "$driver/vm-format.c" "$driver/interrupt-format.c"
 cc $flags -include uapi/errno.h -o "$out/amdrdna-sessions-test" "$tests/amdrdna-sessions-test.c" "$driver/context-pool.c" \
 	"$driver/command-format.c"
+cc $flags -include uapi/errno.h -o "$out/amdrdna-display-test" "$tests/amdrdna-display-test.c" "$driver/display-format.c"
 cc $flags -include uapi/errno.h -o "$out/amdrdna-psp-test" "$tests/amdrdna-psp-test.c" "$driver/bytes.c" \
 	"$driver/firmware-format.c" "$driver/psp-format.c" "$driver/thermal-format.c"
 compiler="$driver/compiler"
@@ -46,6 +47,7 @@ status=0
 "$out/amdrdna-engines-test" "$out/ids.spv" || status=1
 "$out/amdrdna-memory-test" || status=1
 "$out/amdrdna-sessions-test" || status=1
+"$out/amdrdna-display-test" || status=1
 if [ -d "$firmware" ]; then
 	"$out/amdrdna-psp-test" "$firmware" || status=1
 else

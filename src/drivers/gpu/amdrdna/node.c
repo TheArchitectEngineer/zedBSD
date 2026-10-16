@@ -164,8 +164,9 @@ amdrdna_node_register(
 
 /*
  * Stops the GPU device for the reboot or the shutdown of the machine,
- * before the stages are undone: the renderer takes no more work, no
- * address space runs anything new, and the device goes offline (opens
+ * before the stages are undone: the display's lease ends, the renderer
+ * takes no more work, no address space runs anything new, and the device
+ * goes offline (opens
  * that remain keep the core's registration, which the reset makes moot).
  */
 void
@@ -179,6 +180,9 @@ amdrdna_node_stop(
 	node = device->node;
 	if (node == NULL)
 		return;
+
+	/* The display's lease ends and nothing touches the display after. */
+	amdrdna_present_stop(node);
 
 	/* No queued frame and no address space runs anything new. */
 	amdrdna_runtime_stop(node);
@@ -356,6 +360,9 @@ node_close(
 {
 	int error;
 
+	/* The session's display lease ends, bringing the console back. */
+	amdrdna_present_session_close(private_data, session);
+
 	/* The executor session first: it gives back its memory in the address space. */
 	error = amdrdna_vk_node_close(session);
 	if (error != 0)
@@ -469,6 +476,9 @@ node_resource_destroy(
 		kern_free(resource);
 		return;
 	}
+
+	/* A blob on the screen goes off it first. */
+	amdrdna_present_resource_gone(node, resource);
 
 	/* A blob leaves its session's list. */
 	node_blob_unlisted(node, resource);

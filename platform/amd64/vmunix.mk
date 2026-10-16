@@ -232,7 +232,8 @@ AMD64_AMDRDNA_SOURCES += src/drivers/gpu/amdrdna/amdrdna.c src/drivers/gpu/amdrd
 	src/drivers/gpu/amdrdna/check-program.c src/drivers/gpu/amdrdna/cp.c src/drivers/gpu/amdrdna/sdma.c \
 	src/drivers/gpu/amdrdna/engines.c src/drivers/gpu/amdrdna/context-pool.c \
 	src/drivers/gpu/amdrdna/space.c src/drivers/gpu/amdrdna/node.c src/drivers/gpu/amdrdna/runtime.c \
-	src/drivers/gpu/amdrdna/vk-node.c src/drivers/gpu/amdrdna/sessions.c
+	src/drivers/gpu/amdrdna/vk-node.c src/drivers/gpu/amdrdna/sessions.c \
+	src/drivers/gpu/amdrdna/display-format.c src/drivers/gpu/amdrdna/display.c src/drivers/gpu/amdrdna/present.c
 endif
 # The AMD RDNA shader compiler: SPIR-V to GFX10 through the shared frontend and optimizer (ws039-p007).
 AMD64_AMDRDNA_COMPILER_SOURCES :=

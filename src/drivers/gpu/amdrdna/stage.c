@@ -32,6 +32,12 @@
  *   amdrdna.kiq=0        stage A5 runs the graphics ring by its registers,
  *                        without the scheduler's queue and the compute
  *                        queues
+ *   amdrdna.disp.own=1   stages A6 to A8 take the firmware's display over
+ *                        and register the GPU device with it (without the
+ *                        word they pass and the firmware keeps it)
+ *   amdrdna.disp.test=<n>
+ *                        stages A6 and A7 hold their test picture and
+ *                        cursor n seconds (at most 60) for an eye to check
  */
 
 #include <stdarg.h>

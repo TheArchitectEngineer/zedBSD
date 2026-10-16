@@ -144,6 +144,28 @@
 #define AMDRDNA_RING_FIELD_QUEUE_SHIFT	4U
 
 /*
+ * The interrupt client and sources of the display engine: the start of a
+ * frame's fetch of each of the six timing generators, a finished flip of
+ * each of the six planes, and the hot-plug lines, which share one source
+ * and name the line in the first data word (0 to 5 a plug or an unplug, 6
+ * to 11 a short pulse).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/soc15_ih_clientid.h (SOC15_IH_CLIENTID_DCE),
+ * drivers/gpu/drm/amd/include/ivsrcid/dcn/irqsrcs_dcn_1_0.h
+ * (DCN_1_0__SRCID__DC_D1_OTG_VSTARTUP, DCN_1_0__SRCID__HUBP0_FLIP_INTERRUPT,
+ * DCN_1_0__SRCID__DC_HPD1_INT, DCN_1_0__CTXID__DC_HPD1_INT,
+ * DCN_1_0__CTXID__DC_HPD1_RX_INT) and
+ * drivers/gpu/drm/amd/display/dc/irq/dcn20/irq_service_dcn20.c
+ * (to_dal_irq_source_dcn20: the line in the extra word).
+ */
+#define AMDRDNA_CLIENT_DISPLAY		0x04U
+#define AMDRDNA_SOURCE_FRAME_START	0x3cU
+#define AMDRDNA_SOURCE_FLIP_DONE	0x4fU
+#define AMDRDNA_SOURCE_HOTPLUG		0x09U
+#define AMDRDNA_HOTPLUG_SHORT_FIRST	6U
+
+/*
  * The IP blocks the driver knows by name.  The GPU's block table lists
  * many more; the others are counted but not kept.
  */
@@ -226,7 +248,37 @@ enum amdrdna_dcn_register {
 	AMDRDNA_DCN_SCALER_OUTPUT_START,
 	AMDRDNA_DCN_SCALER_OUTPUT_SIZE,
 	AMDRDNA_DCN_SCALER_AUTOMATIC,
+	AMDRDNA_DCN_PLANE_SPACE_SELECT,
+	AMDRDNA_DCN_PLANE_FLIP_INTERRUPT,
+	AMDRDNA_DCN_PLANE_SHOWN_LOW,
+	AMDRDNA_DCN_PLANE_SHOWN_HIGH,
+	AMDRDNA_DCN_PLANE_CURSOR_TIMING,
+	AMDRDNA_DCN_CURSOR_CONTROL,
+	AMDRDNA_DCN_CURSOR_ADDRESS_LOW,
+	AMDRDNA_DCN_CURSOR_ADDRESS_HIGH,
+	AMDRDNA_DCN_CURSOR_SIZE,
+	AMDRDNA_DCN_CURSOR_POSITION,
+	AMDRDNA_DCN_CURSOR_HOT_SPOT,
+	AMDRDNA_DCN_CURSOR_DESTINATION,
+	AMDRDNA_DCN_PIXEL_CURSOR_CONTROL,
+	AMDRDNA_DCN_PIXEL_CURSOR_SCALE,
+	AMDRDNA_DCN_TIMING_POSITION,
+	AMDRDNA_DCN_TIMING_FRAME_COUNT,
+	AMDRDNA_DCN_TIMING_SYNC_STATUS,
+	AMDRDNA_DCN_HOTPLUG_STATUS,
+	AMDRDNA_DCN_HOTPLUG_CONTROL,
 	AMDRDNA_DCN_REGISTER_COUNT
+};
+
+/*
+ * Where the hardware cursor lies against the plane it is drawn over: the
+ * position and hot-spot words the cursor takes, and whether any of its
+ * image falls inside the plane.
+ */
+struct amdrdna_cursor_place {
+	uint32_t position;
+	uint32_t hot_spot;
+	bool shown;
 };
 
 /*
@@ -1230,6 +1282,74 @@ amdrdna_dcn_index(
 	const struct amdrdna_ip *display,
 	enum amdrdna_dcn_register which,
 	unsigned instance);
+
+void
+amdrdna_cursor_locate(
+	int32_t x,
+	int32_t y,
+	uint32_t side,
+	uint32_t plane_width,
+	uint32_t plane_height,
+	struct amdrdna_cursor_place *place);
+
+uint32_t
+amdrdna_cursor_control_word(
+	uint32_t current,
+	bool shown);
+
+uint32_t
+amdrdna_cursor_size_word(
+	uint32_t side);
+
+uint32_t
+amdrdna_cursor_timing_word(void);
+
+uint32_t
+amdrdna_pixel_cursor_word(
+	uint32_t current,
+	bool shown);
+
+uint32_t
+amdrdna_frame_advance(
+	uint32_t before,
+	uint32_t after);
+
+uint32_t
+amdrdna_refresh_millihertz(
+	uint32_t frames,
+	uint64_t microseconds);
+
+uint32_t
+amdrdna_sync_status_word(
+	uint32_t current,
+	bool frame_interrupt,
+	bool acknowledge);
+
+uint32_t
+amdrdna_flip_interrupt_word(
+	uint32_t current,
+	bool enabled,
+	bool acknowledge);
+
+uint32_t
+amdrdna_hotplug_control_word(
+	uint32_t current,
+	bool enabled,
+	bool connected,
+	bool acknowledge,
+	bool acknowledge_short);
+
+bool
+amdrdna_hotplug_connected(
+	uint32_t status);
+
+uint32_t
+amdrdna_flip_control_word(
+	uint32_t current);
+
+bool
+amdrdna_flip_pending(
+	uint32_t flip_control);
 
 const char *
 amdrdna_block_name(

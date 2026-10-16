@@ -11,6 +11,10 @@ CONFIG_DRIVER_PCI_AMDRDNA := y
 CONFIG_AMDRDNA_CONTROL := y
 ZEDBSD_USER_PROGRAMS += amdrdnactl
 
+# The probes of the display the driver takes over (amdrdna.disp.own=1): claim, present (copied and shared), cursor,
+# refresh and power.
+ZEDBSD_USER_PROGRAMS += display-scanout display-control
+
 # The Navi10 firmware the security processor loads in stage A3 (/lib/firmware/amdgpu/); its license is accepted
 # first with "yes | make firmware-licenses ZEDBSD_CONFIG=plan/ws039/tests/config.mk".
 ZEDBSD_USER_PROGRAMS += amd-navi-firmware
