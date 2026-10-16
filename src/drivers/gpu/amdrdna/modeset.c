@@ -437,7 +437,6 @@ amdrdna_a12_mode(
 	good = modeset_good(&check);
 	if (!good)
 		return EIO;
-	modeset_dump(device, "same");
 
 	/* Two: another mode the monitor lists and the plan fits. */
 	other = modeset_other(device, &pipe, &firmware);
@@ -471,7 +470,7 @@ amdrdna_a12_mode(
 	    (unsigned)check.blue,
 	    error);
 
-	/* The words for a look at a failure, and the same mode's for a comparison. */
+	/* The words for a look at a failure. */
 	good = modeset_good(&check);
 	if (!good)
 		modeset_dump(device, "other");
