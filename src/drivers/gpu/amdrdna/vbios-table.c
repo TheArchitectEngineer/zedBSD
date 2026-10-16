@@ -70,7 +70,7 @@
  * The common header every table and routine starts with (its length word,
  * its format byte and its content byte), the list entries of the data
  * tables the driver reads (board power delivery 2, firmware 4, VRAM kept
- * by firmware 11, power 15), and the list entries of the command routines
+ * by firmware 11, power 15, display 27), and the list entries of the command routines
  * it names (post 0, encoder 4, pixel clock 12, pipe power 13, timing
  * enable 35, display clock 46, transmitter 76, AUX 78).  A routine's
  * attribute word follows its common header: workspace bytes in bits 7:0,
@@ -91,6 +91,7 @@
 #define DATA_FIRMWARE			4U
 #define DATA_FIRMWARE_RESERVE		11U
 #define DATA_POWER			15U
+#define DATA_DISPLAY			27U
 #define ROUTINE_ATTRIBUTE_AT		4U
 #define ROUTINE_WORK_MASK		0x00ffU
 #define ROUTINE_PARAMETER_MASK		0x7f00U
@@ -173,11 +174,89 @@ static const uint16_t command_entries[AMDRDNA_VBIOS_COMMAND_COUNT] = {
 	0x4eU
 };
 
+/*
+ * The display paths: the data list's entries of the pin table (12) and the
+ * path table (22); a path table's path count (a byte after the table's
+ * header and its device word) and paths (16 bytes each from byte 8: the
+ * connector's object, its records' offset, the encoder's object, the
+ * second encoder, the encoder's records' offset ...); a record's type and
+ * size bytes, the end type, the I2C record's identifier (type 1, byte 2)
+ * and the hot-plug record's pin (type 2, byte 2); the pin table's entries
+ * (8 bytes each after the header: the pad's output register, two shifts,
+ * the identifier).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/atomfirmware.h
+ * (struct atom_master_list_of_data_tables_v2_1: gpio_pin_lut,
+ * displayobjectinfo; struct display_object_info_table_v1_4,
+ * struct atom_display_object_path_v2, struct atom_common_record_header,
+ * enum atom_object_record_type_id: ATOM_I2C_RECORD_TYPE 1,
+ * ATOM_HPD_INT_RECORD_TYPE 2, ATOM_RECORD_END_TYPE 0xFF;
+ * struct atom_i2c_record, struct atom_hpd_int_record,
+ * struct atom_gpio_pin_assignment, struct atom_gpio_pin_lut_v2_1).
+ */
+#define DATA_PINS			12U
+#define DATA_PATHS			22U
+#define PATHS_COUNT_AT			6U
+#define PATHS_FIRST_AT			8U
+#define PATH_BYTES			16U
+#define PATH_CONNECTOR_AT		0U
+#define PATH_RECORDS_AT			2U
+#define PATH_ENCODER_AT			4U
+#define RECORD_TYPE_AT			0U
+#define RECORD_SIZE_AT			1U
+#define RECORD_VALUE_AT			2U
+#define RECORD_I2C			1U
+#define RECORD_HOTPLUG			2U
+#define RECORD_END			0xffU
+#define PIN_BYTES			8U
+#define PIN_REGISTER_AT			0U
+#define PIN_IDENTIFIER_AT		6U
+
+/*
+ * An object word: its identifier (bits 7:0), its enumeration (10:8) and
+ * its type (14:12, 2 an encoder, 3 a connector); the connector
+ * identifiers of the single- and dual-link DVI-D, HDMI type A and
+ * DisplayPort, and the encoder identifiers of the three internal
+ * transmitter pairs (A and B, C and D, E and F) and the seventh (G).
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/amd/amdgpu/ObjectID.h
+ * (OBJECT_ID_MASK, ENUM_ID_MASK, ENUM_ID_SHIFT, OBJECT_TYPE_MASK,
+ * OBJECT_TYPE_SHIFT, GRAPH_OBJECT_TYPE_ENCODER 2,
+ * GRAPH_OBJECT_TYPE_CONNECTOR 3, CONNECTOR_OBJECT_ID_SINGLE_LINK_DVI_D
+ * 0x03, CONNECTOR_OBJECT_ID_DUAL_LINK_DVI_D 0x04,
+ * CONNECTOR_OBJECT_ID_HDMI_TYPE_A 0x0C, CONNECTOR_OBJECT_ID_DISPLAYPORT
+ * 0x13, ENCODER_OBJECT_ID_INTERNAL_UNIPHY 0x1E, ..._UNIPHY1 0x20,
+ * ..._UNIPHY2 0x21, ..._UNIPHY3 0x25) and
+ * drivers/gpu/drm/amd/display/dc/link/link_factory.c
+ * (translate_encoder_to_transmitter: which transmitter each is).
+ */
+#define OBJECT_IDENTIFIER		0x00ffU
+#define OBJECT_ENUMERATION_SHIFT	8U
+#define OBJECT_ENUMERATION		0x7U
+#define OBJECT_TYPE_SHIFT		12U
+#define OBJECT_TYPE			0x7U
+#define OBJECT_ENCODER			2U
+#define OBJECT_CONNECTOR		3U
+#define CONNECTOR_DVI_SINGLE		0x03U
+#define CONNECTOR_DVI_DUAL		0x04U
+#define CONNECTOR_HDMI			0x0cU
+#define CONNECTOR_DP			0x13U
+#define ENCODER_PAIR_AB			0x1eU
+#define ENCODER_PAIR_CD			0x20U
+#define ENCODER_PAIR_EF			0x21U
+#define ENCODER_SEVENTH			0x25U
+
 static int find_table(const uint8_t *image, size_t length, uint16_t list, unsigned entry, uint16_t *offset, uint8_t *format, uint8_t *content);
+static unsigned encoder_transmitter(uint16_t object);
+static enum amdrdna_connector_kind connector_kind(uint16_t object);
+static void read_path_records(const uint8_t *image, size_t length, size_t first, size_t end, struct amdrdna_vbios_connector *connector);
+static uint32_t pin_register(const uint8_t *image, size_t length, uint16_t pins, uint8_t identifier);
 static void read_firmware(const uint8_t *image, struct amdrdna_vbios_info *info);
 static void read_reserve(const uint8_t *image, struct amdrdna_vbios_info *info);
 static void read_power(const uint8_t *image, struct amdrdna_vbios_info *info);
 static void read_commands(const uint8_t *image, size_t length, struct amdrdna_vbios_info *info);
+static void read_display(const uint8_t *image, size_t length, struct amdrdna_vbios_info *info);
 
 /*
  * Finds the video BIOS image of one PCI function in the ACPI table of images.
@@ -386,6 +465,7 @@ amdrdna_vbios_parse(
 	info->board_table = 0U;
 	info->board_format = 0U;
 	info->board_content = 0U;
+	info->boot_display_clock_10khz = 0U;
 	for (index = 0U; index < AMDRDNA_VBIOS_COMMAND_COUNT; index++) {
 		info->commands[index].offset = 0U;
 		info->commands[index].work_bytes = 0U;
@@ -432,8 +512,253 @@ amdrdna_vbios_parse(
 	/* Notes the command routines the display needs later. */
 	read_commands(image, length, info);
 
+	/* Reads the display clock the firmware boots with. */
+	read_display(image, length, info);
+
 	/* Succeeded: what the image carries is described. */
 	return 0;
+}
+
+/*
+ * Finds the display path whose encoder is a transmitter (0 for A to 6 for
+ * G): its connector, the I2C line and the pad it uses, and its hot-plug
+ * pin.
+ *
+ * Returns 0 with connector filled, ENOENT when the image has no path
+ * table or no path of that transmitter, or EINVAL for a path table that
+ * runs past the image.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/display/dc/bios/bios_parser2.c
+ * (bios_parser_get_src_obj, get_gpio_i2c_info, bios_parser_get_hpd_info:
+ * the path's records, the I2C record's identifier looked up in the pin
+ * table).
+ */
+int
+amdrdna_vbios_connector(
+	const uint8_t *image,
+	size_t length,
+	const struct amdrdna_vbios_info *info,
+	unsigned transmitter,
+	struct amdrdna_vbios_connector *connector)
+{
+	uint16_t paths;
+	uint16_t pins;
+	uint16_t table_length;
+	uint8_t format;
+	uint8_t content;
+	unsigned count;
+	unsigned index;
+	unsigned found;
+	size_t path;
+	size_t records;
+	int error;
+
+	/* Nothing found yet. */
+	connector->connector_object = 0U;
+	connector->kind = AMDRDNA_CONNECTOR_OTHER;
+	connector->encoder_object = 0U;
+	connector->transmitter = AMDRDNA_TRANSMITTER_NONE;
+	connector->ddc_identifier = 0U;
+	connector->ddc_pad_register = 0U;
+	connector->hotplug_pin = 0U;
+
+	/* The path table, and its paths inside it. */
+	error = find_table(image, length, info->data_list, DATA_PATHS, &paths, &format, &content);
+	if (error != 0)
+		return ENOENT;
+	table_length = amdrdna_le16(image, paths + COMMON_LENGTH_AT);
+	if ((size_t)paths + PATHS_FIRST_AT > length || table_length < PATHS_FIRST_AT)
+		return EINVAL;
+	count = image[paths + PATHS_COUNT_AT];
+	if ((size_t)PATHS_FIRST_AT + (size_t)count * PATH_BYTES > table_length)
+		return EINVAL;
+
+	/* The path of the transmitter. */
+	path = 0U;
+	for (index = 0U; index < count; index++) {
+		path = (size_t)paths + PATHS_FIRST_AT + (size_t)index * PATH_BYTES;
+		found = encoder_transmitter(amdrdna_le16(image, path + PATH_ENCODER_AT));
+		if (found == transmitter)
+			break;
+	}
+	if (index >= count)
+		return ENOENT;
+
+	/* Its connector and encoder. */
+	connector->connector_object = amdrdna_le16(image, path + PATH_CONNECTOR_AT);
+	connector->kind = connector_kind(connector->connector_object);
+	connector->encoder_object = amdrdna_le16(image, path + PATH_ENCODER_AT);
+	connector->transmitter = transmitter;
+
+	/* The connector's records (relative to the table), inside the table. */
+	records = (size_t)amdrdna_le16(image, path + PATH_RECORDS_AT);
+	if (records != 0U)
+		read_path_records(image, length, (size_t)paths + records, (size_t)paths + table_length, connector);
+
+	/* The I2C line's pad from the pin table. */
+	error = find_table(image, length, info->data_list, DATA_PINS, &pins, &format, &content);
+	if (error == 0 && connector->ddc_identifier != 0U)
+		connector->ddc_pad_register = pin_register(image, length, pins, connector->ddc_identifier);
+
+	/* Succeeded: the path is described. */
+	return 0;
+}
+
+/* Reports the transmitter an encoder object is (0 for A), or AMDRDNA_TRANSMITTER_NONE. */
+static unsigned
+encoder_transmitter(
+	uint16_t object)
+{
+	unsigned identifier;
+	unsigned enumeration;
+
+	/* An encoder's identifier and its first or second of the pair. */
+	if (((object >> OBJECT_TYPE_SHIFT) & OBJECT_TYPE) != OBJECT_ENCODER)
+		return AMDRDNA_TRANSMITTER_NONE;
+	identifier = object & OBJECT_IDENTIFIER;
+	enumeration = (object >> OBJECT_ENUMERATION_SHIFT) & OBJECT_ENUMERATION;
+	if (enumeration != 1U && enumeration != 2U)
+		return AMDRDNA_TRANSMITTER_NONE;
+
+	/* The pair, then the one of it. */
+	switch (identifier) {
+	case ENCODER_PAIR_AB:
+		return enumeration - 1U;
+	case ENCODER_PAIR_CD:
+		return 2U + enumeration - 1U;
+	case ENCODER_PAIR_EF:
+		return 4U + enumeration - 1U;
+	case ENCODER_SEVENTH:
+		if (enumeration == 1U)
+			return 6U;
+		break;
+	default:
+		break;
+	}
+
+	/* Succeeded: no transmitter. */
+	return AMDRDNA_TRANSMITTER_NONE;
+}
+
+/* Reports the kind of a connector object. */
+static enum amdrdna_connector_kind
+connector_kind(
+	uint16_t object)
+{
+	/* A connector's identifier. */
+	if (((object >> OBJECT_TYPE_SHIFT) & OBJECT_TYPE) != OBJECT_CONNECTOR)
+		return AMDRDNA_CONNECTOR_OTHER;
+
+	/* The kinds the driver tells apart. */
+	switch (object & OBJECT_IDENTIFIER) {
+	case CONNECTOR_DP:
+		return AMDRDNA_CONNECTOR_DP;
+	case CONNECTOR_HDMI:
+		return AMDRDNA_CONNECTOR_HDMI;
+	case CONNECTOR_DVI_SINGLE:
+	case CONNECTOR_DVI_DUAL:
+		return AMDRDNA_CONNECTOR_DVI;
+	default:
+		break;
+	}
+
+	/* Succeeded: another kind. */
+	return AMDRDNA_CONNECTOR_OTHER;
+}
+
+/* Reads a path's I2C and hot-plug records, from first to the end record or end. */
+static void
+read_path_records(
+	const uint8_t *image,
+	size_t length,
+	size_t first,
+	size_t end,
+	struct amdrdna_vbios_connector *connector)
+{
+	size_t record;
+	uint8_t type;
+	uint8_t size;
+
+	/* Each record until the end record, a record of no size, or the table's end. */
+	record = first;
+	while (record + RECORD_VALUE_AT + 1U <= end && record + RECORD_VALUE_AT + 1U <= length) {
+		type = image[record + RECORD_TYPE_AT];
+		size = image[record + RECORD_SIZE_AT];
+		if (type == RECORD_END || size == 0U)
+			return;
+
+		/* The two the driver uses. */
+		if (type == RECORD_I2C)
+			connector->ddc_identifier = image[record + RECORD_VALUE_AT];
+		else if (type == RECORD_HOTPLUG)
+			connector->hotplug_pin = image[record + RECORD_VALUE_AT];
+		record += size;
+	}
+}
+
+/* Reports the pad register of a pin identifier in the pin table, or 0. */
+static uint32_t
+pin_register(
+	const uint8_t *image,
+	size_t length,
+	uint16_t pins,
+	uint8_t identifier)
+{
+	uint16_t table_length;
+	uint32_t pad;
+	size_t entry;
+	size_t end;
+
+	/* The entries after the header, inside the table and the image. */
+	table_length = amdrdna_le16(image, pins + COMMON_LENGTH_AT);
+	end = (size_t)pins + table_length;
+	if (end > length)
+		end = length;
+
+	/* The entry of the identifier. */
+	for (entry = (size_t)pins + COMMON_BYTES; entry + PIN_BYTES <= end; entry += PIN_BYTES) {
+		if (image[entry + PIN_IDENTIFIER_AT] != identifier)
+			continue;
+		pad = amdrdna_le32(image, entry + PIN_REGISTER_AT);
+		return pad;
+	}
+
+	/* Succeeded: the table lacks it. */
+	return 0U;
+}
+
+/*
+ * Reads the display table's boot display clock (a 32-bit word in 10 kHz
+ * after the header and the capability word).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/atomfirmware.h
+ * (struct atom_display_controller_info_v4_1: bootup_dispclk_10khz at
+ * byte 8).
+ */
+static void
+read_display(
+	const uint8_t *image,
+	size_t length,
+	struct amdrdna_vbios_info *info)
+{
+	uint16_t table;
+	uint16_t table_length;
+	uint8_t format;
+	uint8_t content;
+	int error;
+
+	/* The table, long enough for the word. */
+	error = find_table(image, length, info->data_list, DATA_DISPLAY, &table, &format, &content);
+	if (error != 0)
+		return;
+	table_length = amdrdna_le16(image, table + COMMON_LENGTH_AT);
+	if (table_length < 12U)
+		return;
+
+	/* The boot display clock. */
+	info->boot_display_clock_10khz = amdrdna_le32(image, (size_t)table + 8U);
 }
 
 /* Finds one data table from the data list and checks that it lies inside the image. */

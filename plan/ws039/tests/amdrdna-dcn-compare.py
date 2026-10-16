@@ -81,6 +81,23 @@ NAMES = [
     lambda n: "OTG%d_OTG_GLOBAL_SYNC_STATUS" % n,
     lambda n: "HPD%d_DC_HPD_INT_STATUS" % n,
     lambda n: "HPD%d_DC_HPD_INT_CONTROL" % n,
+    lambda n: "DC_I2C_CONTROL",
+    lambda n: "DC_I2C_ARBITRATION",
+    lambda n: "DC_I2C_SW_STATUS",
+    lambda n: "DC_I2C_DDC%d_HW_STATUS" % (n + 1),
+    lambda n: "DC_I2C_DDC%d_SPEED" % (n + 1),
+    lambda n: "DC_I2C_DDC%d_SETUP" % (n + 1),
+    lambda n: "DC_I2C_TRANSACTION%d" % min(n, 3),
+    lambda n: "DC_I2C_DATA",
+    lambda n: "MICROSECOND_TIME_BASE_DIV",
+    lambda n: "DC_GPIO_DDC%d_MASK" % (n + 1),
+    lambda n: "DP_AUX%d_AUX_CONTROL" % n,
+    lambda n: "DP_AUX%d_AUX_SW_CONTROL" % n,
+    lambda n: "DP_AUX%d_AUX_ARB_CONTROL" % n,
+    lambda n: "DP_AUX%d_AUX_INTERRUPT_CONTROL" % n,
+    lambda n: "DP_AUX%d_AUX_SW_STATUS" % n,
+    lambda n: "DP_AUX%d_AUX_SW_DATA" % n,
+    lambda n: "DP_AUX%d_AUX_DPHY_RX_CONTROL0" % n,
 ]
 
 

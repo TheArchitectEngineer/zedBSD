@@ -79,16 +79,23 @@ main(
 	int is_display;
 	int is_screen;
 	int is_gpu;
+	int is_modes;
 
-	/* The GPU device check needs no control device. */
+	/* The GPU device check and the modes need no control device. */
 	is_gpu = 0;
-	if (argc >= 2)
+	is_modes = 0;
+	if (argc >= 2) {
 		is_gpu = strcmp(argv[1], "gpu") == 0;
-	if (is_gpu) {
+		is_modes = strcmp(argv[1], "modes") == 0;
+	}
+	if (is_gpu || is_modes) {
 		path = CONTROL_GPU_DEVICE;
 		if (argc == 3)
 			path = argv[2];
-		result = control_gpu(path);
+		if (is_modes)
+			result = control_modes(path);
+		else
+			result = control_gpu(path);
 		return result;
 	}
 
@@ -500,5 +507,5 @@ static void
 usage(void)
 {
 	/* The one usage line. */
-	fprintf(stderr, "usage: amdrdnactl [-f DEVICE] [status | advance STAGE | vbios FILE | display | screen FILE] | amdrdnactl gpu [GPU-DEVICE]\n");
+	fprintf(stderr, "usage: amdrdnactl [-f DEVICE] [status | advance STAGE | vbios FILE | display | screen FILE] | amdrdnactl gpu|modes [GPU-DEVICE]\n");
 }

@@ -23,6 +23,7 @@
 #include <kern/waitq.h>
 
 #include "drivers/gpu/amdrdna/amdrdna-hw.h"
+#include "drivers/gpu/amdrdna/amdrdna-sink.h"
 
 struct cdev;
 struct thread;
@@ -510,7 +511,7 @@ struct amdrdna_space {
  * runs may be submitted; faulted that the device failed and nothing new
  * runs.  held counts the spaces kept with their tables because their
  * work could not be confirmed stopped; runs, lost and resets count the
- * runs submitted, the spaces lost and the graphics queue's resets.
+ * runs submitted, the spaces lost and the queues' resets (graphics and compute).
  * stamped says the graphics ring's runs write the GPU's timestamp counter
  * at their start and end, for the executor's timing.
  */
@@ -527,6 +528,32 @@ struct amdrdna_spaces {
 	uint64_t runs;
 	uint64_t lost;
 	uint64_t resets;
+};
+
+/*
+ * What stage A10 read of the firmware's output's sink: whether it did,
+ * the video BIOS's path of the output and the I2C line (1 to 6), the
+ * EDID's bytes and decode, how the video BIOS's own I2C read compared
+ * (0 the same) and its instructions, a DisplayPort receiver's first
+ * capability bytes and whether they were read, the highest pixel clock
+ * the output carries now and the modes inside it, and the pad word the
+ * I2C engine keeps for its give-back.
+ */
+struct amdrdna_sink {
+	bool ready;
+	struct amdrdna_vbios_connector connector;
+	unsigned ddc_line;
+	uint8_t edid_bytes[AMDRDNA_EDID_BLOCKS * AMDRDNA_EDID_BLOCK_BYTES];
+	size_t edid_length;
+	struct amdrdna_edid edid;
+	int bios_error;
+	uint32_t bios_steps;
+	uint8_t dpcd[16];
+	bool dpcd_read;
+	int dpcd_error;
+	uint32_t limit_khz;
+	unsigned usable_modes;
+	uint32_t pad_word;
 };
 
 /*
@@ -632,6 +659,7 @@ struct amdrdna_device {
 	struct amdrdna_spaces spaces;
 	struct amdrdna_node *node;
 	struct amdrdna_display display;
+	struct amdrdna_sink sink;
 
 	struct spinlock state_lock;
 	struct wait_queue state_waitq;
@@ -1164,6 +1192,31 @@ amdrdna_a5s_sessions(
 int
 amdrdna_a9_draw(
 	struct amdrdna_device *device);
+
+/* sink.c: stage A10. */
+int
+amdrdna_a10_sink(
+	struct amdrdna_device *device);
+
+const struct amdrdna_sink *
+amdrdna_sink_ready(
+	const struct amdrdna_device *device);
+
+bool
+amdrdna_sink_mode(
+	const struct amdrdna_device *device,
+	unsigned index,
+	uint32_t *width,
+	uint32_t *height,
+	uint32_t *refresh_millihz,
+	unsigned *count);
+
+int
+amdrdna_sink_check(
+	const struct amdrdna_device *device,
+	uint32_t width,
+	uint32_t height,
+	uint32_t *refresh_millihz);
 
 /* display.c: stages A6 and A7 and the display taken over from the firmware. */
 bool

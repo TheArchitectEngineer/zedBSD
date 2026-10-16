@@ -316,6 +316,7 @@ present_query(
 	void *session,
 	struct gpu_display_info *request)
 {
+	const struct amdrdna_sink *sink;
 	struct amdrdna_node *node;
 	struct amdrdna_display *display;
 	bool connected;
@@ -371,16 +372,33 @@ present_query(
 	request->max_height = display->height;
 	request->refresh_millihz = display->refresh_millihz;
 
-	/* The physical size needs the EDID, which is not read. */
+	/* The sink's size, name and preferred mode when stage A10 read its EDID. */
 	request->physical_width_mm = 0U;
 	request->physical_height_mm = 0U;
 	kern_memcpy(request->name, "amdrdna output", sizeof("amdrdna output"));
+	sink = amdrdna_sink_ready(node->device);
+	if (sink != NULL) {
+		request->physical_width_mm = sink->edid.width_mm;
+		request->physical_height_mm = sink->edid.height_mm;
+		if (sink->edid.mode_count != 0U && sink->edid.modes[0].source == AMDRDNA_TIMING_PREFERRED) {
+			request->physical_width_mm = sink->edid.modes[0].width_mm;
+			request->physical_height_mm = sink->edid.modes[0].height_mm;
+			request->preferred_width = sink->edid.modes[0].width;
+			request->preferred_height = sink->edid.modes[0].height;
+		}
+		if (sink->edid.name[0] != '\0')
+			kern_strcpy(request->name, sink->edid.name);
+	}
 
 	/* Succeeded: the display is described. */
 	return 0;
 }
 
-/* Enumerates or checks the one mode (the display mode operation): the firmware's. */
+/*
+ * Enumerates or checks the modes (the display mode operation): the
+ * firmware's, then those the sink's EDID lists that the output carries
+ * now (stage A10).  Nothing is set.
+ */
 static int
 present_mode(
 	void *private_data,
@@ -388,13 +406,15 @@ present_mode(
 	struct gpu_display_mode *request)
 {
 	struct amdrdna_node *node;
-	struct amdrdna_display *display;
+	uint32_t refresh;
+	unsigned count;
+	bool found;
+	int error;
 
 	UNUSED_PARAMETER(session);
 
 	/* The node and what the core passed in. */
 	node = private_data;
-	display = &node->device->display;
 
 	/* Only the one display of this generation exists. */
 	if (request->display_id != PRESENT_DISPLAY_ID)
@@ -402,29 +422,26 @@ present_mode(
 	if (request->generation != PRESENT_GENERATION)
 		return ESTALE;
 
-	/* Enumeration: the one mode. */
+	/* Enumeration: the index-th mode, or the count. */
 	if (request->operation == GPU_DISPLAY_MODE_ENUMERATE) {
-		request->count = 1U;
+		found = amdrdna_sink_mode(node->device, request->index, &request->width, &request->height, &request->refresh_millihz,
+		    &count);
+		request->count = count;
 		if (request->index == GPU_DISPLAY_COUNT_ONLY)
 			return 0;
-		if (request->index != 0U)
+		if (!found)
 			return EINVAL;
-
-		/* The firmware's mode at its refresh. */
-		request->width = display->width;
-		request->height = display->height;
-		request->refresh_millihz = display->refresh_millihz;
 		return 0;
 	}
 
-	/* Validation: only the firmware's mode, at its refresh (0 asks for it). */
-	if (request->width != display->width || request->height != display->height)
-		return EINVAL;
-	if (request->refresh_millihz != 0U && request->refresh_millihz != display->refresh_millihz)
-		return EINVAL;
+	/* Validation: a mode offered (0 asks for its preferred refresh); one past the output's limit is ERANGE. */
+	refresh = request->refresh_millihz;
+	error = amdrdna_sink_check(node->device, request->width, request->height, &refresh);
+	if (error != 0)
+		return error;
 
-	/* Succeeded: the mode is the display's, at its refresh. */
-	request->refresh_millihz = display->refresh_millihz;
+	/* Succeeded: the mode can be lit, at the refresh given back. */
+	request->refresh_millihz = refresh;
 	return 0;
 }
 

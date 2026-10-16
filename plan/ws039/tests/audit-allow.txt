@@ -3,6 +3,7 @@
 # here; a name made of a source's own terms (a register, field, packet or function name) never does.
 # One word per line; reviewed by hand when a word is added.
 EINVAL
+above
 access
 action
 active
@@ -21,6 +22,7 @@ base
 before
 begin
 below
+bios
 bits
 block
 blocks
@@ -31,11 +33,13 @@ bottom
 break
 broken
 buffer
+byte
 bytes
 capabilities
 capability
 case
 changed
+channel
 channels
 char
 checked
@@ -50,6 +54,7 @@ commands
 compressed
 compute
 connected
+connector
 const
 contents
 context
@@ -60,20 +65,24 @@ copies
 copy
 count
 counter
+crystal
 current
 data
 database
 default
 define
+depth
 description
 descriptor
 device
 difference
+digital
 direct
 disabled
 display
 done
 doorbell
+dpcd
 driver
 drivers
 duty
@@ -89,13 +98,17 @@ engines
 entries
 entry
 enum
+equal
 error
 execute
 expected
+extension
+failure
 false
 fault
 faults
 fence
+field
 fields
 file
 files
@@ -115,6 +128,7 @@ fused
 generation
 generic
 global
+going
 graphics
 group
 hardware
@@ -138,6 +152,7 @@ int32_t
 interrupt
 invalidate
 known
+lanes
 last
 layout
 left
@@ -163,7 +178,9 @@ memory
 message
 middle
 minor
+missing
 mode
+modes
 moved
 mutex
 mutex_lock
@@ -176,6 +193,7 @@ number
 object
 offset
 opcode
+opcodes
 open
 opened
 operation
@@ -186,12 +204,15 @@ outside
 packets
 page
 parameter
+parameters
 part
 pass
 path
+paths
 pending
 persistent
 physical
+pins
 pixel
 pixels
 place
@@ -200,6 +221,7 @@ places
 platform
 pointer
 poll
+port
 position
 posted
 power
@@ -212,10 +234,14 @@ program
 programs
 range
 ratio
+read
 reading
 reads
 ready
 record
+records
+reference
+refresh
 refs
 registers
 registration
@@ -281,6 +307,7 @@ topology
 total
 training
 translation
+transmitter
 true
 type
 typedef
@@ -313,5 +340,7 @@ whole
 width
 window
 word
+work
+write
 writing
 written

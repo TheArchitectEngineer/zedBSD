@@ -142,7 +142,19 @@
 | `drivers/gpu/drm/amd/amdgpu/amdgpu_ih.h` | `61050183c8bed06be760d44200fc4f8b4bead290ccea239725ebf1cbfa10d9e2` | MIT | 値（IH の ring の大きさ） |
 | `drivers/gpu/drm/amd/amdgpu/amdgpu_ttm.c` | `083cf56ece9db47310dbc0e21b93e617bca13529b1beeb5fa96ef7b73942d461` | MIT | 読むだけ（VRAM の予約、BAR0 と VRAM の offset、GART の bind） |
 | `drivers/gpu/drm/amd/amdgpu/amdgpu.h` | `dbb825405ee17feab730401ad218dbf1a06f28aa88436aee8e8293766b32d6d1` | MIT | 値（timeout、予約の大きさ） |
-| `drivers/gpu/drm/amd/amdgpu/atom.c` | `56939066ae683215b79d2bf510194d72361ce530720a9ed0722be0d1db7418a9` | MIT | 読むだけ（AtomBIOS の interpreter、使わない） |
+| `drivers/gpu/drm/amd/amdgpu/atom.c` | `56939066ae683215b79d2bf510194d72361ce530720a9ed0722be0d1db7418a9` | MIT | 手順・値（p014 の `bytecode.c`: operand の空間と幅、各命令の動き、register の小さな program、opcode の表。名前・構造は写さない）。host 試験の oracle として `build/tmp` に写して build（tree に入れない） |
+| `drivers/gpu/drm/amd/amdgpu/atom.h` | `6157ba431d5fd2ce19fa40508becd293665ad4ada529b3f76179d509c2b9e3e6` | MIT | 値（image の印・header の位置・routine の header・operand の番号・state の dword・register の program の命令）、oracle の build |
+| `drivers/gpu/drm/amd/include/atom-bits.h` | `d885526a0ebf5f47c4a0daadf3a0c9c6f3281b46d88cc857a98c01e893df6301` | MIT | oracle の build だけ |
+| `drivers/gpu/drm/amd/amdgpu/atombios_i2c.c` | `5927a85cb1c9ef7235de74af1266c2c75e5c14a4e007aa31a294acad5bb63029` | MIT | 値・手順（VBIOS の I2C routine の速さ・上限・scratch の先頭の読み、p014） |
+| `drivers/gpu/drm/amd/amdgpu/ObjectID.h` | `8f5a5dc001686ddae347332547f8767b83f33981a953877b95fabd8ca1313d4a` | MIT | 値（object の語の欄、connector・encoder の id、p014） |
+| `drivers/gpu/drm/amd/amdgpu/amdgpu_amdkfd_gfx_v10.c` | `97722a4d5ed4faab2651e97bd30b4a5d025a33c0bb7d40c533855048191ee85b` | MIT | 手順（SQ_CMD の書き方、p013 の compute の reset の wave の kill） |
+| `drivers/gpu/drm/amd/display/dc/dce/dce_i2c_hw.c` | `5e733d7ea46ad8798f729dbb3c067165f46d97a7497336e5e84126c9adf46fc1` | MIT | 手順（I2C engine の取得・設定・transaction・返却、p014） |
+| `drivers/gpu/drm/amd/display/dc/dce/dce_i2c_hw.h` | `564cce137d26fa975dd83674984d9f8c10cf24d7431e081750cf1cd5561f5c5b` | MIT | 値（status の enum、time limit・reset 長・buffer） |
+| `drivers/gpu/drm/amd/display/dc/dce/dce_aux.c` | `00f35c65631a0aefb4568c8294109bb0b7dde9c7e008cf22bb53e7fd0e26cf5d` | MIT | 手順（AUX の取得・request・reply、p014。実機は DP の sink が無く未確認） |
+| `drivers/gpu/drm/amd/display/dc/gpio/hw_ddc.c` | `7c3416a412f4c006e876ebd3eb44a2fba01dcae975bbff799cf60bbe2c30f50e` | MIT | 手順（DDC の pad の I2C mode） |
+| `drivers/gpu/drm/amd/display/dc/gpio/hw_gpio.c` | `47d230c8f6f46ec81a6815940b0365d02ccb626d4f0592896a6c3d6d2f404632` | MIT | 手順（pad の hardware mode、close の戻し） |
+| `drivers/gpu/drm/amd/display/dc/bios/bios_parser2.c` | `28f672ed46b28bcabb2c268b6c47843e46dc63a7450c82fabf5c3f36f8728638` | MIT | 手順（path の record、I2C の id と pin の表、dce_info の crystal） |
+| `drivers/gpu/drm/amd/display/dc/link/link_factory.c` | `55a597f1ccc70dd172b5d99f7bee0c2cebb9dbec1afed3da3373ebacff153dba` | MIT | 値（encoder の object と transmitter の対応） |
 | `drivers/gpu/drm/amd/amdgpu/amdgpu_bios.c` | `163546c7f5a664c5e181d28127591559dcdf90dcd8ea3998056e61c8b8b5bf3e` | MIT | 読むだけ（VBIOS の取得、使わない） |
 | `drivers/gpu/drm/amd/amdgpu/amdgpu_object.c` | `47dd9a3bee09d5d876ced5cd2b7076b1fc422ee45baf1bc7b5a91cb6a4724024` | MIT | 読むだけ（BO の GPU address） |
 | `drivers/gpu/drm/amd/amdgpu/amdgpu_ids.h` | `72d2f2e9d5ca1a5ca6a28890d33eefb2a003025e58572e46eec48b63547f764b` | MIT | 値（VMID の数） |
@@ -162,6 +174,17 @@
 | `drivers/gpu/drm/amd/pm/swsmu/inc/smu_v11_0_pptable.h` | `2a2975d08ce2b4f9b8867d77b32e3b3930e975929d7a7ede8f46c84a24da5fea` | MIT | 値（powerplay の表の header の欄。p002 で追加） |
 
 取得範囲に無く note が名前だけ挙げた file（読んでいない、値を取らない）: `amdgpu/amdgpu_dpm.c`、`include/amd_asic_type.h`、`include/uapi/linux/kfd_ioctl.h`、`amdgpu/{cik,si,vi}.c`。
+
+### 公開の規格（p014、値）
+
+| 文書 | 取るデータ |
+| --- | --- |
+| VESA E-EDID Release A, Revision 2 | EDID の base block の layout、detailed timing・display descriptor・standard・established の timing |
+| VESA DMT Version 1.0 Revision 13 | established・standard の timing の total と pixel clock |
+| VESA E-DDC 1.2 | EDID の I2C の address |
+| VESA DisplayPort 1.4 | AUX の command・16 byte、DPCD の 00000h〜00002h、8b/10b と link rate の単位 |
+| CTA-861-G | extension の tag と detailed timing の offset |
+| DVI 1.0、HDMI 1.4b | 165 MHz・340 MHz の上限 |
 
 ### host の表（値: device id・revision）
 
