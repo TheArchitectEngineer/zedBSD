@@ -22,6 +22,7 @@
 | U14 | RDNA 機（RX 5600 XT、10.0.10.3） | P3 が知らせる BUG-331 の試験の kernel（X: console の map を UC、Y: WC） | App Home の開閉を 10 回ほどと app の開閉 | 固まらない、mouse が止まらない（BUG-331 の切り分け。P3 が自動で回すので任意） |
 | U15 | RDNA 機（RX 5600 XT、10.0.10.3） | P3 の p015 の kernel（agent/p3-ws039 の 7fac15fed 以降） | zedBSD を起動し、`amdrdnactl advance A11` | 約 0.3 秒暗くなった後、同じ画面がそのまま戻る（画面の点け直しの目視。OTG の CRC は計算されていない見込みで証拠にならない、frame counter と underflow は ok） |
 | U16 | RDNA 機（RX 5600 XT、10.0.10.3） | P3 の p015 の kernel（agent/p3-ws039 の 471f1e395 以降） | zedBSD を起動し、`amdrdnactl advance A12` | 画面が 1280x720 に変わって約 3 秒映り、1920x1080 に戻って同じ画面が映る（mode の切り替えの目視） |
+| U17 | RDNA 機（RX 5600 XT、10.0.10.3） | P3 の p015 の kernel（agent/p3-ws039 の bf4fb396f 以降） | desktop が出ている時に monitor の cable を抜いて数秒後に挿す | 挿した後に画面が戻る（本物の HPD。amdrdnactl hotplug off/on の模擬は ok 済み） |
 
 ## 日程
 
