@@ -28,6 +28,11 @@
 | `src/amd/registers/gfx10.json` | MIT（Mesa の既定） | `f3435695c47c3c3b1d8329a96b098452d5909944ca2c99995520c22614617d48` | V: RSRC1/2・SPI_PS_INPUT_ENA・SPI_VS_OUT_CONFIG・SPI_SHADER_POS_FORMAT・COL_FORMAT・PS_IN_CONTROL・PS_INPUT_CNTL・PA_CL_VS_OUT_CNTL の欄、FLOAT_MODE・SPI_SHADER_FORMAT・SPI_SHADER_EX_FORMAT の enum | `gfx10-compile.c`・`gfx10-program.c` |
 | `src/amd/registers/gfx10-rsrc.json` | MIT（Mesa の既定） | `ab6deb6cea2daf6ef546b8ae5eff105d5939c9d8cd76a710f9f8064e6a2cf820` | V: export 先、GFX10_FORMAT、SQ_BUF_RSRC_WORD1/3、OOB_SELECT | `gfx10-isa.h`・`gfx10-program.[ch]` |
 | `src/amd/registers/gfx9.json` | MIT（Mesa の既定） | `081fbfd1251fb5c6f4b7b6a218ba217e21346e824a04ec8146ab0d1d389ddb06` | V: DST_SEL の enum（SQ_SEL_XYZW01、GFX10 の記述子も同じ値） | `gfx10-program.c` |
+| `src/amd/compiler/aco_insert_waitcnt.cpp` | MIT（SPDX） | `5171bd9899f00a6fc3e8f811dd36f9fc211296a4fc197b59c2f0c78f4766a749` | P: 順に終わる event（vector memory・shared）と順の無い event（scalar load）、counter の数の待ち（`update_counters`・`target_info`）。2026-10-16 追加 | `gfx10-wait.c` |
+| `src/amd/vulkan/radv_cmd_buffer.c` | MIT（SPDX） | `3ecb5f4b2e3d151316450b835ac64dd700b91edb97ac95bc9c06c08f1654179e` | V: point sprite の attribute（PT_SPRITE_TEX、OFFSET 0x20、`radv_emit_ps_inputs`）。2026-10-16 追加 | `gfx10-program.c` |
+| `src/amd/vulkan/radv_queue.c` | MIT（SPDX） | `7b29329a5bd3ef645cb3f3c544fd037d356cd526fa9f287e25f59e1075316f8c` | V: preamble の SPI_INTERP_CONTROL_0（flat・sprite の S・T・0・1）。2026-10-16 追加 | `gfx10-program.c` |
+
+（host 試験の道具 `plan/ws039/tests/gfx10-texture.c` は gfx10-rsrc.json・gfx9.json（SQ_TEX_DEPTH_COMPARE・SQ_TEX_XY_FILTER）の値を引用。試験の道具で driver の code ではない。）
 
 ## 確かめ（2026-10-15、P5）
 
@@ -36,3 +41,8 @@
 - 識別子: compiler の code（comment と文字列を除く）の識別子と、上の 21 file の識別子・json の名前の交差は一般語（`address`・`count`・`offset`・`stage` など）だけ。`has_bias`・`linear_vgpr`・`vertex_inputs`・`storage_count`・`read_count`/`write_count`・`is_signed` は改名した。
 - 構造: ACO は SSA の C++ の多段の compiler、zedBSD は scalar IR から直に命令の列を作り、待ちと hazard を 1 本の straight line の pass で入れる。pass の分け方・関数の切り方・comment の文は ACO と別。
 - 人の review（design 13.3 の 3）は p010 で。
+
+## 確かめ（2026-10-16、P5、q1214）
+
+- `plan/ws039/tests/audit-symbols.sh`（Mesa 25.0.7 の tree を `plan/ws039/temp/mesa` に置いて）: PASS（amdrdna の 24 file、8461 の引用元の識別子、許した一般語 69）。block の直前の「referenced」の検査も同じ script で PASS。
+- 段 D・TEXTURE・入力の追加で新しく引用したのは上の 3 行（aco_insert_waitcnt.cpp・radv_cmd_buffer.c・radv_queue.c）。aco_validate.cpp の行は 2026-10-15 からある。
