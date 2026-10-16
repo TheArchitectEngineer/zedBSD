@@ -48,4 +48,15 @@ design は「DP を先に、DVI は範囲の外」。p014 の A10 で分かっ�
 - 証拠: `build/tmp/p15-a11-r1`〜`r3`（dmesg.txt・advance.txt・after.txt、worktree の中）。
 - host: build warning 0、`plan/ws039/tests/amdrdna-host-test.sh` PASS（command 5、DCN compare 516 register、audit）。
 - 未実施: monitor が信号を取り戻した画面の目視（CRC は OTG の出力の値で monitor 側ではない。ユーザーの試験の一覧に載せる）。HDMI の connector（board の HDMI に繋いだ時）。
+- design.md の A11 の行（「自前の手順で OTG・OPP・MPC・DPP・HUBP・DIG を組み直す」）より狭い: 今の A11 は link（DIG の stream と PHY）だけを落として戻す。
+  OTG の timing・pipe の組み立ては A12 で自前に書き、A12 の「戻し」（GOP の mode へ自前の組み立てで戻す）が design の A11 の残りを満たす形にする。
+
+### A12 の調べ（2026-10-16 22:39〜23:15）
+
+- VBIOS の SetPixelClock（routine 0x0c、v1.7）を host の runner で dry run（scratchpad の調べの道具、tree に入れない）: PLL0 を指すと UNIPHY0 の macro の register（0x5df1〜0x5e12）を書いて lock を待つ。
+- GOP の状態（Debian、amdgpu は boot で vcn の early_init に失敗して device に付かない＝GOP の状態のまま）を hw-dump.py で読んだ（1524 個の DCN の register、読むだけ、`build/tmp/p15-gop/regs.txt`）:
+  - `OTG0_PHYPLL_PIXEL_RATE_CNTL=4`: GOP の pixel clock は出力の PHY 自身の PLL（PHY E の PLL、ATOM_COMBOPHY_PLL4）。A12 の SetPixelClock は PLL E を使う（Linux は空きの最初の PLL を選ぶが、GOP に合わせる）。
+  - GOP の DLG の値は DML の式と合わない（`REF_FREQ_TO_PIX_FREQ`・`REFCYC_PER_HTOTAL`・`REFCYC_H_BLANK_END` が別々の refclk を示し、`DLG_V_BLANK_END=19` は OTG の vblank_end 41 と違う）。GOP の値は「この値でも underflow しない」実例にとどまり、式の照合の基準には使えない。
+- 事故（22:53〜23:05）: Debian で amdgpu を一時の firmware path で modprobe し直したら navi10 の firmware が無く（sos・smc が -2）modprobe が止まり、amdgpu が uncorrectable・`ACK should not assert` を出し続けた。reboot で戻らず、ユーザーが電源を入れ直した（23:05 に Debian、dmesg の該当の行 0）。**以後 Debian で amdgpu の load・rmmod・modprobe はしない（Q1 2026-10-16）。** Debian の永続の設定は変えていない。
+- A12 の値の照合（Q1 了解 2026-10-16）: Linux の DML（`display_mode_vba_20v2.c`・`display_rq_dlg_calc_20v2.c`、Navi10 は DML_PROJECT_NAVI10v2）を host で走らせる oracle（atom.c と同じ形、tree に入れず temp の Linux から build、shim は `plan/ws039/tests/`）を作り、amdrdna の固定小数の計算（単一 pipe・linear ARGB8888・scaling 無し・ODM 無し）を複数の mode で照合する。最後は実機の underflow 0。design.md 15 節 #8（DML の oracle は使わない）の変更になるので design に記録する。
 
