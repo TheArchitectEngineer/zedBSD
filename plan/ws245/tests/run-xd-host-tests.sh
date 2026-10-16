@@ -48,7 +48,11 @@
 #   host-xd-tc-test        the Type-C PHYs and PLLs: the Dekel windows, bank index and lock, another route, the PHY
 #                          microcontroller's health, the lanes' DisplayPort mode, the swing tables and words with the load
 #                          generators, the soft reset; the PLL words (the 5330's TC PLL 2, every rate and reference, HDMI)
-#                          and link clocks, the enable and the read of a TC PLL
+#                          and link clocks, the enable and the read of a TC PLL; Tiger Lake's TC cold well; a port's
+#                          live state, FIA, lanes and pin; the connect and disconnect of the FIA flow (Tiger Lake) and
+#                          of the TCSS flow (display 13)
+#   host-xd-cover-test     every platform row: found by its PCI id, the links (eDP, HDMI, the first Type-C connector)
+#                          planned with PLL words that give them, a CD clock step, the firmware's output classified
 # The check against the Linux tree itself is plan/ws245/tests/check-xd-regs-linux.sh (needs the unpacked tree).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -e
@@ -59,7 +63,7 @@ OUT=${1:-build/ws245-host}
 mkdir -p "$OUT"
 I915_HOST_EXTRA_PRODUCTION="src/drivers/gpu/i915/perf.c src/drivers/gpu/i915/mmio-record.c ${I915_HOST_EXTRA_PRODUCTION:-}"
 failed=0
-for test in host-xd-regs-test host-xd-io-test host-xd-platform-test host-xd-vbt-test host-xd-survey-test host-xd-aux-test host-xd-gmbus-test host-xd-panel-test host-xd-power-test host-xd-dmc-test host-xd-clock-test host-xd-dpll-test host-xd-ddi-test host-xd-dp-test host-xd-pipe-test host-xd-dbuf-test host-xd-core-test host-xd-takeover-test host-xd-screen-test host-xd-tc-test; do
+for test in host-xd-regs-test host-xd-io-test host-xd-platform-test host-xd-vbt-test host-xd-survey-test host-xd-aux-test host-xd-gmbus-test host-xd-panel-test host-xd-power-test host-xd-dmc-test host-xd-clock-test host-xd-dpll-test host-xd-ddi-test host-xd-dp-test host-xd-pipe-test host-xd-dbuf-test host-xd-core-test host-xd-takeover-test host-xd-screen-test host-xd-tc-test host-xd-cover-test; do
 	test -f "$T/$test.c" || continue
 	i915_display_host_build "$OUT/$test" "$T/$test.c" "$T/xd-fake-regs.c" plan/ws084/tests/native-decide-stubs.c
 	if ! "$OUT/$test"; then
@@ -75,6 +79,12 @@ for source in src/drivers/gpu/i915/display/xd-*.c; do
 		failed=1
 	fi
 done
+# The steps of the xd code read the fields of a platform's description, never its kind or whether it was verified on
+# a machine: neither is compared anywhere in the xd files.
+if grep -nE '(->|\.)kind (==|!=) I915_XD_KIND_|(->|\.)verified\b' src/drivers/gpu/i915/display/xd-*.c; then
+	echo "run-xd-host-tests: an xd file branches on the platform's kind or on verified" >&2
+	failed=1
+fi
 if [ "$failed" -ne 0 ]; then
 	echo "run-xd-host-tests: FAILED" >&2
 	exit 1

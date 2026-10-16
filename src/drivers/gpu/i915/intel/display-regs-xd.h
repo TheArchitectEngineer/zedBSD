@@ -1119,6 +1119,26 @@
 #define I915_XD_DFLEXDPMLE1_LANES(idx)		(0xfU << ((idx) * 4U))
 
 /*
+ * The lanes the sink of a Type-C port assigned to DisplayPort (in
+ * DFLEXDPSP, a nibble at the port's byte), and the main link lanes the
+ * display uses (in DFLEXDPMLE1, the port's nibble): lane 0, lanes 1..0,
+ * lane 3, lanes 3..2, lanes 3..0.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (DP_LANE_ASSIGNMENT_SHIFT, DP_LANE_ASSIGNMENT_MASK), and
+ * drivers/gpu/drm/i915/display/intel_mg_phy_regs.h
+ * (DFLEXDPMLE1_DPMLETC_ML0, DFLEXDPMLE1_DPMLETC_ML1_0,
+ * DFLEXDPMLE1_DPMLETC_ML3, DFLEXDPMLE1_DPMLETC_ML3_2,
+ * DFLEXDPMLE1_DPMLETC_ML3_0).
+ */
+#define I915_XD_DFLEXDPSP_LANES(idx)		(0xfU << ((idx) * 8U))
+#define I915_XD_DFLEXDPMLE1_ML0			0x1U
+#define I915_XD_DFLEXDPMLE1_ML1_0		0x3U
+#define I915_XD_DFLEXDPMLE1_ML3			0x8U
+#define I915_XD_DFLEXDPMLE1_ML3_2		0xcU
+#define I915_XD_DFLEXDPMLE1_ML3_0		0xfU
+
+/*
  * The Type-C subsystem status of display 13: the pin assignment, the
  * PHY ready and the two live states.
  *

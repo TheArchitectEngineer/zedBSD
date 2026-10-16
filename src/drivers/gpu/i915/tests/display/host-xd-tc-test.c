@@ -15,7 +15,10 @@
  * the transmit words of Alder Lake-P and Tiger Lake, with the load
  * generators; the soft reset; the PLL words of the 5330's USB-C link (TC
  * PLL 2 at 1.62 GHz on 38.4 MHz), of other rates, references and HDMI
- * clocks, and the link clocks they give; the enable and read of a TC PLL.
+ * clocks, and the link clocks they give; the enable and read of a TC PLL;
+ * Tiger Lake's TC cold well; the live state, FIA, lanes and pin
+ * assignment of a port; the connect and disconnect of the FIA flow
+ * (Tiger Lake) and of the TCSS flow (display 13).
  */
 
 #include "host-test.h"
@@ -24,8 +27,10 @@
 #include "../../display/xd-clock.h"
 #include "../../display/xd-io.h"
 #include "../../display/xd-platform.h"
+#include "../../display/xd-power.h"
 #include "../../display/xd-tc.h"
 #include "../../intel/display-regs-xd.h"
+#include "../../intel/display-regs-xd-south.h"
 
 #include <uapi/errno.h>
 #include <stddef.h>
@@ -37,6 +42,11 @@
 #define I915_XD_TC_TEST_ADLP_REVID	0x0cU
 #define I915_XD_TC_TEST_TGL		0x9a49U
 #define I915_XD_TC_TEST_TGL_REVID	0x01U
+#define I915_XD_TC_TEST_RKL		0x4c8aU
+#define I915_XD_TC_TEST_RKL_REVID	0x00U
+
+/* How many calls of the owner's wells the record keeps. */
+#define I915_XD_TC_TEST_CALLS		16U
 
 /* The windows of the six ports, their PHY's register space, and the 5330's USB-C port (TC2, 1 from 0). */
 #define I915_XD_TC_TEST_WINDOWS		0x168000U
@@ -67,6 +77,25 @@ static struct {
 	unsigned routed;
 } i915_xd_tc_test_model;
 
+/*
+ * The owner's wells as a connection used them: each get (1) and put (-1)
+ * with its set, the sets still held, and a set the owner refuses.
+ */
+static struct {
+	int op[I915_XD_TC_TEST_CALLS];
+	uint64_t functions[I915_XD_TC_TEST_CALLS];
+	unsigned count;
+	int held;
+	uint64_t refuse;
+} i915_xd_tc_test_power;
+
+/* The firmware's TC cold requests: how many, the last one's data, and whether a block fails. */
+static struct {
+	unsigned requests;
+	uint32_t last;
+	int fail;
+} i915_xd_tc_test_firmware;
+
 /* The window and the Dekel PHY windows the checks share. */
 static struct i915_xd_io i915_xd_tc_test_io;
 static struct i915_xd_dkl i915_xd_tc_test_dkl;
@@ -88,6 +117,15 @@ static void i915_xd_tc_test_soft_reset(void);
 static void i915_xd_tc_test_pll_words(void);
 static void i915_xd_tc_test_pll_enable(void);
 static void i915_xd_tc_test_pll_read(void);
+static int i915_xd_tc_test_power_get(void *context, uint64_t functions);
+static void i915_xd_tc_test_power_put(void *context, uint64_t functions);
+static void i915_xd_tc_test_power_reset(struct i915_xd_tc_power *power);
+static int i915_xd_tc_test_power_at(unsigned place, int op, uint64_t functions);
+static void i915_xd_tc_test_mailbox(uint32_t offset, uint32_t value, void *context);
+static void i915_xd_tc_test_tccold(void);
+static void i915_xd_tc_test_helpers(void);
+static void i915_xd_tc_test_fia_flow(void);
+static void i915_xd_tc_test_tcss_flow(void);
 
 /*
  * Runs every check of the xd Type-C PHYs and PLLs and reports.
@@ -106,6 +144,10 @@ main(void)
 	i915_xd_tc_test_pll_words();
 	i915_xd_tc_test_pll_enable();
 	i915_xd_tc_test_pll_read();
+	i915_xd_tc_test_tccold();
+	i915_xd_tc_test_helpers();
+	i915_xd_tc_test_fia_flow();
+	i915_xd_tc_test_tcss_flow();
 
 	/* Reports the result. */
 	failures = i915_host_report("host_xd_tc_test");
@@ -256,8 +298,10 @@ i915_xd_tc_test_route_read(
 {
 	(void)context;
 
-	/* Succeeded: counted and read. */
+	/* Counts the access. */
 	i915_xd_tc_test_model.routed++;
+
+	/* Succeeded: the PHY's word. */
 	return *i915_xd_tc_test_phy(tc, phy_offset);
 }
 
@@ -699,4 +743,369 @@ i915_xd_tc_test_pll_read(void)
 	i915_xd_fake_set(0x46040U, 0x0U);
 	enabled = drv_i915_xd_tc_pll_read(&i915_xd_tc_test_io, &i915_xd_tc_test_dkl, pll, I915_XD_DPLL_AFC_NONE, &words);
 	i915_host_check(enabled == 0, "pll read: TC PLL 2 with its enable clear reads as off");
+}
+
+/* Records a get of the owner's wells; refuses the set it was told to. */
+static int
+i915_xd_tc_test_power_get(
+	void *context,
+	uint64_t functions)
+{
+	(void)context;
+
+	/* A refused set. */
+	if (functions == i915_xd_tc_test_power.refuse)
+		return EIO;
+
+	/* Records the get. */
+	if (i915_xd_tc_test_power.count < I915_XD_TC_TEST_CALLS) {
+		i915_xd_tc_test_power.op[i915_xd_tc_test_power.count] = 1;
+		i915_xd_tc_test_power.functions[i915_xd_tc_test_power.count] = functions;
+		i915_xd_tc_test_power.count++;
+	}
+	i915_xd_tc_test_power.held++;
+
+	/* Succeeded: the wells are up. */
+	return 0;
+}
+
+/* Records a put of the owner's wells. */
+static void
+i915_xd_tc_test_power_put(
+	void *context,
+	uint64_t functions)
+{
+	(void)context;
+
+	/* Recorded. */
+	if (i915_xd_tc_test_power.count < I915_XD_TC_TEST_CALLS) {
+		i915_xd_tc_test_power.op[i915_xd_tc_test_power.count] = -1;
+		i915_xd_tc_test_power.functions[i915_xd_tc_test_power.count] = functions;
+		i915_xd_tc_test_power.count++;
+	}
+	i915_xd_tc_test_power.held--;
+}
+
+/* Starts a fresh record of the owner's wells and fills the hooks that reach it. */
+static void
+i915_xd_tc_test_power_reset(
+	struct i915_xd_tc_power *power)
+{
+	/* A fresh record. */
+	memset(&i915_xd_tc_test_power, 0, sizeof(i915_xd_tc_test_power));
+	power->get = i915_xd_tc_test_power_get;
+	power->put = i915_xd_tc_test_power_put;
+	power->context = NULL;
+}
+
+/* Tells whether the owner's wells saw a get or put (op 1 or -1) of a set at a place. */
+static int
+i915_xd_tc_test_power_at(
+	unsigned place,
+	int op,
+	uint64_t functions)
+{
+	/* Past the record. */
+	if (place >= i915_xd_tc_test_power.count)
+		return 0;
+	if (i915_xd_tc_test_power.op[place] != op)
+		return 0;
+	if (i915_xd_tc_test_power.functions[place] != functions)
+		return 0;
+
+	/* Succeeded: seen. */
+	return 1;
+}
+
+/*
+ * Answers a TC cold request of the mailbox: the busy bit and the command
+ * go; a block answers with the exit failed bit while the test says so.
+ */
+static void
+i915_xd_tc_test_mailbox(
+	uint32_t offset,
+	uint32_t value,
+	void *context)
+{
+	uint32_t data;
+
+	(void)offset;
+	(void)context;
+
+	/* Only a command. */
+	if ((value & I915_XD_GTDRIVER_MAILBOX_BUSY) == 0U)
+		return;
+
+	/* Notes the request and answers it. */
+	data = i915_xd_fake_get(I915_XD_GTDRIVER_DATA0);
+	i915_xd_tc_test_firmware.requests++;
+	i915_xd_tc_test_firmware.last = data;
+	if ((value & 0xffU) == I915_XD_MAILBOX_TCCOLD && data == I915_XD_MAILBOX_TCCOLD_BLOCK && i915_xd_tc_test_firmware.fail)
+		i915_xd_fake_set(I915_XD_GTDRIVER_DATA0, I915_XD_MAILBOX_TCCOLD_EXIT_FAILED);
+	i915_xd_fake_set(I915_XD_GTDRIVER_MAILBOX, 0U);
+}
+
+/*
+ * Tiger Lake's TC cold well: a block and an unblock through the mailbox;
+ * a block whose exit keeps failing is tried three times and noted.
+ */
+static void
+i915_xd_tc_test_tccold(void)
+{
+	const struct i915_xd_platform *platform;
+	struct i915_xd_well_report report;
+	int well;
+	int error;
+
+	/* Tiger Lake's well, with a firmware that agrees. */
+	platform = i915_xd_tc_test_setup(I915_XD_TC_TEST_TGL, I915_XD_TC_TEST_TGL_REVID);
+	memset(&i915_xd_tc_test_firmware, 0, sizeof(i915_xd_tc_test_firmware));
+	i915_xd_fake_rule_call(I915_XD_GTDRIVER_MAILBOX, i915_xd_tc_test_mailbox, NULL);
+	well = drv_i915_xd_power_find(platform, I915_XD_WELL_CONTROL_MAILBOX, 0U);
+	i915_host_check(well >= 0, "tc cold: Tiger Lake has its TC cold well");
+	error = drv_i915_xd_power_well_enable(&i915_xd_tc_test_io, platform, (unsigned)well, NULL, &report);
+	i915_host_check(error == 0 && report.state_late == 0 && i915_xd_tc_test_firmware.requests == 1U &&
+		i915_xd_tc_test_firmware.last == I915_XD_MAILBOX_TCCOLD_BLOCK, "tc cold: one block request");
+	error = drv_i915_xd_power_well_disable(&i915_xd_tc_test_io, platform, (unsigned)well, NULL, &report);
+	i915_host_check(error == 0 && report.state_late == 0 && i915_xd_tc_test_firmware.requests == 2U &&
+		i915_xd_tc_test_firmware.last == I915_XD_MAILBOX_TCCOLD_UNBLOCK, "tc cold: one unblock request");
+
+	/* A firmware whose exit keeps failing: three tries, noted, the enable goes on. */
+	i915_xd_tc_test_firmware.requests = 0U;
+	i915_xd_tc_test_firmware.fail = 1;
+	error = drv_i915_xd_power_well_enable(&i915_xd_tc_test_io, platform, (unsigned)well, NULL, &report);
+	i915_host_check(error == 0 && report.state_late == 1 && i915_xd_tc_test_firmware.requests == 3U,
+		"tc cold: a failing block is tried three times and noted");
+}
+
+/*
+ * The Type-C helpers: the TC cold functions of each platform, the FIA of
+ * a port, the live state, the lanes and the pin assignment, the main link
+ * lanes.
+ */
+static void
+i915_xd_tc_test_helpers(void)
+{
+	const struct i915_xd_platform *platform;
+	const struct i915_xd_port_desc *port;
+	struct i915_xd_tc_fia fia;
+	unsigned live;
+	int error;
+
+	/* What blocks TC cold: Tiger Lake's well always, display 13's AUX well but not in Thunderbolt mode, Rocket Lake nothing. */
+	platform = i915_xd_tc_test_setup(I915_XD_TC_TEST_TGL, I915_XD_TC_TEST_TGL_REVID);
+	i915_host_check(drv_i915_xd_tc_cold_functions(platform, 3U, I915_XD_TC_MODE_TBT) == I915_XD_POWERS_TC_COLD_OFF,
+		"helpers: Tiger Lake blocks TC cold with its TC cold well, even for Thunderbolt");
+	platform = i915_xd_tc_test_setup(I915_XD_TC_TEST_ADLP, I915_XD_TC_TEST_ADLP_REVID);
+	i915_host_check(drv_i915_xd_tc_cold_functions(platform, 4U, I915_XD_TC_MODE_DP_ALT) == I915_XD_POWERS_AUX(4U) &&
+		drv_i915_xd_tc_cold_functions(platform, 4U, I915_XD_TC_MODE_LEGACY) == I915_XD_POWERS_AUX(4U) &&
+		drv_i915_xd_tc_cold_functions(platform, 4U, I915_XD_TC_MODE_TBT) == 0U,
+		"helpers: Alder Lake-P blocks TC cold with the port's AUX well, Thunderbolt with nothing");
+	platform = i915_xd_tc_test_setup(I915_XD_TC_TEST_RKL, I915_XD_TC_TEST_RKL_REVID);
+	i915_host_check(drv_i915_xd_tc_cold_functions(platform, 3U, I915_XD_TC_MODE_DP_ALT) == 0U, "helpers: Rocket Lake has no TC cold");
+
+	/* Tiger Lake's FIA: one for every port, or modular (two ports each). */
+	platform = i915_xd_tc_test_setup(I915_XD_TC_TEST_TGL, I915_XD_TC_TEST_TGL_REVID);
+	error = drv_i915_xd_tc_fia(&i915_xd_tc_test_io, platform, 2U, &fia);
+	i915_host_check(error == 0 && fia.base == 0x163000U && fia.index == 2U, "helpers: Tiger Lake's single FIA holds TC3 at place 2");
+	i915_xd_fake_set(0x1638a0U, I915_XD_DFLEXDPSP_MODULAR);
+	error = drv_i915_xd_tc_fia(&i915_xd_tc_test_io, platform, 2U, &fia);
+	i915_host_check(error == 0 && fia.base == 0x16e000U && fia.index == 0U, "helpers: a modular FIA: TC3 in FIA 2 at place 0");
+	error = drv_i915_xd_tc_fia(&i915_xd_tc_test_io, platform, 5U, &fia);
+	i915_host_check(error == 0 && fia.base == 0x16f000U && fia.index == 1U, "helpers: a modular FIA: TC6 in FIA 3 at place 1");
+	i915_xd_fake_set(0x1638a0U, 0xffffffffU);
+	error = drv_i915_xd_tc_fia(&i915_xd_tc_test_io, platform, 0U, &fia);
+	i915_host_check(error == EIO, "helpers: a FIA in TC cold is refused");
+
+	/* Tiger Lake's live state from the FIA and the south pin. */
+	platform = i915_xd_tc_test_setup(I915_XD_TC_TEST_TGL, I915_XD_TC_TEST_TGL_REVID);
+	port = drv_i915_xd_platform_port(platform, 4U);
+	fia.base = 0x163000U;
+	fia.index = 1U;
+	i915_xd_fake_set(0x1638a0U, (1U << 13) | (1U << 14));
+	i915_xd_fake_set(I915_XD_SDE_ISR, 1U << 25);
+	live = drv_i915_xd_tc_live(&i915_xd_tc_test_io, platform, port, &fia);
+	i915_host_check(port != NULL && live == (I915_XD_TC_LIVE_DP_ALT | I915_XD_TC_LIVE_TBT | I915_XD_TC_LIVE_LEGACY),
+		"helpers: Tiger Lake TC2: DP-alt and Thunderbolt from the FIA, legacy from the south pin");
+	i915_xd_fake_set(0x1638a0U, 0xffffffffU);
+	i915_xd_fake_set(I915_XD_SDE_ISR, 0U);
+	live = drv_i915_xd_tc_live(&i915_xd_tc_test_io, platform, port, &fia);
+	i915_host_check(live == 0U, "helpers: a FIA in TC cold shows nothing");
+
+	/* Display 13's live state from the hotplug interrupt word. */
+	platform = i915_xd_tc_test_setup(I915_XD_TC_TEST_ADLP, I915_XD_TC_TEST_ADLP_REVID);
+	port = drv_i915_xd_platform_port(platform, 4U);
+	i915_xd_fake_set(I915_XD_DE_HPD_ISR, I915_XD_HPD_INT_TC(1U));
+	live = drv_i915_xd_tc_live(&i915_xd_tc_test_io, platform, port, &fia);
+	i915_host_check(live == I915_XD_TC_LIVE_DP_ALT, "helpers: Alder Lake-P TC2: DP-alt from the hotplug word");
+	i915_xd_fake_set(I915_XD_DE_HPD_ISR, I915_XD_HPD_INT_TBT(1U));
+	live = drv_i915_xd_tc_live(&i915_xd_tc_test_io, platform, port, &fia);
+	i915_host_check(live == I915_XD_TC_LIVE_TBT, "helpers: Alder Lake-P TC2: Thunderbolt from the hotplug word");
+
+	/* The lanes the sink gives and the pin assignment. */
+	i915_xd_fake_set(0x1638a0U, 0x0300U);
+	i915_xd_fake_set(0x163880U, 0x40U);
+	i915_host_check(drv_i915_xd_tc_max_lanes(&i915_xd_tc_test_io, &fia) == 2U && drv_i915_xd_tc_pin(&i915_xd_tc_test_io, &fia) == 4U,
+		"helpers: lanes 0x3 are two, pin assignment D");
+	i915_xd_fake_set(0x1638a0U, 0x0f00U);
+	i915_host_check(drv_i915_xd_tc_max_lanes(&i915_xd_tc_test_io, &fia) == 4U, "helpers: lanes 0xf are four");
+	i915_xd_fake_set(0x1638a0U, 0x0800U);
+	i915_host_check(drv_i915_xd_tc_max_lanes(&i915_xd_tc_test_io, &fia) == 1U, "helpers: lane 3 alone is one");
+
+	/* The main link lanes in the port's nibble, the other port's kept. */
+	i915_xd_fake_set(0x1638c0U, 0x5U);
+	drv_i915_xd_tc_set_lanes(&i915_xd_tc_test_io, &fia, 1U, 0);
+	i915_host_check(i915_xd_fake_get(0x1638c0U) == 0x15U, "helpers: one lane is lane 0");
+	drv_i915_xd_tc_set_lanes(&i915_xd_tc_test_io, &fia, 1U, 1);
+	i915_host_check(i915_xd_fake_get(0x1638c0U) == 0x85U, "helpers: one reversed lane is lane 3");
+	drv_i915_xd_tc_set_lanes(&i915_xd_tc_test_io, &fia, 2U, 0);
+	i915_host_check(i915_xd_fake_get(0x1638c0U) == 0x35U, "helpers: two lanes are 1..0");
+	drv_i915_xd_tc_set_lanes(&i915_xd_tc_test_io, &fia, 2U, 1);
+	i915_host_check(i915_xd_fake_get(0x1638c0U) == 0xc5U, "helpers: two reversed lanes are 3..2");
+	drv_i915_xd_tc_set_lanes(&i915_xd_tc_test_io, &fia, 4U, 0);
+	i915_host_check(i915_xd_fake_get(0x1638c0U) == 0xf5U, "helpers: four lanes are 3..0");
+}
+
+/*
+ * The FIA flow of Tiger Lake: a DisplayPort alternate mode sink on TC2
+ * (TC cold blocked, the FIA read, ready, taken, four lanes), its
+ * disconnect; a PHY that is not ready, too few lanes, a legacy connector
+ * that is not ready, Thunderbolt mode, a FIA that stays in TC cold.
+ */
+static void
+i915_xd_tc_test_fia_flow(void)
+{
+	struct i915_xd_tc_connection connection;
+	const struct i915_xd_platform *platform;
+	const struct i915_xd_port_desc *port;
+	struct i915_xd_tc_power power;
+	int error;
+
+	/* TC2 (DDI 4, place 1 of the single FIA): DP-alt, ready, four lanes, pin assignment C. */
+	platform = i915_xd_tc_test_setup(I915_XD_TC_TEST_TGL, I915_XD_TC_TEST_TGL_REVID);
+	port = drv_i915_xd_platform_port(platform, 4U);
+	i915_xd_tc_test_power_reset(&power);
+	i915_xd_fake_set(0x1638a0U, (1U << 13) | 0x0f00U);
+	i915_xd_fake_set(0x163890U, 0x2U);
+	i915_xd_fake_set(0x163894U, 0x1U);
+	i915_xd_fake_set(0x163880U, 0x30U);
+	error = drv_i915_xd_tc_connect(&i915_xd_tc_test_io, platform, port, 4U, I915_XD_TC_MODE_DP_ALT, 4U, &power, &connection);
+	i915_host_check(error == 0 && connection.mode == I915_XD_TC_MODE_DP_ALT && connection.owned == 1 && connection.max_lanes == 4U &&
+		connection.pin == 3U, "fia flow: TC2 connects in DP-alt with four lanes, pin assignment C");
+	i915_host_check(i915_xd_tc_test_power_at(0U, 1, I915_XD_POWERS_TC_COLD_OFF) && i915_xd_tc_test_power.count == 1U &&
+		connection.blocked == I915_XD_POWERS_TC_COLD_OFF, "fia flow: TC cold is blocked first, with the TC cold well, and held");
+	i915_host_check(i915_xd_fake_get(0x163894U) == 0x3U, "fia flow: the not-safe bit of place 1 is set, place 0's kept");
+	drv_i915_xd_tc_disconnect(&i915_xd_tc_test_io, platform, port, &power, &connection);
+	i915_host_check(i915_xd_fake_get(0x163894U) == 0x1U && i915_xd_tc_test_power_at(1U, -1, I915_XD_POWERS_TC_COLD_OFF) &&
+		i915_xd_tc_test_power.held == 0 && connection.mode == I915_XD_TC_MODE_NONE, "fia flow: the disconnect gives the PHY back, then TC cold");
+
+	/* Not ready: refused, TC cold allowed again, the PHY not taken. */
+	i915_xd_tc_test_power_reset(&power);
+	i915_xd_fake_set(0x163890U, 0x0U);
+	error = drv_i915_xd_tc_connect(&i915_xd_tc_test_io, platform, port, 4U, I915_XD_TC_MODE_DP_ALT, 4U, &power, &connection);
+	i915_host_check(error == EBUSY && i915_xd_tc_test_power.held == 0 && i915_xd_fake_get(0x163894U) == 0x1U &&
+		connection.mode == I915_XD_TC_MODE_NONE, "fia flow: a PHY that is not ready is refused and nothing is held");
+
+	/* Too few lanes: the PHY given back, TC cold allowed again. */
+	i915_xd_tc_test_power_reset(&power);
+	i915_xd_fake_set(0x163890U, 0x2U);
+	i915_xd_fake_set(0x1638a0U, (1U << 13) | 0x0300U);
+	error = drv_i915_xd_tc_connect(&i915_xd_tc_test_io, platform, port, 4U, I915_XD_TC_MODE_DP_ALT, 4U, &power, &connection);
+	i915_host_check(error == ENOSPC && i915_xd_tc_test_power.held == 0 && i915_xd_fake_get(0x163894U) == 0x1U,
+		"fia flow: two lanes for a four-lane link: refused, the PHY given back");
+
+	/* The sink left before the lanes were read. */
+	i915_xd_tc_test_power_reset(&power);
+	i915_xd_fake_set(0x1638a0U, 0x0f00U);
+	error = drv_i915_xd_tc_connect(&i915_xd_tc_test_io, platform, port, 4U, I915_XD_TC_MODE_DP_ALT, 4U, &power, &connection);
+	i915_host_check(error == ENODEV && i915_xd_tc_test_power.held == 0, "fia flow: a sink that left is refused");
+
+	/* A legacy connector whose PHY is not ready goes on, not owned, with four lanes. */
+	i915_xd_tc_test_power_reset(&power);
+	i915_xd_fake_set(0x163890U, 0x0U);
+	error = drv_i915_xd_tc_connect(&i915_xd_tc_test_io, platform, port, 4U, I915_XD_TC_MODE_LEGACY, 4U, &power, &connection);
+	i915_host_check(error == 0 && connection.owned == 0 && connection.max_lanes == 4U && i915_xd_tc_test_power.held == 1,
+		"fia flow: a legacy connector goes on without the PHY, four lanes, TC cold blocked");
+	drv_i915_xd_tc_disconnect(&i915_xd_tc_test_io, platform, port, &power, &connection);
+	i915_host_check(i915_xd_tc_test_power.held == 0, "fia flow: the legacy disconnect allows TC cold again");
+
+	/* Thunderbolt: TC cold blocked and nothing else. */
+	i915_xd_tc_test_power_reset(&power);
+	error = drv_i915_xd_tc_connect(&i915_xd_tc_test_io, platform, port, 4U, I915_XD_TC_MODE_TBT, 4U, &power, &connection);
+	i915_host_check(error == 0 && connection.owned == 0 && connection.blocked == I915_XD_POWERS_TC_COLD_OFF && i915_xd_tc_test_power.count == 1U,
+		"fia flow: Thunderbolt only blocks TC cold");
+
+	/* A FIA that stays in TC cold: refused, TC cold allowed again. */
+	i915_xd_tc_test_power_reset(&power);
+	i915_xd_fake_set(0x1638a0U, 0xffffffffU);
+	error = drv_i915_xd_tc_connect(&i915_xd_tc_test_io, platform, port, 4U, I915_XD_TC_MODE_DP_ALT, 4U, &power, &connection);
+	i915_host_check(error == EIO && i915_xd_tc_test_power.held == 0, "fia flow: a FIA in TC cold is refused");
+
+	/* The owner's refusal of the TC cold well. */
+	i915_xd_tc_test_power_reset(&power);
+	i915_xd_tc_test_power.refuse = I915_XD_POWERS_TC_COLD_OFF;
+	error = drv_i915_xd_tc_connect(&i915_xd_tc_test_io, platform, port, 4U, I915_XD_TC_MODE_DP_ALT, 4U, &power, &connection);
+	i915_host_check(error == EIO && i915_xd_tc_test_power.count == 0U, "fia flow: the owner's refusal stops the connect");
+}
+
+/*
+ * The TCSS flow of Alder Lake-P: a DisplayPort alternate mode sink on TC2
+ * (the lane well, the ownership in the DDI buffer, ready, the AUX well,
+ * the lanes, the lane well given back), its disconnect; a PHY that is not
+ * ready, Thunderbolt mode, a port that is not Type-C.
+ */
+static void
+i915_xd_tc_test_tcss_flow(void)
+{
+	struct i915_xd_tc_connection connection;
+	const struct i915_xd_platform *platform;
+	const struct i915_xd_port_desc *port;
+	struct i915_xd_tc_power power;
+	int error;
+
+	/* TC2 (DDI 4, AUX 4, FIA 1 place 1): DP-alt, ready, four lanes. */
+	platform = i915_xd_tc_test_setup(I915_XD_TC_TEST_ADLP, I915_XD_TC_TEST_ADLP_REVID);
+	port = drv_i915_xd_platform_port(platform, 4U);
+	i915_xd_tc_test_power_reset(&power);
+	i915_xd_fake_set(I915_XD_DE_HPD_ISR, I915_XD_HPD_INT_TC(1U));
+	i915_xd_fake_set(I915_XD_TCSS_DDI_STATUS(1U), I915_XD_TCSS_READY);
+	i915_xd_fake_set(0x1638a0U, 0x0f00U);
+	i915_xd_fake_set(I915_XD_DDI_BUF_CTL(4U), 0x80000000U);
+	error = drv_i915_xd_tc_connect(&i915_xd_tc_test_io, platform, port, 4U, I915_XD_TC_MODE_DP_ALT, 4U, &power, &connection);
+	i915_host_check(error == 0 && connection.owned == 1 && connection.max_lanes == 4U && connection.blocked == I915_XD_POWERS_AUX(4U),
+		"tcss flow: TC2 connects in DP-alt, TC cold blocked by AUX 4's well");
+	i915_host_check(i915_xd_tc_test_power_at(0U, 1, I915_XD_POWERS_LANES(4U)) && i915_xd_tc_test_power_at(1U, 1, I915_XD_POWERS_AUX(4U)) &&
+		i915_xd_tc_test_power_at(2U, -1, I915_XD_POWERS_LANES(4U)) && i915_xd_tc_test_power.held == 1,
+		"tcss flow: the lane well, then the AUX well, then the lane well given back");
+	i915_host_check(i915_xd_fake_get(I915_XD_DDI_BUF_CTL(4U)) == (0x80000000U | I915_XD_DDI_BUF_TC_OWNED), "tcss flow: the DDI buffer's ownership bit, the rest kept");
+	drv_i915_xd_tc_disconnect(&i915_xd_tc_test_io, platform, port, &power, &connection);
+	i915_host_check(i915_xd_tc_test_power_at(3U, 1, I915_XD_POWERS_LANES(4U)) && i915_xd_tc_test_power_at(4U, -1, I915_XD_POWERS_AUX(4U)) &&
+		i915_xd_tc_test_power_at(5U, -1, I915_XD_POWERS_LANES(4U)) && i915_xd_tc_test_power.held == 0 &&
+		i915_xd_fake_get(I915_XD_DDI_BUF_CTL(4U)) == 0x80000000U, "tcss flow: the disconnect under the lane well: TC cold, then the PHY");
+
+	/* Not ready: the PHY given back, the lane well too, nothing held. */
+	i915_xd_tc_test_power_reset(&power);
+	i915_xd_fake_set(I915_XD_TCSS_DDI_STATUS(1U), 0U);
+	error = drv_i915_xd_tc_connect(&i915_xd_tc_test_io, platform, port, 4U, I915_XD_TC_MODE_DP_ALT, 4U, &power, &connection);
+	i915_host_check(error == EBUSY && i915_xd_tc_test_power.held == 0 && i915_xd_fake_get(I915_XD_DDI_BUF_CTL(4U)) == 0x80000000U,
+		"tcss flow: a PHY that is not ready is refused, the PHY and the lane well given back");
+
+	/* A TCSS status in TC cold is not ready either. */
+	i915_xd_tc_test_power_reset(&power);
+	i915_xd_fake_set(I915_XD_TCSS_DDI_STATUS(1U), 0xffffffffU);
+	error = drv_i915_xd_tc_connect(&i915_xd_tc_test_io, platform, port, 4U, I915_XD_TC_MODE_DP_ALT, 4U, &power, &connection);
+	i915_host_check(error == EBUSY && i915_xd_tc_test_power.held == 0, "tcss flow: a TCSS status that reads all-ones is not ready");
+
+	/* Thunderbolt: no well at all. */
+	i915_xd_tc_test_power_reset(&power);
+	error = drv_i915_xd_tc_connect(&i915_xd_tc_test_io, platform, port, 4U, I915_XD_TC_MODE_TBT, 4U, &power, &connection);
+	i915_host_check(error == 0 && connection.mode == I915_XD_TC_MODE_TBT && connection.blocked == 0U && i915_xd_tc_test_power.count == 0U,
+		"tcss flow: Thunderbolt takes no well");
+
+	/* A combo port, and no mode, are refused. */
+	error = drv_i915_xd_tc_connect(&i915_xd_tc_test_io, platform, drv_i915_xd_platform_port(platform, 1U), 1U, I915_XD_TC_MODE_DP_ALT, 4U,
+		&power, &connection);
+	i915_host_check(error == EINVAL, "tcss flow: a combo port does not connect");
+	error = drv_i915_xd_tc_connect(&i915_xd_tc_test_io, platform, port, 4U, I915_XD_TC_MODE_NONE, 4U, &power, &connection);
+	i915_host_check(error == EINVAL, "tcss flow: no mode does not connect");
 }

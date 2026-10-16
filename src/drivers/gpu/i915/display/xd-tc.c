@@ -16,6 +16,7 @@
 #include "xd-tc.h"
 
 #include "../intel/display-regs-xd.h"
+#include "../intel/display-regs-xd-south.h"
 
 #include <kern/lock.h>
 
@@ -48,6 +49,11 @@ static void i915_xd_dkl_unlock(struct i915_xd_dkl *dkl);
 static uint32_t i915_xd_dkl_select(struct i915_xd_dkl *dkl, unsigned tc, uint32_t phy_offset);
 static uint32_t i915_xd_tc_swing_word(const struct i915_xd_dkl_swing_table *table, uint8_t level);
 static uint32_t i915_xd_tc_loadgen(int hdmi, unsigned lane);
+static int i915_xd_tc_connect_tcss(struct i915_xd_io *io, const struct i915_xd_platform *platform, const struct i915_xd_port_desc *port, unsigned aux, unsigned mode, unsigned lanes, const struct i915_xd_tc_power *power, struct i915_xd_tc_connection *connection);
+static int i915_xd_tc_connect_fia(struct i915_xd_io *io, const struct i915_xd_platform *platform, const struct i915_xd_port_desc *port, unsigned aux, unsigned mode, unsigned lanes, const struct i915_xd_tc_power *power, struct i915_xd_tc_connection *connection);
+static int i915_xd_tc_block(const struct i915_xd_platform *platform, unsigned aux, unsigned mode, const struct i915_xd_tc_power *power, struct i915_xd_tc_connection *connection);
+static void i915_xd_tc_unblock(const struct i915_xd_tc_power *power, struct i915_xd_tc_connection *connection);
+static int i915_xd_tc_check(struct i915_xd_io *io, const struct i915_xd_platform *platform, const struct i915_xd_port_desc *port, unsigned mode, unsigned lanes, struct i915_xd_tc_connection *connection);
 
 /*
  * Prepares the Dekel PHY windows of a display: the register window they
@@ -466,6 +472,459 @@ drv_i915_xd_tc_release_soft_reset(
 		drv_i915_xd_dkl_rmw(dkl, tc, I915_XD_DKL_PCS_DW5 + lane * I915_XD_DKL_LANE_STRIDE, I915_XD_DKL_PCS_DW5_CORE_SOFTRESET, 0U);
 }
 
+/*
+ * Finds where a Type-C port's FIA words are.  Display 13's FIA is
+ * modular (two ports a FIA); Tiger Lake's is when FIA 1 says so (read
+ * with TC cold blocked), otherwise FIA 1 holds every port.  Returns 0,
+ * or EIO when FIA 1 reads all-ones (the PHY is in TC cold).
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_mg_phy_regs.h
+ * (FIA1_BASE, FIA2_BASE, FIA3_BASE), and drivers/gpu/drm/i915/i915_reg.h
+ * (MODULAR_FIA_MASK).
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_tc.c
+ * (tc_phy_load_fia_params, tgl_tc_phy_init, adlp_tc_phy_init).
+ */
+int
+drv_i915_xd_tc_fia(
+	struct i915_xd_io *io,
+	const struct i915_xd_platform *platform,
+	unsigned tc,
+	struct i915_xd_tc_fia *fia)
+{
+	static const uint32_t bases[] = { I915_XD_FIA1_BASE, I915_XD_FIA2_BASE, I915_XD_FIA3_BASE };
+	uint32_t word;
+	int modular;
+
+	/* Display 13's FIA is modular; Tiger Lake's says whether it is. */
+	modular = 1;
+	if (platform->tc_flow == I915_XD_TC_FLOW_FIA) {
+		word = drv_i915_xd_io_read(io, I915_XD_FIA1_BASE + I915_XD_FIA_DFLEXDPSP);
+		if (word == 0xffffffffU)
+			return EIO;
+		modular = 0;
+		if ((word & I915_XD_DFLEXDPSP_MODULAR) != 0U)
+			modular = 1;
+	}
+
+	/* A modular FIA serves two ports, the single one all of them. */
+	if (modular) {
+		fia->base = bases[(tc / 2U) % 3U];
+		fia->index = tc % 2U;
+	} else {
+		fia->base = I915_XD_FIA1_BASE;
+		fia->index = tc;
+	}
+
+	/* Succeeded: the port's FIA. */
+	return 0;
+}
+
+/*
+ * Reads what the sink of a Type-C port put it in (I915_XD_TC_LIVE_*): on
+ * display 13 the Type-C and Thunderbolt bits of the hotplug interrupt
+ * word, on Tiger Lake the FIA's live state (nothing while it reads
+ * all-ones, in TC cold: the caller blocks TC cold); on both the south
+ * display's Type-C pin for a legacy connector.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_tc.c
+ * (icl_tc_phy_hpd_live_status, adlp_tc_phy_hpd_live_status).
+ */
+unsigned
+drv_i915_xd_tc_live(
+	struct i915_xd_io *io,
+	const struct i915_xd_platform *platform,
+	const struct i915_xd_port_desc *port,
+	const struct i915_xd_tc_fia *fia)
+{
+	uint32_t word;
+	unsigned live;
+	unsigned tc;
+
+	/* The north side: the hotplug interrupt word, or the FIA. */
+	live = 0U;
+	tc = port->tc - 1U;
+	if (platform->tc_flow == I915_XD_TC_FLOW_TCSS) {
+		word = drv_i915_xd_io_read(io, I915_XD_DE_HPD_ISR);
+		if ((word & I915_XD_HPD_INT_TC(tc)) != 0U)
+			live |= I915_XD_TC_LIVE_DP_ALT;
+		if ((word & I915_XD_HPD_INT_TBT(tc)) != 0U)
+			live |= I915_XD_TC_LIVE_TBT;
+	} else {
+		word = drv_i915_xd_io_read(io, fia->base + I915_XD_FIA_DFLEXDPSP);
+		if (word == 0xffffffffU)
+			return 0U;
+		if ((word & I915_XD_DFLEXDPSP_LIVE_TBT(fia->index)) != 0U)
+			live |= I915_XD_TC_LIVE_TBT;
+		if ((word & I915_XD_DFLEXDPSP_LIVE_TC(fia->index)) != 0U)
+			live |= I915_XD_TC_LIVE_DP_ALT;
+	}
+
+	/* The south side: a legacy connector on the port's Type-C pin. */
+	if (port->south_pin_kind == I915_XD_SOUTH_PIN_TC) {
+		word = drv_i915_xd_io_read(io, I915_XD_SDE_ISR);
+		if ((word & I915_XD_SDE_TC_HPD(port->south_pin)) != 0U)
+			live |= I915_XD_TC_LIVE_LEGACY;
+	}
+
+	/* Succeeded: the live state. */
+	return live;
+}
+
+/*
+ * Tells whether a Type-C port's PHY is ready for the display to take it:
+ * the TCSS status on display 13, the FIA's PHY mode status on Tiger Lake;
+ * a word that reads all-ones (TC cold) is not ready.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (TCSS_DDI_STATUS_READY, DP_PHY_MODE_STATUS_COMPLETED).
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_tc.c
+ * (icl_tc_phy_is_ready, adlp_tc_phy_is_ready).
+ */
+int
+drv_i915_xd_tc_ready(
+	struct i915_xd_io *io,
+	const struct i915_xd_platform *platform,
+	unsigned tc,
+	const struct i915_xd_tc_fia *fia)
+{
+	uint32_t word;
+
+	/* Display 13: the TCSS status. */
+	if (platform->tc_flow == I915_XD_TC_FLOW_TCSS) {
+		word = drv_i915_xd_io_read(io, I915_XD_TCSS_DDI_STATUS(tc));
+		if (word == 0xffffffffU)
+			return 0;
+		if ((word & I915_XD_TCSS_READY) == 0U)
+			return 0;
+
+		/* Succeeded: ready. */
+		return 1;
+	}
+
+	/* Tiger Lake: the FIA's PHY mode status. */
+	word = drv_i915_xd_io_read(io, fia->base + I915_XD_FIA_DFLEXDPPMS);
+	if (word == 0xffffffffU)
+		return 0;
+	if ((word & I915_XD_DFLEXDPPMS_READY(fia->index)) == 0U)
+		return 0;
+
+	/* Succeeded: ready. */
+	return 1;
+}
+
+/*
+ * Takes (take nonzero) or gives back a Type-C port's PHY: on display 13
+ * the ownership bit of the port's DDI buffer word (with the port's lane
+ * well up), on Tiger Lake the FIA's not-safe bit.  Returns 0, or EIO when
+ * the FIA reads all-ones (TC cold).
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (DDI_BUF_CTL_TC_PHY_OWNERSHIP, DP_PHY_MODE_STATUS_NOT_SAFE).
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_tc.c
+ * (icl_tc_phy_take_ownership, adlp_tc_phy_take_ownership).
+ */
+int
+drv_i915_xd_tc_own(
+	struct i915_xd_io *io,
+	const struct i915_xd_platform *platform,
+	const struct i915_xd_port_desc *port,
+	const struct i915_xd_tc_fia *fia,
+	int take)
+{
+	uint32_t bit;
+	uint32_t word;
+
+	/* Display 13: the DDI buffer's ownership bit. */
+	if (platform->tc_flow == I915_XD_TC_FLOW_TCSS) {
+		bit = 0U;
+		if (take)
+			bit = I915_XD_DDI_BUF_TC_OWNED;
+		(void)drv_i915_xd_io_rmw(io, I915_XD_DDI_BUF_CTL(port->ddi), I915_XD_DDI_BUF_TC_OWNED, bit);
+
+		/* Succeeded: the bit is written. */
+		return 0;
+	}
+
+	/* Tiger Lake: the FIA's not-safe bit, unless the FIA is in TC cold. */
+	word = drv_i915_xd_io_read(io, fia->base + I915_XD_FIA_DFLEXDPCSSS);
+	if (word == 0xffffffffU)
+		return EIO;
+	word &= ~I915_XD_DFLEXDPCSSS_OWNED(fia->index);
+	if (take)
+		word |= I915_XD_DFLEXDPCSSS_OWNED(fia->index);
+	drv_i915_xd_io_write(io, fia->base + I915_XD_FIA_DFLEXDPCSSS, word);
+
+	/* Succeeded: the bit is written. */
+	return 0;
+}
+
+/*
+ * Tells whether the display owns a Type-C port's PHY (a FIA in TC cold
+ * owns nothing).
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_tc.c
+ * (icl_tc_phy_is_owned, adlp_tc_phy_is_owned).
+ */
+int
+drv_i915_xd_tc_owned(
+	struct i915_xd_io *io,
+	const struct i915_xd_platform *platform,
+	const struct i915_xd_port_desc *port,
+	const struct i915_xd_tc_fia *fia)
+{
+	uint32_t word;
+
+	/* Display 13: the DDI buffer's ownership bit. */
+	if (platform->tc_flow == I915_XD_TC_FLOW_TCSS) {
+		word = drv_i915_xd_io_read(io, I915_XD_DDI_BUF_CTL(port->ddi));
+		if ((word & I915_XD_DDI_BUF_TC_OWNED) == 0U)
+			return 0;
+
+		/* Succeeded: owned. */
+		return 1;
+	}
+
+	/* Tiger Lake: the FIA's not-safe bit. */
+	word = drv_i915_xd_io_read(io, fia->base + I915_XD_FIA_DFLEXDPCSSS);
+	if (word == 0xffffffffU)
+		return 0;
+	if ((word & I915_XD_DFLEXDPCSSS_OWNED(fia->index)) == 0U)
+		return 0;
+
+	/* Succeeded: owned. */
+	return 1;
+}
+
+/*
+ * Reads a Type-C port's pin assignment from its FIA (0 for a legacy
+ * connector, 1..6 for A..F).
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_tc.c
+ * (intel_tc_port_get_pin_assignment_mask).
+ */
+unsigned
+drv_i915_xd_tc_pin(
+	struct i915_xd_io *io,
+	const struct i915_xd_tc_fia *fia)
+{
+	uint32_t word;
+
+	/* The port's nibble. */
+	word = drv_i915_xd_io_read(io, fia->base + I915_XD_FIA_DFLEXPA1);
+
+	/* Succeeded: the assignment. */
+	return i915_xd_field_get(I915_XD_DFLEXPA1_PIN(fia->index), word);
+}
+
+/*
+ * Reads how many lanes the sink of a Type-C port in DisplayPort
+ * alternate mode gave the display: one lane of any, two of the lower or
+ * upper pair, all four; an assignment it does not know counts as one.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_tc.c
+ * (intel_tc_port_get_lane_mask, intel_tc_port_get_max_lane_count).
+ */
+unsigned
+drv_i915_xd_tc_max_lanes(
+	struct i915_xd_io *io,
+	const struct i915_xd_tc_fia *fia)
+{
+	uint32_t word;
+	uint32_t lanes;
+
+	/* The port's lane assignment. */
+	word = drv_i915_xd_io_read(io, fia->base + I915_XD_FIA_DFLEXDPSP);
+	lanes = i915_xd_field_get(I915_XD_DFLEXDPSP_LANES(fia->index), word);
+
+	/* Counts it. */
+	switch (lanes) {
+	case 0x3U:
+	case 0xcU:
+		return 2U;
+	case 0xfU:
+		return 4U;
+	default:
+		return 1U;
+	}
+}
+
+/*
+ * Tells a Type-C port's FIA which main link lanes the display uses: one
+ * lane (lane 3 when the lanes are reversed, lane 0 otherwise), two (the
+ * upper or the lower pair), or four.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_tc.c
+ * (intel_tc_port_set_fia_lane_count).
+ */
+void
+drv_i915_xd_tc_set_lanes(
+	struct i915_xd_io *io,
+	const struct i915_xd_tc_fia *fia,
+	unsigned lanes,
+	int reversed)
+{
+	uint32_t field;
+	uint32_t value;
+
+	/* The lanes of the count and direction. */
+	switch (lanes) {
+	case 1U:
+		value = reversed ? I915_XD_DFLEXDPMLE1_ML3 : I915_XD_DFLEXDPMLE1_ML0;
+		break;
+	case 2U:
+		value = reversed ? I915_XD_DFLEXDPMLE1_ML3_2 : I915_XD_DFLEXDPMLE1_ML1_0;
+		break;
+	default:
+		value = I915_XD_DFLEXDPMLE1_ML3_0;
+		break;
+	}
+
+	/* The port's nibble. */
+	field = I915_XD_DFLEXDPMLE1_LANES(fia->index);
+	(void)drv_i915_xd_io_rmw(io, fia->base + I915_XD_FIA_DFLEXDPMLE1, field, i915_xd_field_put(field, value));
+}
+
+/*
+ * Reports what keeps a Type-C port out of TC cold in a mode, as the power
+ * functions (I915_XD_POWERS_*) the owner brings up: Tiger Lake's TC cold
+ * well in every mode; on display 13 the port's AUX well (aux is its AUX
+ * channel) except in Thunderbolt mode, which needs none.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_tc.c
+ * (tgl_tc_phy_cold_off_domain, adlp_tc_phy_cold_off_domain).
+ */
+uint64_t
+drv_i915_xd_tc_cold_functions(
+	const struct i915_xd_platform *platform,
+	unsigned aux,
+	unsigned mode)
+{
+	/* Tiger Lake: the firmware's TC cold block. */
+	if (platform->tccold == I915_XD_TCCOLD_MAILBOX_WELL)
+		return I915_XD_POWERS_TC_COLD_OFF;
+
+	/* A platform without TC cold. */
+	if (platform->tccold != I915_XD_TCCOLD_AUX_WELL)
+		return 0U;
+
+	/* Display 13 in Thunderbolt mode needs no well. */
+	if (mode == I915_XD_TC_MODE_TBT)
+		return 0U;
+
+	/* Succeeded: the port's AUX well. */
+	return I915_XD_POWERS_AUX(aux);
+}
+
+/*
+ * Connects a Type-C port in a mode for a link of some lanes, with the
+ * platform's flow, and fills the connection.
+ *
+ * The TCSS flow (display 13): the port's lane well, the ownership, the
+ * PHY's ready, TC cold blocked by the port's AUX well, the lanes checked,
+ * the lane well given back.  The FIA flow (Tiger Lake): TC cold blocked,
+ * the port's FIA, the PHY's ready and then the ownership, the lanes
+ * checked.  Thunderbolt mode only blocks TC cold.  A legacy connector is
+ * used even when the PHY is not ready or not taken (Linux warns and goes
+ * on).  The lanes check: a legacy connector has four; in DisplayPort
+ * alternate mode the sink must still be there and give enough lanes.  A
+ * step that fails gives back what the earlier ones took.  Returns 0,
+ * EBUSY (not ready or not taken), ENODEV (the sink left), ENOSPC (too
+ * few lanes), EINVAL (a port that is not Type-C, or no mode), EIO (TC
+ * cold that did not end), or the owner's error.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_tc.c
+ * (icl_tc_phy_connect, adlp_tc_phy_connect, tc_phy_verify_legacy_or_dp_alt_mode,
+ * tc_cold_block).
+ */
+int
+drv_i915_xd_tc_connect(
+	struct i915_xd_io *io,
+	const struct i915_xd_platform *platform,
+	const struct i915_xd_port_desc *port,
+	unsigned aux,
+	unsigned mode,
+	unsigned lanes,
+	const struct i915_xd_tc_power *power,
+	struct i915_xd_tc_connection *connection)
+{
+	int error;
+
+	/* Nothing held yet. */
+	connection->mode = I915_XD_TC_MODE_NONE;
+	connection->blocked = 0U;
+	connection->owned = 0;
+	connection->max_lanes = 0U;
+	connection->pin = 0U;
+	connection->fia.base = 0U;
+	connection->fia.index = 0U;
+
+	/* Only a Type-C port connects, in a mode. */
+	if (port->tc == 0U || platform->tc_flow == I915_XD_TC_FLOW_NONE)
+		return EINVAL;
+	if (mode == I915_XD_TC_MODE_NONE)
+		return EINVAL;
+
+	/* The platform's flow. */
+	if (platform->tc_flow == I915_XD_TC_FLOW_TCSS) {
+		error = i915_xd_tc_connect_tcss(io, platform, port, aux, mode, lanes, power, connection);
+	} else {
+		error = i915_xd_tc_connect_fia(io, platform, port, aux, mode, lanes, power, connection);
+	}
+	if (error != 0)
+		return error;
+
+	/* Notes the mode. */
+	connection->mode = mode;
+
+	/* Succeeded: connected in the mode. */
+	return 0;
+}
+
+/*
+ * Disconnects a Type-C port: on display 13 under the port's lane well,
+ * TC cold allowed again and the PHY given back; on Tiger Lake the PHY
+ * given back and TC cold allowed again.  A port in Thunderbolt mode only
+ * allows TC cold again.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_tc.c
+ * (icl_tc_phy_disconnect, adlp_tc_phy_disconnect).
+ */
+void
+drv_i915_xd_tc_disconnect(
+	struct i915_xd_io *io,
+	const struct i915_xd_platform *platform,
+	const struct i915_xd_port_desc *port,
+	const struct i915_xd_tc_power *power,
+	struct i915_xd_tc_connection *connection)
+{
+	uint64_t lane_well;
+	int lane_error;
+
+	/* A port that is not connected has nothing to give back. */
+	if (connection->mode == I915_XD_TC_MODE_NONE)
+		return;
+
+	/* Display 13: under the lane well, TC cold first, then the PHY. */
+	if (platform->tc_flow == I915_XD_TC_FLOW_TCSS) {
+		lane_well = I915_XD_POWERS_LANES(port->ddi);
+		lane_error = power->get(power->context, lane_well);
+		i915_xd_tc_unblock(power, connection);
+		if (connection->owned)
+			(void)drv_i915_xd_tc_own(io, platform, port, &connection->fia, 0);
+		if (lane_error == 0)
+			power->put(power->context, lane_well);
+	} else {
+		/* Tiger Lake: the PHY first, then TC cold. */
+		if (connection->owned)
+			(void)drv_i915_xd_tc_own(io, platform, port, &connection->fia, 0);
+		i915_xd_tc_unblock(power, connection);
+	}
+
+	/* Nothing held. */
+	connection->owned = 0;
+	connection->mode = I915_XD_TC_MODE_NONE;
+}
+
 /* Takes the window lock, telling a host test so. */
 static void
 i915_xd_dkl_lock(
@@ -557,4 +1016,217 @@ i915_xd_tc_loadgen(
 
 	/* Succeeded: the selects of the lane. */
 	return word;
+}
+
+/* The TCSS flow of display 13's connect (see drv_i915_xd_tc_connect()). */
+static int
+i915_xd_tc_connect_tcss(
+	struct i915_xd_io *io,
+	const struct i915_xd_platform *platform,
+	const struct i915_xd_port_desc *port,
+	unsigned aux,
+	unsigned mode,
+	unsigned lanes,
+	const struct i915_xd_tc_power *power,
+	struct i915_xd_tc_connection *connection)
+{
+	uint64_t lane_well;
+	int ready;
+	int error;
+
+	/* The FIA is modular: no read. */
+	error = drv_i915_xd_tc_fia(io, platform, port->tc - 1U, &connection->fia);
+	if (error != 0)
+		return error;
+
+	/* Thunderbolt mode only blocks TC cold. */
+	if (mode == I915_XD_TC_MODE_TBT) {
+		error = i915_xd_tc_block(platform, aux, mode, power, connection);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: blocked. */
+		return 0;
+	}
+
+	/* The port's lane well, under which the ownership bit holds. */
+	lane_well = I915_XD_POWERS_LANES(port->ddi);
+	error = power->get(power->context, lane_well);
+	if (error != 0)
+		return error;
+
+	/* Takes the PHY. */
+	(void)drv_i915_xd_tc_own(io, platform, port, &connection->fia, 1);
+	connection->owned = 1;
+
+	/* The PHY must be ready (a legacy connector goes on). */
+	ready = drv_i915_xd_tc_ready(io, platform, port->tc - 1U, &connection->fia);
+	if (!ready && mode != I915_XD_TC_MODE_LEGACY)
+		error = EBUSY;
+
+	/* Blocks TC cold. */
+	if (error == 0)
+		error = i915_xd_tc_block(platform, aux, mode, power, connection);
+
+	/* The lanes and the sink; TC cold is allowed again when they fail. */
+	if (error == 0) {
+		error = i915_xd_tc_check(io, platform, port, mode, lanes, connection);
+		if (error != 0)
+			i915_xd_tc_unblock(power, connection);
+	}
+
+	/* A step that failed gives the PHY back. */
+	if (error != 0) {
+		(void)drv_i915_xd_tc_own(io, platform, port, &connection->fia, 0);
+		connection->owned = 0;
+	}
+
+	/* The lane well is given back either way. */
+	power->put(power->context, lane_well);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: TC cold blocked and the PHY held. */
+	return 0;
+}
+
+/* The FIA flow of Tiger Lake's connect (see drv_i915_xd_tc_connect()). */
+static int
+i915_xd_tc_connect_fia(
+	struct i915_xd_io *io,
+	const struct i915_xd_platform *platform,
+	const struct i915_xd_port_desc *port,
+	unsigned aux,
+	unsigned mode,
+	unsigned lanes,
+	const struct i915_xd_tc_power *power,
+	struct i915_xd_tc_connection *connection)
+{
+	int ready;
+	int error;
+
+	/* Blocks TC cold. */
+	error = i915_xd_tc_block(platform, aux, mode, power, connection);
+	if (error != 0)
+		return error;
+
+	/* The port's FIA, read out of TC cold. */
+	error = drv_i915_xd_tc_fia(io, platform, port->tc - 1U, &connection->fia);
+
+	/* Thunderbolt mode is done. */
+	if (error == 0 && mode == I915_XD_TC_MODE_TBT)
+		return 0;
+
+	/* The PHY must be ready and taken (a legacy connector goes on). */
+	if (error == 0) {
+		ready = drv_i915_xd_tc_ready(io, platform, port->tc - 1U, &connection->fia);
+		if (ready) {
+			error = drv_i915_xd_tc_own(io, platform, port, &connection->fia, 1);
+			if (error == 0)
+				connection->owned = 1;
+		}
+		error = 0;
+		if (!connection->owned && mode != I915_XD_TC_MODE_LEGACY)
+			error = EBUSY;
+	}
+
+	/* The lanes and the sink. */
+	if (error == 0)
+		error = i915_xd_tc_check(io, platform, port, mode, lanes, connection);
+
+	/* A step that failed gives back the PHY and TC cold. */
+	if (error != 0) {
+		if (connection->owned)
+			(void)drv_i915_xd_tc_own(io, platform, port, &connection->fia, 0);
+		connection->owned = 0;
+		i915_xd_tc_unblock(power, connection);
+		return error;
+	}
+
+	/* Succeeded: TC cold blocked and the PHY held. */
+	return 0;
+}
+
+/* Brings up what keeps a port out of TC cold in its mode, and notes it in the connection. */
+static int
+i915_xd_tc_block(
+	const struct i915_xd_platform *platform,
+	unsigned aux,
+	unsigned mode,
+	const struct i915_xd_tc_power *power,
+	struct i915_xd_tc_connection *connection)
+{
+	uint64_t functions;
+	int error;
+
+	/* A mode that needs nothing. */
+	functions = drv_i915_xd_tc_cold_functions(platform, aux, mode);
+	if (functions == 0U)
+		return 0;
+
+	/* The owner's wells. */
+	error = power->get(power->context, functions);
+	if (error != 0)
+		return error;
+
+	/* Notes what is held. */
+	connection->blocked = functions;
+
+	/* Succeeded: held. */
+	return 0;
+}
+
+/* Gives back what kept a port out of TC cold. */
+static void
+i915_xd_tc_unblock(
+	const struct i915_xd_tc_power *power,
+	struct i915_xd_tc_connection *connection)
+{
+	/* Nothing held. */
+	if (connection->blocked == 0U)
+		return;
+
+	/* The owner's wells. */
+	power->put(power->context, connection->blocked);
+	connection->blocked = 0U;
+}
+
+/*
+ * Checks the lanes of a connection: a legacy connector has four; in
+ * DisplayPort alternate mode the sink must still be there and give at
+ * least the lanes the link needs.  Notes the lanes and the pin
+ * assignment.  Returns 0, ENODEV or ENOSPC.
+ */
+static int
+i915_xd_tc_check(
+	struct i915_xd_io *io,
+	const struct i915_xd_platform *platform,
+	const struct i915_xd_port_desc *port,
+	unsigned mode,
+	unsigned lanes,
+	struct i915_xd_tc_connection *connection)
+{
+	unsigned live;
+
+	/* The pin assignment. */
+	connection->pin = drv_i915_xd_tc_pin(io, &connection->fia);
+
+	/* A legacy connector has all four lanes. */
+	if (mode == I915_XD_TC_MODE_LEGACY) {
+		connection->max_lanes = 4U;
+		return 0;
+	}
+
+	/* The sink may have left meanwhile. */
+	live = drv_i915_xd_tc_live(io, platform, port, &connection->fia);
+	if ((live & I915_XD_TC_LIVE_DP_ALT) == 0U)
+		return ENODEV;
+
+	/* The lanes it gives. */
+	connection->max_lanes = drv_i915_xd_tc_max_lanes(io, &connection->fia);
+	if (connection->max_lanes < lanes)
+		return ENOSPC;
+
+	/* Succeeded: enough lanes. */
+	return 0;
 }

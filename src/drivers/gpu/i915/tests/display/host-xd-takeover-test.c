@@ -559,7 +559,7 @@ i915_xd_to_test_classify(void)
 	i915_host_check(firmware.output == I915_XD_FW_OUTPUT_OTHER && firmware.output_ddi == 2, "classify: DDI C, which Alder Lake-P does not have -> other");
 	firmware.pipe[0].ddi_function = 0x92000000U;
 	drv_i915_xd_firmware_classify(platform, 0, &firmware);
-	i915_host_check(firmware.output == I915_XD_FW_OUTPUT_OTHER, "classify: DP SST on DDI B, not the panel's -> other");
+	i915_host_check(firmware.output == I915_XD_FW_OUTPUT_DP_COMBO, "classify: DP SST on DDI B, not the panel's -> combo DP");
 
 	/* A lit pipe with its DDI function off is passed over for the next. */
 	i915_xd_to_test_base(&firmware);

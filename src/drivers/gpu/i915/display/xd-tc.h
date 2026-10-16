@@ -25,8 +25,19 @@
  * modeset while it still records its writes) gives the struct hooks
  * instead, and the hooks' owner keeps the lock.
  *
- * A Type-C port is numbered here from 0 (TC1).  The connection state of
- * the ports (live state, ownership, TC cold) is not in this file.
+ * The connection of a port is made with the platform's flow: the FIA
+ * flow of display 12 (Tiger Lake: TC cold blocked through the firmware,
+ * the live state, ready and ownership in the FIA's words, which a
+ * modular FIA keeps for two ports each) or the TCSS flow of display 13
+ * (the live state in the hotplug interrupt words, ready in the TCSS
+ * status, the ownership in the DDI buffer word under the port's lane
+ * well, TC cold blocked by the port's AUX well except in Thunderbolt
+ * mode).  The connect takes and the disconnect gives back what the flow
+ * needs, through the owner's power wells; the state machine around them
+ * (when to connect, the delayed disconnect) is the caller's.
+ *
+ * A Type-C port is numbered here from 0 (TC1), except in a port
+ * description (struct i915_xd_port_desc), whose tc counts from 1.
  */
 
 #ifndef DRIVERS_GPU_I915_DISPLAY_XD_TC_H
@@ -95,6 +106,52 @@ struct i915_xd_dkl {
 	struct i915_xd_dkl_hooks hooks;
 };
 
+/* The bits of a Type-C port's live state: what its sink put it in. */
+#define I915_XD_TC_LIVE_DP_ALT		0x1U
+#define I915_XD_TC_LIVE_TBT		0x2U
+#define I915_XD_TC_LIVE_LEGACY		0x4U
+
+/* The mode a Type-C port is connected in. */
+#define I915_XD_TC_MODE_NONE		0U
+#define I915_XD_TC_MODE_DP_ALT		1U
+#define I915_XD_TC_MODE_TBT		2U
+#define I915_XD_TC_MODE_LEGACY		3U
+
+/*
+ * Where a Type-C port's FIA words are: the FIA's base and the port's
+ * place in it.
+ */
+struct i915_xd_tc_fia {
+	uint32_t base;
+	unsigned index;
+};
+
+/*
+ * The owner's power wells, by what they power (I915_XD_POWERS_*): get
+ * brings up the wells of a set and returns 0 or an error; put gives them
+ * back.
+ */
+struct i915_xd_tc_power {
+	int (*get)(void *context, uint64_t functions);
+	void (*put)(void *context, uint64_t functions);
+	void *context;
+};
+
+/*
+ * A Type-C port's connection: the mode, the functions held to block TC
+ * cold, the port's FIA, whether the display owns the PHY, the lanes the
+ * sink gives (4 outside DisplayPort alternate mode) and the pin
+ * assignment.
+ */
+struct i915_xd_tc_connection {
+	unsigned mode;
+	uint64_t blocked;
+	struct i915_xd_tc_fia fia;
+	int owned;
+	unsigned max_lanes;
+	unsigned pin;
+};
+
 void drv_i915_xd_dkl_init(struct i915_xd_dkl *dkl, struct i915_xd_io *io);
 void drv_i915_xd_dkl_set_hooks(struct i915_xd_dkl *dkl, const struct i915_xd_dkl_hooks *hooks);
 uint32_t drv_i915_xd_dkl_window(unsigned tc, uint32_t phy_offset, uint32_t *index_reg, uint32_t *index_value);
@@ -106,5 +163,16 @@ int drv_i915_xd_tc_dp_mode(struct i915_xd_dkl *dkl, unsigned tc, unsigned pin_as
 const struct i915_xd_dkl_swing_table *drv_i915_xd_tc_swing_table(const struct i915_xd_platform *platform, int hdmi, uint32_t rate_khz);
 void drv_i915_xd_tc_signal_levels(struct i915_xd_dkl *dkl, const struct i915_xd_platform *platform, unsigned tc, const struct i915_xd_dkl_swing_table *table, const uint8_t levels[4], int hdmi);
 void drv_i915_xd_tc_release_soft_reset(struct i915_xd_dkl *dkl, unsigned tc);
+int drv_i915_xd_tc_fia(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned tc, struct i915_xd_tc_fia *fia);
+unsigned drv_i915_xd_tc_live(struct i915_xd_io *io, const struct i915_xd_platform *platform, const struct i915_xd_port_desc *port, const struct i915_xd_tc_fia *fia);
+int drv_i915_xd_tc_ready(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned tc, const struct i915_xd_tc_fia *fia);
+int drv_i915_xd_tc_own(struct i915_xd_io *io, const struct i915_xd_platform *platform, const struct i915_xd_port_desc *port, const struct i915_xd_tc_fia *fia, int take);
+int drv_i915_xd_tc_owned(struct i915_xd_io *io, const struct i915_xd_platform *platform, const struct i915_xd_port_desc *port, const struct i915_xd_tc_fia *fia);
+unsigned drv_i915_xd_tc_pin(struct i915_xd_io *io, const struct i915_xd_tc_fia *fia);
+unsigned drv_i915_xd_tc_max_lanes(struct i915_xd_io *io, const struct i915_xd_tc_fia *fia);
+void drv_i915_xd_tc_set_lanes(struct i915_xd_io *io, const struct i915_xd_tc_fia *fia, unsigned lanes, int reversed);
+uint64_t drv_i915_xd_tc_cold_functions(const struct i915_xd_platform *platform, unsigned aux, unsigned mode);
+int drv_i915_xd_tc_connect(struct i915_xd_io *io, const struct i915_xd_platform *platform, const struct i915_xd_port_desc *port, unsigned aux, unsigned mode, unsigned lanes, const struct i915_xd_tc_power *power, struct i915_xd_tc_connection *connection);
+void drv_i915_xd_tc_disconnect(struct i915_xd_io *io, const struct i915_xd_platform *platform, const struct i915_xd_port_desc *port, const struct i915_xd_tc_power *power, struct i915_xd_tc_connection *connection);
 
 #endif /* DRIVERS_GPU_I915_DISPLAY_XD_TC_H */
