@@ -2,7 +2,7 @@
 
 # ws039-p016: `reset`（mode1 reset ＋ asic_init ＋ A2〜A5s の設定し直し ＋ re-light）と `sos alive` の自動の reset
 
-Status: in-progress（2026-10-17 01:18 P3: P3 の branch に merge（5c17b43cf）、実機 R1 の 1 回目で直した 2 点（c95be47f8・c4e3099a0・6c26527d9）の後、R1 の reset 3 回が合格。R2・R3 は未実施。merge と clearance の判定は Q1）
+Status: cleared（2026-10-17 Q1 が判定、merge 5ab0096d4。実機 R1 の reset 3 回 ok。R2（amdrdna.reset=1）・R3（起動時の sos alive）・目視は未実施。2026-10-17 01:18 P3: P3 の branch に merge（5c17b43cf）、実機 R1 の 1 回目で直した 2 点（c95be47f8・c4e3099a0・6c26527d9）の後、R1 の reset 3 回が合格。R2・R3 は未実施。merge と clearance の判定は Q1）
 Disposition: normal
 Parent: [WS039](../ws.md)
 Queue: q1237 / q1237-i01（P3 の p015 と並行。2026-10-16 ユーザー「P1,P3の処理で、並列にオフロードできる実装があれば、それぞれ1エージェントずつ追加してほしいです。…並列な実装は完璧でなくてもよく、あとでマージするときに整合が必要でもOKです。」）
