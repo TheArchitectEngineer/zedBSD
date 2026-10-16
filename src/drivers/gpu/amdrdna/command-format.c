@@ -49,6 +49,7 @@
  * Values referenced: Linux v6.19 drivers/gpu/drm/amd/amdgpu/nvd.h
  * (PACKET3_NOP, PACKET3_SET_BASE, PACKET3_CLEAR_STATE,
  * PACKET3_DISPATCH_DIRECT, PACKET3_CONTEXT_CONTROL, PACKET3_WRITE_DATA,
+ * PACKET3_INDIRECT_BUFFER,
  * PACKET3_RELEASE_MEM, PACKET3_PREAMBLE_CNTL, PACKET3_DMA_DATA,
  * PACKET3_ACQUIRE_MEM, PACKET3_SET_CONTEXT_REG, PACKET3_SET_SH_REG,
  * PACKET3_SET_UCONFIG_REG, PACKET3_SET_RESOURCES, PACKET3_MAP_QUEUES,
@@ -60,6 +61,7 @@
 #define COMMAND_OP_DISPATCH		0x15U
 #define COMMAND_OP_CONTEXT_LOADS	0x28U
 #define COMMAND_OP_WRITE_VALUE		0x37U
+#define COMMAND_OP_INDIRECT		0x3fU
 #define COMMAND_OP_EVENT_FENCE		0x49U
 #define COMMAND_OP_STATE_BRACKET	0x4aU
 #define COMMAND_OP_MOVE			0x50U
@@ -148,6 +150,20 @@
  */
 #define COMMAND_MOVE_SYNC		0x80000000U
 #define COMMAND_MOVE_COUNT_MASK		0x03ffffffU
+
+/*
+ * The indirect buffer's control word: the size in dwords (19:0), the
+ * valid bit a compute queue needs (23) and the context (27:24); and the
+ * low address word's dword alignment.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/amd/amdgpu/nvd.h
+ * (INDIRECT_BUFFER_VALID) and gfx_v10_0.c (gfx_v10_0_ring_emit_ib_gfx,
+ * gfx_v10_0_ring_emit_ib_compute).
+ */
+#define COMMAND_INDIRECT_SIZE_MASK	0x000fffffU
+#define COMMAND_INDIRECT_VALID		0x00800000U
+#define COMMAND_INDIRECT_CONTEXT_SHIFT	24U
+#define COMMAND_INDIRECT_ALIGN_MASK	0xfffffffcU
 
 /*
  * The state bracket's begin and end of the clear state, the context
@@ -549,6 +565,38 @@ amdrdna_pm4_queue_detach(
 
 	/* Succeeded: six words. */
 	return AMDRDNA_PM4_DETACH_WORDS;
+}
+
+/*
+ * Writes a packet that has the engine run count words from an indirect
+ * buffer at address, in a context; a compute queue's packet carries the
+ * valid bit.  Reports the words written.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/gfx_v10_0.c (gfx_v10_0_ring_emit_ib_gfx,
+ * gfx_v10_0_ring_emit_ib_compute).
+ */
+unsigned
+amdrdna_pm4_indirect(
+	uint32_t *words,
+	uint64_t address,
+	uint32_t count,
+	unsigned context,
+	bool compute)
+{
+	/* The header and the buffer's address. */
+	words[0] = command_header(COMMAND_OP_INDIRECT, 3U, false);
+	words[1] = (uint32_t)address & COMMAND_INDIRECT_ALIGN_MASK;
+	words[2] = (uint32_t)(address >> 32);
+
+	/* The size and the context, and the valid bit of a compute queue. */
+	words[3] = count & COMMAND_INDIRECT_SIZE_MASK;
+	words[3] |= (uint32_t)context << COMMAND_INDIRECT_CONTEXT_SHIFT;
+	if (compute)
+		words[3] |= COMMAND_INDIRECT_VALID;
+
+	/* Succeeded: four words. */
+	return AMDRDNA_PM4_INDIRECT_WORDS;
 }
 
 /*

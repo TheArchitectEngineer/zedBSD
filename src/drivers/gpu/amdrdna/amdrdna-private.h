@@ -286,7 +286,8 @@ struct amdrdna_ring {
  * page of system memory the rings' pointers and fences live in.  The
  * clear state is VRAM the run-list controller reads.  The checks' buffers
  * are the copy's source and destination and the dispatch's output in
- * system memory, and the dispatch's program and the copy's middle stop
+ * system memory with the indirect buffer the graphics ring's dispatch
+ * runs from, and the dispatch's program and the copy's middle stop
  * in VRAM.  The shape words are
  * what the stage read from the fuses.  direct says the graphics ring runs
  * without the scheduler (amdrdna.kiq=0), in which case no compute queue
@@ -306,6 +307,7 @@ struct amdrdna_engines {
 	struct amdrdna_system_buffer source;
 	struct amdrdna_system_buffer destination;
 	struct amdrdna_system_buffer output;
+	struct amdrdna_system_buffer indirect;
 	uint64_t program_vram;
 	uint64_t middle_vram;
 	bool direct;

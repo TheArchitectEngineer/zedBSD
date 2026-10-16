@@ -246,6 +246,13 @@ test_packets(void)
 	count = amdrdna_pm4_queue_detach(words, AMDRDNA_QUEUE_ENGINE_GRAPHICS, AMDRDNA_QUEUE_DETACH_PREEMPT, 0x116U);
 	check_word(words[1], 0x30000000U, "pm4 detach graphics preempt");
 
+	/* The indirect buffer: Linux's emit_ib_gfx (no valid bit) and emit_ib_compute (valid). */
+	count = amdrdna_pm4_indirect(words, 0x8000007000ULL, 44U, 0U, false);
+	check(count == 4U && words[0] == 0xc0023f00U && words[1] == 0x7000U && words[2] == 0x80U && words[3] == 44U,
+	    "pm4 indirect (graphics)", "words");
+	count = amdrdna_pm4_indirect(words, 0x8000007000ULL, 44U, 3U, true);
+	check_word(words[3], 0x0380002cU, "pm4 indirect (compute, context 3)");
+
 	/* The preamble's packets. */
 	count = amdrdna_pm4_bracket(words, true);
 	check(count == 2U && words[0] == 0xc0004a00U && words[1] == 0x20000000U, "pm4 bracket begin", "words");

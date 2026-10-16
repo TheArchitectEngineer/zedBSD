@@ -742,6 +742,7 @@ struct amdrdna_psp_reply {
 #define AMDRDNA_PM4_RESOURCES_WORDS	8U
 #define AMDRDNA_PM4_ATTACH_WORDS	7U
 #define AMDRDNA_PM4_DETACH_WORDS	6U
+#define AMDRDNA_PM4_INDIRECT_WORDS	4U
 #define AMDRDNA_COPY_WRITE_WORDS	5U
 #define AMDRDNA_COPY_LINEAR_WORDS	7U
 #define AMDRDNA_COPY_FENCE_WORDS	6U
@@ -1378,6 +1379,14 @@ amdrdna_pm4_queue_detach(
 	uint32_t engine,
 	uint32_t action,
 	uint32_t doorbell);
+
+unsigned
+amdrdna_pm4_indirect(
+	uint32_t *words,
+	uint64_t address,
+	uint32_t count,
+	unsigned context,
+	bool compute);
 
 unsigned
 amdrdna_pm4_bracket(

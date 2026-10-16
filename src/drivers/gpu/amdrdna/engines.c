@@ -110,11 +110,10 @@ static int engines_run(struct amdrdna_device *device);
 static int engines_fences(struct amdrdna_device *device);
 static int engines_fence_one(struct amdrdna_device *device, struct amdrdna_ring *ring);
 static int engines_copy(struct amdrdna_device *device);
-static int engines_dispatch(struct amdrdna_device *device);
+static int engines_dispatch(struct amdrdna_device *device, struct amdrdna_ring *ring, bool indirect);
 static void engines_fault(struct amdrdna_device *device);
 static uint64_t engines_ring_interrupts(struct amdrdna_ring *ring);
 static uint32_t engines_shader_index(struct amdrdna_device *device, uint32_t offset);
-static struct amdrdna_ring *engines_dispatch_ring(struct amdrdna_device *device);
 
 /*
  * Runs stage A5: takes the engines' buffers, brings the command processor
@@ -386,6 +385,8 @@ engines_prepare(
 		error = engines_buffer(device, &engines->destination, ENGINES_COPY_BYTES, "copy destination");
 	if (error == 0)
 		error = engines_buffer(device, &engines->output, ENGINES_OUTPUT_BYTES, "dispatch output");
+	if (error == 0)
+		error = engines_buffer(device, &engines->indirect, ENGINES_PAGE_BYTES, "indirect buffer");
 	if (error != 0)
 		return error;
 
@@ -532,8 +533,15 @@ engines_run(
 	if (error != 0)
 		return error;
 
-	/* A dispatch of the check program. */
-	error = engines_dispatch(device);
+	/* A dispatch of the check program on the first compute queue. */
+	if (device->engines.compute_count != 0U) {
+		error = engines_dispatch(device, &device->engines.compute[0], false);
+		if (error != 0)
+			return error;
+	}
+
+	/* The same dispatch on the graphics ring, from an indirect buffer as the executor will run it. */
+	error = engines_dispatch(device, &device->engines.graphics, true);
 	if (error != 0)
 		return error;
 
@@ -711,24 +719,28 @@ engines_copy(
 }
 
 /*
- * Dispatches the check program on the first compute queue (on the
- * graphics ring without the scheduler): its code, its table and the
+ * Dispatches the check program on a ring, directly or from an indirect
+ * buffer of context 0 the ring points at: its code, its table and the
  * workgroup counts in VRAM, its output in system memory marked unwritten;
  * the caches synced, the program's registers set, the workgroups
  * launched, and every output word compared with what the program writes.
  */
 static int
 engines_dispatch(
-	struct amdrdna_device *device)
+	struct amdrdna_device *device,
+	struct amdrdna_ring *ring,
+	bool indirect)
 {
 	uint32_t words[96];
 	uint32_t values[8];
 	uint32_t descriptor[4];
 	uint32_t groups[3];
+	uint32_t pointer[AMDRDNA_PM4_INDIRECT_WORDS];
 	struct amdrdna_check_description program;
 	struct amdrdna_engines *engines;
-	struct amdrdna_ring *ring;
 	volatile uint8_t *vram;
+	const char *path;
+	uint32_t *buffer;
 	uint32_t *output;
 	uint64_t code_address;
 	uint64_t table_address;
@@ -744,10 +756,9 @@ engines_dispatch(
 	bool matched;
 	int error;
 
-	/* The program, the ring it runs on, and the workgroups. */
+	/* The program, whether the ring is a compute queue, and the workgroups. */
 	engines = &device->engines;
 	amdrdna_check_program(&program);
-	ring = engines_dispatch_ring(device);
 	compute = false;
 	if (ring->kind == AMDRDNA_RING_COMPUTE)
 		compute = true;
@@ -833,8 +844,19 @@ engines_dispatch(
 	/* The workgroups. */
 	count += amdrdna_pm4_dispatch(words + count, groups[0], groups[1], groups[2], program.initiator);
 
-	/* Runs it and waits for the fence. */
-	error = amdrdna_ring_submit(device, ring, words, count, true, &sequence);
+	/* Runs it on the ring, or from the indirect buffer the ring points at. */
+	if (indirect) {
+		buffer = engines->indirect.dma.address;
+		for (index = 0U; index < count; index++)
+			buffer[index] = words[index];
+		__atomic_thread_fence(__ATOMIC_SEQ_CST);
+		count = amdrdna_pm4_indirect(pointer, engines->indirect.gpu_address, count, 0U, compute);
+		error = amdrdna_ring_submit(device, ring, pointer, count, true, &sequence);
+	} else {
+		error = amdrdna_ring_submit(device, ring, words, count, true, &sequence);
+	}
+
+	/* Waits for the fence. */
 	if (error == 0)
 		error = amdrdna_ring_wait(device, ring, sequence, ENGINES_FENCE_MS);
 	if (error != 0) {
@@ -850,9 +872,14 @@ engines_dispatch(
 		return EIO;
 	}
 
+	/* Names how the dispatch reached the ring. */
+	path = "the ring";
+	if (indirect)
+		path = "an indirect buffer";
+
 	/* Records and marks the result. */
-	engines->dispatch_words = output_words;
-	amdrdna_mark("A5 dispatch ok on %s: %ux%ux%u groups of %ux%ux%u, %u words", ring->name,
+	engines->dispatch_words += output_words;
+	amdrdna_mark("A5 dispatch ok on %s from %s: %ux%ux%u groups of %ux%ux%u, %u words", ring->name, path,
 	    groups[0], groups[1], groups[2],
 	    program.local_size[0], program.local_size[1], program.local_size[2],
 	    (unsigned)output_words);
@@ -954,17 +981,4 @@ engines_shader_index(
 
 	/* Succeeded: the index. */
 	return index;
-}
-
-/* Reports the ring the check dispatch runs on: the first compute queue, or the graphics ring. */
-static struct amdrdna_ring *
-engines_dispatch_ring(
-	struct amdrdna_device *device)
-{
-	/* Without the scheduler only the graphics ring runs. */
-	if (device->engines.compute_count == 0U)
-		return &device->engines.graphics;
-
-	/* Succeeded: the first compute queue. */
-	return &device->engines.compute[0];
 }

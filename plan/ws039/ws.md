@@ -9,7 +9,7 @@ Related Milestones: なし
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: q1215（P3、ws039-p005 の段 A5、2026-10-16 開始）。以前 q1213（p004、cleared）・q1212（p003）・q1211（p002）
-Resume point: p005 in-progress（2026-10-16 P3、q1215-i01、[phase005](phase005/phase.md)）: 段 A5（golden・RLC・CSB、KIQ（MEC2 pipe1 q0）、compute の queue 4 本と GFX の queue を MAP_QUEUES、SDMA0、fence と EOP・TRAP、copy、最初の dispatch、VM fault の試験、`amdrdna.kiq=0` の CP_RB0 の退路）の実装と host 試験（PASS 301）と build（warning 0）まで。次は実機 10.0.10.3 で `advance A5`。以前: p004 cleared（実機で A3t skip・A3 ok・A4 ok mode=S、main ee5e55768）。
+Resume point: p005 in-progress（2026-10-16 P3、q1215-i01、[phase005](phase005/phase.md)）: 実機 10.0.10.3 で **A5 ok**（KIQ（MEC2 pipe1 q0）・GFX と compute 4 本を MAP_QUEUES・SDMA0、fence と EOP・TRAP の割り込み、copy 8 KiB、dispatch（compute の ring と GFX の IB）3072 語の照合、VM fault の割り込み 1）を最終の kernel で 3 回（`amdrdna.kiq=0` の退路 1 回を含む、全部 warm reboot）。次は Q1 の merge と clearance の判定、その後 p011（A5s）か p012（Tier F）。以前: p004 cleared（main ee5e55768）。
 Target: 未定（2026-10-15 に開始・一時停止。以前の扱い: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」））
 <!-- awesome-plan-current:end -->
 

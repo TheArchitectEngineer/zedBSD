@@ -355,6 +355,11 @@ amdrdna_cp_start(
 	/* The graphics ring by its registers, without the scheduler. */
 	if (engines->direct) {
 		graphics_direct(device);
+
+		/* Unhalts the compute engines too, as the scheduler's path does. */
+		gc_write(device, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_COMPUTE_HALT, 0U);
+		kern_usleep_range(CP_UNHALT_US, CP_UNHALT_US * 2U);
+		engines->compute_running = true;
 	} else {
 		/* The scheduler's own queue, by its registers. */
 		scheduler_registers(device);
@@ -1388,9 +1393,12 @@ graphics_attach(
  * Sets the graphics ring up by its registers, without the scheduler
  * (amdrdna.kiq=0).
  *
+ * The ring takes its write pointer in its registers, without a doorbell
+ * (the path of a ring without a doorbell).
+ *
  * Procedure referenced: Linux v6.19
  * drivers/gpu/drm/amd/amdgpu/gfx_v10_0.c (gfx_v10_0_cp_gfx_resume,
- * gfx_v10_0_cp_gfx_set_doorbell).
+ * gfx_v10_0_cp_gfx_set_doorbell, gfx_v10_0_ring_set_wptr_gfx).
  */
 static void
 graphics_direct(
@@ -1434,11 +1442,9 @@ graphics_direct(
 	gc_write(device, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_RING_BASE_HIGH, (uint32_t)(address >> 32));
 	gc_write(device, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_RING_ACTIVE, 1U);
 
-	/* The ring's doorbell, and the graphics doorbells from it up. */
-	gc_change(device, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_GRAPHICS_DOORBELL, AMDRDNA_GC_DOORBELL_RANGE_MASK,
-	    ((ring->doorbell << 2) & AMDRDNA_GC_DOORBELL_RANGE_MASK) | AMDRDNA_GC_DOORBELL_ON);
-	gc_write(device, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_GRAPHICS_DOORBELLS_LOW, (ring->doorbell << 2) & AMDRDNA_GC_DOORBELL_RANGE_MASK);
-	gc_write(device, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_GRAPHICS_DOORBELLS_HIGH, AMDRDNA_GC_DOORBELL_RANGE_MASK);
+	/* No doorbell: the driver writes the write pointer's registers itself. */
+	gc_change(device, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_GRAPHICS_DOORBELL,
+	    AMDRDNA_GC_DOORBELL_RANGE_MASK | AMDRDNA_GC_DOORBELL_ON, 0U);
 
 	mutex_unlock(&device->engines.select);
 }
@@ -1526,7 +1532,8 @@ ring_room(
 
 /*
  * Publishes a ring's write pointer: in its copy in memory and through
- * its doorbell (dwords for a command ring, bytes for the copy engine).
+ * its doorbell (dwords for a command ring, bytes for the copy engine), or
+ * for the graphics ring run without the scheduler in its registers.
  *
  * Procedure referenced: Linux v6.19
  * drivers/gpu/drm/amd/amdgpu/gfx_v10_0.c (gfx_v10_0_ring_set_wptr_gfx,
@@ -1553,6 +1560,13 @@ ring_commit(
 	/* The copy the engine polls. */
 	copy = (uint64_t *)(uintptr_t)amdrdna_ring_word(device, ring, CP_WORD_WRITE);
 	__atomic_store_n(copy, value, __ATOMIC_RELEASE);
+
+	/* The graphics ring run without the scheduler takes its write pointer in its registers. */
+	if (ring->kind == AMDRDNA_RING_GRAPHICS && device->engines.direct) {
+		gc_write(device, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_RING_WRITE_LOW, (uint32_t)value);
+		gc_write(device, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_RING_WRITE_HIGH, (uint32_t)(value >> 32));
+		return;
+	}
 
 	/* The doorbell. */
 	doorbells = device->doorbells.address;
