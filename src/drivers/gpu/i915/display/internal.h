@@ -1743,41 +1743,6 @@ struct i915_opregion_info {
  * The firmware display check (takeover.c).
  */
 /*
- * Linux-derived -- N0: what the firmware left, recorded before the driver's first display write, and whether the
- * prepared start path applies.  zedBSD project code.  READ-ONLY: nothing here writes a register, the OpRegion or the
- * VT-d unit.  Registers of a power well that is off are "not readable" (never read as "disabled").
- *
- * Decision: PROCEED only when (a) no pipe is active (a pipe whose power domain is off is not_readable and counted inactive), (b) the VT-d unit that translates the
- * GPU is not translating and has no protected memory region enabled (zedBSD has no IOMMU driver), (c) the firmware
- * framebuffer's GGTT pages do not overlap the pages this driver writes.  Otherwise STOP, with the exact reason, before
- * any display write (N1 -- the takeover of a firmware display -- is not ported yet).
- */
-
-enum i915_native_pipe_class {
-	I915_N0_POWER_OFF = 0,        /* the wells' STATE bits read validly as off: the pipe cannot run */
-	I915_N0_READ_ERROR,           /* the power state or a pipe register did not read as a register value */
-	I915_N0_READABLE_INACTIVE,
-	I915_N0_READABLE_ACTIVE
-};
-
-/* every condition N0 observed (primary_stop is the first in decision order) */
-#define I915_N0_C_ACTIVE_PIPE     (1u << 0)
-#define I915_N0_C_PIPE_READ_ERROR (1u << 1)
-#define I915_N0_C_GGTT_OVERLAP    (1u << 2)
-#define I915_N0_C_VTD_UNREADABLE  (1u << 3)
-#define I915_N0_C_VTD_TRANSLATION (1u << 4)
-#define I915_N0_C_VTD_PMR         (1u << 5)
-#define I915_N0_C_VTD_IR_ENABLED  (1u << 6)   /* interrupt remapping on: the MSI path must be checked (not a DMA stop) */
-#define I915_N0_C_OPREGION_REGISTER (1u << 7) /* ASLS != 0: the probe stops later at intel_opregion_register (not ported) */
-#define I915_N0_C_VBT_DIFFERS     (1u << 8)   /* the OpRegion VBT is not the bytes the parser consumed */
-
-struct i915_native_pipe {
-	int readable;                   /* pipe or transcoder power domain on */
-	int cls;                        /* enum i915_native_pipe_class */
-	uint32_t transconf, trans_ddi_func, pipesrc, plane_ctl, plane_surf, plane_stride, plane_size;
-};
-
-/*
  * The output the firmware (GOP) was scanning out when the driver started
  * (the GPU scanout rule): the kind of interface, the pipe and
  * the port (enum port, PORT_NONE when none), the transcoder's mode select
@@ -1795,69 +1760,6 @@ struct i915_gop_output {
 	int port;
 	unsigned mode;
 	unsigned pipes;
-};
-
-/*
- * What the firmware left on the display before the first display write,
- * and the decision taken from it.
- */
-struct i915_native_report {
-	int hypervisor;                 /* CPUID.1:ECX[31] */
-	/* OpRegion / VBT */
-	uint32_t asls;
-	int opregion_mapped;
-	struct i915_opregion_info op;
-	int vbt_mapped, vbt_valid, vbt_matches_pin;
-	uint32_t vbt_size;
-	uint8_t vbt_sha256[32];
-	/* the VT-d unit of the GPU (GFXVTBAR through the MCHBAR mirror) */
-	uint64_t gfxvtbar;
-	int vtd_enabled, vtd_readable;
-	uint32_t vtd_ver, vtd_gsts, vtd_pmen;
-	/* the firmware framebuffer */
-	int fb_present;
-	uint64_t fb_base, fb_size;
-	int fb_in_aperture;
-	uint32_t fb_ggtt_first, fb_ggtt_pages;
-	/* display */
-	struct i915_native_pipe pipe[4];
-	unsigned active_pipes, unreadable_pipes;
-	uint32_t pll_enable[2], ddi_buf_ctl_a, pp_status, pp_control, blc_ctl, blc_duty;
-	uint32_t dpclka_cfgcr0;         /* ICL_DPCLKA_CFGCR0: the PHY -> PLL clock select */
-	/* the pages this driver will write in the GGTT */
-	uint32_t driver_ggtt_first, ggtt_pages;
-	int overlap;
-	int proceed;
-	int takeover;                   /* PROCEED with a firmware display the start takes over first (N1) */
-	const char *reason;
-	/* */
-	uint32_t pwr_well_ctl;          /* the driver request register (STATE bits) as read: all-ones = READ_ERROR */
-	uint32_t conditions;            /* I915_N0_C_* observed */
-	uint32_t primary_stop;          /* the one that decided STOP (0 when PROCEED) */
-	int parser_src;                 /* enum i915_vbt_source the parser consumed */
-	uint32_t parser_size;
-	uint8_t parser_sha256[32];
-	int parser_sha_known, vbt_same_bytes;
-};
-
-/*
- * What the firmware display check reads through: registers and power-well
- * state.
- */
-struct i915_native_deps {
-	struct i915_mmio *mmio;
-	uint32_t asls;
-	uint64_t gmadr_base, gmadr_size;
-	uint32_t ggtt_pages;            /* entries in the GGTT */
-	uint32_t driver_ggtt_first;     /* the first GGTT page the driver writes (top window + display window) */
-	/* the reference's readout gate: is the pipe's / transcoder's power domain on (no write) */
-	int (*pipe_powered)(void *ctx, unsigned pipe);
-	void *ctx;
-	const uint8_t *vbt_pin;         /* the test build's explicit blob pinned sha256 (NULL in production) */
-	/* what the VBT parser actually consumed (intel_bios_init ran before N0) */
-	int parser_src;
-	uint32_t parser_size;
-	const uint8_t *parser_sha256;   /* 0 when not known */
 };
 
 /*
@@ -3282,11 +3184,7 @@ struct i915_display {
 	int opregion_present;
 	int opregion_vbt_present;
 
-	/* The firmware display the start found before its first display write, and the MMIO it read with. */
-	struct i915_native_report n0;
-	struct i915_mmio *n0_mmio;
-
-	/* The firmware's output read from it, the only one the driver lights by itself. */
+	/* The firmware's output read from the firmware check's record, the only one the driver lights by itself. */
 	struct i915_gop_output gop;
 
 	/* The Dekel PHY access of the Type-C ports, which the AUX_USBC wells' enable reads through (pwc.dkl). */
@@ -3395,10 +3293,7 @@ struct i915_display {
 	/* The display core's own trace (power.c). */
 	struct i915_trace dc_trace;
 
-	/* The last firmware-display report, and the OpRegion and VBT copies the check reads (takeover.c). */
-	const struct i915_native_report *n0_last;
-	uint8_t read_opregion_copy[I915_OPREGION_SIZE];
-	uint8_t read_opregion_vcopy[I915_NATIVE_VBT_COPY_SIZE];
+	/* The OpRegion and VBT copies of the OpRegion read. */
 	uint8_t i915_opregion_read_data_opcopy[I915_OPREGION_SIZE];
 	uint8_t i915_opregion_read_data_vbtcopy[I915_NATIVE_VBT_COPY_SIZE];
 

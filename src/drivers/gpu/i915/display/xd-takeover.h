@@ -22,6 +22,16 @@
  * firmware lit by the ports of the platform's description: nothing, the
  * built-in panel, an HDMI or DVI port, a Type-C DisplayPort, or another
  * output the driver does not light (the firmware's picture is kept).
+ *
+ * The takeover stops what the firmware lit before the driver's first
+ * write, in the order an output is disabled: the planes, the panel's
+ * backlight, the sink, the transcoder and its DDI function, the
+ * scalers and the data islands, the DDI buffer, the transcoder's clock,
+ * the panel's power, the DDI clock, the PLL nobody else uses, the pipe's
+ * DMC.  The parts whose state the caller keeps (the backlight, the
+ * panel's sequencer, the sink, the power references) go through its
+ * hooks.  The VGA plane is turned off through the legacy sequencer
+ * first, then its control.
  */
 
 #ifndef DRIVERS_GPU_I915_DISPLAY_XD_TAKEOVER_H
@@ -29,6 +39,7 @@
 
 #include <stdint.h>
 
+#include "xd-dmc.h"
 #include "xd-io.h"
 #include "xd-platform.h"
 
@@ -164,11 +175,47 @@ struct i915_xd_firmware {
 	int take_over;
 	const char *reason;
 
-	/* The firmware's output: its kind, pipe, DDI (-1 for none) and DDI mode. */
+	/* The firmware's output: its kind, pipe, DDI (-1 for none) and DDI mode; the panel's DDI it was named by. */
+	int panel_ddi;
 	unsigned output;
 	unsigned output_pipe;
 	int output_ddi;
 	unsigned output_mode;
+};
+
+/*
+ * The caller's parts of a takeover, each for one pipe: the panel's
+ * backlight off, the sink told before the transcoder stops (an HDMI
+ * sink's scrambling) and after it (a DisplayPort sink to sleep), the
+ * panel's power off, the port's power references given back after the
+ * DDI is off, and the link's after the PLL.  A hook may be NULL.
+ */
+struct i915_xd_takeover_hooks {
+	void (*backlight_off)(void *context, unsigned pipe);
+	void (*sink_before)(void *context, unsigned pipe);
+	void (*sink_after)(void *context, unsigned pipe);
+	void (*panel_off)(void *context, unsigned pipe);
+	void (*port_release)(void *context, unsigned pipe);
+	void (*link_release)(void *context, unsigned pipe);
+	void *context;
+};
+
+/* The waits of a takeover that ran out, as bits. */
+#define I915_XD_TAKEOVER_LATE_VBLANK	0x01U
+#define I915_XD_TAKEOVER_LATE_PIPE	0x02U
+#define I915_XD_TAKEOVER_LATE_BUFFER	0x04U
+#define I915_XD_TAKEOVER_LATE_PLL	0x08U
+
+/*
+ * What a takeover of one pipe did: the DDI and the mode it stopped, the
+ * PLL it turned off (-1 for none, kept when another lit pipe uses it),
+ * and the waits that ran out.
+ */
+struct i915_xd_takeover_report {
+	int ddi;
+	unsigned mode;
+	int pll;
+	unsigned late;
 };
 
 int drv_i915_xd_firmware_read(struct i915_xd_io *io, const struct i915_xd_platform *platform, const struct i915_xd_fw_env *env, uint32_t opregion, struct i915_xd_firmware *firmware);
@@ -176,5 +223,7 @@ void drv_i915_xd_firmware_decide(struct i915_xd_firmware *firmware);
 void drv_i915_xd_firmware_classify(const struct i915_xd_platform *platform, int panel_ddi, struct i915_xd_firmware *firmware);
 const char *drv_i915_xd_firmware_output_name(unsigned output);
 void drv_i915_xd_firmware_log(const struct i915_xd_firmware *firmware);
+int drv_i915_xd_takeover_stop(struct i915_xd_io *io, const struct i915_xd_platform *platform, const struct i915_xd_dmc *dmc, struct i915_xd_firmware *firmware, unsigned pipe, const struct i915_xd_takeover_hooks *hooks, struct i915_xd_takeover_report *report);
+int drv_i915_xd_vga_off(struct i915_xd_io *io, int (*screen_off)(void *context), void *context);
 
 #endif /* DRIVERS_GPU_I915_DISPLAY_XD_TAKEOVER_H */

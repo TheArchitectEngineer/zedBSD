@@ -1995,10 +1995,10 @@ drv_i915_lcd_kernel_resident_run(
 	drv_i915_lcd_kernel_bind_ops(k);
 
 	/*
-	 * The display a UEFI boot's firmware left lit (N0 found an active
-	 * pipe): read out and stopped before this run writes (N1).
+	 * The display a UEFI boot's firmware left lit (the firmware check found
+	 * a lit pipe): read out and stopped before this run writes.
 	 */
-	if (display->n0.takeover) {
+	if (display->xd.firmware.take_over) {
 		takeover_error = i915_resident_takeover(display, k);
 		if (takeover_error != 0) {
 			k->p = NULL;
@@ -2006,7 +2006,7 @@ drv_i915_lcd_kernel_resident_run(
 		}
 
 		/* Taken over once: a later run starts from the driver's own display. */
-		display->n0.takeover = 0;
+		display->xd.firmware.take_over = 0;
 
 		/* The INIT reference the probe kept for the takeover goes back now (intel_power_domains_enable()). */
 		if (display->dprobe.power_domains_enable_deferred) {
@@ -3644,7 +3644,7 @@ i915_kernel_read32(
 
 	/* The register trace prints every access (a diagnostic switch). */
 	if (display->i915_lcd_reg_trace)
-		kern_logf("i915: N1 read 0x%05x = 0x%08x\n", reg, value);
+		kern_logf("i915: takeover: read 0x%05x = 0x%08x\n", reg, value);
 
 	/* The evasion probe (observation only): the first scanline read after the trigger. */
 	if (k->probe_watch && reg == I915_LCD_PIPEDSL_A) {
@@ -3671,7 +3671,7 @@ i915_kernel_write32(
 
 	/* The register trace prints every access (a diagnostic switch). */
 	if (display->i915_lcd_reg_trace)
-		kern_logf("i915: N1 write 0x%05x = 0x%08x\n", reg, value);
+		kern_logf("i915: takeover: write 0x%05x = 0x%08x\n", reg, value);
 
 	/* Writes the register. */
 	drv_i915_write32(k->d->mmio, reg, value);
@@ -3825,9 +3825,9 @@ i915_kernel_lock(
 	/* The register trace names every lock step (a diagnostic switch). */
 	if (display->i915_lcd_reg_trace) {
 		if (take) {
-			kern_logf("i915: N1 lock %d take\n", which);
+			kern_logf("i915: takeover: lock %d take\n", which);
 		} else {
-			kern_logf("i915: N1 lock %d give back\n", which);
+			kern_logf("i915: takeover: lock %d give back\n", which);
 		}
 	}
 
@@ -4158,8 +4158,8 @@ i915_resident_passed(
 }
 
 /*
- * Takes over the display the firmware left running (2026-09-29, the
- * sequence the N1 parity run proved on the machine): the panel's screen
+ * Takes over the display the firmware left running (the
+ * sequence proved on the machine): the panel's screen
  * objects are built with a placeholder framebuffer (the readout asks their
  * encoder), the PLL pool starts empty so the readout fills it from the
  * hardware, the readout and sanitize run (intel_modeset_setup_hw_state()),

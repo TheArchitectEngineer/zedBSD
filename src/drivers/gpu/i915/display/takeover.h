@@ -8,8 +8,8 @@
 /*
  * The takeover of the display the firmware left running (takeover.c).
  *
- * The output setup and its readout and sanitize, the VGA plane, the check of
- * the firmware display before the first display write, and the readout,
+ * The output setup and its readout and sanitize, the VGA plane, and the
+ * readout,
  * sanitize and takeover of the Linux text on the takeover registry.  Only the
  * functions whose arguments are neutral display types are declared here;
  * the registry accessors that take the modeset environment's types are in
@@ -44,7 +44,7 @@ int drv_i915_n1_takeover(struct i915_display *display, struct i915_n1_report *ou
 void drv_i915_n1_release(struct i915_display *display);
 
 /*
- * ==== The output setup, the VGA plane and the firmware display check ====
+ * ==== The output setup and the VGA plane ====
  */
 
 struct drv_pci_device;
@@ -84,13 +84,6 @@ void drv_i915_vga_unregister(struct i915_vga_client *c);
 void drv_i915_vga_io_test_set(struct i915_display *display, const struct i915_vga_io_ops *ops);
 void drv_i915_vga_reset_io_mem(struct i915_vga_client *c);
 int drv_i915_vga_disable(struct i915_display *display, struct i915_vga_client *c, struct i915_mmio *m);
-
-/* The firmware display check (N0) and the OpRegion data. */
-int drv_i915_native_precheck(struct i915_display *display, const struct i915_native_deps *d, struct i915_native_report *r);
-void drv_i915_native_decide(struct i915_native_report *r);
-void drv_i915_native_log_again(struct i915_display *display);
-void drv_i915_native_log(struct i915_display *display, const struct i915_native_report *r);
-int drv_i915_n0_pipe_powered(void *ctx, unsigned pipe);
 
 /* The firmware plane and console of the takeover run (N1). */
 void drv_i915_n1_read_plane(const struct i915_lcd_kernel_deps *d, int pipe, uint32_t *ctl, uint32_t *stride, uint32_t *size, uint32_t *surf, uint32_t *offset);

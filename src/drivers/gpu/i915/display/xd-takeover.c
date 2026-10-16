@@ -11,7 +11,11 @@
  */
 
 #include "xd-takeover.h"
+#include "xd-clock.h"
+#include "xd-ddi.h"
+#include "xd-dmc.h"
 #include "xd-io.h"
+#include "xd-pipe.h"
 #include "xd-platform.h"
 #include "xd-power.h"
 #include "display-internal.h"
@@ -58,6 +62,49 @@
 #define I915_XD_FW_DDI_SELECT_SHIFT	27U
 #define I915_XD_FW_DDI_MODE_SHIFT	24U
 
+/*
+ * A transcoder's data island packet control, and the packets a disable
+ * turns off: the AVI, general control, vendor, gamut, product and HDR
+ * infoframes, the VSC packet and the DSC picture parameters (a
+ * DisplayPort link's only).
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (_HSW_VIDEO_DIP_CTL_A, VIDEO_DIP_ENABLE_AVI_HSW,
+ * VIDEO_DIP_ENABLE_GCP_HSW, VIDEO_DIP_ENABLE_VS_HSW,
+ * VIDEO_DIP_ENABLE_GMP_HSW, VIDEO_DIP_ENABLE_SPD_HSW,
+ * VIDEO_DIP_ENABLE_DRM_GLK, VIDEO_DIP_ENABLE_VSC_HSW, VDIP_ENABLE_PPS).
+ */
+#define I915_XD_FW_DIP_CTL(trans)	(0x60200U + I915_XD_TRANS_STRIDE * (trans))
+#define I915_XD_FW_DIP_INFOFRAMES	0x10111111U
+#define I915_XD_FW_DIP_VSC		0x00100000U
+#define I915_XD_FW_DIP_PPS		0x01000000U
+
+/*
+ * The two scalers of a pipe: control, window position and window size.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (_PS_1A_CTRL, _PS_2A_CTRL, _PS_1B_CTRL, _PS_WIN_POS_1A, _PS_WIN_SZ_1A).
+ */
+#define I915_XD_FW_SCALERS		2U
+#define I915_XD_FW_PS_CTRL(pipe, scaler)	(0x68180U + 0x800U * (pipe) + 0x100U * (scaler))
+#define I915_XD_FW_PS_WIN_POS(pipe, scaler)	(0x68170U + 0x800U * (pipe) + 0x100U * (scaler))
+#define I915_XD_FW_PS_WIN_SZ(pipe, scaler)	(0x68174U + 0x800U * (pipe) + 0x100U * (scaler))
+
+/*
+ * The legacy VGA screen-off settle time before the VGA plane is
+ * disabled.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_vga.c
+ * (intel_vga_disable).
+ */
+#define I915_XD_FW_VGA_SETTLE_US	300U
+
+/* Where the PLL select sits in a DDI clock select. */
+#define I915_XD_FW_CLK_SEL_SHIFT	28U
+
+/* How long a plane's disable waits for the next vertical blank, in 1 ms steps. */
+#define I915_XD_FW_VBLANK_MS		100U
+
 /* The size of a GGTT page. */
 #define I915_XD_FW_PAGE_SHIFT		12U
 #define I915_XD_FW_PAGE_SIZE		4096U
@@ -69,6 +116,11 @@ static void i915_xd_fw_read_fb(const struct i915_xd_fw_env *env, struct i915_xd_
 static void i915_xd_fw_read_vtd(struct i915_xd_io *io, const struct i915_xd_fw_env *env, struct i915_xd_firmware *firmware);
 static void i915_xd_fw_vtd_walls(struct i915_xd_firmware *firmware);
 static void i915_xd_fw_choose_stop(struct i915_xd_firmware *firmware);
+static unsigned i915_xd_fw_planes_off(struct i915_xd_io *io, unsigned pipe);
+static const struct i915_xd_pll_desc *i915_xd_fw_pll_of(struct i915_xd_io *io, const struct i915_xd_platform *platform, const struct i915_xd_port_desc *port);
+static int i915_xd_fw_pll_shared(struct i915_xd_io *io, const struct i915_xd_platform *platform, const struct i915_xd_firmware *firmware, unsigned pipe, const struct i915_xd_pll_desc *pll);
+static void i915_xd_fw_clock_off(struct i915_xd_io *io, const struct i915_xd_platform *platform, const struct i915_xd_port_desc *port);
+static void i915_xd_fw_hook(void (*hook)(void *context, unsigned pipe), void *context, unsigned pipe);
 
 /*
  * Reads what the firmware left on the display into a record, writing
@@ -239,7 +291,8 @@ drv_i915_xd_firmware_classify(
 	unsigned mode;
 	unsigned pipe;
 
-	/* Nothing lit until a pipe says so. */
+	/* Nothing lit until a pipe says so; the panel's DDI is kept for the takeover. */
+	firmware->panel_ddi = panel_ddi;
 	firmware->output = I915_XD_FW_OUTPUT_NONE;
 	firmware->output_pipe = 0U;
 	firmware->output_ddi = -1;
@@ -355,6 +408,194 @@ drv_i915_xd_firmware_log(
 	    firmware->walls,
 	    firmware->stop,
 	    firmware->reason);
+}
+
+/*
+ * Stops one lit pipe the firmware left, in the order an output is
+ * disabled (see xd-takeover.h), and marks it dark in the record.  The
+ * pipe's DDI, its mode and its PLL are read from the hardware; the PLL is
+ * turned off unless another lit pipe still uses it.  dmc may be NULL (no
+ * pipe DMC is switched).  Returns 0, EINVAL for a pipe that is not lit or
+ * drives no DDI, or ENODEV for a DDI the description does not have.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_modeset_setup.c
+ * (intel_crtc_disable_noatomic_begin), intel_display.c (hsw_crtc_disable,
+ * intel_disable_transcoder), intel_ddi.c (intel_disable_ddi,
+ * intel_ddi_post_disable, intel_ddi_post_disable_dp,
+ * intel_ddi_post_disable_hdmi, intel_ddi_disable_transcoder_clock,
+ * icl_ddi_combo_disable_clock, icl_ddi_tc_disable_clock), intel_dp.c
+ * (intel_dp_set_infoframes), intel_hdmi.c (hsw_set_infoframes),
+ * skl_scaler.c (skl_scaler_disable), intel_dpll_mgr.c
+ * (intel_disable_shared_dpll), intel_dmc.c (intel_dmc_disable_pipe).
+ */
+int
+drv_i915_xd_takeover_stop(
+	struct i915_xd_io *io,
+	const struct i915_xd_platform *platform,
+	const struct i915_xd_dmc *dmc,
+	struct i915_xd_firmware *firmware,
+	unsigned pipe,
+	const struct i915_xd_takeover_hooks *hooks,
+	struct i915_xd_takeover_report *report)
+{
+	const struct i915_xd_port_desc *port;
+	const struct i915_xd_pll_desc *pll;
+	struct i915_xd_ddi_link link;
+	uint32_t function;
+	uint32_t islands;
+	uint32_t transport;
+	unsigned select;
+	unsigned scaler;
+	unsigned waits;
+	unsigned late;
+	int was_running;
+	int shared;
+	int panel;
+	int dp;
+
+	/* Nothing stopped yet. */
+	kern_memset(report, 0, sizeof(*report));
+	report->ddi = -1;
+	report->pll = -1;
+
+	/* A pipe that is not lit, or drives no DDI, has no output to stop. */
+	if (pipe >= I915_XD_FW_PIPES)
+		return EINVAL;
+	if ((firmware->lit_pipes & (1U << pipe)) == 0U)
+		return EINVAL;
+	function = drv_i915_xd_io_read(io, I915_XD_TRANS_DDI_FUNC_CTL(pipe));
+	select = (function & I915_XD_DDI_FUNC_SELECT) >> I915_XD_FW_DDI_SELECT_SHIFT;
+	if (select == 0U)
+		return EINVAL;
+
+	/* The DDI's description, its mode, and whether it is the panel. */
+	report->ddi = (int)select - 1;
+	report->mode = (function & I915_XD_DDI_FUNC_MODE) >> I915_XD_FW_DDI_MODE_SHIFT;
+	port = drv_i915_xd_platform_port(platform, (unsigned)report->ddi);
+	if (port == NULL)
+		return ENODEV;
+	dp = report->mode == I915_XD_DDI_FUNC_MODE_DP_SST;
+	panel = dp && report->ddi == firmware->panel_ddi;
+
+	/* The PLL the DDI runs on, read before its clock is gated. */
+	pll = i915_xd_fw_pll_of(io, platform, port);
+	drv_i915_xd_io_step(io, "xd-takeover stop");
+
+	/* The planes, with a vertical blank for their disable to take effect. */
+	late = i915_xd_fw_planes_off(io, pipe);
+
+	/* The panel's backlight, and the HDMI sink's scrambling. */
+	if (panel)
+		i915_xd_fw_hook(hooks->backlight_off, hooks->context, pipe);
+	if (!dp)
+		i915_xd_fw_hook(hooks->sink_before, hooks->context, pipe);
+
+	/* The transcoder and its DDI function. */
+	waits = drv_i915_xd_pipe_stop(io, pipe, &was_running);
+	if ((waits & I915_XD_PIPE_LATE_OFF) != 0U)
+		late |= I915_XD_TAKEOVER_LATE_PIPE;
+	(void)drv_i915_xd_pipe_func_disable(io, pipe, 0);
+
+	/* The scalers. */
+	for (scaler = 0U; scaler < I915_XD_FW_SCALERS; scaler++) {
+		drv_i915_xd_io_write(io, I915_XD_FW_PS_CTRL(pipe, scaler), 0U);
+		drv_i915_xd_io_write(io, I915_XD_FW_PS_WIN_POS(pipe, scaler), 0U);
+		drv_i915_xd_io_write(io, I915_XD_FW_PS_WIN_SZ(pipe, scaler), 0U);
+	}
+
+	/* The data islands (a DisplayPort link's picture parameters too). */
+	islands = I915_XD_FW_DIP_INFOFRAMES | I915_XD_FW_DIP_VSC;
+	if (dp)
+		islands |= I915_XD_FW_DIP_PPS;
+	(void)drv_i915_xd_io_rmw(io, I915_XD_FW_DIP_CTL(pipe), islands, 0U);
+	drv_i915_xd_io_posting_read(io, I915_XD_FW_DIP_CTL(pipe));
+
+	/* A DisplayPort sink goes to sleep before the port stops. */
+	if (dp)
+		i915_xd_fw_hook(hooks->sink_after, hooks->context, pipe);
+
+	/* The DDI buffer and the transport, with FEC when the link used it. */
+	kern_memset(&link, 0, sizeof(link));
+	link.ddi = (unsigned)report->ddi;
+	link.trans = pipe;
+	link.tc = port->phy_kind == I915_XD_PHY_DEKEL;
+	transport = drv_i915_xd_io_read(io, I915_XD_DP_TP_CTL(pipe));
+	if (dp && (transport & I915_XD_DP_TP_FEC) != 0U)
+		link.fec = 1;
+	waits = drv_i915_xd_ddi_stop(io, &link, dp);
+	if ((waits & I915_XD_DDI_LATE_IDLE) != 0U)
+		late |= I915_XD_TAKEOVER_LATE_BUFFER;
+
+	/* No clock to the transcoder. */
+	drv_i915_xd_io_write(io, I915_XD_TRANS_CLK_SEL(pipe), I915_XD_TRANS_CLK_SEL_NONE);
+
+	/* The panel's power, the port's power references, then its clock. */
+	if (panel)
+		i915_xd_fw_hook(hooks->panel_off, hooks->context, pipe);
+	i915_xd_fw_hook(hooks->port_release, hooks->context, pipe);
+	i915_xd_fw_clock_off(io, platform, port);
+
+	/* The PLL, unless another lit pipe still runs on it. */
+	firmware->lit_pipes &= ~(1U << pipe);
+	firmware->pipe[pipe].state = I915_XD_FW_PIPE_DARK;
+	if (pll != NULL) {
+		shared = i915_xd_fw_pll_shared(io, platform, firmware, pipe, pll);
+		if (!shared) {
+			report->pll = (int)(pll - platform->plls);
+			waits = drv_i915_xd_dpll_disable(io, pll);
+			if (waits != 0U)
+				late |= I915_XD_TAKEOVER_LATE_PLL;
+		}
+	}
+
+	/* The link's references, and the pipe's DMC. */
+	i915_xd_fw_hook(hooks->link_release, hooks->context, pipe);
+	if (dmc != NULL)
+		drv_i915_xd_dmc_pipe(dmc, io, pipe, 0);
+
+	/* Succeeded: the pipe is dark. */
+	report->late = late;
+	return 0;
+}
+
+/*
+ * Turns the VGA plane off: the screen off through the legacy sequencer
+ * (screen_off, the caller's: 0, or nonzero when the legacy I/O could not
+ * be owned), a settle time, then the VGA plane's disable.  Returns 0, 1
+ * when the plane was off already, or EIO when the legacy I/O was refused
+ * (the plane is left).
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_vga.c
+ * (intel_vga_disable).
+ */
+int
+drv_i915_xd_vga_off(
+	struct i915_xd_io *io,
+	int (*screen_off)(void *context),
+	void *context)
+{
+	uint32_t control;
+	int error;
+
+	/* A plane that is off already. */
+	control = drv_i915_xd_io_read(io, I915_XD_VGA_CONTROL);
+	if ((control & I915_XD_VGA_CONTROL_DISABLE) != 0U)
+		return 1;
+
+	/* The screen off through the sequencer first, or the I/O access is lost. */
+	drv_i915_xd_io_step(io, "xd-takeover vga off");
+	error = screen_off(context);
+	if (error != 0)
+		return EIO;
+	(void)drv_i915_xd_io_delay(io, I915_XD_FW_VGA_SETTLE_US);
+
+	/* The plane's disable, flushed. */
+	drv_i915_xd_io_write(io, I915_XD_VGA_CONTROL, I915_XD_VGA_CONTROL_DISABLE);
+	drv_i915_xd_io_posting_read(io, I915_XD_VGA_CONTROL);
+
+	/* Succeeded: the VGA plane is off. */
+	return 0;
 }
 
 /* Tells whether every well of a pipe and its transcoder is on. */
@@ -584,4 +825,154 @@ i915_xd_fw_choose_stop(
 		firmware->take_over = 1;
 		firmware->reason = "a pipe is lit: the driver takes the firmware's output over before its first write";
 	}
+}
+
+/* Turns the pipe's first plane off when it is on, and waits for the vertical blank that applies it; returns the late bits. */
+static unsigned
+i915_xd_fw_planes_off(
+	struct i915_xd_io *io,
+	unsigned pipe)
+{
+	uint32_t control;
+	uint32_t frame;
+	uint32_t now;
+	unsigned waited;
+
+	/* A plane that is off already is left. */
+	control = drv_i915_xd_io_read(io, I915_XD_PLANE_CTL(pipe));
+	if ((control & I915_XD_PLANE_CTL_ENABLE) == 0U)
+		return 0U;
+
+	/* The plane off, armed. */
+	frame = drv_i915_xd_pipe_frame(io, pipe);
+	drv_i915_xd_plane_off_noarm(io, pipe);
+	drv_i915_xd_plane_off_arm(io, pipe);
+
+	/* The next vertical blank. */
+	for (waited = 0U; waited < I915_XD_FW_VBLANK_MS; waited++) {
+		now = drv_i915_xd_pipe_frame(io, pipe);
+		if (now != frame)
+			return 0U;
+
+		(void)drv_i915_xd_io_delay(io, 1000U);
+	}
+
+	/* Succeeded: the plane is off, though no vertical blank was seen. */
+	return I915_XD_TAKEOVER_LATE_VBLANK;
+}
+
+/* Finds the PLL a port's clock is selected from: by the DDI clock map of a combo PHY, by the DDI clock select of a Type-C one; NULL for none. */
+static const struct i915_xd_pll_desc *
+i915_xd_fw_pll_of(
+	struct i915_xd_io *io,
+	const struct i915_xd_platform *platform,
+	const struct i915_xd_port_desc *port)
+{
+	unsigned select;
+	unsigned index;
+	unsigned kind;
+	int ungated;
+
+	/* A combo PHY: the select in the clock map, when its clock is ungated. */
+	if (port->phy_kind == I915_XD_PHY_COMBO) {
+		ungated = drv_i915_xd_dpll_mapped(io, platform, port->phy, &select);
+		if (!ungated)
+			return NULL;
+
+		return drv_i915_xd_dpll_desc(platform, select);
+	}
+
+	/* A Type-C PHY: the port's own PLL, the Thunderbolt PLL, or none. */
+	select = (drv_i915_xd_io_read(io, I915_XD_DDI_CLK_SEL(port->ddi)) & I915_XD_DDI_CLK_SEL_FIELD) >> I915_XD_FW_CLK_SEL_SHIFT;
+	if (select == I915_XD_DDI_CLK_SEL_TC_PLL) {
+		kind = I915_XD_PLL_TC;
+	} else if (select >= I915_XD_DDI_CLK_SEL_TBT_162) {
+		kind = I915_XD_PLL_TBT;
+	} else {
+		return NULL;
+	}
+
+	/* The PLL of that kind (and of the port, for a Type-C PLL). */
+	for (index = 0U; index < platform->nplls; index++) {
+		if (platform->plls[index].kind != kind)
+			continue;
+		if (kind == I915_XD_PLL_TC && platform->plls[index].tc != port->tc)
+			continue;
+
+		return &platform->plls[index];
+	}
+
+	/* Succeeded: the description has no such PLL. */
+	return NULL;
+}
+
+/* Tells whether a lit pipe other than this one still runs on a PLL. */
+static int
+i915_xd_fw_pll_shared(
+	struct i915_xd_io *io,
+	const struct i915_xd_platform *platform,
+	const struct i915_xd_firmware *firmware,
+	unsigned pipe,
+	const struct i915_xd_pll_desc *pll)
+{
+	const struct i915_xd_port_desc *port;
+	const struct i915_xd_pll_desc *other;
+	uint32_t function;
+	unsigned select;
+	unsigned index;
+
+	/* Each other lit pipe's DDI and its PLL. */
+	for (index = 0U; index < I915_XD_FW_PIPES; index++) {
+		if (index == pipe)
+			continue;
+		if ((firmware->lit_pipes & (1U << index)) == 0U)
+			continue;
+
+		function = drv_i915_xd_io_read(io, I915_XD_TRANS_DDI_FUNC_CTL(index));
+		select = (function & I915_XD_DDI_FUNC_SELECT) >> I915_XD_FW_DDI_SELECT_SHIFT;
+		if (select == 0U)
+			continue;
+		port = drv_i915_xd_platform_port(platform, select - 1U);
+		if (port == NULL)
+			continue;
+		other = i915_xd_fw_pll_of(io, platform, port);
+		if (other == pll)
+			return 1;
+	}
+
+	/* Succeeded: no other lit pipe uses it. */
+	return 0;
+}
+
+/* Gates a port's DDI clock: the clock-off bit of a combo PHY; a Type-C port's bit and its clock select. */
+static void
+i915_xd_fw_clock_off(
+	struct i915_xd_io *io,
+	const struct i915_xd_platform *platform,
+	const struct i915_xd_port_desc *port)
+{
+	/* A combo PHY's clock-off bit. */
+	if (port->phy_kind == I915_XD_PHY_COMBO) {
+		drv_i915_xd_dpll_unmap(io, platform, port->phy);
+		return;
+	}
+
+	/* A Type-C port's clock-off bit, then no PLL selected. */
+	(void)drv_i915_xd_io_rmw(io, I915_XD_DPCLKA_CFGCR0, 0U, I915_XD_DPCLKA_TC_OFF((unsigned)port->tc - 1U));
+	drv_i915_xd_io_write(io, I915_XD_DDI_CLK_SEL(port->ddi), I915_XD_DDI_CLK_SEL_NONE);
+}
+
+/* Calls one of the caller's hooks when it has one. */
+static void
+i915_xd_fw_hook(
+	void (*hook)(void *context, unsigned pipe),
+	void *context,
+	unsigned pipe)
+{
+	/* A hook the caller does not have. */
+	if (hook == NULL)
+		return;
+
+	/* The caller's part. */
+	hook(context, pipe);
 }

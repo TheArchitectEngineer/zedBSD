@@ -14,12 +14,14 @@ behind the AUX model).  They use no host library, so the kernel test build can l
 
 ## Host tests
 
+The host tests of the display 12 and 13 parts (`host-xd-*-test.c`, among them the firmware check of
+`xd-takeover.c`) are run by `plan/ws245/tests/run-xd-host-tests.sh`.
+
 | Script | Test source | What it links | Checks |
 | --- | --- | --- | ---: |
 | `run-dp-host-test.sh` | `host-dp-test.c` | eDP first stage (`dp-sink.c`, `panel.c`, `aux.c`, `edid-read.c`) on `dp-fake-hw.c` | 72 |
 | `run-lcd-host-test.sh` | `host-lcd-test.c` | state calculation and register words (`state.c` and the modeset writers) | 56 |
 | `run-lcd-modeset-host-test.sh` | `host-lcd-modeset-test.c` | one-screen modeset (`modeset.c` and its environment) with the resident eDP on `lcd-fake-hw.c` + `dp-fake-hw.c` | 123 |
-| `run-native-decide-host-test.sh` | `host-native-decide-test.c` | N0 decision rules (`takeover.c`: `drv_i915_native_decide`) | 14 |
 | `run-capture-host-test.sh` | `host-capture-test.c` | the capture display's layout, slot rotation and mode checks (`capture.c`, included with `I915_TEST_CAPTURE`) | 23 |
 
 Every script builds through `plan/ws031/tests/display-host-lib.sh`: all of `display/*.c` (each its own

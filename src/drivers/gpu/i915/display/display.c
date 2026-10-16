@@ -176,7 +176,6 @@ static void i915_display_destroy_worlds(struct i915_display *display);
 static struct i915_display *i915_display_live(struct i915_device *device);
 static int i915_display_noirq_front(struct i915_device *device);
 static int i915_display_native_check(struct i915_device *device);
-static void i915_display_firmware_compare(struct i915_display *display);
 static int i915_display_core_init(struct i915_device *device);
 static void i915_display_dmc_init(struct i915_device *device);
 static int i915_display_noirq_tail(struct i915_device *device);
@@ -684,9 +683,9 @@ drv_i915_display_register(
 	 * takeover this start stops here, because it would otherwise leave that
 	 * display untouched and unaccounted for.
 	 */
-	if (dprobe->initial_commit_unimplemented && display->n0.takeover)
-		kern_logf("i915: the firmware display (%u active crtc) is left to the resident start's takeover (N1)\n", dprobe->active_crtcs);
-	if (dprobe->initial_commit_unimplemented && !display->n0.takeover) {
+	if (dprobe->initial_commit_unimplemented && display->xd.firmware.take_over)
+		kern_logf("i915: the firmware display (%u active crtc) is left to the resident start's takeover\n", dprobe->active_crtcs);
+	if (dprobe->initial_commit_unimplemented && !display->xd.firmware.take_over) {
 		drv_i915_trace_record(&device->gt.trace, 0U, I915_TRACE_UNIMPLEMENTED, "intel_initial_commit", dprobe->active_crtcs, 0U);
 		device->stage = "intel_initial_commit";
 		return ENOTSUP;
@@ -1757,142 +1756,59 @@ i915_display_noirq_front(
 }
 
 /*
- * The firmware display check before the first display write: records what
- * the firmware left and decides whether the prepared start applies.
- * Read-only.  A STOP leaves the display untouched and unused.
+ * The firmware display check before the first display write: reads what
+ * the firmware left through the xd parts and decides whether the display
+ * is used (xd-takeover.c).  Read-only.  A display that is not used is
+ * left as the firmware left it.
  */
 static int
 i915_display_native_check(
 	struct i915_device *device)
 {
 	struct i915_display *display;
-	struct i915_native_deps nd;
+	const struct i915_xd_firmware *firmware;
 	struct i915_gt *gt;
 	uint32_t reserved;
+	uint32_t driver_first;
+	uint32_t asls;
 	char name[48];
 
 	display = device->display;
 	gt = &device->gt;
+	firmware = &display->xd.firmware;
 
-	/* The registers, the OpRegion base, the aperture and the GGTT the driver writes. */
-	kern_memset(&nd, 0, sizeof(nd));
-	nd.mmio = &gt->mmio;
-	nd.asls = drv_i915_pci_read32(&gt->pci, I915_PCI_ASLS);
-	nd.gmadr_base = gt->gmadr_base;
-	nd.gmadr_size = gt->gmadr_size;
-	nd.ggtt_pages = gt->ggtt_entries;
+	/* The GGTT pages the driver writes: the top window and the display window. */
 	reserved = I915_GT_GGTT_PAGES + I915_GT_DISPLAY_PAGES;
-	nd.driver_ggtt_first = 0U;
+	driver_first = 0U;
 	if (gt->ggtt_entries > reserved)
-		nd.driver_ggtt_first = gt->ggtt_entries - reserved;
+		driver_first = gt->ggtt_entries - reserved;
 
-	/* The pipes' real power state, read through the display's power domains. */
-	nd.pipe_powered = drv_i915_n0_pipe_powered;
-	nd.ctx = display;
-
-	/* What intel_bios_init actually handed to the parser. */
-	nd.parser_src = display->vbt_state.source;
-	nd.parser_size = 0U;
-	nd.parser_sha256 = NULL;
-
-
-	/* The OpRegion copy the hardware probe made is what the parser consumed. */
-	if (display->vbt_state.source == I915_VBT_SRC_OPREGION && display->p2_opd != NULL && display->p2_opd->vbt_valid) {
-		nd.parser_size = display->p2_opd->vbt_size;
-		nd.parser_sha256 = display->p2_opd->vbt_sha256;
-	}
-
-	/* Checks and logs. */
-	display->n0_mmio = &gt->mmio;
-	(void)drv_i915_native_precheck(display, &nd, &display->n0);
-	drv_i915_native_log(display, &display->n0);
-	kern_logf("i915: N0 before-N0: PCI COMMAND firmware=0x%04x now=0x%04x (BME/MEM set by the start; restored on teardown) | done already: GT reset (GDRST full, display untouched on ADL-P), GT fault/error-register clears, fence clears (0..31), PCODE reads, MSI enabled (no handler), WC CPU view of the aperture | not done: any display register, any GGTT PTE, any D-state change\n",
+	/* Reads and decides. */
+	asls = drv_i915_pci_read32(&gt->pci, I915_PCI_ASLS);
+	(void)drv_i915_xd_check_firmware(&display->xd, gt->gmadr_base, gt->gmadr_size, gt->ggtt_entries, driver_first, asls);
+	kern_logf("i915: N0: PCI COMMAND firmware=0x%04x now=0x%04x (memory and bus master set by the start, restored on teardown); no display register, GGTT entry or D-state written yet\n",
 	    (unsigned)gt->pci.saved_command,
 	    (unsigned)drv_i915_pci_read16(&gt->pci, I915_PCI_COMMAND_WORD));
 
-	/* A STOP: nothing on the display was touched, and nothing will be. */
-	if (!display->n0.proceed) {
-		kern_logf("i915: N0: the display is not used (native-precheck before any display write); the GPU node has no display\n");
+	/* A wall: nothing on the display was touched, and nothing will be. */
+	if (!firmware->use) {
+		kern_logf("i915: N0: the display is not used (%s); the GPU node has no display\n", firmware->reason);
 		display->absent = 1;
 	}
 
-	/* The same check by the xd parts, compared with the one above. */
-	(void)drv_i915_xd_check_firmware(&display->xd, gt->gmadr_base, gt->gmadr_size, nd.ggtt_pages, nd.driver_ggtt_first, nd.asls);
-
 	/* The firmware's output, the only one the driver lights by itself (the GPU scanout rule). */
-	drv_i915_gop_output_read(&display->xd.firmware, &display->gop);
-	i915_display_firmware_compare(display);
+	drv_i915_gop_output_read(firmware, &display->gop);
 	drv_i915_gop_output_name(&display->gop, name, sizeof(name));
 	kern_logf("i915: N0: the firmware's output: %s (lit pipes 0x%x)\n", name, display->gop.pipes);
 
 	/* One on an interface this driver cannot light keeps the firmware's picture: nothing on the display is touched. */
-	if (display->n0.proceed && display->gop.kind == I915_GOP_OTHER) {
+	if (firmware->use && display->gop.kind == I915_GOP_OTHER) {
 		kern_logf("i915: N0: the firmware's output (%s) is not one this driver lights: the firmware's picture is kept and the GPU node has no display\n", name);
 		display->absent = 1;
 	}
 
 	/* Succeeded: the check ran. */
 	return 0;
-}
-
-/*
- * Compares the xd parts' record of the firmware's display with the older
- * check's report, in one line: the decision, the takeover, the lit pipes,
- * the GGTT overlap, each lit pipe's DDI function, and the output's kind.
- */
-static void
-i915_display_firmware_compare(
-	struct i915_display *display)
-{
-	static const unsigned kinds[] = {
-		I915_XD_FW_OUTPUT_NONE,
-		I915_XD_FW_OUTPUT_PANEL,
-		I915_XD_FW_OUTPUT_HDMI,
-		I915_XD_FW_OUTPUT_OTHER,
-		I915_XD_FW_OUTPUT_DP_TC,
-	};
-	const struct i915_xd_firmware *firmware;
-	const struct i915_native_report *report;
-	const char *differs;
-	unsigned pipe;
-	int overlap;
-
-	/* The two records. */
-	firmware = &display->xd.firmware;
-	report = &display->n0;
-
-	/* The first field that differs, in the order of the decision. */
-	differs = NULL;
-	overlap = (firmware->walls & I915_XD_FW_WALL_OVERLAP) != 0U;
-	if (report->proceed != firmware->use)
-		differs = "the decision";
-	else if (report->takeover != firmware->take_over)
-		differs = "the takeover";
-	else if (report->active_pipes != firmware->lit_pipes)
-		differs = "the lit pipes";
-	else if (report->overlap != overlap)
-		differs = "the GGTT overlap";
-
-	/* Each lit pipe's DDI function. */
-	for (pipe = 0U; pipe < I915_XD_FW_PIPES; pipe++) {
-		if (differs != NULL)
-			break;
-		if ((report->active_pipes & (1U << pipe)) == 0U)
-			continue;
-		if (report->pipe[pipe].trans_ddi_func != firmware->pipe[pipe].ddi_function)
-			differs = "a lit pipe's DDI function";
-	}
-
-	/* The output's kind by the platform's ports against the driver's own rule. */
-	if (differs == NULL && display->gop.kind < sizeof(kinds) / sizeof(kinds[0]) && kinds[display->gop.kind] != firmware->output)
-		differs = "the output's kind";
-
-	/* One line either way. */
-	if (differs != NULL) {
-		kern_logf("i915: xd-takeover: differs from N0: %s\n", differs);
-		return;
-	}
-	kern_logf("i915: xd-takeover: agrees with N0\n");
 }
 
 /*
@@ -2471,9 +2387,9 @@ i915_driver_register(
 	 * With the firmware display left to the takeover, nothing references
 	 * its wells yet (the reference's intel_initial_commit() has taken them
 	 * over by now), so the INIT reference is kept until the takeover
-	 * (as the N1 parity run on the machine).
+	 * (as the run on the machine showed).
 	 */
-	if (display->n0.takeover) {
+	if (display->xd.firmware.take_over) {
 		p->power_domains_enable_deferred = 1;
 		kern_logf("i915: power_domains_enable: deferred (the INIT reference is kept until the takeover)\n");
 	} else {

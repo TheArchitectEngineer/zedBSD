@@ -20,22 +20,21 @@
 /*
  * The takeover of the display the firmware left running.
  *
- * Four parts, in the order of the display start:
+ * Three parts, in the order of the display start (the check of what the
+ * firmware left is xd-takeover.c's):
  *
- *   the firmware display check (N0)  what the firmware left on the display,
- *                                    read before the first display write,
- *                                    and the decision taken from it;
  *   the VGA plane                    the VGA arbiter client and the legacy
  *                                    VGA plane the firmware may have left on;
  *   the output setup                 the front of the Linux
  *                                    intel_display_driver_probe_nogem(): the
  *                                    crtc, plane, DPLL and encoder records, and
  *                                    their readout and sanitize;
- *   the takeover registry (N1)       the Linux intel_modeset_setup_hw_state()
+ *   the takeover registry            the Linux intel_modeset_setup_hw_state()
  *                                    and intel_crtc_disable_noatomic() run on
  *                                    a registry of the device's objects: the
  *                                    readout and sanitize of the firmware's
- *                                    display, then the takeover that stops it.
+ *                                    display, then the takeover that stops it
+ *                                    (its output through the xd parts).
  *
  * The readout, sanitize and noatomic disable of the registry are rewritten
  * from Linux v6.8.12 drivers/gpu/drm/i915/display/intel_modeset_setup.c
@@ -58,7 +57,9 @@
 #include "color.h"
 #include "ddi.h"
 #include "dmc.h"
+#include "dp.h"
 #include "dp-ext-kern.h"
+#include "hdmi-mode.h"
 #include "pipe.h"
 #include "power.h"
 #include "scanout.h"
@@ -125,8 +126,6 @@
 #define I915_DDI_CLOCK_REG_ACCESS		(1U << 7)
 
 /* The VGA plane control (display 5 and later) and the standard VGA ports (video/vga.h). */
-#define I915_CPU_VGACNTRL			0x41000U
-#define I915_VGA_DISP_DISABLE			(1U << 31)
 #define I915_VGA_SEQ_I				0x3C4U	/* sequencer index */
 #define I915_VGA_SEQ_D				0x3C5U	/* sequencer data */
 #define I915_VGA_SR01_SCREEN_OFF		0x20U	/* SR01 bit 5: screen off */
@@ -143,8 +142,6 @@
 #define I915_PCI_CLASS_VGA			0x030000U
 
 /* The ICL+ shared DPLL enable registers (read by the firmware's log). */
-#define I915_DPLL0_ENABLE			0x46010U
-#define I915_DPLL1_ENABLE			0x46014U
 
 /* enum intel_dpll_id, ICL naming (values preserved). */
 #define I915_DPLL_ID_ICL_DPLL0			0
@@ -249,9 +246,6 @@
 #define I915_TRANS_VTOTAL_A			0x6000cU
 #define I915_PIPESRC_A				0x6001cU
 #define I915_PLANE_CTL_1_A			0x70180U
-#define I915_PLANE_STRIDE_1_A			0x70188U
-#define I915_PLANE_SIZE_1_A			0x70190U
-#define I915_PLANE_SURF_1_A			0x7019cU
 #define I915_PLANE_CTL_ENABLE			(1U << 31)
 #define I915_PIPE_STRIDE			0x1000U
 
@@ -277,20 +271,7 @@
  */
 #define I915_DISABLE_DPT_CLK_GATING		(1U << 22)
 
-/* The registers N0 records on the pipe A power domain. */
-#define I915_HSW_PWR_WELL_CTL2			0x45404U
-#define I915_PP_STATUS				0xc7200U
-#define I915_PP_CONTROL				0xc7204U
-#define I915_BLC_PWM_CTL			0xc8250U
-#define I915_BLC_PWM_DUTY			0xc8258U
 
-/* The GPU's VT-d unit, reached through the MCHBAR mirror. */
-#define I915_MCHBAR_MIRROR			0x140000U
-#define I915_GFXVTBAR_LO			(I915_MCHBAR_MIRROR + 0x5400U)	/* bit 0 enable */
-#define I915_VTD_VER				0x00U	/* version: non-zero on a real unit */
-#define I915_VTD_GSTS				0x1cU	/* bit 31 TES translation enabled */
-#define I915_VTD_PMEN				0x64U	/* bit 0 EPM (enable), bit 31 PRS (status) */
-#define I915_VTD_WINDOW				0x1000U
 
 /*
  * One pin of the ICP GMBUS pin table (gmbus_pins_icp[]).
@@ -313,11 +294,32 @@ struct i915_dvo_port_map {
 	uint8_t dp;
 };
 
+/*
+ * The registry's objects of one crtc whose output the xd parts stop: the
+ * hooks keep the state of its encoder (NULL when the registry has none
+ * on the crtc) and connector.  Lives for one stop.
+ */
+struct i915_takeover_xd_stop_ctx {
+	struct i915_takeover_world *takeover;
+	struct intel_crtc *crtc;
+	struct intel_crtc_state *crtc_state;
+	struct intel_encoder *encoder;
+	struct intel_connector *connector;
+};
+
 static struct drm_i915_private *i915_takeover_cur_i915(struct i915_takeover_world *takeover);
 static struct i915_lcd_wm_ctx *i915_takeover_wm(struct i915_takeover_world *takeover);
 static int i915_takeover_reg_trace(const struct i915_takeover_world *takeover);
 static struct i915_takeover_world *i915_takeover_of_device(const struct drm_device *dev);
 static bool i915_n1_plane_get_hw_state(struct intel_plane *plane, enum pipe *pipe);
+static void i915_takeover_xd_stop(struct i915_takeover_world *takeover, struct intel_crtc *crtc);
+static int i915_vga_screen_off(void *context);
+static void i915_takeover_backlight_off(void *context, unsigned pipe);
+static void i915_takeover_sink_before(void *context, unsigned pipe);
+static void i915_takeover_sink_after(void *context, unsigned pipe);
+static void i915_takeover_panel_off(void *context, unsigned pipe);
+static void i915_takeover_port_release(void *context, unsigned pipe);
+static void i915_takeover_link_release(void *context, unsigned pipe);
 static void i915_n1_build_device(struct i915_takeover_world *takeover, const struct i915_lcd_modeset_cfg *cfg, struct i915_lcd_emit *ops);
 static void i915_n1_fill_report(struct i915_takeover_world *takeover, struct i915_n1_report *out);
 static void i915_n1_add_tc_ports(struct i915_takeover_world *takeover);
@@ -379,15 +381,6 @@ static int i915_vga_get_legacy_io(struct i915_display *display);
 static unsigned char i915_vga_in8(struct i915_display *display, unsigned short port);
 static void i915_vga_out8(struct i915_display *display, unsigned short port, unsigned char value);
 static void i915_vga_put_legacy_io(struct i915_display *display);
-static int i915_cpu_hypervisor(void);
-static void i915_read_opregion(struct i915_display *display, const struct i915_native_deps *d, struct i915_native_report *r);
-static void i915_read_vtd(const struct i915_native_deps *d, struct i915_native_report *r);
-static void i915_read_fb(const struct i915_native_deps *d, struct i915_native_report *r);
-static void i915_read_display(const struct i915_native_deps *d, struct i915_native_report *r);
-static const char *i915_opvbt_source_name(int src);
-static const char *i915_opvbt_observed_name(int src);
-static const char *i915_vbt_source_name(int parser_src);
-static void i915_sha_prefix(const uint8_t *sha256, char *text);
 
 /*
  * Allocates the takeover world of a display.
@@ -452,7 +445,7 @@ drv_i915_n1_crtc_at(
 	/* Prints the step of the walk while the register trace is on. */
 	trace = i915_takeover_reg_trace(takeover);
 	if (trace != 0) {
-		kern_logf("i915: N1 walk crtc %u (plane0 hook 0x%llx)\n",
+		kern_logf("i915: takeover: walk crtc %u (plane0 hook 0x%llx)\n",
 			  idx,
 			  (unsigned long long)(uintptr_t)takeover->n1.plane[0].get_hw_state);
 	}
@@ -507,7 +500,7 @@ drv_i915_n1_plane_at(
 	/* Prints the step of the walk, with where the registry and its first plane hook are. */
 	trace = i915_takeover_reg_trace(takeover);
 	if (trace != 0) {
-		kern_logf("i915: N1 walk plane %u | &n1=0x%llx &plane0=0x%llx hook=0x%llx live=%d\n",
+		kern_logf("i915: takeover: walk plane %u | &n1=0x%llx &plane0=0x%llx hook=0x%llx live=%d\n",
 			  idx,
 			  (unsigned long long)(uintptr_t)&takeover->n1,
 			  (unsigned long long)(uintptr_t)&takeover->n1.plane[0],
@@ -562,7 +555,7 @@ drv_i915_n1_encoder_at(
 	/* Prints the step of the walk while the register trace is on. */
 	trace = i915_takeover_reg_trace(takeover);
 	if (trace != 0)
-		kern_logf("i915: N1 walk encoder %u\n", idx);
+		kern_logf("i915: takeover: walk encoder %u\n", idx);
 
 	/* Answers nothing while the registry is not built. */
 	if (!takeover->n1.live)
@@ -594,7 +587,7 @@ drv_i915_n1_connector_at(
 	/* Prints the step of the walk while the register trace is on. */
 	trace = i915_takeover_reg_trace(takeover);
 	if (trace != 0)
-		kern_logf("i915: N1 walk connector %u\n", idx);
+		kern_logf("i915: takeover: walk connector %u\n", idx);
 
 	/* Answers nothing while the registry is not built. */
 	if (!takeover->n1.live)
@@ -2255,7 +2248,7 @@ drv_i915_modeset_sanitize_hw_state(
 	 * firmware display still lit its DDI IO and AUX wells would look unused
 	 * and go off under the running pipe, which then cannot be stopped
 	 * (pipe_off and DDI BUF idle time out).  They are kept for the
-	 * takeover (N1), whose own readout references them.
+	 * takeover, whose own readout references them.
 	 */
 	if (d->active_pipes != 0U)
 		kern_logf("i915: power wells: kept (active pipes 0x%x: the firmware display is left to the takeover)\n", d->active_pipes);
@@ -2528,14 +2521,11 @@ drv_i915_vga_reset_io_mem(
 }
 
 /*
- * Disables the VGA plane the driver never uses (intel_vga_disable()).
- *
- * The WaEnableVGAAccessThroughIOPort sequence turns the screen off through
- * the legacy sequencer first, waits 300 us, and only then sets
- * VGA_DISP_DISABLE in CPU_VGACNTRL -- doing it the other way round loses
- * the I/O port access.  Returns 0 after disabling the plane, 1 when it was
- * already disabled (not an errno), or EIO when the legacy I/O could not be
- * owned.
+ * Disables the VGA plane the driver never uses, through the xd parts
+ * (drv_i915_xd_vga_off): the legacy sequencer's screen off is this
+ * file's, since the legacy VGA I/O belongs to the VGA client.  Returns 0
+ * after disabling the plane, 1 when it was already disabled (not an
+ * errno), or EIO when the legacy I/O could not be owned.
  */
 int
 drv_i915_vga_disable(
@@ -2543,354 +2533,18 @@ drv_i915_vga_disable(
 	struct i915_vga_client *c,
 	struct i915_mmio *m)
 {
-	uint32_t vgacntrl;
-	unsigned char sr1;
-	int owned;
+	int result;
 
 	UNUSED_PARAMETER(c);
+	UNUSED_PARAMETER(m);
 
-	/* Already disabled: the reference returns here. */
-	vgacntrl = drv_i915_read32(m, I915_CPU_VGACNTRL);
-	if ((vgacntrl & I915_VGA_DISP_DISABLE) != 0U)
-		return 1;
-
-	/* WaEnableVGAAccessThroughIOPort: owns the legacy I/O first. */
-	owned = i915_vga_get_legacy_io(display);
-	if (owned == 0)
+	/* The screen off through the sequencer, then the plane. */
+	result = drv_i915_xd_vga_off(&display->xd.io, i915_vga_screen_off, display);
+	if (result == EIO)
 		return EIO;
 
-	/* Turns the screen off through sequencer register SR01. */
-	i915_vga_out8(display, I915_VGA_SEQ_I, 0x01U);
-	sr1 = i915_vga_in8(display, I915_VGA_SEQ_D);
-	i915_vga_out8(display, I915_VGA_SEQ_D, (unsigned char)(sr1 | I915_VGA_SR01_SCREEN_OFF));
-	i915_vga_put_legacy_io(display);
-
-	/* Lets the screen-off settle before the plane goes. */
-	(void)drv_i915_udelay(300U);
-
-	/* Disables the plane and flushes the write. */
-	drv_i915_write32(m, I915_CPU_VGACNTRL, I915_VGA_DISP_DISABLE);
-	drv_i915_posting_read32(m, I915_CPU_VGACNTRL);
-
-	/* Succeeded: the VGA plane is off. */
-	return 0;
-}
-
-/*
- * Records what the firmware left on the display and decides whether the
- * prepared start path applies (N0).
- *
- * Read-only: nothing here writes a register, the OpRegion or the VT-d unit.
- * The OpRegion and VBT copies are display->read_opregion_copy and
- * read_opregion_vcopy.  Returns 1 to proceed, 0 to stop before any display
- * write; r->reason says why.
- */
-int
-drv_i915_native_precheck(
-	struct i915_display *display,
-	const struct i915_native_deps *d,
-	struct i915_native_report *r)
-{
-	unsigned index;
-
-	/* Starts from an empty report. */
-	kern_memset(r, 0, sizeof(*r));
-
-	/* Records the platform and the GGTT pages the driver writes. */
-	r->hypervisor = i915_cpu_hypervisor();
-	r->ggtt_pages = d->ggtt_pages;
-	r->driver_ggtt_first = d->driver_ggtt_first;
-
-	/* Reads the OpRegion, the VT-d unit, the firmware framebuffer and the pipes. */
-	i915_read_opregion(display, d, r);
-	i915_read_vtd(d, r);
-	i915_read_fb(d, r);
-	i915_read_display(d, r);
-
-	/* Records what the VBT parser consumed. */
-	r->parser_src = d->parser_src;
-	r->parser_size = d->parser_size;
-
-	/* Compares the observed VBT with the bytes the parser consumed. */
-	if (d->parser_sha256 != NULL) {
-		r->parser_sha_known = 1;
-		r->vbt_same_bytes = r->vbt_valid;
-		for (index = 0U; index < 32U; index++) {
-			r->parser_sha256[index] = d->parser_sha256[index];
-			if (r->vbt_sha256[index] != d->parser_sha256[index])
-				r->vbt_same_bytes = 0;
-		}
-	}
-
-	/* Decides from the report alone. */
-	drv_i915_native_decide(r);
-
-	/* Succeeded: reports whether the start path applies. */
-	return r->proceed;
-}
-
-/*
- * Decides from an N0 report whether the prepared start path applies.
- *
- * Every condition is recorded, so one native run names every wall it can
- * see; the first in decision order is the one that stops.  Reads only the
- * report.
- */
-void
-drv_i915_native_decide(
-	struct i915_native_report *r)
-{
-	unsigned pipe;
-
-	/* The driver writes GGTT pages [driver_ggtt_first, ggtt_pages): no firmware scanout may live there. */
-	r->overlap = 0;
-	if (r->fb_in_aperture != 0 && r->fb_ggtt_first + r->fb_ggtt_pages > r->driver_ggtt_first)
-		r->overlap = 1;
-
-	/* Nor may the surface of an active pipe. */
-	for (pipe = 0U; pipe < 4U; pipe++) {
-		if ((r->active_pipes & (1U << pipe)) != 0U && (r->pipe[pipe].plane_surf >> 12) + 1U > r->driver_ggtt_first)
-			r->overlap = 1;
-	}
-
-	/* Records an active pipe. */
-	r->conditions = 0U;
-	if (r->active_pipes != 0U)
-		r->conditions |= I915_N0_C_ACTIVE_PIPE;
-
-	/* Records a pipe that did not read as register values. */
-	for (pipe = 0U; pipe < 4U; pipe++) {
-		if (r->pipe[pipe].cls == I915_N0_READ_ERROR)
-			r->conditions |= I915_N0_C_PIPE_READ_ERROR;
-	}
-
-	/* Records a GGTT overlap. */
-	if (r->overlap != 0)
-		r->conditions |= I915_N0_C_GGTT_OVERLAP;
-
-	/* Records the state of a VT-d unit the host does not own. */
-	if (r->hypervisor == 0 && r->vtd_enabled != 0) {
-		if (r->vtd_readable == 0) {
-			r->conditions |= I915_N0_C_VTD_UNREADABLE;
-		} else {
-			/* GSTS.TES: translation enabled. */
-			if ((r->vtd_gsts & 0x80000000U) != 0U)
-				r->conditions |= I915_N0_C_VTD_TRANSLATION;
-
-			/* PMEN.EPM / PRS: a protected memory region. */
-			if ((r->vtd_pmen & 0x80000001U) != 0U)
-				r->conditions |= I915_N0_C_VTD_PMR;
-
-			/* GSTS.IRES: interrupt remapping. */
-			if ((r->vtd_gsts & 0x02000000U) != 0U)
-				r->conditions |= I915_N0_C_VTD_IR_ENABLED;
-		}
-	}
-
-	/* Records an OpRegion. */
-	if (r->asls != 0U)
-		r->conditions |= I915_N0_C_OPREGION_REGISTER;
-
-	/* Records an OpRegion VBT that is not the one the parser consumed. */
-	if (r->vbt_valid != 0 && r->parser_sha_known != 0 && r->vbt_same_bytes == 0)
-		r->conditions |= I915_N0_C_VBT_DIFFERS;
-
-	/*
-	 * Takes the first stop in decision order.  An active pipe is not a stop:
-	 * a UEFI boot's GOP leaves the panel lit,
-	 * and the display start reads it out and stops it (N1:
-	 * intel_modeset_setup_hw_state() and intel_crtc_disable_noatomic()) before
-	 * its first write.  Every other condition still stops.
-	 */
-	r->proceed = 0;
-	r->takeover = 0;
-	r->primary_stop = 0U;
-	if ((r->conditions & I915_N0_C_PIPE_READ_ERROR) != 0U) {
-		r->primary_stop = I915_N0_C_PIPE_READ_ERROR;
-		r->reason = "a pipe's power state / registers did not read as register values: not shown inactive";
-	} else if ((r->conditions & I915_N0_C_GGTT_OVERLAP) != 0U) {
-		r->primary_stop = I915_N0_C_GGTT_OVERLAP;
-		r->reason = "the firmware scanout overlaps the GGTT pages this driver writes";
-	} else if ((r->conditions & I915_N0_C_VTD_UNREADABLE) != 0U) {
-		r->primary_stop = I915_N0_C_VTD_UNREADABLE;
-		r->reason = "the GPU's VT-d unit is enabled but its status is not readable";
-	} else if ((r->conditions & (I915_N0_C_VTD_TRANSLATION | I915_N0_C_VTD_PMR)) != 0U) {
-		r->primary_stop = r->conditions & (I915_N0_C_VTD_TRANSLATION | I915_N0_C_VTD_PMR);
-		r->reason = "the GPU's VT-d unit translates / protects memory (firmware DMA protection) and zedBSD has no IOMMU driver";
-	} else if (r->hypervisor != 0) {
-		/* A guest sees the host's unit; the host owns it. */
-		r->proceed = 1;
-		r->reason = "start conditions match the prepared path (no overlap; VT-d: guest view, the host owns the unit)";
-	} else {
-		/* Native, with DMA untranslated. */
-		r->proceed = 1;
-		r->reason = "start conditions match the prepared path (no overlap, DMA untranslated)";
-	}
-
-	/* A firmware display the start takes over before its first write. */
-	if (r->proceed && (r->conditions & I915_N0_C_ACTIVE_PIPE) != 0U) {
-		r->takeover = 1;
-		r->reason = "a pipe is active (firmware display): the start takes it over (N1: readout + crtc_disable_noatomic) before its first write";
-	}
-}
-
-/*
- * Logs the last N0 report again, as the final output of a run.
- *
- * Nothing is logged when N0 did not run.
- */
-void
-drv_i915_native_log_again(
-	struct i915_display *display)
-{
-	/* N0 did not run: there is nothing to repeat. */
-	if (display->n0_last == NULL)
-		return;
-
-	/* Repeats the summary. */
-	kern_logf("i915: N0 ---- summary (repeated at the end of the run) ----\n");
-	drv_i915_native_log(display, display->n0_last);
-}
-
-/*
- * Logs an N0 report and remembers it for drv_i915_native_log_again().
- */
-void
-drv_i915_native_log(
-	struct i915_display *display,
-	const struct i915_native_report *r)
-{
-	const struct i915_native_pipe *q;
-	const char *class_name;
-	char sha[17];
-	char psha[17];
-	unsigned pipe;
-
-	/* Remembers the report for the summary at the end of the run. */
-	display->n0_last = r;
-
-	/* Spells the first 8 bytes of both hashes in hex. */
-	i915_sha_prefix(r->vbt_sha256, sha);
-	i915_sha_prefix(r->parser_sha256, psha);
-
-	/* Logs the platform, the OpRegion and the VT-d unit. */
-	kern_logf("i915: N0 platform: hypervisor=%d (CPUID.1:ECX[31]; recorded, not a driver mode)\n", r->hypervisor);
-	kern_logf("i915: N0 opregion: ASLS=0x%08x mapped=%d sig=%d ver=%u.%u.%u size=%uKiB mboxes=0x%x | VBT via %s "
-		"(rvda=0x%llx rvds=%u relative=%d inside=%d phys=0x%llx) mapped=%d size=%u valid=%d sha256=%s.. matches explicit pin=%d\n",
-		r->asls, r->opregion_mapped, r->op.signature_ok, r->op.major, r->op.minor, r->op.revision, r->op.size_kib, r->op.mboxes,
-		i915_opvbt_source_name(r->op.src),
-		(unsigned long long)r->op.rvda, r->op.rvds, r->op.rvda_relative, r->op.rvda_inside, (unsigned long long)r->op.vbt_phys,
-		r->vbt_mapped, r->vbt_size, r->vbt_valid, r->vbt_mapped ? sha : "-", r->vbt_matches_pin);
-	kern_logf("i915: N0 vt-d (GPU unit): GFXVTBAR=0x%llx enabled=%d view=%s VER=0x%08x readable=%d GSTS=0x%08x "
-		"(TES bit31) PMEN=0x%08x (EPM bit0 / PRS bit31)\n", (unsigned long long)r->gfxvtbar, r->vtd_enabled,
-		r->hypervisor ? "guest" : "native", r->vtd_ver, r->vtd_readable, r->vtd_gsts, r->vtd_pmen);
-	kern_logf("i915: N0 vt-d GSTS decoded: TES=%u RTPS=%u FLS=%u AFLS=%u WBFS=%u QIES=%u IRES=%u IRTPS=%u CFIS=%u | "
-		"PMEN EPM=%u PRS=%u%s\n", (r->vtd_gsts >> 31) & 1U, (r->vtd_gsts >> 30) & 1U, (r->vtd_gsts >> 29) & 1U,
-		(r->vtd_gsts >> 28) & 1U, (r->vtd_gsts >> 27) & 1U, (r->vtd_gsts >> 26) & 1U, (r->vtd_gsts >> 25) & 1U,
-		(r->vtd_gsts >> 24) & 1U, (r->vtd_gsts >> 23) & 1U, r->vtd_pmen & 1U, (r->vtd_pmen >> 31) & 1U,
-		r->vtd_readable ? "" : " (not register values)");
-
-	/* Logs the VBT the OpRegion carries against the one the parser adopted. */
-	kern_logf("i915: N0 VBT: observed %s %u bytes sha256=%s.. | adopted by the parser: %s %u bytes sha256=%s.. | "
-		"same bytes=%d\n", i915_opvbt_observed_name(r->op.src), r->vbt_size, r->vbt_mapped ? sha : "-",
-		i915_vbt_source_name(r->parser_src), r->parser_size, r->parser_sha_known ? psha : "-",
-		r->vbt_same_bytes);
-
-	/* Logs the firmware framebuffer and the GGTT pages. */
-	kern_logf("i915: N0 firmware framebuffer: present=%d base=0x%llx size=0x%llx in_aperture=%d GGTT pages %u..%u | "
-		"driver writes GGTT pages %u..%u overlap=%d\n", r->fb_present, (unsigned long long)r->fb_base,
-		(unsigned long long)r->fb_size, r->fb_in_aperture, r->fb_ggtt_first, r->fb_ggtt_first + r->fb_ggtt_pages,
-		r->driver_ggtt_first, r->ggtt_pages, r->overlap);
-
-	/* Logs every pipe. */
-	for (pipe = 0U; pipe < 4U; pipe++) {
-		/* A pipe that could not be read names why. */
-		q = &r->pipe[pipe];
-		if (q->readable == 0) {
-			if (q->cls == I915_N0_READ_ERROR)
-				class_name = "READ_ERROR (the power state did not read as a register value; NOT counted inactive)";
-			else
-				class_name = "POWER_OFF";
-
-			/* Reports the unreadable pipe. */
-			kern_logf("i915: N0 pipe %c: %s -- not_readable (its wells' STATE is off: counted inactive, as the reference readout "
-				"concludes; its registers were not read)\n", 'A' + (int)pipe, class_name);
-			continue;
-		}
-
-		/* A readable pipe names its class and its registers. */
-		if (q->cls == I915_N0_READABLE_ACTIVE)
-			class_name = "READABLE_ACTIVE";
-		else if (q->cls == I915_N0_READ_ERROR)
-			class_name = "READ_ERROR (a pipe register read all-ones)";
-		else
-			class_name = "READABLE_INACTIVE";
-
-		/* Reports the class and the registers. */
-		kern_logf("i915: N0 pipe %c: %s\n", 'A' + (int)pipe, class_name);
-		kern_logf("i915: N0 pipe %c: TRANSCONF=0x%08x TRANS_DDI_FUNC_CTL=0x%08x PIPESRC=0x%08x PLANE_CTL=0x%08x "
-			"PLANE_SURF=0x%08x STRIDE=0x%08x SIZE=0x%08x\n", 'A' + (int)pipe, q->transconf, q->trans_ddi_func, q->pipesrc,
-			q->plane_ctl, q->plane_surf, q->plane_stride, q->plane_size);
-	}
-
-	/* Logs the pipe A power domain, which was read only when pipe A was readable. */
-	if (r->pipe[0].readable == 0) {
-		kern_logf("i915: N0 pipe-A domain: not read (pipe A's wells are off)\n");
-	} else {
-		kern_logf("i915: N0 pipe-A domain: DPLL0_ENABLE=0x%08x DPLL1_ENABLE=0x%08x DPCLKA_CFGCR0=0x%08x (PHY A -> DPLL %u) "
-			"DDI_BUF_CTL_A=0x%08x PP_STATUS=0x%08x PP_CONTROL=0x%08x BLC_PWM_CTL=0x%08x BLC_PWM_DUTY=0x%08x\n", r->pll_enable[0],
-			r->pll_enable[1], r->dpclka_cfgcr0, r->dpclka_cfgcr0 & 3U, r->ddi_buf_ctl_a, r->pp_status, r->pp_control, r->blc_ctl,
-			r->blc_duty);
-	}
-
-	/* Logs the decision and every condition observed. */
-	kern_logf("i915: N0 decision: %s -- %s (active pipes 0x%x, unreadable 0x%x)\n", r->proceed ? "PROCEED" : "STOP before "
-		"any display write", r->reason, r->active_pipes, r->unreadable_pipes);
-	kern_logf("i915: N0 conditions: primary=0x%x observed=0x%x [%s%s%s%s%s%s%s%s%s]\n", r->primary_stop, r->conditions,
-		(r->conditions & I915_N0_C_ACTIVE_PIPE) ? " ACTIVE_PIPE" : "",
-		(r->conditions & I915_N0_C_PIPE_READ_ERROR) ? " PIPE_READ_ERROR" : "",
-		(r->conditions & I915_N0_C_GGTT_OVERLAP) ? " GGTT_OVERLAP" : "",
-		(r->conditions & I915_N0_C_VTD_UNREADABLE) ? " VTD_UNREADABLE" : "",
-		(r->conditions & I915_N0_C_VTD_TRANSLATION) ? " VTD_TRANSLATION" : "",
-		(r->conditions & I915_N0_C_VTD_PMR) ? " VTD_PMR" : "",
-		(r->conditions & I915_N0_C_VTD_IR_ENABLED) ? " VTD_IR_ENABLED(check the MSI path)" : "",
-		(r->conditions & I915_N0_C_OPREGION_REGISTER) ? " OPREGION_PRESENT(data only; runtime disabled)" : "",
-		(r->conditions & I915_N0_C_VBT_DIFFERS) ? " VBT_DIFFERS" : "");
-}
-
-/*
- * Reports whether a pipe's power domains are on, for the N0 readout gate.
- *
- * The pipe_powered callback of struct i915_native_deps: ctx is the struct
- * i915_display (its power_domains and the n0_mmio N0 reads with).  It reads
- * the wells' real STATE, since before init_hw the driver neither synced nor
- * took over the firmware's requests.  Returns 1 when both the pipe and the
- * transcoder domains are on, else 0.
- */
-int
-drv_i915_n0_pipe_powered(
-	void *ctx,
-	unsigned pipe)
-{
-	struct i915_display *display;
-	int pipe_on;
-	int transcoder_on;
-
-	/* The context is the display N0 runs on. */
-	display = ctx;
-
-	/* The pipe domain must be on. */
-	pipe_on = drv_i915_power_domain_hw_state_on(&display->power_domains, (enum i915_power_domain)(I915_PW_DOMAIN_PIPE_A + pipe), display->n0_mmio);
-	if (pipe_on == 0)
-		return 0;
-
-	/* So must the transcoder domain. */
-	transcoder_on = drv_i915_power_domain_hw_state_on(&display->power_domains, (enum i915_power_domain)(I915_PW_DOMAIN_TRANSCODER_A + pipe), display->n0_mmio);
-	if (transcoder_on == 0)
-		return 0;
-
-	/* Succeeded: the pipe's registers are readable. */
-	return 1;
+	/* Succeeded: the plane is off (1 when it already was). */
+	return result;
 }
 
 /*
@@ -2994,7 +2648,7 @@ drv_i915_n1_check_ggtt(
 			verdict = "same";
 		else
 			verdict = "DIFFERS";
-		kern_logf("i915: N1 ggtt[%u] (page %u) = 0x%016llx -> 0x%llx | console page 0x%llx | %s\n",
+		kern_logf("i915: takeover: ggtt[%u] (page %u) = 0x%016llx -> 0x%llx | console page 0x%llx | %s\n",
 			probe[index], first + probe[index], (unsigned long long)pte, (unsigned long long)pa,
 			(unsigned long long)want, verdict);
 
@@ -3005,7 +2659,7 @@ drv_i915_n1_check_ggtt(
 
 	/* The console writes through this very mapping: plane and CPU read/write the same pages. */
 	if (in_aperture != 0) {
-		kern_logf("i915: N1 ggtt: the console writes THROUGH the aperture, so the plane and the CPU "
+		kern_logf("i915: takeover: ggtt: the console writes THROUGH the aperture, so the plane and the CPU "
 			"use the same mapping by construction\n");
 		return 1;
 	}
@@ -3148,12 +2802,12 @@ i915_n1_plane_get_hw_state(
 	takeover = i915_takeover_of_device(plane->base.dev);
 	trace = i915_takeover_reg_trace(takeover);
 	if (trace != 0)
-		kern_logf("i915: N1 plane hook entered\n");
+		kern_logf("i915: takeover: plane hook entered\n");
 
 	/* Takes the plane text's readout hook. */
 	hook = i915_lcd_plane_get_hw_state();
 	if (trace != 0) {
-		kern_logf("i915: N1 plane %d hook %p\n",
+		kern_logf("i915: takeover: plane %d hook %p\n",
 			  (int)plane->pipe,
 			  (void *)hook);
 	}
@@ -3161,7 +2815,7 @@ i915_n1_plane_get_hw_state(
 	/* Reads the plane. */
 	visible = hook(plane, pipe);
 	if (trace != 0) {
-		kern_logf("i915: N1 plane %d visible=%d\n",
+		kern_logf("i915: takeover: plane %d visible=%d\n",
 			  (int)plane->pipe,
 			  (int)visible);
 	}
@@ -3270,7 +2924,7 @@ i915_n1_build_device(
 	}
 
 	/* Reports the registry, with where it and its first plane hook are. */
-	kern_logf("i915: N1 registry: %u built | &n1=0x%llx &plane0=0x%llx hook=0x%llx\n",
+	kern_logf("i915: takeover: registry: %u built | &n1=0x%llx &plane0=0x%llx hook=0x%llx\n",
 		  (unsigned)I915_N1_PIPES,
 		  (unsigned long long)(uintptr_t)n1,
 		  (unsigned long long)(uintptr_t)&n1->plane[0],
@@ -3460,7 +3114,7 @@ i915_n1_add_tc_ports(
 	}
 
 	/* Reports what the walks hold. */
-	kern_logf("i915: N1 registry: %u encoder(s): the bound screen's and %u Type-C port(s)\n",
+	kern_logf("i915: takeover: registry: %u encoder(s): the bound screen's and %u Type-C port(s)\n",
 		  n1->encoder_count,
 		  n1->encoder_count - 1u);
 }
@@ -3679,11 +3333,12 @@ i915_get_transcoder_pipes(
 }
 
 /*
- * Disables one active crtc through the display hooks (intel_crtc_disable_noatomic_begin()).
+ * Disables one active crtc (intel_crtc_disable_noatomic_begin()).
  *
- * The visible planes go first, then the crtc is disabled with the
- * registry's throw-away atomic state, and its reference on the shared DPLL
- * is dropped.
+ * The visible planes are taken out of the registry's state first (their
+ * hardware is the xd plane's), then the output is stopped through the xd
+ * parts (i915_takeover_xd_stop), and the crtc's reference on the shared
+ * DPLL is dropped.
  */
 static void
 i915_crtc_disable_noatomic_begin(
@@ -3691,25 +3346,14 @@ i915_crtc_disable_noatomic_begin(
 	struct intel_crtc *crtc,
 	struct drm_modeset_acquire_ctx *ctx)
 {
-	struct drm_i915_private *i915;
-	struct drm_i915_private *cur_i915;
-	struct i915_lcd_wm_ctx *wm;
 	struct intel_crtc_state *crtc_state;
 	const struct intel_plane_state *plane_state;
-	struct intel_crtc_state *temp_crtc_state;
-	struct intel_atomic_state *state;
-	struct intel_crtc *temp_crtc;
 	struct intel_plane *plane;
-	enum pipe pipe;
-	unsigned index;
-	int ret;
 
-	/* Resolves the crtc's device, state and pipe, and the readout context. */
-	i915 = i915_lcd_to_i915(crtc->base.dev);
+	UNUSED_PARAMETER(ctx);
+
+	/* Resolves the crtc's state. */
 	crtc_state = to_intel_crtc_state(crtc->base.state);
-	pipe = crtc->pipe;
-	cur_i915 = i915_takeover_cur_i915(takeover);
-	wm = i915_takeover_wm(takeover);
 
 	/* An inactive crtc has nothing to disable. */
 	if (!crtc_state->hw.active)
@@ -3722,49 +3366,8 @@ i915_crtc_disable_noatomic_begin(
 			drv_i915_plane_disable_noatomic(takeover, crtc, plane);
 	}
 
-	/* Takes the throw-away atomic state of the disable. */
-	state = I915_TAKEOVER_DRM_ATOMIC_STATE_ALLOC(takeover, &i915->drm);
-	if (state == NULL) {
-		I915_LCD_DRM_DBG_KMS(&i915->drm,
-				     "failed to disable [CRTC:%d:%s], out of memory",
-				     crtc->base.base.id,
-				     crtc->base.name);
-		return;
-	}
-
-	/* The state carries the lock context and is the driver's own. */
-	state->acquire_ctx = ctx;
-	state->internal = true;
-
-	/*
-	 * Adds the crtc and its big-joiner slaves to the state.  Everything is
-	 * already locked, so -EDEADLK cannot happen.
-	 */
-	I915_TAKEOVER_FOR_EACH_INTEL_CRTC_IN_PIPE_MASK(takeover, temp_crtc, index, BIT(pipe) | intel_crtc_bigjoiner_slave_pipes(crtc_state)) {
-		/* Records the crtc's state as the old state of the disable. */
-		temp_crtc_state = I915_TAKEOVER_INTEL_ATOMIC_GET_CRTC_STATE(takeover, wm, state, temp_crtc);
-
-		/* Adds the crtc's connectors (a step of the DRM atomic core, not ported). */
-		ret = I915_TAKEOVER_DRM_ATOMIC_ADD_AFFECTED_CONNECTORS(cur_i915, state, &temp_crtc->base);
-
-		/*
-		 * Warns when either failed.  No accessor of this path returns an
-		 * error pointer (IS_ERR() is false), so only the connector step
-		 * can fail.
-		 */
-		(void)temp_crtc_state;
-		if (ret != 0)
-			drv_i915_lcd_error("WARN_ON(IS_ERR(temp_crtc_state) || ret)\n");
-	}
-
-	/* Disables the crtc through the display hooks. */
-	i915->display.funcs.display->crtc_disable(state, crtc);
-
-	/* Notes the adjusted state. */
-	I915_LCD_DRM_DBG_KMS(&i915->drm,
-			     "[CRTC:%d:%s] hw state adjusted, was enabled, now disabled\n",
-			     crtc->base.base.id,
-			     crtc->base.name);
+	/* Stops the output through the xd parts. */
+	i915_takeover_xd_stop(takeover, crtc);
 
 	/* The crtc no longer runs. */
 	crtc->active = false;
@@ -3776,6 +3379,213 @@ i915_crtc_disable_noatomic_begin(
 						      crtc_state->shared_dpll,
 						      &crtc_state->shared_dpll->state);
 	}
+}
+
+/*
+ * Stops the output a crtc of the registry drives through the xd parts
+ * (drv_i915_xd_takeover_stop), with the registry's encoder of the crtc
+ * (when it has one) keeping its own state through the hooks.
+ */
+static void
+i915_takeover_xd_stop(
+	struct i915_takeover_world *takeover,
+	struct intel_crtc *crtc)
+{
+	struct i915_takeover_xd_stop_ctx stop;
+	struct i915_xd_takeover_hooks hooks;
+	struct i915_xd_takeover_report report;
+	struct i915_display *display;
+	struct i915_n1_registry *n1;
+	unsigned index;
+	unsigned pipe;
+	int error;
+
+	/* A device without a description has no xd parts to stop the output with. */
+	display = takeover->display;
+	n1 = &takeover->n1;
+	pipe = (unsigned)crtc->pipe;
+	if (!display->xd.chosen) {
+		kern_logf("i915: takeover: pipe %c: no description of the device, the output is left\n", 'A' + (int)pipe);
+		return;
+	}
+
+	/* The crtc's encoder and connector in the registry, when it has them. */
+	kern_memset(&stop, 0, sizeof(stop));
+	stop.takeover = takeover;
+	stop.crtc = crtc;
+	stop.crtc_state = to_intel_crtc_state(crtc->base.state);
+	for (index = 0U; index < n1->encoder_count; index++) {
+		if (n1->encoders[index]->base.crtc != &crtc->base)
+			continue;
+
+		stop.encoder = n1->encoders[index];
+		stop.connector = n1->connectors[index];
+		break;
+	}
+
+	/* The parts whose state the encoder keeps. */
+	kern_memset(&hooks, 0, sizeof(hooks));
+	hooks.backlight_off = i915_takeover_backlight_off;
+	hooks.sink_before = i915_takeover_sink_before;
+	hooks.sink_after = i915_takeover_sink_after;
+	hooks.panel_off = i915_takeover_panel_off;
+	hooks.port_release = i915_takeover_port_release;
+	hooks.link_release = i915_takeover_link_release;
+	hooks.context = &stop;
+
+	/* The record says the pipe is lit, whatever the firmware check saw (the sanitize may stop a pipe too). */
+	display->xd.firmware.lit_pipes |= 1U << pipe;
+	error = drv_i915_xd_takeover_stop(&display->xd.io, display->xd.choice.platform, &display->xd.dmc, &display->xd.firmware, pipe, &hooks, &report);
+	kern_logf("i915: takeover: pipe %c stopped: DDI %d mode %u, PLL %d, late 0x%x, encoder %s (rc %d)\n",
+	    'A' + (int)pipe,
+	    report.ddi,
+	    report.mode,
+	    report.pll,
+	    report.late,
+	    stop.encoder != NULL ? "kept" : "none",
+	    error);
+}
+
+/* The panel's backlight off, through the connector's panel. */
+static void
+i915_takeover_backlight_off(
+	void *context,
+	unsigned pipe)
+{
+	struct i915_takeover_xd_stop_ctx *stop;
+
+	UNUSED_PARAMETER(pipe);
+
+	/* A crtc without a connector has no panel of the driver's. */
+	stop = context;
+	if (stop->connector == NULL)
+		return;
+
+	/* The backlight off, its state with it. */
+	drv_i915_edp_backlight_off(stop->connector->base.state);
+}
+
+/* An HDMI sink's scrambling and clock ratio reset. */
+static void
+i915_takeover_sink_before(
+	void *context,
+	unsigned pipe)
+{
+	struct i915_takeover_xd_stop_ctx *stop;
+	bool reset;
+
+	UNUSED_PARAMETER(pipe);
+
+	/* A crtc without an encoder has no sink of the driver's. */
+	stop = context;
+	if (stop->encoder == NULL || stop->connector == NULL)
+		return;
+	if (stop->connector->base.state == NULL)
+		return;
+
+	/* Resets the sink; a failure is only logged. */
+	reset = drv_i915_hdmi_handle_sink_scrambling(stop->encoder, stop->connector->base.state->connector, false, false);
+	if (!reset)
+		kern_logf("i915: takeover: the HDMI sink's scrambling was not reset\n");
+}
+
+/* A DisplayPort sink to sleep: its link is no longer trained. */
+static void
+i915_takeover_sink_after(
+	void *context,
+	unsigned pipe)
+{
+	struct i915_takeover_xd_stop_ctx *stop;
+	struct intel_dp *intel_dp;
+
+	UNUSED_PARAMETER(pipe);
+
+	/* A crtc without an encoder has no sink of the driver's. */
+	stop = context;
+	if (stop->encoder == NULL)
+		return;
+
+	/* The link is untrained, the sink asleep. */
+	intel_dp = enc_to_intel_dp(stop->encoder);
+	intel_dp->link_trained = false;
+	drv_i915_dp_set_power(intel_dp, DP_SET_POWER_D3);
+}
+
+/* The panel's power off through its sequencer (VDD forced first, as the post-disable does). */
+static void
+i915_takeover_panel_off(
+	void *context,
+	unsigned pipe)
+{
+	struct i915_takeover_xd_stop_ctx *stop;
+	struct drm_i915_private *cur_i915;
+	struct intel_dp *intel_dp;
+
+	UNUSED_PARAMETER(pipe);
+
+	/* A crtc without an encoder has no panel of the driver's. */
+	stop = context;
+	if (stop->encoder == NULL)
+		return;
+
+	/* VDD on, then the panel off. */
+	cur_i915 = i915_takeover_cur_i915(stop->takeover);
+	intel_dp = enc_to_intel_dp(stop->encoder);
+	i915_lcd_intel_pps_vdd_on(cur_i915, intel_dp);
+	i915_lcd_intel_pps_off(cur_i915, intel_dp);
+}
+
+/* The port's I/O power reference back, and a dual-mode adaptor off TMDS for an HDMI port. */
+static void
+i915_takeover_port_release(
+	void *context,
+	unsigned pipe)
+{
+	struct i915_takeover_xd_stop_ctx *stop;
+	struct intel_digital_port *dig_port;
+	struct drm_i915_private *i915;
+	intel_wakeref_t wakeref;
+	bool hdmi;
+
+	UNUSED_PARAMETER(pipe);
+
+	/* A crtc without an encoder holds no reference of the port. */
+	stop = context;
+	if (stop->encoder == NULL)
+		return;
+
+	/* The I/O reference. */
+	dig_port = i915_lcd_enc_to_dig_port(stop->encoder);
+	i915 = i915_lcd_to_i915(stop->encoder->base.dev);
+	wakeref = fetch_and_zero(&dig_port->ddi_io_wakeref);
+	if (wakeref)
+		i915_lcd_intel_display_power_put(i915, dig_port->ddi_io_power_domain, wakeref);
+
+	/* A dual-mode adaptor goes back to DisplayPort. */
+	hdmi = intel_crtc_has_type(stop->crtc_state, INTEL_OUTPUT_HDMI);
+	if (hdmi)
+		drv_i915_dp_dual_mode_set_tmds_output(&dig_port->hdmi, false);
+}
+
+/* The link's AUX power and Type-C link references back, through the encoder's own hook. */
+static void
+i915_takeover_link_release(
+	void *context,
+	unsigned pipe)
+{
+	struct i915_takeover_xd_stop_ctx *stop;
+
+	UNUSED_PARAMETER(pipe);
+
+	/* A crtc without an encoder, or an encoder without the hook, holds none. */
+	stop = context;
+	if (stop->encoder == NULL)
+		return;
+	if (stop->encoder->post_pll_disable == NULL)
+		return;
+
+	/* The encoder gives its references back. */
+	stop->encoder->post_pll_disable(&stop->takeover->n1.state, stop->encoder, stop->crtc_state, stop->connector != NULL ? stop->connector->base.state : NULL);
 }
 
 /*
@@ -5761,6 +5571,51 @@ i915_vga_in8(
 	/* Succeeded: reports the port value. */
 	return value;
 }
+/* Turns a port PLL off through the xd clock and logs the waits that ran out. */
+static void
+i915_nogem_pll_disable(
+	struct i915_display_nogem *d,
+	struct i915_dpll *pll)
+{
+	unsigned late;
+
+	/* A display without the xd clock leaves the PLL. */
+	if (d->xd == NULL)
+		return;
+
+	/* The enable and the power, each with its wait. */
+	late = drv_i915_xd_dpll_disable(&d->xd->io, pll->xd_pll);
+	d->mmio_writes += 2U;
+	if ((late & I915_XD_DPLL_LATE_UNLOCK) != 0U)
+		kern_logf("i915: PLL %d locked\n", pll->id);
+	if ((late & I915_XD_DPLL_LATE_POWER_OFF) != 0U)
+		kern_logf("i915: PLL %d Power not disabled\n", pll->id);
+}
+
+/* Turns the screen off through sequencer register SR01 of the legacy VGA I/O; 0, or EIO when the I/O could not be owned. */
+static int
+i915_vga_screen_off(
+	void *context)
+{
+	struct i915_display *display;
+	unsigned char sr1;
+	int owned;
+
+	/* Owns the legacy I/O first. */
+	display = context;
+	owned = i915_vga_get_legacy_io(display);
+	if (owned == 0)
+		return EIO;
+
+	/* SR01's screen-off bit. */
+	i915_vga_out8(display, I915_VGA_SEQ_I, 0x01U);
+	sr1 = i915_vga_in8(display, I915_VGA_SEQ_D);
+	i915_vga_out8(display, I915_VGA_SEQ_D, (unsigned char)(sr1 | I915_VGA_SR01_SCREEN_OFF));
+	i915_vga_put_legacy_io(display);
+
+	/* Succeeded: the screen is off. */
+	return 0;
+}
 
 /* Writes a legacy VGA port. */
 static void
@@ -5790,332 +5645,6 @@ i915_vga_put_legacy_io(
 	ops = display->g_vga_io;
 	if (ops != NULL)
 		ops->put(ops->ctx, (int)I915_VGA_RSRC_LEGACY_IO);
-}
-
-/* Reports CPUID.1:ECX[31], the hypervisor bit. */
-static int
-i915_cpu_hypervisor(void)
-{
-	uint32_t eax;
-	uint32_t ebx;
-	uint32_t ecx;
-	uint32_t edx;
-
-	/* Asks CPUID leaf 1. */
-	eax = 1U;
-	__asm__ __volatile__("cpuid" : "+a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx));
-	(void)ebx;
-	(void)edx;
-
-	/* Succeeded: reports the hypervisor bit. */
-	return (int)((ecx >> 31) & 1U);
-}
-
-/* Reads the OpRegion and the VBT it names into the N0 report, without writing either. */
-static void
-i915_read_opregion(
-	struct i915_display *display,
-	const struct i915_native_deps *d,
-	struct i915_native_report *r)
-{
-	uint8_t *copy;
-	uint8_t *vcopy;
-	void *op;
-	void *vb;
-	uint32_t size;
-	unsigned index;
-	int error;
-
-	/* The copies live in the display. */
-	copy = display->read_opregion_copy;
-	vcopy = display->read_opregion_vcopy;
-
-	/* ASLS 0: there is no OpRegion. */
-	r->asls = d->asls;
-	if (d->asls == 0U)
-		return;
-
-	/* Maps the OpRegion read-only. */
-	op = NULL;
-	error = hal_space_map_device((hal_physaddr_t)d->asls, I915_OPREGION_SIZE, HAL_SPACE_READ, &op);
-	if (error != HAL_OK)
-		return;
-	if (op == NULL)
-		return;
-
-	/* Copies it and drops the mapping. */
-	r->opregion_mapped = 1;
-	for (index = 0U; index < I915_OPREGION_SIZE; index++)
-		copy[index] = ((const volatile uint8_t *)op)[index];
-	(void)hal_space_unmap_device(op, I915_OPREGION_SIZE);
-
-	/* Finds where the OpRegion keeps the VBT. */
-	error = drv_i915_opregion_locate_vbt(copy, I915_OPREGION_SIZE, d->asls, &r->op);
-	if (error != 0)
-		return;
-
-	/* Reads the VBT from RVDA, or from mailbox #4 inside the OpRegion copy. */
-	if (r->op.src == I915_OPVBT_RVDA) {
-		/* Refuses an RVDA VBT larger than the copy, or one inside the OpRegion. */
-		size = r->op.rvds;
-		if (size > I915_NATIVE_VBT_COPY_SIZE)
-			return;
-		if (r->op.rvda_inside != 0)
-			return;
-
-		/* Maps the RVDA VBT read-only. */
-		vb = NULL;
-		error = hal_space_map_device((hal_physaddr_t)r->op.vbt_phys, size, HAL_SPACE_READ, &vb);
-		if (error != HAL_OK)
-			return;
-		if (vb == NULL)
-			return;
-
-		/* Copies it, drops the mapping, validates and hashes it. */
-		r->vbt_mapped = 1;
-		for (index = 0U; index < size; index++)
-			vcopy[index] = ((const volatile uint8_t *)vb)[index];
-		(void)hal_space_unmap_device(vb, size);
-		r->vbt_size = size;
-		r->vbt_valid = drv_i915_vbt_validate(vcopy, size);
-		drv_i915_sha256(vcopy, size, r->vbt_sha256);
-	} else {
-		/* Validates and hashes the mailbox #4 VBT in place. */
-		r->vbt_mapped = 1;
-		r->vbt_size = r->op.vbt_max;
-		r->vbt_valid = drv_i915_vbt_validate(copy + r->op.vbt_offset, r->op.vbt_max);
-		drv_i915_sha256(copy + r->op.vbt_offset, r->op.vbt_max, r->vbt_sha256);
-	}
-
-	/* Compares a valid VBT with the explicit blob's pinned hash. */
-	if (d->vbt_pin != NULL && r->vbt_valid != 0) {
-		r->vbt_matches_pin = 1;
-		for (index = 0U; index < 32U; index++) {
-			if (r->vbt_sha256[index] != d->vbt_pin[index])
-				r->vbt_matches_pin = 0;
-		}
-	}
-}
-
-/* Reads the GPU's VT-d unit through the MCHBAR mirror into the N0 report, without writing it. */
-static void
-i915_read_vtd(
-	const struct i915_native_deps *d,
-	struct i915_native_report *r)
-{
-	uint32_t low;
-	uint32_t high;
-	uint64_t base;
-	void *unit;
-	int error;
-
-	/* Reads GFXVTBAR, low half first. */
-	low = drv_i915_read32(d->mmio, I915_GFXVTBAR_LO);
-	high = drv_i915_read32(d->mmio, I915_GFXVTBAR_LO + 4U);
-	r->gfxvtbar = (uint64_t)low | (uint64_t)high << 32;
-
-	/* A disabled unit, or one at address 0, is not read. */
-	r->vtd_enabled = (int)(r->gfxvtbar & 1U);
-	base = r->gfxvtbar & ~0xfffULL;
-	if (r->vtd_enabled == 0)
-		return;
-	if (base == 0U)
-		return;
-
-	/* Maps the unit's registers read-only. */
-	unit = NULL;
-	error = hal_space_map_device((hal_physaddr_t)base, I915_VTD_WINDOW, HAL_SPACE_READ, &unit);
-	if (error != HAL_OK)
-		return;
-	if (unit == NULL)
-		return;
-
-	/* Reads the version, the global status and the protected memory enable. */
-	r->vtd_ver = *(const volatile uint32_t *)((const volatile uint8_t *)unit + I915_VTD_VER);
-	r->vtd_gsts = *(const volatile uint32_t *)((const volatile uint8_t *)unit + I915_VTD_GSTS);
-	r->vtd_pmen = *(const volatile uint32_t *)((const volatile uint8_t *)unit + I915_VTD_PMEN);
-	(void)hal_space_unmap_device(unit, I915_VTD_WINDOW);
-
-	/*
-	 * A real unit reports its version (non-zero, not all-ones); zeros / all-ones
-	 * = nothing decodes there (e.g. a guest's view of the host's address) --
-	 * then GSTS / PMEN are not register values.
-	 */
-	r->vtd_readable = 0;
-	if (r->vtd_ver != 0U && r->vtd_ver != 0xffffffffU)
-		r->vtd_readable = 1;
-}
-
-/* Records the firmware framebuffer and the GGTT pages it occupies in the aperture. */
-static void
-i915_read_fb(
-	const struct i915_native_deps *d,
-	struct i915_native_report *r)
-{
-	const struct zbl6_framebuffer *fb;
-
-	/* No framebuffer in the boot handoff: nothing to record. */
-	fb = kern_boot_handoff("pcat.framebuffer");
-	if (fb == NULL)
-		return;
-	if (fb->size == 0U)
-		return;
-
-	/* Records the framebuffer. */
-	r->fb_present = 1;
-	r->fb_base = fb->physical_base;
-	r->fb_size = fb->size;
-
-	/* A framebuffer inside the aperture occupies GGTT pages. */
-	if (fb->physical_base >= d->gmadr_base && fb->physical_base + fb->size <= d->gmadr_base + d->gmadr_size) {
-		r->fb_in_aperture = 1;
-		r->fb_ggtt_first = (uint32_t)((fb->physical_base - d->gmadr_base) >> 12);
-		r->fb_ggtt_pages = (uint32_t)((fb->size + 4095U) >> 12);
-	}
-}
-
-/* Reads every pipe whose power is on, and the pipe A domain, into the N0 report. */
-static void
-i915_read_display(
-	const struct i915_native_deps *d,
-	struct i915_native_report *r)
-{
-	struct i915_mmio *m;
-	struct i915_native_pipe *q;
-	unsigned pipe;
-	uint32_t offset;
-
-	/* HSW_PWR_WELL_CTL2: the STATE bits the power decision reads; all-ones is not a register value. */
-	m = d->mmio;
-	r->pwr_well_ctl = drv_i915_read32(m, I915_HSW_PWR_WELL_CTL2);
-
-	/* Classifies every pipe. */
-	for (pipe = 0U; pipe < 4U; pipe++) {
-		/* A power state that is not a register value is a read error. */
-		q = &r->pipe[pipe];
-		offset = I915_PIPE_STRIDE * pipe;
-		if (r->pwr_well_ctl == 0xffffffffU) {
-			q->cls = I915_N0_READ_ERROR;
-			r->unreadable_pipes |= 1U << pipe;
-			continue;
-		}
-
-		/* A pipe whose domains are off is not read. */
-		q->readable = d->pipe_powered(d->ctx, pipe);
-		if (q->readable == 0) {
-			q->cls = I915_N0_POWER_OFF;
-			r->unreadable_pipes |= 1U << pipe;
-			continue;
-		}
-
-		/* Reads the transcoder, the pipe and the primary plane. */
-		q->transconf = drv_i915_read32(m, I915_TRANSCONF_A + offset);
-		q->trans_ddi_func = drv_i915_read32(m, I915_TRANS_DDI_FUNC_CTL_A + offset);
-		q->pipesrc = drv_i915_read32(m, I915_PIPESRC_A + offset);
-		q->plane_ctl = drv_i915_read32(m, I915_PLANE_CTL_1_A + offset);
-		q->plane_stride = drv_i915_read32(m, I915_PLANE_STRIDE_1_A + offset);
-		q->plane_size = drv_i915_read32(m, I915_PLANE_SIZE_1_A + offset);
-		q->plane_surf = drv_i915_read32(m, I915_PLANE_SURF_1_A + offset);
-
-		/* An all-ones register is a read error. */
-		if (q->transconf == 0xffffffffU || q->plane_ctl == 0xffffffffU) {
-			q->cls = I915_N0_READ_ERROR;
-			continue;
-		}
-
-		/* An enabled transcoder or plane makes the pipe active. */
-		q->cls = I915_N0_READABLE_INACTIVE;
-		if ((q->transconf & 0x80000000U) != 0U || (q->plane_ctl & 0x80000000U) != 0U) {
-			q->cls = I915_N0_READABLE_ACTIVE;
-			r->active_pipes |= 1U << pipe;
-		}
-	}
-
-	/* Pipe A's domain is on when these are meaningful (PW1 / DDI A): read only when pipe A is readable. */
-	if (r->pipe[0].readable != 0) {
-		r->pll_enable[0] = drv_i915_read32(m, I915_DPLL0_ENABLE);
-		r->pll_enable[1] = drv_i915_read32(m, I915_DPLL1_ENABLE);
-		r->ddi_buf_ctl_a = drv_i915_read32(m, I915_DDI_BUF_CTL_A);
-		r->pp_status = drv_i915_read32(m, I915_PP_STATUS);
-		r->pp_control = drv_i915_read32(m, I915_PP_CONTROL);
-		r->blc_ctl = drv_i915_read32(m, I915_BLC_PWM_CTL);
-		r->blc_duty = drv_i915_read32(m, I915_BLC_PWM_DUTY);
-		r->dpclka_cfgcr0 = drv_i915_read32(m, I915_ICL_DPCLKA_CFGCR0);
-	}
-}
-
-/* Names where the OpRegion keeps the VBT: RVDA, mailbox #4 or none. */
-static const char *
-i915_opvbt_source_name(
-	int src)
-{
-	/* RVDA: a physical address the OpRegion names. */
-	if (src == I915_OPVBT_RVDA)
-		return "RVDA";
-
-	/* Mailbox #4 inside the OpRegion. */
-	if (src == I915_OPVBT_MAILBOX4)
-		return "mailbox#4";
-
-	/* No VBT in the OpRegion. */
-	return "none";
-}
-
-/* Names the observed VBT's origin as the N0 VBT line spells it. */
-static const char *
-i915_opvbt_observed_name(
-	int src)
-{
-	/* RVDA: a physical address the OpRegion names. */
-	if (src == I915_OPVBT_RVDA)
-		return "OPREGION(RVDA)";
-
-	/* Mailbox #4 inside the OpRegion. */
-	if (src == I915_OPVBT_MAILBOX4)
-		return "OPREGION(mailbox#4)";
-
-	/* No VBT in the OpRegion. */
-	return "none";
-}
-
-/* Names the VBT source the parser consumed. */
-static const char *
-i915_vbt_source_name(
-	int parser_src)
-{
-	/* The pinned explicit blob. */
-	if (parser_src == I915_VBT_SRC_EXPLICIT_BLOB)
-		return "EXPLICIT_BLOB";
-
-	/* The OpRegion's VBT. */
-	if (parser_src == I915_VBT_SRC_OPREGION)
-		return "OPREGION";
-
-	/* The PCI expansion ROM. */
-	if (parser_src == I915_VBT_SRC_PCI_ROM)
-		return "PCI_ROM";
-
-	/* No VBT. */
-	return "NONE";
-}
-
-/* Spells the first 8 bytes of a sha256 as 16 hex digits and a terminator in text[17]. */
-static void
-i915_sha_prefix(
-	const uint8_t *sha256,
-	char *text)
-{
-	static const char hex[] = "0123456789abcdef";
-	unsigned index;
-
-	/* Two digits per byte, high nibble first. */
-	for (index = 0U; index < 8U; index++) {
-		text[2U * index] = hex[sha256[index] >> 4];
-		text[2U * index + 1U] = hex[sha256[index] & 15U];
-	}
-
-	/* Ends the string. */
-	text[16] = '\0';
 }
 
 /*
@@ -6167,25 +5696,4 @@ i915_nogem_tc_get_pll_id(
 
 	/* Succeeded: the PLL is known (or known to be none). */
 	return 1;
-}
-
-/* Turns a port PLL off through the xd clock and logs the waits that ran out. */
-static void
-i915_nogem_pll_disable(
-	struct i915_display_nogem *d,
-	struct i915_dpll *pll)
-{
-	unsigned late;
-
-	/* A display without the xd clock leaves the PLL. */
-	if (d->xd == NULL)
-		return;
-
-	/* The enable and the power, each with its wait. */
-	late = drv_i915_xd_dpll_disable(&d->xd->io, pll->xd_pll);
-	d->mmio_writes += 2U;
-	if ((late & I915_XD_DPLL_LATE_UNLOCK) != 0U)
-		kern_logf("i915: PLL %d locked\n", pll->id);
-	if ((late & I915_XD_DPLL_LATE_POWER_OFF) != 0U)
-		kern_logf("i915: PLL %d Power not disabled\n", pll->id);
 }

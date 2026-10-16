@@ -12,7 +12,9 @@
  * pages, the VT-d unit's walls, a guest, a garbled pipe, a device
  * without a description), the readout of an Alder Lake-P on the
  * register model (which writes nothing), the output's kind by the
- * platform's ports, and the framebuffer's GGTT range.
+ * platform's ports, and the framebuffer's GGTT range; the takeover's
+ * stop of the 5330's panel on pipe A (its order, the caller's hooks, the
+ * PLL), of an HDMI pipe, of two pipes on one PLL, and the VGA plane's.
  */
 
 #include "host-test.h"
@@ -42,6 +44,9 @@
 #define I915_XD_TO_TEST_GFXVTBAR	0x145400U
 #define I915_XD_TO_TEST_VTD_BASE	0xfed90000ULL
 
+/* A transcoder's data island control. */
+#define I915_XD_FW_TEST_DIP_CTL(trans)	(0x60200U + 0x1000U * (trans))
+
 /* The DDI function words: DP SST on DDI A, HDMI and DVI on DDI B, DP SST and HDMI on TC1, DP MST on DDI A. */
 #define I915_XD_TO_TEST_FUNC_EDP	0x8a000000U
 #define I915_XD_TO_TEST_FUNC_HDMI_B	0x90000000U
@@ -63,11 +68,35 @@ struct i915_xd_to_test_vtd {
 	unsigned reads;
 };
 
+/* The caller's steps the stop checks see. */
+#define I915_XD_TO_TEST_BACKLIGHT	1U
+#define I915_XD_TO_TEST_SINK_BEFORE	2U
+#define I915_XD_TO_TEST_SINK_AFTER	3U
+#define I915_XD_TO_TEST_PANEL		4U
+#define I915_XD_TO_TEST_PORT		5U
+#define I915_XD_TO_TEST_LINK		6U
+
+/*
+ * The caller's side of a stop: the hooks it saw in order, the register
+ * writes made before each, and how many times the screen-off ran.
+ */
+struct i915_xd_to_test_run {
+	unsigned steps[8];
+	unsigned writes_before[8];
+	unsigned count;
+	unsigned screen_offs;
+	int screen_refused;
+	uint32_t frame;
+};
+
 /* The window the readout checks use. */
 static struct i915_xd_io i915_xd_to_test_io;
 
 /* The unit the environment's reader shows. */
 static struct i915_xd_to_test_vtd i915_xd_to_test_unit;
+
+/* The caller's side of the stop being checked. */
+static struct i915_xd_to_test_run i915_xd_to_test_run;
 
 static void i915_xd_to_test_base(struct i915_xd_firmware *firmware);
 static int i915_xd_to_test_reason_has(const struct i915_xd_firmware *firmware, const char *word);
@@ -79,6 +108,23 @@ static void i915_xd_to_test_decisions(void);
 static void i915_xd_to_test_readout(void);
 static void i915_xd_to_test_classify(void);
 static void i915_xd_to_test_range(void);
+static void i915_xd_to_test_note(unsigned step);
+static void i915_xd_to_test_backlight(void *context, unsigned pipe);
+static void i915_xd_to_test_sink_before(void *context, unsigned pipe);
+static void i915_xd_to_test_sink_after(void *context, unsigned pipe);
+static void i915_xd_to_test_panel(void *context, unsigned pipe);
+static void i915_xd_to_test_port(void *context, unsigned pipe);
+static void i915_xd_to_test_link(void *context, unsigned pipe);
+static void i915_xd_to_test_hooks(struct i915_xd_takeover_hooks *hooks);
+static void i915_xd_to_test_buffer_rule(uint32_t offset, uint32_t value, void *context);
+static uint32_t i915_xd_to_test_frame_rule(uint32_t offset, uint32_t value, void *context);
+static int i915_xd_to_test_screen_off(void *context);
+static void i915_xd_to_test_light(unsigned pipe, uint32_t function);
+static unsigned i915_xd_to_test_step_at(unsigned step);
+static void i915_xd_to_test_stop_panel(void);
+static void i915_xd_to_test_stop_hdmi(void);
+static void i915_xd_to_test_stop_shared(void);
+static void i915_xd_to_test_vga(void);
 
 /*
  * Runs every check of the firmware's display and reports.
@@ -93,6 +139,10 @@ main(void)
 	i915_xd_to_test_readout();
 	i915_xd_to_test_classify();
 	i915_xd_to_test_range();
+	i915_xd_to_test_stop_panel();
+	i915_xd_to_test_stop_hdmi();
+	i915_xd_to_test_stop_shared();
+	i915_xd_to_test_vga();
 
 	/* Reports the result. */
 	failures = i915_host_report("host_xd_takeover_test");
@@ -541,4 +591,349 @@ i915_xd_to_test_range(void)
 	env.fb_present = 0;
 	(void)drv_i915_xd_firmware_read(&i915_xd_to_test_io, platform, &env, 0U, &firmware);
 	i915_host_check(!firmware.fb_present && !firmware.fb_in_aperture, "range: no framebuffer");
+}
+
+/* Notes one of the caller's steps, with the writes made so far. */
+static void
+i915_xd_to_test_note(
+	unsigned step)
+{
+	/* A full list keeps its first steps. */
+	if (i915_xd_to_test_run.count == 8U)
+		return;
+
+	/* The step. */
+	i915_xd_to_test_run.steps[i915_xd_to_test_run.count] = step;
+	i915_xd_to_test_run.writes_before[i915_xd_to_test_run.count] = i915_xd_fake_writes();
+	i915_xd_to_test_run.count++;
+}
+
+/* The panel's backlight off. */
+static void
+i915_xd_to_test_backlight(
+	void *context,
+	unsigned pipe)
+{
+	/* Notes the step. */
+	(void)context;
+	(void)pipe;
+	i915_xd_to_test_note(I915_XD_TO_TEST_BACKLIGHT);
+}
+
+/* The HDMI sink before the transcoder stops. */
+static void
+i915_xd_to_test_sink_before(
+	void *context,
+	unsigned pipe)
+{
+	/* Notes the step. */
+	(void)context;
+	(void)pipe;
+	i915_xd_to_test_note(I915_XD_TO_TEST_SINK_BEFORE);
+}
+
+/* The DisplayPort sink after the transcoder stopped. */
+static void
+i915_xd_to_test_sink_after(
+	void *context,
+	unsigned pipe)
+{
+	/* Notes the step. */
+	(void)context;
+	(void)pipe;
+	i915_xd_to_test_note(I915_XD_TO_TEST_SINK_AFTER);
+}
+
+/* The panel's power off. */
+static void
+i915_xd_to_test_panel(
+	void *context,
+	unsigned pipe)
+{
+	/* Notes the step. */
+	(void)context;
+	(void)pipe;
+	i915_xd_to_test_note(I915_XD_TO_TEST_PANEL);
+}
+
+/* The port's references. */
+static void
+i915_xd_to_test_port(
+	void *context,
+	unsigned pipe)
+{
+	/* Notes the step. */
+	(void)context;
+	(void)pipe;
+	i915_xd_to_test_note(I915_XD_TO_TEST_PORT);
+}
+
+/* The link's references. */
+static void
+i915_xd_to_test_link(
+	void *context,
+	unsigned pipe)
+{
+	/* Notes the step. */
+	(void)context;
+	(void)pipe;
+	i915_xd_to_test_note(I915_XD_TO_TEST_LINK);
+}
+
+/* Fills the caller's hooks. */
+static void
+i915_xd_to_test_hooks(
+	struct i915_xd_takeover_hooks *hooks)
+{
+	/* Every hook notes its step. */
+	memset(hooks, 0, sizeof(*hooks));
+	hooks->backlight_off = i915_xd_to_test_backlight;
+	hooks->sink_before = i915_xd_to_test_sink_before;
+	hooks->sink_after = i915_xd_to_test_sink_after;
+	hooks->panel_off = i915_xd_to_test_panel;
+	hooks->port_release = i915_xd_to_test_port;
+	hooks->link_release = i915_xd_to_test_link;
+	hooks->context = NULL;
+}
+
+/* A DDI buffer goes idle when its enable is cleared, and leaves idle when it is set. */
+static void
+i915_xd_to_test_buffer_rule(
+	uint32_t offset,
+	uint32_t value,
+	void *context)
+{
+	/* The idle bit follows the enable. */
+	(void)context;
+	if ((value & I915_XD_DDI_BUF_ENABLE) == 0U) {
+		i915_xd_fake_set(offset, value | I915_XD_DDI_BUF_IDLE);
+	} else {
+		i915_xd_fake_set(offset, value & ~I915_XD_DDI_BUF_IDLE);
+	}
+}
+
+/* A frame counter that moves at each read. */
+static uint32_t
+i915_xd_to_test_frame_rule(
+	uint32_t offset,
+	uint32_t value,
+	void *context)
+{
+	/* One frame per read. */
+	(void)offset;
+	(void)value;
+	(void)context;
+	i915_xd_to_test_run.frame++;
+
+	/* Succeeded: the count. */
+	return i915_xd_to_test_run.frame;
+}
+
+/* The legacy screen off: counted, or refused when the run asks. */
+static int
+i915_xd_to_test_screen_off(
+	void *context)
+{
+	/* Counts the call. */
+	(void)context;
+	i915_xd_to_test_run.screen_offs++;
+	if (i915_xd_to_test_run.screen_refused)
+		return EIO;
+
+	/* Succeeded: the screen is off. */
+	return 0;
+}
+
+/* Lights a pipe on the model: its transcoder, function, plane and the rules a stop meets. */
+static void
+i915_xd_to_test_light(
+	unsigned pipe,
+	uint32_t function)
+{
+	uint32_t ddi;
+
+	/* The transcoder, whose state follows its enable, the function and the plane. */
+	i915_xd_fake_rule_mirror(I915_XD_TRANS_CONF(pipe), I915_XD_TRANS_CONF_ENABLE, I915_XD_TRANS_CONF(pipe), -1, 0U);
+	i915_xd_fake_set(I915_XD_TRANS_CONF(pipe), I915_XD_TRANS_CONF_ENABLE | I915_XD_TRANS_CONF_STATE);
+	i915_xd_fake_set(I915_XD_TRANS_DDI_FUNC_CTL(pipe), function);
+	i915_xd_fake_set(I915_XD_PLANE_CTL(pipe), I915_XD_PLANE_CTL_ENABLE);
+	i915_xd_fake_rule_read(I915_XD_PIPE_FRMCNT(pipe), i915_xd_to_test_frame_rule, NULL);
+
+	/* The DDI buffer on, going idle when it is turned off. */
+	ddi = ((function & I915_XD_DDI_FUNC_SELECT) >> 27) - 1U;
+	i915_xd_fake_set(I915_XD_DDI_BUF_CTL(ddi), I915_XD_DDI_BUF_ENABLE);
+	i915_xd_fake_rule_call(I915_XD_DDI_BUF_CTL(ddi), i915_xd_to_test_buffer_rule, NULL);
+
+	/* DPLL0 powered and locked, its state following its requests. */
+	i915_xd_fake_rule_mirror(I915_XD_DPLL0_ENABLE, I915_XD_PLL_POWER_ENABLE, I915_XD_DPLL0_ENABLE, -1, 0U);
+	i915_xd_fake_rule_mirror(I915_XD_DPLL0_ENABLE, I915_XD_PLL_ENABLE, I915_XD_DPLL0_ENABLE, -1, 0U);
+	i915_xd_fake_set(I915_XD_DPLL0_ENABLE, I915_XD_PLL_ENABLE | I915_XD_PLL_LOCK | I915_XD_PLL_POWER_ENABLE | I915_XD_PLL_POWER_STATE);
+}
+
+/* Returns the index of a step in the run, or 8 when it was not seen. */
+static unsigned
+i915_xd_to_test_step_at(
+	unsigned step)
+{
+	unsigned index;
+
+	/* The first time the step was seen. */
+	for (index = 0U; index < i915_xd_to_test_run.count; index++) {
+		if (i915_xd_to_test_run.steps[index] == step)
+			return index;
+	}
+
+	/* Succeeded: not seen. */
+	return 8U;
+}
+
+/* The 5330's panel on pipe A: the order, the hooks between the writes, the PLL off. */
+static void
+i915_xd_to_test_stop_panel(void)
+{
+	const struct i915_xd_platform *platform;
+	struct i915_xd_takeover_report report;
+	struct i915_xd_takeover_hooks hooks;
+	struct i915_xd_firmware firmware;
+	int error;
+
+	/* The firmware's panel on pipe A, DDI A, DPLL0. */
+	platform = i915_xd_to_test_setup();
+	if (platform == NULL)
+		return;
+	memset(&i915_xd_to_test_run, 0, sizeof(i915_xd_to_test_run));
+	i915_xd_to_test_light(0U, I915_XD_TO_TEST_FUNC_EDP);
+	i915_xd_fake_set(I915_XD_FW_TEST_DIP_CTL(0U), 0x11111111U);
+	i915_xd_to_test_base(&firmware);
+	firmware.lit_pipes = 1U;
+	firmware.pipe[0].state = I915_XD_FW_PIPE_LIT;
+	firmware.panel_ddi = 0;
+	i915_xd_to_test_hooks(&hooks);
+
+	/* Stops it. */
+	error = drv_i915_xd_takeover_stop(&i915_xd_to_test_io, platform, NULL, &firmware, 0U, &hooks, &report);
+	i915_host_check(error == 0 && report.ddi == 0 && report.mode == I915_XD_DDI_FUNC_MODE_DP_SST && report.pll == 0 && report.late == 0U,
+			"stop panel: DDI A in DP SST, DPLL0 off, no wait ran out");
+	i915_host_check(i915_xd_fake_get(I915_XD_PLANE_CTL(0U)) == 0U && i915_xd_fake_get(I915_XD_TRANS_CONF(0U)) == 0U,
+			"stop panel: the plane and the transcoder off");
+	i915_host_check((i915_xd_fake_get(I915_XD_TRANS_DDI_FUNC_CTL(0U)) & I915_XD_DDI_FUNC_ENABLE) == 0U && i915_xd_fake_get(I915_XD_FW_TEST_DIP_CTL(0U)) == 0x00000000U,
+			"stop panel: the DDI function off, every data island off (the picture parameters too)");
+	i915_host_check((i915_xd_fake_get(I915_XD_DDI_BUF_CTL(0U)) & I915_XD_DDI_BUF_ENABLE) == 0U && (i915_xd_fake_get(I915_XD_DPCLKA_CFGCR0) & I915_XD_DPCLKA_DDI_OFF_A) != 0U,
+			"stop panel: the DDI buffer off and DDI A's clock gated");
+	i915_host_check((i915_xd_fake_get(I915_XD_DPLL0_ENABLE) & (I915_XD_PLL_ENABLE | I915_XD_PLL_POWER_ENABLE)) == 0U, "stop panel: DPLL0 off and unpowered");
+	i915_host_check(i915_xd_to_test_run.count == 5U &&
+			i915_xd_to_test_run.steps[0] == I915_XD_TO_TEST_BACKLIGHT &&
+			i915_xd_to_test_run.steps[1] == I915_XD_TO_TEST_SINK_AFTER &&
+			i915_xd_to_test_run.steps[2] == I915_XD_TO_TEST_PANEL &&
+			i915_xd_to_test_run.steps[3] == I915_XD_TO_TEST_PORT &&
+			i915_xd_to_test_run.steps[4] == I915_XD_TO_TEST_LINK,
+			"stop panel: the hooks in order: backlight, sink, panel, port, link (no HDMI sink)");
+	i915_host_check(i915_xd_to_test_run.writes_before[0] == 3U && i915_xd_to_test_run.writes_before[1] > i915_xd_to_test_run.writes_before[0] + 8U,
+			"stop panel: the backlight after the plane's three writes, the sink after the transcoder, function, scalers and islands");
+	i915_host_check(firmware.lit_pipes == 0U && firmware.pipe[0].state == I915_XD_FW_PIPE_DARK, "stop panel: the record says pipe A is dark");
+
+	/* A pipe that is not lit is refused. */
+	error = drv_i915_xd_takeover_stop(&i915_xd_to_test_io, platform, NULL, &firmware, 0U, &hooks, &report);
+	i915_host_check(error == EINVAL, "stop panel: a dark pipe is refused");
+}
+
+/* HDMI on DDI B, pipe B: the sink before, no panel steps, the picture parameters kept. */
+static void
+i915_xd_to_test_stop_hdmi(void)
+{
+	const struct i915_xd_platform *platform;
+	struct i915_xd_takeover_report report;
+	struct i915_xd_takeover_hooks hooks;
+	struct i915_xd_firmware firmware;
+	int error;
+
+	/* HDMI on DDI B. */
+	platform = i915_xd_to_test_setup();
+	if (platform == NULL)
+		return;
+	memset(&i915_xd_to_test_run, 0, sizeof(i915_xd_to_test_run));
+	i915_xd_to_test_light(1U, I915_XD_TO_TEST_FUNC_HDMI_B);
+	i915_xd_fake_set(I915_XD_FW_TEST_DIP_CTL(1U), 0x11111111U);
+	i915_xd_to_test_base(&firmware);
+	firmware.lit_pipes = 2U;
+	firmware.pipe[1].state = I915_XD_FW_PIPE_LIT;
+	firmware.panel_ddi = 0;
+	i915_xd_to_test_hooks(&hooks);
+
+	/* Stops it. */
+	error = drv_i915_xd_takeover_stop(&i915_xd_to_test_io, platform, NULL, &firmware, 1U, &hooks, &report);
+	i915_host_check(error == 0 && report.ddi == 1 && report.mode == I915_XD_DDI_FUNC_MODE_HDMI && report.pll == 0, "stop HDMI: DDI B, DPLL0 off");
+	i915_host_check(i915_xd_to_test_run.count == 3U &&
+			i915_xd_to_test_step_at(I915_XD_TO_TEST_SINK_BEFORE) == 0U &&
+			i915_xd_to_test_step_at(I915_XD_TO_TEST_BACKLIGHT) == 8U &&
+			i915_xd_to_test_step_at(I915_XD_TO_TEST_PANEL) == 8U &&
+			i915_xd_to_test_step_at(I915_XD_TO_TEST_SINK_AFTER) == 8U,
+			"stop HDMI: the sink before the transcoder, no backlight, panel or DisplayPort sink");
+	i915_host_check(i915_xd_fake_get(I915_XD_FW_TEST_DIP_CTL(1U)) == 0x01000000U && (i915_xd_fake_get(I915_XD_DPCLKA_CFGCR0) & I915_XD_DPCLKA_DDI_OFF_B) != 0U,
+			"stop HDMI: the infoframes off (the picture parameters left), DDI B's clock gated");
+}
+
+/* Two lit pipes on DPLL0: the first stop keeps the PLL, the second turns it off. */
+static void
+i915_xd_to_test_stop_shared(void)
+{
+	const struct i915_xd_platform *platform;
+	struct i915_xd_takeover_report report;
+	struct i915_xd_takeover_hooks hooks;
+	struct i915_xd_firmware firmware;
+	uint32_t pll;
+
+	/* The panel on pipe A and HDMI on pipe B, both on DPLL0. */
+	platform = i915_xd_to_test_setup();
+	if (platform == NULL)
+		return;
+	memset(&i915_xd_to_test_run, 0, sizeof(i915_xd_to_test_run));
+	i915_xd_to_test_light(0U, I915_XD_TO_TEST_FUNC_EDP);
+	i915_xd_to_test_light(1U, I915_XD_TO_TEST_FUNC_HDMI_B);
+	i915_xd_to_test_base(&firmware);
+	firmware.lit_pipes = 3U;
+	firmware.pipe[0].state = I915_XD_FW_PIPE_LIT;
+	firmware.pipe[1].state = I915_XD_FW_PIPE_LIT;
+	firmware.panel_ddi = 0;
+	i915_xd_to_test_hooks(&hooks);
+
+	/* Pipe A first: DPLL0 stays. */
+	(void)drv_i915_xd_takeover_stop(&i915_xd_to_test_io, platform, NULL, &firmware, 0U, &hooks, &report);
+	pll = i915_xd_fake_get(I915_XD_DPLL0_ENABLE);
+	i915_host_check(report.pll == -1 && (pll & I915_XD_PLL_ENABLE) != 0U, "stop shared: pipe B still runs on DPLL0, so it stays on");
+
+	/* Then pipe B: DPLL0 goes. */
+	(void)drv_i915_xd_takeover_stop(&i915_xd_to_test_io, platform, NULL, &firmware, 1U, &hooks, &report);
+	pll = i915_xd_fake_get(I915_XD_DPLL0_ENABLE);
+	i915_host_check(report.pll == 0 && (pll & I915_XD_PLL_ENABLE) == 0U && firmware.lit_pipes == 0U, "stop shared: the last user turns DPLL0 off");
+}
+
+/* The VGA plane: off already, turned off, and the legacy I/O refused. */
+static void
+i915_xd_to_test_vga(void)
+{
+	unsigned writes;
+	int result;
+
+	/* Off already: nothing written, the sequencer not touched. */
+	(void)i915_xd_to_test_setup();
+	memset(&i915_xd_to_test_run, 0, sizeof(i915_xd_to_test_run));
+	i915_xd_fake_set(I915_XD_VGA_CONTROL, I915_XD_VGA_CONTROL_DISABLE);
+	result = drv_i915_xd_vga_off(&i915_xd_to_test_io, i915_xd_to_test_screen_off, NULL);
+	i915_host_check(result == 1 && i915_xd_fake_writes() == 0U && i915_xd_to_test_run.screen_offs == 0U, "vga: off already -> 1, nothing written");
+
+	/* On: the screen off, then the plane's disable. */
+	(void)i915_xd_to_test_setup();
+	memset(&i915_xd_to_test_run, 0, sizeof(i915_xd_to_test_run));
+	result = drv_i915_xd_vga_off(&i915_xd_to_test_io, i915_xd_to_test_screen_off, NULL);
+	writes = i915_xd_fake_writes();
+	i915_host_check(result == 0 && i915_xd_to_test_run.screen_offs == 1U && writes == 1U && i915_xd_fake_get(I915_XD_VGA_CONTROL) == I915_XD_VGA_CONTROL_DISABLE,
+			"vga: the screen off through the sequencer, then the plane disabled");
+
+	/* The legacy I/O refused: the plane is left. */
+	(void)i915_xd_to_test_setup();
+	memset(&i915_xd_to_test_run, 0, sizeof(i915_xd_to_test_run));
+	i915_xd_to_test_run.screen_refused = 1;
+	result = drv_i915_xd_vga_off(&i915_xd_to_test_io, i915_xd_to_test_screen_off, NULL);
+	i915_host_check(result == EIO && i915_xd_fake_writes() == 0U, "vga: the legacy I/O refused -> EIO, the plane left");
 }
