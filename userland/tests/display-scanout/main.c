@@ -49,7 +49,10 @@
 #define SCANOUT_NODE		"/dev/gpu0"
 #define SCANOUT_HOLD		5U
 
-/* The shared frame's colour (BGRA: a blue). */
+/*
+ * The shared frame's colour, a red-orange: written as a 32-bit word, its
+ * bytes in memory are B 0x20, G 0x50, R 0xd0, A 0xff, the BGRA8888 order.
+ */
 #define SCANOUT_COLOUR		0xffd05020U
 
 /* The cursor image: 32 by 32, a white square with a black border two pixels wide, opaque. */
