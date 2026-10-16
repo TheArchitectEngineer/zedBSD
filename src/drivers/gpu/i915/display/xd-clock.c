@@ -56,14 +56,24 @@
 #define I915_XD_CDCLK_MAX		652800U
 
 /*
- * The 38.4 MHz reference, which the port PLLs divide by 2; the range the
+ * The bypass clock of display 11, which does not follow the reference.
+ *
+ * Value referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_cdclk.c
+ * (bxt_get_cdclk).
+ */
+#define I915_XD_CDCLK_BYPASS_11_KHZ	50000U
+
+/*
+ * The 24 MHz reference, which has its own Thunderbolt PLL words; the
+ * 38.4 MHz reference, which the port PLLs divide by 2; the range the
  * DCO of a combo DPLL must be in for an HDMI clock; and how long a port
  * PLL's power and lock may take to come and go.
  *
  * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dpll_mgr.c
- * (icl_wrpll_ref_clock, icl_calc_wrpll, icl_pll_power_enable,
- * icl_pll_enable, icl_pll_disable).
+ * (icl_calc_tbt_pll, icl_wrpll_ref_clock, icl_calc_wrpll,
+ * icl_pll_power_enable, icl_pll_enable, icl_pll_disable).
  */
+#define I915_XD_DPLL_REF_24		24000U
 #define I915_XD_DPLL_REF_38P4		38400U
 #define I915_XD_DPLL_DCO_MIN_KHZ	7998000U
 #define I915_XD_DPLL_DCO_MAX_KHZ	10000000U
@@ -111,6 +121,45 @@
 #define I915_XD_TC_PLL_BIAS_FIELDS	(I915_XD_DKL_BIAS_FRAC_ENABLE | I915_XD_DKL_BIAS_FBDIV_FRAC)
 #define I915_XD_TC_PLL_TDC_FIELDS	(I915_XD_DKL_TDC_SSC_STEP_SIZE | I915_XD_DKL_TDC_FEED_FWD_GAIN)
 
+/*
+ * The line driver clock select of a Type-C PLL with a second divider:
+ * 1 in a Dekel PHY, 2 in an MG PHY.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dpll_mgr.c
+ * (icl_mg_pll_find_divisors: tlinedrv).
+ */
+#define I915_XD_TC_PLL_LINEDRV_DKL	1U
+#define I915_XD_TC_PLL_LINEDRV_MG	2U
+
+/*
+ * An MG PLL (Ice Lake): the feedback pre-divider it doubles when the
+ * integer divider would not fit in 8 bits, the loop filter's gain, the
+ * fractional lock's threshold, the SSC type, the TDC select, and the
+ * fixed bias fields (the GB select, the initial DCO amplitude, the bias
+ * bonus, the C trim and the reference RDAC).
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dpll_mgr.c
+ * (icl_calc_mg_pll_state: m1div of 4, MG_PLL_LF_GAINCTRL(1),
+ * MG_PLL_FRAC_LOCK_LOCKTHRESH(10), MG_PLL_SSC_TYPE(2), MG_PLL_TDC_TDCSEL(3),
+ * MG_PLL_BIAS_BIAS_GB_SEL(3), MG_PLL_BIAS_INIT_DCOAMP(0x3F),
+ * MG_PLL_BIAS_BIAS_BONUS(10), MG_PLL_BIAS_CTRIM(12),
+ * MG_PLL_BIAS_VREF_RDAC(4)).
+ */
+#define I915_XD_MG_PLL_FBPREDIV_HIGH	4U
+#define I915_XD_MG_PLL_INT_MAX		255U
+#define I915_XD_MG_PLL_LF_GAIN		1U
+#define I915_XD_MG_PLL_LOCK_THRESHOLD	10U
+#define I915_XD_MG_PLL_SSC_TYPE		2U
+#define I915_XD_MG_PLL_TDC_SELECT	3U
+#define I915_XD_MG_PLL_BIAS_GB		3U
+#define I915_XD_MG_PLL_BIAS_DCOAMP	0x3fU
+#define I915_XD_MG_PLL_BIAS_BONUS	10U
+#define I915_XD_MG_PLL_BIAS_CTRIM	12U
+#define I915_XD_MG_PLL_BIAS_RDAC	4U
+
+/* The fields of the MG PLL's clock top words the words set; the rest of each register is kept. */
+#define I915_XD_MG_PLL_HSCLK_FIELDS	I915_XD_TC_PLL_HSCLK_FIELDS
+
 static uint32_t i915_xd_clock_div_round(uint32_t a, uint32_t b);
 static uint32_t i915_xd_cdclk_divider(uint32_t cdclk_khz, uint32_t vco_khz);
 static uint32_t i915_xd_cdclk_decimal(uint32_t cdclk_khz);
@@ -127,9 +176,9 @@ static uint32_t i915_xd_dpll_p_code(uint32_t p);
 static uint32_t i915_xd_dpll_p_value(uint32_t code);
 static uint32_t i915_xd_dpll_k_code(uint32_t k);
 static uint32_t i915_xd_dpll_k_value(uint32_t code);
-static int i915_xd_tc_pll_iref(uint32_t ref_khz, uint32_t *ndiv, uint32_t *trim);
+static int i915_xd_tc_pll_iref(uint32_t ref_khz, uint32_t *ndiv, uint32_t *trim, uint32_t *pulse);
 static int i915_xd_tc_pll_dividers(uint32_t port_khz, int hdmi, uint32_t *div1, uint32_t *div2, uint32_t *dco_khz);
-static void i915_xd_tc_pll_clock_tops(int hdmi, uint32_t div1, uint32_t div2, struct i915_xd_tc_pll_words *words);
+static void i915_xd_tc_pll_clock_tops(int hdmi, uint32_t div1, uint32_t div2, uint32_t line_driver, uint32_t *refclkin, uint32_t *coreclk, uint32_t *hsclk);
 static uint32_t i915_xd_tc_pll_hsdiv_code(uint32_t divider);
 static uint32_t i915_xd_tc_pll_hsdiv_value(uint32_t code);
 static void i915_xd_tc_pll_put(struct i915_xd_dkl *dkl, unsigned tc, uint32_t phy_offset, uint32_t fields, uint32_t value);
@@ -137,7 +186,8 @@ static void i915_xd_tc_pll_put(struct i915_xd_dkl *dkl, unsigned tc, uint32_t ph
 /*
  * Reads the CD clock the hardware runs: the reference from DSSM, the
  * PLL's rate when it is on and locked (its ratio times the reference),
- * the bypass clock (half the reference), and the CD clock (the PLL's rate
+ * the bypass clock (half the reference; 50 MHz on display 11), and the
+ * CD clock (the PLL's rate
  * through the CD2X divider, or the bypass clock).  The voltage level is
  * not readable; the one the CD clock needs is assumed.
  *
@@ -175,8 +225,10 @@ drv_i915_xd_cdclk_read(
 	if ((pll & I915_XD_CDCLK_PLL_ON) != 0U && (pll & I915_XD_CDCLK_PLL_LOCK) != 0U)
 		state->vco_khz = (pll & I915_XD_CDCLK_PLL_RATIO) * state->ref_khz;
 
-	/* The bypass clock is half the reference, and is the CD clock while the PLL is off. */
+	/* The bypass clock is half the reference (50 MHz on display 11), and is the CD clock while the PLL is off. */
 	state->bypass_khz = state->ref_khz / 2U;
+	if (platform->display_ver < 12U)
+		state->bypass_khz = I915_XD_CDCLK_BYPASS_11_KHZ;
 	state->cdclk_khz = state->bypass_khz;
 
 	/* The CD clock through the CD2X divider (given here doubled: 1, 1.5, 2, 4). */
@@ -941,7 +993,8 @@ drv_i915_xd_dpll_hdmi_words(
 
 /*
  * Works out the words of the Thunderbolt PLL, which runs at one rate:
- * its DCO from the table of the reference; its dividers are not used.
+ * its DCO from the table of the reference; its dividers are not used,
+ * except on Ice Lake, whose row of the reference has them.
  *
  * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dpll_mgr.c
  * (icl_calc_tbt_pll, icl_calc_dpll_state).
@@ -953,9 +1006,20 @@ drv_i915_xd_dpll_tbt_words(
 	int afc,
 	struct i915_xd_dpll_words *words)
 {
+	const struct i915_xd_dpll_dp_row *row;
 	const struct i915_xd_dpll_dco *dco;
 
-	/* The DCO of the reference, no dividers. */
+	/* Ice Lake's PLL has its dividers too: the row of the reference. */
+	if (platform->tbt_pll_19p2 != NULL) {
+		row = platform->tbt_pll_19p2;
+		if (ref_khz == I915_XD_DPLL_REF_24)
+			row = platform->tbt_pll_24;
+		i915_xd_dpll_pack(platform, ref_khz, row->dco_integer, row->dco_fraction, row->qdiv_ratio, row->qdiv_mode, row->kdiv,
+			row->pdiv, afc, words);
+		return;
+	}
+
+	/* Succeeded: the DCO of the reference, no dividers. */
 	dco = drv_i915_xd_tbt_pll(ref_khz);
 	i915_xd_dpll_pack(platform, ref_khz, dco->dco_integer, dco->dco_fraction, 0U, 0U, 0U, 0U, afc, words);
 }
@@ -1261,6 +1325,7 @@ drv_i915_xd_tc_pll_words(
 	uint32_t fraction;
 	uint32_t iref_ndiv;
 	uint32_t iref_trim;
+	uint32_t iref_pulse;
 	uint32_t target;
 	uint32_t gain;
 	uint32_t proportional;
@@ -1268,7 +1333,7 @@ drv_i915_xd_tc_pll_words(
 	int error;
 
 	/* The current reference of the reference clock. */
-	error = i915_xd_tc_pll_iref(ref_khz, &iref_ndiv, &iref_trim);
+	error = i915_xd_tc_pll_iref(ref_khz, &iref_ndiv, &iref_trim, &iref_pulse);
 	if (error != 0)
 		return error;
 
@@ -1286,7 +1351,7 @@ drv_i915_xd_tc_pll_words(
 	fraction = (uint32_t)(((uint64_t)remainder << I915_XD_TC_PLL_FRACTION_BITS) / feedback_khz);
 
 	/* The clock tops: the reference mux, the core divider, the line driver, input and dividers. */
-	i915_xd_tc_pll_clock_tops(hdmi, div1, div2, words);
+	i915_xd_tc_pll_clock_tops(hdmi, div1, div2, I915_XD_TC_PLL_LINEDRV_DKL, &words->refclkin, &words->coreclk, &words->hsclk);
 
 	/* The loop filter is stronger above 9 GHz. */
 	if (dco_khz >= I915_XD_TC_PLL_HIGH_DCO_KHZ) {
@@ -1498,6 +1563,314 @@ drv_i915_xd_tc_pll_read(
 	words->ssc = drv_i915_xd_dkl_read(dkl, tc, I915_XD_DKL_PLL_SSC) & I915_XD_TC_PLL_SSC_FIELDS;
 	words->bias = drv_i915_xd_dkl_read(dkl, tc, I915_XD_DKL_PLL_BIAS) & I915_XD_TC_PLL_BIAS_FIELDS;
 	words->tdc = drv_i915_xd_dkl_read(dkl, tc, I915_XD_DKL_PLL_TDC_COLDST_BIAS) & I915_XD_TC_PLL_TDC_FIELDS;
+
+	/* Succeeded: the PLL is enabled. */
+	return 1;
+}
+
+/*
+ * Works out the words of an Ice Lake Type-C port's PLL in its MG PHY for
+ * a DisplayPort link rate or an HDMI clock (port_khz) on a reference: the
+ * dividers and the clock tops as a Dekel PHY's (with the MG line driver),
+ * the feedback divider over twice the reference (four times when the
+ * integer would not fit in 8 bits) with its 22-bit fraction, the loop
+ * filter with the TDC target, the fractional lock with the feed-forward
+ * gain, the SSC words without spread, the bias, and the TDC cold start;
+ * on a 38.4 MHz reference only the cold start of the TDC word and none of
+ * the bias are written.  Returns 0, or EINVAL when no divider fits or
+ * the reference is not one the PHY takes.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dpll_mgr.c
+ * (icl_calc_mg_pll_state: the MG words and their masks).
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dpll_mgr.c
+ * (icl_mg_pll_find_divisors, icl_calc_mg_pll_state).
+ */
+int
+drv_i915_xd_mg_pll_words(
+	uint32_t ref_khz,
+	uint32_t port_khz,
+	int hdmi,
+	struct i915_xd_mg_pll_words *words)
+{
+	uint32_t div1;
+	uint32_t div2;
+	uint32_t dco_khz;
+	uint32_t prediv;
+	uint32_t feedback_khz;
+	uint32_t integer;
+	uint32_t remainder;
+	uint32_t fraction;
+	uint32_t iref_ndiv;
+	uint32_t iref_trim;
+	uint32_t iref_pulse;
+	uint32_t target;
+	uint32_t gain;
+	uint32_t proportional;
+	uint32_t integral;
+	int error;
+
+	/* The current reference of the reference clock. */
+	error = i915_xd_tc_pll_iref(ref_khz, &iref_ndiv, &iref_trim, &iref_pulse);
+	if (error != 0)
+		return error;
+
+	/* The dividers that put the DCO in place. */
+	error = i915_xd_tc_pll_dividers(port_khz, hdmi, &div1, &div2, &dco_khz);
+	if (error != 0)
+		return error;
+
+	/* The feedback divider: over twice the reference, or four times when 8 bits do not hold it. */
+	prediv = I915_XD_TC_PLL_FBPREDIV;
+	integer = dco_khz / (ref_khz * prediv);
+	if (integer > I915_XD_MG_PLL_INT_MAX) {
+		prediv = I915_XD_MG_PLL_FBPREDIV_HIGH;
+		integer = dco_khz / (ref_khz * prediv);
+	}
+	if (integer > I915_XD_MG_PLL_INT_MAX)
+		return EINVAL;
+	feedback_khz = ref_khz * prediv;
+	remainder = dco_khz % feedback_khz;
+	fraction = (uint32_t)(((uint64_t)remainder << I915_XD_TC_PLL_FRACTION_BITS) / feedback_khz);
+
+	/* The clock tops: the reference mux, the core divider, the line driver, input and dividers. */
+	i915_xd_tc_pll_clock_tops(hdmi, div1, div2, I915_XD_TC_PLL_LINEDRV_MG, &words->refclkin, &words->coreclk, &words->hsclk);
+
+	/* The loop filter is stronger above 9 GHz. */
+	if (dco_khz >= I915_XD_TC_PLL_HIGH_DCO_KHZ) {
+		proportional = I915_XD_TC_PLL_PROP_HIGH;
+		integral = I915_XD_TC_PLL_INTEG_HIGH;
+	} else {
+		proportional = I915_XD_TC_PLL_PROP_LOW;
+		integral = I915_XD_TC_PLL_INTEG_LOW;
+	}
+
+	/* The TDC target and the feed-forward gain (used only with a fraction), as a Dekel PHY's. */
+	target = (uint32_t)(I915_XD_TC_PLL_TDC_NUMERATOR / ((uint64_t)I915_XD_TC_PLL_TDC_DENOMINATOR * ref_khz));
+	target = (target + 5U) / 10U;
+	gain = 0U;
+	if (remainder != 0U)
+		gain = prediv * I915_XD_TC_PLL_GAIN_NUMERATOR / (dco_khz * 3U / 10U);
+
+	/* DIV0: the integer and the fraction, enabled when there is one. */
+	words->div0 = i915_xd_field_put(I915_XD_MG_DIV0_FBDIV_FRAC, fraction);
+	words->div0 |= i915_xd_field_put(I915_XD_MG_DIV0_FBDIV_INT, integer);
+	if (remainder != 0U)
+		words->div0 |= I915_XD_MG_DIV0_FRAC_ENABLE;
+
+	/* DIV1: the current reference divider, the dither divider of 2, an N divider of 1 and the pre-divider. */
+	words->div1 = I915_XD_MG_DIV1_IREF_NDIV(iref_ndiv);
+	words->div1 |= I915_XD_MG_DIV1_DITHER_DIV_2;
+	words->div1 |= I915_XD_MG_DIV1_NDIV(1U);
+	words->div1 |= i915_xd_field_put(I915_XD_MG_DIV1_FBPREDIV, prediv);
+
+	/* The loop filter: the TDC target, the AFC counter of 512, the gain and the coefficients. */
+	words->lf = I915_XD_MG_LF_TDC_TARGET(target);
+	words->lf |= I915_XD_MG_LF_AFC_COUNT_512;
+	words->lf |= I915_XD_MG_LF_GAIN(I915_XD_MG_PLL_LF_GAIN);
+	words->lf |= I915_XD_MG_LF_INT_COEFF(integral);
+	words->lf |= I915_XD_MG_LF_PROP_COEFF(proportional);
+
+	/* The fractional lock: the lock criteria, the threshold, the dither, the gain and its calibration with a fraction. */
+	words->frac_lock = I915_XD_MG_FRAC_LOCK_TRUELOCK_32;
+	words->frac_lock |= I915_XD_MG_FRAC_LOCK_EARLYLOCK_32;
+	words->frac_lock |= I915_XD_MG_FRAC_LOCK_THRESHOLD(I915_XD_MG_PLL_LOCK_THRESHOLD);
+	words->frac_lock |= I915_XD_MG_FRAC_LOCK_DCO_DITHER;
+	words->frac_lock |= I915_XD_MG_FRAC_LOCK_FEED_FWD_GAIN(gain);
+	if (remainder != 0U)
+		words->frac_lock |= I915_XD_MG_FRAC_LOCK_FEED_FWD_CAL;
+
+	/* SSC: the type, the step count and the FLL; no spread, so no step length or size. */
+	words->ssc = I915_XD_MG_SSC_TYPE(I915_XD_MG_PLL_SSC_TYPE);
+	words->ssc |= I915_XD_MG_SSC_STEP_NUM(I915_XD_TC_PLL_SSC_STEPS);
+	words->ssc |= I915_XD_MG_SSC_FLL_ENABLE;
+
+	/* The TDC cold start bias. */
+	words->tdc = I915_XD_MG_TDC_COLDSTART;
+	words->tdc |= I915_XD_MG_TDC_IREFINT_ENABLE;
+	words->tdc |= I915_XD_MG_TDC_REFBIAS_PULSE(iref_pulse);
+	words->tdc |= I915_XD_MG_TDC_OVERCURRENT_CORR;
+	words->tdc |= I915_XD_MG_TDC_SELECT(I915_XD_MG_PLL_TDC_SELECT);
+
+	/* The bias. */
+	words->bias = I915_XD_MG_BIAS_GB_SEL(I915_XD_MG_PLL_BIAS_GB);
+	words->bias |= I915_XD_MG_BIAS_INIT_DCOAMP(I915_XD_MG_PLL_BIAS_DCOAMP);
+	words->bias |= I915_XD_MG_BIAS_BONUS(I915_XD_MG_PLL_BIAS_BONUS);
+	words->bias |= I915_XD_MG_BIAS_CAL_ENABLE;
+	words->bias |= I915_XD_MG_BIAS_CTRIM(I915_XD_MG_PLL_BIAS_CTRIM);
+	words->bias |= I915_XD_MG_BIAS_VREF_RDAC(I915_XD_MG_PLL_BIAS_RDAC);
+	words->bias |= I915_XD_MG_BIAS_IREF_TRIM(iref_trim);
+
+	/* A 38.4 MHz reference keeps the bias and all of the TDC word but its cold start. */
+	words->bias_mask = 0xffffffffU;
+	words->tdc_mask = 0xffffffffU;
+	if (ref_khz == I915_XD_DPLL_REF_38P4) {
+		words->bias_mask = 0U;
+		words->tdc_mask = I915_XD_MG_TDC_COLDSTART;
+	}
+	words->bias &= words->bias_mask;
+	words->tdc &= words->tdc_mask;
+
+	/* Succeeded: the words are filled. */
+	return 0;
+}
+
+/*
+ * Reports the link clock an MG PLL's words give, in kHz: the feedback
+ * divider (with its fraction when enabled) times the reference, over the
+ * AFE's 5 and the two dividers.  0 when the high-speed divider code is
+ * not one the PHY has.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dpll_mgr.c
+ * (icl_ddi_mg_pll_get_freq).
+ */
+uint32_t
+drv_i915_xd_mg_pll_port_khz(
+	uint32_t ref_khz,
+	const struct i915_xd_mg_pll_words *words)
+{
+	uint64_t clock;
+	uint32_t prediv;
+	uint32_t integer;
+	uint32_t fraction;
+	uint32_t div1;
+	uint32_t div2;
+
+	/* The feedback divider. */
+	prediv = i915_xd_field_get(I915_XD_MG_DIV1_FBPREDIV, words->div1);
+	integer = i915_xd_field_get(I915_XD_MG_DIV0_FBDIV_INT, words->div0);
+	fraction = 0U;
+	if ((words->div0 & I915_XD_MG_DIV0_FRAC_ENABLE) != 0U)
+		fraction = i915_xd_field_get(I915_XD_MG_DIV0_FBDIV_FRAC, words->div0);
+
+	/* The dividers; a second divider of 0 divides by 1. */
+	div1 = i915_xd_tc_pll_hsdiv_value(i915_xd_field_get(I915_XD_DKL_HSCLK_HSDIV, words->hsclk));
+	if (div1 == 0U)
+		return 0U;
+	div2 = i915_xd_field_get(I915_XD_DKL_HSCLK_DSDIV, words->hsclk);
+	if (div2 == 0U)
+		div2 = 1U;
+
+	/* The DCO, the fraction's share added after its own shift to keep the rounding small. */
+	clock = (uint64_t)prediv * integer * ref_khz;
+	clock += ((uint64_t)prediv * fraction * ref_khz) >> I915_XD_TC_PLL_FRACTION_BITS;
+
+	/* Succeeded: the link clock. */
+	return (uint32_t)(clock / (5U * div1 * div2));
+}
+
+/*
+ * Turns an Ice Lake Type-C port's PLL on with its words: the power of its
+ * enable word and the wait for it, the clock tops written into the fields
+ * the PLL uses, the dividers, loop filter, fractional lock and SSC words
+ * written whole, the bias and TDC words through their masks, a posting
+ * read, the enable and the wait for the lock.  The MG PHY's registers are
+ * reached directly.  Returns the waits that ran out (I915_XD_DPLL_LATE_*);
+ * a PLL that is not a Type-C one is refused with every bit.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dpll_mgr.c
+ * (icl_pll_power_enable, icl_pll_enable: the waits of 1 ms).
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dpll_mgr.c
+ * (mg_pll_enable, icl_mg_pll_write, icl_pll_power_enable, icl_pll_enable).
+ */
+unsigned
+drv_i915_xd_mg_pll_enable(
+	struct i915_xd_io *io,
+	const struct i915_xd_pll_desc *pll,
+	const struct i915_xd_mg_pll_words *words)
+{
+	uint32_t base;
+	unsigned late;
+	int error;
+
+	/* Only a Type-C PLL has its words in a PHY. */
+	if (pll->kind != I915_XD_PLL_TC || pll->tc == 0U)
+		return I915_XD_DPLL_LATE_POWER_ON | I915_XD_DPLL_LATE_LOCK;
+	base = I915_XD_MG_PHY(pll->tc - 1U);
+
+	/* Powers the PLL and waits for the power. */
+	late = 0U;
+	(void)drv_i915_xd_io_rmw(io, pll->enable, 0U, I915_XD_PLL_POWER_ENABLE);
+	error = drv_i915_xd_io_poll(io, pll->enable, I915_XD_PLL_POWER_STATE, I915_XD_PLL_POWER_STATE, I915_XD_DPLL_US, NULL);
+	if (error != 0)
+		late |= I915_XD_DPLL_LATE_POWER_ON;
+
+	/* The clock tops, in the fields the PLL uses. */
+	(void)drv_i915_xd_io_rmw(io, base + I915_XD_MG_REFCLKIN_CTL, I915_XD_DKL_REFCLKIN_OD_2_MUX, words->refclkin);
+	(void)drv_i915_xd_io_rmw(io, base + I915_XD_MG_CLKTOP2_CORECLKCTL1, I915_XD_DKL_CORECLK_A_DIVRATIO, words->coreclk);
+	(void)drv_i915_xd_io_rmw(io, base + I915_XD_MG_CLKTOP2_HSCLKCTL, I915_XD_MG_PLL_HSCLK_FIELDS, words->hsclk);
+
+	/* The dividers, the loop filter, the fractional lock and the SSC, whole. */
+	drv_i915_xd_io_write(io, base + I915_XD_MG_PLL_DIV0, words->div0);
+	drv_i915_xd_io_write(io, base + I915_XD_MG_PLL_DIV1, words->div1);
+	drv_i915_xd_io_write(io, base + I915_XD_MG_PLL_LF, words->lf);
+	drv_i915_xd_io_write(io, base + I915_XD_MG_PLL_FRAC_LOCK, words->frac_lock);
+	drv_i915_xd_io_write(io, base + I915_XD_MG_PLL_SSC, words->ssc);
+
+	/* The bias and the TDC cold start through their masks, then a posting read. */
+	(void)drv_i915_xd_io_rmw(io, base + I915_XD_MG_PLL_BIAS, words->bias_mask, words->bias);
+	(void)drv_i915_xd_io_rmw(io, base + I915_XD_MG_PLL_TDC_COLDST_BIAS, words->tdc_mask, words->tdc);
+	drv_i915_xd_io_posting_read(io, base + I915_XD_MG_PLL_TDC_COLDST_BIAS);
+
+	/* Enables it and waits for the lock. */
+	(void)drv_i915_xd_io_rmw(io, pll->enable, 0U, I915_XD_PLL_ENABLE);
+	error = drv_i915_xd_io_poll(io, pll->enable, I915_XD_PLL_LOCK, I915_XD_PLL_LOCK, I915_XD_DPLL_US, NULL);
+	if (error != 0)
+		late |= I915_XD_DPLL_LATE_LOCK;
+
+	/* Succeeded: the waits that ran out. */
+	return late;
+}
+
+/*
+ * Reads an Ice Lake Type-C port's PLL: returns 1 when it is enabled, with
+ * its words (the clock tops in the fields the PLL uses, the bias and TDC
+ * words through the masks of the reference), or 0 when it is off or not
+ * a Type-C PLL.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dpll_mgr.c
+ * (mg_pll_get_hw_state).
+ */
+int
+drv_i915_xd_mg_pll_read(
+	struct i915_xd_io *io,
+	const struct i915_xd_pll_desc *pll,
+	uint32_t ref_khz,
+	struct i915_xd_mg_pll_words *words)
+{
+	uint32_t enable;
+	uint32_t base;
+
+	/* Only a Type-C PLL has its words in a PHY. */
+	if (pll->kind != I915_XD_PLL_TC || pll->tc == 0U)
+		return 0;
+	base = I915_XD_MG_PHY(pll->tc - 1U);
+
+	/* A PLL that is not enabled has no state. */
+	enable = drv_i915_xd_io_read(io, pll->enable);
+	if ((enable & I915_XD_PLL_ENABLE) == 0U)
+		return 0;
+
+	/* The clock tops. */
+	words->refclkin = drv_i915_xd_io_read(io, base + I915_XD_MG_REFCLKIN_CTL) & I915_XD_DKL_REFCLKIN_OD_2_MUX;
+	words->coreclk = drv_i915_xd_io_read(io, base + I915_XD_MG_CLKTOP2_CORECLKCTL1) & I915_XD_DKL_CORECLK_A_DIVRATIO;
+	words->hsclk = drv_i915_xd_io_read(io, base + I915_XD_MG_CLKTOP2_HSCLKCTL) & I915_XD_MG_PLL_HSCLK_FIELDS;
+
+	/* The whole words. */
+	words->div0 = drv_i915_xd_io_read(io, base + I915_XD_MG_PLL_DIV0);
+	words->div1 = drv_i915_xd_io_read(io, base + I915_XD_MG_PLL_DIV1);
+	words->lf = drv_i915_xd_io_read(io, base + I915_XD_MG_PLL_LF);
+	words->frac_lock = drv_i915_xd_io_read(io, base + I915_XD_MG_PLL_FRAC_LOCK);
+	words->ssc = drv_i915_xd_io_read(io, base + I915_XD_MG_PLL_SSC);
+
+	/* The bias and the TDC cold start through the masks of the reference. */
+	words->bias_mask = 0xffffffffU;
+	words->tdc_mask = 0xffffffffU;
+	if (ref_khz == I915_XD_DPLL_REF_38P4) {
+		words->bias_mask = 0U;
+		words->tdc_mask = I915_XD_MG_TDC_COLDSTART;
+	}
+	words->bias = drv_i915_xd_io_read(io, base + I915_XD_MG_PLL_BIAS) & words->bias_mask;
+	words->tdc = drv_i915_xd_io_read(io, base + I915_XD_MG_PLL_TDC_COLDST_BIAS) & words->tdc_mask;
 
 	/* Succeeded: the PLL is enabled. */
 	return 1;
@@ -1756,39 +2129,43 @@ i915_xd_dpll_k_value(
 }
 
 /*
- * Reports the current reference divider and trim of a Type-C PLL for a
- * reference clock.  Returns 0, or EINVAL for a reference the PHY does not
- * take.
+ * Reports the current reference divider, trim and start pulse width
+ * of a Type-C PLL for a reference clock.  Returns 0, or EINVAL for a
+ * reference the PHY does not take.
  *
  * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dpll_mgr.c
- * (icl_calc_mg_pll_state: iref_ndiv and iref_trim of 19.2, 24 and
- * 38.4 MHz).
+ * (icl_calc_mg_pll_state: iref_ndiv, iref_trim and iref_pulse_w of 19.2,
+ * 24 and 38.4 MHz).
  */
 static int
 i915_xd_tc_pll_iref(
 	uint32_t ref_khz,
 	uint32_t *ndiv,
-	uint32_t *trim)
+	uint32_t *trim,
+	uint32_t *pulse)
 {
-	/* Each reference has its pair. */
+	/* Each reference has its divider ratio, trim and start pulse width. */
 	switch (ref_khz) {
 	case 19200U:
 		*ndiv = 1U;
 		*trim = 28U;
+		*pulse = 1U;
 		break;
 	case 24000U:
 		*ndiv = 1U;
 		*trim = 25U;
+		*pulse = 2U;
 		break;
 	case 38400U:
 		*ndiv = 2U;
 		*trim = 28U;
+		*pulse = 1U;
 		break;
 	default:
 		return EINVAL;
 	}
 
-	/* Succeeded: the reference's pair. */
+	/* Succeeded: the reference's values. */
 	return 0;
 }
 
@@ -1851,20 +2228,24 @@ i915_xd_tc_pll_dividers(
 /*
  * Fills the clock top words of a Type-C PLL: the reference mux, the core
  * clock divider (10 for DisplayPort and 5 for HDMI with a second divider,
- * 5 without), and the high-speed clock control (the line driver select 1
- * with a second divider and 0 without, the core input of HDMI, the two
- * dividers).
+ * 5 without), and the high-speed clock control (the PHY's line driver
+ * select with a second divider and 0 without, the core input of HDMI,
+ * the two dividers).  The clock tops are the same words in a Dekel and
+ * an MG PHY.
  *
  * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dpll_mgr.c
- * (icl_mg_pll_find_divisors: a_divratio, tlinedrv of the DKL PHY,
- * inputsel, MG_REFCLKIN_CTL_OD_2_MUX(1)).
+ * (icl_mg_pll_find_divisors: a_divratio, tlinedrv, inputsel,
+ * MG_REFCLKIN_CTL_OD_2_MUX(1)).
  */
 static void
 i915_xd_tc_pll_clock_tops(
 	int hdmi,
 	uint32_t div1,
 	uint32_t div2,
-	struct i915_xd_tc_pll_words *words)
+	uint32_t line_driver,
+	uint32_t *refclkin,
+	uint32_t *coreclk,
+	uint32_t *hsclk)
 {
 	uint32_t divratio;
 	uint32_t linedrv;
@@ -1875,19 +2256,19 @@ i915_xd_tc_pll_clock_tops(
 	linedrv = 0U;
 	if (div2 >= 2U) {
 		divratio = hdmi ? 5U : 10U;
-		linedrv = 1U;
+		linedrv = line_driver;
 	}
 
 	/* HDMI takes the other core input. */
 	inputsel = hdmi ? 1U : 0U;
 
 	/* The words. */
-	words->refclkin = i915_xd_field_put(I915_XD_DKL_REFCLKIN_OD_2_MUX, 1U);
-	words->coreclk = i915_xd_field_put(I915_XD_DKL_CORECLK_A_DIVRATIO, divratio);
-	words->hsclk = i915_xd_field_put(I915_XD_DKL_HSCLK_TLINEDRV, linedrv);
-	words->hsclk |= i915_xd_field_put(I915_XD_DKL_HSCLK_CORE_INPUTSEL, inputsel);
-	words->hsclk |= i915_xd_field_put(I915_XD_DKL_HSCLK_HSDIV, i915_xd_tc_pll_hsdiv_code(div1));
-	words->hsclk |= i915_xd_field_put(I915_XD_DKL_HSCLK_DSDIV, div2);
+	*refclkin = i915_xd_field_put(I915_XD_DKL_REFCLKIN_OD_2_MUX, 1U);
+	*coreclk = i915_xd_field_put(I915_XD_DKL_CORECLK_A_DIVRATIO, divratio);
+	*hsclk = i915_xd_field_put(I915_XD_DKL_HSCLK_TLINEDRV, linedrv);
+	*hsclk |= i915_xd_field_put(I915_XD_DKL_HSCLK_CORE_INPUTSEL, inputsel);
+	*hsclk |= i915_xd_field_put(I915_XD_DKL_HSCLK_HSDIV, i915_xd_tc_pll_hsdiv_code(div1));
+	*hsclk |= i915_xd_field_put(I915_XD_DKL_HSCLK_DSDIV, div2);
 }
 
 /* The high-speed divider code of a divider (2, 3, 5, 7); any other is taken as 2. */

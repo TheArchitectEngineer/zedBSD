@@ -6,8 +6,9 @@
  */
 
 /*
- * The Type-C PHYs of the display 12 and 13 code (see xd-tc.h): the
- * Dekel PHY windows and the lane programming of a Type-C port.
+ * The Type-C PHYs of the display 11 to 13 code (see xd-tc.h): the
+ * Dekel PHY windows, the lane programming of a Type-C port in a Dekel or
+ * an MG PHY, and the connection of a Type-C port.
  */
 
 #include "display-internal.h"
@@ -44,6 +45,19 @@
 /* The rate above which a DisplayPort link takes the high-rate swing table. */
 #define I915_XD_DKL_SWING_LOW_MAX_KHZ	270000U
 
+/*
+ * The link clocks an MG PHY's lanes follow: below 300 MHz the clock hub
+ * keeps the low-rate lock enable, above 500 MHz the duty-cycle
+ * correction takes the AMI clock divider override of 1.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (icl_mg_phy_set_signal_levels: 300000, 500000,
+ * CFG_AMI_CK_DIV_OVERRIDE_VAL(1)).
+ */
+#define I915_XD_MG_LOW_RATE_KHZ		300000U
+#define I915_XD_MG_DCC_OVERRIDE_KHZ	500000U
+#define I915_XD_MG_DCC_DIVIDER		1U
+
 static void i915_xd_dkl_lock(struct i915_xd_dkl *dkl);
 static void i915_xd_dkl_unlock(struct i915_xd_dkl *dkl);
 static uint32_t i915_xd_dkl_select(struct i915_xd_dkl *dkl, unsigned tc, uint32_t phy_offset);
@@ -53,6 +67,8 @@ static int i915_xd_tc_connect_tcss(struct i915_xd_io *io, const struct i915_xd_p
 static int i915_xd_tc_connect_fia(struct i915_xd_io *io, const struct i915_xd_platform *platform, const struct i915_xd_port_desc *port, unsigned aux, unsigned mode, unsigned lanes, const struct i915_xd_tc_power *power, struct i915_xd_tc_connection *connection);
 static int i915_xd_tc_block(const struct i915_xd_platform *platform, unsigned aux, unsigned mode, const struct i915_xd_tc_power *power, struct i915_xd_tc_connection *connection);
 static void i915_xd_tc_unblock(const struct i915_xd_tc_power *power, struct i915_xd_tc_connection *connection);
+static int i915_xd_tc_dp_modes(unsigned pin_assignment, unsigned lanes, uint32_t *mode0_out, uint32_t *mode1_out);
+static const struct i915_xd_mg_swing *i915_xd_tc_mg_row(const struct i915_xd_mg_swing_table *table, uint8_t level);
 static int i915_xd_tc_check(struct i915_xd_io *io, const struct i915_xd_platform *platform, const struct i915_xd_port_desc *port, unsigned mode, unsigned lanes, struct i915_xd_tc_connection *connection);
 
 /*
@@ -304,55 +320,63 @@ drv_i915_xd_tc_dp_mode(
 	lane1 &= ~modes;
 
 	/* Chooses the modes the pin assignment and the lane count call for. */
-	mode0 = 0U;
-	mode1 = 0U;
-	error = 0;
-	switch (pin_assignment) {
-	case I915_XD_TC_PIN_LEGACY:
-		/* A legacy port: one lane is lane 1's single transmitter, more are both lanes doubled. */
-		if (lanes == 1U) {
-			mode1 = I915_XD_DKL_DP_MODE_X1;
-		} else {
-			mode0 = I915_XD_DKL_DP_MODE_X2;
-			mode1 = I915_XD_DKL_DP_MODE_X2;
-		}
-		break;
-	case I915_XD_TC_PIN_A:
-		/* Assignment A doubles both lanes only for four lanes. */
-		if (lanes == 4U) {
-			mode0 = I915_XD_DKL_DP_MODE_X2;
-			mode1 = I915_XD_DKL_DP_MODE_X2;
-		}
-		break;
-	case I915_XD_TC_PIN_B:
-		/* Assignment B doubles both lanes only for two lanes. */
-		if (lanes == 2U) {
-			mode0 = I915_XD_DKL_DP_MODE_X2;
-			mode1 = I915_XD_DKL_DP_MODE_X2;
-		}
-		break;
-	case I915_XD_TC_PIN_C:
-	case I915_XD_TC_PIN_D:
-	case I915_XD_TC_PIN_E:
-	case I915_XD_TC_PIN_F:
-		/* Assignments C to F: one lane is both lanes single, more are both doubled. */
-		if (lanes == 1U) {
-			mode0 = I915_XD_DKL_DP_MODE_X1;
-			mode1 = I915_XD_DKL_DP_MODE_X1;
-		} else {
-			mode0 = I915_XD_DKL_DP_MODE_X2;
-			mode1 = I915_XD_DKL_DP_MODE_X2;
-		}
-		break;
-	default:
-		/* The PHY has no mode for it. */
-		error = EINVAL;
-		break;
-	}
+	error = i915_xd_tc_dp_modes(pin_assignment, lanes, &mode0, &mode1);
 
 	/* Writes both lanes' modes. */
 	drv_i915_xd_dkl_write(dkl, tc, I915_XD_DKL_DP_MODE, lane0 | mode0);
 	drv_i915_xd_dkl_write(dkl, tc, I915_XD_DKL_DP_MODE + I915_XD_DKL_LANE_STRIDE, lane1 | mode1);
+
+	/* Reports a pin assignment without a mode. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the lanes are in the link's mode. */
+	return 0;
+}
+
+/*
+ * Sets the DisplayPort mode of the two lanes of an Ice Lake Type-C port
+ * in its MG PHY, as drv_i915_xd_tc_dp_mode() does in a Dekel PHY: the
+ * same modes, in the lanes' registers reached directly.  Returns 0, or
+ * EINVAL for a pin assignment the PHY has no mode for (the lanes are
+ * then written with no mode).
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_mg_phy_regs.h
+ * (MG_DP_MODE, MG_DP_MODE_CFG_DP_X1_MODE, MG_DP_MODE_CFG_DP_X2_MODE).
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (icl_program_mg_dp_mode).
+ */
+int
+drv_i915_xd_tc_mg_dp_mode(
+	struct i915_xd_io *io,
+	unsigned tc,
+	unsigned pin_assignment,
+	unsigned lanes)
+{
+	uint32_t lane0_reg;
+	uint32_t lane1_reg;
+	uint32_t lane0;
+	uint32_t lane1;
+	uint32_t modes;
+	uint32_t mode0;
+	uint32_t mode1;
+	int error;
+
+	/* Reads both lanes' mode words without their modes. */
+	modes = I915_XD_DKL_DP_MODE_X1 | I915_XD_DKL_DP_MODE_X2;
+	lane0_reg = I915_XD_MG_PHY(tc) + I915_XD_MG_DP_MODE;
+	lane1_reg = lane0_reg + I915_XD_MG_LANE_STRIDE;
+	lane0 = drv_i915_xd_io_read(io, lane0_reg);
+	lane1 = drv_i915_xd_io_read(io, lane1_reg);
+	lane0 &= ~modes;
+	lane1 &= ~modes;
+
+	/* Chooses the modes the pin assignment and the lane count call for. */
+	error = i915_xd_tc_dp_modes(pin_assignment, lanes, &mode0, &mode1);
+
+	/* Writes both lanes' modes. */
+	drv_i915_xd_io_write(io, lane0_reg, lane0 | mode0);
+	drv_i915_xd_io_write(io, lane1_reg, lane1 | mode1);
 
 	/* Reports a pin assignment without a mode. */
 	if (error != 0)
@@ -451,6 +475,134 @@ drv_i915_xd_tc_signal_levels(
 }
 
 /*
+ * Chooses the MG swing table of an Ice Lake Type-C port: HDMI's, or
+ * DisplayPort's up to 2.7 GHz or above it.  NULL on a platform without
+ * MG ports.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi_buf_trans.c
+ * (icl_get_mg_buf_trans, icl_get_mg_buf_trans_dp).
+ */
+const struct i915_xd_mg_swing_table *
+drv_i915_xd_tc_mg_swing_table(
+	const struct i915_xd_platform *platform,
+	int hdmi,
+	uint32_t rate_khz)
+{
+	const struct i915_xd_swing_set *set;
+
+	/* HDMI has its own table. */
+	set = platform->swing;
+	if (hdmi)
+		return set->mg_hdmi;
+
+	/* DisplayPort above 2.7 GHz. */
+	if (rate_khz > I915_XD_DKL_SWING_LOW_MAX_KHZ)
+		return set->mg_dp_high;
+
+	/* Succeeded: DisplayPort up to 2.7 GHz. */
+	return set->mg_dp_low;
+}
+
+/*
+ * Programs the transmit swing of the four transmitters of an Ice Lake
+ * Type-C port in its MG PHY, for a link clock (port_khz: the link rate,
+ * or HDMI's clock): each transmitter leaves its FS32 use, takes the
+ * de-emphasis override of its link lane's level (the first transmitter
+ * of a PHY lane the even link lane, the second the odd one) in its swing
+ * and drive controls, its clock hub's low-rate lock below 300 MHz, the
+ * duty-cycle override above 500 MHz, and the calculation init of its
+ * PISO.  A level past the table takes the table's last row.  A
+ * Thunderbolt port is not programmed here (the caller skips it).
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_mg_phy_regs.h
+ * (MG_TX1_LINK_PARAMS, MG_TX2_LINK_PARAMS, CRI_USE_FS32, MG_TX1_SWINGCTRL,
+ * MG_TX2_SWINGCTRL, CRI_TXDEEMPH_OVERRIDE_17_12, MG_TX1_DRVCTRL,
+ * MG_TX2_DRVCTRL, CRI_TXDEEMPH_OVERRIDE_11_6, CRI_TXDEEMPH_OVERRIDE_5_0,
+ * CRI_TXDEEMPH_OVERRIDE_EN, MG_CLKHUB, CFG_LOW_RATE_LKREN_EN,
+ * MG_TX1_DCC, MG_TX2_DCC, CFG_AMI_CK_DIV_OVERRIDE_VAL,
+ * CFG_AMI_CK_DIV_OVERRIDE_EN, MG_TX1_PISO_READLOAD,
+ * MG_TX2_PISO_READLOAD, CRI_CALCINIT).
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (icl_mg_phy_set_signal_levels).
+ */
+void
+drv_i915_xd_tc_mg_signal_levels(
+	struct i915_xd_io *io,
+	unsigned tc,
+	const struct i915_xd_mg_swing_table *table,
+	const uint8_t levels[4],
+	uint32_t port_khz)
+{
+	const struct i915_xd_mg_swing *row;
+	uint32_t lane_base;
+	uint32_t drive_fields;
+	uint32_t word;
+	uint32_t lock;
+	uint32_t duty;
+	unsigned lane;
+
+	/* Each transmitter leaves its FS32 use. */
+	for (lane = 0U; lane < I915_XD_DKL_LANES; lane++) {
+		lane_base = I915_XD_MG_PHY(tc) + lane * I915_XD_MG_LANE_STRIDE;
+		(void)drv_i915_xd_io_rmw(io, lane_base + I915_XD_MG_TX1_LINK_PARAMS, I915_XD_MG_TX_USE_FS32, 0U);
+		(void)drv_i915_xd_io_rmw(io, lane_base + I915_XD_MG_TX2_LINK_PARAMS, I915_XD_MG_TX_USE_FS32, 0U);
+	}
+
+	/* The swing controls take bits 17..12 of each link lane's de-emphasis. */
+	for (lane = 0U; lane < I915_XD_DKL_LANES; lane++) {
+		lane_base = I915_XD_MG_PHY(tc) + lane * I915_XD_MG_LANE_STRIDE;
+		row = i915_xd_tc_mg_row(table, levels[2U * lane]);
+		word = i915_xd_field_put(I915_XD_MG_TX_DEEMPH_17_12, row->deemph_17_12);
+		(void)drv_i915_xd_io_rmw(io, lane_base + I915_XD_MG_TX1_SWINGCTRL, I915_XD_MG_TX_DEEMPH_17_12, word);
+		row = i915_xd_tc_mg_row(table, levels[2U * lane + 1U]);
+		word = i915_xd_field_put(I915_XD_MG_TX_DEEMPH_17_12, row->deemph_17_12);
+		(void)drv_i915_xd_io_rmw(io, lane_base + I915_XD_MG_TX2_SWINGCTRL, I915_XD_MG_TX_DEEMPH_17_12, word);
+	}
+
+	/* The drive controls take bits 11..6 and 5..0 and turn the override on. */
+	drive_fields = I915_XD_MG_TX_DEEMPH_11_6 | I915_XD_MG_TX_DEEMPH_5_0;
+	for (lane = 0U; lane < I915_XD_DKL_LANES; lane++) {
+		lane_base = I915_XD_MG_PHY(tc) + lane * I915_XD_MG_LANE_STRIDE;
+		row = i915_xd_tc_mg_row(table, levels[2U * lane]);
+		word = i915_xd_field_put(I915_XD_MG_TX_DEEMPH_11_6, row->deemph_11_6);
+		word |= i915_xd_field_put(I915_XD_MG_TX_DEEMPH_5_0, row->deemph_5_0);
+		word |= I915_XD_MG_TX_DEEMPH_OVERRIDE;
+		(void)drv_i915_xd_io_rmw(io, lane_base + I915_XD_MG_TX1_DRVCTRL, drive_fields, word);
+		row = i915_xd_tc_mg_row(table, levels[2U * lane + 1U]);
+		word = i915_xd_field_put(I915_XD_MG_TX_DEEMPH_11_6, row->deemph_11_6);
+		word |= i915_xd_field_put(I915_XD_MG_TX_DEEMPH_5_0, row->deemph_5_0);
+		word |= I915_XD_MG_TX_DEEMPH_OVERRIDE;
+		(void)drv_i915_xd_io_rmw(io, lane_base + I915_XD_MG_TX2_DRVCTRL, drive_fields, word);
+	}
+
+	/* The clock hub keeps the low-rate lock enable below 300 MHz. */
+	lock = 0U;
+	if (port_khz < I915_XD_MG_LOW_RATE_KHZ)
+		lock = I915_XD_MG_CLKHUB_LOW_RATE_LKREN;
+	for (lane = 0U; lane < I915_XD_DKL_LANES; lane++) {
+		lane_base = I915_XD_MG_PHY(tc) + lane * I915_XD_MG_LANE_STRIDE;
+		(void)drv_i915_xd_io_rmw(io, lane_base + I915_XD_MG_CLKHUB, I915_XD_MG_CLKHUB_LOW_RATE_LKREN, lock);
+	}
+
+	/* The duty-cycle correction takes the divider override above 500 MHz. */
+	duty = 0U;
+	if (port_khz > I915_XD_MG_DCC_OVERRIDE_KHZ)
+		duty = i915_xd_field_put(I915_XD_MG_DCC_AMI_DIV, I915_XD_MG_DCC_DIVIDER) | I915_XD_MG_DCC_AMI_DIV_OVERRIDE;
+	for (lane = 0U; lane < I915_XD_DKL_LANES; lane++) {
+		lane_base = I915_XD_MG_PHY(tc) + lane * I915_XD_MG_LANE_STRIDE;
+		(void)drv_i915_xd_io_rmw(io, lane_base + I915_XD_MG_TX1_DCC, I915_XD_MG_DCC_AMI_DIV | I915_XD_MG_DCC_AMI_DIV_OVERRIDE, duty);
+		(void)drv_i915_xd_io_rmw(io, lane_base + I915_XD_MG_TX2_DCC, I915_XD_MG_DCC_AMI_DIV | I915_XD_MG_DCC_AMI_DIV_OVERRIDE, duty);
+	}
+
+	/* Each transmitter's PISO starts its calculation. */
+	for (lane = 0U; lane < I915_XD_DKL_LANES; lane++) {
+		lane_base = I915_XD_MG_PHY(tc) + lane * I915_XD_MG_LANE_STRIDE;
+		(void)drv_i915_xd_io_rmw(io, lane_base + I915_XD_MG_TX1_PISO_READLOAD, 0U, I915_XD_MG_TX_CALCINIT);
+		(void)drv_i915_xd_io_rmw(io, lane_base + I915_XD_MG_TX2_PISO_READLOAD, 0U, I915_XD_MG_TX_CALCINIT);
+	}
+}
+
+/*
  * Releases the soft reset of the PCS of both lanes of a Type-C port,
  * which a port switched from Thunderbolt to DisplayPort alternate or
  * legacy mode needs on display 13 before its buffer is enabled.
@@ -475,14 +627,16 @@ drv_i915_xd_tc_release_soft_reset(
 /*
  * Finds where a Type-C port's FIA words are.  Display 13's FIA is
  * modular (two ports a FIA); Tiger Lake's is when FIA 1 says so (read
- * with TC cold blocked), otherwise FIA 1 holds every port.  Returns 0,
- * or EIO when FIA 1 reads all-ones (the PHY is in TC cold).
+ * with TC cold blocked), otherwise FIA 1 holds every port; Ice Lake's
+ * FIA 1 holds every port and is not asked.  Returns 0, or EIO when FIA 1
+ * reads all-ones (the PHY is in TC cold).
  *
  * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_mg_phy_regs.h
  * (FIA1_BASE, FIA2_BASE, FIA3_BASE), and drivers/gpu/drm/i915/i915_reg.h
  * (MODULAR_FIA_MASK).
  * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_tc.c
- * (tc_phy_load_fia_params, tgl_tc_phy_init, adlp_tc_phy_init).
+ * (tc_phy_load_fia_params, icl_tc_phy_init, tgl_tc_phy_init,
+ * adlp_tc_phy_init).
  */
 int
 drv_i915_xd_tc_fia(
@@ -495,9 +649,11 @@ drv_i915_xd_tc_fia(
 	uint32_t word;
 	int modular;
 
-	/* Display 13's FIA is modular; Tiger Lake's says whether it is. */
+	/* Display 13's FIA is modular; Tiger Lake's says whether it is; Ice Lake has FIA 1 alone. */
 	modular = 1;
-	if (platform->tc_flow == I915_XD_TC_FLOW_FIA) {
+	if (platform->tc_flow == I915_XD_TC_FLOW_FIA && platform->fia == I915_XD_FIA_SINGLE) {
+		modular = 0;
+	} else if (platform->tc_flow == I915_XD_TC_FLOW_FIA) {
 		word = drv_i915_xd_io_read(io, I915_XD_FIA1_BASE + I915_XD_FIA_DFLEXDPSP);
 		if (word == 0xffffffffU)
 			return EIO;
@@ -788,10 +944,13 @@ drv_i915_xd_tc_set_lanes(
  * Reports what keeps a Type-C port out of TC cold in a mode, as the power
  * functions (I915_XD_POWERS_*) the owner brings up: Tiger Lake's TC cold
  * well in every mode; on display 13 the port's AUX well (aux is its AUX
- * channel) except in Thunderbolt mode, which needs none.
+ * channel) except in Thunderbolt mode, which needs none; on Ice Lake the
+ * port's AUX well for a legacy connector only (the well then asks the
+ * firmware to leave TC cold), nothing in the other modes.
  *
  * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_tc.c
- * (tgl_tc_phy_cold_off_domain, adlp_tc_phy_cold_off_domain).
+ * (icl_tc_phy_cold_off_domain, tgl_tc_phy_cold_off_domain,
+ * adlp_tc_phy_cold_off_domain).
  */
 uint64_t
 drv_i915_xd_tc_cold_functions(
@@ -802,6 +961,14 @@ drv_i915_xd_tc_cold_functions(
 	/* Tiger Lake: the firmware's TC cold block. */
 	if (platform->tccold == I915_XD_TCCOLD_MAILBOX_WELL)
 		return I915_XD_POWERS_TC_COLD_OFF;
+
+	/* Ice Lake: a legacy connector's AUX well, nothing in the other modes. */
+	if (platform->tccold == I915_XD_TCCOLD_AUX_WELL_EXIT) {
+		if (mode != I915_XD_TC_MODE_LEGACY)
+			return 0U;
+
+		return I915_XD_POWERS_AUX(aux);
+	}
 
 	/* A platform without TC cold. */
 	if (platform->tccold != I915_XD_TCCOLD_AUX_WELL)
@@ -1229,4 +1396,100 @@ i915_xd_tc_check(
 
 	/* Succeeded: enough lanes. */
 	return 0;
+}
+
+/*
+ * Chooses the DisplayPort modes of a Type-C PHY's two lanes for a pin
+ * assignment and the lanes a link uses: one or two transmitters of each
+ * lane.  Returns 0, or EINVAL (with no modes) for a pin assignment the
+ * PHY has no mode for.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (icl_program_mg_dp_mode).
+ */
+static int
+i915_xd_tc_dp_modes(
+	unsigned pin_assignment,
+	unsigned lanes,
+	uint32_t *mode0_out,
+	uint32_t *mode1_out)
+{
+	uint32_t mode0;
+	uint32_t mode1;
+	int error;
+
+	/* The modes of each pin assignment. */
+	mode0 = 0U;
+	mode1 = 0U;
+	error = 0;
+	switch (pin_assignment) {
+	case I915_XD_TC_PIN_LEGACY:
+		/* A legacy port: one lane is lane 1's single transmitter, more are both lanes doubled. */
+		if (lanes == 1U) {
+			mode1 = I915_XD_DKL_DP_MODE_X1;
+		} else {
+			mode0 = I915_XD_DKL_DP_MODE_X2;
+			mode1 = I915_XD_DKL_DP_MODE_X2;
+		}
+		break;
+	case I915_XD_TC_PIN_A:
+		/* Assignment A doubles both lanes only for four lanes. */
+		if (lanes == 4U) {
+			mode0 = I915_XD_DKL_DP_MODE_X2;
+			mode1 = I915_XD_DKL_DP_MODE_X2;
+		}
+		break;
+	case I915_XD_TC_PIN_B:
+		/* Assignment B doubles both lanes only for two lanes. */
+		if (lanes == 2U) {
+			mode0 = I915_XD_DKL_DP_MODE_X2;
+			mode1 = I915_XD_DKL_DP_MODE_X2;
+		}
+		break;
+	case I915_XD_TC_PIN_C:
+	case I915_XD_TC_PIN_D:
+	case I915_XD_TC_PIN_E:
+	case I915_XD_TC_PIN_F:
+		/* Assignments C to F: one lane is both lanes single, more are both doubled. */
+		if (lanes == 1U) {
+			mode0 = I915_XD_DKL_DP_MODE_X1;
+			mode1 = I915_XD_DKL_DP_MODE_X1;
+		} else {
+			mode0 = I915_XD_DKL_DP_MODE_X2;
+			mode1 = I915_XD_DKL_DP_MODE_X2;
+		}
+		break;
+	default:
+		/* The PHY has no mode for it. */
+		error = EINVAL;
+		break;
+	}
+
+	/* Hands the modes back. */
+	*mode0_out = mode0;
+	*mode1_out = mode1;
+
+	/* Reports a pin assignment without a mode. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the modes. */
+	return 0;
+}
+
+/* The row of an MG swing table for a level; a level past the table takes its last row. */
+static const struct i915_xd_mg_swing *
+i915_xd_tc_mg_row(
+	const struct i915_xd_mg_swing_table *table,
+	uint8_t level)
+{
+	unsigned index;
+
+	/* The row of the level, kept inside the table. */
+	index = level;
+	if (index >= table->count)
+		index = table->count - 1U;
+
+	/* Succeeded: the row. */
+	return &table->rows[index];
 }

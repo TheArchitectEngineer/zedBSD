@@ -42,7 +42,8 @@ for ours_name, linux_name in (('i915_xd_cdclk_tgl', 'icl_cdclk_table'), ('i915_x
 	rows = re.findall(r'\.refclk = (\d+), \.cdclk = (\d+), \.divider = (\d+), \.ratio = +(\d+)', block(cd, 'struct intel_cdclk_vals %s[]' % linux_name))
 	theirs = [v for r in rows for v in (int(r[0]), int(r[1]), int(r[3]), int(r[2]))]
 	compare(ours_name, nums(block(header, ours_name + '[]')), theirs)
-for ours_name, linux_name in (('i915_xd_voltage_tgl', 'tgl_voltage_level_max_cdclk'), ('i915_xd_voltage_rplu', 'rplu_voltage_level_max_cdclk')):
+for ours_name, linux_name in (('i915_xd_voltage_tgl', 'tgl_voltage_level_max_cdclk'), ('i915_xd_voltage_rplu', 'rplu_voltage_level_max_cdclk'),
+			      ('i915_xd_voltage_icl', 'icl_voltage_level_max_cdclk')):
 	text = cd[cd.index(linux_name + '[]'):]
 	theirs = [int(x) for x in re.findall(r'\] = (\d+)', text[:text.index('};')])]
 	ours = nums(header[header.index(ours_name + '[]'):header.index(';', header.index(ours_name + '[]'))].split('=')[1])
@@ -59,6 +60,12 @@ for ours_name, linux_name in (('i915_xd_tbt_pll_19p2', 'tgl_tbt_pll_19_2MHz_valu
 	m = re.search(r'%s = \{\s*\.dco_integer = (\w+), \.dco_fraction = (\w+)' % linux_name, dp)
 	ours = nums(header[header.index(ours_name + ' ='):header.index(';', header.index(ours_name + ' ='))].split('=')[1])
 	compare(ours_name, ours, [int(m.group(1), 0), int(m.group(2), 0)])
+# p045: Ice Lake's Thunderbolt PLL words with their dividers; ours (link 0, dco_integer, dco_fraction, qdiv_ratio, qdiv_mode,
+# kdiv, pdiv).
+for ours_name, linux_name in (('i915_xd_tbt_pll_icl_19p2', 'icl_tbt_pll_19_2MHz_values'), ('i915_xd_tbt_pll_icl_24', 'icl_tbt_pll_24MHz_values')):
+	m = re.search(r'%s = \{\s*\.dco_integer = (\w+), \.dco_fraction = (\w+),\s*\.pdiv = (\w+) /\* \d+ \*/, \.kdiv = (\d+), \.qdiv_mode = (\d+), \.qdiv_ratio = (\d+)' % linux_name, dp)
+	ours = nums(header[header.index(ours_name + ' ='):header.index(';', header.index(ours_name + ' ='))].split('=')[1])
+	compare(ours_name, ours, [0, int(m.group(1), 0), int(m.group(2), 0), int(m.group(6)), int(m.group(5)), int(m.group(4)), int(m.group(3), 0)])
 
 # The compensation references: Linux (dw1, dw9, dw10) in the enum order; ours (voltage_process, dw1, dw9, dw10).
 cp = open(i915 + 'display/intel_combo_phy.c').read()
@@ -76,7 +83,7 @@ for ours_name, linux_name in (('i915_xd_buddy_masks', 'tgl_buddy_page_masks'), (
 
 # The steppings: Linux [revid] = { ..., .display_step = STEP_x } or COMMON_STEP(x).
 st = open(i915 + 'intel_step.c').read()
-for ours_name, linux_name in (('tgl', 'tgl_revids'), ('tgl_uy', 'tgl_uy_revids'), ('rkl', 'rkl_revids'), ('adls', 'adls_revids'),
+for ours_name, linux_name in (('icl', 'icl_revids'), ('tgl', 'tgl_revids'), ('tgl_uy', 'tgl_uy_revids'), ('rkl', 'rkl_revids'), ('adls', 'adls_revids'),
 			      ('rpls', 'adls_rpls_revids'), ('adlp', 'adlp_revids'), ('adln', 'adlp_n_revids'), ('rplp', 'adlp_rplp_revids')):
 	theirs = []
 	for revid, rest in re.findall(r'\[(\w+)\] = \{([^}]*\})', block(st, 'intel_step_info %s[]' % linux_name)):
@@ -99,7 +106,8 @@ def pci(macro):
 	return out
 
 
-for ours_name, linux in (('tgl', pci('INTEL_TGL_12_GT1_IDS')), ('tgl_uy', pci('INTEL_TGL_12_GT2_IDS')), ('rkl', pci('INTEL_RKL_IDS')),
+for ours_name, linux in (('icl', pci('INTEL_ICL_PORT_F_IDS')), ('icl_no_f', [x for x in pci('INTEL_ICL_11_IDS') if x not in pci('INTEL_ICL_PORT_F_IDS')]),
+			 ('tgl', pci('INTEL_TGL_12_GT1_IDS')), ('tgl_uy', pci('INTEL_TGL_12_GT2_IDS')), ('rkl', pci('INTEL_RKL_IDS')),
 			 ('adls', pci('INTEL_ADLS_IDS')), ('rpls', pci('INTEL_RPLS_IDS')), ('adlp', pci('INTEL_ADLP_IDS')),
 			 ('adln', pci('INTEL_ADLN_IDS') + [0x46d3, 0x46d4]), ('rplp', [x for x in pci('INTEL_RPLP_IDS') if x not in pci('INTEL_RPLU_IDS')]),
 			 ('rplu', pci('INTEL_RPLU_IDS'))):
@@ -117,19 +125,25 @@ pairs = [('combo_swing_edp_hbr3_common', 'icl_combo_phy_trans_dp_hbr2_edp_hbr3')
 	 ('combo_swing_edp_low_adlp', 'adlp_combo_phy_trans_edp_hbr2'), ('combo_swing_edp_hbr3_adlp', 'adlp_combo_phy_trans_dp_hbr2_edp_hbr3'),
 	 ('dkl_swing_dp_low_tgl', 'tgl_dkl_phy_trans_dp_hbr'), ('dkl_swing_dp_high_tgl', 'tgl_dkl_phy_trans_dp_hbr2'),
 	 ('dkl_swing_hdmi', 'tgl_dkl_phy_trans_hdmi'), ('dkl_swing_dp_low_adlp', 'adlp_dkl_phy_trans_dp_hbr'),
-	 ('dkl_swing_dp_high_adlp', 'adlp_dkl_phy_trans_dp_hbr2_hbr3')]
+	 ('dkl_swing_dp_high_adlp', 'adlp_dkl_phy_trans_dp_hbr2_hbr3'),
+	 ('mg_swing_dp_low_icl', 'icl_mg_phy_trans_rbr_hbr'), ('mg_swing_dp_high_icl', 'icl_mg_phy_trans_hbr2_hbr3'),
+	 ('mg_swing_hdmi_icl', 'icl_mg_phy_trans_hdmi')]
 for ours_name, linux_name in pairs:
 	text = re.sub(r'/\*.*?\*/', '', block(bt, 'intel_ddi_buf_trans_entry _%s[]' % linux_name), flags=re.S)
 	rows = [[int(x, 0) for x in r.split(',')] for r in re.findall(r'\{ \.\w+ = \{([^}]*)\}', text)]
 	if ours_name.startswith('combo'):
 		theirs = [v for r in rows for v in (r[0], r[1], r[2], r[4], r[3])]
+	elif ours_name.startswith('mg'):
+		# .mg = { override 11..6, override 5..0, override 17..12 }; ours (17..12, 11..6, 5..0).
+		theirs = [v for r in rows for v in (r[2], r[0], r[1])]
 	else:
 		theirs = [v for r in rows for v in (r[0], r[2], r[1])]
 	compare('i915_xd_' + ours_name, nums(block(header, 'i915_xd_%s_rows[]' % ours_name)), theirs)
 
 # The display buffer rules: Linux active_pipes, dbuf_mask per pipe and join_mbus.
 wm = open(i915 + 'display/skl_watermark.c').read()
-for ours_name, linux_name in (('i915_xd_dbuf_tgl', 'tgl_allowed_dbufs'), ('i915_xd_dbuf_adlp', 'adlp_allowed_dbufs')):
+for ours_name, linux_name in (('i915_xd_dbuf_tgl', 'tgl_allowed_dbufs'), ('i915_xd_dbuf_adlp', 'adlp_allowed_dbufs'),
+			      ('i915_xd_dbuf_icl', 'icl_allowed_dbufs')):
 	text = wm[wm.index('dbuf_slice_conf_entry %s[]' % linux_name):]
 	text = text[:text.index('\n};')]
 	theirs = []

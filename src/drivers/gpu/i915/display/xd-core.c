@@ -117,10 +117,12 @@ drv_i915_xd_core_start(
 	i915_xd_core_abox(io, platform);
 	i915_xd_core_buddy(io, platform, input);
 
-	/* The DC power request chicken bits. */
-	drv_i915_xd_io_rmw(io, I915_XD_CHICKEN_DCPR_2, 0U,
-		I915_XD_DCPR_2_CLEAR_MEMSTAT_DIS | I915_XD_DCPR_2_SEND_RESP_IMM |
-		I915_XD_DCPR_2_MASK_LPMODE | I915_XD_DCPR_2_MASK_MAXLATENCY_MEMUP);
+	/* The DC power request chicken bits of display 12 and 13 (Ice Lake takes none). */
+	if (platform->display_ver >= 12U) {
+		drv_i915_xd_io_rmw(io, I915_XD_CHICKEN_DCPR_2, 0U,
+			I915_XD_DCPR_2_CLEAR_MEMSTAT_DIS | I915_XD_DCPR_2_SEND_RESP_IMM |
+			I915_XD_DCPR_2_MASK_LPMODE | I915_XD_DCPR_2_MASK_MAXLATENCY_MEMUP);
+	}
 
 	/* Display 13's fatal error mask. */
 	if (platform->display_ver == 13U)

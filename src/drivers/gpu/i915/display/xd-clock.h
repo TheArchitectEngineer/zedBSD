@@ -133,6 +133,26 @@ struct i915_xd_tc_pll_words {
 	int afc_set;
 };
 
+/*
+ * The words of an Ice Lake Type-C port's PLL in its MG PHY, one per
+ * register, with the masks of the bias and the TDC cold start words
+ * (only some of their fields are written on a 38.4 MHz reference).
+ */
+struct i915_xd_mg_pll_words {
+	uint32_t refclkin;
+	uint32_t coreclk;
+	uint32_t hsclk;
+	uint32_t div0;
+	uint32_t div1;
+	uint32_t lf;
+	uint32_t frac_lock;
+	uint32_t ssc;
+	uint32_t bias;
+	uint32_t bias_mask;
+	uint32_t tdc;
+	uint32_t tdc_mask;
+};
+
 void drv_i915_xd_cdclk_read(struct i915_xd_io *io, const struct i915_xd_platform *platform, struct i915_xd_cdclk *state);
 uint8_t drv_i915_xd_cdclk_voltage(const struct i915_xd_platform *platform, uint32_t cdclk_khz);
 uint32_t drv_i915_xd_cdclk_lowest(const struct i915_xd_platform *platform, uint32_t ref_khz, uint32_t min_khz);
@@ -157,6 +177,10 @@ int drv_i915_xd_tc_pll_words(uint32_t ref_khz, uint32_t port_khz, int hdmi, int 
 uint32_t drv_i915_xd_tc_pll_port_khz(uint32_t ref_khz, const struct i915_xd_tc_pll_words *words);
 unsigned drv_i915_xd_tc_pll_enable(struct i915_xd_io *io, struct i915_xd_dkl *dkl, const struct i915_xd_pll_desc *pll, const struct i915_xd_tc_pll_words *words);
 int drv_i915_xd_tc_pll_read(struct i915_xd_io *io, struct i915_xd_dkl *dkl, const struct i915_xd_pll_desc *pll, int afc, struct i915_xd_tc_pll_words *words);
+int drv_i915_xd_mg_pll_words(uint32_t ref_khz, uint32_t port_khz, int hdmi, struct i915_xd_mg_pll_words *words);
+uint32_t drv_i915_xd_mg_pll_port_khz(uint32_t ref_khz, const struct i915_xd_mg_pll_words *words);
+unsigned drv_i915_xd_mg_pll_enable(struct i915_xd_io *io, const struct i915_xd_pll_desc *pll, const struct i915_xd_mg_pll_words *words);
+int drv_i915_xd_mg_pll_read(struct i915_xd_io *io, const struct i915_xd_pll_desc *pll, uint32_t ref_khz, struct i915_xd_mg_pll_words *words);
 uint32_t drv_i915_xd_tc_clock_select(const struct i915_xd_pll_desc *pll, uint32_t rate_khz);
 void drv_i915_xd_tc_clock_map(struct i915_xd_io *io, unsigned ddi, unsigned tc, uint32_t select);
 void drv_i915_xd_tc_clock_unmap(struct i915_xd_io *io, unsigned ddi, unsigned tc);

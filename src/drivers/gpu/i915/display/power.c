@@ -1694,11 +1694,13 @@ i915_pw_xd_hooks(
 	hook->pwc = pwc;
 	hook->well = well;
 
-	/* The steps. */
+	/* The steps; the older display drives no Ice Lake port, so it needs no legacy or eDP answers. */
 	hooks->pipes_up = i915_pw_hook_pipes_up;
 	hooks->pipes_down = i915_pw_hook_pipes_down;
 	hooks->vga_reset = i915_pw_hook_vga_reset;
 	hooks->tc_health = i915_pw_hook_tc_health;
+	hooks->tc_legacy = NULL;
+	hooks->port_edp = NULL;
 	hooks->context = hook;
 }
 

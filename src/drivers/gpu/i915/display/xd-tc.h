@@ -160,8 +160,11 @@ void drv_i915_xd_dkl_write(struct i915_xd_dkl *dkl, unsigned tc, uint32_t phy_of
 void drv_i915_xd_dkl_rmw(struct i915_xd_dkl *dkl, unsigned tc, uint32_t phy_offset, uint32_t clear, uint32_t set);
 int drv_i915_xd_tc_wait_health(struct i915_xd_dkl *dkl, unsigned tc, unsigned timeout_us);
 int drv_i915_xd_tc_dp_mode(struct i915_xd_dkl *dkl, unsigned tc, unsigned pin_assignment, unsigned lanes);
+int drv_i915_xd_tc_mg_dp_mode(struct i915_xd_io *io, unsigned tc, unsigned pin_assignment, unsigned lanes);
 const struct i915_xd_dkl_swing_table *drv_i915_xd_tc_swing_table(const struct i915_xd_platform *platform, int hdmi, uint32_t rate_khz);
 void drv_i915_xd_tc_signal_levels(struct i915_xd_dkl *dkl, const struct i915_xd_platform *platform, unsigned tc, const struct i915_xd_dkl_swing_table *table, const uint8_t levels[4], int hdmi);
+const struct i915_xd_mg_swing_table *drv_i915_xd_tc_mg_swing_table(const struct i915_xd_platform *platform, int hdmi, uint32_t rate_khz);
+void drv_i915_xd_tc_mg_signal_levels(struct i915_xd_io *io, unsigned tc, const struct i915_xd_mg_swing_table *table, const uint8_t levels[4], uint32_t port_khz);
 void drv_i915_xd_tc_release_soft_reset(struct i915_xd_dkl *dkl, unsigned tc);
 int drv_i915_xd_tc_fia(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned tc, struct i915_xd_tc_fia *fia);
 unsigned drv_i915_xd_tc_live(struct i915_xd_io *io, const struct i915_xd_platform *platform, const struct i915_xd_port_desc *port, const struct i915_xd_tc_fia *fia);

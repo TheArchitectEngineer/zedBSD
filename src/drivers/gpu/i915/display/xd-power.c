@@ -41,6 +41,12 @@
 /* The distance from a well control to its BIOS copy, the first of the four. */
 #define I915_XD_POWER_BIOS_OFFSET	4U
 
+/* The Type-C ports a Thunderbolt AUX function may name. */
+#define I915_XD_POWER_TBT_PORTS		6U
+
+/* The common lane word of a combo PHY that holds its AUX lane enable. */
+#define I915_XD_POWER_CL_DW12		12U
+
 /*
  * The TC cold block of Tiger Lake through the GT driver mailbox: how long
  * one request may take, how many requests are made, and the pause
@@ -56,6 +62,21 @@
 #define I915_XD_POWER_TCCOLD_PAUSE_US	1000U
 
 /*
+ * The TC cold exit of Ice Lake through the GT driver mailbox: how long
+ * one request may take (250 us, then 1 ms more), how many requests are
+ * made while the mailbox is busy, the pause between them, and how long
+ * the exit takes once accepted.
+ *
+ * Values referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display_power_well.c
+ * (icl_tc_cold_exit: 250 us and 1 ms, 3 tries, 1 ms apart, 1 ms after).
+ */
+#define I915_XD_POWER_TC_EXIT_US	1250U
+#define I915_XD_POWER_TC_EXIT_TRIES	3U
+#define I915_XD_POWER_TC_EXIT_PAUSE_US	1000U
+#define I915_XD_POWER_TC_EXIT_SETTLE_US	1000U
+
+/*
  * How often a DC state is written again while it reads back otherwise,
  * and how many reads in a row must show it before it counts as taken.
  *
@@ -68,7 +89,10 @@
 
 static const struct i915_xd_well_desc *i915_xd_power_desc(const struct i915_xd_platform *platform, unsigned well);
 static uint32_t i915_xd_power_control(unsigned control);
-static int i915_xd_power_tc_port(const struct i915_xd_platform *platform, const struct i915_xd_well_desc *desc, unsigned *aux);
+static int i915_xd_power_tc_port(const struct i915_xd_platform *platform, const struct i915_xd_well_desc *desc, unsigned *aux, unsigned *phy_kind);
+static const struct i915_xd_port_desc *i915_xd_power_combo_aux_port(const struct i915_xd_platform *platform, const struct i915_xd_well_desc *desc);
+static uint32_t i915_xd_power_combo_base(unsigned phy);
+static int i915_xd_power_tc_exit(struct i915_xd_io *io, struct i915_xd_well_report *report);
 static int i915_xd_power_wait_fuses(struct i915_xd_io *io, unsigned gate, struct i915_xd_well_report *report);
 static void i915_xd_power_release(struct i915_xd_power *power, uint64_t wells, const struct i915_xd_power_switch *sw);
 static void i915_xd_power_give_owed(struct i915_xd_power *power, unsigned set, const struct i915_xd_power_switch *sw);
@@ -117,20 +141,28 @@ drv_i915_xd_power_find(
  * Power well 1 waits for the fuses of power gate 0 first (and on the
  * platforms that need it sets the FLR source chicken bit); a Type-C AUX
  * well routes its channel through the Thunderbolt IO or the PHY's own;
- * the request is set and the state waited for (a state that does not
- * come is noted in the report and the enable goes on, as a Thunderbolt
- * AUX well with its tunnel down never reports); the DisplayPort AUX well
- * of a Type-C port waits for its PHY's microcontroller; a well with fuses
- * waits for them (late fuses are noted); then the owner rewrites the VGA
- * registers and restores the pipe interrupts inside the well.  Tiger
- * Lake's TC cold well asks the firmware to block TC cold instead.
- * Returns 0, EINVAL for a well that is not switched by a request, or EIO
- * when the time base failed (the caller stops).
+ * the request is set (on Ice Lake a combo PHY's AUX well also turns its
+ * AUX lane on, and a legacy Type-C connector's asks the firmware to
+ * leave TC cold) and the state waited for (a state that does not come
+ * is noted in the report and the enable goes on, as a Thunderbolt AUX
+ * well with its tunnel down never reports); the DisplayPort AUX well of
+ * a Type-C port on a Dekel PHY waits for its PHY's microcontroller; Ice
+ * Lake's AUX A and B of a port that is not eDP take the analog override
+ * (display WA #1178); a well with fuses waits for them (late fuses are
+ * noted); then the owner rewrites the VGA registers and restores the
+ * pipe interrupts inside the well.  Tiger Lake's TC cold well asks the
+ * firmware to block TC cold instead.  Returns 0, EINVAL for a well that
+ * is not switched by a request, or EIO when the time base failed (the
+ * caller stops).
  *
+ * Values referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display_power_well.c
+ * (icl_combo_phy_aux_power_well_enable: AUX A and B of display WA #1178).
  * Procedure referenced: Linux v6.8.12
  * drivers/gpu/drm/i915/display/intel_display_power_well.c
- * (hsw_power_well_enable, icl_tc_phy_aux_power_well_enable,
- * hsw_wait_for_power_well_enable, hsw_power_well_post_enable).
+ * (hsw_power_well_enable, icl_combo_phy_aux_power_well_enable,
+ * icl_tc_phy_aux_power_well_enable, hsw_wait_for_power_well_enable,
+ * hsw_power_well_post_enable).
  */
 int
 drv_i915_xd_power_well_enable(
@@ -141,11 +173,16 @@ drv_i915_xd_power_well_enable(
 	struct i915_xd_well_report *report)
 {
 	const struct i915_xd_well_desc *desc;
+	const struct i915_xd_port_desc *combo;
 	uint32_t control;
 	uint32_t state;
+	uint32_t base;
 	unsigned timeout_us;
 	unsigned aux;
+	unsigned phy_kind;
 	int tc_port;
+	int legacy;
+	int edp;
 	int error;
 
 	/* Starts with nothing to report. */
@@ -182,7 +219,7 @@ drv_i915_xd_power_well_enable(
 	}
 
 	/* A Type-C AUX well routes its channel through the Thunderbolt IO or the PHY's own. */
-	tc_port = i915_xd_power_tc_port(platform, desc, &aux);
+	tc_port = i915_xd_power_tc_port(platform, desc, &aux, &phy_kind);
 	if (tc_port >= 0) {
 		if ((desc->flags & I915_XD_WELL_TBT_AUX) != 0U) {
 			(void)drv_i915_xd_io_rmw(io, I915_XD_DDI_AUX_CTL(aux), 0U, I915_XD_AUX_CTL_TBT_IO);
@@ -193,6 +230,29 @@ drv_i915_xd_power_well_enable(
 
 	/* Requests the well. */
 	(void)drv_i915_xd_io_rmw(io, control, 0U, I915_XD_PWR_WELL_REQUEST(desc->index));
+
+	/* On Ice Lake a combo PHY's AUX lane comes on with its AUX well. */
+	combo = NULL;
+	if ((platform->wa & I915_XD_WA_COMBO_AUX_LANE) != 0U)
+		combo = i915_xd_power_combo_aux_port(platform, desc);
+	if (combo != NULL) {
+		base = i915_xd_power_combo_base(combo->phy);
+		(void)drv_i915_xd_io_rmw(io, I915_XD_PORT_CL_DW(base, I915_XD_POWER_CL_DW12), 0U, I915_XD_CL_DW12_AUX_LANE_ENABLE);
+	}
+
+	/* On Ice Lake the DisplayPort AUX well of a legacy Type-C connector asks the firmware to leave TC cold. */
+	legacy = 0;
+	if (platform->tccold == I915_XD_TCCOLD_AUX_WELL_EXIT &&
+	    tc_port >= 0 &&
+	    (desc->flags & I915_XD_WELL_TBT_AUX) == 0U &&
+	    hooks != NULL &&
+	    hooks->tc_legacy != NULL)
+		legacy = hooks->tc_legacy(hooks->context, (unsigned)tc_port);
+	if (legacy) {
+		error = i915_xd_power_tc_exit(io, report);
+		if (error != 0)
+			return EIO;
+	}
 
 	/* Waits for the state; a state that does not come is noted and the enable goes on. */
 	timeout_us = (unsigned)desc->enable_timeout_ms * 1000U;
@@ -205,14 +265,29 @@ drv_i915_xd_power_well_enable(
 	if (error != 0)
 		report->state_late = 1;
 
-	/* The DisplayPort AUX well of a Type-C port waits for the PHY's microcontroller. */
+	/* The DisplayPort AUX well of a Type-C port on a Dekel PHY waits for the PHY's microcontroller. */
 	if (tc_port >= 0 &&
+	    phy_kind == I915_XD_PHY_DEKEL &&
 	    (desc->flags & I915_XD_WELL_TBT_AUX) == 0U &&
 	    hooks != NULL &&
 	    hooks->tc_health != NULL) {
 		error = hooks->tc_health(hooks->context, (unsigned)tc_port);
 		if (error == EIO)
 			return EIO;
+	}
+
+	/* Ice Lake's AUX A and B of a port that is not eDP take the analog override (display WA #1178). */
+	edp = 0;
+	if (combo != NULL &&
+	    hooks != NULL &&
+	    hooks->port_edp != NULL)
+		edp = hooks->port_edp(hooks->context, combo->ddi);
+	if (combo != NULL &&
+	    (platform->wa & I915_XD_WA_AUX_ANAOVRD_1178) != 0U &&
+	    desc->index <= I915_XD_WELL_AUX(1U) &&
+	    !edp) {
+		base = i915_xd_power_combo_base(combo->phy);
+		(void)drv_i915_xd_io_rmw(io, I915_XD_AUX_ANAOVRD1(base), 0U, I915_XD_AUX_ANAOVRD1_ENABLE | I915_XD_AUX_ANAOVRD1_LDO_BYPASS);
 	}
 
 	/* A well with fuses waits for its power gate's. */
@@ -242,7 +317,8 @@ drv_i915_xd_power_well_enable(
  * Takes down a well that has a request and a state bit.
  *
  * The owner drains the pipe interrupts inside the well first (a failed
- * drain keeps the well on); then the driver's request is withdrawn, and
+ * drain keeps the well on); on Ice Lake a combo PHY's AUX lane goes off
+ * with its AUX well; then the driver's request is withdrawn, and
  * when the BIOS does not request the well too its state is waited for (a
  * state that stays is noted).  Tiger Lake's TC cold well asks the
  * firmware to allow TC cold again instead.  Returns 0, EINVAL for a well
@@ -252,7 +328,7 @@ drv_i915_xd_power_well_enable(
  * Procedure referenced: Linux v6.8.12
  * drivers/gpu/drm/i915/display/intel_display_power_well.c
  * (hsw_power_well_disable, hsw_power_well_pre_disable,
- * hsw_wait_for_power_well_disable).
+ * icl_combo_phy_aux_power_well_disable, hsw_wait_for_power_well_disable).
  */
 int
 drv_i915_xd_power_well_disable(
@@ -263,9 +339,11 @@ drv_i915_xd_power_well_disable(
 	struct i915_xd_well_report *report)
 {
 	const struct i915_xd_well_desc *desc;
+	const struct i915_xd_port_desc *combo;
 	uint32_t control;
 	uint32_t request;
 	uint32_t bios;
+	uint32_t base;
 	int drained;
 	int error;
 
@@ -300,6 +378,15 @@ drv_i915_xd_power_well_disable(
 		drained = hooks->pipes_down(hooks->context, desc->irq_pipes);
 		if (drained != 0)
 			return EBUSY;
+	}
+
+	/* On Ice Lake a combo PHY's AUX lane goes off before its AUX well. */
+	combo = NULL;
+	if ((platform->wa & I915_XD_WA_COMBO_AUX_LANE) != 0U)
+		combo = i915_xd_power_combo_aux_port(platform, desc);
+	if (combo != NULL) {
+		base = i915_xd_power_combo_base(combo->phy);
+		(void)drv_i915_xd_io_rmw(io, I915_XD_PORT_CL_DW(base, I915_XD_POWER_CL_DW12), I915_XD_CL_DW12_AUX_LANE_ENABLE, 0U);
 	}
 
 	/* Withdraws the driver's request. */
@@ -1422,42 +1509,52 @@ i915_xd_power_control(
 }
 
 /*
- * Returns the Type-C port (0 for the first) whose AUX well this is, and
- * in *aux that port's AUX channel; -1 for any other well.  A Thunderbolt
- * AUX well serves the port of its number, a DisplayPort AUX well the
- * port whose AUX channel it powers when that port's PHY is a Dekel PHY.
+ * Returns the Type-C port (0 for the first) whose AUX well this is, in
+ * *aux that port's AUX channel and in *phy_kind its PHY (Dekel or MG);
+ * -1 for any other well.  A Thunderbolt AUX well serves the port whose
+ * Thunderbolt AUX it powers, a DisplayPort AUX well the Type-C port
+ * whose AUX channel it powers.
  */
 static int
 i915_xd_power_tc_port(
 	const struct i915_xd_platform *platform,
 	const struct i915_xd_well_desc *desc,
-	unsigned *aux)
+	unsigned *aux,
+	unsigned *phy_kind)
 {
 	const struct i915_xd_port_desc *port;
 	unsigned tc;
 	unsigned index;
 
 	/* Only an AUX well can be a Type-C port's. */
+	*phy_kind = I915_XD_PHY_NONE;
 	if (desc->control != I915_XD_WELL_CONTROL_AUX)
 		return -1;
 
-	/* The Type-C number a Thunderbolt AUX well serves (1 for the first). */
+	/* The Type-C number a Thunderbolt AUX well serves (1 for the first), from what it powers. */
 	tc = 0U;
-	if ((desc->flags & I915_XD_WELL_TBT_AUX) != 0U)
-		tc = desc->index - I915_XD_WELL_AUX_TBT(0U) + 1U;
+	if ((desc->flags & I915_XD_WELL_TBT_AUX) != 0U) {
+		for (index = 0U; index < I915_XD_POWER_TBT_PORTS; index++) {
+			if ((desc->powers & I915_XD_POWERS_TBT_AUX(index)) != 0U) {
+				tc = index + 1U;
+				break;
+			}
+		}
+	}
 
 	/* Finds the port: by its Type-C number, or by the AUX channel the well powers. */
 	for (index = 0U; index < platform->nports; index++) {
 		port = &platform->ports[index];
-		if (port->phy_kind != I915_XD_PHY_DEKEL || port->tc == 0U)
+		if (port->tc == 0U)
 			continue;
 		if (tc != 0U && port->tc != tc)
 			continue;
 		if (tc == 0U && port->aux != desc->index)
 			continue;
 
-		/* Succeeded: the port's Type-C number and its AUX channel. */
+		/* Succeeded: the port's Type-C number, its AUX channel and its PHY. */
 		*aux = port->aux;
+		*phy_kind = port->phy_kind;
 		return (int)port->tc - 1;
 	}
 
@@ -1551,5 +1648,112 @@ i915_xd_power_tccold(
 	}
 
 	/* Succeeded: the request was made. */
+	return 0;
+}
+
+/*
+ * Returns the combo port whose AUX channel a well powers, or NULL for a
+ * well that is not the AUX well of a combo port.
+ */
+static const struct i915_xd_port_desc *
+i915_xd_power_combo_aux_port(
+	const struct i915_xd_platform *platform,
+	const struct i915_xd_well_desc *desc)
+{
+	const struct i915_xd_port_desc *port;
+	unsigned index;
+
+	/* Only a DisplayPort AUX well. */
+	if (desc->control != I915_XD_WELL_CONTROL_AUX)
+		return NULL;
+	if ((desc->flags & I915_XD_WELL_TBT_AUX) != 0U)
+		return NULL;
+
+	/* The combo port of the well's channel. */
+	for (index = 0U; index < platform->nports; index++) {
+		port = &platform->ports[index];
+		if (port->phy_kind != I915_XD_PHY_COMBO)
+			continue;
+		if (port->aux != desc->index)
+			continue;
+
+		/* Succeeded: the port. */
+		return port;
+	}
+
+	/* No combo port has the channel. */
+	return NULL;
+}
+
+/*
+ * Reports the register block of combo PHY A or B (Ice Lake has only
+ * those two).
+ *
+ * Values referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_combo_phy_regs.h (_ICL_COMBOPHY_A,
+ * _ICL_COMBOPHY_B).
+ */
+static uint32_t
+i915_xd_power_combo_base(
+	unsigned phy)
+{
+	/* PHY B's block. */
+	if (phy == 1U)
+		return I915_XD_COMBO_PHY_B;
+
+	/* Succeeded: PHY A's block. */
+	return I915_XD_COMBO_PHY_A;
+}
+
+/*
+ * Asks the firmware to take Ice Lake's Type-C PHYs out of TC cold: the
+ * request is made again, up to three times 1 ms apart, while the mailbox
+ * is busy with another command, and an accepted one is given 1 ms to
+ * finish.  A request that fails is noted in the report (state_late) and
+ * the well's enable goes on, as Linux does.  Returns 0, or EIO when the
+ * time base failed.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display_power_well.c
+ * (icl_tc_cold_exit).
+ */
+static int
+i915_xd_power_tc_exit(
+	struct i915_xd_io *io,
+	struct i915_xd_well_report *report)
+{
+	uint32_t data0;
+	unsigned tries;
+	int error;
+
+	/* Asks while the mailbox is busy, up to the last try. */
+	for (tries = 1U; ; tries++) {
+		/* One request, without data. */
+		data0 = 0U;
+		error = drv_i915_xd_io_mailbox(io, I915_XD_MAILBOX_EXIT_TCCOLD, &data0, NULL, I915_XD_POWER_TC_EXIT_US);
+		if (error != EAGAIN)
+			break;
+		if (tries == I915_XD_POWER_TC_EXIT_TRIES)
+			break;
+
+		/* Waits before the next try. */
+		error = drv_i915_xd_io_delay(io, I915_XD_POWER_TC_EXIT_PAUSE_US);
+		if (error != 0)
+			return EIO;
+	}
+
+	/* A request that failed is noted; the enable goes on. */
+	if (error != 0) {
+		report->state_late = 1;
+		drv_i915_xd_io_step(io, "power: TC cold exit failed");
+		return 0;
+	}
+
+	/* The exit takes up to 1 ms to finish. */
+	error = drv_i915_xd_io_delay(io, I915_XD_POWER_TC_EXIT_SETTLE_US);
+	if (error != 0)
+		return EIO;
+
+	/* Succeeded: the PHYs are out of TC cold. */
 	return 0;
 }

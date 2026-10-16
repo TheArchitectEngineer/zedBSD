@@ -907,7 +907,7 @@ i915_xd_vbt_defaults(
 	for (ddi = 0U; ddi < I915_XD_VBT_DEFAULT_DDIS; ddi++) {
 		/* A Type-C port's mode comes from the VBT, so without one it gets no output. */
 		port = drv_i915_xd_platform_port(vbt->platform, ddi);
-		if (port != NULL && port->phy_kind == I915_XD_PHY_DEKEL)
+		if (port != NULL && port->tc != 0U)
 			continue;
 
 		/* The output's DVO port: HDMI A..D for DDI A..D, then HDMI E and F. */

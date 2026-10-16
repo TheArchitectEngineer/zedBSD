@@ -28,12 +28,14 @@
 #include "display-internal.h"
 
 /*
- * The kinds of PHY behind a port: a combo PHY, a Dekel Type-C PHY, or
- * none (the port is not driven).
+ * The kinds of PHY behind a port: a combo PHY, a Dekel Type-C PHY (display
+ * 12 and 13, reached through a window), an MG Type-C PHY (display 11,
+ * reached directly), or none (the port is not driven).
  */
 #define I915_XD_PHY_NONE		0U
 #define I915_XD_PHY_COMBO		1U
 #define I915_XD_PHY_DEKEL		2U
+#define I915_XD_PHY_MG			3U
 
 /*
  * Where a port's hotplug pin is in the south display: none, a DDI pin
@@ -49,7 +51,9 @@
  * 11 and 12 (the live state, ready and ownership in the FIA registers),
  * or the display 13 flow (TCSS status, the ownership bit in the DDI
  * buffer control); and the block of TC cold through a mailbox well
- * (Tiger Lake) or through the AUX well of the port (display 13).
+ * (Tiger Lake), through the AUX well of the port (display 13), or, for a
+ * legacy connector only, through the AUX well of the port with the
+ * firmware asked to leave TC cold while the well comes up (Ice Lake).
  */
 #define I915_XD_TC_FLOW_NONE		0U
 #define I915_XD_TC_FLOW_FIA		1U
@@ -57,6 +61,15 @@
 #define I915_XD_TCCOLD_NONE		0U
 #define I915_XD_TCCOLD_MAILBOX_WELL	1U
 #define I915_XD_TCCOLD_AUX_WELL		2U
+#define I915_XD_TCCOLD_AUX_WELL_EXIT	3U
+
+/*
+ * Where the FIA flow finds a Type-C port's FIA: FIA 1 says whether the
+ * FIA is modular (Tiger Lake), or FIA 1 serves every port and is never
+ * asked (Ice Lake).
+ */
+#define I915_XD_FIA_READ_MODULAR	0U
+#define I915_XD_FIA_SINGLE		1U
 
 /*
  * How a platform maps a DDI to a combo DPLL: in DPCLKA_CFGCR0 with the
@@ -148,6 +161,7 @@
 #define I915_XD_KIND_RKL		2U
 #define I915_XD_KIND_ADLS		3U
 #define I915_XD_KIND_ADLP		4U
+#define I915_XD_KIND_ICL		5U
 
 /*
  * The workarounds a platform takes, as bits of its description (the
@@ -161,8 +175,11 @@
  * display 12 compression dummy pixel and clock request chickens
  * (Wa_1409120013, Wa_14013723622), the Wa_1409767108 buddy masks on
  * the first stepping only (Rocket Lake A0), the Dekel PHY load
- * generator select of display 13, and the CD clock of at least the
- * pixel rate (Tiger Lake, which can underrun at half of it).
+ * generator select of display 13, the CD clock of at least the
+ * pixel rate (Tiger Lake, which can underrun at half of it), and the
+ * Ice Lake combo PHY AUX wells: the AUX lane enable of the PHY's common
+ * lane with the well, and the AUX analog override of a port that is not
+ * eDP (display WA #1178).
  */
 #define I915_XD_WA_BUDDY_1409767108	0x0001U
 #define I915_XD_WA_PW1_FLR_SOURCE	0x0002U
@@ -175,6 +192,8 @@
 #define I915_XD_WA_BUDDY_1409767108_A0	0x0100U
 #define I915_XD_WA_DKL_LOADGEN		0x0200U
 #define I915_XD_WA_CDCLK_PIXEL_RATE	0x0400U
+#define I915_XD_WA_COMBO_AUX_LANE	0x0800U
+#define I915_XD_WA_AUX_ANAOVRD_1178	0x1000U
 
 /*
  * One row of a combo PHY swing table: the values of one voltage swing
@@ -217,11 +236,29 @@ struct i915_xd_dkl_swing_table {
 };
 
 /*
+ * One row of an MG PHY swing table: the three parts of the transmit
+ * de-emphasis override of one level (bits 17..12, 11..6 and 5..0).
+ */
+struct i915_xd_mg_swing {
+	uint8_t deemph_17_12;
+	uint8_t deemph_11_6;
+	uint8_t deemph_5_0;
+};
+
+/* An MG PHY swing table, in the same form. */
+struct i915_xd_mg_swing_table {
+	const struct i915_xd_mg_swing *rows;
+	unsigned count;
+	unsigned hdmi_default;
+};
+
+/*
  * The swing tables a platform chooses from: for a combo port, DisplayPort
  * up to 2.7 GHz and above it, eDP with the VBT's low swing, eDP with the
- * VBT's high-efficiency (HOBL) setting, eDP above 5.4 GHz, and HDMI; for
- * a Dekel port, DisplayPort up to 2.7 GHz and above it, and HDMI (NULL on
- * a platform without Dekel ports).
+ * VBT's high-efficiency (HOBL) setting (NULL where the platform has no
+ * HOBL), eDP above 5.4 GHz, and HDMI; for a Dekel port, DisplayPort up to
+ * 2.7 GHz and above it, and HDMI (NULL on a platform without Dekel
+ * ports); for an MG port the same three (NULL without MG ports).
  */
 struct i915_xd_swing_set {
 	const struct i915_xd_combo_swing_table *dp_low;
@@ -233,6 +270,9 @@ struct i915_xd_swing_set {
 	const struct i915_xd_dkl_swing_table *dkl_dp_low;
 	const struct i915_xd_dkl_swing_table *dkl_dp_high;
 	const struct i915_xd_dkl_swing_table *dkl_hdmi;
+	const struct i915_xd_mg_swing_table *mg_dp_low;
+	const struct i915_xd_mg_swing_table *mg_dp_high;
+	const struct i915_xd_mg_swing_table *mg_hdmi;
 };
 
 /*
@@ -445,6 +485,9 @@ struct i915_xd_platform {
 	const struct i915_xd_swing_set *swing;
 	unsigned wa;
 	const struct i915_xd_vbt_maps *vbt_maps;
+	uint8_t fia;
+	const struct i915_xd_dpll_dp_row *tbt_pll_19p2;
+	const struct i915_xd_dpll_dp_row *tbt_pll_24;
 };
 
 

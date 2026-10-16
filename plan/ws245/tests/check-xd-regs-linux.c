@@ -27,6 +27,7 @@ enum ws245_linux_names {
 	PIPE_C = 2,
 	PIPE_D = 3,
 	TRANSCODER_A = 0,
+	TRANSCODER_EDP = 4,
 	HPD_PORT_A = 10,
 	HPD_PORT_TC1 = 20,
 	TC_PORT_1 = 0,
@@ -37,13 +38,13 @@ enum ws245_linux_names {
 /*
  * The display description the Linux register macros read the pipe and
  * transcoder blocks from (display 12 and 13: 4 KiB apart from 0x70000
- * and 0x60000).
+ * and 0x60000; display 11's eDP transcoder 0xF000 above A's).
  */
 struct ws245_display_info {
 	uint32_t mmio_offset;
-	uint32_t pipe_offsets[4];
-	uint32_t trans_offsets[4];
-	uint32_t cursor_offsets[4];
+	uint32_t pipe_offsets[5];
+	uint32_t trans_offsets[5];
+	uint32_t cursor_offsets[5];
 };
 
 /*
@@ -52,9 +53,9 @@ struct ws245_display_info {
  */
 static const struct ws245_display_info ws245_display_info = {
 	0U,
-	{ 0x70000U, 0x71000U, 0x72000U, 0x73000U },
-	{ 0x60000U, 0x61000U, 0x62000U, 0x63000U },
-	{ 0x70080U, 0x71080U, 0x72080U, 0x73080U }
+	{ 0x70000U, 0x71000U, 0x72000U, 0x73000U, 0x7f000U },
+	{ 0x60000U, 0x61000U, 0x62000U, 0x63000U, 0x6f000U },
+	{ 0x70080U, 0x71080U, 0x72080U, 0x73080U, 0U }
 };
 
 /*
@@ -69,6 +70,9 @@ struct ws245_gmbus_device {
 };
 
 #define DISPLAY_INFO(device) (&ws245_display_info)
+
+/* The description above places display 11's eDP transcoder, so its pairs are compared. */
+#define I915_XD_MAP_EDP_TRANSCODER 1
 
 #include <linux/types.h>
 

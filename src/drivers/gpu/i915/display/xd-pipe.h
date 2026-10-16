@@ -196,6 +196,10 @@ void drv_i915_xd_pipe_msa(struct i915_xd_io *io, unsigned trans, const struct i9
 uint32_t drv_i915_xd_pipe_func_word(const struct i915_xd_trans_func *func);
 void drv_i915_xd_pipe_func_enable(struct i915_xd_io *io, unsigned trans, const struct i915_xd_trans_func *func);
 void drv_i915_xd_pipe_func_config(struct i915_xd_io *io, unsigned trans, const struct i915_xd_trans_func *func);
+uint32_t drv_i915_xd_pipe_func_word_11(unsigned trans, unsigned pipe, const struct i915_xd_trans_func *func);
+void drv_i915_xd_pipe_func_enable_11(struct i915_xd_io *io, unsigned trans, unsigned pipe, const struct i915_xd_trans_func *func);
+void drv_i915_xd_pipe_clock_on(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned trans, unsigned ddi);
+void drv_i915_xd_pipe_clock_off(struct i915_xd_io *io, unsigned trans);
 uint32_t drv_i915_xd_pipe_func_disable(struct i915_xd_io *io, unsigned trans, int mst_master);
 int drv_i915_xd_pipe_start(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned trans);
 unsigned drv_i915_xd_pipe_stop(struct i915_xd_io *io, unsigned trans, int *was_running);

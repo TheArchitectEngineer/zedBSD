@@ -172,6 +172,15 @@
 #define I915_XD_WELL_AUX_TBT(tc)		(9U + (tc))
 
 /*
+ * The indexes of Ice Lake's Thunderbolt AUX wells, right after its six
+ * AUX wells A..F.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (ICL_PW_CTL_IDX_AUX_TBT1 to ICL_PW_CTL_IDX_AUX_TBT4).
+ */
+#define I915_XD_WELL_AUX_TBT_ICL(tc)		(8U + (tc))
+
+/*
  * The indexes of the DDI IO wells: one per DDI, numbered like the DDIs
  * (display 13 calls 7 and 8 DDI D and E).
  *
@@ -704,8 +713,14 @@
  * the training pattern (1, 2,
  * 3, 4, idle, normal); the idle-done status.
  *
+ * Display 11 has the transport in its port instead: a transport is
+ * named by its transcoder on display 12 and 13 and by
+ * I915_XD_DP_TP_PORT(ddi) on display 11, and the two addresses follow
+ * from the name.
+ *
  * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
- * (_TGL_DP_TP_CTL_A, _TGL_DP_TP_STATUS_A, DP_TP_CTL_ENABLE,
+ * (_TGL_DP_TP_CTL_A, _TGL_DP_TP_STATUS_A, _DP_TP_CTL_A, _DP_TP_CTL_B,
+ * _DP_TP_STATUS_A, _DP_TP_STATUS_B, DP_TP_CTL_ENABLE,
  * DP_TP_CTL_MODE_SST, DP_TP_CTL_FEC_ENABLE, DP_TP_CTL_MODE_MST,
  * DP_TP_CTL_ENHANCED_FRAME_ENABLE,
  * DP_TP_CTL_LINK_TRAIN_MASK, DP_TP_CTL_LINK_TRAIN_PAT1,
@@ -713,8 +728,10 @@
  * DP_TP_CTL_LINK_TRAIN_PAT4, DP_TP_CTL_LINK_TRAIN_IDLE,
  * DP_TP_CTL_LINK_TRAIN_NORMAL, DP_TP_STATUS_IDLE_DONE).
  */
-#define I915_XD_DP_TP_CTL(trans)		(0x60540U + I915_XD_TRANS_STRIDE * (trans))
-#define I915_XD_DP_TP_STATUS(trans)		(0x60544U + I915_XD_TRANS_STRIDE * (trans))
+#define I915_XD_DP_TP_PORT(ddi)			(0x100U + (ddi))
+#define I915_XD_DP_TP_CTL(tp)			((tp) >= I915_XD_DP_TP_PORT(0U) ? 0x64040U + 0x100U * ((tp) - I915_XD_DP_TP_PORT(0U)) : \
+						 0x60540U + I915_XD_TRANS_STRIDE * (tp))
+#define I915_XD_DP_TP_STATUS(tp)		(I915_XD_DP_TP_CTL(tp) + 4U)
 #define I915_XD_DP_TP_ENABLE			0x80000000U
 #define I915_XD_DP_TP_FEC			0x40000000U
 #define I915_XD_DP_TP_MST			0x08000000U
@@ -1036,6 +1053,19 @@
 #define I915_XD_TX_DW7_N_SCALAR			0x7f000000U
 
 /*
+ * The AUX analog override word of Ice Lake's combo PHYs A and B (0x398
+ * into the PHY's block), with its LDO bypass and enable bits (display WA
+ * #1178).
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (_ICL_AUX_ANAOVRD1_A, _ICL_AUX_ANAOVRD1_B, ICL_AUX_ANAOVRD1_LDO_BYPASS,
+ * ICL_AUX_ANAOVRD1_ENABLE).
+ */
+#define I915_XD_AUX_ANAOVRD1(base)		((base) + 0x398U)
+#define I915_XD_AUX_ANAOVRD1_LDO_BYPASS		0x00000080U
+#define I915_XD_AUX_ANAOVRD1_ENABLE		0x00000001U
+
+/*
  * The duty cycle corrector of a combo PHY on display 12 and 13: the
  * ODCC clock select and its divider (DW8 of the transmit lanes) and the
  * DCC mode (DW1 of the PCS lanes), which the PHY init sets to run once.
@@ -1267,6 +1297,167 @@
 #define I915_XD_DKL_BIAS_FBDIV_FRAC		0x3fffff00U
 #define I915_XD_DKL_TDC_SSC_STEP_SIZE		0x0000ff00U
 #define I915_XD_DKL_TDC_FEED_FWD_GAIN		0x000000ffU
+
+/*
+ * The registers of an MG PHY, the Type-C PHY of display 11, reached
+ * directly rather than through a window: Type-C port n's block is 0x1000
+ * above port 0's, and lane 1's copy of a lane register is 0x400 above
+ * lane 0's.  The lane registers of the two transmitters (TX1, TX2): the
+ * link parameters (the FS32 use), the swing control (de-emphasis bits
+ * 17..12), the drive control (de-emphasis bits 11..6 and 5..0 and their
+ * override), the duty-cycle correction (the AMI clock divider override),
+ * the PISO read load (the calculation init); the lane's clock hub (the
+ * low-rate lock enable) and its DisplayPort mode word.  The PLL words:
+ * the reference input, the clock tops, the dividers, the loop filter,
+ * the fractional lock, the SSC, the bias and the TDC cold start bias.
+ *
+ * Values referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_mg_phy_regs.h
+ * (MG_PHY_PORT_LN, MG_TX_LINK_PARAMS_TX1LN0_PORT1,
+ * MG_TX_LINK_PARAMS_TX2LN0_PORT1, CRI_USE_FS32,
+ * MG_TX_PISO_READLOAD_TX1LN0_PORT1, MG_TX_PISO_READLOAD_TX2LN0_PORT1,
+ * CRI_CALCINIT, MG_TX_SWINGCTRL_TX1LN0_PORT1,
+ * MG_TX_SWINGCTRL_TX2LN0_PORT1, CRI_TXDEEMPH_OVERRIDE_17_12_MASK,
+ * MG_TX_DRVCTRL_TX1LN0_TXPORT1, MG_TX_DRVCTRL_TX2LN0_PORT1,
+ * CRI_TXDEEMPH_OVERRIDE_11_6_MASK, CRI_TXDEEMPH_OVERRIDE_EN,
+ * CRI_TXDEEMPH_OVERRIDE_5_0_MASK, MG_CLKHUB_LN0_PORT1,
+ * CFG_LOW_RATE_LKREN_EN, MG_TX_DCC_TX1LN0_PORT1, MG_TX_DCC_TX2LN0_PORT1,
+ * CFG_AMI_CK_DIV_OVERRIDE_VAL_MASK, CFG_AMI_CK_DIV_OVERRIDE_EN,
+ * MG_DP_MODE_LN0_ACU_PORT1, _MG_REFCLKIN_CTL_PORT1,
+ * _MG_CLKTOP2_CORECLKCTL1_PORT1, _MG_CLKTOP2_HSCLKCTL_PORT1,
+ * _MG_PLL_DIV0_PORT1, _MG_PLL_DIV1_PORT1, _MG_PLL_LF_PORT1,
+ * _MG_PLL_FRAC_LOCK_PORT1, _MG_PLL_SSC_PORT1, _MG_PLL_BIAS_PORT1,
+ * _MG_PLL_TDC_COLDST_BIAS_PORT1).
+ */
+#define I915_XD_MG_PHY(tc)			(0x168000U + 0x1000U * (tc))
+#define I915_XD_MG_LANE_STRIDE			0x400U
+#define I915_XD_MG_TX1_LINK_PARAMS		0x012cU
+#define I915_XD_MG_TX2_LINK_PARAMS		0x00acU
+#define I915_XD_MG_TX_USE_FS32			0x00000020U
+#define I915_XD_MG_TX1_PISO_READLOAD		0x014cU
+#define I915_XD_MG_TX2_PISO_READLOAD		0x00ccU
+#define I915_XD_MG_TX_CALCINIT			0x00000002U
+#define I915_XD_MG_TX1_SWINGCTRL		0x0148U
+#define I915_XD_MG_TX2_SWINGCTRL		0x00c8U
+#define I915_XD_MG_TX_DEEMPH_17_12		0x0000003fU
+#define I915_XD_MG_TX1_DRVCTRL			0x0144U
+#define I915_XD_MG_TX2_DRVCTRL			0x00c4U
+#define I915_XD_MG_TX_DEEMPH_11_6		0x3f000000U
+#define I915_XD_MG_TX_DEEMPH_OVERRIDE		0x00400000U
+#define I915_XD_MG_TX_DEEMPH_5_0		0x003f0000U
+#define I915_XD_MG_CLKHUB			0x039cU
+#define I915_XD_MG_CLKHUB_LOW_RATE_LKREN	0x00000800U
+#define I915_XD_MG_TX1_DCC			0x0110U
+#define I915_XD_MG_TX2_DCC			0x0090U
+#define I915_XD_MG_DCC_AMI_DIV			0x06000000U
+#define I915_XD_MG_DCC_AMI_DIV_OVERRIDE		0x01000000U
+#define I915_XD_MG_DP_MODE			0x03a0U
+#define I915_XD_MG_REFCLKIN_CTL			0x092cU
+#define I915_XD_MG_CLKTOP2_HSCLKCTL		0x08d4U
+#define I915_XD_MG_CLKTOP2_CORECLKCTL1		0x08d8U
+#define I915_XD_MG_PLL_DIV0			0x0a00U
+#define I915_XD_MG_PLL_DIV1			0x0a04U
+#define I915_XD_MG_PLL_LF			0x0a08U
+#define I915_XD_MG_PLL_FRAC_LOCK		0x0a0cU
+#define I915_XD_MG_PLL_SSC			0x0a10U
+#define I915_XD_MG_PLL_BIAS			0x0a14U
+#define I915_XD_MG_PLL_TDC_COLDST_BIAS		0x0a18U
+
+/*
+ * The fields of the MG PLL words.  DIV0: the fraction enable, the 22-bit
+ * fractional and the 8-bit integer feedback divider.  DIV1: the current
+ * reference divider ratio, the dither divider of 2, the N divider ratio
+ * and the feedback pre-divider.  The loop filter: the TDC target count,
+ * the AFC counter select of 512, the gain control, the integral and the
+ * proportional coefficient.  The fractional lock: the true and the early
+ * lock criteria of 32, the lock threshold, the DCO dither enable, the
+ * feed-forward calibration enable and gain.  The SSC: the enable, the
+ * type, the step length and count, the FLL enable and the step size.
+ * The bias: the bias GB select, the initial DCO amplitude, the bias
+ * bonus, the bias calibration enable, the C trim, the reference RDAC and
+ * the current reference trim.  The TDC cold start bias: the current
+ * reference integer enable, the reference bias start pulse width, the
+ * cold start, the TDC overcurrent correction enable and the TDC select.
+ *
+ * Values referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_mg_phy_regs.h (MG_PLL_DIV0_FRACNEN_H,
+ * MG_PLL_DIV0_FBDIV_FRAC_MASK, MG_PLL_DIV0_FBDIV_INT_MASK,
+ * MG_PLL_DIV1_IREF_NDIVRATIO, MG_PLL_DIV1_DITHER_DIV_2,
+ * MG_PLL_DIV1_NDIVRATIO, MG_PLL_DIV1_FBPREDIV_MASK,
+ * MG_PLL_LF_TDCTARGETCNT, MG_PLL_LF_AFCCNTSEL_512, MG_PLL_LF_GAINCTRL,
+ * MG_PLL_LF_INT_COEFF, MG_PLL_LF_PROP_COEFF,
+ * MG_PLL_FRAC_LOCK_TRUELOCK_CRIT_32, MG_PLL_FRAC_LOCK_EARLYLOCK_CRIT_32,
+ * MG_PLL_FRAC_LOCK_LOCKTHRESH, MG_PLL_FRAC_LOCK_DCODITHEREN,
+ * MG_PLL_FRAC_LOCK_FEEDFWRDCAL_EN, MG_PLL_FRAC_LOCK_FEEDFWRDGAIN,
+ * MG_PLL_SSC_EN, MG_PLL_SSC_TYPE, MG_PLL_SSC_STEPLENGTH,
+ * MG_PLL_SSC_STEPNUM, MG_PLL_SSC_FLLEN, MG_PLL_SSC_STEPSIZE,
+ * MG_PLL_BIAS_BIAS_GB_SEL, MG_PLL_BIAS_INIT_DCOAMP,
+ * MG_PLL_BIAS_BIAS_BONUS, MG_PLL_BIAS_BIASCAL_EN, MG_PLL_BIAS_CTRIM,
+ * MG_PLL_BIAS_VREF_RDAC, MG_PLL_BIAS_IREFTRIM,
+ * MG_PLL_TDC_COLDST_IREFINT_EN, MG_PLL_TDC_COLDST_REFBIAS_START_PULSE_W,
+ * MG_PLL_TDC_COLDST_COLDSTART, MG_PLL_TDC_TDCOVCCORR_EN,
+ * MG_PLL_TDC_TDCSEL).
+ */
+#define I915_XD_MG_DIV0_FRAC_ENABLE		0x40000000U
+#define I915_XD_MG_DIV0_FBDIV_FRAC		0x3fffff00U
+#define I915_XD_MG_DIV0_FBDIV_INT		0x000000ffU
+#define I915_XD_MG_DIV1_IREF_NDIV(x)		((x) << 16)
+#define I915_XD_MG_DIV1_DITHER_DIV_2		0x00001000U
+#define I915_XD_MG_DIV1_NDIV(x)			((x) << 4)
+#define I915_XD_MG_DIV1_FBPREDIV		0x0000000fU
+#define I915_XD_MG_LF_TDC_TARGET(x)		((x) << 24)
+#define I915_XD_MG_LF_AFC_COUNT_512		0x00100000U
+#define I915_XD_MG_LF_GAIN(x)			((x) << 16)
+#define I915_XD_MG_LF_INT_COEFF(x)		((x) << 8)
+#define I915_XD_MG_LF_PROP_COEFF(x)		((x) << 0)
+#define I915_XD_MG_FRAC_LOCK_TRUELOCK_32	0x00040000U
+#define I915_XD_MG_FRAC_LOCK_EARLYLOCK_32	0x00010000U
+#define I915_XD_MG_FRAC_LOCK_THRESHOLD(x)	((x) << 11)
+#define I915_XD_MG_FRAC_LOCK_DCO_DITHER		0x00000400U
+#define I915_XD_MG_FRAC_LOCK_FEED_FWD_CAL	0x00000100U
+#define I915_XD_MG_FRAC_LOCK_FEED_FWD_GAIN(x)	((x) << 0)
+#define I915_XD_MG_SSC_ENABLE			0x10000000U
+#define I915_XD_MG_SSC_TYPE(x)			((x) << 26)
+#define I915_XD_MG_SSC_STEP_LENGTH(x)		((x) << 16)
+#define I915_XD_MG_SSC_STEP_NUM(x)		((x) << 10)
+#define I915_XD_MG_SSC_FLL_ENABLE		0x00000200U
+#define I915_XD_MG_SSC_STEP_SIZE(x)		((x) << 0)
+#define I915_XD_MG_BIAS_GB_SEL(x)		((x) << 30)
+#define I915_XD_MG_BIAS_INIT_DCOAMP(x)		((x) << 24)
+#define I915_XD_MG_BIAS_BONUS(x)		((x) << 16)
+#define I915_XD_MG_BIAS_CAL_ENABLE		0x00008000U
+#define I915_XD_MG_BIAS_CTRIM(x)		((x) << 8)
+#define I915_XD_MG_BIAS_VREF_RDAC(x)		((x) << 5)
+#define I915_XD_MG_BIAS_IREF_TRIM(x)		((x) << 0)
+#define I915_XD_MG_TDC_IREFINT_ENABLE		0x08000000U
+#define I915_XD_MG_TDC_REFBIAS_PULSE(x)		((x) << 17)
+#define I915_XD_MG_TDC_COLDSTART		0x00010000U
+#define I915_XD_MG_TDC_OVERCURRENT_CORR		0x00000004U
+#define I915_XD_MG_TDC_SELECT(x)		((x) << 0)
+
+/*
+ * Display 11's transcoder differences: the eDP transcoder, whose
+ * registers lie 0xF000 above transcoder A's (so the transcoder register
+ * macros reach them with the index 15) and whose chicken word lies
+ * apart; the DDI select of a transcoder's DDI function (the DDI index
+ * itself, in bits 30..28); the eDP input of the eDP transcoder's DDI
+ * function (pipe A always on, pipe B or C switched with the panel); and
+ * the transcoder clock select (the DDI index plus one, in bits 31..29).
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_display_device.c
+ * (TRANSCODER_A_OFFSET, TRANSCODER_EDP_OFFSET, ICL_DISPLAY), and
+ * Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h (_CHICKEN_TRANS_EDP,
+ * TRANS_DDI_PORT_MASK, TRANS_DDI_SELECT_PORT, TRANS_DDI_EDP_INPUT_A_ON,
+ * TRANS_DDI_EDP_INPUT_B_ONOFF, TRANS_DDI_EDP_INPUT_C_ONOFF,
+ * TRANS_CLK_SEL_PORT).
+ */
+#define I915_XD_TRANS_EDP			15U
+#define I915_XD_CHICKEN_TRANS_EDP		0x420ccU
+#define I915_XD_DDI_FUNC_SELECT_11		0x70000000U
+#define I915_XD_DDI_FUNC_EDP_INPUT_A_ON		0U
+#define I915_XD_DDI_FUNC_EDP_INPUT_B_ONOFF	5U
+#define I915_XD_DDI_FUNC_EDP_INPUT_C_ONOFF	6U
+#define I915_XD_TRANS_CLK_SEL_FIELD_11		0xe0000000U
 
 /*
  * The transcoder's chicken word: the vblank with the delay of the set
