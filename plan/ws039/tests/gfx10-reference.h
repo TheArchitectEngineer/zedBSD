@@ -45,7 +45,8 @@ struct reference_memory {
 
 /*
  * One wave of a vertex or pixel program for the reference: the lanes that
- * run; a vertex lane's fetched locations and its vertex and instance
+ * run, and of them the helper lanes (a pixel's quad neighbours that are
+ * not covered: they run but write no storage); a vertex lane's fetched locations and its vertex and instance
  * numbers; a pixel lane's interpolated attributes, position (w already
  * 1 / w) and face (a Boolean); and what the run left: each lane's outputs
  * by slot with a mark per channel written, and its discard.
@@ -53,6 +54,7 @@ struct reference_memory {
 struct reference_graphics {
 	uint32_t lanes;
 	uint8_t run[32];
+	uint8_t helper[32];
 	uint32_t input[32][32][4];
 	uint32_t vertex_index[32];
 	uint32_t instance_index[32];

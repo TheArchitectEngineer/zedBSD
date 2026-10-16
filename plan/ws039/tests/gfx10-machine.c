@@ -923,6 +923,10 @@ vector_alu(
 	int is_compare;
 	int known;
 	int error;
+	int quad;
+	unsigned quad_pattern;
+	unsigned quad_zero;
+	unsigned source_lane;
 
 	src[1] = 0U;
 	src[2] = 0U;
@@ -930,6 +934,9 @@ vector_alu(
 	abs = 0U;
 	is_compare = 0;
 	sources = 2U;
+	quad = 0;
+	quad_pattern = 0U;
+	quad_zero = 0U;
 
 	/* Decodes the fields of the form; the wide opcode is the short one moved by its offset. */
 	if (wide != 0) {
@@ -976,6 +983,28 @@ vector_alu(
 			*used_literal = 1;
 	}
 
+	/*
+	 * A short form whose first source is the lane pattern word reads that
+	 * VGPR from a lane of its group of four: the word follows (like a
+	 * literal) with the VGPR, the pattern, the zero-if-idle bit, the
+	 * modifiers and the row and bank enables, which must all be on.
+	 */
+	if (wide == 0 && src[0] == 250U) {
+		*used_literal = 1;
+		if ((literal >> 24) != 0xffU)
+			return fail(run, "a lane pattern with a row or bank disabled");
+		if (((literal >> 8) & 0x1ffU) >= 0x100U)
+			return fail(run, "a lane pattern other than one within the group of four");
+		if (((literal >> 18) & 1U) != 0U)
+			return fail(run, "a lane pattern that reads idle lanes");
+		quad = 1;
+		quad_pattern = (literal >> 8) & 0xffU;
+		quad_zero = (literal >> 19) & 1U;
+		src[0] = 256U + (literal & 0xffU);
+		abs = ((literal >> 21) & 1U) | (((literal >> 23) & 1U) << 1);
+		neg = ((literal >> 20) & 1U) | (((literal >> 22) & 1U) << 1);
+	}
+
 	/* The constant bus: at most two distinct scalar values (SGPRs, VCC, the literal) among the sources read. */
 	{
 		unsigned seen[3];
@@ -990,8 +1019,10 @@ vector_alu(
 			reads = 2U;
 		if (wide != 0 && opcode < 0x100U)
 			reads = 2U;
-		if (wide != 0 && opcode >= 0x200U && opcode != 0x143U && opcode != 0x14bU)
+		if (wide != 0 && opcode >= 0x200U)
 			reads = 2U;
+		if (wide != 0 && (opcode == 0x143U || opcode == 0x14bU || (opcode >= 0x144U && opcode <= 0x147U)))
+			reads = 3U;
 		for (index = 0U; index < reads; index++) {
 			if (src[index] >= 128U && src[index] != CODE_LITERAL)
 				continue;
@@ -1032,12 +1063,22 @@ vector_alu(
 		if ((mask & (1U << lane)) == 0U)
 			continue;
 
+		/* The lane the first source is read from: its own, or the one the pattern names in its group of four. */
+		source_lane = lane;
+		if (quad != 0) {
+			source_lane = (lane & ~3U) + ((quad_pattern >> (2U * (lane & 3U))) & 3U);
+			if ((mask & (1U << source_lane)) == 0U && quad_zero == 0U)
+				continue;
+		}
+
 		/* The sources, with the float modifiers. */
 		for (index = 0U; index < sources; index++) {
 			values[index] = 0U;
 			if (wide != 0 && index > 0U && opcode >= 0x180U && opcode < 0x200U)
 				continue;
-			error = source_value(run, wave, src[index], lane, literal, &values[index]);
+			if (index == 0U && source_lane != lane && (mask & (1U << source_lane)) == 0U)
+				continue;
+			error = source_value(run, wave, src[index], index == 0U ? source_lane : lane, literal, &values[index]);
 			if (error != 0)
 				return error;
 			if ((abs & (1U << index)) != 0U)
@@ -1212,6 +1253,34 @@ vector_operation(
 		return (a & 0xffffffU) * (b & 0xffffffU) + c;
 	case 0x14bU:
 		return as_bits(fmaf(fa, fb, fc));
+	case 0x144U:
+		/* The face of the direction: z, then y, then x is the major axis; the negative side is the odd face. */
+		if (fabsf(fc) >= fabsf(fa) && fabsf(fc) >= fabsf(fb))
+			return as_bits(fc < 0.0f ? 5.0f : 4.0f);
+		if (fabsf(fb) >= fabsf(fa))
+			return as_bits(fb < 0.0f ? 3.0f : 2.0f);
+		return as_bits(fa < 0.0f ? 1.0f : 0.0f);
+	case 0x145U:
+		/* The face's horizontal coordinate before the division. */
+		if (fabsf(fc) >= fabsf(fa) && fabsf(fc) >= fabsf(fb))
+			return as_bits(fc < 0.0f ? -fa : fa);
+		if (fabsf(fb) >= fabsf(fa))
+			return as_bits(fa);
+		return as_bits(fa < 0.0f ? fc : -fc);
+	case 0x146U:
+		/* The face's vertical coordinate before the division. */
+		if (fabsf(fc) >= fabsf(fa) && fabsf(fc) >= fabsf(fb))
+			return as_bits(-fb);
+		if (fabsf(fb) >= fabsf(fa))
+			return as_bits(fb < 0.0f ? -fc : fc);
+		return as_bits(-fb);
+	case 0x147U:
+		/* Twice the major axis's component. */
+		if (fabsf(fc) >= fabsf(fa) && fabsf(fc) >= fabsf(fb))
+			return as_bits(2.0f * fc);
+		if (fabsf(fb) >= fabsf(fa))
+			return as_bits(2.0f * fb);
+		return as_bits(2.0f * fa);
 	case 0x169U:
 		return a * b;
 	case 0x16aU:
@@ -1893,10 +1962,14 @@ format_fetch(
 
 /*
  * Runs an image access: a sample (with an offset, a bias, a depth compare,
- * gradients, a level, or level 0), a texel fetch at a level, or a size
- * query.  The address VGPRs are, in order: the offset, the bias, the
- * reference, the gradients du/dx dv/dx du/dy dv/dy, u and v, the level (a
- * size query: the level alone).  The channels the mask enables are
+ * gradients, a level, or level 0), a gather at level 0, a texel fetch at a
+ * level, or a size query, of a 2D image, a 3D one, an array of 2D images
+ * or a cube (the dimension field must be the descriptor's type).  The
+ * address VGPRs are, in order: the offset, the bias, the reference, the
+ * gradients (each coordinate's along x, then along y), the coordinate (u,
+ * v, then a 3D image's r or an array's layer; a cube's face coordinates in
+ * [1, 2] and its face plus 8 times the cube), the level (a size query: the
+ * level alone).  The channels the mask enables (a gather's four) are
  * written to consecutive VGPRs.
  */
 static int
@@ -1906,6 +1979,7 @@ image_access(
 	uint32_t word0,
 	uint32_t word1)
 {
+	static const unsigned dimension_type[8] = { 0U, 9U, 10U, 11U, 0U, 13U, 0U, 0U };
 	struct texture_request request;
 	unsigned opcode;
 	unsigned vaddr;
@@ -1918,20 +1992,28 @@ image_access(
 	unsigned next;
 	unsigned mask;
 	unsigned written;
+	unsigned results;
+	unsigned dimension;
+	unsigned coordinates;
 	uint32_t descriptor[8];
 	uint32_t sampler_words[4];
 	uint32_t out[4];
 	uint32_t offset;
 	uint32_t quad;
+	uint32_t face_word;
 	unsigned kind;
 	int has_offset;
 	int has_bias;
 	int has_compare;
 	int has_gradients;
 	int has_level;
+	int has_layer;
 	int implicit;
 	int fetch;
 	int size_query;
+	int gathered;
+	int cube;
+	int32_t face_number;
 	uint8_t *texels;
 	int error;
 
@@ -1941,8 +2023,11 @@ image_access(
 	image = ((word1 >> 16) & 0x1fU) << 2;
 	sampler = ((word1 >> 21) & 0x1fU) << 2;
 	mask = (word0 >> 8) & 0xfU;
-	if (mask == 0U || ((word0 >> 3) & 7U) != 1U || ((word0 >> 1) & 3U) != 0U)
-		return fail(run, "an image access other than a 2D image without NSA, or with no channel");
+	dimension = (word0 >> 3) & 7U;
+	if (mask == 0U || ((word0 >> 1) & 3U) != 0U)
+		return fail(run, "an image access with NSA, or with no channel");
+	if (dimension_type[dimension] == 0U)
+		return fail(run, "an image access of a dimension the machine does not know");
 
 	/* The address count by the opcode: the sample kinds are 0x20 .. 0x3f, a bit pattern of offset, compare and kind. */
 	has_offset = 0;
@@ -1953,11 +2038,16 @@ image_access(
 	implicit = 0;
 	fetch = 0;
 	size_query = 0;
+	gathered = 0;
 	if (opcode == 0x01U) {
 		fetch = 1;
 		has_level = 1;
 	} else if (opcode == 0x0eU) {
 		size_query = 1;
+	} else if (opcode == 0x47U || opcode == 0x4fU || opcode == 0x57U || opcode == 0x5fU) {
+		gathered = 1;
+		has_offset = (opcode & 0x10U) != 0U;
+		has_compare = (opcode & 0x08U) != 0U;
 	} else if (opcode >= 0x20U && opcode <= 0x3fU) {
 		has_offset = (opcode & 0x10U) != 0U;
 		has_compare = (opcode & 0x08U) != 0U;
@@ -1976,7 +2066,24 @@ image_access(
 	}
 	if (fetch != 0 && ((word0 >> 12) & 1U) == 0U)
 		return fail(run, "a texel fetch without unnormalized coordinates");
-	count = 2U + (unsigned)has_offset + (unsigned)has_bias + (unsigned)has_compare + 4U * (unsigned)has_gradients + (unsigned)has_level;
+	if (gathered != 0 && has_compare == 0 && mask != 1U && mask != 2U && mask != 4U && mask != 8U)
+		return fail(run, "a gather whose mask is not one channel");
+	if (gathered != 0 && has_compare != 0 && mask != 1U)
+		return fail(run, "a compare gather whose mask is not the first channel");
+
+	/* The coordinates by the dimension: two, and r, a layer or a cube's face. */
+	cube = dimension == 3U;
+	coordinates = 2U;
+	has_layer = 0;
+	if (dimension == 2U || dimension == 3U || dimension == 5U)
+		coordinates = 3U;
+	if (dimension == 5U)
+		has_layer = 1;
+	if (cube != 0 && (fetch != 0 || has_gradients != 0))
+		return fail(run, "a fetch or a sample with gradients of a cube");
+	count = coordinates + (unsigned)has_offset + (unsigned)has_bias + (unsigned)has_compare + (unsigned)has_level;
+	if (has_gradients != 0)
+		count += 2U * (coordinates - (unsigned)has_layer);
 	if (size_query != 0)
 		count = 1U;
 
@@ -1987,6 +2094,8 @@ image_access(
 			return error;
 		descriptor[index] = wave->s[image + index];
 	}
+	if (((descriptor[3] >> 28) & 0xfU) != dimension_type[dimension])
+		return fail(run, "an image access whose dimension is not its descriptor's type");
 	memset(sampler_words, 0, sizeof(sampler_words));
 	if (fetch == 0 && size_query == 0) {
 		for (index = 0U; index < 4U; index++) {
@@ -2001,14 +2110,17 @@ image_access(
 		if (error != 0)
 			return error;
 	}
-	written = 0U;
+	results = 0U;
 	for (index = 0U; index < 4U; index++) {
-		if ((mask & (1U << index)) == 0U)
-			continue;
-		error = check_write(run, wave, vdata + written);
+		if ((mask & (1U << index)) != 0U)
+			results++;
+	}
+	if (gathered != 0)
+		results = 4U;
+	for (index = 0U; index < results; index++) {
+		error = check_write(run, wave, vdata + index);
 		if (error != 0)
 			return error;
-		written++;
 	}
 
 	/* A sample with implicit derivatives needs whole quads. */
@@ -2037,6 +2149,7 @@ image_access(
 				offset = wave->v[next][lane];
 				request.offset_u = (int)(int8_t)(uint8_t)((offset & 0x3fU) << 2) >> 2;
 				request.offset_v = (int)(int8_t)(uint8_t)(((offset >> 8) & 0x3fU) << 2) >> 2;
+				request.offset_r = (int)(int8_t)(uint8_t)(((offset >> 16) & 0x3fU) << 2) >> 2;
 				next++;
 			}
 			if (has_bias != 0) {
@@ -2051,14 +2164,38 @@ image_access(
 			}
 			if (has_gradients != 0) {
 				request.has_gradients = 1;
-				for (index = 0U; index < 4U; index++)
+				for (index = 0U; index < 2U * (coordinates - (unsigned)has_layer); index++)
 					request.gradients[index] = wave->v[next + index][lane];
-				next += 4U;
+				next += 2U * (coordinates - (unsigned)has_layer);
 			}
 			request.u = wave->v[next][lane];
 			request.v = wave->v[next + 1U][lane];
-			next += 2U;
+			if (dimension == 2U)
+				request.r = wave->v[next + 2U][lane];
+			if (has_layer != 0 && fetch != 0)
+				request.layer = (int32_t)wave->v[next + 2U][lane];
+			if (has_layer != 0 && fetch == 0)
+				request.layer = (int32_t)floorf(as_float(wave->v[next + 2U][lane]));
+			if (cube != 0) {
+				/* The face coordinates are in [1, 2]; the face word is the face plus 8 times the cube. */
+				request.u = as_bits(as_float(request.u) - 1.0f);
+				request.v = as_bits(as_float(request.v) - 1.0f);
+				face_word = wave->v[next + 2U][lane];
+				face_number = (int32_t)floorf(as_float(face_word));
+				if ((face_number & 7) > 5)
+					return fail(run, "a cube sample whose face is not 0 .. 5");
+				request.face = face_number & 7;
+				request.layer = face_number >> 3;
+			}
+			next += coordinates;
 			request.fetch = fetch;
+			request.gather = gathered;
+			if (gathered != 0 && has_compare == 0) {
+				for (index = 0U; index < 4U; index++) {
+					if ((mask & (1U << index)) != 0U)
+						request.channel = index;
+				}
+			}
 			if (has_level != 0 && fetch == 0) {
 				request.has_lod = 1;
 				request.lod = wave->v[next][lane];
@@ -2067,20 +2204,16 @@ image_access(
 		texture_sample(texels, descriptor, sampler_words, &request, out);
 		written = 0U;
 		for (index = 0U; index < 4U; index++) {
-			if ((mask & (1U << index)) == 0U)
+			if (gathered == 0 && (mask & (1U << index)) == 0U)
 				continue;
 			wave->v[vdata - 256U + written][lane] = out[index];
 			written++;
 		}
 	}
 	wave->vector_issued++;
-	written = 0U;
-	for (index = 0U; index < 4U; index++) {
-		if ((mask & (1U << index)) == 0U)
-			continue;
-		wave->vector_order[vdata + written] = wave->vector_issued;
-		wave->pending[vdata + written] |= PENDING_VECTOR;
-		written++;
+	for (index = 0U; index < results; index++) {
+		wave->vector_order[vdata + index] = wave->vector_issued;
+		wave->pending[vdata + index] |= PENDING_VECTOR;
 	}
 	mark_scalar_reads(wave->read_by_load, image, 8U);
 	if (fetch == 0 && size_query == 0)

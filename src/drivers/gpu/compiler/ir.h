@@ -62,7 +62,7 @@
 
 /*
  * The set of the storage buffer a compute shader reads gl_NumWorkGroups
- * from (ws101-p002): a uniform of kind DRV_GPU_IR_UNIFORM_STORAGE with this
+ * from: a uniform of kind DRV_GPU_IR_UNIFORM_STORAGE with this
  * set and binding 0 names three words -- the group counts x, y, z -- that
  * the dispatch places and whose address it delivers like any other storage
  * buffer's.  No descriptor set of a pipeline layout has this number.
@@ -71,7 +71,7 @@
 
 /*
  * The built-in values of a compute invocation a LOAD_SYSTEM reads, as its
- * `component` (ws101-p002): the invocation's place in its workgroup (x, y,
+ * `component`: the invocation's place in its workgroup (x, y,
  * z and the linear index) and the workgroup's place in the dispatch.
  */
 #define DRV_GPU_IR_SYSTEM_LOCAL_ID_X 0U
@@ -83,17 +83,17 @@
 #define DRV_GPU_IR_SYSTEM_GROUP_ID_Z 6U
 
 /*
- * The built-in value of a geometry invocation a LOAD_SYSTEM reads
- * (ws075-p007a): gl_PrimitiveIDIn, the number of the input primitive the
- * channel's invocation runs for.
+ * The built-in value of a geometry invocation a LOAD_SYSTEM reads:
+ * gl_PrimitiveIDIn, the number of the input primitive the channel's
+ * invocation runs for.
  */
 #define DRV_GPU_IR_SYSTEM_PRIMITIVE_ID 7U
 #define DRV_GPU_IR_SYSTEM_COUNT 8U
 
 /*
- * The operations of an ATOMIC instruction, as its `immediate`
- * (ws101-p002): the value numbers of the data port's atomic operations
- * (Mesa brw_eu_defines.h, BRW_AOP_*), retained as stable IR tags. Each backend
+ * The operations of an ATOMIC instruction, as its `immediate`: the value
+ * numbers of the data port's atomic operations (Mesa brw_eu_defines.h,
+ * BRW_AOP_*), retained as stable IR tags. Each backend
  * translates these tags to its own instruction encoding.  An increment and a
  * decrement are ADD and SUB of one.
  */
@@ -117,32 +117,32 @@
 
 /*
  * The `location` of an ATOMIC instruction on a word of the workgroup's
- * shared memory rather than of a storage buffer (ws101-p006).
+ * shared memory rather than of a storage buffer.
  */
 #define DRV_GPU_IR_LOCATION_SHARED 0xFFFFFFFDU
 
 /*
  * The location a fragment shader's second colour is stored to: Location 0
- * Index 1, the second source of a dual-source blend (ws031-p032).
+ * Index 1, the second source of a dual-source blend.
  */
 #define DRV_GPU_IR_LOCATION_SECOND_COLOR 0xFFFFFFFCU
 
 /*
  * The STORE_OUTPUT location of a geometry shader's Layer builtin, component
- * 0 (ws075-p007a): the render target array index of the emitted primitive.
+ * 0: the render target array index of the emitted primitive.
  */
 #define DRV_GPU_IR_LOCATION_LAYER 0xFFFFFFFBU
 
 /*
  * The `immediate` bit of a LOAD_VERTEX_INPUT whose input vertex is chosen
- * at run time (ws075-p007a): src[0] is then the integer number of the
+ * at run time: src[0] is then the integer number of the
  * vertex, and the other bits are zero.
  */
 #define DRV_GPU_IR_VERTEX_DYNAMIC 0x80000000U
 
 /*
  * The primitives a geometry shader emits, retaining the original IR
- * numeric tags (ws075-p007a):
+ * numeric tags:
  * points, line strips and triangle strips.
  */
 #define DRV_GPU_IR_OUTPUT_POINTS 1U
@@ -157,8 +157,7 @@
 
 /*
  * The memory a FENCE orders, and whether it acquires, as bits of its
- * `immediate`; a BARRIER's `immediate` names the fences before it
- * (ws101-p006).
+ * `immediate`; a BARRIER's `immediate` names the fences before it.
  */
 #define DRV_GPU_IR_FENCE_GLOBAL 1U
 #define DRV_GPU_IR_FENCE_SHARED 2U
@@ -184,6 +183,12 @@
  *   SAMPLE_DERIVS    u dudx dudy v dvdx dvdy r drdx drdy ai
  *   SAMPLE_BIAS_COMPARE, SAMPLE_LOD_COMPARE   ref bias/lod u v r ai
  *   SAMPLE_DERIV_COMPARE                      ref u dudx dudy ...
+ *   GATHER4          u v r ai                 GATHER4_COMPARE  ref u v r ai
+ *
+ * A gather reads level 0 and replies with one channel of the four texels
+ * a bilinear filter would weigh, in the order (i0, j1), (i1, j1), (i1, j0),
+ * (i0, j0); a compare gather with the four results of the compare.  The
+ * channel is DRV_GPU_IR_TEXTURE_CHANNEL() of the instruction's `component`.
  *
  * A message may stop after its last parameter that matters; the rest read
  * as zero.
@@ -196,8 +201,40 @@
 #define DRV_GPU_IR_TEXTURE_SAMPLE_BIAS_COMPARE 5U
 #define DRV_GPU_IR_TEXTURE_SAMPLE_LOD_COMPARE 6U
 #define DRV_GPU_IR_TEXTURE_LD 7U
+#define DRV_GPU_IR_TEXTURE_GATHER4 8U
 #define DRV_GPU_IR_TEXTURE_RESINFO 10U
+#define DRV_GPU_IR_TEXTURE_GATHER4_COMPARE 16U
 #define DRV_GPU_IR_TEXTURE_SAMPLE_DERIV_COMPARE 20U
+
+/*
+ * The bits of a TEXTURE instruction's `component` that hold the message
+ * type, and the channel a gather reads (bits 7:5).
+ */
+#define DRV_GPU_IR_TEXTURE_MESSAGE_MASK 0x1FU
+#define DRV_GPU_IR_TEXTURE_CHANNEL_SHIFT 5U
+#define DRV_GPU_IR_TEXTURE_CHANNEL(component) (((component) >> 5) & 0x3U)
+
+/*
+ * The shape of the image a TEXTURE instruction reads
+ * (struct drv_gpu_shader_ir_inst.image_shape): the kind in bits 3:0 and
+ * whether the image is an array.
+ *
+ * The kind says how many of the message's coordinate parameters are the
+ * image's own: u and v for the 2D kind, u, v and r for 3D, and for a cube
+ * the direction x, y, z in u, v and r.  The parameter after them is the
+ * layer of an array (r after a 2D coordinate, ai after a cube one).  A 1D
+ * image is a 2D one a texel high (its v is 0); a texel buffer is fetched
+ * as a 1D image; a multisampled 2D image is fetched with the sample as its
+ * layer.  Zero, the 2D kind of no array, is also the shape of an
+ * instruction that was built without one.
+ */
+#define DRV_GPU_IR_IMAGE_2D 0U
+#define DRV_GPU_IR_IMAGE_3D 1U
+#define DRV_GPU_IR_IMAGE_CUBE 2U
+#define DRV_GPU_IR_IMAGE_BUFFER 3U
+#define DRV_GPU_IR_IMAGE_KIND_MASK 0xFU
+#define DRV_GPU_IR_IMAGE_ARRAYED 0x10U
+#define DRV_GPU_IR_IMAGE_MULTISAMPLED 0x20U
 
 /* The most parameters a TEXTURE instruction passes. */
 #define DRV_GPU_IR_TEXTURE_MAX_PARAMS 11U
@@ -476,9 +513,10 @@ enum drv_gpu_shader_ir_op {
 	 * sampler at set `location`, binding `immediate`: the message's
 	 * parameters are the src[1] consecutive values from src[0] on, in the
 	 * order the message takes them (DRV_GPU_IR_TEXTURE_*); `component` is
-	 * the message type (bits 4:0) and the constant texel offset of the
-	 * header (bits 23:8: u in 11:8, v in 7:4, r in 3:0 of the offset,
-	 * shifted by 8), no header when the offset is 0.
+	 * the message type (bits 4:0), the channel a gather reads (bits 7:5)
+	 * and the constant texel offset of the header (bits 23:8: u in 11:8,
+	 * v in 7:4, r in 3:0 of the offset, shifted by 8), no header when the
+	 * offset is 0; `image_shape` is the image's shape.
 	 */
 	DRV_GPU_IR_TEXTURE,
 
@@ -498,7 +536,7 @@ enum drv_gpu_shader_ir_op {
 	DRV_GPU_IR_STORE_STORAGE,
 
 	/*
-	 * The start of a skippable block (ws075-p023): the instructions up to
+	 * The start of a skippable block: the instructions up to
 	 * the matching SKIP_END are the body of one block whose predicate is
 	 * the Boolean src[0]; a thread none of whose channels is in it may jump
 	 * over them.  The parser checks that nothing made between the two is
@@ -512,8 +550,7 @@ enum drv_gpu_shader_ir_op {
 
 	/*
 	 * dst = the built-in value `component` (DRV_GPU_IR_SYSTEM_*) of the
-	 * channel's compute invocation (ws101-p002) or geometry invocation
-	 * (ws075-p007a).
+	 * channel's compute invocation or geometry invocation.
 	 */
 	DRV_GPU_IR_LOAD_SYSTEM,
 
@@ -525,34 +562,33 @@ enum drv_gpu_shader_ir_op {
 	 * src[2].  The Boolean predicate is the source after the values
 	 * (src[2], or src[3] for a compare and exchange) when `component` is
 	 * DRV_GPU_IR_ATOMIC_PREDICATED.  The code generator asks the memory for
-	 * the old value only when an instruction reads dst (ws101-p002).
+	 * the old value only when an instruction reads dst.
 	 */
 	DRV_GPU_IR_ATOMIC,
 
 	/*
 	 * dst = the bytes of storage buffer `location` its descriptor gives the
-	 * shader, the range an OpArrayLength divides (ws101-p002).
+	 * shader, the range an OpArrayLength divides.
 	 */
 	DRV_GPU_IR_STORAGE_SIZE,
 
 	/*
 	 * dst = the word at byte offset src[0] of the workgroup's shared
 	 * memory; with `component` 1 read only where the Boolean src[1] holds,
-	 * the other channels keeping whatever their register held (ws101-p006).
+	 * the other channels keeping whatever their register held.
 	 */
 	DRV_GPU_IR_LOAD_SHARED,
 
 	/*
 	 * The word at byte offset src[0] of the workgroup's shared memory =
-	 * src[1]; with `component` 1 only where the Boolean src[2] holds
-	 * (ws101-p006).
+	 * src[1]; with `component` 1 only where the Boolean src[2] holds.
 	 */
 	DRV_GPU_IR_STORE_SHARED,
 
 	/*
 	 * Every invocation of the workgroup waits here until all have come
 	 * (a workgroup execution barrier), after the fences `immediate` names
-	 * (DRV_GPU_IR_FENCE_*) (ws101-p006).  Every thread of the group must
+	 * (DRV_GPU_IR_FENCE_*).  Every thread of the group must
 	 * reach it the same number of times: the parser refuses one after a
 	 * return and one in a loop not every invocation enters.
 	 */
@@ -561,13 +597,13 @@ enum drv_gpu_shader_ir_op {
 	/*
 	 * The memory accesses before it are done, and visible to the others
 	 * that use the memory, before any after it (a memory fence of the
-	 * memory `immediate` names, DRV_GPU_IR_FENCE_*) (ws101-p006).
+	 * memory `immediate` names, DRV_GPU_IR_FENCE_*).
 	 */
 	DRV_GPU_IR_FENCE,
 
 	/*
 	 * dst = input `location`, component `component` of one vertex of the
-	 * input primitive (geometry only, ws075-p007a): the vertex `immediate`,
+	 * input primitive (geometry only): the vertex `immediate`,
 	 * or, when `immediate` is DRV_GPU_IR_VERTEX_DYNAMIC, the vertex whose
 	 * number is the integer src[0] (a number past the primitive's vertices
 	 * reads something undefined).  The location is a located input's own,
@@ -578,7 +614,7 @@ enum drv_gpu_shader_ir_op {
 
 	/*
 	 * Emits one vertex of the output primitive from what the outputs hold
-	 * now (geometry only, ws075-p007a); with `component` 1 only for the
+	 * now (geometry only); with `component` 1 only for the
 	 * channels where the Boolean src[0] (the predicate of the block the
 	 * emit is in) holds.
 	 */
@@ -586,7 +622,7 @@ enum drv_gpu_shader_ir_op {
 
 	/*
 	 * Ends the output strip the vertices emitted so far make (geometry
-	 * only, ws075-p007a); the next vertex starts a new one.  With
+	 * only); the next vertex starts a new one.  With
 	 * `component` 1 only for the channels where the Boolean src[0] holds.
 	 * The parser leaves it out when the output is points.
 	 */
@@ -657,10 +693,16 @@ struct drv_gpu_shader_ir_inst {
 	 * when every channel's is.  A channel outside it only ever meets the
 	 * result in a selection that takes something else, so the code
 	 * generator may run the message for the guard's channels alone and
-	 * skip it when no channel is in the guard (ws075-p021).  Other
+	 * skip it when no channel is in the guard.  Other
 	 * instructions leave it zero.
 	 */
 	uint32_t guard;
+
+	/*
+	 * A TEXTURE instruction: the shape of the image it reads
+	 * (DRV_GPU_IR_IMAGE_*).  Other instructions leave it zero.
+	 */
+	uint32_t image_shape;
 };
 
 /*
@@ -692,7 +734,7 @@ struct drv_gpu_shader_ir {
 	uint32_t local_size[3];
 
 	/*
-	 * Compute (ws101-p006): the bytes of shared memory the workgroup's
+	 * Compute: the bytes of shared memory the workgroup's
 	 * Workgroup variables take, and nonzero when the shader has a
 	 * workgroup barrier.
 	 */
@@ -700,7 +742,7 @@ struct drv_gpu_shader_ir {
 	uint32_t uses_barrier;
 
 	/*
-	 * Geometry (ws075-p007a), from the execution modes: the vertices of one
+	 * Geometry, from the execution modes: the vertices of one
 	 * input primitive (1, 2, 4, 3 or 6), the primitive emitted
 	 * (DRV_GPU_IR_OUTPUT_*) and the most vertices one invocation emits;
 	 * zero for another stage.
@@ -710,7 +752,7 @@ struct drv_gpu_shader_ir {
 	uint32_t max_vertices;
 
 	/*
-	 * Geometry (ws075-p007a): nonzero when the shader ends a strip
+	 * Geometry: nonzero when the shader ends a strip
 	 * (END_PRIMITIVE), reads gl_PrimitiveIDIn, or writes gl_Layer.
 	 */
 	uint32_t uses_end_primitive;

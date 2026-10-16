@@ -139,6 +139,8 @@
 #define OP_IMAGE_SAMPLE_PROJ_DREF_IMPLICIT_LOD 93U
 #define OP_IMAGE_SAMPLE_PROJ_DREF_EXPLICIT_LOD 94U
 #define OP_IMAGE_FETCH 95U
+#define OP_IMAGE_GATHER 96U
+#define OP_IMAGE_DREF_GATHER 97U
 #define OP_IMAGE 100U
 #define OP_IMAGE_QUERY_SIZE_LOD 103U
 #define OP_IMAGE_QUERY_SIZE 104U
@@ -230,7 +232,7 @@
 #define OP_NO_LINE 317U
 #define OP_MODULE_PROCESSED 330U
 
-/* Opcodes of compute shaders (ws101-p002, spirv-compute.inc). */
+/* Opcodes of compute shaders (spirv-compute.inc). */
 #define OP_ARRAY_LENGTH 68U
 #define OP_CONTROL_BARRIER 224U
 #define OP_MEMORY_BARRIER 225U
@@ -251,7 +253,7 @@
 #define OP_ATOMIC_XOR 242U
 #define OP_EXECUTION_MODE_ID 331U
 
-/* Opcodes of geometry shaders (ws075-p007a, spirv-geometry.inc). */
+/* Opcodes of geometry shaders (spirv-geometry.inc). */
 #define OP_EMIT_VERTEX 218U
 #define OP_END_PRIMITIVE 219U
 
@@ -287,7 +289,7 @@
 
 /*
  * Decorations of a storage buffer's accesses that change nothing the lowering
- * does (ws101-p002).
+ * does.
  */
 #define DEC_RESTRICT 19U
 #define DEC_ALIASED 20U
@@ -303,14 +305,14 @@
 #define BUILTIN_VERTEX_INDEX 42U
 #define BUILTIN_INSTANCE_INDEX 43U
 
-/* The built-in inputs of a compute shader (ws101-p002). */
+/* The built-in inputs of a compute shader. */
 #define BUILTIN_NUM_WORKGROUPS 24U
 #define BUILTIN_WORKGROUP_ID 26U
 #define BUILTIN_LOCAL_INVOCATION_ID 27U
 #define BUILTIN_GLOBAL_INVOCATION_ID 28U
 #define BUILTIN_LOCAL_INVOCATION_INDEX 29U
 
-/* The built-ins of a geometry shader (ws075-p007a). */
+/* The built-ins of a geometry shader. */
 #define BUILTIN_PRIMITIVE_ID 7U
 #define BUILTIN_INVOCATION_ID 8U
 #define BUILTIN_LAYER 9U
@@ -594,7 +596,7 @@ struct drv_gpu_spirv_id {
 
 	/*
 	 * A fragment output's Index decoration: 1 is the second colour of a
-	 * dual-source blend (ws031-p032).
+	 * dual-source blend.
 	 */
 	uint8_t index;
 
@@ -696,7 +698,7 @@ struct drv_gpu_spirv_id {
 	uint32_t dynamic_length;
 
 	/*
-	 * A pointer into a geometry shader's per-vertex input (ws075-p007a):
+	 * A pointer into a geometry shader's per-vertex input:
 	 * nonzero once the chain's first index chose the input vertex; the
 	 * vertex's number when that index is a constant; and the IR integer of
 	 * the number when it is chosen at run time (NO_VALUE for a constant).
@@ -855,7 +857,7 @@ struct drv_gpu_spirv_parser {
 	int loop_merge_block;
 
 	/*
-	 * The block now lowered is a skippable region (ws075-p023): a
+	 * The block now lowered is a skippable region: a
 	 * SKIP_BEGIN on its predicate was emitted at its label and its SKIP_END
 	 * comes before its terminator; `skip_first_value` is the first value
 	 * made inside it.
@@ -930,7 +932,7 @@ struct drv_gpu_spirv_parser {
 	uint32_t system_uniform;
 
 	/*
-	 * Compute (ws101-p006): nonzero once an OpReturn was lowered, after
+	 * Compute: nonzero once an OpReturn was lowered, after
 	 * which a workgroup barrier is refused (a thread whose channels all
 	 * returned would not wait at it the same number of times).
 	 */
@@ -1013,9 +1015,11 @@ static int drv_gpu_spirv_lower_derivative(struct drv_gpu_spirv_parser *parser, c
 static int drv_gpu_spirv_texel_offset(struct drv_gpu_spirv_parser *parser, uint32_t id, uint32_t *bits, uint32_t opcode, uint32_t offset);
 static struct drv_gpu_spirv_id * drv_gpu_spirv_image_type(struct drv_gpu_spirv_parser *parser, struct drv_gpu_spirv_id *image);
 static void drv_gpu_spirv_texture_param(uint32_t *params, uint32_t *count, uint32_t value);
-static int drv_gpu_spirv_emit_texture(struct drv_gpu_spirv_parser *parser, const struct drv_gpu_spirv_id *image, const uint32_t *params, uint32_t param_count, uint32_t message, uint32_t texel_offset, uint32_t *first);
+static uint32_t drv_gpu_spirv_image_shape(const struct drv_gpu_spirv_id *type);
+static int drv_gpu_spirv_emit_texture(struct drv_gpu_spirv_parser *parser, const struct drv_gpu_spirv_id *image, uint32_t image_shape, const uint32_t *params, uint32_t param_count, uint32_t message, uint32_t texel_offset, uint32_t *first);
 static int drv_gpu_spirv_lower_image(struct drv_gpu_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int drv_gpu_spirv_lower_texture(struct drv_gpu_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
+static int drv_gpu_spirv_lower_gather(struct drv_gpu_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int drv_gpu_spirv_lower_fetch(struct drv_gpu_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int drv_gpu_spirv_lower_query(struct drv_gpu_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int drv_gpu_spirv_lower_label(struct drv_gpu_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
@@ -1249,8 +1253,7 @@ drv_gpu_shader_parse(
 		error = drv_gpu_spirv_compute_declared(parser);
 
 	/*
-	 * A geometry shader must have said what it takes and emits
-	 * (ws075-p007a).
+	 * A geometry shader must have said what it takes and emits.
 	 */
 	if (error == 0)
 		error = drv_gpu_spirv_geometry_declared(parser);
@@ -1791,7 +1794,7 @@ drv_gpu_spirv_decoration_ignored(
 	/*
 	 * Nor do its coherence and aliasing qualifiers: the code generator
 	 * never reorders a memory access, and every access goes to memory
-	 * uncached (ws101-p002).
+	 * uncached.
 	 */
 	if (decoration == DEC_COHERENT ||
 	    decoration == DEC_VOLATILE ||
@@ -2310,7 +2313,7 @@ drv_gpu_spirv_declare_variable(
 		} else if (record->builtin == BUILTIN_PRIMITIVE_ID) {
 			/*
 			 * gl_PrimitiveID: the primitive's number, the same for
-			 * all its pixels (ws075-p007a).
+			 * all its pixels.
 			 */
 			record->has_location = 1U;
 			record->location = DRV_GPU_SHADER_LOCATION_PRIMITIVE_ID;
@@ -3774,6 +3777,22 @@ drv_gpu_spirv_lower(
 		 */
 		return 0;
 
+	case OP_IMAGE_GATHER:
+	case OP_IMAGE_DREF_GATHER:
+		/* Lowers a gather of four texels' channel or compares. */
+		error = drv_gpu_spirv_lower_gather(parser,
+						   word,
+						   count,
+						   opcode,
+						   offset);
+		if (error != 0)
+			return error;
+
+		/*
+		 * Succeeded: this instruction has a complete scalar lowering.
+		 */
+		return 0;
+
 	case OP_IMAGE_FETCH:
 		/*
 		 * Lowers this instruction while preserving the frontend refusal
@@ -4242,7 +4261,7 @@ drv_gpu_spirv_chain_block(
 
 			/*
 			 * A 16-bit index made whole, signed as SPIR-V's indices
-			 * are (ws031-p039).
+			 * are.
 			 */
 			/*
 			 * Resolves the scalar operand before constructing its
@@ -4257,7 +4276,7 @@ drv_gpu_spirv_chain_block(
 
 			/*
 			 * A storage buffer's second dynamic index folds the
-			 * first into bytes, and itself after it (ws101-p002).
+			 * first into bytes, and itself after it.
 			 */
 			if (record->dynamic_index != NO_VALUE) {
 
@@ -4564,8 +4583,7 @@ drv_gpu_spirv_chain_dynamic(
 	}
 
 	/*
-	 * A 16-bit index made whole, signed as SPIR-V's indices are
-	 * (ws031-p039).
+	 * A 16-bit index made whole, signed as SPIR-V's indices are.
 	 */
 	/*
 	 * Resolves the scalar operand before constructing its enclosing
@@ -5482,7 +5500,7 @@ drv_gpu_spirv_lower_storage(
 
 			/*
 			 * A compute shader's load reads only for the block's
-			 * channels (ws101-p002): a channel outside it may hold
+			 * channels: a channel outside it may hold
 			 * an offset past the buffer, as after `if (i >= n)
 			 * return;`.
 			 */
@@ -6186,7 +6204,7 @@ drv_gpu_spirv_lower_integer(
 	}
 
 	/*
-	 * The widths (ws031-p039): a shift's base is the result's and its count
+	 * The widths: a shift's base is the result's and its count
 	 * any; the other operations' operands are all of the result's.
 	 */
 	width = drv_gpu_spirv_int_width(parser, word[1]);
@@ -6771,7 +6789,7 @@ drv_gpu_spirv_lower_convert(
 
 	/*
 	 * A 16-bit integer converted to a float is made whole first, by the
-	 * conversion's signedness (ws031-p039).
+	 * conversion's signedness.
 	 */
 	width = 0U;
 	if (opcode == OP_CONVERT_S_TO_F || opcode == OP_CONVERT_U_TO_F)
@@ -6801,9 +6819,9 @@ drv_gpu_spirv_lower_convert(
 }
 
 /*
- * Lowers OpSConvert and OpUConvert between 16-bit and 32-bit integers
- * (ws031-p039): to 32 bits the 16-bit value made whole, sign extended or
- * zero extended; to 16 bits the 32-bit value as it is (its low half is the
+ * Lowers OpSConvert and OpUConvert between 16-bit and 32-bit integers: to
+ * 32 bits the 16-bit value made whole, sign extended or zero extended; to
+ * 16 bits the 32-bit value as it is (its low half is the
  * result).  The widths must differ (the SPIR-V rule).
  */
 static int
@@ -6941,7 +6959,7 @@ drv_gpu_spirv_lower_bitcast(
 	/*
 	 * A float or integer scalar or vector of the operand's bits; a Boolean
 	 * has none.  A 16-bit integer's vector casts to or from 32-bit scalars
-	 * of the same bits, component 0 the low half (ws031-p039).
+	 * of the same bits, component 0 the low half.
 	 */
 	components = drv_gpu_spirv_value_components(parser, word[1]);
 	booleans = drv_gpu_spirv_bool_components(parser, word[1]);
@@ -8468,7 +8486,7 @@ drv_gpu_spirv_lower_extended(
 	}
 
 	/*
-	 * The integer functions' 16-bit operands made whole (ws031-p039): sign
+	 * The integer functions' 16-bit operands made whole: sign
 	 * extended for SAbs, SSign, SMin, SMax and SClamp, zero extended for
 	 * UMin, UMax and UClamp; each operand of the result's width.
 	 */
@@ -10474,7 +10492,7 @@ drv_gpu_spirv_lower_integer_compare(
 
 	/*
 	 * 16-bit operands made whole: signed for the signed orderings, unsigned
-	 * for the others and equality (ws031-p039).
+	 * for the others and equality.
 	 */
 	is_signed = 0;
 	if (op == DRV_GPU_IR_ILT || op == DRV_GPU_IR_IGE)
@@ -11085,6 +11103,39 @@ drv_gpu_spirv_texture_param(
 }
 
 /*
+ * Reports the shape an image type gives a TEXTURE instruction: its kind
+ * (a 1D image is of the 2D kind) and whether it is an array or
+ * multisampled.
+ */
+static uint32_t
+drv_gpu_spirv_image_shape(
+	const struct drv_gpu_spirv_id *type)
+{
+	uint32_t shape;
+
+	/* The kind by the image's Dim; 1D and 2D share the 2D kind. */
+	shape = DRV_GPU_IR_IMAGE_2D;
+	if (type->image_dim == DIM_3D) {
+		shape = DRV_GPU_IR_IMAGE_3D;
+	} else if (type->image_dim == DIM_CUBE) {
+		shape = DRV_GPU_IR_IMAGE_CUBE;
+	} else if (type->image_dim == DIM_BUFFER) {
+		shape = DRV_GPU_IR_IMAGE_BUFFER;
+	}
+
+	/* An array's layer follows the coordinate. */
+	if (type->image_arrayed != 0U)
+		shape |= DRV_GPU_IR_IMAGE_ARRAYED;
+
+	/* A multisampled image is fetched with the sample as its layer. */
+	if (type->image_ms != 0U)
+		shape |= DRV_GPU_IR_IMAGE_MULTISAMPLED;
+
+	/* Succeeded: the shape the instruction carries. */
+	return shape;
+}
+
+/*
  * Emits a TEXTURE instruction: copies the parameters into a run of fresh
  * consecutive values and defines four fresh consecutive results, the
  * first returned in *first.
@@ -11093,6 +11144,7 @@ static int
 drv_gpu_spirv_emit_texture(
 	struct drv_gpu_spirv_parser *parser,
 	const struct drv_gpu_spirv_id *image,
+	uint32_t image_shape,
 	const uint32_t *params,
 	uint32_t param_count,
 	uint32_t message,
@@ -11137,6 +11189,7 @@ drv_gpu_spirv_emit_texture(
 		inst->immediate = image->binding;
 		inst->location = image->set;
 		inst->component = message | (texel_offset << 8);
+		inst->image_shape = image_shape;
 		drv_gpu_spirv_guard(parser, inst);
 	}
 
@@ -11243,6 +11296,7 @@ drv_gpu_spirv_lower_texture(
 	uint32_t zero;
 	uint32_t message;
 	uint32_t texel_offset;
+	uint32_t shape;
 	uint32_t first;
 	uint32_t index;
 	int compare;
@@ -11610,8 +11664,10 @@ drv_gpu_spirv_lower_texture(
 	}
 
 	/* Emits the message. */
+	shape = drv_gpu_spirv_image_shape(type);
 	error = drv_gpu_spirv_emit_texture(parser,
 					   image,
+					   shape,
 					   params,
 					   param_count,
 					   message,
@@ -11628,6 +11684,217 @@ drv_gpu_spirv_lower_texture(
 		record->comp[index] = first + index;
 
 	/* Succeeded: the sample is lowered. */
+	return 0;
+}
+
+/*
+ * Lowers OpImageGather (textureGather()) and OpImageDrefGather (a compare
+ * gather) of a 2D or cube image or an array of them to the gather
+ * messages: the reference of a compare, then the coordinate and the layer,
+ * as a sample takes them; the channel a plain gather reads is a constant
+ * 0 .. 3 carried in the instruction's `component`.  A ConstOffset moves the
+ * texel grid; ConstOffsets, Offset and the other image operands are
+ * refused.
+ */
+static int
+drv_gpu_spirv_lower_gather(
+	struct drv_gpu_spirv_parser *parser,
+	const uint32_t *word,
+	uint32_t count,
+	uint32_t opcode,
+	uint32_t offset)
+{
+	int error;
+	struct drv_gpu_spirv_id *image;
+	struct drv_gpu_spirv_id *type;
+	struct drv_gpu_spirv_id *record;
+	struct drv_gpu_spirv_id *channel_record;
+	uint32_t coordinate[4];
+	uint32_t scalars[4];
+	uint32_t params[DRV_GPU_IR_TEXTURE_MAX_PARAMS];
+	uint32_t param_count;
+	uint32_t coordinate_count;
+	uint32_t scalar_count;
+	uint32_t dimensions;
+	uint32_t position_count;
+	uint32_t components;
+	uint32_t operands;
+	uint32_t next;
+	uint32_t message;
+	uint32_t channel;
+	uint32_t texel_offset;
+	uint32_t shape;
+	uint32_t first;
+	uint32_t index;
+
+	/* The instruction must carry the image, the coordinate and the channel or the reference. */
+	if (count < 6U)
+		return EINVAL;
+
+	/* Resolves the image and its type; a 2D or cube image is gathered from. */
+	image = drv_gpu_spirv_id(parser, word[3]);
+	type = drv_gpu_spirv_image_type(parser, image);
+	if (type == NULL) {
+		/*
+		 * Records the unsupported instruction in the caller's
+		 * diagnostic.
+		 */
+		error = drv_gpu_spirv_refuse(
+		    parser,
+		    opcode,
+		    offset,
+		    "gather from something that is not a loaded sampler");
+		return error;
+	}
+
+	/* Refuses an image a gather cannot read. */
+	if (type->image_dim != DIM_2D &&
+	    type->image_dim != DIM_CUBE) {
+		/*
+		 * Records the unsupported instruction in the caller's
+		 * diagnostic.
+		 */
+		error = drv_gpu_spirv_refuse(
+		    parser,
+		    opcode,
+		    offset,
+		    "gather from an image that is not 2D or cube");
+		return error;
+	}
+
+	/* The coordinate: the image's dimensions and the layer of an array. */
+	dimensions = 2U;
+	if (type->image_dim == DIM_CUBE)
+		dimensions = 3U;
+	position_count = dimensions + type->image_arrayed;
+	coordinate_count = drv_gpu_spirv_operand(parser, word[4], coordinate);
+	if (coordinate_count < position_count) {
+		/*
+		 * Records the unsupported instruction in the caller's
+		 * diagnostic.
+		 */
+		error = drv_gpu_spirv_refuse(
+		    parser,
+		    opcode,
+		    offset,
+		    "gather at a coordinate shorter than the image's");
+		return error;
+	}
+
+	/* A plain gather's channel is a constant from 0 to 3. */
+	message = DRV_GPU_IR_TEXTURE_GATHER4;
+	channel = 0U;
+	scalars[0] = 0U;
+	if (opcode == OP_IMAGE_GATHER) {
+		channel_record = drv_gpu_spirv_id(parser, word[5]);
+		if (channel_record == NULL ||
+		    channel_record->kind != ID_CONSTANT ||
+		    channel_record->constant > 3U) {
+			/*
+			 * Records the unsupported instruction in the caller's
+			 * diagnostic.
+			 */
+			error = drv_gpu_spirv_refuse(
+			    parser,
+			    opcode,
+			    offset,
+			    "gather of a channel that is not a constant 0 to 3");
+			return error;
+		}
+		channel = channel_record->constant;
+	}
+
+	/* A compare gather's reference is one scalar. */
+	if (opcode == OP_IMAGE_DREF_GATHER) {
+		message = DRV_GPU_IR_TEXTURE_GATHER4_COMPARE;
+		scalar_count = drv_gpu_spirv_operand(parser, word[5], scalars);
+		if (scalar_count != 1U)
+			return EINVAL;
+	}
+
+	/* The image operands. */
+	next = 6U;
+	operands = 0U;
+	if (next < count) {
+		operands = word[next];
+		next++;
+	}
+
+	/* Refuses an operand that is not lowered. */
+	if ((operands & ~IMAGE_OPERAND_CONST_OFFSET) != 0U) {
+		/*
+		 * Records the unsupported instruction in the caller's
+		 * diagnostic.
+		 */
+		error = drv_gpu_spirv_refuse(
+		    parser,
+		    opcode,
+		    offset,
+		    "gather with image operands other than ConstOffset");
+		return error;
+	}
+
+	/* A constant offset moves the texel grid. */
+	texel_offset = 0U;
+	if ((operands & IMAGE_OPERAND_CONST_OFFSET) != 0U) {
+		if (next >= count)
+			return EINVAL;
+		error = drv_gpu_spirv_texel_offset(parser,
+						   word[next],
+						   &texel_offset,
+						   opcode,
+						   offset);
+		if (error != 0)
+			return error;
+		next++;
+	}
+
+	/* Every operand must have been read. */
+	if (next != count)
+		return EINVAL;
+
+	/* The result is four floats or integers. */
+	components = drv_gpu_spirv_value_components(parser, word[1]);
+	if (components != 4U) {
+		/*
+		 * Records the unsupported instruction in the caller's
+		 * diagnostic.
+		 */
+		error = drv_gpu_spirv_refuse(parser,
+					     opcode,
+					     offset,
+					     "gather whose result is not a vec4");
+		return error;
+	}
+
+	/* The reference of a compare, then the coordinate and the layer. */
+	param_count = 0U;
+	if (opcode == OP_IMAGE_DREF_GATHER)
+		drv_gpu_spirv_texture_param(params, &param_count, scalars[0]);
+	for (index = 0U; index < position_count; index++)
+		drv_gpu_spirv_texture_param(params, &param_count, coordinate[index]);
+
+	/* Emits the message with the channel in bits 7:5 of its type. */
+	shape = drv_gpu_spirv_image_shape(type);
+	error = drv_gpu_spirv_emit_texture(parser,
+					   image,
+					   shape,
+					   params,
+					   param_count,
+					   message | (channel << DRV_GPU_IR_TEXTURE_CHANNEL_SHIFT),
+					   texel_offset,
+					   &first);
+	if (error != 0)
+		return error;
+
+	/* The result names the reply. */
+	record = drv_gpu_spirv_result(parser, word[2], word[1], 4U, 0);
+	if (record == NULL)
+		return EINVAL;
+	for (index = 0U; index < 4U; index++)
+		record->comp[index] = first + index;
+
+	/* Succeeded: the gather is lowered. */
 	return 0;
 }
 
@@ -11669,6 +11936,7 @@ drv_gpu_spirv_lower_fetch(
 	uint32_t level;
 	uint32_t texel_offset;
 	uint32_t shift;
+	uint32_t shape;
 	uint32_t first;
 	uint32_t index;
 	uint32_t sample;
@@ -11971,8 +12239,10 @@ drv_gpu_spirv_lower_fetch(
 		drv_gpu_spirv_texture_param(params, &param_count, sample);
 
 	/* Emits the message. */
+	shape = drv_gpu_spirv_image_shape(type);
 	error = drv_gpu_spirv_emit_texture(parser,
 					   image,
+					   shape,
 					   params,
 					   param_count,
 					   DRV_GPU_IR_TEXTURE_LD,
@@ -12019,6 +12289,7 @@ drv_gpu_spirv_lower_query(
 	uint32_t components;
 	uint32_t expected;
 	uint32_t level;
+	uint32_t shape;
 	uint32_t first;
 	uint32_t index;
 
@@ -12097,8 +12368,10 @@ drv_gpu_spirv_lower_query(
 	/* Emits the message. */
 	param_count = 0U;
 	drv_gpu_spirv_texture_param(params, &param_count, level);
+	shape = drv_gpu_spirv_image_shape(type);
 	error = drv_gpu_spirv_emit_texture(parser,
 					   image,
+					   shape,
 					   params,
 					   param_count,
 					   DRV_GPU_IR_TEXTURE_RESINFO,
@@ -13977,7 +14250,7 @@ drv_gpu_spirv_lower_return(
 	for (index = 0U; index < parser->depth; index++)
 		parser->constructs[index].leaky = 1;
 
-	/* From here on a workgroup barrier is refused (ws101-p006). */
+	/* From here on a workgroup barrier is refused. */
 	parser->returned = 1;
 
 	/* The block ends here. */
@@ -14441,7 +14714,7 @@ drv_gpu_spirv_kind_components(
 
 	/*
 	 * The scalar must be of the kind asked for: a float of 32 bits, an
-	 * integer of 32 or 16 bits (ws031-p039: a 16-bit one is carried in a
+	 * integer of 32 or 16 bits (a 16-bit one is carried in a
 	 * 32-bit value, its high half undefined; drv_gpu_spirv_extend16() makes
 	 * it whole where that matters, and a 16-bit integer never reaches
 	 * memory other than a local or a shared one,
@@ -14550,7 +14823,7 @@ drv_gpu_spirv_value_components(
 /*
  * Tells whether a type holds a 16-bit integer anywhere: a scalar, a
  * vector's, a matrix's, an array's, a pointer's pointee or a structure's
- * member (ws031-p039).  A type nested past MAX_TYPE_DEPTH is taken to.
+ * member.  A type nested past MAX_TYPE_DEPTH is taken to.
  */
 static int
 drv_gpu_spirv_type_has_int16(
@@ -14671,7 +14944,7 @@ drv_gpu_spirv_operand_int_width(
 }
 
 /*
- * Makes a 16-bit integer's value whole (ws031-p039): its low half sign
+ * Makes a 16-bit integer's value whole: its low half sign
  * extended (SHL 16, ASR 16) or zero extended (IAND 0xFFFF), where its high
  * half would change a result.  A 32-bit value is returned as it is.
  */
@@ -15651,8 +15924,8 @@ drv_gpu_spirv_result(
 	return record;
 }
 
-/* The compute part of the parser (ws101-p002). */
+/* The compute part of the parser. */
 #include "spirv-compute.inc"
 
-/* The geometry part of the parser (ws075-p007a). */
+/* The geometry part of the parser. */
 #include "spirv-geometry.inc"

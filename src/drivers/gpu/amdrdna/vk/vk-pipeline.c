@@ -618,7 +618,7 @@ pipeline_compile(
 	if (error != 0)
 		return error;
 	if (pipeline->fragment.compiled->primitive_id_attribute != AMDRDNA_GFX10_NO_ATTRIBUTE)
-		options.export_primitive_id = 1U;
+		options.pass_primitive_number = 1U;
 	error = pipeline_compile_stage(build->vertex_module, DRV_GPU_STAGE_VERTEX, &options, &pipeline->vertex);
 	if (error != 0)
 		return error;

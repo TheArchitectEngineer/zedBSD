@@ -45,6 +45,8 @@ static float half_value(uint32_t bits);
 static uint32_t storage_word(struct reference_run *run, uint32_t uniform, uint32_t offset);
 static void storage_store(struct reference_run *run, uint32_t uniform, uint32_t offset, uint32_t data);
 static uint32_t atomic_apply(uint32_t operation, uint32_t old, uint32_t data, uint32_t compare);
+static int texture_message(struct reference_run *run, const struct drv_gpu_shader_ir_inst *inst, uint32_t lane, struct texture_request *request);
+static int signed_nibble(uint32_t bits);
 
 /* Runs one compute workgroup of a parsed program. */
 const char *
@@ -430,6 +432,8 @@ execute(
 	case DRV_GPU_IR_STORE_STORAGE:
 		if (inst->component != 0U && c == 0U)
 			break;
+		if (run->graphics != NULL && run->graphics->helper[lane] != 0U)
+			break;
 		storage_store(run, inst->location, a, b);
 		break;
 	case DRV_GPU_IR_STORAGE_SIZE:
@@ -496,6 +500,10 @@ execute(
 		} else {
 			uint32_t old = storage_word(run, inst->location, a);
 
+			if (run->graphics != NULL && run->graphics->helper[lane] != 0U) {
+				*d = 0U;
+				break;
+			}
 			storage_store(run, inst->location, a, atomic_apply(inst->immediate, old, b, c));
 			*d = old;
 		}
@@ -550,9 +558,6 @@ execute(
 		{
 			struct texture_request request;
 			uint32_t out[4];
-			uint32_t offset_bits = (inst->component >> 4) & 0xffU;
-			uint32_t message;
-			uint32_t p[DRV_GPU_IR_TEXTURE_MAX_PARAMS];
 			uint32_t k;
 
 			if (run->graphics == NULL || run->graphics->sample == NULL) {
@@ -561,89 +566,60 @@ execute(
 			}
 			memset(&request, 0, sizeof(request));
 			if (inst->op == DRV_GPU_IR_TEXTURE) {
-				message = inst->component & 0x1fU;
-				offset_bits = (inst->component >> 12) & 0xffU;
-				for (k = 0U; k < inst->src[1] && k < DRV_GPU_IR_TEXTURE_MAX_PARAMS; k++)
-					p[k] = *value(run, inst->src[0] + k, lane);
-				switch (message) {
-				case DRV_GPU_IR_TEXTURE_SAMPLE:
-					request.u = p[0];
-					request.v = p[1];
-					break;
-				case DRV_GPU_IR_TEXTURE_SAMPLE_BIAS:
-				case DRV_GPU_IR_TEXTURE_SAMPLE_LOD:
-					request.has_lod = 1;
-					request.lod = p[0];
-					request.u = p[1];
-					request.v = p[2];
-					break;
-				case DRV_GPU_IR_TEXTURE_SAMPLE_COMPARE:
-					request.compare = 1;
-					request.reference = p[0];
-					request.u = p[1];
-					request.v = p[2];
-					break;
-				case DRV_GPU_IR_TEXTURE_SAMPLE_BIAS_COMPARE:
-				case DRV_GPU_IR_TEXTURE_SAMPLE_LOD_COMPARE:
-					request.compare = 1;
-					request.reference = p[0];
-					request.has_lod = 1;
-					request.lod = p[1];
-					request.u = p[2];
-					request.v = p[3];
-					break;
-				case DRV_GPU_IR_TEXTURE_SAMPLE_DERIVS:
-					request.has_gradients = 1;
-					request.u = p[0];
-					request.gradients[0] = p[1];
-					request.gradients[2] = p[2];
-					request.v = p[3];
-					request.gradients[1] = p[4];
-					request.gradients[3] = p[5];
-					break;
-				case DRV_GPU_IR_TEXTURE_SAMPLE_DERIV_COMPARE:
-					request.compare = 1;
-					request.reference = p[0];
-					request.has_gradients = 1;
-					request.u = p[1];
-					request.gradients[0] = p[2];
-					request.gradients[2] = p[3];
-					request.v = p[4];
-					request.gradients[1] = p[5];
-					request.gradients[3] = p[6];
-					break;
-				case DRV_GPU_IR_TEXTURE_LD:
-					request.fetch = 1;
-					request.u = p[0];
-					request.v = p[1];
-					offset_bits = 0U;
-					break;
-				case DRV_GPU_IR_TEXTURE_RESINFO:
-					request.size_query = 1;
-					request.level = p[0];
-					offset_bits = 0U;
-					break;
-				default:
+				if (texture_message(run, inst, lane, &request) != 0) {
 					*run->undefined = 1;
 					return;
 				}
 			} else {
+				uint32_t offset_bits = (inst->component >> 4) & 0xffU;
+
 				request.u = a;
 				request.v = b;
 				if (inst->op != DRV_GPU_IR_SAMPLE) {
 					request.has_lod = 1;
 					request.lod = *value(run, inst->src[2], lane);
 				}
+				request.offset_u = signed_nibble(offset_bits >> 4);
+				request.offset_v = signed_nibble(offset_bits);
 			}
-			request.offset_u = (int)((offset_bits >> 4) & 0xfU);
-			request.offset_v = (int)(offset_bits & 0xfU);
-			if (request.offset_u >= 8)
-				request.offset_u -= 16;
-			if (request.offset_v >= 8)
-				request.offset_v -= 16;
 			run->graphics->sample(run->graphics->sample_context, inst->location, inst->immediate, &request, out);
 			for (k = 0U; k < 4U; k++)
 				*value(run, inst->dst + k, lane) = out[k];
+		}
+		break;
+	case DRV_GPU_IR_DDX:
+	case DRV_GPU_IR_DDX_FINE:
+	case DRV_GPU_IR_DDY:
+	case DRV_GPU_IR_DDY_FINE:
+		{
+			uint32_t quad = lane & ~3U;
+			uint32_t from;
+			uint32_t to;
+			uint32_t k;
+
+			/* The quad's lanes: x is bit 0 of the lane, y bit 1; every lane of the quad must still run. */
+			if (run->graphics == NULL || quad + 3U >= run->lanes) {
+				*run->undefined = 1;
+				break;
+			}
+			for (k = 0U; k < 4U; k++) {
+				if (run->active[quad + k] == 0U)
+					*run->undefined = 1;
+			}
+			if (inst->op == DRV_GPU_IR_DDX) {
+				from = quad;
+				to = quad + 1U;
+			} else if (inst->op == DRV_GPU_IR_DDY) {
+				from = quad;
+				to = quad + 2U;
+			} else if (inst->op == DRV_GPU_IR_DDX_FINE) {
+				from = quad + (lane & 2U);
+				to = from + 1U;
+			} else {
+				from = quad + (lane & 1U);
+				to = from + 2U;
+			}
+			*d = as_bits(as_float(*value(run, inst->src[0], to)) - as_float(*value(run, inst->src[0], from)));
 		}
 		break;
 	case DRV_GPU_IR_KILL:
@@ -787,4 +763,169 @@ atomic_apply(
 	default:
 		return old;
 	}
+}
+
+/* A 4-bit two's complement number, -8 .. 7. */
+static int
+signed_nibble(
+	uint32_t bits)
+{
+	int number;
+
+	number = (int)(bits & 0xfU);
+	if (number >= 8)
+		number -= 16;
+	return number;
+}
+
+/*
+ * Reads a TEXTURE message's parameters into a request by its type and the
+ * image's shape (ir.h): a 3D image's r; an array's layer, the nearest
+ * integer to the one given (a fetch's is one); a cube's direction turned
+ * into the face it points at and the coordinates on it, by the table of
+ * the Vulkan specification ("Cube Map Face Selection"), computed with the
+ * arithmetic the hardware uses (sc * (1 / |2 ma|) + 1.5, less 1) so that
+ * the coordinates are bit for bit the GFX10 interpreter's.  Returns
+ * nonzero for a message the reference does not model.
+ */
+static int
+texture_message(
+	struct reference_run *run,
+	const struct drv_gpu_shader_ir_inst *inst,
+	uint32_t lane,
+	struct texture_request *request)
+{
+	uint32_t p[DRV_GPU_IR_TEXTURE_MAX_PARAMS];
+	uint32_t message;
+	uint32_t kind;
+	uint32_t count;
+	uint32_t next;
+	uint32_t k;
+	int arrayed;
+	float coordinate[3];
+	float x;
+	float y;
+	float z;
+	float sc;
+	float tc;
+	float ma;
+
+	message = inst->component & DRV_GPU_IR_TEXTURE_MESSAGE_MASK;
+	kind = inst->image_shape & DRV_GPU_IR_IMAGE_KIND_MASK;
+	arrayed = (inst->image_shape & DRV_GPU_IR_IMAGE_ARRAYED) != 0U;
+	if (kind == DRV_GPU_IR_IMAGE_BUFFER || (inst->image_shape & DRV_GPU_IR_IMAGE_MULTISAMPLED) != 0U)
+		return 1;
+	for (k = 0U; k < inst->src[1] && k < DRV_GPU_IR_TEXTURE_MAX_PARAMS; k++)
+		p[k] = *value(run, inst->src[0] + k, lane);
+	count = 2U;
+	if (kind == DRV_GPU_IR_IMAGE_3D || kind == DRV_GPU_IR_IMAGE_CUBE)
+		count = 3U;
+	request->offset_u = signed_nibble(inst->component >> 16);
+	request->offset_v = signed_nibble(inst->component >> 12);
+	request->offset_r = signed_nibble(inst->component >> 8);
+
+	/* The parameters before the coordinate. */
+	next = 0U;
+	switch (message) {
+	case DRV_GPU_IR_TEXTURE_SAMPLE:
+		break;
+	case DRV_GPU_IR_TEXTURE_SAMPLE_BIAS:
+	case DRV_GPU_IR_TEXTURE_SAMPLE_LOD:
+		request->has_lod = 1;
+		request->lod = p[next++];
+		break;
+	case DRV_GPU_IR_TEXTURE_SAMPLE_COMPARE:
+		request->compare = 1;
+		request->reference = p[next++];
+		break;
+	case DRV_GPU_IR_TEXTURE_SAMPLE_BIAS_COMPARE:
+	case DRV_GPU_IR_TEXTURE_SAMPLE_LOD_COMPARE:
+		request->compare = 1;
+		request->reference = p[next++];
+		request->has_lod = 1;
+		request->lod = p[next++];
+		break;
+	case DRV_GPU_IR_TEXTURE_SAMPLE_DERIVS:
+		request->has_gradients = 1;
+		break;
+	case DRV_GPU_IR_TEXTURE_SAMPLE_DERIV_COMPARE:
+		request->compare = 1;
+		request->reference = p[next++];
+		request->has_gradients = 1;
+		break;
+	case DRV_GPU_IR_TEXTURE_GATHER4:
+		request->gather = 1;
+		request->channel = DRV_GPU_IR_TEXTURE_CHANNEL(inst->component);
+		break;
+	case DRV_GPU_IR_TEXTURE_GATHER4_COMPARE:
+		request->gather = 1;
+		request->compare = 1;
+		request->reference = p[next++];
+		break;
+	case DRV_GPU_IR_TEXTURE_LD:
+		/* u, v, the level (only 0 is modelled), then r or the layer, integers. */
+		request->fetch = 1;
+		request->u = p[0];
+		request->v = p[1];
+		request->offset_u = 0;
+		request->offset_v = 0;
+		request->offset_r = 0;
+		if (kind == DRV_GPU_IR_IMAGE_3D)
+			request->r = p[3];
+		if (arrayed != 0)
+			request->layer = (int32_t)p[3];
+		return 0;
+	case DRV_GPU_IR_TEXTURE_RESINFO:
+		request->size_query = 1;
+		request->level = p[0];
+		return 0;
+	default:
+		return 1;
+	}
+
+	/* The coordinate, each component followed by its gradients when the message has them. */
+	for (k = 0U; k < count; k++) {
+		coordinate[k] = as_float(p[next]);
+		next++;
+		if (request->has_gradients != 0) {
+			request->gradients[k] = p[next];
+			request->gradients[count + k] = p[next + 1U];
+			next += 2U;
+		}
+	}
+	request->u = as_bits(coordinate[0]);
+	request->v = as_bits(coordinate[1]);
+	if (kind == DRV_GPU_IR_IMAGE_3D)
+		request->r = as_bits(coordinate[2]);
+
+	/* The layer of an array: the nearest integer, ties to even. */
+	if (arrayed != 0)
+		request->layer = (int32_t)rintf(as_float(p[next]));
+
+	/* A cube's face and the coordinates on it. */
+	if (kind == DRV_GPU_IR_IMAGE_CUBE) {
+		x = coordinate[0];
+		y = coordinate[1];
+		z = coordinate[2];
+		if (fabsf(z) >= fabsf(x) && fabsf(z) >= fabsf(y)) {
+			request->face = z < 0.0f ? 5 : 4;
+			sc = z < 0.0f ? -x : x;
+			tc = -y;
+			ma = z;
+		} else if (fabsf(y) >= fabsf(x)) {
+			request->face = y < 0.0f ? 3 : 2;
+			sc = x;
+			tc = y < 0.0f ? -z : z;
+			ma = y;
+		} else {
+			request->face = x < 0.0f ? 1 : 0;
+			sc = x < 0.0f ? z : -z;
+			tc = -y;
+			ma = x;
+		}
+		ma = 1.0f / fabsf(2.0f * ma);
+		request->u = as_bits(fmaf(sc, ma, 1.5f) - 1.0f);
+		request->v = as_bits(fmaf(tc, ma, 1.5f) - 1.0f);
+	}
+	return 0;
 }

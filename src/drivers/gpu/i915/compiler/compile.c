@@ -3222,6 +3222,7 @@ i915_compile_texture(
 	const struct drv_gpu_shader_ir_inst *inst)
 {
 	uint32_t sampler;
+	uint32_t message;
 	uint32_t param_count;
 	uint32_t texel_offset;
 	uint32_t payload;
@@ -3237,6 +3238,13 @@ i915_compile_texture(
 	/* Finds the sampled image the instruction names. */
 	found = i915_compile_sampler_index(state, inst, &sampler);
 	if (found == 0) {
+		state->unsupported = 1;
+		return;
+	}
+
+	/* Refuses a gather, whose channel this compiler does not select. */
+	message = inst->component & DRV_GPU_IR_TEXTURE_MESSAGE_MASK;
+	if (message == DRV_GPU_IR_TEXTURE_GATHER4 || message == DRV_GPU_IR_TEXTURE_GATHER4_COMPARE) {
 		state->unsupported = 1;
 		return;
 	}

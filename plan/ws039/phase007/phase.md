@@ -2,7 +2,7 @@
 
 # ws039-p007: shader の compiler（SPIR-V → GFX10、RDNA1、Navi10 = gfx1010）
 
-Status: in-progress（2026-10-15 P5 着手・一時停止の後、同日夕に q1203 / q1203-i01 で P5 が再開。2026-10-16 q1214 / q1214-i01 で P5 が段 D の続き・TEXTURE の残り・特殊な入出力。実機前）
+Status: in-progress（2026-10-16 q1233 / q1233-i01、P5: 段 H・I を host で済ませた。vkcompile の実機の 1 回目は 11 ok・2 FAIL（試験の期待値の誤り、7.14）・1 refused、期待値を直した再試験の待ち。以前 q1203・q1214）
 Disposition: normal
 Parent: [WS039](../ws.md)
 Queue: Q1 の割当（2026-10-15、P5: 「WS039 の shader の compiler（ws039-p007）」。ユーザーの決定 2026-10-15「担当を 2 人（driver と compiler）で並行してよいです。」）
@@ -114,7 +114,9 @@ compiler が program ごとに配置を決め、結果の記述に byte の offs
 | E | 頂点・fragment（頂点の fetch、補間、export、sample、KILL、UBO） | 済（2026-10-15、host。TEXTURE は SAMPLE・BIAS・LOD・LD の 4 種） |
 | F | desktop の全 shader の差分の試験（5 節の 4） | 済（2026-10-15、host、44 module × 200 回） |
 | D | 速さ（待ちを register ごとの counter に、uniform の値を SGPR のまま使う） | 済（2026-10-16、host。7.9） |
-| G | TEXTURE の残りの message（2D）、POINT_COORD・PRIMITIVE_ID・SECOND_COLOR、whole quad の storage 書き込み | 済（2026-10-16、host。7.9。3D・cube・array は IR に次元が無く拒む） |
+| G | TEXTURE の残りの message（2D）、POINT_COORD・PRIMITIVE_ID・SECOND_COLOR、whole quad の storage 書き込み | 済（2026-10-16、host。7.9） |
+| H | DDX・DDY（coarse・fine）、gather（channel・compare・offset）、3D・2D array・cube・cube array の sample・fetch・size（共有の IR に image の形） | 済（2026-10-16、host。7.12。cube の勾配・offset、texel buffer・MS は拒む） |
+| I | 規約の全文と出典の表記の見直し、実機の app（vkcompile）と P3 への依頼 | 7.12・7.13 |
 
 ## 7. 記録
 
@@ -250,4 +252,36 @@ compiler が program ごとに配置を決め、結果の記述に byte の offs
 - `gfx10-program.c`: register の数の語（RSRC1）に MEM_ORDERED（VS bit 27、PS bit 25、CS bit 30）を立てる。段 D の「vector memory の load・sample は順に終わる」待ち（counter の数で待つ）は GFX10 でこの bit が立っている時の動き（RADV は GFX10・GFX11 で常に立てる、`radv_mem_ordered`）。立てないと sample と load の counter が順に減らず、数の待ちが早すぎる。commit `3f0bda33c`。
 - 試験: compute・graphics の register の検査に 3 つの bit を足した。`amdrdna-compiler-host-test.sh` PASS（28 行の PASS、known words 92/92）。
 - `gfx10-texture.c`（試験の texture の道具）: sampler の unnormalized（bit 15）と記述子の channel の select（DST_SEL）を足した（p008 の executor の試験が使う。既存の試験は identity の select で結果は変わらない）。
+
+### 7.12 段 H・I（2026-10-16 q1233 / q1233-i01、P5、実機前）
+
+承認: 2026-10-16 ユーザー「p007はサブエージェントを追加して完了させましょう。」（Q1 経由）。共有の IR への image の形の追加は Q1 の許可（i915・V3D・nvrtx の振る舞いを変えない条件）、gather の front と i915 の guard も Q1 の許可（2026-10-16）。
+
+変更:
+- 共有の IR（`src/drivers/gpu/compiler/ir.h`）: TEXTURE の `image_shape`（`DRV_GPU_IR_IMAGE_2D`=0 が既定、3D・CUBE・BUFFER、ARRAYED・MULTISAMPLED の bit）、message `GATHER4`=8・`GATHER4_COMPARE`=16、gather の channel は `component` の bit 7:5。front（`spirv.c`）: TEXTURE を出す 3 か所で image の型から `image_shape`、OpImageGather・OpImageDrefGather（2D・cube と array、ConstOffset まで）。i915（`i915/compiler/compile.c`）: gather の message を `unsupported` で拒む（今と同じく拒む）。ir.h・spirv.c の開発管理番号（wsNNN-pNNN）を消した（Guardrail「source の中の開発の管理情報」）。i915 compile.c の 22 個は手を付けていない（WS251 か i915 の作業の時に）。
+- compiler: DDX・DDY（coarse・fine、DPP の quad_perm の 2 命令、`aco_instruction_selection.cpp` を Procedure referenced）、3D・2D array・cube・cube array の sample・fetch・size（cube は v_cubema/sc/tc/id ＋ 1/|ma| ＋ 1.5、array の layer は v_rndne、cube array は face ＋ layer × 8）、3D の勾配と offset、gather（`image_gather4_lz`・`_c_lz`・`_o`）。拒む物: cube の勾配・offset、texel buffer、multisample の fetch。encode に DPP と MIMG の dim、`vector_source_count` に cube の 3 source。
+- 規約: conformance-reviewer（P5 の下の subagent）が compiler の 4 file を全文の規則で直した（style-check 137 → 0、条件演算子 12 → 0、`return refuse()` の分解 50、生成 code の byte 一致を確かめた）。出典: `audit-compiler.sh`（新規）で Mesa の識別子と一致した 2 つを改名（`export_primitive_id` → `pass_primitive_number`、`vk/vk-pipeline.c` の 1 行も、`level_zero` → `level_is_zero`）、出典の無い 16 進の define を直した。監査の表 [amdrdna-compiler-license-audit.md](../amdrdna-compiler-license-audit.md) に 3 file を足した。
+- 試験: interpreter に DPP（quad_perm・zero の bound）・cube の 4 命令・MIMG の dim と型の照合・gather・3D/array/cube の address、3 source の命令の constant bus の数え方を直した。texture の道具に 3D（trilinear）・array・cube（face は clamp）・gather・範囲外の fetch は 0。参照に DDX（quad、helper の lane も走らせる）・形ごとの message・cube の face の選び（Vulkan の表）・gather。shader: `derivative.frag`・`shapes.frag`・`gather.frag`・`shapes.vert`、host 試験に vkcompile の 13 program（-O）を加えた。
+
+結果（2026-10-16）:
+- `amdrdna-compiler-host-test.sh` PASS: known words 105/105（DPP 2、cube 4、rcp |v|、fma の literal、3D・cube・2D array・gather 4 を追加）、compute 12、graphics 15 module ＋ vkcompile 13 program、45 program の disassemble に誤り無し。
+- `amdrdna-compiler-desktop-test.sh` PASS（44 module、62 program × 200）。62 program と旧の host の 27 program の code は HEAD（984cfeda0）と byte 一致。
+- わざとの誤りで FAIL: DDX の lane の形 2 種、cube の 1.5・sc/tc の取り違え、layer の丸めの省略、gather の channel、3D の offset の r、cube array の layer の加算。勾配の x と y の入れ替えは texture の道具（LOD だけに使う）では見えない。
+- 他の backend: SPIR-V 210 module（desktop・tree の全 GLSL・.spv）の IR が HEAD と一致（`image_shape` 以外の全欄、最適化の後も）。i915 の Gen12・Gen9 の code の hash が 210 module で一致、gather は i915 の guard で ENOTSUP（guard を外すと compile してしまう）。nvrtx `nvrtx-sm75-host-test.sh` 287 checks 0 fail、`nvrtx-sm75-desktop-test.sh --strict` 138 compiled 0 disagree。bcm2711 `plan/ws141/tests/shader-host-test.sh` PASS（P3 の worktree の Mesa を読み取りで）。
+- `make -j16 ZEDBSD_CONFIG=config/ci/config-amd64.mk vmunix` exit 0、warning 0。`audit-compiler.sh` PASS、driver の `audit-symbols.sh`（P3 の Linux の tree）PASS、`style-check.py` total 0。
+- vkcompile（`plan/ws039/tests/vkcompile.c`・`vkcompile/`・`vkcompile-build.sh`）: host の lavapipe で 14 case 中 13 ok（derivative の coarse の dFdy だけ違う。Vulkan は coarse を fine で計算してよく、llvmpipe はそうしている。期待値は AMD の quad の左上の形）、vkcompile の 13 program は interpreter と参照で 64 回ずつ一致。
+
+commit: 1d071e2fc（機能）、01599cb10（規約・監査・vkcompile）。
+
+### 7.13 実機で確かめる事と再開点（2026-10-16）
+
+1. 実機（RX 5600 XT、P3 に依頼）: `vkcompile` の 14 case（DPP の derivative、gather 2 種、primitive 番号、point sprite、除算 5 種（`v_rcp_iflag_f32` の精度）、discard（wave 全体の早い終わり）、size、texel fetch の鎖（待ち）、dual-source）。executor が 2D の image しか作らないので、3D・array・cube の sample・cube の face の規約（[1,2]・face ＋ 8 × layer、負の layer）・sample_c の dmask 1・resinfo の z は executor が対応した時に。
+2. 7.9 の未実施の項目（exec 0 の VMEM の counter、MEM_ORDERED の下の順）は vkcompile の chain と全 case の結果で一部を見る。
+3. 残り: cube の勾配・offset、texel buffer・MS の fetch（executor の対応と一緒に）、i915 compile.c の開発管理番号。
+
+### 7.14 実機の vkcompile の 1 回目（2026-10-16 20:15、P3 が 10.0.10.3 で、P3 の f362d7cab ＋ P5 の 0c6f25258、A9）
+
+- 14 case: ok 11（derivative・gather・gather-offset・primitive・point・divide-0/1/2・discard・size・chain）、FAIL 2（divide-signed-0 wrong=1846、divide-signed-1 wrong=1824）、refused 1（dual-source: executor に dualSrcBlend が無い）。全文は P3 の worktree の `build/tmp/bug331/p5-vkcompile.txt`。
+- FAIL の解析（host）: 違ったのは剰余の 2 byte だけで商は全部合う。示された 8 画素の剰余は、全部 SPIR-V の OpSMod（0 でない結果は除数の符号: 切り捨ての剰余に、符号が違えば除数を足す）の値と一致した。GLSL の `%` は glslang が OpSMod にする（`vkcompile/divide_signed.frag` の SPIR-V で確かめた）。front はそれを IREM ＋ 補正に展開し、compiler と実機はその定義どおり。誤りは vkcompile の期待値（C の `%` = 切り捨ての剰余）だった。llvmpipe は GLSL で未定義の負の `%` を切り捨ての剰余にするので、前の期待値で ok になっていた。期待値を OpSMod に直すと llvmpipe が実機と同じ数（1846・1824）で FAIL になり、実機の値が OpSMod であることの裏付けになった。compiler・interpreter の変更は無し（interpreter と参照は IR の定義で前から一致）。
+- 直し: `vkcompile.c` の `vc_expect_divide_signed` を OpSMod に、`vkcompile/divide_signed.frag` の comment。再試験の依頼を Q1 に送った。
 

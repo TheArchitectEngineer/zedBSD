@@ -51,8 +51,20 @@ cc $flags -o "$out/gfx10-graphics-test" "$tests/gfx10-graphics-test.c" "$tests/g
 # shellcheck disable=SC2086
 "$out/gfx10-graphics-test" "$out" $graphics || status=1
 
+# 3b. The programs of the GPU check vkcompile (plan/ws039/tests/vkcompile/), compiled as its build does (-O inlines
+#     the functions), on the same interpreter and reference.
+mkdir -p "$out/vkcompile"
+graphics=""
+for source in "$tests"/vkcompile/*.vert "$tests"/vkcompile/*.frag; do
+	name=$(basename "$source")
+	glslc --target-env=vulkan1.0 -O -o "$out/vkcompile/$name.spv" "$source"
+	graphics="$graphics $out/vkcompile/$name.spv"
+done
+# shellcheck disable=SC2086
+"$out/gfx10-graphics-test" "$out/vkcompile" $graphics || status=1
+
 # 4. Every word of every program is an instruction llvm-mc knows.
-for hex in "$out"/*.hex; do
+for hex in "$out"/*.hex "$out"/vkcompile/*.hex; do
 	if llvm-mc-19 -arch=amdgcn -mcpu=gfx1010 -disassemble "$hex" > "$hex.s" 2> "$hex.err" && [ ! -s "$hex.err" ]; then
 		:
 	else
@@ -61,7 +73,7 @@ for hex in "$out"/*.hex; do
 		status=1
 	fi
 done
-echo "disassembled: $(ls "$out"/*.hex | wc -l) programs"
+echo "disassembled: $(ls "$out"/*.hex "$out"/vkcompile/*.hex | wc -l) programs"
 
 if [ "$status" -ne 0 ]; then
 	echo "FAIL amdrdna-compiler-host-test ($out)"

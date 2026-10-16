@@ -143,6 +143,7 @@
 #define GFX10_IMAGE_UNNORMALIZED	12U
 #define GFX10_IMAGE_MASK		8U
 #define GFX10_IMAGE_DIMENSION		3U
+#define GFX10_IMAGE_DIMENSION_MASK	7U
 #define GFX10_IMAGE_SAMPLER		21U
 #define GFX10_IMAGE_DESCRIPTOR		16U
 #define GFX10_IMAGE_DATA		8U
@@ -161,8 +162,16 @@
 #define GFX10_EXPORT_COMPRESSED		10U
 #define GFX10_EXPORT_TARGET		4U
 
-/* The bits of an 8-bit register field, the low bits of an operand code. */
+/*
+ * The bits of an 8-bit register field, the low bits of an operand code;
+ * and of a 9-bit source field, the whole code.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_assembler.cpp
+ * (reg(): a register in 8 bits where a field holds VGPRs only; the 9-bit
+ * sources of emit_vop3_instruction).
+ */
 #define GFX10_FIELD8_MASK		0xffU
+#define GFX10_SOURCE9_MASK		0x1ffU
 
 static unsigned encode_scalar(const struct amdrdna_gfx10_inst *inst, uint32_t *words);
 static unsigned encode_scalar_load(const struct amdrdna_gfx10_inst *inst, uint32_t *words);
@@ -264,6 +273,10 @@ amdrdna_gfx10_is_wide(
 	    inst->kind != AMDRDNA_GFX10_KIND_VECTOR_COMPARE)
 		return 0;
 
+	/* A read of another lane of the group of four has only the short forms. */
+	if (inst->quad_read != 0U)
+		return 0;
+
 	/* The lowering asked for the wide form, or a modifier needs it. */
 	if (inst->wide != 0U)
 		return 1;
@@ -311,6 +324,7 @@ amdrdna_gfx10_describe(
 	unsigned result_count;
 	unsigned data_count;
 	unsigned index;
+	unsigned channels;
 	int returns;
 
 	/* Starts with no register used. */
@@ -341,6 +355,7 @@ amdrdna_gfx10_describe(
 			add_read(access, AMDRDNA_GFX10_EXEC_LO, 1U);
 			add_write(access, AMDRDNA_GFX10_EXEC_LO, 1U);
 		}
+
 		break;
 	case AMDRDNA_GFX10_KIND_CONTROL:
 	case AMDRDNA_GFX10_KIND_LABEL:
@@ -354,6 +369,7 @@ amdrdna_gfx10_describe(
 			   inst->opcode == AMDRDNA_GFX10_S_CBRANCH_EXECNZ) {
 			add_read(access, AMDRDNA_GFX10_EXEC_LO, 1U);
 		}
+
 		break;
 	case AMDRDNA_GFX10_KIND_SCALAR_LOAD:
 		/* A buffer load reads the four SGPRs of its descriptor, a load the pair of its address. */
@@ -363,6 +379,8 @@ amdrdna_gfx10_describe(
 		} else {
 			add_read(access, inst->src[0], 2U);
 		}
+
+		/* The loaded dwords are written to the destination registers. */
 		add_write(access, inst->dst, inst->count);
 		access->counter = AMDRDNA_GFX10_COUNTER_SCALAR;
 		break;
@@ -377,6 +395,7 @@ amdrdna_gfx10_describe(
 		for (index = 0U; index < source_count; index++)
 			add_read(access, inst->src[index], 1U);
 
+		/* The result goes to the destination register. */
 		add_write(access, inst->dst, 1U);
 		break;
 	case AMDRDNA_GFX10_KIND_INTERPOLATE:
@@ -391,6 +410,7 @@ amdrdna_gfx10_describe(
 		if (inst->opcode == AMDRDNA_GFX10_V_INTERP_P2_F32)
 			add_read(access, inst->dst, 1U);
 
+		/* The result goes to the destination register. */
 		add_write(access, inst->dst, 1U);
 		break;
 	case AMDRDNA_GFX10_KIND_SHARED:
@@ -404,6 +424,7 @@ amdrdna_gfx10_describe(
 		if (returns != 0)
 			add_write(access, inst->dst, 1U);
 
+		/* A shared-memory access is counted on the scalar counter. */
 		access->counter = AMDRDNA_GFX10_COUNTER_SCALAR;
 		break;
 	case AMDRDNA_GFX10_KIND_BUFFER:
@@ -412,6 +433,7 @@ amdrdna_gfx10_describe(
 		    inst->opcode == AMDRDNA_GFX10_BUFFER_GL1_INV)
 			break;
 
+		/* Reads the lane mask, the address registers and the descriptor. */
 		add_read(access, AMDRDNA_GFX10_EXEC_LO, 1U);
 		add_read(access, inst->src[0], 1U);
 		add_read(access, inst->src[1], 4U);
@@ -427,6 +449,7 @@ amdrdna_gfx10_describe(
 		} else {
 			access->counter = AMDRDNA_GFX10_COUNTER_VECTOR_STORE;
 		}
+
 		break;
 	case AMDRDNA_GFX10_KIND_IMAGE:
 		add_read(access, AMDRDNA_GFX10_EXEC_LO, 1U);
@@ -437,7 +460,18 @@ amdrdna_gfx10_describe(
 		if (inst->src[2] != AMDRDNA_GFX10_NULL)
 			add_read(access, inst->src[2], 4U);
 
-		add_write(access, inst->dst, mask_channels(inst->mask));
+		/* A gather writes four channels whatever its mask; any other access the channels it selects. */
+		if (inst->opcode == AMDRDNA_GFX10_IMAGE_GATHER4_LZ ||
+		    inst->opcode == AMDRDNA_GFX10_IMAGE_GATHER4_C_LZ ||
+		    inst->opcode == AMDRDNA_GFX10_IMAGE_GATHER4_LZ_O ||
+		    inst->opcode == AMDRDNA_GFX10_IMAGE_GATHER4_C_LZ_O) {
+			add_write(access, inst->dst, 4U);
+		} else {
+			channels = mask_channels(inst->mask);
+			add_write(access, inst->dst, channels);
+		}
+
+		/* An image access is counted with the vector loads. */
 		access->counter = AMDRDNA_GFX10_COUNTER_VECTOR_LOAD;
 		break;
 	case AMDRDNA_GFX10_KIND_EXPORT:
@@ -454,6 +488,7 @@ amdrdna_gfx10_describe(
 				add_read(access, inst->src[index], 1U);
 		}
 
+		/* An export is counted on the export counter. */
 		access->counter = AMDRDNA_GFX10_COUNTER_EXPORT;
 		break;
 	default:
@@ -461,7 +496,9 @@ amdrdna_gfx10_describe(
 	}
 }
 
-/* Reports whether an operand code names a VGPR. */
+/*
+ * Reports whether an operand code names a VGPR.
+ */
 int
 amdrdna_gfx10_is_vgpr(
 	unsigned code)
@@ -476,7 +513,9 @@ amdrdna_gfx10_is_vgpr(
 	return 1;
 }
 
-/* Reports whether an operand code names a register (an SGPR, a special scalar register or a VGPR). */
+/*
+ * Reports whether an operand code names a register (an SGPR, a special scalar register or a VGPR).
+ */
 int
 amdrdna_gfx10_is_register(
 	unsigned code)
@@ -658,6 +697,30 @@ encode_vector(
 		break;
 	}
 
+	/*
+	 * A read of another lane of the group of four names the pattern word
+	 * as its first source; that word follows with the VGPR, the pattern,
+	 * zero from a lane that does not run, and every row and bank on.
+	 */
+	if (inst->quad_read != 0U) {
+		if (inst->kind == AMDRDNA_GFX10_KIND_VECTOR_COMPARE)
+			return 0U;
+		vgpr = amdrdna_gfx10_is_vgpr(inst->src[0]);
+		if (vgpr == 0)
+			return 0U;
+		vgpr = amdrdna_gfx10_is_vgpr(inst->src[1]);
+		if (inst->kind == AMDRDNA_GFX10_KIND_VECTOR_TWO && vgpr == 0)
+			return 0U;
+		word &= ~(uint32_t)GFX10_SOURCE9_MASK;
+		word |= AMDRDNA_GFX10_QUAD_SOURCE;
+		words[0] = word;
+		words[1] = (uint32_t)inst->src[0] & GFX10_FIELD8_MASK;
+		words[1] |= (uint32_t)inst->quad_pattern << AMDRDNA_GFX10_QUAD_PATTERN_SHIFT;
+		words[1] |= AMDRDNA_GFX10_QUAD_ZERO_IF_IDLE;
+		words[1] |= AMDRDNA_GFX10_QUAD_ENABLES;
+		return 2U;
+	}
+
 	/* Appends the literal the first source may name. */
 	words[0] = word;
 	count = append_literal(inst, source_count, words, 1U);
@@ -773,6 +836,7 @@ encode_shared(
 		if (vgpr == 0)
 			return 0U;
 
+		/* Places the data source in its field of the second word. */
 		word |= ((uint32_t)inst->src[1U + index] & GFX10_FIELD8_MASK) << (GFX10_SHARED_DATA0 + 8U * index);
 	}
 
@@ -782,8 +846,11 @@ encode_shared(
 		if (vgpr == 0)
 			return 0U;
 
+		/* Places the destination in its field of the second word. */
 		word |= ((uint32_t)inst->dst & GFX10_FIELD8_MASK) << GFX10_SHARED_DST;
 	}
+
+	/* Stores the second word. */
 	words[1] = word;
 
 	/* Two words. */
@@ -889,7 +956,7 @@ encode_image(
 			return 0U;
 	}
 
-	/* The first word: the form, the opcode, the bits, the channel mask and the 2D dimension. */
+	/* The first word: the form, the opcode, the bits, the channel mask and the dimension. */
 	word = AMDRDNA_GFX10_FORM_IMAGE;
 	word |= ((uint32_t)inst->opcode & GFX10_IMAGE_OPCODE_MASK) << GFX10_IMAGE_OPCODE;
 	if ((inst->flags & AMDRDNA_GFX10_FLAG_GLOBALLY_COHERENT) != 0U)
@@ -897,7 +964,7 @@ encode_image(
 	if ((inst->flags & AMDRDNA_GFX10_FLAG_UNNORMALIZED) != 0U)
 		word |= 1U << GFX10_IMAGE_UNNORMALIZED;
 	word |= ((uint32_t)inst->mask & 0xfU) << GFX10_IMAGE_MASK;
-	word |= (uint32_t)AMDRDNA_GFX10_IMAGE_DIM_2D << GFX10_IMAGE_DIMENSION;
+	word |= ((uint32_t)inst->dimension & GFX10_IMAGE_DIMENSION_MASK) << GFX10_IMAGE_DIMENSION;
 	words[0] = word;
 
 	/* The second word: the sampler (none for a load), the descriptor, the data and the address. */
@@ -949,8 +1016,11 @@ encode_export(
 		if (vgpr == 0)
 			return 0U;
 
+		/* Places the channel's source in its field of the second word. */
 		word |= ((uint32_t)inst->src[index] & GFX10_FIELD8_MASK) << (8U * index);
 	}
+
+	/* Stores the second word. */
 	words[1] = word;
 
 	/* Two words. */
@@ -996,10 +1066,12 @@ vector_source_count(
 	case AMDRDNA_GFX10_KIND_VECTOR_COMPARE:
 		return 2U;
 	default:
-		/* The multiply-adds take three sources, the others two. */
+		/* The multiply-adds and the cube operations take three sources, the others two. */
 		if (inst->opcode == AMDRDNA_GFX10_V_FMA_F32)
 			return 3U;
 		if (inst->opcode == AMDRDNA_GFX10_V_MAD_U32_U24)
+			return 3U;
+		if (inst->opcode >= AMDRDNA_GFX10_V_CUBEID_F32 && inst->opcode <= AMDRDNA_GFX10_V_CUBEMA_F32)
 			return 3U;
 		return 2U;
 	}
@@ -1089,6 +1161,7 @@ buffer_shape(
 		if (inst->opcode == AMDRDNA_GFX10_BUFFER_ATOMIC_CMPSWAP)
 			*data_count = 2U;
 
+		/* Counts the values the atomic returns. */
 		*result_count = 0U;
 		if ((inst->flags & AMDRDNA_GFX10_FLAG_GLOBALLY_COHERENT) != 0U)
 			*result_count = 1U;
