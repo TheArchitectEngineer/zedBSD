@@ -9,8 +9,8 @@
  * The words of the GPU's thermal block and the tables of its power side:
  * the temperature the block reads, the fan controller's duty and mode, the
  * fan's speed from its tachometer, the thresholds of the thermal alerts,
- * the board's power table the system-management unit's firmware is handed,
- * and the readings it hands back.
+ * the board's power table and the averaging settings the system-management
+ * unit's firmware is handed, and the readings it hands back.
  *
  * Nothing here touches the hardware: every function turns words or tables
  * read from the GPU, the video BIOS or a firmware file into numbers, or
@@ -219,6 +219,17 @@
 #define FORMAT_READING_DISPLAY_CLOCK_AT		12U
 #define FORMAT_READING_GFX_AVERAGE_AT		18U
 #define FORMAT_READING_GFX_ACTIVITY_AT		24U
+
+/*
+ * The averaging settings: six 16-bit time constants from the start of the
+ * table, one per average; the rest of the table is the firmware's own and
+ * is handed over as zero.
+ *
+ * Value referenced: Linux v6.19
+ * drivers/gpu/drm/amd/pm/swsmu/inc/pmfw_if/smu11_driver_if_navi10.h
+ * (DriverSmuConfig_t: GfxclkAverageLpfTau through SocketPowerLpfTau).
+ */
+#define FORMAT_SETTINGS_AVERAGES		6U
 
 /*
  * Reads the temperature word: the reading the trip compares (the one the
@@ -633,4 +644,31 @@ amdrdna_power_features_on(
 
 	/* Succeeded: all three run. */
 	return true;
+}
+
+/*
+ * Puts together the table of the firmware's averaging settings
+ * (AMDRDNA_SMU_SETTINGS_BYTES bytes): every average gets the same time
+ * constant, AMDRDNA_SMU_AVERAGE_MS.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/pm/swsmu/smu11/navi10_ppt.c
+ * (navi10_set_config_table).
+ */
+void
+amdrdna_power_settings_build(
+	uint8_t *table)
+{
+	unsigned at;
+	unsigned average;
+
+	/* The firmware's own part goes over as zero. */
+	for (at = 0U; at < AMDRDNA_SMU_SETTINGS_BYTES; at++)
+		table[at] = 0U;
+
+	/* Each average's time constant, the low byte first. */
+	for (average = 0U; average < FORMAT_SETTINGS_AVERAGES; average++) {
+		table[average * 2U] = (uint8_t)(AMDRDNA_SMU_AVERAGE_MS & 0xffU);
+		table[average * 2U + 1U] = (uint8_t)(AMDRDNA_SMU_AVERAGE_MS >> 8);
+	}
 }

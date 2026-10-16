@@ -56,7 +56,7 @@
 #define HOTPLUG_LOOK_FRAMES		30U
 #define HOTPLUG_FRAME_WAIT_US		50000U
 
-static int hotplug_run(struct amdrdna_device *device, unsigned forced);
+static int hotplug_run(struct amdrdna_device *device, unsigned asked_level);
 static int hotplug_gone(struct amdrdna_device *device);
 static int hotplug_there(struct amdrdna_device *device);
 static uint32_t hotplug_frames(struct amdrdna_device *device, unsigned frames);
@@ -176,7 +176,7 @@ amdrdna_hotplug_request(
 int
 amdrdna_hotplug_ask(
 	struct amdrdna_device *device,
-	unsigned forced)
+	unsigned asked_level)
 {
 	const struct amdrdna_sink *sink;
 	unsigned long irq;
@@ -185,7 +185,7 @@ amdrdna_hotplug_ask(
 	int error;
 
 	/* A level the request names, on an output stage A10 read. */
-	if (forced != HOTPLUG_GONE && forced != HOTPLUG_THERE)
+	if (asked_level != HOTPLUG_GONE && asked_level != HOTPLUG_THERE)
 		return EINVAL;
 	sink = amdrdna_sink_ready(device);
 	if (sink == NULL)
@@ -203,7 +203,7 @@ amdrdna_hotplug_ask(
 	} else {
 		start = device->hotplug_work.finished;
 		device->hotplug_work.requested = true;
-		device->hotplug_work.forced = forced;
+		device->hotplug_work.asked_level = asked_level;
 		waitq_wake_all(&device->state_waitq);
 		while (device->hotplug_work.finished == start && !device->stopping) {
 			sequence = waitq_sequence(&device->state_waitq);
@@ -236,18 +236,18 @@ amdrdna_hotplug_serve(
 	struct amdrdna_device *device,
 	unsigned long irq)
 {
-	unsigned forced;
+	unsigned asked_level;
 	int error;
 
 	/* Takes the request and its level. */
-	forced = device->hotplug_work.forced;
+	asked_level = device->hotplug_work.asked_level;
 	device->hotplug_work.requested = false;
-	device->hotplug_work.forced = HOTPLUG_LINE;
+	device->hotplug_work.asked_level = HOTPLUG_LINE;
 
 	spin_unlock_irqrestore(&device->state_lock, irq);
 
 	/* Acts without the lock: it sleeps and runs the video BIOS. */
-	error = hotplug_run(device, forced);
+	error = hotplug_run(device, asked_level);
 
 	/* Publishes the result and wakes a waiting caller. */
 	irq = spin_lock_irqsave(&device->state_lock);
@@ -268,20 +268,20 @@ amdrdna_hotplug_serve(
 static int
 hotplug_run(
 	struct amdrdna_device *device,
-	unsigned forced)
+	unsigned asked_level)
 {
 	struct amdrdna_node *node;
-	bool there;
+	bool monitor_in;
 	int error;
 
 	/* The line settles, then its level; a request names its own. */
-	if (forced == HOTPLUG_LINE) {
+	if (asked_level == HOTPLUG_LINE) {
 		kern_usleep_range(HOTPLUG_SETTLE_US, HOTPLUG_SETTLE_US + HOTPLUG_STEP_US);
-		there = amdrdna_display_sense(device);
+		monitor_in = amdrdna_display_sense(device);
 	} else {
-		there = false;
-		if (forced == HOTPLUG_THERE)
-			there = true;
+		monitor_in = false;
+		if (asked_level == HOTPLUG_THERE)
+			monitor_in = true;
 	}
 
 	/* The node's locks when the GPU device has a display: no presentation runs meanwhile. */
@@ -298,7 +298,7 @@ hotplug_run(
 	if (node == NULL || node->stopped == 0) {
 		mutex_lock(&device->display.mode_lock);
 
-		if (there) {
+		if (monitor_in) {
 			error = hotplug_there(device);
 		} else {
 			error = hotplug_gone(device);
@@ -364,7 +364,7 @@ hotplug_there(
 	struct amdrdna_sink *next;
 	struct amdrdna_timing now;
 	struct amdrdna_timing preferred;
-	bool keep;
+	bool same_mode;
 	bool found;
 	int compared;
 	int read;
@@ -380,13 +380,13 @@ hotplug_there(
 	read = amdrdna_sink_read(device, next);
 
 	/* Keeps the mode shown for the same monitor, one that shows it, or one that did not answer. */
-	keep = true;
+	same_mode = true;
 	if (read == 0) {
 		compared = -1;
 		if (next->edid_length == device->sink.edid_length)
 			compared = kern_memcmp(next->edid_bytes, device->sink.edid_bytes, next->edid_length);
 		if (compared != 0)
-			keep = amdrdna_sink_carries(next, &now);
+			same_mode = amdrdna_sink_carries(next, &now);
 
 		/* The new record replaces the published one (the readers hold the node's display lock). */
 		next->ready = true;
@@ -394,7 +394,7 @@ hotplug_there(
 	}
 
 	/* The same mode: nothing to do on an output that is lit, else the stream and the transmitter on. */
-	if (keep) {
+	if (same_mode) {
 		if (!device->display.output_dark) {
 			amdrdna_mark("A13 plug: the output is lit in %ux%u (edid=%d)", now.width, now.height, read);
 			return 0;

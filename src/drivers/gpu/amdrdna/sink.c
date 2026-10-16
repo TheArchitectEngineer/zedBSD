@@ -284,7 +284,7 @@
 #define SINK_SAME_REFRESH_MILLIHZ	500U
 
 /* No limit on the pixel clock (in kHz); the bytes of a pixel of the surface. */
-#define SINK_NO_LIMIT_KHZ		0xffffffffU
+#define SINK_NO_LIMIT_KHZ		4294967295U
 #define SINK_PIXEL_BYTES		4U
 
 /* The names of the transmitters for the log. */
@@ -998,15 +998,15 @@ sink_carried(
 	const struct amdrdna_timing *mode;
 	uint32_t pitch;
 	unsigned at;
-	int clocks;
+	int clock_error;
 	int error;
 
 	/* The clocks once, and the surface's pitch in pixels (the firmware's). */
 	display = &device->display;
 	input = (struct amdrdna_mode_plan_input){ 0 };
-	clocks = amdrdna_mode_clocks(device, &input);
-	if (clocks != 0)
-		amdrdna_mark("A10 note: the board's clocks were not read (%d); the signal's limit alone decides", clocks);
+	clock_error = amdrdna_mode_clocks(device, &input);
+	if (clock_error != 0)
+		amdrdna_mark("A10 note: the board's clocks were not read (%d); the signal's limit alone decides", clock_error);
 	pitch = device->gop.pitch_word + 1U;
 
 	/* Each listed mode. */
@@ -1027,7 +1027,7 @@ sink_carried(
 		}
 
 		/* The plan at the board's clocks. */
-		if (clocks == 0) {
+		if (clock_error == 0) {
 			amdrdna_mode_timing_input(mode, pitch, &input);
 			error = amdrdna_mode_plan(&input, &plan);
 			if (error != 0)

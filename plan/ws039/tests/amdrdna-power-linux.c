@@ -10,8 +10,8 @@
  * table and a board table laid out by the Linux v6.19 structures, the
  * table the unit's firmware takes put together the way Linux puts it
  * together (navi10_store_powerplay_table and the copy of
- * navi10_append_powerplay_table, through BoardReserved), and the readings
- * in both of the unit's layouts.
+ * navi10_append_powerplay_table, through BoardReserved), the readings
+ * in both of the unit's layouts, and the averaging settings.
  *
  *   amdrdna-power-linux DIRECTORY
  *
@@ -51,6 +51,7 @@ main(
 	static PPTable_t expected;
 	static SmuMetrics_t metrics;
 	static SmuMetrics_legacy_t legacy;
+	static DriverSmuConfig_t settings;
 	size_t from;
 	size_t to;
 	size_t bytes;
@@ -114,6 +115,18 @@ main(
 	legacy.AverageGfxclkFrequency = 1600U;
 	legacy.AverageGfxActivity = 99U;
 
+	/*
+	 * The averaging settings Linux hands over after the start
+	 * (navi10_set_config_table with navi10_get_default_config_table_settings).
+	 */
+	memset(&settings, 0, sizeof(settings));
+	settings.GfxclkAverageLpfTau = 10U;
+	settings.SocclkAverageLpfTau = 10U;
+	settings.UclkAverageLpfTau = 10U;
+	settings.GfxActivityLpfTau = 10U;
+	settings.UclkActivityLpfTau = 10U;
+	settings.SocketPowerLpfTau = 10U;
+
 	/* Writes them. */
 	if (write_file(argv[1], "power.bin", &power, sizeof(power)) != 0)
 		return 1;
@@ -124,6 +137,8 @@ main(
 	if (write_file(argv[1], "metrics.bin", &metrics, sizeof(metrics)) != 0)
 		return 1;
 	if (write_file(argv[1], "legacy.bin", &legacy, sizeof(legacy)) != 0)
+		return 1;
+	if (write_file(argv[1], "settings.bin", &settings, sizeof(settings)) != 0)
 		return 1;
 	return 0;
 }

@@ -1054,30 +1054,36 @@ vk_node_report_busy(
 
 /*
  * Marks the clocks the power side's watch last read from the firmware (at
- * most a second old) and how busy it says the graphics engine was; a GPU
+ * most a second old) and the highest graphics clock and activity it read
+ * in the period, how busy the firmware says the graphics engine was, and
+ * how many times the driver raised the graphics clock for work; a GPU
  * whose firmware gives no readings is marked so.
  */
 static void
 vk_node_report_clocks(
 	struct amdrdna_node *node)
 {
-	struct amdrdna_power_readings speeds_now;
+	struct amdrdna_power_clock_report report;
 	bool clocked;
 
-	/* The watch's last readings. */
-	clocked = amdrdna_power_clocks(node->device, &speeds_now);
+	/* The watch's readings; the highest ones start over for the next period. */
+	clocked = amdrdna_power_clocks(node->device, &report);
 	if (!clocked) {
 		amdrdna_mark("vk timing: clocks not read (the smu firmware gives no readings)");
 		return;
 	}
 
 	/* Its line. */
-	amdrdna_mark("vk timing: clocks gfx %uMHz average %uMHz soc %uMHz mem %uMHz | gfx busy %u%%",
-	    speeds_now.gfx_clock,
-	    speeds_now.gfx_average,
-	    speeds_now.system_clock,
-	    speeds_now.memory_clock,
-	    speeds_now.gfx_activity);
+	amdrdna_mark("vk timing: clocks gfx %uMHz top %uMHz average %uMHz soc %uMHz mem %uMHz | gfx busy %u%% top %u%% | boosts %llu%s",
+	    report.now.gfx_clock,
+	    report.gfx_clock_top,
+	    report.now.gfx_average,
+	    report.now.system_clock,
+	    report.now.memory_clock,
+	    report.now.gfx_activity,
+	    report.gfx_activity_top,
+	    (unsigned long long)report.boosts,
+	    report.boosted ? " raised" : "");
 }
 
 /* Marks the VK_NODE_TIMED_SHOWN opcodes of a period that took the most time, the longest first. */
