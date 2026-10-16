@@ -1097,6 +1097,13 @@ write_resolver(
 		/* Reports operation failure. */
 		return -1;
 	}
+
+	/*
+	 * A file of this name is left over from an earlier boot whose dhcpc had
+	 * the same process ID (BUG-326); no running process owns it.
+	 */
+	if (unlink(temporary) != 0 && errno != ENOENT)
+		return -1;
 	descriptor = open(temporary, O_WRONLY | O_CREAT | O_EXCL, 0644);
 
 	/* Checks the file descriptor. */
