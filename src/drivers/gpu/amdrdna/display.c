@@ -994,6 +994,69 @@ amdrdna_display_topology(
 	return topology;
 }
 
+/*
+ * Moves the display's topology sequence on (the mode changed under the
+ * pollers' feet, a monitor's plug having set another) and tells whoever
+ * polls the GPU device.
+ */
+void
+amdrdna_display_topology_move(
+	struct amdrdna_device *device)
+{
+	struct amdrdna_display *display;
+	unsigned long irq;
+
+	/* One more under the interrupt thread's lock. */
+	display = &device->display;
+	irq = spin_lock_irqsave(&display->lock);
+
+	display->topology++;
+
+	spin_unlock_irqrestore(&display->lock, irq);
+
+	/* Wakes whoever polls the GPU device for the display's events. */
+	poll_notify();
+}
+
+/* Reads the console's timing generator's frame counter (24 bits). */
+uint32_t
+amdrdna_display_frame_count(
+	struct amdrdna_device *device)
+{
+	uint32_t frame;
+
+	/* The counter's word. */
+	frame = display_read(device, AMDRDNA_DCN_TIMING_FRAME_COUNT, device->gop.timing);
+
+	/* Succeeded: the count. */
+	return frame;
+}
+
+/*
+ * Tells whether a monitor is on the console's hot-plug line now, read
+ * from the line's status (connected when the display has no line).
+ */
+bool
+amdrdna_display_sense(
+	struct amdrdna_device *device)
+{
+	struct amdrdna_display *display;
+	uint32_t status;
+	bool level;
+
+	/* Without a line, the monitor the firmware lit is taken as there. */
+	display = &device->display;
+	if (!display->has_hotplug)
+		return true;
+
+	/* The line's level. */
+	status = display_read(device, AMDRDNA_DCN_HOTPLUG_STATUS, display->hotplug);
+	level = amdrdna_hotplug_connected(status);
+
+	/* Succeeded: the level. */
+	return level;
+}
+
 /* Reports the time in microseconds, from the platform's counter (the tick clock without one). */
 uint64_t
 amdrdna_display_now_us(void)
@@ -1762,6 +1825,9 @@ display_hotplug(
 
 		/* Wakes whoever polls the GPU device for the display's events. */
 		poll_notify();
+
+		/* The bring-up thread turns the output off, or reads the monitor and lights it again (stage A13). */
+		amdrdna_hotplug_request(device);
 	}
 }
 

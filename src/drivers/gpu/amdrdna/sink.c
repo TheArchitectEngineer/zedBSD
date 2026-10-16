@@ -16,10 +16,12 @@
  * own I2C routine run by the driver's runner (bytecode.c) on the board's
  * registers, which checks the runner on the hardware; the two must read
  * the same bytes.  A DisplayPort signal also has its receiver's
- * capabilities read over the AUX channel.  The modes the EDID lists are
- * then kept with the pixel clock the output can carry now (the boot
- * display clock and the signal's limit): the display's mode enumeration
- * offers those.
+ * capabilities read over the AUX channel.  Of the modes the EDID lists
+ * the output shows those inside the signal's pixel clock, held by the
+ * display's frames and planned at the clocks the board runs (mode-plan.c):
+ * the display's mode enumeration offers those, and a present of one of
+ * their sizes sets it.  A monitor's plug reads the sink again the same
+ * way.
  *
  * Every engine is taken through its arbitration and given back, and the
  * pad's mode word is put back as it was.
@@ -281,6 +283,10 @@
 /* How near two refreshes are to be the same mode (half a hertz). */
 #define SINK_SAME_REFRESH_MILLIHZ	500U
 
+/* No limit on the pixel clock (in kHz); the bytes of a pixel of the surface. */
+#define SINK_NO_LIMIT_KHZ		0xffffffffU
+#define SINK_PIXEL_BYTES		4U
+
 /* The names of the transmitters for the log. */
 static const char transmitter_letters[AMDRDNA_TRANSMITTERS + 1U] = "ABCDEFG";
 
@@ -296,6 +302,8 @@ static int sink_edid_bios(struct amdrdna_device *device, struct amdrdna_sink *si
 static int sink_bios_run(struct amdrdna_device *device, unsigned routine, uint32_t *parameters, uint32_t parameter_words, uint32_t *steps, uint32_t *scratch_out, uint32_t scratch_words);
 static int sink_dpcd(struct amdrdna_device *device, struct amdrdna_sink *sink);
 static void sink_limit(struct amdrdna_device *device, struct amdrdna_sink *sink);
+static void sink_carried(struct amdrdna_device *device, struct amdrdna_sink *sink);
+static bool sink_same_refresh(uint32_t listed, uint32_t asked);
 static int i2c_read(struct amdrdna_device *device, unsigned line, uint8_t offset, uint8_t *bytes, unsigned count);
 static int i2c_take(struct amdrdna_device *device, unsigned line);
 static void i2c_give_back(struct amdrdna_device *device, unsigned line);
@@ -311,7 +319,7 @@ static void bios_wait(void *owner, uint32_t microseconds);
  * Stage A10: finds the firmware's output's path, reads the sink's EDID by
  * the I2C engine and by the video BIOS's routine and compares them, reads
  * a DisplayPort receiver's capabilities, and keeps the modes the output
- * can carry.  Nothing on the screen changes.
+ * can show.  Nothing on the screen changes.
  *
  * Returns 0, or the error of the step that failed (no output, no path,
  * no EDID).
@@ -324,41 +332,13 @@ amdrdna_a10_sink(
 	struct amdrdna_timing preferred;
 	const char *atom_word;
 	const char *dpcd_word;
-	unsigned usable;
-	unsigned index;
 	int error;
 
-	/* Starts over. */
+	/* The sink, read into the device's record and published. */
 	sink = &device->sink;
-	*sink = (struct amdrdna_sink){ 0 };
-
-	/* The output's path. */
-	error = sink_path(device, sink);
+	error = amdrdna_sink_read(device, sink);
 	if (error != 0)
 		return error;
-
-	/* The EDID by the I2C engine; a sink that does not answer has no modes to offer. */
-	error = sink_edid_engine(device, sink);
-	if (error != 0) {
-		amdrdna_mark("A10 fail: no EDID on line %u (%d)", sink->ddc_line, error);
-		return error;
-	}
-
-	/* The same block by the video BIOS's routine (the runner on the board); a difference is noted, not fatal. */
-	sink->bios_error = sink_edid_bios(device, sink);
-
-	/* A DisplayPort receiver's capabilities. */
-	if (device->gop.output_kind == AMDRDNA_OUTPUT_DP || device->gop.output_kind == AMDRDNA_OUTPUT_DP_MST)
-		sink->dpcd_error = sink_dpcd(device, sink);
-
-	/* What the output carries, and the modes inside it. */
-	sink_limit(device, sink);
-	usable = 0U;
-	for (index = 0U; index < sink->edid.mode_count; index++) {
-		if (sink->edid.modes[index].pixel_khz != 0U && sink->edid.modes[index].pixel_khz <= sink->limit_khz)
-			usable++;
-	}
-	sink->usable_modes = usable;
 	__atomic_store_n(&sink->ready, true, __ATOMIC_RELEASE);
 
 	/* Says what was read, with the preferred mode when the EDID names one. */
@@ -383,7 +363,7 @@ amdrdna_a10_sink(
 	    (unsigned)(preferred.refresh_millihz / 1000U),
 	    (unsigned)(preferred.refresh_millihz % 1000U),
 	    sink->edid.blocks,
-	    usable,
+	    sink->usable_modes,
 	    sink->edid.mode_count,
 	    (unsigned)sink->limit_khz,
 	    atom_word,
@@ -399,6 +379,61 @@ amdrdna_a10_sink(
 	}
 
 	/* Succeeded: the sink is read. */
+	return 0;
+}
+
+/*
+ * Reads the firmware's output's sink into a record, which is not
+ * published: the output's path, the EDID by the I2C engine and by the
+ * video BIOS's routine, a DisplayPort receiver's capabilities, the
+ * signal's limit and the modes the output shows.  The bring-up thread
+ * calls it (it runs the video BIOS).
+ *
+ * Returns 0, or the error of the step that failed (no output, no path,
+ * no EDID).
+ */
+int
+amdrdna_sink_read(
+	struct amdrdna_device *device,
+	struct amdrdna_sink *sink)
+{
+	unsigned usable;
+	unsigned index;
+	int error;
+
+	/* Starts over. */
+	*sink = (struct amdrdna_sink){ 0 };
+
+	/* The output's path. */
+	error = sink_path(device, sink);
+	if (error != 0)
+		return error;
+
+	/* The EDID by the I2C engine; a sink that does not answer has no modes to offer. */
+	error = sink_edid_engine(device, sink);
+	if (error != 0) {
+		amdrdna_mark("A10 fail: no EDID on line %u (%d)", sink->ddc_line, error);
+		return error;
+	}
+
+	/* The same block by the video BIOS's routine (the runner on the board); a difference is noted, not fatal. */
+	sink->bios_error = sink_edid_bios(device, sink);
+
+	/* A DisplayPort receiver's capabilities. */
+	if (device->gop.output_kind == AMDRDNA_OUTPUT_DP || device->gop.output_kind == AMDRDNA_OUTPUT_DP_MST)
+		sink->dpcd_error = sink_dpcd(device, sink);
+
+	/* What the signal carries, and the modes the output shows. */
+	sink_limit(device, sink);
+	sink_carried(device, sink);
+	usable = 0U;
+	for (index = 0U; index < sink->edid.mode_count; index++) {
+		if (sink->carried[index])
+			usable++;
+	}
+	sink->usable_modes = usable;
+
+	/* Succeeded: the record is complete. */
 	return 0;
 }
 
@@ -456,14 +491,12 @@ amdrdna_sink_mode(
 	/* The sink's modes the output carries, each but the current one's double. */
 	for (at = 0U; sink != NULL && at < sink->edid.mode_count; at++) {
 		mode = &sink->edid.modes[at];
-		if (mode->pixel_khz == 0U || mode->pixel_khz > sink->limit_khz)
+		if (!sink->carried[at])
 			continue;
 		current = false;
-		if (mode->width == display->width &&
-		    mode->height == display->height &&
-		    mode->refresh_millihz + SINK_SAME_REFRESH_MILLIHZ >= display->refresh_millihz &&
-		    mode->refresh_millihz <= display->refresh_millihz + SINK_SAME_REFRESH_MILLIHZ)
-			current = true;
+		if (mode->width == display->width && mode->height == display->height) {
+			current = sink_same_refresh(mode->refresh_millihz, display->refresh_millihz);
+		}
 		if (current)
 			continue;
 		if (listed == index) {
@@ -508,15 +541,23 @@ amdrdna_sink_check(
 	current = false;
 	if (width == display->width && height == display->height && *refresh_millihz == 0U) {
 		current = true;
-	} else if (width == display->width &&
-		   height == display->height &&
-		   *refresh_millihz + SINK_SAME_REFRESH_MILLIHZ >= display->refresh_millihz &&
-		   *refresh_millihz <= display->refresh_millihz + SINK_SAME_REFRESH_MILLIHZ) {
-		current = true;
+	} else if (width == display->width && height == display->height) {
+		current = sink_same_refresh(display->refresh_millihz, *refresh_millihz);
 	}
 	if (current) {
 		*refresh_millihz = display->refresh_millihz;
 		return 0;
+	}
+
+	/* The firmware's mode, which a mode set left (it is always shown again). */
+	if (display->mode_known && width == display->firmware_mode.width && height == display->firmware_mode.height) {
+		current = true;
+		if (*refresh_millihz != 0U)
+			current = sink_same_refresh(display->firmware_mode.refresh_millihz, *refresh_millihz);
+		if (current) {
+			*refresh_millihz = display->firmware_mode.refresh_millihz;
+			return 0;
+		}
 	}
 
 	/* A mode the sink lists. */
@@ -528,13 +569,122 @@ amdrdna_sink_check(
 		return EINVAL;
 	mode = &sink->edid.modes[index];
 
-	/* One the output carries now. */
-	if (mode->pixel_khz == 0U || mode->pixel_khz > sink->limit_khz)
+	/* One the output shows. */
+	if (!sink->carried[index])
 		return ERANGE;
 	*refresh_millihz = mode->refresh_millihz;
 
 	/* Succeeded: the mode can be lit. */
 	return 0;
+}
+
+/*
+ * Gives the timing of a mode a present asks for: the firmware's (its
+ * size, at its refresh or none asked for), else a mode the sink lists
+ * that the output shows (0 asks for the first of that size).
+ *
+ * Returns 0; EINVAL for a size neither is; ERANGE for a listed mode the
+ * output does not show.
+ */
+int
+amdrdna_sink_choose(
+	const struct amdrdna_device *device,
+	uint32_t width,
+	uint32_t height,
+	uint32_t refresh_millihz,
+	struct amdrdna_timing *timing)
+{
+	const struct amdrdna_display *display;
+	const struct amdrdna_sink *sink;
+	unsigned index;
+	bool same;
+
+	/* The firmware's mode. */
+	display = &device->display;
+	if (display->mode_known && width == display->firmware_mode.width && height == display->firmware_mode.height) {
+		same = true;
+		if (refresh_millihz != 0U)
+			same = sink_same_refresh(display->firmware_mode.refresh_millihz, refresh_millihz);
+		if (same) {
+			*timing = display->firmware_mode;
+			return 0;
+		}
+	}
+
+	/* A mode the sink lists. */
+	sink = amdrdna_sink_ready(device);
+	if (sink == NULL)
+		return EINVAL;
+	index = amdrdna_edid_find(&sink->edid, width, height, refresh_millihz);
+	if (index >= sink->edid.mode_count)
+		return EINVAL;
+
+	/* One the output shows. */
+	if (!sink->carried[index])
+		return ERANGE;
+
+	/* Succeeded: the timing is given. */
+	*timing = sink->edid.modes[index];
+	return 0;
+}
+
+/*
+ * Tells whether a sink record lists a mode with a timing's size and
+ * refresh (within half a hertz) that the output shows.
+ */
+bool
+amdrdna_sink_carries(
+	const struct amdrdna_sink *sink,
+	const struct amdrdna_timing *timing)
+{
+	const struct amdrdna_timing *mode;
+	unsigned at;
+	bool same;
+
+	/* Each mode the output shows, until one is the timing's. */
+	for (at = 0U; at < sink->edid.mode_count; at++) {
+		mode = &sink->edid.modes[at];
+		if (!sink->carried[at])
+			continue;
+		if (mode->width != timing->width || mode->height != timing->height)
+			continue;
+		same = sink_same_refresh(mode->refresh_millihz, timing->refresh_millihz);
+		if (same)
+			return true;
+	}
+
+	/* Succeeded: no; none is. */
+	return false;
+}
+
+/*
+ * Gives the mode a sink record prefers that the output shows: the EDID's
+ * preferred mode, else the first it lists that the output shows.  Returns
+ * false when the output shows none.
+ */
+bool
+amdrdna_sink_preferred(
+	const struct amdrdna_sink *sink,
+	struct amdrdna_timing *timing)
+{
+	unsigned at;
+
+	/* The preferred mode, when the output shows it. */
+	if (sink->edid.mode_count != 0U && sink->edid.modes[0].source == AMDRDNA_TIMING_PREFERRED && sink->carried[0]) {
+		*timing = sink->edid.modes[0];
+		return true;
+	}
+
+	/* Else the first the output shows. */
+	for (at = 0U; at < sink->edid.mode_count; at++) {
+		if (!sink->carried[at])
+			continue;
+		*timing = sink->edid.modes[at];
+		return true;
+	}
+
+	/* Succeeded: no; the output shows none. */
+	return false;
 }
 
 /*
@@ -781,9 +931,11 @@ sink_dpcd(
 }
 
 /*
- * Works out the highest pixel clock the output carries now: the boot
- * display clock, the signal's limit (a DisplayPort link's from its
- * receiver's rate and lanes), and the sink's range limit.
+ * Works out the highest pixel clock the output's signal carries: the
+ * signal's limit (a DisplayPort link's from its receiver's rate and
+ * lanes; the boot display clock for a signal of no known limit) and the
+ * sink's range limit.  The display clock the board runs now is the
+ * plan's to judge (sink_carried()).
  */
 static void
 sink_limit(
@@ -793,8 +945,8 @@ sink_limit(
 	uint32_t limit;
 	uint32_t lanes;
 
-	/* The display clock the firmware runs. */
-	limit = device->vbios_info.boot_display_clock_10khz * 10U;
+	/* No limit until the signal's. */
+	limit = SINK_NO_LIMIT_KHZ;
 
 	/* The signal's limit. */
 	switch (device->gop.output_kind) {
@@ -814,6 +966,7 @@ sink_limit(
 			limit = (uint32_t)((uint64_t)lanes * sink->dpcd[DPCD_RATE] * DP_RATE_UNIT_KHZ / 10U / 3U);
 		break;
 	default:
+		limit = device->vbios_info.boot_display_clock_10khz * 10U;
 		break;
 	}
 
@@ -821,6 +974,78 @@ sink_limit(
 	if (sink->edid.max_pixel_khz != 0U && sink->edid.max_pixel_khz < limit)
 		limit = sink->edid.max_pixel_khz;
 	sink->limit_khz = limit;
+}
+
+/*
+ * Marks the listed modes the output shows: progressive, with known syncs,
+ * inside the signal's limit, held by the display's frames (once stage A6
+ * made them) and planned at the clocks the board runs.  Without the
+ * clocks (their routine failed) the signal's limit alone decides.
+ */
+static void
+sink_carried(
+	struct amdrdna_device *device,
+	struct amdrdna_sink *sink)
+{
+	struct amdrdna_mode_plan_input input;
+	struct amdrdna_mode_plan plan;
+	const struct amdrdna_display *display;
+	const struct amdrdna_timing *mode;
+	uint32_t pitch;
+	unsigned at;
+	int clocks;
+	int error;
+
+	/* The clocks once, and the surface's pitch in pixels (the firmware's). */
+	display = &device->display;
+	input = (struct amdrdna_mode_plan_input){ 0 };
+	clocks = amdrdna_mode_clocks(device, &input);
+	if (clocks != 0)
+		amdrdna_mark("A10 note: the board's clocks were not read (%d); the signal's limit alone decides", clocks);
+	pitch = device->gop.pitch_word + 1U;
+
+	/* Each listed mode. */
+	for (at = 0U; at < sink->edid.mode_count; at++) {
+		mode = &sink->edid.modes[at];
+		sink->carried[at] = false;
+		if (mode->pixel_khz == 0U || mode->interlaced || mode->pixel_khz > sink->limit_khz)
+			continue;
+		if (mode->h_pulse == 0U || mode->v_pulse == 0U)
+			continue;
+
+		/* The frames hold its rows and lines (once they exist). */
+		if (display->frame_bytes != 0U) {
+			if ((uint64_t)mode->width * SINK_PIXEL_BYTES > display->stride)
+				continue;
+			if ((uint64_t)display->stride * mode->height > display->frame_bytes)
+				continue;
+		}
+
+		/* The plan at the board's clocks. */
+		if (clocks == 0) {
+			amdrdna_mode_timing_input(mode, pitch, &input);
+			error = amdrdna_mode_plan(&input, &plan);
+			if (error != 0)
+				continue;
+		}
+		sink->carried[at] = true;
+	}
+}
+
+/* Tells whether a listed refresh is the one asked for: within half a hertz. */
+static bool
+sink_same_refresh(
+	uint32_t listed,
+	uint32_t asked)
+{
+	/* Too low, or too high. */
+	if (listed + SINK_SAME_REFRESH_MILLIHZ < asked)
+		return false;
+	if (listed > asked + SINK_SAME_REFRESH_MILLIHZ)
+		return false;
+
+	/* Succeeded: the same refresh. */
+	return true;
 }
 
 /*

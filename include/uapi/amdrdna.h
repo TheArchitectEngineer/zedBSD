@@ -291,6 +291,24 @@ struct amdrdna_reset_ask {
 };
 
 /*
+ * Asks the driver to act as if the monitor went away (level 1) or came
+ * (level 2) on the firmware's output (AMDRDNA_IOC_HOTPLUG, root only):
+ * the output turned off, or the monitor's EDID read again and the output
+ * lit again.  The driver answers when it has acted, with the result (0 or
+ * an errno), whether the output is dark and the display's mode.
+ */
+struct amdrdna_hotplug_ask {
+	uint32_t version;
+	uint32_t size;
+	uint32_t level;
+	int32_t result;
+	uint32_t dark;
+	uint32_t width;
+	uint32_t height;
+	uint32_t refresh_millihz;
+};
+
+/*
  * Copies part of the video BIOS image to the caller (AMDRDNA_IOC_VBIOS).
  *
  * The driver copies at most length bytes from offset into buffer, and
@@ -403,6 +421,7 @@ _Static_assert(sizeof(struct amdrdna_vbios_read) == 48U, "amdrdna vbios ABI size
 _Static_assert(sizeof(struct amdrdna_display_state) == 216U, "amdrdna display ABI size");
 _Static_assert(sizeof(struct amdrdna_screen) == 64U, "amdrdna screen ABI size");
 _Static_assert(sizeof(struct amdrdna_reset_ask) == 32U, "amdrdna reset ABI size");
+_Static_assert(sizeof(struct amdrdna_hotplug_ask) == 32U, "amdrdna hotplug ABI size");
 _Static_assert(offsetof(struct amdrdna_display_state, frame_signals) == 136U, "amdrdna display ABI alignment");
 
 #define AMDRDNA_IOC_STATUS	_IOWR(KERN_AMDRDNA_IOC_GROUP, 1, struct amdrdna_status)
@@ -411,5 +430,6 @@ _Static_assert(offsetof(struct amdrdna_display_state, frame_signals) == 136U, "a
 #define AMDRDNA_IOC_DISPLAY	_IOWR(KERN_AMDRDNA_IOC_GROUP, 4, struct amdrdna_display_state)
 #define AMDRDNA_IOC_SCREEN	_IOWR(KERN_AMDRDNA_IOC_GROUP, 5, struct amdrdna_screen)
 #define AMDRDNA_IOC_RESET	_IOWR(KERN_AMDRDNA_IOC_GROUP, 6, struct amdrdna_reset_ask)
+#define AMDRDNA_IOC_HOTPLUG	_IOWR(KERN_AMDRDNA_IOC_GROUP, 7, struct amdrdna_hotplug_ask)
 
 #endif

@@ -21,4 +21,8 @@ int control_modes(const char *path);
 /* reset.c: the reset of the GPU (amdrdnactl reset). */
 int control_reset(const char *path);
 
+/* present.c: a mode set by a present (amdrdnactl present) and the output's off and on (amdrdnactl hotplug). */
+int control_present(const char *path, uint32_t width, uint32_t height, unsigned seconds);
+int control_hotplug(const char *path, int on);
+
 #endif

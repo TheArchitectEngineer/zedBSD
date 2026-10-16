@@ -81,6 +81,13 @@ main(
 	int is_gpu;
 	int is_modes;
 	int is_reset;
+	int is_hotplug;
+	int is_present;
+	int on;
+	uint32_t width;
+	uint32_t height;
+	unsigned seconds;
+	char *end;
 
 	/* The reset opens the control device itself (one may be named). */
 	is_reset = 0;
@@ -91,6 +98,42 @@ main(
 		if (argc == 3)
 			path = argv[2];
 		result = control_reset(path);
+		return result;
+	}
+
+	/* The output's off and on: the control device (one may be named). */
+	is_hotplug = 0;
+	if (argc >= 3)
+		is_hotplug = strcmp(argv[1], "hotplug") == 0;
+	if (is_hotplug && argc <= 4) {
+		path = CONTROL_DEVICE;
+		if (argc == 4)
+			path = argv[3];
+		on = strcmp(argv[2], "on") == 0;
+		result = control_hotplug(path, on);
+		return result;
+	}
+
+	/* A present of another size: WIDTHxHEIGHT, the seconds held, the GPU device. */
+	is_present = 0;
+	if (argc >= 3)
+		is_present = strcmp(argv[1], "present") == 0;
+	if (is_present && argc <= 5) {
+		width = (uint32_t)strtoul(argv[2], &end, 10);
+		height = 0U;
+		if (*end == 'x')
+			height = (uint32_t)strtoul(end + 1, NULL, 10);
+		seconds = 3U;
+		if (argc >= 4)
+			seconds = (unsigned)strtoul(argv[3], NULL, 10);
+		path = CONTROL_GPU_DEVICE;
+		if (argc == 5)
+			path = argv[4];
+		if (width == 0U || height == 0U) {
+			fprintf(stderr, "amdrdnactl: present WIDTHxHEIGHT [SECONDS] [GPU-DEVICE]\n");
+			return 2;
+		}
+		result = control_present(path, width, height, seconds);
 		return result;
 	}
 
@@ -520,5 +563,5 @@ static void
 usage(void)
 {
 	/* The one usage line. */
-	fprintf(stderr, "usage: amdrdnactl [-f DEVICE] [status | advance STAGE | vbios FILE | display | screen FILE] | amdrdnactl gpu|modes [GPU-DEVICE] | amdrdnactl reset [DEVICE]\n");
+	fprintf(stderr, "usage: amdrdnactl [-f DEVICE] [status | advance STAGE | vbios FILE | display | screen FILE] | amdrdnactl gpu|modes [GPU-DEVICE] | amdrdnactl reset [DEVICE] | amdrdnactl hotplug off|on [DEVICE] | amdrdnactl present WIDTHxHEIGHT [SECONDS] [GPU-DEVICE]\n");
 }

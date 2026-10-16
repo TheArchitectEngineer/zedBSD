@@ -43,7 +43,7 @@
 #include "drivers/gpu/amdrdna/amdrdna-regs.h"
 
 /* The last stage this driver has; asking for a later one is refused. */
-#define AMDRDNA_LAST_STAGE		AMDRDNA_STAGE_A12
+#define AMDRDNA_LAST_STAGE		AMDRDNA_STAGE_A13
 
 /* How long the shutdown waits for the bring-up thread to end, and its step. */
 #define AMDRDNA_SHUTDOWN_WAIT_US	5000000U
@@ -205,6 +205,8 @@ amdrdna_attach(
 	spin_init(&device->engines.copy.lock, LOCK_RANK_DEVICE, "amdrdna ring");
 	spin_init(&device->display.lock, LOCK_RANK_DEVICE, "amdrdna display");
 	waitq_init(&device->display.waitq, "amdrdna display");
+	(void)mutex_init(&device->display.mode_lock, LOCK_RANK_DEVICE, "amdrdna mode");
+	(void)mutex_init(&device->hotplug_work.lock, LOCK_RANK_DEVICE, "amdrdna hotplug");
 	amdrdna_spaces_init(device);
 	amdrdna_reset_init(device);
 
@@ -478,6 +480,7 @@ amdrdna_thread(
 
 		while (!device->stopping &&
 		    !device->reset.requested &&
+		    !device->hotplug_work.requested &&
 		    (device->stage >= device->target ||
 		     device->failed_stage != AMDRDNA_STAGE_NONE)) {
 			sequence = waitq_sequence(&device->state_waitq);
@@ -493,6 +496,13 @@ amdrdna_thread(
 		/* A reset asked for runs between stages; the lock is let go while it runs. */
 		if (device->reset.requested) {
 			irq = amdrdna_reset_serve(device, irq);
+			spin_unlock_irqrestore(&device->state_lock, irq);
+			continue;
+		}
+
+		/* A change of the monitor is acted on between stages too. */
+		if (device->hotplug_work.requested) {
+			irq = amdrdna_hotplug_serve(device, irq);
 			spin_unlock_irqrestore(&device->state_lock, irq);
 			continue;
 		}
@@ -608,6 +618,9 @@ amdrdna_run_stage(
 		break;
 	case AMDRDNA_STAGE_A12:
 		error = amdrdna_a12_mode(device);
+		break;
+	case AMDRDNA_STAGE_A13:
+		error = amdrdna_a13_hotplug(device);
 		break;
 	default:
 		error = ENOTSUP;
