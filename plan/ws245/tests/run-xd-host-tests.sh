@@ -32,6 +32,9 @@
 #                          M/N values, the link status, the training against a model sink and repeaters
 #   host-xd-pipe-test      the transcoders and pipes: the 5330's panel against its firmware's words, the order of a
 #                          setup, an HDMI mode of display 12, the start and the stop, the pipe's own words
+#   host-xd-dbuf-test      the display buffer and watermarks: the 5330's panel against the driver's run, the slices
+#                          and joining, the shares, the levels the blank and the allocation cut, the slices' power,
+#                          the bus's joining, the data box credits
 # The check against the Linux tree itself is plan/ws245/tests/check-xd-regs-linux.sh (needs the unpacked tree).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -e
@@ -42,7 +45,7 @@ OUT=${1:-build/ws245-host}
 mkdir -p "$OUT"
 I915_HOST_EXTRA_PRODUCTION="src/drivers/gpu/i915/perf.c src/drivers/gpu/i915/mmio-record.c ${I915_HOST_EXTRA_PRODUCTION:-}"
 failed=0
-for test in host-xd-regs-test host-xd-io-test host-xd-platform-test host-xd-vbt-test host-xd-survey-test host-xd-aux-test host-xd-gmbus-test host-xd-panel-test host-xd-power-test host-xd-dmc-test host-xd-clock-test host-xd-dpll-test host-xd-ddi-test host-xd-dp-test host-xd-pipe-test; do
+for test in host-xd-regs-test host-xd-io-test host-xd-platform-test host-xd-vbt-test host-xd-survey-test host-xd-aux-test host-xd-gmbus-test host-xd-panel-test host-xd-power-test host-xd-dmc-test host-xd-clock-test host-xd-dpll-test host-xd-ddi-test host-xd-dp-test host-xd-pipe-test host-xd-dbuf-test; do
 	test -f "$T/$test.c" || continue
 	i915_display_host_build "$OUT/$test" "$T/$test.c" "$T/xd-fake-regs.c" plan/ws084/tests/native-decide-stubs.c
 	if ! "$OUT/$test"; then

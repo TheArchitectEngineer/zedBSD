@@ -1024,7 +1024,7 @@ i915_ms_test_outer(void)
 	/* The order from the run log. */
 	dc = i915_ms_find(I915_LCD_T_POWER_GET, I915_PW_DOMAIN_DC_OFF, NULL, 0U);
 	dom = i915_ms_find(I915_LCD_T_POWER_GET, I915_PW_DOMAIN_PIPE_A, NULL, 0U);
-	mbus = i915_ms_find(I915_LCD_T_RMW, 0x4438cU, NULL, 0U);
+	mbus = i915_ms_find(I915_LCD_T_WRITE, 0x4438cU, NULL, 0U);
 	dbuf1 = i915_ms_find(I915_LCD_T_DBUF, 0x0fU, NULL, 0U);
 	dbox = i915_ms_find(I915_LCD_T_WRITE, 0x7003cU, NULL, 0U);
 	pll = i915_ms_find(I915_LCD_T_WRITE, 0x164288U, NULL, 0U);

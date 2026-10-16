@@ -44,6 +44,7 @@
 #include "dkl-phy.h"
 #include "xd-ddi.h"
 #include "xd-power.h"
+#include "xd-dbuf.h"
 #include "xd.h"
 #include <kern/kcrt.h>
 
@@ -70,7 +71,6 @@
 #define HSW_PWR_WELL_CTL2	0x45404u
 
 /* The DC state register and what the DC6 check reads (i915_reg.h). */
-
 
 /* The PCH reset handshake and the DC power-request workarounds (i915_reg.h). */
 #define HSW_NDE_RSTWRN_OPT		0x46408u
@@ -206,7 +206,6 @@ static struct i915_trace *i915_core_trace(struct i915_display_core *dc);
 static struct i915_trace *i915_dc_off_trace(struct i915_pw_ctx *pwc);
 static uint8_t i915_dbuf_slice_mask(const struct i915_display_core *dc);
 static void i915_pch_reset_handshake(struct i915_display_core *dc);
-static void i915_gen9_dbuf_slice_set(struct i915_display_core *dc, unsigned slice, int enable);
 static void i915_gen9_dbuf_slices_update(struct i915_display_core *dc, uint8_t req_slices);
 static void i915_gen12_dbuf_slices_config(struct i915_display_core *dc);
 static void i915_gen9_dbuf_enable(struct i915_display_core *dc);
@@ -2303,7 +2302,6 @@ i915_pw_dc_off_on(
 	pwc->dc_off_combo_inits++;
 }
 
-
 /*
  * Lets the DMC take the display into the target DC state when DC_off is
  * disabled, once its firmware is loaded.
@@ -2464,68 +2462,36 @@ i915_pch_reset_handshake(
 	i915_power_rmw(dc->m, HSW_NDE_RSTWRN_OPT, RESET_PCH_HANDSHAKE_ENABLE, RESET_PCH_HANDSHAKE_ENABLE);
 }
 
-/* Powers one DBUF slice on or off (gen9_dbuf_slice_set(): request, posting read, 10 us, state). */
-static void
-i915_gen9_dbuf_slice_set(
-	struct i915_display_core *dc,
-	unsigned slice,
-	int enable)
-{
-	uint32_t reg;
-	uint32_t request;
-	uint32_t value;
-	int state;
-	const char *action;
-
-	/* Writes the request bit. */
-	reg = i915_dbuf_ctl_s[slice];
-	request = 0u;
-	if (enable)
-		request = DBUF_POWER_REQUEST;
-	i915_power_rmw(dc->m, reg, DBUF_POWER_REQUEST, request);
-
-	/* Posts the write and gives the slice 10 us. */
-	(void)drv_i915_raw_read32(dc->m, reg);
-	(void)drv_i915_udelay(10u);
-
-	/* Reads the slice's power state back. */
-	value = drv_i915_raw_read32(dc->m, reg);
-	state = 0;
-	if ((value & DBUF_POWER_STATE) != 0u)
-		state = 1;
-
-	/* Reports a slice that did not follow the request. */
-	if ((enable ? 1 : 0) != state) {
-		action = "disable";
-		if (enable)
-			action = "enable";
-		kern_logf("i915: DBUF slice %u power %s timeout\n", slice, action);
-	}
-}
-
-/* Sets every DBUF slice to the request under the domains lock and records the result. */
+/*
+ * Sets the display's DBUF slices to the request through the xd DBUF,
+ * under the domains lock, and records the result.
+ */
 static void
 i915_gen9_dbuf_slices_update(
 	struct i915_display_core *dc,
 	uint8_t req_slices)
 {
+	uint8_t late;
 	unsigned slice;
-	int enable;
 
-	/* Programs the four slices under the domains lock. */
+	/* Powers the slices under the domains lock. */
 	mutex_lock(&dc->pd->lock);
 
-	for (slice = 0u; slice < 4u; slice++) {
-		enable = 0;
-		if ((req_slices & (1u << slice)) != 0u)
-			enable = 1;
-		i915_gen9_dbuf_slice_set(dc, slice, enable);
-	}
-
-	/* Records the slices now requested. */
+	late = drv_i915_xd_dbuf_power(&dc->pwc->xd->io, dc->pwc->xd->choice.platform, req_slices);
 	dc->dbuf_enabled_slices = req_slices;
 
 	mutex_unlock(&dc->pd->lock);
+
+	/* Reports a slice that did not follow the request. */
+	for (slice = 0u; slice < 4u; slice++) {
+		if ((late & (1u << slice)) == 0u)
+			continue;
+		if ((req_slices & (1u << slice)) != 0u) {
+			kern_logf("i915: DBUF slice %u power enable timeout\n", slice);
+		} else {
+			kern_logf("i915: DBUF slice %u power disable timeout\n", slice);
+		}
+	}
 }
 
 /*

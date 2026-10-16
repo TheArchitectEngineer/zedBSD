@@ -72,6 +72,11 @@
 #include "edid.h"
 #include "pipe.h"
 #include "plane.h"
+#include "xd-dbuf.h"
+#include "xd-io.h"
+#include "xd-platform.h"
+
+#include "../intel/display-regs-xd.h"
 #include "../mmio.h"
 #include "../power.h"
 #include <kern/kcrt.h>
@@ -126,12 +131,6 @@
 
 /* The IPQ depth of the PCH (ipqdepthpch). */
 #define I915_BW_IPQDEPTHPCH           16
-
-/*
- * The DBUF slice tables of the Linux text (adlp_allowed_dbufs[],
- * tgl_allowed_dbufs[]).
- */
-#include "../intel/wm-dbuf.h"
 
 /*
  * One QGV point as the PCODE reports it: the DRAM clock and timings.
@@ -218,57 +217,23 @@ static unsigned int i915_intel_bw_crtc_data_rate(const struct intel_crtc_state *
 static int i915_intel_bw_crtc_min_cdclk(const struct intel_crtc_state *crtc_state);
 static unsigned int i915_intel_bw_crtc_num_active_planes(const struct intel_crtc_state *crtc_state);
 static u8 i915_intel_dbuf_enabled_slices(const struct intel_dbuf_state *dbuf_state);
-static bool i915_check_mbus_joined(u8 active_pipes, const struct dbuf_slice_conf_entry *dbuf_slices);
 static bool i915_adlp_check_mbus_joined(u8 active_pipes);
-static u8 i915_compute_dbuf_slices(enum pipe pipe, u8 active_pipes, bool join_mbus, const struct dbuf_slice_conf_entry *dbuf_slices);
-static u8 i915_tgl_compute_dbuf_slices(enum pipe pipe, u8 active_pipes, bool join_mbus);
-static u8 i915_adlp_compute_dbuf_slices(enum pipe pipe, u8 active_pipes, bool join_mbus);
 static u8 i915_skl_compute_dbuf_slices(struct intel_crtc *crtc, u8 active_pipes, bool join_mbus);
-static int i915_intel_dbuf_slice_size(struct drm_i915_private *i915);
 static u16 i915_skl_ddb_entry_init(struct skl_ddb_entry *entry, u16 start, u16 end);
 static unsigned int i915_mbus_ddb_offset(struct drm_i915_private *i915, u8 slice_mask);
 static bool i915_skl_watermark_ipc_enabled(struct drm_i915_private *i915);
-static bool i915_skl_needs_memory_bw_wa(struct drm_i915_private *i915);
-static uint_fixed_16_16_t i915_intel_get_linetime_us(const struct intel_crtc_state *crtc_state);
 static unsigned int i915_skl_cursor_allocation(const struct intel_crtc_state *crtc_state, int num_active);
-static u64 i915_skl_total_relative_data_rate(const struct intel_crtc_state *crtc_state);
 static void i915_intel_crtc_dbuf_weights(const struct intel_dbuf_state *dbuf_state, enum pipe for_pipe, unsigned int *weight_start, unsigned int *weight_end, unsigned int *weight_total);
-static int i915_skl_wm_check_vblank(struct intel_crtc_state *crtc_state);
-static unsigned int i915_skl_wm_latency(struct drm_i915_private *i915, int level, const struct skl_wm_params *wp);
-static uint_fixed_16_16_t i915_skl_wm_method1(const struct drm_i915_private *i915, u32 pixel_rate, u8 cpp, u32 latency, u32 dbuf_block_size);
-static uint_fixed_16_16_t i915_skl_wm_method2(u32 pixel_rate, u32 pipe_htotal, u32 latency, uint_fixed_16_16_t plane_blocks_per_line);
-static int i915_skl_compute_wm_params(const struct intel_crtc_state *crtc_state, int width, const struct drm_format_info *format, u64 modifier, unsigned int rotation, u32 plane_pixel_rate, struct skl_wm_params *wp, int color_plane);
-static int i915_skl_compute_plane_wm_params(const struct intel_crtc_state *crtc_state, const struct intel_plane_state *plane_state, struct skl_wm_params *wp, int color_plane);
-static bool i915_skl_wm_has_lines(struct drm_i915_private *i915, int level);
-static int i915_skl_wm_max_lines(struct drm_i915_private *i915);
-static void i915_skl_compute_plane_wm(const struct intel_crtc_state *crtc_state, struct intel_plane *plane, int level, unsigned int latency, const struct skl_wm_params *wp, const struct skl_wm_level *result_prev, struct skl_wm_level *result);
-static void i915_skl_compute_wm_levels(const struct intel_crtc_state *crtc_state, struct intel_plane *plane, const struct skl_wm_params *wm_params, struct skl_wm_level *levels);
-static void i915_tgl_compute_sagv_wm(const struct intel_crtc_state *crtc_state, struct intel_plane *plane, const struct skl_wm_params *wm_params, struct skl_plane_wm *plane_wm);
-static void i915_skl_compute_transition_wm(struct drm_i915_private *i915, struct skl_wm_level *trans_wm, const struct skl_wm_level *wm0, const struct skl_wm_params *wp);
-static int i915_skl_build_plane_wm_single(struct intel_crtc_state *crtc_state, const struct intel_plane_state *plane_state, struct intel_plane *plane, int color_plane);
-static int i915_icl_build_plane_wm(struct intel_crtc_state *crtc_state, const struct intel_plane_state *plane_state);
-static int i915_skl_build_plane_wm_uv(struct intel_crtc_state *crtc_state, const struct intel_plane_state *plane_state, struct intel_plane *plane);
-static int i915_skl_build_plane_wm(struct intel_crtc_state *crtc_state, const struct intel_plane_state *plane_state);
-static int i915_skl_max_wm0_lines(const struct intel_crtc_state *crtc_state);
-static int i915_skl_max_wm_level_for_vblank(struct intel_crtc_state *crtc_state, int wm0_lines, int *level_out);
-static bool i915_skl_is_vblank_too_short(const struct intel_crtc_state *crtc_state, int wm0_lines, int latency);
+static void i915_wm_xd_pipe(struct drm_i915_private *i915, const struct intel_crtc_state *crtc_state, struct i915_xd_wm_pipe *pipe);
+static void i915_wm_level_to_xd(const struct skl_wm_level *from, struct i915_xd_wm_level *to);
+static void i915_wm_level_from_xd(const struct i915_xd_wm_level *from, struct skl_wm_level *to);
+static void i915_wm_plane_to_xd(const struct skl_plane_wm *from, struct i915_xd_plane_wm *to);
+static void i915_wm_plane_from_xd(const struct i915_xd_plane_wm *from, struct skl_plane_wm *to);
 static int i915_skl_build_pipe_wm(struct i915_lcd_wm_ctx *wm, struct intel_atomic_state *state, struct intel_crtc *crtc);
-static void i915_skl_check_wm_level(struct skl_wm_level *wm, const struct skl_ddb_entry *ddb);
-static void i915_skl_check_nv12_wm_level(struct skl_wm_level *wm, struct skl_wm_level *uv_wm, const struct skl_ddb_entry *ddb_y, const struct skl_ddb_entry *ddb);
-static bool i915_skl_need_wm_copy_wa(struct drm_i915_private *i915, int level, const struct skl_plane_wm *wm);
-static bool i915_use_minimal_wm0_only(const struct intel_crtc_state *crtc_state, struct intel_plane *plane);
-static void i915_skl_allocate_plane_ddb(struct skl_plane_ddb_iter *iter, struct skl_ddb_entry *ddb, const struct skl_wm_level *wm, u64 data_rate);
 static int i915_skl_crtc_allocate_plane_ddb(struct i915_lcd_wm_ctx *wm, struct intel_atomic_state *state, struct intel_crtc *crtc);
-static void i915_skl_ddb_entry_for_slices(struct drm_i915_private *i915, u8 slice_mask, struct skl_ddb_entry *ddb);
 static unsigned int i915_intel_crtc_ddb_weight(const struct intel_crtc_state *crtc_state);
 static int i915_skl_crtc_allocate_ddb(struct i915_takeover_world *takeover, struct i915_lcd_wm_ctx *wm, struct intel_atomic_state *state, struct intel_crtc *crtc);
-static const struct skl_wm_level *i915_skl_plane_wm_level(const struct skl_pipe_wm *pipe_wm, enum plane_id plane_id, int level);
-static const struct skl_wm_level *i915_skl_plane_trans_wm(const struct skl_pipe_wm *pipe_wm, enum plane_id plane_id);
-static void i915_skl_write_wm_level(struct drm_i915_private *i915, i915_reg_t reg, const struct skl_wm_level *level);
-static void i915_skl_ddb_entry_write(struct drm_i915_private *i915, i915_reg_t reg, const struct skl_ddb_entry *entry);
-static void i915_intel_dbuf_mdclk_cdclk_ratio_update(struct drm_i915_private *i915, u8 ratio, bool joined_mbus);
 static void i915_update_mbus_pre_enable(struct i915_lcd_wm_ctx *wm, struct intel_atomic_state *state);
-static bool i915_xelpdp_is_only_pipe_per_dbuf_bank(enum pipe pipe, u8 active_pipes);
 static void i915_skl_wm_level_from_reg_val(u32 val, struct skl_wm_level *level);
 static void i915_skl_pipe_wm_get_hw_state(struct intel_crtc *crtc, struct skl_pipe_wm *out);
 static void i915_skl_pipe_ddb_get_hw_state(struct intel_crtc *crtc, struct skl_ddb_entry *ddb, struct skl_ddb_entry *ddb_y) __attribute__((unused));
@@ -1060,7 +1025,7 @@ drv_i915_lcd_ms_wm_compute(
  * (the same part of skl_compute_ddb(), with the pipe no longer active).
  *
  * The old state is the device's current one, which another screen's
- * commit may have changed since this screen's enable (ws113-p011).  The
+ * commit may have changed since this screen's enable.  The
  * pipes that stay in the configuration are those the other running
  * screens light or leave room for (keep_pipes): this pipe stays when the
  * screen that still runs left room for it, so that its stop changes
@@ -1205,10 +1170,7 @@ drv_i915_lcd_wm_get_hw_state(
 
 /*
  * Writes the watermark levels and the DDB allocation of one plane
- * (skl_write_plane_wm()).
- *
- * The level registers first, then the transition watermark, the SAGV
- * watermarks where the hardware has them, and the plane's DDB entry.
+ * through the xd watermarks (skl_write_plane_wm()).
  */
 void
 skl_write_plane_wm(
@@ -1216,49 +1178,22 @@ skl_write_plane_wm(
 	const struct intel_crtc_state *crtc_state)
 {
 	struct drm_i915_private *i915;
-	enum plane_id plane_id;
-	enum pipe pipe;
 	const struct skl_pipe_wm *pipe_wm;
 	const struct skl_ddb_entry *ddb;
-	const struct skl_ddb_entry *ddb_y;
-	const struct skl_wm_level *wm_level;
-	const struct skl_plane_wm *wm;
-	int display_ver;
-	int level;
+	struct i915_xd_plane_wm xd_wm;
+	struct i915_xd_ddb range;
 
-	/* The plane, its pipe, and the watermarks and DDB entries the state computed for it. */
+	/* The plane's watermarks and DDB entry the state computed. */
 	i915 = i915_lcd_to_i915(plane->base.dev);
-	plane_id = plane->id;
-	pipe = plane->pipe;
 	pipe_wm = &crtc_state->wm.skl.optimal;
-	ddb = &crtc_state->wm.skl.plane_ddb[plane_id];
-	ddb_y = &crtc_state->wm.skl.plane_ddb_y[plane_id];
+	ddb = &crtc_state->wm.skl.plane_ddb[plane->id];
+	i915_wm_plane_to_xd(&pipe_wm->planes[plane->id], &xd_wm);
+	range.start = ddb->start;
+	range.end = ddb->end;
 
-	/* Writes each watermark level. */
-	for (level = 0; level < i915->display.wm.num_levels; level++) {
-		wm_level = i915_skl_plane_wm_level(pipe_wm, plane_id, level);
-		i915_skl_write_wm_level(i915, PLANE_WM(pipe, plane_id, level), wm_level);
-	}
-
-	/* Writes the transition watermark. */
-	wm_level = i915_skl_plane_trans_wm(pipe_wm, plane_id);
-	i915_skl_write_wm_level(i915, PLANE_WM_TRANS(pipe, plane_id), wm_level);
-
-	/* HAS_HW_SAGV_WM(): display version 13+, not a discrete part, has SAGV watermark registers. */
-	display_ver = I915_LCD_DISPLAY_VER(i915);
-	if (display_ver >= 13 && !IS_DGFX(i915)) {
-		wm = &pipe_wm->planes[plane_id];
-
-		i915_skl_write_wm_level(i915, PLANE_WM_SAGV(pipe, plane_id), &wm->sagv.wm0);
-		i915_skl_write_wm_level(i915, PLANE_WM_SAGV_TRANS(pipe, plane_id), &wm->sagv.trans_wm);
-	}
-
-	/* Writes the plane's DDB entry. */
-	i915_skl_ddb_entry_write(i915, PLANE_BUF_CFG(pipe, plane_id), ddb);
-
-	/* Before display version 11 the NV12 Y plane has an entry of its own. */
-	if (display_ver < 11)
-		i915_skl_ddb_entry_write(i915, PLANE_NV12_BUF_CFG(pipe, plane_id), ddb_y);
+	/* Writes the levels, the transition, the SAGV pair and the entry. */
+	drv_i915_xd_wm_write_plane(drv_i915_lcd_xd_io(i915), drv_i915_lcd_xd_platform(), (unsigned)plane->pipe,
+		(unsigned)i915->display.wm.num_levels, &xd_wm, pipe_wm->use_sagv_wm ? 1 : 0, &range);
 }
 
 /*
@@ -1353,8 +1288,6 @@ drv_i915_mbus_dbox_update(
 	const struct intel_dbuf_state *new_dbuf_state;
 	const struct intel_dbuf_state *old_dbuf_state;
 	const struct intel_crtc *crtc;
-	bool only_pipe;
-	bool alderlake_p;
 	int display_ver;
 	u32 pipe_val;
 	u32 val;
@@ -1362,7 +1295,6 @@ drv_i915_mbus_dbox_update(
 	/* The device and its display version. */
 	i915 = i915_lcd_to_i915(state->base.dev);
 	display_ver = I915_LCD_DISPLAY_VER(i915);
-	val = 0;
 
 	/* Before display version 11 there is no DBOX to program. */
 	if (display_ver < 11)
@@ -1381,48 +1313,8 @@ drv_i915_mbus_dbox_update(
 	    new_dbuf_state->active_pipes == old_dbuf_state->active_pipes)
 		return;
 
-	/* Display version 14: the I credit. */
-	if (display_ver >= 14)
-		val |= MBUS_DBOX_I_CREDIT(2);
-
-	/* Display version 12+: the back-to-back transactions. */
-	if (display_ver >= 12) {
-		val |= MBUS_DBOX_B2B_TRANSACTIONS_MAX(16);
-		val |= MBUS_DBOX_B2B_TRANSACTIONS_DELAY(1);
-		val |= MBUS_DBOX_REGULATE_B2B_TRANSACTIONS_EN;
-	}
-
-	/* The A credit: display 14, Alder Lake-P (Wa_22010947358:adl-p), or the rest. */
-	alderlake_p = I915_LCD_IS_ALDERLAKE_P(i915);
-	if (display_ver >= 14) {
-		if (new_dbuf_state->joined_mbus) {
-			val |= MBUS_DBOX_A_CREDIT(12);
-		} else {
-			val |= MBUS_DBOX_A_CREDIT(8);
-		}
-	} else if (alderlake_p) {
-		if (new_dbuf_state->joined_mbus) {
-			val |= MBUS_DBOX_A_CREDIT(6);
-		} else {
-			val |= MBUS_DBOX_A_CREDIT(4);
-		}
-	} else {
-		val |= MBUS_DBOX_A_CREDIT(2);
-	}
-
-	/* The B and BW credits: display 14, Alder Lake-P, display 12, or older. */
-	if (display_ver >= 14) {
-		val |= MBUS_DBOX_B_CREDIT(0xA);
-	} else if (alderlake_p) {
-		val |= MBUS_DBOX_BW_CREDIT(2);
-		val |= MBUS_DBOX_B_CREDIT(8);
-	} else if (display_ver >= 12) {
-		val |= MBUS_DBOX_BW_CREDIT(2);
-		val |= MBUS_DBOX_B_CREDIT(12);
-	} else {
-		val |= MBUS_DBOX_BW_CREDIT(1);
-		val |= MBUS_DBOX_B_CREDIT(8);
-	}
+	/* The pipe's credits. */
+	val = drv_i915_xd_dbuf_dbox_word(drv_i915_lcd_xd_platform(), new_dbuf_state->joined_mbus ? 1 : 0);
 
 	/* The crtcs of the active pipes: the watermark context's crtc, if its pipe is active. */
 	crtc = to_intel_crtc(wm->crtc_state->uapi.crtc);
@@ -1431,19 +1323,11 @@ drv_i915_mbus_dbox_update(
 	if ((new_dbuf_state->active_pipes & BIT(crtc->pipe)) == 0)
 		return;
 
-	/* Display version 14: the BW credits depend on the pipes sharing the DBUF bank. */
+	/* The word of the pipe. */
 	pipe_val = val;
-	if (display_ver >= 14) {
-		only_pipe = i915_xelpdp_is_only_pipe_per_dbuf_bank(crtc->pipe, new_dbuf_state->active_pipes);
-		if (only_pipe) {
-			pipe_val |= MBUS_DBOX_BW_8CREDITS_MTL;
-		} else {
-			pipe_val |= MBUS_DBOX_BW_4CREDITS_MTL;
-		}
-	}
 
 	/* Writes the pipe's DBOX control. */
-	i915_lcd_intel_de_write(i915, PIPE_MBUS_DBOX_CTL(crtc->pipe), pipe_val);
+	drv_i915_xd_io_write(drv_i915_lcd_xd_io(i915), I915_XD_PIPE_MBUS_DBOX_CTL(crtc->pipe), pipe_val);
 }
 
 /*
@@ -1486,14 +1370,17 @@ skl_ddb_dbuf_slice_mask(
 	struct drm_i915_private *i915,
 	const struct skl_ddb_entry *entry)
 {
+	const struct i915_xd_platform *platform;
 	int slice_size;
 	enum dbuf_slice start_slice;
 	enum dbuf_slice end_slice;
 	u16 entry_size;
 	u8 slice_mask;
 
-	/* An empty entry lies in no slice. */
-	slice_size = i915_intel_dbuf_slice_size(i915);
+	/* An empty entry lies in no slice; a slice is the platform's buffer over its slices. */
+	UNUSED_PARAMETER(i915);
+	platform = drv_i915_lcd_xd_platform();
+	slice_size = platform->dbuf_blocks / platform->dbuf_slices;
 	slice_mask = 0;
 	entry_size = skl_ddb_entry_size(entry);
 	if (!entry_size)
@@ -1964,89 +1851,20 @@ i915_intel_dbuf_enabled_slices(
 	return enabled_slices;
 }
 
-/* Tells whether a configuration of active pipes joins the MBUS (check_mbus_joined()). */
-static bool
-i915_check_mbus_joined(
-	u8 active_pipes,
-	const struct dbuf_slice_conf_entry *dbuf_slices)
-{
-	int i;
-
-	/* The first entry of the pipes decides. */
-	for (i = 0; dbuf_slices[i].active_pipes != 0; i++) {
-		if (dbuf_slices[i].active_pipes == active_pipes)
-			return dbuf_slices[i].join_mbus;
-	}
-
-	/* Succeeded: an unlisted configuration does not join. */
-	return false;
-}
-
-/* Tells whether a configuration of active pipes joins the MBUS on ADL-P (adlp_check_mbus_joined()). */
+/* Tells whether a set of active pipes joins the MBUS, through the xd DBUF. */
 static bool
 i915_adlp_check_mbus_joined(
 	u8 active_pipes)
 {
-	bool joined;
+	u8 joined;
 
-	/* Looks the pipes up in the ADL-P table. */
-	joined = i915_check_mbus_joined(active_pipes, adlp_allowed_dbufs);
+	/* The platform's table. */
+	joined = drv_i915_xd_dbuf_joined(drv_i915_lcd_xd_platform(), active_pipes);
+	if (!joined)
+		return false;
 
-	/* Succeeded: reports the joining. */
-	return joined;
-}
-
-/* The DBUF slices of a pipe in a configuration, from a table (compute_dbuf_slices()); 0 when unlisted. */
-static u8
-i915_compute_dbuf_slices(
-	enum pipe pipe,
-	u8 active_pipes,
-	bool join_mbus,
-	const struct dbuf_slice_conf_entry *dbuf_slices)
-{
-	int i;
-
-	/* The entry of the pipes and the joining. */
-	for (i = 0; dbuf_slices[i].active_pipes != 0; i++) {
-		if (dbuf_slices[i].active_pipes == active_pipes &&
-		    dbuf_slices[i].join_mbus == join_mbus)
-			return dbuf_slices[i].dbuf_mask[pipe];
-	}
-
-	/* Succeeded: an unlisted configuration has no slices. */
-	return 0;
-}
-
-/* The DBUF slices of a pipe on Tiger Lake (tgl_compute_dbuf_slices()). */
-static u8
-i915_tgl_compute_dbuf_slices(
-	enum pipe pipe,
-	u8 active_pipes,
-	bool join_mbus)
-{
-	u8 slices;
-
-	/* Looks the pipe up in the Tiger Lake table. */
-	slices = i915_compute_dbuf_slices(pipe, active_pipes, join_mbus, tgl_allowed_dbufs);
-
-	/* Succeeded: reports the slices. */
-	return slices;
-}
-
-/* The DBUF slices of a pipe on ADL-P (adlp_compute_dbuf_slices()). */
-static u8
-i915_adlp_compute_dbuf_slices(
-	enum pipe pipe,
-	u8 active_pipes,
-	bool join_mbus)
-{
-	u8 slices;
-
-	/* Looks the pipe up in the ADL-P table. */
-	slices = i915_compute_dbuf_slices(pipe, active_pipes, join_mbus, adlp_allowed_dbufs);
-
-	/* Succeeded: reports the slices. */
-	return slices;
+	/* Succeeded: the bus is joined. */
+	return true;
 }
 
 /* The DBUF slices of a crtc's pipe by platform (skl_compute_dbuf_slices()). */
@@ -2068,10 +1886,8 @@ i915_skl_compute_dbuf_slices(
 	 * The table of the platform.  The DG2 table is not reached: IS_DG2() is
 	 * 0 on this path, so dg2_compute_dbuf_slices() is not called.
 	 */
-	if (display_ver >= 13) {
-		slices = i915_adlp_compute_dbuf_slices(pipe, active_pipes, join_mbus);
-	} else if (display_ver == 12) {
-		slices = i915_tgl_compute_dbuf_slices(pipe, active_pipes, join_mbus);
+	if (display_ver >= 12) {
+		slices = drv_i915_xd_dbuf_slices(drv_i915_lcd_xd_platform(), (unsigned)pipe, active_pipes, join_mbus ? 1 : 0);
 	} else if (display_ver == 11) {
 		slices = icl_compute_dbuf_slices(pipe, active_pipes, join_mbus);
 	} else if (active_pipes & BIT(pipe)) {
@@ -2086,16 +1902,6 @@ i915_skl_compute_dbuf_slices(
 
 	/* Succeeded: reports the slices. */
 	return slices;
-}
-
-/* The size of one DBUF slice in blocks (intel_dbuf_slice_size()). */
-static int
-i915_intel_dbuf_slice_size(
-	struct drm_i915_private *i915)
-{
-	/* The DBUF size shared evenly by the slices. */
-	return DISPLAY_INFO(i915)->dbuf.size /
-		hweight8(DISPLAY_INFO(i915)->dbuf.slice_mask);
 }
 
 /* Fills a DDB entry and reports its end (skl_ddb_entry_init()). */
@@ -2113,26 +1919,21 @@ i915_skl_ddb_entry_init(
 	return end;
 }
 
-/* The DDB offset of the MBUS a slice mask belongs to (mbus_ddb_offset()). */
+/* Where the allocations of a set of slices count from, through the xd DBUF. */
 static unsigned int
 i915_mbus_ddb_offset(
 	struct drm_i915_private *i915,
 	u8 slice_mask)
 {
-	struct skl_ddb_entry ddb;
+	u16 offset;
 
-	/* S1/S2 are the first MBUS, S3/S4 the second. */
-	if (slice_mask & (BIT(DBUF_S1) | BIT(DBUF_S2))) {
-		slice_mask = BIT(DBUF_S1);
-	} else if (slice_mask & (BIT(DBUF_S3) | BIT(DBUF_S4))) {
-		slice_mask = BIT(DBUF_S3);
-	}
+	UNUSED_PARAMETER(i915);
 
-	/* The DDB range of the MBUS's first slice. */
-	i915_skl_ddb_entry_for_slices(i915, slice_mask, &ddb);
+	/* The start of the slices' half. */
+	offset = drv_i915_xd_dbuf_mbus_offset(drv_i915_lcd_xd_platform(), slice_mask);
 
-	/* Succeeded: reports where it starts. */
-	return ddb.start;
+	/* Succeeded: the offset. */
+	return offset;
 }
 
 /* Tells whether IPC is enabled (skl_watermark_ipc_enabled()). */
@@ -2144,142 +1945,25 @@ i915_skl_watermark_ipc_enabled(
 	return i915->display.wm.ipc_enabled;
 }
 
-/*
- * Tells whether the memory bandwidth workaround applies (skl_needs_memory_bw_wa()).
- * FIXME: We still don't have the proper code detect if we need to apply the WA,
- * so assume we'll always need it in order to avoid underruns.
- */
-static bool
-i915_skl_needs_memory_bw_wa(
-	struct drm_i915_private *i915)
-{
-	int display_ver;
-
-	UNUSED_PARAMETER(i915);
-
-	/* Display version 9 only. */
-	display_ver = drv_i915_lcd_display_ver();
-	if (display_ver == 9)
-		return true;
-
-	/* Succeeded: later versions need no workaround. */
-	return false;
-}
-
-/* The line time of a crtc in microseconds, 16.16 fixed point (intel_get_linetime_us()). */
-static uint_fixed_16_16_t
-i915_intel_get_linetime_us(
-	const struct intel_crtc_state *crtc_state)
-{
-	uint_fixed_16_16_t linetime_us;
-	u32 pixel_rate;
-	u32 crtc_htotal;
-	int warned;
-
-	/* An inactive crtc has no line time. */
-	if (!crtc_state->hw.active)
-		return u32_to_fixed16(0);
-
-	/* An active crtc without a pixel rate is reported and has none either. */
-	pixel_rate = crtc_state->pixel_rate;
-	warned = I915_LCD_DRM_WARN_ON(crtc_state->uapi.crtc->dev, pixel_rate == 0);
-	if (warned)
-		return u32_to_fixed16(0);
-
-	/* htotal * 1000 / pixel rate. */
-	crtc_htotal = crtc_state->hw.pipe_mode.crtc_htotal;
-	linetime_us = div_fixed16(crtc_htotal * 1000, pixel_rate);
-
-	/* Succeeded: reports the line time. */
-	return linetime_us;
-}
-
-/* The DDB blocks reserved for the cursor (skl_cursor_allocation()). */
+/* The cursor's share of a pipe, through the xd watermarks. */
 static unsigned int
 i915_skl_cursor_allocation(
 	const struct intel_crtc_state *crtc_state,
 	int num_active)
 {
-	struct intel_plane *plane;
 	struct drm_i915_private *i915;
-	struct skl_wm_level wm;
-	struct skl_wm_params wp;
-	unsigned int latency;
-	int ret;
-	int min_ddb_alloc;
-	int fixed_blocks;
-	int level;
+	struct i915_xd_wm_pipe pipe;
+	u16 blocks;
 
-	/* The cursor plane and the device of the state. */
-	plane = to_intel_plane(crtc_state->uapi.crtc->cursor);
+	/* The pipe. */
 	i915 = i915_lcd_to_i915(crtc_state->uapi.crtc->dev);
-	kern_memset(&wm, 0, sizeof(wm));
-	min_ddb_alloc = 0;
+	i915_wm_xd_pipe(i915, crtc_state, &pipe);
 
-	/*
-	 * The watermark parameters of a 256-wide ARGB8888 linear cursor.  The
-	 * result is named ret so the warning reads as in Linux.
-	 */
-	ret = i915_skl_compute_wm_params(crtc_state, 256,
-		i915_drm_format_info(FORMAT_ARGB8888),
-		FORMAT_MOD_LINEAR,
-		MODE_ROTATE_0,
-		crtc_state->pixel_rate, &wp, 0);
-	I915_LCD_DRM_WARN_ON(&i915->drm, ret);
+	/* The cursor's blocks. */
+	blocks = drv_i915_xd_wm_cursor_blocks(drv_i915_lcd_xd_platform(), &pipe, (unsigned)num_active);
 
-	/* The allocation of the highest level the cursor reaches. */
-	for (level = 0; level < i915->display.wm.num_levels; level++) {
-		latency = i915_skl_wm_latency(i915, level, &wp);
-
-		i915_skl_compute_plane_wm(crtc_state, plane, level, latency, &wp, &wm, &wm);
-		if (wm.min_ddb_alloc == U16_MAX)
-			break;
-
-		/* The level fits: its allocation is the one so far. */
-		min_ddb_alloc = wm.min_ddb_alloc;
-	}
-
-	/* One active pipe reserves 32 blocks, several reserve 8. */
-	if (num_active == 1) {
-		fixed_blocks = 32;
-	} else {
-		fixed_blocks = 8;
-	}
-
-	/* Succeeded: reports the larger of the two. */
-	return max(fixed_blocks, min_ddb_alloc);
-}
-
-/* The relative data rate of a crtc's planes (skl_total_relative_data_rate()). */
-static u64
-i915_skl_total_relative_data_rate(
-	const struct intel_crtc_state *crtc_state)
-{
-	enum plane_id plane_id;
-	u64 data_rate;
-	int display_ver;
-
-	/* The display version of the crtc's device (DISPLAY_VER()). */
-	display_ver = drv_i915_lcd_display_ver();
-	data_rate = 0;
-
-	/*
-	 * Sums the planes (for_each_plane_id_on_crtc(): the primary only);
-	 * before display version 20 the cursor has its fixed share.
-	 */
-	for (plane_id = PLANE_PRIMARY; plane_id <= PLANE_PRIMARY; plane_id++) {
-		if (plane_id == PLANE_CURSOR && display_ver < 20)
-			continue;
-
-		data_rate += crtc_state->rel_data_rate[plane_id];
-
-		/* Before display version 11 the NV12 Y plane counts apart. */
-		if (display_ver < 11)
-			data_rate += crtc_state->rel_data_rate_y[plane_id];
-	}
-
-	/* Succeeded: reports the data rate. */
-	return data_rate;
+	/* Succeeded: the share. */
+	return blocks;
 }
 
 /*
@@ -2332,975 +2016,93 @@ i915_intel_crtc_dbuf_weights(
 	}
 }
 
-/* Disables the watermark levels the vblank is too short for (skl_wm_check_vblank()); 0 or EINVAL. */
-static int
-i915_skl_wm_check_vblank(
-	struct intel_crtc_state *crtc_state)
+/* Describes a crtc state's pipe to the xd watermarks: the latencies, IPC, the SAGV block time, the rates. */
+static void
+i915_wm_xd_pipe(
+	struct drm_i915_private *i915,
+	const struct intel_crtc_state *crtc_state,
+	struct i915_xd_wm_pipe *pipe)
 {
-	struct intel_crtc *crtc;
-	struct drm_i915_private *i915;
-	struct skl_plane_wm *wm;
-	enum plane_id plane_id;
-	bool too_short;
-	int display_ver;
-	int wm0_lines;
-	int level;
-	int error;
+	unsigned level;
 
-	/* The crtc and the device of the state. */
-	crtc = to_intel_crtc(crtc_state->uapi.crtc);
-	i915 = i915_lcd_to_i915(crtc->base.dev);
+	/* The levels and their latencies. */
+	kern_memset(pipe, 0, sizeof(*pipe));
+	pipe->levels = (unsigned)i915->display.wm.num_levels;
+	for (level = 0; level < pipe->levels && level < I915_XD_WM_LEVELS; level++)
+		pipe->latency_us[level] = i915->display.wm.skl_latency[level];
 
-	/* An inactive crtc has nothing to check. */
-	if (!crtc_state->hw.active)
-		return 0;
-
-	/* The highest level the vblank allows. */
-	wm0_lines = i915_skl_max_wm0_lines(crtc_state);
-	error = i915_skl_max_wm_level_for_vblank(crtc_state, wm0_lines, &level);
-	if (error != 0)
-		return error;
-
-	/*
-	 * PSR needs to toggle LATENCY_REPORTING_REMOVED_PIPE_*
-	 * based on whether we're limited by the vblank duration.
-	 */
-	crtc_state->wm_level_disabled = false;
-	if (level < i915->display.wm.num_levels - 1)
-		crtc_state->wm_level_disabled = true;
-
-	/* Disables every level above it. */
-	for (level++; level < i915->display.wm.num_levels; level++) {
-		for_each_plane_id_on_crtc(crtc, plane_id) {
-			wm = &crtc_state->wm.skl.optimal.planes[plane_id];
-
-			/*
-			 * FIXME just clear enable or flag the entire
-			 * thing as bad via min_ddb_alloc=U16_MAX?
-			 */
-			wm->wm[level].enable = false;
-			wm->uv_wm[level].enable = false;
-		}
-	}
-
-	/* Display version 12+: a vblank shorter than the SAGV block time disables the SAGV watermarks. */
-	display_ver = I915_LCD_DISPLAY_VER(i915);
-	if (display_ver >= 12 && i915->display.sagv.block_time_us) {
-		too_short = i915_skl_is_vblank_too_short(crtc_state, wm0_lines,
-			i915->display.sagv.block_time_us);
-		if (too_short) {
-			for_each_plane_id_on_crtc(crtc, plane_id) {
-				wm = &crtc_state->wm.skl.optimal.planes[plane_id];
-
-				wm->sagv.wm0.enable = false;
-				wm->sagv.trans_wm.enable = false;
-			}
-		}
-	}
-
-	/* Succeeded: the levels fit the vblank. */
-	return 0;
+	/* IPC, the SAGV block time, the pipe's pixel rate and line total. */
+	pipe->ipc = i915_skl_watermark_ipc_enabled(i915) ? 1 : 0;
+	pipe->sagv_block_us = (unsigned)i915->display.sagv.block_time_us;
+	if (crtc_state->hw.active)
+		pipe->pixel_rate_khz = crtc_state->pixel_rate;
+	pipe->htotal = (uint32_t)crtc_state->hw.pipe_mode.crtc_htotal;
 }
 
-/* The latency of a watermark level with the workarounds (skl_wm_latency()); wp may be NULL. */
-static unsigned int
-i915_skl_wm_latency(
-	struct drm_i915_private *i915,
-	int level,
-	const struct skl_wm_params *wp)
+/* Copies one Linux watermark level into an xd one. */
+static void
+i915_wm_level_to_xd(
+	const struct skl_wm_level *from,
+	struct i915_xd_wm_level *to)
 {
-	unsigned int latency;
-	bool ipc_enabled;
-	bool bw_wa;
+	/* The fields. */
+	to->enable = from->enable ? 1U : 0U;
+	to->ignore_lines = from->ignore_lines ? 1U : 0U;
+	to->blocks = from->blocks;
+	to->lines = from->lines;
+	to->min_ddb = from->min_ddb_alloc;
+}
 
-	/* A level without latency stays at 0. */
-	latency = i915->display.wm.skl_latency[level];
-	if (latency == 0)
-		return 0;
+/* Copies one xd watermark level into a Linux one. */
+static void
+i915_wm_level_from_xd(
+	const struct i915_xd_wm_level *from,
+	struct skl_wm_level *to)
+{
+	/* The fields. */
+	to->enable = from->enable != 0U;
+	to->ignore_lines = from->ignore_lines != 0U;
+	to->blocks = from->blocks;
+	to->lines = (u8)from->lines;
+	to->min_ddb_alloc = from->min_ddb;
+}
 
-	/*
-	 * WaIncreaseLatencyIPCEnabled: kbl,cfl
-	 * Display WA #1141: kbl,cfl
-	 */
-	if (IS_KABYLAKE(i915) || IS_COFFEELAKE(i915) || IS_COMETLAKE(i915)) {
-		ipc_enabled = i915_skl_watermark_ipc_enabled(i915);
-		if (ipc_enabled)
-			latency += 4;
-	}
+/* Copies a Linux plane watermark into an xd one. */
+static void
+i915_wm_plane_to_xd(
+	const struct skl_plane_wm *from,
+	struct i915_xd_plane_wm *to)
+{
+	unsigned level;
 
-	/* The memory bandwidth workaround adds 15 us for an X-tiled plane. */
-	bw_wa = i915_skl_needs_memory_bw_wa(i915);
-	if (bw_wa) {
-		if (wp != NULL && wp->x_tiled)
-			latency += 15;
-	}
+	/* The levels, the transition and the SAGV pair. */
+	for (level = 0; level < I915_XD_WM_LEVELS; level++)
+		i915_wm_level_to_xd(&from->wm[level], &to->level[level]);
+	i915_wm_level_to_xd(&from->trans_wm, &to->trans);
+	i915_wm_level_to_xd(&from->sagv.wm0, &to->sagv);
+	i915_wm_level_to_xd(&from->sagv.trans_wm, &to->sagv_trans);
+}
 
-	/* Succeeded: reports the latency. */
-	return latency;
+/* Copies an xd plane watermark into a Linux one. */
+static void
+i915_wm_plane_from_xd(
+	const struct i915_xd_plane_wm *from,
+	struct skl_plane_wm *to)
+{
+	unsigned level;
+
+	/* The levels, the transition and the SAGV pair. */
+	for (level = 0; level < I915_XD_WM_LEVELS; level++)
+		i915_wm_level_from_xd(&from->level[level], &to->wm[level]);
+	i915_wm_level_from_xd(&from->trans, &to->trans_wm);
+	i915_wm_level_from_xd(&from->sagv, &to->sagv.wm0);
+	i915_wm_level_from_xd(&from->sagv_trans, &to->sagv.trans_wm);
 }
 
 /*
- * The watermark by method 1 (skl_wm_method1()).
- * The max latency should be 257 (max the punit can code is 255 and we add 2us
- * for the read latency) and cpp should always be <= 8, so that
- * should allow pixel_rate up to ~2 GHz which seems sufficient since max
- * 2xcdclk is 1350 MHz and the pixel rate should never exceed that.
- */
-static uint_fixed_16_16_t
-i915_skl_wm_method1(
-	const struct drm_i915_private *i915,
-	u32 pixel_rate,
-	u8 cpp,
-	u32 latency,
-	u32 dbuf_block_size)
-{
-	u32 wm_intermediate_val;
-	uint_fixed_16_16_t ret;
-	int display_ver;
-
-	UNUSED_PARAMETER(i915);
-
-	/* No latency: no limit. */
-	if (latency == 0)
-		return FP_16_16_MAX;
-
-	/* latency * pixel rate * cpp / (1000 * block size). */
-	wm_intermediate_val = latency * pixel_rate * cpp;
-	ret = div_fixed16(wm_intermediate_val, 1000 * dbuf_block_size);
-
-	/* Display version 10+ adds one block. */
-	display_ver = drv_i915_lcd_display_ver();
-	if (display_ver >= 10)
-		ret = add_fixed16_u32(ret, 1);
-
-	/* Succeeded: reports the watermark. */
-	return ret;
-}
-
-/* The watermark by method 2 (skl_wm_method2()). */
-static uint_fixed_16_16_t
-i915_skl_wm_method2(
-	u32 pixel_rate,
-	u32 pipe_htotal,
-	u32 latency,
-	uint_fixed_16_16_t plane_blocks_per_line)
-{
-	u32 wm_intermediate_val;
-	uint_fixed_16_16_t ret;
-
-	/* No latency: no limit. */
-	if (latency == 0)
-		return FP_16_16_MAX;
-
-	/* The lines the latency spans, times the blocks of a line. */
-	wm_intermediate_val = latency * pixel_rate;
-	wm_intermediate_val = DIV_ROUND_UP(wm_intermediate_val,
-					   pipe_htotal * 1000);
-	ret = mul_u32_fixed16(wm_intermediate_val, plane_blocks_per_line);
-
-	/* Succeeded: reports the watermark. */
-	return ret;
-}
-
-/* Computes the watermark parameters of a plane surface (skl_compute_wm_params()); 0 or EINVAL. */
-static int
-i915_skl_compute_wm_params(
-	const struct intel_crtc_state *crtc_state,
-	int width,
-	const struct drm_format_info *format,
-	u64 modifier,
-	unsigned int rotation,
-	u32 plane_pixel_rate,
-	struct skl_wm_params *wp,
-	int color_plane)
-{
-	struct intel_crtc *crtc;
-	struct drm_i915_private *i915;
-	uint_fixed_16_16_t linetime;
-	u32 interm_pbpl;
-	bool semiplanar;
-	bool tiled;
-	bool rotated;
-	bool bw_wa;
-	int display_ver;
-
-	/* The crtc and the device of the state. */
-	crtc = to_intel_crtc(crtc_state->uapi.crtc);
-	i915 = i915_lcd_to_i915(crtc->base.dev);
-	display_ver = I915_LCD_DISPLAY_VER(i915);
-
-	/* only planar format has two planes */
-	if (color_plane == 1) {
-		semiplanar = intel_format_info_is_yuv_semiplanar(format, modifier);
-		if (!semiplanar) {
-			I915_LCD_DRM_DBG_KMS(&i915->drm,
-				"Non planar format have single plane\n");
-			return EINVAL;
-		}
-	}
-
-	/* The tiling of the surface. */
-	wp->x_tiled = false;
-	if (modifier == I915_FORMAT_MOD_X_TILED)
-		wp->x_tiled = true;
-
-	tiled = intel_fb_is_tiled_modifier(modifier);
-	wp->y_tiled = false;
-	if (modifier != I915_FORMAT_MOD_X_TILED && tiled)
-		wp->y_tiled = true;
-
-	wp->rc_surface = intel_fb_is_ccs_modifier(modifier);
-	wp->is_planar = intel_format_info_is_yuv_semiplanar(format, modifier);
-
-	/* The width of the colour plane: the UV plane of a planar format is half as wide. */
-	wp->width = width;
-	if (color_plane == 1 && wp->is_planar)
-		wp->width /= 2;
-
-	/* The bytes per pixel and the pixel rate. */
-	wp->cpp = format->cpp[color_plane];
-	wp->plane_pixel_rate = plane_pixel_rate;
-
-	/* Display version 11+: a Yf-tiled one-byte surface uses 256-byte blocks. */
-	if (display_ver >= 11 &&
-	    modifier == I915_FORMAT_MOD_Yf_TILED &&
-	    wp->cpp == 1) {
-		wp->dbuf_block_size = 256;
-	} else {
-		wp->dbuf_block_size = 512;
-	}
-
-	/* The minimum scanlines of a Y tile: by cpp when rotated by 90 or 270 degrees. */
-	rotated = rotation_90_or_270(rotation);
-	if (rotated) {
-		/* The scanlines of a tile row for each cpp. */
-		switch (wp->cpp) {
-		case 1:
-			wp->y_min_scanlines = 16;
-			break;
-		case 2:
-			wp->y_min_scanlines = 8;
-			break;
-		case 4:
-			wp->y_min_scanlines = 4;
-			break;
-		default:
-			I915_LCD_MISSING_CASE(wp->cpp);
-			return EINVAL;
-		}
-	} else {
-		wp->y_min_scanlines = 4;
-	}
-
-	/* The memory bandwidth workaround doubles them. */
-	bw_wa = i915_skl_needs_memory_bw_wa(i915);
-	if (bw_wa)
-		wp->y_min_scanlines *= 2;
-
-	/* The blocks of a line: by tile row for Y tiling, by line otherwise. */
-	wp->plane_bytes_per_line = wp->width * wp->cpp;
-	if (wp->y_tiled) {
-		interm_pbpl = DIV_ROUND_UP(wp->plane_bytes_per_line *
-					   wp->y_min_scanlines,
-					   wp->dbuf_block_size);
-
-		/* Display version 10+ adds one block. */
-		if (display_ver >= 10)
-			interm_pbpl++;
-
-		/* Per line of the tile row. */
-		wp->plane_blocks_per_line = div_fixed16(interm_pbpl,
-							wp->y_min_scanlines);
-	} else {
-		interm_pbpl = DIV_ROUND_UP(wp->plane_bytes_per_line,
-					   wp->dbuf_block_size);
-
-		/* A linear surface, and display version 10+, add one block. */
-		if (!wp->x_tiled || display_ver >= 10)
-			interm_pbpl++;
-
-		/* The blocks of one line. */
-		wp->plane_blocks_per_line = u32_to_fixed16(interm_pbpl);
-	}
-
-	/* The Y tile minimum and the line time. */
-	wp->y_tile_minimum = mul_u32_fixed16(wp->y_min_scanlines,
-					     wp->plane_blocks_per_line);
-	linetime = i915_intel_get_linetime_us(crtc_state);
-	wp->linetime_us = fixed16_to_u32_round_up(linetime);
-
-	/* Succeeded: the parameters are computed. */
-	return 0;
-}
-
-/* Computes the watermark parameters of a plane state (skl_compute_plane_wm_params()); 0 or EINVAL. */
-static int
-i915_skl_compute_plane_wm_params(
-	const struct intel_crtc_state *crtc_state,
-	const struct intel_plane_state *plane_state,
-	struct skl_wm_params *wp,
-	int color_plane)
-{
-	const struct drm_framebuffer *fb;
-	unsigned int pixel_rate;
-	int width;
-	int error;
-
-	/*
-	 * Src coordinates are already rotated by 270 degrees for
-	 * the 90/270 degree plane rotation cases (to match the
-	 * GTT mapping), hence no need to account for rotation here.
-	 */
-	fb = plane_state->hw.fb;
-	width = i915_drm_rect_width(&plane_state->uapi.src) >> 16;
-	pixel_rate = drv_i915_plane_pixel_rate(crtc_state, plane_state);
-
-	/* The parameters of the framebuffer's format and modifier. */
-	error = i915_skl_compute_wm_params(crtc_state, width,
-		fb->format, fb->modifier,
-		plane_state->hw.rotation,
-		pixel_rate,
-		wp, color_plane);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the parameters are computed. */
-	return 0;
-}
-
-/* Tells whether a level's watermark has a line count (skl_wm_has_lines()). */
-static bool
-i915_skl_wm_has_lines(
-	struct drm_i915_private *i915,
-	int level)
-{
-	int display_ver;
-
-	UNUSED_PARAMETER(i915);
-
-	/* Display version 10+ counts lines at every level. */
-	display_ver = drv_i915_lcd_display_ver();
-	if (display_ver >= 10)
-		return true;
-
-	/* The number of lines are ignored for the level 0 watermark. */
-	if (level > 0)
-		return true;
-
-	/* Succeeded: level 0 has no lines. */
-	return false;
-}
-
-/* The largest line count a watermark register holds (skl_wm_max_lines()). */
-static int
-i915_skl_wm_max_lines(
-	struct drm_i915_private *i915)
-{
-	int display_ver;
-
-	UNUSED_PARAMETER(i915);
-
-	/* Display version 13+ has 8 bits. */
-	display_ver = drv_i915_lcd_display_ver();
-	if (display_ver >= 13)
-		return 255;
-
-	/* Succeeded: earlier versions have 5 bits. */
-	return 31;
-}
-
-/* Computes one watermark level of a plane (skl_compute_plane_wm()); a rejected level has min_ddb_alloc U16_MAX. */
-static void
-i915_skl_compute_plane_wm(
-	const struct intel_crtc_state *crtc_state,
-	struct intel_plane *plane,
-	int level,
-	unsigned int latency,
-	const struct skl_wm_params *wp,
-	const struct skl_wm_level *result_prev,
-	struct skl_wm_level *result /* out */)
-{
-	struct drm_i915_private *i915;
-	uint_fixed_16_16_t method1;
-	uint_fixed_16_16_t method2;
-	uint_fixed_16_16_t selected_result;
-	u32 blocks;
-	u32 lines;
-	u32 min_ddb_alloc;
-	u32 line_blocks;
-	bool minimal;
-	bool has_lines;
-	int display_ver;
-	int max_lines;
-	int extra_lines;
-
-	/* The device of the state. */
-	i915 = i915_lcd_to_i915(crtc_state->uapi.crtc->dev);
-	display_ver = I915_LCD_DISPLAY_VER(i915);
-	min_ddb_alloc = 0;
-
-	/* A level without latency is rejected. */
-	if (latency == 0) {
-		result->min_ddb_alloc = U16_MAX;
-		return;
-	}
-
-	/* An async flip uses the minimal watermark 0 only: every higher level is rejected. */
-	minimal = i915_use_minimal_wm0_only(crtc_state, plane);
-	if (minimal && level > 0) {
-		result->min_ddb_alloc = U16_MAX;
-		return;
-	}
-
-	/* The two methods. */
-	method1 = i915_skl_wm_method1(i915, wp->plane_pixel_rate,
-				 wp->cpp, latency, wp->dbuf_block_size);
-	method2 = i915_skl_wm_method2(wp->plane_pixel_rate,
-				 crtc_state->hw.pipe_mode.crtc_htotal,
-				 latency,
-				 wp->plane_blocks_per_line);
-
-	/* The method the tiling, the line size and the latency select. */
-	if (wp->y_tiled) {
-		selected_result = max_fixed16(method2, wp->y_tile_minimum);
-	} else {
-		if ((wp->cpp * crtc_state->hw.pipe_mode.crtc_htotal /
-		     wp->dbuf_block_size < 1) &&
-		     (wp->plane_bytes_per_line / wp->dbuf_block_size < 1)) {
-			selected_result = method2;
-		} else if (latency >= wp->linetime_us) {
-			if (display_ver == 9) {
-				selected_result = min_fixed16(method1, method2);
-			} else {
-				selected_result = method2;
-			}
-		} else {
-			selected_result = method1;
-		}
-	}
-
-	/*
-	 * Lets have blocks at minimum equivalent to plane_blocks_per_line
-	 * as there will be at minimum one line for lines configuration. This
-	 * is a work around for FIFO underruns observed with resolutions like
-	 * 4k 60 Hz in single channel DRAM configurations.
-	 *
-	 * As per the Bspec 49325, if the ddb allocation can hold at least
-	 * one plane_blocks_per_line, we should have selected method2 in
-	 * the above logic. Assuming that modern versions have enough dbuf
-	 * and method2 guarantees blocks equivalent to at least 1 line,
-	 * select the blocks as plane_blocks_per_line.
-	 *
-	 * TODO: Revisit the logic when we have better understanding on DRAM
-	 * channels' impact on the level 0 memory latency and the relevant
-	 * wm calculations.
-	 */
-	blocks = fixed16_to_u32_round_up(selected_result) + 1;
-	has_lines = i915_skl_wm_has_lines(i915, level);
-	if (has_lines) {
-		line_blocks = fixed16_to_u32_round_up(wp->plane_blocks_per_line);
-		blocks = max(blocks, line_blocks);
-	}
-
-	/* The lines the selected result spans. */
-	lines = div_round_up_fixed16(selected_result,
-				     wp->plane_blocks_per_line);
-
-	/* The display version 9 workarounds. */
-	if (display_ver == 9) {
-		/* Display WA #1125: skl,bxt,kbl */
-		if (level == 0 && wp->rc_surface)
-			blocks += fixed16_to_u32_round_up(wp->y_tile_minimum);
-
-		/* Display WA #1126: skl,bxt,kbl */
-		if (level >= 1 && level <= 7) {
-			if (wp->y_tiled) {
-				blocks += fixed16_to_u32_round_up(wp->y_tile_minimum);
-				lines += wp->y_min_scanlines;
-			} else {
-				blocks++;
-			}
-
-			/*
-			 * Make sure result blocks for higher latency levels are
-			 * at least as high as level below the current level.
-			 * Assumption in DDB algorithm optimization for special
-			 * cases. Also covers Display WA #1125 for RC.
-			 */
-			if (result_prev->blocks > blocks)
-				blocks = result_prev->blocks;
-		}
-	}
-
-	/* Display version 11+: the minimum DDB allocation, by whole tile rows for Y tiling. */
-	if (display_ver >= 11) {
-		if (wp->y_tiled) {
-			if (lines % wp->y_min_scanlines == 0) {
-				extra_lines = wp->y_min_scanlines;
-			} else {
-				extra_lines = wp->y_min_scanlines * 2 -
-					lines % wp->y_min_scanlines;
-			}
-
-			/* The lines rounded up to whole tile rows plus one, in blocks. */
-			min_ddb_alloc = mul_round_up_u32_fixed16(lines + extra_lines,
-								 wp->plane_blocks_per_line);
-		} else {
-			min_ddb_alloc = blocks + DIV_ROUND_UP(blocks, 10);
-		}
-	}
-
-	/* A level without lines counts none. */
-	if (!has_lines)
-		lines = 0;
-
-	/* reject it: more lines than the register holds */
-	max_lines = i915_skl_wm_max_lines(i915);
-	if (lines > (u32)max_lines) {
-		result->min_ddb_alloc = U16_MAX;
-		return;
-	}
-
-	/*
-	 * If lines is valid, assume we can use this watermark level
-	 * for now.  We'll come back and disable it after we calculate the
-	 * DDB allocation if it turns out we don't actually have enough
-	 * blocks to satisfy it.
-	 */
-	result->blocks = blocks;
-	result->lines = lines;
-	/* Bspec says: value >= plane ddb allocation -> invalid, hence the +1 here */
-	result->min_ddb_alloc = max(min_ddb_alloc, blocks) + 1;
-	result->enable = true;
-
-	/* Before display version 12 a level can keep SAGV when its latency covers the block time. */
-	if (display_ver < 12 && i915->display.sagv.block_time_us) {
-		result->can_sagv = false;
-		if (latency >= i915->display.sagv.block_time_us)
-			result->can_sagv = true;
-	}
-}
-
-/* Computes every watermark level of a plane (skl_compute_wm_levels()). */
-static void
-i915_skl_compute_wm_levels(
-	const struct intel_crtc_state *crtc_state,
-	struct intel_plane *plane,
-	const struct skl_wm_params *wm_params,
-	struct skl_wm_level *levels)
-{
-	struct drm_i915_private *i915;
-	struct skl_wm_level *result_prev;
-	struct skl_wm_level *result;
-	unsigned int latency;
-	int level;
-
-	/* The device, and level 0 as the level below level 0. */
-	i915 = i915_lcd_to_i915(crtc_state->uapi.crtc->dev);
-	result_prev = &levels[0];
-
-	/* Computes each level from its latency and the level below. */
-	for (level = 0; level < i915->display.wm.num_levels; level++) {
-		result = &levels[level];
-		latency = i915_skl_wm_latency(i915, level, wm_params);
-
-		i915_skl_compute_plane_wm(crtc_state, plane, level, latency,
-			wm_params, result_prev, result);
-
-		/* The next level builds on this one. */
-		result_prev = result;
-	}
-}
-
-/* Computes a plane's SAGV watermark 0 (tgl_compute_sagv_wm()). */
-static void
-i915_tgl_compute_sagv_wm(
-	const struct intel_crtc_state *crtc_state,
-	struct intel_plane *plane,
-	const struct skl_wm_params *wm_params,
-	struct skl_plane_wm *plane_wm)
-{
-	struct drm_i915_private *i915;
-	struct skl_wm_level *sagv_wm;
-	struct skl_wm_level *levels;
-	unsigned int latency;
-
-	/* The device, the SAGV watermark and the plane's levels. */
-	i915 = i915_lcd_to_i915(crtc_state->uapi.crtc->dev);
-	sagv_wm = &plane_wm->sagv.wm0;
-	levels = plane_wm->wm;
-	latency = 0;
-
-	/* The latency is the SAGV block time on top of level 0's. */
-	if (i915->display.sagv.block_time_us)
-		latency = i915->display.sagv.block_time_us +
-			i915_skl_wm_latency(i915, 0, wm_params);
-
-	/* Computes it as a level 0 watermark. */
-	i915_skl_compute_plane_wm(crtc_state, plane, 0, latency,
-		wm_params, &levels[0],
-		sagv_wm);
-}
-
-/* Computes a transition watermark from watermark 0 (skl_compute_transition_wm()). */
-static void
-i915_skl_compute_transition_wm(
-	struct drm_i915_private *i915,
-	struct skl_wm_level *trans_wm,
-	const struct skl_wm_level *wm0,
-	const struct skl_wm_params *wp)
-{
-	u16 trans_min;
-	u16 trans_amount;
-	u16 trans_y_tile_min;
-	u16 wm0_blocks;
-	u16 trans_offset;
-	u16 blocks;
-	bool ipc_enabled;
-	int display_ver;
-
-	/* Transition WM don't make any sense if ipc is disabled */
-	ipc_enabled = i915_skl_watermark_ipc_enabled(i915);
-	if (!ipc_enabled)
-		return;
-
-	/*
-	 * WaDisableTWM:skl,kbl,cfl,bxt
-	 * Transition WM are not recommended by HW team for GEN9
-	 */
-	display_ver = I915_LCD_DISPLAY_VER(i915);
-	if (display_ver == 9)
-		return;
-
-	/* The minimum by display version. */
-	if (display_ver >= 11) {
-		trans_min = 4;
-	} else {
-		trans_min = 14;
-	}
-
-	/* Display WA #1140: glk,cnl */
-	if (display_ver == 10) {
-		trans_amount = 0;
-	} else {
-		trans_amount = 10; /* This is configurable amount */
-	}
-
-	/* The blocks the transition adds. */
-	trans_offset = trans_min + trans_amount;
-
-	/*
-	 * The spec asks for Selected Result Blocks for wm0 (the real value),
-	 * not Result Blocks (the integer value). Pay attention to the capital
-	 * letters. The value wm_l0->blocks is actually Result Blocks, but
-	 * since Result Blocks is the ceiling of Selected Result Blocks plus 1,
-	 * and since we later will have to get the ceiling of the sum in the
-	 * transition watermarks calculation, we can just pretend Selected
-	 * Result Blocks is Result Blocks minus 1 and it should work for the
-	 * current platforms.
-	 */
-	wm0_blocks = wm0->blocks - 1;
-
-	/* The blocks: at least two Y tile rows for Y tiling. */
-	if (wp->y_tiled) {
-		trans_y_tile_min =
-			(u16)mul_round_up_u32_fixed16(2, wp->y_tile_minimum);
-		blocks = max(wm0_blocks, trans_y_tile_min) + trans_offset;
-	} else {
-		blocks = wm0_blocks + trans_offset;
-	}
-
-	/* One block more. */
-	blocks++;
-
-	/*
-	 * Just assume we can enable the transition watermark.  After
-	 * computing the DDB we'll come back and disable it if that
-	 * assumption turns out to be false.
-	 */
-	trans_wm->blocks = blocks;
-	trans_wm->min_ddb_alloc = max_t(u16, wm0->min_ddb_alloc, blocks + 1);
-	trans_wm->enable = true;
-}
-
-/* Builds the watermarks of one colour plane of a plane (skl_build_plane_wm_single()); 0 or EINVAL. */
-static int
-i915_skl_build_plane_wm_single(
-	struct intel_crtc_state *crtc_state,
-	const struct intel_plane_state *plane_state,
-	struct intel_plane *plane,
-	int color_plane)
-{
-	struct intel_crtc *crtc;
-	struct drm_i915_private *i915;
-	struct skl_plane_wm *wm;
-	struct skl_wm_params wm_params;
-	int display_ver;
-	int error;
-
-	/* The crtc, the device and the plane's raw watermarks. */
-	crtc = to_intel_crtc(crtc_state->uapi.crtc);
-	i915 = i915_lcd_to_i915(crtc->base.dev);
-	wm = &crtc_state->wm.skl.raw.planes[plane->id];
-
-	/* The parameters of the colour plane. */
-	error = i915_skl_compute_plane_wm_params(crtc_state, plane_state,
-		&wm_params, color_plane);
-	if (error != 0)
-		return error;
-
-	/* The levels and the transition watermark. */
-	i915_skl_compute_wm_levels(crtc_state, plane, &wm_params, wm->wm);
-	i915_skl_compute_transition_wm(i915, &wm->trans_wm,
-		&wm->wm[0], &wm_params);
-
-	/* Display version 12+: the SAGV watermark and its transition watermark. */
-	display_ver = I915_LCD_DISPLAY_VER(i915);
-	if (display_ver >= 12) {
-		i915_tgl_compute_sagv_wm(crtc_state, plane, &wm_params, wm);
-
-		i915_skl_compute_transition_wm(i915, &wm->sagv.trans_wm,
-			&wm->sagv.wm0, &wm_params);
-	}
-
-	/* Succeeded: the watermarks are built. */
-	return 0;
-}
-
-/* Builds the watermarks of a plane on display 11+ (icl_build_plane_wm()); 0 or EINVAL. */
-static int
-i915_icl_build_plane_wm(
-	struct intel_crtc_state *crtc_state,
-	const struct intel_plane_state *plane_state)
-{
-	struct intel_plane *plane;
-	enum plane_id plane_id;
-	struct skl_plane_wm *wm;
-	const struct drm_framebuffer *fb;
-	bool visible;
-	int error;
-
-	/* The plane and its raw watermarks. */
-	plane = to_intel_plane(plane_state->uapi.plane);
-	plane_id = plane->id;
-	wm = &crtc_state->wm.skl.raw.planes[plane_id];
-
-	/* Watermarks calculated in master */
-	if (plane_state->planar_slave)
-		return 0;
-
-	/* The watermarks start cleared. */
-	kern_memset(wm, 0, sizeof(*wm));
-
-	/* A planar pair: the linked Y plane and this UV plane; otherwise the visible plane alone. */
-	if (plane_state->planar_linked_plane) {
-		fb = plane_state->hw.fb;
-
-		/* A planar pair is visible and YUV with several planes. */
-		visible = drv_i915_wm_plane_visible(crtc_state, plane_state);
-		I915_LCD_DRM_WARN(plane->base.dev, !visible,
-			"WARN_ON(!intel_wm_plane_visible(crtc_state, plane_state))\n");
-		I915_LCD_DRM_WARN_ON(plane->base.dev, !fb->format->is_yuv ||
-			    fb->format->num_planes == 1);
-
-		/* The Y plane. */
-		error = i915_skl_build_plane_wm_single(crtc_state, plane_state,
-			plane_state->planar_linked_plane, 0);
-		if (error != 0)
-			return error;
-
-		/* The UV plane. */
-		error = i915_skl_build_plane_wm_single(crtc_state, plane_state,
-			plane, 1);
-		if (error != 0)
-			return error;
-	} else {
-		visible = drv_i915_wm_plane_visible(crtc_state, plane_state);
-		if (visible) {
-			error = i915_skl_build_plane_wm_single(crtc_state, plane_state,
-				plane, 0);
-			if (error != 0)
-				return error;
-		}
-	}
-
-	/* Succeeded: the watermarks are built. */
-	return 0;
-}
-
-/* Builds the UV watermarks of a planar plane (skl_build_plane_wm_uv()); 0 or EINVAL. */
-static int
-i915_skl_build_plane_wm_uv(
-	struct intel_crtc_state *crtc_state,
-	const struct intel_plane_state *plane_state,
-	struct intel_plane *plane)
-{
-	struct skl_plane_wm *wm;
-	struct skl_wm_params wm_params;
-	int error;
-
-	/* The plane's raw watermarks are those of a planar plane. */
-	wm = &crtc_state->wm.skl.raw.planes[plane->id];
-	wm->is_planar = true;
-
-	/* uv plane watermarks must also be validated for NV12/Planar */
-	error = i915_skl_compute_plane_wm_params(crtc_state, plane_state,
-		&wm_params, 1);
-	if (error != 0)
-		return error;
-
-	/* The UV levels. */
-	i915_skl_compute_wm_levels(crtc_state, plane, &wm_params, wm->uv_wm);
-
-	/* Succeeded: the UV watermarks are built. */
-	return 0;
-}
-
-/* Builds the watermarks of a plane before display 11 (skl_build_plane_wm()); 0 or EINVAL. */
-static int
-i915_skl_build_plane_wm(
-	struct intel_crtc_state *crtc_state,
-	const struct intel_plane_state *plane_state)
-{
-	struct intel_plane *plane;
-	enum plane_id plane_id;
-	struct skl_plane_wm *wm;
-	const struct drm_framebuffer *fb;
-	bool visible;
-	int error;
-
-	/* The plane, its raw watermarks and its framebuffer. */
-	plane = to_intel_plane(plane_state->uapi.plane);
-	plane_id = plane->id;
-	wm = &crtc_state->wm.skl.raw.planes[plane_id];
-	fb = plane_state->hw.fb;
-
-	/* The watermarks start cleared. */
-	kern_memset(wm, 0, sizeof(*wm));
-
-	/* An invisible plane keeps them cleared. */
-	visible = drv_i915_wm_plane_visible(crtc_state, plane_state);
-	if (!visible)
-		return 0;
-
-	/* The main plane. */
-	error = i915_skl_build_plane_wm_single(crtc_state, plane_state,
-		plane, 0);
-	if (error != 0)
-		return error;
-
-	/* A YUV format with several planes adds the UV plane. */
-	if (fb->format->is_yuv && fb->format->num_planes > 1) {
-		error = i915_skl_build_plane_wm_uv(crtc_state, plane_state,
-			plane);
-		if (error != 0)
-			return error;
-	}
-
-	/* Succeeded: the watermarks are built. */
-	return 0;
-}
-
-/* The most lines any plane's watermark 0 needs (skl_max_wm0_lines()). */
-static int
-i915_skl_max_wm0_lines(
-	const struct intel_crtc_state *crtc_state)
-{
-	const struct skl_plane_wm *wm;
-	enum plane_id plane_id;
-	int wm0_lines;
-
-	/* Keeps the largest line count of the planes (for_each_plane_id_on_crtc(): the primary only). */
-	wm0_lines = 0;
-	for (plane_id = PLANE_PRIMARY; plane_id <= PLANE_PRIMARY; plane_id++) {
-		wm = &crtc_state->wm.skl.optimal.planes[plane_id];
-
-		/* FIXME what about !skl_wm_has_lines() platforms? */
-		wm0_lines = max_t(int, wm0_lines, wm->wm[0].lines);
-	}
-
-	/* Succeeded: reports the line count. */
-	return wm0_lines;
-}
-
-/*
- * The highest watermark level the vblank is long enough for
- * (skl_max_wm_level_for_vblank()); 0 with the level, or EINVAL when none is.
- */
-static int
-i915_skl_max_wm_level_for_vblank(
-	struct intel_crtc_state *crtc_state,
-	int wm0_lines,
-	int *level_out)
-{
-	struct intel_crtc *crtc;
-	struct drm_i915_private *i915;
-	bool too_short;
-	int latency;
-	int level;
-	int found;
-
-	/* The crtc and the device of the state. */
-	crtc = to_intel_crtc(crtc_state->uapi.crtc);
-	i915 = i915_lcd_to_i915(crtc->base.dev);
-	found = -1;
-
-	/* Looks down from the highest level for one the vblank covers. */
-	for (level = i915->display.wm.num_levels - 1; level >= 0; level--) {
-		/* FIXME should we care about the latency w/a's? */
-		latency = i915_skl_wm_latency(i915, level, NULL);
-		if (latency == 0)
-			continue;
-
-		/* FIXME is it correct to use 0 latency for wm0 here? */
-		if (level == 0)
-			latency = 0;
-
-		/* The first level the vblank covers is the one. */
-		too_short = i915_skl_is_vblank_too_short(crtc_state, wm0_lines, latency);
-		if (!too_short) {
-			found = level;
-			break;
-		}
-	}
-
-	/* No level fits the vblank. */
-	if (found < 0)
-		return EINVAL;
-
-	/* Succeeded: reports the level. */
-	*level_out = found;
-	return 0;
-}
-
-/* Tells whether a latency and watermark 0 do not fit the vblank (skl_is_vblank_too_short()). */
-static bool
-i915_skl_is_vblank_too_short(
-	const struct intel_crtc_state *crtc_state,
-	int wm0_lines,
-	int latency)
-{
-	const struct drm_display_mode *adjusted_mode;
-	int latency_lines;
-
-	/* The lines the latency spans. */
-	adjusted_mode = &crtc_state->hw.adjusted_mode;
-	latency_lines = drv_i915_usecs_to_scanlines(adjusted_mode, latency);
-
-	/* FIXME missing scaler and DSC pre-fill time */
-	if (crtc_state->framestart_delay +
-	    latency_lines +
-	    wm0_lines >
-	    adjusted_mode->crtc_vtotal - adjusted_mode->crtc_vblank_start)
-		return true;
-
-	/* Succeeded: the vblank is long enough. */
-	return false;
-}
-
-/*
- * Builds the watermarks of a crtc's planes (skl_build_pipe_wm()); 0 or
- * EINVAL.  The planes of the commit are the watermark context's one plane.
+ * Builds a pipe's watermarks through the xd watermarks: the plane's
+ * levels, transition and SAGV watermarks, then the levels the vertical
+ * blank allows (EINVAL when none).
  */
 static int
 i915_skl_build_pipe_wm(
@@ -3311,199 +2113,81 @@ i915_skl_build_pipe_wm(
 	struct intel_crtc_state *crtc_state;
 	const struct intel_plane_state *plane_state;
 	struct intel_plane *plane;
-	int display_ver;
+	struct drm_i915_private *i915;
+	const struct drm_display_mode *adjusted_mode;
+	struct i915_xd_wm_pipe pipe;
+	struct i915_xd_wm_surface surface;
+	struct i915_xd_plane_wm xd_wm;
+	struct skl_plane_wm *plane_wm;
+	unsigned deepest;
+	int sagv_too_short;
+	bool visible;
 	int error;
 
-	/* The crtc's new state, and the display version of its device (DISPLAY_VER()). */
+	/* The crtc state, the pipe and its one plane. */
 	crtc_state = intel_atomic_get_new_crtc_state(state, crtc);
-	display_ver = drv_i915_lcd_display_ver();
-
-	/* The new plane states of the commit: the watermark context's one plane. */
+	i915 = i915_lcd_to_i915(crtc->base.dev);
 	plane = wm->crtc_state->only_plane;
 	plane_state = (struct intel_plane_state *)wm->crtc_state->only_plane_state;
+	i915_wm_xd_pipe(i915, crtc_state, &pipe);
 
-	/*
-	 * FIXME should perhaps check {old,new}_plane_crtc->hw.crtc
-	 * instead but we don't populate that correctly for NV12 Y
-	 * planes so for now hack this.
-	 */
+	/* The plane's watermarks, when it is on this pipe and visible. */
 	if (plane != NULL && plane->pipe == crtc->pipe) {
-		/* The builder of the display version. */
-		if (display_ver >= 11) {
-			error = i915_icl_build_plane_wm(crtc_state, plane_state);
-		} else {
-			error = i915_skl_build_plane_wm(crtc_state, plane_state);
+		plane_wm = &crtc_state->wm.skl.raw.planes[plane->id];
+		kern_memset(plane_wm, 0, sizeof(*plane_wm));
+		visible = drv_i915_wm_plane_visible(crtc_state, plane_state);
+		if (visible) {
+			surface.width = (uint32_t)(i915_drm_rect_width(&plane_state->uapi.src) >> 16);
+			surface.cpp = plane_state->hw.fb->format->cpp[0];
+			surface.layout = I915_XD_WM_LINEAR;
+			if (plane_state->hw.fb->modifier == I915_FORMAT_MOD_X_TILED) {
+				surface.layout = I915_XD_WM_X_TILED;
+			} else if (plane_state->hw.fb->modifier != FORMAT_MOD_LINEAR) {
+				surface.layout = I915_XD_WM_Y_TILED;
+			}
+			surface.pixel_rate_khz = drv_i915_plane_pixel_rate(crtc_state, plane_state);
+			surface.minimal = 0;
+			if (drv_i915_lcd_display_ver() >= 13 && crtc_state->uapi.async_flip && plane->async_flip)
+				surface.minimal = 1;
+			drv_i915_xd_wm_plane(drv_i915_lcd_xd_platform(), &pipe, &surface, &xd_wm);
+			i915_wm_plane_from_xd(&xd_wm, plane_wm);
 		}
-
-		/* Reports a plane whose watermarks cannot be built. */
-		if (error != 0)
-			return error;
 	}
 
 	/* The optimal watermarks start as the raw ones. */
 	crtc_state->wm.skl.optimal = crtc_state->wm.skl.raw;
+	if (!crtc_state->hw.active)
+		return 0;
 
-	/* Disables the levels the vblank is too short for. */
-	error = i915_skl_wm_check_vblank(crtc_state);
+	/* The deepest level the vertical blank allows. */
+	adjusted_mode = &crtc_state->hw.adjusted_mode;
+	pipe.htotal = (uint32_t)adjusted_mode->crtc_htotal;
+	error = drv_i915_xd_wm_vblank_level(&pipe, (uint32_t)adjusted_mode->crtc_clock,
+		(uint32_t)(adjusted_mode->crtc_vtotal - adjusted_mode->crtc_vblank_start),
+		(unsigned)crtc_state->framestart_delay,
+		crtc_state->wm.skl.optimal.planes[PLANE_PRIMARY].wm[0].lines,
+		&deepest, &sagv_too_short);
 	if (error != 0)
 		return error;
+
+	/* The deeper levels and a SAGV that does not fit go off. */
+	crtc_state->wm_level_disabled = false;
+	if ((int)deepest < i915->display.wm.num_levels - 1)
+		crtc_state->wm_level_disabled = true;
+	if (drv_i915_lcd_display_ver() < 12)
+		sagv_too_short = 0;
+	i915_wm_plane_to_xd(&crtc_state->wm.skl.optimal.planes[PLANE_PRIMARY], &xd_wm);
+	drv_i915_xd_wm_cut(&xd_wm, pipe.levels, deepest, sagv_too_short);
+	i915_wm_plane_from_xd(&xd_wm, &crtc_state->wm.skl.optimal.planes[PLANE_PRIMARY]);
 
 	/* Succeeded: the pipe's watermarks are built. */
 	return 0;
 }
 
 /*
- * Disables a watermark level larger than its plane's DDB (skl_check_wm_level()).
- *
- * We only disable the watermarks for each plane if
- * they exceed the ddb allocation of said plane. This
- * is done so that we don't end up touching cursor
- * watermarks needlessly when some other plane reduces
- * our max possible watermark level.
- *
- * Bspec has this to say about the PLANE_WM enable bit:
- * "All the watermarks at this level for all enabled
- *  planes must be enabled before the level will be used."
- * So this is actually safe to do.
- */
-static void
-i915_skl_check_wm_level(
-	struct skl_wm_level *wm,
-	const struct skl_ddb_entry *ddb)
-{
-	u16 size;
-
-	/* A level that does not fit is cleared. */
-	size = skl_ddb_entry_size(ddb);
-	if (wm->min_ddb_alloc > size)
-		kern_memset(wm, 0, sizeof(*wm));
-}
-
-/* Disables an NV12 level pair when either half does not fit (skl_check_nv12_wm_level()). */
-static void
-i915_skl_check_nv12_wm_level(
-	struct skl_wm_level *wm,
-	struct skl_wm_level *uv_wm,
-	const struct skl_ddb_entry *ddb_y,
-	const struct skl_ddb_entry *ddb)
-{
-	u16 size_y;
-	u16 size;
-	bool clear;
-
-	/* The Y half against the Y entry, then the UV half against the main entry. */
-	clear = false;
-	size_y = skl_ddb_entry_size(ddb_y);
-	if (wm->min_ddb_alloc > size_y) {
-		clear = true;
-	} else {
-		size = skl_ddb_entry_size(ddb);
-		if (uv_wm->min_ddb_alloc > size)
-			clear = true;
-	}
-
-	/* Clears both halves when either does not fit. */
-	if (clear) {
-		kern_memset(wm, 0, sizeof(*wm));
-		kern_memset(uv_wm, 0, sizeof(*uv_wm));
-	}
-}
-
-/*
- * Tells whether a disabled level keeps the values of the level below
- * (skl_need_wm_copy_wa()).
- *
- * Wa_1408961008:icl, ehl
- * Wa_14012656716:tgl, adl
- * Wa_14017887344:icl
- * Wa_14017868169:adl, tgl
- * Due to some power saving optimizations, different subsystems
- * like PSR, might still use even disabled wm level registers,
- * for "reference", so lets keep at least the values sane.
- * Considering amount of WA requiring us to do similar things, was
- * decided to simply do it for all of the platforms, as those wm
- * levels are disabled, this isn't going to do harm anyway.
- */
-static bool
-i915_skl_need_wm_copy_wa(
-	struct drm_i915_private *i915,
-	int level,
-	const struct skl_plane_wm *wm)
-{
-	UNUSED_PARAMETER(i915);
-
-	/* Level 0 is never copied. */
-	if (level <= 0)
-		return false;
-
-	/* An enabled level keeps its own values. */
-	if (wm->wm[level].enable)
-		return false;
-
-	/* Succeeded: the disabled level takes the values below. */
-	return true;
-}
-
-/* Tells whether a plane's async flip uses the minimal watermark 0 only (use_minimal_wm0_only()). */
-static bool
-i915_use_minimal_wm0_only(
-	const struct intel_crtc_state *crtc_state,
-	struct intel_plane *plane)
-{
-	int display_ver;
-
-	/* Display version 13+ only (DISPLAY_VER() of the plane's device). */
-	display_ver = drv_i915_lcd_display_ver();
-	if (display_ver < 13)
-		return false;
-
-	/* Only an async flip of the crtc. */
-	if (!crtc_state->uapi.async_flip)
-		return false;
-
-	/* Only a plane that flips asynchronously. */
-	if (!plane->async_flip)
-		return false;
-
-	/* Succeeded: the minimal watermark 0 applies. */
-	return true;
-}
-
-/* Grants one plane its blocks plus a data-rate share of the rest (skl_allocate_plane_ddb()). */
-static void
-i915_skl_allocate_plane_ddb(
-	struct skl_plane_ddb_iter *iter,
-	struct skl_ddb_entry *ddb,
-	const struct skl_wm_level *wm,
-	u64 data_rate)
-{
-	u16 size;
-	u16 extra;
-
-	/* The plane's share of the leftover blocks, by its data rate. */
-	extra = 0;
-	if (data_rate) {
-		extra = min_t(u16, iter->size,
-			      DIV64_U64_ROUND_UP(iter->size * data_rate,
-						 iter->data_rate));
-		iter->size -= extra;
-		iter->data_rate -= data_rate;
-	}
-
-	/*
-	 * Keep ddb entry of all disabled planes explicitly zeroed
-	 * to avoid skl_ddb_add_affected_planes() adding them to
-	 * the state when other planes change their allocations.
-	 */
-	size = wm->min_ddb_alloc + extra;
-	if (size)
-		iter->start = i915_skl_ddb_entry_init(ddb, iter->start,
-			iter->start + size);
-}
-
-/*
- * Hands a crtc's DDB out to its planes (skl_crtc_allocate_plane_ddb()); 0
- * or EINVAL when the configuration exceeds the DDB.
+ * Hands a pipe's share of the DBUF out to its cursor and its plane through
+ * the xd watermarks, turning off the watermarks the allocation cannot
+ * hold.  Returns 0, or EINVAL when not even level 0 fits.
  */
 static int
 i915_skl_crtc_allocate_plane_ddb(
@@ -3515,223 +2199,53 @@ i915_skl_crtc_allocate_plane_ddb(
 	struct intel_crtc_state *crtc_state;
 	const struct intel_dbuf_state *dbuf_state;
 	const struct skl_ddb_entry *alloc;
-	struct skl_ddb_entry *ddb;
-	struct skl_ddb_entry *ddb_y;
-	const struct skl_ddb_entry *cursor_ddb;
-	const struct skl_plane_wm *const_wm;
-	struct skl_plane_wm *wm;
-	struct skl_plane_ddb_iter iter;
-	enum plane_id plane_id;
-	u16 cursor_size;
-	u16 size;
-	u32 blocks;
-	bool copy_wa;
+	struct skl_plane_wm *plane_wm;
+	struct i915_xd_wm_pipe pipe;
+	struct i915_xd_plane_wm xd_wm;
+	struct i915_xd_ddb range;
+	struct i915_xd_ddb plane_ddb;
+	struct i915_xd_ddb cursor_ddb;
+	u16 cursor_blocks;
 	int num_active;
-	int display_ver;
-	int level;
+	int error;
 
-	/* The device, the crtc's new state, and the pipe's DDB in the new DBUF state. */
+	/* The device, the new state, the pipe's share and the active pipes. */
 	i915 = i915_lcd_to_i915(crtc->base.dev);
 	crtc_state = intel_atomic_get_new_crtc_state(state, crtc);
 	dbuf_state = i915_wm_intel_atomic_get_new_dbuf_state(wm_ctx);
 	alloc = &dbuf_state->ddb[crtc->pipe];
 	num_active = hweight8(dbuf_state->active_pipes);
-	display_ver = I915_LCD_DISPLAY_VER(i915);
-	blocks = 0;
 
-	/* Clear the partitioning for disabled planes. */
+	/* Nothing is handed out on an inactive pipe or an empty share. */
 	kern_memset(crtc_state->wm.skl.plane_ddb, 0, sizeof(crtc_state->wm.skl.plane_ddb));
 	kern_memset(crtc_state->wm.skl.plane_ddb_y, 0, sizeof(crtc_state->wm.skl.plane_ddb_y));
-
-	/* An inactive crtc has no planes to allocate for. */
 	if (!crtc_state->hw.active)
 		return 0;
-
-	/* A pipe without DDB has nothing to hand out. */
-	iter.start = alloc->start;
-	iter.size = skl_ddb_entry_size(alloc);
-	if (iter.size == 0)
+	if (skl_ddb_entry_size(alloc) == 0)
 		return 0;
 
-	/* Allocate fixed number of blocks for cursor. */
-	if (display_ver < 20) {
-		cursor_size = i915_skl_cursor_allocation(crtc_state, num_active);
-		iter.size -= cursor_size;
-		i915_skl_ddb_entry_init(&crtc_state->wm.skl.plane_ddb[PLANE_CURSOR],
-			alloc->end - cursor_size, alloc->end);
+	/* The cursor's part and the plane's watermarks. */
+	cursor_blocks = (u16)i915_skl_cursor_allocation(crtc_state, num_active);
+	i915_wm_xd_pipe(i915, crtc_state, &pipe);
+	plane_wm = &crtc_state->wm.skl.optimal.planes[PLANE_PRIMARY];
+	i915_wm_plane_to_xd(plane_wm, &xd_wm);
+
+	/* Hands the share out. */
+	range.start = alloc->start;
+	range.end = alloc->end;
+	error = drv_i915_xd_wm_allocate(&pipe, &range, cursor_blocks, &xd_wm, crtc_state->rel_data_rate[PLANE_PRIMARY], &plane_ddb, &cursor_ddb);
+	if (error != 0) {
+		I915_LCD_DRM_DBG_KMS(&i915->drm, "Requested display configuration exceeds system DDB limitations");
+		return error;
 	}
 
-	/* The data rate the leftover blocks are shared by. */
-	iter.data_rate = i915_skl_total_relative_data_rate(crtc_state);
+	/* The plane's and the cursor's entries and the plane's watermarks. */
+	i915_wm_plane_from_xd(&xd_wm, plane_wm);
+	i915_skl_ddb_entry_init(&crtc_state->wm.skl.plane_ddb[PLANE_PRIMARY], plane_ddb.start, plane_ddb.end);
+	i915_skl_ddb_entry_init(&crtc_state->wm.skl.plane_ddb[PLANE_CURSOR], cursor_ddb.start, cursor_ddb.end);
 
-	/*
-	 * Find the highest watermark level for which we can satisfy the block
-	 * requirement of active planes.
-	 */
-	for (level = i915->display.wm.num_levels - 1; level >= 0; level--) {
-		blocks = 0;
-
-		/* Sums the level's blocks of every plane; a cursor that does not fit rules the level out. */
-		for_each_plane_id_on_crtc(crtc, plane_id) {
-			const_wm = &crtc_state->wm.skl.optimal.planes[plane_id];
-
-			/* The cursor has its fixed entry: a level it does not fit rules the level out. */
-			if (plane_id == PLANE_CURSOR && display_ver < 20) {
-				cursor_ddb = &crtc_state->wm.skl.plane_ddb[plane_id];
-
-				size = skl_ddb_entry_size(cursor_ddb);
-				if (const_wm->wm[level].min_ddb_alloc > size) {
-					I915_LCD_DRM_WARN(&i915->drm,
-						const_wm->wm[level].min_ddb_alloc != U16_MAX,
-						"WARN_ON(wm->wm[level].min_ddb_alloc != U16_MAX)\n");
-					blocks = U32_MAX;
-					break;
-				}
-
-				continue;
-			}
-
-			/* Every other plane needs its level's blocks. */
-			blocks += const_wm->wm[level].min_ddb_alloc;
-			blocks += const_wm->uv_wm[level].min_ddb_alloc;
-		}
-
-		/* The first level that fits is the one. */
-		if (blocks <= iter.size) {
-			iter.size -= blocks;
-			break;
-		}
-	}
-
-	/* No level fits: the configuration exceeds the DDB. */
-	if (level < 0) {
-		I915_LCD_DRM_DBG_KMS(&i915->drm,
-			"Requested display configuration exceeds system DDB limitations");
-		I915_LCD_DRM_DBG_KMS(&i915->drm, "minimum required %d/%d\n",
-			blocks, iter.size);
-		return EINVAL;
-	}
-
-	/* avoid the WARN later when we don't allocate any extra DDB */
-	if (iter.data_rate == 0)
-		iter.size = 0;
-
-	/*
-	 * Grant each plane the blocks it requires at the highest achievable
-	 * watermark level, plus an extra share of the leftover blocks
-	 * proportional to its relative data rate.
-	 */
-	for_each_plane_id_on_crtc(crtc, plane_id) {
-		ddb = &crtc_state->wm.skl.plane_ddb[plane_id];
-		ddb_y = &crtc_state->wm.skl.plane_ddb_y[plane_id];
-		const_wm = &crtc_state->wm.skl.optimal.planes[plane_id];
-
-		/* The cursor keeps its fixed entry. */
-		if (plane_id == PLANE_CURSOR && display_ver < 20)
-			continue;
-
-		/* Before display version 11 an NV12 plane has a Y and a UV entry. */
-		if (display_ver < 11 &&
-		    crtc_state->nv12_planes & BIT(plane_id)) {
-			i915_skl_allocate_plane_ddb(&iter, ddb_y, &const_wm->wm[level],
-				crtc_state->rel_data_rate_y[plane_id]);
-			i915_skl_allocate_plane_ddb(&iter, ddb, &const_wm->uv_wm[level],
-				crtc_state->rel_data_rate[plane_id]);
-		} else {
-			i915_skl_allocate_plane_ddb(&iter, ddb, &const_wm->wm[level],
-				crtc_state->rel_data_rate[plane_id]);
-		}
-	}
-
-	/* Every leftover block and every data rate is handed out. */
-	I915_LCD_DRM_WARN_ON(&i915->drm, iter.size != 0 || iter.data_rate != 0);
-
-	/*
-	 * When we calculated watermark values we didn't know how high
-	 * of a level we'd actually be able to hit, so we just marked
-	 * all levels as "enabled."  Go back now and disable the ones
-	 * that aren't actually possible.
-	 */
-	for (level++; level < i915->display.wm.num_levels; level++) {
-		for_each_plane_id_on_crtc(crtc, plane_id) {
-			ddb = &crtc_state->wm.skl.plane_ddb[plane_id];
-			ddb_y = &crtc_state->wm.skl.plane_ddb_y[plane_id];
-			wm = &crtc_state->wm.skl.optimal.planes[plane_id];
-
-			/* Clears the level of a plane whose DDB it does not fit. */
-			if (display_ver < 11 &&
-			    crtc_state->nv12_planes & BIT(plane_id)) {
-				i915_skl_check_nv12_wm_level(&wm->wm[level],
-					&wm->uv_wm[level],
-					ddb_y, ddb);
-			} else {
-				i915_skl_check_wm_level(&wm->wm[level], ddb);
-			}
-
-			/* A disabled level keeps the values of the level below. */
-			copy_wa = i915_skl_need_wm_copy_wa(i915, level, wm);
-			if (copy_wa) {
-				wm->wm[level].blocks = wm->wm[level - 1].blocks;
-				wm->wm[level].lines = wm->wm[level - 1].lines;
-				wm->wm[level].ignore_lines = wm->wm[level - 1].ignore_lines;
-			}
-		}
-	}
-
-	/*
-	 * Go back and disable the transition and SAGV watermarks
-	 * if it turns out we don't have enough DDB blocks for them.
-	 */
-	for_each_plane_id_on_crtc(crtc, plane_id) {
-		ddb = &crtc_state->wm.skl.plane_ddb[plane_id];
-		ddb_y = &crtc_state->wm.skl.plane_ddb_y[plane_id];
-		wm = &crtc_state->wm.skl.optimal.planes[plane_id];
-
-		/* The transition watermark against the plane's entry (the Y entry of an NV12 plane). */
-		if (display_ver < 11 &&
-		    crtc_state->nv12_planes & BIT(plane_id)) {
-			i915_skl_check_wm_level(&wm->trans_wm, ddb_y);
-		} else {
-			size = skl_ddb_entry_size(ddb_y);
-			I915_LCD_DRM_WARN(&i915->drm, size != 0,
-				"WARN_ON(skl_ddb_entry_size(ddb_y))\n");
-
-			i915_skl_check_wm_level(&wm->trans_wm, ddb);
-		}
-
-		/* The SAGV watermarks against the plane's entry. */
-		i915_skl_check_wm_level(&wm->sagv.wm0, ddb);
-		i915_skl_check_wm_level(&wm->sagv.trans_wm, ddb);
-	}
-
-	/* Succeeded: the planes have their DDB. */
+	/* Succeeded: the share is handed out. */
 	return 0;
-}
-
-/* The DDB range of a set of DBUF slices (skl_ddb_entry_for_slices()). */
-static void
-i915_skl_ddb_entry_for_slices(
-	struct drm_i915_private *i915,
-	u8 slice_mask,
-	struct skl_ddb_entry *ddb)
-{
-	int slice_size;
-
-	/* No slices, no range. */
-	slice_size = i915_intel_dbuf_slice_size(i915);
-	if (!slice_mask) {
-		ddb->start = 0;
-		ddb->end = 0;
-		return;
-	}
-
-	/* From the first slice's start to the last slice's end. */
-	ddb->start = (ffs(slice_mask) - 1) * slice_size;
-	ddb->end = fls(slice_mask) * slice_size;
-
-	/* The range must be non-empty and inside the DBUF. */
-	I915_LCD_WARN_ON(ddb->start >= ddb->end);
-	I915_LCD_WARN_ON(ddb->end > DISPLAY_INFO(i915)->dbuf.size);
 }
 
 /* The DDB weight of a crtc: its pipe mode's width (intel_crtc_ddb_weight()). */
@@ -3778,13 +2292,10 @@ i915_skl_crtc_allocate_ddb(
 	const struct intel_dbuf_state *old_dbuf_state;
 	struct intel_dbuf_state *new_dbuf_state;
 	struct intel_crtc_state *crtc_state;
-	struct skl_ddb_entry ddb_slices;
+	struct i915_xd_ddb range;
 	enum pipe pipe;
 	unsigned int mbus_offset;
-	u32 ddb_range_size;
 	u32 dbuf_slice_mask;
-	u32 start;
-	u32 end;
 	bool equal;
 	int error;
 
@@ -3796,30 +2307,18 @@ i915_skl_crtc_allocate_ddb(
 	mbus_offset = 0;
 
 	/* A pipe without weight gets no DDB; otherwise its weighted share of its slices' range. */
+	/* The pipe's share of its slices by weight (none without weight). */
 	if (new_dbuf_state->weight[pipe] == 0) {
 		i915_skl_ddb_entry_init(&new_dbuf_state->ddb[pipe], 0, 0);
 	} else {
 		dbuf_slice_mask = new_dbuf_state->slices[pipe];
-
-		/* The range of the pipe's slices, relative to its MBUS. */
-		i915_skl_ddb_entry_for_slices(i915, dbuf_slice_mask, &ddb_slices);
 		mbus_offset = i915_mbus_ddb_offset(i915, dbuf_slice_mask);
-		ddb_range_size = skl_ddb_entry_size(&ddb_slices);
-
-		/* The pipe's share by weight. */
 		i915_intel_crtc_dbuf_weights(new_dbuf_state, pipe,
 			&weight_start, &weight_end, &weight_total);
-
-		/* The share, placed at the MBUS-relative start of the slices. */
-		start = ddb_range_size * weight_start / weight_total;
-		end = ddb_range_size * weight_end / weight_total;
-
-		i915_skl_ddb_entry_init(&new_dbuf_state->ddb[pipe],
-			ddb_slices.start - mbus_offset + start,
-			ddb_slices.start - mbus_offset + end);
+		drv_i915_xd_dbuf_pipe_range(drv_i915_lcd_xd_platform(), (u8)dbuf_slice_mask, weight_start, weight_end, weight_total, &range);
+		i915_skl_ddb_entry_init(&new_dbuf_state->ddb[pipe], range.start, range.end);
 	}
 
-	/* The same slices and the same DDB: nothing changes for the crtc. */
 	if (old_dbuf_state->slices[pipe] == new_dbuf_state->slices[pipe]) {
 		equal = skl_ddb_entry_equal(&old_dbuf_state->ddb[pipe],
 			&new_dbuf_state->ddb[pipe]);
@@ -3862,109 +2361,7 @@ i915_skl_crtc_allocate_ddb(
 	return 0;
 }
 
-/* The watermark of a level, the SAGV watermark 0 where the pipe uses it (skl_plane_wm_level()). */
-static const struct skl_wm_level *
-i915_skl_plane_wm_level(
-	const struct skl_pipe_wm *pipe_wm,
-	enum plane_id plane_id,
-	int level)
-{
-	const struct skl_plane_wm *wm;
-
-	/* The plane's watermarks. */
-	wm = &pipe_wm->planes[plane_id];
-
-	/* Level 0 of a pipe on SAGV watermarks is the SAGV watermark. */
-	if (level == 0 && pipe_wm->use_sagv_wm)
-		return &wm->sagv.wm0;
-
-	/* Succeeded: reports the level. */
-	return &wm->wm[level];
-}
-
-/* The transition watermark, the SAGV one where the pipe uses it (skl_plane_trans_wm()). */
-static const struct skl_wm_level *
-i915_skl_plane_trans_wm(
-	const struct skl_pipe_wm *pipe_wm,
-	enum plane_id plane_id)
-{
-	const struct skl_plane_wm *wm;
-
-	/* The plane's watermarks. */
-	wm = &pipe_wm->planes[plane_id];
-
-	/* A pipe on SAGV watermarks uses the SAGV transition watermark. */
-	if (pipe_wm->use_sagv_wm)
-		return &wm->sagv.trans_wm;
-
-	/* Succeeded: reports the transition watermark. */
-	return &wm->trans_wm;
-}
-
-/* Writes one watermark level register (skl_write_wm_level()). */
-static void
-i915_skl_write_wm_level(
-	struct drm_i915_private *i915,
-	i915_reg_t reg,
-	const struct skl_wm_level *level)
-{
-	u32 val;
-
-	/* The enable and ignore-lines bits, the blocks and the lines. */
-	val = 0;
-	if (level->enable)
-		val |= PLANE_WM_EN;
-	if (level->ignore_lines)
-		val |= PLANE_WM_IGNORE_LINES;
-	val |= REG_FIELD_PREP(PLANE_WM_BLOCKS_MASK, level->blocks);
-	val |= REG_FIELD_PREP(PLANE_WM_LINES_MASK, level->lines);
-
-	/* Writes the register. */
-	i915_lcd_intel_de_write_fw(i915, reg, val);
-}
-
-/* Writes one DDB entry register (skl_ddb_entry_write()); an empty entry writes 0. */
-static void
-i915_skl_ddb_entry_write(
-	struct drm_i915_private *i915,
-	i915_reg_t reg,
-	const struct skl_ddb_entry *entry)
-{
-	/* The inclusive end and the start, or 0 for an empty entry. */
-	if (entry->end) {
-		i915_lcd_intel_de_write_fw(i915, reg,
-			PLANE_BUF_END(entry->end - 1) |
-			PLANE_BUF_START(entry->start));
-	} else {
-		i915_lcd_intel_de_write_fw(i915, reg, 0);
-	}
-}
-
-/* Sets the DBUF minimum tracker state service of every slice (intel_dbuf_mdclk_cdclk_ratio_update()). */
-static void
-i915_intel_dbuf_mdclk_cdclk_ratio_update(
-	struct drm_i915_private *i915,
-	u8 ratio,
-	bool joined_mbus)
-{
-	enum dbuf_slice slice;
-
-	/* A joined MBUS doubles the ratio. */
-	if (joined_mbus)
-		ratio *= 2;
-
-	/* Programs each slice of the platform. */
-	for_each_dbuf_slice(i915, slice) {
-		(void)i915_lcd_intel_de_rmw(i915, DBUF_CTL_S(slice),
-			DBUF_MIN_TRACKER_STATE_SERVICE_MASK,
-			DBUF_MIN_TRACKER_STATE_SERVICE(ratio - 1));
-	}
-}
-
-/*
- * Configure MBUS_CTL and all DBUF_CTL_S of each slice to join_mbus state before
- * update the request state of all DBUS slices (update_mbus_pre_enable()).
- */
+/* Joins or splits the MBUS before the plane update, through the xd DBUF. */
 static void
 i915_update_mbus_pre_enable(
 	struct i915_lcd_wm_ctx *wm,
@@ -3972,72 +2369,13 @@ i915_update_mbus_pre_enable(
 {
 	struct drm_i915_private *i915;
 	const struct intel_dbuf_state *dbuf_state;
-	bool alderlake_p;
-	int display_ver;
-	u32 mbus_ctl;
 
-	/* The device and the new DBUF state of the commit. */
+	/* The device and the new DBUF state. */
 	i915 = i915_lcd_to_i915(state->base.dev);
 	dbuf_state = i915_wm_intel_atomic_get_new_dbuf_state(wm);
 
-	/* HAS_MBUS_JOINING(): Alder Lake-P and display 14+ only. */
-	alderlake_p = I915_LCD_IS_ALDERLAKE_P(i915);
-	display_ver = I915_LCD_DISPLAY_VER(i915);
-	if (!alderlake_p && display_ver < 14)
-		return;
-
-	/*
-	 * TODO: Implement vblank synchronized MBUS joining changes.
-	 * Must be properly coordinated with dbuf reprogramming.
-	 */
-	if (dbuf_state->joined_mbus) {
-		mbus_ctl = MBUS_HASHING_MODE_1x4 | MBUS_JOIN |
-			MBUS_JOIN_PIPE_SELECT_NONE;
-	} else {
-		mbus_ctl = MBUS_HASHING_MODE_2x2 |
-			MBUS_JOIN_PIPE_SELECT_NONE;
-	}
-
-	/* Writes the joining and hashing mode, then the slices' tracker service. */
-	(void)i915_lcd_intel_de_rmw(i915, MBUS_CTL,
-		MBUS_HASHING_MODE_MASK | MBUS_JOIN |
-		MBUS_JOIN_PIPE_SELECT_MASK, mbus_ctl);
-	i915_intel_dbuf_mdclk_cdclk_ratio_update(i915, 2, dbuf_state->joined_mbus);
-}
-
-/* Tells whether a pipe is the only active one of its DBUF bank (xelpdp_is_only_pipe_per_dbuf_bank()). */
-static bool
-i915_xelpdp_is_only_pipe_per_dbuf_bank(
-	enum pipe pipe,
-	u8 active_pipes)
-{
-	enum pipe partner;
-
-	/* The other pipe of the bank: A with D, B with C. */
-	switch (pipe) {
-	case PIPE_A:
-		partner = PIPE_D;
-		break;
-	case PIPE_D:
-		partner = PIPE_A;
-		break;
-	case PIPE_B:
-		partner = PIPE_C;
-		break;
-	case PIPE_C:
-		partner = PIPE_B;
-		break;
-	default: /* to suppress compiler warning */
-		I915_LCD_MISSING_CASE(pipe);
-		return false;
-	}
-
-	/* The partner is active: the pipe shares the bank. */
-	if (active_pipes & BIT(partner))
-		return false;
-
-	/* Succeeded: the pipe is alone in its bank. */
-	return true;
+	/* The bus control and the tracker service. */
+	drv_i915_xd_dbuf_mbus(drv_i915_lcd_xd_io(i915), drv_i915_lcd_xd_platform(), dbuf_state->joined_mbus ? 1 : 0);
 }
 
 /* Decodes a watermark level register (skl_wm_level_from_reg_val()). */
