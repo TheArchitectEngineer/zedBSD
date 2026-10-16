@@ -6,7 +6,7 @@
  */
 
 /*
- * The glass look of window mode (ws035-p059, a proof of the look and feel):
+ * The glass look of window mode (a proof of the look and feel):
  * its images and the shapes it draws.  The windows, title bars and system
  * bar that use them are in shell.c.
  *
@@ -18,18 +18,18 @@
  *
  * Text is drawn from a glyph atlas made with libtruetype from the font at
  * server->font_path (printable ASCII and the multiplication sign) and its
- * companions (ws090-p020: Mahora Bold, and the monospaced fallback for the
- * signs Mahora lacks); without a font the look is drawn without text.  Any other character (WS070 p009) is
+ * companions (Mahora Bold, and the monospaced fallback for the
+ * signs Mahora lacks); without a font the look is drawn without text.  Any other character is
  * rendered when it is first drawn, from that font or else from the fallback
  * font (server->fallback_font_path, for Japanese), into a cell of the
  * atlas's cache, the least recently drawn cell making room; text is UTF-8.
  * A character neither font has is looked for in the colour emoji font
- * (GLASS_EMOJI_FONT, opened on the first such character, ws102-p019),
+ * (GLASS_EMOJI_FONT, opened on the first such character),
  * whose colour glyph goes into the cell as it is and is drawn as an image.
  * The titlebar's icons (icons.c) are rendered into the atlas once, at two
- * sizes, and so are the seven layers of the Kei mark (artwork/mark.c,
- * ws035-p108), which the login and lock screens draw.  The applications'
- * tiles (icons.c, ws128-p012: the banded rounded square with the picture
+ * sizes, and so are the seven layers of the Kei mark (artwork/mark.c),
+ * which the login and lock screens draw.  The applications'
+ * tiles (icons.c: the banded rounded square with the picture
  * cut out) are rendered in colour into an image of their own at each size
  * the compositor draws them (App Home, Alt+Tab, the system bar, the title
  * bars' marks) and drawn as images, so that what is behind a tile shows
@@ -60,7 +60,7 @@
 /*
  * The atlas holds printable ASCII, the multiplication sign (the close
  * button), the check mark and the right angle quote (the System Menu) at
- * five sizes, and at the sixth (App Home's clock, ws181-p006) only the
+ * five sizes, and at the sixth (App Home's clock) only the
  * space, the digits and the colon: the glyphs up to GLASS_CLOCK_LAST.
  */
 #define GLASS_GLYPHS		98U
@@ -70,7 +70,7 @@
 #define GLASS_ATLAS_HEIGHT	1024U
 #define GLASS_FILE_MAX		(16U * 1024U * 1024U)
 
-/* The fonts kept open: the first font, the fallback and the colour emoji font (ws102-p019). */
+/* The fonts kept open: the first font, the fallback and the colour emoji font. */
 #define GLASS_FACES		3U
 #define GLASS_EMOJI_FONT	KEILAND_DATADIR "/fonts/keiland-emoji.ttf"
 
@@ -78,7 +78,7 @@
 #define GLASS_ICON_SIZES	2U
 
 /*
- * The applications' tiles (ws128-p012): the sizes kept, in pixels a side
+ * The applications' tiles: the sizes kept, in pixels a side
  * (a window's mark by its title and on Wiseview's tiles, the system bar's
  * applications, Alt+Tab, App Home), how many, the image they are kept in
  * and the empty pixels between them.
@@ -90,20 +90,20 @@
 
 /*
  * How far inside an application's tile, a part of its side, the blurred
- * scene its picture shows is drawn (BUG-237): past the tile's smoothed
+ * scene its picture shows is drawn: past the tile's smoothed
  * edge, so that none of it shows round the tile, and short of its picture
  * (about a sixth of the side in).
  */
 #define GLASS_TILE_SCENE_INSET	0.08f
 
-/* The bands an application tile's reflection on App Home's floor fades out in (ws099-p035b). */
+/* The bands an application tile's reflection on App Home's floor fades out in. */
 #define GLASS_REFLECTION_SLICES	8U
 
-/* The largest side, in output pixels, of a quad joined to others into one draw (batch.c, ws211-p003 review-1 M3). */
+/* The largest side, in output pixels, of a quad joined to others into one draw (batch.c). */
 #define GLASS_BATCH_SIDE	128.0f
 
 /*
- * The large digits of the lock screen's clock (ws187-p001), in an image of
+ * The large digits of the lock screen's clock, in an image of
  * their own at the one size the clock asks for: the image's size, its
  * glyphs (the ten digits, then the colon), and the largest size and glyph
  * box (pixels) they are drawn at.
@@ -124,7 +124,7 @@
 
 /*
  * The Kei mark's layers again at the system bar's launcher size, in pixels a
- * side (ws035-p117): drawn one to one, they stay crisp where the large ones
+ * side: drawn one to one, they stay crisp where the large ones
  * would be shrunk five times.  They sit in the free column right of the
  * large ones, GLASS_MARK_SMALL_ACROSS a row.
  */
@@ -135,7 +135,7 @@
 #define GLASS_BITMAP		64U
 
 /*
- * What a glyph worker's job is for (ws213-p005): a cell of the atlas's
+ * What a glyph worker's job is for: a cell of the atlas's
  * cache, or one of the lock screen clock's large digits.
  */
 #define GLASS_JOB_CELL		0U
@@ -147,7 +147,7 @@
 #define GLASS_BLUR_PASSES	3U
 
 /*
- * A picture decoded for the wallpaper (ws035-p133, ws138-p001): its pixels
+ * A picture decoded for the wallpaper: its pixels
  * (three bytes each, red, green and blue, the rows packed) and its size in
  * pixels.  data is NULL for the landscape drawn here.
  */
@@ -158,8 +158,8 @@ struct wallpaper_picture {
 };
 
 /*
- * The wallpaper's file read and decoded ahead on a thread of its own
- * (ws035-p133, ws138-p001), so that the disk and the decoding work while the
+ * The wallpaper's file read and decoded ahead on a thread of its own,
+ * so that the disk and the decoding work while the
  * Vulkan device is made: the path, the picture (data NULL when it could not
  * be read or decoded), and whether the thread runs or has not been joined
  * yet.  Only the main thread starts and joins it; the thread writes the
@@ -175,9 +175,9 @@ struct glass_prefetch {
 
 /*
  * A wallpaper chosen during the session, read and decoded on a thread of
- * its own (WS135, plan/ws135/design.md section 4.4) so that the event loop
+ * its own so that the event loop
  * never waits on the disk: the path ("-" and landscape set for the
- * landscape, ws213-p005), the picture or the error once the thread is
+ * landscape), the picture or the error once the thread is
  * done, and whether it runs or has not been joined yet.  lock guards done;
  * only the event loop starts it (kwl_glass_wallpaper_begin,
  * kwl_glass_landscape) and joins it (kwl_glass_wallpaper_poll,
@@ -185,7 +185,7 @@ struct glass_prefetch {
  *
  * The thread also draws the picture at the output's size (width and
  * height, taken at the start) into rows and the frosted glass into blurred
- * (ws213-p005, the work thread W: the pixels and the blur are not the
+ * (the work thread W: the pixels and the blur are not the
  * event loop's work), both packed at their widths; the event loop only
  * copies them into the look's images.  rows is NULL when they could not be
  * made, and the event loop then draws the picture itself.
@@ -208,7 +208,7 @@ struct glass_loader {
 /*
  * One glyph as the look draws it: its place in its image, its box and
  * advance, whether it is a colour glyph drawn as an image, and whether its
- * coverage is still being rendered by the glyph worker (ws213-p005): a
+ * coverage is still being rendered by the glyph worker: a
  * pending glyph is measured with its advance but not drawn, and its cell
  * gets the coverage at the start of a later walk.
  */
@@ -228,7 +228,7 @@ struct glass_glyph {
  * One cell of the atlas's cache: the character and size whose glyph it
  * holds (a codepoint of 0 is a free cell), the glyph's place and metrics,
  * when it was last drawn, and the number of its last assignment (a glyph
- * worker's result for an earlier one is not written, ws213-p005).
+ * worker's result for an earlier one is not written).
  */
 struct glass_cached {
 	uint32_t codepoint;
@@ -243,16 +243,16 @@ struct glass_cached {
  * the ASCII glyphs at each size, the icons at their sizes, the
  * applications' tiles in their own image (tiles_ready once they are drawn
  * there), the Kei mark's
- * layers large and at the launcher's size (ws035-p117), and the cache of
+ * layers large and at the launcher's size, and the cache of
  * other characters; the fonts stay open (with their files' bytes) to
  * render the cache's glyphs.  cache_top is the atlas row the cache starts
  * at, cache_count the cells that fit under it, clock the count of cached
  * glyphs drawn (the cells' use is ordered by it).  The large digits of the
- * lock screen's clock (ws187-p001) have their image, made when the clock
+ * lock screen's clock have their image, made when the clock
  * first asks, and are drawn again only when it asks for another size
  * (large_pixels, 0 while none is drawn).
  *
- * The glyph worker (ws213-p005) renders the cache's glyphs and the large
+ * The glyph worker renders the cache's glyphs and the large
  * digits away from the event loop once it runs (worker_running): it opens
  * its own faces over the bytes kept here (font_size their lengths), a
  * cell's assignments are numbered by cell_generation, and the large
@@ -286,7 +286,7 @@ struct kwl_glass {
 	 * review-4 H2): a cell used at guard_clock or later holds one, and
 	 * guarded_evictions counts those given to another glyph before the
 	 * picture completed, and the glyphs the picture could not draw because
-	 * they were still being rendered (ws213-p005; 0: no guard).
+	 * they were still being rendered (0: no guard).
 	 */
 	uint64_t guard_clock;
 	uint32_t guarded_evictions;
@@ -376,8 +376,8 @@ static struct glass_loader glass_loader;
 static int glass_loader_ready;
 
 /*
- * Starts reading and decoding the wallpaper's file on a thread (ws035-p133,
- * ws138-p001), before the Vulkan device is made; the look takes the picture
+ * Starts reading and decoding the wallpaper's file on a thread,
+ * before the Vulkan device is made; the look takes the picture
  * when it draws the wallpaper.  Without a thread the look reads the file
  * itself.
  */
@@ -434,7 +434,7 @@ kwl_glass_open(
 	if (error != 0)
 		printf("KWL GLASS no text: font=%s errno=%d\n", server->font_path, error);
 
-	/* The glyph worker renders the glyphs drawn from now on (ws213-p005); without it the event loop renders them. */
+	/* The glyph worker renders the glyphs drawn from now on; without it the event loop renders them. */
 	if (glass->text)
 		glass_worker_start(server, glass);
 	printf("KWL STARTUP step=glyphs ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
@@ -501,9 +501,9 @@ kwl_glass_close(
 }
 
 /*
- * Draws the landscape into the look again (ws089-p007, the desktop's
+ * Draws the landscape into the look again (the desktop's
  * preferences going back to no picture).  The wallpaper's thread draws it
- * like a picture (ws213-p005) and kwl_glass_wallpaper_poll shows it; while
+ * like a picture and kwl_glass_wallpaper_poll shows it; while
  * the thread reads another picture the event loop draws it at once.
  *
  * The images keep their size and their descriptors, so only their pixels
@@ -523,7 +523,7 @@ kwl_glass_landscape(
 		return ENODEV;
 
 	/*
-	 * The wallpaper's thread draws it when it is free (ws213-p005), and
+	 * The wallpaper's thread draws it when it is free, and
 	 * kwl_glass_wallpaper_poll shows it; while it reads a picture the
 	 * event loop draws the landscape itself, as before.
 	 */
@@ -557,8 +557,8 @@ kwl_glass_landscape(
 }
 
 /*
- * Makes the look's output-sized images again for an output of another size
- * (ws113-p004a): the wallpaper and its blurred copy, with the picture the
+ * Makes the look's output-sized images again for an output of another size:
+ * the wallpaper and its blurred copy, with the picture the
  * settings hold now.  The device finishes what it is drawing from them
  * first.  Returns 0 or an errno value (the look is then drawn without its
  * wallpaper until the next change).
@@ -602,11 +602,11 @@ kwl_glass_resize(
 
 /*
  * Makes the wallpaper and its frosted glass at another size, the picture
- * in them, before an output turns (WS217): the look keeps its own images
+ * in them, before an output turns: the look keeps its own images
  * until kwl_glass_size_swap gives it these, so that a failure here leaves
  * everything as it was.  The two images' layout moves are submitted and
  * waited for once, as at the start (each alone waited for the render
- * thread and the queue, BUG-306).  Returns 0 (nothing made without the
+ * thread and the queue).  Returns 0 (nothing made without the
  * look) or an errno value, with nothing left made.
  */
 int
@@ -650,7 +650,7 @@ kwl_glass_size_prepare(
 /*
  * Gives the look the wallpaper and frosted glass kwl_glass_size_prepare
  * made, and lets its old ones go (the device is idle: an output turning
- * with the render thread parked, WS217).  A wallpaper being read for the
+ * with the render thread parked).  A wallpaper being read for the
  * old size is drawn again at the new one when it comes
  * (kwl_glass_wallpaper_poll compares the sizes).
  */
@@ -700,7 +700,7 @@ kwl_glass_size_drop(
 
 /*
  * Starts reading a wallpaper chosen during the session on a thread of its
- * own (WS135): the event loop goes on, and kwl_glass_wallpaper_poll shows
+ * own: the event loop goes on, and kwl_glass_wallpaper_poll shows
  * the picture once it is read.  Returns 0, EBUSY while another is being
  * read, EINVAL for a path that is not an ordinary file (a FIFO, a device,
  * a folder) or too long, ENODEV without the look, or the errno value of
@@ -822,8 +822,8 @@ kwl_glass_wallpaper_poll(
 	(void)vkDeviceWaitIdle(server->compose->device);
 
 	/*
-	 * The rows the thread drew at the output's size are copied in
-	 * (ws213-p005); for an output of another size by now, or rows that
+	 * The rows the thread drew at the output's size are copied in;
+	 * for an output of another size by now, or rows that
 	 * could not be made, the event loop draws the picture itself.
 	 */
 	if (glass_loader.rows != NULL &&
@@ -855,7 +855,7 @@ kwl_glass_wallpaper_poll(
 
 /*
  * Makes the wallpaper's image and its blurred copy at a size (the output's
- * logical one: the caller says which, WS217), and draws them.
+ * logical one: the caller says which), and draws them.
  */
 static int
 wallpaper_create(
@@ -864,10 +864,12 @@ wallpaper_create(
 	uint32_t width,
 	uint32_t height)
 {
+	uint64_t started;
 	VkResult result;
 	int error;
 
 	/* The output-sized image. */
+	started = kwl_milliseconds();
 	result = kwl_host_image_create(server->compose, width, height, server->compose->sampler, &glass->wallpaper);
 	if (result != VK_SUCCESS)
 		return EIO;
@@ -876,6 +878,9 @@ wallpaper_create(
 	error = blur_create(server, glass, width, height);
 	if (error != 0)
 		return error;
+
+	/* How long the two images took; the rest of the step is the picture's reading and drawing. */
+	printf("KWL STARTUP step=wallpaper-images ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 
 	/* The picture in both. */
 	error = wallpaper_fill(glass, server->wallpaper_path, width, height);
@@ -932,12 +937,12 @@ glass_size_make(
 }
 
 /*
- * Draws the start's picture (a PNG or a JPEG, ws138-p001; or the landscape
+ * Draws the start's picture (a PNG or a JPEG; or the landscape
  * drawn here when path is NULL or cannot be read) into the wallpaper's image
  * and its blurred copy, which are mapped, the output's size, and kept for
  * the look's life.
  *
- * The picture is made one output row at a time (ws035-p133): each row is
+ * The picture is made one output row at a time: each row is
  * packed, copied into the image (which is only written, never read), and
  * added to the frosted glass's block averages, so no output-sized copy of
  * the picture is kept.  A wallpaper chosen later is read on a thread
@@ -1010,10 +1015,10 @@ wallpaper_draw(
  * Draws a picture (data NULL: the landscape) at an output's size into the
  * wallpaper's rows and the frosted glass's (the output's size divided by
  * GLASS_BLUR_SCALE), each row at its pitch in bytes.  The picture is made
- * one output row at a time (ws035-p133): each row is packed, copied out,
+ * one output row at a time: each row is packed, copied out,
  * and added to the frosted glass's block averages, so no output-sized copy
  * of the picture is kept.  It touches nothing but what it is given, so the
- * wallpaper's thread runs it too (ws213-p005).  Returns 0 or ENOMEM.
+ * wallpaper's thread runs it too.  Returns 0 or ENOMEM.
  */
 static int
 wallpaper_render(
@@ -1149,8 +1154,7 @@ landscape_row(
 }
 
 /*
- * Colors one pixel of the landscape in the Kei look (ws035-p108,
- * plan/ws035/kei-identity-design.md): a bright sky that pales towards the
+ * Colors one pixel of the landscape in the Kei look: a bright sky that pales towards the
  * horizon with a soft sun, three ranges of misty hills (pale blue far away,
  * young green near), a still lake that reflects them, soft green leaves at
  * the top left and along the foot with a few blurred white flowers, and the
@@ -1468,16 +1472,19 @@ atlas_create(
 	struct kwl_server *server,
 	struct kwl_glass *glass)
 {
+	uint64_t started;
 	VkResult result;
 	int error;
 
 	/* The first font, kept open for the cache's glyphs. */
+	started = kwl_milliseconds();
 	error = glass_open_face(glass, server->font_path);
 	if (error != 0)
 		return error;
 
-	/* Its companions: Mahora Bold, and the monospaced fallback for the signs it lacks (ws090-p020). */
+	/* Its companions: Mahora Bold, and the monospaced fallback for the signs it lacks. */
 	(void)truetype_open_companions(glass->faces[0], KEILAND_FONT_BOLD, KEILAND_FONT_FALLBACK_MONO);
+	printf("KWL STARTUP step=glyphs-fonts ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 
 	/*
 	 * The fallback font is opened on the first character the first font
@@ -1488,9 +1495,11 @@ atlas_create(
 	glass->fallback_tried = 0;
 
 	/* The atlas image, transparent where nothing is drawn. */
+	started = kwl_milliseconds();
 	result = kwl_host_image_create(server->compose, GLASS_ATLAS_WIDTH, GLASS_ATLAS_HEIGHT, server->compose->sampler, &glass->atlas);
 	if (result != VK_SUCCESS)
 		return EIO;
+	printf("KWL STARTUP step=glyphs-image ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 
 	/* The glyphs at each size, the icons and the cache's place after them. */
 	error = atlas_fill(glass, glass->faces[0]);
@@ -1649,14 +1658,14 @@ file_read(
 	if (descriptor < 0)
 		return NULL;
 
-	/* Its size, bounded by GLASS_FILE_MAX (ws035-p133: the buffer is as large as the file). */
+	/* Its size, bounded by GLASS_FILE_MAX (the buffer is as large as the file). */
 	error = fstat(descriptor, &status);
 	if (error != 0) {
 		close(descriptor);
 		return NULL;
 	}
 
-	/* Only an ordinary file is a picture: a FIFO or a device would hold the reader (WS135). */
+	/* Only an ordinary file is a picture: a FIFO or a device would hold the reader. */
 	regular = S_ISREG(status.st_mode);
 	if (!regular) {
 		close(descriptor);
@@ -1736,7 +1745,7 @@ wallpaper_load(
 }
 
 /*
- * Reads a picture's file and decodes it (a PNG or a JPEG, ws138-p001;
+ * Reads a picture's file and decodes it (a PNG or a JPEG;
  * transparency over black) into three bytes a pixel.  Returns 0, or an errno
  * value with nothing kept: the file's, EINVAL for bytes that are not such a
  * picture, EFBIG for one too large.  Safe on any thread.
@@ -1772,7 +1781,7 @@ wallpaper_read(
 /*
  * Reads and decodes the wallpaper glass_loader names (or takes the
  * landscape), and draws it at the output's size into rows of its own,
- * away from the event loop (ws213-p005).
+ * away from the event loop.
  */
 static void *
 loader_run(
@@ -2052,7 +2061,7 @@ glass_shape_draw(
 	int joined;
 	int visible;
 
-	/* A shape of a layer faded out wholly is not drawn (the desktop behind App Home, ws181-p008). */
+	/* A shape of a layer faded out wholly is not drawn (the desktop behind App Home). */
 	if (server->layer_on && server->layer_opacity <= 0.0f)
 		return;
 
@@ -2081,7 +2090,7 @@ glass_shape_draw(
 		opacity = opacity * server->layer_opacity;
 	}
 
-	/* On a head, its part of the plane: the quad and the box in its own pixels (ws113-p007). */
+	/* On a head, its part of the plane: the quad and the box in its own pixels. */
 	if (server->view_width != 0U) {
 		quad[0] -= (float)server->view_x;
 		quad[1] -= (float)server->view_y;
@@ -2091,7 +2100,7 @@ glass_shape_draw(
 		height = (float)server->view_height;
 	}
 
-	/* Completely clipped quads cannot affect a pixel: outside the scissor, or between the damage's rectangles (ws211-p009). */
+	/* Completely clipped quads cannot affect a pixel: outside the scissor, or between the damage's rectangles. */
 	visible = kwl_compose_clip_visible(compose, quad[0], quad[1], quad[2], quad[3]);
 	if (!visible)
 		return;
@@ -2118,7 +2127,7 @@ glass_shape_draw(
 	constants[23] = opacity;
 
 	/*
-	 * In the dark appearance (ws089-p017) the glass, the solid colours, the
+	 * In the dark appearance the glass, the solid colours, the
 	 * outlines and the text take their dark colours, and the glass is the
 	 * shader's dark glass (mode -1); shadows, images and the blur's steps
 	 * are left as they are, and so is a shape drawn light.
@@ -2139,7 +2148,7 @@ glass_shape_draw(
 	if (shape->dark_glass != 0U && shape->mode == MODE_GLASS)
 		constants[17] = -1.0f;
 
-	/* The glass's values that are the same over the whole shape, worked out once here (ws211-p011). */
+	/* The glass's values that are the same over the whole shape, worked out once here. */
 	if (shape->mode == MODE_GLASS)
 		glass_shape_glass_constants(constants);
 
@@ -2175,7 +2184,7 @@ glass_shape_draw(
 
 	/*
 	 * App Home's floor lines (small solid quads) are joined into one draw
-	 * (batch.c, ws211-p003 段 2, the floors first); anything else draws
+	 * (batch.c, the floors first); anything else draws
 	 * the quads waiting first, then itself alone.
 	 */
 	kwl_compose_count_draw(server, pipeline, set, 1U);
@@ -2198,8 +2207,8 @@ glass_shape_draw(
 }
 
 /*
- * Records one shape except where opaque shapes drawn after it hide it
- * (ws211-p011): holes are the insides of those shapes (glass_opaque_inside), and the
+ * Records one shape except where opaque shapes drawn after it hide it:
+ * holes are the insides of those shapes (glass_opaque_inside), and the
  * shape is drawn as the pieces of its quad around them (kwl_damage_rects_cut),
  * each with the part of the image it covers.  The GPU then shades nothing
  * that is drawn over anyway.  In a layer seen through (the desktop going
@@ -2389,7 +2398,7 @@ glass_draw_text(
  * Draws a line of UTF-8 text centred on x (a button's word, a board's
  * line), cut in the middle where it is wider than limit.  The middle cut's
  * x is the line's left edge; a caller that gave it the centre drew the
- * word from the centre on, half its width to the right (BUG-278).
+ * word from the centre on, half its width to the right.
  */
 void
 glass_draw_text_centred(
@@ -2569,7 +2578,7 @@ glass_glyph_advance(
 
 /*
  * Makes the large digits (the digits and the colon of the lock screen's
- * clock, ws187-p001) at a size in pixels, unless they are at that size
+ * clock) at a size in pixels, unless they are at that size
  * already.  Returns 0, or an errno value: ENODEV without the look's text,
  * EINVAL for a size past GLASS_LARGE_PIXELS_MOST (the caller then draws an
  * atlas size instead).
@@ -2596,7 +2605,7 @@ glass_large_prepare(
 	if (glass->large_pixels == pixels)
 		return 0;
 
-	/* A size the glyph worker is rendering, or could not render (ws213-p005). */
+	/* A size the glyph worker is rendering, or could not render. */
 	if (glass->large_wanted == pixels)
 		return EAGAIN;
 	if (glass->large_failed == pixels)
@@ -2618,7 +2627,7 @@ glass_large_prepare(
 
 	/*
 	 * With the glyph worker the digits are rendered there and written at
-	 * the start of a later walk (ws213-p005); the caller draws an atlas
+	 * the start of a later walk; the caller draws an atlas
 	 * size until then.
 	 */
 	if (glass->worker_running) {
@@ -2773,7 +2782,7 @@ glass_draw_icon(
 
 /*
  * Draws an application's tile upside down under a floor at y, as a glossy
- * floor reflects it (App Home's stage, ws099-p035b): the tile's lower part,
+ * floor reflects it (App Home's stage): the tile's lower part,
  * height pixels of it, mirrored, its opacity from opacity at the floor
  * fading to nothing downwards (in GLASS_REFLECTION_SLICES bands).
  */
@@ -2844,9 +2853,9 @@ glass_draw_app_tile_reflection(
  * smallest kept larger (the largest when none is) scaled, as opaque as
  * asked (0..1).  Its picture is cut out: with GLASS_HOLE_GROUND what was
  * drawn under the tile shows through it, with GLASS_HOLE_SCENE the blurred
- * scene under the glass the tile is on, unwhitened (BUG-237), with
+ * scene under the glass the tile is on, unwhitened, with
  * GLASS_HOLE_WALLPAPER the desktop's wallpaper itself, sharp, as if the
- * picture were a real hole through the bar or App Home (ws099-p034b, the
+ * picture were a real hole through the bar or App Home (the
  * 2026-10-06 user decision).  lighten
  * (0..1) whitens the tile itself, as a lit button.
  */
@@ -2954,7 +2963,7 @@ glass_draw_app_tile(
  * Draws the Kei mark in a square of a size in pixels at (x, y): its seven
  * layers from the atlas, each in the colour of the look asked for, the
  * whole as opaque as asked (0..1).  A mark about the launcher's size uses
- * the layers rendered at that size (ws035-p117).
+ * the layers rendered at that size.
  */
 void
 glass_draw_mark(
@@ -2969,7 +2978,7 @@ glass_draw_mark(
 	/*
 	 * The bar pale, its shade deeper, the leaf clearer and its shade the
 	 * deep blue of the splash, the overlap deeper still, then the white
-	 * light along the edges and the sheen (ws035-p109).  The panes are
+	 * light along the edges and the sheen.  The panes are
 	 * translucent, so the picture behind shows through as on the splash.
 	 */
 	static const float splash_colours[KL_MARK_LAYERS][4] = {
@@ -2983,7 +2992,7 @@ glass_draw_mark(
 	};
 
 	/*
-	 * The same layers for the system bar (ws035-p118, the 2026-09-28 user
+	 * The same layers for the system bar (the 2026-09-28 user
 	 * decision): every pane a slightly deeper blue and nearly opaque, and
 	 * the white light and sheen fainter, so that the mark stands out on
 	 * the bar's light glass instead of fading into it.
@@ -3037,7 +3046,7 @@ glass_draw_mark(
 
 /*
  * Gives the wallpaper at the desktop's size, for a display beside the
- * output (heads.c, ws113-p004b); NULL without the glass look or before the
+ * output (heads.c); NULL without the glass look or before the
  * wallpaper is made.
  */
 const struct kwl_import *
@@ -3110,7 +3119,7 @@ glass_glyph_guard_end(
 }
 
 /*
- * Redraws the output when the glyph worker has rendered glyphs (ws213-p005):
+ * Redraws the output when the glyph worker has rendered glyphs:
  * the next walk writes them into their cells and draws the text that
  * waited for them.  The event loop calls it every pass.
  */
@@ -3140,7 +3149,7 @@ kwl_glass_glyphs_poll(
 /*
  * Writes the glyphs the glyph worker rendered into their cells and the
  * large digits' image, in the order they were asked for, so that a cell
- * given twice keeps the later glyph (ws213-p005).  It runs at the start of
+ * given twice keeps the later glyph.  It runs at the start of
  * a walk, the only time the look's images are written while the frames
  * read them.
  */
@@ -3437,8 +3446,8 @@ large_glyph_of(
 
 /*
  * Renders the Kei mark's layers into the atlas side by side from a row on,
- * the small ones at the launcher's size in the column right of them
- * (ws035-p117), and moves the row past them; returns 0, or ENOSPC when the
+ * the small ones at the launcher's size in the column right of them,
+ * and moves the row past them; returns 0, or ENOSPC when the
  * atlas is full.
  */
 static int
@@ -3572,7 +3581,7 @@ glass_open_face(
 }
 
 /*
- * Starts the glyph worker (ws213-p005) and gives it the fonts open now;
+ * Starts the glyph worker and gives it the fonts open now;
  * the main thread's wake pipe tells the event loop of rendered glyphs.
  * Without it the cache's glyphs are rendered by the event loop as before.
  */
@@ -3617,7 +3626,7 @@ glass_worker_font(
 	font.data = glass->font_data[slot];
 	font.size = glass->font_size[slot];
 
-	/* The first font with the companions atlas_create opened it with (ws090-p020). */
+	/* The first font with the companions atlas_create opened it with. */
 	if (slot == 0U) {
 		font.bold_path = KEILAND_FONT_BOLD;
 		font.next_path = KEILAND_FONT_FALLBACK_MONO;
@@ -3724,7 +3733,7 @@ glass_cache_glyph(
 		}
 	}
 
-	/* No font has it yet: the colour emoji font, opened once on the first such character (ws102-p019). */
+	/* No font has it yet: the colour emoji font, opened once on the first such character. */
 	if (id == 0U && glass->emoji_tried == 0U) {
 		glass->emoji_tried = 1;
 		glass->emoji_face = -1;
@@ -3769,15 +3778,15 @@ glass_cache_glyph(
 
 	/*
 	 * The cell's new assignment: a glyph worker's result for an earlier one
-	 * is not written into it (ws213-p005).
+	 * is not written into it.
 	 */
 	glass->cell_generation++;
 	cell->generation = glass->cell_generation;
 
 	/*
 	 * A glyph with a box is rendered by the glyph worker when it runs: the
-	 * cell waits for its coverage, written at the start of a later walk
-	 * (ws213-p005).  Otherwise (no worker, or the job could not be made)
+	 * cell waits for its coverage, written at the start of a later walk.
+	 * Otherwise (no worker, or the job could not be made)
 	 * the event loop renders it now.
 	 */
 	pending = 0U;
@@ -3821,7 +3830,7 @@ glass_cache_glyph(
 /*
  * Draws a character's colour glyph of the emoji font into a cell of the
  * cache (its premultiplied colours as they are), for glass_draw_glyph_at
- * to draw as an image (ws102-p019); NULL when it cannot be drawn or is
+ * to draw as an image; NULL when it cannot be drawn or is
  * larger than a cell.
  */
 static const struct glass_glyph *
@@ -3881,7 +3890,7 @@ glass_cache_color(
 }
 
 /*
- * Asks the glyph worker for a cell's glyph (ws213-p005): the font, the
+ * Asks the glyph worker for a cell's glyph: the font, the
  * glyph and the size, the box measured here and the cell's assignment.
  * Returns 0, or ENOMEM with nothing asked (the caller renders it itself).
  */
@@ -3950,7 +3959,7 @@ glass_take_cell(
 }
 
 /*
- * Asks the glyph worker for the large digits at a size (ws213-p005): their
+ * Asks the glyph worker for the large digits at a size: their
  * boxes are measured here and placed side by side as large_fill places
  * them, and every glyph with a box is asked for.  Returns EAGAIN while
  * they are being rendered (the caller draws an atlas size meanwhile), or
@@ -4154,8 +4163,8 @@ glass_draw_glyph_at(
 		return;
 
 	/*
-	 * A glyph the worker is still rendering is not drawn this time
-	 * (ws213-p005): the output is drawn again when it is rendered, and a
+	 * A glyph the worker is still rendering is not drawn this time:
+	 * the output is drawn again when it is rendered, and a
 	 * layer's picture recorded without it is counted with the guard's
 	 * evictions, so that it is drawn again too.
 	 */
@@ -4165,7 +4174,7 @@ glass_draw_glyph_at(
 		return;
 	}
 
-	/* The glyph's pixels: coverage in the colour, or a colour glyph as an image (ws102-p019). */
+	/* The glyph's pixels: coverage in the colour, or a colour glyph as an image. */
 	glass_shape_init(&shape, (float)(x + glyph->left), (float)(baseline - glyph->top), (float)glyph->width, (float)glyph->height);
 	shape.mode = MODE_TEXT;
 	if (glyph->color)
@@ -4180,8 +4189,8 @@ glass_draw_glyph_at(
 }
 
 /*
- * Works out a glass shape's values that are the same over the whole shape
- * (ws211-p011), from its constants as pushed (its final colour and mode),
+ * Works out a glass shape's values that are the same over the whole shape,
+ * from its constants as pushed (its final colour and mode),
  * into the texture slot the glass does not sample by: whether it is white
  * (step(0.9, the least of its colour's channels)), whether it is dark glass
  * (step(mode, -0.5)), its sheen from the top (0.05 less as it is flatter,
@@ -4227,8 +4236,8 @@ glass_shape_glass_constants(
 }
 
 /*
- * Gives a colour of the light appearance its colour in the dark one
- * (ws089-p017): a colour of little saturation (white, the greys, black and
+ * Gives a colour of the light appearance its colour in the dark one:
+ * a colour of little saturation (white, the greys, black and
  * the faintly tinted ones) has its lightness turned over with its tint
  * kept, so that white glass becomes dark glass and dark text light text;
  * a saturated colour (the accent, the warnings) stays as it is.  The

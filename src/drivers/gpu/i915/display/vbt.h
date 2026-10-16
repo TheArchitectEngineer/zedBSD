@@ -48,9 +48,9 @@
  * allocator, logging, the platform predicates and the few DRM objects the
  * parser fills -- fixed to the one platform the driver drives (ADL-P, display
  * version 13, PCH ADP).  The Linux enums and structures the parser shares with
- * the rest of the driver come from intel/vbt.h; the VBT block layouts of
- * intel/vbt-defs.h are private to vbt.c, which includes them itself after
- * defining _INTEL_BIOS_PRIVATE.
+ * the rest of the driver come from intel/vbt.h.  The parser itself is gone
+ * (the VBT is read by xd-vbt.c and served by vbt-shell.c); what is left here
+ * is the environment the DP files are layered on.
  *
  * The DP environment (dp-internal.h) is layered on this one and replaces its
  * world name, so a DP file sees everything below as well.
@@ -201,8 +201,7 @@ typedef u16 __be16;
  * Every error-level message is counted in the parser's counters.  Only a
  * message whose level is shown has its arguments evaluated; it is formatted
  * with the kernel's printf subset, where a conversion outside it (%.*s) is
- * shown as written and its argument consumed (BUG-256: the format text
- * alone was shown before).
+ * shown as written and its argument consumed.
  */
 #define I915_VBT_LOG(level, fmt, ...) \
 	do { \

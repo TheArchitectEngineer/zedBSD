@@ -158,6 +158,51 @@ drv_i915_xd_edid_decode(
 }
 
 /*
+ * Decodes the first timing descriptor of an EDID base block.
+ *
+ * The four 18-byte descriptors are looked at in order; the first one with
+ * a pixel clock is a timing (the others hold names, ranges or limits),
+ * and it is decoded.  index tells which descriptor it was.  Returns 0, or
+ * EINVAL when no descriptor is a timing or the timing is not one the
+ * display drives (an interlaced one, a zero size).
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/drm_edid.c (the
+ * preferred mode taken from the first detailed timing of the base block).
+ */
+int
+drv_i915_xd_edid_first_timing(
+	const uint8_t *base,
+	struct i915_display_mode *mode,
+	unsigned *index)
+{
+	const uint8_t *descriptor;
+	unsigned position;
+	int error;
+
+	/* Finds the first descriptor whose pixel clock is not zero. */
+	for (position = 0U; position < I915_XD_EDID_DESCRIPTORS; position++) {
+		descriptor = base + I915_XD_EDID_FIRST_DTD + I915_XD_EDID_DESCRIPTOR_BYTES * position;
+		if (descriptor[0] != 0U || descriptor[1] != 0U)
+			break;
+	}
+
+	/* A block without a timing descriptor has no first timing. */
+	if (position == I915_XD_EDID_DESCRIPTORS)
+		return EINVAL;
+
+	/* Decodes it. */
+	error = drv_i915_output_edid_timing(descriptor, mode);
+	if (error != 0)
+		return EINVAL;
+
+	/* Succeeded: the mode and the descriptor it came from. */
+	mode->descriptor_index = position;
+	if (index != NULL)
+		*index = position;
+	return 0;
+}
+
+/*
  * Decodes the base block: the id, the version, the input and its colour
  * depth, the screen size, the preferred timing and the extension count.
  */

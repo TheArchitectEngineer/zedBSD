@@ -28,7 +28,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-/* How long a login session goes without input before it locks, unless --lock-idle says (ws035-p102). */
+/* How long a login session goes without input before it locks, unless --lock-idle says. */
 #define MAIN_LOCK_IDLE_MS	(10U * 60U * 1000U)
 #include <errno.h>
 #include <stdarg.h>
@@ -105,7 +105,7 @@ main(
 	server.size_width = 320;
 	server.size_height = 240;
 
-	/* The session starts on the middle desktop, the others to its left and right (ws181-p006). */
+	/* The session starts on the middle desktop, the others to its left and right. */
 	server.desktop = KWL_DESKTOP_START;
 	server.desktop_from = (float)KWL_DESKTOP_START;
 	server.desktop_to = (float)KWL_DESKTOP_START;
@@ -116,7 +116,11 @@ main(
 	log_append(STDOUT_FILENO);
 	log_append(STDERR_FILENO);
 
-	/* The backend reports nothing to the compositor yet (WS131 p003); its callbacks come with the areas that need them. */
+	/* When the program began, against the kernel's start (KWL STARTUP step=start), and the steps before Vulkan from it. */
+	step_start = kwl_milliseconds();
+	step_start = startup_step("start", step_start);
+
+	/* The backend reports nothing to the compositor yet; its callbacks come with the areas that need them. */
 	memset(&backend_options, 0, sizeof(backend_options));
 	memset(&backend_host, 0, sizeof(backend_host));
 	backend_host.data = &server;
@@ -142,10 +146,10 @@ main(
 		return 2;
 	}
 
-	/* The desktop's size until the display is known: the size asked for, unrotated (WS217). */
+	/* The desktop's size until the display is known: the size asked for, unrotated. */
 	kwl_output_size_set(&server, server.size_width, server.size_height, KWL_ROTATE_0);
 
-	/* A login session locks after ten minutes without input unless told otherwise (ws035-p102). */
+	/* A login session locks after ten minutes without input unless told otherwise. */
 	if (server.session && !server.lock_idle_given)
 		server.lock_idle_ms = MAIN_LOCK_IDLE_MS;
 	server.lock_input_ms = kwl_milliseconds();
@@ -173,18 +177,21 @@ main(
 
 	/*
 	 * A desktop that is not the login screen holds the desktop's settings
-	 * (settings.c, WS135), read before the look draws its wallpaper so
+	 * (settings.c), read before the look draws its wallpaper so
 	 * that the picture is read once.
 	 */
 	if (!server.greeter)
 		kwl_settings_open(&server);
 
-	/* The login screen's text is in the system's language; a session's comes with its settings (WS158). */
+	/* The login screen's text is in the system's language; a session's comes with its settings. */
 	if (server.greeter)
 		kwl_language_system(&server);
 
-	/* A test image's screen capture listens (shot.c; nothing elsewhere, ws173-p002). */
+	/* A test image's screen capture listens (shot.c; nothing elsewhere). */
 	kwl_shot_open(&server);
+
+	/* How long the settings and the language took. */
+	step_start = startup_step("settings", step_start);
 
 	/* Catch normal termination without performing allocation or I/O inside a signal handler. */
 	previous_handler = signal(SIGINT, stop_service);
@@ -196,7 +203,7 @@ main(
 	if (previous_handler == SIG_ERR)
 		return 1;
 
-	/* So does SIGHUP, so that the session's settings are written (WS135). */
+	/* So does SIGHUP, so that the session's settings are written. */
 	previous_handler = signal(SIGHUP, stop_service);
 	if (previous_handler == SIG_ERR)
 		return 1;
@@ -204,8 +211,8 @@ main(
 	/*
 	 * Opens the operating system's side (libkeiland-backend) before
 	 * anything asks it for a resource.  The login screen's and a session's
-	 * descriptors to sessiond carry the session (ws131-p006) and the power
-	 * requests (ws131-p005).
+	 * descriptors to sessiond carry the session and the power
+	 * requests.
 	 */
 	backend_options.greeter_descriptor = -1;
 	backend_options.session_descriptor = -1;
@@ -217,8 +224,12 @@ main(
 	if (error != 0)
 		printf("KWL BACKEND unavailable errno=%d\n", error);
 
-	/* The power as the backend knows it now, for the bar's battery (ws132-p003). */
+	/* How long the operating system's side took to open. */
+	step_start = startup_step("backend", step_start);
+
+	/* The power as the backend knows it now, for the bar's battery. */
 	kwl_power_read(&server);
+	step_start = startup_step("power", step_start);
 
 	/* Takes the OS's seat resources before Vulkan opens the display. */
 	if (error == 0) {
@@ -227,9 +238,12 @@ main(
 			printf("KWL OS unavailable errno=%d\n", error);
 	}
 
+	/* How long the seat's resources took. */
+	step_start = startup_step("seat", step_start);
+
 	/*
 	 * A session serves the notifications of the desktop's bus where the
-	 * system has one (Linux's session bus, ws156-p006); without it the
+	 * system has one (Linux's session bus); without it the
 	 * session goes on with Keiland's own notifications only.
 	 */
 	if (error == 0 && !server.greeter)
@@ -239,15 +253,17 @@ main(
 	if (error == 0)
 		kwl_glass_prefetch(&server);
 
-	/* The threads' wake pipe and the cursor's box, which the cursor plane's thread reads from the output's opening on (ws213-p004). */
+	/* The threads' wake pipe and the cursor's box, which the cursor plane's thread reads from the output's opening on. */
 	if (error == 0) {
 		error = kwl_threads_prepare(&server);
 		if (error != 0)
 			printf("KWL FAILED site=threads errno=%d\n", error);
 	}
 
-	/* The start is timed from the Vulkan device on (KWL STARTUP); the compositor opens no GPU node of its own (ws103-p006). */
-	step_start = kwl_milliseconds();
+	/* How long the notifications' bus, the wallpaper's reading thread and the threads' pipe took to start. */
+	step_start = startup_step("prepare", step_start);
+
+	/* The compose step is timed from the Vulkan device on; the compositor opens no GPU node of its own. */
 
 	/*
 	 * Window mode's Vulkan device, which also gives the display's size and
@@ -267,7 +283,7 @@ main(
 	server.pointer_y = (int32_t)(server.height / 2U);
 	server.pointer_unmoved = 1U;
 
-	/* The input thread reads the devices and moves the pointer in the cursor's box (ws213-p004). */
+	/* The input thread reads the devices and moves the pointer in the cursor's box. */
 	if (error == 0) {
 		error = kwl_input_threads_start(&server);
 		if (error != 0)
@@ -449,7 +465,7 @@ parse_options(
 			continue;
 		}
 
-		/* A test's rotation of the output, over displays.conf's (WS217): one of the four angles. */
+		/* A test's rotation of the output, over displays.conf's: one of the four angles. */
 		match = strncmp(argument, "--rotate=", 9);
 		if (match == 0) {
 			/* 0 is an angle (unsigned_option refuses a zero); any other number is read bounded. */
@@ -472,21 +488,21 @@ parse_options(
 			continue;
 		}
 
-		/* A test image's own option (shot.c: --rotate-policy, WS217); a product's compositor takes none. */
+		/* A test image's own option (shot.c: --rotate-policy); a product's compositor takes none. */
 		match = kwl_shot_option(server, argument);
 		if (match == 1)
 			continue;
 		if (match < 0)
 			return EINVAL;
 
-		/* The desktop surface's program and token (desktop.c, ws094-p002). */
+		/* The desktop surface's program and token (desktop.c). */
 		match = kwl_desktop_option(server, argument);
 		if (match == 1)
 			continue;
 		if (match != 0)
 			return EINVAL;
 
-		/* A test run (WS110): finite, without a login session's features. */
+		/* A test run: finite, without a login session's features. */
 		match = strcmp(argument, "--testing");
 		if (match == 0) {
 			request.testing = 1U;
@@ -521,7 +537,7 @@ parse_options(
 			continue;
 		}
 
-		/* The on-screen keyboard's glass on the scene under it, blurred (ws075-p029; the default is the blurred wallpaper). */
+		/* The on-screen keyboard's glass on the scene under it, blurred (the default is the blurred wallpaper). */
 		match = strcmp(argument, "--keyboard-blur");
 		if (match == 0) {
 			server->keyboard_blur = 1;
@@ -535,14 +551,14 @@ parse_options(
 			continue;
 		}
 
-		/* Every frame drawn whole, without the layers' pictures (the reference for their tests, ws211-p002). */
+		/* Every frame drawn whole, without the layers' pictures (the reference for their tests). */
 		match = strcmp(argument, "--no-layer-cache");
 		if (match == 0) {
 			server->layer_cache_off = 1U;
 			continue;
 		}
 
-		/* The login screen (ws035-p095): no socket, sessiond asked on --auth-fd, no deadline. */
+		/* The login screen: no socket, sessiond asked on --auth-fd, no deadline. */
 		match = strcmp(argument, "--greeter");
 		if (match == 0) {
 			server->greeter = 1;
@@ -560,7 +576,7 @@ parse_options(
 			continue;
 		}
 
-		/* The descriptor a login session says READY to sessiond on (ws035-p101). */
+		/* The descriptor a login session says READY to sessiond on. */
 		match = strncmp(argument, "--control-fd=", 13);
 		if (match == 0) {
 			error = unsigned_option(argument + 13, 1023, &number);
@@ -571,7 +587,7 @@ parse_options(
 			continue;
 		}
 
-		/* How long a login session goes without input before it locks (ws035-p102; 0: never). */
+		/* How long a login session goes without input before it locks (0: never). */
 		match = strncmp(argument, "--lock-idle=", 12);
 		if (match == 0) {
 			error = unsigned_option(argument + 12, 86400, &number);
@@ -583,14 +599,14 @@ parse_options(
 			continue;
 		}
 
-		/* A login session (ws035-p095), which is now the default: kept as a name for it (WS110). */
+		/* A login session, which is now the default: kept as a name for it. */
 		match = strcmp(argument, "--session");
 		if (match == 0) {
 			request.session = 1U;
 			continue;
 		}
 
-		/* The glass look of window mode (ws035-p059). */
+		/* The glass look of window mode. */
 		match = strcmp(argument, "--glass");
 		if (match == 0) {
 			server->glass = 1;
@@ -641,7 +657,7 @@ parse_options(
 		return EINVAL;
 	}
 
-	/* The role, decided once whatever the options' order (WS110). */
+	/* The role, decided once whatever the options' order. */
 	error = kwl_role_resolve(&request, &role);
 	if (error != 0) {
 		fprintf(stderr, "wayland: %s\n", role.refusal);
@@ -881,7 +897,7 @@ event_loop(
 		    (server->max_frames != 0 && server->frame >= server->max_frames))
 			break;
 
-		/* The ticks before the poll are timed as one part of the pass (KWL PERF main, ws213-p001 M0). */
+		/* The ticks before the poll are timed as one part of the pass (KWL PERF main). */
 		part = kwl_cycles();
 
 		/* Evdev nodes that appeared since the last scan join the seat, soon after a device's event more often. */
@@ -918,7 +934,7 @@ event_loop(
 
 		/*
 		 * The pipe the compositor's threads wake the loop with follows the
-		 * clients: the input thread's reports (ws213-p004).  The devices
+		 * clients: the input thread's reports.  The devices
 		 * themselves are the input thread's to poll.
 		 */
 		wake_slot = count;
@@ -935,7 +951,7 @@ event_loop(
 		 * The acquire fences of committed images are polled last.  A fatal
 		 * client's are not: its commits are never taken, and a fence that is
 		 * always readable (any fd a client sent) would wake the loop until the
-		 * client is retired (ws103-p006).
+		 * client is retired.
 		 */
 		first_fence = count;
 		for (client = server->clients; client != NULL; client = client->next) {
@@ -978,7 +994,7 @@ event_loop(
 		if (waiting)
 			timeout = 2;
 
-		/* A gone client's buffer that may be released now: the input is looked at, then it is released (BUG-239). */
+		/* A gone client's buffer that may be released now: the input is looked at, then it is released. */
 		retire_ready = kwl_retire_ready(server, kwl_milliseconds());
 		if (retire_ready)
 			timeout = 0;
@@ -1034,7 +1050,7 @@ event_loop(
 		/* Lets the OS populate its entries in this descriptor snapshot. */
 		kwl_os_poll_fill(server, descriptors + first_os);
 
-		/* The input thread computes the motions from now on with the settings and outputs as they are (ws213-p004). */
+		/* The input thread computes the motions from now on with the settings and outputs as they are. */
 		kwl_input_sync(server);
 
 		/* Poll sees sockets only; typed image fds are consumed immediately during import. */
@@ -1043,7 +1059,7 @@ event_loop(
 		server->perf.poll_cycles += kwl_cycles() - mark;
 		mark = kwl_cycles();
 
-		/* The pass's work starts now; its parts are told apart at its end if it runs long (ws213-p004). */
+		/* The pass's work starts now; its parts are told apart at its end if it runs long. */
 		perf_pass_begin(server);
 		server->perf.passes++;
 		if (ready == 0)
@@ -1065,7 +1081,7 @@ event_loop(
 		/*
 		 * The threads' wake pipe is emptied before any of their queues is
 		 * taken this pass (the render thread's below, the input thread's
-		 * after), so a message queued later wakes the next poll (ws213-p004).
+		 * after), so a message queued later wakes the next poll.
 		 */
 		if (descriptors[wake_slot].revents != 0)
 			wake_drain(server);
@@ -1094,8 +1110,7 @@ event_loop(
 
 		/*
 		 * The input thread's reports are applied before clients are flushed,
-		 * so they leave in this pass, in the order the devices made them
-		 * (BUG-142, ws213-p004).
+		 * so they leave in this pass, in the order the devices made them.
 		 */
 		part = kwl_cycles();
 		kwl_input_drain(server);
@@ -1144,7 +1159,7 @@ event_loop(
 				why = "error";
 			}
 
-			/* Withdrawal releases unread rights and scanout ownership before fd reuse (the log line BUG-121's test reads). */
+			/* Withdrawal releases unread rights and scanout ownership before fd reuse (a log line a test reads). */
 			if (remove) {
 				printf("KWL CLIENT gone client=%llu reason=%s\n", (unsigned long long)client->number, why);
 				kwl_client_destroy(client);
@@ -1157,10 +1172,10 @@ event_loop(
 		/* The clipboard's history reads what a source has written so far (clipboard.c; the pass is at most 10 ms). */
 		kwl_clipboard_poll(server);
 
-		/* A drag let go before its target answered is decided once it has (data.c, ws189-p002 F1). */
+		/* A drag let go before its target answered is decided once it has (data.c). */
 		kwl_data_tick(server);
 
-		/* A test image's screen capture takes its requests (shot.c, ws173-p002). */
+		/* A test image's screen capture takes its requests (shot.c). */
 		kwl_shot_tick(server);
 
 		/* The snapshot contains no ownership references beyond this iteration. */
@@ -1177,7 +1192,7 @@ event_loop(
 		/*
 		 * One gone client's buffer released after the frame, only while the
 		 * compositor is idle, so that neither a frame nor the input waits
-		 * for a release (BUG-239, T1-392).
+		 * for a release (T1-392).
 		 */
 		retire_ready = kwl_retire_ready(server, kwl_milliseconds());
 		if (retire_ready)
@@ -1203,7 +1218,7 @@ event_loop(
 		/* The last flush's part (KWL PERF main). */
 		server->perf.flush_cycles += kwl_cycles() - part;
 
-		/* The pass's work, kept for its longest and 99th percentile, and told part by part when it ran long (ws213-p004). */
+		/* The pass's work, kept for its longest and 99th percentile, and told part by part when it ran long. */
 		part = kwl_cycles() - mark;
 		server->perf.work_cycles += part;
 		perf_pass_end(server, part);
@@ -1240,7 +1255,7 @@ service_cleanup(
 	while (server->clients != NULL)
 		kwl_client_destroy(server->clients);
 
-	/* The gone clients' buffers still waiting are released before the device (BUG-239). */
+	/* The gone clients' buffers still waiting are released before the device. */
 	kwl_retire_flush(server);
 
 	/* The swapchain and the Vulkan device go after every buffer's image. */
@@ -1250,7 +1265,7 @@ service_cleanup(
 	kwl_input_threads_stop(server);
 	kwl_input_cleanup(server);
 
-	/* The session's volume and settings are kept for the next login (volume.c, BUG-161; settings.c, WS135). */
+	/* The session's volume and settings are kept for the next login (volume.c; settings.c). */
 	kwl_volume_keep(server, "end");
 	kwl_settings_close(server);
 
@@ -1260,7 +1275,7 @@ service_cleanup(
 	/* Returns the OS resources after input and display cleanup. */
 	kwl_os_close(server);
 
-	/* A screen the lid put out is lit for whoever comes next, and the backlight closed (backend-host.c, ws132-p008). */
+	/* A screen the lid put out is lit for whoever comes next, and the backlight closed (backend-host.c). */
 	kwl_lid_screen_restore(server);
 	kl_backend_backlight_close(server->backlight);
 	server->backlight = NULL;
@@ -1275,7 +1290,7 @@ service_cleanup(
 
 /*
  * Reads the processor's cycle counter (the millisecond clock has only tick
- * resolution).  On arm64 (the Linux arm64 package, WS112) the virtual
+ * resolution).  On arm64 (the Linux arm64 package) the virtual
  * counter of the generic timer.
  */
 uint64_t
@@ -1304,7 +1319,7 @@ kwl_cycles(
 
 /*
  * Counts one piece of the main thread's Vulkan work outside a walk for
- * KWL PERF pass's vk_outside_max_us (ws213-p004, the design's 6.4).
+ * KWL PERF pass's vk_outside_max_us (the design's 6.4).
  */
 void
 kwl_perf_vk_outside(
@@ -1344,7 +1359,7 @@ kwl_perf_report(
 	if (now - perf->window_start_ms < 5000U)
 		return;
 
-	/* The cursor thread's counts of the window (ws213-p004). */
+	/* The cursor thread's counts of the window. */
 	memset(&stats, 0, sizeof(stats));
 	if (server->threads_prepared)
 		kwl_cursor_box_take_stats(&server->cursor_box, &stats);
@@ -1378,7 +1393,7 @@ kwl_perf_report(
 		    (double)perf->compose_cycles / per_ms / (double)perf->compose_frames);
 	}
 
-	/* The render thread's steps of a frame, averages then longest, in milliseconds (ws211-p010). */
+	/* The render thread's steps of a frame, averages then longest, in milliseconds. */
 	if (perf->rec_frames != 0) {
 		printf("KWL PERF rec frames=%u copied=%u begin=%.2f encode=%.2f end=%.2f submit=%.2f present=%.2f | max end=%.2f submit=%.2f present=%.2f\n",
 		    perf->rec_frames,
@@ -1394,7 +1409,7 @@ kwl_perf_report(
 	}
 
 	/*
-	 * The pass's parts in milliseconds of the window (ws213-p001 M0): the
+	 * The pass's parts in milliseconds of the window: the
 	 * ticks before the poll (outside work), then the parts of work, and
 	 * the scheduler's own parts.  other is the work none of them covers
 	 * (the poll's descriptors, accept, the OS, the clipboard and the rest).
@@ -1425,11 +1440,11 @@ kwl_perf_report(
 	    (double)perf->cursor_queue_present_cycles / per_ms,
 	    (double)perf->cursor_queue_present_max_cycles / per_ms);
 
-	/* The passes' longest work, and the cursor's box (ws213-p004). */
+	/* The passes' longest work, and the cursor's box. */
 	perf_pass_report(perf, per_ms);
 	perf_box_report(perf, &stats);
 
-	/* The drawings' walks and replays (ws213-p003). */
+	/* The drawings' walks and replays. */
 	perf_walk_report(perf, per_ms);
 
 	/* wl_shm's copies: how many, and the CPU time of one. */
@@ -1447,7 +1462,7 @@ kwl_perf_report(
 }
 
 /*
- * Prints the window's drawings (KWL PERF walk, ws213-p003): the walk that
+ * Prints the window's drawings (KWL PERF walk): the walk that
  * wrote each frame's display list, by how many things the frame drew
  * (fewer than 100, 100 to 299, and 300 or more as App Home draws), the
  * replay that recorded the frames' lists, and the walk and the replay of
@@ -1552,7 +1567,7 @@ perf_cycles_order(
 
 /*
  * Reports how long one step of the start took, and when it ended (the
- * diagnostic line KWL STARTUP, ws035-p129); returns the time it ended.
+ * diagnostic line KWL STARTUP); returns the time it ended.
  */
 static uint64_t
 startup_step(
@@ -1621,7 +1636,7 @@ wake_drain(
 }
 
 /*
- * Prints the window's passes (KWL PERF pass, ws213-p004): the longest
+ * Prints the window's passes (KWL PERF pass): the longest
  * pass's work and the 99th percentile, the longest walk of a drawing, and
  * the longest Vulkan work of the main thread outside a walk, in
  * microseconds.  The passes' array
@@ -1784,7 +1799,7 @@ perf_part_us(
 }
 
 /*
- * Prints the cursor's box (KWL PERF cursor, ws213-p004, the design's 6.4):
+ * Prints the cursor's box (KWL PERF cursor):
  * how many writes the main thread applied, their lag from the report's
  * evdev time (the 99th percentile, the longest and how many over a
  * refresh), the lag beyond the reports' spacing, and the gap between the

@@ -28,7 +28,8 @@
  * The EDID layout the code reads: the block size; in the base block the
  * header, the vendor and product id (ten bytes from the manufacturer to
  * the year, which the VBT's panel ids copy), the version, the video
- * input, the screen size in cm, the first detailed timing, the
+ * input, the screen size in cm, the first of the four 18-byte
+ * descriptors (detailed timings or display descriptors), the
  * extension count and the checksum; in a CTA-861 extension its tag, the
  * offset of its detailed timings, the support flags and the data blocks.
  *
@@ -50,6 +51,8 @@
 #define I915_XD_EDID_WIDTH_CM		21U
 #define I915_XD_EDID_HEIGHT_CM		22U
 #define I915_XD_EDID_FIRST_DTD		54U
+#define I915_XD_EDID_DESCRIPTORS	4U
+#define I915_XD_EDID_DESCRIPTOR_BYTES	18U
 #define I915_XD_EDID_EXTENSIONS		126U
 #define I915_XD_EDID_CHECKSUM		127U
 #define I915_XD_EDID_CTA_TAG		0x02U
@@ -114,5 +117,6 @@ struct i915_xd_edid {
 
 int drv_i915_xd_edid_block_check(const uint8_t *block, unsigned index);
 int drv_i915_xd_edid_decode(const uint8_t *edid, size_t size, struct i915_xd_edid *out);
+int drv_i915_xd_edid_first_timing(const uint8_t *base, struct i915_display_mode *mode, unsigned *index);
 
 #endif /* DRIVERS_GPU_I915_DISPLAY_XD_EDID_H */

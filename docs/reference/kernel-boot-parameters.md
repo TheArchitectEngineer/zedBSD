@@ -111,6 +111,15 @@ The slots are independent names, not an overlay order.
 - Two slots resolving to the same partition are an error.
 - A resolved initial boot slot must contain a supported FAT16 or FAT32
   filesystem. Other boot-filesystem types require a later contract revision.
+- On amd64 PC/AT the kernel uses `boot0=UUID=` to wait for its boot disk:
+  it probes the USB roots and the fixed disks (NVMe, SATA) at once, and
+  waits, at most five seconds, only while no disk found so far has a
+  partition whose FAT carries that volume serial.  A machine started from
+  its internal disk does not wait for USB storage; one started from a USB
+  stick waits until the stick is found.  Without `boot0=UUID=` the kernel
+  waits up to five seconds for the first disk before it probes the fixed
+  disks, as before.  A boot disk that never comes fails in the VFS as
+  before.
 
 A file reference has this form:
 

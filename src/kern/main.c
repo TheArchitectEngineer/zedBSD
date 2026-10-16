@@ -139,6 +139,7 @@ boot_worker(
 	/* Discovers PCI and ACPI devices in a thread that can wait for them. */
 	platform_handoff = argument;
 	kern_logf("boot: platform device discovery\n");
+	kern_log_boot_step("the platform's devices are being discovered");
 	device_count = kern_platform_init(
 	    platform_handoff,
 	    boot_devices,
@@ -147,7 +148,9 @@ boot_worker(
 	/* Retains the discovered table before refreshing boot storage. */
 	boot_device_count = (unsigned)device_count;
 	kern_logf("boot: platform devices detected: %u\n", boot_device_count);
+	kern_log_boot_step("the platform's devices are attached");
 	kern_platform_refresh_devices(boot_devices, device_count);
+	kern_log_boot_step("the boot storage is discovered");
 
 	/* Mounts the discovered storage and starts userspace in the same thread. */
 	boot_start(&handoff_snapshot, boot_devices, boot_device_count);
@@ -171,7 +174,7 @@ boot_start(
 	int init_error;
 
 #ifdef ZEDBSD_VERSION
-	/* The version, first in the kernel's log (ws129-p003; the HAL's banner reaches only the console). */
+	/* The version, first in the kernel's log (the HAL's banner reaches only the console). */
 	kern_logf("zedBSD %s\n", ZEDBSD_VERSION);
 #endif
 
@@ -219,6 +222,9 @@ boot_start(
 		return;
 	}
 
+	/* The root and the boot slots are mounted. */
+	kern_log_boot_step("the VFS is initialized");
+
 	/* Starts commit accounting now that swap can be known. */
 	error = vm_commit_init();
 	if (error != 0) {
@@ -245,6 +251,7 @@ boot_start(
 		  (unsigned long)(memory.physical_reserved / 1024U));
 
 	/* Starts init and reports a failure to do so. */
+	kern_log_boot_step("init is starting");
 	kern_logf("boot: starting init %s\n\n", init_path);
 	init_error = kern_init_start(init_path);
 	if (init_error != 0) {

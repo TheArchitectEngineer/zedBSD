@@ -58,3 +58,75 @@ commit: b2f0919a7（実装・試験の道具）、52df69d05（sysctl の comment
 - desktop を先にする起動でも、2 段目（networkd の notify は最大 10 秒、networking の oneshot）の間 init は子の回収と control socket の応答をしない。その間に sessiond が console に戻った時の getty、`service` の要求、電源の要求は 2 段目の終わりまで遅れる（boot-test で getty が「system running」の後に出たのはこれ）。今は記録だけ。
 - oneshot の終わりの検出が 100 ms の poll（ONESHOT_POLL_MS）なので oneshot ごとに最大 0.1 秒。小さいので変えない。
 - host の短い試験は無い（init は pid 1 でしか動かない）。確認は QEMU の init.log の順序（通常・debug）と boot-test。
+
+## q1221-i02（2026-10-16 P2）: 5330 の記録の解析と、kernel の起動・compositor の起動の続き
+
+commit: d9dbec60d（base 3f9387f72）。
+
+### 5330 の記録（P1 の `plan/ws245/temp/5330/q1collect-base.txt`・`q1collect-p017.txt`、main ed9621e9b の image、読むだけ）
+
+| 起動 | init 開始 | greeter の start | homes | networkd running | networking 終わり | session の開始 | compose の開始→終わり | HANDOFF go |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| base の kernel | 9.95 | 10.05 | 10.05→12.05 | 13.89 | 19.57 | 約 11.95 | 17.82→28.29 | 28.35（表示は MODE switch の 30.06） |
+| p017 の kernel | 1.88 | 1.98 | 1.98→2.18 | 3.99 | 4.19 | 約 2.17 | 6.59→16.91 | 16.96 |
+
+- kernel→init の差（9.95 と 1.88）は kernel の i915 の側（P1 の担当）。
+- compositor: session の開始から Vulkan の前までに 4.4〜5.9 s（QEMU では 0.07 s）。compose の中は起動ごとに遅い段が違う（base: vulkan-device 1.7 s・wallpaper 2.0 s・glyphs 3.4 s、p017: glyphs-icons 1.6 s・tiles 1.7 s・glyphs 4.9 s）。どの段も file の読み込みか GPU の image の作成を含み、残りは compose の中の計られていない部分（約 3 s）。5330 の root は USB の stick（sda）。
+- QEMU で USB の stick を QEMU の throttling で遅くした時（10 MB/s・100 IOPS）、session の開始から Vulkan の前までが 0.07 → 2.5〜3.1 s に伸びる（binary と lib の page-in）。5330 の 4.4〜5.9 s は同じ形。compose の 10 s は QEMU（llvmpipe）では出ず、i915 の driver の側（kernel の中の SPIR-V の compile・GPU の image の作成）か USB の I/O かは、下の細かい STARTUP の行で 5330 で分かる。
+
+### 変えた事
+
+1. **kernel の起動の disk の待ち**（`src/kern/platform/pcat.c`、Q1 の許可）: 今までは USB の disk が来るまで最大 5 秒待ってから NVMe・AHCI を probe していたので、NVMe・SATA から起動する機械は毎回 5 秒待っていた。loader が渡す `boot0=UUID=`（起動した FAT の volume serial）があれば、NVMe・AHCI もすぐ probe し、その serial の FAT がどの disk の partition にも無い間だけ最大 5 秒待つ（disk が増えた時だけ見直す）。`boot0=UUID=` が無い時は今までどおり。HAL は不変。
+2. **late の段は desktop の表示を待つ**（`userland/base/init/main.c`）: desktop を先に立てる起動では、1 段目の後に、`desktop=yes` の service（greeter.service に足した）が動いている間、sessiond の印 `/run/desktop-shown`（`userland/base/service/service-config.h` の KERN_INIT_DESKTOP_SHOWN）を最大 30 秒待ってから late の段を始める。待つ間も init は子を回収し control socket に答える（console に戻った時の getty はすぐ立つ）。sessiond は session に GO を送った時と login 画面が READY の時に印を作る（`sessiond_desktop_shown`）。init は起動ごとに印を消す。
+3. **一つの起動で各 service を自動で立てるのは 1 回**（`started_once`）: 2 の待ちの間に終わった sessiond（console に戻った物）を 2 段目がもう一度立てていた不具合を、boot-test で見つけて直した。
+4. **homes を late に**（5330 で 2 s。自動 login の home は sessiond が作る）。
+5. **compositor の STARTUP の行を細かく**（`userland/desktop/wayland/main.c`・`compose.c`・`glass.c`）: `start`（main に入った時刻）・`settings`・`backend`・`power`・`seat`・`prepare`（Vulkan の前の各段）、`vulkan-display`、`wallpaper-images`、`glyphs-fonts`・`glyphs-image`、`image-layouts`（GPU の待ち）・`render-thread`。動作は変えない。
+6. 触った file の comment の WS・BUG の番号と plan/ への参照を消した（guardrail）。
+7. 文書: `docs/reference/init-services.md`（desktop の key、待ち）、`docs/reference/kernel-boot-parameters.md`（boot0 の待ち）。
+
+### 測定（QEMU、Venus、kernel の起動からの秒）
+
+| 起動 | init 開始 | greeter の start | desktop shown | networkd の start | HANDOFF go |
+| --- | --- | --- | --- | --- | --- |
+| i01 の後（NVMe、4 回） | 5.41〜5.76 | 5.43〜5.79 | （無し） | 5.53〜6.0 | 8.97・9.14・9.17・10.30 |
+| i02 の後（NVMe、3 回） | 0.43・0.40・0.39 | 0.46・0.42・0.40 | 4.06・4.02・4.20 | 4.16・4.12・4.31 | 4.02・3.99・4.16 |
+| i02 の debug（kmsg=console、NVMe） | 0.45 | 0.73（networking の後） | — | 0.58 | 4.45 |
+| i01 の後（USB、100 IOPS に絞る） | 3.71 | 4.04 | — | 4.74 | 11.93 |
+| i02 の後（USB、100 IOPS に絞る） | 3.67 | 4.00 | 10.31 | 10.41 | 10.29 |
+
+- NVMe: 起動から desktop まで約 9 s → 約 4 s（kernel の 5 秒の待ちが消えた）。host の画面で見ても QEMU の起動から desktop まで 14.0 s → 10.6 s。
+- 遅い USB: late の段を desktop の後に回して 11.9 → 10.3 s。
+- USB の起動（絞らない）: init 0.46、HANDOFF 4.18。待ちの log は出ない（stick は NVMe の probe の間に見つかっている）。
+- boot の disk が無い時: virtio-blk（kernel に driver が無い）から kmsg=console の image を起動 → `boot: waiting up to 5 seconds for the boot disk (FAT DC15-A90B)` → `boot: boot-storage wait expired` → `vfs: boot0 selector resolution failed (error 6)` → `VFS initialization failed (6); entering idle.`（今までと同じ失敗の経路）。画面 `/home/awe/zedBSD-worktrees/p2/build/ws253/vblk/shot16.png`。
+- boot-test.sh PASS: `/home/awe/zedBSD-worktrees/p2/build/ws253/boot-test-i02c/login.png`（GPU 無し: greeter → console に戻る → すぐ getty、late の段は後）。
+
+### 残件
+
+- 5330 の素の起動での確認（P1 への依頼文は返却に書いた）。compose の約 10 s の内訳は、細かい STARTUP の行で分かる。i915 の側（kernel の中の SPIR-V の compile など）なら P1 の担当。
+- USB の stick からの読み込みの遅さ（page-in・小さな file）が 5330 の compositor の前半の 4〜6 s の主な候補。USB storage の driver と VM の page fault の先読みは今回の範囲の外（必要なら別の WS）。
+
+## q1221-i03（2026-10-16 P2）: kernel の起動の段の時刻
+
+commit: 71715e844（base 52c4b1e66）。
+
+### 5330 の記録（P1 の `ws253-boot-8666f25a6-20261016.txt`、main 8666f25a6 の kernel、読むだけ）
+
+- init.log: init started 14.741 → greeter 14.842 → desktop shown 19.542（HANDOFF go 19480、session ready waited 4444）→ late の段 19.542〜29.932（homes 1.6 s、networkd の READY 5.0 s、networking 2.1 s）。
+- STARTUP: start at_ms=17332（sessiond の start 14.84 から compositor の main まで約 2.5 s）、compose 2065 ms（うち glyphs-fonts 1541 ms）、output-swapchain 3210 ms・MODE switch 3245 ms（表示は 22.7 s）。
+- `sysctl hw.diskstats`（起動の後）: sda read_ops=1693 read_bytes=33 MB **read_ns=92.2 s**（1 回の読み込みの平均 54 ms）、busy_ns=42.3 s。QEMU の USB の stick は同じ数の読み込みで平均 0.68 ms（NVMe 0.40 ms）。dd の 10 MB の連続の読み込みは 0.56 s で速いので、**小さな読み込みが 1 回ごとに長く待つ**。glyphs-fonts（font の file 3 つ、計約 340 KB を read() で読むだけ）の 1.5 s、compositor の exec・lib の page-in の 2.5 s、homes の 1.6 s、kernel→init の一部はこの USB の読み込みの待ちと見ている（usb-storage・xHCI の driver の側、この Phase の範囲の外）。
+- output-swapchain 3.2 s は i915 の modeset（P1 の担当）。記録だけ。
+
+### 変えた事
+
+- `kern_log_boot_step()`（`src/kern/klog.c`・`include/kern/klog.h`）: `boot: at N ms: STEP` の行を kernel の log に残す。N は kernel の clock（user の CLOCK_MONOTONIC と同じ、HAL と CPU の準備ができた時が 0）からの ms。kmsg=quiet でも dmesg で読める。既存の行は変えない。
+- 段: HAL と CPU（entry.c）、platform の device の発見の始まりと終わり・USB の root の probe・fixed disk の probe・boot disk の発見・boot storage の発見・VFS・init の開始（main.c・pcat.c）、PCI・ACPI・deferred PCI・UCSI の attach（pcat.c）、GPU の attach の始まりと終わり（sysctl.c の kern_gpu_attach_begin/end、i915・nvrtx が呼ぶ）。
+- 触った file の comment の WS・BUG の番号を消した。
+
+### QEMU の確認（Venus）
+
+| disk | HAL | PCI | USB の root | fixed disk | boot storage | VFS | init | HANDOFF go |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| NVMe | 0 | 39 | 48 | 155 | 158 | 416 | 0.425 s | 4.028 s |
+| USB | 0 | 43 | 57 | 163 | 168 | 529 | 0.544 s | 4.213 s |
+
+（ms。QEMU の Venus は kern_gpu_attach を使わないので GPU の行は出ない。）

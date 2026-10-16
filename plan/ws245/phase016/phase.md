@@ -2,7 +2,7 @@
 
 # ws245-p016: OpRegion の場所と map（xd-vbt の読み、`struct i915_xd` と io・platform の用意、OpRegion の runtime の削除）
 
-Status: in-progress（q1218-i01 P1: 実装・host 試験・build・5330 の素の起動の回帰に合格（2026-10-16 15:16）。merge の依頼を Q1 に送った（消す file 6 つは Q1）。SV7（Gen9）の起動はユーザーの一覧）
+Status: cleared（2026-10-16 Q1 が判定。q1218-i01 P1: 5330 の素の起動の回帰に合格（2026-10-16 15:16）。main 9244ac507 に merge、6 file は Q1 が 54fc334c5 で削除。clearance は Q1。SV7（Gen9）の起動はユーザーの一覧）
 Parent: [WS245](../ws.md)
 Queue: q1218 / q1218-i01（承認は phase047 と同じ）
 設計: [design.md](../design.md) §6.2 の p016 の行、§3.6、§6.1 R2・R8・R11（改訂 6）

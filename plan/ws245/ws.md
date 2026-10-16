@@ -3,12 +3,12 @@
 # WS245: i915 の Gen12 系（display 12・13）の display の書き直し
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-15 作成。p001 の [design.md](design.md) は**改訂 6**（P1、q1218、2026-10-16: レビュー 5 の 28 件を §11.4 で扱った。37 段・159 LW。p001 の clearance は Q1）。レビューは 5 回済み（[design-review-1.md](design-review-1.md)・[design-review.md](design-review.md)・[design-review-3.md](design-review-3.md)・[design-review-4.md](design-review-4.md)・[design-review-5.md](design-review-5.md)）。q1218 で p047 から段の実装を始める）
+Status: incomplete（2026-10-15 作成。p001 の [design.md](design.md) は改訂 6 で cleared（2026-10-16 Q1）。q1218（P1、2026-10-16）で段の実装を開始: p047（証拠の道具）cleared、p016（OpRegion）・p017（VBT の解析）は 5330 の素の起動の回帰に合格し main に merge（p016）/ merge の依頼済み（p017））
 Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
 Related: [WS244](../ws244/ws.md)（i915 の Linux 由来の code の整理、棚卸し plan/ws244/inventory.md・tests/inventory.py）、[Guardrail](../guardrail.md)「MIT・GPL の出典のデータの引用」
-Resume point: q1218（P1、2026-10-16）: design.md 改訂 6（レビュー 5 の反映）は済み → p047（証拠の道具）から段ごとに、5330 の素の起動の自動の回帰の後に main（段の進み方は各 phase.md）。以前: 2026-10-16 00:03 q1209-i02（P1、ラップアップ）: design.md 改訂 5 は commit 済み（8c4fe7791: レビュー 4 の 34 件を §11.2 で扱い、ユーザーの判断（B3 register の証拠、M7 常設できない、M8 入れ直す）を R4・R9・p047 に反映。§6.2 は 37 段・156 LW、表 R、§7 #30〜#33）。**次に再開する時**: design-review-5.md（blocker 2・major 11・minor 15、未反映。要点と直す順は [phase001/phase.md](phase001/phase.md) の「改訂 5」の残り）を design.md §11.4 で扱って改訂 6 → p001 の clearance（Q1）。M11 は Q1 の作業（decisions-log・guardrail の読み替え・ws.md の手順 3）→ ユーザーに §7 #23〜#33（既定の案で進めてよいか）→ p047（証拠の道具）→ p016（OpRegion の場所）から 1 段ずつ（Queue の承認が要る）。p006 の途中の差分は `plan/ws245/temp/p006-partial-20261015.patch` と `temp/p006-partial-20261015-untracked/`（git に入れない）。以前: q1207（P1）: p004 cleared（main 2d5b167aa）、p006 は途中で停止（ユーザーの即時中断）。q1204: p002 cleared（main a9925a4db）。q1200: 改訂 3a。
+Resume point: 2026-10-16 q1218（P1）の区切り: 次は **p018**（[phase018](phase018/phase.md) に調べた依存: `dp-internal.h` が `vbt.h` を include し DP の環境が vbt.c の allocator・log の関数を使う、`I915_TEST_SET=execution` の ktest-display が旧 parser を呼ぶ）（EDID の decode を xd-edid に、旧 VBT parser の本体を消し本番の呼び手の 10 関数と drm_mode の helper を殻 `vbt-shell.c` に。design.md §6.2 の p018 の行）。p017 で旧の結果（`vbt_state.parsed`・`drv_i915_vbt_init_panel` の出力）は既に xd の値なので、p018 の殻は xd の parse を旧の型に写すだけ（`phase017/phase.md`）。N0 の読み（`takeover.c` の `drv_i915_opregion_locate_vbt`）は p036 まで旧なので、殻の `locate_vbt` は xd の find を `struct i915_opregion_info` に写す。5330 の回帰の手順は `phase047/phase.md`・`phase016/phase.md` の表の形（基準の kernel を親の main の source から build、`5330-survey.sh`、書き込みの digest が違えば `i915.debug=display` の起動で全部の列を `5330-survey-diff.py` で比べる。0x162100 は起動ごとに変わる）。USB の UEFI の entry は image を dd するたびに PARTUUID が変わるので `efibootmgr --create-only` で足す（今は Boot0007）。以前: q1209-i02（P1）で design.md 改訂 5、レビュー 5 は改訂 6 で反映。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）
@@ -114,7 +114,7 @@ Resume point: q1218（P1、2026-10-16）: design.md 改訂 6（レビュー 5 �
 
 | ID | 内容 | 状態 |
 | --- | --- | --- |
-| [p001](phase001/phase.md) | 設計: display 11〜13 の model、外向きの口と契約、データの表の引用の方法、段の分割と順序、試験の道、LW。design-reviewer を通す（5 回） | in-progress（design.md 改訂 6 でレビュー 5 を反映済み（2026-10-16）。clearance は Q1） |
+| [p001](phase001/phase.md) | 設計: display 11〜13 の model、外向きの口と契約、データの表の引用の方法、段の分割と順序、試験の道、LW。design-reviewer を通す（5 回） | cleared（2026-10-16 Q1、design.md 改訂 6） |
 | [p002](phase002/phase.md) | 土台: register と表の header、xd-io、xd-platform、host の試験の枠と own の register の model、own の型の分離、Gen9 の own への移設 | cleared（2026-10-15、T1-699 PASS、U10 で 5330 の素の起動に合格） |
 | p003 | （改訂 3a）口 `xd.h` と adapter、`i915.display=` | **canceled**（2026-10-15 夜、段ごとの置き換えに置き換え。adapter と boot の語は作らない: design.md §6.1 R5） |
 | [p004](phase004/phase.md) | VBT（合成の fixture）・EDID の解析（呼ばれない部品） | cleared（2026-10-15、host 試験、main 2d5b167aa、U10 で 5330 に合格） |
@@ -130,9 +130,10 @@ Resume point: q1218（P1、2026-10-16）: design.md 改訂 6（レビュー 5 �
 | p014 | （改訂 3a）display 11 | **canceled**（→ p045） |
 | p015 | （改訂 3a）規約の全文 | **canceled**（→ p046） |
 | p047 | 回帰の証拠の道具: own の survey（PP_STATUS・PWM・frame counter・SURFLIVE・pipe CRC・underrun・TRANS_CONF などを picture up の後に dmesg へ）と `mmio.c` の書き込みの log（`i915.debug=display`）、`5330-survey.sh`（改訂 5、レビュー 4 の B3・M6） | cleared（4 LW。2026-10-16 main 3e1e0c687。LCD の目視は beta2.md の U11） |
-| [p016](phase016/phase.md) | OpRegion の場所と map（xd-vbt の find、`struct i915_xd` と io・platform の用意）。opregion.c を消す | in-progress（3 LW。2026-10-16 5330 の回帰に合格、merge の依頼済み。SV7 は一覧） |
-| p017 | VBT の解析（xd-vbt を真に、旧 parser と影の比較を 1 段） | planned（4 LW） |
-| p018 | EDID の decode（xd-edid）+ vbt.c の parser の本体の削除（本番の呼び手 7 関数と drm_mode の helper は殻 `vbt-shell.c` に） | planned（3 LW） |
+| [p016](phase016/phase.md) | OpRegion の場所と map（xd-vbt の find、`struct i915_xd` と io・platform の用意）。opregion.c を消す | cleared（2026-10-16 5330 の回帰に合格、main 9244ac507、旧 file の削除 54fc334c5。SV7 は beta2 の U12） |
+| [p017](phase017/phase.md) | VBT の解析（xd-vbt を真に、旧 parser と影の比較を 1 段） | cleared（2026-10-16 5330 の回帰に合格、main 45c83da79） |
+| [p018](phase018/phase.md) | 旧 VBT parser の本体の削除（本番の呼び手 10 関数を殻 `vbt-shell.c` に、ktest-display の 2 file を削除）。2026-10-16 に p018 と p053 の 2 段に分けた | cleared（2026-10-16 5330 の回帰に合格、merge 8fea53a1d、旧 4 file は Q1 が削除） |
+| [p053](phase053/phase.md) | EDID の decode を xd-edid に（`edid.c` の decode を消し、`state.c` の mode を xd-edid の first timing に。drm_modes の helper は edid.c に殻として残る）。p018 から分けた | cleared（2026-10-16 T1-702 で 5330 の回帰 PASS、全部の列の差 0、merge 7e3bf81cf） |
 | p019 | AUX の transaction（xd-aux。well・DC off・VDD は呼ぶ側） | planned（4 LW） |
 | p020 | GMBUS と DDC の EDID の読み（xd-gmbus） | planned（3 LW。HDMI の plug はユーザーの一覧） |
 | p021 | backlight の PWM（xd-panel） | planned（2 LW） |
@@ -166,4 +167,4 @@ Resume point: q1218（P1、2026-10-16）: design.md 改訂 6（レビュー 5 �
 | p044 | platform の網羅（display 12 の行）と TGL の TC（流れ B、host だけ）。#21 で全部 xd | planned（4 LW。5320 はユーザーの一覧） |
 | p045 | display 11（Ice Lake） | planned（8 LW。実機は無い） |
 | p046 | 規約の全文の見直しと p045 の出典の監査 | planned（3 LW） |
-合計 37 段、159 LW（±40 %。改訂 6）。5330 の素の起動は段の kernel で最少 37 回、基準の起動と `i915.debug=display` の起動を含めて見込み約 50 回（最大 70〜85 回、design.md §6.6）。
+合計 38 段、161 LW（±40 %。改訂 6 の 159 に、p018 を p018・p053 に分けた +2: 2026-10-16 q1223）。5330 の素の起動は段の kernel で最少 37 回、基準の起動と `i915.debug=display` の起動を含めて見込み約 50 回（最大 70〜85 回、design.md §6.6）。

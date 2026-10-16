@@ -18,6 +18,8 @@
 #include "kern/clock.h"
 #include "kern/sched.h"
 #include "kern/partition.h"
+#include "kern/kmem.h"
+#include <kern/kcrt.h>
 #include <drivers/disklabel/disklabel.h>
 #include "drivers/platform/pcat/pcat-ide.h"
 #include "drivers/pci/pci-pcat.h"
@@ -131,11 +133,48 @@
 /* How many reads of the status bound the wait for the controller's input buffer. */
 #define KBC_DRAIN_SPINS		1000000U
 
+/* How long the boot waits for the disk it was started from, in seconds. */
+#define BOOT_STORAGE_WAIT_SECONDS	5U
+
+/*
+ * The boot parameter by which the loader names the FAT it was started from
+ * (its volume serial number, as XXXX-XXXX), and the room for the serial.
+ */
+#define BOOT_FAT_PARAMETER	"boot0=UUID="
+#define BOOT_FAT_UUID_MAX	16U
+
+/* How many partitions of one disk are looked at for the boot FAT. */
+#define BOOT_DISK_PARTITIONS	16U
+
+/*
+ * Where a FAT boot sector keeps its extended boot signature (0x29) and the
+ * volume serial number after it: FAT12 and FAT16 at the first place,
+ * FAT32 at the second.
+ */
+#define FAT_SIGNATURE_OFFSET_16	38U
+#define FAT_SIGNATURE_OFFSET_32	66U
+#define FAT_EXTENDED_SIGNATURE	0x29U
+#define FAT_SECTOR_SIGNATURE_OFFSET	510U
+
+/*
+ * The partition entries of the disk being looked at for the boot FAT.
+ *
+ * Only the boot worker uses it, once, while the boot storage is discovered;
+ * it is a file-scope table so that the table is not on that thread's stack.
+ */
+static struct partition boot_disk_entries[BOOT_DISK_PARTITIONS];
+
 static void reboot_wait(uint64_t microseconds);
 static void reset_control_reset(void);
 static void keyboard_reset(void);
 static uint8_t port_read(uint16_t port);
 static void port_write(uint16_t port, uint8_t value);
+static void probe_fixed_disks(void);
+static int boot_fat_uuid(char *uuid, size_t size);
+static void wait_for_boot_disk(const char *uuid);
+static int boot_disk_present(const char *uuid);
+static int disk_holds_boot_fat(struct disk *disk, const char *uuid);
+static int sector_holds_boot_fat(const uint8_t *sector, unsigned signature_offset, const char *uuid);
 
 #if CONFIG_KERNEL_USB_HID_CHECKPOINT
 int drv_usb_hid_checkpoint_driver_register(void);
@@ -338,6 +377,7 @@ kern_platform_init(
 	else
 		drv_pci_dump();
 #endif
+	kern_log_boot_step("the PCI functions are attached");
 #if CONFIG_DRIVER_ACPI
 
 	/*
@@ -347,11 +387,12 @@ kern_platform_init(
 	acpi_error = drv_acpi_attach();
 	if (acpi_error != 0 && acpi_error != ENODEV)
 		kern_logf("acpi: attachment failed (error %d)\n", acpi_error);
+	kern_log_boot_step("ACPI is attached");
 
 	/*
 	 * Gives the memory BARs the firmware left unassigned an address in the
 	 * host bridge's _CRS windows, and attaches the functions that waited
-	 * for it (BUG-210: the 5330's LPSS I2C controllers, whose buses the
+	 * for it (the 5330's LPSS I2C controllers, whose buses the
 	 * touch pad's I2C-HID probe below needs).  Without a namespace there
 	 * are no windows, and the functions are attached as they are.
 	 */
@@ -360,10 +401,11 @@ kern_platform_init(
 	} else {
 		(void)drv_pci_probe_deferred();
 	}
+	kern_log_boot_step("the deferred PCI functions are attached");
 #if CONFIG_DRIVER_TYPEC
 
 	/*
-	 * Starts the USB-C connectors' UCSI driver (ws050-p003) on the
+	 * Starts the USB-C connectors' UCSI driver on the
 	 * namespace, once the Embedded Controller its _STA and _DSM read is
 	 * attached.  A platform without a UCSI device (ENODEV) has none.
 	 */
@@ -371,6 +413,7 @@ kern_platform_init(
 		typec_error = drv_ucsi_acpi_attach();
 		if (typec_error != 0 && typec_error != ENODEV)
 			kern_logf("ucsi: attachment failed (error %d)\n", typec_error);
+		kern_log_boot_step("UCSI is attached");
 	}
 #endif
 #endif
@@ -422,16 +465,23 @@ kern_platform_init(
 /*
  * Finishes device discovery once interrupts are enabled.
  *
- * The USB roots are probed and the platform waits a bounded time for boot
- * storage to appear before NVMe namespaces are probed, so that a PCI
- * namespace cannot make removable boot media look absent.
+ * The USB roots are probed first.  When the loader names the FAT it was
+ * started from (boot0=UUID=), the fixed disks (NVMe, SATA) are probed at
+ * once and the platform waits a bounded time only while that FAT is on none
+ * of the disks found so far: a machine started from its internal disk does
+ * not wait for USB storage, and one started from a USB stick waits for the
+ * stick.  Without that parameter the platform waits a bounded time for the
+ * first disk before the fixed disks are probed, so that a PCI namespace
+ * cannot make removable boot media look absent.
  */
 void
 kern_platform_refresh_devices(
 	const struct kern_boot_device *d,
 	size_t n)
 {
+	char uuid[BOOT_FAT_UUID_MAX];
 	uint64_t deadline;
+	int named;
 
 	(void)d;
 	(void)n;
@@ -454,32 +504,29 @@ kern_platform_refresh_devices(
 #if CONFIG_DRIVER_PCI_INTEL_AX211
 	drv_pci_intel_ax211_devices_ready();
 #endif
+	kern_log_boot_step("the USB roots are probed");
 
-	/* Waits up to five seconds for the first disk to arrive. */
-	if (disk_count() != 0)
-		goto nvme;
-	deadline = clock_ticks() + 5U * KERN_CLOCK_HZ;
-	kern_logf("boot: waiting up to 5 seconds for boot storage\n");
-	while (disk_count() == 0 && clock_ticks() < deadline)
-		sched_yield();
-	if (disk_count() == 0)
-		kern_logf("boot: boot-storage wait expired\n");
-nvme:
-	(void)0;
+	/* The boot FAT the loader names decides how long to wait, and for what. */
+	named = boot_fat_uuid(uuid, sizeof(uuid));
+	if (named) {
+		probe_fixed_disks();
+		kern_log_boot_step("the fixed disks are probed");
+		wait_for_boot_disk(uuid);
+		return;
+	}
 
-	/*
-	 * Probes NVMe namespaces after removable boot media has had its bounded
-	 * discovery window.  A present PCI namespace must not make USB-root
-	 * discovery look complete before the removable device arrives.
-	 */
-#if CONFIG_DRIVER_PCI_NVME
-	drv_pci_nvme_probe_namespaces();
-#endif
+	/* Without a name, waits up to five seconds for the first disk to arrive. */
+	if (disk_count() == 0) {
+		deadline = clock_ticks() + BOOT_STORAGE_WAIT_SECONDS * KERN_CLOCK_HZ;
+		kern_logf("boot: waiting up to 5 seconds for boot storage\n");
+		while (disk_count() == 0 && clock_ticks() < deadline)
+			sched_yield();
+		if (disk_count() == 0)
+			kern_logf("boot: boot-storage wait expired\n");
+	}
 
-	/* SATA disks behind AHCI follow the same bounded removable-media wait. */
-#if CONFIG_DRIVER_PCI_AHCI
-	drv_pci_ahci_probe_ports();
-#endif
+	/* The fixed disks follow the removable media's bounded discovery window. */
+	probe_fixed_disks();
 }
 
 /*
@@ -611,7 +658,7 @@ kern_platform_poweroff(
  * chipset's reset control register, then the keyboard controller, and
  * halts when none of them reset it.
  *
- * Machines differ in which of them works (BUG-249: the Latitude 5320 kept
+ * Machines differ in which of them works (the Latitude 5320 kept
  * running after the keyboard controller's pulse, which was the only way
  * tried).  The FADT's register comes first, as the operating systems the
  * firmware is written for use it; on the Latitude 5330 it is a request to
@@ -738,4 +785,262 @@ port_write(
 {
 	/* The byte goes to the port. */
 	__asm__ volatile("outb %0,%1" : : "a"(value), "Nd"(port));
+}
+
+/* Probes the NVMe namespaces and the SATA disks behind AHCI. */
+static void
+probe_fixed_disks(
+	void)
+{
+	/* The NVMe namespaces. */
+#if CONFIG_DRIVER_PCI_NVME
+	drv_pci_nvme_probe_namespaces();
+#endif
+
+	/* The SATA disks behind AHCI. */
+#if CONFIG_DRIVER_PCI_AHCI
+	drv_pci_ahci_probe_ports();
+#endif
+}
+
+/*
+ * Copies the serial of the FAT the loader was started from, as boot0=UUID=
+ * gives it on the boot command line.  Reports 0 when the line names none.
+ */
+static int
+boot_fat_uuid(
+	char *uuid,
+	size_t size)
+{
+	const char *line;
+	const char *cursor;
+	size_t prefix;
+	size_t length;
+	int differs;
+
+	/* The command line the loader handed over. */
+	line = hal_get_arch_handoff("boot.command-line");
+	if (line == NULL)
+		return 0;
+
+	/* Looks for the parameter at the start of each word. */
+	prefix = kern_strlen(BOOT_FAT_PARAMETER);
+	for (cursor = line;
+	     *cursor != '\0';
+	     cursor++) {
+		/* Only the start of the line or of a word can begin a parameter. */
+		if (cursor != line && cursor[-1] != ' ')
+			continue;
+
+		differs = kern_strncmp(cursor, BOOT_FAT_PARAMETER, prefix);
+		if (differs != 0)
+			continue;
+
+		/* The serial runs to the end of the word. */
+		cursor += prefix;
+		length = 0;
+		while (cursor[length] != '\0' && cursor[length] != ' ')
+			length++;
+
+		/* A serial that is empty or longer than any FAT's is not one. */
+		if (length == 0 || length >= size)
+			return 0;
+
+		kern_memcpy(uuid, cursor, length);
+		uuid[length] = '\0';
+
+		/* Succeeded: the line names the boot FAT. */
+		return 1;
+	}
+
+	/* The line names no boot FAT. */
+	return 0;
+}
+
+/*
+ * Waits a bounded time for the disk that holds the boot FAT, looking again
+ * each time another disk arrives.
+ */
+static void
+wait_for_boot_disk(
+	const char *uuid)
+{
+	uint64_t deadline;
+	unsigned seen;
+	unsigned count;
+	int present;
+
+	/* The disks found so far may already hold it. */
+	seen = disk_count();
+	present = boot_disk_present(uuid);
+	if (present)
+		return;
+
+	/* Waits while it is missing, looking again when the number of disks changes. */
+	deadline = clock_ticks() + BOOT_STORAGE_WAIT_SECONDS * KERN_CLOCK_HZ;
+	kern_logf("boot: waiting up to 5 seconds for the boot disk (FAT %s)\n", uuid);
+	while (!present && clock_ticks() < deadline) {
+		sched_yield();
+
+		/* Only a new disk can bring the boot FAT. */
+		count = disk_count();
+		if (count == seen)
+			continue;
+
+		seen = count;
+		present = boot_disk_present(uuid);
+	}
+
+	/* The VFS reports the missing boot FAT as it always has. */
+	if (!present) {
+		kern_logf("boot: boot-storage wait expired\n");
+		return;
+	}
+
+	/* Notes when the boot disk came. */
+	kern_log_boot_step("the boot disk is found");
+}
+
+/* Reports whether any whole disk found so far has a partition holding the boot FAT. */
+static int
+boot_disk_present(
+	const char *uuid)
+{
+	struct disk *disk;
+	unsigned index;
+	int holds;
+
+	/* Each whole disk; the partitions are not published yet. */
+	for (index = 0; index < disk_count(); index++) {
+		disk = disk_at(index);
+		if (disk == NULL)
+			continue;
+
+		/* A partition already published is looked at through its disk. */
+		holds = 0;
+		if ((disk->d_flags & DISK_PARTITION) == 0)
+			holds = disk_holds_boot_fat(disk, uuid);
+		disk_release(disk);
+
+		/* This disk holds it. */
+		if (holds)
+			return 1;
+	}
+
+	/* No disk found so far holds it. */
+	return 0;
+}
+
+/* Reports whether one of a disk's partitions starts with the boot FAT's boot sector. */
+static int
+disk_holds_boot_fat(
+	struct disk *disk,
+	const char *uuid)
+{
+	uint8_t *sector;
+	unsigned index;
+	int count;
+	int error;
+	int holds;
+
+	/* A disk whose blocks are smaller than a boot sector holds no FAT. */
+	if (disk->d_block_size < FAT_SECTOR_SIGNATURE_OFFSET + 2U)
+		return 0;
+
+	/* The partition table; a disk without one holds no partition. */
+	count = partition_scan(disk, boot_disk_entries, BOOT_DISK_PARTITIONS);
+	if (count <= 0)
+		return 0;
+
+	/* Room for one block. */
+	sector = kern_malloc(disk->d_block_size);
+	if (sector == NULL)
+		return 0;
+
+	/* The first block of each partition. */
+	holds = 0;
+	for (index = 0; index < (unsigned)count; index++) {
+		/* An empty partition has no boot sector. */
+		if (boot_disk_entries[index].p_block_count == 0)
+			continue;
+
+		error = disk_read_direct(disk, boot_disk_entries[index].p_data_block, 1U, sector);
+		if (error != 0)
+			continue;
+
+		/* The FAT12 and FAT16 place of the serial, then the FAT32 one. */
+		holds = sector_holds_boot_fat(sector, FAT_SIGNATURE_OFFSET_16, uuid);
+		if (holds)
+			break;
+
+		holds = sector_holds_boot_fat(sector, FAT_SIGNATURE_OFFSET_32, uuid);
+		if (holds)
+			break;
+	}
+
+	kern_free(sector);
+
+	/* Reports whether a partition held it. */
+	if (holds)
+		return 1;
+
+	/* None of its partitions does. */
+	return 0;
+}
+
+/*
+ * Reports whether a boot sector carries the extended boot signature at the
+ * given place and, after it, the volume serial the loader named.
+ */
+static int
+sector_holds_boot_fat(
+	const uint8_t *sector,
+	unsigned signature_offset,
+	const char *uuid)
+{
+	char serial[BOOT_FAT_UUID_MAX];
+	const uint8_t *bytes;
+	uint32_t value;
+	unsigned index;
+	char left;
+	char right;
+
+	/* A boot sector ends with 55 AA. */
+	if (sector[FAT_SECTOR_SIGNATURE_OFFSET] != 0x55U)
+		return 0;
+	if (sector[FAT_SECTOR_SIGNATURE_OFFSET + 1U] != 0xaaU)
+		return 0;
+
+	/* Without the extended signature there is no serial. */
+	if (sector[signature_offset] != FAT_EXTENDED_SIGNATURE)
+		return 0;
+
+	/* The serial, little-endian, in the XXXX-XXXX form the loader writes. */
+	bytes = sector + signature_offset + 1U;
+	value = (uint32_t)bytes[0];
+	value |= (uint32_t)bytes[1] << 8;
+	value |= (uint32_t)bytes[2] << 16;
+	value |= (uint32_t)bytes[3] << 24;
+	(void)kern_snprintf(serial, sizeof(serial), "%04X-%04X",
+	    (unsigned)(value >> 16),
+	    (unsigned)(value & 0xffffU));
+
+	/* Compares it with the named one, letters in either case. */
+	for (index = 0; serial[index] != '\0'; index++) {
+		left = serial[index];
+		right = uuid[index];
+		if (left >= 'a' && left <= 'f')
+			left = (char)(left - 'a' + 'A');
+		if (right >= 'a' && right <= 'f')
+			right = (char)(right - 'a' + 'A');
+		if (left != right)
+			return 0;
+	}
+
+	/* The named serial must end where this one does. */
+	if (uuid[index] != '\0')
+		return 0;
+
+	/* Succeeded: this is the boot FAT. */
+	return 1;
 }

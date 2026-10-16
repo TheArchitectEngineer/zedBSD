@@ -216,8 +216,7 @@ kern_calloc(
  * recorded large allocation, and freeing an unknown pointer is fatal.  A
  * large allocation's header sits just before the block at the start of its
  * page, so it is found without searching the list: a driver that holds many
- * page-backed blocks freed them in time growing with their number (ws141,
- * 2026-10-12).
+ * page-backed blocks freed them in time growing with their number.
  */
 void
 kern_free(
@@ -264,7 +263,7 @@ kern_free(
 
 	kernel_heap_lock_leave(enabled);
 
-	/* An unknown pointer stops the kernel; the line before the stop names it and the code that freed it (BUG-321). */
+	/* An unknown pointer stops the kernel; the line before the stop names it and the code that freed it. */
 	if (large == NULL) {
 		hal_printf("\nkern_free: %lx is not a kernel allocation (freed from %lx)\n",
 			   (unsigned long)address,
@@ -329,7 +328,7 @@ kernel_entry(
 	/* Brings up the log, the heap, and the core subsystems. */
 	kern_log_init();
 
-	/* kmsg=quiet keeps the kernel's messages off the console, for dmesg only (ws035-p097). */
+	/* kmsg=quiet keeps the kernel's messages off the console, for dmesg only. */
 	quiet = kern_boot_parameters_token_present(hal_get_arch_handoff("boot.command-line"), "kmsg=quiet");
 	if (quiet)
 		kern_log_set_quiet(1);
@@ -381,6 +380,7 @@ kernel_entry(
 		   (unsigned)(hal_pmem_get_total_size() / (1024U * 1024U)),
 		   (unsigned)(1000U / HAL_TIMER_FREQUENCY));
 	kern_logf("boot: CPUs ready: %u\n", hal_cpu_count());
+	kern_log_boot_step("the HAL and the CPUs are ready");
 
 	/* Starts the reaper and the network stack. */
 	if (process_reaper_start() != 0)

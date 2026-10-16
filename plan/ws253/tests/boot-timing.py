@@ -14,8 +14,10 @@ session's log and the system log.
     plan/ws253/tests/boot-timing.py IMAGE OUTDIR [--seconds 150]
 
 GUEST_RUNTIME names the guest's runtime directory (default build/ws253/run).
-The Venus renderer is VENUS_RENDERER as zdesktop-guest.sh reads it.  The guest
-is stopped at the end.
+The Venus renderer is VENUS_RENDERER as zdesktop-guest.sh reads it.  --disk usb
+boots from a USB stick on the xHCI, the way the Latitude 5330 is booted, rather
+than from NVMe; the guest is then started here with zdesktop-guest.sh's devices.
+The guest is stopped at the end.
 """
 import argparse
 import hashlib
@@ -40,10 +42,13 @@ RECORDS = {
 	"init.log": "cat /var/log/init.log",
 	"sessiond.log": "cat /var/log/sessiond.log",
 	"session.log": "cat /run/user/*/session.log",
+	"kernel-uptime.txt": "sysctl kern.boot.kmsg; cat /var/log/init.log | head -1",
 	"messages": "cat /var/log/messages",
 	"dmesg.txt": "dmesg",
 	"services.txt": "service list",
 	"boot.txt": "sysctl kern.boot.login; sysctl kern.boot.kmsg; date +%s",
+	"boot-steps.txt": "dmesg | grep 'boot: at '",
+	"diskstats.txt": "sysctl hw.diskstats",
 }
 
 
@@ -52,6 +57,29 @@ def guest(runtime: Path, *words: str, capture_output: bool = True) -> subprocess
 	environment = dict(os.environ, GUEST_RUNTIME=str(runtime))
 	return subprocess.run([str(GUEST), *words], cwd=ROOT, env=environment,
 			      capture_output=capture_output, text=True, timeout=120)
+
+
+def start_usb(runtime: Path, image: Path) -> subprocess.CompletedProcess:
+	"""Starts the Venus guest as zdesktop-guest.sh does, but from a USB stick."""
+	renderer = Path(os.environ.get("VENUS_RENDERER", str(ROOT / "build/ws035-sq-venus/install")))
+	environment = dict(os.environ, GUEST_RUNTIME=str(runtime), LIBGL_ALWAYS_SOFTWARE="1",
+			   MESA_LOADER_DRIVER_OVERRIDE="zink",
+			   RENDER_SERVER_EXEC_PATH=str(renderer / "libexec/virgl_render_server"),
+			   LD_LIBRARY_PATH=str(renderer / "lib/x86_64-linux-gnu"))
+	environment.setdefault("VK_DRIVER_FILES", "/usr/share/vulkan/icd.d/lvp_icd.json")
+	extra = ("-object memory-backend-memfd,id=mem,size=8G,share=on -machine memory-backend=mem "
+		 "-device virtio-gpu-gl-pci,id=venus,venus=on,blob=on,hostmem=1G,max_outputs=1 "
+		 "-display egl-headless,rendernode=/dev/dri/renderD128 "
+		 f"-vnc unix:{runtime}/vnc.sock,display=venus -device usb-tablet,bus=xhci.0,port=4")
+	# BOOT_TIMING_THROTTLE (QEMU's throttling options for the stick, such as
+	# "bps-read=20000000,iops-read=1000") makes the stick as slow as a real one.
+	throttle = os.environ.get("BOOT_TIMING_THROTTLE", "")
+	for option in filter(None, throttle.split(",")):
+		extra += f" -set drive.boot.throttling.{option}"
+	runtime.mkdir(parents=True, exist_ok=True)
+	return subprocess.run(["python3", str(ROOT / "plan/tools/guest/guest.py"), "start", str(image),
+			       "--disk", "usb", "--qemu-extra", extra],
+			      cwd=ROOT, env=environment, capture_output=True, text=True, timeout=120)
 
 
 def shoot(runtime: Path, output: Path) -> str | None:
@@ -75,6 +103,7 @@ def main() -> int:
 	parser.add_argument("image")
 	parser.add_argument("outdir")
 	parser.add_argument("--seconds", type=float, default=150.0)
+	parser.add_argument("--disk", choices=("nvme", "usb"), default="nvme")
 	arguments = parser.parse_args()
 
 	runtime = Path(os.environ.get("GUEST_RUNTIME", str(ROOT / "build/ws253/run"))).resolve()
@@ -85,7 +114,10 @@ def main() -> int:
 	# The emulator starts; every time below is measured from here.
 	started = time.monotonic()
 	wall = time.time()
-	result = guest(runtime, "start", str(Path(arguments.image).resolve()))
+	if arguments.disk == "usb":
+		result = start_usb(runtime, Path(arguments.image).resolve())
+	else:
+		result = guest(runtime, "start", str(Path(arguments.image).resolve()))
 	if result.returncode != 0:
 		print(result.stdout + result.stderr, file=sys.stderr)
 		return 1
