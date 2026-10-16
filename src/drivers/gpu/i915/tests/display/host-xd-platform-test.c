@@ -18,6 +18,7 @@
 #include "../../display/display-internal.h"
 #include "../../display/xd-io.h"
 #include "../../display/xd-platform.h"
+#include "../../display/xd.h"
 #include "../../intel/display-regs-xd.h"
 #include "../../intel/pci-ids.h"
 
@@ -49,6 +50,7 @@ static void i915_xd_test_pch(void);
 static void i915_xd_test_accepted(void);
 static void i915_xd_test_shape(void);
 static void i915_xd_test_lookups(void);
+static void i915_xd_test_start(void);
 
 /*
  * Runs every check of the platform descriptions and reports.
@@ -65,6 +67,7 @@ main(void)
 	i915_xd_test_accepted();
 	i915_xd_test_shape();
 	i915_xd_test_lookups();
+	i915_xd_test_start();
 
 	/* Reports the result. */
 	failures = i915_host_report("host_xd_platform_test");
@@ -407,3 +410,40 @@ i915_xd_test_lookups(void)
 	/* The 5330 DBUF of one pipe A: joined, all four slices. */
 	i915_host_check(platform->dbuf[0].pipes == 0x1U && platform->dbuf[0].joined != 0 && platform->dbuf[0].slices[0] == 0xfU, "lookups: one pipe A joins all four slices");
 }
+
+/* Checks the xd display's start: the description by product and revision, then the south display by the PCH. */
+static void
+i915_xd_test_start(void)
+{
+	static struct i915_xd xd;
+
+	/* An Alder Lake-P: display 13, the platform's ADP south display assumed until the PCH is read. */
+	drv_i915_xd_start(&xd, NULL, NULL, 0x46a6U, 0x0cU);
+	i915_host_check(xd.chosen && xd.choice.platform != NULL && xd.choice.platform->display_ver == 13U, "start: Alder Lake-P is display 13");
+	i915_host_check(xd.choice.pch_assumed && xd.choice.pch_kind == I915_PCH_ADP, "start: the south display is assumed before the PCH");
+
+	/* Its ADP PCH is read. */
+	drv_i915_xd_south(&xd, 0x46a6U, 0x0cU, 0x5180U);
+	i915_host_check(!xd.choice.pch_assumed && xd.choice.pch_kind == I915_PCH_ADP, "start: the ADP PCH is read");
+
+	/* A PCH of another kind keeps the description as it was. */
+	drv_i915_xd_south(&xd, 0x46a6U, 0x0cU, 0xa080U);
+	i915_host_check(xd.chosen && !xd.choice.pch_assumed && xd.choice.pch_kind == I915_PCH_ADP, "start: a TGP PCH does not change Alder Lake-P");
+
+	/* No PCH found: the platform's own stays assumed. */
+	drv_i915_xd_south(&xd, 0x46a6U, 0x0cU, 0U);
+	i915_host_check(xd.choice.pch_assumed && xd.choice.pch_kind == I915_PCH_ADP, "start: no PCH keeps the assumed one");
+
+	/* A Tiger Lake is display 12. */
+	drv_i915_xd_start(&xd, NULL, NULL, 0x9a49U, 0x01U);
+	i915_host_check(xd.chosen && xd.choice.platform->display_ver == 12U, "start: Tiger Lake is display 12");
+
+	/* A Gen9 device (Kaby Lake GT2) and an unknown id have no description and do not use the xd display. */
+	drv_i915_xd_start(&xd, NULL, NULL, 0x5917U, 0x07U);
+	i915_host_check(!xd.chosen && xd.choice.platform == NULL, "start: Gen9 has no description");
+	drv_i915_xd_south(&xd, 0x5917U, 0x07U, 0x9d80U);
+	i915_host_check(!xd.chosen, "start: Gen9 stays without one after the PCH");
+	drv_i915_xd_start(&xd, NULL, NULL, 0x1234U, 0x00U);
+	i915_host_check(!xd.chosen, "start: an unknown id has no description");
+}
+
