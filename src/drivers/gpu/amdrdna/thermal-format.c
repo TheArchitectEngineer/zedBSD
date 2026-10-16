@@ -199,6 +199,24 @@
 #define FORMAT_READING_FAN_AT			62U
 
 /*
+ * The clocks in the same readings, in megahertz: the graphics, system and
+ * memory clocks as they run now (the first three of the table's clocks),
+ * the graphics clock's average, and the graphics engine's average
+ * activity in percent.  The older layout puts them at the same places.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/pm/swsmu/inc/pmfw_if/smu11_driver_if_navi10.h
+ * (SmuMetrics_t and SmuMetrics_legacy_t: CurrClock with PPCLK_GFXCLK,
+ * PPCLK_SOCCLK and PPCLK_UCLK, AverageGfxclkFrequencyPostDs and
+ * AverageGfxclkFrequency, AverageGfxActivity).
+ */
+#define FORMAT_READING_GFX_CLOCK_AT		0U
+#define FORMAT_READING_SOC_CLOCK_AT		2U
+#define FORMAT_READING_MEMORY_CLOCK_AT		4U
+#define FORMAT_READING_GFX_AVERAGE_AT		18U
+#define FORMAT_READING_GFX_ACTIVITY_AT		24U
+
+/*
  * Reads the temperature word: the reading the trip compares (the one the
  * driver watches) and the highest reading, in degrees Celsius.
  *
@@ -561,8 +579,8 @@ amdrdna_power_table_build(
 }
 
 /*
- * Reads the temperatures and the fan's speed from a table of readings the
- * unit's firmware handed back (AMDRDNA_SMU_READINGS_BYTES bytes).
+ * Reads the temperatures, the fan's speed and the clocks from a table of
+ * readings the unit's firmware handed back (AMDRDNA_SMU_READINGS_BYTES bytes).
  *
  * Procedure referenced: Linux v6.19
  * drivers/gpu/drm/amd/pm/swsmu/smu11/navi10_ppt.c
@@ -579,6 +597,15 @@ amdrdna_power_readings_read(
 	result->hotspot = amdrdna_le16(readings, FORMAT_READING_HOTSPOT_AT);
 	result->memory = amdrdna_le16(readings, FORMAT_READING_MEMORY_AT);
 	result->fan_speed = amdrdna_le16(readings, FORMAT_READING_FAN_AT);
+
+	/* The clocks as they run now. */
+	result->gfx_clock = amdrdna_le16(readings, FORMAT_READING_GFX_CLOCK_AT);
+	result->system_clock = amdrdna_le16(readings, FORMAT_READING_SOC_CLOCK_AT);
+	result->memory_clock = amdrdna_le16(readings, FORMAT_READING_MEMORY_CLOCK_AT);
+
+	/* The graphics clock's average and how busy the graphics engine was. */
+	result->gfx_average = amdrdna_le16(readings, FORMAT_READING_GFX_AVERAGE_AT);
+	result->gfx_activity = amdrdna_le16(readings, FORMAT_READING_GFX_ACTIVITY_AT);
 }
 
 /*
