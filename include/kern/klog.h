@@ -35,7 +35,7 @@ size_t
 kern_log_capacity(void);
 
 /*
- * The quiet log (the boot parameter kmsg=quiet, ws035-p097): records go to
+ * The quiet log (the boot parameter kmsg=quiet): records go to
  * the ring (dmesg) and the platform debug port, not to the console.
  */
 void
@@ -46,7 +46,7 @@ int
 kern_log_quiet(void);
 
 /*
- * Keeps the text of a fatal stop in the ring only (BUG-158): no console is
+ * Keeps the text of a fatal stop in the ring only: no console is
  * written, and the ring's lock is taken only when this CPU does not already
  * hold it and another CPU gives it up within a bound.  Called with
  * interrupts disabled on the way to a stop.
@@ -54,5 +54,14 @@ kern_log_quiet(void);
 void
 kern_log_record_fatal(
 	const char *text);
+
+/*
+ * Logs one step of the boot with the milliseconds since the kernel's clock
+ * started ("boot: at N ms: STEP"), so that dmesg shows where a boot spends
+ * its time, also when the log is quiet.
+ */
+void
+kern_log_boot_step(
+	const char *step);
 
 #endif

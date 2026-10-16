@@ -21,16 +21,17 @@
 #include "kern/lock.h"
 #include "kern/platform.h"
 #include "kern/text-display.h"
+#include "kern/clock.h"
 #include <stdarg.h>
 #include <kern/kcrt.h>
 #include <hal/hal.h>
 
 /*
  * The size of the ring.  amd64 keeps 512 KiB, so a driver's long start log
- * (the i915's, read over SSH after a start root asked for, ws118-p005) is
+ * (the i915's, read over SSH after a start root asked for) is
  * still whole when dmesg reads it.  The Raspberry Pi 4 keeps 256 KiB, so
  * the start of a boot that failed is still there when the bootlog service
- * keeps the log on the boot FAT (BUG-288).  The smaller machines keep
+ * keeps the log on the boot FAT.  The smaller machines keep
  * 32 KiB.
  */
 #if defined(__x86_64__)
@@ -58,7 +59,7 @@ static uint64_t klog_dropped;
  * The CPU (its number plus one) writing a record to the consoles, or 0.
  *
  * The consoles take one character at a time, so two CPUs logging at once
- * mixed their records character by character (BUG-031).  A record is
+ * mixed their records character by character.  A record is
  * written whole while its CPU holds this.  It is not a lock of the rank
  * order: a record may be logged under any lock, and the console takes its
  * own locks per character, as before.
@@ -131,7 +132,7 @@ kern_log_write(
 			console_output((unsigned char)bytes[at]);
 	}
 
-	/* A quiet console shows only that the boot goes on (ws035-p107). */
+	/* A quiet console shows only that the boot goes on. */
 	if (quiet)
 		kern_text_progress();
 
@@ -210,6 +211,29 @@ kern_logf(
 
 	/* Records the rendered text. */
 	kern_log_write(text, used);
+}
+
+/*
+ * Logs one step of the boot with the milliseconds since the kernel's clock
+ * started.
+ *
+ * The clock is the one user space reads as CLOCK_MONOTONIC, so the steps
+ * line up with init's timeline (/var/log/init.log).  A step logged before
+ * the clock runs shows 0.
+ */
+void
+kern_log_boot_step(
+	const char *step)
+{
+	uint64_t ticks;
+	uint64_t milliseconds;
+
+	/* The time since the clock started. */
+	ticks = clock_ticks();
+	milliseconds = kern_ticks_to_ms(ticks);
+
+	/* One line that a reader of dmesg can find among the others. */
+	kern_logf("boot: at %llu ms: %s\n", (unsigned long long)milliseconds, step);
 }
 
 /*

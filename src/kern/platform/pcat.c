@@ -377,6 +377,7 @@ kern_platform_init(
 	else
 		drv_pci_dump();
 #endif
+	kern_log_boot_step("the PCI functions are attached");
 #if CONFIG_DRIVER_ACPI
 
 	/*
@@ -386,6 +387,7 @@ kern_platform_init(
 	acpi_error = drv_acpi_attach();
 	if (acpi_error != 0 && acpi_error != ENODEV)
 		kern_logf("acpi: attachment failed (error %d)\n", acpi_error);
+	kern_log_boot_step("ACPI is attached");
 
 	/*
 	 * Gives the memory BARs the firmware left unassigned an address in the
@@ -399,6 +401,7 @@ kern_platform_init(
 	} else {
 		(void)drv_pci_probe_deferred();
 	}
+	kern_log_boot_step("the deferred PCI functions are attached");
 #if CONFIG_DRIVER_TYPEC
 
 	/*
@@ -410,6 +413,7 @@ kern_platform_init(
 		typec_error = drv_ucsi_acpi_attach();
 		if (typec_error != 0 && typec_error != ENODEV)
 			kern_logf("ucsi: attachment failed (error %d)\n", typec_error);
+		kern_log_boot_step("UCSI is attached");
 	}
 #endif
 #endif
@@ -500,11 +504,13 @@ kern_platform_refresh_devices(
 #if CONFIG_DRIVER_PCI_INTEL_AX211
 	drv_pci_intel_ax211_devices_ready();
 #endif
+	kern_log_boot_step("the USB roots are probed");
 
 	/* The boot FAT the loader names decides how long to wait, and for what. */
 	named = boot_fat_uuid(uuid, sizeof(uuid));
 	if (named) {
 		probe_fixed_disks();
+		kern_log_boot_step("the fixed disks are probed");
 		wait_for_boot_disk(uuid);
 		return;
 	}
@@ -886,8 +892,13 @@ wait_for_boot_disk(
 	}
 
 	/* The VFS reports the missing boot FAT as it always has. */
-	if (!present)
+	if (!present) {
 		kern_logf("boot: boot-storage wait expired\n");
+		return;
+	}
+
+	/* Notes when the boot disk came. */
+	kern_log_boot_step("the boot disk is found");
 }
 
 /* Reports whether any whole disk found so far has a partition holding the boot FAT. */

@@ -47,6 +47,8 @@ RECORDS = {
 	"dmesg.txt": "dmesg",
 	"services.txt": "service list",
 	"boot.txt": "sysctl kern.boot.login; sysctl kern.boot.kmsg; date +%s",
+	"boot-steps.txt": "dmesg | grep 'boot: at '",
+	"diskstats.txt": "sysctl hw.diskstats",
 }
 
 
