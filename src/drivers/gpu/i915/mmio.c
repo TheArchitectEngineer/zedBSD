@@ -68,7 +68,17 @@ static const struct i915_mmio_range i915_gen9_ranges[] = {
 #include "intel/forcewake-ranges-gen9.inc"
 };
 
+/*
+ * The start's record of the display writes (mmio-record.c).
+ *
+ * The kernel links it; the host tests of the register access do not, and
+ * there the record's flag has no address, so every write skips it.
+ */
+extern volatile int drv_i915_mmio_record_on __attribute__((weak));
+extern void drv_i915_mmio_record_write(const struct i915_mmio *mmio, uint32_t offset, uint32_t value) __attribute__((weak));
+
 static void i915_mmio_note(struct i915_mmio *mmio, uint16_t op, const char *what, uint64_t argument0, uint64_t argument1);
+static void i915_mmio_store(struct i915_mmio *mmio, uint32_t offset, uint32_t value);
 static uint32_t i915_window_read32(void *context, uint32_t offset);
 static void i915_window_write32(void *context, uint32_t offset, uint32_t value);
 static void i915_window_forcewake_request(void *context, int domain, int wake);
@@ -340,7 +350,7 @@ drv_i915_write32(
 	}
 
 	/* Writes the register. */
-	mmio->ops->write32(mmio->context, offset, value);
+	i915_mmio_store(mmio, offset, value);
 }
 
 /*
@@ -387,7 +397,7 @@ drv_i915_write32_auto(
 		(void)drv_i915_forcewake_get(mmio, domain);
 
 	/* Writes the register. */
-	mmio->ops->write32(mmio->context, offset, value);
+	i915_mmio_store(mmio, offset, value);
 
 	/* Lets the domain sleep again. */
 	if (domain >= 0)
@@ -425,7 +435,7 @@ drv_i915_raw_write32(
 	uint32_t value)
 {
 	/* Writes the register as it is. */
-	mmio->ops->write32(mmio->context, offset, value);
+	i915_mmio_store(mmio, offset, value);
 }
 
 /*
@@ -472,7 +482,7 @@ drv_i915_rmw32(
 	/* Keeps every bit outside the mask and replaces the bits inside it. */
 	old_value = mmio->ops->read32(mmio->context, offset);
 	new_value = (old_value & ~mask) | (value & mask);
-	mmio->ops->write32(mmio->context, offset, new_value);
+	i915_mmio_store(mmio, offset, new_value);
 }
 
 /*
@@ -501,7 +511,7 @@ drv_i915_write32_masked(
 	}
 
 	/* Writes the word; the mask travels in its upper half. */
-	mmio->ops->write32(mmio->context, offset, masked_word);
+	i915_mmio_store(mmio, offset, masked_word);
 }
 
 /*
@@ -570,6 +580,29 @@ i915_mmio_note(
 		return;
 
 	drv_i915_trace_record(mmio->trace, 0U, op, what, argument0, argument1);
+}
+
+/*
+ * Writes a register and hands the write to the start's record of the display
+ * writes while that record is open.  Once the record is closed, the cost of a
+ * write is one load and one branch more than the bus write.
+ */
+static void
+i915_mmio_store(
+	struct i915_mmio *mmio,
+	uint32_t offset,
+	uint32_t value)
+{
+	/* Writes the register. */
+	mmio->ops->write32(mmio->context, offset, value);
+
+	/* A build without the record has nothing to give the write to. */
+	if (&drv_i915_mmio_record_on == NULL)
+		return;
+
+	/* Gives the write to the record of the start, which keeps the display's. */
+	if (drv_i915_mmio_record_on != 0)
+		drv_i915_mmio_record_write(mmio, offset, value);
 }
 
 /* Reads one register of the mapped window; outside the window reads all-ones. */

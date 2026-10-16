@@ -26,12 +26,12 @@
  * output holds the last picture of the lease that ended, and the next
  * lease's first frame is drawn into the other buffer and flipped to, so a
  * login or a logout (the greeter's lease, then the session's, then the
- * greeter's again) never goes dark (ws075-p016).  A hold that no lease
+ * greeter's again) never goes dark.  A hold that no lease
  * ends within I915_PRESENT_HOLD_MS, or the shutdown, makes the worker
  * leave the window, and the panel is stopped through the reference's stop
  * path.
  *
- * FIFO (ws075-p019): a presentation returns once its flip is armed, so the
+ * FIFO: a presentation returns once its flip is armed, so the
  * presenting thread draws its next frame while the flip waits for its
  * vblank; the next presentation first waits for that flip to latch, then
  * draws into the buffer the panel stopped showing.  Every frame is shown
@@ -56,6 +56,7 @@
 #include "control.h"
 #include "head.h"
 #include "hotplug.h"
+#include "survey.h"
 #include <kern/kcrt.h>
 
 #include "../i915.h"
@@ -263,7 +264,7 @@ drv_i915_present_shutdown(
 
 /*
  * Ends the hold of the last picture now, for a claim that moves the
- * output (ws113-p011a): the worker leaves the display window and stops the
+ * output: the worker leaves the display window and stops the
  * output that showed it.  Unlike the shutdown, later holds are not
  * refused.  Waits a bounded time.  Returns 0 once nothing is held (also
  * when nothing was), or ETIMEDOUT.
@@ -362,7 +363,7 @@ drv_i915_present_display_present(
 	rd = &display->rd;
 	storage = object;
 
-	/* The second output's lease presents on the second output (ws113-p011). */
+	/* The second output's lease presents on the second output. */
 	owns_head = drv_i915_head_owns(display, session, request->lease);
 	if (owns_head) {
 		error = i915_present_head(owner_device, session, object, request);
@@ -386,14 +387,14 @@ drv_i915_present_display_present(
 		return EINVAL;
 	}
 
-	/* The resident output of this generation, still connected (ws113-p011a: a connector's identity). */
+	/* The resident output of this generation, still connected (a connector's identity). */
 	(void)drv_i915_display_resident_identity(display, &display_id, &generation, &connected);
 	if (request->generation != generation) {
 		mutex_unlock(&rd->mutex);
 		return ESTALE;
 	}
 
-	/* Its connector unplugged: the frame cannot be shown (ws113-p011a, the kind's own detection does not matter). */
+	/* Its connector unplugged: the frame cannot be shown (the kind's own detection does not matter). */
 	if (!connected) {
 		mutex_unlock(&rd->mutex);
 		return ENXIO;
@@ -473,7 +474,7 @@ drv_i915_present_display_present(
  * Reports the completed sequence of the lease (the display wait operation).
  *
  * The newest presentation completes when its flip latches: the wait waits
- * for that (FIFO, ws075-p019).  Returns 0, EINVAL for a session that does
+ * for that (FIFO).  Returns 0, EINVAL for a session that does
  * not hold the lease or a sequence not presented yet, EAGAIN before the
  * first presentation, or EIO when the flip did not latch.
  */
@@ -496,7 +497,7 @@ drv_i915_present_display_wait(
 	display = owner_device->display;
 	rd = &display->rd;
 
-	/* The second output's lease waits on the second output (ws113-p011). */
+	/* The second output's lease waits on the second output. */
 	owns_head = drv_i915_head_owns(display, session, request->lease);
 	if (owns_head) {
 		error = i915_present_head_wait(owner_device, session, request);
@@ -562,7 +563,7 @@ drv_i915_present_display_release(
 	owner_device = device;
 	rd = &owner_device->display->rd;
 
-	/* The second output's lease ends the second output (ws113-p011): it goes dark at once. */
+	/* The second output's lease ends the second output: it goes dark at once. */
 	owns_head = drv_i915_head_owns(owner_device->display, session, request->lease);
 	if (owns_head) {
 		error = drv_i915_head_release(owner_device, session, request->lease);
@@ -631,7 +632,7 @@ drv_i915_present_lease_close(
 	if (device->display == NULL)
 		return;
 
-	/* The second output's lease ends first, as the compositor would end it (ws113-p011). */
+	/* The second output's lease ends first, as the compositor would end it. */
 	drv_i915_head_lease_close(device, session);
 
 	rd = &device->display->rd;
@@ -674,7 +675,7 @@ drv_i915_present_window_ready(
 	if (display->window.display_failed)
 		return 0;
 
-	/* A moved output that failed fails the rest of its lease; the next lease tries again (ws113-p011a). */
+	/* A moved output that failed fails the rest of its lease; the next lease tries again. */
 	if (display->window.lease_failed)
 		return 0;
 
@@ -683,9 +684,9 @@ drv_i915_present_window_ready(
 }
 
 /*
- * Reports whether the current lease's moved output failed (ws113-p011a):
+ * Reports whether the current lease's moved output failed:
  * its presentations fail until the next claim, as for an output that is
- * gone (BUG-266).
+ * gone.
  */
 int
 drv_i915_present_lease_failed(
@@ -718,7 +719,7 @@ drv_i915_present_lease_failed(
  * across the holds between leases, until a hold is over or a stop is asked
  * for, and the reference's stop path follows.  A moved output that did not
  * come up, or did not stop cleanly, gives the firmware's output back and
- * fails the rest of its lease (ws113-p011a); the next lease lights an
+ * fails the rest of its lease; the next lease lights an
  * output again.  XXX: the firmware's output that did not come up, or did
  * not stop cleanly, is not tried again: presentation fails from here on
  * and the node keeps serving.
@@ -743,13 +744,12 @@ drv_i915_present_window(
 	/*
 	 * Lights the panel; the window serves until a hold is over or a stop.
 	 * An external DP link that did not train is lowered and lit again
-	 * (EAGAIN, ws051-p004b); every retry lowers the port's link, so the
+	 * (EAGAIN); every retry lowers the port's link, so the
 	 * retries end.  A window left so that a second output's first frame
 	 * finds the resident output lit for two pipes is lit again at once,
 	 * and so is a run for two pipes that failed cleanly, for one pipe with
-	 * the second output latched limited (ws113-p011).  moved tells whether
-	 * the run lights an output a claim moved to, not the firmware's
-	 * (ws113-p011a).
+	 * the second output latched limited.  moved tells whether
+	 * the run lights an output a claim moved to, not the firmware's.
 	 */
 	moved = drv_i915_display_output_moved(display);
 	spared = 0;
@@ -769,7 +769,7 @@ drv_i915_present_window(
 	/*
 	 * The first entry after a sleep whose HDMI display did not come up:
 	 * the display was unplugged during the sleep, and the built-in panel is
-	 * tried in its place once (ws052-p009, decided 2026-10-05).  A panel
+	 * tried in its place once.  A panel
 	 * that does not come up either ends as any failed run does.
 	 */
 	after_resume = display->window.after_resume;
@@ -782,10 +782,10 @@ drv_i915_present_window(
 	}
 
 	/*
-	 * A moved output that failed, or whose display was unplugged (BUG-268),
-	 * gives the firmware's output back (ws113-p011a), and the rest of its
+	 * A moved output that failed, or whose display was unplugged,
+	 * gives the firmware's output back, and the rest of its
 	 * lease fails.  The firmware's own output whose display was unplugged
-	 * is given up (ws051-p005b): the driver lights nothing in its place,
+	 * is given up: the driver lights nothing in its place,
 	 * the rest of the lease fails, and Keiland claims the next display.
 	 */
 	lost = 0;
@@ -796,13 +796,12 @@ drv_i915_present_window(
 		lost = 1;
 	}
 
-	/* A moved output whose last hold ended without a lease gives the firmware's back (ws113-p011a), before the hold is over. */
+	/* A moved output whose last hold ended without a lease gives the firmware's back, before the hold is over. */
 	drv_i915_display_output_back(device);
 
 	/*
 	 * The output moved back, or the firmware's output was given up: the
-	 * display sessions list the displays again now, an idle desktop too
-	 * (BUG-268, ws051-p005b).
+	 * display sessions list the displays again now, an idle desktop too.
 	 */
 	moved_after = drv_i915_display_output_moved(display);
 	if (moved && !moved_after) {
@@ -827,9 +826,9 @@ drv_i915_present_window(
 	/*
 	 * A failed run of the firmware's output makes every later presentation
 	 * fail; the window is not entered for it again.  A run for two pipes
-	 * that failed but gave everything back is spared (ws113-p011, review
-	 * F9): the second output is latched limited and the next lighting is
-	 * for one pipe.  So is a run whose display was unplugged (ws051-p005b):
+	 * that failed but gave everything back is spared: the second output
+	 * is latched limited and the next lighting is for one pipe.  So is a
+	 * run whose display was unplugged:
 	 * the run failed because the sink went, and the output was given up.
 	 */
 	if (error != 0 && !moved && !spared && !lost && !display->window.display_failed) {
@@ -888,7 +887,7 @@ drv_i915_present_hold_over(
 
 	display = device->display;
 
-	/* The output the window lights was unplugged (BUG-268): left at once, held or not. */
+	/* The output the window lights was unplugged: left at once, held or not. */
 	if (display->window.unplugged)
 		return 1;
 
@@ -896,7 +895,7 @@ drv_i915_present_hold_over(
 	if (!display->window.holding)
 		return 0;
 
-	/* The shutdown ends the hold at once, and so does a claim that moves the output (ws113-p011a). */
+	/* The shutdown ends the hold at once, and so does a claim that moves the output. */
 	if (display->window.hold_ended)
 		return 1;
 	if (display->window.hold_cut)
@@ -935,7 +934,7 @@ drv_i915_present_hold_prepare(
 
 /*
  * Asks for the resident output to be lit again because its external DP
- * link must be trained again (ws051-p005b, the Linux
+ * link must be trained again (the Linux
  * intel_dp_retrain_link()): the worker leaves the window at the next frame
  * and the window's end lights the output again, its link trained afresh,
  * its buffers and picture kept.  Runs from the hotplug path.
@@ -960,8 +959,8 @@ drv_i915_present_retrain_request(
 /*
  * Asks the window to be left at once because a connector's display was
  * unplugged while the resident output is lit on it: an output a claim
- * moved there (BUG-268), whose firmware's output then comes back, or the
- * firmware's own external display (ws051-p005b, a Type-C or HDMI display
+ * moved there, whose firmware's output then comes back, or the
+ * firmware's own external display (a Type-C or HDMI display
  * the firmware lit), which is then given up.  The output is stopped and
  * the display sessions are told, without waiting for the lease's next
  * frame, a hold to run out or the Type-C link's reset.  The built-in
@@ -1017,7 +1016,7 @@ drv_i915_present_unplugged(
 
 /*
  * Takes a Type-C port whose DisplayPort Alternate Mode partner stayed away
- * for the link reset's delay (ws051-p005b): when the resident output is lit
+ * for the link reset's delay: when the resident output is lit
  * on that port's external DP display, the display is taken as unplugged
  * (drv_i915_present_unplugged), in case its connector's disconnection was
  * not seen.  Runs from the hotplug path's link reset work.
@@ -1060,7 +1059,7 @@ drv_i915_present_tc_partner_gone(
 
 /*
  * Reports whether the window is to be left because its output was
- * unplugged (BUG-268).  Runs on the worker with the device IRQ lock held.
+ * unplugged.  Runs on the worker with the device IRQ lock held.
  */
 int
 drv_i915_present_unplug_pending(
@@ -1075,8 +1074,8 @@ drv_i915_present_unplug_pending(
 /*
  * Asks for the window to be left and the resident output lit again for
  * two pipes, when a frame of the second output finds the resident output
- * lit for one (ws113-p011, the 2026-10-07 user decision: the first output
- * is lit again when the second is added).  The resident buffers, and
+ * lit for one (the first output is lit again when the second is
+ * added).  The resident buffers, and
  * their picture, are kept across the new lighting.  Runs on the worker
  * inside the window; the caller holds the device IRQ lock.  Returns 1 when
  * the window is to be left, 0 otherwise.
@@ -1090,7 +1089,7 @@ drv_i915_present_relight_begin(
 
 	display = device->display;
 
-	/* A link that must be trained again (ws051-p005b): the output is lit again, its buffers kept. */
+	/* A link that must be trained again: the output is lit again, its buffers kept. */
 	if (display->window.retrain) {
 		display->window.retrain = 0;
 		display->window.relight = 1;
@@ -1342,7 +1341,7 @@ i915_present_release_locked(
 
 	rd = &device->display->rd;
 
-	/* A light the lease switched off comes back first (ws113-p012). */
+	/* A light the lease switched off comes back first. */
 	drv_i915_display_power_restore_locked(device);
 
 	/* The panel shows this node's frames: the worker stops it. */
@@ -1436,7 +1435,7 @@ i915_present_blit_build(
 
 /*
  * Presents an imported blob through the GPU copy, on the resident output
- * or on the second output (head, ws113-p011).
+ * or on the second output (head).
  *
  * The copy's kernels and the session's objects are made here, on the
  * asking thread, not on the worker.
@@ -1519,13 +1518,19 @@ i915_present_window_serve(
 	/* The worker is inside the window while it serves; the pipe's refresh boundaries can be read from now on. */
 	drv_i915_display_refresh_up(display, 1);
 
-	/* A second output kept over the last window's end comes back with its picture (ws113-p011). */
+	/* Surveys the registers of the first picture, once in a start. */
+	drv_i915_survey_window_open(display);
+
+	/* A second output kept over the last window's end comes back with its picture. */
 	drv_i915_head_resume(display);
 
 	/* Serves everything until the window is to be left. */
 	drv_i915_worker_serve_window(display->device);
 
-	/* A lit second output stops before the resident output does, its picture kept for the next window (ws113-p011); its lease stays. */
+	/* Ends a survey the window left half done, while the pipe still runs. */
+	drv_i915_survey_window_close(display);
+
+	/* A lit second output stops before the resident output does, its picture kept for the next window; its lease stays. */
 	drv_i915_head_stop(display, 1);
 
 	/* The mappings go first; the window is left. */
@@ -1671,6 +1676,9 @@ i915_present_flip(
 	if (!display->resident_up)
 		return EINVAL;
 
+	/* Takes the second survey of the start when its time has come. */
+	drv_i915_survey_flip(display);
+
 	/* The back buffer, with what the CPU wrote made visible. */
 	to = &display->resident_buf[display->resident_front ^ 1U];
 	if (publish) {
@@ -1796,7 +1804,7 @@ i915_present_clear_stale(
 
 /*
  * Waits for the flip the last presentation armed to latch, so the buffer it
- * leaves is free and the frame it shows has completed (FIFO, ws075-p019).
+ * leaves is free and the frame it shows has completed (FIFO).
  * A kernel built with I915_PRESENT_NO_VSYNC set never waits.  The caller
  * holds the lease mutex.  Returns 0, or EIO when the flip did not latch.
  */
@@ -1816,7 +1824,7 @@ i915_present_latch(
 	/*
 	 * The vblank the armed flip latches at (none armed returns at once),
 	 * timed, on the resident output's screen 0 by name: the worker may
-	 * have the second output's screen selected meanwhile (ws113-p011).
+	 * have the second output's screen selected meanwhile.
 	 */
 	start = drv_i915_perf_now();
 	error = drv_i915_lcd_modeset_flip_wait_screen(device->display, 0U);
@@ -1831,7 +1839,7 @@ i915_present_latch(
 }
 
 /*
- * Shows a frame of the second output's lease on it (ws113-p011): the
+ * Shows a frame of the second output's lease on it: the
  * lease, the connector's generation and connection, the frame's size,
  * then the latch of the head's armed flip and the frame queued to the
  * worker, which lights the head first when it is not lit.  A failure of
@@ -1861,8 +1869,8 @@ i915_present_head(
 
 	/*
 	 * Without the resident output's lease the second output is not shown
-	 * (review F10: its frame would light the resident output black, with
-	 * no lease to end its window).
+	 * (its frame would light the resident output black, with no lease to
+	 * end its window).
 	 */
 	drv_i915_present_lease_init(display);
 	mutex_lock(&display->rd.mutex);
@@ -1933,7 +1941,7 @@ i915_present_head(
 		error = drv_i915_worker_sync_display(device, I915_WORKER_SYNC_PRESENT, &item);
 	}
 
-	/* A head that could not be lit, copied or flipped is the output's loss, not the device's (review F3). */
+	/* A head that could not be lit, copied or flipped is the output's loss, not the device's. */
 	if (error == EIO || error == ETIMEDOUT)
 		error = ENXIO;
 
@@ -1958,7 +1966,7 @@ i915_present_head(
 
 /*
  * Reports the completed sequence of the second output's lease (the display
- * wait operation on it, ws113-p011): the head's newest flip latches first.
+ * wait operation on it): the head's newest flip latches first.
  * Returns 0, EINVAL, EAGAIN before the first presentation, or ENXIO when
  * the flip did not latch.
  */
@@ -2017,9 +2025,9 @@ i915_present_head_wait(
 
 /*
  * Tells whether the resident run is to be tried again at once: an external
- * DP link that did not train (EAGAIN, ws051-p004b), a window left after a
- * clean run so that the resident output is lit again for two pipes
- * (ws113-p011), or a run for two pipes that failed before the display was
+ * DP link that did not train (EAGAIN), a window left after a
+ * clean run so that the resident output is lit again for two pipes,
+ * or a run for two pipes that failed before the display was
  * handed anything, which is tried for one pipe with the second output
  * latched limited.  A run for two pipes that failed after it was lit but
  * gave everything back is not tried again (no lease may be waiting, review
@@ -2085,7 +2093,7 @@ i915_present_window_retry(
 	return 1;
 }
 
-/* Takes the mark of an unplugged output after a run (BUG-268): 1 when it was set, and it is cleared. */
+/* Takes the mark of an unplugged output after a run: 1 when it was set, and it is cleared. */
 static int
 i915_present_unplug_take(
 	struct i915_display *display)

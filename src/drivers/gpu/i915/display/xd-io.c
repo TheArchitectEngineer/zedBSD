@@ -17,6 +17,7 @@
 #include "xd-io.h"
 
 #include "../mmio.h"
+#include "../mmio-record.h"
 #include "../sync.h"
 #include "../intel/display-regs-xd.h"
 
@@ -291,6 +292,10 @@ drv_i915_xd_io_step(
 {
 	/* Adds the step to the record. */
 	i915_xd_io_record(io, I915_XD_IO_RECORD_STEP, 0U, 0U, name);
+
+	/* Names the device's next writes in the start's record of the display writes. */
+	if (io->mmio != NULL)
+		drv_i915_mmio_record_mark(name);
 }
 
 /*
