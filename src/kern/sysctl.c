@@ -61,6 +61,7 @@ static const struct sysctl_leaf leaves[] = {
 	{{ CTL_KERN, KERN_BOOT_CONFIG_MATCHES, 0 }, 2, "kern.boot.config_matches"},
 	{{ CTL_KERN, KERN_BOOT_ROOT_IMAGE, 0 }, 2, "kern.boot.root_image"},
 	{{ CTL_KERN, KERN_BOOT_LOGIN, 0 }, 2, "kern.boot.login"},
+	{{ CTL_KERN, KERN_BOOT_KMSG, 0 }, 2, "kern.boot.kmsg"},
 	{{ CTL_NET, NET_TCPSTATS, 0 }, 2, "net.tcpstats"},
 	{{ CTL_VFS, VFS_BUFCACHE, VFS_BUFCACHE_MAX_BYTES }, 3,
 	 "vfs.bufcache.max_bytes"},
@@ -115,7 +116,7 @@ struct gpu_telemetry_source {
 };
 
 /*
- * The GPUs hw.gputelemetry lists (ws134-p007).
+ * The GPUs hw.gputelemetry lists.
  *
  * A driver appends one under gpu_telemetry_lock and publishes it by raising
  * gpu_telemetry_count with release; a reader loads the count with acquire
@@ -137,7 +138,7 @@ struct thermal_source {
 };
 
 /*
- * The sources hw.thermal lists (ws134-p009), appended and published as
+ * The sources hw.thermal lists, appended and published as
  * the GPUs of hw.gputelemetry are: under thermal_lock, by raising
  * thermal_count with release; never taken out.
  */
@@ -155,6 +156,7 @@ static int sysctl_writeback(const int *name, void *oldp, size_t *oldlenp, const 
 static int oid_compare(const int *a, unsigned alen, const int *b, unsigned blen);
 static const struct sysctl_leaf *find_oid(const int *oid, unsigned oidlen);
 static int sysctl_output(void *oldp, size_t *oldlenp, const void *value, size_t size);
+static int sysctl_boot_parameter(enum kern_boot_parameter_key key, void *oldp, size_t *oldlenp, const void *newp, size_t newlen);
 static int sysctl_meta(int operation, void *oldp, size_t *oldlenp, const void *newp, size_t newlen);
 
 /*
@@ -170,7 +172,7 @@ sysctl_init(
 }
 
 /*
- * Lists a source of temperatures in hw.thermal (ws134-p009): the function
+ * Lists a source of temperatures in hw.thermal: the function
  * that reads its sensors and its context, which live as long as the
  * kernel.  A context already listed is not listed again.  Returns 0, or
  * ENOSPC when the list is full, EINVAL without a function.
@@ -221,7 +223,7 @@ kern_thermal_register(
 }
 
 /*
- * Lists a GPU in hw.gputelemetry (ws134-p007): its driver's name, the
+ * Lists a GPU in hw.gputelemetry: its driver's name, the
  * function that reads it and its context, which live as long as the
  * kernel.  A context already listed is not listed again.  Returns 0, or
  * ENOSPC when the list is full, EINVAL without a function.
@@ -348,7 +350,6 @@ kern_sysctl(
 	struct root_image_info root_image;
 	struct hal_memstat hal_memory;
 	const char *new_name;
-	const char *login;
 	uint64_t value;
 	uint32_t cpus;
 	uint32_t attaching;
@@ -407,7 +408,7 @@ kern_sysctl(
 		return error;
 	}
 
-	/* Reports each TCP socket's state and counts (ws220-p001). */
+	/* Reports each TCP socket's state and counts. */
 	if (namelen == 2 && name[0] == CTL_NET && name[1] == NET_TCPSTATS) {
 		error = sysctl_tcpstats(oldp, oldlenp, newp, newlen, superuser);
 		return error;
@@ -463,14 +464,28 @@ kern_sysctl(
 		return sysctl_output(oldp, oldlenp, &root_image, sizeof(root_image));
 	}
 
-	/* The login= boot parameter, for the graphical login's sessiond (ws035-p098). */
+	/* The login= boot parameter, for the graphical login's sessiond and init's order of the services. */
 	if (namelen == 2 && name[0] == CTL_KERN && name[1] == KERN_BOOT_LOGIN) {
-		if (newp != NULL || newlen != 0)
-			return EPERM;
-		login = kern_boot_parameters_value(kern_boot_parameters_current(), KERN_BOOT_PARAMETER_LOGIN);
-		if (login == NULL)
-			login = "";
-		return sysctl_output(oldp, oldlenp, login, kern_strlen(login) + 1);
+		error = sysctl_boot_parameter(KERN_BOOT_PARAMETER_LOGIN, oldp, oldlenp, newp, newlen);
+
+		/* Reports why the parameter could not be given. */
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the parameter, or its size, is the caller's. */
+		return 0;
+	}
+
+	/* The kmsg= boot parameter, for init's order of the services. */
+	if (namelen == 2 && name[0] == CTL_KERN && name[1] == KERN_BOOT_KMSG) {
+		error = sysctl_boot_parameter(KERN_BOOT_PARAMETER_KMSG, oldp, oldlenp, newp, newlen);
+
+		/* Reports why the parameter could not be given. */
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the parameter, or its size, is the caller's. */
+		return 0;
 	}
 
 	/* Reports retained loader identities independently from boot parameters. */
@@ -756,7 +771,43 @@ sysctl_output(
 }
 
 /*
- * Reads hw.cputimes: the header and each CPU's ticks (ws134-p005).
+ * Copies out one boot parameter as a string, "" when the boot did not give it.
+ *
+ * The parameters are what the loader passed, so they can only be read.
+ */
+static int
+sysctl_boot_parameter(
+	enum kern_boot_parameter_key key,
+	void *oldp,
+	size_t *oldlenp,
+	const void *newp,
+	size_t newlen)
+{
+	const char *value;
+	size_t size;
+	int error;
+
+	/* Refuses a write: the boot's parameters are fixed. */
+	if (newp != NULL || newlen != 0)
+		return EPERM;
+
+	/* Looks the parameter up; one the boot did not give reads as the empty string. */
+	value = kern_boot_parameters_value(kern_boot_parameters_current(), key);
+	if (value == NULL)
+		value = "";
+
+	/* Copies it out with its terminating NUL. */
+	size = kern_strlen(value) + 1U;
+	error = sysctl_output(oldp, oldlenp, value, size);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the parameter, or its size, is the caller's. */
+	return 0;
+}
+
+/*
+ * Reads hw.cputimes: the header and each CPU's ticks.
  *
  * The value is built straight into the caller's buffer, a CPU at a time,
  * so its size grows with the CPUs and not the stack.  A buffer too small
@@ -832,8 +883,8 @@ sysctl_cputimes(
 }
 
 /*
- * Reads hw.diskstats: the header and each physical whole disk's work
- * (ws134-p006), written by the disk registry under its lock.  A buffer too
+ * Reads hw.diskstats: the header and each physical whole disk's work,
+ * written by the disk registry under its lock.  A buffer too
  * small fails with ENOMEM and the length needed.
  */
 static int
@@ -872,10 +923,10 @@ sysctl_diskstats(
 }
 
 /*
- * Reads net.tcpstats: the header and each TCP socket's state and counts
- * (ws220-p001), written by the TCP registry under its lock.  A buffer too
+ * Reads net.tcpstats: the header and each TCP socket's state and counts,
+ * written by the TCP registry under its lock.  A buffer too
  * small fails with ENOMEM and the length needed.  The sequence numbers are
- * given to the superuser only (ws220-p002).
+ * given to the superuser only.
  */
 static int
 sysctl_tcpstats(
@@ -915,7 +966,7 @@ sysctl_tcpstats(
 
 /*
  * Reads hw.gputelemetry: the header and each listed GPU as its driver reads
- * it (ws134-p007).  A GPU whose driver fails to read it is left out.  A
+ * it.  A GPU whose driver fails to read it is left out.  A
  * buffer too small fails with ENOMEM and the length needed (every listed
  * GPU's, so a reader that asks again with it has room).
  */
@@ -992,7 +1043,7 @@ sysctl_gputelemetry(
 
 /*
  * Reads hw.thermal: the header and each listed source's sensors as it
- * keeps them (ws134-p009).  A source that fails is left out.  The length
+ * keeps them.  A source that fails is left out.  The length
  * asked for is room for every source's most sensors, so a reader that asks
  * again with it has room; the length given back is what was filled.
  */

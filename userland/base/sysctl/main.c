@@ -103,6 +103,7 @@ show_all(
 	    "kern.boot.config_matches",
 	    "kern.boot.root_image",
 	    "kern.boot.login",
+	    "kern.boot.kmsg",
 	    "vfs.bufcache.max_bytes",
 	    "vfs.bufcache.current_bytes",
 	    "vfs.bufcache.dirty_bytes",
@@ -172,7 +173,8 @@ show_name(
 	 * rendering. */
 	if (strcmp(name, "kern.boot.firmware_partition") == 0 ||
 	    strcmp(name, "kern.boot.config_partition") == 0 ||
-	    strcmp(name, "kern.boot.login") == 0) {
+	    strcmp(name, "kern.boot.login") == 0 ||
+	    strcmp(name, "kern.boot.kmsg") == 0) {
 		char selector[64];
 		size_t size = sizeof(selector);
 
@@ -199,11 +201,11 @@ show_name(
 	if (strcmp(name, "hw.gputelemetry") == 0)
 		return show_gputelemetry();
 
-	/* Each temperature sensor, a line a sensor (ws134-p009). */
+	/* Each temperature sensor, a line a sensor. */
 	if (strcmp(name, "hw.thermal") == 0)
 		return show_thermal();
 
-	/* Each TCP socket's state and counts, a line a socket (ws220-p001). */
+	/* Each TCP socket's state and counts, a line a socket. */
 	if (strcmp(name, "net.tcpstats") == 0)
 		return show_tcpstats();
 
@@ -488,7 +490,7 @@ show_readahead(
 }
 
 /*
- * Prints hw.cputimes (ws134-p005): the ticks a second and the CPUs, then
+ * Prints hw.cputimes: the ticks a second and the CPUs, then
  * a line a CPU with its user, system, idle and other ticks since boot.
  * Returns 0, or -1 with errno set.
  */
@@ -548,7 +550,7 @@ show_cputimes(
 }
 
 /*
- * Prints hw.diskstats (ws134-p006): the set's generation and the disks,
+ * Prints hw.diskstats: the set's generation and the disks,
  * then a line a disk with its kind, flags, id, generation, work and
  * requests outstanding.  Returns 0, or -1 with errno set.
  */
@@ -612,7 +614,7 @@ show_diskstats(
 }
 
 /*
- * Prints hw.gputelemetry (ws134-p007): the GPUs, then a line a GPU with its
+ * Prints hw.gputelemetry: the GPUs, then a line a GPU with its
  * driver, the fields it filled (valid), its busy time at the driver's
  * clock, its frequencies and its objects' memory.  Returns 0, or -1 with
  * errno set.
@@ -675,7 +677,7 @@ show_gputelemetry(
 }
 
 /*
- * Prints hw.thermal (ws134-p009): the sensors, then a line a sensor with
+ * Prints hw.thermal: the sensors, then a line a sensor with
  * its ACPI path, its kind, whether it is the processor's, and the values it
  * has (in thousandths of a degree Celsius) with the time it was read.
  * Returns 0, or -1 with errno set.
@@ -746,7 +748,7 @@ show_thermal(
 }
 
 /*
- * Prints net.tcpstats (ws220-p001): the time of the reading, the sockets
+ * Prints net.tcpstats: the time of the reading, the sockets
  * and the packet pool's use, then a line a socket with its addresses,
  * state, send and receive sides, retransmission timer and counts, each as
  * name=value after the field of struct tcp_stats_entry.  Returns 0, or -1

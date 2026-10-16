@@ -561,7 +561,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS250](ws250/ws.md) | MG006 | nvrtx の終わらない GPU の仕事の取り消しと復帰、system は動き続ける（2026-10-15 ユーザー） | incomplete（p001 を P4 が q1206 で設計中） | p001 |
 | [WS251](ws251/ws.md) | MG001 | source の tree 全体から開発の管理情報を削除する（2026-10-15 ユーザー） | planned | 着手はユーザーの指示で |
 | [WS252](ws252/ws.md) | MG006 | i915 の RKL・ADL-S/RPL-S・ICL の GT の対応（2026-10-15 ユーザー、WS245 §7 #20） | planned | p001 設計の担当の割り当て待ち |
-| [WS253](ws253/ws.md) | MG001 | 起動の時間の短縮: 通常の起動は sessiond（Wayland）を先に、network・audio・sshd などは後に。debug の起動は今のまま（2026-10-16 ユーザー） | incomplete（p001 を q1221 で実行中） | p001 |
+| [WS253](ws253/ws.md) | MG001 | 起動の時間の短縮: 通常の起動は sessiond（Wayland）を先に、network・audio・sshd などは後に。debug の起動は今のまま（2026-10-16 ユーザー） | incomplete（p001: 2 段の起動を main に 4e3ded77f、QEMU で確認。5330 の時間の確認待ち） | 5330 の起動の記録（P1 の次の起動で） |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
@@ -607,6 +607,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-16 15:3x: WS253（起動の時間）p001 を main に merge（4e3ded77f）: service に late=yes、通常の起動（login=graphical かつ kmsg=quiet）は 2 段で desktop を先に、debug の起動は今の順序、sysctl kern.boot.kmsg、/var/log/init.log。QEMU では前後とも約 9 秒で 60 秒は再現せず、5330 の記録で原因を当てる（P1 に読むだけの依頼）。
 - 2026-10-16 午後: i915 の表示の書き直し p016（OpRegion の場所と map・struct i915_xd・旧 OpRegion の runtime の削除）が 5330 の素の起動の回帰に合格（基準と同じ項目、survey の digest 一致）→ merge 9244ac507、旧 file 6 つを Q1 が削除 54fc334c5。DHCP の失敗は BUG-326（前の起動の resolv.conf.tmp.<pid> の残り）で dhcpc を修正 ca4470702。
 - 2026-10-16 15:00（ユーザー）:「5330はデスクトップが起動しました。OKです。」→ U11（p047 の後の LCD の目視）合格。「ただ、起動に1分くらいかかってました。…これを解決するためのWSを作り、サブエージェントでQEMUを使って解析して、直してください。…通常ブートではネットワークは後回し。audiod, networkd, sshdなど大半は後回しで、とにかくsessiondでWaylandを立ち上げる。どうしても依存のあるサービスは教えてください。」→ WS253 を作成、p001 は q1221。debug の起動は今の順序を保つ。
 - 2026-10-16 午後: i915 の display の書き直しの最初の段 p047（回帰の証拠の道具: survey と mmio の書き込みの記録）が 5330 の素の起動の回帰に合格（基準と同じ: graphical・lease・picture up・device lost 0・backlight 100、survey lit）→ main に merge（3e1e0c687）、ci の vmunix は warning 0。LCD の目視は未確認（beta2.md の一覧）。

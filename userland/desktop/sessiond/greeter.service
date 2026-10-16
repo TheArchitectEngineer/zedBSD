@@ -1,3 +1,5 @@
+# The graphical login.  A boot that shows the desktop first (login=graphical, kmsg=quiet) starts it as soon as
+# syslogd has started: networking is late there and is not waited for.  A debug boot starts it after networking.
 type=respawn
 command=/sbin/sessiond
 after=syslogd,networking
