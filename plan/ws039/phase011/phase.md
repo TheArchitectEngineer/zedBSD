@@ -2,7 +2,7 @@
 
 # ws039-p011: 段 A5s（session・pasid・動的な VMID・page table・BO・GPU device の登録）
 
-Status: in-progress（2026-10-16 P3、q1216-i01。実機 10.0.10.3 で A5s ok・`/dev/gpu0`・`amdrdnactl gpu` ok を最終の kernel で 3 回。Q1 の merge と clearance の判定待ち）
+Status: cleared（2026-10-16 Q1: 実機 10.0.10.3 で A5s ok 3 回（warm）、/dev/gpu0、amdrdnactl gpu ok（blob・mmap・storage・export/import）、16 session の LRU、fault の pasid が session を名指す。main の merge 3d4306fe0、ci の vmunix warning 0。未確認: cold の直後、stop/fault の op の実際の呼び出し、executor の bind（p008））
 Disposition: normal
 Parent: [WS039](../ws.md)
 Queue: q1216 / q1216-i01
