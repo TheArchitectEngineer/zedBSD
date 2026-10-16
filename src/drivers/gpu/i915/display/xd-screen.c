@@ -67,6 +67,15 @@
 #define I915_XD_SCREEN_BW_CDCLK_DIV	512U
 
 /*
+ * How long an update waits for the scan line to leave the lines before
+ * the vertical blank: 1 ms, rounded up to 10 ms ticks, plus one.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_crtc.c
+ * (intel_pipe_update_start: msecs_to_jiffies_timeout(1)).
+ */
+#define I915_XD_SCREEN_EVADE_TICKS	2L
+
+/*
  * The steps of a light and of a dark, by the hook each runs: an index
  * into the caller's hooks (i915_xd_screen_hook).
  */
@@ -408,6 +417,101 @@ drv_i915_xd_screen_refusal_name(
 
 	/* Succeeded: a value no refusal has. */
 	return "unknown";
+}
+
+/*
+ * Runs an update that must land in one frame.  Outside an empty window
+ * it takes a vertical blank reference and, with interrupts off, reads
+ * the scan line; while the line is inside the window it sleeps (with
+ * interrupts on) until the next blank, giving up after 1 ms; then the
+ * reference goes back.  The arming writes follow with interrupts still
+ * off, then the end's line and frame are read, the completion event is
+ * armed (with its own reference) and interrupts go back on.  An update
+ * whose frame counter moved between its start and its end crossed a
+ * blank and is reported.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_crtc.c
+ * (intel_pipe_update_start, intel_pipe_update_end).
+ */
+void
+drv_i915_xd_screen_update(
+	struct i915_xd_io *io,
+	const struct i915_xd_update *update,
+	const struct i915_xd_update_hooks *hooks,
+	struct i915_xd_update_report *report)
+{
+	long ticks;
+	unsigned line;
+	int waited;
+	int error;
+
+	/* Nothing seen yet. */
+	kern_memset(report, 0, sizeof(*report));
+	line = 0U;
+	waited = 0;
+
+	/* A window that does not lie in the frame is not waited out: interrupts go off for the writes. */
+	if (update->window.min <= 0 || update->window.max <= 0) {
+		hooks->irq_off(hooks->context);
+	} else {
+		/* The sleeps need the blank's interrupt; without it the writes go now. */
+		error = hooks->vblank_get(hooks->context);
+		if (error != 0) {
+			hooks->error(hooks->context, "the update could not take the vertical blank interrupt\n");
+			hooks->irq_off(hooks->context);
+		} else {
+			/* Interrupts off, then the scan line until it is outside the window. */
+			hooks->irq_off(hooks->context);
+			ticks = I915_XD_SCREEN_EVADE_TICKS;
+			for (;;) {
+				/* Outside the window the writes may go. */
+				line = drv_i915_xd_pipe_scanline(io, update->pipe, update->vtotal, update->scanline_offset);
+				if ((int)line < update->window.min || (int)line > update->window.max)
+					break;
+
+				/* The time is spent: the writes go anyway. */
+				if (ticks == 0L) {
+					report->gave_up = 1;
+					hooks->error(hooks->context, "the update did not get out of the lines before the vertical blank in time\n");
+					break;
+				}
+
+				/* Sleeps until the next blank with interrupts on. */
+				hooks->irq_on(hooks->context);
+				ticks = hooks->vblank_sleep(hooks->context, ticks);
+				report->sleeps++;
+				hooks->irq_off(hooks->context);
+			}
+
+			/* The sleeps are over: the reference goes back; where the writes start. */
+			hooks->vblank_put(hooks->context);
+			report->start_line = line;
+			report->start_frame = drv_i915_xd_pipe_frame(io, update->pipe);
+			waited = 1;
+		}
+	}
+
+	/* The arming writes, then where they ended. */
+	hooks->arm(hooks->context);
+	report->end_line = drv_i915_xd_pipe_scanline(io, update->pipe, update->vtotal, update->scanline_offset);
+	report->end_frame = drv_i915_xd_pipe_frame(io, update->pipe);
+
+	/* The completion event for the next blank holds a reference of its own. */
+	if (hooks->arm_event != NULL) {
+		error = hooks->vblank_get(hooks->context);
+		if (error != 0)
+			hooks->error(hooks->context, "the update's event could not take the vertical blank interrupt\n");
+		hooks->arm_event(hooks->context);
+	}
+
+	/* Interrupts back on. */
+	hooks->irq_on(hooks->context);
+
+	/* Reports writes that may have landed in two frames. */
+	if (waited && report->start_frame != 0U && report->start_frame != report->end_frame) {
+		report->crossed = 1;
+		hooks->error(hooks->context, "the update crossed a vertical blank\n");
+	}
 }
 
 /*
@@ -872,6 +976,7 @@ i915_xd_screen_plan_wm(
 		return EINVAL;
 
 	/* The pipe at the mode's pixel rate and line total. */
+	plan->wm_levels = input->wm.levels;
 	pipe = input->wm;
 	pipe.pixel_rate_khz = plan->pixel_khz;
 	pipe.htotal = input->mode->htotal;

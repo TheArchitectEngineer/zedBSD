@@ -27,6 +27,7 @@
 #include "output.h"
 #include "present.h"
 #include "vblank.h"
+#include "xd-pipe.h"
 
 #include "../i915.h"
 #include "../worker.h"
@@ -228,7 +229,7 @@ i915_refresh_sample(
 	*lit = 0;
 	if (display->window.display_up && !display->output.none) {
 		*lit = 1;
-		frame = drv_i915_pipe_frame_read(&display->xd.io, pipe);
+		frame = drv_i915_xd_pipe_frame(&display->xd.io, (unsigned)pipe);
 		if (display->refresh.frame_valid && frame > display->refresh.frame) {
 			display->refresh.count += frame - display->refresh.frame;
 			display->refresh.time_ns = sched_ticks() * (KERN_NSEC_PER_SEC / KERN_CLOCK_HZ);

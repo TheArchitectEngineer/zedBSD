@@ -78,7 +78,6 @@ void drv_i915_unreference_shared_dpll_crtc(const struct intel_crtc *crtc, const 
 
 /* The colour and crtc hooks of the modeset object. */
 const struct intel_color_funcs *drv_i915_lcd_ms_color_funcs(void);
-const struct drm_crtc_funcs *drv_i915_lcd_ms_crtc_funcs(void);
 
 /* Binds a device view to the named world's shared-DPLL pool. */
 void drv_i915_lcd_dpll_pool_bind(struct i915_lcd_world *world, struct drm_i915_private *i915);

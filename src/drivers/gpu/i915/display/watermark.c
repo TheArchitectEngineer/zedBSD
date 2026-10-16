@@ -211,10 +211,6 @@ static unsigned i915_adl_psf_bw(const struct i915_bw_state *bw, int psf_gv_point
 static uint16_t i915_icl_prepare_qgv_points_mask(const struct i915_bw_state *bw, unsigned qgv_points, unsigned psf_points);
 static int i915_is_sagv_enabled(const struct i915_bw_state *bw, uint16_t points_mask);
 static void i915_icl_force_disable_sagv(struct i915_display_state *d, struct mutex *sb_lock, struct i915_mmio *mmio, int display_ver, struct i915_bw_state *bw, struct i915_bw_obj_state *bw_obj);
-static void i915_wm_level_to_xd(const struct skl_wm_level *from, struct i915_xd_wm_level *to);
-static void i915_wm_level_from_xd(const struct i915_xd_wm_level *from, struct skl_wm_level *to);
-static void i915_wm_plane_to_xd(const struct skl_plane_wm *from, struct i915_xd_plane_wm *to);
-static void i915_wm_plane_from_xd(const struct i915_xd_plane_wm *from, struct skl_plane_wm *to);
 
 /*
  * Creates the watermark world of a display.
@@ -790,11 +786,10 @@ drv_i915_pmdemand_init(
 }
 
 /*
- * Takes the screen's plan as the modeset's watermarks and display buffer
- * state: the plane's watermarks and its and the cursor's parts of the
- * buffer, and the new DBUF state (the old one with this pipe and the
- * configuration's other pipes running, the joining, the pipe's slices,
- * the slices powered, the pipe's weight and range).  A change of the
+ * Takes the screen's plan as the modeset's new DBUF state: the old one
+ * with this pipe and the configuration's other pipes running, the
+ * joining, the pipe's slices, the slices powered, the pipe's weight and
+ * range.  A change of the
  * slices, the joining or the running pipes marks the state changed, so
  * the commit updates the buffer.  The modeset's watermark context
  * becomes the one the watermark world names as current.
@@ -819,14 +814,6 @@ drv_i915_lcd_ms_wm_compute(
 	ms->wm.crtc_state = cs;
 	ms->state.base.dev = &ms->i915.drm;
 	ms->state.crtc_state = cs;
-
-	/* The plane's watermarks and its and the cursor's parts of the pipe's range. */
-	i915_wm_plane_from_xd(&plan->wm, &cs->wm.skl.optimal.planes[PLANE_PRIMARY]);
-	kern_memset(cs->wm.skl.plane_ddb, 0, sizeof(cs->wm.skl.plane_ddb));
-	cs->wm.skl.plane_ddb[PLANE_PRIMARY].start = plan->plane_ddb.start;
-	cs->wm.skl.plane_ddb[PLANE_PRIMARY].end = plan->plane_ddb.end;
-	cs->wm.skl.plane_ddb[PLANE_CURSOR].start = plan->cursor_ddb.start;
-	cs->wm.skl.plane_ddb[PLANE_CURSOR].end = plan->cursor_ddb.end;
 
 	/* The new DBUF state: the old one with the configuration's pipes and this pipe's part. */
 	*new_dbuf = ms->wm.old_dbuf;
@@ -963,34 +950,6 @@ drv_i915_lcd_dbuf_forget(
 	/* No state is published any more. */
 	kern_memset(&wm_world->i915_lcd_dbuf_dev, 0, sizeof(wm_world->i915_lcd_dbuf_dev));
 	wm_world->i915_lcd_dbuf_dev_valid = 0;
-}
-
-/*
- * Writes the watermark levels and the DDB allocation of one plane
- * through the xd watermarks (skl_write_plane_wm()).
- */
-void
-skl_write_plane_wm(
-	struct intel_plane *plane,
-	const struct intel_crtc_state *crtc_state)
-{
-	struct drm_i915_private *i915;
-	const struct skl_pipe_wm *pipe_wm;
-	const struct skl_ddb_entry *ddb;
-	struct i915_xd_plane_wm xd_wm;
-	struct i915_xd_ddb range;
-
-	/* The plane's watermarks and DDB entry the state computed. */
-	i915 = i915_lcd_to_i915(plane->base.dev);
-	pipe_wm = &crtc_state->wm.skl.optimal;
-	ddb = &crtc_state->wm.skl.plane_ddb[plane->id];
-	i915_wm_plane_to_xd(&pipe_wm->planes[plane->id], &xd_wm);
-	range.start = ddb->start;
-	range.end = ddb->end;
-
-	/* Writes the levels, the transition, the SAGV pair and the entry. */
-	drv_i915_xd_wm_write_plane(drv_i915_lcd_xd_io(i915), drv_i915_lcd_xd_platform(), (unsigned)plane->pipe,
-		(unsigned)i915->display.wm.num_levels, &xd_wm, pipe_wm->use_sagv_wm ? 1 : 0, &range);
 }
 
 /* GENMASK(num - 1, 0): the low num bits. */
@@ -1345,64 +1304,4 @@ i915_icl_force_disable_sagv(
 	/* Asks the PCODE for the restriction and records its answer. */
 	d->sagv_pcode_ret = drv_i915_icl_pcode_restrict_qgv_points(sb_lock, mmio,
 		display_ver, bw, (uint32_t)bw_obj->qgv_points_mask);
-}
-
-/* Copies one Linux watermark level into an xd one. */
-static void
-i915_wm_level_to_xd(
-	const struct skl_wm_level *from,
-	struct i915_xd_wm_level *to)
-{
-	/* The fields. */
-	to->enable = from->enable ? 1U : 0U;
-	to->ignore_lines = from->ignore_lines ? 1U : 0U;
-	to->blocks = from->blocks;
-	to->lines = from->lines;
-	to->min_ddb = from->min_ddb_alloc;
-}
-
-/* Copies one xd watermark level into a Linux one. */
-static void
-i915_wm_level_from_xd(
-	const struct i915_xd_wm_level *from,
-	struct skl_wm_level *to)
-{
-	/* The fields. */
-	to->enable = from->enable != 0U;
-	to->ignore_lines = from->ignore_lines != 0U;
-	to->blocks = from->blocks;
-	to->lines = (u8)from->lines;
-	to->min_ddb_alloc = from->min_ddb;
-}
-
-/* Copies a Linux plane watermark into an xd one. */
-static void
-i915_wm_plane_to_xd(
-	const struct skl_plane_wm *from,
-	struct i915_xd_plane_wm *to)
-{
-	unsigned level;
-
-	/* The levels, the transition and the SAGV pair. */
-	for (level = 0; level < I915_XD_WM_LEVELS; level++)
-		i915_wm_level_to_xd(&from->wm[level], &to->level[level]);
-	i915_wm_level_to_xd(&from->trans_wm, &to->trans);
-	i915_wm_level_to_xd(&from->sagv.wm0, &to->sagv);
-	i915_wm_level_to_xd(&from->sagv.trans_wm, &to->sagv_trans);
-}
-
-/* Copies an xd plane watermark into a Linux one. */
-static void
-i915_wm_plane_from_xd(
-	const struct i915_xd_plane_wm *from,
-	struct skl_plane_wm *to)
-{
-	unsigned level;
-
-	/* The levels, the transition and the SAGV pair. */
-	for (level = 0; level < I915_XD_WM_LEVELS; level++)
-		i915_wm_level_from_xd(&from->level[level], &to->wm[level]);
-	i915_wm_level_from_xd(&from->trans, &to->trans_wm);
-	i915_wm_level_from_xd(&from->sagv, &to->sagv.wm0);
-	i915_wm_level_from_xd(&from->sagv_trans, &to->sagv.trans_wm);
 }

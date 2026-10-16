@@ -46,7 +46,9 @@
 #   host-xd-screen-test    a screen's plan: the 5330's panel against the older check's numbers (CD clock, bandwidth,
 #                          level 0, the plane's and the cursor's blocks), the watermarks (pipes sharing a slice by
 #                          weight, a blank too short, a share too small), the refusals (CD clock, voltage, QGV, sinks,
-#                          links), HDMI and Type-C DisplayPort links, Tiger Lake's pixel rate rule
+#                          links), HDMI and Type-C DisplayPort links, Tiger Lake's pixel rate rule; an update that
+#                          lands in one frame (the evasion window, the scan line, a line slept out, a blank that does
+#                          not come, a refused interrupt reference, writes that cross a blank)
 #   host-xd-output-test    a screen's output: the 5330's panel lit (power uses in order, the display buffer, the
 #                          backlight from the VBT, the PLL, the port and its trained link, the pipe, the start) and
 #                          darkened in reverse; the backlight's levels; a PLL that does not lock, a link that does not

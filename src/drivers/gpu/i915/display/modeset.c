@@ -36,6 +36,7 @@
  */
 
 #include "modeset-internal.h"
+#include "xd-pipe.h"
 #include "xd-screen.h"
 #include "watermark-internal.h"
 #include "modeset.h"
@@ -64,6 +65,7 @@
 #include "watermark.h"
 #include <kern/kcrt.h>
 
+#include "../intel/display-regs-xd.h"
 #include "../i915.h"
 #include "../ggtt.h"
 #include "../memory.h"
@@ -186,8 +188,6 @@ static uint32_t i915_modeset_live_surf(struct i915_lcd_world *world);
 static uint32_t i915_modeset_frame_now(struct i915_lcd_world *world);
 static int i915_modeset_flip_arm(struct i915_display *display, uint32_t new_surf, struct i915_lcd_flip_result *res, int *dc_off);
 static void i915_modeset_flip_retire(struct i915_display *display);
-static void i915_modeset_flip_load(const struct i915_lcd_modeset *ms, struct i915_xd_flip *flip);
-static void i915_modeset_flip_store(struct i915_lcd_modeset *ms, const struct i915_xd_flip *flip);
 static int i915_modeset_prepare_state(struct i915_display *display, const struct i915_lcd_state *s, const struct i915_lcd_modeset_cfg *cfg, struct i915_lcd_emit *ops);
 static void i915_modeset_plan_check(const struct i915_lcd_state *s, const struct i915_lcd_modeset_cfg *cfg, const struct i915_lcd_modeset *ms, struct i915_xd_plan *plan);
 static void i915_modeset_plan_publish(struct i915_lcd_modeset *ms, const struct i915_xd_plan *plan);
@@ -704,11 +704,11 @@ drv_i915_lcd_modeset_status(
 
 	/* The watermarks and DDB computed for the plane. */
 	out->wm_rc = ms->wm_rc;
-	out->ddb_start = ms->crtc_state.wm.skl.plane_ddb[PLANE_PRIMARY].start;
-	out->ddb_end = ms->crtc_state.wm.skl.plane_ddb[PLANE_PRIMARY].end;
-	out->wm0_enable = ms->crtc_state.wm.skl.optimal.planes[PLANE_PRIMARY].wm[0].enable;
-	out->wm0_blocks = ms->crtc_state.wm.skl.optimal.planes[PLANE_PRIMARY].wm[0].blocks;
-	out->wm0_lines = ms->crtc_state.wm.skl.optimal.planes[PLANE_PRIMARY].wm[0].lines;
+	out->ddb_start = ms->plan.plane_ddb.start;
+	out->ddb_end = ms->plan.plane_ddb.end;
+	out->wm0_enable = ms->plan.wm.level[0].enable;
+	out->wm0_blocks = ms->plan.wm.level[0].blocks;
+	out->wm0_lines = ms->plan.wm.level[0].lines;
 	out->dbuf_slices_wanted = ms->wm.new_dbuf.enabled_slices;
 	out->mbus_joined = ms->wm.new_dbuf.joined_mbus;
 
@@ -739,13 +739,13 @@ drv_i915_lcd_modeset_status(
 	out->dither = ms->crtc_state.dither;
 
 	/* The flip. */
-	out->cur_surf = ms->cur_surf;
-	out->pend_surf = ms->pend_surf;
-	out->flip_pending = ms->flip_pending;
-	out->flip_stuck = ms->flip_stuck;
+	out->cur_surf = ms->flip.current;
+	out->pend_surf = ms->flip.pending;
+	out->flip_pending = ms->flip.armed;
+	out->flip_stuck = ms->flip.stuck;
 	out->flip_event_ref = ms->flip_event_ref;
 	out->events_cancelled = ms->events_cancelled;
-	out->flip_gen = ms->flip_gen;
+	out->flip_gen = ms->flip.gen;
 
 	/* The backlight range and the user brightness. */
 	out->backlight_min = ms->connector.panel.backlight.min;
@@ -847,8 +847,8 @@ drv_i915_lcd_modeset_plane_released(
 
 	/* The display reads neither buffer any more. */
 	ms->plane_armed = 0;
-	ms->flip_pending = 0;
-	ms->flip_stuck = 0;
+	ms->flip.armed = 0;
+	ms->flip.stuck = 0;
 }
 
 /*
@@ -1136,7 +1136,6 @@ drv_i915_lcd_modeset_flip(
 	struct i915_lcd_modeset *ms;
 	struct i915_lcd_emit *ms_ops;
 	struct i915_lcd_flip_result res;
-	struct i915_xd_flip flip;
 	unsigned verdict;
 	int dc_off;
 	int armed;
@@ -1168,9 +1167,7 @@ drv_i915_lcd_modeset_flip(
 	}
 
 	/* The screen's flip judges what the flip did: the live surface decides whether the old buffer is free. */
-	i915_modeset_flip_load(ms, &flip);
-	verdict = drv_i915_xd_flip_judge(&flip, res.event_rc, res.live_after);
-	i915_modeset_flip_store(ms, &flip);
+	verdict = drv_i915_xd_flip_judge(&ms->flip, res.event_rc, res.live_after);
 	res.result = I915_LCD_FLIP_TIMEOUT;
 	if (verdict == I915_XD_FLIP_DONE)
 		res.result = I915_LCD_FLIP_DONE;
@@ -1262,7 +1259,6 @@ drv_i915_lcd_modeset_flip_poll(
 {
 	struct i915_lcd_world *world;
 	struct i915_lcd_modeset *ms;
-	struct i915_xd_flip flip;
 	uint32_t live;
 	int idle;
 
@@ -1270,19 +1266,17 @@ drv_i915_lcd_modeset_flip_poll(
 	ms = i915_modeset_selected_screen(world);
 
 	/* Nothing pending, or a flip that will never complete. */
-	if (!ms->flip_pending || ms->flip_stuck)
+	if (!ms->flip.armed || ms->flip.stuck)
 		return 1;
 
 	/* The screen's flip asks the live surface. */
 	live = i915_modeset_live_surf(world);
-	i915_modeset_flip_load(ms, &flip);
-	idle = drv_i915_xd_flip_idle(&flip, live);
+	idle = drv_i915_xd_flip_idle(&ms->flip, live);
 	if (!idle)
 		return 0;
 
 	/* The flip has latched: its event is given up, and the new buffer is the current one. */
 	i915_modeset_flip_retire(display);
-	i915_modeset_flip_store(ms, &flip);
 
 	/* No flip is pending any more. */
 	return 1;
@@ -1316,23 +1310,23 @@ drv_i915_lcd_modeset_flip_wait(
 	ms_ops = world->ms_ops_pool[world->ms_sel];
 
 	/* Nothing armed, or a flip that will never complete: nothing to wait for. */
-	if (!ms->flip_pending || ms->flip_stuck)
+	if (!ms->flip.armed || ms->flip.stuck)
 		return 0;
 
 	/* A flip that has latched already. */
 	live = i915_modeset_live_surf(world);
-	if (live == ms->pend_surf)
+	if (live == ms->flip.pending)
 		return 0;
 
 	/* Waits for the vblank the flip latches at, then checks that it did. */
 	event_rc = ms_ops->wait_event(ms_ops->ctx, ms->crtc.pipe, I915_LCD_FLIP_EVENT_MS);
 	live = i915_modeset_live_surf(world);
-	if (live == ms->pend_surf)
+	if (live == ms->flip.pending)
 		return 0;
 
 	/* The vblank came and went without the new buffer, or never came. */
 	kern_logf("i915: resident display: flip to 0x%08x did not latch: event_rc=%d live 0x%08x\n",
-	    ms->pend_surf,
+	    ms->flip.pending,
 	    event_rc,
 	    live);
 	return EIO;
@@ -1371,24 +1365,24 @@ drv_i915_lcd_modeset_flip_wait_screen(
 	/* A screen that never ran, nothing armed, or a flip that will never complete: nothing to wait for. */
 	if (ms_ops == NULL)
 		return 0;
-	if (!ms->flip_pending || ms->flip_stuck)
+	if (!ms->flip.armed || ms->flip.stuck)
 		return 0;
 
 	/* A flip that has latched already. */
-	live = ms_ops->read32(ms_ops->ctx, i915_mmio_reg_offset(PLANE_SURFLIVE(ms->crtc.pipe, PLANE_PRIMARY)));
-	if (live == ms->pend_surf)
+	live = ms_ops->read32(ms_ops->ctx, I915_XD_PLANE_SURFLIVE((unsigned)ms->crtc.pipe));
+	if (live == ms->flip.pending)
 		return 0;
 
 	/* Waits for the vblank the flip latches at, then checks that it did. */
 	event_rc = ms_ops->wait_event(ms_ops->ctx, ms->crtc.pipe, I915_LCD_FLIP_EVENT_MS);
-	live = ms_ops->read32(ms_ops->ctx, i915_mmio_reg_offset(PLANE_SURFLIVE(ms->crtc.pipe, PLANE_PRIMARY)));
-	if (live == ms->pend_surf)
+	live = ms_ops->read32(ms_ops->ctx, I915_XD_PLANE_SURFLIVE((unsigned)ms->crtc.pipe));
+	if (live == ms->flip.pending)
 		return 0;
 
 	/* The vblank came and went without the new buffer, or never came. */
 	kern_logf("i915: display screen %u: flip to 0x%08x did not latch: event_rc=%d live 0x%08x\n",
 	    screen,
-	    ms->pend_surf,
+	    ms->flip.pending,
 	    event_rc,
 	    live);
 	return EIO;
@@ -1409,7 +1403,6 @@ drv_i915_lcd_modeset_flip_settle(
 	struct i915_lcd_world *world;
 	struct i915_lcd_modeset *ms;
 	struct i915_lcd_emit *ms_ops;
-	struct i915_xd_flip flip;
 	uint32_t live;
 	int settled;
 	int idle;
@@ -1429,12 +1422,10 @@ drv_i915_lcd_modeset_flip_settle(
 	live = i915_modeset_live_surf(world);
 
 	/* The screen's flip judges it: an event that did not come, or a surface that did not latch, keeps both buffers. */
-	i915_modeset_flip_load(ms, &flip);
-	settled = drv_i915_xd_flip_settled(&flip, event_rc, live);
-	i915_modeset_flip_store(ms, &flip);
+	settled = drv_i915_xd_flip_settled(&ms->flip, event_rc, live);
 	if (settled != 0) {
 		kern_logf("i915: resident display: flip to 0x%08x did not complete: event_rc=%d live 0x%08x\n",
-		    ms->pend_surf,
+		    ms->flip.pending,
 		    event_rc,
 		    live);
 		return EIO;
@@ -2643,8 +2634,12 @@ i915_modeset_live_surf(
 	ms = i915_modeset_selected_screen(world);
 	ms_ops = world->ms_ops_pool[world->ms_sel];
 
-	/* PLANE_SURFLIVE of the primary plane. */
-	live = ms_ops->read32(ms_ops->ctx, i915_mmio_reg_offset(PLANE_SURFLIVE(ms->crtc.pipe, PLANE_PRIMARY)));
+	/*
+	 * The primary plane's live surface, read through the screen's own
+	 * backend: a presenting thread reads it too, and the shared xd window
+	 * is the worker's.
+	 */
+	live = ms_ops->read32(ms_ops->ctx, I915_XD_PLANE_SURFLIVE((unsigned)ms->crtc.pipe));
 
 	/* Reports the live surface. */
 	return live;
@@ -2672,7 +2667,6 @@ i915_modeset_flip_arm(
 	struct i915_lcd_world *world;
 	struct i915_lcd_modeset *ms;
 	struct i915_lcd_emit *ms_ops;
-	struct i915_xd_flip flip;
 	unsigned refused;
 	unsigned before;
 	int prepare_error;
@@ -2686,7 +2680,7 @@ i915_modeset_flip_arm(
 	/* Nothing written yet: the flip is refused until it is not. */
 	kern_memset(res, 0, sizeof(*res));
 	res->result = I915_LCD_FLIP_REFUSED;
-	res->old_surf = ms->cur_surf;
+	res->old_surf = ms->flip.current;
 	res->new_surf = new_surf;
 
 	/*
@@ -2696,8 +2690,7 @@ i915_modeset_flip_arm(
 	 */
 	retained = drv_i915_lcd_modeset_retained(display);
 	lit = ms->prepared && ms->crtc.active && ms->plane_armed;
-	i915_modeset_flip_load(ms, &flip);
-	refused = drv_i915_xd_flip_refused(&flip, lit, retained, new_surf);
+	refused = drv_i915_xd_flip_refused(&ms->flip, lit, retained, new_surf);
 	if (refused != I915_XD_FLIP_OK)
 		return I915_LCD_MS_NOT_PREPARED;
 	if (ms_ops->vblank_get == NULL || ms_ops->wait_event == NULL)
@@ -2705,22 +2698,20 @@ i915_modeset_flip_arm(
 
 	/* The flip's generation and the pipe as it is now. */
 	world->i915_lcd_cur_i915 = &ms->i915;
-	flip.gen++;
-	i915_modeset_flip_store(ms, &flip);
-	res->gen = flip.gen;
+	ms->flip.gen++;
+	res->gen = ms->flip.gen;
 	res->live_before = i915_modeset_live_surf(world);
 	res->frame_before = i915_modeset_frame_now(world);
 
 	/* The new plane state: the same layout, another surface; a refusal restores the current one. */
 	prepare_error = drv_i915_lcd_ms_plane_prepare(ms, ms->fb_fourcc, ms->fb_modifier, ms->fb_width, ms->fb_height, ms->fb_pitch, new_surf);
 	if (prepare_error != 0) {
-		(void)drv_i915_lcd_ms_plane_prepare(ms, ms->fb_fourcc, ms->fb_modifier, ms->fb_width, ms->fb_height, ms->fb_pitch, ms->cur_surf);
+		(void)drv_i915_lcd_ms_plane_prepare(ms, ms->fb_fourcc, ms->fb_modifier, ms->fb_width, ms->fb_height, ms->fb_pitch, ms->flip.current);
 		return I915_LCD_MS_NOT_PREPARED;
 	}
 
 	/* From here both buffers may be read by the display until the completion is known. */
-	drv_i915_xd_flip_arm(&flip, new_surf);
-	i915_modeset_flip_store(ms, &flip);
+	drv_i915_xd_flip_arm(&ms->flip, new_surf);
 	before = world->ms_errors_pool[world->ms_sel];
 
 	/* intel_atomic_commit_tail(): DC states off around every commit, fastsets and other updates too. */
@@ -2759,20 +2750,18 @@ i915_modeset_flip_retire(
 	ms->flip_event_ref = 0;
 }
 
-/* Reads the selected screen's hardware frame counter. */
+/* Reads the selected screen's hardware frame counter through the xd pipe. */
 static uint32_t
 i915_modeset_frame_now(
 	struct i915_lcd_world *world)
 {
 	struct i915_lcd_modeset *ms;
-	struct i915_lcd_emit *ms_ops;
 	uint32_t frame;
 
 	ms = i915_modeset_selected_screen(world);
-	ms_ops = world->ms_ops_pool[world->ms_sel];
 
-	/* PIPE_FRMCOUNT_G4X of the pipe. */
-	frame = ms_ops->read32(ms_ops->ctx, i915_mmio_reg_offset(PIPE_FRMCOUNT_G4X(ms->crtc.pipe)));
+	/* The pipe's frame counter. */
+	frame = drv_i915_xd_pipe_frame(drv_i915_lcd_xd_io(&ms->i915), (unsigned)ms->crtc.pipe);
 
 	/* Reports the frame count. */
 	return frame;
@@ -3053,7 +3042,7 @@ i915_modeset_prepare_state(
 	ms->fb_width = cfg->fb_width;
 	ms->fb_height = cfg->fb_height;
 	ms->fb_pitch = cfg->fb_pitch;
-	ms->cur_surf = cfg->fb_surf;
+	ms->flip.current = cfg->fb_surf;
 	plane_error = drv_i915_lcd_ms_plane_prepare(ms, cfg->fb_fourcc, cfg->fb_modifier, cfg->fb_width, cfg->fb_height, cfg->fb_pitch, cfg->fb_surf);
 	if (plane_error != 0)
 		return plane_error;
@@ -3064,19 +3053,15 @@ i915_modeset_prepare_state(
 	if (cfg->dbuf_size == 0U || cfg->dbuf_slice_mask == 0U)
 		return EINVAL;
 
-	/* The new state is active, and the plane visible; the cursor is never shown but has DDB. */
+	/* The new state is active. */
 	ms->crtc_state.hw.active = true;
 	ms->crtc_state.hw.enable = true;
 	ms->crtc_state.hw.pipe_mode = ms->crtc_state.hw.adjusted_mode;
-	ms->plane_state.uapi.visible = true;
-	ms->cursor.base.dev = &ms->i915.drm;
-	ms->cursor.id = PLANE_CURSOR;
-	ms->cursor.pipe = ms->crtc.pipe;
-	ms->crtc.base.cursor = &ms->cursor.base;
 
 	/* The screen's plan: the watermarks, the display buffer, the CD clock and the bandwidth (nothing is written). */
 	world->i915_lcd_cur_i915 = &ms->i915;
 	i915_modeset_plan_check(s, cfg, ms, &plan);
+	ms->plan = plan;
 
 	/* The plan's watermarks and display buffer become the state the commits write. */
 	drv_i915_lcd_ms_wm_compute(display->wm_world, ms, &plan);
@@ -4562,9 +4547,6 @@ i915_modeset_step_setup(
 		}
 	}
 
-	/* The active timings before the pipe runs. */
-	drv_i915_lcd_ms_active_timings(ms);
-
 	/* Succeeded: the setup ran. */
 	return 0;
 }
@@ -5031,34 +5013,4 @@ i915_modeset_step_dark_settle(
 
 	/* Succeeded: the screen is off and everything is given back. */
 	return 0;
-}
-
-/* Loads a screen's flip from the modeset object's record of it. */
-static void
-i915_modeset_flip_load(
-	const struct i915_lcd_modeset *ms,
-	struct i915_xd_flip *flip)
-{
-	/* The buffers, the state and the generation. */
-	flip->current = ms->cur_surf;
-	flip->pending = ms->pend_surf;
-	flip->old = ms->old_surf;
-	flip->armed = ms->flip_pending;
-	flip->stuck = ms->flip_stuck;
-	flip->gen = ms->flip_gen;
-}
-
-/* Stores a screen's flip back into the modeset object's record of it. */
-static void
-i915_modeset_flip_store(
-	struct i915_lcd_modeset *ms,
-	const struct i915_xd_flip *flip)
-{
-	/* The buffers, the state and the generation. */
-	ms->cur_surf = flip->current;
-	ms->pend_surf = flip->pending;
-	ms->old_surf = flip->old;
-	ms->flip_pending = flip->armed;
-	ms->flip_stuck = flip->stuck;
-	ms->flip_gen = flip->gen;
 }

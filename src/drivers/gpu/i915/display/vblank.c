@@ -6,25 +6,12 @@
  */
 
 /*
- * Derived from the Linux kernel v6.8.12 (drivers/gpu/drm/i915/display/intel_vblank.c),
- * which carries the following notice.
- *
- * SPDX-License-Identifier: MIT
- *
- * Copyright © 2022-2023 Intel Corporation
- */
-
-/*
- * The scanline, frame counter and vblank helpers of the one-screen path
- * (see vblank.h).
- *
- * The scanline and timing helpers follow the Linux 6.8.12 intel_vblank.c
- * text.  The rest is what the synchronous plane update of that text needs
- * around it: the crtc hooks that read the hardware frame counter, the
- * nesting local_irq_*() of the update section on the device's backend, the
- * vblank evasion window of the running mode, and the backend hooks of a
- * panel run that take a vblank reference, sleep until the pipe's next
- * vblank and complete the flip event.
+ * The vertical blank helpers of the one-screen path (see vblank.h): the
+ * nesting of the update section's interrupts on the device's backend,
+ * the settling of a pending flip event, the evasion window of the
+ * running mode (xd-pipe), and the backend hooks of a panel run that take
+ * a vertical blank reference, sleep until the pipe's next blank and
+ * complete the flip event.
  */
 
 #include "modeset-internal.h"
@@ -41,175 +28,7 @@
 
 #include <uapi/errno.h>
 
-static void i915_wait_for_pipe_scanline_moving(struct intel_crtc *crtc, bool state);
-static u32 i915_g4x_get_vblank_counter(struct drm_crtc *crtc);
-static int i915_get_crtc_scanline(struct intel_crtc *crtc);
-static int i915_crtc_scanline_offset(const struct intel_crtc_state *crtc_state);
 static uint32_t i915_lcd_kernel_frame(void *ctx);
-
-/*
- * Reads a pipe's hardware frame counter through the xd pipe.
- *
- * For the refresh boundaries of the display control; the caller knows
- * the pipe runs.  The counter moves at each vblank start and restarts
- * when the pipe is enabled again.
- */
-uint32_t
-drv_i915_pipe_frame_read(
-	struct i915_xd_io *io,
-	int pipe)
-{
-	uint32_t frame;
-
-	/* Reads the pipe's frame counter. */
-	frame = drv_i915_xd_pipe_frame(io, (unsigned)pipe);
-
-	/* Succeeded: the frame number. */
-	return frame;
-}
-
-/*
- * Waits until the pipe's scanline counter stands still.
- */
-void
-drv_i915_wait_for_pipe_scanline_stopped(
-	struct intel_crtc *crtc)
-{
-	/* Waits for the counter to stop. */
-	i915_wait_for_pipe_scanline_moving(crtc, false);
-}
-
-/*
- * Reads the scanline the pipe is on, with interrupts off around the read.
- *
- * The Linux intel_get_crtc_scanline(): the interrupt section is the named
- * world's, on the crtc's device.
- */
-int
-drv_i915_get_crtc_scanline(
-	struct i915_lcd_world *world,
-	struct intel_crtc *crtc)
-{
-	struct drm_i915_private *dev_priv;
-	unsigned long irqflags;
-	int position;
-
-	/* Finds the device the crtc belongs to. */
-	dev_priv = i915_lcd_to_i915(crtc->base.dev);
-
-	/* Takes the scanline with interrupts off. */
-	I915_LCD_LOCAL_IRQ_SAVE(world, dev_priv, irqflags);
-	intel_vblank_section_enter(dev_priv);
-
-	position = i915_get_crtc_scanline(crtc);
-
-	intel_vblank_section_exit(dev_priv);
-	I915_LCD_LOCAL_IRQ_RESTORE(world, dev_priv, irqflags);
-
-	/* Succeeded: reports the scanline. */
-	return position;
-}
-
-/*
- * Records the timings the vblank helpers read for a crtc.
- *
- * The Linux intel_crtc_update_active_timings(): the hardware mode of the
- * pipe's vblank object, the VRR vblank start, the mode flags and the
- * scanline offset.  The vblank_time_lock section guards against
- * concurrent readers that this path does not have.
- */
-void
-drv_i915_crtc_update_active_timings(
-	const struct intel_crtc_state *crtc_state,
-	bool vrr_enable)
-{
-	struct intel_crtc *crtc;
-	struct drm_i915_private *i915;
-	u8 mode_flags;
-	struct drm_display_mode adjusted_mode;
-	int vmax_vblank_start;
-	unsigned long irqflags;
-
-	/* Finds the crtc and its device. */
-	crtc = to_intel_crtc(crtc_state->uapi.crtc);
-	i915 = i915_lcd_to_i915(crtc->base.dev);
-	mode_flags = crtc_state->mode_flags;
-	vmax_vblank_start = 0;
-
-	/* Starts from the adjusted mode of the state. */
-	drm_mode_init(&adjusted_mode, &crtc_state->hw.adjusted_mode);
-
-	/*
-	 * With VRR the timings run to vmax and the vblank starts at vmin;
-	 * without it the VRR flag is dropped.
-	 */
-	if (vrr_enable) {
-		I915_LCD_DRM_WARN_ON(&i915->drm, (mode_flags & I915_MODE_FLAG_VRR) == 0);
-
-		/* The timings run to vmax; the vblank starts at vmin. */
-		adjusted_mode.crtc_vtotal = crtc_state->vrr.vmax;
-		adjusted_mode.crtc_vblank_end = crtc_state->vrr.vmax;
-		adjusted_mode.crtc_vblank_start = intel_vrr_vmin_vblank_start(crtc_state);
-		vmax_vblank_start = intel_vrr_vmax_vblank_start(crtc_state);
-	} else {
-		mode_flags &= ~I915_MODE_FLAG_VRR;
-	}
-
-	/* Publishes the timings the vblank and scanline helpers read. */
-	I915_LCD_SPIN_LOCK_IRQSAVE(&i915->drm.vblank_time_lock, irqflags);
-	intel_vblank_section_enter(i915);
-
-	drm_calc_timestamping_constants(&crtc->base, &adjusted_mode);
-	crtc->vmax_vblank_start = vmax_vblank_start;
-	crtc->mode_flags = mode_flags;
-	crtc->scanline_offset = i915_crtc_scanline_offset(crtc_state);
-
-	intel_vblank_section_exit(i915);
-	I915_LCD_SPIN_UNLOCK_IRQRESTORE(&i915->drm.vblank_time_lock, irqflags);
-}
-
-/*
- * Returns the crtc hooks of display version 5 and later.
- *
- * The one hook this path uses reads the hardware frame counter.  A device
- * view that is not a modeset object (the takeover registry) binds the same
- * table.
- */
-const struct drm_crtc_funcs *
-drv_i915_lcd_ms_crtc_funcs(void)
-{
-	/* i915's crtc hooks on display version 5 and later: the hardware frame counter. */
-	static const struct drm_crtc_funcs crtc_funcs = {
-		i915_g4x_get_vblank_counter
-	};
-
-	/* Succeeded: the table is constant and shared. */
-	return &crtc_funcs;
-}
-
-/*
- * Records the active timings of a modeset object before its crtc enable.
- *
- * What the Linux intel_enable_crtc() does before the crtc_enable hook:
- * intel_crtc_update_active_timings() without VRR, with the device's vblank
- * objects bound and drm_crtc_set_max_vblank_count() of the full 32-bit
- * hardware counter.
- */
-void
-drv_i915_lcd_ms_active_timings(
-	struct i915_lcd_modeset *ms)
-{
-	/* The object's device is the one the Linux text works on from here. */
-	ms->world->i915_lcd_cur_i915 = &ms->i915;
-
-	/* Binds the vblank objects and the full-width frame counter of the pipe. */
-	ms->i915.drm.vblank = ms->vblank;
-	ms->vblank[ms->crtc.pipe].max_vblank_count = 0xffffffffu;
-	ms->crtc.base.funcs = drv_i915_lcd_ms_crtc_funcs();
-
-	/* Records the timings of the new state. */
-	drv_i915_crtc_update_active_timings(&ms->crtc_state, false);
-}
 
 /*
  * Turns interrupts off for the update section (the Linux local_irq_disable()).
@@ -245,90 +64,6 @@ drv_i915_lcd_irq_enable(
 
 	/* From here the section has interrupts on. */
 	world->i915_lcd_irqs_off = 0;
-}
-
-/*
- * Turns interrupts off and reports whether they were off already (the
- * Linux local_irq_save()).
- */
-unsigned long
-drv_i915_lcd_irq_save(
-	struct i915_lcd_world *world,
-	struct drm_i915_private *i915)
-{
-	unsigned long was_off;
-
-	/* Remembers the state the restore goes back to. */
-	was_off = (unsigned long)world->i915_lcd_irqs_off;
-
-	/* Turns interrupts off. */
-	drv_i915_lcd_irq_disable(world, i915);
-
-	/* Succeeded: reports the state before the save. */
-	return was_off;
-}
-
-/*
- * Goes back to the interrupt state a save reported (the Linux
- * local_irq_restore()).
- */
-void
-drv_i915_lcd_irq_restore(
-	struct i915_lcd_world *world,
-	struct drm_i915_private *i915,
-	unsigned long was_off)
-{
-	/* Interrupts were on before the save: they go back on. */
-	if (!was_off)
-		drv_i915_lcd_irq_enable(world, i915);
-}
-
-/*
- * Computes the vblank evasion window of a modeset object's running mode.
- *
- * The window intel_pipe_update_start() sleeps out of (the Linux
- * intel_crtc_vblank_evade_scanlines()), with the old and the new crtc
- * state both the object's own.  0, or EINVAL when the window is empty.
- */
-int
-drv_i915_lcd_ms_evade_window(
-	struct i915_lcd_modeset *ms,
-	int *min,
-	int *max,
-	int *vblank_start)
-{
-	/* The object's device is the one the Linux text works on from here. */
-	ms->world->i915_lcd_cur_i915 = &ms->i915;
-
-	/* The update's atomic state is the running state on both sides. */
-	ms->state.base.dev = &ms->i915.drm;
-	ms->state.crtc_state = &ms->crtc_state;
-	ms->state.old_crtc_state = &ms->crtc_state;
-
-	/* Computes the window. */
-	drv_i915_crtc_vblank_evade_scanlines(&ms->state, &ms->crtc, min, max, vblank_start);
-
-	/* Refuses a window that does not start inside the frame. */
-	if (*min <= 0)
-		return EINVAL;
-	if (*max <= 0)
-		return EINVAL;
-
-	/* Succeeded: the window lies inside the frame. */
-	return 0;
-}
-
-/*
- * Returns the size of a crtc state as this unit sees it.
- *
- * A diagnostic of the environment layout: the modeset owner compares it
- * with the size the other units see before it clears one.
- */
-unsigned long
-drv_i915_crtc_state_size_crtc_unit(void)
-{
-	/* Succeeded: reports the size of this unit's crtc state. */
-	return (unsigned long)sizeof(struct intel_crtc_state);
 }
 
 /*
@@ -373,11 +108,13 @@ drv_i915_lcd_ms_vblank_off(
 }
 
 /*
- * Computes the vblank evasion window of the selected screen.
+ * Computes the vblank evasion window of the selected screen: the lines
+ * of its running mode before the vertical blank's start that a flip's
+ * arming writes stay out of (xd-pipe).
  *
  * I915_LCD_MS_OK with the window filled, I915_LCD_MS_NOT_PREPARED when
- * the screen is not running, or I915_LCD_MS_ERRORS when the window is
- * empty.
+ * the screen is not running, or I915_LCD_MS_ERRORS when the window does
+ * not lie in the frame.
  */
 int
 drv_i915_lcd_modeset_evade_window(
@@ -388,7 +125,7 @@ drv_i915_lcd_modeset_evade_window(
 {
 	struct i915_lcd_world *world;
 	struct i915_lcd_modeset *ms;
-	int window_error;
+	struct i915_xd_evade window;
 
 	/* Finds the selected screen. */
 	world = display->lcd_world;
@@ -400,12 +137,14 @@ drv_i915_lcd_modeset_evade_window(
 	if (!ms->crtc.active)
 		return I915_LCD_MS_NOT_PREPARED;
 
-	/* The screen's device is the one the Linux text works on from here. */
-	world->i915_lcd_cur_i915 = &ms->i915;
+	/* The window of the running mode. */
+	drv_i915_xd_pipe_evade_window((uint32_t)ms->plan.mode.clock_khz, ms->plan.mode.htotal, ms->plan.mode.vdisplay, &window);
+	*min = window.min;
+	*max = window.max;
+	*vblank_start = window.vblank_start;
 
-	/* Computes the window of the running mode. */
-	window_error = drv_i915_lcd_ms_evade_window(ms, min, max, vblank_start);
-	if (window_error != 0)
+	/* A window that does not start inside the frame. */
+	if (window.min <= 0 || window.max <= 0)
 		return I915_LCD_MS_ERRORS;
 
 	/* Succeeded: the window is filled in. */
@@ -609,170 +348,6 @@ drv_i915_lcd_kernel_cancel_event(
 
 	/* The event is forgotten. */
 	k->event_armed = 0;
-}
-
-/* Waits up to 100 ms for the scanline counter to reach a state, through the xd pipe. */
-static void
-i915_wait_for_pipe_scanline_moving(
-	struct intel_crtc *crtc,
-	bool state)
-{
-	struct drm_i915_private *dev_priv;
-	enum pipe pipe;
-	unsigned late;
-
-	/* Finds the device and the pipe. */
-	dev_priv = i915_lcd_to_i915(crtc->base.dev);
-	pipe = crtc->pipe;
-
-	/* Waits for the display line to settle or start moving. */
-	late = drv_i915_xd_pipe_wait_scanline(drv_i915_lcd_xd_io(dev_priv), (unsigned)pipe, state ? 1 : 0);
-	if (late != 0U) {
-		I915_LCD_DRM_ERR(&dev_priv->drm,
-				 "pipe %c scanline %s wait timed out\n",
-				 pipe_name(pipe),
-				 i915_lcd_str_on_off(state));
-	}
-}
-
-/*
- * Reads the pipe's hardware frame counter (the Linux g4x_get_vblank_counter(),
- * the crtc hook of display version 5 and later).
- *
- * 0 while the pipe's vblank object has no counter range.
- */
-static u32
-i915_g4x_get_vblank_counter(
-	struct drm_crtc *crtc)
-{
-	struct drm_i915_private *dev_priv;
-	struct drm_vblank_crtc *vblank;
-	enum pipe pipe;
-	u32 frame;
-
-	/* Finds the device, the pipe's vblank object and the pipe. */
-	dev_priv = i915_lcd_to_i915(crtc->dev);
-	vblank = &dev_priv->drm.vblank[drm_crtc_index(crtc)];
-	pipe = to_intel_crtc(crtc)->pipe;
-
-	/* A vblank object without a counter range has no counter. */
-	if (!vblank->max_vblank_count)
-		return 0;
-
-	/* Reads the counter. */
-	frame = i915_lcd_intel_de_read(dev_priv, PIPE_FRMCOUNT_G4X(pipe));
-
-	/* Succeeded: reports the frame number. */
-	return frame;
-}
-
-/*
- * Reads the pipe's scanline, adjusted by the crtc's scanline offset (the
- * Linux __intel_get_crtc_scanline()).
- *
- * A fast read of the display block: no forcewake.  0 while the crtc is off.
- */
-static int
-i915_get_crtc_scanline(
-	struct intel_crtc *crtc)
-{
-	struct drm_device *dev;
-	struct drm_i915_private *dev_priv;
-	const struct drm_display_mode *mode;
-	struct drm_vblank_crtc *vblank;
-	enum pipe pipe;
-	int position;
-	int vtotal;
-	int i;
-	int temp;
-
-	/* Finds the device and the pipe. */
-	dev = crtc->base.dev;
-	dev_priv = i915_lcd_to_i915(dev);
-	pipe = crtc->pipe;
-
-	/* A crtc that is off is on no scanline. */
-	if (!crtc->active)
-		return 0;
-
-	/* Takes the hardware mode the active timings recorded. */
-	vblank = &crtc->base.dev->vblank[drm_crtc_index(&crtc->base)];
-	mode = &vblank->hwmode;
-
-	/* DSI takes the scanline from the vblank timestamp instead (not reached here). */
-	if (crtc->mode_flags & I915_MODE_FLAG_GET_SCANLINE_FROM_TIMESTAMP) {
-		position = __intel_get_crtc_scanline_from_timestamp(crtc);
-		return position;
-	}
-
-	/* An interlaced mode counts lines per field. */
-	vtotal = mode->crtc_vtotal;
-	if (mode->flags & DRM_MODE_FLAG_INTERLACE)
-		vtotal /= 2;
-
-	/* Reads the scanline counter. */
-	position = i915_lcd_intel_de_read_fw(dev_priv, PIPEDSL(pipe)) & PIPEDSL_LINE_MASK;
-
-	/*
-	 * On HSW the DSL register appears to return 0 when read just before
-	 * the start of vblank: it is read again, up to 100 times 1 us apart,
-	 * so the update does not appear to span a vblank.
-	 */
-	if (HAS_DDI(dev_priv) && !position) {
-		for (i = 0; i < 100; i++) {
-			i915_lcd_udelay(dev_priv, 1);
-			temp = i915_lcd_intel_de_read_fw(dev_priv, PIPEDSL(pipe)) & PIPEDSL_LINE_MASK;
-			if (temp != position) {
-				position = temp;
-				break;
-			}
-		}
-	}
-
-	/* Succeeded: reports the scanline with the offset of the output type. */
-	return (position + crtc->scanline_offset) % vtotal;
-}
-
-/*
- * Computes the offset between the scanline counter and the real scanline
- * (the Linux intel_crtc_scanline_offset()).
- *
- * The counter increments at the leading edge of hsync and starts from
- * vtotal - 1 on the first active line, so it reads one less than expected:
- * the offset is 1.  On gen2 it counts from 1 (vtotal - 1 is added instead),
- * and on HSW+ an HDMI output adds one more line (2).
- */
-static int
-i915_crtc_scanline_offset(
-	const struct intel_crtc_state *crtc_state)
-{
-	struct drm_i915_private *i915;
-	const struct drm_display_mode *adjusted_mode;
-	int vtotal;
-	bool hdmi;
-
-	/* Finds the device and the adjusted mode. */
-	i915 = i915_lcd_to_i915(crtc_state->uapi.crtc->dev);
-	adjusted_mode = &crtc_state->hw.adjusted_mode;
-
-	/* Gen2 counts from 1: the offset is a field's vtotal - 1. */
-	if (I915_LCD_DISPLAY_VER(i915) == 2) {
-		vtotal = adjusted_mode->crtc_vtotal;
-		if (adjusted_mode->flags & DRM_MODE_FLAG_INTERLACE)
-			vtotal /= 2;
-
-		return vtotal - 1;
-	}
-
-	/* An HDMI output on a DDI platform is one line further. */
-	if (HAS_DDI(i915)) {
-		hdmi = intel_crtc_has_type(crtc_state, INTEL_OUTPUT_HDMI);
-		if (hdmi)
-			return 2;
-	}
-
-	/* Succeeded: the counter reads one line behind. */
-	return 1;
 }
 
 /*

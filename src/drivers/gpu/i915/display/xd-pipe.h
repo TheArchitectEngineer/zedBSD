@@ -185,6 +185,26 @@ struct i915_xd_plane {
 	uint32_t color_ctl;
 };
 
+/*
+ * The lines an update that must land in one frame stays away from: from
+ * min to max, the lines just before the vertical blank's start.
+ */
+struct i915_xd_evade {
+	int min;
+	int max;
+	int vblank_start;
+};
+
+/*
+ * The scan line counter's offset from the real line: one behind, two
+ * behind on an HDMI output.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_vblank.c
+ * (intel_crtc_scanline_offset).
+ */
+#define I915_XD_SCANLINE_OFFSET		1U
+#define I915_XD_SCANLINE_OFFSET_HDMI	2U
+
 void drv_i915_xd_pipe_m_n(struct i915_xd_io *io, unsigned trans, const struct i915_xd_dp_m_n *m_n);
 void drv_i915_xd_pipe_timing(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned trans, const struct i915_xd_timing *timing);
 void drv_i915_xd_pipe_configure(struct i915_xd_io *io, const struct i915_xd_platform *platform, const struct i915_xd_trans_setup *setup);
@@ -202,6 +222,8 @@ unsigned drv_i915_xd_pipe_stop(struct i915_xd_io *io, unsigned trans, int *was_r
 void drv_i915_xd_pipe_scalers_off(struct i915_xd_io *io, unsigned pipe);
 uint32_t drv_i915_xd_pipe_frame(struct i915_xd_io *io, unsigned pipe);
 unsigned drv_i915_xd_pipe_wait_scanline(struct i915_xd_io *io, unsigned pipe, int moving);
+unsigned drv_i915_xd_pipe_scanline(struct i915_xd_io *io, unsigned pipe, unsigned vtotal, unsigned offset);
+void drv_i915_xd_pipe_evade_window(uint32_t clock_khz, uint32_t htotal, uint32_t vblank_start, struct i915_xd_evade *evade);
 int drv_i915_xd_plane_check(uint32_t fourcc, uint64_t modifier, uint32_t width, uint32_t height, uint32_t pitch, uint32_t surf);
 void drv_i915_xd_plane_words(const struct i915_xd_platform *platform, struct i915_xd_plane *plane);
 void drv_i915_xd_plane_noarm(struct i915_xd_io *io, const struct i915_xd_plane *plane);

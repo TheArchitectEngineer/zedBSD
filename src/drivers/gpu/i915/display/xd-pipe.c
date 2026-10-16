@@ -51,6 +51,17 @@
 #define I915_XD_PLANE_PAGE		0x1000U
 #define I915_XD_PLANE_CPP		4U
 
+/*
+ * How long before a vertical blank an update that must land in one frame
+ * stays away from it; how many times, 1 us apart, a scan line read as 0
+ * is read again (the counter may read 0 just before the blank).
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_crtc.h
+ * (VBLANK_EVASION_TIME_US), intel_vblank.c (__intel_get_crtc_scanline).
+ */
+#define I915_XD_PIPE_EVADE_US		100U
+#define I915_XD_PIPE_ZERO_REREADS	100U
+
 static uint32_t i915_xd_pipe_pair(uint32_t lower, uint32_t upper);
 static uint32_t i915_xd_pipe_vrr_word(const struct i915_xd_platform *platform, const struct i915_xd_vrr *vrr);
 static int i915_xd_pipe_scanline_moves(struct i915_xd_io *io, unsigned pipe);
@@ -663,6 +674,74 @@ drv_i915_xd_pipe_wait_scanline(
 
 	/* The scan line did not reach the state. */
 	return I915_XD_PIPE_LATE_SCANLINE;
+}
+
+/*
+ * Reads the line a pipe scans now: the counter, read again while it reads
+ * 0 (up to 100 times 1 us apart), plus the counter's offset from the real
+ * line, modulo the frame's lines.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_vblank.c
+ * (__intel_get_crtc_scanline).
+ */
+unsigned
+drv_i915_xd_pipe_scanline(
+	struct i915_xd_io *io,
+	unsigned pipe,
+	unsigned vtotal,
+	unsigned offset)
+{
+	uint32_t line;
+	uint32_t again;
+	unsigned tries;
+
+	/* The counter. */
+	line = drv_i915_xd_io_read(io, I915_XD_PIPE_SCANLINE(pipe)) & I915_XD_PIPE_SCANLINE_LINE;
+
+	/* A 0 may be the counter just before the blank: it is read again until it moves. */
+	for (tries = 0U; line == 0U && tries < I915_XD_PIPE_ZERO_REREADS; tries++) {
+		(void)drv_i915_xd_io_delay(io, 1U);
+		again = drv_i915_xd_io_read(io, I915_XD_PIPE_SCANLINE(pipe)) & I915_XD_PIPE_SCANLINE_LINE;
+		if (again != line) {
+			line = again;
+			break;
+		}
+	}
+
+	/* A frame without lines has no line. */
+	if (vtotal == 0U)
+		return 0U;
+
+	/* Succeeded: the line, with the counter's offset. */
+	return (line + offset) % vtotal;
+}
+
+/*
+ * Finds the lines an update that must land in one frame stays away from:
+ * from 100 us before the vertical blank's start to the line before it.
+ * A mode without a line length counts 100 us as one line.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_vblank.c
+ * (intel_crtc_vblank_evade_scanlines, intel_usecs_to_scanlines).
+ */
+void
+drv_i915_xd_pipe_evade_window(
+	uint32_t clock_khz,
+	uint32_t htotal,
+	uint32_t vblank_start,
+	struct i915_xd_evade *evade)
+{
+	uint32_t lines;
+
+	/* The lines 100 us take. */
+	lines = 1U;
+	if (htotal != 0U)
+		lines = (I915_XD_PIPE_EVADE_US * clock_khz + 1000U * htotal - 1U) / (1000U * htotal);
+
+	/* Succeeded: the window ends one line before the blank's start. */
+	evade->vblank_start = (int)vblank_start;
+	evade->min = (int)vblank_start - (int)lines;
+	evade->max = (int)vblank_start - 1;
 }
 
 /*

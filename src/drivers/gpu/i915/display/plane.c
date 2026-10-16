@@ -6,87 +6,41 @@
  */
 
 /*
- * Derived from the Linux kernel v6.8.12 (drivers/gpu/drm/i915/display/intel_atomic_plane.c),
- * which carries the following notice.
- *
- * Copyright © 2014 Intel Corporation
- *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
- */
-
-/*
- * Derived from the Linux kernel v6.8.12 (drivers/gpu/drm/i915/display/skl_universal_plane.c),
- * which carries the following notice.
- *
- * SPDX-License-Identifier: MIT
- *
- * Copyright © 2020 Intel Corporation
- */
-
-/*
- * The universal plane of the one-screen path (see plane.h).
- *
- * The functions follow the Linux 6.8.12 text of skl_universal_plane.c (the
- * control words and the arming and non-arming register writers of display
- * version 11 and later, the plane's CDCLK need and its readout) and
- * intel_atomic_plane.c (the plane's pixel and data rates).  Every register
- * access goes through the device's backend (modeset-internal.h), so the
- * same text records register words, drives the model in the tests and
- * programs the real display; the callees that are not ported (the scaler,
- * the input CSC, the black CSC) are named steps.  PLANE_CTL is the Linux
- * word (0x94000000 for the linear XRGB8888 primary plane of display 13).
- *
- * Around that text: the plane of the modeset object (one full-screen
- * primary plane on a linear XRGB8888 framebuffer, refused before any Linux
- * text runs when anything else is asked for), its update and its
- * synchronous flip, and the word recorder of the calculation.
+ * The primary plane of the one-screen path (see plane.h): the plane of a
+ * modeset object as the xd plane, its writes and its watermarks, the
+ * update of a flip that must land in one frame, and the word recorder of
+ * the calculation.
  */
 
 #include "modeset-internal.h"
-#include "takeover-internal.h"
 #include "plane.h"
-#include "pipe.h"
+#include "xd-dbuf.h"
 #include "xd-pipe.h"
+#include "xd-screen.h"
+
 #include <kern/kcrt.h>
 
 #include <uapi/errno.h>
 
-static void i915_plane_xd_of(const struct intel_plane *plane, const struct intel_plane_state *plane_state, struct i915_xd_plane *xd_plane);
-static void i915_plane_xd_words(const struct intel_plane *plane, struct intel_plane_state *plane_state);
-static void i915_icl_plane_update_noarm(struct intel_plane *plane, const struct intel_crtc_state *crtc_state, const struct intel_plane_state *plane_state);
-static void i915_icl_plane_update_arm(struct intel_plane *plane, const struct intel_crtc_state *crtc_state, const struct intel_plane_state *plane_state);
-static void i915_icl_plane_disable_arm(struct intel_plane *plane, const struct intel_crtc_state *crtc_state);
-static const struct drm_format_info *i915_xrgb8888_format(void);
+static void i915_plane_fill(struct i915_xd_plane *plane, unsigned pipe, uint32_t width, uint32_t height, uint32_t pitch, uint32_t surf);
+static void i915_plane_write_wm(struct i915_xd_io *io, const struct i915_lcd_modeset *ms);
+static int i915_plane_vblank_get(void *context);
+static void i915_plane_vblank_put(void *context);
+static long i915_plane_vblank_sleep(void *context, long ticks);
+static void i915_plane_irq_off(void *context);
+static void i915_plane_irq_on(void *context);
+static void i915_plane_arm(void *context);
+static void i915_plane_arm_event(void *context);
+static void i915_plane_error(void *context, const char *what);
 
 /*
  * Records the plane words of one full-screen primary plane.
  *
- * The plane covers the pipe without scaling on a linear XRGB8888 buffer:
- * source the whole framebuffer (16.16), destination the same rectangle,
- * rotation 0, opaque, the DRM default blend mode, no colour key, BT.709
- * limited-range defaults (unused for RGB), no scaler.  PLANE_CTL and
- * PLANE_COLOR_CTL are the Linux skl_plane_check() words; then the Linux
- * icl_plane_update_noarm() and icl_plane_update_arm() write them.  The
- * words go to `emit`.  Anything else is refused before any Linux text
- * runs: 0, or EINVAL.  The device view, the crtc state and the plane
- * state are the world's (former function statics).
+ * The plane covers the pipe without scaling on a linear XRGB8888 buffer;
+ * its words that do not arm the update, the watermarks of an empty
+ * state (no levels, no buffer range), then the control word and the
+ * arming surface go to `emit`.  Anything else is refused before a word is
+ * written: 0, or EINVAL.  The device view is the world's.
  */
 int
 drv_i915_plane_emit(
@@ -101,18 +55,13 @@ drv_i915_plane_emit(
 	u32 pitch,
 	u32 surf_ggtt_offset)
 {
+	const struct i915_xd_platform *platform;
 	struct drm_i915_private *i915;
-	struct intel_crtc crtc;
-	struct intel_crtc_state *crtc_state;
-	struct intel_plane plane;
-	struct intel_plane_state *plane_state;
-	struct drm_framebuffer fb;
+	struct i915_xd_plane plane;
+	struct i915_xd_plane_wm wm;
+	struct i915_xd_ddb ddb;
+	struct i915_xd_io *io;
 	int error;
-
-	/* The recorder's device view and states are the world's. */
-	i915 = &world->i915_plane_emit_i915;
-	crtc_state = &world->i915_plane_emit_crtc_state;
-	plane_state = &world->i915_plane_emit_plane_state;
 
 	/* Only a buffer the xd plane scans out. */
 	error = drv_i915_xd_plane_check(fourcc, modifier, width, height, pitch, surf_ggtt_offset);
@@ -125,68 +74,33 @@ drv_i915_plane_emit(
 	if (plane_id != PLANE_PRIMARY)
 		return EINVAL;
 
-	/* Starts every object from zero. */
+	/* The recorder's device view writes through the caller's backend. */
+	i915 = &world->i915_plane_emit_i915;
 	kern_memset(i915, 0, sizeof(*i915));
-	kern_memset(&crtc, 0, sizeof(crtc));
-	kern_memset(crtc_state, 0, sizeof(*crtc_state));
-	kern_memset(&plane, 0, sizeof(plane));
-	kern_memset(plane_state, 0, sizeof(*plane_state));
-	kern_memset(&fb, 0, sizeof(fb));
-
-	/* The device writes through the caller's backend. */
 	i915->emit = emit;
+	io = drv_i915_lcd_xd_io(i915);
+	platform = drv_i915_lcd_xd_platform();
 
-	/* The crtc and its state. */
-	crtc.base.dev = &i915->drm;
-	crtc.pipe = (enum pipe)pipe;
-	crtc_state->uapi.crtc = &crtc.base;
+	/* The plane and its control words. */
+	i915_plane_fill(&plane, (unsigned)pipe, width, height, pitch, surf_ggtt_offset);
+	drv_i915_xd_plane_words(platform, &plane);
 
-	/* The primary plane of the pipe. */
-	plane.base.dev = &i915->drm;
-	plane.id = (enum plane_id)plane_id;
-	plane.pipe = (enum pipe)pipe;
-
-	/* The linear XRGB8888 framebuffer. */
-	fb.dev = &i915->drm;
-	fb.format = i915_xrgb8888_format();
-	fb.modifier = modifier;
-
-	/* The plane state of a full-screen, unscaled, opaque plane. */
-	plane_state->uapi.plane = &plane.base;
-	plane_state->uapi.src.x2 = (int)(width << 16);
-	plane_state->uapi.src.y2 = (int)(height << 16);
-	plane_state->uapi.dst.x2 = (int)width;
-	plane_state->uapi.dst.y2 = (int)height;
-	plane_state->hw.fb = &fb;
-	plane_state->hw.rotation = MODE_ROTATE_0;
-	plane_state->hw.alpha = 0xffff;
-	plane_state->hw.pixel_blend_mode = MODE_BLEND_PREMULTI;
-	plane_state->hw.color_encoding = COLOR_YCBCR_BT709;
-	plane_state->hw.color_range = COLOR_YCBCR_LIMITED_RANGE;
-	plane_state->view.color_plane[0].scanout_stride = pitch;
-	plane_state->view.color_plane[0].mapping_stride = pitch;
-	plane_state->scaler_id = -1;
-	plane_state->ggtt_offset = surf_ggtt_offset;
-
-	/* The control words of the xd plane. */
-	i915_plane_xd_words(&plane, plane_state);
-
-	/* Writes the plane: the unarmed registers, then PLANE_CTL and the arming PLANE_SURF. */
-	i915_icl_plane_update_noarm(&plane, crtc_state, plane_state);
-	i915_icl_plane_update_arm(&plane, crtc_state, plane_state);
+	/* The words that do not arm, the empty watermarks, then the control word and the arming surface. */
+	kern_memset(&wm, 0, sizeof(wm));
+	kern_memset(&ddb, 0, sizeof(ddb));
+	drv_i915_xd_plane_noarm(io, &plane);
+	drv_i915_xd_wm_write_plane(io, platform, (unsigned)pipe, 0U, &wm, 0, &ddb);
+	drv_i915_xd_plane_arm(io, &plane);
 
 	/* Succeeded: the words are emitted. */
 	return 0;
 }
 
 /*
- * Prepares the plane of a modeset object.
- *
- * The framebuffer and plane state are filled exactly as
- * drv_i915_plane_emit() fills them (same checks, same refusals), and
- * PLANE_CTL and PLANE_COLOR_CTL are computed with the Linux functions.
- * 0, or EINVAL for anything but a linear XRGB8888 buffer of 1 to 8192
- * pixels each way with a 64-byte multiple pitch at a page-aligned address.
+ * Prepares the plane of a modeset object: the buffer it shows on the
+ * object's pipe and its control words.  0, or EINVAL for anything but a
+ * linear XRGB8888 buffer of 1 to 8192 pixels each way with a 64-byte
+ * multiple pitch at a page-aligned address.
  */
 int
 drv_i915_lcd_ms_plane_prepare(
@@ -205,40 +119,9 @@ drv_i915_lcd_ms_plane_prepare(
 	if (error != 0)
 		return error;
 
-	/* Starts the plane, its state and the framebuffer from zero. */
-	kern_memset(&ms->plane, 0, sizeof(ms->plane));
-	kern_memset(&ms->plane_state, 0, sizeof(ms->plane_state));
-	kern_memset(&ms->fb, 0, sizeof(ms->fb));
-
-	/* The primary plane of the object's pipe. */
-	ms->plane.base.dev = &ms->i915.drm;
-	ms->plane.id = PLANE_PRIMARY;
-	ms->plane.pipe = ms->crtc.pipe;
-
-	/* The linear XRGB8888 framebuffer. */
-	ms->fb.dev = &ms->i915.drm;
-	ms->fb.format = i915_xrgb8888_format();
-	ms->fb.modifier = modifier;
-
-	/* The plane state of a full-screen, unscaled, opaque plane. */
-	ms->plane_state.uapi.plane = &ms->plane.base;
-	ms->plane_state.uapi.src.x2 = (int)(width << 16);
-	ms->plane_state.uapi.src.y2 = (int)(height << 16);
-	ms->plane_state.uapi.dst.x2 = (int)width;
-	ms->plane_state.uapi.dst.y2 = (int)height;
-	ms->plane_state.hw.fb = &ms->fb;
-	ms->plane_state.hw.rotation = MODE_ROTATE_0;
-	ms->plane_state.hw.alpha = 0xffff;
-	ms->plane_state.hw.pixel_blend_mode = MODE_BLEND_PREMULTI;
-	ms->plane_state.hw.color_encoding = COLOR_YCBCR_BT709;
-	ms->plane_state.hw.color_range = COLOR_YCBCR_LIMITED_RANGE;
-	ms->plane_state.view.color_plane[0].scanout_stride = pitch;
-	ms->plane_state.view.color_plane[0].mapping_stride = pitch;
-	ms->plane_state.scaler_id = -1;
-	ms->plane_state.ggtt_offset = surf_ggtt_offset;
-
-	/* The control words of the xd plane. */
-	i915_plane_xd_words(&ms->plane, &ms->plane_state);
+	/* The plane and its control words. */
+	i915_plane_fill(&ms->plane, (unsigned)ms->crtc.pipe, width, height, pitch, surf_ggtt_offset);
+	drv_i915_xd_plane_words(drv_i915_lcd_xd_platform(), &ms->plane);
 
 	/* Succeeded: the plane is ready for its update. */
 	return 0;
@@ -247,15 +130,20 @@ drv_i915_lcd_ms_plane_prepare(
 /*
  * Writes the plane of a modeset object.
  *
- * The unarmed registers first, then PLANE_CTL and PLANE_SURF; the surface
- * write arms the update, and from then on the buffer may be scanned out.
+ * The words that do not arm the update and the watermarks first, then
+ * the control word and the surface; the surface write arms the update,
+ * and from then on the buffer may be scanned out.
  */
 void
 drv_i915_lcd_ms_plane_update(
 	struct i915_lcd_modeset *ms)
 {
-	/* Writes the registers that do not arm the update. */
-	i915_icl_plane_update_noarm(&ms->plane, &ms->crtc_state, &ms->plane_state);
+	struct i915_xd_io *io;
+
+	/* The words that do not arm the update, and the watermarks. */
+	io = drv_i915_lcd_xd_io(&ms->i915);
+	drv_i915_xd_plane_noarm(io, &ms->plane);
+	i915_plane_write_wm(io, ms);
 
 	/*
 	 * plane_armed is set BEFORE the arming write: from here the buffer
@@ -263,184 +151,222 @@ drv_i915_lcd_ms_plane_update(
 	 */
 	ms->plane_armed = 1;
 
-	/* Writes PLANE_CTL and the arming PLANE_SURF. */
-	i915_icl_plane_update_arm(&ms->plane, &ms->crtc_state, &ms->plane_state);
+	/* The control word and the arming surface. */
+	drv_i915_xd_plane_arm(io, &ms->plane);
 }
 
 /*
- * Disables the plane of a modeset object (the Linux icl_plane_disable_arm()).
+ * Disables the plane of a modeset object: its upsampler, its
+ * watermarks, then a zero control word and the arming surface.
  */
 void
 drv_i915_lcd_ms_plane_disable(
 	struct i915_lcd_modeset *ms)
 {
-	/* Writes the disable, armed by the PLANE_SURF write. */
-	i915_icl_plane_disable_arm(&ms->plane, &ms->crtc_state);
+	struct i915_xd_io *io;
+
+	/* The upsampler, the watermarks, the control and the surface. */
+	io = drv_i915_lcd_xd_io(&ms->i915);
+	drv_i915_xd_plane_off_noarm(io, (unsigned)ms->crtc.pipe);
+	i915_plane_write_wm(io, ms);
+	drv_i915_xd_plane_off_arm(io, (unsigned)ms->crtc.pipe);
 }
 
 /*
- * Updates the running crtc of a modeset object to its plane's new state
- * (a synchronous flip).
- *
- * The Linux update of a running crtc (intel_update_crtc()) for its one
- * primary plane: intel_crtc_planes_update_noarm(),
- * intel_pipe_update_start(), intel_crtc_planes_update_arm(),
- * intel_pipe_update_end(); commit_pipe_pre_planes() and
- * commit_pipe_post_planes() have nothing to do for a plane-only update.
- * The old and new crtc state are the object's own (same timings), and the
- * update arms the object's flip event.
+ * Flips the running plane of a modeset object to its plane's new
+ * buffer: the words that do not arm and the watermarks, then the arming
+ * writes as an update that lands in one frame (out of the lines before
+ * the vertical blank, interrupts off), with the flip's completion event
+ * armed for the next blank.
  */
 void
 drv_i915_lcd_ms_plane_update_flip(
 	struct i915_lcd_modeset *ms)
 {
-	struct i915_lcd_world *world;
-
-	/* The world the object belongs to. */
-	world = ms->world;
-
-	/* The object's device and pipe are the ones the update works on and sleeps for. */
-	world->i915_lcd_cur_i915 = &ms->i915;
-	world->i915_lcd_flip_pipe = ms->crtc.pipe;
-
-	/* The update's atomic state: same timings on both sides, not a modeset. */
-	ms->state.base.dev = &ms->i915.drm;
-	ms->state.crtc_state = &ms->crtc_state;
-	ms->state.old_crtc_state = &ms->crtc_state;
-	ms->crtc_state.uapi.mode_changed = false;
-
-	/* The completion the update arms. */
-	ms->crtc_state.uapi.event = &ms->flip_event;
-
-	/* The unarmed registers, then the arming writes inside the vblank evasion. */
-	i915_icl_plane_update_noarm(&ms->plane, &ms->crtc_state, &ms->plane_state);
-	drv_i915_pipe_update_start(world, &ms->state, &ms->crtc);
-	i915_icl_plane_update_arm(&ms->plane, &ms->crtc_state, &ms->plane_state);
-	drv_i915_pipe_update_end(world, &ms->state, &ms->crtc);
-
-	/* The event is armed; the state no longer carries it. */
-	ms->crtc_state.uapi.event = 0;
-}
-
-/* Converts a plane state of the modeset path into the xd plane, with its control words. */
-static void
-i915_plane_xd_of(
-	const struct intel_plane *plane,
-	const struct intel_plane_state *plane_state,
-	struct i915_xd_plane *xd_plane)
-{
-	/* The pipe, the source size, the pitch and the position (0 behind a scaler). */
-	kern_memset(xd_plane, 0, sizeof(*xd_plane));
-	xd_plane->pipe = (unsigned)plane->pipe;
-	xd_plane->width = (uint32_t)(i915_drm_rect_width(&plane_state->uapi.src) >> 16);
-	xd_plane->height = (uint32_t)(i915_drm_rect_height(&plane_state->uapi.src) >> 16);
-	xd_plane->pitch = plane_state->view.color_plane[0].scanout_stride;
-	if (plane_state->scaler_id < 0) {
-		xd_plane->x = (uint32_t)plane_state->uapi.dst.x1;
-		xd_plane->y = (uint32_t)plane_state->uapi.dst.y1;
-	}
-
-	/* The surface, the plane alpha and the control words. */
-	xd_plane->surf = intel_plane_ggtt_offset(plane_state) + plane_state->view.color_plane[0].offset;
-	xd_plane->alpha = (uint8_t)(plane_state->hw.alpha >> 8);
-	xd_plane->ctl = plane_state->ctl;
-	xd_plane->color_ctl = plane_state->color_ctl;
-}
-
-/* Computes the control words of a plane state with the xd plane. */
-static void
-i915_plane_xd_words(
-	const struct intel_plane *plane,
-	struct intel_plane_state *plane_state)
-{
-	struct i915_xd_plane xd_plane;
-
-	/* The xd plane's words, kept in the state. */
-	i915_plane_xd_of(plane, plane_state, &xd_plane);
-	drv_i915_xd_plane_words(drv_i915_lcd_xd_platform(), &xd_plane);
-	plane_state->ctl = xd_plane.ctl;
-	plane_state->color_ctl = xd_plane.color_ctl;
-}
-
-/*
- * Writes the plane registers that do not arm the update through the xd
- * pipe, then the plane's watermarks and DDB.
- */
-static void
-i915_icl_plane_update_noarm(
-	struct intel_plane *plane,
-	const struct intel_crtc_state *crtc_state,
-	const struct intel_plane_state *plane_state)
-{
-	struct drm_i915_private *dev_priv;
-	struct i915_xd_plane xd_plane;
-
-	/* Finds the device. */
-	dev_priv = i915_lcd_to_i915(plane->base.dev);
-
-	/* The unarmed words. */
-	i915_plane_xd_of(plane, plane_state, &xd_plane);
-	drv_i915_xd_plane_noarm(drv_i915_lcd_xd_io(dev_priv), &xd_plane);
-
-	/* The watermarks and DDB of the plane. */
-	skl_write_plane_wm(plane, crtc_state);
-}
-
-/* Writes PLANE_CTL and the arming PLANE_SURF through the xd pipe. */
-static void
-i915_icl_plane_update_arm(
-	struct intel_plane *plane,
-	const struct intel_crtc_state *crtc_state,
-	const struct intel_plane_state *plane_state)
-{
-	struct drm_i915_private *dev_priv;
-	struct i915_xd_plane xd_plane;
-
-	UNUSED_PARAMETER(crtc_state);
-
-	/* Finds the device. */
-	dev_priv = i915_lcd_to_i915(plane->base.dev);
-
-	/* The control word and the surface. */
-	i915_plane_xd_of(plane, plane_state, &xd_plane);
-	drv_i915_xd_plane_arm(drv_i915_lcd_xd_io(dev_priv), &xd_plane);
-}
-
-/*
- * Disables a plane through the xd pipe: its upsampler, its watermarks,
- * then PLANE_CTL = 0 and the arming PLANE_SURF = 0.
- */
-static void
-i915_icl_plane_disable_arm(
-	struct intel_plane *plane,
-	const struct intel_crtc_state *crtc_state)
-{
-	struct drm_i915_private *dev_priv;
+	struct i915_xd_update_hooks hooks;
+	struct i915_xd_update_report report;
+	struct i915_xd_update update;
 	struct i915_xd_io *io;
 
-	/* Finds the device and the window. */
-	dev_priv = i915_lcd_to_i915(plane->base.dev);
-	io = drv_i915_lcd_xd_io(dev_priv);
+	/* The object's device is the one the update works on. */
+	ms->world->i915_lcd_cur_i915 = &ms->i915;
 
-	/* The upsampler, the watermarks of the disabled plane, the control and the surface. */
-	drv_i915_xd_plane_off_noarm(io, (unsigned)plane->pipe);
-	skl_write_plane_wm(plane, crtc_state);
-	drv_i915_xd_plane_off_arm(io, (unsigned)plane->pipe);
+	/* The words that do not arm the update, and the watermarks. */
+	io = drv_i915_lcd_xd_io(&ms->i915);
+	drv_i915_xd_plane_noarm(io, &ms->plane);
+	i915_plane_write_wm(io, ms);
+
+	/* The pipe, its frame's lines, the scan line counter's offset and the lines before the blank. */
+	update.pipe = (unsigned)ms->crtc.pipe;
+	update.vtotal = ms->plan.mode.vtotal;
+	update.scanline_offset = I915_XD_SCANLINE_OFFSET;
+	if (ms->output_hdmi)
+		update.scanline_offset = I915_XD_SCANLINE_OFFSET_HDMI;
+	drv_i915_xd_pipe_evade_window((uint32_t)ms->plan.mode.clock_khz, ms->plan.mode.htotal, ms->plan.mode.vdisplay, &update.window);
+
+	/* The backend's side of the update. */
+	kern_memset(&hooks, 0, sizeof(hooks));
+	hooks.vblank_get = i915_plane_vblank_get;
+	hooks.vblank_put = i915_plane_vblank_put;
+	hooks.vblank_sleep = i915_plane_vblank_sleep;
+	hooks.irq_off = i915_plane_irq_off;
+	hooks.irq_on = i915_plane_irq_on;
+	hooks.arm = i915_plane_arm;
+	hooks.arm_event = i915_plane_arm_event;
+	hooks.error = i915_plane_error;
+	hooks.context = ms;
+
+	/* The arming writes in one frame, the event armed. */
+	drv_i915_xd_screen_update(io, &update, &hooks, &report);
 }
 
-/* Returns the description of the XRGB8888 format this path scans out. */
-static const struct drm_format_info *
-i915_xrgb8888_format(void)
+/* Fills a full-screen, unscaled, opaque plane of a pipe on a buffer. */
+static void
+i915_plane_fill(
+	struct i915_xd_plane *plane,
+	unsigned pipe,
+	uint32_t width,
+	uint32_t height,
+	uint32_t pitch,
+	uint32_t surf)
 {
-	/* The one format of this path: 4 bytes per pixel, one plane, no alpha. */
-	static const struct drm_format_info xrgb8888 = {
-		FORMAT_XRGB8888,
-		1,
-		{ 4, 0, 0, 0 },
-		false,
-		false,
-	};
+	/* The pipe, the buffer's size, pitch and address, at the pipe's origin, opaque. */
+	kern_memset(plane, 0, sizeof(*plane));
+	plane->pipe = pipe;
+	plane->width = width;
+	plane->height = height;
+	plane->pitch = pitch;
+	plane->surf = surf;
+	plane->alpha = 0xffU;
+}
 
-	/* Succeeded: the description is constant and shared. */
-	return &xrgb8888;
+/* Writes the plane's watermarks and its part of the display buffer as the screen's plan found them. */
+static void
+i915_plane_write_wm(
+	struct i915_xd_io *io,
+	const struct i915_lcd_modeset *ms)
+{
+	/* The levels, the transition, the SAGV pair (not used: SAGV stays off) and the range. */
+	drv_i915_xd_wm_write_plane(io, drv_i915_lcd_xd_platform(), (unsigned)ms->crtc.pipe, ms->plan.wm_levels, &ms->plan.wm, 0, &ms->plan.plane_ddb);
+}
+
+/* Takes a reference to the pipe's vertical blank interrupt through the backend. */
+static int
+i915_plane_vblank_get(
+	void *context)
+{
+	struct i915_lcd_modeset *ms;
+	int error;
+
+	/* The context is the modeset object. */
+	ms = context;
+
+	/* The backend's reference. */
+	error = ms->i915.emit->vblank_get(ms->i915.emit->ctx, ms->crtc.pipe);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the interrupt is on and referenced. */
+	return 0;
+}
+
+/* Gives a reference to the pipe's vertical blank interrupt back. */
+static void
+i915_plane_vblank_put(
+	void *context)
+{
+	struct i915_lcd_modeset *ms;
+
+	/* The context is the modeset object. */
+	ms = context;
+
+	/* The backend's reference goes back. */
+	ms->i915.emit->vblank_put(ms->i915.emit->ctx, ms->crtc.pipe);
+}
+
+/* Sleeps until the pipe's next vertical blank or the ticks run out; the ticks left. */
+static long
+i915_plane_vblank_sleep(
+	void *context,
+	long ticks)
+{
+	struct i915_lcd_modeset *ms;
+	long left;
+
+	/* The context is the modeset object. */
+	ms = context;
+
+	/* The backend's sleep. */
+	left = ms->i915.emit->vblank_sleep(ms->i915.emit->ctx, ms->crtc.pipe, ticks);
+
+	/* Succeeded: the ticks left (0 when the blank did not come). */
+	return left;
+}
+
+/* Turns interrupts off for the update, in the world's nesting. */
+static void
+i915_plane_irq_off(
+	void *context)
+{
+	struct i915_lcd_modeset *ms;
+
+	/* The context is the modeset object. */
+	ms = context;
+
+	/* Off, unless the section already is. */
+	I915_LCD_LOCAL_IRQ_DISABLE(ms->world, &ms->i915);
+}
+
+/* Turns interrupts back on after the update, in the world's nesting. */
+static void
+i915_plane_irq_on(
+	void *context)
+{
+	struct i915_lcd_modeset *ms;
+
+	/* The context is the modeset object. */
+	ms = context;
+
+	/* On, when the section had them off. */
+	I915_LCD_LOCAL_IRQ_ENABLE(ms->world, &ms->i915);
+}
+
+/* Writes the plane's control word and the arming surface. */
+static void
+i915_plane_arm(
+	void *context)
+{
+	struct i915_lcd_modeset *ms;
+
+	/* The context is the modeset object. */
+	ms = context;
+
+	/* The arming writes. */
+	drv_i915_xd_plane_arm(drv_i915_lcd_xd_io(&ms->i915), &ms->plane);
+}
+
+/* Arms the flip's completion event for the pipe's next vertical blank. */
+static void
+i915_plane_arm_event(
+	void *context)
+{
+	struct i915_lcd_modeset *ms;
+
+	/* The context is the modeset object. */
+	ms = context;
+
+	/* The backend's event. */
+	ms->i915.emit->arm_event(ms->i915.emit->ctx, ms->crtc.pipe);
+}
+
+/* Counts an error of the update as one of the screen's. */
+static void
+i915_plane_error(
+	void *context,
+	const char *what)
+{
+	UNUSED_PARAMETER(context);
+
+	/* The world's error count and hook. */
+	drv_i915_lcd_error(what);
 }

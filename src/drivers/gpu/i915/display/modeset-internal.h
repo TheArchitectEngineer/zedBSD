@@ -1074,8 +1074,6 @@ enum tc_port {
  */
 #define I915_LCD_LOCAL_IRQ_DISABLE(world, i915) drv_i915_lcd_irq_disable((world), (i915))
 #define I915_LCD_LOCAL_IRQ_ENABLE(world, i915) drv_i915_lcd_irq_enable((world), (i915))
-#define I915_LCD_LOCAL_IRQ_SAVE(world, i915, f) ((f) = drv_i915_lcd_irq_save((world), (i915)))
-#define I915_LCD_LOCAL_IRQ_RESTORE(world, i915, f) drv_i915_lcd_irq_restore((world), (i915), (f))
 
 /* drm_crtc_arm_vblank_event(): one pending event per pipe, completed by the pipe's next vblank. */
 #define drm_crtc_arm_vblank_event(c, e) \
@@ -2103,10 +2101,8 @@ struct i915_lcd_modeset {
 	struct drm_connector_state conn_state;
 	struct intel_shared_dpll pll;
 	struct dpll_info pll_info;
-	struct intel_plane plane;
-	struct intel_plane_state plane_state;
-	struct drm_framebuffer fb;
-	struct intel_plane cursor;	/* never shown; the reference reserves DDB space for it (skl_cursor_allocation) */
+	struct i915_xd_plane plane;	/* the primary plane: the buffer it shows, its position and its control words */
+	struct i915_xd_plan plan;	/* the screen's plan: the link, the watermarks, the display buffer, the CD clock */
 	struct i915_lcd_wm_ctx wm;	/* old / new global DBUF state */
 	int wm_rc;
 	/* the CDCLK state this crtc requires (bxt_modeset_calc_cdclk) against the current one */
@@ -2131,18 +2127,12 @@ struct i915_lcd_modeset {
 	struct i915_xd_output xo;	/* the screen's output: its description and what its light and dark hold */
 	unsigned commits;
 	struct drm_vblank_crtc vblank[4];	/* dev->vblank[]: hwmode, max_vblank_count */
-	int flip_event;			/* the event token of the pending update */
 	u32 fb_fourcc;
 	u32 fb_width;
 	u32 fb_height;
 	u32 fb_pitch;
 	u64 fb_modifier;
-	u32 cur_surf;
-	u32 pend_surf;
-	u32 old_surf;
-	int flip_pending;
-	int flip_stuck;
-	unsigned flip_gen;
+	struct i915_xd_flip flip;	/* the buffer shown, the one a flip armed and the one it replaces */
 	int flip_event_ref;		/* the armed event still holds its vblank reference (taken in update_end) */
 	unsigned events_cancelled;
 	int prepared;
@@ -2278,26 +2268,13 @@ struct i915_lcd_world {
 	int i915_lcd_dpll_pool_inited;
 
 	/*
-	 * The pipe of the plane update in progress: the pipe whose vblank the
-	 * update's sleep waits for.  Set by the plane update before the
-	 * vblank evasion.
-	 */
-	int i915_lcd_flip_pipe;
-
-	/*
 	 * Whether the update section has interrupts off (local_irq_*): 1 between
 	 * the disable and the enable, so save / restore nest.
 	 */
 	int i915_lcd_irqs_off;
 
-	/* The crtc state of the plane word recorder (a function static): cleared and filled at each call. */
-	struct intel_crtc_state i915_plane_emit_crtc_state;
-
-	/* The device of the plane word recorder (a function static, as above). */
+	/* The device of the plane word recorder (a function static): cleared and filled at each call. */
 	struct drm_i915_private i915_plane_emit_i915;
-
-	/* The plane state of the plane word recorder (a function static, as above). */
-	struct intel_plane_state i915_plane_emit_plane_state;
 
 	/*
 	 * The one mode object drm_mode_create() hands out to the EDID text
@@ -2369,17 +2346,12 @@ int drv_i915_lcd_hdmi_level_shift(struct i915_lcd_world *world);
 bool drv_i915_lcd_intel_phy_is_tc(struct drm_i915_private *dev_priv, enum phy phy);
 enum phy drv_i915_lcd_intel_port_to_phy(struct drm_i915_private *i915, enum port port);
 
-/* The plane text's kept functions (watermark.c, plane.c). */
-void skl_write_plane_wm(struct intel_plane *plane, const struct intel_crtc_state *crtc_state);
-
 /*
  * local_irq_* of the update section: interrupts off / on through the named
  * device's hooks, with the nesting state kept in the named world.
  */
 void drv_i915_lcd_irq_disable(struct i915_lcd_world *world, struct drm_i915_private *i915);
 void drv_i915_lcd_irq_enable(struct i915_lcd_world *world, struct drm_i915_private *i915);
-unsigned long drv_i915_lcd_irq_save(struct i915_lcd_world *world, struct drm_i915_private *i915);
-void drv_i915_lcd_irq_restore(struct i915_lcd_world *world, struct drm_i915_private *i915, unsigned long was_off);
 
 /* The pool's shared_dpll[] state array of the named world (the atomic state's shared DPLL state). */
 struct intel_shared_dpll_state *drv_i915_lcd_shared_dpll_state(struct i915_lcd_world *world);
@@ -2425,13 +2397,11 @@ void drv_i915_lcd_ms_wm_compute(struct i915_wm_world *wm_world, struct i915_lcd_
 int drv_i915_lcd_dbuf_current(struct i915_wm_world *wm_world, struct intel_dbuf_state *out);
 void drv_i915_lcd_dbuf_publish(struct i915_wm_world *wm_world, const struct intel_dbuf_state *now);
 void drv_i915_lcd_dbuf_forget(struct i915_wm_world *wm_world);
-void drv_i915_lcd_ms_active_timings(struct i915_lcd_modeset *ms);
 void drv_i915_lcd_ms_plane_update_flip(struct i915_lcd_modeset *ms);
 void drv_i915_lcd_ms_color_check(struct i915_lcd_modeset *ms);
 int drv_i915_lcd_ms_plane_prepare(struct i915_lcd_modeset *ms, u32 fourcc, u64 modifier, u32 width, u32 height, u32 pitch, u32 surf_ggtt_offset);
 void drv_i915_lcd_ms_plane_update(struct i915_lcd_modeset *ms);
 void drv_i915_lcd_ms_plane_disable(struct i915_lcd_modeset *ms);
-int drv_i915_lcd_ms_evade_window(struct i915_lcd_modeset *ms, int *min, int *max, int *vblank_start);
 void drv_i915_lcd_ms_set_acpi(struct i915_lcd_modeset *ms, u32 user_level, u32 user_max);
 void drv_i915_lcd_xd_timing(const struct drm_display_mode *mode, struct i915_xd_timing *timing);
 

@@ -63,10 +63,6 @@ int drv_i915_display_emit_cpu_transcoder(struct i915_lcd_world *world, struct i9
  * ==== The synchronous update of a running pipe ====
  */
 
-int drv_i915_usecs_to_scanlines(const struct drm_display_mode *adjusted_mode, int usecs);
-void drv_i915_crtc_vblank_evade_scanlines(struct intel_atomic_state *state, struct intel_crtc *crtc, int *min, int *max, int *vblank_start);
-void drv_i915_pipe_update_start(struct i915_lcd_world *world, struct intel_atomic_state *state, struct intel_crtc *crtc);
-void drv_i915_pipe_update_end(struct i915_lcd_world *world, struct intel_atomic_state *state, struct intel_crtc *crtc);
 
 #endif /* I915_DISPLAY_WORLD_MODESET */
 

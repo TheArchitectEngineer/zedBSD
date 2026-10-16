@@ -31,6 +31,11 @@
  * retained: its settle is skipped, so nothing is given back under a pipe
  * that may still run.
  *
+ * An update that must land in one frame (a flip's arming writes) stays
+ * out of the lines just before the vertical blank: it sleeps one blank
+ * at a time until the scan line is outside them, then writes with
+ * interrupts off and arms its completion event for the next blank.
+ *
  * A flip arms a new buffer on a lit screen; the pipe latches it at its
  * next vertical blank, and only the live surface tells that the old
  * buffer is free.  A flip whose event did not come, or came without the
@@ -49,6 +54,7 @@
 #include "xd-dbuf.h"
 #include "xd-dp.h"
 #include "xd-io.h"
+#include "xd-pipe.h"
 #include "xd-platform.h"
 
 /* The kinds of output a screen drives: the built-in panel, an HDMI or DVI sink, an external DisplayPort sink. */
@@ -155,6 +161,7 @@ struct i915_xd_plan {
 	uint8_t slices;
 	uint8_t joined;
 	uint8_t enabled_slices;
+	unsigned wm_levels;
 	struct i915_xd_plane_wm wm;
 	int wm_cut;
 	uint16_t weight;
@@ -290,10 +297,59 @@ struct i915_xd_run_result {
 	int acquired;
 };
 
+/*
+ * The caller's side of an update that must land in one frame: a
+ * reference to the pipe's vertical blank interrupt (0, or an error) and
+ * its release, a sleep until the pipe's next vertical blank or a number
+ * of 10 ms ticks (the ticks left, 0 when the blank did not come),
+ * interrupts off and on, the arming writes, the completion event armed
+ * for the next blank (NULL: the update has none; the event holds a
+ * reference of its own), and an error of the update.
+ */
+struct i915_xd_update_hooks {
+	int (*vblank_get)(void *context);
+	void (*vblank_put)(void *context);
+	long (*vblank_sleep)(void *context, long ticks);
+	void (*irq_off)(void *context);
+	void (*irq_on)(void *context);
+	void (*arm)(void *context);
+	void (*arm_event)(void *context);
+	void (*error)(void *context, const char *what);
+	void *context;
+};
+
+/*
+ * An update: its pipe, the lines of its frame, the scan line counter's
+ * offset, and the lines it stays out of.
+ */
+struct i915_xd_update {
+	unsigned pipe;
+	unsigned vtotal;
+	unsigned scanline_offset;
+	struct i915_xd_evade window;
+};
+
+/*
+ * What an update saw: the line and the frame it wrote in and ended at
+ * (start_frame 0 when it did not wait: then it is not checked), the
+ * sleeps, whether it gave up waiting, and whether it crossed a vertical
+ * blank (its writes may have landed in two frames).
+ */
+struct i915_xd_update_report {
+	unsigned start_line;
+	unsigned end_line;
+	uint32_t start_frame;
+	uint32_t end_frame;
+	unsigned sleeps;
+	int gave_up;
+	int crossed;
+};
+
 unsigned drv_i915_xd_screen_plan_link(const struct i915_xd_plan_input *input, struct i915_xd_plan *plan);
 unsigned drv_i915_xd_screen_plan_check(const struct i915_xd_plan_input *input, struct i915_xd_plan *plan);
 unsigned drv_i915_xd_screen_plan(const struct i915_xd_plan_input *input, struct i915_xd_plan *plan);
 const char *drv_i915_xd_screen_refusal_name(unsigned refused);
+void drv_i915_xd_screen_update(struct i915_xd_io *io, const struct i915_xd_update *update, const struct i915_xd_update_hooks *hooks, struct i915_xd_update_report *report);
 int drv_i915_xd_screen_light(struct i915_xd_screen *screen, struct i915_xd_io *io, const struct i915_xd_screen_hooks *hooks, int undo);
 int drv_i915_xd_screen_dark(struct i915_xd_screen *screen, struct i915_xd_io *io, const struct i915_xd_screen_hooks *hooks);
 unsigned drv_i915_xd_flip_refused(const struct i915_xd_flip *flip, int lit, int retained, uint32_t surface);

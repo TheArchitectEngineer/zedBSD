@@ -19,7 +19,10 @@
  * port with a branch's limits, and Tiger Lake's pixel rate rule; the
  * light's and the dark's order of steps, what a failed step skips, the
  * undo of a failed light, and a dark retained when its stop is not
- * confirmed; the flips (refusals, a flip that latches, one whose event
+ * confirmed; an update that must land in one frame (the evasion window,
+ * the scan line read again at 0, a line outside the window, one inside it
+ * slept out, a blank that never comes, an interrupt reference refused, an
+ * update that crosses a blank); the flips (refusals, a flip that latches, one whose event
  * comes without the new buffer, one without an event, the poll and the
  * settle) and the verdicts of a resident run.
  */
@@ -32,6 +35,8 @@
 #include "../../display/xd-platform.h"
 #include "../../display/xd-screen.h"
 #include "../../display/display-internal.h"
+
+#include "../../intel/display-regs-xd.h"
 
 #include <uapi/errno.h>
 #include <stddef.h>
@@ -56,6 +61,39 @@ struct i915_xd_screen_test_seen {
 
 /* The steps seen by the sequencer checks. */
 static struct i915_xd_screen_test_seen i915_xd_screen_test_seen;
+
+/*
+ * What the update checks' backend saw: whether interrupts are off, the
+ * offs, the vertical blank references held and refused, the sleeps (and
+ * those entered with interrupts off), the arming writes (and those with
+ * interrupts on), the events, the errors; and what it does: refuse the
+ * references, move the scan line out of the window at a sleep, move the
+ * frame counter at the arming writes.
+ */
+struct i915_xd_screen_test_backend {
+	int irq_off;
+	unsigned offs;
+	int refs;
+	unsigned refusals;
+	unsigned sleeps;
+	unsigned sleeps_irq_off;
+	unsigned arms;
+	unsigned arms_irq_on;
+	unsigned events;
+	unsigned errors;
+	int refuse;
+	int sleep_moves;
+	int arm_crosses;
+};
+
+/* The update checks' backend. */
+static struct i915_xd_screen_test_backend i915_xd_screen_test_backend;
+
+/* The scan line counter's answers of the zero check, in order. */
+static uint32_t i915_xd_screen_test_lines[4];
+
+/* The next answer of the zero check. */
+static unsigned i915_xd_screen_test_line_next;
 
 static int i915_xd_screen_test_note(unsigned step);
 static int i915_xd_screen_test_s1(void *context);
@@ -83,6 +121,17 @@ static void i915_xd_screen_test_hooks(struct i915_xd_screen_hooks *hooks);
 static int i915_xd_screen_test_order(const unsigned *want, unsigned count);
 static void i915_xd_screen_test_sequencer(void);
 static void i915_xd_screen_test_flips(void);
+static void i915_xd_screen_test_update(void);
+static void i915_xd_screen_test_update_hooks(struct i915_xd_update_hooks *hooks);
+static int i915_xd_screen_test_vblank_get(void *context);
+static void i915_xd_screen_test_vblank_put(void *context);
+static long i915_xd_screen_test_vblank_sleep(void *context, long ticks);
+static void i915_xd_screen_test_irq_off(void *context);
+static void i915_xd_screen_test_irq_on(void *context);
+static void i915_xd_screen_test_arm(void *context);
+static void i915_xd_screen_test_arm_event(void *context);
+static void i915_xd_screen_test_error(void *context, const char *what);
+static uint32_t i915_xd_screen_test_line_rule(uint32_t offset, uint32_t value, void *context);
 static void i915_xd_screen_test_runs(void);
 static const struct i915_xd_platform *i915_xd_screen_test_platform(uint16_t device, uint8_t revid);
 static void i915_xd_screen_test_mode(struct i915_display_mode *mode, int clock_khz);
@@ -112,6 +161,7 @@ main(void)
 	i915_xd_screen_test_dp();
 	i915_xd_screen_test_tgl();
 	i915_xd_screen_test_sequencer();
+	i915_xd_screen_test_update();
 	i915_xd_screen_test_flips();
 	i915_xd_screen_test_runs();
 
@@ -506,6 +556,267 @@ i915_xd_screen_test_tgl(void)
 	(void)drv_i915_xd_screen_plan(&input, &plan);
 	i915_host_check(plan.min_cdclk_khz == 140800U && plan.cdclk_khz >= 140800U, "tgl: needs the pixel rate itself");
 	i915_host_check(plan.refused == I915_XD_PLAN_CDCLK, "tgl: the running 179.2 MHz is not a Tiger Lake step: another CD clock");
+}
+
+/* An update that must land in one frame, against the backend above. */
+static void
+i915_xd_screen_test_update(void)
+{
+	struct i915_xd_update_report report;
+	struct i915_xd_update_hooks hooks;
+	struct i915_xd_update update;
+	struct i915_xd_io_hooks io_hooks;
+	struct i915_xd_evade window;
+	struct i915_xd_io io;
+	unsigned line;
+
+	/* The fake registers and the backend's hooks. */
+	i915_xd_fake_reset();
+	i915_xd_fake_hooks(&io_hooks);
+	drv_i915_xd_io_init(&io, NULL, NULL);
+	drv_i915_xd_io_set_hooks(&io, &io_hooks);
+	i915_xd_screen_test_update_hooks(&hooks);
+
+	/* The window of the 5330's panel: 100 us is 7 lines of 2080 pixels at 140.8 MHz; a mode without a line length. */
+	drv_i915_xd_pipe_evade_window(140800U, 2080U, 1080U, &window);
+	i915_host_check(window.min == 1073 && window.max == 1079 && window.vblank_start == 1080, "update: the window 1073..1079 before the blank at 1080");
+	drv_i915_xd_pipe_evade_window(140800U, 0U, 1080U, &window);
+	i915_host_check(window.min == 1079 && window.max == 1079, "update: a mode without a line length: one line");
+
+	/* A counter read as 0 is read again until it moves; the offset of an HDMI output. */
+	i915_xd_screen_test_lines[0] = 0U;
+	i915_xd_screen_test_lines[1] = 0U;
+	i915_xd_screen_test_lines[2] = 7U;
+	i915_xd_screen_test_line_next = 0U;
+	i915_xd_fake_rule_read(I915_XD_PIPE_SCANLINE(0U), i915_xd_screen_test_line_rule, NULL);
+	line = drv_i915_xd_pipe_scanline(&io, 0U, 1125U, I915_XD_SCANLINE_OFFSET_HDMI);
+	i915_host_check(line == 9U && i915_xd_screen_test_line_next == 3U, "update: a 0 read again until 7, plus HDMI's 2");
+	i915_xd_fake_reset();
+	i915_xd_fake_hooks(&io_hooks);
+	drv_i915_xd_io_set_hooks(&io, &io_hooks);
+	i915_xd_fake_set(I915_XD_PIPE_SCANLINE(0U), 1124U);
+	line = drv_i915_xd_pipe_scanline(&io, 0U, 1125U, I915_XD_SCANLINE_OFFSET);
+	i915_host_check(line == 0U, "update: the last line plus one wraps to 0");
+
+	/* The update: pipe A, 1125 lines, the window above. */
+	memset(&update, 0, sizeof(update));
+	update.pipe = 0U;
+	update.vtotal = 1125U;
+	update.scanline_offset = I915_XD_SCANLINE_OFFSET;
+	drv_i915_xd_pipe_evade_window(140800U, 2080U, 1080U, &update.window);
+
+	/* A line outside the window: no sleep, the writes with interrupts off, the event's reference kept. */
+	memset(&i915_xd_screen_test_backend, 0, sizeof(i915_xd_screen_test_backend));
+	i915_xd_fake_set(I915_XD_PIPE_SCANLINE(0U), 499U);
+	i915_xd_fake_set(I915_XD_PIPE_FRMCNT(0U), 40U);
+	drv_i915_xd_screen_update(&io, &update, &hooks, &report);
+	i915_host_check(report.sleeps == 0U && report.start_line == 500U && report.start_frame == 40U && report.end_frame == 40U && !report.crossed && !report.gave_up,
+			"update: line 500 is outside the window: written at once");
+	i915_host_check(i915_xd_screen_test_backend.arms == 1U && i915_xd_screen_test_backend.arms_irq_on == 0U && i915_xd_screen_test_backend.offs == 1U &&
+			!i915_xd_screen_test_backend.irq_off && i915_xd_screen_test_backend.events == 1U && i915_xd_screen_test_backend.refs == 1 &&
+			i915_xd_screen_test_backend.errors == 0U,
+			"update: one section with interrupts off around the writes, interrupts back on, the event holds one reference");
+
+	/* A line inside the window: one sleep with interrupts on, then the writes. */
+	memset(&i915_xd_screen_test_backend, 0, sizeof(i915_xd_screen_test_backend));
+	i915_xd_screen_test_backend.sleep_moves = 1;
+	i915_xd_fake_set(I915_XD_PIPE_SCANLINE(0U), 1075U);
+	drv_i915_xd_screen_update(&io, &update, &hooks, &report);
+	i915_host_check(report.sleeps == 1U && i915_xd_screen_test_backend.sleeps_irq_off == 0U && report.start_line == 4U && report.start_frame == 41U &&
+			i915_xd_screen_test_backend.arms == 1U && i915_xd_screen_test_backend.arms_irq_on == 0U && i915_xd_screen_test_backend.refs == 1 &&
+			!i915_xd_screen_test_backend.irq_off && i915_xd_screen_test_backend.errors == 0U,
+			"update: line 1076 is inside: slept to the next frame with interrupts on, written at line 4");
+
+	/* A blank that never comes: the update gives up after its ticks and writes anyway. */
+	memset(&i915_xd_screen_test_backend, 0, sizeof(i915_xd_screen_test_backend));
+	i915_xd_fake_set(I915_XD_PIPE_SCANLINE(0U), 1075U);
+	drv_i915_xd_screen_update(&io, &update, &hooks, &report);
+	i915_host_check(report.gave_up && report.sleeps == 2U && i915_xd_screen_test_backend.errors == 1U && i915_xd_screen_test_backend.arms == 1U &&
+			i915_xd_screen_test_backend.refs == 1 && !i915_xd_screen_test_backend.irq_off,
+			"update: no blank within the two ticks: one error, written anyway, the references balanced");
+
+	/* An interrupt reference refused: no wait, the writes with interrupts off, both refusals reported. */
+	memset(&i915_xd_screen_test_backend, 0, sizeof(i915_xd_screen_test_backend));
+	i915_xd_screen_test_backend.refuse = 1;
+	i915_xd_fake_set(I915_XD_PIPE_SCANLINE(0U), 1075U);
+	drv_i915_xd_screen_update(&io, &update, &hooks, &report);
+	i915_host_check(report.sleeps == 0U && report.start_frame == 0U && i915_xd_screen_test_backend.refusals == 2U && i915_xd_screen_test_backend.errors == 2U &&
+			i915_xd_screen_test_backend.arms == 1U && i915_xd_screen_test_backend.arms_irq_on == 0U && i915_xd_screen_test_backend.events == 1U &&
+			!i915_xd_screen_test_backend.irq_off,
+			"update: the references refused: written at once with interrupts off, two errors");
+
+	/* Writes that cross a blank. */
+	memset(&i915_xd_screen_test_backend, 0, sizeof(i915_xd_screen_test_backend));
+	i915_xd_screen_test_backend.arm_crosses = 1;
+	i915_xd_fake_set(I915_XD_PIPE_SCANLINE(0U), 499U);
+	drv_i915_xd_screen_update(&io, &update, &hooks, &report);
+	i915_host_check(report.crossed && report.end_frame == report.start_frame + 1U && i915_xd_screen_test_backend.errors == 1U,
+			"update: the frame counter moved during the writes: reported");
+
+	/* A window outside the frame: no wait at all. */
+	memset(&i915_xd_screen_test_backend, 0, sizeof(i915_xd_screen_test_backend));
+	update.window.min = 0;
+	drv_i915_xd_screen_update(&io, &update, &hooks, &report);
+	i915_host_check(report.start_frame == 0U && i915_xd_screen_test_backend.refs == 1 && i915_xd_screen_test_backend.offs == 1U &&
+			i915_xd_screen_test_backend.arms_irq_on == 0U && i915_xd_screen_test_backend.errors == 0U,
+			"update: an empty window: written with interrupts off, no wait, no check");
+}
+
+/* Fills the update checks' hooks. */
+static void
+i915_xd_screen_test_update_hooks(
+	struct i915_xd_update_hooks *hooks)
+{
+	/* Each hook of the backend above. */
+	memset(hooks, 0, sizeof(*hooks));
+	hooks->vblank_get = i915_xd_screen_test_vblank_get;
+	hooks->vblank_put = i915_xd_screen_test_vblank_put;
+	hooks->vblank_sleep = i915_xd_screen_test_vblank_sleep;
+	hooks->irq_off = i915_xd_screen_test_irq_off;
+	hooks->irq_on = i915_xd_screen_test_irq_on;
+	hooks->arm = i915_xd_screen_test_arm;
+	hooks->arm_event = i915_xd_screen_test_arm_event;
+	hooks->error = i915_xd_screen_test_error;
+}
+
+/* Takes a reference, or refuses one. */
+static int
+i915_xd_screen_test_vblank_get(
+	void *context)
+{
+	UNUSED_PARAMETER(context);
+
+	/* A refusing backend. */
+	if (i915_xd_screen_test_backend.refuse) {
+		i915_xd_screen_test_backend.refusals++;
+		return EINVAL;
+	}
+
+	/* Succeeded: one reference more. */
+	i915_xd_screen_test_backend.refs++;
+	return 0;
+}
+
+/* Gives a reference back. */
+static void
+i915_xd_screen_test_vblank_put(
+	void *context)
+{
+	UNUSED_PARAMETER(context);
+
+	/* One reference less. */
+	i915_xd_screen_test_backend.refs--;
+}
+
+/* Sleeps: the next frame comes (the line leaves the window) when the backend moves it; otherwise a tick runs out. */
+static long
+i915_xd_screen_test_vblank_sleep(
+	void *context,
+	long ticks)
+{
+	UNUSED_PARAMETER(context);
+
+	/* Counts the sleep and one entered with interrupts off. */
+	i915_xd_screen_test_backend.sleeps++;
+	if (i915_xd_screen_test_backend.irq_off)
+		i915_xd_screen_test_backend.sleeps_irq_off++;
+
+	/* A blank that never comes spends a tick. */
+	if (!i915_xd_screen_test_backend.sleep_moves)
+		return ticks - 1L;
+
+	/* The next frame: line 3, the counter one on. */
+	i915_xd_fake_set(I915_XD_PIPE_SCANLINE(0U), 3U);
+	i915_xd_fake_set(I915_XD_PIPE_FRMCNT(0U), i915_xd_fake_get(I915_XD_PIPE_FRMCNT(0U)) + 1U);
+
+	/* Succeeded: the blank came with ticks left. */
+	return ticks;
+}
+
+/* Interrupts off. */
+static void
+i915_xd_screen_test_irq_off(
+	void *context)
+{
+	UNUSED_PARAMETER(context);
+
+	/* Counts the off. */
+	i915_xd_screen_test_backend.irq_off = 1;
+	i915_xd_screen_test_backend.offs++;
+}
+
+/* Interrupts on. */
+static void
+i915_xd_screen_test_irq_on(
+	void *context)
+{
+	UNUSED_PARAMETER(context);
+
+	/* Back on. */
+	i915_xd_screen_test_backend.irq_off = 0;
+}
+
+/* The arming writes: counted, and with interrupts on noted; a crossing backend moves the counter. */
+static void
+i915_xd_screen_test_arm(
+	void *context)
+{
+	UNUSED_PARAMETER(context);
+
+	/* Counts the writes and those outside the section. */
+	i915_xd_screen_test_backend.arms++;
+	if (!i915_xd_screen_test_backend.irq_off)
+		i915_xd_screen_test_backend.arms_irq_on++;
+
+	/* The blank comes during the writes. */
+	if (i915_xd_screen_test_backend.arm_crosses)
+		i915_xd_fake_set(I915_XD_PIPE_FRMCNT(0U), i915_xd_fake_get(I915_XD_PIPE_FRMCNT(0U)) + 1U);
+}
+
+/* Arms the event. */
+static void
+i915_xd_screen_test_arm_event(
+	void *context)
+{
+	UNUSED_PARAMETER(context);
+
+	/* Counts the event. */
+	i915_xd_screen_test_backend.events++;
+}
+
+/* Counts an error. */
+static void
+i915_xd_screen_test_error(
+	void *context,
+	const char *what)
+{
+	UNUSED_PARAMETER(context);
+	UNUSED_PARAMETER(what);
+
+	/* One error more. */
+	i915_xd_screen_test_backend.errors++;
+}
+
+/* Answers the scan line counter's reads of the zero check in order. */
+static uint32_t
+i915_xd_screen_test_line_rule(
+	uint32_t offset,
+	uint32_t value,
+	void *context)
+{
+	uint32_t line;
+
+	UNUSED_PARAMETER(offset);
+	UNUSED_PARAMETER(value);
+	UNUSED_PARAMETER(context);
+
+	/* The next answer, the last one again when they run out. */
+	line = i915_xd_screen_test_lines[i915_xd_screen_test_line_next];
+	if (i915_xd_screen_test_line_next < 3U)
+		i915_xd_screen_test_line_next++;
+
+	/* Succeeded: the answer. */
+	return line;
 }
 
 /* Notes a step; the step the run names fails with EIO. */
