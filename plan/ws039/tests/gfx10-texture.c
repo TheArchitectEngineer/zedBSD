@@ -16,7 +16,8 @@
  * word 4 the depth less one in 12:0.  Sampler word 0 the clamp of x and y
  * in 2:0 and 5:3 (0 wraps) and the depth compare function in 14:12
  * (never, less, equal, less or equal, greater, not equal, greater or
- * equal, always: the reference against the texel), word 2 the magnifying
+ * equal, always: the reference against the texel) and the unnormalized
+ * coordinates in 15, word 2 the magnifying
  * and minifying filters in 21:20 and 23:22 (1 bilinear).  (Mesa 25.0.7
  * src/amd/registers/gfx10-rsrc.json, SQ_IMG_RSRC_WORD0..4,
  * SQ_IMG_SAMP_WORD0, SQ_IMG_SAMP_WORD2; src/amd/registers/gfx9.json, the
@@ -28,6 +29,7 @@
 #include <math.h>
 #include <string.h>
 
+static void swizzle(const uint32_t *image, float *result);
 static void filter(const uint8_t *texels, const uint32_t *image, const uint32_t *sampler, const struct texture_request *request, float *result);
 static void texel(const uint8_t *texels, const uint32_t *image, const uint32_t *sampler, int32_t x, int32_t y, const struct texture_request *request, float *out);
 static float level_of_detail(const uint32_t *image, const struct texture_request *request);
@@ -113,13 +115,36 @@ texture_sample(
 	/* A fetch reads the integer texel. */
 	if (request->fetch != 0) {
 		texel(texels, image, sampler, (int32_t)request->u, (int32_t)request->v, request, result);
+		swizzle(image, result);
 		memcpy(out, result, 16U);
 		return;
 	}
 
 	/* A sample filters. */
 	filter(texels, image, sampler, request, result);
+	if (request->compare == 0)
+		swizzle(image, result);
 	memcpy(out, result, 16U);
+}
+
+/* The descriptor's channel selects (word 3, 3 bits each): 0 and 1 the constants, 4 .. 7 the texel's channels. */
+static void
+swizzle(
+	const uint32_t *image,
+	float *result)
+{
+	float texel_channels[4];
+	uint32_t channel;
+	uint32_t select;
+
+	memcpy(texel_channels, result, sizeof(texel_channels));
+	for (channel = 0U; channel < 4U; channel++) {
+		select = (image[3] >> (3U * channel)) & 7U;
+		if (select >= 4U)
+			result[channel] = texel_channels[select - 4U];
+		else
+			result[channel] = select == 1U ? 1.0f : 0.0f;
+	}
 }
 
 /* Filters at (u, v) with the request's offset, by the filter its level of detail picks. */
@@ -147,8 +172,13 @@ filter(
 	uint32_t mode;
 	float lod;
 
+	/* Coordinates in texels, normalized or given so. */
 	u = as_float(request->u);
 	v = as_float(request->v);
+	if ((sampler[0] & (1U << 15)) == 0U) {
+		u *= (float)image_width(image);
+		v *= (float)image_height(image);
+	}
 	lod = level_of_detail(image, request);
 	mode = (sampler[2] >> 20) & 3U;
 	if (lod > 0.0f)
@@ -156,15 +186,15 @@ filter(
 
 	/* The nearest texel. */
 	if (mode != 1U) {
-		x = floorf(u * (float)image_width(image));
-		y = floorf(v * (float)image_height(image));
+		x = floorf(u);
+		y = floorf(v);
 		texel(texels, image, sampler, (int32_t)x + request->offset_u, (int32_t)y + request->offset_v, request, result);
 		return;
 	}
 
 	/* The four texels around the sample point, weighted. */
-	x = u * (float)image_width(image) - 0.5f;
-	y = v * (float)image_height(image) - 0.5f;
+	x = u - 0.5f;
+	y = v - 0.5f;
 	x0 = (int32_t)floorf(x);
 	y0 = (int32_t)floorf(y);
 	fx = x - (float)x0;

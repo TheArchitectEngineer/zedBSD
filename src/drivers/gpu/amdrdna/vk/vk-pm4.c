@@ -1,0 +1,368 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The writer of an indirect buffer of command packets (amdrdna-vk-gfx10.h).
+ *
+ * Each function writes one whole packet or nothing: a packet that would
+ * pass the buffer's end marks the buffer full, and every later packet is
+ * dropped too, so a full buffer never holds half a packet.  The caller
+ * checks full once the buffer is written.
+ */
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include "drivers/gpu/amdrdna/vk/amdrdna-vk-gfx10.h"
+
+/*
+ * A packet's header alone, with the largest count, is a one-word packet
+ * that does nothing (the padding of a buffer).
+ *
+ * Value referenced: Mesa 25.0.7 src/amd/common/sid.h (PKT3_NOP_PAD).
+ */
+#define PM4_ONE_WORD_NOTHING	(AMDRDNA_PM4_TYPE3 | (AMDRDNA_PM4_COUNT_MASK << AMDRDNA_PM4_COUNT_SHIFT) | \
+				 (AMDRDNA_PM4_OP_NOTHING << AMDRDNA_PM4_OP_SHIFT))
+
+static bool pm4_room(struct amdrdna_pm4 *pm4, uint32_t words);
+static void pm4_set_run(struct amdrdna_pm4 *pm4, uint32_t operation, uint32_t base, uint32_t reg, const uint32_t *values, uint32_t count);
+
+/* Starts a buffer over words of capacity words. */
+void
+amdrdna_pm4_start(
+	struct amdrdna_pm4 *pm4,
+	uint32_t *words,
+	uint32_t capacity)
+{
+	/* Empty, with room for capacity words. */
+	pm4->words = words;
+	pm4->count = 0U;
+	pm4->capacity = capacity;
+	pm4->full = false;
+}
+
+/*
+ * Writes a packet's header: the operation, the words of the body that
+ * follows (at least one), and whether it is the compute shader's.  The
+ * room for the whole packet is checked here; the body's words follow
+ * through amdrdna_pm4_word().
+ */
+void
+amdrdna_pm4_packet(
+	struct amdrdna_pm4 *pm4,
+	uint32_t operation,
+	uint32_t body_words,
+	bool compute)
+{
+	uint32_t header;
+	bool room;
+
+	/* The header and the body must fit. */
+	room = pm4_room(pm4, 1U + body_words);
+	if (!room)
+		return;
+
+	/* The type, the body's words less one, the operation, the compute bit. */
+	header = AMDRDNA_PM4_TYPE3;
+	header |= ((body_words - 1U) & AMDRDNA_PM4_COUNT_MASK) << AMDRDNA_PM4_COUNT_SHIFT;
+	header |= (operation & 0xffU) << AMDRDNA_PM4_OP_SHIFT;
+	if (compute)
+		header |= AMDRDNA_PM4_COMPUTE;
+	pm4->words[pm4->count] = header;
+	pm4->count++;
+}
+
+/* Writes one word of a packet's body (dropped once the buffer is full). */
+void
+amdrdna_pm4_word(
+	struct amdrdna_pm4 *pm4,
+	uint32_t word)
+{
+	/* A full buffer takes nothing more. */
+	if (pm4->full)
+		return;
+
+	/* The header made the room for its body. */
+	if (pm4->count >= pm4->capacity) {
+		pm4->full = true;
+		return;
+	}
+	pm4->words[pm4->count] = word;
+	pm4->count++;
+}
+
+/* Sets one context register (byte offset from 0x28000 on). */
+void
+amdrdna_pm4_set_context(
+	struct amdrdna_pm4 *pm4,
+	uint32_t reg,
+	uint32_t value)
+{
+	/* A run of one. */
+	pm4_set_run(pm4, AMDRDNA_PM4_OP_SET_CONTEXT, AMDRDNA_PM4_CONTEXT_BASE, reg, &value, 1U);
+}
+
+/* Sets count consecutive context registers from reg. */
+void
+amdrdna_pm4_set_context_run(
+	struct amdrdna_pm4 *pm4,
+	uint32_t reg,
+	const uint32_t *values,
+	uint32_t count)
+{
+	/* One packet for the run. */
+	pm4_set_run(pm4, AMDRDNA_PM4_OP_SET_CONTEXT, AMDRDNA_PM4_CONTEXT_BASE, reg, values, count);
+}
+
+/* Sets one shader register (byte offset from 0xb000 on). */
+void
+amdrdna_pm4_set_shader(
+	struct amdrdna_pm4 *pm4,
+	uint32_t reg,
+	uint32_t value)
+{
+	/* A run of one. */
+	pm4_set_run(pm4, AMDRDNA_PM4_OP_SET_SHADER, AMDRDNA_PM4_SHADER_BASE, reg, &value, 1U);
+}
+
+/* Sets count consecutive shader registers from reg. */
+void
+amdrdna_pm4_set_shader_run(
+	struct amdrdna_pm4 *pm4,
+	uint32_t reg,
+	const uint32_t *values,
+	uint32_t count)
+{
+	/* One packet for the run. */
+	pm4_set_run(pm4, AMDRDNA_PM4_OP_SET_SHADER, AMDRDNA_PM4_SHADER_BASE, reg, values, count);
+}
+
+/* Sets one user configuration register (byte offset from 0x30000 on). */
+void
+amdrdna_pm4_set_user_config(
+	struct amdrdna_pm4 *pm4,
+	uint32_t reg,
+	uint32_t value)
+{
+	/* A run of one. */
+	pm4_set_run(pm4, AMDRDNA_PM4_OP_SET_USER_CONFIG, AMDRDNA_PM4_USER_CONFIG_BASE, reg, &value, 1U);
+}
+
+/*
+ * Sets one user configuration register through the indexed setter: the
+ * register's place with the index above it.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/amd/vulkan/radv_cs.h
+ * (radeon_set_uconfig_reg_idx).
+ */
+void
+amdrdna_pm4_set_user_config_indexed(
+	struct amdrdna_pm4 *pm4,
+	uint32_t reg,
+	uint32_t index,
+	uint32_t value)
+{
+	/* The register's place and its index, then the value. */
+	amdrdna_pm4_packet(pm4, AMDRDNA_PM4_OP_SET_USER_CONFIG_INDEXED, 2U, false);
+	amdrdna_pm4_word(pm4, ((reg - AMDRDNA_PM4_USER_CONFIG_BASE) >> 2) | (index << AMDRDNA_PM4_REGISTER_INDEX_SHIFT));
+	amdrdna_pm4_word(pm4, value);
+}
+
+/* Sends an event of a type with its index. */
+void
+amdrdna_pm4_event(
+	struct amdrdna_pm4 *pm4,
+	uint32_t event,
+	uint32_t index)
+{
+	/* One word: the type and the index. */
+	amdrdna_pm4_packet(pm4, AMDRDNA_PM4_OP_EVENT, 1U, false);
+	amdrdna_pm4_word(pm4, event | (index << AMDRDNA_PM4_EVENT_INDEX_SHIFT));
+}
+
+/*
+ * Sends an end-of-pipe event with cache actions that writes a 32-bit value
+ * to memory once everything before it has finished.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/amd/vulkan/radv_cs.c
+ * (radv_cs_emit_write_event_eop, the GFX9 and later form).
+ */
+void
+amdrdna_pm4_event_fence(
+	struct amdrdna_pm4 *pm4,
+	uint32_t event,
+	uint32_t caches,
+	uint64_t address,
+	uint32_t value)
+{
+	/* The event and its cache actions, where the value goes, the value. */
+	amdrdna_pm4_packet(pm4, AMDRDNA_PM4_OP_EVENT_FENCE, 7U, false);
+	amdrdna_pm4_word(pm4, event | (AMDRDNA_PM4_EVENT_INDEX_TIMESTAMP << AMDRDNA_PM4_EVENT_INDEX_SHIFT) | caches);
+	amdrdna_pm4_word(pm4, AMDRDNA_PM4_FENCE_TO_MEMORY | AMDRDNA_PM4_FENCE_DATA_32 | AMDRDNA_PM4_FENCE_INTERRUPT_AFTER_WRITE);
+	amdrdna_pm4_word(pm4, (uint32_t)address);
+	amdrdna_pm4_word(pm4, (uint32_t)(address >> 32));
+	amdrdna_pm4_word(pm4, value);
+	amdrdna_pm4_word(pm4, 0U);
+	amdrdna_pm4_word(pm4, 0U);
+}
+
+/*
+ * Waits until a memory word equals a value.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/amd/vulkan/radv_cs.h
+ * (radv_cp_wait_mem, the graphics queue's form).
+ */
+void
+amdrdna_pm4_wait_value(
+	struct amdrdna_pm4 *pm4,
+	uint64_t address,
+	uint32_t value)
+{
+	/* The function, the address, the value, all of its bits, the poll interval. */
+	amdrdna_pm4_packet(pm4, AMDRDNA_PM4_OP_WAIT_VALUE, 6U, false);
+	amdrdna_pm4_word(pm4, AMDRDNA_PM4_WAIT_EQUAL_IN_MEMORY);
+	amdrdna_pm4_word(pm4, (uint32_t)address);
+	amdrdna_pm4_word(pm4, (uint32_t)(address >> 32));
+	amdrdna_pm4_word(pm4, value);
+	amdrdna_pm4_word(pm4, 0xffffffffU);
+	amdrdna_pm4_word(pm4, AMDRDNA_PM4_WAIT_POLL_INTERVAL);
+}
+
+/*
+ * Writes back and invalidates the caches a set of actions names, over the
+ * whole address space, and waits for them.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/amd/vulkan/radv_cs.c
+ * (gfx10_cs_emit_cache_flush, the acquire of the cache actions).
+ */
+void
+amdrdna_pm4_cache_acquire(
+	struct amdrdna_pm4 *pm4,
+	uint32_t caches)
+{
+	/* No coherency control, the whole space, the poll interval, the actions. */
+	amdrdna_pm4_packet(pm4, AMDRDNA_PM4_OP_CACHE_ACQUIRE, 7U, false);
+	amdrdna_pm4_word(pm4, 0U);
+	amdrdna_pm4_word(pm4, AMDRDNA_PM4_ACQUIRE_SIZE_LOW);
+	amdrdna_pm4_word(pm4, AMDRDNA_PM4_ACQUIRE_SIZE_HIGH);
+	amdrdna_pm4_word(pm4, 0U);
+	amdrdna_pm4_word(pm4, 0U);
+	amdrdna_pm4_word(pm4, AMDRDNA_PM4_ACQUIRE_POLL);
+	amdrdna_pm4_word(pm4, caches);
+}
+
+/* Has the fetcher wait for the engine (after a wait the engine did). */
+void
+amdrdna_pm4_fetcher_sync(
+	struct amdrdna_pm4 *pm4)
+{
+	/* One word of nothing. */
+	amdrdna_pm4_packet(pm4, AMDRDNA_PM4_OP_FETCHER_SYNC, 1U, false);
+	amdrdna_pm4_word(pm4, 0U);
+}
+
+/*
+ * Draws vertex_count generated vertices of instance_count instances.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/amd/vulkan/radv_cmd_buffer.c
+ * (radv_cs_emit_draw_packet and the instance count before it).
+ */
+void
+amdrdna_pm4_draw(
+	struct amdrdna_pm4 *pm4,
+	uint32_t vertex_count,
+	uint32_t instance_count)
+{
+	/* The instances. */
+	amdrdna_pm4_packet(pm4, AMDRDNA_PM4_OP_INSTANCES, 1U, false);
+	amdrdna_pm4_word(pm4, instance_count);
+
+	/* The vertices, their indices generated. */
+	amdrdna_pm4_packet(pm4, AMDRDNA_PM4_OP_DRAW_GENERATED, 2U, false);
+	amdrdna_pm4_word(pm4, vertex_count);
+	amdrdna_pm4_word(pm4, AMDRDNA_PM4_DRAW_GENERATED_INDICES);
+}
+
+/*
+ * Dispatches x by y by z workgroups of the compute program set before, in
+ * wave32.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/amd/vulkan/radv_cmd_buffer.c
+ * (radv_emit_dispatch_packets: the direct dispatch with the compute bit).
+ */
+void
+amdrdna_pm4_dispatch(
+	struct amdrdna_pm4 *pm4,
+	uint32_t x,
+	uint32_t y,
+	uint32_t z)
+{
+	/* The counts and the start word. */
+	amdrdna_pm4_packet(pm4, AMDRDNA_PM4_OP_DISPATCH, 4U, true);
+	amdrdna_pm4_word(pm4, x);
+	amdrdna_pm4_word(pm4, y);
+	amdrdna_pm4_word(pm4, z);
+	amdrdna_pm4_word(pm4, AMDRDNA_SH_DISPATCH_START);
+}
+
+/* Pads the buffer with one-word packets that do nothing to a multiple of words. */
+void
+amdrdna_pm4_pad(
+	struct amdrdna_pm4 *pm4,
+	uint32_t multiple)
+{
+	bool room;
+
+	/* One word at a time until the count is a multiple. */
+	while (!pm4->full && (pm4->count % multiple) != 0U) {
+		room = pm4_room(pm4, 1U);
+		if (!room)
+			return;
+		pm4->words[pm4->count] = PM4_ONE_WORD_NOTHING;
+		pm4->count++;
+	}
+}
+
+/* Reports whether words more fit; a buffer they do not fit is marked full. */
+static bool
+pm4_room(
+	struct amdrdna_pm4 *pm4,
+	uint32_t words)
+{
+	/* A full buffer takes nothing more. */
+	if (pm4->full)
+		return false;
+
+	/* The words past the end make it full. */
+	if (words > pm4->capacity - pm4->count) {
+		pm4->full = true;
+		return false;
+	}
+
+	/* Succeeded: they fit. */
+	return true;
+}
+
+/* Writes a setter of a register space: the first register's place from the base, then the values. */
+static void
+pm4_set_run(
+	struct amdrdna_pm4 *pm4,
+	uint32_t operation,
+	uint32_t base,
+	uint32_t reg,
+	const uint32_t *values,
+	uint32_t count)
+{
+	uint32_t index;
+
+	/* The place, then each value. */
+	amdrdna_pm4_packet(pm4, operation, 1U + count, false);
+	amdrdna_pm4_word(pm4, (reg - base) >> 2);
+	for (index = 0U; index < count; index++)
+		amdrdna_pm4_word(pm4, values[index]);
+}

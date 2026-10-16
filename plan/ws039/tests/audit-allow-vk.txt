@@ -1,0 +1,33 @@
+# Words the source audit allows in the amdrdna Vulkan executor (src/drivers/gpu/amdrdna/vk/) besides audit-allow.txt.
+# The same rule as there: only C keywords, zedBSD kernel and executor interface names and plain English words; a name
+# made of a cited source's own terms never belongs here.  One word per line; reviewed by hand when a word is added.
+bits
+bucket
+buckets
+channel
+compute
+dispatch
+element
+event
+first
+kernel
+mask
+module
+multiple
+object
+objects
+offsets
+pitch
+program
+references
+requested
+result
+sets
+shader
+supported
+sync
+typedef
+unnormalized
+usage
+used
+values
