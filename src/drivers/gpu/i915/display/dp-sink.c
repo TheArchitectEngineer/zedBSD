@@ -203,12 +203,23 @@ static int i915_dp_kernel_delayed_pending(void *ctx, int which);
 static void i915_dp_kernel_vdd_off_body(void *arg);
 static void i915_dp_kernel_async_put_body(void *arg);
 static void i915_edp_log_bytes(const char *tag, const uint8_t *bytes, unsigned count);
-static void i915_edp_log_pps(const char *when, const struct i915_edp_pps_regs *regs);
 static void i915_edp_cfg_from_panel(struct i915_edp_config *cfg, const struct i915_vbt_encoder *enc, const struct i915_vbt_panel *panel, int have_panel);
 static unsigned i915_edp_well_refs(struct i915_power_domains *pd);
 static void i915_edp_device_log_acquire(struct i915_edp_device *dev, int rc);
 static void i915_edp_device_late(struct i915_edp_device *dev, const struct i915_vbt_encoder *enc, int port);
 static void i915_edp_device_lcd_a(struct i915_edp_device *dev);
+static int i915_edp_device_take(struct i915_edp_device *dev);
+static void i915_edp_cfg_delays(const struct i915_edp_config *cfg, struct i915_xd_pps_delays *delays);
+static void i915_edp_device_result(struct i915_edp_device *dev);
+static uint64_t i915_edp_xe_now(void *context);
+static int i915_edp_xe_domain(struct i915_edp_device *dev, unsigned use);
+static int i915_edp_xe_power_get(void *context, unsigned use);
+static void i915_edp_xe_power_put(void *context, unsigned use, int cookie);
+static void i915_edp_xe_power_put_later(void *context, unsigned use, int cookie);
+static void i915_edp_xe_lock(void *context, unsigned lock, int taken);
+static void i915_edp_xe_vdd_later(void *context, unsigned delay_ms);
+static void i915_edp_xe_vdd_cancel(void *context, int wait);
+static void i915_edp_xe_error(void *context, const char *text);
 
 /*
  * Creates the DP environment's world of a display.
@@ -1442,8 +1453,6 @@ drv_i915_edp_device_init_connector(
 	int port)
 {
 	struct i915_edp_device *dev;
-	struct i915_edp_result *res;
-	struct i915_dp_world *world;
 	const struct i915_vbt_encoder *enc;
 	struct i915_vbt_panel panel;
 	int rc;
@@ -1484,8 +1493,6 @@ drv_i915_edp_device_init_connector(
 	}
 
 	/* Takes the early panel data the VBT has before the EDID is known. */
-	res = &dev->res;
-	world = drv_i915_edp_world_of(dev);
 	panel_found = drv_i915_vbt_init_panel(&dev->vbt->parsed, port, 0, &panel);
 	have_panel = 0;
 	if (panel_found == 0)
@@ -1504,23 +1511,24 @@ drv_i915_edp_device_init_connector(
 		  dev->cfg.t1_t3, dev->cfg.t8, dev->cfg.t9, dev->cfg.t10, dev->cfg.t11_t12, dev->cfg.bl_controller,
 		  i915_edp_well_refs(dev->k.pd));
 
-	/* Brings the eDP up to its EDID and reports what it found. */
-	rc = drv_i915_edp_begin(world, &dev->env, &dev->cfg, res);
+	/* Takes the panel's sink up to its EDID and reports what it found. */
+	error = i915_edp_device_take(dev);
+	rc = 0;
+	if (error == ENXIO) {
+		rc = -I915_EDP_ENXIO;
+	} else if (error != 0) {
+		rc = -I915_EDP_EIO;
+	}
 	dev->init_rc = rc;
-	i915_edp_device_log_acquire(dev, rc);
+	i915_edp_device_log_acquire(dev, error);
 
-	/*
-	 * A failed bring-up already turned VDD off (Linux's out_vdd_off); the
-	 * objects are released, and the threads are kept for the stop.
-	 */
+	/* A failed taking already let VDD go; the threads are kept for the stop. */
 	if (rc != 0) {
-		(void)drv_i915_edp_end(world, res);
-		kern_logf("i915: edp init_connector FAILED rc=%d: eDP disabled, VDD off, refs core=%d aux=%d\n",
-			  rc, res->power_refs_core, res->power_refs_aux);
+		kern_logf("i915: edp init_connector FAILED (%d): eDP disabled, VDD off\n", error);
 		return rc;
 	}
 
-	/* Runs Linux's late step: the EDID-based panel lookup, the final delays, the delayed VDD-off. */
+	/* The late step: the EDID-based panel lookup, the final delays, VDD let go later. */
 	i915_edp_device_late(dev, enc, port);
 
 	/* The connector is kept for the later display stages. */
@@ -1544,7 +1552,6 @@ drv_i915_edp_device_fini(
 {
 	struct i915_power_domains *pd;
 	struct i915_dp_world *world;
-	int end_rc;
 
 	/* Nothing to stop when the device never started. */
 	if (dev == NULL)
@@ -1556,11 +1563,10 @@ drv_i915_edp_device_fini(
 	world = drv_i915_edp_world_of(dev);
 	drv_i915_dp_ext_stop(world);
 
-	/* Ends the connector; the delayed work is cancelled before the PPS lock is taken. */
+	/* Lets the panel's sink go; the delayed VDD-off is called off before the sequencer is held. */
 	pd = dev->k.pd;
-	end_rc = 0;
 	if (dev->connector_live) {
-		end_rc = drv_i915_edp_end(world, &dev->res);
+		drv_i915_xd_edp_stop(&dev->xe);
 		dev->connector_live = 0;
 	}
 
@@ -1569,12 +1575,10 @@ drv_i915_edp_device_fini(
 	drv_i915_display_power_async_bind(pd, NULL, NULL, NULL);
 
 	/* Reports what the stop left and what the works and the power layer did. */
-	kern_logf("i915: edp fini: end_rc=%d vdd_hw=%d vdd_wakeref=%d off_reserved=%d refs core=%d aux=%d "
-		  "lock_errors=%u | vdd-off work armed=%u fired=%u ran=%d cancelled(timer/queue)=%u/%u | "
+	kern_logf("i915: edp fini: vdd held=%d | vdd-off work armed=%u fired=%u ran=%d cancelled(timer/queue)=%u/%u | "
 		  "async put: puts=%u parked=%u grabs=%u work_runs=%u released=%u flushes=%u state_errors=%u "
 		  "use_count_errors=%u | well_refs=%u\n",
-		  end_rc, dev->res.vdd_on_hw, dev->res.vdd_wakeref_held, dev->res.vdd_work_pending,
-		  dev->res.power_refs_core, dev->res.power_refs_aux, dev->env.lock_errors,
+		  dev->xe.vdd_cookie != 0 ? 1 : 0,
 		  dev->k.vdd_off_work.armed_count, dev->k.vdd_off_work.fired_count, dev->k.vdd_off_work.work.ran_count,
 		  dev->k.vdd_off_work.cancelled_armed, dev->k.vdd_off_work.cancelled_pending,
 		  pd->async_puts, pd->async_parked, pd->async_grabs, pd->async_work_runs, pd->async_released,
@@ -2778,15 +2782,14 @@ i915_dp_kernel_vdd_off_body(
 {
 	struct i915_dp_kernel *kernel;
 	struct i915_edp_device *dev;
-	struct i915_dp_world *world;
 
 	/* The backend is the kernel part of the display's eDP device. */
 	kernel = arg;
 	dev = container_of(kernel, struct i915_edp_device, k);
-	world = drv_i915_edp_world_of(dev);
 
-	/* Runs the body on the live eDP. */
-	drv_i915_edp_work_run(world, I915_DP_WORK_VDD_OFF);
+	/* Runs the body on the panel's sink, when it is taken. */
+	if (dev->connector_live)
+		drv_i915_xd_edp_vdd_work(&dev->xe);
 }
 
 /* Runs the asynchronous power put on the worker thread. */
@@ -2857,17 +2860,6 @@ i915_edp_log_bytes(
 	}
 }
 
-/* Logs the four sequencer registers at one point of the bring-up. */
-static void
-i915_edp_log_pps(
-	const char *when,
-	const struct i915_edp_pps_regs *regs)
-{
-	/* Writes the status, the control word and both delay registers on one line. */
-	kern_logf("i915: edp pps %s: PP_STATUS=0x%08x PP_CONTROL=0x%08x PP_ON_DELAYS=0x%08x "
-		  "PP_OFF_DELAYS=0x%08x\n", when, regs->pp_status, regs->pp_control, regs->pp_on_delays, regs->pp_off_delays);
-}
-
 /*
  * Fills the eDP configuration from the VBT's encoder and, when known, its
  * panel.
@@ -2927,41 +2919,35 @@ i915_edp_well_refs(
 	return n;
 }
 
-/* Logs what the bring-up up to the EDID found. */
+/* Logs what the taking of the panel's sink up to the EDID found. */
 static void
 i915_edp_device_log_acquire(
 	struct i915_edp_device *dev,
-	int rc)
+	int error)
 {
 	struct i915_edp_result *res;
 	uint8_t digest[32];
 
-	/* The sequencer registers before and after its set-up, and its delays. */
+	/* The sequencer and its delays. */
 	res = &dev->res;
-	i915_edp_log_pps("before", &res->before);
-	i915_edp_log_pps("after intel_pps_init", &res->after_init);
 	kern_logf("i915: edp pps: idx=%d valid=%d delays(ms) up=%d down=%d cycle=%d bl_on=%d bl_off=%d\n",
 		  res->pps_idx, res->pps_valid, res->delay_power_up_ms, res->delay_power_down_ms,
 		  res->delay_power_cycle_ms, res->delay_bl_on_ms, res->delay_bl_off_ms);
 
-	/* The stages reached, the errors, the time and the sleeps. */
-	kern_logf("i915: edp acquire: rc=%d stage=%d failed_stage=%d dpcd_ok=%d edp_dpcd_ok=%d "
-		  "link_cfg_ok=%d edid_ok=%d edid_blocks=%u ext=%u i2c_defers=%u i2c_nacks=%u log_errors=%u "
-		  "wait_timeouts=%u time_faults=%u elapsed_ms=%llu | sleeps: tick=%u (%llu us) short=%u (%llu us)\n",
-		  rc, res->stage, res->failed_stage, res->dpcd_ok, res->edp_dpcd_ok, res->link_cfg_ok, res->edid_ok,
-		  res->edid_blocks, res->edid_extensions, res->i2c_defers, res->i2c_nacks, res->log_errors,
-		  dev->k.wait_timeouts, dev->k.time_faults, (unsigned long long)res->elapsed_ms,
-		  dev->k.tick_sleeps, (unsigned long long)dev->k.tick_slept_us,
-		  dev->k.busy_sleeps, (unsigned long long)dev->k.busy_slept_us);
+	/* The stage reached, the time and the sleeps. */
+	kern_logf("i915: edp acquire: error=%d stage=%u dpcd_ok=%d edp_dpcd_ok=%d edid_ok=%d edid_blocks=%u ext=%u "
+		  "time_faults=%u | sleeps: tick=%u (%llu us)\n",
+		  error, dev->xe.stage, res->dpcd_ok, res->edp_dpcd_ok, res->edid_ok, res->edid_blocks, res->edid_extensions,
+		  dev->k.time_faults, dev->k.tick_sleeps, (unsigned long long)dev->k.tick_slept_us);
 
-	/* The receiver and eDP capabilities and the link configuration, when read. */
+	/* The receiver and eDP capabilities, when read. */
 	if (res->dpcd_ok) {
 		kern_logf("i915: edp DPCD 000: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x "
-			  "%02x %02x %02x %02x %02x | eDP 700: %02x %02x %02x (ok=%d) | 100: %02x %02x (ok=%d)\n",
+			  "%02x %02x %02x %02x %02x | eDP 700: %02x %02x %02x (ok=%d)\n",
 			  res->dpcd[0], res->dpcd[1], res->dpcd[2], res->dpcd[3], res->dpcd[4], res->dpcd[5],
 			  res->dpcd[6], res->dpcd[7], res->dpcd[8], res->dpcd[9], res->dpcd[10], res->dpcd[11],
 			  res->dpcd[12], res->dpcd[13], res->dpcd[14], res->edp_dpcd[0], res->edp_dpcd[1],
-			  res->edp_dpcd[2], res->edp_dpcd_ok, res->link_cfg[0], res->link_cfg[1], res->link_cfg_ok);
+			  res->edp_dpcd[2], res->edp_dpcd_ok);
 	}
 
 	/* The EDID bytes, their digest, the manufacturer and the product, when read. */
@@ -2975,8 +2961,9 @@ i915_edp_device_log_acquire(
 }
 
 /*
- * Runs Linux's late step: the EDID-based panel lookup, the final delays,
- * and the delayed VDD-off reserved.
+ * Runs the late step: the panel looked up again with its EDID, the
+ * sequencer finished with the panel's final VBT delays, VDD let go a
+ * while later.
  */
 static void
 i915_edp_device_late(
@@ -2984,17 +2971,14 @@ i915_edp_device_late(
 	const struct i915_vbt_encoder *enc,
 	int port)
 {
-	struct i915_edp_result *res;
-	struct i915_dp_world *world;
 	struct i915_vbt_panel late_panel_data;
+	struct i915_xd_pps_delays delays;
 	int late_panel;
 	int panel_found;
 	int panel_type;
 
 	/* Looks the panel up again, now with its EDID. */
-	res = &dev->res;
-	world = drv_i915_edp_world_of(dev);
-	panel_found = drv_i915_vbt_init_panel(&dev->vbt->parsed, port, res->edid, &late_panel_data);
+	panel_found = drv_i915_vbt_init_panel(&dev->vbt->parsed, port, dev->res.edid, &late_panel_data);
 	late_panel = 0;
 	if (panel_found == 0)
 		late_panel = 1;
@@ -3005,21 +2989,296 @@ i915_edp_device_late(
 	if (late_panel)
 		dev->vbt_bpp = late_panel_data.bpp;
 
-	/* Finishes the sequencer. */
-	dev->late_rc = drv_i915_edp_init_late(world, &dev->cfg, res);
+	/* Finishes the sequencer with the final delays. */
+	i915_edp_cfg_delays(&dev->cfg, &delays);
+	drv_i915_xd_edp_late(&dev->xe, dev->cfg.bl_controller, &delays);
+	dev->late_rc = 0;
+	i915_edp_device_result(dev);
 
-	/* Reports the final registers and delays, and what is kept on. */
-	i915_edp_log_pps("after intel_pps_init_late", &res->after_acquire);
+	/* Reports the final delays and what is kept on. */
 	panel_type = -1;
 	if (late_panel)
 		panel_type = late_panel_data.panel_type;
 
-	kern_logf("i915: edp late: rc=%d panel_late=%d type=%d delays(ms) up=%d down=%d cycle=%d | "
-		  "KEPT: vdd_hw=%d vdd_wakeref=%d off_reserved=%d (in %d ms) refs core=%d aux=%d well_refs=%u\n",
-		  dev->late_rc, late_panel, panel_type, res->delay_power_up_ms,
-		  res->delay_power_down_ms, res->delay_power_cycle_ms, res->vdd_on_hw, res->vdd_wakeref_held,
-		  res->vdd_work_pending, res->delay_power_cycle_ms * 5, res->power_refs_core,
-		  res->power_refs_aux, i915_edp_well_refs(dev->k.pd));
+	kern_logf("i915: edp late: panel_late=%d type=%d pps=%u delays(ms) up=%d down=%d cycle=%d | VDD held=%d, off in %d ms\n",
+		  late_panel, panel_type, dev->xe.pps, dev->res.delay_power_up_ms, dev->res.delay_power_down_ms,
+		  dev->res.delay_power_cycle_ms, dev->xe.vdd_cookie != 0 ? 1 : 0, dev->res.delay_power_cycle_ms * 5);
+}
+
+/*
+ * Takes the panel's sink with the xd code: its environment on the
+ * device's locks, threads and power, the sequencer's choice from the
+ * VBT's early panel data and the south display, and what it read copied
+ * into the device's result for the later display stages.  Returns 0 or
+ * the xd sink's error.
+ */
+static int
+i915_edp_device_take(
+	struct i915_edp_device *dev)
+{
+	struct i915_xd_edp_config config;
+	struct i915_xd_edp_env env;
+	struct i915_display *display;
+	int pch_kind;
+	int error;
+
+	/* The sink's environment, on this device. */
+	display = container_of(dev, struct i915_display, edp_dev);
+	kern_memset(&env, 0, sizeof(env));
+	env.now_ms = i915_edp_xe_now;
+	env.power_get = i915_edp_xe_power_get;
+	env.power_put = i915_edp_xe_power_put;
+	env.power_put_later = i915_edp_xe_power_put_later;
+	env.lock = i915_edp_xe_lock;
+	env.vdd_later = i915_edp_xe_vdd_later;
+	env.vdd_cancel = i915_edp_xe_vdd_cancel;
+	env.error = i915_edp_xe_error;
+	env.context = dev;
+	drv_i915_xd_edp_init(&dev->xe, &dev->k.aux_io, display->xd.choice.platform, &env);
+
+	/* The panel's channel, the south display's sequencers and the VBT's early delays. */
+	kern_memset(&config, 0, sizeof(config));
+	config.aux_channel = (unsigned)dev->cfg.aux_ch;
+	config.sequencers = 1U;
+	config.muxed = 0;
+	pch_kind = display->xd.choice.pch_kind;
+	if (pch_kind >= I915_PCH_ICP && pch_kind <= I915_PCH_ADP) {
+		config.sequencers = 2U;
+		config.muxed = 1;
+	}
+	config.controller = dev->cfg.bl_controller;
+	i915_edp_cfg_delays(&dev->cfg, &config.vbt);
+	config.long_power_cycle = 0;
+
+	/* The taking, and what it read. */
+	error = drv_i915_xd_edp_start(&dev->xe, &config);
+	i915_edp_device_result(dev);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the sink is taken with VDD on. */
+	return 0;
+}
+
+/* Copies the VBT's panel delays of a configuration into the xd sequencer's form. */
+static void
+i915_edp_cfg_delays(
+	const struct i915_edp_config *cfg,
+	struct i915_xd_pps_delays *delays)
+{
+	/* The same delays in the same units. */
+	delays->power_up = cfg->t1_t3;
+	delays->backlight_on = cfg->t8;
+	delays->backlight_off = cfg->t9;
+	delays->power_down = cfg->t10;
+	delays->power_cycle = cfg->t11_t12;
+}
+
+/* Copies what the xd sink read and chose into the device's result, which the later stages read. */
+static void
+i915_edp_device_result(
+	struct i915_edp_device *dev)
+{
+	struct i915_edp_result *res;
+	const struct i915_xd_edp *xe;
+	unsigned bytes;
+
+	res = &dev->res;
+	xe = &dev->xe;
+	kern_memset(res, 0, sizeof(*res));
+
+	/* The sequencer and its waits. */
+	res->stage = (int)xe->stage;
+	res->pps_idx = (int)xe->pps;
+	res->pps_valid = xe->stage >= I915_XD_EDP_STAGE_PPS ? 1 : 0;
+	res->delay_power_up_ms = (int)xe->waits.power_up_ms;
+	res->delay_power_down_ms = (int)xe->waits.power_down_ms;
+	res->delay_power_cycle_ms = (int)xe->waits.power_cycle_ms;
+	res->delay_bl_on_ms = (int)xe->waits.backlight_on_ms;
+	res->delay_bl_off_ms = (int)xe->waits.backlight_off_ms;
+
+	/* The capabilities. */
+	if (xe->stage >= I915_XD_EDP_STAGE_CAPS) {
+		kern_memcpy(res->dpcd, xe->caps, sizeof(res->dpcd));
+		res->dpcd_ok = 1;
+	}
+	if (xe->edp_caps_read) {
+		kern_memcpy(res->edp_dpcd, xe->edp_caps, sizeof(res->edp_dpcd));
+		res->edp_dpcd_ok = 1;
+	}
+
+	/* The EDID, as many blocks as both hold. */
+	res->edid_blocks = xe->edid_blocks;
+	if (res->edid_blocks > I915_EDP_MAX_EDID_BLOCKS)
+		res->edid_blocks = I915_EDP_MAX_EDID_BLOCKS;
+	bytes = 128u * res->edid_blocks;
+	kern_memcpy(res->edid, xe->edid, bytes);
+	res->edid_extensions = xe->edid_extensions;
+	res->edid_ok = 0;
+	if (res->edid_blocks != 0u &&
+	    (res->edid_blocks == 1u + res->edid_extensions ||
+	     res->edid_blocks == I915_EDP_MAX_EDID_BLOCKS))
+		res->edid_ok = 1;
+}
+
+/* Reads the clock of the panel's sink, in milliseconds. */
+static uint64_t
+i915_edp_xe_now(
+	void *context)
+{
+	struct i915_edp_device *dev;
+	uint64_t now;
+
+	/* The device's clock. */
+	dev = context;
+	now = i915_dp_kernel_now_ms(&dev->k);
+
+	/* Succeeded: the time. */
+	return now;
+}
+
+/* Returns the power domain a use of the panel's sink names: the display core, or the panel's AUX channel. */
+static int
+i915_edp_xe_domain(
+	struct i915_edp_device *dev,
+	unsigned use)
+{
+	struct i915_display *display;
+	enum i915_power_domain domain;
+
+	/* The display core. */
+	if (use == I915_XD_EDP_POWER_CORE)
+		return (int)POWER_DOMAIN_DISPLAY_CORE;
+
+	/* The AUX channel's domain on the display's version. */
+	display = container_of(dev, struct i915_display, edp_dev);
+	domain = drv_i915_aux_legacy_power_domain(display->xd.choice.platform->display_ver, (int)dev->cfg.aux_ch);
+
+	/* Succeeded: the channel's domain. */
+	return (int)domain;
+}
+
+/* Takes a power reference for a use of the panel's sink: 1, or 0 when it could not. */
+static int
+i915_edp_xe_power_get(
+	void *context,
+	unsigned use)
+{
+	struct i915_edp_device *dev;
+	int domain;
+	int error;
+
+	/* The domain, through the power domains. */
+	dev = context;
+	domain = i915_edp_xe_domain(dev, use);
+	error = drv_i915_display_power_get(dev->k.pd, (enum i915_power_domain)domain, dev->k.pwc);
+	if (error != 0)
+		return 0;
+
+	/* Succeeded: the reference is held. */
+	return 1;
+}
+
+/* Gives a power reference of the panel's sink back. */
+static void
+i915_edp_xe_power_put(
+	void *context,
+	unsigned use,
+	int cookie)
+{
+	struct i915_edp_device *dev;
+	int domain;
+
+	UNUSED_PARAMETER(cookie);
+
+	/* The domain, through the power domains. */
+	dev = context;
+	domain = i915_edp_xe_domain(dev, use);
+	drv_i915_display_power_put(dev->k.pd, (enum i915_power_domain)domain, dev->k.pwc);
+}
+
+/* Lets a power reference of the panel's sink go after the power layer's delay. */
+static void
+i915_edp_xe_power_put_later(
+	void *context,
+	unsigned use,
+	int cookie)
+{
+	struct i915_edp_device *dev;
+	int domain;
+
+	UNUSED_PARAMETER(cookie);
+
+	/* The domain, parked with the default delay. */
+	dev = context;
+	domain = i915_edp_xe_domain(dev, use);
+	drv_i915_display_power_put_async(dev->k.pd, (enum i915_power_domain)domain, dev->k.pwc, -1);
+}
+
+/* Takes or drops one of the panel's sink's locks: the sequencer's or the AUX channel's mutex. */
+static void
+i915_edp_xe_lock(
+	void *context,
+	unsigned lock,
+	int taken)
+{
+	struct i915_edp_device *dev;
+	int which;
+
+	/* The device's mutex of the lock. */
+	dev = context;
+	which = I915_DP_LOCK_PPS;
+	if (lock == I915_XD_EDP_LOCK_AUX)
+		which = I915_DP_LOCK_AUX;
+
+	/* Takes or drops it. */
+	if (taken) {
+		mutex_lock(&dev->k.locks[which]);
+	} else {
+		mutex_unlock(&dev->k.locks[which]);
+	}
+}
+
+/* Arms the delayed VDD-off of the panel's sink on the device's timer. */
+static void
+i915_edp_xe_vdd_later(
+	void *context,
+	unsigned delay_ms)
+{
+	struct i915_edp_device *dev;
+
+	/* The device's delayed work. */
+	dev = context;
+	(void)drv_i915_delayed_queue(&dev->k.tq, &dev->k.vdd_off_work, delay_ms);
+}
+
+/* Disarms the delayed VDD-off of the panel's sink, waiting for a running one when asked. */
+static void
+i915_edp_xe_vdd_cancel(
+	void *context,
+	int wait)
+{
+	struct i915_edp_device *dev;
+
+	/* The device's delayed work. */
+	dev = context;
+	if (wait) {
+		(void)drv_i915_delayed_cancel_sync(&dev->k.tq, &dev->k.vdd_off_work, i915_dp_kernel_sync_deadline());
+	} else {
+		(void)drv_i915_delayed_cancel(&dev->k.tq, &dev->k.vdd_off_work);
+	}
+}
+
+/* Logs a note of the panel's sink. */
+static void
+i915_edp_xe_error(
+	void *context,
+	const char *text)
+{
+	UNUSED_PARAMETER(context);
+
+	/* One line. */
+	kern_logf("i915: %s", text);
 }
 
 /*

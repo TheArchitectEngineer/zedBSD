@@ -115,7 +115,19 @@ struct i915_xd_edid {
 	uint8_t native_vic;
 };
 
+/*
+ * The DDC an EDID is read over: read_block runs the I2C messages that
+ * read size bytes of a block (the segment pointer for a segment past the
+ * first, the block's offset within its segment, the read) and answers 0,
+ * ENXIO when there is nothing to ask (tried no more), or another error.
+ */
+struct i915_xd_edid_ddc {
+	int (*read_block)(void *context, unsigned segment, unsigned offset, uint8_t *buffer, unsigned size);
+	void *context;
+};
+
 int drv_i915_xd_edid_block_check(const uint8_t *block, unsigned index);
+int drv_i915_xd_edid_read(const struct i915_xd_edid_ddc *ddc, uint8_t *edid, unsigned max_blocks, unsigned *blocks, unsigned *extensions);
 int drv_i915_xd_edid_decode(const uint8_t *edid, size_t size, struct i915_xd_edid *out);
 int drv_i915_xd_edid_first_timing(const uint8_t *base, struct i915_display_mode *mode, unsigned *index);
 

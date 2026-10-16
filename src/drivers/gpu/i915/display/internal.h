@@ -91,6 +91,7 @@
 #include "dp-ext.h"
 #include "tc.h"
 #include "xd.h"
+#include "xd-edp.h"
 
 /*
  * The old name of struct i915_display_mode (display-internal.h).
@@ -2632,6 +2633,7 @@ struct i915_edp_device {
 	int lcd_cpu_words_rc, lcd_ddi_words_rc;
 	int vbt_bpp;
 	struct i915_vbt_state *vbt;
+	struct i915_xd_edp xe;                /* the panel's sink (xd-edp.c): its sequencer, DPCD and EDID */
 };
 
 /*

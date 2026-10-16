@@ -37,6 +37,19 @@
 #define I915_XD_EDID_DEPTH_REVISION	4U
 
 /*
+ * The patience of reading an EDID: the reads of one block before it
+ * counts as damaged, and the I2C transfers of one read before it counts
+ * as failed (spurious refusals and timeouts are common on a loaded
+ * bus).
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/drm_edid.c
+ * (edid_block_read: the four tries; drm_do_probe_ddc_edid: the five
+ * retries).
+ */
+#define I915_XD_EDID_BLOCK_TRIES	4U
+#define I915_XD_EDID_TRANSFER_TRIES	5U
+
+/*
  * The CTA data block header (tag in bits 7:5, length in 4:0), the tags
  * of the video and vendor blocks, the HDMI vendor block's OUI as it is
  * stored (least significant byte first), its least length and the
@@ -62,6 +75,8 @@
 #define I915_XD_SVD_NATIVE_LAST		192U
 #define I915_XD_SVD_VIC			0x7fU
 
+static int i915_xd_edid_read_one(const struct i915_xd_edid_ddc *ddc, unsigned index, uint8_t *block);
+static int i915_xd_edid_transfer(const struct i915_xd_edid_ddc *ddc, unsigned index, uint8_t *block);
 static void i915_xd_edid_base(const uint8_t *base, struct i915_xd_edid *out);
 static void i915_xd_edid_cta(const uint8_t *block, struct i915_xd_edid *out);
 static void i915_xd_edid_cta_block(const uint8_t *payload, unsigned tag, unsigned length, struct i915_xd_edid *out);
@@ -100,6 +115,60 @@ drv_i915_xd_edid_block_check(
 		return EINVAL;
 
 	/* Succeeded: the block checks. */
+	return 0;
+}
+
+/*
+ * Reads an EDID over a DDC: the base block, then the extension blocks it
+ * announces, as many as max_blocks holds.  Each block is read up to four
+ * times until it checks; a base block whose first read is all zero is no
+ * EDID.  Returns 0 with the blocks that checked (at least the base
+ * block) and the extensions the base block announces (whether they fit
+ * or not), or for a base block that did not read: EIO when it could not
+ * be transferred, ENXIO when it was all zero, EPROTO when no read checked.
+ * An extension that does not read ends the EDID before it.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/drm_edid.c
+ * (_drm_do_get_edid, edid_block_read, edid_block_status).
+ */
+int
+drv_i915_xd_edid_read(
+	const struct i915_xd_edid_ddc *ddc,
+	uint8_t *edid,
+	unsigned max_blocks,
+	unsigned *blocks,
+	unsigned *extensions)
+{
+	unsigned total;
+	unsigned index;
+	int error;
+
+	*blocks = 0U;
+	*extensions = 0U;
+
+	/* Refuses an EDID with no room. */
+	if (max_blocks == 0U)
+		return EINVAL;
+
+	/* The base block, which says how many follow. */
+	error = i915_xd_edid_read_one(ddc, 0U, edid);
+	if (error != 0)
+		return error;
+
+	*blocks = 1U;
+	*extensions = edid[I915_XD_EDID_EXTENSIONS];
+	total = 1U + *extensions;
+
+	/* The extensions that fit, until one does not read. */
+	for (index = 1U; index < total && index < max_blocks; index++) {
+		error = i915_xd_edid_read_one(ddc, index, edid + index * I915_XD_EDID_BLOCK_BYTES);
+		if (error != 0)
+			break;
+
+		*blocks = index + 1U;
+	}
+
+	/* Succeeded: the blocks that checked. */
 	return 0;
 }
 
@@ -345,4 +414,88 @@ i915_xd_edid_cta_block(
 	out->hdmi = 1;
 	if (length > I915_XD_HDMI_VSDB_TMDS)
 		out->hdmi_max_tmds_khz = (uint32_t)payload[I915_XD_HDMI_VSDB_TMDS] * I915_XD_HDMI_TMDS_UNIT_KHZ;
+}
+
+/*
+ * Reads one EDID block until it checks: up to four reads, each into a
+ * cleared block.  Returns 0, EIO when the block could not be
+ * transferred, ENXIO for a block whose first read was all zero, or
+ * EPROTO when no read checked.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/drm_edid.c
+ * (edid_block_read).
+ */
+static int
+i915_xd_edid_read_one(
+	const struct i915_xd_edid_ddc *ddc,
+	unsigned index,
+	uint8_t *block)
+{
+	unsigned try;
+	unsigned byte;
+	int zero;
+	int error;
+
+	/* Reads the block until a read checks. */
+	for (try = 0U; try < I915_XD_EDID_BLOCK_TRIES; try++) {
+		kern_memset(block, 0, I915_XD_EDID_BLOCK_BYTES);
+		error = i915_xd_edid_transfer(ddc, index, block);
+		if (error != 0)
+			return EIO;
+
+		/* A block whose first read is all zero is not there. */
+		zero = 1;
+		for (byte = 0U; byte < I915_XD_EDID_BLOCK_BYTES; byte++) {
+			if (block[byte] != 0U)
+				zero = 0;
+		}
+
+		if (try == 0U && zero)
+			return ENXIO;
+
+		/* A block that checks is read. */
+		error = drv_i915_xd_edid_block_check(block, index);
+		if (error == 0)
+			return 0;
+	}
+
+	/* No read checked. */
+	return EPROTO;
+}
+
+/*
+ * Transfers one EDID block over the DDC, up to five times until a
+ * transfer works; a DDC with nothing to ask is not asked again.  Blocks
+ * go two to a 256-byte segment.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/drm_edid.c
+ * (drm_do_probe_ddc_edid).
+ */
+static int
+i915_xd_edid_transfer(
+	const struct i915_xd_edid_ddc *ddc,
+	unsigned index,
+	uint8_t *block)
+{
+	unsigned segment;
+	unsigned offset;
+	unsigned try;
+	int error;
+
+	/* The block's segment and its offset there. */
+	segment = index / 2U;
+	offset = (index % 2U) * I915_XD_EDID_BLOCK_BYTES;
+
+	/* Transfers until one works. */
+	error = EIO;
+	for (try = 0U; try < I915_XD_EDID_TRANSFER_TRIES; try++) {
+		error = ddc->read_block(ddc->context, segment, offset, block, I915_XD_EDID_BLOCK_BYTES);
+		if (error == 0)
+			return 0;
+		if (error == ENXIO)
+			return error;
+	}
+
+	/* Reports the last transfer's failure. */
+	return error;
 }

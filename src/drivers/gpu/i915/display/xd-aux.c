@@ -70,6 +70,31 @@
 #define I915_XD_DPCD_REST_US		500U
 #define I915_XD_DPCD_CHUNK		16U
 
+/*
+ * The patience of an I2C message over the channel: the fewest tries one
+ * AUX message gets and the most extra tries the sink's requests to wait
+ * earn, the bit times the I2C bus and the AUX messages take (an I2C
+ * start, a stop, an address byte and a data byte with their
+ * acknowledgements; an AUX request's and reply's fixed parts at 1 MHz,
+ * eight per data byte), and the I2C bus speed the tries are counted for.
+ *
+ * Values referenced: Linux v6.8.12
+ * drivers/gpu/drm/display/drm_dp_helper.c (drm_dp_i2c_do_msg: at least 7
+ * tries and up to 7 more for I2C defers; AUX_PRECHARGE_LEN,
+ * AUX_SYNC_LEN, AUX_STOP_LEN, AUX_CMD_LEN, AUX_ADDRESS_LEN,
+ * AUX_REPLY_PAD_LEN, AUX_LENGTH_LEN, I2C_START_LEN, I2C_STOP_LEN,
+ * I2C_ADDR_LEN, I2C_DATA_LEN; dp_aux_i2c_speed_khz of 10).
+ */
+#define I915_XD_I2C_LEAST_TRIES		7U
+#define I915_XD_I2C_MOST_DEFERS		7U
+#define I915_XD_I2C_START_BITS		1U
+#define I915_XD_I2C_STOP_BITS		1U
+#define I915_XD_I2C_ADDRESS_BITS	9U
+#define I915_XD_I2C_DATA_BITS		9U
+#define I915_XD_AUX_REQUEST_BITS	66U
+#define I915_XD_AUX_REPLY_BITS		42U
+#define I915_XD_I2C_SPEED_KHZ		10U
+
 static int i915_xd_dpcd_message(struct i915_xd_aux *aux, struct i915_xd_io *io, unsigned request, uint32_t address, uint8_t *data, unsigned size);
 static int i915_xd_aux_wait_idle(struct i915_xd_io *io, uint32_t control, uint32_t *status);
 static uint32_t i915_xd_aux_send(struct i915_xd_aux *aux, struct i915_xd_io *io, const struct i915_xd_aux_message *message, uint32_t control);
@@ -78,6 +103,10 @@ static void i915_xd_aux_load(struct i915_xd_io *io, unsigned channel, const uint
 static void i915_xd_aux_unload(struct i915_xd_io *io, unsigned channel, uint8_t *reply, unsigned count);
 static uint32_t i915_xd_aux_word(const uint8_t *bytes, unsigned count);
 static void i915_xd_aux_bytes(uint32_t word, uint8_t *bytes, unsigned count);
+static int i915_xd_aux_i2c_once(struct i915_xd_aux *aux, struct i915_xd_io *io, unsigned request, unsigned address, uint8_t *data, unsigned size, unsigned *reply, unsigned *moved);
+static unsigned i915_xd_aux_i2c_tries(unsigned size);
+static int i915_xd_aux_i2c_message(struct i915_xd_aux *aux, struct i915_xd_io *io, unsigned *request, unsigned address, uint8_t *data, unsigned size, unsigned *moved);
+static int i915_xd_aux_i2c_drain(struct i915_xd_aux *aux, struct i915_xd_io *io, unsigned request, unsigned address, uint8_t *data, unsigned size, unsigned *next_size);
 
 /*
  * Prepares one AUX channel of a display.
@@ -338,6 +367,81 @@ drv_i915_xd_dpcd_write(
 	}
 
 	/* Succeeded: the sink took the bytes. */
+	return 0;
+}
+
+/*
+ * Runs I2C messages as one transaction over the channel.  Each message
+ * starts with its address alone, then moves its bytes in AUX messages as
+ * large as the channel carries (smaller after the sink took fewer); every
+ * AUX message keeps the I2C transaction open, and an address alone
+ * without that bit closes it at the end, whatever became of the
+ * messages.  Returns 0 or the first message's error (see xd-aux.h).
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/display/drm_dp_helper.c (drm_dp_i2c_xfer,
+ * drm_dp_i2c_msg_set_request).
+ */
+int
+drv_i915_xd_aux_i2c(
+	struct i915_xd_aux *aux,
+	struct i915_xd_io *io,
+	const struct i915_xd_aux_i2c_message *messages,
+	unsigned count)
+{
+	unsigned request;
+	unsigned address;
+	unsigned index;
+	unsigned done;
+	unsigned chunk;
+	unsigned size;
+	unsigned moved;
+	int error;
+
+	/* Moves every message in turn. */
+	error = 0;
+	request = I915_XD_AUX_I2C_WRITE | I915_XD_AUX_I2C_MOT;
+	address = 0U;
+	for (index = 0U; index < count; index++) {
+		/* The message's request, which keeps the transaction open. */
+		address = messages[index].address;
+		request = I915_XD_AUX_I2C_WRITE | I915_XD_AUX_I2C_MOT;
+		if (messages[index].read)
+			request = I915_XD_AUX_I2C_READ | I915_XD_AUX_I2C_MOT;
+
+		/* The address alone starts the message. */
+		error = i915_xd_aux_i2c_message(aux, io, &request, address, NULL, 0U, &moved);
+		if (error != 0)
+			break;
+
+		/* The bytes, in chunks as large as the sink takes. */
+		request = I915_XD_AUX_I2C_WRITE | I915_XD_AUX_I2C_MOT;
+		if (messages[index].read)
+			request = I915_XD_AUX_I2C_READ | I915_XD_AUX_I2C_MOT;
+		size = I915_XD_DPCD_CHUNK;
+		for (done = 0U; done < messages[index].length; done += chunk) {
+			chunk = messages[index].length - done;
+			if (chunk > size)
+				chunk = size;
+
+			error = i915_xd_aux_i2c_drain(aux, io, request, address, messages[index].bytes + done, chunk, &size);
+			if (error != 0)
+				break;
+		}
+
+		if (error != 0)
+			break;
+	}
+
+	/* The address alone without the open bit ends the transaction; its outcome does not count. */
+	request &= ~I915_XD_AUX_I2C_MOT;
+	(void)i915_xd_aux_i2c_message(aux, io, &request, address, NULL, 0U, &moved);
+
+	/* Reports the first message that failed. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: every message moved its bytes. */
 	return 0;
 }
 
@@ -632,4 +736,269 @@ i915_xd_aux_bytes(
 	/* Takes the bytes from the top of the word down. */
 	for (index = 0U; index < count; index++)
 		bytes[index] = (uint8_t)(word >> (8U * (I915_XD_AUX_WORD_BYTES - 1U - index)));
+}
+
+/*
+ * Sends one I2C AUX message once: the header (request and address, then
+ * the byte count less one, or the address alone for no bytes), a
+ * write's data, and for a read the reply's data copied out.  Returns 0
+ * with the reply's code (the top four bits of its first byte) and the
+ * data bytes moved, or the channel's error: EBUSY for a busy or stuck
+ * channel or a forbidden reply size (sent again at once), ETIMEDOUT when
+ * the sink did not answer, EIO for a damaged reply, E2BIG for a message
+ * the data words cannot hold.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_dp_aux.c (intel_dp_aux_transfer,
+ * intel_dp_aux_header).
+ */
+static int
+i915_xd_aux_i2c_once(
+	struct i915_xd_aux *aux,
+	struct i915_xd_io *io,
+	unsigned request,
+	unsigned address,
+	uint8_t *data,
+	unsigned size,
+	unsigned *reply,
+	unsigned *moved)
+{
+	struct i915_xd_aux_message message;
+	struct i915_xd_aux_result result;
+	uint8_t send[4U + I915_XD_DPCD_CHUNK];
+	uint8_t answer[1U + I915_XD_DPCD_CHUNK];
+	unsigned index;
+	unsigned base;
+	int reading;
+
+	*reply = 0U;
+	*moved = 0U;
+
+	/* The header: the request and the address, then the count less one when bytes move. */
+	send[0] = (uint8_t)((request << 4) | ((address >> 16) & 0xfU));
+	send[1] = (uint8_t)((address >> 8) & 0xffU);
+	send[2] = (uint8_t)(address & 0xffU);
+	message.request = send;
+	message.request_bytes = 3U;
+	if (size != 0U) {
+		send[3] = (uint8_t)(size - 1U);
+		message.request_bytes = 4U;
+	}
+
+	/* A read's reply carries its bytes; a write carries them and is answered with at most one. */
+	reading = 0;
+	if ((request & I915_XD_AUX_I2C_READ) != 0U)
+		reading = 1;
+	message.reply = answer;
+	message.reply_room = 2U;
+	if (reading) {
+		message.reply_room = 1U + size;
+	} else {
+		for (index = 0U; index < size; index++)
+			send[4U + index] = data[index];
+		message.request_bytes += size;
+	}
+	message.thunderbolt = 0;
+	message.hdcp_key = 0;
+
+	/* The transaction, and what the channel made of it. */
+	drv_i915_xd_aux_exchange(aux, io, &message, &result);
+	switch (result.outcome) {
+	case I915_XD_AUX_SENT:
+		break;
+	case I915_XD_AUX_NO_ANSWER:
+		return ETIMEDOUT;
+	case I915_XD_AUX_RECEIVE_ERROR:
+		return EIO;
+	case I915_XD_AUX_TOO_LONG:
+		return E2BIG;
+	default:
+		return EBUSY;
+	}
+
+	/* The reply's code. */
+	*reply = ((unsigned)answer[0] >> 4) & 0xfU;
+
+	/* A read moved the bytes after the code. */
+	if (reading) {
+		base = result.reply_bytes - 1U;
+		for (index = 0U; index < base; index++)
+			data[index] = answer[1U + index];
+		*moved = base;
+
+		/* Succeeded: the read's bytes. */
+		return 0;
+	}
+
+	/* A write's second byte, when there is one, says how many bytes the sink took. */
+	*moved = size;
+	if (result.reply_bytes > 1U && answer[1] < size)
+		*moved = answer[1];
+
+	/* Succeeded: the sink answered. */
+	return 0;
+}
+
+/*
+ * Counts the tries an I2C AUX message deserves: enough AUX round trips,
+ * with their rests, to cover the message on the slow I2C bus, and never
+ * fewer than seven.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/display/drm_dp_helper.c (drm_dp_i2c_retry_count,
+ * drm_dp_aux_req_duration, drm_dp_aux_reply_duration,
+ * drm_dp_i2c_msg_duration).
+ */
+static unsigned
+i915_xd_aux_i2c_tries(
+	unsigned size)
+{
+	unsigned aux_us;
+	unsigned i2c_us;
+	unsigned bits;
+	unsigned tries;
+
+	/* The AUX request and reply, a read's bytes in the reply and a write's in the request. */
+	aux_us = I915_XD_AUX_REQUEST_BITS + I915_XD_AUX_REPLY_BITS + size * 8U;
+
+	/* The I2C bus's bits at its speed, rounded up. */
+	bits = I915_XD_I2C_START_BITS + I915_XD_I2C_ADDRESS_BITS + size * I915_XD_I2C_DATA_BITS + I915_XD_I2C_STOP_BITS;
+	i2c_us = (bits * 1000U + I915_XD_I2C_SPEED_KHZ - 1U) / I915_XD_I2C_SPEED_KHZ;
+
+	/* The round trips with their rests that cover the bus, rounded up. */
+	tries = (i2c_us + aux_us + I915_XD_DPCD_REST_US - 1U) / (aux_us + I915_XD_DPCD_REST_US);
+	if (tries < I915_XD_I2C_LEAST_TRIES)
+		tries = I915_XD_I2C_LEAST_TRIES;
+
+	/* Succeeded: the tries. */
+	return tries;
+}
+
+/*
+ * Sends one I2C AUX message until both the channel's sink and the I2C
+ * device acknowledge it.  A busy channel is tried again at once; the
+ * sink's or the device's request to wait rests and tries again (each of
+ * the device's, up to seven, earns one more try); a short acknowledged
+ * write, or one the device asked to wait, is asked for its status from
+ * then on (the request becomes a status request, which the caller sees).
+ * Returns 0 with the bytes moved, or an error (see xd-aux.h).
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/display/drm_dp_helper.c (drm_dp_i2c_do_msg,
+ * drm_dp_i2c_msg_write_status_update).
+ */
+static int
+i915_xd_aux_i2c_message(
+	struct i915_xd_aux *aux,
+	struct i915_xd_io *io,
+	unsigned *request,
+	unsigned address,
+	uint8_t *data,
+	unsigned size,
+	unsigned *moved)
+{
+	unsigned reply;
+	unsigned tries;
+	unsigned defers;
+	unsigned try;
+	int error;
+
+	/* The tries the message deserves; the device's waits add to them. */
+	tries = i915_xd_aux_i2c_tries(size);
+	defers = 0U;
+	*moved = 0U;
+	for (try = 0U; try < tries + defers; try++) {
+		error = i915_xd_aux_i2c_once(aux, io, *request, address, data, size, &reply, moved);
+
+		/* A busy channel is simply tried again. */
+		if (error == EBUSY)
+			continue;
+
+		/* Any other failure of the channel ends the message. */
+		if (error != 0)
+			return error;
+
+		/* The channel's sink refused, or answered with a code it may not use. */
+		if ((reply & I915_XD_AUX_NATIVE_REPLY_MASK) == I915_XD_AUX_NATIVE_NACK)
+			return EIO;
+		if ((reply & I915_XD_AUX_NATIVE_REPLY_MASK) != I915_XD_AUX_NATIVE_ACK &&
+		    (reply & I915_XD_AUX_NATIVE_REPLY_MASK) != I915_XD_AUX_NATIVE_DEFER)
+			return EIO;
+
+		/* The channel's sink asks to be asked later. */
+		if ((reply & I915_XD_AUX_NATIVE_REPLY_MASK) == I915_XD_AUX_NATIVE_DEFER) {
+			(void)drv_i915_xd_io_delay(io, I915_XD_DPCD_REST_US);
+			continue;
+		}
+
+		/* The I2C device took the message: a short write asks its status from now on. */
+		if ((reply & I915_XD_AUX_I2C_REPLY_MASK) == I915_XD_AUX_I2C_ACK) {
+			if (*moved != size && (*request & ~I915_XD_AUX_I2C_MOT) == I915_XD_AUX_I2C_WRITE)
+				*request = (*request & I915_XD_AUX_I2C_MOT) | I915_XD_AUX_I2C_WRITE_STATUS;
+			return 0;
+		}
+
+		/* The I2C device refused. */
+		if ((reply & I915_XD_AUX_I2C_REPLY_MASK) == I915_XD_AUX_I2C_NACK)
+			return EIO;
+
+		/* A reply code the specification does not have. */
+		if ((reply & I915_XD_AUX_I2C_REPLY_MASK) != I915_XD_AUX_I2C_DEFER)
+			return EIO;
+
+		/* The I2C device asks to wait: one more try, a rest, and a write asks its status. */
+		if (defers < I915_XD_I2C_MOST_DEFERS)
+			defers++;
+		(void)drv_i915_xd_io_delay(io, I915_XD_DPCD_REST_US);
+		if ((*request & ~I915_XD_AUX_I2C_MOT) == I915_XD_AUX_I2C_WRITE)
+			*request = (*request & I915_XD_AUX_I2C_MOT) | I915_XD_AUX_I2C_WRITE_STATUS;
+	}
+
+	/* The tries ran out. */
+	return EIO;
+}
+
+/*
+ * Moves one chunk of an I2C message until all of it is through, the sink
+ * taking or giving fewer bytes at a time if it must.  Returns 0 with the
+ * chunk size the next chunk should use (the smallest the sink moved), or
+ * an error; a message that moved no byte is EPROTO.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/display/drm_dp_helper.c (drm_dp_i2c_drain_msg).
+ */
+static int
+i915_xd_aux_i2c_drain(
+	struct i915_xd_aux *aux,
+	struct i915_xd_io *io,
+	unsigned request,
+	unsigned address,
+	uint8_t *data,
+	unsigned size,
+	unsigned *next_size)
+{
+	unsigned left;
+	unsigned moved;
+	int error;
+
+	/* Moves what is left until nothing is. */
+	*next_size = size;
+	left = size;
+	while (left > 0U) {
+		error = i915_xd_aux_i2c_message(aux, io, &request, address, data, left, &moved);
+		if (error != 0)
+			return error;
+		if (moved == 0U)
+			return EPROTO;
+
+		/* A short move lowers the size of the next chunks. */
+		if (moved < left && moved < *next_size)
+			*next_size = moved;
+
+		data += moved;
+		left -= moved;
+	}
+
+	/* Succeeded: the chunk is through. */
+	return 0;
 }

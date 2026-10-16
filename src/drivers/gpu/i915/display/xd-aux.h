@@ -129,4 +129,25 @@ void drv_i915_xd_aux_exchange(struct i915_xd_aux *aux, struct i915_xd_io *io, co
 int drv_i915_xd_dpcd_read(struct i915_xd_aux *aux, struct i915_xd_io *io, uint32_t address, uint8_t *buffer, unsigned size);
 int drv_i915_xd_dpcd_write(struct i915_xd_aux *aux, struct i915_xd_io *io, uint32_t address, const uint8_t *buffer, unsigned size);
 
+/*
+ * One I2C message carried over a channel: the device's 7-bit address,
+ * whether the message reads (nonzero) or writes, and its bytes.
+ */
+struct i915_xd_aux_i2c_message {
+	unsigned address;
+	int read;
+	uint8_t *bytes;
+	unsigned length;
+};
+
+/*
+ * Runs I2C messages as one I2C transaction over a channel (an EDID's
+ * offset write and its read, say), each message's bytes in AUX messages
+ * of at most 16, retrying as the sink asks.  The caller holds the
+ * channel usable as for a transaction.  Returns 0, EIO for a refusal or
+ * a reply the specification does not allow, ETIMEDOUT when the sink never
+ * answered, or EPROTO for an acknowledgement that moved no byte.
+ */
+int drv_i915_xd_aux_i2c(struct i915_xd_aux *aux, struct i915_xd_io *io, const struct i915_xd_aux_i2c_message *messages, unsigned count);
+
 #endif /* DRIVERS_GPU_I915_DISPLAY_XD_AUX_H */

@@ -53,6 +53,7 @@
 #include "dp-sink.h"
 
 #include <kern/klog.h>
+#include <uapi/errno.h>
 
 /* The bytes of an AUX request header without, and with, the length byte. */
 #define BARE_ADDRESS_SIZE	3
@@ -95,7 +96,8 @@ static int i915_dp_aux_xfer(struct intel_dp *intel_dp, const u8 *send, int send_
 static void i915_dp_aux_header(u8 txbuf[HEADER_SIZE], const struct drm_dp_aux_msg *msg);
 static int i915_dp_aux_hdcp_key(const struct drm_dp_aux_msg *msg);
 static i915_dp_ssize_t i915_dp_aux_transfer(struct drm_dp_aux *aux, struct drm_dp_aux_msg *msg);
-static struct i915_dp_world *i915_aux_emit_world(void *ctx);
+static struct i915_xd_edp *i915_aux_emit_sink(void *ctx);
+static int i915_aux_emit_error(int error);
 static void i915_dp_aux_report(struct intel_dp *intel_dp, struct drm_i915_private *i915, i915_reg_t ch_ctl, const char *what, u32 status);
 
 /*
@@ -124,11 +126,11 @@ drv_i915_dp_aux_init(
 }
 
 /*
- * Reads DPCD bytes of the live eDP for the modeset (drm_dp_dpcd_read()).
+ * Reads DPCD bytes of the panel's sink for the modeset.
  *
  * It is the dpcd_read hook of struct i915_lcd_emit; ctx is the panel run
  * (struct i915_lcd_kernel).  It returns the bytes transferred, or a negative
- * Linux errno (-I915_EDP_EINVAL without a live eDP).
+ * Linux errno (-I915_EDP_EINVAL without a taken sink).
  */
 long
 drv_i915_edp_emit_dpcd_read(
@@ -137,23 +139,23 @@ drv_i915_edp_emit_dpcd_read(
 	uint8_t *buf,
 	size_t size)
 {
-	struct i915_dp_world *world;
-	long transferred;
+	struct i915_xd_edp *xe;
+	int error;
 
-	/* Finds the eDP world of the run's panel. */
-	world = i915_aux_emit_world(ctx);
+	/* The panel's sink of the run's display. */
+	xe = i915_aux_emit_sink(ctx);
 
-	/* Reads the bytes over the live AUX channel. */
-	transferred = drv_i915_edp_dpcd_read(world, offset, buf, size);
-	if (transferred < 0)
-		return transferred;
+	/* Reads the bytes. */
+	error = drv_i915_xd_edp_dpcd_read(xe, offset, buf, (unsigned)size);
+	if (error != 0)
+		return (long)i915_aux_emit_error(error);
 
 	/* Succeeded: reports the bytes read. */
-	return transferred;
+	return (long)size;
 }
 
 /*
- * Writes DPCD bytes of the live eDP for the modeset (drm_dp_dpcd_write()).
+ * Writes DPCD bytes of the panel's sink for the modeset.
  *
  * It is the dpcd_write hook of struct i915_lcd_emit, as
  * drv_i915_edp_emit_dpcd_read().
@@ -165,24 +167,23 @@ drv_i915_edp_emit_dpcd_write(
 	const uint8_t *buf,
 	size_t size)
 {
-	struct i915_dp_world *world;
-	long transferred;
+	struct i915_xd_edp *xe;
+	int error;
 
-	/* Finds the eDP world of the run's panel. */
-	world = i915_aux_emit_world(ctx);
+	/* The panel's sink of the run's display. */
+	xe = i915_aux_emit_sink(ctx);
 
-	/* Writes the bytes over the live AUX channel. */
-	transferred = drv_i915_edp_dpcd_write(world, offset, buf, size);
-	if (transferred < 0)
-		return transferred;
+	/* Writes the bytes. */
+	error = drv_i915_xd_edp_dpcd_write(xe, offset, buf, (unsigned)size);
+	if (error != 0)
+		return (long)i915_aux_emit_error(error);
 
 	/* Succeeded: reports the bytes written. */
-	return transferred;
+	return (long)size;
 }
 
 /*
- * Reads the receiver capabilities of the live eDP for the modeset
- * (drm_dp_read_dpcd_caps()).
+ * Reads the receiver capabilities of the panel's sink for the modeset.
  *
  * It is the read_dpcd_caps hook of struct i915_lcd_emit; it returns 0, or a
  * negative Linux errno.
@@ -192,16 +193,16 @@ drv_i915_edp_emit_read_dpcd_caps(
 	void *ctx,
 	uint8_t dpcd[15])
 {
-	struct i915_dp_world *world;
-	int read;
+	struct i915_xd_edp *xe;
+	int error;
 
-	/* Finds the eDP world of the run's panel. */
-	world = i915_aux_emit_world(ctx);
+	/* The panel's sink of the run's display. */
+	xe = i915_aux_emit_sink(ctx);
 
-	/* Reads the capabilities, with the extended field, over the live AUX channel. */
-	read = drv_i915_edp_read_dpcd_caps(world, dpcd);
-	if (read != 0)
-		return read;
+	/* Reads the capabilities. */
+	error = drv_i915_xd_edp_read_caps(xe, dpcd);
+	if (error != 0)
+		return i915_aux_emit_error(error);
 
 	/* Succeeded: the capabilities are in dpcd. */
 	return 0;
@@ -589,20 +590,35 @@ i915_dp_aux_transfer(
 	return ret;
 }
 
-/* Finds the eDP world of a panel run's panel, for the modeset hooks. */
-static struct i915_dp_world *
-i915_aux_emit_world(
+/* Finds the panel's sink of a panel run's display, for the modeset hooks. */
+static struct i915_xd_edp *
+i915_aux_emit_sink(
 	void *ctx)
 {
 	struct i915_lcd_kernel *kernel;
-	struct i915_dp_world *world;
 
 	/* The hook context is the panel run; its panel is the display's eDP device. */
 	kernel = ctx;
-	world = drv_i915_edp_world_of(kernel->d->edp);
 
-	/* Succeeded: reports the world. */
-	return world;
+	/* Succeeded: the device's sink. */
+	return &kernel->d->edp->xe;
+}
+
+/* Turns an error of the panel's sink into the negative Linux errno of the modeset hooks. */
+static int
+i915_aux_emit_error(
+	int error)
+{
+	/* The errors the hooks' callers tell apart. */
+	if (error == EINVAL)
+		return -I915_EDP_EINVAL;
+	if (error == ETIMEDOUT)
+		return -I915_EDP_ETIMEDOUT;
+	if (error == EBUSY)
+		return -I915_EDP_EBUSY;
+
+	/* Any other failure of the channel. */
+	return -I915_EDP_EIO;
 }
 
 /*

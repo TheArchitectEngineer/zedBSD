@@ -168,6 +168,44 @@
 #define I915_XD_AUX_NATIVE_DEFER		0x2U
 
 /*
+ * The AUX message of an I2C transfer over the channel: the request codes
+ * (a write, a read, a write's status asked again) with the bit that keeps
+ * the I2C transaction open after the message (middle of transaction),
+ * and the I2C reply codes, which sit above the native ones in the top of
+ * the reply's first byte (the field's mask after the shift,
+ * acknowledgement, refusal and the request to retry later).
+ *
+ * Values referenced: Linux v6.8.12 include/drm/display/drm_dp.h
+ * (DP_AUX_I2C_WRITE, DP_AUX_I2C_READ, DP_AUX_I2C_WRITE_STATUS_UPDATE,
+ * DP_AUX_I2C_MOT, DP_AUX_I2C_REPLY_MASK, DP_AUX_I2C_REPLY_ACK,
+ * DP_AUX_I2C_REPLY_NACK, DP_AUX_I2C_REPLY_DEFER).
+ */
+#define I915_XD_AUX_I2C_WRITE			0x0U
+#define I915_XD_AUX_I2C_READ			0x1U
+#define I915_XD_AUX_I2C_WRITE_STATUS		0x2U
+#define I915_XD_AUX_I2C_MOT			0x4U
+#define I915_XD_AUX_I2C_REPLY_MASK		0xcU
+#define I915_XD_AUX_I2C_ACK			0x0U
+#define I915_XD_AUX_I2C_NACK			0x4U
+#define I915_XD_AUX_I2C_DEFER			0x8U
+
+/*
+ * The capabilities a sink adds to the receiver's: the bit of the
+ * training read interval byte that says the extended receiver
+ * capabilities exist and where they are (the same fifteen bytes, which
+ * replace the receiver's when the revision there is not lower), and the
+ * eDP display control capabilities (their revision first, three bytes).
+ *
+ * Values referenced: Linux v6.8.12 include/drm/display/drm_dp.h
+ * (DP_EXTENDED_RECEIVER_CAP_FIELD_PRESENT, DP_DP13_DPCD_REV,
+ * DP_EDP_DPCD_REV, EDP_DISPLAY_CTL_CAP_SIZE).
+ */
+#define I915_XD_DPCD_EXTENDED_PRESENT		0x80U
+#define I915_XD_DPCD_EXTENDED_REV		0x2200U
+#define I915_XD_DPCD_EDP_REV			0x700U
+#define I915_XD_DPCD_EDP_CAPS_SIZE		3U
+
+/*
  * The repeaters' common range: the structure revision, the repeater
  * count (one bit per count, bit 7 for one repeater), the repeater mode
  * (transparent or not); the eight bytes are read together.  Each
