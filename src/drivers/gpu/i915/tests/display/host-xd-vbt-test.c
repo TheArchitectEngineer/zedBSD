@@ -19,12 +19,12 @@
  *   - the outputs and the panel each platform's VBT gives, against the
  *     values the platform's numbering tables say (DVO port, DDC pin and
  *     AUX channel codes);
- *   - for the Alder Lake-P VBTs, the same values out of the parser the
- *     driver runs today (display/vbt.c), which reads only that platform;
+ *   - the VBT stage (display/vbt-shell.c), which puts the xd values in the
+ *     older display code's types;
  *   - the defaults of a board without a VBT;
  *   - the refusal of damaged VBTs (sizes, offsets, block overruns,
  *     inconsistent panel tables);
- *   - where an OpRegion keeps its VBT, against today's reader;
+ *   - where an OpRegion keeps its VBT, against the firmware check's reader;
  *   - SHA-256 against the FIPS 180-2 examples;
  *   - the EDID decode of the laptop's panel and of a made-up HDMI sink.
  */
