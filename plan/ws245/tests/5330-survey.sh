@@ -84,7 +84,13 @@ sshpass -p "$PASS" scp $SSH_OPTS "$PROBE" "kei@$HOST:/tmp/backlight-probe" > /de
 	echo "## the previous start (kernel.log.old)"
 	echo
 	echo '```'
-	printf 'lines: %s, perf windows: %s\n' "$(wc -l < "$LOGS/$NAME-kernel.log.old" 2>/dev/null || echo 0)" "$(grep -c 'perf: [0-9]* ms' "$LOGS/$NAME-kernel.log.old" 2>/dev/null || echo 0)"
+	old_lines=0
+	old_perf=0
+	if [ -s "$LOGS/$NAME-kernel.log.old" ]; then
+		old_lines=$(wc -l < "$LOGS/$NAME-kernel.log.old")
+		old_perf=$(grep -c 'perf: [0-9]* ms' "$LOGS/$NAME-kernel.log.old" || true)
+	fi
+	printf 'lines: %s, perf windows: %s\n' "$old_lines" "$old_perf"
 	grep -E 'i915: survey: |i915: w: |device lost' "$LOGS/$NAME-kernel.log.old" 2>/dev/null || true
 	tail -5 "$LOGS/$NAME-kernel.log.old" 2>/dev/null || true
 	echo '```'

@@ -2,7 +2,7 @@
 
 # ws245-p047: 回帰の証拠の道具（survey と書き込みの記録）
 
-Status: in-progress（q1218-i01 P1: 実装と host 試験・build は済み。5330 の素の起動の回帰はこれから）
+Status: in-progress（q1218-i01 P1: 実装・host 試験・build・5330 の素の起動の回帰に合格（2026-10-16 14:47）。merge の依頼を Q1 に送った。clearance は merge の後に Q1）
 Parent: [WS245](../ws.md)
 Queue: q1218 / q1218-i01（承認: 2026-10-16 ユーザー「別なサブエージェントで、i915の実装変更のWSを進めてオーケーです。こちらはmainに取り込む前にベアメタルテストして、オーケーならmainに取り込んでいきます。USBを挿しておくので、UEFIのエントリーを制御して自動テストしてほしいです。実機は 10.0.30.3 です。」）
 設計: [design.md](../design.md) §6.2 の p047 の行、§6.3「証拠の道」、表 R の PIPE_CRC_CTL の行（改訂 6）
@@ -37,6 +37,25 @@ Queue: q1218 / q1218-i01（承認: 2026-10-16 ユーザー「別なサブエー�
 - `make -j16 ZEDBSD_CONFIG=config/ci/config-amd64.mk vmunix`: warning 0。`… BUILD=build/ws245-p047-tests I915_TESTS=y vmunix`: warning 0、`amd64 vmunix check: PASS`。
 - `git diff --check`: 問題無し。
 
-## 5330 の素の起動の回帰
+## 5330 の素の起動の回帰（2026-10-16、素の起動。QEMU ではない）
 
-（未実施。基準 = 親の main 49c578bd2 の kernel、段 = この段の kernel。USB は U10 の image（vmunix の sha256 は `build/uat/ws245-amd64/vmunix` と同じ c4219d62…、main 1716c14bc）。1716c14bc → 49c578bd2 の kernel と uapi の差は AMD の driver の追加だけで、U10 の userland のまま差し替えてよい。）
+image: main 786f90afd（networkd の DHCP の 169.254 を外した物、Q1 の指示「マージしたら、5330でのイメージに反映して」）を merge した 510b267f5 の上で `yes | make ZEDBSD_CONFIG=config/ci/config-amd64.mk firmware-licenses`（試験の image の build で担当が同意を流してよい: Q1、WS233 の取り決め、`plan/tools/guest/test-image.sh:67` と同じ）→ `make -j16 ZEDBSD_CONFIG=config/ci/config-amd64.mk disk-image`（`build/amd64/hdd-image.img`、2,485,125,120 byte、sha256 8f4eb268…、kernel の source の warning 0）。5330 の Linux から USB（`/dev/sda`、TRAN usb、removable、mount 無しを確かめた）に dd。GPT の PARTUUID が変わったので UEFI の entry `Boot0006 zedBSD USB ws245` を `efibootmgr --create-only` で足した（BootOrder は変えない）。基準の kernel は親の main 786f90afd の source から `BUILD=build/ws245-base` で build（sha256 01097983…、warning 0）。段の kernel は image の物（e4b5b87d…）。どちらも USB の ZEDBSD 区画の `vmunix` を差し替え、`efibootmgr -n 0006` → reboot、ssh で `5330-survey.sh`。AC 接続。
+
+| 見る物 | 基準（786f90afd） | 段（p047、510b267f5） |
+| --- | --- | --- |
+| zedBSD の ssh まで | 54 s | 59 s |
+| kern.boot.login / msgbuf_dropped | graphical / 0 | graphical / 0 |
+| sessiond の SESSION start と HANDOFF | あり（ready=1 waited 17898 ms） | あり（SESSION start、HANDOFF ready=0 waited 30000 ms。同じ形は今日の基準 49c578bd2 の起動にもあった） |
+| lease 1 claimed / picture up / device lost / i915 の error・warn の行 | 1 / 2 / 0 / 3 | 1 / 2 / 0 / 3（同じ 3 行: intel_bios_init・N0・edp acquire の文言の語） |
+| perf の per submit | 4.20 ms・6.84 ms | 4.02 ms・6.71 ms |
+| backlight-probe（get / set 100 / get） | 100 / 100 / 100 | 100 / 100 / 100 |
+| survey の判定 | （survey は無い） | `lit`: panel on、backlight on、transcoder on、frames +225、live surface resident、CRC 0x717ca0a4 の 2 回、underrun 0 |
+| 書き込みの記録の digest | — | 13613 writes、599 entries（5 runs）、割り込みの register 205、dropped 0、order 0xb961e20f、set 0xdcd7004e |
+
+判定: R4 の共通の物は基準と同じ、survey は lit → **合格**（Q1 の判定待ち）。LCD の目視: 未確認（ユーザーの一覧に載せる。以後の段の受け入れに引き継ぐ: 改訂 6 の m14）。証拠: `plan/ws245/tests/evidence/5330-base-786f90afd-20261016.md`・`5330-p047-510b267f5-20261016.md`（dmesg の全部は `plan/ws245/temp/5330/`、git に入れない）。
+
+### それより前の起動（記録）
+
+- 13:59 基準（main 49c578bd2 の kernel、U10 の image）: 合格の形（evidence `5330-base-49c578bd2-20261016.md`）。
+- 14:03 p047（de20a7fa）の 1 回目: ssh が届かず（DHCP が取れず link-local だった: `/var/log/messages` の networkd の行）。ユーザーの目視は「backlight が消えた状態で止まっていた」。調べ: USB の boot log（boot-000007）と次の起動で読んだ `kernel.log.old` では survey が `lit`（frames +1713、PWM enable、DUTY 0xbc3c）、kernel は電源を切られるまで 60 s ごとの perf の行を出し続けた。`/var/log/messages` に 05:18:16 UTC `sessiond: sleep asked from kei` / `NOSLEEP network reason=radio`。AC の cable が抜けていて battery（`KWL POWER source=battery`）だったので idle の限度が短く、compositor の idle の screen off（`userland/desktop/wayland/sleep.c:446`、backlight を off）が先に来た、で説明がつく。ユーザーは入力を試さずに電源を切った（2026-10-16 ユーザー「起動が止まったとき、何も試さずに電源を長押しして電源OFFしたので、もうわかりません。電源ケーブルは抜けていました。」）→ Q1 の判断: p047 の不具合ではないと扱う。survey は picture up の後の約 1〜30 s しか見ないので、その後の消灯・静止・入力の不達は見分けられない（`5330-survey.sh` に userland の log と前の起動の kernel.log.old を取る項目を足した: Q1 の指示 (a)。任意の時の survey の口（§7 #32）は作らない）。
+- 14:24 p047 の 2 回目: ssh で証拠（evidence `5330-p047-de20a7fa-20261016.md`、survey lit、frames +142）。DHCP はユーザーが手で直した。05:27:34 UTC に auto login の session の compositor が `KWL FAILED site=compose_draw errno=5 operation=submit result=-4` で終わった（kernel の device lost は 0）→ BUG-325（tracking、記録だけ: 2026-10-16 ユーザー「GPU投入終了は記録だけ残して先に進みましょう。」）。
