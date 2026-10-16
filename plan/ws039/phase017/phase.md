@@ -1,6 +1,6 @@
 # ws039-p017 VRAM の 256 MiB の窓の固定の解除
 
-- 親: [WS039](../ws.md)、状態: in-progress（2026-10-16 P3: 段 (1) を実機で ok、段 (2) は作業中）
+- 親: [WS039](../ws.md)、状態: in-progress（2026-10-16 P3: 段 (1) は実機で ok・merge 済み（f2ed268e4）、ユーザーの目視「お、RDNA機で多数のアプリが起動しました！目視。」。段 (2) は console の map を UC の形で実機 ok、Q1 の merge と判定・T1 の QEMU の起動待ち。WC の形の 1 回のフリーズは BUG-331 / p018 へ）
 - Queue: q1231 / q1231-i01（2026-10-16 Q1 の割当）。実行者: P3（`agent/p3-ws039`）
 - 起点（2026-10-16 ユーザー）:「glassが解決したら、ファン制御をマージして、そのあと窓の固定は解除して自由に使えるように改善しましょう。」（§15 #7「まず256MBで実装します。」の後の段）
 - 順: p009 の glass の修正 → p012（SMU の Tier F、fan の制御）の実機と merge → この段。
@@ -38,3 +38,26 @@
 - app: kei の session に `terminal`・`music`・`calendar`・`files`・`notes` を起動 → terminal・music（`MUSIC READY`）・calendar（`CALENDAR READY`）・files が動く（p009 では terminal・music・calendar が `vkAllocateMemory result=-2`・`error=5` で落ちた）。4 つの後 cpu_free=155MiB。capture `build/tmp/amdrdna-hw-p9-7/s14.png`（plane の surface は 0x80136f0000 = VRAM の 311 MiB、窓の外の swapchain を間接の窓で読んだ）。
 - **notes は `stencil format failed (-11)`**（VK_ERROR_FORMAT_NOT_SUPPORTED: executor が depth・stencil の format を持たない。窓とは別の executor の制限。残り）。
 - host: `amdrdna-host-test.sh`（LINUX・FIRMWARE・dump 付き）PASS 438、vk host 174/0、build warning 0、vmunix check PASS、style-check は新しい指摘無し（試験の printf の条件演算子を除く）。
+
+## 段 (2) の実装（2026-10-16 P3、WIP 8a45a6062・99d3b1f27、merge 依頼はまだ）
+
+- Q1 の許可: `src/drivers/pci/`（pci.c・`include/drivers/pci/pci.h` の追加、pci-pcat-assign.c）、kernel の text console（`src/drivers/platform/pcat/graphics/`）。ユーザーの決定（2026-10-16、Q1 経由）:「HALはフレームバッファを持たないのでは？」「フレームバッファはたしかにHALから「受け取る」けど、その管理権は受け取ってしまえばカーネルが動かしていいのでは？」→ hal.h の追加（`plan/ws039/phase017/hal-framebuffer-move.diff`、採らない。未追跡の file、Q1 が消す）はせず、framebuffer は受け取った後は kernel が map する。「あ、framebufferのスクロールはやめますが、マップの移動はやってください。」
+- `pci.c`・`pci.h`: `drv_pci_device_resize_bar(device, index, size)`。Resizable BAR の capability（0x15）の BAR の entry、offer される size（1002:731f の BAR0 で sizes の語が 0x700 の時だけ 0x3f00 に読む。Linux v6.19 drivers/pci/rebar.c の quirk を取得して確かめた: `plan/ws039/temp/linux-pci/`）、memory decoding を止めて size を書き、BAR の address を書き直して（size を変えると device が address を消す。実機で確かめた）読み戻す。失敗で元の size。
+- `pci-pcat-assign.c`: `drv_pci_pcat_grow_bar(device, index, size)`。_CRS の窓・busy（他の function の BAR・他の bridge の窓・chipset・ECAM・memory map）を読み、(i) その場で広げられれば bridge の prefetchable の窓を伸ばし、範囲に入る自分の BAR を後ろへ、(ii) 無理なら、上の bridge の窓に他の function の BAR が無い時に限り、4 GiB より上の _CRS の窓で新しい size に揃った最初の空き（Linux と同じ形）へ BAR0 を動かし、他の prefetchable の BAR（BAR2）を後ろに、bridge の窓をそこへ移す。decoding を止めて 窓（host 側から）→ BAR0 の場所 → size → 他の BAR、失敗は逆順に戻す。BAR0 が動いたら `drv_pcat_graphics_framebuffer_moved(old, new, size)`。呼ばれなければ何もしない（条件 a）。
+- `platform/pcat/graphics/backend.c`・`text.c`: kernel の text console は HAL の固定の VA（ZBL6_FRAMEBUFFER_VIRTUAL_BASE）を借りず、受け取った物理 address を `hal_space_map_device`（WC、i915 の bootfb と同じ型。P4 の BUG-330 の連絡）で自分で map。`drv_pcat_graphics_framebuffer_moved` で新しい場所を map し、`drv_pcat_text_retarget` で console と spinner の描く先を替える（古い map は残す: 書き手が持っているかもしれない、書いても何にも届かない）。HAL の early console は kernel_putc の公開の後は framebuffer に書かない（`hal_putc` は kernel へ渡す、panic も hal_printf → hal_putc、splash は kernel の console が retarget か stop）を読んで確かめた。
+- driver（`gmc.c`）: A2 の最初に `memory_grow`（既定 on、`amdrdna.bar.grow=0` で off）: VRAM の 2 の冪（8 GiB）から窓の 2 倍まで順に grow を頼み、通れば BAR0 の記録と layout を作り直す。`amdrdna-regs.h` の CPU の窓の上限を 1 GiB（HAL の device の窓 2 GiB を他と分ける。Q1 了承）。`display.c` の screen の窓の内外を map した範囲で判定。
+- 実機（10.0.10.3）:
+  - 18:43・18:46: その場で広げる形だけ → ENOSPC（`in the way 0x4010318000+0x100`: firmware が PCH の 64-bit の BAR を GPU の窓の直後に置いた）。256 MiB のまま続く（条件 b）。
+  - 18:58・19:01: 移す形 → 窓と場所は通り size で EIO（BAR の address が size の書き込みで消える）→ 戻して 256 MiB のまま。address の書き直しを足した。
+  - 19:04・19:07（kernel a7b2cab8 = 99d3b1f27 と同じ code）: `pci: 0000:03:00.0 BAR0 0x10000000 bytes at 0x4000000000 grown to 0x200000000 bytes at 0x4200000000, 3 bridge windows 0x4200000000-0x44001fffff`、`graphics: boot framebuffer moved to 0x4200000000`、`A2 window grown 256MiB -> 8192MiB at 0x4200000000, doorbells at 0x4400000000, layout cpu=0-1024MiB`、`A2 ok bar0=1024MiB pool=2 cpu=990MiB gpu=5103MiB`、A6〜A9 ok、`cpu_free=964MiB`、vkblend 20 case ok、app 4 つ起動、capture `build/tmp/amdrdna-hw-p9-7/s15.png`。Debian への warm reboot の後、firmware は BAR0 を 256 MiB @0x4000000000 に戻す（lspci）。
+  - **19:09 の起動（同じ kernel）で、ユーザーが App Home を閉じる animation の途中にフリーズ（mouse も止まる）→ 機械が reset して Debian へ（BUG-331）**。USB の sda2 の `log/boot-000019.txt` は「20 s after boot」（19:09:32）で終わり、止まる前の印は無い。直前の 19:08:18 に P3 の script がユーザーの操作中に reboot した（P3 の過ち、以後 reboot の前に Q1 に時刻を知らせる）。
+  - A6 の `underflow=0/1` が 19:07 の起動で 1 回（19:09 は 0/0）。
+- 切り分けの順（Q1 了承）: X（console の map を UC に、test のみ 9e6bff2a）→ Y（WC、99d3b1f27）→ `amdrdna.bar.grow=0`。操作は ssh からの自動の入力で App Home の開閉を 20〜50 回。
+
+## 段 (2) の仕上げ（2026-10-16 夜 P3）
+
+- ユーザーの判断（Q1 経由）:「RDNA機はフリーズはいったんおいておいて、先にフェーズをすべて終わらせましょう。」→ 停止しなかった X の形で仕上げ: kernel の console の framebuffer の map を HAL の固定の map と同じ UC（`HAL_SPACE_NOCACHE`）に。WC の形の調べは [p018](../phase018/phase.md)。
+- 試験の image（`plan/ws039/tests/config.mk`）に `CONFIG_INPUT_TEST_INJECT := y` と `aat-input`（host から `plan/tools/aat/aat` で入力を注入、BUG-331 の自動の試験）。
+- 実機（kernel 4418743cf06f8345 = 最後の build と同じ byte、19:32 起動）: BAR0 0x4000000000 の 256 MiB → 0x4200000000 の 8 GiB、`graphics: boot framebuffer moved to 0x4200000000`、`A2 ok bar0=1024MiB pool=2 cpu=990MiB gpu=5103MiB`、A6〜A9 ok（A6 underflow 0/0）、App Home の開閉 70 回と app 5 つで停止なし、`fault=0 hung=0`、`cpu_free=935MiB`、vkblend 20 case ok。
+- host: `amdrdna-host-test.sh`（LINUX・FIRMWARE・dump 付き）PASS 438、vk host PASS（174）、build: 試験の config・`config/ci/config-amd64.mk`・`config-pcat.mk`・`config-rpi4.mk` の vmunix が warning 0、`amd64 vmunix check: PASS`。style-check は新しい指摘無し（試験の printf の条件演算子を除く）。
+- 未確認: QEMU の起動（他の device の PCI の割り当てと console が変わらない事。条件 (d)、T1 に依頼）、firmware の Re-Size BAR が on の時（BAR0 が既に大きい: grow は呼ばれない）、HPD・suspend の後の BAR の戻り。Debian への warm reboot では firmware が BAR0 を 256 MiB @0x4000000000 に戻す（19:08 に確かめた）。

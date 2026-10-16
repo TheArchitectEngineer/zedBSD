@@ -736,6 +736,38 @@ amdrdna_pm4_write_and_wait(
 }
 
 /*
+ * Writes a packet that waits until a register (an absolute index), masked
+ * by mask, equals value.  Reports the words written.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/gfx_v10_0.c (gfx_v10_0_ring_emit_reg_wait,
+ * gfx_v10_0_wait_reg_mem).
+ */
+unsigned
+amdrdna_pm4_wait_register(
+	uint32_t *words,
+	uint32_t index,
+	uint32_t value,
+	uint32_t mask)
+{
+	/* The header and the control word: wait only, a register, equal. */
+	words[0] = amdrdna_pm4_header(AMDRDNA_PM4_OP_WAIT_VALUE, 6U, false);
+	words[1] = AMDRDNA_PM4_WAIT_EQUAL;
+
+	/* The register, no second word. */
+	words[2] = index;
+	words[3] = 0U;
+
+	/* The value, the mask and the poll interval. */
+	words[4] = value;
+	words[5] = mask;
+	words[6] = COMMAND_WAIT_REGISTER_POLL;
+
+	/* Succeeded: seven words. */
+	return AMDRDNA_PM4_WAIT_WORDS;
+}
+
+/*
  * Writes a packet that waits until the 32-bit word at address equals
  * value: a ring waiting for its own fence, so the work before it has
  * ended before what follows starts.  fetcher runs it on the graphics

@@ -1044,3 +1044,25 @@ text_splash_ticker(
 			return;
 	}
 }
+
+/*
+ * Has the console draw through another mapping of the framebuffer (to for
+ * from), and the spinner too, under the console's lock.
+ */
+void
+drv_pcat_text_retarget(
+	volatile uint32_t *from,
+	volatile uint32_t *to)
+{
+	unsigned long irq;
+
+	/* Only the mapping the console draws through now changes. */
+	irq = spin_lock_irqsave(&text_lock);
+	if (text_pixels == from) {
+		text_pixels = to;
+		drv_pcat_splash_retarget(to);
+	}
+
+	/* Other writers see the new mapping. */
+	spin_unlock_irqrestore(&text_lock, irq);
+}

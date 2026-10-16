@@ -59,17 +59,17 @@
 
 /*
  * The size of the register window this driver maps, and the part of the
- * VRAM window it uses (the first 256 MiB, even when the firmware made the
- * window larger).
+ * VRAM window it maps for the CPU (the first 1 GiB of a larger window:
+ * the kernel's device mappings share a 2 GiB space).
  *
  * Values referenced: Linux v6.19
  * drivers/gpu/drm/amd/amdgpu/nbio_v2_3.c (the register hole at the end of
  * the first 512 KiB of the register window).
  * derived: the register window spans 0x80000 bytes; the CPU window is
- * 0x10000000 bytes.
+ * at most 0x40000000 bytes.
  */
 #define AMDRDNA_REGISTER_WINDOW_BYTES		0x80000U
-#define AMDRDNA_CPU_WINDOW_BYTES		0x10000000ULL
+#define AMDRDNA_CPU_WINDOW_BYTES		0x40000000ULL
 
 /*
  * The registers read before the block table is known: the indirect VRAM
@@ -521,6 +521,20 @@
 #define AMDRDNA_GC_REG_COMPUTE_DOORBELLS_HIGH	0x1dfdU
 #define AMDRDNA_GC_REG_POINTER_POLL		0x1e23U
 #define AMDRDNA_GC_REG_QUEUE_STATUS		0x1e58U
+
+/*
+ * The register a queue's work is reset through: a request bit for each
+ * context (15:0) and, for the graphics pipe 0, a bit for each of its
+ * queues (23:16); it reads 0 once the reset is done.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/asic_reg/gc/gc_10_1_0_offset.h
+ * (mmCP_VMID_RESET 0x1e53) and gc_10_1_0_sh_mask.h
+ * (CP_VMID_RESET__RESET_REQUEST_MASK 0xffff,
+ * CP_VMID_RESET__PIPE0_QUEUES__SHIFT 0x10).
+ */
+#define AMDRDNA_GC_REG_CONTEXT_RESET		0x1e53U
+#define AMDRDNA_GC_CONTEXT_RESET_QUEUES_SHIFT	16U
 #define AMDRDNA_GC_COMPUTE_HALT_FIRST		0x40000000U
 #define AMDRDNA_GC_COMPUTE_HALT_SECOND		0x10000000U
 #define AMDRDNA_GC_GRAPHICS_HALT_CONSTANT	0x01000000U

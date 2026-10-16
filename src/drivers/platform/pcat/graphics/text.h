@@ -30,6 +30,11 @@ void drv_pcat_text_putc(int character);
 void drv_pcat_text_write(unsigned row, unsigned column, uint8_t attribute,
 			 const char *utf8);
 void drv_pcat_text_clear(void);
+/*
+ * Draws through another mapping of the framebuffer from now on (to for
+ * from), the spinner too.
+ */
+void drv_pcat_text_retarget(volatile uint32_t *from, volatile uint32_t *to);
 int drv_pcat_text_set_cursor(unsigned row, unsigned column);
 void drv_pcat_text_get_cursor(unsigned *row, unsigned *column, int *visible);
 void drv_pcat_text_show_cursor(int visible);

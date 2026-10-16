@@ -228,6 +228,28 @@ amdrdna_node_session_lost(
 }
 
 /*
+ * Tells the GPU core that the device failed (a fault the driver found
+ * itself): every session's work fails from now on.  Without a registered
+ * device the address spaces stop taking runs.
+ */
+void
+amdrdna_node_device_failed(
+	struct amdrdna_device *device,
+	int error)
+{
+	struct amdrdna_node *node;
+
+	/* No new run, whoever is told. */
+	amdrdna_spaces_fault(device);
+
+	/* The core faults the device and calls back. */
+	node = device->node;
+	if (node == NULL || node->gpu == NULL)
+		return;
+	drv_gpu_report_error(node->gpu, error);
+}
+
+/*
  * Opens a session of the node: its record and its address space.  The
  * core's open and the driver's own checks open sessions the same way.
  *
