@@ -72,7 +72,7 @@
 <!-- master:blocked:start -->
 - **BUG-317**（Pi の main の kernel が起動 54 秒で停止、namei の context->lock）: 解析は途中で停止、結論なし。a9f0765..73476664c で src/kern は無変更、候補は usb-hid・hid-input（BUG-313 の遅い公開）、WS236 の V3D・MMAL、rpi4-bt。
 - WS037 RTX: R8・R9（パススルー）と方法 A の desktop は達成。T1-691 で P4m の間欠の失敗が再発（解析は ws037/phase007 の終わり）。
-- BUG-315（Pi の touch）: Y の quirk は main に入った。Windows の実測は `27c6:8191` で生 X が全幅、Pi は USB 3 端子でも `056a:8191` で左右に飽和。Pi の列挙時の Device Descriptor 生18 byte は Windows のものと VID の2 byte だけ異なる。3 interface の HID report descriptor は全 byte 一致し、共有された Windows の `27c6` 対象 capture には interface 1 への設定が無い。同じケーブルを Windows から Pi に戻しても Pi は `056a:8191`。Pi で Device Mode 2 を2回送る追試も、MS OS 文字列 `0x03ee` の照会も飽和を解消しなかった。Windows の PnP 履歴は同じ port で `056a` の直後に `27c6` が現れたことを示すが、その時の USB 転送は未採取。完全電源断から Windows で再採取しても `056a` は現れなかったとのユーザー報告があり、新 capture の受領待ち。VID の条件を調べる。BUG-311（Pi の BT）: 7 回目は main に入った、未試験。
+- BUG-315（Pi の touch）: 2026-10-17 解決（BUG-333 と同じ件）。panel は数え上げの最初の GET_DESCRIPTOR(Device) で ID を選び、Linux・Windows と同じ 64 byte・full-speed の EP0 64 で Goodix 27c6:8191（全幅）、zedBSD の旧い 8 byte で Wacom 互換 056a:8191（中央 1/3）。既定を 64 byte に（93bb1db8c）。BUG-311（Pi の BT）: 7 回目は main に入った、未試験。
 - WS239（compositor の失敗時の console の login）: p001 は main、p002 の QEMU 試験は T3 が途中で停止、結果なし。
 - GitHub への記録の公開は保留。push はユーザーの指示の時だけ。
 <!-- master:blocked:end -->
