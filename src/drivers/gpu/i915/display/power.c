@@ -45,6 +45,7 @@
 #include "xd-ddi.h"
 #include "xd-power.h"
 #include "xd-dbuf.h"
+#include "xd-core.h"
 #include "xd.h"
 #include <kern/kcrt.h>
 
@@ -70,44 +71,8 @@
 #define ICL_PWR_WELL_CTL_DDI2	0x45454u
 #define HSW_PWR_WELL_CTL2	0x45404u
 
-/* The DC state register and what the DC6 check reads (i915_reg.h). */
-
-/* The PCH reset handshake and the DC power-request workarounds (i915_reg.h). */
-#define HSW_NDE_RSTWRN_OPT		0x46408u
-#define RESET_PCH_HANDSHAKE_ENABLE	(1u << 4)
-#define GEN11_CHICKEN_DCPR_2		0x46434u
-#define DCPR_CLEAR_MEMSTAT_DIS		(1u << 24)
-#define DCPR_SEND_RESP_IMM		(1u << 25)
-#define DCPR_MASK_LPMODE		(1u << 26)
-#define DCPR_MASK_MAXLATENCY_MEMUP_CLR	(1u << 27)
-#define XELPD_DISPLAY_ERR_FATAL_MASK	0x4421cu
-
-/* The DBUF slice control bits (skl_watermark_regs.h). */
-#define DBUF_POWER_REQUEST		(1u << 31)
+/* The DBUF slice power state bit (skl_watermark_regs.h). */
 #define DBUF_POWER_STATE		(1u << 30)
-#define DBUF_TRACKER_STATE_SERVICE_MASK	(0x1fu << 19)
-#define DBUF_TRACKER_STATE_SERVICE_8	(8u << 19)
-
-/* The MBUS ABOX credit registers (i915_reg.h): ABOX0, then ABOX1 / ABOX2. */
-#define MBUS_ABOX0_CTL			0x45038u
-#define MBUS_ABOX1_CTL			0x45048u
-#define MBUS_ABOX2_CTL			0x4504cu
-#define MBUS_ABOX_BW_CREDIT_MASK	(3u << 20)
-#define MBUS_ABOX_B_CREDIT_MASK		(0xfu << 16)
-#define MBUS_ABOX_BT_CREDIT_POOL2_MASK	(0x1fu << 8)
-#define MBUS_ABOX_BT_CREDIT_POOL1_MASK	(0x1fu << 0)
-#define MBUS_ABOX_BW_CREDIT_1		(1u << 20)
-#define MBUS_ABOX_B_CREDIT_1		(1u << 16)
-#define MBUS_ABOX_BT_CREDIT_POOL2_16	(16u << 8)
-#define MBUS_ABOX_BT_CREDIT_POOL1_16	(16u << 0)
-
-/* BW_BUDDY, one pair per ABOX (i915_reg.h); the device info says which ABOXes exist. */
-#define BW_BUDDY_CTL_BASE		0x45130u
-#define BW_BUDDY_PAGE_MASK_BASE		0x45134u
-#define BW_BUDDY_STRIDE			0x10u
-#define BW_BUDDY_TLB_REQ_TIMER_MASK	(0x3fu << 16)
-#define BW_BUDDY_TLB_REQ_TIMER_8	(0x8u << 16)
-#define BW_BUDDY_DISABLE		(1u << 31)
 
 /* The reference's delay of an asynchronous put when the caller names none. */
 #define I915_POWER_ASYNC_PUT_DELAY_MS	100
@@ -133,21 +98,6 @@ struct i915_pw_hook_ctx {
 };
 
 /*
- * One row of tgl_buddy_page_masks[]: the BW_BUDDY page mask of one DRAM
- * configuration.
- */
-struct i915_buddy_mask {
-	/* The number of DRAM channels (0 ends the table). */
-	unsigned nch;
-
-	/* The DRAM type (enum i915_dram_type). */
-	int type;
-
-	/* The page mask BW_BUDDY is given. */
-	uint32_t page_mask;
-};
-
-/*
  * The DBUF slice control registers, slice S1 first (skl_watermark_regs.h:
  * _DBUF_CTL_S0 0x45008, _DBUF_CTL_S1 0x44FE8, _DBUF_CTL_S2 0x44300,
  * _DBUF_CTL_S3 0x44304).
@@ -158,21 +108,8 @@ struct i915_buddy_mask {
  */
 static const uint32_t i915_dbuf_ctl_s[4] = { 0x45008u, 0x44FE8u, 0x44300u, 0x44304u };
 
-/*
- * tgl_buddy_page_masks[]: the BW_BUDDY page mask of each known DRAM
- * configuration, ended by a row of zero channels.  It never changes.
- */
-static const struct i915_buddy_mask i915_tgl_buddy[] = {
-	{ 1, I915_DRAM_DDR4, 0x0Fu },
-	{ 1, I915_DRAM_DDR5, 0x0Fu },
-	{ 2, I915_DRAM_LPDDR4, 0x1Cu },
-	{ 2, I915_DRAM_LPDDR5, 0x1Cu },
-	{ 2, I915_DRAM_DDR4, 0x1Fu },
-	{ 2, I915_DRAM_DDR5, 0x1Eu },
-	{ 4, I915_DRAM_LPDDR4, 0x38u },
-	{ 4, I915_DRAM_LPDDR5, 0x38u },
-	{ 0, 0, 0u }
-};
+/* The trace stage of the combo PHY bring-up (the display's noirq stage). */
+#define I915_COMBO_TRACE_STAGE		4U
 
 static uint32_t i915_get_allowed_dc_mask(unsigned display_ver, int enable_dc);
 static uint32_t i915_sanitize_target_dc_state(const struct i915_power_domains *pd, uint32_t target);
@@ -201,21 +138,23 @@ static void i915_pw_dc_off_on(struct i915_pw_ctx *pwc);
 static void i915_pw_dc_off_off(struct i915_pw_ctx *pwc);
 static struct i915_xd_power *i915_pw_dc_policy(struct i915_pw_ctx *pwc);
 static void i915_pw_dc_log(struct i915_pw_ctx *pwc, const struct i915_xd_dc_report *report);
-static void i915_power_rmw(struct i915_mmio *mmio, uint32_t reg, uint32_t clear, uint32_t set);
 static struct i915_trace *i915_core_trace(struct i915_display_core *dc);
 static struct i915_trace *i915_dc_off_trace(struct i915_pw_ctx *pwc);
 static uint8_t i915_dbuf_slice_mask(const struct i915_display_core *dc);
-static void i915_pch_reset_handshake(struct i915_display_core *dc);
 static void i915_gen9_dbuf_slices_update(struct i915_display_core *dc, uint8_t req_slices);
-static void i915_gen12_dbuf_slices_config(struct i915_display_core *dc);
-static void i915_gen9_dbuf_enable(struct i915_display_core *dc);
-static void i915_icl_mbus_init(struct i915_display_core *dc);
-static void i915_tgl_bw_buddy_init(struct i915_display_core *dc);
 static void i915_core_fault(struct i915_display_core *dc, const char *where);
 static int i915_icl_display_core_init(struct i915_display_core *dc, int resume);
 static void i915_icl_display_core_uninit(struct i915_display_core *dc);
-static unsigned i915_wells_on(struct i915_power_domains *pd, struct i915_pw_ctx *pwc);
+static unsigned i915_core_dram_type(int dram_type);
+static void i915_core_hooks(struct i915_display_core *dc, struct i915_xd_core_hooks *hooks);
+static int i915_core_well1_on(void *context);
+static void i915_core_well1_off(void *context);
+static void i915_core_cdclk_on(void *context);
+static void i915_core_cdclk_off(void *context);
+static void i915_core_dbuf(void *context, uint8_t slices);
+static int i915_core_faulted(void *context);
 static void i915_combo_phys_up(struct i915_pw_ctx *pwc, struct i915_trace *trace);
+static unsigned i915_wells_on(struct i915_power_domains *pd, struct i915_pw_ctx *pwc);
 
 /*
  * Builds the power-domain state of a display (intel_power_domains_init()).
@@ -2386,21 +2325,6 @@ i915_pw_dc_log(
 	pwc->dc_state_rewrites = power->dc_rewrites;
 }
 
-/* Clears and sets bits of a display-core register with raw accesses. */
-static void
-i915_power_rmw(
-	struct i915_mmio *mmio,
-	uint32_t reg,
-	uint32_t clear,
-	uint32_t set)
-{
-	uint32_t value;
-
-	/* Reads, changes and writes the register back. */
-	value = drv_i915_raw_read32(mmio, reg);
-	drv_i915_raw_write32(mmio, reg, (value & ~clear) | set);
-}
-
 /*
  * The trace ring of the display core's combo PHY init: the display's own
  * (the display core is a member of the display).
@@ -2453,15 +2377,6 @@ i915_dbuf_slice_mask(
 	return dc->dbuf_slice_mask;
 }
 
-/* Enables the PCH reset handshake (intel_pch_reset_handshake(enable): no PICA bit before display version 14). */
-static void
-i915_pch_reset_handshake(
-	struct i915_display_core *dc)
-{
-	/* Sets the handshake bit. */
-	i915_power_rmw(dc->m, HSW_NDE_RSTWRN_OPT, RESET_PCH_HANDSHAKE_ENABLE, RESET_PCH_HANDSHAKE_ENABLE);
-}
-
 /*
  * Sets the display's DBUF slices to the request through the xd DBUF,
  * under the domains lock, and records the result.
@@ -2494,159 +2409,6 @@ i915_gen9_dbuf_slices_update(
 	}
 }
 
-/*
- * Gives every DBUF slice of the display tracker service level 8
- * (gen12_dbuf_slices_config()).
- *
- * Alder Lake-P returns at the top of the reference's function and keeps
- * what the firmware left.
- */
-static void
-i915_gen12_dbuf_slices_config(
-	struct i915_display_core *dc)
-{
-	uint8_t mask;
-	unsigned slice;
-	unsigned done;
-
-	/* Alder Lake-P keeps the firmware's service levels. */
-	if (dc->is_alderlake_p)
-		return;
-
-	/* Programs every slice of the display. */
-	mask = i915_dbuf_slice_mask(dc);
-	done = 0u;
-	for (slice = 0u; slice < 4u; slice++) {
-		if ((mask & (1u << slice)) == 0u)
-			continue;
-		i915_power_rmw(dc->m, i915_dbuf_ctl_s[slice], DBUF_TRACKER_STATE_SERVICE_MASK,
-			DBUF_TRACKER_STATE_SERVICE_8);
-		done++;
-	}
-
-	/* Logs what was programmed. */
-	kern_logf("i915: gen12_dbuf_slices_config: tracker state service 8 on %u slice(s) of mask 0x%x\n",
-		done, mask);
-}
-
-/* Enables the DBUF (gen9_dbuf_enable(): what the firmware left, plus at least slice S1). */
-static void
-i915_gen9_dbuf_enable(
-	struct i915_display_core *dc)
-{
-	uint8_t enabled;
-	uint8_t slices_mask;
-
-	/* Keeps what the firmware left and adds BIT(DBUF_S1). */
-	enabled = drv_i915_enabled_dbuf_slices_mask(dc);
-	slices_mask = (uint8_t)(1u | enabled);
-
-	/* Powers the slices within the display's own. */
-	i915_gen9_dbuf_slices_update(dc, (uint8_t)(slices_mask & i915_dbuf_slice_mask(dc)));
-}
-
-/*
- * Gives the MBUS ABOX credit pools their credits (icl_mbus_init()).
- *
- * The reference returns for Alder Lake-P and display 14+, and otherwise
- * walks the device's ABOX mask -- plus ABOX0 on display version 12: the
- * gen12 platforms that read pixel data through ABOX1 and ABOX2 still expect
- * ABOX0 to be given credits, although their other instance-0 registers
- * (BW_BUDDY) are left alone.
- */
-static void
-i915_icl_mbus_init(
-	struct i915_display_core *dc)
-{
-	static const uint32_t abox_ctl[3] = { MBUS_ABOX0_CTL, MBUS_ABOX1_CTL, MBUS_ABOX2_CTL };
-	uint32_t mask;
-	uint32_t value;
-	unsigned abox;
-	unsigned index;
-	unsigned done;
-
-	/* Alder Lake-P and display 14+ program none. */
-	if (dc->is_alderlake_p || dc->display_ver >= 14)
-		return;
-
-	/* The ABOXes of the device, and ABOX0 on display version 12. */
-	abox = dc->abox_mask;
-	if (dc->display_ver == 12)
-		abox |= 1u;
-
-	/* POOL1 16, POOL2 16, B 1, BW 1 on each ABOX. */
-	mask = MBUS_ABOX_BT_CREDIT_POOL1_MASK | MBUS_ABOX_BT_CREDIT_POOL2_MASK |
-		MBUS_ABOX_B_CREDIT_MASK | MBUS_ABOX_BW_CREDIT_MASK;
-	value = MBUS_ABOX_BT_CREDIT_POOL1_16 | MBUS_ABOX_BT_CREDIT_POOL2_16 |
-		MBUS_ABOX_B_CREDIT_1 | MBUS_ABOX_BW_CREDIT_1;
-	done = 0u;
-	for (index = 0u; index < 3u; index++) {
-		if ((abox & (1u << index)) == 0u)
-			continue;
-		i915_power_rmw(dc->m, abox_ctl[index], mask, value);
-		done++;
-	}
-
-	/* Logs what was programmed. */
-	kern_logf("i915: icl_mbus_init: %u ABOX register(s) of mask 0x%x given the "
-		"reference credits (POOL1 16, POOL2 16, B 1, BW 1)\n", done, abox);
-}
-
-/* Programs the arbiter's BW_BUDDY from the DRAM configuration (tgl_bw_buddy_init()). */
-static void
-i915_tgl_bw_buddy_init(
-	struct i915_display_core *dc)
-{
-	const struct i915_buddy_mask *row;
-	unsigned index;
-	unsigned abox;
-	unsigned buddy;
-	const char *wa_note;
-
-	/* Looks the DRAM configuration up. */
-	row = NULL;
-	for (index = 0u; i915_tgl_buddy[index].nch != 0u; index++) {
-		if (i915_tgl_buddy[index].nch == dc->dram_channels &&
-		    i915_tgl_buddy[index].type == dc->dram_type) {
-			row = &i915_tgl_buddy[index];
-			break;
-		}
-	}
-
-	/* The ABOXes of this display (its device info's abox_mask). */
-	abox = dc->abox_mask;
-
-	/* An unknown memory configuration disables the address buddy logic. */
-	if (row == NULL) {
-		for (buddy = 0u; buddy < 3u; buddy++) {
-			if ((abox & (1u << buddy)) != 0u)
-				drv_i915_raw_write32(dc->m, BW_BUDDY_CTL_BASE + buddy * BW_BUDDY_STRIDE, BW_BUDDY_DISABLE);
-		}
-
-		/* Logs the disabled buddy logic. */
-		kern_logf("i915: BW_BUDDY: unknown DRAM config (ch=%u type=%d); disabled\n",
-			dc->dram_channels, dc->dram_type);
-		return;
-	}
-
-	/* Gives each ABOX the page mask, and on display version 12 the TLB request timer (Wa_22010178259). */
-	for (buddy = 0u; buddy < 3u; buddy++) {
-		if ((abox & (1u << buddy)) == 0u)
-			continue;
-		drv_i915_raw_write32(dc->m, BW_BUDDY_PAGE_MASK_BASE + buddy * BW_BUDDY_STRIDE, row->page_mask);
-		if (dc->display_ver == 12) {
-			i915_power_rmw(dc->m, BW_BUDDY_CTL_BASE + buddy * BW_BUDDY_STRIDE,
-				BW_BUDDY_TLB_REQ_TIMER_MASK, BW_BUDDY_TLB_REQ_TIMER_8);
-		}
-	}
-
-	/* Logs what was programmed. */
-	wa_note = "";
-	if (dc->display_ver == 12)
-		wa_note = " + TLB request timer 0x8 (Wa_22010178259)";
-	kern_logf("i915: BW_BUDDY: ABOX mask 0x%x page_mask 0x%x%s\n", abox, row->page_mask, wa_note);
-}
-
 /* Records the first adaptation-layer fault of the display-core init and where it stopped. */
 static void
 i915_core_fault(
@@ -2664,19 +2426,21 @@ i915_core_fault(
 }
 
 /*
- * Brings the display core up (icl_display_core_init(resume = false)): 0, or
- * EIO when an adaptation-layer fault stopped it.
+ * Brings the display core up through the xd core (icl_display_core_init()):
+ * 0, or EIO when an adaptation-layer fault stopped it.
  */
 static int
 i915_icl_display_core_init(
 	struct i915_display_core *dc,
 	int resume)
 {
-	struct i915_xd_power *power;
+	struct i915_xd_core_hooks hooks;
+	struct i915_xd_core_input input;
+	struct i915_xd *xd;
 	struct i915_trace *trace;
-	int index;
-	int enable_result;
-	int faulted;
+	unsigned stop;
+	unsigned phys;
+	int error;
 
 	/* The DMC reload of a resume is done later on these platforms, not here. */
 	UNUSED_PARAMETER(resume);
@@ -2685,133 +2449,222 @@ i915_icl_display_core_init(
 	trace = i915_core_trace(dc);
 	drv_i915_trace_init(trace);
 
-	/* Clears the DC states the firmware may have left, before anything else is written. */
+	/* A display without the xd description has no core sequence. */
 	dc->last_child = 1;
+	xd = dc->pwc->xd;
+	if (xd == NULL || !xd->chosen) {
+		i915_core_fault(dc, "xd platform");
+		return EIO;
+	}
+
+	/* The south display, the stepping and the memory. */
+	input.pch_kind = xd->choice.pch_kind;
+	input.step = xd->choice.step;
+	input.dram_type = i915_core_dram_type(dc->dram_type);
+	input.dram_channels = dc->dram_channels;
+
+	/* The core's sequence, with power well 1, the CD clock and the DBUF slices here. */
+	i915_core_hooks(dc, &hooks);
+	error = drv_i915_xd_core_start(&xd->io, xd->choice.platform, i915_pw_dc_policy(dc->pwc), &input, &hooks, &stop, &phys);
+
+	/* Records and logs the combo PHYs brought up. */
+	drv_i915_trace_record(trace, I915_COMBO_TRACE_STAGE, I915_TRACE_ACQUIRE, "intel_combo_phy_init", (uint64_t)__builtin_popcount(phys), 0U);
+	kern_logf("i915: combo PHYs: %u initialised (mask 0x%x)\n", (unsigned)__builtin_popcount(phys), phys);
+
+	/* Reports where a fault stopped the start. */
+	if (error != 0) {
+		dc->last_child = 3 + (int)stop;
+		if (stop == I915_XD_CORE_STOP_PHYS) {
+			i915_core_fault(dc, "intel_combo_phy_init");
+		} else if (stop == I915_XD_CORE_STOP_WELL1) {
+			i915_core_fault(dc, "power_well_1_enable");
+		} else {
+			i915_core_fault(dc, "intel_cdclk_init_hw");
+		}
+		return EIO;
+	}
+
+	/* Succeeded: the display core is up. */
+	dc->last_child = 7;
+	return 0;
+}
+
+/*
+ * Takes the display core down through the xd core (icl_display_core_uninit()):
+ * the DC states left, the DBUF off, the CDCLK at the bypass with its PLL
+ * off, power well 1 off and the combo PHYs down.
+ */
+static void
+i915_icl_display_core_uninit(
+	struct i915_display_core *dc)
+{
+	struct i915_xd_core_hooks hooks;
+	struct i915_xd_dc_report report;
+	struct i915_xd_power *power;
+	struct i915_xd *xd;
+	unsigned a_down;
+
+	/* A display without the xd description has nothing to take down. */
+	xd = dc->pwc->xd;
+	if (xd == NULL || !xd->chosen)
+		return;
+
+	/* The core's sequence. */
+	i915_core_hooks(dc, &hooks);
 	power = i915_pw_dc_policy(dc->pwc);
+	drv_i915_xd_core_stop(&xd->io, xd->choice.platform, power, &hooks, &report, &a_down);
+
+	/* Logs the DC states left and the PHYs down. */
 	if (power != NULL)
-		drv_i915_xd_power_dc_clear(power, &dc->pwc->xd->io);
+		i915_pw_dc_log(dc->pwc, &report);
+	if (a_down != 0U)
+		kern_logf("i915: combo PHY A was not up before the uninit\n");
+	kern_logf("i915: combo PHYs: uninit\n");
+}
 
-	/* 1. Enables the PCH reset handshake. */
-	dc->last_child = 2;
-	i915_pch_reset_handshake(dc);
-
-	/* 2. Initializes every combo PHY; the reference is void, so the fault state is checked after. */
-	dc->last_child = 3;
-	i915_combo_phys_up(dc->pwc, trace);
-	faulted = drv_i915_time_base_faulted();
-	if (faulted != 0) {
-		i915_core_fault(dc, "intel_combo_phy_init");
-		return EIO;
+/* Converts the display core's memory type into the xd one (0: unknown). */
+static unsigned
+i915_core_dram_type(
+	int dram_type)
+{
+	/* The four memories the buddy tables know. */
+	switch (dram_type) {
+	case I915_DRAM_DDR4:
+		return I915_XD_DRAM_DDR4;
+	case I915_DRAM_DDR5:
+		return I915_XD_DRAM_DDR5;
+	case I915_DRAM_LPDDR4:
+		return I915_XD_DRAM_LPDDR4;
+	case I915_DRAM_LPDDR5:
+		return I915_XD_DRAM_LPDDR5;
+	default:
+		break;
 	}
 
-	/* 3. Enables power well 1 (PG1); the AUX wells enable on demand. */
-	dc->last_child = 4;
+	/* Succeeded: a memory the tables do not know. */
+	return 0U;
+}
+
+/* Fills the xd core's hooks with the display core's parts. */
+static void
+i915_core_hooks(
+	struct i915_display_core *dc,
+	struct i915_xd_core_hooks *hooks)
+{
+	/* The display core is the hooks' context. */
+	hooks->well1_on = i915_core_well1_on;
+	hooks->well1_off = i915_core_well1_off;
+	hooks->cdclk_on = i915_core_cdclk_on;
+	hooks->cdclk_off = i915_core_cdclk_off;
+	hooks->dbuf = i915_core_dbuf;
+	hooks->faulted = i915_core_faulted;
+	hooks->context = dc;
+}
+
+/* Enables power well 1 under the domains lock: 0, or EIO for a time-base fault. */
+static int
+i915_core_well1_on(
+	void *context)
+{
+	struct i915_display_core *dc;
+	int index;
+	int enable_result;
+
+	/* The well. */
+	dc = context;
 	index = drv_i915_power_well_by_id(dc->pd, I915_SKL_DISP_PW_1);
-	if (index < 0) {
-		i915_core_fault(dc, "lookup_power_well(PW_1)");
+	if (index < 0)
 		return EIO;
-	}
 
-	/* Enables the well under the domains lock. */
+	/* Enables it under the domains lock. */
 	mutex_lock(&dc->pd->lock);
 
 	enable_result = drv_i915_power_well_enable(&dc->pd->power_wells[index], dc->pwc);
 
 	mutex_unlock(&dc->pd->lock);
 
-	/* Stops on a time-base fault of the enable. */
-	if (enable_result == EIO) {
-		i915_core_fault(dc, "power_well_1_enable");
+	/* Reports a time-base fault of the enable. */
+	if (enable_result == EIO)
 		return EIO;
-	}
 
-	/* 4. Enables the CDCLK; the fault state is checked after. */
-	dc->last_child = 5;
-	drv_i915_cdclk_init_hw(dc->cd);
-	faulted = drv_i915_time_base_faulted();
-	if (faulted != 0) {
-		i915_core_fault(dc, "intel_cdclk_init_hw");
-		return EIO;
-	}
-
-	/*
-	 * gen12_dbuf_slices_config(): run on every display 12+, returning at
-	 * once on Alder Lake-P.  Tiger Lake needs it: without service level 8
-	 * the display's data path underruns continuously while a picture is up.
-	 */
-	if (dc->display_ver >= 12)
-		i915_gen12_dbuf_slices_config(dc);
-
-	/* 5. Enables the DBUF. */
-	dc->last_child = 6;
-	i915_gen9_dbuf_enable(dc);
-
-	/*
-	 * 6. icl_mbus_init(): the MBUS ABOX credit pools.  Without it Tiger
-	 * Lake's display starves and the pipe underruns while a picture is up.
-	 */
-	i915_icl_mbus_init(dc);
-
-	/* 7. Programs the arbiter's BW_BUDDY registers. */
-	dc->last_child = 7;
-	i915_tgl_bw_buddy_init(dc);
-
-	/* Wa_14011508470 (display IP 12.0..13.0). */
-	i915_power_rmw(dc->m, GEN11_CHICKEN_DCPR_2, 0u,
-		DCPR_CLEAR_MEMSTAT_DIS | DCPR_SEND_RESP_IMM |
-		DCPR_MASK_LPMODE | DCPR_MASK_MAXLATENCY_MEMUP_CLR);
-
-	/* Wa_14011503030:xelpd. */
-	drv_i915_raw_write32(dc->m, XELPD_DISPLAY_ERR_FATAL_MASK, ~0u);
-
-	/* Succeeded: the display core is up. */
+	/* Succeeded: the well is on. */
 	return 0;
 }
 
-/*
- * Takes the display core down (icl_display_core_uninit()): the DC states
- * left, the DBUF off, the CDCLK at the bypass with its PLL off, power well
- * 1 off and the combo PHYs down.
- */
+/* Disables power well 1 under the domains lock. */
 static void
-i915_icl_display_core_uninit(
-	struct i915_display_core *dc)
+i915_core_well1_off(
+	void *context)
 {
-	struct i915_xd_power *power;
-	struct i915_xd_dc_report report;
-	unsigned a_down;
+	struct i915_display_core *dc;
 	int index;
 
-	/* Leaves the DC states through the verified write, so the copy of the state last written follows. */
-	power = i915_pw_dc_policy(dc->pwc);
-	if (power != NULL) {
-		drv_i915_xd_power_dc_leave(power, &dc->pwc->xd->io, &report);
-		i915_pw_dc_log(dc->pwc, &report);
-	}
-
-	/* Turns every DBUF slice off. */
-	drv_i915_gen9_dbuf_slices_update(dc, 0u);
-
-	/* Takes the CDCLK down. */
-	drv_i915_cdclk_uninit_hw(dc->cd);
-
-	/* Turns power well 1 off under the domains lock. */
+	/* The well. */
+	dc = context;
 	index = drv_i915_power_well_by_id(dc->pd, I915_SKL_DISP_PW_1);
-	if (index >= 0) {
-		mutex_lock(&dc->pd->lock);
+	if (index < 0)
+		return;
 
-		(void)drv_i915_power_well_disable(&dc->pd->power_wells[index], dc->pwc);
+	/* Disables it under the domains lock. */
+	mutex_lock(&dc->pd->lock);
 
-		mutex_unlock(&dc->pd->lock);
-	}
+	(void)drv_i915_power_well_disable(&dc->pd->power_wells[index], dc->pwc);
 
-	/* Takes the combo PHYs down (xd DDI). */
-	if (dc->pwc->xd != NULL && dc->pwc->xd->chosen) {
-		a_down = drv_i915_xd_combo_phy_uninit(&dc->pwc->xd->io, dc->pwc->xd->choice.platform);
-		if (a_down != 0U)
-			kern_logf("i915: combo PHY A was not up before the uninit\n");
-		kern_logf("i915: combo PHYs: uninit\n");
-	}
+	mutex_unlock(&dc->pd->lock);
+}
+
+/* Brings the CD clock up. */
+static void
+i915_core_cdclk_on(
+	void *context)
+{
+	struct i915_display_core *dc;
+
+	/* The clock's own start. */
+	dc = context;
+	drv_i915_cdclk_init_hw(dc->cd);
+}
+
+/* Takes the CD clock down. */
+static void
+i915_core_cdclk_off(
+	void *context)
+{
+	struct i915_display_core *dc;
+
+	/* The clock's own stop. */
+	dc = context;
+	drv_i915_cdclk_uninit_hw(dc->cd);
+}
+
+/* Powers the DBUF slices asked for, within the display's. */
+static void
+i915_core_dbuf(
+	void *context,
+	uint8_t slices)
+{
+	struct i915_display_core *dc;
+
+	/* The slices of the display. */
+	dc = context;
+	i915_gen9_dbuf_slices_update(dc, (uint8_t)(slices & i915_dbuf_slice_mask(dc)));
+}
+
+/* Tells whether the register access met a time-base fault. */
+static int
+i915_core_faulted(
+	void *context)
+{
+	int faulted;
+
+	/* The access layer's fault state. */
+	UNUSED_PARAMETER(context);
+	faulted = drv_i915_time_base_faulted();
+	if (faulted != 0)
+		return 1;
+
+	/* Succeeded: no fault. */
+	return 0;
 }
 
 /* Counts the wells that are on as the driver owns them. */
@@ -2835,9 +2688,6 @@ i915_wells_on(
 	/* Succeeded: reports how many are on. */
 	return count;
 }
-
-/* The trace stage of the combo PHY bring-up (the display's noirq stage). */
-#define I915_COMBO_TRACE_STAGE		4U
 
 /*
  * Brings up the combo PHYs through the xd DDI (those that do not read as
