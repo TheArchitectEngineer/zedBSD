@@ -42,7 +42,7 @@
 #include "drivers/gpu/amdrdna/amdrdna-regs.h"
 
 /* The last stage this driver has; asking for a later one is refused. */
-#define AMDRDNA_LAST_STAGE		AMDRDNA_STAGE_A2
+#define AMDRDNA_LAST_STAGE		AMDRDNA_STAGE_A4
 
 /* How long the shutdown waits for the bring-up thread to end, and its step. */
 #define AMDRDNA_SHUTDOWN_WAIT_US	5000000U
@@ -182,6 +182,10 @@ amdrdna_attach(
 	(void)mutex_init(&device->memory_lock, LOCK_RANK_DEVICE, "amdrdna memory");
 	spin_init(&device->interrupts.lock, LOCK_RANK_DEVICE, "amdrdna interrupts");
 	waitq_init(&device->interrupts.waitq, "amdrdna interrupts");
+	(void)mutex_init(&device->psp.lock, LOCK_RANK_DEVICE, "amdrdna psp");
+	(void)mutex_init(&device->thermal.mailbox, LOCK_RANK_DEVICE, "amdrdna smu");
+	spin_init(&device->thermal.lock, LOCK_RANK_DEVICE, "amdrdna thermal");
+	waitq_init(&device->thermal.waitq, "amdrdna thermal");
 
 	/* Stage A0: finds and identifies the GPU. */
 	device->running = AMDRDNA_STAGE_A0;
@@ -247,9 +251,12 @@ amdrdna_detach(
  * then undoes the stages that wrote.
  *
  * The thread is told to stop and waited for, for a bounded time.  Once it
- * has ended, stage A2's interrupt ring is stopped and the memory hubs'
- * contexts get back the words the firmware left; a thread still inside a
- * stage is left alone with the GPU, and so is everything it set up.
+ * has ended, the stages are undone in reverse: stage A4's watch stops and
+ * the power unit is told it will be unloaded, stage A3's secure OS unloads
+ * what the driver loaded and destroys its ring, and stage A2's interrupt
+ * ring is stopped and the memory hubs' contexts get back the words the
+ * firmware left.  A thread still inside a stage is left alone with the
+ * GPU, and so is everything it set up.
  */
 static void
 amdrdna_shutdown(
@@ -297,7 +304,9 @@ amdrdna_shutdown(
 		return;
 	}
 
-	/* Undoes stage A2, when it ran. */
+	/* Undoes stage A4, then A3, then A2, as far as each ran. */
+	amdrdna_power_stop(device);
+	amdrdna_psp_stop(device);
 	amdrdna_a2_stop(device);
 }
 
@@ -448,6 +457,16 @@ amdrdna_thread(
 			device->stage = next;
 		}
 
+		/*
+		 * A3 is always followed by A4 in the same run: a secure OS that
+		 * started the power unit's firmware must not be left without the
+		 * fan and the watch.
+		 */
+		if (error == 0 &&
+		    next == AMDRDNA_STAGE_A3 &&
+		    device->target < AMDRDNA_STAGE_A4)
+			device->target = AMDRDNA_STAGE_A4;
+
 		spin_unlock_irqrestore(&device->state_lock, irq);
 	}
 
@@ -474,6 +493,15 @@ amdrdna_run_stage(
 		break;
 	case AMDRDNA_STAGE_A2:
 		error = amdrdna_a2_memory(device);
+		break;
+	case AMDRDNA_STAGE_A3T:
+		error = amdrdna_a3t_training(device);
+		break;
+	case AMDRDNA_STAGE_A3:
+		error = amdrdna_a3_psp(device);
+		break;
+	case AMDRDNA_STAGE_A4:
+		error = amdrdna_a4_power(device);
 		break;
 	default:
 		error = ENOTSUP;

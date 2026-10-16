@@ -141,6 +141,98 @@ struct amdrdna_interrupts {
 	uint64_t overflows;
 };
 
+/* The programs the security processor loads for the driver in stage A3. */
+#define AMDRDNA_PSP_PROGRAMS		12U
+
+/* A firmware file read whole into kernel memory; data is NULL when none is held. */
+struct amdrdna_blob {
+	uint8_t *data;
+	size_t size;
+};
+
+/*
+ * The security processor's side of the driver (stage A3).
+ *
+ * The private buffer (1 MiB of system memory, at a GPU address on a 1 MiB
+ * boundary) is where the boot loader and the secure OS read a piece of
+ * firmware the driver hands them.  ring_vram is the start of three pages
+ * of VRAM the CPU reaches: the secure OS's ring, the fence page it writes
+ * its done value to, and the command buffer.  The programs are system
+ * memory the security processor copies into the trusted region, which is
+ * VRAM only the GPU reaches.  lock serializes the commands on the ring;
+ * the flags say how far the stage got, so the stop undoes only that.  The
+ * buffers live as long as the GPU may touch them, which is the record's
+ * life.
+ */
+struct amdrdna_psp {
+	struct mutex lock;
+	struct amdrdna_system_buffer private_buffer;
+	struct amdrdna_system_buffer programs[AMDRDNA_PSP_PROGRAMS];
+	uint32_t program_bytes[AMDRDNA_PSP_PROGRAMS];
+	uint64_t ring_vram;
+	bool pages_taken;
+	uint32_t fence_sequence;
+	bool booted;
+	bool ring_up;
+	uint64_t region_vram;
+	uint32_t region_bytes;
+	bool region_set;
+	bool application_loaded;
+	uint32_t application_session;
+	unsigned loaded;
+	uint32_t secure_os_version;
+	unsigned warnings;
+};
+
+/*
+ * How memory training ended (stage A3t): its result and the reason of a
+ * skip (the control interface's codes), how long it took, and the 4 KiB
+ * of training data the security processor left, kept for a later resume.
+ */
+struct amdrdna_training {
+	unsigned result;
+	unsigned reason;
+	uint32_t milliseconds;
+	uint8_t *data;
+};
+
+/*
+ * The power and thermal side of the driver (stage A4, the static-fan
+ * tier).
+ *
+ * mailbox serializes the system-management unit's messages; first_sent
+ * and hung follow the mailbox's protocol (the first message does not wait
+ * for an answer to a previous one; a unit that stopped answering is not
+ * sent another).  The watch thread reads the temperature and the fan once
+ * a second; lock protects what it publishes (the readings, the fault and
+ * the alert counts) and the thread's stop, and waitq wakes it to stop.
+ */
+struct amdrdna_thermal {
+	struct mutex mailbox;
+	bool first_sent;
+	bool hung;
+	uint32_t smu_version;
+	uint32_t interface_version;
+	unsigned mode;
+	unsigned duty_percent;
+	unsigned limit;
+	unsigned high_alert;
+	bool alerts_on;
+	struct spinlock lock;
+	struct wait_queue waitq;
+	bool stopping;
+	bool thread_running;
+	unsigned temperature;
+	unsigned highest;
+	uint32_t fan_speed;
+	unsigned fan_driven;
+	bool faulted;
+	uint64_t high_alerts;
+	uint64_t low_alerts;
+	uint64_t critical_alerts;
+	uint64_t smu_interrupts;
+};
+
 /*
  * One RDNA GPU the driver keeps.
  *
@@ -155,7 +247,8 @@ struct amdrdna_interrupts {
  * writes and the CPU's invalidation requests), the dummy page, the table's
  * place, the hubs' context words from before the stage (given back on a
  * failure and at shutdown) and the interrupt ring; memory_ready says the
- * table translates.  The record lives until the PCI function is
+ * table translates.  Stages A3t, A3 and A4 add the training's result,
+ * the security processor's buffers and the power and thermal state.  The record lives until the PCI function is
  * detached, which the driver refuses while the thread runs.
  */
 struct amdrdna_device {
@@ -228,6 +321,10 @@ struct amdrdna_device {
 	uint32_t underflow_before;
 	uint32_t underflow_after;
 	struct amdrdna_interrupts interrupts;
+
+	struct amdrdna_training training;
+	struct amdrdna_psp psp;
+	struct amdrdna_thermal thermal;
 
 	struct spinlock state_lock;
 	struct wait_queue state_waitq;
@@ -383,6 +480,82 @@ amdrdna_ih_prepare(
 void
 amdrdna_ih_stop(
 	struct amdrdna_device *device);
+
+/* mmio.c: VRAM writes through the indirect window. */
+void
+amdrdna_vram_write(
+	struct amdrdna_device *device,
+	uint64_t offset,
+	const void *buffer,
+	size_t length);
+
+/* gmc.c: VRAM for the later stages. */
+volatile uint8_t *
+amdrdna_vram_cpu(
+	struct amdrdna_device *device,
+	uint64_t offset);
+
+int
+amdrdna_vram_take(
+	struct amdrdna_device *device,
+	bool cpu,
+	uint64_t bytes,
+	uint64_t alignment,
+	uint64_t *offset);
+
+int
+amdrdna_training_range_release(
+	struct amdrdna_device *device);
+
+/* ih.c: turning the interrupt ring on. */
+void
+amdrdna_ih_enable(
+	struct amdrdna_device *device);
+
+/* firmware.c: the firmware files. */
+int
+amdrdna_firmware_read(
+	const char *name,
+	size_t limit,
+	struct amdrdna_blob *blob);
+
+void
+amdrdna_firmware_free(
+	struct amdrdna_blob *blob);
+
+/* training.c: stage A3t. */
+int
+amdrdna_a3t_training(
+	struct amdrdna_device *device);
+
+/* psp.c: stage A3. */
+int
+amdrdna_a3_psp(
+	struct amdrdna_device *device);
+
+void
+amdrdna_psp_stop(
+	struct amdrdna_device *device);
+
+/* smu.c: stage A4. */
+int
+amdrdna_a4_power(
+	struct amdrdna_device *device);
+
+void
+amdrdna_power_stop(
+	struct amdrdna_device *device);
+
+void
+amdrdna_thermal_interrupt(
+	struct amdrdna_device *device,
+	const struct amdrdna_interrupt *interrupt);
+
+/* stage.c: numbers on the boot line. */
+unsigned
+amdrdna_parameter_number(
+	const char *key,
+	unsigned fallback);
 
 /* control.c: the control device. */
 int

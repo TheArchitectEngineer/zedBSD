@@ -326,4 +326,98 @@
 #define AMDRDNA_HUB_PAGE_SHIFT			12U
 #define AMDRDNA_HUB_PAGE_HIGH_SHIFT		44U
 
+
+/*
+ * The security processor's mailbox words the bring-up uses beyond the
+ * ones above (MP0 window 0): the boot loader's argument (an address in
+ * 1 MiB units), the secure OS's control word for its ring, the ring's
+ * write pointer (in dwords), the ring's address (low, high) and its size
+ * in bytes.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/asic_reg/mp/mp_11_0_offset.h
+ * (mmMP0_SMN_C2PMSG_36, mmMP0_SMN_C2PMSG_64, mmMP0_SMN_C2PMSG_67,
+ * mmMP0_SMN_C2PMSG_69, mmMP0_SMN_C2PMSG_70, mmMP0_SMN_C2PMSG_71).
+ */
+#define AMDRDNA_PSP_REG_BOOT_ARGUMENT		0x0064U
+#define AMDRDNA_PSP_REG_RING_CONTROL		0x0080U
+#define AMDRDNA_PSP_REG_RING_WRITE		0x0083U
+#define AMDRDNA_PSP_REG_RING_LOW		0x0085U
+#define AMDRDNA_PSP_REG_RING_HIGH		0x0086U
+#define AMDRDNA_PSP_REG_RING_BYTES		0x0087U
+
+/*
+ * The security processor's handshake values: the mask and value of a
+ * mailbox word that reads "ready, no error" (bit 31 and a zero status in
+ * bits 15:0), the boot loader's commands (load the key database, the
+ * system driver, the secure OS, and run the long memory training), and
+ * the secure OS's ring commands (create the kernel-mode ring, type 2 in
+ * bits 23:16, and destroy every ring).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/amdgpu_psp.h (PSP_BL__LOAD_KEY_DATABASE,
+ * PSP_BL__LOAD_SYSDRV, PSP_BL__LOAD_SOSDRV, PSP_BL__DRAM_LONG_TRAIN,
+ * MBOX_TOS_READY_FLAG, MBOX_TOS_READY_MASK, enum psp_ring_type) and
+ * drivers/gpu/drm/amd/amdgpu/psp_gfx_if.h (GFX_CMD_STATUS_MASK,
+ * GFX_CMD_RESPONSE_MASK, GFX_CTRL_CMD_ID_INIT_GPCOM_RING,
+ * GFX_CTRL_CMD_ID_DESTROY_RINGS), and psp_v11_0.c
+ * (psp_v11_0_wait_for_bootloader: the 0x8000FFFF mask).
+ */
+#define AMDRDNA_PSP_READY_MASK			0x8000ffffU
+#define AMDRDNA_PSP_READY			0x80000000U
+#define AMDRDNA_PSP_BOOT_KEY_DATABASE		0x00080000U
+#define AMDRDNA_PSP_BOOT_SYSTEM_DRIVER		0x00010000U
+#define AMDRDNA_PSP_BOOT_SECURE_OS		0x00020000U
+#define AMDRDNA_PSP_BOOT_LONG_TRAINING		0x00100000U
+#define AMDRDNA_PSP_RING_CREATE			0x00020000U
+#define AMDRDNA_PSP_RING_DESTROY		0x00030000U
+#define AMDRDNA_PSP_ADDRESS_SHIFT		20U
+
+/*
+ * The system-management unit's mailbox (MP1 window 0): the message word,
+ * its argument and its response, and the words that let the unit raise a
+ * software interrupt (the interrupt's ID in bits 7:0, valid in bit 8) and
+ * mask or acknowledge it (mask in bit 0, acknowledge in bit 8).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/asic_reg/mp/mp_11_0_offset.h
+ * (mmMP1_SMN_C2PMSG_66, mmMP1_SMN_C2PMSG_82, mmMP1_SMN_C2PMSG_90,
+ * mmMP1_SMN_IH_SW_INT, mmMP1_SMN_IH_SW_INT_CTRL) and mp_11_0_sh_mask.h
+ * (MP1_SMN_IH_SW_INT__ID_MASK, MP1_SMN_IH_SW_INT__VALID_MASK,
+ * MP1_SMN_IH_SW_INT_CTRL__INT_MASK_MASK,
+ * MP1_SMN_IH_SW_INT_CTRL__INT_ACK_MASK).
+ */
+#define AMDRDNA_SMU_WINDOW_MAILBOX		0U
+#define AMDRDNA_SMU_REG_MESSAGE			0x0282U
+#define AMDRDNA_SMU_REG_ARGUMENT		0x0292U
+#define AMDRDNA_SMU_REG_RESPONSE		0x029aU
+#define AMDRDNA_SMU_REG_SOFT_INTERRUPT		0x02c2U
+#define AMDRDNA_SMU_REG_SOFT_INTERRUPT_CONTROL	0x02c3U
+#define AMDRDNA_SMU_SOFT_INTERRUPT_ID_MASK	0x000000ffU
+#define AMDRDNA_SMU_SOFT_INTERRUPT_VALID	0x00000100U
+#define AMDRDNA_SMU_SOFT_INTERRUPT_MASKED	0x00000001U
+#define AMDRDNA_SMU_SOFT_INTERRUPT_ACKNOWLEDGE	0x00000100U
+
+/*
+ * The thermal block's registers (THM window 0): the interrupt enable and
+ * control words, the temperature status, the fan controller's three
+ * control words, the fan's tachometer period and the thermal status that
+ * reports the duty the fan is driven at.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/asic_reg/thm/thm_11_0_2_offset.h
+ * (mmTHM_THERMAL_INT_ENA, mmTHM_THERMAL_INT_CTRL,
+ * mmCG_MULT_THERMAL_STATUS, mmCG_FDO_CTRL0, mmCG_FDO_CTRL1,
+ * mmCG_FDO_CTRL2, mmCG_TACH_STATUS, mmCG_THERMAL_STATUS).
+ */
+#define AMDRDNA_THM_WINDOW_MAIN			0U
+#define AMDRDNA_THM_REG_ALERT_ENABLE		0x000aU
+#define AMDRDNA_THM_REG_ALERT_CONTROL		0x000bU
+#define AMDRDNA_THM_REG_TEMPERATURE		0x005fU
+#define AMDRDNA_THM_REG_FAN_DUTY		0x0067U
+#define AMDRDNA_THM_REG_FAN_LIMITS		0x0068U
+#define AMDRDNA_THM_REG_FAN_MODE		0x0069U
+#define AMDRDNA_THM_REG_FAN_TACHOMETER		0x006bU
+#define AMDRDNA_THM_REG_FAN_STATUS		0x006cU
+
 #endif

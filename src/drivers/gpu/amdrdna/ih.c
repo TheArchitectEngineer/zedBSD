@@ -152,6 +152,44 @@ amdrdna_ih_prepare(
 }
 
 /*
+ * Turns the interrupt ring and its message interrupt on (stage A3), and
+ * lets the thread read whatever the controller writes from now on.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/navi10_ih.c (navi10_ih_toggle_interrupts
+ * with true).
+ */
+void
+amdrdna_ih_enable(
+	struct amdrdna_device *device)
+{
+	struct amdrdna_interrupts *interrupts;
+	unsigned long irq;
+	uint32_t word;
+
+	/* A ring that was never prepared stays off. */
+	interrupts = &device->interrupts;
+	if (!interrupts->prepared)
+		return;
+
+	/* The thread reads the ring from the moment the controller may write it. */
+	interrupts->enabled = true;
+
+	/* Turns the ring and its interrupt on. */
+	word = ih_read(device, AMDRDNA_IH_REG_RING_CONTROL);
+	word = amdrdna_interrupt_switch_word(word, true);
+	ih_write(device, AMDRDNA_IH_REG_RING_CONTROL, word);
+
+	/* Wakes the thread once, for anything written before the first message. */
+	irq = spin_lock_irqsave(&interrupts->lock);
+
+	interrupts->pending = true;
+	waitq_wake_all(&interrupts->waitq);
+
+	spin_unlock_irqrestore(&interrupts->lock, irq);
+}
+
+/*
  * Stops the interrupt ring and the interrupt thread for the shutdown of
  * the machine: the ring off and its pointers at zero, then the thread
  * told to end and waited for, for a bounded time.
@@ -557,6 +595,14 @@ ih_dispatch(
 			amdrdna_vm_fault(device, interrupt);
 			return;
 		}
+	}
+
+	/* A thermal alert, the critical-temperature trip, or the power unit's software interrupt. */
+	if (interrupt->client == AMDRDNA_CLIENT_THERMAL ||
+	    interrupt->client == AMDRDNA_CLIENT_SMU_IO ||
+	    interrupt->client == AMDRDNA_CLIENT_SMU) {
+		amdrdna_thermal_interrupt(device, interrupt);
+		return;
 	}
 
 	/* Counts an event no block of this stage takes, and names the first few. */
