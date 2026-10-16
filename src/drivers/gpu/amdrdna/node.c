@@ -667,13 +667,17 @@ node_resource_map(
 		return 0;
 	}
 
-	/* A blob: its place in the window. */
+	/*
+	 * A blob: its place in the window, the pages it was asked for (the
+	 * backing is whole runs of the address spaces' 64 KiB; libvulkan maps
+	 * exactly the pages it asked for).
+	 */
 	mapping->physical = amdrdna_vram_bus(node->device, resource->backing->vram);
 	mapping->address = (void *)(uintptr_t)amdrdna_backing_cpu(node->device, resource->backing);
-	mapping->bytes = resource->backing->bytes;
+	mapping->bytes = (resource->bytes + NODE_PAGE_BYTES - 1U) & ~((uint64_t)NODE_PAGE_BYTES - 1U);
 	mapping->attributes = DRV_GPU_MAPPING_DEVICE;
 
-	/* Succeeded: the view covers the whole backing. */
+	/* Succeeded: the view covers the blob's pages. */
 	return 0;
 }
 

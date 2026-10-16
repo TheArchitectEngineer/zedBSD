@@ -585,12 +585,17 @@ vk_node_execute(
 	const void *wire,
 	uint32_t bytes)
 {
+	struct amdrdna_vk_session *executor;
 	int error;
 
 	/* The frame's commands, decoded and dispatched by the executor. */
-	error = amdrdna_vk_stream_execute(session->vk, wire, bytes, amdrdna_vk_dispatch);
-	if (error != 0)
+	executor = session->vk;
+	error = amdrdna_vk_stream_execute(executor, wire, bytes, amdrdna_vk_dispatch);
+	if (error != 0) {
+		amdrdna_mark("vk: a frame failed (%d): command %u refused, %u the last taken",
+		    error, (unsigned)executor->failed_opcode, (unsigned)executor->last_opcode);
 		return error;
+	}
 
 	/* Succeeded: the frame ran. */
 	return 0;
