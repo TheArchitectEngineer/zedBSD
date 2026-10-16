@@ -307,11 +307,13 @@ amdrdna_a4_power(
 
 	/* Marks the clocks the firmware reports, when it gave readings. */
 	if (thermal->clocked) {
-		amdrdna_mark("A4 clocks gfx=%uMHz average=%uMHz soc=%uMHz mem=%uMHz busy=%u%% levels=%s",
+		amdrdna_mark("A4 clocks gfx=%uMHz average=%uMHz soc=%uMHz mem=%uMHz dcef=%uMHz disp=%uMHz busy=%u%% levels=%s",
 		    thermal->gfx_clock,
 		    thermal->gfx_average,
 		    thermal->system_clock,
 		    thermal->memory_clock,
+		    thermal->return_clock,
+		    thermal->display_engine_clock,
 		    thermal->gfx_activity,
 		    thermal->clock_levels ? "asked" : "off");
 	}
@@ -533,6 +535,8 @@ amdrdna_power_clocks(
 	speeds_now->gfx_clock = thermal->gfx_clock;
 	speeds_now->system_clock = thermal->system_clock;
 	speeds_now->memory_clock = thermal->memory_clock;
+	speeds_now->return_clock = thermal->return_clock;
+	speeds_now->display_engine_clock = thermal->display_engine_clock;
 	speeds_now->gfx_average = thermal->gfx_average;
 	speeds_now->gfx_activity = thermal->gfx_activity;
 
@@ -1390,6 +1394,8 @@ power_read(
 	readings.gfx_clock = 0U;
 	readings.system_clock = 0U;
 	readings.memory_clock = 0U;
+	readings.return_clock = 0U;
+	readings.display_engine_clock = 0U;
 	readings.gfx_average = 0U;
 	readings.gfx_activity = 0U;
 	if (thermal->features_on) {
@@ -1425,6 +1431,8 @@ power_read(
 	thermal->gfx_clock = readings.gfx_clock;
 	thermal->system_clock = readings.system_clock;
 	thermal->memory_clock = readings.memory_clock;
+	thermal->return_clock = readings.return_clock;
+	thermal->display_engine_clock = readings.display_engine_clock;
 	thermal->gfx_average = readings.gfx_average;
 	thermal->gfx_activity = readings.gfx_activity;
 	thermal->readings++;

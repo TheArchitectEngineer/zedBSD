@@ -339,6 +339,76 @@ enum amdrdna_dcn_register {
 	AMDRDNA_DCN_AUX_SEND_STATUS,
 	AMDRDNA_DCN_AUX_SEND_DATA,
 	AMDRDNA_DCN_AUX_RECEIVE_CONTROL,
+	AMDRDNA_DCN_TIMING_BLANK,
+	AMDRDNA_DCN_TIMING_CRC_CONTROL,
+	AMDRDNA_DCN_TIMING_CRC_RED_GREEN,
+	AMDRDNA_DCN_TIMING_CRC_BLUE,
+	AMDRDNA_DCN_PLANE_SECOND_VIEWPORT_START,
+	AMDRDNA_DCN_PLANE_SECOND_VIEWPORT_SIZE,
+	AMDRDNA_DCN_PLANE_REQUEST_SIZE,
+	AMDRDNA_DCN_PLANE_REQUEST_SIZE_CHROMA,
+	AMDRDNA_DCN_PLANE_REQUEST_DEBUG,
+	AMDRDNA_DCN_PLANE_EXPANSION,
+	AMDRDNA_DCN_PLANE_LEVEL_MARKS,
+	AMDRDNA_DCN_PLANE_GLOBAL_TTU,
+	AMDRDNA_DCN_PLANE_LUMA_TTU,
+	AMDRDNA_DCN_PLANE_LUMA_TTU_PREFETCH,
+	AMDRDNA_DCN_PLANE_CHROMA_TTU,
+	AMDRDNA_DCN_PLANE_CHROMA_TTU_PREFETCH,
+	AMDRDNA_DCN_PLANE_CURSOR_TTU,
+	AMDRDNA_DCN_PLANE_CURSOR_TTU_PREFETCH,
+	AMDRDNA_DCN_PLANE_SECOND_CURSOR_TTU_PREFETCH,
+	AMDRDNA_DCN_PLANE_BLANK_OFFSET,
+	AMDRDNA_DCN_PLANE_NEXT_START,
+	AMDRDNA_DCN_PLANE_LINE_CYCLES,
+	AMDRDNA_DCN_PLANE_AFTER_SCALER,
+	AMDRDNA_DCN_PLANE_PREFETCH,
+	AMDRDNA_DCN_PLANE_PREFETCH_CHROMA,
+	AMDRDNA_DCN_PLANE_VBLANK_LINES,
+	AMDRDNA_DCN_PLANE_VBLANK_PTE,
+	AMDRDNA_DCN_PLANE_VBLANK_PTE_CHROMA,
+	AMDRDNA_DCN_PLANE_VBLANK_META,
+	AMDRDNA_DCN_PLANE_VBLANK_META_CHROMA,
+	AMDRDNA_DCN_PLANE_FLIP_LINES,
+	AMDRDNA_DCN_PLANE_FLIP_PTE,
+	AMDRDNA_DCN_PLANE_FLIP_META,
+	AMDRDNA_DCN_PLANE_PTE_ROW_LINES,
+	AMDRDNA_DCN_PLANE_PTE_GROUP,
+	AMDRDNA_DCN_PLANE_PTE_ROW_LINES_CHROMA,
+	AMDRDNA_DCN_PLANE_PTE_GROUP_CHROMA,
+	AMDRDNA_DCN_PLANE_META_ROW_LINES,
+	AMDRDNA_DCN_PLANE_META_CHUNK,
+	AMDRDNA_DCN_PLANE_META_ROW_LINES_CHROMA,
+	AMDRDNA_DCN_PLANE_META_CHUNK_CHROMA,
+	AMDRDNA_DCN_PLANE_LINE_DELIVERY_PREFETCH,
+	AMDRDNA_DCN_PLANE_LINE_DELIVERY,
+	AMDRDNA_DCN_PLANE_REFERENCE_RATIO,
+	AMDRDNA_DCN_PLANE_REQUEST_LIMIT,
+	AMDRDNA_DCN_HUB_URGENT_MARK,
+	AMDRDNA_DCN_HUB_TRIP_MARK,
+	AMDRDNA_DCN_HUB_ENTER_MARK,
+	AMDRDNA_DCN_HUB_EXIT_MARK,
+	AMDRDNA_DCN_HUB_SWITCH_MARK,
+	AMDRDNA_DCN_HUB_MARK_SELECT,
+	AMDRDNA_DCN_HUB_SATURATION,
+	AMDRDNA_DCN_HUB_OUTSTANDING,
+	AMDRDNA_DCN_HUB_TIMER,
+	AMDRDNA_DCN_TIMING_START_LINE,
+	AMDRDNA_DCN_TIMING_UPDATE,
+	AMDRDNA_DCN_TIMING_READY,
+	AMDRDNA_DCN_TIMING_V_TOTAL_MIN,
+	AMDRDNA_DCN_TIMING_V_TOTAL_MAX,
+	AMDRDNA_DCN_TIMING_INTERLACE,
+	AMDRDNA_DCN_TIMING_CLOCK_CONTROL,
+	AMDRDNA_DCN_VERTICAL_GENERATOR,
+	AMDRDNA_DCN_SCALER_H_BLANK,
+	AMDRDNA_DCN_SCALER_V_BLANK,
+	AMDRDNA_DCN_SCALER_BLEND_SIZE,
+	AMDRDNA_DCN_PIXEL_RATE_SOURCE,
+	AMDRDNA_DCN_TIMING_CRC_WINDOW_A_X,
+	AMDRDNA_DCN_TIMING_CRC_WINDOW_A_Y,
+	AMDRDNA_DCN_TIMING_CRC_WINDOW_B_X,
+	AMDRDNA_DCN_TIMING_CRC_WINDOW_B_Y,
 	AMDRDNA_DCN_REGISTER_COUNT
 };
 
@@ -457,7 +527,8 @@ enum amdrdna_vbios_command {
  * What the video BIOS image says that the driver uses: where its lists of
  * data tables and command routines are, the firmware description, the VRAM
  * the firmware keeps for itself, the power table's header and the board's
- * power-delivery table version, and the command routines named above.
+ * power-delivery table version, the display table's boot display clock and
+ * reference clock (in 10 kHz), and the command routines named above.
  *
  * A field whose table the image lacks is zero.
  */
@@ -492,6 +563,7 @@ struct amdrdna_vbios_info {
 	uint8_t board_format;
 	uint8_t board_content;
 	uint32_t boot_display_clock_10khz;
+	uint32_t display_reference_10khz;
 	struct amdrdna_vbios_routine commands[AMDRDNA_VBIOS_COMMAND_COUNT];
 };
 
@@ -524,6 +596,151 @@ struct amdrdna_vbios_connector {
 	uint8_t hotplug_pin;
 };
 
+/* The words the largest display routine's parameters take (the transmitter's 16 bytes and 16 reserved). */
+#define AMDRDNA_COMMAND_WORDS		8U
+
+/*
+ * The pixel clock routine's parameters: the clock in 100 Hz, the PLL, the
+ * encoder object's identifier, the encoder mode, the flags, the timing
+ * generator and the deep colour ratio.
+ */
+struct amdrdna_pixel_clock_command {
+	uint32_t pixel_100hz;
+	uint8_t pll;
+	uint8_t encoder_object;
+	uint8_t mode;
+	uint8_t flags;
+	uint8_t generator;
+	uint8_t depth;
+};
+
+/*
+ * The encoder routine's stream setup: the DIG, the action, the mode, the
+ * lanes, the pixel clock in 10 kHz, the bits a colour and the DisplayPort
+ * rate in 270 MHz units.
+ */
+struct amdrdna_encoder_command {
+	uint8_t dig;
+	uint8_t action;
+	uint8_t mode;
+	uint8_t lanes;
+	uint32_t pixel_10khz;
+	uint8_t bits_per_colour;
+	uint8_t dp_rate;
+};
+
+/*
+ * The transmitter routine's parameters: the PHY, the action, the mode (or
+ * a DisplayPort lane setting), the lanes, the symbol clock in 10 kHz, the
+ * hot-plug line (1 to 6, 0 for none), the DIG front ends and the connector
+ * object's identifier.
+ */
+struct amdrdna_transmitter_command {
+	uint8_t phy;
+	uint8_t action;
+	uint8_t mode;
+	uint8_t lanes;
+	uint32_t symbol_10khz;
+	uint8_t hotplug;
+	uint8_t front_ends;
+	uint8_t connector_id;
+};
+
+/*
+ * What the display plan (mode-plan.c) is given: a mode's timing (the
+ * totals, the active area and the front porches, the pixel clock in kHz),
+ * the surface's pitch in pixels (linear, 32 bits a pixel, shown unscaled
+ * on one pipe with a cursor), and the clocks the board runs in kHz (the hub's reference, the data fabric's return clock, the
+ * fabric, the display clock, the pipe clock) and the memory's transfer
+ * rate in MT/s.
+ */
+struct amdrdna_mode_plan_input {
+	uint32_t h_total;
+	uint32_t width;
+	uint32_t h_front;
+	uint32_t v_total;
+	uint32_t height;
+	uint32_t v_front;
+	uint32_t pixel_khz;
+	uint32_t pitch;
+	uint32_t reference_khz;
+	uint32_t return_khz;
+	uint32_t fabric_khz;
+	uint32_t display_khz;
+	uint32_t pipe_khz;
+	uint32_t memory_mts;
+};
+
+/*
+ * The display plan of a mode: what the memory may do in the vertical
+ * blank (0 change its clock and self-refresh, 1 only self-refresh, 2
+ * neither), whether its clock may change (0 never, 1 in the vertical
+ * blank, 2 in the active area too), the timing generator's global sync in
+ * lines and pixels, the hub's watermarks in ns, and the plane's request,
+ * deadline and arbitration fields as the registers take them.
+ */
+struct amdrdna_mode_plan {
+	unsigned vblank_use;
+	unsigned memory_switch;
+	uint32_t start_lines;
+	uint32_t update_offset;
+	uint32_t update_width;
+	uint32_t ready_offset;
+	uint32_t urgent_ns;
+	uint32_t switch_ns;
+	uint32_t refresh_exit_ns;
+	uint32_t refresh_enter_exit_ns;
+	uint32_t trip_ns;
+	uint32_t chunk_log;
+	uint32_t least_chunk_log;
+	uint32_t meta_chunk_log;
+	uint32_t least_meta_chunk_log;
+	uint32_t pte_group_log;
+	uint32_t meta_pte_group_log;
+	uint32_t pte_rows_log;
+	uint32_t swath_log;
+	uint32_t data_expansion;
+	uint32_t pte_expansion;
+	uint32_t meta_expansion;
+	uint32_t cursor_expansion;
+	uint32_t blank_end_cycles;
+	uint32_t blank_end_line;
+	uint32_t next_start_quarters;
+	uint32_t line_cycles;
+	uint32_t after_scaler_cycles;
+	uint32_t after_scaler_lines;
+	uint32_t prefetch_quarters;
+	uint32_t vm_vblank_quarters;
+	uint32_t row_vblank_quarters;
+	uint32_t vm_flip_quarters;
+	uint32_t row_flip_quarters;
+	uint32_t reference_to_pixel;
+	uint32_t prefetch_ratio;
+	uint32_t prefetch_ratio_chroma;
+	uint32_t pte_group_vblank_cycles;
+	uint32_t meta_chunk_vblank_cycles;
+	uint32_t pte_group_flip_cycles;
+	uint32_t meta_chunk_flip_cycles;
+	uint32_t pte_row_quarters;
+	uint32_t meta_row_quarters;
+	uint32_t pte_group_cycles;
+	uint32_t meta_chunk_cycles;
+	uint32_t line_delivery_prefetch_cycles;
+	uint32_t line_delivery_cycles;
+	uint32_t cursor_chunk_adjust;
+	uint32_t ready_after_zero;
+	uint32_t request_limit;
+	uint32_t low_level_mark;
+	uint32_t high_level_mark;
+	uint32_t vblank_ttu_cycles;
+	uint32_t flip_level;
+	uint32_t request_delivery_prefetch_cycles;
+	uint32_t request_delivery_cycles;
+	uint32_t cursor_delivery_prefetch_cycles;
+	uint32_t cursor_delivery_cycles;
+	uint32_t fixed_level;
+};
+
 /* The PCI place and identity a video BIOS image in the ACPI table names. */
 struct amdrdna_vbios_owner {
 	uint32_t bus;
@@ -553,8 +770,9 @@ struct amdrdna_power_limits {
 /*
  * One set of readings the unit's firmware handed back: the edge, hotspot
  * and memory temperatures in degrees Celsius and the fan's speed in turns
- * per minute; the graphics, system and memory clocks as they run now and
- * the graphics clock's average, in megahertz; and how busy the graphics
+ * per minute; the graphics, system and memory clocks, the display's data
+ * return clock and the display clock as they run now and the graphics
+ * clock's average, in megahertz; and how busy the graphics
  * engine was on average, in percent.
  */
 struct amdrdna_power_readings {
@@ -565,6 +783,8 @@ struct amdrdna_power_readings {
 	unsigned gfx_clock;
 	unsigned system_clock;
 	unsigned memory_clock;
+	unsigned return_clock;
+	unsigned display_engine_clock;
 	unsigned gfx_average;
 	unsigned gfx_activity;
 };
@@ -1404,6 +1624,32 @@ amdrdna_vbios_parse(
 	const uint8_t *image,
 	size_t length,
 	struct amdrdna_vbios_info *info);
+
+void
+amdrdna_command_pixel_clock(
+	uint32_t *words,
+	const struct amdrdna_pixel_clock_command *command);
+
+void
+amdrdna_command_encoder(
+	uint32_t *words,
+	const struct amdrdna_encoder_command *command);
+
+void
+amdrdna_command_transmitter(
+	uint32_t *words,
+	const struct amdrdna_transmitter_command *command);
+
+void
+amdrdna_command_pipe(
+	uint32_t *words,
+	uint32_t generator,
+	uint32_t on);
+
+int
+amdrdna_mode_plan(
+	const struct amdrdna_mode_plan_input *input,
+	struct amdrdna_mode_plan *plan);
 
 int
 amdrdna_vbios_connector(

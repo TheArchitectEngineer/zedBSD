@@ -201,18 +201,22 @@
 /*
  * The clocks in the same readings, in megahertz: the graphics, system and
  * memory clocks as they run now (the first three of the table's clocks),
- * the graphics clock's average, and the graphics engine's average
+ * the display's data return clock and the display clock (its sixth and
+ * seventh), the graphics clock's average, and the graphics engine's average
  * activity in percent.  The older layout puts them at the same places.
  *
  * Values referenced: Linux v6.19
  * drivers/gpu/drm/amd/pm/swsmu/inc/pmfw_if/smu11_driver_if_navi10.h
  * (SmuMetrics_t and SmuMetrics_legacy_t: CurrClock with PPCLK_GFXCLK,
- * PPCLK_SOCCLK and PPCLK_UCLK, AverageGfxclkFrequencyPostDs and
+ * PPCLK_SOCCLK, PPCLK_UCLK, PPCLK_DCEFCLK and PPCLK_DISPCLK,
+ * AverageGfxclkFrequencyPostDs and
  * AverageGfxclkFrequency, AverageGfxActivity).
  */
 #define FORMAT_READING_GFX_CLOCK_AT		0U
 #define FORMAT_READING_SOC_CLOCK_AT		2U
 #define FORMAT_READING_MEMORY_CLOCK_AT		4U
+#define FORMAT_READING_RETURN_CLOCK_AT		10U
+#define FORMAT_READING_DISPLAY_CLOCK_AT		12U
 #define FORMAT_READING_GFX_AVERAGE_AT		18U
 #define FORMAT_READING_GFX_ACTIVITY_AT		24U
 
@@ -602,6 +606,8 @@ amdrdna_power_readings_read(
 	result->gfx_clock = amdrdna_le16(readings, FORMAT_READING_GFX_CLOCK_AT);
 	result->system_clock = amdrdna_le16(readings, FORMAT_READING_SOC_CLOCK_AT);
 	result->memory_clock = amdrdna_le16(readings, FORMAT_READING_MEMORY_CLOCK_AT);
+	result->return_clock = amdrdna_le16(readings, FORMAT_READING_RETURN_CLOCK_AT);
+	result->display_engine_clock = amdrdna_le16(readings, FORMAT_READING_DISPLAY_CLOCK_AT);
 
 	/* The graphics clock's average and how busy the graphics engine was. */
 	result->gfx_average = amdrdna_le16(readings, FORMAT_READING_GFX_AVERAGE_AT);

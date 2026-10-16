@@ -293,6 +293,7 @@ static int sink_path(struct amdrdna_device *device, struct amdrdna_sink *sink);
 static const char *sink_connector_name(enum amdrdna_connector_kind kind);
 static int sink_edid_engine(struct amdrdna_device *device, struct amdrdna_sink *sink);
 static int sink_edid_bios(struct amdrdna_device *device, struct amdrdna_sink *sink);
+static int sink_bios_run(struct amdrdna_device *device, unsigned routine, uint32_t *parameters, uint32_t parameter_words, uint32_t *steps, uint32_t *scratch_out, uint32_t scratch_words);
 static int sink_dpcd(struct amdrdna_device *device, struct amdrdna_sink *sink);
 static void sink_limit(struct amdrdna_device *device, struct amdrdna_sink *sink);
 static int i2c_read(struct amdrdna_device *device, unsigned line, uint8_t offset, uint8_t *bytes, unsigned count);
@@ -537,6 +538,34 @@ amdrdna_sink_check(
 }
 
 /*
+ * Runs a video BIOS routine on the board's registers with its parameters
+ * (the runner and a scratch area of its own, made for the run); steps
+ * gets the instructions it ran.  The scratch area's first dwords, where a
+ * routine leaves what it reads, are copied to scratch_out (scratch_words
+ * of them, none when NULL).
+ *
+ * Returns 0; ENOMEM; or the runner's error (the reason is said).
+ */
+int
+amdrdna_bios_run(
+	struct amdrdna_device *device,
+	unsigned routine,
+	uint32_t *parameters,
+	uint32_t parameter_words,
+	uint32_t *steps)
+{
+	int error;
+
+	/* The run without its scratch area's bytes. */
+	error = sink_bios_run(device, routine, parameters, parameter_words, steps, NULL, 0U);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the routine ran. */
+	return 0;
+}
+
+/*
  * Finds the path of the firmware's output: its transmitter (the encoder
  * back end's number), the video BIOS's path of it, and the I2C line whose
  * pad the path's I2C identifier names.
@@ -631,27 +660,25 @@ sink_edid_engine(
 	return 0;
 }
 
-/*
- * Reads the base block again by the video BIOS's I2C routine, run on the
- * board's registers, and compares it with the engine's.  Returns 0 when
- * the two are the same; ENOENT when the image has no such routine; EIO
- * when the routine reported a failure or read other bytes; the runner's
- * error when it stopped.
- */
+/* Runs a routine as amdrdna_bios_run() does, copying the scratch area's first words out. */
 static int
-sink_edid_bios(
+sink_bios_run(
 	struct amdrdna_device *device,
-	struct amdrdna_sink *sink)
+	unsigned routine,
+	uint32_t *parameters,
+	uint32_t parameter_words,
+	uint32_t *steps,
+	uint32_t *scratch_out,
+	uint32_t scratch_words)
 {
 	struct amdrdna_bytecode_access access;
 	struct amdrdna_bytecode *runner;
 	struct sink_bios bios;
-	uint32_t parameters[BIOS_I2C_PARAMETER_WORDS];
 	uint32_t *scratch;
-	uint8_t status;
 	int error;
 
 	/* The runner and its scratch area. */
+	*steps = 0U;
 	runner = kern_calloc(1U, sizeof(*runner));
 	scratch = kern_calloc(1U, BIOS_SCRATCH_BYTES);
 	if (runner == NULL || scratch == NULL) {
@@ -668,35 +695,66 @@ sink_edid_bios(
 	access.wait = bios_wait;
 	error = amdrdna_bytecode_open(runner, device->vbios, device->vbios_bytes, &access, scratch, BIOS_SCRATCH_BYTES);
 
-	/* A read of the base block on the path's line: speed, index 0, read, the bytes, the address, the line. */
+	/* The routine. */
 	if (error == 0) {
-		parameters[0] = BIOS_I2C_SPEED_KHZ;
-		parameters[1] = BIOS_I2C_READ | ((uint32_t)AMDRDNA_EDID_BLOCK_BYTES << 8) | ((uint32_t)(EDID_ADDRESS << 1) << 16) |
-				((uint32_t)sink->connector.ddc_identifier << 24);
-		error = amdrdna_bytecode_run(runner, BIOS_I2C_ROUTINE, parameters, BIOS_I2C_PARAMETER_WORDS);
-		sink->bios_steps = (uint32_t)runner->steps;
+		error = amdrdna_bytecode_run(runner, routine, parameters, parameter_words);
+		*steps = (uint32_t)runner->steps;
 		if (error != 0)
-			amdrdna_mark("A10 note: the video BIOS's I2C routine stopped: %s at 0x%x (%d)",
+			amdrdna_mark("the video BIOS's routine 0x%02x stopped: %s at 0x%x (%d)", routine,
 			    runner->failure != NULL ? runner->failure : "?", (unsigned)runner->failed_at, error);
 	}
 
-	/* Its status, then its bytes against the engine's. */
-	if (error == 0) {
-		status = (uint8_t)(parameters[0] >> 8);
-		if (status != BIOS_I2C_OK)
-			error = EIO;
-		else if (kern_memcmp(scratch, sink->edid_bytes, AMDRDNA_EDID_BLOCK_BYTES) != 0)
-			error = EIO;
-		if (error != 0)
-			amdrdna_mark("A10 note: the video BIOS's I2C read status %u, first bytes %08x %08x", (unsigned)status,
-			    (unsigned)scratch[0], (unsigned)scratch[1]);
-	}
+	/* What it left in the scratch area. */
+	if (error == 0 && scratch_out != NULL)
+		kern_memcpy(scratch_out, scratch, (size_t)scratch_words * 4U);
 
 	/* The runner given back. */
 	kern_free(scratch);
 	kern_free(runner);
 	if (error != 0)
 		return error;
+
+	/* Succeeded: the routine ran. */
+	return 0;
+}
+
+/*
+ * Reads the base block again by the video BIOS's I2C routine, run on the
+ * board's registers, and compares it with the engine's.  Returns 0 when
+ * the two are the same; ENOENT when the image has no such routine; EIO
+ * when the routine reported a failure or read other bytes; the runner's
+ * error when it stopped.
+ */
+static int
+sink_edid_bios(
+	struct amdrdna_device *device,
+	struct amdrdna_sink *sink)
+{
+	uint32_t parameters[BIOS_I2C_PARAMETER_WORDS];
+	uint32_t block[AMDRDNA_EDID_BLOCK_BYTES / 4U];
+	uint8_t status;
+	int error;
+
+	/* A read of the base block on the path's line: speed, index 0, read, the bytes, the address, the line. */
+	parameters[0] = BIOS_I2C_SPEED_KHZ;
+	parameters[1] = BIOS_I2C_READ | ((uint32_t)AMDRDNA_EDID_BLOCK_BYTES << 8) | ((uint32_t)(EDID_ADDRESS << 1) << 16) |
+			((uint32_t)sink->connector.ddc_identifier << 24);
+	error = sink_bios_run(device, BIOS_I2C_ROUTINE, parameters, BIOS_I2C_PARAMETER_WORDS, &sink->bios_steps, block,
+	    AMDRDNA_EDID_BLOCK_BYTES / 4U);
+	if (error != 0)
+		return error;
+
+	/* Its status, then its bytes against the engine's. */
+	status = (uint8_t)(parameters[0] >> 8);
+	if (status != BIOS_I2C_OK)
+		error = EIO;
+	else if (kern_memcmp(block, sink->edid_bytes, AMDRDNA_EDID_BLOCK_BYTES) != 0)
+		error = EIO;
+	if (error != 0) {
+		amdrdna_mark("A10 note: the video BIOS's I2C read status %u, first bytes %08x %08x", (unsigned)status,
+		    (unsigned)block[0], (unsigned)block[1]);
+		return error;
+	}
 
 	/* Succeeded: the routine read the same block. */
 	return 0;

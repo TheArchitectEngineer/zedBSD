@@ -86,6 +86,26 @@ static const uint16_t i2c_transaction_offsets[AMDRDNA_DISPLAY_PIPES] = {
 };
 
 /*
+ * The hub arbiter's four watermark sets A to D (window 2), each the five
+ * words urgent, page table urgent, self-refresh entry, self-refresh exit
+ * and memory clock change in a row; instances past the fourth name the
+ * last.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/asic_reg/dcn/dcn_2_0_0_offset.h
+ * (mmDCHUBBUB_ARB_DATA_URGENCY_WATERMARK_A to _D, and the four other words
+ * of each set after it).
+ */
+static const uint16_t mark_set_offsets[AMDRDNA_DISPLAY_PIPES] = {
+	0x0509U,
+	0x050eU,
+	0x0513U,
+	0x0518U,
+	0x0518U,
+	0x0518U
+};
+
+/*
  * The place of every named display register, in the order of
  * enum amdrdna_dcn_register: the clock controls in window 1, the pipe
  * blocks in window 2, with the plane (0xdc apart), the blend units (0x1b),
@@ -146,11 +166,46 @@ static const uint16_t i2c_transaction_offsets[AMDRDNA_DISPLAY_PIPES] = {
  * mmDP_AUX0_AUX_ARB_CONTROL, mmDP_AUX0_AUX_INTERRUPT_CONTROL,
  * mmDP_AUX0_AUX_SW_STATUS, mmDP_AUX0_AUX_SW_DATA,
  * mmDP_AUX0_AUX_DPHY_RX_CONTROL0 and the same of DP_AUX1 to DP_AUX5).
+ * The registers the mode set adds, from the same header: the timing
+ * generator's blank control, CRC control and the first CRC's words
+ * (mmOTG0_OTG_BLANK_CONTROL, mmOTG0_OTG_CRC_CNTL, mmOTG0_OTG_CRC0_DATA_RG,
+ * mmOTG0_OTG_CRC0_DATA_B).
+ * The registers the mode set's own pipe programming adds, from the same
+ * header: the plane's second viewport, request sizes, debug word,
+ * expansion modes, arbitration levels and times, deadline words
+ * (mmHUBP0_DCSURF_SEC_VIEWPORT_START, mmHUBP0_DCSURF_SEC_VIEWPORT_DIMENSION,
+ * mmHUBP0_DCHUBP_REQ_SIZE_CONFIG, mmHUBP0_DCHUBP_REQ_SIZE_CONFIG_C,
+ * mmHUBP0_HUBPREQ_DEBUG_DB, mmHUBPREQ0_DCN_EXPANSION_MODE,
+ * mmHUBPREQ0_DCN_TTU_QOS_WM, mmHUBPREQ0_DCN_GLOBAL_TTU_CNTL,
+ * mmHUBPREQ0_DCN_SURF0_TTU_CNTL0 and CNTL1, mmHUBPREQ0_DCN_SURF1_TTU_CNTL0
+ * and CNTL1, mmHUBPREQ0_DCN_CUR0_TTU_CNTL0 and CNTL1,
+ * mmHUBPREQ0_DCN_CUR1_TTU_CNTL1, mmHUBPREQ0_BLANK_OFFSET_0 and _1,
+ * mmHUBPREQ0_DST_DIMENSIONS, mmHUBPREQ0_DST_AFTER_SCALER,
+ * mmHUBPREQ0_PREFETCH_SETTINGS and _C, mmHUBPREQ0_VBLANK_PARAMETERS_0 to
+ * _4, mmHUBPREQ0_FLIP_PARAMETERS_0 to _2, mmHUBPREQ0_NOM_PARAMETERS_0 to
+ * _7, mmHUBPREQ0_PER_LINE_DELIVERY_PRE, mmHUBPREQ0_PER_LINE_DELIVERY,
+ * mmHUBPREQ0_REF_FREQ_TO_PIX_FREQ, mmHUBPREQ0_DST_Y_DELTA_DRQ_LIMIT), the
+ * hub arbiter's watermarks (the five words of each set, as above), its
+ * watermark select, saturation level, outstanding requests and timer
+ * (mmDCHUBBUB_ARB_WATERMARK_CHANGE_CNTL, mmDCHUBBUB_ARB_SAT_LEVEL,
+ * mmDCHUBBUB_ARB_DF_REQ_OUTSTAND, mmDCHUBBUB_GLOBAL_TIMER_CNTL), the
+ * timing generator's global sync, total limits, interlace and clock
+ * control (mmOTG0_OTG_VSTARTUP_PARAM, mmOTG0_OTG_VUPDATE_PARAM,
+ * mmOTG0_OTG_VREADY_PARAM, mmOTG0_OTG_V_TOTAL_MIN, mmOTG0_OTG_V_TOTAL_MAX,
+ * mmOTG0_OTG_INTERLACE_CONTROL, mmOTG0_OTG_CLOCK_CONTROL), the vertical
+ * timing generators (mmVTG0_CONTROL), and the scaler's copy of the blank
+ * and its blend size (mmDSCL0_OTG_H_BLANK, mmDSCL0_OTG_V_BLANK,
+ * mmDSCL0_MPC_SIZE and the same of DSCL1 to DSCL5), and the PHY PLL that
+ * clocks each timing generator (mmOTG0_PHYPLL_PIXEL_RATE_CNTL), and the
+ * first CRC's two windows (mmOTG0_OTG_CRC0_WINDOWA_X_CONTROL,
+ * mmOTG0_OTG_CRC0_WINDOWA_Y_CONTROL, mmOTG0_OTG_CRC0_WINDOWB_X_CONTROL,
+ * mmOTG0_OTG_CRC0_WINDOWB_Y_CONTROL).
  * derived: the distances are the differences between the offsets of
  * instance 1 and instance 0 in the same header; a scaler register's
  * distance from its pixel processor's control word is the same in all six
  * pipes (0x27, 0x2c, 0x30, 0x3d, 0x3e and 0x38), and so is a cursor
- * register's (0x1b and 0x1e).
+ * register's (0x1b and 0x1e), and so are the scaler's blank and blend
+ * size words (0x3b, 0x3c and 0x3f).
  */
 static const struct dcn_place dcn_places[AMDRDNA_DCN_REGISTER_COUNT] = {
 	{ 1U, 0x0000U, 0x0000U, head_legacy_offsets },
@@ -234,7 +289,77 @@ static const struct dcn_place dcn_places[AMDRDNA_DCN_REGISTER_COUNT] = {
 	{ 2U, 0x1f53U, 0x001cU, NULL },
 	{ 2U, 0x1f54U, 0x001cU, NULL },
 	{ 2U, 0x1f56U, 0x001cU, NULL },
-	{ 2U, 0x1f5aU, 0x001cU, NULL }
+	{ 2U, 0x1f5aU, 0x001cU, NULL },
+	{ 2U, 0x1b42U, 0x0080U, NULL },
+	{ 2U, 0x1b68U, 0x0080U, NULL },
+	{ 2U, 0x1b6eU, 0x0080U, NULL },
+	{ 2U, 0x1b6fU, 0x0080U, NULL },
+	{ 2U, 0x05edU, 0x00dcU, NULL },
+	{ 2U, 0x05eeU, 0x00dcU, NULL },
+	{ 2U, 0x05f1U, 0x00dcU, NULL },
+	{ 2U, 0x05f2U, 0x00dcU, NULL },
+	{ 2U, 0x05f6U, 0x00dcU, NULL },
+	{ 2U, 0x062cU, 0x00dcU, NULL },
+	{ 2U, 0x062dU, 0x00dcU, NULL },
+	{ 2U, 0x062eU, 0x00dcU, NULL },
+	{ 2U, 0x062fU, 0x00dcU, NULL },
+	{ 2U, 0x0630U, 0x00dcU, NULL },
+	{ 2U, 0x0631U, 0x00dcU, NULL },
+	{ 2U, 0x0632U, 0x00dcU, NULL },
+	{ 2U, 0x0633U, 0x00dcU, NULL },
+	{ 2U, 0x0634U, 0x00dcU, NULL },
+	{ 2U, 0x0636U, 0x00dcU, NULL },
+	{ 2U, 0x0646U, 0x00dcU, NULL },
+	{ 2U, 0x0647U, 0x00dcU, NULL },
+	{ 2U, 0x0648U, 0x00dcU, NULL },
+	{ 2U, 0x0649U, 0x00dcU, NULL },
+	{ 2U, 0x064aU, 0x00dcU, NULL },
+	{ 2U, 0x064bU, 0x00dcU, NULL },
+	{ 2U, 0x064cU, 0x00dcU, NULL },
+	{ 2U, 0x064dU, 0x00dcU, NULL },
+	{ 2U, 0x064eU, 0x00dcU, NULL },
+	{ 2U, 0x064fU, 0x00dcU, NULL },
+	{ 2U, 0x0650U, 0x00dcU, NULL },
+	{ 2U, 0x0651U, 0x00dcU, NULL },
+	{ 2U, 0x0652U, 0x00dcU, NULL },
+	{ 2U, 0x0653U, 0x00dcU, NULL },
+	{ 2U, 0x0654U, 0x00dcU, NULL },
+	{ 2U, 0x0655U, 0x00dcU, NULL },
+	{ 2U, 0x0656U, 0x00dcU, NULL },
+	{ 2U, 0x0657U, 0x00dcU, NULL },
+	{ 2U, 0x0658U, 0x00dcU, NULL },
+	{ 2U, 0x0659U, 0x00dcU, NULL },
+	{ 2U, 0x065aU, 0x00dcU, NULL },
+	{ 2U, 0x065bU, 0x00dcU, NULL },
+	{ 2U, 0x065cU, 0x00dcU, NULL },
+	{ 2U, 0x065dU, 0x00dcU, NULL },
+	{ 2U, 0x065fU, 0x00dcU, NULL },
+	{ 2U, 0x0660U, 0x00dcU, NULL },
+	{ 2U, 0x0000U, 0x0000U, mark_set_offsets },
+	{ 2U, 0x0001U, 0x0000U, mark_set_offsets },
+	{ 2U, 0x0002U, 0x0000U, mark_set_offsets },
+	{ 2U, 0x0003U, 0x0000U, mark_set_offsets },
+	{ 2U, 0x0004U, 0x0000U, mark_set_offsets },
+	{ 2U, 0x051dU, 0x0000U, NULL },
+	{ 2U, 0x0506U, 0x0000U, NULL },
+	{ 2U, 0x0505U, 0x0000U, NULL },
+	{ 2U, 0x051fU, 0x0000U, NULL },
+	{ 2U, 0x1b87U, 0x0080U, NULL },
+	{ 2U, 0x1b88U, 0x0080U, NULL },
+	{ 2U, 0x1b89U, 0x0080U, NULL },
+	{ 2U, 0x1b30U, 0x0080U, NULL },
+	{ 2U, 0x1b31U, 0x0080U, NULL },
+	{ 2U, 0x1b44U, 0x0080U, NULL },
+	{ 2U, 0x1b86U, 0x0080U, NULL },
+	{ 2U, 0x0528U, 0x0001U, NULL },
+	{ 2U, 0x003bU, 0x0000U, pixel_processor_offsets },
+	{ 2U, 0x003cU, 0x0000U, pixel_processor_offsets },
+	{ 2U, 0x003fU, 0x0000U, pixel_processor_offsets },
+	{ 1U, 0x0083U, 0x0004U, NULL },
+	{ 2U, 0x1b6aU, 0x0080U, NULL },
+	{ 2U, 0x1b6bU, 0x0080U, NULL },
+	{ 2U, 0x1b6cU, 0x0080U, NULL },
+	{ 2U, 0x1b6dU, 0x0080U, NULL }
 };
 
 /*

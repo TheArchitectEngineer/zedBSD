@@ -254,6 +254,8 @@ struct amdrdna_thermal {
 	unsigned gfx_clock;
 	unsigned system_clock;
 	unsigned memory_clock;
+	unsigned return_clock;
+	unsigned display_engine_clock;
 	unsigned gfx_average;
 	unsigned gfx_activity;
 	unsigned readings;
@@ -1193,6 +1195,23 @@ int
 amdrdna_a9_draw(
 	struct amdrdna_device *device);
 
+/* relight.c: stage A11. */
+int
+amdrdna_a11_relight(
+	struct amdrdna_device *device);
+
+/* modeset.c: stage A12. */
+int
+amdrdna_a12_mode(
+	struct amdrdna_device *device);
+
+void
+amdrdna_timing_crc_window(
+	struct amdrdna_device *device,
+	unsigned timing,
+	uint32_t width,
+	uint32_t height);
+
 /* sink.c: stage A10. */
 int
 amdrdna_a10_sink(
@@ -1201,6 +1220,14 @@ amdrdna_a10_sink(
 const struct amdrdna_sink *
 amdrdna_sink_ready(
 	const struct amdrdna_device *device);
+
+int
+amdrdna_bios_run(
+	struct amdrdna_device *device,
+	unsigned routine,
+	uint32_t *parameters,
+	uint32_t parameter_words,
+	uint32_t *steps);
 
 bool
 amdrdna_sink_mode(
@@ -1292,6 +1319,11 @@ void
 amdrdna_display_cursor_use(
 	struct amdrdna_device *device,
 	unsigned slot);
+
+uint32_t
+amdrdna_display_underflow(
+	struct amdrdna_device *device,
+	uint32_t *timing_underflow);
 
 int
 amdrdna_display_blank(

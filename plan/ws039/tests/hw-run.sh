@@ -15,13 +15,13 @@
 #                                                   into OUT (a new directory below build/tmp by default)
 #   plan/ws039/tests/hw-run.sh debian                reboot zedBSD back into Debian
 #
-# AMDRDNA_HOST (default awe@10.0.10.3) is Debian; AMDRDNA_ZED (default root@10.0.10.3) is zedBSD, reached with the
+# AMDRDNA_HOST (default awe@10.0.10.3) is Debian; AMDRDNA_ZED (default root@10.0.30.5) is zedBSD, reached with the
 # guest harness key plan/tmp/guest/id_ed25519.  Nothing is removed.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
 repo=$(cd "$(dirname "$0")/../../.." && pwd)
 host=${AMDRDNA_HOST:-awe@10.0.10.3}
-zed=${AMDRDNA_ZED:-root@10.0.10.3}
+zed=${AMDRDNA_ZED:-root@10.0.30.5}
 key=$repo/plan/tmp/guest/id_ed25519
 debian="timeout 600 ssh -o BatchMode=yes -o ConnectTimeout=10 $host"
 zedssh="ssh -i $key -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $zed"

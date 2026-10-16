@@ -5,6 +5,7 @@
 EINVAL
 above
 access
+across
 action
 active
 address
@@ -26,6 +27,7 @@ bios
 bits
 block
 blocks
+blue
 board
 bool
 boot
@@ -38,10 +40,12 @@ bytes
 capabilities
 capability
 case
+change
 changed
 channel
 channels
 char
+check
 checked
 chip
 clear
@@ -67,6 +71,7 @@ count
 counter
 crystal
 current
+cycles
 data
 database
 default
@@ -80,8 +85,10 @@ digital
 direct
 disabled
 display
+divider
 done
 doorbell
+down
 dpcd
 driver
 drivers
@@ -92,9 +99,11 @@ element
 else
 enable
 enabled
+encoder
 endif
 engine
 engines
+enter
 entries
 entry
 enum
@@ -112,11 +121,13 @@ field
 fields
 file
 files
+firmware
 first
 flags
 flush
 format
 found
+fraction
 frame
 frames
 frequency
@@ -155,6 +166,7 @@ known
 lanes
 last
 layout
+leave
 left
 length
 level
@@ -187,6 +199,7 @@ mutex_lock
 mutex_unlock
 name
 needed
+negative
 next
 node
 number
@@ -201,11 +214,13 @@ order
 other
 output
 outside
+over
 packets
 page
 parameter
 parameters
 part
+parts
 pass
 path
 paths
@@ -213,6 +228,7 @@ pending
 persistent
 physical
 pins
+pitch
 pixel
 pixels
 place
@@ -220,6 +236,7 @@ placement
 places
 platform
 pointer
+polarity
 poll
 port
 position
@@ -248,6 +265,7 @@ registration
 request
 requested
 reserved
+rest
 result
 retired
 return
@@ -258,6 +276,7 @@ root
 round
 running
 runs
+same
 sched
 scheduler
 scratch
@@ -283,6 +302,7 @@ span
 speed
 spin_lock_irqsave
 spin_unlock_irqrestore
+spread
 start
 state
 static
@@ -308,6 +328,7 @@ total
 training
 translation
 transmitter
+trip
 true
 type
 typedef
@@ -315,6 +336,7 @@ uint16_t
 uint32_t
 uint64_t
 uint8_t
+under
 underflow
 unit
 units
@@ -328,6 +350,7 @@ vector
 vendor
 version
 vertical
+view
 void
 volatile
 vram

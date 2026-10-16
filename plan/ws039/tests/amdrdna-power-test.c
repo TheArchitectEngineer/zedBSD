@@ -394,12 +394,16 @@ test_linux(
 	check(readings.gfx_clock == 300U && readings.system_clock == 600U && readings.memory_clock == 875U &&
 	    readings.gfx_average == 299U && readings.gfx_activity == 37U,
 	    "linux.clocks", "the clocks are not 300, 600, 875, 299 MHz and 37%");
+	check(readings.return_clock == 506U && readings.display_engine_clock == 164U, "linux.display-clocks",
+	    "the display's clocks are not 506 and 164 MHz");
 	amdrdna_power_readings_read(legacy, &readings);
 	check(readings.edge == 41U && readings.hotspot == 43U && readings.memory == 42U && readings.fan_speed == 987U,
 	    "linux.readings-legacy", "the older readings are not 41, 43, 42 and 987");
 	check(readings.gfx_clock == 1750U && readings.system_clock == 1100U && readings.memory_clock == 100U &&
 	    readings.gfx_average == 1600U && readings.gfx_activity == 99U,
 	    "linux.clocks-legacy", "the older clocks are not 1750, 1100, 100, 1600 MHz and 99%");
+	check(readings.return_clock == 810U && readings.display_engine_clock == 600U, "linux.display-clocks-legacy",
+	    "the older display's clocks are not 810 and 600 MHz");
 
 	free(power);
 	free(board);

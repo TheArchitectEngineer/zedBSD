@@ -211,9 +211,15 @@ test_edid(void)
 	index = amdrdna_edid_find(&edid, 640U, 480U, 60000U);
 	check(index < edid.mode_count && edid.modes[index].pixel_khz == 25175U && edid.modes[index].source == AMDRDNA_TIMING_ESTABLISHED,
 	    "edid: 640x480@60 established (%u)", index);
+	check(index < edid.mode_count && edid.modes[index].h_porch == 16U && edid.modes[index].h_pulse == 96U &&
+	    edid.modes[index].v_porch == 10U && edid.modes[index].v_pulse == 2U && !edid.modes[index].h_positive &&
+	    !edid.modes[index].v_positive, "edid: 640x480@60 established with DMT's porches, syncs and negative polarities");
 	index = amdrdna_edid_find(&edid, 1280U, 1024U, 0U);
 	check(index < edid.mode_count && edid.modes[index].pixel_khz == 108000U && edid.modes[index].source == AMDRDNA_TIMING_STANDARD,
 	    "edid: 1280x1024 standard with its clock (%u)", index);
+	check(index < edid.mode_count && edid.modes[index].h_porch == 48U && edid.modes[index].h_pulse == 112U &&
+	    edid.modes[index].v_porch == 1U && edid.modes[index].v_pulse == 3U && edid.modes[index].h_positive &&
+	    edid.modes[index].v_positive, "edid: 1280x1024 standard with DMT's porches, syncs and positive polarities");
 	index = amdrdna_edid_find(&edid, 1600U, 900U, 60000U);
 	check(index < edid.mode_count && edid.modes[index].pixel_khz == 108000U, "edid: 1600x900@60 standard");
 	index = amdrdna_edid_find(&edid, 1440U, 900U, 75000U);
