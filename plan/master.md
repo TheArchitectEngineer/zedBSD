@@ -606,6 +606,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-16 午後: i915 の display の書き直しの最初の段 p047（回帰の証拠の道具: survey と mmio の書き込みの記録）が 5330 の素の起動の回帰に合格（基準と同じ: graphical・lease・picture up・device lost 0・backlight 100、survey lit）→ main に merge（3e1e0c687）、ci の vmunix は warning 0。LCD の目視は未確認（beta2.md の一覧）。
 - 2026-10-16（ユーザー）:「p006, p009, p012の順でどうですか？」→ WS039 は p006（display）→ p009（desktop）→ p012（SMU Tier F の実機）の順。p006 は q1220（P3）。
 - 2026-10-16 午後: AMD RDNA の driver の段 A9（WS039 p008: executor の組み込み、compiler の改良を含む）が実機で ok、vkquad が libvulkan から RX 5600 XT で描けた → main に merge（5ac37f771）。ci の vmunix は warning 0。amdrdna.vk の既定は 0 のまま。
 - 2026-10-16（ユーザー）:「起動が止まったとき、何も試さずに電源を長押しして電源OFFしたので、もうわかりません。電源ケーブルは抜けていました。」→ p047 の 1 回目の backlight の消灯は battery の idle の screen off で説明がつく（p047 の不具合ではない）。「GPU投入終了は記録だけ残して先に進みましょう。」→ BUG-325（tracking）。
