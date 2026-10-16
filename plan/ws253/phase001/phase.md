@@ -104,3 +104,29 @@ commit: d9dbec60d（base 3f9387f72）。
 
 - 5330 の素の起動での確認（P1 への依頼文は返却に書いた）。compose の約 10 s の内訳は、細かい STARTUP の行で分かる。i915 の側（kernel の中の SPIR-V の compile など）なら P1 の担当。
 - USB の stick からの読み込みの遅さ（page-in・小さな file）が 5330 の compositor の前半の 4〜6 s の主な候補。USB storage の driver と VM の page fault の先読みは今回の範囲の外（必要なら別の WS）。
+
+## q1221-i03（2026-10-16 P2）: kernel の起動の段の時刻
+
+commit: 71715e844（base 52c4b1e66）。
+
+### 5330 の記録（P1 の `ws253-boot-8666f25a6-20261016.txt`、main 8666f25a6 の kernel、読むだけ）
+
+- init.log: init started 14.741 → greeter 14.842 → desktop shown 19.542（HANDOFF go 19480、session ready waited 4444）→ late の段 19.542〜29.932（homes 1.6 s、networkd の READY 5.0 s、networking 2.1 s）。
+- STARTUP: start at_ms=17332（sessiond の start 14.84 から compositor の main まで約 2.5 s）、compose 2065 ms（うち glyphs-fonts 1541 ms）、output-swapchain 3210 ms・MODE switch 3245 ms（表示は 22.7 s）。
+- `sysctl hw.diskstats`（起動の後）: sda read_ops=1693 read_bytes=33 MB **read_ns=92.2 s**（1 回の読み込みの平均 54 ms）、busy_ns=42.3 s。QEMU の USB の stick は同じ数の読み込みで平均 0.68 ms（NVMe 0.40 ms）。dd の 10 MB の連続の読み込みは 0.56 s で速いので、**小さな読み込みが 1 回ごとに長く待つ**。glyphs-fonts（font の file 3 つ、計約 340 KB を read() で読むだけ）の 1.5 s、compositor の exec・lib の page-in の 2.5 s、homes の 1.6 s、kernel→init の一部はこの USB の読み込みの待ちと見ている（usb-storage・xHCI の driver の側、この Phase の範囲の外）。
+- output-swapchain 3.2 s は i915 の modeset（P1 の担当）。記録だけ。
+
+### 変えた事
+
+- `kern_log_boot_step()`（`src/kern/klog.c`・`include/kern/klog.h`）: `boot: at N ms: STEP` の行を kernel の log に残す。N は kernel の clock（user の CLOCK_MONOTONIC と同じ、HAL と CPU の準備ができた時が 0）からの ms。kmsg=quiet でも dmesg で読める。既存の行は変えない。
+- 段: HAL と CPU（entry.c）、platform の device の発見の始まりと終わり・USB の root の probe・fixed disk の probe・boot disk の発見・boot storage の発見・VFS・init の開始（main.c・pcat.c）、PCI・ACPI・deferred PCI・UCSI の attach（pcat.c）、GPU の attach の始まりと終わり（sysctl.c の kern_gpu_attach_begin/end、i915・nvrtx が呼ぶ）。
+- 触った file の comment の WS・BUG の番号を消した。
+
+### QEMU の確認（Venus）
+
+| disk | HAL | PCI | USB の root | fixed disk | boot storage | VFS | init | HANDOFF go |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| NVMe | 0 | 39 | 48 | 155 | 158 | 416 | 0.425 s | 4.028 s |
+| USB | 0 | 43 | 57 | 163 | 168 | 529 | 0.544 s | 4.213 s |
+
+（ms。QEMU の Venus は kern_gpu_attach を使わないので GPU の行は出ない。）
