@@ -2,7 +2,7 @@
 
 # ws039-p014: 段 A10 mode set の 1（読むだけ＋AtomBIOS の interpreter）
 
-Status: in-progress（2026-10-16 21:05 P3 着手）
+Status: in-progress（2026-10-16 22:15 P3: 実機の A10 ok（EDID・VBIOS の routine の照合・mode の一覧）。DP の AUX・DPCD は DP の sink が無く実機未確認。判定は Q1）
 Disposition: normal
 Parent: [WS039](../ws.md)
 Queue: q1234 / q1234-i01（p013 → p014 → p015 → p016、各段は実機で ok の後に main）
@@ -32,3 +32,18 @@ i915 の present の大きさの変更の扱いの確認、AtomBIOS の command 
 - 手順 3〜5（一部）: `dcn-registers.c` に I2C engine・DDC pad・AUX の register（amdrdna-dcn-compare 492 registers 一致）。`vbios-table.c` に `amdrdna_vbios_connector`（path の表・I2C と HPD の record・pin の表）と boot の DISPCLK（dce_info）。`edid.c`（decode と mode の検索、established・standard は VESA DMT の表から clock）。`sink.c`（段 A10: GOP の DIG の番号 = transmitter → path → DDC の line、I2C engine で EDID、VBIOS の I2C routine（0x36）を runner で実機の register に走らせ同じ block を読み比べる、DP の時は AUX で DPCD 16 byte、出せる pixel clock の上限と mode の数）。段 A5c は印だけの段（A10 の前に通る）。
 - この board: VBIOS の path は 4 本（DP×3: transmitter E/C/D、HDMI: A）。GOP は DIG 4 = transmitter E = **DP の connector**（I2C id 0x95 = DDC6、HPD 6）で、signal は DVI（DP++ の受動の変換で HDMI の monitor と見る）→ この机では AUX の DPCD は確かめられない（DP の monitor が要る）。
 - host: `amdrdna-host-test.sh` PASS（sink 21 checks、dcn 492、audit）、build warning 0。実機は未。
+
+### 2026-10-16 21:45〜22:15 P3（実機）
+
+- `display.mode`（`present.c` の `present_query`・`present_mode`、`sink.c` の `amdrdna_sink_mode`・`amdrdna_sink_check`）: ENUMERATE の 0 番は今の（firmware の）mode、その後に EDID の mode のうち出せる物（pixel clock ≤ 上限: boot の DISPCLK・signal の上限（DVI 165 MHz・HDMI 340 MHz・DP は lane×rate）・EDID の range の上限）。VALIDATE は今の mode か出せる EDID の mode で 0（refresh 0 は好む refresh を返す）、上限の外は ERANGE、無い物は EINVAL。mode は設定しない（p015）。query は EDID の名前・物理の大きさ・好む大きさ。
+- i915 の扱いの確認（design 8.6 の 10）: i915 は実行中に mode を変えない。mode より大きい present は EINVAL、小さい物は整数倍に拡大して中央、COMMIT は無い、present の refresh は使わない、ENUMERATE は今の mode 1 つ（他の connector は preferred の 1 つ）、VALIDATE は今の mode 以下の大きさを受ける（`src/drivers/gpu/i915/display/present.c` 338・404〜407、`display.c` 2766〜2828）。→ amdrdna の p015 の引き金（present の大きさが今の mode と違う時に組み直す）は i915 と違う形になる（design の 8.6 の 10 のとおり）。
+- 試験の道具: `amdrdnactl modes [GPU-DEVICE]`（`userland/tests/amdrdnactl/modes.c`、display の query と各 mode の ENUMERATE・VALIDATE、一覧に無い 1234x567 の拒否）。
+- 実機（10.0.10.3、`amdrdnactl advance A10`、3 回 22:01・22:07・22:12、最後は bb7beee9c の kernel）:
+  - `A5c ok queue resets: graphics through the scheduler, compute with the waves killed; resets so far 1`（起動時の A5 の fault の検査の compute の queue 2 の reset の 1 回）。
+  - `A10 path transmitter=E connector=0x3113 encoder=0x2121 i2c=0x95 pad=0x5da5 line=6 hotplug=6`
+  - `A10 ok conn=DP signal=2 ddc=6 edid=DEL f184 "DELL SE2426H" 1920x1080@60.000 blocks=2 modes=13/15 limit=165000kHz atom=same(0, 601 steps) dpcd=none` — I2C engine で 2 block、**VBIOS の I2C routine を runner で実機の register に走らせた読み（601 命令）が engine と同じ 128 byte**（runner の実機での確かめ）。
+  - `amdrdnactl modes`: `name="DELL SE2426H" current=1920x1080@60000 preferred=1920x1080 physical=527x296mm`、mode 13 個（1920x1080@60、720x400@70.087、640x480@59.940・75、800x600@60.317・75、1024x768@60.004・75.029、1280x1024@75.025・60.020、1152x864@75、1600x900@60、1280x720@60）が全部 validate=0、1234x567 は拒否、`MODES ok count=13`。
+  - A10 の後も desktop は描き続ける（presents が進む）、fault=0 hung=0、underflow 0。
+- 確かめていない物: DP の signal の時の AUX の DPCD の読みと link の状態（この机の sink は DP++ の受動の変換の DVI。DP の monitor が要る）、HDMI の connector（transmitter A）の EDID、2 block を越える EDID（segment の pointer）。
+- 規約: 新しい file（`bytecode.c`・`edid.c`・`sink.c`・`amdrdna-bytecode.h`・`amdrdna-sink.h`）を coding-style の checklist で見直し、Boolean の式・入れ子の条件演算子・3 つ以上の節の条件を直した。監査の allow-list に一般の語を足した（connector・transmitter・channel・crystal 等）。license の監査の表に p014 の出典（atom.c・atom.h・dce_i2c_hw・dce_aux・hw_ddc・hw_gpio・bios_parser2・link_factory・ObjectID.h・atombios_i2c.c・amdkfd の gfx_v10）と公開の規格の表を足した。
+- build: `platform/amd64/vmunix.mk` の amdrdna の source に 3 file を足した。warning 0。host: `amdrdna-host-test.sh` PASS、`amdrdna-bytecode-test.sh` PASS（475）、`amdrdna-vk-host-test.sh` PASS。
