@@ -85,6 +85,9 @@ else
 	"$out/amdrdna-tables-test" || status=1
 fi
 if [ -d "$linux/drivers/gpu/drm/amd" ]; then
+	cc $flags -include uapi/errno.h -I"$linux/drivers/gpu/drm/amd/include" -o "$out/amdrdna-command-test" \
+		"$tests/amdrdna-command-test.c" "$driver/display-command.c"
+	"$out/amdrdna-command-test" || status=1
 	"$out/amdrdna-tables-test" --dcn > "$out/dcn.txt"
 	python3 -I "$tests/amdrdna-dcn-compare.py" "$linux/drivers/gpu/drm/amd" < "$out/dcn.txt" || status=1
 	"$out/amdrdna-memory-test" --hub > "$out/hub.txt"

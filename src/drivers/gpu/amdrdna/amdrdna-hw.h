@@ -524,6 +524,56 @@ struct amdrdna_vbios_connector {
 	uint8_t hotplug_pin;
 };
 
+/* The words the largest display routine's parameters take (the transmitter's 16 bytes and 16 reserved). */
+#define AMDRDNA_COMMAND_WORDS		8U
+
+/*
+ * The pixel clock routine's parameters: the clock in 100 Hz, the PLL, the
+ * encoder object's identifier, the encoder mode, the flags, the timing
+ * generator and the deep colour ratio.
+ */
+struct amdrdna_pixel_clock_command {
+	uint32_t pixel_100hz;
+	uint8_t pll;
+	uint8_t encoder_object;
+	uint8_t mode;
+	uint8_t flags;
+	uint8_t generator;
+	uint8_t depth;
+};
+
+/*
+ * The encoder routine's stream setup: the DIG, the action, the mode, the
+ * lanes, the pixel clock in 10 kHz, the bits a colour and the DisplayPort
+ * rate in 270 MHz units.
+ */
+struct amdrdna_encoder_command {
+	uint8_t dig;
+	uint8_t action;
+	uint8_t mode;
+	uint8_t lanes;
+	uint32_t pixel_10khz;
+	uint8_t bits_per_colour;
+	uint8_t dp_rate;
+};
+
+/*
+ * The transmitter routine's parameters: the PHY, the action, the mode (or
+ * a DisplayPort lane setting), the lanes, the symbol clock in 10 kHz, the
+ * hot-plug line (1 to 6, 0 for none), the DIG front ends and the connector
+ * object's identifier.
+ */
+struct amdrdna_transmitter_command {
+	uint8_t phy;
+	uint8_t action;
+	uint8_t mode;
+	uint8_t lanes;
+	uint32_t symbol_10khz;
+	uint8_t hotplug;
+	uint8_t front_ends;
+	uint8_t connector_id;
+};
+
 /* The PCI place and identity a video BIOS image in the ACPI table names. */
 struct amdrdna_vbios_owner {
 	uint32_t bus;
@@ -1404,6 +1454,27 @@ amdrdna_vbios_parse(
 	const uint8_t *image,
 	size_t length,
 	struct amdrdna_vbios_info *info);
+
+void
+amdrdna_command_pixel_clock(
+	uint32_t *words,
+	const struct amdrdna_pixel_clock_command *command);
+
+void
+amdrdna_command_encoder(
+	uint32_t *words,
+	const struct amdrdna_encoder_command *command);
+
+void
+amdrdna_command_transmitter(
+	uint32_t *words,
+	const struct amdrdna_transmitter_command *command);
+
+void
+amdrdna_command_pipe(
+	uint32_t *words,
+	uint32_t generator,
+	uint32_t on);
 
 int
 amdrdna_vbios_connector(
