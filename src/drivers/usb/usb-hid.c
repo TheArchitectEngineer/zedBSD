@@ -40,15 +40,16 @@
 #define USB_HID_REPORT_TYPE_FEATURE	3U
 
 /*
- * These digitizer Device Modes select touch screen fingers (2) or touch pad
- * fingers (3) in place of the single-touch mouse mode a Windows touch screen
- * starts in.  The feature report buffer holds the longest report carrying it.
+ * The Device Mode (Input Mode) a digitizer is put in (BUG-267, as Linux's
+ * hid-multitouch does): a touch screen's fingers (2) or a touch pad's (3),
+ * in place of the single-touch mouse a Windows touch screen starts as; and
+ * the longest feature report that carries it.
  */
 #define USB_HID_DEVICE_MODE_SCREEN	2U
 #define USB_HID_DEVICE_MODE_PAD		3U
 #define USB_HID_FEATURE_MAX		64U
 
-/* How long a raw device's output report may take. */
+/* How long a raw device's output report may take (ws161-p002). */
 #define USB_HID_OUTPUT_TIMEOUT_MS	5000U
 #define USB_HID_PROTOCOL_REPORT		1U
 #define USB_HID_CONTROL_TIMEOUT_MS	1000U
@@ -61,7 +62,7 @@
 #define USB_HID_WORK_COMPLETE		(1U << 1)
 
 /*
- * The boot parameter that asks for every HID
+ * BUG-267's diagnosis: the boot parameter that asks for every HID
  * interface's report descriptor and its first reports in the kernel's log,
  * how many reports of an interface are logged, and how many bytes go on
  * one line of a descriptor's or a report's hex.
@@ -77,7 +78,7 @@ struct usb_hid {
 	struct drv_usb_urb *urb;
 	/*
 	 * The devices the report descriptor declares and the events of its
-	 * reports (the HID input glue), NULL for a raw interface.
+	 * reports (the HID input glue, ws143-p005), NULL for a raw interface.
 	 */
 	struct hid_input *hidinput;
 	struct thread *worker;
@@ -87,7 +88,7 @@ struct usb_hid {
 	size_t buffer_size;
 	/*
 	 * Nonzero when the interface is a touch screen that reports its
-	 * fingers (its Device Mode set, or a descriptor without one):
+	 * fingers (its Device Mode set, or a descriptor without one, BUG-313):
 	 * a pointer beside it on the same device is its mouse emulation.
 	 */
 	unsigned fingers;
@@ -113,10 +114,9 @@ struct usb_hid {
 	char physical_path[USB_HID_TEXT_MAX];
 	char unique_id[USB_HID_TEXT_MAX];
 	/*
-	 * A raw interface (FIDO authenticators with usage page 0xF1D0, or
-	 * the Wacom 056a:8191 vendor interface) is published as
-	 * /dev/input/hidrawN instead of an event device: raw is set when the
-	 * report descriptor is read, which is then
+	 * A raw interface (ws161-p002: the FIDO authenticators, usage page
+	 * 0xF1D0) is published as /dev/input/hidrawN instead of an event
+	 * device: raw is set when the report descriptor is read, which is then
 	 * kept (raw_descriptor, raw_layout) and not parsed for input.  The
 	 * input reports go to hidraw as they come; the output reports go out
 	 * on the interrupt OUT endpoint (out_endpoint, NULL for a device
@@ -131,7 +131,7 @@ struct usb_hid {
 	struct drv_usb_endpoint *out_endpoint;
 	uint8_t *out_buffer;
 	/*
-	 * The step of the attachment under way, named in the
+	 * BUG-267: the step of the attachment under way, named in the
 	 * kernel's log when it fails, and how many of the interface's reports
 	 * were logged under usbhid.dump=1.
 	 */
@@ -145,7 +145,7 @@ static unsigned usb_hid_input_is_ready;
 static unsigned usb_hid_registered;
 
 /*
- * Whether usbhid.dump=1 is among the boot parameters: 0 until
+ * Whether usbhid.dump=1 is among the boot parameters (BUG-267): 0 until
  * the first attachment looks, then 1 without it and 2 with it.  The boot
  * parameters do not change while the kernel runs.
  */
@@ -194,7 +194,7 @@ static void usb_hid_put_bits(uint8_t *data, uint32_t offset, uint32_t bits, uint
 static void usb_hid_contact_maximum(struct usb_hid *hid);
 static uint32_t usb_hid_get_bits(const uint8_t *data, uint32_t offset, uint32_t bits);
 
-/* What a raw interface's transport does: its output reports. */
+/* What a raw interface's transport does: its output reports (ws161-p002). */
 static const struct drv_hidraw_ops usb_hid_raw_ops = {
 	.output = usb_hid_raw_output
 };
@@ -409,7 +409,7 @@ usb_hid_attach(
 	if (error != 0)
 		goto fail;
 
-	/* Select a digitizer's fingers while preserving its starting mode if it refuses. */
+	/* A digitizer's fingers rather than its mouse (BUG-267); a device that refuses keeps working as it starts. */
 	if (!hid->raw) {
 		error = usb_hid_set_device_mode(hid);
 		hid->fingers = 0U;
@@ -417,7 +417,6 @@ usb_hid_attach(
 			hid->fingers = 1U;
 		usb_hid_contact_maximum(hid);
 	}
-
 	hid->stage = "resources";
 	usb_hid_identity(hid);
 	hid->buffer = kern_malloc(hid->buffer_size);
@@ -469,7 +468,7 @@ usb_hid_attach(
 
 fail:
 
-	/* The kernel's log says which step refused the interface. */
+	/* BUG-267: the kernel's log says which step refused the interface. */
 	usb_hid_location(hid, &bus, &address, &interface_number);
 	kern_logf("usb-hid-diag: usb%u device %u interface %u attach error=%d stage=%s\n",
 		  bus,
@@ -709,16 +708,13 @@ static int
 usb_hid_fetch_layout(
 	struct usb_hid *hid)
 {
-	const struct drv_usb_device_descriptor *usb_descriptor;
 	struct hid_report_touch_info touch;
 	uint8_t *descriptor;
 	size_t descriptor_length;
 	size_t actual;
 	size_t capacity;
 	size_t maximum_report;
-	unsigned interface_number;
 	int raw;
-	int raw_selected;
 	int dump;
 	int prepared;
 	int touch_error;
@@ -751,27 +747,12 @@ usb_hid_fetch_layout(
 	if (error == 0 && actual != descriptor_length)
 		error = EIO;
 
-	/* Keep a raw interface's descriptor without parsing it for input. */
+	/* A FIDO authenticator's interface is raw: the descriptor is kept and not parsed for input (ws161-p002). */
 	if (error == 0) {
 		raw = drv_hidraw_describe(descriptor, descriptor_length, &hid->raw_layout);
-		usb_descriptor = drv_usb_device_descriptor(hid->device);
-		interface_number = drv_usb_interface_number(hid->interface);
-		raw_selected = 0;
-#if 0
 		if (raw == 0 &&
 		    hid->raw_layout.usage_page == HIDRAW_USAGE_PAGE_FIDO &&
-		    hid->raw_layout.usage == HIDRAW_USAGE_CTAPHID)
-			raw_selected = 1;
-#else
-		if (raw == 0 &&
-		    ((hid->raw_layout.usage_page == HIDRAW_USAGE_PAGE_FIDO &&
-		      hid->raw_layout.usage == HIDRAW_USAGE_CTAPHID) ||
-		     (usb_descriptor->vendor == 0x056aU &&
-		      usb_descriptor->product == 0x8191U &&
-		      interface_number == 1U)))
-			raw_selected = 1;
-#endif
-		if (raw_selected) {
+		    hid->raw_layout.usage == HIDRAW_USAGE_CTAPHID) {
 			hid->raw = 1U;
 			hid->raw_descriptor = descriptor;
 			hid->raw_descriptor_size = descriptor_length;
@@ -791,12 +772,12 @@ usb_hid_fetch_layout(
 		error = drv_hid_input_prepare(descriptor, descriptor_length, &hid->hidinput);
 	}
 
-	/* A refused descriptor is logged with where it was refused; any other under usbhid.dump=1. */
+	/* BUG-267: a refused descriptor is logged with where it was refused; any other under usbhid.dump=1. */
 	if (error != 0 && prepared) {
 		usb_hid_log_hex(hid, "usb-hid-rdesc", descriptor, descriptor_length);
 		usb_hid_log_refusal(hid, descriptor, descriptor_length, error);
 	} else if (error == 0) {
-		/* A touch screen's or pad's descriptor is always logged to show how it lays out its fingers. */
+		/* A touch screen's or pad's descriptor is always logged: how it lays out its fingers (BUG-313). */
 		dump = usb_hid_dump_wanted();
 		touch_error = drv_hid_input_touch(hid->hidinput, &touch);
 		if (touch_error == 0)
@@ -1068,7 +1049,7 @@ usb_hid_publish_report(
 
 	spin_unlock_irqrestore(&hid->lock, irq);
 
-	/* Under usbhid.dump=1 the interface's first reports go to the kernel's log as they came. */
+	/* BUG-267: under usbhid.dump=1 the interface's first reports go to the kernel's log as they came. */
 	dump = usb_hid_dump_wanted();
 	if (dump && hid->reports_dumped < USB_HID_DUMP_REPORTS) {
 		hid->reports_dumped++;
@@ -1671,7 +1652,7 @@ usb_hid_le16(
 	return (uint16_t)bytes[0] | (uint16_t)((uint16_t)bytes[1] << 8U);
 }
 
-/* Tells whether the boot parameters ask for the HID interfaces' descriptors and reports in the kernel's log. */
+/* Tells whether the boot parameters ask for the HID interfaces' descriptors and reports in the kernel's log (BUG-267). */
 static int
 usb_hid_dump_wanted(
 	void)
@@ -1718,7 +1699,7 @@ usb_hid_location(
 }
 
 /*
- * Logs bytes as hex: a line with their length, then
+ * Logs bytes as hex (BUG-267): a line with their length, then
  * USB_HID_DUMP_LINE bytes a line, each line led by the prefix, the
  * interface and the offset of its first byte.
  */
@@ -1770,7 +1751,7 @@ usb_hid_log_hex(
 }
 
 /*
- * Logs where a report descriptor was refused: the parser's item
+ * Logs where a report descriptor was refused (BUG-267): the parser's item
  * and its prefix byte, or, when the parser takes the descriptor, that the
  * devices it declares did not fit (stage=describe).
  */
@@ -1816,15 +1797,15 @@ usb_hid_log_refusal(
 }
 
 /*
- * Chooses what of an interface is published.  A Wacom touch screen can
- * otherwise appear as a mouse.  A Windows touch screen also declares the
+ * Chooses what of an interface is published (BUG-313: a Wacom touch
+ * screen showed as a mouse).  A Windows touch screen also declares the
  * mouse it emulates before its Device Mode is set: as a collection beside
  * the screen in the screen's interface, or as an interface of its own.
  * Once the screen reports its fingers, that mouse is not published: the
  * screen's interface publishes the screen alone, and an interface that is
  * only a pointer beside a screen of the same device publishes nothing.
  * When the rest of the screen's interface is a pen or a keyboard with
- * keys, it waits for its first key or pen (the Wacom 8191's
+ * keys, it waits for its first key or pen (T1-649: the Wacom 8191's
  * interface 0 declares a pen and a keyboard, and its main device came up
  * beside the screen though neither had reported).  Any other interface
  * publishes everything it declares.
@@ -1906,8 +1887,8 @@ usb_hid_sibling_fingers(
 
 /*
  * Puts a touch screen or a touch pad into the mode that reports its fingers
- * with SET_REPORT of the feature report that holds the Device Mode
- * (Digitizer 0x52), its other fields zero.
+ * (BUG-267): SET_REPORT of the feature report that holds the Device Mode
+ * (Digitizer 0x52), its other fields zero, as Linux's hid-multitouch does.
  * ENOENT for a descriptor without a touch screen or pad or without the
  * field; the device's refusal otherwise.  The outcome is logged.
  */
@@ -1990,7 +1971,7 @@ usb_hid_set_device_mode(
 /*
  * Reads a touch screen's or pad's Contact Count Maximum (GET_REPORT of its
  * feature report), the most fingers it tracks, and gives its device that
- * many slots.  A device without
+ * many slots, as Linux's hid-multitouch does (BUG-313).  A device without
  * the field, or one that refuses, keeps the slots its descriptor gives.
  * The outcome is logged.
  */
