@@ -310,6 +310,32 @@ struct modeset_check {
 	uint32_t blue;
 };
 
+/*
+ * The display words the log gets after a failed step of the mode set,
+ * eight to a line: the clock controls, the hub arbiter and the vertical
+ * timing generators, the plane, the pixel processor, the timing
+ * generator's input and the timing generator (absolute dword indices of
+ * the first pipe on Navi10).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/asic_reg/dcn/dcn_2_0_0_offset.h
+ * (mmDENTIST_DISPCLK_CNTL to mmOTG0_PHYPLL_PIXEL_RATE_CNTL in window 1,
+ * mmDCHUBBUB_ARB_DATA_URGENCY_WATERMARK_A to mmVTG0_CONTROL, mmHUBP0_* and
+ * mmHUBPREQ0_*, mmDSCL0_*, mmODM0_* and mmOTG0_* in window 2, with
+ * navi10_ip_offset.h's display bases 0xc0 and 0x34c0).
+ */
+static const struct modeset_range {
+	uint32_t first;
+	uint32_t count;
+} modeset_ranges[] = {
+	{ 0x0124U, 0x0020U },
+	{ 0x39c8U, 0x0028U },
+	{ 0x3aa5U, 0x0090U },
+	{ 0x41abU, 0x0020U },
+	{ 0x4f8aU, 0x0008U },
+	{ 0x4feaU, 0x0078U }
+};
+
 static int modeset_pipe(struct amdrdna_device *device, struct modeset_pipe *pipe);
 static int modeset_input(struct amdrdna_device *device, const struct amdrdna_timing *timing, struct amdrdna_mode_plan_input *input);
 static bool modeset_good(const struct modeset_check *check);
@@ -330,6 +356,7 @@ static void modeset_blank(struct amdrdna_device *device, const struct modeset_pi
 static bool modeset_frames(struct amdrdna_device *device, const struct modeset_pipe *pipe, unsigned frames);
 static void modeset_look(struct amdrdna_device *device, const struct modeset_pipe *pipe, unsigned frames, struct modeset_check *check);
 static void modeset_note(struct amdrdna_device *device, const struct modeset_pipe *pipe, const char *step);
+static void modeset_dump(struct amdrdna_device *device, const char *step);
 static uint32_t modeset_read(struct amdrdna_device *device, enum amdrdna_dcn_register which, unsigned instance);
 static void modeset_write(struct amdrdna_device *device, enum amdrdna_dcn_register which, unsigned instance, uint32_t value);
 
@@ -410,6 +437,7 @@ amdrdna_a12_mode(
 	good = modeset_good(&check);
 	if (!good)
 		return EIO;
+	modeset_dump(device, "same");
 
 	/* Two: another mode the monitor lists and the plan fits. */
 	other = modeset_other(device, &pipe, &firmware);
@@ -442,6 +470,11 @@ amdrdna_a12_mode(
 	    (unsigned)check.red_green,
 	    (unsigned)check.blue,
 	    error);
+
+	/* The words for a look at a failure, and the same mode's for a comparison. */
+	good = modeset_good(&check);
+	if (!good)
+		modeset_dump(device, "other");
 
 	/* The other mode held for the monitor. */
 	kern_usleep_range(MODESET_HOLD_US, MODESET_HOLD_US + MODESET_STEP_US);
@@ -1377,6 +1410,31 @@ modeset_look(
 	(void)modeset_frames(device, pipe, 2U);
 	check->red_green = modeset_read(device, AMDRDNA_DCN_TIMING_CRC_RED_GREEN, pipe->timing);
 	check->blue = modeset_read(device, AMDRDNA_DCN_TIMING_CRC_BLUE, pipe->timing);
+}
+
+/* Puts the first pipe's display words in the log, eight to a line, after a step that failed. */
+static void
+modeset_dump(
+	struct amdrdna_device *device,
+	const char *step)
+{
+	uint32_t values[8];
+	uint32_t at;
+	size_t range;
+	unsigned slot;
+
+	/* Each range, eight words a line. */
+	for (range = 0U; range < sizeof(modeset_ranges) / sizeof(modeset_ranges[0]); range++) {
+		for (at = 0U; at < modeset_ranges[range].count; at += 8U) {
+			for (slot = 0U; slot < 8U; slot++)
+				values[slot] = amdrdna_read(device, modeset_ranges[range].first + at + slot);
+			amdrdna_mark("A12 dump %s 0x%05x: %08x %08x %08x %08x %08x %08x %08x %08x",
+			    step,
+			    (unsigned)(modeset_ranges[range].first + at),
+			    (unsigned)values[0], (unsigned)values[1], (unsigned)values[2], (unsigned)values[3],
+			    (unsigned)values[4], (unsigned)values[5], (unsigned)values[6], (unsigned)values[7]);
+		}
+	}
 }
 
 /* Notes the timing generator's state after a step of the mode set: its control and clock words, its pixel clock's sources and its frame and position. */
