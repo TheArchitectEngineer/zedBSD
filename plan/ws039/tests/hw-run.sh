@@ -54,8 +54,12 @@ write)
 boot)
 	[ $# -eq 2 ] || { echo "usage: hw-run.sh boot ENTRY" >&2; exit 2; }
 	$debian "set -e
-		esp=\$(sudo -n blkid -s PARTUUID -o value /dev/disk/by-partlabel/zedBSD\\x20EFI\\x20System 2>/dev/null || true)
-		if [ -n \"\$esp\" ] && ! sudo -n efibootmgr | grep -E '^Boot$2' | grep -qi \"GPT,\$esp\"; then
+		esp=\$(sudo -n blkid -t 'PARTLABEL=zedBSD EFI System' -s PARTUUID -o value 2>/dev/null | head -n 1)
+		if [ -z \"\$esp\" ]; then
+			echo 'no USB ESP (PARTLABEL \"zedBSD EFI System\") found; refusing'
+			exit 1
+		fi
+		if ! sudo -n efibootmgr | grep -E '^Boot$2' | grep -qi \"GPT,\$esp\"; then
 			echo 'Boot$2 does not point at the USB ESP '\$esp'; refusing (hw-run.sh write adds an entry)'
 			sudo -n efibootmgr | grep -E '^Boot[0-9A-F]{4}' | grep -i usb || true
 			exit 1

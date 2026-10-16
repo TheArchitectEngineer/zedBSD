@@ -51,6 +51,7 @@ static int control_advance(struct amdrdna_device *device, uintptr_t argument);
 static int control_vbios(struct amdrdna_device *device, uintptr_t argument);
 static int control_display(struct amdrdna_device *device, uintptr_t argument);
 static int control_screen(struct amdrdna_device *device, uintptr_t argument);
+static int control_reset(struct amdrdna_device *device, uintptr_t argument);
 static void control_fill(struct amdrdna_device *device, struct amdrdna_status *status);
 static void control_fill_memory(struct amdrdna_device *device, struct amdrdna_status *status);
 static uint32_t control_fill_power(struct amdrdna_device *device, struct amdrdna_status *status);
@@ -146,6 +147,9 @@ control_ioctl(
 	case AMDRDNA_IOC_SCREEN:
 		error = control_screen(device, argument);
 		break;
+	case AMDRDNA_IOC_RESET:
+		error = control_reset(device, argument);
+		break;
 	default:
 		error = ENOTTY;
 		break;
@@ -218,6 +222,55 @@ control_advance(
 		return error;
 
 	/* Succeeded: the stages up to the target will run. */
+	return 0;
+}
+
+/*
+ * Resets the GPU and sets it up again: AMDRDNA_IOC_RESET, for root only,
+ * while no session uses the GPU.  The answer carries the reset's result;
+ * the request itself fails only when it is refused.
+ */
+static int
+control_reset(
+	struct amdrdna_device *device,
+	uintptr_t argument)
+{
+	struct amdrdna_reset_ask ask;
+	struct ucred *credential;
+	uint32_t milliseconds;
+	int superuser;
+	int result;
+	int error;
+
+	/* Refuses a caller that is not root. */
+	credential = cred_current_ref();
+	superuser = cred_is_superuser(credential);
+	cred_release(credential);
+	if (!superuser)
+		return EPERM;
+
+	/* The caller's version and size must be this interface's. */
+	error = copyin(argument, &ask, sizeof(ask));
+	if (error != 0)
+		return error;
+	if (ask.version != AMDRDNA_INTERFACE_VERSION || ask.size != sizeof(ask))
+		return EINVAL;
+
+	/* The reset, run by the bring-up thread; a refusal is the request's error. */
+	milliseconds = 0U;
+	result = amdrdna_reset_request(device, AMDRDNA_RESET_REQUEST, &milliseconds);
+	if (result == EBUSY || result == ENODEV)
+		return result;
+
+	/* The answer. */
+	ask.result = result;
+	ask.milliseconds = milliseconds;
+	ask.resets = device->reset.resets;
+	error = copyout(&ask, argument, sizeof(ask));
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the reset ran; its result is in the answer. */
 	return 0;
 }
 

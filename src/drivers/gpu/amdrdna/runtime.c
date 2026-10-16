@@ -38,6 +38,7 @@
 #include <uapi/gpu-job.h>
 
 #include "drivers/gpu/amdrdna/amdrdna-node.h"
+#include "drivers/gpu/amdrdna/amdrdna-reset.h"
 
 /*
  * The protocol's capset: its id, its bytes and the places of its words,
@@ -84,6 +85,7 @@ static int runtime_stop_begin(void *private_data, void *session, int error);
 static int runtime_stop_poll(void *private_data, void *session);
 static int runtime_isolate(void *private_data, void *session);
 static void runtime_fault(void *private_data, int error);
+static int runtime_reset(void *private_data);
 static void runtime_worker(void *argument);
 static int runtime_execute(struct amdrdna_node *node, struct amdrdna_session *session, const void *wire, uint32_t bytes);
 static void runtime_enqueue(struct amdrdna_node *node, struct amdrdna_node_entry *entry);
@@ -120,6 +122,18 @@ static const struct drv_gpu_recovery_ops runtime_recovery = {
 };
 
 /*
+ * The same with the device's reset (a mode-1 reset and the stages set up
+ * again), for a boot that allows it (amdrdna.reset=1).
+ */
+static const struct drv_gpu_recovery_ops runtime_recovery_reset = {
+	runtime_stop_begin,
+	runtime_stop_poll,
+	runtime_fault,
+	runtime_reset,
+	runtime_isolate
+};
+
+/*
  * Prepares the renderer's queue, its lock and wait queues, and the
  * recovery operations before the node is registered.
  */
@@ -127,13 +141,18 @@ void
 amdrdna_runtime_prepare(
 	struct amdrdna_node *node)
 {
+	bool allowed;
+
 	/* The queue, its lock and its two wait queues. */
 	spin_init(&node->queue_lock, LOCK_RANK_DEVICE, "amdrdna queue");
 	waitq_init(&node->available, "amdrdna queue available");
 	waitq_init(&node->retired, "amdrdna queue retired");
 
-	/* The stop of a session and the device's fault. */
+	/* The stop of a session and the device's fault, and its reset when the boot allows it. */
+	allowed = amdrdna_reset_allowed(node->device);
 	node->ops.recovery = &runtime_recovery;
+	if (allowed)
+		node->ops.recovery = &runtime_recovery_reset;
 }
 
 /*
@@ -214,6 +233,30 @@ amdrdna_runtime_stop(
 
 	/* Marks the stop, for the log of the reboot. */
 	amdrdna_mark("shutdown: the renderer takes no more work");
+}
+
+/*
+ * Holds the renderer across a reset of the GPU (held true: nothing new is
+ * taken and what is queued completes with EIO, as after a fault but
+ * without a fault's report), or lets it take work again after the reset
+ * set the GPU up (held false).
+ */
+void
+amdrdna_runtime_hold(
+	struct amdrdna_node *node,
+	bool held)
+{
+	unsigned long enabled;
+
+	/* faulted is what every frame, marker and reservation looks at. */
+	enabled = spin_lock_irqsave(&node->queue_lock);
+
+	node->faulted = 0;
+	if (held)
+		node->faulted = 1;
+	waitq_wake_all(&node->available);
+
+	spin_unlock_irqrestore(&node->queue_lock, enabled);
 }
 
 /* Reports the protocol's capset: wire 1, XML 1.3.269, timelines, the vendor suffix and its flags. */
@@ -773,6 +816,31 @@ runtime_fault(
 	/* The first fault is shown. */
 	if (first)
 		amdrdna_mark("gpu device: the device faulted (%d); it takes no more work", error);
+}
+
+/*
+ * Resets the GPU for the GPU core's recovery, which asks only once every
+ * old session has gone: a mode-1 reset, the post and the stages set up
+ * again on the bring-up thread.  Returns 0 when the GPU runs again, or
+ * the reset's error (the GPU stays faulted).
+ */
+static int
+runtime_reset(
+	void *private_data)
+{
+	struct amdrdna_node *node;
+	int error;
+
+	/* The node the core passed in. */
+	node = private_data;
+
+	/* The reset, run by the bring-up thread; this waits for it. */
+	error = amdrdna_reset_request(node->device, AMDRDNA_RESET_RECOVERY, NULL);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the GPU is checked and runs again. */
+	return 0;
 }
 
 /*

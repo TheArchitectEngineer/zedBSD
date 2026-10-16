@@ -99,7 +99,9 @@ static void relight_write(struct amdrdna_device *device, enum amdrdna_dcn_regist
 /*
  * Stage A11: re-lights the firmware's TMDS output in the same mode.
  *
- * Returns 0; ENOTSUP for an output that is not TMDS; ENOENT before stage
+ * pixel_khz is the running timing's pixel clock; 0 works it out from the
+ * totals and the refresh stage A6 measured (a caller that runs before A6,
+ * the reset, measures the clock itself).  Returns 0; ENOTSUP for an output that is not TMDS; ENOENT before stage
  * A10 read the output's path; or the error of the routine that failed
  * (the transmitter is turned on again and the picture shown either way).
  *
@@ -116,7 +118,8 @@ static void relight_write(struct amdrdna_device *device, enum amdrdna_dcn_regist
  */
 int
 amdrdna_a11_relight(
-	struct amdrdna_device *device)
+	struct amdrdna_device *device,
+	uint32_t pixel_khz)
 {
 	struct amdrdna_encoder_command encoder;
 	struct relight_crc before;
@@ -124,6 +127,8 @@ amdrdna_a11_relight(
 	const struct amdrdna_sink *sink;
 	uint32_t words[AMDRDNA_COMMAND_WORDS];
 	uint32_t pixel_10khz;
+	uint32_t refresh_millihz;
+	uint64_t frame_pixels;
 	uint32_t mode;
 	uint32_t underflow;
 	uint32_t timing_underflow;
@@ -154,9 +159,20 @@ amdrdna_a11_relight(
 		return ENOTSUP;
 	}
 
-	/* The pixel clock of the running timing, in 10 kHz: the totals at the measured refresh. */
-	pixel_10khz = (uint32_t)(((uint64_t)device->gop.h_total * device->gop.v_total * device->display.refresh_millihz + 5000000U) /
-				 10000000U);
+	/* The pixel clock of the running timing, in 10 kHz: the caller's, else the totals at the measured refresh. */
+	frame_pixels = (uint64_t)device->gop.h_total * device->gop.v_total;
+	if (pixel_khz != 0U) {
+		pixel_10khz = (pixel_khz + 5U) / 10U;
+	} else {
+		pixel_10khz = (uint32_t)((frame_pixels * device->display.refresh_millihz + 5000000U) / 10000000U);
+	}
+	if (pixel_10khz == 0U || frame_pixels == 0U) {
+		amdrdna_mark("A11 fail: the running timing's pixel clock is not known");
+		return ENOENT;
+	}
+
+	/* The refresh the clock gives, for the report. */
+	refresh_millihz = (uint32_t)(((uint64_t)pixel_10khz * 10000000U + frame_pixels / 2U) / frame_pixels);
 
 	/* The picture's CRC, the frame counter and the underflow before. */
 	relight_crc(device, &before);
@@ -222,8 +238,8 @@ amdrdna_a11_relight(
 	amdrdna_mark("A11 ok relit %ux%u@%u.%03u %s phy=%u dig=%u pclk=%ukHz dark=%llums steps=%u frames=%u crc=%s %08x/%08x underflow=%u/%u",
 	    device->display.width,
 	    device->display.height,
-	    (unsigned)(device->display.refresh_millihz / 1000U),
-	    (unsigned)(device->display.refresh_millihz % 1000U),
+	    (unsigned)(refresh_millihz / 1000U),
+	    (unsigned)(refresh_millihz % 1000U),
 	    mode == RELIGHT_MODE_DVI ? "DVI" : "HDMI",
 	    sink->connector.transmitter,
 	    device->gop.output_front,

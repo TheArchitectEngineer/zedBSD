@@ -296,6 +296,134 @@ amdrdna_a2_stop(
 }
 
 /*
+ * Copies the system-memory table's entries (entries of them) out of VRAM
+ * before a reset of the GPU, which takes VRAM as lost.
+ *
+ * Returns 0, or EBUSY before stage A2 built the table.
+ */
+int
+amdrdna_gart_save(
+	struct amdrdna_device *device,
+	uint64_t *copy,
+	uint64_t entries)
+{
+	volatile uint8_t *table;
+	uint64_t entry;
+
+	/* The table must exist. */
+	if (device->gart_table == 0U)
+		return EBUSY;
+
+	/* Drops what the host path read before, then reads every entry through the window. */
+	amdrdna_host_path_drop(device);
+	table = memory_cpu(device, device->gart_table);
+	for (entry = 0U; entry < entries; entry++)
+		copy[entry] = kern_mmio_read64(table + entry * MEMORY_ENTRY_BYTES);
+
+	/* Succeeded: the entries are copied. */
+	return 0;
+}
+
+/*
+ * Sets stage A2's memory up again after a reset of the GPU, keeping what
+ * the stage took: the system-memory table's entries written back from
+ * the copy taken before the reset (entries of them; every entry unused
+ * without one), both memory hubs set up as the stage does with their
+ * words recorded again, the host data path's flush rule, the default
+ * page for faults, the doorbells, context 0's translations dropped, the
+ * hubs' words read back, and the interrupt ring set up again, off.
+ *
+ * Returns 0, or the error of the step that failed.
+ */
+int
+amdrdna_a2_restart(
+	struct amdrdna_device *device,
+	const uint64_t *copy,
+	uint64_t entries)
+{
+	volatile uint8_t *table;
+	uint64_t unused;
+	uint64_t entry;
+	uint32_t word;
+	int error;
+
+	/* Says the setup starts. */
+	amdrdna_mark("A2 again after the reset, %llu table entries kept", (unsigned long long)entries);
+
+	/* The table's entries, from the copy or unused. */
+	table = memory_cpu(device, device->gart_table);
+	unused = amdrdna_gart_unused_entry(device->dummy_page.dma.device_address);
+	for (entry = 0U; entry < AMDRDNA_GART_BYTES / MEMORY_PAGE_BYTES; entry++) {
+		/* One entry: the kept one, else unused. */
+		if (copy != NULL && entry < entries)
+			kern_mmio_write64(table + entry * MEMORY_ENTRY_BYTES, copy[entry]);
+		else
+			kern_mmio_write64(table + entry * MEMORY_ENTRY_BYTES, unused);
+	}
+	amdrdna_host_path_flush(device);
+	amdrdna_host_path_drop(device);
+
+	/* How the reset left the hubs; their context words are the ones to give back from now on. */
+	memory_mark_hubs(device);
+
+	/* Sets up the graphics hub, then the media hub. */
+	memory_hub_setup(device, AMDRDNA_HUB_GRAPHICS);
+	memory_hub_setup(device, AMDRDNA_HUB_MEDIA);
+
+	/* The host data path's flush also drops its read cache, and is flushed once. */
+	word = amdrdna_block_read(device, AMDRDNA_BLOCK_HDP, AMDRDNA_HDP_WINDOW_MAIN, AMDRDNA_HDP_REG_MISC);
+	word |= AMDRDNA_HDP_MISC_FLUSH_DROPS;
+	amdrdna_block_write(device, AMDRDNA_BLOCK_HDP, AMDRDNA_HDP_WINDOW_MAIN, AMDRDNA_HDP_REG_MISC, word);
+	amdrdna_host_path_flush(device);
+
+	/* A faulting access of either hub goes to the default page. */
+	word = hub_read(device, AMDRDNA_HUB_GRAPHICS, AMDRDNA_HUB_FAULT_CONTROL, 0U);
+	word = amdrdna_hub_fault_default_word(word);
+	hub_write(device, AMDRDNA_HUB_GRAPHICS, AMDRDNA_HUB_FAULT_CONTROL, 0U, word);
+	word = hub_read(device, AMDRDNA_HUB_MEDIA, AMDRDNA_HUB_FAULT_CONTROL, 0U);
+	word = amdrdna_hub_fault_default_word(word);
+	hub_write(device, AMDRDNA_HUB_MEDIA, AMDRDNA_HUB_FAULT_CONTROL, 0U, word);
+
+	/* The doorbell BAR reaches the engines. */
+	word = amdrdna_block_read(device, AMDRDNA_BLOCK_NBIO, AMDRDNA_NBIO_WINDOW_HOST, AMDRDNA_NBIO_REG_DOORBELL_APERTURE);
+	word |= AMDRDNA_DOORBELL_APERTURE_ON;
+	amdrdna_block_write(device, AMDRDNA_BLOCK_NBIO, AMDRDNA_NBIO_WINDOW_HOST, AMDRDNA_NBIO_REG_DOORBELL_APERTURE, word);
+
+	/* Context 0's cached translations dropped, on the media hub first. */
+	error = amdrdna_tlb_flush(device, AMDRDNA_HUB_MEDIA, 0U);
+	if (error == 0)
+		error = amdrdna_tlb_flush(device, AMDRDNA_HUB_GRAPHICS, 0U);
+	if (error != 0) {
+		amdrdna_mark("A2 fail: context 0 translations not dropped after the reset (%d)", error);
+		return error;
+	}
+
+	/* The hubs' main words read back. */
+	error = memory_hub_check(device, AMDRDNA_HUB_GRAPHICS);
+	if (error == 0)
+		error = memory_hub_check(device, AMDRDNA_HUB_MEDIA);
+	if (error != 0)
+		return error;
+
+	/* The interrupt ring set up again, left off. */
+	error = amdrdna_ih_restart(device);
+	if (error != 0) {
+		amdrdna_mark("A2 fail: interrupt ring not set up after the reset (%d)", error);
+		return error;
+	}
+
+	/* Marks the result. */
+	word = memory_underflow(device);
+	amdrdna_mark("A2 ok again gart=0x%llx table=+0x%llx underflow=%u",
+	    (unsigned long long)device->gart_start,
+	    (unsigned long long)device->gart_table,
+	    (unsigned)word);
+
+	/* Succeeded: the memory is shared again. */
+	return 0;
+}
+
+/*
  * Flushes the host data path's write cache, so the GPU, the security
  * processor and the display read what the CPU wrote to VRAM.
  *
