@@ -2,7 +2,7 @@
 
 # ws039-p013: 段 A5c 取り消しと復帰（終わらない仕事の取り消し、queue の reset）
 
-Status: in-progress（2026-10-16 P3: GFX の queue の reset、compute 専用の family と compute の queue の reset を実機で ok。merge と判定は Q1）
+Status: cleared（2026-10-16 Q1 が判定、merge 7e8aa264a。2026-10-16 P3: GFX の queue の reset、compute 専用の family と compute の queue の reset を実機で ok。merge と判定は Q1）
 Disposition: normal
 Parent: [WS039](../ws.md)
 Queue: q1234 / q1234-i01（p013 → p014 → p015 → p016、各段は実機で ok の後に main）

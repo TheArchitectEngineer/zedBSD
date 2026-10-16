@@ -209,11 +209,15 @@ struct amdrdna_training {
  * a previous one; a unit that stopped answering is not sent another).
  * limits is what the board's power table says, valid once table_built.
  * features_on says the firmware runs its three features (the mode is then
- * AMDRDNA_FAN_FIRMWARE), with the feature words it reported.  The watch
+ * AMDRDNA_FAN_FIRMWARE), with the feature words it reported; clock_levels
+ * says the boot line had the graphics clock's levels permitted too
+ * (amdrdna.smu.gfxclk=1).  The watch
  * thread reads the temperatures and the fan once a second, from the
  * firmware's readings when its features run and from the thermal block
- * always; lock protects what it publishes (the readings, the fault and the
- * alert counts) and the thread's stop, and waitq wakes it to stop.
+ * always, and the clocks (MHz) and the graphics engine's activity from
+ * the firmware's readings (clocked says they were read); lock protects
+ * what it publishes (the readings, the fault and the alert counts) and
+ * the thread's stop, and waitq wakes it to stop.
  */
 struct amdrdna_thermal {
 	struct mutex mailbox;
@@ -228,6 +232,7 @@ struct amdrdna_thermal {
 	bool features_on;
 	uint32_t features_low;
 	uint32_t features_high;
+	bool clock_levels;
 	unsigned mode;
 	unsigned duty_percent;
 	unsigned limit;
@@ -245,6 +250,12 @@ struct amdrdna_thermal {
 	uint32_t fan_speed;
 	uint32_t tachometer_speed;
 	unsigned fan_driven;
+	bool clocked;
+	unsigned gfx_clock;
+	unsigned system_clock;
+	unsigned memory_clock;
+	unsigned gfx_average;
+	unsigned gfx_activity;
 	unsigned readings;
 	bool faulted;
 	uint64_t high_alerts;
@@ -501,6 +512,8 @@ struct amdrdna_space {
  * runs.  held counts the spaces kept with their tables because their
  * work could not be confirmed stopped; runs, lost and resets count the
  * runs submitted, the spaces lost and the queues' resets (graphics and compute).
+ * stamped says the graphics ring's runs write the GPU's timestamp counter
+ * at their start and end, for the executor's timing.
  */
 struct amdrdna_spaces {
 	struct spinlock lock;
@@ -511,6 +524,7 @@ struct amdrdna_spaces {
 	unsigned held;
 	bool ready;
 	bool faulted;
+	bool stamped;
 	uint64_t runs;
 	uint64_t lost;
 	uint64_t resets;
@@ -874,6 +888,11 @@ amdrdna_thermal_interrupt(
 	struct amdrdna_device *device,
 	const struct amdrdna_interrupt *interrupt);
 
+bool
+amdrdna_power_clocks(
+	struct amdrdna_device *device,
+	struct amdrdna_power_readings *speeds_now);
+
 /* cp.c: stage A5's command processor. */
 int
 amdrdna_cp_settings(
@@ -1026,6 +1045,19 @@ amdrdna_ring_fence_address(
 	const struct amdrdna_device *device,
 	const struct amdrdna_ring *ring);
 
+uint64_t
+amdrdna_ring_stamp_address(
+	const struct amdrdna_device *device,
+	const struct amdrdna_ring *ring,
+	bool end);
+
+void
+amdrdna_ring_stamps(
+	struct amdrdna_device *device,
+	const struct amdrdna_ring *ring,
+	uint64_t *started,
+	uint64_t *ended);
+
 /* space.c: the address spaces, their backings and their runs. */
 void
 amdrdna_spaces_init(
@@ -1076,6 +1108,16 @@ amdrdna_space_quiet(
 bool
 amdrdna_space_lost(
 	struct amdrdna_space *space);
+
+void
+amdrdna_spaces_stamp(
+	struct amdrdna_device *device,
+	bool on);
+
+uint64_t
+amdrdna_space_run_ticks(
+	struct amdrdna_space *space,
+	uint64_t *started);
 
 void
 amdrdna_space_fault(

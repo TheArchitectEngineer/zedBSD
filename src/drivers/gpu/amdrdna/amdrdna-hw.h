@@ -127,6 +127,34 @@
 #define AMDRDNA_SMU_FEATURES_HIGH	0x00000003U
 
 /*
+ * The features the driver also permits when the boot line asks the
+ * firmware to move the graphics clock (amdrdna.smu.gfxclk=1), in the low
+ * word of the feature mask: the clock's prefetcher (bit 0) and its levels
+ * (bit 1), and the limits that keep a raised clock within the board's
+ * power (bit 23), current (bit 24), current steps (bit 25) and regulator
+ * temperature (bit 29), which Linux permits whatever it asks for.  The
+ * memory clock's levels stay off: the firmware's picture was timed for
+ * the memory clock it has.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/pm/swsmu/inc/pmfw_if/smu11_driver_if_navi10.h
+ * (FEATURE_DPM_PREFETCHER_BIT, FEATURE_DPM_GFXCLK_BIT, FEATURE_PPT_BIT,
+ * FEATURE_TDC_BIT, FEATURE_GFX_EDC_BIT, FEATURE_VR0HOT_BIT) and
+ * drivers/gpu/drm/amd/pm/swsmu/smu11/navi10_ppt.c
+ * (navi10_get_allowed_feature_mask: the features always permitted).
+ */
+#define AMDRDNA_SMU_CLOCK_FEATURES_LOW	0x23800003U
+
+/*
+ * The graphics clock's levels, in the low word of the feature mask.
+ *
+ * Value referenced: Linux v6.19
+ * drivers/gpu/drm/amd/pm/swsmu/inc/pmfw_if/smu11_driver_if_navi10.h
+ * (FEATURE_DPM_GFXCLK_BIT).
+ */
+#define AMDRDNA_SMU_FEATURE_GFX_LEVELS	0x00000002U
+
+/*
  * The sizes of the two tables the driver exchanges with the unit's
  * firmware: the board's power table it hands over, and the table of
  * readings it gets back (the larger of the two layouts the firmware
@@ -525,13 +553,20 @@ struct amdrdna_power_limits {
 /*
  * One set of readings the unit's firmware handed back: the edge, hotspot
  * and memory temperatures in degrees Celsius and the fan's speed in turns
- * per minute.
+ * per minute; the graphics, system and memory clocks as they run now and
+ * the graphics clock's average, in megahertz; and how busy the graphics
+ * engine was on average, in percent.
  */
 struct amdrdna_power_readings {
 	unsigned edge;
 	unsigned hotspot;
 	unsigned memory;
 	unsigned fan_speed;
+	unsigned gfx_clock;
+	unsigned system_clock;
+	unsigned memory_clock;
+	unsigned gfx_average;
+	unsigned gfx_activity;
 };
 
 /*
@@ -988,9 +1023,28 @@ struct amdrdna_psp_reply {
 #define AMDRDNA_PM4_SYNC_POLL			0x0000000aU
 #define AMDRDNA_PM4_FENCE_DATA_LOW		0x20000000U
 
+/*
+ * The GPU's free-running timestamp counter written to memory: the word
+ * copy's opcode, its control word with the counter as the source (9),
+ * memory as the destination (5 at bit 8), both words of the counter (bit
+ * 16) and the write confirmed (bit 20); and an event fence's data
+ * selector for the counter at the end of the pipe (3 at bit 29).
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/amd/amdgpu/nvd.h
+ * (PACKET3_COPY_DATA and its field positions) and Mesa 25.0.7
+ * src/amd/common/sid.h (COPY_DATA_TIMESTAMP, COPY_DATA_DST_MEM,
+ * COPY_DATA_COUNT_SEL, COPY_DATA_WR_CONFIRM, EOP_DATA_SEL_TIMESTAMP).
+ * derived: 9 | 5 << 8 | 1 << 16 | 1 << 20 = 0x00110509; 3 << 29 =
+ * 0x60000000.
+ */
+#define AMDRDNA_PM4_OP_COPY_WORDS		0x40U
+#define AMDRDNA_PM4_COPY_COUNTER_TO_MEMORY	0x00110509U
+#define AMDRDNA_PM4_FENCE_DATA_COUNTER		0x60000000U
+
 /* The words of the packets the driver builds. */
 #define AMDRDNA_PM4_WRITE_WORDS		5U
 #define AMDRDNA_PM4_FENCE_WORDS		8U
+#define AMDRDNA_PM4_STAMP_WORDS		6U
 #define AMDRDNA_PM4_SYNC_WORDS		8U
 #define AMDRDNA_PM4_MOVE_WORDS		7U
 #define AMDRDNA_PM4_DISPATCH_WORDS	5U
@@ -1811,6 +1865,18 @@ amdrdna_pm4_fence(
 	uint64_t address,
 	uint32_t value,
 	bool interrupt,
+	bool compute);
+
+unsigned
+amdrdna_pm4_stamp(
+	uint32_t *words,
+	uint64_t address,
+	bool compute);
+
+unsigned
+amdrdna_pm4_stamp_done(
+	uint32_t *words,
+	uint64_t address,
 	bool compute);
 
 unsigned

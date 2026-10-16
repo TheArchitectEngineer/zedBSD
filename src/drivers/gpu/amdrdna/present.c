@@ -17,6 +17,12 @@
  * the lease, closing its session or destroying the blob on the screen
  * flips back to the console's surface, the firmware's.
  *
+ * The kernel's text console draws into that surface through an uncached
+ * mapping, a whole repaint for each line that scrolls.  While a frame of
+ * the lease is on the screen nobody sees it, so it is kept from drawing
+ * (it keeps its text) until the lease ends; a kernel message logged then
+ * costs no time of the presentation's or the executor's.
+ *
  * The node's present lock puts the presentations, the lease's end and a
  * blob's going off the screen in one order; a presentation takes the
  * display lock only to check the lease and to write the flip, and waits
@@ -43,6 +49,7 @@
 #include <kern/kcrt.h>
 #include <kern/lock.h>
 #include <kern/sched.h>
+#include <kern/text-display.h>
 #include <uapi/errno.h>
 #include <uapi/gpu.h>
 #include <uapi/gpu-display.h>
@@ -128,6 +135,8 @@ static int present_admit(struct amdrdna_node *node, void *session, const struct 
 static void present_copy(struct amdrdna_node *node, const struct amdrdna_resource *resource, const struct gpu_display_present *request);
 static void present_end_lease(struct amdrdna_node *node);
 static void present_broken(struct amdrdna_node *node, int error);
+static void present_text_hold(struct amdrdna_node *node);
+static void present_text_give_back(struct amdrdna_node *node);
 static int present_cursor_check(struct amdrdna_node *node, void *session, uint64_t lease, uint64_t generation);
 static void present_cursor_copy(struct amdrdna_node *node, const struct amdrdna_resource *resource, const struct gpu_display_cursor_image *request, unsigned slot);
 
@@ -183,6 +192,7 @@ amdrdna_a8_register(
 	node->sequence = 0U;
 	node->shown = NULL;
 	node->next_frame = 0U;
+	node->text_held = 0;
 
 	/* The display's and the scanout's operations and the capabilities they make good. */
 	capabilities = node->ops.capabilities;
@@ -588,6 +598,9 @@ present_present(
 		node->presents++;
 		node->shown_time_ns = sched_ticks() * (KERN_NSEC_PER_SEC / KERN_CLOCK_HZ);
 		request->sequence = node->sequence;
+
+		/* The console's surface is off the screen: its text stops drawing there. */
+		present_text_hold(node);
 	} else {
 		present_broken(node, error);
 		if (blob)
@@ -1145,6 +1158,9 @@ present_end_lease(
 		node->shown = NULL;
 	}
 
+	/* The console draws its text again, the lines it missed too. */
+	present_text_give_back(node);
+
 	/* The lease is free. */
 	amdrdna_mark("gpu device: display lease %llu released after %llu frames", (unsigned long long)node->lease, (unsigned long long)node->sequence);
 	node->owner = NULL;
@@ -1164,6 +1180,44 @@ present_broken(
 	/* Presentations, the cursor and the lease's end leave the plane alone from now on. */
 	node->broken = 1;
 	amdrdna_mark("gpu device: a flip did not begin (%d); the display stops", error);
+}
+
+/*
+ * Keeps the kernel's text console from drawing while a frame of the lease
+ * is on the screen, once per lease.  The caller holds the node's display
+ * lock.
+ */
+static void
+present_text_hold(
+	struct amdrdna_node *node)
+{
+	/* Held already since the lease's first frame. */
+	if (node->text_held != 0)
+		return;
+
+	/*
+	 * text_held tells the lease's end that the console was stopped here
+	 * and is to draw again.
+	 */
+	kern_text_suspend();
+	node->text_held = 1;
+}
+
+/*
+ * Lets the kernel's text console draw again at the lease's end, repainting
+ * what it kept.  The caller holds the node's display lock.
+ */
+static void
+present_text_give_back(
+	struct amdrdna_node *node)
+{
+	/* No frame of the lease stopped it. */
+	if (node->text_held == 0)
+		return;
+
+	/* The console's surface is the one shown from now on: its text, drawn again. */
+	node->text_held = 0;
+	kern_text_resume();
 }
 
 /*
