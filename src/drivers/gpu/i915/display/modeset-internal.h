@@ -2451,8 +2451,6 @@ void drv_i915_lcd_ms_xo_env(struct i915_lcd_modeset *ms, struct i915_xd_output_e
 void drv_i915_lcd_ms_xo_describe(struct i915_lcd_modeset *ms);
 void drv_i915_lcd_ms_xo_dbuf(struct i915_lcd_modeset *ms);
 void drv_i915_lcd_ms_xo_sync(struct i915_lcd_modeset *ms);
-void drv_i915_lcd_ms_tc_dp_mode(struct i915_lcd_modeset *ms);
-void drv_i915_lcd_ms_tc_phy_wa(struct i915_lcd_modeset *ms);
 
 /*
  * The power, clock, PHY and DMC functions the other modeset

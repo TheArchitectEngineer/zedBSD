@@ -313,23 +313,24 @@ drv_i915_xd_combo_level_row(
 }
 
 /*
- * Returns the highest swing level a DisplayPort or eDP table reaches:
- * that of its last row (a table of more rows than pairs is taken as
- * every pair, one of none as the first).
+ * Returns the highest swing level a DisplayPort or eDP table of so many
+ * rows reaches (a combo or a Dekel table): that of its last row (a table
+ * of more rows than pairs is taken as every pair, one of none as the
+ * first).
  *
  * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
  * (intel_ddi_dp_voltage_max).
  */
 uint8_t
-drv_i915_xd_combo_swing_max(
-	const struct i915_xd_combo_swing_table *table)
+drv_i915_xd_dp_swing_max(
+	unsigned rows)
 {
 	unsigned last;
 
 	/* The last row, within the pairs. */
 	last = 0U;
-	if (table->count > 0U)
-		last = table->count - 1U;
+	if (rows > 0U)
+		last = rows - 1U;
 	if (last > 9U)
 		last = 9U;
 

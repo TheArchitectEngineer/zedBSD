@@ -53,28 +53,23 @@ static void i915_output_shell_tc_get_link(void *context, unsigned lanes);
 static void i915_output_shell_tc_put_link(void *context);
 static unsigned i915_output_shell_tc_mode(void *context);
 static void i915_output_shell_tc_lanes(void *context, unsigned lanes);
-static void i915_output_shell_tc_dp_mode(void *context);
-static void i915_output_shell_tc_levels(void *context, const uint8_t set[4]);
-static int i915_output_shell_tc_pll(void *context, int on);
-static void i915_output_shell_tc_phy_wa(void *context);
+static unsigned i915_output_shell_tc_pin(void *context);
+static int i915_output_shell_tc_tbt_pll(void *context, int on);
 static enum intel_display_power_domain i915_output_shell_domain(struct i915_lcd_modeset *ms, unsigned use);
 static void i915_output_shell_domain_held(struct i915_lcd_modeset *ms, unsigned use, enum intel_display_power_domain domain);
 
 /*
  * The Type-C hooks of an external DisplayPort sink's output: the
- * object's Type-C port code (its link, its mode, its lanes), its PHY
- * code (the DisplayPort mode, the signal levels, the reset of a port
- * that was in Thunderbolt mode) and its PLL pool.  Constant.
+ * object's Type-C port code (its link, its mode, its lanes, its pin
+ * assignment) and the PLL pool's Thunderbolt PLL.  Constant.
  */
 static const struct i915_xd_output_tc i915_output_shell_tc = {
 	i915_output_shell_tc_get_link,
 	i915_output_shell_tc_put_link,
 	i915_output_shell_tc_mode,
 	i915_output_shell_tc_lanes,
-	i915_output_shell_tc_dp_mode,
-	i915_output_shell_tc_levels,
-	i915_output_shell_tc_pll,
-	i915_output_shell_tc_phy_wa,
+	i915_output_shell_tc_pin,
+	i915_output_shell_tc_tbt_pll,
 };
 
 /*
@@ -106,10 +101,11 @@ drv_i915_lcd_ms_xo_env(
 	env->link_failed = i915_output_shell_link_failed;
 	env->observe = i915_output_shell_observe;
 
-	/* An external DisplayPort sink's converter and its Type-C port. */
+	/* An external DisplayPort sink's converter, its Type-C port and the Dekel PHYs' window. */
 	if (ms->output_dp_ext) {
 		env->converter = i915_output_shell_converter;
 		env->tc = &i915_output_shell_tc;
+		env->dkl = drv_i915_lcd_xd_dkl(&ms->i915);
 	}
 	env->error = i915_output_shell_error;
 	env->debug = i915_output_shell_debug;
@@ -127,6 +123,7 @@ drv_i915_lcd_ms_xo_describe(
 	struct i915_lcd_modeset *ms)
 {
 	const struct intel_shared_dpll *pll;
+	const struct intel_shared_dpll *tc_pll;
 	const struct intel_crtc_state *crtc_state;
 	const struct drm_display_mode *mode;
 	const struct intel_panel *panel;
@@ -185,15 +182,11 @@ drv_i915_lcd_ms_xo_describe(
 		}
 	}
 
-	/* A Type-C port, and the highest swing its PHY reaches. */
+	/* A Type-C port. */
 	out->tc = ms->output_dp_ext ? 1 : 0;
 	out->tc_port = 0U;
-	out->tc_swing_max = 0U;
-	if (out->tc) {
+	if (out->tc)
 		out->tc_port = (unsigned)(ms->dig_port.base.port - PORT_TC1);
-		if (intel_dp->voltage_max != NULL)
-			out->tc_swing_max = (uint8_t)(intel_dp->voltage_max(intel_dp, crtc_state) & DP_TRAIN_VOLTAGE_SWING_MASK);
-	}
 
 	/* The VBT's HDMI level and swing table settings of the panel. */
 	out->hdmi_level = ms->hdmi_level_shift;
@@ -213,6 +206,21 @@ drv_i915_lcd_ms_xo_describe(
 		out->pll_words.div0 = pll->state.hw_state.div0;
 	}
 	out->pll_words.div0_set = ms->i915.display.vbt.override_afc_startup ? 1 : 0;
+
+	/* A Type-C port's own PLL the check reserved, and its words (the AFC startup only with the VBT's override). */
+	tc_pll = crtc_state->icl_port_dplls[ICL_PORT_DPLL_MG_PHY].pll;
+	if (out->tc && tc_pll != NULL) {
+		out->tc_pll = (unsigned)tc_pll->info->id;
+		out->tc_pll_words.refclkin = tc_pll->state.hw_state.mg_refclkin_ctl;
+		out->tc_pll_words.coreclk = tc_pll->state.hw_state.mg_clktop2_coreclkctl1;
+		out->tc_pll_words.hsclk = tc_pll->state.hw_state.mg_clktop2_hsclkctl;
+		out->tc_pll_words.div0 = tc_pll->state.hw_state.mg_pll_div0;
+		out->tc_pll_words.div1 = tc_pll->state.hw_state.mg_pll_div1;
+		out->tc_pll_words.ssc = tc_pll->state.hw_state.mg_pll_ssc;
+		out->tc_pll_words.bias = tc_pll->state.hw_state.mg_pll_bias;
+		out->tc_pll_words.tdc = tc_pll->state.hw_state.mg_pll_tdc_coldst_bias;
+	}
+	out->tc_pll_words.afc_set = ms->i915.display.vbt.override_afc_startup ? 1 : 0;
 
 	/* The colours, the line time and the DMC programs. */
 	out->gamma_mode = crtc_state->gamma_mode;
@@ -280,6 +288,7 @@ drv_i915_lcd_ms_xo_sync(
 	struct intel_panel *panel;
 	struct intel_dp *intel_dp;
 	unsigned held;
+	int own_pll;
 
 	out = &ms->xo;
 	intel_dp = &ms->dig_port.dp;
@@ -299,9 +308,16 @@ drv_i915_lcd_ms_xo_sync(
 	kern_memcpy(intel_dp->lttpr_common_caps, out->repeater_caps, sizeof(intel_dp->lttpr_common_caps));
 	kern_memcpy(intel_dp->lttpr_phy_caps, out->repeater_phy_caps, sizeof(intel_dp->lttpr_phy_caps));
 
-	/* A combo port's PLL the check gave the crtc (a Type-C port's PLLs keep the pool's own record). */
+	/*
+	 * The port's PLL the crtc runs on: a combo port's, or a Type-C port's
+	 * own in DisplayPort alternate or legacy mode (the Thunderbolt PLL
+	 * keeps the pool's own record).
+	 */
 	pll = ms->crtc_state.shared_dpll;
-	if (pll != NULL && !out->tc) {
+	own_pll = 1;
+	if (out->tc && out->tc_mode != I915_XD_OUTPUT_TC_DP_ALT && out->tc_mode != I915_XD_OUTPUT_TC_LEGACY)
+		own_pll = 0;
+	if (pll != NULL && own_pll) {
 		pll->on = out->pll_on != 0;
 		pll->active_mask = out->pll_pipes;
 	}
@@ -610,34 +626,25 @@ i915_output_shell_tc_lanes(
 	intel_tc_port_set_fia_lane_count(&ms->dig_port, (int)lanes);
 }
 
-/* Programs the Type-C PHY's DisplayPort mode. */
-static void
-i915_output_shell_tc_dp_mode(
+/* Reports the DisplayPort pin assignment the object's Type-C port recorded. */
+static unsigned
+i915_output_shell_tc_pin(
 	void *context)
 {
-	/* The object's PHY. */
-	drv_i915_lcd_ms_tc_dp_mode(context);
-}
-
-/* Programs the Type-C PHY's signal levels from the training's level bytes. */
-static void
-i915_output_shell_tc_levels(
-	void *context,
-	const uint8_t set[4])
-{
 	struct i915_lcd_modeset *ms;
-	struct intel_encoder *encoder;
+	u32 pin;
 
-	/* The port's levels, then its PHY's hook. */
+	/* The port's connection. */
 	ms = context;
-	kern_memcpy(ms->dig_port.dp.train_set, set, sizeof(ms->dig_port.dp.train_set));
-	encoder = &ms->dig_port.base;
-	encoder->set_signal_levels(encoder, &ms->crtc_state);
+	pin = i915_lcd_tc_port_get_pin_assignment_mask(&ms->dig_port);
+
+	/* Succeeded: the pin assignment. */
+	return (unsigned)pin;
 }
 
-/* Turns the crtc's active port PLL on or off through the PLL pool: 0. */
+/* Turns the Thunderbolt PLL on or off for the crtc through the PLL pool: 0. */
 static int
-i915_output_shell_tc_pll(
+i915_output_shell_tc_tbt_pll(
 	void *context,
 	int on)
 {
@@ -653,15 +660,6 @@ i915_output_shell_tc_pll(
 
 	/* Succeeded: the pool reports its own errors. */
 	return 0;
-}
-
-/* Releases the Type-C PHY's core reset before the DDI buffer starts. */
-static void
-i915_output_shell_tc_phy_wa(
-	void *context)
-{
-	/* The object's PHY. */
-	drv_i915_lcd_ms_tc_phy_wa(context);
 }
 
 /* Returns the power domain a use of the output names on the object's port and pipe. */

@@ -97,57 +97,18 @@ enum i915_ddi_disable_hook {
 };
 
 /*
- * ==== File-scope constants ====
- */
-
-/*
- * The DP voltage swing and pre-emphasis pairs, in the order of the entries
- * of a buffer-translation table (the Linux index_to_dp_signal_levels[]).
- *
- * A signal level the sink requests is translated to the table entry of the
- * same index; the number of entries of the port's table bounds the swing
- * the port reports as its maximum.  Constant for the life of the kernel.
- */
-static const u8 index_to_dp_signal_levels[] = {
-	[0] = DP_TRAIN_VOLTAGE_SWING_LEVEL_0 | DP_TRAIN_PRE_EMPH_LEVEL_0,
-	[1] = DP_TRAIN_VOLTAGE_SWING_LEVEL_0 | DP_TRAIN_PRE_EMPH_LEVEL_1,
-	[2] = DP_TRAIN_VOLTAGE_SWING_LEVEL_0 | DP_TRAIN_PRE_EMPH_LEVEL_2,
-	[3] = DP_TRAIN_VOLTAGE_SWING_LEVEL_0 | DP_TRAIN_PRE_EMPH_LEVEL_3,
-	[4] = DP_TRAIN_VOLTAGE_SWING_LEVEL_1 | DP_TRAIN_PRE_EMPH_LEVEL_0,
-	[5] = DP_TRAIN_VOLTAGE_SWING_LEVEL_1 | DP_TRAIN_PRE_EMPH_LEVEL_1,
-	[6] = DP_TRAIN_VOLTAGE_SWING_LEVEL_1 | DP_TRAIN_PRE_EMPH_LEVEL_2,
-	[7] = DP_TRAIN_VOLTAGE_SWING_LEVEL_2 | DP_TRAIN_PRE_EMPH_LEVEL_0,
-	[8] = DP_TRAIN_VOLTAGE_SWING_LEVEL_2 | DP_TRAIN_PRE_EMPH_LEVEL_1,
-	[9] = DP_TRAIN_VOLTAGE_SWING_LEVEL_3 | DP_TRAIN_PRE_EMPH_LEVEL_0,
-};
-
-/*
  * ==== Forward declarations ====
  */
 
-static struct i915_lcd_modeset *i915_ddi_modeset(const struct intel_encoder *encoder);
 static void i915_ddi_init_dp_buf_reg(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state);
 static void i915_ddi_set_dp_msa(const struct intel_crtc_state *crtc_state, const struct drm_connector_state *conn_state);
 static void i915_ddi_xd_func(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state, struct i915_xd_trans_func *func);
 static void i915_ddi_enable_transcoder_func(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state);
-static u8 i915_ddi_dp_voltage_max(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state);
-static int i915_ddi_dp_level(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state, int lane);
-static int i915_ddi_level(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state, int lane);
-static int i915_translate_signal_level(struct intel_dp *intel_dp, u8 signal_levels);
 static enum transcoder i915_tgl_dp_tp_transcoder(const struct intel_crtc_state *crtc_state);
 static int i915_icl_ddi_min_voltage_level(const struct intel_crtc_state *crtc_state);
 static int i915_jsl_ddi_min_voltage_level(const struct intel_crtc_state *crtc_state);
 static int i915_tgl_ddi_min_voltage_level(const struct intel_crtc_state *crtc_state);
-static int i915_ddi_hdmi_level(struct intel_encoder *encoder, const struct intel_ddi_buf_trans *trans);
-static unsigned i915_combo_output_kind(const struct intel_crtc_state *crtc_state);
-static const struct i915_xd_combo_swing_table *i915_combo_swing_table(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state);
-static const struct intel_ddi_buf_trans *i915_combo_get_buf_trans(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state, int *n_entries);
-static const struct intel_ddi_buf_trans *i915_dkl_get_buf_trans(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state, int *n_entries);
-static void i915_ddi_bind_buf_trans(struct intel_encoder *encoder);
 static void i915_ddi_xd_link(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state, struct i915_xd_ddi_link *link);
-static void i915_icl_program_mg_dp_mode(struct intel_digital_port *dig_port, const struct intel_crtc_state *crtc_state);
-static void i915_adlp_tbt_to_dp_alt_switch_wa(struct intel_encoder *encoder);
-static void i915_tgl_dkl_phy_set_signal_levels(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state);
 
 /*
  * ==== Public functions ====
@@ -336,12 +297,9 @@ drv_i915_lcd_ms_bind_encoder(
 }
 
 /*
- * Binds the encoder hooks of a modeset object's DDI port, as
- * intel_ddi_init() and intel_ddi_init_dp_connector() bind them on display
- * version 12 and later (the `encoder->... =` and `dig_port->dp.... =`
- * assignments of intel_ddi.c; the buffer translations as
- * intel_ddi_buf_trans_init() binds them), without making the object its
- * world's bound one.
+ * Binds what a modeset object's DDI port keeps of intel_ddi_init() on
+ * display version 12 and later: the power domain of the port's lanes,
+ * without making the object its world's bound one.
  *
  * The takeover binds the Type-C ports' readout encoders this way: a crtc the
  * firmware left on such a port is stopped through that port's own hooks.
@@ -351,14 +309,12 @@ drv_i915_lcd_ms_bind_port_hooks(
 	struct i915_lcd_modeset *ms)
 {
 	struct intel_encoder *encoder;
-	struct intel_dp *intel_dp;
 	struct drm_i915_private *i915;
 	enum phy phy;
 	bool is_tc;
 
-	/* Finds the object's encoder and its DP half. */
+	/* Finds the object's encoder. */
 	encoder = &ms->dig_port.base;
-	intel_dp = &ms->dig_port.dp;
 
 	/*
 	 * intel_ddi_init(): encoder->power_domain =
@@ -374,57 +330,11 @@ drv_i915_lcd_ms_bind_port_hooks(
 	} else {
 		encoder->power_domain = POWER_DOMAIN_PORT_DDI_LANES_A + (int)encoder->port;
 	}
-
-	/* A Type-C PHY's DKL transmitters, which the xd output reaches through its Type-C hooks. */
-	if (is_tc)
-		encoder->set_signal_levels = i915_tgl_dkl_phy_set_signal_levels;
-
-	/* Binds the buffer-translation table of the port, and the highest swing it reaches. */
-	i915_ddi_bind_buf_trans(encoder);
-	intel_dp->voltage_max = i915_ddi_dp_voltage_max;
-}
-
-/*
- * Programs the DisplayPort mode of a modeset object's Type-C PHY for its
- * link's lanes (the xd output's Type-C hook).
- */
-void
-drv_i915_lcd_ms_tc_dp_mode(
-	struct i915_lcd_modeset *ms)
-{
-	/* The PHY's two lanes. */
-	i915_icl_program_mg_dp_mode(&ms->dig_port, &ms->crtc_state);
-}
-
-/*
- * Releases the core reset of a modeset object's Type-C PHY before its DDI
- * buffer starts (the xd output's Type-C hook).
- */
-void
-drv_i915_lcd_ms_tc_phy_wa(
-	struct i915_lcd_modeset *ms)
-{
-	/* The PHY's two lanes. */
-	i915_adlp_tbt_to_dp_alt_switch_wa(&ms->dig_port.base);
 }
 
 /*
  * ==== Static functions ====
  */
-
-/* Finds the modeset object whose encoder this is (every hooked encoder is one). */
-static struct i915_lcd_modeset *
-i915_ddi_modeset(
-	const struct intel_encoder *encoder)
-{
-	struct i915_lcd_modeset *ms;
-
-	/* The encoder is the base of the object's digital port. */
-	ms = container_of(encoder, struct i915_lcd_modeset, dig_port.base);
-
-	/* Succeeded: reports the object. */
-	return ms;
-}
 
 /*
  * Computes the DDI_BUF_CTL value of a DP port into intel_dp->DP through
@@ -551,142 +461,6 @@ i915_ddi_enable_transcoder_func(
 	drv_i915_xd_pipe_func_enable(drv_i915_lcd_xd_io(dev_priv), (unsigned)crtc_state->cpu_transcoder, &func);
 }
 
-/* Reports the highest voltage swing the port's buffer table reaches (the Linux intel_ddi_dp_voltage_max()). */
-static u8
-i915_ddi_dp_voltage_max(
-	struct intel_dp *intel_dp,
-	const struct intel_crtc_state *crtc_state)
-{
-	struct intel_encoder *encoder;
-	struct drm_i915_private *dev_priv __maybe_unused;
-	int n_entries;
-	bool warned;
-
-	/* Finds the port's encoder and its device. */
-	encoder = &i915_lcd_dp_to_dig_port(intel_dp)->base;
-	dev_priv = i915_lcd_to_i915(encoder->base.dev);
-
-	/* Asks the port for the number of entries of its buffer table. */
-	encoder->get_buf_trans(encoder, crtc_state, &n_entries);
-
-	/* A table without an entry is taken as one entry. */
-	warned = I915_LCD_DRM_WARN_ON(&dev_priv->drm, n_entries < 1);
-	if (warned)
-		n_entries = 1;
-
-	/*
-	 * A table longer than the signal-level list is taken as the list's
-	 * length.  The warning text is the Linux drm_WARN_ON()'s; the comparison
-	 * casts the list length so that it is not an unsigned comparison.
-	 */
-	warned = I915_LCD_DRM_WARN(&dev_priv->drm,
-				   n_entries > (int)ARRAY_SIZE(index_to_dp_signal_levels),
-				   "WARN_ON(n_entries > ARRAY_SIZE(index_to_dp_signal_levels))\n");
-	if (warned)
-		n_entries = ARRAY_SIZE(index_to_dp_signal_levels);
-
-	/* Succeeded: reports the swing of the last entry. */
-	return index_to_dp_signal_levels[n_entries - 1] &
-		DP_TRAIN_VOLTAGE_SWING_MASK;
-}
-
-/* Converts a lane's DP train set into a buffer-translation index (the Linux intel_ddi_dp_level()). */
-static int
-i915_ddi_dp_level(
-	struct intel_dp *intel_dp,
-	const struct intel_crtc_state *crtc_state,
-	int lane)
-{
-	u8 train_set;
-	u8 signal_levels;
-	bool is_uhbr;
-	int level;
-
-	/* The lane's train set. */
-	train_set = intel_dp->train_set[lane];
-
-	/* A UHBR link trains with a TX FFE preset, which is the index itself. */
-	is_uhbr = drv_i915_dp_is_uhbr(crtc_state);
-	if (is_uhbr)
-		return train_set & DP_TX_FFE_PRESET_VALUE_MASK;
-
-	/* An 8b/10b link's swing and pre-emphasis pair is looked up. */
-	signal_levels = train_set & (DP_TRAIN_VOLTAGE_SWING_MASK |
-				     DP_TRAIN_PRE_EMPHASIS_MASK);
-	level = i915_translate_signal_level(intel_dp, signal_levels);
-
-	/* Succeeded: reports the index of the pair. */
-	return level;
-}
-
-/* Selects the buffer-translation entry of one lane (the Linux intel_ddi_level()). */
-static int
-i915_ddi_level(
-	struct intel_encoder *encoder,
-	const struct intel_crtc_state *crtc_state,
-	int lane)
-{
-	struct drm_i915_private *i915 __maybe_unused;
-	const struct intel_ddi_buf_trans *trans;
-	int level;
-	int n_entries;
-	bool warned;
-	bool has_hdmi;
-
-	/* Finds the device and the port's buffer table. */
-	i915 = i915_lcd_to_i915(encoder->base.dev);
-	trans = encoder->get_buf_trans(encoder, crtc_state, &n_entries);
-
-	/* A port without a table is a warning, and the first entry is used. */
-	warned = drm_WARN_ON_ONCE(&i915->drm, !trans);
-	if (warned)
-		return 0;
-
-	/* HDMI uses the VBT's level; DP the level the sink asked for. */
-	has_hdmi = intel_crtc_has_type(crtc_state, INTEL_OUTPUT_HDMI);
-	if (has_hdmi) {
-		level = i915_ddi_hdmi_level(encoder, trans);
-	} else {
-		level = i915_ddi_dp_level(enc_to_intel_dp(encoder), crtc_state,
-					  lane);
-	}
-
-	/* A level past the table is a warning, and the last entry is used. */
-	warned = drm_WARN_ON_ONCE(&i915->drm, level >= n_entries);
-	if (warned)
-		level = n_entries - 1;
-
-	/* Succeeded: reports the entry. */
-	return level;
-}
-
-/* Finds the index of a DP swing and pre-emphasis pair (the Linux translate_signal_level()). */
-static int
-i915_translate_signal_level(
-	struct intel_dp *intel_dp,
-	u8 signal_levels)
-{
-	struct drm_i915_private *i915 __maybe_unused;
-	int i;
-
-	/* Finds the device of the port. */
-	i915 = i915_lcd_dp_to_i915(intel_dp);
-
-	/* Looks the pair up in the signal-level list. */
-	for (i = 0; i < (int)ARRAY_SIZE(index_to_dp_signal_levels); i++) {
-		if (index_to_dp_signal_levels[i] == signal_levels)
-			return i;
-	}
-
-	/* A pair the list does not have is a warning, and index 0 is used. */
-	(void)I915_LCD_DRM_WARN(&i915->drm, 1,
-				"Unsupported voltage swing/pre-emphasis level: 0x%x\n",
-				signal_levels);
-
-	/* Succeeded: reports the fallback index. */
-	return 0;
-}
-
 /* Selects the transcoder whose DP_TP registers carry the link (the Linux tgl_dp_tp_transcoder()). */
 static enum transcoder
 i915_tgl_dp_tp_transcoder(
@@ -740,306 +514,6 @@ i915_tgl_ddi_min_voltage_level(
 
 	/* Succeeded: lower clocks need no minimum. */
 	return 0;
-}
-
-/*
- * Selects the buffer-translation entry of an HDMI port (the Linux
- * intel_ddi_hdmi_level()): the VBT's level shift, or the table's default.
- */
-static int
-i915_ddi_hdmi_level(
-	struct intel_encoder *encoder,
-	const struct intel_ddi_buf_trans *trans)
-{
-	struct i915_lcd_world *world;
-	int level;
-
-	/* Finds the world of the encoder's modeset object. */
-	world = i915_ddi_modeset(encoder)->world;
-
-	/* The VBT's value for the port the DDI hooks are bound to. */
-	level = I915_LCD_INTEL_BIOS_HDMI_LEVEL_SHIFT(world, encoder->devdata);
-	if (level < 0)
-		level = trans->hdmi_default_entry;
-
-	/* Succeeded: reports the entry. */
-	return level;
-}
-
-/*
- * Programs the DP mode of a Type-C port's two PHY lanes from its pin
- * assignment and the link's lane count (the Linux
- * icl_program_mg_dp_mode(), with the DKL PHY of display version 12 and
- * later; Ice Lake's MG PHY is not ported and is reported).
- *
- * A port that is not Type-C, or one in Thunderbolt-alt mode, is left
- * alone.
- */
-static void
-i915_icl_program_mg_dp_mode(
-	struct intel_digital_port *dig_port,
-	const struct intel_crtc_state *crtc_state)
-{
-	struct drm_i915_private *dev_priv;
-	enum tc_port tc_port;
-	enum phy phy;
-	u32 pin_assignment;
-	u8 width;
-	bool is_tc;
-	bool in_tbt_alt_mode;
-	bool in_legacy_mode;
-	int display_ver;
-	int mode_result;
-
-	/* Finds the device, the Type-C port and the PHY. */
-	dev_priv = i915_lcd_to_i915(dig_port->base.base.dev);
-	tc_port = i915_lcd_intel_port_to_tc(dev_priv, dig_port->base.port);
-	phy = drv_i915_lcd_intel_port_to_phy(dev_priv, dig_port->base.port);
-
-	/* Only a Type-C PHY has a DP mode. */
-	is_tc = drv_i915_lcd_intel_phy_is_tc(dev_priv, phy);
-	if (!is_tc)
-		return;
-
-	/* A port in Thunderbolt-alt mode is the Thunderbolt controller's. */
-	in_tbt_alt_mode = i915_lcd_intel_tc_port_in_tbt_alt_mode(dig_port);
-	if (in_tbt_alt_mode)
-		return;
-
-	/* Ice Lake's MG PHY is not ported. */
-	display_ver = I915_LCD_DISPLAY_VER(dev_priv);
-	if (display_ver < 12) {
-		drv_i915_lcd_error("UNPORTED: the MG PHY DP mode of display version 11 (icl_program_mg_dp_mode)\n");
-		return;
-	}
-
-	/* The pin assignment (DPPATC) and the link's width. */
-	pin_assignment = i915_lcd_tc_port_get_pin_assignment_mask(dig_port);
-	width = (u8)crtc_state->lane_count;
-
-	/* A fixed connection: only a legacy port has one. */
-	if (pin_assignment == 0x0) {
-		in_legacy_mode = intel_tc_port_in_legacy_mode(dig_port);
-		if (!in_legacy_mode)
-			drv_i915_lcd_error("WARN_ON(!intel_tc_port_in_legacy_mode(dig_port))\n");
-	}
-
-	/* Programs both lanes' DP mode through the xd Type-C PHY. */
-	mode_result = drv_i915_xd_tc_dp_mode(drv_i915_lcd_xd_dkl(dev_priv), (unsigned)tc_port, pin_assignment, width);
-	if (mode_result != 0)
-		I915_LCD_MISSING_CASE(pin_assignment);
-}
-
-/*
- * Releases the core soft reset of a Type-C port's two PHY lanes before its
- * DDI buffer is enabled in DP-alt or legacy mode (the Linux
- * adlp_tbt_to_dp_alt_switch_wa(), an Alder Lake-P workaround for a port
- * that was in Thunderbolt-alt mode).
- */
-static void
-i915_adlp_tbt_to_dp_alt_switch_wa(
-	struct intel_encoder *encoder)
-{
-	struct drm_i915_private *i915;
-	enum tc_port tc_port;
-
-	/* Finds the device and the Type-C port. */
-	i915 = i915_lcd_to_i915(encoder->base.dev);
-	tc_port = i915_lcd_intel_port_to_tc(i915, encoder->port);
-
-	/* Releases the core soft reset of both lanes through the xd Type-C PHY. */
-	drv_i915_xd_tc_release_soft_reset(drv_i915_lcd_xd_dkl(i915), (unsigned)tc_port);
-}
-
-/*
- * Programs a Type-C port's DKL PHY transmitters with the levels of its
- * buffer translation table (the Linux tgl_dkl_phy_set_signal_levels(), the
- * set_signal_levels hook).
- *
- * Each of the two PHY lanes drives two of the link's lanes (TX1 and TX2):
- * DPCNTL0 takes the even link lane's level, DPCNTL1 the odd one's.  Alder
- * Lake-P also selects the load generators (HDMI needs its own).  A port in
- * Thunderbolt-alt mode is left alone.
- */
-static void
-i915_tgl_dkl_phy_set_signal_levels(
-	struct intel_encoder *encoder,
-	const struct intel_crtc_state *crtc_state)
-{
-	struct drm_i915_private *dev_priv;
-	const struct i915_xd_dkl_swing_table *table;
-	enum tc_port tc_port;
-	uint8_t levels[4];
-	int ln;
-	bool in_tbt_alt_mode;
-	bool has_hdmi;
-
-	/* Finds the device and the Type-C port. */
-	dev_priv = i915_lcd_to_i915(encoder->base.dev);
-	tc_port = i915_lcd_intel_port_to_tc(dev_priv, encoder->port);
-
-	/* A port in Thunderbolt-alt mode is the Thunderbolt controller's. */
-	in_tbt_alt_mode = i915_lcd_intel_tc_port_in_tbt_alt_mode(i915_lcd_enc_to_dig_port(encoder));
-	if (in_tbt_alt_mode)
-		return;
-
-	/* The port's xd swing table; a platform without Dekel tables is a warning. */
-	has_hdmi = intel_crtc_has_type(crtc_state, INTEL_OUTPUT_HDMI);
-	table = drv_i915_xd_tc_swing_table(drv_i915_lcd_xd_platform(), has_hdmi, (uint32_t)crtc_state->port_clock);
-	if (table == NULL) {
-		drv_i915_lcd_error("WARN_ON_ONCE(!trans)\n");
-		return;
-	}
-
-	/* The level of each link lane. */
-	for (ln = 0; ln < 4; ln++)
-		levels[ln] = (uint8_t)i915_ddi_level(encoder, crtc_state, ln);
-
-	/* Programs the transmitters through the xd Type-C PHY. */
-	drv_i915_xd_tc_signal_levels(drv_i915_lcd_xd_dkl(dev_priv), drv_i915_lcd_xd_platform(), (unsigned)tc_port, table, levels,
-		has_hdmi);
-}
-
-/*
- * Reports the xd kind of a crtc state's output: HDMI, eDP or DisplayPort.
- */
-static unsigned
-i915_combo_output_kind(
-	const struct intel_crtc_state *crtc_state)
-{
-	/* HDMI, then eDP; any other is DisplayPort. */
-	if (intel_crtc_has_type(crtc_state, INTEL_OUTPUT_HDMI))
-		return I915_XD_OUTPUT_HDMI;
-	if (intel_crtc_has_type(crtc_state, INTEL_OUTPUT_EDP))
-		return I915_XD_OUTPUT_EDP;
-
-	/* Succeeded: DisplayPort. */
-	return I915_XD_OUTPUT_DP;
-}
-
-/*
- * Chooses the xd swing table of a combo port: its kind and rate, and for
- * eDP the panel's VBT (HOBL unless a link failed with it, the low swing).
- */
-static const struct i915_xd_combo_swing_table *
-i915_combo_swing_table(
-	struct intel_encoder *encoder,
-	const struct intel_crtc_state *crtc_state)
-{
-	struct intel_connector *connector;
-	struct intel_dp *intel_dp;
-	unsigned kind;
-	unsigned vbt;
-
-	/* The VBT's settings of an eDP panel. */
-	kind = i915_combo_output_kind(crtc_state);
-	vbt = 0U;
-	if (kind == I915_XD_OUTPUT_EDP) {
-		intel_dp = enc_to_intel_dp(encoder);
-		connector = intel_dp->attached_connector;
-		if (connector->panel.vbt.edp.hobl && !intel_dp->hobl_failed)
-			vbt |= I915_XD_SWING_HOBL;
-		if (connector->panel.vbt.edp.low_vswing)
-			vbt |= I915_XD_SWING_LOW;
-	}
-
-	/* Succeeded: the platform's table. */
-	return drv_i915_xd_combo_swing_table(drv_i915_lcd_xd_platform(), kind, (uint32_t)crtc_state->port_clock, vbt);
-}
-
-/*
- * The buffer-translation view of a combo port's xd swing table: its
- * length and HDMI default row, which the DP and HDMI level choices read
- * (the rows themselves are written by the xd DDI).  Rewritten by every
- * call; read at once by the modeset that asked, under its locks.
- */
-static struct intel_ddi_buf_trans i915_combo_trans_view;
-
-/* The get_buf_trans hook of a combo port: the view of its xd swing table. */
-static const struct intel_ddi_buf_trans *
-i915_combo_get_buf_trans(
-	struct intel_encoder *encoder,
-	const struct intel_crtc_state *crtc_state,
-	int *n_entries)
-{
-	const struct i915_xd_combo_swing_table *table;
-
-	/* The table's length and default. */
-	table = i915_combo_swing_table(encoder, crtc_state);
-	i915_combo_trans_view.entries = NULL;
-	i915_combo_trans_view.num_entries = (u8)table->count;
-	i915_combo_trans_view.hdmi_default_entry = (u8)table->hdmi_default;
-	*n_entries = (int)table->count;
-
-	/* Succeeded: the view. */
-	return &i915_combo_trans_view;
-}
-
-/*
- * The buffer-translation view of a Type-C port's xd Dekel swing table:
- * its length and HDMI default row, which the DP and HDMI level choices
- * read (the rows themselves are written by the xd Type-C PHY).
- * Rewritten by every call; read at once by the modeset that asked, under
- * its locks.
- */
-static struct intel_ddi_buf_trans i915_dkl_trans_view;
-
-/* The get_buf_trans hook of a Type-C port: the view of its xd Dekel swing table. */
-static const struct intel_ddi_buf_trans *
-i915_dkl_get_buf_trans(
-	struct intel_encoder *encoder,
-	const struct intel_crtc_state *crtc_state,
-	int *n_entries)
-{
-	const struct i915_xd_dkl_swing_table *table;
-	bool has_hdmi;
-
-	UNUSED_PARAMETER(encoder);
-
-	/* The table of the output and rate; a platform without Dekel tables has none. */
-	has_hdmi = intel_crtc_has_type(crtc_state, INTEL_OUTPUT_HDMI);
-	table = drv_i915_xd_tc_swing_table(drv_i915_lcd_xd_platform(), has_hdmi, (uint32_t)crtc_state->port_clock);
-	if (table == NULL) {
-		*n_entries = 0;
-		return NULL;
-	}
-
-	/* The table's length and default. */
-	i915_dkl_trans_view.entries = NULL;
-	i915_dkl_trans_view.num_entries = (u8)table->count;
-	i915_dkl_trans_view.hdmi_default_entry = (u8)table->hdmi_default;
-	*n_entries = (int)table->count;
-
-	/* Succeeded: the view. */
-	return &i915_dkl_trans_view;
-}
-
-/*
- * Binds an encoder's buffer-translation hook as intel_ddi_buf_trans_init()
- * does: a Type-C (DKL) PHY takes the view of its xd Dekel swing table, a
- * combo PHY the view of its xd swing table.
- */
-static void
-i915_ddi_bind_buf_trans(
-	struct intel_encoder *encoder)
-{
-	struct drm_i915_private *i915;
-	enum phy phy;
-	bool is_tc;
-
-	/* Finds whether the port's PHY is Type-C. */
-	i915 = i915_lcd_to_i915(encoder->base.dev);
-	phy = drv_i915_lcd_intel_port_to_phy(i915, encoder->port);
-	is_tc = drv_i915_lcd_intel_phy_is_tc(i915, phy);
-
-	/* A Type-C PHY takes its xd Dekel swing table. */
-	if (is_tc) {
-		encoder->get_buf_trans = i915_dkl_get_buf_trans;
-		return;
-	}
-
-	/* A combo PHY takes its xd swing table. */
-	encoder->get_buf_trans = i915_combo_get_buf_trans;
 }
 
 /*

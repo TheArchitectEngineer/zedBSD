@@ -34,9 +34,12 @@
  *
  * Three kinds of output are driven: the built-in panel (eDP), an HDMI
  * or DVI sink on a combo port, and an external DisplayPort sink on a
- * Type-C port.  The Type-C port's own parts (its link to the PHY, the
- * PHY's DisplayPort mode and signal levels, its own PLL) are the
- * caller's, through the environment's Type-C hooks.
+ * Type-C port.  A Type-C port's PHY (its DisplayPort mode, its signal
+ * levels, its core reset) and its own PLL are driven here through the
+ * Dekel PHY's window; what the port's connection holds (its link to the
+ * PHY, the mode it is in, its lanes and pin assignment, and the
+ * Thunderbolt PLL the Type-C ports share) is the caller's, through the
+ * environment's Type-C hooks.
  */
 
 #ifndef DRIVERS_GPU_I915_DISPLAY_XD_OUTPUT_H
@@ -50,6 +53,7 @@
 #include "xd-panel.h"
 #include "xd-pipe.h"
 #include "xd-platform.h"
+#include "xd-tc.h"
 
 /*
  * What an output takes power for: the exit from DC states, the display
@@ -97,28 +101,24 @@
 #define I915_XD_OUTPUT_LOCK_BACKLIGHT	1U
 
 /*
- * The caller's parts of a Type-C port.
+ * The caller's parts of a Type-C port: what its connection holds.
  *
  * get_link takes the port's link (and with the first link the PHY) for
  * a link of so many lanes, put_link gives it back; mode reports the
  * mode the port is held in (I915_XD_OUTPUT_TC_*); lanes sets the lanes
- * the PHY's flexible IO gives the display; dp_mode programs the PHY's
- * DisplayPort mode for the link's lanes; levels programs the PHY's
- * signal levels from the link's level bytes; pll turns the port's PLL
- * on or off for the output's pipe (its own in DisplayPort alternate or
- * legacy mode, the Thunderbolt PLL otherwise: 0 or an error); and phy_wa releases the PHY's core reset
- * before the DDI buffer of a port that was in Thunderbolt mode starts.
- * Each takes the environment's context.
+ * the PHY's flexible IO gives the display; pin reports the DisplayPort
+ * pin assignment the connection recorded (I915_XD_TC_PIN_*); and
+ * tbt_pll turns the Thunderbolt PLL the Type-C ports share on or off
+ * for the output's pipe (0 or an error).  Each takes the environment's
+ * context.
  */
 struct i915_xd_output_tc {
 	void (*get_link)(void *context, unsigned lanes);
 	void (*put_link)(void *context);
 	unsigned (*mode)(void *context);
 	void (*lanes)(void *context, unsigned lanes);
-	void (*dp_mode)(void *context);
-	void (*levels)(void *context, const uint8_t set[4]);
-	int (*pll)(void *context, int on);
-	void (*phy_wa)(void *context);
+	unsigned (*pin)(void *context);
+	int (*tbt_pll)(void *context, int on);
 };
 
 /*
@@ -136,7 +136,8 @@ struct i915_xd_output_tc {
  * stops.  link_failed hears that the link did not train (the caller may
  * ask for a lower link).  converter sets up a branch's protocol
  * converter after the sink woke (NULL: none).  tc holds the Type-C
- * port's hooks (NULL for a combo port).  observe marks a point of the
+ * port's hooks (NULL for a combo port), and dkl is the Dekel PHYs'
+ * window a Type-C port's PHY and PLL are reached through.  observe marks a point of the
  * run.  error and debug take the run's notes; error counts against the
  * run.
  */
@@ -154,6 +155,7 @@ struct i915_xd_output_env {
 	void (*link_failed)(void *context);
 	void (*converter)(void *context);
 	const struct i915_xd_output_tc *tc;
+	struct i915_xd_dkl *dkl;
 	void (*observe)(void *context, unsigned point);
 	void (*error)(void *context, const char *text);
 	void (*debug)(void *context, const char *text);
@@ -212,7 +214,8 @@ struct i915_xd_output_backlight {
  * table's index or -1, the DDI bits the port keeps), the VBT's choice of
  * swing table (I915_XD_SWING_*), the HDMI swing level the VBT names (-1:
  * the table's own), whether the port is Type-C (and which, 0 for the
- * first) and the highest swing its PHY reaches; the port's PLL and its words (a combo port's); the
+ * first); the port's PLL and its words (a combo port's), and a Type-C
+ * port's own PLL and its words; the
  * colour words, the line time word; the DMC programs loaded (bit n for
  * DMC n); the sink's receiver capabilities and the display buffer's
  * change.
@@ -251,9 +254,10 @@ struct i915_xd_output {
 	int hdmi_level;
 	int tc;
 	unsigned tc_port;
-	uint8_t tc_swing_max;
 	unsigned pll;
 	struct i915_xd_dpll_words pll_words;
+	unsigned tc_pll;
+	struct i915_xd_tc_pll_words tc_pll_words;
 	uint32_t gamma_mode;
 	uint32_t csc_mode;
 	uint32_t linetime;

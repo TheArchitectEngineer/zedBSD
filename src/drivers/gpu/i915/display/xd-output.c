@@ -132,6 +132,9 @@ static void i915_xd_output_levels(void *context, const uint8_t set[4]);
 static void i915_xd_output_pattern(void *context, uint8_t pattern);
 static void i915_xd_output_prepare(void *context);
 static void i915_xd_output_phy_wa(void *context);
+static int i915_xd_output_tc_own_pll(const struct i915_xd_output *out);
+static void i915_xd_output_tc_dp_mode(struct i915_xd_output *out, const struct i915_xd_output_env *env);
+static void i915_xd_output_tc_levels(struct i915_xd_output_run *run, const uint8_t set[4]);
 static void i915_xd_output_idle(void *context);
 static void i915_xd_output_sleep(void *context, unsigned min_us, unsigned max_us);
 static void i915_xd_output_note(void *context, unsigned kind, const char *text);
@@ -408,16 +411,16 @@ drv_i915_xd_output_link_power(
 
 /*
  * Turns the port's PLL on for the pipe, under the PLLs' lock: the first
- * pipe on it turns it on with its words, a later one only joins it.  A
- * Type-C port's PLL (its own in DisplayPort alternate or legacy mode,
- * the Thunderbolt PLL the Type-C ports share otherwise) is the
- * caller's.  Returns
- * 0, EBUSY when the pipe is on the PLL already, ENODEV for a PLL the
+ * pipe on it turns it on with its words, a later one only joins it.  The
+ * PLL is a combo port's DPLL, or a Type-C port's own PLL in DisplayPort
+ * alternate or legacy mode (its words go to its PHY); the Thunderbolt
+ * PLL the Type-C ports share otherwise is the caller's.  Returns 0,
+ * EBUSY when the pipe is on the PLL already, ENODEV for a PLL the
  * platform does not have, or EIO when the PLL did not power up or lock.
  *
  * Procedure referenced: Linux v6.8.12
  * drivers/gpu/drm/i915/display/intel_dpll_mgr.c (intel_enable_shared_dpll,
- * icl_pll_enable, combo_pll_enable).
+ * icl_pll_enable, combo_pll_enable, mg_pll_enable).
  */
 int
 drv_i915_xd_output_pll(
@@ -427,14 +430,17 @@ drv_i915_xd_output_pll(
 	const struct i915_xd_pll_desc *pll;
 	uint8_t pipe_bit;
 	uint8_t before;
+	unsigned pll_id;
 	unsigned late;
+	int own;
 	int error;
 
 	pipe_bit = (uint8_t)(1U << out->pipe);
 
-	/* A Type-C port's PLL (its own, or the Thunderbolt PLL the Type-C ports share) is the caller's. */
-	if (out->tc) {
-		error = env->tc->pll(env->context, 1);
+	/* The Thunderbolt PLL the Type-C ports share is the caller's. */
+	own = i915_xd_output_tc_own_pll(out);
+	if (out->tc && !own) {
+		error = env->tc->tbt_pll(env->context, 1);
 		if (error != 0)
 			return error;
 		out->pll_pipes |= pipe_bit;
@@ -462,16 +468,23 @@ drv_i915_xd_output_pll(
 		return 0;
 	}
 
-	/* The combo PLL as the platform knows it. */
-	pll = drv_i915_xd_dpll_desc(env->platform, out->pll);
+	/* The combo PLL, or the Type-C port's own, as the platform knows it. */
+	pll_id = out->pll;
+	if (out->tc)
+		pll_id = out->tc_pll;
+	pll = drv_i915_xd_dpll_desc(env->platform, pll_id);
 	if (pll == NULL) {
 		i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_PLL, 0);
 		i915_xd_output_error(env, "xd-output: the port PLL is not the platform's\n");
 		return ENODEV;
 	}
 
-	/* Turns it on with the plan's words. */
-	late = drv_i915_xd_dpll_enable(env->io, env->platform, pll, &out->pll_words);
+	/* Turns it on with the plan's words: a combo PLL's own, or a Type-C PLL's in its PHY. */
+	if (out->tc) {
+		late = drv_i915_xd_tc_pll_enable(env->io, env->dkl, pll, &out->tc_pll_words);
+	} else {
+		late = drv_i915_xd_dpll_enable(env->io, env->platform, pll, &out->pll_words);
+	}
 	out->pll_on = 1;
 
 	i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_PLL, 0);
@@ -558,7 +571,7 @@ drv_i915_xd_output_port(
 
 	/* The Type-C PHY's DisplayPort mode. */
 	if (out->tc)
-		env->tc->dp_mode(env->context);
+		i915_xd_output_tc_dp_mode(out, env);
 
 	/* The transcoder runs on the port's clock. */
 	i915_xd_output_trans_clock(out, env);
@@ -856,7 +869,7 @@ drv_i915_xd_output_port_off(
 
 /*
  * Takes the pipe off the port's PLL, under the PLLs' lock; the last pipe
- * turns it off (a Type-C port's PLL is the caller's).  Returns 0,
+ * turns it off (the Thunderbolt PLL is the caller's).  Returns 0,
  * EINVAL when the pipe is not on the PLL, or EIO when the PLL did not
  * unlock or power down.
  *
@@ -871,14 +884,17 @@ drv_i915_xd_output_pll_off(
 {
 	const struct i915_xd_pll_desc *pll;
 	uint8_t pipe_bit;
+	unsigned pll_id;
 	unsigned late;
+	int own;
 	int error;
 
 	pipe_bit = (uint8_t)(1U << out->pipe);
 
-	/* A Type-C port's PLL (its own, or the Thunderbolt PLL the Type-C ports share) is the caller's. */
-	if (out->tc) {
-		error = env->tc->pll(env->context, 0);
+	/* The Thunderbolt PLL the Type-C ports share is the caller's. */
+	own = i915_xd_output_tc_own_pll(out);
+	if (out->tc && !own) {
+		error = env->tc->tbt_pll(env->context, 0);
 		out->pll_pipes &= (uint8_t)~pipe_bit;
 		out->pll_on = 0;
 		if (error != 0)
@@ -909,7 +925,10 @@ drv_i915_xd_output_pll_off(
 
 	/* The last pipe turns it off. */
 	late = 0U;
-	pll = drv_i915_xd_dpll_desc(env->platform, out->pll);
+	pll_id = out->pll;
+	if (out->tc)
+		pll_id = out->tc_pll;
+	pll = drv_i915_xd_dpll_desc(env->platform, pll_id);
 	if (pll != NULL)
 		late = drv_i915_xd_dpll_disable(env->io, pll);
 	out->pll_on = 0;
@@ -1624,7 +1643,9 @@ i915_xd_output_dp_link(
 	struct i915_xd_dp_link *link)
 {
 	const struct i915_xd_combo_swing_table *table;
+	const struct i915_xd_dkl_swing_table *tc_table;
 	struct i915_xd_output *out;
+	unsigned rows;
 
 	out = run->out;
 	kern_memset(link, 0, sizeof(*link));
@@ -1635,13 +1656,17 @@ i915_xd_output_dp_link(
 	link->enhanced = out->enhanced;
 	link->rate_index = out->rate_index;
 
-	/* The source's limits: the swing a Type-C PHY reaches, or the combo table's. */
+	/* The source's limits: the swing the port's table reaches (a Type-C PHY's Dekel table, or the combo table). */
 	if (out->tc) {
-		link->swing_max = out->tc_swing_max;
+		rows = 1U;
+		tc_table = drv_i915_xd_tc_swing_table(run->env->platform, 0, out->rate_khz);
+		if (tc_table != NULL)
+			rows = tc_table->count;
 	} else {
 		table = i915_xd_output_swing_table(out, run->env);
-		link->swing_max = drv_i915_xd_combo_swing_max(table);
+		rows = table->count;
 	}
+	link->swing_max = drv_i915_xd_dp_swing_max(rows);
 	link->preemph_max = 3U;
 	link->per_lane = 1;
 	link->tps3 = 1;
@@ -1756,7 +1781,7 @@ i915_xd_output_islands(
 
 /*
  * Programs the port's signal levels from the training's level bytes: a
- * Type-C PHY's through the caller; a combo port's from the swing table's
+ * Type-C PHY's from its Dekel table; a combo port's from the swing table's
  * row of each lane (the high-efficiency table is noted).
  *
  * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
@@ -1778,9 +1803,9 @@ i915_xd_output_levels(
 	out = run->out;
 	kern_memcpy(out->set, set, sizeof(out->set));
 
-	/* A Type-C PHY's levels are the caller's. */
+	/* A Type-C PHY's levels. */
 	if (out->tc) {
-		run->env->tc->levels(run->env->context, set);
+		i915_xd_output_tc_levels(run, set);
 		return;
 	}
 
@@ -1880,7 +1905,13 @@ i915_xd_output_prepare(
 	i915_xd_output_ddi_late(run->env, late);
 }
 
-/* Releases a Type-C PHY's core reset through the caller, between the transport and the buffer. */
+/*
+ * Releases a Type-C PHY's core reset, between the transport and the
+ * buffer.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (adlp_tbt_to_dp_alt_switch_wa).
+ */
 static void
 i915_xd_output_phy_wa(
 	void *context)
@@ -1889,8 +1920,101 @@ i915_xd_output_phy_wa(
 
 	run = context;
 
-	/* The caller's part. */
-	run->env->tc->phy_wa(run->env->context);
+	/* Both lanes of the port's PHY. */
+	drv_i915_xd_tc_release_soft_reset(run->env->dkl, run->out->tc_port);
+}
+
+/* Tells whether a Type-C port runs on its own PLL: in DisplayPort alternate or legacy mode (not Thunderbolt). */
+static int
+i915_xd_output_tc_own_pll(
+	const struct i915_xd_output *out)
+{
+	/* A combo port has no Type-C PLL. */
+	if (!out->tc)
+		return 0;
+
+	/* The modes whose PHY the display drives. */
+	if (out->tc_mode == I915_XD_OUTPUT_TC_DP_ALT)
+		return 1;
+	if (out->tc_mode == I915_XD_OUTPUT_TC_LEGACY)
+		return 1;
+
+	/* Thunderbolt mode, or none: the Thunderbolt PLL. */
+	return 0;
+}
+
+/*
+ * Sets a Type-C PHY's DisplayPort mode for the link's lanes and the pin
+ * assignment the connection recorded (a Thunderbolt port's PHY is not
+ * the display's).  A pin assignment of a fixed connection outside legacy
+ * mode, or one the PHY has no mode for, is an error.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (icl_program_mg_dp_mode).
+ */
+static void
+i915_xd_output_tc_dp_mode(
+	struct i915_xd_output *out,
+	const struct i915_xd_output_env *env)
+{
+	unsigned pin;
+	int error;
+
+	/* A Thunderbolt port's PHY is the Thunderbolt controller's. */
+	if (out->tc_mode == I915_XD_OUTPUT_TC_TBT)
+		return;
+
+	/* The pin assignment; only a legacy port has a fixed connection. */
+	pin = env->tc->pin(env->context);
+	if (pin == I915_XD_TC_PIN_LEGACY && out->tc_mode != I915_XD_OUTPUT_TC_LEGACY)
+		i915_xd_output_error(env, "xd-output: a fixed connection on a Type-C port outside legacy mode\n");
+
+	/* Both lanes' modes. */
+	error = drv_i915_xd_tc_dp_mode(env->dkl, out->tc_port, pin, out->lanes);
+	if (error != 0)
+		i915_xd_output_error(env, "xd-output: a pin assignment the Type-C PHY has no mode for\n");
+}
+
+/*
+ * Programs a Type-C PHY's signal levels from the link's level bytes: the
+ * platform's Dekel DisplayPort table for the rate, a row per lane (a
+ * Thunderbolt port's PHY is not the display's).
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (tgl_dkl_phy_set_signal_levels, intel_ddi_level, intel_ddi_dp_level).
+ */
+static void
+i915_xd_output_tc_levels(
+	struct i915_xd_output_run *run,
+	const uint8_t set[4])
+{
+	const struct i915_xd_dkl_swing_table *table;
+	uint8_t rows[4];
+	unsigned lane;
+	unsigned row;
+	int error;
+
+	/* A Thunderbolt port's PHY is the Thunderbolt controller's. */
+	if (run->out->tc_mode == I915_XD_OUTPUT_TC_TBT)
+		return;
+
+	/* The platform's Dekel table for the rate. */
+	table = drv_i915_xd_tc_swing_table(run->env->platform, 0, run->out->rate_khz);
+	if (table == NULL) {
+		i915_xd_output_error(run->env, "xd-output: the platform has no Type-C swing table\n");
+		return;
+	}
+
+	/* The row of each lane. */
+	for (lane = 0U; lane < 4U; lane++) {
+		error = drv_i915_xd_combo_level_row(set[lane], &row);
+		if (error != 0)
+			i915_xd_output_error(run->env, "xd-output: a level the swing tables do not have\n");
+		rows[lane] = (uint8_t)row;
+	}
+
+	/* Programs the PHY's transmitters. */
+	drv_i915_xd_tc_signal_levels(run->env->dkl, run->env->platform, run->out->tc_port, table, rows, 0);
 }
 
 /* Sends the idle pattern after the training and waits for it to be sent. */

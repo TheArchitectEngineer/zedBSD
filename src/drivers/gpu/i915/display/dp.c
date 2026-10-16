@@ -218,21 +218,6 @@ drv_i915_dp_link_failed(
 }
 
 /*
- * Tells whether the link rate of a crtc state is UHBR, and thus 128b/132b.
- */
-bool
-drv_i915_dp_is_uhbr(
-	const struct intel_crtc_state *crtc_state)
-{
-	/* The 128b/132b rates start above the highest 8b/10b rate. */
-	if (crtc_state->port_clock <= I915_DP_HIGHEST_8B10B_KHZ)
-		return false;
-
-	/* Succeeded: the link uses 128b/132b channel coding. */
-	return true;
-}
-
-/*
  * Tells whether a crtc state needs the DP VSC SDP.
  *
  * The Linux intel_dp_needs_vsc_sdp(): as per DP 1.4a spec section 2.2.4.3

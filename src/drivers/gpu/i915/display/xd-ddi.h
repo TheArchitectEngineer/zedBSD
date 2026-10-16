@@ -94,7 +94,7 @@ void drv_i915_xd_combo_lanes(struct i915_xd_io *io, unsigned phy, unsigned lanes
 const struct i915_xd_combo_swing_table *drv_i915_xd_combo_swing_table(const struct i915_xd_platform *platform, unsigned kind, uint32_t rate_khz, unsigned vbt);
 int drv_i915_xd_combo_swing_is_hobl(const struct i915_xd_platform *platform, const struct i915_xd_combo_swing_table *table);
 int drv_i915_xd_combo_level_row(uint8_t level, unsigned *row);
-uint8_t drv_i915_xd_combo_swing_max(const struct i915_xd_combo_swing_table *table);
+uint8_t drv_i915_xd_dp_swing_max(unsigned rows);
 void drv_i915_xd_combo_signal_levels(struct i915_xd_io *io, const struct i915_xd_platform *platform, const struct i915_xd_combo_levels *levels);
 uint32_t drv_i915_xd_ddi_dp_word(const struct i915_xd_platform *platform, const struct i915_xd_ddi_link *link);
 unsigned drv_i915_xd_ddi_dp_start(struct i915_xd_io *io, const struct i915_xd_ddi_link *link, uint32_t word, void (*before_buffer)(void *context), void *context);
