@@ -101,8 +101,8 @@ _Static_assert(sizeof(struct cpu_times_entry) == 32U,
     "hw.cputimes entry ABI must be identical on ILP32 and LP64");
 
 /*
- * hw.diskstats: each physical whole disk's work since it appeared
- *.  The value is a struct disk_stats_header followed by count
+ * hw.diskstats: each physical whole disk's work since it appeared.
+ * The value is a struct disk_stats_header followed by count
  * struct disk_stats_entry, in the order the disks appeared.  Partitions,
  * loop disks and a file system's own disks are not listed: a partition's
  * work is its whole disk's.  Read-only.  A buffer too small fails with
@@ -237,8 +237,8 @@ _Static_assert(sizeof(struct gpu_telemetry_entry) == 72U,
     "hw.gputelemetry entry ABI must be identical on ILP32 and LP64");
 
 /*
- * hw.thermal: the machine's temperature sensors as the kernel reads them
- *: today the ACPI thermal zones and the ACPI devices with a
+ * hw.thermal: the machine's temperature sensors as the kernel reads them:
+ * today the ACPI thermal zones and the ACPI devices with a
  * _TMP (the DPTF participants of an Intel laptop).  The value is a struct
  * thermal_header followed by count struct thermal_entry.  Read-only.  A
  * buffer too small fails with ENOMEM and the length needed.

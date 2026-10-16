@@ -883,8 +883,8 @@ sysctl_cputimes(
 }
 
 /*
- * Reads hw.diskstats: the header and each physical whole disk's work
- *, written by the disk registry under its lock.  A buffer too
+ * Reads hw.diskstats: the header and each physical whole disk's work,
+ * written by the disk registry under its lock.  A buffer too
  * small fails with ENOMEM and the length needed.
  */
 static int
@@ -923,8 +923,8 @@ sysctl_diskstats(
 }
 
 /*
- * Reads net.tcpstats: the header and each TCP socket's state and counts
- *, written by the TCP registry under its lock.  A buffer too
+ * Reads net.tcpstats: the header and each TCP socket's state and counts,
+ * written by the TCP registry under its lock.  A buffer too
  * small fails with ENOMEM and the length needed.  The sequence numbers are
  * given to the superuser only.
  */
