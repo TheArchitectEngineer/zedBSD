@@ -216,8 +216,10 @@ amdrdna_a11_relight(
 		return error;
 	}
 
-	/* Says how it went. */
-	amdrdna_mark("A11 ok relit %ux%u@%u.%03u %s transmitter=%u dig=%u pixel=%ukHz dark=%llums steps=%u frames=%u crc=%s (%08x%08x -> %08x%08x) underflow=%u/%u",
+	/* Says how it went (the CRC before only when the picture changed). */
+	if (!same)
+		amdrdna_mark("A11 note: the picture's crc before was %08x/%08x", (unsigned)before.red_green, (unsigned)before.blue);
+	amdrdna_mark("A11 ok relit %ux%u@%u.%03u %s phy=%u dig=%u pclk=%ukHz dark=%llums steps=%u frames=%u crc=%s %08x/%08x underflow=%u/%u",
 	    device->display.width,
 	    device->display.height,
 	    (unsigned)(device->display.refresh_millihz / 1000U),
@@ -230,8 +232,6 @@ amdrdna_a11_relight(
 	    (unsigned)total_steps,
 	    (unsigned)(frame_after - frame_before),
 	    same ? "same" : "differs",
-	    (unsigned)before.red_green,
-	    (unsigned)before.blue,
 	    (unsigned)after.red_green,
 	    (unsigned)after.blue,
 	    (unsigned)underflow,
