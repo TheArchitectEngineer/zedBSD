@@ -254,6 +254,8 @@ struct amdrdna_thermal {
 	unsigned gfx_clock;
 	unsigned system_clock;
 	unsigned memory_clock;
+	unsigned return_clock;
+	unsigned display_engine_clock;
 	unsigned gfx_average;
 	unsigned gfx_activity;
 	unsigned readings;

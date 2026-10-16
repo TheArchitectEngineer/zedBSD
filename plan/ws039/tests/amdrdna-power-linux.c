@@ -97,6 +97,8 @@ main(
 	metrics.CurrClock[PPCLK_GFXCLK] = 300U;
 	metrics.CurrClock[PPCLK_SOCCLK] = 600U;
 	metrics.CurrClock[PPCLK_UCLK] = 875U;
+	metrics.CurrClock[PPCLK_DCEFCLK] = 506U;
+	metrics.CurrClock[PPCLK_DISPCLK] = 164U;
 	metrics.AverageGfxclkFrequencyPostDs = 299U;
 	metrics.AverageGfxActivity = 37U;
 	fill(&legacy, sizeof(legacy), 17U, 1U);
@@ -107,6 +109,8 @@ main(
 	legacy.CurrClock[PPCLK_GFXCLK] = 1750U;
 	legacy.CurrClock[PPCLK_SOCCLK] = 1100U;
 	legacy.CurrClock[PPCLK_UCLK] = 100U;
+	legacy.CurrClock[PPCLK_DCEFCLK] = 810U;
+	legacy.CurrClock[PPCLK_DISPCLK] = 600U;
 	legacy.AverageGfxclkFrequency = 1600U;
 	legacy.AverageGfxActivity = 99U;
 
