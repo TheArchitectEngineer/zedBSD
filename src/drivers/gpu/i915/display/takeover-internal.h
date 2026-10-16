@@ -75,7 +75,6 @@ struct i915_takeover_world {
 /* The shared DPLL and CDCLK functions of clock.c. */
 struct intel_shared_dpll *drv_i915_get_shared_dpll_by_id(struct drm_i915_private *i915, enum intel_dpll_id id);
 void drv_i915_unreference_shared_dpll_crtc(const struct intel_crtc *crtc, const struct intel_shared_dpll *pll, struct intel_shared_dpll_state *shared_dpll_state);
-int drv_i915_crtc_compute_min_cdclk(const struct intel_crtc_state *crtc_state);
 
 /* The colour and crtc hooks of the modeset object. */
 const struct intel_color_funcs *drv_i915_lcd_ms_color_funcs(void);

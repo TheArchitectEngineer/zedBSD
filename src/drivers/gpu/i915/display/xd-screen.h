@@ -12,9 +12,10 @@
  * The plan is a pure function of the mode, the sink, the platform's
  * description and what the display runs now: the link (rate, lanes, bits
  * per pixel, M/N), the combo PLL's words, the display buffer's slices for
- * the pipes that run together, and the check that the mode needs no
- * other CD clock, no other voltage level and no more memory bandwidth
- * than the allowed QGV point gives.  Nothing is written.
+ * the pipes that run together, the plane's watermarks and its share of
+ * the display buffer, and the check that the mode needs no other CD
+ * clock, no other voltage level and no more memory bandwidth than the
+ * allowed QGV point gives.  Nothing is written.
  *
  * Lighting and darkening a screen run its steps in the order an output is
  * enabled and disabled (the same order for the three kinds; what differs
@@ -45,6 +46,7 @@
 
 #include "display-internal.h"
 #include "xd-clock.h"
+#include "xd-dbuf.h"
 #include "xd-dp.h"
 #include "xd-io.h"
 #include "xd-platform.h"
@@ -59,8 +61,9 @@
  * lane count it does not know, an eDP 1.4 panel's rate table), a mode no
  * link carries, a link rate without PLL words, a mode that needs another
  * CD clock (or more than the highest), one that needs another voltage
- * level, and one that needs more memory bandwidth than the allowed QGV
- * point.
+ * level, one that needs more memory bandwidth than the allowed QGV point,
+ * and one whose watermarks the vertical blank or the display buffer
+ * cannot hold.
  */
 #define I915_XD_PLAN_OK			0U
 #define I915_XD_PLAN_SINK		1U
@@ -69,6 +72,7 @@
 #define I915_XD_PLAN_CDCLK		4U
 #define I915_XD_PLAN_VOLTAGE		5U
 #define I915_XD_PLAN_QGV		6U
+#define I915_XD_PLAN_WM			7U
 
 /*
  * What the plan knows of the sink.  A panel: its DPCD rate code and lane
@@ -97,7 +101,11 @@ struct i915_xd_sink {
  * mode, the sink, the platform's description and the PLL reference, the
  * pipes that run together (this one among them), and for the check the
  * CD clock now and its highest step, the bandwidth of the allowed QGV
- * point (MB/s) and the plane's bytes per pixel.
+ * point (MB/s) and the plane's bytes per pixel.  For the watermarks: the
+ * memory's levels and latencies (the plan fills in the pipe's pixel rate
+ * and line total), the plane's buffer size, the pipe's frame start delay,
+ * and the slices and weights the other pipes have in the display buffer
+ * now (this pipe's entries are not read).
  */
 struct i915_xd_plan_input {
 	unsigned kind;
@@ -112,14 +120,25 @@ struct i915_xd_plan_input {
 	uint32_t cdclk_max_khz;
 	uint32_t qgv_mbps;
 	unsigned cpp;
+	struct i915_xd_wm_pipe wm;
+	uint32_t fb_width;
+	uint32_t fb_height;
+	unsigned frame_start_delay;
+	uint8_t pipe_slices[4];
+	uint16_t pipe_weight[4];
 };
 
 /*
  * A plan: the link, its M/N, the combo PLL's words (pll_set zero when the
  * port's PLL is not a combo DPLL), the display buffer's slices and
- * whether the bus is joined, the check's numbers (pixel and data rates,
- * the CD clock the mode needs and the one it gets, its VCO and voltage
- * level), and why it was refused (I915_XD_PLAN_OK when it was not).
+ * whether the bus is joined, the slices powered for all the pipes, the
+ * plane's watermarks (whether the vertical blank turned the deeper levels
+ * off), the pipe's weight and its share of the buffer and the plane's and
+ * the cursor's parts of it (the error when they do not fit), the check's
+ * numbers (pixel and data rates, the CD clock the pipe and the memory
+ * read bandwidth need and the larger, the one it gets, its VCO and
+ * voltage level), and why it was refused (I915_XD_PLAN_OK when it was
+ * not).
  */
 struct i915_xd_plan {
 	unsigned kind;
@@ -135,8 +154,18 @@ struct i915_xd_plan {
 	int pll_set;
 	uint8_t slices;
 	uint8_t joined;
+	uint8_t enabled_slices;
+	struct i915_xd_plane_wm wm;
+	int wm_cut;
+	uint16_t weight;
+	struct i915_xd_ddb pipe_ddb;
+	struct i915_xd_ddb plane_ddb;
+	struct i915_xd_ddb cursor_ddb;
+	int wm_error;
 	uint32_t pixel_khz;
 	uint32_t data_mbps;
+	uint32_t crtc_min_cdclk_khz;
+	uint32_t bw_min_cdclk_khz;
 	uint32_t min_cdclk_khz;
 	uint32_t cdclk_khz;
 	uint32_t vco_khz;

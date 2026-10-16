@@ -147,6 +147,31 @@ drv_i915_xd_dbuf_slices(
 }
 
 /*
+ * Tells which slices are to be powered for the pipes' slices: slice 1
+ * always (the display's start turns it on and it stays), and every slice
+ * a pipe uses.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/skl_watermark.c
+ * (intel_dbuf_enabled_slices).
+ */
+uint8_t
+drv_i915_xd_dbuf_enabled(
+	const uint8_t *pipe_slices,
+	unsigned pipes)
+{
+	uint8_t slices;
+	unsigned pipe;
+
+	/* Slice 1, and each pipe's. */
+	slices = 0x1U;
+	for (pipe = 0U; pipe < pipes; pipe++)
+		slices |= pipe_slices[pipe];
+
+	/* Succeeded: the slices. */
+	return slices;
+}
+
+/*
  * Finds the blocks a set of slices spans: from the start of its lowest
  * slice to the end of its highest (0..0 for no slice).
  *

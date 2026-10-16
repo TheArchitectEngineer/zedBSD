@@ -190,7 +190,7 @@ static void i915_modeset_flip_load(const struct i915_lcd_modeset *ms, struct i91
 static void i915_modeset_flip_store(struct i915_lcd_modeset *ms, const struct i915_xd_flip *flip);
 static int i915_modeset_prepare_state(struct i915_display *display, const struct i915_lcd_state *s, const struct i915_lcd_modeset_cfg *cfg, struct i915_lcd_emit *ops);
 static void i915_modeset_plan_check(const struct i915_lcd_state *s, const struct i915_lcd_modeset_cfg *cfg, const struct i915_lcd_modeset *ms, struct i915_xd_plan *plan);
-static void i915_modeset_plan_compare(const struct i915_xd_plan *plan, unsigned old_refused, const struct i915_lcd_modeset *ms);
+static void i915_modeset_plan_publish(struct i915_lcd_modeset *ms, const struct i915_xd_plan *plan);
 static void i915_modeset_light_hooks(struct i915_xd_screen_hooks *hooks, struct i915_modeset_commit *commit);
 static void i915_modeset_dark_hooks(struct i915_xd_screen_hooks *hooks, struct i915_modeset_commit *commit);
 static int i915_modeset_step_power(void *context);
@@ -2795,7 +2795,6 @@ i915_modeset_prepare_state(
 	struct drm_display_mode *mode;
 	struct intel_dpll_hw_state want;
 	struct i915_xd_plan plan;
-	unsigned old_refused;
 	int dbuf_known;
 	int plane_error;
 	int tc_error;
@@ -3075,44 +3074,39 @@ i915_modeset_prepare_state(
 	ms->cursor.pipe = ms->crtc.pipe;
 	ms->crtc.base.cursor = &ms->cursor.base;
 
-	/* The screen's plan checks the same state (the older check below decides; a difference is logged). */
+	/* The screen's plan: the watermarks, the display buffer, the CD clock and the bandwidth (nothing is written). */
+	world->i915_lcd_cur_i915 = &ms->i915;
 	i915_modeset_plan_check(s, cfg, ms, &plan);
 
-	/* The check phase: watermarks and DDB for the new state (nothing is written). */
-	world->i915_lcd_cur_i915 = &ms->i915;
-	ms->wm_rc = drv_i915_lcd_ms_wm_compute(display->wm_world, ms);
-	if (ms->wm_rc != 0)
+	/* The plan's watermarks and display buffer become the state the commits write. */
+	drv_i915_lcd_ms_wm_compute(display->wm_world, ms, &plan);
+	if (plan.refused == I915_XD_PLAN_WM) {
+		ms->wm_rc = plan.wm_error;
 		return ms->wm_rc;
+	}
 
-	/* The check phase, continued: the CDCLK this state requires. */
-	drv_i915_ddi_compute_min_voltage_level(&ms->crtc_state);
-	drv_i915_lcd_ms_plane_min_cdclk(ms);
-	ms->cdclk_rc = drv_i915_lcd_ms_cdclk_check(ms);
-	if (ms->cdclk_rc != 0) {
-		i915_modeset_plan_compare(&plan, I915_XD_PLAN_CDCLK, ms);
+	/* What the CD clock and the bandwidth need, as the plan found it. */
+	i915_modeset_plan_publish(ms, &plan);
+
+	/* A need above the highest step, or one no step gives. */
+	if (plan.refused == I915_XD_PLAN_CDCLK && plan.cdclk_khz == 0U) {
+		ms->cdclk_rc = I915_LCD_EINVAL;
 		return ms->cdclk_rc;
 	}
 
-	/* The reference would reprogram CDCLK around the planes (intel_set_cdclk_pre/post_plane_update): not connected. */
+	/* Another CD clock or voltage level would be reprogrammed around the planes: not connected. */
 	if (ms->cdclk.change_needed) {
-		old_refused = I915_XD_PLAN_CDCLK;
-		if (ms->cdclk.cdclk == (int)ms->i915.display.cdclk.hw.cdclk && ms->cdclk.vco == (int)ms->i915.display.cdclk.hw.vco)
-			old_refused = I915_XD_PLAN_VOLTAGE;
-		i915_modeset_plan_compare(&plan, old_refused, ms);
 		i915_modeset_on_error(world, "the mode requires a CDCLK state other than the current one: CDCLK programming is not connected\n");
 		return EINVAL;
 	}
 
 	/* The memory bandwidth of the allowed QGV point must cover the plane. */
-	ms->bw_data_rate = drv_i915_lcd_ms_bw_data_rate(ms);
-	if (cfg->qgv_allowed_bw == 0U || ms->bw_data_rate > cfg->qgv_allowed_bw) {
-		i915_modeset_plan_compare(&plan, I915_XD_PLAN_QGV, ms);
+	if (plan.refused == I915_XD_PLAN_QGV) {
 		i915_modeset_on_error(world, "the memory bandwidth of the allowed QGV point is unknown or below what the plane needs\n");
 		return EINVAL;
 	}
 
 	/* Succeeded: the state is built and checked. */
-	i915_modeset_plan_compare(&plan, I915_XD_PLAN_OK, ms);
 	return 0;
 }
 
@@ -4342,9 +4336,10 @@ i915_resident_output_way(
 }
 
 /*
- * Runs the check part of the screen's plan on the state the older check
- * phase checks: the mode and link computed, the CD clock the
- * initialisation left, the allowed QGV point, the pipes that run.
+ * Runs the check part of the screen's plan on the state the prepare
+ * built: the mode and link computed, the CD clock the initialisation
+ * left, the allowed QGV point, the pipes that run, the memory's
+ * watermark levels and the display buffer as the other pipes use it.
  */
 static void
 i915_modeset_plan_check(
@@ -4354,6 +4349,7 @@ i915_modeset_plan_check(
 	struct i915_xd_plan *plan)
 {
 	struct i915_xd_plan_input input;
+	unsigned index;
 
 	/* What the plan checks against. */
 	kern_memset(&input, 0, sizeof(input));
@@ -4376,6 +4372,24 @@ i915_modeset_plan_check(
 	input.qgv_mbps = cfg->qgv_allowed_bw;
 	input.cpp = 4U;
 
+	/* The memory's watermark levels, the plane's buffer and the pipe's frame start delay. */
+	input.wm.levels = cfg->wm_num_levels;
+	for (index = 0U; index < I915_XD_WM_LEVELS; index++)
+		input.wm.latency_us[index] = cfg->wm_latency[index];
+	input.wm.ipc = 0;
+	if (cfg->wm_ipc_enabled)
+		input.wm.ipc = 1;
+	input.wm.sagv_block_us = cfg->sagv_block_time_us;
+	input.fb_width = cfg->fb_width;
+	input.fb_height = cfg->fb_height;
+	input.frame_start_delay = (unsigned)ms->crtc_state.framestart_delay;
+
+	/* The slices and weights the other pipes have now. */
+	for (index = 0U; index < 4U; index++) {
+		input.pipe_slices[index] = ms->wm.old_dbuf.slices[index];
+		input.pipe_weight[index] = (uint16_t)ms->wm.old_dbuf.weight[index];
+	}
+
 	/* The link the state computed. */
 	kern_memset(plan, 0, sizeof(*plan));
 	plan->kind = input.kind;
@@ -4390,44 +4404,40 @@ i915_modeset_plan_check(
 }
 
 /*
- * Logs where the screen's plan and the older check phase disagree: the
- * refusal, and for an accepted state the CD clock, its voltage level and
- * the display buffer's slices and joining.
+ * Copies what the screen's plan found the CD clock and the bandwidth
+ * need into the screen's record (the status reports it): the pipe's and
+ * the memory read bandwidth's needs, and once a step was found the step,
+ * its VCO and voltage level and whether it differs from the running one;
+ * the data rate once the CD clock passed.
  */
 static void
-i915_modeset_plan_compare(
-	const struct i915_xd_plan *plan,
-	unsigned old_refused,
-	const struct i915_lcd_modeset *ms)
+i915_modeset_plan_publish(
+	struct i915_lcd_modeset *ms,
+	const struct i915_xd_plan *plan)
 {
-	unsigned pipe;
+	/* The needs. */
+	ms->cdclk.crtc_min = (int)plan->crtc_min_cdclk_khz;
+	ms->cdclk.bw_min = (int)plan->bw_min_cdclk_khz;
 
-	/* The refusals. */
-	if (plan->refused != old_refused) {
-		kern_logf("i915: xd-screen: the plan's check differs: the plan says %s, the older check %s\n",
-		    drv_i915_xd_screen_refusal_name(plan->refused),
-		    drv_i915_xd_screen_refusal_name(old_refused));
+	/* A need no step gives records nothing more. */
+	if (plan->refused == I915_XD_PLAN_CDCLK && plan->cdclk_khz == 0U)
+		return;
+
+	/* The step the plan found. */
+	ms->cdclk.min_cdclk = (int)plan->min_cdclk_khz;
+	ms->cdclk.cdclk = (int)plan->cdclk_khz;
+	ms->cdclk.vco = (int)plan->vco_khz;
+	ms->cdclk.voltage_level = plan->voltage;
+
+	/* Another step or level than the running one is a change. */
+	ms->cdclk.change_needed = 0;
+	if (plan->refused == I915_XD_PLAN_CDCLK || plan->refused == I915_XD_PLAN_VOLTAGE) {
+		ms->cdclk.change_needed = 1;
 		return;
 	}
 
-	/* A refused state has nothing more to compare. */
-	if (old_refused != I915_XD_PLAN_OK)
-		return;
-
-	/* The CD clock, its level, the slices and the joining. */
-	pipe = (unsigned)ms->crtc.pipe;
-	if (plan->cdclk_khz != (uint32_t)ms->cdclk.cdclk ||
-	    plan->voltage != (uint8_t)ms->cdclk.voltage_level ||
-	    plan->min_cdclk_khz != (uint32_t)ms->cdclk.min_cdclk ||
-	    plan->slices != ms->wm.new_dbuf.slices[pipe] ||
-	    plan->joined != (uint8_t)ms->wm.new_dbuf.joined_mbus) {
-		kern_logf("i915: xd-screen: the plan's check differs: CD clock %u/%d kHz (min %u/%d), level %u/%d, slices 0x%x/0x%x, joined %u/%d\n",
-		    plan->cdclk_khz, ms->cdclk.cdclk,
-		    plan->min_cdclk_khz, ms->cdclk.min_cdclk,
-		    (unsigned)plan->voltage, ms->cdclk.voltage_level,
-		    (unsigned)plan->slices, (unsigned)ms->wm.new_dbuf.slices[pipe],
-		    (unsigned)plan->joined, (int)ms->wm.new_dbuf.joined_mbus);
-	}
+	/* The bandwidth the QGV point is checked against. */
+	ms->bw_data_rate = plan->data_mbps;
 }
 
 /* Fills the light's steps of an enable commit. */

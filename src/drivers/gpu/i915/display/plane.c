@@ -73,90 +73,7 @@ static void i915_plane_xd_words(const struct intel_plane *plane, struct intel_pl
 static void i915_icl_plane_update_noarm(struct intel_plane *plane, const struct intel_crtc_state *crtc_state, const struct intel_plane_state *plane_state);
 static void i915_icl_plane_update_arm(struct intel_plane *plane, const struct intel_crtc_state *crtc_state, const struct intel_plane_state *plane_state);
 static void i915_icl_plane_disable_arm(struct intel_plane *plane, const struct intel_crtc_state *crtc_state);
-static int i915_icl_plane_min_cdclk(const struct intel_crtc_state *crtc_state, const struct intel_plane_state *plane_state);
-static bool i915_use_min_ddb(const struct intel_crtc_state *crtc_state, struct intel_plane *plane);
-static unsigned int i915_plane_relative_data_rate(const struct intel_crtc_state *crtc_state, const struct intel_plane_state *plane_state, int color_plane);
 static const struct drm_format_info *i915_xrgb8888_format(void);
-
-/*
- * Scales a pixel rate by a plane's downscaling (the Linux
- * intel_adjusted_rate()).
- *
- * The source rectangle is in 16.16 fixed point.  Downscaling limits the
- * maximum pixel rate: the destination is taken no larger than the source.
- */
-unsigned int
-drv_i915_adjusted_rate(
-	const struct drm_rect *src,
-	const struct drm_rect *dst,
-	unsigned int rate)
-{
-	unsigned int src_w;
-	unsigned int src_h;
-	unsigned int dst_w;
-	unsigned int dst_h;
-
-	/* The source size in whole pixels and the destination size. */
-	src_w = i915_drm_rect_width(src) >> 16;
-	src_h = i915_drm_rect_height(src) >> 16;
-	dst_w = i915_drm_rect_width(dst);
-	dst_h = i915_drm_rect_height(dst);
-
-	/* Downscaling limits the maximum pixel rate. */
-	dst_w = min(src_w, dst_w);
-	dst_h = min(src_h, dst_h);
-
-	/* Succeeded: reports the rate scaled by the area ratio, rounded up. */
-	return DIV_ROUND_UP_ULL(mul_u32_u32(rate, src_w * src_h), dst_w * dst_h);
-}
-
-/*
- * Returns the pixel rate a plane fetches at (the Linux
- * intel_plane_pixel_rate()).
- *
- * The plane's visibility is not checked: the watermark code uses this for
- * a cursor that is fully off screen too.
- */
-unsigned int
-drv_i915_plane_pixel_rate(
-	const struct intel_crtc_state *crtc_state,
-	const struct intel_plane_state *plane_state)
-{
-	unsigned int rate;
-
-	/* Scales the pipe's pixel rate by the plane's downscaling. */
-	rate = drv_i915_adjusted_rate(&plane_state->uapi.src, &plane_state->uapi.dst, crtc_state->pixel_rate);
-
-	/* Succeeded: reports the rate. */
-	return rate;
-}
-
-/*
- * Returns the data rate of one colour plane of a visible plane (the Linux
- * intel_plane_data_rate()): its pixel rate times its bytes per pixel.
- */
-unsigned int
-drv_i915_plane_data_rate(
-	const struct intel_crtc_state *crtc_state,
-	const struct intel_plane_state *plane_state,
-	int color_plane)
-{
-	const struct drm_framebuffer *fb;
-	unsigned int pixel_rate;
-
-	/* The framebuffer of the plane. */
-	fb = plane_state->hw.fb;
-
-	/* An invisible plane fetches nothing. */
-	if (!plane_state->uapi.visible)
-		return 0;
-
-	/* The plane's pixel rate. */
-	pixel_rate = drv_i915_plane_pixel_rate(crtc_state, plane_state);
-
-	/* Succeeded: reports the bytes per second of the colour plane. */
-	return pixel_rate * fb->format->cpp[color_plane];
-}
 
 /*
  * Records the plane words of one full-screen primary plane.
@@ -362,21 +279,6 @@ drv_i915_lcd_ms_plane_disable(
 }
 
 /*
- * Records the CDCLK the plane of a modeset object needs.
- *
- * The Linux intel_plane_calc_min_cdclk(): plane->min_cdclk is
- * icl_plane_min_cdclk on display version 11 and later
- * (skl_universal_plane_create()).
- */
-void
-drv_i915_lcd_ms_plane_min_cdclk(
-	struct i915_lcd_modeset *ms)
-{
-	/* Stores the plane's need in the crtc state. */
-	ms->crtc_state.min_cdclk[ms->plane.id] = i915_icl_plane_min_cdclk(&ms->crtc_state, &ms->plane_state);
-}
-
-/*
  * Updates the running crtc of a modeset object to its plane's new state
  * (a synchronous flip).
  *
@@ -418,27 +320,6 @@ drv_i915_lcd_ms_plane_update_flip(
 
 	/* The event is armed; the state no longer carries it. */
 	ms->crtc_state.uapi.event = 0;
-}
-
-/*
- * Records the data rates of the plane of a modeset object.
- *
- * The two assignments of the Linux intel_plane_atomic_check_with_state()
- * that give a visible plane its data rates; the DDB allocation weighs the
- * planes by rel_data_rate.
- */
-void
-drv_i915_lcd_ms_plane_data_rates(
-	struct i915_lcd_modeset *ms)
-{
-	struct intel_crtc_state *cs;
-
-	/* The object's crtc state. */
-	cs = &ms->crtc_state;
-
-	/* The data rate and the relative data rate of the primary plane's colour plane 0. */
-	cs->data_rate[ms->plane.id] = drv_i915_plane_data_rate(cs, &ms->plane_state, 0);
-	cs->rel_data_rate[ms->plane.id] = i915_plane_relative_data_rate(cs, &ms->plane_state, 0);
 }
 
 /* Converts a plane state of the modeset path into the xd plane, with its control words. */
@@ -545,101 +426,6 @@ i915_icl_plane_disable_arm(
 	drv_i915_xd_plane_off_noarm(io, (unsigned)plane->pipe);
 	skl_write_plane_wm(plane, crtc_state);
 	drv_i915_xd_plane_off_arm(io, (unsigned)plane->pipe);
-}
-
-/* Returns the CDCLK a plane needs (the Linux icl_plane_min_cdclk()): two pixels per clock. */
-static int
-i915_icl_plane_min_cdclk(
-	const struct intel_crtc_state *crtc_state,
-	const struct intel_plane_state *plane_state)
-{
-	unsigned int pixel_rate;
-
-	/* The plane's pixel rate. */
-	pixel_rate = drv_i915_plane_pixel_rate(crtc_state, plane_state);
-
-	/* Succeeded: two pixels per clock, rounded up. */
-	return DIV_ROUND_UP(pixel_rate, 2);
-}
-
-/*
- * Tells whether an async flip gives the plane its minimum DDB only (the
- * Linux use_min_ddb(), display version 13 and later).
- */
-static bool
-i915_use_min_ddb(
-	const struct intel_crtc_state *crtc_state,
-	struct intel_plane *plane)
-{
-	/* Only display version 13 and later. */
-	if (drv_i915_lcd_display_ver() < 13)
-		return false;
-
-	/* Only an async flip on a plane that does them. */
-	if (!crtc_state->uapi.async_flip)
-		return false;
-	if (!plane->async_flip)
-		return false;
-
-	/* Succeeded: the plane gets its minimum DDB. */
-	return true;
-}
-
-/*
- * Returns the relative data rate a plane weighs in the DDB allocation
- * with (the Linux intel_plane_relative_data_rate()).
- *
- * The source is already rotated for 90/270 degrees (to match the GTT
- * mapping); the UV plane sub-samples by 2.  A cursor counts its bytes, any
- * other plane its bytes scaled by its downscaling.
- */
-static unsigned int
-i915_plane_relative_data_rate(
-	const struct intel_crtc_state *crtc_state,
-	const struct intel_plane_state *plane_state,
-	int color_plane)
-{
-	struct intel_plane *plane;
-	const struct drm_framebuffer *fb;
-	int width;
-	int height;
-	unsigned int rel_data_rate;
-	bool min_ddb;
-	unsigned int adjusted;
-
-	/* The plane and its framebuffer. */
-	plane = to_intel_plane(plane_state->uapi.plane);
-	fb = plane_state->hw.fb;
-
-	/* An invisible plane weighs nothing. */
-	if (!plane_state->uapi.visible)
-		return 0;
-
-	/* A plane that gets its minimum DDB is not weighed for the extra DDB. */
-	min_ddb = i915_use_min_ddb(crtc_state, plane);
-	if (min_ddb)
-		return 0;
-
-	/* The source size, halved for the UV plane. */
-	width = i915_drm_rect_width(&plane_state->uapi.src) >> 16;
-	height = i915_drm_rect_height(&plane_state->uapi.src) >> 16;
-	if (color_plane == 1) {
-		width /= 2;
-		height /= 2;
-	}
-
-	/* The bytes of the source. */
-	rel_data_rate = width * height * fb->format->cpp[color_plane];
-
-	/* A cursor weighs its bytes. */
-	if (plane->id == PLANE_CURSOR)
-		return rel_data_rate;
-
-	/* Scales the bytes by the downscaling. */
-	adjusted = drv_i915_adjusted_rate(&plane_state->uapi.src, &plane_state->uapi.dst, rel_data_rate);
-
-	/* Succeeded: reports the weight. */
-	return adjusted;
 }
 
 /* Returns the description of the XRGB8888 format this path scans out. */

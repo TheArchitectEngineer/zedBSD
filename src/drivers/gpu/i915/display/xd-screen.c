@@ -175,6 +175,7 @@ static unsigned i915_xd_screen_panel_link(const struct i915_xd_plan_input *input
 static unsigned i915_xd_screen_hdmi_link(const struct i915_xd_plan_input *input, struct i915_xd_plan *plan);
 static unsigned i915_xd_screen_dp_link(const struct i915_xd_plan_input *input, struct i915_xd_plan *plan);
 static unsigned i915_xd_screen_combo_pll(const struct i915_xd_plan_input *input, struct i915_xd_plan *plan);
+static int i915_xd_screen_plan_wm(const struct i915_xd_plan_input *input, struct i915_xd_plan *plan);
 static uint32_t i915_xd_screen_round_up(uint64_t value, uint32_t divisor);
 
 /*
@@ -233,21 +234,23 @@ drv_i915_xd_screen_plan_link(
 }
 
 /*
- * Computes the check part of a plan whose link is found: the pixel and
- * data rates, the CD clock the mode needs (the pixel rate's, the plane's
- * and the memory read bandwidth's; on Tiger Lake the pixel rate itself),
- * the step that gives it and its voltage level with the port's own need;
- * the display buffer's slices for the pipes that run.  The mode is
- * refused when it needs another CD clock or more than the highest,
- * another voltage level, or more bandwidth than the allowed QGV point.
- * Returns the refusal, also kept in plan->refused.
+ * Computes the check part of a plan whose link is found: the display
+ * buffer's slices for the pipes that run, the plane's watermarks and its
+ * share of the buffer, the pixel and data rates, the CD clock the mode
+ * needs (half the pixel rate, on Tiger Lake the pixel rate itself, and
+ * the memory read bandwidth's), the step that gives it and its voltage
+ * level with the port's own need.  The mode is refused when its
+ * watermarks do not fit, when it needs another CD clock or more than the
+ * highest, another voltage level, or more bandwidth than the allowed QGV
+ * point.  Returns the refusal, also kept in plan->refused.
  *
  * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_cdclk.c
  * (intel_crtc_compute_min_cdclk, intel_pixel_rate_to_cdclk,
  * intel_planes_min_cdclk, bxt_calc_cdclk, bxt_modeset_calc_cdclk,
  * intel_cdclk_changed), skl_universal_plane.c (icl_plane_min_cdclk),
  * intel_bw.c (intel_bw_crtc_data_rate, intel_bw_crtc_min_cdclk,
- * intel_bw_check_qgv_points), skl_watermark.c (skl_compute_ddb).
+ * intel_bw_check_qgv_points), skl_watermark.c (skl_compute_ddb,
+ * skl_compute_wm).
  */
 unsigned
 drv_i915_xd_screen_plan_check(
@@ -257,8 +260,10 @@ drv_i915_xd_screen_plan_check(
 	const struct i915_xd_platform *platform;
 	uint32_t data_kbps;
 	uint32_t need;
-	uint32_t bandwidth;
+	uint32_t clamp;
+	uint32_t vco_khz;
 	uint8_t level;
+	int error;
 
 	/* A plan already refused is not checked. */
 	if (plan->refused != I915_XD_PLAN_OK)
@@ -274,19 +279,35 @@ drv_i915_xd_screen_plan_check(
 	data_kbps = plan->pixel_khz * input->cpp;
 	plan->data_mbps = i915_xd_screen_round_up(data_kbps, 1000U);
 
-	/* Two pixels per CD clock for the pipe and for its plane; the memory read bandwidth. */
-	need = i915_xd_screen_round_up(plan->pixel_khz, 2U);
-	bandwidth = i915_xd_screen_round_up((uint64_t)data_kbps * I915_XD_SCREEN_BW_CDCLK_MUL, I915_XD_SCREEN_BW_CDCLK_DIV);
-	if (bandwidth > need)
-		need = bandwidth;
-
-	/* A platform that can underrun at half the pixel rate: the pixel rate itself, up to the highest step. */
-	if ((platform->wa & I915_XD_WA_CDCLK_PIXEL_RATE) != 0U) {
-		if (plan->pixel_khz < input->cdclk_max_khz && plan->pixel_khz > need)
-			need = plan->pixel_khz;
-		if (plan->pixel_khz >= input->cdclk_max_khz && input->cdclk_max_khz > need)
-			need = input->cdclk_max_khz;
+	/* The plane's watermarks and the pipe's share of the display buffer. */
+	error = i915_xd_screen_plan_wm(input, plan);
+	if (error != 0) {
+		plan->wm_error = error;
+		plan->refused = I915_XD_PLAN_WM;
+		return plan->refused;
 	}
+
+	/*
+	 * The pipe needs one CD clock for two pixels; a platform that can
+	 * underrun at half the pixel rate needs the pixel rate itself, but
+	 * no more than the highest step.
+	 */
+	need = i915_xd_screen_round_up(plan->pixel_khz, 2U);
+	if ((platform->wa & I915_XD_WA_CDCLK_PIXEL_RATE) != 0U) {
+		clamp = plan->pixel_khz;
+		if (clamp > input->cdclk_max_khz)
+			clamp = input->cdclk_max_khz;
+		if (clamp > need)
+			need = clamp;
+	}
+	plan->crtc_min_cdclk_khz = need;
+
+	/* The memory read bandwidth's need, from display 12 on. */
+	plan->bw_min_cdclk_khz = 0U;
+	if (platform->display_ver >= 12U)
+		plan->bw_min_cdclk_khz = i915_xd_screen_round_up((uint64_t)data_kbps * I915_XD_SCREEN_BW_CDCLK_MUL, I915_XD_SCREEN_BW_CDCLK_DIV);
+	if (plan->bw_min_cdclk_khz > need)
+		need = plan->bw_min_cdclk_khz;
 	plan->min_cdclk_khz = need;
 
 	/* No step above the highest. */
@@ -295,13 +316,19 @@ drv_i915_xd_screen_plan_check(
 		return plan->refused;
 	}
 
-	/* The step that gives it, its VCO and its voltage level with the port's need. */
+	/* The step that gives it and its VCO. */
 	plan->cdclk_khz = drv_i915_xd_cdclk_lowest(platform, input->cdclk.ref_khz, need);
-	if (plan->cdclk_khz == 0U) {
+	vco_khz = 0U;
+	if (plan->cdclk_khz != 0U)
+		vco_khz = drv_i915_xd_cdclk_vco(platform, &input->cdclk, plan->cdclk_khz);
+	if (vco_khz == 0U) {
+		plan->cdclk_khz = 0U;
 		plan->refused = I915_XD_PLAN_CDCLK;
 		return plan->refused;
 	}
-	plan->vco_khz = drv_i915_xd_cdclk_vco(platform, &input->cdclk, plan->cdclk_khz);
+	plan->vco_khz = vco_khz;
+
+	/* Its voltage level with the port's need. */
 	plan->min_voltage = 0U;
 	if (plan->rate_khz > I915_XD_SCREEN_HIGH_PORT_KHZ)
 		plan->min_voltage = I915_XD_SCREEN_HIGH_PORT_LEVEL;
@@ -373,6 +400,8 @@ drv_i915_xd_screen_refusal_name(
 		return "another voltage level";
 	case I915_XD_PLAN_QGV:
 		return "more memory bandwidth than the QGV point";
+	case I915_XD_PLAN_WM:
+		return "watermarks the blank or the display buffer cannot hold";
 	default:
 		break;
 	}
@@ -800,6 +829,124 @@ i915_xd_screen_combo_pll(
 	/* Succeeded: the words. */
 	plan->pll_set = 1;
 	return I915_XD_PLAN_OK;
+}
+
+/*
+ * Computes the plane's watermarks and the pipe's share of the display
+ * buffer: the levels from the memory's latencies, the deeper levels the
+ * vertical blank cannot hold turned off, the pipe's weight among the
+ * pipes on its slices and its range, then the cursor's fixed part and the
+ * plane's allocation by the size of its buffer.  Returns 0, or EINVAL
+ * when the memory gives no levels or when no level fits the blank or the
+ * buffer.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/skl_watermark.c
+ * (skl_build_pipe_wm, skl_wm_check_vblank, skl_compute_ddb,
+ * skl_crtc_allocate_ddb, intel_crtc_dbuf_weights, intel_crtc_ddb_weight,
+ * skl_crtc_allocate_plane_ddb), intel_atomic_plane.c
+ * (intel_plane_relative_data_rate).
+ */
+static int
+i915_xd_screen_plan_wm(
+	const struct i915_xd_plan_input *input,
+	struct i915_xd_plan *plan)
+{
+	const struct i915_xd_platform *platform;
+	struct i915_xd_wm_pipe pipe;
+	struct i915_xd_wm_surface surface;
+	uint8_t slices[4];
+	uint16_t weight;
+	unsigned weight_start;
+	unsigned weight_end;
+	unsigned weight_total;
+	unsigned deepest;
+	unsigned index;
+	uint16_t cursor_blocks;
+	uint64_t relative_rate;
+	int sagv_too_short;
+	int error;
+
+	/* A memory that names no levels gives the plane no watermark. */
+	platform = input->platform;
+	if (input->wm.levels == 0U || input->wm.levels > I915_XD_WM_LEVELS)
+		return EINVAL;
+
+	/* The pipe at the mode's pixel rate and line total. */
+	pipe = input->wm;
+	pipe.pixel_rate_khz = plan->pixel_khz;
+	pipe.htotal = input->mode->htotal;
+
+	/* The plane: the whole buffer, linear, unscaled, at the pipe's rate. */
+	kern_memset(&surface, 0, sizeof(surface));
+	surface.width = input->fb_width;
+	surface.cpp = input->cpp;
+	surface.layout = I915_XD_WM_LINEAR;
+	surface.pixel_rate_khz = plan->pixel_khz;
+	drv_i915_xd_wm_plane(platform, &pipe, &surface, &plan->wm);
+
+	/* The deepest level the vertical blank holds. */
+	error = drv_i915_xd_wm_vblank_level(&pipe, plan->pixel_khz, (uint32_t)(input->mode->vtotal - input->mode->vdisplay),
+		input->frame_start_delay, plan->wm.level[0].lines, &deepest, &sagv_too_short);
+	if (error != 0)
+		return error;
+
+	/* The deeper levels go off; before display 12 the SAGV's block time does not count. */
+	plan->wm_cut = 0;
+	if (deepest + 1U < pipe.levels)
+		plan->wm_cut = 1;
+	if (platform->display_ver < 12U)
+		sagv_too_short = 0;
+	drv_i915_xd_wm_cut(&plan->wm, pipe.levels, deepest, sagv_too_short);
+
+	/*
+	 * The pipe's weight is the width of its mode; it shares its slices
+	 * with the pipes that use the same ones, before it the pipes of lower
+	 * numbers.
+	 */
+	plan->weight = input->mode->hdisplay;
+	weight_start = 0U;
+	weight_end = 0U;
+	weight_total = 0U;
+	for (index = 0U; index < 4U; index++) {
+		/* This pipe's own entries are the plan's; the others are what runs now. */
+		slices[index] = input->pipe_slices[index];
+		weight = input->pipe_weight[index];
+		if (index == input->pipe) {
+			slices[index] = plan->slices;
+			weight = plan->weight;
+		}
+
+		/* A pipe on other slices does not share them. */
+		if (slices[index] != plan->slices)
+			continue;
+
+		/* Adds the pipe's weight to the share before, up to and around this one. */
+		weight_total += weight;
+		if (index < input->pipe) {
+			weight_start += weight;
+			weight_end += weight;
+		} else if (index == input->pipe) {
+			weight_end += weight;
+		}
+	}
+
+	/* The slices all the pipes use, and the pipe's range of its slices. */
+	plan->enabled_slices = drv_i915_xd_dbuf_enabled(slices, 4U);
+	drv_i915_xd_dbuf_pipe_range(platform, plan->slices, weight_start, weight_end, weight_total, &plan->pipe_ddb);
+
+	/* An empty range hands nothing out. */
+	if (plan->pipe_ddb.end == plan->pipe_ddb.start)
+		return 0;
+
+	/* The cursor's fixed part for the pipes that run, then the plane's by the size of its buffer. */
+	cursor_blocks = drv_i915_xd_wm_cursor_blocks(platform, &pipe, (unsigned)__builtin_popcount(input->run_pipes));
+	relative_rate = (uint64_t)input->fb_width * input->fb_height * input->cpp;
+	error = drv_i915_xd_wm_allocate(&pipe, &plan->pipe_ddb, cursor_blocks, &plan->wm, relative_rate, &plan->plane_ddb, &plan->cursor_ddb);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the plane's watermarks fit its part of the buffer. */
+	return 0;
 }
 
 /* Divides, rounding up. */

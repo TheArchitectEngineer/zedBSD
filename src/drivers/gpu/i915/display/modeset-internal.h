@@ -2417,16 +2417,11 @@ int drv_i915_lcd_ms_alloc_tc_plls(struct i915_lcd_world *world, struct i915_lcd_
 void drv_i915_lcd_ms_release_pll(struct i915_lcd_world *world, struct i915_lcd_modeset *ms);
 void drv_i915_lcd_ms_bind_encoder(struct i915_lcd_modeset *ms);
 void drv_i915_lcd_ms_bind_port_hooks(struct i915_lcd_modeset *ms);
-void drv_i915_lcd_ms_plane_data_rates(struct i915_lcd_modeset *ms);
 void drv_i915_lcd_ms_wm_compute_off(struct i915_wm_world *wm_world, struct i915_lcd_modeset *ms, unsigned keep_pipes);
-int drv_i915_lcd_ms_cdclk_check(struct i915_lcd_modeset *ms);
-int drv_i915_lcd_ms_bw_min_cdclk(struct i915_lcd_modeset *ms);
-unsigned int drv_i915_lcd_ms_bw_data_rate(struct i915_lcd_modeset *ms);
-void drv_i915_lcd_ms_plane_min_cdclk(struct i915_lcd_modeset *ms);
 void drv_i915_lcd_ms_set_brightness(struct i915_lcd_modeset *ms, u32 user_level, u32 user_max);
 void drv_i915_lcd_ms_backlight_power(struct i915_lcd_modeset *ms, int on);
 u32 drv_i915_lcd_ms_user_level(struct i915_lcd_modeset *ms, u32 user_max);
-int drv_i915_lcd_ms_wm_compute(struct i915_wm_world *wm_world, struct i915_lcd_modeset *ms);
+void drv_i915_lcd_ms_wm_compute(struct i915_wm_world *wm_world, struct i915_lcd_modeset *ms, const struct i915_xd_plan *plan);
 int drv_i915_lcd_dbuf_current(struct i915_wm_world *wm_world, struct intel_dbuf_state *out);
 void drv_i915_lcd_dbuf_publish(struct i915_wm_world *wm_world, const struct intel_dbuf_state *now);
 void drv_i915_lcd_dbuf_forget(struct i915_wm_world *wm_world);

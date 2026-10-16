@@ -35,6 +35,7 @@ struct intel_bw_state;
 struct intel_crtc_state;
 struct intel_dbuf_state;
 struct intel_plane_state;
+struct i915_xd_plan;
 
 /*
  * ==== The watermark world ====
@@ -68,10 +69,7 @@ int drv_i915_pmdemand_init(struct i915_display_state *d, int display_ver, struct
  * ==== The bandwidth and watermark text of the modeset ====
  */
 
-int drv_i915_lcd_ms_bw_min_cdclk(struct i915_lcd_modeset *ms);
-unsigned int drv_i915_lcd_ms_bw_data_rate(struct i915_lcd_modeset *ms);
-bool drv_i915_wm_plane_visible(const struct intel_crtc_state *crtc_state, const struct intel_plane_state *plane_state);
-int drv_i915_lcd_ms_wm_compute(struct i915_wm_world *wm_world, struct i915_lcd_modeset *ms);
+void drv_i915_lcd_ms_wm_compute(struct i915_wm_world *wm_world, struct i915_lcd_modeset *ms, const struct i915_xd_plan *plan);
 void drv_i915_lcd_ms_wm_compute_off(struct i915_wm_world *wm_world, struct i915_lcd_modeset *ms, unsigned keep_pipes);
 int drv_i915_lcd_dbuf_current(struct i915_wm_world *wm_world, struct intel_dbuf_state *out);
 void drv_i915_lcd_dbuf_publish(struct i915_wm_world *wm_world, const struct intel_dbuf_state *now);

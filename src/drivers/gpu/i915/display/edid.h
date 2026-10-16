@@ -26,9 +26,6 @@
 
 struct i915_lcd_world;
 
-void drv_i915_drm_mode_copy(struct drm_display_mode *dst, const struct drm_display_mode *src);
-void drv_i915_drm_mode_init(struct drm_display_mode *dst, const struct drm_display_mode *src);
-void drv_i915_drm_mode_get_hv_timing(const struct drm_display_mode *mode, int *hdisplay, int *vdisplay);
 void drv_i915_drm_mode_set_crtcinfo(struct drm_display_mode *p, int adjust_flags);
 
 #endif /* I915_DISPLAY_WORLD_MODESET */

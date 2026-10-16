@@ -9,9 +9,12 @@
  * The host test of a screen's plan (display/xd-screen.c): the 5330's
  * panel against the numbers the older check phase reports for it (the
  * CD clock 179.2 MHz from a 70.4 MHz pixel need and an 11 MHz bandwidth
- * need, 564 MB/s, four slices joined), the refusals (another CD clock,
- * more than the highest, another voltage level, the QGV point, the
- * sinks the plan does not drive, a link too slow), an HDMI sink's link
+ * need, 564 MB/s, four slices joined, the plane's level 0 and its part
+ * of the buffer), the watermarks (two pipes sharing their slices by
+ * weight, a blank too short, a buffer too wide for the share, a memory
+ * without levels), the refusals (another CD clock, more than the
+ * highest, another voltage level, the QGV point, the sinks the plan does
+ * not drive, a link too slow), an HDMI sink's link
  * and WRPLL on DDI B, an external DisplayPort sink's link on a Type-C
  * port with a branch's limits, and Tiger Lake's pixel rate rule; the
  * light's and the dark's order of steps, what a failed step skips, the
@@ -86,6 +89,7 @@ static void i915_xd_screen_test_mode(struct i915_display_mode *mode, int clock_k
 static void i915_xd_screen_test_panel_input(struct i915_xd_plan_input *input, const struct i915_xd_platform *platform, const struct i915_display_mode *mode);
 static void i915_xd_screen_test_panel(void);
 static void i915_xd_screen_test_refusals(void);
+static void i915_xd_screen_test_wm(void);
 static void i915_xd_screen_test_sinks(void);
 static void i915_xd_screen_test_hdmi(void);
 static void i915_xd_screen_test_dp(void);
@@ -102,6 +106,7 @@ main(void)
 	/* Each group of checks. */
 	i915_xd_screen_test_panel();
 	i915_xd_screen_test_refusals();
+	i915_xd_screen_test_wm();
 	i915_xd_screen_test_sinks();
 	i915_xd_screen_test_hdmi();
 	i915_xd_screen_test_dp();
@@ -156,7 +161,12 @@ i915_xd_screen_test_mode(
 	mode->vtotal = 1128U;
 }
 
-/* The 5330's panel: HBR on four lanes, eDP 1.3, a 6 bpc EDID, the CD clock 179.2 MHz from a 38.4 MHz reference. */
+/*
+ * The 5330's panel: HBR on four lanes, eDP 1.3, a 6 bpc EDID, the CD
+ * clock 179.2 MHz from a 38.4 MHz reference; the memory's six watermark
+ * levels as the 5330's start reads them, a 1920x1080 buffer, no other
+ * pipe in the display buffer.
+ */
 static void
 i915_xd_screen_test_panel_input(
 	struct i915_xd_plan_input *input,
@@ -185,6 +195,22 @@ i915_xd_screen_test_panel_input(
 	input->cdclk_max_khz = 652800U;
 	input->qgv_mbps = 20000U;
 	input->cpp = 4U;
+
+	/* The watermark levels, the buffer and the frame start delay. */
+	input->wm.levels = 6U;
+	input->wm.latency_us[0] = 3U;
+	input->wm.latency_us[1] = 54U;
+	input->wm.latency_us[2] = 83U;
+	input->wm.latency_us[3] = 102U;
+	input->wm.latency_us[4] = 147U;
+	input->wm.latency_us[5] = 147U;
+	input->wm.latency_us[6] = 144U;
+	input->wm.latency_us[7] = 144U;
+	input->wm.ipc = 1;
+	input->wm.sagv_block_us = 35U;
+	input->fb_width = 1920U;
+	input->fb_height = 1080U;
+	input->frame_start_delay = 1U;
 }
 
 /* The 5330's panel against the older check phase's numbers. */
@@ -218,6 +244,13 @@ i915_xd_screen_test_panel(void)
 			"panel: needs 70.4 MHz, gets the running 179.2 MHz at VCO 537.6 MHz, level 0 (the older check's numbers)");
 	i915_host_check(plan.data_mbps == 564U, "panel: 564 MB/s (the older check's data rate)");
 	i915_host_check(plan.slices == 0xfU && plan.joined == 1U, "panel: four slices, the bus joined (pipe A alone)");
+	i915_host_check(plan.crtc_min_cdclk_khz == 70400U && plan.bw_min_cdclk_khz == 11000U, "panel: the pipe needs 70.4 MHz, the read bandwidth 11 MHz");
+	i915_host_check(plan.enabled_slices == 0xfU && plan.weight == 1920U && plan.pipe_ddb.start == 0U && plan.pipe_ddb.end == 4096U,
+			"panel: all four slices powered, the pipe's weight its width, the whole joined buffer");
+	i915_host_check(plan.plane_ddb.start == 0U && plan.plane_ddb.end == 4060U && plan.cursor_ddb.start == 4060U && plan.cursor_ddb.end == 4096U,
+			"panel: the plane's blocks 0..4060, the cursor's the rest (the older check's numbers)");
+	i915_host_check(plan.wm.level[0].enable == 1U && plan.wm.level[0].blocks == 16U && plan.wm.level[0].lines == 1U,
+			"panel: level 0 on, 16 blocks, one line (the older check's numbers)");
 
 	/* With pipe B too: the bus is not joined. */
 	input.run_pipes = 0x3U;
@@ -284,6 +317,63 @@ i915_xd_screen_test_refusals(void)
 	input.sink.max_lanes = 1U;
 	refused = drv_i915_xd_screen_plan(&input, &plan);
 	i915_host_check(refused == I915_XD_PLAN_LINK && plan.cdclk_khz == 0U, "refusal: one RBR lane cannot carry 140.8 MHz at 24 bpp; no check");
+}
+
+/* The watermarks and the display buffer's shares. */
+static void
+i915_xd_screen_test_wm(void)
+{
+	const struct i915_xd_platform *platform;
+	struct i915_xd_plan_input input;
+	struct i915_display_mode mode;
+	struct i915_xd_plan plan;
+	unsigned refused;
+
+	platform = i915_xd_screen_test_platform(I915_XD_SCREEN_TEST_TGL, I915_XD_SCREEN_TEST_TGL_REVID);
+	if (platform == NULL)
+		return;
+
+	/* Tiger Lake's pipe C beside a 1920-wide pipe B on the same slice: the second half of it. */
+	i915_xd_screen_test_mode(&mode, 140800);
+	i915_xd_screen_test_panel_input(&input, platform, &mode);
+	input.pipe = 2U;
+	input.run_pipes = 0x7U;
+	input.pipe_slices[0] = 0x1U;
+	input.pipe_weight[0] = 1920U;
+	input.pipe_slices[1] = 0x2U;
+	input.pipe_weight[1] = 1920U;
+	(void)drv_i915_xd_screen_plan(&input, &plan);
+	i915_host_check(plan.slices == 0x2U && plan.enabled_slices == 0x3U, "wm: pipes A, B and C: C on slice 2 with B, slices 1 and 2 powered");
+	i915_host_check(plan.pipe_ddb.start == 1536U && plan.pipe_ddb.end == 2048U, "wm: C's half of slice 2 after B's");
+	i915_host_check(plan.cursor_ddb.end == 2048U && plan.plane_ddb.start == 1536U && plan.plane_ddb.end == plan.cursor_ddb.start,
+			"wm: the plane from the start of C's half, the cursor at its end");
+
+	/* A buffer too wide for the share. */
+	input.fb_width = 60000U;
+	refused = drv_i915_xd_screen_plan(&input, &plan);
+	i915_host_check(refused == I915_XD_PLAN_WM && plan.wm_error == EINVAL, "wm: a 60000-pixel line's level 0 does not fit half a slice");
+
+	/* A blank of one line. */
+	platform = i915_xd_screen_test_platform(I915_XD_SCREEN_TEST_ADLP, I915_XD_SCREEN_TEST_ADLP_REVID);
+	if (platform == NULL)
+		return;
+	i915_xd_screen_test_panel_input(&input, platform, &mode);
+	mode.vtotal = (uint16_t)(mode.vdisplay + 1U);
+	refused = drv_i915_xd_screen_plan(&input, &plan);
+	i915_host_check(refused == I915_XD_PLAN_WM && plan.wm_error == EINVAL && plan.cdclk_khz == 0U, "wm: a one-line blank holds no level; no CD clock is checked");
+
+	/* A short blank turns the deeper levels off. */
+	mode.vtotal = 1086U;
+	refused = drv_i915_xd_screen_plan(&input, &plan);
+	i915_host_check(refused == I915_XD_PLAN_OK && plan.wm_cut == 1 && plan.wm.level[1].enable == 1U && plan.wm.level[2].enable == 0U && plan.wm.level[5].enable == 0U,
+			"wm: a 6-line blank keeps levels 0 and 1 (54 us) and turns 2 (83 us) and deeper off");
+
+	/* A memory without levels. */
+	i915_xd_screen_test_mode(&mode, 140800);
+	i915_xd_screen_test_panel_input(&input, platform, &mode);
+	input.wm.levels = 0U;
+	refused = drv_i915_xd_screen_plan(&input, &plan);
+	i915_host_check(refused == I915_XD_PLAN_WM && plan.wm_error == EINVAL, "wm: a memory that names no levels");
 }
 
 /* The panels the plan does not drive. */

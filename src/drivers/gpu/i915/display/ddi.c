@@ -105,43 +105,11 @@ static void i915_ddi_set_dp_msa(const struct intel_crtc_state *crtc_state, const
 static void i915_ddi_xd_func(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state, struct i915_xd_trans_func *func);
 static void i915_ddi_enable_transcoder_func(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state);
 static enum transcoder i915_tgl_dp_tp_transcoder(const struct intel_crtc_state *crtc_state);
-static int i915_icl_ddi_min_voltage_level(const struct intel_crtc_state *crtc_state);
-static int i915_jsl_ddi_min_voltage_level(const struct intel_crtc_state *crtc_state);
-static int i915_tgl_ddi_min_voltage_level(const struct intel_crtc_state *crtc_state);
 static void i915_ddi_xd_link(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state, struct i915_xd_ddi_link *link);
 
 /*
  * ==== Public functions ====
  */
-
-/*
- * Computes the lowest voltage level the port clock of a crtc state needs.
- *
- * The Linux intel_ddi_compute_min_voltage_level(): the result is stored in
- * the state (min_voltage_level); a version without a rule leaves it alone.
- */
-void
-drv_i915_ddi_compute_min_voltage_level(
-	struct intel_crtc_state *crtc_state)
-{
-	struct drm_i915_private *dev_priv __maybe_unused;
-	int display_ver;
-
-	/* Finds the device of the crtc and its display version. */
-	dev_priv = i915_lcd_to_i915(crtc_state->uapi.crtc->dev);
-	display_ver = I915_LCD_DISPLAY_VER(dev_priv);
-
-	/* Takes the rule of the platform's display version. */
-	if (display_ver >= 14) {
-		crtc_state->min_voltage_level = i915_icl_ddi_min_voltage_level(crtc_state);
-	} else if (display_ver >= 12) {
-		crtc_state->min_voltage_level = i915_tgl_ddi_min_voltage_level(crtc_state);
-	} else if (IS_JASPERLAKE(dev_priv) || IS_ELKHARTLAKE(dev_priv)) {
-		crtc_state->min_voltage_level = i915_jsl_ddi_min_voltage_level(crtc_state);
-	} else if (display_ver >= 11) {
-		crtc_state->min_voltage_level = i915_icl_ddi_min_voltage_level(crtc_state);
-	}
-}
 
 /*
  * Records the DDI words of a DP output without a modeset object.
@@ -475,45 +443,6 @@ i915_tgl_dp_tp_transcoder(
 
 	/* Succeeded: an SST stream uses its own transcoder's. */
 	return crtc_state->cpu_transcoder;
-}
-
-/* The minimum voltage level of Ice Lake and display 14 (the Linux icl_ddi_min_voltage_level()). */
-static int
-i915_icl_ddi_min_voltage_level(
-	const struct intel_crtc_state *crtc_state)
-{
-	/* A port clock above 594 MHz needs level 1. */
-	if (crtc_state->port_clock > 594000)
-		return 1;
-
-	/* Succeeded: lower clocks need no minimum. */
-	return 0;
-}
-
-/* The minimum voltage level of Jasper Lake and Elkhart Lake (the Linux jsl_ddi_min_voltage_level()). */
-static int
-i915_jsl_ddi_min_voltage_level(
-	const struct intel_crtc_state *crtc_state)
-{
-	/* A port clock above 594 MHz needs level 3. */
-	if (crtc_state->port_clock > 594000)
-		return 3;
-
-	/* Succeeded: lower clocks need no minimum. */
-	return 0;
-}
-
-/* The minimum voltage level of display 12 and 13 (the Linux tgl_ddi_min_voltage_level()). */
-static int
-i915_tgl_ddi_min_voltage_level(
-	const struct intel_crtc_state *crtc_state)
-{
-	/* A port clock above 594 MHz needs level 2. */
-	if (crtc_state->port_clock > 594000)
-		return 2;
-
-	/* Succeeded: lower clocks need no minimum. */
-	return 0;
 }
 
 /*

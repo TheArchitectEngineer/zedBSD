@@ -114,6 +114,7 @@ struct i915_xd_ddb {
 
 uint8_t drv_i915_xd_dbuf_joined(const struct i915_xd_platform *platform, uint8_t pipes);
 uint8_t drv_i915_xd_dbuf_slices(const struct i915_xd_platform *platform, unsigned pipe, uint8_t pipes, int joined);
+uint8_t drv_i915_xd_dbuf_enabled(const uint8_t *pipe_slices, unsigned pipes);
 void drv_i915_xd_dbuf_slice_range(const struct i915_xd_platform *platform, uint8_t slices, struct i915_xd_ddb *range);
 uint16_t drv_i915_xd_dbuf_mbus_offset(const struct i915_xd_platform *platform, uint8_t slices);
 void drv_i915_xd_dbuf_pipe_range(const struct i915_xd_platform *platform, uint8_t slices, unsigned weight_start, unsigned weight_end, unsigned weight_total, struct i915_xd_ddb *range);

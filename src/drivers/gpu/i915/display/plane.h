@@ -24,9 +24,6 @@
 
 #ifdef I915_DISPLAY_WORLD_MODESET
 
-unsigned int drv_i915_adjusted_rate(const struct drm_rect *src, const struct drm_rect *dst, unsigned int rate);
-unsigned int drv_i915_plane_pixel_rate(const struct intel_crtc_state *crtc_state, const struct intel_plane_state *plane_state);
-unsigned int drv_i915_plane_data_rate(const struct intel_crtc_state *crtc_state, const struct intel_plane_state *plane_state, int color_plane);
 int drv_i915_plane_emit(struct i915_lcd_world *world, struct i915_lcd_emit *emit, int pipe, int plane_id, u32 fourcc, u64 modifier, u32 width, u32 height, u32 pitch, u32 surf_ggtt_offset);
 
 #endif /* I915_DISPLAY_WORLD_MODESET */
