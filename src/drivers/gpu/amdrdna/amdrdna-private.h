@@ -501,7 +501,10 @@ struct amdrdna_spaces {
  * state_lock, and state_waitq wakes the thread when target rises or the
  * machine is told to stop.  The register mapping, the block table and
  * the readouts are written by one stage at a time and only read after
- * that stage reported ok.  Stage A2 adds the VRAM window and the doorbell
+ * that stage reported ok.  attach_counted says the boot's stages will
+ * register the GPU device (at attach_stage) and the GPU counts as
+ * attaching until they did or failed; only the bring-up thread changes it
+ * after the attach.  Stage A2 adds the VRAM window and the doorbell
  * page, the pools (memory_lock serializes them, the system-memory table's
  * writes and the CPU's invalidation requests), the dummy page, the table's
  * place, the hubs' context words from before the stage (given back on a
@@ -602,6 +605,8 @@ struct amdrdna_device {
 	int failed_error;
 	bool stopping;
 	bool thread_running;
+	bool attach_counted;
+	unsigned attach_stage;
 
 	struct cdev *control;
 };
