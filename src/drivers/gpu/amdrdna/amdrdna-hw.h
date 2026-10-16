@@ -104,6 +104,33 @@
 #define AMDRDNA_SOURCE_SMU_SOFT		0xfeU
 
 /*
+ * The three features of the system-management unit's firmware the driver
+ * asks for, as the low and high words of the 64-bit feature mask: the
+ * firmware's own critical-temperature stop (bit 31), the fan control (bit
+ * 32) and the thermal control (bit 33).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/pm/swsmu/inc/pmfw_if/smu11_driver_if_navi10.h
+ * (FEATURE_FW_CTF_BIT, FEATURE_FAN_CONTROL_BIT, FEATURE_THERMAL_BIT).
+ */
+#define AMDRDNA_SMU_FEATURES_LOW	0x80000000U
+#define AMDRDNA_SMU_FEATURES_HIGH	0x00000003U
+
+/*
+ * The sizes of the two tables the driver exchanges with the unit's
+ * firmware: the board's power table it hands over, and the table of
+ * readings it gets back (the larger of the two layouts the firmware
+ * versions use; the fields the driver reads lie at the same place in
+ * both).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/pm/swsmu/inc/pmfw_if/smu11_driver_if_navi10.h
+ * (sizeof(PPTable_t), sizeof(SmuMetrics_t), sizeof(SmuMetrics_legacy_t)).
+ */
+#define AMDRDNA_SMU_POWER_TABLE_BYTES	1192U
+#define AMDRDNA_SMU_READINGS_BYTES	104U
+
+/*
  * The interrupt clients and sources of the engines: the command processor
  * (its end-of-pipe event, a bad opcode, a privileged register and a
  * privileged instruction) and the first copy engine (its trap); and the
@@ -367,6 +394,35 @@ struct amdrdna_vbios_owner {
 	uint32_t function;
 	uint16_t vendor;
 	uint16_t product;
+};
+
+/*
+ * What the board's power table says about temperatures, read while the
+ * table is put together for the unit's firmware: the limits of the edge,
+ * the hotspot and the memory and the shutdown temperature, all in degrees
+ * Celsius, the kind of thermal controller the board has (0 for none), and
+ * the features the table asks the firmware to run (low and high words).
+ */
+struct amdrdna_power_limits {
+	unsigned edge;
+	unsigned hotspot;
+	unsigned memory;
+	unsigned shutdown;
+	unsigned controller;
+	uint32_t features_low;
+	uint32_t features_high;
+};
+
+/*
+ * One set of readings the unit's firmware handed back: the edge, hotspot
+ * and memory temperatures in degrees Celsius and the fan's speed in turns
+ * per minute.
+ */
+struct amdrdna_power_readings {
+	unsigned edge;
+	unsigned hotspot;
+	unsigned memory;
+	unsigned fan_speed;
 };
 
 /*
@@ -1303,6 +1359,35 @@ amdrdna_alert_off_word(
 
 uint32_t
 amdrdna_alert_clear_word(void);
+
+int
+amdrdna_power_table_in_firmware(
+	const uint8_t *file,
+	size_t length,
+	uint32_t identity,
+	size_t *offset,
+	size_t *bytes);
+
+int
+amdrdna_power_table_build(
+	const uint8_t *power,
+	size_t power_bytes,
+	const uint8_t *board,
+	size_t board_bytes,
+	unsigned board_format,
+	unsigned board_content,
+	uint8_t *table,
+	struct amdrdna_power_limits *limits);
+
+void
+amdrdna_power_readings_read(
+	const uint8_t *readings,
+	struct amdrdna_power_readings *result);
+
+bool
+amdrdna_power_features_on(
+	uint32_t low,
+	uint32_t high);
 
 /* command-format.c: the ring commands. */
 uint32_t

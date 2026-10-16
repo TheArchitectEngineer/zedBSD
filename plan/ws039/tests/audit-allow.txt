@@ -21,6 +21,7 @@ below
 bits
 block
 blocks
+board
 bool
 boot
 bottom
@@ -47,6 +48,7 @@ contents
 context
 continue
 control
+controller
 copy
 count
 data
@@ -65,6 +67,7 @@ doorbell
 driver
 drivers
 duty
+edge
 either
 element
 else
@@ -135,6 +138,7 @@ mailbox
 major
 mark
 mask
+memory
 message
 middle
 minor
@@ -166,6 +170,7 @@ pointer
 poll
 position
 posted
+power
 prefix
 present
 priority

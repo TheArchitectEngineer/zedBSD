@@ -197,15 +197,22 @@ struct amdrdna_training {
 };
 
 /*
- * The power and thermal side of the driver (stage A4, the static-fan
- * tier).
+ * The power and thermal side of the driver (stage A4: the unit's firmware
+ * runs the fan and the thermal control, or the driver drives the fan at a
+ * static duty when the firmware will not).
  *
- * mailbox serializes the system-management unit's messages; first_sent
- * and hung follow the mailbox's protocol (the first message does not wait
- * for an answer to a previous one; a unit that stopped answering is not
- * sent another).  The watch thread reads the temperature and the fan once
- * a second; lock protects what it publishes (the readings, the fault and
- * the alert counts) and the thread's stop, and waitq wakes it to stop.
+ * mailbox serializes the system-management unit's messages and the use of
+ * the table page, the VRAM the driver and the firmware exchange tables
+ * through (taken once, for the record's life); first_sent and hung follow
+ * the mailbox's protocol (the first message does not wait for an answer to
+ * a previous one; a unit that stopped answering is not sent another).
+ * limits is what the board's power table says, valid once table_built.
+ * features_on says the firmware runs its three features (the mode is then
+ * AMDRDNA_FAN_FIRMWARE), with the feature words it reported.  The watch
+ * thread reads the temperatures and the fan once a second, from the
+ * firmware's readings when its features run and from the thermal block
+ * always; lock protects what it publishes (the readings, the fault and the
+ * alert counts) and the thread's stop, and waitq wakes it to stop.
  */
 struct amdrdna_thermal {
 	struct mutex mailbox;
@@ -213,6 +220,13 @@ struct amdrdna_thermal {
 	bool hung;
 	uint32_t smu_version;
 	uint32_t interface_version;
+	bool table_taken;
+	uint64_t table_vram;
+	bool table_built;
+	struct amdrdna_power_limits limits;
+	bool features_on;
+	uint32_t features_low;
+	uint32_t features_high;
 	unsigned mode;
 	unsigned duty_percent;
 	unsigned limit;
@@ -224,8 +238,13 @@ struct amdrdna_thermal {
 	bool thread_running;
 	unsigned temperature;
 	unsigned highest;
+	unsigned sensor;
+	unsigned hotspot;
+	unsigned memory_temperature;
 	uint32_t fan_speed;
+	uint32_t tachometer_speed;
 	unsigned fan_driven;
+	unsigned readings;
 	bool faulted;
 	uint64_t high_alerts;
 	uint64_t low_alerts;
