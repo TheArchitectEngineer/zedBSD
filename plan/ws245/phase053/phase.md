@@ -2,7 +2,7 @@
 
 # ws245-p053: EDID の decode を xd-edid に
 
-Status: in-progress（q1224-i01 P1: 実装・host 試験・build は済み。5330 の回帰は 2 回の起動で survey lit、書き込みの digest が違ったので、全部の列の比べを T1 に依頼（2026-10-16 ユーザー「この作業の間、P1のテストはT1にオフロードして、T1でシリアライズして競合しないように実行しましょう。」））
+Status: cleared（2026-10-16、ws.md の表と同じ: T1-702 で 5330 の回帰 PASS、全部の列の差 0、merge 7e3bf81cf。下の記録は q1224-i01 の時点の物）
 Parent: [WS245](../ws.md)
 Queue: q1224 / q1224-i01
 設計: [design.md](../design.md) §6.2 の p018 の行の EDID の部分（2026-10-16 に p018 から分けた: phase018）
