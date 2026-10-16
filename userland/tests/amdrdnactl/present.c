@@ -31,9 +31,8 @@
 
 #include "amdrdnactl.h"
 
-/* The bytes of a pixel, the rows written in one transfer, and the border's width. */
+/* The bytes of a pixel and the border's width. */
 #define PRESENT_PIXEL_BYTES		4U
-#define PRESENT_ROWS_A_WRITE		64U
 #define PRESENT_BORDER			4U
 
 /* The levels of the hot-plug request: gone and there. */
@@ -230,6 +229,7 @@ present_fill(
 {
 	struct gpu_transfer transfer;
 	uint32_t *rows;
+	uint32_t group;
 	uint32_t row;
 	uint32_t first;
 	uint32_t count;
@@ -238,8 +238,11 @@ present_fill(
 	uint32_t pixel;
 	int status;
 
-	/* Room for a group of rows. */
-	rows = malloc((size_t)width * PRESENT_ROWS_A_WRITE * PRESENT_PIXEL_BYTES);
+	/* Room for a group of rows: as many as one transfer carries (at least one). */
+	group = GPU_COPY_MAX / (width * PRESENT_PIXEL_BYTES);
+	if (group == 0U)
+		group = 1U;
+	rows = malloc((size_t)width * group * PRESENT_PIXEL_BYTES);
 	if (rows == NULL) {
 		printf("PRESENT fail memory\n");
 		return 1;
@@ -248,8 +251,8 @@ present_fill(
 	/* Each group of rows: made, then written at its place. */
 	for (first = 0U; first < height; first += count) {
 		count = height - first;
-		if (count > PRESENT_ROWS_A_WRITE)
-			count = PRESENT_ROWS_A_WRITE;
+		if (count > group)
+			count = group;
 		for (row = 0U; row < count; row++) {
 			y = first + row;
 			for (x = 0U; x < width; x++) {

@@ -99,9 +99,10 @@ static void relight_write(struct amdrdna_device *device, enum amdrdna_dcn_regist
 /*
  * Stage A11: re-lights the firmware's TMDS output in the same mode.
  *
- * pixel_khz is the running timing's pixel clock; 0 works it out from the
- * totals and the refresh stage A6 measured (a caller that runs before A6,
- * the reset, measures the clock itself).  Returns 0; ENOTSUP for an output that is not TMDS; ENOENT before stage
+ * pixel_khz is the running timing's pixel clock; 0 takes the mode shown
+ * (modeset.c), else works it out from the totals and the refresh stage A6
+ * measured (a caller that runs before A6, the reset, measures the clock
+ * itself).  Returns 0; ENOTSUP for an output that is not TMDS; ENOENT before stage
  * A10 read the output's path; or the error of the routine that failed
  * (the transmitter is turned on again and the picture shown either way).
  *
@@ -126,8 +127,10 @@ amdrdna_a11_relight(
 	struct relight_crc after;
 	const struct amdrdna_sink *sink;
 	uint32_t words[AMDRDNA_COMMAND_WORDS];
+	struct amdrdna_timing now;
 	uint32_t pixel_10khz;
 	uint32_t refresh_millihz;
+	int listed;
 	uint64_t frame_pixels;
 	uint32_t mode;
 	uint32_t underflow;
@@ -159,8 +162,22 @@ amdrdna_a11_relight(
 		return ENOTSUP;
 	}
 
-	/* The pixel clock of the running timing, in 10 kHz: the caller's, else the totals at the measured refresh. */
+	/*
+	 * The pixel clock of the running timing, in 10 kHz: the caller's, else
+	 * the mode shown (the monitor's listed clock), else the totals at the
+	 * measured refresh.
+	 */
 	frame_pixels = (uint64_t)device->gop.h_total * device->gop.v_total;
+	if (pixel_khz == 0U) {
+		mutex_lock(&device->display.mode_lock);
+
+		listed = amdrdna_mode_current(device, &now);
+
+		mutex_unlock(&device->display.mode_lock);
+
+		if (listed == 0)
+			pixel_khz = now.pixel_khz;
+	}
 	if (pixel_khz != 0U) {
 		pixel_10khz = (pixel_khz + 5U) / 10U;
 	} else {

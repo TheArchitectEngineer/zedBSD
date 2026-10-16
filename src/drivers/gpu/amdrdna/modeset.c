@@ -711,7 +711,6 @@ amdrdna_mode_set(
 	struct amdrdna_mode_plan plan;
 	struct modeset_check check;
 	struct modeset_pipe pipe;
-	unsigned long irq;
 	bool good;
 	int error;
 
@@ -745,13 +744,6 @@ amdrdna_mode_set(
 	/* The whole sequence, then a look at the picture. */
 	error = modeset_switch(device, &pipe, timing, &plan, input.reference_khz);
 	modeset_look(device, &pipe, timing, MODESET_GOOD_FRAMES, &check);
-
-	/* The timing generator started again: the refresh count takes its next reading as a new base. */
-	irq = spin_lock_irqsave(&display->lock);
-
-	display->frame_valid = false;
-
-	spin_unlock_irqrestore(&display->lock, irq);
 
 	/* The timing generator runs the new mode whatever happened; the output is lit. */
 	display->mode = *timing;
@@ -1147,6 +1139,7 @@ modeset_switch(
 	uint32_t words[AMDRDNA_COMMAND_WORDS];
 	uint32_t word;
 	uint32_t pixel_10khz;
+	unsigned long irq;
 	unsigned waited;
 	int error;
 	int step;
@@ -1196,6 +1189,13 @@ modeset_switch(
 	modeset_plane(device, pipe, plan);
 	modeset_marks(device, plan, reference_khz);
 	modeset_sync(device, pipe, timing, plan);
+
+	/* The timing generator's frame counter starts again: the refresh count takes its next reading as a new base. */
+	irq = spin_lock_irqsave(&device->display.lock);
+
+	device->display.frame_valid = false;
+
+	spin_unlock_irqrestore(&device->display.lock, irq);
 
 	/* The timing generator started: its vertical generator first, then the master enable. */
 	word = modeset_read(device, AMDRDNA_DCN_VERTICAL_GENERATOR, pipe->timing);

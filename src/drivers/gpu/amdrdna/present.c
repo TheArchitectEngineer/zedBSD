@@ -374,10 +374,8 @@ present_query(
 	request->current_height = display->height;
 	request->preferred_width = display->width;
 	request->preferred_height = display->height;
-	request->max_width = display->stride / PRESENT_PIXEL_BYTES;
-	request->max_height = display->height;
-	if (display->stride != 0U)
-		request->max_height = (uint32_t)(display->frame_bytes / display->stride);
+	request->max_width = node->device->gop.viewport_width;
+	request->max_height = node->device->gop.viewport_height;
 	request->refresh_millihz = display->refresh_millihz;
 
 	/* The sink's size, name and preferred mode when stage A10 read its EDID. */
