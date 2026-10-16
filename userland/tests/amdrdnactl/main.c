@@ -13,6 +13,8 @@
  *   amdrdnactl [-f DEVICE] [status]       prints the state, one "key=value" per line
  *   amdrdnactl [-f DEVICE] advance STAGE  asks for the stages up to STAGE (root)
  *   amdrdnactl [-f DEVICE] vbios FILE     writes the video BIOS image to FILE
+ *   amdrdnactl [-f DEVICE] display        prints the display the driver took
+ *                                         over: its registers and counts
  *   amdrdnactl gpu [GPU-DEVICE]           checks the GPU device the driver
  *                                         registered (/dev/gpu0 by default)
  *
@@ -49,6 +51,7 @@ static int control_fail(const char *step, int error);
 static int control_status(int descriptor);
 static int control_advance(int descriptor, const char *stage);
 static int control_vbios(int descriptor, const char *path);
+static int control_display(int descriptor);
 static const char *stage_name(uint32_t stage);
 static int stage_number(const char *name, uint32_t *stage);
 static void usage(void);
@@ -70,6 +73,7 @@ main(
 	int is_status;
 	int is_advance;
 	int is_vbios;
+	int is_display;
 	int is_gpu;
 
 	/* The GPU device check needs no control device. */
@@ -102,6 +106,7 @@ main(
 	is_status = strcmp(command, "status") == 0;
 	is_advance = strcmp(command, "advance") == 0;
 	is_vbios = strcmp(command, "vbios") == 0;
+	is_display = strcmp(command, "display") == 0;
 
 	/* Opens the device. */
 	descriptor = open(path, O_RDONLY);
@@ -115,6 +120,8 @@ main(
 		result = control_advance(descriptor, argv[first + 1]);
 	} else if (is_vbios && first + 2 == argc) {
 		result = control_vbios(descriptor, argv[first + 1]);
+	} else if (is_display && first + 1 == argc) {
+		result = control_display(descriptor);
 	} else {
 		usage();
 		result = 2;
@@ -323,6 +330,51 @@ control_vbios(
 	return 0;
 }
 
+/* Prints the display the driver took over: its picture, its addresses, its registers and its counts. */
+static int
+control_display(
+	int descriptor)
+{
+	struct amdrdna_display_state state;
+	int result;
+
+	/* Asks the driver for the display's state. */
+	memset(&state, 0, sizeof(state));
+	state.version = AMDRDNA_INTERFACE_VERSION;
+	state.size = sizeof(state);
+	result = ioctl(descriptor, AMDRDNA_IOC_DISPLAY, &state);
+	if (result != 0)
+		return control_fail("display", errno);
+
+	/* The takeover, the picture and the addresses. */
+	printf("display flags=0x%04x otg=%u hubp=%u hpd=%u %ux%u stride=%u refresh=%u.%03uHz\n",
+	    (unsigned)state.flags, (unsigned)state.timing, (unsigned)state.plane, (unsigned)state.hotplug,
+	    (unsigned)state.width, (unsigned)state.height, (unsigned)state.stride,
+	    (unsigned)(state.refresh_millihz / 1000U), (unsigned)(state.refresh_millihz % 1000U));
+	printf("address console=0x%llx requested=0x%llx shown=0x%llx plane=0x%llx cursor=0x%llx\n",
+	    (unsigned long long)state.console_address, (unsigned long long)state.requested_address,
+	    (unsigned long long)state.shown_address, (unsigned long long)state.plane_address,
+	    (unsigned long long)state.cursor_address);
+
+	/* The registers as read now. */
+	printf("timing frame=0x%06x position=0x%08x sync=0x%08x combiner=0x%08x\n",
+	    (unsigned)state.frame_count, (unsigned)state.position, (unsigned)state.sync_status, (unsigned)state.combiner_input);
+	printf("plane control=0x%08x flip=0x%08x flip_irq=0x%08x\n",
+	    (unsigned)state.plane_control, (unsigned)state.flip_control, (unsigned)state.flip_interrupt);
+	printf("cursor control=0x%08x size=0x%08x position=0x%08x hot=0x%08x pixel=0x%08x\n",
+	    (unsigned)state.cursor_control, (unsigned)state.cursor_size, (unsigned)state.cursor_position,
+	    (unsigned)state.cursor_hot_spot, (unsigned)state.pixel_cursor);
+	printf("hotplug status=0x%08x control=0x%08x\n", (unsigned)state.hotplug_status, (unsigned)state.hotplug_control);
+
+	/* The counts. */
+	printf("counts frame_irq=%llu flip_irq=%llu hotplug_irq=%llu flips=%llu refreshes=%llu topology=%llu presents=%llu leases=%llu\n",
+	    (unsigned long long)state.frame_signals, (unsigned long long)state.flip_signals,
+	    (unsigned long long)state.hotplug_signals, (unsigned long long)state.flips,
+	    (unsigned long long)state.refresh_count, (unsigned long long)state.topology,
+	    (unsigned long long)state.presents, (unsigned long long)state.leases);
+	return 0;
+}
+
 /* Names a stage number. */
 static const char *
 stage_name(
@@ -364,5 +416,5 @@ static void
 usage(void)
 {
 	/* The one usage line. */
-	fprintf(stderr, "usage: amdrdnactl [-f DEVICE] [status | advance STAGE | vbios FILE] | amdrdnactl gpu [GPU-DEVICE]\n");
+	fprintf(stderr, "usage: amdrdnactl [-f DEVICE] [status | advance STAGE | vbios FILE | display] | amdrdnactl gpu [GPU-DEVICE]\n");
 }

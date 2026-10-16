@@ -55,7 +55,6 @@ static int amdrdna_suspend(struct drv_pci_device *pci);
 static int amdrdna_keep(struct amdrdna_device *device);
 static void amdrdna_thread(void *argument);
 static int amdrdna_run_stage(struct amdrdna_device *device, unsigned stage);
-static int amdrdna_display_stage(unsigned stage);
 static void amdrdna_give_back(struct amdrdna_device *device);
 
 /*
@@ -195,6 +194,8 @@ amdrdna_attach(
 	for (index = 0U; index < AMDRDNA_COMPUTE_QUEUES; index++)
 		spin_init(&device->engines.compute[index].lock, LOCK_RANK_DEVICE, "amdrdna ring");
 	spin_init(&device->engines.copy.lock, LOCK_RANK_DEVICE, "amdrdna ring");
+	spin_init(&device->display.lock, LOCK_RANK_DEVICE, "amdrdna display");
+	waitq_init(&device->display.waitq, "amdrdna display");
 	amdrdna_spaces_init(device);
 
 	/* Stage A0: finds and identifies the GPU. */
@@ -262,7 +263,8 @@ amdrdna_detach(
  *
  * The thread is told to stop and waited for, for a bounded time.  Once it
  * has ended, the stages are undone in reverse: stage A5s's GPU device goes
- * offline and its address spaces run nothing new, stage A5's queues are
+ * offline and its address spaces run nothing new, the display stages A6
+ * to A8 flip back to the console's surface, stage A5's queues are
  * detached and its engines halted, stage A4's watch stops and
  * the power unit is told it will be unloaded, stage A3's secure OS unloads
  * what the driver loaded and destroys its ring, and stage A2's interrupt
@@ -316,8 +318,13 @@ amdrdna_shutdown(
 		return;
 	}
 
-	/* Takes the GPU device offline, then undoes stage A5, A4, A3 and A2, as far as each ran. */
+	/*
+	 * Takes the GPU device offline (its display lease ends), gives the
+	 * display back to the firmware, then undoes stage A5, A4, A3 and A2,
+	 * as far as each ran.
+	 */
 	amdrdna_node_stop(device);
+	amdrdna_display_stop(device);
 	amdrdna_engines_stop(device);
 	amdrdna_power_stop(device);
 	amdrdna_psp_stop(device);
@@ -524,9 +531,13 @@ amdrdna_run_stage(
 		error = amdrdna_a5s_sessions(device);
 		break;
 	case AMDRDNA_STAGE_A6:
+		error = amdrdna_a6_takeover(device);
+		break;
 	case AMDRDNA_STAGE_A7:
+		error = amdrdna_a7_cursor(device);
+		break;
 	case AMDRDNA_STAGE_A8:
-		error = amdrdna_display_stage(stage);
+		error = amdrdna_a8_register(device);
 		break;
 	case AMDRDNA_STAGE_A9:
 		error = amdrdna_a9_draw(device);
@@ -541,32 +552,6 @@ amdrdna_run_stage(
 		return error;
 
 	/* Succeeded: the stage reported ok. */
-	return 0;
-}
-
-/*
- * Runs one of the display's stages A6 to A8, which only run when the
- * driver takes the display over (amdrdna.disp.own=1); without it the
- * firmware's picture stays and the stage is passed over, so stage A9 can
- * follow.  The takeover itself is not in the driver yet.
- */
-static int
-amdrdna_display_stage(
-	unsigned stage)
-{
-	unsigned own;
-
-	/* Whether the boot asked for the display. */
-	own = amdrdna_parameter_number("amdrdna.disp.own", 0U);
-
-	/* The display the driver does not have yet is refused. */
-	if (own != 0U) {
-		amdrdna_mark("%s fail: the display's takeover is not in the driver yet", amdrdna_stage_name(stage));
-		return ENOTSUP;
-	}
-
-	/* Succeeded: the stage is passed over, the firmware's picture stays. */
-	amdrdna_mark("%s skip: the display stays the firmware's (amdrdna.disp.own=0)", amdrdna_stage_name(stage));
 	return 0;
 }
 
