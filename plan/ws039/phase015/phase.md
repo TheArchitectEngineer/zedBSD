@@ -2,7 +2,7 @@
 
 # ws039-p015: 段 A11〜A13 mode set（re-light、別の mode、hotplug）
 
-Status: in-progress（2026-10-16 22:35 P3: 範囲は (B) TMDS を先に、と決まった）
+Status: in-progress（2026-10-16 22:16 P3: 範囲は (B) TMDS を先に、と決まった）
 Disposition: normal
 Parent: [WS039](../ws.md)
 Queue: q1234 / q1234-i01（p013 → p014 → p015 → p016、各段は実機で ok の後に main）
@@ -13,7 +13,7 @@ Queue: q1234 / q1234-i01（p013 → p014 → p015 → p016、各段は実機で 
 
 VBIOS の command の呼び出し（power gating・pixel clock・encoder・transmitter・CRTC）、OTG・OPP・MPC・DPP・HUBP・DIG の組み立て、DP の link training、同じ mode の re-light（A11）、別の mode（A12、DLG・TTU・watermark の固定小数、host 試験 (m)）、hotplug（A13）、戻し、HDMI（後半）。**実機: A11・A12・A13 の ok、underflow 0**。
 
-## 判断（2026-10-16 22:20 Q1 経由でユーザーへ）
+## 判断（2026-10-16 夜、Q1 経由でユーザーへ）
 
 design は「DP を先に、DVI は範囲の外」。p014 の A10 で分かった実機の接続は、board の DP の connector（transmitter E、DDC6）に DP++ の受動の変換で HDMI の monitor（DELL SE2426H）を **DVI の signal（TMDS）** で駆動。DP の sink が無いので DP の link training・AUX は実機で確かめられない。選択肢: (A) DP の monitor を繋ぐ、(B) TMDS（DVI over DP++、HDMI の connector）を先に作り DP は host まで、(C) p016 を先に。P3 の推奨は (B)。
 - **決定（2026-10-16 ユーザー、Q1 経由のクリック）: 「TMDS（DVI/HDMI）を先に」= (B)。DP は host 試験まで、DP の monitor がつながったら実機で。実機を使う時間は「いつでもよい（時刻は知らせる）」。毎回、触る前に時刻と内容（画面を消すか）を Q1 に。** design.md 8.6 の範囲の段落に記録した。
