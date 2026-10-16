@@ -36,9 +36,6 @@ struct i915_display;
  */
 
 void drv_i915_link_compute_m_n(u16 bits_per_pixel_x16, int nlanes, int pixel_clock, int link_clock, int bw_overhead, struct intel_link_m_n *m_n);
-void drv_i915_cpu_transcoder_get_m1_n1(struct intel_crtc *crtc, enum transcoder transcoder, struct intel_link_m_n *m_n);
-void drv_i915_cpu_transcoder_get_m2_n2(struct intel_crtc *crtc, enum transcoder transcoder, struct intel_link_m_n *m_n);
-int drv_i915_crtc_dotclock(const struct intel_crtc_state *pipe_config);
 
 /*
  * ==== The PHY and the power domains of a port or a crtc ====
@@ -57,21 +54,9 @@ void drv_i915_enable_transcoder(const struct intel_crtc_state *new_crtc_state);
 void drv_i915_disable_transcoder(const struct intel_crtc_state *old_crtc_state);
 
 /*
- * ==== The readout of a running pipe ====
- */
-
-void drv_i915_crtc_state_reset(struct intel_crtc_state *crtc_state, struct intel_crtc *crtc);
-bool drv_i915_crtc_get_pipe_config(struct intel_crtc_state *crtc_state);
-void drv_i915_encoder_get_config(struct intel_encoder *encoder, struct intel_crtc_state *crtc_state);
-void drv_i915_set_plane_visible(struct intel_crtc_state *crtc_state, struct intel_plane_state *plane_state, bool visible);
-void drv_i915_plane_fixup_bitmasks(struct i915_takeover_world *takeover, struct intel_crtc_state *crtc_state);
-void drv_i915_plane_disable_noatomic(struct i915_takeover_world *takeover, struct intel_crtc *crtc, struct intel_plane *plane);
-
-/*
  * ==== The pipe scalers ====
  */
 
-void drv_i915_skl_scaler_get_config(struct intel_crtc_state *crtc_state);
 void drv_i915_skl_scaler_disable(const struct intel_crtc_state *old_crtc_state);
 
 /*
@@ -89,7 +74,6 @@ int drv_i915_usecs_to_scanlines(const struct drm_display_mode *adjusted_mode, in
 void drv_i915_crtc_vblank_evade_scanlines(struct intel_atomic_state *state, struct intel_crtc *crtc, int *min, int *max, int *vblank_start);
 void drv_i915_pipe_update_start(struct i915_lcd_world *world, struct intel_atomic_state *state, struct intel_crtc *crtc);
 void drv_i915_pipe_update_end(struct i915_lcd_world *world, struct intel_atomic_state *state, struct intel_crtc *crtc);
-void drv_i915_crtc_wait_for_next_vblank(struct intel_crtc *crtc);
 
 #endif /* I915_DISPLAY_WORLD_MODESET */
 

@@ -119,7 +119,6 @@ static int i915_bxt_calc_cdclk_pll_vco(struct drm_i915_private *dev_priv, int cd
 static u8 i915_calc_voltage_level(int cdclk, int num_voltage_levels, const int voltage_level_max_cdclk[]);
 static u8 i915_tgl_calc_voltage_level(int cdclk);
 static int i915_pixel_rate_to_cdclk(const struct intel_crtc_state *crtc_state);
-static int i915_planes_min_cdclk(struct i915_takeover_world *takeover, const struct intel_crtc_state *crtc_state);
 static void i915_icl_pll_power_enable(struct drm_i915_private *i915, struct intel_shared_dpll *pll, i915_reg_t enable_reg);
 static void i915_icl_pll_enable(struct drm_i915_private *i915, struct intel_shared_dpll *pll, i915_reg_t enable_reg);
 static void i915_intel_enable_shared_dpll(struct drm_i915_private *i915, struct intel_shared_dpll *pll);
@@ -131,8 +130,6 @@ static struct intel_shared_dpll *i915_find_shared_dpll(struct i915_lcd_world *wo
 static void i915_reference_shared_dpll_crtc(const struct intel_crtc *crtc, const struct intel_shared_dpll *pll, struct intel_shared_dpll_state *shared_dpll_state);
 static void i915_reference_shared_dpll(struct i915_lcd_world *world, struct intel_atomic_state *state, const struct intel_crtc *crtc, const struct intel_shared_dpll *pll, const struct intel_dpll_hw_state *pll_state);
 static void i915_unreference_shared_dpll(struct i915_lcd_world *world, struct intel_atomic_state *state, const struct intel_crtc *crtc, const struct intel_shared_dpll *pll);
-static void i915_readout_dpll_hw_state(struct i915_takeover_world *takeover, struct drm_i915_private *i915, struct intel_shared_dpll *pll);
-static void i915_sanitize_dpll_state(struct drm_i915_private *i915, struct intel_shared_dpll *pll);
 static void i915_lcd_dpll_pool_init(struct i915_lcd_world *world, struct i915_lcd_modeset *ms);
 static enum tc_port i915_icl_pll_id_to_tc_port(enum intel_dpll_id id);
 static i915_reg_t i915_intel_tc_pll_enable_reg(struct drm_i915_private *i915, struct intel_shared_dpll *pll);
@@ -141,13 +138,11 @@ static int i915_icl_mg_pll_find_divisors(int clock_khz, bool is_dp, bool use_ssc
 static int i915_icl_calc_mg_pll_state(struct intel_crtc_state *crtc_state, struct intel_dpll_hw_state *pll_state);
 static int i915_icl_ddi_mg_pll_get_freq(struct drm_i915_private *i915, const struct intel_shared_dpll *pll, const struct intel_dpll_hw_state *pll_state);
 static int i915_icl_ddi_tbt_pll_get_freq(struct drm_i915_private *i915, const struct intel_shared_dpll *pll, const struct intel_dpll_hw_state *pll_state);
-static bool i915_dkl_pll_get_hw_state(struct drm_i915_private *i915, struct intel_shared_dpll *pll, struct intel_dpll_hw_state *hw_state);
 static void i915_dkl_pll_write(struct drm_i915_private *i915, struct intel_shared_dpll *pll);
 static void i915_mg_pll_enable(struct drm_i915_private *i915, struct intel_shared_dpll *pll);
 static const struct i915_xd_pll_desc *i915_dpll_xd_desc(const struct intel_shared_dpll *pll);
 static int i915_dpll_afc(const struct drm_i915_private *i915);
 static void i915_dpll_report(struct drm_i915_private *i915, const struct intel_shared_dpll *pll, unsigned late);
-static bool i915_combo_pll_get_hw_state(struct drm_i915_private *i915, struct intel_shared_dpll *pll, struct intel_dpll_hw_state *hw_state);
 static int i915_combo_pll_get_freq(struct drm_i915_private *i915, const struct intel_shared_dpll *pll, const struct intel_dpll_hw_state *pll_state);
 static void i915_combo_pll_enable(struct drm_i915_private *i915, struct intel_shared_dpll *pll);
 static void i915_port_pll_disable(struct drm_i915_private *i915, struct intel_shared_dpll *pll);
@@ -158,7 +153,6 @@ static void i915_port_pll_disable(struct drm_i915_private *i915, struct intel_sh
  * shared by every PLL of every device.
  */
 static const struct intel_shared_dpll_funcs i915_combo_pll_funcs = {
-	.get_hw_state = i915_combo_pll_get_hw_state,
 	.get_freq = i915_combo_pll_get_freq,
 	.enable = i915_combo_pll_enable,
 	.disable = i915_port_pll_disable,
@@ -170,7 +164,6 @@ static const struct intel_shared_dpll_funcs i915_combo_pll_funcs = {
  * every Type-C PLL of every device.
  */
 static const struct intel_shared_dpll_funcs i915_dkl_pll_funcs = {
-	.get_hw_state = i915_dkl_pll_get_hw_state,
 	.get_freq = i915_icl_ddi_mg_pll_get_freq,
 	.enable = i915_mg_pll_enable,
 	.disable = i915_port_pll_disable,
@@ -184,7 +177,6 @@ static const struct intel_shared_dpll_funcs i915_dkl_pll_funcs = {
  * and shared by every device.
  */
 static const struct intel_shared_dpll_funcs i915_tbt_pll_funcs = {
-	.get_hw_state = i915_combo_pll_get_hw_state,
 	.get_freq = i915_icl_ddi_tbt_pll_get_freq,
 	.enable = i915_combo_pll_enable,
 	.disable = i915_port_pll_disable,
@@ -203,32 +195,6 @@ static const char *const i915_tc_pll_names[I915_MAX_TC_PORTS] = {
 	"TC PLL 5",
 	"TC PLL 6"
 };
-
-/*
- * Maps an Alder Lake-P PCI revision id to its display stepping (the
- * entries of adlp_revids[] this driver needs).
- */
-int
-drv_i915_adlp_display_step(
-	uint8_t revid)
-{
-	/* Looks the revision up. */
-	switch (revid) {
-	case 0x0:
-		return I915_STEP_A0;
-	case 0x4:
-		return I915_STEP_B0;
-	case 0x8:
-		return I915_STEP_C0;
-	case 0xC:
-		return I915_STEP_D0;
-	default:
-		break;
-	}
-
-	/* A revision the table does not list has no known stepping. */
-	return I915_STEP_NONE;
-}
 
 /*
  * Prepares the CDCLK state of a display over its xd description: the
@@ -403,19 +369,13 @@ drv_i915_max_cdclk_freq(
 
 /*
  * Computes the CDCLK a crtc needs (intel_crtc_compute_min_cdclk()).
- *
- * The planes of the crtc are walked in the takeover registry, which the
- * Linux text reached through a file-scope accessor: they are found only
- * while the registry is live (NULL: no registry, no planes).
  */
 int
 drv_i915_crtc_compute_min_cdclk(
-	struct i915_takeover_world *takeover,
 	const struct intel_crtc_state *crtc_state)
 {
 	struct drm_i915_private *dev_priv;
 	int min_cdclk;
-	int planes_min;
 	int display_ver;
 	bool has_dp;
 	bool has_dsi;
@@ -483,9 +443,10 @@ drv_i915_crtc_compute_min_cdclk(
 	if (has_dsi && IS_GEMINILAKE(dev_priv))
 		min_cdclk = max(158400, min_cdclk);
 
-	/* Accounts for the additional needs of the planes. */
-	planes_min = i915_planes_min_cdclk(takeover, crtc_state);
-	min_cdclk = max(planes_min, min_cdclk);
+	/*
+	 * The planes' own needs (intel_planes_min_cdclk()) add nothing here:
+	 * the commit's crtc state records none for its plane.
+	 */
 
 	/* DSC is not part of this path; reaching it is reported. */
 	if (crtc_state->dsc.compression_enable)
@@ -518,7 +479,6 @@ drv_i915_crtc_compute_min_cdclk(
  */
 int
 drv_i915_lcd_ms_cdclk_check(
-	struct i915_takeover_world *takeover,
 	struct i915_lcd_modeset *ms)
 {
 	struct drm_i915_private *i915;
@@ -546,7 +506,7 @@ drv_i915_lcd_ms_cdclk_check(
 		i915->display.cdclk.table = adlp_cdclk_table;
 
 	/* intel_compute_min_cdclk(): the crtc's need. */
-	min_cdclk = drv_i915_crtc_compute_min_cdclk(takeover, cs);
+	min_cdclk = drv_i915_crtc_compute_min_cdclk(cs);
 	if (min_cdclk < 0)
 		return -min_cdclk;
 
@@ -704,82 +664,6 @@ drv_i915_unreference_shared_dpll_crtc(
 	/* Notes the release (on the crtc's DRM device). */
 	I915_LCD_DRM_DBG_KMS(crtc->base.dev, "[CRTC:%d:%s] releasing %s\n",
 		crtc->base.base.id, crtc->base.name, pll->info->name);
-}
-
-/*
- * Calculates a DPLL's output frequency from a state (intel_dpll_get_freq()):
- * 0 when the PLL has no frequency hook.
- */
-int
-drv_i915_dpll_get_freq(
-	struct drm_i915_private *i915,
-	const struct intel_shared_dpll *pll,
-	const struct intel_dpll_hw_state *pll_state)
-{
-	int freq;
-
-	/* A PLL without the hook is a warning of the Linux text. */
-	if (pll->info->funcs->get_freq == NULL) {
-		drv_i915_lcd_error("WARN_ON(!pll->info->funcs->get_freq)\n");
-		return 0;
-	}
-
-	/* Asks the PLL kind. */
-	freq = pll->info->funcs->get_freq(i915, pll, pll_state);
-
-	/* Succeeded: reports the frequency. */
-	return freq;
-}
-
-/*
- * Reads a DPLL's hardware state (intel_dpll_get_hw_state()): true when
- * the PLL is enabled and the state was read.
- */
-bool
-drv_i915_dpll_get_hw_state(
-	struct drm_i915_private *i915,
-	struct intel_shared_dpll *pll,
-	struct intel_dpll_hw_state *hw_state)
-{
-	bool enabled;
-
-	/* Asks the PLL kind. */
-	enabled = pll->info->funcs->get_hw_state(i915, pll, hw_state);
-
-	/* Succeeded: reports whether the PLL is enabled. */
-	return enabled;
-}
-
-/*
- * Reads every DPLL of the pool out (intel_dpll_readout_hw_state()).
- *
- * The crtcs whose readout uses a PLL are found in the takeover registry.
- */
-void
-drv_i915_n1_dpll_readout_hw_state(
-	struct i915_takeover_world *takeover,
-	struct drm_i915_private *i915)
-{
-	int index;
-
-	/* Reads each PLL of the pool (for_each_shared_dpll). */
-	for (index = 0; index < i915->display.dpll.num_shared_dpll; index++)
-		i915_readout_dpll_hw_state(takeover, i915, &i915->display.dpll.shared_dplls[index]);
-}
-
-/*
- * Turns off every DPLL that is on but used by no pipe
- * (intel_dpll_sanitize_state()).
- */
-void
-drv_i915_dpll_sanitize_state(
-	struct drm_i915_private *i915)
-{
-	int index;
-
-	/* Sanitizes each PLL of the pool (for_each_shared_dpll). */
-	for (index = 0; index < i915->display.dpll.num_shared_dpll; index++)
-		i915_sanitize_dpll_state(i915, &i915->display.dpll.shared_dplls[index]);
 }
 
 /*
@@ -1561,39 +1445,6 @@ i915_pixel_rate_to_cdclk(
 	return DIV_ROUND_UP(pixel_rate * 100, 90);
 }
 
-/*
- * The highest CDCLK need of the crtc's planes (intel_planes_min_cdclk()).
- *
- * The Linux for_each_intel_plane_on_crtc() of this text walked the
- * takeover registry: the one primary plane of the crtc's pipe while the
- * registry is live, none otherwise.
- */
-static int
-i915_planes_min_cdclk(
-	struct i915_takeover_world *takeover,
-	const struct intel_crtc_state *crtc_state)
-{
-	struct intel_crtc *crtc;
-	struct intel_plane *plane;
-	int min_cdclk;
-
-	/* Resolves the crtc. */
-	crtc = to_intel_crtc(crtc_state->uapi.crtc);
-	min_cdclk = 0;
-
-	/* Without a registry there is no plane to walk. */
-	if (takeover == NULL)
-		return min_cdclk;
-
-	/* Takes the need of the registry's plane of the pipe, if any. */
-	plane = drv_i915_n1_plane_at(takeover, (unsigned)crtc->pipe);
-	if (plane != NULL)
-		min_cdclk = max(crtc_state->min_cdclk[plane->id], min_cdclk);
-
-	/* Succeeded: reports the planes' need. */
-	return min_cdclk;
-}
-
 /* Powers a combo PLL on (icl_pll_power_enable()). */
 static void
 i915_icl_pll_power_enable(
@@ -1911,70 +1762,6 @@ i915_unreference_shared_dpll(
 
 	/* Drops the crtc's reference. */
 	drv_i915_unreference_shared_dpll_crtc(crtc, pll, &shared_dpll[pll->index]);
-}
-
-/*
- * Reads one PLL out and finds the crtcs that use it (readout_dpll_hw_state()).
- *
- * The Linux for_each_intel_crtc() of this text walked the takeover
- * registry.
- */
-static void
-i915_readout_dpll_hw_state(
-	struct i915_takeover_world *takeover,
-	struct drm_i915_private *i915,
-	struct intel_shared_dpll *pll)
-{
-	struct intel_crtc *crtc;
-	struct intel_crtc_state *crtc_state;
-	unsigned index;
-
-	/* Reads the PLL; an enabled one takes its power domain. */
-	pll->on = drv_i915_dpll_get_hw_state(i915, pll, &pll->state.hw_state);
-	if (pll->on && pll->info->power_domain)
-		pll->wakeref = i915_lcd_intel_display_power_get(i915, pll->info->power_domain);
-
-	/* References the PLL for every active crtc of the registry that uses it. */
-	pll->state.pipe_mask = 0;
-	for (index = 0u; ; index++) {
-		crtc = drv_i915_n1_crtc_at(takeover, index);
-		if (crtc == NULL)
-			break;
-
-		/* Only an active crtc on this PLL uses it. */
-		crtc_state = to_intel_crtc_state(crtc->base.state);
-		if (crtc_state->hw.active && crtc_state->shared_dpll == pll)
-			i915_reference_shared_dpll_crtc(crtc, pll, &pll->state);
-	}
-
-	/* The pipes that use the PLL are the pipes that drive it. */
-	pll->active_mask = pll->state.pipe_mask;
-
-	/* Notes the readout. */
-	I915_LCD_DRM_DBG_KMS(&i915->drm,
-		"%s hw state readout: pipe_mask 0x%x, on %i\n",
-		pll->info->name, pll->state.pipe_mask, pll->on);
-}
-
-/* Turns off a PLL that is on but used by no pipe (sanitize_dpll_state()). */
-static void
-i915_sanitize_dpll_state(
-	struct drm_i915_private *i915,
-	struct intel_shared_dpll *pll)
-{
-	/* A PLL that is off needs nothing. */
-	if (!pll->on)
-		return;
-
-	/* A PLL a pipe drives stays on. */
-	if (pll->active_mask)
-		return;
-
-	/* Turns it off. */
-	I915_LCD_DRM_DBG_KMS(&i915->drm,
-		"%s enabled but not in use, disabling\n",
-		pll->info->name);
-	i915_intel_disable_shared_dpll(i915, pll);
 }
 
 /* Binds the modeset object's device view to the world's pool (built on first use). */
@@ -2450,94 +2237,6 @@ i915_icl_ddi_tbt_pll_get_freq(
 }
 
 /*
- * Reads a Type-C PLL's DKL words when the PLL is enabled
- * (dkl_pll_get_hw_state()); the display core is powered only if it already
- * is.
- *
- * Every word read here is behind the same bank index, though the words
- * are in different blocks of the PHY.  Each word keeps only the fields the
- * PLL programs.
- */
-static bool
-i915_dkl_pll_get_hw_state(
-	struct drm_i915_private *i915,
-	struct intel_shared_dpll *pll,
-	struct intel_dpll_hw_state *hw_state)
-{
-	enum tc_port tc_port;
-	intel_wakeref_t wakeref;
-	i915_reg_t enable_reg;
-	u32 val;
-	u32 div0_mask;
-
-	/* Finds the port the PLL serves and its enable register. */
-	tc_port = i915_icl_pll_id_to_tc_port(pll->info->id);
-	enable_reg = i915_intel_tc_pll_enable_reg(i915, pll);
-
-	/* A readout never turns the display core on. */
-	wakeref = drv_i915_n1_power_get_if_enabled(i915, POWER_DOMAIN_DISPLAY_CORE);
-	if (!wakeref)
-		return false;
-
-	/* A PLL that is off has no state to read. */
-	val = i915_lcd_intel_de_read(i915, enable_reg);
-	if ((val & PLL_ENABLE) == 0) {
-		i915_lcd_intel_display_power_put(i915, POWER_DOMAIN_DISPLAY_CORE, wakeref);
-		return false;
-	}
-
-	/* The reference clock input's mux. */
-	hw_state->mg_refclkin_ctl = i915_lcd_dkl_phy_read(i915, tc_port, DKL_REFCLKIN_CTL);
-	hw_state->mg_refclkin_ctl &= MG_REFCLKIN_CTL_OD_2_MUX_MASK;
-
-	/* The high-speed clock's line driver, input and dividers. */
-	hw_state->mg_clktop2_hsclkctl = i915_lcd_dkl_phy_read(i915, tc_port, DKL_CLKTOP2_HSCLKCTL);
-	hw_state->mg_clktop2_hsclkctl &= MG_CLKTOP2_HSCLKCTL_TLINEDRV_CLKSEL_MASK |
-					 MG_CLKTOP2_HSCLKCTL_CORE_INPUTSEL_MASK |
-					 MG_CLKTOP2_HSCLKCTL_HSDIV_RATIO_MASK |
-					 MG_CLKTOP2_HSCLKCTL_DSDIV_RATIO_MASK;
-
-	/* The core clock's divider. */
-	hw_state->mg_clktop2_coreclkctl1 = i915_lcd_dkl_phy_read(i915, tc_port, DKL_CLKTOP2_CORECLKCTL1);
-	hw_state->mg_clktop2_coreclkctl1 &= MG_CLKTOP2_CORECLKCTL1_A_DIVRATIO_MASK;
-
-	/* DIV0, with the AFC startup field only when the VBT overrides it. */
-	div0_mask = DKL_PLL_DIV0_MASK;
-	if (i915->display.vbt.override_afc_startup)
-		div0_mask |= DKL_PLL_DIV0_AFC_STARTUP_MASK;
-	hw_state->mg_pll_div0 = i915_lcd_dkl_phy_read(i915, tc_port, DKL_PLL_DIV0);
-	hw_state->mg_pll_div0 &= div0_mask;
-
-	/* DIV1: the current reference trim and the TDC target count. */
-	hw_state->mg_pll_div1 = i915_lcd_dkl_phy_read(i915, tc_port, DKL_PLL_DIV1);
-	hw_state->mg_pll_div1 &= DKL_PLL_DIV1_IREF_TRIM_MASK |
-				 DKL_PLL_DIV1_TDC_TARGET_CNT_MASK;
-
-	/* SSC: the reference divider and the spread spectrum. */
-	hw_state->mg_pll_ssc = i915_lcd_dkl_phy_read(i915, tc_port, DKL_PLL_SSC);
-	hw_state->mg_pll_ssc &= DKL_PLL_SSC_IREF_NDIV_RATIO_MASK |
-				DKL_PLL_SSC_STEP_LEN_MASK |
-				DKL_PLL_SSC_STEP_NUM_MASK |
-				DKL_PLL_SSC_EN;
-
-	/* BIAS: the fractional divider. */
-	hw_state->mg_pll_bias = i915_lcd_dkl_phy_read(i915, tc_port, DKL_PLL_BIAS);
-	hw_state->mg_pll_bias &= DKL_PLL_BIAS_FRAC_EN_H |
-				 DKL_PLL_BIAS_FBDIV_FRAC_MASK;
-
-	/* TDC_COLDST_BIAS: the SSC step size and the feed-forward gain. */
-	hw_state->mg_pll_tdc_coldst_bias = i915_lcd_dkl_phy_read(i915, tc_port, DKL_PLL_TDC_COLDST_BIAS);
-	hw_state->mg_pll_tdc_coldst_bias &= DKL_PLL_TDC_SSC_STEP_SIZE_MASK |
-					    DKL_PLL_TDC_FEED_FWD_GAIN_MASK;
-
-	/* Gives the display core back. */
-	i915_lcd_intel_display_power_put(i915, POWER_DOMAIN_DISPLAY_CORE, wakeref);
-
-	/* Succeeded: the PLL is enabled and its words are read. */
-	return true;
-}
-
-/*
  * Writes a Type-C PLL's DKL words (dkl_pll_write()).
  *
  * Every word is changed read-modify-write, only in the fields the PLL
@@ -2697,50 +2396,6 @@ i915_dpll_report(
 		I915_LCD_DRM_ERR(&i915->drm, "PLL %d locked\n", pll->info->id);
 	if ((late & I915_XD_DPLL_LATE_POWER_OFF) != 0U)
 		I915_LCD_DRM_ERR(&i915->drm, "PLL %d Power not disabled\n", pll->info->id);
-}
-
-/*
- * Reads a combo PLL or the Thunderbolt PLL through the xd clock when it
- * is enabled; the display core is powered only if it already is.
- */
-static bool
-i915_combo_pll_get_hw_state(
-	struct drm_i915_private *i915,
-	struct intel_shared_dpll *pll,
-	struct intel_dpll_hw_state *hw_state)
-{
-	const struct i915_xd_pll_desc *desc;
-	struct i915_xd_dpll_words words;
-	intel_wakeref_t wakeref;
-	int enabled;
-
-	/* A PLL the platform does not have is off. */
-	desc = i915_dpll_xd_desc(pll);
-	if (desc == NULL)
-		return false;
-
-	/* A readout never turns the display core on. */
-	wakeref = drv_i915_n1_power_get_if_enabled(i915, POWER_DOMAIN_DISPLAY_CORE);
-	if (!wakeref)
-		return false;
-
-	/* Reads the PLL; the state keeps what it held where a word is not read. */
-	words.cfgcr0 = hw_state->cfgcr0;
-	words.cfgcr1 = hw_state->cfgcr1;
-	words.div0 = hw_state->div0;
-	words.div0_set = 0;
-	enabled = drv_i915_xd_dpll_read(drv_i915_lcd_xd_io(i915), drv_i915_lcd_xd_platform(), desc, i915_dpll_afc(i915), &words);
-	if (enabled) {
-		hw_state->cfgcr0 = words.cfgcr0;
-		hw_state->cfgcr1 = words.cfgcr1;
-		hw_state->div0 = words.div0;
-	}
-
-	/* Gives the display core back. */
-	i915_lcd_intel_display_power_put(i915, POWER_DOMAIN_DISPLAY_CORE, wakeref);
-
-	/* Succeeded: whether the PLL is enabled. */
-	return enabled != 0;
 }
 
 /* Reports a combo PLL state's link clock through the xd clock, or 0. */

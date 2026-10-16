@@ -119,4 +119,14 @@ int drv_i915_xd_aux_init(struct i915_xd_aux *aux, unsigned channel);
 uint32_t drv_i915_xd_aux_control(const struct i915_xd_aux_message *message);
 void drv_i915_xd_aux_exchange(struct i915_xd_aux *aux, struct i915_xd_io *io, const struct i915_xd_aux_message *message, struct i915_xd_aux_result *result);
 
+/*
+ * Reads or writes size bytes of a sink's DPCD at address over native AUX
+ * messages of at most 16 bytes, retrying refused, deferred and damaged
+ * messages as the specification allows; a read first wakes the sink
+ * with a thrown-away read of its revision.  The caller holds the channel
+ * usable as for a transaction.  Returns 0, EIO, ETIMEDOUT or EBUSY.
+ */
+int drv_i915_xd_dpcd_read(struct i915_xd_aux *aux, struct i915_xd_io *io, uint32_t address, uint8_t *buffer, unsigned size);
+int drv_i915_xd_dpcd_write(struct i915_xd_aux *aux, struct i915_xd_io *io, uint32_t address, const uint8_t *buffer, unsigned size);
+
 #endif /* DRIVERS_GPU_I915_DISPLAY_XD_AUX_H */

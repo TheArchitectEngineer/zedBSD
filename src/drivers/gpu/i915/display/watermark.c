@@ -215,7 +215,6 @@ static int i915_is_sagv_enabled(const struct i915_bw_state *bw, uint16_t points_
 static void i915_icl_force_disable_sagv(struct i915_display_state *d, struct mutex *sb_lock, struct i915_mmio *mmio, int display_ver, struct i915_bw_state *bw, struct i915_bw_obj_state *bw_obj);
 static unsigned int i915_intel_bw_crtc_data_rate(const struct intel_crtc_state *crtc_state);
 static int i915_intel_bw_crtc_min_cdclk(const struct intel_crtc_state *crtc_state);
-static unsigned int i915_intel_bw_crtc_num_active_planes(const struct intel_crtc_state *crtc_state);
 static u8 i915_intel_dbuf_enabled_slices(const struct intel_dbuf_state *dbuf_state);
 static bool i915_adlp_check_mbus_joined(u8 active_pipes);
 static u8 i915_skl_compute_dbuf_slices(struct intel_crtc *crtc, u8 active_pipes, bool join_mbus);
@@ -232,19 +231,8 @@ static void i915_wm_plane_from_xd(const struct i915_xd_plane_wm *from, struct sk
 static int i915_skl_build_pipe_wm(struct i915_lcd_wm_ctx *wm, struct intel_atomic_state *state, struct intel_crtc *crtc);
 static int i915_skl_crtc_allocate_plane_ddb(struct i915_lcd_wm_ctx *wm, struct intel_atomic_state *state, struct intel_crtc *crtc);
 static unsigned int i915_intel_crtc_ddb_weight(const struct intel_crtc_state *crtc_state);
-static int i915_skl_crtc_allocate_ddb(struct i915_takeover_world *takeover, struct i915_lcd_wm_ctx *wm, struct intel_atomic_state *state, struct intel_crtc *crtc);
+static int i915_skl_crtc_allocate_ddb(struct i915_lcd_wm_ctx *wm, struct intel_crtc *crtc);
 static void i915_update_mbus_pre_enable(struct i915_lcd_wm_ctx *wm, struct intel_atomic_state *state);
-static void i915_skl_wm_level_from_reg_val(u32 val, struct skl_wm_level *level);
-static void i915_skl_pipe_wm_get_hw_state(struct intel_crtc *crtc, struct skl_pipe_wm *out);
-static void i915_skl_pipe_ddb_get_hw_state(struct intel_crtc *crtc, struct skl_ddb_entry *ddb, struct skl_ddb_entry *ddb_y) __attribute__((unused));
-static void i915_skl_ddb_get_hw_plane_state(struct drm_i915_private *i915, const enum pipe pipe, const enum plane_id plane_id, struct skl_ddb_entry *ddb, struct skl_ddb_entry *ddb_y);
-static void i915_skl_ddb_entry_union(struct skl_ddb_entry *a, const struct skl_ddb_entry *b);
-static void i915_skl_wm_get_hw_state(struct i915_takeover_world *takeover, struct i915_lcd_wm_ctx *wm, struct drm_i915_private *i915);
-static bool i915_skl_dbuf_is_misconfigured(struct i915_takeover_world *takeover, struct i915_lcd_wm_ctx *wm, struct drm_i915_private *i915);
-static void i915_skl_wm_sanitize(struct i915_takeover_world *takeover, struct i915_lcd_wm_ctx *wm, struct drm_i915_private *i915);
-static void i915_skl_wm_get_hw_state_and_sanitize(struct i915_takeover_world *takeover, struct i915_lcd_wm_ctx *wm, struct drm_i915_private *i915) __attribute__((unused));
-static void i915_skl_ddb_entry_init_from_hw(struct skl_ddb_entry *entry, u32 reg);
-static bool i915_skl_ddb_entries_overlap(const struct skl_ddb_entry *a, const struct skl_ddb_entry *b);
 
 /*
  * Creates the watermark world of a display.
@@ -820,34 +808,6 @@ drv_i915_pmdemand_init(
 }
 
 /*
- * Records the bandwidth a crtc needs in the bandwidth state
- * (intel_bw_crtc_update()): its data rate and its active planes.
- *
- * The QGV point is re-checked at the next bandwidth check.
- */
-void
-drv_i915_bw_crtc_update(
-	struct intel_bw_state *bw_state,
-	const struct intel_crtc_state *crtc_state)
-{
-	struct intel_crtc *crtc;
-
-	/* The crtc of the state. */
-	crtc = to_intel_crtc(crtc_state->uapi.crtc);
-
-	/* Records the pipe's data rate and active planes. */
-	bw_state->data_rate[crtc->pipe] = i915_intel_bw_crtc_data_rate(crtc_state);
-	bw_state->num_active_planes[crtc->pipe] = i915_intel_bw_crtc_num_active_planes(crtc_state);
-	bw_state->force_check_qgv = true;
-
-	/* The debug line of the update. */
-	I915_LCD_DRM_DBG_KMS(crtc->base.dev, "pipe %c data rate %u num active planes %u\n",
-		pipe_name(crtc->pipe),
-		bw_state->data_rate[crtc->pipe],
-		bw_state->num_active_planes[crtc->pipe]);
-}
-
-/*
  * Reports the minimum CDCLK the modeset's crtc needs for its pipe read
  * bandwidth (the one crtc's share of intel_bw_calc_min_cdclk()).
  */
@@ -937,7 +897,6 @@ drv_i915_lcd_ms_wm_compute(
 	struct intel_crtc_state *cs;
 	struct intel_dbuf_state *new_dbuf;
 	struct i915_lcd_wm_ctx *wm;
-	struct i915_takeover_world *takeover;
 	enum pipe pipe;
 	int display_ver;
 	int error;
@@ -948,12 +907,8 @@ drv_i915_lcd_ms_wm_compute(
 	new_dbuf = &ms->wm.new_dbuf;
 	pipe = ms->crtc.pipe;
 
-	/*
-	 * The watermark text works on this modeset's context from now on; the
-	 * takeover's readout answers from the same context.
-	 */
+	/* The watermark text works on this modeset's context from now on. */
 	wm_world->i915_lcd_wm = wm;
-	takeover = wm_world->display->takeover_world;
 
 	/* The watermark context works on this crtc state, in the modeset's atomic state. */
 	ms->wm.crtc_state = cs;
@@ -1007,7 +962,7 @@ drv_i915_lcd_ms_wm_compute(
 	}
 
 	/* Gives the pipe its share of the DDB. */
-	error = i915_skl_crtc_allocate_ddb(takeover, wm, &ms->state, &ms->crtc);
+	error = i915_skl_crtc_allocate_ddb(wm, &ms->crtc);
 	if (error != 0)
 		return error;
 
@@ -1137,35 +1092,6 @@ drv_i915_lcd_dbuf_forget(
 	/* No state is published any more. */
 	kern_memset(&wm_world->i915_lcd_dbuf_dev, 0, sizeof(wm_world->i915_lcd_dbuf_dev));
 	wm_world->i915_lcd_dbuf_dev_valid = 0;
-}
-
-/*
- * Reads the watermark and DDB state of the hardware into the takeover's
- * registry (the Linux skl_wm_get_hw_state(), reached through
- * intel_wm_get_hw_state()).
- *
- * The readout calls this with the registry's own device, so the takeover
- * world is the one that device belongs to.  The DBUF state it fills is the
- * new DBUF state of the watermark context the watermark world names as
- * current (the Linux text reached it through a file-scope pointer).
- *
- * XXX: the takeover world is found from the registry's device
- * (container_of); the environment header declares this entry point with
- * the device only.
- */
-void
-drv_i915_lcd_wm_get_hw_state(
-	struct drm_i915_private *i915)
-{
-	struct i915_takeover_world *takeover;
-	struct i915_lcd_wm_ctx *wm;
-
-	/* The registry the device belongs to, and the current watermark context of its display. */
-	takeover = container_of(i915, struct i915_takeover_world, n1.i915);
-	wm = takeover->display->wm_world->i915_lcd_wm;
-
-	/* Reads the watermarks and the DDB of every registry crtc. */
-	i915_skl_wm_get_hw_state(takeover, wm, i915);
 }
 
 /*
@@ -1328,76 +1254,6 @@ drv_i915_mbus_dbox_update(
 
 	/* Writes the pipe's DBOX control. */
 	drv_i915_xd_io_write(drv_i915_lcd_xd_io(i915), I915_XD_PIPE_MBUS_DBOX_CTL(crtc->pipe), pipe_val);
-}
-
-/*
- * Tells whether one DDB entry overlaps any other of a list
- * (skl_ddb_allocation_overlaps()); the entry at ignore_idx is not compared.
- */
-bool
-skl_ddb_allocation_overlaps(
-	const struct skl_ddb_entry *ddb,
-	const struct skl_ddb_entry *entries,
-	int num_entries,
-	int ignore_idx)
-{
-	bool overlap;
-	int i;
-
-	/* Compares with every other entry. */
-	for (i = 0; i < num_entries; i++) {
-		if (i == ignore_idx)
-			continue;
-
-		/* One overlap is enough. */
-		overlap = i915_skl_ddb_entries_overlap(ddb, &entries[i]);
-		if (overlap)
-			return true;
-	}
-
-	/* Succeeded: no entry overlaps. */
-	return false;
-}
-
-/*
- * Reports the DBUF slices a DDB entry lies in (skl_ddb_dbuf_slice_mask()).
- *
- * A per-plane entry can in the worst case span several slices, but one
- * entry is always contiguous.
- */
-u32
-skl_ddb_dbuf_slice_mask(
-	struct drm_i915_private *i915,
-	const struct skl_ddb_entry *entry)
-{
-	const struct i915_xd_platform *platform;
-	int slice_size;
-	enum dbuf_slice start_slice;
-	enum dbuf_slice end_slice;
-	u16 entry_size;
-	u8 slice_mask;
-
-	/* An empty entry lies in no slice; a slice is the platform's buffer over its slices. */
-	UNUSED_PARAMETER(i915);
-	platform = drv_i915_lcd_xd_platform();
-	slice_size = platform->dbuf_blocks / platform->dbuf_slices;
-	slice_mask = 0;
-	entry_size = skl_ddb_entry_size(entry);
-	if (!entry_size)
-		return 0;
-
-	/* The first and the last slice of the entry. */
-	start_slice = entry->start / slice_size;
-	end_slice = (entry->end - 1) / slice_size;
-
-	/* Every slice from the first to the last. */
-	while (start_slice <= end_slice) {
-		slice_mask |= BIT(start_slice);
-		start_slice++;
-	}
-
-	/* Succeeded: reports the slices. */
-	return slice_mask;
 }
 
 /* GENMASK(num - 1, 0): the low num bits. */
@@ -1807,18 +1663,6 @@ i915_intel_bw_crtc_min_cdclk(
 
 	/* Succeeded: reports the CDCLK. */
 	return DIV_ROUND_UP_ULL(scaled, 512);
-}
-
-/* The number of active planes of a crtc, the cursor aside (intel_bw_crtc_num_active_planes()). */
-static unsigned int
-i915_intel_bw_crtc_num_active_planes(
-	const struct intel_crtc_state *crtc_state)
-{
-	/*
-	 * We assume cursors are small enough
-	 * to not not cause bandwidth problems.
-	 */
-	return hweight8(crtc_state->active_planes & ~BIT(PLANE_CURSOR));
 }
 
 /* The DBUF slices a DBUF state enables: S1 always, and every pipe's slices (intel_dbuf_enabled_slices()). */
@@ -2275,14 +2119,12 @@ i915_intel_crtc_ddb_weight(
 
 /*
  * Gives a crtc's pipe its share of its slices' DDB (skl_crtc_allocate_ddb());
- * 0, or the error of the global state lock.  The crtc's state comes from the
- * takeover registry, as in the Linux text of this path.
+ * 0, or the error of the global state lock.  The crtc's state is the
+ * watermark context's.
  */
 static int
 i915_skl_crtc_allocate_ddb(
-	struct i915_takeover_world *takeover,
 	struct i915_lcd_wm_ctx *wm,
-	struct intel_atomic_state *state,
 	struct intel_crtc *crtc)
 {
 	struct drm_i915_private *i915;
@@ -2331,15 +2173,8 @@ i915_skl_crtc_allocate_ddb(
 	if (error != 0)
 		return error;
 
-	/*
-	 * The crtc's state in the commit (the readout's
-	 * intel_atomic_get_crtc_state(), which this text was compiled with):
-	 * outside a readout the watermark context's crtc state.  While the
-	 * registry is live it also records the state as the old state of the
-	 * atomic state.  No accessor of this path returns an error pointer, so
-	 * the Linux IS_ERR() test is always false and is left out.
-	 */
-	crtc_state = I915_TAKEOVER_INTEL_ATOMIC_GET_CRTC_STATE(takeover, wm, &state->base, crtc);
+	/* The crtc's state in the commit: the watermark context's. */
+	crtc_state = wm->crtc_state;
 
 	/*
 	 * Used for checking overlaps, so we need absolute
@@ -2376,454 +2211,4 @@ i915_update_mbus_pre_enable(
 
 	/* The bus control and the tracker service. */
 	drv_i915_xd_dbuf_mbus(drv_i915_lcd_xd_io(i915), drv_i915_lcd_xd_platform(), dbuf_state->joined_mbus ? 1 : 0);
-}
-
-/* Decodes a watermark level register (skl_wm_level_from_reg_val()). */
-static void
-i915_skl_wm_level_from_reg_val(
-	u32 val,
-	struct skl_wm_level *level)
-{
-	/* The enable and ignore-lines bits. */
-	level->enable = false;
-	if (val & PLANE_WM_EN)
-		level->enable = true;
-
-	level->ignore_lines = false;
-	if (val & PLANE_WM_IGNORE_LINES)
-		level->ignore_lines = true;
-
-	/* The blocks and the lines. */
-	level->blocks = REG_FIELD_GET(PLANE_WM_BLOCKS_MASK, val);
-	level->lines = REG_FIELD_GET(PLANE_WM_LINES_MASK, val);
-}
-
-/* Reads the watermarks of a crtc's planes from the hardware (skl_pipe_wm_get_hw_state()). */
-static void
-i915_skl_pipe_wm_get_hw_state(
-	struct intel_crtc *crtc,
-	struct skl_pipe_wm *out)
-{
-	struct drm_i915_private *i915;
-	struct skl_plane_wm *wm;
-	enum pipe pipe;
-	enum plane_id plane_id;
-	int display_ver;
-	int level;
-	u32 val;
-
-	/* The device and the pipe. */
-	i915 = i915_lcd_to_i915(crtc->base.dev);
-	pipe = crtc->pipe;
-	display_ver = I915_LCD_DISPLAY_VER(i915);
-
-	/* Reads each plane's registers. */
-	for_each_plane_id_on_crtc(crtc, plane_id) {
-		wm = &out->planes[plane_id];
-
-		/* The level registers. */
-		for (level = 0; level < i915->display.wm.num_levels; level++) {
-			if (plane_id != PLANE_CURSOR) {
-				val = i915_lcd_intel_de_read(i915, PLANE_WM(pipe, plane_id, level));
-			} else {
-				val = i915_lcd_intel_de_read(i915, CUR_WM(pipe, level));
-			}
-
-			i915_skl_wm_level_from_reg_val(val, &wm->wm[level]);
-		}
-
-		/* The transition register. */
-		if (plane_id != PLANE_CURSOR) {
-			val = i915_lcd_intel_de_read(i915, PLANE_WM_TRANS(pipe, plane_id));
-		} else {
-			val = i915_lcd_intel_de_read(i915, CUR_WM_TRANS(pipe));
-		}
-
-		i915_skl_wm_level_from_reg_val(val, &wm->trans_wm);
-
-		/* HAS_HW_SAGV_WM(): the SAGV registers; display 12 without them copies level 0 and the transition. */
-		if (display_ver >= 13 && !IS_DGFX(i915)) {
-			if (plane_id != PLANE_CURSOR) {
-				val = i915_lcd_intel_de_read(i915, PLANE_WM_SAGV(pipe, plane_id));
-			} else {
-				val = i915_lcd_intel_de_read(i915, CUR_WM_SAGV(pipe));
-			}
-
-			i915_skl_wm_level_from_reg_val(val, &wm->sagv.wm0);
-
-			/* The SAGV transition register. */
-			if (plane_id != PLANE_CURSOR) {
-				val = i915_lcd_intel_de_read(i915, PLANE_WM_SAGV_TRANS(pipe, plane_id));
-			} else {
-				val = i915_lcd_intel_de_read(i915, CUR_WM_SAGV_TRANS(pipe));
-			}
-
-			i915_skl_wm_level_from_reg_val(val, &wm->sagv.trans_wm);
-		} else if (display_ver >= 12) {
-			wm->sagv.wm0 = wm->wm[0];
-			wm->sagv.trans_wm = wm->trans_wm;
-		}
-	}
-}
-
-/*
- * Reads the DDB entries of a crtc's planes under the pipe's power
- * (skl_pipe_ddb_get_hw_state()).
- *
- * XXX: not called -- Linux reaches it from the state checker
- * (intel_modeset_verify_crtc), which is not ported.  The power question is
- * asked of the named device.
- */
-static void
-i915_skl_pipe_ddb_get_hw_state(
-	struct intel_crtc *crtc,
-	struct skl_ddb_entry *ddb,
-	struct skl_ddb_entry *ddb_y)
-{
-	struct drm_i915_private *i915;
-	enum intel_display_power_domain power_domain;
-	enum pipe pipe;
-	intel_wakeref_t wakeref;
-	enum plane_id plane_id;
-
-	/* The device and the pipe's power domain. */
-	i915 = i915_lcd_to_i915(crtc->base.dev);
-	pipe = crtc->pipe;
-	power_domain = POWER_DOMAIN_PIPE(pipe);
-
-	/* A pipe whose power is off has nothing to read. */
-	wakeref = I915_TAKEOVER_INTEL_DISPLAY_POWER_GET_IF_ENABLED(i915, power_domain);
-	if (!wakeref)
-		return;
-
-	/* Reads each plane's entries. */
-	for_each_plane_id_on_crtc(crtc, plane_id) {
-		i915_skl_ddb_get_hw_plane_state(i915, pipe,
-			plane_id,
-			&ddb[plane_id],
-			&ddb_y[plane_id]);
-	}
-
-	/* Gives the power reference back. */
-	i915_lcd_intel_display_power_put(i915, power_domain, wakeref);
-}
-
-/* Reads the DDB entries of one plane (skl_ddb_get_hw_plane_state()). */
-static void
-i915_skl_ddb_get_hw_plane_state(
-	struct drm_i915_private *i915,
-	const enum pipe pipe,
-	const enum plane_id plane_id,
-	struct skl_ddb_entry *ddb,
-	struct skl_ddb_entry *ddb_y)
-{
-	u32 val;
-	int display_ver;
-
-	/* Cursor doesn't support NV12/planar, so no extra calculation needed */
-	if (plane_id == PLANE_CURSOR) {
-		val = i915_lcd_intel_de_read(i915, CUR_BUF_CFG(pipe));
-		i915_skl_ddb_entry_init_from_hw(ddb, val);
-		return;
-	}
-
-	/* The plane's entry. */
-	val = i915_lcd_intel_de_read(i915, PLANE_BUF_CFG(pipe, plane_id));
-	i915_skl_ddb_entry_init_from_hw(ddb, val);
-
-	/* Display version 11+ has no NV12 entry. */
-	display_ver = I915_LCD_DISPLAY_VER(i915);
-	if (display_ver >= 11)
-		return;
-
-	/* The NV12 Y entry. */
-	val = i915_lcd_intel_de_read(i915, PLANE_NV12_BUF_CFG(pipe, plane_id));
-	i915_skl_ddb_entry_init_from_hw(ddb_y, val);
-}
-
-/* Widens a DDB entry to cover another (skl_ddb_entry_union()). */
-static void
-i915_skl_ddb_entry_union(
-	struct skl_ddb_entry *a,
-	const struct skl_ddb_entry *b)
-{
-	/* Two non-empty entries span both; an empty one takes the other. */
-	if (a->end && b->end) {
-		a->start = min(a->start, b->start);
-		a->end = max(a->end, b->end);
-	} else if (b->end) {
-		a->start = b->start;
-		a->end = b->end;
-	}
-}
-
-/*
- * Reads the watermarks and the DDB of every registry crtc and the DBUF
- * state they make (skl_wm_get_hw_state()).
- */
-static void
-i915_skl_wm_get_hw_state(
-	struct i915_takeover_world *takeover,
-	struct i915_lcd_wm_ctx *wm,
-	struct drm_i915_private *i915)
-{
-	struct intel_dbuf_state *dbuf_state;
-	struct intel_crtc *crtc;
-	struct intel_crtc_state *crtc_state;
-	struct skl_ddb_entry *ddb;
-	struct skl_ddb_entry *ddb_y;
-	enum pipe pipe;
-	enum plane_id plane_id;
-	unsigned int mbus_offset;
-	unsigned index;
-	bool alderlake_p;
-	int display_ver;
-	u32 mbus_ctl;
-	u8 slices;
-
-	/* The DBUF state the readout fills: the watermark context's new state. */
-	dbuf_state = i915_takeover_intel_atomic_get_dbuf_state(wm);
-
-	/* HAS_MBUS_JOINING(): the MBUS joining as the hardware has it. */
-	alderlake_p = I915_LCD_IS_ALDERLAKE_P(i915);
-	display_ver = I915_LCD_DISPLAY_VER(i915);
-	if (alderlake_p || display_ver >= 14) {
-		mbus_ctl = i915_lcd_intel_de_read(i915, MBUS_CTL);
-		dbuf_state->joined_mbus = false;
-		if (mbus_ctl & MBUS_JOIN)
-			dbuf_state->joined_mbus = true;
-	}
-
-	/* for_each_intel_crtc(): reads each crtc of the registry. */
-	index = 0u;
-	crtc = drv_i915_n1_crtc_at(takeover, index);
-	while (crtc != NULL) {
-		crtc_state = to_intel_crtc_state(crtc->base.state);
-		pipe = crtc->pipe;
-
-		/* The watermarks of an active crtc; the raw ones are the same. */
-		kern_memset(&crtc_state->wm.skl.optimal, 0,
-		       sizeof(crtc_state->wm.skl.optimal));
-		if (crtc_state->hw.active)
-			i915_skl_pipe_wm_get_hw_state(crtc, &crtc_state->wm.skl.optimal);
-		crtc_state->wm.skl.raw = crtc_state->wm.skl.optimal;
-
-		/* The pipe's DDB is the union of its planes' entries. */
-		kern_memset(&dbuf_state->ddb[pipe], 0, sizeof(dbuf_state->ddb[pipe]));
-		for_each_plane_id_on_crtc(crtc, plane_id) {
-			ddb = &crtc_state->wm.skl.plane_ddb[plane_id];
-			ddb_y = &crtc_state->wm.skl.plane_ddb_y[plane_id];
-
-			if (!crtc_state->hw.active)
-				continue;
-
-			i915_skl_ddb_get_hw_plane_state(i915, crtc->pipe,
-				plane_id, ddb, ddb_y);
-
-			i915_skl_ddb_entry_union(&dbuf_state->ddb[pipe], ddb);
-			i915_skl_ddb_entry_union(&dbuf_state->ddb[pipe], ddb_y);
-		}
-
-		/* The pipe's weight. */
-		dbuf_state->weight[pipe] = i915_intel_crtc_ddb_weight(crtc_state);
-
-		/*
-		 * Used for checking overlaps, so we need absolute
-		 * offsets instead of MBUS relative offsets.
-		 */
-		slices = i915_skl_compute_dbuf_slices(crtc, dbuf_state->active_pipes,
-			dbuf_state->joined_mbus);
-		mbus_offset = i915_mbus_ddb_offset(i915, slices);
-		crtc_state->wm.skl.ddb.start = mbus_offset + dbuf_state->ddb[pipe].start;
-		crtc_state->wm.skl.ddb.end = mbus_offset + dbuf_state->ddb[pipe].end;
-
-		/* The slices actually used by the planes on the pipe */
-		dbuf_state->slices[pipe] =
-			skl_ddb_dbuf_slice_mask(i915, &crtc_state->wm.skl.ddb);
-
-		/* The debug line of the crtc. */
-		I915_LCD_DRM_DBG_KMS(&i915->drm,
-			"[CRTC:%d:%s] dbuf slices 0x%x, ddb (%d - %d), active pipes 0x%x, mbus joined: %s\n",
-			crtc->base.base.id, crtc->base.name,
-			dbuf_state->slices[pipe], dbuf_state->ddb[pipe].start,
-			dbuf_state->ddb[pipe].end, dbuf_state->active_pipes,
-			str_yes_no(dbuf_state->joined_mbus));
-
-		/* The next crtc of the registry. */
-		index++;
-		crtc = drv_i915_n1_crtc_at(takeover, index);
-	}
-
-	/* The enabled slices are the ones the display core enabled. */
-	dbuf_state->enabled_slices = i915->display.dbuf.enabled_slices;
-}
-
-/*
- * Tells whether the firmware left the DBUF misconfigured: a pipe on slices
- * the configuration does not give it, or overlapping DDB entries
- * (skl_dbuf_is_misconfigured()).
- */
-static bool
-i915_skl_dbuf_is_misconfigured(
-	struct i915_takeover_world *takeover,
-	struct i915_lcd_wm_ctx *wm,
-	struct drm_i915_private *i915)
-{
-	const struct intel_dbuf_state *dbuf_state;
-	struct skl_ddb_entry entries[I915_MAX_PIPES];
-	struct intel_crtc *crtc;
-	const struct intel_crtc_state *crtc_state;
-	unsigned index;
-	bool overlaps;
-	u8 slices;
-
-	UNUSED_PARAMETER(i915);
-
-	/* The DBUF state of the readout, and no entries yet. */
-	dbuf_state = i915_takeover_intel_atomic_get_dbuf_state(wm);
-	kern_memset(entries, 0, sizeof(entries));
-
-	/* for_each_intel_crtc(): collects every crtc's absolute DDB entry. */
-	index = 0u;
-	crtc = drv_i915_n1_crtc_at(takeover, index);
-	while (crtc != NULL) {
-		crtc_state = to_intel_crtc_state(crtc->base.state);
-		entries[crtc->pipe] = crtc_state->wm.skl.ddb;
-
-		index++;
-		crtc = drv_i915_n1_crtc_at(takeover, index);
-	}
-
-	/* for_each_intel_crtc(): checks each crtc's slices and overlaps. */
-	index = 0u;
-	crtc = drv_i915_n1_crtc_at(takeover, index);
-	while (crtc != NULL) {
-		crtc_state = to_intel_crtc_state(crtc->base.state);
-
-		/* A pipe on slices the configuration does not give it. */
-		slices = i915_skl_compute_dbuf_slices(crtc, dbuf_state->active_pipes,
-			dbuf_state->joined_mbus);
-		if (dbuf_state->slices[crtc->pipe] & ~slices)
-			return true;
-
-		/* A pipe whose DDB overlaps another's. */
-		overlaps = skl_ddb_allocation_overlaps(&crtc_state->wm.skl.ddb, entries,
-			I915_MAX_PIPES, crtc->pipe);
-		if (overlaps)
-			return true;
-
-		/* The next crtc of the registry. */
-		index++;
-		crtc = drv_i915_n1_crtc_at(takeover, index);
-	}
-
-	/* Succeeded: the DBUF is configured consistently. */
-	return false;
-}
-
-/*
- * Turns every plane off when the firmware misprogrammed the DBUF
- * (skl_wm_sanitize()).
- *
- * On TGL/RKL (at least) the BIOS likes to assign the planes
- * to the wrong DBUF slices. This will cause an infinite loop
- * in skl_commit_modeset_enables() as it can't find a way to
- * transition between the old bogus DBUF layout to the new
- * proper DBUF layout without DBUF allocation overlaps between
- * the planes (which cannot be allowed or else the hardware
- * may hang). If we detect a bogus DBUF layout just turn off
- * all the planes so that skl_commit_modeset_enables() can
- * simply ignore them.
- */
-static void
-i915_skl_wm_sanitize(
-	struct i915_takeover_world *takeover,
-	struct i915_lcd_wm_ctx *wm,
-	struct drm_i915_private *i915)
-{
-	struct intel_crtc *crtc;
-	struct intel_plane *plane;
-	const struct intel_plane_state *plane_state;
-	struct intel_crtc_state *crtc_state;
-	unsigned index;
-	bool misconfigured;
-
-	/* A consistent DBUF needs nothing. */
-	misconfigured = i915_skl_dbuf_is_misconfigured(takeover, wm, i915);
-	if (!misconfigured)
-		return;
-
-	/* The debug line of the sanitize. */
-	I915_LCD_DRM_DBG_KMS(&i915->drm, "BIOS has misprogrammed the DBUF, disabling all planes\n");
-
-	/* for_each_intel_crtc(): turns each crtc's primary plane off and clears its DDB. */
-	index = 0u;
-	crtc = drv_i915_n1_crtc_at(takeover, index);
-	while (crtc != NULL) {
-		plane = to_intel_plane(crtc->base.primary);
-		plane_state = to_intel_plane_state(plane->base.state);
-		crtc_state = to_intel_crtc_state(crtc->base.state);
-
-		/* A visible plane is turned off. */
-		if (plane_state->uapi.visible)
-			drv_i915_plane_disable_noatomic(takeover, crtc, plane);
-
-		/* No plane may be left active; the DDB entry is cleared. */
-		I915_LCD_DRM_WARN_ON(&i915->drm, crtc_state->active_planes != 0);
-		kern_memset(&crtc_state->wm.skl.ddb, 0, sizeof(crtc_state->wm.skl.ddb));
-
-		/* The next crtc of the registry. */
-		index++;
-		crtc = drv_i915_n1_crtc_at(takeover, index);
-	}
-}
-
-/*
- * Reads the watermarks and sanitizes a misprogrammed DBUF
- * (skl_wm_get_hw_state_and_sanitize()).
- *
- * XXX: not called -- the readout reaches the watermark readout alone
- * (drv_i915_lcd_wm_get_hw_state()); Linux calls this from
- * intel_modeset_setup_hw_state() through the watermark hooks, which the
- * takeover's readout does not carry.
- */
-static void
-i915_skl_wm_get_hw_state_and_sanitize(
-	struct i915_takeover_world *takeover,
-	struct i915_lcd_wm_ctx *wm,
-	struct drm_i915_private *i915)
-{
-	/* Reads the hardware state, then sanitizes it. */
-	i915_skl_wm_get_hw_state(takeover, wm, i915);
-	i915_skl_wm_sanitize(takeover, wm, i915);
-}
-
-/* Decodes a DDB entry register: the end is made exclusive (skl_ddb_entry_init_from_hw()). */
-static void
-i915_skl_ddb_entry_init_from_hw(
-	struct skl_ddb_entry *entry,
-	u32 reg)
-{
-	/* The start and the inclusive end. */
-	i915_skl_ddb_entry_init(entry,
-		REG_FIELD_GET(PLANE_BUF_START_MASK, reg),
-		REG_FIELD_GET(PLANE_BUF_END_MASK, reg));
-
-	/* A non-empty entry's end becomes exclusive. */
-	if (entry->end)
-		entry->end++;
-}
-
-/* Tells whether two DDB entries overlap (skl_ddb_entries_overlap()). */
-static bool
-i915_skl_ddb_entries_overlap(
-	const struct skl_ddb_entry *a,
-	const struct skl_ddb_entry *b)
-{
-	/* Each starts before the other ends. */
-	if (a->start < b->end && b->start < a->end)
-		return true;
-
-	/* Succeeded: the entries are apart. */
-	return false;
 }

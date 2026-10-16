@@ -3091,7 +3091,7 @@ i915_modeset_prepare_state(
 	/* The check phase, continued: the CDCLK this state requires. */
 	drv_i915_ddi_compute_min_voltage_level(&ms->crtc_state);
 	drv_i915_lcd_ms_plane_min_cdclk(ms);
-	ms->cdclk_rc = drv_i915_lcd_ms_cdclk_check(display->takeover_world, ms);
+	ms->cdclk_rc = drv_i915_lcd_ms_cdclk_check(ms);
 	if (ms->cdclk_rc != 0) {
 		i915_modeset_plan_compare(&plan, I915_XD_PLAN_CDCLK, ms);
 		return ms->cdclk_rc;
@@ -4007,75 +4007,36 @@ i915_resident_passed(
 }
 
 /*
- * Takes over the display the firmware left running (the
- * sequence proved on the machine): the panel's screen
- * objects are built with a placeholder framebuffer (the readout asks their
- * encoder), the PLL pool starts empty so the readout fills it from the
- * hardware, the readout and sanitize run (intel_modeset_setup_hw_state()),
- * every active crtc is stopped (intel_crtc_disable_noatomic()), and the
- * registry is released.  The PLL pool and the DBUF state start empty again
- * for the run's own commit.  The firmware's framebuffer is never written.
- * Returns 0, or the errno of the step that failed (logged).
+ * Takes over the display the firmware left running: every pipe the
+ * firmware check found lit is stopped through the xd takeover
+ * (drv_i915_xd_takeover), with the INIT power reference the probe kept
+ * for it.  The PLL pool and the DBUF state start empty for the run's own
+ * commit.  The firmware's framebuffer is never written.  Returns 0, or
+ * the errno of the pipe that could not be stopped (logged).
  */
 static int
 i915_resident_takeover(
 	struct i915_display *display,
 	struct i915_lcd_kernel *k)
 {
-	const struct i915_lcd_kernel_deps *d;
-	struct i915_lcd_modeset_cfg cfg;
-	struct i915_n1_report report;
+	struct i915_xd_takeover_outcome outcome;
 	int error;
 
-	d = k->d;
+	UNUSED_PARAMETER(k);
 
-	/* The panel's configuration, with a framebuffer that is never shown. */
-	kern_memset(&cfg, 0, sizeof(cfg));
-	error = drv_i915_lcd_kernel_fill_cfg(k, &cfg);
-	if (error != 0) {
-		kern_logf("i915: takeover: the panel's configuration could not be filled rc=%d\n", error);
-		return error;
-	}
-	cfg.fb_fourcc = I915_FOURCC_XRGB8888;
-	cfg.fb_modifier = I915_MOD_LINEAR;
-	cfg.fb_width = 640U;
-	cfg.fb_height = 480U;
-	cfg.fb_pitch = 640U * 4U;
-	cfg.fb_surf = 0U;
+	/* What the firmware left lit. */
+	kern_logf("i915: takeover: lit pipes 0x%x, output %s (pipe %c, DDI %d)\n",
+	    display->xd.firmware.lit_pipes,
+	    drv_i915_xd_firmware_output_name(display->xd.firmware.output),
+	    'A' + (int)display->xd.firmware.output_pipe,
+	    display->xd.firmware.output_ddi);
 
-	/* The screen objects the readout asks; nothing is written. */
-	error = drv_i915_lcd_modeset_prepare(display, &d->edp->lcd, &cfg, &k->ops);
-	if (error != 0) {
-		kern_logf("i915: takeover: the screen objects could not be built rc=%d\n", error);
-		return error;
-	}
-
-	/* The readout fills the PLL pool from the hardware. */
-	drv_i915_lcd_dplls_reset(display->lcd_world);
-
-	/* The readout and the sanitize. */
-	kern_memset(&report, 0, sizeof(report));
-	error = drv_i915_n1_readout(display, &cfg, &k->ops, &report);
-	if (error != 0) {
-		kern_logf("i915: takeover: the readout was refused rc=%d\n", error);
-		drv_i915_n1_release(display);
-		return error;
-	}
-	kern_logf("i915: takeover: readout: active pipes 0x%x, pipe %d transcoder %d DPLL%d port %d, mode %ux%u %u kHz, plane visible=%u\n",
-	    report.active_pipes,
-	    report.pipe,
-	    report.cpu_transcoder,
-	    report.dpll_id,
-	    report.port,
-	    report.mode_h,
-	    report.mode_v,
-	    report.clock_khz,
-	    report.plane_visible);
-
-	/* Stops every crtc the firmware left running. */
-	error = drv_i915_n1_takeover(display, &report);
-	drv_i915_n1_release(display);
-	kern_logf("i915: takeover: rc=%d, crtcs stopped %u, still active 0x%x\n", error, report.takeovers, report.still_active);
+	/* Stops every lit pipe. */
+	error = drv_i915_xd_takeover(&display->xd, &outcome);
+	kern_logf("i915: takeover: rc=%d, crtcs stopped %u, still active 0x%x\n",
+	    error,
+	    (unsigned)__builtin_popcount(outcome.stopped),
+	    outcome.still_lit);
 	if (error != 0)
 		return error;
 

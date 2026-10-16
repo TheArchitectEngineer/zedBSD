@@ -24,6 +24,8 @@
 #include "../../display/xd-platform.h"
 #include "../../display/xd-power.h"
 #include "../../display/xd-takeover.h"
+#include "../../display/xd.h"
+#include "../../intel/display-dpcd-xd.h"
 #include "../../intel/display-regs-xd.h"
 #include "../../intel/display-regs-xd-south.h"
 
@@ -125,6 +127,10 @@ static void i915_xd_to_test_stop_panel(void);
 static void i915_xd_to_test_stop_hdmi(void);
 static void i915_xd_to_test_stop_shared(void);
 static void i915_xd_to_test_vga(void);
+static void i915_xd_to_test_sanitize(void);
+static void i915_xd_to_test_sanitize_unknown(void);
+static void i915_xd_to_test_pps_status(uint32_t offset, uint32_t value, void *context);
+static void i915_xd_to_test_takeover(void);
 
 /*
  * Runs every check of the firmware's display and reports.
@@ -143,6 +149,9 @@ main(void)
 	i915_xd_to_test_stop_hdmi();
 	i915_xd_to_test_stop_shared();
 	i915_xd_to_test_vga();
+	i915_xd_to_test_sanitize();
+	i915_xd_to_test_sanitize_unknown();
+	i915_xd_to_test_takeover();
 
 	/* Reports the result. */
 	failures = i915_host_report("host_xd_takeover_test");
@@ -936,4 +945,165 @@ i915_xd_to_test_vga(void)
 	i915_xd_to_test_run.screen_refused = 1;
 	result = drv_i915_xd_vga_off(&i915_xd_to_test_io, i915_xd_to_test_screen_off, NULL);
 	i915_host_check(result == EIO && i915_xd_fake_writes() == 0U, "vga: the legacy I/O refused -> EIO, the plane left");
+}
+
+/*
+ * The sanitize of a start with the panel lit on pipe A: every other
+ * port's clock gated (the model starts with every clock running), DPLL1
+ * off, DPLL0 kept, the compressor off, the lit pipe left.
+ */
+static void
+i915_xd_to_test_sanitize(void)
+{
+	const struct i915_xd_platform *platform;
+	struct i915_xd_sanitize_report report;
+	struct i915_xd_firmware firmware;
+	unsigned others;
+	unsigned index;
+
+	/* The panel on pipe A, DDI A mapped to DPLL0; DPLL1 left on; the compressor on. */
+	platform = i915_xd_to_test_setup();
+	if (platform == NULL)
+		return;
+	memset(&i915_xd_to_test_run, 0, sizeof(i915_xd_to_test_run));
+	i915_xd_to_test_light(0U, I915_XD_TO_TEST_FUNC_EDP);
+	i915_xd_fake_rule_mirror(I915_XD_DPLL1_ENABLE, I915_XD_PLL_POWER_ENABLE, I915_XD_DPLL1_ENABLE, -1, 0U);
+	i915_xd_fake_rule_mirror(I915_XD_DPLL1_ENABLE, I915_XD_PLL_ENABLE, I915_XD_DPLL1_ENABLE, -1, 0U);
+	i915_xd_fake_set(I915_XD_DPLL1_ENABLE, I915_XD_PLL_ENABLE | I915_XD_PLL_LOCK | I915_XD_PLL_POWER_ENABLE | I915_XD_PLL_POWER_STATE);
+	i915_xd_fake_set(I915_XD_DPFC_CONTROL_A, I915_XD_DPFC_CONTROL_ENABLE | 0x10U);
+	i915_xd_to_test_base(&firmware);
+	firmware.lit_pipes = 1U;
+	firmware.pipe[0].state = I915_XD_FW_PIPE_LIT;
+
+	/* Sanitizes. */
+	drv_i915_xd_firmware_sanitize(&i915_xd_to_test_io, platform, NULL, &firmware, &report);
+	others = 0U;
+	for (index = 0U; index < platform->nports; index++) {
+		if (platform->ports[index].ddi != 0U)
+			others |= 1U << platform->ports[index].ddi;
+	}
+	i915_host_check(report.clocks_gated == others && (i915_xd_fake_get(I915_XD_DPCLKA_CFGCR0) & I915_XD_DPCLKA_DDI_OFF_A) == 0U &&
+			(i915_xd_fake_get(I915_XD_DPCLKA_CFGCR0) & I915_XD_DPCLKA_DDI_OFF_B) != 0U && (i915_xd_fake_get(I915_XD_DPCLKA_CFGCR0) & I915_XD_DPCLKA_TC_OFF(0U)) != 0U,
+			"sanitize: every port but the lit DDI A has its clock gated");
+	i915_host_check(report.plls_off == 2U && report.plls_kept == 0 && (i915_xd_fake_get(I915_XD_DPLL1_ENABLE) & I915_XD_PLL_ENABLE) == 0U &&
+			(i915_xd_fake_get(I915_XD_DPLL0_ENABLE) & I915_XD_PLL_ENABLE) != 0U,
+			"sanitize: DPLL1 off, the lit pipe's DPLL0 kept");
+	i915_host_check(report.fbc_off == 1 && i915_xd_fake_get(I915_XD_DPFC_CONTROL_A) == 0x10U, "sanitize: the compressor off, its other bits kept");
+	i915_host_check(report.dmc_pipes == 0U && firmware.lit_pipes == 1U && (i915_xd_fake_get(I915_XD_TRANS_CONF(0U)) & I915_XD_TRANS_CONF_ENABLE) != 0U,
+			"sanitize: no DMC loaded, the lit pipe left running");
+
+	/* A second sanitize finds nothing to do. */
+	drv_i915_xd_firmware_sanitize(&i915_xd_to_test_io, platform, NULL, &firmware, &report);
+	i915_host_check(report.clocks_gated == 0U && report.plls_off == 0U && report.fbc_off == 0, "sanitize: again, nothing to change");
+}
+
+/* A lit Type-C port whose PLL select is unknown: no PLL is turned off. */
+static void
+i915_xd_to_test_sanitize_unknown(void)
+{
+	const struct i915_xd_platform *platform;
+	struct i915_xd_sanitize_report report;
+	struct i915_xd_firmware firmware;
+
+	/* DP on TC1 with no clock select; DPLL0 on. */
+	platform = i915_xd_to_test_setup();
+	if (platform == NULL)
+		return;
+	memset(&i915_xd_to_test_run, 0, sizeof(i915_xd_to_test_run));
+	i915_xd_to_test_light(0U, I915_XD_TO_TEST_FUNC_DP_TC1);
+	i915_xd_to_test_base(&firmware);
+	firmware.lit_pipes = 1U;
+	firmware.pipe[0].state = I915_XD_FW_PIPE_LIT;
+
+	/* Sanitizes. */
+	drv_i915_xd_firmware_sanitize(&i915_xd_to_test_io, platform, NULL, &firmware, &report);
+	i915_host_check(report.plls_kept == 1 && report.plls_off == 0U && (i915_xd_fake_get(I915_XD_DPLL0_ENABLE) & I915_XD_PLL_ENABLE) != 0U,
+			"sanitize unknown: a lit port's PLL unknown, every PLL kept");
+	i915_host_check((report.clocks_gated & (1U << 3U)) == 0U && (report.clocks_gated & 1U) != 0U,
+			"sanitize unknown: TC1's clock kept, DDI A's gated");
+}
+
+/* The sequencer's status follows its power request at once. */
+static void
+i915_xd_to_test_pps_status(
+	uint32_t offset,
+	uint32_t value,
+	void *context)
+{
+	/* On and idle with the power, off and idle without. */
+	(void)offset;
+	(void)context;
+	if ((value & I915_XD_PP_CONTROL_POWER_ON) != 0U) {
+		i915_xd_fake_set(I915_XD_PP_STATUS(0U), I915_XD_PP_STATUS_ON | I915_XD_PP_STATUS_STATE_ON_IDLE);
+	} else {
+		i915_xd_fake_set(I915_XD_PP_STATUS(0U), I915_XD_PP_STATUS_STATE_OFF_IDLE);
+	}
+}
+
+/*
+ * The takeover of the 5330's lit panel through the display: the
+ * backlight off (the sequencer's enable, then the PWM at duty 0), the
+ * sink to D3, the panel's power off, the pipe dark.
+ */
+static void
+i915_xd_to_test_takeover(void)
+{
+	static struct i915_xd xd;
+	static struct i915_xd_fake_aux sink;
+	struct i915_xd_takeover_outcome outcome;
+	struct i915_xd_io_hooks hooks;
+	int error;
+
+	/* The display: a window on the model and the 5330's description; no VBT, no DMC. */
+	i915_xd_fake_reset();
+	memset(&xd, 0, sizeof(xd));
+	i915_xd_fake_hooks(&hooks);
+	drv_i915_xd_io_init(&xd.io, NULL, NULL);
+	drv_i915_xd_io_set_hooks(&xd.io, &hooks);
+	error = drv_i915_xd_platform_choose(I915_XD_TO_TEST_ADLP, I915_XD_TO_TEST_ADLP_REVID, 0, 0U, &xd.choice);
+	i915_host_check(error == 0, "takeover: the 5330's description");
+	if (error != 0)
+		return;
+	xd.chosen = 1;
+
+	/* The panel lit on pipe A: powered with its backlight, the PWM running, the sink behind AUX A. */
+	memset(&i915_xd_to_test_run, 0, sizeof(i915_xd_to_test_run));
+	i915_xd_to_test_light(0U, I915_XD_TO_TEST_FUNC_EDP);
+	i915_xd_fake_set(I915_XD_PP_CONTROL(0U), I915_XD_PP_CONTROL_UNLOCK | I915_XD_PP_CONTROL_POWER_ON | I915_XD_PP_CONTROL_RESET | I915_XD_PP_CONTROL_BACKLIGHT);
+	i915_xd_fake_set(I915_XD_PP_STATUS(0U), I915_XD_PP_STATUS_ON | I915_XD_PP_STATUS_STATE_ON_IDLE);
+	i915_xd_fake_rule_call(I915_XD_PP_CONTROL(0U), i915_xd_to_test_pps_status, NULL);
+	i915_xd_fake_set(I915_XD_SBLC_PWM_CTL(0U), I915_XD_SBLC_PWM_ENABLE);
+	i915_xd_fake_set(I915_XD_SBLC_PWM_FREQ(0U), 96000U);
+	i915_xd_fake_set(I915_XD_SBLC_PWM_DUTY(0U), 48000U);
+	memset(&sink, 0, sizeof(sink));
+	sink.dpcd[I915_XD_DPCD_SET_POWER] = I915_XD_DPCD_POWER_D0;
+	i915_xd_fake_aux_attach(&sink, 0U);
+	i915_xd_to_test_base(&xd.firmware);
+	xd.firmware.lit_pipes = 1U;
+	xd.firmware.pipe[0].state = I915_XD_FW_PIPE_LIT;
+	xd.firmware.pipe[0].ddi_function = I915_XD_TO_TEST_FUNC_EDP;
+	xd.firmware.panel_ddi = 0;
+
+	/* Takes it over. */
+	error = drv_i915_xd_takeover(&xd, &outcome);
+	i915_host_check(error == 0 && outcome.lit == 1U && outcome.stopped == 1U && outcome.still_lit == 0U && xd.firmware.lit_pipes == 0U,
+			"takeover: pipe A found lit and stopped, nothing left lit");
+	i915_host_check((i915_xd_fake_get(I915_XD_SBLC_PWM_CTL(0U)) & I915_XD_SBLC_PWM_ENABLE) == 0U && i915_xd_fake_get(I915_XD_SBLC_PWM_DUTY(0U)) == 0U,
+			"takeover: the PWM stopped at duty 0");
+	i915_host_check(sink.dpcd[I915_XD_DPCD_SET_POWER] == I915_XD_DPCD_POWER_D3, "takeover: the sink put to sleep (D3) over AUX A");
+	i915_host_check((i915_xd_fake_get(I915_XD_PP_CONTROL(0U)) & (I915_XD_PP_CONTROL_POWER_ON | I915_XD_PP_CONTROL_BACKLIGHT | I915_XD_PP_CONTROL_FORCE_VDD | I915_XD_PP_CONTROL_RESET)) == 0U &&
+			(i915_xd_fake_get(I915_XD_PP_STATUS(0U)) & I915_XD_PP_STATUS_ON) == 0U,
+			"takeover: the panel's power, VDD, reset and backlight enable off, the panel off");
+	i915_host_check((i915_xd_fake_get(I915_XD_TRANS_CONF(0U)) & I915_XD_TRANS_CONF_ENABLE) == 0U && (i915_xd_fake_get(I915_XD_DPLL0_ENABLE) & I915_XD_PLL_ENABLE) == 0U,
+			"takeover: the transcoder and DPLL0 off");
+
+	/* Nothing lit: nothing to do. */
+	error = drv_i915_xd_takeover(&xd, &outcome);
+	i915_host_check(error == 0 && outcome.lit == 0U && outcome.stopped == 0U, "takeover: again, nothing lit and nothing done");
+
+	/* A device without a description cannot stop a lit pipe. */
+	xd.chosen = 0;
+	xd.firmware.lit_pipes = 1U;
+	error = drv_i915_xd_takeover(&xd, &outcome);
+	i915_host_check(error == ENODEV && outcome.still_lit == 1U, "takeover: no description, the lit pipe left (ENODEV)");
 }

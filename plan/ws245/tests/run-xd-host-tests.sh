@@ -11,7 +11,8 @@
 #   host-xd-survey-test    the survey of the first picture on the register model, and the start's record of the display
 #                          writes (src/drivers/gpu/i915/mmio-record.c)
 #   host-xd-aux-test       the AUX channel: the control word, native and I2C-over-AUX transactions through the data
-#                          words, the sink's replies, the tries and waits of the channel's faults
+#                          words, the sink's replies, the tries and waits of the channel's faults; the native DPCD
+#                          reads and writes (the wake-up read, messages of 16 bytes, retries)
 #   host-xd-gmbus-test     the GMBUS controller: EDID reads with an offset and the segment pointer, the command words,
 #                          the interrupt enables, the target's refusals and the controller's faults
 #   host-xd-panel-test     the panel: the backlight PWM's period, lowest duty, scaling, controllers, start and stop;
@@ -39,7 +40,9 @@
 #                          the faults that stop a start
 #   host-xd-takeover-test  the firmware's display: the decision on each start situation, the readout of an
 #                          Alder Lake-P (which writes nothing), the output's kind by the ports, the framebuffer's pages;
-#                          the takeover's stop of a lit pipe in the disable order, and the VGA plane's
+#                          the takeover's stop of a lit pipe in the disable order, and the VGA plane's; the sanitize
+#                          of what the firmware left unused (clocks, PLLs, the compressor); the display's takeover
+#                          of the lit panel (backlight, sink to sleep, panel power)
 #   host-xd-screen-test    a screen's plan: the 5330's panel against the older check's numbers, the refusals (CD clock,
 #                          voltage, QGV, sinks, links), HDMI and Type-C DisplayPort links, Tiger Lake's pixel rate rule
 # The check against the Linux tree itself is plan/ws245/tests/check-xd-regs-linux.sh (needs the unpacked tree).

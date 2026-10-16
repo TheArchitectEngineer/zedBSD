@@ -32,10 +32,7 @@
 struct i915_lcd_world;
 struct i915_takeover_world;
 
-i915_reg_t drv_i915_hsw_chicken_trans_reg(struct drm_i915_private *i915, enum transcoder cpu_transcoder);
 void drv_i915_ddi_compute_min_voltage_level(struct intel_crtc_state *crtc_state);
-void drv_i915_ddi_sanitize_encoder_pll_mapping(struct i915_takeover_world *takeover, struct intel_encoder *encoder);
-bool drv_i915_ddi_connector_get_hw_state(struct intel_connector *intel_connector);
 
 void drv_i915_encoders_pre_pll_enable(struct intel_atomic_state *state, struct intel_crtc *crtc);
 void drv_i915_encoders_pre_enable(struct intel_atomic_state *state, struct intel_crtc *crtc);

@@ -224,6 +224,22 @@ void drv_i915_xd_firmware_classify(const struct i915_xd_platform *platform, int 
 const char *drv_i915_xd_firmware_output_name(unsigned output);
 void drv_i915_xd_firmware_log(const struct i915_xd_firmware *firmware);
 int drv_i915_xd_takeover_stop(struct i915_xd_io *io, const struct i915_xd_platform *platform, const struct i915_xd_dmc *dmc, struct i915_xd_firmware *firmware, unsigned pipe, const struct i915_xd_takeover_hooks *hooks, struct i915_xd_takeover_report *report);
+/*
+ * What the sanitize of the firmware's display changed: the pipes whose
+ * DMC it switched on, the ports whose clock it gated, the PLLs it turned
+ * off (bit n = the platform's PLL n), whether the frame buffer compressor
+ * was turned off, and whether PLLs were left because a lit port's PLL
+ * could not be read.
+ */
+struct i915_xd_sanitize_report {
+	unsigned dmc_pipes;
+	unsigned clocks_gated;
+	unsigned plls_off;
+	int fbc_off;
+	int plls_kept;
+};
+
+void drv_i915_xd_firmware_sanitize(struct i915_xd_io *io, const struct i915_xd_platform *platform, const struct i915_xd_dmc *dmc, const struct i915_xd_firmware *firmware, struct i915_xd_sanitize_report *report);
 int drv_i915_xd_vga_off(struct i915_xd_io *io, int (*screen_off)(void *context), void *context);
 
 #endif /* DRIVERS_GPU_I915_DISPLAY_XD_TAKEOVER_H */

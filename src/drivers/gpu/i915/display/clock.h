@@ -21,7 +21,6 @@
 
 struct i915_xd;
 
-int drv_i915_adlp_display_step(uint8_t revid);
 void drv_i915_init_cdclk_hooks(struct i915_cdclk_dev *cd, struct i915_xd *xd);
 int drv_i915_bxt_calc_cdclk(struct i915_cdclk_dev *cd, int min_cdclk);
 int drv_i915_bxt_calc_cdclk_pll_vco(struct i915_cdclk_dev *cd, int cdclk);

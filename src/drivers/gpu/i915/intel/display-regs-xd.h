@@ -1053,6 +1053,17 @@
 #define I915_XD_PCS_DW1_DCC_RUN_ONCE		0U
 
 /*
+ * The frame buffer compressor of pipe A (display 12 and 13 have that one
+ * only): its control register and enable.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (ILK_DPFC_CONTROL, DPFC_CTL_EN); intel_display_device.c (the fbc_mask
+ * of display 12 and 13: FBC A).
+ */
+#define I915_XD_DPFC_CONTROL_A			0x43208U
+#define I915_XD_DPFC_CONTROL_ENABLE		0x80000000U
+
+/*
  * The display 12 chickens of the start: the frame buffer compression
  * chicken of pipe A (the compressor's dummy pixel) and the clock request
  * policy (the memory-up override).

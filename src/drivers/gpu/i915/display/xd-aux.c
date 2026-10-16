@@ -13,6 +13,7 @@
 #include "xd-aux.h"
 #include "xd-io.h"
 
+#include "../intel/display-dpcd-xd.h"
 #include "../intel/display-regs-xd.h"
 
 #include <uapi/errno.h>
@@ -54,6 +55,22 @@
 #define I915_XD_AUX_SYNC_PULSES		32U
 #define I915_XD_AUX_FAST_WAKE_PULSES	18U
 
+/*
+ * The patience of a native DPCD access: the most messages one access
+ * sends, and the rest between two messages when the last one did not
+ * end in an unanswered try (the channel already waited for those); and
+ * the most bytes one message carries.
+ *
+ * Values referenced: Linux v6.8.12
+ * drivers/gpu/drm/display/drm_dp_helper.c (drm_dp_dpcd_access: the 32
+ * tries, AUX_RETRY_INTERVAL of 500 us); include/drm/display/drm_dp.h
+ * (DP_AUX_MAX_PAYLOAD_BYTES).
+ */
+#define I915_XD_DPCD_TRIES		32U
+#define I915_XD_DPCD_REST_US		500U
+#define I915_XD_DPCD_CHUNK		16U
+
+static int i915_xd_dpcd_message(struct i915_xd_aux *aux, struct i915_xd_io *io, unsigned request, uint32_t address, uint8_t *data, unsigned size);
 static int i915_xd_aux_wait_idle(struct i915_xd_io *io, uint32_t control, uint32_t *status);
 static uint32_t i915_xd_aux_send(struct i915_xd_aux *aux, struct i915_xd_io *io, const struct i915_xd_aux_message *message, uint32_t control);
 static uint32_t i915_xd_aux_try(struct i915_xd_aux *aux, struct i915_xd_io *io, const struct i915_xd_aux_message *message, uint32_t control_word);
@@ -236,6 +253,193 @@ drv_i915_xd_aux_exchange(
 
 	/* Succeeded: the reply is in the caller's room. */
 	result->reply_bytes = size;
+}
+
+/*
+ * Reads size bytes of the sink's DPCD from address with native AUX
+ * reads of at most 16 bytes each.  A one-byte read of the DPCD revision
+ * goes first and its byte is thrown away: some sinks corrupt the first
+ * access after they woke from power saving.  The caller holds the
+ * channel usable (see xd-aux.h).  Returns 0, or the error of the first
+ * message that did not succeed (EIO for a refusal or a damaged reply,
+ * ETIMEDOUT when the sink never answered, EBUSY for a busy channel).
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/display/drm_dp_helper.c (drm_dp_dpcd_read,
+ * drm_dp_dpcd_probe).
+ */
+int
+drv_i915_xd_dpcd_read(
+	struct i915_xd_aux *aux,
+	struct i915_xd_io *io,
+	uint32_t address,
+	uint8_t *buffer,
+	unsigned size)
+{
+	uint8_t thrown;
+	unsigned done;
+	unsigned chunk;
+	int error;
+
+	/* The throw-away read of the revision wakes the sink. */
+	error = i915_xd_dpcd_message(aux, io, I915_XD_AUX_NATIVE_READ, I915_XD_DPCD_REV, &thrown, 1U);
+	if (error != 0)
+		return error;
+
+	/* Reads the range a message at a time. */
+	for (done = 0U; done < size; done += chunk) {
+		chunk = size - done;
+		if (chunk > I915_XD_DPCD_CHUNK)
+			chunk = I915_XD_DPCD_CHUNK;
+
+		error = i915_xd_dpcd_message(aux, io, I915_XD_AUX_NATIVE_READ, address + done, buffer + done, chunk);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the bytes are in the buffer. */
+	return 0;
+}
+
+/*
+ * Writes size bytes to the sink's DPCD at address with native AUX writes
+ * of at most 16 bytes each.  Returns 0 or an error as
+ * drv_i915_xd_dpcd_read().
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/display/drm_dp_helper.c (drm_dp_dpcd_write).
+ */
+int
+drv_i915_xd_dpcd_write(
+	struct i915_xd_aux *aux,
+	struct i915_xd_io *io,
+	uint32_t address,
+	const uint8_t *buffer,
+	unsigned size)
+{
+	uint8_t data[I915_XD_DPCD_CHUNK];
+	unsigned done;
+	unsigned chunk;
+	unsigned index;
+	int error;
+
+	/* Writes the range a message at a time, from a copy the message may carry. */
+	for (done = 0U; done < size; done += chunk) {
+		chunk = size - done;
+		if (chunk > I915_XD_DPCD_CHUNK)
+			chunk = I915_XD_DPCD_CHUNK;
+
+		for (index = 0U; index < chunk; index++)
+			data[index] = buffer[done + index];
+
+		error = i915_xd_dpcd_message(aux, io, I915_XD_AUX_NATIVE_WRITE, address + done, data, chunk);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the sink took the bytes. */
+	return 0;
+}
+
+/*
+ * Sends one native DPCD message until the sink acknowledges it or the
+ * tries run out: the header (request and address, then the byte count
+ * less one), the data of a write, and for a read the reply's data copied
+ * out.  A refused message, a deferred one, a damaged reply and a busy
+ * channel are sent again after a rest; one the sink did not answer is
+ * sent again at once.  Returns 0 or the error of the first failed try.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/display/drm_dp_helper.c (drm_dp_dpcd_access);
+ * drivers/gpu/drm/i915/display/intel_dp_aux.c (intel_dp_aux_transfer,
+ * intel_dp_aux_header).
+ */
+static int
+i915_xd_dpcd_message(
+	struct i915_xd_aux *aux,
+	struct i915_xd_io *io,
+	unsigned request,
+	uint32_t address,
+	uint8_t *data,
+	unsigned size)
+{
+	struct i915_xd_aux_message message;
+	struct i915_xd_aux_result result;
+	uint8_t send[4U + I915_XD_DPCD_CHUNK];
+	uint8_t reply[1U + I915_XD_DPCD_CHUNK];
+	unsigned reply_code;
+	unsigned index;
+	unsigned try;
+	int first;
+	int error;
+
+	/* The header, then a write's data. */
+	send[0] = (uint8_t)((request << 4) | ((address >> 16) & 0xfU));
+	send[1] = (uint8_t)((address >> 8) & 0xffU);
+	send[2] = (uint8_t)(address & 0xffU);
+	send[3] = (uint8_t)(size - 1U);
+	message.request = send;
+	message.request_bytes = 4U;
+	message.reply = reply;
+	message.reply_room = 1U;
+	if (request == I915_XD_AUX_NATIVE_WRITE) {
+		for (index = 0U; index < size; index++)
+			send[4U + index] = data[index];
+		message.request_bytes = 4U + size;
+		message.reply_room = 2U;
+	} else {
+		message.reply_room = 1U + size;
+	}
+	message.thunderbolt = 0;
+	message.hdcp_key = 0;
+
+	/* Sends the message until the sink takes it. */
+	first = 0;
+	error = 0;
+	for (try = 0U; try < I915_XD_DPCD_TRIES; try++) {
+		/* Rests after a try that the sink answered, or that never left. */
+		if (try != 0U && error != ETIMEDOUT)
+			(void)drv_i915_xd_io_delay(io, I915_XD_DPCD_REST_US);
+
+		drv_i915_xd_aux_exchange(aux, io, &message, &result);
+		switch (result.outcome) {
+		case I915_XD_AUX_SENT:
+			error = EIO;
+			reply_code = ((unsigned)reply[0] >> 4) & I915_XD_AUX_NATIVE_REPLY_MASK;
+			if (reply_code == I915_XD_AUX_NATIVE_ACK) {
+				/* A read must bring back every byte asked for. */
+				if (request == I915_XD_AUX_NATIVE_READ && result.reply_bytes != 1U + size)
+					break;
+
+				if (request == I915_XD_AUX_NATIVE_READ) {
+					for (index = 0U; index < size; index++)
+						data[index] = reply[1U + index];
+				}
+
+				/* Succeeded: the sink took the message. */
+				return 0;
+			}
+			break;
+		case I915_XD_AUX_NO_ANSWER:
+			error = ETIMEDOUT;
+			break;
+		case I915_XD_AUX_BUSY:
+		case I915_XD_AUX_UNFINISHED:
+		case I915_XD_AUX_BAD_SIZE:
+			error = EBUSY;
+			break;
+		default:
+			error = EIO;
+			break;
+		}
+
+		/* The error returned is the first one seen. */
+		if (first == 0)
+			first = error;
+	}
+
+	/* Reports the first error of a message the sink never took. */
+	return first;
 }
 
 /*

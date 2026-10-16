@@ -560,6 +560,126 @@ drv_i915_xd_takeover_stop(
 }
 
 /*
+ * Corrects what the firmware left on but unused, before the driver starts
+ * using the display: a lit pipe gets its pipe DMC, the frame buffer
+ * compressor is turned off (the driver does not use it), every port that
+ * drives no lit pipe has its clock gated, and every PLL no lit pipe runs
+ * on is turned off.  When the PLL of a lit pipe's port cannot be read
+ * (a Type-C port's select is one this code does not know), no PLL is
+ * turned off.  The lit pipes themselves are left as they are: the
+ * takeover stops them.  dmc may be NULL.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_modeset_setup.c
+ * (intel_modeset_setup_hw_state, intel_sanitize_crtc), intel_ddi.c
+ * (intel_ddi_sanitize_encoder_pll_mapping), intel_dpll_mgr.c
+ * (intel_dpll_sanitize_state), intel_fbc.c (intel_fbc_sanitize).
+ */
+void
+drv_i915_xd_firmware_sanitize(
+	struct i915_xd_io *io,
+	const struct i915_xd_platform *platform,
+	const struct i915_xd_dmc *dmc,
+	const struct i915_xd_firmware *firmware,
+	struct i915_xd_sanitize_report *report)
+{
+	const struct i915_xd_port_desc *port;
+	const struct i915_xd_pll_desc *pll;
+	struct i915_xd_dpll_words words;
+	uint32_t control;
+	uint32_t function;
+	unsigned used_ddis;
+	unsigned used_plls;
+	unsigned select;
+	unsigned index;
+	unsigned pipe;
+	int unknown;
+	int lit;
+	int on;
+
+	/* Nothing changed yet. */
+	kern_memset(report, 0, sizeof(*report));
+	drv_i915_xd_io_step(io, "xd-takeover sanitize");
+
+	/* Each lit pipe's DMC, its DDI, and the PLL that DDI runs on. */
+	used_ddis = 0U;
+	used_plls = 0U;
+	unknown = 0;
+	for (pipe = 0U; pipe < I915_XD_FW_PIPES; pipe++) {
+		if ((firmware->lit_pipes & (1U << pipe)) == 0U)
+			continue;
+
+		if (dmc != NULL && drv_i915_xd_dmc_has(dmc, I915_XD_DMC_PIPE(pipe))) {
+			drv_i915_xd_dmc_pipe(dmc, io, pipe, 1);
+			report->dmc_pipes |= 1U << pipe;
+		}
+
+		function = drv_i915_xd_io_read(io, I915_XD_TRANS_DDI_FUNC_CTL(pipe));
+		select = (function & I915_XD_DDI_FUNC_SELECT) >> I915_XD_FW_DDI_SELECT_SHIFT;
+		if (select == 0U)
+			continue;
+		used_ddis |= 1U << (select - 1U);
+		port = drv_i915_xd_platform_port(platform, select - 1U);
+		if (port == NULL) {
+			unknown = 1;
+			continue;
+		}
+		pll = i915_xd_fw_pll_of(io, platform, port);
+		if (pll == NULL) {
+			unknown = 1;
+			continue;
+		}
+		used_plls |= 1U << (unsigned)(pll - platform->plls);
+	}
+
+	/* The frame buffer compressor. */
+	control = drv_i915_xd_io_read(io, I915_XD_DPFC_CONTROL_A);
+	if ((control & I915_XD_DPFC_CONTROL_ENABLE) != 0U) {
+		drv_i915_xd_io_write(io, I915_XD_DPFC_CONTROL_A, control & ~I915_XD_DPFC_CONTROL_ENABLE);
+		report->fbc_off = 1;
+	}
+
+	/* The clocks of the ports no lit pipe drives. */
+	for (index = 0U; index < platform->nports; index++) {
+		port = &platform->ports[index];
+		if ((used_ddis & (1U << port->ddi)) != 0U)
+			continue;
+
+		/* A port whose clock is gated already needs nothing. */
+		if (port->phy_kind == I915_XD_PHY_COMBO) {
+			on = drv_i915_xd_dpll_mapped(io, platform, port->phy, &select);
+		} else {
+			control = drv_i915_xd_io_read(io, I915_XD_DPCLKA_CFGCR0);
+			on = (control & I915_XD_DPCLKA_TC_OFF((unsigned)port->tc - 1U)) == 0U;
+		}
+		if (!on)
+			continue;
+
+		i915_xd_fw_clock_off(io, platform, port);
+		report->clocks_gated |= 1U << port->ddi;
+	}
+
+	/* The PLLs no lit pipe runs on, unless a lit port's PLL is unknown. */
+	if (unknown) {
+		report->plls_kept = 1;
+		return;
+	}
+	for (index = 0U; index < platform->nplls; index++) {
+		if ((used_plls & (1U << index)) != 0U)
+			continue;
+
+		/* A PLL that is off needs nothing. */
+		pll = &platform->plls[index];
+		lit = drv_i915_xd_dpll_read(io, platform, pll, I915_XD_DPLL_AFC_NONE, &words);
+		if (!lit)
+			continue;
+
+		(void)drv_i915_xd_dpll_disable(io, pll);
+		report->plls_off |= 1U << index;
+	}
+}
+
+/*
  * Turns the VGA plane off: the screen off through the legacy sequencer
  * (screen_off, the caller's: 0, or nonzero when the legacy I/O could not
  * be owned), a settle time, then the VGA plane's disable.  Returns 0, 1

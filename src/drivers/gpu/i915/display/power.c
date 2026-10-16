@@ -646,6 +646,49 @@ drv_i915_power_domain_hw_state_on(
 }
 
 /*
+ * Turns off every power well the firmware left on that nothing references
+ * (intel_power_domains_sanitize_state()), the last well first; each well
+ * is read afresh, not from the recorded state.  Returns how many were
+ * turned off.
+ */
+unsigned
+drv_i915_power_wells_sanitize(
+	struct i915_power_domains *pd,
+	struct i915_pw_ctx *pwc)
+{
+	struct i915_power_well *well;
+	unsigned index;
+	unsigned disabled;
+	int enabled;
+
+	/* Walks the wells from the last. */
+	disabled = 0U;
+	index = pd->num_power_wells;
+	while (index > 0U) {
+		/* An always-on well and a referenced well stay on. */
+		index--;
+		well = &pd->power_wells[index];
+		if (well->always_on != 0)
+			continue;
+		if (well->refcount != 0U)
+			continue;
+
+		/* A well that is off needs nothing. */
+		enabled = drv_i915_power_well_is_enabled(well, pwc);
+		if (enabled == 0)
+			continue;
+
+		/* Disables the unused well. */
+		kern_logf("i915: BIOS left unused %s power well enabled, disabling it\n", well->name);
+		(void)drv_i915_power_well_disable(well, pwc);
+		disabled++;
+	}
+
+	/* Succeeded: the wells turned off. */
+	return disabled;
+}
+
+/*
  * Takes one reference on a display power domain (intel_display_power_get()).
  *
  * The wells of the domain's functions count the reference (a reference

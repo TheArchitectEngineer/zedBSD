@@ -68,7 +68,6 @@ int drv_i915_pmdemand_init(struct i915_display_state *d, int display_ver, struct
  * ==== The bandwidth and watermark text of the modeset ====
  */
 
-void drv_i915_bw_crtc_update(struct intel_bw_state *bw_state, const struct intel_crtc_state *crtc_state);
 int drv_i915_lcd_ms_bw_min_cdclk(struct i915_lcd_modeset *ms);
 unsigned int drv_i915_lcd_ms_bw_data_rate(struct i915_lcd_modeset *ms);
 bool drv_i915_wm_plane_visible(const struct intel_crtc_state *crtc_state, const struct intel_plane_state *plane_state);

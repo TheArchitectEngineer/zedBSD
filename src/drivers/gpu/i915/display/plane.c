@@ -74,7 +74,6 @@ static void i915_icl_plane_update_noarm(struct intel_plane *plane, const struct 
 static void i915_icl_plane_update_arm(struct intel_plane *plane, const struct intel_crtc_state *crtc_state, const struct intel_plane_state *plane_state);
 static void i915_icl_plane_disable_arm(struct intel_plane *plane, const struct intel_crtc_state *crtc_state);
 static int i915_icl_plane_min_cdclk(const struct intel_crtc_state *crtc_state, const struct intel_plane_state *plane_state);
-static bool i915_skl_plane_get_hw_state(struct intel_plane *plane, enum pipe *pipe);
 static bool i915_use_min_ddb(const struct intel_crtc_state *crtc_state, struct intel_plane *plane);
 static unsigned int i915_plane_relative_data_rate(const struct intel_crtc_state *crtc_state, const struct intel_plane_state *plane_state, int color_plane);
 static const struct drm_format_info *i915_xrgb8888_format(void);
@@ -433,36 +432,6 @@ drv_i915_lcd_ms_plane_update_flip(
 }
 
 /*
- * Returns the readout hook of a plane (the Linux skl_plane_get_hw_state()).
- *
- * The hook is static in this file, as in Linux; the takeover registry
- * binds it.
- */
-bool
-(*i915_lcd_plane_get_hw_state(void))(struct intel_plane *plane, enum pipe *pipe)
-{
-	/* Succeeded: reports the hook. */
-	return i915_skl_plane_get_hw_state;
-}
-
-/*
- * Disables a plane for the takeover (the Linux plane->disable_arm() hook,
- * icl_plane_disable_arm()).
- *
- * The Linux intel_plane_disable_noatomic() calls the plane's disable_arm
- * hook; this path has that text and reaches it here, so the takeover
- * really stops the plane.
- */
-void
-drv_i915_lcd_plane_disable_arm(
-	struct intel_plane *plane,
-	const struct intel_crtc_state *crtc_state)
-{
-	/* Writes the disable. */
-	i915_icl_plane_disable_arm(plane, crtc_state);
-}
-
-/*
  * Records the data rates of the plane of a modeset object.
  *
  * The two assignments of the Linux intel_plane_atomic_check_with_state()
@@ -602,55 +571,6 @@ i915_icl_plane_min_cdclk(
 
 	/* Succeeded: two pixels per clock, rounded up. */
 	return DIV_ROUND_UP(pixel_rate, 2);
-}
-
-/*
- * Reads out whether a plane is enabled (the Linux skl_plane_get_hw_state(),
- * the plane's readout hook).
- *
- * A reference on the pipe's power domain is taken only where its well is
- * already on (on the plane's device, the readout's device while the
- * takeover runs); a pipe whose well is off has no enabled plane.
- */
-static bool
-i915_skl_plane_get_hw_state(
-	struct intel_plane *plane,
-	enum pipe *pipe)
-{
-	struct drm_i915_private *dev_priv;
-	enum intel_display_power_domain power_domain;
-	enum plane_id plane_id;
-	intel_wakeref_t wakeref;
-	u32 plane_ctl;
-	bool ret;
-
-	/* Finds the device, the pipe's power domain and the plane. */
-	dev_priv = i915_lcd_to_i915(plane->base.dev);
-	power_domain = POWER_DOMAIN_PIPE(plane->pipe);
-	plane_id = plane->id;
-
-	/* Holds the pipe's well only if it is on already. */
-	wakeref = I915_TAKEOVER_INTEL_DISPLAY_POWER_GET_IF_ENABLED(dev_priv, power_domain);
-	if (!wakeref)
-		return false;
-
-	/* Reads the enable bit and names the plane's pipe. */
-	plane_ctl = i915_lcd_intel_de_read(dev_priv, PLANE_CTL(plane->pipe, plane_id));
-	ret = false;
-	if (plane_ctl & PLANE_CTL_ENABLE)
-		ret = true;
-
-	*pipe = plane->pipe;
-
-	/* Gives the reference back. */
-	i915_lcd_intel_display_power_put(dev_priv, power_domain, wakeref);
-
-	/* Reports a disabled plane. */
-	if (!ret)
-		return false;
-
-	/* Succeeded: the plane is enabled. */
-	return true;
 }
 
 /*

@@ -156,7 +156,10 @@ Resume point: 2026-10-16 の方針（ユーザー「i915は、実装だけ先に
 | [p038](phase038/phase.md) | screen の plan（純関数。eDP・HDMI・DP-ext の 3 種を同じ段で） | in-progress（5 LW。2026-10-16 q1229-i05 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回。拒む 3 条件の判断は旧の check、plan は影） |
 | [p048](phase048/phase.md) | screen の enable/disable の列（3 種を同じ段で。retained） | in-progress（7 LW。2026-10-16 q1229-i05 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回。step の中身は殻、順と失敗の扱いが xd-screen） |
 | [p049](phase049/phase.md) | flip と resident run の契約（EAGAIN・UNPLUGGED・RELIGHT・acquired） | in-progress（4 LW。2026-10-16 q1229-i05 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回） |
-| p050 | 口 `xd.h` と own の file の付け替え（backlight.c を含む）、modeset・state・ddi・dp-sink・pipe・plane・aux・panel・panel-backlight・vblank・takeover の残り・internal.h の Linux の型の削除 | planned（4 LW。5320・SV7 の節目、QEMU の boot-test） |
+| p050a | takeover の readout と sanitize を xd-takeover の record と stop に（takeover.c の registry を消す）。2026-10-16 Q1 の判断で p050 を 4 段に分けた（design の 4 LW を大きく超えるため） | in-progress |
+| [p050b](phase050b/phase.md) | eDP の step の本体を xd の部品（PPS・backlight・AUX・DDI の IO power・訓練の DPCD・WM/DBUF の書き込み・vblank の event）を直に呼ぶ形に | planned |
+| [p050c](phase050c/phase.md) | HDMI と DP-TC の step の本体 | planned |
+| [p050d](phase050d/phase.md) | 口 `xd.h` と own の file の付け替え（backlight.c を含む）、旧 file（modeset・state・ddi・dp-sink・pipe・plane・aux・panel・panel-backlight・vblank・takeover の残り・internal.h の Linux の型）と旧 host 試験（host-dp-test・host-lcd-modeset-test）の削除、oracle の check を xd の試験へ | planned（5320・SV7 の節目、QEMU の boot-test） |
 | p039 | hotplug（xd-hpd。hotplug.c を消す） | planned（6 LW。改訂 5 で p039 を p039・p051 に分けた。節目: HDMI の plug で 2 画面はユーザーの一覧） |
 | p051 | own の output.c の port の規則と head-rules の pipe の規則を platform の記述に（hdmi.c・hdmi-mode.c・head-rules.c を消す） | planned（3 LW） |
 | p040 | Dekel の窓と TC PHY、TC PLL（xd-tc の窓を dkl-phy.c と一緒に入れ替える、clock.c の残りを消す） | planned（5 LW。改訂 5 で p040 を p040・p052 に分けた） |

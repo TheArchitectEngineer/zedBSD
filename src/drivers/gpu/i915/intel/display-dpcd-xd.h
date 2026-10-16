@@ -137,6 +137,37 @@
 #define I915_XD_DPCD_STATUS_SIZE		6U
 
 /*
+ * The sink's power state: D0 (normal operation) and D3 (power down, the
+ * AUX channel still answers), and the mask of the field.
+ *
+ * Values referenced: Linux v6.8.12 include/drm/display/drm_dp.h
+ * (DP_SET_POWER, DP_SET_POWER_D0, DP_SET_POWER_D3, DP_SET_POWER_MASK).
+ */
+#define I915_XD_DPCD_SET_POWER			0x600U
+#define I915_XD_DPCD_POWER_D0			0x01U
+#define I915_XD_DPCD_POWER_D3			0x02U
+#define I915_XD_DPCD_POWER_MASK			0x07U
+
+/*
+ * The AUX message of a native DPCD access: the request codes in the top
+ * of the first byte (with the top four bits of the 20-bit address in its
+ * bottom), and the native reply codes in the top of the reply's first
+ * byte (the field's mask after the shift, acknowledgement, refusal and
+ * the sink's request to retry later).
+ *
+ * Values referenced: Linux v6.8.12 include/drm/display/drm_dp.h
+ * (DP_AUX_NATIVE_WRITE, DP_AUX_NATIVE_READ, DP_AUX_NATIVE_REPLY_MASK,
+ * DP_AUX_NATIVE_REPLY_ACK, DP_AUX_NATIVE_REPLY_NACK,
+ * DP_AUX_NATIVE_REPLY_DEFER).
+ */
+#define I915_XD_AUX_NATIVE_WRITE		0x8U
+#define I915_XD_AUX_NATIVE_READ			0x9U
+#define I915_XD_AUX_NATIVE_REPLY_MASK		0x3U
+#define I915_XD_AUX_NATIVE_ACK			0x0U
+#define I915_XD_AUX_NATIVE_NACK			0x1U
+#define I915_XD_AUX_NATIVE_DEFER		0x2U
+
+/*
  * The repeaters' common range: the structure revision, the repeater
  * count (one bit per count, bit 7 for one repeater), the repeater mode
  * (transparent or not); the eight bytes are read together.  Each

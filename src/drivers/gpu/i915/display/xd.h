@@ -18,8 +18,10 @@
 #ifndef DRIVERS_GPU_I915_DISPLAY_XD_H
 #define DRIVERS_GPU_I915_DISPLAY_XD_H
 
+#include "xd-aux.h"
 #include "xd-dmc.h"
 #include "xd-io.h"
+#include "xd-panel.h"
 #include "xd-platform.h"
 #include "xd-power.h"
 #include "xd-takeover.h"
@@ -59,5 +61,19 @@ void drv_i915_xd_start(struct i915_xd *xd, struct i915_mmio *mmio, struct mutex 
 void drv_i915_xd_south(struct i915_xd *xd, uint16_t product, uint8_t revid, uint16_t pch_id);
 int drv_i915_xd_check_firmware(struct i915_xd *xd, uint64_t aperture_base, uint64_t aperture_size, uint32_t ggtt_pages, uint32_t driver_first_page, uint32_t asls);
 int drv_i915_xd_read_opregion(struct i915_xd *xd, uint32_t asls, uint8_t *opregion_copy, uint8_t *vbt_copy, size_t vbt_room);
+
+/*
+ * What the takeover of the firmware's display did: the pipes it found
+ * lit, the pipes it stopped, the pipes still lit afterwards, and the
+ * error of the first pipe that could not be stopped (0 for none).
+ */
+struct i915_xd_takeover_outcome {
+	unsigned lit;
+	unsigned stopped;
+	unsigned still_lit;
+	int error;
+};
+
+int drv_i915_xd_takeover(struct i915_xd *xd, struct i915_xd_takeover_outcome *outcome);
 
 #endif /* DRIVERS_GPU_I915_DISPLAY_XD_H */

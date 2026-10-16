@@ -181,7 +181,7 @@ static void i915_display_dmc_init(struct i915_device *device);
 static int i915_display_noirq_tail(struct i915_device *device);
 static int i915_display_nogem_front(struct i915_device *device);
 static void i915_display_setup_outputs(struct i915_device *device);
-static void i915_display_readout(struct i915_device *device);
+static void i915_display_sanitize(struct i915_device *device);
 static int i915_display_driver_probe(struct i915_display *display, int intel_irqs_enabled);
 static int i915_skl_watermark_ipc_init(struct i915_mmio *m, int has_ipc, int platform_can);
 static uint32_t i915_display_rmw(struct i915_mmio *m, uint32_t reg, uint32_t clear, uint32_t set);
@@ -552,8 +552,8 @@ drv_i915_display_irq_log(
  * Runs the survey and the display nogem probe (intel_display_driver_probe_nogem()).
  *
  * The survey records what the firmware left (diagnostics only).  Then the
- * front section, intel_setup_outputs(), and the readout and the sanitize
- * of intel_modeset_setup_hw_state() run.  Returns 0, or the
+ * front section, intel_setup_outputs(), and the sanitize of what the
+ * firmware left run.  Returns 0, or the
  * front section's error with the failing step in device->stage.
  */
 int
@@ -575,9 +575,9 @@ drv_i915_display_init_nogem(
 	if (error != 0)
 		return error;
 
-	/* The outputs, then the readout and the sanitize of the hardware state. */
+	/* The outputs, then the sanitize of what the firmware left. */
 	i915_display_setup_outputs(device);
-	i915_display_readout(device);
+	i915_display_sanitize(device);
 
 	/* Succeeded: intel_display_driver_probe_nogem() returns 0. */
 	return 0;
@@ -2178,51 +2178,47 @@ i915_display_setup_outputs(
 }
 
 /*
- * intel_modeset_setup_hw_state(): readout and sanitize.
- *
- * The reference takes a POWER_DOMAIN_INIT reference around the whole of
- * it; the init reference is still held here.  The sanitize turns back off
- * what the firmware left unused or inconsistent; on a quiescent device
- * every step is a no-op.
+ * Corrects what the firmware left on but unused (the sanitize half of
+ * intel_modeset_setup_hw_state()) through the xd takeover's record: a lit
+ * pipe's DMC, the frame buffer compressor, the clocks of the ports and
+ * the PLLs no lit pipe uses; and, when nothing is lit, the power wells
+ * nothing references.  The lit pipes are left to the takeover.
  */
 static void
-i915_display_readout(
+i915_display_sanitize(
 	struct i915_device *device)
 {
+	struct i915_xd_sanitize_report report;
 	struct i915_display *display;
-	struct i915_display_nogem *nogem;
-	struct i915_gt *gt;
-	uint8_t revid;
+	unsigned wells;
 
 	display = device->display;
-	gt = &device->gt;
-	nogem = &display->nogem;
 
-	/* The readout half. */
-	drv_i915_modeset_readout_hw_state(nogem, (int)gt->display_ver, &gt->mmio, &display->power_domains, &display->pwc);
-	kern_logf("i915: readout: crtcs=%u active_pipes=0x%x planes_visible=%u encoders_linked=%u dplls_on=%u (detail readout unimplemented: %d)\n",
-	    nogem->readout_crtcs,
-	    nogem->active_pipes,
-	    nogem->readout_planes_visible,
-	    nogem->readout_encoders_linked,
-	    nogem->readout_dplls_on,
-	    nogem->readout_detail_unimplemented);
+	/* A device without a description has no xd parts to correct with. */
+	kern_memset(&report, 0, sizeof(report));
+	if (display->xd.chosen)
+		drv_i915_xd_firmware_sanitize(&display->xd.io, display->xd.choice.platform, &display->xd.dmc, &display->xd.firmware, &report);
 
-	/* The sanitize half, with the stepping from the live configuration space. */
-	revid = drv_i915_pci_read8(&gt->pci, I915_PCI_REVISION);
-	drv_i915_modeset_sanitize_hw_state(nogem, (int)gt->display_ver, drv_i915_adlp_display_step(revid), display->dstate.fbc_mask, &gt->mmio, &display->power_domains, &display->pwc);
-	kern_logf("i915: sanitize: vblank_resets=%u dmc_pipes=%u vblank_on=%u fbc_deact=%u enc_clk_gated=%u dplls_disabled=%u wells_disabled=%u cmtg_wa=%d early_was=%d wm_read=%d (crtc_disable_noatomic needed: %d)\n",
-	    nogem->vblank_resets,
-	    nogem->dmc_pipes_enabled,
-	    nogem->vblank_on_count,
-	    nogem->fbc_deactivated,
-	    nogem->encoder_clocks_gated,
-	    nogem->dplls_disabled,
-	    nogem->wells_disabled,
-	    nogem->cmtg_wa_applied,
-	    nogem->early_display_was_applied,
-	    nogem->wm_hw_state_read,
-	    nogem->crtc_disable_noatomic_unimplemented);
+	/*
+	 * The wells nothing references: with a lit pipe its DDI IO and AUX
+	 * wells look unused, and turning them off under the running pipe
+	 * would keep the takeover from stopping it, so they wait for the
+	 * takeover.
+	 */
+	wells = 0U;
+	if (display->xd.firmware.lit_pipes != 0U)
+		kern_logf("i915: power wells: kept (lit pipes 0x%x: the firmware display is left to the takeover)\n", display->xd.firmware.lit_pipes);
+	else
+		wells = drv_i915_power_wells_sanitize(&display->power_domains, &display->pwc);
+
+	kern_logf("i915: sanitize: lit pipes 0x%x, dmc pipes 0x%x, fbc off %d, clocks gated 0x%x, PLLs off 0x%x%s, wells off %u\n",
+	    display->xd.firmware.lit_pipes,
+	    report.dmc_pipes,
+	    report.fbc_off,
+	    report.clocks_gated,
+	    report.plls_off,
+	    report.plls_kept ? " (kept: a lit port's PLL is unknown)" : "",
+	    wells);
 }
 
 /*
@@ -2241,7 +2237,6 @@ i915_display_driver_probe(
 	struct i915_mmio *m;
 	int display_ver;
 	unsigned i;
-	unsigned pipe;
 
 	p = &display->dprobe;
 	nogem = &display->nogem;
@@ -2253,11 +2248,7 @@ i915_display_driver_probe(
 	 * state recomputed by an atomic commit.  With no active crtc the commit
 	 * carries nothing and returns 0.
 	 */
-	p->active_crtcs = 0U;
-	for (pipe = 0U; pipe < 32U; pipe++) {
-		if ((nogem->active_pipes & (1U << pipe)) != 0U)
-			p->active_crtcs++;
-	}
+	p->active_crtcs = (unsigned)__builtin_popcount(display->xd.firmware.lit_pipes);
 
 	/* The reference only logs a failed initial modeset and continues. */
 	if (p->active_crtcs != 0U) {

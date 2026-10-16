@@ -30,6 +30,7 @@ int drv_i915_power_well_by_id(const struct i915_power_domains *pd, int id);
 int drv_i915_power_well_enable(struct i915_power_well *well, struct i915_pw_ctx *pwc);
 int drv_i915_power_well_disable(struct i915_power_well *well, struct i915_pw_ctx *pwc);
 int drv_i915_power_well_is_enabled(struct i915_power_well *well, struct i915_pw_ctx *pwc);
+unsigned drv_i915_power_wells_sanitize(struct i915_power_domains *pd, struct i915_pw_ctx *pwc);
 void drv_i915_power_well_sync_hw(struct i915_power_well *well, struct i915_pw_ctx *pwc);
 
 int drv_i915_display_power_is_enabled(struct i915_power_domains *pd, enum i915_power_domain domain, struct i915_pw_ctx *pwc);

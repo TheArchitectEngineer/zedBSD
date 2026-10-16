@@ -14,6 +14,9 @@
 #include "display-internal.h"
 #include "xd.h"
 
+#include "../intel/display-dpcd-xd.h"
+#include "../intel/display-regs-xd.h"
+
 #include "bootloader/include/amd64-handoff.h"
 
 #include <hal/hal.h>
@@ -32,6 +35,32 @@ static const char *i915_xd_vbt_source_name(unsigned source);
 static int i915_xd_hypervisor(void);
 static int i915_xd_vtd_read(void *context, uint64_t base, uint32_t *version, uint32_t *status, uint32_t *protect);
 static int i915_xd_panel_ddi(const struct i915_xd *xd);
+static unsigned i915_xd_panel_controller(struct i915_xd *xd);
+static void i915_xd_takeover_backlight_off(void *context, unsigned pipe);
+static void i915_xd_takeover_sink_after(void *context, unsigned pipe);
+static void i915_xd_takeover_panel_off(void *context, unsigned pipe);
+
+/*
+ * What the hooks of a takeover's stop work with: the display, the
+ * stopped pipe's DDI, and the panel's power sequencer and its waits.
+ */
+struct i915_xd_takeover_ctx {
+	struct i915_xd *xd;
+	unsigned ddi;
+	unsigned pps;
+	struct i915_xd_pps_waits waits;
+};
+
+/*
+ * The panel power sequencers of the south displays of display 12 and 13
+ * (ICP to ADP), and whether the second one shares its pins.
+ *
+ * Values referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_pps.c (intel_num_pps,
+ * intel_pps_is_valid).
+ */
+#define I915_XD_PANEL_SEQUENCERS	2U
+#define I915_XD_PANEL_SEQUENCER_MUXED	1
 
 /*
  * Prepares the xd display of a device and chooses its description.
@@ -385,4 +414,225 @@ i915_xd_panel_ddi(
 
 	/* Succeeded: no eDP child, so DDI A. */
 	return 0;
+}
+
+/*
+ * Takes the firmware's display over: every pipe the firmware left lit
+ * is stopped in the order an output is disabled
+ * (drv_i915_xd_takeover_stop).  A panel pipe's backlight goes off first
+ * and its power last; a DisplayPort sink is put to sleep before its port
+ * stops.  An HDMI sink that was scrambling ends it by itself once the
+ * scrambled clock is gone, so it is not told.  The caller holds the
+ * display's INIT power reference (every well on and the display out of
+ * its deep power states), which is what the AUX channel and the panel's
+ * sequencer need; no other reference is taken or given back.  Returns 0
+ * when every lit pipe was stopped, or the error of the first that was
+ * not (outcome says which pipes are still lit).
+ */
+int
+drv_i915_xd_takeover(
+	struct i915_xd *xd,
+	struct i915_xd_takeover_outcome *outcome)
+{
+	struct i915_xd_takeover_hooks hooks;
+	struct i915_xd_takeover_report report;
+	struct i915_xd_takeover_ctx ctx;
+	struct i915_xd_pps_delays firmware;
+	struct i915_xd_pps_delays vbt;
+	struct i915_xd_pps_delays program;
+	uint32_t function;
+	unsigned pipe;
+	int error;
+
+	/* Nothing stopped yet. */
+	kern_memset(outcome, 0, sizeof(*outcome));
+	outcome->lit = xd->firmware.lit_pipes;
+
+	/* A device without a description has no parts to stop its pipes with. */
+	if (!xd->chosen) {
+		outcome->still_lit = outcome->lit;
+		if (outcome->lit != 0U)
+			outcome->error = ENODEV;
+		return outcome->error;
+	}
+
+	/*
+	 * The panel's sequencer, and how long its backlight takes to go
+	 * dark: the delays the firmware programmed (the VBT's do not apply
+	 * to the firmware's sequence).
+	 */
+	kern_memset(&ctx, 0, sizeof(ctx));
+	ctx.xd = xd;
+	ctx.pps = i915_xd_panel_controller(xd);
+	drv_i915_xd_pps_read_delays(&xd->io, ctx.pps, &firmware);
+	kern_memset(&vbt, 0, sizeof(vbt));
+	drv_i915_xd_pps_choose(&firmware, &vbt, &program, &ctx.waits);
+
+	/* The hooks of the parts the stop does not own. */
+	kern_memset(&hooks, 0, sizeof(hooks));
+	hooks.backlight_off = i915_xd_takeover_backlight_off;
+	hooks.sink_after = i915_xd_takeover_sink_after;
+	hooks.panel_off = i915_xd_takeover_panel_off;
+	hooks.context = &ctx;
+
+	/* Stops each lit pipe, the lowest first. */
+	for (pipe = 0U; pipe < I915_XD_FW_PIPES; pipe++) {
+		if ((xd->firmware.lit_pipes & (1U << pipe)) == 0U)
+			continue;
+
+		/* The DDI the pipe drives, as the firmware check read it. */
+		function = xd->firmware.pipe[pipe].ddi_function;
+		ctx.ddi = i915_xd_field_get(I915_XD_DDI_FUNC_SELECT, function);
+		if (ctx.ddi != 0U)
+			ctx.ddi--;
+
+		error = drv_i915_xd_takeover_stop(&xd->io, xd->choice.platform, &xd->dmc, &xd->firmware, pipe, &hooks, &report);
+		kern_logf("i915: takeover: pipe %c stopped: DDI %d mode %u, PLL %d, late 0x%x (rc %d)\n",
+		    'A' + (int)pipe,
+		    report.ddi,
+		    report.mode,
+		    report.pll,
+		    report.late,
+		    error);
+		if (error != 0) {
+			if (outcome->error == 0)
+				outcome->error = error;
+			continue;
+		}
+
+		outcome->stopped |= 1U << pipe;
+	}
+
+	/* What stays lit. */
+	outcome->still_lit = xd->firmware.lit_pipes;
+	if (outcome->still_lit != 0U && outcome->error == 0)
+		outcome->error = EBUSY;
+
+	/* Succeeded when nothing stays lit. */
+	return outcome->error;
+}
+
+/*
+ * The panel's power sequencer and backlight controller: the VBT's
+ * backlight controller names both, as the panel's power and its
+ * backlight are one block of the south display; without a VBT, the
+ * sequencer that has the panel powered, then the first one.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_pps.c (bxt_power_sequencer_idx,
+ * bxt_initial_pps_idx).
+ */
+static unsigned
+i915_xd_panel_controller(
+	struct i915_xd *xd)
+{
+	const struct i915_xd_vbt_child *child;
+	struct i915_xd_vbt_panel panel;
+	int found;
+	int error;
+
+	/* The VBT's controller of the panel's output, when it is one the display has. */
+	if (xd->vbt_parsed) {
+		child = drv_i915_xd_vbt_child(&xd->vbt, (unsigned)i915_xd_panel_ddi(xd));
+		error = EINVAL;
+		if (child != NULL)
+			error = drv_i915_xd_vbt_panel(&xd->vbt, child, NULL, 0U, &panel);
+		if (error == 0 && panel.backlight_controller < I915_XD_PANEL_SEQUENCERS &&
+		    drv_i915_xd_pps_usable(&xd->io, panel.backlight_controller, I915_XD_PANEL_SEQUENCERS, I915_XD_PANEL_SEQUENCER_MUXED))
+			return panel.backlight_controller;
+	}
+
+	/* The sequencer that has the panel powered. */
+	found = drv_i915_xd_pps_find(&xd->io, I915_XD_PANEL_SEQUENCERS, I915_XD_PPS_FIND_POWERED);
+	if (found >= 0)
+		return (unsigned)found;
+
+	/* Succeeded: the first one. */
+	return 0U;
+}
+
+/*
+ * A takeover's panel backlight off: the sequencer's backlight enable,
+ * the backlight's off delay, then the PWM at duty 0.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_pps.c (intel_pps_backlight_off),
+ * intel_backlight.c (intel_backlight_disable, cnp_disable_backlight).
+ */
+static void
+i915_xd_takeover_backlight_off(
+	void *context,
+	unsigned pipe)
+{
+	struct i915_xd_takeover_ctx *ctx;
+	struct i915_xd_backlight backlight;
+
+	(void)pipe;
+
+	/* The sequencer's enable, and the time the panel takes to go dark. */
+	ctx = context;
+	drv_i915_xd_pps_backlight(&ctx->xd->io, ctx->pps, 0);
+	(void)drv_i915_xd_io_delay(&ctx->xd->io, ctx->waits.backlight_off_ms * 1000U);
+
+	/* The PWM, at duty 0. */
+	drv_i915_xd_backlight_read(&backlight, &ctx->xd->io, ctx->pps);
+	drv_i915_xd_backlight_disable(&backlight, &ctx->xd->io, 0U);
+}
+
+/*
+ * A takeover's DisplayPort sink to sleep (D3) over its port's AUX
+ * channel; a sink that does not answer is only logged.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_dp.c (intel_dp_set_power).
+ */
+static void
+i915_xd_takeover_sink_after(
+	void *context,
+	unsigned pipe)
+{
+	const struct i915_xd_port_desc *port;
+	struct i915_xd_takeover_ctx *ctx;
+	struct i915_xd_aux aux;
+	uint8_t power;
+	int error;
+
+	/* The port's AUX channel. */
+	ctx = context;
+	port = drv_i915_xd_platform_port(ctx->xd->choice.platform, ctx->ddi);
+	if (port == NULL)
+		return;
+	error = drv_i915_xd_aux_init(&aux, port->aux);
+	if (error != 0)
+		return;
+
+	/* The sink to D3. */
+	power = I915_XD_DPCD_POWER_D3;
+	error = drv_i915_xd_dpcd_write(&aux, &ctx->xd->io, I915_XD_DPCD_SET_POWER, &power, 1U);
+	if (error != 0)
+		kern_logf("i915: takeover: pipe %c: the sink did not go to sleep (rc %d)\n", 'A' + (int)pipe, error);
+}
+
+/*
+ * A takeover's panel power off: VDD held first (the sequencer needs it
+ * to turn the panel off), then the power, the reset, VDD and the
+ * backlight enable together, and the wait for the panel to be off.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_pps.c (intel_pps_off_unlocked).
+ */
+static void
+i915_xd_takeover_panel_off(
+	void *context,
+	unsigned pipe)
+{
+	struct i915_xd_takeover_ctx *ctx;
+	int error;
+
+	/* VDD on, then everything off. */
+	ctx = context;
+	(void)drv_i915_xd_pps_vdd_on(&ctx->xd->io, ctx->pps);
+	error = drv_i915_xd_pps_power_off(&ctx->xd->io, ctx->pps);
+	if (error != 0)
+		kern_logf("i915: takeover: pipe %c: the panel did not go off (rc %d)\n", 'A' + (int)pipe, error);
 }

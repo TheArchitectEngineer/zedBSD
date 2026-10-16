@@ -34,16 +34,6 @@ int drv_i915_takeover_world_create(struct i915_display *display);
 void drv_i915_takeover_world_destroy(struct i915_display *display);
 
 /*
- * The readout and sanitize of the firmware's display on the registry (0,
- * EINVAL, EBUSY: a readout is live, ENXIO: no screen is bound), the takeover
- * that stops every active crtc (0, EINVAL, EBUSY: a pipe is still active),
- * and the release of the registry.
- */
-int drv_i915_n1_readout(struct i915_display *display, const struct i915_lcd_modeset_cfg *cfg, struct i915_lcd_emit *ops, struct i915_n1_report *out);
-int drv_i915_n1_takeover(struct i915_display *display, struct i915_n1_report *out);
-void drv_i915_n1_release(struct i915_display *display);
-
-/*
  * ==== The output setup and the VGA plane ====
  */
 
@@ -65,16 +55,6 @@ int drv_i915_dvo_port_to_port(int display_ver, uint8_t dvo_port);
 int drv_i915_port_to_phy(int display_ver, int port);
 int drv_i915_phy_is_tc(int display_ver, int phy);
 int drv_i915_ddi_is_tc(int display_ver, int port);
-int drv_i915_ddi_get_hw_state(struct i915_display_nogem *d, struct i915_encoder *e, struct i915_mmio *m, unsigned pipe_mask_avail, unsigned *pipe_out);
-int drv_i915_ddi_is_clock_enabled(struct i915_display_nogem *d, struct i915_encoder *e, struct i915_mmio *m);
-void drv_i915_ddi_disable_clock(struct i915_display_nogem *d, struct i915_encoder *e, struct i915_mmio *m);
-
-/* The readout and sanitize of the output records. */
-unsigned drv_i915_hsw_enabled_transcoders(struct i915_display_nogem *d, int display_ver, unsigned pipe, struct i915_mmio *m, struct i915_power_domains *pd, struct i915_pw_ctx *pwc);
-void drv_i915_modeset_readout_hw_state(struct i915_display_nogem *d, int display_ver, struct i915_mmio *m, struct i915_power_domains *pd, struct i915_pw_ctx *pwc);
-void drv_i915_dpll_readout(struct i915_display_nogem *d, struct i915_mmio *m);
-void drv_i915_modeset_sanitize_hw_state(struct i915_display_nogem *d, int display_ver, int display_step, unsigned fbc_mask, struct i915_mmio *m, struct i915_power_domains *pd, struct i915_pw_ctx *pwc);
-void drv_i915_nogem_dpll_sanitize_state(struct i915_display_nogem *d, struct i915_mmio *m, int display_ver, int display_step);
 
 /* The VGA arbiter client and the VGA plane. */
 int drv_i915_gmch_vga_set_state(struct i915_vga_client *c, int enable_decode);
@@ -84,10 +64,5 @@ void drv_i915_vga_unregister(struct i915_vga_client *c);
 void drv_i915_vga_io_test_set(struct i915_display *display, const struct i915_vga_io_ops *ops);
 void drv_i915_vga_reset_io_mem(struct i915_vga_client *c);
 int drv_i915_vga_disable(struct i915_display *display, struct i915_vga_client *c, struct i915_mmio *m);
-
-/* The firmware plane and console of the takeover run (N1). */
-void drv_i915_n1_read_plane(const struct i915_lcd_kernel_deps *d, int pipe, uint32_t *ctl, uint32_t *stride, uint32_t *size, uint32_t *surf, uint32_t *offset);
-int drv_i915_n1_check_ggtt(const struct i915_lcd_kernel_deps *d, uint64_t fw_surf, unsigned pages, uint64_t fb_phys, int in_aperture);
-int drv_i915_n1_mirror_console(struct i915_scanout *so);
 
 #endif /* DRIVERS_GPU_I915_DISPLAY_TAKEOVER_H */

@@ -66,6 +66,7 @@ static void i915_xd_aux_test_i2c(void);
 static void i915_xd_aux_test_replies(void);
 static void i915_xd_aux_test_faults(void);
 static void i915_xd_aux_test_refusals(void);
+static void i915_xd_aux_test_dpcd(void);
 
 /*
  * Runs every check of the AUX channel and reports.
@@ -82,6 +83,7 @@ main(void)
 	i915_xd_aux_test_replies();
 	i915_xd_aux_test_faults();
 	i915_xd_aux_test_refusals();
+	i915_xd_aux_test_dpcd();
 
 	/* Reports the result. */
 	failures = i915_host_report("host_xd_aux_test");
@@ -455,4 +457,62 @@ i915_xd_aux_test_refusals(void)
 	i915_host_check(result.outcome == I915_XD_AUX_SENT && result.reply_bytes == 2U &&
 			reply[0] == 0U && reply[1] == 0x12U && reply[2] == 0xeeU,
 			"aux: a reply larger than the room fills only the room");
+}
+
+/*
+ * The native DPCD accesses over the channel: a read with its wake-up
+ * read first, a read longer than one message, a write, a deferred and a
+ * refused message sent again, and a sink that never answers.
+ */
+static void
+i915_xd_aux_test_dpcd(void)
+{
+	struct i915_xd_aux_test *run;
+	uint8_t bytes[20];
+	uint8_t value;
+	unsigned index;
+	int error;
+
+	/* A sink with a known DPCD. */
+	i915_xd_aux_test_setup(I915_XD_AUX_TEST_A);
+	run = &i915_xd_aux_test_run;
+	for (index = 0U; index < 20U; index++)
+		run->sink.dpcd[0x100U + index] = (uint8_t)(0xa0U + index);
+	run->sink.dpcd[0] = 0x14U;
+
+	/* Two bytes: the wake-up read, then the bytes. */
+	error = drv_i915_xd_dpcd_read(&run->aux, &run->io, 0x100U, bytes, 2U);
+	i915_host_check(error == 0 && bytes[0] == 0xa0U && bytes[1] == 0xa1U && run->sink.transactions == 2U,
+			"dpcd: a two-byte read after the wake-up read of the revision");
+
+	/* Twenty bytes: the wake-up read and two messages of 16 and 4. */
+	run->sink.transactions = 0U;
+	error = drv_i915_xd_dpcd_read(&run->aux, &run->io, 0x100U, bytes, 20U);
+	i915_host_check(error == 0 && bytes[15] == 0xafU && bytes[19] == 0xb3U && run->sink.transactions == 3U,
+			"dpcd: a 20-byte read in messages of 16 and 4");
+
+	/* A write. */
+	run->sink.transactions = 0U;
+	value = 0x02U;
+	error = drv_i915_xd_dpcd_write(&run->aux, &run->io, 0x600U, &value, 1U);
+	i915_host_check(error == 0 && run->sink.dpcd[0x600U] == 0x02U && run->sink.transactions == 1U && run->sink.last_request[0] == 0x80U &&
+			run->sink.last_request[1] == 0x06U && run->sink.last_request[3] == 0x00U && run->sink.last_request[4] == 0x02U,
+			"dpcd: a one-byte write, its header and byte");
+
+	/* A deferral and a refusal, then the sink takes the write. */
+	run->sink.transactions = 0U;
+	i915_xd_fake_aux_script(&run->sink, I915_XD_FAKE_AUX_DEFER, 0U, 1U);
+	i915_xd_fake_aux_script(&run->sink, I915_XD_FAKE_AUX_NACK, 0U, 1U);
+	value = 0x01U;
+	error = drv_i915_xd_dpcd_write(&run->aux, &run->io, 0x600U, &value, 1U);
+	i915_host_check(error == 0 && run->sink.dpcd[0x600U] == 0x01U && run->sink.transactions == 3U,
+			"dpcd: a deferred and a refused write sent again until taken");
+
+	/* A message the sink did not answer on any of its five tries is sent again, and taken. */
+	run->sink.transactions = 0U;
+	i915_xd_fake_aux_script(&run->sink, I915_XD_FAKE_AUX_TIMEOUT, 0U, 5U);
+	value = 0x02U;
+	error = drv_i915_xd_dpcd_write(&run->aux, &run->io, 0x600U, &value, 1U);
+	i915_host_check(error == 0 && run->sink.dpcd[0x600U] == 0x02U && run->sink.transactions == 6U,
+			"dpcd: an unanswered message sent again and taken");
 }
