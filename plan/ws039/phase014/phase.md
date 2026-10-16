@@ -26,4 +26,9 @@ i915 の present の大きさの変更の扱いの確認、AtomBIOS の command 
 
 ## 記録
 
-（実装の後に足す）
+### 2026-10-16 21:05〜21:45 P3（host まで）
+
+- 手順 1・2: `bytecode.c`・`amdrdna-bytecode.h`（runner）。host 試験 `amdrdna-bytecode-test.sh`: 実機の VBIOS（rom.bin）の 35 routine を 3 通りの parameter で、Linux の atom.c（temp の tree を build/tmp に写して shim の header `tests/bytecode-oracle/` で host build、tree に入れない）と同じ register の model で走らせ、register の読み書き・待ちの列・parameter・scratch・状態を比べて **475 checks 全一致**（polling で 4096 event に切った run 16 も先頭は一致）。合成の image で深さ 16・手数の上限・image の外・branch table・無い routine。初版の誤り: routine の header の parameter の byte の位置を mask の値で読んでいた（呼ばれた routine の parameter がずれた）→ oracle の差で発見して直した。design の「tarball の取得」は temp の tree（監査と同じ v6.19、tree の外）に置き換えた。
+- 手順 3〜5（一部）: `dcn-registers.c` に I2C engine・DDC pad・AUX の register（amdrdna-dcn-compare 492 registers 一致）。`vbios-table.c` に `amdrdna_vbios_connector`（path の表・I2C と HPD の record・pin の表）と boot の DISPCLK（dce_info）。`edid.c`（decode と mode の検索、established・standard は VESA DMT の表から clock）。`sink.c`（段 A10: GOP の DIG の番号 = transmitter → path → DDC の line、I2C engine で EDID、VBIOS の I2C routine（0x36）を runner で実機の register に走らせ同じ block を読み比べる、DP の時は AUX で DPCD 16 byte、出せる pixel clock の上限と mode の数）。段 A5c は印だけの段（A10 の前に通る）。
+- この board: VBIOS の path は 4 本（DP×3: transmitter E/C/D、HDMI: A）。GOP は DIG 4 = transmitter E = **DP の connector**（I2C id 0x95 = DDC6、HPD 6）で、signal は DVI（DP++ の受動の変換で HDMI の monitor と見る）→ この机では AUX の DPCD は確かめられない（DP の monitor が要る）。
+- host: `amdrdna-host-test.sh` PASS（sink 21 checks、dcn 492、audit）、build warning 0。実機は未。
