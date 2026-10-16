@@ -498,7 +498,8 @@ struct amdrdna_space {
  * It is taken after a space's own lock and before a ring's.  ready says
  * runs may be submitted; faulted that the device failed and nothing new
  * runs.  held counts the spaces kept with their tables because their
- * work could not be confirmed stopped.
+ * work could not be confirmed stopped; runs, lost and resets count the
+ * runs submitted, the spaces lost and the graphics queue's resets.
  */
 struct amdrdna_spaces {
 	struct spinlock lock;
@@ -511,6 +512,7 @@ struct amdrdna_spaces {
 	bool faulted;
 	uint64_t runs;
 	uint64_t lost;
+	uint64_t resets;
 };
 
 /*
@@ -862,6 +864,11 @@ amdrdna_cp_stop(
 	struct amdrdna_device *device);
 
 int
+amdrdna_cp_graphics_reset(
+	struct amdrdna_device *device,
+	unsigned context);
+
+int
 amdrdna_ring_submit(
 	struct amdrdna_device *device,
 	struct amdrdna_ring *ring,
@@ -1087,6 +1094,11 @@ void
 amdrdna_node_session_lost(
 	struct amdrdna_device *device,
 	void *session,
+	int error);
+
+void
+amdrdna_node_device_failed(
+	struct amdrdna_device *device,
 	int error);
 
 /* sessions.c: stage A5s. */
