@@ -21,6 +21,8 @@
 
 #include "internal.h"
 
+struct i915_xd_platform;
+
 struct i915_display;
 
 /*
@@ -53,7 +55,7 @@ int drv_i915_display_nogem_front(struct i915_display *display, struct i915_displ
 void drv_i915_display_nogem_fini(struct i915_display_nogem *d);
 void drv_i915_adjust_wm_latency(uint16_t wm[], int num_levels, int read_latency, int wm_lv_0_adjust_needed);
 void drv_i915_skl_setup_wm_latency(struct i915_display_nogem *d, int display_ver, struct mutex *sb_lock, struct i915_mmio *m, int wm_lv_0_adjust_needed);
-void drv_i915_shared_dpll_init(struct i915_display_nogem *d, int display_ver, int is_alderlake_p);
+void drv_i915_shared_dpll_init(struct i915_display_nogem *d, const struct i915_xd_platform *platform);
 int drv_i915_crtc_init(struct i915_display_nogem *d, int display_ver, unsigned pipe);
 void drv_i915_display_wa_apply(struct i915_display_nogem *d, struct i915_mmio *m, int display_ver, int is_alderlake_p);
 void drv_i915_update_max_cdclk(struct i915_display_nogem *d, int display_ver, uint32_t cdclk_ref);
@@ -64,7 +66,7 @@ int drv_i915_port_to_phy(int display_ver, int port);
 int drv_i915_phy_is_tc(int display_ver, int phy);
 int drv_i915_ddi_is_tc(int display_ver, int port);
 int drv_i915_ddi_get_hw_state(struct i915_display_nogem *d, struct i915_encoder *e, struct i915_mmio *m, unsigned pipe_mask_avail, unsigned *pipe_out);
-int drv_i915_ddi_is_clock_enabled(struct i915_encoder *e, struct i915_mmio *m);
+int drv_i915_ddi_is_clock_enabled(struct i915_display_nogem *d, struct i915_encoder *e, struct i915_mmio *m);
 void drv_i915_ddi_disable_clock(struct i915_display_nogem *d, struct i915_encoder *e, struct i915_mmio *m);
 
 /* The readout and sanitize of the output records. */

@@ -612,8 +612,9 @@ i915_ms_test_normal(void)
 
 	/* The order from the run log. */
 	pps = i915_ms_find(I915_LCD_T_PANEL, 0U, NULL, 0U);
-	pll = i915_ms_find(I915_LCD_T_WAIT, 0x46010U, NULL, 0U);
-	clk = i915_ms_find(I915_LCD_T_RMW, 0x164280U, NULL, 0U);
+	pll = i915_ms_find(I915_LCD_T_WRITE, 0x164288U, NULL, 0U);
+	pll = i915_ms_find(I915_LCD_T_WRITE, 0x46010U, NULL, pll >= 0 ? (unsigned)pll : 0U);
+	clk = i915_ms_find(I915_LCD_T_WRITE, 0x164280U, NULL, 0U);
 	tp1 = i915_ms_find(I915_LCD_T_DPCD_WRITE, 0x102U, NULL, 0U);
 	src = i915_ms_find(I915_LCD_T_WRITE, 0x6001cU, NULL, 0U);
 	mn = i915_ms_find(I915_LCD_T_WRITE, 0x60030U, NULL, 0U);
@@ -1030,7 +1031,8 @@ i915_ms_test_outer(void)
 	mbus = i915_ms_find(I915_LCD_T_RMW, 0x4438cU, NULL, 0U);
 	dbuf1 = i915_ms_find(I915_LCD_T_DBUF, 0x0fU, NULL, 0U);
 	dbox = i915_ms_find(I915_LCD_T_WRITE, 0x7003cU, NULL, 0U);
-	pll = i915_ms_find(I915_LCD_T_WAIT, 0x46010U, NULL, 0U);
+	pll = i915_ms_find(I915_LCD_T_WRITE, 0x164288U, NULL, 0U);
+	pll = i915_ms_find(I915_LCD_T_WRITE, 0x46010U, NULL, pll >= 0 ? (unsigned)pll : 0U);
 	surf = i915_ms_find(I915_LCD_T_WRITE, 0x7019cU, NULL, 0U);
 	dbuf2 = i915_ms_find(I915_LCD_T_DBUF, 0x0fU, NULL, surf > 0 ? (unsigned)surf : 0U);
 	put = i915_ms_find(I915_LCD_T_POWER_PUT, I915_PW_DOMAIN_DC_OFF, NULL, 0U);
@@ -1761,20 +1763,20 @@ i915_ms_test_time_base(void)
 	int named;
 	int refs;
 
-	/* The PLL-lock wait meets a time-base fault. */
+	/* The DP_TP_STATUS wait of the link training meets a time-base fault. */
 	i915_ms_bring_up();
-	i915_ms_lcd.fault_time_base_reg = 0x46010U;
+	i915_ms_lcd.fault_time_base_reg = 0x60544U;
 	config = i915_ms_config();
 	result = i915_ms_prepare_enable(&config);
 	drv_i915_lcd_modeset_status(&i915_ms_display, &s);
-	wait = i915_ms_find(I915_LCD_T_WAIT, 0x46010U, NULL, 0U);
+	wait = i915_ms_find(I915_LCD_T_WAIT, 0x60544U, NULL, 0U);
 	printf("  E: enable rc=%d errors=%u first=%s", result, s.errors, i915_ms_first_error(&s, "-\n"));
 	named = i915_ms_error_names(&s, "time base");
 	i915_host_check(result == I915_LCD_MS_ERRORS &&
 			named &&
 			wait >= 0 &&
 			i915_ms_trace.e[wait].rc == I915_LCD_EIO,
-			"E: the wait returns -EIO (not -ETIMEDOUT) and the time-base fault is the FIRST anomaly, ahead of the reference's own PLL error");
+			"E: the wait returns -EIO (not -ETIMEDOUT) and the time-base fault is the FIRST anomaly, ahead of the reference's own error");
 	i915_host_check(i915_ms_lcd.plane_arms == 0U, "E: after that anomaly the plane was not armed");
 
 	/* A transient fault: the stop itself runs on a sound time base and returns everything. */

@@ -138,11 +138,11 @@
 #define I915_LCD_PIPEDSL_MASK		0x1fffU
 
 /*
- * How the resident run lights an output of one kind other than the panel
- * (ws113-p011a): its run parameters, its encoder's configuration over the
- * filled panel configuration, and whether it owns the PLL pool and the
- * DBUF state from their empty start (the only screen).  The panel needs
- * none of them: the run's defaults are the panel's.
+ * How the resident run lights an output of one kind other than the panel: its
+ * run parameters, its encoder's configuration over the filled panel
+ * configuration, and whether it owns the PLL pool and the DBUF state from
+ * their empty start (the only screen).  The panel needs none of them: the
+ * run's defaults are the panel's.
  */
 struct i915_resident_output_way {
 	void (*params)(const struct i915_display_output *output, struct i915_lcd_run_params *params);
@@ -270,6 +270,49 @@ drv_i915_lcd_set_display_ver(
 {
 	/* The world keeps the version the platform predicates answer from. */
 	display->lcd_world->i915_lcd_ver = ver;
+}
+
+/*
+ * Sets the xd platform description of the device, which the modeset's
+ * port PLLs and DDI clock map read.
+ */
+void
+drv_i915_lcd_set_xd_platform(
+	struct i915_display *display,
+	const struct i915_xd_platform *platform)
+{
+	/* The world keeps the description. */
+	display->lcd_world->xd_platform = platform;
+}
+
+/*
+ * Returns the xd platform description of the device: the one the display
+ * set, or else the first description of the display version (a host
+ * test's world, which names only the version).
+ */
+const struct i915_xd_platform *
+drv_i915_lcd_xd_platform(void)
+{
+	const struct i915_xd_platform *platform;
+	unsigned count;
+	unsigned index;
+	int version;
+
+	/* The display's own. */
+	if (i915_modeset_bound_world != NULL && i915_modeset_bound_world->xd_platform != NULL)
+		return i915_modeset_bound_world->xd_platform;
+
+	/* The first description of the version. */
+	version = drv_i915_lcd_display_ver();
+	count = drv_i915_xd_platform_count();
+	for (index = 0U; index < count; index++) {
+		platform = drv_i915_xd_platform_row(index);
+		if ((int)platform->display_ver == version)
+			return platform;
+	}
+
+	/* Succeeded: no description of the version; the first one serves. */
+	return drv_i915_xd_platform_row(0U);
 }
 
 /*
@@ -965,8 +1008,7 @@ drv_i915_lcd_modeset_commit_disable(
 
 	/*
 	 * The check phase: the global DBUF state without this pipe, but with
-	 * every pipe another running screen lights or leaves room for
-	 * (ws113-p011).
+	 * every pipe another running screen lights or leaves room for.
 	 */
 	keep_pipes = 0U;
 	for (screen = 0U; screen < I915_LCD_MS_SCREENS; screen++) {
@@ -1336,8 +1378,7 @@ drv_i915_lcd_modeset_flip_poll(
  * thread that is not the worker: the presenting thread, so the worker is
  * free to run the next frame's rendering meanwhile.  Only for a display
  * whose worker never selects another screen (the tests): the resident
- * path names its screen (drv_i915_lcd_modeset_flip_wait_screen, ws113-p011,
- * review F19).
+ * path names its screen (drv_i915_lcd_modeset_flip_wait_screen).
  *
  * Nothing of the screen's state is changed: the worker retires the latched
  * flip when it takes the next presentation (drv_i915_lcd_modeset_flip_poll()).
@@ -1384,7 +1425,7 @@ drv_i915_lcd_modeset_flip_wait(
 
 /*
  * Waits until the armed flip of a named screen has latched, from a thread
- * that is not the worker (ws113-p011).
+ * that is not the worker.
  *
  * As drv_i915_lcd_modeset_flip_wait(), but the screen is the caller's and
  * not the selected one: the worker selects the second output's screen
@@ -1839,7 +1880,7 @@ drv_i915_lcd_kernel_resident_run(
 	/*
 	 * An earlier run left resources the display may still read: refused.
 	 * Buffers an earlier run kept pinned for this one, when the resident
-	 * output is lit again for two pipes (ws113-p011), are this run's.
+	 * output is lit again for two pipes, are this run's.
 	 */
 	retained = drv_i915_lcd_show_retained(display);
 	if (!retained)
@@ -1898,7 +1939,7 @@ drv_i915_lcd_kernel_resident_run(
 	}
 
 	/*
-	 * Another output in the panel's place (ws075-p012, ws113-p011a): the
+	 * Another output in the panel's place: the
 	 * run's parameters name its port and pipe, and, as the only screen, it
 	 * may own the device's PLL pool and DBUF state from their empty start.
 	 */
@@ -1929,9 +1970,9 @@ drv_i915_lcd_kernel_resident_run(
 		way.cfg(display, d, &display->output, &env->cfg);
 
 	/*
-	 * The DBUF share leaves room for a claimed second output's pipe
-	 * (ws113-p011); without one the output has the DBUF to itself, as
-	 * before.  The window remembers which pipes the run was lit for.
+	 * The DBUF share leaves room for a claimed second output's pipe;
+	 * without one the output has the DBUF to itself, as before.  The
+	 * window remembers which pipes the run was lit for.
 	 */
 	display->window.run_pipes = drv_i915_head_run_pipes(display);
 	env->cfg.also_active_pipes = display->window.run_pipes;
@@ -2007,7 +2048,7 @@ drv_i915_lcd_kernel_resident_run(
 		drv_i915_lcd_log_trace(rep->trace);
 		drv_i915_lcd_log_observer(&rep->obs);
 	} else if (unplugged) {
-		/* A run whose display was unplugged fails as expected (BUG-268): its log would only delay the output's return. */
+		/* A run whose display was unplugged fails as expected: its log would only delay the output's return. */
 		kern_logf("i915: resident display: run log not printed: its display was unplugged (%u entries kept)\n", rep->trace->n);
 	} else {
 		kern_logf("i915: resident display: run log %u writes, %u rmw, %u waits (0 timed out), 0 errors, 0 unresolved steps (%u entries kept, %u not kept)\n",
@@ -2047,7 +2088,7 @@ drv_i915_lcd_kernel_resident_run(
 	/*
 	 * An external DP link that did not train, stopped and given back
 	 * cleanly: the port's link limits are lowered and the run is to be
-	 * tried again at the lower link (ws051-p004b).
+	 * tried again at the lower link.
 	 */
 	if (!passed && released && held == 0 && display->output.kind == I915_OUTPUT_KIND_DP_EXT) {
 		fallback_error = i915_resident_dp_ext_fallback(display, &display->output, rep->enable_rc);
@@ -2065,7 +2106,7 @@ drv_i915_lcd_kernel_resident_run(
 
 /*
  * Fills the run parameters of an output that is not the built-in panel,
- * for the second output's run (ws113-p011): the kind's port, pipe,
+ * for the second output's run: the kind's port, pipe,
  * transcoder and PLL, as the resident run of that kind has them.  The
  * second output never empties the PLL pool the resident output draws from.
  * Returns 0, or EOPNOTSUPP for the panel (which has no parameters of its
@@ -2096,7 +2137,7 @@ drv_i915_lcd_output_params(
 
 /*
  * Turns a filled panel configuration into the encoder's of an output that
- * is not the built-in panel, for the second output's run (ws113-p011).
+ * is not the built-in panel, for the second output's run.
  * The panel's configuration is left as it is.
  */
 void
@@ -2122,7 +2163,7 @@ drv_i915_lcd_output_cfg(
 
 /*
  * Lowers an external DP output's link after an enable that reported it as
- * not trained, for the second output's run (ws113-p011), as the resident
+ * not trained, for the second output's run, as the resident
  * run does for its own output.  Returns 0 when the output may be lit again
  * at the lower link, ENOSPC when no lower link carries the mode, or EINVAL
  * for an output or an enable that did not fail at the link.
@@ -3486,7 +3527,7 @@ i915_kernel_display(
 {
 	struct i915_lcd_kernel *k;
 
-	/* A run that names its display (a second output's, ws113-p011). */
+	/* A run that names its display (a second output's). */
 	k = ctx;
 	if (k->display != NULL)
 		return k->display;
@@ -3808,7 +3849,7 @@ i915_resident_window(
 	(void)drv_i915_lcd_modeset_flip_settle(display);
 
 	/*
-	 * Lit again for two pipes next (ws113-p011): buffer A, which the next
+	 * Lit again for two pipes next: buffer A, which the next
 	 * lighting shows first, takes the picture B shows, so the output comes
 	 * back with its last picture and not an older one.  The GPU wrote B
 	 * through an uncached mapping: the CPU's stale lines go first (review
@@ -3916,8 +3957,7 @@ i915_resident_buffers(
 
 /*
  * Tells whether an earlier run kept both resident buffers pinned for this
- * one (ws113-p011: the resident output lit again for two pipes, with its
- * picture).  A keep that does not find both buffers pinned is forgotten.
+ * one (the resident output lit again for two pipes, with its picture).  A keep that does not find both buffers pinned is forgotten.
  */
 static int
 i915_resident_buffers_kept(
@@ -3965,7 +4005,7 @@ i915_resident_release(
 	/* The show body ended A; B's last use ends here. */
 	drv_i915_scanout_end(&display->resident_buf[1]);
 
-	/* Kept pinned, with their picture, for the lighting for two pipes that follows (ws113-p011). */
+	/* Kept pinned, with their picture, for the lighting for two pipes that follows. */
 	if (display->window.relight && display->window.keep_buffers)
 		return 1;
 
@@ -4183,9 +4223,9 @@ i915_resident_hdmi_cfg(
 }
 
 /*
- * Fills the parameters of a resident run on an external DP display
- * (ws051-p004b): the Type-C port's DDI, pipe and transcoder B (as the HDMI
- * output's), the port's TC PLL from an empty pool, the prepared mode.
+ * Fills the parameters of a resident run on an external DP display: the Type-C
+ * port's DDI, pipe and transcoder B (as the HDMI output's), the port's TC PLL
+ * from an empty pool, the prepared mode.
  */
 static void
 i915_resident_dp_ext_params(
@@ -4205,12 +4245,12 @@ i915_resident_dp_ext_params(
 }
 
 /*
- * Turns a filled panel configuration into the external DP encoder's
- * (ws051-p004b): what intel_ddi_init() and intel_dp_init_connector() leave
- * for a Type-C DDI with DP -- the port, pipe B, the TC PLL, the port's AUX
- * channel and its own DPCD access, the sink's receiver capabilities from
- * the claim's probe, no lane reversal (only a legacy Type-C port may be
- * reversed), no panel and no backlight.
+ * Turns a filled panel configuration into the external DP encoder's: what
+ * intel_ddi_init() and intel_dp_init_connector() leave for a Type-C DDI with
+ * DP -- the port, pipe B, the TC PLL, the port's AUX channel and its own DPCD
+ * access, the sink's receiver capabilities from the claim's probe, no lane
+ * reversal (only a legacy Type-C port may be reversed), no panel and no
+ * backlight.
  */
 static void
 i915_resident_dp_ext_cfg(
@@ -4311,8 +4351,8 @@ i915_kernel_preflight_dp_ext(
  * Lowers an external DP output's link after its link did not train, and
  * computes the output's link again for the next run (the Linux
  * intel_dp_get_link_train_fallback_values() and the modeset the retry work
- * asks for, ws051-p004b).  The output is the resident one or the second
- * output (ws113-p011).  Only an enable that reported the link as not
+ * asks for).  The output is the resident one or the second
+ * output.  Only an enable that reported the link as not
  * trained is retried.  Returns 0 when the next run may try the lower link,
  * ENOSPC when no lower link carries the mode, or EINVAL for a run that did
  * not fail at the link.
@@ -4373,7 +4413,7 @@ i915_resident_dp_ext_fallback(
 
 /*
  * Says how the resident run lights an output of a kind: the one place that
- * chooses among the kinds' parameters and configurations (ws113-p011a).
+ * chooses among the kinds' parameters and configurations.
  * Returns 0 with the way (all empty for the panel), or EOPNOTSUPP for a
  * kind this driver does not light.
  */
@@ -4396,7 +4436,7 @@ i915_resident_output_way(
 		way->own_pool = 1;
 		break;
 	case I915_OUTPUT_KIND_DP_EXT:
-		/* A Type-C port's DDI, pipe B, its TC PLL, the PLL pool its own (ws051-p004b). */
+		/* A Type-C port's DDI, pipe B, its TC PLL, the PLL pool its own. */
 		way->params = i915_resident_dp_ext_params;
 		way->cfg = i915_resident_dp_ext_cfg;
 		way->own_pool = 1;

@@ -127,6 +127,7 @@
 
 #include "internal.h"
 #include "tc.h"
+#include "xd-platform.h"
 
 #ifdef I915_DISPLAY_LINUX_WORLD
 #error "modeset-internal.h: another Linux environment is already included in this translation unit"
@@ -2193,6 +2194,12 @@ struct i915_lcd_world {
 	int i915_lcd_ver;
 
 	/*
+	 * The xd platform description of the device, which the port PLLs and
+	 * the DDI clock map read; NULL until the display sets it.
+	 */
+	const struct i915_xd_platform *xd_platform;
+
+	/*
 	 * The new state of the disable commit: the old crtc state with the crtc
 	 * made inactive (a function static of the commit's disable).  Filled at
 	 * the start of each disable commit and read only inside it.
@@ -2336,6 +2343,7 @@ void drv_i915_lcd_debug(const char *what);
 
 /* The display version of the device the probe found (12 = Tiger Lake, 13 = ADL-P class). */
 int drv_i915_lcd_display_ver(void);
+const struct i915_xd_platform *drv_i915_lcd_xd_platform(void);
 
 /* The mode object and name helpers of the EDID text. */
 void drv_i915_lcd_drm_mode_set_name(struct drm_display_mode *mode);
@@ -2425,6 +2433,9 @@ void drv_i915_lcd_ms_set_acpi(struct i915_lcd_modeset *ms, u32 user_level, u32 u
 void drv_i915_display_power_get_in_set(struct drm_i915_private *i915, struct intel_display_power_domain_set *power_domain_set, enum intel_display_power_domain domain);
 void drv_i915_display_power_put_mask_in_set(struct drm_i915_private *i915, struct intel_display_power_domain_set *power_domain_set, struct intel_power_domain_mask *mask);
 void drv_i915_enable_shared_dpll(const struct intel_crtc_state *crtc_state);
+void drv_i915_dpll_map_ddi(struct drm_i915_private *i915, unsigned phy, const struct intel_shared_dpll *pll);
+void drv_i915_dpll_unmap_ddi(struct drm_i915_private *i915, unsigned phy);
+int drv_i915_dpll_ddi_mapped(struct drm_i915_private *i915, unsigned phy, unsigned *pll_id);
 void drv_i915_disable_shared_dpll(const struct intel_crtc_state *crtc_state);
 void drv_i915_lcd_ms_release_pipe(struct i915_lcd_world *world, enum pipe pipe);
 void drv_i915_combo_phy_power_up_lanes(struct drm_i915_private *dev_priv, enum phy phy, bool is_dsi, int lane_count, bool lane_reversal);

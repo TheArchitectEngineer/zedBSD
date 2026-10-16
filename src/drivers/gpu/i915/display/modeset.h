@@ -23,6 +23,7 @@
 #include "internal.h"
 
 struct i915_display;
+struct i915_xd_platform;
 
 /*
  * ==== The modeset world ====
@@ -35,6 +36,14 @@ void drv_i915_lcd_world_destroy(struct i915_display *display);
 /* Sets and reports the display version of the device (12 = Tiger Lake, 13 = ADL-P class). */
 void drv_i915_lcd_set_display_ver(struct i915_display *display, int ver);
 int drv_i915_lcd_display_ver(void);
+
+/*
+ * Sets and reports the xd platform description the modeset's clocks read
+ * (the display's; before one is set, the first description of the
+ * display version).
+ */
+void drv_i915_lcd_set_xd_platform(struct i915_display *display, const struct i915_xd_platform *platform);
+const struct i915_xd_platform *drv_i915_lcd_xd_platform(void);
 
 /* Records an anomaly the backend found (a power well kept on, a broken time base) as a Linux-text error. */
 void drv_i915_lcd_backend_fault(const char *what);
@@ -114,7 +123,7 @@ int drv_i915_lcd_show_discard_model(struct i915_display *display, struct i915_lc
  * with its own parameters.  The run is always the display's lk member.
  */
 
-/* The second output's parameters, encoder and link fallback, as the resident run's of that kind (ws113-p011). */
+/* The second output's parameters, encoder and link fallback, as the resident run's of that kind. */
 int drv_i915_lcd_output_params(const struct i915_display_output *output, struct i915_lcd_run_params *params);
 void drv_i915_lcd_output_cfg(struct i915_display *display, const struct i915_lcd_kernel_deps *d, const struct i915_display_output *output, struct i915_lcd_modeset_cfg *cfg);
 int drv_i915_lcd_output_link_fallback(struct i915_display *display, struct i915_display_output *output, int enable_rc);

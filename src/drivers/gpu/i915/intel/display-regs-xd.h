@@ -552,9 +552,10 @@
 /*
  * The map of the DDIs to the combo DPLLs.  On Tiger Lake and display 13
  * one word holds, per combo PHY, a two-bit DPLL select at twice the PHY
- * and a clock-off bit (PHY A, B, C at bits 10, 11, 24), and a clock-off
- * bit per Type-C port.  Rocket Lake moves the selects of PHY D and the
- * clock-off bits; Alder Lake-S uses two words of three PHYs each.
+ * and a clock-off bit (PHY A, B, C at bits 10, 11, 24; PHY D and E,
+ * which only Alder Lake-S has, at bits 4 and 5 of their own word), and a
+ * clock-off bit per Type-C port.  Rocket Lake moves the selects of PHY D
+ * and the clock-off bits; Alder Lake-S uses two words of three PHYs each.
  *
  * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
  * (ICL_DPCLKA_CFGCR0, ICL_DPCLKA_CFGCR0_DDI_CLK_OFF,
@@ -571,6 +572,8 @@
 #define I915_XD_DPCLKA_DDI_OFF_A		0x00000400U
 #define I915_XD_DPCLKA_DDI_OFF_B		0x00000800U
 #define I915_XD_DPCLKA_DDI_OFF_C		0x01000000U
+#define I915_XD_DPCLKA_DDI_OFF_D		0x00000010U
+#define I915_XD_DPCLKA_DDI_OFF_E		0x00000020U
 #define I915_XD_DPCLKA_TC_OFF(tc)		(1U << ((tc) < 3U ? (tc) + 12U : (tc) - 3U + 21U))
 #define I915_XD_DPCLKA_RKL_SEL_SHIFT_D		27U
 #define I915_XD_DPCLKA_RKL_DDI_OFF(phy)		(1U << ((phy) + 10U))

@@ -66,6 +66,8 @@
 #include "vblank.h"
 #include "vbt-parse.h"
 #include "watermark.h"
+#include "xd-clock.h"
+#include "xd.h"
 
 #include "../ggtt.h"
 #include "../mmio.h"
@@ -140,37 +142,9 @@
 #define I915_PCI_CLASS_VGA_MASK			0xffff00U
 #define I915_PCI_CLASS_VGA			0x030000U
 
-/* The ICL+ shared DPLL enable registers. */
+/* The ICL+ shared DPLL enable registers (read by the firmware's log). */
 #define I915_DPLL0_ENABLE			0x46010U
 #define I915_DPLL1_ENABLE			0x46014U
-#define I915_TBT_PLL_ENABLE			0x46020U
-/*
- * ADL-P's Type-C PLL enable registers (ADLP_PORTTC_PLL_ENABLE: TC1 at
- * 0x46038, TC2 at 0x46040, then every 8 bytes; Linux v6.8.12 i915_reg.h
- * PORTTC1_PLL_ENABLE / PORTTC2_PLL_ENABLE, intel_tc_pll_enable_reg()).
- * MG_PLL_ENABLE at 0x46030 is the ICL/TGL register, not ADL-P's.
- */
-#define I915_PORTTC1_PLL_ENABLE			0x46038U
-#define I915_PORTTC_PLL_ENABLE_STRIDE		8U
-/*
- * Tiger Lake's Type-C PLL enable registers (MG_PLL_ENABLE: TC1 at 0x46030,
- * then every 4 bytes; Linux v6.8.12 i915_reg.h _MG_PLL1_ENABLE /
- * _MG_PLL2_ENABLE, intel_tc_pll_enable_reg()).
- */
-#define I915_MG_PLL1_ENABLE			0x46030U
-#define I915_MG_PLL_ENABLE_STRIDE		4U
-#define I915_PLL_ENABLE_BIT			(1U << 31)
-
-/*
- * The other bits of a PLL enable register (Linux v6.8.12 i915_reg.h
- * PLL_LOCK, PLL_POWER_ENABLE, PLL_POWER_STATE), and how long the disable
- * waits for each to follow (icl_pll_disable(): 1 ms, polled every 10 us).
- */
-#define I915_PLL_LOCK_BIT			(1U << 30)
-#define I915_PLL_POWER_ENABLE_BIT		(1U << 27)
-#define I915_PLL_POWER_STATE_BIT		(1U << 26)
-#define I915_PLL_DISABLE_TIMEOUT_US		1000U
-#define I915_PLL_DISABLE_POLL_US		10U
 
 /* enum intel_dpll_id, ICL naming (values preserved). */
 #define I915_DPLL_ID_ICL_DPLL0			0
@@ -319,18 +293,6 @@
 #define I915_VTD_WINDOW				0x1000U
 
 /*
- * One row of a platform's shared DPLL table (adlp_plls[], tgl_plls[]).
- *
- * The rows are copied into the DPLL records when the manager is created.
- */
-struct i915_adlp_pll_desc {
-	const char *name;
-	int id;
-	int funcs;
-	uint32_t reg;
-};
-
-/*
  * One pin of the ICP GMBUS pin table (gmbus_pins_icp[]).
  *
  * The pin number is the index of the pin record it fills.
@@ -394,7 +356,6 @@ static uint32_t i915_nogem_rmw(struct i915_display_nogem *d, struct i915_mmio *m
 static uint32_t i915_sagv_block_time(int display_ver, struct mutex *sb_lock, struct i915_mmio *m);
 static void i915_sagv_init(struct i915_display_nogem *d, int display_ver, struct mutex *sb_lock, struct i915_mmio *m, struct i915_bw_state *bw);
 static int i915_gmbus_setup(struct i915_display_nogem *d, struct i915_mmio *m);
-static uint32_t i915_icl_dpclka_ddi_clk_off(int phy);
 static uint32_t i915_icl_dpclka_tc_clk_off(int tc_port);
 static int i915_ddi_lanes_domain(int display_ver, int port);
 static int i915_port_in_use(const struct i915_display_nogem *d, int port);
@@ -411,8 +372,7 @@ static void i915_nogem_sanitize_encoder_pll_mapping(struct i915_display_nogem *d
 static int i915_nogem_sanitize_crtc(struct i915_display_nogem *d, struct i915_crtc *crtc);
 static void i915_nogem_adlp_cmtg_clock_gating_wa(struct i915_display_nogem *d, struct i915_mmio *m, int display_ver, int display_step, const struct i915_dpll *pll);
 static int i915_nogem_tc_get_pll_id(struct i915_encoder *e, struct i915_mmio *m, int *pll_id);
-static int i915_nogem_wait_clear(struct i915_mmio *m, uint32_t reg, uint32_t mask);
-static void i915_nogem_icl_pll_disable(struct i915_display_nogem *d, struct i915_mmio *m, struct i915_dpll *pll);
+static void i915_nogem_pll_disable(struct i915_display_nogem *d, struct i915_dpll *pll);
 static void i915_nogem_power_domains_sanitize_state(struct i915_display_nogem *d, struct i915_power_domains *pd, struct i915_pw_ctx *pwc);
 static int i915_vga_client_register(struct i915_vga_client *c);
 static int i915_vga_get_legacy_io(struct i915_display *display);
@@ -1123,7 +1083,10 @@ drv_i915_display_nogem_front(
 	 */
 
 	/* Creates the shared DPLL manager. */
-	drv_i915_shared_dpll_init(d, display_ver, is_adlp);
+	d->xd = NULL;
+	if (display->xd.chosen)
+		d->xd = &display->xd;
+	drv_i915_shared_dpll_init(d, d->xd != NULL ? d->xd->choice.platform : NULL);
 
 	/* intel_fdi_pll_freq_update(): IRONLAKE/SNB/IVB only -> returns. */
 	/* intel_update_czclk(): VLV/CHV only -> returns. */
@@ -1311,85 +1274,49 @@ drv_i915_skl_setup_wm_latency(
 }
 
 /*
- * Creates the shared DPLL manager (intel_shared_dpll_init()).
- *
- * Alder Lake-P's adlp_pll_mgr and Tiger Lake's tgl_pll_mgr are ported;
- * display 14, DG2 and every other platform leave the manager absent rather
- * than guess a table.
+ * Creates the shared DPLL records from the platform's PLLs (the xd
+ * description): the combo DPLLs, the Thunderbolt PLL and the Type-C
+ * PLLs, with their names, ids (the platform's select values) and enable
+ * words.  A display without a description has no records.
  */
 void
 drv_i915_shared_dpll_init(
 	struct i915_display_nogem *d,
-	int display_ver,
-	int is_alderlake_p)
+	const struct i915_xd_platform *platform)
 {
-	static const struct i915_adlp_pll_desc adlp_plls[] = {
-		{ "DPLL 0",   I915_DPLL_ID_ICL_DPLL0,  I915_DPLL_FUNCS_COMBO, I915_DPLL0_ENABLE },
-		{ "DPLL 1",   I915_DPLL_ID_ICL_DPLL1,  I915_DPLL_FUNCS_COMBO, I915_DPLL1_ENABLE },
-		{ "TBT PLL",  I915_DPLL_ID_ICL_TBTPLL, I915_DPLL_FUNCS_TBT,   I915_TBT_PLL_ENABLE },
-		{ "TC PLL 1", I915_DPLL_ID_ICL_MGPLL1, I915_DPLL_FUNCS_DKL,   I915_PORTTC1_PLL_ENABLE + 0U * I915_PORTTC_PLL_ENABLE_STRIDE },
-		{ "TC PLL 2", I915_DPLL_ID_ICL_MGPLL2, I915_DPLL_FUNCS_DKL,   I915_PORTTC1_PLL_ENABLE + 1U * I915_PORTTC_PLL_ENABLE_STRIDE },
-		{ "TC PLL 3", I915_DPLL_ID_ICL_MGPLL3, I915_DPLL_FUNCS_DKL,   I915_PORTTC1_PLL_ENABLE + 2U * I915_PORTTC_PLL_ENABLE_STRIDE },
-		{ "TC PLL 4", I915_DPLL_ID_ICL_MGPLL4, I915_DPLL_FUNCS_DKL,   I915_PORTTC1_PLL_ENABLE + 3U * I915_PORTTC_PLL_ENABLE_STRIDE }
-	};
-	static const struct i915_adlp_pll_desc tgl_plls[] = {
-		{ "DPLL 0",   I915_DPLL_ID_ICL_DPLL0,  I915_DPLL_FUNCS_COMBO, I915_DPLL0_ENABLE },
-		{ "DPLL 1",   I915_DPLL_ID_ICL_DPLL1,  I915_DPLL_FUNCS_COMBO, I915_DPLL1_ENABLE },
-		{ "TBT PLL",  I915_DPLL_ID_ICL_TBTPLL, I915_DPLL_FUNCS_TBT,   I915_TBT_PLL_ENABLE },
-		{ "TC PLL 1", I915_DPLL_ID_ICL_MGPLL1, I915_DPLL_FUNCS_DKL,   I915_MG_PLL1_ENABLE + 0U * I915_MG_PLL_ENABLE_STRIDE },
-		{ "TC PLL 2", I915_DPLL_ID_ICL_MGPLL2, I915_DPLL_FUNCS_DKL,   I915_MG_PLL1_ENABLE + 1U * I915_MG_PLL_ENABLE_STRIDE },
-		{ "TC PLL 3", I915_DPLL_ID_ICL_MGPLL3, I915_DPLL_FUNCS_DKL,   I915_MG_PLL1_ENABLE + 2U * I915_MG_PLL_ENABLE_STRIDE },
-		{ "TC PLL 4", I915_DPLL_ID_ICL_MGPLL4, I915_DPLL_FUNCS_DKL,   I915_MG_PLL1_ENABLE + 3U * I915_MG_PLL_ENABLE_STRIDE },
-		{ "TC PLL 5", I915_DPLL_ID_ICL_MGPLL5, I915_DPLL_FUNCS_DKL,   I915_MG_PLL1_ENABLE + 4U * I915_MG_PLL_ENABLE_STRIDE },
-		{ "TC PLL 6", I915_DPLL_ID_ICL_MGPLL6, I915_DPLL_FUNCS_DKL,   I915_MG_PLL1_ENABLE + 5U * I915_MG_PLL_ENABLE_STRIDE }
-	};
-	const struct i915_adlp_pll_desc *plls;
-	unsigned count;
+	static const char *const combo_names[] = { "DPLL 0", "DPLL 1", "DPLL 2", "DPLL 3" };
+	static const char *const tc_names[] = { "TC PLL 1", "TC PLL 2", "TC PLL 3", "TC PLL 4", "TC PLL 5", "TC PLL 6" };
+	const struct i915_xd_pll_desc *desc;
+	struct i915_dpll *pll;
 	unsigned index;
 
 	/* Initializes the lock of the DPLL records. */
 	(void)mutex_init(&d->dpll_lock, LOCK_RANK_DEVICE, "i915-dpll");
 
-	/*
-	 * DISPLAY_VER >= 14 / DG2 have no shared DPLLs (port PLLs live in the PHY);
-	 * ADL-P selects adlp_pll_mgr and Tiger Lake (display 12 that is not
-	 * ADL-P) tgl_pll_mgr.  Anything else is out of scope for this port and
-	 * leaves the manager absent rather than guessing a table.
-	 */
-	if (display_ver >= 14) {
-		d->dpll_mgr_present = 0;
-		d->num_dplls = 0U;
+	/* A display without a description has no records. */
+	d->dpll_mgr_present = 0;
+	d->num_dplls = 0U;
+	if (platform == NULL)
 		return;
-	}
 
-	/* Picks the platform's table. */
-	if (is_alderlake_p != 0) {
-		/* adlp_plls[]: DPLL0, DPLL1, TBT PLL, TC PLL 1..4. */
-		plls = adlp_plls;
-		count = sizeof(adlp_plls) / sizeof(adlp_plls[0]);
-	} else if (display_ver == 12) {
-		/* tgl_plls[]: DPLL0, DPLL1, TBT PLL, TC PLL 1..6. */
-		plls = tgl_plls;
-		count = sizeof(tgl_plls) / sizeof(tgl_plls[0]);
-	} else {
-		/* No table of this platform is ported. */
-		d->dpll_mgr_present = 0;
-		d->num_dplls = 0U;
-		return;
-	}
-
-	/* Copies the table into the records. */
-	for (index = 0U; index < count; index++) {
-		/* Stops at the capacity of the records. */
-		if (index >= (unsigned)I915_NOGEM_MAX_DPLLS)
-			break;
-
-		/* Fills one DPLL record from its table row. */
-		d->dplls[index].name = plls[index].name;
-		d->dplls[index].id = plls[index].id;
-		d->dplls[index].funcs = plls[index].funcs;
-		d->dplls[index].enable_reg = plls[index].reg;
-		d->dplls[index].index = index;
+	/* One record per PLL of the platform. */
+	for (index = 0U; index < platform->nplls && index < (unsigned)I915_NOGEM_MAX_DPLLS; index++) {
+		desc = &platform->plls[index];
+		pll = &d->dplls[index];
+		pll->id = (int)desc->select;
+		pll->enable_reg = desc->enable;
+		pll->xd_pll = desc;
+		pll->index = index;
+		if (desc->kind == I915_XD_PLL_COMBO) {
+			pll->name = combo_names[desc->select % 4U];
+			pll->funcs = I915_DPLL_FUNCS_COMBO;
+		} else if (desc->kind == I915_XD_PLL_TBT) {
+			pll->name = "TBT PLL";
+			pll->funcs = I915_DPLL_FUNCS_TBT;
+		} else {
+			pll->name = tc_names[(desc->tc - 1U) % 6U];
+			pll->funcs = I915_DPLL_FUNCS_DKL;
+		}
 	}
 
 	/* Publishes the records and the manager. */
@@ -1847,25 +1774,21 @@ drv_i915_ddi_get_hw_state(
  */
 int
 drv_i915_ddi_is_clock_enabled(
+	struct i915_display_nogem *d,
 	struct i915_encoder *e,
 	struct i915_mmio *m)
 {
 	uint32_t clk_off;
 	uint32_t cfgcr0;
 	uint32_t clk_sel;
+	unsigned selected;
 	int tc_port;
 
-	/* A combo PHY clock runs while its DDI_CLK_OFF bit is clear. */
+	/* A combo PHY clock runs while its clock-off bit is clear (xd clock). */
 	if (e->clk_funcs == I915_DDI_CLK_ICL_COMBO) {
-		clk_off = i915_icl_dpclka_ddi_clk_off(e->phy);
-		cfgcr0 = drv_i915_read32(m, I915_ICL_DPCLKA_CFGCR0);
-
-		/* The clock-off bit set means gated. */
-		if ((cfgcr0 & clk_off) != 0U)
+		if (d->xd == NULL)
 			return 0;
-
-		/* The combo clock runs. */
-		return 1;
+		return drv_i915_xd_dpll_mapped(&d->xd->io, d->xd->choice.platform, (unsigned)e->phy, &selected);
 	}
 
 	/* A Type-C clock runs when PORT_CLK_SEL selects one and its TC_CLK_OFF bit is clear. */
@@ -1902,10 +1825,12 @@ drv_i915_ddi_disable_clock(
 	uint32_t clk_off;
 	int tc_port;
 
-	/* A combo PHY clock is gated by its DDI_CLK_OFF bit. */
+	/* A combo PHY clock is gated by its clock-off bit (xd clock). */
 	if (e->clk_funcs == I915_DDI_CLK_ICL_COMBO) {
-		clk_off = i915_icl_dpclka_ddi_clk_off(e->phy);
-		(void)i915_nogem_rmw(d, m, I915_ICL_DPCLKA_CFGCR0, 0U, clk_off);
+		if (d->xd != NULL) {
+			drv_i915_xd_dpll_unmap(&d->xd->io, d->xd->choice.platform, (unsigned)e->phy);
+			d->mmio_writes++;
+		}
 		return;
 	}
 
@@ -2155,7 +2080,8 @@ drv_i915_dpll_readout(
 	unsigned index;
 	unsigned pipe;
 	unsigned k;
-	uint32_t enable;
+	unsigned selected;
+	struct i915_xd_dpll_words words;
 	int tc_unknown;
 	int known;
 
@@ -2168,10 +2094,11 @@ drv_i915_dpll_readout(
 		if (e->crtc_linked == 0)
 			continue;
 
-		/* _icl_ddi_get_pll(): ICL_DPCLKA_CFGCR0_DDI_CLK_SEL of the PHY, 2 bits at 2 * phy. */
-		if (e->clk_funcs == I915_DDI_CLK_ICL_COMBO) {
+		/* The PLL the combo PHY selects (xd clock); the word is kept for the log. */
+		if (e->clk_funcs == I915_DDI_CLK_ICL_COMBO && d->xd != NULL) {
 			e->dpclka_cfgcr0 = drv_i915_read32(m, I915_ICL_DPCLKA_CFGCR0);
-			e->shared_dpll_id = (int)((e->dpclka_cfgcr0 >> (2U * (unsigned)e->phy)) & 0x3U);
+			(void)drv_i915_xd_dpll_mapped(&d->xd->io, d->xd->choice.platform, (unsigned)e->phy, &selected);
+			e->shared_dpll_id = (int)selected;
 			kern_logf("i915: [ENCODER port %c] get_config: ICL_DPCLKA_CFGCR0=0x%08x -> "
 				"shared_dpll id %d\n", (char)('A' + e->port), e->dpclka_cfgcr0, e->shared_dpll_id);
 		} else if (e->clk_funcs == I915_DDI_CLK_ICL_TC) {
@@ -2190,13 +2117,12 @@ drv_i915_dpll_readout(
 	for (index = 0U; index < d->num_dplls; index++)
 		d->dplls[index].readout_incomplete = tc_unknown;
 
-	/* intel_dpll_readout_hw_state() -> readout_dpll_hw_state() */
+	/* Each PLL's state and the pipes it feeds. */
 	for (index = 0U; index < d->num_dplls; index++) {
-		/* Reads the enable bit. */
+		/* Whether the PLL is enabled (xd clock). */
 		pll = &d->dplls[index];
-		enable = drv_i915_read32(m, pll->enable_reg);
 		pll->on = 0;
-		if ((enable & I915_PLL_ENABLE_BIT) != 0U)
+		if (d->xd != NULL && drv_i915_xd_dpll_read(&d->xd->io, d->xd->choice.platform, pll->xd_pll, I915_XD_DPLL_AFC_NONE, &words))
 			pll->on = 1;
 
 		/*
@@ -2378,22 +2304,9 @@ drv_i915_nogem_dpll_sanitize_state(
 			continue;
 		}
 
-		/*
-		 * A Type-C PLL is turned off with the whole of Linux's disable
-		 * (icl_pll_disable() through mg_pll_disable()): the enable, the
-		 * lock's going, the power and its going.
-		 */
-		if (pll->funcs == I915_DPLL_FUNCS_DKL) {
-			kern_logf("i915: %s enabled but not in use, disabling\n", pll->name);
-			i915_nogem_icl_pll_disable(d, m, pll);
-			pll->on = 0;
-			d->dplls_disabled++;
-			continue;
-		}
-
-		/* _intel_disable_shared_dpll(): clear PLL_ENABLE. */
+		/* Turns it off (xd clock): the enable, the lock's going, the power and its going. */
 		kern_logf("i915: %s enabled but not in use, disabling\n", pll->name);
-		(void)i915_nogem_rmw(d, m, pll->enable_reg, I915_PLL_ENABLE_BIT, 0U);
+		i915_nogem_pll_disable(d, pll);
 		pll->on = 0;
 		d->dplls_disabled++;
 	}
@@ -5218,21 +5131,6 @@ i915_gmbus_setup(
 	return 0;
 }
 
-/* Reports the DDI_CLK_OFF bit of a combo PHY: 1 << _PICK(phy, 10, 11, 24, 4, 5). */
-static uint32_t
-i915_icl_dpclka_ddi_clk_off(
-	int phy)
-{
-	static const unsigned bits[5] = { 10U, 11U, 24U, 4U, 5U };
-
-	/* A PHY beyond the table has no bit. */
-	if (phy < 0 || phy > 4)
-		return 0U;
-
-	/* Succeeded: reports the PHY's bit. */
-	return 1U << bits[phy];
-}
-
 /* Reports the TC_CLK_OFF bit of a Type-C port: TC ports 1..3 are bits 12..14, TC port 4 on restart at bit 21. */
 static uint32_t
 i915_icl_dpclka_tc_clk_off(
@@ -5681,7 +5579,7 @@ i915_nogem_sanitize_encoder_pll_mapping(
 		return;
 
 	/* A gated clock needs nothing. */
-	clock_enabled = drv_i915_ddi_is_clock_enabled(e, m);
+	clock_enabled = drv_i915_ddi_is_clock_enabled(d, e, m);
 	if (clock_enabled == 0)
 		return;
 
@@ -6271,75 +6169,23 @@ i915_nogem_tc_get_pll_id(
 	return 1;
 }
 
-/*
- * Waits until every bit of a mask is clear in a display register, polling
- * every 10 us for at most 1 ms (the waits of icl_pll_disable()).
- *
- * Returns 0, ETIMEDOUT when the bits stayed, or EIO when the time base
- * failed.
- */
-static int
-i915_nogem_wait_clear(
-	struct i915_mmio *m,
-	uint32_t reg,
-	uint32_t mask)
-{
-	uint32_t value;
-	unsigned waited_us;
-	int delay_result;
-
-	/* Polls until the bits are clear or the time is up; the last read decides. */
-	waited_us = 0U;
-	for (;;) {
-		/* Reads the register; the wait is over once the bits are clear. */
-		value = drv_i915_read32(m, reg);
-		if ((value & mask) == 0U)
-			break;
-
-		/* The time is up: the bits stayed. */
-		if (waited_us >= I915_PLL_DISABLE_TIMEOUT_US)
-			return ETIMEDOUT;
-
-		/* Waits a little before the next read. */
-		delay_result = drv_i915_udelay(I915_PLL_DISABLE_POLL_US);
-		if (delay_result != 0)
-			return EIO;
-
-		/* The time waited so far. */
-		waited_us += I915_PLL_DISABLE_POLL_US;
-	}
-
-	/* Succeeded: the bits are clear. */
-	return 0;
-}
-
-/*
- * Turns a PLL off with Linux's whole disable (icl_pll_disable()): clears
- * the enable and waits for the lock to go, then clears the power request
- * and waits for the power to go.  A wait that ends without its bit going
- * is logged, as the reference logs it, and the disable goes on.
- */
+/* Turns a port PLL off through the xd clock and logs the waits that ran out. */
 static void
-i915_nogem_icl_pll_disable(
+i915_nogem_pll_disable(
 	struct i915_display_nogem *d,
-	struct i915_mmio *m,
 	struct i915_dpll *pll)
 {
-	int wait_result;
+	unsigned late;
 
-	/* Clears the enable. */
-	(void)i915_nogem_rmw(d, m, pll->enable_reg, I915_PLL_ENABLE_BIT, 0U);
+	/* A display without the xd clock leaves the PLL. */
+	if (d->xd == NULL)
+		return;
 
-	/* Waits for the lock to go. */
-	wait_result = i915_nogem_wait_clear(m, pll->enable_reg, I915_PLL_LOCK_BIT);
-	if (wait_result != 0)
-		kern_logf("i915: PLL %d locked (error %d)\n", pll->id, wait_result);
-
-	/* Removes the PLL power. */
-	(void)i915_nogem_rmw(d, m, pll->enable_reg, I915_PLL_POWER_ENABLE_BIT, 0U);
-
-	/* Waits for the power to go. */
-	wait_result = i915_nogem_wait_clear(m, pll->enable_reg, I915_PLL_POWER_STATE_BIT);
-	if (wait_result != 0)
-		kern_logf("i915: PLL %d Power not disabled (error %d)\n", pll->id, wait_result);
+	/* The enable and the power, each with its wait. */
+	late = drv_i915_xd_dpll_disable(&d->xd->io, pll->xd_pll);
+	d->mmio_writes += 2U;
+	if ((late & I915_XD_DPLL_LATE_UNLOCK) != 0U)
+		kern_logf("i915: PLL %d locked\n", pll->id);
+	if ((late & I915_XD_DPLL_LATE_POWER_OFF) != 0U)
+		kern_logf("i915: PLL %d Power not disabled\n", pll->id);
 }

@@ -143,8 +143,6 @@ static u8 i915_ddi_dp_voltage_max(struct intel_dp *intel_dp, const struct intel_
 static u8 i915_ddi_dp_preemph_max(struct intel_dp *intel_dp);
 static void i915_ddi_enable_clock(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state);
 static void i915_ddi_disable_clock(struct intel_encoder *encoder);
-static void i915_icl_ddi_enable_clock_reg(struct drm_i915_private *cur_i915, struct drm_i915_private *i915, i915_reg_t reg, u32 clk_sel_mask, u32 clk_sel, u32 clk_off);
-static void i915_icl_ddi_disable_clock_reg(struct drm_i915_private *cur_i915, struct drm_i915_private *i915, i915_reg_t reg, u32 clk_off);
 static void i915_icl_ddi_combo_enable_clock(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state);
 static void i915_icl_ddi_combo_disable_clock(struct intel_encoder *encoder);
 static enum intel_display_power_domain i915_ddi_main_link_aux_domain(struct intel_digital_port *dig_port, const struct intel_crtc_state *crtc_state);
@@ -193,12 +191,10 @@ static void i915_ddi_read_func_ctl(struct intel_encoder *encoder, struct intel_c
 static void i915_ddi_dotclock_get(struct intel_crtc_state *pipe_config);
 static void i915_ddi_get_config(struct intel_encoder *encoder, struct intel_crtc_state *pipe_config);
 static void i915_ddi_get_clock(struct intel_encoder *encoder, struct intel_crtc_state *crtc_state, struct intel_shared_dpll *pll);
-static struct intel_shared_dpll *i915_icl_ddi_get_pll_reg(struct drm_i915_private *i915, i915_reg_t reg, u32 clk_sel_mask, u32 clk_sel_shift);
 static struct intel_shared_dpll *i915_icl_ddi_combo_get_pll(struct intel_encoder *encoder);
 static void i915_icl_ddi_combo_get_config(struct intel_encoder *encoder, struct intel_crtc_state *crtc_state);
 static void i915_ddi_sync_state(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state);
 static void i915_ddi_get_power_domains(struct intel_encoder *encoder, struct intel_crtc_state *crtc_state);
-static bool i915_icl_ddi_is_clock_enabled_reg(struct drm_i915_private *i915, i915_reg_t reg, u32 clk_off);
 static bool i915_icl_ddi_combo_is_clock_enabled(struct intel_encoder *encoder);
 static bool i915_ddi_connector_read_hw_state(struct intel_connector *intel_connector, struct intel_encoder *encoder);
 static void i915_icl_program_mg_dp_mode(struct intel_digital_port *dig_port, const struct intel_crtc_state *crtc_state);
@@ -555,7 +551,7 @@ drv_i915_lcd_ms_bind_readout(
 	 * A combo PHY port reads its PLL too (icl_ddi_combo_get_config(), as
 	 * intel_ddi_init() binds it from display 11).  Without it the crtc
 	 * state names no PLL, the sanitize turns off the PLL the firmware's
-	 * pipe runs on, and that pipe can no longer stop (ws084).
+	 * pipe runs on, and that pipe can no longer stop.
 	 */
 	i915 = i915_lcd_to_i915(encoder->base.dev);
 	phy = drv_i915_lcd_intel_port_to_phy(i915, encoder->port);
@@ -650,9 +646,8 @@ drv_i915_lcd_ms_bind_encoder(
  * intel_ddi_buf_trans_init() binds them), without making the object its
  * world's bound one.
  *
- * The takeover binds the Type-C ports' readout encoders this way
- * (ws051-p004b): a crtc the firmware left on such a port is stopped
- * through that port's own hooks.
+ * The takeover binds the Type-C ports' readout encoders this way: a crtc the
+ * firmware left on such a port is stopped through that port's own hooks.
  */
 void
 drv_i915_lcd_ms_bind_port_hooks(
@@ -1887,54 +1882,6 @@ i915_ddi_disable_clock(
 	encoder->disable_clock(encoder);
 }
 
-/*
- * Selects the port's PLL and ungates its clock in a clock register, under
- * the DPLL lock (the Linux _icl_ddi_enable_clock(); the lock is taken on
- * the entry point's device).
- */
-static void
-i915_icl_ddi_enable_clock_reg(
-	struct drm_i915_private *cur_i915,
-	struct drm_i915_private *i915,
-	i915_reg_t reg,
-	u32 clk_sel_mask,
-	u32 clk_sel,
-	u32 clk_off)
-{
-	/* Selects the PLL, then ungates the clock. */
-	I915_LCD_MUTEX_LOCK(cur_i915, &i915->display.dpll.lock);
-
-	(void)i915_lcd_intel_de_rmw(i915, reg, clk_sel_mask, clk_sel);
-
-	/*
-	 * "This step and the step before must be
-	 *  done with separate register writes."
-	 */
-	(void)i915_lcd_intel_de_rmw(i915, reg, clk_off, 0);
-
-	I915_LCD_MUTEX_UNLOCK(cur_i915, &i915->display.dpll.lock);
-}
-
-/*
- * Gates the port's clock in a clock register, under the DPLL lock (the
- * Linux _icl_ddi_disable_clock(); the lock is taken on the entry point's
- * device).
- */
-static void
-i915_icl_ddi_disable_clock_reg(
-	struct drm_i915_private *cur_i915,
-	struct drm_i915_private *i915,
-	i915_reg_t reg,
-	u32 clk_off)
-{
-	/* Gates the clock. */
-	I915_LCD_MUTEX_LOCK(cur_i915, &i915->display.dpll.lock);
-
-	(void)i915_lcd_intel_de_rmw(i915, reg, 0, clk_off);
-
-	I915_LCD_MUTEX_UNLOCK(cur_i915, &i915->display.dpll.lock);
-}
-
 /* Maps a combo PHY port to the crtc's PLL and ungates its clock (the Linux icl_ddi_combo_enable_clock(), the enable_clock hook). */
 static void
 i915_icl_ddi_combo_enable_clock(
@@ -1958,13 +1905,14 @@ i915_icl_ddi_combo_enable_clock(
 	if (warned)
 		return;
 
-	/* Selects the PLL for the PHY and ungates the PHY's DDI clock. */
-	i915_icl_ddi_enable_clock_reg(cur_i915,
-				      i915,
-				      ICL_DPCLKA_CFGCR0,
-				      ICL_DPCLKA_CFGCR0_DDI_CLK_SEL_MASK(phy),
-				      ICL_DPCLKA_CFGCR0_DDI_CLK_SEL(pll->info->id, phy),
-				      ICL_DPCLKA_CFGCR0_DDI_CLK_OFF(phy));
+	/*
+	 * Selects the PLL for the PHY and ungates the PHY's DDI clock through
+	 * the xd clock, under the DPLL lock (taken on the entry point's
+	 * device), as the Type-C clock-off bits of the same word are written.
+	 */
+	I915_LCD_MUTEX_LOCK(cur_i915, &i915->display.dpll.lock);
+	drv_i915_dpll_map_ddi(i915, (unsigned)phy, pll);
+	I915_LCD_MUTEX_UNLOCK(cur_i915, &i915->display.dpll.lock);
 }
 
 /* Gates the DDI clock of a combo PHY port (the Linux icl_ddi_combo_disable_clock(), the disable_clock hook). */
@@ -1981,11 +1929,10 @@ i915_icl_ddi_combo_disable_clock(
 	cur_i915 = i915_ddi_cur_i915(encoder);
 	phy = drv_i915_lcd_intel_port_to_phy(i915, encoder->port);
 
-	/* Gates the PHY's DDI clock. */
-	i915_icl_ddi_disable_clock_reg(cur_i915,
-				       i915,
-				       ICL_DPCLKA_CFGCR0,
-				       ICL_DPCLKA_CFGCR0_DDI_CLK_OFF(phy));
+	/* Gates the PHY's DDI clock through the xd clock, under the DPLL lock. */
+	I915_LCD_MUTEX_LOCK(cur_i915, &i915->display.dpll.lock);
+	drv_i915_dpll_unmap_ddi(i915, (unsigned)phy);
+	I915_LCD_MUTEX_UNLOCK(cur_i915, &i915->display.dpll.lock);
 }
 
 /* Selects the AUX power domain the port's main link needs (the Linux intel_ddi_main_link_aux_domain()). */
@@ -4110,7 +4057,7 @@ i915_ddi_get_clock(
 	/*
 	 * Makes the slot the active one (icl_set_active_port_dpll()).  The
 	 * frequency below reads the PLL it names, so this is not a recorded
-	 * step: a NULL PLL there faulted the bare-metal takeover (ws084).
+	 * step: a NULL PLL there faulted the bare-metal takeover.
 	 */
 	crtc_state->shared_dpll = port_dpll->pll;
 	crtc_state->dpll_hw_state = port_dpll->hw_state;
@@ -4120,27 +4067,6 @@ i915_ddi_get_clock(
 							&crtc_state->dpll_hw_state);
 }
 
-/* Finds the PLL a clock register selects for a port (the Linux _icl_ddi_get_pll()). */
-static struct intel_shared_dpll *
-i915_icl_ddi_get_pll_reg(
-	struct drm_i915_private *i915,
-	i915_reg_t reg,
-	u32 clk_sel_mask,
-	u32 clk_sel_shift)
-{
-	enum intel_dpll_id id;
-	struct intel_shared_dpll *pll;
-
-	/* Reads the PLL select field. */
-	id = (i915_lcd_intel_de_read(i915, reg) & clk_sel_mask) >> clk_sel_shift;
-
-	/* Finds the device's PLL of that id. */
-	pll = drv_i915_get_shared_dpll_by_id(i915, id);
-
-	/* Succeeded: reports the PLL (NULL when the id is not in the pool). */
-	return pll;
-}
-
 /* Finds the PLL a combo PHY port selects (the Linux icl_ddi_combo_get_pll()). */
 static struct intel_shared_dpll *
 i915_icl_ddi_combo_get_pll(
@@ -4148,16 +4074,16 @@ i915_icl_ddi_combo_get_pll(
 {
 	struct drm_i915_private *i915;
 	struct intel_shared_dpll *pll;
+	unsigned id;
 	enum phy phy;
 
 	/* Finds the device and the port's PHY. */
 	i915 = i915_lcd_to_i915(encoder->base.dev);
 	phy = drv_i915_lcd_intel_port_to_phy(i915, encoder->port);
 
-	/* Reads the PHY's select field of the DDI clock register. */
-	pll = i915_icl_ddi_get_pll_reg(i915, ICL_DPCLKA_CFGCR0,
-				       ICL_DPCLKA_CFGCR0_DDI_CLK_SEL_MASK(phy),
-				       ICL_DPCLKA_CFGCR0_DDI_CLK_SEL_SHIFT(phy));
+	/* Reads the PLL the PHY selects (xd clock) and finds the device's PLL of that id. */
+	(void)drv_i915_dpll_ddi_mapped(i915, (unsigned)phy, &id);
+	pll = drv_i915_get_shared_dpll_by_id(i915, (enum intel_dpll_id)id);
 
 	/* Succeeded: reports the PLL. */
 	return pll;
@@ -4262,26 +4188,6 @@ i915_ddi_get_power_domains(
 	i915_main_link_aux_power_domain_get(dig_port, crtc_state);
 }
 
-/* Tells whether a clock register leaves a port's clock ungated (the Linux _icl_ddi_is_clock_enabled()). */
-static bool
-i915_icl_ddi_is_clock_enabled_reg(
-	struct drm_i915_private *i915,
-	i915_reg_t reg,
-	u32 clk_off)
-{
-	u32 value;
-
-	/* Reads the clock register. */
-	value = i915_lcd_intel_de_read(i915, reg);
-
-	/* A set clock-off bit gates the clock. */
-	if (value & clk_off)
-		return false;
-
-	/* Succeeded: the clock is ungated. */
-	return true;
-}
-
 /*
  * Tells whether a combo PHY port's DDI clock is ungated (the Linux
  * icl_ddi_combo_is_clock_enabled(), the is_clock_enabled hook).
@@ -4291,19 +4197,19 @@ i915_icl_ddi_combo_is_clock_enabled(
 	struct intel_encoder *encoder)
 {
 	struct drm_i915_private *i915;
+	unsigned id;
 	enum phy phy;
-	bool enabled;
+	int enabled;
 
 	/* Finds the device and the port's PHY. */
 	i915 = i915_lcd_to_i915(encoder->base.dev);
 	phy = drv_i915_lcd_intel_port_to_phy(i915, encoder->port);
 
-	/* Reads the PHY's clock-off bit. */
-	enabled = i915_icl_ddi_is_clock_enabled_reg(i915, ICL_DPCLKA_CFGCR0,
-						    ICL_DPCLKA_CFGCR0_DDI_CLK_OFF(phy));
+	/* Reads the PHY's clock-off bit (xd clock). */
+	enabled = drv_i915_dpll_ddi_mapped(i915, (unsigned)phy, &id);
 
 	/* Succeeded: reports whether the clock is ungated. */
-	return enabled;
+	return enabled != 0;
 }
 
 /*

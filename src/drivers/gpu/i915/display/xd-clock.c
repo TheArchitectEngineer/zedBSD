@@ -54,6 +54,20 @@
 #define I915_XD_CDCLK_MAX_24MHZ		648000U
 #define I915_XD_CDCLK_MAX		652800U
 
+/*
+ * The 38.4 MHz reference, which the port PLLs divide by 2; the range the
+ * DCO of a combo DPLL must be in for an HDMI clock; and how long a port
+ * PLL's power and lock may take to come and go.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dpll_mgr.c
+ * (icl_wrpll_ref_clock, icl_calc_wrpll, icl_pll_power_enable,
+ * icl_pll_enable, icl_pll_disable).
+ */
+#define I915_XD_DPLL_REF_38P4		38400U
+#define I915_XD_DPLL_DCO_MIN_KHZ	7998000U
+#define I915_XD_DPLL_DCO_MAX_KHZ	10000000U
+#define I915_XD_DPLL_US			1000U
+
 static uint32_t i915_xd_clock_div_round(uint32_t a, uint32_t b);
 static uint32_t i915_xd_cdclk_divider(uint32_t cdclk_khz, uint32_t vco_khz);
 static uint32_t i915_xd_cdclk_decimal(uint32_t cdclk_khz);
@@ -63,6 +77,13 @@ static void i915_xd_cdclk_pll_on(struct i915_xd_io *io, struct i915_xd_cdclk *st
 static void i915_xd_cdclk_pll_crawl(struct i915_xd_io *io, struct i915_xd_cdclk *state, uint32_t vco_khz, struct i915_xd_cdclk_report *report);
 static void i915_xd_cdclk_program(struct i915_xd_io *io, const struct i915_xd_platform *platform, struct i915_xd_cdclk *state, const struct i915_xd_cdclk *target, struct i915_xd_cdclk_report *report);
 static void i915_xd_cdclk_report_clear(struct i915_xd_cdclk_report *report);
+static void i915_xd_dpll_pack(const struct i915_xd_platform *platform, uint32_t ref_khz, uint32_t dco_integer, uint32_t dco_fraction, uint32_t qdiv_ratio, uint32_t qdiv_mode, uint32_t kdiv, uint32_t pdiv, int afc, struct i915_xd_dpll_words *words);
+static void i915_xd_dpll_map_place(const struct i915_xd_platform *platform, unsigned phy, uint32_t *word, uint32_t *shift, uint32_t *off);
+static uint32_t i915_xd_dpll_div0(const struct i915_xd_platform *platform, const struct i915_xd_pll_desc *pll);
+static uint32_t i915_xd_dpll_p_code(uint32_t p);
+static uint32_t i915_xd_dpll_p_value(uint32_t code);
+static uint32_t i915_xd_dpll_k_code(uint32_t k);
+static uint32_t i915_xd_dpll_k_value(uint32_t code);
 
 /*
  * Reads the CD clock the hardware runs: the reference from DSSM, the
@@ -676,4 +697,630 @@ i915_xd_cdclk_report_clear(
 	report->unlock_late = 0;
 	report->lock_late = 0;
 	report->crawl_late = 0;
+}
+
+/*
+ * Packs a DCO and dividers into the words of a combo DPLL: the fraction
+ * halved where the platform needs it with a 38.4 MHz reference, the
+ * normal crystal select of display 12 on (the 8400 MHz central frequency
+ * before), and the AFC startup field when the VBT overrides it.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dpll_mgr.c
+ * (icl_calc_dpll_state, ehl_combo_pll_div_frac_wa_needed).
+ */
+static void
+i915_xd_dpll_pack(
+	const struct i915_xd_platform *platform,
+	uint32_t ref_khz,
+	uint32_t dco_integer,
+	uint32_t dco_fraction,
+	uint32_t qdiv_ratio,
+	uint32_t qdiv_mode,
+	uint32_t kdiv,
+	uint32_t pdiv,
+	int afc,
+	struct i915_xd_dpll_words *words)
+{
+	/* With a 38.4 MHz reference some platforms take half the fraction, rounded. */
+	if (platform->frac_wa_38p4 && ref_khz == I915_XD_DPLL_REF_38P4)
+		dco_fraction = (dco_fraction + 1U) / 2U;
+
+	/* The DCO. */
+	words->cfgcr0 = i915_xd_field_put(I915_XD_CFGCR0_DCO_FRACTION, dco_fraction) |
+			(dco_integer & I915_XD_CFGCR0_DCO_INTEGER);
+
+	/* The dividers; display 12 on selects the normal crystal, which is a 0 field. */
+	words->cfgcr1 = i915_xd_field_put(I915_XD_CFGCR1_QDIV_RATIO, qdiv_ratio) |
+			i915_xd_field_put(I915_XD_CFGCR1_KDIV, kdiv) |
+			i915_xd_field_put(I915_XD_CFGCR1_PDIV, pdiv);
+	if (qdiv_mode != 0U)
+		words->cfgcr1 |= I915_XD_CFGCR1_QDIV_MODE;
+	if (platform->display_ver < 12U)
+		words->cfgcr1 |= I915_XD_CFGCR1_CENTRAL_FREQ_8400;
+
+	/* The VBT's AFC startup, when it has one. */
+	words->div0 = 0U;
+	words->div0_set = 0;
+	if (afc >= 0) {
+		words->div0 = i915_xd_field_put(I915_XD_DPLL_DIV0_AFC_STARTUP, (uint32_t)afc);
+		words->div0_set = 1;
+	}
+}
+
+/*
+ * Works out the words of a combo DPLL for a DisplayPort link rate from
+ * the table of the reference (a 38.4 MHz reference uses the 19.2 MHz
+ * rows).  afc is the VBT's AFC startup override, or
+ * I915_XD_DPLL_AFC_NONE.  Returns 0, or EINVAL for a rate the table does
+ * not have.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dpll_mgr.c
+ * (icl_calc_dp_combo_pll, icl_calc_dpll_state).
+ */
+int
+drv_i915_xd_dpll_dp_words(
+	const struct i915_xd_platform *platform,
+	uint32_t ref_khz,
+	uint32_t link_khz,
+	int afc,
+	struct i915_xd_dpll_words *words)
+{
+	const struct i915_xd_dpll_dp_row *row;
+
+	/* The row of the link rate. */
+	row = drv_i915_xd_dpll_dp(ref_khz, link_khz);
+	if (row == NULL)
+		return EINVAL;
+
+	/* Packs it. */
+	i915_xd_dpll_pack(platform, ref_khz, row->dco_integer, row->dco_fraction, row->qdiv_ratio, row->qdiv_mode,
+		row->kdiv, row->pdiv, afc, words);
+
+	/* Succeeded: the words are the caller's. */
+	return 0;
+}
+
+/*
+ * Works out the words of a combo DPLL for an HDMI TMDS clock.  The PLL's
+ * output (five times the TMDS clock, the AFE clock) times one of the
+ * dividers the hardware allows gives the DCO; of the dividers that put
+ * the DCO between 7998 and 10000 MHz the one nearest the middle wins.
+ * The divider is then split into P, Q and K, and the DCO is expressed in
+ * the reference (19.2 MHz for a 38.4 MHz one) with a 15-bit fraction.
+ * Returns 0, or EINVAL when no divider fits.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dpll_mgr.c
+ * (icl_calc_wrpll: the dividers and the DCO range).
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dpll_mgr.c
+ * (icl_calc_wrpll, icl_wrpll_get_multipliers, icl_wrpll_params_populate,
+ * icl_wrpll_ref_clock, icl_calc_dpll_state).
+ */
+int
+drv_i915_xd_dpll_hdmi_words(
+	const struct i915_xd_platform *platform,
+	uint32_t ref_khz,
+	uint32_t tmds_khz,
+	int afc,
+	struct i915_xd_dpll_words *words)
+{
+	static const uint8_t dividers[] = {
+		2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 28, 30, 32, 36, 40,
+		42, 44, 48, 50, 52, 54, 56, 60, 64, 66, 68, 70, 72, 76, 78, 80,
+		84, 88, 90, 92, 96, 98, 100, 102, 3, 5, 7, 9, 15, 21
+	};
+	uint32_t afe_khz;
+	uint32_t dco_khz;
+	uint32_t middle;
+	uint32_t distance;
+	uint32_t best_distance;
+	uint32_t best_dco;
+	uint32_t best_divider;
+	uint32_t p;
+	uint32_t q;
+	uint32_t k;
+	uint32_t wrpll_ref;
+	uint64_t dco_fixed;
+	unsigned index;
+
+	/* The divider whose DCO is in range and nearest the middle. */
+	afe_khz = tmds_khz * 5U;
+	middle = (I915_XD_DPLL_DCO_MIN_KHZ + I915_XD_DPLL_DCO_MAX_KHZ) / 2U;
+	best_distance = 0xffffffffU;
+	best_dco = 0U;
+	best_divider = 0U;
+	for (index = 0U; index < sizeof(dividers) / sizeof(dividers[0]); index++) {
+		dco_khz = afe_khz * dividers[index];
+		if (dco_khz < I915_XD_DPLL_DCO_MIN_KHZ || dco_khz > I915_XD_DPLL_DCO_MAX_KHZ)
+			continue;
+
+		distance = dco_khz >= middle ? dco_khz - middle : middle - dco_khz;
+		if (distance < best_distance) {
+			best_distance = distance;
+			best_divider = dividers[index];
+			best_dco = dco_khz;
+		}
+	}
+
+	/* No divider fits. */
+	if (best_divider == 0U)
+		return EINVAL;
+
+	/*
+	 * Splits the divider: 2, 3, 5 and 7 alone; the other odd ones as
+	 * three times P; the even ones as P times Q times K = 2.
+	 */
+	q = 1U;
+	k = 1U;
+	if (best_divider == 2U || best_divider == 3U || best_divider == 5U || best_divider == 7U) {
+		p = best_divider;
+	} else if ((best_divider & 1U) != 0U) {
+		p = best_divider / 3U;
+		k = 3U;
+	} else if (best_divider % 4U == 0U) {
+		p = 2U;
+		q = best_divider / 4U;
+		k = 2U;
+	} else if (best_divider % 6U == 0U) {
+		p = 3U;
+		q = best_divider / 6U;
+		k = 2U;
+	} else if (best_divider % 5U == 0U) {
+		p = 5U;
+		q = best_divider / 10U;
+		k = 2U;
+	} else {
+		p = 7U;
+		q = best_divider / 14U;
+		k = 2U;
+	}
+
+	/* The DCO as a 15-bit fixed point multiple of the reference the PLL sees. */
+	wrpll_ref = ref_khz;
+	if (wrpll_ref == I915_XD_DPLL_REF_38P4)
+		wrpll_ref = ref_khz / 2U;
+	if (wrpll_ref == 0U)
+		return EINVAL;
+	dco_fixed = ((uint64_t)best_dco << 15) / wrpll_ref;
+
+	/* Packs it with the dividers in their register encoding. */
+	i915_xd_dpll_pack(platform, ref_khz, (uint32_t)(dco_fixed >> 15), (uint32_t)(dco_fixed & 0x7fffU), q, q != 1U ? 1U : 0U,
+		i915_xd_dpll_k_code(k), i915_xd_dpll_p_code(p), afc, words);
+
+	/* Succeeded: the words are the caller's. */
+	return 0;
+}
+
+/*
+ * Works out the words of the Thunderbolt PLL, which runs at one rate:
+ * its DCO from the table of the reference; its dividers are not used.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dpll_mgr.c
+ * (icl_calc_tbt_pll, icl_calc_dpll_state).
+ */
+void
+drv_i915_xd_dpll_tbt_words(
+	const struct i915_xd_platform *platform,
+	uint32_t ref_khz,
+	int afc,
+	struct i915_xd_dpll_words *words)
+{
+	const struct i915_xd_dpll_dco *dco;
+
+	/* The DCO of the reference, no dividers. */
+	dco = drv_i915_xd_tbt_pll(ref_khz);
+	i915_xd_dpll_pack(platform, ref_khz, dco->dco_integer, dco->dco_fraction, 0U, 0U, 0U, 0U, afc, words);
+}
+
+/*
+ * Reports the link clock a combo DPLL's words give (the DCO over the
+ * dividers and the AFE's 5), in kHz; 0 when a divider field holds no
+ * divider.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dpll_mgr.c
+ * (icl_ddi_combo_pll_get_freq, __cnl_ddi_wrpll_get_freq).
+ */
+uint32_t
+drv_i915_xd_dpll_port_khz(
+	const struct i915_xd_platform *platform,
+	uint32_t ref_khz,
+	const struct i915_xd_dpll_words *words)
+{
+	uint32_t wrpll_ref;
+	uint32_t fraction;
+	uint32_t dco_khz;
+	uint32_t p;
+	uint32_t q;
+	uint32_t k;
+
+	/* The dividers: P and K from their codes, Q only in its mode. */
+	p = i915_xd_dpll_p_value(i915_xd_field_get(I915_XD_CFGCR1_PDIV, words->cfgcr1));
+	k = i915_xd_dpll_k_value(i915_xd_field_get(I915_XD_CFGCR1_KDIV, words->cfgcr1));
+	q = 1U;
+	if ((words->cfgcr1 & I915_XD_CFGCR1_QDIV_MODE) != 0U)
+		q = i915_xd_field_get(I915_XD_CFGCR1_QDIV_RATIO, words->cfgcr1);
+	if (p == 0U || q == 0U || k == 0U)
+		return 0U;
+
+	/* The DCO: the integer and the fraction (written halved where the platform needs it). */
+	wrpll_ref = ref_khz;
+	if (wrpll_ref == I915_XD_DPLL_REF_38P4)
+		wrpll_ref = ref_khz / 2U;
+	fraction = i915_xd_field_get(I915_XD_CFGCR0_DCO_FRACTION, words->cfgcr0);
+	if (platform->frac_wa_38p4 && ref_khz == I915_XD_DPLL_REF_38P4)
+		fraction *= 2U;
+	dco_khz = (words->cfgcr0 & I915_XD_CFGCR0_DCO_INTEGER) * wrpll_ref;
+	dco_khz += (fraction * wrpll_ref) / 0x8000U;
+
+	/* Succeeded: the link clock. */
+	return dco_khz / (p * q * k * 5U);
+}
+
+/*
+ * Reports the PLL of a platform that a DDI selects with a value, or NULL.
+ */
+const struct i915_xd_pll_desc *
+drv_i915_xd_dpll_desc(
+	const struct i915_xd_platform *platform,
+	unsigned select)
+{
+	unsigned index;
+
+	/* Looks the select value up. */
+	for (index = 0U; index < platform->nplls; index++) {
+		if (platform->plls[index].select == select)
+			return &platform->plls[index];
+	}
+
+	/* Succeeded: no PLL has it. */
+	return NULL;
+}
+
+/*
+ * Turns a combo DPLL or the Thunderbolt PLL on with its words: power,
+ * the wait for the power, the configuration words and the AFC startup,
+ * a posting read, the enable, the wait for the lock.  Returns the waits
+ * that ran out (I915_XD_DPLL_LATE_*); a PLL without configuration words
+ * (a Type-C PLL, whose words are in its PHY) is refused with every bit.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dpll_mgr.c
+ * (icl_pll_power_enable, icl_pll_enable: the waits of 1 ms).
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dpll_mgr.c
+ * (combo_pll_enable, tbt_pll_enable, icl_pll_power_enable, icl_dpll_write,
+ * icl_pll_enable).
+ */
+unsigned
+drv_i915_xd_dpll_enable(
+	struct i915_xd_io *io,
+	const struct i915_xd_platform *platform,
+	const struct i915_xd_pll_desc *pll,
+	const struct i915_xd_dpll_words *words)
+{
+	uint32_t div0;
+	unsigned late;
+	int error;
+
+	/* Only a PLL with configuration words is written here. */
+	if (pll->cfgcr0 == 0U)
+		return I915_XD_DPLL_LATE_POWER_ON | I915_XD_DPLL_LATE_LOCK;
+
+	/* Powers the PLL and waits for the power. */
+	late = 0U;
+	(void)drv_i915_xd_io_rmw(io, pll->enable, 0U, I915_XD_PLL_POWER_ENABLE);
+	error = drv_i915_xd_io_poll(io, pll->enable, I915_XD_PLL_POWER_STATE, I915_XD_PLL_POWER_STATE, I915_XD_DPLL_US, NULL);
+	if (error != 0)
+		late |= I915_XD_DPLL_LATE_POWER_ON;
+
+	/* The words, the AFC startup where the platform has the word, then a posting read. */
+	drv_i915_xd_io_write(io, pll->cfgcr0, words->cfgcr0);
+	drv_i915_xd_io_write(io, pll->cfgcr1, words->cfgcr1);
+	div0 = i915_xd_dpll_div0(platform, pll);
+	if (words->div0_set && div0 != 0U)
+		(void)drv_i915_xd_io_rmw(io, div0, I915_XD_DPLL_DIV0_AFC_STARTUP, words->div0);
+	drv_i915_xd_io_posting_read(io, pll->cfgcr1);
+
+	/* Enables it and waits for the lock. */
+	(void)drv_i915_xd_io_rmw(io, pll->enable, 0U, I915_XD_PLL_ENABLE);
+	error = drv_i915_xd_io_poll(io, pll->enable, I915_XD_PLL_LOCK, I915_XD_PLL_LOCK, I915_XD_DPLL_US, NULL);
+	if (error != 0)
+		late |= I915_XD_DPLL_LATE_LOCK;
+
+	/* Succeeded: the waits that ran out. */
+	return late;
+}
+
+/*
+ * Turns a port PLL of any kind off through its enable word: the enable,
+ * the wait for the lock to go, the power, the wait for the power to go.
+ * Returns the waits that ran out (I915_XD_DPLL_LATE_*).
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dpll_mgr.c
+ * (icl_pll_disable: the waits of 1 ms).
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dpll_mgr.c
+ * (icl_pll_disable, combo_pll_disable, tbt_pll_disable, mg_pll_disable).
+ */
+unsigned
+drv_i915_xd_dpll_disable(
+	struct i915_xd_io *io,
+	const struct i915_xd_pll_desc *pll)
+{
+	unsigned late;
+	int error;
+
+	/* Clears the enable and waits for the lock to go. */
+	late = 0U;
+	(void)drv_i915_xd_io_rmw(io, pll->enable, I915_XD_PLL_ENABLE, 0U);
+	error = drv_i915_xd_io_poll(io, pll->enable, I915_XD_PLL_LOCK, 0U, I915_XD_DPLL_US, NULL);
+	if (error != 0)
+		late |= I915_XD_DPLL_LATE_UNLOCK;
+
+	/* Removes the power and waits for it to go. */
+	(void)drv_i915_xd_io_rmw(io, pll->enable, I915_XD_PLL_POWER_ENABLE, 0U);
+	error = drv_i915_xd_io_poll(io, pll->enable, I915_XD_PLL_POWER_STATE, 0U, I915_XD_DPLL_US, NULL);
+	if (error != 0)
+		late |= I915_XD_DPLL_LATE_POWER_OFF;
+
+	/* Succeeded: the waits that ran out. */
+	return late;
+}
+
+/*
+ * Reads a port PLL: returns 1 when it is enabled, with the configuration
+ * words of a combo DPLL or the Thunderbolt PLL (and the AFC startup field
+ * when afc is not I915_XD_DPLL_AFC_NONE and the platform has the word),
+ * or 0 when it is off.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dpll_mgr.c
+ * (icl_pll_get_hw_state, combo_pll_get_hw_state, tbt_pll_get_hw_state).
+ */
+int
+drv_i915_xd_dpll_read(
+	struct i915_xd_io *io,
+	const struct i915_xd_platform *platform,
+	const struct i915_xd_pll_desc *pll,
+	int afc,
+	struct i915_xd_dpll_words *words)
+{
+	uint32_t div0;
+
+	/* A PLL that is not enabled has no state. */
+	if ((drv_i915_xd_io_read(io, pll->enable) & I915_XD_PLL_ENABLE) == 0U)
+		return 0;
+
+	/* The configuration words, when the PLL has them. */
+	if (pll->cfgcr0 != 0U) {
+		words->cfgcr0 = drv_i915_xd_io_read(io, pll->cfgcr0);
+		words->cfgcr1 = drv_i915_xd_io_read(io, pll->cfgcr1);
+		div0 = i915_xd_dpll_div0(platform, pll);
+		if (afc != I915_XD_DPLL_AFC_NONE && div0 != 0U) {
+			words->div0 = drv_i915_xd_io_read(io, div0) & I915_XD_DPLL_DIV0_AFC_STARTUP;
+			words->div0_set = 1;
+		}
+	}
+
+	/* Succeeded: the PLL is enabled. */
+	return 1;
+}
+
+/*
+ * Selects a combo DPLL for a combo PHY's DDI clock and ungates the clock,
+ * in two writes (the select must be in place before the clock runs).
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (_icl_ddi_enable_clock, icl_ddi_combo_enable_clock, rkl_ddi_enable_clock,
+ * adls_ddi_enable_clock).
+ */
+void
+drv_i915_xd_dpll_map(
+	struct i915_xd_io *io,
+	const struct i915_xd_platform *platform,
+	unsigned phy,
+	unsigned select)
+{
+	uint32_t word;
+	uint32_t shift;
+	uint32_t off;
+
+	/* The select, then the clock-off bit cleared. */
+	i915_xd_dpll_map_place(platform, phy, &word, &shift, &off);
+	(void)drv_i915_xd_io_rmw(io, word, I915_XD_DPCLKA_SEL_BITS << shift, (select & I915_XD_DPCLKA_SEL_BITS) << shift);
+	(void)drv_i915_xd_io_rmw(io, word, off, 0U);
+}
+
+/*
+ * Gates a combo PHY's DDI clock (the select stays).
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (_icl_ddi_disable_clock, icl_ddi_combo_disable_clock).
+ */
+void
+drv_i915_xd_dpll_unmap(
+	struct i915_xd_io *io,
+	const struct i915_xd_platform *platform,
+	unsigned phy)
+{
+	uint32_t word;
+	uint32_t shift;
+	uint32_t off;
+
+	/* Sets the clock-off bit. */
+	i915_xd_dpll_map_place(platform, phy, &word, &shift, &off);
+	(void)drv_i915_xd_io_rmw(io, word, 0U, off);
+}
+
+/*
+ * Reads a combo PHY's DDI clock: the DPLL it selects, and returns 1 when
+ * the clock is ungated.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (_icl_ddi_get_pll, _icl_ddi_is_clock_enabled).
+ */
+int
+drv_i915_xd_dpll_mapped(
+	struct i915_xd_io *io,
+	const struct i915_xd_platform *platform,
+	unsigned phy,
+	unsigned *select)
+{
+	uint32_t word;
+	uint32_t shift;
+	uint32_t off;
+	uint32_t value;
+
+	/* Reads the word once for both. */
+	i915_xd_dpll_map_place(platform, phy, &word, &shift, &off);
+	value = drv_i915_xd_io_read(io, word);
+	*select = (value >> shift) & I915_XD_DPCLKA_SEL_BITS;
+
+	/* Succeeded: whether the clock runs. */
+	return (value & off) == 0U ? 1 : 0;
+}
+
+/*
+ * Finds where a combo PHY's DPLL select and clock-off bit are in the
+ * platform's map: the word, the select's shift and the clock-off bit.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (ICL_DPCLKA_CFGCR0_DDI_CLK_OFF, RKL_DPCLKA_CFGCR0_DDI_CLK_OFF,
+ * RKL_DPCLKA_CFGCR0_DDI_CLK_SEL_SHIFT, ADLS_DPCLKA_CFGCR).
+ */
+static void
+i915_xd_dpll_map_place(
+	const struct i915_xd_platform *platform,
+	unsigned phy,
+	uint32_t *word,
+	uint32_t *shift,
+	uint32_t *off)
+{
+	static const uint32_t offs[] = {
+		I915_XD_DPCLKA_DDI_OFF_A,
+		I915_XD_DPCLKA_DDI_OFF_B,
+		I915_XD_DPCLKA_DDI_OFF_C,
+		I915_XD_DPCLKA_DDI_OFF_D,
+		I915_XD_DPCLKA_DDI_OFF_E
+	};
+
+	/* The one word of Tiger Lake and display 13 is the default. */
+	*word = I915_XD_DPCLKA_CFGCR0;
+	*shift = I915_XD_DPCLKA_SEL_SHIFT(phy);
+	*off = phy < sizeof(offs) / sizeof(offs[0]) ? offs[phy] : 0U;
+
+	/* Rocket Lake moves PHY D's select and every clock-off bit. */
+	if (platform->pll_map == I915_XD_PLL_MAP_CFGCR0_RKL) {
+		if (phy == 3U)
+			*shift = I915_XD_DPCLKA_RKL_SEL_SHIFT_D;
+		*off = I915_XD_DPCLKA_RKL_DDI_OFF(phy);
+		return;
+	}
+
+	/* Alder Lake-S keeps PHY D and E in a second word. */
+	if (platform->pll_map == I915_XD_PLL_MAP_CFGCR_ADLS) {
+		*shift = I915_XD_DPCLKA_ADLS_SEL_SHIFT(phy);
+		if (phy >= 3U)
+			*word = I915_XD_DPCLKA_CFGCR1_ADLS;
+	}
+}
+
+/*
+ * Reports a PLL's DIV0 word, which holds the AFC startup: the combo DPLLs
+ * and the Thunderbolt PLL of the platforms with one map word (Tiger Lake
+ * and display 13) have one; 0 elsewhere.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dpll_mgr.c
+ * (icl_dpll_write, icl_pll_get_hw_state).
+ */
+static uint32_t
+i915_xd_dpll_div0(
+	const struct i915_xd_platform *platform,
+	const struct i915_xd_pll_desc *pll)
+{
+	/* Only the platforms of the one map word, and not a Type-C PLL. */
+	if (platform->pll_map != I915_XD_PLL_MAP_CFGCR0 || pll->kind == I915_XD_PLL_TC)
+		return 0U;
+
+	/* Succeeded: the PLL's DIV0. */
+	return I915_XD_DPLL_DIV0(pll->select);
+}
+
+/*
+ * The register codes of the P and K dividers, and back (an unknown code
+ * reads as 0).
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (DPLL_CFGCR1_PDIV_2, DPLL_CFGCR1_PDIV_3, DPLL_CFGCR1_PDIV_5,
+ * DPLL_CFGCR1_PDIV_7, DPLL_CFGCR1_KDIV_1, DPLL_CFGCR1_KDIV_2,
+ * DPLL_CFGCR1_KDIV_3).
+ */
+static uint32_t
+i915_xd_dpll_p_code(
+	uint32_t p)
+{
+	/* 2, 3, 5, 7 as 1, 2, 4, 8. */
+	switch (p) {
+	case 2U:
+		return 1U;
+	case 3U:
+		return 2U;
+	case 5U:
+		return 4U;
+	case 7U:
+		return 8U;
+	default:
+		return 0U;
+	}
+}
+
+/* The P divider of a register code. */
+static uint32_t
+i915_xd_dpll_p_value(
+	uint32_t code)
+{
+	/* 1, 2, 4, 8 as 2, 3, 5, 7. */
+	switch (code) {
+	case 1U:
+		return 2U;
+	case 2U:
+		return 3U;
+	case 4U:
+		return 5U;
+	case 8U:
+		return 7U;
+	default:
+		return 0U;
+	}
+}
+
+/* The register code of a K divider. */
+static uint32_t
+i915_xd_dpll_k_code(
+	uint32_t k)
+{
+	/* 1, 2, 3 as 1, 2, 4. */
+	switch (k) {
+	case 1U:
+		return 1U;
+	case 2U:
+		return 2U;
+	case 3U:
+		return 4U;
+	default:
+		return 0U;
+	}
+}
+
+/* The K divider of a register code. */
+static uint32_t
+i915_xd_dpll_k_value(
+	uint32_t code)
+{
+	/* 1, 2, 4 as 1, 2, 3. */
+	switch (code) {
+	case 1U:
+		return 1U;
+	case 2U:
+		return 2U;
+	case 4U:
+		return 3U;
+	default:
+		return 0U;
+	}
 }

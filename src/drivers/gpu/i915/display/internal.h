@@ -1167,12 +1167,16 @@ enum i915_dpll_funcs {
  * One shared DPLL record: its id, its hooks and the state the readout
  * found.
  */
+struct i915_xd;
+struct i915_xd_pll_desc;
+
 struct i915_dpll {
 	const char *name;
 	int id;                 /* enum intel_dpll_id */
 	int funcs;              /* enum i915_dpll_funcs */
 	unsigned index;
 	uint32_t enable_reg;
+	const struct i915_xd_pll_desc *xd_pll;  /* the platform's PLL (xd clock) */
 	int on;                 /* readout */
 	unsigned pipe_mask;
 	unsigned active_mask;
@@ -1207,6 +1211,9 @@ struct i915_display_nogem {
 	struct i915_gmbus_pin gmbus_pins[I915_NOGEM_MAX_GMBUS];
 	unsigned gmbus_pins_present;
 	int gmbus_adapters_unimplemented;   /* i2c core absent: recorded, not faked */
+
+	/* The xd display the DPLL readout and sanitize go through; NULL without a description. */
+	struct i915_xd *xd;
 
 	/* CRTCs / planes / DPLLs */
 	struct i915_crtc crtcs[I915_NOGEM_MAX_PIPES];

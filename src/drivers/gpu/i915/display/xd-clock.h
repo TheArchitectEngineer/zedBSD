@@ -7,7 +7,7 @@
 
 /*
  * The display clocks of the display 12 and 13 code (xd-clock.c): the CD
- * clock.
+ * clock and the combo port PLLs.
  *
  * The CD clock runs the display engine.  It comes from a PLL on the
  * reference clock (its ratio sets the PLL's rate) through a CD2X divider,
@@ -22,6 +22,17 @@
  * PLL's ratio while it runs (display 13) crawl to a new one; the others,
  * and any change from a PLL that is off or in an unknown state, turn the
  * PLL off and on again.
+ *
+ * The port PLLs give the DDIs their link clocks.  A combo DPLL is
+ * programmed with a DCO (an integer and a 15-bit fraction of the
+ * reference) and three dividers: for a DisplayPort link rate from the
+ * table, for an HDMI clock by choosing the dividers that put the DCO
+ * nearest the middle of its range.  With a 38.4 MHz reference the PLL
+ * divides the reference by 2, so the 19.2 MHz words serve, and some
+ * platforms take the fraction halved.  The PLL is powered, written,
+ * enabled and waited on through its enable word; a DDI takes its clock
+ * from a combo DPLL through the platform's DPCLKA select, which is
+ * written before the DDI's clock is ungated, in a separate write.
  */
 
 #ifndef DRIVERS_GPU_I915_DISPLAY_XD_CLOCK_H
@@ -70,6 +81,30 @@ struct i915_xd_cdclk_report {
 	int crawl_late;
 };
 
+/* A DPLL write that has no VBT override of the AFC startup. */
+#define I915_XD_DPLL_AFC_NONE		(-1)
+
+/*
+ * The waits of a port PLL that ran out, as bits: its power coming, its
+ * lock coming, its lock going, its power going.
+ */
+#define I915_XD_DPLL_LATE_POWER_ON	0x1U
+#define I915_XD_DPLL_LATE_LOCK		0x2U
+#define I915_XD_DPLL_LATE_UNLOCK	0x4U
+#define I915_XD_DPLL_LATE_POWER_OFF	0x8U
+
+/*
+ * The words a combo DPLL or the Thunderbolt PLL is programmed with: the
+ * DCO (CFGCR0), the dividers (CFGCR1), and the AFC startup field of DIV0
+ * with whether it is written at all (only with the VBT's override).
+ */
+struct i915_xd_dpll_words {
+	uint32_t cfgcr0;
+	uint32_t cfgcr1;
+	uint32_t div0;
+	int div0_set;
+};
+
 void drv_i915_xd_cdclk_read(struct i915_xd_io *io, const struct i915_xd_platform *platform, struct i915_xd_cdclk *state);
 uint8_t drv_i915_xd_cdclk_voltage(const struct i915_xd_platform *platform, uint32_t cdclk_khz);
 uint32_t drv_i915_xd_cdclk_lowest(const struct i915_xd_platform *platform, uint32_t ref_khz, uint32_t min_khz);
@@ -79,5 +114,16 @@ void drv_i915_xd_cdclk_set(struct i915_xd_io *io, const struct i915_xd_platform 
 void drv_i915_xd_cdclk_init(struct i915_xd_io *io, const struct i915_xd_platform *platform, struct i915_xd_cdclk *state, struct i915_xd_cdclk_report *report);
 void drv_i915_xd_cdclk_uninit(struct i915_xd_io *io, const struct i915_xd_platform *platform, struct i915_xd_cdclk *state, struct i915_xd_cdclk_report *report);
 uint32_t drv_i915_xd_cdclk_max(const struct i915_xd_cdclk *state);
+int drv_i915_xd_dpll_dp_words(const struct i915_xd_platform *platform, uint32_t ref_khz, uint32_t link_khz, int afc, struct i915_xd_dpll_words *words);
+int drv_i915_xd_dpll_hdmi_words(const struct i915_xd_platform *platform, uint32_t ref_khz, uint32_t tmds_khz, int afc, struct i915_xd_dpll_words *words);
+void drv_i915_xd_dpll_tbt_words(const struct i915_xd_platform *platform, uint32_t ref_khz, int afc, struct i915_xd_dpll_words *words);
+uint32_t drv_i915_xd_dpll_port_khz(const struct i915_xd_platform *platform, uint32_t ref_khz, const struct i915_xd_dpll_words *words);
+const struct i915_xd_pll_desc *drv_i915_xd_dpll_desc(const struct i915_xd_platform *platform, unsigned select);
+unsigned drv_i915_xd_dpll_enable(struct i915_xd_io *io, const struct i915_xd_platform *platform, const struct i915_xd_pll_desc *pll, const struct i915_xd_dpll_words *words);
+unsigned drv_i915_xd_dpll_disable(struct i915_xd_io *io, const struct i915_xd_pll_desc *pll);
+int drv_i915_xd_dpll_read(struct i915_xd_io *io, const struct i915_xd_platform *platform, const struct i915_xd_pll_desc *pll, int afc, struct i915_xd_dpll_words *words);
+void drv_i915_xd_dpll_map(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned phy, unsigned select);
+void drv_i915_xd_dpll_unmap(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned phy);
+int drv_i915_xd_dpll_mapped(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned phy, unsigned *select);
 
 #endif /* DRIVERS_GPU_I915_DISPLAY_XD_CLOCK_H */

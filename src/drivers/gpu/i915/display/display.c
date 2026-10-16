@@ -1891,6 +1891,8 @@ i915_display_core_init(
 
 	/* The LCD path picks its tables from the display version. */
 	drv_i915_lcd_set_display_ver(display, (int)gt->display_ver);
+	if (display->xd.chosen)
+		drv_i915_lcd_set_xd_platform(display, display->xd.choice.platform);
 	dcore->dram_type = display->dram_info.type;
 	dcore->dram_channels = display->dram_info.num_channels;
 

@@ -28,11 +28,11 @@
  */
 
 /*
- * The CDCLK and combo PLL tables of Linux intel_cdclk.c and
- * intel_dpll_mgr.c; private to display/clock.c, which includes it after the
- * definitions of struct intel_cdclk_vals and struct icl_combo_pll_params.
+ * The CDCLK tables of Linux intel_cdclk.c that the modeset's CDCLK check
+ * reads; private to display/clock.c, which includes it after the
+ * definition of struct intel_cdclk_vals.
  *
- * zedBSD display rebuild: the CDCLK and combo PLL tables of display/clock.c.
+ * zedBSD display rebuild: the CDCLK tables of display/clock.c.
  *
  * Moved without change to any value from the pre-rebuild tree (commit
  * 7e7ff337): the Linux-typed tables from parity/lcd/intel_cdclk_port.c and
@@ -104,89 +104,6 @@ static const struct intel_cdclk_vals adlp_cdclk_table[] = {
 	{ .refclk = 38400, .cdclk = 556800, .divider = 2, .ratio = 29 },
 	{ .refclk = 38400, .cdclk = 652800, .divider = 2, .ratio = 34 },
 	{ .refclk = 0 }
-};
-
-/*
- * icl_dp_combo_pll_24MHz_values[] (intel_dpll_mgr.c): the combo PLL words
- * of each DP link rate on a 24 MHz reference.  The values are already the
- * bits written to the registers, not the logical dividers.
- */
-static const struct icl_combo_pll_params icl_dp_combo_pll_24MHz_values[] = {
-	{ 540000,
-	  { .dco_integer = 0x151, .dco_fraction = 0x4000,		/* [0]: 5.4 */
-	    .pdiv = 0x2 /* 3 */, .kdiv = 1, .qdiv_mode = 0, .qdiv_ratio = 0, }, },
-	{ 270000,
-	  { .dco_integer = 0x151, .dco_fraction = 0x4000,		/* [1]: 2.7 */
-	    .pdiv = 0x2 /* 3 */, .kdiv = 2, .qdiv_mode = 0, .qdiv_ratio = 0, }, },
-	{ 162000,
-	  { .dco_integer = 0x151, .dco_fraction = 0x4000,		/* [2]: 1.62 */
-	    .pdiv = 0x4 /* 5 */, .kdiv = 2, .qdiv_mode = 0, .qdiv_ratio = 0, }, },
-	{ 324000,
-	  { .dco_integer = 0x151, .dco_fraction = 0x4000,		/* [3]: 3.24 */
-	    .pdiv = 0x4 /* 5 */, .kdiv = 1, .qdiv_mode = 0, .qdiv_ratio = 0, }, },
-	{ 216000,
-	  { .dco_integer = 0x168, .dco_fraction = 0x0000,		/* [4]: 2.16 */
-	    .pdiv = 0x1 /* 2 */, .kdiv = 2, .qdiv_mode = 1, .qdiv_ratio = 2, }, },
-	{ 432000,
-	  { .dco_integer = 0x168, .dco_fraction = 0x0000,		/* [5]: 4.32 */
-	    .pdiv = 0x1 /* 2 */, .kdiv = 2, .qdiv_mode = 0, .qdiv_ratio = 0, }, },
-	{ 648000,
-	  { .dco_integer = 0x195, .dco_fraction = 0x0000,		/* [6]: 6.48 */
-	    .pdiv = 0x2 /* 3 */, .kdiv = 1, .qdiv_mode = 0, .qdiv_ratio = 0, }, },
-	{ 810000,
-	  { .dco_integer = 0x151, .dco_fraction = 0x4000,		/* [7]: 8.1 */
-	    .pdiv = 0x1 /* 2 */, .kdiv = 1, .qdiv_mode = 0, .qdiv_ratio = 0, }, },
-};
-
-/*
- * icl_dp_combo_pll_19_2MHz_values[] (intel_dpll_mgr.c): the same for a
- * 19.2 MHz reference, also used for 38.4 MHz.
- */
-static const struct icl_combo_pll_params icl_dp_combo_pll_19_2MHz_values[] = {
-	{ 540000,
-	  { .dco_integer = 0x1A5, .dco_fraction = 0x7000,		/* [0]: 5.4 */
-	    .pdiv = 0x2 /* 3 */, .kdiv = 1, .qdiv_mode = 0, .qdiv_ratio = 0, }, },
-	{ 270000,
-	  { .dco_integer = 0x1A5, .dco_fraction = 0x7000,		/* [1]: 2.7 */
-	    .pdiv = 0x2 /* 3 */, .kdiv = 2, .qdiv_mode = 0, .qdiv_ratio = 0, }, },
-	{ 162000,
-	  { .dco_integer = 0x1A5, .dco_fraction = 0x7000,		/* [2]: 1.62 */
-	    .pdiv = 0x4 /* 5 */, .kdiv = 2, .qdiv_mode = 0, .qdiv_ratio = 0, }, },
-	{ 324000,
-	  { .dco_integer = 0x1A5, .dco_fraction = 0x7000,		/* [3]: 3.24 */
-	    .pdiv = 0x4 /* 5 */, .kdiv = 1, .qdiv_mode = 0, .qdiv_ratio = 0, }, },
-	{ 216000,
-	  { .dco_integer = 0x1C2, .dco_fraction = 0x0000,		/* [4]: 2.16 */
-	    .pdiv = 0x1 /* 2 */, .kdiv = 2, .qdiv_mode = 1, .qdiv_ratio = 2, }, },
-	{ 432000,
-	  { .dco_integer = 0x1C2, .dco_fraction = 0x0000,		/* [5]: 4.32 */
-	    .pdiv = 0x1 /* 2 */, .kdiv = 2, .qdiv_mode = 0, .qdiv_ratio = 0, }, },
-	{ 648000,
-	  { .dco_integer = 0x1FA, .dco_fraction = 0x2000,		/* [6]: 6.48 */
-	    .pdiv = 0x2 /* 3 */, .kdiv = 1, .qdiv_mode = 0, .qdiv_ratio = 0, }, },
-	{ 810000,
-	  { .dco_integer = 0x1A5, .dco_fraction = 0x7000,		/* [7]: 8.1 */
-	    .pdiv = 0x1 /* 2 */, .kdiv = 1, .qdiv_mode = 0, .qdiv_ratio = 0, }, },
-};
-
-/*
- * tgl_tbt_pll_19_2MHz_values and tgl_tbt_pll_24MHz_values
- * (intel_dpll_mgr.c): the Thunderbolt PLL's DCO of display version 12 and
- * later, on a 19.2 MHz (also 38.4 MHz) and a 24 MHz reference.  The PLL
- * puts out every DP rate at once and the DDI clock select picks one, so
- * the dividers are not used.  Taken without change to any value from Linux
- * v6.8.12 drivers/gpu/drm/i915/display/intel_dpll_mgr.c (sha256
- * 6b339fd5ed331c7e0f35544821c64a249fabff09ababb2b6629f2f89bea02bb7).
- */
-static const struct skl_wrpll_params tgl_tbt_pll_19_2MHz_values = {
-	.dco_integer = 0x54, .dco_fraction = 0x3000,
-	/* the following params are unused */
-	.pdiv = 0, .kdiv = 0, .qdiv_mode = 0, .qdiv_ratio = 0,
-};
-
-static const struct skl_wrpll_params tgl_tbt_pll_24MHz_values = {
-	.dco_integer = 0x43, .dco_fraction = 0x4000,
-	/* the following params are unused */
 };
 
 #endif /* DRIVERS_GPU_I915_INTEL_CLOCK_H */
