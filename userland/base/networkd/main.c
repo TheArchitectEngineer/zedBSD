@@ -465,6 +465,9 @@ static int prefer_resolver(const unsigned char *, size_t);
 static void resolver_write_failed(const char *);
 static void lan_configure(const struct networkd_lan_work *);
 static void lan_configure_steps(const struct networkd_lan_work *);
+static void lan_reset_begin(const char *);
+static void lan_reset_end(const char *);
+static void lan_retry_plan(const struct networkd_lan_work *);
 static int lan_request_supersedes(const struct networkd_request *, enum networkd_client_role);
 static void dispatch_pending_lan(void);
 static int stop_child(pid_t, int *);
@@ -1676,8 +1679,20 @@ lan_configure(
 		       work->interface);
 	lan_configure_cancelled = 0;
 
+	/*
+	 * A DHCP retry takes the interface down first; the configure brings
+	 * it up and asks DHCP, so the link is reset before every retry
+	 * (ws254).
+	 */
+	if (work->reset)
+		lan_reset_begin(work->interface);
+
 	/* Configures it. */
 	lan_configure_steps(work);
+
+	/* Ends the reset, and reads the interface again for its cable. */
+	if (work->reset)
+		lan_reset_end(work->interface);
 
 	/* Nothing is being configured any more. */
 	lan_configuring[0] = '\0';
@@ -1723,6 +1738,9 @@ lan_configure_steps(
 		if (lan_configure_cancelled)
 			return;
 		(void)networkd_lan_configured(&managed_lan, work->interface, 0);
+
+		/* A DHCP interface is asked again in a minute (ws254). */
+		lan_retry_plan(work);
 		notify_state_changed();
 		return;
 	}
@@ -1776,13 +1794,26 @@ lan_configure_steps(
 	 * dhcpc printed names the stage its transaction failed at; nothing
 	 * else keeps it once the interface has fallen back (BUG-293).
 	 */
-	if (!obtained) {
+	if (!obtained && work->reset) {
+		/* A retry that failed again is noted, not warned of each minute (ws254). */
+		syslog(LOG_NOTICE, "networkd: %s: DHCP retry obtained no address: %s",
+		       work->interface, diagnostic);
+	} else if (!obtained) {
 		syslog(LOG_WARNING, "networkd: %s: %s obtained no address: %s",
 		       work->interface, lan_mode_name(work->policy.mode),
 		       diagnostic);
+	} else if (work->reset) {
+		/* Says that the retries ended with a lease (ws254). */
+		syslog(LOG_NOTICE, "networkd: %s: DHCP retry obtained an address",
+		       work->interface);
 	}
 
+	/* Records the outcome, which ends the retry that asked for it. */
 	(void)networkd_lan_configured(&managed_lan, work->interface, obtained);
+
+	/* A DHCP interface that obtained nothing is asked again in a minute (ws254). */
+	if (!obtained)
+		lan_retry_plan(work);
 
 	/* Keeps a DHCP lease's route and resolver for the network preference. */
 	lan_l3_forget(work->interface, 0);
@@ -1790,6 +1821,117 @@ lan_configure_steps(
 		lan_l3_record(work->interface);
 	apply_network_preference();
 	notify_state_changed();
+}
+
+/*
+ * Takes an interface down at the start of a DHCP retry (ws254).
+ *
+ * 2026-10-16 user: each retry is down, up, then DHCP, so that a link that
+ * needs a reset gets one.  The configure that follows brings it up.  The
+ * carrier changes this causes are the reset's own, and the policy is told
+ * so until lan_reset_end.
+ */
+static void
+lan_reset_begin(
+	const char *name)
+{
+	char diagnostic[CHILD_OUTPUT_MAX];
+	char *arguments[4];
+	int result;
+
+	/* Says in the system log that the retry resets the interface. */
+	syslog(LOG_NOTICE, "networkd: %s: DHCP retry: taking the interface down and up",
+	       name);
+
+	/* Tells the policy that carrier changes from here on are the reset's. */
+	(void)networkd_lan_reset_begin(&managed_lan, name);
+
+	/* Takes the interface down, bounded like every other step. */
+	diagnostic[0] = '\0';
+	arguments[0] = (char *)"/sbin/ifconfig";
+	arguments[1] = (char *)name;
+	arguments[2] = (char *)"down";
+	arguments[3] = NULL;
+	result = run_command_until(arguments, 10U,
+	    netutil_monotonic_us() + 15000000ULL, diagnostic);
+
+	/* A down that failed is logged; the up and DHCP are tried all the same. */
+	if (result != 0) {
+		syslog(LOG_NOTICE, "networkd: %s: DHCP retry: down failed: %s",
+		       name, diagnostic);
+	}
+}
+
+/*
+ * Ends the reset of a DHCP retry (ws254).
+ *
+ * The carrier changes the down and up caused are read while the policy
+ * still knows them for the reset's own; then the interfaces are read again,
+ * which says whether a cable is in it after all.
+ */
+static void
+lan_reset_end(
+	const char *name)
+{
+	int drained;
+	int armed;
+	int flags;
+	int error;
+
+	/*
+	 * Reads the events the down and up caused, while they still change
+	 * nothing.  An armed confirmed commit leaves them queued, as the event
+	 * loop does.
+	 */
+	armed = networkd_confirmed_active(&confirmed);
+	if (route_events >= 0 && !armed) {
+		drained = process_route_events();
+		if (drained != 0) {
+			(void)close(route_events);
+			route_events = -1;
+		}
+	}
+
+	/* Carrier changes mean a cable again. */
+	(void)networkd_lan_reset_end(&managed_lan, name);
+
+	/* Reads the interfaces again: a cable that went during the reset is seen now. */
+	lan_snapshot();
+
+	/*
+	 * An interface the up could not bring back is recorded as down, so
+	 * that the policy raises it again rather than waiting for a carrier
+	 * change a down interface cannot report.
+	 */
+	flags = 0;
+	error = interface_flags(name, &flags);
+	if (error == 0 && (flags & IFF_UP) == 0) {
+		(void)networkd_lan_down(&managed_lan, name);
+		lan_work_due = 1;
+	}
+}
+
+/*
+ * Plans the next DHCP retry of an interface whose configure obtained
+ * nothing (ws254).  The policy plans none for a static interface, one held
+ * down, or one without a cable.
+ */
+static void
+lan_retry_plan(
+	const struct networkd_lan_work *work)
+{
+	int planned;
+
+	/* Asks the policy for a retry a minute from now. */
+	planned = networkd_lan_retry_schedule(&managed_lan, work->interface,
+	    netutil_monotonic_us());
+
+	/* Says once, at the first failure, that DHCP will be asked again. */
+	if (planned == 1 && !work->reset) {
+		syslog(LOG_NOTICE, "networkd: %s: DHCP is asked again every %u seconds",
+		       work->interface,
+		       (unsigned)(NETWORKD_LAN_DHCP_RETRY_US / 1000000ULL));
+	}
 }
 
 /*
@@ -2862,6 +3004,7 @@ event_poll_timeout(
 	void)
 {
 	int automatic;
+	int armed;
 	int rollback;
 	int scan;
 
@@ -2886,6 +3029,14 @@ event_poll_timeout(
 	scan = -1;
 	if (!networkd_confirmed_active(&confirmed))
 		scan = networkd_ipv6_poll_timeout();
+	if (scan >= 0 && (automatic < 0 || scan < automatic))
+		automatic = scan;
+
+	/* A wired DHCP retry that is due wakes the loop too (ws254). */
+	scan = -1;
+	armed = networkd_confirmed_active(&confirmed);
+	if (!armed)
+		scan = networkd_lan_retry_timeout(&managed_lan, netutil_monotonic_us());
 	if (scan >= 0 && (automatic < 0 || scan < automatic))
 		automatic = scan;
 	rollback = networkd_confirmed_poll_timeout(&confirmed,
@@ -2923,6 +3074,8 @@ run_due_work(
 	void)
 {
 	enum networkd_sleep_resume resume;
+	int retries;
+	int armed;
 	int due;
 
 	/* A sleep whose SLEEP_END never came ends by itself (ws052-p010). */
@@ -2936,6 +3089,18 @@ run_due_work(
 	if (sleep_resume_due) {
 		sleep_resume_due = 0U;
 		sleep_resume(sleep_resume_pending, sleep_resume_via);
+	}
+
+	/*
+	 * A wired interface whose DHCP retry is due is asked again (ws254).
+	 * Not while a confirmed commit is armed: its rollback owns the wired
+	 * state until it is confirmed or rolled back.
+	 */
+	armed = networkd_confirmed_active(&confirmed);
+	if (!armed) {
+		retries = networkd_lan_retry_due(&managed_lan, netutil_monotonic_us());
+		if (retries > 0)
+			lan_work_due = 1;
 	}
 
 	/* The wired work is done first: it is bounded and it is cheap. */
