@@ -13,6 +13,7 @@
 
 #include "userland/base/networkd/managed-lan.h"
 
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 #include <uapi/route.h>
@@ -26,6 +27,7 @@ static const struct networkd_lan_policy *policy_for(
 static struct networkd_lan_interface *find_by_index(struct networkd_lan *,
 						    uint32_t);
 static int name_valid(const char *);
+static int retry_wanted(const struct networkd_lan *, const struct networkd_lan_interface *);
 
 /*
  * Implements the networkd lan init operation.
@@ -121,10 +123,15 @@ networkd_lan_set_interface(
 	/* Replaced by what was asked. */
 	lan->policy[index] = *policy;
 
-	/* An interface with a cable is configured again, as the user asked. */
+	/*
+	 * An interface with a cable is configured again, as the user asked:
+	 * a plain configure, not a DHCP retry that resets the link first.
+	 */
 	item = find_interface(lan, policy->interface);
-	if (item != NULL && item->carrier)
+	if (item != NULL && item->carrier) {
 		item->state = NETWORKD_LAN_PENDING;
+		item->retry_pending = 0;
+	}
 
 	/* Reports successful completion. */
 	return 0;
@@ -281,6 +288,14 @@ networkd_lan_observe(
 	item->generation = generation;
 	item->present = 1;
 
+	/*
+	 * A running state read while a retry resets the link says what the
+	 * reset is doing, not where the cable is; the daemon reads the
+	 * interfaces again once the reset is over.
+	 */
+	if (item->resetting)
+		return 0;
+
 	/* A cable that arrived asks for the interface to be configured. */
 	if (carrier && !item->carrier && item->state == NETWORKD_LAN_IDLE)
 		item->state = NETWORKD_LAN_PENDING;
@@ -345,6 +360,18 @@ networkd_lan_event(
 
 		/* Reports what is to be done. */
 		return NETWORKD_LAN_ACTION_NONE;
+	}
+
+	/*
+	 * A carrier change while a retry takes the interface down and up is
+	 * the reset's own doing.  The daemon reads the interface again when
+	 * the reset is over, which says whether the cable is still there.
+	 */
+	if (item->resetting) {
+		if (event->rtm_transition == RTM_IFINFO_CARRIER_UP)
+			return NETWORKD_LAN_ACTION_NONE;
+		if (event->rtm_transition == RTM_IFINFO_CARRIER_DOWN)
+			return NETWORKD_LAN_ACTION_NONE;
 	}
 
 	/* Handles a cable that arrived. */
@@ -436,6 +463,9 @@ networkd_lan_next(
 			sizeof(work->interface) - 1U);
 		work->policy = *policy;
 
+		/* A DHCP retry resets the link before it asks (ws254). */
+		work->reset = item->retry_pending;
+
 		/* Reports successful completion. */
 		return 0;
 	}
@@ -522,14 +552,233 @@ networkd_lan_configured(
 	/*
 	 * An address of its own means configured.  Without one the
 	 * interface is left without an IPv4 address (no 169.254 fallback is
-	 * given), and is not tried again until its cable moves or the
-	 * administrator brings it up again: a server that did not answer
-	 * will not answer any sooner for being asked in a loop.
+	 * given).  It is tried again when its cable moves, when the
+	 * administrator brings it up again, or, for DHCP, at the retry the
+	 * daemon plans next with networkd_lan_retry_schedule (ws254).
 	 */
 	item->state = obtained ? NETWORKD_LAN_CONFIGURED :
 		      NETWORKD_LAN_UNCONFIGURED;
 
+	/* The outcome ends the retry that asked for it, and any planned one. */
+	item->retry_pending = 0;
+	item->retry_at = 0U;
+
 	/* Reports successful completion. */
+	return 0;
+}
+
+/*
+ * Plans a DHCP retry for an interface whose configure obtained nothing.
+ *
+ * The retry is one minute from now.  An interface that is configured,
+ * held down, without a cable, or configured statically gets none.
+ */
+int
+networkd_lan_retry_schedule(
+	struct networkd_lan *lan,
+	const char *name,
+	uint64_t now)
+{
+	struct networkd_lan_interface *item;
+	int valid;
+	int wanted;
+
+	/* Rejects a missing state. */
+	if (lan == NULL)
+		return -1;
+
+	/* Rejects a name that could not be an interface. */
+	valid = name_valid(name);
+	if (!valid)
+		return -1;
+
+	/* Finds the interface whose configure failed. */
+	item = find_interface(lan, name);
+	if (item == NULL)
+		return -1;
+
+	/* Decides whether the interface is one that DHCP is asked for again. */
+	wanted = retry_wanted(lan, item);
+	if (!wanted) {
+		item->retry_at = 0U;
+		return 0;
+	}
+
+	/* RETRY_AT is when the event loop wakes to ask again. */
+	item->retry_at = now + NETWORKD_LAN_DHCP_RETRY_US;
+
+	/* Succeeded: a retry is planned. */
+	return 1;
+}
+
+/*
+ * Makes each interface whose DHCP retry is due pending as a retry.
+ */
+int
+networkd_lan_retry_due(
+	struct networkd_lan *lan,
+	uint64_t now)
+{
+	struct networkd_lan_interface *item;
+	size_t index;
+	int count;
+	int wanted;
+
+	/* Rejects a missing state. */
+	if (lan == NULL)
+		return 0;
+	count = 0;
+
+	/* Looks at every interface with a planned retry. */
+	for (index = 0U; index < lan->interface_count; index++) {
+		item = &lan->interfaces[index];
+
+		/* Skips one with no retry planned, or not due yet. */
+		if (item->retry_at == 0U)
+			continue;
+		if (item->retry_at > now)
+			continue;
+
+		/* The planned retry is used up, whether it is still wanted or not. */
+		item->retry_at = 0U;
+
+		/* Skips one whose cable, configuration or administrator changed meanwhile. */
+		wanted = retry_wanted(lan, item);
+		if (!wanted)
+			continue;
+
+		/*
+		 * PENDING with RETRY_PENDING has the next configure reset the
+		 * link before it asks DHCP again.
+		 */
+		item->state = NETWORKD_LAN_PENDING;
+		item->retry_pending = 1;
+		count++;
+	}
+
+	/* Reports how many interfaces are to be asked again. */
+	return count;
+}
+
+/*
+ * Reports the milliseconds until the next DHCP retry is due.
+ */
+int
+networkd_lan_retry_timeout(
+	const struct networkd_lan *lan,
+	uint64_t now)
+{
+	const struct networkd_lan_interface *item;
+	uint64_t earliest;
+	uint64_t milliseconds;
+	size_t index;
+	int wanted;
+
+	/* Rejects a missing state. */
+	if (lan == NULL)
+		return -1;
+	earliest = 0U;
+
+	/* Finds the earliest retry that is still wanted. */
+	for (index = 0U; index < lan->interface_count; index++) {
+		item = &lan->interfaces[index];
+
+		/* Skips one with no retry planned. */
+		if (item->retry_at == 0U)
+			continue;
+
+		/* Skips one that would not be asked again when it is due. */
+		wanted = retry_wanted(lan, item);
+		if (!wanted)
+			continue;
+
+		/* Keeps the earlier of the two. */
+		if (earliest == 0U || item->retry_at < earliest)
+			earliest = item->retry_at;
+	}
+
+	/* Nothing is planned: nothing is waited for. */
+	if (earliest == 0U)
+		return -1;
+
+	/* A retry that is due already is due now. */
+	if (earliest <= now)
+		return 0;
+
+	/* Rounds up, so that the loop does not wake a moment too early. */
+	milliseconds = (earliest - now + 999ULL) / 1000ULL;
+	if (milliseconds > (uint64_t)INT_MAX)
+		return INT_MAX;
+
+	/* Reports the wait until the retry. */
+	return (int)milliseconds;
+}
+
+/*
+ * Records that the daemon is about to take an interface down and up for
+ * a DHCP retry.
+ */
+int
+networkd_lan_reset_begin(
+	struct networkd_lan *lan,
+	const char *name)
+{
+	struct networkd_lan_interface *item;
+	int valid;
+
+	/* Rejects a missing state. */
+	if (lan == NULL)
+		return -1;
+
+	/* Rejects a name that could not be an interface. */
+	valid = name_valid(name);
+	if (!valid)
+		return -1;
+
+	/* Finds the interface being reset. */
+	item = find_interface(lan, name);
+	if (item == NULL)
+		return -1;
+
+	/* RESETTING has the carrier changes the reset causes change nothing. */
+	item->resetting = 1;
+
+	/* Succeeded: the reset may begin. */
+	return 0;
+}
+
+/*
+ * Records that the down and up of a DHCP retry are over.
+ *
+ * The caller reads the interfaces again afterwards, which says whether a
+ * cable is still in it.
+ */
+int
+networkd_lan_reset_end(
+	struct networkd_lan *lan,
+	const char *name)
+{
+	struct networkd_lan_interface *item;
+	int valid;
+
+	/* Rejects a missing state. */
+	if (lan == NULL)
+		return -1;
+
+	/* Rejects a name that could not be an interface. */
+	valid = name_valid(name);
+	if (!valid)
+		return -1;
+
+	/* Finds the interface that was reset. */
+	item = find_interface(lan, name);
+	if (item == NULL)
+		return -1;
+
+	/* RESETTING cleared: carrier changes mean a cable again. */
+	item->resetting = 0;
+
+	/* Succeeded: the reset is over. */
 	return 0;
 }
 
@@ -601,6 +850,10 @@ networkd_lan_hold_down(
 	item->state = NETWORKD_LAN_IDLE;
 	item->raised = 0;
 
+	/* A held interface is not asked again by itself. */
+	item->retry_pending = 0;
+	item->retry_at = 0U;
+
 	/* Succeeded: the interface stays down until it is released. */
 	return 0;
 }
@@ -638,6 +891,13 @@ networkd_lan_release(
 
 	/* HELD_DOWN cleared: the policy raises and configures it again. */
 	item->held_down = 0;
+
+	/*
+	 * `net up' configures it as it always has, without the reset of a
+	 * retry; a retry is planned again if this configure fails too.
+	 */
+	item->retry_pending = 0;
+	item->retry_at = 0U;
 
 	/* A configured interface keeps the address it has. */
 	if (item->state == NETWORKD_LAN_CONFIGURED)
@@ -798,6 +1058,44 @@ find_policy(
 
 	/* Reports that no result is available. */
 	return NULL;
+}
+
+/*
+ * Tells whether an interface is one whose DHCP is asked again: managed,
+ * unconfigured, with its cable, not held down, and configured for DHCP.
+ */
+static int
+retry_wanted(
+	const struct networkd_lan *lan,
+	const struct networkd_lan_interface *item)
+{
+	const struct networkd_lan_policy *policy;
+
+	/* Nothing is asked while the daemon is not managing interfaces. */
+	if (!lan->enabled)
+		return 0;
+
+	/* A configured one has its address; one that is pending is being asked. */
+	if (item->state != NETWORKD_LAN_UNCONFIGURED)
+		return 0;
+
+	/* Without a cable there is nobody to ask; the next cable asks. */
+	if (!item->carrier)
+		return 0;
+
+	/* One the administrator took down stays down (BUG-293). */
+	if (item->held_down)
+		return 0;
+
+	/* Only DHCP is asked again: a static address does not answer later. */
+	policy = policy_for(lan, item->name);
+	if (policy == NULL)
+		return 0;
+	if (policy->mode != NETWORKD_LAN_MODE_DHCP)
+		return 0;
+
+	/* Succeeded: DHCP is asked again. */
+	return 1;
 }
 
 /* Supports the name valid operation. */

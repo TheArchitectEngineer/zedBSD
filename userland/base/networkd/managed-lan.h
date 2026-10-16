@@ -31,6 +31,13 @@
 #define NETWORKD_LAN_MAX 16U
 #define NETWORKD_LAN_ADDRESS_MAX 16U
 
+/*
+ * How long a wired interface whose DHCP obtained nothing waits before it
+ * is reset and asked again, in microseconds of the monotonic clock
+ * (ws254, 2026-10-16 user: one minute).
+ */
+#define NETWORKD_LAN_DHCP_RETRY_US 60000000ULL
+
 /* What the configuration asks for an interface. */
 enum networkd_lan_mode {
 	/* Written down as disabled: the daemon leaves it alone. */
@@ -61,7 +68,8 @@ enum networkd_lan_state {
 
 	/*
 	 * A cable is in it, configuration was tried and did not succeed.
-	 * It carries a link-local address, which says exactly that.
+	 * It carries no IPv4 address.  One that asks for DHCP is reset and
+	 * asked again every minute (ws254).
 	 */
 	NETWORKD_LAN_UNCONFIGURED
 };
@@ -109,6 +117,29 @@ struct networkd_lan_interface {
 
 	/* Cleared before a snapshot and set again by it, to find removals. */
 	int present;
+
+	/*
+	 * When DHCP is tried again, on the monotonic clock in microseconds,
+	 * for an interface whose DHCP obtained nothing (ws254).  Zero means
+	 * no retry is planned.  It is acted on only while the interface is
+	 * still unconfigured, has its cable and is not held down.
+	 */
+	uint64_t retry_at;
+
+	/*
+	 * The pending configuration is a DHCP retry: the daemon takes the
+	 * interface down and up before asking, so that a link that needs a
+	 * reset gets one (ws254).  Cleared by the outcome of the configure.
+	 */
+	int retry_pending;
+
+	/*
+	 * The daemon is taking the interface down and up for a retry.  The
+	 * carrier changes that this causes are its own doing, not a cable
+	 * that moved, so they change nothing here; the daemon reads the
+	 * interface again when the reset is over.
+	 */
+	int resetting;
 };
 
 struct networkd_lan {
@@ -125,6 +156,9 @@ struct networkd_lan_work {
 	enum networkd_lan_action action;
 	char interface[IFNAMSIZ];
 	struct networkd_lan_policy policy;
+
+	/* A DHCP retry: take the interface down and up before configuring it. */
+	int reset;
 };
 
 void networkd_lan_init(struct networkd_lan *);
@@ -178,6 +212,35 @@ int networkd_lan_next(const struct networkd_lan *, struct networkd_lan_work *);
  * what tells a configured interface from one that only has a cable.
  */
 int networkd_lan_configured(struct networkd_lan *, const char *, int obtained);
+
+/*
+ * Plans a DHCP retry for an interface whose configure has just obtained
+ * nothing, one minute from NOW (the monotonic clock in microseconds).
+ * Only an unconfigured interface whose configuration asks for DHCP gets
+ * one; a static one is left alone.  Returns 1 when a retry was planned, 0
+ * when none is, and -1 for an interface that is not held.
+ */
+int networkd_lan_retry_schedule(struct networkd_lan *, const char *, uint64_t now);
+
+/*
+ * Asks again for each interface whose retry is due at NOW and that still
+ * wants one, by making it pending as a retry.  Returns how many were.
+ */
+int networkd_lan_retry_due(struct networkd_lan *, uint64_t now);
+
+/*
+ * Reports the milliseconds from NOW until the next retry is due, 0 when
+ * one is due already, or -1 when none is planned.
+ */
+int networkd_lan_retry_timeout(const struct networkd_lan *, uint64_t now);
+
+/*
+ * Brackets the down and up of a DHCP retry.  Carrier changes reported
+ * between the two change nothing; after the end the daemon reads the
+ * interfaces again, which says whether the cable is still there.
+ */
+int networkd_lan_reset_begin(struct networkd_lan *, const char *);
+int networkd_lan_reset_end(struct networkd_lan *, const char *);
 
 /* Records that an interface was taken down. */
 int networkd_lan_down(struct networkd_lan *, const char *);
