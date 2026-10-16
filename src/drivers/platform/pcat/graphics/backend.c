@@ -15,6 +15,7 @@
 #include "drivers/platform/pcat/graphics/pcat.h"
 
 #include <drivers/pci/pci.h>
+#include <hal/hal.h>
 #include <kern/kcrt.h>
 #include "bootloader/include/amd64-handoff.h"
 #include "kern/klog.h"
@@ -48,6 +49,13 @@ static int vga_color_cache = -1;
 static volatile uint8_t *vga_aperture, *cirrus_aperture;
 static const struct zbl6_framebuffer *linear_framebuffer;
 static volatile uint32_t *linear_pixels;
+
+/*
+ * The boot framebuffer once the kernel has it: the physical address it is
+ * at now (its device may move it after the boot) and the bytes mapped.
+ */
+static uint64_t linear_physical;
+static size_t linear_bytes;
 
 static const uint32_t vga_palette[16] = {
 	0x000000U, 0x0000aaU, 0x00aa00U, 0x00aaaaU, 0xaa0000U, 0xaa00aaU,
@@ -1024,26 +1032,36 @@ static int
 pcat_graphics_prepare_hardware(
 	void)
 {
-	uint64_t aligned;
-	uint64_t offset;
 	void *aperture;
+	void *mapped;
+	int error;
 
 	drv_pcat_font_init();
 	linear_framebuffer = kern_boot_handoff("pcat.framebuffer");
 
-	/* Handles the linear framebuffer availability. */
+	/*
+	 * The boot framebuffer is the kernel's once handed over: it maps the
+	 * physical address itself, write-combining as every other mapping of
+	 * it is (the HAL's and the GPU drivers'), so it can map it again if
+	 * the device moves it.
+	 */
 	linear_pixels = NULL;
 	if (linear_framebuffer != NULL) {
-		aligned = linear_framebuffer->physical_base & ~0x1fffffULL;
-		offset = linear_framebuffer->physical_base - aligned;
-		linear_pixels =
-			(volatile uint32_t
-				 *)(uintptr_t)(ZBL6_FRAMEBUFFER_VIRTUAL_BASE +
-					       offset);
+		error = hal_space_map_device((hal_physaddr_t)linear_framebuffer->physical_base, (size_t)linear_framebuffer->size,
+					     HAL_SPACE_READ | HAL_SPACE_WRITE | HAL_SPACE_WC, &mapped);
+		if (error == 0) {
+			linear_pixels = mapped;
+			linear_physical = linear_framebuffer->physical_base;
+			linear_bytes = (size_t)linear_framebuffer->size;
 
-		/* Reports a usable linear framebuffer. */
-		text_console_start();
-		return 1;
+			/* Reports a usable linear framebuffer. */
+			text_console_start();
+			return 1;
+		}
+
+		/* Without the mapping the boot framebuffer is not used. */
+		kern_logf("graphics: boot framebuffer at 0x%llx not mapped (%d)\n", (unsigned long long)linear_framebuffer->physical_base,
+			  error);
 	}
 
 	/* Maps the uncached legacy VGA aperture. */
@@ -1163,4 +1181,42 @@ cirrus_detach(
 
 	/* Succeeded. */
 	return 0;
+}
+
+/*
+ * Follows the boot framebuffer after its device moved the physical range
+ * [from, from + length) to to: maps the framebuffer's new place and has the
+ * text console draw there.  The old mapping stays (a writer may still hold
+ * it; what it writes now reaches nothing).  Nothing changes for a
+ * framebuffer outside the range.
+ */
+void
+drv_pcat_graphics_framebuffer_moved(
+	uint64_t from,
+	uint64_t to,
+	uint64_t length)
+{
+	volatile uint32_t *previous;
+	uint64_t physical;
+	void *mapped;
+	int error;
+
+	/* Only the framebuffer the kernel mapped, inside the moved range. */
+	if (linear_pixels == NULL || linear_physical < from || linear_physical - from >= length)
+		return;
+	physical = to + (linear_physical - from);
+
+	/* The new place, mapped as the old one. */
+	error = hal_space_map_device((hal_physaddr_t)physical, linear_bytes, HAL_SPACE_READ | HAL_SPACE_WRITE | HAL_SPACE_WC, &mapped);
+	if (error != 0) {
+		kern_logf("graphics: boot framebuffer moved to 0x%llx, not mapped (%d)\n", (unsigned long long)physical, error);
+		return;
+	}
+
+	/* The text console, then the graphics paths, draw through it. */
+	previous = linear_pixels;
+	drv_pcat_text_retarget(previous, mapped);
+	linear_pixels = mapped;
+	linear_physical = physical;
+	kern_logf("graphics: boot framebuffer moved to 0x%llx\n", (unsigned long long)physical);
 }

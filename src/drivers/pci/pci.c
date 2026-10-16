@@ -1510,14 +1510,23 @@ drv_pci_device_resize_bar(
 	if (error != 0)
 		return error;
 
-	/* The new size, the other fields kept; it must read back, and the BAR keep its address. */
+	/*
+	 * The new size, the other fields kept; it must read back.  The BAR is
+	 * written its address again (a device may clear it with the size), and
+	 * must read it back.
+	 */
 	original = entry_control;
+	read_control = 0U;
 	control = (entry_control & ~PCI_REBAR_SIZE_MASK) | (code << PCI_REBAR_SIZE_SHIFT);
 	error = drv_pci_device_config_write32(device, capability + PCI_REBAR_CONTROL + entry * PCI_REBAR_ENTRY_BYTES, control);
 	if (error == 0)
 		error = drv_pci_device_config_read32(device, capability + PCI_REBAR_CONTROL + entry * PCI_REBAR_ENTRY_BYTES, &read_control);
-	if (error == 0 && read_control != control)
+	if (error == 0 && (read_control & PCI_REBAR_SIZE_MASK) != (control & PCI_REBAR_SIZE_MASK))
 		error = EIO;
+	if (error == 0)
+		error = pci_bar_read_raw(device, index, bar->type, &low, &high);
+	if (error == 0)
+		error = pci_bar_write_raw(device, index, bar->type, (uint32_t)bar->bus_address | (low & 0xfU), (uint32_t)(bar->bus_address >> 32));
 	if (error == 0)
 		error = pci_bar_read_raw(device, index, bar->type, &low, &high);
 	address = 0U;
@@ -1526,9 +1535,22 @@ drv_pci_device_resize_bar(
 	if (error == 0 && address != bar->bus_address)
 		error = EIO;
 
-	/* A failed change gives the old size back. */
-	if (error != 0)
+	/* A failed change says what was read and gives the old size back. */
+	if (error != 0) {
+		kern_logf("pci: %04x:%02x:%02x.%u BAR%u size 0x%llx not taken (%d): control 0x%08x read 0x%08x, address 0x%llx read 0x%llx\n",
+			  device->address.segment,
+			  device->address.bus,
+			  device->address.device,
+			  device->address.function,
+			  index,
+			  (unsigned long long)size,
+			  error,
+			  (unsigned)control,
+			  (unsigned)read_control,
+			  (unsigned long long)bar->bus_address,
+			  (unsigned long long)address);
 		(void)drv_pci_device_config_write32(device, capability + PCI_REBAR_CONTROL + entry * PCI_REBAR_ENTRY_BYTES, original);
+	}
 
 	/* The command bits as before, in either case. */
 	restored = drv_pci_device_config_write16(device, PCI_COMMAND, command);

@@ -54,4 +54,14 @@ int drv_pcat_graphics_backend_get_framebuffer(
 	unsigned *stride,
 	int *rgbx);
 
+/*
+ * Follow the boot framebuffer after its device moved the physical range
+ * [from, from + length) to to (a PCI BAR given a new address): the kernel
+ * maps the new place and the text console draws there.
+ */
+void drv_pcat_graphics_framebuffer_moved(
+	uint64_t from,
+	uint64_t to,
+	uint64_t length);
+
 #endif
