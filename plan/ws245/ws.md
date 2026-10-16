@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
 Related: [WS244](../ws244/ws.md)（i915 の Linux 由来の code の整理、棚卸し plan/ws244/inventory.md・tests/inventory.py）、[Guardrail](../guardrail.md)「MIT・GPL の出典のデータの引用」
-Resume point: 2026-10-16 16:40 q1224（P1）の区切り: p047・p016・p017・p018 は cleared（main）。**p053**（EDID の decode）は実装済み（tip 918265e98）で、5330 の書き込みの全部の列の比べを T1 に依頼中（phase053、手順は `plan/ws245/tests/5330-bootcycle.sh`、2026-10-16 ユーザー「P1のテストはT1にオフロード」）。次は **p019**（AUX の transaction、xd-aux。design.md §6.2 の p019 の行）。5330 の回帰は段ごとに T1 に依頼する（kernel を `~/ws245/` に置き、基準の kernel を親の main の source から build、`5330-bootcycle.sh` の 2 回（digest が違えば `DEBUG=1`）、`5330-survey-diff.py` で判定）。USB の image は 33cde7ac9（main d454d4bd3 以降）、UEFI の entry は Boot0008（image を dd し直すたびに PARTUUID が変わるので `efibootmgr --create-only`）。
+Resume point: 2026-10-16 16:40 q1224（P1）の区切り: p047・p016・p017・p018 は cleared（main）。**p053**（EDID の decode）は実装済み（tip 918265e98）で、5330 の書き込みの全部の列の比べを T1 に依頼中（phase053、手順は `plan/ws245/tests/5330-bootcycle.sh`、2026-10-16 ユーザー「P1のテストはT1にオフロード」）。次は **p019**（AUX の transaction、xd-aux。[phase019](phase019/phase.md) に aux.c の継ぎ目と保つ振る舞いを調べてある。code は未着手）。5330 の回帰は段ごとに T1 に依頼する（kernel を `~/ws245/` に置き、基準の kernel を親の main の source から build、`5330-bootcycle.sh` の 2 回（digest が違えば `DEBUG=1`）、`5330-survey-diff.py` で判定）。USB の image は 33cde7ac9（main d454d4bd3 以降）、UEFI の entry は Boot0008（image を dd し直すたびに PARTUUID が変わるので `efibootmgr --create-only`）。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）
@@ -134,7 +134,7 @@ Resume point: 2026-10-16 16:40 q1224（P1）の区切り: p047・p016・p017・p
 | [p017](phase017/phase.md) | VBT の解析（xd-vbt を真に、旧 parser と影の比較を 1 段） | cleared（2026-10-16 5330 の回帰に合格、main 45c83da79） |
 | [p018](phase018/phase.md) | 旧 VBT parser の本体の削除（本番の呼び手 10 関数を殻 `vbt-shell.c` に、ktest-display の 2 file を削除）。2026-10-16 に p018 と p053 の 2 段に分けた | cleared（2026-10-16 5330 の回帰に合格、merge 8fea53a1d、旧 4 file は Q1 が削除） |
 | [p053](phase053/phase.md) | EDID の decode を xd-edid に（`edid.c` の decode を消し、`state.c` の mode を xd-edid の first timing に。drm_modes の helper は edid.c に殻として残る）。p018 から分けた | in-progress（2 LW。2026-10-16 実装・host・build 済み、5330 は survey lit、書き込みの全部の列の比べを T1 に依頼） |
-| p019 | AUX の transaction（xd-aux。well・DC off・VDD は呼ぶ側） | planned（4 LW） |
+| [p019](phase019/phase.md) | AUX の transaction（xd-aux。well・DC off・VDD は呼ぶ側） | planned（4 LW。2026-10-16 q1225 で調べだけ、code は未着手: phase019 に再開点） |
 | p020 | GMBUS と DDC の EDID の読み（xd-gmbus） | planned（3 LW。HDMI の plug はユーザーの一覧） |
 | p021 | backlight の PWM（xd-panel） | planned（2 LW） |
 | p022 | panel power（PPS、xd-panel） | planned（3 LW） |
