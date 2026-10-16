@@ -40,9 +40,8 @@
  * drivers/gpu/drm/i915/display/intel_cdclk.c (sha256
  * e954ff508ced6525c83ced776ba26788cc18a2f8677aa4441697d5f9ccc38c48) and
  * intel_dpll_mgr.c (sha256
- * bc90f5855afccb4ef1c18f07b284c90fb67e27df96cf9d22545768d14abc7b00); and the
- * same CDCLK rows in the display core's own layout (struct i915_cdclk_vals)
- * from parity/cdclk.c.  The notices above are the source files' own.
+ * bc90f5855afccb4ef1c18f07b284c90fb67e27df96cf9d22545768d14abc7b00).  The
+ * notices above are the source files' own.
  *
  * Included once, at file scope, by display/clock.c after the definitions of
  * struct intel_cdclk_vals and struct icl_combo_pll_params.  Every table is
@@ -105,56 +104,6 @@ static const struct intel_cdclk_vals adlp_cdclk_table[] = {
 	{ .refclk = 38400, .cdclk = 556800, .divider = 2, .ratio = 29 },
 	{ .refclk = 38400, .cdclk = 652800, .divider = 2, .ratio = 34 },
 	{ .refclk = 0 }
-};
-
-/*
- * icl_cdclk_table[] in the display core's layout: the table the Tiger Lake
- * CDCLK bring-up programs from.  A row of zero reference clock ends it.
- */
-static const struct i915_cdclk_vals i915_icl_cdclk_table[] = {
-	{ 19200, 172800, 2, 18, 0 },
-	{ 19200, 192000, 2, 20, 0 },
-	{ 19200, 307200, 2, 32, 0 },
-	{ 19200, 326400, 4, 68, 0 },
-	{ 19200, 556800, 2, 58, 0 },
-	{ 19200, 652800, 2, 68, 0 },
-	{ 24000, 180000, 2, 15, 0 },
-	{ 24000, 192000, 2, 16, 0 },
-	{ 24000, 312000, 2, 26, 0 },
-	{ 24000, 324000, 4, 54, 0 },
-	{ 24000, 552000, 2, 46, 0 },
-	{ 24000, 648000, 2, 54, 0 },
-	{ 38400, 172800, 2,  9, 0 },
-	{ 38400, 192000, 2, 10, 0 },
-	{ 38400, 307200, 2, 16, 0 },
-	{ 38400, 326400, 4, 34, 0 },
-	{ 38400, 556800, 2, 29, 0 },
-	{ 38400, 652800, 2, 34, 0 },
-	{ 0, 0, 0, 0, 0 }
-};
-
-/*
- * adlp_cdclk_table[] in the display core's layout: the table the Alder
- * Lake-P CDCLK bring-up programs from (waveform 0: no squash).  A row of
- * zero reference clock ends it.
- */
-static const struct i915_cdclk_vals i915_adlp_cdclk_table[] = {
-	{ 19200, 172800, 3, 27, 0 },
-	{ 19200, 192000, 2, 20, 0 },
-	{ 19200, 307200, 2, 32, 0 },
-	{ 19200, 556800, 2, 58, 0 },
-	{ 19200, 652800, 2, 68, 0 },
-	{ 24000, 176000, 3, 22, 0 },
-	{ 24000, 192000, 2, 16, 0 },
-	{ 24000, 312000, 2, 26, 0 },
-	{ 24000, 552000, 2, 46, 0 },
-	{ 24000, 648000, 2, 54, 0 },
-	{ 38400, 179200, 3, 14, 0 },
-	{ 38400, 192000, 2, 10, 0 },
-	{ 38400, 307200, 2, 16, 0 },
-	{ 38400, 556800, 2, 29, 0 },
-	{ 38400, 652800, 2, 34, 0 },
-	{ 0, 0, 0, 0, 0 }
 };
 
 /*
@@ -227,8 +176,7 @@ static const struct icl_combo_pll_params icl_dp_combo_pll_19_2MHz_values[] = {
  * puts out every DP rate at once and the DDI clock select picks one, so
  * the dividers are not used.  Taken without change to any value from Linux
  * v6.8.12 drivers/gpu/drm/i915/display/intel_dpll_mgr.c (sha256
- * 6b339fd5ed331c7e0f35544821c64a249fabff09ababb2b6629f2f89bea02bb7) for
- * ws051-p003.
+ * 6b339fd5ed331c7e0f35544821c64a249fabff09ababb2b6629f2f89bea02bb7).
  */
 static const struct skl_wrpll_params tgl_tbt_pll_19_2MHz_values = {
 	.dco_integer = 0x54, .dco_fraction = 0x3000,

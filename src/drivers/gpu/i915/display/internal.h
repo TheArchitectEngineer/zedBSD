@@ -508,15 +508,6 @@ enum i915_display_step {
 	I915_STEP_D0
 };
 
-/* intel_cdclk_vals: one row of a platform CDCLK table. */
-struct i915_cdclk_vals {
-	uint32_t refclk;   /* kHz */
-	uint32_t cdclk;    /* kHz */
-	uint8_t  divider;  /* CD2X divider (2/3/... informational) */
-	uint8_t  ratio;    /* PLL ratio */
-	uint16_t waveform; /* squash waveform (0 on ADL-P: no squash) */
-};
-
 /*
  * intel_cdclk_config: dev_priv->display.cdclk.hw plus computed targets.
  * vco special values: 0 = PLL off (bypass), ~0u = unknown (sanitize wants a
@@ -531,18 +522,14 @@ struct i915_cdclk_config {
 };
 
 /*
- * Which set of CDCLK hooks the platform uses.
- */
-enum i915_cdclk_funcs { I915_CDCLK_FUNCS_NONE = 0, I915_CDCLK_FUNCS_TGL };
-
-/*
- * The CDCLK of the display: the platform table and hooks, the state the
- * hardware is in, and the PCODE lock the changes take.
+ * The CDCLK of the display as the older code reads it: the state the
+ * hardware is in (a copy of what the xd clock read or set), the xd state
+ * the CDCLK is read and set through, the platform's facts, and the
+ * diagnostics of the last change.
  */
 struct i915_cdclk_dev {
 	struct i915_cdclk_config hw;          /* current HW state (display.cdclk.hw) */
-	const struct i915_cdclk_vals *table;  /* selected platform table */
-	int funcs;                               /* enum i915_cdclk_funcs */
+	struct i915_xd *xd;                   /* the xd window and platform description */
 	int display_ver;                         /* 13 for ADL-P */
 	int has_cdclk_crawl;                     /* ADL-P: 1 */
 	int has_cdclk_squash;                    /* ADL-P: 0 */

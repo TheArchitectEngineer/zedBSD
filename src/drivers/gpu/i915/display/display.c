@@ -1843,20 +1843,14 @@ i915_display_core_init(
 	struct i915_display *display;
 	struct i915_display_core *dcore;
 	struct i915_gt *gt;
-	uint8_t revid;
-	int step;
 
 	display = device->display;
 	gt = &device->gt;
 	dcore = &display->dcore;
 
-	/* The stepping from the live configuration space (the cached header reads all-ones here). */
-	revid = drv_i915_pci_read8(&gt->pci, I915_PCI_REVISION);
-	step = drv_i915_adlp_display_step(revid);
-
-	/* The CDCLK state and hooks of this display. */
+	/* The CDCLK state of this display, over its xd description. */
 	kern_memset(&display->cdclk, 0, sizeof(display->cdclk));
-	drv_i915_init_cdclk_hooks(&display->cdclk, (int)gt->display_ver, step, gt->is_alderlake_p);
+	drv_i915_init_cdclk_hooks(&display->cdclk, &display->xd);
 	display->cdclk.m = &gt->mmio;
 	display->cdclk.sb_lock = &gt->sb_lock;
 

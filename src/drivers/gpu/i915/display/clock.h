@@ -19,17 +19,15 @@
 
 #include "internal.h"
 
-const struct i915_cdclk_vals *drv_i915_adlp_cdclk_table(void);
-const struct i915_cdclk_vals *drv_i915_icl_cdclk_table(void);
+struct i915_xd;
+
 int drv_i915_adlp_display_step(uint8_t revid);
-void drv_i915_init_cdclk_hooks(struct i915_cdclk_dev *cd, int display_ver, int display_step, int is_alderlake_p);
-uint8_t drv_i915_tgl_calc_voltage_level(int cdclk);
+void drv_i915_init_cdclk_hooks(struct i915_cdclk_dev *cd, struct i915_xd *xd);
 int drv_i915_bxt_calc_cdclk(struct i915_cdclk_dev *cd, int min_cdclk);
 int drv_i915_bxt_calc_cdclk_pll_vco(struct i915_cdclk_dev *cd, int cdclk);
 void drv_i915_bxt_get_cdclk(struct i915_cdclk_dev *cd, struct i915_cdclk_config *cfg);
 void drv_i915_update_cdclk(struct i915_cdclk_dev *cd);
 void drv_i915_bxt_set_cdclk(struct i915_cdclk_dev *cd, const struct i915_cdclk_config *cfg);
-void drv_i915_bxt_sanitize_cdclk(struct i915_cdclk_dev *cd);
 void drv_i915_cdclk_init_hw(struct i915_cdclk_dev *cd);
 void drv_i915_cdclk_uninit_hw(struct i915_cdclk_dev *cd);
 uint32_t drv_i915_max_cdclk_freq(const struct i915_cdclk_dev *cd);

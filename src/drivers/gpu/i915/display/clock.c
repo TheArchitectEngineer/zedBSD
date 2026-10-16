@@ -79,6 +79,8 @@
 #include "modeset-internal.h"
 #include "takeover-internal.h"
 #include "clock.h"
+#include "xd-clock.h"
+#include "xd.h"
 #include <kern/kcrt.h>
 
 #include "../mmio.h"
@@ -88,39 +90,6 @@
 #include <kern/klog.h>
 
 #include <uapi/errno.h>
-
-/* The CDCLK reference clock select of SKL_DSSM (i915_reg.h). */
-#define SKL_DSSM				0x51004u
-#define ICL_DSSM_CDCLK_PLL_REFCLK_MASK		(7u << 29)
-#define ICL_DSSM_CDCLK_PLL_REFCLK_24MHz		(0u << 29)
-#define ICL_DSSM_CDCLK_PLL_REFCLK_19_2MHz	(1u << 29)
-#define ICL_DSSM_CDCLK_PLL_REFCLK_38_4MHz	(2u << 29)
-
-/* CDCLK_CTL and its fields (i915_reg.h). */
-#define I915_CDCLK_CTL				0x46000u
-#define BXT_CDCLK_CD2X_DIV_SEL_MASK		(3u << 22)
-#define BXT_CDCLK_CD2X_DIV_SEL_1		(0u << 22)
-#define BXT_CDCLK_CD2X_DIV_SEL_1_5		(1u << 22)
-#define BXT_CDCLK_CD2X_DIV_SEL_2		(2u << 22)
-#define BXT_CDCLK_CD2X_DIV_SEL_4		(3u << 22)
-#define CDCLK_FREQ_DECIMAL_MASK			0x7ffu
-#define TGL_CDCLK_CD2X_PIPE_NONE		(7u << 19)	/* == ICL_CDCLK_CD2X_PIPE_NONE */
-
-/* The DE PLL (i915_reg.h). */
-#define I915_BXT_DE_PLL_ENABLE			0x46070u
-#define BXT_DE_PLL_PLL_ENABLE			(1u << 31)
-#define BXT_DE_PLL_LOCK				(1u << 30)
-#define BXT_DE_PLL_FREQ_REQ			(1u << 23)
-#define BXT_DE_PLL_FREQ_REQ_ACK			(1u << 22)
-#define ICL_CDCLK_PLL_RATIO_MASK		0xffu
-
-/* The PCODE CDCLK mailbox (i915_reg.h). */
-#define SKL_PCODE_CDCLK_CONTROL			0x7u
-#define SKL_CDCLK_PREPARE_FOR_CHANGE		0x3u
-#define SKL_CDCLK_READY_FOR_CHANGE		0x1u
-
-/* The pipe of a CDCLK change made outside a modeset (no vblank sync). */
-#define I915_CDCLK_INVALID_PIPE			(-1)
 
 /*
  * One row of a platform's CDCLK table as the modeset text reads it
@@ -165,23 +134,9 @@ struct icl_combo_pll_params {
 /* The CDCLK and combo PLL tables (Linux-derived, constant). */
 #include "../intel/clock.h"
 
-static uint32_t i915_divrc(uint32_t a, uint32_t b);
-static int i915_hweight16(uint16_t w);
-static uint8_t i915_cd_calc_voltage_level(int cdclk, int n, const int *max_cdclk);
-static uint8_t i915_cdclk_calc_voltage_level(struct i915_cdclk_dev *cd, int cdclk);
-static uint32_t i915_skl_cdclk_decimal(int cdclk);
-static uint32_t i915_bxt_cdclk_cd2x_div_sel(struct i915_cdclk_dev *cd, int cdclk, int vco);
-static uint16_t i915_cdclk_squash_waveform(struct i915_cdclk_dev *cd, int cdclk);
-static int i915_cdclk_pll_is_unknown(uint32_t vco);
-static void i915_icl_readout_refclk(struct i915_cdclk_dev *cd, struct i915_cdclk_config *cfg);
-static void i915_bxt_de_pll_readout(struct i915_cdclk_dev *cd, struct i915_cdclk_config *cfg);
-static void i915_icl_cdclk_pll_disable(struct i915_cdclk_dev *cd);
-static void i915_icl_cdclk_pll_enable(struct i915_cdclk_dev *cd, int vco);
-static void i915_icl_cdclk_pll_update(struct i915_cdclk_dev *cd, int vco);
-static void i915_adlp_cdclk_pll_crawl(struct i915_cdclk_dev *cd, int vco);
-static void i915_bxt_program_cdclk(struct i915_cdclk_dev *cd, const struct i915_cdclk_config *cfg, int pipe);
-static int i915_bxt_cdclk_is_legal(struct i915_cdclk_dev *cd);
-static void i915_bxt_cdclk_init_hw(struct i915_cdclk_dev *cd);
+static void i915_cdclk_to_xd(const struct i915_cdclk_config *cfg, struct i915_xd_cdclk *state);
+static void i915_cdclk_from_xd(const struct i915_xd_cdclk *state, struct i915_cdclk_config *cfg);
+static void i915_cdclk_report(struct i915_cdclk_dev *cd, const struct i915_xd_cdclk_report *report);
 static int i915_bxt_calc_cdclk(struct drm_i915_private *dev_priv, int min_cdclk);
 static int i915_bxt_calc_cdclk_pll_vco(struct drm_i915_private *dev_priv, int cdclk);
 static u8 i915_calc_voltage_level(int cdclk, int num_voltage_levels, const int voltage_level_max_cdclk[]);
@@ -287,27 +242,6 @@ static const char *const i915_tc_pll_names[I915_MAX_TC_PORTS] = {
 };
 
 /*
- * Returns Alder Lake-P's CDCLK table in the display core's layout.
- */
-const struct i915_cdclk_vals *
-drv_i915_adlp_cdclk_table(void)
-{
-	/* Succeeded: the table is constant and shared. */
-	return i915_adlp_cdclk_table;
-}
-
-/*
- * Returns the CDCLK table Tiger Lake uses (icl_cdclk_table[]) in the
- * display core's layout.
- */
-const struct i915_cdclk_vals *
-drv_i915_icl_cdclk_table(void)
-{
-	/* Succeeded: the table is constant and shared. */
-	return i915_icl_cdclk_table;
-}
-
-/*
  * Maps an Alder Lake-P PCI revision id to its display stepping (the
  * entries of adlp_revids[] this driver needs).
  */
@@ -334,93 +268,47 @@ drv_i915_adlp_display_step(
 }
 
 /*
- * Selects the platform's CDCLK table and hooks (intel_init_cdclk_hooks()).
+ * Prepares the CDCLK state of a display over its xd description: the
+ * display version, and whether the PLL may crawl to a new ratio.
  */
 void
 drv_i915_init_cdclk_hooks(
 	struct i915_cdclk_dev *cd,
-	int display_ver,
-	int display_step,
-	int is_alderlake_p)
+	struct i915_xd *xd)
 {
-	/* Records the display version the hooks serve. */
-	cd->display_ver = display_ver;
+	/* Records the xd state the CD clock is read and set through. */
+	cd->xd = xd;
 
-	/*
-	 * Display version 12 that is not Alder Lake-P is Tiger Lake:
-	 * icl_cdclk_table.  Alder Lake-P takes the a-step table for [A0, B0)
-	 * (Wa_22011320316; not this device, which takes adlp_cdclk_table
-	 * too) and adlp_cdclk_table with tgl_cdclk_funcs for every later
-	 * stepping.  RPL-U is a distinct SKU that is not matched.
-	 */
-	if (!is_alderlake_p && display_ver == 12) {
-		cd->table = i915_icl_cdclk_table;
-		cd->funcs = I915_CDCLK_FUNCS_TGL;
-	} else if (is_alderlake_p && display_ver >= 12) {
-		if (display_step >= I915_STEP_A0 && display_step < I915_STEP_B0) {
-			/* adlp_a_step_cdclk_table would be this stepping's. */
-			cd->table = i915_adlp_cdclk_table;
-			cd->funcs = I915_CDCLK_FUNCS_TGL;
-		} else {
-			cd->table = i915_adlp_cdclk_table;
-			cd->funcs = I915_CDCLK_FUNCS_TGL;
-		}
-	} else {
-		cd->table = i915_adlp_cdclk_table;
-		cd->funcs = I915_CDCLK_FUNCS_TGL;
-	}
+	/* A display without a description has no CD clock to bring up. */
+	if (xd == NULL || !xd->chosen)
+		return;
 
-	/*
-	 * The platform capabilities: xe_lpd_display (Alder Lake-P) crawls the
-	 * CDCLK PLL, Tiger Lake's gen12 display does not (its VCO changes
-	 * disable and re-enable the PLL); neither squashes.
-	 */
-	cd->has_cdclk_crawl = 0;
-	if (is_alderlake_p)
-		cd->has_cdclk_crawl = 1;
+	/* The display version and the PLL crawl of the platform; none squashes. */
+	cd->display_ver = xd->choice.platform->display_ver;
+	cd->has_cdclk_crawl = xd->choice.platform->cdclk_crawl;
 	cd->has_cdclk_squash = 0;
 }
 
 /*
- * Reports the voltage level a CDCLK needs (tgl_calc_voltage_level()).
- */
-uint8_t
-drv_i915_tgl_calc_voltage_level(
-	int cdclk)
-{
-	static const int tgl_max[] = { 312000, 326400, 556800, 652800 };
-	uint8_t level;
-
-	/* Finds the first level whose maximum covers the frequency. */
-	level = i915_cd_calc_voltage_level(cdclk, 4, tgl_max);
-
-	/* Succeeded: reports the level. */
-	return level;
-}
-
-/*
- * Reports the lowest table CDCLK at or above a minimum for the current
- * reference clock (bxt_calc_cdclk()), or 0 when none is.
+ * Reports the lowest CDCLK of the platform's table at or above a minimum
+ * for the current reference clock (bxt_calc_cdclk()), or 0 when none is.
  */
 int
 drv_i915_bxt_calc_cdclk(
 	struct i915_cdclk_dev *cd,
 	int min_cdclk)
 {
-	const struct i915_cdclk_vals *table;
-	int index;
+	uint32_t cdclk;
 
-	/* Looks for the first row of the reference clock that is fast enough. */
-	table = cd->table;
-	for (index = 0; table[index].refclk != 0u; index++) {
-		if (table[index].refclk == cd->hw.ref && (int)table[index].cdclk >= min_cdclk)
-			return (int)table[index].cdclk;
+	/* Asks the xd table. */
+	cdclk = drv_i915_xd_cdclk_lowest(cd->xd->choice.platform, cd->hw.ref, (uint32_t)min_cdclk);
+	if (cdclk == 0u) {
+		kern_logf("i915: cdclk: cannot satisfy min cdclk %d @ refclk %u\n", min_cdclk, cd->hw.ref);
+		return 0;
 	}
 
-	/* No row satisfies the minimum. */
-	kern_logf("i915: cdclk: cannot satisfy min cdclk %d @ refclk %u\n",
-		min_cdclk, cd->hw.ref);
-	return 0;
+	/* Succeeded: the CDCLK. */
+	return (int)cdclk;
 }
 
 /*
@@ -432,78 +320,33 @@ drv_i915_bxt_calc_cdclk_pll_vco(
 	struct i915_cdclk_dev *cd,
 	int cdclk)
 {
-	const struct i915_cdclk_vals *table;
-	int index;
+	struct i915_xd_cdclk state;
+	uint32_t vco;
 
-	/* The bypass frequency runs with the PLL off. */
-	table = cd->table;
-	if ((uint32_t)cdclk == cd->hw.bypass)
-		return 0;
+	/* Asks the xd table on the current reference. */
+	i915_cdclk_to_xd(&cd->hw, &state);
+	vco = drv_i915_xd_cdclk_vco(cd->xd->choice.platform, &state, (uint32_t)cdclk);
+	if (vco == 0u && (uint32_t)cdclk != cd->hw.bypass)
+		kern_logf("i915: cdclk: cdclk %d not valid for refclk %u\n", cdclk, cd->hw.ref);
 
-	/* Looks the frequency up for the reference clock. */
-	for (index = 0; table[index].refclk != 0u; index++) {
-		if (table[index].refclk == cd->hw.ref && (int)table[index].cdclk == cdclk)
-			return (int)(cd->hw.ref * table[index].ratio);
-	}
-
-	/* The frequency is not valid for the reference clock. */
-	kern_logf("i915: cdclk: cdclk %d not valid for refclk %u\n",
-		cdclk, cd->hw.ref);
-	return 0;
+	/* Succeeded: the VCO. */
+	return (int)vco;
 }
 
 /*
- * Reads the CDCLK state out of the hardware (bxt_get_cdclk()).
- *
- * The voltage level cannot be read back; it is set to at least what the
- * frequency requires.
+ * Reads the CDCLK state out of the hardware (bxt_get_cdclk()); the voltage
+ * level is the one the frequency needs.
  */
 void
 drv_i915_bxt_get_cdclk(
 	struct i915_cdclk_dev *cd,
 	struct i915_cdclk_config *cfg)
 {
-	uint32_t divider;
-	int div;
+	struct i915_xd_cdclk state;
 
-	/* Reads the reference clock and the PLL. */
-	i915_bxt_de_pll_readout(cd, cfg);
-
-	/* Display version 12+: the bypass frequency is half the reference. */
-	cfg->bypass = cfg->ref / 2u;
-
-	/* With the PLL off the CDCLK is the bypass frequency. */
-	if (cfg->vco == 0u) {
-		cfg->cdclk = cfg->bypass;
-		cfg->voltage_level = i915_cdclk_calc_voltage_level(cd, (int)cfg->cdclk);
-		return;
-	}
-
-	/* Decodes the CD2X divider. */
-	divider = drv_i915_raw_read32(cd->m, I915_CDCLK_CTL) & BXT_CDCLK_CD2X_DIV_SEL_MASK;
-	switch (divider) {
-	case BXT_CDCLK_CD2X_DIV_SEL_1:
-		div = 2;
-		break;
-	case BXT_CDCLK_CD2X_DIV_SEL_1_5:
-		div = 3;
-		break;
-	case BXT_CDCLK_CD2X_DIV_SEL_2:
-		div = 4;
-		break;
-	case BXT_CDCLK_CD2X_DIV_SEL_4:
-		div = 8;
-		break;
-	default:
-		/* MISSING_CASE: the reference returns early and leaves the frequency unset. */
-		return;
-	}
-
-	/* No squash on these platforms: the frequency is the VCO over the divider. */
-	cfg->cdclk = i915_divrc(cfg->vco, (uint32_t)div);
-
-	/* Assumes at least the voltage level the frequency requires. */
-	cfg->voltage_level = i915_cdclk_calc_voltage_level(cd, (int)cfg->cdclk);
+	/* Reads it through the xd clock. */
+	drv_i915_xd_cdclk_read(&cd->xd->io, cd->xd->choice.platform, &state);
+	i915_cdclk_from_xd(&state, cfg);
 }
 
 /*
@@ -513,148 +356,86 @@ void
 drv_i915_update_cdclk(
 	struct i915_cdclk_dev *cd)
 {
-	/*
-	 * intel_cdclk_get_cdclk() is bxt_get_cdclk() here; the GMBUSFREQ_VLV
-	 * update is VLV / CHV only.
-	 */
+	/* The device's state is the hardware's. */
 	drv_i915_bxt_get_cdclk(cd, &cd->hw);
 }
 
 /*
- * Programs a CDCLK state (bxt_set_cdclk()): the PCODE prepare, the PLL and
- * CDCLK_CTL writes, the PCODE voltage notify and the readout.
- *
- * A failed prepare writes nothing; a failed notify leaves the hardware
- * changed and the software state as it was.
+ * Programs a CDCLK state (bxt_set_cdclk()) through the xd clock: the
+ * firmware's prepare, the PLL and CDCLK_CTL, the voltage notify and the
+ * readout.  A refused prepare writes nothing; a refused notify leaves the
+ * hardware changed and the state as it was.
  */
 void
 drv_i915_bxt_set_cdclk(
 	struct i915_cdclk_dev *cd,
 	const struct i915_cdclk_config *cfg)
 {
-	int cdclk;
-	int pcode_result;
+	struct i915_xd_cdclk state;
+	struct i915_xd_cdclk target;
+	struct i915_xd_cdclk_report report;
 
-	/* Records the request. */
-	cdclk = (int)cfg->cdclk;
-	cd->diag_requested = *cfg;
-
-	/*
-	 * Informs the PCU of the change (display version 11+, not DG2):
-	 * skl_pcode_request(CDCLK_CONTROL, PREPARE, READY, READY, 3).
-	 */
-	pcode_result = drv_i915_skl_pcode_request(cd->sb_lock, cd->m, SKL_PCODE_CDCLK_CONTROL,
-		SKL_CDCLK_PREPARE_FOR_CHANGE, SKL_CDCLK_READY_FOR_CHANGE,
-		SKL_CDCLK_READY_FOR_CHANGE, 3);
-	cd->diag_prepare_status = pcode_result;
-	if (pcode_result != 0) {
-		kern_logf("i915: cdclk: PCU prepare failed (err %d, freq %d)\n",
-			pcode_result, cdclk);
-		return;
-	}
-
-	/*
-	 * The crawl-and-squash midpoint needs both; without squash one
-	 * programming step does it.
-	 */
-	i915_bxt_program_cdclk(cd, cfg, I915_CDCLK_INVALID_PIPE);
-
-	/* Notifies the new voltage level (display version 11+, not DG2). */
-	pcode_result = drv_i915_snb_pcode_write(cd->sb_lock, cd->m, SKL_PCODE_CDCLK_CONTROL,
-		cfg->voltage_level);
-	cd->diag_notify_status = pcode_result;
-	if (pcode_result != 0) {
-		/* The hardware already changed: the state update is not faked. */
-		kern_logf("i915: cdclk: PCODE freq set failed (err %d, freq %d)\n",
-			pcode_result, cdclk);
-		return;
-	}
-
-	/* Reads the new state back. */
-	drv_i915_update_cdclk(cd);
-
-	/* The voltage level cannot be read back: it is what was requested. */
-	cd->hw.voltage_level = cfg->voltage_level;
+	/* Sets it through the xd clock and keeps what it met. */
+	kern_memset(&report, 0, sizeof(report));
+	i915_cdclk_to_xd(&cd->hw, &state);
+	i915_cdclk_to_xd(cfg, &target);
+	drv_i915_xd_cdclk_set(&cd->xd->io, cd->xd->choice.platform, &state, &target, &report);
+	i915_cdclk_from_xd(&state, &cd->hw);
+	i915_cdclk_report(cd, &report);
 }
 
 /*
- * Accepts a legal pre-OS CDCLK state or forces a full reprogram
- * (bxt_sanitize_cdclk()).
- *
- * A forced reprogram is recorded as cdclk 0 and VCO ~0.
- */
-void
-drv_i915_bxt_sanitize_cdclk(
-	struct i915_cdclk_dev *cd)
-{
-	int legal;
-
-	/* Reads what the firmware left. */
-	drv_i915_update_cdclk(cd);
-	cd->diag_observed_before = cd->hw;
-
-	/* Keeps a legal state as it is. */
-	legal = i915_bxt_cdclk_is_legal(cd);
-	if (legal) {
-		cd->diag_sanitized = cd->hw;
-		return;
-	}
-
-	/* Forces the CDCLK programming and a full PLL disable and enable. */
-	kern_logf("i915: cdclk: sanitizing cdclk programmed by pre-os\n");
-	cd->hw.cdclk = 0;
-	cd->hw.vco = ~0u;
-	cd->diag_sanitized = cd->hw;
-}
-
-/*
- * Brings the CDCLK up (intel_cdclk_init_hw() -> bxt_cdclk_init_hw()).
+ * Brings the CDCLK up (intel_cdclk_init_hw()): keeps a legal state the
+ * firmware left, and otherwise sets the table's lowest.
  */
 void
 drv_i915_cdclk_init_hw(
 	struct i915_cdclk_dev *cd)
 {
-	/* Display version 10+ (and BXT) takes the bxt path. */
-	i915_bxt_cdclk_init_hw(cd);
+	struct i915_xd_cdclk state;
+	struct i915_xd_cdclk_report report;
+
+	/* Brings it up through the xd clock and keeps what it met. */
+	drv_i915_xd_cdclk_init(&cd->xd->io, cd->xd->choice.platform, &state, &report);
+	i915_cdclk_from_xd(&state, &cd->hw);
+	i915_cdclk_report(cd, &report);
 }
 
 /*
- * Takes the CDCLK down for a suspend (intel_cdclk_uninit_hw() ->
- * bxt_cdclk_uninit()): the bypass frequency with the PLL off.
- *
- * The resume's drv_i915_cdclk_init_hw() finds the PLL off and programs the
- * CDCLK again.
+ * Takes the CDCLK down for a suspend (intel_cdclk_uninit_hw()): the bypass
+ * frequency with the PLL off.  The resume's drv_i915_cdclk_init_hw() finds
+ * the PLL off and sets the CDCLK again.
  */
 void
 drv_i915_cdclk_uninit_hw(
 	struct i915_cdclk_dev *cd)
 {
-	struct i915_cdclk_config cfg;
+	struct i915_xd_cdclk state;
+	struct i915_xd_cdclk_report report;
 
-	/* The bypass frequency with the VCO off, at the voltage the bypass needs. */
-	cfg = cd->hw;
-	cfg.cdclk = cfg.bypass;
-	cfg.vco = 0U;
-	cfg.voltage_level = i915_cdclk_calc_voltage_level(cd, (int)cfg.cdclk);
-
-	/* Programs it. */
-	drv_i915_bxt_set_cdclk(cd, &cfg);
+	/* Takes it down through the xd clock and keeps what it met. */
+	i915_cdclk_to_xd(&cd->hw, &state);
+	drv_i915_xd_cdclk_uninit(&cd->xd->io, cd->xd->choice.platform, &state, &report);
+	i915_cdclk_from_xd(&state, &cd->hw);
+	i915_cdclk_report(cd, &report);
 }
 
 /*
- * Reports the highest CDCLK of the platform (intel_update_max_cdclk(),
- * display version 11+ except JSL / EHL).
+ * Reports the highest CDCLK of the platform (intel_update_max_cdclk()).
  */
 uint32_t
 drv_i915_max_cdclk_freq(
 	const struct i915_cdclk_dev *cd)
 {
-	/* 648 MHz on a 24 MHz reference, 652.8 MHz otherwise. */
-	if (cd->hw.ref == 24000u)
-		return 648000u;
+	struct i915_xd_cdclk state;
+	uint32_t max;
 
-	/* Succeeded: the 19.2 / 38.4 MHz maximum. */
-	return 652800u;
+	/* Asks the xd clock for the reference. */
+	i915_cdclk_to_xd(&cd->hw, &state);
+	max = drv_i915_xd_cdclk_max(&state);
+
+	/* Succeeded: the highest CDCLK. */
+	return max;
 }
 
 /*
@@ -1656,416 +1437,78 @@ drv_i915_icl_update_active_dpll(
 	drv_i915_icl_set_active_port_dpll(crtc_state, port_dpll_id);
 }
 
-/* Divides with rounding to the closest (DIV_ROUND_CLOSEST for non-negative operands). */
-static uint32_t
-i915_divrc(
-	uint32_t a,
-	uint32_t b)
-{
-	/* Adds half the divisor before the truncating division. */
-	return (a + b / 2u) / b;
-}
-
-/* Counts the set bits of a 16-bit word. */
-static int
-i915_hweight16(
-	uint16_t w)
-{
-	int count;
-
-	/* Shifts the word out bit by bit. */
-	count = 0;
-	while (w != 0u) {
-		count += (int)(w & 1u);
-		w >>= 1;
-	}
-
-	/* Succeeded: reports the count. */
-	return count;
-}
-
-/* Finds the first voltage level whose maximum CDCLK covers a frequency (calc_voltage_level()). */
-static uint8_t
-i915_cd_calc_voltage_level(
-	int cdclk,
-	int n,
-	const int *max_cdclk)
-{
-	int index;
-
-	/* Walks the levels from the lowest. */
-	for (index = 0; index < n; index++) {
-		if (cdclk <= max_cdclk[index])
-			return (uint8_t)index;
-	}
-
-	/* MISSING_CASE: clamps to the top level. */
-	return (uint8_t)(n - 1);
-}
-
-/* The voltage level a CDCLK needs with the platform's hooks (tgl_cdclk_funcs here). */
-static uint8_t
-i915_cdclk_calc_voltage_level(
-	struct i915_cdclk_dev *cd,
-	int cdclk)
-{
-	uint8_t level;
-
-	UNUSED_PARAMETER(cd);
-
-	/* The TGL hooks serve both platforms. */
-	level = drv_i915_tgl_calc_voltage_level(cdclk);
-
-	/* Succeeded: reports the level. */
-	return level;
-}
-
-/* The decimal CDCLK field of CDCLK_CTL (skl_cdclk_decimal()). */
-static uint32_t
-i915_skl_cdclk_decimal(
-	int cdclk)
-{
-	/* (cdclk - 1 MHz) in 0.5 MHz units, rounded to the closest. */
-	return i915_divrc((uint32_t)(cdclk - 1000), 500u);
-}
-
-/* The CD2X divider select of a CDCLK and VCO (bxt_cdclk_cd2x_div_sel()). */
-static uint32_t
-i915_bxt_cdclk_cd2x_div_sel(
-	struct i915_cdclk_dev *cd,
-	int cdclk,
-	int vco)
-{
-	uint32_t ratio;
-
-	UNUSED_PARAMETER(cd);
-
-	/* Selects by the VCO-to-CDCLK ratio. */
-	ratio = i915_divrc((uint32_t)vco, (uint32_t)cdclk);
-	switch (ratio) {
-	case 3:
-		return BXT_CDCLK_CD2X_DIV_SEL_1_5;
-	case 4:
-		return BXT_CDCLK_CD2X_DIV_SEL_2;
-	case 8:
-		return BXT_CDCLK_CD2X_DIV_SEL_4;
-	default:
-		break;
-	}
-
-	/*
-	 * A ratio of 2, and any other: the reference warns unless the CDCLK is
-	 * the bypass with the VCO off, and falls through to divide by 1.
-	 */
-	return BXT_CDCLK_CD2X_DIV_SEL_1;
-}
-
-/*
- * The squash waveform of a CDCLK (cdclk_squash_waveform()): 0 for the
- * bypass, 0xffff for a frequency the table does not list.
- */
-static uint16_t
-i915_cdclk_squash_waveform(
-	struct i915_cdclk_dev *cd,
-	int cdclk)
-{
-	const struct i915_cdclk_vals *table;
-	int index;
-
-	/* The bypass frequency has no waveform. */
-	table = cd->table;
-	if ((uint32_t)cdclk == cd->hw.bypass)
-		return 0;
-
-	/* Looks the frequency up for the reference clock (the rows here carry 0). */
-	for (index = 0; table[index].refclk != 0u; index++) {
-		if (table[index].refclk == cd->hw.ref && (int)table[index].cdclk == cdclk)
-			return table[index].waveform;
-	}
-
-	/* The frequency is not in the table. */
-	return 0xffffu;
-}
-
-/* Tells whether a VCO is the "unknown, force a full reprogram" value (1 or 0). */
-static int
-i915_cdclk_pll_is_unknown(
-	uint32_t vco)
-{
-	/* ~0 is never a real frequency. */
-	if (vco == ~0u)
-		return 1;
-
-	/* Succeeded: the VCO is known. */
-	return 0;
-}
-
-/* Reads the CDCLK PLL reference clock (icl_readout_refclk()). */
+/* Copies a CDCLK state of the older code into the xd clock's form. */
 static void
-i915_icl_readout_refclk(
-	struct i915_cdclk_dev *cd,
-	struct i915_cdclk_config *cfg)
-{
-	uint32_t dssm;
-
-	/* Decodes the reference clock select. */
-	dssm = drv_i915_raw_read32(cd->m, SKL_DSSM) & ICL_DSSM_CDCLK_PLL_REFCLK_MASK;
-	switch (dssm) {
-	case ICL_DSSM_CDCLK_PLL_REFCLK_19_2MHz:
-		cfg->ref = 19200;
-		break;
-	case ICL_DSSM_CDCLK_PLL_REFCLK_38_4MHz:
-		cfg->ref = 38400;
-		break;
-	default:
-		/* 24 MHz, and MISSING_CASE falls through to it (the reference). */
-		cfg->ref = 24000;
-		break;
-	}
-}
-
-/* Reads the reference clock and the DE PLL's VCO (bxt_de_pll_readout()). */
-static void
-i915_bxt_de_pll_readout(
-	struct i915_cdclk_dev *cd,
-	struct i915_cdclk_config *cfg)
-{
-	uint32_t value;
-	uint32_t ratio;
-
-	/* Display version 11+ (not DG2): the reference clock select. */
-	i915_icl_readout_refclk(cd, cfg);
-
-	/* A PLL that is disabled or not locked has no VCO: 0 says so. */
-	value = drv_i915_raw_read32(cd->m, I915_BXT_DE_PLL_ENABLE);
-	if ((value & BXT_DE_PLL_PLL_ENABLE) == 0u || (value & BXT_DE_PLL_LOCK) == 0u) {
-		cfg->vco = 0;
-		return;
-	}
-
-	/* Display version 11+: the ratio is in the PLL enable register. */
-	ratio = value & ICL_CDCLK_PLL_RATIO_MASK;
-	cfg->vco = ratio * cfg->ref;
-}
-
-/* Turns the CDCLK PLL off (icl_cdclk_pll_disable()). */
-static void
-i915_icl_cdclk_pll_disable(
-	struct i915_cdclk_dev *cd)
-{
-	uint32_t value;
-	int wait_result;
-
-	/* Clears the PLL enable. */
-	value = drv_i915_raw_read32(cd->m, I915_BXT_DE_PLL_ENABLE);
-	drv_i915_raw_write32(cd->m, I915_BXT_DE_PLL_ENABLE, value & ~BXT_DE_PLL_PLL_ENABLE);
-
-	/* Waits for the lock to drop. */
-	wait_result = drv_i915_wait_reg(cd->m, I915_BXT_DE_PLL_ENABLE, BXT_DE_PLL_LOCK, 0u, 10u, 1u, NULL);
-	if (wait_result != 0)
-		kern_logf("i915: cdclk: timeout waiting for CDCLK PLL unlock\n");
-
-	/* The PLL is off. */
-	cd->hw.vco = 0;
-}
-
-/* Turns the CDCLK PLL on at a VCO (icl_cdclk_pll_enable()). */
-static void
-i915_icl_cdclk_pll_enable(
-	struct i915_cdclk_dev *cd,
-	int vco)
-{
-	uint32_t ratio;
-	uint32_t value;
-	int wait_result;
-
-	/* Writes the ratio, then the ratio with the enable. */
-	ratio = i915_divrc((uint32_t)vco, cd->hw.ref);
-	value = ratio & ICL_CDCLK_PLL_RATIO_MASK;
-	drv_i915_raw_write32(cd->m, I915_BXT_DE_PLL_ENABLE, value);
-	value |= BXT_DE_PLL_PLL_ENABLE;
-	drv_i915_raw_write32(cd->m, I915_BXT_DE_PLL_ENABLE, value);
-
-	/* Waits for the lock. */
-	wait_result = drv_i915_wait_reg(cd->m, I915_BXT_DE_PLL_ENABLE, BXT_DE_PLL_LOCK, BXT_DE_PLL_LOCK,
-		10u, 1u, NULL);
-	if (wait_result != 0)
-		kern_logf("i915: cdclk: timeout waiting for CDCLK PLL lock\n");
-
-	/* The PLL runs at the VCO. */
-	cd->hw.vco = (uint32_t)vco;
-}
-
-/* Moves the CDCLK PLL to a VCO by a disable and an enable (icl_cdclk_pll_update()). */
-static void
-i915_icl_cdclk_pll_update(
-	struct i915_cdclk_dev *cd,
-	int vco)
-{
-	/* Turns a PLL running at another VCO off. */
-	if (cd->hw.vco != 0u && cd->hw.vco != (uint32_t)vco)
-		i915_icl_cdclk_pll_disable(cd);
-
-	/* Turns the PLL on at the VCO when it is not there already. */
-	if (cd->hw.vco != (uint32_t)vco)
-		i915_icl_cdclk_pll_enable(cd, vco);
-}
-
-/* Moves the CDCLK PLL to a VCO without disabling it (adlp_cdclk_pll_crawl()). */
-static void
-i915_adlp_cdclk_pll_crawl(
-	struct i915_cdclk_dev *cd,
-	int vco)
-{
-	uint32_t ratio;
-	uint32_t value;
-	int wait_result;
-
-	/* Writes the new ratio with the PLL still enabled. */
-	ratio = i915_divrc((uint32_t)vco, cd->hw.ref);
-	value = (ratio & ICL_CDCLK_PLL_RATIO_MASK) | BXT_DE_PLL_PLL_ENABLE;
-	drv_i915_raw_write32(cd->m, I915_BXT_DE_PLL_ENABLE, value);
-
-	/* Submits the frequency change request. */
-	value |= BXT_DE_PLL_FREQ_REQ;
-	drv_i915_raw_write32(cd->m, I915_BXT_DE_PLL_ENABLE, value);
-
-	/* Waits for the lock and the acknowledge. */
-	wait_result = drv_i915_wait_reg(cd->m, I915_BXT_DE_PLL_ENABLE,
-		BXT_DE_PLL_LOCK | BXT_DE_PLL_FREQ_REQ_ACK,
-		BXT_DE_PLL_LOCK | BXT_DE_PLL_FREQ_REQ_ACK, 10u, 1u, NULL);
-	if (wait_result != 0)
-		kern_logf("i915: cdclk: timeout waiting for FREQ change ack\n");
-
-	/* Withdraws the request. */
-	value &= ~BXT_DE_PLL_FREQ_REQ;
-	drv_i915_raw_write32(cd->m, I915_BXT_DE_PLL_ENABLE, value);
-
-	/* The PLL runs at the VCO. */
-	cd->hw.vco = (uint32_t)vco;
-}
-
-/* Programs the PLL and CDCLK_CTL of a CDCLK state (_bxt_set_cdclk(): crawl yes, squash no). */
-static void
-i915_bxt_program_cdclk(
-	struct i915_cdclk_dev *cd,
+i915_cdclk_to_xd(
 	const struct i915_cdclk_config *cfg,
-	int pipe)
+	struct i915_xd_cdclk *state)
 {
-	int cdclk;
-	int vco;
-	int unsquashed_cdclk;
-	int unknown;
-	uint16_t waveform;
-	uint32_t value;
+	/* Field by field, in kHz. */
+	state->ref_khz = cfg->ref;
+	state->vco_khz = cfg->vco;
+	state->cdclk_khz = cfg->cdclk;
+	state->bypass_khz = cfg->bypass;
+	state->voltage = cfg->voltage_level;
+}
 
-	/* Records that the hardware sequence ran. */
-	cdclk = (int)cfg->cdclk;
-	vco = (int)cfg->vco;
-	cd->diag_hw_sequence_reached = 1;
-
-	/* Crawls between two running VCOs; otherwise disables and enables (display version 11+). */
-	unknown = i915_cdclk_pll_is_unknown(cd->hw.vco);
-	if (cd->has_cdclk_crawl && cd->hw.vco > 0u && vco > 0 && !unknown) {
-		if (cd->hw.vco != (uint32_t)vco)
-			i915_adlp_cdclk_pll_crawl(cd, vco);
-	} else {
-		i915_icl_cdclk_pll_update(cd, vco);
-	}
-
-	/* The frequency before squashing (no squash here: the waveform is 0 and counts 16 bits). */
-	waveform = i915_cdclk_squash_waveform(cd, cdclk);
-	if (waveform == 0u)
-		waveform = 0xffffu;
-	unsquashed_cdclk = (int)i915_divrc((uint32_t)cdclk * 16u, (uint32_t)i915_hweight16(waveform));
-
-	/* The divider select; no dg2_cdclk_squash_program() without squash. */
-	value = i915_bxt_cdclk_cd2x_div_sel(cd, unsquashed_cdclk, vco);
-
-	/* Outside a modeset the change syncs to no pipe. */
-	if (pipe == I915_CDCLK_INVALID_PIPE)
-		value |= TGL_CDCLK_CD2X_PIPE_NONE;
-	else
-		value |= (uint32_t)pipe << 20;
-
-	/* SSA precharge is GLK / BXT only; before display version 20 the decimal frequency. */
-	value |= i915_skl_cdclk_decimal(cdclk) & CDCLK_FREQ_DECIMAL_MASK;
-
-	/* Writes CDCLK_CTL; without a pipe there is no vblank to wait for. */
-	drv_i915_raw_write32(cd->m, I915_CDCLK_CTL, value);
+/* Copies a CDCLK state of the xd clock into the older code's form. */
+static void
+i915_cdclk_from_xd(
+	const struct i915_xd_cdclk *state,
+	struct i915_cdclk_config *cfg)
+{
+	/* Field by field, in kHz. */
+	cfg->ref = state->ref_khz;
+	cfg->vco = state->vco_khz;
+	cfg->cdclk = state->cdclk_khz;
+	cfg->bypass = state->bypass_khz;
+	cfg->voltage_level = state->voltage;
 }
 
 /*
- * Tells whether the CDCLK state read out is a legal one for the platform
- * (the checks of bxt_sanitize_cdclk()): 1 to keep it, 0 to reprogram.
+ * Logs what a CDCLK change met and copies it into the device's
+ * diagnostics: the state found and whether it was kept, the state asked
+ * for, the firmware's answers, and whether the PLL and CDCLK_CTL were
+ * written.
  */
-static int
-i915_bxt_cdclk_is_legal(
-	struct i915_cdclk_dev *cd)
-{
-	uint32_t cdctl;
-	uint32_t expected;
-	int cdclk;
-	int clock;
-	int vco;
-
-	/* A PLL that is off, or a bypass frequency, is reprogrammed. */
-	if (cd->hw.vco == 0u || cd->hw.cdclk == cd->hw.bypass)
-		return 0;
-
-	/*
-	 * The DPLL is fine; CDCLK_CTL is checked (the firmware may leave a bad
-	 * decimal or MBZ bits).  The pipe field is ignored: the firmware may
-	 * have synced to a pipe or to none.
-	 */
-	cdctl = drv_i915_raw_read32(cd->m, I915_CDCLK_CTL);
-	cdctl &= ~TGL_CDCLK_CD2X_PIPE_NONE;
-
-	/* The frequency must be a table frequency. */
-	cdclk = drv_i915_bxt_calc_cdclk(cd, (int)cd->hw.cdclk);
-	if (cdclk != (int)cd->hw.cdclk)
-		return 0;
-
-	/* The VCO must be the frequency's. */
-	vco = drv_i915_bxt_calc_cdclk_pll_vco(cd, cdclk);
-	if (vco != (int)cd->hw.vco)
-		return 0;
-
-	/* CDCLK_CTL must hold the decimal and divider of the frequency (no squash, no SSA precharge). */
-	expected = i915_skl_cdclk_decimal(cdclk);
-	clock = (int)cd->hw.cdclk;
-	expected |= i915_bxt_cdclk_cd2x_div_sel(cd, clock, (int)cd->hw.vco);
-	if (cdctl != expected)
-		return 0;
-
-	/* Succeeded: nothing to sanitize. */
-	return 1;
-}
-
-/* Sanitizes the CDCLK and reprograms it only when needed (bxt_cdclk_init_hw()). */
 static void
-i915_bxt_cdclk_init_hw(
-	struct i915_cdclk_dev *cd)
+i915_cdclk_report(
+	struct i915_cdclk_dev *cd,
+	const struct i915_xd_cdclk_report *report)
 {
-	struct i915_cdclk_config cfg;
-
-	/* Accepts or rejects what the firmware left. */
-	drv_i915_bxt_sanitize_cdclk(cd);
-
-	/* A state the sanitize accepted is kept as it is. */
-	if (cd->hw.cdclk != 0u && cd->hw.vco != 0u) {
-		cd->diag_no_change = 1;
-		return;
+	/* The state the start found, kept or replaced. */
+	if (report->kept || report->replaced) {
+		i915_cdclk_from_xd(&report->before, &cd->diag_observed_before);
+		cd->diag_sanitized = cd->diag_observed_before;
+		cd->diag_no_change = report->kept;
+	}
+	if (report->replaced) {
+		kern_logf("i915: cdclk: sanitizing cdclk programmed by pre-os\n");
+		cd->diag_sanitized.cdclk = 0u;
+		cd->diag_sanitized.vco = I915_XD_CDCLK_VCO_UNKNOWN;
 	}
 
-	/* FIXME of the reference: the initial CDCLK should come from the VBT; the minimum is used. */
-	cfg = cd->hw;
-	cfg.cdclk = (uint32_t)drv_i915_bxt_calc_cdclk(cd, 0);
-	cfg.vco = (uint32_t)drv_i915_bxt_calc_cdclk_pll_vco(cd, (int)cfg.cdclk);
-	cfg.voltage_level = i915_cdclk_calc_voltage_level(cd, (int)cfg.cdclk);
+	/* A start that kept the state asked for nothing. */
+	if (report->kept)
+		return;
 
-	/* Programs it. */
-	drv_i915_bxt_set_cdclk(cd, &cfg);
+	/* The state asked for and the firmware's answers. */
+	i915_cdclk_from_xd(&report->requested, &cd->diag_requested);
+	cd->diag_prepare_status = report->prepare_error;
+	cd->diag_notify_status = report->voltage_error;
+	cd->diag_hw_sequence_reached = report->programmed;
+	if (report->prepare_error != 0)
+		kern_logf("i915: cdclk: PCU prepare failed (err %d, freq %u)\n", report->prepare_error, report->requested.cdclk_khz);
+	if (report->voltage_error != 0)
+		kern_logf("i915: cdclk: PCODE freq set failed (err %d, freq %u)\n", report->voltage_error, report->requested.cdclk_khz);
+
+	/* The PLL waits that ran out. */
+	if (report->unlock_late)
+		kern_logf("i915: cdclk: timeout waiting for CDCLK PLL unlock\n");
+	if (report->lock_late)
+		kern_logf("i915: cdclk: timeout waiting for CDCLK PLL lock\n");
+	if (report->crawl_late)
+		kern_logf("i915: cdclk: timeout waiting for FREQ change ack\n");
 }
 
 /* The lowest table CDCLK of the device view at or above a minimum (bxt_calc_cdclk()), or 0. */
