@@ -278,6 +278,38 @@ amdrdna_vk_pm4_fetcher_sync(
 }
 
 /*
+ * Moves bytes from source to destination, two addresses of the session's
+ * space, through the level-2 cache; the engine waits for the move before
+ * the next packet.  Any alignment and at most AMDRDNA_VK_MOVE_MAX bytes.
+ * The driver's packet is built aside and copied in, so the buffer (in
+ * the CPU's uncached window) is only written.
+ */
+void
+amdrdna_vk_pm4_move(
+	struct amdrdna_vk_pm4 *pm4,
+	uint64_t source,
+	uint64_t destination,
+	uint32_t bytes)
+{
+	uint32_t words[AMDRDNA_PM4_MOVE_WORDS];
+	unsigned count;
+	unsigned index;
+	bool room;
+
+	/* The driver's packet, built aside. */
+	room = pm4_room(pm4, AMDRDNA_PM4_MOVE_WORDS);
+	if (!room)
+		return;
+	count = amdrdna_pm4_move_cached(words, source, destination, bytes);
+
+	/* Copied into the buffer word by word. */
+	for (index = 0U; index < count; index++) {
+		pm4->words[pm4->count] = words[index];
+		pm4->count++;
+	}
+}
+
+/*
  * Draws vertex_count generated vertices of instance_count instances.
  *
  * Procedure referenced: Mesa 25.0.7 src/amd/vulkan/radv_cmd_buffer.c

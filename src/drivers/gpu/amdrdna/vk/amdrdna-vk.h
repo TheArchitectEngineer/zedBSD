@@ -205,8 +205,8 @@ void amdrdna_vk_gpu_free(void *owner, void *token);
 int amdrdna_vk_gpu_run(void *owner, uint64_t va, uint32_t bytes);
 
 /*
- * Counts a transfer the CPU did through the window instead of the GPU, for
- * the node's counts (provided by the node).
+ * Counts a copy between a buffer and an image the command processor
+ * moved, for the node's counts (provided by the node).
  */
 void amdrdna_vk_gpu_copied(void *owner, uint64_t bytes);
 
