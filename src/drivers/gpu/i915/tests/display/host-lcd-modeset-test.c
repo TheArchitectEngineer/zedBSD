@@ -125,7 +125,6 @@ static void i915_ms_test_cycles(void);
 static void i915_ms_test_power_kept(void);
 static void i915_ms_test_flip(void);
 static void i915_ms_test_flip_event(void);
-static void i915_ms_test_time_base(void);
 static void i915_ms_test_dither(void);
 
 /*
@@ -195,7 +194,6 @@ main(
 	i915_ms_test_power_kept();
 	i915_ms_test_flip();
 	i915_ms_test_flip_event();
-	i915_ms_test_time_base();
 	i915_ms_test_dither();
 
 	/* Releases the worlds. */
@@ -1093,11 +1091,11 @@ i915_ms_test_outer(void)
 			(drv_i915_lcd_fake_reg(&i915_ms_lcd, 0x4438cU) & 0x80000000U) == 0U &&
 			drv_i915_lcd_fake_violations(&i915_ms_lcd) == 0U,
 			"D: the disable commit: domains returned, DBUF back to slice 1 only AFTER the pipe stopped, MBUS un-joined, no violation");
-	off = i915_ms_find(I915_LCD_T_WAIT, 0x70008U, NULL, 0U);
+	off = i915_ms_find(I915_LCD_T_WRITE, 0x70008U, NULL, 0U);
 	shrink = i915_ms_find(I915_LCD_T_DBUF, 0x01U, NULL, 0U);
 	grow = i915_ms_find(I915_LCD_T_DBUF, 0x0fU, NULL, 0U);
 	i915_host_check(off >= 0 && shrink > off && grow > off,
-			"D: order from the run: the pipe-off wait comes before both DBUF updates (old|new, then new)");
+			"D: order from the run: the transcoder stops before both DBUF updates (old|new, then new)");
 	error = drv_i915_lcd_observer_stopped(&i915_ms_obs, 100U, &frame0, &frame1);
 	i915_host_check(error == 0, "D: after the stop the frame counter stands still");
 	drv_i915_lcd_modeset_plane_released(&i915_ms_display);
@@ -1747,45 +1745,6 @@ i915_ms_test_flip_event(void)
 			i915_ms_lcd.events_cancelled == 1U &&
 			i915_ms_lcd.power_underflows == underflows0,
 			"J3: the stop settles that event too: every reference returned once");
-	(void)drv_i915_edp_end(i915_ms_display.dp_world, &i915_ms_res);
-}
-
-/* E. A time-base fault is not a timeout. */
-static void
-i915_ms_test_time_base(void)
-{
-	struct i915_lcd_modeset_cfg config;
-	struct i915_lcd_modeset_status s;
-	int result;
-	int wait;
-	int named;
-	int error;
-
-	/* The enable runs on a sound time base; the pipe-off wait of the stop meets a time-base fault. */
-	i915_ms_bring_up();
-	config = i915_ms_config();
-	result = i915_ms_prepare_enable(&config);
-	i915_host_check(result == I915_LCD_MS_OK, "E: the enable on a sound time base succeeds");
-	i915_ms_lcd.fault_time_base_reg = 0x70008U;
-	result = drv_i915_lcd_modeset_commit_disable(&i915_ms_display);
-	drv_i915_lcd_modeset_status(&i915_ms_display, &s);
-	wait = i915_ms_find(I915_LCD_T_WAIT, 0x70008U, NULL, 0U);
-	printf("  E: disable rc=%d errors=%u first=%s", result, s.errors, i915_ms_first_error(&s, "-\n"));
-	named = i915_ms_error_names(&s, "time base");
-	i915_host_check(result == I915_LCD_MS_ERRORS &&
-			named &&
-			wait >= 0 &&
-			i915_ms_trace.e[wait].rc == I915_LCD_EIO,
-			"E: the pipe-off wait returns -EIO (not -ETIMEDOUT) and the time-base fault is the FIRST anomaly");
-
-	/* A stop that was not confirmed keeps the display retained until the model that holds it is discarded. */
-	i915_ms_lcd.fault_time_base_reg = 0U;
-	drv_i915_lcd_modeset_status(&i915_ms_display, &s);
-	printf("  E: retained=%d stop_unconfirmed=%d\n", s.retained, s.stop_unconfirmed);
-	i915_host_check(s.retained == 1 && s.stop_unconfirmed == 1, "E: the stop that met the fault is not confirmed: the display is retained");
-	error = drv_i915_lcd_modeset_discard_model(&i915_ms_display, &i915_ms_trace.ops);
-	i915_host_check(error == 0 && drv_i915_lcd_modeset_retained(&i915_ms_display) == 0,
-			"E: discarding the model frees the object again");
 	(void)drv_i915_edp_end(i915_ms_display.dp_world, &i915_ms_res);
 }
 

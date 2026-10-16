@@ -35,12 +35,12 @@
 #include "interrupts.h"
 #include "modeset.h"
 #include "../mmio.h"
+#include "xd-pipe.h"
 
 #include <kern/irq.h>
 
 #include <uapi/errno.h>
 
-static bool i915_pipe_scanline_is_moving(struct drm_i915_private *dev_priv, enum pipe pipe);
 static void i915_wait_for_pipe_scanline_moving(struct intel_crtc *crtc, bool state);
 static u32 i915_g4x_get_vblank_counter(struct drm_crtc *crtc);
 static int i915_get_crtc_scanline(struct intel_crtc *crtc);
@@ -48,23 +48,21 @@ static int i915_crtc_scanline_offset(const struct intel_crtc_state *crtc_state);
 static uint32_t i915_lcd_kernel_frame(void *ctx);
 
 /*
- * Reads a pipe's hardware frame counter (PIPE_FRMCOUNT).
+ * Reads a pipe's hardware frame counter through the xd pipe.
  *
- * For the refresh boundaries of the display control (ws113-p012); the
- * caller knows the pipe runs.  The counter moves at each vblank start and
- * restarts when the pipe is enabled again.
+ * For the refresh boundaries of the display control; the caller knows
+ * the pipe runs.  The counter moves at each vblank start and restarts
+ * when the pipe is enabled again.
  */
 uint32_t
 drv_i915_pipe_frame_read(
-	struct i915_mmio *mmio,
+	struct i915_xd_io *io,
 	int pipe)
 {
-	uint32_t reg;
 	uint32_t frame;
 
 	/* Reads the pipe's frame counter. */
-	reg = i915_mmio_reg_offset(PIPE_FRMCOUNT_G4X(pipe));
-	frame = drv_i915_read32(mmio, reg);
+	frame = drv_i915_xd_pipe_frame(io, (unsigned)pipe);
 
 	/* Succeeded: the frame number. */
 	return frame;
@@ -624,33 +622,7 @@ drv_i915_lcd_kernel_cancel_event(
 	k->event_armed = 0;
 }
 
-/* Tells whether the pipe's scanline counter moves across 5 ms (the Linux pipe_scanline_is_moving()). */
-static bool
-i915_pipe_scanline_is_moving(
-	struct drm_i915_private *dev_priv,
-	enum pipe pipe)
-{
-	i915_reg_t reg;
-	u32 line1;
-	u32 line2;
-
-	/* The scanline register of the pipe. */
-	reg = PIPEDSL(pipe);
-
-	/* Reads the scanline, waits 5 ms, reads it again. */
-	line1 = i915_lcd_intel_de_read(dev_priv, reg) & PIPEDSL_LINE_MASK;
-	i915_lcd_msleep(dev_priv, 5);
-	line2 = i915_lcd_intel_de_read(dev_priv, reg) & PIPEDSL_LINE_MASK;
-
-	/* The counter stood still. */
-	if (line1 == line2)
-		return false;
-
-	/* Succeeded: the counter moved. */
-	return true;
-}
-
-/* Waits up to 100 ms for the scanline counter to reach a state (the Linux wait_for_pipe_scanline_moving()). */
+/* Waits up to 100 ms for the scanline counter to reach a state, through the xd pipe. */
 static void
 i915_wait_for_pipe_scanline_moving(
 	struct intel_crtc *crtc,
@@ -658,15 +630,15 @@ i915_wait_for_pipe_scanline_moving(
 {
 	struct drm_i915_private *dev_priv;
 	enum pipe pipe;
-	int wait_error;
+	unsigned late;
 
 	/* Finds the device and the pipe. */
 	dev_priv = i915_lcd_to_i915(crtc->base.dev);
 	pipe = crtc->pipe;
 
-	/* Waits for the display line to settle or start moving; the sleeps are the device's. */
-	wait_error = I915_LCD_WAIT_FOR(dev_priv, i915_pipe_scanline_is_moving(dev_priv, pipe) == state, 100);
-	if (wait_error != 0) {
+	/* Waits for the display line to settle or start moving. */
+	late = drv_i915_xd_pipe_wait_scanline(drv_i915_lcd_xd_io(dev_priv), (unsigned)pipe, state ? 1 : 0);
+	if (late != 0U) {
 		I915_LCD_DRM_ERR(&dev_priv->drm,
 				 "pipe %c scanline %s wait timed out\n",
 				 pipe_name(pipe),
@@ -820,7 +792,7 @@ i915_crtc_scanline_offset(
  *
  * The counter is the one of the run's pipe: the pipe its parameters name
  * (pipe B for the HDMI display), or the panel's pipe A when the run has
- * none.  Reading pipe A's counter for a run on pipe B (ws075-p013) saw it
+ * none.  Reading pipe A's counter for a run on pipe B saw it
  * stand at 0, so every flip event of the HDMI display timed out and the
  * resident run failed at its stop.
  */

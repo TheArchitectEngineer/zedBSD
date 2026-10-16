@@ -1184,4 +1184,96 @@
 #define I915_XD_DKL_TX_LOADGEN_TX2		0x00000060U
 #define I915_XD_DKL_TX_DISABLE_WAIT_INIT	0x00000080U
 
+/*
+ * The transcoder's chicken word: the vblank with the delay of the set
+ * context latency (display 12 and 13), the frame start delay (lines less
+ * one), and the FEC stall release of a stopping transcoder.  Transcoder D
+ * lies apart from A to C.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (_CHICKEN_TRANS_A, _CHICKEN_TRANS_B, _CHICKEN_TRANS_C,
+ * _CHICKEN_TRANS_D, PIPE_VBLANK_WITH_DELAY, HSW_FRAME_START_DELAY_MASK,
+ * FECSTALL_DIS_DPTSTREAM_DPTTG).
+ */
+#define I915_XD_CHICKEN_TRANS(trans)		((trans) == 3U ? 0x420d8U : 0x420c0U + 4U * (trans))
+#define I915_XD_CHICKEN_TRANS_VBLANK_DELAY	0x80000000U
+#define I915_XD_CHICKEN_TRANS_FRAME_START	0x18000000U
+#define I915_XD_CHICKEN_TRANS_FEC_STALL		0x00800000U
+
+/*
+ * The transcoder's pixel multiplier (less one), its variable refresh
+ * words (control: the ignored maximum shift, the flip line enable, the
+ * pipeline full lines and their override on display 12, the guardband on
+ * display 13; the vertical maximum, minimum and the flip line, each less
+ * one), and the interlace field of the transcoder configuration
+ * (progressive, or interlaced with the field indication).
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (_TRANS_MULT_A, _TRANS_VRR_CTL_A, VRR_CTL_IGN_MAX_SHIFT,
+ * VRR_CTL_FLIP_LINE_EN, VRR_CTL_PIPELINE_FULL_MASK,
+ * VRR_CTL_PIPELINE_FULL_OVERRIDE, XELPD_VRR_CTL_VRR_GUARDBAND_MASK,
+ * _TRANS_VRR_VMAX_A, _TRANS_VRR_VMIN_A, _TRANS_VRR_FLIPLINE_A,
+ * TRANSCONF_INTERLACE_MASK_ILK, TRANSCONF_INTERLACE_IF_ID_ILK).
+ */
+#define I915_XD_TRANS_MULT(trans)		(0x6002cU + I915_XD_TRANS_STRIDE * (trans))
+#define I915_XD_TRANS_VRR_CTL(trans)		(0x60420U + I915_XD_TRANS_STRIDE * (trans))
+#define I915_XD_VRR_IGNORE_MAX_SHIFT		0x40000000U
+#define I915_XD_VRR_FLIP_LINE			0x20000000U
+#define I915_XD_VRR_PIPELINE_FULL		0x000007f8U
+#define I915_XD_VRR_PIPELINE_FULL_OVERRIDE	0x00000001U
+#define I915_XD_VRR_GUARDBAND			0x0000ffffU
+#define I915_XD_TRANS_VRR_VMAX(trans)		(0x60424U + I915_XD_TRANS_STRIDE * (trans))
+#define I915_XD_TRANS_VRR_VMIN(trans)		(0x60434U + I915_XD_TRANS_STRIDE * (trans))
+#define I915_XD_TRANS_VRR_FLIPLINE(trans)	(0x60438U + I915_XD_TRANS_STRIDE * (trans))
+#define I915_XD_TRANS_CONF_INTERLACE		0x00e00000U
+#define I915_XD_TRANS_CONF_INTERLACED		3U
+
+/*
+ * The rest of the pipe words the transcoder's setup writes: the pipe
+ * chicken word's per-pixel alpha bypass and frame buffer pass-through
+ * rounding; the miscellaneous word's YUV 4:2:0 (and its full blend), the
+ * HDR precision and the YUV output.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (PER_PIXEL_ALPHA_BYPASS_EN, PIXEL_ROUNDING_TRUNC_FB_PASSTHRU,
+ * PIPE_MISC_YUV420_ENABLE, PIPE_MISC_YUV420_MODE_FULL_BLEND,
+ * PIPE_MISC_HDR_MODE_PRECISION, PIPE_MISC_OUTPUT_COLORSPACE_YUV).
+ */
+#define I915_XD_PIPE_CHICKEN_ALPHA_BYPASS	0x00000080U
+#define I915_XD_PIPE_CHICKEN_FB_PASSTHRU	0x00008000U
+#define I915_XD_PIPE_MISC_YUV420		0x08000000U
+#define I915_XD_PIPE_MISC_YUV420_FULL_BLEND	0x04000000U
+#define I915_XD_PIPE_MISC_HDR_PRECISION		0x00800000U
+#define I915_XD_PIPE_MISC_OUTPUT_YUV		0x00000800U
+
+/*
+ * The rest of the transcoder's DDI function words: the multi-stream
+ * mode, the multi-stream transport's master transcoder, HDCP signalling,
+ * the HDMI high TMDS character rate and scrambling; the second word's
+ * port sync enable and master select.  The MSA word's colour depth codes
+ * of 10 and 12 bits, and its colour formats (CEA RGB, YCbCr 4:4:4 BT.709,
+ * and the one that points at the VSC SDP).
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (TRANS_DDI_MODE_SELECT_DP_MST, TRANS_DDI_MST_TRANSPORT_SELECT_MASK,
+ * TRANS_DDI_HDCP_SIGNALLING, TRANS_DDI_HIGH_TMDS_CHAR_RATE,
+ * TRANS_DDI_HDMI_SCRAMBLING, PORT_SYNC_MODE_ENABLE,
+ * PORT_SYNC_MODE_MASTER_SELECT_MASK), and Linux v6.8.12
+ * include/drm/display/drm_dp.h (DP_MSA_MISC_10_BPC, DP_MSA_MISC_12_BPC,
+ * DP_MSA_MISC_COLOR_CEA_RGB, DP_MSA_MISC_COLOR_YCBCR_444_BT709,
+ * DP_MSA_MISC_COLOR_VSC_SDP).
+ */
+#define I915_XD_DDI_FUNC_MODE_DP_MST		3U
+#define I915_XD_DDI_FUNC_MST_MASTER		0x00000c00U
+#define I915_XD_DDI_FUNC_HDCP			0x00000200U
+#define I915_XD_DDI_FUNC_HIGH_TMDS		0x00000010U
+#define I915_XD_DDI_FUNC_SCRAMBLING		0x00000001U
+#define I915_XD_DDI_FUNC2_PORT_SYNC		0x00000010U
+#define I915_XD_DDI_FUNC2_PORT_SYNC_MASTER	0x00000007U
+#define I915_XD_MSA_BPC_10			0x00000040U
+#define I915_XD_MSA_BPC_12			0x00000060U
+#define I915_XD_MSA_CEA_RGB			0x00000008U
+#define I915_XD_MSA_YCBCR_444_BT709		0x0000001cU
+#define I915_XD_MSA_VSC_SDP			0x00004000U
+
 #endif /* DRIVERS_GPU_I915_INTEL_DISPLAY_REGS_XD_H */

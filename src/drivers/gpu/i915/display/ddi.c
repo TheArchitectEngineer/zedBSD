@@ -72,6 +72,7 @@
 #include "dp.h"
 #include "hdmi-mode.h"
 #include "xd-ddi.h"
+#include "xd-pipe.h"
 
 #include "../intel/display-regs-xd.h"
 #include "pipe.h"
@@ -131,8 +132,7 @@ static void i915_encoders_call(struct i915_lcd_modeset *ms, i915_ddi_encoder_hoo
 static void i915_encoders_walk_disable(struct intel_atomic_state *state, struct intel_crtc *crtc, enum i915_ddi_disable_hook which);
 static void i915_ddi_init_dp_buf_reg(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state);
 static void i915_ddi_set_dp_msa(const struct intel_crtc_state *crtc_state, const struct drm_connector_state *conn_state);
-static u32 i915_bdw_trans_port_sync_master_select(enum transcoder master_transcoder);
-static u32 i915_ddi_transcoder_func_reg_val_get(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state);
+static void i915_ddi_xd_func(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state, struct i915_xd_trans_func *func);
 static void i915_ddi_enable_transcoder_func(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state);
 static void i915_ddi_config_transcoder_func(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state);
 static void i915_tgl_ddi_pre_enable_dp(struct intel_atomic_state *state, struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state, const struct drm_connector_state *conn_state);
@@ -1031,7 +1031,7 @@ i915_ddi_init_dp_buf_reg(
 		intel_dp->DP |= DDI_BUF_CTL_TC_PHY_OWNERSHIP;
 }
 
-/* Writes the MSA MISC word of a DP transcoder (the Linux intel_ddi_set_dp_msa()). */
+/* Writes the MSA MISC word of a DP transcoder through the xd pipe. */
 static void
 i915_ddi_set_dp_msa(
 	const struct intel_crtc_state *crtc_state,
@@ -1039,244 +1039,75 @@ i915_ddi_set_dp_msa(
 {
 	struct intel_crtc *crtc;
 	struct drm_i915_private *dev_priv;
-	enum transcoder cpu_transcoder;
-	u32 temp;
+	struct i915_xd_msa msa;
 	bool has_dp_encoder;
 	bool needs_vsc_sdp;
 
-	/* Finds the crtc, its device and its transcoder. */
+	/* Finds the crtc and its device. */
 	crtc = to_intel_crtc(crtc_state->uapi.crtc);
 	dev_priv = i915_lcd_to_i915(crtc->base.dev);
-	cpu_transcoder = crtc_state->cpu_transcoder;
 
 	/* Only a DP transcoder has an MSA. */
 	has_dp_encoder = intel_crtc_has_dp_encoder(crtc_state);
 	if (!has_dp_encoder)
 		return;
 
-	/* A DSI transcoder here is a warning. */
-	(void)I915_LCD_DRM_WARN_ON(&dev_priv->drm, transcoder_is_dsi(cpu_transcoder));
-
-	/* The MSA always carries a synchronous clock. */
-	temp = DP_MSA_MISC_SYNC_CLOCK;
-
-	/* The colour depth of the pipe. */
-	switch (crtc_state->pipe_bpp) {
-	case 18:
-		temp |= DP_MSA_MISC_6_BPC;
-		break;
-	case 24:
-		temp |= DP_MSA_MISC_8_BPC;
-		break;
-	case 30:
-		temp |= DP_MSA_MISC_10_BPC;
-		break;
-	case 36:
-		temp |= DP_MSA_MISC_12_BPC;
-		break;
-	default:
-		I915_LCD_MISSING_CASE(crtc_state->pipe_bpp);
-		break;
-	}
-
-	/* nonsense combination */
-	(void)I915_LCD_DRM_WARN_ON(&dev_priv->drm, crtc_state->limited_color_range &&
-				   crtc_state->output_format != INTEL_OUTPUT_FORMAT_RGB);
-
-	/* Limited range RGB is signalled as CEA RGB. */
-	if (crtc_state->limited_color_range)
-		temp |= DP_MSA_MISC_COLOR_CEA_RGB;
-
-	/*
-	 * As per DP 1.2 spec section 2.3.4.3 while sending
-	 * YCBCR 444 signals we should program MSA MISC1/0 fields with
-	 * colorspace information.
-	 */
-	if (crtc_state->output_format == INTEL_OUTPUT_FORMAT_YCBCR444)
-		temp |= DP_MSA_MISC_COLOR_YCBCR_444_BT709;
-
-	/*
-	 * As per DP 1.4a spec section 2.2.4.3 [MSA Field for Indication
-	 * of Color Encoding Format and Content Color Gamut] while sending
-	 * YCBCR 420, HDR BT.2020 signals we should program MSA MISC1 fields
-	 * which indicate VSC SDP for the Pixel Encoding/Colorimetry Format.
-	 */
+	/* The depth and the colour format of the stream. */
+	kern_memset(&msa, 0, sizeof(msa));
+	msa.bpp = (unsigned)crtc_state->pipe_bpp;
+	msa.cea_rgb = crtc_state->limited_color_range ? 1 : 0;
+	msa.ycbcr444 = crtc_state->output_format == INTEL_OUTPUT_FORMAT_YCBCR444 ? 1 : 0;
 	needs_vsc_sdp = drv_i915_dp_needs_vsc_sdp(crtc_state, conn_state);
-	if (needs_vsc_sdp)
-		temp |= DP_MSA_MISC_COLOR_VSC_SDP;
+	msa.vsc_sdp = needs_vsc_sdp ? 1 : 0;
 
 	/* Writes the word. */
-	i915_lcd_intel_de_write(dev_priv, TRANS_MSA_MISC(cpu_transcoder), temp);
+	drv_i915_xd_pipe_msa(drv_i915_lcd_xd_io(dev_priv), (unsigned)crtc_state->cpu_transcoder, &msa);
 }
 
-/* Converts a port-sync master transcoder into its select field value (the Linux bdw_trans_port_sync_master_select()). */
-static u32
-i915_bdw_trans_port_sync_master_select(
-	enum transcoder master_transcoder)
-{
-	/* The eDP transcoder selects 0. */
-	if (master_transcoder == TRANSCODER_EDP)
-		return 0;
-
-	/* Succeeded: transcoders A.. select 1.. */
-	return master_transcoder + 1;
-}
-
-/*
- * Computes the TRANS_DDI_FUNC_CTL value of a crtc state (the Linux
- * intel_ddi_transcoder_func_reg_val_get(); only for the enable and config
- * of the transcoder function).
- */
-static u32
-i915_ddi_transcoder_func_reg_val_get(
+/* Describes the transcoder function of a crtc state to the xd pipe. */
+static void
+i915_ddi_xd_func(
 	struct intel_encoder *encoder,
-	const struct intel_crtc_state *crtc_state)
+	const struct intel_crtc_state *crtc_state,
+	struct i915_xd_trans_func *func)
 {
-	struct intel_crtc *crtc;
-	struct drm_i915_private *dev_priv __maybe_unused;
-	enum pipe pipe;
-	enum transcoder cpu_transcoder;
-	enum port port;
-	enum transcoder master;
-	u8 master_select;
-	u32 temp;
-	int display_ver;
 	bool has_hdmi;
-	bool has_analog;
 	bool has_dp_mst;
-	bool is_uhbr;
 
-	/* Finds the crtc, its device, pipe and transcoder, and the port. */
-	crtc = to_intel_crtc(crtc_state->uapi.crtc);
-	dev_priv = i915_lcd_to_i915(crtc->base.dev);
-	pipe = crtc->pipe;
-	cpu_transcoder = crtc_state->cpu_transcoder;
-	port = encoder->port;
-	display_ver = I915_LCD_DISPLAY_VER(dev_priv);
+	/* The DDI, the depth, the sync polarities and the lanes. */
+	kern_memset(func, 0, sizeof(*func));
+	func->ddi = (unsigned)encoder->port;
+	func->bpp = (unsigned)crtc_state->pipe_bpp;
+	func->vsync_high = (crtc_state->hw.adjusted_mode.flags & DRM_MODE_FLAG_PVSYNC) != 0 ? 1 : 0;
+	func->hsync_high = (crtc_state->hw.adjusted_mode.flags & DRM_MODE_FLAG_PHSYNC) != 0 ? 1 : 0;
+	func->lanes = (unsigned)crtc_state->lane_count;
+	func->sync_master = I915_XD_NO_TRANSCODER;
+	if (crtc_state->master_transcoder != INVALID_TRANSCODER)
+		func->sync_master = (unsigned)crtc_state->master_transcoder;
 
-	/* Enable TRANS_DDI_FUNC_CTL for the pipe to work in HDMI mode */
-	temp = TRANS_DDI_FUNC_ENABLE;
-	if (display_ver >= 12) {
-		temp |= TGL_TRANS_DDI_SELECT_PORT(port);
-	} else {
-		temp |= TRANS_DDI_SELECT_PORT(port);
-	}
-
-	/* The colour depth of the pipe; an unknown depth is taken as 6 bpc. */
-	switch (crtc_state->pipe_bpp) {
-	default:
-		I915_LCD_MISSING_CASE(crtc_state->pipe_bpp);
-		fallthrough;
-	case 18:
-		temp |= TRANS_DDI_BPC_6;
-		break;
-	case 24:
-		temp |= TRANS_DDI_BPC_8;
-		break;
-	case 30:
-		temp |= TRANS_DDI_BPC_10;
-		break;
-	case 36:
-		temp |= TRANS_DDI_BPC_12;
-		break;
-	}
-
-	/* The sync polarities of the mode. */
-	if (crtc_state->hw.adjusted_mode.flags & DRM_MODE_FLAG_PVSYNC)
-		temp |= TRANS_DDI_PVSYNC;
-	if (crtc_state->hw.adjusted_mode.flags & DRM_MODE_FLAG_PHSYNC)
-		temp |= TRANS_DDI_PHSYNC;
-
-	/* The eDP transcoder selects the pipe that feeds it. */
-	if (cpu_transcoder == TRANSCODER_EDP) {
-		switch (pipe) {
-		default:
-			I915_LCD_MISSING_CASE(pipe);
-			fallthrough;
-		case PIPE_A:
-			/* On Haswell, can only use the always-on power well for
-			 * eDP when not using the panel fitter, and when not
-			 * using motion blur mitigation (which we don't
-			 * support). */
-			if (crtc_state->pch_pfit.force_thru) {
-				temp |= TRANS_DDI_EDP_INPUT_A_ONOFF;
-			} else {
-				temp |= TRANS_DDI_EDP_INPUT_A_ON;
-			}
-			break;
-		case PIPE_B:
-			temp |= TRANS_DDI_EDP_INPUT_B_ONOFF;
-			break;
-		case PIPE_C:
-			temp |= TRANS_DDI_EDP_INPUT_C_ONOFF;
-			break;
-		}
-	}
-
-	/* Which kinds of output the crtc state drives. */
+	/* HDMI or DVI with its scrambling and clock ratio. */
 	has_hdmi = intel_crtc_has_type(crtc_state, INTEL_OUTPUT_HDMI);
-	has_analog = false;
-	has_dp_mst = false;
-	if (!has_hdmi) {
-		has_analog = intel_crtc_has_type(crtc_state, INTEL_OUTPUT_ANALOG);
-		if (!has_analog)
-			has_dp_mst = intel_crtc_has_type(crtc_state, INTEL_OUTPUT_DP_MST);
-	}
-
-	/* The mode of the transcoder function, by the kind of output. */
 	if (has_hdmi) {
-		/* HDMI, or DVI for a sink without HDMI, with its scrambling and clock ratio. */
-		if (crtc_state->has_hdmi_sink) {
-			temp |= TRANS_DDI_MODE_SELECT_HDMI;
-		} else {
-			temp |= TRANS_DDI_MODE_SELECT_DVI;
-		}
-
-		if (crtc_state->hdmi_scrambling)
-			temp |= TRANS_DDI_HDMI_SCRAMBLING;
-		if (crtc_state->hdmi_high_tmds_clock_ratio)
-			temp |= TRANS_DDI_HIGH_TMDS_CHAR_RATE;
-		if (display_ver >= 14)
-			temp |= TRANS_DDI_PORT_WIDTH(crtc_state->lane_count);
-	} else if (has_analog) {
-		/* FDI, with its lane count. */
-		temp |= TRANS_DDI_MODE_SELECT_FDI_OR_128B132B;
-		temp |= (crtc_state->fdi_lanes - 1) << 1;
-	} else if (has_dp_mst) {
-		/* DP MST, or 128b/132b at a UHBR rate, with its lanes and master. */
-		is_uhbr = drv_i915_dp_is_uhbr(crtc_state);
-		if (is_uhbr) {
-			temp |= TRANS_DDI_MODE_SELECT_FDI_OR_128B132B;
-		} else {
-			temp |= TRANS_DDI_MODE_SELECT_DP_MST;
-		}
-		temp |= DDI_PORT_WIDTH(crtc_state->lane_count);
-
-		if (display_ver >= 12) {
-			master = crtc_state->mst_master_transcoder;
-			(void)I915_LCD_DRM_WARN_ON(&dev_priv->drm,
-						   master == INVALID_TRANSCODER);
-			temp |= TRANS_DDI_MST_TRANSPORT_SELECT(master);
-		}
-	} else {
-		/* DP SST with its lanes. */
-		temp |= TRANS_DDI_MODE_SELECT_DP_SST;
-		temp |= DDI_PORT_WIDTH(crtc_state->lane_count);
+		func->mode = crtc_state->has_hdmi_sink ? I915_XD_FUNC_HDMI : I915_XD_FUNC_DVI;
+		func->scrambling = crtc_state->hdmi_scrambling ? 1 : 0;
+		func->high_tmds = crtc_state->hdmi_high_tmds_clock_ratio ? 1 : 0;
+		return;
 	}
 
-	/* Display versions 8 to 10 select the port-sync master here. */
-	if (I915_LCD_IS_DISPLAY_VER(dev_priv, 8, 10) &&
-	    crtc_state->master_transcoder != INVALID_TRANSCODER) {
-		master_select = i915_bdw_trans_port_sync_master_select(crtc_state->master_transcoder);
-		temp |= TRANS_DDI_PORT_SYNC_ENABLE |
-			TRANS_DDI_PORT_SYNC_MASTER_SELECT(master_select);
+	/* DP multi-stream with its master, or single stream. */
+	has_dp_mst = intel_crtc_has_type(crtc_state, INTEL_OUTPUT_DP_MST);
+	if (has_dp_mst) {
+		func->mode = I915_XD_FUNC_DP_MST;
+		(void)I915_LCD_DRM_WARN_ON(NULL, crtc_state->mst_master_transcoder == INVALID_TRANSCODER);
+		func->mst_master = (unsigned)crtc_state->mst_master_transcoder;
+		return;
 	}
 
-	/* Succeeded: reports the word. */
-	return temp;
+	/* Succeeded: single stream. */
+	func->mode = I915_XD_FUNC_DP_SST;
 }
 
-/* Writes and enables the transcoder function of a crtc state (the Linux intel_ddi_enable_transcoder_func()). */
+/* Writes and enables the transcoder function of a crtc state through the xd pipe. */
 static void
 i915_ddi_enable_transcoder_func(
 	struct intel_encoder *encoder,
@@ -1284,44 +1115,18 @@ i915_ddi_enable_transcoder_func(
 {
 	struct intel_crtc *crtc;
 	struct drm_i915_private *dev_priv;
-	enum transcoder cpu_transcoder;
-	enum transcoder master_transcoder;
-	u8 master_select;
-	u32 ctl2;
-	u32 ctl;
-	int display_ver;
+	struct i915_xd_trans_func func;
 
-	/* Finds the crtc, its device and its transcoder. */
+	/* Finds the crtc and its device. */
 	crtc = to_intel_crtc(crtc_state->uapi.crtc);
 	dev_priv = i915_lcd_to_i915(crtc->base.dev);
-	cpu_transcoder = crtc_state->cpu_transcoder;
 
-	/* Display version 11 and later write the port-sync word first. */
-	display_ver = I915_LCD_DISPLAY_VER(dev_priv);
-	if (display_ver >= 11) {
-		master_transcoder = crtc_state->master_transcoder;
-		ctl2 = 0;
-
-		if (master_transcoder != INVALID_TRANSCODER) {
-			master_select = i915_bdw_trans_port_sync_master_select(master_transcoder);
-			ctl2 |= PORT_SYNC_MODE_ENABLE |
-				PORT_SYNC_MODE_MASTER_SELECT(master_select);
-		}
-
-		i915_lcd_intel_de_write(dev_priv,
-					TRANS_DDI_FUNC_CTL2(cpu_transcoder),
-					ctl2);
-	}
-
-	/* Writes the transcoder function with its enable bit. */
-	ctl = i915_ddi_transcoder_func_reg_val_get(encoder, crtc_state);
-	i915_lcd_intel_de_write(dev_priv, TRANS_DDI_FUNC_CTL(cpu_transcoder), ctl);
+	/* The port sync word, then the function with its enable. */
+	i915_ddi_xd_func(encoder, crtc_state, &func);
+	drv_i915_xd_pipe_func_enable(drv_i915_lcd_xd_io(dev_priv), (unsigned)crtc_state->cpu_transcoder, &func);
 }
 
-/*
- * Writes the transcoder function of a crtc state without enabling it (the
- * Linux intel_ddi_config_transcoder_func()).
- */
+/* Writes the transcoder function of a crtc state without enabling it, through the xd pipe. */
 static void
 i915_ddi_config_transcoder_func(
 	struct intel_encoder *encoder,
@@ -1329,18 +1134,15 @@ i915_ddi_config_transcoder_func(
 {
 	struct intel_crtc *crtc;
 	struct drm_i915_private *dev_priv;
-	enum transcoder cpu_transcoder;
-	u32 ctl;
+	struct i915_xd_trans_func func;
 
-	/* Finds the crtc, its device and its transcoder. */
+	/* Finds the crtc and its device. */
 	crtc = to_intel_crtc(crtc_state->uapi.crtc);
 	dev_priv = i915_lcd_to_i915(crtc->base.dev);
-	cpu_transcoder = crtc_state->cpu_transcoder;
 
-	/* Writes the word with the enable bit cleared. */
-	ctl = i915_ddi_transcoder_func_reg_val_get(encoder, crtc_state);
-	ctl &= ~TRANS_DDI_FUNC_ENABLE;
-	i915_lcd_intel_de_write(dev_priv, TRANS_DDI_FUNC_CTL(cpu_transcoder), ctl);
+	/* The function without its enable. */
+	i915_ddi_xd_func(encoder, crtc_state, &func);
+	drv_i915_xd_pipe_func_config(drv_i915_lcd_xd_io(dev_priv), (unsigned)crtc_state->cpu_transcoder, &func);
 }
 
 /*
@@ -2450,7 +2252,6 @@ i915_ddi_disable_transcoder_func(
 	struct drm_i915_private *dev_priv;
 	enum transcoder cpu_transcoder;
 	u32 ctl;
-	int display_ver;
 	bool mst_master;
 	bool has_hdmi;
 
@@ -2458,41 +2259,13 @@ i915_ddi_disable_transcoder_func(
 	crtc = to_intel_crtc(crtc_state->uapi.crtc);
 	dev_priv = i915_lcd_to_i915(crtc->base.dev);
 	cpu_transcoder = crtc_state->cpu_transcoder;
-	display_ver = I915_LCD_DISPLAY_VER(dev_priv);
 
-	/* Display version 11 and later clear the port-sync word. */
-	if (display_ver >= 11) {
-		i915_lcd_intel_de_write(dev_priv,
-					TRANS_DDI_FUNC_CTL2(cpu_transcoder), 0);
-	}
+	/* Clears the port-sync word and the function's enable (and its port and mode, but on an MST master). */
+	mst_master = intel_dp_mst_is_master_trans(crtc_state);
+	ctl = drv_i915_xd_pipe_func_disable(drv_i915_lcd_xd_io(dev_priv), (unsigned)cpu_transcoder, mst_master ? 1 : 0);
 
-	/* Reads the function; HDCP signalling still on is a warning. */
-	ctl = i915_lcd_intel_de_read(dev_priv, TRANS_DDI_FUNC_CTL(cpu_transcoder));
-
+	/* HDCP signalling still on is a warning. */
 	(void)I915_LCD_DRM_WARN_ON(crtc->base.dev, ctl & TRANS_DDI_HDCP_SIGNALLING);
-
-	/* Clears the enable bit. */
-	ctl &= ~TRANS_DDI_FUNC_ENABLE;
-
-	/* Display versions 8 to 10 clear the port-sync fields here. */
-	if (I915_LCD_IS_DISPLAY_VER(dev_priv, 8, 10)) {
-		ctl &= ~(TRANS_DDI_PORT_SYNC_ENABLE |
-			 TRANS_DDI_PORT_SYNC_MASTER_SELECT_MASK);
-	}
-
-	/* Deselects the port and the mode, except on an MST master transcoder. */
-	if (display_ver >= 12) {
-		mst_master = intel_dp_mst_is_master_trans(crtc_state);
-		if (!mst_master) {
-			ctl &= ~(TGL_TRANS_DDI_PORT_MASK |
-				 TRANS_DDI_MODE_SELECT_MASK);
-		}
-	} else {
-		ctl &= ~(TRANS_DDI_PORT_MASK | TRANS_DDI_MODE_SELECT_MASK);
-	}
-
-	/* Writes the function. */
-	i915_lcd_intel_de_write(dev_priv, TRANS_DDI_FUNC_CTL(cpu_transcoder), ctl);
 
 	/* A quirked HDMI sink is given 100 ms with the DDI disabled. */
 	if (!I915_LCD_INTEL_HAS_QUIRK(dev_priv, QUIRK_INCREASE_DDI_DISABLED_TIME))

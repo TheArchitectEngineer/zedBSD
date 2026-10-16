@@ -272,7 +272,6 @@ drv_i915_dp_is_uhbr(
 	return true;
 }
 
-
 /*
  * Tells whether a crtc state needs the DP VSC SDP.
  *

@@ -47,6 +47,7 @@
 #include "takeover-internal.h"
 #include "../intel/mreg.h"
 #include "color.h"
+#include "xd-pipe.h"
 
 static bool i915_lut_is_legacy(const struct drm_property_blob *lut);
 static u32 i915_icl_gamma_mode(const struct intel_crtc_state *crtc_state);
@@ -326,26 +327,22 @@ i915_icl_color_commit_noarm(
 	i915_icl_load_csc_matrix(crtc_state);
 }
 
-/* Writes the armed colour registers (the Linux icl_color_commit_arm()). */
+/*
+ * Writes the armed colour registers through the xd pipe: the bottom
+ * colour black (userspace does not control it), the gamma mode and the
+ * CSC mode.
+ */
 static void
 i915_icl_color_commit_arm(
 	const struct intel_crtc_state *crtc_state)
 {
 	struct intel_crtc *crtc;
 	struct drm_i915_private *i915;
-	enum pipe pipe;
 
-	/* Finds the crtc, its device and its pipe. */
+	/* Finds the crtc and its device. */
 	crtc = to_intel_crtc(crtc_state->uapi.crtc);
 	i915 = i915_lcd_to_i915(crtc->base.dev);
-	pipe = crtc->pipe;
 
-	/* Userspace does not control the pipe background colour: it is forced to black. */
-	i915_lcd_intel_de_write(i915, SKL_BOTTOM_COLOR(pipe), 0);
-
-	/* Programs the gamma mode. */
-	i915_lcd_intel_de_write(i915, GAMMA_MODE(crtc->pipe), crtc_state->gamma_mode);
-
-	/* Programs the CSC mode. */
-	i915_lcd_intel_de_write_fw(i915, PIPE_CSC_MODE(crtc->pipe), crtc_state->csc_mode);
+	/* The three words. */
+	drv_i915_xd_pipe_colors(drv_i915_lcd_xd_io(i915), (unsigned)crtc->pipe, crtc_state->gamma_mode, crtc_state->csc_mode);
 }

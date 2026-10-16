@@ -28,12 +28,13 @@
 
 struct i915_display;
 struct i915_mmio;
+struct i915_xd_io;
 
 /*
  * ==== A pipe's hardware frame counter ====
  */
 
-uint32_t drv_i915_pipe_frame_read(struct i915_mmio *mmio, int pipe);
+uint32_t drv_i915_pipe_frame_read(struct i915_xd_io *io, int pipe);
 
 /*
  * ==== The vblank evasion window of the selected screen ====

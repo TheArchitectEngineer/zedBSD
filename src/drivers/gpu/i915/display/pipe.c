@@ -73,6 +73,7 @@
 #include "dp.h"
 #include "edid.h"
 #include "xd-dp.h"
+#include "xd-pipe.h"
 #include <kern/kcrt.h>
 
 /*
@@ -99,14 +100,9 @@
 /* The bit of the crtc itself in a scaler users mask (the Linux SKL_CRTC_INDEX). */
 #define I915_SKL_CRTC_INDEX		31
 
-static void i915_set_m_n(struct drm_i915_private *i915, const struct intel_link_m_n *m_n, i915_reg_t data_m_reg, i915_reg_t data_n_reg, i915_reg_t link_m_reg, i915_reg_t link_n_reg);
 static bool i915_cpu_transcoder_has_m2_n2(struct drm_i915_private *dev_priv, enum transcoder transcoder);
-static void i915_cpu_transcoder_set_m1_n1(struct intel_crtc *crtc, enum transcoder transcoder, const struct intel_link_m_n *m_n);
-static void i915_cpu_transcoder_set_m2_n2(struct intel_crtc *crtc, enum transcoder transcoder, const struct intel_link_m_n *m_n);
-static void i915_set_transcoder_timings(const struct intel_crtc_state *crtc_state);
+static void i915_xd_timing_of(const struct drm_display_mode *mode, struct i915_xd_timing *timing);
 static void i915_set_pipe_src_size(const struct intel_crtc_state *crtc_state);
-static void i915_hsw_set_frame_start_delay(const struct intel_crtc_state *crtc_state);
-static void i915_hsw_set_transconf(const struct intel_crtc_state *crtc_state);
 static void i915_hsw_configure_cpu_transcoder(const struct intel_crtc_state *crtc_state);
 static void i915_hsw_crtc_enable(struct intel_atomic_state *state, struct intel_crtc *crtc);
 static int i915_dotclock_calculate(int link_freq, const struct intel_link_m_n *m_n);
@@ -116,7 +112,6 @@ static bool i915_has_dsi_transcoders(u8 enabled_transcoders);
 static bool i915_has_pipe_transcoders(u8 enabled_transcoders);
 static bool i915_has_edp_transcoders(u8 enabled_transcoders);
 static bool i915_is_hdr_mode(const struct intel_crtc_state *crtc_state);
-static void i915_wait_for_pipe_off(const struct intel_crtc_state *old_crtc_state);
 static void i915_bdw_set_pipe_misc(const struct intel_crtc_state *crtc_state);
 static void i915_icl_set_pipe_chicken(const struct intel_crtc_state *crtc_state);
 static void i915_hsw_set_linetime_wm(const struct intel_crtc_state *crtc_state);
@@ -139,8 +134,6 @@ static void i915_crtc_compute_pixel_rate(struct intel_crtc_state *crtc_state);
 static u32 i915_crtc_get_vblank_counter(struct intel_crtc *crtc);
 static bool i915_crtc_needs_vblank_work(const struct intel_crtc_state *crtc_state);
 static int i915_mode_vblank_start(const struct drm_display_mode *mode);
-static u32 i915_trans_vrr_ctl(const struct intel_crtc_state *crtc_state);
-static void i915_vrr_set_transcoder_timings(const struct intel_crtc_state *crtc_state);
 
 /*
  * Tells whether a PHY is a Type-C PHY (the Linux intel_phy_is_tc()).
@@ -298,11 +291,10 @@ drv_i915_aux_power_domain(
 }
 
 /*
- * Enables the transcoder of a crtc state (the Linux intel_enable_transcoder()).
- *
- * The pipe must have no plane enabled.  On display version 13 the pipe
- * arbiter is switched to programmable slots first (Wa_22012358565).  A
- * transcoder that already runs is left as it is.
+ * Enables the transcoder of a crtc state through the xd pipe: on display
+ * 13 the pipe arbiter takes the programmed slots first, and a transcoder
+ * that already runs is left as it is.  The pipe must have no plane
+ * enabled.
  */
 void
 drv_i915_enable_transcoder(
@@ -312,8 +304,7 @@ drv_i915_enable_transcoder(
 	struct drm_i915_private *dev_priv;
 	enum transcoder cpu_transcoder;
 	enum pipe pipe;
-	u32 val;
-	bool dsi;
+	int ran;
 
 	/* Finds the crtc, its device, its transcoder and its pipe. */
 	crtc = to_intel_crtc(new_crtc_state->uapi.crtc);
@@ -327,37 +318,12 @@ drv_i915_enable_transcoder(
 	/* The planes of the pipe must be off (a state check). */
 	assert_planes_disabled(crtc);
 
-	/*
-	 * A pipe without a PLL cannot drive bits from a plane.  On ILK+ the
-	 * pipe PLLs are integrated, so only the FDI PLLs of a PCH encoder
-	 * are checked.
-	 */
-	if (HAS_GMCH(dev_priv)) {
-		dsi = intel_crtc_has_type(new_crtc_state, INTEL_OUTPUT_DSI);
-		if (dsi) {
-			assert_dsi_pll_enabled(dev_priv);
-		} else {
-			assert_pll_enabled(dev_priv, pipe);
-		}
-	} else if (new_crtc_state->has_pch_encoder) {
-		assert_fdi_rx_pll_enabled(dev_priv, intel_crtc_pch_transcoder(crtc));
-		assert_fdi_tx_pll_enabled(dev_priv, (enum pipe)cpu_transcoder);
-	}
-
-	/* Wa_22012358565:adl-p: the pipe arbiter uses the programmed slots. */
-	if (I915_LCD_DISPLAY_VER(dev_priv) == 13)
-		i915_lcd_intel_de_rmw(dev_priv, PIPE_ARB_CTL(pipe), 0, PIPE_ARB_USE_PROG_SLOTS);
-
-	/* A transcoder that already runs stays as it is (both pipes stay enabled only on 830). */
-	val = i915_lcd_intel_de_read(dev_priv, TRANSCONF(cpu_transcoder));
-	if (val & TRANSCONF_ENABLE) {
+	/* Starts the transcoder; one that already ran is a warning. */
+	ran = drv_i915_xd_pipe_start(drv_i915_lcd_xd_io(dev_priv), drv_i915_lcd_xd_platform(), (unsigned)cpu_transcoder);
+	if (ran) {
 		I915_LCD_DRM_WARN_ON(&dev_priv->drm, !IS_I830(dev_priv));
 		return;
 	}
-
-	/* Enables the transcoder and flushes the write. */
-	i915_lcd_intel_de_write(dev_priv, TRANSCONF(cpu_transcoder), val | TRANSCONF_ENABLE);
-	i915_lcd_intel_de_posting_read(dev_priv, TRANSCONF(cpu_transcoder));
 
 	/*
 	 * Until the pipe starts, PIPEDSL reads return a stale value; without
@@ -369,11 +335,9 @@ drv_i915_enable_transcoder(
 }
 
 /*
- * Disables the transcoder of a crtc state (the Linux intel_disable_transcoder()).
- *
- * The planes must be off already, or the pipe may hang.  After the write
- * the FEC stall of the transcoder is cleared (display version 12 and
- * later) and the pipe state is waited for to go off.
+ * Disables the transcoder of a crtc state through the xd pipe: its enable
+ * cleared, the FEC stall released, and the transcoder waited for to go
+ * off.  The planes must be off already, or the pipe may hang.
  */
 void
 drv_i915_disable_transcoder(
@@ -383,8 +347,8 @@ drv_i915_disable_transcoder(
 	struct drm_i915_private *dev_priv;
 	enum transcoder cpu_transcoder;
 	enum pipe pipe;
-	i915_reg_t chicken;
-	u32 val;
+	unsigned late;
+	int was_running;
 
 	/* Finds the crtc, its device, its transcoder and its pipe. */
 	crtc = to_intel_crtc(old_crtc_state->uapi.crtc);
@@ -398,30 +362,10 @@ drv_i915_disable_transcoder(
 	/* Planes must not keep pumping pixels into the pipe (a state check). */
 	assert_planes_disabled(crtc);
 
-	/* A transcoder that is off stays as it is. */
-	val = i915_lcd_intel_de_read(dev_priv, TRANSCONF(cpu_transcoder));
-	if ((val & TRANSCONF_ENABLE) == 0)
-		return;
-
-	/* Double wide has implications for planes: it is kept off when not needed. */
-	if (old_crtc_state->double_wide)
-		val &= ~TRANSCONF_DOUBLE_WIDE;
-
-	/* Disables the pipe (830 keeps its pipes and pipe PLLs on). */
-	if (!IS_I830(dev_priv))
-		val &= ~TRANSCONF_ENABLE;
-
-	i915_lcd_intel_de_write(dev_priv, TRANSCONF(cpu_transcoder), val);
-
-	/* Clears the FEC stall of the transcoder. */
-	if (I915_LCD_DISPLAY_VER(dev_priv) >= 12) {
-		chicken = drv_i915_hsw_chicken_trans_reg(dev_priv, cpu_transcoder);
-		i915_lcd_intel_de_rmw(dev_priv, chicken, FECSTALL_DIS_DPTSTREAM_DPTTG, 0);
-	}
-
-	/* Waits for the pipe to go off. */
-	if ((val & TRANSCONF_ENABLE) == 0)
-		i915_wait_for_pipe_off(old_crtc_state);
+	/* Stops the transcoder; a transcoder that did not go off is reported. */
+	late = drv_i915_xd_pipe_stop(drv_i915_lcd_xd_io(dev_priv), (unsigned)cpu_transcoder, &was_running);
+	if ((late & I915_XD_PIPE_LATE_OFF) != 0U)
+		I915_LCD_DRM_WARN(&dev_priv->drm, 1, "pipe_off wait timed out\n");
 }
 
 /*
@@ -865,6 +809,8 @@ drv_i915_display_emit_transcoder(
 	struct drm_i915_private *i915;
 	struct intel_crtc crtc;
 	struct intel_crtc_state crtc_state;
+	struct i915_xd_dp_m_n values;
+	struct i915_xd_timing timing;
 
 	/* The recorder's device view is the world's. */
 	i915 = &world->i915_display_emit_transcoder_i915;
@@ -891,9 +837,15 @@ drv_i915_display_emit_transcoder(
 	crtc_state.pipe_src.x2 = src_w;
 	crtc_state.pipe_src.y2 = src_h;
 
-	/* Runs the Linux writers in the order hsw_configure_cpu_transcoder() calls them. */
-	i915_cpu_transcoder_set_m1_n1(&crtc, (enum transcoder)cpu_transcoder, m_n);
-	i915_set_transcoder_timings(&crtc_state);
+	/* Runs the xd writers in the order the transcoder's setup calls them. */
+	values.tu = m_n->tu;
+	values.data_m = m_n->data_m;
+	values.data_n = m_n->data_n;
+	values.link_m = m_n->link_m;
+	values.link_n = m_n->link_n;
+	i915_xd_timing_of(&crtc_state.hw.adjusted_mode, &timing);
+	drv_i915_xd_pipe_m_n(drv_i915_lcd_xd_io(i915), (unsigned)cpu_transcoder, &values);
+	drv_i915_xd_pipe_timing(drv_i915_lcd_xd_io(i915), drv_i915_lcd_xd_platform(), (unsigned)cpu_transcoder, &timing);
 	i915_set_pipe_src_size(&crtc_state);
 
 	/* Succeeded: the words are emitted. */
@@ -1406,30 +1358,6 @@ drv_i915_crtc_wait_for_next_vblank(
 	I915_TAKEOVER_DRM_CRTC_WAIT_ONE_VBLANK(i915_lcd_to_i915(crtc->base.dev), &crtc->base);
 }
 
-/*
- * Writes one set of M/N registers (the Linux intel_set_m_n()).
- *
- * On BDW+ writing LINK_N arms the double-buffered update of all the M/N
- * registers, so it is written last.
- */
-static void
-i915_set_m_n(
-	struct drm_i915_private *i915,
-	const struct intel_link_m_n *m_n,
-	i915_reg_t data_m_reg,
-	i915_reg_t data_n_reg,
-	i915_reg_t link_m_reg,
-	i915_reg_t link_n_reg)
-{
-	/* The data M with the transfer unit, the data N and the link M. */
-	i915_lcd_intel_de_write(i915, data_m_reg, TU_SIZE(m_n->tu) | m_n->data_m);
-	i915_lcd_intel_de_write(i915, data_n_reg, m_n->data_n);
-	i915_lcd_intel_de_write(i915, link_m_reg, m_n->link_m);
-
-	/* The link N, which arms the update. */
-	i915_lcd_intel_de_write(i915, link_n_reg, m_n->link_n);
-}
-
 /* Tells whether a transcoder has the second M/N set (the Linux intel_cpu_transcoder_has_m2_n2()). */
 static bool
 i915_cpu_transcoder_has_m2_n2(
@@ -1452,183 +1380,29 @@ i915_cpu_transcoder_has_m2_n2(
 	return false;
 }
 
-/* Writes the M1/N1 values of a transcoder (the Linux intel_cpu_transcoder_set_m1_n1()). */
+/* Converts the crtc timings of a mode into the xd transcoder's timings. */
 static void
-i915_cpu_transcoder_set_m1_n1(
-	struct intel_crtc *crtc,
-	enum transcoder transcoder,
-	const struct intel_link_m_n *m_n)
+i915_xd_timing_of(
+	const struct drm_display_mode *mode,
+	struct i915_xd_timing *timing)
 {
-	struct drm_i915_private *dev_priv;
-
-	/* Finds the device. */
-	dev_priv = i915_lcd_to_i915(crtc->base.dev);
-
-	/* Display version 5 and later keep them per transcoder, g4x per pipe. */
-	if (I915_LCD_DISPLAY_VER(dev_priv) >= 5) {
-		i915_set_m_n(dev_priv,
-			     m_n,
-			     PIPE_DATA_M1(transcoder),
-			     PIPE_DATA_N1(transcoder),
-			     PIPE_LINK_M1(transcoder),
-			     PIPE_LINK_N1(transcoder));
-	} else {
-		i915_set_m_n(dev_priv,
-			     m_n,
-			     PIPE_DATA_M_G4X(crtc->pipe),
-			     PIPE_DATA_N_G4X(crtc->pipe),
-			     PIPE_LINK_M_G4X(crtc->pipe),
-			     PIPE_LINK_N_G4X(crtc->pipe));
-	}
+	/* The horizontal and vertical crtc timings and the interlace flag. */
+	timing->hdisplay = (uint32_t)mode->crtc_hdisplay;
+	timing->hblank_start = (uint32_t)mode->crtc_hblank_start;
+	timing->hblank_end = (uint32_t)mode->crtc_hblank_end;
+	timing->hsync_start = (uint32_t)mode->crtc_hsync_start;
+	timing->hsync_end = (uint32_t)mode->crtc_hsync_end;
+	timing->htotal = (uint32_t)mode->crtc_htotal;
+	timing->vdisplay = (uint32_t)mode->crtc_vdisplay;
+	timing->vblank_start = (uint32_t)mode->crtc_vblank_start;
+	timing->vblank_end = (uint32_t)mode->crtc_vblank_end;
+	timing->vsync_start = (uint32_t)mode->crtc_vsync_start;
+	timing->vsync_end = (uint32_t)mode->crtc_vsync_end;
+	timing->vtotal = (uint32_t)mode->crtc_vtotal;
+	timing->interlaced = (mode->flags & DRM_MODE_FLAG_INTERLACE) != 0 ? 1 : 0;
 }
 
-/* Writes the M2/N2 values of a transcoder that has them (the Linux intel_cpu_transcoder_set_m2_n2()). */
-static void
-i915_cpu_transcoder_set_m2_n2(
-	struct intel_crtc *crtc,
-	enum transcoder transcoder,
-	const struct intel_link_m_n *m_n)
-{
-	struct drm_i915_private *dev_priv;
-	bool has_m2_n2;
-
-	/* Finds the device. */
-	dev_priv = i915_lcd_to_i915(crtc->base.dev);
-
-	/* Only some transcoders have the second set. */
-	has_m2_n2 = i915_cpu_transcoder_has_m2_n2(dev_priv, transcoder);
-	if (!has_m2_n2)
-		return;
-
-	/* Writes the second set. */
-	i915_set_m_n(dev_priv,
-		     m_n,
-		     PIPE_DATA_M2(transcoder),
-		     PIPE_DATA_N2(transcoder),
-		     PIPE_LINK_M2(transcoder),
-		     PIPE_LINK_N2(transcoder));
-}
-
-/*
- * Writes the transcoder timings of a crtc state (the Linux
- * intel_set_transcoder_timings()).
- *
- * The adjusted mode is not changed (the state checker would see the
- * difference).  ADL+ no longer uses VBLANK_START: the pipe vblank start
- * is TRANS_SET_CONTEXT_LATENCY, and VBLANK_START is written as 1 so it
- * stands out in register dumps.
- */
-static void
-i915_set_transcoder_timings(
-	const struct intel_crtc_state *crtc_state)
-{
-	struct intel_crtc *crtc;
-	struct drm_i915_private *dev_priv;
-	enum pipe pipe;
-	enum transcoder cpu_transcoder;
-	const struct drm_display_mode *adjusted_mode;
-	u32 crtc_vdisplay;
-	u32 crtc_vtotal;
-	u32 crtc_vblank_start;
-	u32 crtc_vblank_end;
-	int vsyncshift;
-	bool sdvo;
-
-	/* Finds the crtc, its device, its pipe, its transcoder and the mode. */
-	crtc = to_intel_crtc(crtc_state->uapi.crtc);
-	dev_priv = i915_lcd_to_i915(crtc->base.dev);
-	pipe = crtc->pipe;
-	cpu_transcoder = crtc_state->cpu_transcoder;
-	adjusted_mode = &crtc_state->hw.adjusted_mode;
-	vsyncshift = 0;
-
-	/* Takes the vertical timings that may be adjusted below. */
-	crtc_vdisplay = adjusted_mode->crtc_vdisplay;
-	crtc_vtotal = adjusted_mode->crtc_vtotal;
-	crtc_vblank_start = adjusted_mode->crtc_vblank_start;
-	crtc_vblank_end = adjusted_mode->crtc_vblank_end;
-
-	/* Interlaced: the chip adds 2 halflines automatically, and the vsync shifts. */
-	if (adjusted_mode->flags & DRM_MODE_FLAG_INTERLACE) {
-		crtc_vtotal -= 1;
-		crtc_vblank_end -= 1;
-
-		/* The vsync shifts by half a line (SDVO by half the line total). */
-		sdvo = intel_crtc_has_type(crtc_state, INTEL_OUTPUT_SDVO);
-		if (sdvo) {
-			vsyncshift = (adjusted_mode->crtc_htotal - 1) / 2;
-		} else {
-			vsyncshift = adjusted_mode->crtc_hsync_start - adjusted_mode->crtc_htotal / 2;
-		}
-
-		/* A negative shift wraps around the line. */
-		if (vsyncshift < 0)
-			vsyncshift += adjusted_mode->crtc_htotal;
-	}
-
-	/* ADL+: the vblank start goes into the context latency; VBLANK_START is cleared to 1. */
-	if (I915_LCD_DISPLAY_VER(dev_priv) >= 13) {
-		i915_lcd_intel_de_write(dev_priv,
-					TRANS_SET_CONTEXT_LATENCY(cpu_transcoder),
-					crtc_vblank_start - crtc_vdisplay);
-
-		/* VBLANK_START is not used by the hardware: 1 makes it stand out in dumps. */
-		crtc_vblank_start = 1;
-	}
-
-	/* The vsync shift (display version 4 and later). */
-	if (I915_LCD_DISPLAY_VER(dev_priv) >= 4)
-		i915_lcd_intel_de_write(dev_priv, TRANS_VSYNCSHIFT(cpu_transcoder), vsyncshift);
-
-	/* The horizontal timings. */
-	i915_lcd_intel_de_write(dev_priv,
-				TRANS_HTOTAL(cpu_transcoder),
-				HACTIVE(adjusted_mode->crtc_hdisplay - 1) |
-				HTOTAL(adjusted_mode->crtc_htotal - 1));
-	i915_lcd_intel_de_write(dev_priv,
-				TRANS_HBLANK(cpu_transcoder),
-				HBLANK_START(adjusted_mode->crtc_hblank_start - 1) |
-				HBLANK_END(adjusted_mode->crtc_hblank_end - 1));
-	i915_lcd_intel_de_write(dev_priv,
-				TRANS_HSYNC(cpu_transcoder),
-				HSYNC_START(adjusted_mode->crtc_hsync_start - 1) |
-				HSYNC_END(adjusted_mode->crtc_hsync_end - 1));
-
-	/* The vertical timings. */
-	i915_lcd_intel_de_write(dev_priv,
-				TRANS_VTOTAL(cpu_transcoder),
-				VACTIVE(crtc_vdisplay - 1) |
-				VTOTAL(crtc_vtotal - 1));
-	i915_lcd_intel_de_write(dev_priv,
-				TRANS_VBLANK(cpu_transcoder),
-				VBLANK_START(crtc_vblank_start - 1) |
-				VBLANK_END(crtc_vblank_end - 1));
-	i915_lcd_intel_de_write(dev_priv,
-				TRANS_VSYNC(cpu_transcoder),
-				VSYNC_START(adjusted_mode->crtc_vsync_start - 1) |
-				VSYNC_END(adjusted_mode->crtc_vsync_end - 1));
-
-	/*
-	 * Workaround: when the eDP input selection is B, VTOTAL_B must be
-	 * programmed with the VTOTAL_EDP value, and likewise for C (the
-	 * DDI_FUNC_CTL register description, eDP Input Select bits).
-	 */
-	if (IS_HASWELL(dev_priv) &&
-	    cpu_transcoder == TRANSCODER_EDP &&
-	    (pipe == PIPE_B || pipe == PIPE_C)) {
-		i915_lcd_intel_de_write(dev_priv,
-					TRANS_VTOTAL(pipe),
-					VACTIVE(crtc_vdisplay - 1) |
-					VTOTAL(crtc_vtotal - 1));
-	}
-}
-
-/*
- * Writes the pipe source size (the Linux intel_set_pipe_src_size()).
- *
- * PIPESRC is the size scaled from, which is always the user's requested
- * size.
- */
+/* Writes the pipe source size through the xd pipe: always the user's requested size. */
 static void
 i915_set_pipe_src_size(
 	const struct intel_crtc_state *crtc_state)
@@ -1637,94 +1411,22 @@ i915_set_pipe_src_size(
 	struct drm_i915_private *dev_priv;
 	int width;
 	int height;
-	enum pipe pipe;
 
-	/* Finds the crtc, its device, the source size and the pipe. */
+	/* Finds the crtc, its device and the source size. */
 	crtc = to_intel_crtc(crtc_state->uapi.crtc);
 	dev_priv = i915_lcd_to_i915(crtc->base.dev);
 	width = i915_drm_rect_width(&crtc_state->pipe_src);
 	height = i915_drm_rect_height(&crtc_state->pipe_src);
-	pipe = crtc->pipe;
 
 	/* Writes the size. */
-	i915_lcd_intel_de_write(dev_priv, PIPESRC(pipe), PIPESRC_WIDTH(width - 1) | PIPESRC_HEIGHT(height - 1));
-}
-
-/* Writes the frame start delay of the transcoder (the Linux hsw_set_frame_start_delay()). */
-static void
-i915_hsw_set_frame_start_delay(
-	const struct intel_crtc_state *crtc_state)
-{
-	struct intel_crtc *crtc;
-	struct drm_i915_private *i915;
-	i915_reg_t chicken;
-
-	/* Finds the crtc, its device and the transcoder's chicken register. */
-	crtc = to_intel_crtc(crtc_state->uapi.crtc);
-	i915 = i915_lcd_to_i915(crtc->base.dev);
-	chicken = drv_i915_hsw_chicken_trans_reg(i915, crtc_state->cpu_transcoder);
-
-	/* Replaces the delay field. */
-	i915_lcd_intel_de_rmw(i915,
-			      chicken,
-			      HSW_FRAME_START_DELAY_MASK,
-			      HSW_FRAME_START_DELAY(crtc_state->framestart_delay - 1));
+	drv_i915_xd_pipe_source(drv_i915_lcd_xd_io(dev_priv), (unsigned)crtc->pipe, (uint32_t)width, (uint32_t)height);
 }
 
 /*
- * Writes TRANSCONF of a crtc state (the Linux hsw_set_transconf()).
- *
- * During a modeset the pipe is still disabled and must remain so; during a
- * fastset it is already enabled and must remain so.
- */
-static void
-i915_hsw_set_transconf(
-	const struct intel_crtc_state *crtc_state)
-{
-	struct intel_crtc *crtc;
-	struct drm_i915_private *dev_priv;
-	enum transcoder cpu_transcoder;
-	u32 val;
-	bool needs_modeset;
-
-	/* Finds the crtc, its device and its transcoder. */
-	crtc = to_intel_crtc(crtc_state->uapi.crtc);
-	dev_priv = i915_lcd_to_i915(crtc->base.dev);
-	cpu_transcoder = crtc_state->cpu_transcoder;
-	val = 0;
-
-	/* A fastset keeps the pipe enabled. */
-	needs_modeset = intel_crtc_needs_modeset(crtc_state);
-	if (!needs_modeset)
-		val |= TRANSCONF_ENABLE;
-
-	/* Haswell dithers in the transcoder. */
-	if (IS_HASWELL(dev_priv) && crtc_state->dither)
-		val |= TRANSCONF_DITHER_EN | TRANSCONF_DITHER_TYPE_SP;
-
-	/* The interlace mode. */
-	if (crtc_state->hw.adjusted_mode.flags & DRM_MODE_FLAG_INTERLACE) {
-		val |= TRANSCONF_INTERLACE_IF_ID_ILK;
-	} else {
-		val |= TRANSCONF_INTERLACE_PF_PD_ILK;
-	}
-
-	/* Haswell selects YUV output in the transcoder. */
-	if (IS_HASWELL(dev_priv) &&
-	    crtc_state->output_format != INTEL_OUTPUT_FORMAT_RGB)
-		val |= TRANSCONF_OUTPUT_COLORSPACE_YUV_HSW;
-
-	/* Writes the word and flushes it. */
-	i915_lcd_intel_de_write(dev_priv, TRANSCONF(cpu_transcoder), val);
-	i915_lcd_intel_de_posting_read(dev_priv, TRANSCONF(cpu_transcoder));
-}
-
-/*
- * Programs the CPU transcoder of a crtc state (the Linux
- * hsw_configure_cpu_transcoder()).
- *
- * M/N, timings, VRR words, TRANS_MULT, the frame start delay and
- * TRANSCONF, in this order.
+ * Programs the CPU transcoder of a crtc state through the xd pipe: the
+ * M/N values (FDI for a PCH encoder, the link's for DP), the timing, the
+ * variable refresh words, the pixel multiplier, the frame start delay and
+ * TRANSCONF.
  */
 static void
 i915_hsw_configure_cpu_transcoder(
@@ -1732,40 +1434,53 @@ i915_hsw_configure_cpu_transcoder(
 {
 	struct intel_crtc *crtc;
 	struct drm_i915_private *dev_priv;
-	enum transcoder cpu_transcoder;
+	const struct intel_link_m_n *m_n;
+	struct i915_xd_trans_setup setup;
 	bool dp;
+	bool needs_modeset;
 
-	/* Finds the crtc, its device and its transcoder. */
+	/* Finds the crtc and its device. */
 	crtc = to_intel_crtc(crtc_state->uapi.crtc);
 	dev_priv = i915_lcd_to_i915(crtc->base.dev);
-	cpu_transcoder = crtc_state->cpu_transcoder;
+
+	/* The transcoder and the mode's timing. */
+	kern_memset(&setup, 0, sizeof(setup));
+	setup.trans = (unsigned)crtc_state->cpu_transcoder;
+	i915_xd_timing_of(&crtc_state->hw.adjusted_mode, &setup.timing);
 
 	/* The M/N values: FDI for a PCH encoder, the link's for DP. */
+	m_n = NULL;
 	if (crtc_state->has_pch_encoder) {
-		i915_cpu_transcoder_set_m1_n1(crtc, cpu_transcoder, &crtc_state->fdi_m_n);
+		m_n = &crtc_state->fdi_m_n;
 	} else {
 		dp = intel_crtc_has_dp_encoder(crtc_state);
-		if (dp) {
-			i915_cpu_transcoder_set_m1_n1(crtc, cpu_transcoder, &crtc_state->dp_m_n);
-			i915_cpu_transcoder_set_m2_n2(crtc, cpu_transcoder, &crtc_state->dp_m2_n2);
-		}
+		if (dp)
+			m_n = &crtc_state->dp_m_n;
+	}
+	if (m_n != NULL) {
+		setup.dp = 1;
+		setup.m_n.tu = m_n->tu;
+		setup.m_n.data_m = m_n->data_m;
+		setup.m_n.data_n = m_n->data_n;
+		setup.m_n.link_m = m_n->link_m;
+		setup.m_n.link_n = m_n->link_n;
 	}
 
-	/* The timings, and the VRR words where the platform has VRR. */
-	i915_set_transcoder_timings(crtc_state);
-	if (HAS_VRR(dev_priv))
-		i915_vrr_set_transcoder_timings(crtc_state);
+	/* The variable refresh, the multiplier and the frame start delay. */
+	setup.vrr.vmin = (uint32_t)crtc_state->vrr.vmin;
+	setup.vrr.vmax = (uint32_t)crtc_state->vrr.vmax;
+	setup.vrr.flipline = (uint32_t)crtc_state->vrr.flipline;
+	setup.vrr.guardband = (uint32_t)crtc_state->vrr.guardband;
+	setup.vrr.pipeline_full = (uint32_t)crtc_state->vrr.pipeline_full;
+	setup.pixel_multiplier = (unsigned)crtc_state->pixel_multiplier;
+	setup.frame_start_delay = (unsigned)crtc_state->framestart_delay;
 
-	/* The pixel multiplier (not on the eDP transcoder). */
-	if (cpu_transcoder != TRANSCODER_EDP) {
-		i915_lcd_intel_de_write(dev_priv,
-					TRANS_MULT(cpu_transcoder),
-					crtc_state->pixel_multiplier - 1);
-	}
+	/* A fastset keeps the pipe enabled. */
+	needs_modeset = intel_crtc_needs_modeset(crtc_state);
+	setup.running = needs_modeset ? 0 : 1;
 
-	/* The frame start delay, then TRANSCONF. */
-	i915_hsw_set_frame_start_delay(crtc_state);
-	i915_hsw_set_transconf(crtc_state);
+	/* Programs the transcoder. */
+	drv_i915_xd_pipe_configure(drv_i915_lcd_xd_io(dev_priv), drv_i915_lcd_xd_platform(), &setup);
 }
 
 /*
@@ -2042,142 +1757,52 @@ i915_is_hdr_mode(
 	return true;
 }
 
-/*
- * Waits for the pipe of a crtc state to go off (the Linux
- * intel_wait_for_pipe_off()).
- */
-static void
-i915_wait_for_pipe_off(
-	const struct intel_crtc_state *old_crtc_state)
-{
-	struct intel_crtc *crtc;
-	struct drm_i915_private *dev_priv;
-	enum transcoder cpu_transcoder;
-	int wait_error;
-
-	/* Finds the crtc and its device. */
-	crtc = to_intel_crtc(old_crtc_state->uapi.crtc);
-	dev_priv = i915_lcd_to_i915(crtc->base.dev);
-
-	/* Before display version 4 only the scanline counter tells. */
-	if (I915_LCD_DISPLAY_VER(dev_priv) < 4) {
-		drv_i915_wait_for_pipe_scanline_stopped(crtc);
-		return;
-	}
-
-	/* Waits up to 100 ms for the pipe state to go off. */
-	cpu_transcoder = old_crtc_state->cpu_transcoder;
-	wait_error = intel_de_wait_for_clear(dev_priv, TRANSCONF(cpu_transcoder), TRANSCONF_STATE_ENABLE, 100);
-	if (wait_error != 0)
-		I915_LCD_DRM_WARN(&dev_priv->drm, 1, "pipe_off wait timed out\n");
-}
-
-/* Writes the pipe misc word of a crtc state (the Linux bdw_set_pipe_misc()). */
+/* Writes the pipe misc word of a crtc state through the xd pipe. */
 static void
 i915_bdw_set_pipe_misc(
 	const struct intel_crtc_state *crtc_state)
 {
 	struct intel_crtc *crtc;
 	struct drm_i915_private *dev_priv;
-	u32 val;
+	struct i915_xd_pipe_misc misc;
 	bool hdr;
 
 	/* Finds the crtc and its device. */
 	crtc = to_intel_crtc(crtc_state->uapi.crtc);
 	dev_priv = i915_lcd_to_i915(crtc->base.dev);
-	val = 0;
 
-	/* The colour depth; 12 bpc is defined for ADLP+ only. */
-	switch (crtc_state->pipe_bpp) {
-	case 18:
-		val |= PIPE_MISC_BPC_6;
-		break;
-	case 24:
-		val |= PIPE_MISC_BPC_8;
-		break;
-	case 30:
-		val |= PIPE_MISC_BPC_10;
-		break;
-	case 36:
-		if (I915_LCD_DISPLAY_VER(dev_priv) >= 13)
-			val |= PIPE_MISC_BPC_12_ADLP;
-		break;
-	default:
-		I915_LCD_MISSING_CASE(crtc_state->pipe_bpp);
-		break;
-	}
-
-	/* Dithering. */
-	if (crtc_state->dither)
-		val |= PIPE_MISC_DITHER_ENABLE | PIPE_MISC_DITHER_TYPE_SP;
-
-	/* YUV output. */
-	if (crtc_state->output_format == INTEL_OUTPUT_FORMAT_YCBCR420 ||
-	    crtc_state->output_format == INTEL_OUTPUT_FORMAT_YCBCR444)
-		val |= PIPE_MISC_OUTPUT_COLORSPACE_YUV;
-
-	/* 4:2:0 output in full blend mode. */
+	/* The depth, the dither and the pixel format. */
+	kern_memset(&misc, 0, sizeof(misc));
+	misc.bpp = (unsigned)crtc_state->pipe_bpp;
+	misc.dither = crtc_state->dither ? 1 : 0;
+	misc.output = I915_XD_OUTPUT_RGB;
+	if (crtc_state->output_format == INTEL_OUTPUT_FORMAT_YCBCR444)
+		misc.output = I915_XD_OUTPUT_YCBCR444;
 	if (crtc_state->output_format == INTEL_OUTPUT_FORMAT_YCBCR420)
-		val |= PIPE_MISC_YUV420_ENABLE | PIPE_MISC_YUV420_MODE_FULL_BLEND;
+		misc.output = I915_XD_OUTPUT_YCBCR420;
 
-	/* HDR precision when only HDR planes are active (display version 11 and later). */
-	if (I915_LCD_DISPLAY_VER(dev_priv) >= 11) {
-		hdr = i915_is_hdr_mode(crtc_state);
-		if (hdr)
-			val |= PIPE_MISC_HDR_MODE_PRECISION;
-	}
-
-	/* Pixel rounding by truncation (display version 12 and later). */
-	if (I915_LCD_DISPLAY_VER(dev_priv) >= 12)
-		val |= PIPE_MISC_PIXEL_ROUNDING_TRUNC;
-
-	/* Broadwell allows PSR with the sprite enabled. */
-	if (IS_BROADWELL(dev_priv))
-		val |= PIPE_MISC_PSR_MASK_SPRITE_ENABLE;
+	/* HDR precision when only HDR planes are active. */
+	hdr = i915_is_hdr_mode(crtc_state);
+	misc.hdr = hdr ? 1 : 0;
 
 	/* Writes the word. */
-	i915_lcd_intel_de_write(dev_priv, PIPE_MISC(crtc->pipe), val);
+	drv_i915_xd_pipe_misc(drv_i915_lcd_xd_io(dev_priv), drv_i915_lcd_xd_platform(), (unsigned)crtc->pipe, &misc);
 }
 
-/* Sets the pipe chicken bits (the Linux icl_set_pipe_chicken()). */
+/* Sets the pipe chicken bits through the xd pipe. */
 static void
 i915_icl_set_pipe_chicken(
 	const struct intel_crtc_state *crtc_state)
 {
 	struct intel_crtc *crtc;
 	struct drm_i915_private *dev_priv;
-	enum pipe pipe;
-	u32 tmp;
 
-	/* Finds the crtc, its device and its pipe. */
+	/* Finds the crtc and its device. */
 	crtc = to_intel_crtc(crtc_state->uapi.crtc);
 	dev_priv = i915_lcd_to_i915(crtc->base.dev);
-	pipe = crtc->pipe;
 
-	/* Reads the chicken bits. */
-	tmp = i915_lcd_intel_de_read(dev_priv, PIPE_CHICKEN(pipe));
-
-	/*
-	 * Display WA #1153: icl: bypass the alpha math and rounding for
-	 * per-pixel values 00 and 0xff.  Display WA #1605353570: icl: pass
-	 * framebuffer pixels unmodified across the pipe.
-	 */
-	tmp |= PER_PIXEL_ALPHA_BYPASS_EN;
-	tmp |= PIXEL_ROUNDING_TRUNC_FB_PASSTHRU;
-
-	/* Underrun recovery is always disabled on display 13+ (the DG2 bit is inverted). */
-	if (IS_DG2(dev_priv)) {
-		tmp &= ~UNDERRUN_RECOVERY_ENABLE_DG2;
-	} else if (I915_LCD_DISPLAY_VER(dev_priv) >= 13) {
-		tmp |= UNDERRUN_RECOVERY_DISABLE_ADLP;
-	}
-
-	/* Wa_14010547955:dg2 */
-	if (IS_DG2(dev_priv))
-		tmp |= DG2_RENDER_CCSTAG_4_3_EN;
-
-	/* Writes the word back. */
-	i915_lcd_intel_de_write(dev_priv, PIPE_CHICKEN(pipe), tmp);
+	/* Writes the bits. */
+	drv_i915_xd_pipe_chicken(drv_i915_lcd_xd_io(dev_priv), drv_i915_lcd_xd_platform(), (unsigned)crtc->pipe);
 }
 
 /* Writes the line time watermark of the pipe (the Linux hsw_set_linetime_wm()). */
@@ -3036,59 +2661,4 @@ i915_mode_vblank_start(
 
 	/* Succeeded: reports the line. */
 	return vblank_start;
-}
-
-/* Computes the TRANS_VRR_CTL word (the Linux trans_vrr_ctl()). */
-static u32
-i915_trans_vrr_ctl(
-	const struct intel_crtc_state *crtc_state)
-{
-	/* Display version 13 has the guardband; earlier versions the pipeline-full override. */
-	if (drv_i915_lcd_display_ver() >= 13) {
-		return VRR_CTL_IGN_MAX_SHIFT |
-		       VRR_CTL_FLIP_LINE_EN |
-		       XELPD_VRR_CTL_VRR_GUARDBAND(crtc_state->vrr.guardband);
-	}
-
-	/* Succeeded: the word of display version 12. */
-	return VRR_CTL_IGN_MAX_SHIFT |
-	       VRR_CTL_FLIP_LINE_EN |
-	       VRR_CTL_PIPELINE_FULL(crtc_state->vrr.pipeline_full) |
-	       VRR_CTL_PIPELINE_FULL_OVERRIDE;
-}
-
-/*
- * Writes the VRR words of the transcoder (the Linux
- * intel_vrr_set_transcoder_timings()).
- *
- * PIPE_VBLANK_WITH_DELAY means on TGL: generate the VRR "safe window" for
- * DSB vblank waits; on ADL/DG2: make TRANS_SET_CONTEXT_LATENCY effective
- * with VRR.  Without VRR (flipline 0) only TRANS_VRR_CTL = 0 is written.
- */
-static void
-i915_vrr_set_transcoder_timings(
-	const struct intel_crtc_state *crtc_state)
-{
-	struct drm_i915_private *dev_priv;
-	enum transcoder cpu_transcoder;
-
-	/* Finds the device and the transcoder. */
-	dev_priv = i915_lcd_to_i915(crtc_state->uapi.crtc->dev);
-	cpu_transcoder = crtc_state->cpu_transcoder;
-
-	/* The vblank-with-delay bit of display versions 12 and 13. */
-	if (I915_LCD_IS_DISPLAY_VER(dev_priv, 12, 13))
-		i915_lcd_intel_de_rmw(dev_priv, CHICKEN_TRANS(cpu_transcoder), 0, PIPE_VBLANK_WITH_DELAY);
-
-	/* Without VRR the control word is cleared. */
-	if (!crtc_state->vrr.flipline) {
-		i915_lcd_intel_de_write(dev_priv, TRANS_VRR_CTL(cpu_transcoder), 0);
-		return;
-	}
-
-	/* The VRR range, the control word and the flip line. */
-	i915_lcd_intel_de_write(dev_priv, TRANS_VRR_VMIN(cpu_transcoder), crtc_state->vrr.vmin - 1);
-	i915_lcd_intel_de_write(dev_priv, TRANS_VRR_VMAX(cpu_transcoder), crtc_state->vrr.vmax - 1);
-	i915_lcd_intel_de_write(dev_priv, TRANS_VRR_CTL(cpu_transcoder), i915_trans_vrr_ctl(crtc_state));
-	i915_lcd_intel_de_write(dev_priv, TRANS_VRR_FLIPLINE(cpu_transcoder), crtc_state->vrr.flipline - 1);
 }
