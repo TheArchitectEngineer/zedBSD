@@ -308,6 +308,12 @@ kmsg=quiet       messages go to the log buffer (dmesg, sysctl kern.msgbuf)
   it) and on a kernel panic; from then on the kernel's messages are written
   on it again.
 - The UEFI loader also reads `kmsg=quiet`: it draws no progress blocks.
+- The kernel reports the value as `sysctl kern.boot.kmsg` (empty when the
+  boot did not give one).  init reads it with `kern.boot.login`: a boot with
+  `login=graphical` and `kmsg=quiet` starts the desktop's services first and
+  the network, sound, sshd and cron after them; any other boot starts the
+  services in the order their dependencies give
+  ([init and services](init-services.md#boot-order)).
 - For kernel development leave `kmsg=` out or write `kmsg=console`, and use
   `login=console` (Section 7b).
 - On amd64 UEFI, holding Ctrl while the loader runs gives the kernel

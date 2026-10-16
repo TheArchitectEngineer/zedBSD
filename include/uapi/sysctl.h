@@ -44,7 +44,7 @@
 /*
  * hw.gpu.attaching (uint32_t): how many GPU devices a driver has attached but
  * not yet published a node (/dev/gpuN) for or given up on.  The graphical
- * login waits for /dev/gpu0 only while it is nonzero (BUG-092).
+ * login waits for /dev/gpu0 only while it is nonzero.
  */
 #define HW_GPU_ATTACHING	4
 /*
@@ -56,7 +56,7 @@
 #define HW_GPU_START	5
 /*
  * hw.cputimes: each CPU's time since boot, counted in clock ticks of hz a
- * second (ws134-p005).  The value is a struct cpu_times_header followed by
+ * second.  The value is a struct cpu_times_header followed by
  * count struct cpu_times_entry, one a CPU in the order of their numbers.
  * Read-only.  A buffer too small fails with ENOMEM and the length needed;
  * a reader asks for the length first (no buffer) or tries again.
@@ -102,7 +102,7 @@ _Static_assert(sizeof(struct cpu_times_entry) == 32U,
 
 /*
  * hw.diskstats: each physical whole disk's work since it appeared
- * (ws134-p006).  The value is a struct disk_stats_header followed by count
+ *.  The value is a struct disk_stats_header followed by count
  * struct disk_stats_entry, in the order the disks appeared.  Partitions,
  * loop disks and a file system's own disks are not listed: a partition's
  * work is its whole disk's.  Read-only.  A buffer too small fails with
@@ -177,7 +177,7 @@ _Static_assert(sizeof(struct disk_stats_entry) == 120U,
     "hw.diskstats entry ABI must be identical on ILP32 and LP64");
 
 /*
- * hw.gputelemetry: each GPU's work as its driver keeps it (ws134-p007).
+ * hw.gputelemetry: each GPU's work as its driver keeps it.
  * The value is a struct gpu_telemetry_header followed by count struct
  * gpu_telemetry_entry, one a GPU whose driver reports telemetry (none for a
  * driver that keeps nothing, such as the virtual GPU).  Read-only.  A
@@ -238,7 +238,7 @@ _Static_assert(sizeof(struct gpu_telemetry_entry) == 72U,
 
 /*
  * hw.thermal: the machine's temperature sensors as the kernel reads them
- * (ws134-p009): today the ACPI thermal zones and the ACPI devices with a
+ *: today the ACPI thermal zones and the ACPI devices with a
  * _TMP (the DPTF participants of an Intel laptop).  The value is a struct
  * thermal_header followed by count struct thermal_entry.  Read-only.  A
  * buffer too small fails with ENOMEM and the length needed.
@@ -298,7 +298,7 @@ _Static_assert(sizeof(struct thermal_entry) == 64U,
 
 /*
  * net.tcpstats: each TCP socket's state and what it has done since it was
- * created (ws220-p001), to follow a transfer's control over time.  The
+ * created, to follow a transfer's control over time.  The
  * value is a struct tcp_stats_header followed by count struct
  * tcp_stats_entry, in the order of the kernel's socket registry.
  * Read-only.  A buffer too small fails with ENOMEM and the length needed.
@@ -325,7 +325,7 @@ _Static_assert(sizeof(struct thermal_entry) == 64U,
 #define TCP_STATS_HAVE_FAST_RETRANSMIT	0x00000010U
 /*
  * send_unacknowledged, send_next and receive_next are given: the reader is
- * the superuser (ws220-p002).  Without the bit the three are 0.  The
+ * the superuser.  Without the bit the three are 0.  The
  * addresses, ports and every other field are given to every reader, as
  * netstat shows them on other systems.
  */
@@ -360,9 +360,9 @@ struct tcp_stats_header {
  * wait, 8 last ACK, 9 time wait).  An IPv4 address is in the first 4 bytes
  * of its field, in network order.  backoff is how many times the
  * retransmission timeout is doubled: the timeouts since the last valid
- * round-trip sample (ws220-p004; a probe of a closed window answered or
+ * round-trip sample (a probe of a closed window answered or
  * sent again as it opens sets it back too, and the probes themselves are
- * the persist timer's, apart from it, ws220-p005); rto_ms is the timeout
+ * the persist timer's, apart from it); rto_ms is the timeout
  * it waits now (the connection's, so doubled) and retransmit_in_ms how
  * long is left of it (0: no segment outstanding).  With TCP_STATS_HAVE_RTT, srtt_us and
  * rttvar_us are RFC 6298's smoothed round-trip time and its variation and
@@ -373,7 +373,7 @@ struct tcp_stats_header {
  * send_window is the window the peer last advertised; receive_window the
  * one this end last put in a segment.  send_next is the end of what was
  * handed to the device (RFC 9293's SND.NXT; segments queued behind a
- * refused one are not part of it, ws220-p003), and in_flight_bytes the
+ * refused one are not part of it), and in_flight_bytes the
  * sequence space sent and not acknowledged; send_segments the segments in
  * the ring, unsent ones included, of send_ring.  receive_bytes and
  * receive_packets are what waits for the reader, of receive_limit_bytes;
@@ -388,7 +388,7 @@ struct tcp_stats_header {
  * retransmission path that the device took and their bytes, and how many
  * times that resend was made due at once
  * (immediate_resends: a fast retransmit, a partial acknowledgement in a
- * recovery, or a window that opened for a probe; ws220-p005) rather than
+ * recovery, or a window that opened for a probe) rather than
  * by a timeout; segments the stack failed to hand to the
  * device (segment_send_failures, an acknowledgement or a resend lost on
  * the way out); acknowledgements received, those that acknowledged
@@ -491,8 +491,10 @@ struct memory_stats {
 #define KERN_BOOT_CONFIGURATION 6
 #define KERN_BOOT_CONFIG_MATCHES 7
 #define KERN_BOOT_ROOT_IMAGE 8
-/* The login= boot parameter (ws035-p098): "graphical", "console", or "" when it was not given. */
+/* The login= boot parameter: "graphical", "console", or "" when it was not given. */
 #define KERN_BOOT_LOGIN 9
+/* The kmsg= boot parameter: "quiet", "console", or "" when it was not given. */
+#define KERN_BOOT_KMSG 10
 #define ROOT_IMAGE_VERSION 1U
 #define ROOT_IMAGE_OVERLAY 1U
 #define ROOT_IMAGE_MOUNTED 2U

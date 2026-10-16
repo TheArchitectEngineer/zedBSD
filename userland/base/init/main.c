@@ -28,6 +28,7 @@
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/sysctl.h>
 #include <sys/un.h>
 #include <sys/wait.h>
 #include <time.h>
@@ -37,6 +38,16 @@
 #define SERVICE_MAX 32
 #define ARGUMENT_MAX 16
 
+/* The record of when this boot started, readied and ended each service, for reading how long the boot took. */
+#define TIMELINE_PATH "/var/log/init.log"
+
+/* The boot parameters that choose the order of the services, as the kernel reports them. */
+#define BOOT_LOGIN_SYSCTL "kern.boot.login"
+#define BOOT_KMSG_SYSCTL "kern.boot.kmsg"
+
+/* The room for one boot parameter's value, which is one short word. */
+#define BOOT_PARAMETER_MAX 32
+
 /* Requests held while a oneshot service runs, and how often init looks at the socket and the service then. */
 #define DEFERRED_MAX 8
 #define ONESHOT_POLL_MS 100
@@ -45,7 +56,7 @@
  * How long a stopping process is given: a service after SIGTERM and after
  * SIGKILL, and the processes no service owns after each of the two.  A
  * process stuck in the kernel is left behind after these, so the shutdown
- * still reaches its sync (BUG-288).
+ * still reaches its sync.
  */
 #define STOP_GRACE_MS 5000U
 #define STOP_POLL_MS 100U
@@ -105,12 +116,19 @@ struct service {
 	unsigned notify_timeout;
 	unsigned failures;
 	/*
-	 * The service this one stands in for (replaces=, ws035-p098): while
+	 * The service this one stands in for (replaces=): while
 	 * this one is enabled the other is not started; when this one ends and
 	 * is not started again, the other is.  The graphical login's greeter
 	 * replaces the console's getty this way.
 	 */
 	char replaces[64];
+	/*
+	 * Set by late=yes for a service the desktop does not need at once (the
+	 * network, sound, sshd, cron).  A boot that shows the desktop first
+	 * starts it only after the other services have been started, and does
+	 * not hold them for it; a debug boot starts it in its usual place.
+	 */
+	int late;
 };
 
 static struct service services[SERVICE_MAX];
@@ -123,7 +141,7 @@ static int services_stopping;
 
 /*
  * The control socket's listener (-1 without one).  It is served while a
- * oneshot service runs too (BUG-095): a oneshot that asks for the power to be
+ * oneshot service runs too: a oneshot that asks for the power to be
  * cut, through /sbin/poweroff, waits for init's answer while init waits for it.
  */
 static int control_listener = -1;
@@ -147,6 +165,35 @@ enum dependency_result {
 	DEPENDENCIES_SKIP
 };
 
+/*
+ * Which services one round of starting takes.  A boot that shows the desktop
+ * first starts the services that are not late, then all that are left; any
+ * other boot starts all of them in one round.
+ */
+enum start_round {
+	START_ROUND_DESKTOP,
+	START_ROUND_ALL
+};
+
+/*
+ * Nonzero when this boot shows the desktop first: the boot parameters ask for
+ * the graphical login (login=graphical) and keep the kernel's messages off the
+ * screen (kmsg=quiet).  Set once before the services start.  A debug boot (the
+ * messages on the console, or the console's login) leaves it 0 and starts the
+ * services in the order their dependencies alone give.
+ */
+static int desktop_first;
+
+/*
+ * The descriptor of the boot's timeline (TIMELINE_PATH), or -1 before the
+ * file systems are mounted or when the file cannot be written.  Opened once and
+ * kept for init's life; the services do not inherit it.
+ */
+static int timeline_descriptor = -1;
+
+/* The monotonic time init started at, the timeline's first line once the timeline is open. */
+static uint64_t init_started_ms;
+
 static void make_runtime_directories(void);
 static struct rcconf_model *load_rcconf_snapshot(void);
 static void set_configured_hostname(const struct rcconf_model *snapshot);
@@ -159,7 +206,15 @@ static int on_off(const char *value, int *result);
 static int parse_seconds(const char *value, unsigned minimum, unsigned maximum, unsigned *result);
 static int open_control_socket(void);
 static void start_enabled_services(void);
-static enum dependency_result dependencies_state(const struct service *service);
+static void start_round(enum start_round round);
+static enum dependency_result dependencies_state(const struct service *service, enum start_round round);
+static enum dependency_result order_state(const struct service *service, enum start_round round);
+static enum dependency_result requirements_state(const struct service *service);
+static int boot_shows_desktop_first(void);
+static int boot_parameter_is(const char *name, const char *expected);
+static void timeline_open(void);
+static void timeline_record(const char *event, const char *name);
+static void timeline_write(uint64_t milliseconds, const char *event, const char *name);
 static struct service *find_service(const char *name);
 static struct service *replacer_of(const struct service *service);
 static void release_replaced(const struct service *service);
@@ -199,6 +254,9 @@ main(
 	int client;
 	struct rcconf_model *snapshot;
 
+	/* The time init started, which the timeline begins with. */
+	init_started_ms = monotonic_milliseconds();
+
 	/* Handles a failed getpid operation. */
 	if (getpid() != 1) {
 		fprintf(stderr, "init: must run as process 1\n");
@@ -212,7 +270,7 @@ main(
 	(void)signal(SIGTERM, signal_handler);
 	(void)signal(SIGCHLD, SIG_DFL);
 
-	/* A root the kernel could only mount read-only is checked before anything else (BUG-312). */
+	/* A root the kernel could only mount read-only is checked before anything else. */
 	root_check();
 
 	make_runtime_directories();
@@ -226,6 +284,9 @@ main(
 	set_configured_hostname(snapshot);
 	run_startup_command("/sbin/mount", "mount");
 	run_startup_command("/sbin/swapon", "swapon");
+
+	/* The timeline, now that /var/log is where it stays. */
+	timeline_open();
 
 	/* Handles a failed load services operation. */
 	if (load_services(snapshot) != 0) {
@@ -242,9 +303,13 @@ main(
 	if (control_listener < 0)
 		fprintf(stderr, "init: control socket: %s\n", strerror(errno));
 
+	/* The boot parameters choose whether the desktop's services come first. */
+	desktop_first = boot_shows_desktop_first();
+
 	start_enabled_services();
 
 	printf("init: system running\n");
+	timeline_record("system", "running");
 
 	/* Continue until the operation reaches a terminal state. */
 	for (;;) {
@@ -532,6 +597,10 @@ load_one_service(
 	if (assignment_get(path, "required", value, sizeof(value)) == 0)
 		service->required = yes(value);
 
+	/* A service the desktop does not need at once, which a desktop boot starts last. */
+	if (assignment_get(path, "late", value, sizeof(value)) == 0)
+		service->late = yes(value);
+
 	/* Handles a failed assignment get operation. */
 	if (assignment_get(path, "restart", value, sizeof(value)) == 0) {
 		service->restart_always = strcmp(value, "always") == 0;
@@ -670,19 +739,69 @@ open_control_socket(
 	return descriptor;
 }
 
-/* Supports the start enabled services operation. */
+/*
+ * Starts the enabled services in the order their dependencies give.
+ *
+ * A boot that shows the desktop first starts the services that are not late
+ * in a first round, so the graphical login does not wait for the network,
+ * sound or sshd, and the late ones in a second round after it.
+ */
 static void
 start_enabled_services(
 	void)
 {
+	size_t index;
+
+	/* The desktop's round: every service but the late ones. */
+	if (desktop_first) {
+		timeline_record("order", "desktop-first");
+		start_round(START_ROUND_DESKTOP);
+		timeline_record("round", "desktop-started");
+	} else {
+		timeline_record("order", "dependencies");
+	}
+
+	/* A halt, power-off or reboot asked for meanwhile starts nothing more; the loop carries it out. */
+	if (action_requested != 0)
+		return;
+
+	/* Every service still waiting, the late ones included. */
+	start_round(START_ROUND_ALL);
+	if (action_requested != 0)
+		return;
+
+	/* A service still waiting after every pass waits for itself. */
+	for (index = 0; index < service_count; index++) {
+		/* Only an enabled service that never left the stopped state is in a cycle. */
+		if (!services[index].enabled)
+			continue;
+		if (services[index].state != SERVICE_STOPPED)
+			continue;
+
+		/* Marks it failed, which is what a service that can never start is. */
+		services[index].state = SERVICE_FAILED;
+		fprintf(stderr, "init: dependency cycle: %s\n", services[index].name);
+		timeline_record("cycle", services[index].name);
+	}
+}
+
+/*
+ * Starts each service of one round whose dependencies are met, pass after
+ * pass, so that a service waiting for another starts in the pass after it.
+ */
+static void
+start_round(
+	enum start_round round)
+{
 	struct service *service;
 	struct service *replacer;
 	enum dependency_result dependencies;
-	size_t pass, index;
+	size_t pass;
+	size_t index;
 
-	/* Process each remaining element. */
+	/* As many passes as there are services: each pass starts at least one, or none is left that can start. */
 	for (pass = 0; pass < service_count; pass++) {
-		/* Process each remaining element. */
+		/* Each service not started yet. */
 		for (index = 0; index < service_count; index++) {
 			service = &services[index];
 
@@ -690,107 +809,286 @@ start_enabled_services(
 			if (action_requested != 0)
 				return;
 
-			/* Handles the service condition. */
-			if (!service->enabled ||
-			    service->state != SERVICE_STOPPED)
+			/* A disabled service, or one this boot has already dealt with, is passed over. */
+			if (!service->enabled)
+				continue;
+			if (service->state != SERVICE_STOPPED)
+				continue;
+
+			/* The desktop's round leaves the late services for the next. */
+			if (round == START_ROUND_DESKTOP && service->late)
 				continue;
 
 			/* A service another enabled one stands in for waits until that one gives up (replaces=). */
 			replacer = replacer_of(service);
 			if (replacer != NULL) {
 				service->state = SERVICE_SKIPPED;
-				fprintf(stderr, "init: %s replaced by %s\n",
-					service->name, replacer->name);
+				fprintf(stderr, "init: %s replaced by %s\n", service->name, replacer->name);
+				timeline_record("replaced", service->name);
 				continue;
 			}
 
-			/* The dependencies decide whether it starts now. */
-			dependencies = dependencies_state(service);
-
-			/* Handles the dependencies condition. */
-			if (dependencies == DEPENDENCIES_READY)
+			/* The dependencies decide whether it starts now, later, or not at all. */
+			dependencies = dependencies_state(service, round);
+			if (dependencies == DEPENDENCIES_READY) {
 				(void)spawn_service(service);
-			else if (dependencies == DEPENDENCIES_SKIP) {
+			} else if (dependencies == DEPENDENCIES_SKIP) {
 				service->state = SERVICE_SKIPPED;
-				fprintf(stderr,
-					"init: skipped %s: required dependency "
-					"failed\n",
-					service->name);
+				fprintf(stderr, "init: skipped %s: required dependency failed\n", service->name);
+				timeline_record("skipped", service->name);
 			}
-		}
-	}
-
-	/* Process each remaining element. */
-	for (index = 0; index < service_count; index++) {
-		/* Handles the services condition. */
-		if (services[index].enabled &&
-		    services[index].state == SERVICE_STOPPED) {
-			services[index].state = SERVICE_FAILED;
-			fprintf(stderr, "init: dependency cycle: %s\n",
-				services[index].name);
 		}
 	}
 }
 
-/* Supports the dependencies state operation. */
+/*
+ * Reports whether a service can start now: the services it is ordered after
+ * have settled, and the ones it requires are up.
+ */
 static enum dependency_result
 dependencies_state(
+	const struct service *service,
+	enum start_round round)
+{
+	enum dependency_result order;
+	enum dependency_result requirements;
+
+	/* The services named in after=. */
+	order = order_state(service, round);
+	if (order != DEPENDENCIES_READY)
+		return order;
+
+	/* The services named in requires=. */
+	requirements = requirements_state(service);
+	if (requirements != DEPENDENCIES_READY)
+		return requirements;
+
+	/* Succeeded: the service can start now. */
+	return DEPENDENCIES_READY;
+}
+
+/*
+ * Reports whether the services a service is ordered after (after=) have
+ * settled.  While the desktop's services start, a late service in the list
+ * is not waited for: it starts in the next round, after this one.
+ */
+static enum dependency_result
+order_state(
+	const struct service *service,
+	enum start_round round)
+{
+	struct service *dependency;
+	char copy[256];
+	char *name;
+	int settled;
+
+	/* A service ordered after nothing can start. */
+	if (service->after[0] == '\0')
+		return DEPENDENCIES_READY;
+
+	/* Each name of the list. */
+	strcpy(copy, service->after);
+	for (name = strtok(copy, ",");
+	     name != NULL;
+	     name = strtok(NULL, ",")) {
+		/* A name no definition has is a broken order: the service is not started. */
+		dependency = find_service(name);
+		if (dependency == NULL)
+			return DEPENDENCIES_SKIP;
+
+		/* A late service is not waited for in the desktop's round. */
+		if (round == START_ROUND_DESKTOP && dependency->late)
+			continue;
+
+		/* A disabled service never starts, so nothing waits for it. */
+		if (!dependency->enabled)
+			continue;
+
+		/* One still on its way holds the service back. */
+		settled = terminal_state(dependency->state);
+		if (!settled)
+			return DEPENDENCIES_WAIT;
+	}
+
+	/* Succeeded: everything it is ordered after has settled. */
+	return DEPENDENCIES_READY;
+}
+
+/*
+ * Reports whether the services a service requires (requires=) are up.  A
+ * requirement that is late is not up in the desktop's round, so the service
+ * waits for the next round with it.
+ */
+static enum dependency_result
+requirements_state(
 	const struct service *service)
 {
-	struct service *dependency_local;
-	struct service *dependency_local1;
-	char copy[256], *name;
+	struct service *dependency;
+	char copy[256];
+	char *name;
 
-	/* Handles the service condition. */
-	if (service->after[0] != '\0') {
-		strcpy(copy, service->after);
+	/* A service that requires nothing can start. */
+	if (service->requires[0] == '\0')
+		return DEPENDENCIES_READY;
 
-		/* Process each element required by the operation. */
-		for (name = strtok(copy, ","); name != NULL;
-		     name = strtok(NULL, ",")) {
-			dependency_local = find_service(name);
+	/* Each name of the list. */
+	strcpy(copy, service->requires);
+	for (name = strtok(copy, ",");
+	     name != NULL;
+	     name = strtok(NULL, ",")) {
+		/* A requirement that is missing or disabled never comes up: the service is not started. */
+		dependency = find_service(name);
+		if (dependency == NULL)
+			return DEPENDENCIES_SKIP;
+		if (!dependency->enabled)
+			return DEPENDENCIES_SKIP;
 
-			/* Handles the dependency local availability. */
-			if (dependency_local == NULL)
-				return DEPENDENCIES_SKIP;
+		/* A requirement that failed or was not started takes the service with it. */
+		if (dependency->state == SERVICE_FAILED)
+			return DEPENDENCIES_SKIP;
+		if (dependency->state == SERVICE_SKIPPED)
+			return DEPENDENCIES_SKIP;
 
-			/* Handles a failed terminal state operation. */
-			if (dependency_local->enabled &&
-			    !terminal_state(dependency_local->state))
-
-				/* Returns the computed result. */
-				return DEPENDENCIES_WAIT;
-		}
+		/* A requirement neither running nor completed is still to come. */
+		if (dependency->state != SERVICE_RUNNING && dependency->state != SERVICE_COMPLETED)
+			return DEPENDENCIES_WAIT;
 	}
 
-	/* Handles the service condition. */
-	if (service->requires[0] != '\0') {
-		strcpy(copy, service->requires);
-
-		/* Process each element required by the operation. */
-		for (name = strtok(copy, ","); name != NULL;
-		     name = strtok(NULL, ",")) {
-			dependency_local1 = find_service(name);
-
-			/* Handles an operation failure. */
-			if (dependency_local1 == NULL || !dependency_local1->enabled ||
-			    dependency_local1->state == SERVICE_FAILED ||
-			    dependency_local1->state == SERVICE_SKIPPED)
-
-				/* Returns the computed result. */
-				return DEPENDENCIES_SKIP;
-
-			/* Handles the dependency local1 condition. */
-			if (dependency_local1->state != SERVICE_RUNNING &&
-			    dependency_local1->state != SERVICE_COMPLETED)
-
-				/* Returns the computed result. */
-				return DEPENDENCIES_WAIT;
-		}
-	}
-
-	/* Returns the computed result. */
+	/* Succeeded: everything it requires is up. */
 	return DEPENDENCIES_READY;
+}
+
+/*
+ * Reports whether this boot shows the desktop first: the boot parameters ask
+ * for the graphical login and keep the kernel's messages off the screen.
+ *
+ * kmsg=console (Ctrl at the loader) and login=console (Shift) are the debug
+ * boots, which start the network and the others in their usual place.
+ */
+static int
+boot_shows_desktop_first(
+	void)
+{
+	int graphical;
+	int quiet;
+
+	/* The graphical login is asked for. */
+	graphical = boot_parameter_is(BOOT_LOGIN_SYSCTL, "graphical");
+	if (!graphical)
+		return 0;
+
+	/* The kernel's messages stay off the screen. */
+	quiet = boot_parameter_is(BOOT_KMSG_SYSCTL, "quiet");
+	if (!quiet)
+		return 0;
+
+	/* Succeeded: the desktop comes first. */
+	return 1;
+}
+
+/*
+ * Reports whether a boot parameter, read through its sysctl, has the given
+ * value.  A kernel that cannot say is taken as a boot without it.
+ */
+static int
+boot_parameter_is(
+	const char *name,
+	const char *expected)
+{
+	char value[BOOT_PARAMETER_MAX];
+	size_t size;
+	int error;
+	int differs;
+
+	/* Asks the kernel for the parameter. */
+	size = sizeof(value);
+	error = sysctlbyname(name, value, &size, NULL, 0);
+	if (error != 0)
+		return 0;
+
+	/* An answer that is not one terminated string is not the value. */
+	if (size == 0 || size > sizeof(value))
+		return 0;
+	if (value[size - 1] != '\0')
+		return 0;
+
+	/* Compares it with the value asked about. */
+	differs = strcmp(value, expected);
+	if (differs != 0)
+		return 0;
+
+	/* Succeeded: the parameter has the value. */
+	return 1;
+}
+
+/*
+ * Opens a new timeline for this boot and writes its first lines: when init
+ * started and when the file systems were mounted.
+ */
+static void
+timeline_open(
+	void)
+{
+	int descriptor;
+
+	/* Each boot writes its own timeline over the last one. */
+	descriptor = open(TIMELINE_PATH, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+	if (descriptor < 0) {
+		fprintf(stderr, "init: %s: %s\n", TIMELINE_PATH, strerror(errno));
+		return;
+	}
+
+	/* The descriptor stays open for the services started later. */
+	timeline_descriptor = descriptor;
+
+	/* The start of init, which came before the file could be written, and the mounts. */
+	timeline_write(init_started_ms, "init", "started");
+	timeline_record("mount", "done");
+}
+
+/* Writes one event of the boot into the timeline at the present time. */
+static void
+timeline_record(
+	const char *event,
+	const char *name)
+{
+	uint64_t now;
+
+	/* The time since the kernel started, which the services' own logs also count in. */
+	now = monotonic_milliseconds();
+	timeline_write(now, event, name);
+}
+
+/*
+ * Writes one line of the timeline: the seconds since the kernel started,
+ * to the millisecond, the event and the service or the step it is about.
+ */
+static void
+timeline_write(
+	uint64_t milliseconds,
+	const char *event,
+	const char *name)
+{
+	char line[160];
+	int length;
+
+	/* Without a timeline there is nothing to write to. */
+	if (timeline_descriptor < 0)
+		return;
+
+	/* Formats the line; one that does not fit is cut. */
+	length = snprintf(line, sizeof(line), "%llu.%03llu %s %s\n",
+			  (unsigned long long)(milliseconds / 1000U),
+			  (unsigned long long)(milliseconds % 1000U),
+			  event,
+			  name);
+	if (length < 0)
+		return;
+	if ((size_t)length >= sizeof(line))
+		length = (int)sizeof(line) - 1;
+
+	/* Writes it whole; a failed write loses only this line. */
+	(void)write(timeline_descriptor, line, (size_t)length);
 }
 
 /* Supports the find service operation. */
@@ -971,6 +1269,7 @@ spawn_service(
 	}
 
 	service->pid = child;
+	timeline_record("start", service->name);
 
 	/* Handles the service condition. */
 	if (service->notify_fd3) {
@@ -985,6 +1284,7 @@ spawn_service(
 			(void)waitpid(child, &status, 0);
 			service->pid = 0;
 			service->state = SERVICE_FAILED;
+			timeline_record("failed", service->name);
 			errno = error_local1;
 
 			/* Reports operation failure. */
@@ -998,6 +1298,7 @@ spawn_service(
 		service->state = SERVICE_RUNNING;
 		printf("init: started %s pid %ld\n", service->name,
 		       (long)child);
+		timeline_record("running", service->name);
 
 		/* Reports successful completion. */
 		return 0;
@@ -1033,6 +1334,7 @@ spawn_service(
 		service->state = SERVICE_FAILED;
 		service->pid = 0;
 		fprintf(stderr, "init: oneshot %s failed\n", service->name);
+		timeline_record("failed", service->name);
 		errno = EIO;
 
 		/* Reports operation failure. */
@@ -1041,6 +1343,7 @@ spawn_service(
 
 	service->state = SERVICE_COMPLETED;
 	service->pid = 0;
+	timeline_record("done", service->name);
 
 	/* Reports successful completion. */
 	return 0;
@@ -1552,8 +1855,8 @@ wait_for_exit(
  * Stops every process that no service owns.
  *
  * A login shell, a program it started, or an orphan would otherwise keep
- * writing after the sync, and what it wrote would be lost to the reset
- * (BUG-288).  Each is sent SIGTERM, then SIGKILL after a grace period.
+ * writing after the sync, and what it wrote would be lost to the reset.
+ * Each is sent SIGTERM, then SIGKILL after a grace period.
  * Init itself is never signalled.
  */
 static void
