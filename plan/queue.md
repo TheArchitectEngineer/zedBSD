@@ -517,3 +517,4 @@ WS074 の記録の q590・q594〜q598（Codex の browser3）は main の同じ�
 | 14 | WS078 名前の移行・WS009 文書・WS014 | WS148・WS149・WS151 の頁の検討 |
 
 保留: WS074 Web ブラウザ（2026-10-05 Q1 に戻した、レンダリングの改善はユーザーの指示まで止める）。WS121 browser の動画は P2 の列に（p001 の設計から）。
+| q1232 / q1232-i01 | P4（phase-runner、worktree p4・agent/p4-bug330） | BUG-330 | framebuffer の console のスクロールの高速化（kernel の text.c・HAL の cons.c の実装、framebuffer の memory type）、QEMU で測る | in-progress |
