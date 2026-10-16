@@ -45,6 +45,10 @@
 #                          of the lit panel (backlight, sink to sleep, panel power)
 #   host-xd-screen-test    a screen's plan: the 5330's panel against the older check's numbers, the refusals (CD clock,
 #                          voltage, QGV, sinks, links), HDMI and Type-C DisplayPort links, Tiger Lake's pixel rate rule
+#   host-xd-tc-test        the Type-C PHYs and PLLs: the Dekel windows, bank index and lock, another route, the PHY
+#                          microcontroller's health, the lanes' DisplayPort mode, the swing tables and words with the load
+#                          generators, the soft reset; the PLL words (the 5330's TC PLL 2, every rate and reference, HDMI)
+#                          and link clocks, the enable and the read of a TC PLL
 # The check against the Linux tree itself is plan/ws245/tests/check-xd-regs-linux.sh (needs the unpacked tree).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -e
@@ -55,7 +59,7 @@ OUT=${1:-build/ws245-host}
 mkdir -p "$OUT"
 I915_HOST_EXTRA_PRODUCTION="src/drivers/gpu/i915/perf.c src/drivers/gpu/i915/mmio-record.c ${I915_HOST_EXTRA_PRODUCTION:-}"
 failed=0
-for test in host-xd-regs-test host-xd-io-test host-xd-platform-test host-xd-vbt-test host-xd-survey-test host-xd-aux-test host-xd-gmbus-test host-xd-panel-test host-xd-power-test host-xd-dmc-test host-xd-clock-test host-xd-dpll-test host-xd-ddi-test host-xd-dp-test host-xd-pipe-test host-xd-dbuf-test host-xd-core-test host-xd-takeover-test host-xd-screen-test; do
+for test in host-xd-regs-test host-xd-io-test host-xd-platform-test host-xd-vbt-test host-xd-survey-test host-xd-aux-test host-xd-gmbus-test host-xd-panel-test host-xd-power-test host-xd-dmc-test host-xd-clock-test host-xd-dpll-test host-xd-ddi-test host-xd-dp-test host-xd-pipe-test host-xd-dbuf-test host-xd-core-test host-xd-takeover-test host-xd-screen-test host-xd-tc-test; do
 	test -f "$T/$test.c" || continue
 	i915_display_host_build "$OUT/$test" "$T/$test.c" "$T/xd-fake-regs.c" plan/ws084/tests/native-decide-stubs.c
 	if ! "$OUT/$test"; then

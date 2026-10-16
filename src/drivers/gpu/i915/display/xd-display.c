@@ -86,6 +86,9 @@ drv_i915_xd_start(
 	/* The register window writes the device's registers; the mailbox is serialized with the GT's own users. */
 	drv_i915_xd_io_init(&xd->io, mmio, mailbox_lock);
 
+	/* The Dekel PHY windows of the Type-C ports, reached through that window. */
+	drv_i915_xd_dkl_init(&xd->dkl, &xd->io);
+
 	/* Chooses the description by the product and revision. */
 	error = drv_i915_xd_platform_choose(product, revid, 0, 0U, &xd->choice);
 	if (error != 0) {

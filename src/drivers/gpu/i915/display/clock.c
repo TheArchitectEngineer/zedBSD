@@ -72,10 +72,11 @@
  *
  * The DPLL half keeps the device's pool of PLLs that every screen's
  * modeset object shares (the Linux text of intel_dpll_mgr.c's references,
- * readout and sanitize) and the Type-C PLL's words; the combo PLLs' and
- * the Thunderbolt PLL's words, enable, disable and read, and the DDI clock
- * map, are the xd clock's (xd-clock.c), reached through the modeset's
- * register window (drv_i915_lcd_xd_io()).
+ * readout and sanitize); every PLL's words, enable, disable and read, and
+ * the DDI clock map, are the xd clock's (xd-clock.c), reached through the
+ * modeset's register window (drv_i915_lcd_xd_io()) and, for a Type-C
+ * PLL's words in its PHY, the modeset's Dekel PHY route
+ * (drv_i915_lcd_xd_dkl()).
  */
 
 #include "modeset-internal.h"
@@ -119,8 +120,6 @@ static int i915_bxt_calc_cdclk_pll_vco(struct drm_i915_private *dev_priv, int cd
 static u8 i915_calc_voltage_level(int cdclk, int num_voltage_levels, const int voltage_level_max_cdclk[]);
 static u8 i915_tgl_calc_voltage_level(int cdclk);
 static int i915_pixel_rate_to_cdclk(const struct intel_crtc_state *crtc_state);
-static void i915_icl_pll_power_enable(struct drm_i915_private *i915, struct intel_shared_dpll *pll, i915_reg_t enable_reg);
-static void i915_icl_pll_enable(struct drm_i915_private *i915, struct intel_shared_dpll *pll, i915_reg_t enable_reg);
 static void i915_intel_enable_shared_dpll(struct drm_i915_private *i915, struct intel_shared_dpll *pll);
 static void i915_enable_shared_dpll_locked(struct drm_i915_private *i915, struct intel_crtc *crtc, struct intel_shared_dpll *pll, unsigned int pipe_mask);
 static void i915_intel_disable_shared_dpll(struct drm_i915_private *i915, struct intel_shared_dpll *pll);
@@ -131,21 +130,20 @@ static void i915_reference_shared_dpll_crtc(const struct intel_crtc *crtc, const
 static void i915_reference_shared_dpll(struct i915_lcd_world *world, struct intel_atomic_state *state, const struct intel_crtc *crtc, const struct intel_shared_dpll *pll, const struct intel_dpll_hw_state *pll_state);
 static void i915_unreference_shared_dpll(struct i915_lcd_world *world, struct intel_atomic_state *state, const struct intel_crtc *crtc, const struct intel_shared_dpll *pll);
 static void i915_lcd_dpll_pool_init(struct i915_lcd_world *world, struct i915_lcd_modeset *ms);
-static enum tc_port i915_icl_pll_id_to_tc_port(enum intel_dpll_id id);
-static i915_reg_t i915_intel_tc_pll_enable_reg(struct drm_i915_private *i915, struct intel_shared_dpll *pll);
-static u32 i915_mg_hsdiv_of_div1(int div1);
-static int i915_icl_mg_pll_find_divisors(int clock_khz, bool is_dp, bool use_ssc, u32 *target_dco_khz, struct intel_dpll_hw_state *state, bool is_dkl);
-static int i915_icl_calc_mg_pll_state(struct intel_crtc_state *crtc_state, struct intel_dpll_hw_state *pll_state);
-static int i915_icl_ddi_mg_pll_get_freq(struct drm_i915_private *i915, const struct intel_shared_dpll *pll, const struct intel_dpll_hw_state *pll_state);
 static int i915_icl_ddi_tbt_pll_get_freq(struct drm_i915_private *i915, const struct intel_shared_dpll *pll, const struct intel_dpll_hw_state *pll_state);
-static void i915_dkl_pll_write(struct drm_i915_private *i915, struct intel_shared_dpll *pll);
-static void i915_mg_pll_enable(struct drm_i915_private *i915, struct intel_shared_dpll *pll);
 static const struct i915_xd_pll_desc *i915_dpll_xd_desc(const struct intel_shared_dpll *pll);
 static int i915_dpll_afc(const struct drm_i915_private *i915);
 static void i915_dpll_report(struct drm_i915_private *i915, const struct intel_shared_dpll *pll, unsigned late);
 static int i915_combo_pll_get_freq(struct drm_i915_private *i915, const struct intel_shared_dpll *pll, const struct intel_dpll_hw_state *pll_state);
 static void i915_combo_pll_enable(struct drm_i915_private *i915, struct intel_shared_dpll *pll);
 static void i915_port_pll_disable(struct drm_i915_private *i915, struct intel_shared_dpll *pll);
+static void i915_tc_pll_words_to_state(const struct i915_xd_tc_pll_words *words, struct intel_dpll_hw_state *hw_state);
+static void i915_tc_pll_words_of_state(const struct intel_dpll_hw_state *hw_state, int afc_set, struct i915_xd_tc_pll_words *words);
+static int i915_tc_pll_get_freq(struct drm_i915_private *i915, const struct intel_shared_dpll *pll, const struct intel_dpll_hw_state *pll_state);
+static void i915_tc_pll_enable(struct drm_i915_private *i915, struct intel_shared_dpll *pll);
+static uint32_t i915_lcd_xd_dkl_read(void *context, unsigned tc, uint32_t phy_offset);
+static void i915_lcd_xd_dkl_write(void *context, unsigned tc, uint32_t phy_offset, uint32_t value);
+static void i915_lcd_xd_dkl_rmw(void *context, unsigned tc, uint32_t phy_offset, uint32_t clear, uint32_t set);
 
 /*
  * The hooks of a combo PLL of these platforms: the xd clock's read,
@@ -164,8 +162,8 @@ static const struct intel_shared_dpll_funcs i915_combo_pll_funcs = {
  * every Type-C PLL of every device.
  */
 static const struct intel_shared_dpll_funcs i915_dkl_pll_funcs = {
-	.get_freq = i915_icl_ddi_mg_pll_get_freq,
-	.enable = i915_mg_pll_enable,
+	.get_freq = i915_tc_pll_get_freq,
+	.enable = i915_tc_pll_enable,
 	.disable = i915_port_pll_disable,
 };
 
@@ -1054,8 +1052,8 @@ drv_i915_tbt_pll_describe(
 }
 
 /*
- * Computes the DKL PLL words of a Type-C port's link clock
- * (icl_calc_mg_pll_state() of display version 12 and later).
+ * Computes the DKL PLL words of a Type-C port's link clock through the xd
+ * clock.
  *
  * port_clock is the DP link rate or the HDMI TMDS clock in kHz, ref_nssc
  * the reference clock.  Returns 0, or I915_LCD_EINVAL when no divider fits
@@ -1068,59 +1066,20 @@ drv_i915_dkl_pll_calc(
 	int ref_nssc,
 	struct intel_dpll_hw_state *hw_state)
 {
-	struct drm_i915_private i915;
-	struct intel_crtc crtc;
-	struct intel_crtc_state crtc_state;
-	int calc_result;
+	struct i915_xd_tc_pll_words words;
+	int error;
 
-	/* Builds a device view with only the reference clock set. */
-	kern_memset(&i915, 0, sizeof(i915));
-	kern_memset(&crtc, 0, sizeof(crtc));
-	kern_memset(&crtc_state, 0, sizeof(crtc_state));
+	/* The xd clock's words, without an AFC startup override. */
 	kern_memset(hw_state, 0, sizeof(*hw_state));
-	i915.display.dpll.ref_clks.nssc = ref_nssc;
+	error = drv_i915_xd_tc_pll_words((uint32_t)ref_nssc, (uint32_t)port_clock, is_hdmi, I915_XD_DPLL_AFC_NONE, &words);
+	if (error != 0)
+		return error;
 
-	/* Links a crtc state of the clock and the output kind to it. */
-	crtc.base.dev = &i915.drm;
-	crtc_state.uapi.crtc = &crtc.base;
-	crtc_state.port_clock = port_clock;
-	if (is_hdmi) {
-		crtc_state.output_types = BIT(INTEL_OUTPUT_HDMI);
-	} else {
-		crtc_state.output_types = BIT(INTEL_OUTPUT_DP);
-	}
-
-	/* Chooses the dividers and packs the PLL words. */
-	calc_result = i915_icl_calc_mg_pll_state(&crtc_state, hw_state);
-	if (calc_result != 0)
-		return calc_result;
+	/* Copies the words into the state. */
+	i915_tc_pll_words_to_state(&words, hw_state);
 
 	/* Succeeded: the words are the caller's. */
 	return 0;
-}
-
-/*
- * Computes the link clock a DKL PLL's words give, in kHz
- * (icl_ddi_mg_pll_get_freq()); 0 for words whose divider is not one the
- * PHY has.
- */
-int
-drv_i915_dkl_pll_freq(
-	int ref_nssc,
-	const struct intel_dpll_hw_state *hw_state)
-{
-	struct drm_i915_private i915;
-	int freq;
-
-	/* Builds a device view with only the reference clock set. */
-	kern_memset(&i915, 0, sizeof(i915));
-	i915.display.dpll.ref_clks.nssc = ref_nssc;
-
-	/* Works the frequency out of the words. */
-	freq = i915_icl_ddi_mg_pll_get_freq(&i915, NULL, hw_state);
-
-	/* Succeeded: the link clock. */
-	return freq;
 }
 
 /*
@@ -1141,7 +1100,11 @@ drv_i915_icl_compute_tc_phy_dplls(
 	struct drm_i915_private *i915;
 	struct icl_port_dpll *port_dpll;
 	struct i915_xd_dpll_words words;
+	struct i915_xd_tc_pll_words tc_words;
+	uint32_t ref_khz;
 	bool old_on_tbt;
+	int hdmi;
+	int afc;
 	int calc_result;
 
 	/* Finds the device. */
@@ -1155,11 +1118,15 @@ drv_i915_icl_compute_tc_phy_dplls(
 	port_dpll->hw_state.cfgcr1 = words.cfgcr1;
 	port_dpll->hw_state.div0 = words.div0;
 
-	/* The MG PHY port PLL is the port's DKL PLL. */
+	/* The MG PHY port PLL is the port's DKL PLL: its words from the xd clock. */
 	port_dpll = &crtc_state->icl_port_dplls[ICL_PORT_DPLL_MG_PHY];
-	calc_result = i915_icl_calc_mg_pll_state(crtc_state, &port_dpll->hw_state);
+	ref_khz = (uint32_t)i915->display.dpll.ref_clks.nssc;
+	hdmi = intel_crtc_has_type(crtc_state, INTEL_OUTPUT_HDMI);
+	afc = i915_dpll_afc(i915);
+	calc_result = drv_i915_xd_tc_pll_words(ref_khz, (uint32_t)crtc_state->port_clock, hdmi, afc, &tc_words);
 	if (calc_result != 0)
 		return calc_result;
+	i915_tc_pll_words_to_state(&tc_words, &port_dpll->hw_state);
 
 	/* A crtc that ran on the Thunderbolt PLL keeps it (mainly for the fastset check). */
 	old_on_tbt = false;
@@ -1176,7 +1143,7 @@ drv_i915_icl_compute_tc_phy_dplls(
 	}
 
 	/* The link clock is what the DKL PLL's words give. */
-	crtc_state->port_clock = i915_icl_ddi_mg_pll_get_freq(i915, NULL, &port_dpll->hw_state);
+	crtc_state->port_clock = (int)drv_i915_xd_tc_pll_port_khz(ref_khz, &tc_words);
 
 	/* Succeeded: both states are computed. */
 	return 0;
@@ -1241,6 +1208,33 @@ drv_i915_icl_update_active_dpll(
 
 	/* Selects that port PLL. */
 	drv_i915_icl_set_active_port_dpll(crtc_state, port_dpll_id);
+}
+
+/*
+ * The Dekel PHY windows the modeset's Type-C ports are reached through:
+ * the xd PHY accesses routed to the device's own (its hooks take the lock
+ * the ports share, or a host test's model takes the bank index and window
+ * accesses as register writes).  Pointed at the device on every call;
+ * used under the modeset's locks.
+ */
+static struct i915_xd_dkl i915_lcd_xd_dkl_route;
+
+/* Points the modeset's Dekel PHY route at a device and returns it. */
+struct i915_xd_dkl *
+drv_i915_lcd_xd_dkl(
+	struct drm_i915_private *i915)
+{
+	struct i915_xd_dkl_hooks hooks;
+
+	/* Every access goes to the device's hooks. */
+	hooks.read = i915_lcd_xd_dkl_read;
+	hooks.write = i915_lcd_xd_dkl_write;
+	hooks.rmw = i915_lcd_xd_dkl_rmw;
+	hooks.context = i915;
+	drv_i915_xd_dkl_set_hooks(&i915_lcd_xd_dkl_route, &hooks);
+
+	/* Succeeded: the route. */
+	return &i915_lcd_xd_dkl_route;
 }
 
 /* Copies a CDCLK state of the older code into the xd clock's form. */
@@ -1443,44 +1437,6 @@ i915_pixel_rate_to_cdclk(
 
 	/* Succeeded: the 90% rule. */
 	return DIV_ROUND_UP(pixel_rate * 100, 90);
-}
-
-/* Powers a combo PLL on (icl_pll_power_enable()). */
-static void
-i915_icl_pll_power_enable(
-	struct drm_i915_private *i915,
-	struct intel_shared_dpll *pll,
-	i915_reg_t enable_reg)
-{
-	int wait_result;
-
-	/* Requests the PLL power. */
-	(void)i915_lcd_intel_de_rmw(i915, enable_reg, 0, PLL_POWER_ENABLE);
-
-	/* The spec says to "wait" but also that it should be immediate. */
-	wait_result = i915_lcd_wait(i915, enable_reg, PLL_POWER_STATE, PLL_POWER_STATE, 1);
-	if (wait_result != 0) {
-		I915_LCD_DRM_ERR(&i915->drm, "PLL %d Power not enabled\n",
-			pll->info->id);
-	}
-}
-
-/* Enables a combo PLL and waits for its lock (icl_pll_enable()). */
-static void
-i915_icl_pll_enable(
-	struct drm_i915_private *i915,
-	struct intel_shared_dpll *pll,
-	i915_reg_t enable_reg)
-{
-	int wait_result;
-
-	/* Sets the enable. */
-	(void)i915_lcd_intel_de_rmw(i915, enable_reg, 0, PLL_ENABLE);
-
-	/* The timeout is actually 600 us. */
-	wait_result = i915_lcd_wait(i915, enable_reg, PLL_LOCK, PLL_LOCK, 1);
-	if (wait_result != 0)
-		I915_LCD_DRM_ERR(&i915->drm, "PLL %d not locked\n", pll->info->id);
 }
 
 /* Turns a shared DPLL on with its power domain (_intel_enable_shared_dpll()). */
@@ -1774,446 +1730,6 @@ i915_lcd_dpll_pool_init(
 	drv_i915_lcd_dpll_pool_bind(world, &ms->i915);
 }
 
-/* The Type-C port of a Type-C PLL id (icl_pll_id_to_tc_port()). */
-static enum tc_port
-i915_icl_pll_id_to_tc_port(
-	enum intel_dpll_id id)
-{
-	/* Succeeded: TC PLL 1 serves TC1, and the ids follow the ports. */
-	return (enum tc_port)((int)TC_PORT_1 + (int)id - (int)DPLL_ID_ICL_MGPLL1);
-}
-
-/*
- * The enable register of a Type-C PLL (intel_tc_pll_enable_reg()):
- * Alder Lake-P's PORTTC PLL enables, every other platform's MG PLL
- * enables.
- */
-static i915_reg_t
-i915_intel_tc_pll_enable_reg(
-	struct drm_i915_private *i915,
-	struct intel_shared_dpll *pll)
-{
-	enum tc_port tc_port;
-	bool is_alderlake_p;
-
-	UNUSED_PARAMETER(i915);
-
-	/* Finds the port the PLL serves. */
-	tc_port = i915_icl_pll_id_to_tc_port(pll->info->id);
-
-	/* Alder Lake-P moved the Type-C PLL enables. */
-	is_alderlake_p = I915_LCD_IS_ALDERLAKE_P(i915);
-	if (is_alderlake_p)
-		return ADLP_PORTTC_PLL_ENABLE(tc_port);
-
-	/* Succeeded: every other platform's MG PLL enable. */
-	return MG_PLL_ENABLE(tc_port);
-}
-
-/* The CLKTOP2 high-speed divider field of a first divider (the div1 switch of icl_mg_pll_find_divisors()). */
-static u32
-i915_mg_hsdiv_of_div1(
-	int div1)
-{
-	u32 hsdiv;
-
-	/* Picks the field value of the divider; an unknown one is reported and taken as 2. */
-	switch (div1) {
-	case 3:
-		hsdiv = MG_CLKTOP2_HSCLKCTL_HSDIV_RATIO_3;
-		break;
-	case 5:
-		hsdiv = MG_CLKTOP2_HSCLKCTL_HSDIV_RATIO_5;
-		break;
-	case 7:
-		hsdiv = MG_CLKTOP2_HSCLKCTL_HSDIV_RATIO_7;
-		break;
-	case 2:
-		hsdiv = MG_CLKTOP2_HSCLKCTL_HSDIV_RATIO_2;
-		break;
-	default:
-		I915_LCD_MISSING_CASE(div1);
-		hsdiv = MG_CLKTOP2_HSCLKCTL_HSDIV_RATIO_2;
-		break;
-	}
-
-	/* Succeeded: the field value. */
-	return hsdiv;
-}
-
-/*
- * Finds the first and second dividers that put a link clock's DCO in the
- * PLL's range, and fills the clock top words (icl_mg_pll_find_divisors()).
- *
- * The DCO is div1 * div2 * clock * 5; DP needs exactly 8.1 GHz, HDMI any
- * DCO in its range.  The first fit in the order of the reference wins.
- * Returns 0, or I915_LCD_EINVAL when no pair fits.
- */
-static int
-i915_icl_mg_pll_find_divisors(
-	int clock_khz,
-	bool is_dp,
-	bool use_ssc,
-	u32 *target_dco_khz,
-	struct intel_dpll_hw_state *state,
-	bool is_dkl)
-{
-	static const u8 div1_vals[] = { 7, 5, 3, 2 };
-	u32 dco_min_freq;
-	u32 dco_max_freq;
-	unsigned int i;
-	unsigned int div1_count;
-	int div1;
-	int div2;
-	int dco;
-	int a_divratio;
-	int tlinedrv;
-	int inputsel;
-	u32 hsdiv;
-
-	/* The DCO range: DP's one frequency, HDMI's range (lower with SSC). */
-	if (is_dp) {
-		dco_min_freq = 8100000;
-		dco_max_freq = 8100000;
-	} else {
-		dco_max_freq = 10000000;
-		if (use_ssc) {
-			dco_min_freq = 8000000;
-		} else {
-			dco_min_freq = 7992000;
-		}
-	}
-
-	/* Tries every first divider, largest first, and every second divider, largest first. */
-	div1_count = sizeof(div1_vals) / sizeof(div1_vals[0]);
-	for (i = 0; i < div1_count; i++) {
-		div1 = div1_vals[i];
-
-		/* Tries the second dividers of this first divider. */
-		for (div2 = 10; div2 > 0; div2--) {
-			/* A pair whose DCO is out of range does not fit. */
-			dco = div1 * div2 * clock_khz * 5;
-			if (dco < (int)dco_min_freq || dco > (int)dco_max_freq)
-				continue;
-
-			/*
-			 * The core clock divider and the line driver select.
-			 * Note: a_divratio does not match the TGL BSpec
-			 * algorithm, but matches the hard-coded values and
-			 * works on the hardware for DP alt mode at least.
-			 */
-			if (div2 >= 2) {
-				if (is_dp) {
-					a_divratio = 10;
-				} else {
-					a_divratio = 5;
-				}
-
-				/* The DKL PHY's line driver select differs from the MG PHY's. */
-				if (is_dkl) {
-					tlinedrv = 1;
-				} else {
-					tlinedrv = 2;
-				}
-			} else {
-				a_divratio = 5;
-				tlinedrv = 0;
-			}
-
-			/* The core input select: DP's 0, HDMI's 1. */
-			if (is_dp) {
-				inputsel = 0;
-			} else {
-				inputsel = 1;
-			}
-
-			/* The high-speed divider field of the first divider. */
-			hsdiv = i915_mg_hsdiv_of_div1(div1);
-
-			/* Reports the DCO and fills the clock top words. */
-			*target_dco_khz = (u32)dco;
-			state->mg_refclkin_ctl = MG_REFCLKIN_CTL_OD_2_MUX(1);
-			state->mg_clktop2_coreclkctl1 =
-				MG_CLKTOP2_CORECLKCTL1_A_DIVRATIO(a_divratio);
-			state->mg_clktop2_hsclkctl =
-				MG_CLKTOP2_HSCLKCTL_TLINEDRV_CLKSEL(tlinedrv) |
-				MG_CLKTOP2_HSCLKCTL_CORE_INPUTSEL(inputsel) |
-				hsdiv |
-				MG_CLKTOP2_HSCLKCTL_DSDIV_RATIO(div2);
-
-			/* Succeeded: the first pair that fits. */
-			return 0;
-		}
-	}
-
-	/* No pair puts the DCO in range. */
-	return I915_LCD_EINVAL;
-}
-
-/*
- * Computes a Type-C PLL's words for a crtc state's link clock
- * (icl_calc_mg_pll_state()).
- *
- * The specification works in real numbers; the reference adapted it to
- * integer arithmetic, and so does this text, with the same rounding.
- * Display version 12 and later have the DKL PHY, whose words are computed
- * here; Ice Lake's MG PHY words are not ported and are reported.  Spread
- * spectrum is never used.  Returns 0, or I915_LCD_EINVAL.
- */
-static int
-i915_icl_calc_mg_pll_state(
-	struct intel_crtc_state *crtc_state,
-	struct intel_dpll_hw_state *pll_state)
-{
-	struct drm_i915_private *i915;
-	int refclk_khz;
-	int clock;
-	u32 dco_khz;
-	u32 m1div;
-	u32 m2div_int;
-	u32 m2div_rem;
-	u32 m2div_frac;
-	u32 iref_ndiv;
-	u32 iref_trim;
-	u32 prop_coeff;
-	u32 int_coeff;
-	u32 tdc_targetcnt;
-	u32 feedfwgain;
-	u64 ssc_stepsize;
-	u64 ssc_steplen;
-	u64 ssc_steplog;
-	u64 tmp;
-	bool use_ssc;
-	bool is_dp;
-	bool is_hdmi;
-	bool is_dkl;
-	int display_ver;
-	int divisors_result;
-	u8 afc_startup;
-
-	/* Finds the device, its reference clock and the link clock. */
-	i915 = i915_lcd_to_i915(crtc_state->uapi.crtc->dev);
-	refclk_khz = i915->display.dpll.ref_clks.nssc;
-	clock = crtc_state->port_clock;
-	use_ssc = false;
-
-	/* Anything but HDMI is DP. */
-	is_hdmi = intel_crtc_has_type(crtc_state, INTEL_OUTPUT_HDMI);
-	is_dp = true;
-	if (is_hdmi)
-		is_dp = false;
-
-	/* Display version 12 and later have the DKL PHY; Ice Lake's MG PHY is not ported. */
-	display_ver = I915_LCD_DISPLAY_VER(i915);
-	is_dkl = false;
-	if (display_ver >= 12)
-		is_dkl = true;
-	if (!is_dkl) {
-		drv_i915_lcd_error("UNPORTED: the MG PHY PLL state of display version 11 (icl_calc_mg_pll_state)\n");
-		return I915_LCD_EINVAL;
-	}
-
-	/* Finds the dividers that put the DCO in range. */
-	divisors_result = i915_icl_mg_pll_find_divisors(clock, is_dp, use_ssc, &dco_khz, pll_state, is_dkl);
-	if (divisors_result != 0)
-		return divisors_result;
-
-	/*
-	 * The feedback divider: the pre-divider m1 is 2 and the integer part
-	 * must fit in 8 bits (the DKL PHY has no pre-divider of 4).
-	 */
-	m1div = 2;
-	m2div_int = dco_khz / ((u32)refclk_khz * m1div);
-	if (m2div_int > 255)
-		return I915_LCD_EINVAL;
-
-	/* The fractional part of the feedback divider, in 22 bits. */
-	m2div_rem = dco_khz % ((u32)refclk_khz * m1div);
-	tmp = (u64)m2div_rem * (1 << 22);
-	tmp = tmp / ((u64)refclk_khz * m1div);
-	m2div_frac = (u32)tmp;
-
-	/* The current reference of each reference clock. */
-	switch (refclk_khz) {
-	case 19200:
-		iref_ndiv = 1;
-		iref_trim = 28;
-		break;
-	case 24000:
-		iref_ndiv = 1;
-		iref_trim = 25;
-		break;
-	case 38400:
-		iref_ndiv = 2;
-		iref_trim = 28;
-		break;
-	default:
-		I915_LCD_MISSING_CASE(refclk_khz);
-		return I915_LCD_EINVAL;
-	}
-
-	/*
-	 * The TDC target count:
-	 *   tdc_res = 0.000003
-	 *   tdc_targetcnt = int(2 / (tdc_res * 8 * 50 * 1.1) / refclk_mhz + 0.5)
-	 * with the reference clock in kHz (the factor 1000), 0.00132 written
-	 * as 132 / 100000, and the 0.5 as 5 after a factor of 10 that the last
-	 * division takes back.  The operations are ordered so that no early
-	 * division multiplies a rounding error.
-	 */
-	tdc_targetcnt = (2 * 1000 * 100000 * 10 / (132 * (u32)refclk_khz) + 5) / 10;
-
-	/*
-	 * The feed-forward gain, used only with a fractional divider (or
-	 * SSC).  The DCO is divided by 10 so the dividend fits in 32 bits;
-	 * the division rounds down anyway.
-	 */
-	feedfwgain = 0;
-	if (use_ssc || m2div_rem > 0)
-		feedfwgain = m1div * 1000000 * 100 / (dco_khz * 3 / 10);
-
-	/* The loop filter's coefficients: higher above a 9 GHz DCO. */
-	if (dco_khz >= 9000000) {
-		prop_coeff = 5;
-		int_coeff = 10;
-	} else {
-		prop_coeff = 4;
-		int_coeff = 8;
-	}
-
-	/* The spread spectrum's step size and length (none without SSC). */
-	if (use_ssc) {
-		tmp = (u64)dco_khz * (47 * 32);
-		tmp = tmp / ((u64)refclk_khz * m1div * 10000);
-		ssc_stepsize = tmp;
-		tmp = (u64)dco_khz * 1000;
-		ssc_steplen = DIV_ROUND_UP_ULL(tmp, 32 * 2 * 32);
-	} else {
-		ssc_stepsize = 0;
-		ssc_steplen = 0;
-	}
-
-	/* The spread spectrum's step count is fixed. */
-	ssc_steplog = 4;
-
-	/* DIV0: the loop filter's coefficients and the feedback divider. */
-	pll_state->mg_pll_div0 = DKL_PLL_DIV0_INTEG_COEFF(int_coeff) |
-				 DKL_PLL_DIV0_PROP_COEFF(prop_coeff) |
-				 DKL_PLL_DIV0_FBPREDIV(m1div) |
-				 DKL_PLL_DIV0_FBDIV_INT(m2div_int);
-
-	/* The VBT's AFC startup override, when it has one. */
-	if (i915->display.vbt.override_afc_startup) {
-		afc_startup = i915->display.vbt.override_afc_startup_val;
-		pll_state->mg_pll_div0 |= DKL_PLL_DIV0_AFC_STARTUP(afc_startup);
-	}
-
-	/* DIV1: the current reference trim and the TDC target count. */
-	pll_state->mg_pll_div1 = DKL_PLL_DIV1_IREF_TRIM(iref_trim) |
-				 DKL_PLL_DIV1_TDC_TARGET_CNT(tdc_targetcnt);
-
-	/* SSC: the reference divider and the spread spectrum's steps. */
-	pll_state->mg_pll_ssc = DKL_PLL_SSC_IREF_NDIV_RATIO(iref_ndiv) |
-				DKL_PLL_SSC_STEP_LEN(ssc_steplen) |
-				DKL_PLL_SSC_STEP_NUM(ssc_steplog);
-	if (use_ssc)
-		pll_state->mg_pll_ssc |= DKL_PLL_SSC_EN;
-
-	/* BIAS: the fractional divider, enabled when it is not zero. */
-	pll_state->mg_pll_bias = DKL_PLL_BIAS_FBDIV_FRAC(m2div_frac);
-	if (m2div_frac != 0)
-		pll_state->mg_pll_bias |= DKL_PLL_BIAS_FRAC_EN_H;
-
-	/* TDC_COLDST_BIAS: the SSC step size and the feed-forward gain. */
-	pll_state->mg_pll_tdc_coldst_bias =
-			DKL_PLL_TDC_SSC_STEP_SIZE(ssc_stepsize) |
-			DKL_PLL_TDC_FEED_FWD_GAIN(feedfwgain);
-
-	/* Succeeded: the words are filled. */
-	return 0;
-}
-
-/*
- * Computes the link clock a Type-C PLL's words give, in kHz
- * (icl_ddi_mg_pll_get_freq()); 0 for an unknown high-speed divider, or for
- * Ice Lake's MG PHY words, which are not ported.
- */
-static int
-i915_icl_ddi_mg_pll_get_freq(
-	struct drm_i915_private *i915,
-	const struct intel_shared_dpll *pll,
-	const struct intel_dpll_hw_state *pll_state)
-{
-	u32 m1;
-	u32 m2_int;
-	u32 m2_frac;
-	u32 div1;
-	u32 div2;
-	u32 ref_clock;
-	u64 tmp;
-	int display_ver;
-
-	UNUSED_PARAMETER(pll);
-
-	/* Finds the reference clock and the display version. */
-	ref_clock = (u32)i915->display.dpll.ref_clks.nssc;
-	display_ver = I915_LCD_DISPLAY_VER(i915);
-
-	/* Ice Lake's MG PHY words are not ported. */
-	if (display_ver < 12) {
-		drv_i915_lcd_error("UNPORTED: the MG PHY PLL frequency of display version 11 (icl_ddi_mg_pll_get_freq)\n");
-		return 0;
-	}
-
-	/* The feedback pre-divider and the integer part of the feedback divider. */
-	m1 = pll_state->mg_pll_div0 & DKL_PLL_DIV0_FBPREDIV_MASK;
-	m1 = m1 >> DKL_PLL_DIV0_FBPREDIV_SHIFT;
-	m2_int = pll_state->mg_pll_div0 & DKL_PLL_DIV0_FBDIV_INT_MASK;
-
-	/* The fractional part, when it is enabled. */
-	m2_frac = 0;
-	if ((pll_state->mg_pll_bias & DKL_PLL_BIAS_FRAC_EN_H) != 0) {
-		m2_frac = pll_state->mg_pll_bias & DKL_PLL_BIAS_FBDIV_FRAC_MASK;
-		m2_frac = m2_frac >> DKL_PLL_BIAS_FBDIV_SHIFT;
-	}
-
-	/* The first divider from the high-speed divider field. */
-	switch (pll_state->mg_clktop2_hsclkctl & MG_CLKTOP2_HSCLKCTL_HSDIV_RATIO_MASK) {
-	case MG_CLKTOP2_HSCLKCTL_HSDIV_RATIO_2:
-		div1 = 2;
-		break;
-	case MG_CLKTOP2_HSCLKCTL_HSDIV_RATIO_3:
-		div1 = 3;
-		break;
-	case MG_CLKTOP2_HSCLKCTL_HSDIV_RATIO_5:
-		div1 = 5;
-		break;
-	case MG_CLKTOP2_HSCLKCTL_HSDIV_RATIO_7:
-		div1 = 7;
-		break;
-	default:
-		I915_LCD_MISSING_CASE(pll_state->mg_clktop2_hsclkctl);
-		return 0;
-	}
-
-	/* The second divider; 0 is the same as 1, no division. */
-	div2 = (pll_state->mg_clktop2_hsclkctl & MG_CLKTOP2_HSCLKCTL_DSDIV_RATIO_MASK) >>
-		MG_CLKTOP2_HSCLKCTL_DSDIV_RATIO_SHIFT;
-	if (div2 == 0)
-		div2 = 1;
-
-	/*
-	 * The original formula, with the division by 2^22 delayed to keep the
-	 * rounding error small.
-	 */
-	tmp = (u64)m1 * m2_int * ref_clock +
-	      (((u64)m1 * m2_frac * ref_clock) >> 22);
-	tmp = tmp / (5 * div1 * div2);
-
-	/* Succeeded: the link clock. */
-	return (int)tmp;
-}
-
 /*
  * The Thunderbolt PLL's frequency (icl_ddi_tbt_pll_get_freq()): it puts
  * out every rate at once and the DDI clock select picks one, so asking is
@@ -2234,123 +1750,6 @@ i915_icl_ddi_tbt_pll_get_freq(
 
 	/* The PLL has no single frequency. */
 	return 0;
-}
-
-/*
- * Writes a Type-C PLL's DKL words (dkl_pll_write()).
- *
- * Every word is changed read-modify-write, only in the fields the PLL
- * programs, and every one is behind the same bank index though in
- * different blocks of the PHY.  A read of the last word posts them.
- */
-static void
-i915_dkl_pll_write(
-	struct drm_i915_private *i915,
-	struct intel_shared_dpll *pll)
-{
-	struct intel_dpll_hw_state *hw_state;
-	enum tc_port tc_port;
-	u32 val;
-
-	/* Finds the state to write and the port the PLL serves. */
-	hw_state = &pll->state.hw_state;
-	tc_port = i915_icl_pll_id_to_tc_port(pll->info->id);
-
-	/* The reference clock input's mux. */
-	val = i915_lcd_dkl_phy_read(i915, tc_port, DKL_REFCLKIN_CTL);
-	val &= ~MG_REFCLKIN_CTL_OD_2_MUX_MASK;
-	val |= hw_state->mg_refclkin_ctl;
-	i915_lcd_dkl_phy_write(i915, tc_port, DKL_REFCLKIN_CTL, val);
-
-	/* The core clock's divider. */
-	val = i915_lcd_dkl_phy_read(i915, tc_port, DKL_CLKTOP2_CORECLKCTL1);
-	val &= ~MG_CLKTOP2_CORECLKCTL1_A_DIVRATIO_MASK;
-	val |= hw_state->mg_clktop2_coreclkctl1;
-	i915_lcd_dkl_phy_write(i915, tc_port, DKL_CLKTOP2_CORECLKCTL1, val);
-
-	/* The high-speed clock's line driver, input and dividers. */
-	val = i915_lcd_dkl_phy_read(i915, tc_port, DKL_CLKTOP2_HSCLKCTL);
-	val &= ~(MG_CLKTOP2_HSCLKCTL_TLINEDRV_CLKSEL_MASK |
-		 MG_CLKTOP2_HSCLKCTL_CORE_INPUTSEL_MASK |
-		 MG_CLKTOP2_HSCLKCTL_HSDIV_RATIO_MASK |
-		 MG_CLKTOP2_HSCLKCTL_DSDIV_RATIO_MASK);
-	val |= hw_state->mg_clktop2_hsclkctl;
-	i915_lcd_dkl_phy_write(i915, tc_port, DKL_CLKTOP2_HSCLKCTL, val);
-
-	/* DIV0, with the AFC startup field only when the VBT overrides it. */
-	val = DKL_PLL_DIV0_MASK;
-	if (i915->display.vbt.override_afc_startup)
-		val |= DKL_PLL_DIV0_AFC_STARTUP_MASK;
-	i915_lcd_dkl_phy_rmw(i915, tc_port, DKL_PLL_DIV0, val, hw_state->mg_pll_div0);
-
-	/* DIV1: the current reference trim and the TDC target count. */
-	val = i915_lcd_dkl_phy_read(i915, tc_port, DKL_PLL_DIV1);
-	val &= ~(DKL_PLL_DIV1_IREF_TRIM_MASK |
-		 DKL_PLL_DIV1_TDC_TARGET_CNT_MASK);
-	val |= hw_state->mg_pll_div1;
-	i915_lcd_dkl_phy_write(i915, tc_port, DKL_PLL_DIV1, val);
-
-	/* SSC: the reference divider and the spread spectrum. */
-	val = i915_lcd_dkl_phy_read(i915, tc_port, DKL_PLL_SSC);
-	val &= ~(DKL_PLL_SSC_IREF_NDIV_RATIO_MASK |
-		 DKL_PLL_SSC_STEP_LEN_MASK |
-		 DKL_PLL_SSC_STEP_NUM_MASK |
-		 DKL_PLL_SSC_EN);
-	val |= hw_state->mg_pll_ssc;
-	i915_lcd_dkl_phy_write(i915, tc_port, DKL_PLL_SSC, val);
-
-	/* BIAS: the fractional divider. */
-	val = i915_lcd_dkl_phy_read(i915, tc_port, DKL_PLL_BIAS);
-	val &= ~(DKL_PLL_BIAS_FRAC_EN_H |
-		 DKL_PLL_BIAS_FBDIV_FRAC_MASK);
-	val |= hw_state->mg_pll_bias;
-	i915_lcd_dkl_phy_write(i915, tc_port, DKL_PLL_BIAS, val);
-
-	/* TDC_COLDST_BIAS: the SSC step size and the feed-forward gain. */
-	val = i915_lcd_dkl_phy_read(i915, tc_port, DKL_PLL_TDC_COLDST_BIAS);
-	val &= ~(DKL_PLL_TDC_SSC_STEP_SIZE_MASK |
-		 DKL_PLL_TDC_FEED_FWD_GAIN_MASK);
-	val |= hw_state->mg_pll_tdc_coldst_bias;
-	i915_lcd_dkl_phy_write(i915, tc_port, DKL_PLL_TDC_COLDST_BIAS, val);
-
-	/* Posts the writes. */
-	i915_lcd_dkl_phy_posting_read(i915, tc_port, DKL_PLL_TDC_COLDST_BIAS);
-}
-
-/*
- * Turns a Type-C PLL on (mg_pll_enable() with the DKL write of display
- * version 12 and later; Ice Lake's MG PHY write is not ported and is
- * reported).
- */
-static void
-i915_mg_pll_enable(
-	struct drm_i915_private *i915,
-	struct intel_shared_dpll *pll)
-{
-	i915_reg_t enable_reg;
-	int display_ver;
-
-	/* Powers the PLL. */
-	enable_reg = i915_intel_tc_pll_enable_reg(i915, pll);
-	i915_icl_pll_power_enable(i915, pll, enable_reg);
-
-	/* Writes its configuration (the DKL PHY's; Ice Lake's MG PHY is not ported). */
-	display_ver = I915_LCD_DISPLAY_VER(i915);
-	if (display_ver >= 12) {
-		i915_dkl_pll_write(i915, pll);
-	} else {
-		drv_i915_lcd_error("UNPORTED: the MG PHY PLL write of display version 11 (icl_mg_pll_write)\n");
-	}
-
-	/*
-	 * The DVFS pre sequence would be here; the CDCLK paths already set the
-	 * voltage.
-	 */
-
-	/* Enables it and waits for the lock (an unlocked PLL is logged). */
-	i915_icl_pll_enable(i915, pll, enable_reg);
-
-	/* The DVFS post sequence would be here (see above). */
 }
 
 /*
@@ -2508,4 +1907,132 @@ drv_i915_dpll_ddi_mapped(
 {
 	/* Reads the map. */
 	return drv_i915_xd_dpll_mapped(drv_i915_lcd_xd_io(i915), drv_i915_lcd_xd_platform(), phy, pll_id);
+}
+
+/* Copies a Type-C PLL's xd words into the older code's PLL state. */
+static void
+i915_tc_pll_words_to_state(
+	const struct i915_xd_tc_pll_words *words,
+	struct intel_dpll_hw_state *hw_state)
+{
+	/* One word per register. */
+	hw_state->mg_refclkin_ctl = words->refclkin;
+	hw_state->mg_clktop2_coreclkctl1 = words->coreclk;
+	hw_state->mg_clktop2_hsclkctl = words->hsclk;
+	hw_state->mg_pll_div0 = words->div0;
+	hw_state->mg_pll_div1 = words->div1;
+	hw_state->mg_pll_ssc = words->ssc;
+	hw_state->mg_pll_bias = words->bias;
+	hw_state->mg_pll_tdc_coldst_bias = words->tdc;
+}
+
+/* Copies the older code's PLL state of a Type-C PLL into the xd words. */
+static void
+i915_tc_pll_words_of_state(
+	const struct intel_dpll_hw_state *hw_state,
+	int afc_set,
+	struct i915_xd_tc_pll_words *words)
+{
+	/* One word per register, and whether DIV0 carries the AFC startup. */
+	words->refclkin = hw_state->mg_refclkin_ctl;
+	words->coreclk = hw_state->mg_clktop2_coreclkctl1;
+	words->hsclk = hw_state->mg_clktop2_hsclkctl;
+	words->div0 = hw_state->mg_pll_div0;
+	words->div1 = hw_state->mg_pll_div1;
+	words->ssc = hw_state->mg_pll_ssc;
+	words->bias = hw_state->mg_pll_bias;
+	words->tdc = hw_state->mg_pll_tdc_coldst_bias;
+	words->afc_set = afc_set;
+}
+
+/* Reports a Type-C PLL state's link clock through the xd clock, or 0. */
+static int
+i915_tc_pll_get_freq(
+	struct drm_i915_private *i915,
+	const struct intel_shared_dpll *pll,
+	const struct intel_dpll_hw_state *pll_state)
+{
+	struct i915_xd_tc_pll_words words;
+	uint32_t port_khz;
+
+	UNUSED_PARAMETER(pll);
+
+	/* The link clock of the words. */
+	i915_tc_pll_words_of_state(pll_state, 0, &words);
+	port_khz = drv_i915_xd_tc_pll_port_khz((uint32_t)i915->display.dpll.ref_clks.nssc, &words);
+
+	/* Succeeded: the link clock (0 for a divider the PHY does not have). */
+	return (int)port_khz;
+}
+
+/* Turns a Type-C PLL on with its state's words through the xd clock and the modeset's PHY route. */
+static void
+i915_tc_pll_enable(
+	struct drm_i915_private *i915,
+	struct intel_shared_dpll *pll)
+{
+	const struct i915_xd_pll_desc *desc;
+	struct i915_xd_tc_pll_words words;
+	unsigned late;
+	int afc;
+	int afc_set;
+
+	/* A PLL the platform does not have cannot be turned on. */
+	desc = i915_dpll_xd_desc(pll);
+	if (desc == NULL) {
+		drv_i915_lcd_error("enable of a PLL the platform does not have\n");
+		return;
+	}
+
+	/* The state's words; the AFC startup is written only with the VBT's override. */
+	afc = i915_dpll_afc(i915);
+	afc_set = 0;
+	if (afc != I915_XD_DPLL_AFC_NONE)
+		afc_set = 1;
+	i915_tc_pll_words_of_state(&pll->state.hw_state, afc_set, &words);
+
+	/* Turns it on and reports the waits that ran out. */
+	late = drv_i915_xd_tc_pll_enable(drv_i915_lcd_xd_io(i915), drv_i915_lcd_xd_dkl(i915), desc, &words);
+	i915_dpll_report(i915, pll, late);
+}
+
+/* Reads a Type-C port's PHY register through the device's modeset hooks. */
+static uint32_t
+i915_lcd_xd_dkl_read(
+	void *context,
+	unsigned tc,
+	uint32_t phy_offset)
+{
+	uint32_t value;
+
+	/* The device reads it whole. */
+	value = i915_lcd_dkl_phy_read(context, (enum tc_port)tc, phy_offset);
+
+	/* Succeeded: the register's value. */
+	return value;
+}
+
+/* Writes a Type-C port's PHY register through the device's modeset hooks. */
+static void
+i915_lcd_xd_dkl_write(
+	void *context,
+	unsigned tc,
+	uint32_t phy_offset,
+	uint32_t value)
+{
+	/* The device writes it whole. */
+	i915_lcd_dkl_phy_write(context, (enum tc_port)tc, phy_offset, value);
+}
+
+/* Changes bits of a Type-C port's PHY register through the device's modeset hooks. */
+static void
+i915_lcd_xd_dkl_rmw(
+	void *context,
+	unsigned tc,
+	uint32_t phy_offset,
+	uint32_t clear,
+	uint32_t set)
+{
+	/* The device changes it whole. */
+	i915_lcd_dkl_phy_rmw(context, (enum tc_port)tc, phy_offset, clear, set);
 }

@@ -25,6 +25,7 @@
 #include "xd-platform.h"
 #include "xd-power.h"
 #include "xd-takeover.h"
+#include "xd-tc.h"
 #include "xd-vbt.h"
 
 #include <stddef.h>
@@ -43,7 +44,8 @@ struct mutex;
  * The power well counts are prepared with the power domains and kept
  * under their lock; the DMC firmware is parsed and loaded by the DMC
  * loader's work.  The firmware's display is read once, before the first
- * display write, by the firmware check.
+ * display write, by the firmware check.  The Dekel PHY windows of the
+ * Type-C ports are ready from the start.
  */
 struct i915_xd {
 	struct i915_xd_io io;
@@ -55,6 +57,7 @@ struct i915_xd {
 	struct i915_xd_power power;
 	struct i915_xd_dmc dmc;
 	struct i915_xd_firmware firmware;
+	struct i915_xd_dkl dkl;
 };
 
 void drv_i915_xd_start(struct i915_xd *xd, struct i915_mmio *mmio, struct mutex *mailbox_lock, uint16_t product, uint8_t revid);

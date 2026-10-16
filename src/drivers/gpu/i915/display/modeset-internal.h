@@ -173,9 +173,20 @@ typedef uint64_t __u64;
 #include "../intel/mreg.h"
 #include "../intel/dp.h"
 #include "../intel/phy.h"
-#include "../intel/dkl.h"
 #include "../intel/fourcc.h"
 #include "../intel/psr.h"
+
+/* The Type-C ports of the display (Linux intel_display.h). */
+enum tc_port {
+	TC_PORT_NONE = -1,
+	TC_PORT_1 = 0,
+	TC_PORT_2,
+	TC_PORT_3,
+	TC_PORT_4,
+	TC_PORT_5,
+	TC_PORT_6,
+	I915_MAX_TC_PORTS
+};
 
 /*
  * ==== Macros and constants ====
@@ -2398,6 +2409,13 @@ int drv_i915_dkl_pll_freq(int ref_nssc, const struct intel_dpll_hw_state *hw_sta
 int drv_i915_icl_compute_tc_phy_dplls(struct intel_crtc_state *crtc_state, const struct intel_crtc_state *old_crtc_state);
 void drv_i915_icl_set_active_port_dpll(struct intel_crtc_state *crtc_state, enum icl_port_dpll_id port_dpll_id);
 void drv_i915_icl_update_active_dpll(struct intel_atomic_state *state, struct intel_crtc *crtc, struct intel_encoder *encoder);
+
+/*
+ * The Dekel PHY windows the modeset's Type-C ports are reached through
+ * (clock.c): the xd PHY accesses routed to the device's hooks, so they go
+ * where the modeset's other writes go.
+ */
+struct i915_xd_dkl *drv_i915_lcd_xd_dkl(struct drm_i915_private *i915);
 int drv_i915_lcd_ms_alloc_pll(struct i915_lcd_world *world, struct i915_lcd_modeset *ms, const struct intel_dpll_hw_state *hw_state);
 int drv_i915_lcd_ms_alloc_tc_plls(struct i915_lcd_world *world, struct i915_lcd_modeset *ms, enum tc_port tc_port);
 void drv_i915_lcd_ms_release_pll(struct i915_lcd_world *world, struct i915_lcd_modeset *ms);
@@ -3079,7 +3097,7 @@ i915_lcd_dkl_phy_read(
 	}
 
 	/* A model is told the bank, then reads through the port's window. */
-	window = drv_i915_dkl_phy_window((unsigned)tc_port, phy_address, &index_reg, &index_value);
+	window = drv_i915_xd_dkl_window((unsigned)tc_port, phy_address, &index_reg, &index_value);
 	i915_lcd_intel_de_write(i915, _MMIO(index_reg), index_value);
 	value = i915_lcd_intel_de_read(i915, _MMIO(window));
 
@@ -3110,7 +3128,7 @@ i915_lcd_dkl_phy_write(
 	}
 
 	/* A model is told the bank, then written through the port's window. */
-	window = drv_i915_dkl_phy_window((unsigned)tc_port, phy_address, &index_reg, &index_value);
+	window = drv_i915_xd_dkl_window((unsigned)tc_port, phy_address, &index_reg, &index_value);
 	i915_lcd_intel_de_write(i915, _MMIO(index_reg), index_value);
 	i915_lcd_intel_de_write(i915, _MMIO(window), value);
 }
@@ -3139,7 +3157,7 @@ i915_lcd_dkl_phy_rmw(
 	}
 
 	/* A model is told the bank, then changed through the port's window. */
-	window = drv_i915_dkl_phy_window((unsigned)tc_port, phy_address, &index_reg, &index_value);
+	window = drv_i915_xd_dkl_window((unsigned)tc_port, phy_address, &index_reg, &index_value);
 	i915_lcd_intel_de_write(i915, _MMIO(index_reg), index_value);
 	(void)i915_lcd_intel_de_rmw(i915, _MMIO(window), clear, set);
 }
@@ -3165,7 +3183,7 @@ i915_lcd_dkl_phy_posting_read(
 	}
 
 	/* A model is told the bank, then the window is read back. */
-	window = drv_i915_dkl_phy_window((unsigned)tc_port, phy_address, &index_reg, &index_value);
+	window = drv_i915_xd_dkl_window((unsigned)tc_port, phy_address, &index_reg, &index_value);
 	i915_lcd_intel_de_write(i915, _MMIO(index_reg), index_value);
 	i915_lcd_intel_de_posting_read(i915, _MMIO(window));
 }

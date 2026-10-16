@@ -88,7 +88,6 @@
 #include "../trace.h"
 #include "../workqueue.h"
 #include "display-internal.h"
-#include "dkl-phy.h"
 #include "dp-ext.h"
 #include "tc.h"
 #include "xd.h"
@@ -419,7 +418,7 @@ struct i915_cdclk_dev;
  * (has_vga post-enable) and the IRQ-enabled gate (intel_irqs_enabled(); 0 before
  * the interrupts are set up).  The *_calls counters are diagnostics the GPU-free tests observe.
  */
-struct i915_dkl_phy;
+struct i915_xd_dkl;
 struct i915_pw_ctx {
 	struct i915_mmio *mmio;
 	struct i915_vga_client *vga;
@@ -462,12 +461,12 @@ struct i915_pw_ctx {
 	unsigned dc_state_writes;
 	unsigned dc_state_rewrites;
 	/*
-	 * The display's DKL PHY access, which a Type-C AUX well's enable reads the
-	 * PHY microcontroller's health through; NULL (the GPU-free tests) skips
-	 * that read.  tc_uc_health_timeouts counts the enables whose PHY did not
+	 * The display's Dekel PHY windows, which a Type-C AUX well's enable reads
+	 * the PHY microcontroller's health through; NULL (the GPU-free tests)
+	 * skips that read.  tc_uc_health_timeouts counts the enables whose PHY did not
 	 * report itself healthy in time.
 	 */
-	struct i915_dkl_phy *dkl;
+	struct i915_xd_dkl *dkl;
 	unsigned tc_uc_health_timeouts;
 	/*
 	 * The display's xd state: its register window and the platform's
@@ -2075,8 +2074,8 @@ struct i915_lcd_emit {
 	 * intel_dkl_phy_read / _write / _rmw: a register of a Type-C port's DKL
 	 * PHY at its PHY address (the bank in bits 15..12), under the lock the
 	 * ports' bank index shares.  NULL in a model: the bank index and the
-	 * window are written and read through write32 / read32 (dkl-phy.c's
-	 * drv_i915_dkl_phy_window() gives the registers).
+	 * window are written and read through write32 / read32 (xd-tc.c's
+	 * drv_i915_xd_dkl_window() gives the registers).
 	 */
 	uint32_t (*dkl_read)(void *ctx, int tc_port, uint32_t phy_address);
 	void (*dkl_write)(void *ctx, int tc_port, uint32_t phy_address, uint32_t value);
@@ -3152,9 +3151,6 @@ struct i915_display {
 
 	/* The firmware's output read from the firmware check's record, the only one the driver lights by itself. */
 	struct i915_gop_output gop;
-
-	/* The Dekel PHY access of the Type-C ports, which the AUX_USBC wells' enable reads through (pwc.dkl). */
-	struct i915_dkl_phy dkl;
 
 	/* The Type-C ports and what binds them to this display (tc-kern.c). */
 	struct i915_tc_kern tck;

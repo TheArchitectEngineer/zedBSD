@@ -1196,6 +1196,59 @@
 #define I915_XD_DKL_TX_DISABLE_WAIT_INIT	0x00000080U
 
 /*
+ * The fields of the Type-C PLL words in a Dekel PHY: the reference clock
+ * input mux, the core clock A divider, the high-speed clock control (the
+ * core input select, the line driver clock select, the HS divider and the
+ * DS divider), the PLL dividers (integral and proportional coefficients,
+ * feedback pre-divider, integer feedback divider), the current reference
+ * trim and the TDC target count, the SSC words (reference divider ratio,
+ * step length and count, enable), the fractional feedback divider and its
+ * enable, and the TDC SSC step size and feed-forward gain; and the codes
+ * of the HS divider for the divisors 2, 3, 5 and 7.
+ *
+ * Values referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_mg_phy_regs.h
+ * (MG_REFCLKIN_CTL_OD_2_MUX_MASK, MG_CLKTOP2_CORECLKCTL1_A_DIVRATIO_MASK,
+ * MG_CLKTOP2_HSCLKCTL_CORE_INPUTSEL_MASK,
+ * MG_CLKTOP2_HSCLKCTL_TLINEDRV_CLKSEL_MASK,
+ * MG_CLKTOP2_HSCLKCTL_HSDIV_RATIO_MASK, MG_CLKTOP2_HSCLKCTL_HSDIV_RATIO_2,
+ * MG_CLKTOP2_HSCLKCTL_HSDIV_RATIO_3, MG_CLKTOP2_HSCLKCTL_HSDIV_RATIO_5,
+ * MG_CLKTOP2_HSCLKCTL_HSDIV_RATIO_7, MG_CLKTOP2_HSCLKCTL_DSDIV_RATIO_MASK)
+ * and Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dkl_phy_regs.h
+ * (DKL_PLL_DIV0_INTEG_COEFF_MASK, DKL_PLL_DIV0_PROP_COEFF_MASK,
+ * DKL_PLL_DIV0_FBPREDIV_MASK, DKL_PLL_DIV0_FBDIV_INT_MASK,
+ * DKL_PLL_DIV1_IREF_TRIM_MASK, DKL_PLL_DIV1_TDC_TARGET_CNT_MASK,
+ * DKL_PLL_SSC_IREF_NDIV_RATIO_MASK, DKL_PLL_SSC_STEP_LEN_MASK,
+ * DKL_PLL_SSC_STEP_NUM_MASK, DKL_PLL_SSC_EN, DKL_PLL_BIAS_FRAC_EN_H,
+ * DKL_PLL_BIAS_FBDIV_FRAC_MASK, DKL_PLL_TDC_SSC_STEP_SIZE_MASK,
+ * DKL_PLL_TDC_FEED_FWD_GAIN_MASK).
+ */
+#define I915_XD_DKL_REFCLKIN_OD_2_MUX		0x00000700U
+#define I915_XD_DKL_CORECLK_A_DIVRATIO		0x0000ff00U
+#define I915_XD_DKL_HSCLK_CORE_INPUTSEL		0x00010000U
+#define I915_XD_DKL_HSCLK_TLINEDRV		0x0000c000U
+#define I915_XD_DKL_HSCLK_HSDIV			0x00003000U
+#define I915_XD_DKL_HSCLK_HSDIV_2		0U
+#define I915_XD_DKL_HSCLK_HSDIV_3		1U
+#define I915_XD_DKL_HSCLK_HSDIV_5		2U
+#define I915_XD_DKL_HSCLK_HSDIV_7		3U
+#define I915_XD_DKL_HSCLK_DSDIV			0x00000f00U
+#define I915_XD_DKL_DIV0_INTEG_COEFF		0x001f0000U
+#define I915_XD_DKL_DIV0_PROP_COEFF		0x0000f000U
+#define I915_XD_DKL_DIV0_FBPREDIV		0x00000f00U
+#define I915_XD_DKL_DIV0_FBDIV_INT		0x000000ffU
+#define I915_XD_DKL_DIV1_IREF_TRIM		0x001f0000U
+#define I915_XD_DKL_DIV1_TDC_TARGET		0x000000ffU
+#define I915_XD_DKL_SSC_IREF_NDIV		0xe0000000U
+#define I915_XD_DKL_SSC_STEP_LEN		0x00ff0000U
+#define I915_XD_DKL_SSC_STEP_NUM		0x00003800U
+#define I915_XD_DKL_SSC_ENABLE			0x00000200U
+#define I915_XD_DKL_BIAS_FRAC_ENABLE		0x40000000U
+#define I915_XD_DKL_BIAS_FBDIV_FRAC		0x3fffff00U
+#define I915_XD_DKL_TDC_SSC_STEP_SIZE		0x0000ff00U
+#define I915_XD_DKL_TDC_FEED_FWD_GAIN		0x000000ffU
+
+/*
  * The transcoder's chicken word: the vblank with the delay of the set
  * context latency (display 12 and 13), the frame start delay (lines less
  * one), and the FEC stall release of a stopping transcoder.  Transcoder D

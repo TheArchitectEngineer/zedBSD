@@ -2333,7 +2333,8 @@ static const struct i915_xd_vbt_maps i915_xd_vbt_maps_adlp = {
  * ADLS_DMC_PATH, ADLP_DMC_PATH, disable_dmc_evt, pipedmc_clock_gating_wa),
  * Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dmc_regs.h (_TGL_PIPEDMC_REG_MMIO_BASE_A,
  * _ADLP_PIPEDMC_REG_MMIO_BASE_A), Linux v6.8.12 drivers/gpu/drm/i915/display/intel_display_wa.c
- * (xe_d_display_wa_apply, adlp_display_wa_apply),
+ * (xe_d_display_wa_apply, adlp_display_wa_apply), Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (tgl_dkl_phy_set_signal_levels: the load generator of Alder Lake-P),
  * Linux v6.8.12 drivers/gpu/drm/i915/display/intel_display_power_well.c (hsw_power_well_enable), and
  * Linux v6.8.12 drivers/gpu/drm/i915/display/intel_tc.c (the TC cold handling of Tiger Lake and
  * display 13).
@@ -2618,7 +2619,8 @@ static const struct i915_xd_platform i915_xd_platforms[] = {
 		"i915/adlp_dmc.bin",
 		I915_XD_DMC_PIPE_BASE_ADLP,
 		&i915_xd_swing_adlp,
-		I915_XD_WA_PW1_FLR_SOURCE | I915_XD_WA_DPCE_UNGATE | I915_XD_WA_PIPEDMC_UNGATE | I915_XD_WA_ARB_PROG_SLOTS,
+		I915_XD_WA_PW1_FLR_SOURCE | I915_XD_WA_DPCE_UNGATE | I915_XD_WA_PIPEDMC_UNGATE | I915_XD_WA_ARB_PROG_SLOTS |
+		I915_XD_WA_DKL_LOADGEN,
 		&i915_xd_vbt_maps_adlp
 	},
 	{
@@ -2665,7 +2667,8 @@ static const struct i915_xd_platform i915_xd_platforms[] = {
 		"i915/adlp_dmc.bin",
 		I915_XD_DMC_PIPE_BASE_ADLP,
 		&i915_xd_swing_adlp,
-		I915_XD_WA_PW1_FLR_SOURCE | I915_XD_WA_DPCE_UNGATE | I915_XD_WA_PIPEDMC_UNGATE | I915_XD_WA_ARB_PROG_SLOTS,
+		I915_XD_WA_PW1_FLR_SOURCE | I915_XD_WA_DPCE_UNGATE | I915_XD_WA_PIPEDMC_UNGATE | I915_XD_WA_ARB_PROG_SLOTS |
+		I915_XD_WA_DKL_LOADGEN,
 		&i915_xd_vbt_maps_adlp
 	},
 	{
@@ -2712,7 +2715,8 @@ static const struct i915_xd_platform i915_xd_platforms[] = {
 		"i915/adlp_dmc.bin",
 		I915_XD_DMC_PIPE_BASE_ADLP,
 		&i915_xd_swing_adlp,
-		I915_XD_WA_PW1_FLR_SOURCE | I915_XD_WA_DPCE_UNGATE | I915_XD_WA_PIPEDMC_UNGATE | I915_XD_WA_ARB_PROG_SLOTS,
+		I915_XD_WA_PW1_FLR_SOURCE | I915_XD_WA_DPCE_UNGATE | I915_XD_WA_PIPEDMC_UNGATE | I915_XD_WA_ARB_PROG_SLOTS |
+		I915_XD_WA_DKL_LOADGEN,
 		&i915_xd_vbt_maps_adlp
 	},
 	{
@@ -2759,7 +2763,8 @@ static const struct i915_xd_platform i915_xd_platforms[] = {
 		"i915/adlp_dmc.bin",
 		I915_XD_DMC_PIPE_BASE_ADLP,
 		&i915_xd_swing_adlp,
-		I915_XD_WA_PW1_FLR_SOURCE | I915_XD_WA_DPCE_UNGATE | I915_XD_WA_PIPEDMC_UNGATE | I915_XD_WA_ARB_PROG_SLOTS,
+		I915_XD_WA_PW1_FLR_SOURCE | I915_XD_WA_DPCE_UNGATE | I915_XD_WA_PIPEDMC_UNGATE | I915_XD_WA_ARB_PROG_SLOTS |
+		I915_XD_WA_DKL_LOADGEN,
 		&i915_xd_vbt_maps_adlp
 	},
 };
