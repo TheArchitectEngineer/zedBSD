@@ -102,18 +102,21 @@
 #define EXECUTE_QUAD_PROGRAMS		3U
 
 /*
- * The executor's own check of its draws (stage A9): two images of 64 by
+ * The executor's own trial of its draws (stage A9): two images of 64 by
  * 64 pixels, the first drawn blue with a red square from 16 to 48 inside,
  * the second a copy of it; the colours as a B8G8R8A8 pixel read as a
  * little-endian word (alpha in the top byte, blue at the bottom), and the
- * word both hold before they are drawn.
+ * word both hold before they are drawn (any word no draw writes).
+ *
+ * Values referenced: the Vulkan 1.0 specification (VK_FORMAT_B8G8R8A8_UNORM:
+ * B in byte 0, G in byte 1, R in byte 2, A in byte 3).
  */
-#define EXECUTE_CHECK_SIDE		64U
-#define EXECUTE_CHECK_INNER_FROM	16U
-#define EXECUTE_CHECK_INNER_TO		48U
-#define EXECUTE_CHECK_BLUE		0xff0000ffU
-#define EXECUTE_CHECK_RED		0xffff0000U
-#define EXECUTE_CHECK_UNDRAWN		0x5a5a5a5aU
+#define EXECUTE_TRIAL_SIDE		64U
+#define EXECUTE_TRIAL_INNER_FROM	16U
+#define EXECUTE_TRIAL_INNER_TO		48U
+#define EXECUTE_TRIAL_BLUE		0xff0000ffU
+#define EXECUTE_TRIAL_RED		0xffff0000U
+#define EXECUTE_TRIAL_UNDRAWN		0x5a5a5a5aU
 
 /*
  * The executor's own programs and the session's run.
@@ -212,7 +215,7 @@ static bool execute_region_inside(int32_t x, int32_t y, uint32_t width, uint32_t
 static void execute_full_viewport(uint32_t *viewport, int32_t x0, int32_t y0, int32_t x1, int32_t y1);
 static void execute_put32(uint8_t *cpu, uint32_t at, uint32_t value);
 static void execute_put_words(uint8_t *cpu, uint32_t at, const uint32_t *words, uint32_t count);
-static void execute_check_compare(const uint8_t *cpu, uint32_t pitch, struct amdrdna_vk_check *check);
+static void execute_trial_compare(const uint8_t *cpu, uint32_t pitch, struct amdrdna_vk_trial *trial);
 static uint32_t execute_get32(const uint8_t *cpu, uint32_t at);
 
 /*
@@ -301,17 +304,17 @@ amdrdna_vk_execute_close(
  * a quad of one colour over the first image and another over a square
  * inside it, then, after a barrier, a quad that samples the first image
  * into the second; the indirect buffer is run and waited for, and every
- * pixel of both images is compared.  Returns 0 with the counts in check
+ * pixel of both images is compared.  Returns 0 with the counts in trial
  * (wrong pixels are counted, not an error), or the error of the run or
  * of the memory.
  */
 int
-amdrdna_vk_execute_check(
+amdrdna_vk_execute_trial(
 	struct amdrdna_vk_session *session,
-	struct amdrdna_vk_check *check)
+	struct amdrdna_vk_trial *trial)
 {
-	static const uint32_t blue[4] = { 0U, 0U, EXECUTE_FLOAT_ONE, EXECUTE_FLOAT_ONE };
-	static const uint32_t red[4] = { EXECUTE_FLOAT_ONE, 0U, 0U, EXECUTE_FLOAT_ONE };
+	static const uint32_t outside_colour[4] = { 0U, 0U, EXECUTE_FLOAT_ONE, EXECUTE_FLOAT_ONE };
+	static const uint32_t square_colour[4] = { EXECUTE_FLOAT_ONE, 0U, 0U, EXECUTE_FLOAT_ONE };
 	struct amdrdna_vk_execute *execute;
 	struct execute_quad quad;
 	void *token;
@@ -323,9 +326,9 @@ amdrdna_vk_execute_check(
 	int error;
 
 	/* Nothing compared yet. */
-	kern_memset(check, 0, sizeof(*check));
-	check->pixels = EXECUTE_CHECK_SIDE * EXECUTE_CHECK_SIDE;
-	check->bad_at = check->pixels * 2U;
+	kern_memset(trial, 0, sizeof(*trial));
+	trial->pixels = EXECUTE_TRIAL_SIDE * EXECUTE_TRIAL_SIDE;
+	trial->bad_at = trial->pixels * 2U;
 
 	/* The session's run and programs. */
 	error = execute_open(session, &execute);
@@ -333,31 +336,31 @@ amdrdna_vk_execute_check(
 		return error;
 
 	/* The two images, every pixel a word the draws do not write. */
-	pitch = amdrdna_vk_pitch(EXECUTE_CHECK_SIDE);
-	image_bytes = pitch * EXECUTE_CHECK_SIDE;
+	pitch = amdrdna_vk_pitch(EXECUTE_TRIAL_SIDE);
+	image_bytes = pitch * EXECUTE_TRIAL_SIDE;
 	error = amdrdna_vk_gpu_alloc(session->owner, (uint64_t)image_bytes * 2U, &token, &cpu, &va);
 	if (error != 0)
 		return error;
 	for (at = 0U; at < image_bytes * 2U; at += 4U)
-		execute_put32(cpu, at, EXECUTE_CHECK_UNDRAWN);
+		execute_put32(cpu, at, EXECUTE_TRIAL_UNDRAWN);
 
 	/* The first image blue, then the red square. */
 	execute_start(execute);
 	kern_memset(&quad, 0, sizeof(quad));
 	quad.target.address = va;
-	quad.target.width = EXECUTE_CHECK_SIDE;
-	quad.target.height = EXECUTE_CHECK_SIDE;
+	quad.target.width = EXECUTE_TRIAL_SIDE;
+	quad.target.height = EXECUTE_TRIAL_SIDE;
 	quad.target.format = VK_FORMAT_B8G8R8A8_UNORM;
-	quad.x1 = (int32_t)EXECUTE_CHECK_SIDE;
-	quad.y1 = (int32_t)EXECUTE_CHECK_SIDE;
-	kern_memcpy(quad.colour, blue, sizeof(quad.colour));
+	quad.x1 = (int32_t)EXECUTE_TRIAL_SIDE;
+	quad.y1 = (int32_t)EXECUTE_TRIAL_SIDE;
+	kern_memcpy(quad.colour, outside_colour, sizeof(quad.colour));
 	error = execute_quad(execute, &quad);
 	if (error == 0) {
-		quad.x0 = (int32_t)EXECUTE_CHECK_INNER_FROM;
-		quad.y0 = (int32_t)EXECUTE_CHECK_INNER_FROM;
-		quad.x1 = (int32_t)EXECUTE_CHECK_INNER_TO;
-		quad.y1 = (int32_t)EXECUTE_CHECK_INNER_TO;
-		kern_memcpy(quad.colour, red, sizeof(quad.colour));
+		quad.x0 = (int32_t)EXECUTE_TRIAL_INNER_FROM;
+		quad.y0 = (int32_t)EXECUTE_TRIAL_INNER_FROM;
+		quad.x1 = (int32_t)EXECUTE_TRIAL_INNER_TO;
+		quad.y1 = (int32_t)EXECUTE_TRIAL_INNER_TO;
+		kern_memcpy(quad.colour, square_colour, sizeof(quad.colour));
 		error = execute_quad(execute, &quad);
 	}
 
@@ -367,33 +370,33 @@ amdrdna_vk_execute_check(
 		quad.target.address = va + image_bytes;
 		quad.x0 = 0;
 		quad.y0 = 0;
-		quad.x1 = (int32_t)EXECUTE_CHECK_SIDE;
-		quad.y1 = (int32_t)EXECUTE_CHECK_SIDE;
+		quad.x1 = (int32_t)EXECUTE_TRIAL_SIDE;
+		quad.y1 = (int32_t)EXECUTE_TRIAL_SIDE;
 		quad.textured = true;
 		quad.source = va;
-		quad.source_width = EXECUTE_CHECK_SIDE;
-		quad.source_height = EXECUTE_CHECK_SIDE;
+		quad.source_width = EXECUTE_TRIAL_SIDE;
+		quad.source_height = EXECUTE_TRIAL_SIDE;
 		quad.source_format = VK_FORMAT_B8G8R8A8_UNORM;
-		quad.u1 = (int32_t)EXECUTE_CHECK_SIDE;
-		quad.v1 = (int32_t)EXECUTE_CHECK_SIDE;
+		quad.u1 = (int32_t)EXECUTE_TRIAL_SIDE;
+		quad.v1 = (int32_t)EXECUTE_TRIAL_SIDE;
 		quad.filter = VK_FILTER_NEAREST;
 		error = execute_quad(execute, &quad);
 	}
 
 	/* The quads and the words that draw them, then the run and its wait. */
-	check->quads = execute->quads;
-	check->words = execute->pm4.count;
+	trial->quads = execute->quads;
+	trial->words = execute->pm4.count;
 	if (error == 0)
 		error = execute_flush(session, execute);
 
 	/* Every pixel of both images compared. */
 	if (error == 0)
-		execute_check_compare(cpu, pitch, check);
+		execute_trial_compare(cpu, pitch, trial);
 	amdrdna_vk_gpu_free(session->owner, token);
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the counts are in check. */
+	/* Succeeded: the counts are in trial. */
 	return 0;
 }
 
@@ -1711,15 +1714,15 @@ execute_put_words(
 }
 
 /*
- * Compares the check's two images (pitch bytes a row, the second after
+ * Compares the trial's two images (pitch bytes a row, the second after
  * the first) with what the draws should have left: blue with the red
  * square in both.
  */
 static void
-execute_check_compare(
+execute_trial_compare(
 	const uint8_t *cpu,
 	uint32_t pitch,
-	struct amdrdna_vk_check *check)
+	struct amdrdna_vk_trial *trial)
 {
 	uint32_t image;
 	uint32_t x;
@@ -1730,27 +1733,27 @@ execute_check_compare(
 
 	/* Each pixel of each image. */
 	for (image = 0U; image < 2U; image++) {
-		for (y = 0U; y < EXECUTE_CHECK_SIDE; y++) {
-			for (x = 0U; x < EXECUTE_CHECK_SIDE; x++) {
+		for (y = 0U; y < EXECUTE_TRIAL_SIDE; y++) {
+			for (x = 0U; x < EXECUTE_TRIAL_SIDE; x++) {
 				/* Red inside the square, blue around it. */
-				expected = EXECUTE_CHECK_BLUE;
-				if (x >= EXECUTE_CHECK_INNER_FROM && x < EXECUTE_CHECK_INNER_TO) {
-					if (y >= EXECUTE_CHECK_INNER_FROM && y < EXECUTE_CHECK_INNER_TO)
-						expected = EXECUTE_CHECK_RED;
+				expected = EXECUTE_TRIAL_BLUE;
+				if (x >= EXECUTE_TRIAL_INNER_FROM && x < EXECUTE_TRIAL_INNER_TO) {
+					if (y >= EXECUTE_TRIAL_INNER_FROM && y < EXECUTE_TRIAL_INNER_TO)
+						expected = EXECUTE_TRIAL_RED;
 				}
 
 				/* The pixel as the GPU left it. */
-				at = (image * EXECUTE_CHECK_SIDE + y) * pitch + x * 4U;
+				at = (image * EXECUTE_TRIAL_SIDE + y) * pitch + x * 4U;
 				value = execute_get32(cpu, at);
 
 				/* A pixel as expected counts for its image; the first wrong one is kept. */
 				if (value == expected && image == 0U) {
-					check->drawn++;
+					trial->drawn++;
 				} else if (value == expected) {
-					check->copied++;
-				} else if (check->bad_at == check->pixels * 2U) {
-					check->bad_at = (image * EXECUTE_CHECK_SIDE + y) * EXECUTE_CHECK_SIDE + x;
-					check->bad_value = value;
+					trial->copied++;
+				} else if (trial->bad_at == trial->pixels * 2U) {
+					trial->bad_at = (image * EXECUTE_TRIAL_SIDE + y) * EXECUTE_TRIAL_SIDE + x;
+					trial->bad_value = value;
 				}
 			}
 		}

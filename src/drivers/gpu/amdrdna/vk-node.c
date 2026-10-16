@@ -196,7 +196,7 @@ amdrdna_a9_draw(
 	struct amdrdna_node *node;
 	struct amdrdna_session *session;
 	struct amdrdna_vk_session *executor;
-	struct amdrdna_vk_check check;
+	struct amdrdna_vk_trial trial;
 	int closed;
 	int error;
 
@@ -221,12 +221,12 @@ amdrdna_a9_draw(
 		return error;
 	}
 
-	/* The executor's session and its check, under the node's lock as every executor call. */
+	/* The executor's session and its trial, under the node's lock as every executor call. */
 	mutex_lock(&node->lock);
 
 	error = amdrdna_vk_session_open(session, &executor);
 	if (error == 0) {
-		error = amdrdna_vk_execute_check(executor, &check);
+		error = amdrdna_vk_execute_trial(executor, &trial);
 		closed = amdrdna_vk_session_close(&executor);
 		if (error == 0 && closed != 0)
 			error = closed;
@@ -237,23 +237,23 @@ amdrdna_a9_draw(
 	/* The session and its address space go (or are kept when the work did not end). */
 	amdrdna_node_session_close(node, session);
 
-	/* Reports a check that did not run to its end. */
+	/* Reports a trial that did not run to its end. */
 	if (error != 0) {
 		amdrdna_mark("A9 fail: the executor's draws did not run (%d)", error);
 		return error;
 	}
 
 	/* Reports a pixel the draws did not leave as expected. */
-	if (check.drawn != check.pixels || check.copied != check.pixels) {
+	if (trial.drawn != trial.pixels || trial.copied != trial.pixels) {
 		amdrdna_mark("A9 fail: draw pixels=%u/%u copy=%u/%u first wrong at %u: 0x%08x",
-		    (unsigned)check.drawn, (unsigned)check.pixels, (unsigned)check.copied, (unsigned)check.pixels,
-		    (unsigned)check.bad_at, (unsigned)check.bad_value);
+		    (unsigned)trial.drawn, (unsigned)trial.pixels, (unsigned)trial.copied, (unsigned)trial.pixels,
+		    (unsigned)trial.bad_at, (unsigned)trial.bad_value);
 		return EIO;
 	}
 
 	/* Marks the result. */
 	amdrdna_mark("A9 ok draw pixels=%u copy=%u quads=%u words=%u renderer bound",
-	    (unsigned)check.drawn, (unsigned)check.copied, (unsigned)check.quads, (unsigned)check.words);
+	    (unsigned)trial.drawn, (unsigned)trial.copied, (unsigned)trial.quads, (unsigned)trial.words);
 
 	/* Succeeded: the executor draws on the GPU. */
 	return 0;

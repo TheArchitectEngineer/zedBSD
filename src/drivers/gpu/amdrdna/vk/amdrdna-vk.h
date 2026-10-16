@@ -128,13 +128,13 @@ int amdrdna_vk_dispatch(struct amdrdna_vk_session *session, uint32_t opcode, uin
 int amdrdna_vk_memory_attach(struct amdrdna_vk_session *session, uint64_t identity, uint64_t bytes, uint8_t *cpu, uint64_t va, void *backing);
 
 /*
- * What the executor's own check of its draws on the GPU found (stage A9,
+ * What the executor's own trial of its draws on the GPU found (stage A9,
  * vk-execute.c): the pixels of each of its two images, how many of the
  * drawn image's and of its copy's are as expected, the quads drawn, the
  * words of the indirect buffer that drew them, and the first wrong pixel
  * (its index over both images, pixels * 2 when none) and its value.
  */
-struct amdrdna_vk_check {
+struct amdrdna_vk_trial {
 	uint32_t pixels;
 	uint32_t drawn;
 	uint32_t copied;
@@ -144,7 +144,7 @@ struct amdrdna_vk_check {
 	uint32_t bad_value;
 };
 
-int amdrdna_vk_execute_check(struct amdrdna_vk_session *session, struct amdrdna_vk_check *check);
+int amdrdna_vk_execute_trial(struct amdrdna_vk_session *session, struct amdrdna_vk_trial *trial);
 
 /*
  * Finds a blob of the owner's (the node's session) by its resource id and
