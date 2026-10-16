@@ -6,8 +6,7 @@
  */
 
 /*
- * sessiond, the graphical login's session manager
- * (plan/ws035/login-manager-design.md).
+ * sessiond, the graphical login's session manager.
  *
  * init starts it as the service "greeter" in place of the console's getty.
  * It is small and runs as root: it gives the display and the input devices
@@ -21,14 +20,14 @@
  * graphical login (login=graphical), when there is no greeter or no display,
  * and when the graphical login fails to start (fallback-rules.c says what a
  * failure is): after six failures in a row, the waits between the tries
- * growing from 1 to 16 seconds (BUG-122: a GPU that a crashed compositor
+ * growing from 1 to 16 seconds (a GPU that a crashed compositor
  * left behind may take a while to be usable again), or once failures in a
  * row have kept the screen for a minute and a half.  The automatic login's session
  * at boot that does not take the display within a minute is ended and is
  * the first of them.  sessiond then exits 0, and init starts the console's
  * getty that the greeter service replaces.  When the graphical login was
  * asked for, it first gives the screen back to the text console through
- * /dev/system (ws239-p001): the kernel's messages go to the console again,
+ * /dev/system: the kernel's messages go to the console again,
  * as with kmsg=console, the boot logo goes, and a line on the console says
  * why the console's login came.  A GPU driver may publish the display
  * (/dev/gpu0) a moment after init has started the services; while the
@@ -38,6 +37,7 @@
 
 #include "sessiond.h"
 #include "fallback-rules.h"
+#include "userland/base/service/service-config.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -95,6 +95,12 @@
 
 /* Set by SIGTERM and SIGINT: sessiond ends its greeter or session and stops. */
 volatile sig_atomic_t sessiond_stopping;
+
+/*
+ * Set once the mark that a desktop has taken the display is left.  Only the
+ * first desktop of the boot is what init waits for; it is never cleared.
+ */
+static int main_desktop_marked;
 
 static unsigned main_retry_delay(unsigned failures);
 static int main_options(struct sessiond *daemon, int count, char **arguments, int *graphical, int *console);
@@ -184,7 +190,7 @@ main(
 	/* A client of the session writing to a closed pipe must not stop sessiond. */
 	(void)signal(SIGPIPE, SIG_IGN);
 
-	/* A device plugged in later is the seat's user's at once (BUG-264). */
+	/* A device plugged in later is the seat's user's at once. */
 	sessiond_seat_events_open();
 
 	/* The greeter, then a session for each login, until stopped. */
@@ -204,7 +210,7 @@ main(
 		daemon.session_bounded = 0;
 		memset(&account, 0, sizeof(account));
 
-		/* A session that never took the display is the first failure to start in a row (ws239-p001). */
+		/* A session that never took the display is the first failure to start in a row. */
 		if (error != 0) {
 			sessiond_log("SESSIOND AUTOLOGIN failed errno=%d", error);
 			failures = 1;
@@ -283,6 +289,36 @@ sessiond_log(
 	/* Writes it whole. */
 	printf("%lld %s\n", (long long)time(NULL), text);
 	fflush(stdout);
+}
+
+/*
+ * Leaves the mark that a desktop has taken the display, once a boot.
+ *
+ * init waits for it before it starts the services the desktop does not need
+ * at once (the network, sound, sshd), so that they do not compete with the
+ * desktop's start.  A mark that cannot be made only makes init wait its
+ * bound.
+ */
+void
+sessiond_desktop_shown(
+	void)
+{
+	int descriptor;
+
+	/* Only the first desktop of the boot is waited for. */
+	if (main_desktop_marked)
+		return;
+	main_desktop_marked = 1;
+
+	/* An empty file is the mark. */
+	descriptor = open(KERN_INIT_DESKTOP_SHOWN, O_WRONLY | O_CREAT | O_CLOEXEC, 0644);
+	if (descriptor < 0) {
+		sessiond_log("SESSIOND DESKTOP mark errno=%d", errno);
+		return;
+	}
+
+	(void)close(descriptor);
+	sessiond_log("SESSIOND DESKTOP shown at_ms=%lld", sessiond_milliseconds());
 }
 
 /*
@@ -592,7 +628,7 @@ main_open_log(
  * Looks up the account /etc/keiland/autologin names (its first line) for
  * the login at boot.  Returns 0, or ENOENT when there is no such file or
  * no such account, or the account may not be logged in by itself (root,
- * or a locked or expired account: ws196-p002).
+ * or a locked or expired account).
  */
 static int
 main_autologin(
@@ -715,7 +751,7 @@ main_retry_delay(
 
 /*
  * Gives the screen back to the text console when the graphical login asked
- * for cannot start (ws239-p001): /dev/system sends the kernel's messages to
+ * for cannot start: /dev/system sends the kernel's messages to
  * the console again (as kmsg=console would) and ends the boot logo, and a
  * line on the console says why the console's login comes.  init then starts
  * the console's getty.  A failure is only noted: the getty's first read

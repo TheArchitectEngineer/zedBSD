@@ -48,6 +48,14 @@
 /* The room for one boot parameter's value, which is one short word. */
 #define BOOT_PARAMETER_MAX 32
 
+/*
+ * How long a boot that shows the desktop first holds the late services back
+ * for the desktop to take the display, and how often it looks.  A desktop
+ * that is slower than this, or that never comes, has them start anyway.
+ */
+#define DESKTOP_WAIT_MS 30000U
+#define DESKTOP_POLL_MS 100
+
 /* Requests held while a oneshot service runs, and how often init looks at the socket and the service then. */
 #define DEFERRED_MAX 8
 #define ONESHOT_POLL_MS 100
@@ -129,6 +137,20 @@ struct service {
 	 * not hold them for it; a debug boot starts it in its usual place.
 	 */
 	int late;
+	/*
+	 * Set by desktop=yes for the service that shows the desktop (the
+	 * graphical login).  While it runs, a boot that shows the desktop
+	 * first starts the late services only once the desktop has taken the
+	 * display (KERN_INIT_DESKTOP_SHOWN) or the wait is over.
+	 */
+	int desktop;
+	/*
+	 * Set once init has started the service in this boot.  The rounds of
+	 * the boot start a service only once: one that ended while init
+	 * waited for the desktop (a graphical login that gave the screen to
+	 * the console) is not started again by the next round.
+	 */
+	int started_once;
 };
 
 static struct service services[SERVICE_MAX];
@@ -212,6 +234,9 @@ static enum dependency_result order_state(const struct service *service, enum st
 static enum dependency_result requirements_state(const struct service *service);
 static int boot_shows_desktop_first(void);
 static int boot_parameter_is(const char *name, const char *expected);
+static void wait_for_desktop(void);
+static int desktop_running(void);
+static void serve_one_request(int milliseconds);
 static void timeline_open(void);
 static void timeline_record(const char *event, const char *name);
 static void timeline_write(uint64_t milliseconds, const char *event, const char *name);
@@ -361,6 +386,9 @@ make_runtime_directories(
 	(void)mkdir("/var", 0755);
 	(void)mkdir("/run", 0755);
 	(void)mkdir("/var/log", 0755);
+
+	/* The mark of a desktop shown is this boot's to leave, not the last one's. */
+	(void)unlink(KERN_INIT_DESKTOP_SHOWN);
 }
 
 /* Supports the load rcconf snapshot operation. */
@@ -601,6 +629,10 @@ load_one_service(
 	if (assignment_get(path, "late", value, sizeof(value)) == 0)
 		service->late = yes(value);
 
+	/* The service that shows the desktop, which the late ones wait for in a desktop boot. */
+	if (assignment_get(path, "desktop", value, sizeof(value)) == 0)
+		service->desktop = yes(value);
+
 	/* Handles a failed assignment get operation. */
 	if (assignment_get(path, "restart", value, sizeof(value)) == 0) {
 		service->restart_always = strcmp(value, "always") == 0;
@@ -757,6 +789,9 @@ start_enabled_services(
 		timeline_record("order", "desktop-first");
 		start_round(START_ROUND_DESKTOP);
 		timeline_record("round", "desktop-started");
+
+		/* The late services wait for the desktop to take the display, so that they do not slow its start. */
+		wait_for_desktop();
 	} else {
 		timeline_record("order", "dependencies");
 	}
@@ -772,10 +807,12 @@ start_enabled_services(
 
 	/* A service still waiting after every pass waits for itself. */
 	for (index = 0; index < service_count; index++) {
-		/* Only an enabled service that never left the stopped state is in a cycle. */
+		/* Only an enabled service that was never started is in a cycle. */
 		if (!services[index].enabled)
 			continue;
 		if (services[index].state != SERVICE_STOPPED)
+			continue;
+		if (services[index].started_once)
 			continue;
 
 		/* Marks it failed, which is what a service that can never start is. */
@@ -813,6 +850,8 @@ start_round(
 			if (!service->enabled)
 				continue;
 			if (service->state != SERVICE_STOPPED)
+				continue;
+			if (service->started_once)
 				continue;
 
 			/* The desktop's round leaves the late services for the next. */
@@ -956,6 +995,116 @@ requirements_state(
 
 	/* Succeeded: everything it requires is up. */
 	return DEPENDENCIES_READY;
+}
+
+/*
+ * Waits, a bounded time, for the desktop to take the display.
+ *
+ * The wait ends when the mark is there, when no desktop service is running
+ * any more (it gave the screen back to the console), when the bound is
+ * reached, or when a halt, power-off or reboot is asked for.  Meanwhile the
+ * services that end are collected (a greeter that gave up lets the console's
+ * getty start) and the control socket is answered.
+ */
+static void
+wait_for_desktop(
+	void)
+{
+	uint64_t deadline;
+	uint64_t now;
+	int running;
+	int shown;
+
+	/* The bound, from now. */
+	deadline = monotonic_milliseconds() + DESKTOP_WAIT_MS;
+
+	/* Looks until one of the ends comes. */
+	for (;;) {
+		/* A system action is carried out by the loop. */
+		if (action_requested != 0)
+			return;
+
+		/* The desktop has taken the display. */
+		shown = access(KERN_INIT_DESKTOP_SHOWN, F_OK);
+		if (shown == 0) {
+			timeline_record("desktop", "shown");
+			return;
+		}
+
+		/* No desktop runs (none is enabled, or it gave the screen to the console). */
+		running = desktop_running();
+		if (!running) {
+			timeline_record("desktop", "not-running");
+			return;
+		}
+
+		/* The bound is reached. */
+		now = monotonic_milliseconds();
+		if (now >= deadline) {
+			timeline_record("desktop", "wait-expired");
+			return;
+		}
+
+		/* Collects the services that ended, then answers a request or waits a little. */
+		reap_children();
+		serve_one_request(DESKTOP_POLL_MS);
+	}
+}
+
+/* Reports whether a service that shows the desktop is running. */
+static int
+desktop_running(
+	void)
+{
+	size_t index;
+
+	/* Each enabled desktop service. */
+	for (index = 0; index < service_count; index++) {
+		/* Only a desktop service that this boot enabled counts. */
+		if (!services[index].desktop)
+			continue;
+		if (!services[index].enabled)
+			continue;
+
+		/* One that runs is still on its way to the display. */
+		if (services[index].state == SERVICE_RUNNING)
+			return 1;
+	}
+
+	/* None runs. */
+	return 0;
+}
+
+/*
+ * Answers one request on the control socket, or waits up to the given time
+ * for one.  Without a socket it only waits.
+ */
+static void
+serve_one_request(
+	int milliseconds)
+{
+	struct pollfd listener;
+	int client;
+
+	/* Without a socket there is nothing to answer. */
+	if (control_listener < 0) {
+		pause_milliseconds((unsigned)milliseconds);
+		return;
+	}
+
+	/* A connection waiting now is answered at once. */
+	client = accept4(control_listener, NULL, NULL, SOCK_CLOEXEC);
+	if (client >= 0) {
+		handle_request(client);
+		close(client);
+		return;
+	}
+
+	/* Otherwise waits a little for one. */
+	listener.fd = control_listener;
+	listener.events = POLLIN;
+	listener.revents = 0;
+	(void)poll(&listener, 1, milliseconds);
 }
 
 /*
@@ -1269,6 +1418,7 @@ spawn_service(
 	}
 
 	service->pid = child;
+	service->started_once = 1;
 	timeline_record("start", service->name);
 
 	/* Handles the service condition. */

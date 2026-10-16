@@ -7,10 +7,10 @@
 
 /*
  * Window mode: draws the background and every window, bottom to top, into
- * a VK_KHR_display swapchain (WS035 compositing design, D1).
+ * a VK_KHR_display swapchain.
  *
  * A frame is one command buffer, recorded from the display list the
- * drawing writes (draw-list.c, ws213-p003). Scene changes render the windows and
+ * drawing writes (draw-list.c). Scene changes render the windows and
  * optionally capture cursor-free pixels; cursor-only damage can restore
  * those pixels before its LOAD pass. Only one frame is in flight: its fence is exported as an fd
  * that the event loop polls, and the buffers the frame sampled and the frame
@@ -35,7 +35,7 @@
 #define COMPOSE_EXTENSIONS_MAX	16U
 
 /*
- * The parts of a frame's images it draws (WS217): the scene's (the
+ * The parts of a frame's images it draws: the scene's (the
  * logical damage of the image drawn into, NULL region for all of it) and,
  * for a turned output, the turn pass's on the swapchain's image (the
  * physical rectangles, none for all of it).  The scene's point into the
@@ -116,6 +116,7 @@ kwl_compose_open(
 {
 	struct kwl_compose *compose;
 	uint64_t started;
+	uint64_t display_started;
 	VkResult result;
 	int error;
 
@@ -134,16 +135,20 @@ kwl_compose_open(
 	}
 
 	/* The display's size (unless --width and --height chose one) and refresh, before anything is drawn at that size. */
+	display_started = kwl_milliseconds();
 	result = compose_display(server);
 	if (result != VK_SUCCESS) {
 		printf("KWL VULKAN_ERROR operation=display result=%d\n", (int)result);
 		return EIO;
 	}
 
+	/* How long the display's description took, a part of the device's step. */
+	printf("KWL STARTUP step=vulkan-display ms=%llu\n", (unsigned long long)(kwl_milliseconds() - display_started));
+
 	/* What the device can take, against which each client buffer's description is checked. */
 	compose_limits(server);
 
-	/* How long the device took (KWL STARTUP, ws035-p129). */
+	/* How long the device took (KWL STARTUP). */
 	printf("KWL STARTUP step=vulkan-device ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 	started = kwl_milliseconds();
 
@@ -154,7 +159,7 @@ kwl_compose_open(
 		return EIO;
 	}
 
-	/* The start's images (the arrow, the wallpaper, the glyphs) are moved to their layout together (ws035-p131). */
+	/* The start's images (the arrow, the wallpaper, the glyphs) are moved to their layout together. */
 	kwl_host_image_batch_begin(compose);
 
 	/* the compositor's arrow cursor. */
@@ -168,7 +173,7 @@ kwl_compose_open(
 	printf("KWL STARTUP step=vulkan-objects-arrow ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 
 	/*
-	 * The cursor shapes' images, in the same batch (ws213-p003, review-3
+	 * The cursor shapes' images, in the same batch (review-3
 	 * M-6): none is made while the compositor runs.  A failure leaves the
 	 * shape to be made when first asked for; their making is timed alone.
 	 */
@@ -188,24 +193,32 @@ kwl_compose_open(
 	}
 
 	/* The start's images' layout moves, submitted and waited for once. */
+	started = kwl_milliseconds();
 	result = kwl_host_image_batch_end(compose);
 	if (result != VK_SUCCESS) {
 		printf("KWL VULKAN_ERROR operation=setup-layout result=%d\n", (int)result);
 		return EIO;
 	}
 
-	/* The render thread, which draws the frames from now on (ws213-p004); it needs the threads' wake pipe. */
+	/* How long the GPU took to move them. */
+	printf("KWL STARTUP step=image-layouts ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
+
+	/* The render thread, which draws the frames from now on; it needs the threads' wake pipe. */
 	if (!server->threads_prepared) {
 		printf("KWL FAILED site=render-thread errno=%d\n", EINVAL);
 		return EIO;
 	}
 
 	/* The thread started. */
+	started = kwl_milliseconds();
 	error = kwl_compose_render_start(server);
 	if (error != 0) {
 		printf("KWL FAILED site=render-thread errno=%d\n", error);
 		return EIO;
 	}
+
+	/* How long the render thread took to start. */
+	printf("KWL STARTUP step=render-thread ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 
 	/* Succeeded: window mode can open its output. */
 	return 0;
@@ -214,7 +227,7 @@ kwl_compose_open(
 /*
  * Reads a display's native size, its refresh at that size and its name
  * (empty when it has none), for an output moved to it while the compositor
- * runs (ws113-p004a).  Returns VK_SUCCESS, or VK_ERROR_SURFACE_LOST_KHR
+ * runs.  Returns VK_SUCCESS, or VK_ERROR_SURFACE_LOST_KHR
  * when the display is not connected now.
  */
 VkResult
@@ -273,7 +286,7 @@ kwl_compose_display_read(
  * Tells whether the lid matters to the output shown: it does unless that
  * output is an external display (an HDMI or DisplayPort connector's key,
  * D-ID A2 "zedbsd-port-v1:...:hdmi:B"), which goes on with the lid closed
- * (ws052-p012, the 2026-10-07 user decision N8; R5: a machine started with
+ * (the 2026-10-07 user decision N8; R5: a machine started with
  * its lid closed on an external display).  The built-in panel, a virtual
  * display and a display without a name are the machine's own.
  */
@@ -305,7 +318,7 @@ kwl_output_lid_matters(
 
 /*
  * Creates window mode's display surface, and the render pass and pipelines
- * for its format the first time, without taking the display (ws035-p130).
+ * for its format the first time, without taking the display.
  *
  * A surface and its format need no lease (only a swapchain claims the
  * display), so this is done before READY, while another compositor (the
@@ -327,8 +340,8 @@ kwl_compose_output_prepare(
 
 	/*
 	 * The angle displays.conf keeps for the display (or --rotate), which
-	 * decides the desktop's logical size and how the surface is made
-	 * (WS217): every opening chooses it again, for the display it opens on.
+	 * decides the desktop's logical size and how the surface is made:
+	 * every opening chooses it again, for the display it opens on.
 	 */
 	compose_rotation_choose(server);
 
@@ -361,7 +374,7 @@ kwl_compose_output_prepare(
 			return EIO;
 		}
 
-		/* The small solid quads drawn together, when the device can (batch.c, ws211-p003). */
+		/* The small solid quads drawn together, when the device can (batch.c). */
 		kwl_batch_open(server);
 	}
 
@@ -387,7 +400,7 @@ kwl_compose_output_open(
 	if (compose->output_open)
 		return 0;
 
-	/* The render thread parked while the output's swapchain is made (ws213-p004). */
+	/* The render thread parked while the output's swapchain is made. */
 	kwl_compose_park(server);
 	error = compose_output_open_parked(server);
 	kwl_compose_unpark(server);
@@ -396,7 +409,7 @@ kwl_compose_output_open(
 
 	/*
 	 * The desktop follows what the output shows now against what it
-	 * showed when it last opened (WS217, review-4 C7): another logical
+	 * showed when it last opened (review-4 C7): another logical
 	 * size (a move to a display of another size), another angle.
 	 */
 	(void)kwl_output_rotated(server);
@@ -406,7 +419,7 @@ kwl_compose_output_open(
 }
 
 /*
- * Gives the render pass a frame's target is drawn with (WS217): the one
+ * Gives the render pass a frame's target is drawn with: the one
  * that clears it, or, with load, the one that keeps its pixels (made by
  * kwl_compose_load_pass the first time it is needed).  The anchor and the
  * heads draw into their swapchain images with the output's passes while
@@ -434,7 +447,7 @@ kwl_compose_target_pass(
 }
 
 /*
- * Gives the image the anchor's frames are drawn into (WS217): the turn
+ * Gives the image the anchor's frames are drawn into: the turn
  * image when the compositor turns the output, else the swapchain's image
  * of the frame.
  */
@@ -453,7 +466,7 @@ kwl_compose_target_image(
 
 /*
  * Gives the layout the image the anchor's frames are drawn into is in
- * outside its passes (WS217): the turn image is kept to be sampled, the
+ * outside its passes: the turn image is kept to be sampled, the
  * swapchain's image to be presented.
  */
 VkImageLayout
@@ -498,7 +511,7 @@ compose_output_open_parked(
 	/*
 	 * Its FIFO swapchain, in the format the pipelines were made for; its
 	 * images are a copy's source when the display allows it, for the
-	 * mirror's heads (ws113-p004b) and a test image's capture.
+	 * mirror's heads and a test image's capture.
 	 */
 	started = kwl_milliseconds();
 	readback = 1;
@@ -518,7 +531,7 @@ compose_output_open_parked(
 
 	/* A surface without readback retains the ordinary colour-only swapchain. */
 	if (result == VK_ERROR_FORMAT_NOT_SUPPORTED && readback) {
-		/* A display whose images cannot be read back still shows the desktop, without the capture (ws173-p002). */
+		/* A display whose images cannot be read back still shows the desktop, without the capture. */
 		printf("KWL SHOT unsupported: the swapchain images cannot be a copy's source\n");
 		readback = 0;
 		result = vkdemo_display_create_swapchain(compose->physical, compose->device, compose->family, &compose->output, 0);
@@ -548,8 +561,8 @@ compose_output_open_parked(
 	}
 
 	/*
-	 * The turn image, when the angle chosen is turned by the compositor
-	 * (WS217); one that cannot be made opens the output unrotated, the
+	 * The turn image, when the angle chosen is turned by the compositor;
+	 * one that cannot be made opens the output unrotated, the
 	 * choice kept, and the scene and the layers follow the size drawn at.
 	 */
 	compose_turn_open(server);
@@ -575,14 +588,14 @@ compose_output_open_parked(
 	printf("KWL STARTUP step=output-targets ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 	memset(compose->image_frames, 0, sizeof(compose->image_frames));
 
-	/* The displays' choice (read once), and the heads brought in line at the next look (ws113-p004b). */
+	/* The displays' choice (read once), and the heads brought in line at the next look. */
 	kwl_heads_config_load(server);
 	compose->heads_stale = 1U;
 
 	/* The cursor plane, when the output has one (it borrows the output's claim). */
 	kwl_cursor_plane_open(server);
 
-	/* The layers' pictures, made with the output (layer-cache.c, ws211-p002). */
+	/* The layers' pictures, made with the output (layer-cache.c). */
 	kwl_layers_open(server);
 
 	/* Succeeded: window mode owns the display through the swapchain. */
@@ -618,7 +631,7 @@ kwl_compose_output_close(
 	/*
 	 * The render thread parks after the frame in flight and forgets the
 	 * images it holds; the cursor thread stops; both before anything waits
-	 * on the device, and the cursor's plane goes (ws213-p004).
+	 * on the device, and the cursor's plane goes.
 	 */
 	kwl_compose_park(server);
 	kwl_compose_forget(server, 1U, (1U << KWL_HEADS) - 1U);
@@ -627,7 +640,7 @@ kwl_compose_output_close(
 	/* No frame may still use the swapchain's images. */
 	(void)vkDeviceWaitIdle(compose->device);
 
-	/* The heads go with the output (ws113-p004b). */
+	/* The heads go with the output. */
 	kwl_heads_close_all(server);
 
 	/* The layers' pictures, the backdrop, the targets, then the swapchain and surface. */
@@ -656,8 +669,8 @@ kwl_compose_output_close(
 
 /*
  * Draws one frame of window mode: the walk that writes its display list,
- * given to the render thread, which records, submits and presents it
- * (ws213-p004).  The render thread acquires the images first: until it is
+ * given to the render thread, which records, submits and presents it.
+ * The render thread acquires the images first: until it is
  * ready the frame is only wanted, and 0 is returned without drawing; so
  * too while a frame is in flight or the output is closed.
  */
@@ -697,7 +710,7 @@ kwl_compose_draw(
 	    compose->ready.number != compose->want_number)
 		return 0;
 
-	/* How long the frame pacing waited for the windows since the last frame was shown (ws211-p002 段 0). */
+	/* How long the frame pacing waited for the windows since the last frame was shown. */
 	if (server->log_frames) {
 		printf(
 			"KWL LAT pace frame=%llu awaiting=%u waited_ms=%llu wait_ms=%llu\n",
@@ -726,7 +739,7 @@ kwl_compose_draw(
 	compose->frame_start_ms = kwl_milliseconds();
 	all = compose_windows(server, windows, KWL_FRAME_WINDOWS);
 
-	/* The anchor's windows first, then the heads' (heads.c draws them on theirs, ws113-p007). */
+	/* The anchor's windows first, then the heads' (heads.c draws them on theirs). */
 	count = compose_split(server, windows, all);
 	compose->frame_heads = windows + count;
 	compose->frame_head_count = all - count;
@@ -737,7 +750,7 @@ kwl_compose_draw(
 	/* The sub-surfaces follow them, held and told like them (subsurface.c draws them with their parents). */
 	subsurfaces = kwl_subsurface_collect(server, windows + all + popups, KWL_FRAME_WINDOWS - all - popups);
 
-	/* The frame's start, when the per-frame lines were asked for (ws099-p002's parts of a frame). */
+	/* The frame's start, when the per-frame lines were asked for (the parts of a frame). */
 	if (server->log_frames) {
 		/* Identify a client cursor surface and whole-output invalidation in this frame. */
 		cursor_id = 0U;
@@ -759,11 +772,11 @@ kwl_compose_draw(
 		server->pointer_accepted_us = 0U;
 	}
 
-	/* The output's image the render thread holds, and the heads' it holds (ws113-p004b); one that is not ready asks for another frame. */
+	/* The output's image the render thread holds, and the heads' it holds; one that is not ready asks for another frame. */
 	image = compose->ready.held.output_image;
 	missed = kwl_heads_take(server, &compose->ready.held);
 
-	/* The part of the image to draw: all of it, or the damage it has missed (its buffer age), as rectangles apart (ws211-p009). */
+	/* The part of the image to draw: all of it, or the damage it has missed (its buffer age), as rectangles apart. */
 	partial = compose_region(server, image, &region, rects, &rect_count);
 	region_drawn = NULL;
 	if (partial)
@@ -771,7 +784,7 @@ kwl_compose_draw(
 
 	/*
 	 * A turned output draws the scene into its turn image, over the damage
-	 * that image missed (WS217), and the swapchain's image's own damage is
+	 * that image missed, and the swapchain's image's own damage is
 	 * the turn pass's, turned to the physical output.
 	 */
 	memset(&scene, 0, sizeof(scene));
@@ -856,7 +869,7 @@ kwl_compose_draw(
 
 /*
  * Waits for the frame (or the layer's picture) in flight to complete and
- * applies its completion (ws213-p004): the render thread waits for its
+ * applies its completion: the render thread waits for its
  * fence; the main thread then releases the buffers it sampled and sends
  * the frame callbacks.  Returns 0, or EIO when the frame failed.
  */
@@ -882,8 +895,8 @@ kwl_compose_complete(
 }
 
 /*
- * Tells whether the event loop must ask a fence's status each pass: never
- * since ws213-p004, as the render thread waits for the frames' fences and
+ * Tells whether the event loop must ask a fence's status each pass: never,
+ * as the render thread waits for the frames' fences and
  * wakes the loop with their completions.
  */
 int
@@ -896,7 +909,7 @@ kwl_compose_waiting(
 }
 
 /*
- * Applies the render thread's messages in their order (ws213-p004): a
+ * Applies the render thread's messages in their order: a
  * ready is kept for the next walk (or cancelled when the want changed), a
  * failed acquire is the output's loss or the compositor's failure, and a
  * completion ends the frame in flight.  The event loop calls it each pass,
@@ -962,7 +975,7 @@ kwl_compose_close(
 	struct kwl_compose *compose;
 	unsigned index;
 
-	/* The angle chosen last reaches displays.conf before the compositor ends (heads.c's writer, BUG-306). */
+	/* The angle chosen last reaches displays.conf before the compositor ends (heads.c's writer). */
 	kwl_heads_config_close();
 
 	/* Nothing was opened. */
@@ -1017,7 +1030,7 @@ kwl_compose_close(
 
 		/*
 		 * The passes (the one that keeps the image's pixels is made once
-		 * and kept from one output to the next, as the format is: WS217),
+		 * and kept from one output to the next, as the format is),
 		 * layouts, sampler, pools and synchronization.
 		 */
 		vkDestroyRenderPass(compose->device, compose->pass, NULL);
@@ -1046,7 +1059,7 @@ kwl_compose_close(
 }
 
 /*
- * Starts the render thread (ws213-p004), once the device and its objects
+ * Starts the render thread, once the device and its objects
  * are made: it waits for a want.
  */
 int
@@ -1250,7 +1263,7 @@ compose_device(
 	/*
 	 * The first five are always enabled: the dedicated allocation (and the
 	 * requirement queries it depends on) is how a client's buffer is
-	 * imported (import.c, WS103).  The external fence pair follows when the
+	 * imported (import.c).  The external fence pair follows when the
 	 * device has it.
 	 */
 	static const char *const device_extensions[] = {
@@ -1288,7 +1301,7 @@ compose_device(
 	memcpy(instance_names, instance_extensions, sizeof(instance_extensions));
 	instance_count = 5U;
 
-	/* The surface counters, which the display control needs, when the library offers them (ws113-p004a). */
+	/* The surface counters, which the display control needs, when the library offers them. */
 	surface_counter = 0;
 	found = 32U;
 	result = vkEnumerateInstanceExtensionProperties(NULL, &found, available);
@@ -1424,7 +1437,7 @@ compose_device(
 			compose->fence_fd = 0;
 	}
 
-	/* The hotplug's entry point (ws113-p004a). */
+	/* The hotplug's entry point. */
 	compose->register_device_event = NULL;
 	if (display_control)
 		compose->register_device_event = (PFN_vkRegisterDeviceEventEXT)vkGetDeviceProcAddr(compose->device, "vkRegisterDeviceEventEXT");
@@ -1531,7 +1544,7 @@ compose_display(
 	/*
 	 * The displays' choice (read once, nothing else done), whose angle for
 	 * this display makes the desktop's logical size before the look, the
-	 * scene and the layers are made at it (WS217).
+	 * scene and the layers are made at it.
 	 */
 	kwl_heads_config_load(server);
 	compose_rotation_choose(server);
@@ -1557,7 +1570,7 @@ compose_display(
 }
 
 /*
- * Chooses the angle the output shows on the display it opens on (WS217):
+ * Chooses the angle the output shows on the display it opens on:
  * --rotate when a test gave it, else the angle displays.conf keeps for the
  * display's key (the login screen is never rotated, D9).  An angle the
  * display cannot take opens it unrotated, the file's line kept and the
@@ -1586,13 +1599,13 @@ compose_rotation_choose(
 	if (server->greeter)
 		wanted = KWL_ROTATE_0;
 
-	/* Whether the turn pass is offered on this GPU without a test's policy (not the Pi 4's yet, WS141 p015). */
+	/* Whether the turn pass is offered on this GPU without a test's policy (not the Pi 4's yet). */
 	vkGetPhysicalDeviceProperties(compose->physical, &properties);
 	compose->turn_default = 1U;
 	if (properties.vendorID == KWL_TURN_VENDOR_OFF)
 		compose->turn_default = 0U;
 
-	/* The angles the display may take: none but 0 by default until its hardware's 180 is read (ws217-p010); every one under a test's policy. */
+	/* The angles the display may take: none but 0 by default until its hardware's 180 is read; every one under a test's policy. */
 	compose->rotations = kwl_rotate_mask(compose->hw180, compose->turn_default, KWL_TURN_BUILD, server->rotate_policy, &why);
 	compose->rotate_why = why;
 
@@ -2228,8 +2241,8 @@ compose_targets(
 
 	/*
 	 * The frames are drawn into the swapchain's images at their size while
-	 * nothing turns the picture (WS217: the turn pass draws into an image of
-	 * the logical size instead, ws217-p002b).
+	 * nothing turns the picture (the turn pass draws into an image of
+	 * the logical size instead).
 	 */
 	compose->target_width = compose->output.width;
 	compose->target_height = compose->output.height;
@@ -2382,7 +2395,7 @@ compose_windows(
 
 /*
  * Puts the anchor's windows first in a frame's list (bottom to top), then
- * the heads' in the same order (ws113-p007); a window of an output not
+ * the heads' in the same order; a window of an output not
  * shown (the mirror, a head gone) is the anchor's.  Returns how many are
  * the anchor's.
  */
@@ -2406,7 +2419,7 @@ compose_split(
 	anchor = 0U;
 	others = 0U;
 	for (index = 0U; index < count; index++) {
-		/* A sheet is its parent's output's (ws090-p014's sheets are drawn under the parent's title bar). */
+		/* A sheet is its parent's output's (sheets are drawn under the parent's title bar). */
 		parent = kwl_sheet_parent(windows[index]);
 		if (parent != NULL)
 			windows[index]->output = parent->output;
@@ -2437,7 +2450,7 @@ compose_split(
 /*
  * Logs each output's windows (its render list's surfaces, bottom to top)
  * when they differ from the last frame's: "KWL RENDER output=N
- * surfaces=A,B" (ws113-p007, D-ATOMIC: a window is in its output's list
+ * surfaces=A,B" (D-ATOMIC: a window is in its output's list
  * alone).
  */
 static void
@@ -2481,7 +2494,7 @@ compose_lists_log(
 	}
 }
 
-/* Draws the cursor in the pass being recorded (the anchor's, or a head's, ws113-p007). */
+/* Draws the cursor in the pass being recorded (the anchor's, or a head's). */
 void
 kwl_compose_cursor(
 	struct kwl_server *server,
@@ -2513,8 +2526,8 @@ surface_image(
  * Begins a drawing into the list (a frame's, or a layer's picture that
  * presents nothing): the list is emptied, nothing is known as bound, the
  * joined quads start from their buffer's beginning, the walk's time
- * starts (ws213-p003), and the glyphs the glyph worker rendered since the
- * last walk go into their cells (ws213-p005).
+ * starts, and the glyphs the glyph worker rendered since the
+ * last walk go into their cells.
  */
 void
 kwl_compose_list_begin(
@@ -2533,7 +2546,7 @@ kwl_compose_list_begin(
 }
 
 /*
- * Gives the next image made its own number (ws213-p003): numbers only
+ * Gives the next image made its own number: numbers only
  * increase from 1, so none is given twice and 0 stays "no image".
  */
 uint64_t
@@ -2586,7 +2599,7 @@ kwl_compose_set_put(
 	struct kwl_compose *compose,
 	VkDescriptorSet set)
 {
-	/* A set given back may come back with another image: it is no longer known as bound (ws211-p003). */
+	/* A set given back may come back with another image: it is no longer known as bound. */
 	if (set != VK_NULL_HANDLE && set == compose->bound_set)
 		kwl_compose_bind_forget(compose);
 
@@ -2717,7 +2730,7 @@ compose_quad(
 }
 
 /*
- * Counts one draw of the frame being recorded (KWL DRAWS, ws211-p002): a
+ * Counts one draw of the frame being recorded (KWL DRAWS): a
  * glass shape (shape nonzero) or a window's quad, in the section drawn now,
  * and whether its pipeline and descriptor set differ from the draw before.
  * Only with --log-frames.
@@ -2770,7 +2783,7 @@ compose_quad_part(
 	float height;
 	int visible;
 
-	/* The output drawn: the anchor, or a head's part of the plane (ws113-p007). */
+	/* The output drawn: the anchor, or a head's part of the plane. */
 	width = (float)server->width;
 	height = (float)server->height;
 	if (server->view_width != 0U) {
@@ -2780,7 +2793,7 @@ compose_quad_part(
 		height = (float)server->view_height;
 	}
 
-	/* Omit images wholly outside the pass scissor, or between the damage's rectangles (ws211-p009). */
+	/* Omit images wholly outside the pass scissor, or between the damage's rectangles. */
 	visible = kwl_compose_clip_visible(server->compose, (float)x, (float)y, (float)quad_width, (float)quad_height);
 	if (!visible)
 		return;
@@ -2804,7 +2817,7 @@ compose_quad_part(
 /*
  * Works out the part of a swapchain image a frame draws: the damage of
  * this frame and of every frame since the image was last drawn (its buffer
- * age), as rectangles that do not overlap (ws211-p009 D2).  Returns 1 with
+ * age), as rectangles that do not overlap.  Returns 1 with
  * the box around them and the rectangles, or 0 when the whole image is
  * drawn: a change of unknown extent, an image not drawn lately, or damage
  * over most of the output.
@@ -2853,7 +2866,7 @@ compose_region(
 }
 
 /*
- * Works out a turned output's parts of a frame (WS217): the swapchain's
+ * Works out a turned output's parts of a frame: the swapchain's
  * image's damage (region, rects, count: its buffer age, logical) turned to
  * the physical rectangles of the turn pass, and the turn image's own.
  */
@@ -2928,7 +2941,7 @@ compose_turn_regions(
 }
 
 /*
- * Works out the part of the turn image a frame draws (WS217): the damage
+ * Works out the part of the turn image a frame draws: the damage
  * since it was last drawn, as compose_region does for a swapchain image
  * (the turn image is drawn in every frame, so usually this frame's alone).
  * Called after compose_region, which keeps this frame's damage.
@@ -3082,7 +3095,7 @@ compose_region_since(
  * Records a frame: the background, then each window from the bottom.  A
  * partial frame (region) draws inside its damage's rectangles (rects,
  * rect_count of them, inside region); two or more are drawn apart in one
- * pass over the box around them (ws211-p009 D3).
+ * pass over the box around them.
  */
 static VkResult
 compose_record(
@@ -3108,7 +3121,7 @@ compose_record(
 	unsigned reuse;
 	unsigned capture;
 
-	/* The part of the image the scene is drawn in, and the image and framebuffer it is drawn into (WS217: the turn image's). */
+	/* The part of the image the scene is drawn in, and the image and framebuffer it is drawn into (the turn image's). */
 	region = drawn->region;
 	rects = drawn->rects;
 	rect_count = drawn->count;
@@ -3118,7 +3131,7 @@ compose_record(
 	if (compose->turn.image != VK_NULL_HANDLE)
 		framebuffer = compose->turn.framebuffer;
 
-	/* A fresh list for the frame's drawing, which compose_replay records (ws213-p003); no rectangle is drawn apart yet. */
+	/* A fresh list for the frame's drawing, which compose_replay records; no rectangle is drawn apart yet. */
 	command = &compose->list;
 	kwl_compose_list_begin(compose);
 	compose->clip_count = 0U;
@@ -3129,7 +3142,7 @@ compose_record(
 	 * the cursor on its plane no frame differs from the one before by the
 	 * cursor alone, so none could reuse it (all 266 frames of the Pi's
 	 * 2026-10-12 boot were reuse=0), and capturing it cost a whole-image
-	 * copy and a second pass each frame (ws211-p002 段 0b).  One value
+	 * copy and a second pass each frame.  One value
 	 * decides the whole frame's use of it (review-2 N1); a frame without
 	 * the capture leaves the scene unknown, so the first after the plane
 	 * closes is drawn whole.
@@ -3182,7 +3195,7 @@ compose_record(
 			capture);
 	}
 
-	/* The frame's draws are counted from nothing (KWL DRAWS, ws211-p002). */
+	/* The frame's draws are counted from nothing (KWL DRAWS). */
 	memset(&server->draw_counts, 0, sizeof(server->draw_counts));
 	server->draw_section = KWL_SECTION_OTHER;
 
@@ -3190,24 +3203,24 @@ compose_record(
 	if (!reuse)
 		kwl_hover_begin(server, region == NULL);
 
-	/* The clients' images imported since the last frame go to the layout they are sampled in (ws099-p016). */
+	/* The clients' images imported since the last frame go to the layout they are sampled in. */
 	kwl_import_layouts_record(compose, command);
 
-	/* The pictures App Home's animation lacks, drawn before the frame's pass (layer-cache.c, ws211-p002). */
+	/* The pictures App Home's animation lacks, drawn before the frame's pass (layer-cache.c). */
 	compose->frame_layers_generation = compose->layers.generation;
 	kwl_layers_inband(server, command, windows, count);
 
-	/* The pictures a window's dock or undock animation shows, drawn in its first frame (layer-cache.c, ws211-p007). */
+	/* The pictures a window's dock or undock animation shows, drawn in its first frame (layer-cache.c). */
 	kwl_layers_anim_inband(server, command, windows, count);
 
-	/* The anchor's pass: its own part of the plane (ws113-p007). */
+	/* The anchor's pass: its own part of the plane. */
 	server->view_output = KWL_PLANE_ANCHOR;
 	server->view_x = 0;
 	server->view_y = 0;
 	server->view_width = 0U;
 	server->view_height = 0U;
 
-	/* Removes every older cursor covered by buffer-age damage before drawing its new place: each rectangle, not their box (ws211-p009 D4). */
+	/* Removes every older cursor covered by buffer-age damage before drawing its new place: each rectangle, not their box. */
 	if (reuse)
 		kwl_scene_copy(&compose->scene, command, target, kwl_compose_target_layout(compose), rects, rect_count, 1U);
 
@@ -3320,14 +3333,14 @@ compose_record(
 	compose->clip_count = 0U;
 	compose->clip_scissor_valid = 0U;
 
-	/* A turned output's picture copied turned onto the swapchain's image, in that image's own damage (WS217). */
+	/* A turned output's picture copied turned onto the swapchain's image, in that image's own damage. */
 	if (compose->turn.image != VK_NULL_HANDLE)
 		kwl_turn_record(server, command, image, &drawn->present_area, drawn->present_rects, drawn->present_count);
 
-	/* A test image's capture copies the finished image (shot.c; nothing elsewhere, ws173-p002). */
+	/* A test image's capture copies the finished image (shot.c; nothing elsewhere). */
 	kwl_shot_record(server, command, compose->output.images[image]);
 
-	/* The heads' pictures: the desktop copied (mirror, from the turn image when it turns), or the wallpaper (extended, ws113-p004b). */
+	/* The heads' pictures: the desktop copied (mirror, from the turn image when it turns), or the wallpaper (extended). */
 	kwl_heads_record(server, command, target, kwl_compose_target_layout(compose));
 
 	/* The scene's hover tests, including the heads' bars, are all recorded. */
@@ -3364,7 +3377,7 @@ compose_cursor(
 
 	/*
 	 * A drag and drop's icon under the cursor (its surface's corner at the
-	 * pointer moved by its attach offsets, ws189-p002), or the compositor's
+	 * pointer moved by its attach offsets), or the compositor's
 	 * badge in the glass look (data.c); in the glass look the mark of what
 	 * the drop would do over it (shell.c).
 	 */
@@ -3386,7 +3399,7 @@ compose_cursor(
 			kwl_glass_draw_drag_mark(server, command, server->dnd_state);
 	}
 
-	/* A cursor that has not moved since the start is not drawn (ws035-p116). */
+	/* A cursor that has not moved since the start is not drawn. */
 	if (server->pointer_unmoved)
 		return;
 
@@ -3394,7 +3407,7 @@ compose_cursor(
 	if (server->compose->cursor_plane.shown)
 		return;
 
-	/* A client's cursor only over its own window (BUG-118): elsewhere the frame's arrow or the compositor's. */
+	/* A client's cursor only over its own window: elsewhere the frame's arrow or the compositor's. */
 	shown = kwl_cursor_client_shown(server);
 	if (!shown) {
 		if (server->frame_edges != 0U) {
@@ -3436,7 +3449,7 @@ compose_cursor(
 		return;
 	}
 
-	/* A shape the client asked for, its hotspot at the pointer (cursor.c, ws035-p080). */
+	/* A shape the client asked for, its hotspot at the pointer (cursor.c). */
 	image = kwl_cursor_image(server, &hotspot_x, &hotspot_y);
 	if (image != NULL) {
 		compose_quad(server, command, image, server->pointer_x - hotspot_x, server->pointer_y - hotspot_y);
@@ -3531,7 +3544,7 @@ kwl_compose_cursor_source(
 
 /*
  * Keeps one drawing's walk and replay times and how many things it drew,
- * for the five seconds' KWL PERF walk (ws213-p003); a drawing past the
+ * for the five seconds' KWL PERF walk; a drawing past the
  * window's room is only counted.
  */
 static void
@@ -3544,7 +3557,7 @@ compose_walk_timed(
 	struct kwl_perf *perf;
 	uint32_t slot;
 
-	/* The pass's walks, for its KWL SLOW_PASS line (ws213-p004). */
+	/* The pass's walks, for its KWL SLOW_PASS line. */
 	perf = &server->perf;
 	perf->pass_walk_cycles += walk;
 
@@ -3564,7 +3577,7 @@ compose_walk_timed(
 }
 
 /*
- * Logs the submitted frame's draws (KWL DRAWS, --log-frames, ws211-p002):
+ * Logs the submitted frame's draws (KWL DRAWS, --log-frames):
  * the shapes and the windows' quads, those of App Home, the desktop layer,
  * the system bar and the rest, the pipeline and descriptor set changes,
  * whether the frame captured the scene, and the host images copied first.
@@ -3600,7 +3613,7 @@ compose_log_draws(
 /*
  * Gives the drawing written into the list since kwl_compose_list_begin to
  * the render thread as a layer's picture that presents nothing
- * (layer-cache.c, ws213-p004): the host images written up to now are
+ * (layer-cache.c): the host images written up to now are
  * copied first, as for a frame.  The render thread must be ready for the
  * layer (kwl_compose_want_layer).  The caller sets frame_bake.
  */
@@ -3885,7 +3898,7 @@ compose_message(
 		if (message->number == compose->want_number)
 			compose->want_kind = KWL_RENDER_NONE;
 
-		/* The display went (unplugged, or another generation): no frame until the output moves (ws113-p004a). */
+		/* The display went (unplugged, or another generation): no frame until the output moves. */
 		result = message->result;
 		if (result == VK_ERROR_SURFACE_LOST_KHR || result == VK_ERROR_OUT_OF_DATE_KHR) {
 			if (!compose->output_lost) {
@@ -3981,7 +3994,7 @@ compose_completed(
 	kwl_callbacks_done(&compose->callbacks);
 	compose->in_flight = 0;
 
-	/* A test image's capture sends the frame it copied (shot.c, ws173-p002). */
+	/* A test image's capture sends the frame it copied (shot.c). */
 	kwl_shot_complete(server);
 	if (server->log_frames)
 		printf("KWL LAT shown frame=%llu at_us=%llu\n", (unsigned long long)compose->frame_number, (unsigned long long)kwl_microseconds());
@@ -4002,7 +4015,7 @@ compose_completed(
 
 /*
  * Applies a completed frame's presents: a move's first frame proves the
- * move or sends the output back (BUG-266), a display gone is lost, the
+ * move or sends the output back, a display gone is lost, the
  * heads' presents are applied, and the frame's lines go out.
  */
 static void
@@ -4013,7 +4026,7 @@ compose_frame_presented(
 	struct kwl_compose *compose;
 	VkResult result;
 
-	/* The render thread's times of the frame (KWL LAT, ws213-p001 11 節 4). */
+	/* The render thread's times of the frame (KWL LAT). */
 	compose = server->compose;
 	if (server->log_frames) {
 		printf("KWL LAT recorded frame=%llu at_us=%llu\n", (unsigned long long)compose->frame_number, (unsigned long long)outcome->recorded_us);
@@ -4023,7 +4036,7 @@ compose_frame_presented(
 	}
 
 	/*
-	 * A move's first frame that the display refused (BUG-266: the display
+	 * A move's first frame that the display refused (the display
 	 * could not be lit): the frame still completed, and the output goes
 	 * back to the display it left (output-switch.c) instead of the
 	 * compositor ending.
@@ -4047,7 +4060,7 @@ compose_frame_presented(
 		kwl_displays_move_settled(server, 0);
 	}
 
-	/* The display went: the output moves (ws113-p004a). */
+	/* The display went: the output moves. */
 	if (result == VK_ERROR_SURFACE_LOST_KHR || result == VK_ERROR_OUT_OF_DATE_KHR) {
 		printf("KWL OUTPUT lost operation=present result=%d\n", (int)result);
 		if (!compose->output_lost)
@@ -4055,7 +4068,7 @@ compose_frame_presented(
 		result = VK_SUCCESS;
 	}
 
-	/* The heads' presents (ws113-p004b). */
+	/* The heads' presents. */
 	kwl_heads_presented(server, outcome);
 
 	/* Any other failure of the present is the compositor's. */
@@ -4126,7 +4139,7 @@ compose_op_acquire_head(
 
 /*
  * Records the list into the command buffers, submits it and presents the
- * job's images, for the render thread (ws213-p004): the host images'
+ * job's images, for the render thread: the host images'
  * copies first in the same submission; a frame waits for the acquired
  * images (the output's, then the heads') and signals their present
  * semaphores.  The outcome says what each step came to and when.
@@ -4236,7 +4249,7 @@ compose_op_run(
 	present.pImageIndices = &job->output_image;
 	outcome->present_result = vkQueuePresentKHR(compose->queue, &present);
 
-	/* Each head's image to its display after the commands (ws113-p004b). */
+	/* Each head's image to its display after the commands. */
 	for (index = 0U; index < KWL_HEADS; index++) {
 		if (!job->heads[index])
 			continue;
@@ -4287,7 +4300,7 @@ compose_op_wait(
 
 /*
  * Records the list into the frame's command buffers, for the render thread
- * (ws213-p003, p004): the copies of the host images it took into
+ * (p004): the copies of the host images it took into
  * copy_command, its vertices of the joined quads into the batch's vertex
  * buffer (no drawing is in flight), and its operations into command.
  */
@@ -4303,7 +4316,7 @@ compose_replay_commands(
 	/*
 	 * Beginning a command buffer resets it (its pool has
 	 * VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT), without a call of
-	 * its own (a round trip less under Venus, ws099-p002).
+	 * its own (a round trip less under Venus).
 	 */
 	memset(&begin, 0, sizeof(begin));
 	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -4312,7 +4325,7 @@ compose_replay_commands(
 	/*
 	 * The host images' copies, which run before the drawing in the same
 	 * submission.  Most frames copy none, and then copy_command is neither
-	 * begun nor ended: each is a round trip to the kernel (ws211-p010), and
+	 * begun nor ended: each is a round trip to the kernel, and
 	 * compose_op_run submits copy_command only when frame_copies says so.
 	 */
 	compose->frame_copies = 0U;
@@ -4358,7 +4371,7 @@ compose_replay_commands(
 	return VK_SUCCESS;
 }
 
-/* Adds a frame's render-thread steps to the window's KWL PERF rec line (ws211-p010). */
+/* Adds a frame's render-thread steps to the window's KWL PERF rec line. */
 static void
 compose_rec_timed(
 	struct kwl_server *server,
