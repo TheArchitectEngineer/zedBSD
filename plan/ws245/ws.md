@@ -69,7 +69,7 @@ Resume point: 2026-10-16 q1218（P1）の区切り: 次は **p018**（[phase018]
 - p026: src/drivers/gpu/i915/display/dmc.c（中身は消して vmunix.mk から外し済み）。
 - p029: src/drivers/gpu/i915/display/phy.c・phy.h（中身は消し、vmunix.mk から外し済み）。
 - p037: src/drivers/gpu/i915/tests/display/host-native-decide-test.c（中身は消した）、plan/ws084/tests/run-native-decide-host-test.sh（参照されない）。
-- p040（P6、agent/p6-ws245 の 806e0b063）: src/drivers/gpu/i915/display/dkl-phy.c・dkl-phy.h・src/drivers/gpu/i915/intel/dkl.h（中身は空）。master の Tools の plan/ws051/tests/host-tc.sh が dkl-phy.c を grep/sed する 2 行と host-tc-tables.c の DKL の 3 check は、窓の check が host-xd-tc-test に移ったので merge の時に消す。
+- p040（P6、agent/p6-ws245 の 806e0b063、p044 は aa14ff623）: src/drivers/gpu/i915/display/dkl-phy.c・dkl-phy.h・src/drivers/gpu/i915/intel/dkl.h（中身は空）。master の Tools の plan/ws051/tests/host-tc.sh が dkl-phy.c を grep/sed する 2 行と host-tc-tables.c の DKL の 3 check は、窓の check が host-xd-tc-test に移ったので merge の時に消す。
 - p028〜: master の Tools の plan/ws051/tests/host-vbt-pll.sh が takeover.c の PLL の表を読めず FAIL になる（表は xd の platform の表へ、PLL の check は host-xd-dpll-test へ移った）。merge の時に道具から adlp_plls の部分を外すか DVO だけの道具にし、Tools の行を直す。
 
 ## 全部を実装してから試験（2026-10-16 夕 ユーザー）
