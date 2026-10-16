@@ -27,6 +27,15 @@ for test in host-xd-regs-test host-xd-io-test host-xd-platform-test host-xd-vbt-
 		failed=1
 	fi
 done
+# The xd files may not reach internal.h, the older display code's header, even through another header: each is
+# compiled with I915_XD_STRICT, which internal.h refuses.
+for source in src/drivers/gpu/i915/display/xd-*.c; do
+	if ! ${CC:-cc} -std=gnu11 -DKERN_USER_ABI_LP64 -Iinclude -Isrc -I. -idirafter libc/include -DI915_XD_STRICT \
+	    -fsyntax-only "$source"; then
+		echo "run-xd-host-tests: $source reaches internal.h" >&2
+		failed=1
+	fi
+done
 if [ "$failed" -ne 0 ]; then
 	echo "run-xd-host-tests: FAILED" >&2
 	exit 1

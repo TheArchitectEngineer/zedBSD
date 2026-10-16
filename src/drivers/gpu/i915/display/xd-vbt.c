@@ -112,6 +112,7 @@ static const uint32_t i915_xd_sha256_initial[8] = {
 	0x6a09e667U, 0xbb67ae85U, 0x3c6ef372U, 0xa54ff53aU, 0x510e527fU, 0x9b05688cU, 0x1f83d9abU, 0x5be0cd19U
 };
 
+static int i915_xd_opregion_copy(const struct i915_xd_opregion_access *access, uint64_t address, size_t size, uint8_t *copy);
 static uint32_t i915_xd_vbt_u8(const uint8_t *bytes, size_t size, size_t offset);
 static uint32_t i915_xd_vbt_u16(const uint8_t *bytes, size_t size, size_t offset);
 static uint32_t i915_xd_vbt_u32(const uint8_t *bytes, size_t size, size_t offset);
@@ -232,6 +233,107 @@ drv_i915_xd_opregion_find_vbt(
 	where->raw_size = raw_size;
 
 	/* Succeeded: the raw VBT and mailbox 4 are found. */
+	return 0;
+}
+
+/*
+ * Reads the OpRegion at a physical address and copies the VBT it keeps.
+ *
+ * The 8 KiB OpRegion is copied to opregion_copy.  The raw VBT is tried
+ * first, as the OpRegion names it; one that lies inside the OpRegion
+ * itself, is larger than vbt_room, cannot be mapped or does not check is
+ * passed over, and the VBT in mailbox 4 is tried next.  The VBT taken is
+ * copied to vbt_copy and hashed.  Returns 0 (also when ASLS is 0: there
+ * is no OpRegion), EIO when the OpRegion cannot be mapped, EINVAL when it
+ * has no OpRegion signature, or ENOENT when neither place holds a VBT
+ * that checks.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_opregion.c (intel_opregion_setup).
+ */
+int
+drv_i915_xd_opregion_read(
+	const struct i915_xd_opregion_access *access,
+	uint32_t asls,
+	uint8_t *opregion_copy,
+	uint8_t *vbt_copy,
+	size_t vbt_room,
+	struct i915_xd_opregion_read *read)
+{
+	uint64_t opregion_end;
+	uint64_t raw_end;
+	int checked;
+	int error;
+
+	/* Starts with nothing found. */
+	kern_memset(read, 0, sizeof(*read));
+	read->source = I915_XD_VBT_FROM_NONE;
+	read->raw_status = I915_XD_OPREGION_RAW_ABSENT;
+
+	/* ASLS 0 means the firmware has no OpRegion. */
+	if (asls == 0U)
+		return 0;
+
+	/* There is an OpRegion; the rest says whether it could be read. */
+	read->present = 1;
+
+	/* Copies the OpRegion. */
+	error = i915_xd_opregion_copy(access, asls, I915_XD_OPREGION_BYTES, opregion_copy);
+	if (error != 0)
+		return EIO;
+	read->mapped = 1;
+
+	/* Finds where it keeps its VBT. */
+	error = drv_i915_xd_opregion_find_vbt(opregion_copy, I915_XD_OPREGION_BYTES, asls, &read->where);
+	if (error != 0)
+		return EINVAL;
+	read->found = 1;
+
+	/* Decides whether the raw VBT can be taken. */
+	opregion_end = (uint64_t)asls + I915_XD_OPREGION_BYTES;
+	raw_end = read->where.raw_address + read->where.raw_size;
+	if (read->where.raw_size == 0U) {
+		/* The OpRegion names no raw VBT. */
+		read->raw_status = I915_XD_OPREGION_RAW_ABSENT;
+	} else if (read->where.raw_address < opregion_end && raw_end > asls) {
+		/* A raw VBT overlapping the OpRegion is a firmware error. */
+		read->raw_status = I915_XD_OPREGION_RAW_INSIDE;
+	} else if (read->where.raw_size > vbt_room) {
+		/* A raw VBT larger than the copy is not taken. */
+		read->raw_status = I915_XD_OPREGION_RAW_TOO_LARGE;
+	} else {
+		/* Copies the raw VBT and checks it. */
+		read->raw_status = I915_XD_OPREGION_RAW_UNMAPPED;
+		error = i915_xd_opregion_copy(access, read->where.raw_address, read->where.raw_size, vbt_copy);
+		if (error == 0) {
+			read->raw_status = I915_XD_OPREGION_RAW_UNCHECKED;
+			checked = drv_i915_xd_vbt_check(vbt_copy, read->where.raw_size);
+			if (checked == 0)
+				read->raw_status = I915_XD_OPREGION_RAW_USED;
+		}
+	}
+
+	/* Takes the raw VBT when it checked. */
+	if (read->raw_status == I915_XD_OPREGION_RAW_USED) {
+		read->source = I915_XD_VBT_FROM_RAW;
+		read->vbt_size = read->where.raw_size;
+	} else {
+		/* Copies mailbox 4 out of the OpRegion copy and checks it. */
+		if (read->where.mailbox_size > vbt_room)
+			return ENOENT;
+		kern_memcpy(vbt_copy, opregion_copy + read->where.mailbox_offset, read->where.mailbox_size);
+		checked = drv_i915_xd_vbt_check(vbt_copy, read->where.mailbox_size);
+		if (checked != 0)
+			return ENOENT;
+		read->source = I915_XD_VBT_FROM_MAILBOX;
+		read->vbt_size = read->where.mailbox_size;
+	}
+
+	/* Hashes the VBT taken. */
+	read->vbt_valid = 1;
+	drv_i915_xd_sha256(vbt_copy, read->vbt_size, read->vbt_sha256);
+
+	/* Succeeded: the VBT is in vbt_copy. */
 	return 0;
 }
 
@@ -2112,3 +2214,33 @@ i915_xd_sha256_rotr(
 	/* Succeeded: the rotated word. */
 	return (word >> count) | (word << (32U - count));
 }
+
+/* Copies size bytes of physical memory through the reader's mapping; 0, or the mapping's errno. */
+static int
+i915_xd_opregion_copy(
+	const struct i915_xd_opregion_access *access,
+	uint64_t address,
+	size_t size,
+	uint8_t *copy)
+{
+	const volatile uint8_t *bytes;
+	size_t index;
+	int error;
+
+	/* Maps the memory readable. */
+	bytes = NULL;
+	error = access->map(access->context, address, size, &bytes);
+	if (error != 0)
+		return error;
+	if (bytes == NULL)
+		return EIO;
+
+	/* Copies it a byte at a time (device memory) and gives the mapping back. */
+	for (index = 0U; index < size; index++)
+		copy[index] = bytes[index];
+	access->unmap(access->context, bytes, size);
+
+	/* Succeeded: the bytes are in the copy. */
+	return 0;
+}
+

@@ -92,7 +92,7 @@
 /* The pipes the takeover registry holds one crtc and one primary plane for. */
 #define I915_N1_PIPES 4
 
-/* The Type-C ports the takeover registry can hold a readout encoder for (TC1 to TC4, ws051-p004b). */
+/* The Type-C ports the takeover registry can hold a readout encoder for (TC1 to TC4). */
 #define I915_N1_TC_PORTS 4
 
 /* The encoders and connectors of the registry: the bound screen's and one per declared Type-C port. */
@@ -294,8 +294,6 @@
 /* The watermark readout of this platform (skl_wm_get_hw_state), static in its own file. */
 #define intel_wm_get_hw_state(i915) drv_i915_lcd_wm_get_hw_state(i915)
 
-/* The firmware notification of a sanitized encoder (opregion.c). */
-#define intel_opregion_notify_encoder(encoder, enable) drv_i915_opregion_notify_encoder((int)(encoder)->port, (encoder)->type, (enable))
 
 /* A debug line at notice level: this path has one log (the Linux drm_notice()). */
 #define I915_TAKEOVER_DRM_NOTICE(dev, fmt, ...) I915_LCD_DRM_DBG_KMS(dev, fmt, ##__VA_ARGS__)
@@ -453,7 +451,7 @@ struct intel_pmdemand_state {
  * The takeover registry: the device's objects as the readout walks them --
  * one crtc and one primary plane per pipe, the encoder and connector of
  * the screen the DDI callers are bound to, and an encoder and connector
- * for each Type-C port the display declares (ws051-p004b) -- and the
+ * for each Type-C port the display declares -- and the
  * device-wide states the takeover clears.
  *
  * The runner builds it from the same configuration the modeset object is
@@ -543,7 +541,7 @@ struct i915_takeover_world {
 	struct i915_display *display;
 
 	/*
-	 * The Type-C ports' readout objects (ws051-p004b): each one's encoder
+	 * The Type-C ports' readout objects: each one's encoder
 	 * and connector are the registry's for that port, with the port's own
 	 * DDI hooks and AUX channel, so a crtc the firmware left on the port
 	 * is read out on it and stopped through it.  Cleared and built with
@@ -595,7 +593,7 @@ bool skl_ddb_allocation_overlaps(const struct skl_ddb_entry *ddb, const struct s
 u32 skl_ddb_dbuf_slice_mask(struct drm_i915_private *i915, const struct skl_ddb_entry *entry);
 
 /*
- * P1 exports: the DPLL and CDCLK readout functions of clock.c under the
+ * exports: the DPLL and CDCLK readout functions of clock.c under the
  * names they are exported by.
  */
 struct intel_shared_dpll *drv_i915_get_shared_dpll_by_id(struct drm_i915_private *i915, enum intel_dpll_id id);
@@ -614,8 +612,6 @@ void drv_i915_lcd_plane_disable_arm(struct intel_plane *plane, const struct inte
 /* The watermark readout (skl_wm_get_hw_state), static in its own file. */
 void drv_i915_lcd_wm_get_hw_state(struct drm_i915_private *i915);
 
-/* The firmware notification of a sanitized encoder (opregion.c). */
-int drv_i915_opregion_notify_encoder(int port, int output_type, int enable);
 
 /* The plane readout hook, static in its own file (plane.c). */
 bool (*i915_lcd_plane_get_hw_state(void))(struct intel_plane *plane, enum pipe *pipe);

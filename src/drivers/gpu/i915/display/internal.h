@@ -39,7 +39,7 @@
  *   the display root    struct i915_display, which the device owns and which
  *                       holds every long-lived display object.
  *
- * The Linux display code is compiled in one of five Linux environments,
+ * The Linux display code is compiled in one of four Linux environments,
  * each a private header of its own:
  *
  *   modeset-internal.h   the modeset, DDI, DPLL, plane, colour, backlight and
@@ -49,7 +49,6 @@
  *                        EDID text (on vbt.h);
  *   vbt.h                the VBT parser's environment;
  *   hotplug-internal.h   the hotplug, GMBUS and HDMI detect text;
- *   opregion-internal.h  the OpRegion and ACPI text.
  *
  * The same Linux type name (struct drm_i915_private, struct intel_dp,
  * struct drm_display_mode and others) has a different layout in each
@@ -69,6 +68,14 @@
 #ifndef DRIVERS_GPU_I915_DISPLAY_INTERNAL_H
 #define DRIVERS_GPU_I915_DISPLAY_INTERNAL_H
 
+/*
+ * The xd display files are compiled with I915_XD_STRICT by their check, so
+ * a path by which one of them reaches this header stops the compile.
+ */
+#ifdef I915_XD_STRICT
+#error "an xd display file includes internal.h, the older display code's header"
+#endif
+
 #include <limits.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -84,6 +91,7 @@
 #include "dkl-phy.h"
 #include "dp-ext.h"
 #include "tc.h"
+#include "xd.h"
 
 /*
  * The old name of struct i915_display_mode (display-internal.h).
@@ -417,7 +425,7 @@ struct i915_cdclk_dev;
 /*
  * Context for the power-well operation bodies: the MMIO handle, the VGA client
  * (has_vga post-enable) and the IRQ-enabled gate (intel_irqs_enabled(); 0 before
- * P4).  The *_calls counters are diagnostics the GPU-free tests observe.
+ * the interrupts are set up).  The *_calls counters are diagnostics the GPU-free tests observe.
  */
 struct i915_dkl_phy;
 struct i915_pw_ctx {
@@ -489,7 +497,7 @@ struct i915_pmdemand {
  * (bxt_get_cdclk via the DE PLL / CDCLK_CTL), sanitises it (bxt_sanitize_cdclk),
  * and only if the state is not a legal freq/VCO for this platform reprograms it
  * (bxt_set_cdclk, using the common PCODE mailbox).  This is intel_cdclk_init_hw,
- * NOT intel_cdclk_init (which reprograms to the min cdclk later in P3).
+ * NOT intel_cdclk_init (which reprograms to the min cdclk later in the start).
  */
 
 struct mutex;
@@ -581,7 +589,7 @@ struct i915_display_core {
 	struct i915_mmio *m;              /* the one MMIO backend */
 	struct mutex *sb_lock;             /* the one PCODE sideband lock */
 
-	/* DRAM info carried from P2 (BW_BUDDY table lookup). */
+	/* DRAM info read at the start (BW_BUDDY table lookup). */
 	int dram_type;                     /* enum i915_dram_type */
 	unsigned dram_channels;
 
@@ -602,7 +610,7 @@ struct i915_display_core {
 	 */
 	uint8_t is_alderlake_p;
 	int init_wakeref_held;             /* POWER_DOMAIN_INIT domain reference held */
-	int core_suspended;                /* the display core was taken down for a suspend (ws052-p009) */
+	int core_suspended;                /* the display core was taken down for a suspend */
 	int pm_wakeref;                    /* runtime-PM side of the init wakeref */
 
 	/* Diagnostics. */
@@ -772,7 +780,7 @@ struct i915_bw_state {
  * The display software state (state.c, watermark.c).
  */
 /*
- * P3 tail: intel_mode_config_init() .. intel_fbc_init().
+ * tail: intel_mode_config_init() .. intel_fbc_init().
  *
  * Ports the remainder of intel_display_driver_probe_noirq() that follows the
  * (asynchronous) DMC load and the modeset/flip workqueues:
@@ -792,7 +800,7 @@ struct i915_bw_state {
  *
  * Note the two distinct "bw" states the reference keeps, which the port also
  * keeps apart:
- *   - display.bw.max[] / sagv.status  -- the PCODE-probed HW table from P2,
+ *   - display.bw.max[] / sagv.status  -- the PCODE-probed HW table from the start,
  *     already owned by struct i915_bw_state (internal.h).
  *   - struct intel_bw_state           -- the ATOMIC global state object created
  *     here, holding qgv_points_mask (i915_bw_obj_state below).
@@ -956,7 +964,7 @@ enum i915_quirk_id {
 
 /*
  * ---------------------------------------------------------------- *
- * Device-owned P3-tail display state
+ * Device-owned display state of the noirq tail
  * ----------------------------------------------------------------
  */
 
@@ -1013,9 +1021,9 @@ struct i915_display_state {
  * The output setup, readout and sanitize (takeover.c).
  */
 /*
- * P5: intel_display_driver_probe_nogem().
+ * intel_display_driver_probe_nogem().
  *
- * P5-a covers the front section, up to (but not including) intel_setup_outputs():
+ * covers the front section, up to (but not including) intel_setup_outputs():
  *
  *   intel_wm_init            -> skl_wm_init: intel_sagv_init + skl_setup_wm_latency
  *   intel_panel_sanitize_ssc -> LVDS/SSC; nothing to do on ADL-P
@@ -1030,7 +1038,7 @@ struct i915_display_state {
  *
  * The DRM object model (drm_crtc / drm_plane / drm_encoder / drm_connector) is
  * NOT brought in; CRTCs, planes and shared DPLLs are the minimal records
- * the readout and sanitize phases (P5-c / P5-d) actually consume.
+ * the readout and sanitize phases actually consume.
  *
  * Confirmed from the reference device tables rather than assumed, for ADL-P
  * (xe_lpd, DISPLAY_VER 13, PCH_ADP):
@@ -1101,7 +1109,7 @@ struct i915_encoder {
 	int init_hdmi, init_dp;
 	uint8_t dvo_port;
 	uint32_t device_type;
-	/* readout (P5-c) */
+	/* readout */
 	int crtc_linked;        /* encoder->base.crtc != NULL */
 	unsigned pipe_mask;
 	int is_mst;
@@ -1125,18 +1133,18 @@ struct i915_plane {
 	int id;                 /* enum plane_id: PLANE_PRIMARY=0, SPRITE0.., CURSOR */
 	int type;               /* enum i915_plane_type */
 	unsigned pipe;
-	int visible;            /* plane_state->uapi.visible (readout, P5-c) */
+	int visible;            /* plane_state->uapi.visible (readout) */
 	int in_use;
 };
 
-/* intel_crtc + the parts of intel_crtc_state P5 fills in. */
+/* intel_crtc + the parts of intel_crtc_state the nogem probe fills in. */
 struct i915_crtc_state {
 	int active;             /* hw.active */
 	int enable;             /* hw.enable */
 	int cpu_transcoder;     /* -1 = INVALID_TRANSCODER */
 	int inherited;
 	unsigned active_planes;
-	/* readout results (P5-c) */
+	/* readout results */
 	uint32_t transconf;
 	uint32_t trans_ddi_func_ctl;
 	unsigned enabled_transcoders;   /* hsw_enabled_transcoders() bitmask */
@@ -1181,7 +1189,7 @@ struct i915_dpll {
 	int funcs;              /* enum i915_dpll_funcs */
 	unsigned index;
 	uint32_t enable_reg;
-	int on;                 /* readout (P5-c) */
+	int on;                 /* readout */
 	unsigned pipe_mask;
 	unsigned active_mask;
 	int readout_incomplete; /* an active pipe's PLL could not be read (e.g. TC get_pll not ported): never disable */
@@ -1243,7 +1251,7 @@ struct i915_display_nogem {
 	int vga_already_disabled;
 	int vga_disable_done;
 
-	/* intel_setup_outputs (P5-b) */
+	/* intel_setup_outputs */
 	struct i915_encoder encoders[I915_NOGEM_MAX_ENCODERS];
 	unsigned num_encoders;
 	unsigned ddi_init_calls;
@@ -1264,7 +1272,7 @@ struct i915_display_nogem {
 	int edp_port;                       /* port whose eDP connector is live, or -1 */
 	int edp_init_rc;
 
-	/* intel_modeset_readout_hw_state (P5-c) */
+	/* intel_modeset_readout_hw_state */
 	unsigned active_pipes;          /* cdclk_state/dbuf_state->active_pipes */
 	unsigned readout_crtcs;
 	unsigned readout_planes_visible;
@@ -1279,7 +1287,7 @@ struct i915_display_nogem {
 	 */
 	int readout_detail_unimplemented;
 
-	/* intel_modeset_setup_hw_state, sanitize half (P5-d) */
+	/* intel_modeset_setup_hw_state, sanitize half */
 	int early_display_was_applied;   /* IS_DISPLAY_VER(10,12) only -> 0 on ADL-P */
 	int pch_sanitize_applied;        /* HAS_PCH_IBX only -> 0 */
 	int plane_mapping_sanitized;     /* DISPLAY_VER >= 4 returns -> 0 */
@@ -1312,11 +1320,11 @@ struct i915_display_nogem {
  * The Linux driver probe (display.c, hotplug.c, power.c).
  */
 /*
- * P7: the rest of i915_driver_probe() after i915_gem_init().
+ * the rest of i915_driver_probe() after i915_gem_init().
  *
  * The reference (i915_driver.c, 6.8.12):
- *   intel_pxp_init(i915)                 see pxp.h (P7-0)
- *   intel_display_driver_probe(i915)     P7-a, display/intel_display_driver.c:
+ *   intel_pxp_init(i915)                 see pxp.h
+ *   intel_display_driver_probe(i915)     display/intel_display_driver.c:
  *     intel_initial_commit()             an atomic commit that recomputes the
  *                                        plane state of every ACTIVE crtc; with
  *                                        no active crtc it commits nothing
@@ -1329,7 +1337,7 @@ struct i915_display_nogem {
  *                                        SDEIMR, SHOTPLUG_CTL_DDI/TC
  *     intel_hpd_poll_disable()           poll_enabled = false + poll_init_work
  *     skl_watermark_ipc_init()           HAS_IPC: DISP_ARB_CTL2.DISP_IPC_ENABLE
- *   i915_driver_register(i915)           P7-b:
+ *   i915_driver_register(i915):
  *     gem/pmu/vgpu/drm_dev/debugfs/sysfs/perf/gt sysfs/hwmon registrations
  *     intel_display_driver_register()    opregion register, acpi video, audio
  *                                        components, debugfs, fbdev config,
@@ -1460,7 +1468,7 @@ struct i915_driver_probe {
  *
  * Ports the drm_dev_init() side of DRM device state, a drmm managed-resource
  * list with the drm_add_action_or_reset() contract, and drm_vblank_init() /
- * drm_vblank_worker_init() for the display "noirq" bring-up (P3).  It does not
+ * drm_vblank_worker_init() for the display "noirq" bring-up.  It does not
  * open /dev/dri, start display output, or wait on real vblanks.
  */
 
@@ -1638,7 +1646,7 @@ struct i915_vbt {
  *
  * Structure-faithful port of intel_bios_init(): initialise the VBT device/block
  * lists, apply init_vbt_defaults(), then resolve the VBT from (1) the OpRegion
- * (carried from P2), else (2) the PCI expansion ROM read for real via config
+ * (read at the start), else (2) the PCI expansion ROM read for real via config
  * 0x30 + a device mapping.  A found+validated VBT is parsed (BDB blocks, general
  * features/definitions); a genuine absence takes init_vbt_missing_defaults()
  * (default child devices for the non-TC DDI ports).  DGFX SPI flash is NOT read
@@ -1653,7 +1661,7 @@ struct i915_pci;
  */
 enum i915_vbt_source {
 	I915_VBT_SRC_NONE = 0,     /* no VBT found -> missing defaults */
-	I915_VBT_SRC_OPREGION,     /* OpRegion mailbox #4 (from P2) */
+	I915_VBT_SRC_OPREGION,     /* OpRegion mailbox #4 (read at the start) */
 	I915_VBT_SRC_PCI_ROM,      /* PCI expansion ROM ($VBT) */
 	I915_VBT_SRC_EXPLICIT_BLOB, /* a named, hash-pinned blob the build asked for -- NOT an OpRegion */
 };
@@ -1691,64 +1699,13 @@ struct i915_vbt_state {
 /*
  * Whether the explicit VBT is asked for.
  *
- * Never: the test build's captured VBT of the test machine was removed
- * (plan/ws233/phase001/phase.md, 2026-10-14), so the kernel takes the VBT
+ * Never: the test build has no captured VBT of the test machine, so the kernel takes the VBT
  * from the OpRegion or the PCI ROM, or the Linux defaults.
  *
  * XXX: the explicit-blob bookkeeping it leaves (the EXPLICIT_BLOB source and
  * origin, the blob fields) is dead and can go with the next change of vbt.c.
  */
 #define I915_VBT_EXPLICIT 0
-
-/*
- * The OpRegion ACPI service (opregion.c).
- */
-/*
- * Linux-derived -- the ACPI notifier chain the i915 OpRegion code registers its receive callback on
- * (register_acpi_notifier / unregister_acpi_notifier / acpi_notifier_call_chain).  zedBSD project code.
- *
- * Contract followed (Linux v6.8.12 drivers/acpi/event.c + kernel/notifier.c, checked against the public sources; no
- * text is copied -- those files are GPL-2.0, this is an independent implementation of the interface contract):
- *   - register: priority order (higher first, equal priority after the existing ones); the same block twice -> -EEXIST.
- *   - unregister: removes the block; a block not on the chain -> -ENOENT.
- *   - call chain: each callback in order; a result with NOTIFY_STOP_MASK ends the walk; the chain's result is the last
- *     callback's (NOTIFY_DONE when nobody was called).  acpi_notifier_call_chain() returns -EINVAL when that result is
- *     NOTIFY_BAD, else 0.
- *   - blocking: callbacks run in a context that may sleep; register / unregister are serialised against a running call
- *     chain, so after unregister returns the callback is not running and is not called again.
- * ADAPTATION: one kernel mutex serialises everything (Linux uses an rwsem: concurrent dispatches may overlap there).
- * A callback must not register / unregister on this chain (it would deadlock, as with the rwsem).
- *
- * The event source is separate: today only synthetic events (tests); an ACPI (AML Notify) source is connected later
- * to the same i915_acpi_notifier_call_chain() entry.
- */
-
-struct notifier_block {
-	int (*notifier_call)(struct notifier_block *nb, unsigned long action, void *data);
-	struct notifier_block *next;
-	int priority;
-};
-
-#define NOTIFY_DONE      0x0000
-#define NOTIFY_OK        0x0001
-#define NOTIFY_STOP_MASK 0x8000
-#define NOTIFY_BAD       (NOTIFY_STOP_MASK | 0x0002)
-
-/* struct acpi_bus_event: acpi_device_class (char[20]) and acpi_bus_id (char[8]) */
-struct acpi_bus_event {
-	char device_class[20];
-	char bus_id[8];
-	uint32_t type;
-	uint32_t data;
-};
-
-/* what one dispatch did, kept apart: the callbacks' result, the dispatch's return value, how many ran */
-struct i915_acpi_dispatch {
-	const char *event_source;       /* "SYNTHETIC" today; "ACPI" once an AML Notify source exists */
-	int callback_result;            /* the chain's result (NOTIFY_*) */
-	int dispatch_result;            /* acpi_notifier_call_chain(): -EINVAL for NOTIFY_BAD, else 0 */
-	unsigned calls;
-};
 
 /*
  * The OpRegion VBT source (vbt.c).
@@ -1829,7 +1786,7 @@ struct i915_native_pipe {
 
 /*
  * The output the firmware (GOP) was scanning out when the driver started
- * (ws113-p002, the GPU scanout rule): the kind of interface, the pipe and
+ * (the GPU scanout rule): the kind of interface, the pipe and
  * the port (enum port, PORT_NONE when none), the transcoder's mode select
  * (TRANS_DDI_FUNC_CTL bits 26:24), and every pipe the firmware had lit.
  */
@@ -1837,7 +1794,7 @@ struct i915_native_pipe {
 #define I915_GOP_EDP		1U	/* DDI A in DP SST mode: the built-in panel */
 #define I915_GOP_HDMI		2U	/* DDI B in HDMI or DVI mode: the driver's HDMI path */
 #define I915_GOP_OTHER		3U	/* an interface this driver cannot light yet */
-#define I915_GOP_DP_TC		4U	/* a Type-C port's DDI in DP SST mode (DP-alt): the external DP path (ws051-p004c) */
+#define I915_GOP_DP_TC		4U	/* a Type-C port's DDI in DP SST mode (DP-alt): the external DP path */
 
 struct i915_gop_output {
 	unsigned kind;
@@ -1911,7 +1868,7 @@ struct i915_native_deps {
 };
 
 /*
- * The OpRegion as DATA (VBT_ONLY, ): P2 maps it read-only, copies the 8 KiB and the VBT it names, validates the
+ * The OpRegion as DATA (VBT_ONLY): the start maps it read-only, copies the 8 KiB and the VBT it names, checks the
  * VBT.  The runtime protocol (ACPI notifier, drdy / ardy / chpd / csts / DIDL / CADL, ASLE) is NOT joined: runtime =
  * DISABLED, reason ACPI_RUNTIME_UNAVAILABLE.  The mailboxes' current values are observed only.
  */
@@ -2113,7 +2070,7 @@ enum i915_lcd_observe {
 #define I915_LCD_EIO       (-5)
 
 /*
- * The DPCD access of one sink's own AUX channel (ws051-p004b).
+ * The DPCD access of one sink's own AUX channel.
  *
  * A modeset object whose sink is not the one the backend's DPCD hooks
  * reach (those reach the panel's) names one of these: an external DP
@@ -2234,7 +2191,7 @@ struct i915_lcd_emit {
  *
  * Calculation only: nothing is written to hardware.  The arithmetic is the
  * reference's own (generated files in this directory); the comparison target is
- * what Linux programmed on the same machine (plan/ws031/display-ref/).
+ * what Linux programmed on the same machine.
  *
  * NOT computed yet (LCD-A, next slices): DDI buffer translation / voltage swing,
  * transcoder timing register words, plane + scanout layout, CDCLK / bandwidth /
@@ -2254,7 +2211,7 @@ struct i915_lcd_link {
 };
 
 /*
- * The DKL PLL words of a Type-C port's link clock (ws051-p004b): what
+ * The DKL PLL words of a Type-C port's link clock: what
  * icl_calc_mg_pll_state() computes for display version 12 and later, one
  * word per DKL register.
  */
@@ -2450,7 +2407,7 @@ struct i915_lcd_trace {
 
 struct i915_lcd_modeset_cfg {
 	int output_hdmi;                /* 0 = the eDP panel (DP SST), 1 = an HDMI sink on a combo-PHY DDI */
-	int output_dp_ext;              /* 1 = an external DP sink (SST) on a Type-C port's DDI (ws051-p004b) */
+	int output_dp_ext;              /* 1 = an external DP sink (SST) on a Type-C port's DDI */
 	int vbt_hdmi_level_shift;       /* the VBT child's HDMI level shift for this port; < 0 = the VBT has none */
 	unsigned also_active_pipes;     /* the other pipes this configuration lights (BIT(pipe)): the DDB is
 	                                 * computed for the whole set, as the reference's atomic check would */
@@ -2517,7 +2474,7 @@ struct i915_lcd_modeset_status {
 	int dc_off_held;                /* POWER_DOMAIN_DC_OFF is held (inside a commit, or kept after an unconfirmed stop) */
 	unsigned crtc_domains_held;     /* how many domains of get_crtc_power_domains() the crtc holds */
 	uint8_t dbuf_slices_now; int mbus_joined_now;   /* the current global DBUF state */
-	unsigned dbuf_active_pipes_now;                 /* its active pipes, the reserved ones included (ws113-p011) */
+	unsigned dbuf_active_pipes_now;                 /* its active pipes, the reserved ones included */
 	int stop_unconfirmed, retained;
 	int dither;
 	uint32_t cur_surf, pend_surf;       /* displayed / pending (valid while flip_pending) */
@@ -2836,7 +2793,7 @@ struct i915_hpd_hotplug_record {
 /*
  * What the hotplug path saw and did.
  */
-/* One connector of the hotplug path as the display inventory sees it (ws113-p002). */
+/* One connector of the hotplug path as the display inventory sees it. */
 #define I915_HPD_OUTPUT_OTHER	0U
 #define I915_HPD_OUTPUT_EDP	1U
 #define I915_HPD_OUTPUT_HDMI	2U
@@ -2876,15 +2833,6 @@ struct i915_hpd_summary {
 	int hdmi_status;                            /* enum connector_status, now */
 	unsigned long long hdmi_epoch;
 };
-
-/*
- * The OpRegion (opregion.c).
- */
-/*
- * Linux-derived -- the OpRegion service instance as seen from outside the extracted text.  zedBSD project code.
- * Backend SHADOW only (driver-owned RAM in the OpRegion format); production runs VBT_ONLY and never joins the
- * firmware's runtime protocol.
- */
 
 struct i915_workqueue;
 
@@ -2994,7 +2942,7 @@ struct drv_gpu_scanout_ops;
  * The parameters of one panel run.
  *
  * The resident run of the panel has none (its pointer stays NULL); the
- * resident run of another output and the second output (ws113-p011) name
+ * resident run of another output and the second output name
  * the output's port, pipe and PLL; a scenario of the tests also names the
  * picture and the window.  It is kept with the run that points at it.
  */
@@ -3029,7 +2977,7 @@ struct i915_lcd_kernel {
 	/*
 	 * The display the run belongs to; NULL for a run that is the display's
 	 * lk member (the hooks then find the display around it).  A second
-	 * output's run (ws113-p011) is not lk and names its display here.
+	 * output's run is not lk and names its display here.
 	 */
 	struct i915_display *display;
 
@@ -3134,9 +3082,9 @@ struct i915_tc_kern {
  */
 
 /*
- * The kinds of output the resident run lights (ws113-p011a): the built-in
+ * The kinds of output the resident run lights: the built-in
  * eDP panel, an HDMI display, or an external DisplayPort display (a Type-C
- * port's, ws051-p004b, which fills its part).  Zero is the panel.
+ * port's, which fills its part).  Zero is the panel.
  */
 enum i915_output_kind {
 	I915_OUTPUT_KIND_PANEL = 0,
@@ -3146,11 +3094,11 @@ enum i915_output_kind {
 };
 
 /*
- * The output the resident node drives (output.c, ws075-p012).
+ * The output the resident node drives (output.c).
  *
  * Chosen when the node's panel dependencies are filled at the device start:
  * the firmware's output (the GPU scanout rule).  Keiland moves it to another
- * connected output while no lease is held (ws113-p011a, display.c's claim),
+ * connected output while no lease is held (display.c's claim),
  * and the end of such an output's last hold brings the firmware's back.
  * Zeroed, it is the eDP panel of an unknown connector.
  */
@@ -3158,7 +3106,7 @@ struct i915_display_output {
 	/* What it is: the panel, an HDMI display (DDI B on pipe B, DVI mode), an external DP display. */
 	enum i915_output_kind kind;
 
-	/* Nonzero: the node drives no output (the firmware's output could not be driven, ws113-p002). */
+	/* Nonzero: the node drives no output (the firmware's output could not be driven). */
 	int none;
 
 	/* Nonzero once connector names the hotplug path's connector of the output (its ID and generation follow it). */
@@ -3170,8 +3118,8 @@ struct i915_display_output {
 
 	/*
 	 * An external DP display's Type-C port (0 = TC1) and DDI port, and
-	 * what its sink's probe found when the output was prepared
-	 * (ws051-p004b); unused for the other kinds.
+	 * what its sink's probe found when the output was prepared;
+	 * unused for the other kinds.
 	 */
 	unsigned tc_port;
 	int port;
@@ -3182,7 +3130,7 @@ struct i915_display_output {
 };
 
 /*
- * The second output, the head (ws113-p011, plan/ws113/phase011/design.md):
+ * The second output, the head:
  * an HDMI or an external DisplayPort display shown beside the resident
  * output while Keiland holds both leases.
  *
@@ -3244,7 +3192,7 @@ struct i915_display_head {
 	/*
 	 * Nonzero while the lit head's buffers, and its last picture, are kept
 	 * over a display window's end (a sleep, a hold that ran out): the next
-	 * window lights the head again with them at its start (review F6).
+	 * window lights the head again with them at its start.
 	 * Only the worker reads and writes it.
 	 */
 	int dormant;
@@ -3260,11 +3208,13 @@ struct i915_takeover_world;
 struct i915_dp_world;
 struct i915_vbt_world;
 struct i915_hpd_world;
-struct i915_opregion_world;
 
 struct i915_display {
 	/* The device this display belongs to. */
 	struct i915_device *device;
+
+	/* The xd display: its register window, the device's description and what its parts found (xd.h). */
+	struct i915_xd xd;
 
 	/*
 	 * Probe state (the probe's static locals, device lifetime).
@@ -3335,7 +3285,7 @@ struct i915_display {
 	struct i915_native_report n0;
 	struct i915_mmio *n0_mmio;
 
-	/* The firmware's output read from it, the only one the driver lights by itself (ws113-p002). */
+	/* The firmware's output read from it, the only one the driver lights by itself. */
 	struct i915_gop_output gop;
 
 	/* The Dekel PHY access of the Type-C ports, which the AUX_USBC wells' enable reads through (pwc.dkl). */
@@ -3355,9 +3305,9 @@ struct i915_display {
 	struct i915_lcd_kernel_deps rlcd;
 
 	/*
-	 * The output the resident run lights: the panel, or another output
-	 * (ws075-p012); and the firmware's, which the start chose and which
-	 * comes back when a moved output's last hold ends (ws113-p011a).  The
+	 * The output the resident run lights: the panel, or another output;
+	 * and the firmware's, which the start chose and which
+	 * comes back when a moved output's last hold ends.  The
 	 * device IRQ lock covers a change of output against the worker, which
 	 * reads it only when it enters the display window.
 	 */
@@ -3380,7 +3330,7 @@ struct i915_display {
 	/* The serving thread's side of the display window. */
 	struct i915_present_window window;
 
-	/* The second output (ws113-p011). */
+	/* The second output. */
 	struct i915_display_head head;
 
 	/* The panel run of the resident path; written by the serving thread only. */
@@ -3472,7 +3422,6 @@ struct i915_display {
 	struct i915_dp_world *dp_world;
 	struct i915_vbt_world *vbt_world;
 	struct i915_hpd_world *hpd_world;
-	struct i915_opregion_world *opregion_world;
 
 	/*
 	 * The stages of the display start that completed, so the stop takes
@@ -3483,7 +3432,7 @@ struct i915_display {
 	int power_domains_inited;
 	int dmc_inited;
 
-	/* DC9 was entered for a suspend and is to be left by the resume (ws052-p009). */
+	/* DC9 was entered for a suspend and is to be left by the resume. */
 	int suspend_dc9;
 	int modeset_wq_ok;
 	int flip_wq_ok;

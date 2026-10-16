@@ -209,9 +209,7 @@
  * The VBT DVO_PORT_* codes the port mapping uses.
  *
  * The values are Linux v6.8.12's intel_vbt_defs.h (the same as vbt.c's
- * intel/vbt-defs.h, which is vbt.c's alone and not included here).  Before
- * ws051-p002 the codes from port G on were wrong (HDMIG 15, DPG 16, HDMIH
- * 16, HDMII 17, DPH 20, DPI 21), which misread a child on TC3 or TC4.
+ * intel/vbt-defs.h, which is vbt.c's alone and not included here).
  */
 #define I915_DVO_PORT_HDMIA			0U
 #define I915_DVO_PORT_HDMIB			1U
@@ -590,7 +588,7 @@ drv_i915_n1_primary_plane(
  * Reports the registry's encoder at an index (the walk over the device's encoders).
  *
  * Index 0 is the encoder of the screen the DDI callers are bound to, and
- * the declared Type-C ports' readout encoders follow (ws051-p004b).  NULL
+ * the declared Type-C ports' readout encoders follow.  NULL
  * past the last one and whenever the registry is not live; the step is
  * printed while the register trace is on.
  */
@@ -1080,7 +1078,7 @@ drv_i915_display_nogem_front(
 
 	/* intel_wm_init() -> skl_wm_init() for display 9 and later. */
 	i915_sagv_init(d, display_ver, sb_lock, m, bw);
-	drv_i915_skl_setup_wm_latency(d, display_ver, sb_lock, m, 0 /* dram_info.wm_lv_0_adjust_needed; P2 decoded it */);
+	drv_i915_skl_setup_wm_latency(d, display_ver, sb_lock, m, 0 /* dram_info.wm_lv_0_adjust_needed; the start decoded it */);
 
 	/*
 	 * intel_panel_sanitize_ssc(): LVDS SSC handling.  ADL-P has no LVDS and
@@ -1099,7 +1097,7 @@ drv_i915_display_nogem_front(
 
 	/* Reports how many pipes the platform has. */
 	pipe_count = i915_popcount(pipe_mask);
-	kern_logf("i915: P5 %u display pipe%s available.\n", pipe_count, pipe_count > 1U ? "s" : "");
+	kern_logf("i915: %u display pipe%s available.\n", pipe_count, pipe_count > 1U ? "s" : "");
 
 	/* Creates the crtc of every pipe the platform has (for_each_pipe: intel_crtc_init()). */
 	for (pipe = 0U; pipe < (unsigned)I915_NOGEM_MAX_PIPES; pipe++) {
@@ -1132,7 +1130,7 @@ drv_i915_display_nogem_front(
 
 	/* intel_display_driver_init_hw(): reads the CDCLK the hardware runs at. */
 	drv_i915_update_cdclk(cd);
-	kern_logf("i915: P5 Current CDCLK: cdclk=%u vco=%u ref=%u voltage=%u\n", cd->hw.cdclk, cd->hw.vco, cd->hw.ref, (unsigned)cd->hw.voltage_level);
+	kern_logf("i915: Current CDCLK: cdclk=%u vco=%u ref=%u voltage=%u\n", cd->hw.cdclk, cd->hw.vco, cd->hw.ref, (unsigned)cd->hw.voltage_level);
 
 	/* The logical and actual CDCLK states now equal the hardware state. */
 	d->cdclk_logical_set = 1;
@@ -1516,7 +1514,7 @@ drv_i915_display_wa_apply(
 		(void)i915_nogem_rmw(d, m, I915_CLKREQ_POLICY, I915_CLKREQ_POLICY_MEM_UP_OVRD, 0U);
 
 		d->xe_d_wa_applied = 1;
-		kern_logf("i915: P3 xe_d_display_wa_apply: Wa_1409120013 (DPFC chicken dummy pixel) + Wa_14013723622 (CLKREQ_POLICY memory-up override cleared)\n");
+		kern_logf("i915: xe_d_display_wa_apply: Wa_1409120013 (DPFC chicken dummy pixel) + Wa_14013723622 (CLKREQ_POLICY memory-up override cleared)\n");
 		return;
 	}
 
@@ -1525,7 +1523,7 @@ drv_i915_display_wa_apply(
 	 * arm of the reference is written out but has never run on hardware.
 	 */
 	if (display_ver == 11) {
-		kern_logf("i915: P3 gen11_display_wa_apply: XXX unimplemented path entered (display 11 is not a device this driver claims)\n");
+		kern_logf("i915: gen11_display_wa_apply: XXX unimplemented path entered (display 11 is not a device this driver claims)\n");
 
 		/* Wa_1409120013 */
 		i915_nogem_write(d, m, I915_ILK_DPFC_CHICKEN_FBC_A, I915_DPFC_CHICKEN_COMP_DUMMY_PIXEL);
@@ -1536,7 +1534,7 @@ drv_i915_display_wa_apply(
 	}
 
 	/* No other display version has an arm. */
-	kern_logf("i915: P3 intel_display_wa_apply: XXX no arm for display version %d\n", display_ver);
+	kern_logf("i915: intel_display_wa_apply: XXX no arm for display version %d\n", display_ver);
 }
 
 /*
@@ -2077,7 +2075,7 @@ drv_i915_modeset_readout_hw_state(
 		d->readout_crtcs++;
 		state_name = (cs->active != 0) ? "enabled" : "disabled";
 		gated_name = (cs->power_gated != 0) ? " (power gated)" : "";
-		kern_logf("i915: P5c [CRTC:%c] hw state readout: %s%s\n", (char)('A' + index), state_name, gated_name);
+		kern_logf("i915: [CRTC:%c] hw state readout: %s%s\n", (char)('A' + index), state_name, gated_name);
 	}
 
 	/* Reads the planes of every crtc. */
@@ -2106,7 +2104,7 @@ drv_i915_modeset_readout_hw_state(
 
 		/* Reports the encoder. */
 		state_name = (e->crtc_linked != 0) ? "enabled" : "disabled";
-		kern_logf("i915: P5c [ENCODER port %c] hw state readout: %s pipe_mask=0x%x mst=%d\n", (char)('A' + e->port), state_name, e->pipe_mask, e->is_mst);
+		kern_logf("i915: [ENCODER port %c] hw state readout: %s pipe_mask=0x%x mst=%d\n", (char)('A' + e->port), state_name, e->pipe_mask, e->is_mst);
 	}
 
 	/* Reads the PLL feeding each linked encoder, then the DPLLs. */
@@ -2120,7 +2118,7 @@ drv_i915_modeset_readout_hw_state(
 			d->readout_dplls_on++;
 
 		/* Reports the DPLL. */
-		kern_logf("i915: P5c %s hw state readout: pipe_mask 0x%x, on %d\n", pll->name, pll->pipe_mask, pll->on);
+		kern_logf("i915: %s hw state readout: pipe_mask 0x%x, on %d\n", pll->name, pll->pipe_mask, pll->on);
 	}
 
 	/*
@@ -2174,7 +2172,7 @@ drv_i915_dpll_readout(
 		if (e->clk_funcs == I915_DDI_CLK_ICL_COMBO) {
 			e->dpclka_cfgcr0 = drv_i915_read32(m, I915_ICL_DPCLKA_CFGCR0);
 			e->shared_dpll_id = (int)((e->dpclka_cfgcr0 >> (2U * (unsigned)e->phy)) & 0x3U);
-			kern_logf("i915: P5c [ENCODER port %c] get_config: ICL_DPCLKA_CFGCR0=0x%08x -> "
+			kern_logf("i915: [ENCODER port %c] get_config: ICL_DPCLKA_CFGCR0=0x%08x -> "
 				"shared_dpll id %d\n", (char)('A' + e->port), e->dpclka_cfgcr0, e->shared_dpll_id);
 		} else if (e->clk_funcs == I915_DDI_CLK_ICL_TC) {
 			/* icl_ddi_tc_get_pll(): the PLL the port's DDI clock select names. */
@@ -2183,7 +2181,7 @@ drv_i915_dpll_readout(
 				tc_unknown = 1;
 		} else {
 			tc_unknown = 1;
-			kern_logf("i915: P5c [ENCODER port %c] get_config: no clock operations -- the PLL "
+			kern_logf("i915: [ENCODER port %c] get_config: no clock operations -- the PLL "
 				"of this active link is unknown\n", (char)('A' + e->port));
 		}
 	}
@@ -2256,7 +2254,7 @@ drv_i915_modeset_sanitize_hw_state(
 
 	/*
 	 * The reference brackets the whole of intel_modeset_setup_hw_state() in a
-	 * POWER_DOMAIN_INIT reference; P3's init reference is still held here.
+	 * POWER_DOMAIN_INIT reference; the noirq stage's init reference is still held here.
 	 */
 	i915_nogem_early_display_was(d, m, display_ver);
 
@@ -2330,11 +2328,11 @@ drv_i915_modeset_sanitize_hw_state(
 	 * (the reference's get_encoder_power_domains() does), so with the
 	 * firmware display still lit its DDI IO and AUX wells would look unused
 	 * and go off under the running pipe, which then cannot be stopped
-	 * (ws084: pipe_off and DDI BUF idle time out).  They are kept for the
+	 * (pipe_off and DDI BUF idle time out).  They are kept for the
 	 * takeover (N1), whose own readout references them.
 	 */
 	if (d->active_pipes != 0U)
-		kern_logf("i915: P5d power wells: kept (active pipes 0x%x: the firmware display is left to the takeover)\n", d->active_pipes);
+		kern_logf("i915: power wells: kept (active pipes 0x%x: the firmware display is left to the takeover)\n", d->active_pipes);
 	else
 		i915_nogem_power_domains_sanitize_state(d, pd, pwc);
 
@@ -2547,7 +2545,7 @@ drv_i915_vga_register(
 	/* Reports the client and the host bridge. */
 	client_state = (c->registered != 0) ? "registered" : "not-vga(-ENODEV)";
 	bridge_state = (c->gmch != NULL) ? "found" : "absent";
-	kern_logf("i915: P3 intel_vga_register: client=%s gmch_bridge=%s ret=%d\n", client_state, bridge_state, reported_error);
+	kern_logf("i915: intel_vga_register: client=%s gmch_bridge=%s ret=%d\n", client_state, bridge_state, reported_error);
 
 	/* Succeeded: the device takes part in arbitration, or is a tolerated secondary. */
 	return 0;
@@ -2785,8 +2783,8 @@ drv_i915_native_decide(
 		r->conditions |= I915_N0_C_VBT_DIFFERS;
 
 	/*
-	 * Takes the first stop in decision order.  An active pipe is not a stop
-	 * (2026-09-29 user decision): a UEFI boot's GOP leaves the panel lit,
+	 * Takes the first stop in decision order.  An active pipe is not a stop:
+	 * a UEFI boot's GOP leaves the panel lit,
 	 * and the display start reads it out and stops it (N1:
 	 * intel_modeset_setup_hw_state() and intel_crtc_disable_noatomic()) before
 	 * its first write.  Every other condition still stops.
@@ -2945,135 +2943,6 @@ drv_i915_native_log(
 		(r->conditions & I915_N0_C_VTD_IR_ENABLED) ? " VTD_IR_ENABLED(check the MSI path)" : "",
 		(r->conditions & I915_N0_C_OPREGION_REGISTER) ? " OPREGION_PRESENT(data only; runtime disabled)" : "",
 		(r->conditions & I915_N0_C_VBT_DIFFERS) ? " VBT_DIFFERS" : "");
-}
-
-/*
- * Reads the OpRegion as data and copies the VBT it names (the P2
- * OpRegion acquisition, VBT_ONLY).
- *
- * The OpRegion is mapped read-only, its 8 KiB are copied to
- * display->i915_opregion_read_data_opcopy and the VBT to
- * i915_opregion_read_data_vbtcopy, which out->vbt points at when the VBT is
- * valid.  The runtime protocol is not joined (runtime = DISABLED).  Returns
- * 0 (also when there is no OpRegion), EIO when the OpRegion or its VBT could
- * not be mapped, or EINVAL when the OpRegion names no VBT that can be copied.
- */
-int
-drv_i915_opregion_read_data(
-	struct i915_display *display,
-	uint32_t asls,
-	struct i915_opregion_data *out)
-{
-	uint8_t *opcopy;
-	uint8_t *vbtcopy;
-	void *op;
-	void *vb;
-	uint32_t length;
-	unsigned index;
-	int error;
-
-	/* The copies live in the display. */
-	opcopy = display->i915_opregion_read_data_opcopy;
-	vbtcopy = display->i915_opregion_read_data_vbtcopy;
-
-	/* Starts with the runtime protocol disabled, which it always is here. */
-	kern_memset(out, 0, sizeof(*out));
-	out->runtime_enabled = 0;
-	out->runtime_reason = "ACPI_RUNTIME_UNAVAILABLE (no AML / ACPI event delivery in zedBSD): the OpRegion is used as data only";
-
-	/* ASLS 0 means there is no OpRegion. */
-	out->present = 0;
-	if (asls != 0U)
-		out->present = 1;
-	if (out->present == 0)
-		return 0;
-
-	/* READ-ONLY view: this driver cannot write the shared mailboxes through it. */
-	op = NULL;
-	error = hal_space_map_device((hal_physaddr_t)asls, I915_OPREGION_SIZE, HAL_SPACE_READ, &op);
-	if (error != HAL_OK)
-		return EIO;
-	if (op == NULL)
-		return EIO;
-
-	/* Copies the OpRegion and drops the mapping. */
-	out->mapped = 1;
-	for (index = 0U; index < I915_OPREGION_SIZE; index++)
-		opcopy[index] = ((const volatile uint8_t *)op)[index];
-	(void)hal_space_unmap_device(op, I915_OPREGION_SIZE);
-
-	/* Finds where the OpRegion keeps the VBT. */
-	error = drv_i915_opregion_locate_vbt(opcopy, I915_OPREGION_SIZE, asls, &out->op);
-	if (error != 0)
-		return EINVAL;
-
-	/* Copies the VBT from RVDA, or from mailbox #4 inside the OpRegion copy. */
-	if (out->op.src == I915_OPVBT_RVDA) {
-		/* Refuses an RVDA VBT larger than the copy, or one inside the OpRegion. */
-		length = out->op.rvds;
-		if (length > I915_NATIVE_VBT_COPY_SIZE)
-			return EINVAL;
-		if (out->op.rvda_inside != 0)
-			return EINVAL;
-
-		/* Maps the RVDA VBT read-only. */
-		vb = NULL;
-		error = hal_space_map_device((hal_physaddr_t)out->op.vbt_phys, length, HAL_SPACE_READ, &vb);
-		if (error != HAL_OK)
-			return EIO;
-		if (vb == NULL)
-			return EIO;
-
-		/* Copies it and drops the mapping. */
-		for (index = 0U; index < length; index++)
-			vbtcopy[index] = ((const volatile uint8_t *)vb)[index];
-		(void)hal_space_unmap_device(vb, length);
-		out->vbt_size = length;
-	} else {
-		/* Copies the mailbox #4 VBT out of the OpRegion copy. */
-		out->vbt_size = out->op.vbt_max;
-		for (index = 0U; index < out->vbt_size; index++)
-			vbtcopy[index] = opcopy[out->op.vbt_offset + index];
-	}
-
-	/* Validates the VBT and hashes a valid one for the parser. */
-	out->vbt_valid = drv_i915_vbt_validate(vbtcopy, out->vbt_size);
-	if (out->vbt_valid != 0) {
-		out->vbt = vbtcopy;
-		drv_i915_sha256(vbtcopy, out->vbt_size, out->vbt_sha256);
-	}
-
-	/* Succeeded: the OpRegion data and its VBT are in out. */
-	return 0;
-}
-
-/*
- * Logs the OpRegion data and the runtime mailboxes as found.
- */
-void
-drv_i915_opregion_log(
-	const struct i915_opregion_data *d)
-{
-	const char *data_state;
-
-	/* No OpRegion: nothing but its absence to report. */
-	if (d->present == 0) {
-		kern_logf("i915: P2 opregion: absent (ASLS=0): no OpRegion data, no runtime protocol\n");
-		return;
-	}
-
-	/* The data is available when the OpRegion was mapped and carries its signature. */
-	data_state = "UNAVAILABLE";
-	if (d->mapped != 0 && d->op.signature_ok != 0)
-		data_state = "AVAILABLE";
-
-	/* Logs the data and the mailboxes; this driver writes none of them. */
-	kern_logf("i915: P2 opregion: data=%s ver=%u.%u mboxes=0x%x VBT via %s size=%u valid=%d | runtime=DISABLED (%s)\n",
-		data_state, d->op.major, d->op.minor, d->op.mboxes, i915_opvbt_source_name(d->op.src), d->vbt_size,
-		d->vbt_valid, d->runtime_reason);
-	kern_logf("i915: P2 opregion runtime mailboxes as found (observed only; this driver writes none of them): "
-		"ACPI drdy=0x%x csts=0x%x cevt=0x%x chpd=0x%x clid=0x%x | ASLE ardy=0x%x aslc=0x%x tche=0x%x\n", d->op.acpi_drdy,
-		d->op.acpi_csts, d->op.acpi_cevt, d->op.acpi_chpd, d->op.acpi_clid, d->op.asle_ardy, d->op.asle_aslc, d->op.asle_tche);
 }
 
 /*
@@ -3580,7 +3449,7 @@ i915_n1_fill_report(
 
 /*
  * Adds a readout encoder and connector for each Type-C port the display
- * declares (ws051-p004b; the Linux intel_ddi_init() makes one for every
+ * declares (the Linux intel_ddi_init() makes one for every
  * port of the VBT).
  *
  * Each is the takeover world's object for the port, built as
@@ -4600,7 +4469,6 @@ i915_sanitize_encoder(
 	void *best_encoder;
 	bool has_active_crtc;
 	bool bogus;
-	int notify_enable;
 
 	/* Resolves the encoder's device, its pm demand state and the crtc it reads from. */
 	i915 = i915_lcd_to_i915(encoder->base.dev);
@@ -4681,14 +4549,6 @@ i915_sanitize_encoder(
 		connector->base.dpms = DRM_MODE_DPMS_OFF;
 		connector->base.encoder = NULL;
 	}
-
-	/* Tells the firmware the encoder's sanitized state. */
-	notify_enable = 0;
-	if (connector != NULL) {
-		if (has_active_crtc)
-			notify_enable = 1;
-	}
-	intel_opregion_notify_encoder(encoder, notify_enable);
 
 	/* Sanitizes the DDI clock mapping of the encoder. */
 	if (HAS_DDI(i915))
@@ -5787,7 +5647,7 @@ i915_nogem_fbc_sanitize(
 	uint32_t ctl;
 
 	/*
-	 * for_each_intel_fbc(): the runtime fbc_mask owned by the P3 display state
+	 * for_each_intel_fbc(): the runtime fbc_mask owned by the noirq display state
 	 * (ADL-P has BIT(INTEL_FBC_A) only).
 	 */
 	for (id = 0U; id < 2U; id++) {
@@ -6398,13 +6258,13 @@ i915_nogem_tc_get_pll_id(
 		break;
 	default:
 		*pll_id = -1;
-		kern_logf("i915: P5c [ENCODER port %c] get_config: DDI_CLK_SEL=0x%08x is not a Type-C clock select "
+		kern_logf("i915: [ENCODER port %c] get_config: DDI_CLK_SEL=0x%08x is not a Type-C clock select "
 			"-- the PLL of this active link is unknown\n", (char)('A' + e->port), clk_sel);
 		return 0;
 	}
 
 	/* Reports what was found. */
-	kern_logf("i915: P5c [ENCODER port %c] get_config: DDI_CLK_SEL=0x%08x -> shared_dpll id %d\n",
+	kern_logf("i915: [ENCODER port %c] get_config: DDI_CLK_SEL=0x%08x -> shared_dpll id %d\n",
 		(char)('A' + e->port), clk_sel, *pll_id);
 
 	/* Succeeded: the PLL is known (or known to be none). */

@@ -35,7 +35,6 @@
 #include "hotplug.h"
 #include "interrupts.h"
 #include "modeset.h"
-#include "opregion.h"
 #include "output.h"
 #include "power.h"
 #include "present.h"
@@ -117,7 +116,7 @@
 #define I915_DISPLAY_GENERATION		1U
 
 /*
- * The display ID of another connector of the inventory (ws113-p002): this
+ * The display ID of another connector of the inventory: this
  * base plus the hotplug path's connector index, the same while the device
  * lives, whatever is connected.
  */
@@ -175,7 +174,6 @@
 static int i915_display_create_worlds(struct i915_display *display);
 static void i915_display_destroy_worlds(struct i915_display *display);
 static struct i915_display *i915_display_live(struct i915_device *device);
-static void i915_display_opregion_signature(struct i915_device *device, uint32_t asls);
 static int i915_display_noirq_front(struct i915_device *device);
 static int i915_display_native_check(struct i915_device *device);
 static int i915_display_core_init(struct i915_device *device);
@@ -216,15 +214,15 @@ static int i915_display_outputs_differ(const struct i915_display_output *one, co
  * is display 0, with one full-output plane; the hotplug path's other
  * connectors follow it in the inventory, connected or not, and are
  * described but not lit (claiming one is refused with ENOSPC, the limit
- * of outputs shown at once, until ws113-p011).  Query,
+ * of outputs shown at once).  Query,
  * mode and claim are answered here, present, wait and release by the
  * present path, and the topology sequence by the hotplug path, which
- * moves it when a connector is connected or disconnected (ws113-p002).
- * Power and refresh (ws113-p012) check the display here and are done by
+ * moves it when a connector is connected or disconnected.
+ * Power and refresh check the display here and are done by
  * the display control (control.c).  The cursor plane is not used yet
- * (ws141-p014; F-092), so the cursor operations are absent.  Presents
- * wait under the open's admission (no DRV_GPU_DISPLAY_UNGATED,
- * ws214-p003a).  The table never changes.
+ * so the cursor operations are absent.  Presents
+ * wait under the open's admission (no DRV_GPU_DISPLAY_UNGATED).
+ * The table never changes.
  */
 static const struct drv_gpu_display_ops i915_display_ops = {
 	i915_display_query,
@@ -268,6 +266,9 @@ drv_i915_display_create(
 		return ENOMEM;
 
 	display->device = device;
+
+	/* The xd display: its register window and the description of the device. */
+	drv_i915_xd_start(&display->xd, &device->gt.mmio, &device->gt.sb_lock, device->product, device->revision);
 
 	/* The resident output's refresh boundaries start with nothing counted. */
 	drv_i915_display_refresh_init(display);
@@ -332,9 +333,9 @@ drv_i915_display_destroy(
 /*
  * Reads the OpRegion and its VBT, then the DRAM and the memory bandwidth.
  *
- * P2.9 intel_opregion_setup(): ASLS holds the OpRegion base.  The OpRegion
+ * intel_opregion_setup(): ASLS holds the OpRegion base.  The OpRegion
  * is read as data (a read-only copy and its VBT); the runtime protocol is
- * not joined (VBT_ONLY).  P2.10 intel_dram_detect() and P2.11
+ * not joined (VBT_ONLY).  intel_dram_detect() and
  * intel_bw_init_hw() are void in the reference: a tolerated PCODE or data
  * failure is logged and the probe continues.
  */
@@ -345,8 +346,10 @@ drv_i915_display_init_opregion(
 	struct i915_display *display;
 	struct i915_gt *gt;
 	uint32_t asls;
+	struct i915_opregion_data *opd;
 	int dram_error;
 	int bw_error;
+	int error;
 	uint16_t op;
 
 	display = i915_display_live(device);
@@ -357,27 +360,41 @@ drv_i915_display_init_opregion(
 
 	/* ASLS (PCI configuration 0xFC) holds the OpRegion base. */
 	asls = drv_i915_pci_read32(&gt->pci, I915_PCI_ASLS);
-	kern_logf("i915: P2 opregion: ASLS=0x%08x\n", asls);
+	kern_logf("i915: opregion: ASLS=0x%08x\n", asls);
 
-	/* Reads the OpRegion as data; a valid VBT in it is handed to the parser. */
-	(void)drv_i915_opregion_read_data(display, asls, &display->opd);
-	drv_i915_opregion_log(&display->opd);
-	display->p2_opd = &display->opd;
-	if (display->opd.vbt_valid) {
-		drv_i915_bios_set_opregion_vbt(display, display->opd.vbt, display->opd.vbt_size);
+	/* Reads the OpRegion and the VBT it keeps into the display's copies. */
+	error = drv_i915_xd_read_opregion(&display->xd,
+					  asls,
+					  display->i915_opregion_read_data_opcopy,
+					  display->i915_opregion_read_data_vbtcopy,
+					  sizeof(display->i915_opregion_read_data_vbtcopy));
+
+	/* Gives the VBT parser and the firmware check the read: whether there is an OpRegion, and its VBT. */
+	opd = &display->opd;
+	kern_memset(opd, 0, sizeof(*opd));
+	opd->present = display->xd.opregion.present;
+	opd->mapped = display->xd.opregion.mapped;
+	opd->runtime_enabled = 0;
+	if (error == 0 && display->xd.opregion.vbt_valid) {
+		opd->vbt_valid = 1;
+		opd->vbt = display->i915_opregion_read_data_vbtcopy;
+		opd->vbt_size = display->xd.opregion.vbt_size;
+		kern_memcpy(opd->vbt_sha256, display->xd.opregion.vbt_sha256, sizeof(opd->vbt_sha256));
+	}
+	display->p2_opd = opd;
+
+	/* A VBT that checks is the one the parser reads. */
+	if (opd->vbt_valid) {
+		drv_i915_bios_set_opregion_vbt(display, opd->vbt, opd->vbt_size);
 		display->opregion_vbt_present = 1;
 	}
 
-	/* ASLS 0 is the legitimate absent branch; otherwise the header's signature is checked. */
+	/* ASLS 0 is the legitimate absent branch. */
 	display->opregion_present = 0;
 	if (asls != 0U)
 		display->opregion_present = 1;
-
-	if (asls == 0U) {
+	if (asls == 0U)
 		drv_i915_trace_record(&gt->trace, 0U, I915_TRACE_NOTE, "intel_opregion_absent", 0U, 0U);
-	} else {
-		i915_display_opregion_signature(device, asls);
-	}
 
 	/* The DRAM the bandwidth code is given. */
 	dram_error = drv_i915_dram_detect(&gt->sb_lock, &gt->mmio, &display->dram_info);
@@ -393,7 +410,7 @@ drv_i915_display_init_opregion(
 		op = I915_TRACE_ACQUIRE;
 	drv_i915_trace_record(&gt->trace, 0U, op, "intel_bw_init_hw", (uint64_t)(unsigned)display->bw_state.sagv_status, 0U);
 
-	kern_logf("i915: P2 hw_probe tail: dram_detect rc=%d bw_init rc=%d sagv=%d\n",
+	kern_logf("i915: hw_probe tail: dram_detect rc=%d bw_init rc=%d sagv=%d\n",
 	    dram_error,
 	    bw_error,
 	    display->bw_state.sagv_status);
@@ -453,7 +470,7 @@ drv_i915_display_init_noirq(
 	if (error == 0)
 		display->flip_wq_ok = 1;
 
-	kern_logf("i915: P3 modeset/flip workqueues: modeset=%d flip=%d\n", display->modeset_wq_ok, display->flip_wq_ok);
+	kern_logf("i915: modeset/flip workqueues: modeset=%d flip=%d\n", display->modeset_wq_ok, display->flip_wq_ok);
 
 	/* The software state: mode config, CDCLK, colour, DBUF, bandwidth, PM demand, quirks and FBC. */
 	error = i915_display_noirq_tail(device);
@@ -478,6 +495,7 @@ drv_i915_display_irq_prepare(
 {
 	struct i915_display *display;
 	struct i915_pch_state *pch;
+	uint16_t pch_id;
 
 	display = i915_display_live(device);
 	if (display == NULL)
@@ -488,7 +506,7 @@ drv_i915_display_irq_prepare(
 	/* Finds the PCH: display version, Alder Lake-P, a display, running as a guest. */
 	kern_memset(pch, 0, sizeof(*pch));
 	drv_i915_detect_pch(display, pch, (int)device->gt.display_ver, 1, 1, 1);
-	kern_logf("i915: P4 intel_detect_pch: type=%d id=0x%04x source=%d bridges=%u bridge_dev=0x%04x subsys=%04x:%04x\n",
+	kern_logf("i915: intel_detect_pch: type=%d id=0x%04x source=%d bridges=%u bridge_dev=0x%04x subsys=%04x:%04x\n",
 	    pch->type,
 	    (unsigned)pch->id,
 	    pch->source,
@@ -496,6 +514,12 @@ drv_i915_display_irq_prepare(
 	    (unsigned)pch->bridge_device,
 	    (unsigned)pch->bridge_svid,
 	    (unsigned)pch->bridge_sdid);
+
+	/* The xd description's south display: a PCH a bridge named, or none (a guessed one is no PCH read). */
+	pch_id = 0U;
+	if (pch->source == I915_PCH_SRC_REAL)
+		pch_id = pch->id;
+	drv_i915_xd_south(&display->xd, device->product, device->revision, pch_id);
 
 	/* Binds the vblank delivery, the power-well hooks and the display operations. */
 	drv_i915_display_irq_bind(display, &device->gt.irq);
@@ -515,7 +539,7 @@ drv_i915_display_irq_log(
 	if (display == NULL)
 		return;
 
-	kern_logf("i915: P4 de masks: pipe_masked=0x%x pipe_enables=0x%x port_masked=0x%x misc_masked=0x%x de_irq_mask[A]=0x%x master_enabled=%d\n",
+	kern_logf("i915: de masks: pipe_masked=0x%x pipe_enables=0x%x port_masked=0x%x misc_masked=0x%x de_irq_mask[A]=0x%x master_enabled=%d\n",
 	    display->irq.de_pipe_masked,
 	    display->irq.de_pipe_enables,
 	    display->irq.de_port_masked,
@@ -527,9 +551,9 @@ drv_i915_display_irq_log(
 /*
  * Runs the survey and the display nogem probe (intel_display_driver_probe_nogem()).
  *
- * The survey records what the firmware left (diagnostics only).  P5-a is
- * the front section, P5-b intel_setup_outputs(), P5-c and P5-d the readout
- * and the sanitize of intel_modeset_setup_hw_state().  Returns 0, or the
+ * The survey records what the firmware left (diagnostics only).  Then the
+ * front section, intel_setup_outputs(), and the readout and the sanitize
+ * of intel_modeset_setup_hw_state() run.  Returns 0, or the
  * front section's error with the failing step in device->stage.
  */
 int
@@ -597,7 +621,7 @@ drv_i915_display_register(
 	if (dprobe->initial_commit_unimplemented)
 		unimplemented = " (DRM atomic commit unimplemented)";
 
-	kern_logf("i915: P7 display_driver_probe: rc=%d active_crtcs=%u initial_commit=%d%s overlay=%d fbdev=%d ipc_enabled=%d\n",
+	kern_logf("i915: display_driver_probe: rc=%d active_crtcs=%u initial_commit=%d%s overlay=%d fbdev=%d ipc_enabled=%d\n",
 	    error,
 	    dprobe->active_crtcs,
 	    dprobe->initial_commit_rc,
@@ -605,7 +629,7 @@ drv_i915_display_register(
 	    dprobe->overlay,
 	    dprobe->fbdev,
 	    dprobe->ipc_enabled);
-	kern_logf("i915: P7 hpd_init: encoders=%u pins=%d,%d setups=%u skipped=%d | de: enabled=0x%x hotplug=0x%x IMR=0x%08x TC_CTL=0x%08x TBT_CTL=0x%08x | pch: enabled=0x%x hotplug=0x%x SHPD_FILTER=0x%x SDEIMR=0x%08x%s SHOTPLUG_DDI=0x%08x SHOTPLUG_TC=0x%08x | poll: works=%u core_gets=%u\n",
+	kern_logf("i915: hpd_init: encoders=%u pins=%d,%d setups=%u skipped=%d | de: enabled=0x%x hotplug=0x%x IMR=0x%08x TC_CTL=0x%08x TBT_CTL=0x%08x | pch: enabled=0x%x hotplug=0x%x SHPD_FILTER=0x%x SDEIMR=0x%08x%s SHOTPLUG_DDI=0x%08x SHOTPLUG_TC=0x%08x | poll: works=%u core_gets=%u\n",
 	    dprobe->hp.n_encoders,
 	    dprobe->hp.encoder_pin[0],
 	    dprobe->hp.encoder_pin[1],
@@ -634,10 +658,10 @@ drv_i915_display_register(
 	 * the hotplug registers are programmed.
 	 */
 	if (error == 0) {
-		/* The Type-C ports first: the hotplug path asks them whether something is plugged in (ws051-p002b). */
+		/* The Type-C ports first: the hotplug path asks them whether something is plugged in. */
 		drv_i915_tc_kern_start(display, &device->gt.mmio, (unsigned)device->gt.display_ver);
 
-		/* Then the external DP ports on them, whose sinks the DP connectors' detection probes (ws051-p004a). */
+		/* Then the external DP ports on them, whose sinks the DP connectors' detection probes. */
 		drv_i915_dp_ext_start(display);
 
 		/* Then the hotplug path, with the connectors of the encoders the output setup made. */
@@ -649,12 +673,12 @@ drv_i915_display_register(
 	hotplug = "NOT started";
 	if (display->hpd_started)
 		hotplug = "started";
-	kern_logf("i915: P7 hotplug path: %s\n", hotplug);
+	kern_logf("i915: hotplug path: %s\n", hotplug);
 
 	/*
 	 * An active crtc at probe time is the firmware display.  The reference
 	 * only logs a failed initial modeset and continues; when N0 decided the
-	 * takeover (ws084-p001), the resident display start reads it out and
+	 * takeover, the resident display start reads it out and
 	 * stops it before its first write, so the start goes on.  Without the
 	 * takeover this start stops here, because it would otherwise leave that
 	 * display untouched and unaccounted for.
@@ -667,20 +691,9 @@ drv_i915_display_register(
 		return ENOTSUP;
 	}
 
-	/*
-	 * i915_driver_register() -> intel_opregion_register(): VBT_ONLY -- no
-	 * ACPI notifier is registered, drdy, ardy, csts, DIDL and CADL are not
-	 * written and there is no ASLE service, as in the reference built
-	 * without ACPI.  Recorded; the probe continues.
-	 */
-	if (display->opregion_present) {
-		drv_i915_trace_record(&device->gt.trace, 0U, I915_TRACE_NOTE, "intel_opregion_register:runtime_disabled(vbt_only)", 0U, 0U);
-		kern_logf("i915: P7 intel_opregion_register: runtime DISABLED (VBT_ONLY, ACPI_RUNTIME_UNAVAILABLE): no notifier registered, no mailbox written, no ASLE service -- the probe continues\n");
-	}
-
 	/* i915_driver_register(). */
 	i915_driver_register(device);
-	kern_logf("i915: P7 driver_register: na_registrations=%u opregion=%d kms_poll=%d | power_domains_enable: wells_on %u -> %u dc_state=0x%x verify_mismatches=%u | runtime_pm_enable: probe usage=%d active=%d (autosuspend not armed: intel_runtime_suspend unimplemented)\n",
+	kern_logf("i915: driver_register: na_registrations=%u opregion=%d kms_poll=%d | power_domains_enable: wells_on %u -> %u dc_state=0x%x verify_mismatches=%u | runtime_pm_enable: probe usage=%d active=%d (autosuspend not armed: intel_runtime_suspend unimplemented)\n",
 	    dprobe->na_registrations,
 	    dprobe->opregion_registered,
 	    dprobe->hp.kms_poll_inited,
@@ -750,7 +763,7 @@ drv_i915_display_resident_deps(
 	rctx->es = &gt->engines;
 	rctx->lcd = rlcd;
 
-	/* The output the node drives: the panel, or HDMI when display=hdmi finds a sink (ws075-p012). */
+	/* The output the node drives: the panel, or HDMI when display=hdmi finds a sink. */
 	if (!display->absent)
 		drv_i915_display_output_select(display);
 }
@@ -787,7 +800,7 @@ drv_i915_display_stop_early(
 		display->hpd_started = 0;
 	}
 
-	/* The Type-C ports' PHYs and TC cold blocks go back to the Type-C subsystem (ws177-p002). */
+	/* The Type-C ports' PHYs and TC cold blocks go back to the Type-C subsystem. */
 	drv_i915_tc_kern_stop(display);
 
 	/*
@@ -806,7 +819,7 @@ drv_i915_display_stop_early(
 }
 
 /*
- * Begins the display's suspend (ws052-p009): takes the INIT reference
+ * Begins the display's suspend: takes the INIT reference
  * again (intel_power_domains_disable()), which keeps every well on while
  * the suspend goes on.  The outputs were stopped when the request worker
  * left the display window for its park.
@@ -1068,7 +1081,7 @@ drv_i915_display_fini(
 	drv_i915_capture_fini(device);
 #endif
 
-	/* The boot framebuffer display's staging area and view, once no address space maps them (BUG-310). */
+	/* The boot framebuffer display's staging area and view, once no address space maps them. */
 	drv_i915_bootfb_fini(device);
 }
 
@@ -1149,7 +1162,7 @@ drv_i915_display_bind_ops(
 	return;
 #endif
 
-	/* A Gen9 node, whose display is left to the firmware, offers the firmware's framebuffer (BUG-310); another without a panel offers none. */
+	/* A Gen9 node, whose display is left to the firmware, offers the firmware's framebuffer; another without a panel offers none. */
 	display = i915_display_live(device);
 	if (display == NULL) {
 		drv_i915_bootfb_bind_ops(device, ops);
@@ -1181,7 +1194,7 @@ drv_i915_display_session_close(
 	return;
 #endif
 
-	/* The boot framebuffer display owns the lease on a Gen9 node (BUG-310). */
+	/* The boot framebuffer display owns the lease on a Gen9 node. */
 	bound = drv_i915_bootfb_bound(device);
 	if (bound) {
 		drv_i915_bootfb_session_close(device, session);
@@ -1194,7 +1207,7 @@ drv_i915_display_session_close(
 
 /*
  * Reads the mode of the node's output: the panel's (the resident eDP's
- * LCD state), or the HDMI mode display=hdmi chose (ws075-p012).  0, or
+ * LCD state), or the HDMI mode display=hdmi chose.  0, or
  * ENXIO when the node has no output.
  */
 int
@@ -1375,7 +1388,7 @@ drv_i915_drm_vblank_init(
 
 	/* Every crtc has its vblank state. */
 	ddev->vblank_inited = 1;
-	kern_logf("i915: P3 drm_vblank_init: vblank_slots=%u (per-pipe worker+timer+seqlock)\n", num_crtcs);
+	kern_logf("i915: drm_vblank_init: vblank_slots=%u (per-pipe worker+timer+seqlock)\n", num_crtcs);
 
 	/* Succeeded: the vblank state is complete. */
 	return 0;
@@ -1629,11 +1642,6 @@ i915_display_create_worlds(
 	if (error != 0)
 		return error;
 
-	/* The OpRegion environment. */
-	error = drv_i915_opregion_world_create(display);
-	if (error != 0)
-		return error;
-
 	/* Succeeded: every environment has its state. */
 	return 0;
 }
@@ -1644,7 +1652,6 @@ i915_display_destroy_worlds(
 	struct i915_display *display)
 {
 	/* Each destroy leaves an absent world alone. */
-	drv_i915_opregion_world_destroy(display);
 	drv_i915_hpd_world_destroy(display);
 	drv_i915_vbt_world_destroy(display);
 	drv_i915_dp_world_destroy(display);
@@ -1670,63 +1677,6 @@ i915_display_live(
 	return device->display;
 }
 
-/* Maps the OpRegion header and checks its "IntelGraphicsMem" signature (diagnostic; unmapped again). */
-static void
-i915_display_opregion_signature(
-	struct i915_device *device,
-	uint32_t asls)
-{
-	static const char want[I915_OPREGION_SIGNATURE_BYTES] = {
-		'I', 'n', 't', 'e', 'l', 'G', 'r', 'a', 'p', 'h', 'i', 'c', 's', 'M', 'e', 'm'
-	};
-	const volatile uint8_t *header;
-	char sign[I915_OPREGION_SIGNATURE_BYTES + 1U];
-	uint32_t size_kib;
-	uint32_t version;
-	unsigned i;
-	void *op;
-	int status;
-	int ok;
-
-	/* Maps the 8 KiB header read-only. */
-	op = NULL;
-	status = hal_space_map_device((hal_physaddr_t)asls, I915_OPREGION_HEADER_BYTES, HAL_SPACE_READ, &op);
-	if (status != HAL_OK || op == NULL) {
-		kern_logf("i915: P2 opregion: map(ASLS=0x%08x,8KiB) rc=%d (not device-mappable)\n", asls, status);
-		drv_i915_trace_record(&device->gt.trace, 0U, I915_TRACE_NOTE, "intel_opregion_map_unavailable", (uint64_t)asls, (uint64_t)(unsigned)status);
-		return;
-	}
-
-	/* Reads the signature, the size and the version. */
-	header = (const volatile uint8_t *)op;
-	for (i = 0U; i < I915_OPREGION_SIGNATURE_BYTES; i++)
-		sign[i] = (char)header[i];
-
-	sign[I915_OPREGION_SIGNATURE_BYTES] = '\0';
-	size_kib = *(const volatile uint32_t *)(const volatile void *)(header + I915_OPREGION_SIZE_OFFSET);
-	version = *(const volatile uint32_t *)(const volatile void *)(header + I915_OPREGION_VERSION_OFFSET);
-	kern_logf("i915: P2 opregion: sign='%s' size=%uKiB version=0x%08x\n", sign, size_kib, version);
-
-	/* Compares the signature byte by byte. */
-	ok = 1;
-	for (i = 0U; i < I915_OPREGION_SIGNATURE_BYTES; i++) {
-		if (sign[i] != want[i]) {
-			ok = 0;
-			break;
-		}
-	}
-
-	/* Records a valid OpRegion, or the mismatch. */
-	if (ok) {
-		drv_i915_trace_record(&device->gt.trace, 0U, I915_TRACE_ACQUIRE, "intel_opregion_setup", (uint64_t)asls, (uint64_t)version);
-	} else {
-		kern_logf("i915: P2 opregion: signature mismatch\n");
-		drv_i915_trace_record(&device->gt.trace, 0U, I915_TRACE_NOTE, "intel_opregion_bad_signature", (uint64_t)asls, 0U);
-	}
-
-	(void)hal_space_unmap_device(op, I915_OPREGION_HEADER_BYTES);
-}
-
 /*
  * The front of the noirq probe: the DRM device and its vblank state, the
  * VBT, the VGA client, the power-domain map and the PM demand lock.
@@ -1745,13 +1695,13 @@ i915_display_noirq_front(
 	gt = &device->gt;
 
 	drv_i915_trace_record(&gt->trace, 0U, I915_TRACE_NOTE, "display_driver_probe_noirq:enter", 0U, 0U);
-	kern_logf("i915: P3 display_driver_probe_noirq enter (device state carried from P2, msi_kept=%u)\n", gt->msi_kept);
+	kern_logf("i915: display_driver_probe_noirq enter (device state carried from the start, msi_kept=%u)\n", gt->msi_kept);
 
 	/* i915_inject_probe_failure() is a debug-only no-op; HAS_DISPLAY is true. */
 	drv_i915_trace_record(&gt->trace, 0U, I915_TRACE_NOTE, "i915_inject_probe_failure:noop", 0U, 0U);
 	drv_i915_trace_record(&gt->trace, 0U, I915_TRACE_NOTE, "HAS_DISPLAY:true", 1U, 0U);
 
-	/* P3.1 drm_dev_init, then drm_vblank_init for INTEL_NUM_PIPES = hweight8(A|B|C|D) crtcs. */
+	/* drm_dev_init, then drm_vblank_init for INTEL_NUM_PIPES = hweight8(A|B|C|D) crtcs. */
 	pipe_mask = I915_DISPLAY_PIPE_MASK;
 	num_pipes = 4U;
 	device->stage = "drm_dev_init";
@@ -1770,18 +1720,18 @@ i915_display_noirq_front(
 	drv_i915_trace_record(&gt->trace, 0U, I915_TRACE_ACQUIRE, "drm_vblank_init", (uint64_t)num_pipes, (uint64_t)pipe_mask);
 
 	/*
-	 * P3.2 intel_bios_init: the VBT from the explicit blob (test build
+	 * intel_bios_init: the VBT from the explicit blob (test build
 	 * only), the OpRegion or the PCI ROM, or the defaults of a genuine
 	 * absence.  Void in the reference: it never fails the probe.
 	 */
 	(void)drv_i915_bios_init_ex(display, &display->vbt_state, &gt->pci, display->opregion_vbt_present, I915_VBT_EXPLICIT, &gt->trace);
-	kern_logf("i915: P3 intel_bios_init done: source=%d vbt_found=%d version=%u child_devices=%u\n",
+	kern_logf("i915: intel_bios_init done: source=%d vbt_found=%d version=%u child_devices=%u\n",
 	    display->vbt_state.source,
 	    display->vbt_state.vbt_found,
 	    (unsigned)display->vbt_state.version,
 	    display->vbt_state.num_display_devices);
 
-	/* P3.3 intel_vga_register: a genuine absence is tolerated inside the call. */
+	/* intel_vga_register: a genuine absence is tolerated inside the call. */
 	device->stage = "intel_vga_register";
 	error = drv_i915_vga_register(&display->vga_client, device->pci, gt->display_ver, &gt->trace);
 	if (error != 0)
@@ -1789,7 +1739,7 @@ i915_display_noirq_front(
 
 	display->vga_registered = 1;
 
-	/* P3.4 intel_power_domains_init: options, DC masks, lock, async-put work and the power-well map. */
+	/* intel_power_domains_init: options, DC masks, lock, async-put work and the power-well map. */
 	device->stage = "intel_power_domains_init";
 	error = drv_i915_power_domains_init(&display->power_domains, gt->display_ver, -1, -1, &gt->trace);
 	if (error != 0)
@@ -1797,7 +1747,7 @@ i915_display_noirq_front(
 
 	display->power_domains_inited = 1;
 
-	/* P3.5 intel_pmdemand_init_early: the PM demand lock and wait queue. */
+	/* intel_pmdemand_init_early: the PM demand lock and wait queue. */
 	drv_i915_pmdemand_init_early(&display->pmdemand);
 	drv_i915_trace_record(&gt->trace, 0U, I915_TRACE_ACQUIRE, "intel_pmdemand_init_early", 0U, 0U);
 
@@ -1855,7 +1805,7 @@ i915_display_native_check(
 	display->n0_mmio = &gt->mmio;
 	(void)drv_i915_native_precheck(display, &nd, &display->n0);
 	drv_i915_native_log(display, &display->n0);
-	kern_logf("i915: N0 before-N0: PCI COMMAND firmware=0x%04x now=0x%04x (BME/MEM set at P2; restored on teardown) | done already: GT reset (GDRST full, display untouched on ADL-P), GT fault/error-register clears, fence clears (0..31), PCODE reads, MSI enabled (no handler), WC CPU view of the aperture | not done: any display register, any GGTT PTE, any D-state change\n",
+	kern_logf("i915: N0 before-N0: PCI COMMAND firmware=0x%04x now=0x%04x (BME/MEM set by the start; restored on teardown) | done already: GT reset (GDRST full, display untouched on ADL-P), GT fault/error-register clears, fence clears (0..31), PCODE reads, MSI enabled (no handler), WC CPU view of the aperture | not done: any display register, any GGTT PTE, any D-state change\n",
 	    (unsigned)gt->pci.saved_command,
 	    (unsigned)drv_i915_pci_read16(&gt->pci, I915_PCI_COMMAND_WORD));
 
@@ -1865,7 +1815,7 @@ i915_display_native_check(
 		display->absent = 1;
 	}
 
-	/* The firmware's output, the only one the driver lights by itself (the GPU scanout rule, ws113-p002). */
+	/* The firmware's output, the only one the driver lights by itself (the GPU scanout rule). */
 	drv_i915_gop_output_read(&display->n0, &display->gop);
 	drv_i915_gop_output_name(&display->gop, name, sizeof(name));
 	kern_logf("i915: N0: the firmware's output: %s (lit pipes 0x%x)\n", name, display->gop.pipes);
@@ -1881,7 +1831,7 @@ i915_display_native_check(
 }
 
 /*
- * P3.6 intel_power_domains_init_hw(i915, false): the display core on the
+ * intel_power_domains_init_hw(i915, false): the display core on the
  * real device -- DC states off, the PCH reset handshake, the combo PHYs,
  * PW1, CDCLK, DBUF, BW_BUDDY and the XE_LPD WAs, then POWER_DOMAIN_INIT
  * held and every well synced.
@@ -1957,11 +1907,11 @@ i915_display_core_init(
 		if (dcore->fault_where != NULL)
 			device->stage = dcore->fault_where;
 
-		kern_logf("i915: P3 intel_power_domains_init_hw(false): adaptation-layer fault at %s\n", device->stage);
+		kern_logf("i915: intel_power_domains_init_hw(false): adaptation-layer fault at %s\n", device->stage);
 		return EIO;
 	}
 
-	kern_logf("i915: P3 intel_power_domains_init_hw(false) done: cdclk=%u vco=%u dbuf=0x%x init_ref=%d sync_hw=%d\n",
+	kern_logf("i915: intel_power_domains_init_hw(false) done: cdclk=%u vco=%u dbuf=0x%x init_ref=%d sync_hw=%d\n",
 	    display->cdclk.hw.cdclk,
 	    display->cdclk.hw.vco,
 	    dcore->dbuf_enabled_slices,
@@ -1973,7 +1923,7 @@ i915_display_core_init(
 }
 
 /*
- * P3.7 intel_dmc_init: acquires, parses and loads the DMC firmware
+ * intel_dmc_init: acquires, parses and loads the DMC firmware
  * asynchronously.  A DMC-owned POWER_DOMAIN_INIT reference is taken
  * (released by the worker on a successful load); the probe continues
  * without waiting for the load.
@@ -2015,7 +1965,7 @@ i915_display_dmc_init(
 	drv_i915_dmc_init(&display->dmc_dev, &display->dmc_wq, &gt->mmio, &display->power_domains, &display->pwc, (int)gt->display_ver, gt->is_alderlake_p, stepping, substepping, path);
 	display->dmc_inited = 1;
 	display->pwc.display_ver = (int)gt->display_ver;
-	kern_logf("i915: P3 intel_dmc_init: revid=0x%x step=%c%c DMC load queued (path=%s, work_submitted=%d)\n",
+	kern_logf("i915: intel_dmc_init: revid=0x%x step=%c%c DMC load queued (path=%s, work_submitted=%d)\n",
 	    (unsigned)revid,
 	    stepping,
 	    substepping,
@@ -2024,7 +1974,7 @@ i915_display_dmc_init(
 }
 
 /*
- * P3.9 to P3.16, the tail of intel_display_driver_probe_noirq():
+ * The tail of intel_display_driver_probe_noirq():
  * intel_mode_config_init, intel_cdclk_init, intel_color_init,
  * intel_dbuf_init, intel_bw_init (the bandwidth software state and the
  * forced SAGV disable), intel_pmdemand_init, intel_init_quirks and
@@ -2078,7 +2028,7 @@ i915_display_noirq_tail(
 	if (error != 0)
 		return error;
 
-	kern_logf("i915: P3 intel_bw_init: obj=%u sagv_forced=%d qgv=0x%x psf=0x%x mask=0x%x pcode=%d sagv_status=%d\n",
+	kern_logf("i915: intel_bw_init: obj=%u sagv_forced=%d qgv=0x%x psf=0x%x mask=0x%x pcode=%d sagv_status=%d\n",
 	    dstate->obj_count,
 	    dstate->sagv_force_disable_attempted,
 	    dstate->sagv_qgv_points,
@@ -2111,7 +2061,7 @@ i915_display_noirq_tail(
 	    (unsigned)drv_i915_pci_read16(&gt->pci, I915_PCI_SUBSYSTEM_VENDOR),
 	    (unsigned)drv_i915_pci_read16(&gt->pci, I915_PCI_SUBSYSTEM_DEVICE));
 	drv_i915_init_quirks(dstate, q_dev, q_svid, q_sdid);
-	kern_logf("i915: P3 intel_init_quirks: dev=0x%x subsys=%04x:%04x quirk_mask=0x%x hooks=%u dmi_available=%d\n",
+	kern_logf("i915: intel_init_quirks: dev=0x%x subsys=%04x:%04x quirk_mask=0x%x hooks=%u dmi_available=%d\n",
 	    (unsigned)q_dev,
 	    (unsigned)q_svid,
 	    (unsigned)q_sdid,
@@ -2125,12 +2075,12 @@ i915_display_noirq_tail(
 	if (dstate->fbc[0] != NULL)
 		funcs = dstate->fbc[0]->funcs_kind;
 
-	kern_logf("i915: P3 intel_fbc_init: fbc_mask=0x%x enable_fbc=%d created=%u funcs=%d\n",
+	kern_logf("i915: intel_fbc_init: fbc_mask=0x%x enable_fbc=%d created=%u funcs=%d\n",
 	    dstate->fbc_mask,
 	    dstate->enable_fbc_sanitized,
 	    dstate->fbc_created,
 	    funcs);
-	kern_logf("i915: P3 probe_noirq COMPLETE: global objs=%u (order: %s,%s,%s,%s) mode_config max=%ux%u cursor=%ux%u async_flip=%d\n",
+	kern_logf("i915: probe_noirq COMPLETE: global objs=%u (order: %s,%s,%s,%s) mode_config max=%ux%u cursor=%ux%u async_flip=%d\n",
 	    dstate->obj_count,
 	    dstate->cdclk_obj.name,
 	    dstate->dbuf_obj.name,
@@ -2147,7 +2097,7 @@ i915_display_noirq_tail(
 }
 
 /*
- * P5-a: the front section of the nogem probe -- watermark and SAGV
+ * the front section of the nogem probe -- watermark and SAGV
  * latencies, the PPS and GMBUS bases, the crtc and plane records, the
  * shared DPLL table, CDCLK init_hw and the ADL-P WAs, and the VGA plane
  * disable.
@@ -2176,7 +2126,7 @@ i915_display_nogem_front(
 	}
 
 	display->nogem_inited = 1;
-	kern_logf("i915: P5a wm: levels=%u latency=%u/%u/%u/%u/%u/%u/%u/%u valid=%d sagv_status=%d block_time=%uus\n",
+	kern_logf("i915: wm: levels=%u latency=%u/%u/%u/%u/%u/%u/%u/%u valid=%d sagv_status=%d block_time=%uus\n",
 	    nogem->wm_num_levels,
 	    nogem->wm_skl_latency[0],
 	    nogem->wm_skl_latency[1],
@@ -2189,7 +2139,7 @@ i915_display_nogem_front(
 	    nogem->wm_latency_valid,
 	    nogem->sagv_status,
 	    nogem->sagv_block_time_us);
-	kern_logf("i915: P5a objects: crtcs=%u planes/crtc=%u scalers=%u dplls=%u(mgr=%d) gmbus_pins=%u pps_base=0x%x gmbus_base=0x%x\n",
+	kern_logf("i915: objects: crtcs=%u planes/crtc=%u scalers=%u dplls=%u(mgr=%d) gmbus_pins=%u pps_base=0x%x gmbus_base=0x%x\n",
 	    nogem->num_crtcs,
 	    nogem->crtcs[0].num_planes,
 	    nogem->crtcs[0].num_scalers,
@@ -2198,7 +2148,7 @@ i915_display_nogem_front(
 	    nogem->gmbus_pins_present,
 	    nogem->pps_mmio_base,
 	    nogem->gmbus_mmio_base);
-	kern_logf("i915: P5a hw: max_cdclk=%u nssc_ref=%u adlp_wa=%d hti_read=%d vga_already_off=%d vga_disabled=%d writes=%u (gmbus_adapters/hdcp_component unimplemented: %d/%d)\n",
+	kern_logf("i915: hw: max_cdclk=%u nssc_ref=%u adlp_wa=%d hti_read=%d vga_already_off=%d vga_disabled=%d writes=%u (gmbus_adapters/hdcp_component unimplemented: %d/%d)\n",
 	    nogem->max_cdclk_freq,
 	    nogem->dpll_ref_nssc,
 	    nogem->adlp_wa_applied,
@@ -2214,7 +2164,7 @@ i915_display_nogem_front(
 }
 
 /*
- * P5-b intel_setup_outputs(): HAS_DDI -> intel_ddi_crt_present() (false on
+ * intel_setup_outputs(): HAS_DDI -> intel_ddi_crt_present() (false on
  * version 9 and later) -> intel_bios_for_each_encoder(intel_ddi_init).  The
  * eDP connector is built inside intel_ddi_init, as the reference does.
  */
@@ -2238,7 +2188,7 @@ i915_display_setup_outputs(
 
 	/* Runs the DDI decision chain over the ports A, B, TC1 to TC4. */
 	drv_i915_setup_outputs(nogem, (int)gt->display_ver, I915_DISPLAY_PORT_MASK, &display->vbt_state, &gt->mmio);
-	kern_logf("i915: P5b setup_outputs: vbt_children=%u ddi_init=%u encoders=%u skipped=%u crt_present=%d\n",
+	kern_logf("i915: setup_outputs: vbt_children=%u ddi_init=%u encoders=%u skipped=%u crt_present=%d\n",
 	    display->vbt_state.num_display_devices,
 	    nogem->ddi_init_calls,
 	    nogem->num_encoders,
@@ -2247,7 +2197,7 @@ i915_display_setup_outputs(
 
 	/* Names every encoder made. */
 	for (i = 0U; i < nogem->num_encoders; i++) {
-		kern_logf("i915: P5b encoder[%u]: port=%c phy=%d tc=%d clk=%d pd=%d dvo=0x%02x dev_type=0x%x dp=%d hdmi=%d\n",
+		kern_logf("i915: encoder[%u]: port=%c phy=%d tc=%d clk=%d pd=%d dvo=0x%02x dev_type=0x%x dp=%d hdmi=%d\n",
 		    i,
 		    (char)('A' + nogem->encoders[i].port),
 		    nogem->encoders[i].phy,
@@ -2262,11 +2212,11 @@ i915_display_setup_outputs(
 
 	/* Names every port skipped and why. */
 	for (i = 0U; i < nogem->num_ddi_skips; i++)
-		kern_logf("i915: P5b ddi skip[%u]: port=%d reason=%d\n", i, nogem->ddi_skip_port[i], nogem->ddi_skip_reason[i]);
+		kern_logf("i915: ddi skip[%u]: port=%d reason=%d\n", i, nogem->ddi_skip_port[i], nogem->ddi_skip_reason[i]);
 }
 
 /*
- * P5-c and P5-d: intel_modeset_setup_hw_state(), readout and sanitize.
+ * intel_modeset_setup_hw_state(): readout and sanitize.
  *
  * The reference takes a POWER_DOMAIN_INIT reference around the whole of
  * it; the init reference is still held here.  The sanitize turns back off
@@ -2288,7 +2238,7 @@ i915_display_readout(
 
 	/* The readout half. */
 	drv_i915_modeset_readout_hw_state(nogem, (int)gt->display_ver, &gt->mmio, &display->power_domains, &display->pwc);
-	kern_logf("i915: P5c readout: crtcs=%u active_pipes=0x%x planes_visible=%u encoders_linked=%u dplls_on=%u (detail readout unimplemented: %d)\n",
+	kern_logf("i915: readout: crtcs=%u active_pipes=0x%x planes_visible=%u encoders_linked=%u dplls_on=%u (detail readout unimplemented: %d)\n",
 	    nogem->readout_crtcs,
 	    nogem->active_pipes,
 	    nogem->readout_planes_visible,
@@ -2299,7 +2249,7 @@ i915_display_readout(
 	/* The sanitize half, with the stepping from the live configuration space. */
 	revid = drv_i915_pci_read8(&gt->pci, I915_PCI_REVISION);
 	drv_i915_modeset_sanitize_hw_state(nogem, (int)gt->display_ver, drv_i915_adlp_display_step(revid), display->dstate.fbc_mask, &gt->mmio, &display->power_domains, &display->pwc);
-	kern_logf("i915: P5d sanitize: vblank_resets=%u dmc_pipes=%u vblank_on=%u fbc_deact=%u enc_clk_gated=%u dplls_disabled=%u wells_disabled=%u cmtg_wa=%d early_was=%d wm_read=%d (crtc_disable_noatomic needed: %d)\n",
+	kern_logf("i915: sanitize: vblank_resets=%u dmc_pipes=%u vblank_on=%u fbc_deact=%u enc_clk_gated=%u dplls_disabled=%u wells_disabled=%u cmtg_wa=%d early_was=%d wm_read=%d (crtc_disable_noatomic needed: %d)\n",
 	    nogem->vblank_resets,
 	    nogem->dmc_pipes_enabled,
 	    nogem->vblank_on_count,
@@ -2475,11 +2425,11 @@ i915_driver_register(
 	 * With the firmware display left to the takeover, nothing references
 	 * its wells yet (the reference's intel_initial_commit() has taken them
 	 * over by now), so the INIT reference is kept until the takeover
-	 * (ws084, as the N1 parity run on the machine).
+	 * (as the N1 parity run on the machine).
 	 */
 	if (display->n0.takeover) {
 		p->power_domains_enable_deferred = 1;
-		kern_logf("i915: P7 power_domains_enable: deferred (the INIT reference is kept until the takeover)\n");
+		kern_logf("i915: power_domains_enable: deferred (the INIT reference is kept until the takeover)\n");
 	} else {
 		drv_i915_power_domains_enable(p, &display->dcore);
 	}
@@ -2567,10 +2517,10 @@ i915_display_log_wells(
 		well = &display->power_domains.power_wells[i];
 		enabled = drv_i915_power_well_is_enabled(well, &display->pwc);
 		if (well->refcount != 0U || enabled)
-			kern_logf("i915: P7 well %s: refcount=%u hw_enabled=%d\n", well->name, well->refcount, enabled);
+			kern_logf("i915: well %s: refcount=%u hw_enabled=%d\n", well->name, well->refcount, enabled);
 	}
 
-	kern_logf("i915: P7 DC_STATE_EN=0x%08x DC_off disable_calls=%u dc_state_writes=%u rewrites=%u dmc_has_payload=%d\n",
+	kern_logf("i915: DC_STATE_EN=0x%08x DC_off disable_calls=%u dc_state_writes=%u rewrites=%u dmc_has_payload=%d\n",
 	    drv_i915_read32(&device->gt.mmio, I915_DISPLAY_DC_STATE_EN),
 	    display->pwc.dc_off_disable_calls,
 	    display->pwc.dc_state_writes,
@@ -2745,7 +2695,7 @@ i915_display_query(
 		return error;
 	}
 
-	/* The display, by its connector's ID and generation (ws113-p011a), its state and its formats. */
+	/* The display, by its connector's ID and generation, its state and its formats. */
 	(void)drv_i915_display_resident_identity(display, &request->display_id, &request->generation, &connected);
 	/* Frames are presented from shared resources (present.c), so BLOB is offered. */
 	request->flags = GPU_DISPLAY_CONNECTED | GPU_DISPLAY_FIFO | GPU_DISPLAY_BLOB;
@@ -2779,7 +2729,7 @@ i915_display_query(
 		request->physical_height_mm = height_mm;
 	}
 
-	/* The output's name: its port's key (ws113-p002, D-ID A2): the panel's DDI A, or the other output's port. */
+	/* The output's name: its port's key (D-ID A2): the panel's DDI A, or the other output's port. */
 	kind = I915_HPD_OUTPUT_EDP;
 	port = 0;
 	if (display->output.kind == I915_OUTPUT_KIND_HDMI) {
@@ -2885,8 +2835,8 @@ i915_display_mode(
  * Gives a display's lease to a session (the display claim operation).
  *
  * The resident output has one lease at a time; another connected connector
- * becomes the second output while the resident lease is held (ws113-p011),
- * or the resident output moves to it while none is (ws113-p011a).  Returns
+ * becomes the second output while the resident lease is held,
+ * or the resident output moves to it while none is.  Returns
  * 0 with the lease, ENOENT or ESTALE for another display, EINVAL for a
  * plane other than 0, EBUSY while another session holds the resident
  * lease, ENOSPC for the limit of the outputs shown at once, or ENXIO for
@@ -2921,10 +2871,9 @@ i915_display_claim(
 
 	/*
 	 * Another connector.  With the resident output's lease held it becomes
-	 * the second output, the head (ws113-p011), or the claim is the limit
-	 * of the outputs shown at once, told as one (ENOSPC, the 2026-10-05
-	 * user decision), not a failure.  With no lease held the output moves
-	 * to it (Keiland's explicit claim, ws113-p011a).
+	 * the second output, the head, or the claim is the limit
+	 * of the outputs shown at once, told as one (ENOSPC), not a failure.
+	 * With no lease held the output moves to it (Keiland's explicit claim).
 	 */
 	if (!resident) {
 		if (!connected)
@@ -2962,8 +2911,8 @@ i915_display_claim(
 	request->lease = rd->lease;
 
 	/*
-	 * A moved output that failed failed only the lease that lit it
-	 * (ws113-p011a): this lease's first frame lights an output again.
+	 * A moved output that failed failed only the lease that lit it:
+	 * this lease's first frame lights an output again.
 	 */
 	irq = spin_lock_irqsave(&owner_device->irq_lock);
 
@@ -2981,7 +2930,7 @@ i915_display_claim(
 
 /*
  * Gives the resident output's display ID and generation, and whether its
- * connector is connected (ws113-p011a): its connector's ID and generation
+ * connector is connected: its connector's ID and generation
  * in the inventory, so that a display keeps one identity whichever output
  * the node lights; display 1 of generation 1 without the hotplug path.
  */
@@ -3007,7 +2956,7 @@ drv_i915_display_resident_identity(
 	/*
 	 * The connector as the topology last took it, the built-in panel
 	 * connected while the node has it (output.c): the hotplug path never
-	 * detects an eDP connector (BUG-250: taken as unplugged, every frame
+	 * detects an eDP connector (taken as unplugged, every frame
 	 * was refused with ENXIO).
 	 */
 	error = drv_i915_display_output_connector(display, (unsigned)resident, &output);
@@ -3064,7 +3013,7 @@ drv_i915_display_which(
 
 /*
  * Brings the firmware's output back as the resident output when a moved
- * output's last hold ended with no lease held (ws113-p011a, D-RELEASE):
+ * output's last hold ended with no lease held (D-RELEASE):
  * the output is not lit until the next claim and frame.  Runs on the
  * worker after it left the display window, before the hold is said to be
  * over, so that a claim waiting for the hold's end moves the output after
@@ -3109,8 +3058,8 @@ drv_i915_display_output_back(
 		return;
 
 	/*
-	 * A second output still claimed keeps the resident output where it is
-	 * (ws113-p011, review F4): the firmware's output may be the second
+	 * A second output still claimed keeps the resident output where it is:
+	 * the firmware's output may be the second
 	 * output's connector or pipe.  Its release ends that, and the next
 	 * claim of the firmware's connector moves the output back.
 	 */
@@ -3130,7 +3079,7 @@ drv_i915_display_output_back(
 
 /*
  * Brings the firmware's output back as the resident output after a moved
- * output's run failed (ws113-p011a: a failed move gives the earlier output
+ * output's run failed (a failed move gives the earlier output
  * back), with a lease held or not.
  *
  * Runs on the worker after it left the display window.  The rest of the
@@ -3166,8 +3115,8 @@ drv_i915_display_output_fail_back(
 
 /*
  * Gives up the firmware's own output after its display was unplugged while
- * it was lit (ws051-p005b, Q1's choice (b) of 2026-10-08): the driver does
- * not light another output in its place (the user's decision 3: Keiland
+ * it was lit: the driver does
+ * not light another output in its place (Keiland
  * decides), and the rest of the lease's presentations fail (ENXIO).
  *
  * The built-in panel, when the machine has one, stands as the resident
@@ -3220,7 +3169,7 @@ drv_i915_display_output_lost(
 
 /*
  * Reports whether the resident output is a moved one, not the output the
- * firmware left lit (ws113-p011a).
+ * firmware left lit.
  */
 int
 drv_i915_display_output_moved(
@@ -3239,8 +3188,8 @@ drv_i915_display_output_moved(
 
 /*
  * Reports the display topology's sequence (the display events operation):
- * the hotplug path moves it when a connector is connected or disconnected
- * (ws113-p002).  Any context: no hardware access, no wait.
+ * the hotplug path moves it when a connector is connected or disconnected.
+ * Any context: no hardware access, no wait.
  */
 int
 drv_i915_display_events(
@@ -3281,7 +3230,7 @@ i915_display_resident_connector(
 	if (!display->hpd_started)
 		return -1;
 
-	/* The connector the output names (ws113-p011a). */
+	/* The connector the output names. */
 	if (display->output.has_connector)
 		return (int)display->output.connector;
 
@@ -3350,7 +3299,7 @@ i915_display_other(
 }
 
 /*
- * Writes a connector's key (main's adoption A2, ws113-p001): the version,
+ * Writes a connector's key (main's adoption A2): the version,
  * the GPU's PCI segment, bus, device and function, the kind and the port,
  * for example "zedbsd-port-v1:pci:0000:00:02.0:edp:A".
  */
@@ -3415,8 +3364,8 @@ i915_display_other_query(
 	request->flags = GPU_DISPLAY_FIFO | GPU_DISPLAY_BLOB;
 
 	/*
-	 * A connected one: the second output when it is the head, lit or not
-	 * (ws113-p011); otherwise the limit of outputs shown at once only when
+	 * A connected one: the second output when it is the head, lit or not;
+	 * otherwise the limit of outputs shown at once only when
 	 * its claim now answers ENOSPC (D-LIMIT).
 	 */
 	drv_i915_head_connector_state(device->display, connector, &is_head, &lit, &limited);
@@ -3499,7 +3448,7 @@ i915_display_other_mode(
 
 /*
  * Powers the resident display's panel off or on for the open holding its
- * lease (the display power operation, ws113-p012).
+ * lease (the display power operation).
  *
  * Another connector is not lit and has no lease: EBUSY (ENOENT or ESTALE
  * for an unknown one).  An HDMI display in the panel's place has no light
@@ -3531,8 +3480,8 @@ i915_display_power(
 		return error;
 
 	/*
-	 * Another connector: the second output has no light of ours to switch
-	 * (ws113-p011), and no other connector is leased.
+	 * Another connector: the second output has no light of ours to switch,
+	 * and no other connector is leased.
 	 */
 	if (!resident) {
 		if (!connected)
@@ -3561,7 +3510,7 @@ i915_display_power(
 
 /*
  * Waits for a refresh boundary of a display (the display refresh
- * operation, ws113-p012): the resident output's pipe frames.  Another
+ * operation): the resident output's pipe frames.  Another
  * connector is not lit and makes no boundary.
  */
 static int
@@ -3627,8 +3576,8 @@ i915_display_other_check(
 }
 
 /*
- * Moves the resident output to another connected connector (ws113-p011a,
- * Keiland's explicit claim): only while no lease is held (otherwise the
+ * Moves the resident output to another connected connector (Keiland's
+ * explicit claim): only while no lease is held (otherwise the
  * limit of the outputs shown at once, ENOSPC).  The connector's kind
  * prepares its output (output.c), the hold of the last picture, if any,
  * ends and the output that showed it is stopped, and the prepared output

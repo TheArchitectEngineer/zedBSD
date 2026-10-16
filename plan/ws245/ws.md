@@ -129,8 +129,8 @@ Resume point: q1218（P1、2026-10-16）: design.md 改訂 6（レビュー 5 �
 | p013 | （改訂 3a）旧 code の削除と出典の監査 | **canceled**（→ 各段で消す + p043） |
 | p014 | （改訂 3a）display 11 | **canceled**（→ p045） |
 | p015 | （改訂 3a）規約の全文 | **canceled**（→ p046） |
-| p047 | 回帰の証拠の道具: own の survey（PP_STATUS・PWM・frame counter・SURFLIVE・pipe CRC・underrun・TRANS_CONF などを picture up の後に dmesg へ）と `mmio.c` の書き込みの log（`i915.debug=display`）、`5330-survey.sh`（改訂 5、レビュー 4 の B3・M6） | in-progress（4 LW。2026-10-16 実装・5330 の素の起動の回帰に合格、merge の依頼済み。LCD の目視は一覧に） |
-| p016 | OpRegion の場所と map（xd-vbt の find、`struct i915_xd` と io・platform の用意）。opregion.c を消す | planned（3 LW。改訂 6: display.c の開発の管理情報も） |
+| p047 | 回帰の証拠の道具: own の survey（PP_STATUS・PWM・frame counter・SURFLIVE・pipe CRC・underrun・TRANS_CONF などを picture up の後に dmesg へ）と `mmio.c` の書き込みの log（`i915.debug=display`）、`5330-survey.sh`（改訂 5、レビュー 4 の B3・M6） | cleared（4 LW。2026-10-16 main 3e1e0c687。LCD の目視は beta2.md の U11） |
+| [p016](phase016/phase.md) | OpRegion の場所と map（xd-vbt の find、`struct i915_xd` と io・platform の用意）。opregion.c を消す | in-progress（3 LW。2026-10-16 5330 の回帰に合格、merge の依頼済み。SV7 は一覧） |
 | p017 | VBT の解析（xd-vbt を真に、旧 parser と影の比較を 1 段） | planned（4 LW） |
 | p018 | EDID の decode（xd-edid）+ vbt.c の parser の本体の削除（本番の呼び手 7 関数と drm_mode の helper は殻 `vbt-shell.c` に） | planned（3 LW） |
 | p019 | AUX の transaction（xd-aux。well・DC off・VDD は呼ぶ側） | planned（4 LW） |
