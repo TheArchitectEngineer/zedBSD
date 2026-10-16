@@ -34,6 +34,8 @@
 | q1222 / q1222-i01 | P3（phase-runner、worktree p3・agent/p3-ws039） | ws039-p009 | design.md §16 の p009 の行のまま: compositor が amdrdna で描く（desktop）、amdrdna.auto の既定を上げる、reboot の後片付け。実機 10.0.10.3 で desktop の ok（目視）の後に main（2026-10-16 ユーザー「p006, p009, p012の順でどうですか？」） | in-progress |
 | q1221 / q1221-i01 | P2（phase-runner、worktree p2・agent/p2-ws253） | ws253-p001 | 起動の時間の測定（QEMU）・原因の特定・通常の起動は sessiond を先に network 等を後に、debug の起動は今のまま・依存の一覧（2026-10-16 ユーザー「これを解決するためのWSを作り、サブエージェントでQEMUを使って解析して、直してください。」） | 区切りで返却（3f9387f72、merge 4e3ded77f。QEMU で前後とも約 9 秒、60 秒は再現せず。5330 の確認が残り） |
 | q1221 / q1221-i02 | P2（phase-runner、worktree p2・agent/p2-ws253） | ws253-p001 | 5330 の記録（P1 の q1collect、kernel から desktop まで約 28 s: compositor の起動の待ち 16 s・kernel→init 10 s・homes 2 s）の解析と短縮（同じ範囲） | 区切りで返却（52c4b1e66、merge d454d4bd3。QEMU の NVMe 起動で desktop まで約 9 s → 約 4 s。5330 の確認が残り） |
+| q1221 / q1221-i03 | P2（phase-runner、worktree p2・agent/p2-ws253） | ws253-p001 | 5330 の d454d4bd3 の後の記録（desktop shown 19.5 s、compose 2 s、kernel→init 14.7 s が最大）: kernel の起動の段の時刻の記録と短縮（同じ範囲） | in-progress |
+| T1-702 | T1（test-runner） | ws245-p053 | 5330 の素の起動の回帰（基準 8666f25a6 と p053 33cde7ac9、全部の列の diff）と WS253 の記録の相乗り（2026-10-16 ユーザー「P1のテストはT1にオフロードして、T1でシリアライズ」） | in-progress |
 | q1207 / q1207-i01 | P1（phase-runner、worktree p1・agent/p1-ws245） | ws245-p004 → ws245-p006 | p004 VBT・EDID（xd-vbt・xd-edid）、続けて p006 power・DMC・clock・TC の register（design.md §6.2）。host 試験だけで kernel の振る舞いは変えない（2026-10-15 ユーザー「WS245は、ロールバックできる体制にしておいて、今から実装します。」「今マージします」） | in-progress |
 
 ## 2026-10-15: WS247・WS245（q984〜q995）
