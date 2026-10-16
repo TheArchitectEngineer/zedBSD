@@ -119,6 +119,7 @@ static void vk_node_count(struct amdrdna_node *node, uint32_t kind, uint64_t sta
 static void vk_node_count_busy(struct amdrdna_session *session, uint64_t submitted_us);
 static void vk_node_report(struct amdrdna_node *node);
 static void vk_node_report_busy(const struct vk_node_busy *busy, uint64_t run_bytes);
+static void vk_node_report_clocks(struct amdrdna_node *node);
 static void vk_node_report_opcodes(const struct vk_node_tally *tallies);
 static void vk_node_tally_add(struct vk_node_tally *tally, uint64_t us, uint64_t bytes);
 
@@ -968,8 +969,9 @@ vk_node_report(
 	    (unsigned long long)memory->count, (unsigned long long)(memory->bytes >> 10),
 	    (unsigned long long)(memory->us / 1000U), (unsigned long long)memory->most_us);
 
-	/* The GPU's own time on the runs, then the opcodes that took longest. */
+	/* The GPU's own time on the runs and its clocks, then the opcodes that took longest. */
 	vk_node_report_busy(&busy, runs->bytes);
+	vk_node_report_clocks(node);
 	vk_node_report_opcodes(taken + VK_NODE_OPCODE_FIRST);
 	kern_free(taken);
 }
@@ -1011,6 +1013,34 @@ vk_node_report_busy(
 	amdrdna_mark("vk timing: gpu busy %llu runs %llums max %lluus (%llu ticks, counter %llukHz) | run buffers %lluKiB",
 	    (unsigned long long)busy->runs, (unsigned long long)(busy_us / 1000U), (unsigned long long)most_us,
 	    (unsigned long long)busy->ticks, (unsigned long long)kilohertz, (unsigned long long)(run_bytes >> 10));
+}
+
+/*
+ * Marks the clocks the power side's watch last read from the firmware (at
+ * most a second old) and how busy it says the graphics engine was; a GPU
+ * whose firmware gives no readings is marked so.
+ */
+static void
+vk_node_report_clocks(
+	struct amdrdna_node *node)
+{
+	struct amdrdna_power_readings speeds_now;
+	bool clocked;
+
+	/* The watch's last readings. */
+	clocked = amdrdna_power_clocks(node->device, &speeds_now);
+	if (!clocked) {
+		amdrdna_mark("vk timing: clocks not read (the smu firmware gives no readings)");
+		return;
+	}
+
+	/* Its line. */
+	amdrdna_mark("vk timing: clocks gfx %uMHz average %uMHz soc %uMHz mem %uMHz | gfx busy %u%%",
+	    speeds_now.gfx_clock,
+	    speeds_now.gfx_average,
+	    speeds_now.system_clock,
+	    speeds_now.memory_clock,
+	    speeds_now.gfx_activity);
 }
 
 /* Marks the VK_NODE_TIMED_SHOWN opcodes of a period that took the most time, the longest first. */

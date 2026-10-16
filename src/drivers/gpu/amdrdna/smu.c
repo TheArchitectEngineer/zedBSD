@@ -193,8 +193,9 @@ static void thermal_write(struct amdrdna_device *device, uint32_t offset, uint32
  * Runs stage A4: checks that the unit's firmware runs and asks its
  * versions, drives the fan at the static duty, then puts the board's power
  * table together and asks the firmware to run its fan and thermal
- * control (amdrdna.smu.features=0 leaves that out), falling back to the
- * static duty when it will not; sends the thermal alerts to the interrupt
+ * control (amdrdna.smu.features=0 leaves that out; amdrdna.smu.gfxclk=1
+ * has it move the graphics clock too), falling back to the static duty
+ * when it will not; sends the thermal alerts to the interrupt
  * ring and checks that one arrives, reads the temperatures and the fan,
  * and starts the watch.
  *
@@ -259,6 +260,15 @@ amdrdna_a4_power(
 	/* Puts the table together; its limits serve the static tier too. */
 	error = power_table_prepare(device, table);
 
+	/*
+	 * The boot line may have the firmware move the graphics clock too
+	 * (amdrdna.smu.gfxclk=1); it stays at the video BIOS's boot clock
+	 * otherwise.  clock_levels tells the features to permit its levels.
+	 */
+	thermal->clock_levels = false;
+	if (amdrdna_parameter_number("amdrdna.smu.gfxclk", 0U) != 0U)
+		thermal->clock_levels = true;
+
 	/* Asks the firmware for its features when the table is ready and the boot line allows it. */
 	wanted = amdrdna_parameter_number("amdrdna.smu.features", 1U);
 	if (error != 0) {
@@ -293,6 +303,17 @@ amdrdna_a4_power(
 
 	/* Reads the temperatures and the fan. */
 	power_read(device);
+
+	/* Marks the clocks the firmware reports, when it gave readings. */
+	if (thermal->clocked) {
+		amdrdna_mark("A4 clocks gfx=%uMHz average=%uMHz soc=%uMHz mem=%uMHz busy=%u%% levels=%s",
+		    thermal->gfx_clock,
+		    thermal->gfx_average,
+		    thermal->system_clock,
+		    thermal->memory_clock,
+		    thermal->gfx_activity,
+		    thermal->clock_levels ? "asked" : "off");
+	}
 
 	/* Starts the watch. */
 	error = power_watch_start(device);
@@ -486,6 +507,38 @@ amdrdna_thermal_interrupt(
 		/* A source of these clients the stage does not know. */
 		amdrdna_mark("thermal: unhandled client=0x%x source=0x%x", (unsigned)interrupt->client, (unsigned)interrupt->source);
 	}
+}
+
+/*
+ * Gives the clocks and the graphics engine's activity the watch last read
+ * from the firmware (the clock fields of speeds_now; the others are left as
+ * they are).  Returns false when the firmware gave no readings: its
+ * features do not run, or the watch has not read yet.
+ */
+bool
+amdrdna_power_clocks(
+	struct amdrdna_device *device,
+	struct amdrdna_power_readings *speeds_now)
+{
+	struct amdrdna_thermal *thermal;
+	unsigned long irq;
+	bool clocked;
+
+	/* What the watch published, under its lock. */
+	thermal = &device->thermal;
+	irq = spin_lock_irqsave(&thermal->lock);
+
+	clocked = thermal->clocked;
+	speeds_now->gfx_clock = thermal->gfx_clock;
+	speeds_now->system_clock = thermal->system_clock;
+	speeds_now->memory_clock = thermal->memory_clock;
+	speeds_now->gfx_average = thermal->gfx_average;
+	speeds_now->gfx_activity = thermal->gfx_activity;
+
+	spin_unlock_irqrestore(&thermal->lock, irq);
+
+	/* Succeeded when they were read. */
+	return clocked;
 }
 
 /*
@@ -818,12 +871,18 @@ power_features(
 	uint64_t address;
 	uint32_t low;
 	uint32_t high;
+	uint32_t permitted;
 	const char *how;
 	bool on;
 	int error;
 
 	/* The power side's state. */
 	thermal = &device->thermal;
+
+	/* The three features, and the graphics clock's levels with their limits when the boot line asks. */
+	permitted = AMDRDNA_SMU_FEATURES_LOW;
+	if (thermal->clock_levels)
+		permitted |= AMDRDNA_SMU_CLOCK_FEATURES_LOW;
 
 	/* No display is counted yet. */
 	error = smu_message(device, SMU_MESSAGE_DISPLAYS, 0U, NULL);
@@ -868,10 +927,10 @@ power_features(
 		return error;
 	}
 
-	/* Permits the three features, the high word first. */
+	/* Permits the features, the high word first. */
 	error = smu_message(device, SMU_MESSAGE_PERMIT_HIGH, AMDRDNA_SMU_FEATURES_HIGH, NULL);
 	if (error == 0)
-		error = smu_message(device, SMU_MESSAGE_PERMIT_LOW, AMDRDNA_SMU_FEATURES_LOW, NULL);
+		error = smu_message(device, SMU_MESSAGE_PERMIT_LOW, permitted, NULL);
 	if (error != 0) {
 		amdrdna_mark("A4 features: the permitted features refused (%d)", error);
 		return error;
@@ -922,6 +981,13 @@ power_features(
 	    (unsigned)high,
 	    (unsigned)low,
 	    (unsigned)thermal_read(device, AMDRDNA_THM_REG_FAN_MODE));
+
+	/* Says whether the graphics clock's levels run, when the boot line asked for them. */
+	if (thermal->clock_levels) {
+		amdrdna_mark("A4 features: graphics clock levels %s (permitted 0x%08x)",
+		    (low & AMDRDNA_SMU_FEATURE_GFX_LEVELS) != 0U ? "run" : "do not run",
+		    (unsigned)permitted);
+	}
 
 	/* Succeeded: the firmware runs the fan and the thermal control. */
 	return 0;
@@ -1320,6 +1386,11 @@ power_read(
 	readings.hotspot = 0U;
 	readings.memory = 0U;
 	readings.fan_speed = 0U;
+	readings.gfx_clock = 0U;
+	readings.system_clock = 0U;
+	readings.memory_clock = 0U;
+	readings.gfx_average = 0U;
+	readings.gfx_activity = 0U;
 	if (thermal->features_on) {
 		/* A firmware that gives no readings no longer watches the GPU either. */
 		error = power_readings_fetch(device, &readings);
@@ -1349,6 +1420,12 @@ power_read(
 	thermal->fan_speed = speed;
 	thermal->tachometer_speed = tachometer;
 	thermal->fan_driven = driven;
+	thermal->clocked = fetched;
+	thermal->gfx_clock = readings.gfx_clock;
+	thermal->system_clock = readings.system_clock;
+	thermal->memory_clock = readings.memory_clock;
+	thermal->gfx_average = readings.gfx_average;
+	thermal->gfx_activity = readings.gfx_activity;
 	thermal->readings++;
 	count = thermal->readings;
 

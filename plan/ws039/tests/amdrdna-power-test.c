@@ -55,6 +55,11 @@
 #define READING_HOTSPOT_AT	36U
 #define READING_MEMORY_AT	38U
 #define READING_FAN_AT		62U
+#define READING_GFX_CLOCK_AT	0U
+#define READING_SOC_CLOCK_AT	2U
+#define READING_MEMORY_CLOCK_AT	4U
+#define READING_GFX_AVERAGE_AT	18U
+#define READING_GFX_ACTIVITY_AT	24U
 
 /* The case results. */
 static int failures;
@@ -297,11 +302,20 @@ test_readings(void)
 	put16(bytes, READING_HOTSPOT_AT, 52U);
 	put16(bytes, READING_MEMORY_AT, 50U);
 	put16(bytes, READING_FAN_AT, 1234U);
+	put16(bytes, READING_GFX_CLOCK_AT, 300U);
+	put16(bytes, READING_SOC_CLOCK_AT, 600U);
+	put16(bytes, READING_MEMORY_CLOCK_AT, 875U);
+	put16(bytes, READING_GFX_AVERAGE_AT, 299U);
+	put16(bytes, READING_GFX_ACTIVITY_AT, 37U);
 	amdrdna_power_readings_read(bytes, &readings);
 	check(readings.edge == 47U, "readings.edge", "the edge is not 47");
 	check(readings.hotspot == 52U, "readings.hotspot", "the hotspot is not 52");
 	check(readings.memory == 50U, "readings.memory", "the memory is not 50");
 	check(readings.fan_speed == 1234U, "readings.fan", "the fan is not 1234 rpm");
+	check(readings.gfx_clock == 300U && readings.system_clock == 600U && readings.memory_clock == 875U,
+	    "readings.clocks", "the clocks are not 300, 600 and 875 MHz");
+	check(readings.gfx_average == 299U && readings.gfx_activity == 37U,
+	    "readings.activity", "the average and the activity are not 299 MHz and 37%");
 }
 
 /* The feature words. */
@@ -377,9 +391,15 @@ test_linux(
 	amdrdna_power_readings_read(metrics, &readings);
 	check(readings.edge == 47U && readings.hotspot == 52U && readings.memory == 50U && readings.fan_speed == 1234U,
 	    "linux.readings", "the readings are not 47, 52, 50 and 1234");
+	check(readings.gfx_clock == 300U && readings.system_clock == 600U && readings.memory_clock == 875U &&
+	    readings.gfx_average == 299U && readings.gfx_activity == 37U,
+	    "linux.clocks", "the clocks are not 300, 600, 875, 299 MHz and 37%");
 	amdrdna_power_readings_read(legacy, &readings);
 	check(readings.edge == 41U && readings.hotspot == 43U && readings.memory == 42U && readings.fan_speed == 987U,
 	    "linux.readings-legacy", "the older readings are not 41, 43, 42 and 987");
+	check(readings.gfx_clock == 1750U && readings.system_clock == 1100U && readings.memory_clock == 100U &&
+	    readings.gfx_average == 1600U && readings.gfx_activity == 99U,
+	    "linux.clocks-legacy", "the older clocks are not 1750, 1100, 100, 1600 MHz and 99%");
 
 	free(power);
 	free(board);

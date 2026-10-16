@@ -94,11 +94,21 @@ main(
 	metrics.TemperatureHotspot = 52U;
 	metrics.TemperatureMem = 50U;
 	metrics.CurrFanSpeed = 1234U;
+	metrics.CurrClock[PPCLK_GFXCLK] = 300U;
+	metrics.CurrClock[PPCLK_SOCCLK] = 600U;
+	metrics.CurrClock[PPCLK_UCLK] = 875U;
+	metrics.AverageGfxclkFrequencyPostDs = 299U;
+	metrics.AverageGfxActivity = 37U;
 	fill(&legacy, sizeof(legacy), 17U, 1U);
 	legacy.TemperatureEdge = 41U;
 	legacy.TemperatureHotspot = 43U;
 	legacy.TemperatureMem = 42U;
 	legacy.CurrFanSpeed = 987U;
+	legacy.CurrClock[PPCLK_GFXCLK] = 1750U;
+	legacy.CurrClock[PPCLK_SOCCLK] = 1100U;
+	legacy.CurrClock[PPCLK_UCLK] = 100U;
+	legacy.AverageGfxclkFrequency = 1600U;
+	legacy.AverageGfxActivity = 99U;
 
 	/* Writes them. */
 	if (write_file(argv[1], "power.bin", &power, sizeof(power)) != 0)

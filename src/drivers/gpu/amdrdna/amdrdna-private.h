@@ -208,11 +208,15 @@ struct amdrdna_training {
  * a previous one; a unit that stopped answering is not sent another).
  * limits is what the board's power table says, valid once table_built.
  * features_on says the firmware runs its three features (the mode is then
- * AMDRDNA_FAN_FIRMWARE), with the feature words it reported.  The watch
+ * AMDRDNA_FAN_FIRMWARE), with the feature words it reported; clock_levels
+ * says the boot line had the graphics clock's levels permitted too
+ * (amdrdna.smu.gfxclk=1).  The watch
  * thread reads the temperatures and the fan once a second, from the
  * firmware's readings when its features run and from the thermal block
- * always; lock protects what it publishes (the readings, the fault and the
- * alert counts) and the thread's stop, and waitq wakes it to stop.
+ * always, and the clocks (MHz) and the graphics engine's activity from
+ * the firmware's readings (clocked says they were read); lock protects
+ * what it publishes (the readings, the fault and the alert counts) and
+ * the thread's stop, and waitq wakes it to stop.
  */
 struct amdrdna_thermal {
 	struct mutex mailbox;
@@ -227,6 +231,7 @@ struct amdrdna_thermal {
 	bool features_on;
 	uint32_t features_low;
 	uint32_t features_high;
+	bool clock_levels;
 	unsigned mode;
 	unsigned duty_percent;
 	unsigned limit;
@@ -244,6 +249,12 @@ struct amdrdna_thermal {
 	uint32_t fan_speed;
 	uint32_t tachometer_speed;
 	unsigned fan_driven;
+	bool clocked;
+	unsigned gfx_clock;
+	unsigned system_clock;
+	unsigned memory_clock;
+	unsigned gfx_average;
+	unsigned gfx_activity;
 	unsigned readings;
 	bool faulted;
 	uint64_t high_alerts;
@@ -848,6 +859,11 @@ void
 amdrdna_thermal_interrupt(
 	struct amdrdna_device *device,
 	const struct amdrdna_interrupt *interrupt);
+
+bool
+amdrdna_power_clocks(
+	struct amdrdna_device *device,
+	struct amdrdna_power_readings *speeds_now);
 
 /* cp.c: stage A5's command processor. */
 int
