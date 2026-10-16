@@ -2,7 +2,7 @@
 
 # ws039-p016: `reset`（mode1 reset ＋ asic_init ＋ A2〜A5s の設定し直し ＋ re-light）と `sos alive` の自動の reset
 
-Status: in-progress（2026-10-17 00:2x P7: code・build・host 試験まで。実機は未実施、依頼文は下の「実機の試験の依頼」。判定は Q1）
+Status: in-progress（2026-10-17 01:18 P3: P3 の branch に merge（5c17b43cf）、実機 R1 の 1 回目で直した 2 点（c95be47f8・c4e3099a0・6c26527d9）の後、R1 の reset 3 回が合格。R2・R3 は未実施。merge と clearance の判定は Q1）
 Disposition: normal
 Parent: [WS039](../ws.md)
 Queue: q1237 / q1237-i01（P3 の p015 と並行。2026-10-16 ユーザー「P1,P3の処理で、並列にオフロードできる実装があれば、それぞれ1エージェントずつ追加してほしいです。…並列な実装は完璧でなくてもよく、あとでマージするときに整合が必要でもOKです。」）
@@ -63,6 +63,17 @@ Queue: q1237 / q1237-i01（P3 の p015 と並行。2026-10-16 ユーザー「P1,
 - 画面が暗いまま・SSH が 5 分戻らない（mode1 の後に PCI の戻しが効かず固まった等）: **電源の入れ直し**が要る。T1 は Q1 に報告し、Q1 がユーザーの一覧に「10.0.10.3 の電源の入れ直し」を載せる（今すぐは頼まない）。入れ直しの後は BootNext が 1 回限りなので Debian が立つ。
 - Debian の起動で画面が出ない時も電源の入れ直し（GPU が中途の状態）。Debian で amdgpu は load しない（p015 の事故の後の Q1 の規則）。
 - 次の zedBSD の試行の前は warm reboot で足りる（R1 の失敗の後でも、GOP が戻っていれば）。
+
+## P3 の branch への merge と実機 R1（2026-10-17 00:33〜01:18、P3）
+
+**merge**（5c17b43cf = 913cf2480 ＋ 3f9a8fcb5）: 衝突は `plan/ws039/tests/audit-allow.txt` の 1 行だけ（finished・firmware を整列して両方）。ioctl 6 番は重ならなかった。P7 の注意の点: `amdrdna_a11_relight` に pixel clock の引数（kHz、0 なら A6 が測った refresh から）を足し、`reset-display.c` は測った `pipe->pixel_khz` を渡す。`device->display.refresh_millihz` への書き込みは外した。build（`make -j16 BUILD=build/p3/usb ZEDBSD_CONFIG=plan/ws039/tests/config.mk build/p3/usb/vmunix build/p3/usb/bin/amdrdnactl`）rc 0・warning 0・kernel include check PASS・amd64 vmunix check PASS。host 試験 `amdrdna-host-test.sh`・`amdrdna-vk-host-test.sh`・`amdrdna-bytecode-test.sh`・`amdrdna-reset-test.sh`・`amdrdna-dml-test.sh` 全て PASS。
+
+**実機**（10.0.10.3、RX 5600 XT、zedBSD を USB から。boot の行は text login・`amdrdna.auto=A9`、`hw-run.sh boot 0003`。電源の入れ直し無し、全部 warm reboot）:
+- 1 回目（kernel 22f4d18c = 5c17b43cf、00:59〜01:01）: `RESET fail result=42 ms=26509 resets=0`。mode1 done・post ok posted=1・A2 ok again・`A11 ok relit … underflow=0/0`・display lit again・A3 ok・A4 ok まで進み、**A5 の `kiq ring test read 0xcafedead`**。原因: ring の software の `write_pointer` と `sequence` が 2 回目の A5 で 0 に戻らず（hw の queue は mode1 の後 0 から、ring の buffer は 0 で埋め直される）、doorbell で渡した write pointer まで 0 の語（type 0 の packet）を CP が実行していた。直し: `engines.c` の `engines_ring` で write pointer・sequence を 0、up を false に（c95be47f8）。
+- 2 回目（c95be47f8 の kernel、01:04〜01:06）: RESET ok を 3 回。ただし `amdrdnactl display` の frame_irq・refreshes が reset の後止まる（OTG の frame counter は進む、OTG の sync status は INT_STATUS が立ったまま）。原因: post の後 display の割り込みを入れ直した時点では IH の ring が A3 まで off で、最初の VSTARTUP が配られず ack されないまま残り、次の割り込みが来ない。直し: A3 の後に display の割り込みを ack し直す（`amdrdna_reset_display_rearm`、c4e3099a0）。3 回目（c4e3099a0、01:11〜01:13）で frame_irq は 60/s で進んだが、refreshes が reset ごとに 2^24 跳ぶ（frame counter が 0 から始まる）→ refresh の数の base を取り直す（`frame_valid = false`、6c26527d9）。
+- **合格の回**（6c26527d9 の kernel、vmunix cksum 1719841716、01:14〜01:18）: `amdrdnactl reset` を 3 回、毎回 `RESET ok ms=26774〜27315 resets=1/2/3`。dmesg: `reset begin (request)`・`reset: display kept, 141 words, otg0 running, pclk=148500kHz`・`reset: mode1 now`・`reset: mode1 done, boot=0x80000000 vram=6128MiB resizable=2`・`reset: post ok … posted=1`・`A2 again after the reset`・`A2 ok again … underflow=0`・`A11 ok relit 1920x1080@60.000 DVI … underflow=0/0`・`reset: display lit again otg0 hubp0 pclk=148500kHz frames=30 underflow=0`・`A3 ok`・`A4 ok … mode=F`・`A5 ok`・`reset ok (request)`。各回の後: status `failed=none`、`fault=0 hung=0`、display の frame_irq・refreshes が 1 s に 60 進む、`gpu ok`（2 回目の版）、`vkhang --loops`（`VKHANG ok … pixel=ff6f0000`）・`vkhang --compute --loops`（steps=111）・`vkblend`（`ok cases=20`）。証拠 `build/tmp/p16-r4/`（reset1〜3.txt・dmesg.txt）、1・2 回目は `build/tmp/p16-r1/`・`p16-r2/`・`p16-r3/`（P3 の worktree、commit しない）。
+- 未実施: 画面の目視（reset の間に消えて text console が戻るか。ユーザーの一覧へ）、R2（`amdrdna.reset=1` の起動）、R3（起動時の `sos alive`、作れない）、core の回復の道。reset が 27 s かかる（内訳は未測定。A3 の firmware の load と A4・A5 の確かめが大きい見込み）。
+- 道具の直し: UEFI の Boot0001 は古い USB の ESP を指していて（今の USB は Boot0003）、`hw-run.sh boot 0001` は検査を通って Debian に戻るだけだった（`/dev/disk/by-partlabel/` の escape が効かず PARTUUID が空で検査を飛ばしていた）。`blkid -t 'PARTLABEL=zedBSD EFI System'` で ESP を探し、見つからなければ断るように直した（Debian の上の実行は次の実機の時に確かめる）。
 
 ## P3 の branch と合わせる時の注意（merge の時に Q1）
 
