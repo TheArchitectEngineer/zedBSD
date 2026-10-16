@@ -31,6 +31,9 @@
 | `src/amd/compiler/aco_insert_waitcnt.cpp` | MIT（SPDX） | `5171bd9899f00a6fc3e8f811dd36f9fc211296a4fc197b59c2f0c78f4766a749` | P: 順に終わる event（vector memory・shared）と順の無い event（scalar load）、counter の数の待ち（`update_counters`・`target_info`）。2026-10-16 追加 | `gfx10-wait.c` |
 | `src/amd/vulkan/radv_cmd_buffer.c` | MIT（SPDX） | `3ecb5f4b2e3d151316450b835ac64dd700b91edb97ac95bc9c06c08f1654179e` | V: point sprite の attribute（PT_SPRITE_TEX、OFFSET 0x20、`radv_emit_ps_inputs`）。2026-10-16 追加 | `gfx10-program.c` |
 | `src/amd/vulkan/radv_queue.c` | MIT（SPDX） | `7b29329a5bd3ef645cb3f3c544fd037d356cd526fa9f287e25f59e1075316f8c` | V: preamble の SPI_INTERP_CONTROL_0（flat・sprite の S・T・0・1）。2026-10-16 追加 | `gfx10-program.c` |
+| `src/amd/common/nir/ac_nir_lower_tex.c` | MIT（file の notice） | `dd805ff9b230c08ed5362b85c0ae4c7e0233262775ac14545d2c29f7755642b0` | V・P: cube の address（face の座標 × 1/\|ma\| ＋ 1.5、face ＋ layer × 8）。2026-10-16 追加 | `gfx10-compile.c` |
+| `src/amd/common/ac_shader_util.h` | MIT（SPDX） | `deca80e8b07f7cd17712960cdd0504ff3f8890e9a00daf7c48517f7b702e19b6` | V: image の dimension の番号（2D 1・3D 2・cube 3・2D array 5）。2026-10-16 追加 | `gfx10-isa.h` |
+| `src/amd/compiler/aco_builder_h.py` | MIT（file の notice） | `c1fa3caeaa6cc4340d502d53465bce4e5ac59141d2c035a38bc0cbaa8d6fbc79` | V: DPP の quad_perm の詰め方（lane ごと 2 bit）。2026-10-16 追加 | `gfx10-isa.h` |
 
 （host 試験の道具 `plan/ws039/tests/gfx10-texture.c` は gfx10-rsrc.json・gfx9.json（SQ_TEX_DEPTH_COMPARE・SQ_TEX_XY_FILTER）の値を引用。試験の道具で driver の code ではない。）
 
@@ -73,3 +76,9 @@
 
 - `plan/ws039/tests/audit-vk.sh`（`audit-symbols.py` の規則を `vk/` に、許す一般語は `audit-allow.txt` と `audit-allow-vk.txt` を合わせて）: PASS（24 file、Mesa の引用元の識別子 8461、許した一般語 69）。Linux の tree は手元に無いので Mesa だけ。
 - 注意: driver 全体の `audit-symbols.sh` は `compiler/` だけを除いて歩くので、`vk/` を merge すると `vk/` の一般語（`requested`・`objects`・`result` など 30 語、`audit-allow-vk.txt`）で FAIL になる。2026-10-16 Q1 の決定: driver の `audit-symbols.sh` は `vk/` と `compiler/` を歩かない形にする。merge の時に、Q1 が P3 に頼む。
+
+## 確かめ（2026-10-16、P5、q1233）
+
+- 追加の引用: 上の 3 行（cube の address、image の dimension、DPP の quad_perm）。`aco_instruction_selection.cpp`（derivative の quad の形、gather の dmask、address の順）・`aco_assembler.cpp`（DPP の語・MIMG の dim の欄）・`aco_opcodes.py`（cube の 4 命令・gather の 4 命令）は既存の行の file。
+- `plan/ws039/tests/audit-compiler.sh`（新規。`audit-symbols.py` と同じ 3 規則を compiler の 9 file に、引用元は上の表の Mesa の file 27 個、許す語は `audit-allow.txt` と `audit-allow-compiler.txt`）: PASS（9 file、引用元の識別子 21862、許した一般語 189）。走らせて見つかった物を直した: Mesa の識別子と一致した `export_primitive_id`（options の field → `pass_primitive_number`、`vk/vk-pipeline.c` も）と `level_zero`（→ `level_is_zero`）、出典の無い 16 進の define（zedBSD 自身の目印は `UINT16_MAX`・`UINT32_MAX` などに、float の符号の bit は IEEE 754 を出典に、欄の幅の mask は `aco_assembler.cpp` を出典に）。
+

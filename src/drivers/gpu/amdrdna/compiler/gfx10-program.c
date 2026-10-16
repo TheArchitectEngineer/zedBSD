@@ -176,6 +176,7 @@ amdrdna_gfx10_program_registers(
 	uint32_t parameters;
 	uint32_t shared_blocks;
 
+	/* Starts with an empty register image. */
 	kern_memset(registers, 0, sizeof(*registers));
 
 	/* The VGPR blocks, at least one, the float mode and the NaN clamp. */
@@ -253,21 +254,29 @@ amdrdna_gfx10_program_registers(
 				registers->attribute_control[location] = GFX10_ATTRIBUTE_SPRITE;
 				continue;
 			}
+
+			/* The primitive number's attribute is flat and comes from its own parameter. */
 			if (location == program->primitive_id_attribute) {
 				registers->attribute_control[location] = AMDRDNA_GFX10_PRIMITIVE_ID_PARAMETER | GFX10_ATTRIBUTE_FLAT;
 				continue;
 			}
+
+			/* Every other attribute is read from the parameter of the same number. */
 			registers->attribute_control[location] = location;
 			if ((program->flat_inputs & (1U << location)) != 0U)
 				registers->attribute_control[location] |= GFX10_ATTRIBUTE_FLAT;
 		}
+
+		/* Sets the interpolation and the interpolant controls. */
 		registers->interpolation_control = GFX10_INTERPOLATION_SPRITE;
 		registers->interpolant_control = registers->attribute_count | GFX10_INTERPOLANT_WAVE32;
 		registers->discards = program->discards;
 	}
 }
 
-/* Writes the four words of a raw buffer descriptor. */
+/*
+ * Writes the four words of a raw buffer descriptor.
+ */
 void
 amdrdna_gfx10_raw_buffer_descriptor(
 	uint64_t address,
@@ -289,7 +298,9 @@ amdrdna_gfx10_raw_buffer_descriptor(
 	words[3] |= GFX10_BUFFER_CHECK_OFFSET;
 }
 
-/* Writes the four words of a vertex buffer descriptor. */
+/*
+ * Writes the four words of a vertex buffer descriptor.
+ */
 void
 amdrdna_gfx10_vertex_descriptor(
 	uint64_t address,
@@ -318,6 +329,8 @@ amdrdna_gfx10_vertex_descriptor(
 		} else {
 			select = GFX10_BUFFER_SELECT_ZERO;
 		}
+
+		/* Places the selection in the channel's field. */
 		words[3] |= select << (3U * channel);
 	}
 

@@ -126,7 +126,7 @@ struct amdrdna_gfx10_program {
  * AMDRDNA_GFX10_PRIMITIVE_ID_PARAMETER, because the pixel program reads it.
  */
 struct amdrdna_gfx10_compile_options {
-	uint32_t export_primitive_id;
+	uint32_t pass_primitive_number;
 };
 
 /*

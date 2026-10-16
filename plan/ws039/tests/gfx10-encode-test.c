@@ -72,6 +72,8 @@ make(
 	inst.src[0] = (uint16_t)src0;
 	inst.src[1] = (uint16_t)src1;
 	inst.src[2] = (uint16_t)src2;
+	if (kind == AMDRDNA_GFX10_KIND_IMAGE)
+		inst.dimension = AMDRDNA_GFX10_IMAGE_DIM_2D;
 
 	/* The record. */
 	return inst;
@@ -302,6 +304,36 @@ vector_cases(void)
 	inst.literal = 0x40490fdbU;
 	failed |= emit("v_fma_f32 v1, v2, v3, 0x40490fdb", &inst);
 
+	inst = make(AMDRDNA_GFX10_KIND_VECTOR_ONE, AMDRDNA_GFX10_V_MOV_B32, V(1), V(2), 0U, 0U);
+	inst.quad_read = 1U;
+	inst.quad_pattern = AMDRDNA_GFX10_QUAD_ROW_LEFT;
+	failed |= emit("v_mov_b32_dpp v1, v2 quad_perm:[0,0,2,2] row_mask:0xf bank_mask:0xf bound_ctrl:1", &inst);
+
+	inst = make(AMDRDNA_GFX10_KIND_VECTOR_TWO, AMDRDNA_GFX10_V_SUB_F32, V(1), V(2), V(1), 0U);
+	inst.quad_read = 1U;
+	inst.quad_pattern = AMDRDNA_GFX10_QUAD_COLUMN_BOTTOM;
+	failed |= emit("v_sub_f32_dpp v1, v2, v1 quad_perm:[2,3,2,3] row_mask:0xf bank_mask:0xf bound_ctrl:1", &inst);
+
+	inst = make(AMDRDNA_GFX10_KIND_VECTOR_WIDE, AMDRDNA_GFX10_V_CUBEID_F32, V(0), V(1), S(2), V(3));
+	failed |= emit("v_cubeid_f32 v0, v1, s2, v3", &inst);
+
+	inst = make(AMDRDNA_GFX10_KIND_VECTOR_WIDE, AMDRDNA_GFX10_V_CUBESC_F32, V(0), V(1), V(2), V(3));
+	failed |= emit("v_cubesc_f32 v0, v1, v2, v3", &inst);
+
+	inst = make(AMDRDNA_GFX10_KIND_VECTOR_WIDE, AMDRDNA_GFX10_V_CUBETC_F32, V(0), V(1), V(2), V(3));
+	failed |= emit("v_cubetc_f32 v0, v1, v2, v3", &inst);
+
+	inst = make(AMDRDNA_GFX10_KIND_VECTOR_WIDE, AMDRDNA_GFX10_V_CUBEMA_F32, V(0), V(1), V(2), V(3));
+	failed |= emit("v_cubema_f32 v0, v1, v2, v3", &inst);
+
+	inst = make(AMDRDNA_GFX10_KIND_VECTOR_ONE, AMDRDNA_GFX10_V_RCP_F32, V(5), V(5), 0U, 0U);
+	inst.modifiers = (uint8_t)AMDRDNA_GFX10_WIDE_ABS(0);
+	failed |= emit("v_rcp_f32_e64 v5, |v5|", &inst);
+
+	inst = make(AMDRDNA_GFX10_KIND_VECTOR_WIDE, AMDRDNA_GFX10_V_FMA_F32, V(4), V(4), V(6), AMDRDNA_GFX10_LITERAL);
+	inst.literal = 0x3fc00000U;
+	failed |= emit("v_fma_f32 v4, v4, v6, 0x3fc00000", &inst);
+
 	inst = make(AMDRDNA_GFX10_KIND_VECTOR_WIDE, AMDRDNA_GFX10_V_MUL_LO_U32, V(1), V(2), V(3), 0U);
 	failed |= emit("v_mul_lo_u32 v1, v2, v3", &inst);
 
@@ -472,6 +504,34 @@ memory_cases(void)
 	inst.count = 3U;
 	inst.flags = AMDRDNA_GFX10_FLAG_UNNORMALIZED;
 	failed |= emit("image_load_mip v[0:3], v[4:6], s[8:15] dmask:0xf dim:SQ_RSRC_IMG_2D unorm", &inst);
+
+	inst = make(AMDRDNA_GFX10_KIND_IMAGE, AMDRDNA_GFX10_IMAGE_SAMPLE, V(0), V(4), S(8), S(16));
+	inst.mask = 0xfU;
+	inst.count = 3U;
+	inst.dimension = AMDRDNA_GFX10_IMAGE_DIM_CUBE;
+	failed |= emit("image_sample v[0:3], v[4:6], s[8:15], s[16:19] dmask:0xf dim:SQ_RSRC_IMG_CUBE", &inst);
+
+	inst = make(AMDRDNA_GFX10_KIND_IMAGE, AMDRDNA_GFX10_IMAGE_SAMPLE_L, V(0), V(4), S(8), S(16));
+	inst.mask = 0xfU;
+	inst.count = 4U;
+	inst.dimension = AMDRDNA_GFX10_IMAGE_DIM_3D;
+	failed |= emit("image_sample_l v[0:3], v[4:7], s[8:15], s[16:19] dmask:0xf dim:SQ_RSRC_IMG_3D", &inst);
+
+	inst = make(AMDRDNA_GFX10_KIND_IMAGE, AMDRDNA_GFX10_IMAGE_SAMPLE_LZ, V(0), V(4), S(8), S(16));
+	inst.mask = 0xfU;
+	inst.count = 3U;
+	inst.dimension = AMDRDNA_GFX10_IMAGE_DIM_2D_ARRAY;
+	failed |= emit("image_sample_lz v[0:3], v[4:6], s[8:15], s[16:19] dmask:0xf dim:SQ_RSRC_IMG_2D_ARRAY", &inst);
+
+	inst = make(AMDRDNA_GFX10_KIND_IMAGE, AMDRDNA_GFX10_IMAGE_GATHER4_LZ, V(0), V(4), S(8), S(16));
+	inst.mask = 0x2U;
+	inst.count = 2U;
+	failed |= emit("image_gather4_lz v[0:3], v[4:5], s[8:15], s[16:19] dmask:0x2 dim:SQ_RSRC_IMG_2D", &inst);
+
+	inst = make(AMDRDNA_GFX10_KIND_IMAGE, AMDRDNA_GFX10_IMAGE_GATHER4_C_LZ_O, V(0), V(4), S(8), S(16));
+	inst.mask = 0x1U;
+	inst.count = 4U;
+	failed |= emit("image_gather4_c_lz_o v[0:3], v[4:7], s[8:15], s[16:19] dmask:0x1 dim:SQ_RSRC_IMG_2D", &inst);
 
 	inst = make(AMDRDNA_GFX10_KIND_EXPORT, 0U, 0U, V(0), V(1), V(2));
 	inst.src[3] = (uint16_t)V(3);

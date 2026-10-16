@@ -59,7 +59,7 @@
 #define GFX10_COUNTER_SLOTS		5U
 
 /* A register no event of a counter has yet to fill. */
-#define GFX10_NOT_PENDING		0xffU
+#define GFX10_NOT_PENDING		UINT8_MAX
 
 /* The passes after which the labels' states are taken not to settle. */
 #define GFX10_SETTLE_PASSES		16U
@@ -218,6 +218,7 @@ amdrdna_gfx10_place_waits(
 	int vector_memory;
 	int changed;
 
+	/* Starts with no output. */
 	*out = NULL;
 	*out_count = 0U;
 
@@ -245,6 +246,8 @@ amdrdna_gfx10_place_waits(
 				label_count = list[index].label + 1U;
 		}
 	}
+
+	/* Branch hazards are tracked only when the program has both vector and shared memory. */
 	output.track_branch_hazard = 0;
 	if (has_vector_memory != 0 && has_shared_memory != 0)
 		output.track_branch_hazard = 1;
@@ -263,6 +266,8 @@ amdrdna_gfx10_place_waits(
 		kern_free(output.list);
 		return ENOMEM;
 	}
+
+	/* Clears the state of every label. */
 	for (index = 0U; index <= label_count; index++)
 		state_clear(&labels[index]);
 
@@ -281,6 +286,7 @@ amdrdna_gfx10_place_waits(
 		changed = walk(list, count, &output, state, labels, 1);
 	}
 
+	/* Releases the label states. */
 	kern_free(labels);
 	kern_free(state);
 
@@ -324,6 +330,7 @@ amdrdna_gfx10_assemble(
 	int again;
 	int error;
 
+	/* Starts with nothing laid out. */
 	*words = NULL;
 	*word_count = 0U;
 	*failed = 0U;
@@ -373,6 +380,8 @@ amdrdna_gfx10_assemble(
 				*failed = index;
 				return EINVAL;
 			}
+
+			/* Adds the instruction's words to the total. */
 			total += size;
 		}
 
@@ -390,6 +399,8 @@ amdrdna_gfx10_assemble(
 				*failed = index;
 				return EINVAL;
 			}
+
+			/* Stores the distance in the branch. */
 			inst->immediate = (uint32_t)distance & 0xffffU;
 
 			/* The mishandled distance gets an idle instruction after the branch, and everything is laid out again. */
@@ -400,6 +411,8 @@ amdrdna_gfx10_assemble(
 					kern_free(label_offset);
 					return error;
 				}
+
+				/* Counts the idle instruction and lays the program out again. */
 				moved++;
 				again = 1;
 				break;
@@ -437,6 +450,7 @@ amdrdna_gfx10_assemble(
 	for (index = written; index < padded; index++)
 		code[index] = AMDRDNA_GFX10_FORM_CONTROL | ((uint32_t)AMDRDNA_GFX10_S_CODE_END << 16);
 
+	/* Releases the offset tables. */
 	kern_free(offset);
 	kern_free(label_offset);
 
@@ -493,8 +507,12 @@ walk(
 					if (joined != 0)
 						changed = 1;
 				}
+
+				/* The state continues from the label's. */
 				*state = labels[inst->label];
 			}
+
+			/* The label is reached from here on. */
 			reached = 1;
 			append(output, inst);
 			continue;
@@ -562,6 +580,7 @@ state_join(
 	int changed;
 	int joined;
 
+	/* Starts with nothing changed. */
 	changed = 0;
 
 	/* Each register's counts: the smaller one waits longer, which serves both paths. */
@@ -673,10 +692,14 @@ wait_for(
 		immediate |= vector_count & GFX10_WAIT_VECTOR_LOW_MASK;
 		immediate |= (vector_count & GFX10_WAIT_VECTOR_HIGH_MASK) << GFX10_WAIT_VECTOR_HIGH_SHIFT;
 	}
+
+	/* A wait for the exports. */
 	if (needed[AMDRDNA_GFX10_COUNTER_EXPORT] != GFX10_NOT_PENDING) {
 		immediate &= ~AMDRDNA_GFX10_WAIT_EXPORT_MASK;
 		immediate |= (uint32_t)needed[AMDRDNA_GFX10_COUNTER_EXPORT] << GFX10_WAIT_EXPORT_SHIFT;
 	}
+
+	/* A wait for the scalar loads. */
 	if (needed[AMDRDNA_GFX10_COUNTER_SCALAR] != GFX10_NOT_PENDING) {
 		immediate &= ~AMDRDNA_GFX10_WAIT_SCALAR_MASK;
 		immediate |= (uint32_t)needed[AMDRDNA_GFX10_COUNTER_SCALAR] << GFX10_WAIT_SCALAR_SHIFT;
@@ -719,6 +742,8 @@ resolve_all(
 			}
 		}
 	}
+
+	/* Emits the wait the pending registers need. */
 	if (waits != 0)
 		wait_for(state, output, needed);
 
@@ -761,6 +786,8 @@ resolve_all(
 			append(output, &inst);
 		}
 	}
+
+	/* After the break no memory access or branch is left to separate from the next. */
 	state->vector_memory = 0;
 	state->shared_memory = 0;
 	state->branch_after_vector = 0;
@@ -792,6 +819,7 @@ break_hazards(
 	int writes_lane_mask;
 	int writes_sgpr;
 
+	/* Classifies the instruction. */
 	vector_alu = is_vector_alu(inst);
 	scalar_alu = is_scalar_alu(inst);
 	vector_memory = is_vector_memory(inst);
@@ -886,6 +914,7 @@ note_issued(
 	int vector_memory;
 	int reads_lane_mask;
 
+	/* Classifies the instruction. */
 	vector_alu = is_vector_alu(inst);
 	scalar_alu = is_scalar_alu(inst);
 	vector_memory = is_vector_memory(inst);
@@ -931,6 +960,8 @@ note_issued(
 	} else if (inst->kind == AMDRDNA_GFX10_KIND_SCALAR_LOAD) {
 		read_set = state->read_by_scalar_load;
 	}
+
+	/* Records the registers the access reads in the set that guards them. */
 	if (read_set != NULL) {
 		for (index = 0U; index < access->reads_used; index++)
 			add_range(read_set, &access->reads[index]);
@@ -991,6 +1022,7 @@ count_behind(
 	uint32_t code;
 	unsigned limit;
 
+	/* Looks up how many events the counter can hold. */
 	limit = count_limit(counter);
 
 	/* Each register held by the counter. */
@@ -1055,6 +1087,8 @@ note_wait(
 			set_clear(state->read_by_shared);
 			set_clear(state->read_by_scalar_load);
 		}
+
+		/* A counter wait ends here: nothing else in it ends a hazard. */
 		return;
 	}
 
@@ -1079,6 +1113,8 @@ note_wait(
 			set_clear(state->read_by_store);
 			set_clear(state->read_by_shared);
 		}
+
+		/* A zero scalar-destination field ends the lane mask read. */
 		if ((inst->immediate & GFX10_DEPEND_SA_SDST_MASK) == 0U)
 			state->lane_mask_read = 0;
 	}
@@ -1121,6 +1157,7 @@ append(
 	if (output->count == output->capacity)
 		return;
 
+	/* Appends the instruction. */
 	output->list[output->count] = *inst;
 	output->count++;
 }
@@ -1174,6 +1211,8 @@ needed_counts(
 		if (needed[counter] != GFX10_NOT_PENDING)
 			return 1;
 	}
+
+	/* Reports that no counter is waited for. */
 	return 0;
 }
 
@@ -1420,6 +1459,7 @@ instruction_words(
 	uint32_t scratch[AMDRDNA_GFX10_MAX_WORDS];
 	unsigned size;
 
+	/* Starts with nothing refused. */
 	*refused = 0;
 
 	/* A label is no word. */
