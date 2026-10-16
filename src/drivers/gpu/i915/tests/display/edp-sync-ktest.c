@@ -541,10 +541,11 @@ i915_edp_sync_fresh(
 	kern_memset(env, 0, sizeof(*env));
 	drv_i915_dp_kernel_bind_sync(i915_edp_sync_kernel, env);
 
-	/* The registers and waits of the model. */
+	/* The registers and waits of the model, and its AUX window. */
 	env->read32 = i915_edp_sync_read32;
 	env->write32 = i915_edp_sync_write32;
 	env->wait_reg = i915_edp_sync_wait_reg;
+	env->aux_io = i915_edp_sync_model_env.aux_io;
 
 	/* The model's clock: the panel delays cost no real time. */
 	env->sleep_us = i915_edp_sync_sleep_us;

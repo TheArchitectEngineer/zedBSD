@@ -83,6 +83,12 @@ struct i915_dp_fake_hw {
 	uint32_t aux_data[5];
 	uint64_t stuck_until_us;
 
+	/*
+	 * The register window the driver's AUX transactions run through
+	 * (struct i915_dp_env aux_io): these registers and this clock.
+	 */
+	struct i915_xd_io aux_io;
+
 	/* The sink: DPCD, EDID EEPROM, I2C pointer; VDD must have been on sink_power_up_us before it answers. */
 	uint8_t dpcd[0x800];
 	uint8_t edid[512];

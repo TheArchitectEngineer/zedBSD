@@ -10,8 +10,8 @@
  * EDID): the production display files the kernel builds (dp-sink.c,
  * panel.c, aux.c, edid-read.c) against the register model dp-fake-hw.c,
  * with the target laptop's captured DPCD and EDID as the sink's content.
- *
- *   sh plan/ws031/tests/run-dp-host-test.sh
+ * The AUX transactions run through the xd AUX channel (xd-aux.c) on the
+ * model's AUX window.
  */
 
 #include "host-test.h"
@@ -26,7 +26,8 @@
 /*
  * The captured sink: DPCD pages 0x000, 0x100 and 0x700, and the EDID.
  *
- * Read once by main() from plan/ws031/display-ref and never changed.
+ * Read once by main() from the reference directory named on the command
+ * line and never changed.
  */
 static uint8_t i915_dp_d000[256];
 static uint8_t i915_dp_d100[256];
@@ -616,13 +617,17 @@ i915_dp_test_channel(void)
 	i915_host_check(error == 0 && same == 0, "a forbidden message size 21 is -EBUSY and retried, never unpacked");
 	(void)drv_i915_edp_end(i915_dp_world, &i915_dp_res);
 
-	/* A channel stuck busy for 25 ms: bounded waits, then recovery. */
+	/*
+	 * A channel stuck busy for 25 ms: bounded waits, then recovery.  The
+	 * waits are the AUX channel's own, which the model only sees as time
+	 * passing; their stall count is checked by the xd AUX test.
+	 */
 	i915_dp_fresh();
 	i915_dp_script_all(1U, I915_DP_FAKE_STUCK_BUSY, 25U);
 	error = drv_i915_edp_begin(i915_dp_world, &i915_dp_env, &config, &i915_dp_res);
 	end = drv_i915_edp_end(i915_dp_world, &i915_dp_res);
 	released = i915_dp_released("stuck");
-	i915_host_check(error == 0 && end == 0 && i915_dp_hw.wait_timeouts >= 1U && released,
+	i915_host_check(error == 0 && end == 0 && released,
 			"a channel stuck busy for 25 ms: bounded waits, then recovery");
 
 	/* A channel that stays busy: a finite failure. */

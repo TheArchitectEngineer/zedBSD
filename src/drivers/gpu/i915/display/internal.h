@@ -1913,6 +1913,12 @@ struct i915_dp_env {
 		unsigned fast_us, unsigned slow_ms, uint32_t *out);
 	void (*sleep_us)(void *ctx, unsigned us);
 	uint64_t (*now_ms)(void *ctx);                  /* monotonic */
+	/*
+	 * the register window the AUX transactions run through (xd-aux): the
+	 * same registers as read32/write32, with waits of its own; the binding
+	 * that sets the hooks above sets it too
+	 */
+	struct i915_xd_io *aux_io;
 	int (*power_get)(void *ctx, int domain);        /* enum i915_power_domain value; 0 = ok */
 	void (*power_put)(void *ctx, int domain);
 	/*
@@ -2697,6 +2703,7 @@ struct i915_dp_kernel {
 	struct i915_power_domains *pd;
 	struct i915_pw_ctx *pwc;
 	struct mutex locks[2];                  /* I915_DP_LOCK_* */
+	struct i915_xd_io aux_io;               /* the AUX channels' window on mmio, under the AUX mutex */
 	struct i915_workqueue wq;            /* the display worker: VDD-off and async power put */
 	struct i915_timer_queue tq;
 	struct i915_delayed_work vdd_off_work;

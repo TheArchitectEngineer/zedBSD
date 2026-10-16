@@ -17,8 +17,9 @@
  * and includes this file.  Each pair is skipped when the includer has no
  * definition of the Linux name, so the same list serves the test against
  * the tree's older headers (host-xd-regs-test.c, which knows only some
- * of the names) and the check against the Linux tree itself
- * (plan/ws245/tests/check-xd-regs-linux.sh, which must know all of them).
+ * of the names) and the check against the Linux tree itself (a host
+ * program built against the unpacked Linux headers, which must know all
+ * of them).
  */
 
 #ifdef GEN6_PCODE_MAILBOX
@@ -2160,6 +2161,9 @@ I915_XD_MAP_VAL(I915_XD_AUX_CTL_BUSY, DP_AUX_CH_CTL_SEND_BUSY)
 #ifdef DP_AUX_CH_CTL_DONE
 I915_XD_MAP_VAL(I915_XD_AUX_CTL_DONE, DP_AUX_CH_CTL_DONE)
 #endif
+#ifdef DP_AUX_CH_CTL_INTERRUPT
+I915_XD_MAP_VAL(I915_XD_AUX_CTL_INTERRUPT, DP_AUX_CH_CTL_INTERRUPT)
+#endif
 #ifdef DP_AUX_CH_CTL_TIME_OUT_ERROR
 I915_XD_MAP_VAL(I915_XD_AUX_CTL_TIMEOUT_ERROR, DP_AUX_CH_CTL_TIME_OUT_ERROR)
 #endif
@@ -2174,6 +2178,9 @@ I915_XD_MAP_VAL(I915_XD_AUX_CTL_RECEIVE_ERROR, DP_AUX_CH_CTL_RECEIVE_ERROR)
 #endif
 #ifdef DP_AUX_CH_CTL_MESSAGE_SIZE_MASK
 I915_XD_MAP_VAL(I915_XD_AUX_CTL_SIZE, DP_AUX_CH_CTL_MESSAGE_SIZE_MASK)
+#endif
+#ifdef DP_AUX_CH_CTL_AUX_AKSV_SELECT
+I915_XD_MAP_VAL(I915_XD_AUX_CTL_HDCP_KEY, DP_AUX_CH_CTL_AUX_AKSV_SELECT)
 #endif
 #ifdef DP_AUX_CH_CTL_TBT_IO
 I915_XD_MAP_VAL(I915_XD_AUX_CTL_TBT_IO, DP_AUX_CH_CTL_TBT_IO)

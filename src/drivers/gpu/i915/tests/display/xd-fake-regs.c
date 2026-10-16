@@ -16,10 +16,42 @@
 
 #include "xd-fake-regs.h"
 
+#include "../../intel/display-regs-xd.h"
+
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+/*
+ * The control word's bits an AUX transaction owns: busy, done, both
+ * errors and the reply size.  The rest is what the driver wrote.
+ */
+#define I915_XD_FAKE_AUX_STATUS		(I915_XD_AUX_CTL_BUSY | \
+					 I915_XD_AUX_CTL_DONE | \
+					 I915_XD_AUX_CTL_TIMEOUT_ERROR | \
+					 I915_XD_AUX_CTL_RECEIVE_ERROR | \
+					 I915_XD_AUX_CTL_SIZE)
+
+/*
+ * The AUX request codes the sink tells apart (the top four bits of the
+ * first byte): a native command has bit 3 set, an I2C one does not; a
+ * native read is 9, a native write 8; an I2C command's low two bits say
+ * write (0), read (1) or write status update (2).  The reply codes of a
+ * refusal and of a request to wait, native and I2C, are in the top
+ * nibble of the reply's first byte.
+ *
+ * Values referenced: VESA DisplayPort Standard (the AUX request and
+ * reply command codes).
+ */
+#define I915_XD_FAKE_AUX_NATIVE		0x8U
+#define I915_XD_FAKE_AUX_NATIVE_READ	0x9U
+#define I915_XD_FAKE_AUX_I2C_KIND	0x3U
+#define I915_XD_FAKE_AUX_I2C_READ	0x1U
+#define I915_XD_FAKE_AUX_NATIVE_NACK	0x10U
+#define I915_XD_FAKE_AUX_NATIVE_DEFER	0x20U
+#define I915_XD_FAKE_AUX_I2C_NACK	0x40U
+#define I915_XD_FAKE_AUX_I2C_DEFER	0x80U
 
 /* How many registers, rules, later changes and held locks the model keeps. */
 #define I915_XD_FAKE_REGISTERS		2048U
@@ -79,6 +111,7 @@ static struct {
 	uint64_t now;
 	unsigned reads;
 	unsigned writes;
+	uint32_t previous;
 	unsigned held[I915_XD_FAKE_LOCKS];
 	unsigned held_count;
 	unsigned lock_violations;
@@ -92,6 +125,9 @@ static struct i915_xd_fake_register *i915_xd_fake_find(uint32_t offset, int crea
 static void i915_xd_fake_run_events(void);
 static void i915_xd_fake_apply_rules(uint32_t offset, uint32_t value);
 static uint32_t i915_xd_fake_move(uint32_t bits, int shift);
+static void i915_xd_fake_aux_write(uint32_t offset, uint32_t value, void *context);
+static void i915_xd_fake_aux_run(struct i915_xd_fake_aux *sink, uint32_t offset, uint32_t value, uint32_t word);
+static unsigned i915_xd_fake_aux_serve(struct i915_xd_fake_aux *sink, const uint8_t *request, unsigned size, uint8_t *reply);
 
 /*
  * Empties the model: no registers, no rules, no pending changes, the
@@ -274,6 +310,67 @@ i915_xd_fake_rule_call(
 }
 
 /*
+ * Reports, to a rule that runs for a write, the value the register held
+ * before that write.
+ */
+uint32_t
+i915_xd_fake_previous(void)
+{
+	/* Reports the value the write hook kept. */
+	return i915_xd_fake.previous;
+}
+
+/*
+ * Puts an AUX sink behind a channel of the model: from now on a write of
+ * the channel's control word is answered by the sink.  The sink's
+ * memories are left as the test filled them; its script, its I2C offset
+ * and its record start empty.
+ */
+void
+i915_xd_fake_aux_attach(
+	struct i915_xd_fake_aux *sink,
+	unsigned channel)
+{
+	/* Starts the sink with no script and nothing seen. */
+	sink->channel = channel;
+	sink->i2c_offset = 0U;
+	sink->script_length = 0U;
+	sink->script_next = 0U;
+	sink->transactions = 0U;
+	sink->last_request_bytes = 0U;
+
+	/* Answers every write of the channel's control word. */
+	i915_xd_fake_rule_call(I915_XD_DDI_AUX_CTL(channel), i915_xd_fake_aux_write, sink);
+}
+
+/*
+ * Scripts the sink's answer to the next count transactions after those
+ * already scripted.
+ */
+void
+i915_xd_fake_aux_script(
+	struct i915_xd_fake_aux *sink,
+	unsigned answer,
+	unsigned param,
+	unsigned count)
+{
+	unsigned index;
+
+	/* Appends the answer count times. */
+	for (index = 0U; index < count; index++) {
+		/* A full script is a mistake in the test. */
+		if (sink->script_length == I915_XD_FAKE_AUX_SCRIPT) {
+			fprintf(stderr, "xd-fake-regs: AUX script too long\n");
+			abort();
+		}
+
+		sink->answers[sink->script_length] = answer;
+		sink->params[sink->script_length] = param;
+		sink->script_length++;
+	}
+}
+
+/*
  * Reports how many register reads went through the hooks.
  */
 unsigned
@@ -342,8 +439,9 @@ i915_xd_fake_write_hook(
 {
 	(void)context;
 
-	/* Stores the value, then lets the hardware answer it. */
+	/* Keeps the value before the write for the rules, stores the value, then lets the hardware answer it. */
 	i915_xd_fake.writes++;
+	i915_xd_fake.previous = i915_xd_fake_get(offset);
 	i915_xd_fake_set(offset, value);
 	i915_xd_fake_apply_rules(offset, value);
 }
@@ -499,6 +597,205 @@ i915_xd_fake_apply_rules(
 		moved = i915_xd_fake_move(value & rule->source_mask, rule->shift);
 		i915_xd_fake_later(rule->delay_us, rule->target, covered, moved);
 	}
+}
+
+/*
+ * Answers a write of an AUX control word as the channel does: a busy
+ * channel ignores it; otherwise the done flag and the errors written as
+ * 1 are cleared, the driver's own bits are kept, and the busy bit starts
+ * a transaction.
+ */
+static void
+i915_xd_fake_aux_write(
+	uint32_t offset,
+	uint32_t value,
+	void *context)
+{
+	struct i915_xd_fake_aux *sink;
+	uint32_t previous;
+	uint32_t word;
+
+	/* A busy channel keeps the word it had. */
+	sink = context;
+	previous = i915_xd_fake_previous();
+	if ((previous & I915_XD_AUX_CTL_BUSY) != 0U) {
+		i915_xd_fake_set(offset, previous);
+		return;
+	}
+
+	/* Clears the status bits written as 1 and takes the driver's bits. */
+	word = previous & ~(value & (I915_XD_AUX_CTL_DONE | I915_XD_AUX_CTL_TIMEOUT_ERROR | I915_XD_AUX_CTL_RECEIVE_ERROR));
+	word = (word & I915_XD_FAKE_AUX_STATUS) | (value & ~I915_XD_FAKE_AUX_STATUS);
+
+	/* Without the busy bit nothing is sent. */
+	if ((value & I915_XD_AUX_CTL_BUSY) == 0U) {
+		i915_xd_fake_set(offset, word);
+		return;
+	}
+
+	/* Sends the request. */
+	i915_xd_fake_aux_run(sink, offset, value, word);
+}
+
+/*
+ * Runs one transaction: reads the request out of the data words, takes
+ * the scripted answer, and leaves the status and the reply.
+ */
+static void
+i915_xd_fake_aux_run(
+	struct i915_xd_fake_aux *sink,
+	uint32_t offset,
+	uint32_t value,
+	uint32_t word)
+{
+	uint8_t request[20];
+	uint8_t reply[20];
+	uint32_t data;
+	unsigned size;
+	unsigned answer;
+	unsigned param;
+	unsigned count;
+	unsigned index;
+	int i2c;
+
+	/* Reads the request the size names out of the data words, first byte highest. */
+	size = i915_xd_field_get(I915_XD_AUX_CTL_SIZE, value);
+	if (size > 20U)
+		size = 20U;
+	for (index = 0U; index < size; index++) {
+		data = i915_xd_fake_get(I915_XD_DDI_AUX_DATA(sink->channel, index / 4U));
+		request[index] = (uint8_t)(data >> (24U - 8U * (index % 4U)));
+	}
+
+	/* Records the request. */
+	for (index = 0U; index < size; index++)
+		sink->last_request[index] = request[index];
+	sink->last_request_bytes = size;
+	sink->transactions++;
+
+	/* Takes the scripted answer; past the script the sink acknowledges. */
+	answer = I915_XD_FAKE_AUX_ACK;
+	param = 0U;
+	if (sink->script_next < sink->script_length) {
+		answer = sink->answers[sink->script_next];
+		param = sink->params[sink->script_next];
+		sink->script_next++;
+	}
+
+	/* Starts from a word with no status. */
+	word &= ~I915_XD_FAKE_AUX_STATUS;
+
+	/* Answers without a reply when the script says so. */
+	switch (answer) {
+	case I915_XD_FAKE_AUX_TIMEOUT:
+		i915_xd_fake_set(offset, word | I915_XD_AUX_CTL_DONE | I915_XD_AUX_CTL_TIMEOUT_ERROR);
+		return;
+	case I915_XD_FAKE_AUX_DAMAGED:
+		i915_xd_fake_set(offset, word | I915_XD_AUX_CTL_DONE | I915_XD_AUX_CTL_RECEIVE_ERROR);
+		return;
+	case I915_XD_FAKE_AUX_STUCK:
+		i915_xd_fake_set(offset, word | I915_XD_AUX_CTL_BUSY);
+		i915_xd_fake_later(param, offset, I915_XD_AUX_CTL_BUSY, I915_XD_AUX_CTL_DONE | I915_XD_AUX_CTL_TIMEOUT_ERROR);
+		return;
+	case I915_XD_FAKE_AUX_SIZE:
+		i915_xd_fake_set(offset, word | I915_XD_AUX_CTL_DONE | i915_xd_field_put(I915_XD_AUX_CTL_SIZE, param));
+		return;
+	default:
+		break;
+	}
+
+	/* Builds the reply: a refusal, a request to wait, or the sink's answer. */
+	i2c = 0;
+	if (size != 0U && ((request[0] >> 4) & I915_XD_FAKE_AUX_NATIVE) == 0U)
+		i2c = 1;
+	if (answer == I915_XD_FAKE_AUX_NACK) {
+		reply[0] = I915_XD_FAKE_AUX_NATIVE_NACK;
+		if (i2c != 0)
+			reply[0] = I915_XD_FAKE_AUX_I2C_NACK;
+		count = 1U;
+	} else if (answer == I915_XD_FAKE_AUX_DEFER) {
+		reply[0] = I915_XD_FAKE_AUX_NATIVE_DEFER;
+		if (i2c != 0)
+			reply[0] = I915_XD_FAKE_AUX_I2C_DEFER;
+		count = 1U;
+	} else {
+		count = i915_xd_fake_aux_serve(sink, request, size, reply);
+	}
+
+	/* Loads the reply into the data words, first byte highest, the rest 0. */
+	for (index = 0U; index < 5U; index++)
+		i915_xd_fake_set(I915_XD_DDI_AUX_DATA(sink->channel, index), 0U);
+	for (index = 0U; index < count; index++) {
+		data = i915_xd_fake_get(I915_XD_DDI_AUX_DATA(sink->channel, index / 4U));
+		data |= (uint32_t)reply[index] << (24U - 8U * (index % 4U));
+		i915_xd_fake_set(I915_XD_DDI_AUX_DATA(sink->channel, index / 4U), data);
+	}
+
+	/* Ends the transaction done, with the reply's size. */
+	i915_xd_fake_set(offset, word | I915_XD_AUX_CTL_DONE | i915_xd_field_put(I915_XD_AUX_CTL_SIZE, count));
+}
+
+/*
+ * Serves an acknowledged request from the sink's memories and builds
+ * the reply; returns the reply's length.  A native read answers the
+ * bytes asked for, a native write stores them; an I2C read answers the
+ * EEPROM's bytes from its offset on, a one-byte I2C write sets the
+ * offset, and a bare address is answered with the acknowledgement only.
+ */
+static unsigned
+i915_xd_fake_aux_serve(
+	struct i915_xd_fake_aux *sink,
+	const uint8_t *request,
+	unsigned size,
+	uint8_t *reply)
+{
+	unsigned command;
+	unsigned address;
+	unsigned length;
+	unsigned index;
+
+	/* Every answer starts with the acknowledgement. */
+	reply[0] = 0x00U;
+
+	/* A bare address (no length byte) only opens or closes an I2C transfer. */
+	if (size < 4U)
+		return 1U;
+
+	/* Decodes the command, the address and the length less one. */
+	command = request[0] >> 4;
+	address = ((request[0] & 0x0fU) << 16) | ((unsigned)request[1] << 8) | request[2];
+	length = (unsigned)request[3] + 1U;
+
+	/* A native read answers the bytes asked for. */
+	if (command == I915_XD_FAKE_AUX_NATIVE_READ) {
+		for (index = 0U; index < length && index < 19U; index++)
+			reply[1U + index] = sink->dpcd[(address + index) % I915_XD_FAKE_AUX_DPCD_BYTES];
+		return 1U + index;
+	}
+
+	/* A native write stores the bytes it carries. */
+	if ((command & I915_XD_FAKE_AUX_NATIVE) != 0U) {
+		for (index = 0U; index < length && 4U + index < size; index++)
+			sink->dpcd[(address + index) % I915_XD_FAKE_AUX_DPCD_BYTES] = request[4U + index];
+		return 1U;
+	}
+
+	/* An I2C read answers the EEPROM's bytes from its offset on. */
+	if ((command & I915_XD_FAKE_AUX_I2C_KIND) == I915_XD_FAKE_AUX_I2C_READ) {
+		for (index = 0U; index < length && index < 19U; index++) {
+			reply[1U + index] = sink->i2c[sink->i2c_offset % I915_XD_FAKE_AUX_I2C_BYTES];
+			sink->i2c_offset++;
+		}
+
+		return 1U + index;
+	}
+
+	/* A one-byte I2C write sets the EEPROM's offset. */
+	if (size > 4U)
+		sink->i2c_offset = request[4];
+
+	/* Succeeded: the write was taken. */
+	return 1U;
 }
 
 /* Moves bits left (positive shift) or right (negative shift). */

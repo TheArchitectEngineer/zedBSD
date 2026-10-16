@@ -174,6 +174,8 @@ drv_i915_dp_fake_bind_env(
 	struct i915_dp_env *env,
 	struct i915_dp_world *world)
 {
+	struct i915_xd_io_hooks hooks;
+
 	/* Starts the environment's bookkeeping at zero. */
 	kern_memset(env, 0, sizeof(*env));
 
@@ -200,6 +202,16 @@ drv_i915_dp_fake_bind_env(
 	/* The world the due work runs on; no channel is stuck. */
 	hw->world = world;
 	hw->stuck_until_us = 0U;
+
+	/* The AUX window: the same registers, and its waits pass the model's time. */
+	hooks.read = i915_dp_fake_read;
+	hooks.write = i915_dp_fake_write;
+	hooks.wait = i915_dp_fake_sleep_us;
+	hooks.lock = NULL;
+	hooks.context = hw;
+	drv_i915_xd_io_init(&hw->aux_io, NULL, NULL);
+	drv_i915_xd_io_set_hooks(&hw->aux_io, &hooks);
+	env->aux_io = &hw->aux_io;
 }
 
 /*

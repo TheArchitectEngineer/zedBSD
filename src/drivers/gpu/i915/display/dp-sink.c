@@ -1257,6 +1257,12 @@ drv_i915_dp_kernel_sync_start(
 	(void)mutex_init(&k->locks[I915_DP_LOCK_PPS], LOCK_RANK_DEVICE, "i915-pps");
 	(void)mutex_init(&k->locks[I915_DP_LOCK_AUX], LOCK_RANK_DEVICE, "i915-dp-aux");
 
+	/*
+	 * Opens the register window the AUX channels are driven through,
+	 * on the same MMIO; the AUX mutex serializes its users.
+	 */
+	drv_i915_xd_io_init(&k->aux_io, k->mmio, NULL);
+
 	/* Starts the worker thread. */
 	error = drv_i915_workqueue_create(&k->wq, "i915-display-wq");
 	if (error != 0)
@@ -1346,10 +1352,11 @@ drv_i915_dp_kernel_bind(
 	/* The locks and the delayed work. */
 	drv_i915_dp_kernel_bind_sync(k, env);
 
-	/* The registers and their waits. */
+	/* The registers and their waits, and the AUX channels' window on the same MMIO. */
 	env->read32 = i915_dp_kernel_read32;
 	env->write32 = i915_dp_kernel_write32;
 	env->wait_reg = i915_dp_kernel_wait_reg;
+	env->aux_io = &k->aux_io;
 
 	/* The sleeps and the clock. */
 	env->sleep_us = i915_dp_kernel_sleep;

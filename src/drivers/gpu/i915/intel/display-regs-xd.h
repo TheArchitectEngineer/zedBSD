@@ -724,17 +724,18 @@
 #define I915_XD_DDI_BUF_WIDTH			0x0000000eU
 
 /*
- * The AUX channel of a DDI: the control word (busy, done, the timeout
- * and receive errors, the timeout length, the message size, the
- * Thunderbolt IO select and the two sync pulse counts less one) and the
- * five data words.
+ * The AUX channel of a DDI: the control word (busy, done, the done
+ * interrupt, the timeout and receive errors, the timeout length, the
+ * message size, the HDCP key select, the Thunderbolt IO select and the
+ * two sync pulse counts less one) and the five data words.
  *
  * Values referenced: Linux v6.8.12
  * drivers/gpu/drm/i915/display/intel_dp_aux_regs.h (_DPA_AUX_CH_CTL,
  * _DPB_AUX_CH_CTL, _DPA_AUX_CH_DATA1, DP_AUX_CH_CTL_SEND_BUSY,
- * DP_AUX_CH_CTL_DONE, DP_AUX_CH_CTL_TIME_OUT_ERROR,
- * DP_AUX_CH_CTL_TIME_OUT_MASK, DP_AUX_CH_CTL_TIME_OUT_MAX,
- * DP_AUX_CH_CTL_RECEIVE_ERROR, DP_AUX_CH_CTL_MESSAGE_SIZE_MASK,
+ * DP_AUX_CH_CTL_DONE, DP_AUX_CH_CTL_INTERRUPT,
+ * DP_AUX_CH_CTL_TIME_OUT_ERROR, DP_AUX_CH_CTL_TIME_OUT_MASK,
+ * DP_AUX_CH_CTL_TIME_OUT_MAX, DP_AUX_CH_CTL_RECEIVE_ERROR,
+ * DP_AUX_CH_CTL_MESSAGE_SIZE_MASK, DP_AUX_CH_CTL_AUX_AKSV_SELECT,
  * DP_AUX_CH_CTL_TBT_IO, DP_AUX_CH_CTL_FW_SYNC_PULSE_SKL_MASK,
  * DP_AUX_CH_CTL_SYNC_PULSE_SKL_MASK).
  */
@@ -743,11 +744,13 @@
 #define I915_XD_DDI_AUX_DATA_WORDS		5U
 #define I915_XD_AUX_CTL_BUSY			0x80000000U
 #define I915_XD_AUX_CTL_DONE			0x40000000U
+#define I915_XD_AUX_CTL_INTERRUPT		0x20000000U
 #define I915_XD_AUX_CTL_TIMEOUT_ERROR		0x10000000U
 #define I915_XD_AUX_CTL_TIMEOUT			0x0c000000U
 #define I915_XD_AUX_CTL_TIMEOUT_MAX		3U
 #define I915_XD_AUX_CTL_RECEIVE_ERROR		0x02000000U
 #define I915_XD_AUX_CTL_SIZE			0x01f00000U
+#define I915_XD_AUX_CTL_HDCP_KEY		0x00008000U
 #define I915_XD_AUX_CTL_TBT_IO			0x00000800U
 #define I915_XD_AUX_CTL_FW_SYNC_PULSE		0x000003e0U
 #define I915_XD_AUX_CTL_SYNC_PULSE		0x0000001fU

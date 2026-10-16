@@ -58,6 +58,7 @@
 #endif
 
 #include "vbt.h"
+#include "xd-aux.h"
 
 #ifndef I915_DISPLAY_WORLD_VBT
 #error "display/dp-internal.h: the VBT environment did not define itself"
@@ -131,8 +132,7 @@ typedef u16 __le16;
  * level is shown has its arguments evaluated and is formatted with the
  * kernel's printf subset (a conversion outside it is shown as written, its
  * argument still consumed) and shown with the DP's prefix by
- * drv_i915_dp_notef() (BUG-256: the format text alone, with its %s and
- * %08x, was shown before).
+ * drv_i915_dp_notef().
  */
 #define I915_DP_LOG(level, fmt, ...) \
 	do { \
@@ -587,6 +587,9 @@ struct intel_dp {
 	/* The AUX channel. */
 	struct drm_dp_aux aux;
 
+	/* The channel's hardware (xd-aux), bound by drv_i915_dp_aux_init(). */
+	struct i915_xd_aux xd_aux;
+
 	/* The status of the last transfer that found the channel busy. */
 	u32 aux_busy_last_status;
 
@@ -595,16 +598,6 @@ struct intel_dp {
 
 	/* The panel power sequencer state. */
 	struct intel_pps pps;
-
-	/* The platform's AUX clock divider for a given try. */
-	u32 (*get_aux_clock_divider)(struct intel_dp *dp, int index);
-
-	/* The platform's AUX send control word. */
-	u32 (*get_aux_send_ctl)(struct intel_dp *dp, int send_bytes, u32 aux_clock_divider);
-
-	/* The platform's AUX control and data registers. */
-	i915_reg_t (*aux_ch_ctl_reg)(struct intel_dp *dp);
-	i915_reg_t (*aux_ch_data_reg)(struct intel_dp *dp, int index);
 };
 
 /*
@@ -752,16 +745,15 @@ struct i915_dp_ext_port {
 	unsigned probes;
 
 	/*
-	 * The DPCD access a modeset object of this port's sink takes
-	 * (ws051-p004b): the port's AUX channel, refused once the ports
-	 * stopped.  Bound with the port; ext is the world that says whether
-	 * the ports still run.
+	 * The DPCD access a modeset object of this port's sink takes: the
+	 * port's AUX channel, refused once the ports stopped.  Bound with the
+	 * port; ext is the world that says whether the ports still run.
 	 */
 	struct i915_lcd_aux_emit aux_emit;
 	struct i915_dp_ext_world *ext;
 
 	/*
-	 * The link limits a failed link training left (ws051-p004b, the Linux
+	 * The link limits a failed link training left (the Linux
 	 * intel_dp->max_link_rate and max_link_lane_count): 0 means the
 	 * sink's own.  Lowered by drv_i915_dp_ext_link_fallback(), given back
 	 * by a long hot plug pulse; under the port's lock.
