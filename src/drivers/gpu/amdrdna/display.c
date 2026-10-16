@@ -1120,6 +1120,7 @@ amdrdna_display_screen(
 	uint32_t word;
 	uint32_t words;
 	uint32_t copied;
+	bool outside;
 	int error;
 
 	/* The display must be the driver's. */
@@ -1127,13 +1128,18 @@ amdrdna_display_screen(
 	if (!display->taken)
 		return ENOENT;
 
-	/* The surface the plane reads, inside the CPU's window, with rows the bounce buffer holds. */
+	/*
+	 * The surface the plane reads, inside the VRAM (outside the CPU's
+	 * window it is read through the indirect window), with rows the bounce
+	 * buffer holds.
+	 */
 	address = display_shown_address(device);
 	if (address < device->frame_buffer_base)
 		return ERANGE;
 	vram = address - device->frame_buffer_base;
-	if (vram + (uint64_t)display->stride * display->height > device->vram_window_bytes)
+	if (vram + (uint64_t)display->stride * display->height > device->vram_bytes)
 		return ERANGE;
+	outside = vram + (uint64_t)display->stride * display->height > device->vram_window_bytes;
 	if (display->stride > DISPLAY_SCREEN_ROW_WORDS * 4U)
 		return ERANGE;
 
@@ -1158,10 +1164,16 @@ amdrdna_display_screen(
 		if (screen->length - copied < display->stride)
 			break;
 
-		/* The row through the bounce buffer. */
-		source = (volatile const uint32_t *)(volatile const void *)amdrdna_vram_cpu(device, vram + (uint64_t)line * display->stride);
-		for (word = 0U; word < words; word++)
-			row[word] = source[word];
+		/* The row through the bounce buffer: from the window, or a word at a time through the indirect window. */
+		if (outside) {
+			amdrdna_vram_read(device, vram + (uint64_t)line * display->stride, row, display->stride);
+		} else {
+			source = (volatile const uint32_t *)(volatile const void *)amdrdna_vram_cpu(device, vram + (uint64_t)line * display->stride);
+			for (word = 0U; word < words; word++)
+				row[word] = source[word];
+		}
+
+		/* The row to the caller. */
 		error = copyout(row, (uintptr_t)(screen->buffer + copied), display->stride);
 		if (error != 0)
 			break;

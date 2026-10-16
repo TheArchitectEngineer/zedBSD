@@ -496,8 +496,9 @@ node_resource_destroy(
 }
 
 /*
- * Creates a blob: a backing of VRAM in the CPU's window, cleared, which
- * the session and the opens it is shared with read and write.
+ * Creates a blob: a backing of VRAM, cleared, which the session and the
+ * opens it is shared with read and write; in the CPU's window when it is
+ * to be mapped, else in the VRAM only the GPU reaches.
  */
 static int
 node_blob_create(
@@ -524,8 +525,8 @@ node_blob_create(
 	if (resource == NULL)
 		return ENOMEM;
 
-	/* The backing, cleared. */
-	error = amdrdna_backing_create(node->device, request->bytes, &backing);
+	/* The backing, cleared, in the window only when the blob is mapped. */
+	error = amdrdna_backing_create(node->device, request->bytes, (request->flags & GPU_BLOB_MAPPABLE) != 0U, &backing);
 	if (error != 0) {
 		kern_free(resource);
 		return error;
@@ -592,6 +593,14 @@ node_resource_read(
 		return 0;
 	}
 
+	/* A blob outside the window is read a word at a time through the indirect window, whole words only. */
+	if (!resource->backing->cpu) {
+		if ((offset % 4U) != 0U || (bytes % 4U) != 0U)
+			return EINVAL;
+		amdrdna_vram_read(node->device, resource->backing->vram + offset, buffer, bytes);
+		return 0;
+	}
+
 	/* A blob is read through the window, after the host path's read cache is dropped. */
 	amdrdna_host_path_drop(node->device);
 	source = amdrdna_backing_cpu(node->device, resource->backing) + offset;
@@ -637,6 +646,14 @@ node_resource_write(
 		return 0;
 	}
 
+	/* A blob outside the window is written a word at a time through the indirect window, whole words only. */
+	if (!resource->backing->cpu) {
+		if ((offset % 4U) != 0U || (bytes % 4U) != 0U)
+			return EINVAL;
+		amdrdna_vram_write(node->device, resource->backing->vram + offset, buffer, bytes);
+		return 0;
+	}
+
 	/* A blob is written through the window, read back once so the writes have landed. */
 	target = amdrdna_backing_cpu(node->device, resource->backing) + offset;
 	for (at = 0U; at < bytes; at++)
@@ -676,6 +693,10 @@ node_resource_map(
 		mapping->attributes = 0U;
 		return 0;
 	}
+
+	/* A blob outside the window has no CPU view. */
+	if (!resource->backing->cpu)
+		return EINVAL;
 
 	/*
 	 * A blob: its place in the window, the pages it was asked for (the

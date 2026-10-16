@@ -28,6 +28,7 @@
 #include <uapi/gpu-op.h>
 
 #include "drivers/gpu/amdrdna/amdrdna-regs.h"
+#include "drivers/gpu/amdrdna/vk/amdrdna-vk-objects.h"
 #include "drivers/gpu/amdrdna/vk/amdrdna-vk.h"
 
 #include "drivers/gpu/i915/render/vulkan-codec.inc"
@@ -464,17 +465,26 @@ device_memory(
 	if (memory == NULL)
 		return ENOMEM;
 
-	/* The type: device-local, and the CPU's window makes it host-visible and coherent (uncached). */
-	memory->memoryTypeCount = 1U;
-	memory->memoryTypes[0].propertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+	/*
+	 * The types: device-local only (the VRAM outside the CPU's window),
+	 * then device-local that the CPU's window makes host-visible and
+	 * coherent (uncached); the fewer properties first, as the
+	 * specification orders them.
+	 */
+	memory->memoryTypeCount = AMDRDNA_VK_MEMORY_TYPES;
+	memory->memoryTypes[AMDRDNA_VK_MEMORY_DEVICE].propertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+	memory->memoryTypes[AMDRDNA_VK_MEMORY_DEVICE].heapIndex = AMDRDNA_VK_MEMORY_DEVICE;
+	memory->memoryTypes[AMDRDNA_VK_MEMORY_HOST].propertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
 	    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
 	    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-	memory->memoryTypes[0].heapIndex = 0U;
+	memory->memoryTypes[AMDRDNA_VK_MEMORY_HOST].heapIndex = AMDRDNA_VK_MEMORY_HOST;
 
-	/* The heap: what the window holds. */
-	memory->memoryHeapCount = 1U;
-	memory->memoryHeaps[0].size = amdrdna_vk_heap_bytes(session->owner);
-	memory->memoryHeaps[0].flags = VK_MEMORY_HEAP_DEVICE_LOCAL_BIT;
+	/* The heaps: the VRAM outside the window, and what the window holds. */
+	memory->memoryHeapCount = AMDRDNA_VK_MEMORY_TYPES;
+	memory->memoryHeaps[AMDRDNA_VK_MEMORY_DEVICE].size = amdrdna_vk_heap_bytes(session->owner, false);
+	memory->memoryHeaps[AMDRDNA_VK_MEMORY_DEVICE].flags = VK_MEMORY_HEAP_DEVICE_LOCAL_BIT;
+	memory->memoryHeaps[AMDRDNA_VK_MEMORY_HOST].size = amdrdna_vk_heap_bytes(session->owner, true);
+	memory->memoryHeaps[AMDRDNA_VK_MEMORY_HOST].flags = VK_MEMORY_HEAP_DEVICE_LOCAL_BIT;
 
 	/* Replies the present word and the record. */
 	drv_i915_wire_reply_u64(reply, 1U);

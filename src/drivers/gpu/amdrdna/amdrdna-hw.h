@@ -955,6 +955,7 @@ struct amdrdna_psp_reply {
 #define AMDRDNA_PM4_FETCH_SYNC_WORDS	2U
 #define AMDRDNA_COPY_WRITE_WORDS	5U
 #define AMDRDNA_COPY_LINEAR_WORDS	7U
+#define AMDRDNA_COPY_FILL_WORDS		5U
 #define AMDRDNA_COPY_FENCE_WORDS	6U
 
 /*
@@ -1870,6 +1871,13 @@ amdrdna_copy_linear(
 	uint32_t *words,
 	uint64_t source,
 	uint64_t destination,
+	uint32_t bytes);
+
+unsigned
+amdrdna_copy_fill(
+	uint32_t *words,
+	uint64_t destination,
+	uint32_t value,
 	uint32_t bytes);
 
 unsigned

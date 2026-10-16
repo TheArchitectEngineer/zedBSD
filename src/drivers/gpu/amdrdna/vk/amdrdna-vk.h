@@ -154,9 +154,12 @@ int amdrdna_vk_execute_trial(struct amdrdna_vk_session *session, struct amdrdna_
  */
 int amdrdna_vk_blob(void *owner, uint32_t resource_id, uint8_t **cpu, uint64_t *bytes);
 
-/* The owner's GPU: its PCI product, and the bytes of VRAM the CPU's window gives the executor's memory. */
+/*
+ * The owner's GPU: its PCI product, and the bytes of VRAM the executor's
+ * memory may take in the CPU's window (cpu true) or outside it.
+ */
 uint32_t amdrdna_vk_device_id(void *owner);
-uint64_t amdrdna_vk_heap_bytes(void *owner);
+uint64_t amdrdna_vk_heap_bytes(void *owner, bool cpu);
 
 /*
  * Gives back the storage of a VkDeviceMemory once nothing holds it: the
@@ -173,6 +176,14 @@ void amdrdna_vk_memory_detach(void *owner, void *backing, uint64_t va, uint64_t 
  * amdrdna_vk_memory_detach() gives back.  The caller holds the node's lock.
  */
 int amdrdna_vk_memory_import(void *owner, uint32_t resource_id, uint64_t bytes, uint8_t **cpu, uint64_t *va, void **backing);
+
+/*
+ * Gives a VkDeviceMemory of bytes its own storage in the VRAM the CPU does
+ * not reach (provided by the node): maps it for the GPU and gives the
+ * GPU's address and the backing, which amdrdna_vk_memory_detach() gives
+ * back.  The caller holds the node's lock.
+ */
+int amdrdna_vk_memory_create(void *owner, uint64_t bytes, uint64_t *va, void **backing);
 
 /*
  * The executor's own GPU memory (programs, command buffers, resource

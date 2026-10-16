@@ -42,17 +42,24 @@
 /* The widest and tallest image (the colour target's and the image descriptor's limit). */
 #define AMDRDNA_VK_IMAGE_SIDE_MAX		16384U
 
-/* The memory type the executor reports (one: device local, host visible and coherent). */
-#define AMDRDNA_VK_MEMORY_TYPE		0U
+/*
+ * The memory types the executor reports: device local only (VRAM the CPU
+ * does not reach, heap 0), and device local, host visible and coherent
+ * (the CPU's window, heap 1); every buffer and image takes either.
+ */
+#define AMDRDNA_VK_MEMORY_DEVICE	0U
+#define AMDRDNA_VK_MEMORY_HOST		1U
+#define AMDRDNA_VK_MEMORY_TYPES		2U
 
 /*
  * A VkDeviceMemory.
  *
- * bytes is the size libvulkan asked for (whole pages).  Once the blob for
- * it is attached, cpu is the CPU's view of its first byte (through the
- * VRAM window, or system memory), va the GPU's address of it in the
- * session's address space, and backing the node's record the memory holds
- * a reference to.
+ * bytes is the size libvulkan asked for (whole pages).  Once its storage
+ * is attached (a blob, or the executor's own outside the CPU's window),
+ * cpu is the CPU's view of its first byte (through the VRAM window, or
+ * system memory; NULL outside the window), va the GPU's address of it in
+ * the session's address space, and backing the node's record the memory
+ * holds a reference to.
  */
 struct amdrdna_vk_memory {
 	uint64_t bytes;

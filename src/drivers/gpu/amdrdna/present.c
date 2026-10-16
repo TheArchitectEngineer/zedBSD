@@ -841,6 +841,11 @@ present_cursor_set(
 	if (request->height == 0U || request->height > PRESENT_CURSOR_SIDE)
 		return EINVAL;
 
+	/* A blob outside the CPU's window is read in whole words. */
+	if (resource->kind != AMDRDNA_RESOURCE_STORAGE && !resource->backing->cpu &&
+	    ((request->offset % PRESENT_PIXEL_BYTES) != 0U || (request->stride % PRESENT_PIXEL_BYTES) != 0U))
+		return EINVAL;
+
 	/* Checks the lease and changes the cursor under the display lock. */
 	mutex_lock(&node->display_lock);
 
@@ -1200,19 +1205,30 @@ present_cursor_copy(
 	const struct gpu_display_cursor_image *request,
 	unsigned slot)
 {
+	uint8_t line[PRESENT_CURSOR_SIDE * PRESENT_PIXEL_BYTES];
 	const volatile uint8_t *source;
+	const volatile uint8_t *row_source;
 	const volatile uint8_t *pixel;
 	volatile uint32_t *target;
 	uint32_t value;
 	uint32_t row;
 	uint32_t column;
+	bool outside;
 
-	/* The image's first byte: in RAM for storage, in the window for a blob (its read cache dropped). */
+	/*
+	 * The image's first byte: in RAM for storage, in the window for a blob
+	 * (its read cache dropped); a blob outside the window is read a row at
+	 * a time through the indirect window.
+	 */
+	outside = false;
+	source = NULL;
 	if (resource->kind == AMDRDNA_RESOURCE_STORAGE) {
 		source = resource->cpu + request->offset;
-	} else {
+	} else if (resource->backing->cpu) {
 		amdrdna_host_path_drop(node->device);
 		source = amdrdna_backing_cpu(node->device, resource->backing) + request->offset;
+	} else {
+		outside = true;
 	}
 
 	/* The slot's pixels, 64 a row. */
@@ -1220,6 +1236,17 @@ present_cursor_copy(
 
 	/* Every pixel of the slot: the image's where it has one, transparent elsewhere. */
 	for (row = 0U; row < PRESENT_CURSOR_SIDE; row++) {
+		/* The row of the image, where it has one. */
+		row_source = NULL;
+		if (row < request->height && outside) {
+			amdrdna_vram_read(node->device, resource->backing->vram + request->offset + (uint64_t)row * request->stride, line,
+					  (size_t)request->width * PRESENT_PIXEL_BYTES);
+			row_source = line;
+		} else if (row < request->height) {
+			row_source = source + (uint64_t)row * request->stride;
+		}
+
+		/* Each pixel of the row. */
 		for (column = 0U; column < PRESENT_CURSOR_SIDE; column++) {
 			/* Outside the image: transparent. */
 			if (row >= request->height || column >= request->width) {
@@ -1228,7 +1255,7 @@ present_cursor_copy(
 			}
 
 			/* The pixel's four bytes, B, G, R, A or R, G, B, A in memory. */
-			pixel = source + (uint64_t)row * request->stride + (uint64_t)column * PRESENT_PIXEL_BYTES;
+			pixel = row_source + (uint64_t)column * PRESENT_PIXEL_BYTES;
 			if (request->format == GPU_PIXEL_RGBA8888) {
 				value = (uint32_t)pixel[2] | ((uint32_t)pixel[1] << 8) | ((uint32_t)pixel[0] << 16) | ((uint32_t)pixel[3] << 24);
 			} else {

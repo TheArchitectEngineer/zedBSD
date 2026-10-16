@@ -181,22 +181,24 @@
 /*
  * The copy engine's packets: the opcode in bits 7:0 and the sub-opcode in
  * 15:8 of the first word; the opcodes of nothing, the linear copy, the
- * linear write, the fence and the trap; the fence's memory type (3,
- * uncached, at bit 16); a count of bytes or words less one.
+ * linear write, the fence, the trap and the constant fill; the fence's
+ * memory type (3, uncached, at bit 16); a count of bytes or words less
+ * one.
  *
  * Values referenced: Linux v6.19
  * drivers/gpu/drm/amd/amdgpu/navi10_sdma_pkt_open.h (SDMA_OP_NOP,
  * SDMA_OP_COPY, SDMA_OP_WRITE, SDMA_OP_FENCE, SDMA_OP_TRAP,
- * SDMA_SUBOP_COPY_LINEAR, SDMA_SUBOP_WRITE_LINEAR,
+ * SDMA_OP_CONST_FILL, SDMA_SUBOP_COPY_LINEAR, SDMA_SUBOP_WRITE_LINEAR,
  * SDMA_PKT_FENCE_HEADER_mtype_shift) and sdma_v5_0.c
- * (sdma_v5_0_ring_emit_fence: MTYPE 3; sdma_v5_0_emit_copy_buffer: the
- * count less one).
+ * (sdma_v5_0_ring_emit_fence: MTYPE 3; sdma_v5_0_emit_copy_buffer and
+ * sdma_v5_0_emit_fill_buffer: the count less one).
  */
 #define COMMAND_COPY_OP_NOTHING		0U
 #define COMMAND_COPY_OP_COPY		1U
 #define COMMAND_COPY_OP_WRITE		2U
 #define COMMAND_COPY_OP_FENCE		5U
 #define COMMAND_COPY_OP_TRAP		6U
+#define COMMAND_COPY_OP_FILL		11U
 #define COMMAND_COPY_FENCE_UNCACHED	0x00030000U
 #define COMMAND_COPY_COUNT_MASK		0x003fffffU
 
@@ -850,6 +852,34 @@ amdrdna_copy_linear(
 
 	/* Succeeded: seven words. */
 	return AMDRDNA_COPY_LINEAR_WORDS;
+}
+
+/*
+ * Writes the copy engine's packet that fills bytes at an address with a
+ * 32-bit value, at most 4 MiB, a whole number of words.  Reports the words
+ * written.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/sdma_v5_0.c (sdma_v5_0_emit_fill_buffer).
+ */
+unsigned
+amdrdna_copy_fill(
+	uint32_t *words,
+	uint64_t destination,
+	uint32_t value,
+	uint32_t bytes)
+{
+	/* The constant fill. */
+	words[0] = COMMAND_COPY_OP_FILL;
+
+	/* The destination, the value, the byte count less one. */
+	words[1] = (uint32_t)destination;
+	words[2] = (uint32_t)(destination >> 32);
+	words[3] = value;
+	words[4] = (bytes - 1U) & COMMAND_COPY_COUNT_MASK;
+
+	/* Succeeded: five words. */
+	return AMDRDNA_COPY_FILL_WORDS;
 }
 
 /*

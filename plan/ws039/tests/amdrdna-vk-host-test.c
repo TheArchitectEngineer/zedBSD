@@ -56,6 +56,7 @@ static uint64_t reply_u64(unsigned *at);
 static void command_begin(struct vulkan_writer *writer, uint32_t opcode);
 static void write_tail(struct vulkan_writer *writer, uint64_t identity);
 static void write_allocate(struct vulkan_writer *writer, uint64_t identity, uint64_t bytes, uint32_t imported);
+static void write_allocate_device(struct vulkan_writer *writer, uint64_t identity, uint64_t bytes);
 static void write_image(struct vulkan_writer *writer, uint64_t identity, uint32_t format, uint32_t width, uint32_t height, uint32_t levels);
 static void write_buffer(struct vulkan_writer *writer, uint64_t identity, uint64_t bytes);
 static void write_pair(struct vulkan_writer *writer, uint32_t opcode, uint64_t first, uint64_t second);
@@ -135,10 +136,27 @@ amdrdna_vk_device_id(void *owner)
 }
 
 uint64_t
-amdrdna_vk_heap_bytes(void *owner)
+amdrdna_vk_heap_bytes(void *owner, bool cpu)
 {
 	(void)owner;
+	if (!cpu)
+		return 5862ULL << 20;
 	return 240ULL << 20;
+}
+
+/* Device-local memory of its own: at 0x32000000, its backing the create token. */
+static unsigned created;
+static int create_token;
+
+int
+amdrdna_vk_memory_create(void *owner, uint64_t bytes, uint64_t *va, void **backing)
+{
+	(void)owner;
+	(void)bytes;
+	created++;
+	*va = 0x32000000ULL;
+	*backing = &create_token;
+	return 0;
 }
 
 void
@@ -881,7 +899,21 @@ write_allocate(struct vulkan_writer *writer, uint64_t identity, uint64_t bytes, 
 		vulkan_write_u64(writer, 0);
 	}
 	vulkan_write_u64(writer, bytes);
-	vulkan_write_u32(writer, 0);
+	vulkan_write_u32(writer, AMDRDNA_VK_MEMORY_HOST);
+	write_tail(writer, identity);
+}
+
+/* vkAllocateMemory of the device-local type, neither imported nor exported. */
+static void
+write_allocate_device(struct vulkan_writer *writer, uint64_t identity, uint64_t bytes)
+{
+	command_begin(writer, GPU_OP_ALLOCATE_MEMORY);
+	vulkan_write_u64(writer, TEST_DEVICE);
+	vulkan_write_u64(writer, 1);
+	vulkan_write_u32(writer, VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO);
+	vulkan_write_u64(writer, 0);
+	vulkan_write_u64(writer, bytes);
+	vulkan_write_u32(writer, AMDRDNA_VK_MEMORY_DEVICE);
 	write_tail(writer, identity);
 }
 
@@ -986,11 +1018,11 @@ test_memory(void)
 	check(reply_u32(&at) == GPU_OP_CREATE_IMAGE && reply_u32(&at) == VK_SUCCESS && reply_u64(&at) == 1 && reply_u64(&at) == 0x201,
 	    "memory: image reply");
 	check(reply_u32(&at) == GPU_OP_GET_IMAGE_MEMORY_REQUIREMENTS && reply_u64(&at) == 1 && reply_u64(&at) == 5120 &&
-	    reply_u64(&at) == 256 && reply_u32(&at) == 1, "memory: image requirements (rows of 512, 256 aligned)");
+	    reply_u64(&at) == 256 && reply_u32(&at) == 3, "memory: image requirements (rows of 512, 256 aligned, either type)");
 	check(reply_u32(&at) == GPU_OP_CREATE_BUFFER && reply_u32(&at) == VK_SUCCESS && reply_u64(&at) == 1 && reply_u64(&at) == 0x202,
 	    "memory: buffer reply");
 	check(reply_u32(&at) == GPU_OP_GET_BUFFER_MEMORY_REQUIREMENTS && reply_u64(&at) == 1 && reply_u64(&at) == 1024 &&
-	    reply_u64(&at) == 256 && reply_u32(&at) == 1, "memory: buffer requirements (rounded to 256)");
+	    reply_u64(&at) == 256 && reply_u32(&at) == 3, "memory: buffer requirements (rounded to 256, either type)");
 	check(reply_u32(&at) == GPU_OP_CREATE_IMAGE && reply_u32(&at) == (uint32_t)VK_ERROR_FEATURE_NOT_PRESENT,
 	    "memory: an image of two levels is refused by name");
 	check(reply_u32(&at) == GPU_OP_CREATE_IMAGE && reply_u32(&at) == (uint32_t)VK_ERROR_FEATURE_NOT_PRESENT,
@@ -1072,8 +1104,28 @@ test_memory(void)
 	check(amdrdna_vk_memory_attach(session, 0x210, 0x10000, storage, 0x30000000ULL, &backing_token) == EINVAL,
 	    "memory: an import has its storage already");
 
+	/* Device-local memory, neither imported nor exported, takes its own storage outside the CPU's window. */
+	frame_begin(&client);
+	write_allocate_device(&client, 0x220, 0x10000);
+	write_buffer(&client, 0x221, 1000);
+	write_bind(&client, GPU_OP_BIND_BUFFER_MEMORY, 0x221, 0x220, 0x200);
+	error = frame_run(session, &client);
+	at = TEST_REPLY_AT / 4U;
+	check(error == 0 && reply_u32(&at) == GPU_OP_ALLOCATE_MEMORY && reply_u32(&at) == VK_SUCCESS && created == 1,
+	    "memory: device-local memory made by the node");
+	check(amdrdna_vk_memory_attach(session, 0x220, 0x10000, storage, 0x30000000ULL, &backing_token) == EINVAL,
+	    "memory: device-local memory has its storage already");
+	buffer = amdrdna_vk_payload(session, I915_VK_OBJ_BUFFER, 0x221);
+	check(buffer != NULL && amdrdna_vk_buffer_address(buffer, &va, &cpu) == 0 && va == 0x32000000ULL + 0x200 && cpu == NULL,
+	    "memory: a buffer outside the window has no CPU address");
+	frame_begin(&client);
+	write_pair(&client, GPU_OP_DESTROY_BUFFER, 0x221, 0);
+	write_pair(&client, GPU_OP_FREE_MEMORY, 0x220, 0);
+	error = frame_run(session, &client);
+	check(error == 0 && detached == 2 && detached_backing == &create_token, "memory: device-local storage goes back");
+
 	/* Closing the session gives the import's storage back and frees everything. */
-	check(amdrdna_vk_session_close(&session) == 0 && detached == 2 && detached_backing == &import_token, "memory: session closed");
+	check(amdrdna_vk_session_close(&session) == 0 && detached == 3 && detached_backing == &import_token, "memory: session closed");
 	check(allocations == before, "memory: nothing leaked");
 }
 
