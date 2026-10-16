@@ -66,6 +66,7 @@ Resume point: 2026-10-16 q1218（P1）の区切り: 次は **p018**（[phase018]
 ## merge の時に Q1 が消す物（全部の段の試験の後、branch を main に入れる時）
 
 - p025: src/drivers/gpu/i915/display/dc9.c・dc9.h（本番の呼び手 0、vmunix.mk から外し済み）、plan/ws052/tests/host-i915-dc9.c と plan/ws052/tests/Makefile の i915-dc9 の規則（期待値は host-xd-power-test の DC9 の check へ移した）。
+- p026: src/drivers/gpu/i915/display/dmc.c（中身は消して vmunix.mk から外し済み）。
 
 ## 全部を実装してから試験（2026-10-16 夕 ユーザー）
 
