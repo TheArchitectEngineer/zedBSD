@@ -169,6 +169,22 @@
 #define AMDRDNA_SMU_READINGS_BYTES	104U
 
 /*
+ * The table of the firmware's averaging settings the driver hands over
+ * once the graphics clock's levels run: its size, and the time constant
+ * the driver gives each of its six averages (the graphics, system and
+ * memory clocks, the graphics and memory activity, and the board's
+ * power), in milliseconds.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/pm/swsmu/inc/pmfw_if/smu11_driver_if_navi10.h
+ * (sizeof(DriverSmuConfig_t)) and
+ * drivers/gpu/drm/amd/pm/swsmu/smu11/navi10_ppt.c
+ * (navi10_get_default_config_table_settings).
+ */
+#define AMDRDNA_SMU_SETTINGS_BYTES	44U
+#define AMDRDNA_SMU_AVERAGE_MS		10U
+
+/*
  * The interrupt clients and sources of the engines: the command processor
  * (its end-of-pipe event, a bad opcode, a privileged register and a
  * privileged instruction) and the first copy engine (its trap); and the
@@ -1825,6 +1841,10 @@ bool
 amdrdna_power_features_on(
 	uint32_t low,
 	uint32_t high);
+
+void
+amdrdna_power_settings_build(
+	uint8_t *table);
 
 /* command-format.c: the ring commands. */
 uint32_t

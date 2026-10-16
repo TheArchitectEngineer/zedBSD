@@ -198,6 +198,21 @@ struct amdrdna_training {
 };
 
 /*
+ * What the power side tells the timing marks about the clocks: the watch's
+ * last readings, the highest graphics clock and activity it read since the
+ * previous report, how many times the driver raised the graphics clock for
+ * work, and whether it is raised now.  One report lives on the caller's
+ * stack.
+ */
+struct amdrdna_power_clock_report {
+	struct amdrdna_power_readings now;
+	unsigned gfx_clock_top;
+	unsigned gfx_activity_top;
+	uint64_t boosts;
+	bool boosted;
+};
+
+/*
  * The power and thermal side of the driver (stage A4: the unit's firmware
  * runs the fan and the thermal control, or the driver drives the fan at a
  * static duty when the firmware will not).
@@ -215,9 +230,21 @@ struct amdrdna_training {
  * thread reads the temperatures and the fan once a second, from the
  * firmware's readings when its features run and from the thermal block
  * always, and the clocks (MHz) and the graphics engine's activity from
- * the firmware's readings (clocked says they were read); lock protects
- * what it publishes (the readings, the fault and the alert counts) and
- * the thread's stop, and waitq wakes it to stop.
+ * the firmware's readings (clocked says they were read), keeping the
+ * highest graphics clock and activity since the timing marks last took
+ * them (gfx_clock_top, gfx_activity_top).
+ *
+ * When the graphics clock's levels run, gfx_lowest and gfx_highest are
+ * the lowest and highest level the firmware gave (MHz, 0 when not read),
+ * and boost_mode says how the driver raises the clock for work: not at
+ * all, with the workload profile for 3D only, or with the profile and the
+ * clock's floor at the highest level.  A run of commands notes the time
+ * (busy_ticks) and, when the clock is not raised, sets boost_wanted and
+ * wakes the watch, which raises it (boosted, counted in boosts) and lowers
+ * it again a second after the last run.  lock protects what the watch
+ * publishes (the readings, the fault and the alert counts), the boost's
+ * state and the thread's stop, and waitq wakes the thread to stop or to
+ * raise the clock.
  */
 struct amdrdna_thermal {
 	struct mutex mailbox;
@@ -256,6 +283,15 @@ struct amdrdna_thermal {
 	unsigned memory_clock;
 	unsigned gfx_average;
 	unsigned gfx_activity;
+	unsigned gfx_clock_top;
+	unsigned gfx_activity_top;
+	unsigned gfx_lowest;
+	unsigned gfx_highest;
+	unsigned boost_mode;
+	bool boost_wanted;
+	bool boosted;
+	uint64_t busy_ticks;
+	uint64_t boosts;
 	unsigned readings;
 	bool faulted;
 	uint64_t high_alerts;
@@ -891,7 +927,11 @@ amdrdna_thermal_interrupt(
 bool
 amdrdna_power_clocks(
 	struct amdrdna_device *device,
-	struct amdrdna_power_readings *speeds_now);
+	struct amdrdna_power_clock_report *report);
+
+void
+amdrdna_power_busy(
+	struct amdrdna_device *device);
 
 /* cp.c: stage A5's command processor. */
 int

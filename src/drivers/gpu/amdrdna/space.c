@@ -391,7 +391,8 @@ amdrdna_space_unmap(
  * tracked ring (AMDRDNA_TRACKED_*) and waits up to milliseconds for them
  * to end.
  *
- * The CPU's writes to VRAM are made visible first.  The space gets a hub
+ * The power side hears that the GPU works, and the CPU's writes to VRAM
+ * are made visible.  The space gets a hub
  * context; when the context's translations are stale they are dropped on
  * the ring before the commands (the context pointed at the space's root
  * table, the drop waited for, the interrupt controller told which space
@@ -441,6 +442,9 @@ amdrdna_space_run(
 		return ENODEV;
 	if (words == 0U || (address & 3U) != 0U)
 		return EINVAL;
+
+	/* Tells the power side the GPU works, so the graphics clock is raised for it. */
+	amdrdna_power_busy(device);
 
 	/* The GPU must read what the CPU wrote to VRAM. */
 	amdrdna_host_path_flush(device);
