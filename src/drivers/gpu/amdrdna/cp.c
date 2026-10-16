@@ -129,6 +129,8 @@ static void settings_harvest(struct amdrdna_device *device);
 static void interrupts_set(struct amdrdna_device *device, bool on);
 static void scheduler_registers(struct amdrdna_device *device);
 static int scheduler_run(struct amdrdna_device *device, const uint32_t *words, unsigned count, const char *what);
+static int scheduler_fenced(struct amdrdna_device *device, const uint32_t *words, unsigned count, const char *what);
+static int ring_fenced(struct amdrdna_device *device, struct amdrdna_ring *ring);
 static void compute_image(struct amdrdna_device *device, struct amdrdna_ring *ring, bool active);
 static int compute_attach(struct amdrdna_device *device);
 static int graphics_attach(struct amdrdna_device *device);
@@ -1282,6 +1284,58 @@ scheduler_run(
 }
 
 /*
+ * Hands words to the scheduler's queue with a fence and waits for the
+ * fence (the fence shows the queue ran them; no register test after).
+ * Returns 0, or the error of the submission or the fence.
+ */
+static int
+scheduler_fenced(
+	struct amdrdna_device *device,
+	const uint32_t *words,
+	unsigned count,
+	const char *what)
+{
+	struct amdrdna_ring *ring;
+	uint32_t sequence;
+	int error;
+
+	/* One command for the scheduler at a time; the words, their fence, the wait. */
+	ring = &device->engines.scheduler;
+	mutex_lock(&device->engines.scheduler_lock);
+
+	error = amdrdna_ring_submit(device, ring, words, count, false, &sequence);
+	if (error == 0)
+		error = amdrdna_ring_wait(device, ring, sequence, CP_FENCE_MS);
+
+	mutex_unlock(&device->engines.scheduler_lock);
+
+	/* Reports a scheduler that did not run the words. */
+	if (error != 0) {
+		amdrdna_mark("the scheduler did not run the %s (%d)", what, error);
+		return error;
+	}
+
+	/* Succeeded: the scheduler ran the words. */
+	return 0;
+}
+
+/* Tests that a ring runs: a fence alone on it, waited for.  Returns 0, or the error of the submission or the fence. */
+static int
+ring_fenced(
+	struct amdrdna_device *device,
+	struct amdrdna_ring *ring)
+{
+	uint32_t sequence;
+	int error;
+
+	/* The fence and the wait. */
+	error = amdrdna_ring_submit(device, ring, NULL, 0U, false, &sequence);
+	if (error == 0)
+		error = amdrdna_ring_wait(device, ring, sequence, CP_FENCE_MS);
+	return error;
+}
+
+/*
  * Fills a compute queue's image from the registers it holds now (the
  * queue is selected by this function; the caller holds the select mutex),
  * writes it where the firmware reads it, and keeps a copy.
@@ -1593,8 +1647,10 @@ graphics_preamble(
  * queue went inactive; the queue's image comes back from its copy and its
  * ring starts empty; the scheduler attaches the queue again; the ring is
  * tested and the preamble runs again (the reset may have dropped the
- * state).  The work that did not end is gone; nothing else was on the
- * ring (every run is waited for before the next one is written).
+ * state).  Each step is checked by a fence (the scratch register's test
+ * takes a quarter of a second each).  The work that did not end is gone;
+ * nothing else was on the ring (every run is waited for before the next
+ * one is written).
  *
  * Returns 0, ENOTSUP for a graphics ring run without the scheduler, or the
  * error of the step that failed (the device then has no graphics queue).
@@ -1616,7 +1672,7 @@ amdrdna_cp_graphics_reset(
 	struct amdrdna_ring *ring;
 	volatile uint32_t *slots;
 	unsigned long irq;
-	uint64_t times[CP_RESET_STEPS];
+	uint64_t step_ms[CP_RESET_STEPS];
 	uint32_t reset_index;
 	uint32_t request;
 	uint32_t index;
@@ -1634,17 +1690,17 @@ amdrdna_cp_graphics_reset(
 
 	/* The queue takes nothing new until it is attached again. */
 	ring->up = false;
-	times[0] = clock_milliseconds(NULL);
+	step_ms[0] = clock_milliseconds(NULL);
 
 	/* The context's work on queue 0 of the pipe reset; then the image's active word and the register read 0. */
 	request = (1U << context) | (1U << (AMDRDNA_GC_CONTEXT_RESET_QUEUES_SHIFT + ring->place.queue));
 	count = amdrdna_pm4_write_register(words, reset_index, request, false);
 	count += amdrdna_pm4_wait_memory(words + count, ring->image.gpu_address + (uint64_t)AMDRDNA_GRAPHICS_IMAGE_ACTIVE * 4U, 0U, false);
 	count += amdrdna_pm4_wait_register(words + count, reset_index, 0U, 0xffffffffU);
-	error = scheduler_run(device, words, count, "graphics reset");
+	error = scheduler_fenced(device, words, count, "graphics reset");
 	if (error != 0)
 		return error;
-	times[1] = clock_milliseconds(NULL);
+	step_ms[1] = clock_milliseconds(NULL);
 
 	/* The image from its copy, the ring empty: filler words, both pointers 0. */
 	irq = spin_lock_irqsave(&ring->lock);
@@ -1674,27 +1730,27 @@ amdrdna_cp_graphics_reset(
 	/* The scheduler attaches the queue again. */
 	count = amdrdna_pm4_queue_attach(words, &ring->place, AMDRDNA_QUEUE_ENGINE_GRAPHICS,
 	    ring->doorbell, ring->image.gpu_address, ring_gpu_word(device, ring, CP_WORD_WRITE));
-	error = scheduler_run(device, words, count, "graphics attach after the reset");
+	error = scheduler_fenced(device, words, count, "graphics attach after the reset");
 	if (error != 0)
 		return error;
-	times[2] = clock_milliseconds(NULL);
+	step_ms[2] = clock_milliseconds(NULL);
 
-	/* The ring runs commands, and its preamble again. */
-	error = amdrdna_ring_test(device, ring);
-	times[3] = clock_milliseconds(NULL);
+	/* The ring runs commands (a fence alone on it), and its preamble again. */
+	error = ring_fenced(device, ring);
+	step_ms[3] = clock_milliseconds(NULL);
 	if (error == 0)
 		error = graphics_preamble(device);
 	if (error != 0)
 		return error;
-	times[4] = clock_milliseconds(NULL);
+	step_ms[4] = clock_milliseconds(NULL);
 
 	/* Succeeded: the queue takes work again; the steps' times are said. */
 	ring->up = true;
 	amdrdna_mark("graphics queue reset steps: reset %llums, attach %llums, test %llums, preamble %llums",
-	    (unsigned long long)(times[1] - times[0]),
-	    (unsigned long long)(times[2] - times[1]),
-	    (unsigned long long)(times[3] - times[2]),
-	    (unsigned long long)(times[4] - times[3]));
+	    (unsigned long long)(step_ms[1] - step_ms[0]),
+	    (unsigned long long)(step_ms[2] - step_ms[1]),
+	    (unsigned long long)(step_ms[3] - step_ms[2]),
+	    (unsigned long long)(step_ms[4] - step_ms[3]));
 	return 0;
 }
 
