@@ -20,6 +20,7 @@
 
 #include "xd-io.h"
 #include "xd-platform.h"
+#include "xd-power.h"
 #include "xd-vbt.h"
 
 #include <stddef.h>
@@ -35,6 +36,8 @@ struct mutex;
  * zero on a device the xd code does not describe (Gen9, an unknown id),
  * whose display does not use the xd parts.  The OpRegion read is filled by
  * the OpRegion stage, the VBT parse (vbt_parsed nonzero) by the VBT stage.
+ * The power well counts are prepared with the power domains and kept
+ * under their lock.
  */
 struct i915_xd {
 	struct i915_xd_io io;
@@ -43,6 +46,7 @@ struct i915_xd {
 	struct i915_xd_opregion_read opregion;
 	struct i915_xd_vbt vbt;
 	int vbt_parsed;
+	struct i915_xd_power power;
 };
 
 void drv_i915_xd_start(struct i915_xd *xd, struct i915_mmio *mmio, struct mutex *mailbox_lock, uint16_t product, uint8_t revid);

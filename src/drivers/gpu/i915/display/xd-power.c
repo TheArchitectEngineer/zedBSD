@@ -44,6 +44,11 @@ static const struct i915_xd_well_desc *i915_xd_power_desc(const struct i915_xd_p
 static uint32_t i915_xd_power_control(unsigned control);
 static int i915_xd_power_tc_port(const struct i915_xd_platform *platform, const struct i915_xd_well_desc *desc, unsigned *aux);
 static int i915_xd_power_wait_fuses(struct i915_xd_io *io, unsigned gate, struct i915_xd_well_report *report);
+static void i915_xd_power_release(struct i915_xd_power *power, uint64_t wells, const struct i915_xd_power_switch *sw);
+static void i915_xd_power_give_owed(struct i915_xd_power *power, unsigned set, const struct i915_xd_power_switch *sw);
+static void i915_xd_power_down(struct i915_xd_power *power, unsigned well, const struct i915_xd_power_switch *sw);
+static int i915_xd_power_take_owed(struct i915_xd_power *power, unsigned well);
+static void i915_xd_power_cancel_work(struct i915_xd_power *power);
 
 /*
  * Finds the table entry of a well given by its control and its index
@@ -337,6 +342,536 @@ drv_i915_xd_power_well_adopt(
 	if ((driver & request) == 0U)
 		drv_i915_xd_io_write(io, control, driver | request);
 	drv_i915_xd_io_write(io, control - I915_XD_POWER_BIOS_OFFSET, bios & ~request);
+}
+
+/*
+ * Prepares the counts of a display: no well has a user or owes one to
+ * the work, none is known to be on, and no work is bound.  Nothing is
+ * written to the hardware.
+ */
+void
+drv_i915_xd_power_init(
+	struct i915_xd_power *power,
+	const struct i915_xd_platform *platform)
+{
+	unsigned well;
+
+	/* Records the platform whose wells are counted. */
+	power->platform = platform;
+
+	/* Starts every well with no user and nothing owed to the work. */
+	for (well = 0U; well < I915_XD_POWER_MAX_WELLS; well++) {
+		power->refs[well] = 0U;
+		power->owed[0][well] = 0U;
+		power->owed[1][well] = 0U;
+	}
+
+	/* Starts with no work bound and none armed. */
+	power->work_armed = 0;
+	power->next_delay = 0;
+	power->work.queue = NULL;
+	power->work.cancel = NULL;
+	power->work.context = NULL;
+
+	/* No well is known to be on until the owner records one. */
+	__atomic_store_n(&power->on, 0ULL, __ATOMIC_RELEASE);
+
+	/* Starts the diagnostics at zero. */
+	power->stats.deferred = 0U;
+	power->stats.taken_over = 0U;
+	power->stats.work_runs = 0U;
+	power->stats.work_empty = 0U;
+	power->stats.released = 0U;
+	power->stats.requeues = 0U;
+	power->stats.flushes = 0U;
+	power->stats.errors = 0U;
+}
+
+/*
+ * Binds the owner's delayed work behind deferred give-backs, or unbinds
+ * it when work is NULL or has no queue (a deferred give-back is then
+ * immediate).
+ */
+void
+drv_i915_xd_power_bind_work(
+	struct i915_xd_power *power,
+	const struct i915_xd_power_work *work)
+{
+	/* Unbinds the work when none is given. */
+	if (work == NULL || work->queue == NULL) {
+		power->work.queue = NULL;
+		power->work.cancel = NULL;
+		power->work.context = NULL;
+		return;
+	}
+
+	/* Takes the owner's work. */
+	power->work = *work;
+}
+
+/* Reports the set of table entries (a bit each) of the wells that power one of the functions. */
+uint64_t
+drv_i915_xd_power_wells_of(
+	const struct i915_xd_platform *platform,
+	uint64_t functions)
+{
+	uint64_t wells;
+	unsigned well;
+
+	/* Gathers the wells whose set holds one of the functions. */
+	wells = 0ULL;
+	for (well = 0U; well < platform->nwells; well++) {
+		/* A table larger than a set can name ends here. */
+		if (well >= I915_XD_POWER_MAX_WELLS)
+			break;
+
+		/* A well that powers none of the functions is passed over. */
+		if ((platform->wells[well].powers & functions) == 0ULL)
+			continue;
+
+		wells |= 1ULL << well;
+	}
+
+	/* Succeeded: the wells. */
+	return wells;
+}
+
+/*
+ * Counts a user on every well that powers one of the functions, in the
+ * table's order, bringing up each well nobody used.  A user owed to the
+ * delayed work is taken over instead: that well stays as it is, and the
+ * work, when nothing is owed any more, is disarmed.  When a well fails
+ * to come up, the wells this call counted are given back.  Returns 0,
+ * EINVAL for a table larger than the counts, or the error of the well.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display_power.c
+ * (__intel_display_power_get_domain, intel_display_power_grab_async_put_ref).
+ */
+int
+drv_i915_xd_power_get(
+	struct i915_xd_power *power,
+	uint64_t functions,
+	const struct i915_xd_power_switch *sw)
+{
+	const struct i915_xd_platform *platform;
+	uint64_t wells;
+	uint64_t taken;
+	uint64_t bit;
+	unsigned well;
+	int took_over;
+	int owed;
+	int error;
+
+	/* A table with more wells than the counts can hold is not used. */
+	platform = power->platform;
+	if (platform->nwells > I915_XD_POWER_MAX_WELLS)
+		return EINVAL;
+
+	/* Counts the user on each well of the functions, parents first. */
+	wells = drv_i915_xd_power_wells_of(platform, functions);
+	taken = 0ULL;
+	took_over = 0;
+	for (well = 0U; well < platform->nwells; well++) {
+		/* A well outside the set is passed over. */
+		bit = 1ULL << well;
+		if ((wells & bit) == 0ULL)
+			continue;
+
+		/* A user owed to the work becomes this caller's; the well stays as it is. */
+		owed = i915_xd_power_take_owed(power, well);
+		if (owed) {
+			took_over = 1;
+			taken |= bit;
+			continue;
+		}
+
+		/* The first user brings the well up; a well that fails gives back what this call took. */
+		if (power->refs[well] == 0U) {
+			error = sw->on(sw->context, well);
+			if (error != 0) {
+				i915_xd_power_release(power, taken, sw);
+				return error;
+			}
+		}
+
+		/* The count is the number of users of the well. */
+		power->refs[well]++;
+		taken |= bit;
+	}
+
+	/* Disarms the work once a taken-over user leaves it nothing owed. */
+	if (took_over) {
+		power->stats.taken_over++;
+		owed = drv_i915_xd_power_owes(power);
+		if (!owed && power->work_armed) {
+			i915_xd_power_cancel_work(power);
+			power->work_armed = 0;
+		}
+	}
+
+	/* Succeeded: every well of the functions is up and counts the caller. */
+	return 0;
+}
+
+/*
+ * Gives back the caller's user of every well that powers one of the
+ * functions, in the reverse of the table's order; a well whose last
+ * user leaves goes down.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display_power.c
+ * (__intel_display_power_put_domain).
+ */
+void
+drv_i915_xd_power_put(
+	struct i915_xd_power *power,
+	uint64_t functions,
+	const struct i915_xd_power_switch *sw)
+{
+	uint64_t wells;
+
+	/* Gives back one user of each well of the functions. */
+	wells = drv_i915_xd_power_wells_of(power->platform, functions);
+	i915_xd_power_release(power, wells, sw);
+}
+
+/*
+ * Gives back the caller's user of the wells of the functions later: the
+ * users are owed to the delayed work, which gives them back after the
+ * delay unless a new user takes them over first.  A give-back deferred
+ * while the work is armed waits for the run after, with the longest
+ * delay asked for.  Without a bound work the users are given back now.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display_power.c
+ * (__intel_display_power_put_async, queue_async_put_domains_work).
+ */
+void
+drv_i915_xd_power_put_later(
+	struct i915_xd_power *power,
+	uint64_t functions,
+	int delay_ms,
+	const struct i915_xd_power_switch *sw)
+{
+	uint64_t wells;
+	unsigned well;
+	unsigned set;
+	int queued;
+
+	/* Without a work the users are given back now. */
+	if (power->work.queue == NULL) {
+		drv_i915_xd_power_put(power, functions, sw);
+		return;
+	}
+
+	/* Owes the users to the run of the work that is due: the armed one, or the one after. */
+	power->stats.deferred++;
+	wells = drv_i915_xd_power_wells_of(power->platform, functions);
+	set = 0U;
+	if (power->work_armed)
+		set = 1U;
+	for (well = 0U; well < power->platform->nwells && well < I915_XD_POWER_MAX_WELLS; well++) {
+		/* A well outside the set is passed over. */
+		if ((wells & (1ULL << well)) == 0ULL)
+			continue;
+
+		/* A well with no user of the caller's to owe is an inconsistency, not a count. */
+		if (power->refs[well] <= (unsigned)power->owed[0][well] + power->owed[1][well]) {
+			power->stats.errors++;
+			continue;
+		}
+
+		power->owed[set][well]++;
+	}
+
+	/* An armed work takes the longest delay asked for into its next arming. */
+	if (power->work_armed) {
+		if (delay_ms > power->next_delay)
+			power->next_delay = delay_ms;
+		return;
+	}
+
+	/* Arms the work; one that was armed already means the counts lost track of it. */
+	power->work_armed = 1;
+	queued = power->work.queue(power->work.context, delay_ms);
+	if (queued == 0)
+		power->stats.errors++;
+}
+
+/*
+ * Runs the delayed work: gives back the users owed to this run, then
+ * arms the work again for the ones deferred meanwhile, or disarms it.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display_power.c
+ * (intel_display_power_put_async_work).
+ */
+void
+drv_i915_xd_power_work(
+	struct i915_xd_power *power,
+	const struct i915_xd_power_switch *sw)
+{
+	unsigned well;
+	int later;
+	int queued;
+
+	/* A run that finds nothing owed (taken over or flushed) has nothing to do. */
+	power->stats.work_runs++;
+	if (!power->work_armed) {
+		power->stats.work_empty++;
+		return;
+	}
+
+	/* Gives back the users owed to this run. */
+	power->work_armed = 0;
+	i915_xd_power_give_owed(power, 0U, sw);
+
+	/* Moves the users deferred meanwhile up to the next run. */
+	later = 0;
+	for (well = 0U; well < I915_XD_POWER_MAX_WELLS; well++) {
+		if (power->owed[1][well] != 0U)
+			later = 1;
+		power->owed[0][well] = power->owed[1][well];
+		power->owed[1][well] = 0U;
+	}
+
+	/* Arms the work again for them, or disarms one armed after this run began. */
+	if (later) {
+		power->stats.requeues++;
+		power->work_armed = 1;
+		queued = power->work.queue(power->work.context, power->next_delay);
+		if (queued == 0)
+			power->stats.errors++;
+		power->next_delay = 0;
+	} else {
+		i915_xd_power_cancel_work(power);
+	}
+}
+
+/*
+ * Gives back every user owed to the work now and disarms it.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display_power.c
+ * (intel_display_power_flush_work).
+ */
+void
+drv_i915_xd_power_flush(
+	struct i915_xd_power *power,
+	const struct i915_xd_power_switch *sw)
+{
+	unsigned well;
+
+	/* Nothing is owed while the work is not armed. */
+	power->stats.flushes++;
+	if (!power->work_armed)
+		return;
+
+	/* Joins the users deferred for the run after to the ones due now. */
+	power->work_armed = 0;
+	for (well = 0U; well < I915_XD_POWER_MAX_WELLS; well++) {
+		power->owed[0][well] = (uint16_t)(power->owed[0][well] + power->owed[1][well]);
+		power->owed[1][well] = 0U;
+	}
+
+	/* Gives them back and disarms the work. */
+	i915_xd_power_give_owed(power, 0U, sw);
+	i915_xd_power_cancel_work(power);
+}
+
+/* Tells whether any user is owed to the work (1 or 0). */
+int
+drv_i915_xd_power_owes(
+	const struct i915_xd_power *power)
+{
+	unsigned well;
+
+	/* Looks at both runs of every well. */
+	for (well = 0U; well < I915_XD_POWER_MAX_WELLS; well++) {
+		if (power->owed[0][well] != 0U)
+			return 1;
+		if (power->owed[1][well] != 0U)
+			return 1;
+	}
+
+	/* Succeeded: nothing is owed. */
+	return 0;
+}
+
+/*
+ * Tells whether every well that powers one of the functions is known to
+ * be on, so that their registers can be read (1 or 0).  It takes no lock
+ * and writes nothing: an interrupt handler may ask.
+ */
+int
+drv_i915_xd_power_has(
+	const struct i915_xd_power *power,
+	uint64_t functions)
+{
+	uint64_t wells;
+	uint64_t on;
+
+	/* Every well of the functions must be recorded as on. */
+	wells = drv_i915_xd_power_wells_of(power->platform, functions);
+	on = __atomic_load_n(&power->on, __ATOMIC_ACQUIRE);
+	if ((on & wells) != wells)
+		return 0;
+
+	/* Succeeded: the functions are powered. */
+	return 1;
+}
+
+/* Records whether a well of the table is on, for the readers that take no lock. */
+void
+drv_i915_xd_power_record(
+	struct i915_xd_power *power,
+	unsigned well,
+	int on)
+{
+	uint64_t bit;
+
+	/* A well past what a set can name is not recorded. */
+	if (well >= I915_XD_POWER_MAX_WELLS)
+		return;
+
+	/* Sets or clears the well's bit. */
+	bit = 1ULL << well;
+	if (on) {
+		(void)__atomic_fetch_or(&power->on, bit, __ATOMIC_RELEASE);
+	} else {
+		(void)__atomic_fetch_and(&power->on, ~bit, __ATOMIC_RELEASE);
+	}
+}
+
+/*
+ * Gives back one user of each well in a set, in the reverse of the
+ * table's order; a well whose last user leaves goes down, unless the
+ * owner has to keep it on (it then keeps that user for good).
+ */
+static void
+i915_xd_power_release(
+	struct i915_xd_power *power,
+	uint64_t wells,
+	const struct i915_xd_power_switch *sw)
+{
+	unsigned well;
+
+	/* Walks the table backwards, the wells inside a parent first. */
+	for (well = power->platform->nwells; well > 0U; well--) {
+		/* A well outside the set is passed over. */
+		if (well > I915_XD_POWER_MAX_WELLS)
+			continue;
+		if ((wells & (1ULL << (well - 1U))) == 0ULL)
+			continue;
+
+		/* A give-back of a user the well does not have (other than the work's) is an inconsistency, not a count. */
+		if (power->refs[well - 1U] <= (unsigned)power->owed[0][well - 1U] + power->owed[1][well - 1U]) {
+			power->stats.errors++;
+			continue;
+		}
+
+		/* The count is the number of users; the last one takes the well down. */
+		power->refs[well - 1U]--;
+		if (power->refs[well - 1U] == 0U)
+			i915_xd_power_down(power, well - 1U, sw);
+	}
+}
+
+/*
+ * Gives back every user one run of the work owes, in the reverse of the
+ * table's order; a well whose last user leaves goes down.
+ */
+static void
+i915_xd_power_give_owed(
+	struct i915_xd_power *power,
+	unsigned set,
+	const struct i915_xd_power_switch *sw)
+{
+	unsigned well;
+	unsigned owed;
+
+	/* Walks the table backwards, the wells inside a parent first. */
+	for (well = I915_XD_POWER_MAX_WELLS; well > 0U; well--) {
+		/* A well that owes this run nothing is passed over. */
+		owed = power->owed[set][well - 1U];
+		if (owed == 0U)
+			continue;
+		power->owed[set][well - 1U] = 0U;
+		power->stats.released += owed;
+
+		/* A well with fewer users than it owes is an inconsistency: it loses only what it has. */
+		if (power->refs[well - 1U] < owed) {
+			power->stats.errors++;
+			owed = power->refs[well - 1U];
+		}
+
+		/* The owed users leave; the last one takes the well down. */
+		if (owed == 0U)
+			continue;
+		power->refs[well - 1U] = (uint16_t)(power->refs[well - 1U] - owed);
+		if (power->refs[well - 1U] == 0U)
+			i915_xd_power_down(power, well - 1U, sw);
+	}
+}
+
+/*
+ * Takes a well down through the owner after its last user left; a well
+ * the owner has to keep on keeps one user for good, so it is not brought
+ * up again by a later user.
+ */
+static void
+i915_xd_power_down(
+	struct i915_xd_power *power,
+	unsigned well,
+	const struct i915_xd_power_switch *sw)
+{
+	int error;
+
+	/* Asks the owner to take the well down. */
+	error = sw->off(sw->context, well);
+
+	/* A well that had to stay on keeps one user. */
+	if (error == EBUSY)
+		power->refs[well] = 1U;
+}
+
+/*
+ * Takes over one user a well owes to the work, from the run after first.
+ * Reports 1 when there was one, 0 when the well owes nothing.
+ */
+static int
+i915_xd_power_take_owed(
+	struct i915_xd_power *power,
+	unsigned well)
+{
+	/* The run after gives back last, so its user is taken first. */
+	if (power->owed[1][well] != 0U) {
+		power->owed[1][well]--;
+		return 1;
+	}
+
+	/* Then the run that is due. */
+	if (power->owed[0][well] != 0U) {
+		power->owed[0][well]--;
+		return 1;
+	}
+
+	/* The well owes nothing. */
+	return 0;
+}
+
+/* Disarms the owner's work, and forgets the delay of a next arming. */
+static void
+i915_xd_power_cancel_work(
+	struct i915_xd_power *power)
+{
+	/* Asks the owner to disarm the work. */
+	if (power->work.cancel != NULL)
+		(void)power->work.cancel(power->work.context, 0);
+
+	/* No arming is due any more. */
+	power->next_delay = 0;
 }
 
 /* Returns a well's entry in the platform's table, or NULL past its end. */

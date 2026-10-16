@@ -1741,7 +1741,7 @@ i915_display_noirq_front(
 
 	/* intel_power_domains_init: options, DC masks, lock, async-put work and the power-well map. */
 	device->stage = "intel_power_domains_init";
-	error = drv_i915_power_domains_init(&display->power_domains, gt->display_ver, -1, -1, &gt->trace);
+	error = drv_i915_power_domains_init(&display->power_domains, gt->display_ver, &display->xd, -1, -1, &gt->trace);
 	if (error != 0)
 		return error;
 

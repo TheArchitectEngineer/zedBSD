@@ -17,7 +17,8 @@
 #   host-xd-panel-test     the panel: the backlight PWM's period, lowest duty, scaling, controllers, start and stop;
 #                          the power sequencer's delays, VDD alone, power on and off and their waits
 #   host-xd-power-test     the power wells: the Alder Lake-P wells against the 5330's list, the writes of power well 1,
-#                          a pipe well, the Type-C and Thunderbolt AUX wells, drains, BIOS requests
+#                          a pipe well, the Type-C and Thunderbolt AUX wells, drains, BIOS requests; the counts:
+#                          which wells power which functions, their order, the deferred give-back, the on record
 # The check against the Linux tree itself is plan/ws245/tests/check-xd-regs-linux.sh (needs the unpacked tree).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -e

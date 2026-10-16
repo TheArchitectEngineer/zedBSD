@@ -8,10 +8,10 @@
 /*
  * The display power wells, domains and core (power.c).
  *
- * The power-domain map, the power-well operations, the reference-counted
- * domain get and put with its asynchronous put, the DC states, the DBUF
- * slices, the display-core bring-up and the POWER_DOMAIN_INIT reference of
- * the driver probe.  The functions whose arguments are types of the modeset
+ * The power domains over the xd power well counts, the power-well
+ * operations, the domain get and put with its asynchronous put, the DC
+ * states, the DBUF slices, the display-core bring-up and the
+ * POWER_DOMAIN_INIT reference of the driver probe.  The functions whose arguments are types of the modeset
  * environment are declared in modeset-internal.h.
  */
 
@@ -20,7 +20,9 @@
 
 #include "internal.h"
 
-int drv_i915_power_domains_init(struct i915_power_domains *pd, unsigned display_ver, int enable_dc_param, int disable_pw_param, struct i915_trace *trace);
+struct i915_xd;
+
+int drv_i915_power_domains_init(struct i915_power_domains *pd, unsigned display_ver, struct i915_xd *xd, int enable_dc_param, int disable_pw_param, struct i915_trace *trace);
 void drv_i915_power_domains_cleanup(struct i915_power_domains *pd);
 uint64_t drv_i915_power_domain_wells(const struct i915_power_domains *pd, enum i915_power_domain domain);
 int drv_i915_power_well_by_id(const struct i915_power_domains *pd, int id);
@@ -29,8 +31,6 @@ int drv_i915_power_well_enable(struct i915_power_well *well, struct i915_pw_ctx 
 int drv_i915_power_well_disable(struct i915_power_well *well, struct i915_pw_ctx *pwc);
 int drv_i915_power_well_is_enabled(struct i915_power_well *well, struct i915_pw_ctx *pwc);
 void drv_i915_power_well_sync_hw(struct i915_power_well *well, struct i915_pw_ctx *pwc);
-int drv_i915_power_well_get(struct i915_power_well *well, struct i915_pw_ctx *pwc);
-void drv_i915_power_well_put(struct i915_power_well *well, struct i915_pw_ctx *pwc);
 
 int drv_i915_display_power_is_enabled(struct i915_power_domains *pd, enum i915_power_domain domain, struct i915_pw_ctx *pwc);
 int drv_i915_power_domain_hw_state_on(struct i915_power_domains *pd, enum i915_power_domain domain, struct i915_mmio *mmio);

@@ -17,19 +17,17 @@
 /*
  * The display power wells, domains and core (see power.h).
  *
- * intel_power_domains_init() builds the platform's power-well descriptors
- * (display version 13: the XE_LPD set, version 12: the Tiger Lake set) and
- * the map from each power domain to the wells that provide it, in the
- * reference order and with the reference ids, control indices and
- * attributes.  A well's descriptor is separate from its live state (the
- * software reference count and the last known hardware state).
+ * Each power domain stands for a set of functions of the xd power wells
+ * (xd-power.c), whose counts decide which wells come up and go down, in
+ * the platform table's order; the wells the older code reads are copies
+ * of that table with the users and the last known state.  A last
+ * reference may be put asynchronously: its wells then stay up, owed to
+ * the delayed work, until the work gives them back.
  *
- * The well operations are the reference's hsw / icl / DC_off bodies: the
- * driver request bit, the fuse waits of the fused wells, the takeover of a
- * request the firmware left, and the DC state the DMC enters when DC_off is
- * released.  Domain gets take the domain's wells in ascending order and
- * puts give them back in reverse; a last reference may also be put
- * asynchronously and is then parked until the delayed work releases it.
+ * The well operations switch a well by its request bit through the xd
+ * power wells, with the VGA, interrupt and Type-C PHY steps of this
+ * context; DC_off leaves the DC states, and its release enters the one
+ * the DMC is allowed.
  *
  * The display-core bring-up (icl_display_core_init) and its caller
  * intel_power_domains_init_hw() run the DC-state disable, the PCH reset
@@ -47,8 +45,10 @@
 #include "modeset.h"
 #include "dkl-phy.h"
 #include "xd-power.h"
+#include "xd.h"
 #include <kern/kcrt.h>
 
+#include "../intel/display-regs-xd.h"
 #include "../mmio.h"
 #include "../sync.h"
 #include "../trace.h"
@@ -62,49 +62,8 @@
 /* The trace stage of the display noirq bring-up. */
 #define I915_POWER_TRACE_STAGE_NOIRQ	4U
 
-/* The pipe bits of a well's interrupt pipe mask. */
-#define BIT_PIPE_A	(1u << 0)
-#define BIT_PIPE_B	(1u << 1)
-#define BIT_PIPE_C	(1u << 2)
-#define BIT_PIPE_D	(1u << 3)
-
-/* The reference's HSW / ICL power-well control indices (i915_reg.h). */
-#define IDX_PW_1	0u
-#define IDX_PW_2	1u
-#define IDX_PW_A	5u
-#define IDX_PW_B	6u
-#define IDX_PW_C	7u
-#define IDX_PW_D	8u
-#define IDX_DDI_A	0u
-#define IDX_DDI_B	1u
-#define IDX_DDI_C	2u
-#define IDX_DDI_D	7u	/* XELPD */
-#define IDX_DDI_E	8u	/* XELPD */
-#define IDX_DDI_TC1	3u
-#define IDX_DDI_TC2	4u
-#define IDX_DDI_TC3	5u
-#define IDX_DDI_TC4	6u
-#define IDX_AUX_A	0u
-#define IDX_AUX_B	1u
-#define IDX_AUX_C	2u
-#define IDX_AUX_D	7u	/* XELPD */
-#define IDX_AUX_E	8u	/* XELPD */
-#define IDX_AUX_TC1	3u
-#define IDX_AUX_TC2	4u
-#define IDX_AUX_TC3	5u
-#define IDX_AUX_TC4	6u
-#define IDX_AUX_TBT1	9u
-#define IDX_AUX_TBT2	10u
-#define IDX_AUX_TBT3	11u
-#define IDX_AUX_TBT4	12u
-
 /* How long an AUX_USBC well's enable waits for the PHY microcontroller's health (1 ms, as Linux). */
 #define I915_TC_UC_HEALTH_TIMEOUT_US	1000u
-
-/* Tiger Lake (display version 12) adds PW_3..PW_5. */
-#define IDX_PW_3	2u
-#define IDX_PW_4	3u
-#define IDX_PW_5	4u
 
 /* The driver request registers of the well families (i915_reg.h). */
 #define ICL_PWR_WELL_CTL_AUX2	0x45444u
@@ -164,42 +123,13 @@
 #define I915_POWER_ASYNC_PUT_DELAY_MS	100
 
 /*
- * One power well of a platform's descriptor set, as
- * intel_display_power_map_init() lists it.
- *
- * An instance is one row of a constant table; the power-domain map copies
- * it into a struct i915_power_well that carries the live state as well.
+ * What the xd power well counts switch wells with: the domains state
+ * whose copies they turn on and off, and the well context of the
+ * operations.  One lives on the stack of each get, put and work run.
  */
-struct i915_pw_desc {
-	/* The well's name, as the logs print it. */
-	const char *name;
-
-	/* The operations family the well uses. */
-	enum i915_pw_ops_kind ops;
-
-	/* The descriptor attributes: always on, VGA, fuses, Thunderbolt AUX, fixed enable delay. */
-	int always_on;
-	int has_vga;
-	int has_fuses;
-	int is_tc_tbt;
-	int fixed_enable_delay;
-
-	/* The enable timeout in milliseconds (0: the operations' default). */
-	unsigned enable_timeout;
-
-	/* The pipes whose interrupts live in the well. */
-	unsigned irq_pipe_mask;
-
-	/* The well's control index and its power-well id. */
-	unsigned hsw_idx;
-	int id;
-
-	/* Nonzero for the zero-length domain list that means every domain. */
-	int domains_all;
-
-	/* The domains the well provides. */
-	const enum i915_power_domain *domains;
-	unsigned domain_count;
+struct i915_pw_switch_ctx {
+	struct i915_power_domains *pd;
+	struct i915_pw_ctx *pwc;
 };
 
 /*
@@ -254,14 +184,9 @@ static const struct i915_buddy_mask i915_tgl_buddy[] = {
 	{ 0, 0, 0u }
 };
 
-static void i915_pw_dom(struct i915_pw_domain_mask *mask, enum i915_power_domain domain);
 static uint32_t i915_get_allowed_dc_mask(unsigned display_ver, int enable_dc);
 static uint32_t i915_sanitize_target_dc_state(const struct i915_power_domains *pd, uint32_t target);
 static int i915_sanitize_disable_power_well(int param);
-static struct i915_power_well *i915_pw_add(struct i915_power_domains *pd, const struct i915_pw_desc *desc);
-static void i915_power_map_build(struct i915_power_domains *pd, const struct i915_pw_desc *descs, unsigned count);
-static int i915_power_map_init(struct i915_power_domains *pd);
-static int i915_power_map_init_tgl(struct i915_power_domains *pd);
 static unsigned i915_pw_driver_reg(enum i915_pw_ops_kind ops);
 static uint32_t i915_pw_state(unsigned idx);
 static int i915_pw_xd_well(const struct i915_power_well *well, struct i915_pw_ctx *pwc);
@@ -270,19 +195,18 @@ static void i915_pw_hook_pipes_up(void *context, unsigned pipe_mask);
 static int i915_pw_hook_pipes_down(void *context, unsigned pipe_mask);
 static void i915_pw_hook_vga_reset(void *context);
 static int i915_pw_hook_tc_health(void *context, unsigned tc_port);
-static int i915_mask_test(const struct i915_pw_domain_mask *mask, unsigned domain);
-static void i915_mask_set(struct i915_pw_domain_mask *mask, unsigned domain);
-static void i915_mask_clear(struct i915_pw_domain_mask *mask, unsigned domain);
-static int i915_mask_empty(const struct i915_pw_domain_mask *mask);
-static int i915_parked(struct i915_power_domains *pd, unsigned domain);
-static int i915_parked_any(struct i915_power_domains *pd);
-static void i915_verify_async_put_domains_state(struct i915_power_domains *pd);
-static void i915_cancel_async_put_work(struct i915_power_domains *pd, int sync);
-static int i915_grab_async_put_ref(struct i915_power_domains *pd, unsigned domain);
-static int i915_get_domain_locked(struct i915_power_domains *pd, enum i915_power_domain domain, struct i915_pw_ctx *pwc);
-static void i915_put_domain_locked(struct i915_power_domains *pd, enum i915_power_domain domain, struct i915_pw_ctx *pwc);
-static void i915_queue_async_put_domains_work(struct i915_power_domains *pd, int delay_ms);
-static void i915_release_async_put_domains(struct i915_power_domains *pd, const struct i915_pw_domain_mask *mask);
+static uint64_t i915_pw_functions(unsigned display_ver, enum i915_power_domain domain);
+static uint64_t i915_pw_port_function(unsigned display_ver, unsigned offset, uint64_t ddi0);
+static void i915_pw_copy_well(struct i915_power_well *well, const struct i915_xd_well_desc *desc, unsigned xd_well, unsigned display_ver);
+static struct i915_power_well *i915_pw_copy_of(struct i915_power_domains *pd, unsigned xd_well);
+static void i915_pw_switch(struct i915_power_domains *pd, struct i915_pw_ctx *pwc, struct i915_pw_switch_ctx *ctx, struct i915_xd_power_switch *sw);
+static int i915_pw_switch_on(void *context, unsigned xd_well);
+static int i915_pw_switch_off(void *context, unsigned xd_well);
+static void i915_pw_count_put(struct i915_power_domains *pd, enum i915_power_domain domain);
+static void i915_pw_copy_counts(struct i915_power_domains *pd);
+static int i915_pw_work_queue(void *context, int delay_ms);
+static int i915_pw_work_cancel(void *context, int sync);
+static void i915_pw_set_state(struct i915_pw_ctx *pwc, struct i915_power_well *well, int state);
 static uint32_t i915_gen9_dc_mask(int display_ver);
 static void i915_gen9_write_dc_state(struct i915_pw_ctx *pwc, uint32_t state);
 static void i915_power_rmw(struct i915_mmio *mmio, uint32_t reg, uint32_t clear, uint32_t set);
@@ -307,25 +231,46 @@ static unsigned i915_wells_on(struct i915_power_domains *pd, struct i915_pw_ctx 
  * Builds the power-domain state of a display (intel_power_domains_init()).
  *
  * Sanitizes the power-well and DC options, computes the allowed DC states
- * and the target DC state, prepares the lock and the asynchronous put, and
- * builds the platform's power-well map.  Returns 0, or EINVAL when there is
- * no state or no map for the display version.
+ * and the target DC state, prepares the lock, the xd power well counts of
+ * the platform's description, the copy of its wells the older code reads,
+ * and each domain's wells.  Returns 0, or EINVAL when there is no state,
+ * no description of the device, or more wells than the copy holds.
  */
 int
 drv_i915_power_domains_init(
 	struct i915_power_domains *pd,
 	unsigned display_ver,
+	struct i915_xd *xd,
 	int enable_dc_param,
 	int disable_pw_param,
 	struct i915_trace *trace)
 {
+	const struct i915_xd_platform *platform;
 	unsigned domain;
-	int map_result;
-	const char *map_name;
+	unsigned well;
+	unsigned index;
+	uint64_t functions;
+	uint64_t xd_wells;
 
 	/* Refuses a missing state. */
 	if (pd == NULL)
 		return EINVAL;
+
+	/* A display without a description has no wells to count. */
+	if (xd == NULL || !xd->chosen) {
+		kern_logf("i915: intel_power_domains_init: no platform description for display version %u\n",
+			display_ver);
+		return EINVAL;
+	}
+
+	/* Refuses a table larger than the copy and the counts hold. */
+	platform = xd->choice.platform;
+	if (platform->nwells > I915_PW_MAX || platform->nwells > I915_XD_POWER_MAX_WELLS) {
+		kern_logf("i915: intel_power_domains_init: %u wells in the %s description\n",
+			platform->nwells,
+			platform->name);
+		return EINVAL;
+	}
 
 	/* Sanitizes the options and derives the DC states they allow. */
 	pd->disable_power_well = i915_sanitize_disable_power_well(disable_pw_param);
@@ -340,13 +285,7 @@ drv_i915_power_domains_init(
 	for (domain = 0u; domain < I915_PW_DOMAIN_NUM; domain++)
 		pd->domain_use_count[domain] = 0u;
 
-	/* Starts the asynchronous put with nothing parked and no work bound. */
-	pd->async_put_domains[0].bits[0] = 0u;
-	pd->async_put_domains[0].bits[1] = 0u;
-	pd->async_put_domains[1].bits[0] = 0u;
-	pd->async_put_domains[1].bits[1] = 0u;
-	pd->async_put_wakeref = 0;
-	pd->async_put_next_delay = 0;
+	/* Starts with no delayed work bound. */
 	pd->async_ops = NULL;
 	pd->async_ctx = NULL;
 	pd->async_pwc = NULL;
@@ -363,47 +302,54 @@ drv_i915_power_domains_init(
 	pd->async_state_errors = 0u;
 	pd->use_count_errors = 0u;
 
-	/* No map is built yet. */
-	pd->map_initialized = 0;
-	pd->num_power_wells = 0u;
+	/* Prepares the xd counts of the platform's wells: no user, none known to be on. */
+	pd->xd = xd;
+	pd->display_ver = display_ver;
+	drv_i915_xd_power_init(&xd->power, platform);
 
 	/*
-	 * Builds the map of the display version: 13 is XE_LPD (Alder Lake-P),
-	 * 12 is Tiger Lake.  A version without a map is refused rather than
-	 * programmed with another platform's wells.
+	 * Copies the wells the older code reads, in the table's order.  The
+	 * Type-C cold well is a GT mailbox request, which no domain takes
+	 * here, so it has no copy.
 	 */
-	if (display_ver >= 13u) {
-		map_result = i915_power_map_init(pd);
-		if (map_result != 0)
-			return EINVAL;
-	} else if (display_ver == 12u) {
-		map_result = i915_power_map_init_tgl(pd);
-		if (map_result != 0)
-			return EINVAL;
-	} else {
-		kern_logf("i915: intel_power_domains_init: no power-well map for display version %u\n",
-			display_ver);
-		return EINVAL;
+	pd->num_power_wells = 0u;
+	for (well = 0u; well < platform->nwells; well++) {
+		/* Passes the mailbox well over. */
+		if (platform->wells[well].control == I915_XD_WELL_CONTROL_MAILBOX)
+			continue;
+
+		/* Fills the next copy. */
+		i915_pw_copy_well(&pd->power_wells[pd->num_power_wells], &platform->wells[well], well, display_ver);
+		pd->num_power_wells++;
 	}
 
-	/* Publishes the state as initialized and records it. */
+	/* Gives each domain the copies of the wells that power its functions. */
+	for (domain = 0u; domain < I915_PW_DOMAIN_NUM; domain++) {
+		functions = i915_pw_functions(display_ver, (enum i915_power_domain)domain);
+		xd_wells = drv_i915_xd_power_wells_of(platform, functions);
+
+		/* Marks each copy whose well is among them. */
+		pd->domain_wells[domain] = 0u;
+		for (index = 0u; index < pd->num_power_wells; index++) {
+			if ((xd_wells & (1ULL << pd->power_wells[index].xd_well)) != 0u)
+				pd->domain_wells[domain] |= (uint64_t)1u << index;
+		}
+	}
+
+	/* Publishes the map as built and the state as initialized, and records it. */
+	pd->map_initialized = 1;
 	pd->initialized = 1;
 	drv_i915_trace_record(trace, I915_POWER_TRACE_STAGE_NOIRQ, I915_TRACE_ACQUIRE,
 		"intel_power_domains_init", (uint64_t)pd->num_power_wells,
 		(uint64_t)pd->allowed_dc_mask);
 
-	/* Names the map for the log. */
-	map_name = "tgl";
-	if (display_ver >= 13u)
-		map_name = "xelpd";
-
 	/* Logs what was built. */
 	kern_logf("i915: intel_power_domains_init: wells=%u allowed_dc=0x%x "
-		"target_dc=0x%x disable_pw=%d (%s map)\n",
+		"target_dc=0x%x disable_pw=%d (%s wells)\n",
 		pd->num_power_wells, pd->allowed_dc_mask, pd->target_dc_state,
-		pd->disable_power_well, map_name);
+		pd->disable_power_well, platform->name);
 
-	/* Succeeded: the map and the options are ready for the hardware init. */
+	/* Succeeded: the wells and the options are ready for the hardware init. */
 	return 0;
 }
 
@@ -497,14 +443,14 @@ drv_i915_power_well_enable(
 
 	/* An always-on well is simply on. */
 	if (well->ops == I915_PW_OPS_ALWAYS_ON) {
-		well->hw_enabled = 1;
+		i915_pw_set_state(pwc, well, 1);
 		return 0;
 	}
 
 	/* DC_off is enabled by leaving the DC states (gen9_dc_off_power_well_enable()). */
 	if (well->ops == I915_PW_OPS_DC_OFF) {
 		drv_i915_dc_off_enable(pwc);
-		well->hw_enabled = 1;
+		i915_pw_set_state(pwc, well, 1);
 		return 0;
 	}
 
@@ -538,7 +484,7 @@ drv_i915_power_well_enable(
 	}
 
 	/* Succeeded: the well is on. */
-	well->hw_enabled = 1;
+	i915_pw_set_state(pwc, well, 1);
 	return 0;
 }
 
@@ -569,7 +515,7 @@ drv_i915_power_well_disable(
 
 	/* An always-on well is never actually disabled. */
 	if (well->ops == I915_PW_OPS_ALWAYS_ON) {
-		well->hw_enabled = 1;
+		i915_pw_set_state(pwc, well, 1);
 		return 0;
 	}
 
@@ -607,7 +553,7 @@ drv_i915_power_well_disable(
 		}
 
 		/* Records whether DC_off still reads as enabled. */
-		well->hw_enabled = drv_i915_power_well_is_enabled(well, pwc);
+		i915_pw_set_state(pwc, well, drv_i915_power_well_is_enabled(well, pwc));
 		return 0;
 	}
 
@@ -632,7 +578,7 @@ drv_i915_power_well_disable(
 		return EIO;
 
 	/* Records the driver's ownership (request and state both set). */
-	well->hw_enabled = drv_i915_power_well_is_enabled(well, pwc);
+	i915_pw_set_state(pwc, well, drv_i915_power_well_is_enabled(well, pwc));
 
 	/* Succeeded: the driver's request is gone. */
 	return 0;
@@ -699,7 +645,7 @@ drv_i915_power_well_sync_hw(
 
 	/* An always-on well is simply on. */
 	if (well->ops == I915_PW_OPS_ALWAYS_ON) {
-		well->hw_enabled = 1;
+		i915_pw_set_state(pwc, well, 1);
 		return;
 	}
 
@@ -716,79 +662,16 @@ drv_i915_power_well_sync_hw(
 	}
 
 	/* Records what the hardware now says. */
-	well->hw_enabled = drv_i915_power_well_is_enabled(well, pwc);
-}
-
-/*
- * Takes one software reference on a well, turning it on for the first.
- *
- * The display-core enable of a well is a different entry that does not
- * count.  Returns 0 or the enable's error; a failed first reference is not
- * counted.
- */
-int
-drv_i915_power_well_get(
-	struct i915_power_well *well,
-	struct i915_pw_ctx *pwc)
-{
-	int enable_result;
-
-	/* The first reference turns the well on. */
-	enable_result = 0;
-	if (well->refcount == 0u)
-		enable_result = drv_i915_power_well_enable(well, pwc);
-
-	/* Reports a failed enable without counting it. */
-	if (enable_result != 0)
-		return enable_result;
-
-	/* The count is the number of holders of the well. */
-	well->refcount++;
-
-	/* Succeeded: the caller holds the well. */
-	return 0;
-}
-
-/*
- * Gives one software reference on a well back, turning it off with the
- * last.
- */
-void
-drv_i915_power_well_put(
-	struct i915_power_well *well,
-	struct i915_pw_ctx *pwc)
-{
-	int disable_result;
-
-	/* Refuses an underflow. */
-	if (well->refcount == 0u)
-		return;
-
-	/* The count is the number of holders; the last one turns the well off. */
-	well->refcount--;
-	if (well->refcount != 0u)
-		return;
-
-	/* Turns the well off. */
-	disable_result = drv_i915_power_well_disable(well, pwc);
-
-	/*
-	 * A refused disable leaves the well on, now owned by the failed stop:
-	 * it is never re-enabled on a later get.
-	 */
-	if (disable_result == EBUSY) {
-		well->refcount = 1u;
-		pwc->kept_wells++;
-	}
+	i915_pw_set_state(pwc, well, drv_i915_power_well_is_enabled(well, pwc));
 }
 
 /*
  * Tells whether a domain counts as enabled (__intel_display_power_is_enabled()).
  *
- * The reference walks the domain's wells in reverse against the recorded
- * state, not a fresh hardware read, so an interrupt-reset path never
- * touches a register to answer.  Always-on wells are skipped.  Returns 1 or
- * 0.
+ * Answers from the recorded state of the wells of the domain's functions,
+ * not a fresh hardware read, and without the domains lock, so an
+ * interrupt-reset path never touches a register or waits to answer.
+ * Returns 1 or 0.
  */
 int
 drv_i915_display_power_is_enabled(
@@ -796,28 +679,20 @@ drv_i915_display_power_is_enabled(
 	enum i915_power_domain domain,
 	struct i915_pw_ctx *pwc)
 {
-	uint64_t wells;
-	unsigned index;
-	struct i915_power_well *well;
+	uint64_t functions;
+	int powered;
 
 	UNUSED_PARAMETER(pwc);
 
-	/* Walks the domain's wells, last one first. */
-	wells = drv_i915_power_domain_wells(pd, domain);
-	index = pd->num_power_wells;
-	while (index-- > 0u) {
-		if ((wells & ((uint64_t)1u << index)) == 0u)
-			continue;
+	/* A state without the xd counts has no well on. */
+	if (pd->xd == NULL)
+		return 0;
 
-		/* Skips an always-on well. */
-		well = &pd->power_wells[index];
-		if (well->always_on)
-			continue;
-
-		/* A well not known to be on (-1 until the first sync) is not enabled. */
-		if (well->hw_enabled != 1)
-			return 0;
-	}
+	/* Asks whether every well of the domain's functions is recorded as on. */
+	functions = i915_pw_functions(pd->display_ver, domain);
+	powered = drv_i915_xd_power_has(&pd->xd->power, functions);
+	if (!powered)
+		return 0;
 
 	/* Succeeded: every well of the domain is on. */
 	return 1;
@@ -870,8 +745,10 @@ drv_i915_power_domain_hw_state_on(
 /*
  * Takes one reference on a display power domain (intel_display_power_get()).
  *
- * Returns 0, or the error of the well that could not be turned on (the
- * wells already taken are given back).
+ * The wells of the domain's functions count the reference (a reference
+ * owed to the delayed work is taken over first).  Returns 0, or the error
+ * of the well that could not be turned on (the wells already taken are
+ * given back).
  */
 int
 drv_i915_display_power_get(
@@ -879,12 +756,22 @@ drv_i915_display_power_get(
 	enum i915_power_domain domain,
 	struct i915_pw_ctx *pwc)
 {
+	struct i915_pw_switch_ctx ctx;
+	struct i915_xd_power_switch sw;
+	uint64_t functions;
 	int get_result;
 
-	/* Takes the domain under the domains lock. */
+	/* Takes the domain's wells under the domains lock. */
+	i915_pw_switch(pd, pwc, &ctx, &sw);
+	functions = i915_pw_functions(pd->display_ver, domain);
 	mutex_lock(&pd->lock);
 
-	get_result = i915_get_domain_locked(pd, domain, pwc);
+	get_result = drv_i915_xd_power_get(&pd->xd->power, functions, &sw);
+
+	/* The domain's count is the number of references its users hold; a failed get holds none. */
+	if (get_result == 0)
+		pd->domain_use_count[domain]++;
+	i915_pw_copy_counts(pd);
 
 	mutex_unlock(&pd->lock);
 
@@ -905,17 +792,25 @@ drv_i915_display_power_put(
 	enum i915_power_domain domain,
 	struct i915_pw_ctx *pwc)
 {
-	/* Puts the domain under the domains lock. */
+	struct i915_pw_switch_ctx ctx;
+	struct i915_xd_power_switch sw;
+	uint64_t functions;
+
+	/* Gives the domain's wells back under the domains lock. */
+	i915_pw_switch(pd, pwc, &ctx, &sw);
+	functions = i915_pw_functions(pd->display_ver, domain);
 	mutex_lock(&pd->lock);
 
-	i915_put_domain_locked(pd, domain, pwc);
+	i915_pw_count_put(pd, domain);
+	drv_i915_xd_power_put(&pd->xd->power, functions, &sw);
+	i915_pw_copy_counts(pd);
 
 	mutex_unlock(&pd->lock);
 }
 
 /*
  * Binds the delayed work behind the asynchronous put and the well context
- * it releases with.
+ * it releases with; a NULL ops unbinds it.
  */
 void
 drv_i915_display_power_async_bind(
@@ -924,12 +819,24 @@ drv_i915_display_power_async_bind(
 	void *ctx,
 	struct i915_pw_ctx *pwc)
 {
+	struct i915_xd_power_work work;
+
+	/* The xd counts arm and disarm the work through the bound operations. */
+	work.queue = NULL;
+	work.cancel = NULL;
+	work.context = pd;
+	if (ops != NULL) {
+		work.queue = i915_pw_work_queue;
+		work.cancel = i915_pw_work_cancel;
+	}
+
 	/* Publishes the work under the domains lock. */
 	mutex_lock(&pd->lock);
 
 	pd->async_ops = ops;
 	pd->async_ctx = ctx;
 	pd->async_pwc = pwc;
+	drv_i915_xd_power_bind_work(&pd->xd->power, &work);
 
 	mutex_unlock(&pd->lock);
 }
@@ -937,9 +844,9 @@ drv_i915_display_power_async_bind(
 /*
  * Gives a reference back asynchronously (__intel_display_power_put_async()).
  *
- * A last reference is parked and released by the delayed work; any other
- * reference, or any reference with no work bound, is put at once.  A
- * negative delay is the reference's default of 100 ms.
+ * The last reference of a domain leaves its wells up, owed to the delayed
+ * work; any other reference, or any reference with no work bound, is put
+ * at once.  A negative delay is the default of 100 ms.
  */
 void
 drv_i915_display_power_put_async(
@@ -948,36 +855,31 @@ drv_i915_display_power_put_async(
 	struct i915_pw_ctx *pwc,
 	int delay_ms)
 {
-	/* Takes the reference's default delay when none is named. */
+	struct i915_pw_switch_ctx ctx;
+	struct i915_xd_power_switch sw;
+	uint64_t functions;
+	unsigned use_count;
+
+	/* Takes the default delay when none is named. */
 	if (delay_ms < 0)
 		delay_ms = I915_POWER_ASYNC_PUT_DELAY_MS;
 
-	/* Parks or puts the reference under the domains lock. */
+	/* Defers or puts the reference under the domains lock. */
+	i915_pw_switch(pd, pwc, &ctx, &sw);
+	functions = i915_pw_functions(pd->display_ver, domain);
 	mutex_lock(&pd->lock);
 
 	pd->async_puts++;
-	if (pd->async_ops == NULL || pd->domain_use_count[domain] > 1u) {
+	use_count = pd->domain_use_count[domain];
+	i915_pw_count_put(pd, domain);
+	if (pd->async_ops == NULL || use_count > 1u) {
 		/* Not the last reference, or no delayed work to hand it to: an ordinary put. */
-		i915_put_domain_locked(pd, domain, pwc);
+		drv_i915_xd_power_put(&pd->xd->power, functions, &sw);
 	} else {
-		/* Counts a use count that is not the single reference being parked. */
-		if (pd->domain_use_count[domain] != 1u)
-			pd->use_count_errors++;
-
-		/* Lets a pending work requeue itself, or queues a new one. */
-		pd->async_parked++;
-		if (pd->async_put_wakeref != 0) {
-			i915_mask_set(&pd->async_put_domains[1], (unsigned)domain);
-			if (delay_ms > pd->async_put_next_delay)
-				pd->async_put_next_delay = delay_ms;
-		} else {
-			i915_mask_set(&pd->async_put_domains[0], (unsigned)domain);
-			i915_queue_async_put_domains_work(pd, delay_ms);
-		}
+		/* The last reference: the wells stay up until the work gives them back. */
+		drv_i915_xd_power_put_later(&pd->xd->power, functions, delay_ms, &sw);
 	}
-
-	/* Checks the invariants whatever happened. */
-	i915_verify_async_put_domains_state(pd);
+	i915_pw_copy_counts(pd);
 
 	mutex_unlock(&pd->lock);
 }
@@ -990,90 +892,67 @@ void
 drv_i915_display_power_async_work(
 	struct i915_power_domains *pd)
 {
-	int more_parked;
+	struct i915_pw_switch_ctx ctx;
+	struct i915_xd_power_switch sw;
 
-	/* Releases what is parked under the domains lock. */
+	/* Gives back what is owed to the work under the domains lock, with the bound context. */
+	i915_pw_switch(pd, pd->async_pwc, &ctx, &sw);
 	mutex_lock(&pd->lock);
 
-	pd->async_work_runs++;
-	if (pd->async_put_wakeref == 0) {
-		/* Every parked reference was grabbed back by a later get or a flush. */
-		pd->async_work_empty++;
-	} else {
-		/* The work owns the parked references until it has released them. */
-		pd->async_put_wakeref = 0;
-		i915_release_async_put_domains(pd, &pd->async_put_domains[0]);
-
-		/* Requeues the work for what was parked meanwhile, or cancels a work queued after this one was dequeued. */
-		more_parked = !i915_mask_empty(&pd->async_put_domains[1]);
-		if (more_parked) {
-			pd->async_put_domains[0] = pd->async_put_domains[1];
-			pd->async_put_domains[1].bits[0] = 0u;
-			pd->async_put_domains[1].bits[1] = 0u;
-			pd->async_requeues++;
-			i915_queue_async_put_domains_work(pd, pd->async_put_next_delay);
-			pd->async_put_next_delay = 0;
-		} else {
-			i915_cancel_async_put_work(pd, 0);
-		}
-	}
-
-	/* Checks the invariants whatever happened. */
-	i915_verify_async_put_domains_state(pd);
+	drv_i915_xd_power_work(&pd->xd->power, &sw);
+	i915_pw_copy_counts(pd);
 
 	mutex_unlock(&pd->lock);
 }
 
 /*
- * Releases every parked reference now (intel_display_power_flush_work()).
+ * Releases every reference owed to the work now (intel_display_power_flush_work()).
  */
 void
 drv_i915_display_power_flush_work(
 	struct i915_power_domains *pd)
 {
-	struct i915_pw_domain_mask all;
+	struct i915_pw_switch_ctx ctx;
+	struct i915_xd_power_switch sw;
 
-	/* Releases what is parked under the domains lock (nothing when the work owns nothing). */
+	/* Nothing can be owed without a bound work and its context. */
+	if (pd->async_pwc == NULL)
+		return;
+
+	/* Gives back what is owed under the domains lock. */
+	i915_pw_switch(pd, pd->async_pwc, &ctx, &sw);
 	mutex_lock(&pd->lock);
 
-	pd->async_flushes++;
-	if (pd->async_put_wakeref != 0) {
-		/* Takes the parked references from the work and releases both sets. */
-		pd->async_put_wakeref = 0;
-		all.bits[0] = pd->async_put_domains[0].bits[0] | pd->async_put_domains[1].bits[0];
-		all.bits[1] = pd->async_put_domains[0].bits[1] | pd->async_put_domains[1].bits[1];
-		i915_release_async_put_domains(pd, &all);
-		i915_cancel_async_put_work(pd, 0);
-	}
-
-	/* Checks the invariants whatever happened. */
-	i915_verify_async_put_domains_state(pd);
+	drv_i915_xd_power_flush(&pd->xd->power, &sw);
+	i915_pw_copy_counts(pd);
 
 	mutex_unlock(&pd->lock);
 }
 
 /*
- * Releases every parked reference and waits out a running work
+ * Releases every owed reference and waits out a running work
  * (intel_display_power_flush_work_sync()).
  */
 void
 drv_i915_display_power_flush_work_sync(
 	struct i915_power_domains *pd)
 {
-	/* Releases what is parked. */
+	int owes;
+
+	/* Releases what is owed. */
 	drv_i915_display_power_flush_work(pd);
 
 	/* Cancels the work synchronously, outside the lock its body takes. */
 	if (pd->async_ops != NULL)
 		(void)pd->async_ops->cancel(pd->async_ctx, 1);
 
-	/* Checks that nothing is parked any more. */
+	/* Checks that nothing is owed any more. */
 	mutex_lock(&pd->lock);
 
-	pd->async_put_next_delay = 0;
-	i915_verify_async_put_domains_state(pd);
-	if (pd->async_put_wakeref != 0)
-		pd->async_state_errors++;
+	owes = drv_i915_xd_power_owes(&pd->xd->power);
+	if (owes || pd->xd->power.work_armed)
+		pd->xd->power.stats.errors++;
+	i915_pw_copy_counts(pd);
 
 	mutex_unlock(&pd->lock);
 }
@@ -1846,16 +1725,6 @@ drv_i915_aux_io_power_domain(
 	return I915_PW_DOMAIN_AUX_IO_A;
 }
 
-/* Adds a domain to a well's domain mask. */
-static void
-i915_pw_dom(
-	struct i915_pw_domain_mask *mask,
-	enum i915_power_domain domain)
-{
-	/* Sets the domain's bit in the word that holds it. */
-	mask->bits[(unsigned)domain >> 6] |= (uint64_t)1u << ((unsigned)domain & 63u);
-}
-
 /* Computes the allowed DC states (get_allowed_dc_mask(): display version 12+ allows DC9, DC3CO and up to DC6). */
 static uint32_t
 i915_get_allowed_dc_mask(
@@ -1919,352 +1788,6 @@ i915_sanitize_disable_power_well(
 		return 1;
 
 	/* Succeeded: dynamic disabling is off. */
-	return 0;
-}
-
-/* Appends one well from its descriptor, with its live state unknown; NULL when the array is full. */
-static struct i915_power_well *
-i915_pw_add(
-	struct i915_power_domains *pd,
-	const struct i915_pw_desc *desc)
-{
-	struct i915_power_well *well;
-	unsigned index;
-
-	/* Refuses a well past the array. */
-	if (pd->num_power_wells >= I915_PW_MAX)
-		return NULL;
-
-	/* Takes the next slot. */
-	well = &pd->power_wells[pd->num_power_wells];
-	pd->num_power_wells++;
-
-	/* Copies the descriptor. */
-	well->name = desc->name;
-	well->ops = desc->ops;
-	well->always_on = desc->always_on;
-	well->has_vga = desc->has_vga;
-	well->has_fuses = desc->has_fuses;
-	well->is_tc_tbt = desc->is_tc_tbt;
-	well->fixed_enable_delay = desc->fixed_enable_delay;
-	well->enable_timeout = desc->enable_timeout;
-	well->irq_pipe_mask = desc->irq_pipe_mask;
-	well->hsw_idx = desc->hsw_idx;
-	well->id = desc->id;
-	well->domains_all = desc->domains_all;
-
-	/* Builds the domain mask from the list. */
-	well->domains.bits[0] = 0u;
-	well->domains.bits[1] = 0u;
-	for (index = 0u; index < desc->domain_count; index++)
-		i915_pw_dom(&well->domains, desc->domains[index]);
-
-	/* The software count is separate from the hardware state, which is unknown until the sync. */
-	well->refcount = 0u;
-	well->hw_enabled = -1;
-
-	/* Succeeded: the well is in the array. */
-	return well;
-}
-
-/* Adds every descriptor in order and builds the map from each domain to the wells that provide it. */
-static void
-i915_power_map_build(
-	struct i915_power_domains *pd,
-	const struct i915_pw_desc *descs,
-	unsigned count)
-{
-	unsigned index;
-	unsigned domain;
-	const struct i915_power_well *well;
-
-	/* Adds the wells in the reference order. */
-	pd->num_power_wells = 0u;
-	for (index = 0u; index < count; index++)
-		(void)i915_pw_add(pd, &descs[index]);
-
-	/* Starts every domain with no well. */
-	for (index = 0u; index < I915_PW_DOMAIN_NUM; index++)
-		pd->domain_wells[index] = 0u;
-
-	/* Adds each well to the domains it provides (a zero-length list is every domain). */
-	for (index = 0u; index < pd->num_power_wells; index++) {
-		well = &pd->power_wells[index];
-		if (well->domains_all) {
-			for (domain = 0u; domain < I915_PW_DOMAIN_NUM; domain++)
-				pd->domain_wells[domain] |= (uint64_t)1u << index;
-			continue;
-		}
-
-		/* Adds the well to each domain of its list. */
-		for (domain = 0u; domain < I915_PW_DOMAIN_NUM; domain++) {
-			if ((well->domains.bits[domain >> 6] & ((uint64_t)1u << (domain & 63u))) != 0u)
-				pd->domain_wells[domain] |= (uint64_t)1u << index;
-		}
-	}
-
-	/* Publishes the map as built. */
-	pd->map_initialized = 1;
-}
-
-/* Builds the XE_LPD wells and their map (intel_display_power_map_init() for display version 13). */
-static int
-i915_power_map_init(
-	struct i915_power_domains *pd)
-{
-	static const enum i915_power_domain pw_a[] = {
-		I915_PW_DOMAIN_PIPE_A, I915_PW_DOMAIN_PIPE_PANEL_FITTER_A,
-		I915_PW_DOMAIN_INIT };
-	static const enum i915_power_domain pw_b[] = {
-		I915_PW_DOMAIN_PIPE_B, I915_PW_DOMAIN_PIPE_PANEL_FITTER_B,
-		I915_PW_DOMAIN_TRANSCODER_B, I915_PW_DOMAIN_INIT };
-	static const enum i915_power_domain pw_c[] = {
-		I915_PW_DOMAIN_PIPE_C, I915_PW_DOMAIN_PIPE_PANEL_FITTER_C,
-		I915_PW_DOMAIN_TRANSCODER_C, I915_PW_DOMAIN_INIT };
-	static const enum i915_power_domain pw_d[] = {
-		I915_PW_DOMAIN_PIPE_D, I915_PW_DOMAIN_PIPE_PANEL_FITTER_D,
-		I915_PW_DOMAIN_TRANSCODER_D, I915_PW_DOMAIN_INIT };
-	/*
-	 * xelpd_pwdoms_pw_2 = PW_B + PW_C + PW_D + XELPD_DC_OFF_PORT_POWER_DOMAINS
-	 * + INIT.  The DC-off port domains are the DDI lanes of ports C to E and
-	 * of the Type-C ports, VGA, audio playback, and the AUX channels C to E,
-	 * USBC1 to 4 and TBT1 to 4 (without the AUX ones, a Type-C
-	 * port's AUX_USBC domain -- its TC cold block and its AUX transfers --
-	 * held its AUX well alone, PW_2 went down after the connect, and with it
-	 * the PHY ownership in DDI_BUF_CTL and the AUX channel's registers).
-	 */
-	static const enum i915_power_domain pw_2[] = {
-		I915_PW_DOMAIN_PIPE_B, I915_PW_DOMAIN_PIPE_PANEL_FITTER_B,
-		I915_PW_DOMAIN_TRANSCODER_B,
-		I915_PW_DOMAIN_PIPE_C, I915_PW_DOMAIN_PIPE_PANEL_FITTER_C,
-		I915_PW_DOMAIN_TRANSCODER_C,
-		I915_PW_DOMAIN_PIPE_D, I915_PW_DOMAIN_PIPE_PANEL_FITTER_D,
-		I915_PW_DOMAIN_TRANSCODER_D,
-		I915_PW_DOMAIN_PORT_DDI_LANES_C, I915_PW_DOMAIN_PORT_DDI_LANES_D,
-		I915_PW_DOMAIN_PORT_DDI_LANES_E, I915_PW_DOMAIN_PORT_DDI_LANES_TC1,
-		I915_PW_DOMAIN_PORT_DDI_LANES_TC2, I915_PW_DOMAIN_PORT_DDI_LANES_TC3,
-		I915_PW_DOMAIN_PORT_DDI_LANES_TC4,
-		I915_PW_DOMAIN_VGA, I915_PW_DOMAIN_AUDIO_PLAYBACK,
-		I915_PW_DOMAIN_AUX_IO_C, I915_PW_DOMAIN_AUX_IO_D, I915_PW_DOMAIN_AUX_IO_E,
-		I915_PW_DOMAIN_AUX_C, I915_PW_DOMAIN_AUX_D, I915_PW_DOMAIN_AUX_E,
-		I915_PW_DOMAIN_AUX_USBC1, I915_PW_DOMAIN_AUX_USBC2,
-		I915_PW_DOMAIN_AUX_USBC3, I915_PW_DOMAIN_AUX_USBC4,
-		I915_PW_DOMAIN_AUX_TBT1, I915_PW_DOMAIN_AUX_TBT2,
-		I915_PW_DOMAIN_AUX_TBT3, I915_PW_DOMAIN_AUX_TBT4,
-		I915_PW_DOMAIN_INIT };
-	/* xelpd_pwdoms_dc_off = DC_OFF_PORT (as above) + PW_C + PW_D + DSI + AUDIO + AUX_A/B + DC_OFF + INIT. */
-	static const enum i915_power_domain dc_off[] = {
-		I915_PW_DOMAIN_PORT_DDI_LANES_C, I915_PW_DOMAIN_PORT_DDI_LANES_D,
-		I915_PW_DOMAIN_PORT_DDI_LANES_E, I915_PW_DOMAIN_PORT_DDI_LANES_TC1,
-		I915_PW_DOMAIN_PORT_DDI_LANES_TC2, I915_PW_DOMAIN_PORT_DDI_LANES_TC3,
-		I915_PW_DOMAIN_PORT_DDI_LANES_TC4,
-		I915_PW_DOMAIN_VGA, I915_PW_DOMAIN_AUDIO_PLAYBACK,
-		I915_PW_DOMAIN_AUX_IO_C, I915_PW_DOMAIN_AUX_IO_D, I915_PW_DOMAIN_AUX_IO_E,
-		I915_PW_DOMAIN_AUX_C, I915_PW_DOMAIN_AUX_D, I915_PW_DOMAIN_AUX_E,
-		I915_PW_DOMAIN_AUX_USBC1, I915_PW_DOMAIN_AUX_USBC2,
-		I915_PW_DOMAIN_AUX_USBC3, I915_PW_DOMAIN_AUX_USBC4,
-		I915_PW_DOMAIN_AUX_TBT1, I915_PW_DOMAIN_AUX_TBT2,
-		I915_PW_DOMAIN_AUX_TBT3, I915_PW_DOMAIN_AUX_TBT4,
-		I915_PW_DOMAIN_PIPE_C, I915_PW_DOMAIN_PIPE_PANEL_FITTER_C,
-		I915_PW_DOMAIN_TRANSCODER_C,
-		I915_PW_DOMAIN_PIPE_D, I915_PW_DOMAIN_PIPE_PANEL_FITTER_D,
-		I915_PW_DOMAIN_TRANSCODER_D,
-		I915_PW_DOMAIN_PORT_DSI, I915_PW_DOMAIN_AUDIO_MMIO,
-		I915_PW_DOMAIN_AUX_A, I915_PW_DOMAIN_AUX_B,
-		I915_PW_DOMAIN_DC_OFF, I915_PW_DOMAIN_INIT };
-	static const enum i915_power_domain ddi_io_a[] = { I915_PW_DOMAIN_PORT_DDI_IO_A };
-	static const enum i915_power_domain ddi_io_b[] = { I915_PW_DOMAIN_PORT_DDI_IO_B };
-	static const enum i915_power_domain ddi_io_c[] = { I915_PW_DOMAIN_PORT_DDI_IO_C };
-	static const enum i915_power_domain ddi_io_d[] = { I915_PW_DOMAIN_PORT_DDI_IO_D };
-	static const enum i915_power_domain ddi_io_e[] = { I915_PW_DOMAIN_PORT_DDI_IO_E };
-	static const enum i915_power_domain ddi_io_tc1[] = { I915_PW_DOMAIN_PORT_DDI_IO_TC1 };
-	static const enum i915_power_domain ddi_io_tc2[] = { I915_PW_DOMAIN_PORT_DDI_IO_TC2 };
-	static const enum i915_power_domain ddi_io_tc3[] = { I915_PW_DOMAIN_PORT_DDI_IO_TC3 };
-	static const enum i915_power_domain ddi_io_tc4[] = { I915_PW_DOMAIN_PORT_DDI_IO_TC4 };
-	static const enum i915_power_domain aux_a[] = { I915_PW_DOMAIN_AUX_IO_A, I915_PW_DOMAIN_AUX_A };
-	static const enum i915_power_domain aux_b[] = { I915_PW_DOMAIN_AUX_IO_B, I915_PW_DOMAIN_AUX_B };
-	static const enum i915_power_domain aux_c[] = { I915_PW_DOMAIN_AUX_IO_C, I915_PW_DOMAIN_AUX_C };
-	static const enum i915_power_domain aux_d[] = { I915_PW_DOMAIN_AUX_IO_D, I915_PW_DOMAIN_AUX_D };
-	static const enum i915_power_domain aux_e[] = { I915_PW_DOMAIN_AUX_IO_E, I915_PW_DOMAIN_AUX_E };
-	static const enum i915_power_domain aux_usbc1[] = { I915_PW_DOMAIN_AUX_USBC1 };
-	static const enum i915_power_domain aux_usbc2[] = { I915_PW_DOMAIN_AUX_USBC2 };
-	static const enum i915_power_domain aux_usbc3[] = { I915_PW_DOMAIN_AUX_USBC3 };
-	static const enum i915_power_domain aux_usbc4[] = { I915_PW_DOMAIN_AUX_USBC4 };
-	static const enum i915_power_domain aux_tbt1[] = { I915_PW_DOMAIN_AUX_TBT1 };
-	static const enum i915_power_domain aux_tbt2[] = { I915_PW_DOMAIN_AUX_TBT2 };
-	static const enum i915_power_domain aux_tbt3[] = { I915_PW_DOMAIN_AUX_TBT3 };
-	static const enum i915_power_domain aux_tbt4[] = { I915_PW_DOMAIN_AUX_TBT4 };
-
-	/*
-	 * The XE_LPD wells in the reference order.  Columns: name, operations,
-	 * always on, VGA, fuses, Thunderbolt AUX, fixed enable delay, enable
-	 * timeout (ms), interrupt pipes, control index, id, every domain,
-	 * domains.
-	 */
-	static const struct i915_pw_desc wells[] = {
-		/* i9xx_power_wells_always_on: a zero-length domain list is every domain. */
-		{ "always_on", I915_PW_OPS_ALWAYS_ON, 1, 0, 0, 0, 0, 0u, 0u, 0u, I915_DISP_PW_ID_NONE, 1, NULL, 0u },
-		/* icl_power_wells_pw_1: always on, fused, a NULL domain list is no domain. */
-		{ "PW_1", I915_PW_OPS_HSW, 1, 0, 1, 0, 0, 0u, 0u, IDX_PW_1, I915_SKL_DISP_PW_1, 0, NULL, 0u },
-		/* xelpd_power_wells_dc_off */
-		{ "DC_off", I915_PW_OPS_DC_OFF, 0, 0, 0, 0, 0, 0u, 0u, 0u, I915_SKL_DISP_DC_OFF, 0, dc_off, ARRAY_SIZE(dc_off) },
-		/* xelpd_power_wells_main */
-		{ "PW_2", I915_PW_OPS_HSW, 0, 1, 1, 0, 0, 0u, 0u, IDX_PW_2, I915_SKL_DISP_PW_2, 0, pw_2, ARRAY_SIZE(pw_2) },
-		{ "PW_A", I915_PW_OPS_HSW, 0, 0, 1, 0, 0, 0u, BIT_PIPE_A, IDX_PW_A, I915_DISP_PW_ID_NONE, 0, pw_a, ARRAY_SIZE(pw_a) },
-		{ "PW_B", I915_PW_OPS_HSW, 0, 0, 1, 0, 0, 0u, BIT_PIPE_B, IDX_PW_B, I915_DISP_PW_ID_NONE, 0, pw_b, ARRAY_SIZE(pw_b) },
-		{ "PW_C", I915_PW_OPS_HSW, 0, 0, 1, 0, 0, 0u, BIT_PIPE_C, IDX_PW_C, I915_DISP_PW_ID_NONE, 0, pw_c, ARRAY_SIZE(pw_c) },
-		{ "PW_D", I915_PW_OPS_HSW, 0, 0, 1, 0, 0, 0u, BIT_PIPE_D, IDX_PW_D, I915_DISP_PW_ID_NONE, 0, pw_d, ARRAY_SIZE(pw_d) },
-		{ "DDI_IO_A", I915_PW_OPS_ICL_DDI, 0, 0, 0, 0, 0, 0u, 0u, IDX_DDI_A, I915_DISP_PW_ID_NONE, 0, ddi_io_a, ARRAY_SIZE(ddi_io_a) },
-		{ "DDI_IO_B", I915_PW_OPS_ICL_DDI, 0, 0, 0, 0, 0, 0u, 0u, IDX_DDI_B, I915_DISP_PW_ID_NONE, 0, ddi_io_b, ARRAY_SIZE(ddi_io_b) },
-		{ "DDI_IO_C", I915_PW_OPS_ICL_DDI, 0, 0, 0, 0, 0, 0u, 0u, IDX_DDI_C, I915_DISP_PW_ID_NONE, 0, ddi_io_c, ARRAY_SIZE(ddi_io_c) },
-		{ "DDI_IO_D", I915_PW_OPS_ICL_DDI, 0, 0, 0, 0, 0, 0u, 0u, IDX_DDI_D, I915_DISP_PW_ID_NONE, 0, ddi_io_d, ARRAY_SIZE(ddi_io_d) },
-		{ "DDI_IO_E", I915_PW_OPS_ICL_DDI, 0, 0, 0, 0, 0, 0u, 0u, IDX_DDI_E, I915_DISP_PW_ID_NONE, 0, ddi_io_e, ARRAY_SIZE(ddi_io_e) },
-		{ "DDI_IO_TC1", I915_PW_OPS_ICL_DDI, 0, 0, 0, 0, 0, 0u, 0u, IDX_DDI_TC1, I915_DISP_PW_ID_NONE, 0, ddi_io_tc1, ARRAY_SIZE(ddi_io_tc1) },
-		{ "DDI_IO_TC2", I915_PW_OPS_ICL_DDI, 0, 0, 0, 0, 0, 0u, 0u, IDX_DDI_TC2, I915_DISP_PW_ID_NONE, 0, ddi_io_tc2, ARRAY_SIZE(ddi_io_tc2) },
-		{ "DDI_IO_TC3", I915_PW_OPS_ICL_DDI, 0, 0, 0, 0, 0, 0u, 0u, IDX_DDI_TC3, I915_DISP_PW_ID_NONE, 0, ddi_io_tc3, ARRAY_SIZE(ddi_io_tc3) },
-		{ "DDI_IO_TC4", I915_PW_OPS_ICL_DDI, 0, 0, 0, 0, 0, 0u, 0u, IDX_DDI_TC4, I915_DISP_PW_ID_NONE, 0, ddi_io_tc4, ARRAY_SIZE(ddi_io_tc4) },
-		/* AUX_A..E: fixed enable delay. */
-		{ "AUX_A", I915_PW_OPS_ICL_AUX, 0, 0, 0, 0, 1, 0u, 0u, IDX_AUX_A, I915_DISP_PW_ID_NONE, 0, aux_a, ARRAY_SIZE(aux_a) },
-		{ "AUX_B", I915_PW_OPS_ICL_AUX, 0, 0, 0, 0, 1, 0u, 0u, IDX_AUX_B, I915_DISP_PW_ID_NONE, 0, aux_b, ARRAY_SIZE(aux_b) },
-		{ "AUX_C", I915_PW_OPS_ICL_AUX, 0, 0, 0, 0, 1, 0u, 0u, IDX_AUX_C, I915_DISP_PW_ID_NONE, 0, aux_c, ARRAY_SIZE(aux_c) },
-		{ "AUX_D", I915_PW_OPS_ICL_AUX, 0, 0, 0, 0, 1, 0u, 0u, IDX_AUX_D, I915_DISP_PW_ID_NONE, 0, aux_d, ARRAY_SIZE(aux_d) },
-		{ "AUX_E", I915_PW_OPS_ICL_AUX, 0, 0, 0, 0, 1, 0u, 0u, IDX_AUX_E, I915_DISP_PW_ID_NONE, 0, aux_e, ARRAY_SIZE(aux_e) },
-		/* AUX_USBC1..4: fixed enable delay and the 500 ms enable timeout of WA_14017248603. */
-		{ "AUX_USBC1", I915_PW_OPS_ICL_AUX, 0, 0, 0, 0, 1, 500u, 0u, IDX_AUX_TC1, I915_DISP_PW_ID_NONE, 0, aux_usbc1, ARRAY_SIZE(aux_usbc1) },
-		{ "AUX_USBC2", I915_PW_OPS_ICL_AUX, 0, 0, 0, 0, 1, 500u, 0u, IDX_AUX_TC2, I915_DISP_PW_ID_NONE, 0, aux_usbc2, ARRAY_SIZE(aux_usbc2) },
-		{ "AUX_USBC3", I915_PW_OPS_ICL_AUX, 0, 0, 0, 0, 1, 500u, 0u, IDX_AUX_TC3, I915_DISP_PW_ID_NONE, 0, aux_usbc3, ARRAY_SIZE(aux_usbc3) },
-		{ "AUX_USBC4", I915_PW_OPS_ICL_AUX, 0, 0, 0, 0, 1, 500u, 0u, IDX_AUX_TC4, I915_DISP_PW_ID_NONE, 0, aux_usbc4, ARRAY_SIZE(aux_usbc4) },
-		/* AUX_TBT1..4: Thunderbolt AUX. */
-		{ "AUX_TBT1", I915_PW_OPS_ICL_AUX, 0, 0, 0, 1, 0, 0u, 0u, IDX_AUX_TBT1, I915_DISP_PW_ID_NONE, 0, aux_tbt1, ARRAY_SIZE(aux_tbt1) },
-		{ "AUX_TBT2", I915_PW_OPS_ICL_AUX, 0, 0, 0, 1, 0, 0u, 0u, IDX_AUX_TBT2, I915_DISP_PW_ID_NONE, 0, aux_tbt2, ARRAY_SIZE(aux_tbt2) },
-		{ "AUX_TBT3", I915_PW_OPS_ICL_AUX, 0, 0, 0, 1, 0, 0u, 0u, IDX_AUX_TBT3, I915_DISP_PW_ID_NONE, 0, aux_tbt3, ARRAY_SIZE(aux_tbt3) },
-		{ "AUX_TBT4", I915_PW_OPS_ICL_AUX, 0, 0, 0, 1, 0, 0u, 0u, IDX_AUX_TBT4, I915_DISP_PW_ID_NONE, 0, aux_tbt4, ARRAY_SIZE(aux_tbt4) }
-	};
-
-	/* Builds the wells and the map. */
-	i915_power_map_build(pd, wells, ARRAY_SIZE(wells));
-
-	/* Succeeded: the XE_LPD map is built. */
-	return 0;
-}
-
-/*
- * Builds the Tiger Lake wells and their map (intel_display_power_map_init()
- * for display version 12: always_on, PW_1, tgl_power_wells_main and
- * tgl_power_wells_aux).
- *
- * XXX: the reference's TC cold-off well is not built.  This driver never
- * takes a Type-C port, and its operations (tgl_tc_cold_off_ops) are a
- * PCODE handshake that is not ported; a Type-C display on this platform
- * needs both before it can work.
- */
-static int
-i915_power_map_init_tgl(
-	struct i915_power_domains *pd)
-{
-	/* TGL_PW_5_POWER_DOMAINS */
-	static const enum i915_power_domain pw_5[] = {
-		I915_PW_DOMAIN_PIPE_D, I915_PW_DOMAIN_PIPE_PANEL_FITTER_D,
-		I915_PW_DOMAIN_TRANSCODER_D, I915_PW_DOMAIN_INIT };
-	/* TGL_PW_4 = PW_5 + pipe C */
-	static const enum i915_power_domain pw_4[] = {
-		I915_PW_DOMAIN_PIPE_D, I915_PW_DOMAIN_PIPE_PANEL_FITTER_D,
-		I915_PW_DOMAIN_TRANSCODER_D,
-		I915_PW_DOMAIN_PIPE_C, I915_PW_DOMAIN_PIPE_PANEL_FITTER_C,
-		I915_PW_DOMAIN_TRANSCODER_C, I915_PW_DOMAIN_INIT };
-	/* TGL_PW_3 = PW_4 + pipe B + the four Type-C lane / AUX domains + VGA + audio */
-	static const enum i915_power_domain pw_3[] = {
-		I915_PW_DOMAIN_PIPE_D, I915_PW_DOMAIN_PIPE_PANEL_FITTER_D,
-		I915_PW_DOMAIN_TRANSCODER_D,
-		I915_PW_DOMAIN_PIPE_C, I915_PW_DOMAIN_PIPE_PANEL_FITTER_C,
-		I915_PW_DOMAIN_TRANSCODER_C,
-		I915_PW_DOMAIN_PIPE_B, I915_PW_DOMAIN_PIPE_PANEL_FITTER_B,
-		I915_PW_DOMAIN_TRANSCODER_B,
-		I915_PW_DOMAIN_PORT_DDI_LANES_TC1, I915_PW_DOMAIN_PORT_DDI_LANES_TC2,
-		I915_PW_DOMAIN_PORT_DDI_LANES_TC3, I915_PW_DOMAIN_PORT_DDI_LANES_TC4,
-		I915_PW_DOMAIN_VGA, I915_PW_DOMAIN_AUDIO_MMIO, I915_PW_DOMAIN_AUDIO_PLAYBACK,
-		I915_PW_DOMAIN_AUX_USBC1, I915_PW_DOMAIN_AUX_USBC2,
-		I915_PW_DOMAIN_AUX_USBC3, I915_PW_DOMAIN_AUX_USBC4,
-		I915_PW_DOMAIN_AUX_TBT1, I915_PW_DOMAIN_AUX_TBT2,
-		I915_PW_DOMAIN_AUX_TBT3, I915_PW_DOMAIN_AUX_TBT4,
-		I915_PW_DOMAIN_INIT };
-	/*
-	 * tgl_pwdoms_pw_2 is PW_3 plus the VDSC of PW_2, not a domain this
-	 * driver takes, so PW_2 carries pw_3.  tgl_pwdoms_dc_off = PW_3 +
-	 * AUX_A/B/C + DC_OFF.
-	 */
-	static const enum i915_power_domain dc_off[] = {
-		I915_PW_DOMAIN_PIPE_D, I915_PW_DOMAIN_PIPE_PANEL_FITTER_D,
-		I915_PW_DOMAIN_TRANSCODER_D,
-		I915_PW_DOMAIN_PIPE_C, I915_PW_DOMAIN_PIPE_PANEL_FITTER_C,
-		I915_PW_DOMAIN_TRANSCODER_C,
-		I915_PW_DOMAIN_PIPE_B, I915_PW_DOMAIN_PIPE_PANEL_FITTER_B,
-		I915_PW_DOMAIN_TRANSCODER_B,
-		I915_PW_DOMAIN_PORT_DDI_LANES_TC1, I915_PW_DOMAIN_PORT_DDI_LANES_TC2,
-		I915_PW_DOMAIN_PORT_DDI_LANES_TC3, I915_PW_DOMAIN_PORT_DDI_LANES_TC4,
-		I915_PW_DOMAIN_VGA, I915_PW_DOMAIN_AUDIO_MMIO, I915_PW_DOMAIN_AUDIO_PLAYBACK,
-		I915_PW_DOMAIN_AUX_USBC1, I915_PW_DOMAIN_AUX_USBC2,
-		I915_PW_DOMAIN_AUX_USBC3, I915_PW_DOMAIN_AUX_USBC4,
-		I915_PW_DOMAIN_AUX_TBT1, I915_PW_DOMAIN_AUX_TBT2,
-		I915_PW_DOMAIN_AUX_TBT3, I915_PW_DOMAIN_AUX_TBT4,
-		I915_PW_DOMAIN_AUX_A, I915_PW_DOMAIN_AUX_B, I915_PW_DOMAIN_AUX_C,
-		I915_PW_DOMAIN_DC_OFF, I915_PW_DOMAIN_INIT };
-	static const enum i915_power_domain ddi_io_a[] = { I915_PW_DOMAIN_PORT_DDI_IO_A };
-	static const enum i915_power_domain ddi_io_b[] = { I915_PW_DOMAIN_PORT_DDI_IO_B };
-	static const enum i915_power_domain ddi_io_c[] = { I915_PW_DOMAIN_PORT_DDI_IO_C };
-	static const enum i915_power_domain ddi_io_tc1[] = { I915_PW_DOMAIN_PORT_DDI_IO_TC1 };
-	static const enum i915_power_domain ddi_io_tc2[] = { I915_PW_DOMAIN_PORT_DDI_IO_TC2 };
-	static const enum i915_power_domain ddi_io_tc3[] = { I915_PW_DOMAIN_PORT_DDI_IO_TC3 };
-	static const enum i915_power_domain ddi_io_tc4[] = { I915_PW_DOMAIN_PORT_DDI_IO_TC4 };
-	static const enum i915_power_domain aux_a[] = { I915_PW_DOMAIN_AUX_IO_A, I915_PW_DOMAIN_AUX_A };
-	static const enum i915_power_domain aux_b[] = { I915_PW_DOMAIN_AUX_IO_B, I915_PW_DOMAIN_AUX_B };
-	static const enum i915_power_domain aux_c[] = { I915_PW_DOMAIN_AUX_IO_C, I915_PW_DOMAIN_AUX_C };
-	static const enum i915_power_domain aux_usbc1[] = { I915_PW_DOMAIN_AUX_USBC1 };
-	static const enum i915_power_domain aux_usbc2[] = { I915_PW_DOMAIN_AUX_USBC2 };
-	static const enum i915_power_domain aux_usbc3[] = { I915_PW_DOMAIN_AUX_USBC3 };
-	static const enum i915_power_domain aux_usbc4[] = { I915_PW_DOMAIN_AUX_USBC4 };
-	static const enum i915_power_domain aux_tbt1[] = { I915_PW_DOMAIN_AUX_TBT1 };
-	static const enum i915_power_domain aux_tbt2[] = { I915_PW_DOMAIN_AUX_TBT2 };
-	static const enum i915_power_domain aux_tbt3[] = { I915_PW_DOMAIN_AUX_TBT3 };
-	static const enum i915_power_domain aux_tbt4[] = { I915_PW_DOMAIN_AUX_TBT4 };
-
-	/* The Tiger Lake wells in the reference order (columns as in i915_power_map_init()). */
-	static const struct i915_pw_desc wells[] = {
-		/* i9xx_power_wells_always_on: a zero-length domain list is every domain. */
-		{ "always_on", I915_PW_OPS_ALWAYS_ON, 1, 0, 0, 0, 0, 0u, 0u, 0u, I915_DISP_PW_ID_NONE, 1, NULL, 0u },
-		/* icl_power_wells_pw_1 */
-		{ "PW_1", I915_PW_OPS_HSW, 1, 0, 1, 0, 0, 0u, 0u, IDX_PW_1, I915_SKL_DISP_PW_1, 0, NULL, 0u },
-		/* tgl_power_wells_main */
-		{ "DC_off", I915_PW_OPS_DC_OFF, 0, 0, 0, 0, 0, 0u, 0u, 0u, I915_SKL_DISP_DC_OFF, 0, dc_off, ARRAY_SIZE(dc_off) },
-		{ "PW_2", I915_PW_OPS_HSW, 0, 0, 1, 0, 0, 0u, 0u, IDX_PW_2, I915_SKL_DISP_PW_2, 0, pw_3, ARRAY_SIZE(pw_3) },
-		{ "PW_3", I915_PW_OPS_HSW, 0, 1, 1, 0, 0, 0u, BIT_PIPE_B, IDX_PW_3, I915_ICL_DISP_PW_3, 0, pw_3, ARRAY_SIZE(pw_3) },
-		{ "DDI_IO_A", I915_PW_OPS_ICL_DDI, 0, 0, 0, 0, 0, 0u, 0u, IDX_DDI_A, I915_DISP_PW_ID_NONE, 0, ddi_io_a, ARRAY_SIZE(ddi_io_a) },
-		{ "DDI_IO_B", I915_PW_OPS_ICL_DDI, 0, 0, 0, 0, 0, 0u, 0u, IDX_DDI_B, I915_DISP_PW_ID_NONE, 0, ddi_io_b, ARRAY_SIZE(ddi_io_b) },
-		{ "DDI_IO_C", I915_PW_OPS_ICL_DDI, 0, 0, 0, 0, 0, 0u, 0u, IDX_DDI_C, I915_DISP_PW_ID_NONE, 0, ddi_io_c, ARRAY_SIZE(ddi_io_c) },
-		{ "DDI_IO_TC1", I915_PW_OPS_ICL_DDI, 0, 0, 0, 0, 0, 0u, 0u, IDX_DDI_TC1, I915_DISP_PW_ID_NONE, 0, ddi_io_tc1, ARRAY_SIZE(ddi_io_tc1) },
-		{ "DDI_IO_TC2", I915_PW_OPS_ICL_DDI, 0, 0, 0, 0, 0, 0u, 0u, IDX_DDI_TC2, I915_DISP_PW_ID_NONE, 0, ddi_io_tc2, ARRAY_SIZE(ddi_io_tc2) },
-		{ "DDI_IO_TC3", I915_PW_OPS_ICL_DDI, 0, 0, 0, 0, 0, 0u, 0u, IDX_DDI_TC3, I915_DISP_PW_ID_NONE, 0, ddi_io_tc3, ARRAY_SIZE(ddi_io_tc3) },
-		{ "DDI_IO_TC4", I915_PW_OPS_ICL_DDI, 0, 0, 0, 0, 0, 0u, 0u, IDX_DDI_TC4, I915_DISP_PW_ID_NONE, 0, ddi_io_tc4, ARRAY_SIZE(ddi_io_tc4) },
-		{ "PW_4", I915_PW_OPS_HSW, 0, 0, 1, 0, 0, 0u, BIT_PIPE_C, IDX_PW_4, I915_DISP_PW_ID_NONE, 0, pw_4, ARRAY_SIZE(pw_4) },
-		{ "PW_5", I915_PW_OPS_HSW, 0, 0, 1, 0, 0, 0u, BIT_PIPE_D, IDX_PW_5, I915_DISP_PW_ID_NONE, 0, pw_5, ARRAY_SIZE(pw_5) },
-		/* tgl_power_wells_aux */
-		{ "AUX_A", I915_PW_OPS_ICL_AUX, 0, 0, 0, 0, 1, 0u, 0u, IDX_AUX_A, I915_DISP_PW_ID_NONE, 0, aux_a, ARRAY_SIZE(aux_a) },
-		{ "AUX_B", I915_PW_OPS_ICL_AUX, 0, 0, 0, 0, 1, 0u, 0u, IDX_AUX_B, I915_DISP_PW_ID_NONE, 0, aux_b, ARRAY_SIZE(aux_b) },
-		{ "AUX_C", I915_PW_OPS_ICL_AUX, 0, 0, 0, 0, 1, 0u, 0u, IDX_AUX_C, I915_DISP_PW_ID_NONE, 0, aux_c, ARRAY_SIZE(aux_c) },
-		{ "AUX_USBC1", I915_PW_OPS_ICL_AUX, 0, 0, 0, 0, 1, 500u, 0u, IDX_AUX_TC1, I915_DISP_PW_ID_NONE, 0, aux_usbc1, ARRAY_SIZE(aux_usbc1) },
-		{ "AUX_USBC2", I915_PW_OPS_ICL_AUX, 0, 0, 0, 0, 1, 500u, 0u, IDX_AUX_TC2, I915_DISP_PW_ID_NONE, 0, aux_usbc2, ARRAY_SIZE(aux_usbc2) },
-		{ "AUX_USBC3", I915_PW_OPS_ICL_AUX, 0, 0, 0, 0, 1, 500u, 0u, IDX_AUX_TC3, I915_DISP_PW_ID_NONE, 0, aux_usbc3, ARRAY_SIZE(aux_usbc3) },
-		{ "AUX_USBC4", I915_PW_OPS_ICL_AUX, 0, 0, 0, 0, 1, 500u, 0u, IDX_AUX_TC4, I915_DISP_PW_ID_NONE, 0, aux_usbc4, ARRAY_SIZE(aux_usbc4) },
-		{ "AUX_TBT1", I915_PW_OPS_ICL_AUX, 0, 0, 0, 1, 0, 0u, 0u, IDX_AUX_TBT1, I915_DISP_PW_ID_NONE, 0, aux_tbt1, ARRAY_SIZE(aux_tbt1) },
-		{ "AUX_TBT2", I915_PW_OPS_ICL_AUX, 0, 0, 0, 1, 0, 0u, 0u, IDX_AUX_TBT2, I915_DISP_PW_ID_NONE, 0, aux_tbt2, ARRAY_SIZE(aux_tbt2) },
-		{ "AUX_TBT3", I915_PW_OPS_ICL_AUX, 0, 0, 0, 1, 0, 0u, 0u, IDX_AUX_TBT3, I915_DISP_PW_ID_NONE, 0, aux_tbt3, ARRAY_SIZE(aux_tbt3) },
-		{ "AUX_TBT4", I915_PW_OPS_ICL_AUX, 0, 0, 0, 1, 0, 0u, 0u, IDX_AUX_TBT4, I915_DISP_PW_ID_NONE, 0, aux_tbt4, ARRAY_SIZE(aux_tbt4) }
-	};
-
-	/* Builds the wells and the map (as the XE_LPD map does). */
-	i915_power_map_build(pd, wells, ARRAY_SIZE(wells));
-
-	/* Succeeded: the Tiger Lake map is built. */
 	return 0;
 }
 
@@ -2477,322 +2000,392 @@ i915_pw_hook_tc_health(
 	return 0;
 }
 
-/* Tells whether a domain is in a mask (1 or 0). */
-static int
-i915_mask_test(
-	const struct i915_pw_domain_mask *mask,
-	unsigned domain)
+/*
+ * Names the functions of the xd power wells a domain stands for.
+ *
+ * The pipes, transcoders, DDI lanes and IO, and AUX channels map to their
+ * own functions; the ports D and E of display 13 sit on the DDI and AUX
+ * numbers that Tiger Lake gives its Type-C ports 5 and 6.  The audio
+ * registers need only the exit from DC states on display 13, the audio
+ * well on display 12, and DSI (display 13 only) the exit from DC states.  The init
+ * reference holds every pipe and the exit from DC states.  A domain no
+ * well powers (the display core, GMBUS, the GT interrupts, the eDP
+ * transcoder, the Type-C cold block) has none.
+ *
+ * Values referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display_power_map.c
+ * (xelpd_pwdoms_pw_a to xelpd_pwdoms_pw_d, xelpd_pwdoms_pw_2,
+ * xelpd_pwdoms_dc_off, tgl_pwdoms_pw_3 to tgl_pwdoms_pw_5,
+ * tgl_pwdoms_dc_off, icl_pwdoms_aux_a to icl_pwdoms_aux_e).
+ */
+static uint64_t
+i915_pw_functions(
+	unsigned display_ver,
+	enum i915_power_domain domain)
 {
-	/* Reports the domain's bit. */
-	return (int)((mask->bits[domain >> 6] >> (domain & 63u)) & 1u);
-}
+	unsigned offset;
 
-/* Adds a domain to a mask. */
-static void
-i915_mask_set(
-	struct i915_pw_domain_mask *mask,
-	unsigned domain)
-{
-	/* Sets the domain's bit. */
-	mask->bits[domain >> 6] |= (uint64_t)1u << (domain & 63u);
-}
+	/* A pipe and its panel fitter need the pipe. */
+	if (domain >= I915_PW_DOMAIN_PIPE_A && domain <= I915_PW_DOMAIN_PIPE_D)
+		return I915_XD_POWERS_PIPE((unsigned)(domain - I915_PW_DOMAIN_PIPE_A));
+	if (domain >= I915_PW_DOMAIN_PIPE_PANEL_FITTER_A && domain <= I915_PW_DOMAIN_PIPE_PANEL_FITTER_D)
+		return I915_XD_POWERS_PIPE((unsigned)(domain - I915_PW_DOMAIN_PIPE_PANEL_FITTER_A));
 
-/* Removes a domain from a mask. */
-static void
-i915_mask_clear(
-	struct i915_pw_domain_mask *mask,
-	unsigned domain)
-{
-	/* Clears the domain's bit. */
-	mask->bits[domain >> 6] &= ~((uint64_t)1u << (domain & 63u));
-}
+	/* A transcoder A to D needs the transcoder. */
+	if (domain >= I915_PW_DOMAIN_TRANSCODER_A && domain <= I915_PW_DOMAIN_TRANSCODER_D)
+		return I915_XD_POWERS_TRANS((unsigned)(domain - I915_PW_DOMAIN_TRANSCODER_A));
 
-/* Tells whether a mask holds no domain (1 or 0). */
-static int
-i915_mask_empty(
-	const struct i915_pw_domain_mask *mask)
-{
-	/* Any bit in either word is a domain. */
-	if (mask->bits[0] != 0u)
-		return 0;
-	if (mask->bits[1] != 0u)
-		return 0;
+	/* The lanes, the DDI IO, the AUX IO and the AUX channel of a port need that function of its DDI. */
+	if (domain >= I915_PW_DOMAIN_PORT_DDI_LANES_A && domain <= I915_PW_DOMAIN_PORT_DDI_LANES_TC6) {
+		offset = (unsigned)(domain - I915_PW_DOMAIN_PORT_DDI_LANES_A);
+		return i915_pw_port_function(display_ver, offset, I915_XD_POWERS_LANES(0U));
+	}
+	if (domain >= I915_PW_DOMAIN_PORT_DDI_IO_A && domain <= I915_PW_DOMAIN_PORT_DDI_IO_TC6) {
+		offset = (unsigned)(domain - I915_PW_DOMAIN_PORT_DDI_IO_A);
+		return i915_pw_port_function(display_ver, offset, I915_XD_POWERS_DDI_IO(0U));
+	}
+	if (domain >= I915_PW_DOMAIN_AUX_IO_A && domain <= I915_PW_DOMAIN_AUX_IO_F) {
+		offset = (unsigned)(domain - I915_PW_DOMAIN_AUX_IO_A);
+		return i915_pw_port_function(display_ver, offset, I915_XD_POWERS_AUX_IO(0U));
+	}
+	if (domain >= I915_PW_DOMAIN_AUX_A && domain <= I915_PW_DOMAIN_AUX_USBC6) {
+		offset = (unsigned)(domain - I915_PW_DOMAIN_AUX_A);
+		return i915_pw_port_function(display_ver, offset, I915_XD_POWERS_AUX(0U));
+	}
 
-	/* Succeeded: the mask is empty. */
-	return 1;
-}
+	/* The Thunderbolt AUX of a Type-C port. */
+	if (domain >= I915_PW_DOMAIN_AUX_TBT1 && domain <= I915_PW_DOMAIN_AUX_TBT6)
+		return I915_XD_POWERS_TBT_AUX((unsigned)(domain - I915_PW_DOMAIN_AUX_TBT1));
 
-/* Tells whether a domain is parked in either set of the asynchronous put (1 or 0). */
-static int
-i915_parked(
-	struct i915_power_domains *pd,
-	unsigned domain)
-{
-	int in_set;
+	/* The remaining domains, one by one. */
+	switch (domain) {
+	case I915_PW_DOMAIN_PORT_DSI:
+		/* DSI keeps the display out of DC states on display 13; Tiger Lake's wells have no DSI. */
+		if (display_ver >= 13u)
+			return I915_XD_POWERS_DC_OFF;
+		return 0u;
+	case I915_PW_DOMAIN_VGA:
+		return I915_XD_POWERS_VGA;
+	case I915_PW_DOMAIN_AUDIO_PLAYBACK:
+		return I915_XD_POWERS_AUDIO;
+	case I915_PW_DOMAIN_AUDIO_MMIO:
+		/* The audio registers sit outside power well 2 from display 13 on. */
+		if (display_ver >= 13u)
+			return I915_XD_POWERS_DC_OFF;
+		return I915_XD_POWERS_AUDIO;
+	case I915_PW_DOMAIN_DC_OFF:
+		return I915_XD_POWERS_DC_OFF;
+	case I915_PW_DOMAIN_INIT:
+		/* The init reference keeps every pipe's wells and the exit from DC states. */
+		return I915_XD_POWERS_PIPE(0U) |
+		       I915_XD_POWERS_PIPE(1U) |
+		       I915_XD_POWERS_PIPE(2U) |
+		       I915_XD_POWERS_PIPE(3U) |
+		       I915_XD_POWERS_DC_OFF;
+	default:
+		break;
+	}
 
-	/* Looks in the set the work releases next. */
-	in_set = i915_mask_test(&pd->async_put_domains[0], domain);
-	if (in_set)
-		return 1;
-
-	/* Looks in the set parked while the work was pending. */
-	in_set = i915_mask_test(&pd->async_put_domains[1], domain);
-	if (in_set)
-		return 1;
-
-	/* Succeeded: the domain is not parked. */
-	return 0;
-}
-
-/* Tells whether anything is parked in either set of the asynchronous put (1 or 0). */
-static int
-i915_parked_any(
-	struct i915_power_domains *pd)
-{
-	int empty;
-
-	/* Looks at the set the work releases next. */
-	empty = i915_mask_empty(&pd->async_put_domains[0]);
-	if (!empty)
-		return 1;
-
-	/* Looks at the set parked while the work was pending. */
-	empty = i915_mask_empty(&pd->async_put_domains[1]);
-	if (!empty)
-		return 1;
-
-	/* Succeeded: nothing is parked. */
-	return 0;
+	/* No well powers the domain. */
+	return 0u;
 }
 
 /*
- * Checks the asynchronous put's invariants (verify_async_put_domains_state()):
- * the two masks are disjoint, the wakeref flag matches "something is
- * parked", and every parked domain holds exactly one reference.
+ * Names the function of the DDI (or AUX channel) of a port, given the
+ * port's place in the domain list (A to F, then Type-C 1 to 6) and the
+ * function of DDI 0.  Display 13 numbers its ports D and E as 7 and 8;
+ * display 12 gives those numbers to Type-C ports 5 and 6.  A port the
+ * display does not have has no function.
  */
+static uint64_t
+i915_pw_port_function(
+	unsigned display_ver,
+	unsigned offset,
+	uint64_t ddi0)
+{
+	/* Ports A to C are DDIs 0 to 2 on both. */
+	if (offset <= 2u)
+		return ddi0 << offset;
+
+	/* Ports D and E are DDIs 7 and 8 on display 13; display 12 has no such port, nor any port F. */
+	if (offset <= 5u) {
+		if (display_ver >= 13u && offset <= 4u)
+			return ddi0 << (offset + 4u);
+		return 0u;
+	}
+
+	/* Type-C ports 1 to 4 are DDIs 3 to 6 on both. */
+	if (offset <= 9u)
+		return ddi0 << (offset - 3u);
+
+	/* Type-C ports 5 and 6 are DDIs 7 and 8 on display 12 only. */
+	if (display_ver == 12u)
+		return ddi0 << (offset - 3u);
+
+	/* Display 13 has no Type-C port 5 or 6. */
+	return 0u;
+}
+
+/* Fills the copy of one well of the platform's table that the older code reads; its state is unknown. */
 static void
-i915_verify_async_put_domains_state(
-	struct i915_power_domains *pd)
+i915_pw_copy_well(
+	struct i915_power_well *well,
+	const struct i915_xd_well_desc *desc,
+	unsigned xd_well,
+	unsigned display_ver)
 {
-	unsigned domain;
-	int error;
-	int parked;
-	int wakeref_held;
+	/* The name and the operations family of the well's control. */
+	well->name = desc->name;
+	well->ops = I915_PW_OPS_HSW;
+	if (desc->control == I915_XD_WELL_CONTROL_AUX)
+		well->ops = I915_PW_OPS_ICL_AUX;
+	if (desc->control == I915_XD_WELL_CONTROL_DDI)
+		well->ops = I915_PW_OPS_ICL_DDI;
+	if (desc->control == I915_XD_WELL_CONTROL_DC_OFF)
+		well->ops = I915_PW_OPS_DC_OFF;
 
-	/* The two sets must not share a domain. */
-	error = 0;
-	if ((pd->async_put_domains[0].bits[0] & pd->async_put_domains[1].bits[0]) != 0u)
-		error = 1;
-	else if ((pd->async_put_domains[0].bits[1] & pd->async_put_domains[1].bits[1]) != 0u)
-		error = 1;
+	/* Power well 1 belongs to the display core and the DMC: no domain turns it off. */
+	well->always_on = 0;
+	if (desc->control == I915_XD_WELL_CONTROL_MAIN && desc->index == I915_XD_WELL_PW_1)
+		well->always_on = 1;
 
-	/* The wakeref flag must be set exactly while something is parked. */
-	parked = i915_parked_any(pd);
-	wakeref_held = 0;
-	if (pd->async_put_wakeref != 0)
-		wakeref_held = 1;
-	if (wakeref_held != parked)
-		error = 1;
+	/* The facts the table carries. */
+	well->has_vga = 0;
+	if ((desc->flags & I915_XD_WELL_VGA) != 0u)
+		well->has_vga = 1;
+	well->has_fuses = 0;
+	if (desc->fuse_gate != I915_XD_WELL_NO_FUSE)
+		well->has_fuses = 1;
+	well->is_tc_tbt = 0;
+	if ((desc->flags & I915_XD_WELL_TBT_AUX) != 0u)
+		well->is_tc_tbt = 1;
+	well->fixed_enable_delay = 0;
+	if ((desc->flags & I915_XD_WELL_FIXED_DELAY) != 0u)
+		well->fixed_enable_delay = 1;
+	well->enable_timeout = desc->enable_timeout_ms;
+	well->irq_pipe_mask = desc->irq_pipes;
+	well->hsw_idx = desc->index;
 
-	/* Every parked domain must hold exactly one reference. */
-	for (domain = 0u; domain < I915_PW_DOMAIN_NUM; domain++) {
-		parked = i915_parked(pd, domain);
-		if (parked && pd->domain_use_count[domain] != 1u)
-			error = 1;
+	/* The ids other code finds a well by. */
+	well->id = I915_DISP_PW_ID_NONE;
+	if (desc->control == I915_XD_WELL_CONTROL_DC_OFF)
+		well->id = I915_SKL_DISP_DC_OFF;
+	if (desc->control == I915_XD_WELL_CONTROL_MAIN) {
+		if (desc->index == I915_XD_WELL_PW_1)
+			well->id = I915_SKL_DISP_PW_1;
+		if (desc->index == I915_XD_WELL_PW_2)
+			well->id = I915_SKL_DISP_PW_2;
+		if (desc->index == I915_XD_WELL_PW_3 && display_ver == 12u)
+			well->id = I915_ICL_DISP_PW_3;
 	}
 
-	/* Reports an inconsistent state. */
-	if (error) {
-		pd->async_state_errors++;
-		kern_logf("i915: power: async put state inconsistent (wakeref=%d [0]=%016llx:%016llx "
-			"[1]=%016llx:%016llx)\n", pd->async_put_wakeref,
-			(unsigned long long)pd->async_put_domains[0].bits[1],
-			(unsigned long long)pd->async_put_domains[0].bits[0],
-			(unsigned long long)pd->async_put_domains[1].bits[1],
-			(unsigned long long)pd->async_put_domains[1].bits[0]);
-	}
+	/* The entry in the table, no user, and a state unknown until the sync. */
+	well->xd_well = xd_well;
+	well->refcount = 0u;
+	well->hw_enabled = -1;
 }
 
-/* Cancels the delayed work of the asynchronous put (cancel_async_put_work()). */
-static void
-i915_cancel_async_put_work(
+/* Finds the copy of a well of the platform's table, or NULL for a well with none. */
+static struct i915_power_well *
+i915_pw_copy_of(
 	struct i915_power_domains *pd,
-	int sync)
+	unsigned xd_well)
 {
-	/* Cancels the work when one is bound. */
-	if (pd->async_ops != NULL)
-		(void)pd->async_ops->cancel(pd->async_ctx, sync);
-
-	/* No delay is pending any more. */
-	pd->async_put_next_delay = 0;
-}
-
-/*
- * Takes a parked reference back for a get
- * (intel_display_power_grab_async_put_ref()): 1 when it did.
- */
-static int
-i915_grab_async_put_ref(
-	struct i915_power_domains *pd,
-	unsigned domain)
-{
-	int grabbed;
-	int parked;
-
-	/* Looks for the domain among the parked ones. */
-	grabbed = 0;
-	parked = i915_parked(pd, domain);
-
-	/* Takes the parked reference back, cancelling the work when nothing else is parked. */
-	if (parked) {
-		i915_mask_clear(&pd->async_put_domains[0], domain);
-		i915_mask_clear(&pd->async_put_domains[1], domain);
-		grabbed = 1;
-		pd->async_grabs++;
-		parked = i915_parked_any(pd);
-		if (!parked) {
-			i915_cancel_async_put_work(pd, 0);
-			pd->async_put_wakeref = 0;
-		}
-	}
-
-	/* Checks the invariants whatever happened. */
-	i915_verify_async_put_domains_state(pd);
-
-	/* Succeeded: reports whether a parked reference was taken back. */
-	return grabbed;
-}
-
-/*
- * Takes a domain with the domains lock held (__intel_display_power_get_domain()):
- * 0, or the error of the well that did not turn on.
- */
-static int
-i915_get_domain_locked(
-	struct i915_power_domains *pd,
-	enum i915_power_domain domain,
-	struct i915_pw_ctx *pwc)
-{
-	uint64_t wells;
 	unsigned index;
-	unsigned taken;
-	int grabbed;
-	int get_result;
 
-	/* A parked reference is taken back without touching the hardware. */
-	wells = drv_i915_power_domain_wells(pd, domain);
-	grabbed = i915_grab_async_put_ref(pd, (unsigned)domain);
-	if (grabbed)
-		return 0;
-
-	/* Gets the domain's wells in ascending (the reference's enabling) order. */
+	/* Looks the entry up among the copies. */
 	for (index = 0u; index < pd->num_power_wells; index++) {
-		if ((wells & ((uint64_t)1u << index)) == 0u)
-			continue;
-
-		/* Takes the well. */
-		get_result = drv_i915_power_well_get(&pd->power_wells[index], pwc);
-		if (get_result != 0) {
-			/* Gives the wells already taken back, in reverse. */
-			taken = index;
-			while (taken-- > 0u) {
-				if ((wells & ((uint64_t)1u << taken)) != 0u)
-					drv_i915_power_well_put(&pd->power_wells[taken], pwc);
-			}
-
-			/* Reports the well that did not turn on. */
-			return get_result;
-		}
+		if (pd->power_wells[index].xd_well == xd_well)
+			return &pd->power_wells[index];
 	}
 
-	/* Counts the reference on the domain. */
-	pd->domain_use_count[domain]++;
+	/* The well has no copy. */
+	return NULL;
+}
 
-	/* Succeeded: every well of the domain is held. */
+/* Fills the switch the xd counts turn wells on and off through, with this state and context. */
+static void
+i915_pw_switch(
+	struct i915_power_domains *pd,
+	struct i915_pw_ctx *pwc,
+	struct i915_pw_switch_ctx *ctx,
+	struct i915_xd_power_switch *sw)
+{
+	/* The state and the well context the switching acts with. */
+	ctx->pd = pd;
+	ctx->pwc = pwc;
+
+	/* The steps. */
+	sw->on = i915_pw_switch_on;
+	sw->off = i915_pw_switch_off;
+	sw->context = ctx;
+}
+
+/*
+ * Turns a well on for the xd counts through its copy's enable operation.
+ * Returns 0, or the error that stops the caller.
+ */
+static int
+i915_pw_switch_on(
+	void *context,
+	unsigned xd_well)
+{
+	struct i915_pw_switch_ctx *ctx;
+	struct i915_power_well *well;
+	int error;
+
+	/*
+	 * A well with no copy (Tiger Lake's TC cold mailbox) is not switched
+	 * here; it counts as on while it has users.
+	 */
+	ctx = context;
+	well = i915_pw_copy_of(ctx->pd, xd_well);
+	if (well == NULL) {
+		drv_i915_xd_power_record(&ctx->pd->xd->power, xd_well, 1);
+		return 0;
+	}
+
+	/* Turns the well on. */
+	error = drv_i915_power_well_enable(well, ctx->pwc);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the well is on. */
 	return 0;
 }
 
-/* Puts a domain with the domains lock held (__intel_display_power_put_domain()). */
-static void
-i915_put_domain_locked(
-	struct i915_power_domains *pd,
-	enum i915_power_domain domain,
-	struct i915_pw_ctx *pwc)
+/*
+ * Turns a well off for the xd counts through its copy's disable
+ * operation.  Returns 0, or EBUSY when a refused disable leaves the well
+ * on (it is then kept on for good by the failed stop).
+ */
+static int
+i915_pw_switch_off(
+	void *context,
+	unsigned xd_well)
 {
-	uint64_t wells;
-	unsigned index;
-	int parked;
+	struct i915_pw_switch_ctx *ctx;
+	struct i915_power_well *well;
+	int error;
 
-	/* The domain's count of references; a put at zero is reported, not counted. */
-	wells = drv_i915_power_domain_wells(pd, domain);
+	/* A well with no copy is not switched here; it counts as off without users. */
+	ctx = context;
+	well = i915_pw_copy_of(ctx->pd, xd_well);
+	if (well == NULL) {
+		drv_i915_xd_power_record(&ctx->pd->xd->power, xd_well, 0);
+		return 0;
+	}
+
+	/* Turns the well off. */
+	error = drv_i915_power_well_disable(well, ctx->pwc);
+
+	/* A refused disable keeps the well on. */
+	if (error == EBUSY) {
+		ctx->pwc->kept_wells++;
+		return EBUSY;
+	}
+
+	/* Succeeded: the well is off, or its disable failed in a way that leaves nothing to keep. */
+	return 0;
+}
+
+/* Gives one reference on a domain back from its count; a put at zero is reported, not counted. */
+static void
+i915_pw_count_put(
+	struct i915_power_domains *pd,
+	enum i915_power_domain domain)
+{
+	/* The count is the number of references the domain's users hold. */
 	if (pd->domain_use_count[domain] == 0u) {
 		pd->use_count_errors++;
 		kern_logf("i915: power: use count on domain %u is already zero\n", (unsigned)domain);
 	} else {
 		pd->domain_use_count[domain]--;
 	}
-
-	/* A domain still parked for the asynchronous put should not be put again. */
-	parked = i915_parked(pd, (unsigned)domain);
-	if (parked) {
-		pd->async_state_errors++;
-		kern_logf("i915: power: async disabling of domain %u is pending\n", (unsigned)domain);
-	}
-
-	/* Puts the domain's wells in reverse order. */
-	index = pd->num_power_wells;
-	while (index-- > 0u) {
-		if ((wells & ((uint64_t)1u << index)) != 0u)
-			drv_i915_power_well_put(&pd->power_wells[index], pwc);
-	}
 }
 
-/* Queues the delayed work for the parked references (queue_async_put_domains_work()). */
+/* Copies the xd counts' users and diagnostics into the copies the older code reads. */
 static void
-i915_queue_async_put_domains_work(
-	struct i915_power_domains *pd,
+i915_pw_copy_counts(
+	struct i915_power_domains *pd)
+{
+	const struct i915_xd_power *power;
+	unsigned index;
+
+	/* Copies each well's users. */
+	power = &pd->xd->power;
+	for (index = 0u; index < pd->num_power_wells; index++)
+		pd->power_wells[index].refcount = power->refs[pd->power_wells[index].xd_well];
+
+	/* Copies the diagnostics of the delayed give-back. */
+	pd->async_parked = power->stats.deferred;
+	pd->async_grabs = power->stats.taken_over;
+	pd->async_work_runs = power->stats.work_runs;
+	pd->async_work_empty = power->stats.work_empty;
+	pd->async_released = power->stats.released;
+	pd->async_requeues = power->stats.requeues;
+	pd->async_flushes = power->stats.flushes;
+	pd->async_state_errors = power->stats.errors;
+}
+
+/* Arms the bound delayed work for the xd counts: 1 when it was not armed already. */
+static int
+i915_pw_work_queue(
+	void *context,
 	int delay_ms)
 {
+	struct i915_power_domains *pd;
 	int queued;
 
-	/* The work owns the parked references from here; it must not own any already. */
-	if (pd->async_put_wakeref != 0)
-		pd->async_state_errors++;
-	pd->async_put_wakeref = 1;
-
-	/* Queues the work; one already queued is an inconsistency. */
+	/* Arms the work through the bound operations. */
+	pd = context;
 	queued = pd->async_ops->queue(pd->async_ctx, delay_ms);
-	if (!queued) {
-		pd->async_state_errors++;
-		kern_logf("i915: power: async put work was already queued\n");
-	}
+
+	/* Succeeded: reports whether it was newly armed. */
+	return queued;
 }
 
-/* Puts every parked domain of a mask (release_async_put_domains()). */
-static void
-i915_release_async_put_domains(
-	struct i915_power_domains *pd,
-	const struct i915_pw_domain_mask *mask)
+/* Disarms the bound delayed work for the xd counts. */
+static int
+i915_pw_work_cancel(
+	void *context,
+	int sync)
 {
-	struct i915_pw_domain_mask release;
-	unsigned domain;
-	int in_mask;
+	struct i915_power_domains *pd;
+	int cancelled;
 
-	/* Copies the mask: it may be one of the two sets being cleared. */
-	release = *mask;
+	/* Disarms the work through the bound operations. */
+	pd = context;
+	cancelled = pd->async_ops->cancel(pd->async_ctx, sync);
 
-	/* Puts each domain of the mask. */
-	for (domain = 0u; domain < I915_PW_DOMAIN_NUM; domain++) {
-		in_mask = i915_mask_test(&release, domain);
-		if (!in_mask)
-			continue;
+	/* Succeeded: reports what the cancel found. */
+	return cancelled;
+}
 
-		/* Unparks the domain before the put, so the put's check is satisfied. */
-		i915_mask_clear(&pd->async_put_domains[0], domain);
-		i915_mask_clear(&pd->async_put_domains[1], domain);
-		i915_put_domain_locked(pd, (enum i915_power_domain)domain, pd->async_pwc);
-		pd->async_released++;
-	}
+/*
+ * Records a well's last known state in its copy, and in the xd record the
+ * interrupt paths read without the lock (1 on, 0 off, -1 unknown).
+ */
+static void
+i915_pw_set_state(
+	struct i915_pw_ctx *pwc,
+	struct i915_power_well *well,
+	int state)
+{
+	int on;
+
+	/* The copy the older code reads. */
+	well->hw_enabled = state;
+
+	/* A context without the xd state (a well built by hand) has no record. */
+	if (pwc == NULL || pwc->xd == NULL)
+		return;
+
+	/* The record of the well's entry. */
+	on = 0;
+	if (state == 1)
+		on = 1;
+	drv_i915_xd_power_record(&pwc->xd->power, well->xd_well, on);
 }
 
 /* The DC state bits a display version has (gen9_dc_mask()). */

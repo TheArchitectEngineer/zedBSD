@@ -30,6 +30,7 @@
 #include "../../trace.h"
 #include "../../workqueue.h"
 #include "../../display/power.h"
+#include "../../display/xd.h"
 #include "../../display/watermark.h"
 
 #include <hal/hal.h>
@@ -280,6 +281,13 @@ static int i915_ktest_rpm_fail;
  * It is too big for the stack and is not the started device's state.
  */
 static struct i915_power_domains i915_ktest_power_domains;
+
+/*
+ * The xd state of that display: an Alder Lake-P description and a
+ * register window over the model, whose power well counts the domains
+ * use.  It lives as long as the test's power-domain state.
+ */
+static struct i915_xd i915_ktest_xd;
 
 static void i915_ktest_waitq_deadline(struct i915_ktest *ktest);
 static void i915_ktest_completions(struct i915_ktest *ktest);
@@ -1162,14 +1170,21 @@ i915_ktest_late_fuse(
 	uint32_t fuse;
 	int enabled;
 	int index;
+	int choose;
 	int error;
 
 	/* Builds a display-13 power-well map of its own, reached through the model. */
 	drv_i915_trace_init(&i915_ktest_trace);
 	i915_fake_open(&i915_ktest_mmio, &i915_ktest_fake);
-	(void)drv_i915_power_domains_init(&i915_ktest_power_domains, 13U, -1, 1, &i915_ktest_trace);
+	kern_memset(&i915_ktest_xd, 0, sizeof(i915_ktest_xd));
+	drv_i915_xd_io_init(&i915_ktest_xd.io, &i915_ktest_mmio, NULL);
+	choose = drv_i915_xd_platform_choose(0x46a6U, 0x0cU, 0, 0U, &i915_ktest_xd.choice);
+	if (choose == 0)
+		i915_ktest_xd.chosen = 1;
+	(void)drv_i915_power_domains_init(&i915_ktest_power_domains, 13U, &i915_ktest_xd, -1, 1, &i915_ktest_trace);
 	kern_memset(&pwc, 0, sizeof(pwc));
 	pwc.mmio = &i915_ktest_mmio;
+	pwc.xd = &i915_ktest_xd;
 	index = drv_i915_power_well_by_id(&i915_ktest_power_domains, I915_SKL_DISP_PW_1);
 
 	/*

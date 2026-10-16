@@ -14,6 +14,10 @@
  * routing and its PHY health hook, a Thunderbolt AUX well that does not
  * report; a drain that fails and keeps the well on; a disable while the
  * BIOS still requests the well; and the take-over of a BIOS request.
+ * Above the switching, the counts: which wells power which functions,
+ * the order wells come up and go down in, a well that fails to come up,
+ * a well that has to stay on, the deferred give-back with its delayed
+ * work, and the record of the wells that are on.
  */
 
 #include "host-test.h"
@@ -47,6 +51,22 @@ struct i915_xd_power_test_seen {
 	int drain_fails;
 };
 
+/*
+ * What the switch of the counts saw: the wells turned on and off in
+ * order (the table entry, plus 100 for an off), the well whose on fails,
+ * the well whose off is refused, the work's armings with their delay,
+ * and its disarmings.
+ */
+struct i915_xd_power_test_switch {
+	unsigned order[32];
+	unsigned count;
+	int fail_on;
+	int keep_on;
+	unsigned queued;
+	int last_delay;
+	unsigned cancelled;
+};
+
 /* The window the checks share, reaching a fresh model each time. */
 static struct i915_xd_io i915_xd_power_test_io;
 
@@ -78,6 +98,14 @@ static void i915_xd_power_test_table(void);
 static void i915_xd_power_test_main_wells(void);
 static void i915_xd_power_test_aux_wells(void);
 static void i915_xd_power_test_disable(void);
+static void i915_xd_power_test_counts(void);
+static void i915_xd_power_test_deferred(void);
+static void i915_xd_power_test_switch(struct i915_xd_power_switch *sw, struct i915_xd_power_work *work, struct i915_xd_power_test_switch *seen);
+static int i915_xd_power_test_on(void *context, unsigned well);
+static int i915_xd_power_test_off(void *context, unsigned well);
+static int i915_xd_power_test_queue(void *context, int delay_ms);
+static int i915_xd_power_test_cancel(void *context, int sync);
+static uint64_t i915_xd_power_test_set(const struct i915_xd_platform *platform, const char *const *names, unsigned count);
 
 /*
  * Runs every check of the xd power wells and reports.
@@ -92,6 +120,8 @@ main(void)
 	i915_xd_power_test_main_wells();
 	i915_xd_power_test_aux_wells();
 	i915_xd_power_test_disable();
+	i915_xd_power_test_counts();
+	i915_xd_power_test_deferred();
 
 	/* Reports the result. */
 	failures = i915_host_report("host_xd_power_test");
@@ -517,4 +547,309 @@ i915_xd_power_test_disable(void)
 	drv_i915_xd_power_well_adopt(&i915_xd_power_test_io, platform, 3U);
 	count = i915_xd_power_test_writes(offsets, values, 8U);
 	i915_host_check(count == 0U, "power: no BIOS request, nothing written");
+}
+
+/* Checks which wells power which functions, and how the counts bring them up and down. */
+static void
+i915_xd_power_test_counts(void)
+{
+	static const char *const pipe_b[] = { "PW_2", "PW_B" };
+	static const char *const pipe_c[] = { "DC_off", "PW_2", "PW_C" };
+	static const char *const usbc1[] = { "DC_off", "PW_2", "AUX_USBC1" };
+	static const char *const init[] = { "DC_off", "PW_2", "PW_A", "PW_B", "PW_C", "PW_D" };
+	static const char *const ddi_b[] = { "DDI_IO_B" };
+	static const char *const pipe_a[] = { "PW_A" };
+	static struct i915_xd_power power;
+	const struct i915_xd_platform *platform;
+	struct i915_xd_power_switch sw;
+	struct i915_xd_power_work work;
+	struct i915_xd_power_test_switch seen;
+	uint64_t init_functions;
+	int dc_off;
+	int pw_2;
+	int pw_c;
+	int has;
+	int error;
+
+	/* The Alder Lake-P description. */
+	platform = i915_xd_power_test_setup();
+	if (platform == NULL)
+		return;
+	dc_off = i915_xd_power_test_well(platform, "DC_off");
+	pw_2 = i915_xd_power_test_well(platform, "PW_2");
+	pw_c = i915_xd_power_test_well(platform, "PW_C");
+
+	/* Which wells power what, as Linux's map and the 5330's debugfs have it. */
+	init_functions = I915_XD_POWERS_PIPE(0U) | I915_XD_POWERS_PIPE(1U) | I915_XD_POWERS_PIPE(2U) | I915_XD_POWERS_PIPE(3U) | I915_XD_POWERS_DC_OFF;
+	i915_host_check(drv_i915_xd_power_wells_of(platform, I915_XD_POWERS_PIPE(0U)) == i915_xd_power_test_set(platform, pipe_a, 1U),
+			"power: pipe A needs PW_A alone, not PW_2");
+	i915_host_check(drv_i915_xd_power_wells_of(platform, I915_XD_POWERS_PIPE(1U) | I915_XD_POWERS_TRANS(1U)) == i915_xd_power_test_set(platform, pipe_b, 2U),
+			"power: pipe B needs PW_2 and PW_B");
+	i915_host_check(drv_i915_xd_power_wells_of(platform, I915_XD_POWERS_PIPE(2U)) == i915_xd_power_test_set(platform, pipe_c, 3U),
+			"power: pipe C needs DC off, PW_2 and PW_C");
+	i915_host_check(drv_i915_xd_power_wells_of(platform, I915_XD_POWERS_DDI_IO(1U)) == i915_xd_power_test_set(platform, ddi_b, 1U),
+			"power: the IO of DDI B needs its IO well alone, not PW_2");
+	i915_host_check(drv_i915_xd_power_wells_of(platform, I915_XD_POWERS_AUX(3U)) == i915_xd_power_test_set(platform, usbc1, 3U),
+			"power: the AUX channel of Type-C port 1 needs PW_2");
+	i915_host_check(drv_i915_xd_power_wells_of(platform, init_functions) == i915_xd_power_test_set(platform, init, 6U),
+			"power: the init set is DC off, PW_2 and PW_A to PW_D");
+	i915_host_check(drv_i915_xd_power_wells_of(platform, I915_XD_POWERS_LANES(0U) | I915_XD_POWERS_LANES(1U)) == 0ULL,
+			"power: the lanes of DDI A and B need no switched well");
+
+	/* Pipe C: the parents first, then back in the reverse order. */
+	drv_i915_xd_power_init(&power, platform);
+	i915_xd_power_test_switch(&sw, &work, &seen);
+	error = drv_i915_xd_power_get(&power, I915_XD_POWERS_PIPE(2U), &sw);
+	i915_host_check(error == 0 && seen.count == 3U &&
+			seen.order[0] == (unsigned)dc_off && seen.order[1] == (unsigned)pw_2 && seen.order[2] == (unsigned)pw_c &&
+			power.refs[pw_2] == 1U,
+			"power: pipe C brings up DC off, PW_2 and PW_C in that order");
+	drv_i915_xd_power_put(&power, I915_XD_POWERS_PIPE(2U), &sw);
+	i915_host_check(seen.count == 6U &&
+			seen.order[3] == 100U + (unsigned)pw_c && seen.order[4] == 100U + (unsigned)pw_2 && seen.order[5] == 100U + (unsigned)dc_off &&
+			power.refs[pw_2] == 0U,
+			"power: pipe C takes them down in the reverse order");
+
+	/* A well shared by two users stays up for the second. */
+	i915_xd_power_test_switch(&sw, &work, &seen);
+	(void)drv_i915_xd_power_get(&power, I915_XD_POWERS_PIPE(1U), &sw);
+	(void)drv_i915_xd_power_get(&power, I915_XD_POWERS_PIPE(2U), &sw);
+	drv_i915_xd_power_put(&power, I915_XD_POWERS_PIPE(2U), &sw);
+	i915_host_check(power.refs[pw_2] == 1U && seen.count == 6U && seen.order[4] == 100U + (unsigned)pw_c && seen.order[5] == 100U + (unsigned)dc_off,
+			"power: PW_2 stays up for pipe B when pipe C leaves");
+	drv_i915_xd_power_put(&power, I915_XD_POWERS_PIPE(1U), &sw);
+
+	/* A well that fails to come up gives back what the call took, and the error comes back. */
+	i915_xd_power_test_switch(&sw, &work, &seen);
+	seen.fail_on = pw_c;
+	error = drv_i915_xd_power_get(&power, I915_XD_POWERS_PIPE(2U), &sw);
+	i915_host_check(error == EIO && power.refs[dc_off] == 0U && power.refs[pw_2] == 0U && power.refs[pw_c] == 0U &&
+			seen.count == 4U && seen.order[2] == 100U + (unsigned)pw_2 && seen.order[3] == 100U + (unsigned)dc_off,
+			"power: a well that fails to come up gives back DC off and PW_2");
+
+	/* A well that has to stay on keeps a user and is not brought up again. */
+	i915_xd_power_test_switch(&sw, &work, &seen);
+	(void)drv_i915_xd_power_get(&power, I915_XD_POWERS_PIPE(2U), &sw);
+	seen.keep_on = pw_c;
+	drv_i915_xd_power_put(&power, I915_XD_POWERS_PIPE(2U), &sw);
+	seen.keep_on = -1;
+	(void)drv_i915_xd_power_get(&power, I915_XD_POWERS_PIPE(2U), &sw);
+	i915_host_check(power.refs[pw_c] == 2U && seen.count == 7U && seen.order[5] == (unsigned)dc_off && seen.order[6] == (unsigned)pw_2,
+			"power: a well kept on keeps its user and is not switched again");
+
+	/* A give-back of a user the well does not have is counted as an error and switches nothing. */
+	drv_i915_xd_power_init(&power, platform);
+	i915_xd_power_test_switch(&sw, &work, &seen);
+	drv_i915_xd_power_put(&power, I915_XD_POWERS_PIPE(0U), &sw);
+	i915_host_check(power.stats.errors == 1U && seen.count == 0U, "power: a give-back without a user is an error, not a switch");
+
+	/* The record of the wells that are on answers without the counts. */
+	drv_i915_xd_power_init(&power, platform);
+	has = drv_i915_xd_power_has(&power, I915_XD_POWERS_PIPE(1U));
+	i915_host_check(has == 0, "power: pipe B is not powered before its wells are recorded");
+	drv_i915_xd_power_record(&power, (unsigned)pw_2, 1);
+	has = drv_i915_xd_power_has(&power, I915_XD_POWERS_PIPE(1U));
+	i915_host_check(has == 0, "power: pipe B is not powered with PW_2 alone");
+	drv_i915_xd_power_record(&power, (unsigned)i915_xd_power_test_well(platform, "PW_B"), 1);
+	has = drv_i915_xd_power_has(&power, I915_XD_POWERS_PIPE(1U));
+	i915_host_check(has == 1, "power: pipe B is powered once PW_2 and PW_B are recorded on");
+	drv_i915_xd_power_record(&power, (unsigned)pw_2, 0);
+	has = drv_i915_xd_power_has(&power, I915_XD_POWERS_PIPE(1U));
+	i915_host_check(has == 0, "power: pipe B is not powered once PW_2 is recorded off");
+	has = drv_i915_xd_power_has(&power, 0ULL);
+	i915_host_check(has == 1, "power: a function no well powers is always powered");
+}
+
+/* Checks the give-back deferred to the delayed work. */
+static void
+i915_xd_power_test_deferred(void)
+{
+	static struct i915_xd_power power;
+	const struct i915_xd_platform *platform;
+	struct i915_xd_power_switch sw;
+	struct i915_xd_power_work work;
+	struct i915_xd_power_test_switch seen;
+	int usbc1;
+	int pw_b;
+	int owes;
+
+	/* The Alder Lake-P description, with the work bound. */
+	platform = i915_xd_power_test_setup();
+	if (platform == NULL)
+		return;
+	usbc1 = i915_xd_power_test_well(platform, "AUX_USBC1");
+	pw_b = i915_xd_power_test_well(platform, "PW_B");
+	drv_i915_xd_power_init(&power, platform);
+	i915_xd_power_test_switch(&sw, &work, &seen);
+	drv_i915_xd_power_bind_work(&power, &work);
+
+	/* A deferred give-back keeps the wells up and arms the work with its delay. */
+	(void)drv_i915_xd_power_get(&power, I915_XD_POWERS_AUX(3U), &sw);
+	drv_i915_xd_power_put_later(&power, I915_XD_POWERS_AUX(3U), 100, &sw);
+	i915_host_check(power.refs[usbc1] == 1U && seen.count == 3U && seen.queued == 1U && seen.last_delay == 100 && power.work_armed == 1,
+			"power: a deferred give-back keeps the wells up and arms the work");
+
+	/* A new user takes the owed one over; the work is disarmed. */
+	(void)drv_i915_xd_power_get(&power, I915_XD_POWERS_AUX(3U), &sw);
+	owes = drv_i915_xd_power_owes(&power);
+	i915_host_check(power.refs[usbc1] == 1U && seen.count == 3U && seen.cancelled == 1U && power.work_armed == 0 && owes == 0 &&
+			power.stats.taken_over == 1U,
+			"power: a get takes the owed user over without switching");
+
+	/* Deferred while armed: the run after gives it back, with the longest delay. */
+	(void)drv_i915_xd_power_get(&power, I915_XD_POWERS_PIPE(1U), &sw);
+	drv_i915_xd_power_put_later(&power, I915_XD_POWERS_AUX(3U), 100, &sw);
+	drv_i915_xd_power_put_later(&power, I915_XD_POWERS_PIPE(1U), 300, &sw);
+	drv_i915_xd_power_work(&power, &sw);
+	i915_host_check(power.refs[usbc1] == 0U && power.refs[pw_b] == 1U && seen.queued == 3U && seen.last_delay == 300 &&
+			power.stats.requeues == 1U && power.work_armed == 1,
+			"power: the work gives back its run and arms itself for the run after");
+	drv_i915_xd_power_work(&power, &sw);
+	owes = drv_i915_xd_power_owes(&power);
+	i915_host_check(power.refs[pw_b] == 0U && owes == 0 && power.work_armed == 0 && seen.cancelled == 2U &&
+			power.stats.released == 5U && power.stats.errors == 0U,
+			"power: the run after gives the rest back and disarms the work");
+
+	/* A run that finds nothing owed does nothing. */
+	drv_i915_xd_power_work(&power, &sw);
+	i915_host_check(power.stats.work_empty == 1U, "power: a run with nothing owed does nothing");
+
+	/* A flush gives back both runs at once. */
+	(void)drv_i915_xd_power_get(&power, I915_XD_POWERS_AUX(3U), &sw);
+	(void)drv_i915_xd_power_get(&power, I915_XD_POWERS_PIPE(1U), &sw);
+	drv_i915_xd_power_put_later(&power, I915_XD_POWERS_AUX(3U), 100, &sw);
+	drv_i915_xd_power_put_later(&power, I915_XD_POWERS_PIPE(1U), 100, &sw);
+	drv_i915_xd_power_flush(&power, &sw);
+	owes = drv_i915_xd_power_owes(&power);
+	i915_host_check(power.refs[usbc1] == 0U && power.refs[pw_b] == 0U && owes == 0 && power.work_armed == 0,
+			"power: a flush gives back everything owed");
+
+	/* Without a work a deferred give-back is immediate. */
+	drv_i915_xd_power_bind_work(&power, NULL);
+	(void)drv_i915_xd_power_get(&power, I915_XD_POWERS_AUX(3U), &sw);
+	drv_i915_xd_power_put_later(&power, I915_XD_POWERS_AUX(3U), 100, &sw);
+	i915_host_check(power.refs[usbc1] == 0U && power.work_armed == 0, "power: without a work the give-back is immediate");
+}
+
+/* Fills the switch and the work of the counts with the recording steps. */
+static void
+i915_xd_power_test_switch(
+	struct i915_xd_power_switch *sw,
+	struct i915_xd_power_work *work,
+	struct i915_xd_power_test_switch *seen)
+{
+	/* Nothing seen yet; nothing fails or is refused. */
+	memset(seen, 0, sizeof(*seen));
+	seen->fail_on = -1;
+	seen->keep_on = -1;
+
+	/* The steps. */
+	sw->on = i915_xd_power_test_on;
+	sw->off = i915_xd_power_test_off;
+	sw->context = seen;
+	work->queue = i915_xd_power_test_queue;
+	work->cancel = i915_xd_power_test_cancel;
+	work->context = seen;
+}
+
+/* Records a well turned on; fails the one asked to fail. */
+static int
+i915_xd_power_test_on(
+	void *context,
+	unsigned well)
+{
+	struct i915_xd_power_test_switch *seen;
+
+	/* Fails the well asked to fail. */
+	seen = context;
+	if ((int)well == seen->fail_on)
+		return EIO;
+
+	/* Records the well. */
+	if (seen->count < 32U)
+		seen->order[seen->count] = well;
+	seen->count++;
+
+	/* Succeeded: the well is on. */
+	return 0;
+}
+
+/* Records a well turned off; refuses the one asked to stay on. */
+static int
+i915_xd_power_test_off(
+	void *context,
+	unsigned well)
+{
+	struct i915_xd_power_test_switch *seen;
+
+	/* Refuses the well asked to stay on. */
+	seen = context;
+	if ((int)well == seen->keep_on)
+		return EBUSY;
+
+	/* Records the well. */
+	if (seen->count < 32U)
+		seen->order[seen->count] = 100U + well;
+	seen->count++;
+
+	/* Succeeded: the well is off. */
+	return 0;
+}
+
+/* Records an arming of the work and its delay. */
+static int
+i915_xd_power_test_queue(
+	void *context,
+	int delay_ms)
+{
+	struct i915_xd_power_test_switch *seen;
+
+	/* Records the arming. */
+	seen = context;
+	seen->queued++;
+	seen->last_delay = delay_ms;
+
+	/* Succeeded: the work was not armed. */
+	return 1;
+}
+
+/* Records a disarming of the work. */
+static int
+i915_xd_power_test_cancel(
+	void *context,
+	int sync)
+{
+	struct i915_xd_power_test_switch *seen;
+
+	UNUSED_PARAMETER(sync);
+
+	/* Records the disarming. */
+	seen = context;
+	seen->cancelled++;
+
+	/* Succeeded: the work was armed. */
+	return 1;
+}
+
+/* Reports the set of table entries of the named wells. */
+static uint64_t
+i915_xd_power_test_set(
+	const struct i915_xd_platform *platform,
+	const char *const *names,
+	unsigned count)
+{
+	uint64_t set;
+	unsigned index;
+	int well;
+
+	/* Adds each named well. */
+	set = 0ULL;
+	for (index = 0U; index < count; index++) {
+		well = i915_xd_power_test_well(platform, names[index]);
+		if (well >= 0)
+			set |= 1ULL << well;
+	}
+
+	/* Succeeded: the set. */
+	return set;
 }

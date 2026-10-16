@@ -23,6 +23,12 @@
  * AUX well of a Type-C port in DisplayPort or legacy mode waits for its
  * PHY's microcontroller through the owner's hook.  The caller serializes
  * the calls (the power domains' lock).
+ *
+ * Above the switching, the counts keep who uses each well: a user names
+ * the functions it needs (a pipe, a transcoder, the lanes or the IO of a
+ * DDI, an AUX channel, the VGA plane, the exit from DC states), and the
+ * wells whose sets hold them are brought up for the first user and taken
+ * down after the last, the owner doing the switching.
  */
 
 #ifndef DRIVERS_GPU_I915_DISPLAY_XD_POWER_H
@@ -65,7 +71,109 @@ struct i915_xd_well_report {
 	uint32_t fuses_late;
 };
 
+/* The most wells a platform's table may have: one bit each in a 64-bit set. */
+#define I915_XD_POWER_MAX_WELLS		64U
+
+/*
+ * How the owner switches one well of the table for the counts below:
+ * on brings the well up and reports 0 or the error that stops the
+ * caller; off takes it down and reports 0, or EBUSY when the well had to
+ * stay on (it then keeps one user for good).  The calls come under the
+ * owner's lock, the one the counts are kept under.
+ */
+struct i915_xd_power_switch {
+	int (*on)(void *context, unsigned well);
+	int (*off)(void *context, unsigned well);
+	void *context;
+};
+
+/*
+ * The owner's delayed work behind a deferred give-back: queue arms it to
+ * run drv_i915_xd_power_work() after a delay in milliseconds and reports
+ * 1 when it was not armed already; cancel disarms it (waiting for a run
+ * in progress when sync is nonzero).
+ */
+struct i915_xd_power_work {
+	int (*queue)(void *context, int delay_ms);
+	int (*cancel)(void *context, int sync);
+	void *context;
+};
+
+/*
+ * What the counts have seen, for the owner's diagnostics: the deferred
+ * give-backs, the gets that took a deferred user over, the runs of the
+ * work (and those that found nothing owed), the wells the work gave
+ * back, the times it armed itself again, the flushes, and the times the
+ * counts were found inconsistent.
+ */
+struct i915_xd_power_stats {
+	unsigned deferred;
+	unsigned taken_over;
+	unsigned work_runs;
+	unsigned work_empty;
+	unsigned released;
+	unsigned requeues;
+	unsigned flushes;
+	unsigned errors;
+};
+
+/*
+ * Who uses each power well of a display, and which wells are on.
+ *
+ * A user asks for a set of functions (I915_XD_POWERS_*); every well
+ * whose set holds one of them counts the user, the first user brings the
+ * well up in the table's order (a parent well comes before the wells
+ * inside it), and the last one takes it down in the reverse order.  A
+ * user may give its wells back later instead of now: they then stay up,
+ * owed to the delayed work, until the work runs or a new user takes them
+ * over.  The display owns one for the device's life.  The counts are kept
+ * under the owner's lock; the record of which wells are on is read
+ * without it, because an interrupt handler asks whether a pipe is powered.
+ */
+struct i915_xd_power {
+	/* The platform's description, whose wells the counts follow. */
+	const struct i915_xd_platform *platform;
+
+	/* How many users each well has, the ones owed to the work included. */
+	uint16_t refs[I915_XD_POWER_MAX_WELLS];
+
+	/*
+	 * The users each well owes to the delayed work: [0] the ones the
+	 * armed work gives back when it runs, [1] the ones deferred while it
+	 * was armed, which it gives back on the run after.
+	 */
+	uint16_t owed[2][I915_XD_POWER_MAX_WELLS];
+
+	/* Nonzero while the work is armed and owed users; the delay of its next arming. */
+	int work_armed;
+	int next_delay;
+
+	/* The owner's delayed work; without one a deferred give-back is immediate. */
+	struct i915_xd_power_work work;
+
+	/*
+	 * The wells known to be on, a bit a table entry, as the owner
+	 * recorded them after switching or reading them.  It is written with
+	 * atomic stores and read without the lock.
+	 */
+	uint64_t on;
+
+	/* What the counts have seen. */
+	struct i915_xd_power_stats stats;
+};
+
 int drv_i915_xd_power_find(const struct i915_xd_platform *platform, unsigned control, unsigned index);
+void drv_i915_xd_power_init(struct i915_xd_power *power, const struct i915_xd_platform *platform);
+void drv_i915_xd_power_bind_work(struct i915_xd_power *power, const struct i915_xd_power_work *work);
+uint64_t drv_i915_xd_power_wells_of(const struct i915_xd_platform *platform, uint64_t functions);
+int drv_i915_xd_power_get(struct i915_xd_power *power, uint64_t functions, const struct i915_xd_power_switch *sw);
+void drv_i915_xd_power_put(struct i915_xd_power *power, uint64_t functions, const struct i915_xd_power_switch *sw);
+void drv_i915_xd_power_put_later(struct i915_xd_power *power, uint64_t functions, int delay_ms, const struct i915_xd_power_switch *sw);
+void drv_i915_xd_power_work(struct i915_xd_power *power, const struct i915_xd_power_switch *sw);
+void drv_i915_xd_power_flush(struct i915_xd_power *power, const struct i915_xd_power_switch *sw);
+int drv_i915_xd_power_owes(const struct i915_xd_power *power);
+int drv_i915_xd_power_has(const struct i915_xd_power *power, uint64_t functions);
+void drv_i915_xd_power_record(struct i915_xd_power *power, unsigned well, int on);
 int drv_i915_xd_power_well_enable(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned well, const struct i915_xd_power_hooks *hooks, struct i915_xd_well_report *report);
 int drv_i915_xd_power_well_disable(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned well, const struct i915_xd_power_hooks *hooks, struct i915_xd_well_report *report);
 int drv_i915_xd_power_well_owned(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned well);

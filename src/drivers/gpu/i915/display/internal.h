@@ -256,16 +256,14 @@ i915_mmio_reg_equal(
 /*
  * display power domains (structure + map), see power.c.
  *
- * Ports intel_power_domains_init(): option sanitize, allowed_dc_mask,
- * target_dc_state, lock, async-put work, and intel_display_power_map_init() --
- * the platform power-well descriptor set (ADL-P = display ver 13 -> xelpd, 30
- * wells) built into a power_wells[] array plus a per-domain -> wells map.  The
- * descriptor order, ids, hsw control indices and attributes are the reference
- * values (NOT inferred from array position).  Per-well refcount / hardware-
- * enabled / always_on are tracked SEPARATELY.  The power-well enable/disable/sync
- * MMIO is the init_hw (5.2) step; here the ops are connected by kind.
+ * The domains are the older display code's names for what it powers.
+ * Each one stands for a set of functions of the xd power wells, whose
+ * counts decide which wells are up; power_wells[] is a copy of the
+ * platform's well table (its Type-C cold mailbox well left out) that the
+ * older code reads: the names, the operations family, the users of each
+ * well and the last known state.
  *
- * DC state values are the reference register-bit encodings (not abstract flags).
+ * DC state values are the register-bit encodings (not abstract flags).
  */
 
 struct i915_trace;
@@ -349,11 +347,6 @@ enum i915_pw_ops_kind {
 	I915_PW_OPS_DC_OFF,     /* gen9_dc_off_power_well_ops */
 };
 
-/* 128-bit power-domain membership mask (I915_PW_DOMAIN_NUM <= 128). */
-struct i915_pw_domain_mask {
-	uint64_t bits[2];
-};
-
 /* A runtime power well (i915_power_well: desc data + separate live state). */
 struct i915_power_well {
 	const char *name;
@@ -367,10 +360,9 @@ struct i915_power_well {
 	unsigned irq_pipe_mask;
 	unsigned hsw_idx;            /* HSW/ICL power-well control index (reference) */
 	int id;                     /* i915_power_well_id (0 = DISP_PW_ID_NONE) */
-	struct i915_pw_domain_mask domains;
-	int domains_all;            /* zero-length domain list = ALL domains */
-	/* Live state, tracked separately from the descriptor: */
-	unsigned refcount;          /* SW get/put reference count */
+	unsigned xd_well;           /* the well's entry in the platform's table */
+	/* Live state, copied from the xd power well counts and records: */
+	unsigned refcount;          /* the well's users */
 	int hw_enabled;             /* last known HW state (-1 = unknown until sync) */
 };
 
@@ -389,6 +381,10 @@ struct i915_power_domains {
 	/* per-domain -> bitmask of well indices that provide it. */
 	uint64_t domain_wells[I915_PW_DOMAIN_NUM];
 
+	/* The xd state whose power well counts the domains use, and the display version. */
+	struct i915_xd *xd;
+	unsigned display_ver;
+
 	int map_initialized;
 	int initialized;
 
@@ -396,15 +392,11 @@ struct i915_power_domains {
 	unsigned domain_use_count[I915_PW_DOMAIN_NUM];
 
 	/*
-	 * intel_display_power_put_async(): a last reference that is put asynchronously is
-	 * parked in async_put_domains[0] and released by the delayed work; while that work
-	 * is outstanding further ones collect in [1] and the work re-queues itself for
-	 * them.  A get of a parked domain takes the reference back without touching the
-	 * hardware.  async_put_wakeref marks "the work owns parked references".
+	 * The delayed work behind a last reference put asynchronously: the
+	 * wells stay up, owed to the work, until it runs or a get takes them
+	 * over (the xd power well counts keep what is owed).  The counters
+	 * are copies of the counts' diagnostics, kept for the logs.
 	 */
-	struct i915_pw_domain_mask async_put_domains[2];
-	int async_put_wakeref;
-	int async_put_next_delay;
 	const struct i915_pw_async_ops *async_ops;   /* NULL: put_async puts at once */
 	void *async_ctx;
 	struct i915_pw_ctx *async_pwc;              /* the context the delayed work uses */
