@@ -463,6 +463,7 @@ struct amdrdna_vbios_info {
 	uint16_t board_table;
 	uint8_t board_format;
 	uint8_t board_content;
+	uint32_t boot_display_clock_10khz;
 	struct amdrdna_vbios_routine commands[AMDRDNA_VBIOS_COMMAND_COUNT];
 };
 

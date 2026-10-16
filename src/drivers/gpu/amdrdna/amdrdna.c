@@ -43,7 +43,7 @@
 #include "drivers/gpu/amdrdna/amdrdna-regs.h"
 
 /* The last stage this driver has; asking for a later one is refused. */
-#define AMDRDNA_LAST_STAGE		AMDRDNA_STAGE_A9
+#define AMDRDNA_LAST_STAGE		AMDRDNA_STAGE_A10
 
 /* How long the shutdown waits for the bring-up thread to end, and its step. */
 #define AMDRDNA_SHUTDOWN_WAIT_US	5000000U
@@ -567,6 +567,15 @@ amdrdna_run_stage(
 		break;
 	case AMDRDNA_STAGE_A9:
 		error = amdrdna_a9_draw(device);
+		break;
+	case AMDRDNA_STAGE_A5C:
+		/* The queue resets are armed by A5 and A9; the stage says so and passes. */
+		amdrdna_mark("A5c ok queue resets: graphics through the scheduler, compute with the waves killed; resets so far %u",
+		    (unsigned)device->spaces.resets);
+		error = 0;
+		break;
+	case AMDRDNA_STAGE_A10:
+		error = amdrdna_a10_sink(device);
 		break;
 	default:
 		error = ENOTSUP;

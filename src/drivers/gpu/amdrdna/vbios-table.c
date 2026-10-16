@@ -70,7 +70,7 @@
  * The common header every table and routine starts with (its length word,
  * its format byte and its content byte), the list entries of the data
  * tables the driver reads (board power delivery 2, firmware 4, VRAM kept
- * by firmware 11, power 15), and the list entries of the command routines
+ * by firmware 11, power 15, display 27), and the list entries of the command routines
  * it names (post 0, encoder 4, pixel clock 12, pipe power 13, timing
  * enable 35, display clock 46, transmitter 76, AUX 78).  A routine's
  * attribute word follows its common header: workspace bytes in bits 7:0,
@@ -91,6 +91,7 @@
 #define DATA_FIRMWARE			4U
 #define DATA_FIRMWARE_RESERVE		11U
 #define DATA_POWER			15U
+#define DATA_DISPLAY			27U
 #define ROUTINE_ATTRIBUTE_AT		4U
 #define ROUTINE_WORK_MASK		0x00ffU
 #define ROUTINE_PARAMETER_MASK		0x7f00U
@@ -255,6 +256,7 @@ static void read_firmware(const uint8_t *image, struct amdrdna_vbios_info *info)
 static void read_reserve(const uint8_t *image, struct amdrdna_vbios_info *info);
 static void read_power(const uint8_t *image, struct amdrdna_vbios_info *info);
 static void read_commands(const uint8_t *image, size_t length, struct amdrdna_vbios_info *info);
+static void read_display(const uint8_t *image, size_t length, struct amdrdna_vbios_info *info);
 
 /*
  * Finds the video BIOS image of one PCI function in the ACPI table of images.
@@ -463,6 +465,7 @@ amdrdna_vbios_parse(
 	info->board_table = 0U;
 	info->board_format = 0U;
 	info->board_content = 0U;
+	info->boot_display_clock_10khz = 0U;
 	for (index = 0U; index < AMDRDNA_VBIOS_COMMAND_COUNT; index++) {
 		info->commands[index].offset = 0U;
 		info->commands[index].work_bytes = 0U;
@@ -508,6 +511,9 @@ amdrdna_vbios_parse(
 
 	/* Notes the command routines the display needs later. */
 	read_commands(image, length, info);
+
+	/* Reads the display clock the firmware boots with. */
+	read_display(image, length, info);
 
 	/* Succeeded: what the image carries is described. */
 	return 0;
@@ -720,6 +726,39 @@ pin_register(
 
 	/* Succeeded: the table lacks it. */
 	return 0U;
+}
+
+/*
+ * Reads the display table's boot display clock (a 32-bit word in 10 kHz
+ * after the header and the capability word).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/atomfirmware.h
+ * (struct atom_display_controller_info_v4_1: bootup_dispclk_10khz at
+ * byte 8).
+ */
+static void
+read_display(
+	const uint8_t *image,
+	size_t length,
+	struct amdrdna_vbios_info *info)
+{
+	uint16_t table;
+	uint16_t table_length;
+	uint8_t format;
+	uint8_t content;
+	int error;
+
+	/* The table, long enough for the word. */
+	error = find_table(image, length, info->data_list, DATA_DISPLAY, &table, &format, &content);
+	if (error != 0)
+		return;
+	table_length = amdrdna_le16(image, table + COMMON_LENGTH_AT);
+	if (table_length < 12U)
+		return;
+
+	/* The boot display clock. */
+	info->boot_display_clock_10khz = amdrdna_le32(image, (size_t)table + 8U);
 }
 
 /* Finds one data table from the data list and checks that it lies inside the image. */

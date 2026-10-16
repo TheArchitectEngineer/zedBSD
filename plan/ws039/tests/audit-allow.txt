@@ -22,6 +22,7 @@ base
 before
 begin
 below
+bios
 bits
 block
 blocks
@@ -38,6 +39,7 @@ capabilities
 capability
 case
 changed
+channel
 channels
 char
 checked
@@ -63,6 +65,7 @@ copies
 copy
 count
 counter
+crystal
 current
 data
 database
@@ -79,6 +82,7 @@ disabled
 display
 done
 doorbell
+dpcd
 driver
 drivers
 duty
@@ -148,6 +152,7 @@ int32_t
 interrupt
 invalidate
 known
+lanes
 last
 layout
 left
@@ -235,6 +240,7 @@ reads
 ready
 record
 records
+reference
 refresh
 refs
 registers
