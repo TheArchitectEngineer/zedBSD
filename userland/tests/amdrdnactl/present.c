@@ -41,7 +41,8 @@
 
 static int present_query(int descriptor, struct gpu_display_info *output);
 static int present_fill(int descriptor, uint64_t handle, uint32_t width, uint32_t height, uint32_t shade);
-static int present_frame(int descriptor, const struct gpu_display_info *output, uint64_t lease, uint64_t handle, uint32_t width, uint32_t height);
+static int present_frame(int descriptor, const struct gpu_display_info *output, uint64_t lease, uint64_t handle, uint32_t width, uint32_t height, uint32_t refresh_millihz);
+static uint32_t present_refresh(int descriptor, const struct gpu_display_info *output, uint32_t width, uint32_t height);
 
 /*
  * Presents frames of width by height on the first display of the GPU
@@ -59,6 +60,7 @@ control_present(
 	struct gpu_display_release release;
 	struct gpu_display_claim claim;
 	struct gpu_display_info output;
+	uint32_t refresh;
 	int descriptor;
 	int status;
 	int result;
@@ -91,6 +93,9 @@ control_present(
 		return 1;
 	}
 
+	/* The refresh the display offers for the size (a size it does not offer keeps the current one, to see the refusal). */
+	refresh = present_refresh(descriptor, &output, width, height);
+
 	/* The frame's storage, the ramp written into it. */
 	memset(&create, 0, sizeof(create));
 	create.version = GPU_ABI_VERSION;
@@ -107,7 +112,7 @@ control_present(
 
 	/* The first frame sets the mode of its size. */
 	if (result == 0)
-		result = present_frame(descriptor, &output, claim.lease, create.handle, width, height);
+		result = present_frame(descriptor, &output, claim.lease, create.handle, width, height, refresh);
 
 	/* Held, then a second frame of another shade in the same mode. */
 	if (result == 0) {
@@ -115,7 +120,7 @@ control_present(
 		result = present_fill(descriptor, create.handle, width, height, 0x80U);
 	}
 	if (result == 0)
-		result = present_frame(descriptor, &output, claim.lease, create.handle, width, height);
+		result = present_frame(descriptor, &output, claim.lease, create.handle, width, height, refresh);
 	if (result == 0)
 		sleep(1U);
 
@@ -284,6 +289,40 @@ present_fill(
 }
 
 /*
+ * Asks the display for its refresh of a size (the validation, 0 asking for
+ * the preferred one); a size it refuses gets the current refresh.
+ */
+static uint32_t
+present_refresh(
+	int descriptor,
+	const struct gpu_display_info *output,
+	uint32_t width,
+	uint32_t height)
+{
+	struct gpu_display_mode mode;
+	int status;
+
+	/* The validation of the size. */
+	memset(&mode, 0, sizeof(mode));
+	mode.version = GPU_ABI_VERSION;
+	mode.size = sizeof(mode);
+	mode.display_id = output->display_id;
+	mode.generation = output->generation;
+	mode.operation = GPU_DISPLAY_MODE_VALIDATE;
+	mode.width = width;
+	mode.height = height;
+	status = ioctl(descriptor, GPU_DISPLAY_MODE, &mode);
+	if (status != 0) {
+		printf("PRESENT mode %ux%u refused by the validation %d; presented at the current refresh\n", width, height, errno);
+		return output->refresh_millihz;
+	}
+
+	/* Succeeded: the refresh offered. */
+	printf("PRESENT mode %ux%u@%u offered\n", width, height, mode.refresh_millihz);
+	return mode.refresh_millihz;
+}
+
+/*
  * Presents the storage as a frame of width by height and reports the
  * display's mode after it; returns 0, or 1 when the present failed or the
  * mode is not the frame's size.
@@ -295,13 +334,14 @@ present_frame(
 	uint64_t lease,
 	uint64_t handle,
 	uint32_t width,
-	uint32_t height)
+	uint32_t height,
+	uint32_t refresh_millihz)
 {
 	struct gpu_display_present present;
 	struct gpu_display_info after;
 	int status;
 
-	/* The frame, FIFO, at the size's first refresh. */
+	/* The frame, FIFO, at the refresh the display offered. */
 	memset(&present, 0, sizeof(present));
 	present.version = GPU_ABI_VERSION;
 	present.size = sizeof(present);
@@ -311,6 +351,7 @@ present_frame(
 	present.height = height;
 	present.stride = width * PRESENT_PIXEL_BYTES;
 	present.format = GPU_PIXEL_BGRA8888;
+	present.refresh_millihz = refresh_millihz;
 	present.flags = GPU_DISPLAY_PRESENT_FIFO;
 	present.generation = output->generation;
 	status = ioctl(descriptor, GPU_DISPLAY_PRESENT, &present);

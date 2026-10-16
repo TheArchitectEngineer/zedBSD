@@ -304,6 +304,7 @@ static int sink_dpcd(struct amdrdna_device *device, struct amdrdna_sink *sink);
 static void sink_limit(struct amdrdna_device *device, struct amdrdna_sink *sink);
 static void sink_carried(struct amdrdna_device *device, struct amdrdna_sink *sink);
 static bool sink_same_refresh(uint32_t listed, uint32_t asked);
+static unsigned sink_find(const struct amdrdna_sink *sink, uint32_t width, uint32_t height, uint32_t refresh_millihz);
 static int i2c_read(struct amdrdna_device *device, unsigned line, uint8_t offset, uint8_t *bytes, unsigned count);
 static int i2c_take(struct amdrdna_device *device, unsigned line);
 static void i2c_give_back(struct amdrdna_device *device, unsigned line);
@@ -534,6 +535,7 @@ amdrdna_sink_check(
 	const struct amdrdna_display *display;
 	const struct amdrdna_timing *mode;
 	unsigned index;
+	unsigned listed;
 	bool current;
 
 	/* The current mode at its refresh (none asked for, or within half a hertz of it). */
@@ -564,14 +566,15 @@ amdrdna_sink_check(
 	sink = amdrdna_sink_ready(device);
 	if (sink == NULL)
 		return EINVAL;
-	index = amdrdna_edid_find(&sink->edid, width, height, *refresh_millihz);
-	if (index >= sink->edid.mode_count)
+	index = sink_find(sink, width, height, *refresh_millihz);
+	if (index >= sink->edid.mode_count) {
+		/* Listed but not shown here, or not listed at all. */
+		listed = amdrdna_edid_find(&sink->edid, width, height, *refresh_millihz);
+		if (listed < sink->edid.mode_count)
+			return ERANGE;
 		return EINVAL;
+	}
 	mode = &sink->edid.modes[index];
-
-	/* One the output shows. */
-	if (!sink->carried[index])
-		return ERANGE;
 	*refresh_millihz = mode->refresh_millihz;
 
 	/* Succeeded: the mode can be lit. */
@@ -597,6 +600,7 @@ amdrdna_sink_choose(
 	const struct amdrdna_display *display;
 	const struct amdrdna_sink *sink;
 	unsigned index;
+	unsigned listed;
 	bool same;
 
 	/* The firmware's mode. */
@@ -615,13 +619,14 @@ amdrdna_sink_choose(
 	sink = amdrdna_sink_ready(device);
 	if (sink == NULL)
 		return EINVAL;
-	index = amdrdna_edid_find(&sink->edid, width, height, refresh_millihz);
-	if (index >= sink->edid.mode_count)
+	index = sink_find(sink, width, height, refresh_millihz);
+	if (index >= sink->edid.mode_count) {
+		/* Listed but not shown here, or not listed at all. */
+		listed = amdrdna_edid_find(&sink->edid, width, height, refresh_millihz);
+		if (listed < sink->edid.mode_count)
+			return ERANGE;
 		return EINVAL;
-
-	/* One the output shows. */
-	if (!sink->carried[index])
-		return ERANGE;
+	}
 
 	/* Succeeded: the timing is given. */
 	*timing = sink->edid.modes[index];
@@ -1030,6 +1035,51 @@ sink_carried(
 		}
 		sink->carried[at] = true;
 	}
+}
+
+/*
+ * Finds a listed mode of a size the output shows: at the refresh asked
+ * for (within half a hertz), or with 0 the preferred one, else the
+ * highest refresh.  Returns its index, or AMDRDNA_EDID_MODES.
+ */
+static unsigned
+sink_find(
+	const struct amdrdna_sink *sink,
+	uint32_t width,
+	uint32_t height,
+	uint32_t refresh_millihz)
+{
+	const struct amdrdna_timing *mode;
+	unsigned best;
+	unsigned at;
+	bool same;
+
+	/* Each mode of the size that the output shows. */
+	best = AMDRDNA_EDID_MODES;
+	for (at = 0U; at < sink->edid.mode_count; at++) {
+		mode = &sink->edid.modes[at];
+		if (!sink->carried[at] ||
+		    mode->width != width ||
+		    mode->height != height)
+			continue;
+
+		/* A refresh asked for. */
+		if (refresh_millihz != 0U) {
+			same = sink_same_refresh(mode->refresh_millihz, refresh_millihz);
+			if (same)
+				return at;
+			continue;
+		}
+
+		/* None asked for: the preferred mode, else the highest refresh. */
+		if (mode->source == AMDRDNA_TIMING_PREFERRED)
+			return at;
+		if (best == AMDRDNA_EDID_MODES || mode->refresh_millihz > sink->edid.modes[best].refresh_millihz)
+			best = at;
+	}
+
+	/* Succeeded: the best of the size, or none. */
+	return best;
 }
 
 /* Tells whether a listed refresh is the one asked for: within half a hertz. */
