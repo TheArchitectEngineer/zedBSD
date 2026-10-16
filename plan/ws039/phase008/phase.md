@@ -2,7 +2,7 @@
 
 # ws039-p008: Vulkan の executor（host の部分: nvrtx の写しと PM4 の組み立て）
 
-Status: in-progress（2026-10-16 q1219 / q1219-i01 で P5 が executor を kernel に組み込み、実機 10.0.10.3 で A9 ok と vkquad の pixel の一致。Q1 の merge と clearance の判定待ち）。以前: q1214-i01 で host の部分
+Status: cleared（2026-10-16 Q1: 実機 10.0.10.3 で A9 ok（draw・copy 4096 pixel）と vkquad が 11 回 ok（libvulkan から zedBSD amdrdna (AMD RDNA1) として描画、pixel 一致）。main の merge 5ac37f771、ci の vmunix warning 0。amdrdna.vk の既定は 0（p009 で上げる）、audit-vk の一般語 90 件は p010 で allow に。未確認: cold の直後、compositor（p009）、compute pipeline）
 Disposition: normal
 Parent: [WS039](../ws.md)
 Queue: q1219 / q1219-i01（段 A9: executor の組み込みと実機の描画、承認 2026-10-16 ユーザー「p008に進みます」）。以前 q1214 / q1214-i01（Q1 の割当 2026-10-16、P5: 「ws039-p007 の残り」と「p008 の host の部分」）
