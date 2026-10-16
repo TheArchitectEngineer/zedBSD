@@ -160,7 +160,7 @@ Resume point: 2026-10-16 の方針（ユーザー「i915は、実装だけ先に
 | [p050b](phase050b/phase.md) | eDP の step の本体を xd の部品（PPS・backlight・AUX・DDI の IO power・訓練の DPCD・WM/DBUF の書き込み・vblank の event）を直に呼ぶ形に | in-progress（2026-10-17 q1229-i07 で実装・host 試験・build 済み（aa4374975、新しい xd-output.c と殻 output-shell.c）、5330 は全部の段の後に 1 回） |
 | [p050c](phase050c/phase.md) | HDMI と DP-TC の step の本体 | in-progress（2026-10-17 q1229-i07 で実装・host 試験・build 済み（81332cf8e）、5330 は全部の段の後に 1 回。hdmi-mode.c/.h の削除は merge の時に Q1） |
 | [p050d](phase050d/phase.md) | 口 `xd.h` と own の file の付け替え（backlight.c を含む）、旧 file（modeset・state・ddi・dp-sink・pipe・plane・aux・panel・panel-backlight・vblank・takeover の残り・internal.h の Linux の型）と旧 host 試験（host-dp-test・host-lcd-modeset-test）の削除、oracle の check を xd の試験へ | 4 段に分けた（2026-10-17 Q1、q1229-i08）: 下の p050d1〜d4 |
-| [p050d1](phase050d1/phase.md) | 内蔵 panel の sink の取得（PPS の用意・VDD・DPCD・EDID）と kernel の panel・DPCD の hook を xd の部品に（旧の Linux の eDP の world は旧 host 試験の間残す） | in-progress（2026-10-17 q1229-i08） |
+| [p050d1](phase050d1/phase.md) | 内蔵 panel の sink の取得（PPS の用意・VDD・DPCD・EDID）と kernel の panel・DPCD の hook を xd の部品に（旧の Linux の eDP の world は旧 host 試験の間残す） | in-progress（2026-10-17 q1229-i08 で実装・host 試験・build 済み（3604ddfa1、新しい xd-edp.c、I2C over AUX、EDID の読み）、5330 は全部の段の後に 1 回） |
 | [p050d2](phase050d2/phase.md) | prepare の check（state.c の compute・CDCLK）と WM/DBUF を xd-screen の plan・xd-dbuf に | planned |
 | [p050d3](phase050d3/phase.md) | plane・flip・vblank を xd-pipe・xd-screen に | planned |
 | [p050d4](phase050d4/phase.md) | 口 xd.h と own の file の付け替え、旧 file と旧 host 試験・ktest の削除（oracle を xd の試験へ） | planned（5320・SV7 の節目、QEMU の boot-test） |
@@ -210,6 +210,7 @@ Resume point: 2026-10-16 の方針（ユーザー「i915は、実装だけ先に
 | p040（P6、branch agent/p6-ws245） | 806e0b063 | 5342e0844（p050a の記録の commit。P1 の p050b・c と並行） |
 | p044 の一部（P6） | aa14ff623 | 806e0b063 |
 | p040・p044 の merge と Type-C の付け替え（P1） | 6cbff0b73 | bd91827a5（merge: 親 e825d6e6e（p050c の記録の commit）と aa14ff623） |
+| p050d1 | 3604ddfa1 | b0c289c9d（p050d1〜d4 の phase.md の commit） |
 
 ### merge の時に Q1 が消す物（段の殻で中身を空にし vmunix.mk から外した file と、範囲の外の試験）
 
