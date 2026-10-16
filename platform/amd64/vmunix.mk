@@ -152,8 +152,11 @@ AMD64_I915_SOURCES += src/drivers/gpu/i915/display/dkl-phy.c src/drivers/gpu/i91
 # The external DP ports on the Type-C ports: the sink probe and its binding (ws051-p004a).
 AMD64_I915_SOURCES += src/drivers/gpu/i915/display/dp-ext.c src/drivers/gpu/i915/display/dp-ext-kern.c
 AMD64_I915_SOURCES += src/drivers/gpu/i915/display/head.c src/drivers/gpu/i915/display/head-rules.c
-# The display 12 and 13 rewrite (WS245): compiled from its first files on, not yet called by the driver.
+# The display 12 and 13 rewrite: compiled from its first files on, not yet called by the driver.
 AMD64_I915_SOURCES += src/drivers/gpu/i915/display/xd-io.c src/drivers/gpu/i915/display/xd-platform.c
+# The record of the display writes of a start and the survey of the first picture, which two kernels are compared by.
+AMD64_I915_SOURCES += src/drivers/gpu/i915/mmio-record.c src/drivers/gpu/i915/display/survey.c
+# The display 12 and 13 rewrite, continued.
 AMD64_I915_SOURCES += src/drivers/gpu/i915/display/xd-vbt.c src/drivers/gpu/i915/display/xd-edid.c
 endif
 AMD64_NVRTX_SOURCES :=
