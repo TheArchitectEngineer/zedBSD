@@ -562,7 +562,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS251](ws251/ws.md) | MG001 | source の tree 全体から開発の管理情報を削除する（2026-10-15 ユーザー） | planned | 着手はユーザーの指示で |
 | [WS252](ws252/ws.md) | MG006 | i915 の RKL・ADL-S/RPL-S・ICL の GT の対応（2026-10-15 ユーザー、WS245 §7 #20） | planned | p001 設計の担当の割り当て待ち |
 | [WS253](ws253/ws.md) | MG001 | 起動の時間の短縮: 通常の起動は sessiond（Wayland）を先に、network・audio・sshd などは後に。debug の起動は今のまま（2026-10-16 ユーザー） | incomplete（p001: 2 段の起動・desktop の表示を待つ late・kernel の disk の待ちの短縮を main に d454d4bd3、QEMU で約 9 s → 約 4 s。5330 の確認待ち） | 5330 の起動の記録（P1 の次の起動で） |
-| [WS254](ws254/ws.md) | MG001 | networkd: DHCP の失敗の後に 1 分おきに取り直す（2026-10-16 ユーザー） | incomplete（p001 を q1226 で実行中） | p001 |
+| [WS254](ws254/ws.md) | MG001 | networkd: DHCP の失敗の後に 1 分おきに取り直す（2026-10-16 ユーザー） | incomplete（p001 cleared: QEMU で確認、main 5cb63ff2a。実機は未実施） | p002 規約の見直し |
 | [WS255](ws255/ws.md) | MG001 | 試験機（5330・RDNA 機）の zedBSD の試験の image を静的な IP に（2026-10-16 ユーザー） | incomplete（p001 を q1227 で実行中） | p001 |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
@@ -609,6 +609,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-16 夕: WS254 p001（DHCP の失敗の後 60 s おきに ifconfig down → up → dhcpc、lease で止める、static と net up・cable の抜き差しは今のまま）を QEMU で確認して main に merge（5cb63ff2a）。BUG-327: T1-703 で同じ stick を 5330 の Linux から読むと 4 KiB 平均 0.43 ms（stick の劣化ではない）、zedBSD は 1 回約 30 ms → usb-storage・xHCI の側、bug-analyzer で解析中。
 - 2026-10-16 夕（ユーザー）:「DHCP の 1 分おきの取り直しですが、インタフェースのdown->up->DHCPという手順にしてください。でないとインタフェースのリセットが必要なケースに対処できないです。」→ WS254 の取り直しは毎回 interface の down → up → DHCP。P4 に伝えた。
 - 2026-10-16 夕（ユーザー）:「また、networkdは、DHCPが失敗したあと、1分おきにDHCPを試みる修正を入れるのがいいと思います。別なサブエージェントで実施してOKです。」→ WS254（q1226）。「さらに、テスト機ではstatic IPにすることで、自律ループを維持しやすくできると考えます。」→ WS255（q1227、試験の image だけ、通常・release は DHCP のまま）。2 つとも P4。ユーザーの観察「RDNA機はデスクトップは起動していたので、DHCPが取得できなかったんだと思います。」→ P3 の branch に main の dhcpc の修正を取り込む。
 - 2026-10-16 夕: WS253 p001 の 3 回目を merge（cf638a523）: kernel の起動の段の時刻を dmesg に `boot: at N ms:`。5330 の記録の解析で、USB の stick の小さな読み込みが平均 54 ms 待つ（BUG-327、driver の側で WS253 の範囲の外）、output-swapchain 3.2 s は i915 の modeset（P1 の側）。5330 の測定は T1-703。
