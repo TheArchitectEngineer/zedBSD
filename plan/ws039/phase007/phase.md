@@ -244,3 +244,10 @@ compiler が program ごとに配置を決め、結果の記述に byte の offs
 1. 3D・cube・array の sample: 共有の IR が image の次元を持たない（共有の front の変更は p007 の範囲外、Q1 に相談）。
 2. DDX・DDY（IR にある、desktop は使わない）、gather は未。
 3. driver との口は p008（executor）で使う形に合わせる（`amdrdna_gfx10_compile` の options、registers の新しい field）。
+
+### 7.11 p008 の途中で見つけた compiler の口の直し（2026-10-16 q1214、P5、実機前）
+
+- `gfx10-program.c`: register の数の語（RSRC1）に MEM_ORDERED（VS bit 27、PS bit 25、CS bit 30）を立てる。段 D の「vector memory の load・sample は順に終わる」待ち（counter の数で待つ）は GFX10 でこの bit が立っている時の動き（RADV は GFX10・GFX11 で常に立てる、`radv_mem_ordered`）。立てないと sample と load の counter が順に減らず、数の待ちが早すぎる。commit `3f0bda33c`。
+- 試験: compute・graphics の register の検査に 3 つの bit を足した。`amdrdna-compiler-host-test.sh` PASS（28 行の PASS、known words 92/92）。
+- `gfx10-texture.c`（試験の texture の道具）: sampler の unnormalized（bit 15）と記述子の channel の select（DST_SEL）を足した（p008 の executor の試験が使う。既存の試験は identity の select で結果は変わらない）。
+
