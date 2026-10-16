@@ -16,6 +16,8 @@
 
 #include "../intel/display-regs-xd.h"
 
+#include <uapi/errno.h>
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -36,6 +38,18 @@
 #define I915_XD_PIPE_SCANLINE_GAP_US	5000U
 #define I915_XD_PIPE_POLL_MIN_US	10U
 #define I915_XD_PIPE_POLL_MAX_US	1000U
+
+/*
+ * The limits of a plane's buffer: the largest side, the pitch unit, the
+ * page a surface starts on; the bytes of an XRGB8888 pixel.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/skl_universal_plane.c
+ * (skl_plane_max_width, skl_plane_stride_mult).
+ */
+#define I915_XD_PLANE_MAX_SIDE		8192U
+#define I915_XD_PLANE_PITCH_UNIT	64U
+#define I915_XD_PLANE_PAGE		0x1000U
+#define I915_XD_PLANE_CPP		4U
 
 static uint32_t i915_xd_pipe_pair(uint32_t lower, uint32_t upper);
 static uint32_t i915_xd_pipe_vrr_word(const struct i915_xd_platform *platform, const struct i915_xd_vrr *vrr);
@@ -628,7 +642,168 @@ drv_i915_xd_pipe_wait_scanline(
 	return I915_XD_PIPE_LATE_SCANLINE;
 }
 
-/* Packs two values less one into a register's lower and upper halves. */
+/*
+ * Checks a buffer the first plane is to scan out: linear XRGB8888, 1 to
+ * 8192 pixels each way, a pitch that holds a line and counts 64 bytes,
+ * a surface on a page.  Returns 0 or EINVAL.
+ */
+int
+drv_i915_xd_plane_check(
+	uint32_t fourcc,
+	uint64_t modifier,
+	uint32_t width,
+	uint32_t height,
+	uint32_t pitch,
+	uint32_t surf)
+{
+	/* The format and layout. */
+	if (fourcc != I915_XD_FOURCC_XRGB8888)
+		return EINVAL;
+	if (modifier != I915_XD_MODIFIER_LINEAR)
+		return EINVAL;
+
+	/* The size. */
+	if (width == 0U || height == 0U)
+		return EINVAL;
+	if (width > I915_XD_PLANE_MAX_SIDE || height > I915_XD_PLANE_MAX_SIDE)
+		return EINVAL;
+
+	/* The pitch and the surface. */
+	if (pitch < width * I915_XD_PLANE_CPP)
+		return EINVAL;
+	if ((pitch % I915_XD_PLANE_PITCH_UNIT) != 0U)
+		return EINVAL;
+	if ((surf & (I915_XD_PLANE_PAGE - 1U)) != 0U)
+		return EINVAL;
+
+	/* Succeeded: the plane can scan the buffer out. */
+	return 0;
+}
+
+/*
+ * Fills the control words of a plane of linear XRGB8888: the enable and
+ * the format, on display 13 one arbiter slot (a 4-byte pixel); the
+ * colour control with the plane gamma off (the format has no alpha).
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/skl_universal_plane.c
+ * (skl_plane_ctl, adlp_plane_ctl_arb_slots, glk_plane_color_ctl).
+ */
+void
+drv_i915_xd_plane_words(
+	const struct i915_xd_platform *platform,
+	struct i915_xd_plane *plane)
+{
+	/* The control word. */
+	plane->ctl = I915_XD_PLANE_CTL_ENABLE | i915_xd_field_put(I915_XD_PLANE_CTL_FORMAT, I915_XD_PLANE_CTL_FORMAT_XRGB8888);
+	if (platform->display_ver == 13U)
+		plane->ctl |= i915_xd_field_put(I915_XD_PLANE_CTL_ARB_SLOTS, 1U);
+
+	/* The colour control. */
+	plane->color_ctl = I915_XD_PLANE_COLOR_GAMMA_OFF;
+}
+
+/*
+ * Writes the words of the first plane that do not arm an update: the
+ * stride in 64-byte units, the position, the size (less one), the
+ * colour key (none) with the plane alpha, the offset (0), the auxiliary
+ * distance (no auxiliary surface), the chroma upsampler (off) and the
+ * colour control.  The pipe's watermarks follow (the caller's).
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/skl_universal_plane.c
+ * (icl_plane_update_noarm, skl_plane_keymsk, skl_plane_keymax).
+ */
+void
+drv_i915_xd_plane_noarm(
+	struct i915_xd_io *io,
+	const struct i915_xd_plane *plane)
+{
+	uint32_t keymsk;
+	unsigned pipe;
+
+	/* The stride, the position and the size. */
+	pipe = plane->pipe;
+	drv_i915_xd_io_step(io, "xd-pipe plane");
+	drv_i915_xd_io_write(io, I915_XD_PLANE_STRIDE(pipe), i915_xd_field_put(I915_XD_PLANE_STRIDE_UNITS, plane->pitch / I915_XD_PLANE_PITCH_UNIT));
+	drv_i915_xd_io_write(io, I915_XD_PLANE_POS(pipe), i915_xd_pipe_pair(plane->x, plane->y));
+	drv_i915_xd_io_write(io, I915_XD_PLANE_SIZE(pipe), i915_xd_pipe_pair(plane->width - 1U, plane->height - 1U));
+
+	/* No colour key; a translucent plane enables the constant alpha. */
+	keymsk = 0U;
+	if (plane->alpha < 0xffU)
+		keymsk |= I915_XD_PLANE_KEYMSK_ALPHA;
+	drv_i915_xd_io_write(io, I915_XD_PLANE_KEYVAL(pipe), 0U);
+	drv_i915_xd_io_write(io, I915_XD_PLANE_KEYMSK(pipe), keymsk);
+	drv_i915_xd_io_write(io, I915_XD_PLANE_KEYMAX(pipe), i915_xd_field_put(I915_XD_PLANE_KEYMAX_ALPHA, plane->alpha));
+
+	/* The offset, the auxiliary distance, the upsampler and the colour control. */
+	drv_i915_xd_io_write(io, I915_XD_PLANE_OFFSET(pipe), 0U);
+	drv_i915_xd_io_write(io, I915_XD_PLANE_AUX_DIST(pipe), 0U);
+	drv_i915_xd_io_write(io, I915_XD_PLANE_CUS_CTL(pipe), 0U);
+	drv_i915_xd_io_write(io, I915_XD_PLANE_COLOR_CTL(pipe), plane->color_ctl);
+}
+
+/*
+ * Arms an update of the first plane: the control word just before the
+ * surface address, whose write arms the update (a disabled plane's
+ * control word arms by itself, so the two go together).
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/skl_universal_plane.c
+ * (icl_plane_update_arm).
+ */
+void
+drv_i915_xd_plane_arm(
+	struct i915_xd_io *io,
+	const struct i915_xd_plane *plane)
+{
+	/* The control word, then the surface. */
+	drv_i915_xd_io_write(io, I915_XD_PLANE_CTL(plane->pipe), plane->ctl);
+	drv_i915_xd_io_write(io, I915_XD_PLANE_SURF(plane->pipe), plane->surf);
+}
+
+/*
+ * Starts turning the first plane off: its chroma upsampler.  The pipe's
+ * watermarks follow (the caller's), then drv_i915_xd_plane_off_arm().
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/skl_universal_plane.c
+ * (icl_plane_disable_arm).
+ */
+void
+drv_i915_xd_plane_off_noarm(
+	struct i915_xd_io *io,
+	unsigned pipe)
+{
+	/* The upsampler. */
+	drv_i915_xd_io_step(io, "xd-pipe plane off");
+	drv_i915_xd_io_write(io, I915_XD_PLANE_CUS_CTL(pipe), 0U);
+}
+
+/* Turns the first plane off: a zero control word, armed by a zero surface. */
+void
+drv_i915_xd_plane_off_arm(
+	struct i915_xd_io *io,
+	unsigned pipe)
+{
+	/* The control word, then the surface. */
+	drv_i915_xd_io_write(io, I915_XD_PLANE_CTL(pipe), 0U);
+	drv_i915_xd_io_write(io, I915_XD_PLANE_SURF(pipe), 0U);
+}
+
+/* Reads the surface the first plane scans out now. */
+uint32_t
+drv_i915_xd_plane_live(
+	struct i915_xd_io *io,
+	unsigned pipe)
+{
+	uint32_t live;
+
+	/* The live surface. */
+	live = drv_i915_xd_io_read(io, I915_XD_PLANE_SURFLIVE(pipe));
+
+	/* Succeeded: its address. */
+	return live;
+}
+
+/* Packs two values into a register's lower and upper halves. */
 static uint32_t
 i915_xd_pipe_pair(
 	uint32_t lower,

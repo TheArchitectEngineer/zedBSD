@@ -12,8 +12,9 @@
  * M/N values, the DDI function word, the source size, the MSA word), the
  * order of a transcoder's setup, an HDMI (DVI) mode on transcoder B of
  * Tiger Lake, the start and the stop of a transcoder with the wait for it
- * to go off, the pipe's miscellaneous, chicken and colour words, and the
- * function's disable.
+ * to go off, the pipe's miscellaneous, chicken and colour words, the
+ * function's disable, and the first plane of the 5330's panel and of a
+ * second pipe.
  */
 
 #include "host-test.h"
@@ -25,6 +26,7 @@
 #include "../../display/xd-platform.h"
 #include "../../intel/display-regs-xd.h"
 
+#include <uapi/errno.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -45,6 +47,7 @@ static void i915_xd_pipe_test_order(void);
 static void i915_xd_pipe_test_hdmi(void);
 static void i915_xd_pipe_test_start_stop(void);
 static void i915_xd_pipe_test_pipe_words(void);
+static void i915_xd_pipe_test_plane(void);
 
 /*
  * Runs every check of the transcoders and pipes and reports.
@@ -60,6 +63,7 @@ main(void)
 	i915_xd_pipe_test_hdmi();
 	i915_xd_pipe_test_start_stop();
 	i915_xd_pipe_test_pipe_words();
+	i915_xd_pipe_test_plane();
 
 	/* Reports the result. */
 	failures = i915_host_report("host_xd_pipe_test");
@@ -399,4 +403,105 @@ i915_xd_pipe_test_pipe_words(void)
 	read = drv_i915_xd_pipe_func_disable(&i915_xd_pipe_test_io, 0U, 0);
 	i915_host_check(read == 0x8a210002U && i915_xd_fake_get(0x60400U) == 0x00210002U && i915_xd_fake_get(0x60404U) == 0U,
 			"pipe: the function's disable clears the enable, the DDI and the mode, and the port sync");
+}
+
+/*
+ * The first plane: the buffers it refuses, its control words on display
+ * 13 and 12, the 5330's panel buffer (the words its firmware left: the
+ * control 0x94000000, stride 0x78, size 0x0437077f, colour control
+ * 0x2000) in the order an update writes them, the plane on pipe B, the
+ * plane off and the live surface.
+ */
+static void
+i915_xd_pipe_test_plane(void)
+{
+	static const uint32_t expected[] = {
+		0x70188U, 0x7018cU, 0x70190U, 0x70194U, 0x70198U, 0x701a0U, 0x701a4U, 0x701c0U, 0x701c8U, 0x701ccU,
+		0x70180U, 0x7019cU
+	};
+	const struct i915_xd_platform *platform;
+	const struct i915_xd_platform *tgl;
+	struct i915_xd_plane plane;
+	struct i915_xd_io_record records[32];
+	unsigned count;
+	unsigned writes;
+	unsigned index;
+	int same;
+	int error;
+
+	/* The buffers the plane refuses. */
+	error = drv_i915_xd_plane_check(I915_XD_FOURCC_XRGB8888, 0U, 1920U, 1080U, 7680U, 0x180000U);
+	i915_host_check(error == 0, "plane: the 5330's panel buffer is taken");
+	error = drv_i915_xd_plane_check(0x34324241U, 0U, 1920U, 1080U, 7680U, 0x180000U);
+	i915_host_check(error == EINVAL, "plane: another format is refused");
+	error = drv_i915_xd_plane_check(I915_XD_FOURCC_XRGB8888, 2U, 1920U, 1080U, 7680U, 0x180000U);
+	i915_host_check(error == EINVAL, "plane: a tiled buffer is refused");
+	error = drv_i915_xd_plane_check(I915_XD_FOURCC_XRGB8888, 0U, 8193U, 1080U, 40000U, 0x180000U);
+	i915_host_check(error == EINVAL, "plane: a side above 8192 is refused");
+	error = drv_i915_xd_plane_check(I915_XD_FOURCC_XRGB8888, 0U, 1920U, 1080U, 7000U, 0x180000U);
+	i915_host_check(error == EINVAL, "plane: a pitch shorter than a line is refused");
+	error = drv_i915_xd_plane_check(I915_XD_FOURCC_XRGB8888, 0U, 1920U, 1080U, 7700U, 0x180000U);
+	i915_host_check(error == EINVAL, "plane: a pitch not of 64 bytes is refused");
+	error = drv_i915_xd_plane_check(I915_XD_FOURCC_XRGB8888, 0U, 1920U, 1080U, 7680U, 0x180800U);
+	i915_host_check(error == EINVAL, "plane: a surface off a page is refused");
+
+	/* Tiger Lake: no arbiter slots. */
+	tgl = i915_xd_pipe_test_setup(I915_XD_PIPE_TEST_TGL, I915_XD_PIPE_TEST_TGL_REVID);
+	memset(&plane, 0, sizeof(plane));
+	if (tgl != NULL)
+		drv_i915_xd_plane_words(tgl, &plane);
+	i915_host_check(tgl != NULL && plane.ctl == 0x84000000U && plane.color_ctl == 0x2000U, "plane: the control word of display 12");
+
+	/* Alder Lake-P: the panel's buffer at 0x180000. */
+	platform = i915_xd_pipe_test_setup(I915_XD_PIPE_TEST_ADLP, I915_XD_PIPE_TEST_ADLP_REVID);
+	if (platform == NULL) {
+		i915_host_check(0, "plane: the Alder Lake-P description");
+		return;
+	}
+	memset(&plane, 0, sizeof(plane));
+	plane.pipe = 0U;
+	plane.width = 1920U;
+	plane.height = 1080U;
+	plane.pitch = 7680U;
+	plane.surf = 0x180000U;
+	plane.alpha = 0xffU;
+	drv_i915_xd_plane_words(platform, &plane);
+	drv_i915_xd_plane_noarm(&i915_xd_pipe_test_io, &plane);
+	drv_i915_xd_plane_arm(&i915_xd_pipe_test_io, &plane);
+	i915_host_check(i915_xd_fake_get(0x70180U) == 0x94000000U && i915_xd_fake_get(0x70188U) == 0x78U &&
+			i915_xd_fake_get(0x70190U) == 0x0437077fU && i915_xd_fake_get(0x7019cU) == 0x180000U &&
+			i915_xd_fake_get(0x701ccU) == 0x2000U && i915_xd_fake_get(0x7018cU) == 0U &&
+			i915_xd_fake_get(0x701a0U) == 0xff000000U && i915_xd_fake_get(0x70198U) == 0U,
+			"plane: the 5330's panel plane (control 0x94000000, stride 0x78, size 0x0437077f)");
+
+	/* The order: the unarmed words, then the control word and the arming surface. */
+	count = drv_i915_xd_io_records(&i915_xd_pipe_test_io, records, 32U);
+	same = 1;
+	writes = 0U;
+	for (index = 0U; index < count; index++) {
+		if (records[index].kind != I915_XD_IO_RECORD_WRITE)
+			continue;
+		if (writes >= sizeof(expected) / sizeof(expected[0]) || records[index].offset != expected[writes])
+			same = 0;
+		writes++;
+	}
+	i915_host_check(same && writes == sizeof(expected) / sizeof(expected[0]), "plane: the unarmed words, then the control word and the surface");
+
+	/* A translucent plane on pipe B at an offset. */
+	plane.pipe = 1U;
+	plane.x = 100U;
+	plane.y = 50U;
+	plane.alpha = 0x80U;
+	drv_i915_xd_plane_noarm(&i915_xd_pipe_test_io, &plane);
+	i915_host_check(i915_xd_fake_get(0x7118cU) == 0x00320064U && i915_xd_fake_get(0x71198U) == 0x80000000U &&
+			i915_xd_fake_get(0x711a0U) == 0x80000000U,
+			"plane: pipe B's plane at (100, 50) with the constant alpha 0x80");
+
+	/* Off, and the live surface. */
+	drv_i915_xd_plane_off_noarm(&i915_xd_pipe_test_io, 0U);
+	drv_i915_xd_plane_off_arm(&i915_xd_pipe_test_io, 0U);
+	i915_xd_fake_set(0x701acU, 0x180000U);
+	i915_host_check(i915_xd_fake_get(0x70180U) == 0U && i915_xd_fake_get(0x7019cU) == 0U &&
+			drv_i915_xd_plane_live(&i915_xd_pipe_test_io, 0U) == 0x180000U,
+			"plane: the plane off, and the live surface");
 }

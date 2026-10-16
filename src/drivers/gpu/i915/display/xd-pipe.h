@@ -18,6 +18,16 @@
  * DVI, DisplayPort single or multi stream), colour depth, sync polarity
  * and lane count; a DisplayPort stream also carries its MSA word.
  *
+ * The first plane of a pipe scans out a linear XRGB8888 buffer: its
+ * words that do not arm an update (stride in 64-byte units, position,
+ * size, the colour key and plane alpha, the offset, the auxiliary
+ * distance, the chroma upsampler, the colour control) go first, the
+ * pipe's watermarks after them (the caller's), then the control word and
+ * the surface address, which arms the update at the next vertical blank.
+ * The live surface tells which buffer the pipe scans.  Turning the plane
+ * off writes the upsampler, then (after the watermarks) a zero control
+ * word and surface.
+ *
  * The pipe takes the planes' pixels: its source size, its miscellaneous
  * word (the colour depth of what it sends, dithering, YUV output, the
  * rounding), its chicken word, and the colour words that pass pixels
@@ -52,6 +62,13 @@
 
 /* No transcoder (a port sync or multi-stream master that is not there). */
 #define I915_XD_NO_TRANSCODER		0xffU
+
+/*
+ * The one pixel format and layout the planes scan out: XRGB8888
+ * ('XR24'), linear.
+ */
+#define I915_XD_FOURCC_XRGB8888		0x34325258U
+#define I915_XD_MODIFIER_LINEAR		0ULL
 
 /* The waits of a transcoder that ran out, as bits. */
 #define I915_XD_PIPE_LATE_OFF		0x1U
@@ -150,6 +167,24 @@ struct i915_xd_pipe_misc {
 	int hdr;
 };
 
+/*
+ * The first plane of a pipe: the source size and pitch of its buffer,
+ * its position on the pipe, the buffer's GGTT address, the plane alpha
+ * (0xff opaque), and the control words drv_i915_xd_plane_words() fills.
+ */
+struct i915_xd_plane {
+	unsigned pipe;
+	uint32_t width;
+	uint32_t height;
+	uint32_t pitch;
+	uint32_t x;
+	uint32_t y;
+	uint32_t surf;
+	uint8_t alpha;
+	uint32_t ctl;
+	uint32_t color_ctl;
+};
+
 void drv_i915_xd_pipe_m_n(struct i915_xd_io *io, unsigned trans, const struct i915_xd_dp_m_n *m_n);
 void drv_i915_xd_pipe_timing(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned trans, const struct i915_xd_timing *timing);
 void drv_i915_xd_pipe_configure(struct i915_xd_io *io, const struct i915_xd_platform *platform, const struct i915_xd_trans_setup *setup);
@@ -166,5 +201,12 @@ int drv_i915_xd_pipe_start(struct i915_xd_io *io, const struct i915_xd_platform 
 unsigned drv_i915_xd_pipe_stop(struct i915_xd_io *io, unsigned trans, int *was_running);
 uint32_t drv_i915_xd_pipe_frame(struct i915_xd_io *io, unsigned pipe);
 unsigned drv_i915_xd_pipe_wait_scanline(struct i915_xd_io *io, unsigned pipe, int moving);
+int drv_i915_xd_plane_check(uint32_t fourcc, uint64_t modifier, uint32_t width, uint32_t height, uint32_t pitch, uint32_t surf);
+void drv_i915_xd_plane_words(const struct i915_xd_platform *platform, struct i915_xd_plane *plane);
+void drv_i915_xd_plane_noarm(struct i915_xd_io *io, const struct i915_xd_plane *plane);
+void drv_i915_xd_plane_arm(struct i915_xd_io *io, const struct i915_xd_plane *plane);
+void drv_i915_xd_plane_off_noarm(struct i915_xd_io *io, unsigned pipe);
+void drv_i915_xd_plane_off_arm(struct i915_xd_io *io, unsigned pipe);
+uint32_t drv_i915_xd_plane_live(struct i915_xd_io *io, unsigned pipe);
 
 #endif /* DRIVERS_GPU_I915_DISPLAY_XD_PIPE_H */

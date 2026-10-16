@@ -1276,4 +1276,24 @@
 #define I915_XD_MSA_YCBCR_444_BT709		0x0000001cU
 #define I915_XD_MSA_VSC_SDP			0x00004000U
 
+/*
+ * The rest of the first universal plane's words: the colour key's value,
+ * mask (with the constant alpha enable) and maximum (with the plane
+ * alpha in the top byte), the distance to an auxiliary surface, the
+ * chroma upsampler control, and the colour control's plane gamma off.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (_PLANE_KEYVAL_1_A, _PLANE_KEYMSK_1_A, PLANE_KEYMSK_ALPHA_ENABLE,
+ * _PLANE_KEYMAX_1_A, PLANE_KEYMAX_ALPHA_MASK, _PLANE_AUX_DIST_1_A,
+ * _PLANE_CUS_CTL_1_A, PLANE_COLOR_PLANE_GAMMA_DISABLE).
+ */
+#define I915_XD_PLANE_KEYVAL(pipe)		(0x70194U + I915_XD_PIPE_STRIDE * (pipe))
+#define I915_XD_PLANE_KEYMSK(pipe)		(0x70198U + I915_XD_PIPE_STRIDE * (pipe))
+#define I915_XD_PLANE_KEYMSK_ALPHA		0x80000000U
+#define I915_XD_PLANE_KEYMAX(pipe)		(0x701a0U + I915_XD_PIPE_STRIDE * (pipe))
+#define I915_XD_PLANE_KEYMAX_ALPHA		0xff000000U
+#define I915_XD_PLANE_AUX_DIST(pipe)		(0x701c0U + I915_XD_PIPE_STRIDE * (pipe))
+#define I915_XD_PLANE_CUS_CTL(pipe)		(0x701c8U + I915_XD_PIPE_STRIDE * (pipe))
+#define I915_XD_PLANE_COLOR_GAMMA_OFF		0x00002000U
+
 #endif /* DRIVERS_GPU_I915_INTEL_DISPLAY_REGS_XD_H */
