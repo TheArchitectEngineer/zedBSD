@@ -564,6 +564,19 @@ drv_i915_display_emit_cpu_transcoder(
 }
 
 /*
+ * Describes the crtc timings of a mode to the xd transcoder (for a caller
+ * that sets the transcoder up through the xd output).
+ */
+void
+drv_i915_lcd_xd_timing(
+	const struct drm_display_mode *mode,
+	struct i915_xd_timing *timing)
+{
+	/* The mode's crtc timings. */
+	i915_xd_timing_of(mode, timing);
+}
+
+/*
  * Runs one part of the enable of a modeset object's crtc (the Linux
  * hsw_crtc_enable(), cut where a screen's light steps meet it): the
  * pipe's DMC, the encoders before the PLL, the shared PLL, the encoders'

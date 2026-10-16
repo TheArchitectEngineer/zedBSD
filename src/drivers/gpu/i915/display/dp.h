@@ -34,11 +34,11 @@ bool drv_i915_dp_needs_vsc_sdp(const struct intel_crtc_state *crtc_state, const 
 void drv_i915_dp_set_infoframes(struct intel_encoder *encoder, bool enable, const struct intel_crtc_state *crtc_state, const struct drm_connector_state *conn_state);
 void drv_i915_dp_set_link_params(struct intel_dp *intel_dp, int link_rate, int lane_count);
 void drv_i915_dp_set_power(struct intel_dp *intel_dp, u8 mode);
-void drv_i915_edp_backlight_on(const struct intel_crtc_state *crtc_state, const struct drm_connector_state *conn_state);
-void drv_i915_edp_backlight_off(const struct drm_connector_state *old_conn_state);
 
 void drv_i915_dp_start_link_train(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state);
 void drv_i915_dp_stop_link_train(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state);
+void drv_i915_dp_sink_bind(struct intel_dp *intel_dp, struct i915_xd_dp_sink *sink);
+void drv_i915_dp_link_failed(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state);
 
 #endif /* I915_DISPLAY_WORLD_MODESET */
 

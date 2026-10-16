@@ -15,6 +15,7 @@
 
 #include "../intel/display-regs-xd.h"
 
+#include <uapi/errno.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -272,6 +273,76 @@ drv_i915_xd_combo_swing_is_hobl(
 {
 	/* Only that table. */
 	return table == platform->swing->edp_hobl ? 1 : 0;
+}
+
+/*
+ * Finds the swing table row of a DisplayPort lane's level byte.  The rows
+ * of a DisplayPort or eDP table follow the swing and pre-emphasis pairs a
+ * sink may ask for, by swing and then by pre-emphasis, the two adding up
+ * to 3 at most.  Returns 0 with the row, or EINVAL for a pair no table
+ * has (row 0).
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (index_to_dp_signal_levels).
+ */
+int
+drv_i915_xd_combo_level_row(
+	uint8_t level,
+	unsigned *row)
+{
+	/*
+	 * The first row of each swing level: four pre-emphasis levels at
+	 * swing 0, three at swing 1, two at swing 2 and one at swing 3.
+	 */
+	static const uint8_t first_row[4] = { 0U, 4U, 7U, 9U };
+	unsigned swing;
+	unsigned preemph;
+
+	/* The two levels of the byte. */
+	swing = (unsigned)(level & 0x3U);
+	preemph = (unsigned)((level >> 3) & 0x3U);
+	*row = 0U;
+
+	/* A pair beyond the table. */
+	if (swing + preemph > 3U)
+		return EINVAL;
+
+	/* Succeeded: the pair's row. */
+	*row = first_row[swing] + preemph;
+	return 0;
+}
+
+/*
+ * Returns the highest swing level a DisplayPort or eDP table reaches:
+ * that of its last row (a table of more rows than pairs is taken as
+ * every pair, one of none as the first).
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (intel_ddi_dp_voltage_max).
+ */
+uint8_t
+drv_i915_xd_combo_swing_max(
+	const struct i915_xd_combo_swing_table *table)
+{
+	unsigned last;
+
+	/* The last row, within the pairs. */
+	last = 0U;
+	if (table->count > 0U)
+		last = table->count - 1U;
+	if (last > 9U)
+		last = 9U;
+
+	/* The swing of the row: rows 9, 7 to 8, 4 to 6 and 0 to 3. */
+	if (last >= 9U)
+		return 3U;
+	if (last >= 7U)
+		return 2U;
+	if (last >= 4U)
+		return 1U;
+
+	/* Succeeded: the lowest swing. */
+	return 0U;
 }
 
 /*

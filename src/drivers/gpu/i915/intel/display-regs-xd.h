@@ -608,6 +608,7 @@
  */
 #define I915_XD_TRANS_CLK_SEL(trans)		(0x46140U + 4U * (trans))
 #define I915_XD_TRANS_CLK_SEL_FIELD		0xf0000000U
+#define I915_XD_TRANS_CLK_SEL_SHIFT		28U
 #define I915_XD_TRANS_CLK_SEL_NONE		0x0U
 
 /*
@@ -855,6 +856,48 @@
  */
 #define I915_XD_PS_CTRL_1(pipe)			(0x68180U + 0x800U * (pipe))
 #define I915_XD_PS_CTRL_ENABLE			0x80000000U
+
+/*
+ * A pipe's two scalers, each with its control, window position and
+ * window size (all three are cleared when the pipe stops).
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (_PS_1A_CTRL, _PS_2A_CTRL, _PS_1B_CTRL, _PS_WIN_POS_1A, _PS_WIN_SZ_1A).
+ */
+#define I915_XD_SCALERS				2U
+#define I915_XD_PS_CTRL(pipe, scaler)		(0x68180U + 0x800U * (pipe) + 0x100U * (scaler))
+#define I915_XD_PS_WIN_POS(pipe, scaler)	(0x68170U + 0x800U * (pipe) + 0x100U * (scaler))
+#define I915_XD_PS_WIN_SZ(pipe, scaler)		(0x68174U + 0x800U * (pipe) + 0x100U * (scaler))
+
+/*
+ * A transcoder's data island packets: the control word with the enables
+ * of the infoframes (AVI, GCP, VS, GMP, SPD and the HDR metadata's), of
+ * the DisplayPort VSC packet and of the picture parameter packet.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (_HSW_VIDEO_DIP_CTL_A, VIDEO_DIP_ENABLE_AVI_HSW,
+ * VIDEO_DIP_ENABLE_GCP_HSW, VIDEO_DIP_ENABLE_VS_HSW,
+ * VIDEO_DIP_ENABLE_GMP_HSW, VIDEO_DIP_ENABLE_SPD_HSW,
+ * VIDEO_DIP_ENABLE_DRM_GLK, VIDEO_DIP_ENABLE_VSC_HSW, VDIP_ENABLE_PPS).
+ */
+#define I915_XD_DIP_CTL(trans)			(0x60200U + I915_XD_TRANS_STRIDE * (trans))
+#define I915_XD_DIP_INFOFRAMES			0x10011111U
+#define I915_XD_DIP_VSC				0x00100000U
+#define I915_XD_DIP_PPS				0x01000000U
+
+/*
+ * A pipe's splitter for an eDP panel driven as several streams: its
+ * enable, the number of segments and the overlapping pixels (the three
+ * fields are cleared when no splitter is used).  The address is that of
+ * pipe B's and C's control with pipe A one step below them.
+ *
+ * Values referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_vdsc_regs.h (_ICL_PIPE_DSS_CTL1_PB,
+ * _ICL_PIPE_DSS_CTL1_PC, ICL_PIPE_DSS_CTL1, SPLITTER_ENABLE,
+ * SPLITTER_CONFIGURATION_MASK, OVERLAP_PIXELS_MASK).
+ */
+#define I915_XD_PIPE_DSS_CTL1(pipe)		(0x78000U + 0x200U * (pipe))
+#define I915_XD_PIPE_DSS_SPLITTER		0x860f0000U
 
 /*
  * The first universal plane of a pipe: control (enable, the arbiter

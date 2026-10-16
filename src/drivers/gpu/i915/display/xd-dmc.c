@@ -431,6 +431,24 @@ drv_i915_xd_dmc_pipe(
 		return;
 
 	/* Sets or clears the enable of the pipe's DMC. */
+	drv_i915_xd_dmc_pipe_switch(io, pipe, on);
+}
+
+/*
+ * Sets or clears the enable of a pipe's DMC whose program is loaded (the
+ * caller knows it is).
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_dmc.c (intel_dmc_enable_pipe,
+ * intel_dmc_disable_pipe).
+ */
+void
+drv_i915_xd_dmc_pipe_switch(
+	struct i915_xd_io *io,
+	unsigned pipe,
+	int on)
+{
+	/* The enable bit, alone. */
 	if (on) {
 		(void)drv_i915_xd_io_rmw(io, I915_XD_PIPEDMC_CONTROL(pipe), 0U, I915_XD_PIPEDMC_ENABLE);
 	} else {

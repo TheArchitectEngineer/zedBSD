@@ -128,6 +128,7 @@
 #include "internal.h"
 #include "tc.h"
 #include "xd-io.h"
+#include "xd-output.h"
 #include "xd-platform.h"
 #include "xd-screen.h"
 
@@ -2116,6 +2117,7 @@ struct i915_lcd_modeset {
 	u32 bl_user_max;		/* the backlight device's props.max_brightness */
 	int stop_unconfirmed;		/* the disable reported an error: nothing further was given back */
 	struct i915_xd_screen screen;	/* the screen's phase and the steps of its last light or dark */
+	struct i915_xd_output xo;	/* the built-in panel's output: its description and what its light and dark hold */
 	unsigned commits;
 	struct drm_vblank_crtc vblank[4];	/* dev->vblank[]: hwmode, max_vblank_count */
 	int flip_event;			/* the event token of the pending update */
@@ -2419,7 +2421,6 @@ void drv_i915_lcd_dbuf_forget(struct i915_wm_world *wm_world);
 void drv_i915_lcd_ms_active_timings(struct i915_lcd_modeset *ms);
 void drv_i915_lcd_ms_plane_update_flip(struct i915_lcd_modeset *ms);
 void drv_i915_lcd_ms_color_check(struct i915_lcd_modeset *ms);
-int drv_i915_lcd_ms_backlight_setup(struct i915_lcd_modeset *ms);
 /*
  * The parts of a crtc's enable and disable a screen's steps run: the
  * pipe's DMC, the link's power (the encoders around the PLL), the shared
@@ -2440,6 +2441,20 @@ void drv_i915_lcd_ms_plane_update(struct i915_lcd_modeset *ms);
 void drv_i915_lcd_ms_plane_disable(struct i915_lcd_modeset *ms);
 int drv_i915_lcd_ms_evade_window(struct i915_lcd_modeset *ms, int *min, int *max, int *vblank_start);
 void drv_i915_lcd_ms_set_acpi(struct i915_lcd_modeset *ms, u32 user_level, u32 user_max);
+void drv_i915_lcd_xd_timing(const struct drm_display_mode *mode, struct i915_xd_timing *timing);
+
+/*
+ * The built-in panel's xd output on a modeset object (output-shell.c):
+ * whether the object drives the panel, the output's environment on the
+ * object's backend, its description from the object's state, the display
+ * buffer around the commit, and the object's state brought in line with
+ * what the output holds.
+ */
+int drv_i915_lcd_ms_xo_panel(const struct i915_lcd_modeset *ms);
+void drv_i915_lcd_ms_xo_env(struct i915_lcd_modeset *ms, struct i915_xd_output_env *env);
+void drv_i915_lcd_ms_xo_describe(struct i915_lcd_modeset *ms);
+void drv_i915_lcd_ms_xo_dbuf(struct i915_lcd_modeset *ms);
+void drv_i915_lcd_ms_xo_sync(struct i915_lcd_modeset *ms);
 
 /*
  * The power, clock, PHY and DMC functions the other modeset

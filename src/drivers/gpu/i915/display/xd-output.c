@@ -1,0 +1,1727 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * One output of a screen of the display 12 and 13 code (see xd-output.h).
+ */
+
+#include "xd-output.h"
+#include "xd-clock.h"
+#include "xd-dbuf.h"
+#include "xd-ddi.h"
+#include "xd-dmc.h"
+#include "xd-dp.h"
+#include "xd-io.h"
+#include "xd-panel.h"
+#include "xd-pipe.h"
+#include "xd-platform.h"
+#include "xd-screen.h"
+
+#include "../intel/display-dpcd-xd.h"
+#include "../intel/display-regs-xd.h"
+
+#include <kern/kcrt.h>
+
+#include <uapi/errno.h>
+#include <stddef.h>
+#include <stdint.h>
+
+/*
+ * The delay before the DC states may come back after a light or a dark:
+ * long enough that a commit following at 60 frames a second does not turn
+ * them off and on again.
+ *
+ * Values referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display.c (intel_atomic_commit_tail,
+ * the delay of the DC off put).
+ */
+#define I915_XD_OUTPUT_DC_DELAY_MS	17
+
+/*
+ * The PWM frequency of a panel whose VBT names none.
+ *
+ * Values referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_backlight.c (get_vbt_pwm_freq).
+ */
+#define I915_XD_OUTPUT_PWM_HZ		200U
+
+/*
+ * The DPCD revision from which a sink has a power state, the tries a
+ * sink is given to wake up and the wait between them.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dp.c
+ * (intel_dp_set_power).
+ */
+#define I915_XD_OUTPUT_DPCD_POWER_REV	0x11U
+#define I915_XD_OUTPUT_WAKE_TRIES	3U
+#define I915_XD_OUTPUT_WAKE_US		1000U
+
+/*
+ * The source's identifier an eDP panel is given before it is woken (the
+ * vendor's OUI the panel may tune itself to), and where it is written.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dp.c
+ * (intel_edp_init_source_oui), include/drm/display/drm_dp.h
+ * (DP_SOURCE_OUI).
+ */
+#define I915_XD_OUTPUT_SOURCE_OUI	0x300U
+#define I915_XD_OUTPUT_OUI_SIZE		3U
+
+/*
+ * The DPCD revision of a sink that may be a branch device whose ports
+ * signal hotplug only while it is awake, the branch flag of its
+ * capabilities and the hotplug flag of its first port.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dp.c
+ * (downstream_hpd_needs_d0), include/drm/display/drm_dp.h
+ * (DP_DOWNSTREAMPORT_PRESENT, DP_DWN_STRM_PORT_PRESENT, DP_DS_PORT_HPD).
+ */
+#define I915_XD_OUTPUT_DPCD_REV_1_1	0x11U
+#define I915_XD_OUTPUT_DPCD_PORTS	0x005U
+#define I915_XD_OUTPUT_DPCD_BRANCH	0x01U
+
+/*
+ * The training patterns a sink is told of, as the DPCD writes them (with
+ * the scrambling bit masked off).
+ *
+ * Values referenced: Linux v6.8.12 include/drm/display/drm_dp.h
+ * (DP_TRAINING_PATTERN_MASK_1_4).
+ */
+#define I915_XD_OUTPUT_PATTERN_MASK	0x0fU
+
+/* The power uses a pipe's crtc takes for the whole time it runs. */
+#define I915_XD_OUTPUT_CRTC_USES	((1U << I915_XD_OUTPUT_POWER_CORE) | (1U << I915_XD_OUTPUT_POWER_PIPE) | \
+					 (1U << I915_XD_OUTPUT_POWER_TRANS) | (1U << I915_XD_OUTPUT_POWER_LANES))
+
+/*
+ * The run of a port step: the output and its environment, which the
+ * training's hooks reach through their context.
+ */
+struct i915_xd_output_run {
+	struct i915_xd_output *out;
+	const struct i915_xd_output_env *env;
+};
+
+static unsigned i915_xd_output_index(const struct i915_xd_output *out, unsigned use);
+static int i915_xd_output_take(struct i915_xd_output *out, const struct i915_xd_output_env *env, unsigned use);
+static void i915_xd_output_give(struct i915_xd_output *out, const struct i915_xd_output_env *env, unsigned use);
+static void i915_xd_output_error(const struct i915_xd_output_env *env, const char *text);
+static void i915_xd_output_debug(const struct i915_xd_output_env *env, const char *text);
+static void i915_xd_output_lock(const struct i915_xd_output_env *env, unsigned lock, int taken);
+static int i915_xd_output_panel(const struct i915_xd_output_env *env, unsigned step);
+static void i915_xd_output_observe(const struct i915_xd_output_env *env, unsigned point);
+static void i915_xd_output_dbuf_before(struct i915_xd_output *out, const struct i915_xd_output_env *env);
+static void i915_xd_output_dbuf_after(struct i915_xd_output *out, const struct i915_xd_output_env *env);
+static void i915_xd_output_give_crtc(struct i915_xd_output *out, const struct i915_xd_output_env *env);
+static void i915_xd_output_ddi_link(const struct i915_xd_output *out, struct i915_xd_ddi_link *link);
+static const struct i915_xd_combo_swing_table *i915_xd_output_swing_table(const struct i915_xd_output *out, const struct i915_xd_output_env *env);
+static void i915_xd_output_dp_link(struct i915_xd_output_run *run, struct i915_xd_dp_link *link);
+static void i915_xd_output_sink_power(struct i915_xd_output *out, const struct i915_xd_output_env *env, uint8_t state);
+static void i915_xd_output_islands(struct i915_xd_output *out, const struct i915_xd_output_env *env, int on);
+static void i915_xd_output_levels(void *context, const uint8_t set[4]);
+static void i915_xd_output_pattern(void *context, uint8_t pattern);
+static void i915_xd_output_prepare(void *context);
+static void i915_xd_output_idle(void *context);
+static void i915_xd_output_sleep(void *context, unsigned min_us, unsigned max_us);
+static void i915_xd_output_note(void *context, unsigned kind, const char *text);
+static void i915_xd_output_ddi_late(const struct i915_xd_output_env *env, unsigned late);
+static void i915_xd_output_pll_late(const struct i915_xd_output_env *env, unsigned late);
+static uint32_t i915_xd_output_invert(const struct i915_xd_output *out, uint32_t level);
+static int i915_xd_output_scale(const struct i915_xd_output_env *env, uint32_t value, uint32_t from_min, uint32_t from_max, uint32_t to_min, uint32_t to_max, uint32_t *scaled);
+
+/*
+ * Keeps the display out of DC states for the light or the dark that
+ * starts: the DMC firmware must not power anything down while registers
+ * are written and PLLs are waited for.  Returns 0, or EIO when the
+ * reference could not be taken.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display.c (intel_atomic_commit_tail).
+ */
+int
+drv_i915_xd_output_dc_hold(
+	struct i915_xd_output *out,
+	const struct i915_xd_output_env *env)
+{
+	int error;
+
+	/* The exit from DC states. */
+	error = i915_xd_output_take(out, env, I915_XD_OUTPUT_POWER_DC_OFF);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: DC states stay off until the end. */
+	return 0;
+}
+
+/*
+ * Takes the power a lit pipe needs for the whole time it runs: the
+ * display core (for its PLL), the pipe, the transcoder and the port's
+ * lanes; a use held already is not taken twice.  Nothing is to be given
+ * back at the end of a light.  Returns 0, or EIO.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display.c
+ * (intel_modeset_get_crtc_power_domains, get_crtc_power_domains).
+ */
+int
+drv_i915_xd_output_power(
+	struct i915_xd_output *out,
+	const struct i915_xd_output_env *env)
+{
+	int error;
+
+	/* The light gives nothing back. */
+	out->put_later = 0U;
+
+	/* The display core, which the port's PLL needs. */
+	error = i915_xd_output_take(out, env, I915_XD_OUTPUT_POWER_CORE);
+	if (error != 0)
+		return error;
+
+	/* The pipe. */
+	error = i915_xd_output_take(out, env, I915_XD_OUTPUT_POWER_PIPE);
+	if (error != 0)
+		return error;
+
+	/* The transcoder. */
+	error = i915_xd_output_take(out, env, I915_XD_OUTPUT_POWER_TRANS);
+	if (error != 0)
+		return error;
+
+	/* The port's lanes. */
+	error = i915_xd_output_take(out, env, I915_XD_OUTPUT_POWER_LANES);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the pipe's power is held. */
+	return 0;
+}
+
+/*
+ * Marks every power use of the running pipe to be given back at the end
+ * of the dark; nothing is taken.
+ */
+int
+drv_i915_xd_output_dark_power(
+	struct i915_xd_output *out,
+	const struct i915_xd_output_env *env)
+{
+	(void)env;
+
+	/* The pipe's uses that are held. */
+	out->put_later = out->held & I915_XD_OUTPUT_CRTC_USES;
+
+	/* Succeeded: nothing to take. */
+	return 0;
+}
+
+/*
+ * Brings the display buffer to what the light needs before the pipe
+ * runs: the bus joined or split and the slices of both the old and the
+ * new layout on (the planes move to the new one later), then the data
+ * box credits of the pipe.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/skl_watermark.c
+ * (intel_dbuf_pre_plane_update, intel_mbus_dbox_update).
+ */
+int
+drv_i915_xd_output_dbuf(
+	struct i915_xd_output *out,
+	const struct i915_xd_output_env *env)
+{
+	/* The slices and the bus, then the credits. */
+	i915_xd_output_dbuf_before(out, env);
+
+	/* Succeeded: the buffer is ready for the pipe. */
+	return 0;
+}
+
+/*
+ * Reads how the firmware left the panel's backlight PWM and derives the
+ * backlight's range and level: the VBT's controller (or the first, when
+ * the south display cannot use it), the period the firmware programmed
+ * (or the VBT's frequency in raw clock ticks), the lowest duty from the
+ * VBT's minimum, the level from the duty and whether it runs.  A panel
+ * without a VBT backlight has none.  Returns 0, or ENODEV when no period
+ * is known.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_backlight.c (intel_backlight_setup,
+ * intel_pwm_setup_backlight, cnp_setup_backlight, get_vbt_pwm_freq,
+ * intel_pwm_get_backlight).
+ */
+int
+drv_i915_xd_output_backlight_setup(
+	struct i915_xd_output *out,
+	const struct i915_xd_output_env *env)
+{
+	struct i915_xd_output_backlight *backlight;
+	unsigned controller;
+	unsigned hz;
+	uint32_t duty;
+	int usable;
+
+	backlight = &out->backlight;
+
+	/* A panel the VBT gives no backlight has none to set up. */
+	if (!backlight->vbt_present)
+		return 0;
+
+	/* The setup reads the PWM under the backlight's lock. */
+	i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_BACKLIGHT, 1);
+
+	/* The VBT's controller, or the first when the south display cannot use it. */
+	controller = backlight->vbt_controller;
+	usable = drv_i915_xd_backlight_controller_usable(env->io, controller, backlight->controllers, backlight->muxed);
+	if (!usable) {
+		i915_xd_output_debug(env, "xd-output: the VBT's backlight controller is not usable, the first is\n");
+		controller = 0U;
+	}
+
+	/* The polarity, the enable and the period the firmware left. */
+	drv_i915_xd_backlight_read(&backlight->pwm, env->io, controller);
+
+	/* Without a programmed period, the VBT's frequency (or the default) gives it. */
+	if (backlight->pwm.period == 0U) {
+		hz = backlight->vbt_hz;
+		if (hz == 0U)
+			hz = I915_XD_OUTPUT_PWM_HZ;
+		backlight->pwm.period = drv_i915_xd_backlight_period(backlight->rawclk_khz, hz);
+	}
+
+	/* Neither gives one: the panel's backlight cannot be driven. */
+	if (backlight->pwm.period == 0U) {
+		i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_BACKLIGHT, 0);
+		return ENODEV;
+	}
+
+	/* The range of levels is the PWM's: the lowest duty up to the period. */
+	backlight->max = backlight->pwm.period;
+	backlight->min = drv_i915_xd_backlight_min_duty(backlight->max, backlight->vbt_min);
+
+	/* The level the duty shows now, and whether the PWM runs. */
+	duty = drv_i915_xd_backlight_duty(&backlight->pwm, env->io);
+	backlight->level = i915_xd_output_invert(out, duty);
+	backlight->enabled = backlight->pwm.running;
+
+	i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_BACKLIGHT, 0);
+
+	/* Succeeded: the panel has a backlight from here. */
+	backlight->present = 1;
+	return 0;
+}
+
+/*
+ * Switches the pipe's DMC on before the pipe is set up, or off after it
+ * stopped (the pipe no longer runs from here), when the firmware has a
+ * program for it.  Returns 0, or EBUSY when a light finds the pipe
+ * running.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display.c (hsw_crtc_enable,
+ * hsw_crtc_disable), intel_dmc.c (intel_dmc_enable_pipe,
+ * intel_dmc_disable_pipe).
+ */
+int
+drv_i915_xd_output_dmc(
+	struct i915_xd_output *out,
+	const struct i915_xd_output_env *env,
+	int on)
+{
+	unsigned program;
+
+	/* A pipe that runs already is not lit again. */
+	if (on && out->lit) {
+		i915_xd_output_error(env, "xd-output: the pipe runs already\n");
+		return EBUSY;
+	}
+
+	/* The pipe's program, when the firmware has one. */
+	program = I915_XD_DMC_PIPE(out->pipe);
+	if (((out->dmc_programs >> program) & 1U) != 0U)
+		drv_i915_xd_dmc_pipe_switch(env->io, out->pipe, on);
+
+	/* After the dark's switch the pipe no longer runs. */
+	if (!on)
+		out->lit = 0;
+
+	/* Succeeded: the pipe's DMC is switched. */
+	return 0;
+}
+
+/*
+ * Takes the AUX power of the port's link before its PLL is enabled: the
+ * AUX channel of a DisplayPort link must stay powered while the link
+ * runs.  Returns 0, or EIO.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (intel_ddi_pre_pll_enable, main_link_aux_power_domain_get,
+ * intel_ddi_main_link_aux_domain).
+ */
+int
+drv_i915_xd_output_link_power(
+	struct i915_xd_output *out,
+	const struct i915_xd_output_env *env)
+{
+	int error;
+
+	/* The AUX channel's power. */
+	error = i915_xd_output_take(out, env, I915_XD_OUTPUT_POWER_AUX);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the link's AUX power is held. */
+	return 0;
+}
+
+/*
+ * Turns the port's PLL on for the pipe, under the PLLs' lock: the first
+ * pipe on it turns it on with its words, a later one only joins it.
+ * Returns 0, EBUSY when the pipe is on the PLL already, ENODEV for a PLL
+ * the platform does not have, or EIO when the PLL did not power up or
+ * lock.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_dpll_mgr.c (intel_enable_shared_dpll,
+ * icl_pll_enable, combo_pll_enable).
+ */
+int
+drv_i915_xd_output_pll(
+	struct i915_xd_output *out,
+	const struct i915_xd_output_env *env)
+{
+	const struct i915_xd_pll_desc *pll;
+	uint8_t pipe_bit;
+	uint8_t before;
+	unsigned late;
+
+	pipe_bit = (uint8_t)(1U << out->pipe);
+
+	/* Joins the PLL or turns it on, under the PLLs' lock. */
+	i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_PLL, 1);
+
+	/* The pipe is on the PLL already. */
+	if ((out->pll_pipes & pipe_bit) != 0U) {
+		i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_PLL, 0);
+		i915_xd_output_error(env, "xd-output: the pipe is on the PLL already\n");
+		return EBUSY;
+	}
+
+	/* Another pipe runs the PLL: it is on, and the pipe joins it. */
+	before = out->pll_pipes;
+	out->pll_pipes |= pipe_bit;
+	if (before != 0U) {
+		if (!out->pll_on)
+			i915_xd_output_error(env, "xd-output: the shared PLL is off\n");
+		i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_PLL, 0);
+		return 0;
+	}
+
+	/* The PLL the platform knows by the select. */
+	pll = drv_i915_xd_dpll_desc(env->platform, out->pll);
+	if (pll == NULL) {
+		i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_PLL, 0);
+		i915_xd_output_error(env, "xd-output: the port PLL is not the platform's\n");
+		return ENODEV;
+	}
+
+	/* Turns it on with the plan's words. */
+	late = drv_i915_xd_dpll_enable(env->io, env->platform, pll, &out->pll_words);
+	out->pll_on = 1;
+
+	i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_PLL, 0);
+
+	/* Reports the waits that ran out. */
+	i915_xd_output_pll_late(env, late);
+	if (late != 0U)
+		return EIO;
+
+	/* Succeeded: the PLL runs for the pipe. */
+	return 0;
+}
+
+/*
+ * Brings the port and its DisplayPort link up: the pipe's underruns
+ * armed, the link's levels and the DDI buffer's word, the panel's power,
+ * the DDI clock mapped to the PLL, the port's IO power, the transcoder's
+ * clock and function, the signal levels and lanes, the splitter off, the
+ * sink woken, the link trained and ended, then the stream's attributes.
+ * A link that does not train is reported to the caller and the step
+ * goes on (the pipe still lights, black).  Returns 0, or EIO when the
+ * port's IO power could not be taken.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (intel_ddi_pre_enable, intel_ddi_pre_enable_dp, tgl_ddi_pre_enable_dp,
+ * intel_ddi_init_dp_buf_reg, intel_ddi_enable_clock,
+ * intel_ddi_enable_transcoder_clock, intel_ddi_config_transcoder_func,
+ * intel_ddi_power_up_lanes, intel_ddi_mso_configure, intel_ddi_set_dp_msa),
+ * intel_dp.c (intel_dp_set_link_params, intel_dp_set_power),
+ * intel_dp_link_training.c (intel_dp_start_link_train,
+ * intel_dp_stop_link_train).
+ */
+int
+drv_i915_xd_output_port(
+	struct i915_xd_output *out,
+	const struct i915_xd_output_env *env)
+{
+	struct i915_xd_output_run run;
+	struct i915_xd_ddi_link ddi;
+	struct i915_xd_dp_link link;
+	struct i915_xd_trans_func func;
+	struct i915_xd_msa msa;
+	uint32_t clock;
+	unsigned which;
+	int error;
+
+	/* Where the pipe's underruns are armed. */
+	i915_xd_output_observe(env, I915_XD_OUTPUT_SEE_UNDERRUN);
+
+	/* The link starts untrained from the lowest levels. */
+	kern_memset(out->set, 0, sizeof(out->set));
+	out->trained = 0;
+
+	/* The DDI buffer's word; its enable is set when the link starts. */
+	i915_xd_output_ddi_link(out, &ddi);
+	out->buf_word = drv_i915_xd_ddi_dp_word(env->platform, &ddi);
+
+	/* The panel's power. */
+	(void)i915_xd_output_panel(env, I915_XD_OUTPUT_PANEL_ON);
+
+	/* The DDI clock from the port's PLL, under the PLLs' lock. */
+	i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_PLL, 1);
+	drv_i915_xd_dpll_map(env->io, env->platform, out->phy, out->pll);
+	i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_PLL, 0);
+
+	/* The port's IO power. */
+	error = i915_xd_output_take(out, env, I915_XD_OUTPUT_POWER_DDI_IO);
+	if (error != 0)
+		return error;
+
+	/* The transcoder runs on the port's clock: the PHY's on display 13, the DDI's before. */
+	which = out->ddi;
+	if (env->platform->display_ver >= 13U)
+		which = out->phy;
+	clock = (which + 1U) << I915_XD_TRANS_CLK_SEL_SHIFT;
+	drv_i915_xd_io_write(env->io, I915_XD_TRANS_CLK_SEL(out->trans), clock);
+
+	/* The transcoder's function, not yet enabled. */
+	kern_memset(&func, 0, sizeof(func));
+	func.ddi = out->ddi;
+	func.mode = I915_XD_FUNC_DP_SST;
+	func.bpp = out->bpp;
+	func.vsync_high = out->vsync_high;
+	func.hsync_high = out->hsync_high;
+	func.lanes = out->lanes;
+	func.sync_master = I915_XD_NO_TRANSCODER;
+	drv_i915_xd_pipe_func_config(env->io, out->trans, &func);
+
+	/* The signal levels of the lowest levels, then the lanes the link uses. */
+	run.out = out;
+	run.env = env;
+	i915_xd_output_levels(&run, out->set);
+	drv_i915_xd_combo_lanes(env->io, out->phy, out->lanes, (out->kept & I915_XD_DDI_BUF_REVERSAL) != 0U ? 1 : 0);
+
+	/* No splitter: the panel is one stream. */
+	(void)drv_i915_xd_io_rmw(env->io, I915_XD_PIPE_DSS_CTL1(out->pipe), I915_XD_PIPE_DSS_SPLITTER, 0U);
+
+	/* The sink wakes up. */
+	i915_xd_output_sink_power(out, env, I915_XD_DPCD_POWER_D0);
+
+	/* Trains the link; one that did not train is the caller's to lower. */
+	i915_xd_output_dp_link(&run, &link);
+	error = drv_i915_xd_dp_train(&link);
+	kern_memcpy(out->set, link.set, sizeof(out->set));
+	if (error != 0) {
+		if (out->hobl_active)
+			out->hobl_failed = 1;
+		if (env->link_failed != NULL)
+			env->link_failed(env->context);
+	}
+
+	/* The link leaves the training pattern and carries the stream. */
+	out->trained = 1;
+	i915_xd_output_dp_link(&run, &link);
+	drv_i915_xd_dp_train_end(&link);
+
+	/* The stream's attributes the sink reads: depth and colour range. */
+	kern_memset(&msa, 0, sizeof(msa));
+	msa.bpp = out->bpp;
+	msa.cea_rgb = out->limited_range;
+	drv_i915_xd_pipe_msa(env->io, out->trans, &msa);
+
+	/* Succeeded: the port runs its link. */
+	return 0;
+}
+
+/*
+ * Sets the pipe up: its source size and word, the transcoder (M/N,
+ * timing, frame start, the transcoder's configuration), then (the pipe
+ * runs from here) the bottom colour and colour modes, the line time and
+ * the chicken bits.  The output scans out the first plane alone, which
+ * has the HDR path.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display.c (hsw_crtc_enable,
+ * intel_set_pipe_src_size, bdw_set_pipe_misc, hsw_configure_cpu_transcoder,
+ * hsw_set_linetime_wm, icl_set_pipe_chicken), intel_color.c
+ * (icl_color_commit_arm).
+ */
+int
+drv_i915_xd_output_pipe(
+	struct i915_xd_output *out,
+	const struct i915_xd_output_env *env)
+{
+	struct i915_xd_trans_setup setup;
+	struct i915_xd_pipe_misc misc;
+
+	/* The source size. */
+	drv_i915_xd_pipe_source(env->io, out->pipe, out->src_width, out->src_height);
+
+	/* The pipe's word: depth, dither, RGB, HDR precision. */
+	kern_memset(&misc, 0, sizeof(misc));
+	misc.bpp = out->bpp;
+	misc.dither = out->dither;
+	misc.output = I915_XD_OUTPUT_RGB;
+	misc.hdr = 1;
+	drv_i915_xd_pipe_misc(env->io, env->platform, out->pipe, &misc);
+
+	/* The transcoder: the link's M/N, the timing, the frame start. */
+	kern_memset(&setup, 0, sizeof(setup));
+	setup.trans = out->trans;
+	setup.timing = out->timing;
+	setup.dp = 1;
+	setup.m_n = out->m_n;
+	setup.pixel_multiplier = out->pixel_multiplier;
+	setup.frame_start_delay = out->frame_start_delay;
+	drv_i915_xd_pipe_configure(env->io, env->platform, &setup);
+
+	/* The pipe counts as running from here. */
+	out->lit = 1;
+
+	/* The colours, the line time and the chicken bits. */
+	drv_i915_xd_pipe_colors(env->io, out->pipe, out->gamma_mode, out->csc_mode);
+	drv_i915_xd_io_write(env->io, I915_XD_WM_LINETIME(out->pipe), out->linetime);
+	drv_i915_xd_pipe_chicken(env->io, env->platform, out->pipe);
+
+	/* Succeeded: the pipe is set up. */
+	return 0;
+}
+
+/*
+ * Starts the output: the transcoder's function enabled, the transcoder
+ * started, the panel's backlight on (the PWM, then the sequencer's
+ * enable), and the data island packets the panel does not use off.
+ * Returns 0.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (intel_enable_ddi, intel_enable_ddi_dp), intel_display.c
+ * (intel_enable_transcoder), intel_dp.c (intel_edp_backlight_on,
+ * intel_dp_set_infoframes).
+ */
+int
+drv_i915_xd_output_start(
+	struct i915_xd_output *out,
+	const struct i915_xd_output_env *env)
+{
+	struct i915_xd_trans_func func;
+	int ran;
+
+	/* The transcoder's function with its enable. */
+	kern_memset(&func, 0, sizeof(func));
+	func.ddi = out->ddi;
+	func.mode = I915_XD_FUNC_DP_SST;
+	func.bpp = out->bpp;
+	func.vsync_high = out->vsync_high;
+	func.hsync_high = out->hsync_high;
+	func.lanes = out->lanes;
+	func.sync_master = I915_XD_NO_TRANSCODER;
+	drv_i915_xd_pipe_func_enable(env->io, out->trans, &func);
+
+	/* The transcoder starts; one found running is left as it is. */
+	ran = drv_i915_xd_pipe_start(env->io, env->platform, out->trans);
+	if (ran)
+		i915_xd_output_error(env, "xd-output: the transcoder ran already\n");
+
+	/* The panel's backlight. */
+	drv_i915_xd_output_backlight_on(out, env);
+
+	/* The packets the panel does not use. */
+	i915_xd_output_islands(out, env, 1);
+
+	/* Succeeded: the output shows the pipe. */
+	return 0;
+}
+
+/*
+ * Ends a light after the plane: the display buffer's slices that only
+ * the old layout used go off, and the uses no longer needed are given
+ * back.  The caller lets DC states back (drv_i915_xd_output_dc_allow).
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display.c (intel_atomic_commit_tail),
+ * skl_watermark.c (intel_dbuf_post_plane_update).
+ */
+int
+drv_i915_xd_output_settle(
+	struct i915_xd_output *out,
+	const struct i915_xd_output_env *env)
+{
+	/* The new layout's slices alone. */
+	i915_xd_output_dbuf_after(out, env);
+
+	/* The uses the light no longer needs. */
+	i915_xd_output_give_crtc(out, env);
+
+	/* Succeeded: the light is settled. */
+	return 0;
+}
+
+/*
+ * Stops the output's picture before the transcoder: the link no longer
+ * counts as trained, and the panel's backlight goes off (the sequencer's
+ * enable, then the PWM).  Returns 0.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (intel_disable_ddi, intel_disable_ddi_dp), intel_dp.c
+ * (intel_edp_backlight_off).
+ */
+int
+drv_i915_xd_output_stop(
+	struct i915_xd_output *out,
+	const struct i915_xd_output_env *env)
+{
+	/* The link is no longer up. */
+	out->trained = 0;
+
+	/* The backlight. */
+	drv_i915_xd_output_backlight_off(out, env);
+
+	/* Succeeded: the panel is dark. */
+	return 0;
+}
+
+/*
+ * Stops the transcoder and the port: the pipe's pending vertical blank
+ * event settled, the transcoder stopped and its function cleared, the
+ * scalers off, the packets off, the sink put to sleep, the DDI buffer
+ * stopped, no clock to the transcoder, the panel's power off (VDD held
+ * for the sequence), the port's IO power given back and its clock gated.
+ * Returns 0, or EIO when the transcoder did not stop or the buffer did
+ * not go idle (the stop is then not confirmed).
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (intel_ddi_post_disable, intel_ddi_post_disable_dp,
+ * intel_ddi_disable_transcoder_func, intel_disable_ddi_buf,
+ * intel_ddi_disable_transcoder_clock, intel_ddi_disable_clock),
+ * intel_display.c (intel_disable_transcoder), intel_dp.c
+ * (intel_dp_set_infoframes, intel_dp_set_power), intel_pps.c
+ * (intel_pps_vdd_on, intel_pps_off).
+ */
+int
+drv_i915_xd_output_port_off(
+	struct i915_xd_output *out,
+	const struct i915_xd_output_env *env)
+{
+	struct i915_xd_ddi_link ddi;
+	unsigned late;
+	int was_running;
+	int error;
+
+	error = 0;
+
+	/* The pipe's pending vertical blank event will not come. */
+	if (env->vblank_off != NULL)
+		env->vblank_off(env->context);
+
+	/* The transcoder, then its function. */
+	late = drv_i915_xd_pipe_stop(env->io, out->trans, &was_running);
+	if ((late & I915_XD_PIPE_LATE_OFF) != 0U) {
+		i915_xd_output_error(env, "xd-output: the transcoder did not stop\n");
+		error = EIO;
+	}
+	(void)drv_i915_xd_pipe_func_disable(env->io, out->trans, 0);
+
+	/* The scalers and the packets. */
+	drv_i915_xd_pipe_scalers_off(env->io, out->pipe);
+	i915_xd_output_islands(out, env, 0);
+
+	/* The sink goes to sleep before its link goes away. */
+	i915_xd_output_sink_power(out, env, I915_XD_DPCD_POWER_D3);
+
+	/* The DDI buffer and the transport. */
+	i915_xd_output_ddi_link(out, &ddi);
+	late = drv_i915_xd_ddi_stop(env->io, &ddi, 1);
+	i915_xd_output_ddi_late(env, late);
+	if ((late & I915_XD_DDI_LATE_IDLE) != 0U)
+		error = EIO;
+	out->buf_word &= ~I915_XD_DDI_BUF_ENABLE;
+
+	/* No clock to the transcoder. */
+	drv_i915_xd_io_write(env->io, I915_XD_TRANS_CLK_SEL(out->trans), I915_XD_TRANS_CLK_SEL_NONE);
+
+	/* The panel's power, with VDD held for the sequence. */
+	(void)i915_xd_output_panel(env, I915_XD_OUTPUT_PANEL_VDD_ON);
+	(void)i915_xd_output_panel(env, I915_XD_OUTPUT_PANEL_OFF);
+
+	/* The port's IO power, then its clock. */
+	i915_xd_output_give(out, env, I915_XD_OUTPUT_POWER_DDI_IO);
+	i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_PLL, 1);
+	drv_i915_xd_dpll_unmap(env->io, env->platform, out->phy);
+	i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_PLL, 0);
+
+	/* Reports a stop that was not confirmed. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the port is off. */
+	return 0;
+}
+
+/*
+ * Takes the pipe off the port's PLL, under the PLLs' lock; the last pipe
+ * turns it off.  Returns 0, EINVAL when the pipe is not on the PLL, or
+ * EIO when the PLL did not unlock or power down.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_dpll_mgr.c (intel_disable_shared_dpll,
+ * icl_pll_disable).
+ */
+int
+drv_i915_xd_output_pll_off(
+	struct i915_xd_output *out,
+	const struct i915_xd_output_env *env)
+{
+	const struct i915_xd_pll_desc *pll;
+	uint8_t pipe_bit;
+	unsigned late;
+
+	pipe_bit = (uint8_t)(1U << out->pipe);
+
+	/* Leaves the PLL or turns it off, under the PLLs' lock. */
+	i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_PLL, 1);
+
+	/* The pipe does not run on the PLL. */
+	if ((out->pll_pipes & pipe_bit) == 0U) {
+		i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_PLL, 0);
+		i915_xd_output_error(env, "xd-output: the pipe is not on the PLL\n");
+		return EINVAL;
+	}
+
+	/* The PLL of a running pipe is on. */
+	if (!out->pll_on)
+		i915_xd_output_error(env, "xd-output: the PLL of a running pipe is off\n");
+
+	/* Another pipe keeps the PLL. */
+	out->pll_pipes &= (uint8_t)~pipe_bit;
+	if (out->pll_pipes != 0U) {
+		i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_PLL, 0);
+		return 0;
+	}
+
+	/* The last pipe turns it off. */
+	late = 0U;
+	pll = drv_i915_xd_dpll_desc(env->platform, out->pll);
+	if (pll != NULL)
+		late = drv_i915_xd_dpll_disable(env->io, pll);
+	out->pll_on = 0;
+
+	i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_PLL, 0);
+
+	/* Reports the waits that ran out. */
+	i915_xd_output_pll_late(env, late);
+	if (late != 0U)
+		return EIO;
+
+	/* Succeeded: the pipe left the PLL. */
+	return 0;
+}
+
+/*
+ * Gives the AUX power of the port's link back after its PLL is off.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (intel_ddi_post_pll_disable, main_link_aux_power_domain_put).
+ */
+int
+drv_i915_xd_output_link_power_off(
+	struct i915_xd_output *out,
+	const struct i915_xd_output_env *env)
+{
+	/* The AUX channel's power. */
+	i915_xd_output_give(out, env, I915_XD_OUTPUT_POWER_AUX);
+
+	/* Succeeded: the link's power is given back. */
+	return 0;
+}
+
+/*
+ * Ends a confirmed dark: the display buffer moved to the layout without
+ * the pipe (the bus, the slices of both layouts, the credits, then the
+ * new slices alone) and the pipe's power given back.  The caller lets DC
+ * states back (drv_i915_xd_output_dc_allow) unless something failed.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display.c (intel_atomic_commit_tail),
+ * skl_watermark.c (intel_dbuf_pre_plane_update, intel_mbus_dbox_update,
+ * intel_dbuf_post_plane_update).
+ */
+int
+drv_i915_xd_output_dark_settle(
+	struct i915_xd_output *out,
+	const struct i915_xd_output_env *env)
+{
+	/* The buffer without the pipe. */
+	i915_xd_output_dbuf_before(out, env);
+	i915_xd_output_dbuf_after(out, env);
+
+	/* The pipe's power. */
+	i915_xd_output_give_crtc(out, env);
+
+	/* Succeeded: the dark is settled. */
+	return 0;
+}
+
+/*
+ * Lets DC states back after a light or a dark, after a delay that keeps
+ * a commit following soon from switching them off and on again.
+ */
+void
+drv_i915_xd_output_dc_allow(
+	struct i915_xd_output *out,
+	const struct i915_xd_output_env *env)
+{
+	int cookie;
+
+	/* Nothing held. */
+	if ((out->held & (1U << I915_XD_OUTPUT_POWER_DC_OFF)) == 0U)
+		return;
+
+	/* The reference goes back later. */
+	cookie = out->cookie[I915_XD_OUTPUT_POWER_DC_OFF];
+	out->held &= ~(1U << I915_XD_OUTPUT_POWER_DC_OFF);
+	out->cookie[I915_XD_OUTPUT_POWER_DC_OFF] = 0;
+	env->power_put_later(env->context, I915_XD_OUTPUT_POWER_DC_OFF, 0U, cookie, I915_XD_OUTPUT_DC_DELAY_MS);
+}
+
+/*
+ * Turns the panel's backlight on: the PWM at the level (a level at or
+ * below the lowest comes back at the highest, under the backlight's
+ * lock), then the sequencer's enable.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dp.c
+ * (intel_edp_backlight_on), intel_backlight.c (intel_backlight_enable,
+ * __intel_backlight_enable, cnp_enable_backlight), intel_pps.c
+ * (intel_pps_backlight_on).
+ */
+void
+drv_i915_xd_output_backlight_on(
+	struct i915_xd_output *out,
+	const struct i915_xd_output_env *env)
+{
+	struct i915_xd_output_backlight *backlight;
+	uint32_t duty;
+
+	backlight = &out->backlight;
+
+	/* The PWM, when the panel has a backlight. */
+	if (backlight->present) {
+		i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_BACKLIGHT, 1);
+
+		/* A level that would be dark comes back at the highest. */
+		if (backlight->max == 0U)
+			i915_xd_output_error(env, "xd-output: the backlight has no range\n");
+		if (backlight->level <= backlight->min)
+			backlight->level = backlight->max;
+
+		/* Starts the PWM at the level. */
+		duty = i915_xd_output_invert(out, backlight->level);
+		(void)drv_i915_xd_backlight_enable(&backlight->pwm, env->io, duty);
+		backlight->enabled = 1;
+
+		i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_BACKLIGHT, 0);
+	}
+
+	/* The sequencer's backlight enable. */
+	(void)i915_xd_output_panel(env, I915_XD_OUTPUT_PANEL_BACKLIGHT_ON);
+}
+
+/*
+ * Turns the panel's backlight off: the sequencer's enable, then the PWM
+ * at the lowest duty under the backlight's lock.  The level is kept for
+ * the next on.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dp.c
+ * (intel_edp_backlight_off), intel_pps.c (intel_pps_backlight_off),
+ * intel_backlight.c (intel_backlight_disable, cnp_disable_backlight).
+ */
+void
+drv_i915_xd_output_backlight_off(
+	struct i915_xd_output *out,
+	const struct i915_xd_output_env *env)
+{
+	struct i915_xd_output_backlight *backlight;
+	uint32_t duty;
+
+	backlight = &out->backlight;
+
+	/* The sequencer's backlight enable. */
+	(void)i915_xd_output_panel(env, I915_XD_OUTPUT_PANEL_BACKLIGHT_OFF);
+
+	/* A panel without a backlight has no PWM. */
+	if (!backlight->present)
+		return;
+
+	/* The PWM stops at the duty of level 0. */
+	i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_BACKLIGHT, 1);
+
+	backlight->enabled = 0;
+	duty = i915_xd_output_invert(out, 0U);
+	drv_i915_xd_backlight_disable(&backlight->pwm, env->io, duty);
+
+	i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_BACKLIGHT, 0);
+}
+
+/*
+ * Sets the panel's brightness to user_level of user_max, scaled to the
+ * backlight's range from its lowest level up; a backlight that is on
+ * shows it at once, one that is off takes it at the next on.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_backlight.c (intel_panel_set_backlight,
+ * scale_user_to_hw, intel_panel_actually_set_backlight).
+ */
+void
+drv_i915_xd_output_brightness(
+	struct i915_xd_output *out,
+	const struct i915_xd_output_env *env,
+	uint32_t user_level,
+	uint32_t user_max)
+{
+	struct i915_xd_output_backlight *backlight;
+	uint32_t level;
+
+	backlight = &out->backlight;
+
+	/* A panel without a backlight has no brightness. */
+	if (!backlight->present)
+		return;
+
+	/* The new level, under the backlight's lock. */
+	i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_BACKLIGHT, 1);
+
+	/* The user's range onto the backlight's. */
+	if (backlight->max == 0U)
+		i915_xd_output_error(env, "xd-output: the backlight has no range\n");
+	(void)i915_xd_output_scale(env, user_level, 0U, user_max, backlight->min, backlight->max, &level);
+	backlight->level = level;
+
+	/* A backlight that is on shows it. */
+	if (backlight->enabled)
+		drv_i915_xd_backlight_set_duty(&backlight->pwm, env->io, i915_xd_output_invert(out, level));
+
+	i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_BACKLIGHT, 0);
+}
+
+/*
+ * Sets the panel's brightness the firmware asks for (an OpRegion
+ * request): user_level of user_max scaled to the whole range, then
+ * raised to the backlight's lowest level.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_backlight.c (intel_backlight_set_acpi,
+ * clamp_user_to_hw).
+ */
+void
+drv_i915_xd_output_brightness_acpi(
+	struct i915_xd_output *out,
+	const struct i915_xd_output_env *env,
+	uint32_t user_level,
+	uint32_t user_max)
+{
+	struct i915_xd_output_backlight *backlight;
+	uint32_t level;
+
+	backlight = &out->backlight;
+
+	/* A panel without a backlight has no brightness. */
+	if (!backlight->present)
+		return;
+
+	/* The new level, under the backlight's lock. */
+	i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_BACKLIGHT, 1);
+
+	/* The user's range onto the whole range, kept within the backlight's. */
+	if (backlight->max == 0U)
+		i915_xd_output_error(env, "xd-output: the backlight has no range\n");
+	(void)i915_xd_output_scale(env, user_level, 0U, user_max, 0U, backlight->max, &level);
+	if (level < backlight->min)
+		level = backlight->min;
+	if (level > backlight->max)
+		level = backlight->max;
+	backlight->level = level;
+
+	/* A backlight that is on shows it. */
+	if (backlight->enabled)
+		drv_i915_xd_backlight_set_duty(&backlight->pwm, env->io, i915_xd_output_invert(out, level));
+
+	i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_BACKLIGHT, 0);
+}
+
+/*
+ * Returns the panel's brightness as a level of user_max: the level in
+ * the backlight's range scaled to the user's (0 for an empty range).
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_backlight.c (scale_hw_to_user).
+ */
+uint32_t
+drv_i915_xd_output_user_level(
+	const struct i915_xd_output *out,
+	uint32_t user_max)
+{
+	const struct i915_xd_output_backlight *backlight;
+	uint32_t level;
+
+	backlight = &out->backlight;
+
+	/* An empty range has no levels to scale from. */
+	if (backlight->min >= backlight->max)
+		return 0U;
+
+	/* The backlight's range onto the user's. */
+	level = drv_i915_xd_backlight_scale(backlight->level, backlight->min, backlight->max, 0U, user_max);
+
+	/* Succeeded: the user's level. */
+	return level;
+}
+
+/* Returns the index a power use of the output names: its pipe, transcoder, DDI or AUX channel. */
+static unsigned
+i915_xd_output_index(
+	const struct i915_xd_output *out,
+	unsigned use)
+{
+	/* The unit the use powers. */
+	switch (use) {
+	case I915_XD_OUTPUT_POWER_PIPE:
+		return out->pipe;
+	case I915_XD_OUTPUT_POWER_TRANS:
+		return out->trans;
+	case I915_XD_OUTPUT_POWER_LANES:
+	case I915_XD_OUTPUT_POWER_DDI_IO:
+		return out->ddi;
+	case I915_XD_OUTPUT_POWER_AUX:
+		return out->aux;
+	default:
+		break;
+	}
+
+	/* Succeeded: the display-wide uses have no index. */
+	return 0U;
+}
+
+/* Takes one power use of the output unless it holds it: 0, or EIO. */
+static int
+i915_xd_output_take(
+	struct i915_xd_output *out,
+	const struct i915_xd_output_env *env,
+	unsigned use)
+{
+	unsigned index;
+	int cookie;
+
+	/* A use held already. */
+	if ((out->held & (1U << use)) != 0U)
+		return 0;
+
+	/* The caller's reference. */
+	index = i915_xd_output_index(out, use);
+	cookie = env->power_get(env->context, use, index);
+	if (cookie == 0) {
+		i915_xd_output_error(env, "xd-output: a power reference could not be taken\n");
+		return EIO;
+	}
+
+	/* Succeeded: the use is held until it is given back. */
+	out->held |= 1U << use;
+	out->cookie[use] = cookie;
+	return 0;
+}
+
+/* Gives one power use of the output back, if it holds it. */
+static void
+i915_xd_output_give(
+	struct i915_xd_output *out,
+	const struct i915_xd_output_env *env,
+	unsigned use)
+{
+	unsigned index;
+	int cookie;
+
+	/* A use not held. */
+	if ((out->held & (1U << use)) == 0U)
+		return;
+
+	/* The caller's reference goes back. */
+	index = i915_xd_output_index(out, use);
+	cookie = out->cookie[use];
+	out->held &= ~(1U << use);
+	out->cookie[use] = 0;
+	env->power_put(env->context, use, index, cookie);
+}
+
+/* Hands a note that counts against the run to the caller. */
+static void
+i915_xd_output_error(
+	const struct i915_xd_output_env *env,
+	const char *text)
+{
+	/* The caller's error sink, when it has one. */
+	if (env->error != NULL)
+		env->error(env->context, text);
+}
+
+/* Hands a debug note to the caller. */
+static void
+i915_xd_output_debug(
+	const struct i915_xd_output_env *env,
+	const char *text)
+{
+	/* The caller's debug sink, when it has one. */
+	if (env->debug != NULL)
+		env->debug(env->context, text);
+}
+
+/* Takes or drops one of the output's locks. */
+static void
+i915_xd_output_lock(
+	const struct i915_xd_output_env *env,
+	unsigned lock,
+	int taken)
+{
+	/* The caller's lock, when it has one. */
+	if (env->lock != NULL)
+		env->lock(env->context, lock, taken);
+}
+
+/* Runs one step of the panel's power sequencer: 0, or its error. */
+static int
+i915_xd_output_panel(
+	const struct i915_xd_output_env *env,
+	unsigned step)
+{
+	int error;
+
+	/* A caller without a sequencer has nothing to run. */
+	if (env->panel == NULL)
+		return 0;
+
+	/* The step. */
+	error = env->panel(env->context, step);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the step ran. */
+	return 0;
+}
+
+/* Marks a point of the run for the caller. */
+static void
+i915_xd_output_observe(
+	const struct i915_xd_output_env *env,
+	unsigned point)
+{
+	/* The caller's mark, when it looks. */
+	if (env->observe != NULL)
+		env->observe(env->context, point);
+}
+
+/*
+ * Moves the display buffer to its new layout before the planes do: the
+ * bus joined or split and the slices of both layouts on, when either
+ * changes; then the data box credits of the pipe, when the joining or
+ * the running pipes change and the pipe runs after it.
+ */
+static void
+i915_xd_output_dbuf_before(
+	struct i915_xd_output *out,
+	const struct i915_xd_output_env *env)
+{
+	const struct i915_xd_output_dbuf *dbuf;
+	uint32_t credits;
+
+	dbuf = &out->dbuf;
+
+	/* The bus and both layouts' slices. */
+	if (dbuf->slices_before != dbuf->slices_after || dbuf->joined_before != dbuf->joined_after) {
+		drv_i915_xd_dbuf_mbus(env->io, env->platform, dbuf->joined_after);
+		env->dbuf_slices(env->context, (uint8_t)(dbuf->slices_before | dbuf->slices_after));
+	}
+
+	/* Neither the joining nor the running pipes change: the credits stay. */
+	if (dbuf->joined_before == dbuf->joined_after && dbuf->pipes_before == dbuf->pipes_after)
+		return;
+
+	/* A pipe that does not run after it has no credits to set. */
+	if ((dbuf->pipes_after & (1U << out->pipe)) == 0U)
+		return;
+
+	/* The pipe's credits for the bus as it is joined after it. */
+	credits = drv_i915_xd_dbuf_dbox_word(env->platform, dbuf->joined_after);
+	drv_i915_xd_io_write(env->io, I915_XD_PIPE_MBUS_DBOX_CTL(out->pipe), credits);
+}
+
+/* Leaves only the new layout's slices on after the planes moved, when the layout changed. */
+static void
+i915_xd_output_dbuf_after(
+	struct i915_xd_output *out,
+	const struct i915_xd_output_env *env)
+{
+	const struct i915_xd_output_dbuf *dbuf;
+
+	dbuf = &out->dbuf;
+
+	/* Nothing changed. */
+	if (dbuf->slices_before == dbuf->slices_after && dbuf->joined_before == dbuf->joined_after)
+		return;
+
+	/* The new slices alone. */
+	env->dbuf_slices(env->context, dbuf->slices_after);
+}
+
+/* Gives back the pipe's power uses marked at the start of the light or the dark, in the order they were taken. */
+static void
+i915_xd_output_give_crtc(
+	struct i915_xd_output *out,
+	const struct i915_xd_output_env *env)
+{
+	unsigned uses;
+
+	uses = out->put_later;
+	out->put_later = 0U;
+
+	/* The display core, the pipe, the transcoder, the lanes. */
+	if ((uses & (1U << I915_XD_OUTPUT_POWER_CORE)) != 0U)
+		i915_xd_output_give(out, env, I915_XD_OUTPUT_POWER_CORE);
+	if ((uses & (1U << I915_XD_OUTPUT_POWER_PIPE)) != 0U)
+		i915_xd_output_give(out, env, I915_XD_OUTPUT_POWER_PIPE);
+	if ((uses & (1U << I915_XD_OUTPUT_POWER_TRANS)) != 0U)
+		i915_xd_output_give(out, env, I915_XD_OUTPUT_POWER_TRANS);
+	if ((uses & (1U << I915_XD_OUTPUT_POWER_LANES)) != 0U)
+		i915_xd_output_give(out, env, I915_XD_OUTPUT_POWER_LANES);
+}
+
+/* Describes the port's link to the DDI: its DDI and transcoder, its lanes and rate, the bits it keeps, its framing. */
+static void
+i915_xd_output_ddi_link(
+	const struct i915_xd_output *out,
+	struct i915_xd_ddi_link *link)
+{
+	/* The single stream link of the output. */
+	kern_memset(link, 0, sizeof(*link));
+	link->ddi = out->ddi;
+	link->trans = out->trans;
+	link->lanes = out->lanes;
+	link->rate_khz = out->rate_khz;
+	link->kept = out->kept;
+	link->enhanced = out->enhanced;
+}
+
+/*
+ * Chooses the port's swing table: the platform's eDP table for the rate,
+ * with the VBT's low swing, and its high-efficiency table unless a link
+ * failed with it.
+ */
+static const struct i915_xd_combo_swing_table *
+i915_xd_output_swing_table(
+	const struct i915_xd_output *out,
+	const struct i915_xd_output_env *env)
+{
+	const struct i915_xd_combo_swing_table *table;
+	unsigned vbt;
+
+	/* The VBT's settings, without the high-efficiency table after a failure. */
+	vbt = out->swing_vbt;
+	if (out->hobl_failed)
+		vbt &= ~I915_XD_SWING_HOBL;
+
+	/* Succeeded: the platform's table. */
+	table = drv_i915_xd_combo_swing_table(env->platform, I915_XD_OUTPUT_EDP, out->rate_khz, vbt);
+	return table;
+}
+
+/*
+ * Describes the training of the port's link: the plan's rate and lanes,
+ * the source's limits (the swing table's highest swing, pre-emphasis 3,
+ * levels per lane, patterns 3 and 4), no repeaters behind a panel, the
+ * sink's capabilities the output keeps, the sink through the caller and
+ * the source through the output's hooks.
+ */
+static void
+i915_xd_output_dp_link(
+	struct i915_xd_output_run *run,
+	struct i915_xd_dp_link *link)
+{
+	const struct i915_xd_combo_swing_table *table;
+	struct i915_xd_output *out;
+
+	out = run->out;
+	kern_memset(link, 0, sizeof(*link));
+
+	/* The link and its rate's entry in a panel's list. */
+	link->rate_khz = out->rate_khz;
+	link->lanes = out->lanes;
+	link->enhanced = out->enhanced;
+	link->rate_index = out->rate_index;
+
+	/* The source's limits. */
+	table = i915_xd_output_swing_table(out, run->env);
+	link->swing_max = drv_i915_xd_combo_swing_max(table);
+	link->preemph_max = 3U;
+	link->per_lane = 1;
+	link->tps3 = 1;
+	link->tps4 = 1;
+
+	/* No repeaters behind a panel; a trained link is up. */
+	link->find_repeaters = 0;
+	link->active = out->trained;
+
+	/* The capabilities the output keeps. */
+	link->caps = out->caps;
+	link->repeater_caps = out->repeater_caps;
+	link->repeater_phy_caps = out->repeater_phy_caps;
+
+	/* The two sides. */
+	link->sink = run->env->sink;
+	link->source.levels = i915_xd_output_levels;
+	link->source.pattern = i915_xd_output_pattern;
+	link->source.prepare = i915_xd_output_prepare;
+	link->source.idle = i915_xd_output_idle;
+	link->source.sleep = i915_xd_output_sleep;
+	link->source.note = i915_xd_output_note;
+	link->source.context = run;
+}
+
+/*
+ * Sets the sink's power state: D3 sleeps (unless the sink is a branch
+ * whose ports signal hotplug only while awake), D0 writes the source's
+ * identifier first and gives the sink three tries to wake up.  A sink
+ * without power states, or one that does not answer, is only noted.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dp.c
+ * (intel_dp_set_power, downstream_hpd_needs_d0, intel_edp_init_source_oui).
+ */
+static void
+i915_xd_output_sink_power(
+	struct i915_xd_output *out,
+	const struct i915_xd_output_env *env,
+	uint8_t state)
+{
+	static const uint8_t oui[I915_XD_OUTPUT_OUI_SIZE] = { 0x00U, 0xaaU, 0x01U };
+	unsigned tries;
+	int written;
+
+	/* A sink before DPCD 1.1 has no power state. */
+	if (out->caps[I915_XD_DPCD_REV] < I915_XD_OUTPUT_DPCD_POWER_REV)
+		return;
+
+	/* To sleep: a branch whose ports signal hotplug only while awake stays awake. */
+	if (state != I915_XD_DPCD_POWER_D0) {
+		if (out->caps[I915_XD_DPCD_REV] == I915_XD_OUTPUT_DPCD_REV_1_1 &&
+		    (out->caps[I915_XD_OUTPUT_DPCD_PORTS] & I915_XD_OUTPUT_DPCD_BRANCH) != 0U)
+			return;
+		written = env->sink.write(env->sink.context, I915_XD_DPCD_SET_POWER, &state, 1U);
+		if (written != 1)
+			i915_xd_output_debug(env, "xd-output: the sink did not go to sleep\n");
+		return;
+	}
+
+	/* The source's identifier, as early as possible. */
+	written = env->sink.write(env->sink.context, I915_XD_OUTPUT_SOURCE_OUI, oui, I915_XD_OUTPUT_OUI_SIZE);
+	if (written < 0)
+		i915_xd_output_error(env, "xd-output: the source's identifier was not written\n");
+
+	/* Wakes the sink, with time to wake between the tries. */
+	written = 0;
+	for (tries = 0U; tries < I915_XD_OUTPUT_WAKE_TRIES; tries++) {
+		written = env->sink.write(env->sink.context, I915_XD_DPCD_SET_POWER, &state, 1U);
+		if (written == 1)
+			break;
+
+		(void)drv_i915_xd_io_delay(env->io, I915_XD_OUTPUT_WAKE_US);
+	}
+
+	/* Notes a sink that did not wake. */
+	if (written != 1)
+		i915_xd_output_debug(env, "xd-output: the sink did not wake up\n");
+}
+
+/*
+ * Turns the transcoder's data island packets off: the infoframes and the
+ * VSC packet (a panel without self refresh uses none) on a start, the
+ * picture parameters too on a stop.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dp.c
+ * (intel_dp_set_infoframes).
+ */
+static void
+i915_xd_output_islands(
+	struct i915_xd_output *out,
+	const struct i915_xd_output_env *env,
+	int on)
+{
+	uint32_t packets;
+	uint32_t control;
+
+	/* The packets cleared. */
+	packets = I915_XD_DIP_INFOFRAMES | I915_XD_DIP_VSC;
+	if (!on)
+		packets |= I915_XD_DIP_PPS;
+
+	/* The control word without them, flushed. */
+	control = drv_i915_xd_io_read(env->io, I915_XD_DIP_CTL(out->trans));
+	drv_i915_xd_io_write(env->io, I915_XD_DIP_CTL(out->trans), control & ~packets);
+	drv_i915_xd_io_posting_read(env->io, I915_XD_DIP_CTL(out->trans));
+}
+
+/*
+ * Programs the port's signal levels from the training's level bytes: the
+ * swing table's row of each lane (the high-efficiency table is noted),
+ * written through the combo PHY.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (icl_combo_phy_set_signal_levels, intel_ddi_level, intel_ddi_dp_level).
+ */
+static void
+i915_xd_output_levels(
+	void *context,
+	const uint8_t set[4])
+{
+	struct i915_xd_combo_levels levels;
+	struct i915_xd_output_run *run;
+	struct i915_xd_output *out;
+	unsigned lane;
+	unsigned row;
+	int error;
+
+	run = context;
+	out = run->out;
+	kern_memcpy(out->set, set, sizeof(out->set));
+
+	/* The port's PHY, kind, link and table. */
+	kern_memset(&levels, 0, sizeof(levels));
+	levels.phy = out->phy;
+	levels.kind = I915_XD_OUTPUT_EDP;
+	levels.rate_khz = out->rate_khz;
+	levels.lanes = out->lanes;
+	levels.table = i915_xd_output_swing_table(out, run->env);
+
+	/* The row of each lane, within the table. */
+	for (lane = 0U; lane < 4U; lane++) {
+		error = drv_i915_xd_combo_level_row(set[lane], &row);
+		if (error != 0)
+			i915_xd_output_error(run->env, "xd-output: a level the swing tables do not have\n");
+		if (levels.table->count != 0U && row >= levels.table->count)
+			row = levels.table->count - 1U;
+		levels.level[lane] = (uint8_t)row;
+	}
+
+	/* Whether the high-efficiency table drives the panel. */
+	out->hobl_active = drv_i915_xd_combo_swing_is_hobl(run->env->platform, levels.table);
+
+	/* Programs them. */
+	drv_i915_xd_combo_signal_levels(run->env->io, run->env->platform, &levels);
+}
+
+/* Selects a training pattern on the port's transport. */
+static void
+i915_xd_output_pattern(
+	void *context,
+	uint8_t pattern)
+{
+	struct i915_xd_output_run *run;
+	unsigned select;
+
+	run = context;
+
+	/* The transport's field of the DPCD's pattern (an unknown one is pattern 1). */
+	switch (pattern & I915_XD_OUTPUT_PATTERN_MASK) {
+	case I915_XD_DPCD_PATTERN_NONE:
+		select = I915_XD_DP_TP_PATTERN_NORMAL;
+		break;
+	case I915_XD_DPCD_PATTERN_2:
+		select = I915_XD_DP_TP_PATTERN_2;
+		break;
+	case I915_XD_DPCD_PATTERN_3:
+		select = I915_XD_DP_TP_PATTERN_3;
+		break;
+	case I915_XD_DPCD_PATTERN_4:
+		select = I915_XD_DP_TP_PATTERN_4;
+		break;
+	default:
+		select = I915_XD_DP_TP_PATTERN_1;
+		break;
+	}
+
+	/* Writes it. */
+	drv_i915_xd_ddi_pattern(run->env->io, run->out->trans, select);
+}
+
+/* Starts the link in training pattern 1 with the DDI buffer enabled. */
+static void
+i915_xd_output_prepare(
+	void *context)
+{
+	struct i915_xd_output_run *run;
+	struct i915_xd_ddi_link ddi;
+	unsigned late;
+
+	run = context;
+
+	/* The buffer's word with its enable. */
+	i915_xd_output_ddi_link(run->out, &ddi);
+	run->out->buf_word |= I915_XD_DDI_BUF_ENABLE;
+	late = drv_i915_xd_ddi_dp_start(run->env->io, &ddi, run->out->buf_word & ~I915_XD_DDI_BUF_ENABLE, NULL, NULL);
+	i915_xd_output_ddi_late(run->env, late);
+}
+
+/* Sends the idle pattern after the training and waits for it to be sent. */
+static void
+i915_xd_output_idle(
+	void *context)
+{
+	struct i915_xd_output_run *run;
+	unsigned late;
+
+	run = context;
+
+	/* The idle pattern. */
+	late = drv_i915_xd_ddi_idle_patterns(run->env->io, run->out->trans);
+	i915_xd_output_ddi_late(run->env, late);
+}
+
+/* Lets the time between two steps of the training pass. */
+static void
+i915_xd_output_sleep(
+	void *context,
+	unsigned min_us,
+	unsigned max_us)
+{
+	struct i915_xd_output_run *run;
+
+	(void)max_us;
+
+	run = context;
+
+	/* The shortest wait the step allows. */
+	(void)drv_i915_xd_io_delay(run->env->io, min_us);
+}
+
+/* Hands a note of the training to the caller. */
+static void
+i915_xd_output_note(
+	void *context,
+	unsigned kind,
+	const char *text)
+{
+	struct i915_xd_output_run *run;
+
+	run = context;
+
+	/* An error counts against the run; a debug note is only told. */
+	if (kind == I915_XD_DP_NOTE_ERROR) {
+		i915_xd_output_error(run->env, text);
+	} else {
+		i915_xd_output_debug(run->env, text);
+	}
+}
+
+/* Reports the DDI buffer's and the transport's waits that ran out. */
+static void
+i915_xd_output_ddi_late(
+	const struct i915_xd_output_env *env,
+	unsigned late)
+{
+	/* One error per wait. */
+	if ((late & I915_XD_DDI_LATE_IDLE) != 0U)
+		i915_xd_output_error(env, "xd-output: the DDI buffer did not go idle\n");
+	if ((late & I915_XD_DDI_LATE_ACTIVE) != 0U)
+		i915_xd_output_error(env, "xd-output: the DDI buffer did not leave idle\n");
+	if ((late & I915_XD_DDI_LATE_IDLE_PATTERNS) != 0U)
+		i915_xd_output_error(env, "xd-output: the idle patterns were not sent\n");
+}
+
+/* Reports the PLL's waits that ran out. */
+static void
+i915_xd_output_pll_late(
+	const struct i915_xd_output_env *env,
+	unsigned late)
+{
+	/* One error per wait. */
+	if ((late & I915_XD_DPLL_LATE_POWER_ON) != 0U)
+		i915_xd_output_error(env, "xd-output: the port PLL did not power up\n");
+	if ((late & I915_XD_DPLL_LATE_LOCK) != 0U)
+		i915_xd_output_error(env, "xd-output: the port PLL is not locked\n");
+	if ((late & I915_XD_DPLL_LATE_UNLOCK) != 0U)
+		i915_xd_output_error(env, "xd-output: the port PLL did not unlock\n");
+	if ((late & I915_XD_DPLL_LATE_POWER_OFF) != 0U)
+		i915_xd_output_error(env, "xd-output: the port PLL did not power down\n");
+}
+
+/*
+ * Turns a backlight level into the PWM's duty: for a panel whose
+ * brightness runs the other way, the range read backwards.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_backlight.c
+ * (intel_backlight_invert_pwm_level).
+ */
+static uint32_t
+i915_xd_output_invert(
+	const struct i915_xd_output *out,
+	uint32_t level)
+{
+	/* A panel the right way round. */
+	if (!out->backlight.inverted)
+		return level;
+
+	/* Succeeded: the range read backwards. */
+	return out->backlight.max - level + out->backlight.min;
+}
+
+/*
+ * Scales a value from one range into another, rounded to the closest; an
+ * empty source range or an inverted target range is noted and gives the
+ * target's lowest.  Returns 0, or EINVAL for those ranges.
+ */
+static int
+i915_xd_output_scale(
+	const struct i915_xd_output_env *env,
+	uint32_t value,
+	uint32_t from_min,
+	uint32_t from_max,
+	uint32_t to_min,
+	uint32_t to_max,
+	uint32_t *scaled)
+{
+	/* The ranges must be usable. */
+	*scaled = to_min;
+	if (from_min >= from_max) {
+		i915_xd_output_error(env, "xd-output: an empty range to scale from\n");
+		return EINVAL;
+	}
+	if (to_min > to_max) {
+		i915_xd_output_error(env, "xd-output: an inverted range to scale to\n");
+		return EINVAL;
+	}
+
+	/* Succeeded: the scaled value. */
+	*scaled = drv_i915_xd_backlight_scale(value, from_min, from_max, to_min, to_max);
+	return 0;
+}

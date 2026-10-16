@@ -1192,9 +1192,8 @@ i915_enable_ddi_dp(
 	if (port == PORT_A && display_ver < 9)
 		drv_i915_dp_stop_link_train(intel_dp, crtc_state);
 
-	/* Turns the privacy screen and the eDP backlight on. */
+	/* Turns the privacy screen on (the panel's backlight is its xd output's). */
 	drm_connector_update_privacy_screen(conn_state);
-	drv_i915_edp_backlight_on(crtc_state, conn_state);
 
 	/* Enables the DP infoframes unless an LSPCON drives an HDMI sink without them. */
 	if (!dig_port->lspcon.active || intel_dp_has_hdmi_sink(&dig_port->dp))
@@ -2057,9 +2056,8 @@ i915_disable_ddi_dp(
 	/* The link is no longer trained. */
 	intel_dp->link_trained = false;
 
-	/* Disables PSR and the eDP backlight. */
+	/* Disables PSR (the panel's backlight is its xd output's). */
 	intel_psr_disable(intel_dp, old_crtc_state);
-	drv_i915_edp_backlight_off(old_conn_state);
 
 	/* Disable the decompression in DP Sink */
 	intel_dp_sink_disable_decompression(state,

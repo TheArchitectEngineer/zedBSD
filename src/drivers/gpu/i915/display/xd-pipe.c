@@ -580,6 +580,29 @@ drv_i915_xd_pipe_stop(
 }
 
 /*
+ * Turns both scalers of a stopping pipe off and clears their windows,
+ * used or not, so the next mode of the pipe starts unscaled.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/skl_scaler.c (skl_scaler_disable,
+ * skl_detach_scaler).
+ */
+void
+drv_i915_xd_pipe_scalers_off(
+	struct i915_xd_io *io,
+	unsigned pipe)
+{
+	unsigned scaler;
+
+	/* Each scaler's control, then its window. */
+	for (scaler = 0U; scaler < I915_XD_SCALERS; scaler++) {
+		drv_i915_xd_io_write(io, I915_XD_PS_CTRL(pipe, scaler), 0U);
+		drv_i915_xd_io_write(io, I915_XD_PS_WIN_POS(pipe, scaler), 0U);
+		drv_i915_xd_io_write(io, I915_XD_PS_WIN_SZ(pipe, scaler), 0U);
+	}
+}
+
+/*
  * Reads a pipe's frame counter, which moves at each vertical blank start
  * and starts again when the pipe is enabled.
  */

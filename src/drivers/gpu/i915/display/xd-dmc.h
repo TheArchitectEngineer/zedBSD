@@ -123,5 +123,6 @@ int drv_i915_xd_dmc_has_main(const struct i915_xd_dmc *dmc);
 int drv_i915_xd_dmc_has(const struct i915_xd_dmc *dmc, unsigned id);
 void drv_i915_xd_dmc_load(struct i915_xd_dmc *dmc, struct i915_xd_io *io, const struct i915_xd_platform *platform);
 void drv_i915_xd_dmc_pipe(const struct i915_xd_dmc *dmc, struct i915_xd_io *io, unsigned pipe, int on);
+void drv_i915_xd_dmc_pipe_switch(struct i915_xd_io *io, unsigned pipe, int on);
 
 #endif /* DRIVERS_GPU_I915_DISPLAY_XD_DMC_H */

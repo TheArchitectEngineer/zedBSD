@@ -918,6 +918,12 @@ drv_i915_lcd_modeset_commit_enable(
 	ms->state.base.dev = &ms->i915.drm;
 	ms->commits++;
 
+	/* The panel's output is described from the crtc state and the commit's display buffer. */
+	if (drv_i915_lcd_ms_xo_panel(ms)) {
+		drv_i915_lcd_ms_xo_describe(ms);
+		drv_i915_lcd_ms_xo_dbuf(ms);
+	}
+
 	/* The commit's steps. */
 	kern_memset(&commit, 0, sizeof(commit));
 	commit.display = display;
@@ -998,8 +1004,10 @@ drv_i915_lcd_modeset_commit_disable(
 		keep_pipes |= other->also_active_pipes;
 	}
 
-	/* The new DBUF state with only the pipes that stay. */
+	/* The new DBUF state with only the pipes that stay; the panel's output takes it. */
 	drv_i915_lcd_ms_wm_compute_off(display->wm_world, ms, keep_pipes);
+	if (drv_i915_lcd_ms_xo_panel(ms))
+		drv_i915_lcd_ms_xo_dbuf(ms);
 
 	/* The new state of this commit: the crtc inactive. */
 	kern_memset(&commit, 0, sizeof(commit));
@@ -4480,18 +4488,32 @@ i915_modeset_dark_hooks(
 /*
  * The light's power: DC_OFF held ("during full modesets we write a lot of
  * registers, wait for PLLs, etc.  Doing that while DC states are enabled
- * is not a good idea"), and the crtc's power domains.
+ * is not a good idea"), and the crtc's power domains.  The panel's
+ * output takes them through the xd output.
  */
 static int
 i915_modeset_step_power(
 	void *context)
 {
+	struct i915_xd_output_env env;
 	struct i915_modeset_commit *commit;
 	struct i915_lcd_modeset *ms;
 
-	/* DC_OFF, then the domains (the clear-colour planes are not on this linear path). */
+	/* The commit and its screen. */
 	commit = context;
 	ms = commit->ms;
+
+	/* The panel's output: DC states held off, the commit's start, then the pipe's power. */
+	if (drv_i915_lcd_ms_xo_panel(ms)) {
+		drv_i915_lcd_ms_xo_env(ms, &env);
+		(void)drv_i915_xd_output_dc_hold(&ms->xo, &env);
+		i915_modeset_observe(commit->world, I915_LCD_OBS_COMMIT_BEGIN);
+		(void)drv_i915_xd_output_power(&ms->xo, &env);
+		drv_i915_lcd_ms_xo_sync(ms);
+		return 0;
+	}
+
+	/* DC_OFF, then the domains (the clear-colour planes are not on this linear path). */
 	ms->dc_off_wakeref = i915_lcd_intel_display_power_get(&ms->i915, POWER_DOMAIN_DC_OFF);
 	ms->dc_off_held = 1;
 	i915_modeset_observe(commit->world, I915_LCD_OBS_COMMIT_BEGIN);
@@ -4511,13 +4533,23 @@ static int
 i915_modeset_step_dbuf(
 	void *context)
 {
+	struct i915_xd_output_env env;
 	struct i915_modeset_commit *commit;
 	struct i915_lcd_modeset *ms;
 
-	/* The DBUF and the MBUS. */
+	/* The commit and its screen. */
 	commit = context;
 	ms = commit->ms;
 	I915_LCD_DECIDED(&ms->i915, "intel_sagv_pre_plane_update: the QGV restriction stays as the initialisation left it (SAGV off, max-bandwidth point; bandwidth checked in prepare)");
+
+	/* The panel's output moves the buffer itself. */
+	if (drv_i915_lcd_ms_xo_panel(ms)) {
+		drv_i915_lcd_ms_xo_env(ms, &env);
+		(void)drv_i915_xd_output_dbuf(&ms->xo, &env);
+		return 0;
+	}
+
+	/* The DBUF and the MBUS. */
 	drv_i915_dbuf_pre_plane_update(&ms->wm, &ms->state);
 	drv_i915_mbus_dbox_update(&ms->wm, &ms->state);
 
@@ -4530,8 +4562,10 @@ static int
 i915_modeset_step_setup(
 	void *context)
 {
+	struct i915_xd_output_env env;
 	struct i915_modeset_commit *commit;
 	struct i915_lcd_modeset *ms;
+	int error;
 
 	/* The screen's objects and device. */
 	commit = context;
@@ -4540,10 +4574,15 @@ i915_modeset_step_setup(
 	commit->world->i915_lcd_cur_i915 = &ms->i915;
 
 	/* The panel's backlight setup. */
-	if (!ms->output_hdmi && !ms->output_dp_ext) {
-		ms->backlight_setup_rc = drv_i915_lcd_ms_backlight_setup(ms);
-		if (ms->backlight_setup_rc != 0)
+	if (drv_i915_lcd_ms_xo_panel(ms)) {
+		drv_i915_lcd_ms_xo_env(ms, &env);
+		error = drv_i915_xd_output_backlight_setup(&ms->xo, &env);
+		drv_i915_lcd_ms_xo_sync(ms);
+		ms->backlight_setup_rc = 0;
+		if (error != 0) {
+			ms->backlight_setup_rc = -I915_LCD_ENODEV;
 			i915_modeset_on_error(commit->world, "intel_backlight_setup failed (no PWM frequency from the hardware or the VBT)\n");
+		}
 	}
 
 	/* intel_enable_crtc(): the active timings before the crtc enable. */
@@ -4558,11 +4597,23 @@ static int
 i915_modeset_step_dmc_on(
 	void *context)
 {
+	struct i915_xd_output_env env;
 	struct i915_modeset_commit *commit;
+	struct i915_lcd_modeset *ms;
+
+	/* The commit and its screen. */
+	commit = context;
+	ms = commit->ms;
+
+	/* The panel's output switches the pipe's DMC itself. */
+	if (drv_i915_lcd_ms_xo_panel(ms)) {
+		drv_i915_lcd_ms_xo_env(ms, &env);
+		(void)drv_i915_xd_output_dmc(&ms->xo, &env, 1);
+		return 0;
+	}
 
 	/* The crtc enable's first part. */
-	commit = context;
-	drv_i915_lcd_ms_crtc_enable_part(commit->ms, I915_LCD_CRTC_PART_DMC);
+	drv_i915_lcd_ms_crtc_enable_part(ms, I915_LCD_CRTC_PART_DMC);
 
 	/* Succeeded: the part ran. */
 	return 0;
@@ -4573,11 +4624,24 @@ static int
 i915_modeset_step_link_power(
 	void *context)
 {
+	struct i915_xd_output_env env;
 	struct i915_modeset_commit *commit;
+	struct i915_lcd_modeset *ms;
+
+	/* The commit and its screen. */
+	commit = context;
+	ms = commit->ms;
+
+	/* The panel's output takes its link's AUX power. */
+	if (drv_i915_lcd_ms_xo_panel(ms)) {
+		drv_i915_lcd_ms_xo_env(ms, &env);
+		(void)drv_i915_xd_output_link_power(&ms->xo, &env);
+		drv_i915_lcd_ms_xo_sync(ms);
+		return 0;
+	}
 
 	/* The part. */
-	commit = context;
-	drv_i915_lcd_ms_crtc_enable_part(commit->ms, I915_LCD_CRTC_PART_LINK);
+	drv_i915_lcd_ms_crtc_enable_part(ms, I915_LCD_CRTC_PART_LINK);
 
 	/* Succeeded: the part ran. */
 	return 0;
@@ -4588,11 +4652,24 @@ static int
 i915_modeset_step_pll(
 	void *context)
 {
+	struct i915_xd_output_env env;
 	struct i915_modeset_commit *commit;
+	struct i915_lcd_modeset *ms;
+
+	/* The commit and its screen. */
+	commit = context;
+	ms = commit->ms;
+
+	/* The panel's output turns its PLL on. */
+	if (drv_i915_lcd_ms_xo_panel(ms)) {
+		drv_i915_lcd_ms_xo_env(ms, &env);
+		(void)drv_i915_xd_output_pll(&ms->xo, &env);
+		drv_i915_lcd_ms_xo_sync(ms);
+		return 0;
+	}
 
 	/* The part. */
-	commit = context;
-	drv_i915_lcd_ms_crtc_enable_part(commit->ms, I915_LCD_CRTC_PART_PLL);
+	drv_i915_lcd_ms_crtc_enable_part(ms, I915_LCD_CRTC_PART_PLL);
 
 	/* Succeeded: the part ran. */
 	return 0;
@@ -4603,11 +4680,26 @@ static int
 i915_modeset_step_port(
 	void *context)
 {
+	struct i915_xd_output_env env;
 	struct i915_modeset_commit *commit;
+	struct i915_lcd_modeset *ms;
+
+	/* The commit and its screen. */
+	commit = context;
+	ms = commit->ms;
+
+	/* The panel's output brings its port and link up; the port records the link it trained. */
+	if (drv_i915_lcd_ms_xo_panel(ms)) {
+		drv_i915_lcd_ms_xo_env(ms, &env);
+		ms->dig_port.dp.link_rate = (int)ms->xo.rate_khz;
+		ms->dig_port.dp.lane_count = (u8)ms->xo.lanes;
+		(void)drv_i915_xd_output_port(&ms->xo, &env);
+		drv_i915_lcd_ms_xo_sync(ms);
+		return 0;
+	}
 
 	/* The part. */
-	commit = context;
-	drv_i915_lcd_ms_crtc_enable_part(commit->ms, I915_LCD_CRTC_PART_PORT);
+	drv_i915_lcd_ms_crtc_enable_part(ms, I915_LCD_CRTC_PART_PORT);
 
 	/* Succeeded: the part ran. */
 	return 0;
@@ -4618,11 +4710,24 @@ static int
 i915_modeset_step_pipe(
 	void *context)
 {
+	struct i915_xd_output_env env;
 	struct i915_modeset_commit *commit;
+	struct i915_lcd_modeset *ms;
+
+	/* The commit and its screen. */
+	commit = context;
+	ms = commit->ms;
+
+	/* The panel's output sets the pipe up. */
+	if (drv_i915_lcd_ms_xo_panel(ms)) {
+		drv_i915_lcd_ms_xo_env(ms, &env);
+		(void)drv_i915_xd_output_pipe(&ms->xo, &env);
+		drv_i915_lcd_ms_xo_sync(ms);
+		return 0;
+	}
 
 	/* The part. */
-	commit = context;
-	drv_i915_lcd_ms_crtc_enable_part(commit->ms, I915_LCD_CRTC_PART_PIPE);
+	drv_i915_lcd_ms_crtc_enable_part(ms, I915_LCD_CRTC_PART_PIPE);
 
 	/* Succeeded: the part ran. */
 	return 0;
@@ -4633,13 +4738,22 @@ static int
 i915_modeset_step_output(
 	void *context)
 {
+	struct i915_xd_output_env env;
 	struct i915_modeset_commit *commit;
 	struct i915_lcd_modeset *ms;
 
-	/* The part. */
+	/* The commit and its screen. */
 	commit = context;
 	ms = commit->ms;
-	drv_i915_lcd_ms_crtc_enable_part(ms, I915_LCD_CRTC_PART_OUTPUT);
+
+	/* The panel's output starts; any other output's encoders are enabled. */
+	if (drv_i915_lcd_ms_xo_panel(ms)) {
+		drv_i915_lcd_ms_xo_env(ms, &env);
+		(void)drv_i915_xd_output_start(&ms->xo, &env);
+		drv_i915_lcd_ms_xo_sync(ms);
+	} else {
+		drv_i915_lcd_ms_crtc_enable_part(ms, I915_LCD_CRTC_PART_OUTPUT);
+	}
 
 	/* intel_backlight_device_register(): max_brightness = backlight.max, brightness = the level scaled to it. */
 	ms->bl_user_max = ms->connector.panel.backlight.max;
@@ -4721,14 +4835,22 @@ static int
 i915_modeset_step_settle(
 	void *context)
 {
+	struct i915_xd_output_env env;
 	struct i915_modeset_commit *commit;
 	struct i915_lcd_modeset *ms;
+	int panel;
 
-	/* The post-plane half of the commit. */
+	/* The post-plane half of the commit: the panel's output's, or the Linux text's. */
 	commit = context;
 	ms = commit->ms;
-	drv_i915_dbuf_post_plane_update(&ms->wm, &ms->state);
-	drv_i915_modeset_put_crtc_power_domains(&ms->crtc, &commit->put_domains);
+	panel = drv_i915_lcd_ms_xo_panel(ms);
+	if (panel) {
+		drv_i915_lcd_ms_xo_env(ms, &env);
+		(void)drv_i915_xd_output_settle(&ms->xo, &env);
+	} else {
+		drv_i915_dbuf_post_plane_update(&ms->wm, &ms->state);
+		drv_i915_modeset_put_crtc_power_domains(&ms->crtc, &commit->put_domains);
+	}
 	I915_LCD_DECIDED(&ms->i915, "intel_sagv_post_plane_update: QGV points are not relaxed (SAGV stays off)");
 
 	/* The new global state is the current one from here on. */
@@ -4737,8 +4859,13 @@ i915_modeset_step_settle(
 	i915_modeset_observe(commit->world, I915_LCD_OBS_COMMIT_END);
 
 	/* DC states come back later. */
-	intel_display_power_put_async_delay(&ms->i915, POWER_DOMAIN_DC_OFF, ms->dc_off_wakeref, I915_LCD_DC_OFF_DELAY_MS);
-	ms->dc_off_held = 0;
+	if (panel) {
+		drv_i915_xd_output_dc_allow(&ms->xo, &env);
+		drv_i915_lcd_ms_xo_sync(ms);
+	} else {
+		intel_display_power_put_async_delay(&ms->i915, POWER_DOMAIN_DC_OFF, ms->dc_off_wakeref, I915_LCD_DC_OFF_DELAY_MS);
+		ms->dc_off_held = 0;
+	}
 
 	/* Succeeded: the commit is settled. */
 	return 0;
@@ -4749,12 +4876,25 @@ static int
 i915_modeset_step_dark_power(
 	void *context)
 {
+	struct i915_xd_output_env env;
 	struct i915_modeset_commit *commit;
 	struct i915_lcd_modeset *ms;
 
-	/* DC_OFF, then the domains to drop. */
+	/* The commit and its screen. */
 	commit = context;
 	ms = commit->ms;
+
+	/* The panel's output: DC states held off, the commit's start, the pipe's power marked to go back. */
+	if (drv_i915_lcd_ms_xo_panel(ms)) {
+		drv_i915_lcd_ms_xo_env(ms, &env);
+		(void)drv_i915_xd_output_dc_hold(&ms->xo, &env);
+		i915_modeset_observe(commit->world, I915_LCD_OBS_COMMIT_BEGIN);
+		(void)drv_i915_xd_output_dark_power(&ms->xo, &env);
+		drv_i915_lcd_ms_xo_sync(ms);
+		return 0;
+	}
+
+	/* DC_OFF, then the domains to drop. */
 	ms->dc_off_wakeref = i915_lcd_intel_display_power_get(&ms->i915, POWER_DOMAIN_DC_OFF);
 	ms->dc_off_held = 1;
 	i915_modeset_observe(commit->world, I915_LCD_OBS_COMMIT_BEGIN);
@@ -4796,11 +4936,24 @@ static int
 i915_modeset_step_output_off(
 	void *context)
 {
+	struct i915_xd_output_env env;
 	struct i915_modeset_commit *commit;
+	struct i915_lcd_modeset *ms;
+
+	/* The commit and its screen. */
+	commit = context;
+	ms = commit->ms;
+
+	/* The panel's output stops its picture. */
+	if (drv_i915_lcd_ms_xo_panel(ms)) {
+		drv_i915_lcd_ms_xo_env(ms, &env);
+		(void)drv_i915_xd_output_stop(&ms->xo, &env);
+		drv_i915_lcd_ms_xo_sync(ms);
+		return 0;
+	}
 
 	/* The part. */
-	commit = context;
-	drv_i915_lcd_ms_crtc_disable_part(commit->ms, I915_LCD_CRTC_PART_OUTPUT);
+	drv_i915_lcd_ms_crtc_disable_part(ms, I915_LCD_CRTC_PART_OUTPUT);
 
 	/* Succeeded: the part ran. */
 	return 0;
@@ -4811,11 +4964,24 @@ static int
 i915_modeset_step_port_off(
 	void *context)
 {
+	struct i915_xd_output_env env;
 	struct i915_modeset_commit *commit;
+	struct i915_lcd_modeset *ms;
+
+	/* The commit and its screen. */
+	commit = context;
+	ms = commit->ms;
+
+	/* The panel's output stops its transcoder and port. */
+	if (drv_i915_lcd_ms_xo_panel(ms)) {
+		drv_i915_lcd_ms_xo_env(ms, &env);
+		(void)drv_i915_xd_output_port_off(&ms->xo, &env);
+		drv_i915_lcd_ms_xo_sync(ms);
+		return 0;
+	}
 
 	/* The part. */
-	commit = context;
-	drv_i915_lcd_ms_crtc_disable_part(commit->ms, I915_LCD_CRTC_PART_PORT);
+	drv_i915_lcd_ms_crtc_disable_part(ms, I915_LCD_CRTC_PART_PORT);
 
 	/* Succeeded: the part ran. */
 	return 0;
@@ -4826,11 +4992,24 @@ static int
 i915_modeset_step_pll_off(
 	void *context)
 {
+	struct i915_xd_output_env env;
 	struct i915_modeset_commit *commit;
+	struct i915_lcd_modeset *ms;
+
+	/* The commit and its screen. */
+	commit = context;
+	ms = commit->ms;
+
+	/* The panel's output leaves its PLL. */
+	if (drv_i915_lcd_ms_xo_panel(ms)) {
+		drv_i915_lcd_ms_xo_env(ms, &env);
+		(void)drv_i915_xd_output_pll_off(&ms->xo, &env);
+		drv_i915_lcd_ms_xo_sync(ms);
+		return 0;
+	}
 
 	/* The part. */
-	commit = context;
-	drv_i915_lcd_ms_crtc_disable_part(commit->ms, I915_LCD_CRTC_PART_PLL);
+	drv_i915_lcd_ms_crtc_disable_part(ms, I915_LCD_CRTC_PART_PLL);
 
 	/* Succeeded: the part ran. */
 	return 0;
@@ -4841,11 +5020,24 @@ static int
 i915_modeset_step_link_power_off(
 	void *context)
 {
+	struct i915_xd_output_env env;
 	struct i915_modeset_commit *commit;
+	struct i915_lcd_modeset *ms;
+
+	/* The commit and its screen. */
+	commit = context;
+	ms = commit->ms;
+
+	/* The panel's output gives its link's AUX power back. */
+	if (drv_i915_lcd_ms_xo_panel(ms)) {
+		drv_i915_lcd_ms_xo_env(ms, &env);
+		(void)drv_i915_xd_output_link_power_off(&ms->xo, &env);
+		drv_i915_lcd_ms_xo_sync(ms);
+		return 0;
+	}
 
 	/* The part. */
-	commit = context;
-	drv_i915_lcd_ms_crtc_disable_part(commit->ms, I915_LCD_CRTC_PART_LINK);
+	drv_i915_lcd_ms_crtc_disable_part(ms, I915_LCD_CRTC_PART_LINK);
 
 	/* Succeeded: the part ran. */
 	return 0;
@@ -4856,11 +5048,24 @@ static int
 i915_modeset_step_dmc_off(
 	void *context)
 {
+	struct i915_xd_output_env env;
 	struct i915_modeset_commit *commit;
+	struct i915_lcd_modeset *ms;
+
+	/* The commit and its screen. */
+	commit = context;
+	ms = commit->ms;
+
+	/* The panel's output switches the pipe's DMC off. */
+	if (drv_i915_lcd_ms_xo_panel(ms)) {
+		drv_i915_lcd_ms_xo_env(ms, &env);
+		(void)drv_i915_xd_output_dmc(&ms->xo, &env, 0);
+		drv_i915_lcd_ms_xo_sync(ms);
+		return 0;
+	}
 
 	/* The part. */
-	commit = context;
-	drv_i915_lcd_ms_crtc_disable_part(commit->ms, I915_LCD_CRTC_PART_DMC);
+	drv_i915_lcd_ms_crtc_disable_part(ms, I915_LCD_CRTC_PART_DMC);
 
 	/* Succeeded: the part ran. */
 	return 0;
@@ -4920,21 +5125,30 @@ static int
 i915_modeset_step_dark_settle(
 	void *context)
 {
+	struct i915_xd_output_env env;
 	struct i915_modeset_commit *commit;
 	struct i915_lcd_modeset *ms;
 	struct i915_lcd_world *world;
 	unsigned before;
+	int panel;
 
-	/* The rest of the commit tail. */
+	/* The rest of the commit tail: the panel's output's, or the Linux text's. */
 	commit = context;
 	ms = commit->ms;
 	world = commit->world;
+	panel = drv_i915_lcd_ms_xo_panel(ms);
 	I915_LCD_DECIDED(&ms->i915, "intel_sagv_pre_plane_update: the QGV restriction stays as the initialisation left it");
 	before = world->ms_errors_pool[world->ms_sel];
-	drv_i915_dbuf_pre_plane_update(&ms->wm, &ms->state);
-	drv_i915_mbus_dbox_update(&ms->wm, &ms->state);
-	drv_i915_dbuf_post_plane_update(&ms->wm, &ms->state);
-	drv_i915_modeset_put_crtc_power_domains(&ms->crtc, &commit->put_domains);
+	if (panel) {
+		drv_i915_lcd_ms_xo_env(ms, &env);
+		(void)drv_i915_xd_output_dark_settle(&ms->xo, &env);
+		drv_i915_lcd_ms_xo_sync(ms);
+	} else {
+		drv_i915_dbuf_pre_plane_update(&ms->wm, &ms->state);
+		drv_i915_mbus_dbox_update(&ms->wm, &ms->state);
+		drv_i915_dbuf_post_plane_update(&ms->wm, &ms->state);
+		drv_i915_modeset_put_crtc_power_domains(&ms->crtc, &commit->put_domains);
+	}
 	ms->wm.old_dbuf = ms->wm.new_dbuf;
 	drv_i915_lcd_dbuf_publish(commit->display->wm_world, &ms->wm.new_dbuf);
 
@@ -4950,8 +5164,13 @@ i915_modeset_step_dark_settle(
 	}
 
 	/* DC states come back 17 ms later. */
-	intel_display_power_put_async_delay(&ms->i915, POWER_DOMAIN_DC_OFF, ms->dc_off_wakeref, I915_LCD_DC_OFF_DELAY_MS);
-	ms->dc_off_held = 0;
+	if (panel) {
+		drv_i915_xd_output_dc_allow(&ms->xo, &env);
+		drv_i915_lcd_ms_xo_sync(ms);
+	} else {
+		intel_display_power_put_async_delay(&ms->i915, POWER_DOMAIN_DC_OFF, ms->dc_off_wakeref, I915_LCD_DC_OFF_DELAY_MS);
+		ms->dc_off_held = 0;
+	}
 
 	/* Succeeded: the screen is off and everything is given back. */
 	return 0;

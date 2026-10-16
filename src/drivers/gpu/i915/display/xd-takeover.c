@@ -63,34 +63,6 @@
 #define I915_XD_FW_DDI_MODE_SHIFT	24U
 
 /*
- * A transcoder's data island packet control, and the packets a disable
- * turns off: the AVI, general control, vendor, gamut, product and HDR
- * infoframes, the VSC packet and the DSC picture parameters (a
- * DisplayPort link's only).
- *
- * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
- * (_HSW_VIDEO_DIP_CTL_A, VIDEO_DIP_ENABLE_AVI_HSW,
- * VIDEO_DIP_ENABLE_GCP_HSW, VIDEO_DIP_ENABLE_VS_HSW,
- * VIDEO_DIP_ENABLE_GMP_HSW, VIDEO_DIP_ENABLE_SPD_HSW,
- * VIDEO_DIP_ENABLE_DRM_GLK, VIDEO_DIP_ENABLE_VSC_HSW, VDIP_ENABLE_PPS).
- */
-#define I915_XD_FW_DIP_CTL(trans)	(0x60200U + I915_XD_TRANS_STRIDE * (trans))
-#define I915_XD_FW_DIP_INFOFRAMES	0x10111111U
-#define I915_XD_FW_DIP_VSC		0x00100000U
-#define I915_XD_FW_DIP_PPS		0x01000000U
-
-/*
- * The two scalers of a pipe: control, window position and window size.
- *
- * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
- * (_PS_1A_CTRL, _PS_2A_CTRL, _PS_1B_CTRL, _PS_WIN_POS_1A, _PS_WIN_SZ_1A).
- */
-#define I915_XD_FW_SCALERS		2U
-#define I915_XD_FW_PS_CTRL(pipe, scaler)	(0x68180U + 0x800U * (pipe) + 0x100U * (scaler))
-#define I915_XD_FW_PS_WIN_POS(pipe, scaler)	(0x68170U + 0x800U * (pipe) + 0x100U * (scaler))
-#define I915_XD_FW_PS_WIN_SZ(pipe, scaler)	(0x68174U + 0x800U * (pipe) + 0x100U * (scaler))
-
-/*
  * The legacy VGA screen-off settle time before the VGA plane is
  * disabled.
  *
@@ -446,7 +418,6 @@ drv_i915_xd_takeover_stop(
 	uint32_t islands;
 	uint32_t transport;
 	unsigned select;
-	unsigned scaler;
 	unsigned waits;
 	unsigned late;
 	int was_running;
@@ -498,18 +469,14 @@ drv_i915_xd_takeover_stop(
 	(void)drv_i915_xd_pipe_func_disable(io, pipe, 0);
 
 	/* The scalers. */
-	for (scaler = 0U; scaler < I915_XD_FW_SCALERS; scaler++) {
-		drv_i915_xd_io_write(io, I915_XD_FW_PS_CTRL(pipe, scaler), 0U);
-		drv_i915_xd_io_write(io, I915_XD_FW_PS_WIN_POS(pipe, scaler), 0U);
-		drv_i915_xd_io_write(io, I915_XD_FW_PS_WIN_SZ(pipe, scaler), 0U);
-	}
+	drv_i915_xd_pipe_scalers_off(io, pipe);
 
 	/* The data islands (a DisplayPort link's picture parameters too). */
-	islands = I915_XD_FW_DIP_INFOFRAMES | I915_XD_FW_DIP_VSC;
+	islands = I915_XD_DIP_INFOFRAMES | I915_XD_DIP_VSC;
 	if (dp)
-		islands |= I915_XD_FW_DIP_PPS;
-	(void)drv_i915_xd_io_rmw(io, I915_XD_FW_DIP_CTL(pipe), islands, 0U);
-	drv_i915_xd_io_posting_read(io, I915_XD_FW_DIP_CTL(pipe));
+		islands |= I915_XD_DIP_PPS;
+	(void)drv_i915_xd_io_rmw(io, I915_XD_DIP_CTL(pipe), islands, 0U);
+	drv_i915_xd_io_posting_read(io, I915_XD_DIP_CTL(pipe));
 
 	/* A DisplayPort sink goes to sleep before the port stops. */
 	if (dp)

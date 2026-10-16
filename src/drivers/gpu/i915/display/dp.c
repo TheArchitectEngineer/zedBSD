@@ -258,6 +258,43 @@ drv_i915_dp_start_link_train(
 }
 
 /*
+ * Binds an xd sink's DPCD hooks to a DP port's AUX channel, for a caller
+ * that trains or wakes the sink itself.
+ */
+void
+drv_i915_dp_sink_bind(
+	struct intel_dp *intel_dp,
+	struct i915_xd_dp_sink *sink)
+{
+	/* The port's channel. */
+	i915_dp_bind_sink(&intel_dp->aux, sink);
+}
+
+/*
+ * Hears that a DP port's link did not train for a caller that trained it
+ * itself: unless long HPDs are ignored, a lower link is asked for.
+ */
+void
+drv_i915_dp_link_failed(
+	struct intel_dp *intel_dp,
+	const struct intel_crtc_state *crtc_state)
+{
+	struct drm_i915_private *i915;
+
+	/* Finds the device the port belongs to. */
+	i915 = i915_lcd_dp_to_i915(intel_dp);
+
+	/* In fixed environments like CI, a link failure after ignored long HPDs is ignored too. */
+	if (i915->display.hotplug.ignore_long_hpd) {
+		lt_dbg(intel_dp, DP_PHY_DPRX, "Ignore the link failure\n");
+		return;
+	}
+
+	/* Asks for the fallback. */
+	i915_dp_schedule_fallback_link_training(intel_dp, crtc_state);
+}
+
+/*
  * Tells whether the link rate of a crtc state is UHBR, and thus 128b/132b.
  */
 bool
@@ -426,69 +463,6 @@ drv_i915_dp_set_power(
 				     encoder->base.name,
 				     mode == DP_SET_POWER_D0 ? "D0" : "D3");
 	}
-}
-
-/*
- * Enables the backlight PWM and the backlight PP control of an eDP panel.
- *
- * The Linux intel_edp_backlight_on().  The PP control is the current
- * device's panel power sequencer.
- */
-void
-drv_i915_edp_backlight_on(
-	const struct intel_crtc_state *crtc_state,
-	const struct drm_connector_state *conn_state)
-{
-	struct intel_dp *intel_dp;
-	struct drm_i915_private *cur_i915;
-	bool edp;
-
-	/* Finds the DP port of the connector's encoder. */
-	intel_dp = enc_to_intel_dp(to_intel_encoder(conn_state->best_encoder));
-
-	/* Only an eDP panel has a backlight here. */
-	edp = drv_i915_dp_is_edp(intel_dp);
-	if (!edp)
-		return;
-
-	/* Notes the enable. */
-	I915_LCD_DRM_DBG_KMS(NULL, "\n");
-
-	/* Enables the PWM, then the backlight enable bit of the sequencer. */
-	drv_i915_backlight_enable(crtc_state, conn_state);
-	cur_i915 = i915_dp_cur_i915(&intel_dp->aux);
-	i915_lcd_intel_pps_backlight_on(cur_i915, intel_dp);
-}
-
-/*
- * Disables the backlight PP control and the backlight PWM of an eDP panel.
- *
- * The Linux intel_edp_backlight_off().  The PP control is the current
- * device's panel power sequencer.
- */
-void
-drv_i915_edp_backlight_off(
-	const struct drm_connector_state *old_conn_state)
-{
-	struct intel_dp *intel_dp;
-	struct drm_i915_private *cur_i915;
-	bool edp;
-
-	/* Finds the DP port of the connector's encoder. */
-	intel_dp = enc_to_intel_dp(to_intel_encoder(old_conn_state->best_encoder));
-
-	/* Only an eDP panel has a backlight here. */
-	edp = drv_i915_dp_is_edp(intel_dp);
-	if (!edp)
-		return;
-
-	/* Notes the disable. */
-	I915_LCD_DRM_DBG_KMS(NULL, "\n");
-
-	/* Clears the backlight enable bit of the sequencer, then disables the PWM. */
-	cur_i915 = i915_dp_cur_i915(&intel_dp->aux);
-	i915_lcd_intel_pps_backlight_off(cur_i915, intel_dp);
-	drv_i915_backlight_disable(old_conn_state);
 }
 
 /*
