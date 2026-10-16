@@ -45,6 +45,7 @@
 #include "edid.h"
 #include "xd-edid.h"
 #include "xd-dp.h"
+#include "xd-screen.h"
 #include "pipe.h"
 #include "plane.h"
 #include <kern/kcrt.h>
@@ -55,20 +56,15 @@
 #include <uapi/errno.h>
 #include <stddef.h>
 
+/*
+ * The DDIs the plan is told for an HDMI sink (DDI B) and an external
+ * DisplayPort sink (a Type-C port, whose PLL is not the plan's).
+ */
+#define I915_STATE_HDMI_DDI 1U
+#define I915_STATE_TC1_DDI 3U
+
 /* The PCI_ANY_ID of a quirk entry: any subsystem id matches. */
 #define I915_PCI_ANY_ID ((int)(-1))
-
-/* The link overhead of an SST link without FEC, in parts per million (intel_dp_link_required's 1000000). */
-#define I915_STATE_SST_BW_OVERHEAD 1000000
-
-/* The eDP revision from which the sink carries rate tables (DP_EDP_14). */
-#define I915_STATE_DP_EDP_14 0x03
-
-/* The bits per colour an external DP display is driven at, at most (RGB 8 bpc). */
-#define I915_STATE_DP_EXT_MAX_BPC 8
-
-/* The fewest bits per colour a DP link may drop to (intel_dp_min_bpp() for RGB). */
-#define I915_STATE_DP_EXT_MIN_BPC 6
 
 /*
  * One entry of the Linux intel_quirks[] table.
@@ -207,9 +203,8 @@ static u32 i915_state_record_rmw(void *ctx, u32 reg, u32 clear, u32 set);
 static void i915_state_record_step(void *ctx, const char *name);
 static void i915_state_bind_recorder(struct i915_lcd_emit *emit, struct i915_lcd_words *out);
 static void i915_state_to_mode(const struct i915_lcd_state *s, struct drm_display_mode *mode, struct intel_link_m_n *m_n);
-static int i915_state_dp_ext_max_bpc(const struct i915_lcd_mode *mode, const struct i915_dp_ext_sink *sink);
-static int i915_state_dp_ext_link(const struct i915_lcd_mode *mode, const struct i915_dp_ext_sink *sink, int max_bpc, int max_rate_khz, int max_lanes, struct i915_lcd_link *link);
 static void i915_state_dkl_words(const struct intel_dpll_hw_state *hw, struct i915_lcd_dkl_words *words);
+static void i915_state_from_plan(const struct i915_xd_plan *plan, struct i915_lcd_state *out);
 
 /*
  * Initializes the mode configuration of the display (intel_mode_config_init()).
@@ -736,8 +731,10 @@ drv_i915_lcd_compute(
 	int ref_nssc_khz,
 	struct i915_lcd_state *out)
 {
-	struct intel_link_m_n m_n;
+	struct i915_xd_plan_input input;
+	struct i915_xd_plan plan;
 	const struct edid *edid;
+	unsigned refused;
 	unsigned index;
 	unsigned depth;
 	int bpc;
@@ -782,73 +779,34 @@ drv_i915_lcd_compute(
 
 	out->mode.edid_bpc = bpc;
 
-	/* The bpp: the sink's depth (24 when undefined), capped by the VBT's eDP colour depth. */
-	if (bpc != 0) {
-		out->link.bpp = 3 * bpc;
-	} else {
-		out->link.bpp = 24;
-	}
+	/* The link, its M/N and the combo PLL through the screen's plan. */
+	kern_memset(&input, 0, sizeof(input));
+	input.kind = I915_XD_SCREEN_PANEL;
+	input.ddi = 0U;
+	input.mode = &out->mode;
+	input.sink.rate_code = dpcd[1];
+	input.sink.max_lanes = dpcd[2] & 0x1fu;
+	input.sink.edp_revision = edp_dpcd[0];
+	input.sink.vbt_bpp = vbt_bpp > 0 ? (unsigned)vbt_bpp : 0U;
+	input.platform = drv_i915_lcd_xd_platform();
+	input.ref_khz = (uint32_t)ref_nssc_khz;
+	refused = drv_i915_xd_screen_plan_link(&input, &plan);
 
-	/* A smaller VBT colour depth caps it. */
-	if (vbt_bpp != 0 && vbt_bpp < out->link.bpp)
-		out->link.bpp = vbt_bpp;
-
-	/* The sink's capability: its maximum rate and lane count. */
+	/* The sink's capability and the link as the plan found them. */
 	out->link.sink_max_rate_khz = i915_state_rate_from_bw_code(dpcd[1]);
 	out->link.sink_max_lanes = dpcd[2] & 0x1f;
-
-	/* Refuses a rate code the 8b/10b table does not know. */
-	if (out->link.sink_max_rate_khz == 0)
-		return EINVAL;
-
-	/* Refuses a lane count other than 1, 2 or 4. */
-	if (out->link.sink_max_lanes != 1 &&
-	    out->link.sink_max_lanes != 2 &&
-	    out->link.sink_max_lanes != 4)
-		return EINVAL;
-
-	/* The use_max_params rule applies to a sink older than eDP 1.4. */
-	out->link.use_max_params = 0;
-	if (edp_dpcd[0] < I915_STATE_DP_EDP_14)
-		out->link.use_max_params = 1;
-
-	/* Refuses an eDP 1.4+ sink: its rate tables are not ported. */
-	if (out->link.use_max_params == 0)
-		return EINVAL;
-
-	/* The sink's maximum (the ADL-P combo PHY source limit, 810000, is higher). */
-	out->link.rate_khz = out->link.sink_max_rate_khz;
-	out->link.lanes = out->link.sink_max_lanes;
-
-	/* The bandwidth the mode needs, and what the link carries. */
-	out->link.required_kbps = (int)drv_i915_xd_dp_need_kbps((uint32_t)out->mode.clock_khz, (unsigned)out->link.bpp);
-	out->link.available_kbps = (int)drv_i915_xd_dp_carry_kbps((uint32_t)out->link.rate_khz, (unsigned)out->link.lanes);
-
-	/*
-	 * Refuses a mode the link cannot carry.
-	 *
-	 * XXX: the old code returned the literal -28 (the Linux -ENOSPC); the
-	 * positive zedBSD ENOSPC is returned here.
-	 */
-	if (out->link.required_kbps > out->link.available_kbps)
-		return ENOSPC;
-
-	/* The M/N values of the link. */
-	drv_i915_link_compute_m_n((u16)(out->link.bpp * 16), out->link.lanes, out->mode.clock_khz, out->link.rate_khz, I915_STATE_SST_BW_OVERHEAD, &m_n);
-	out->link.tu = m_n.tu;
-	out->link.data_m = m_n.data_m;
-	out->link.data_n = m_n.data_n;
-	out->link.link_m = m_n.link_m;
-	out->link.link_n = m_n.link_n;
-
-	/* The combo PLL of the link rate; the notes are reported whatever the PLL answers. */
+	out->link.use_max_params = 1;
+	i915_state_from_plan(&plan, out);
 	out->pll.ref_khz = ref_nssc_khz;
-	error = drv_i915_icl_dp_combo_pll(out->link.rate_khz, ref_nssc_khz, &out->pll.cfgcr0, &out->pll.cfgcr1, &out->pll.div0);
 	out->notes = world->lcd_notes;
 
-	/* Reports a PLL the calculation could not find. */
-	if (error != 0)
-		return error;
+	/* A sink the plan does not drive, a link that does not carry the mode, a rate without PLL words. */
+	if (refused == I915_XD_PLAN_SINK)
+		return EINVAL;
+	if (refused == I915_XD_PLAN_LINK)
+		return ENOSPC;
+	if (refused != I915_XD_PLAN_OK)
+		return I915_LCD_EINVAL;
 
 	/* Succeeded: the mode, link, M/N and PLL are computed. */
 	return 0;
@@ -867,7 +825,9 @@ drv_i915_lcd_compute_hdmi(
 	int ref_nssc_khz,
 	struct i915_lcd_state *out)
 {
-	int error;
+	struct i915_xd_plan_input input;
+	struct i915_xd_plan plan;
+	unsigned refused;
 
 	/* Refuses a call without a mode with a clock, or without a result. */
 	if (mode == NULL)
@@ -877,17 +837,21 @@ drv_i915_lcd_compute_hdmi(
 	if (mode->clock_khz <= 0)
 		return EINVAL;
 
-	/* The mode, and the 4-lane, 24 bpp link its TMDS clock runs at. */
+	/* The 4-lane, 24 bpp link its TMDS clock runs at, and the WRPLL, through the screen's plan. */
+	kern_memset(&input, 0, sizeof(input));
+	input.kind = I915_XD_SCREEN_HDMI;
+	input.ddi = I915_STATE_HDMI_DDI;
+	input.mode = mode;
+	input.platform = drv_i915_lcd_xd_platform();
+	input.ref_khz = (uint32_t)ref_nssc_khz;
+	refused = drv_i915_xd_screen_plan_link(&input, &plan);
+
+	/* The mode and the link. */
 	kern_memset(out, 0, sizeof(*out));
 	out->mode = *mode;
-	out->link.rate_khz = mode->clock_khz;
-	out->link.lanes = 4;
-	out->link.bpp = 24;
-
-	/* The WRPLL of the TMDS clock. */
-	error = drv_i915_icl_hdmi_wrpll(out->link.rate_khz, ref_nssc_khz, &out->pll.cfgcr0, &out->pll.cfgcr1, &out->pll.div0);
-	if (error != 0)
-		return error;
+	i915_state_from_plan(&plan, out);
+	if (refused != I915_XD_PLAN_OK)
+		return I915_LCD_EINVAL;
 
 	/* Succeeded: the link and PLL are computed. */
 	return 0;
@@ -917,10 +881,12 @@ drv_i915_lcd_compute_dp_ext(
 	int ref_nssc_khz,
 	struct i915_lcd_state *out)
 {
+	uint32_t common[I915_XD_DP_RATES];
+	struct i915_xd_plan_input input;
 	struct intel_dpll_hw_state hw;
-	struct intel_link_m_n m_n;
-	enum i915_dp_ext_mode_status mode_status;
-	int max_bpc;
+	struct i915_xd_plan plan;
+	unsigned refused;
+	unsigned index;
 	int error;
 
 	/* Refuses a call without a mode with a clock, a sink or a result. */
@@ -945,24 +911,30 @@ drv_i915_lcd_compute_dp_ext(
 	out->link.sink_max_rate_khz = sink->max_rate;
 	out->link.sink_max_lanes = sink->max_sink_lanes;
 
-	/* A mode outside a branch's downstream clock limits is not carried. */
-	mode_status = drv_i915_dp_ext_mode_valid(sink, mode->clock_khz);
-	if (mode_status != I915_DP_EXT_MODE_OK)
+	/* The link and its M/N through the screen's plan (a Type-C port's PLL is not the plan's). */
+	for (index = 0; index < (unsigned)sink->num_common_rates && index < I915_XD_DP_RATES; index++)
+		common[index] = (uint32_t)sink->common_rates[index];
+	kern_memset(&input, 0, sizeof(input));
+	input.kind = I915_XD_SCREEN_DP;
+	input.ddi = I915_STATE_TC1_DDI;
+	input.mode = mode;
+	input.sink.rates = common;
+	input.sink.nrates = index;
+	input.sink.max_lanes = (unsigned)sink->max_lanes;
+	input.sink.max_bpc = sink->max_bpc > 0 ? (unsigned)sink->max_bpc : 0U;
+	input.sink.max_dotclock_khz = (uint32_t)sink->max_dotclock_khz;
+	input.sink.min_tmds_khz = (uint32_t)sink->min_tmds_clock_khz;
+	input.sink.max_tmds_khz = (uint32_t)sink->max_tmds_clock_khz;
+	input.sink.rate_limit_khz = max_rate_khz > 0 ? (uint32_t)max_rate_khz : 0U;
+	input.sink.lane_limit = max_lanes > 0 ? (unsigned)max_lanes : 0U;
+	input.platform = drv_i915_lcd_xd_platform();
+	input.ref_khz = (uint32_t)ref_nssc_khz;
+	refused = drv_i915_xd_screen_plan_link(&input, &plan);
+	if (refused != I915_XD_PLAN_OK)
 		return ENOSPC;
 
-	/* The first depth, rate and lane count that carry the mode. */
-	max_bpc = i915_state_dp_ext_max_bpc(mode, sink);
-	error = i915_state_dp_ext_link(mode, sink, max_bpc, max_rate_khz, max_lanes, &out->link);
-	if (error != 0)
-		return error;
-
-	/* The M/N values of the link. */
-	drv_i915_link_compute_m_n((u16)(out->link.bpp * 16), out->link.lanes, mode->clock_khz, out->link.rate_khz, I915_STATE_SST_BW_OVERHEAD, &m_n);
-	out->link.tu = m_n.tu;
-	out->link.data_m = m_n.data_m;
-	out->link.data_n = m_n.data_n;
-	out->link.link_m = m_n.link_m;
-	out->link.link_n = m_n.link_n;
+	/* The link and its M/N. */
+	i915_state_from_plan(&plan, out);
 
 	/* The Type-C port's DKL PLL of the link rate. */
 	out->pll.ref_khz = ref_nssc_khz;
@@ -1626,88 +1598,6 @@ i915_state_to_mode(
 	m_n->link_n = s->link.link_n;
 }
 
-/*
- * The most bits per colour an external DP display is driven at: the
- * EDID's depth (8 when undefined), capped at 8 and at a branch's downstream
- * limit.
- */
-static int
-i915_state_dp_ext_max_bpc(
-	const struct i915_lcd_mode *mode,
-	const struct i915_dp_ext_sink *sink)
-{
-	int bpc;
-
-	/* The display's depth, 8 when the EDID does not say. */
-	bpc = mode->edid_bpc;
-	if (bpc <= 0)
-		bpc = I915_STATE_DP_EXT_MAX_BPC;
-
-	/* Deep colour is not driven. */
-	if (bpc > I915_STATE_DP_EXT_MAX_BPC)
-		bpc = I915_STATE_DP_EXT_MAX_BPC;
-
-	/* A branch's downstream port caps it (drm_dp_downstream_max_bpc()). */
-	if (sink->max_bpc > 0 && sink->max_bpc < bpc)
-		bpc = sink->max_bpc;
-
-	/* Succeeded: reports the depth. */
-	return bpc;
-}
-
-/*
- * Finds the link of an external DP display's mode through the xd
- * DisplayPort code: for each depth from max_bpc down to 6 in steps of 2,
- * each shared rate from the lowest (up to max_rate_khz when given), each
- * lane count 1, 2, 4 (up to the sink's and max_lanes when given); the
- * first whose data rate carries the mode.  Returns 0 with link's rate,
- * lanes, bpp and rates filled, or ENOSPC.
- */
-static int
-i915_state_dp_ext_link(
-	const struct i915_lcd_mode *mode,
-	const struct i915_dp_ext_sink *sink,
-	int max_bpc,
-	int max_rate_khz,
-	int max_lanes,
-	struct i915_lcd_link *link)
-{
-	uint32_t common[I915_XD_DP_RATES];
-	struct i915_xd_dp_choice choice;
-	unsigned count;
-	unsigned index;
-	int lane_limit;
-	int error;
-
-	/* The lanes the sink takes, under the fallback's limit. */
-	lane_limit = sink->max_lanes;
-	if (max_lanes > 0 && max_lanes < lane_limit)
-		lane_limit = max_lanes;
-
-	/* The shared rates, as the xd link takes them. */
-	count = 0;
-	for (index = 0; index < (unsigned)sink->num_common_rates && index < I915_XD_DP_RATES; index++) {
-		common[index] = (uint32_t)sink->common_rates[index];
-		count++;
-	}
-
-	/* The first depth, rate and lane count that carry the mode. */
-	error = drv_i915_xd_dp_choose((uint32_t)mode->clock_khz, (unsigned)max_bpc, I915_STATE_DP_EXT_MIN_BPC, common, count,
-				      max_rate_khz > 0 ? (uint32_t)max_rate_khz : 0U, (unsigned)lane_limit, &choice);
-	if (error != 0)
-		return error;
-
-	/* The link the choice names. */
-	link->rate_khz = (int)choice.rate_khz;
-	link->lanes = (int)choice.lanes;
-	link->bpp = (int)choice.bpp;
-	link->required_kbps = (int)choice.need_kbps;
-	link->available_kbps = (int)choice.carry_kbps;
-
-	/* Succeeded: the link is found. */
-	return 0;
-}
-
 /* Copies a DKL PLL's words out of a PLL state, one word per register. */
 static void
 i915_state_dkl_words(
@@ -1727,4 +1617,32 @@ i915_state_dkl_words(
 	words->ssc = hw->mg_pll_ssc;
 	words->bias = hw->mg_pll_bias;
 	words->tdc_coldst_bias = hw->mg_pll_tdc_coldst_bias;
+}
+
+/* Copies a screen's plan into the computed state: the link, its M/N and a combo PLL's words. */
+static void
+i915_state_from_plan(
+	const struct i915_xd_plan *plan,
+	struct i915_lcd_state *out)
+{
+	/* The link and what it needs and carries. */
+	out->link.rate_khz = (int)plan->rate_khz;
+	out->link.lanes = (int)plan->lanes;
+	out->link.bpp = (int)plan->bpp;
+	out->link.required_kbps = (int)plan->need_kbps;
+	out->link.available_kbps = (int)plan->carry_kbps;
+
+	/* The M/N. */
+	out->link.tu = plan->m_n.tu;
+	out->link.data_m = plan->m_n.data_m;
+	out->link.data_n = plan->m_n.data_n;
+	out->link.link_m = plan->m_n.link_m;
+	out->link.link_n = plan->m_n.link_n;
+
+	/* A combo PLL's words. */
+	if (plan->pll_set) {
+		out->pll.cfgcr0 = plan->pll.cfgcr0;
+		out->pll.cfgcr1 = plan->pll.cfgcr1;
+		out->pll.div0 = plan->pll.div0;
+	}
 }

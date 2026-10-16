@@ -36,6 +36,7 @@
  */
 
 #include "modeset-internal.h"
+#include "xd-screen.h"
 #include "watermark-internal.h"
 #include "modeset.h"
 #include "aux.h"
@@ -171,6 +172,8 @@ static uint32_t i915_modeset_frame_now(struct i915_lcd_world *world);
 static int i915_modeset_flip_arm(struct i915_display *display, uint32_t new_surf, struct i915_lcd_flip_result *res, int *dc_off);
 static void i915_modeset_flip_retire(struct i915_display *display);
 static int i915_modeset_prepare_state(struct i915_display *display, const struct i915_lcd_state *s, const struct i915_lcd_modeset_cfg *cfg, struct i915_lcd_emit *ops);
+static void i915_modeset_plan_check(const struct i915_lcd_state *s, const struct i915_lcd_modeset_cfg *cfg, const struct i915_lcd_modeset *ms, struct i915_xd_plan *plan);
+static void i915_modeset_plan_compare(const struct i915_xd_plan *plan, unsigned old_refused, const struct i915_lcd_modeset *ms);
 static void i915_show_anomaly(struct i915_lcd_show_report *r, const char *what, int rc);
 static void i915_show_reached(struct i915_lcd_show_env *env, struct i915_lcd_show_report *r, int stage);
 static int i915_show_first_error_after(const struct i915_lcd_trace *trace, unsigned from);
@@ -2961,6 +2964,8 @@ i915_modeset_prepare_state(
 	struct i915_lcd_modeset *ms;
 	struct drm_display_mode *mode;
 	struct intel_dpll_hw_state want;
+	struct i915_xd_plan plan;
+	unsigned old_refused;
 	int dbuf_known;
 	int plane_error;
 	int tc_error;
@@ -3241,6 +3246,9 @@ i915_modeset_prepare_state(
 	ms->cursor.pipe = ms->crtc.pipe;
 	ms->crtc.base.cursor = &ms->cursor.base;
 
+	/* The screen's plan checks the same state (the older check below decides; a difference is logged). */
+	i915_modeset_plan_check(s, cfg, ms, &plan);
+
 	/* The check phase: watermarks and DDB for the new state (nothing is written). */
 	world->i915_lcd_cur_i915 = &ms->i915;
 	ms->wm_rc = drv_i915_lcd_ms_wm_compute(display->wm_world, ms);
@@ -3251,11 +3259,17 @@ i915_modeset_prepare_state(
 	drv_i915_ddi_compute_min_voltage_level(&ms->crtc_state);
 	drv_i915_lcd_ms_plane_min_cdclk(ms);
 	ms->cdclk_rc = drv_i915_lcd_ms_cdclk_check(display->takeover_world, ms);
-	if (ms->cdclk_rc != 0)
+	if (ms->cdclk_rc != 0) {
+		i915_modeset_plan_compare(&plan, I915_XD_PLAN_CDCLK, ms);
 		return ms->cdclk_rc;
+	}
 
 	/* The reference would reprogram CDCLK around the planes (intel_set_cdclk_pre/post_plane_update): not connected. */
 	if (ms->cdclk.change_needed) {
+		old_refused = I915_XD_PLAN_CDCLK;
+		if (ms->cdclk.cdclk == (int)ms->i915.display.cdclk.hw.cdclk && ms->cdclk.vco == (int)ms->i915.display.cdclk.hw.vco)
+			old_refused = I915_XD_PLAN_VOLTAGE;
+		i915_modeset_plan_compare(&plan, old_refused, ms);
 		i915_modeset_on_error(world, "the mode requires a CDCLK state other than the current one: CDCLK programming is not connected\n");
 		return EINVAL;
 	}
@@ -3263,11 +3277,13 @@ i915_modeset_prepare_state(
 	/* The memory bandwidth of the allowed QGV point must cover the plane. */
 	ms->bw_data_rate = drv_i915_lcd_ms_bw_data_rate(ms);
 	if (cfg->qgv_allowed_bw == 0U || ms->bw_data_rate > cfg->qgv_allowed_bw) {
+		i915_modeset_plan_compare(&plan, I915_XD_PLAN_QGV, ms);
 		i915_modeset_on_error(world, "the memory bandwidth of the allowed QGV point is unknown or below what the plane needs\n");
 		return EINVAL;
 	}
 
 	/* Succeeded: the state is built and checked. */
+	i915_modeset_plan_compare(&plan, I915_XD_PLAN_OK, ms);
 	return 0;
 }
 
@@ -4533,4 +4549,93 @@ i915_resident_output_way(
 
 	/* Succeeded: the way is known. */
 	return 0;
+}
+
+/*
+ * Runs the check part of the screen's plan on the state the older check
+ * phase checks: the mode and link computed, the CD clock the
+ * initialisation left, the allowed QGV point, the pipes that run.
+ */
+static void
+i915_modeset_plan_check(
+	const struct i915_lcd_state *s,
+	const struct i915_lcd_modeset_cfg *cfg,
+	const struct i915_lcd_modeset *ms,
+	struct i915_xd_plan *plan)
+{
+	struct i915_xd_plan_input input;
+
+	/* What the plan checks against. */
+	kern_memset(&input, 0, sizeof(input));
+	input.kind = I915_XD_SCREEN_PANEL;
+	if (cfg->output_hdmi)
+		input.kind = I915_XD_SCREEN_HDMI;
+	if (cfg->output_dp_ext)
+		input.kind = I915_XD_SCREEN_DP;
+	input.ddi = (unsigned)cfg->port;
+	input.pipe = (unsigned)cfg->pipe;
+	input.mode = &s->mode;
+	input.platform = drv_i915_lcd_xd_platform();
+	input.run_pipes = (uint8_t)(ms->wm.old_dbuf.active_pipes | (1U << cfg->pipe) | ms->also_active_pipes);
+	input.cdclk.ref_khz = cfg->cdclk_ref_khz;
+	input.cdclk.vco_khz = cfg->cdclk_vco_khz;
+	input.cdclk.cdclk_khz = cfg->cdclk_khz;
+	input.cdclk.bypass_khz = cfg->cdclk_bypass_khz;
+	input.cdclk.voltage = (uint8_t)cfg->cdclk_voltage_level;
+	input.cdclk_max_khz = cfg->cdclk_max_khz;
+	input.qgv_mbps = cfg->qgv_allowed_bw;
+	input.cpp = 4U;
+
+	/* The link the state computed. */
+	kern_memset(plan, 0, sizeof(*plan));
+	plan->kind = input.kind;
+	plan->pipe = input.pipe;
+	plan->mode = s->mode;
+	plan->rate_khz = (uint32_t)s->link.rate_khz;
+	plan->lanes = (unsigned)s->link.lanes;
+	plan->bpp = (unsigned)s->link.bpp;
+
+	/* The check. */
+	(void)drv_i915_xd_screen_plan_check(&input, plan);
+}
+
+/*
+ * Logs where the screen's plan and the older check phase disagree: the
+ * refusal, and for an accepted state the CD clock, its voltage level and
+ * the display buffer's slices and joining.
+ */
+static void
+i915_modeset_plan_compare(
+	const struct i915_xd_plan *plan,
+	unsigned old_refused,
+	const struct i915_lcd_modeset *ms)
+{
+	unsigned pipe;
+
+	/* The refusals. */
+	if (plan->refused != old_refused) {
+		kern_logf("i915: xd-screen: the plan's check differs: the plan says %s, the older check %s\n",
+		    drv_i915_xd_screen_refusal_name(plan->refused),
+		    drv_i915_xd_screen_refusal_name(old_refused));
+		return;
+	}
+
+	/* A refused state has nothing more to compare. */
+	if (old_refused != I915_XD_PLAN_OK)
+		return;
+
+	/* The CD clock, its level, the slices and the joining. */
+	pipe = (unsigned)ms->crtc.pipe;
+	if (plan->cdclk_khz != (uint32_t)ms->cdclk.cdclk ||
+	    plan->voltage != (uint8_t)ms->cdclk.voltage_level ||
+	    plan->min_cdclk_khz != (uint32_t)ms->cdclk.min_cdclk ||
+	    plan->slices != ms->wm.new_dbuf.slices[pipe] ||
+	    plan->joined != (uint8_t)ms->wm.new_dbuf.joined_mbus) {
+		kern_logf("i915: xd-screen: the plan's check differs: CD clock %u/%d kHz (min %u/%d), level %u/%d, slices 0x%x/0x%x, joined %u/%d\n",
+		    plan->cdclk_khz, ms->cdclk.cdclk,
+		    plan->min_cdclk_khz, ms->cdclk.min_cdclk,
+		    (unsigned)plan->voltage, ms->cdclk.voltage_level,
+		    (unsigned)plan->slices, (unsigned)ms->wm.new_dbuf.slices[pipe],
+		    (unsigned)plan->joined, (int)ms->wm.new_dbuf.joined_mbus);
+	}
 }

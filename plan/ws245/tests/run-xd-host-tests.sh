@@ -38,7 +38,10 @@
 #   host-xd-core-test      the display core's start and stop: the order on Alder Lake-P and Tiger Lake, the buddies,
 #                          the faults that stop a start
 #   host-xd-takeover-test  the firmware's display: the decision on each start situation, the readout of an
-#                          Alder Lake-P (which writes nothing), the output's kind by the ports, the framebuffer's pages
+#                          Alder Lake-P (which writes nothing), the output's kind by the ports, the framebuffer's pages;
+#                          the takeover's stop of a lit pipe in the disable order, and the VGA plane's
+#   host-xd-screen-test    a screen's plan: the 5330's panel against the older check's numbers, the refusals (CD clock,
+#                          voltage, QGV, sinks, links), HDMI and Type-C DisplayPort links, Tiger Lake's pixel rate rule
 # The check against the Linux tree itself is plan/ws245/tests/check-xd-regs-linux.sh (needs the unpacked tree).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -e
@@ -49,7 +52,7 @@ OUT=${1:-build/ws245-host}
 mkdir -p "$OUT"
 I915_HOST_EXTRA_PRODUCTION="src/drivers/gpu/i915/perf.c src/drivers/gpu/i915/mmio-record.c ${I915_HOST_EXTRA_PRODUCTION:-}"
 failed=0
-for test in host-xd-regs-test host-xd-io-test host-xd-platform-test host-xd-vbt-test host-xd-survey-test host-xd-aux-test host-xd-gmbus-test host-xd-panel-test host-xd-power-test host-xd-dmc-test host-xd-clock-test host-xd-dpll-test host-xd-ddi-test host-xd-dp-test host-xd-pipe-test host-xd-dbuf-test host-xd-core-test host-xd-takeover-test; do
+for test in host-xd-regs-test host-xd-io-test host-xd-platform-test host-xd-vbt-test host-xd-survey-test host-xd-aux-test host-xd-gmbus-test host-xd-panel-test host-xd-power-test host-xd-dmc-test host-xd-clock-test host-xd-dpll-test host-xd-ddi-test host-xd-dp-test host-xd-pipe-test host-xd-dbuf-test host-xd-core-test host-xd-takeover-test host-xd-screen-test; do
 	test -f "$T/$test.c" || continue
 	i915_display_host_build "$OUT/$test" "$T/$test.c" "$T/xd-fake-regs.c" plan/ws084/tests/native-decide-stubs.c
 	if ! "$OUT/$test"; then

@@ -157,7 +157,7 @@ AMD64_I915_SOURCES += src/drivers/gpu/i915/display/xd-io.c src/drivers/gpu/i915/
 # The record of the display writes of a start and the survey of the first picture, which two kernels are compared by.
 AMD64_I915_SOURCES += src/drivers/gpu/i915/mmio-record.c src/drivers/gpu/i915/display/survey.c
 # The display 12 and 13 rewrite, continued.
-AMD64_I915_SOURCES += src/drivers/gpu/i915/display/xd-vbt.c src/drivers/gpu/i915/display/xd-edid.c src/drivers/gpu/i915/display/xd-aux.c src/drivers/gpu/i915/display/xd-gmbus.c src/drivers/gpu/i915/display/xd-panel.c src/drivers/gpu/i915/display/xd-power.c src/drivers/gpu/i915/display/xd-dp.c src/drivers/gpu/i915/display/xd-pipe.c src/drivers/gpu/i915/display/xd-dbuf.c src/drivers/gpu/i915/display/xd-core.c src/drivers/gpu/i915/display/xd-takeover.c
+AMD64_I915_SOURCES += src/drivers/gpu/i915/display/xd-vbt.c src/drivers/gpu/i915/display/xd-edid.c src/drivers/gpu/i915/display/xd-aux.c src/drivers/gpu/i915/display/xd-gmbus.c src/drivers/gpu/i915/display/xd-panel.c src/drivers/gpu/i915/display/xd-power.c src/drivers/gpu/i915/display/xd-dp.c src/drivers/gpu/i915/display/xd-pipe.c src/drivers/gpu/i915/display/xd-dbuf.c src/drivers/gpu/i915/display/xd-core.c src/drivers/gpu/i915/display/xd-takeover.c src/drivers/gpu/i915/display/xd-screen.c
 endif
 AMD64_NVRTX_SOURCES :=
 ifeq ($(CONFIG_DRIVER_PCI_NVRTX),y)
