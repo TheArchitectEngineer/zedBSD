@@ -1604,7 +1604,7 @@ machine_run_graphics(
 				wave.s[CODE_EXEC] |= 1U << lane;
 			wave.v[0][lane] = graphics->first_vertex_id + lane;
 			wave.v[1][lane] = 0U;
-			wave.v[2][lane] = 0U;
+			wave.v[2][lane] = graphics->primitive_id[lane];
 			wave.v[3][lane] = graphics->instance_id;
 		}
 	} else {
@@ -1852,7 +1852,14 @@ format_fetch(
 	return 0;
 }
 
-/* Runs an image access: a sample at normalized coordinates (with an offset, a bias or a level), or a texel fetch. */
+/*
+ * Runs an image access: a sample (with an offset, a bias, a depth compare,
+ * gradients, a level, or level 0), a texel fetch at a level, or a size
+ * query.  The address VGPRs are, in order: the offset, the bias, the
+ * reference, the gradients du/dx dv/dx du/dy dv/dy, u and v, the level (a
+ * size query: the level alone).  The channels the mask enables are
+ * written to consecutive VGPRs.
+ */
 static int
 image_access(
 	struct run *run,
@@ -1860,6 +1867,7 @@ image_access(
 	uint32_t word0,
 	uint32_t word1)
 {
+	struct texture_request request;
 	unsigned opcode;
 	unsigned vaddr;
 	unsigned vdata;
@@ -1869,18 +1877,22 @@ image_access(
 	unsigned lane;
 	unsigned index;
 	unsigned next;
+	unsigned mask;
+	unsigned written;
 	uint32_t descriptor[8];
 	uint32_t sampler_words[4];
 	uint32_t out[4];
 	uint32_t offset;
 	uint32_t quad;
+	unsigned kind;
 	int has_offset;
 	int has_bias;
+	int has_compare;
+	int has_gradients;
 	int has_level;
 	int implicit;
 	int fetch;
-	int offset_u;
-	int offset_v;
+	int size_query;
 	uint8_t *texels;
 	int error;
 
@@ -1889,31 +1901,45 @@ image_access(
 	vdata = 256U + ((word1 >> 8) & 0xffU);
 	image = ((word1 >> 16) & 0x1fU) << 2;
 	sampler = ((word1 >> 21) & 0x1fU) << 2;
-	if (((word0 >> 8) & 0xfU) != 0xfU || ((word0 >> 3) & 7U) != 1U || ((word0 >> 1) & 3U) != 0U)
-		return fail(run, "an image access other than four channels of a 2D image without NSA");
+	mask = (word0 >> 8) & 0xfU;
+	if (mask == 0U || ((word0 >> 3) & 7U) != 1U || ((word0 >> 1) & 3U) != 0U)
+		return fail(run, "an image access other than a 2D image without NSA, or with no channel");
 
-	/* The address count by the opcode. */
+	/* The address count by the opcode: the sample kinds are 0x20 .. 0x3f, a bit pattern of offset, compare and kind. */
 	has_offset = 0;
 	has_bias = 0;
+	has_compare = 0;
+	has_gradients = 0;
 	has_level = 0;
 	implicit = 0;
 	fetch = 0;
-	switch (opcode) {
-	case 0x01U: fetch = 1; has_level = 1; break;
-	case 0x20U: implicit = 1; break;
-	case 0x24U: has_level = 1; break;
-	case 0x25U: has_bias = 1; implicit = 1; break;
-	case 0x27U: break;
-	case 0x30U: has_offset = 1; implicit = 1; break;
-	case 0x34U: has_offset = 1; has_level = 1; break;
-	case 0x35U: has_offset = 1; has_bias = 1; implicit = 1; break;
-	case 0x37U: has_offset = 1; break;
-	default:
+	size_query = 0;
+	if (opcode == 0x01U) {
+		fetch = 1;
+		has_level = 1;
+	} else if (opcode == 0x0eU) {
+		size_query = 1;
+	} else if (opcode >= 0x20U && opcode <= 0x3fU) {
+		has_offset = (opcode & 0x10U) != 0U;
+		has_compare = (opcode & 0x08U) != 0U;
+		kind = opcode & 0x07U;
+		switch (kind) {
+		case 0U: implicit = 1; break;
+		case 2U: has_gradients = 1; break;
+		case 4U: has_level = 1; break;
+		case 5U: has_bias = 1; implicit = 1; break;
+		case 7U: break;
+		default:
+			return fail(run, "an image opcode the machine does not know");
+		}
+	} else {
 		return fail(run, "an image opcode the machine does not know");
 	}
 	if (fetch != 0 && ((word0 >> 12) & 1U) == 0U)
 		return fail(run, "a texel fetch without unnormalized coordinates");
-	count = 2U + (unsigned)has_offset + (unsigned)has_bias + (unsigned)has_level;
+	count = 2U + (unsigned)has_offset + (unsigned)has_bias + (unsigned)has_compare + 4U * (unsigned)has_gradients + (unsigned)has_level;
+	if (size_query != 0)
+		count = 1U;
 
 	/* The descriptors, the addresses ready; the destination free. */
 	for (index = 0U; index < 8U; index++) {
@@ -1923,7 +1949,7 @@ image_access(
 		descriptor[index] = wave->s[image + index];
 	}
 	memset(sampler_words, 0, sizeof(sampler_words));
-	if (fetch == 0) {
+	if (fetch == 0 && size_query == 0) {
 		for (index = 0U; index < 4U; index++) {
 			error = check_scalar_read(run, wave, sampler + index);
 			if (error != 0)
@@ -1936,13 +1962,17 @@ image_access(
 		if (error != 0)
 			return error;
 	}
+	written = 0U;
 	for (index = 0U; index < 4U; index++) {
-		error = check_write(run, wave, vdata + index);
+		if ((mask & (1U << index)) == 0U)
+			continue;
+		error = check_write(run, wave, vdata + written);
 		if (error != 0)
 			return error;
+		written++;
 	}
 
-	/* A sample with derivatives needs whole quads. */
+	/* A sample with implicit derivatives needs whole quads. */
 	if (implicit != 0) {
 		for (quad = 0U; quad < 32U; quad += 4U) {
 			if (((wave->s[CODE_EXEC] >> quad) & 0xfU) != 0U && ((wave->s[CODE_EXEC] >> quad) & 0xfU) != 0xfU)
@@ -1954,32 +1984,67 @@ image_access(
 	if (texels == NULL)
 		return fail(run, "an image outside memory");
 
-	/* Each lane: its offset, then u and v (past the bias), filtered. */
+	/* Each lane: its request from the address VGPRs in order. */
 	for (lane = 0U; lane < MACHINE_LANES; lane++) {
 		if ((wave->s[CODE_EXEC] & (1U << lane)) == 0U)
 			continue;
+		memset(&request, 0, sizeof(request));
 		next = vaddr - 256U;
-		offset_u = 0;
-		offset_v = 0;
-		if (has_offset != 0) {
-			offset = wave->v[next][lane];
-			offset_u = (int)(int8_t)(uint8_t)((offset & 0x3fU) << 2) >> 2;
-			offset_v = (int)(int8_t)(uint8_t)(((offset >> 8) & 0x3fU) << 2) >> 2;
-			next++;
+		if (size_query != 0) {
+			request.size_query = 1;
+			request.level = wave->v[next][lane];
+		} else {
+			if (has_offset != 0) {
+				offset = wave->v[next][lane];
+				request.offset_u = (int)(int8_t)(uint8_t)((offset & 0x3fU) << 2) >> 2;
+				request.offset_v = (int)(int8_t)(uint8_t)(((offset >> 8) & 0x3fU) << 2) >> 2;
+				next++;
+			}
+			if (has_bias != 0) {
+				request.has_lod = 1;
+				request.lod = wave->v[next][lane];
+				next++;
+			}
+			if (has_compare != 0) {
+				request.compare = 1;
+				request.reference = wave->v[next][lane];
+				next++;
+			}
+			if (has_gradients != 0) {
+				request.has_gradients = 1;
+				for (index = 0U; index < 4U; index++)
+					request.gradients[index] = wave->v[next + index][lane];
+				next += 4U;
+			}
+			request.u = wave->v[next][lane];
+			request.v = wave->v[next + 1U][lane];
+			next += 2U;
+			request.fetch = fetch;
+			if (has_level != 0 && fetch == 0) {
+				request.has_lod = 1;
+				request.lod = wave->v[next][lane];
+			}
 		}
-		if (has_bias != 0)
-			next++;
-		texture_filter(texels, descriptor, sampler_words, wave->v[next][lane], wave->v[next + 1U][lane], fetch, offset_u, offset_v, out);
-		for (index = 0U; index < 4U; index++)
-			wave->v[vdata - 256U + index][lane] = out[index];
+		texture_sample(texels, descriptor, sampler_words, &request, out);
+		written = 0U;
+		for (index = 0U; index < 4U; index++) {
+			if ((mask & (1U << index)) == 0U)
+				continue;
+			wave->v[vdata - 256U + written][lane] = out[index];
+			written++;
+		}
 	}
 	wave->vector_issued++;
+	written = 0U;
 	for (index = 0U; index < 4U; index++) {
-		wave->vector_order[vdata + index] = wave->vector_issued;
-		wave->pending[vdata + index] |= PENDING_VECTOR;
+		if ((mask & (1U << index)) == 0U)
+			continue;
+		wave->vector_order[vdata + written] = wave->vector_issued;
+		wave->pending[vdata + written] |= PENDING_VECTOR;
+		written++;
 	}
 	mark_scalar_reads(wave->read_by_load, image, 8U);
-	if (fetch == 0)
+	if (fetch == 0 && size_query == 0)
 		mark_scalar_reads(wave->read_by_load, sampler, 4U);
 	mark_scalar_reads(wave->read_by_load, CODE_EXEC, 1U);
 	if (wave->branch_after_shared != 0)

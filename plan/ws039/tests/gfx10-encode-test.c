@@ -437,6 +437,36 @@ memory_cases(void)
 	inst.count = 4U;
 	failed |= emit("image_sample_l_o v[0:3], v[4:7], s[8:15], s[16:19] dmask:0xf dim:SQ_RSRC_IMG_2D", &inst);
 
+	inst = make(AMDRDNA_GFX10_KIND_IMAGE, AMDRDNA_GFX10_IMAGE_SAMPLE_C, V(0), V(4), S(8), S(16));
+	inst.mask = 0x1U;
+	inst.count = 3U;
+	failed |= emit("image_sample_c v0, v[4:6], s[8:15], s[16:19] dmask:0x1 dim:SQ_RSRC_IMG_2D", &inst);
+
+	inst = make(AMDRDNA_GFX10_KIND_IMAGE, AMDRDNA_GFX10_IMAGE_SAMPLE_C_LZ_O, V(0), V(4), S(8), S(16));
+	inst.mask = 0x1U;
+	inst.count = 4U;
+	failed |= emit("image_sample_c_lz_o v0, v[4:7], s[8:15], s[16:19] dmask:0x1 dim:SQ_RSRC_IMG_2D", &inst);
+
+	inst = make(AMDRDNA_GFX10_KIND_IMAGE, AMDRDNA_GFX10_IMAGE_SAMPLE_D, V(0), V(4), S(8), S(16));
+	inst.mask = 0xfU;
+	inst.count = 6U;
+	failed |= emit("image_sample_d v[0:3], v[4:9], s[8:15], s[16:19] dmask:0xf dim:SQ_RSRC_IMG_2D", &inst);
+
+	inst = make(AMDRDNA_GFX10_KIND_IMAGE, AMDRDNA_GFX10_IMAGE_SAMPLE_C_D_O, V(0), V(4), S(8), S(16));
+	inst.mask = 0x1U;
+	inst.count = 8U;
+	failed |= emit("image_sample_c_d_o v0, v[4:11], s[8:15], s[16:19] dmask:0x1 dim:SQ_RSRC_IMG_2D", &inst);
+
+	inst = make(AMDRDNA_GFX10_KIND_IMAGE, AMDRDNA_GFX10_IMAGE_SAMPLE_C_B, V(0), V(4), S(8), S(16));
+	inst.mask = 0x1U;
+	inst.count = 4U;
+	failed |= emit("image_sample_c_b v0, v[4:7], s[8:15], s[16:19] dmask:0x1 dim:SQ_RSRC_IMG_2D", &inst);
+
+	inst = make(AMDRDNA_GFX10_KIND_IMAGE, AMDRDNA_GFX10_IMAGE_GET_RESINFO, V(0), V(4), S(8), AMDRDNA_GFX10_NULL);
+	inst.mask = 0xfU;
+	inst.count = 1U;
+	failed |= emit("image_get_resinfo v[0:3], v4, s[8:15] dmask:0xf dim:SQ_RSRC_IMG_2D", &inst);
+
 	inst = make(AMDRDNA_GFX10_KIND_IMAGE, AMDRDNA_GFX10_IMAGE_LOAD_MIP, V(0), V(4), S(8), AMDRDNA_GFX10_NULL);
 	inst.mask = 0xfU;
 	inst.count = 3U;

@@ -98,6 +98,19 @@ struct amdrdna_gfx10_program {
 	uint32_t color_outputs;
 	uint32_t discards;
 
+	/*
+	 * A vertex program: whether it exports the primitive number (the
+	 * driver then has the hardware deliver it).  A pixel program: the
+	 * attribute it reads the point sprite coordinate from and the one it
+	 * reads the primitive number from (AMDRDNA_GFX10_NO_ATTRIBUTE for
+	 * none), and whether its second colour (of a dual-source blend) is
+	 * exported as colour 1.
+	 */
+	uint32_t exports_primitive_id;
+	uint32_t point_coord_attribute;
+	uint32_t primitive_id_attribute;
+	uint32_t dual_source;
+
 	/* The storage buffers, the uniform buffers and the sampled images, and where their descriptors go. */
 	struct amdrdna_gfx10_binding storage[AMDRDNA_GFX10_STORAGE_MAX];
 	uint32_t storage_used;
@@ -105,6 +118,15 @@ struct amdrdna_gfx10_program {
 	uint32_t uniform_used;
 	struct amdrdna_gfx10_binding textures[AMDRDNA_GFX10_TEXTURE_MAX];
 	uint32_t texture_used;
+};
+
+/*
+ * What a pipeline asks of a compile beyond the module: a vertex program
+ * that also exports the primitive number as parameter
+ * AMDRDNA_GFX10_PRIMITIVE_ID_PARAMETER, because the pixel program reads it.
+ */
+struct amdrdna_gfx10_compile_options {
+	uint32_t export_primitive_id;
 };
 
 /*
@@ -116,11 +138,14 @@ struct amdrdna_gfx10_diagnostic {
 	const char *reason;
 };
 
-/* Compiles a SPIR-V module's stage: 0 with the program, EINVAL or ENOTSUP with a reason, or ENOMEM. */
-int amdrdna_gfx10_compile(const uint32_t *words, size_t word_count, enum drv_gpu_shader_stage stage, struct amdrdna_gfx10_program **program, struct amdrdna_gfx10_diagnostic *diagnostic);
+/*
+ * Compiles a SPIR-V module's stage with the options (NULL for none): 0
+ * with the program, EINVAL or ENOTSUP with a reason, or ENOMEM.
+ */
+int amdrdna_gfx10_compile(const uint32_t *words, size_t word_count, enum drv_gpu_shader_stage stage, const struct amdrdna_gfx10_compile_options *options, struct amdrdna_gfx10_program **program, struct amdrdna_gfx10_diagnostic *diagnostic);
 
 /* Compiles a parsed program (the IR is only read), as amdrdna_gfx10_compile(). */
-int amdrdna_gfx10_compile_ir(const struct drv_gpu_shader_ir *ir, struct amdrdna_gfx10_program **program, struct amdrdna_gfx10_diagnostic *diagnostic);
+int amdrdna_gfx10_compile_ir(const struct drv_gpu_shader_ir *ir, const struct amdrdna_gfx10_compile_options *options, struct amdrdna_gfx10_program **program, struct amdrdna_gfx10_diagnostic *diagnostic);
 
 /* Frees a compiled program. */
 void amdrdna_gfx10_program_free(struct amdrdna_gfx10_program *program);

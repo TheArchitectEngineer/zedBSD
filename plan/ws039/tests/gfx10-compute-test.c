@@ -152,7 +152,7 @@ test_module(
 	/* The compiler. */
 	program = NULL;
 	memset(&diagnostic, 0, sizeof(diagnostic));
-	error = amdrdna_gfx10_compile(words, word_count, DRV_GPU_STAGE_COMPUTE, &program, &diagnostic);
+	error = amdrdna_gfx10_compile(words, word_count, DRV_GPU_STAGE_COMPUTE, NULL, &program, &diagnostic);
 	free(words);
 	if (error != 0) {
 		printf("FAIL %s: the compiler refused it at %u (%s)\n", name, diagnostic.instruction, diagnostic.reason);

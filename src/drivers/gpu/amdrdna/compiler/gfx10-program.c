@@ -91,6 +91,27 @@
 #define GFX10_ATTRIBUTE_FLAT		(1U << 10)
 
 /*
+ * The attribute the hardware makes the point sprite coordinate in: the
+ * sprite texture bit (17) and the parameter offset that names no
+ * parameter (0x20); the interpolation control that enables flat shading
+ * (bit 0) and the sprite (bit 1) and gives its channels s, t, 0, 1 (3 bits
+ * each from bit 2) with t from 0 at the top (bit 14 clear); and the bit
+ * that has the hardware deliver a vertex program its primitive number.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/registers/gfx10.json
+ * (SPI_PS_INPUT_CNTL_0: PT_SPRITE_TEX, OFFSET; SPI_INTERP_CONTROL_0:
+ * FLAT_SHADE_ENA, PNT_SPRITE_ENA, PNT_SPRITE_OVRD_X .. W, PNT_SPRITE_TOP_1;
+ * the enum SPI_PNT_SPRITE_OVERRIDE: SEL_0 0, SEL_1 1, SEL_S 2, SEL_T 3;
+ * VGT_PRIMITIVEID_EN: PRIMITIVEID_EN), src/amd/vulkan/radv_cmd_buffer.c
+ * (radv_emit_ps_inputs: the sprite attribute PT_SPRITE_TEX with OFFSET
+ * 0x20, line 2551) and src/amd/vulkan/radv_queue.c (the interpolation
+ * control of the preamble, lines 838-843).
+ */
+#define GFX10_ATTRIBUTE_SPRITE		((1U << 17) | 0x20U)
+#define GFX10_INTERPOLATION_SPRITE	(1U | (1U << 1) | (2U << 2) | (3U << 5) | (0U << 8) | (1U << 11))
+#define GFX10_PRIMITIVE_ID_ENABLE	1U
+
+/*
  * The words of a buffer descriptor: the base's high 16 bits and the
  * stride (bits 29:16) in word 1; in word 3 the channel selects (x, y, z,
  * w in 3 bits each from bit 0: 0 for zero, 1 for one, 4 .. 7 for the
@@ -169,6 +190,10 @@ amdrdna_gfx10_program_registers(
 			registers->vertex_export_config = (parameters - 1U) << GFX10_VERTEX_EXPORT_COUNT_SHIFT;
 		}
 
+		/* The primitive number delivered in v2 for its export. */
+		if (program->exports_primitive_id != 0U)
+			registers->primitive_id_enable = GFX10_PRIMITIVE_ID_ENABLE;
+
 		/* Position 0 always, position 1 for the point size. */
 		registers->position_formats = GFX10_POSITION_FOUR;
 		if (program->writes_point_size != 0U) {
@@ -189,13 +214,26 @@ amdrdna_gfx10_program_registers(
 				registers->color_formats |= GFX10_COLOR_FOUR_FLOATS << (4U * location);
 		}
 
-		/* Attribute L reads parameter L, flat where the program reads it flat. */
+		/*
+		 * Attribute L reads parameter L, flat where the program reads it
+		 * flat; the point sprite coordinate's is made by the hardware, the
+		 * primitive number's reads its parameter flat.
+		 */
 		registers->attribute_count = highest_bit_count(program->attribute_inputs);
 		for (location = 0U; location < registers->attribute_count; location++) {
+			if (location == program->point_coord_attribute) {
+				registers->attribute_control[location] = GFX10_ATTRIBUTE_SPRITE;
+				continue;
+			}
+			if (location == program->primitive_id_attribute) {
+				registers->attribute_control[location] = AMDRDNA_GFX10_PRIMITIVE_ID_PARAMETER | GFX10_ATTRIBUTE_FLAT;
+				continue;
+			}
 			registers->attribute_control[location] = location;
 			if ((program->flat_inputs & (1U << location)) != 0U)
 				registers->attribute_control[location] |= GFX10_ATTRIBUTE_FLAT;
 		}
+		registers->interpolation_control = GFX10_INTERPOLATION_SPRITE;
 		registers->interpolant_control = registers->attribute_count | GFX10_INTERPOLANT_WAVE32;
 		registers->discards = program->discards;
 	}

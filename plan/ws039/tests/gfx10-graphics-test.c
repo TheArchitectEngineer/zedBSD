@@ -47,12 +47,14 @@ void *kern_calloc(size_t count, size_t size);
 void kern_free(void *pointer);
 
 static int test_module(const char *outdir, const char *path);
+static int test_variant(const char *outdir, const char *name, const struct drv_gpu_shader_ir *ir, const uint32_t *words, size_t word_count, enum drv_gpu_shader_stage stage, uint32_t export_primitive_id);
 static int vertex_trial(const struct drv_gpu_shader_ir *ir, const struct amdrdna_gfx10_program *program, uint32_t *state);
 static int pixel_trial(const struct drv_gpu_shader_ir *ir, const struct amdrdna_gfx10_program *program, uint32_t *state);
 static void setup_textures(const struct drv_gpu_shader_ir *ir, const struct amdrdna_gfx10_program *program, struct machine_memory *memory, uint8_t *table_bytes, uint32_t *state);
-static void reference_sample(void *context, uint32_t set, uint32_t binding, uint32_t u, uint32_t v, int fetch, int offset_u, int offset_v, uint32_t *out);
+static void reference_sample(void *context, uint32_t set, uint32_t binding, const struct texture_request *request, uint32_t *out);
 static void setup_uniforms(const struct drv_gpu_shader_ir *ir, const struct amdrdna_gfx10_program *program, struct machine_memory *memory, struct reference_memory *reference, uint8_t *table, uint32_t *state);
 static int compare_slot(const char *what, uint32_t lane, uint32_t channel, uint32_t gpu, uint32_t ref);
+static int compare_storage(const struct drv_gpu_shader_ir *ir);
 static uint32_t random_word(uint32_t *state);
 static float random_float(uint32_t *state);
 static uint32_t float_bits(float value);
@@ -60,6 +62,7 @@ static uint32_t *read_file(const char *path, size_t *words);
 
 /* The buffers of one trial. */
 static uint8_t uniform_bytes[REFERENCE_UNIFORMS][TEST_BUFFER_BYTES];
+static uint8_t reference_storage[REFERENCE_UNIFORMS][TEST_BUFFER_BYTES];
 static uint8_t vertex_bytes[AMDRDNA_GFX10_LOCATIONS][TEST_BUFFER_BYTES];
 static uint8_t table[TEST_TABLE_BYTES];
 static uint8_t push[256];
@@ -125,7 +128,6 @@ test_module(
 	const char *path)
 {
 	char name[4096];
-	char hex_path[8200];
 	const char *base;
 	char *dot;
 	uint32_t *words;
@@ -133,14 +135,7 @@ test_module(
 	enum drv_gpu_shader_stage stage;
 	struct drv_gpu_shader_ir *ir;
 	struct drv_gpu_compile_diagnostic parse_diagnostic;
-	struct amdrdna_gfx10_program *program;
-	struct amdrdna_gfx10_diagnostic diagnostic;
-	struct amdrdna_gfx10_registers registers;
-	uint32_t state;
-	uint32_t index;
-	unsigned trial;
 	int error;
-	FILE *hex;
 
 	base = strrchr(path, '/');
 	base = base != NULL ? base + 1 : path;
@@ -163,19 +158,54 @@ test_module(
 		free(words);
 		return 1;
 	}
+	/* The module as it is; a vertex module also exporting the primitive number. */
+	error = test_variant(outdir, name, ir, words, word_count, stage, 0U);
+	if (error == 0 && stage == DRV_GPU_STAGE_VERTEX)
+		error = test_variant(outdir, name, ir, words, word_count, stage, 1U);
+	free(words);
+	drv_gpu_shader_ir_free(ir);
+	return error;
+}
+
+/* Compiles one module with the options and runs its trials. */
+static int
+test_variant(
+	const char *outdir,
+	const char *module,
+	const struct drv_gpu_shader_ir *ir,
+	const uint32_t *words,
+	size_t word_count,
+	enum drv_gpu_shader_stage stage,
+	uint32_t export_primitive_id)
+{
+	char name[4200];
+	char hex_path[8200];
+	char *dot;
+	struct amdrdna_gfx10_program *program;
+	struct amdrdna_gfx10_diagnostic diagnostic;
+	struct amdrdna_gfx10_compile_options options;
+	struct amdrdna_gfx10_registers registers;
+	uint32_t state;
+	uint32_t index;
+	uint32_t expected;
+	unsigned trial;
+	int error;
+	FILE *hex;
+
+	snprintf(name, sizeof(name), "%s%s", module, export_primitive_id != 0U ? "+primitive" : "");
+	memset(&options, 0, sizeof(options));
+	options.export_primitive_id = export_primitive_id;
 	program = NULL;
 	memset(&diagnostic, 0, sizeof(diagnostic));
-	error = amdrdna_gfx10_compile(words, word_count, stage, &program, &diagnostic);
-	free(words);
+	error = amdrdna_gfx10_compile(words, word_count, stage, &options, &program, &diagnostic);
 	if (error != 0) {
 		printf("FAIL %s: the compiler refused it at %u (%s)\n", name, diagnostic.instruction, diagnostic.reason);
-		drv_gpu_shader_ir_free(ir);
 		return 1;
 	}
 
 	/* The code for the disassembler (the dots of the name made dashes). */
 	for (dot = name; *dot != '\0'; dot++) {
-		if (*dot == '.')
+		if (*dot == '.' || *dot == '+')
 			*dot = '-';
 	}
 	snprintf(hex_path, sizeof(hex_path), "%s/%s.hex", outdir, name);
@@ -189,7 +219,7 @@ test_module(
 		fclose(hex);
 	}
 
-	/* The register values: a vertex program's v0 .. v3 and parameter count, a pixel program's inputs and colours. */
+	/* The register values: a vertex program's v0 .. v3, parameter count and primitive number, a pixel program's inputs and colours. */
 	amdrdna_gfx10_program_registers(program, &registers);
 	error = 0;
 	if (((registers.inputs >> 1) & 0x1fU) != program->user_sgprs)
@@ -201,6 +231,8 @@ test_module(
 			error = 1;
 		if (program->writes_point_size != 0U && (registers.vertex_output_control & (1U << 16)) == 0U)
 			error = 1;
+		if (registers.primitive_id_enable != export_primitive_id || program->exports_primitive_id != export_primitive_id)
+			error = 1;
 	} else {
 		if (registers.pixel_input_enable != program->pixel_inputs || (registers.pixel_input_enable & 2U) == 0U)
 			error = 1;
@@ -211,16 +243,20 @@ test_module(
 				error = 1;
 		}
 		for (index = 0U; index < registers.attribute_count; index++) {
-			if ((registers.attribute_control[index] & 0x3fU) != index)
-				error = 1;
-			if (((registers.attribute_control[index] >> 10) & 1U) != ((program->flat_inputs >> index) & 1U))
+			expected = index;
+			if (index == program->point_coord_attribute)
+				expected = 0x20U | (1U << 17);
+			else if (index == program->primitive_id_attribute)
+				expected = AMDRDNA_GFX10_PRIMITIVE_ID_PARAMETER | (1U << 10);
+			else if (((program->flat_inputs >> index) & 1U) != 0U)
+				expected |= 1U << 10;
+			if (registers.attribute_control[index] != expected)
 				error = 1;
 		}
 	}
 	if (error != 0) {
 		printf("FAIL %s: register values\n", name);
 		amdrdna_gfx10_program_free(program);
-		drv_gpu_shader_ir_free(ir);
 		return 1;
 	}
 
@@ -241,7 +277,6 @@ test_module(
 		printf("FAIL %s (trial %u)\n", name, trial - 1U);
 	}
 	amdrdna_gfx10_program_free(program);
-	drv_gpu_shader_ir_free(ir);
 	return error;
 }
 
@@ -279,7 +314,7 @@ setup_textures(
 		}
 		address = machine_add_region(memory, texture_bytes[slot], sizeof(texture_bytes[slot]));
 		texture_descriptors(texture_image[slot], texture_sampler[slot], address, width, height, format,
-				    (int)(random_word(state) & 1U), (int)(random_word(state) & 1U));
+				    (int)(random_word(state) & 3U), (int)(random_word(state) & 1U), random_word(state) & 7U);
 		memcpy(table_bytes + program->textures[slot].table_offset, texture_image[slot], 32U);
 		memcpy(table_bytes + program->textures[slot].table_offset + 32U, texture_sampler[slot], 16U);
 	}
@@ -291,11 +326,7 @@ reference_sample(
 	void *context,
 	uint32_t set,
 	uint32_t binding,
-	uint32_t u,
-	uint32_t v,
-	int fetch,
-	int offset_u,
-	int offset_v,
+	const struct texture_request *request,
 	uint32_t *out)
 {
 	uint32_t slot;
@@ -303,7 +334,7 @@ reference_sample(
 	(void)context;
 	for (slot = 0U; slot < texture_program->texture_used; slot++) {
 		if (texture_program->textures[slot].set == set && texture_program->textures[slot].binding == binding) {
-			texture_filter(texture_bytes[slot], texture_image[slot], texture_sampler[slot], u, v, fetch, offset_u, offset_v, out);
+			texture_sample(texture_bytes[slot], texture_image[slot], texture_sampler[slot], request, out);
 			return;
 		}
 	}
@@ -336,6 +367,11 @@ setup_uniforms(
 		}
 		address = machine_add_region(memory, uniform_bytes[index], TEST_BUFFER_BYTES);
 		reference->bytes[index] = uniform_bytes[index];
+		if (uniform->kind == DRV_GPU_IR_UNIFORM_STORAGE) {
+			/* A storage buffer: the reference writes its own copy, compared afterwards. */
+			memcpy(reference_storage[index], uniform_bytes[index], TEST_BUFFER_BYTES);
+			reference->bytes[index] = reference_storage[index];
+		}
 		reference->size[index] = TEST_BUFFER_BYTES;
 		for (slot = 0U; slot < program->uniform_used; slot++) {
 			if (uniform->kind == DRV_GPU_IR_UNIFORM_BLOCK &&
@@ -437,6 +473,8 @@ vertex_trial(
 			graphics.first_vertex_id = first;
 			graphics.instance_id = instance;
 			graphics.lanes = TEST_VERTICES - first < 32U ? TEST_VERTICES - first : 32U;
+			for (lane = 0U; lane < 32U; lane++)
+				graphics.primitive_id[lane] = random_word(state) % 1000U;
 			machine_run_graphics(&dispatch, &memory, 0, &graphics, &result);
 			if (result.error != NULL) {
 				printf("  GFX10: %s at word %u (0x%08x)\n", result.error, result.error_pc, result.error_word);
@@ -498,6 +536,17 @@ vertex_trial(
 				}
 			}
 
+			/* The primitive number, when the program exports it. */
+			for (lane = 0U; program->exports_primitive_id != 0U && lane < graphics.lanes && failed == 0; lane++) {
+				target = AMDRDNA_GFX10_EXPORT_PARAMETER + AMDRDNA_GFX10_PRIMITIVE_ID_PARAMETER;
+				if ((graphics.export_channels[target] & 1U) == 0U || (graphics.export_lanes[target] & (1U << lane)) == 0U) {
+					printf("  the primitive number of lane %u was not exported\n", lane);
+					failed = 1;
+					break;
+				}
+				failed = compare_slot("primitive", lane, 0U, graphics.exported[target][lane][0], graphics.primitive_id[lane]);
+			}
+
 			/* The last position export is marked last; position 0 has the valid mask bit. */
 			if (failed == 0 && (graphics.export_flags[AMDRDNA_GFX10_EXPORT_POSITION] & 4U) == 0U) {
 				printf("  position 0 without the valid mask bit\n");
@@ -528,6 +577,7 @@ pixel_trial(
 	uint32_t channel;
 	uint32_t index;
 	uint32_t last;
+	uint32_t slot;
 	float i;
 	float j;
 	float value;
@@ -613,6 +663,18 @@ pixel_trial(
 		reference_state.frag_coord[lane][2] = float_bits(graphics.position[lane][2]);
 		reference_state.frag_coord[lane][3] = float_bits(1.0f / graphics.position[lane][3]);
 		reference_state.front_facing[lane] = graphics.face[lane] > 0.0f ? 0xffffffffU : 0U;
+
+		/* The point sprite coordinate the hardware makes in its attribute, interpolated; the primitive number flat. */
+		if (program->point_coord_attribute != AMDRDNA_GFX10_NO_ATTRIBUTE) {
+			for (channel = 0U; channel < 2U; channel++) {
+				vertices = attributes[graphics.primitive[lane]][program->point_coord_attribute][channel];
+				value = fmaf(vertices[2] - vertices[0], graphics.perspective[lane][1],
+					     fmaf(vertices[1] - vertices[0], graphics.perspective[lane][0], vertices[0]));
+				reference_state.point_coord[lane][channel] = float_bits(value);
+			}
+		}
+		if (program->primitive_id_attribute != AMDRDNA_GFX10_NO_ATTRIBUTE)
+			reference_state.primitive_id[lane] = float_bits(attributes[graphics.primitive[lane]][program->primitive_id_attribute][0][0]);
 	}
 	why = reference_run_graphics(ir, &reference, &reference_state, &undefined);
 	if (why != NULL) {
@@ -621,6 +683,10 @@ pixel_trial(
 	}
 	if (undefined != 0)
 		return 0;
+
+	/* The storage buffers the alive lanes wrote (the helper lanes write nothing). */
+	if (compare_storage(ir) != 0)
+		return 1;
 
 	/* The pixels alive: covered and not discarded. */
 	alive = 0U;
@@ -653,15 +719,18 @@ pixel_trial(
 			printf("  colour %u exported for lanes 0x%08x, alive 0x%08x\n", location, exported_lanes, alive);
 			return 1;
 		}
+		slot = location;
+		if (location == 1U && program->dual_source != 0U)
+			slot = REFERENCE_SLOT_SECOND_COLOR;
 		for (lane = 0U; lane < 32U; lane++) {
 			if ((alive & (1U << lane)) == 0U)
 				continue;
 			for (channel = 0U; channel < 4U; channel++) {
-				if (reference_state.written[lane][location][channel] == 0U)
+				if (reference_state.written[lane][slot][channel] == 0U)
 					continue;
 				if (compare_slot("colour", lane, 4U * location + channel,
 						 graphics.exported[AMDRDNA_GFX10_EXPORT_COLOR + location][lane][channel],
-						 reference_state.output[lane][location][channel]) != 0)
+						 reference_state.output[lane][slot][channel]) != 0)
 					return 1;
 			}
 		}
@@ -669,6 +738,31 @@ pixel_trial(
 	if ((graphics.export_flags[AMDRDNA_GFX10_EXPORT_COLOR + last] & 7U) != 7U) {
 		printf("  the last colour is not marked last and valid\n");
 		return 1;
+	}
+	return 0;
+}
+
+/* Compares each storage buffer the GFX10 run wrote with the reference's; 1 when a word differs. */
+static int
+compare_storage(
+	const struct drv_gpu_shader_ir *ir)
+{
+	uint32_t index;
+	uint32_t word;
+	uint32_t gpu;
+	uint32_t ref;
+
+	for (index = 0U; index < ir->uniform_count && index < REFERENCE_UNIFORMS; index++) {
+		if (ir->uniforms[index].kind != DRV_GPU_IR_UNIFORM_STORAGE)
+			continue;
+		for (word = 0U; word < TEST_BUFFER_BYTES / 4U; word++) {
+			memcpy(&gpu, &uniform_bytes[index][word * 4U], 4U);
+			memcpy(&ref, &reference_storage[index][word * 4U], 4U);
+			if (gpu != ref) {
+				printf("  storage %u word %u: GFX10 0x%08x, reference 0x%08x\n", index, word, gpu, ref);
+				return 1;
+			}
+		}
 	}
 	return 0;
 }

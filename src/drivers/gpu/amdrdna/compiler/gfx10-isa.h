@@ -383,19 +383,32 @@
  * ==== Image opcodes and the 2D dimension ====
  *
  * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_opcodes.py
- * (the GFX10 numbers of the table MIMG, lines 1761-1816).
+ * (the GFX10 numbers of the table MIMG, lines 1761-1824).
  * Checked against llvm-mc 19, which writes the dimension 1 as
  * "dim:SQ_RSRC_IMG_2D".
  */
 #define AMDRDNA_GFX10_IMAGE_LOAD_MIP	0x01U
+#define AMDRDNA_GFX10_IMAGE_GET_RESINFO	0x0eU
 #define AMDRDNA_GFX10_IMAGE_SAMPLE	0x20U
+#define AMDRDNA_GFX10_IMAGE_SAMPLE_D	0x22U
 #define AMDRDNA_GFX10_IMAGE_SAMPLE_L	0x24U
 #define AMDRDNA_GFX10_IMAGE_SAMPLE_B	0x25U
 #define AMDRDNA_GFX10_IMAGE_SAMPLE_LZ	0x27U
+#define AMDRDNA_GFX10_IMAGE_SAMPLE_C	0x28U
+#define AMDRDNA_GFX10_IMAGE_SAMPLE_C_D	0x2aU
+#define AMDRDNA_GFX10_IMAGE_SAMPLE_C_L	0x2cU
+#define AMDRDNA_GFX10_IMAGE_SAMPLE_C_B	0x2dU
+#define AMDRDNA_GFX10_IMAGE_SAMPLE_C_LZ	0x2fU
 #define AMDRDNA_GFX10_IMAGE_SAMPLE_O	0x30U
+#define AMDRDNA_GFX10_IMAGE_SAMPLE_D_O	0x32U
 #define AMDRDNA_GFX10_IMAGE_SAMPLE_L_O	0x34U
 #define AMDRDNA_GFX10_IMAGE_SAMPLE_B_O	0x35U
 #define AMDRDNA_GFX10_IMAGE_SAMPLE_LZ_O	0x37U
+#define AMDRDNA_GFX10_IMAGE_SAMPLE_C_O	0x38U
+#define AMDRDNA_GFX10_IMAGE_SAMPLE_C_D_O	0x3aU
+#define AMDRDNA_GFX10_IMAGE_SAMPLE_C_L_O	0x3cU
+#define AMDRDNA_GFX10_IMAGE_SAMPLE_C_B_O	0x3dU
+#define AMDRDNA_GFX10_IMAGE_SAMPLE_C_LZ_O	0x3fU
 #define AMDRDNA_GFX10_IMAGE_DIM_2D	1U
 
 /*
@@ -480,6 +493,14 @@
 #define AMDRDNA_GFX10_ABI_INSTANCE_MASK	4U
 #define AMDRDNA_GFX10_ABI_USER_SGPRS	2U
 #define AMDRDNA_GFX10_ABI_USER_SGPRS_VS	5U
+
+/*
+ * The parameter a vertex program exports the primitive number in when it
+ * is asked to (a pixel program reads it flat from there), and the value
+ * that names no attribute.
+ */
+#define AMDRDNA_GFX10_PRIMITIVE_ID_PARAMETER	31U
+#define AMDRDNA_GFX10_NO_ATTRIBUTE		0xffffffffU
 
 /* The bytes of one buffer descriptor (V#), image descriptor (T#) and sampler (S#). */
 #define AMDRDNA_GFX10_BUFFER_DESCRIPTOR_BYTES	16U

@@ -516,6 +516,10 @@ execute(
 			*d = run->graphics->frag_coord[lane][inst->component];
 		} else if (inst->location == 66U) {
 			*d = run->graphics->front_facing[lane];
+		} else if (inst->location == 68U) {
+			*d = run->graphics->point_coord[lane][inst->component & 1U];
+		} else if (inst->location == 69U) {
+			*d = run->graphics->primitive_id[lane];
 		} else {
 			*d = run->graphics->input[lane][inst->location][inst->component];
 		}
@@ -530,6 +534,8 @@ execute(
 			linear = REFERENCE_SLOT_POSITION;
 		else if (linear == DRV_GPU_IR_LOCATION_POINT_SIZE)
 			linear = REFERENCE_SLOT_POINT_SIZE;
+		else if (linear == DRV_GPU_IR_LOCATION_SECOND_COLOR)
+			linear = REFERENCE_SLOT_SECOND_COLOR;
 		if (linear >= REFERENCE_SLOTS) {
 			*run->undefined = 1;
 			break;
@@ -542,42 +548,100 @@ execute(
 	case DRV_GPU_IR_SAMPLE_LOD:
 	case DRV_GPU_IR_TEXTURE:
 		{
+			struct texture_request request;
 			uint32_t out[4];
-			uint32_t u_value = a;
-			uint32_t v_value = b;
 			uint32_t offset_bits = (inst->component >> 4) & 0xffU;
 			uint32_t message;
-			int fetch = 0;
-			int offset_u;
-			int offset_v;
+			uint32_t p[DRV_GPU_IR_TEXTURE_MAX_PARAMS];
 			uint32_t k;
 
 			if (run->graphics == NULL || run->graphics->sample == NULL) {
 				*run->undefined = 1;
 				break;
 			}
+			memset(&request, 0, sizeof(request));
 			if (inst->op == DRV_GPU_IR_TEXTURE) {
 				message = inst->component & 0x1fU;
 				offset_bits = (inst->component >> 12) & 0xffU;
-				if (message == DRV_GPU_IR_TEXTURE_SAMPLE_BIAS || message == DRV_GPU_IR_TEXTURE_SAMPLE_LOD) {
-					u_value = *value(run, inst->src[0] + 1U, lane);
-					v_value = *value(run, inst->src[0] + 2U, lane);
-				} else {
-					u_value = *value(run, inst->src[0], lane);
-					v_value = *value(run, inst->src[0] + 1U, lane);
-				}
-				if (message == DRV_GPU_IR_TEXTURE_LD) {
-					fetch = 1;
+				for (k = 0U; k < inst->src[1] && k < DRV_GPU_IR_TEXTURE_MAX_PARAMS; k++)
+					p[k] = *value(run, inst->src[0] + k, lane);
+				switch (message) {
+				case DRV_GPU_IR_TEXTURE_SAMPLE:
+					request.u = p[0];
+					request.v = p[1];
+					break;
+				case DRV_GPU_IR_TEXTURE_SAMPLE_BIAS:
+				case DRV_GPU_IR_TEXTURE_SAMPLE_LOD:
+					request.has_lod = 1;
+					request.lod = p[0];
+					request.u = p[1];
+					request.v = p[2];
+					break;
+				case DRV_GPU_IR_TEXTURE_SAMPLE_COMPARE:
+					request.compare = 1;
+					request.reference = p[0];
+					request.u = p[1];
+					request.v = p[2];
+					break;
+				case DRV_GPU_IR_TEXTURE_SAMPLE_BIAS_COMPARE:
+				case DRV_GPU_IR_TEXTURE_SAMPLE_LOD_COMPARE:
+					request.compare = 1;
+					request.reference = p[0];
+					request.has_lod = 1;
+					request.lod = p[1];
+					request.u = p[2];
+					request.v = p[3];
+					break;
+				case DRV_GPU_IR_TEXTURE_SAMPLE_DERIVS:
+					request.has_gradients = 1;
+					request.u = p[0];
+					request.gradients[0] = p[1];
+					request.gradients[2] = p[2];
+					request.v = p[3];
+					request.gradients[1] = p[4];
+					request.gradients[3] = p[5];
+					break;
+				case DRV_GPU_IR_TEXTURE_SAMPLE_DERIV_COMPARE:
+					request.compare = 1;
+					request.reference = p[0];
+					request.has_gradients = 1;
+					request.u = p[1];
+					request.gradients[0] = p[2];
+					request.gradients[2] = p[3];
+					request.v = p[4];
+					request.gradients[1] = p[5];
+					request.gradients[3] = p[6];
+					break;
+				case DRV_GPU_IR_TEXTURE_LD:
+					request.fetch = 1;
+					request.u = p[0];
+					request.v = p[1];
 					offset_bits = 0U;
+					break;
+				case DRV_GPU_IR_TEXTURE_RESINFO:
+					request.size_query = 1;
+					request.level = p[0];
+					offset_bits = 0U;
+					break;
+				default:
+					*run->undefined = 1;
+					return;
+				}
+			} else {
+				request.u = a;
+				request.v = b;
+				if (inst->op != DRV_GPU_IR_SAMPLE) {
+					request.has_lod = 1;
+					request.lod = *value(run, inst->src[2], lane);
 				}
 			}
-			offset_u = (int)((offset_bits >> 4) & 0xfU);
-			offset_v = (int)(offset_bits & 0xfU);
-			if (offset_u >= 8)
-				offset_u -= 16;
-			if (offset_v >= 8)
-				offset_v -= 16;
-			run->graphics->sample(run->graphics->sample_context, inst->location, inst->immediate, u_value, v_value, fetch, offset_u, offset_v, out);
+			request.offset_u = (int)((offset_bits >> 4) & 0xfU);
+			request.offset_v = (int)(offset_bits & 0xfU);
+			if (request.offset_u >= 8)
+				request.offset_u -= 16;
+			if (request.offset_v >= 8)
+				request.offset_v -= 16;
+			run->graphics->sample(run->graphics->sample_context, inst->location, inst->immediate, &request, out);
 			for (k = 0U; k < 4U; k++)
 				*value(run, inst->dst + k, lane) = out[k];
 		}

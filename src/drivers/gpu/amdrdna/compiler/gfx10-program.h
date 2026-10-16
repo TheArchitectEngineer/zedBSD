@@ -44,11 +44,12 @@
  * Every stage: the register counts and float mode word, and the inputs
  * word (user SGPRs, the system values the hardware delivers, the shared
  * memory size).  A vertex program: the parameter export count, the
- * position export formats and the output control bits (the point size).
- * A pixel program: the input VGPRs enabled, the colour and depth export
- * formats, the interpolant count, one control word per attribute, and
- * whether it discards (the depth unit's kill enable, which the driver
- * sets).
+ * position export formats, the output control bits (the point size) and
+ * the primitive number's delivery.  A pixel program: the input VGPRs
+ * enabled, the colour and depth export formats, the interpolant count, one
+ * control word per attribute, the interpolation control (the point sprite
+ * coordinate's channels), and whether it discards (the depth unit's kill
+ * enable, which the driver sets).
  */
 struct amdrdna_gfx10_registers {
 	uint32_t counts;
@@ -56,6 +57,8 @@ struct amdrdna_gfx10_registers {
 	uint32_t vertex_export_config;
 	uint32_t position_formats;
 	uint32_t vertex_output_control;
+	uint32_t primitive_id_enable;
+	uint32_t interpolation_control;
 	uint32_t pixel_input_enable;
 	uint32_t color_formats;
 	uint32_t depth_format;
