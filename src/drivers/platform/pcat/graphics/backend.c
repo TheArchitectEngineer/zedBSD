@@ -1041,14 +1041,14 @@ pcat_graphics_prepare_hardware(
 
 	/*
 	 * The boot framebuffer is the kernel's once handed over: it maps the
-	 * physical address itself, write-combining as every other mapping of
-	 * it is (the HAL's and the GPU drivers'), so it can map it again if
-	 * the device moves it.
+	 * physical address itself, so it can map it again if the device moves
+	 * it; uncached, the type of the HAL's mapping of the same pages (no
+	 * two types for one page).
 	 */
 	linear_pixels = NULL;
 	if (linear_framebuffer != NULL) {
 		error = hal_space_map_device((hal_physaddr_t)linear_framebuffer->physical_base, (size_t)linear_framebuffer->size,
-					     HAL_SPACE_READ | HAL_SPACE_WRITE | HAL_SPACE_WC, &mapped);
+					     HAL_SPACE_READ | HAL_SPACE_WRITE | HAL_SPACE_NOCACHE, &mapped);
 		if (error == 0) {
 			linear_pixels = mapped;
 			linear_physical = linear_framebuffer->physical_base;
@@ -1207,7 +1207,7 @@ drv_pcat_graphics_framebuffer_moved(
 	physical = to + (linear_physical - from);
 
 	/* The new place, mapped as the old one. */
-	error = hal_space_map_device((hal_physaddr_t)physical, linear_bytes, HAL_SPACE_READ | HAL_SPACE_WRITE | HAL_SPACE_WC, &mapped);
+	error = hal_space_map_device((hal_physaddr_t)physical, linear_bytes, HAL_SPACE_READ | HAL_SPACE_WRITE | HAL_SPACE_NOCACHE, &mapped);
 	if (error != 0) {
 		kern_logf("graphics: boot framebuffer moved to 0x%llx, not mapped (%d)\n", (unsigned long long)physical, error);
 		return;
