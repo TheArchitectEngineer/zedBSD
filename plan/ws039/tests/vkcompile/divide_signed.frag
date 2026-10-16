@@ -1,5 +1,6 @@
 #version 450
-// vkcompile: signed division and remainder (truncated) of hashed operands of both signs, folded to 16 bits each.
+// vkcompile: signed division (truncated) and modulus (%, OpSMod: the divisor's sign) of hashed operands of both signs,
+// folded to 16 bits each.
 layout(push_constant) uniform Push { vec4 rect; uvec4 param; } push;
 layout(location = 0) out vec4 color;
 uint hash(uint v)

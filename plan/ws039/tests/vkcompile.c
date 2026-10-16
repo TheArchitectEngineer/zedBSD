@@ -10,7 +10,7 @@
  * checked pixel by pixel through the public Vulkan 1.0 API with small
  * pixel programs (plan/ws039/tests/vkcompile/): the differences across the
  * pixel's group of four, gathers, the primitive number, the point sprite
- * coordinate, integer division, discards (and waves that end early), the
+ * coordinate, integer division and modulus, discards (and waves that end early), the
  * image size, a chain of texel fetches, and a dual-source blend.
  *
  * Each case draws into a target cleared to an opaque colour, copies the
@@ -1124,7 +1124,14 @@ vc_expect_divide(
 	return 1;
 }
 
-/* The truncated signed quotient and remainder of divide_signed.frag, each folded to 16 bits. */
+/*
+ * The truncated signed quotient and the modulus of divide_signed.frag, each
+ * folded to 16 bits.  GLSL's % is OpSMod, whose non-zero result takes the
+ * divisor's sign (the SPIR-V specification): the truncated remainder plus
+ * the divisor where the remainder is not zero and the operands' signs
+ * differ.  (llvmpipe gives the truncated remainder instead, which GLSL
+ * allows for negative operands, so this case differs there.)
+ */
 static int
 vc_expect_divide_signed(
 	const struct vc *vc,
@@ -1137,6 +1144,7 @@ vc_expect_divide_signed(
 	uint32_t g;
 	int32_t a;
 	int32_t b;
+	int32_t remainder;
 	uint32_t q;
 	uint32_t r;
 
@@ -1150,7 +1158,10 @@ vc_expect_divide_signed(
 	if ((g & 1U) != 0U)
 		b = -b;
 	q = (uint32_t)(a / b);
-	r = (uint32_t)(a % b);
+	remainder = a % b;
+	if (remainder != 0 && (a < 0) != (b < 0))
+		remainder += b;
+	r = (uint32_t)remainder;
 	q ^= q >> 16;
 	r ^= r >> 16;
 	bgra[2] = (uint8_t)q;

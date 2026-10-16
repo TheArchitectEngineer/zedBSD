@@ -2,7 +2,7 @@
 
 # ws039-p007: shader の compiler（SPIR-V → GFX10、RDNA1、Navi10 = gfx1010）
 
-Status: in-progress（2026-10-16 q1233 / q1233-i01、P5: 段 H・I を host で済ませた。実機の試験（vkcompile、P3 に依頼）待ち。以前 q1203・q1214）
+Status: in-progress（2026-10-16 q1233 / q1233-i01、P5: 段 H・I を host で済ませた。vkcompile の実機の 1 回目は 11 ok・2 FAIL（試験の期待値の誤り、7.14）・1 refused、期待値を直した再試験の待ち。以前 q1203・q1214）
 Disposition: normal
 Parent: [WS039](../ws.md)
 Queue: Q1 の割当（2026-10-15、P5: 「WS039 の shader の compiler（ws039-p007）」。ユーザーの決定 2026-10-15「担当を 2 人（driver と compiler）で並行してよいです。」）
@@ -278,4 +278,10 @@ commit: 1d071e2fc（機能）、01599cb10（規約・監査・vkcompile）。
 1. 実機（RX 5600 XT、P3 に依頼）: `vkcompile` の 14 case（DPP の derivative、gather 2 種、primitive 番号、point sprite、除算 5 種（`v_rcp_iflag_f32` の精度）、discard（wave 全体の早い終わり）、size、texel fetch の鎖（待ち）、dual-source）。executor が 2D の image しか作らないので、3D・array・cube の sample・cube の face の規約（[1,2]・face ＋ 8 × layer、負の layer）・sample_c の dmask 1・resinfo の z は executor が対応した時に。
 2. 7.9 の未実施の項目（exec 0 の VMEM の counter、MEM_ORDERED の下の順）は vkcompile の chain と全 case の結果で一部を見る。
 3. 残り: cube の勾配・offset、texel buffer・MS の fetch（executor の対応と一緒に）、i915 compile.c の開発管理番号。
+
+### 7.14 実機の vkcompile の 1 回目（2026-10-16 20:15、P3 が 10.0.10.3 で、P3 の f362d7cab ＋ P5 の 0c6f25258、A9）
+
+- 14 case: ok 11（derivative・gather・gather-offset・primitive・point・divide-0/1/2・discard・size・chain）、FAIL 2（divide-signed-0 wrong=1846、divide-signed-1 wrong=1824）、refused 1（dual-source: executor に dualSrcBlend が無い）。全文は P3 の worktree の `build/tmp/bug331/p5-vkcompile.txt`。
+- FAIL の解析（host）: 違ったのは剰余の 2 byte だけで商は全部合う。示された 8 画素の剰余は、全部 SPIR-V の OpSMod（0 でない結果は除数の符号: 切り捨ての剰余に、符号が違えば除数を足す）の値と一致した。GLSL の `%` は glslang が OpSMod にする（`vkcompile/divide_signed.frag` の SPIR-V で確かめた）。front はそれを IREM ＋ 補正に展開し、compiler と実機はその定義どおり。誤りは vkcompile の期待値（C の `%` = 切り捨ての剰余）だった。llvmpipe は GLSL で未定義の負の `%` を切り捨ての剰余にするので、前の期待値で ok になっていた。期待値を OpSMod に直すと llvmpipe が実機と同じ数（1846・1824）で FAIL になり、実機の値が OpSMod であることの裏付けになった。compiler・interpreter の変更は無し（interpreter と参照は IR の定義で前から一致）。
+- 直し: `vkcompile.c` の `vc_expect_divide_signed` を OpSMod に、`vkcompile/divide_signed.frag` の comment。再試験の依頼を Q1 に送った。
 
