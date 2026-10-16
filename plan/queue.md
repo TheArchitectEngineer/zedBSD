@@ -43,7 +43,7 @@
 | T1-703 | T1（test-runner） | ws253-p001 | 5330 の素の起動 2 回（cold と reboot）で起動の時間の記録（boot: at・init.log・sessiond・KWL STARTUP・diskstats）。値を返すだけ | PASS（main 1f22728f5、warm 2 回: desktop shown 24.7 s・6.7 s、VFS の初期化が 1 回目 13 s・2 回目 0.7 s、reboot から ssh 60.9 s・37.4 s。出力 /home/awe/zedBSD-worktrees/t1/build/t1703-out/） |
 | q1221 / q1221-i04 | P2（phase-runner、worktree p2・agent/p2-ws253） | ws253-p001 | BUG-327: 5330 の USB の stick の読み込みが zedBSD で 1 回約 30 ms（Linux 0.4 ms）の原因の修正（2026-10-16 ユーザー「USB driverが遅いのは、起動が遅い問題を解決しているサブエージェントで処理してくだしあ。」） | in-progress |
 | q1226 / q1226-i01 | P4（phase-runner、worktree p4・agent/p4-ws254） | ws254-p001 | DHCP の失敗の後に 1 分おきに取り直す、QEMU で確認（2026-10-16 ユーザー「別なサブエージェントで実施してOKです。」） | cleared（QEMU で 1 分おきの down→up→DHCP、server の応答の後に lease、877005852、merge 5cb63ff2a。実機は未実施） |
-| q1227 / q1227-i01 | P4（同上、q1226 の後） | ws255-p001 | 試験機の試験の image の静的な IP（2026-10-16 ユーザー「テスト機ではstatic IPにすることで、自律ループを維持しやすくできる」） | in-progress |
+| q1227 / q1227-i01 | P4（同上、q1226 の後） | ws255-p001 | 試験機の試験の image の静的な IP（2026-10-16 ユーザー「テスト機ではstatic IPにすることで、自律ループを維持しやすくできる」） | uncleared（入れ方・2 台の値・手引き static-ip.md・QEMU で address は確認、14e41dd32 merge d2a709ba6。default route と DNS が起動の後に入らない BUG-328 で条件 1 が未達。prefix /16・DNS 1.1.1.1 は未確認） |
 | T1-702 | T1（test-runner） | ws245-p053 | 5330 の素の起動の回帰（基準 8666f25a6 と p053 33cde7ac9、全部の列の diff）と WS253 の記録の相乗り（2026-10-16 ユーザー「P1のテストはT1にオフロードして、T1でシリアライズ」） | PASS（2026-10-16 16:39、5330 の実機、全部の書き込みの列の差 0） |
 | q1207 / q1207-i01 | P1（phase-runner、worktree p1・agent/p1-ws245） | ws245-p004 → ws245-p006 | p004 VBT・EDID（xd-vbt・xd-edid）、続けて p006 power・DMC・clock・TC の register（design.md §6.2）。host 試験だけで kernel の振る舞いは変えない（2026-10-15 ユーザー「WS245は、ロールバックできる体制にしておいて、今から実装します。」「今マージします」） | in-progress |
 
