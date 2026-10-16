@@ -1162,6 +1162,26 @@
 #define I915_XD_DFLEXDPMLE1_LANES(idx)		(0xfU << ((idx) * 4U))
 
 /*
+ * The lanes the sink of a Type-C port assigned to DisplayPort (in
+ * DFLEXDPSP, a nibble at the port's byte), and the main link lanes the
+ * display uses (in DFLEXDPMLE1, the port's nibble): lane 0, lanes 1..0,
+ * lane 3, lanes 3..2, lanes 3..0.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (DP_LANE_ASSIGNMENT_SHIFT, DP_LANE_ASSIGNMENT_MASK), and
+ * drivers/gpu/drm/i915/display/intel_mg_phy_regs.h
+ * (DFLEXDPMLE1_DPMLETC_ML0, DFLEXDPMLE1_DPMLETC_ML1_0,
+ * DFLEXDPMLE1_DPMLETC_ML3, DFLEXDPMLE1_DPMLETC_ML3_2,
+ * DFLEXDPMLE1_DPMLETC_ML3_0).
+ */
+#define I915_XD_DFLEXDPSP_LANES(idx)		(0xfU << ((idx) * 8U))
+#define I915_XD_DFLEXDPMLE1_ML0			0x1U
+#define I915_XD_DFLEXDPMLE1_ML1_0		0x3U
+#define I915_XD_DFLEXDPMLE1_ML3			0x8U
+#define I915_XD_DFLEXDPMLE1_ML3_2		0xcU
+#define I915_XD_DFLEXDPMLE1_ML3_0		0xfU
+
+/*
  * The Type-C subsystem status of display 13: the pin assignment, the
  * PHY ready and the two live states.
  *
@@ -1237,6 +1257,59 @@
 #define I915_XD_DKL_TX_LOADGEN_TX1		0x00000018U
 #define I915_XD_DKL_TX_LOADGEN_TX2		0x00000060U
 #define I915_XD_DKL_TX_DISABLE_WAIT_INIT	0x00000080U
+
+/*
+ * The fields of the Type-C PLL words in a Dekel PHY: the reference clock
+ * input mux, the core clock A divider, the high-speed clock control (the
+ * core input select, the line driver clock select, the HS divider and the
+ * DS divider), the PLL dividers (integral and proportional coefficients,
+ * feedback pre-divider, integer feedback divider), the current reference
+ * trim and the TDC target count, the SSC words (reference divider ratio,
+ * step length and count, enable), the fractional feedback divider and its
+ * enable, and the TDC SSC step size and feed-forward gain; and the codes
+ * of the HS divider for the divisors 2, 3, 5 and 7.
+ *
+ * Values referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_mg_phy_regs.h
+ * (MG_REFCLKIN_CTL_OD_2_MUX_MASK, MG_CLKTOP2_CORECLKCTL1_A_DIVRATIO_MASK,
+ * MG_CLKTOP2_HSCLKCTL_CORE_INPUTSEL_MASK,
+ * MG_CLKTOP2_HSCLKCTL_TLINEDRV_CLKSEL_MASK,
+ * MG_CLKTOP2_HSCLKCTL_HSDIV_RATIO_MASK, MG_CLKTOP2_HSCLKCTL_HSDIV_RATIO_2,
+ * MG_CLKTOP2_HSCLKCTL_HSDIV_RATIO_3, MG_CLKTOP2_HSCLKCTL_HSDIV_RATIO_5,
+ * MG_CLKTOP2_HSCLKCTL_HSDIV_RATIO_7, MG_CLKTOP2_HSCLKCTL_DSDIV_RATIO_MASK)
+ * and Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dkl_phy_regs.h
+ * (DKL_PLL_DIV0_INTEG_COEFF_MASK, DKL_PLL_DIV0_PROP_COEFF_MASK,
+ * DKL_PLL_DIV0_FBPREDIV_MASK, DKL_PLL_DIV0_FBDIV_INT_MASK,
+ * DKL_PLL_DIV1_IREF_TRIM_MASK, DKL_PLL_DIV1_TDC_TARGET_CNT_MASK,
+ * DKL_PLL_SSC_IREF_NDIV_RATIO_MASK, DKL_PLL_SSC_STEP_LEN_MASK,
+ * DKL_PLL_SSC_STEP_NUM_MASK, DKL_PLL_SSC_EN, DKL_PLL_BIAS_FRAC_EN_H,
+ * DKL_PLL_BIAS_FBDIV_FRAC_MASK, DKL_PLL_TDC_SSC_STEP_SIZE_MASK,
+ * DKL_PLL_TDC_FEED_FWD_GAIN_MASK).
+ */
+#define I915_XD_DKL_REFCLKIN_OD_2_MUX		0x00000700U
+#define I915_XD_DKL_CORECLK_A_DIVRATIO		0x0000ff00U
+#define I915_XD_DKL_HSCLK_CORE_INPUTSEL		0x00010000U
+#define I915_XD_DKL_HSCLK_TLINEDRV		0x0000c000U
+#define I915_XD_DKL_HSCLK_HSDIV			0x00003000U
+#define I915_XD_DKL_HSCLK_HSDIV_2		0U
+#define I915_XD_DKL_HSCLK_HSDIV_3		1U
+#define I915_XD_DKL_HSCLK_HSDIV_5		2U
+#define I915_XD_DKL_HSCLK_HSDIV_7		3U
+#define I915_XD_DKL_HSCLK_DSDIV			0x00000f00U
+#define I915_XD_DKL_DIV0_INTEG_COEFF		0x001f0000U
+#define I915_XD_DKL_DIV0_PROP_COEFF		0x0000f000U
+#define I915_XD_DKL_DIV0_FBPREDIV		0x00000f00U
+#define I915_XD_DKL_DIV0_FBDIV_INT		0x000000ffU
+#define I915_XD_DKL_DIV1_IREF_TRIM		0x001f0000U
+#define I915_XD_DKL_DIV1_TDC_TARGET		0x000000ffU
+#define I915_XD_DKL_SSC_IREF_NDIV		0xe0000000U
+#define I915_XD_DKL_SSC_STEP_LEN		0x00ff0000U
+#define I915_XD_DKL_SSC_STEP_NUM		0x00003800U
+#define I915_XD_DKL_SSC_ENABLE			0x00000200U
+#define I915_XD_DKL_BIAS_FRAC_ENABLE		0x40000000U
+#define I915_XD_DKL_BIAS_FBDIV_FRAC		0x3fffff00U
+#define I915_XD_DKL_TDC_SSC_STEP_SIZE		0x0000ff00U
+#define I915_XD_DKL_TDC_FEED_FWD_GAIN		0x000000ffU
 
 /*
  * The transcoder's chicken word: the vblank with the delay of the set

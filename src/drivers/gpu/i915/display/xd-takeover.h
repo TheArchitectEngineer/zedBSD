@@ -78,14 +78,17 @@
 /*
  * The kinds of the firmware's output: nothing lit, the built-in panel
  * (DisplayPort SST on the panel's port), HDMI or DVI on a combo port,
- * DisplayPort SST on a Type-C port, and any other output (one the driver
- * does not light: its picture is kept).
+ * DisplayPort SST on a Type-C port, any other output (one the driver
+ * does not light: its picture is kept), and DisplayPort SST on a combo
+ * port that is not the panel's (a desktop's monitor, which the driver
+ * does not light either).
  */
 #define I915_XD_FW_OUTPUT_NONE		0U
 #define I915_XD_FW_OUTPUT_PANEL		1U
 #define I915_XD_FW_OUTPUT_HDMI		2U
 #define I915_XD_FW_OUTPUT_DP_TC		3U
 #define I915_XD_FW_OUTPUT_OTHER		4U
+#define I915_XD_FW_OUTPUT_DP_COMBO	5U
 
 /*
  * The parts of the firmware's state that are not display registers, and

@@ -159,8 +159,13 @@
  * handlers disabled (Tiger Lake) or the VBLANK_A one only (Alder Lake-S),
  * the programmable arbiter slots (Wa_22012358565, display 13), the
  * display 12 compression dummy pixel and clock request chickens
- * (Wa_1409120013, Wa_14013723622), and the Wa_1409767108 buddy masks on
- * the first stepping only (Rocket Lake A0).
+ * (Wa_1409120013, Wa_14013723622), the Wa_1409767108 buddy masks on
+ * the first stepping only (Rocket Lake A0), the Dekel PHY load
+ * generator select of display 13, the CD clock of at least the
+ * pixel rate (Tiger Lake, which can underrun at half of it), and the
+ * Dekel PHY's core reset released before a Type-C port's DDI buffer
+ * starts in DisplayPort alternate or legacy mode (Alder Lake-P, whose
+ * port may come from Thunderbolt mode).
  */
 #define I915_XD_WA_BUDDY_1409767108	0x0001U
 #define I915_XD_WA_PW1_FLR_SOURCE	0x0002U
@@ -171,6 +176,9 @@
 #define I915_XD_WA_ARB_PROG_SLOTS	0x0040U
 #define I915_XD_WA_XE_D_CHICKENS	0x0080U
 #define I915_XD_WA_BUDDY_1409767108_A0	0x0100U
+#define I915_XD_WA_DKL_LOADGEN		0x0200U
+#define I915_XD_WA_CDCLK_PIXEL_RATE	0x0400U
+#define I915_XD_WA_TC_RESET_AFTER_TBT	0x0800U
 
 /*
  * One row of a combo PHY swing table: the values of one voltage swing

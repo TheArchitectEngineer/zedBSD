@@ -280,8 +280,8 @@ drv_i915_xd_screen_plan_check(
 	if (bandwidth > need)
 		need = bandwidth;
 
-	/* Tiger Lake can underrun at half the pixel rate: the pixel rate itself, up to the highest step. */
-	if (platform->kind == I915_XD_KIND_TGL) {
+	/* A platform that can underrun at half the pixel rate: the pixel rate itself, up to the highest step. */
+	if ((platform->wa & I915_XD_WA_CDCLK_PIXEL_RATE) != 0U) {
 		if (plan->pixel_khz < input->cdclk_max_khz && plan->pixel_khz > need)
 			need = plan->pixel_khz;
 		if (plan->pixel_khz >= input->cdclk_max_khz && input->cdclk_max_khz > need)

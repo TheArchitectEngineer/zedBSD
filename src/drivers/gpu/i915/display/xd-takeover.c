@@ -246,10 +246,12 @@ drv_i915_xd_firmware_decide(
  * firmware that clones onto two outputs gives the lowest pipe).
  * DisplayPort SST on the panel's DDI (panel_ddi, -1 for none) is the
  * panel; HDMI or DVI on a combo port is the HDMI output; DisplayPort SST
- * on a Type-C port is the Type-C DisplayPort; anything else (a DDI the
- * description does not have or drives with no PHY, DisplayPort MST, HDMI
- * on a Type-C port, DisplayPort SST on a combo port that is not the
- * panel's) is an output the driver does not light.
+ * on a Type-C port is the Type-C DisplayPort; DisplayPort SST on a combo
+ * port that is not the panel's (the monitor of a desktop, whose Type-C
+ * connectors may be combo ports) is the combo DisplayPort, which the
+ * driver does not light; anything else (a DDI the description does not
+ * have or drives with no PHY, DisplayPort MST, HDMI on a Type-C port) is
+ * an output the driver does not light.
  */
 void
 drv_i915_xd_firmware_classify(
@@ -320,8 +322,14 @@ drv_i915_xd_firmware_classify(
 	}
 
 	/* DisplayPort SST on a Type-C port. */
-	if (port->phy_kind == I915_XD_PHY_DEKEL && firmware->output_mode == I915_XD_DDI_FUNC_MODE_DP_SST)
+	if (port->phy_kind == I915_XD_PHY_DEKEL && firmware->output_mode == I915_XD_DDI_FUNC_MODE_DP_SST) {
 		firmware->output = I915_XD_FW_OUTPUT_DP_TC;
+		return;
+	}
+
+	/* DisplayPort SST on a combo port that is not the panel's. */
+	if (port->phy_kind == I915_XD_PHY_COMBO && firmware->output_mode == I915_XD_DDI_FUNC_MODE_DP_SST)
+		firmware->output = I915_XD_FW_OUTPUT_DP_COMBO;
 }
 
 /*
@@ -341,6 +349,8 @@ drv_i915_xd_firmware_output_name(
 		return "HDMI";
 	case I915_XD_FW_OUTPUT_DP_TC:
 		return "Type-C DP";
+	case I915_XD_FW_OUTPUT_DP_COMBO:
+		return "combo DP";
 	default:
 		break;
 	}
@@ -1045,7 +1055,7 @@ i915_xd_fw_clock_off(
 	}
 
 	/* A Type-C port's clock-off bit, then no PLL selected. */
-	drv_i915_xd_tc_clock_off(io, port->ddi, (unsigned)port->tc - 1U);
+	drv_i915_xd_tc_clock_unmap(io, port->ddi, (unsigned)port->tc - 1U);
 }
 
 /* Calls one of the caller's hooks when it has one. */

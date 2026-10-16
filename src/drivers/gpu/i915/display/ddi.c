@@ -72,6 +72,7 @@
 #include "dp.h"
 #include "xd-ddi.h"
 #include "xd-pipe.h"
+#include "xd-tc.h"
 
 #include "../intel/display-regs-xd.h"
 #include "pipe.h"
@@ -141,11 +142,7 @@ static int i915_ddi_hdmi_level(struct intel_encoder *encoder, const struct intel
 static unsigned i915_combo_output_kind(const struct intel_crtc_state *crtc_state);
 static const struct i915_xd_combo_swing_table *i915_combo_swing_table(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state);
 static const struct intel_ddi_buf_trans *i915_combo_get_buf_trans(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state, int *n_entries);
-static const struct intel_ddi_buf_trans *i915_intel_get_buf_trans(const struct intel_ddi_buf_trans *trans, int *num_entries);
-static const struct intel_ddi_buf_trans *i915_tgl_get_dkl_buf_trans_dp(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state, int *n_entries);
-static const struct intel_ddi_buf_trans *i915_tgl_get_dkl_buf_trans(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state, int *n_entries);
-static const struct intel_ddi_buf_trans *i915_adlp_get_dkl_buf_trans_dp(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state, int *n_entries);
-static const struct intel_ddi_buf_trans *i915_adlp_get_dkl_buf_trans(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state, int *n_entries);
+static const struct intel_ddi_buf_trans *i915_dkl_get_buf_trans(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state, int *n_entries);
 static void i915_ddi_bind_buf_trans(struct intel_encoder *encoder);
 static void i915_ddi_xd_link(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state, struct i915_xd_ddi_link *link);
 static void i915_icl_program_mg_dp_mode(struct intel_digital_port *dig_port, const struct intel_crtc_state *crtc_state);
@@ -786,14 +783,13 @@ i915_icl_program_mg_dp_mode(
 	struct drm_i915_private *dev_priv;
 	enum tc_port tc_port;
 	enum phy phy;
-	u32 ln0;
-	u32 ln1;
 	u32 pin_assignment;
 	u8 width;
 	bool is_tc;
 	bool in_tbt_alt_mode;
 	bool in_legacy_mode;
 	int display_ver;
+	int mode_result;
 
 	/* Finds the device, the Type-C port and the PHY. */
 	dev_priv = i915_lcd_to_i915(dig_port->base.base.dev);
@@ -817,79 +813,21 @@ i915_icl_program_mg_dp_mode(
 		return;
 	}
 
-	/* Reads both lanes' DP mode and clears their width. */
-	ln0 = i915_lcd_dkl_phy_read(dev_priv, tc_port, DKL_DP_MODE(0));
-	ln1 = i915_lcd_dkl_phy_read(dev_priv, tc_port, DKL_DP_MODE(1));
-	ln0 &= ~(MG_DP_MODE_CFG_DP_X1_MODE | MG_DP_MODE_CFG_DP_X2_MODE);
-	ln1 &= ~(MG_DP_MODE_CFG_DP_X1_MODE | MG_DP_MODE_CFG_DP_X2_MODE);
-
 	/* The pin assignment (DPPATC) and the link's width. */
 	pin_assignment = i915_lcd_tc_port_get_pin_assignment_mask(dig_port);
 	width = (u8)crtc_state->lane_count;
 
-	/* Picks the lanes' width from the pin assignment and the link's width. */
-	switch (pin_assignment) {
-	case 0x0:
-		/* A fixed connection: only a legacy port has one. */
+	/* A fixed connection: only a legacy port has one. */
+	if (pin_assignment == 0x0) {
 		in_legacy_mode = intel_tc_port_in_legacy_mode(dig_port);
 		if (!in_legacy_mode)
 			drv_i915_lcd_error("WARN_ON(!intel_tc_port_in_legacy_mode(dig_port))\n");
-		if (width == 1) {
-			ln1 |= MG_DP_MODE_CFG_DP_X1_MODE;
-		} else {
-			ln0 |= MG_DP_MODE_CFG_DP_X2_MODE;
-			ln1 |= MG_DP_MODE_CFG_DP_X2_MODE;
-		}
-
-		break;
-	case 0x1:
-		/* Pin A: x2 only for four lanes. */
-		if (width == 4) {
-			ln0 |= MG_DP_MODE_CFG_DP_X2_MODE;
-			ln1 |= MG_DP_MODE_CFG_DP_X2_MODE;
-		}
-
-		break;
-	case 0x2:
-		/* Pin B: x2 only for two lanes. */
-		if (width == 2) {
-			ln0 |= MG_DP_MODE_CFG_DP_X2_MODE;
-			ln1 |= MG_DP_MODE_CFG_DP_X2_MODE;
-		}
-
-		break;
-	case 0x3:
-	case 0x5:
-		/* Pins C and E: x1 for one lane, x2 otherwise. */
-		if (width == 1) {
-			ln0 |= MG_DP_MODE_CFG_DP_X1_MODE;
-			ln1 |= MG_DP_MODE_CFG_DP_X1_MODE;
-		} else {
-			ln0 |= MG_DP_MODE_CFG_DP_X2_MODE;
-			ln1 |= MG_DP_MODE_CFG_DP_X2_MODE;
-		}
-
-		break;
-	case 0x4:
-	case 0x6:
-		/* Pins D and F: x1 for one lane, x2 otherwise. */
-		if (width == 1) {
-			ln0 |= MG_DP_MODE_CFG_DP_X1_MODE;
-			ln1 |= MG_DP_MODE_CFG_DP_X1_MODE;
-		} else {
-			ln0 |= MG_DP_MODE_CFG_DP_X2_MODE;
-			ln1 |= MG_DP_MODE_CFG_DP_X2_MODE;
-		}
-
-		break;
-	default:
-		I915_LCD_MISSING_CASE(pin_assignment);
-		break;
 	}
 
-	/* Writes both lanes' DP mode. */
-	i915_lcd_dkl_phy_write(dev_priv, tc_port, DKL_DP_MODE(0), ln0);
-	i915_lcd_dkl_phy_write(dev_priv, tc_port, DKL_DP_MODE(1), ln1);
+	/* Programs both lanes' DP mode through the xd Type-C PHY. */
+	mode_result = drv_i915_xd_tc_dp_mode(drv_i915_lcd_xd_dkl(dev_priv), (unsigned)tc_port, pin_assignment, width);
+	if (mode_result != 0)
+		I915_LCD_MISSING_CASE(pin_assignment);
 }
 
 /*
@@ -904,15 +842,13 @@ i915_adlp_tbt_to_dp_alt_switch_wa(
 {
 	struct drm_i915_private *i915;
 	enum tc_port tc_port;
-	int ln;
 
 	/* Finds the device and the Type-C port. */
 	i915 = i915_lcd_to_i915(encoder->base.dev);
 	tc_port = i915_lcd_intel_port_to_tc(i915, encoder->port);
 
-	/* Clears the core soft reset of both lanes. */
-	for (ln = 0; ln < 2; ln++)
-		i915_lcd_dkl_phy_rmw(i915, tc_port, DKL_PCS_DW5(ln), DKL_PCS_DW5_CORE_SOFTRESET, 0);
+	/* Releases the core soft reset of both lanes through the xd Type-C PHY. */
+	drv_i915_xd_tc_release_soft_reset(drv_i915_lcd_xd_dkl(i915), (unsigned)tc_port);
 }
 
 /*
@@ -931,15 +867,11 @@ i915_tgl_dkl_phy_set_signal_levels(
 	const struct intel_crtc_state *crtc_state)
 {
 	struct drm_i915_private *dev_priv;
+	const struct i915_xd_dkl_swing_table *table;
 	enum tc_port tc_port;
-	const struct intel_ddi_buf_trans *trans;
-	int n_entries;
+	uint8_t levels[4];
 	int ln;
-	int level;
-	u32 val;
 	bool in_tbt_alt_mode;
-	bool warned;
-	bool is_alderlake_p;
 	bool has_hdmi;
 
 	/* Finds the device and the Type-C port. */
@@ -951,67 +883,21 @@ i915_tgl_dkl_phy_set_signal_levels(
 	if (in_tbt_alt_mode)
 		return;
 
-	/* Finds the port's buffer table; a port without one is a warning. */
-	trans = encoder->get_buf_trans(encoder, crtc_state, &n_entries);
-	warned = drm_WARN_ON_ONCE(&dev_priv->drm, !trans);
-	if (warned)
+	/* The port's xd swing table; a platform without Dekel tables is a warning. */
+	has_hdmi = intel_crtc_has_type(crtc_state, INTEL_OUTPUT_HDMI);
+	table = drv_i915_xd_tc_swing_table(drv_i915_lcd_xd_platform(), has_hdmi, (uint32_t)crtc_state->port_clock);
+	if (table == NULL) {
+		drv_i915_lcd_error("WARN_ON_ONCE(!trans)\n");
 		return;
-
-	/* Programs both PHY lanes. */
-	is_alderlake_p = I915_LCD_IS_ALDERLAKE_P(dev_priv);
-	for (ln = 0; ln < 2; ln++) {
-		/* Takes the lane out of its PMD suspend. */
-		i915_lcd_dkl_phy_write(dev_priv, tc_port, DKL_TX_PMD_LANE_SUS(ln), 0);
-
-		/* The even link lane's level in DPCNTL0. */
-		level = i915_ddi_level(encoder, crtc_state, 2 * ln + 0);
-		i915_lcd_dkl_phy_rmw(dev_priv, tc_port, DKL_TX_DPCNTL0(ln),
-				     DKL_TX_PRESHOOT_COEFF_MASK |
-				     DKL_TX_DE_EMPAHSIS_COEFF_MASK |
-				     DKL_TX_VSWING_CONTROL_MASK,
-				     DKL_TX_PRESHOOT_COEFF(trans->entries[level].dkl.preshoot) |
-				     DKL_TX_DE_EMPHASIS_COEFF(trans->entries[level].dkl.de_emphasis) |
-				     DKL_TX_VSWING_CONTROL(trans->entries[level].dkl.vswing));
-
-		/* The odd link lane's level in DPCNTL1. */
-		level = i915_ddi_level(encoder, crtc_state, 2 * ln + 1);
-		i915_lcd_dkl_phy_rmw(dev_priv, tc_port, DKL_TX_DPCNTL1(ln),
-				     DKL_TX_PRESHOOT_COEFF_MASK |
-				     DKL_TX_DE_EMPAHSIS_COEFF_MASK |
-				     DKL_TX_VSWING_CONTROL_MASK,
-				     DKL_TX_PRESHOOT_COEFF(trans->entries[level].dkl.preshoot) |
-				     DKL_TX_DE_EMPHASIS_COEFF(trans->entries[level].dkl.de_emphasis) |
-				     DKL_TX_VSWING_CONTROL(trans->entries[level].dkl.vswing));
-
-		/* The 8b/10b links of this path are not in 20-bit mode. */
-		i915_lcd_dkl_phy_rmw(dev_priv, tc_port, DKL_TX_DPCNTL2(ln),
-				     DKL_TX_DP20BITMODE, 0);
-
-		/* Only Alder Lake-P selects the load generators. */
-		if (!is_alderlake_p)
-			continue;
-
-		/* HDMI's lanes take their own load generators; DP's take 0. */
-		has_hdmi = intel_crtc_has_type(crtc_state, INTEL_OUTPUT_HDMI);
-		if (has_hdmi) {
-			if (ln == 0) {
-				val = DKL_TX_DPCNTL2_CFG_LOADGENSELECT_TX1(0);
-				val |= DKL_TX_DPCNTL2_CFG_LOADGENSELECT_TX2(2);
-			} else {
-				val = DKL_TX_DPCNTL2_CFG_LOADGENSELECT_TX1(3);
-				val |= DKL_TX_DPCNTL2_CFG_LOADGENSELECT_TX2(3);
-			}
-		} else {
-			val = DKL_TX_DPCNTL2_CFG_LOADGENSELECT_TX1(0);
-			val |= DKL_TX_DPCNTL2_CFG_LOADGENSELECT_TX2(0);
-		}
-
-		/* Selects them. */
-		i915_lcd_dkl_phy_rmw(dev_priv, tc_port, DKL_TX_DPCNTL2(ln),
-				     DKL_TX_DPCNTL2_CFG_LOADGENSELECT_TX1_MASK |
-				     DKL_TX_DPCNTL2_CFG_LOADGENSELECT_TX2_MASK,
-				     val);
 	}
+
+	/* The level of each link lane. */
+	for (ln = 0; ln < 4; ln++)
+		levels[ln] = (uint8_t)i915_ddi_level(encoder, crtc_state, ln);
+
+	/* Programs the transmitters through the xd Type-C PHY. */
+	drv_i915_xd_tc_signal_levels(drv_i915_lcd_xd_dkl(dev_priv), drv_i915_lcd_xd_platform(), (unsigned)tc_port, table, levels,
+		has_hdmi);
 }
 
 /*
@@ -1089,110 +975,49 @@ i915_combo_get_buf_trans(
 	return &i915_combo_trans_view;
 }
 
-/* Hands a table out with its length (intel_get_buf_trans()). */
-static const struct intel_ddi_buf_trans *
-i915_intel_get_buf_trans(
-	const struct intel_ddi_buf_trans *trans,
-	int *num_entries)
-{
-	/* Reports the length alongside the table. */
-	*num_entries = trans->num_entries;
-
-	/* Succeeded: the table is constant and shared. */
-	return trans;
-}
-
-/* The Tiger Lake DKL DP table of a link rate (tgl_get_dkl_buf_trans_dp()). */
-static const struct intel_ddi_buf_trans *
-i915_tgl_get_dkl_buf_trans_dp(
-	struct intel_encoder *encoder,
-	const struct intel_crtc_state *crtc_state,
-	int *n_entries)
-{
-	const struct intel_ddi_buf_trans *table;
-
-	UNUSED_PARAMETER(encoder);
-
-	/* Above HBR the HBR2 table, HBR and below the HBR table. */
-	if (crtc_state->port_clock > 270000)
-		table = i915_intel_get_buf_trans(&tgl_dkl_phy_trans_dp_hbr2, n_entries);
-	else
-		table = i915_intel_get_buf_trans(&tgl_dkl_phy_trans_dp_hbr, n_entries);
-
-	/* Succeeded: reports the table. */
-	return table;
-}
-
-/* The Tiger Lake DKL PHY table of an output (tgl_get_dkl_buf_trans()). */
-static const struct intel_ddi_buf_trans *
-i915_tgl_get_dkl_buf_trans(
-	struct intel_encoder *encoder,
-	const struct intel_crtc_state *crtc_state,
-	int *n_entries)
-{
-	const struct intel_ddi_buf_trans *table;
-	bool is_hdmi;
-
-	/* HDMI has its own table, DP picks by rate. */
-	is_hdmi = intel_crtc_has_type(crtc_state, INTEL_OUTPUT_HDMI);
-	if (is_hdmi)
-		table = i915_intel_get_buf_trans(&tgl_dkl_phy_trans_hdmi, n_entries);
-	else
-		table = i915_tgl_get_dkl_buf_trans_dp(encoder, crtc_state, n_entries);
-
-	/* Succeeded: reports the table. */
-	return table;
-}
-
-/* The Alder Lake-P DKL DP table of a link rate (adlp_get_dkl_buf_trans_dp()). */
-static const struct intel_ddi_buf_trans *
-i915_adlp_get_dkl_buf_trans_dp(
-	struct intel_encoder *encoder,
-	const struct intel_crtc_state *crtc_state,
-	int *n_entries)
-{
-	const struct intel_ddi_buf_trans *table;
-
-	UNUSED_PARAMETER(encoder);
-
-	/* Above HBR the HBR2 / HBR3 table, HBR and below the HBR table. */
-	if (crtc_state->port_clock > 270000)
-		table = i915_intel_get_buf_trans(&adlp_dkl_phy_trans_dp_hbr2_hbr3, n_entries);
-	else
-		table = i915_intel_get_buf_trans(&adlp_dkl_phy_trans_dp_hbr, n_entries);
-
-	/* Succeeded: reports the table. */
-	return table;
-}
-
 /*
- * The Alder Lake-P DKL PHY table of an output (adlp_get_dkl_buf_trans()):
- * HDMI takes Tiger Lake's table, DP Alder Lake-P's own.
+ * The buffer-translation view of a Type-C port's xd Dekel swing table:
+ * its length and HDMI default row, which the DP and HDMI level choices
+ * read (the rows themselves are written by the xd Type-C PHY).
+ * Rewritten by every call; read at once by the modeset that asked, under
+ * its locks.
  */
+static struct intel_ddi_buf_trans i915_dkl_trans_view;
+
+/* The get_buf_trans hook of a Type-C port: the view of its xd Dekel swing table. */
 static const struct intel_ddi_buf_trans *
-i915_adlp_get_dkl_buf_trans(
+i915_dkl_get_buf_trans(
 	struct intel_encoder *encoder,
 	const struct intel_crtc_state *crtc_state,
 	int *n_entries)
 {
-	const struct intel_ddi_buf_trans *table;
-	bool is_hdmi;
+	const struct i915_xd_dkl_swing_table *table;
+	bool has_hdmi;
 
-	/* HDMI has Tiger Lake's table, DP picks by rate. */
-	is_hdmi = intel_crtc_has_type(crtc_state, INTEL_OUTPUT_HDMI);
-	if (is_hdmi)
-		table = i915_intel_get_buf_trans(&tgl_dkl_phy_trans_hdmi, n_entries);
-	else
-		table = i915_adlp_get_dkl_buf_trans_dp(encoder, crtc_state, n_entries);
+	UNUSED_PARAMETER(encoder);
 
-	/* Succeeded: reports the table. */
-	return table;
+	/* The table of the output and rate; a platform without Dekel tables has none. */
+	has_hdmi = intel_crtc_has_type(crtc_state, INTEL_OUTPUT_HDMI);
+	table = drv_i915_xd_tc_swing_table(drv_i915_lcd_xd_platform(), has_hdmi, (uint32_t)crtc_state->port_clock);
+	if (table == NULL) {
+		*n_entries = 0;
+		return NULL;
+	}
+
+	/* The table's length and default. */
+	i915_dkl_trans_view.entries = NULL;
+	i915_dkl_trans_view.num_entries = (u8)table->count;
+	i915_dkl_trans_view.hdmi_default_entry = (u8)table->hdmi_default;
+	*n_entries = (int)table->count;
+
+	/* Succeeded: the view. */
+	return &i915_dkl_trans_view;
 }
 
 /*
  * Binds an encoder's buffer-translation hook as intel_ddi_buf_trans_init()
- * does: a Type-C (DKL) PHY takes its platform's DKL tables, a combo PHY
- * the view of its xd swing table.
+ * does: a Type-C (DKL) PHY takes the view of its xd Dekel swing table, a
+ * combo PHY the view of its xd swing table.
  */
 static void
 i915_ddi_bind_buf_trans(
@@ -1207,12 +1032,9 @@ i915_ddi_bind_buf_trans(
 	phy = drv_i915_lcd_intel_port_to_phy(i915, encoder->port);
 	is_tc = drv_i915_lcd_intel_phy_is_tc(i915, phy);
 
-	/* A Type-C PHY takes the platform's DKL tables. */
+	/* A Type-C PHY takes its xd Dekel swing table. */
 	if (is_tc) {
-		if (drv_i915_lcd_display_ver() >= 13)
-			encoder->get_buf_trans = i915_adlp_get_dkl_buf_trans;
-		else
-			encoder->get_buf_trans = i915_tgl_get_dkl_buf_trans;
+		encoder->get_buf_trans = i915_dkl_get_buf_trans;
 		return;
 	}
 

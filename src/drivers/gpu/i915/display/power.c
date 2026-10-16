@@ -41,7 +41,6 @@
 #include "clock.h"
 #include "takeover.h"
 #include "modeset.h"
-#include "dkl-phy.h"
 #include "xd-ddi.h"
 #include "xd-power.h"
 #include "xd-dbuf.h"
@@ -62,9 +61,6 @@
 
 /* The trace stage of the display noirq bring-up. */
 #define I915_POWER_TRACE_STAGE_NOIRQ	4U
-
-/* How long an AUX_USBC well's enable waits for the PHY microcontroller's health (1 ms, as Linux). */
-#define I915_TC_UC_HEALTH_TIMEOUT_US	1000u
 
 /* The driver request registers of the well families (i915_reg.h). */
 #define ICL_PWR_WELL_CTL_AUX2	0x45444u
@@ -1751,7 +1747,7 @@ i915_pw_hook_tc_health(
 		return 0;
 
 	/* Polls the microcontroller's health bit through the Dekel window. */
-	wait_result = drv_i915_dkl_phy_wait_set(pwc->dkl, tc_port, I915_DKL_CMN_UC_DW27, I915_DKL_CMN_UC_DW27_UC_HEALTH, I915_TC_UC_HEALTH_TIMEOUT_US);
+	wait_result = drv_i915_xd_tc_wait_health(pwc->dkl, tc_port, I915_XD_DKL_HEALTH_US);
 	if (wait_result == EIO)
 		return EIO;
 

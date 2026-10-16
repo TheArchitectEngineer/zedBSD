@@ -1447,18 +1447,19 @@ i915_xd_output_clock_on(
 	struct i915_xd_output *out,
 	const struct i915_xd_output_env *env)
 {
+	struct i915_xd_pll_desc source;
 	uint32_t select;
-	int own;
 
 	i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_PLL, 1);
 
-	/* A Type-C port's select and gate. */
+	/* A Type-C port's select (its own PLL in DisplayPort alternate or legacy mode, the Thunderbolt PLL otherwise) and gate. */
 	if (out->tc) {
-		own = 0;
+		kern_memset(&source, 0, sizeof(source));
+		source.kind = I915_XD_PLL_TBT;
 		if (out->tc_mode == I915_XD_OUTPUT_TC_DP_ALT || out->tc_mode == I915_XD_OUTPUT_TC_LEGACY)
-			own = 1;
-		select = drv_i915_xd_tc_clock_select(own, out->rate_khz);
-		drv_i915_xd_tc_clock_on(env->io, out->ddi, out->tc_port, select);
+			source.kind = I915_XD_PLL_TC;
+		select = drv_i915_xd_tc_clock_select(&source, out->rate_khz);
+		drv_i915_xd_tc_clock_map(env->io, out->ddi, out->tc_port, select);
 	} else {
 		drv_i915_xd_dpll_map(env->io, env->platform, out->phy, out->pll);
 	}
@@ -1476,7 +1477,7 @@ i915_xd_output_clock_off(
 
 	/* The gate. */
 	if (out->tc) {
-		drv_i915_xd_tc_clock_off(env->io, out->ddi, out->tc_port);
+		drv_i915_xd_tc_clock_unmap(env->io, out->ddi, out->tc_port);
 	} else {
 		drv_i915_xd_dpll_unmap(env->io, env->platform, out->phy);
 	}
@@ -1864,12 +1865,12 @@ i915_xd_output_prepare(
 
 	run = context;
 
-	/* The PHY's reset, on an Alder Lake-P Type-C port in DisplayPort alternate or legacy mode. */
+	/* The PHY's reset, on a Type-C port in DisplayPort alternate or legacy mode of a platform that needs it. */
 	before_buffer = NULL;
 	owned = 0;
 	if (run->out->tc_mode == I915_XD_OUTPUT_TC_DP_ALT || run->out->tc_mode == I915_XD_OUTPUT_TC_LEGACY)
 		owned = 1;
-	if (run->out->tc && owned && run->env->platform->kind == I915_XD_KIND_ADLP)
+	if (run->out->tc && owned && (run->env->platform->wa & I915_XD_WA_TC_RESET_AFTER_TBT) != 0U)
 		before_buffer = i915_xd_output_phy_wa;
 
 	/* The buffer's word with its enable. */

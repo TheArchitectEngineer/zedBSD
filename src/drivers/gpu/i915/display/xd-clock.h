@@ -33,6 +33,16 @@
  * enabled and waited on through its enable word; a DDI takes its clock
  * from a combo DPLL through the platform's DPCLKA select, which is
  * written before the DDI's clock is ungated, in a separate write.
+ *
+ * A Type-C port's PLL is in its Dekel PHY.  Its feedback divider (an
+ * integer and a 22-bit fraction of twice the reference) puts its DCO at
+ * 8.1 GHz for every DisplayPort link rate, or in a range for an HDMI
+ * clock; a high-speed divider (2, 3, 5 or 7) and a second divider bring
+ * the DCO down to the link clock.  Its words are written through the
+ * PHY's window (xd-tc.c) between the power and the enable of the PLL's
+ * enable word, which stays in the display's registers.  A Type-C port's
+ * DDI selects its own TC PLL, or one of the Thunderbolt PLL's link rates,
+ * in its own clock select, and its clock is ungated in DPCLKA_CFGCR0.
  */
 
 #ifndef DRIVERS_GPU_I915_DISPLAY_XD_CLOCK_H
@@ -42,6 +52,7 @@
 
 #include "xd-io.h"
 #include "xd-platform.h"
+#include "xd-tc.h"
 
 /* A PLL rate that is not known, which forces the PLL off and on again. */
 #define I915_XD_CDCLK_VCO_UNKNOWN	0xffffffffU
@@ -105,6 +116,23 @@ struct i915_xd_dpll_words {
 	int div0_set;
 };
 
+/*
+ * The words of a Type-C port's PLL in its Dekel PHY, one per register,
+ * and whether the AFC startup field of DIV0 is written at all (only
+ * with the VBT's override).
+ */
+struct i915_xd_tc_pll_words {
+	uint32_t refclkin;
+	uint32_t coreclk;
+	uint32_t hsclk;
+	uint32_t div0;
+	uint32_t div1;
+	uint32_t ssc;
+	uint32_t bias;
+	uint32_t tdc;
+	int afc_set;
+};
+
 void drv_i915_xd_cdclk_read(struct i915_xd_io *io, const struct i915_xd_platform *platform, struct i915_xd_cdclk *state);
 uint8_t drv_i915_xd_cdclk_voltage(const struct i915_xd_platform *platform, uint32_t cdclk_khz);
 uint32_t drv_i915_xd_cdclk_lowest(const struct i915_xd_platform *platform, uint32_t ref_khz, uint32_t min_khz);
@@ -125,8 +153,13 @@ int drv_i915_xd_dpll_read(struct i915_xd_io *io, const struct i915_xd_platform *
 void drv_i915_xd_dpll_map(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned phy, unsigned select);
 void drv_i915_xd_dpll_unmap(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned phy);
 int drv_i915_xd_dpll_mapped(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned phy, unsigned *select);
-uint32_t drv_i915_xd_tc_clock_select(int own_pll, uint32_t rate_khz);
-void drv_i915_xd_tc_clock_on(struct i915_xd_io *io, unsigned ddi, unsigned tc, uint32_t select);
-void drv_i915_xd_tc_clock_off(struct i915_xd_io *io, unsigned ddi, unsigned tc);
+int drv_i915_xd_tc_pll_words(uint32_t ref_khz, uint32_t port_khz, int hdmi, int afc, struct i915_xd_tc_pll_words *words);
+uint32_t drv_i915_xd_tc_pll_port_khz(uint32_t ref_khz, const struct i915_xd_tc_pll_words *words);
+unsigned drv_i915_xd_tc_pll_enable(struct i915_xd_io *io, struct i915_xd_dkl *dkl, const struct i915_xd_pll_desc *pll, const struct i915_xd_tc_pll_words *words);
+int drv_i915_xd_tc_pll_read(struct i915_xd_io *io, struct i915_xd_dkl *dkl, const struct i915_xd_pll_desc *pll, int afc, struct i915_xd_tc_pll_words *words);
+uint32_t drv_i915_xd_tc_clock_select(const struct i915_xd_pll_desc *pll, uint32_t rate_khz);
+void drv_i915_xd_tc_clock_map(struct i915_xd_io *io, unsigned ddi, unsigned tc, uint32_t select);
+void drv_i915_xd_tc_clock_unmap(struct i915_xd_io *io, unsigned ddi, unsigned tc);
+int drv_i915_xd_tc_clock_mapped(struct i915_xd_io *io, unsigned ddi, unsigned tc);
 
 #endif /* DRIVERS_GPU_I915_DISPLAY_XD_CLOCK_H */

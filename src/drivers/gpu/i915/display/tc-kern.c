@@ -67,7 +67,7 @@ static int tc_kern_sleep_us(void *ctx, unsigned us);
 static void tc_kern_log(void *ctx, const char *format, ...) __attribute__((format(printf, 2, 3)));
 static void tc_kern_declare_ports(struct i915_display *display, struct i915_tc_kern *k);
 static struct i915_tc *tc_kern_lcd_ports(struct i915_lcd_kernel *kernel, int tc_port, const char *what);
-static struct i915_dkl_phy *tc_kern_lcd_dkl(struct i915_lcd_kernel *kernel, int tc_port);
+static struct i915_xd_dkl *tc_kern_lcd_dkl(struct i915_lcd_kernel *kernel, int tc_port);
 
 /*
  * Binds the display's Type-C ports and reads how the firmware left them.
@@ -157,7 +157,7 @@ drv_i915_tc_kern_stop(
 	/* Gives every port back; the core logs each one. */
 	drv_i915_tc_stop(&k->tc);
 
-	/* The Type-C layer forgets what the display reported of each port (ws177-p003); a kernel without it has none. */
+	/* The Type-C layer forgets what the display reported of each port; a kernel without it has none. */
 	if (drv_typec_display_forget == NULL)
 		return;
 	for (port = 0u; port < I915_TC_PORTS; port++)
@@ -332,7 +332,7 @@ drv_i915_lcd_dkl_read(
 	int tc_port,
 	uint32_t phy_address)
 {
-	struct i915_dkl_phy *dkl;
+	struct i915_xd_dkl *dkl;
 	uint32_t value;
 
 	/* Finds the display's DKL access; without it the PHY does not answer. */
@@ -341,7 +341,7 @@ drv_i915_lcd_dkl_read(
 		return 0xffffffffu;
 
 	/* Reads under the bank index lock. */
-	value = drv_i915_dkl_phy_read(dkl, (unsigned)tc_port, phy_address);
+	value = drv_i915_xd_dkl_read(dkl, (unsigned)tc_port, phy_address);
 
 	/* Succeeded: the register's value. */
 	return value;
@@ -358,7 +358,7 @@ drv_i915_lcd_dkl_write(
 	uint32_t phy_address,
 	uint32_t value)
 {
-	struct i915_dkl_phy *dkl;
+	struct i915_xd_dkl *dkl;
 
 	/* Finds the display's DKL access; without it nothing is written. */
 	dkl = tc_kern_lcd_dkl(ctx, tc_port);
@@ -366,7 +366,7 @@ drv_i915_lcd_dkl_write(
 		return;
 
 	/* Writes under the bank index lock. */
-	drv_i915_dkl_phy_write(dkl, (unsigned)tc_port, phy_address, value);
+	drv_i915_xd_dkl_write(dkl, (unsigned)tc_port, phy_address, value);
 }
 
 /*
@@ -381,7 +381,7 @@ drv_i915_lcd_dkl_rmw(
 	uint32_t clear,
 	uint32_t set)
 {
-	struct i915_dkl_phy *dkl;
+	struct i915_xd_dkl *dkl;
 
 	/* Finds the display's DKL access; without it nothing is changed. */
 	dkl = tc_kern_lcd_dkl(ctx, tc_port);
@@ -389,7 +389,7 @@ drv_i915_lcd_dkl_rmw(
 		return;
 
 	/* Changes the register under one hold of the bank index lock. */
-	drv_i915_dkl_phy_rmw(dkl, (unsigned)tc_port, phy_address, clear, set);
+	drv_i915_xd_dkl_rmw(dkl, (unsigned)tc_port, phy_address, clear, set);
 }
 
 /*
@@ -717,7 +717,7 @@ tc_kern_lcd_ports(
  * a port, or NULL, logged, when the run has none or the number names none
  * of the four Type-C ports.
  */
-static struct i915_dkl_phy *
+static struct i915_xd_dkl *
 tc_kern_lcd_dkl(
 	struct i915_lcd_kernel *kernel,
 	int tc_port)

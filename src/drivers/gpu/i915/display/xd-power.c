@@ -42,6 +42,20 @@
 #define I915_XD_POWER_BIOS_OFFSET	4U
 
 /*
+ * The TC cold block of Tiger Lake through the GT driver mailbox: how long
+ * one request may take, how many requests are made, and the pause
+ * between them.
+ *
+ * Values referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display_power_well.c
+ * (tgl_tc_cold_request: 3 tries, 1 ms apart), and
+ * drivers/gpu/drm/i915/intel_pcode.c (snb_pcode_read: 500 us).
+ */
+#define I915_XD_POWER_TCCOLD_US		500U
+#define I915_XD_POWER_TCCOLD_TRIES	3U
+#define I915_XD_POWER_TCCOLD_PAUSE_US	1000U
+
+/*
  * How often a DC state is written again while it reads back otherwise,
  * and how many reads in a row must show it before it counts as taken.
  *
@@ -66,6 +80,7 @@ static uint32_t i915_xd_power_dc_held_mask(const struct i915_xd_power *power);
 static int i915_xd_power_dc_store(struct i915_xd_power *power, struct i915_xd_io *io, uint32_t state, struct i915_xd_dc_report *report);
 static int i915_xd_power_pw2_on(const struct i915_xd_power *power, struct i915_xd_io *io);
 static void i915_xd_power_dc_report_clear(struct i915_xd_dc_report *report);
+static int i915_xd_power_tccold(struct i915_xd_io *io, int block, struct i915_xd_well_report *report);
 
 /*
  * Finds the table entry of a well given by its control and its index
@@ -107,9 +122,10 @@ drv_i915_xd_power_find(
  * AUX well with its tunnel down never reports); the DisplayPort AUX well
  * of a Type-C port waits for its PHY's microcontroller; a well with fuses
  * waits for them (late fuses are noted); then the owner rewrites the VGA
- * registers and restores the pipe interrupts inside the well.  Returns 0,
- * EINVAL for a well that is not switched by a request, or EIO when the
- * time base failed (the caller stops).
+ * registers and restores the pipe interrupts inside the well.  Tiger
+ * Lake's TC cold well asks the firmware to block TC cold instead.
+ * Returns 0, EINVAL for a well that is not switched by a request, or EIO
+ * when the time base failed (the caller stops).
  *
  * Procedure referenced: Linux v6.8.12
  * drivers/gpu/drm/i915/display/intel_display_power_well.c
@@ -136,10 +152,22 @@ drv_i915_xd_power_well_enable(
 	report->state_late = 0;
 	report->fuses_late = 0U;
 
-	/* Refuses a well the table does not switch by a request. */
+	/* Refuses a well the table does not have. */
 	desc = i915_xd_power_desc(platform, well);
 	if (desc == NULL)
 		return EINVAL;
+
+	/* The TC cold well of Tiger Lake is a request to the firmware: block TC cold. */
+	if (desc->control == I915_XD_WELL_CONTROL_MAILBOX) {
+		error = i915_xd_power_tccold(io, 1, report);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: TC cold is blocked (or the failure is in the report). */
+		return 0;
+	}
+
+	/* Refuses a well the table does not switch by a request. */
 	control = i915_xd_power_control(desc->control);
 	if (control == 0U)
 		return EINVAL;
@@ -216,9 +244,10 @@ drv_i915_xd_power_well_enable(
  * The owner drains the pipe interrupts inside the well first (a failed
  * drain keeps the well on); then the driver's request is withdrawn, and
  * when the BIOS does not request the well too its state is waited for (a
- * state that stays is noted).  Returns 0, EINVAL for a well that is not
- * switched by a request, EBUSY when the drain failed, or EIO when the
- * time base failed.
+ * state that stays is noted).  Tiger Lake's TC cold well asks the
+ * firmware to allow TC cold again instead.  Returns 0, EINVAL for a well
+ * that is not switched by a request, EBUSY when the drain failed, or EIO
+ * when the time base failed.
  *
  * Procedure referenced: Linux v6.8.12
  * drivers/gpu/drm/i915/display/intel_display_power_well.c
@@ -244,10 +273,22 @@ drv_i915_xd_power_well_disable(
 	report->state_late = 0;
 	report->fuses_late = 0U;
 
-	/* Refuses a well the table does not switch by a request. */
+	/* Refuses a well the table does not have. */
 	desc = i915_xd_power_desc(platform, well);
 	if (desc == NULL)
 		return EINVAL;
+
+	/* The TC cold well of Tiger Lake is a request to the firmware: unblock TC cold. */
+	if (desc->control == I915_XD_WELL_CONTROL_MAILBOX) {
+		error = i915_xd_power_tccold(io, 0, report);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: TC cold is allowed again (or the failure is in the report). */
+		return 0;
+	}
+
+	/* Refuses a well the table does not switch by a request. */
 	control = i915_xd_power_control(desc->control);
 	if (control == 0U)
 		return EINVAL;
@@ -1449,5 +1490,66 @@ i915_xd_power_wait_fuses(
 		report->fuses_late |= 1U << gate;
 
 	/* Succeeded: the wait is over. */
+	return 0;
+}
+
+/*
+ * Asks the firmware to block TC cold (block nonzero) or to allow it
+ * again, up to three times 1 ms apart: a block the firmware answers with
+ * the exit failed bit counts as failed.  A request that never succeeds
+ * is noted in the report (state_late) and the well's change goes on, as
+ * Linux does.  Returns 0, or EIO when the time base failed.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (TGL_PCODE_TCCOLD, TGL_PCODE_EXIT_TCCOLD_DATA_L_BLOCK_REQ,
+ * TGL_PCODE_EXIT_TCCOLD_DATA_L_UNBLOCK_REQ,
+ * TGL_PCODE_EXIT_TCCOLD_DATA_L_EXIT_FAILED).
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display_power_well.c
+ * (tgl_tc_cold_request, tgl_tc_cold_off_power_well_enable,
+ * tgl_tc_cold_off_power_well_disable).
+ */
+static int
+i915_xd_power_tccold(
+	struct i915_xd_io *io,
+	int block,
+	struct i915_xd_well_report *report)
+{
+	uint32_t data0;
+	uint32_t data1;
+	unsigned tries;
+	int error;
+
+	/* Asks until the firmware agrees or the tries run out. */
+	for (tries = 1U; ; tries++) {
+		/* One request: block or unblock. */
+		data0 = I915_XD_MAILBOX_TCCOLD_UNBLOCK;
+		if (block)
+			data0 = I915_XD_MAILBOX_TCCOLD_BLOCK;
+		data1 = 0U;
+		error = drv_i915_xd_io_mailbox(io, I915_XD_MAILBOX_TCCOLD, &data0, &data1, I915_XD_POWER_TCCOLD_US);
+
+		/* A block whose exit failed is a failed request. */
+		if (error == 0 &&
+		    block &&
+		    (data0 & I915_XD_MAILBOX_TCCOLD_EXIT_FAILED) != 0U)
+			error = EIO;
+		if (error == 0)
+			break;
+
+		/* The last try failed: noted, the change goes on. */
+		if (tries == I915_XD_POWER_TCCOLD_TRIES) {
+			report->state_late = 1;
+			drv_i915_xd_io_step(io, "power: TC cold request failed");
+			break;
+		}
+
+		/* Waits before the next try. */
+		error = drv_i915_xd_io_delay(io, I915_XD_POWER_TCCOLD_PAUSE_US);
+		if (error != 0)
+			return EIO;
+	}
+
+	/* Succeeded: the request was made. */
 	return 0;
 }
