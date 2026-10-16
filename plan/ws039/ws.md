@@ -100,6 +100,8 @@ AMD RDNA世代のGPUのドライバを実装する。
 
 - 2026-10-16 朝（ユーザー、クリック）: 試験の image の GOP の大きさは「video=640x480 を外す」→ GOP を monitor の 1920x1080 のままにする（loader の設定だけ、mode set は予定どおり desktop の後）。p002 の実機で、640x480 の GOP は 1920x1080 の timing に DSCL で拡大されていた。
 
+- 2026-10-16（ユーザー）:「AMD の firmware を CI・release の amd64 の image に入れます。」→ p004 の merge で config/ci/config-amd64.mk に amd-navi-firmware。
+
 → p001 は判断が揃ったので cleared（Q1、2026-10-15 夜）。#7・#11 は design.md の該当の節を p002 の最初に直す。
 
 ### design.md §15 #9 の回答（2026-10-15 夕 ユーザー、クリック）
