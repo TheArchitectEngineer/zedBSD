@@ -31,3 +31,21 @@ design は「DP を先に、DVI は範囲の外」。p014 の A10 で分かっ�
 
 - A11 以降は画面を一度消す。失敗すると次の起動まで画面が無い（warm reboot で GOP が戻す見込み）。実機の操作の前に毎回 Q1 に時刻を知らせ、ユーザーが RDNA 機を使っていない時間に限る。
 - PHY・PLL は VBIOS の command に頼る（runner は p014 で oracle と全一致、実機で I2C の routine を確かめ済み）。
+
+## 結果（実施の記録）
+
+### A11 re-light（2026-10-16 22:29〜22:38、実機 RX 5600 XT、zedBSD）
+
+- 実装: `src/drivers/gpu/amdrdna/relight.c`（`amdrdna_a11_relight`）、`display-command.c`（VBIOS の command の parameter の組み立て、30a4ee948）、
+  `sink.c` の `amdrdna_bios_run`（A10 の runner を他の段から使う）、`display.c` の `amdrdna_display_underflow`、OTG の BLANK・CRC の register（`dcn-registers.c`、DCN compare に追加）。
+  commit f2cbb8585・7fac15fed（mark の行を 160 桁に収めた）。
+- 手順（Linux の TMDS の off/on に合わせた。PLL・OTG の timing・HUBP は触らない）: OTG の CRC → OTG blank → transmitter DISABLE（routine 0x4c、connector id 付き）→ 300 ms 信号なし →
+  encoder STREAM_SETUP（routine 0x04、DIG FE、DVI、4 lane、pclk、DVI は色深度 0 ＝ Linux と同じ）→ transmitter ENABLE（4 lane、symclk = pclk、HPD sel、FE sel 0、connector id 0）→ 2 frame → unblank → 2 frame → CRC・frame counter・underflow。
+- 実機の結果（3 回、すべて ok）:
+  - r1（f2cbb8585）: `A11 ok relit 1920x1080@60.000 DVI transmitter=4 dig=4 pixel=148500kHz dark=307ms steps=381 frames=26 crc=same (aa0f0e0ce003fe4f -> aa0f0e0ce003fe4f)`、status の underflow=0。
+  - r2・r3（7fac15fed）: `A11 ok relit 1920x1080@60.000 DVI phy=4 dig=4 pclk=148500kHz dark=307ms steps=381 frames=26 crc=same aa0f0e0c/e003fe4f underflow=0/0`。
+  - A11 の後も `amdrdnactl modes` は 13 mode、display の counts は進み（refreshes・frame_irq）、faults=2 は A5・A5s の意図した fault の確認の分。
+- 証拠: `build/tmp/p15-a11-r1`〜`r3`（dmesg.txt・advance.txt・after.txt、worktree の中）。
+- host: build warning 0、`plan/ws039/tests/amdrdna-host-test.sh` PASS（command 5、DCN compare 516 register、audit）。
+- 未実施: monitor が信号を取り戻した画面の目視（CRC は OTG の出力の値で monitor 側ではない。ユーザーの試験の一覧に載せる）。HDMI の connector（board の HDMI に繋いだ時）。
+
