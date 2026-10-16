@@ -43,6 +43,7 @@
 #include "dp.h"
 #include "ddi.h"
 #include "edid.h"
+#include "xd-edid.h"
 #include "pipe.h"
 #include "plane.h"
 #include <kern/kcrt.h>
@@ -62,7 +63,7 @@
 /* The eDP revision from which the sink carries rate tables (DP_EDP_14). */
 #define I915_STATE_DP_EDP_14 0x03
 
-/* The bits per colour an external DP display is driven at, at most (RGB 8 bpc; ws051-p004b). */
+/* The bits per colour an external DP display is driven at, at most (RGB 8 bpc). */
 #define I915_STATE_DP_EXT_MAX_BPC 8
 
 /* The fewest bits per colour a DP link may drop to (intel_dp_min_bpp() for RGB). */
@@ -734,7 +735,6 @@ drv_i915_lcd_compute(
 	int ref_nssc_khz,
 	struct i915_lcd_state *out)
 {
-	struct drm_display_mode mode;
 	struct intel_link_m_n m_n;
 	const struct edid *edid;
 	unsigned index;
@@ -761,35 +761,10 @@ drv_i915_lcd_compute(
 	i915_state_sink_world = world;
 	world->lcd_notes = 0;
 
-	/* The mode: the preferred detailed timing of the base block. */
-	error = drv_i915_edid_preferred_mode(world, edid128, &mode, &index);
+	/* The mode: the first timing descriptor of the base block (xd-edid). */
+	error = drv_i915_xd_edid_first_timing(edid128, &out->mode, &index);
 	if (error != 0)
 		return error;
-
-	/* Copies the mode's timings. */
-	out->mode.clock_khz = mode.clock;
-	out->mode.hdisplay = mode.hdisplay;
-	out->mode.hsync_start = mode.hsync_start;
-	out->mode.hsync_end = mode.hsync_end;
-	out->mode.htotal = mode.htotal;
-	out->mode.vdisplay = mode.vdisplay;
-	out->mode.vsync_start = mode.vsync_start;
-	out->mode.vsync_end = mode.vsync_end;
-	out->mode.vtotal = mode.vtotal;
-
-	/* Copies the sync polarities. */
-	out->mode.hsync_positive = 0;
-	if ((mode.flags & DRM_MODE_FLAG_PHSYNC) != 0)
-		out->mode.hsync_positive = 1;
-
-	out->mode.vsync_positive = 0;
-	if ((mode.flags & DRM_MODE_FLAG_PVSYNC) != 0)
-		out->mode.vsync_positive = 1;
-
-	/* Copies the physical size and which descriptor the mode came from. */
-	out->mode.width_mm = mode.width_mm;
-	out->mode.height_mm = mode.height_mm;
-	out->mode.descriptor_index = index;
 
 	/*
 	 * EDID 1.4 digital input: the colour depth is in bits 6:4 of the video
@@ -845,7 +820,7 @@ drv_i915_lcd_compute(
 	out->link.lanes = out->link.sink_max_lanes;
 
 	/* The bandwidth the mode needs, and what the link carries. */
-	out->link.required_kbps = drv_i915_dp_link_required(mode.clock, out->link.bpp);
+	out->link.required_kbps = drv_i915_dp_link_required(out->mode.clock_khz, out->link.bpp);
 	out->link.available_kbps = drv_i915_dp_max_data_rate(out->link.rate_khz, out->link.lanes);
 
 	/*
@@ -858,7 +833,7 @@ drv_i915_lcd_compute(
 		return ENOSPC;
 
 	/* The M/N values of the link. */
-	drv_i915_link_compute_m_n((u16)(out->link.bpp * 16), out->link.lanes, mode.clock, out->link.rate_khz, I915_STATE_SST_BW_OVERHEAD, &m_n);
+	drv_i915_link_compute_m_n((u16)(out->link.bpp * 16), out->link.lanes, out->mode.clock_khz, out->link.rate_khz, I915_STATE_SST_BW_OVERHEAD, &m_n);
 	out->link.tu = m_n.tu;
 	out->link.data_m = m_n.data_m;
 	out->link.data_n = m_n.data_n;
@@ -919,7 +894,7 @@ drv_i915_lcd_compute_hdmi(
 
 /*
  * Computes the link, M/N and Type-C PLL of an external DP display's mode
- * (ws051-p004b; Linux v6.8.12 intel_dp_compute_link_config_wide() for SST
+ * (Linux v6.8.12 intel_dp_compute_link_config_wide() for SST
  * without DSC).
  *
  * The bits per colour start from the EDID's depth (8 when undefined),
