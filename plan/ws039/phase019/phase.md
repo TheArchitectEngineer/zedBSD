@@ -89,7 +89,7 @@ kernel A（CPU の copy）と B（DMA_DATA）、`amdrdna.vk.timing=5000`、4 節
 
 ## 9. 実機の測定（2 段目、P3 への依頼、未実施）
 
-kernel A' = main `9f5ffb9a1`（1 段目の DMA_DATA まで）、kernel B' = この 2 段目の commit。4 節と同じ自動の手順（起動 → desktop で 10 s 何もしない → App Home の開閉 5 回 → app を 3 つ起動して各 5 s → 閉じる 1 回）を 3 回:
+kernel A' = main `9f5ffb9a1`（1 段目の DMA_DATA まで）、kernel B' = この 2 段目の commit `980c5d0f1`（base 9f5ffb9a1）。4 節と同じ自動の手順（起動 → desktop で 10 s 何もしない → App Home の開閉 5 回 → app を 3 つ起動して各 5 s → 閉じる 1 回）を 3 回:
 1. B'、`amdrdna.vk.timing=5000`: 期待 = 印の period の長さが 5000〜5100 ms 前後（前は 6245〜6606）、KWL PERF の `walk replay max` に 2 s 前後の値が無い、compose の frame_ms が印の period でも 18〜30 ms。新しい `gpu busy` の行の counter の kHz（100000 前後の見込み）と busy の ms を、`gpu runs` の待ちの ms と比べる（busy ≒ 待ちなら GPU の実行が重い、busy が小さければ submit・待ちの側）。
 2. A'、`amdrdna.vk.timing` 無し、3. B'、`amdrdna.vk.timing` 無し: ユーザーが見た「印の無い時」の比べ。session.log の KWL PERF（compose frame_ms・rec begin・SLOW_PASS の数と us）を A' と B' で比べる。特に login の直後・session の始まり（input の行など kernel の行が出る所）の period。dmesg の `display lease 1 claimed` の後の行の数も数える（desktop の間の kernel の行の数）。
 取る物（各回）: `dmesg`、compositor の session.log、`amdrdnactl status`、目視の感想。lease の終わりの console の戻り（reboot の時に shutdown の行が画面に出る）も見られれば。
