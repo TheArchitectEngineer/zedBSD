@@ -3,12 +3,12 @@
 # WS245: i915 の Gen12 系（display 12・13）の display の書き直し
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-15 作成。p001 の [design.md](design.md) は改訂 6 で cleared（2026-10-16 Q1）。q1218（P1、2026-10-16）で段の実装を開始: p047（証拠の道具）cleared、p016（OpRegion）・p017（VBT の解析）は 5330 の素の起動の回帰に合格し main に merge（p016）/ merge の依頼済み（p017）。p019〜p029 は branch agent/p1-ws245 に実装済み（5330 は全部の段の後に 1 回））
+Status: incomplete（2026-10-15 作成。p001 の [design.md](design.md) は改訂 6 で cleared（2026-10-16 Q1）。q1218（P1、2026-10-16）で段の実装を開始: p047（証拠の道具）cleared、p016（OpRegion）・p017（VBT の解析）は 5330 の素の起動の回帰に合格し main に merge（p016）/ merge の依頼済み（p017）。p019〜p030 は branch agent/p1-ws245 に実装済み（5330 は全部の段の後に 1 回））
 Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
 Related: [WS244](../ws244/ws.md)（i915 の Linux 由来の code の整理、棚卸し plan/ws244/inventory.md・tests/inventory.py）、[Guardrail](../guardrail.md)「MIT・GPL の出典のデータの引用」
-Resume point: 2026-10-16 の方針（ユーザー「i915は、実装だけ先に終わらせ、全部マージしたものをテストして、動かなければ二分探索で半分マージしてテスト、だめならさらに半分、で進めます。まずはぜんぶ実装してください。」、Q1 経由）: p020 以降の段を design の順に p046 まで branch（agent/p1-ws245）に積む。各段は host 試験・build（既定と `I915_TESTS=y` の 5 組）warning 0・WIP commit・phase.md の記録。5330 の回帰は全部の後に 1 回（基準は main の kernel、段は branch の tip）、動かなければ下の「段の境の SHA」で二分探索。p019 は T1-704（機能の基準は合格、書き込みの順のずれは別の thread の相対の順: [phase019](phase019/phase.md)）。今の段: p029 の後は p030（DDI の buffer、design §6.2 の p030 の行。xd-ddi に DDI_BUF_CTL（port width、reversal、ADL-P の TC の所有 bit と PHY link rate）、enable と idle の待ち、disable、DP_TP_CTL の pattern。表 R の DDI_BUF_CTL の行: 所有 bit と reversal は殻から受けて rmw で保つ）。p029 の形（[phase029](phase029/phase.md)）: 旧の get_buf_trans の hook は xd の表の view（長さと HDMI の既定）を返し、語の書き込みは xd。harness `wells29.c` は GRP の書き込みを 4 lane に写す。p028 の形（[phase028](phase028/phase.md)）: modeset の lcd world の hardware の書き込みは、backend の read32/write32/usleep を hook にした xd の window（clock.c の `i915_dpll_window`、backlight の形）を通す。旧の host-lcd-modeset-test の比べは rmw を書いた値に直した書き込みの列（scratch の `wr.py` と同じ: 旧の `rmw b=set c=clear d=前の値`）。xd の platform は `drv_i915_lcd_xd_platform()`（lcd world に display が設定、無ければ display version の最初の行）。p026 の形: 消す旧 file は中身を消して vmunix.mk から外す、file の削除は merge の時に Q1（下の「merge の時に Q1 が消す物」）。harness: `plan/ws245/temp/harness/`（`oldtests.sh <tree> <out>`、`wells2N.c`・`run-wells2N.sh`）。build は `sh build/tmp/kbuild.sh p021`（約 3.5 分。出力を grep する時は `-Werror` に当たる `error` を使わない）。
+Resume point: 2026-10-16 の方針（ユーザー「i915は、実装だけ先に終わらせ、全部マージしたものをテストして、動かなければ二分探索で半分マージしてテスト、だめならさらに半分、で進めます。まずはぜんぶ実装してください。」、Q1 経由）: p020 以降の段を design の順に p046 まで branch（agent/p1-ws245）に積む。各段は host 試験・build（既定と `I915_TESTS=y` の 5 組）warning 0・WIP commit・phase.md の記録。5330 の回帰は全部の後に 1 回（基準は main の kernel、段は branch の tip）、動かなければ下の「段の境の SHA」で二分探索。p019 は T1-704（機能の基準は合格、書き込みの順のずれは別の thread の相対の順: [phase019](phase019/phase.md)）。今の段: p030 の後は p031（DP の訓練、design §6.2 の p031 の行。xd-dp（新）: rate/lane の候補、bpp、M/N/TU、sink の power、CR/EQ の訓練（swing の要求 → xd-ddi）、link status、fallback。節目: USB-C DP と HDMI の 2 画面はユーザーの一覧）。p030 の形（[phase030](phase030/phase.md)）: 殻が crtc state から `struct i915_xd_ddi_link` を作り xd-ddi の列を呼ぶ、旧の Dekel の窓の WA は xd の hook。lcd 試験の E（time base の fault）は stop の pipe-off の待ち（0x70008、p032 で xd に移ると壊れる: その段で書き直すか消す）。p029 の形（[phase029](phase029/phase.md)）: 旧の get_buf_trans の hook は xd の表の view（長さと HDMI の既定）を返し、語の書き込みは xd。harness `wells29.c` は GRP の書き込みを 4 lane に写す。p028 の形（[phase028](phase028/phase.md)）: modeset の lcd world の hardware の書き込みは、backend の read32/write32/usleep を hook にした xd の window（clock.c の `i915_dpll_window`、backlight の形）を通す。旧の host-lcd-modeset-test の比べは rmw を書いた値に直した書き込みの列（scratch の `wr.py` と同じ: 旧の `rmw b=set c=clear d=前の値`）。xd の platform は `drv_i915_lcd_xd_platform()`（lcd world に display が設定、無ければ display version の最初の行）。p026 の形: 消す旧 file は中身を消して vmunix.mk から外す、file の削除は merge の時に Q1（下の「merge の時に Q1 が消す物」）。harness: `plan/ws245/temp/harness/`（`oldtests.sh <tree> <out>`、`wells2N.c`・`run-wells2N.sh`）。build は `sh build/tmp/kbuild.sh p021`（約 3.5 分。出力を grep する時は `-Werror` に当たる `error` を使わない）。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）
@@ -145,7 +145,7 @@ Resume point: 2026-10-16 の方針（ユーザー「i915は、実装だけ先に
 | [p027](phase027/phase.md) | CDCLK（xd-clock） | in-progress（3 LW。2026-10-16 q1229-i02 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回。節目: suspend → resume、5320 の起動はユーザーの一覧） |
 | [p028](phase028/phase.md) | combo DPLL（xd-clock） | in-progress（5 LW。2026-10-16 q1229-i03 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回。節目: 5320 の起動。`host-vbt-pll.sh` の PLL の check は host-xd-dpll-test に移した: Tools の行は Q1） |
 | [p029](phase029/phase.md) | combo PHY（xd-ddi: init・lane・swing） | in-progress（4 LW。2026-10-16 q1229-i03 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回。phy.c・phy.h の削除は merge の時に Q1） |
-| p030 | DDI の buffer（xd-ddi: BUF_CTL・DP_TP・idle） | planned（4 LW） |
+| [p030](phase030/phase.md) | DDI の buffer（xd-ddi: BUF_CTL・DP_TP・idle） | in-progress（4 LW。2026-10-16 q1229-i03 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回） |
 | p031 | DP の訓練（xd-dp） | planned（6 LW。節目: USB-C DP と HDMI の 2 画面はユーザーの一覧） |
 | p032 | transcoder と pipe（xd-pipe） | planned（5 LW） |
 | p033 | plane と flip（xd-pipe） | planned（3 LW） |
@@ -186,6 +186,7 @@ Resume point: 2026-10-16 の方針（ユーザー「i915は、実装だけ先に
 | p027 | 9833f6172 | 76fefb632（p026 の記録の commit） |
 | p028 | c90812662 | 47d0e157a（p027 の記録の commit） |
 | p029 | 7e23af604 | a8cb64e8b（p028 の記録の commit） |
+| p030 | baac77f10 | 05775ce1f（p029 の記録の commit） |
 
 ### merge の時に Q1 が消す物（段の殻で中身を空にし vmunix.mk から外した file と、範囲の外の試験）
 
