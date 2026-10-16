@@ -11,7 +11,7 @@
  */
 
 #include "display-internal.h"
-#include "output.h"
+#include "output-timing.h"
 #include "xd-edid.h"
 
 #include <kern/kcrt.h>

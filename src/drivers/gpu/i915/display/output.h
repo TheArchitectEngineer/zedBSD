@@ -6,8 +6,8 @@
  */
 
 /*
- * The choice of the resident node's output (output.c, ws075-p012; the GPU
- * scanout rule since ws113-p002).
+ * The choice of the resident node's output (output.c, and the GPU scanout
+ * rule).
  *
  * The resident node lights only the output the firmware (GOP) was
  * scanning out: the eDP panel, or the HDMI display of DDI B on pipe B in
@@ -21,13 +21,14 @@
 #define DRIVERS_GPU_I915_DISPLAY_OUTPUT_H
 
 #include "internal.h"
+#include "output-timing.h"
 
 /* The HDMI output: port B, pipe B, transcoder B. */
 #define I915_OUTPUT_HDMI_PORT		1
 #define I915_OUTPUT_HDMI_PIPE		1
 
 /*
- * An external DisplayPort display's pipe and transcoder (ws051-p004b):
+ * An external DisplayPort display's pipe and transcoder:
  * pipe B, as the HDMI output's (one output at a time, the DBUF and
  * watermark combination already proved on pipe B).
  */
@@ -77,12 +78,6 @@ int drv_i915_display_output_connector(struct i915_display *display, unsigned con
 int drv_i915_display_output_prepare(struct i915_display *display, unsigned connector, struct i915_display_output *output, const char **reason);
 unsigned drv_i915_display_output_pipe(const struct i915_display_output *output);
 void drv_i915_display_output_panel(struct i915_display *display, struct i915_display_output *output);
-
-/*
- * Decodes one EDID detailed timing descriptor (18 bytes) into a mode: 0,
- * or EINVAL for a descriptor that is not a progressive detailed timing.
- */
-int drv_i915_output_edid_timing(const uint8_t *descriptor, struct i915_lcd_mode *mode);
 
 /*
  * Computes the CVT reduced-blanking (version 1) timing of a mode: 0, or

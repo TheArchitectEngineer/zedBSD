@@ -29,7 +29,6 @@
 #include "internal.h"
 #include "interrupts.h"
 #include "hotplug.h"
-#include "opregion.h"
 #include "power.h"
 #include <kern/kcrt.h>
 
@@ -933,18 +932,17 @@ i915_display_irq_handle(
 	drv_i915_gen11_display_irq_handler(context);
 }
 
-/* Hands a graphics system event to the OpRegion (intel_opregion_asle_intr()). */
+/*
+ * Takes a graphics system event, the firmware's request to the OpRegion's
+ * runtime service.  The driver reads the OpRegion only for its VBT and has
+ * no runtime service, so the event is acknowledged by the interrupt device
+ * and nothing more is done.
+ */
 static void
 i915_display_irq_gse(
 	void *context)
 {
-	struct i915_display *display;
-
-	/* The display interrupt state is a member of its display. */
-	display = container_of((struct i915_display_irq *)context, struct i915_display, irq);
-
-	/* Enters the OpRegion service's gated event entry. */
-	drv_i915_opregion_gse_entry(display);
+	(void)context;
 }
 
 /* The power-well post-enable hook: restores the pipes' interrupts. */
@@ -1162,7 +1160,7 @@ i915_gen8_de_irq_handler(
 		}
 	}
 
-	/* Acknowledges the Type-C hotplug sources and hands them to the hotplug path (gen11_hpd_irq_handler(), ws051-p002b). */
+	/* Acknowledges the Type-C hotplug sources and hands them to the hotplug path (gen11_hpd_irq_handler()). */
 	if (d->display_ver >= 11 && (master_ctl & GEN11_DE_HPD_IRQ) != 0U) {
 		iir = drv_i915_read32(d->m, GEN11_DE_HPD_IIR);
 		if (iir != 0U) {

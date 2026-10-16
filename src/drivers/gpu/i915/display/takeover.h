@@ -88,8 +88,6 @@ int drv_i915_native_precheck(struct i915_display *display, const struct i915_nat
 void drv_i915_native_decide(struct i915_native_report *r);
 void drv_i915_native_log_again(struct i915_display *display);
 void drv_i915_native_log(struct i915_display *display, const struct i915_native_report *r);
-int drv_i915_opregion_read_data(struct i915_display *display, uint32_t asls, struct i915_opregion_data *out);
-void drv_i915_opregion_log(const struct i915_opregion_data *d);
 int drv_i915_n0_pipe_powered(void *ctx, unsigned pipe);
 
 /* The firmware plane and console of the takeover run (N1). */

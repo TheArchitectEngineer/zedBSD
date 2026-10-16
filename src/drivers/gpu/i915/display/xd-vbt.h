@@ -41,9 +41,9 @@
 #define I915_XD_VBT_NONE		0xffU
 
 /* Where an OpRegion keeps its VBT: nowhere, in mailbox 4, or at the raw VBT address. */
-#define I915_XD_OPREGION_VBT_NONE	0U
-#define I915_XD_OPREGION_VBT_MAILBOX	1U
-#define I915_XD_OPREGION_VBT_RAW	2U
+#define I915_XD_VBT_FROM_NONE	0U
+#define I915_XD_VBT_FROM_MAILBOX	1U
+#define I915_XD_VBT_FROM_RAW	2U
 
 /* Which rule chose the panel type: the VBT's own, the EDID's PnP id, or the first panel. */
 #define I915_XD_PANEL_TYPE_VBT		1U
@@ -220,6 +220,44 @@ struct i915_xd_vbt_panel {
 	uint16_t t11_t12;
 };
 
+/* Why the raw VBT an OpRegion names was not used. */
+#define I915_XD_OPREGION_RAW_USED	0U
+#define I915_XD_OPREGION_RAW_ABSENT	1U
+#define I915_XD_OPREGION_RAW_INSIDE	2U
+#define I915_XD_OPREGION_RAW_TOO_LARGE	3U
+#define I915_XD_OPREGION_RAW_UNMAPPED	4U
+#define I915_XD_OPREGION_RAW_UNCHECKED	5U
+
+/*
+ * How the OpRegion reader reaches physical memory: map makes size bytes at
+ * a physical address readable (0, or an errno), unmap gives them back.
+ * The kernel maps device memory read-only; a host test hands out buffers.
+ */
+struct i915_xd_opregion_access {
+	int (*map)(void *context, uint64_t address, size_t size, const volatile uint8_t **bytes);
+	void (*unmap)(void *context, const volatile uint8_t *bytes, size_t size);
+	void *context;
+};
+
+/*
+ * What a read of the OpRegion found: whether there is one (ASLS is not
+ * zero) and it could be mapped, where it keeps its VBT, where the VBT
+ * was taken from (the raw VBT, mailbox 4, or nowhere), why the raw VBT
+ * was not taken, and the VBT's size, check and SHA-256.
+ */
+struct i915_xd_opregion_read {
+	int present;
+	int mapped;
+	int found;
+	struct i915_xd_opregion_vbt where;
+	unsigned source;
+	unsigned raw_status;
+	uint32_t vbt_size;
+	int vbt_valid;
+	uint8_t vbt_sha256[32];
+};
+
+int drv_i915_xd_opregion_read(const struct i915_xd_opregion_access *access, uint32_t asls, uint8_t *opregion_copy, uint8_t *vbt_copy, size_t vbt_room, struct i915_xd_opregion_read *read);
 int drv_i915_xd_opregion_find_vbt(const uint8_t *opregion, size_t size, uint64_t address, struct i915_xd_opregion_vbt *where);
 int drv_i915_xd_vbt_check(const uint8_t *bytes, size_t size);
 int drv_i915_xd_vbt_parse(const struct i915_xd_platform *platform, const uint8_t *bytes, size_t size, struct i915_xd_vbt *vbt);

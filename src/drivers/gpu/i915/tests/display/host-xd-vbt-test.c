@@ -220,6 +220,18 @@ static const uint16_t test_devices[] = { 0x46a6U, 0x46a6U, 0x9a60U, 0x4c8aU, 0x4
 /* Where the last made-up VBT's panel data block starts, counted from its BDB. */
 static size_t test_lfp_data;
 
+/*
+ * The physical memory the OpRegion reader is given: the OpRegion at
+ * TEST_ASLS and one more region (the raw VBT) at test_raw_address.  The
+ * maps that were not given back are counted.
+ */
+#define TEST_ASLS		0x7a000000U
+#define TEST_RAW_BYTES		0x2400U
+static uint8_t test_memory_opregion[TEST_OPREGION_BYTES];
+static uint8_t test_memory_raw[TEST_RAW_BYTES];
+static uint64_t test_raw_address;
+static int test_maps_open;
+
 /* The display the old parser keeps its world in. */
 static struct i915_display test_display;
 
@@ -237,6 +249,9 @@ static void test_vbt_old(unsigned index);
 static void test_defaults(void);
 static void test_damaged(void);
 static void test_opregion(void);
+static void test_opregion_read(void);
+static int test_memory_map(void *context, uint64_t address, size_t size, const volatile uint8_t **bytes);
+static void test_memory_unmap(void *context, const volatile uint8_t *bytes, size_t size);
 static void test_sha256(void);
 static void test_edid(void);
 
@@ -265,6 +280,7 @@ main(void)
 	test_defaults();
 	test_damaged();
 	test_opregion();
+	test_opregion_read();
 	test_sha256();
 	test_edid();
 
@@ -973,3 +989,123 @@ test_edid(void)
 	i915_host_check(drv_i915_xd_edid_decode(hdmi, sizeof(hdmi), &edid) == EINVAL, "EDID: a damaged base block is refused");
 	i915_host_check(drv_i915_xd_edid_decode(hdmi, 127U, &edid) == EINVAL, "EDID: a short base block is refused");
 }
+
+/* Hands out the test's physical memory: the OpRegion or the raw VBT region, whole ranges only. */
+static int
+test_memory_map(
+	void *context,
+	uint64_t address,
+	size_t size,
+	const volatile uint8_t **bytes)
+{
+	(void)context;
+
+	/* The OpRegion. */
+	if (address == TEST_ASLS && size <= sizeof(test_memory_opregion)) {
+		*bytes = test_memory_opregion;
+		test_maps_open++;
+		return 0;
+	}
+
+	/* The raw VBT region, or a range inside it. */
+	if (test_raw_address != 0U && address >= test_raw_address && address - test_raw_address + size <= sizeof(test_memory_raw)) {
+		*bytes = test_memory_raw + (address - test_raw_address);
+		test_maps_open++;
+		return 0;
+	}
+
+	/* Anything else cannot be mapped. */
+	return EIO;
+}
+
+/* Counts a mapping given back. */
+static void
+test_memory_unmap(
+	void *context,
+	const volatile uint8_t *bytes,
+	size_t size)
+{
+	(void)context;
+	(void)bytes;
+	(void)size;
+	test_maps_open--;
+}
+
+/* Checks the OpRegion reader: the raw VBT, the fall back to mailbox 4, and each refusal. */
+static void
+test_opregion_read(void)
+{
+	static uint8_t vbt[TEST_VBT_BYTES];
+	static uint8_t opregion_copy[TEST_OPREGION_BYTES];
+	static uint8_t vbt_copy[TEST_RAW_BYTES];
+	struct i915_xd_opregion_access access;
+	struct i915_xd_opregion_read read;
+	uint8_t digest[32];
+	size_t size;
+	int error;
+
+	access.map = test_memory_map;
+	access.unmap = test_memory_unmap;
+	access.context = NULL;
+	size = test_build(&test_vbts[1], vbt);
+	i915_host_check(size <= 0x1800U, "OpRegion read: the made-up VBT fits mailbox 4");
+
+	/* A 2.1 OpRegion whose raw VBT follows it, as on the Latitude 5330. */
+	memset(test_memory_opregion, 0, sizeof(test_memory_opregion));
+	memcpy(test_memory_opregion, "IntelGraphicsMem", 16U);
+	test_memory_opregion[I915_XD_OPREGION_MAJOR] = 2U;
+	test_memory_opregion[I915_XD_OPREGION_MINOR] = 1U;
+	test_put32(test_memory_opregion, I915_XD_OPREGION_MAILBOXES, 0x1dU);
+	test_put64(test_memory_opregion, I915_XD_OPREGION_ASLE + I915_XD_OPREGION_ASLE_RVDA, 0x2000U);
+	test_put32(test_memory_opregion, I915_XD_OPREGION_ASLE + I915_XD_OPREGION_ASLE_RVDS, (uint32_t)size);
+	memset(test_memory_raw, 0, sizeof(test_memory_raw));
+	memcpy(test_memory_raw, vbt, size);
+	test_raw_address = TEST_ASLS + 0x2000U;
+	test_maps_open = 0;
+	error = drv_i915_xd_opregion_read(&access, TEST_ASLS, opregion_copy, vbt_copy, sizeof(vbt_copy), &read);
+	drv_i915_xd_sha256(vbt, size, digest);
+	i915_host_check(error == 0 && read.present && read.mapped && read.found, "OpRegion read: the OpRegion is read");
+	i915_host_check(read.source == I915_XD_VBT_FROM_RAW && read.raw_status == I915_XD_OPREGION_RAW_USED, "OpRegion read: the raw VBT is taken");
+	i915_host_check(read.vbt_size == size && memcmp(vbt_copy, vbt, size) == 0, "OpRegion read: the raw VBT is copied whole");
+	i915_host_check(read.vbt_valid && memcmp(read.vbt_sha256, digest, 32U) == 0, "OpRegion read: the raw VBT's digest");
+	i915_host_check(test_maps_open == 0, "OpRegion read: every mapping is given back");
+
+	/* A raw VBT that does not check: mailbox 4 is taken instead. */
+	memset(test_memory_raw, 0xa5, sizeof(test_memory_raw));
+	memcpy(test_memory_opregion + I915_XD_OPREGION_VBT, vbt, size);
+	error = drv_i915_xd_opregion_read(&access, TEST_ASLS, opregion_copy, vbt_copy, sizeof(vbt_copy), &read);
+	i915_host_check(error == 0 && read.source == I915_XD_VBT_FROM_MAILBOX, "OpRegion read: a raw VBT that does not check falls back to mailbox 4");
+	i915_host_check(read.raw_status == I915_XD_OPREGION_RAW_UNCHECKED && read.vbt_size == 0x1800U, "OpRegion read: mailbox 4 up to the ASLE extension");
+
+	/* A raw VBT that cannot be mapped. */
+	test_raw_address = 0U;
+	error = drv_i915_xd_opregion_read(&access, TEST_ASLS, opregion_copy, vbt_copy, sizeof(vbt_copy), &read);
+	i915_host_check(error == 0 && read.raw_status == I915_XD_OPREGION_RAW_UNMAPPED && read.source == I915_XD_VBT_FROM_MAILBOX, "OpRegion read: an unmappable raw VBT falls back");
+
+	/* A raw VBT inside the OpRegion's own 8 KiB is not taken. */
+	test_put64(test_memory_opregion, I915_XD_OPREGION_ASLE + I915_XD_OPREGION_ASLE_RVDA, 0x1000U);
+	error = drv_i915_xd_opregion_read(&access, TEST_ASLS, opregion_copy, vbt_copy, sizeof(vbt_copy), &read);
+	i915_host_check(error == 0 && read.raw_status == I915_XD_OPREGION_RAW_INSIDE, "OpRegion read: a raw VBT inside the OpRegion is refused");
+
+	/* A raw VBT larger than the copy is not taken. */
+	test_put64(test_memory_opregion, I915_XD_OPREGION_ASLE + I915_XD_OPREGION_ASLE_RVDA, 0x2000U);
+	test_put32(test_memory_opregion, I915_XD_OPREGION_ASLE + I915_XD_OPREGION_ASLE_RVDS, sizeof(vbt_copy) + 1U);
+	error = drv_i915_xd_opregion_read(&access, TEST_ASLS, opregion_copy, vbt_copy, sizeof(vbt_copy), &read);
+	i915_host_check(error == 0 && read.raw_status == I915_XD_OPREGION_RAW_TOO_LARGE, "OpRegion read: a raw VBT larger than the copy is refused");
+
+	/* Neither place holds a VBT. */
+	memset(test_memory_opregion + I915_XD_OPREGION_VBT, 0, 0x100U);
+	error = drv_i915_xd_opregion_read(&access, TEST_ASLS, opregion_copy, vbt_copy, sizeof(vbt_copy), &read);
+	i915_host_check(error == ENOENT && !read.vbt_valid, "OpRegion read: no VBT anywhere");
+
+	/* No OpRegion, an OpRegion that cannot be mapped, a wrong signature. */
+	error = drv_i915_xd_opregion_read(&access, 0U, opregion_copy, vbt_copy, sizeof(vbt_copy), &read);
+	i915_host_check(error == 0 && !read.present, "OpRegion read: ASLS 0 is no OpRegion");
+	error = drv_i915_xd_opregion_read(&access, TEST_ASLS + 0x10000U, opregion_copy, vbt_copy, sizeof(vbt_copy), &read);
+	i915_host_check(error == EIO && read.present && !read.mapped, "OpRegion read: an unmappable OpRegion");
+	test_memory_opregion[0] = 'i';
+	error = drv_i915_xd_opregion_read(&access, TEST_ASLS, opregion_copy, vbt_copy, sizeof(vbt_copy), &read);
+	i915_host_check(error == EINVAL && read.mapped && !read.found, "OpRegion read: a wrong signature");
+	i915_host_check(test_maps_open == 0, "OpRegion read: every mapping is given back after the refusals");
+}
+
