@@ -1755,7 +1755,9 @@ amdrdna_cp_graphics_reset(
 }
 
 /*
- * Resets compute queue index after work on it did not end: the scheduler
+ * Resets compute queue index after work of a context on it did not end:
+ * the context's waves are killed (a wave that never ends keeps the queue
+ * from being dequeued), the scheduler
  * detaches the queue with a reset (its work is dropped), the queue is
  * waited for until it is no longer active, its image is put back from the
  * copy kept at the first attach, its ring emptied, and the scheduler
@@ -1770,12 +1772,15 @@ amdrdna_cp_graphics_reset(
  * unmap with the reset action, the wait for the queue's active bit with
  * the queue selected, then gfx_v10_0_kcq_init_queue with the copy and an
  * empty ring, and the map; the safe mode around the wait is for clock
- * gating, which the driver does not turn on).
+ * gating, which the driver does not turn on) and
+ * amdgpu_amdkfd_gfx_v10.c (kgd_wave_control_execute: the command written
+ * with every shader array selected, then the selection put back).
  */
 int
 amdrdna_cp_compute_reset(
 	struct amdrdna_device *device,
-	unsigned index)
+	unsigned index,
+	unsigned context)
 {
 	uint32_t words[AMDRDNA_PM4_DETACH_WORDS + AMDRDNA_PM4_ATTACH_WORDS];
 	struct amdrdna_engines *engines;
@@ -1783,6 +1788,8 @@ amdrdna_cp_compute_reset(
 	volatile uint32_t *slots;
 	unsigned long irq;
 	uint64_t step_ms[CP_RESET_STEPS];
+	uint32_t active;
+	uint32_t dequeue;
 	uint32_t slot;
 	unsigned count;
 	int error;
@@ -1797,11 +1804,32 @@ amdrdna_cp_compute_reset(
 	ring->up = false;
 	step_ms[0] = clock_milliseconds(NULL);
 
-	/* The scheduler detaches the queue and drops its work. */
+	/* The context's waves killed in every shader array. */
+	mutex_lock(&engines->select);
+
+	select_all_arrays(device);
+	gc_write(device, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_WAVE_COMMAND,
+	    AMDRDNA_GC_WAVE_KILL | AMDRDNA_GC_WAVE_EVERY | AMDRDNA_GC_WAVE_OF_CONTEXT | ((uint32_t)context << AMDRDNA_GC_WAVE_CONTEXT_SHIFT));
+	select_all_arrays(device);
+
+	mutex_unlock(&engines->select);
+
+	/* The scheduler detaches the queue and drops its work; a detach that does not end shows the queue's state. */
 	count = amdrdna_pm4_queue_detach(words, AMDRDNA_QUEUE_ENGINE_COMPUTE, AMDRDNA_QUEUE_DETACH_RESET, ring->doorbell);
 	error = scheduler_fenced(device, words, count, "compute reset");
-	if (error != 0)
+	if (error != 0) {
+		mutex_lock(&engines->select);
+
+		select_queue(device, &ring->place, 0U);
+		active = gc_read(device, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_QUEUE_ACTIVE);
+		dequeue = gc_read(device, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_QUEUE_DEQUEUE);
+		select_nothing(device);
+
+		mutex_unlock(&engines->select);
+
+		amdrdna_mark("compute queue %u not detached: active=0x%x dequeue=0x%x", index, active, dequeue);
 		return error;
+	}
 
 	/* The queue no longer active, read with it selected. */
 	mutex_lock(&engines->select);

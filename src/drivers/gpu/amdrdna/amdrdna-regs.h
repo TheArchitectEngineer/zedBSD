@@ -535,6 +535,25 @@
  */
 #define AMDRDNA_GC_REG_CONTEXT_RESET		0x1e53U
 #define AMDRDNA_GC_CONTEXT_RESET_QUEUES_SHIFT	16U
+
+/*
+ * The shader sequencer's command register (GC window 0) and the command
+ * that kills every wave of one context: the kill (3), sent to every wave
+ * (1 in bits 6:4), only to those of the context named (bit 7), which is
+ * in bits 31:28.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/asic_reg/gc/gc_10_1_0_offset.h
+ * (mmSQ_CMD 0x111b), gc_10_1_0_sh_mask.h (SQ_CMD__CMD__SHIFT 0,
+ * SQ_CMD__MODE__SHIFT 4, SQ_CMD__CHECK_VMID__SHIFT 7,
+ * SQ_CMD__VM_ID__SHIFT 28) and navi10_enum.h (SQ_IND_CMD_CMD_KILL 3,
+ * SQ_IND_CMD_MODE_BROADCAST 1).
+ */
+#define AMDRDNA_GC_REG_WAVE_COMMAND		0x111bU
+#define AMDRDNA_GC_WAVE_KILL			0x3U
+#define AMDRDNA_GC_WAVE_EVERY			(1U << 4)
+#define AMDRDNA_GC_WAVE_OF_CONTEXT		(1U << 7)
+#define AMDRDNA_GC_WAVE_CONTEXT_SHIFT		28U
 #define AMDRDNA_GC_COMPUTE_HALT_FIRST		0x40000000U
 #define AMDRDNA_GC_COMPUTE_HALT_SECOND		0x10000000U
 #define AMDRDNA_GC_GRAPHICS_HALT_CONSTANT	0x01000000U

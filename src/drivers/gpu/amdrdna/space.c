@@ -1323,7 +1323,7 @@ space_reset(
 		error = amdrdna_cp_graphics_reset(device, context);
 	} else {
 		queue = "compute";
-		error = amdrdna_cp_compute_reset(device, tracked - AMDRDNA_TRACKED_COMPUTE);
+		error = amdrdna_cp_compute_reset(device, tracked - AMDRDNA_TRACKED_COMPUTE, context);
 	}
 	taken = clock_milliseconds(NULL) - started;
 
