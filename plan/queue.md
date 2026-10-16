@@ -518,3 +518,5 @@ WS074 の記録の q590・q594〜q598（Codex の browser3）は main の同じ�
 
 保留: WS074 Web ブラウザ（2026-10-05 Q1 に戻した、レンダリングの改善はユーザーの指示まで止める）。WS121 browser の動画は P2 の列に（p001 の設計から）。
 | q1232 / q1232-i01 | P4（phase-runner、worktree p4・agent/p4-bug330） | BUG-330 | framebuffer の console のスクロールの高速化（kernel の text.c・HAL の cons.c の実装、framebuffer の memory type）、QEMU で測る | 止めた（2026-10-16 夜 ユーザー「framebufferは今は変更をやめます。」） |
+| q1233 / q1233-i01 | P5（phase-runner、worktree p5・agent/p5-ws039） | ws039-p007 | compiler の完了: DDX・DDY、gather、3D・cube・array の sample（共有の IR に image の次元を足す、他の backend の振る舞いは変えない）、7.9 の「実機で確かめる事」を RDNA 機で（実機は P3 と時間を分ける）、規約と出典。2026-10-16 ユーザー「p007はサブエージェントを追加して完了させましょう。」 | in-progress |
+| q1234 / q1234-i01 | P3（phase-runner、worktree p3・agent/p3-ws039） | ws039-p013 → p014 → p015 → p016 | p017 の 2 段目の後に順に。各段は実機で ok の後に main。2026-10-16 ユーザー「p013,p014,p015,p016を現在のサブエージェントで継続してください。」 | pending（p017 の後） |
