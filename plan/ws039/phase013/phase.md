@@ -26,9 +26,13 @@ run の期限、session の状態機械（11.3）、GFX の queue の reset（MQ
 - 続けて vkhang を 3 回（各 `lost after=2546〜2547`、reset 各 774 ms、context 13・14・15）→ aat で App Home の開閉 6 回と app の起動（Files が開く）が通る。capture `build/tmp/amdrdna-hw-p9-7/s16.png`（P3 の worktree、desktop が描けている）。
 - reset の 774 ms は毎回同じ: 中の待ち（ring test の poll・scheduler の fence）の刻みと見る。短くするのは後（体感は期限の 2 s ＋ 0.8 s の間 desktop が止まる）。
 
+## 追加（2026-10-16 20:10〜 P3、(2)〜(5)）
+
+- (2) CP の例外（priv reg・priv inst・bad opcode の割り込み）: `engines.c` が IV の context で `amdrdna_space_command_error` を呼び、その context の持ち主の space を喪失にして session に EIO（その run は期限で reset へ）。実機で起こす手段が無く**未確認**。
+- (3) `isolate`（`runtime.c` の `runtime_isolate`）: space が喪失でかつ GPU の上に何も残らない（queue の reset が済んだ）時だけ 0、session に isolated の印（以後の仕事を拒み、blob の destroy で VRAM を返さない）。それ以外は EIO（共通の層が device の fault へ）。
+- (4) host 試験: `amdrdna-engines-test.c` に register の待ちの packet（Linux の emit_reg_wait の形）と SDMA の fill の packet。PASS の行 440。session の状態機械の host 試験（design の (k) の backup と re-emit）は、backup の要らない形（同期の 1 worker）にしたので対象が無い。
+- (5) reset の時間: 各段の確かめを scratch の register の ring test（1 回 約 257 ms かかっていた）から fence の待ちに替えた。実機 20:23（kernel 1b7a5279）: `graphics queue reset steps: reset 2ms, attach 1ms, test 1ms, preamble 1ms`、全体の印は 272〜319 ms（差は印の行を console に出す時間の見込み）。vkhang 3 回とも `lost after=2570` 前後、その後 vkblend 20 case ok・`vkhang --loops` ok・`fault=0 hung=0`。
+
 ## 残り（この版の外、順に）
 
 - compute 専用の queue family と compute の queue の reset（UNMAP_QUEUES RESET）、vkhang の compute の場合。
-- CP の例外の割り込み（priv reg・priv inst・bad opcode）での喪失、VM fault の run の期限。
-- `isolate` と quarantine（今は isolate が無く、stop の期限を越えると device の fault）。
-- host 試験 (k)。
