@@ -208,8 +208,8 @@
 /*
  * The VBT DVO_PORT_* codes the port mapping uses.
  *
- * The values are Linux v6.8.12's intel_vbt_defs.h (the same as vbt.c's
- * intel/vbt-defs.h, which is vbt.c's alone and not included here).
+ * Values referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_vbt_defs.h (DVO_PORT_*).
  */
 #define I915_DVO_PORT_HDMIA			0U
 #define I915_DVO_PORT_HDMIB			1U

@@ -132,7 +132,8 @@ Resume point: 2026-10-16 q1218（P1）の区切り: 次は **p018**（[phase018]
 | p047 | 回帰の証拠の道具: own の survey（PP_STATUS・PWM・frame counter・SURFLIVE・pipe CRC・underrun・TRANS_CONF などを picture up の後に dmesg へ）と `mmio.c` の書き込みの log（`i915.debug=display`）、`5330-survey.sh`（改訂 5、レビュー 4 の B3・M6） | cleared（4 LW。2026-10-16 main 3e1e0c687。LCD の目視は beta2.md の U11） |
 | [p016](phase016/phase.md) | OpRegion の場所と map（xd-vbt の find、`struct i915_xd` と io・platform の用意）。opregion.c を消す | cleared（2026-10-16 5330 の回帰に合格、main 9244ac507、旧 file の削除 54fc334c5。SV7 は beta2 の U12） |
 | [p017](phase017/phase.md) | VBT の解析（xd-vbt を真に、旧 parser と影の比較を 1 段） | cleared（2026-10-16 5330 の回帰に合格、main 45c83da79） |
-| [p018](phase018/phase.md) | EDID の decode（xd-edid）+ vbt.c の parser の本体の削除（本番の呼び手 10 関数と drm_mode の helper は殻 `vbt-shell.c` に） | planned（3 LW。2026-10-16 調べだけ: DP の環境が vbt.h に依る、execution の試験の組が壊れる。phase018 に再開点） |
+| [p018](phase018/phase.md) | 旧 VBT parser の本体の削除（本番の呼び手 10 関数を殻 `vbt-shell.c` に、ktest-display の 2 file を削除）。2026-10-16 に p018 と p053 の 2 段に分けた | in-progress（3 LW。2026-10-16 5330 の回帰に合格、merge の依頼済み。消す file 4 つは Q1） |
+| p053 | EDID の decode を xd-edid に（`edid.c` の decode、hotplug の EDID の要約。`drv_i915_drm_mode_set_crtcinfo`・`_get_hv_timing` は殻へ）。p018 から分けた | planned（2 LW） |
 | p019 | AUX の transaction（xd-aux。well・DC off・VDD は呼ぶ側） | planned（4 LW） |
 | p020 | GMBUS と DDC の EDID の読み（xd-gmbus） | planned（3 LW。HDMI の plug はユーザーの一覧） |
 | p021 | backlight の PWM（xd-panel） | planned（2 LW） |
@@ -166,4 +167,4 @@ Resume point: 2026-10-16 q1218（P1）の区切り: 次は **p018**（[phase018]
 | p044 | platform の網羅（display 12 の行）と TGL の TC（流れ B、host だけ）。#21 で全部 xd | planned（4 LW。5320 はユーザーの一覧） |
 | p045 | display 11（Ice Lake） | planned（8 LW。実機は無い） |
 | p046 | 規約の全文の見直しと p045 の出典の監査 | planned（3 LW） |
-合計 37 段、159 LW（±40 %。改訂 6）。5330 の素の起動は段の kernel で最少 37 回、基準の起動と `i915.debug=display` の起動を含めて見込み約 50 回（最大 70〜85 回、design.md §6.6）。
+合計 38 段、161 LW（±40 %。改訂 6 の 159 に、p018 を p018・p053 に分けた +2: 2026-10-16 q1223）。5330 の素の起動は段の kernel で最少 37 回、基準の起動と `i915.debug=display` の起動を含めて見込み約 50 回（最大 70〜85 回、design.md §6.6）。
