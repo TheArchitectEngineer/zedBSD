@@ -52,6 +52,7 @@ commands
 compressed
 compute
 connected
+connector
 const
 contents
 context
@@ -72,6 +73,7 @@ description
 descriptor
 device
 difference
+digital
 direct
 disabled
 display
@@ -96,6 +98,7 @@ equal
 error
 execute
 expected
+extension
 failure
 false
 fault
@@ -172,6 +175,7 @@ middle
 minor
 missing
 mode
+modes
 moved
 mutex
 mutex_lock
@@ -199,9 +203,11 @@ parameters
 part
 pass
 path
+paths
 pending
 persistent
 physical
+pins
 pixel
 pixels
 place
@@ -228,6 +234,8 @@ reading
 reads
 ready
 record
+records
+refresh
 refs
 registers
 registration
@@ -293,6 +301,7 @@ topology
 total
 training
 translation
+transmitter
 true
 type
 typedef

@@ -466,6 +466,35 @@ struct amdrdna_vbios_info {
 	struct amdrdna_vbios_routine commands[AMDRDNA_VBIOS_COMMAND_COUNT];
 };
 
+/* The kinds of display connector the driver tells apart. */
+enum amdrdna_connector_kind {
+	AMDRDNA_CONNECTOR_OTHER,
+	AMDRDNA_CONNECTOR_DP,
+	AMDRDNA_CONNECTOR_HDMI,
+	AMDRDNA_CONNECTOR_DVI
+};
+
+/* The display transmitters A to G, and none. */
+#define AMDRDNA_TRANSMITTERS		7U
+#define AMDRDNA_TRANSMITTER_NONE	255U
+
+/*
+ * One display path of the board as the video BIOS describes it: the
+ * connector's object word and kind, the encoder's object word and the
+ * transmitter it is, the I2C line's identifier (0 for none) and the
+ * register index of its pad's output word (from the pin table, 0 when the
+ * table lacks it), and the hot-plug pin (0 for none).
+ */
+struct amdrdna_vbios_connector {
+	uint16_t connector_object;
+	enum amdrdna_connector_kind kind;
+	uint16_t encoder_object;
+	unsigned transmitter;
+	uint8_t ddc_identifier;
+	uint32_t ddc_pad_register;
+	uint8_t hotplug_pin;
+};
+
 /* The PCI place and identity a video BIOS image in the ACPI table names. */
 struct amdrdna_vbios_owner {
 	uint32_t bus;
@@ -1320,6 +1349,14 @@ amdrdna_vbios_parse(
 	const uint8_t *image,
 	size_t length,
 	struct amdrdna_vbios_info *info);
+
+int
+amdrdna_vbios_connector(
+	const uint8_t *image,
+	size_t length,
+	const struct amdrdna_vbios_info *info,
+	unsigned transmitter,
+	struct amdrdna_vbios_connector *connector);
 
 int
 amdrdna_picture_check(
