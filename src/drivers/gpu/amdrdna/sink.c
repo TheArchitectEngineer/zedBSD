@@ -290,6 +290,7 @@ struct sink_bios {
 };
 
 static int sink_path(struct amdrdna_device *device, struct amdrdna_sink *sink);
+static const char *sink_connector_name(enum amdrdna_connector_kind kind);
 static int sink_edid_engine(struct amdrdna_device *device, struct amdrdna_sink *sink);
 static int sink_edid_bios(struct amdrdna_device *device, struct amdrdna_sink *sink);
 static int sink_dpcd(struct amdrdna_device *device, struct amdrdna_sink *sink);
@@ -319,7 +320,9 @@ amdrdna_a10_sink(
 	struct amdrdna_device *device)
 {
 	struct amdrdna_sink *sink;
-	const struct amdrdna_timing *preferred;
+	struct amdrdna_timing preferred;
+	const char *atom_word;
+	const char *dpcd_word;
 	unsigned usable;
 	unsigned index;
 	int error;
@@ -357,31 +360,35 @@ amdrdna_a10_sink(
 	sink->usable_modes = usable;
 	__atomic_store_n(&sink->ready, true, __ATOMIC_RELEASE);
 
-	/* Says what was read. */
-	preferred = NULL;
+	/* Says what was read, with the preferred mode when the EDID names one. */
+	atom_word = "same";
+	dpcd_word = "none";
+	if (sink->dpcd_read)
+		dpcd_word = "read";
+	if (sink->bios_error != 0)
+		atom_word = "differs";
+	preferred = (struct amdrdna_timing){ 0 };
 	if (sink->edid.mode_count != 0U && sink->edid.modes[0].source == AMDRDNA_TIMING_PREFERRED)
-		preferred = &sink->edid.modes[0];
+		preferred = sink->edid.modes[0];
 	amdrdna_mark("A10 ok conn=%s signal=%u ddc=%u edid=%s %04x \"%s\" %ux%u@%u.%03u blocks=%u modes=%u/%u limit=%ukHz atom=%s(%d, %u steps) dpcd=%s",
-	    sink->connector.kind == AMDRDNA_CONNECTOR_DP ? "DP" :
-	    sink->connector.kind == AMDRDNA_CONNECTOR_HDMI ? "HDMI" :
-	    sink->connector.kind == AMDRDNA_CONNECTOR_DVI ? "DVI" : "other",
+	    sink_connector_name(sink->connector.kind),
 	    device->gop.output_kind,
 	    sink->ddc_line,
 	    sink->edid.vendor,
 	    (unsigned)sink->edid.product,
 	    sink->edid.name,
-	    preferred != NULL ? (unsigned)preferred->width : 0U,
-	    preferred != NULL ? (unsigned)preferred->height : 0U,
-	    preferred != NULL ? (unsigned)(preferred->refresh_millihz / 1000U) : 0U,
-	    preferred != NULL ? (unsigned)(preferred->refresh_millihz % 1000U) : 0U,
+	    (unsigned)preferred.width,
+	    (unsigned)preferred.height,
+	    (unsigned)(preferred.refresh_millihz / 1000U),
+	    (unsigned)(preferred.refresh_millihz % 1000U),
 	    sink->edid.blocks,
 	    usable,
 	    sink->edid.mode_count,
 	    (unsigned)sink->limit_khz,
-	    sink->bios_error == 0 ? "same" : "differs",
+	    atom_word,
 	    sink->bios_error,
 	    (unsigned)sink->bios_steps,
-	    sink->dpcd_read ? "read" : "none");
+	    dpcd_word);
 	if (sink->dpcd_read) {
 		amdrdna_mark("A10 dpcd rev=%u.%u rate=0x%02x lanes=%u",
 		    (unsigned)(sink->dpcd[DPCD_REVISION] >> 4),
@@ -451,7 +458,8 @@ amdrdna_sink_mode(
 		if (mode->pixel_khz == 0U || mode->pixel_khz > sink->limit_khz)
 			continue;
 		current = false;
-		if (mode->width == display->width && mode->height == display->height &&
+		if (mode->width == display->width &&
+		    mode->height == display->height &&
 		    mode->refresh_millihz + SINK_SAME_REFRESH_MILLIHZ >= display->refresh_millihz &&
 		    mode->refresh_millihz <= display->refresh_millihz + SINK_SAME_REFRESH_MILLIHZ)
 			current = true;
@@ -492,16 +500,22 @@ amdrdna_sink_check(
 	const struct amdrdna_display *display;
 	const struct amdrdna_timing *mode;
 	unsigned index;
+	bool current;
 
-	/* The current mode at its refresh. */
+	/* The current mode at its refresh (none asked for, or within half a hertz of it). */
 	display = &device->display;
-	if (width == display->width && height == display->height) {
-		if (*refresh_millihz == 0U ||
-		    (*refresh_millihz + SINK_SAME_REFRESH_MILLIHZ >= display->refresh_millihz &&
-		     *refresh_millihz <= display->refresh_millihz + SINK_SAME_REFRESH_MILLIHZ)) {
-			*refresh_millihz = display->refresh_millihz;
-			return 0;
-		}
+	current = false;
+	if (width == display->width && height == display->height && *refresh_millihz == 0U) {
+		current = true;
+	} else if (width == display->width &&
+		   height == display->height &&
+		   *refresh_millihz + SINK_SAME_REFRESH_MILLIHZ >= display->refresh_millihz &&
+		   *refresh_millihz <= display->refresh_millihz + SINK_SAME_REFRESH_MILLIHZ) {
+		current = true;
+	}
+	if (current) {
+		*refresh_millihz = display->refresh_millihz;
+		return 0;
 	}
 
 	/* A mode the sink lists. */
@@ -778,7 +792,10 @@ i2c_read(
 	int error;
 
 	/* A read the buffer holds (the two addresses and the offset besides). */
-	if (line == 0U || line > AMDRDNA_DISPLAY_PIPES || count == 0U || count + 3U > I2C_BUFFER_BYTES)
+	if (line == 0U ||
+	    line > AMDRDNA_DISPLAY_PIPES ||
+	    count == 0U ||
+	    count + 3U > I2C_BUFFER_BYTES)
 		return EINVAL;
 
 	/* The engine. */
@@ -1009,7 +1026,9 @@ aux_read(
 	int error;
 
 	/* A read one request carries. */
-	if (channel >= AMDRDNA_DISPLAY_PIPES || count == 0U || count > AUX_BYTES_MAX)
+	if (channel >= AMDRDNA_DISPLAY_PIPES ||
+	    count == 0U ||
+	    count > AUX_BYTES_MAX)
 		return EINVAL;
 
 	/* The channel enabled, then won from the arbitration. */
@@ -1060,7 +1079,9 @@ aux_read(
 		error = ENXIO;
 	} else if ((status & AUX_DONE) == 0U || (status & AUX_TIMED_OUT) != 0U) {
 		error = ETIMEDOUT;
-	} else if ((status & AUX_BAD_REPLY) != 0U || replied == 0U || replied - 1U < count) {
+	} else if ((status & AUX_BAD_REPLY) != 0U ||
+		   replied == 0U ||
+		   replied - 1U < count) {
 		error = EIO;
 	}
 
@@ -1086,6 +1107,27 @@ give_back:
 
 	/* Succeeded: the bytes are read. */
 	return 0;
+}
+
+/* Names a connector kind for the log. */
+static const char *
+sink_connector_name(
+	enum amdrdna_connector_kind kind)
+{
+	/* The kinds the driver tells apart. */
+	switch (kind) {
+	case AMDRDNA_CONNECTOR_DP:
+		return "DP";
+	case AMDRDNA_CONNECTOR_HDMI:
+		return "HDMI";
+	case AMDRDNA_CONNECTOR_DVI:
+		return "DVI";
+	default:
+		break;
+	}
+
+	/* Succeeded: another kind. */
+	return "other";
 }
 
 /* Reads a display register of the sink's (0 when the display block lacks it). */

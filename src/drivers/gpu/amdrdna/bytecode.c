@@ -845,11 +845,19 @@ bytecode_compare(
 	/* What is kept. */
 	switch (opcode->operation) {
 	case OPERATION_COMPARE:
-		runner->equal = (first == second);
-		runner->above = (first > second);
+		/* Equal, and above (unsigned). */
+		runner->equal = false;
+		if (first == second)
+			runner->equal = true;
+		runner->above = false;
+		if (first > second)
+			runner->above = true;
 		break;
 	case OPERATION_TEST_BITS:
-		runner->equal = ((first & second) == 0U);
+		/* Equal when no bit is common; above is left as it is. */
+		runner->equal = false;
+		if ((first & second) == 0U)
+			runner->equal = true;
 		break;
 	case OPERATION_MULTIPLY:
 		runner->product_low = first * second;
@@ -912,7 +920,9 @@ bytecode_shift(
 	/* The attribute byte; a shift by an immediate takes its default field. */
 	attributes = (uint8_t)image_byte(runner, *at);
 	*at += 1U;
-	by_operand = (opcode->operation == OPERATION_SHIFT_LEFT || opcode->operation == OPERATION_SHIFT_RIGHT);
+	by_operand = false;
+	if (opcode->operation == OPERATION_SHIFT_LEFT || opcode->operation == OPERATION_SHIFT_RIGHT)
+		by_operand = true;
 	if (!by_operand) {
 		attributes &= 0x38U;
 		attributes |= (uint8_t)(default_destinations[attributes >> 3] << 6);

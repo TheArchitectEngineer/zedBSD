@@ -249,7 +249,9 @@ amdrdna_edid_decode(
 	edid_vendor(bytes, edid);
 	edid->version = bytes[EDID_VERSION_AT];
 	edid->revision = bytes[EDID_REVISION_AT];
-	edid->digital = ((bytes[EDID_INPUT_AT] & EDID_INPUT_DIGITAL) != 0U);
+	edid->digital = false;
+	if ((bytes[EDID_INPUT_AT] & EDID_INPUT_DIGITAL) != 0U)
+		edid->digital = true;
 	edid->width_mm = (uint32_t)bytes[EDID_WIDTH_CM_AT] * 10U;
 	edid->height_mm = (uint32_t)bytes[EDID_HEIGHT_CM_AT] * 10U;
 	edid->extensions = bytes[EDID_EXTENSIONS_AT];
@@ -424,11 +426,12 @@ edid_descriptor(
 	timing.width_mm = (uint16_t)(descriptor[DETAIL_WIDTH_MM_AT] | ((descriptor[DETAIL_SIZE_HIGH_AT] & 0xf0U) << 4));
 	timing.height_mm = (uint16_t)(descriptor[DETAIL_HEIGHT_MM_AT] | ((descriptor[DETAIL_SIZE_HIGH_AT] & 0x0fU) << 8));
 	flags = descriptor[DETAIL_FLAGS_AT];
-	timing.interlaced = ((flags & DETAIL_INTERLACED) != 0U);
-	if ((flags & DETAIL_SYNC_KIND) == DETAIL_SYNC_SEPARATE) {
-		timing.v_positive = ((flags & DETAIL_V_POSITIVE) != 0U);
-		timing.h_positive = ((flags & DETAIL_H_POSITIVE) != 0U);
-	}
+	if ((flags & DETAIL_INTERLACED) != 0U)
+		timing.interlaced = true;
+	if ((flags & DETAIL_SYNC_KIND) == DETAIL_SYNC_SEPARATE && (flags & DETAIL_V_POSITIVE) != 0U)
+		timing.v_positive = true;
+	if ((flags & DETAIL_SYNC_KIND) == DETAIL_SYNC_SEPARATE && (flags & DETAIL_H_POSITIVE) != 0U)
+		timing.h_positive = true;
 
 	/* The refresh, the source, the list. */
 	timing.refresh_millihz = edid_refresh(timing.pixel_khz, (uint32_t)timing.width + timing.h_blanking,
@@ -507,7 +510,8 @@ edid_standard(
 		/* The monitor timing of the size and refresh, or the size alone. */
 		known = (struct monitor_timing){ (uint16_t)width, (uint16_t)height, (uint16_t)refresh, 0U, 0U, 0U };
 		for (entry = 0U; entry < STANDARD_KNOWN; entry++) {
-			if (standard_timings[entry].width == width && standard_timings[entry].height == height &&
+			if (standard_timings[entry].width == width &&
+			    standard_timings[entry].height == height &&
 			    standard_timings[entry].refresh == refresh) {
 				known = standard_timings[entry];
 				break;
