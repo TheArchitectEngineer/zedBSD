@@ -274,6 +274,23 @@ struct amdrdna_advance {
 };
 
 /*
+ * Asks the driver to reset the GPU and set it up again
+ * (AMDRDNA_IOC_RESET, root only): a mode-1 reset, the video BIOS's post,
+ * the stages that ran set up again and the display lit again.  It is
+ * refused (EBUSY) while a session of the GPU device is open or before a
+ * secure OS runs.  The driver answers with the result (0 or an errno),
+ * the time it took and the resets so far.
+ */
+struct amdrdna_reset_ask {
+	uint32_t version;
+	uint32_t size;
+	int32_t result;
+	uint32_t milliseconds;
+	uint32_t resets;
+	uint32_t reserved[3];
+};
+
+/*
  * Copies part of the video BIOS image to the caller (AMDRDNA_IOC_VBIOS).
  *
  * The driver copies at most length bytes from offset into buffer, and
@@ -385,6 +402,7 @@ _Static_assert(sizeof(struct amdrdna_advance) == 32U, "amdrdna advance ABI size"
 _Static_assert(sizeof(struct amdrdna_vbios_read) == 48U, "amdrdna vbios ABI size");
 _Static_assert(sizeof(struct amdrdna_display_state) == 216U, "amdrdna display ABI size");
 _Static_assert(sizeof(struct amdrdna_screen) == 64U, "amdrdna screen ABI size");
+_Static_assert(sizeof(struct amdrdna_reset_ask) == 32U, "amdrdna reset ABI size");
 _Static_assert(offsetof(struct amdrdna_display_state, frame_signals) == 136U, "amdrdna display ABI alignment");
 
 #define AMDRDNA_IOC_STATUS	_IOWR(KERN_AMDRDNA_IOC_GROUP, 1, struct amdrdna_status)
@@ -392,5 +410,6 @@ _Static_assert(offsetof(struct amdrdna_display_state, frame_signals) == 136U, "a
 #define AMDRDNA_IOC_VBIOS	_IOWR(KERN_AMDRDNA_IOC_GROUP, 3, struct amdrdna_vbios_read)
 #define AMDRDNA_IOC_DISPLAY	_IOWR(KERN_AMDRDNA_IOC_GROUP, 4, struct amdrdna_display_state)
 #define AMDRDNA_IOC_SCREEN	_IOWR(KERN_AMDRDNA_IOC_GROUP, 5, struct amdrdna_screen)
+#define AMDRDNA_IOC_RESET	_IOWR(KERN_AMDRDNA_IOC_GROUP, 6, struct amdrdna_reset_ask)
 
 #endif

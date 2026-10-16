@@ -18,4 +18,7 @@ int control_gpu(const char *path);
 /* modes.c: the display's modes (amdrdnactl modes). */
 int control_modes(const char *path);
 
+/* reset.c: the reset of the GPU (amdrdnactl reset). */
+int control_reset(const char *path);
+
 #endif

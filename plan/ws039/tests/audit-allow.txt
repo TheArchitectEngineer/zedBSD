@@ -112,6 +112,7 @@ error
 execute
 expected
 extension
+extra
 failure
 false
 fault
@@ -121,6 +122,7 @@ field
 fields
 file
 files
+finished
 firmware
 first
 flags
@@ -265,6 +267,7 @@ registration
 request
 requested
 reserved
+reset
 rest
 result
 retired

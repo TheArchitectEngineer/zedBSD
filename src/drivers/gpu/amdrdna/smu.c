@@ -442,6 +442,52 @@ amdrdna_power_stop(
 }
 
 /*
+ * Makes stage A4 ready to run again after a reset of the GPU, which
+ * restarts the unit's firmware: the first message waits for no earlier
+ * answer, a unit marked hung is asked again, the features and alerts are
+ * off, and the watch may be started again.  The table page and the
+ * limits stay; a thermal fault stays recorded.
+ *
+ * Returns 0, or EBUSY when the watch thread of the stop has not ended.
+ */
+int
+amdrdna_power_rearm(
+	struct amdrdna_device *device)
+{
+	struct amdrdna_thermal *thermal;
+	unsigned long irq;
+	bool running;
+
+	/* The stop's watch must have ended, or two would run. */
+	thermal = &device->thermal;
+	irq = spin_lock_irqsave(&thermal->lock);
+
+	running = thermal->thread_running;
+	if (!running)
+		thermal->stopping = false;
+
+	spin_unlock_irqrestore(&thermal->lock, irq);
+
+	/* Reports a watch still running. */
+	if (running)
+		return EBUSY;
+
+	/* The mailbox and the features as before the stage's first run. */
+	mutex_lock(&thermal->mailbox);
+
+	thermal->first_sent = false;
+	thermal->hung = false;
+
+	mutex_unlock(&thermal->mailbox);
+
+	thermal->features_on = false;
+	thermal->alerts_on = false;
+
+	/* Succeeded: the stage may run again. */
+	return 0;
+}
+
+/*
  * Handles an interrupt of the thermal side: a high alert (the temperature
  * rose past the high threshold) faults the GPU, a low alert is counted
  * (the interrupt check raises one), the critical-temperature trip faults
