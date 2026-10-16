@@ -1198,6 +1198,26 @@ int
 amdrdna_a10_sink(
 	struct amdrdna_device *device);
 
+const struct amdrdna_sink *
+amdrdna_sink_ready(
+	const struct amdrdna_device *device);
+
+bool
+amdrdna_sink_mode(
+	const struct amdrdna_device *device,
+	unsigned index,
+	uint32_t *width,
+	uint32_t *height,
+	uint32_t *refresh_millihz,
+	unsigned *count);
+
+int
+amdrdna_sink_check(
+	const struct amdrdna_device *device,
+	uint32_t width,
+	uint32_t height,
+	uint32_t *refresh_millihz);
+
 /* display.c: stages A6 and A7 and the display taken over from the firmware. */
 bool
 amdrdna_display_wanted(void);

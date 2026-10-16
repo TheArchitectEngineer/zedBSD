@@ -278,6 +278,9 @@
 #define LIMIT_HDMI_KHZ			340000U
 #define DP_RATE_UNIT_KHZ		270000U
 
+/* How near two refreshes are to be the same mode (half a hertz). */
+#define SINK_SAME_REFRESH_MILLIHZ	500U
+
 /* The names of the transmitters for the log. */
 static const char transmitter_letters[AMDRDNA_TRANSMITTERS + 1U] = "ABCDEFG";
 
@@ -352,7 +355,7 @@ amdrdna_a10_sink(
 			usable++;
 	}
 	sink->usable_modes = usable;
-	sink->ready = true;
+	__atomic_store_n(&sink->ready, true, __ATOMIC_RELEASE);
 
 	/* Says what was read. */
 	preferred = NULL;
@@ -388,6 +391,134 @@ amdrdna_a10_sink(
 	}
 
 	/* Succeeded: the sink is read. */
+	return 0;
+}
+
+/*
+ * Reports the sink stage A10 read, or NULL before it did (the stage's
+ * thread publishes it once, after every field).
+ */
+const struct amdrdna_sink *
+amdrdna_sink_ready(
+	const struct amdrdna_device *device)
+{
+	bool ready;
+
+	/* Published once. */
+	ready = __atomic_load_n(&device->sink.ready, __ATOMIC_ACQUIRE);
+	if (!ready)
+		return NULL;
+
+	/* Succeeded: the sink is read. */
+	return &device->sink;
+}
+
+/*
+ * Reports the index-th mode the output offers (index 0 is the current
+ * one, then the sink's modes the output carries, without the current
+ * one's double); returns false past the last.  count gets how many there
+ * are.
+ */
+bool
+amdrdna_sink_mode(
+	const struct amdrdna_device *device,
+	unsigned index,
+	uint32_t *width,
+	uint32_t *height,
+	uint32_t *refresh_millihz,
+	unsigned *count)
+{
+	const struct amdrdna_sink *sink;
+	const struct amdrdna_display *display;
+	const struct amdrdna_timing *mode;
+	unsigned listed;
+	unsigned at;
+	bool current;
+
+	/* The current mode is always the first. */
+	display = &device->display;
+	sink = amdrdna_sink_ready(device);
+	listed = 1U;
+	if (index == 0U) {
+		*width = display->width;
+		*height = display->height;
+		*refresh_millihz = display->refresh_millihz;
+	}
+
+	/* The sink's modes the output carries, each but the current one's double. */
+	for (at = 0U; sink != NULL && at < sink->edid.mode_count; at++) {
+		mode = &sink->edid.modes[at];
+		if (mode->pixel_khz == 0U || mode->pixel_khz > sink->limit_khz)
+			continue;
+		current = false;
+		if (mode->width == display->width && mode->height == display->height &&
+		    mode->refresh_millihz + SINK_SAME_REFRESH_MILLIHZ >= display->refresh_millihz &&
+		    mode->refresh_millihz <= display->refresh_millihz + SINK_SAME_REFRESH_MILLIHZ)
+			current = true;
+		if (current)
+			continue;
+		if (listed == index) {
+			*width = mode->width;
+			*height = mode->height;
+			*refresh_millihz = mode->refresh_millihz;
+		}
+		listed++;
+	}
+
+	/* The count, and whether the index was one of them. */
+	*count = listed;
+	if (index >= listed)
+		return false;
+
+	/* Succeeded: the mode is given. */
+	return true;
+}
+
+/*
+ * Checks a mode without setting it: the current one, or a mode the sink
+ * lists that the output carries; *refresh_millihz 0 asks for the
+ * preferred refresh of that size (the current one's, else the sink's).
+ * Returns 0 with the refresh, ERANGE for a listed mode past what the
+ * output carries now, or EINVAL for one the sink does not list.
+ */
+int
+amdrdna_sink_check(
+	const struct amdrdna_device *device,
+	uint32_t width,
+	uint32_t height,
+	uint32_t *refresh_millihz)
+{
+	const struct amdrdna_sink *sink;
+	const struct amdrdna_display *display;
+	const struct amdrdna_timing *mode;
+	unsigned index;
+
+	/* The current mode at its refresh. */
+	display = &device->display;
+	if (width == display->width && height == display->height) {
+		if (*refresh_millihz == 0U ||
+		    (*refresh_millihz + SINK_SAME_REFRESH_MILLIHZ >= display->refresh_millihz &&
+		     *refresh_millihz <= display->refresh_millihz + SINK_SAME_REFRESH_MILLIHZ)) {
+			*refresh_millihz = display->refresh_millihz;
+			return 0;
+		}
+	}
+
+	/* A mode the sink lists. */
+	sink = amdrdna_sink_ready(device);
+	if (sink == NULL)
+		return EINVAL;
+	index = amdrdna_edid_find(&sink->edid, width, height, *refresh_millihz);
+	if (index >= sink->edid.mode_count)
+		return EINVAL;
+	mode = &sink->edid.modes[index];
+
+	/* One the output carries now. */
+	if (mode->pixel_khz == 0U || mode->pixel_khz > sink->limit_khz)
+		return ERANGE;
+	*refresh_millihz = mode->refresh_millihz;
+
+	/* Succeeded: the mode can be lit. */
 	return 0;
 }
 
