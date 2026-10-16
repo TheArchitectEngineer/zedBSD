@@ -21,6 +21,7 @@
 | q1211 / q1211-i01 | P3（phase-runner、worktree p3・agent/p3-ws039） | ws039-p002 | 段 A0・A1・A1v: 骨格・device id・IP discovery・BAR0 の大きさ・GOP の readout・VBIOS（ACPI の口の差分）・control の node・段の印・host 試験、Linux の amdgpu の dump との照合（許可済み）、10.0.10.3 の実機で A0・A1・A1v の ok。実機で確かめた物だけ main に（2026-10-15 夜 ユーザー「AMDに集中しましょう。N=1にします。」、§15 の回答） | 実装・host 試験・build・USB の image は済み（実機前、最終 141371ea9、main に未 merge）。実機（A0・A1・A1v の ok）はユーザーの電源の入れ直しと USB の差し込みの待ちで P3 は返却。再開は phase002/phase.md の「状態と次」 |
 | q1211 / q1211-i02 | P3（phase-runner） | ws039-p002 | A1 の拡大の GOP の読み・control の node・実機の流し直し | cleared（実機で A0・A1・A1v ok、cf52a3bcb、merge aeca13ff3） |
 | q1212 / q1212-i01 | P3（phase-runner、worktree p3・agent/p3-ws039） | ws039-p003 | A2: BAR0 の 256 MiB の窓の map・GMC・IH・VM fault・host 試験 (d) の前半、試験の image の video=640x480 を外す（2026-10-16 ユーザー（クリック））。実機で A2 の ok と underflow 0 の後に main | cleared（実機で A2 ok・underflow 0、867da3369、merge 6e44a158e） |
+| q1213 / q1213-i01 | P3（phase-runner、worktree p3・agent/p3-ws039） | ws039-p004 | A3t（PSP の memory training）・A3（PSP・firmware の load）・A4 Tier S（SMU の最小限）。firmware の package（zedBSD-firmware の amd-navi、無ければ linux-firmware の固定の commit）。実機で ok の後に main（2026-10-16 ユーザー「進めてください。コールドブートは言ってくれればやります」） | in-progress |
 | q1207 / q1207-i01 | P1（phase-runner、worktree p1・agent/p1-ws245） | ws245-p004 → ws245-p006 | p004 VBT・EDID（xd-vbt・xd-edid）、続けて p006 power・DMC・clock・TC の register（design.md §6.2）。host 試験だけで kernel の振る舞いは変えない（2026-10-15 ユーザー「WS245は、ロールバックできる体制にしておいて、今から実装します。」「今マージします」） | in-progress |
 
 ## 2026-10-15: WS247・WS245（q984〜q995）
