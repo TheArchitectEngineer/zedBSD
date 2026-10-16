@@ -39,6 +39,7 @@
 #include <kern/clock.h>
 #include <kern/device-io.h>
 #include <kern/kcrt.h>
+#include <kern/kmem.h>
 #include <kern/lock.h>
 #include <uapi/errno.h>
 
@@ -516,6 +517,9 @@ amdrdna_vm_fault(
 	amdrdna_vm_fault_decode(interrupt, latched, &fault);
 	device->interrupts.faults++;
 
+	/* The address space the fault belongs to loses its work. */
+	amdrdna_space_fault(device, &fault, interrupt->context);
+
 	/*
 	 * Logs the first faults only, so a flood does not fill the log.  The
 	 * access bits are the interrupt's (retry, read, write, execute from
@@ -560,6 +564,238 @@ amdrdna_fault_interrupts(
 			hub_write(device, hub, AMDRDNA_HUB_CONTEXT_CONTROL, context, word);
 		}
 	}
+}
+
+/*
+ * Reports the CPU's view of a VRAM offset inside the mapped window.  The
+ * offset must lie in the CPU's pool, which the window maps.
+ */
+volatile uint8_t *
+amdrdna_vram_cpu(
+	struct amdrdna_device *device,
+	uint64_t offset)
+{
+	volatile uint8_t *address;
+
+	/* The window's own translation. */
+	address = memory_cpu(device, offset);
+
+	/* Succeeded: where the CPU reads and writes the offset. */
+	return address;
+}
+
+/*
+ * Takes an aligned run of VRAM from the CPU's pool (cpu true) or from the
+ * pool only the GPU reaches, and reports its VRAM offset.  The run is the
+ * caller's for the GPU's lifetime.
+ *
+ * Returns 0, EBUSY before stage A2 built the pools, or ENOMEM.
+ */
+int
+amdrdna_vram_take(
+	struct amdrdna_device *device,
+	bool cpu,
+	uint64_t bytes,
+	uint64_t alignment,
+	uint64_t *offset)
+{
+	struct amdrdna_pool *pool;
+	int error;
+
+	/* The pools exist once the stage that builds them reported ok. */
+	if (!device->memory_ready)
+		return EBUSY;
+
+	/* The pool the caller asked for. */
+	pool = &device->gpu_pool;
+	if (cpu)
+		pool = &device->cpu_pool;
+
+	/* Takes the run, one taker at a time. */
+	mutex_lock(&device->memory_lock);
+
+	error = amdrdna_pool_take(pool, bytes, alignment, offset);
+
+	mutex_unlock(&device->memory_lock);
+
+	/* Reports a pool without room. */
+	if (error != 0)
+		return ENOMEM;
+
+	/* Succeeded: the run is the caller's. */
+	return 0;
+}
+
+/*
+ * Gives a run of VRAM taken with amdrdna_vram_take() back to its pool.
+ * A run the pool cannot take back (its list of free runs is full) stays
+ * taken for good, which is only a loss of room.
+ */
+void
+amdrdna_vram_give(
+	struct amdrdna_device *device,
+	bool cpu,
+	uint64_t offset,
+	uint64_t bytes)
+{
+	struct amdrdna_pool *pool;
+	int error;
+
+	/* The pool the run came from. */
+	pool = &device->gpu_pool;
+	if (cpu)
+		pool = &device->cpu_pool;
+
+	/* Gives the run back, one caller at a time. */
+	mutex_lock(&device->memory_lock);
+
+	error = amdrdna_pool_give(pool, offset, bytes);
+
+	mutex_unlock(&device->memory_lock);
+
+	/* Says when the run could not be taken back. */
+	if (error != 0)
+		amdrdna_mark("vram: %lluKiB at 0x%llx stay taken (%d)", (unsigned long long)(bytes >> 10), (unsigned long long)offset, error);
+}
+
+/*
+ * Reports the bus address the CPU reaches a VRAM offset of the CPU's pool
+ * at: the window's physical address plus the offset's place in it.
+ */
+uint64_t
+amdrdna_vram_bus(
+	struct amdrdna_device *device,
+	uint64_t offset)
+{
+	uint64_t bus;
+
+	/* The window's mapping starts at window_from in VRAM. */
+	bus = device->window.physical_address + (offset - device->window_from);
+
+	/* Succeeded: the bus address. */
+	return bus;
+}
+
+/*
+ * Reports the absolute dword index of one instance of a named register of
+ * a memory hub, for a ring command that writes or waits on it; 0 when the
+ * block table does not list the hub.
+ */
+uint32_t
+amdrdna_hub_register(
+	struct amdrdna_device *device,
+	enum amdrdna_hub hub,
+	enum amdrdna_hub_register which,
+	unsigned instance)
+{
+	const struct amdrdna_ip *block;
+	uint32_t index;
+
+	/* The hub's block and the register's index in it. */
+	block = hub_block(device, hub);
+	index = amdrdna_hub_index(block, hub, which, instance);
+
+	/* Succeeded: the index, 0 for none. */
+	return index;
+}
+
+/*
+ * Gives the VRAM memory training would have overwritten back to the
+ * pools, once training has run or been skipped: every part of the
+ * training range that no other kept range covers goes to the pool whose
+ * bounds hold it.
+ *
+ * Returns 0, or ENOMEM when the scratch pool cannot be had.
+ */
+int
+amdrdna_training_range_release(
+	struct amdrdna_device *device)
+{
+	struct amdrdna_pool *scratch;
+	struct amdrdna_pool *pool;
+	const struct amdrdna_range *range;
+	const struct amdrdna_range *training;
+	uint64_t start;
+	uint64_t end;
+	unsigned index;
+	unsigned span;
+	unsigned side;
+	int error;
+
+	/* Finds the training range; a layout without one has nothing to give. */
+	training = NULL;
+	for (index = 0U; index < device->layout.reserved_count; index++) {
+		/* Stops at the training range. */
+		if (device->layout.reserved[index].reason == AMDRDNA_RANGE_TRAINING) {
+			training = &device->layout.reserved[index];
+			break;
+		}
+	}
+
+	/* Without one, nothing was held for training. */
+	if (training == NULL)
+		return 0;
+
+	/* A pool of its own to cut the other kept ranges out of the training range. */
+	scratch = kern_malloc(sizeof(*scratch));
+	if (scratch == NULL)
+		return ENOMEM;
+
+	/* Gives each pool the part of the training range inside its bounds and outside every other kept range. */
+	error = 0;
+	mutex_lock(&device->memory_lock);
+
+	for (side = 0U; side < 2U; side++) {
+		/* The CPU's pool first, then the GPU's. */
+		pool = &device->cpu_pool;
+		if (side == 1U)
+			pool = &device->gpu_pool;
+
+		/* The training range clipped to the pool's bounds. */
+		start = training->start;
+		end = training->end;
+		if (start < pool->start)
+			start = pool->start;
+		if (end > pool->end)
+			end = pool->end;
+		if (start >= end)
+			continue;
+
+		/* The clipped range without the other kept ranges. */
+		amdrdna_pool_init(scratch, start, end);
+		(void)amdrdna_pool_give(scratch, start, end - start);
+		for (index = 0U; index < device->layout.reserved_count; index++) {
+			/* Holds every kept range but the training range. */
+			range = &device->layout.reserved[index];
+			if (range == training)
+				continue;
+			amdrdna_pool_hold(scratch, range->start, range->end - range->start);
+		}
+
+		/* Gives what is left to the pool. */
+		for (span = 0U; span < scratch->span_count; span++) {
+			/* Gives one run; a run the pool cannot take is reported. */
+			error = amdrdna_pool_give(pool, scratch->spans[span].start, scratch->spans[span].end - scratch->spans[span].start);
+			if (error != 0)
+				break;
+		}
+
+		/* Stops at a refused run. */
+		if (error != 0)
+			break;
+	}
+
+	mutex_unlock(&device->memory_lock);
+
+	/* Frees the scratch pool. */
+	kern_free(scratch);
+
+	/* Reports a run the pools did not take. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the training range is ordinary VRAM again. */
+	return 0;
 }
 
 /* The block table entry of a hub: the graphics block, or the media hub's own. */

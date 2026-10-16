@@ -7,7 +7,7 @@ Status: incomplete（2026-10-15 作成、p001 を P4 が q1206 で設計中）
 Primary Milestone: MG006
 Parent: [Master](../master.md)
 Related: [WS037](../ws037/ws.md)（nvrtx）、[WS241](../ws241/ws.md)（RTX の描画の速さ、work channel を触る）、`src/drivers/gpu/gpu.c`（共通の GPU の層の監視と drv_gpu_recovery_ops）、`src/drivers/gpu/i915/reset.c`（isolate・reset を持つ手本）
-Resume point: q1206（P4）で p001。design.md を書いた（2026-10-15）。design-reviewer の review（design-review.md）を受けて blocker・major を直し、Phase の表（p002〜p006）を確定する。
+Resume point: 2026-10-15 夜 ユーザーの即時中断で止めた。design.md の草稿は main（64f05b2c7）にあり、止めた時の未 commit の書き足し（+288/-243 行）は worktree p4 の plan/ws250/temp/design-partial-20261015.patch（git に入れない、64f05b2c7 に当たる）。同じ worktree の未追跡の plan/ws250/design-review.md（止める前に design-reviewer が書いた物）も残っている。再開はユーザーの指示で。以前: q1206（P4）で p001。design.md を書いた（2026-10-15）。design-reviewer の review（design-review.md）を受けて blocker・major を直し、Phase の表（p002〜p006）を確定する。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）

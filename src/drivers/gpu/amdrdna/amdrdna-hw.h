@@ -29,7 +29,7 @@
 #define AMDRDNA_LAYOUT_RANGES		8U
 
 /* The most free spans one address pool tracks. */
-#define AMDRDNA_POOL_SPANS		128U
+#define AMDRDNA_POOL_SPANS		512U
 
 /* The page-table levels of a context's address space, root first. */
 #define AMDRDNA_VM_LEVELS		4U
@@ -66,6 +66,16 @@
 #define AMDRDNA_TABLE_ADDRESS_MASK	0x0000ffffffffffc0ULL
 
 /*
+ * The memory type of a context's VRAM pages: non-coherent (0), the type
+ * the hubs give an ordinary mapping of local memory.
+ *
+ * Value referenced: Linux v6.19 drivers/gpu/drm/amd/include/navi10_enum.h
+ * (MTYPE_NC) and drivers/gpu/drm/amd/amdgpu/gmc_v10_0.c
+ * (gmc_v10_0_get_vm_pte: the default memory type of a mapping).
+ */
+#define AMDRDNA_PAGE_TYPE_NONCOHERENT	0ULL
+
+/*
  * The interrupt clients and the source the driver handles in this stage:
  * the page faults the media hub and the graphics hub report (source 0 of
  * each).
@@ -79,6 +89,59 @@
 #define AMDRDNA_CLIENT_MEDIA_HUB	0x12U
 #define AMDRDNA_CLIENT_GRAPHICS_HUB	0x1bU
 #define AMDRDNA_SOURCE_PAGE_FAULT	0x00U
+
+/*
+ * The interrupt clients and sources of the thermal stage: the thermal
+ * block's high alert (the temperature rose above the high threshold) and
+ * low alert (it fell below the low one), the critical-temperature trip the
+ * SMU's I/O block reports on its GPIO 19, and the software interrupt the
+ * system-management unit raises for the driver.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/soc15_ih_clientid.h
+ * (SOC15_IH_CLIENTID_THM, SOC15_IH_CLIENTID_ROM_SMUIO,
+ * SOC15_IH_CLIENTID_MP1), drivers/gpu/drm/amd/pm/swsmu/smu11/smu_v11_0.c
+ * (THM_11_0__SRCID__THM_DIG_THERM_L2H, THM_11_0__SRCID__THM_DIG_THERM_H2L,
+ * SMUIO_11_0__SRCID__SMUIO_GPIO19; smu_v11_0_set_irq_state: the software
+ * interrupt's ID 0xFE).
+ */
+#define AMDRDNA_CLIENT_THERMAL		0x0fU
+#define AMDRDNA_CLIENT_SMU_IO		0x16U
+#define AMDRDNA_CLIENT_SMU		0x1fU
+#define AMDRDNA_SOURCE_THERMAL_HIGH	0x00U
+#define AMDRDNA_SOURCE_THERMAL_LOW	0x01U
+#define AMDRDNA_SOURCE_CRITICAL		0x53U
+#define AMDRDNA_SOURCE_SMU_SOFT		0xfeU
+
+/*
+ * The interrupt clients and sources of the engines: the command processor
+ * (its end-of-pipe event, a bad opcode, a privileged register and a
+ * privileged instruction) and the first copy engine (its trap); and the
+ * ring field of a command processor's interrupt (engine 3:2, pipe 1:0,
+ * queue 6:4).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/soc15_ih_clientid.h
+ * (SOC15_IH_CLIENTID_GRBM_CP, SOC15_IH_CLIENTID_SDMA0),
+ * drivers/gpu/drm/amd/include/ivsrcid/gfx/irqsrcs_gfx_10_1.h
+ * (GFX_10_1__SRCID__CP_EOP_INTERRUPT, GFX_10_1__SRCID__CP_BAD_OPCODE_ERROR,
+ * GFX_10_1__SRCID__CP_PRIV_REG_FAULT, GFX_10_1__SRCID__CP_PRIV_INSTR_FAULT),
+ * ivsrcid/sdma0/irqsrcs_sdma0_5_0.h (SDMA0_5_0__SRCID__SDMA_TRAP) and
+ * drivers/gpu/drm/amd/amdgpu/gfx_v10_0.c (gfx_v10_0_eop_irq: the ring
+ * field).
+ */
+#define AMDRDNA_CLIENT_COMMAND		0x14U
+#define AMDRDNA_CLIENT_COPY0		0x08U
+#define AMDRDNA_SOURCE_END_OF_PIPE	0xb5U
+#define AMDRDNA_SOURCE_BAD_OPCODE	0xb7U
+#define AMDRDNA_SOURCE_PRIVILEGED_WORD	0xb8U
+#define AMDRDNA_SOURCE_PRIVILEGED_CODE	0xb9U
+#define AMDRDNA_SOURCE_COPY_TRAP	0xe0U
+#define AMDRDNA_RING_FIELD_ENGINE_MASK	0x0cU
+#define AMDRDNA_RING_FIELD_ENGINE_SHIFT	2U
+#define AMDRDNA_RING_FIELD_PIPE_MASK	0x03U
+#define AMDRDNA_RING_FIELD_QUEUE_MASK	0x70U
+#define AMDRDNA_RING_FIELD_QUEUE_SHIFT	4U
 
 /*
  * The IP blocks the driver knows by name.  The GPU's block table lists
@@ -195,7 +258,9 @@ struct amdrdna_ip {
 /*
  * The shape of the graphics engine as the block table states it: the
  * shader engines, the arrays in each, the paired compute units in each
- * array, the render back ends and the level-2 cache channels.
+ * array, the render back ends and the level-2 cache channels, the wave
+ * width and waves per SIMD, and the scan converters of an engine and the
+ * packers of a converter.
  */
 struct amdrdna_shader_shape {
 	uint32_t engines;
@@ -205,6 +270,8 @@ struct amdrdna_shader_shape {
 	uint32_t cache_channels;
 	uint32_t wave_lanes;
 	uint32_t waves_per_simd;
+	uint32_t converters_per_engine;
+	uint32_t packers_per_converter;
 };
 
 /*
@@ -542,6 +609,452 @@ struct amdrdna_vm_fault {
 	unsigned context;
 };
 
+/* The most pieces the driver cuts one firmware file into. */
+#define AMDRDNA_FIRMWARE_PIECES		4U
+
+/*
+ * The kinds of firmware file, by how the driver cuts them: the security
+ * processor's own file (its boot pieces), a file whose program is the one
+ * piece, a compute processor's file (the program and its jump table) and
+ * the run-list controller's file (its program and three lists).
+ */
+enum amdrdna_firmware_kind {
+	AMDRDNA_FIRMWARE_SECURE,
+	AMDRDNA_FIRMWARE_WHOLE,
+	AMDRDNA_FIRMWARE_COMPUTE,
+	AMDRDNA_FIRMWARE_RUN_LIST
+};
+
+/*
+ * The pieces' indexes: the security processor's system driver, secure
+ * OS, table of contents and key database; a compute processor's program
+ * and jump table; the run-list controller's program, control list, GPM
+ * list and SRM list.
+ */
+#define AMDRDNA_SECURE_SYSTEM_DRIVER	0U
+#define AMDRDNA_SECURE_OS		1U
+#define AMDRDNA_SECURE_CONTENTS		2U
+#define AMDRDNA_SECURE_KEYS		3U
+#define AMDRDNA_COMPUTE_PROGRAM		0U
+#define AMDRDNA_COMPUTE_JUMPS		1U
+#define AMDRDNA_RUN_LIST_PROGRAM	0U
+#define AMDRDNA_RUN_LIST_CONTROL	1U
+#define AMDRDNA_RUN_LIST_GPM		2U
+#define AMDRDNA_RUN_LIST_SRM		3U
+
+/* One piece of a firmware file: its offset in the file and its size. */
+struct amdrdna_firmware_piece {
+	uint32_t offset;
+	uint32_t bytes;
+};
+
+/*
+ * What a firmware file's header says: its layout version, the version of
+ * the program it carries, and the pieces the driver hands on.
+ */
+struct amdrdna_firmware_layout {
+	uint16_t header_major;
+	uint16_t header_minor;
+	uint32_t version;
+	unsigned piece_count;
+	struct amdrdna_firmware_piece pieces[AMDRDNA_FIRMWARE_PIECES];
+};
+
+/*
+ * The security processor's ring and command buffers: a frame of 64
+ * bytes, a ring of 4 KiB, a command of 1024 bytes; and the reserve at the
+ * top of VRAM memory training assumes without one from the video BIOS.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/psp_gfx_if.h (struct psp_gfx_rb_frame,
+ * struct psp_gfx_cmd_resp), amdgpu_psp.c (psp_ring_init: 0x1000) and
+ * drivers/gpu/drm/amd/amdgpu/amdgpu_discovery.h (DISCOVERY_TMR_OFFSET).
+ */
+#define AMDRDNA_PSP_FRAME_BYTES		64U
+#define AMDRDNA_PSP_RING_BYTES		4096U
+#define AMDRDNA_PSP_COMMAND_BYTES	1024U
+#define AMDRDNA_TRAINING_DEFAULT_RESERVE 0x10000U
+
+/*
+ * The program types the security processor loads: the graphics pipe's ME,
+ * PFP and CE, the compute processor, the run-list controller's program,
+ * the two copy engines, the system-management unit, and the run-list
+ * controller's GPM, SRM and control lists.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/psp_gfx_if.h (enum psp_gfx_fw_type:
+ * GFX_FW_TYPE_CP_ME, GFX_FW_TYPE_CP_PFP, GFX_FW_TYPE_CP_CE,
+ * GFX_FW_TYPE_CP_MEC, GFX_FW_TYPE_RLC_G, GFX_FW_TYPE_SDMA0,
+ * GFX_FW_TYPE_SDMA1, GFX_FW_TYPE_SMU,
+ * GFX_FW_TYPE_RLC_RESTORE_LIST_GPM_MEM,
+ * GFX_FW_TYPE_RLC_RESTORE_LIST_SRM_MEM,
+ * GFX_FW_TYPE_RLC_RESTORE_LIST_SRM_CNTL).
+ */
+#define AMDRDNA_PROGRAM_ME		1U
+#define AMDRDNA_PROGRAM_PFP		2U
+#define AMDRDNA_PROGRAM_CE		3U
+#define AMDRDNA_PROGRAM_COMPUTE		4U
+#define AMDRDNA_PROGRAM_RUN_LIST	8U
+#define AMDRDNA_PROGRAM_COPY0		9U
+#define AMDRDNA_PROGRAM_COPY1		10U
+#define AMDRDNA_PROGRAM_SMU		18U
+#define AMDRDNA_PROGRAM_LIST_GPM	20U
+#define AMDRDNA_PROGRAM_LIST_SRM	21U
+#define AMDRDNA_PROGRAM_LIST_CONTROL	22U
+
+/*
+ * The reply the secure OS writes into a command buffer: the status (0 is
+ * success), the session of a loaded application, where a loaded program
+ * went in the trusted region, and the region size the table of contents
+ * asks for.
+ */
+struct amdrdna_psp_reply {
+	uint32_t status;
+	uint32_t session;
+	uint64_t place;
+	uint32_t region_bytes;
+};
+
+/*
+ * The engines a queue lives on, as the queue select and the scheduler
+ * name them: the graphics engine, and the first and second compute
+ * engines.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/gfx_v10_0.c (gfx_v10_0_compute_ring_init:
+ * the compute engine of a ring is its compute processor plus one; the
+ * graphics ring is engine 0).
+ */
+#define AMDRDNA_ENGINE_GRAPHICS		0U
+#define AMDRDNA_ENGINE_COMPUTE_FIRST	1U
+#define AMDRDNA_ENGINE_COMPUTE_SECOND	2U
+
+/*
+ * The engine kinds of the scheduler's queue attach and detach packets
+ * (compute 0, graphics 4), and the detach actions the driver uses
+ * (preempt 0, reset 1).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/gfx_v10_0.c (gfx10_kiq_map_queues: the engine
+ * selection) and amdgpu_gfx.h (enum amdgpu_unmap_queues_action).
+ */
+#define AMDRDNA_QUEUE_ENGINE_COMPUTE	0U
+#define AMDRDNA_QUEUE_ENGINE_GRAPHICS	4U
+#define AMDRDNA_QUEUE_DETACH_PREEMPT	0U
+#define AMDRDNA_QUEUE_DETACH_RESET	1U
+
+/* The words of the packets the driver builds. */
+#define AMDRDNA_PM4_WRITE_WORDS		5U
+#define AMDRDNA_PM4_FENCE_WORDS		8U
+#define AMDRDNA_PM4_SYNC_WORDS		8U
+#define AMDRDNA_PM4_MOVE_WORDS		7U
+#define AMDRDNA_PM4_DISPATCH_WORDS	5U
+#define AMDRDNA_PM4_RESOURCES_WORDS	8U
+#define AMDRDNA_PM4_ATTACH_WORDS	7U
+#define AMDRDNA_PM4_DETACH_WORDS	6U
+#define AMDRDNA_PM4_INDIRECT_WORDS	4U
+#define AMDRDNA_PM4_WAIT_WORDS		7U
+#define AMDRDNA_PM4_FETCH_SYNC_WORDS	2U
+#define AMDRDNA_COPY_WRITE_WORDS	5U
+#define AMDRDNA_COPY_LINEAR_WORDS	7U
+#define AMDRDNA_COPY_FENCE_WORDS	6U
+
+/*
+ * The register spaces the register-write packets address: the context
+ * registers, the shader registers and the user configuration registers.
+ */
+enum amdrdna_register_space {
+	AMDRDNA_SPACE_CONTEXT,
+	AMDRDNA_SPACE_SHADER,
+	AMDRDNA_SPACE_USER
+};
+
+/* One hardware queue of the command processor: its engine (AMDRDNA_ENGINE_*), pipe and queue. */
+struct amdrdna_queue_place {
+	uint32_t engine;
+	uint32_t pipe;
+	uint32_t queue;
+};
+
+/*
+ * The contexts of the graphics hub: context 0 is the kernel's flat
+ * space, contexts 1 to 15 are handed to the address spaces of the GPU's
+ * sessions while they run work.
+ */
+#define AMDRDNA_CONTEXTS		16U
+#define AMDRDNA_FIRST_USER_CONTEXT	1U
+
+/*
+ * The rings a context's work is tracked on: the graphics ring, the four
+ * compute queues and the first copy engine.
+ */
+#define AMDRDNA_TRACKED_RINGS		6U
+#define AMDRDNA_TRACKED_GRAPHICS	0U
+#define AMDRDNA_TRACKED_COMPUTE		1U
+#define AMDRDNA_TRACKED_COPY		5U
+
+/*
+ * The address-space identifiers the interrupt controller attaches to a
+ * page fault: 1 to 65535 (0 names no space), one bit each.
+ */
+#define AMDRDNA_SPACE_IDS		65536U
+#define AMDRDNA_SPACE_ID_WORDS		(AMDRDNA_SPACE_IDS / 32U)
+
+/*
+ * What one hub context is doing for the address spaces.
+ *
+ * owner is the identifier of the address space the context is handed to
+ * (0 when it is nobody's) and table its root table's word.  flushed is
+ * the owner's table generation the context's cached translations were
+ * last dropped for; flush_ring and flush_sequence name the fence after
+ * that drop, which a run on another ring must see passed before it may
+ * skip its own drop (flush_known says there was one).  last holds, for
+ * each tracked ring that ran work in the context (used), the fence after
+ * the latest such work: the context may be handed to another space only
+ * once all of them passed.  stamp orders the contexts from the least to
+ * the most recently used.  held keeps a context that may still run work
+ * nobody can stop out of the pool for good.
+ */
+struct amdrdna_context_slot {
+	uint32_t owner;
+	uint64_t table;
+	uint64_t flushed;
+	bool flush_known;
+	unsigned flush_ring;
+	uint32_t flush_sequence;
+	bool used[AMDRDNA_TRACKED_RINGS];
+	uint32_t last[AMDRDNA_TRACKED_RINGS];
+	uint64_t stamp;
+	bool held;
+};
+
+/*
+ * The pool of hub contexts the address spaces share (contexts 1 to 15):
+ * the slots, the clock their stamps come from, and the counts of drops
+ * and of contexts taken from another space.  The owner serializes every
+ * call.
+ */
+struct amdrdna_context_pool {
+	struct amdrdna_context_slot slots[AMDRDNA_CONTEXTS];
+	uint64_t clock;
+	uint64_t flushes;
+	uint64_t takeovers;
+};
+
+/*
+ * What a run asks of the context pool: the address space's identifier,
+ * the context it held last (0 for none), its root table's word, its table
+ * generation, and the tracked ring the run goes to.
+ */
+struct amdrdna_context_request {
+	uint32_t owner;
+	unsigned held;
+	uint64_t table;
+	uint64_t generation;
+	unsigned ring;
+};
+
+/*
+ * What the context pool answers a run: the context, whether its cached
+ * translations must be dropped before the run (flush) and whether the run
+ * must first wait on its own ring for that ring's earlier work (sync); or
+ * that no context is free yet and the caller waits for the fence
+ * wait_sequence of tracked ring wait_ring and asks again (wait).
+ */
+struct amdrdna_context_grant {
+	unsigned context;
+	bool flush;
+	bool sync;
+	bool wait;
+	unsigned wait_ring;
+	uint32_t wait_sequence;
+};
+
+/*
+ * The address-space identifiers in use, one bit each, and where the
+ * search for a free one starts (identifiers are not reused at once).  The
+ * owner serializes every call.
+ */
+struct amdrdna_space_ids {
+	uint32_t used[AMDRDNA_SPACE_ID_WORDS];
+	uint32_t next;
+	uint32_t count;
+};
+
+/* The words of a queue image. */
+#define AMDRDNA_QUEUE_IMAGE_WORDS	512U
+
+/*
+ * The words of a compute queue image the driver fills: the header, the
+ * pipeline statistics, the compute units of the four shader engines, the
+ * reserved word; then, mirroring the queue's registers, the image's own
+ * address (low, high), active, context, persistent state, the pipe and
+ * queue priorities, the ring (low, high), the read pointer and its report
+ * address (low, high), the write pointer's poll address (low, high), the
+ * doorbell, the ring control, the indirect-buffer control, the dequeue
+ * request, the image control, the end-of-pipe buffer (low, high) and its
+ * control, and the write pointer (low, high).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/v10_structs.h (struct v10_compute_mqd).
+ */
+#define AMDRDNA_COMPUTE_IMAGE_HEADER		0U
+#define AMDRDNA_COMPUTE_IMAGE_STATISTICS	11U
+#define AMDRDNA_COMPUTE_IMAGE_UNITS_0		23U
+#define AMDRDNA_COMPUTE_IMAGE_UNITS_1		24U
+#define AMDRDNA_COMPUTE_IMAGE_UNITS_2		26U
+#define AMDRDNA_COMPUTE_IMAGE_UNITS_3		27U
+#define AMDRDNA_COMPUTE_IMAGE_RESERVED		32U
+#define AMDRDNA_COMPUTE_IMAGE_SELF_LOW		128U
+#define AMDRDNA_COMPUTE_IMAGE_SELF_HIGH		129U
+#define AMDRDNA_COMPUTE_IMAGE_ACTIVE		130U
+#define AMDRDNA_COMPUTE_IMAGE_CONTEXT		131U
+#define AMDRDNA_COMPUTE_IMAGE_PERSISTENT	132U
+#define AMDRDNA_COMPUTE_IMAGE_PIPE_PRIORITY	133U
+#define AMDRDNA_COMPUTE_IMAGE_QUEUE_PRIORITY	134U
+#define AMDRDNA_COMPUTE_IMAGE_RING_LOW		136U
+#define AMDRDNA_COMPUTE_IMAGE_RING_HIGH		137U
+#define AMDRDNA_COMPUTE_IMAGE_READ		138U
+#define AMDRDNA_COMPUTE_IMAGE_READ_REPORT_LOW	139U
+#define AMDRDNA_COMPUTE_IMAGE_READ_REPORT_HIGH	140U
+#define AMDRDNA_COMPUTE_IMAGE_WRITE_POLL_LOW	141U
+#define AMDRDNA_COMPUTE_IMAGE_WRITE_POLL_HIGH	142U
+#define AMDRDNA_COMPUTE_IMAGE_DOORBELL		143U
+#define AMDRDNA_COMPUTE_IMAGE_RING_CONTROL	145U
+#define AMDRDNA_COMPUTE_IMAGE_BUFFER_CONTROL	149U
+#define AMDRDNA_COMPUTE_IMAGE_DEQUEUE		152U
+#define AMDRDNA_COMPUTE_IMAGE_CONTROL		162U
+#define AMDRDNA_COMPUTE_IMAGE_END_LOW		165U
+#define AMDRDNA_COMPUTE_IMAGE_END_HIGH		166U
+#define AMDRDNA_COMPUTE_IMAGE_END_CONTROL	167U
+#define AMDRDNA_COMPUTE_IMAGE_WRITE_LOW		182U
+#define AMDRDNA_COMPUTE_IMAGE_WRITE_HIGH	183U
+
+/*
+ * The words of the graphics queue image the driver fills: the image's own
+ * address (low, high), active, context, priority, time quantum, the ring
+ * (low, high), the read pointer and its report address (low, high), the
+ * write pointer's poll address (low, high), the doorbell, the ring
+ * control, the write pointer (low, high) and the image control.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/v10_structs.h (struct v10_gfx_mqd).
+ */
+#define AMDRDNA_GRAPHICS_IMAGE_SELF_LOW		128U
+#define AMDRDNA_GRAPHICS_IMAGE_SELF_HIGH	129U
+#define AMDRDNA_GRAPHICS_IMAGE_ACTIVE		130U
+#define AMDRDNA_GRAPHICS_IMAGE_CONTEXT		131U
+#define AMDRDNA_GRAPHICS_IMAGE_PRIORITY		134U
+#define AMDRDNA_GRAPHICS_IMAGE_QUANTUM		135U
+#define AMDRDNA_GRAPHICS_IMAGE_RING_LOW		136U
+#define AMDRDNA_GRAPHICS_IMAGE_RING_HIGH	137U
+#define AMDRDNA_GRAPHICS_IMAGE_READ		138U
+#define AMDRDNA_GRAPHICS_IMAGE_READ_REPORT_LOW	139U
+#define AMDRDNA_GRAPHICS_IMAGE_READ_REPORT_HIGH	140U
+#define AMDRDNA_GRAPHICS_IMAGE_WRITE_POLL_LOW	141U
+#define AMDRDNA_GRAPHICS_IMAGE_WRITE_POLL_HIGH	142U
+#define AMDRDNA_GRAPHICS_IMAGE_DOORBELL		143U
+#define AMDRDNA_GRAPHICS_IMAGE_RING_CONTROL	145U
+#define AMDRDNA_GRAPHICS_IMAGE_WRITE_LOW	149U
+#define AMDRDNA_GRAPHICS_IMAGE_WRITE_HIGH	150U
+#define AMDRDNA_GRAPHICS_IMAGE_CONTROL		162U
+
+/*
+ * What a compute queue image is filled from: the GPU addresses of the
+ * image, the ring (its size in bytes), the read pointer's report word, the
+ * write pointer's copy and the end-of-pipe buffer; the doorbell (a dword
+ * index); whether the driver activates the queue itself; and the values
+ * the queue's end-of-pipe control, doorbell, image control, ring control,
+ * read pointer, persistent state and buffer control registers held.
+ */
+struct amdrdna_compute_image_input {
+	uint64_t image;
+	uint64_t ring;
+	uint32_t ring_bytes;
+	uint64_t read_report;
+	uint64_t write_poll;
+	uint64_t end_of_pipe;
+	uint32_t doorbell;
+	bool active;
+	uint32_t end_control;
+	uint32_t doorbell_control;
+	uint32_t image_control;
+	uint32_t ring_control;
+	uint32_t read_pointer;
+	uint32_t persistent;
+	uint32_t buffer_control;
+};
+
+/*
+ * What the graphics queue image is filled from: the GPU addresses of the
+ * image, the ring (its size in bytes), the read pointer's report word and
+ * the write pointer's copy; the doorbell; and the values the queue's image
+ * control, priority, quantum, ring control, doorbell control and read
+ * pointer registers held.
+ */
+struct amdrdna_graphics_image_input {
+	uint64_t image;
+	uint64_t ring;
+	uint32_t ring_bytes;
+	uint64_t read_report;
+	uint64_t write_poll;
+	uint32_t doorbell;
+	uint32_t image_control;
+	uint32_t priority;
+	uint32_t quantum;
+	uint32_t ring_control;
+	uint32_t doorbell_control;
+	uint32_t read_pointer;
+};
+
+/*
+ * One recommended register setting: the GC window and the register's
+ * offset in it, the bits to change (all of them when every bit is set)
+ * and their value.
+ */
+struct amdrdna_register_setting {
+	uint8_t window;
+	uint16_t offset;
+	uint32_t mask;
+	uint32_t value;
+};
+
+/* One run of context registers of the clear state: the first (an absolute index) and how many. */
+struct amdrdna_register_run {
+	uint32_t first;
+	uint32_t count;
+};
+
+/* One register of the clear state and its value. */
+struct amdrdna_register_value {
+	uint32_t index;
+	uint32_t value;
+};
+
+/* The longest run of the clear state. */
+#define AMDRDNA_CLEAR_RUN_LONGEST	272U
+
+/*
+ * The compute program the first dispatch runs: its code (code_words
+ * words, to be followed by end_word up to padded_words), the register
+ * values the compiler gave (counts and inputs), the workgroup size, where
+ * its two buffer descriptors go in its table and the table's size, and
+ * the dispatch's launch word.
+ */
+struct amdrdna_check_description {
+	const uint32_t *code;
+	uint32_t code_words;
+	uint32_t padded_words;
+	uint32_t end_word;
+	uint32_t counts;
+	uint32_t inputs;
+	uint32_t local_size[3];
+	uint32_t output_at;
+	uint32_t groups_at;
+	uint32_t table_bytes;
+	uint32_t initiator;
+};
+
 uint16_t
 amdrdna_le16(
 	const uint8_t *bytes,
@@ -794,5 +1307,456 @@ amdrdna_interrupt_offset(
 	uint32_t pointer,
 	uint32_t ring_bytes,
 	bool *overflowed);
+
+
+int
+amdrdna_firmware_layout(
+	enum amdrdna_firmware_kind kind,
+	const uint8_t *bytes,
+	size_t length,
+	struct amdrdna_firmware_layout *layout);
+
+void
+amdrdna_psp_frame(
+	uint8_t *frame,
+	uint64_t command,
+	uint64_t fence,
+	uint32_t fence_sequence);
+
+int
+amdrdna_psp_ring_step(
+	uint32_t write_pointer,
+	uint32_t *frame,
+	uint32_t *next);
+
+void
+amdrdna_psp_command(
+	uint8_t *command,
+	uint32_t id);
+
+void
+amdrdna_psp_command_program(
+	uint8_t *command,
+	uint64_t address,
+	uint32_t bytes,
+	uint32_t type);
+
+void
+amdrdna_psp_command_contents(
+	uint8_t *command,
+	uint64_t address,
+	uint32_t bytes);
+
+void
+amdrdna_psp_command_region(
+	uint8_t *command,
+	uint64_t address,
+	uint32_t bytes,
+	uint64_t physical);
+
+void
+amdrdna_psp_command_application(
+	uint8_t *command,
+	uint64_t address,
+	uint32_t bytes);
+
+void
+amdrdna_psp_command_unload(
+	uint8_t *command,
+	uint32_t session);
+
+void
+amdrdna_psp_command_plain(
+	uint8_t *command,
+	bool tear_down);
+
+void
+amdrdna_psp_reply_read(
+	const uint8_t *command,
+	struct amdrdna_psp_reply *reply);
+
+void
+amdrdna_training_place(
+	uint64_t vram_bytes,
+	uint64_t reserve_bytes,
+	uint64_t *driver_copy,
+	uint64_t *processor_copy);
+
+void
+amdrdna_temperature_read(
+	uint32_t word,
+	unsigned *sensor,
+	unsigned *highest);
+
+int
+amdrdna_fan_duty_word(
+	uint32_t old,
+	uint32_t limits,
+	unsigned percent,
+	uint32_t *word);
+
+uint32_t
+amdrdna_fan_mode_word(
+	uint32_t old);
+
+uint32_t
+amdrdna_fan_speed(
+	uint32_t tachometer);
+
+unsigned
+amdrdna_fan_driven(
+	uint32_t status,
+	uint32_t limits);
+
+uint32_t
+amdrdna_alert_word(
+	uint32_t old,
+	unsigned high,
+	unsigned low);
+
+uint32_t
+amdrdna_alert_off_word(
+	uint32_t old);
+
+uint32_t
+amdrdna_alert_clear_word(void);
+
+/* command-format.c: the ring commands. */
+uint32_t
+amdrdna_pm4_filler(void);
+
+unsigned
+amdrdna_pm4_registers(
+	uint32_t *words,
+	enum amdrdna_register_space space,
+	uint32_t first,
+	const uint32_t *values,
+	unsigned count,
+	bool compute);
+
+unsigned
+amdrdna_pm4_write_memory(
+	uint32_t *words,
+	uint64_t address,
+	uint32_t value,
+	bool compute);
+
+unsigned
+amdrdna_pm4_write_register(
+	uint32_t *words,
+	uint32_t index,
+	uint32_t value,
+	bool compute);
+
+unsigned
+amdrdna_pm4_fence(
+	uint32_t *words,
+	uint64_t address,
+	uint32_t value,
+	bool interrupt,
+	bool compute);
+
+unsigned
+amdrdna_pm4_cache_sync(
+	uint32_t *words,
+	bool compute);
+
+unsigned
+amdrdna_pm4_move(
+	uint32_t *words,
+	uint64_t source,
+	uint64_t destination,
+	uint32_t bytes);
+
+unsigned
+amdrdna_pm4_dispatch(
+	uint32_t *words,
+	uint32_t x,
+	uint32_t y,
+	uint32_t z,
+	uint32_t initiator);
+
+unsigned
+amdrdna_pm4_queue_resources(
+	uint32_t *words,
+	uint64_t queue_mask);
+
+unsigned
+amdrdna_pm4_queue_attach(
+	uint32_t *words,
+	const struct amdrdna_queue_place *place,
+	uint32_t engine,
+	uint32_t doorbell,
+	uint64_t image,
+	uint64_t write_pointer);
+
+unsigned
+amdrdna_pm4_queue_detach(
+	uint32_t *words,
+	uint32_t engine,
+	uint32_t action,
+	uint32_t doorbell);
+
+unsigned
+amdrdna_pm4_indirect(
+	uint32_t *words,
+	uint64_t address,
+	uint32_t count,
+	unsigned context,
+	bool compute);
+
+unsigned
+amdrdna_pm4_bracket(
+	uint32_t *words,
+	bool begin);
+
+unsigned
+amdrdna_pm4_context_loads(
+	uint32_t *words);
+
+unsigned
+amdrdna_pm4_state_reset(
+	uint32_t *words);
+
+unsigned
+amdrdna_pm4_partition(
+	uint32_t *words);
+
+unsigned
+amdrdna_pm4_move_cached(
+	uint32_t *words,
+	uint64_t source,
+	uint64_t destination,
+	uint32_t bytes);
+
+unsigned
+amdrdna_pm4_fetcher_write_register(
+	uint32_t *words,
+	uint32_t index,
+	uint32_t value);
+
+unsigned
+amdrdna_pm4_write_and_wait(
+	uint32_t *words,
+	uint32_t request,
+	uint32_t done,
+	uint32_t value,
+	uint32_t mask,
+	bool fetcher);
+
+unsigned
+amdrdna_pm4_wait_memory(
+	uint32_t *words,
+	uint64_t address,
+	uint32_t value,
+	bool fetcher);
+
+unsigned
+amdrdna_pm4_fetcher_sync(
+	uint32_t *words);
+
+uint32_t
+amdrdna_copy_filler(void);
+
+unsigned
+amdrdna_copy_write(
+	uint32_t *words,
+	uint64_t address,
+	uint32_t value);
+
+unsigned
+amdrdna_copy_linear(
+	uint32_t *words,
+	uint64_t source,
+	uint64_t destination,
+	uint32_t bytes);
+
+unsigned
+amdrdna_copy_fence(
+	uint32_t *words,
+	uint64_t address,
+	uint32_t value,
+	bool interrupt);
+
+/* queue-format.c: the queue images and queue words. */
+void
+amdrdna_compute_image(
+	const struct amdrdna_compute_image_input *input,
+	uint32_t *image);
+
+void
+amdrdna_graphics_image(
+	const struct amdrdna_graphics_image_input *input,
+	uint32_t *image);
+
+uint32_t
+amdrdna_graphics_ring_word(
+	uint32_t ring_bytes);
+
+uint32_t
+amdrdna_queue_select_word(
+	const struct amdrdna_queue_place *place,
+	unsigned context);
+
+uint32_t
+amdrdna_scheduler_queue_word(
+	uint32_t old,
+	const struct amdrdna_queue_place *place);
+
+uint64_t
+amdrdna_queue_resource_mask(
+	const struct amdrdna_queue_place *places,
+	unsigned count);
+
+/* settings.c: the engine settings and the shape words. */
+const struct amdrdna_register_setting *
+amdrdna_graphics_settings(
+	unsigned *count);
+
+const struct amdrdna_register_setting *
+amdrdna_copy_settings(
+	unsigned *count);
+
+bool
+amdrdna_setting_reads(
+	const struct amdrdna_register_setting *setting);
+
+uint32_t
+amdrdna_setting_word(
+	const struct amdrdna_register_setting *setting,
+	uint32_t old);
+
+unsigned
+amdrdna_clear_state_words(void);
+
+unsigned
+amdrdna_clear_state(
+	uint32_t *words,
+	uint32_t steering);
+
+uint32_t
+amdrdna_backends_on(
+	uint32_t fused,
+	uint32_t off,
+	unsigned per_array);
+
+uint32_t
+amdrdna_groups_on(
+	uint32_t fused,
+	uint32_t off,
+	unsigned per_array);
+
+unsigned
+amdrdna_units_on(
+	uint32_t groups);
+
+uint32_t
+amdrdna_channels_off(
+	uint32_t fused,
+	uint32_t off);
+
+uint32_t
+amdrdna_tile_steering(
+	unsigned converters,
+	unsigned backends_per_converter,
+	unsigned packers);
+
+void
+amdrdna_harvest_words(
+	uint32_t groups,
+	unsigned per_array,
+	uint32_t old_translation,
+	uint32_t old_targets,
+	uint32_t *translation,
+	uint32_t *targets);
+
+uint32_t
+amdrdna_shader_memory_mode(void);
+
+uint32_t
+amdrdna_shader_apertures(void);
+
+/* check-program.c: the first dispatch's program. */
+void
+amdrdna_check_program(
+	struct amdrdna_check_description *description);
+
+void
+amdrdna_raw_buffer_descriptor(
+	uint64_t address,
+	uint32_t bytes,
+	uint32_t *words);
+
+uint32_t
+amdrdna_check_output_words(
+	const uint32_t *groups);
+
+bool
+amdrdna_check_output(
+	const uint32_t *words,
+	const uint32_t *groups,
+	uint32_t *bad_word,
+	uint32_t *expected,
+	uint32_t *found);
+
+/* context-pool.c: the hub contexts and the address-space identifiers. */
+void
+amdrdna_context_pool_init(
+	struct amdrdna_context_pool *pool);
+
+int
+amdrdna_context_grant(
+	struct amdrdna_context_pool *pool,
+	const struct amdrdna_context_request *request,
+	const uint32_t *passed,
+	struct amdrdna_context_grant *grant);
+
+void
+amdrdna_context_submitted(
+	struct amdrdna_context_pool *pool,
+	unsigned context,
+	const struct amdrdna_context_request *request,
+	uint32_t sequence,
+	bool flushed);
+
+bool
+amdrdna_context_idle(
+	const struct amdrdna_context_pool *pool,
+	unsigned context,
+	const uint32_t *passed);
+
+void
+amdrdna_context_release(
+	struct amdrdna_context_pool *pool,
+	unsigned context,
+	uint32_t owner);
+
+void
+amdrdna_context_hold(
+	struct amdrdna_context_pool *pool,
+	unsigned context);
+
+unsigned
+amdrdna_context_free_count(
+	const struct amdrdna_context_pool *pool);
+
+bool
+amdrdna_fence_passed(
+	uint32_t fence,
+	uint32_t sequence);
+
+void
+amdrdna_space_ids_init(
+	struct amdrdna_space_ids *ids);
+
+int
+amdrdna_space_id_take(
+	struct amdrdna_space_ids *ids,
+	uint32_t *id);
+
+void
+amdrdna_space_id_give(
+	struct amdrdna_space_ids *ids,
+	uint32_t id);
 
 #endif

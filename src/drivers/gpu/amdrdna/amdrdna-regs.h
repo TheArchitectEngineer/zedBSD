@@ -326,4 +326,519 @@
 #define AMDRDNA_HUB_PAGE_SHIFT			12U
 #define AMDRDNA_HUB_PAGE_HIGH_SHIFT		44U
 
+
+/*
+ * The security processor's mailbox words the bring-up uses beyond the
+ * ones above (MP0 window 0): the boot loader's argument (an address in
+ * 1 MiB units), the secure OS's control word for its ring, the ring's
+ * write pointer (in dwords), the ring's address (low, high) and its size
+ * in bytes.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/asic_reg/mp/mp_11_0_offset.h
+ * (mmMP0_SMN_C2PMSG_36, mmMP0_SMN_C2PMSG_64, mmMP0_SMN_C2PMSG_67,
+ * mmMP0_SMN_C2PMSG_69, mmMP0_SMN_C2PMSG_70, mmMP0_SMN_C2PMSG_71).
+ */
+#define AMDRDNA_PSP_REG_BOOT_ARGUMENT		0x0064U
+#define AMDRDNA_PSP_REG_RING_CONTROL		0x0080U
+#define AMDRDNA_PSP_REG_RING_WRITE		0x0083U
+#define AMDRDNA_PSP_REG_RING_LOW		0x0085U
+#define AMDRDNA_PSP_REG_RING_HIGH		0x0086U
+#define AMDRDNA_PSP_REG_RING_BYTES		0x0087U
+
+/*
+ * The security processor's handshake values: the mask and value of a
+ * mailbox word that reads "ready, no error" (bit 31 and a zero status in
+ * bits 15:0), the boot loader's commands (load the key database, the
+ * system driver, the secure OS, and run the long memory training), and
+ * the secure OS's ring commands (create the kernel-mode ring, type 2 in
+ * bits 23:16, and destroy every ring).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/amdgpu_psp.h (PSP_BL__LOAD_KEY_DATABASE,
+ * PSP_BL__LOAD_SYSDRV, PSP_BL__LOAD_SOSDRV, PSP_BL__DRAM_LONG_TRAIN,
+ * MBOX_TOS_READY_FLAG, MBOX_TOS_READY_MASK, enum psp_ring_type) and
+ * drivers/gpu/drm/amd/amdgpu/psp_gfx_if.h (GFX_CMD_STATUS_MASK,
+ * GFX_CMD_RESPONSE_MASK, GFX_CTRL_CMD_ID_INIT_GPCOM_RING,
+ * GFX_CTRL_CMD_ID_DESTROY_RINGS), and psp_v11_0.c
+ * (psp_v11_0_wait_for_bootloader: the 0x8000FFFF mask).
+ */
+#define AMDRDNA_PSP_READY_MASK			0x8000ffffU
+#define AMDRDNA_PSP_READY			0x80000000U
+#define AMDRDNA_PSP_BOOT_KEY_DATABASE		0x00080000U
+#define AMDRDNA_PSP_BOOT_SYSTEM_DRIVER		0x00010000U
+#define AMDRDNA_PSP_BOOT_SECURE_OS		0x00020000U
+#define AMDRDNA_PSP_BOOT_LONG_TRAINING		0x00100000U
+#define AMDRDNA_PSP_RING_CREATE			0x00020000U
+#define AMDRDNA_PSP_RING_DESTROY		0x00030000U
+#define AMDRDNA_PSP_ADDRESS_SHIFT		20U
+
+/*
+ * The system-management unit's mailbox (MP1 window 0): the message word,
+ * its argument and its response, and the words that let the unit raise a
+ * software interrupt (the interrupt's ID in bits 7:0, valid in bit 8) and
+ * mask or acknowledge it (mask in bit 0, acknowledge in bit 8).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/asic_reg/mp/mp_11_0_offset.h
+ * (mmMP1_SMN_C2PMSG_66, mmMP1_SMN_C2PMSG_82, mmMP1_SMN_C2PMSG_90,
+ * mmMP1_SMN_IH_SW_INT, mmMP1_SMN_IH_SW_INT_CTRL) and mp_11_0_sh_mask.h
+ * (MP1_SMN_IH_SW_INT__ID_MASK, MP1_SMN_IH_SW_INT__VALID_MASK,
+ * MP1_SMN_IH_SW_INT_CTRL__INT_MASK_MASK,
+ * MP1_SMN_IH_SW_INT_CTRL__INT_ACK_MASK).
+ */
+#define AMDRDNA_SMU_WINDOW_MAILBOX		0U
+#define AMDRDNA_SMU_REG_MESSAGE			0x0282U
+#define AMDRDNA_SMU_REG_ARGUMENT		0x0292U
+#define AMDRDNA_SMU_REG_RESPONSE		0x029aU
+#define AMDRDNA_SMU_REG_SOFT_INTERRUPT		0x02c2U
+#define AMDRDNA_SMU_REG_SOFT_INTERRUPT_CONTROL	0x02c3U
+#define AMDRDNA_SMU_SOFT_INTERRUPT_ID_MASK	0x000000ffU
+#define AMDRDNA_SMU_SOFT_INTERRUPT_VALID	0x00000100U
+#define AMDRDNA_SMU_SOFT_INTERRUPT_MASKED	0x00000001U
+#define AMDRDNA_SMU_SOFT_INTERRUPT_ACKNOWLEDGE	0x00000100U
+
+/*
+ * The thermal block's registers (THM window 0): the interrupt enable and
+ * control words, the temperature status, the fan controller's three
+ * control words, the fan's tachometer period and the thermal status that
+ * reports the duty the fan is driven at.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/asic_reg/thm/thm_11_0_2_offset.h
+ * (mmTHM_THERMAL_INT_ENA, mmTHM_THERMAL_INT_CTRL,
+ * mmCG_MULT_THERMAL_STATUS, mmCG_FDO_CTRL0, mmCG_FDO_CTRL1,
+ * mmCG_FDO_CTRL2, mmCG_TACH_STATUS, mmCG_THERMAL_STATUS).
+ */
+#define AMDRDNA_THM_WINDOW_MAIN			0U
+#define AMDRDNA_THM_REG_ALERT_ENABLE		0x000aU
+#define AMDRDNA_THM_REG_ALERT_CONTROL		0x000bU
+#define AMDRDNA_THM_REG_TEMPERATURE		0x005fU
+#define AMDRDNA_THM_REG_FAN_DUTY		0x0067U
+#define AMDRDNA_THM_REG_FAN_LIMITS		0x0068U
+#define AMDRDNA_THM_REG_FAN_MODE		0x0069U
+#define AMDRDNA_THM_REG_FAN_TACHOMETER		0x006bU
+#define AMDRDNA_THM_REG_FAN_STATUS		0x006cU
+
+/*
+ * The graphics block's second window, where the shader-array select, the
+ * scratch word, the run-list controller and the cache-channel fuses live.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/navi10_ip_offset.h (GC_BASE, segment 1).
+ */
+#define AMDRDNA_GC_WINDOW_SECOND		1U
+
+/*
+ * Where the graphics block's second window starts on Navi10 (a dword
+ * index).  The commands address registers by absolute index, and the
+ * clear state's context registers are counted from it.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/navi10_ip_offset.h (GC_BASE: segment 1 at
+ * 0x0000A000).
+ */
+#define AMDRDNA_GC_SECOND_WINDOW_START		0x0000a000U
+
+/*
+ * The graphics block's control and shape registers (GC window 0): the bus
+ * control word (its read timeout in bits 7:0), the queue select (pipe
+ * 1:0, engine 3:2, context 7:4, queue 10:8), the address configuration,
+ * the render back ends fused off and switched off (bits 23:16 each), the
+ * shader array's workgroup processors fused off and switched off (bits
+ * 31:16 each), the shader memory mode and apertures of the selected
+ * context, the global data share's base, size, wave sync and ordered
+ * append words of context 0 (the base and size of context n at 2n, the
+ * other two at n), and the two words that keep invalidations away from
+ * absent workgroup processors.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/asic_reg/gc/gc_10_1_0_offset.h (mmGRBM_CNTL,
+ * mmGRBM_GFX_CNTL, mmGB_ADDR_CONFIG, mmCC_RB_BACKEND_DISABLE,
+ * mmGC_USER_RB_BACKEND_DISABLE, mmCC_GC_SHADER_ARRAY_CONFIG,
+ * mmGC_USER_SHADER_ARRAY_CONFIG, mmSH_MEM_CONFIG, mmSH_MEM_BASES,
+ * mmGDS_VMID0_BASE, mmGDS_VMID0_SIZE, mmGDS_GWS_VMID0, mmGDS_OA_VMID0,
+ * mmUTCL1_UTCL0_INVREQ_DISABLE, mmGCRD_SA_TARGETS_DISABLE) and
+ * gc_10_1_0_sh_mask.h (GRBM_CNTL__READ_TIMEOUT_MASK, the GRBM_GFX_CNTL
+ * fields, CC_RB_BACKEND_DISABLE__BACKEND_DISABLE_MASK,
+ * CC_GC_SHADER_ARRAY_CONFIG__INACTIVE_WGPS_MASK).
+ */
+#define AMDRDNA_GC_REG_BUS_CONTROL		0x0da0U
+#define AMDRDNA_GC_REG_QUEUE_SELECT		0x0dc2U
+#define AMDRDNA_GC_REG_ADDRESS_CONFIG		0x13deU
+#define AMDRDNA_GC_REG_BACKENDS_FUSED		0x13ddU
+#define AMDRDNA_GC_REG_BACKENDS_OFF		0x147fU
+#define AMDRDNA_GC_REG_GROUPS_FUSED		0x100fU
+#define AMDRDNA_GC_REG_GROUPS_OFF		0x1010U
+#define AMDRDNA_GC_REG_SHADER_MEMORY_MODE	0x10adU
+#define AMDRDNA_GC_REG_SHADER_APERTURES		0x10aaU
+#define AMDRDNA_GC_REG_SHARE_BASE		0x20a0U
+#define AMDRDNA_GC_REG_SHARE_SIZE		0x20a1U
+#define AMDRDNA_GC_REG_WAVE_SYNC		0x20c0U
+#define AMDRDNA_GC_REG_ORDERED_APPEND		0x20d0U
+#define AMDRDNA_GC_REG_TRANSLATION_SKIP		0x158aU
+#define AMDRDNA_GC_REG_CACHE_TARGETS_SKIP	0x158bU
+#define AMDRDNA_GC_BUS_TIMEOUT_MASK		0x000000ffU
+#define AMDRDNA_GC_SELECT_PIPE_SHIFT		0U
+#define AMDRDNA_GC_SELECT_ENGINE_SHIFT		2U
+#define AMDRDNA_GC_SELECT_CONTEXT_SHIFT		4U
+#define AMDRDNA_GC_SELECT_QUEUE_SHIFT		8U
+
+/*
+ * The command processor's registers (GC window 0): its busy word, the
+ * halt words of the compute engines (engine 1 in bit 30, engine 2 in bit
+ * 28) and of the graphics engine (constant 24, prefetch 26, micro 28),
+ * the hardware context count, the device ID word, the interrupt control
+ * of the graphics ring and of compute engine 1's pipe 0 (pipes 1 to 3
+ * follow), the doorbell ranges of the graphics queues and of the compute
+ * queues (a doorbell's dword index from bit 2, the field 27:2), the
+ * graphics ring's doorbell enable (bit 30), the write-pointer poll
+ * control (enable in bit 31) and the queue status (doorbells on in bit 1).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/asic_reg/gc/gc_10_1_0_offset.h (mmCP_STAT,
+ * mmCP_MEC_CNTL, mmCP_ME_CNTL, mmCP_MAX_CONTEXT, mmCP_DEVICE_ID,
+ * mmCP_INT_CNTL_RING0, mmCP_ME1_PIPE0_INT_CNTL, mmCP_RB_DOORBELL_RANGE_LOWER,
+ * mmCP_RB_DOORBELL_RANGE_UPPER, mmCP_MEC_DOORBELL_RANGE_LOWER,
+ * mmCP_MEC_DOORBELL_RANGE_UPPER, mmCP_PQ_WPTR_POLL_CNTL, mmCP_PQ_STATUS)
+ * and gc_10_1_0_sh_mask.h (CP_MEC_CNTL__MEC_ME1_HALT_MASK,
+ * CP_MEC_CNTL__MEC_ME2_HALT_MASK, CP_ME_CNTL__CE_HALT_MASK,
+ * CP_ME_CNTL__PFP_HALT_MASK, CP_ME_CNTL__ME_HALT_MASK,
+ * CP_RB_DOORBELL_RANGE_LOWER__DOORBELL_RANGE_LOWER_MASK,
+ * CP_RB_DOORBELL_CONTROL__DOORBELL_EN_MASK, CP_PQ_WPTR_POLL_CNTL__EN_MASK,
+ * CP_PQ_STATUS__DOORBELL_ENABLE_MASK).
+ */
+#define AMDRDNA_GC_REG_COMMAND_BUSY		0x0f40U
+#define AMDRDNA_GC_REG_COMPUTE_HALT		0x0e2dU
+#define AMDRDNA_GC_REG_GRAPHICS_HALT		0x0f56U
+#define AMDRDNA_GC_REG_CONTEXT_LIMIT		0x1e4eU
+#define AMDRDNA_GC_REG_COMMAND_DEVICE		0x1debU
+#define AMDRDNA_GC_REG_GRAPHICS_INTERRUPTS	0x1e0aU
+#define AMDRDNA_GC_REG_COMPUTE_INTERRUPTS	0x1e25U
+#define AMDRDNA_GC_REG_GRAPHICS_DOORBELLS_LOW	0x1dfaU
+#define AMDRDNA_GC_REG_GRAPHICS_DOORBELLS_HIGH	0x1dfbU
+#define AMDRDNA_GC_REG_COMPUTE_DOORBELLS_LOW	0x1dfcU
+#define AMDRDNA_GC_REG_COMPUTE_DOORBELLS_HIGH	0x1dfdU
+#define AMDRDNA_GC_REG_POINTER_POLL		0x1e23U
+#define AMDRDNA_GC_REG_QUEUE_STATUS		0x1e58U
+#define AMDRDNA_GC_COMPUTE_HALT_FIRST		0x40000000U
+#define AMDRDNA_GC_COMPUTE_HALT_SECOND		0x10000000U
+#define AMDRDNA_GC_GRAPHICS_HALT_CONSTANT	0x01000000U
+#define AMDRDNA_GC_GRAPHICS_HALT_PREFETCH	0x04000000U
+#define AMDRDNA_GC_GRAPHICS_HALT_MICRO		0x10000000U
+#define AMDRDNA_GC_POINTER_POLL_ON		0x80000000U
+#define AMDRDNA_GC_DOORBELL_RANGE_MASK		0x0ffffffcU
+#define AMDRDNA_GC_DOORBELL_ON			0x40000000U
+#define AMDRDNA_GC_QUEUE_DOORBELLS_ON		0x00000002U
+
+/*
+ * The interrupt control bits of the graphics ring and of a compute pipe:
+ * the four idle and busy events (busy compute 18, busy context 19, empty
+ * context 20, idle 21), the privileged instruction (22, graphics only),
+ * the privileged register (23), the bad opcode (24) and the end-of-pipe
+ * timestamp (26).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/asic_reg/gc/gc_10_1_0_sh_mask.h
+ * (CP_INT_CNTL_RING0__CMP_BUSY_INT_ENABLE_MASK,
+ * CP_INT_CNTL_RING0__CNTX_BUSY_INT_ENABLE_MASK,
+ * CP_INT_CNTL_RING0__CNTX_EMPTY_INT_ENABLE_MASK,
+ * CP_INT_CNTL_RING0__GFX_IDLE_INT_ENABLE_MASK,
+ * CP_INT_CNTL_RING0__PRIV_INSTR_INT_ENABLE_MASK,
+ * CP_INT_CNTL_RING0__PRIV_REG_INT_ENABLE_MASK,
+ * CP_INT_CNTL_RING0__OPCODE_ERROR_INT_ENABLE_MASK,
+ * CP_INT_CNTL_RING0__TIME_STAMP_INT_ENABLE_MASK,
+ * CP_ME1_PIPE0_INT_CNTL__TIME_STAMP_INT_ENABLE_MASK).
+ */
+#define AMDRDNA_GC_INTERRUPT_IDLE_EVENTS	0x003c0000U
+#define AMDRDNA_GC_INTERRUPT_PRIVILEGED_CODE	0x00400000U
+#define AMDRDNA_GC_INTERRUPT_PRIVILEGED_WORD	0x00800000U
+#define AMDRDNA_GC_INTERRUPT_BAD_OPCODE		0x01000000U
+#define AMDRDNA_GC_INTERRUPT_END_OF_PIPE	0x04000000U
+
+/*
+ * The registers of the hardware queue the queue select names (GC window
+ * 0): the queue image's address (low, high), active, context, persistent
+ * state, the ring's base (low, high, in 256-byte units), the read
+ * pointer, the read pointer's report address (low, high), the write
+ * pointer's poll address (low, high), the doorbell control, the ring
+ * control, the indirect-buffer control, the dequeue request, the image
+ * control, the end-of-pipe buffer's base (low, high) and control, and
+ * the write pointer (low, high).  The compute queue image holds these
+ * words in the same order from its word 128 on.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/asic_reg/gc/gc_10_1_0_offset.h
+ * (mmCP_MQD_BASE_ADDR, mmCP_MQD_BASE_ADDR_HI, mmCP_HQD_ACTIVE,
+ * mmCP_HQD_VMID, mmCP_HQD_PERSISTENT_STATE, mmCP_HQD_PQ_BASE,
+ * mmCP_HQD_PQ_BASE_HI, mmCP_HQD_PQ_RPTR, mmCP_HQD_PQ_RPTR_REPORT_ADDR,
+ * mmCP_HQD_PQ_RPTR_REPORT_ADDR_HI, mmCP_HQD_PQ_WPTR_POLL_ADDR,
+ * mmCP_HQD_PQ_WPTR_POLL_ADDR_HI, mmCP_HQD_PQ_DOORBELL_CONTROL,
+ * mmCP_HQD_PQ_CONTROL, mmCP_HQD_IB_CONTROL, mmCP_HQD_DEQUEUE_REQUEST,
+ * mmCP_MQD_CONTROL, mmCP_HQD_EOP_BASE_ADDR, mmCP_HQD_EOP_BASE_ADDR_HI,
+ * mmCP_HQD_EOP_CONTROL, mmCP_HQD_PQ_WPTR_LO, mmCP_HQD_PQ_WPTR_HI).
+ */
+#define AMDRDNA_GC_REG_QUEUE_IMAGE_LOW		0x1fa9U
+#define AMDRDNA_GC_REG_QUEUE_IMAGE_HIGH		0x1faaU
+#define AMDRDNA_GC_REG_QUEUE_ACTIVE		0x1fabU
+#define AMDRDNA_GC_REG_QUEUE_CONTEXT		0x1facU
+#define AMDRDNA_GC_REG_QUEUE_PERSISTENT		0x1fadU
+#define AMDRDNA_GC_REG_QUEUE_RING_LOW		0x1fb1U
+#define AMDRDNA_GC_REG_QUEUE_RING_HIGH		0x1fb2U
+#define AMDRDNA_GC_REG_QUEUE_READ		0x1fb3U
+#define AMDRDNA_GC_REG_QUEUE_READ_REPORT_LOW	0x1fb4U
+#define AMDRDNA_GC_REG_QUEUE_READ_REPORT_HIGH	0x1fb5U
+#define AMDRDNA_GC_REG_QUEUE_WRITE_POLL_LOW	0x1fb6U
+#define AMDRDNA_GC_REG_QUEUE_WRITE_POLL_HIGH	0x1fb7U
+#define AMDRDNA_GC_REG_QUEUE_DOORBELL		0x1fb8U
+#define AMDRDNA_GC_REG_QUEUE_RING_CONTROL	0x1fbaU
+#define AMDRDNA_GC_REG_QUEUE_BUFFER_CONTROL	0x1fbeU
+#define AMDRDNA_GC_REG_QUEUE_DEQUEUE		0x1fc1U
+#define AMDRDNA_GC_REG_QUEUE_IMAGE_CONTROL	0x1fcbU
+#define AMDRDNA_GC_REG_QUEUE_END_LOW		0x1fceU
+#define AMDRDNA_GC_REG_QUEUE_END_HIGH		0x1fcfU
+#define AMDRDNA_GC_REG_QUEUE_END_CONTROL	0x1fd0U
+#define AMDRDNA_GC_REG_QUEUE_WRITE_LOW		0x1fdfU
+#define AMDRDNA_GC_REG_QUEUE_WRITE_HIGH		0x1fe0U
+
+/*
+ * The graphics queue's registers (GC window 0) its image is filled from:
+ * the image control, the context, the queue priority, the time quantum,
+ * the ring control, the read pointer and the doorbell control.  The last
+ * one also serves the graphics ring the driver runs without the
+ * firmware's scheduler.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/asic_reg/gc/gc_10_1_0_offset.h
+ * (mmCP_GFX_MQD_CONTROL, mmCP_GFX_HQD_VMID, mmCP_GFX_HQD_QUEUE_PRIORITY,
+ * mmCP_GFX_HQD_QUANTUM, mmCP_GFX_HQD_CNTL, mmCP_GFX_HQD_RPTR,
+ * mmCP_RB_DOORBELL_CONTROL).
+ */
+#define AMDRDNA_GC_REG_GRAPHICS_IMAGE_CONTROL	0x1e9aU
+#define AMDRDNA_GC_REG_GRAPHICS_CONTEXT		0x1e81U
+#define AMDRDNA_GC_REG_GRAPHICS_PRIORITY	0x1e84U
+#define AMDRDNA_GC_REG_GRAPHICS_QUANTUM		0x1e85U
+#define AMDRDNA_GC_REG_GRAPHICS_RING_CONTROL	0x1e8fU
+#define AMDRDNA_GC_REG_GRAPHICS_READ		0x1e88U
+#define AMDRDNA_GC_REG_GRAPHICS_DOORBELL	0x1e8dU
+
+/*
+ * The graphics ring the driver runs itself when the firmware's scheduler
+ * is not used (GC window 0): the write-pointer delay, the ring's context,
+ * the ring control, the write pointer (low, high), the read pointer's
+ * report address (low, high), the write pointer's poll address (low,
+ * high), the ring's base (low, high) and the active word.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/asic_reg/gc/gc_10_1_0_offset.h
+ * (mmCP_RB_WPTR_DELAY, mmCP_RB_VMID, mmCP_RB0_CNTL, mmCP_RB0_WPTR,
+ * mmCP_RB0_WPTR_HI, mmCP_RB0_RPTR_ADDR, mmCP_RB0_RPTR_ADDR_HI,
+ * mmCP_RB_WPTR_POLL_ADDR_LO, mmCP_RB_WPTR_POLL_ADDR_HI, mmCP_RB0_BASE,
+ * mmCP_RB0_BASE_HI, mmCP_RB_ACTIVE).
+ */
+#define AMDRDNA_GC_REG_RING_WRITE_DELAY		0x0f61U
+#define AMDRDNA_GC_REG_RING_CONTEXT		0x1df1U
+#define AMDRDNA_GC_REG_RING_CONTROL		0x1de1U
+#define AMDRDNA_GC_REG_RING_WRITE_LOW		0x1df4U
+#define AMDRDNA_GC_REG_RING_WRITE_HIGH		0x1df5U
+#define AMDRDNA_GC_REG_RING_READ_REPORT_LOW	0x1de3U
+#define AMDRDNA_GC_REG_RING_READ_REPORT_HIGH	0x1de4U
+#define AMDRDNA_GC_REG_RING_WRITE_POLL_LOW	0x1e8bU
+#define AMDRDNA_GC_REG_RING_WRITE_POLL_HIGH	0x1e8cU
+#define AMDRDNA_GC_REG_RING_BASE_LOW		0x1de0U
+#define AMDRDNA_GC_REG_RING_BASE_HIGH		0x1e51U
+#define AMDRDNA_GC_REG_RING_ACTIVE		0x1f40U
+
+/*
+ * The registers of the second window: the shader-array select (instance
+ * 7:0, array 15:8, engine 23:16, and the broadcast bits 29, 30 and 31),
+ * the scratch word the ring tests write (also the user-configuration
+ * register 0x40), the level-2 cache channels fused off and switched off
+ * (channels 0 to 7 in bits 15:8, 8 and up in bits 31:16), the run-list
+ * controller's clear-state buffer address (low, high) and length, its
+ * save/restore machine control (enable 0, auto increment 1), the word
+ * that names the scheduler's own queue, and the boot-load status (done in
+ * bit 31).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/asic_reg/gc/gc_10_1_0_offset.h
+ * (mmGRBM_GFX_INDEX, mmSCRATCH_REG0, mmCGTS_TCC_DISABLE,
+ * mmCGTS_USER_TCC_DISABLE, mmRLC_CSIB_ADDR_LO, mmRLC_CSIB_ADDR_HI,
+ * mmRLC_CSIB_LENGTH, mmRLC_SRM_CNTL, mmRLC_CP_SCHEDULERS,
+ * mmRLC_RLCS_BOOTLOAD_STATUS) and gc_10_1_0_sh_mask.h (the GRBM_GFX_INDEX
+ * fields, CGTS_TCC_DISABLE__HI_TCC_DISABLE_MASK,
+ * CGTS_TCC_DISABLE__TCC_DISABLE_MASK, RLC_SRM_CNTL__SRM_ENABLE_MASK,
+ * RLC_SRM_CNTL__AUTO_INCR_ADDR_MASK,
+ * RLC_RLCS_BOOTLOAD_STATUS__BOOTLOAD_COMPLETE_MASK).
+ */
+#define AMDRDNA_GC_REG_ARRAY_SELECT		0x2200U
+#define AMDRDNA_GC_REG_SCRATCH			0x2040U
+#define AMDRDNA_GC_REG_CHANNELS_FUSED		0x500aU
+#define AMDRDNA_GC_REG_CHANNELS_OFF		0x500bU
+#define AMDRDNA_GC_REG_CLEAR_STATE_LOW		0x4ca2U
+#define AMDRDNA_GC_REG_CLEAR_STATE_HIGH		0x4ca3U
+#define AMDRDNA_GC_REG_CLEAR_STATE_LENGTH	0x4ca4U
+#define AMDRDNA_GC_REG_SAVE_RESTORE		0x4c80U
+#define AMDRDNA_GC_REG_SCHEDULER_QUEUE_SELECT	0x4caaU
+#define AMDRDNA_GC_REG_RUN_LIST_BOOT		0x4e8dU
+#define AMDRDNA_GC_SELECT_INSTANCE_SHIFT	0U
+#define AMDRDNA_GC_SELECT_ARRAY_SHIFT		8U
+#define AMDRDNA_GC_SELECT_ENGINE_INDEX_SHIFT	16U
+#define AMDRDNA_GC_SELECT_ALL_ARRAYS		0x20000000U
+#define AMDRDNA_GC_SELECT_ALL_INSTANCES		0x40000000U
+#define AMDRDNA_GC_SELECT_ALL_ENGINES		0x80000000U
+#define AMDRDNA_GC_SCRATCH_USER_OFFSET		0x0040U
+#define AMDRDNA_GC_SAVE_RESTORE_ON		0x00000003U
+#define AMDRDNA_GC_RUN_LIST_BOOT_DONE		0x80000000U
+
+/*
+ * The first copy engine's registers, which live in the graphics block's
+ * first window: its control (trap 0, address translation 1, mid-command
+ * preemption 5, automatic context switch 18), its chicken bits, the
+ * semaphore wait-fail timer, the engine's halt word (bit 0), the address
+ * translation's control (redo delay 5:1, response mode 11:9) and page
+ * policy (read policy 13:12, write policy 15:14), and its graphics
+ * queue's ring control (enable 0, size in dwords as log2 in 5:1, read
+ * pointer write-back 12), ring base (low, high), read pointer (low,
+ * high), write pointer (low, high), write-pointer poll control (poll
+ * enable 2), read pointer report address (high, low), indirect-buffer
+ * control (enable 0), doorbell (enable 28), doorbell offset (27:2),
+ * write-pointer poll address (high, low) and minor pointer update.  The
+ * second engine's registers are 0x600 further on.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/asic_reg/gc/gc_10_1_0_offset.h
+ * (mmSDMA0_CNTL, mmSDMA0_CHICKEN_BITS, mmSDMA0_SEM_WAIT_FAIL_TIMER_CNTL,
+ * mmSDMA0_F32_CNTL, mmSDMA0_UTCL1_CNTL, mmSDMA0_UTCL1_PAGE,
+ * mmSDMA0_GFX_RB_CNTL, mmSDMA0_GFX_RB_BASE, mmSDMA0_GFX_RB_BASE_HI,
+ * mmSDMA0_GFX_RB_RPTR, mmSDMA0_GFX_RB_RPTR_HI, mmSDMA0_GFX_RB_WPTR,
+ * mmSDMA0_GFX_RB_WPTR_HI, mmSDMA0_GFX_RB_WPTR_POLL_CNTL,
+ * mmSDMA0_GFX_RB_RPTR_ADDR_HI, mmSDMA0_GFX_RB_RPTR_ADDR_LO,
+ * mmSDMA0_GFX_IB_CNTL, mmSDMA0_GFX_DOORBELL, mmSDMA0_GFX_DOORBELL_OFFSET,
+ * mmSDMA0_GFX_RB_WPTR_POLL_ADDR_HI, mmSDMA0_GFX_RB_WPTR_POLL_ADDR_LO,
+ * mmSDMA0_GFX_MINOR_PTR_UPDATE), gc_10_1_0_sh_mask.h (the SDMA0_CNTL,
+ * SDMA0_F32_CNTL, SDMA0_UTCL1_CNTL, SDMA0_GFX_RB_CNTL,
+ * SDMA0_GFX_RB_WPTR_POLL_CNTL, SDMA0_GFX_IB_CNTL, SDMA0_GFX_DOORBELL and
+ * SDMA0_GFX_DOORBELL_OFFSET fields) and
+ * drivers/gpu/drm/amd/amdgpu/sdma_v5_0.c (SDMA1_REG_OFFSET).
+ */
+#define AMDRDNA_COPY_REG_CONTROL		0x001cU
+#define AMDRDNA_COPY_REG_CHICKEN		0x001dU
+#define AMDRDNA_COPY_REG_WAIT_TIMER		0x0021U
+#define AMDRDNA_COPY_REG_HALT			0x002aU
+#define AMDRDNA_COPY_REG_TRANSLATION		0x003cU
+#define AMDRDNA_COPY_REG_PAGE_POLICY		0x0048U
+#define AMDRDNA_COPY_REG_RING_CONTROL		0x0080U
+#define AMDRDNA_COPY_REG_RING_BASE_LOW		0x0081U
+#define AMDRDNA_COPY_REG_RING_BASE_HIGH		0x0082U
+#define AMDRDNA_COPY_REG_READ_LOW		0x0083U
+#define AMDRDNA_COPY_REG_READ_HIGH		0x0084U
+#define AMDRDNA_COPY_REG_WRITE_LOW		0x0085U
+#define AMDRDNA_COPY_REG_WRITE_HIGH		0x0086U
+#define AMDRDNA_COPY_REG_WRITE_POLL		0x0087U
+#define AMDRDNA_COPY_REG_READ_REPORT_HIGH	0x0088U
+#define AMDRDNA_COPY_REG_READ_REPORT_LOW	0x0089U
+#define AMDRDNA_COPY_REG_BUFFER_CONTROL		0x008aU
+#define AMDRDNA_COPY_REG_DOORBELL		0x0092U
+#define AMDRDNA_COPY_REG_DOORBELL_OFFSET	0x00abU
+#define AMDRDNA_COPY_REG_WRITE_POLL_HIGH	0x00b2U
+#define AMDRDNA_COPY_REG_WRITE_POLL_LOW		0x00b3U
+#define AMDRDNA_COPY_REG_MINOR_UPDATE		0x00b5U
+#define AMDRDNA_COPY_SECOND_ENGINE		0x0600U
+#define AMDRDNA_COPY_CONTROL_TRAP		0x00000001U
+#define AMDRDNA_COPY_CONTROL_TRANSLATE		0x00000002U
+#define AMDRDNA_COPY_CONTROL_PREEMPT		0x00000020U
+#define AMDRDNA_COPY_CONTROL_SWITCH		0x00040000U
+#define AMDRDNA_COPY_HALTED			0x00000001U
+#define AMDRDNA_COPY_TRANSLATION_DELAY_MASK	0x0000003eU
+#define AMDRDNA_COPY_TRANSLATION_DELAY_SHIFT	1U
+#define AMDRDNA_COPY_TRANSLATION_MODE_MASK	0x00000e00U
+#define AMDRDNA_COPY_TRANSLATION_MODE_SHIFT	9U
+#define AMDRDNA_COPY_RING_ON			0x00000001U
+#define AMDRDNA_COPY_RING_SIZE_MASK		0x0000003eU
+#define AMDRDNA_COPY_RING_SIZE_SHIFT		1U
+#define AMDRDNA_COPY_RING_REPORT		0x00001000U
+#define AMDRDNA_COPY_WRITE_POLL_ON		0x00000004U
+#define AMDRDNA_COPY_BUFFERS_ON			0x00000001U
+#define AMDRDNA_COPY_DOORBELL_ON		0x10000000U
+#define AMDRDNA_COPY_DOORBELL_OFFSET_MASK	0x0ffffffcU
+#define AMDRDNA_COPY_DOORBELL_OFFSET_SHIFT	2U
+
+/*
+ * The copy engines' page policy: the bits the driver keeps (all but the
+ * read and write policies), and the policies it sets (read: no allocate,
+ * 2 at bit 12; write: bypass, 3 at bit 14).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/sdma_v5_0.c (sdma_v5_0_gfx_resume_instance:
+ * the 0xFF0FFF mask) and sdma_common.h (CACHE_READ_POLICY_L2__NOA,
+ * CACHE_WRITE_POLICY_L2__BYPASS).
+ * derived: (2 << 12) | (3 << 14) = 0xe000.
+ */
+#define AMDRDNA_COPY_PAGE_POLICY_KEEP		0x00ff0fffU
+#define AMDRDNA_COPY_PAGE_POLICY_SET		0x0000e000U
+
+/*
+ * The host bridge's doorbell range of the first copy engine (NBIO window
+ * 2): the first doorbell in bits 11:2 and the count in bits 20:16.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/asic_reg/nbio/nbio_2_3_offset.h
+ * (mmBIF_SDMA0_DOORBELL_RANGE) and nbio_2_3_sh_mask.h
+ * (BIF_SDMA0_DOORBELL_RANGE__OFFSET_MASK, BIF_SDMA0_DOORBELL_RANGE__SIZE_MASK).
+ */
+#define AMDRDNA_NBIO_REG_COPY_DOORBELLS		0x01d0U
+#define AMDRDNA_NBIO_COPY_DOORBELLS_OFFSET_MASK	0x00000ffcU
+#define AMDRDNA_NBIO_COPY_DOORBELLS_SIZE_MASK	0x001f0000U
+#define AMDRDNA_NBIO_COPY_DOORBELLS_SIZE_SHIFT	16U
+
+/*
+ * The doorbells of the engines, as dword indices into the doorbell page
+ * (the 64-bit slot number shifted left by one): the scheduler's own queue
+ * (slot 0), the first compute queue (slot 3, the others follow), the
+ * graphics queue (slot 0x8b) and the first copy engine (slot 0x100); the
+ * last slot of the compute queues' range (0x8a); and the copy engine's
+ * doorbell count in the host bridge's range (20).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/amdgpu_doorbell.h
+ * (AMDGPU_NAVI10_DOORBELL_KIQ, AMDGPU_NAVI10_DOORBELL_MEC_RING0,
+ * AMDGPU_NAVI10_DOORBELL_USERQUEUE_END, AMDGPU_NAVI10_DOORBELL_GFX_RING0,
+ * AMDGPU_NAVI10_DOORBELL_sDMA_ENGINE0) and sdma_v5_0.c
+ * (sdma_v5_0_gfx_resume_instance: the range of 20).
+ * derived: 0x003 << 1 = 0x006, 0x8b << 1 = 0x116, 0x100 << 1 = 0x200,
+ * 0x8a << 1 = 0x114.
+ */
+#define AMDRDNA_DOORBELL_SCHEDULER		0x0000U
+#define AMDRDNA_DOORBELL_COMPUTE_FIRST		0x0006U
+#define AMDRDNA_DOORBELL_COMPUTE_LAST		0x0114U
+#define AMDRDNA_DOORBELL_GRAPHICS		0x0116U
+#define AMDRDNA_DOORBELL_COPY			0x0200U
+#define AMDRDNA_DOORBELL_COPY_COUNT		20U
+
+/*
+ * The compute dispatch's shader registers (GC window 0): the start of the
+ * dispatch (x, y, z) followed by the workgroup size (x, y, z), the
+ * program's address (low, in 256-byte units, then high), its two control
+ * words (the counts, then the inputs), the resource limits followed by
+ * the compute units of shader engines 0 and 1, the scratch ring size and
+ * the compute units of shader engines 2 and 3, the third control word,
+ * and the first user data word.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/asic_reg/gc/gc_10_1_0_offset.h
+ * (mmCOMPUTE_START_X, mmCOMPUTE_NUM_THREAD_X, mmCOMPUTE_PGM_LO,
+ * mmCOMPUTE_PGM_HI, mmCOMPUTE_PGM_RSRC1, mmCOMPUTE_PGM_RSRC2,
+ * mmCOMPUTE_RESOURCE_LIMITS, mmCOMPUTE_STATIC_THREAD_MGMT_SE0,
+ * mmCOMPUTE_STATIC_THREAD_MGMT_SE1, mmCOMPUTE_TMPRING_SIZE,
+ * mmCOMPUTE_STATIC_THREAD_MGMT_SE2, mmCOMPUTE_STATIC_THREAD_MGMT_SE3,
+ * mmCOMPUTE_PGM_RSRC3, mmCOMPUTE_USER_DATA_0).
+ */
+#define AMDRDNA_GC_REG_DISPATCH_START		0x1ba4U
+#define AMDRDNA_GC_REG_DISPATCH_PROGRAM		0x1bacU
+#define AMDRDNA_GC_REG_DISPATCH_COUNTS		0x1bb2U
+#define AMDRDNA_GC_REG_DISPATCH_LIMITS		0x1bb5U
+#define AMDRDNA_GC_REG_DISPATCH_MORE		0x1bc8U
+#define AMDRDNA_GC_REG_DISPATCH_USER		0x1be0U
+
 #endif

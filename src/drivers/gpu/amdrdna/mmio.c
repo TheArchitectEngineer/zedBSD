@@ -237,3 +237,45 @@ amdrdna_vram_read(
 		spin_unlock_irqrestore(&device->vram_window_lock, irq);
 	}
 }
+
+/*
+ * Writes a buffer to VRAM through the indirect VRAM window.
+ *
+ * offset and length are whole dwords.  As with the read, the lock is
+ * taken for one dword at a time and each dword sets both address words.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/amdgpu_device.c (amdgpu_device_mm_access).
+ */
+void
+amdrdna_vram_write(
+	struct amdrdna_device *device,
+	uint64_t offset,
+	const void *buffer,
+	size_t length)
+{
+	const uint32_t *words;
+	uint32_t low;
+	uint32_t high;
+	uint64_t position;
+	size_t index;
+	unsigned long irq;
+
+	/* Writes every dword of the range. */
+	words = buffer;
+	for (index = 0U; index < length / 4U; index++) {
+		/* The low address word carries the request bit, the high one the bits above the low 31. */
+		position = offset + (uint64_t)index * 4U;
+		low = (uint32_t)(position & AMDRDNA_VRAM_WINDOW_LOW_MASK) | AMDRDNA_VRAM_WINDOW_REQUEST;
+		high = (uint32_t)(position >> AMDRDNA_VRAM_WINDOW_HIGH_SHIFT);
+
+		/* Sets the address and writes the dword, without another user between. */
+		irq = spin_lock_irqsave(&device->vram_window_lock);
+
+		amdrdna_write(device, AMDRDNA_NBIO_REG_VRAM_WINDOW_LOW, low);
+		amdrdna_write(device, AMDRDNA_NBIO_REG_VRAM_WINDOW_HIGH, high);
+		amdrdna_write(device, AMDRDNA_NBIO_REG_VRAM_WINDOW_DATA, words[index]);
+
+		spin_unlock_irqrestore(&device->vram_window_lock, irq);
+	}
+}

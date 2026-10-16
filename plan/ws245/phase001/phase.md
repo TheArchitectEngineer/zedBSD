@@ -2,7 +2,7 @@
 
 # ws245-p001: Gen12 系（display 12・13）の display の書き直しの設計
 
-Status: in-progress（q1209-i02 P1: design.md の改訂 5（レビュー 4 の反映）。レビュー 5 の blocker の反映の後に Q1 の clearance。§7 #0〜#22 の回答は反映済み、#23〜#33 は既定の案でユーザーに聞く）
+Status: cleared（2026-10-16 Q1: design.md 改訂 6（0eb279a29、main の merge）、レビュー 1〜5 を全件反映、§7 #23〜#34 は既定の案（ユーザーが実装を指示）。改訂 6 のレビューは回していない。p047 の mmio.c の記録は GT と共有の hot path（off の時は load と分岐 1 回）で、今 GT の担当はいない）
 Parent: [WS245](../ws.md)
 Approval: 2026-10-15 ユーザー「同時にサブエージェントで、i915のリライトをやります。WSがあると思います。」
 
@@ -54,3 +54,12 @@ ws.md の p001 の行のとおり: Intel の公開の PRM（Gen12・ADL-P）と 
 - 確かめた事実（2026-10-15 夜、今の code）: §11.2 の「確かめた事実」の列。build・host 試験・QEMU・実機は流していない（設計の Phase）。
 - レビュー 5: design-reviewer（結果は [design-review-5.md](../design-review-5.md)、2026-10-15 23:58、改訂 5 = 8c4fe7791 に対して。**blocker 2・major 11・minor 15。反映は未着手**: 2026-10-15 夜 ユーザー「5時間あたりの使用量がリミットに届きそうなので、i915の方は、今の作業が終わったらラップアップして、AMDに集中しましょう。N=1にします。」→ Q1 の指示でラップアップ）。
 - **残り（再開点、2026-10-16 00:03 記録）**: design-review-5.md の全件を design.md §11.4（新設）の表で扱う。先に直す物: B1（p047 の書き込みの log: 範囲 0x40000〜0xCFFFF が DPLL/PHY/Dekel（0x16xxxx）・HIP_INDEX（0x1010a0）を含まず、DMC の program・毎 frame の PLANE_SURF・IRQ の ack で klog の 512 KiB の ring が溢れる → 範囲を display の全 BAR の区画に広げ、DMC の program・PLANE_SURF の flip・IRQ の ack を除き、段の名前は xd-io の step で付け、`i915.debug=display` 無しの起動では survey だけ）、B2（survey の呼び方: `worker.c` に時刻つきの仕事の口が無い → picture up の直後に 1 回、2 回目は次の present の serve の中で frame counter の差を見る形に。「U10 の kernel でも survey」は不可能なので基準は p047 の kernel の 1 回目の起動）、M1（p018 で `vbt.h`・`vbt-defs.h` を消すと残る 7 file の build が壊れる、殻の関数の一覧の訂正）、M2（STRICT の検査は `output.h` の include で止まる、`takeover.c:4691` の notify_encoder、Gen9 の init_opregion）、M3〜M6（p033・p048・p049 の消す物と残る呼び手、p038 の継ぎ目に `modeset.c:2827` の `i915_modeset_prepare_state`、p048 の継ぎ目は `commit_enable` の内側、xd-hpd が p052 まで旧の tc/dp-ext を呼ぶ）、M7（HDMI の窓は p024 → p048 の 14 段、p031 の節目に HDMI を足す）、M8（pipe CRC: 最初の 2 つを捨てる、CRC_DONE の割り込みを止める、静止画で「進み」は無意味）、M9（p045 の行と §4.2 の device.c の行に「display だけの種類」「ID を足す」が残る: 直し忘れ）、M10（guardrail「開発の管理情報」: `i915: P<n>` の log 35 行、N0・N1 の名前の扱いはユーザーに聞く）、M11（Q1 の作業: ユーザーの 3 つの判断を master の decisions-log へ、guardrail:119 の「内蔵 LCD の表示」の読み替え、ws.md の手順 3 の `PICTURE UP` → `picture up` と boot の語・survey の手順）。minor は m の表のとおり（`drv_i915_xd_io_setup` → 実物は `drv_i915_xd_io_init`、「直の volatile 書き込み 15 箇所」は 0、§6.2 の「+14」と §6.6 の整合、表 R の `tc.c:924` は helper で書き込みは `:1008-1018`）。
+
+## 改訂 6（2026-10-16、P1、q1218 / q1218-i01）
+
+- 承認: q1218（2026-10-16 ユーザー「別なサブエージェントで、i915の実装変更のWSを進めてオーケーです。こちらはmainに取り込む前にベアメタルテストして、オーケーならmainに取り込んでいきます。」）。§7 の #23〜#33 は既定の案で進める（Q1 の指示）。
+- design-review-5.md の 28 件（blocker 2・major 11・minor 15）を全部扱った（直した 28、直さない 0。design.md §11.4 の表、変更の一覧は §11.5）。事実は 2026-10-16 に main 49c578bd2 の code で確かめ直した。レビューと食い違った物: M1 の「`vbt.h` を 7 file が include」は実際は `vbt-parse.h`（6 file）で、`vbt.h` は `vbt.c` と `dp-internal.h` だけ。M11 の decisions-log と guardrail は Q1 が済ませていた。
+- 主な変更: p047 を作り直した（survey は own の `present.c` の 2 箇所: window の最初の serve と 1 s 後の最初の flip。worker.c と modeset.c は変えない。書き込みの記録は `mmio.c` の中の固定長の ring で、display の MMIO の 5 区画、DMC の連続は畳み、割り込みの register は数だけ、窓は start → survey 1、出力は digest の 1 行と（`i915.debug=display` の時だけ）全部の列。pipe CRC は survey 1 で enable、survey 2 で 2 回読んで止める）。新 R11（開発の管理情報: 段で触る file の物はその段で消す）、p016 に宣言の移動と `takeover.c:4691`、p018 の殻は 10 関数、「消す旧 code」は呼び手が 0 になる関数だけ（殻 file へ）、readout は p050、p038 の継ぎ目に `i915_modeset_prepare_state` の check、p048 の継ぎ目は `commit_enable/_disable` と写し 4 つ、§3.4 に hook の例外と spinlock の規則、p031 の節目に HDMI、p045 と §4.2 の直し忘れ、表 R の 4 行の訂正と 1 行の追加、§7 #34（N0・N1 の改名と R11 の当て方、既定）。
+- 段の表: **37 段、159 LW（±40 %）**（p047・p016・p048 が各 +1）。列の和は awk で確かめた。
+- ws.md: 手順に 5（`i915.debug=display` の入れ方）と 6（survey の取り方）を足し、Phase の表の LW を直した。
+- 未実施: build・host 試験・QEMU・実機（設計の改訂なので対象外）。design-reviewer の 6 回目は流していない（Q1 の判断）。

@@ -29,6 +29,7 @@
 #include <uapi/amdrdna.h>
 #include <uapi/errno.h>
 
+#include "drivers/gpu/amdrdna/amdrdna-node.h"
 #include "drivers/gpu/amdrdna/amdrdna-private.h"
 #include "drivers/gpu/amdrdna/amdrdna-regs.h"
 
@@ -50,6 +51,9 @@ static int control_advance(struct amdrdna_device *device, uintptr_t argument);
 static int control_vbios(struct amdrdna_device *device, uintptr_t argument);
 static void control_fill(struct amdrdna_device *device, struct amdrdna_status *status);
 static void control_fill_memory(struct amdrdna_device *device, struct amdrdna_status *status);
+static uint32_t control_fill_power(struct amdrdna_device *device, struct amdrdna_status *status);
+static void control_fill_engines(struct amdrdna_device *device, struct amdrdna_status *status);
+static void control_fill_spaces(struct amdrdna_device *device, struct amdrdna_status *status);
 static uint32_t ip_version(const struct amdrdna_ip *ip);
 
 /* The device's operations: requests only. */
@@ -371,6 +375,18 @@ control_fill(
 	if (status->stage >= AMDRDNA_STAGE_A2)
 		control_fill_memory(device, status);
 
+	/* The training, the security processor and the power side, from stage A3t on. */
+	if (status->stage >= AMDRDNA_STAGE_A2)
+		flags |= control_fill_power(device, status);
+
+	/* The engines, from stage A5 on (or as far as a failed A5 got). */
+	if (status->stage >= AMDRDNA_STAGE_A4)
+		control_fill_engines(device, status);
+
+	/* The address spaces and the GPU device, from stage A5s on (or as far as a failed A5s got). */
+	if (status->stage >= AMDRDNA_STAGE_A5)
+		control_fill_spaces(device, status);
+
 	/* Publishes the flags. */
 	status->flags = flags;
 }
@@ -402,6 +418,159 @@ control_fill_memory(
 	status->interrupt_signals = (uint32_t)device->interrupts.signals;
 	status->vm_faults = (uint32_t)device->interrupts.faults;
 	status->display_underflow = device->underflow_after;
+}
+
+/*
+ * Fills the status answer's part that stages A3t, A3 and A4 set up, and
+ * reports their state flags.
+ */
+static uint32_t
+control_fill_power(
+	struct amdrdna_device *device,
+	struct amdrdna_status *status)
+{
+	struct amdrdna_thermal *thermal;
+	unsigned long irq;
+	uint32_t flags;
+
+	/* The training's result. */
+	status->training_result = device->training.result;
+	status->training_reason = device->training.reason;
+	status->training_ms = device->training.milliseconds;
+
+	/* The security processor's side. */
+	status->region_kib = device->psp.region_bytes >> 10;
+	status->programs_loaded = device->psp.loaded;
+	status->secure_os_version = device->psp.secure_os_version;
+	status->security_warnings = device->psp.warnings;
+
+	/* The interrupt entries read and those no block took. */
+	status->interrupt_entries = (uint32_t)device->interrupts.entries;
+	status->interrupt_unknown = (uint32_t)device->interrupts.unknown;
+
+	/* The state flags of the three stages. */
+	flags = 0U;
+	if (device->interrupts.enabled)
+		flags |= AMDRDNA_STATUS_INTERRUPTS_ON;
+	if (device->psp.booted)
+		flags |= AMDRDNA_STATUS_SECURE_OS_OURS;
+
+	/* The power side, as one consistent view of what the watch publishes. */
+	thermal = &device->thermal;
+	irq = spin_lock_irqsave(&thermal->lock);
+
+	status->smu_version = thermal->smu_version;
+	status->smu_interface = thermal->interface_version;
+	status->fan_mode = thermal->mode;
+	status->fan_duty = thermal->duty_percent;
+	status->fan_rpm = thermal->fan_speed;
+	status->fan_driven = thermal->fan_driven;
+	status->temperature = thermal->temperature;
+	status->temperature_highest = thermal->highest;
+	status->temperature_limit = thermal->limit;
+	status->thermal_alerts = (uint32_t)(thermal->high_alerts + thermal->low_alerts + thermal->critical_alerts);
+	if (thermal->faulted)
+		flags |= AMDRDNA_STATUS_THERMAL_FAULT;
+	if (thermal->hung)
+		flags |= AMDRDNA_STATUS_SMU_HUNG;
+
+	spin_unlock_irqrestore(&thermal->lock, irq);
+
+	/* Succeeded: the flags of the three stages. */
+	return flags;
+}
+
+/* Fills the status answer's part that stage A5 set up. */
+static void
+control_fill_engines(
+	struct amdrdna_device *device,
+	struct amdrdna_status *status)
+{
+	struct amdrdna_engines *engines;
+	unsigned long irq;
+	uint64_t interrupts;
+	unsigned index;
+
+	/* What runs. */
+	engines = &device->engines;
+	status->engine_flags = 0U;
+	if (engines->scheduler_up)
+		status->engine_flags |= AMDRDNA_RUNS_SCHEDULER;
+	if (engines->graphics.up)
+		status->engine_flags |= AMDRDNA_RUNS_GRAPHICS;
+	if (engines->copy.up)
+		status->engine_flags |= AMDRDNA_RUNS_COPY;
+	if (engines->direct)
+		status->engine_flags |= AMDRDNA_RUNS_DIRECT;
+	status->compute_queues = engines->compute_count;
+
+	/* The shape the stage read. */
+	status->address_config = engines->address_config;
+	status->backends = engines->backends;
+	status->compute_units = engines->units;
+	status->channels_off = engines->channels_off;
+
+	/* The end-of-pipe interrupts of the graphics and compute rings, each read under its ring's lock. */
+	irq = spin_lock_irqsave(&engines->graphics.lock);
+
+	interrupts = engines->graphics.interrupts;
+
+	spin_unlock_irqrestore(&engines->graphics.lock, irq);
+	for (index = 0U; index < engines->compute_count; index++) {
+		/* One compute ring's count. */
+		irq = spin_lock_irqsave(&engines->compute[index].lock);
+
+		interrupts += engines->compute[index].interrupts;
+
+		spin_unlock_irqrestore(&engines->compute[index].lock, irq);
+	}
+
+	/* Publishes their sum. */
+	status->end_of_pipe_interrupts = (uint32_t)interrupts;
+
+	/* The copy engine's traps, under its ring's lock. */
+	irq = spin_lock_irqsave(&engines->copy.lock);
+
+	status->copy_traps = (uint32_t)engines->copy_traps;
+
+	spin_unlock_irqrestore(&engines->copy.lock, irq);
+
+	/* What the checks saw. */
+	status->fences = engines->fences;
+	status->copied_bytes = engines->copied_bytes;
+	status->dispatch_words = engines->dispatch_words;
+}
+
+/* Fills the status answer's part that stage A5s set up. */
+static void
+control_fill_spaces(
+	struct amdrdna_device *device,
+	struct amdrdna_status *status)
+{
+	struct amdrdna_spaces *spaces;
+	struct amdrdna_node *node;
+	unsigned long irq;
+
+	/* The spaces open and kept, and the drops, under the spaces' lock. */
+	spaces = &device->spaces;
+	irq = spin_lock_irqsave(&spaces->lock);
+
+	status->spaces = (spaces->count & 0xffffU) | ((spaces->held & 0xffffU) << 16);
+	status->context_flushes = (uint32_t)spaces->pool.flushes;
+
+	spin_unlock_irqrestore(&spaces->lock, irq);
+
+	/* The GPU device's state. */
+	status->device_flags = 0U;
+	node = device->node;
+	if (node == NULL)
+		return;
+	if (node->gpu != NULL)
+		status->device_flags |= AMDRDNA_DEVICE_REGISTERED;
+	if (node->renderer != 0)
+		status->device_flags |= AMDRDNA_DEVICE_RENDERER;
+	if (node->faulted != 0 || spaces->faulted)
+		status->device_flags |= AMDRDNA_DEVICE_FAULTED;
 }
 
 /* Packs an IP block's version as major << 16 | minor << 8 | step; 0 for an unlisted block. */

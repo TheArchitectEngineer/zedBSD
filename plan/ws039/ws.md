@@ -3,13 +3,13 @@
 # WS039: AMD RDNA GPU対応
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-15 開始・一時停止の後、同日夕にユーザーの指示で再開。p001・p002 cleared、p003 は P3 が q1212、p007（P5）は停止のまま）
+Status: incomplete（2026-10-15 開始・一時停止の後、同日夕にユーザーの指示で再開。p001〜p005 cleared、p011 は P3 が q1216、p007（P5）は停止のまま）
 Primary Milestone: MG006
 Related Milestones: なし
 Objectives: O2
 Parent: [Master](../master.md)
-Queue: q1212（P3、ws039-p003 の段 A2、2026-10-16 開始、i01 で実機 ok）。以前 q1211（p002、cleared）
-Resume point: p003 in-progress（2026-10-16 P3、q1212-i01、[phase003](phase003/phase.md)）: 実機（10.0.10.3）で **A2 ok、underflow 0**（10:08 と 10:11 の 2 回）。試験の image の `video=640x480` を外した（WS039 の config.mk で ZEDBSD_GRAPHICAL_BOOT=y、kmsg は画面のまま）→ GOP は 1920x1080 のままで A1 の underflow も 0。次は Q1 の merge と clearance の判定、その後 p004（A3t・A3・A4 Tier S、firmware の package、cold power cycle が要る）。以前: p002 cleared（実機で A0・A1・A1v ok、main aeca13ff3）。
+Queue: q1216（P3、ws039-p011 の段 A5s、2026-10-16 開始）。以前 q1215（p005、cleared）・q1213（p004）・q1212（p003）・q1211（p002）
+Resume point: p011 in-progress（2026-10-16 P3、q1216-i01、[phase011](phase011/phase.md)）: 実機 10.0.10.3 で **A5s ok**（session の VA の IB で write・move・dispatch 1536 語、16 session で context の LRU（flush 17・取り上げ 2）、session の VM fault が pasid で名指し、`drv_gpu_register` で `/dev/gpu0`、`amdrdnactl gpu` で blob・storage・mapping・export/import ok）を最終の kernel で 3 回（warm reboot）。次は Q1 の merge と clearance の判定、その後 p008（executor、P5 の vk/ と bind）・p012（Tier F）・p006（display）。以前: p005 cleared（main adef3571d）。
 Target: 未定（2026-10-15 に開始・一時停止。以前の扱い: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」））
 <!-- awesome-plan-current:end -->
 
@@ -30,7 +30,7 @@ AMD RDNA世代のGPUのドライバを実装する。
 
 ## Phase一覧
 
-[design.md](design.md) の 16 節の表が正（改訂 2: p002〜p016、必須 75〜111 LW。下の「再開と計画」の表は 2026-10-15 昼の案で、段の順と p011 以降が違う）。作った Phase: [p001](phase001/phase.md) 調べと設計（cleared）、[p002](phase002/phase.md) 骨格と認識 A0・A1・A1v（cleared）、[p003](phase003/phase.md) 段 A2: BAR0 の窓・GMC・IH の用意（in-progress、実機 ok）、[p007](phase007/phase.md) GFX10 の shader の compiler（in-progress、一時停止）。
+[design.md](design.md) の 16 節の表が正（改訂 2: p002〜p016、必須 75〜111 LW。下の「再開と計画」の表は 2026-10-15 昼の案で、段の順と p011 以降が違う）。作った Phase: [p001](phase001/phase.md) 調べと設計（cleared）、[p002](phase002/phase.md) 骨格と認識 A0・A1・A1v（cleared）、[p003](phase003/phase.md) 段 A2: BAR0 の窓・GMC・IH の用意（cleared）、[p004](phase004/phase.md) 段 A3t・A3・A4（Tier S）: firmware の package・PSP・SMU と fan（cleared）、[p005](phase005/phase.md) 段 A5: CP・KIQ・compute の queue・SDMA・fence・最初の copy と dispatch（cleared）、[p011](phase011/phase.md) 段 A5s: session・pasid・動的な VMID・page table・BO・GPU device の登録（in-progress）、[p007](phase007/phase.md) GFX10 の shader の compiler（in-progress、一時停止）。
 
 ## 要検討・ブロック（2026-10-05）
 
@@ -99,6 +99,8 @@ AMD RDNA世代のGPUのドライバを実装する。
 - 2026-10-16 未明（ユーザー、クリック）: 10.0.10.3 の UEFI に USB の entry が無い時、`efibootmgr --create` で「zedBSD USB」の entry を足して BootNext（1 回だけ）にしてよい（「足してよい」）。BootOrder は変えない。
 
 - 2026-10-16 朝（ユーザー、クリック）: 試験の image の GOP の大きさは「video=640x480 を外す」→ GOP を monitor の 1920x1080 のままにする（loader の設定だけ、mode set は予定どおり desktop の後）。p002 の実機で、640x480 の GOP は 1920x1080 の timing に DSCL で拡大されていた。
+
+- 2026-10-16（ユーザー）:「AMD の firmware を CI・release の amd64 の image に入れます。」→ p004 の merge で config/ci/config-amd64.mk に amd-navi-firmware。
 
 → p001 は判断が揃ったので cleared（Q1、2026-10-15 夜）。#7・#11 は design.md の該当の節を p002 の最初に直す。
 

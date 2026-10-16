@@ -67,6 +67,35 @@
 #define AMDRDNA_STATUS_TRAINING_ALLOWED	0x00000040U
 #define AMDRDNA_STATUS_GOP_ON_GPU	0x00000080U
 #define AMDRDNA_STATUS_THREAD_RUNNING	0x00000100U
+#define AMDRDNA_STATUS_INTERRUPTS_ON	0x00000200U
+#define AMDRDNA_STATUS_SECURE_OS_OURS	0x00000400U
+#define AMDRDNA_STATUS_THERMAL_FAULT	0x00000800U
+#define AMDRDNA_STATUS_SMU_HUNG		0x00001000U
+
+/* How memory training ended (training_result). */
+#define AMDRDNA_TRAINING_NONE		0U
+#define AMDRDNA_TRAINING_RAN		1U
+#define AMDRDNA_TRAINING_SKIPPED	2U
+
+/*
+ * Why memory training was skipped (training_reason): the boot line said
+ * so, there is no video BIOS image, the board does not ask for it, or a
+ * secure OS already runs.
+ */
+#define AMDRDNA_TRAINING_SKIP_NONE	0U
+#define AMDRDNA_TRAINING_SKIP_ASKED	1U
+#define AMDRDNA_TRAINING_SKIP_NO_VBIOS	2U
+#define AMDRDNA_TRAINING_SKIP_NOT_ASKED	3U
+#define AMDRDNA_TRAINING_SKIP_SECURE_OS	4U
+
+/*
+ * How the fan is driven (fan_mode): not yet by the driver, at a static
+ * duty through the thermal block (the static tier), or by the
+ * system-management unit's fan control (the full tier).
+ */
+#define AMDRDNA_FAN_NONE		0U
+#define AMDRDNA_FAN_STATIC		1U
+#define AMDRDNA_FAN_FIRMWARE		2U
 
 /* Where the video BIOS image came from. */
 #define AMDRDNA_VBIOS_SOURCE_NONE	0U
@@ -91,6 +120,25 @@
 #define AMDRDNA_INTERRUPT_MSI		1U
 #define AMDRDNA_INTERRUPT_MSIX		2U
 
+/*
+ * What stage A5 left running (engine_flags): the scheduler's own queue,
+ * the graphics queue, the first copy engine, and the graphics ring run
+ * without the scheduler (amdrdna.kiq=0).
+ */
+#define AMDRDNA_RUNS_SCHEDULER	0x00000001U
+#define AMDRDNA_RUNS_GRAPHICS		0x00000002U
+#define AMDRDNA_RUNS_COPY		0x00000004U
+#define AMDRDNA_RUNS_DIRECT		0x00000008U
+
+/*
+ * The GPU device's state (device_flags): registered with the GPU core
+ * (/dev/gpuN published), a renderer libvulkan opens (an executor is
+ * bound), and failed (it takes no new work).
+ */
+#define AMDRDNA_DEVICE_REGISTERED	0x00000001U
+#define AMDRDNA_DEVICE_RENDERER		0x00000002U
+#define AMDRDNA_DEVICE_FAULTED		0x00000004U
+
 /* The output kind the firmware lit, as the display engine names it. */
 #define AMDRDNA_OUTPUT_NONE		0U
 #define AMDRDNA_OUTPUT_DP		1U
@@ -108,6 +156,25 @@
  * the CPU's and the GPU's pools, the interrupt kind, the messages and the
  * page faults counted so far, and the display's underflow bits read at
  * the end of A2 (the plane's three bits, and 8 for the timing generator).
+ * From stage A3t on: how memory training ended (AMDRDNA_TRAINING_*), why
+ * it was skipped and how long it took.  From A3 on: the trusted region's
+ * size, the programs the security processor loaded, the secure OS's
+ * version and the replies that reported an error.  From A4 on: the
+ * system-management unit's firmware and interface versions, the fan's
+ * mode (AMDRDNA_FAN_*), its static duty and driven duty (percent) and its
+ * speed (rpm), the temperature and the highest reading (degrees Celsius),
+ * the limit past which the driver faults the GPU, and the thermal alerts
+ * taken; and the interrupt entries read and those no block took.  From
+ * A5 on: what runs (AMDRDNA_RUNS_*) and the compute queues attached,
+ * the graphics engine's address configuration, the render back ends on
+ * (one bit each), the compute units on, the level-2 cache channels off
+ * (one bit each), the fences the checks waited for, the end-of-pipe
+ * interrupts of the graphics and compute rings and the copy engine's
+ * traps, the bytes the copy check moved, and the output words the
+ * dispatch check compared.  From A5s on: the GPU address spaces open
+ * (bits 15:0) and kept because their work never ended (bits 31:16), the
+ * drops of the hub contexts' translations, and the GPU device's state
+ * (AMDRDNA_DEVICE_*).
  */
 struct amdrdna_status {
 	uint32_t version;
@@ -162,7 +229,39 @@ struct amdrdna_status {
 	uint32_t interrupt_signals;
 	uint32_t vm_faults;
 	uint32_t display_underflow;
-	uint32_t reserved[9];
+	uint32_t training_result;
+	uint32_t training_reason;
+	uint32_t training_ms;
+	uint32_t region_kib;
+	uint32_t programs_loaded;
+	uint32_t secure_os_version;
+	uint32_t security_warnings;
+	uint32_t smu_version;
+	uint32_t smu_interface;
+	uint32_t fan_mode;
+	uint32_t fan_duty;
+	uint32_t fan_rpm;
+	uint32_t fan_driven;
+	uint32_t temperature;
+	uint32_t temperature_highest;
+	uint32_t temperature_limit;
+	uint32_t thermal_alerts;
+	uint32_t interrupt_entries;
+	uint32_t interrupt_unknown;
+	uint32_t engine_flags;
+	uint32_t compute_queues;
+	uint32_t address_config;
+	uint32_t backends;
+	uint32_t compute_units;
+	uint32_t channels_off;
+	uint32_t fences;
+	uint32_t end_of_pipe_interrupts;
+	uint32_t copy_traps;
+	uint32_t copied_bytes;
+	uint32_t dispatch_words;
+	uint32_t spaces;
+	uint32_t context_flushes;
+	uint32_t device_flags;
 };
 
 /* Asks the driver to run every stage up to target (AMDRDNA_IOC_ADVANCE, root only). */
@@ -190,7 +289,7 @@ struct amdrdna_vbios_read {
 	uint32_t reserved[4];
 };
 
-_Static_assert(sizeof(struct amdrdna_status) == 256U, "amdrdna status ABI size");
+_Static_assert(sizeof(struct amdrdna_status) == 352U, "amdrdna status ABI size");
 _Static_assert(offsetof(struct amdrdna_status, frame_buffer_base) == 96U, "amdrdna status ABI alignment");
 _Static_assert(offsetof(struct amdrdna_status, gart_base) == 184U, "amdrdna status ABI alignment");
 _Static_assert(sizeof(struct amdrdna_advance) == 32U, "amdrdna advance ABI size");

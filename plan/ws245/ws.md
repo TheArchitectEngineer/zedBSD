@@ -3,12 +3,12 @@
 # WS245: i915 の Gen12 系（display 12・13）の display の書き直し
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-15 作成。p001 の [design.md](design.md) は**改訂 5**（P1、q1209-i02: レビュー 4 の反映。段ごとの置き換え + 各段の 5330 の素の起動の回帰、内蔵 LCD は register の証拠。37 段 p047・p016〜p046・p048〜p052、旧 p003・p005〜p015 は cancel）。レビューは 4 回済み（[design-review-1.md](design-review-1.md)・[design-review.md](design-review.md)・[design-review-3.md](design-review-3.md)・[design-review-4.md](design-review-4.md)）、5 回目（[design-review-5.md](design-review-5.md)、blocker 2・major 11・minor 15）は済んだが**反映は未着手**（2026-10-15 夜 ユーザーの指示でラップアップ、N=1 で AMD に集中））
+Status: incomplete（2026-10-15 作成。p001 の [design.md](design.md) は**改訂 6**（P1、q1218、2026-10-16: レビュー 5 の 28 件を §11.4 で扱った。37 段・159 LW。p001 の clearance は Q1）。レビューは 5 回済み（[design-review-1.md](design-review-1.md)・[design-review.md](design-review.md)・[design-review-3.md](design-review-3.md)・[design-review-4.md](design-review-4.md)・[design-review-5.md](design-review-5.md)）。q1218 で p047 から段の実装を始める）
 Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
 Related: [WS244](../ws244/ws.md)（i915 の Linux 由来の code の整理、棚卸し plan/ws244/inventory.md・tests/inventory.py）、[Guardrail](../guardrail.md)「MIT・GPL の出典のデータの引用」
-Resume point: 2026-10-16 00:03 q1209-i02（P1、ラップアップ）: design.md 改訂 5 は commit 済み（8c4fe7791: レビュー 4 の 34 件を §11.2 で扱い、ユーザーの判断（B3 register の証拠、M7 常設できない、M8 入れ直す）を R4・R9・p047 に反映。§6.2 は 37 段・156 LW、表 R、§7 #30〜#33）。**次に再開する時**: design-review-5.md（blocker 2・major 11・minor 15、未反映。要点と直す順は [phase001/phase.md](phase001/phase.md) の「改訂 5」の残り）を design.md §11.4 で扱って改訂 6 → p001 の clearance（Q1）。M11 は Q1 の作業（decisions-log・guardrail の読み替え・ws.md の手順 3）→ ユーザーに §7 #23〜#33（既定の案で進めてよいか）→ p047（証拠の道具）→ p016（OpRegion の場所）から 1 段ずつ（Queue の承認が要る）。p006 の途中の差分は `plan/ws245/temp/p006-partial-20261015.patch` と `temp/p006-partial-20261015-untracked/`（git に入れない）。以前: q1207（P1）: p004 cleared（main 2d5b167aa）、p006 は途中で停止（ユーザーの即時中断）。q1204: p002 cleared（main a9925a4db）。q1200: 改訂 3a。
+Resume point: q1218（P1、2026-10-16）: design.md 改訂 6（レビュー 5 の反映）は済み → p047（証拠の道具）から段ごとに、5330 の素の起動の自動の回帰の後に main（段の進み方は各 phase.md）。以前: 2026-10-16 00:03 q1209-i02（P1、ラップアップ）: design.md 改訂 5 は commit 済み（8c4fe7791: レビュー 4 の 34 件を §11.2 で扱い、ユーザーの判断（B3 register の証拠、M7 常設できない、M8 入れ直す）を R4・R9・p047 に反映。§6.2 は 37 段・156 LW、表 R、§7 #30〜#33）。**次に再開する時**: design-review-5.md（blocker 2・major 11・minor 15、未反映。要点と直す順は [phase001/phase.md](phase001/phase.md) の「改訂 5」の残り）を design.md §11.4 で扱って改訂 6 → p001 の clearance（Q1）。M11 は Q1 の作業（decisions-log・guardrail の読み替え・ws.md の手順 3）→ ユーザーに §7 #23〜#33（既定の案で進めてよいか）→ p047（証拠の道具）→ p016（OpRegion の場所）から 1 段ずつ（Queue の承認が要る）。p006 の途中の差分は `plan/ws245/temp/p006-partial-20261015.patch` と `temp/p006-partial-20261015-untracked/`（git に入れない）。以前: q1207（P1）: p004 cleared（main 2d5b167aa）、p006 は途中で停止（ユーザーの即時中断）。q1204: p002 cleared（main a9925a4db）。q1200: 改訂 3a。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）
@@ -69,6 +69,8 @@ Resume point: 2026-10-16 00:03 q1209-i02（P1、ラップアップ）: design.md
 2. 5330 が Linux（chaos、`ssh solaris10-man`）の時: `sudo mount /dev/sda2 /mnt/zb`（USB の ZEDBSD 区画）→ 前の `vmunix` を控えて段の kernel を `vmunix` に写す → umount → `sudo efibootmgr -n 0005`（USB の UEFI の entry、1 回だけ）→ `sudo systemctl reboot`。zedBSD の時は `ssh kei@10.0.30.3`（password kei、sudo も kei）で `/boot/boot0/` に写して `reboot`（再起動は既定の Linux に戻るので、続けて上の BootNext を使う）。
 3. zedBSD に ssh で入り、`sysctl kern.boot.login`（graphical）、`/var/log/sessiond.log`（SESSION start・HANDOFF）、`dmesg` の i915 の行（`lease 1 claimed`・`picture up`（大文字小文字を区別しない grep）・`perf: … per submit`・`device lost` が 0）、backlight（`backlight-probe -f /dev/backlight/backlight0`、Q1 の `build/q1/blp/bin/backlight-probe`）を見る。LCD の目視はユーザー（頼まず、一覧に）。
 4. 5330 の DHCP が取れない事がある（2026-10-15、ユーザーが再取得して回復）。ssh が届かない時は止まったと決めつけず、ユーザーに知らせる。
+5. **書き込みの全部の列が要る時だけ**（design.md §6.3。survey 1 の digest が基準と違った段）: Linux から USB の EFI の区画を mount し、zedBSD の loader の設定（`zedbsd-native-uefi.cfg` から作られる 1 行 1 語の file。build の `ZEDBSD_BOOT_EXTRA_LINES` と同じ経路）を控えてから `i915.debug=display` の 1 行を足す。同じ語の行が既にあれば足さない。見終わったら控えに戻す。
+6. **survey**（p047 から）: `plan/ws245/tests/5330-survey.sh <host> <記録の名前>` が ssh で dmesg・sysctl・sessiond.log・backlight-probe を取り `plan/ws245/tests/5330-<段>-<日付>.md` に写し、`5330-survey-diff.py <基準> <段>` が survey と digest の差と判定（PP_STATUS on、PWM、frame counter が 3 以上、SURFLIVE、CRC が 0 でない、underrun 0、TRANS_CONF）を出す。
 
 ## レビュー 4 への判断（2026-10-15 夜 ユーザー、クリック）
 
@@ -112,7 +114,7 @@ Resume point: 2026-10-16 00:03 q1209-i02（P1、ラップアップ）: design.md
 
 | ID | 内容 | 状態 |
 | --- | --- | --- |
-| [p001](phase001/phase.md) | 設計: display 11〜13 の model、外向きの口と契約、データの表の引用の方法、段の分割と順序、試験の道、LW。design-reviewer を通す（5 回） | in-progress（design.md 改訂 5。レビュー 5 は済み・未反映。反映（改訂 6）の後に clearance） |
+| [p001](phase001/phase.md) | 設計: display 11〜13 の model、外向きの口と契約、データの表の引用の方法、段の分割と順序、試験の道、LW。design-reviewer を通す（5 回） | in-progress（design.md 改訂 6 でレビュー 5 を反映済み（2026-10-16）。clearance は Q1） |
 | [p002](phase002/phase.md) | 土台: register と表の header、xd-io、xd-platform、host の試験の枠と own の register の model、own の型の分離、Gen9 の own への移設 | cleared（2026-10-15、T1-699 PASS、U10 で 5330 の素の起動に合格） |
 | p003 | （改訂 3a）口 `xd.h` と adapter、`i915.display=` | **canceled**（2026-10-15 夜、段ごとの置き換えに置き換え。adapter と boot の語は作らない: design.md §6.1 R5） |
 | [p004](phase004/phase.md) | VBT（合成の fixture）・EDID の解析（呼ばれない部品） | cleared（2026-10-15、host 試験、main 2d5b167aa、U10 で 5330 に合格） |
@@ -127,8 +129,8 @@ Resume point: 2026-10-16 00:03 q1209-i02（P1、ラップアップ）: design.md
 | p013 | （改訂 3a）旧 code の削除と出典の監査 | **canceled**（→ 各段で消す + p043） |
 | p014 | （改訂 3a）display 11 | **canceled**（→ p045） |
 | p015 | （改訂 3a）規約の全文 | **canceled**（→ p046） |
-| p047 | 回帰の証拠の道具: own の survey（PP_STATUS・PWM・frame counter・SURFLIVE・pipe CRC・underrun・TRANS_CONF などを picture up の後に dmesg へ）と `mmio.c` の書き込みの log（`i915.debug=display`）、`5330-survey.sh`（改訂 5、レビュー 4 の B3・M6） | planned（3 LW。最初の段。基準の起動は LCD の目視を 1 回一覧に） |
-| p016 | OpRegion の場所と map（xd-vbt の find、`struct i915_xd` と io・platform の用意）。opregion.c を消す | planned（2 LW） |
+| p047 | 回帰の証拠の道具: own の survey（PP_STATUS・PWM・frame counter・SURFLIVE・pipe CRC・underrun・TRANS_CONF などを picture up の後に dmesg へ）と `mmio.c` の書き込みの log（`i915.debug=display`）、`5330-survey.sh`（改訂 5、レビュー 4 の B3・M6） | planned（4 LW。最初の段。基準の起動は LCD の目視を 1 回一覧に） |
+| p016 | OpRegion の場所と map（xd-vbt の find、`struct i915_xd` と io・platform の用意）。opregion.c を消す | planned（3 LW。改訂 6: display.c の開発の管理情報も） |
 | p017 | VBT の解析（xd-vbt を真に、旧 parser と影の比較を 1 段） | planned（4 LW） |
 | p018 | EDID の decode（xd-edid）+ vbt.c の parser の本体の削除（本番の呼び手 7 関数と drm_mode の helper は殻 `vbt-shell.c` に） | planned（3 LW） |
 | p019 | AUX の transaction（xd-aux。well・DC off・VDD は呼ぶ側） | planned（4 LW） |
@@ -143,7 +145,7 @@ Resume point: 2026-10-16 00:03 q1209-i02（P1、ラップアップ）: design.md
 | p028 | combo DPLL（xd-clock） | planned（5 LW。5320 の節目） |
 | p029 | combo PHY（xd-ddi: init・lane・swing） | planned（4 LW） |
 | p030 | DDI の buffer（xd-ddi: BUF_CTL・DP_TP・idle） | planned（4 LW） |
-| p031 | DP の訓練（xd-dp） | planned（6 LW） |
+| p031 | DP の訓練（xd-dp） | planned（6 LW。節目: USB-C DP と HDMI の 2 画面はユーザーの一覧） |
 | p032 | transcoder と pipe（xd-pipe） | planned（5 LW） |
 | p033 | plane と flip（xd-pipe） | planned（3 LW） |
 | p034 | DBUF と watermark（xd-dbuf） | planned（7 LW。HDMI の 2 画面はユーザーの一覧） |
@@ -151,7 +153,7 @@ Resume point: 2026-10-16 00:03 q1209-i02（P1、ラップアップ）: design.md
 | p036 | GOP の読み出しと判断（N0、xd-takeover。旧 N0 と影の比較） | planned（4 LW） |
 | p037 | 引き継ぎ（N1）の判断と GOP の出力の止め方（xd-takeover。readout・setup_outputs・n1 の helper は p050 まで旧） | planned（5 LW） |
 | p038 | screen の plan（純関数。eDP・HDMI・DP-ext の 3 種を同じ段で） | planned（5 LW。改訂 5 で p038 を p038・p048・p049・p050 の 4 段に分けた） |
-| p048 | screen の enable/disable の列（3 種を同じ段で。retained） | planned（6 LW。節目: HDMI・USB-C DP の 2 画面、GOP が外部を灯した起動、LCD の目視はユーザーの一覧） |
+| p048 | screen の enable/disable の列（3 種を同じ段で。retained） | planned（7 LW。改訂 6: 継ぎ目は commit_enable/_disable。節目: HDMI・USB-C DP の 2 画面、GOP が外部を灯した起動、LCD の目視はユーザーの一覧） |
 | p049 | flip と resident run の契約（EAGAIN・UNPLUGGED・RELIGHT・acquired） | planned（4 LW） |
 | p050 | 口 `xd.h` と own の file の付け替え（backlight.c を含む）、modeset・state・ddi・dp-sink・pipe・plane・aux・panel・panel-backlight・vblank・takeover の残り・internal.h の Linux の型の削除 | planned（4 LW。5320・SV7 の節目、QEMU の boot-test） |
 | p039 | hotplug（xd-hpd。hotplug.c を消す） | planned（6 LW。改訂 5 で p039 を p039・p051 に分けた。節目: HDMI の plug で 2 画面はユーザーの一覧） |
@@ -164,4 +166,4 @@ Resume point: 2026-10-16 00:03 q1209-i02（P1、ラップアップ）: design.md
 | p044 | platform の網羅（display 12 の行）と TGL の TC（流れ B、host だけ）。#21 で全部 xd | planned（4 LW。5320 はユーザーの一覧） |
 | p045 | display 11（Ice Lake） | planned（8 LW。実機は無い） |
 | p046 | 規約の全文の見直しと p045 の出典の監査 | planned（3 LW） |
-合計 37 段、156 LW（±40 %）。5330 の素の起動は段の kernel で最少 37 回、基準の起動と `i915.debug=display` の起動を含めて見込み約 50 回（最大 70〜85 回、design.md §6.6）。
+合計 37 段、159 LW（±40 %。改訂 6）。5330 の素の起動は段の kernel で最少 37 回、基準の起動と `i915.debug=display` の起動を含めて見込み約 50 回（最大 70〜85 回、design.md §6.6）。

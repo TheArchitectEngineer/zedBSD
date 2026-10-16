@@ -11,6 +11,10 @@ CONFIG_DRIVER_PCI_AMDRDNA := y
 CONFIG_AMDRDNA_CONTROL := y
 ZEDBSD_USER_PROGRAMS += amdrdnactl
 
+# The Navi10 firmware the security processor loads in stage A3 (/lib/firmware/amdgpu/); its license is accepted
+# first with "yes | make firmware-licenses ZEDBSD_CONFIG=plan/ws039/tests/config.mk".
+ZEDBSD_USER_PROGRAMS += amd-navi-firmware
+
 # The firmware's screen stays at the monitor's mode (2026-10-16 user: "video=640x480 を外す"): the graphical boot is
 # the one switch of the image build that leaves video= out of zedbsd.cfg (the loader then keeps or asks for 1920x1080);
 # the kernel's lines stay on the screen (kmsg is not quiet, the console paints over the logo) and the login stays the
