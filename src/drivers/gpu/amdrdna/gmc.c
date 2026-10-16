@@ -517,6 +517,9 @@ amdrdna_vm_fault(
 	amdrdna_vm_fault_decode(interrupt, latched, &fault);
 	device->interrupts.faults++;
 
+	/* The address space the fault belongs to loses its work. */
+	amdrdna_space_fault(device, &fault, interrupt->context);
+
 	/*
 	 * Logs the first faults only, so a flood does not fill the log.  The
 	 * access bits are the interrupt's (retry, read, write, execute from
@@ -621,6 +624,79 @@ amdrdna_vram_take(
 
 	/* Succeeded: the run is the caller's. */
 	return 0;
+}
+
+/*
+ * Gives a run of VRAM taken with amdrdna_vram_take() back to its pool.
+ * A run the pool cannot take back (its list of free runs is full) stays
+ * taken for good, which is only a loss of room.
+ */
+void
+amdrdna_vram_give(
+	struct amdrdna_device *device,
+	bool cpu,
+	uint64_t offset,
+	uint64_t bytes)
+{
+	struct amdrdna_pool *pool;
+	int error;
+
+	/* The pool the run came from. */
+	pool = &device->gpu_pool;
+	if (cpu)
+		pool = &device->cpu_pool;
+
+	/* Gives the run back, one caller at a time. */
+	mutex_lock(&device->memory_lock);
+
+	error = amdrdna_pool_give(pool, offset, bytes);
+
+	mutex_unlock(&device->memory_lock);
+
+	/* Says when the run could not be taken back. */
+	if (error != 0)
+		amdrdna_mark("vram: %lluKiB at 0x%llx stay taken (%d)", (unsigned long long)(bytes >> 10), (unsigned long long)offset, error);
+}
+
+/*
+ * Reports the bus address the CPU reaches a VRAM offset of the CPU's pool
+ * at: the window's physical address plus the offset's place in it.
+ */
+uint64_t
+amdrdna_vram_bus(
+	struct amdrdna_device *device,
+	uint64_t offset)
+{
+	uint64_t bus;
+
+	/* The window's mapping starts at window_from in VRAM. */
+	bus = device->window.physical_address + (offset - device->window_from);
+
+	/* Succeeded: the bus address. */
+	return bus;
+}
+
+/*
+ * Reports the absolute dword index of one instance of a named register of
+ * a memory hub, for a ring command that writes or waits on it; 0 when the
+ * block table does not list the hub.
+ */
+uint32_t
+amdrdna_hub_register(
+	struct amdrdna_device *device,
+	enum amdrdna_hub hub,
+	enum amdrdna_hub_register which,
+	unsigned instance)
+{
+	const struct amdrdna_ip *block;
+	uint32_t index;
+
+	/* The hub's block and the register's index in it. */
+	block = hub_block(device, hub);
+	index = amdrdna_hub_index(block, hub, which, instance);
+
+	/* Succeeded: the index, 0 for none. */
+	return index;
 }
 
 /*

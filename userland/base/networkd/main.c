@@ -315,7 +315,7 @@ static int lan_configure_cancelled;
 /*
  * Set while lan_configure runs a command it can be stopped in: bringing
  * the interface up, and dhcpc or the static address.  A request put aside
- * at any other time (the link-local address, the routes) stops nothing and
+ * at any other time (the routes) stops nothing and
  * waits for the configuring to end: those commands are short, and a route
  * left half changed would be worse than the wait.
  */
@@ -463,7 +463,6 @@ static int withdraw_route(int, const struct networkd_managed_route *);
 static int route_present_exact(int, const struct networkd_managed_route *);
 static int prefer_resolver(const unsigned char *, size_t);
 static void resolver_write_failed(const char *);
-static void lan_assign_link_local(const char *, uint64_t);
 static void lan_configure(const struct networkd_lan_work *);
 static void lan_configure_steps(const struct networkd_lan_work *);
 static int lan_request_supersedes(const struct networkd_request *, enum networkd_client_role);
@@ -1662,75 +1661,6 @@ lan_address_usable(
 }
 
 /*
- * Supports the lan assign link local operation.
- *
- * Gives an interface the address that says it has none.  A machine whose
- * lease was not answered is still reachable by whoever is on the same
- * cable, and an address out of the link-local range says, to anything that
- * looks, exactly how it was arrived at.
- */
-static void
-lan_assign_link_local(
-	const char *name,
-	uint64_t deadline)
-{
-	char diagnostic[CHILD_OUTPUT_MAX];
-	char address[NETWORKD_LAN_ADDRESS_MAX];
-	struct ifreq request;
-	char *arguments[7];
-	int descriptor;
-	int derived;
-	int assigned;
-
-	descriptor = socket(AF_INET, SOCK_DGRAM, 0);
-
-	/* Handles a failed socket operation. */
-	if (descriptor < 0)
-		return;
-	memset(&request, 0, sizeof(request));
-	strncpy(request.ifr_name, name, sizeof(request.ifr_name) - 1U);
-
-	/* Handles hardware that will not say what its address is. */
-	if (ioctl(descriptor, SIOCGIFHWADDR, &request) != 0) {
-		(void)close(descriptor);
-		return;
-	}
-	(void)close(descriptor);
-
-	/*
-	 * Derives the address from the six bytes of the hardware address.
-	 * The field's two bytes of padding are zero on every machine, and
-	 * taking the host part from them gave every machine 169.254.1.0
-	 * (BUG-293).
-	 */
-	derived = networkd_lan_link_local(request.ifr_hwaddr,
-					  LAN_HARDWARE_ADDRESS_LENGTH, address,
-					  sizeof(address));
-	if (derived != 0)
-		return;
-
-	/* Gives the interface the link-local address. */
-	diagnostic[0] = '\0';
-	arguments[0] = (char *)"/sbin/ifconfig";
-	arguments[1] = (char *)name;
-	arguments[2] = (char *)"inet";
-	arguments[3] = address;
-	arguments[4] = (char *)"netmask";
-	arguments[5] = (char *)"255.255.0.0";
-	arguments[6] = NULL;
-	assigned = run_command_until(arguments, 10U, deadline, diagnostic);
-
-	/* Says in the system log which address the interface fell back to. */
-	if (assigned != 0) {
-		syslog(LOG_WARNING, "networkd: %s: link-local %s not assigned: %s",
-		       name, address, diagnostic);
-	} else {
-		syslog(LOG_NOTICE, "networkd: %s: link-local %s assigned",
-		       name, address);
-	}
-}
-
-/*
  * Supports the lan configure operation.
  *
  * Names the interface as the one being configured for as long as the
@@ -1832,9 +1762,8 @@ lan_configure_steps(
 	/*
 	 * Leaves an interface a request has taken over as it is.  The request
 	 * put aside gives it its address (or takes it down) as soon as this
-	 * returns; a link-local address given now would only be replaced, and
-	 * the interface stays PENDING, so the policy tries again if the
-	 * request leaves it without an address (BUG-298).
+	 * returns, and the interface stays PENDING, so the policy tries again
+	 * if the request leaves it without an address (BUG-298).
 	 */
 	if (!obtained && lan_configure_cancelled) {
 		syslog(LOG_NOTICE, "networkd: %s: configuring stopped for a request",
@@ -1853,9 +1782,6 @@ lan_configure_steps(
 		       diagnostic);
 	}
 
-	/* An interface that obtained nothing is told to say so. */
-	if (!obtained)
-		lan_assign_link_local(work->interface, deadline);
 	(void)networkd_lan_configured(&managed_lan, work->interface, obtained);
 
 	/* Keeps a DHCP lease's route and resolver for the network preference. */

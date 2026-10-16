@@ -7,7 +7,8 @@
 # security processor's frames and commands and the thermal words of stages A3t to A4 (the real navi10 files of the
 # amd-navi-firmware cache when it exists; AMDRDNA_FIRMWARE overrides it), the packets, queue images, settings and
 # shape words of stage A5 and its first dispatch's program on the GFX10 interpreter (their image positions, register
-# offsets and settings against the Linux sources), and the source audit.
+# offsets and settings against the Linux sources), the hub contexts, address-space identifiers and ring commands of
+# stage A5s, and the source audit.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 #
 # usage: plan/ws039/tests/amdrdna-host-test.sh [DUMP-DIRECTORY]
@@ -31,6 +32,8 @@ cc $flags -include uapi/errno.h -o "$out/amdrdna-tables-test" "$tests/amdrdna-ta
 	"$driver/products.c" "$driver/dcn-registers.c" "$driver/picture.c"
 cc $flags -include uapi/errno.h -o "$out/amdrdna-memory-test" "$tests/amdrdna-memory-test.c" "$driver/span-pool.c" \
 	"$driver/hub-registers.c" "$driver/vm-format.c" "$driver/interrupt-format.c"
+cc $flags -include uapi/errno.h -o "$out/amdrdna-sessions-test" "$tests/amdrdna-sessions-test.c" "$driver/context-pool.c" \
+	"$driver/command-format.c"
 cc $flags -include uapi/errno.h -o "$out/amdrdna-psp-test" "$tests/amdrdna-psp-test.c" "$driver/bytes.c" \
 	"$driver/firmware-format.c" "$driver/psp-format.c" "$driver/thermal-format.c"
 compiler="$driver/compiler"
@@ -42,6 +45,7 @@ glslc --target-env=vulkan1.0 -fshader-stage=compute -o "$out/ids.spv" "$tests/sh
 status=0
 "$out/amdrdna-engines-test" "$out/ids.spv" || status=1
 "$out/amdrdna-memory-test" || status=1
+"$out/amdrdna-sessions-test" || status=1
 if [ -d "$firmware" ]; then
 	"$out/amdrdna-psp-test" "$firmware" || status=1
 else

@@ -42,7 +42,7 @@
 #include "drivers/gpu/amdrdna/amdrdna-regs.h"
 
 /* The last stage this driver has; asking for a later one is refused. */
-#define AMDRDNA_LAST_STAGE		AMDRDNA_STAGE_A5
+#define AMDRDNA_LAST_STAGE		AMDRDNA_STAGE_A5S
 
 /* How long the shutdown waits for the bring-up thread to end, and its step. */
 #define AMDRDNA_SHUTDOWN_WAIT_US	5000000U
@@ -194,6 +194,7 @@ amdrdna_attach(
 	for (index = 0U; index < AMDRDNA_COMPUTE_QUEUES; index++)
 		spin_init(&device->engines.compute[index].lock, LOCK_RANK_DEVICE, "amdrdna ring");
 	spin_init(&device->engines.copy.lock, LOCK_RANK_DEVICE, "amdrdna ring");
+	amdrdna_spaces_init(device);
 
 	/* Stage A0: finds and identifies the GPU. */
 	device->running = AMDRDNA_STAGE_A0;
@@ -259,7 +260,8 @@ amdrdna_detach(
  * then undoes the stages that wrote.
  *
  * The thread is told to stop and waited for, for a bounded time.  Once it
- * has ended, the stages are undone in reverse: stage A5's queues are
+ * has ended, the stages are undone in reverse: stage A5s's GPU device goes
+ * offline and its address spaces run nothing new, stage A5's queues are
  * detached and its engines halted, stage A4's watch stops and
  * the power unit is told it will be unloaded, stage A3's secure OS unloads
  * what the driver loaded and destroys its ring, and stage A2's interrupt
@@ -313,7 +315,8 @@ amdrdna_shutdown(
 		return;
 	}
 
-	/* Undoes stage A5, then A4, A3 and A2, as far as each ran. */
+	/* Takes the GPU device offline, then undoes stage A5, A4, A3 and A2, as far as each ran. */
+	amdrdna_node_stop(device);
 	amdrdna_engines_stop(device);
 	amdrdna_power_stop(device);
 	amdrdna_psp_stop(device);
@@ -515,6 +518,9 @@ amdrdna_run_stage(
 		break;
 	case AMDRDNA_STAGE_A5:
 		error = amdrdna_a5_engines(device);
+		break;
+	case AMDRDNA_STAGE_A5S:
+		error = amdrdna_a5s_sessions(device);
 		break;
 	default:
 		error = ENOTSUP;

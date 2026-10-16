@@ -521,9 +521,10 @@ networkd_lan_configured(
 
 	/*
 	 * An address of its own means configured.  Without one the
-	 * interface carries the link-local address that says so, and is
-	 * not tried again until its cable moves: a server that did not
-	 * answer will not answer any sooner for being asked in a loop.
+	 * interface is left without an IPv4 address (no 169.254 fallback is
+	 * given), and is not tried again until its cable moves or the
+	 * administrator brings it up again: a server that did not answer
+	 * will not answer any sooner for being asked in a loop.
 	 */
 	item->state = obtained ? NETWORKD_LAN_CONFIGURED :
 		      NETWORKD_LAN_UNCONFIGURED;

@@ -29,7 +29,7 @@
 #define AMDRDNA_LAYOUT_RANGES		8U
 
 /* The most free spans one address pool tracks. */
-#define AMDRDNA_POOL_SPANS		128U
+#define AMDRDNA_POOL_SPANS		512U
 
 /* The page-table levels of a context's address space, root first. */
 #define AMDRDNA_VM_LEVELS		4U
@@ -64,6 +64,16 @@
 #define AMDRDNA_PAGE_LEAF		0x0040000000000000ULL
 #define AMDRDNA_PAGE_ADDRESS_MASK	0x0000fffffffff000ULL
 #define AMDRDNA_TABLE_ADDRESS_MASK	0x0000ffffffffffc0ULL
+
+/*
+ * The memory type of a context's VRAM pages: non-coherent (0), the type
+ * the hubs give an ordinary mapping of local memory.
+ *
+ * Value referenced: Linux v6.19 drivers/gpu/drm/amd/include/navi10_enum.h
+ * (MTYPE_NC) and drivers/gpu/drm/amd/amdgpu/gmc_v10_0.c
+ * (gmc_v10_0_get_vm_pte: the default memory type of a mapping).
+ */
+#define AMDRDNA_PAGE_TYPE_NONCOHERENT	0ULL
 
 /*
  * The interrupt clients and the source the driver handles in this stage:
@@ -743,6 +753,8 @@ struct amdrdna_psp_reply {
 #define AMDRDNA_PM4_ATTACH_WORDS	7U
 #define AMDRDNA_PM4_DETACH_WORDS	6U
 #define AMDRDNA_PM4_INDIRECT_WORDS	4U
+#define AMDRDNA_PM4_WAIT_WORDS		7U
+#define AMDRDNA_PM4_FETCH_SYNC_WORDS	2U
 #define AMDRDNA_COPY_WRITE_WORDS	5U
 #define AMDRDNA_COPY_LINEAR_WORDS	7U
 #define AMDRDNA_COPY_FENCE_WORDS	6U
@@ -762,6 +774,111 @@ struct amdrdna_queue_place {
 	uint32_t engine;
 	uint32_t pipe;
 	uint32_t queue;
+};
+
+/*
+ * The contexts of the graphics hub: context 0 is the kernel's flat
+ * space, contexts 1 to 15 are handed to the address spaces of the GPU's
+ * sessions while they run work.
+ */
+#define AMDRDNA_CONTEXTS		16U
+#define AMDRDNA_FIRST_USER_CONTEXT	1U
+
+/*
+ * The rings a context's work is tracked on: the graphics ring, the four
+ * compute queues and the first copy engine.
+ */
+#define AMDRDNA_TRACKED_RINGS		6U
+#define AMDRDNA_TRACKED_GRAPHICS	0U
+#define AMDRDNA_TRACKED_COMPUTE		1U
+#define AMDRDNA_TRACKED_COPY		5U
+
+/*
+ * The address-space identifiers the interrupt controller attaches to a
+ * page fault: 1 to 65535 (0 names no space), one bit each.
+ */
+#define AMDRDNA_SPACE_IDS		65536U
+#define AMDRDNA_SPACE_ID_WORDS		(AMDRDNA_SPACE_IDS / 32U)
+
+/*
+ * What one hub context is doing for the address spaces.
+ *
+ * owner is the identifier of the address space the context is handed to
+ * (0 when it is nobody's) and table its root table's word.  flushed is
+ * the owner's table generation the context's cached translations were
+ * last dropped for; flush_ring and flush_sequence name the fence after
+ * that drop, which a run on another ring must see passed before it may
+ * skip its own drop (flush_known says there was one).  last holds, for
+ * each tracked ring that ran work in the context (used), the fence after
+ * the latest such work: the context may be handed to another space only
+ * once all of them passed.  stamp orders the contexts from the least to
+ * the most recently used.  held keeps a context that may still run work
+ * nobody can stop out of the pool for good.
+ */
+struct amdrdna_context_slot {
+	uint32_t owner;
+	uint64_t table;
+	uint64_t flushed;
+	bool flush_known;
+	unsigned flush_ring;
+	uint32_t flush_sequence;
+	bool used[AMDRDNA_TRACKED_RINGS];
+	uint32_t last[AMDRDNA_TRACKED_RINGS];
+	uint64_t stamp;
+	bool held;
+};
+
+/*
+ * The pool of hub contexts the address spaces share (contexts 1 to 15):
+ * the slots, the clock their stamps come from, and the counts of drops
+ * and of contexts taken from another space.  The owner serializes every
+ * call.
+ */
+struct amdrdna_context_pool {
+	struct amdrdna_context_slot slots[AMDRDNA_CONTEXTS];
+	uint64_t clock;
+	uint64_t flushes;
+	uint64_t takeovers;
+};
+
+/*
+ * What a run asks of the context pool: the address space's identifier,
+ * the context it held last (0 for none), its root table's word, its table
+ * generation, and the tracked ring the run goes to.
+ */
+struct amdrdna_context_request {
+	uint32_t owner;
+	unsigned held;
+	uint64_t table;
+	uint64_t generation;
+	unsigned ring;
+};
+
+/*
+ * What the context pool answers a run: the context, whether its cached
+ * translations must be dropped before the run (flush) and whether the run
+ * must first wait on its own ring for that ring's earlier work (sync); or
+ * that no context is free yet and the caller waits for the fence
+ * wait_sequence of tracked ring wait_ring and asks again (wait).
+ */
+struct amdrdna_context_grant {
+	unsigned context;
+	bool flush;
+	bool sync;
+	bool wait;
+	unsigned wait_ring;
+	uint32_t wait_sequence;
+};
+
+/*
+ * The address-space identifiers in use, one bit each, and where the
+ * search for a free one starts (identifiers are not reused at once).  The
+ * owner serializes every call.
+ */
+struct amdrdna_space_ids {
+	uint32_t used[AMDRDNA_SPACE_ID_WORDS];
+	uint32_t next;
+	uint32_t count;
 };
 
 /* The words of a queue image. */
@@ -1405,6 +1522,39 @@ unsigned
 amdrdna_pm4_partition(
 	uint32_t *words);
 
+unsigned
+amdrdna_pm4_move_cached(
+	uint32_t *words,
+	uint64_t source,
+	uint64_t destination,
+	uint32_t bytes);
+
+unsigned
+amdrdna_pm4_fetcher_write_register(
+	uint32_t *words,
+	uint32_t index,
+	uint32_t value);
+
+unsigned
+amdrdna_pm4_write_and_wait(
+	uint32_t *words,
+	uint32_t request,
+	uint32_t done,
+	uint32_t value,
+	uint32_t mask,
+	bool fetcher);
+
+unsigned
+amdrdna_pm4_wait_memory(
+	uint32_t *words,
+	uint64_t address,
+	uint32_t value,
+	bool fetcher);
+
+unsigned
+amdrdna_pm4_fetcher_sync(
+	uint32_t *words);
+
 uint32_t
 amdrdna_copy_filler(void);
 
@@ -1548,5 +1698,65 @@ amdrdna_check_output(
 	uint32_t *bad_word,
 	uint32_t *expected,
 	uint32_t *found);
+
+/* context-pool.c: the hub contexts and the address-space identifiers. */
+void
+amdrdna_context_pool_init(
+	struct amdrdna_context_pool *pool);
+
+int
+amdrdna_context_grant(
+	struct amdrdna_context_pool *pool,
+	const struct amdrdna_context_request *request,
+	const uint32_t *passed,
+	struct amdrdna_context_grant *grant);
+
+void
+amdrdna_context_submitted(
+	struct amdrdna_context_pool *pool,
+	unsigned context,
+	const struct amdrdna_context_request *request,
+	uint32_t sequence,
+	bool flushed);
+
+bool
+amdrdna_context_idle(
+	const struct amdrdna_context_pool *pool,
+	unsigned context,
+	const uint32_t *passed);
+
+void
+amdrdna_context_release(
+	struct amdrdna_context_pool *pool,
+	unsigned context,
+	uint32_t owner);
+
+void
+amdrdna_context_hold(
+	struct amdrdna_context_pool *pool,
+	unsigned context);
+
+unsigned
+amdrdna_context_free_count(
+	const struct amdrdna_context_pool *pool);
+
+bool
+amdrdna_fence_passed(
+	uint32_t fence,
+	uint32_t sequence);
+
+void
+amdrdna_space_ids_init(
+	struct amdrdna_space_ids *ids);
+
+int
+amdrdna_space_id_take(
+	struct amdrdna_space_ids *ids,
+	uint32_t *id);
+
+void
+amdrdna_space_id_give(
+	struct amdrdna_space_ids *ids,
+	uint32_t id);
 
 #endif

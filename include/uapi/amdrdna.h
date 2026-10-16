@@ -130,6 +130,15 @@
 #define AMDRDNA_RUNS_COPY		0x00000004U
 #define AMDRDNA_RUNS_DIRECT		0x00000008U
 
+/*
+ * The GPU device's state (device_flags): registered with the GPU core
+ * (/dev/gpuN published), a renderer libvulkan opens (an executor is
+ * bound), and failed (it takes no new work).
+ */
+#define AMDRDNA_DEVICE_REGISTERED	0x00000001U
+#define AMDRDNA_DEVICE_RENDERER		0x00000002U
+#define AMDRDNA_DEVICE_FAULTED		0x00000004U
+
 /* The output kind the firmware lit, as the display engine names it. */
 #define AMDRDNA_OUTPUT_NONE		0U
 #define AMDRDNA_OUTPUT_DP		1U
@@ -162,7 +171,10 @@
  * (one bit each), the fences the checks waited for, the end-of-pipe
  * interrupts of the graphics and compute rings and the copy engine's
  * traps, the bytes the copy check moved, and the output words the
- * dispatch check compared.
+ * dispatch check compared.  From A5s on: the GPU address spaces open
+ * (bits 15:0) and kept because their work never ended (bits 31:16), the
+ * drops of the hub contexts' translations, and the GPU device's state
+ * (AMDRDNA_DEVICE_*).
  */
 struct amdrdna_status {
 	uint32_t version;
@@ -247,7 +259,9 @@ struct amdrdna_status {
 	uint32_t copy_traps;
 	uint32_t copied_bytes;
 	uint32_t dispatch_words;
-	uint32_t reserved[3];
+	uint32_t spaces;
+	uint32_t context_flushes;
+	uint32_t device_flags;
 };
 
 /* Asks the driver to run every stage up to target (AMDRDNA_IOC_ADVANCE, root only). */
