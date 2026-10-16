@@ -71,3 +71,15 @@ host-xd-icl-test の中身: 行（D0・ICP・port C は MG PHY C の TC1・port 
 
 - 5330（全部の段の後の 1 回）: 起動・survey・digest に差が無い事（ADL-P の行の値は変わらない）。
 - ICL: 実機は無い。attach（§7 #30）の時に、起動・eDP（transcoder EDP）・HDMI・USB-C（MG、legacy と DP-alt）・suspend。
+
+## P1 の branch との合わせ（2026-10-17 q1229-i10、P1）
+
+- merge: P6 の c85e8569e を agent/p1-ws245 に名指しで merge（c3d27ec57、親 b720306ed（p050d3 の記録）と c85e8569e）。衝突 3 file: `xd-platform.h` の WA の bit（P1 の `I915_XD_WA_TC_RESET_AFTER_TBT` 0x0800 を残し、P6 の `I915_XD_WA_COMBO_AUX_LANE` を 0x1000、`I915_XD_WA_AUX_ANAOVRD_1178` を 0x2000 に付け替え。使うのは名前だけ）、`display-tables-xd.h` の ADL-P 系 4 行（P1 の WA の bit と P6 の新しい 3 field の両方）、`run-xd-host-tests.sh` の試験の列（両方）。merge の後: `run-xd-host-tests.sh` 24 本 all passed（icl 48、cover 111、platform 97、regs 651）、旧 host 試験と out50c は b720306ed と同じ（stagecmp: dp SAME、lcd・out50c の差 0）。
+- xd-output の display 11 の分岐（88e99dbe2）: 「設計との差」の 2・3 と「残り」の列のうち xd-output の物を入れた。
+  - DP の port: display 11 は transcoder の function を訓練の前に書かず、splitter も無く、transcoder の clock は訓練の後（Linux `hsw_ddi_pre_enable_dp` の順）。display 12 以降は今まで通り。
+  - transport（DP_TP）: display 11 は `I915_XD_DP_TP_PORT(ddi)`（`i915_xd_output_transport`、DDI の link・pattern・idle が使う）。
+  - function の enable: display 11 は `drv_i915_xd_pipe_func_enable_11`（pipe を渡す。eDP の transcoder は pipe の input）。関数は 1 つにまとめず分岐にした（`_func_config` は display 11 で呼ばない）。
+  - transcoder の clock: `drv_i915_xd_pipe_clock_on/_off` を全部の版で使う（display 11 の field、eDP の transcoder は書かない）。stop は display 11 で DDI buffer を止める前（Linux `intel_ddi_post_disable_dp/_hdmi` の `< 12`）。
+  - MG PHY: TC の port の PHY が MG（`i915_xd_output_mg`、platform の port の `phy_kind`）なら DP mode は `drv_i915_xd_tc_mg_dp_mode`、signal levels は MG の表と `drv_i915_xd_tc_mg_signal_levels`、訓練の swing の上限は MG の表の行数、PLL は `drv_i915_xd_mg_pll_enable`（記述に `mg_pll_words` を足した。作るのは記述の作り手: ICL を attach する時）。
+  - host 試験（`host-xd-output-test` 67 check、+9）: ICL の panel を transcoder EDP で灯す（function の語: DDI A の display 11 の select・pipe A の input・enable、clock select を書かない、port A の transport で訓練して function はその後、transcoder A の transport に触らない、dark で止めて function を消す）、TC1 の MG（MG PLL 1 の lock と DIV0、DP mode と swing、transcoder B の clock select 0x60000000 が訓練の後に 1 回、dark で clock を DDI C の buffer の前に外す）。
+- まだ無い物（この Phase の残り）: HDMI の display 11 の列（combo B。HDMI の port の順は display 12 と同じ。clock select は display 11 の field で入った）を Linux の列と比べる試験、ICL の 2 行を cover の列に足す事、xd-output の電源の use（transcoder の index 15）を xd-power の domain にどう写すか（attach の時）、ICL の takeover の readout、WM の read latency。build: 6 組 warning 0（`kbuild.sh d45`）。
