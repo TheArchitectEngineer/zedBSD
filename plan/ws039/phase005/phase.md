@@ -2,7 +2,7 @@
 
 # ws039-p005: 段 A5（CP・KIQ・compute の queue・SDMA・fence・最初の copy と dispatch）
 
-Status: in-progress（2026-10-16 P3、q1215-i01。実機 10.0.10.3 で A5 ok（KIQ の道 3 回・`amdrdna.kiq=0` の退路 1 回）。Q1 の merge と clearance の判定待ち）
+Status: cleared（2026-10-16 Q1: 実機 10.0.10.3 で A5 ok（KIQ の道 2 回＋前の kernel 2 回、kiq=0 の退路 1 回）、KIQ・GFX・compute 4 本・SDMA0 の ring test と fence、EOP・TRAP の割り込み、copy の照合、ids.comp の dispatch 1536 語一致（compute と GFX の IB）、VM fault の割り込み到着、Linux と CU・KIQ の場所が一致。main の merge adef3571d、ci の vmunix warning 0。未確認: cold の直後の A5、fault の後の queue の戻し（p013））
 Disposition: normal
 Parent: [WS039](../ws.md)
 Queue: q1215 / q1215-i01
