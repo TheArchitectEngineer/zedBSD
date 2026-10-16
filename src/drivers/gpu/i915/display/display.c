@@ -1870,6 +1870,9 @@ i915_display_core_init(
 	drv_i915_dkl_phy_init(&display->dkl, &gt->mmio);
 	display->pwc.dkl = &display->dkl;
 
+	/* The xd state whose window and platform description the well operations use. */
+	display->pwc.xd = &display->xd;
+
 	/* The display core over the one power, CDCLK, MMIO and sideband state. */
 	kern_memset(dcore, 0, sizeof(*dcore));
 	dcore->pd = &display->power_domains;

@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
 Related: [WS244](../ws244/ws.md)（i915 の Linux 由来の code の整理、棚卸し plan/ws244/inventory.md・tests/inventory.py）、[Guardrail](../guardrail.md)「MIT・GPL の出典のデータの引用」
-Resume point: 2026-10-16 の方針（ユーザー「i915は、実装だけ先に終わらせ、全部マージしたものをテストして、動かなければ二分探索で半分マージしてテスト、だめならさらに半分、で進めます。まずはぜんぶ実装してください。」、Q1 経由）: p020 以降の段を design の順に p046 まで branch（agent/p1-ws245）に積む。各段は host 試験・build（既定と `I915_TESTS=y` の 5 組）warning 0・WIP commit・phase.md の記録。5330 の回帰は全部の後に 1 回（基準は main の kernel、段は branch の tip）、動かなければ下の「段の境の SHA」で二分探索。p019 は T1-704（機能の基準は合格、書き込みの順のずれは別の thread の相対の順: [phase019](phase019/phase.md)）。今の段: p022 の後は p023（power well の操作 W1: xd-power の well の enable/disable、§6.7 の p006 の差分を当て直す。domain の map と refcount は旧のまま）。
+Resume point: 2026-10-16 の方針（ユーザー「i915は、実装だけ先に終わらせ、全部マージしたものをテストして、動かなければ二分探索で半分マージしてテスト、だめならさらに半分、で進めます。まずはぜんぶ実装してください。」、Q1 経由）: p020 以降の段を design の順に p046 まで branch（agent/p1-ws245）に積む。各段は host 試験・build（既定と `I915_TESTS=y` の 5 組）warning 0・WIP commit・phase.md の記録。5330 の回帰は全部の後に 1 回（基準は main の kernel、段は branch の tip）、動かなければ下の「段の境の SHA」で二分探索。p019 は T1-704（機能の基準は合格、書き込みの順のずれは別の thread の相対の順: [phase019](phase019/phase.md)）。今の段: p023 の後は p024（well の所属 W3 と refcount: xd-power に well 単位の refcount と W3 の機能の集合、旧の domain → well の map を W3 に置き換え。§6.7 の保存した xd-power.c の get/put を当て直す）。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）
@@ -138,7 +138,7 @@ Resume point: 2026-10-16 の方針（ユーザー「i915は、実装だけ先に
 | [p020](phase020/phase.md) | GMBUS と DDC の EDID の読み（xd-gmbus） | in-progress（3 LW。2026-10-16 q1228-i02 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回。HDMI の plug はユーザーの一覧） |
 | [p021](phase021/phase.md) | backlight の PWM（xd-panel） | in-progress（2 LW。2026-10-16 実装・host 試験・build 済み、5330 は全部の段の後に 1 回） |
 | [p022](phase022/phase.md) | panel power（PPS、xd-panel） | in-progress（3 LW。2026-10-16 q1229-i01 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回） |
-| p023 | power well の操作（W1、xd-power。p006 の差分を当て直す） | planned（5 LW） |
+| [p023](phase023/phase.md) | power well の操作（W1、xd-power。p006 の差分を当て直す） | in-progress（5 LW。2026-10-16 q1229-i01 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回） |
 | p024 | well の所属（W3）と refcount（xd-power） | planned（4 LW） |
 | p025 | DC state と DC9（xd-power、dc9.c を消す） | planned（3 LW） |
 | p026 | DMC（xd-dmc） | planned（4 LW） |
@@ -178,3 +178,4 @@ Resume point: 2026-10-16 の方針（ユーザー「i915は、実装だけ先に
 | p019 | 343c8516a | fb66c84d0 |
 | p020 | 167786574 | 2f34bc94c（p019 の記録の commit。段の source は 343c8516a のまま） |
 | p021 | c619c69c0 | 09b7da423 |
+| p022 | 92ee105c0 | e58dc6f48（p021 の記録の commit） |

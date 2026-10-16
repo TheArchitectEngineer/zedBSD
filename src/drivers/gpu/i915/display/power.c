@@ -46,6 +46,7 @@
 #include "takeover.h"
 #include "modeset.h"
 #include "dkl-phy.h"
+#include "xd-power.h"
 #include <kern/kcrt.h>
 
 #include "../mmio.h"
@@ -58,7 +59,7 @@
 
 #include <uapi/errno.h>
 
-/* The trace stage of the display noirq bring-up (the old probe's stage P3). */
+/* The trace stage of the display noirq bring-up. */
 #define I915_POWER_TRACE_STAGE_NOIRQ	4U
 
 /* The pipe bits of a well's interrupt pipe mask. */
@@ -97,15 +98,6 @@
 #define IDX_AUX_TBT3	11u
 #define IDX_AUX_TBT4	12u
 
-/*
- * The AUX channel control of channel A and the distance to the next
- * channel's (DP_AUX_CH_CTL), and its bit that routes a Type-C channel
- * through the Thunderbolt I/O (TBT_IO, bit 11).
- */
-#define I915_TC_AUX_CH_CTL_A		0x64010u
-#define I915_TC_AUX_CH_CTL_STRIDE	0x100u
-#define I915_TC_AUX_CH_CTL_TBT_IO	(1u << 11)
-
 /* How long an AUX_USBC well's enable waits for the PHY microcontroller's health (1 ms, as Linux). */
 #define I915_TC_UC_HEALTH_TIMEOUT_US	1000u
 
@@ -118,13 +110,6 @@
 #define ICL_PWR_WELL_CTL_AUX2	0x45444u
 #define ICL_PWR_WELL_CTL_DDI2	0x45454u
 #define HSW_PWR_WELL_CTL2	0x45404u
-
-/* The fuse-distribution status of the power gates (gen9_wait_for_power_well_fuses). */
-#define SKL_FUSE_STATUS		0x42000u
-#define SKL_PG0			0u
-#define SKL_PG1			1u
-#define GEN8_CHICKEN_DCPR_1	0x46430u
-#define DISABLE_FLR_SRC		(1u << 15)
 
 /* The DC state register and what the DC6 check reads (i915_reg.h). */
 #define DC_STATE_EN			0x45504u
@@ -218,6 +203,16 @@ struct i915_pw_desc {
 };
 
 /*
+ * What the xd power wells' hooks act for: the power-well context and the
+ * well being switched (for the messages).  One lives on the stack of each
+ * enable or disable.
+ */
+struct i915_pw_hook_ctx {
+	struct i915_pw_ctx *pwc;
+	struct i915_power_well *well;
+};
+
+/*
  * One row of tgl_buddy_page_masks[]: the BW_BUDDY page mask of one DRAM
  * configuration.
  */
@@ -268,13 +263,13 @@ static void i915_power_map_build(struct i915_power_domains *pd, const struct i91
 static int i915_power_map_init(struct i915_power_domains *pd);
 static int i915_power_map_init_tgl(struct i915_power_domains *pd);
 static unsigned i915_pw_driver_reg(enum i915_pw_ops_kind ops);
-static uint32_t i915_pw_req(unsigned idx);
 static uint32_t i915_pw_state(unsigned idx);
-static int i915_pw_wait_fuse(struct i915_pw_ctx *pwc, unsigned pg);
-static void i915_pw_post_enable(struct i915_power_well *well, struct i915_pw_ctx *pwc);
-static int i915_pw_tc_aux_port(const struct i915_power_well *well);
-static void i915_pw_tc_aux_route(struct i915_pw_ctx *pwc, unsigned tc_port, int tbt);
-static int i915_pw_tc_uc_health_wait(const struct i915_power_well *well, struct i915_pw_ctx *pwc, unsigned tc_port);
+static int i915_pw_xd_well(const struct i915_power_well *well, struct i915_pw_ctx *pwc);
+static void i915_pw_xd_hooks(struct i915_pw_ctx *pwc, struct i915_power_well *well, struct i915_pw_hook_ctx *hook, struct i915_xd_power_hooks *hooks);
+static void i915_pw_hook_pipes_up(void *context, unsigned pipe_mask);
+static int i915_pw_hook_pipes_down(void *context, unsigned pipe_mask);
+static void i915_pw_hook_vga_reset(void *context);
+static int i915_pw_hook_tc_health(void *context, unsigned tc_port);
 static int i915_mask_test(const struct i915_pw_domain_mask *mask, unsigned domain);
 static void i915_mask_set(struct i915_pw_domain_mask *mask, unsigned domain);
 static void i915_mask_clear(struct i915_pw_domain_mask *mask, unsigned domain);
@@ -386,7 +381,7 @@ drv_i915_power_domains_init(
 		if (map_result != 0)
 			return EINVAL;
 	} else {
-		kern_logf("i915: P3 intel_power_domains_init: no power-well map for display version %u\n",
+		kern_logf("i915: intel_power_domains_init: no power-well map for display version %u\n",
 			display_ver);
 		return EINVAL;
 	}
@@ -403,7 +398,7 @@ drv_i915_power_domains_init(
 		map_name = "xelpd";
 
 	/* Logs what was built. */
-	kern_logf("i915: P3 intel_power_domains_init: wells=%u allowed_dc=0x%x "
+	kern_logf("i915: intel_power_domains_init: wells=%u allowed_dc=0x%x "
 		"target_dc=0x%x disable_pw=%d (%s map)\n",
 		pd->num_power_wells, pd->allowed_dc_mask, pd->target_dc_state,
 		pd->disable_power_well, map_name);
@@ -480,24 +475,25 @@ drv_i915_power_well_by_id(
 /*
  * Turns a power well on (the well's enable operation).
  *
- * The reference's enable waits are void: a plain acknowledge timeout is
- * warned and the enable continues.  Returns 0, or EIO when the time base
- * failed and the caller must stop.
+ * Always-on and DC_off wells are the domain layer's; a well switched by a
+ * request is brought up by the xd power wells (xd-power.c) from the
+ * platform's description, with the VGA, interrupt and Type-C PHY hooks
+ * of this context.  As in the reference, an acknowledge or fuse that
+ * comes late is warned about and the enable continues.  Returns 0, or
+ * EIO when the time base failed (or the well has no description) and the
+ * caller must stop.
  */
 int
 drv_i915_power_well_enable(
 	struct i915_power_well *well,
 	struct i915_pw_ctx *pwc)
 {
-	unsigned reg;
-	uint32_t req;
-	uint32_t st;
-	uint32_t value;
-	uint32_t chicken;
-	unsigned pg;
-	unsigned timeout_ms;
-	int wait_result;
-	int tc_port;
+	struct i915_pw_hook_ctx hook;
+	struct i915_xd_power_hooks hooks;
+	struct i915_xd_well_report report;
+	unsigned gate;
+	int xd_well;
+	int error;
 
 	/* An always-on well is simply on. */
 	if (well->ops == I915_PW_OPS_ALWAYS_ON) {
@@ -512,55 +508,22 @@ drv_i915_power_well_enable(
 		return 0;
 	}
 
-	/* Names the driver request register and the well's request and state bits. */
-	reg = i915_pw_driver_reg(well->ops);
-	req = i915_pw_req(well->hsw_idx);
-	st = i915_pw_state(well->hsw_idx);
-
-	/*
-	 * hsw_power_well_enable() for a fused well: power well 1 (PG1) waits
-	 * for PG0's fuses before the enable (after Wa_16013190616:adlp); every
-	 * fused well waits for its own fuses after it.  The power gate is
-	 * ICL_PW_CTL_IDX_TO_PG(idx) = idx + SKL_PG1 on display version 11+.
-	 */
-	if (well->has_fuses) {
-		pg = well->hsw_idx + SKL_PG1;
-		if (pg == SKL_PG1) {
-			/* Wa_16013190616:adlp. */
-			chicken = drv_i915_raw_read32(pwc->mmio, GEN8_CHICKEN_DCPR_1);
-			drv_i915_raw_write32(pwc->mmio, GEN8_CHICKEN_DCPR_1, chicken | DISABLE_FLR_SRC);
-
-			/* Waits for PG0's fuses, stopping on a time-base fault. */
-			wait_result = i915_pw_wait_fuse(pwc, SKL_PG0);
-			if (wait_result == EIO)
-				return EIO;
-		}
-	}
-
-	/*
-	 * A Type-C port's AUX well first routes the channel: through the
-	 * Thunderbolt I/O for a Thunderbolt AUX well, directly for the AUX_USBC
-	 * well of DP-alt and legacy mode.
-	 */
-	tc_port = i915_pw_tc_aux_port(well);
-	if (tc_port >= 0)
-		i915_pw_tc_aux_route(pwc, (unsigned)tc_port, well->is_tc_tbt);
-
-	/* Sets the driver request bit (intel_de_rmw(driver, 0, REQ)). */
-	value = drv_i915_raw_read32(pwc->mmio, reg);
-	drv_i915_raw_write32(pwc->mmio, reg, value | req);
-
-	/*
-	 * hsw_wait_for_power_well_enable(): waits for the state bit.  A fixed
-	 * enable delay is used only on DG2, so the acknowledge is waited for,
-	 * with the descriptor's enable timeout when it sets one.
-	 */
-	timeout_ms = 2u;
-	if (well->enable_timeout != 0u)
-		timeout_ms = well->enable_timeout;
-	wait_result = drv_i915_wait_reg(pwc->mmio, reg, st, st, 0u, timeout_ms, NULL);
-	if (wait_result == EIO)
+	/* Finds the well in the platform's description. */
+	xd_well = i915_pw_xd_well(well, pwc);
+	if (xd_well < 0)
 		return EIO;
+
+	/* Brings the well up. */
+	i915_pw_xd_hooks(pwc, well, &hook, &hooks);
+	error = drv_i915_xd_power_well_enable(&pwc->xd->io, pwc->xd->choice.platform, (unsigned)xd_well, &hooks, &report);
+	if (error != 0)
+		return EIO;
+
+	/* Warns about the fuses that came late; the enable goes on. */
+	for (gate = 0u; gate < 32u; gate++) {
+		if ((report.fuses_late & (1u << gate)) != 0u)
+			kern_logf("i915: power well fuse PG%u wait timeout (continuing)\n", gate);
+	}
 
 	/*
 	 * A real acknowledge timeout is warned and the enable continues (AUX in
@@ -568,32 +531,14 @@ drv_i915_power_well_enable(
 	 * well may time out by design: a Thunderbolt tunnel that is down, or the
 	 * TC cold exit the AUX_USBC well itself starts.
 	 */
-	if (wait_result != 0) {
+	if (report.state_late) {
 		pwc->ack_timeouts++;
 		kern_logf("i915: power well %s enable ACK timeout (continuing)\n",
 			well->name);
 	}
 
-	/* A Type-C port's AUX_USBC well waits for the PHY's microcontroller to report itself healthy. */
-	if (tc_port >= 0 && !well->is_tc_tbt) {
-		wait_result = i915_pw_tc_uc_health_wait(well, pwc, (unsigned)tc_port);
-		if (wait_result == EIO)
-			return EIO;
-	}
-
-	/* A fused well waits for its own power gate's fuses. */
-	if (well->has_fuses) {
-		pg = well->hsw_idx + SKL_PG1;
-		wait_result = i915_pw_wait_fuse(pwc, pg);
-		if (wait_result == EIO)
-			return EIO;
-	}
-
-	/* Records the well as on and runs its post-enable steps. */
-	well->hw_enabled = 1;
-	i915_pw_post_enable(well, pwc);
-
 	/* Succeeded: the well is on. */
+	well->hw_enabled = 1;
 	return 0;
 }
 
@@ -608,14 +553,13 @@ drv_i915_power_well_disable(
 	struct i915_power_well *well,
 	struct i915_pw_ctx *pwc)
 {
-	unsigned reg;
-	uint32_t req;
-	uint32_t st;
-	uint32_t value;
-	uint32_t bios_value;
+	struct i915_pw_hook_ctx hook;
+	struct i915_xd_power_hooks hooks;
+	struct i915_xd_well_report report;
 	uint32_t util_pin;
 	uint32_t dc_state;
-	int drain_result;
+	int xd_well;
+	int error;
 
 	/* A failed interrupt drain refuses every later disable of a real well. */
 	if (pwc->irq_sync_failed && well->ops != I915_PW_OPS_ALWAYS_ON) {
@@ -667,50 +611,25 @@ drv_i915_power_well_disable(
 		return 0;
 	}
 
-	/* Names the driver request register and the well's request and state bits. */
-	reg = i915_pw_driver_reg(well->ops);
-	req = i915_pw_req(well->hsw_idx);
-	st = i915_pw_state(well->hsw_idx);
+	/* Finds the well in the platform's description. */
+	xd_well = i915_pw_xd_well(well, pwc);
+	if (xd_well < 0)
+		return EIO;
 
 	/*
-	 * hsw_power_well_pre_disable() -> gen8_irq_power_well_pre_disable():
-	 * stops the pipe's interrupt sources and waits for a handler already
-	 * running before the well goes off; afterwards the handler would read a
-	 * powered-off register.
+	 * Takes the well down: the interrupt layer drains the pipe's
+	 * interrupts first (hsw_power_well_pre_disable() ->
+	 * gen8_irq_power_well_pre_disable()); a failed drain leaves the request
+	 * bit untouched.
 	 */
-	if (well->irq_pipe_mask != 0u && pwc->irqs_enabled && !pwc->irq_sync_failed) {
-		pwc->irq_pre_disable_calls++;
-		if (pwc->irq_ops != NULL) {
-			/* Drains the pipe's interrupts through the interrupt layer. */
-			drain_result = pwc->irq_ops->pre_disable(pwc->irq_ctx, well->irq_pipe_mask);
-
-			/* The handler was not shown to have left the pipe: this well and every later one stay on. */
-			if (drain_result != 0) {
-				pwc->irq_sync_failed = 1;
-				kern_logf("i915: power well %s: pipe interrupt drain FAILED; the well is kept on and every later "
-					"well disable is refused\n", well->name);
-			}
-		}
-	}
-
-	/* A failed drain leaves the request bit untouched. */
-	if (pwc->irq_sync_failed) {
+	i915_pw_xd_hooks(pwc, well, &hook, &hooks);
+	error = drv_i915_xd_power_well_disable(&pwc->xd->io, pwc->xd->choice.platform, (unsigned)xd_well, &hooks, &report);
+	if (error == EBUSY) {
 		pwc->disable_refusals++;
 		return EBUSY;
 	}
-
-	/* Clears the driver request bit. */
-	value = drv_i915_raw_read32(pwc->mmio, reg);
-	drv_i915_raw_write32(pwc->mmio, reg, value & ~req);
-
-	/*
-	 * Waits for the well to turn off only when the driver was the last
-	 * requester.  While the firmware still holds its request the state
-	 * stays set; that is expected, not a timeout.
-	 */
-	bios_value = drv_i915_raw_read32(pwc->mmio, reg - 4u);
-	if ((bios_value & req) == 0u)
-		(void)drv_i915_wait_reg(pwc->mmio, reg, st, 0u, 0u, 2u, NULL);
+	if (error != 0)
+		return EIO;
 
 	/* Records the driver's ownership (request and state both set). */
 	well->hw_enabled = drv_i915_power_well_is_enabled(well, pwc);
@@ -727,10 +646,10 @@ drv_i915_power_well_is_enabled(
 	struct i915_power_well *well,
 	struct i915_pw_ctx *pwc)
 {
-	unsigned reg;
-	uint32_t mask;
 	uint32_t dmask;
 	uint32_t value;
+	int xd_well;
+	int owned;
 
 	/* An always-on well is always on. */
 	if (well->ops == I915_PW_OPS_ALWAYS_ON)
@@ -751,11 +670,14 @@ drv_i915_power_well_is_enabled(
 		return 1;
 	}
 
+	/* A well without a description reads as off. */
+	xd_well = i915_pw_xd_well(well, pwc);
+	if (xd_well < 0)
+		return 0;
+
 	/* hsw_power_well_enabled(): enabled only when both the driver request and the state are set. */
-	reg = i915_pw_driver_reg(well->ops);
-	mask = i915_pw_req(well->hsw_idx) | i915_pw_state(well->hsw_idx);
-	value = drv_i915_raw_read32(pwc->mmio, reg);
-	if ((value & mask) != mask)
+	owned = drv_i915_xd_power_well_owned(&pwc->xd->io, pwc->xd->choice.platform, (unsigned)xd_well);
+	if (owned == 0)
 		return 0;
 
 	/* Succeeded: the driver owns an enabled well. */
@@ -773,11 +695,7 @@ drv_i915_power_well_sync_hw(
 	struct i915_power_well *well,
 	struct i915_pw_ctx *pwc)
 {
-	unsigned driver_reg;
-	unsigned bios_reg;
-	uint32_t mask;
-	uint32_t bios_req;
-	uint32_t driver_req;
+	int xd_well;
 
 	/* An always-on well is simply on. */
 	if (well->ops == I915_PW_OPS_ALWAYS_ON) {
@@ -787,23 +705,14 @@ drv_i915_power_well_sync_hw(
 
 	/*
 	 * hsw_power_well_sync_hw(): when the firmware holds the request, the
-	 * driver request is set first (when it is not already) and the firmware
-	 * request cleared after it -- never the reverse, and never skipped
-	 * because the software count is zero.  CTL1 (the firmware's) sits just
-	 * below CTL2 (the driver's).
+	 * driver request is set first and the firmware request cleared after
+	 * it -- never the reverse, and never skipped because the software count
+	 * is zero.
 	 */
 	if (well->ops != I915_PW_OPS_DC_OFF) {
-		driver_reg = i915_pw_driver_reg(well->ops);
-		bios_reg = driver_reg - 4u;
-		mask = i915_pw_req(well->hsw_idx);
-		bios_req = drv_i915_raw_read32(pwc->mmio, bios_reg);
-		if ((bios_req & mask) != 0u) {
-			/* Takes the request over before the firmware's goes away. */
-			driver_req = drv_i915_raw_read32(pwc->mmio, driver_reg);
-			if ((driver_req & mask) == 0u)
-				drv_i915_raw_write32(pwc->mmio, driver_reg, driver_req | mask);
-			drv_i915_raw_write32(pwc->mmio, bios_reg, bios_req & ~mask);
-		}
+		xd_well = i915_pw_xd_well(well, pwc);
+		if (xd_well >= 0)
+			drv_i915_xd_power_well_adopt(&pwc->xd->io, pwc->xd->choice.platform, (unsigned)xd_well);
 	}
 
 	/* Records what the hardware now says. */
@@ -1528,7 +1437,7 @@ drv_i915_power_domains_disable(
 
 /*
  * Takes the display core down for a suspend (intel_power_domains_suspend()
- * -> icl_display_core_uninit(), ws052-p009).
+ * -> icl_display_core_uninit()).
  *
  * The caller took the INIT reference with drv_i915_power_domains_disable()
  * when the suspend began and has stopped every output.  The INIT reference
@@ -1560,7 +1469,7 @@ drv_i915_power_domains_suspend(
 
 /*
  * Puts the display in DC9 for S0 idle (bxt_enable_dc9(), with the PCH's
- * Wa_14010685332, ws052-p009).
+ * Wa_14010685332).
  *
  * The display core must be down and the interrupts off (irqs_enabled
  * zero).  It reports the check's refusal (dc9.h) without writing
@@ -1599,7 +1508,7 @@ drv_i915_display_dc9_enter(
 }
 
 /*
- * Leaves DC9 after S0 idle (bxt_disable_dc9(), ws052-p009): the PCH's
+ * Leaves DC9 after S0 idle (bxt_disable_dc9()): the PCH's
  * reference clock first, then the DC state.  It reports the check's
  * refusal without writing the DC state.
  */
@@ -2119,7 +2028,7 @@ i915_power_map_init(
 	 * xelpd_pwdoms_pw_2 = PW_B + PW_C + PW_D + XELPD_DC_OFF_PORT_POWER_DOMAINS
 	 * + INIT.  The DC-off port domains are the DDI lanes of ports C to E and
 	 * of the Type-C ports, VGA, audio playback, and the AUX channels C to E,
-	 * USBC1 to 4 and TBT1 to 4 (BUG-256: without the AUX ones, a Type-C
+	 * USBC1 to 4 and TBT1 to 4 (without the AUX ones, a Type-C
 	 * port's AUX_USBC domain -- its TC cold block and its AUX transfers --
 	 * held its AUX well alone, PW_2 went down after the connect, and with it
 	 * the PHY ownership in DDI_BUF_CTL and the AUX channel's registers).
@@ -2378,15 +2287,6 @@ i915_pw_driver_reg(
 	return HSW_PWR_WELL_CTL2;
 }
 
-/* The request bit of a control index (HSW_PWR_WELL_CTL_REQ). */
-static uint32_t
-i915_pw_req(
-	unsigned idx)
-{
-	/* Each index owns two bits, the request the upper one. */
-	return 0x2u << (idx * 2u);
-}
-
 /* The state bit of a control index (HSW_PWR_WELL_CTL_STATE). */
 static uint32_t
 i915_pw_state(
@@ -2397,125 +2297,142 @@ i915_pw_state(
 }
 
 /*
- * Waits for a power gate's fuses (gen9_wait_for_power_well_fuses()): 0, or
- * EIO on a time-base fault.
+ * Finds a well switched by a request in the platform's description: the
+ * row of the same control and index.  Returns the row, or -1 (logged)
+ * when the display has no description or the description no such well.
  */
 static int
-i915_pw_wait_fuse(
-	struct i915_pw_ctx *pwc,
-	unsigned pg)
+i915_pw_xd_well(
+	const struct i915_power_well *well,
+	struct i915_pw_ctx *pwc)
 {
-	uint32_t bit;
-	int wait_result;
+	unsigned control;
+	int xd_well;
 
-	/*
-	 * intel_de_wait_for_set(..., 1): 2 us atomic and 1 ms sleeping for every
-	 * power gate (the 5 us / 1 us of the reference is only a comment).  PG0
-	 * is bit 27, PG1 bit 26 and so on (SKL_FUSE_PG_DIST).
-	 */
-	bit = 1u << (27u - pg);
-	wait_result = drv_i915_wait_reg(pwc->mmio, SKL_FUSE_STATUS, bit, bit, 2u, 1u, NULL);
+	/* A display without a description cannot switch the well. */
+	if (pwc->xd == NULL || !pwc->xd->chosen) {
+		kern_logf("i915: power well %s: no platform description\n", well->name);
+		return -1;
+	}
 
-	/* A time-base anomaly: the caller must stop. */
-	if (wait_result == EIO)
-		return EIO;
+	/* The control the well's operations family switches. */
+	control = I915_XD_WELL_CONTROL_MAIN;
+	if (well->ops == I915_PW_OPS_ICL_AUX)
+		control = I915_XD_WELL_CONTROL_AUX;
+	if (well->ops == I915_PW_OPS_ICL_DDI)
+		control = I915_XD_WELL_CONTROL_DDI;
 
-	/* A plain timeout is warned and the enable continues. */
-	if (wait_result != 0)
-		kern_logf("i915: power well fuse PG%u wait timeout (continuing)\n", pg);
+	/* Looks the row up. */
+	xd_well = drv_i915_xd_power_find(pwc->xd->choice.platform, control, well->hsw_idx);
+	if (xd_well < 0) {
+		kern_logf("i915: power well %s: not in the %s description\n", well->name, pwc->xd->choice.platform->name);
+		return -1;
+	}
 
-	/* Succeeded: the wait is over. */
+	/* Succeeded: the well's row. */
+	return xd_well;
+}
+
+/* Fills the xd power wells' hooks with this context's VGA, interrupt and Type-C PHY steps. */
+static void
+i915_pw_xd_hooks(
+	struct i915_pw_ctx *pwc,
+	struct i915_power_well *well,
+	struct i915_pw_hook_ctx *hook,
+	struct i915_xd_power_hooks *hooks)
+{
+	/* The context and the well the hooks act for. */
+	hook->pwc = pwc;
+	hook->well = well;
+
+	/* The steps. */
+	hooks->pipes_up = i915_pw_hook_pipes_up;
+	hooks->pipes_down = i915_pw_hook_pipes_down;
+	hooks->vga_reset = i915_pw_hook_vga_reset;
+	hooks->tc_health = i915_pw_hook_tc_health;
+	hooks->context = hook;
+}
+
+/*
+ * Restores the interrupts of a well's pipes after it came up
+ * (gen8_irq_power_well_post_enable()).  It acts only once interrupts are
+ * enabled; before they are installed it does nothing.
+ */
+static void
+i915_pw_hook_pipes_up(
+	void *context,
+	unsigned pipe_mask)
+{
+	struct i915_pw_hook_ctx *hook;
+	struct i915_pw_ctx *pwc;
+
+	/* Finds the context. */
+	hook = context;
+	pwc = hook->pwc;
+
+	/* Restores the pipe's interrupt registers, which live in the well. */
+	if (pwc->irqs_enabled) {
+		pwc->irq_post_enable_calls++;
+		if (pwc->irq_ops != NULL)
+			pwc->irq_ops->post_enable(pwc->irq_ctx, pipe_mask);
+	}
+}
+
+/*
+ * Drains the interrupts of a well's pipes before it goes off
+ * (gen8_irq_power_well_pre_disable()): stops the pipe's interrupt
+ * sources and waits for a handler already running; afterwards the
+ * handler would read a powered-off register.  Reports nonzero when the
+ * drain failed now or earlier: the well then stays on.
+ */
+static int
+i915_pw_hook_pipes_down(
+	void *context,
+	unsigned pipe_mask)
+{
+	struct i915_pw_hook_ctx *hook;
+	struct i915_pw_ctx *pwc;
+	int drain_result;
+
+	/* Finds the context. */
+	hook = context;
+	pwc = hook->pwc;
+
+	/* Drains through the interrupt layer once interrupts are enabled. */
+	if (pwc->irqs_enabled && !pwc->irq_sync_failed) {
+		pwc->irq_pre_disable_calls++;
+		if (pwc->irq_ops != NULL) {
+			/* Drains the pipe's interrupts through the interrupt layer. */
+			drain_result = pwc->irq_ops->pre_disable(pwc->irq_ctx, pipe_mask);
+
+			/* The handler was not shown to have left the pipe: this well and every later one stay on. */
+			if (drain_result != 0) {
+				pwc->irq_sync_failed = 1;
+				kern_logf("i915: power well %s: pipe interrupt drain FAILED; the well is kept on and every later "
+					"well disable is refused\n", hook->well->name);
+			}
+		}
+	}
+
+	/* A failed drain keeps the well on. */
+	if (pwc->irq_sync_failed)
+		return 1;
+
+	/* Succeeded: the pipes are drained. */
 	return 0;
 }
 
-/* Runs a well's post-enable steps (hsw_power_well_post_enable()): the VGA reset and the pipe interrupts. */
+/* Keeps vgacon sane after the well that holds the VGA plane is on (intel_vga_reset_io_mem()). */
 static void
-i915_pw_post_enable(
-	struct i915_power_well *well,
-	struct i915_pw_ctx *pwc)
+i915_pw_hook_vga_reset(
+	void *context)
 {
-	/* intel_vga_reset_io_mem(): keeps vgacon sane after the well is on. */
-	if (well->has_vga) {
-		drv_i915_vga_reset_io_mem(pwc->vga);
-		pwc->vga_reset_calls++;
-	}
+	struct i915_pw_hook_ctx *hook;
 
-	/*
-	 * gen8_irq_power_well_post_enable(): restores the pipe's interrupt
-	 * registers, which live in the well.  It acts only once interrupts are
-	 * enabled; before they are installed it does nothing.
-	 */
-	if (well->irq_pipe_mask != 0u) {
-		if (pwc->irqs_enabled) {
-			pwc->irq_post_enable_calls++;
-			if (pwc->irq_ops != NULL)
-				pwc->irq_ops->post_enable(pwc->irq_ctx, well->irq_pipe_mask);
-		}
-	}
-}
-
-/*
- * Tells which Type-C port an AUX well belongs to: 0 for the first, or -1
- * for a well that is not a Type-C port's AUX well.
- *
- * The control indices are the hardware's (i915_reg.h of Linux v6.8.12):
- * AUX_USBC1 to 4 at 3 to 6 and AUX_TBT1 to 4 at 9 to 12 on display versions
- * 12 and 13, the only maps built here.  The port follows from the index
- * alone, whether or not the VBT declares the port.
- */
-static int
-i915_pw_tc_aux_port(
-	const struct i915_power_well *well)
-{
-	/* Only an ICL-style AUX well can be a Type-C port's. */
-	if (well->ops != I915_PW_OPS_ICL_AUX)
-		return -1;
-
-	/* A Thunderbolt AUX well serves the port of its number. */
-	if (well->is_tc_tbt) {
-		if (well->hsw_idx >= IDX_AUX_TBT1 && well->hsw_idx <= IDX_AUX_TBT4)
-			return (int)(well->hsw_idx - IDX_AUX_TBT1);
-
-		/* Succeeded: a Thunderbolt well outside the four ports belongs to none. */
-		return -1;
-	}
-
-	/* An AUX_USBC well serves the port of its number. */
-	if (well->hsw_idx >= IDX_AUX_TC1 && well->hsw_idx <= IDX_AUX_TC4)
-		return (int)(well->hsw_idx - IDX_AUX_TC1);
-
-	/* Succeeded: a combo port's AUX well. */
-	return -1;
-}
-
-/*
- * Routes a Type-C port's AUX channel before its AUX well powers up: through
- * the Thunderbolt I/O, or directly (DP_AUX_CH_CTL bit 11, TBT_IO).
- */
-static void
-i915_pw_tc_aux_route(
-	struct i915_pw_ctx *pwc,
-	unsigned tc_port,
-	int tbt)
-{
-	uint32_t reg;
-	uint32_t control;
-
-	/* The port's AUX channel is USBC1 on from AUX_CH_D, 0x100 apart from channel A's control. */
-	reg = I915_TC_AUX_CH_CTL_A + I915_TC_AUX_CH_CTL_STRIDE * ((unsigned)I915_AUX_CH_USBC1 + tc_port);
-
-	/* Reads the control, whose other bits are the channel's transfer settings. */
-	control = drv_i915_raw_read32(pwc->mmio, reg);
-
-	/* A Thunderbolt well routes through the Thunderbolt I/O, an AUX_USBC well directly. */
-	if (tbt) {
-		control |= I915_TC_AUX_CH_CTL_TBT_IO;
-	} else {
-		control &= ~I915_TC_AUX_CH_CTL_TBT_IO;
-	}
-
-	/* Writes the routing back. */
-	drv_i915_raw_write32(pwc->mmio, reg, control);
+	/* Rewrites the VGA registers through the VGA client. */
+	hook = context;
+	drv_i915_vga_reset_io_mem(hook->pwc->vga);
+	hook->pwc->vga_reset_calls++;
 }
 
 /*
@@ -2527,18 +2444,23 @@ i915_pw_tc_aux_route(
  * failed.
  */
 static int
-i915_pw_tc_uc_health_wait(
-	const struct i915_power_well *well,
-	struct i915_pw_ctx *pwc,
+i915_pw_hook_tc_health(
+	void *context,
 	unsigned tc_port)
 {
+	struct i915_pw_hook_ctx *hook;
+	struct i915_pw_ctx *pwc;
 	int wait_result;
+
+	/* Finds the context. */
+	hook = context;
+	pwc = hook->pwc;
 
 	/* Without the PHY access (the GPU-free tests) there is nothing to read. */
 	if (pwc->dkl == NULL)
 		return 0;
 
-	/* Polls the microcontroller's health bit. */
+	/* Polls the microcontroller's health bit through the Dekel window. */
 	wait_result = drv_i915_dkl_phy_wait_set(pwc->dkl, tc_port, I915_DKL_CMN_UC_DW27, I915_DKL_CMN_UC_DW27_UC_HEALTH, I915_TC_UC_HEALTH_TIMEOUT_US);
 	if (wait_result == EIO)
 		return EIO;
@@ -2547,7 +2469,7 @@ i915_pw_tc_uc_health_wait(
 	if (wait_result != 0) {
 		pwc->tc_uc_health_timeouts++;
 		kern_logf("i915: power well %s: timeout waiting for the Type-C PHY's microcontroller health (TC%u)\n",
-			well->name,
+			hook->well->name,
 			tc_port + 1u);
 	}
 
@@ -3126,7 +3048,7 @@ i915_gen12_dbuf_slices_config(
 	}
 
 	/* Logs what was programmed. */
-	kern_logf("i915: P3 gen12_dbuf_slices_config: tracker state service 8 on %u slice(s) of mask 0x%x\n",
+	kern_logf("i915: gen12_dbuf_slices_config: tracker state service 8 on %u slice(s) of mask 0x%x\n",
 		done, mask);
 }
 
@@ -3189,7 +3111,7 @@ i915_icl_mbus_init(
 	}
 
 	/* Logs what was programmed. */
-	kern_logf("i915: P3 icl_mbus_init: %u ABOX register(s) of mask 0x%x given the "
+	kern_logf("i915: icl_mbus_init: %u ABOX register(s) of mask 0x%x given the "
 		"reference credits (POOL1 16, POOL2 16, B 1, BW 1)\n", done, abox);
 }
 

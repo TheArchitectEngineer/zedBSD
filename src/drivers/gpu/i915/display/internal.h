@@ -477,6 +477,11 @@ struct i915_pw_ctx {
 	 */
 	struct i915_dkl_phy *dkl;
 	unsigned tc_uc_health_timeouts;
+	/*
+	 * The display's xd state: its register window and the platform's
+	 * description, whose power wells the well operations switch.
+	 */
+	struct i915_xd *xd;
 };
 
 /* pmdemand state: mutex + waitqueue, initialised early. */
