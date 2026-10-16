@@ -197,7 +197,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS034](ws034/ws.md) | キャンセル | MG002 | 4 | package の導入と kernel・libc の是正 |
 | [WS037](ws037/ws.md) | 要検討（ブロック） | MG006 | 16 | nvrtx（文書の後、GSP の起動・channel・display・executor） |
 | [WS038](ws038/ws.md) | 要検討（ブロック） | MG006 | 16 | Intel Arc dGPU |
-| [WS039](ws039/ws.md) | 一時停止（2026-10-15 開始・同日停止） | MG006 | 20 | AMD RDNA（amdrdna、RX 5600 XT。p001 調べ・p007 compiler が途中） |
+| [WS039](ws039/ws.md) | 進行中（2026-10-16） | MG006 | 75〜111 | AMD RDNA（amdrdna、RX 5600 XT。p001 設計・p002 A0〜A1v・p003 A2 は実機で ok。次は p004 A3t・A3・A4、compiler p007 は途中） |
 | [WS044](ws044/ws.md) | 要検討（ブロック） | MG008 | 1.5 | rpi4 の font・FAT32・lldb |
 | [WS045](ws045/ws.md) | ベータ1 | MG002 | 0 | 完了（2026-10-05） |
 | [WS046](ws046/ws.md) | ベータ2（2026-10-05 移動） | MG002 | 1.5 | GNU 互換の make |
@@ -359,7 +359,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS036](ws036/ws.md) | MG008 | amd64 の成果を他 platform へ（aarch64 を含む） | completed | 2026-09-27 完了（p021 全 platform の回帰と規約、p026〜p029、p027 は案 A: boot の parameter の parser を緩めた）。実機は未実施。toolchain の cache（zedbsd8）は 2026-09-27 に rev-0 へ upload 済み |
 | [WS037](ws037/ws.md) | MG006 | **nvrtx**: NVIDIA RTX 2000 以降（Turing〜Blackwell、GTX 16xx を含む）の GPU driver。WS141 の vc4 と同じ進め方（文書が先、GPL の作業の文書は commit しない、定数の一括の改名、最後に類似の監査、GSP の firmware は userland/firmware）。Pascal 以前は範囲の外（2026-10-04 ユーザー） | planned（p001 から、q692） | 独立。試験は centris に挿す NVIDIA の GPU の VFIO |
 | [WS038](ws038/ws.md) | MG006 | Intel Arc dGPU（予約） | planning | 番号のみ |
-| [WS039](ws039/ws.md) | MG006 | AMD RDNA GPU（amdrdna） | incomplete（2026-10-15 開始、同日ユーザーの指示で一時停止） | p001 の再開の点・p007 の 7.2（ws.md） |
+| [WS039](ws039/ws.md) | MG006 | AMD RDNA GPU（amdrdna） | incomplete（p001・p002・p003 cleared、実機 10.0.10.3 の RX 5600 XT） | p004（A3t・A3・A4 Tier S、firmware の package と電源の入れ直しが要る） |
 | [WS040](ws040/ws.md) | MG008 | 時間の単位を tick 周期から導く | completed | — |
 | [WS041](ws041/ws.md) | MG006 | 起きた thread の即時実行 | completed | — |
 | [WS042](ws042/ws.md) | MG002 | `/bin/sh` の POSIX 互換性 | completed | — |
@@ -606,6 +606,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-16 朝: AMD RDNA の driver の段 A2（WS039 p003: BAR0 の窓・GMC・GART・IH の用意）が実機で ok、underflow 0（video=640x480 を外して GOP を 1920x1080 に）→ main に merge（6e44a158e）、ci の vmunix は warning 0。
 - 2026-10-16 朝: AMD RDNA の driver の最初の実機の段（WS039 p002、A0・A1・A1v）が 10.0.10.3 の RX 5600 XT で ok → main に merge（aeca13ff3、ACPI の table の lookup・driver・pcat.c の登録を含む）。ci の config の vmunix は warning 0。zedBSD は DHCP で 10.0.30.5（ユーザー「DHCPは10.0.30.5 で取得したようです。」）。
 - 2026-10-15 夜（ユーザー、クリック、Intel GPU の display の書き直しのレビュー 4 への判断）: LCD の確かめは「register などの証拠で代える」、外部 monitor は「常設できない」、止まった時は「その都度自分で入れ直す」→ Guardrail の i915 の節に追記。i915 は P1 がレビュー 4 を反映（改訂 5、8c4fe7791）しレビュー 5（blocker 2・major 11・minor 15、未反映）を commit してラップアップ（7d9a4a09b、merge bbf8d7ae9）。再開点は ws245/phase001/phase.md。
 - 2026-10-15 夜（ユーザー、1 件ずつクリック）: AMD RDNA の driver の設計 §15 の 14 件に回答（全文は ws039/ws.md）。既定から変わった物: #7「まず256MBで実装します。」、#11 control の node は「開発の間だけ」。#14 amdgpu を 10.0.10.3 で load して dump は許可。→ WS039 p001 cleared。

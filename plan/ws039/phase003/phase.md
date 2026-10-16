@@ -2,7 +2,7 @@
 
 # ws039-p003: 段 A2（BAR0 の窓・GMC・IH の用意）
 
-Status: in-progress（2026-10-16 P3、q1212-i01。実機で A2 ok、Q1 の判定待ち）
+Status: cleared（2026-10-16 Q1: 実機 10.0.10.3 で 2 回とも A2 ok・underflow=0、Linux の値と照合が一致、host 試験 PASS、build warning 0。main の merge 6e44a158e。IH の ring の enable・MSI の到着・VM fault の受けは A3 で）
 Disposition: normal
 Parent: [WS039](../ws.md)
 実行者: P3（worktree `/home/awe/zedBSD-worktrees/p3`、branch `agent/p3-ws039`、base main `355c8642c`）
