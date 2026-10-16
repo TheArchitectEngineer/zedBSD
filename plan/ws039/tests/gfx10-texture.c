@@ -131,8 +131,15 @@ texture_sample(
 		return;
 	}
 
-	/* A fetch reads the integer texel (a 3D image's at the integer r). */
+	/* A fetch reads the integer texel (a 3D image's at the integer r); outside the image it reads zero, whatever the sampler. */
 	if (request->fetch != 0) {
+		if ((int32_t)request->u < 0 || (int32_t)request->u >= (int32_t)image_width(image) ||
+		    (int32_t)request->v < 0 || (int32_t)request->v >= (int32_t)image_height(image) ||
+		    (image_type(image) == TEXTURE_TYPE_3D &&
+		     ((int32_t)request->r < 0 || (int32_t)request->r >= (int32_t)image_depth(image)))) {
+			memset(out, 0, 16U);
+			return;
+		}
 		texel(texels, image, sampler, (int32_t)request->u, (int32_t)request->v,
 		      image_type(image) == TEXTURE_TYPE_3D ? (int32_t)request->r : 0, request, result);
 		swizzle(image, result);

@@ -578,7 +578,7 @@
  * that names no attribute.
  */
 #define AMDRDNA_GFX10_PRIMITIVE_ID_PARAMETER	31U
-#define AMDRDNA_GFX10_NO_ATTRIBUTE		0xffffffffU
+#define AMDRDNA_GFX10_NO_ATTRIBUTE		(~0U)
 
 /* The bytes of one buffer descriptor (V#), image descriptor (T#) and sampler (S#). */
 #define AMDRDNA_GFX10_BUFFER_DESCRIPTOR_BYTES	16U
