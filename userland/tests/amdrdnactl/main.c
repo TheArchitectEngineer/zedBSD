@@ -13,6 +13,8 @@
  *   amdrdnactl [-f DEVICE] [status]       prints the state, one "key=value" per line
  *   amdrdnactl [-f DEVICE] advance STAGE  asks for the stages up to STAGE (root)
  *   amdrdnactl [-f DEVICE] vbios FILE     writes the video BIOS image to FILE
+ *   amdrdnactl gpu [GPU-DEVICE]           checks the GPU device the driver
+ *                                         registered (/dev/gpu0 by default)
  *
  * The exit status is 0, 1 with "amdrdnactl: <step>: <reason>" on a failure,
  * or 2 for a wrong command line.
@@ -28,8 +30,11 @@
 #include <unistd.h>
 #include <uapi/amdrdna.h>
 
-/* The default device: the first GPU's. */
+#include "amdrdnactl.h"
+
+/* The default devices: the first GPU's control device and its GPU device. */
 #define CONTROL_DEVICE		"/dev/amdrdna0"
+#define CONTROL_GPU_DEVICE	"/dev/gpu0"
 
 /* The bytes one request of the image copies. */
 #define CONTROL_CHUNK		4096U
@@ -65,6 +70,19 @@ main(
 	int is_status;
 	int is_advance;
 	int is_vbios;
+	int is_gpu;
+
+	/* The GPU device check needs no control device. */
+	is_gpu = 0;
+	if (argc >= 2)
+		is_gpu = strcmp(argv[1], "gpu") == 0;
+	if (is_gpu) {
+		path = CONTROL_GPU_DEVICE;
+		if (argc == 3)
+			path = argv[2];
+		result = control_gpu(path);
+		return result;
+	}
 
 	/* The device: -f names another one. */
 	path = CONTROL_DEVICE;
@@ -205,6 +223,11 @@ control_status(
 	    (unsigned)status.backends, (unsigned)status.compute_units, (unsigned)status.channels_off,
 	    (unsigned)status.fences, (unsigned)status.end_of_pipe_interrupts, (unsigned)status.copy_traps,
 	    (unsigned)status.copied_bytes, (unsigned)status.dispatch_words);
+
+	/* The address spaces and the GPU device (stage A5s). */
+	printf("sessions spaces=%u held=%u flushes=%u device=0x%x\n",
+	    (unsigned)(status.spaces & 0xffffU), (unsigned)(status.spaces >> 16),
+	    (unsigned)status.context_flushes, (unsigned)status.device_flags);
 	return 0;
 }
 
@@ -341,5 +364,5 @@ static void
 usage(void)
 {
 	/* The one usage line. */
-	fprintf(stderr, "usage: amdrdnactl [-f DEVICE] [status | advance STAGE | vbios FILE]\n");
+	fprintf(stderr, "usage: amdrdnactl [-f DEVICE] [status | advance STAGE | vbios FILE] | amdrdnactl gpu [GPU-DEVICE]\n");
 }

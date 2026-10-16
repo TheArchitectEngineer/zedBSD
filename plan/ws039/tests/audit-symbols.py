@@ -13,7 +13,8 @@
 #
 # Usage: audit-symbols.py <linux tree> <mesa tree or -> <driver directory> <allow list>
 #
-# The shader compiler (compiler/) has its own audit and is left out.
+# The shader compiler (compiler/) and the Vulkan executor (vk/) have their
+# own audit and are left out.
 
 import os
 import re
@@ -111,11 +112,12 @@ def source_identifiers(linux, mesa):
 
 
 def driver_files(directory):
-    """Lists the driver's C files, without the shader compiler."""
+    """Lists the driver's C files, without the shader compiler and the executor."""
     found = []
     for root, dirs, names in os.walk(directory):
-        if "compiler" in dirs:
-            dirs.remove("compiler")
+        for skipped in ("compiler", "vk"):
+            if skipped in dirs:
+                dirs.remove(skipped)
         for name in names:
             if name.endswith(".c") or name.endswith(".h"):
                 found.append(os.path.join(root, name))
