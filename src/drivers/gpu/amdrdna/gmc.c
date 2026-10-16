@@ -35,6 +35,7 @@
 #include <stdint.h>
 
 #include <drivers/generic/dma.h>
+#include <drivers/pci/pci-pcat.h>
 #include <drivers/pci/pci.h>
 #include <kern/clock.h>
 #include <kern/device-io.h>
@@ -126,6 +127,7 @@ static void hub_write(struct amdrdna_device *device, enum amdrdna_hub hub, enum 
 static int memory_blocks(struct amdrdna_device *device);
 static uint32_t memory_underflow(struct amdrdna_device *device);
 static void memory_underflow_clear(struct amdrdna_device *device);
+static void memory_grow(struct amdrdna_device *device);
 static int memory_windows(struct amdrdna_device *device);
 static int memory_pools(struct amdrdna_device *device);
 static int memory_table(struct amdrdna_device *device);
@@ -173,6 +175,9 @@ amdrdna_a2_memory(
 
 	/* Records the bits the display shows before the stage writes anything. */
 	device->underflow_before = memory_underflow(device);
+
+	/* Grows the VRAM window to cover the VRAM when it can (a failure keeps the window as it is). */
+	memory_grow(device);
 
 	/* Maps the CPU's VRAM window and the doorbell page. */
 	error = memory_windows(device);
@@ -950,6 +955,79 @@ memory_underflow_clear(
 		word = amdrdna_read(device, index);
 		amdrdna_write(device, index, word | MEMORY_TIMING_UNDERFLOW_CLEAR);
 	}
+}
+
+/*
+ * Grows the VRAM window (BAR 0) from what the firmware left to cover the
+ * VRAM: the sizes from the VRAM's, rounded up to a power of two, down to
+ * twice the window, each asked of the PCI host, which moves the doorbell
+ * BAR past the window and grows the bridges' windows; the first that
+ * works wins.  The layout is planned again for the larger window.  Off
+ * with the boot word amdrdna.bar.grow=0; a window that does not grow stays
+ * as it was.
+ */
+static void
+memory_grow(
+	struct amdrdna_device *device)
+{
+	struct drv_pci_bar bar;
+	uint64_t size;
+	uint64_t before;
+	unsigned asked;
+	int error;
+
+	/* Only when asked (the default) and when the window shows less than the VRAM. */
+	asked = amdrdna_parameter_number("amdrdna.bar.grow", 1U);
+	if (asked == 0U)
+		return;
+	before = device->vram_window_bytes;
+	if (before >= device->vram_bytes)
+		return;
+
+	/* The largest size first: the VRAM's, rounded up to a power of two. */
+	size = before;
+	while (size < device->vram_bytes)
+		size <<= 1;
+
+	/* Each size down to twice the window, until one works. */
+	error = ENOSPC;
+	while (size > before) {
+		error = drv_pci_pcat_grow_bar(device->pci, AMDRDNA_BAR_VRAM, size);
+		if (error == 0)
+			break;
+		size >>= 1;
+	}
+
+	/* A window no size could grow stays as it was. */
+	if (error != 0) {
+		amdrdna_mark("A2 window stays %lluMiB (%d)", (unsigned long long)(before >> 20), error);
+		return;
+	}
+
+	/* The window's new size, where it is (the doorbells may have moved). */
+	kern_memset(&bar, 0, sizeof(bar));
+	error = drv_pci_device_bar(device->pci, AMDRDNA_BAR_VRAM, &bar);
+	if (error == 0) {
+		device->vram_bus = bar.bus_address;
+		device->vram_window_bytes = bar.size;
+	}
+
+	/* The doorbells' record (their address goes in the mark). */
+	error = drv_pci_device_bar(device->pci, AMDRDNA_BAR_DOORBELL, &bar);
+	if (error == 0)
+		device->doorbell_bytes = bar.size;
+
+	/* The layout for the larger window. */
+	error = amdrdna_plan_layout(device);
+	amdrdna_mark("A2 window grown %lluMiB -> %lluMiB at 0x%llx, doorbells at 0x%llx, layout cpu=0-%lluMiB gpu=%llu-%lluMiB (%d)",
+	    (unsigned long long)(before >> 20),
+	    (unsigned long long)(device->vram_window_bytes >> 20),
+	    (unsigned long long)device->vram_bus,
+	    (unsigned long long)bar.bus_address,
+	    (unsigned long long)(device->layout.cpu_pool_end >> 20),
+	    (unsigned long long)(device->layout.gpu_pool_start >> 20),
+	    (unsigned long long)(device->layout.gpu_pool_end >> 20),
+	    error);
 }
 
 /*

@@ -32,6 +32,48 @@
 #define PCI_COMMAND_MASTER 0x0004U
 #define PCI_COMMAND_INTX_DISABLE 0x0400U
 #define PCI_COMMAND_ENABLE_MASK (PCI_COMMAND_IO | PCI_COMMAND_MEMORY | PCI_COMMAND_MASTER)
+
+/*
+ * The Resizable BAR extended capability (id 0x15): each entry is 8 bytes
+ * from the capability, its sizes word at +4 (bit n of bits 31:4 offers
+ * 2^(n + 20) bytes) and its control word at +8 (the BAR index in bits
+ * 2:0, the entry count in 7:5 of the first entry, the size in 12:8 as
+ * log2 of the bytes less 20).
+ *
+ * Values referenced: PCI Express Base Specification, Resizable BAR
+ * Extended Capability; Linux v6.19 include/uapi/linux/pci_regs.h (the
+ * capability id 0x15, the sizes word at 4 with mask 0xfffffff0, the
+ * control word at 8 with the index mask 0x7, the count in 0xe0 from bit 5,
+ * the size in 0x1f00 from bit 8) and drivers/pci/rebar.c (entries 8 bytes
+ * apart, the smallest size 1 MiB).
+ */
+#define PCI_REBAR_CAPABILITY 0x15U
+#define PCI_REBAR_SIZES 0x04U
+#define PCI_REBAR_CONTROL 0x08U
+#define PCI_REBAR_ENTRY_BYTES 8U
+#define PCI_REBAR_INDEX_MASK 0x7U
+#define PCI_REBAR_COUNT_SHIFT 5U
+#define PCI_REBAR_COUNT_MASK 0x7U
+#define PCI_REBAR_SIZE_SHIFT 8U
+#define PCI_REBAR_SIZE_MASK 0x1f00U
+#define PCI_REBAR_SIZES_SHIFT 4U
+#define PCI_REBAR_MIN_SHIFT 20U
+
+/*
+ * A board whose capability offers fewer sizes than its BAR takes: the
+ * Sapphire RX 5600 XT (vendor 0x1002, device 0x731f) offers 256 MiB to
+ * 1 GiB (0x700 in the sizes) for BAR 0, which takes 256 MiB to 8 GiB
+ * (0x3f00).  Only that exact word is replaced.
+ *
+ * Values referenced: Linux v6.19 drivers/pci/rebar.c (the quirk of the
+ * possible sizes: vendor ATI, device 0x731f, BAR 0, sizes 0x700 read as
+ * 0x3f00).
+ */
+#define PCI_REBAR_QUIRK_VENDOR 0x1002U
+#define PCI_REBAR_QUIRK_DEVICE 0x731fU
+#define PCI_REBAR_QUIRK_BAR 0U
+#define PCI_REBAR_QUIRK_SIZES 0x700U
+#define PCI_REBAR_QUIRK_TRUE_SIZES 0x3f00U
 #define PCI_MSI_CONTROL 0x02U
 #define PCI_MSI_ADDRESS 0x04U
 #define PCI_MSI_ENABLE 0x0001U
@@ -1372,6 +1414,131 @@ rollback:
 		return error;
 
 	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Gives a resizable memory BAR a new size at its address.
+ *
+ * Procedure referenced: Linux v6.19 drivers/pci/rebar.c (the entry of the
+ * BAR found by its index, the offered sizes, the size field rewritten with
+ * the others kept) and drivers/gpu/drm/amd/amdgpu/amdgpu_device.c
+ * (amdgpu_device_resize_fb_bar: memory decoding off while the size
+ * changes).
+ */
+int
+drv_pci_device_resize_bar(
+	struct drv_pci_device *device,
+	unsigned index,
+	uint64_t size)
+{
+	struct drv_pci_bar *bar;
+	uint32_t control;
+	uint32_t original;
+	uint32_t sizes;
+	uint32_t entry_control;
+	uint32_t read_control;
+	uint32_t low;
+	uint32_t high;
+	uint64_t address;
+	uint16_t command;
+	unsigned capability;
+	int restored;
+	unsigned entry;
+	unsigned count;
+	unsigned code;
+	int error;
+
+	/* A memory BAR with an address, not claimed, and a size that is a power of two at least 1 MiB its address is a multiple of. */
+	if (device == NULL || index >= device->bar_count)
+		return EINVAL;
+	bar = &device->bars[index];
+	if (bar->type != DRV_PCI_BAR_MEMORY32 && bar->type != DRV_PCI_BAR_MEMORY64)
+		return EINVAL;
+	if (device->bar_claimed[index])
+		return EBUSY;
+	if (size < ((uint64_t)1U << PCI_REBAR_MIN_SHIFT) || (size & (size - 1U)) != 0U)
+		return EINVAL;
+	if (bar->bus_address == 0U || (bar->bus_address & (size - 1U)) != 0U)
+		return EINVAL;
+	if (bar->type == DRV_PCI_BAR_MEMORY32 && bar->bus_address + (size - 1U) > UINT32_MAX)
+		return EINVAL;
+
+	/* The capability and the count of its entries. */
+	error = drv_pci_device_find_extended_capability(device, PCI_REBAR_CAPABILITY, 0U, &capability);
+	if (error != 0)
+		return ENOTSUP;
+	error = drv_pci_device_config_read32(device, capability + PCI_REBAR_CONTROL, &control);
+	if (error != 0)
+		return error;
+	count = (control >> PCI_REBAR_COUNT_SHIFT) & PCI_REBAR_COUNT_MASK;
+
+	/* The entry of the BAR. */
+	for (entry = 0U; entry < count; entry++) {
+		error = drv_pci_device_config_read32(device, capability + PCI_REBAR_CONTROL + entry * PCI_REBAR_ENTRY_BYTES, &entry_control);
+		if (error != 0)
+			return error;
+		if ((entry_control & PCI_REBAR_INDEX_MASK) == index)
+			break;
+	}
+
+	/* A BAR the capability does not list cannot be resized. */
+	if (entry == count)
+		return ENOTSUP;
+
+	/* The sizes it offers, with the one board whose word is known to be short. */
+	error = drv_pci_device_config_read32(device, capability + PCI_REBAR_SIZES + entry * PCI_REBAR_ENTRY_BYTES, &sizes);
+	if (error != 0)
+		return error;
+	sizes >>= PCI_REBAR_SIZES_SHIFT;
+	if (device->vendor == PCI_REBAR_QUIRK_VENDOR && device->product == PCI_REBAR_QUIRK_DEVICE &&
+	    index == PCI_REBAR_QUIRK_BAR && sizes == PCI_REBAR_QUIRK_SIZES)
+		sizes = PCI_REBAR_QUIRK_TRUE_SIZES;
+
+	/* The size asked for must be offered. */
+	code = 0U;
+	while (((uint64_t)1U << (code + PCI_REBAR_MIN_SHIFT)) < size)
+		code++;
+	if (code >= 32U || (sizes & (1U << code)) == 0U)
+		return ENOTSUP;
+
+	/* Memory decoding and bus mastering off while the size changes. */
+	error = drv_pci_device_config_read16(device, PCI_COMMAND, &command);
+	if (error != 0)
+		return error;
+	error = pci_command_quiesce(device, command);
+	if (error != 0)
+		return error;
+
+	/* The new size, the other fields kept; it must read back, and the BAR keep its address. */
+	original = entry_control;
+	control = (entry_control & ~PCI_REBAR_SIZE_MASK) | (code << PCI_REBAR_SIZE_SHIFT);
+	error = drv_pci_device_config_write32(device, capability + PCI_REBAR_CONTROL + entry * PCI_REBAR_ENTRY_BYTES, control);
+	if (error == 0)
+		error = drv_pci_device_config_read32(device, capability + PCI_REBAR_CONTROL + entry * PCI_REBAR_ENTRY_BYTES, &read_control);
+	if (error == 0 && read_control != control)
+		error = EIO;
+	if (error == 0)
+		error = pci_bar_read_raw(device, index, bar->type, &low, &high);
+	address = 0U;
+	if (error == 0)
+		address = pci_bar_address(bar->type, low, high);
+	if (error == 0 && address != bar->bus_address)
+		error = EIO;
+
+	/* A failed change gives the old size back. */
+	if (error != 0)
+		(void)drv_pci_device_config_write32(device, capability + PCI_REBAR_CONTROL + entry * PCI_REBAR_ENTRY_BYTES, original);
+
+	/* The command bits as before, in either case. */
+	restored = drv_pci_device_config_write16(device, PCI_COMMAND, command);
+	if (restored != 0 && error == 0)
+		error = EIO;
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the BAR has its new size. */
+	bar->size = size;
 	return 0;
 }
 
