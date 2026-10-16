@@ -16,8 +16,9 @@
  * backlight's levels (the user's range, the firmware's request, on and
  * off, a panel the other way round); the faults: a PLL that does not
  * lock, a link that does not train, a pipe found running; an HDMI sink
- * on DDI B; and an external DisplayPort sink on TC1 in DisplayPort
- * alternate and in Thunderbolt mode.
+ * on DDI B; an external DisplayPort sink on TC1 in DisplayPort
+ * alternate and in Thunderbolt mode; and on an Ice Lake (display 11) the
+ * panel on the eDP transcoder and an external sink on TC1's MG PHY.
  */
 
 #include "host-test.h"
@@ -38,9 +39,11 @@
 #include <stdint.h>
 #include <string.h>
 
-/* The 5330's Alder Lake-P. */
+/* The 5330's Alder Lake-P, and an Ice Lake with port F (D0). */
 #define I915_XD_OT_TEST_ADLP		0x46a6U
 #define I915_XD_OT_TEST_ADLP_REVID	0x0cU
+#define I915_XD_OT_TEST_ICL		0x8a52U
+#define I915_XD_OT_TEST_ICL_REVID	0x07U
 
 /* The events the log keeps: the environment's calls and the writes of the registers the test watches. */
 #define I915_XD_OT_GET			1U
@@ -148,6 +151,8 @@ static void i915_xd_ot_test_backlight(void);
 static void i915_xd_ot_test_faults(void);
 static void i915_xd_ot_test_hdmi(void);
 static void i915_xd_ot_test_type_c(void);
+static const struct i915_xd_platform *i915_xd_ot_setup_icl(void);
+static void i915_xd_ot_test_icl(void);
 
 /* The Type-C hooks of the test: each one logged. */
 static const struct i915_xd_output_tc i915_xd_ot_tc = {
@@ -175,6 +180,7 @@ main(void)
 	i915_xd_ot_test_faults();
 	i915_xd_ot_test_hdmi();
 	i915_xd_ot_test_type_c();
+	i915_xd_ot_test_icl();
 
 	/* Reports the result. */
 	failures = i915_host_report("host_xd_output_test");
@@ -1443,4 +1449,163 @@ i915_xd_ot_test_type_c(void)
 			i915_xd_ot_find(I915_XD_OT_WRITE, reset, 0U) < 0 &&
 			i915_xd_fake_get(0x4610cU) == 0xc0000000U && (out.buf_word & I915_XD_DDI_BUF_TC_OWNED) == 0U,
 			"output: in Thunderbolt mode no IO power, no PHY lanes, mode, levels or reset, the Thunderbolt PLL by the caller at 1.62 GHz, no ownership");
+}
+
+/*
+ * Starts the model of the other checks on an Ice Lake: the eDP
+ * transcoder's state follows its enable, the ports' own transports
+ * report their idle patterns sent, and the eDP transcoder's function and
+ * clock select and the transports are watched.
+ */
+static const struct i915_xd_platform *
+i915_xd_ot_setup_icl(void)
+{
+	static const uint32_t watched[] = {
+		I915_XD_TRANS_DDI_FUNC_CTL(I915_XD_TRANS_EDP), I915_XD_TRANS_CLK_SEL(I915_XD_TRANS_EDP),
+		I915_XD_DP_TP_CTL(I915_XD_DP_TP_PORT(0U)), I915_XD_DP_TP_CTL(I915_XD_DP_TP_PORT(2U)),
+	};
+	struct i915_xd_choice choice;
+	unsigned index;
+	int error;
+
+	/* The model of the other checks. */
+	if (i915_xd_ot_setup() == NULL)
+		return NULL;
+
+	/* The eDP transcoder's state, the ports' transports, the watched registers. */
+	i915_xd_fake_rule_mirror(I915_XD_TRANS_CONF(I915_XD_TRANS_EDP), 0x80000000U, I915_XD_TRANS_CONF(I915_XD_TRANS_EDP), -1, 0U);
+	i915_xd_fake_set(I915_XD_DP_TP_STATUS(I915_XD_DP_TP_PORT(0U)), 0x02000000U);
+	i915_xd_fake_set(I915_XD_DP_TP_STATUS(I915_XD_DP_TP_PORT(2U)), 0x02000000U);
+	for (index = 0U; index < sizeof(watched) / sizeof(watched[0]); index++)
+		i915_xd_fake_rule_call(watched[index], i915_xd_ot_watch, NULL);
+
+	/* The description. */
+	error = drv_i915_xd_platform_choose(I915_XD_OT_TEST_ICL, I915_XD_OT_TEST_ICL_REVID, 0, 0U, &choice);
+	if (error != 0)
+		return NULL;
+
+	/* Succeeded: the Ice Lake's description. */
+	return choice.platform;
+}
+
+/* Ice Lake: the panel on the eDP transcoder, then an external sink on TC1's MG PHY. */
+static void
+i915_xd_ot_test_icl(void)
+{
+	const struct i915_xd_platform *platform;
+	const struct i915_xd_pll_desc *pll;
+	struct i915_xd_output_env env;
+	struct i915_xd_output out;
+	uint32_t function;
+	uint32_t func_ctl;
+	uint32_t transport;
+	uint32_t dp_mode;
+	uint32_t swing;
+	unsigned from;
+	int first_transport;
+	int enable;
+	int clock;
+	int last_train;
+	int buffer;
+	int error;
+
+	/* The panel on DDI A and the eDP transcoder (pipe A), its buffer in one slice. */
+	platform = i915_xd_ot_setup_icl();
+	i915_host_check(platform != NULL && platform->display_ver == 11U, "icl: the Ice Lake's description");
+	if (platform == NULL)
+		return;
+	i915_xd_ot_env(&env, platform);
+	i915_xd_ot_panel_output(&out);
+	out.trans = I915_XD_TRANS_EDP;
+	out.dmc_programs = 0U;
+	out.dbuf.slices_after = 0x1U;
+	out.dbuf.joined_after = 0U;
+	error = i915_xd_ot_light(&out, &env);
+	i915_host_check(error == 0 && i915_xd_ot_log.errors == 0U && out.trained, "icl: the panel's light on the eDP transcoder runs through and trains");
+
+	/* The eDP transcoder's function: DDI A in display 11's select, pipe A's input kept on, enabled; no clock select. */
+	func_ctl = I915_XD_TRANS_DDI_FUNC_CTL(I915_XD_TRANS_EDP);
+	function = i915_xd_fake_get(func_ctl);
+	i915_host_check((function & I915_XD_DDI_FUNC_ENABLE) != 0U && (function & I915_XD_DDI_FUNC_SELECT_11) == 0U &&
+			(function & I915_XD_DDI_FUNC_EDP_INPUT) == I915_XD_DDI_FUNC_EDP_INPUT_A_ON &&
+			i915_xd_ot_find(I915_XD_OT_WRITE, I915_XD_TRANS_CLK_SEL(I915_XD_TRANS_EDP), 0U) < 0,
+			"icl: the eDP transcoder's function selects DDI A with pipe A's input, enabled; its clock is not selected");
+
+	/* The training on port A's own transport, before the function; nothing on transcoder A's. */
+	transport = I915_XD_DP_TP_CTL(I915_XD_DP_TP_PORT(0U));
+	first_transport = i915_xd_ot_find(I915_XD_OT_WRITE, transport, 0U);
+	enable = i915_xd_ot_find(I915_XD_OT_WRITE, func_ctl, 0U);
+	i915_host_check(first_transport >= 0 && enable > first_transport && i915_xd_ot_find(I915_XD_OT_WRITE, I915_XD_DP_TP_CTL(0U), 0U) < 0,
+			"icl: the link trains on port A's transport, the function is written once after it, transcoder A's transport is untouched");
+
+	/* The dark: the eDP transcoder stopped, its function cleared, still no clock select. */
+	from = i915_xd_ot_log.count;
+	i915_xd_ot_dark(&out, &env);
+	i915_host_check((i915_xd_fake_get(I915_XD_TRANS_CONF(I915_XD_TRANS_EDP)) & 0x80000000U) == 0U &&
+			(i915_xd_fake_get(func_ctl) & I915_XD_DDI_FUNC_ENABLE) == 0U &&
+			i915_xd_ot_find(I915_XD_OT_WRITE, I915_XD_TRANS_CLK_SEL(I915_XD_TRANS_EDP), from) < 0 && out.held == 0U,
+			"icl: the dark stops the eDP transcoder and clears its function, selects no clock, gives everything back");
+
+	/* An external sink on TC1 (DDI C, the MG PHY C) in DisplayPort alternate mode, on pipe and transcoder B. */
+	platform = i915_xd_ot_setup_icl();
+	if (platform == NULL)
+		return;
+	pll = drv_i915_xd_dpll_desc(platform, I915_XD_OT_TC_PLL_1);
+	if (pll == NULL) {
+		i915_host_check(0, "icl: the platform has MG PLL 1");
+		return;
+	}
+	i915_xd_fake_rule_mirror(pll->enable, 0x08000000U, pll->enable, -1, 0U);
+	i915_xd_fake_rule_mirror(pll->enable, 0x80000000U, pll->enable, -1, 0U);
+	dp_mode = I915_XD_MG_PHY(0U) + I915_XD_MG_DP_MODE;
+	swing = I915_XD_MG_PHY(0U) + I915_XD_MG_TX1_SWINGCTRL;
+	i915_xd_fake_rule_call(dp_mode, i915_xd_ot_watch, NULL);
+	i915_xd_fake_rule_call(swing, i915_xd_ot_watch, NULL);
+	i915_xd_ot_env(&env, platform);
+	env.tc = &i915_xd_ot_tc;
+	i915_xd_ot_log.tc_mode = I915_XD_OUTPUT_TC_DP_ALT;
+	i915_xd_ot_panel_output(&out);
+	out.kind = I915_XD_SCREEN_DP;
+	out.ddi = 2U;
+	out.phy = 2U;
+	out.aux = 2U;
+	out.pipe = 1U;
+	out.trans = 1U;
+	out.tc = 1;
+	out.tc_port = 0U;
+	out.tc_pll = I915_XD_OT_TC_PLL_1;
+	error = drv_i915_xd_mg_pll_words(38400U, 162000U, 0, &out.mg_pll_words);
+	out.rate_khz = 162000U;
+	out.lanes = 4U;
+	out.dmc_programs = 0U;
+	out.backlight.vbt_present = 0;
+	out.dbuf.slices_after = 0x1U;
+	out.dbuf.joined_after = 0U;
+	out.dbuf.pipes_after = 0x2U;
+	if (error == 0)
+		error = i915_xd_ot_light(&out, &env);
+	i915_host_check(error == 0 && i915_xd_ot_log.errors == 0U && out.trained, "icl: a TC1 sink's light on the MG PHY runs through and trains");
+
+	/* The MG PLL locked, the MG PHY's DP mode and swing written. */
+	i915_host_check((i915_xd_fake_get(pll->enable) & 0xc0000000U) == 0xc0000000U &&
+			i915_xd_fake_get(I915_XD_MG_PHY(0U) + I915_XD_MG_PLL_DIV0) == out.mg_pll_words.div0 &&
+			i915_xd_ot_find(I915_XD_OT_WRITE, dp_mode, 0U) >= 0 && i915_xd_ot_find(I915_XD_OT_WRITE, swing, 0U) >= 0,
+			"icl: MG PLL 1 enabled and locked with its words, the MG PHY's DP mode and swing written");
+
+	/* Transcoder B on DDI C's clock in display 11's field, once the link trained on port C's transport. */
+	transport = I915_XD_DP_TP_CTL(I915_XD_DP_TP_PORT(2U));
+	clock = i915_xd_ot_find_value(I915_XD_OT_WRITE, I915_XD_TRANS_CLK_SEL(1U), 0x60000000U, 0U);
+	last_train = i915_xd_ot_find(I915_XD_OT_WRITE, transport, 0U);
+	while (last_train >= 0 && i915_xd_ot_find(I915_XD_OT_WRITE, transport, (unsigned)last_train + 1U) >= 0)
+		last_train = i915_xd_ot_find(I915_XD_OT_WRITE, transport, (unsigned)last_train + 1U);
+	i915_host_check(clock >= 0 && last_train >= 0 && clock > last_train && i915_xd_ot_find(I915_XD_OT_WRITE, I915_XD_TRANS_CLK_SEL(1U), 0U) == clock,
+			"icl: transcoder B's clock select (DDI C, 0x60000000) written once, after the training on port C's transport");
+
+	/* The dark: the clock off the transcoder before the buffer stops. */
+	from = i915_xd_ot_log.count;
+	i915_xd_ot_dark(&out, &env);
+	clock = i915_xd_ot_find_value(I915_XD_OT_WRITE, I915_XD_TRANS_CLK_SEL(1U), I915_XD_TRANS_CLK_SEL_NONE, from);
+	buffer = i915_xd_ot_find(I915_XD_OT_WRITE, I915_XD_DDI_BUF_CTL(2U), from);
+	i915_host_check(clock >= 0 && buffer > clock && (i915_xd_fake_get(pll->enable) & 0xc8000000U) == 0U && out.held == 0U,
+			"icl: the dark takes the clock off transcoder B before DDI C's buffer stops, MG PLL 1 off, everything given back");
 }

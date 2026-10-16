@@ -36,10 +36,18 @@
  * or DVI sink on a combo port, and an external DisplayPort sink on a
  * Type-C port.  A Type-C port's PHY (its DisplayPort mode, its signal
  * levels, its core reset) and its own PLL are driven here through the
- * Dekel PHY's window; what the port's connection holds (its link to the
+ * Dekel PHY's window, or on display 11 (Ice Lake) in the MG PHY's own
+ * registers; what the port's connection holds (its link to the
  * PHY, the mode it is in, its lanes and pin assignment, and the
  * Thunderbolt PLL the Type-C ports share) is the caller's, through the
  * environment's Type-C hooks.
+ *
+ * Display 11 orders a DisplayPort port as its own generation does: the
+ * transcoder's function is not written before the training and its
+ * clock follows the trained link, the transport is the port's own (not
+ * the transcoder's), the eDP transcoder takes its pipe in its function
+ * word and has no clock select, and a stop takes the clock off the
+ * transcoder before the DDI buffer stops.
  */
 
 #ifndef DRIVERS_GPU_I915_DISPLAY_XD_OUTPUT_H
@@ -215,7 +223,8 @@ struct i915_xd_output_backlight {
  * swing table (I915_XD_SWING_*), the HDMI swing level the VBT names (-1:
  * the table's own), whether the port is Type-C (and which, 0 for the
  * first); the port's PLL and its words (a combo port's), and a Type-C
- * port's own PLL and its words; the
+ * port's own PLL and its words (a Dekel PHY's, or on display 11 an MG
+ * PHY's); the
  * colour words, the line time word; the DMC programs loaded (bit n for
  * DMC n); the sink's receiver capabilities and the display buffer's
  * change.
@@ -258,6 +267,7 @@ struct i915_xd_output {
 	struct i915_xd_dpll_words pll_words;
 	unsigned tc_pll;
 	struct i915_xd_tc_pll_words tc_pll_words;
+	struct i915_xd_mg_pll_words mg_pll_words;
 	uint32_t gamma_mode;
 	uint32_t csc_mode;
 	uint32_t linetime;

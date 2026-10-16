@@ -53,7 +53,8 @@
 #                          backlight from the VBT, the PLL, the port and its trained link, the pipe, the start) and
 #                          darkened in reverse; the backlight's levels; a PLL that does not lock, a link that does not
 #                          train, a refused power reference; an HDMI sink on DDI B; a Type-C DisplayPort sink in
-#                          DisplayPort alternate and Thunderbolt mode
+#                          DisplayPort alternate and Thunderbolt mode; Ice Lake's panel on the eDP transcoder and a
+#                          TC1 sink on the MG PHY (display 11's order of the clock select and the port's transport)
 #   host-xd-edp-test       the built-in panel's sink: the sequencer's choice and delays, VDD held across the taking
 #                          and let go five power cycles after its last use, back on after the power cycle, the power
 #                          references and locks, the panel's steps and waits, the stop, the extended capabilities,
