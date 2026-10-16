@@ -133,7 +133,7 @@ Resume point: 2026-10-16 q1218（P1）の区切り: 次は **p018**（[phase018]
 | [p016](phase016/phase.md) | OpRegion の場所と map（xd-vbt の find、`struct i915_xd` と io・platform の用意）。opregion.c を消す | cleared（2026-10-16 5330 の回帰に合格、main 9244ac507、旧 file の削除 54fc334c5。SV7 は beta2 の U12） |
 | [p017](phase017/phase.md) | VBT の解析（xd-vbt を真に、旧 parser と影の比較を 1 段） | cleared（2026-10-16 5330 の回帰に合格、main 45c83da79） |
 | [p018](phase018/phase.md) | 旧 VBT parser の本体の削除（本番の呼び手 10 関数を殻 `vbt-shell.c` に、ktest-display の 2 file を削除）。2026-10-16 に p018 と p053 の 2 段に分けた | cleared（2026-10-16 5330 の回帰に合格、merge 8fea53a1d、旧 4 file は Q1 が削除） |
-| [p053](phase053/phase.md) | EDID の decode を xd-edid に（`edid.c` の decode を消し、`state.c` の mode を xd-edid の first timing に。drm_modes の helper は edid.c に殻として残る）。p018 から分けた | in-progress（2 LW。2026-10-16 実装・host・build 済み、5330 は survey lit、書き込みの全部の列の比べを T1 に依頼） |
+| [p053](phase053/phase.md) | EDID の decode を xd-edid に（`edid.c` の decode を消し、`state.c` の mode を xd-edid の first timing に。drm_modes の helper は edid.c に殻として残る）。p018 から分けた | cleared（2026-10-16 T1-702 で 5330 の回帰 PASS、全部の列の差 0、merge 7e3bf81cf） |
 | p019 | AUX の transaction（xd-aux。well・DC off・VDD は呼ぶ側） | planned（4 LW） |
 | p020 | GMBUS と DDC の EDID の読み（xd-gmbus） | planned（3 LW。HDMI の plug はユーザーの一覧） |
 | p021 | backlight の PWM（xd-panel） | planned（2 LW） |
