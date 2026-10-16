@@ -535,3 +535,4 @@ WS074 の記録の q590・q594〜q598（Codex の browser3）は main の同じ�
 | q1236 / q1236-i02 | P6（phase-runner、新しい起動） | ws245-p045 | Ice Lake（display 11）、手がかりは phase045 | in-progress |
 | q1237 / q1237-i01 | P7（phase-runner、worktree p7・agent/p7-ws039、P3 の 8a580e906 から） | ws039-p016 | P3 と並行: reset（mode1 reset ＋ asic_init を runner で ＋ A2〜A5s の再実行 ＋ re-light、sos alive の時の自動の reset）。実機は P3 と時間を分け Q1 経由。同上のユーザーの指示 | 区切りで返却（9d8c0b871 code・3f9a8fcb5 phase016。host 試験と build まで、実機は P3 の時間に。P3 の branch に合わせる所: uapi の ioctl 6 番、control.c、vmunix.mk、A11 の pixel clock の引数） |
 | q1234 / q1234-i02 | P3（phase-runner、新しい起動、worktree p3・agent/p3-ws039） | ws039-p016 の取り込みと実機 R1 → p015 の残り（A13 ほか） | P7 の agent/p7-ws039 3f9a8fcb5 を取り込み、実機で reset を 3 回、その後 p015 の残り | in-progress |
+| q1238 / q1238-i01 | P2（phase-runner、worktree p2・agent/p2-bug333、main から） | BUG-333 | Pi 4 の USB の touchscreen で 1 本指が 2 本指に（解析と修正、Pi 4 10.0.30.6 に ssh で記録を読む） | in-progress |
