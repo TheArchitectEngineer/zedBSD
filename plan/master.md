@@ -561,7 +561,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS250](ws250/ws.md) | MG006 | nvrtx の終わらない GPU の仕事の取り消しと復帰、system は動き続ける（2026-10-15 ユーザー） | incomplete（p001 を P4 が q1206 で設計中） | p001 |
 | [WS251](ws251/ws.md) | MG001 | source の tree 全体から開発の管理情報を削除する（2026-10-15 ユーザー） | planned | 着手はユーザーの指示で |
 | [WS252](ws252/ws.md) | MG006 | i915 の RKL・ADL-S/RPL-S・ICL の GT の対応（2026-10-15 ユーザー、WS245 §7 #20） | planned | p001 設計の担当の割り当て待ち |
-| [WS253](ws253/ws.md) | MG001 | 起動の時間の短縮: 通常の起動は sessiond（Wayland）を先に、network・audio・sshd などは後に。debug の起動は今のまま（2026-10-16 ユーザー） | incomplete（p001: 2 段の起動を main に 4e3ded77f、QEMU で確認。5330 の時間の確認待ち） | 5330 の起動の記録（P1 の次の起動で） |
+| [WS253](ws253/ws.md) | MG001 | 起動の時間の短縮: 通常の起動は sessiond（Wayland）を先に、network・audio・sshd などは後に。debug の起動は今のまま（2026-10-16 ユーザー） | incomplete（p001: 2 段の起動・desktop の表示を待つ late・kernel の disk の待ちの短縮を main に d454d4bd3、QEMU で約 9 s → 約 4 s。5330 の確認待ち） | 5330 の起動の記録（P1 の次の起動で） |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
@@ -607,6 +607,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-16 夕: WS253（起動の時間）p001 の 2 回目を main に merge（d454d4bd3）: kernel の disk の待ち（boot0 の UUID があれば NVMe・AHCI をすぐ probe）、late の service は desktop の表示を待つ、homes を late、compositor の STARTUP の内訳。QEMU の NVMe 起動で desktop まで約 9 s → 約 4 s。5330 の約 28 s の内訳: kernel→init（i915 側、p017 で 1.9 s）、compositor の前半の page-in（USB の stick）、compose の約 10 s（i915 側か USB の I/O、5330 の次の起動で判定）。
 - 2026-10-16 夕: i915 の表示の書き直し p018（旧 VBT parser の本体を削除し殻 vbt-shell.c に）が 5330 の素の起動の回帰に合格（VBT を読む物の log の差 0、survey PASS）→ merge 8fea53a1d、旧 4 file（vbt.c・vbt-defs.h・ktest-display の 2 つ）を Q1 が削除。EDID の decode は新しい段 p053（q1224）に分けた（38 段・161 LW）。
 - 2026-10-16 16:0x（ユーザー）:「glassが解決したら、ファン制御をマージして、そのあと窓の固定は解除して自由に使えるように改善しましょう。」→ WS039 の順: p009 の glass の修正 → p012（fan の制御、SMU Tier F）の実機と merge → p017（新設: VRAM の 256 MiB の窓の固定の解除）。観察「Terminalなどアプリが起動しませんでした。256MBの窓しか使えないのが原因かも？」は P3 が調べ中。
 - 2026-10-16 夕: i915 の表示の書き直し p017（VBT の解析を新しい parser でも行い旧と比べて新の値を使う）が 5330 の素の起動の回帰に合格（基準と同じ項目、影の比較は一致、全 599 列の差は読み戻しの 1 bit だけ）→ merge 45c83da79。次は p018。

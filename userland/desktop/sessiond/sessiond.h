@@ -6,7 +6,7 @@
  */
 
 /*
- * The graphical login's session manager (plan/ws035/login-manager-design.md).
+ * The graphical login's session manager.
  */
 
 #ifndef SESSIOND_H
@@ -27,7 +27,7 @@
 /* The wallpaper the greeter shows when the image has one. */
 #define SESSIOND_WALLPAPER	"/usr/share/keiland/wallpaper.png"
 
-/* The descriptor the greeter talks to sessiond on, and the one the session does (ws035-p101). */
+/* The descriptor the greeter talks to sessiond on, and the one the session does. */
 #define SESSIOND_AUTH_FD	3
 #define SESSIOND_CONTROL_FD	3
 
@@ -60,8 +60,8 @@ struct sessiond_account {
 
 /*
  * What sessiond was started with: the greeter program and the session
- * script.  A greeter that outlives the step that started it (ws035-p101:
- * after a login it stays on the screen until the session is ready for the
+ * script.  A greeter that outlives the step that started it (after a
+ * login it stays on the screen until the session is ready for the
  * display; at a Log Out it starts while the session still shows): its
  * process (0 for none), sessiond's end of its socket, and when it started.
  */
@@ -74,7 +74,7 @@ struct sessiond {
 
 	/*
 	 * Set by main while the automatic login's session runs at boot, with
-	 * no greeter behind it (ws239-p001): a session that has not taken the
+	 * no greeter behind it: a session that has not taken the
 	 * display within SESSIOND_GREETER_START_SECONDS hangs in its start and
 	 * is ended, so that it does not keep the boot logo on the screen.
 	 */
@@ -98,26 +98,29 @@ int sessiond_session_run(struct sessiond *daemon, struct sessiond_account *accou
 void sessiond_seat_give(uid_t uid, gid_t gid, int keys);
 void sessiond_seat_restore(void);
 
-/* The system's events of the seat's devices: a device that comes is given at once (seat.c, BUG-264). */
+/* The system's events of the seat's devices: a device that comes is given at once (seat.c). */
 void sessiond_seat_events_open(void);
 int sessiond_seat_events_fd(void);
 int sessiond_seat_events_collect(void);
 
 void sessiond_log(const char *format, ...) __attribute__((format(printf, 1, 2)));
 
-/* Ending the machine: the login screen's and a session's POWER (power.c, ws131-p027); nonzero once it is ending. */
+/* Leaves the mark init waits for once a desktop has taken the display (KERN_INIT_DESKTOP_SHOWN). */
+void sessiond_desktop_shown(void);
+
+/* Ending the machine: the login screen's and a session's POWER (power.c); nonzero once it is ending. */
 extern int sessiond_power_started;
 int sessiond_power_run(const char *program, const char *what, const char *from);
 void sessiond_power_session(const struct sessiond_account *account, int control, const char *what);
 
-/* The machine's sleep: POWER suspend and POWER cancel (sleep.c, ws052-p011). */
+/* The machine's sleep: POWER suspend and POWER cancel (sleep.c). */
 void sessiond_sleep_request(int control, const char *from);
 void sessiond_sleep_cancel(void);
 int sessiond_sleep_fd(void);
 void sessiond_sleep_collect(void);
 void sessiond_sleep_forget(int control);
 
-/* A session's SERVICE request (service.c, ws089-p025). */
+/* A session's SERVICE request (service.c). */
 void sessiond_service(const struct sessiond_account *account, int control, const char *arguments);
 
 #endif

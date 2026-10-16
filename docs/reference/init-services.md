@@ -95,7 +95,8 @@ underscore, or hyphen characters, and `command` must be an absolute path.
 | `notify-timeout` | Readiness deadline in seconds, from 1 through 300; default 10 |
 | `required` | Parsed as current metadata; it does not yet make all boot failures fatal |
 | `replaces` | Another service this one stands in for (ws035-p098): while this one is enabled the other is not started (it shows as skipped); when this one ends and is not started again, the other starts.  Not while the system is stopping.  The graphical login's `greeter` replaces `getty_console` |
-| `late` | `yes` for a service the desktop does not need at once (the network, sound, Bluetooth, removable media, sshd, cron, the clock).  A boot that shows the desktop first starts it after the others and does not hold them for it; see [Boot order](#boot-order) |
+| `desktop` | `yes` for the service that shows the desktop (the graphical login, `greeter`).  In a boot that shows the desktop first, the late services wait while it runs until it has taken the display; see [Boot order](#boot-order) |
+| `late` | `yes` for a service the desktop does not need at once (the network, sound, Bluetooth, removable media, sshd, cron, the clock, the home directories' maker `homes`).  A boot that shows the desktop first starts it after the others and does not hold them for it; see [Boot order](#boot-order) |
 
 Daemons must remain in the foreground. Init tracks their child PID directly;
 pidfiles and double-forking are not the authority. `service reload` reloads the
@@ -115,7 +116,14 @@ Init starts the enabled services in two rounds:
    login (`greeter`, ordered after `syslogd` and `networking`) therefore
    starts as soon as `syslogd` has, without waiting for the network.
 2. Everything still waiting, the late services included, in dependency
-   order.
+   order.  This round waits first for the desktop to take the display, so
+   that the late services do not compete with its start for the disk and
+   the processors: sessiond leaves the mark `/run/desktop-shown` when the
+   session or the login screen has the display, and init (which removes the
+   mark at each boot) starts the round when the mark is there, when no
+   `desktop` service runs any more (the login gave the screen to the
+   console), or after 30 seconds.  Meanwhile init collects the services that
+   end and answers its control socket.
 
 Any other boot is a debug boot -- the kernel's messages on the console
 (`kmsg=console`, or Ctrl held at the loader) or the console's login
@@ -133,7 +141,8 @@ service or step it is about:
 5.426 start greeter
 5.427 running greeter
 5.527 round desktop-started
-5.534 start networkd
+9.044 desktop shown
+9.051 start networkd
 5.544 running networkd
 5.644 done networking
 5.651 system running
