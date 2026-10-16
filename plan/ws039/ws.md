@@ -8,8 +8,8 @@ Primary Milestone: MG006
 Related Milestones: なし
 Objectives: O2
 Parent: [Master](../master.md)
-Queue: q1216（P3、ws039-p011 の段 A5s、2026-10-16 開始）。以前 q1215（p005、cleared）・q1213（p004）・q1212（p003）・q1211（p002）
-Resume point: p008 in-progress（2026-10-16 P5、q1219-i01、[phase008](phase008/phase.md)）: executor（vk/）を kernel に組み込み、`amdrdna.vk=1` で renderer を bind。実機 10.0.10.3 で **A9 ok draw pixels=4096 copy=4096**（warm の boot 5 回、最終の kernel で 3 回）、**`VKQUAD ok device=zedBSD amdrdna (AMD RDNA1) pixels=4096`**（最終の kernel の 3 回の boot で計 11 回、fail 0）。次は Q1 の merge と clearance の判定、その後 p009（compositor の desktop）・p012（Tier F）・p006（display）。以前: p011（A5s、main 3d4306fe0）。
+Queue: q1220（P3、ws039-p006 の段 A6〜A8、2026-10-16）。以前 q1219（p008、P5）・q1216（p011）・q1215（p005）・q1213（p004）・q1212（p003）・q1211（p002）
+Resume point: p006 in-progress（2026-10-16 P3、q1220-i01、[phase006](phase006/phase.md)）: `amdrdna.disp.own=1` で GOP の display を引き継ぐ（flip・VSTARTUP/flip/HPD の割り込み・cursor・display 付きの登録）。実機 10.0.10.3 で **A6 ok（60.000Hz、frame_irq 60/s、flip_irq 2/2、underflow 0/0）・A7 ok・A8 ok**、display-scanout・display-control の probe は全部 error 0、ユーザーの目視「テストは成功です」。次は Q1 の merge と clearance の判定、その後 p009（compositor の desktop）・p012（Tier F）。以前: p008（executor、main 5ac37f771）。
 Target: 未定（2026-10-15 に開始・一時停止。以前の扱い: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」））
 <!-- awesome-plan-current:end -->
 
@@ -30,7 +30,7 @@ AMD RDNA世代のGPUのドライバを実装する。
 
 ## Phase一覧
 
-[design.md](design.md) の 16 節の表が正（改訂 2: p002〜p016、必須 75〜111 LW。下の「再開と計画」の表は 2026-10-15 昼の案で、段の順と p011 以降が違う）。作った Phase: [p001](phase001/phase.md) 調べと設計（cleared）、[p002](phase002/phase.md) 骨格と認識 A0・A1・A1v（cleared）、[p003](phase003/phase.md) 段 A2: BAR0 の窓・GMC・IH の用意（cleared）、[p004](phase004/phase.md) 段 A3t・A3・A4（Tier S）: firmware の package・PSP・SMU と fan（cleared）、[p005](phase005/phase.md) 段 A5: CP・KIQ・compute の queue・SDMA・fence・最初の copy と dispatch（cleared）、[p011](phase011/phase.md) 段 A5s: session・pasid・動的な VMID・page table・BO・GPU device の登録（in-progress）、[p007](phase007/phase.md) GFX10 の shader の compiler（in-progress、一時停止）、[p008](phase008/phase.md) Vulkan の executor と段 A9（in-progress、実機で A9 ok・vkquad ok、Q1 の判定待ち）。
+[design.md](design.md) の 16 節の表が正（改訂 2: p002〜p016、必須 75〜111 LW。下の「再開と計画」の表は 2026-10-15 昼の案で、段の順と p011 以降が違う）。作った Phase: [p001](phase001/phase.md) 調べと設計（cleared）、[p002](phase002/phase.md) 骨格と認識 A0・A1・A1v（cleared）、[p003](phase003/phase.md) 段 A2: BAR0 の窓・GMC・IH の用意（cleared）、[p004](phase004/phase.md) 段 A3t・A3・A4（Tier S）: firmware の package・PSP・SMU と fan（cleared）、[p005](phase005/phase.md) 段 A5: CP・KIQ・compute の queue・SDMA・fence・最初の copy と dispatch（cleared）、[p011](phase011/phase.md) 段 A5s: session・pasid・動的な VMID・page table・BO・GPU device の登録（in-progress）、[p007](phase007/phase.md) GFX10 の shader の compiler（in-progress、一時停止）、[p008](phase008/phase.md) Vulkan の executor と段 A9（in-progress、実機で A9 ok・vkquad ok、Q1 の判定待ち）。 [p006](phase006/phase.md) 段 A6〜A8: display の引き継ぎ（in-progress、実機で A6〜A8 ok・目視合格、Q1 の判定待ち）。
 
 ## 要検討・ブロック（2026-10-05）
 

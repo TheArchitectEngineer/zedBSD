@@ -339,6 +339,73 @@ struct amdrdna_engines {
 
 struct amdrdna_node;
 
+/* The frames the display shows clients' storage in, flipped between. */
+#define AMDRDNA_DISPLAY_FRAMES		2U
+
+/*
+ * The display the driver took over from the firmware (stages A6 to A8).
+ *
+ * The takeover changes only what the plane fetches and the cursor drawn
+ * over it: the timing, the link and the clocks stay the firmware's.
+ * taken says the plane's words from before the takeover are saved (the
+ * stop writes them back); console is the GPU address of the firmware's
+ * surface, which the text console keeps writing to and which the plane is
+ * flipped back to when the display is given up, and requested the address
+ * the plane was last asked to show.  width, height and stride describe the
+ * surface every frame must have (the firmware's).  The frames and the
+ * cursor's image are VRAM of the CPU's pool, the driver's for the GPU's
+ * lifetime; the cursor has two image slots, so a new image is written
+ * into the slot the cursor does not read (cursor_slot is the one it
+ * reads).  These fields change in one stage at a time and afterwards
+ * only under the node's display lock.
+ *
+ * lock (an IRQ-safe spinlock, never held across a wait) guards what the
+ * interrupt thread changes: the event counts, the refresh count built
+ * from the timing generator's frame counter and the time it last moved,
+ * the topology sequence (one at first, one more for every change of the
+ * monitor) and whether a monitor is connected, and the words of the sync
+ * status, the flip interrupt and the hot-plug line, which both the thread
+ * and the takeover rewrite.  waitq wakes whoever waits for a frame or for
+ * a flip.
+ */
+struct amdrdna_display {
+	bool taken;
+	bool cursor_ready;
+	bool cursor_shown;
+	bool interrupts_on;
+	bool blanked;
+	bool has_hotplug;
+	unsigned hotplug;
+	uint64_t console;
+	uint64_t requested;
+	uint32_t width;
+	uint32_t height;
+	uint32_t stride;
+	uint32_t refresh_millihz;
+	uint64_t frames[AMDRDNA_DISPLAY_FRAMES];
+	uint64_t frame_bytes;
+	uint64_t cursor_vram;
+	unsigned cursor_slot;
+	uint32_t saved_flip_control;
+	uint32_t saved_space_select;
+	uint32_t saved_cursor_control;
+	uint32_t saved_cursor_timing;
+	uint32_t saved_pixel_cursor;
+	uint32_t saved_pixel_cursor_scale;
+	struct spinlock lock;
+	struct wait_queue waitq;
+	uint64_t frame_signals;
+	uint64_t flip_signals;
+	uint64_t hotplug_signals;
+	uint64_t flips;
+	bool frame_valid;
+	uint32_t frame_last;
+	uint64_t refresh_count;
+	uint64_t refresh_time_ns;
+	uint64_t topology;
+	bool connected;
+};
+
 /*
  * A run of VRAM in the CPU's window that GPU work reads and writes: a
  * blob of a session, the executor's own memory, or a check's buffer.
@@ -442,7 +509,8 @@ struct amdrdna_spaces {
  * table translates.  Stages A3t, A3 and A4 add the training's result,
  * the security processor's buffers and the power and thermal state;
  * stage A5 the command processor's and the copy engine's rings; stage A5s
- * the address spaces and the GPU device (node) of the sessions.  The
+ * the address spaces and the GPU device (node) of the sessions; stages A6
+ * to A8 the display taken over from the firmware.  The
  * record lives until the PCI function is detached, which the driver
  * refuses while the thread runs.
  */
@@ -523,6 +591,7 @@ struct amdrdna_device {
 	struct amdrdna_engines engines;
 	struct amdrdna_spaces spaces;
 	struct amdrdna_node *node;
+	struct amdrdna_display display;
 
 	struct spinlock state_lock;
 	struct wait_queue state_waitq;
@@ -995,6 +1064,106 @@ amdrdna_a5s_sessions(
 /* vk-node.c: stage A9. */
 int
 amdrdna_a9_draw(
+	struct amdrdna_device *device);
+
+/* display.c: stages A6 and A7 and the display taken over from the firmware. */
+bool
+amdrdna_display_wanted(void);
+
+int
+amdrdna_a6_takeover(
+	struct amdrdna_device *device);
+
+int
+amdrdna_a7_cursor(
+	struct amdrdna_device *device);
+
+void
+amdrdna_display_stop(
+	struct amdrdna_device *device);
+
+void
+amdrdna_display_interrupt(
+	struct amdrdna_device *device,
+	const struct amdrdna_interrupt *interrupt);
+
+uint64_t
+amdrdna_display_address(
+	const struct amdrdna_device *device,
+	uint64_t vram);
+
+int
+amdrdna_display_show(
+	struct amdrdna_device *device,
+	uint64_t address);
+
+int
+amdrdna_display_flip(
+	struct amdrdna_device *device,
+	uint64_t address);
+
+int
+amdrdna_display_flip_wait(
+	struct amdrdna_device *device,
+	uint64_t address);
+
+void
+amdrdna_display_refresh_sample(
+	struct amdrdna_device *device,
+	uint64_t *count,
+	uint64_t *time_ns);
+
+int
+amdrdna_display_refresh_wait(
+	struct amdrdna_device *device,
+	uint64_t cursor,
+	uint64_t deadline,
+	uint64_t *count,
+	uint64_t *time_ns);
+
+void
+amdrdna_display_cursor_place(
+	struct amdrdna_device *device,
+	int32_t x,
+	int32_t y);
+
+void
+amdrdna_display_cursor_hide(
+	struct amdrdna_device *device);
+
+volatile uint8_t *
+amdrdna_display_cursor_cpu(
+	struct amdrdna_device *device,
+	unsigned slot);
+
+void
+amdrdna_display_cursor_use(
+	struct amdrdna_device *device,
+	unsigned slot);
+
+int
+amdrdna_display_blank(
+	struct amdrdna_device *device,
+	bool blank);
+
+uint64_t
+amdrdna_display_topology(
+	struct amdrdna_device *device,
+	bool *connected);
+
+uint64_t
+amdrdna_display_now_us(void);
+
+struct amdrdna_display_state;
+
+void
+amdrdna_display_report(
+	struct amdrdna_device *device,
+	struct amdrdna_display_state *state);
+
+/* present.c: stage A8, the display's operations of the GPU device. */
+int
+amdrdna_a8_register(
 	struct amdrdna_device *device);
 
 #endif

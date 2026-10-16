@@ -16,8 +16,10 @@
  * and the sharing; runtime.c the queue of command frames and supervised
  * jobs, the stop of a session and the device's fault; vk-node.c what the
  * Vulkan executor reaches the node through (its memory in the session's
- * address space and the runs of its indirect buffers).  The device is a
- * renderer libvulkan opens only once an executor is bound.
+ * address space and the runs of its indirect buffers); present.c the
+ * display taken over from the firmware, when the boot asks for it (stage
+ * A8).  The device is a renderer libvulkan opens only once an executor is
+ * bound.
  */
 
 #ifndef DRIVERS_GPU_AMDRDNA_AMDRDNA_NODE_H
@@ -125,6 +127,17 @@ typedef uint64_t (*amdrdna_node_timelines)(struct amdrdna_session *session);
  *
  * The counts the executor adds with relaxed atomics: transfers the CPU
  * did through the window, draws and quads, command streams read.
+ *
+ * The display (present.c, stage A8 on, when display is set): the lease of
+ * one open at a time and the frames it presents.  present_lock puts the
+ * presentations, the lease's end and a blob's going off the screen in one
+ * order; display_lock (taken after present_lock, never with lock) guards
+ * the lease (owner, lease, next_lease, sequence, shown and its time), the
+ * frame the next copied presentation goes to, the cursor's state, the
+ * power state, and every write to the display's registers.  broken says a
+ * flip did not begin (nothing more is flipped); stopped that the machine
+ * is going down (nothing more touches the display).  The counts are
+ * presentations and leases.
  */
 struct amdrdna_node {
 	struct amdrdna_device *device;
@@ -148,6 +161,25 @@ struct amdrdna_node {
 	uint64_t quads;
 	uint64_t streams;
 	uint64_t stream_bytes;
+	int display;
+	struct mutex present_lock;
+	struct mutex display_lock;
+	void *owner;
+	uint64_t lease;
+	uint64_t next_lease;
+	uint64_t sequence;
+	uint64_t shown_time_ns;
+	struct amdrdna_resource *shown;
+	unsigned next_frame;
+	int broken;
+	int stopped;
+	int powered_off;
+	int cursor_has_image;
+	int cursor_visible;
+	int32_t cursor_x;
+	int32_t cursor_y;
+	uint64_t presents;
+	uint64_t leases;
 };
 
 /* node.c */
@@ -157,6 +189,11 @@ int amdrdna_node_session_open(struct amdrdna_node *node, struct amdrdna_session 
 void amdrdna_node_session_close(struct amdrdna_node *node, struct amdrdna_session *session);
 uint32_t amdrdna_node_resource_id(struct amdrdna_node *node);
 void amdrdna_node_blob_listed(struct amdrdna_node *node, struct amdrdna_session *session, struct amdrdna_resource *resource, uint32_t resource_id);
+
+/* present.c: the display's operations (stage A8 on). */
+void amdrdna_present_session_close(struct amdrdna_node *node, void *session);
+void amdrdna_present_resource_gone(struct amdrdna_node *node, struct amdrdna_resource *resource);
+void amdrdna_present_stop(struct amdrdna_node *node);
 
 /* runtime.c */
 void amdrdna_runtime_prepare(struct amdrdna_node *node);

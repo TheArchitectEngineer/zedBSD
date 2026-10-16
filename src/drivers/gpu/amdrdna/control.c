@@ -49,6 +49,7 @@ static int control_ioctl(struct file *file, unsigned long request, uintptr_t arg
 static int control_status(struct amdrdna_device *device, uintptr_t argument);
 static int control_advance(struct amdrdna_device *device, uintptr_t argument);
 static int control_vbios(struct amdrdna_device *device, uintptr_t argument);
+static int control_display(struct amdrdna_device *device, uintptr_t argument);
 static void control_fill(struct amdrdna_device *device, struct amdrdna_status *status);
 static void control_fill_memory(struct amdrdna_device *device, struct amdrdna_status *status);
 static uint32_t control_fill_power(struct amdrdna_device *device, struct amdrdna_status *status);
@@ -137,6 +138,9 @@ control_ioctl(
 		break;
 	case AMDRDNA_IOC_VBIOS:
 		error = control_vbios(device, argument);
+		break;
+	case AMDRDNA_IOC_DISPLAY:
+		error = control_display(device, argument);
 		break;
 	default:
 		error = ENOTTY;
@@ -269,6 +273,71 @@ control_vbios(
 		return error;
 
 	/* Succeeded: the caller has the part of the image it asked for. */
+	return 0;
+}
+
+/*
+ * Reports the display the driver took over, its registers and its counts:
+ * AMDRDNA_IOC_DISPLAY.  The registers are read once stage A1 has read the
+ * firmware's chain; before, the answer is ENOENT.
+ */
+static int
+control_display(
+	struct amdrdna_device *device,
+	uintptr_t argument)
+{
+	struct amdrdna_display_state state;
+	struct amdrdna_node *node;
+	unsigned long irq;
+	unsigned stage;
+	int error;
+
+	/* The caller's version and size must be this interface's. */
+	error = copyin(argument, &state, sizeof(state));
+	if (error != 0)
+		return error;
+	if (state.version != AMDRDNA_INTERFACE_VERSION || state.size != sizeof(state))
+		return EINVAL;
+
+	/* The firmware's chain is known once stage A1 reported ok. */
+	irq = spin_lock_irqsave(&device->state_lock);
+
+	stage = device->stage;
+
+	spin_unlock_irqrestore(&device->state_lock, irq);
+
+	/* Without the firmware's chain there is no display to report. */
+	if (stage < AMDRDNA_STAGE_A1 || !device->gop.lit)
+		return ENOENT;
+
+	/* The display's part, then the GPU device's. */
+	kern_memset(&state, 0, sizeof(state));
+	state.version = AMDRDNA_INTERFACE_VERSION;
+	state.size = sizeof(state);
+	amdrdna_display_report(device, &state);
+
+	/* Registered with the display; leased while an open holds it. */
+	node = device->node;
+	if (node != NULL && node->display != 0) {
+		mutex_lock(&node->display_lock);
+
+		state.flags |= AMDRDNA_DISPLAY_REGISTERED;
+		if (node->owner != NULL)
+			state.flags |= AMDRDNA_DISPLAY_LEASED;
+		if (node->broken != 0)
+			state.flags |= AMDRDNA_DISPLAY_BROKEN;
+		state.presents = node->presents;
+		state.leases = node->leases;
+
+		mutex_unlock(&node->display_lock);
+	}
+
+	/* Hands it to the caller. */
+	error = copyout(&state, argument, sizeof(state));
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller has the display's state. */
 	return 0;
 }
 

@@ -12,7 +12,8 @@
  *
  * The driver brings an AMD RDNA GPU up one stage at a time.  This device
  * reports how far it came and what each stage read, lets root ask for the
- * next stages, and hands out the GPU's video BIOS image.  It exists while
+ * next stages, hands out the GPU's video BIOS image, and reports the
+ * display the driver took over.  It exists while
  * the driver is being developed; a kernel built without it brings the GPU
  * up as far as the boot line says and offers no such device.
  *
@@ -289,14 +290,83 @@ struct amdrdna_vbios_read {
 	uint32_t reserved[4];
 };
 
+/* What the display's flags word says (amdrdna_display_state.flags). */
+#define AMDRDNA_DISPLAY_TAKEN		0x00000001U
+#define AMDRDNA_DISPLAY_CURSOR_READY	0x00000002U
+#define AMDRDNA_DISPLAY_INTERRUPTS_ON	0x00000004U
+#define AMDRDNA_DISPLAY_CONNECTED	0x00000008U
+#define AMDRDNA_DISPLAY_BLANKED		0x00000010U
+#define AMDRDNA_DISPLAY_REGISTERED	0x00000020U
+#define AMDRDNA_DISPLAY_LEASED		0x00000040U
+#define AMDRDNA_DISPLAY_BROKEN		0x00000080U
+#define AMDRDNA_DISPLAY_CURSOR_SHOWN	0x00000100U
+#define AMDRDNA_DISPLAY_HOTPLUG		0x00000200U
+
+/*
+ * The display the driver took over from the firmware, as its registers
+ * and its counts are now (AMDRDNA_IOC_DISPLAY).
+ *
+ * timing, plane and hotplug are the firmware's timing generator, plane
+ * and hot-plug line; width, height, stride and refresh_millihz the
+ * picture every frame has.  The addresses are the GPU's: the console's
+ * surface, the one last asked for, the one the plane reads (the earliest
+ * in use) and the one its address registers hold, and the cursor's.  The
+ * register words follow as read; the counts are the interrupts taken,
+ * the flips asked for, the refreshes counted, the topology sequence, the
+ * presentations and the leases.  Only version and size are inputs.
+ */
+struct amdrdna_display_state {
+	uint32_t version;
+	uint32_t size;
+	uint32_t flags;
+	uint32_t timing;
+	uint32_t plane;
+	uint32_t hotplug;
+	uint32_t width;
+	uint32_t height;
+	uint32_t stride;
+	uint32_t refresh_millihz;
+	uint64_t console_address;
+	uint64_t requested_address;
+	uint64_t shown_address;
+	uint64_t plane_address;
+	uint64_t cursor_address;
+	uint32_t frame_count;
+	uint32_t position;
+	uint32_t flip_control;
+	uint32_t flip_interrupt;
+	uint32_t sync_status;
+	uint32_t plane_control;
+	uint32_t combiner_input;
+	uint32_t cursor_control;
+	uint32_t cursor_size;
+	uint32_t cursor_position;
+	uint32_t cursor_hot_spot;
+	uint32_t pixel_cursor;
+	uint32_t hotplug_status;
+	uint32_t hotplug_control;
+	uint64_t frame_signals;
+	uint64_t flip_signals;
+	uint64_t hotplug_signals;
+	uint64_t flips;
+	uint64_t refresh_count;
+	uint64_t topology;
+	uint64_t presents;
+	uint64_t leases;
+	uint32_t reserved[4];
+};
+
 _Static_assert(sizeof(struct amdrdna_status) == 352U, "amdrdna status ABI size");
 _Static_assert(offsetof(struct amdrdna_status, frame_buffer_base) == 96U, "amdrdna status ABI alignment");
 _Static_assert(offsetof(struct amdrdna_status, gart_base) == 184U, "amdrdna status ABI alignment");
 _Static_assert(sizeof(struct amdrdna_advance) == 32U, "amdrdna advance ABI size");
 _Static_assert(sizeof(struct amdrdna_vbios_read) == 48U, "amdrdna vbios ABI size");
+_Static_assert(sizeof(struct amdrdna_display_state) == 216U, "amdrdna display ABI size");
+_Static_assert(offsetof(struct amdrdna_display_state, frame_signals) == 136U, "amdrdna display ABI alignment");
 
 #define AMDRDNA_IOC_STATUS	_IOWR(KERN_AMDRDNA_IOC_GROUP, 1, struct amdrdna_status)
 #define AMDRDNA_IOC_ADVANCE	_IOW(KERN_AMDRDNA_IOC_GROUP, 2, struct amdrdna_advance)
 #define AMDRDNA_IOC_VBIOS	_IOWR(KERN_AMDRDNA_IOC_GROUP, 3, struct amdrdna_vbios_read)
+#define AMDRDNA_IOC_DISPLAY	_IOWR(KERN_AMDRDNA_IOC_GROUP, 4, struct amdrdna_display_state)
 
 #endif

@@ -100,10 +100,27 @@ static const uint16_t pixel_processor_offsets[AMDRDNA_DISPLAY_PIPES] = {
  * mmDSCL0_SCL_VERT_FILTER_SCALE_RATIO, mmDSCL0_RECOUT_START,
  * mmDSCL0_RECOUT_SIZE, mmDSCL0_DSCL_AUTOCAL, and the same registers of
  * DSCL1 to DSCL5).
+ * The registers the display's takeover adds, from the same header: the
+ * plane's context select, flip interrupt and the two words of the address
+ * it reads (mmHUBPREQ0_VMID_SETTINGS_0,
+ * mmHUBPREQ0_DCSURF_SURFACE_FLIP_INTERRUPT,
+ * mmHUBPREQ0_DCSURF_SURFACE_EARLIEST_INUSE,
+ * mmHUBPREQ0_DCSURF_SURFACE_EARLIEST_INUSE_HIGH), the cursor's request
+ * timing (mmHUBPREQ0_CURSOR_SETTINGS), the plane's cursor
+ * (mmCURSOR0_0_CURSOR_CONTROL, mmCURSOR0_0_CURSOR_SURFACE_ADDRESS,
+ * mmCURSOR0_0_CURSOR_SURFACE_ADDRESS_HIGH, mmCURSOR0_0_CURSOR_SIZE,
+ * mmCURSOR0_0_CURSOR_POSITION, mmCURSOR0_0_CURSOR_HOT_SPOT,
+ * mmCURSOR0_0_CURSOR_DST_OFFSET), the pixel processor's cursor
+ * (mmCNVC_CUR0_CURSOR0_CONTROL, mmCNVC_CUR0_CURSOR0_FP_SCALE_BIAS and the
+ * same registers of CNVC_CUR1 to CNVC_CUR5), the timing generator's
+ * position, frame count and sync status (mmOTG0_OTG_STATUS_POSITION,
+ * mmOTG0_OTG_STATUS_FRAME_COUNT, mmOTG0_OTG_GLOBAL_SYNC_STATUS) and the
+ * hot-plug lines (mmHPD0_DC_HPD_INT_STATUS, mmHPD0_DC_HPD_INT_CONTROL).
  * derived: the distances are the differences between the offsets of
  * instance 1 and instance 0 in the same header; a scaler register's
  * distance from its pixel processor's control word is the same in all six
- * pipes (0x27, 0x2c, 0x30, 0x3d, 0x3e and 0x38).
+ * pipes (0x27, 0x2c, 0x30, 0x3d, 0x3e and 0x38), and so is a cursor
+ * register's (0x1b and 0x1e).
  */
 static const struct dcn_place dcn_places[AMDRDNA_DCN_REGISTER_COUNT] = {
 	{ 1U, 0x0000U, 0x0000U, head_legacy_offsets },
@@ -151,7 +168,26 @@ static const struct dcn_place dcn_places[AMDRDNA_DCN_REGISTER_COUNT] = {
 	{ 2U, 0x0030U, 0x0000U, pixel_processor_offsets },
 	{ 2U, 0x003dU, 0x0000U, pixel_processor_offsets },
 	{ 2U, 0x003eU, 0x0000U, pixel_processor_offsets },
-	{ 2U, 0x0038U, 0x0000U, pixel_processor_offsets }
+	{ 2U, 0x0038U, 0x0000U, pixel_processor_offsets },
+	{ 2U, 0x0609U, 0x00dcU, NULL },
+	{ 2U, 0x0620U, 0x00dcU, NULL },
+	{ 2U, 0x0625U, 0x00dcU, NULL },
+	{ 2U, 0x0626U, 0x00dcU, NULL },
+	{ 2U, 0x065eU, 0x00dcU, NULL },
+	{ 2U, 0x0678U, 0x00dcU, NULL },
+	{ 2U, 0x0679U, 0x00dcU, NULL },
+	{ 2U, 0x067aU, 0x00dcU, NULL },
+	{ 2U, 0x067bU, 0x00dcU, NULL },
+	{ 2U, 0x067cU, 0x00dcU, NULL },
+	{ 2U, 0x067dU, 0x00dcU, NULL },
+	{ 2U, 0x067fU, 0x00dcU, NULL },
+	{ 2U, 0x001bU, 0x0000U, pixel_processor_offsets },
+	{ 2U, 0x001eU, 0x0000U, pixel_processor_offsets },
+	{ 2U, 0x1b4aU, 0x0080U, NULL },
+	{ 2U, 0x1b4cU, 0x0080U, NULL },
+	{ 2U, 0x1b8aU, 0x0080U, NULL },
+	{ 2U, 0x1f14U, 0x0008U, NULL },
+	{ 2U, 0x1f15U, 0x0008U, NULL }
 };
 
 /*

@@ -18,7 +18,8 @@
  * order of their last use; and a session that writes to an address it
  * has nothing mapped at must be named by the page fault the hub reports
  * (that check only marks what it saw).  Then the GPU is registered with
- * the GPU core, which publishes /dev/gpuN.
+ * the GPU core, which publishes /dev/gpuN; when the boot asks the driver
+ * to own the display, stage A8 registers it instead, with the display.
  */
 
 #include <stdbool.h>
@@ -115,6 +116,8 @@ amdrdna_a5s_sessions(
 {
 	struct sessions_result result;
 	const char *fault;
+	const char *registration;
+	bool display;
 	int error;
 
 	/* Says the stage starts. */
@@ -150,27 +153,35 @@ amdrdna_a5s_sessions(
 	/* A session's page fault names it; only marked. */
 	sessions_fault(device, &result);
 
-	/* Registers the GPU device; the core publishes /dev/gpuN. */
-	error = amdrdna_node_register(device);
-	if (error != 0) {
-		amdrdna_mark("A5s fail: gpu device not registered (%d)", error);
-		return error;
-	}
-
 	/* Whether the fault check's page fault named its session. */
 	fault = "unnamed";
 	if (result.fault_named)
 		fault = "named";
 
+	/* Registers the GPU device (the core publishes /dev/gpuN), unless stage A8 registers it with the display. */
+	registration = "waits for the display (A8)";
+	display = amdrdna_display_wanted();
+	if (!display) {
+		error = amdrdna_node_register(device);
+		if (error != 0) {
+			amdrdna_mark("A5s fail: gpu device not registered (%d)", error);
+			return error;
+		}
+
+		/* The device is published without a display. */
+		registration = "registered (no display)";
+	}
+
 	/* Marks the result. */
-	amdrdna_mark("A5s ok sessions spaces=%u contexts=%u flushes=%llu takeovers=%llu dispatch=%u fault=%s space=%u gpu device registered (no display)",
+	amdrdna_mark("A5s ok sessions spaces=%u contexts=%u flushes=%llu takeovers=%llu dispatch=%u fault=%s space=%u gpu device %s",
 	    SESSIONS_CONTEXT_CHECKS + 2U,
 	    amdrdna_context_free_count(&device->spaces.pool),
 	    (unsigned long long)result.flushes,
 	    (unsigned long long)result.takeovers,
 	    (unsigned)result.dispatch_words,
 	    fault,
-	    (unsigned)result.fault_space);
+	    (unsigned)result.fault_space,
+	    registration);
 
 	/* Succeeded: the GPU is a GPU device. */
 	return 0;

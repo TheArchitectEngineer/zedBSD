@@ -603,6 +603,12 @@ ih_dispatch(
 		return;
 	}
 
+	/* A frame's start, a finished flip or a hot-plug line of the display engine. */
+	if (interrupt->client == AMDRDNA_CLIENT_DISPLAY) {
+		amdrdna_display_interrupt(device, interrupt);
+		return;
+	}
+
 	/* A thermal alert, the critical-temperature trip, or the power unit's software interrupt. */
 	if (interrupt->client == AMDRDNA_CLIENT_THERMAL ||
 	    interrupt->client == AMDRDNA_CLIENT_SMU_IO ||
