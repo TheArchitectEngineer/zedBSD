@@ -3,13 +3,13 @@
 # WS039: AMD RDNA GPU対応
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-15 開始・一時停止の後、同日夕にユーザーの指示で再開。p001 cleared、p002 は P3 が q1211、p007（P5）は停止のまま）
+Status: incomplete（2026-10-15 開始・一時停止の後、同日夕にユーザーの指示で再開。p001・p002 cleared、p003 は P3 が q1212、p007（P5）は停止のまま）
 Primary Milestone: MG006
 Related Milestones: なし
 Objectives: O2
 Parent: [Master](../master.md)
-Queue: q1211（P3、ws039-p002 の段 A0・A1・A1v、2026-10-16 開始、i02 で実機 ok）
-Resume point: p002 cleared（実機で A0・A1・A1v ok、main aeca13ff3）。次は p003（A2: BAR0 の窓・GMC・IH）、試験の image の video=640x480 を外す。以前: p002 in-progress（2026-10-16 P3、[phase002](phase002/phase.md)）: 実機（10.0.10.3、USB の zedBSD、10.0.30.5）で **A0・A1・A1v ok**（2026-10-16 08:28、3 回目）。1 回目の A1 fail（loader の 640x480 を timing の 1920x1080 と比べていた。GOP は DSCL の AUTOCAL で拡大）を viewport と scaler の読みで直し、A1 の失敗でも control の node を出すようにした。次は Q1 の merge と clearance の判定、A2（p003）の前に GOP の 640x480 拡大のままか `video=640x480` を外すかを決める。
+Queue: q1212（P3、ws039-p003 の段 A2、2026-10-16 開始、i01 で実機 ok）。以前 q1211（p002、cleared）
+Resume point: p003 in-progress（2026-10-16 P3、q1212-i01、[phase003](phase003/phase.md)）: 実機（10.0.10.3）で **A2 ok、underflow 0**（10:08 と 10:11 の 2 回）。試験の image の `video=640x480` を外した（WS039 の config.mk で ZEDBSD_GRAPHICAL_BOOT=y、kmsg は画面のまま）→ GOP は 1920x1080 のままで A1 の underflow も 0。次は Q1 の merge と clearance の判定、その後 p004（A3t・A3・A4 Tier S、firmware の package、cold power cycle が要る）。以前: p002 cleared（実機で A0・A1・A1v ok、main aeca13ff3）。
 Target: 未定（2026-10-15 に開始・一時停止。以前の扱い: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」））
 <!-- awesome-plan-current:end -->
 
@@ -30,7 +30,7 @@ AMD RDNA世代のGPUのドライバを実装する。
 
 ## Phase一覧
 
-[design.md](design.md) の 16 節の表が正（改訂 2: p002〜p016、必須 75〜111 LW。下の「再開と計画」の表は 2026-10-15 昼の案で、段の順と p011 以降が違う）。作った Phase: [p001](phase001/phase.md) 調べと設計（cleared）、[p002](phase002/phase.md) 骨格と認識 A0・A1・A1v（in-progress）、[p007](phase007/phase.md) GFX10 の shader の compiler（in-progress、一時停止）。
+[design.md](design.md) の 16 節の表が正（改訂 2: p002〜p016、必須 75〜111 LW。下の「再開と計画」の表は 2026-10-15 昼の案で、段の順と p011 以降が違う）。作った Phase: [p001](phase001/phase.md) 調べと設計（cleared）、[p002](phase002/phase.md) 骨格と認識 A0・A1・A1v（cleared）、[p003](phase003/phase.md) 段 A2: BAR0 の窓・GMC・IH の用意（in-progress、実機 ok）、[p007](phase007/phase.md) GFX10 の shader の compiler（in-progress、一時停止）。
 
 ## 要検討・ブロック（2026-10-05）
 

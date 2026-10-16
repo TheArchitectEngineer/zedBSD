@@ -200,4 +200,130 @@
 #define AMDRDNA_BLOCK_TABLE_BYTES		0x2800U
 #define AMDRDNA_BOOT_DATABASE_FROM_TOP		0x100000U
 
+/*
+ * The host bridge's registers the memory stage uses (NBIO window 2): the
+ * doorbell aperture switch (bit 0 lets the doorbell BAR through), the
+ * interrupt control word, the dummy-read page of the interrupt controller
+ * (its address shifted right by 8), the host data path's write flush, and
+ * the doorbell range that routes the interrupt controller's doorbell.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/asic_reg/nbio/nbio_2_3_offset.h
+ * (mmRCC_DEV0_EPF0_RCC_DOORBELL_APER_EN, mmINTERRUPT_CNTL,
+ * mmINTERRUPT_CNTL2, mmBIF_BX_PF_HDP_MEM_COHERENCY_FLUSH_CNTL,
+ * mmBIF_IH_DOORBELL_RANGE), nbio_2_3_sh_mask.h
+ * (RCC_DEV0_EPF0_RCC_DOORBELL_APER_EN__BIF_DOORBELL_APER_EN) and
+ * drivers/gpu/drm/amd/amdgpu/nbio_v2_3.c (nbio_v2_3_ih_control,
+ * nbio_v2_3_get_rmmio_remap: the flush register when the remapped one is
+ * not set up).
+ */
+#define AMDRDNA_NBIO_WINDOW_HOST		2U
+#define AMDRDNA_NBIO_REG_DOORBELL_APERTURE	0x00c0U
+#define AMDRDNA_NBIO_REG_INTERRUPT_CONTROL	0x00f1U
+#define AMDRDNA_NBIO_REG_INTERRUPT_DUMMY	0x00f2U
+#define AMDRDNA_NBIO_REG_HOST_PATH_FLUSH	0x00f7U
+#define AMDRDNA_NBIO_REG_INTERRUPT_DOORBELLS	0x01d2U
+#define AMDRDNA_DOORBELL_APERTURE_ON		0x00000001U
+#define AMDRDNA_INTERRUPT_DUMMY_SHIFT		8U
+
+/*
+ * The host data path's registers (HDP window 0): the word that drops its
+ * read cache (write 1, read back), and the control word whose bit 0 makes
+ * a flush also drop the read cache.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/asic_reg/hdp/hdp_5_0_0_offset.h
+ * (mmHDP_READ_CACHE_INVALIDATE, mmHDP_MISC_CNTL), hdp_5_0_0_sh_mask.h
+ * (HDP_MISC_CNTL__FLUSH_INVALIDATE_CACHE) and
+ * drivers/gpu/drm/amd/amdgpu/hdp_v5_0.c (hdp_v5_0_invalidate_hdp,
+ * hdp_v5_0_init_registers).
+ */
+#define AMDRDNA_HDP_WINDOW_MAIN			0U
+#define AMDRDNA_HDP_REG_READ_DROP		0x00d1U
+#define AMDRDNA_HDP_REG_MISC			0x00d3U
+#define AMDRDNA_HDP_MISC_FLUSH_DROPS		0x00000001U
+
+/*
+ * The interrupt controller's registers (OSSSYS window 0): the table that
+ * names the process address space of each graphics-hub context (one word
+ * per context), the ring's control word, its base (address bits 39:8) and
+ * the base's high byte (bits 47:40), the read and write pointers, the
+ * address of the write pointer's copy in memory (high 16 bits, low 32
+ * bits) and the read-pointer doorbell word.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/asic_reg/oss/osssys_5_0_0_offset.h
+ * (mmIH_VMID_0_LUT, mmIH_RB_CNTL, mmIH_RB_BASE, mmIH_RB_BASE_HI,
+ * mmIH_RB_RPTR, mmIH_RB_WPTR, mmIH_RB_WPTR_ADDR_HI, mmIH_RB_WPTR_ADDR_LO,
+ * mmIH_DOORBELL_RPTR) and drivers/gpu/drm/amd/amdgpu/navi10_ih.c
+ * (navi10_ih_enable_ring: the base shifts and the 16-bit high address).
+ */
+#define AMDRDNA_IH_WINDOW_MAIN			0U
+#define AMDRDNA_IH_REG_SPACE_TO_PROCESS		0x0000U
+#define AMDRDNA_IH_REG_RING_CONTROL		0x0080U
+#define AMDRDNA_IH_REG_RING_BASE		0x0081U
+#define AMDRDNA_IH_REG_RING_BASE_HIGH		0x0082U
+#define AMDRDNA_IH_REG_READ_POINTER		0x0083U
+#define AMDRDNA_IH_REG_WRITE_POINTER		0x0084U
+#define AMDRDNA_IH_REG_POINTER_COPY_HIGH	0x0085U
+#define AMDRDNA_IH_REG_POINTER_COPY_LOW		0x0086U
+#define AMDRDNA_IH_REG_DOORBELL			0x0087U
+#define AMDRDNA_IH_RING_BASE_SHIFT		8U
+#define AMDRDNA_IH_RING_BASE_HIGH_SHIFT		40U
+#define AMDRDNA_IH_RING_BASE_HIGH_MASK		0x000000ffU
+#define AMDRDNA_IH_POINTER_COPY_HIGH_MASK	0x0000ffffU
+
+/*
+ * The interrupt ring's size, and the doorbell of its read pointer: slot
+ * 0x178 of the 64-bit doorbell slots, which is dword 0x2f0 of the
+ * doorbell BAR.  The driver maps the first page of that BAR, which holds
+ * every doorbell it uses.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/amdgpu_ih.h (IH_RING_SIZE),
+ * drivers/gpu/drm/amd/amdgpu/amdgpu_doorbell.h
+ * (AMDGPU_NAVI10_DOORBELL_IH) and drivers/gpu/drm/amd/amdgpu/navi10_ih.c
+ * (navi10_ih_sw_init: the slot shifted left by one).
+ * derived: 0x178 << 1 = 0x2f0.
+ */
+#define AMDRDNA_INTERRUPT_RING_BYTES		0x40000U
+#define AMDRDNA_DOORBELL_INTERRUPTS		0x02f0U
+#define AMDRDNA_DOORBELL_BYTES			0x1000U
+
+/*
+ * The memory hubs' settings the driver uses: the invalidation engine the
+ * CPU drives (17), the bit an engine's lock word reads as 1 once taken,
+ * the reach of the system-memory table of context 0 (512 MiB), the range
+ * every invalidation engine covers (all of it), the values that leave the
+ * bypass aperture shut (bottom above top) and the identity aperture shut
+ * (first above last), the last page of a context's 48-bit space, and the
+ * shifts of the aperture words (256 KiB units), the bypass words (16 MiB
+ * units) and the page words (4 KiB units, high half from bit 44).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/gmc_v10_0.c (gmc_v10_0_flush_gpu_tlb:
+ * engine 17 and the semaphore; gmc_v10_0_mc_init: 512 MiB for GC 10.1),
+ * drivers/gpu/drm/amd/include/asic_reg/gc/gc_10_1_0_sh_mask.h
+ * (GCVM_INVALIDATE_ENG0_SEM__SEMAPHORE),
+ * drivers/gpu/drm/amd/amdgpu/gfxhub_v2_0.c
+ * (gfxhub_v2_0_program_invalidation, gfxhub_v2_0_disable_identity_aperture,
+ * gfxhub_v2_0_init_system_aperture_regs, gfxhub_v2_0_setup_vmid_config,
+ * gfxhub_v2_0_init_gart_aperture_regs) and amdgpu_gmc.c
+ * (amdgpu_gmc_set_agp_default).
+ */
+#define AMDRDNA_HUB_CPU_ENGINE			17U
+#define AMDRDNA_HUB_LOCK_TAKEN			0x00000001U
+#define AMDRDNA_GART_BYTES			0x20000000ULL
+#define AMDRDNA_HUB_RANGE_ALL_LOW		0xffffffffU
+#define AMDRDNA_HUB_RANGE_ALL_HIGH		0x0000001fU
+#define AMDRDNA_HUB_BYPASS_SHUT_BOTTOM		0x00ffffffU
+#define AMDRDNA_HUB_IDENTITY_SHUT_LOW		0xffffffffU
+#define AMDRDNA_HUB_IDENTITY_SHUT_HIGH		0x0000000fU
+#define AMDRDNA_HUB_LAST_PAGE_LOW		0xffffffffU
+#define AMDRDNA_HUB_LAST_PAGE_HIGH		0x0000000fU
+#define AMDRDNA_HUB_APERTURE_SHIFT		18U
+#define AMDRDNA_HUB_BYPASS_SHIFT		24U
+#define AMDRDNA_HUB_PAGE_SHIFT			12U
+#define AMDRDNA_HUB_PAGE_HIGH_SHIFT		44U
+
 #endif

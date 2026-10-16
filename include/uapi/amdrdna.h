@@ -83,6 +83,14 @@
 #define AMDRDNA_GOP_SHAPE_PLACED	1U
 #define AMDRDNA_GOP_SHAPE_SCALED	2U
 
+/*
+ * The interrupt the GPU signals the CPU with, once stage A2 set it up
+ * (interrupt_kind).
+ */
+#define AMDRDNA_INTERRUPT_NONE		0U
+#define AMDRDNA_INTERRUPT_MSI		1U
+#define AMDRDNA_INTERRUPT_MSIX		2U
+
 /* The output kind the firmware lit, as the display engine names it. */
 #define AMDRDNA_OUTPUT_NONE		0U
 #define AMDRDNA_OUTPUT_DP		1U
@@ -95,7 +103,11 @@
  *
  * The caller sets version and size; the driver fills the rest.  An IP
  * version is major << 16 | minor << 8 | step.  A value a stage has not
- * read yet is zero.
+ * read yet is zero.  From stage A2 on: where the system-memory table's
+ * reach starts in the GPU's address space and its size, the free VRAM of
+ * the CPU's and the GPU's pools, the interrupt kind, the messages and the
+ * page faults counted so far, and the display's underflow bits read at
+ * the end of A2 (the plane's three bits, and 8 for the timing generator).
  */
 struct amdrdna_status {
 	uint32_t version;
@@ -142,7 +154,15 @@ struct amdrdna_status {
 	uint32_t gop_source_width;
 	uint32_t gop_source_height;
 	uint32_t gop_shape;
-	uint32_t reserved[18];
+	uint64_t gart_base;
+	uint32_t gart_mib;
+	uint32_t cpu_pool_free_mib;
+	uint32_t gpu_pool_free_mib;
+	uint32_t interrupt_kind;
+	uint32_t interrupt_signals;
+	uint32_t vm_faults;
+	uint32_t display_underflow;
+	uint32_t reserved[9];
 };
 
 /* Asks the driver to run every stage up to target (AMDRDNA_IOC_ADVANCE, root only). */
@@ -172,6 +192,7 @@ struct amdrdna_vbios_read {
 
 _Static_assert(sizeof(struct amdrdna_status) == 256U, "amdrdna status ABI size");
 _Static_assert(offsetof(struct amdrdna_status, frame_buffer_base) == 96U, "amdrdna status ABI alignment");
+_Static_assert(offsetof(struct amdrdna_status, gart_base) == 184U, "amdrdna status ABI alignment");
 _Static_assert(sizeof(struct amdrdna_advance) == 32U, "amdrdna advance ABI size");
 _Static_assert(sizeof(struct amdrdna_vbios_read) == 48U, "amdrdna vbios ABI size");
 

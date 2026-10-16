@@ -42,7 +42,7 @@
 #include "drivers/gpu/amdrdna/amdrdna-regs.h"
 
 /* The last stage this driver has; asking for a later one is refused. */
-#define AMDRDNA_LAST_STAGE		AMDRDNA_STAGE_A1V
+#define AMDRDNA_LAST_STAGE		AMDRDNA_STAGE_A2
 
 /* How long the shutdown waits for the bring-up thread to end, and its step. */
 #define AMDRDNA_SHUTDOWN_WAIT_US	5000000U
@@ -179,6 +179,9 @@ amdrdna_attach(
 	spin_init(&device->far_lock, LOCK_RANK_DEVICE, "amdrdna far window");
 	spin_init(&device->state_lock, LOCK_RANK_DEVICE, "amdrdna stage");
 	waitq_init(&device->state_waitq, "amdrdna stage");
+	(void)mutex_init(&device->memory_lock, LOCK_RANK_DEVICE, "amdrdna memory");
+	spin_init(&device->interrupts.lock, LOCK_RANK_DEVICE, "amdrdna interrupts");
+	waitq_init(&device->interrupts.waitq, "amdrdna interrupts");
 
 	/* Stage A0: finds and identifies the GPU. */
 	device->running = AMDRDNA_STAGE_A0;
@@ -240,10 +243,13 @@ amdrdna_detach(
 }
 
 /*
- * Stops the bring-up thread for the reboot or the shutdown of the machine.
+ * Stops the bring-up thread for the reboot or the shutdown of the machine,
+ * then undoes the stages that wrote.
  *
- * The stages so far only read, so nothing on the GPU needs undoing; the
- * thread is told to stop and waited for, for a bounded time.
+ * The thread is told to stop and waited for, for a bounded time.  Once it
+ * has ended, stage A2's interrupt ring is stopped and the memory hubs'
+ * contexts get back the words the firmware left; a thread still inside a
+ * stage is left alone with the GPU, and so is everything it set up.
  */
 static void
 amdrdna_shutdown(
@@ -268,6 +274,7 @@ amdrdna_shutdown(
 	spin_unlock_irqrestore(&device->state_lock, irq);
 
 	/* Waits for the thread to end, for a bounded time. */
+	running = true;
 	for (waited = 0U; waited < AMDRDNA_SHUTDOWN_WAIT_US; waited += AMDRDNA_SHUTDOWN_STEP_US) {
 		/* Reads whether the thread still runs. */
 		irq = spin_lock_irqsave(&device->state_lock);
@@ -278,14 +285,20 @@ amdrdna_shutdown(
 
 		/* Stops waiting once it has ended. */
 		if (!running)
-			return;
+			break;
 
 		/* Gives the thread a step to finish its stage. */
 		kern_usleep_range(AMDRDNA_SHUTDOWN_STEP_US, AMDRDNA_SHUTDOWN_STEP_US * 2U);
 	}
 
 	/* The thread is still in a stage; the reset follows anyway. */
-	amdrdna_mark("shutdown: the bring-up thread still runs a stage; left to the reset");
+	if (running) {
+		amdrdna_mark("shutdown: the bring-up thread still runs a stage; left to the reset");
+		return;
+	}
+
+	/* Undoes stage A2, when it ran. */
+	amdrdna_a2_stop(device);
 }
 
 /*
@@ -458,6 +471,9 @@ amdrdna_run_stage(
 	switch (stage) {
 	case AMDRDNA_STAGE_A1V:
 		error = amdrdna_a1v_vbios(device);
+		break;
+	case AMDRDNA_STAGE_A2:
+		error = amdrdna_a2_memory(device);
 		break;
 	default:
 		error = ENOTSUP;

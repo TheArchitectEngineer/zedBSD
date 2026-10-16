@@ -2,6 +2,7 @@
 # (config/ci/config-amd64.mk, amdrdna built in) with the text console carrying the kernel's lines (the stage marks
 # stay on the firmware's screen), the control device and its tool, and the boot words of one run.
 #   AMDRDNA_RUN=A1v (default: the stages that only read) or A2, A3, ... as the stages come.
+#   The firmware's mode stays the monitor's (no video= line), so the console and the stage marks are 1920x1080.
 # Build:  plan/tools/guest/test-image.sh plan/ws039/tests/config.mk build/p3/usb AMDRDNA_RUN=A1v
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 include config/ci/config-amd64.mk
@@ -10,7 +11,11 @@ CONFIG_DRIVER_PCI_AMDRDNA := y
 CONFIG_AMDRDNA_CONTROL := y
 ZEDBSD_USER_PROGRAMS += amdrdnactl
 
-ZEDBSD_GRAPHICAL_BOOT := n
+# The firmware's screen stays at the monitor's mode (2026-10-16 user: "video=640x480 を外す"): the graphical boot is
+# the one switch of the image build that leaves video= out of zedbsd.cfg (the loader then keeps or asks for 1920x1080);
+# the kernel's lines stay on the screen (kmsg is not quiet, the console paints over the logo) and the login stays the
+# console's.
+ZEDBSD_GRAPHICAL_BOOT := y
 ZEDBSD_GRAPHICAL_LOGIN := n
 ZEDBSD_BOOT_KERNEL_MESSAGES := y
 

@@ -60,8 +60,8 @@ amdrdna_read(
 /*
  * Writes one register inside the mapped window by its dword index.
  *
- * The read-only stages write only the address registers of the indirect
- * windows; an index past the mapped window is not written.
+ * Every register the driver writes lies inside the mapped window; an
+ * index past it is not written.
  */
 void
 amdrdna_write(
@@ -108,6 +108,61 @@ amdrdna_block_index(
 
 	/* Succeeded: the index names the register. */
 	return 0;
+}
+
+/*
+ * Reads a register of a known IP block by its window and offset.
+ *
+ * A register of a block or window the block table did not list reads as
+ * zero; the stages check the blocks they use before they start.
+ */
+uint32_t
+amdrdna_block_read(
+	struct amdrdna_device *device,
+	enum amdrdna_block block,
+	unsigned window,
+	uint32_t offset)
+{
+	uint32_t index;
+	uint32_t value;
+	int error;
+
+	/* Finds the register's index. */
+	error = amdrdna_block_index(device, block, window, offset, &index);
+	if (error != 0)
+		return 0U;
+
+	/* Reads it. */
+	value = amdrdna_read(device, index);
+
+	/* Succeeded: the register's value. */
+	return value;
+}
+
+/*
+ * Writes a register of a known IP block by its window and offset.
+ *
+ * A register of a block or window the block table did not list is not
+ * written.
+ */
+void
+amdrdna_block_write(
+	struct amdrdna_device *device,
+	enum amdrdna_block block,
+	unsigned window,
+	uint32_t offset,
+	uint32_t value)
+{
+	uint32_t index;
+	int error;
+
+	/* Finds the register's index. */
+	error = amdrdna_block_index(device, block, window, offset, &index);
+	if (error != 0)
+		return;
+
+	/* Writes it. */
+	amdrdna_write(device, index, value);
 }
 
 /*

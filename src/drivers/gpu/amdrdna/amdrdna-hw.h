@@ -28,6 +28,58 @@
 /* The most reserved ranges a VRAM layout holds. */
 #define AMDRDNA_LAYOUT_RANGES		8U
 
+/* The most free spans one address pool tracks. */
+#define AMDRDNA_POOL_SPANS		128U
+
+/* The page-table levels of a context's address space, root first. */
+#define AMDRDNA_VM_LEVELS		4U
+
+/* The bytes of one entry of the interrupt ring. */
+#define AMDRDNA_INTERRUPT_ENTRY_BYTES	32U
+
+/*
+ * The bits of a page entry the memory hubs read: present, in system memory,
+ * coherent with the CPU's caches, executable, readable and writable; the
+ * memory type in bits 50:48 (3 is uncached); the bit that makes a
+ * directory entry a leaf; and the address bits of a page and of a table.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/amdgpu_vm.h (AMDGPU_PTE_VALID,
+ * AMDGPU_PTE_SYSTEM, AMDGPU_PTE_SNOOPED, AMDGPU_PTE_EXECUTABLE,
+ * AMDGPU_PTE_READABLE, AMDGPU_PTE_WRITEABLE, AMDGPU_PTE_MTYPE_NV10,
+ * AMDGPU_PDE_PTE), drivers/gpu/drm/amd/include/navi10_enum.h (MTYPE_UC),
+ * drivers/gpu/drm/amd/amdgpu/amdgpu_gmc.c (amdgpu_gmc_set_pte_pde: the
+ * page address mask) and gmc_v10_0.c (gmc_v10_0_get_vm_pde: a table
+ * address is 64-byte aligned and below 2^48).
+ */
+#define AMDRDNA_PAGE_PRESENT		0x0000000000000001ULL
+#define AMDRDNA_PAGE_SYSTEM		0x0000000000000002ULL
+#define AMDRDNA_PAGE_COHERENT		0x0000000000000004ULL
+#define AMDRDNA_PAGE_EXECUTE		0x0000000000000010ULL
+#define AMDRDNA_PAGE_READ		0x0000000000000020ULL
+#define AMDRDNA_PAGE_WRITE		0x0000000000000040ULL
+#define AMDRDNA_PAGE_TYPE_SHIFT		48U
+#define AMDRDNA_PAGE_TYPE_MASK		0x0007000000000000ULL
+#define AMDRDNA_PAGE_TYPE_UNCACHED	3ULL
+#define AMDRDNA_PAGE_LEAF		0x0040000000000000ULL
+#define AMDRDNA_PAGE_ADDRESS_MASK	0x0000fffffffff000ULL
+#define AMDRDNA_TABLE_ADDRESS_MASK	0x0000ffffffffffc0ULL
+
+/*
+ * The interrupt clients and the source the driver handles in this stage:
+ * the page faults the media hub and the graphics hub report (source 0 of
+ * each).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/soc15_ih_clientid.h (SOC15_IH_CLIENTID_VMC,
+ * SOC15_IH_CLIENTID_UTCL2) and
+ * drivers/gpu/drm/amd/include/ivsrcid/vmc/irqsrcs_vmc_1_0.h
+ * (VMC_1_0__SRCID__VM_FAULT, UTCL2_1_0__SRCID__FAULT).
+ */
+#define AMDRDNA_CLIENT_MEDIA_HUB	0x12U
+#define AMDRDNA_CLIENT_GRAPHICS_HUB	0x1bU
+#define AMDRDNA_SOURCE_PAGE_FAULT	0x00U
+
 /*
  * The IP blocks the driver knows by name.  The GPU's block table lists
  * many more; the others are counted but not kept.
@@ -359,6 +411,137 @@ struct amdrdna_product {
 	const char *chip;
 };
 
+/*
+ * The two memory hubs that translate the GPU's addresses: the graphics hub,
+ * which the graphics, compute and copy engines go through, and the media
+ * hub, which the display, the interrupt controller and the host data path
+ * go through.
+ */
+enum amdrdna_hub {
+	AMDRDNA_HUB_GRAPHICS,
+	AMDRDNA_HUB_MEDIA,
+	AMDRDNA_HUB_COUNT
+};
+
+/*
+ * The registers of a memory hub the driver names.  The two hubs have the
+ * same registers in the same order, in their own blocks.  A register kept
+ * once per context (16) or once per invalidation engine (18) takes the
+ * context's or the engine's number as its instance.
+ */
+enum amdrdna_hub_register {
+	AMDRDNA_HUB_CACHE_CONTROL,
+	AMDRDNA_HUB_CACHE_CONTROL_2,
+	AMDRDNA_HUB_CACHE_CONTROL_3,
+	AMDRDNA_HUB_CACHE_CONTROL_4,
+	AMDRDNA_HUB_CACHE_CONTROL_5,
+	AMDRDNA_HUB_FAULT_CONTROL,
+	AMDRDNA_HUB_FAULT_CONTROL_2,
+	AMDRDNA_HUB_FAULT_STATUS,
+	AMDRDNA_HUB_FAULT_ADDRESS_LOW,
+	AMDRDNA_HUB_FAULT_ADDRESS_HIGH,
+	AMDRDNA_HUB_FAULT_PAGE_LOW,
+	AMDRDNA_HUB_FAULT_PAGE_HIGH,
+	AMDRDNA_HUB_IDENTITY_FIRST_LOW,
+	AMDRDNA_HUB_IDENTITY_FIRST_HIGH,
+	AMDRDNA_HUB_IDENTITY_LAST_LOW,
+	AMDRDNA_HUB_IDENTITY_LAST_HIGH,
+	AMDRDNA_HUB_IDENTITY_SHIFT_LOW,
+	AMDRDNA_HUB_IDENTITY_SHIFT_HIGH,
+	AMDRDNA_HUB_CONTEXT_CONTROL,
+	AMDRDNA_HUB_INVALIDATE_LOCK,
+	AMDRDNA_HUB_INVALIDATE_REQUEST,
+	AMDRDNA_HUB_INVALIDATE_DONE,
+	AMDRDNA_HUB_INVALIDATE_RANGE_LOW,
+	AMDRDNA_HUB_INVALIDATE_RANGE_HIGH,
+	AMDRDNA_HUB_TABLE_BASE_LOW,
+	AMDRDNA_HUB_TABLE_BASE_HIGH,
+	AMDRDNA_HUB_TABLE_FIRST_LOW,
+	AMDRDNA_HUB_TABLE_FIRST_HIGH,
+	AMDRDNA_HUB_TABLE_LAST_LOW,
+	AMDRDNA_HUB_TABLE_LAST_HIGH,
+	AMDRDNA_HUB_FRAME_BUFFER_PHYSICAL,
+	AMDRDNA_HUB_DEFAULT_PAGE_LOW,
+	AMDRDNA_HUB_DEFAULT_PAGE_HIGH,
+	AMDRDNA_HUB_FRAME_BUFFER_BOTTOM,
+	AMDRDNA_HUB_FRAME_BUFFER_TOP,
+	AMDRDNA_HUB_BYPASS_TOP,
+	AMDRDNA_HUB_BYPASS_BOTTOM,
+	AMDRDNA_HUB_BYPASS_BASE,
+	AMDRDNA_HUB_APERTURE_LOW,
+	AMDRDNA_HUB_APERTURE_HIGH,
+	AMDRDNA_HUB_TRANSLATION_CONTROL,
+	AMDRDNA_HUB_REGISTER_COUNT
+};
+
+/* One run of free addresses in a pool, [start, end). */
+struct amdrdna_span {
+	uint64_t start;
+	uint64_t end;
+};
+
+/*
+ * A pool of addresses handed out in aligned runs: the VRAM the CPU reaches
+ * through its window, the VRAM only the GPU reaches, or the GPU addresses
+ * of the system-memory table.
+ *
+ * The pool covers [start, end); spans lists the runs that are free, sorted
+ * and never touching (a run given back is merged with its neighbours), and
+ * free_bytes is their sum.  A pool starts empty; its owner gives it the
+ * runs it may hand out.  The owner serializes every call.
+ */
+struct amdrdna_pool {
+	uint64_t start;
+	uint64_t end;
+	struct amdrdna_span spans[AMDRDNA_POOL_SPANS];
+	unsigned span_count;
+	uint64_t free_bytes;
+};
+
+/*
+ * What one entry of the interrupt ring says: the client block and its
+ * source, the ring and the context the event belongs to, whether the media
+ * hub stamped the context, the timestamp, the process address-space ID the
+ * hub attached, and the four words of source data.
+ */
+struct amdrdna_interrupt {
+	uint8_t client;
+	uint8_t source;
+	uint8_t ring;
+	uint8_t context;
+	bool from_media_hub;
+	uint64_t timestamp;
+	uint16_t space_id;
+	uint32_t data[4];
+};
+
+/*
+ * What a page fault of a memory hub says: the hub, the faulting address,
+ * what the access was (from the interrupt, decoded and as its raw bits),
+ * and the hub's latched status
+ * word decoded: more faults behind this one, the walker's error, the
+ * permission bits that failed, a mapping error, the unit that asked, a
+ * write, and the context.
+ */
+struct amdrdna_vm_fault {
+	enum amdrdna_hub hub;
+	uint64_t fault_address;
+	bool retried;
+	bool reading;
+	bool writing;
+	bool executing;
+	uint32_t access_bits;
+	uint16_t space_id;
+	uint32_t latched;
+	bool more_behind;
+	unsigned walker_error;
+	unsigned denied;
+	bool unmapped;
+	unsigned unit;
+	bool unit_wrote;
+	unsigned context;
+};
+
 uint16_t
 amdrdna_le16(
 	const uint8_t *bytes,
@@ -448,5 +631,168 @@ amdrdna_dcn_index(
 const char *
 amdrdna_block_name(
 	enum amdrdna_block block);
+
+void
+amdrdna_pool_init(
+	struct amdrdna_pool *pool,
+	uint64_t start,
+	uint64_t end);
+
+int
+amdrdna_pool_give(
+	struct amdrdna_pool *pool,
+	uint64_t start,
+	uint64_t bytes);
+
+void
+amdrdna_pool_hold(
+	struct amdrdna_pool *pool,
+	uint64_t start,
+	uint64_t bytes);
+
+int
+amdrdna_pool_take(
+	struct amdrdna_pool *pool,
+	uint64_t bytes,
+	uint64_t alignment,
+	uint64_t *start);
+
+uint32_t
+amdrdna_hub_index(
+	const struct amdrdna_ip *block,
+	enum amdrdna_hub hub,
+	enum amdrdna_hub_register which,
+	unsigned instance);
+
+unsigned
+amdrdna_hub_instances(
+	enum amdrdna_hub_register which);
+
+int
+amdrdna_gart_place(
+	uint64_t frame_buffer_start,
+	uint64_t frame_buffer_end,
+	uint64_t bytes,
+	uint64_t *start);
+
+uint64_t
+amdrdna_gart_system_entry(
+	uint64_t bus_address);
+
+uint64_t
+amdrdna_gart_unused_entry(
+	uint64_t dummy_address);
+
+uint64_t
+amdrdna_vm_leaf_entry(
+	uint64_t address,
+	uint64_t access);
+
+uint64_t
+amdrdna_vm_table_entry(
+	uint64_t table_address,
+	bool in_system);
+
+void
+amdrdna_vm_split(
+	uint64_t address,
+	unsigned index[AMDRDNA_VM_LEVELS]);
+
+uint32_t
+amdrdna_invalidate_word(
+	unsigned context);
+
+uint32_t
+amdrdna_hub_cache_word(
+	uint32_t old);
+
+uint32_t
+amdrdna_hub_cache_flush_word(
+	uint32_t old);
+
+uint32_t
+amdrdna_hub_cache_word_3(void);
+
+uint32_t
+amdrdna_hub_cache_word_4(void);
+
+uint32_t
+amdrdna_hub_cache_word_5(void);
+
+uint32_t
+amdrdna_hub_translation_word(
+	uint32_t old);
+
+uint32_t
+amdrdna_hub_system_context_word(
+	uint32_t old);
+
+uint32_t
+amdrdna_hub_user_context_word(
+	uint32_t old);
+
+uint32_t
+amdrdna_hub_fault_default_word(
+	uint32_t old);
+
+uint32_t
+amdrdna_hub_fault_retry_word(
+	uint32_t old);
+
+uint32_t
+amdrdna_hub_fault_rearm_word(
+	uint32_t old);
+
+uint32_t
+amdrdna_hub_fault_interrupt_word(
+	uint32_t old,
+	bool on);
+
+void
+amdrdna_vm_fault_decode(
+	const struct amdrdna_interrupt *interrupt,
+	uint32_t latched,
+	struct amdrdna_vm_fault *fault);
+
+void
+amdrdna_interrupt_decode(
+	const uint32_t words[AMDRDNA_INTERRUPT_ENTRY_BYTES / 4U],
+	struct amdrdna_interrupt *interrupt);
+
+int
+amdrdna_interrupt_ring_word(
+	uint32_t old,
+	uint32_t ring_bytes,
+	bool message,
+	uint32_t *word);
+
+uint32_t
+amdrdna_interrupt_switch_word(
+	uint32_t old,
+	bool on);
+
+uint32_t
+amdrdna_interrupt_overflow_word(
+	uint32_t old,
+	bool clear);
+
+uint32_t
+amdrdna_interrupt_doorbell_word(
+	uint32_t doorbell);
+
+uint32_t
+amdrdna_interrupt_doorbell_range_word(
+	uint32_t old,
+	uint32_t doorbell);
+
+uint32_t
+amdrdna_interrupt_control_word(
+	uint32_t old);
+
+uint32_t
+amdrdna_interrupt_offset(
+	uint32_t pointer,
+	uint32_t ring_bytes,
+	bool *overflowed);
 
 #endif

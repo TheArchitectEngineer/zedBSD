@@ -164,6 +164,11 @@ control_status(
 	    (unsigned)(status.firmware_table_version >> 8), (unsigned)(status.firmware_table_version & 0xffU),
 	    (unsigned)status.firmware_capability_bits, (unsigned)status.power_table_id, (unsigned)status.shutdown_temperature,
 	    (status.flags & AMDRDNA_STATUS_TRAINING_ALLOWED) != 0U ? 1U : 0U);
+	printf("memory gart=0x%llx+%uMiB cpu_free=%uMiB gpu_free=%uMiB irq=%u signals=%u faults=%u underflow=%u\n",
+	    (unsigned long long)status.gart_base, (unsigned)status.gart_mib,
+	    (unsigned)status.cpu_pool_free_mib, (unsigned)status.gpu_pool_free_mib,
+	    (unsigned)status.interrupt_kind, (unsigned)status.interrupt_signals,
+	    (unsigned)status.vm_faults, (unsigned)status.display_underflow);
 	return 0;
 }
 
