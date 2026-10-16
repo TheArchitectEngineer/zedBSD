@@ -2026,7 +2026,7 @@ i915_xd_dpll_map_place(
 /*
  * Reports a PLL's DIV0 word, which holds the AFC startup: the combo DPLLs
  * and the Thunderbolt PLL of the platforms with one map word (Tiger Lake
- * and display 13) have one; 0 elsewhere.
+ * and display 13) have one; 0 elsewhere (display 11 has none).
  *
  * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dpll_mgr.c
  * (icl_dpll_write, icl_pll_get_hw_state).
@@ -2036,7 +2036,9 @@ i915_xd_dpll_div0(
 	const struct i915_xd_platform *platform,
 	const struct i915_xd_pll_desc *pll)
 {
-	/* Only the platforms of the one map word, and not a Type-C PLL. */
+	/* Only display 12 on, the platforms of the one map word, and not a Type-C PLL. */
+	if (platform->display_ver < 12U)
+		return 0U;
 	if (platform->pll_map != I915_XD_PLL_MAP_CFGCR0 || pll->kind == I915_XD_PLL_TC)
 		return 0U;
 

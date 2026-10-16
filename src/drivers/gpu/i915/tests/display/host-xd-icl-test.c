@@ -171,11 +171,13 @@ i915_xd_icl_test_setup(
 	drv_i915_xd_io_init(&i915_xd_icl_test_io, NULL, NULL);
 	drv_i915_xd_io_set_hooks(&i915_xd_icl_test_io, &hooks);
 
-	/* The MG PLL enables: the power state follows the request, the lock the enable. */
+	/* The MG PLL and combo DPLL enables: the power state follows the request, the lock the enable. */
 	for (index = 0U; index < I915_XD_ICL_TEST_MG_ENABLES; index++) {
 		i915_xd_fake_rule_mirror(I915_XD_TC_PLL_ENABLE(index), I915_XD_PLL_POWER_ENABLE, I915_XD_TC_PLL_ENABLE(index), -1, 0U);
 		i915_xd_fake_rule_mirror(I915_XD_TC_PLL_ENABLE(index), I915_XD_PLL_ENABLE, I915_XD_TC_PLL_ENABLE(index), -1, 0U);
 	}
+	i915_xd_fake_rule_mirror(I915_XD_DPLL0_ENABLE, I915_XD_PLL_POWER_ENABLE, I915_XD_DPLL0_ENABLE, -1, 0U);
+	i915_xd_fake_rule_mirror(I915_XD_DPLL0_ENABLE, I915_XD_PLL_ENABLE, I915_XD_DPLL0_ENABLE, -1, 0U);
 
 	/* The AUX wells' states follow their requests; the firmware answers the mailbox. */
 	i915_xd_fake_rule_mirror(I915_XD_PWR_WELL_CTL_AUX, 0xaaaaaaaaU, I915_XD_PWR_WELL_CTL_AUX, -1, 0U);
@@ -789,16 +791,21 @@ i915_xd_icl_test_trans(void)
 
 /*
  * The clocks of display 11: the CD clock's bypass of 50 MHz, the
- * Thunderbolt PLL's words with their dividers, and the data box word
- * without regulated back-to-back transactions.
+ * Thunderbolt PLL's words with their dividers, a combo DPLL's words at
+ * Ice Lake's places without a DIV0, and the data box word without
+ * regulated back-to-back transactions.
  */
 static void
 i915_xd_icl_test_clocks(void)
 {
+	uint32_t offsets[I915_XD_ICL_TEST_WRITES];
+	uint32_t values[I915_XD_ICL_TEST_WRITES];
 	const struct i915_xd_platform *platform;
 	struct i915_xd_dpll_words words;
 	struct i915_xd_cdclk state;
 	uint32_t word;
+	unsigned count;
+	unsigned late;
 
 	/* The CD clock with its PLL off on a 38.4 MHz reference: the 50 MHz bypass. */
 	platform = i915_xd_icl_test_setup(I915_XD_ICL_TEST_DEVICE);
@@ -818,6 +825,15 @@ i915_xd_icl_test_clocks(void)
 	i915_host_check(words.cfgcr0 == 0x01c001a5U && words.cfgcr1 == 0x53U, "clocks: Ice Lake's Thunderbolt PLL on 19.2 MHz");
 	drv_i915_xd_dpll_tbt_words(platform, 24000U, I915_XD_DPLL_AFC_NONE, &words);
 	i915_host_check(words.cfgcr0 == 0x01000151U && words.cfgcr1 == 0x53U, "clocks: Ice Lake's Thunderbolt PLL on 24 MHz");
+
+	/* DPLL0 with the VBT's AFC startup: its words at 0x164000 and 0x164004, no DIV0 on display 11. */
+	words.div0 = 0x04000000U;
+	words.div0_set = 1;
+	late = drv_i915_xd_dpll_enable(&i915_xd_icl_test_io, platform, drv_i915_xd_dpll_desc(platform, 0U), &words);
+	count = i915_xd_icl_test_writes(offsets, values, I915_XD_ICL_TEST_WRITES);
+	i915_host_check(late == 0U && i915_xd_fake_get(0x164000U) == 0x01000151U && i915_xd_fake_get(0x164004U) == 0x53U &&
+		i915_xd_icl_test_index(offsets, count, I915_XD_DPLL_DIV0(0U)) < 0 && i915_xd_icl_test_index(offsets, count, 0x164284U) < 0,
+		"clocks: Ice Lake's DPLL0 words go to 0x164000 and 0x164004, without a DIV0");
 
 	/* The data box: A 2, BW 1, B 8, nothing regulated. */
 	word = drv_i915_xd_dbuf_dbox_word(platform, 0);

@@ -540,6 +540,19 @@
 #define I915_XD_DPLL_DIV0_AFC_STARTUP		0x0e000000U
 
 /*
+ * The configuration words of Ice Lake's combo DPLLs and Thunderbolt PLL,
+ * by their PLL number (0 and 1, the Thunderbolt PLL 2), 0x80 apart; Ice
+ * Lake has no DIV0 word.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (_ICL_DPLL0_CFGCR0, _ICL_DPLL1_CFGCR0, _ICL_DPLL0_CFGCR1,
+ * _ICL_DPLL1_CFGCR1), and Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_dpll_mgr.c (icl_dpll_write).
+ */
+#define I915_XD_DPLL_CFGCR0_ICL(pll)		(0x164000U + 0x80U * (pll))
+#define I915_XD_DPLL_CFGCR1_ICL(pll)		(0x164004U + 0x80U * (pll))
+
+/*
  * The fields of the DPLL configuration words: the DCO fraction and
  * integer; the Q divider ratio and mode, the K and P dividers, and the
  * central frequency select.

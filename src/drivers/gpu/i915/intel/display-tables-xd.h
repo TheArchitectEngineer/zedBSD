@@ -2559,7 +2559,8 @@ static const struct i915_xd_port_desc i915_xd_ports_adlp[] = {
  * and Alder Lake-S's DPLL2 select as 2 and use the words at 0x164294;
  * Alder Lake-S's DPLL3 has its own), the Thunderbolt PLL and the Type-C
  * PLLs (display 13 moved their enables; Ice Lake's are the MG PLLs, whose
- * words are in the MG PHY).
+ * words are in the MG PHY; Ice Lake's DPLLs and Thunderbolt PLL have
+ * their words at its own places).
  *
  * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dpll_mgr.c
  * (icl_plls, tgl_plls, rkl_plls, adls_plls, adlp_plls, intel_combo_pll_enable_reg,
@@ -2569,9 +2570,9 @@ static const struct i915_xd_port_desc i915_xd_ports_adlp[] = {
  * DPLL_ID_ICL_MGPLL1, DPLL_ID_DG1_DPLL2, DPLL_ID_DG1_DPLL3).
  */
 static const struct i915_xd_pll_desc i915_xd_plls_icl[] = {
-	{ I915_XD_PLL_COMBO, 0, 0, I915_XD_DPLL0_ENABLE, I915_XD_DPLL_CFGCR0(0U), I915_XD_DPLL_CFGCR1(0U) },
-	{ I915_XD_PLL_COMBO, 1, 0, I915_XD_DPLL1_ENABLE, I915_XD_DPLL_CFGCR0(1U), I915_XD_DPLL_CFGCR1(1U) },
-	{ I915_XD_PLL_TBT, 2, 0, I915_XD_TBT_PLL_ENABLE, I915_XD_TBT_PLL_CFGCR0, I915_XD_TBT_PLL_CFGCR1 },
+	{ I915_XD_PLL_COMBO, 0, 0, I915_XD_DPLL0_ENABLE, I915_XD_DPLL_CFGCR0_ICL(0U), I915_XD_DPLL_CFGCR1_ICL(0U) },
+	{ I915_XD_PLL_COMBO, 1, 0, I915_XD_DPLL1_ENABLE, I915_XD_DPLL_CFGCR0_ICL(1U), I915_XD_DPLL_CFGCR1_ICL(1U) },
+	{ I915_XD_PLL_TBT, 2, 0, I915_XD_TBT_PLL_ENABLE, I915_XD_DPLL_CFGCR0_ICL(2U), I915_XD_DPLL_CFGCR1_ICL(2U) },
 	{ I915_XD_PLL_TC, 3, 1, I915_XD_TC_PLL_ENABLE(0U), 0U, 0U },
 	{ I915_XD_PLL_TC, 4, 2, I915_XD_TC_PLL_ENABLE(1U), 0U, 0U },
 	{ I915_XD_PLL_TC, 5, 3, I915_XD_TC_PLL_ENABLE(2U), 0U, 0U },
