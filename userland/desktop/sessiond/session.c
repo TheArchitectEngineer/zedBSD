@@ -13,14 +13,14 @@
  * way login starts a shell: initgroups, setgid, setuid, HOME, USER,
  * LOGNAME, PATH, SHELL and XDG_RUNTIME_DIR.  The login is recorded in
  * utmpx.  An account whose home directory is not there yet gets it at its
- * first login (ws035-p120).
+ * first login.
  *
  * The session's user is also given the group "network" (2026-09-28 user
- * decision, ws035-p104): networkd's socket admits that group, and the
+ * decision): networkd's socket admits that group, and the
  * system bar's network menu speaks to networkd as the session's user.
  *
  * networkd is told when the session opens and when it has ended
- * (2026-10-02 user decision, ws005-p024): while the session is open, the
+ * (2026-10-02 user decision): while the session is open, the
  * Wi-Fi networks saved in the user's own store are ones networkd joins on its
  * own; after the logout they are not, and what was joined with them ends.
  * The telling runs "net wifi session open|close UID" in the background, so a
@@ -30,7 +30,7 @@
  * it is left is ended too: its process group, and every process of the
  * user (not for root, whose processes are the system's).
  *
- * The hand-over of the display (ws035-p101): the script is given one end of
+ * The hand-over of the display: the script is given one end of
  * a socket pair as descriptor 3 and the option --control-fd=3 for the compositor.
  * The greeter stays on the screen while the session starts; the compositor says
  * READY when it is about to take the display, sessiond then has the
@@ -42,23 +42,23 @@
  *                    QUIT comes once the greeter is ready; the session
  *                    answers RELEASED when it has given the display back,
  *                    and ends
- *   UNLOCK style     then the secret on the next line: the lock screen
- *                    (ws035-p102); /sbin/passkey checks the session user's
- *                    password, PIN or key as a login does (auth.c,
- *                    ws172-p002); OK, or FAIL reason after a delay
+ *   UNLOCK style     then the secret on the next line: the lock screen;
+ *                    /sbin/passkey checks the session user's
+ *                    password, PIN or key as a login does (auth.c);
+ *                    OK, or FAIL reason after a delay
  *   STYLES, ENROLLED, ENROLL pin|fido2 label, REMOVE pin|fido2 id, CANCEL
  *                    the session user's ways to unlock, and their changes
  *                    (Settings > Users); the current password and the new
  *                    secret follow on their own lines
  *   SERVICE name on|off|status
  *                    a system service the Sharing page turns on or off
- *                    (ws089-p025, service.c: sshd only, root or wheel);
+ *                    (service.c: sshd only, root or wheel);
  *                    SERVICE available= enabled= running= port=, DENIED,
  *                    or ERROR
  *   POWER poweroff|reboot
- *                    ends the machine (ws131-p027, power.c: the Power Off
+ *                    ends the machine (power.c: the Power Off
  *                    dialog; root or wheel only); OK, FAIL wheel, or ERROR
- *   POWER suspend    sleeps the machine (ws052-p011, sleep.c; any session
+ *   POWER suspend    sleeps the machine (sleep.c; any session
  *                    user); SLEPT woke=…, NOSLEEP …, ERROR busy or ERROR
  *                    once the sleep is done
  *   POWER cancel     stops a sleep before the kernel is asked; no answer
@@ -94,7 +94,7 @@
 /* The most groups a session's user is read with. */
 #define SESSION_GROUPS_MAX	64
 
-/* The command that tells networkd about the session (ws005-p024). */
+/* The command that tells networkd about the session. */
 #define SESSION_NET_COMMAND	"/sbin/net"
 
 /* How long the greeter stays on the screen for a session that does not say READY (seconds). */
@@ -119,7 +119,7 @@ static void session_signal_user(uid_t uid, int signal_number);
  *
  * Returns 0 once a session that took the display (said READY) has ended,
  * EIO when it ended without taking the display (an automatic login's
- * session that hung in its start is ended, ws239-p001), or the errno value
+ * session that hung in its start is ended), or the errno value
  * of a session that could not be started.
  */
 int
@@ -219,7 +219,7 @@ sessiond_session_run(
 			(void)kill(child, SIGTERM);
 		}
 
-		/* An automatic login's session that has not taken the display in time hangs in its start: it is ended (ws239-p001). */
+		/* An automatic login's session that has not taken the display in time hangs in its start: it is ended. */
 		now_ms = sessiond_milliseconds();
 		if (daemon->session_bounded &&
 		    !daemon->session_ready &&
@@ -242,7 +242,7 @@ sessiond_session_run(
 		if (entry[1].fd >= 0)
 			entries = 2;
 
-		/* A sleep's answer, whoever asked it (sleep.c, ws052-p011). */
+		/* A sleep's answer, whoever asked it (sleep.c). */
 		sleep_slot = entries;
 		entry[sleep_slot].fd = sessiond_sleep_fd();
 		entry[sleep_slot].events = POLLIN;
@@ -250,7 +250,7 @@ sessiond_session_run(
 		if (entry[sleep_slot].fd >= 0)
 			entries++;
 
-		/* A device plugged in, given below at once (seat.c, BUG-264). */
+		/* A device plugged in, given below at once (seat.c). */
 		seat_slot = entries;
 		entry[seat_slot].fd = sessiond_seat_events_fd();
 		entry[seat_slot].events = POLLIN;
@@ -362,6 +362,9 @@ session_handoff(
 	if (ready) {
 		count = write(control, "GO\n", 3U);
 		sessiond_log("SESSIOND HANDOFF go written=%ld at_ms=%lld", (long)count, sessiond_milliseconds());
+
+		/* The desktop has the display: init may start the late services. */
+		sessiond_desktop_shown();
 	}
 
 	/* The greeter's process goes after. */
@@ -398,14 +401,14 @@ session_request(
 		return 0;
 	}
 
-	/* A system service of the Sharing page (ws089-p025). */
+	/* A system service of the Sharing page. */
 	match = strncmp(line, "SERVICE ", 8);
 	if (match == 0) {
 		sessiond_service(account, control, line + 8);
 		return 0;
 	}
 
-	/* Power Off or Restart (ws131-p027). */
+	/* Power Off or Restart. */
 	match = strncmp(line, "POWER ", 6);
 	if (match == 0) {
 		sessiond_power_session(account, control, line + 6);
@@ -419,7 +422,7 @@ session_request(
 		return 1;
 	}
 
-	/* A READY after the hand-over's wait: the session took the display late (ws239-p001); answered as anything else. */
+	/* A READY after the hand-over's wait: the session took the display late; answered as anything else. */
 	match = strcmp(line, "READY");
 	if (match == 0)
 		daemon->session_ready = 1;
@@ -430,7 +433,7 @@ session_request(
 }
 
 /*
- * Log Out with the display handed over (ws035-p101): the greeter starts
+ * Log Out with the display handed over: the greeter starts
  * while the session still shows, and says READY when it is about to take
  * the display; the session is then told QUIT, gives the display back
  * (RELEASED) and ends, and the greeter is told GO.  main() then carries on
@@ -520,7 +523,7 @@ session_runtime(
 }
 
 /*
- * Makes the home directory of an account that has none yet (ws035-p120):
+ * Makes the home directory of an account that has none yet:
  * an image can name a person's account (the demonstration's kei) but
  * cannot give a directory to its owner, so the first login makes it, 0700
  * and the user's.  Anything already at the path is left as it is, and a
@@ -660,7 +663,7 @@ session_child(
 	 * the user).  The log starts empty for each session and is written at
 	 * its end: a program of the session before that still writes after the
 	 * truncation adds to the end instead of leaving a hole of NUL bytes
-	 * (ws099-p028, as the compositor's own log).
+	 * (as the compositor's own log).
 	 */
 	descriptor = open("/dev/null", O_RDONLY);
 	if (descriptor >= 0)

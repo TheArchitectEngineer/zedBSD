@@ -10,15 +10,15 @@
  * pair as descriptor 3, and answers its requests, one line each:
  *
  *   READY                  the greeter is about to take the display; GO
- *                          (ws035-p101: nothing else holds it then)
+ *                          (nothing else holds it then)
  *   STYLES name            the ways the account can log in now
  *   AUTH name style        then the secret on the next line: /sbin/passkey
- *                          checks it (auth.c, ws172-p002); TOUCH while a
+ *                          checks it (auth.c); TOUCH while a
  *                          security key waits, then OK, or FAIL reason
  *                          after a delay that grows with the failures
  *   CANCEL                 stops a security key attempt
  *   POWER poweroff|reboot  ends the machine; OK
- *   POWER suspend          sleeps it (sleep.c, ws052-p011): SLEPT woke=…,
+ *   POWER suspend          sleeps it (sleep.c): SLEPT woke=…,
  *                          NOSLEEP …, ERROR busy or ERROR when it is done
  *   POWER cancel           stops a sleep before the kernel is asked; no answer
  *
@@ -29,7 +29,7 @@
  * After OK the greeter stays on the screen ("Starting session") while the
  * session starts; once the session is ready to take the display sessiond
  * shuts its side of the socket down, the greeter gives the display back,
- * says RELEASED and ends (ws035-p101), so the text console never shows
+ * says RELEASED and ends, so the text console never shows
  * between the two.  At a Log Out a greeter is started while the session
  * still shows; its READY is answered only once the session has given the
  * display back (session.c).
@@ -167,7 +167,7 @@ sessiond_greeter_run(
 		if (poll_entry[1].fd >= 0)
 			entries = 2;
 
-		/* A sleep's answer, whoever asked it (sleep.c, ws052-p011). */
+		/* A sleep's answer, whoever asked it (sleep.c). */
 		sleep_slot = entries;
 		poll_entry[sleep_slot].fd = sessiond_sleep_fd();
 		poll_entry[sleep_slot].events = POLLIN;
@@ -175,7 +175,7 @@ sessiond_greeter_run(
 		if (poll_entry[sleep_slot].fd >= 0)
 			entries++;
 
-		/* A device plugged in (seat.c, BUG-264). */
+		/* A device plugged in (seat.c). */
 		seat_slot = entries;
 		poll_entry[seat_slot].fd = sessiond_seat_events_fd();
 		poll_entry[seat_slot].events = POLLIN;
@@ -203,7 +203,7 @@ sessiond_greeter_run(
 			break;
 		}
 
-		/* A greeter that has not taken the display in time hangs in its start: it is ended as failed (ws239-p001). */
+		/* A greeter that has not taken the display in time hangs in its start: it is ended as failed. */
 		now = time(NULL);
 		if (!closed &&
 		    !greeter.ready &&
@@ -319,7 +319,7 @@ sessiond_greeter_release(
 }
 
 /*
- * Starts a greeter while the session still shows (a Log Out, ws035-p101),
+ * Starts a greeter while the session still shows (a Log Out),
  * the seat given to it, and waits for its READY, which is not answered
  * yet (sessiond_greeter_go does).  The greeter is left for
  * sessiond_greeter_run to adopt.  Returns 0 once it said READY, or an
@@ -582,6 +582,9 @@ greeter_request(
 		greeter->ready = 1;
 		sessiond_log("SESSIOND HANDOFF greeter ready: go");
 		greeter_reply(greeter, "GO");
+
+		/* The login screen has the display: init may start the late services. */
+		sessiond_desktop_shown();
 		return;
 	}
 
@@ -611,7 +614,7 @@ greeter_power(
 	int differs;
 	int error;
 
-	/* The sleep, and its cancel (never answered), for the login screen too (ws052-p011). */
+	/* The sleep, and its cancel (never answered), for the login screen too. */
 	differs = strcmp(what, "suspend");
 	if (differs == 0) {
 		sessiond_sleep_request(greeter->socket, "the graphical login");
@@ -651,7 +654,7 @@ greeter_reply(
 	size_t length;
 	ssize_t written;
 
-	/* The reply and its line end, in one write (room for any reply, ws172 m1). */
+	/* The reply and its line end, in one write (room for any reply). */
 	snprintf(line, sizeof(line), "%s\n", reply);
 	length = strlen(line);
 	written = write(greeter->socket, line, length);
@@ -739,7 +742,7 @@ greeter_kill(
 }
 
 /*
- * Puts the reason a greeter failed into sessiond's log (BUG-122): the last
+ * Puts the reason a greeter failed into sessiond's log: the last
  * line of its own log that says how it exited (KWL EXIT … error=), or its
  * last line when it wrote none.
  */
