@@ -93,8 +93,9 @@
  * the cycle, the byte count, the index and the target address with the
  * read bit),
  * the status (GMBUS2: in use, hardware wait phase, the stall timeout,
- * hardware ready, the NAK), the data (GMBUS3), the interrupt mask
- * (GMBUS4) and the two-byte index (GMBUS5).
+ * hardware ready, the NAK), the data (GMBUS3), the interrupt enables
+ * (GMBUS4: the bus going idle, the wait phase, hardware ready) and the
+ * two-byte index (GMBUS5).
  *
  * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
  * (PCH_DISPLAY_BASE), and Linux v6.8.12
@@ -104,7 +105,8 @@
  * GMBUS_CYCLE_STOP, GMBUS_BYTE_COUNT_SHIFT, GEN9_GMBUS_BYTE_COUNT_MAX,
  * GMBUS_SLAVE_INDEX_SHIFT, GMBUS_SLAVE_ADDR_SHIFT, GMBUS_SLAVE_READ,
  * GMBUS_INUSE, GMBUS_HW_WAIT_PHASE, GMBUS_STALL_TIMEOUT, GMBUS_HW_RDY,
- * GMBUS_SATOER, GMBUS_ACTIVE, GMBUS_2BYTE_INDEX_EN).
+ * GMBUS_SATOER, GMBUS_ACTIVE, GMBUS_IDLE_EN, GMBUS_HW_WAIT_EN,
+ * GMBUS_HW_RDY_EN, GMBUS_2BYTE_INDEX_EN).
  */
 #define I915_XD_GMBUS0				0xc5100U
 #define I915_XD_GMBUS0_RATE_100KHZ		0x00000000U
@@ -132,6 +134,9 @@
 #define I915_XD_GMBUS2_ACTIVE			0x00000200U
 #define I915_XD_GMBUS3				0xc510cU
 #define I915_XD_GMBUS4				0xc5110U
+#define I915_XD_GMBUS4_IDLE			0x00000004U
+#define I915_XD_GMBUS4_WAIT_PHASE		0x00000002U
+#define I915_XD_GMBUS4_HW_READY			0x00000001U
 #define I915_XD_GMBUS5				0xc5120U
 #define I915_XD_GMBUS5_TWO_BYTE_INDEX		0x80000000U
 

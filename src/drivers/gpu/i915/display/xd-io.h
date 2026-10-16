@@ -155,6 +155,7 @@ void drv_i915_xd_io_write(struct i915_xd_io *io, uint32_t offset, uint32_t value
 uint32_t drv_i915_xd_io_rmw(struct i915_xd_io *io, uint32_t offset, uint32_t clear, uint32_t set);
 void drv_i915_xd_io_posting_read(struct i915_xd_io *io, uint32_t offset);
 int drv_i915_xd_io_poll(struct i915_xd_io *io, uint32_t offset, uint32_t mask, uint32_t value, unsigned timeout_us, uint32_t *last);
+int drv_i915_xd_io_poll_any(struct i915_xd_io *io, uint32_t offset, uint32_t bits, unsigned timeout_us, uint32_t *last);
 int drv_i915_xd_io_delay(struct i915_xd_io *io, unsigned microseconds);
 void drv_i915_xd_io_step(struct i915_xd_io *io, const char *name);
 unsigned drv_i915_xd_io_records(const struct i915_xd_io *io, struct i915_xd_io_record *out, unsigned max);

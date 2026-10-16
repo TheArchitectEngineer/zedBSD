@@ -43,3 +43,12 @@ Queue: q1225 / q1225-i01（調べだけで返却）、q1225-i02（実装）
 - build: `make -j16 ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/ws245-dev build/ws245-dev/vmunix` warning 0（`-Werror`）。`I915_TESTS=y` の `I915_TEST_SET=vke2・display・display_ktest・display_ktest2・execution` の 5 組も warning 0。`git diff --check` は空。
 - 段の kernel: `build/p019/vmunix-p019-343c8516a`（sha256 6cdd543d…）。基準: `build/p019/vmunix-p053-918265e98`（918265e98 から build、sha256 ea5b3427… = T1-702 の p053 の kernel と同じ binary）。
 - 5330: 未実施（T1 に依頼。依頼文は Q1 に送った）。外部出力（USB-C DP の AUX の TBT IO）: 未確認（host 試験のみ、節目は p020）。
+
+## T1-704 の 5330 の結果と書き込みの順のずれ（2026-10-16、q1228-i02 の P1 が読んだ）
+
+- T1-704（Q1 の要約）: 機能の基準は全部合格（graphical・lease・picture up・device lost 0・backlight 100・survey lit・edp acquire rc=0・DPCD と LCD-B の dpcd の値と rc が同じ）。`5330-survey-diff.py` は FAIL: 順序無しの digest は同じ（set 0xdcd7004e）、順序つきが違い、位置で比べて 133 件の差。
+- 読んだ事（`temp/5330/5330-base-p053-918265e98-debug-20261016-1708-dmesg.txt` と `5330-p019-343c8516a-debug-20261016-1711-dmesg.txt` の `i915: w` の列 599 個ずつを difflib で整列）: 違いは 3 つの書き込みが別の位置に移っただけで、無くなった書き込み・増えた書き込みは 0。
+  - `45444=00000001`（PWR_WELL_CTL_AUX、AUX A の well の要求）と `c7204=00000067`（PP_CONTROL、VDD を強制で on）: eDP の最初の AUX の前の acquire（AUX の power domain と VDD）。基準では DMC の program の書き込み（0x8f0xx・0x5fxxx、DMC の workqueue の thread）の前、段では後ろ（127 個後）。
+  - `c4030=00000089`（SHOTPLUG_CTL_DDI、hotplug の path）: AUX の書き込み（0x64010 の制御の語など）の 3 個前から後ろへ。
+  - どれも別々の thread（eDP の同期の thread・DMC の worker・hotplug）の書き込みの相対の順。p019 で AUX の待ちが env の `wait_reg`（tick の sleep）から xd-io の poll（短い spin、`kern_usleep_range`）に変わり、thread の間の時間の関係が変わった事による（意図した変化の副作用。各 thread の中の列は同じ）。
+- 対処: `5330-survey-diff.py` の全部の列の比べを位置ごとから整列（difflib）に変え、両方の列にあって位置だけ違う書き込みは「write in another place」として数え FAIL にしない、片方にしか無い書き込みだけを FAIL にする（`VARYING` の扱いは同じ）。T1-704 の 2 つの log で `whole lists: 0 writes differ, 3 moved` → PASS。

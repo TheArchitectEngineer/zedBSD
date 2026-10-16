@@ -17,6 +17,7 @@
 #include "xd-fake-regs.h"
 
 #include "../../intel/display-regs-xd.h"
+#include "../../intel/display-regs-xd-south.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -67,7 +68,8 @@ struct i915_xd_fake_register {
 
 /*
  * How the model answers a write of one register: by mirroring bits into
- * a target register after a delay, or by calling the test's function.
+ * a target register after a delay, or by calling the test's function;
+ * or how it answers a read of one register: by the test's read function.
  */
 struct i915_xd_fake_rule {
 	/* The register whose write triggers the rule. */
@@ -79,8 +81,11 @@ struct i915_xd_fake_rule {
 	int shift;
 	unsigned delay_us;
 
-	/* The test's own answer; NULL for a mirror. */
+	/* The test's own answer to a write; NULL for a mirror and a read rule. */
 	i915_xd_fake_write_fn function;
+
+	/* The test's own answer to a read; NULL for a write rule. */
+	i915_xd_fake_read_fn reader;
 	void *context;
 };
 
@@ -124,10 +129,16 @@ static void i915_xd_fake_lock_hook(void *context, unsigned lock, int taken);
 static struct i915_xd_fake_register *i915_xd_fake_find(uint32_t offset, int create);
 static void i915_xd_fake_run_events(void);
 static void i915_xd_fake_apply_rules(uint32_t offset, uint32_t value);
+static uint32_t i915_xd_fake_apply_readers(uint32_t offset, uint32_t value);
 static uint32_t i915_xd_fake_move(uint32_t bits, int shift);
 static void i915_xd_fake_aux_write(uint32_t offset, uint32_t value, void *context);
 static void i915_xd_fake_aux_run(struct i915_xd_fake_aux *sink, uint32_t offset, uint32_t value, uint32_t word);
 static unsigned i915_xd_fake_aux_serve(struct i915_xd_fake_aux *sink, const uint8_t *request, unsigned size, uint8_t *reply);
+static void i915_xd_fake_gmbus_command(uint32_t offset, uint32_t value, void *context);
+static void i915_xd_fake_gmbus_index(uint32_t offset, uint32_t value, void *context);
+static void i915_xd_fake_gmbus_feed(uint32_t offset, uint32_t value, void *context);
+static uint32_t i915_xd_fake_gmbus_status(uint32_t offset, uint32_t value, void *context);
+static uint32_t i915_xd_fake_gmbus_data(uint32_t offset, uint32_t value, void *context);
 
 /*
  * Empties the model: no registers, no rules, no pending changes, the
@@ -275,6 +286,7 @@ i915_xd_fake_rule_mirror(
 	rule->shift = shift;
 	rule->delay_us = delay_us;
 	rule->function = NULL;
+	rule->reader = NULL;
 	rule->context = NULL;
 	i915_xd_fake.rule_count++;
 }
@@ -305,6 +317,38 @@ i915_xd_fake_rule_call(
 	rule->shift = 0;
 	rule->delay_us = 0U;
 	rule->function = function;
+	rule->reader = NULL;
+	rule->context = context;
+	i915_xd_fake.rule_count++;
+}
+
+/*
+ * Adds a rule that answers every read of the register at offset with
+ * the test's function, which is given the value the register holds.
+ */
+void
+i915_xd_fake_rule_read(
+	uint32_t offset,
+	i915_xd_fake_read_fn function,
+	void *context)
+{
+	struct i915_xd_fake_rule *rule;
+
+	/* A full table is a mistake in the test. */
+	if (i915_xd_fake.rule_count == I915_XD_FAKE_RULES) {
+		fprintf(stderr, "xd-fake-regs: too many rules\n");
+		abort();
+	}
+
+	/* Adds the read answer. */
+	rule = &i915_xd_fake.rules[i915_xd_fake.rule_count];
+	rule->offset = offset;
+	rule->source_mask = 0U;
+	rule->target = 0U;
+	rule->shift = 0;
+	rule->delay_us = 0U;
+	rule->function = NULL;
+	rule->reader = function;
 	rule->context = context;
 	i915_xd_fake.rule_count++;
 }
@@ -371,6 +415,64 @@ i915_xd_fake_aux_script(
 }
 
 /*
+ * Puts a DDC target behind the GMBUS controller of the model: from now on
+ * the controller's command, index, status and data registers are
+ * answered by the target.  The memory is left as the test filled it; the
+ * script, the segment, the offset and the record start empty.
+ */
+void
+i915_xd_fake_gmbus_attach(
+	struct i915_xd_fake_gmbus *target,
+	unsigned address)
+{
+	/* Starts the target idle, with no script and nothing seen. */
+	target->address = address;
+	target->segment = 0U;
+	target->offset = 0U;
+	target->left = 0U;
+	target->writing = 0;
+	target->active = 0;
+	target->refused = 0;
+	target->stuck = 0;
+	target->script_length = 0U;
+	target->script_next = 0U;
+	target->cycles = 0U;
+	target->written_bytes = 0U;
+
+	/* Answers the controller's registers. */
+	i915_xd_fake_rule_call(I915_XD_GMBUS1, i915_xd_fake_gmbus_command, target);
+	i915_xd_fake_rule_call(I915_XD_GMBUS5, i915_xd_fake_gmbus_index, target);
+	i915_xd_fake_rule_call(I915_XD_GMBUS3, i915_xd_fake_gmbus_feed, target);
+	i915_xd_fake_rule_read(I915_XD_GMBUS2, i915_xd_fake_gmbus_status, target);
+	i915_xd_fake_rule_read(I915_XD_GMBUS3, i915_xd_fake_gmbus_data, target);
+}
+
+/*
+ * Scripts the target's answer to the next count data cycles after those
+ * already scripted.
+ */
+void
+i915_xd_fake_gmbus_script(
+	struct i915_xd_fake_gmbus *target,
+	unsigned answer,
+	unsigned count)
+{
+	unsigned index;
+
+	/* Appends the answer count times. */
+	for (index = 0U; index < count; index++) {
+		/* A full script is a mistake in the test. */
+		if (target->script_length == I915_XD_FAKE_GMBUS_SCRIPT) {
+			fprintf(stderr, "xd-fake-regs: GMBUS script too long\n");
+			abort();
+		}
+
+		target->answers[target->script_length] = answer;
+		target->script_length++;
+	}
+}
+
+/*
  * Reports how many register reads went through the hooks.
  */
 unsigned
@@ -425,6 +527,9 @@ i915_xd_fake_read_hook(
 	i915_xd_fake_run_events();
 	i915_xd_fake.reads++;
 	value = i915_xd_fake_get(offset);
+
+	/* Lets the test answer a register it models itself. */
+	value = i915_xd_fake_apply_readers(offset, value);
 
 	/* Succeeded: reports the register's value. */
 	return value;
@@ -582,8 +687,10 @@ i915_xd_fake_apply_rules(
 	for (index = 0U; index < i915_xd_fake.rule_count; index++) {
 		rule = &i915_xd_fake.rules[index];
 
-		/* A rule of another register does not answer. */
+		/* A rule of another register, or a read rule, does not answer a write. */
 		if (rule->offset != offset)
+			continue;
+		if (rule->reader != NULL)
 			continue;
 
 		/* A test's function answers by itself. */
@@ -796,6 +903,248 @@ i915_xd_fake_aux_serve(
 
 	/* Succeeded: the write was taken. */
 	return 1U;
+}
+
+/* Runs the read rules of a register being read and reports what the read sees. */
+static uint32_t
+i915_xd_fake_apply_readers(
+	uint32_t offset,
+	uint32_t value)
+{
+	struct i915_xd_fake_rule *rule;
+	unsigned index;
+
+	/* Lets every read rule of the register answer, in the order they were added. */
+	for (index = 0U; index < i915_xd_fake.rule_count; index++) {
+		rule = &i915_xd_fake.rules[index];
+		if (rule->offset != offset || rule->reader == NULL)
+			continue;
+
+		value = rule->reader(offset, value, rule->context);
+	}
+
+	/* Succeeded: the value the read sees. */
+	return value;
+}
+
+/*
+ * Answers a write of the GMBUS command register as the controller and
+ * the target do: a software clear ends a refusal and the cycle; a stop
+ * ends the transfer (the bus stays active when the target lingers); a
+ * ready command starts a data cycle, which the target refuses, or takes
+ * as a read of its bytes from the offset, or as a write (the segment
+ * pointer, an offset, or bytes it keeps).
+ */
+static void
+i915_xd_fake_gmbus_command(
+	uint32_t offset,
+	uint32_t value,
+	void *context)
+{
+	struct i915_xd_fake_gmbus *target;
+	uint32_t data;
+	unsigned cycle;
+	unsigned address;
+	unsigned count;
+	unsigned answer;
+	unsigned index;
+
+	(void)offset;
+	target = context;
+
+	/* The software clear resets the controller. */
+	if ((value & I915_XD_GMBUS1_SW_CLEAR) != 0U) {
+		target->refused = 0;
+		target->active = 0;
+		target->left = 0U;
+		return;
+	}
+
+	/* Without software ready nothing starts. */
+	if ((value & I915_XD_GMBUS1_SW_READY) == 0U)
+		return;
+
+	/* A stop ends the transfer. */
+	cycle = i915_xd_field_get(I915_XD_GMBUS1_CYCLE, value);
+	if ((cycle & I915_XD_GMBUS1_CYCLE_STOP) != 0U) {
+		target->active = target->lingers;
+		return;
+	}
+
+	/* A data cycle: the script decides how the target answers it. */
+	if (target->cycles < I915_XD_FAKE_GMBUS_SCRIPT)
+		target->commands[target->cycles] = value;
+	target->cycles++;
+	target->active = 1;
+	target->writing = 0;
+	target->left = 0U;
+	answer = I915_XD_FAKE_GMBUS_ACK;
+	if (target->script_next < target->script_length) {
+		answer = target->answers[target->script_next];
+		target->script_next++;
+	}
+
+	if (answer == I915_XD_FAKE_GMBUS_STUCK) {
+		target->stuck = 1;
+		return;
+	}
+
+	/* A refused cycle, or one for an address nobody answers. */
+	address = i915_xd_field_get(I915_XD_GMBUS1_ADDRESS, value);
+	if (answer == I915_XD_FAKE_GMBUS_NAK || (address != target->address && address != 0x30U)) {
+		target->refused = 1;
+		return;
+	}
+
+	/* An index cycle sets the offset first. */
+	if ((cycle & I915_XD_GMBUS1_CYCLE_INDEX) != 0U)
+		target->offset = i915_xd_field_get(I915_XD_GMBUS1_INDEX, value);
+
+	/* A read has its bytes to deliver. */
+	count = i915_xd_field_get(I915_XD_GMBUS1_BYTE_COUNT, value);
+	if ((value & I915_XD_GMBUS1_READ) != 0U) {
+		target->left = count;
+		return;
+	}
+
+	/* A write's first bytes are in the data register already. */
+	data = i915_xd_fake_get(I915_XD_GMBUS3);
+	if (address == 0x30U) {
+		target->segment = data & 0xffU;
+		return;
+	}
+
+	if (count == 1U) {
+		target->offset = data & 0xffU;
+		return;
+	}
+
+	/* A longer write is kept; the bytes after the first four come later. */
+	target->written_bytes = 0U;
+	for (index = 0U; index < 4U && index < count; index++) {
+		target->written[target->written_bytes] = (uint8_t)(data >> (8U * index));
+		target->written_bytes++;
+	}
+
+	target->left = count - index;
+	target->writing = 1;
+}
+
+/* Takes the bytes of a write cycle after its first four, as the driver feeds them. */
+static void
+i915_xd_fake_gmbus_feed(
+	uint32_t offset,
+	uint32_t value,
+	void *context)
+{
+	struct i915_xd_fake_gmbus *target;
+	unsigned index;
+
+	(void)offset;
+	target = context;
+
+	/* Only a write cycle with bytes still to come takes them. */
+	if (target->writing == 0)
+		return;
+
+	/* Keeps up to four bytes, lowest first. */
+	for (index = 0U; index < 4U && target->left != 0U; index++) {
+		if (target->written_bytes < sizeof(target->written)) {
+			target->written[target->written_bytes] = (uint8_t)(value >> (8U * index));
+			target->written_bytes++;
+		}
+
+		target->left--;
+	}
+}
+
+/* Answers a write of the two-byte index register: the offset, when enabled. */
+static void
+i915_xd_fake_gmbus_index(
+	uint32_t offset,
+	uint32_t value,
+	void *context)
+{
+	struct i915_xd_fake_gmbus *target;
+
+	(void)offset;
+	target = context;
+
+	/* An enabled index is the offset of the next cycle. */
+	if ((value & I915_XD_GMBUS5_TWO_BYTE_INDEX) != 0U)
+		target->offset = value & 0xffffU;
+}
+
+/*
+ * Answers a read of the GMBUS status: nothing while stuck, a refusal,
+ * or ready and in the wait phase, active while bytes remain or the bus
+ * lingers.
+ */
+static uint32_t
+i915_xd_fake_gmbus_status(
+	uint32_t offset,
+	uint32_t value,
+	void *context)
+{
+	struct i915_xd_fake_gmbus *target;
+	uint32_t status;
+
+	(void)offset;
+	(void)value;
+	target = context;
+
+	/* A stuck controller is only busy. */
+	if (target->stuck != 0)
+		return I915_XD_GMBUS2_ACTIVE;
+
+	/* A refusal, with the bus still active when the target holds it. */
+	if (target->refused != 0) {
+		status = I915_XD_GMBUS2_NAK;
+		if (target->stays_active != 0)
+			status |= I915_XD_GMBUS2_ACTIVE;
+		return status;
+	}
+
+	/* Ready, at the wait phase, and active while the cycle has bytes left or the bus lingers. */
+	status = I915_XD_GMBUS2_HW_READY | I915_XD_GMBUS2_WAIT_PHASE;
+	if (target->active != 0 && (target->left != 0U || target->lingers != 0))
+		status |= I915_XD_GMBUS2_ACTIVE;
+
+	/* Succeeded: the status the controller shows. */
+	return status;
+}
+
+/*
+ * Answers a read of the GMBUS data during a read cycle: the next four
+ * bytes of the target's memory, lowest first.
+ */
+static uint32_t
+i915_xd_fake_gmbus_data(
+	uint32_t offset,
+	uint32_t value,
+	void *context)
+{
+	struct i915_xd_fake_gmbus *target;
+	uint32_t word;
+	unsigned index;
+
+	(void)offset;
+	target = context;
+
+	/* Outside a read the register holds what was written. */
+	if (target->left == 0U || target->writing != 0)
+		return value;
+
+	/* Takes up to four bytes from the segment and the offset. */
+	word = 0U;
+	for (index = 0U; index < 4U && target->left != 0U; index++) {
+		word |= (uint32_t)target->memory[(target->segment * 256U + target->offset) % I915_XD_FAKE_GMBUS_BYTES] << (8U * index);
+		target->offset++;
+		target->left--;
+	}
+
+	/* Succeeded: the bytes of this read. */
+	return word;
 }
 
 /* Moves bits left (positive shift) or right (negative shift). */

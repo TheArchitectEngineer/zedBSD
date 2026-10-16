@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
 Related: [WS244](../ws244/ws.md)（i915 の Linux 由来の code の整理、棚卸し plan/ws244/inventory.md・tests/inventory.py）、[Guardrail](../guardrail.md)「MIT・GPL の出典のデータの引用」
-Resume point: 2026-10-16 q1225-i02（P1）の区切り: p047・p016・p017・p018・p053 は cleared（main、p053 は T1-702 の PASS で merge 7e3bf81cf）。**p019**（AUX の transaction、xd-aux）は実装・host 試験・build 済み（343c8516a）で、5330 の素の起動の回帰（基準 p053 の kernel と p019 の kernel を `DEBUG=1` で 1 回ずつ、`5330-survey-diff.py` で全部の書き込みの列を比べる）の依頼文を Q1 に送った（[phase019](phase019/phase.md)）。次は p020（GMBUS と DDC、xd-gmbus）。5330 の回帰は段ごとに T1 に依頼する（kernel を `~/ws245/` に置き、基準の kernel は段の親の source から build、`5330-bootcycle.sh`、`5330-survey-diff.py` で判定）。USB の image は 33cde7ac9（main d454d4bd3 以降）、UEFI の entry は Boot0008（image を dd し直すたびに PARTUUID が変わるので `efibootmgr --create-only`）。
+Resume point: 2026-10-16 の方針（ユーザー「i915は、実装だけ先に終わらせ、全部マージしたものをテストして、動かなければ二分探索で半分マージしてテスト、だめならさらに半分、で進めます。まずはぜんぶ実装してください。」、Q1 経由）: p020 以降の段を design の順に p046 まで branch（agent/p1-ws245）に積む。各段は host 試験・build（既定と `I915_TESTS=y` の 5 組）warning 0・WIP commit・phase.md の記録。5330 の回帰は全部の後に 1 回（基準は main の kernel、段は branch の tip）、動かなければ下の「段の境の SHA」で二分探索。p019 は T1-704（機能の基準は合格、書き込みの順のずれは別の thread の相対の順: [phase019](phase019/phase.md)）。今の段: p020 の後は p021（backlight の PWM）。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）
@@ -135,7 +135,7 @@ Resume point: 2026-10-16 q1225-i02（P1）の区切り: p047・p016・p017・p01
 | [p018](phase018/phase.md) | 旧 VBT parser の本体の削除（本番の呼び手 10 関数を殻 `vbt-shell.c` に、ktest-display の 2 file を削除）。2026-10-16 に p018 と p053 の 2 段に分けた | cleared（2026-10-16 5330 の回帰に合格、merge 8fea53a1d、旧 4 file は Q1 が削除） |
 | [p053](phase053/phase.md) | EDID の decode を xd-edid に（`edid.c` の decode を消し、`state.c` の mode を xd-edid の first timing に。drm_modes の helper は edid.c に殻として残る）。p018 から分けた | cleared（2026-10-16 T1-702 で 5330 の回帰 PASS、全部の列の差 0、merge 7e3bf81cf） |
 | [p019](phase019/phase.md) | AUX の transaction（xd-aux。well・DC off・VDD は呼ぶ側） | in-progress（4 LW。2026-10-16 q1225-i02 で実装・host 試験・build 済み（343c8516a）、5330 の回帰を T1 に依頼（Q1 経由）） |
-| p020 | GMBUS と DDC の EDID の読み（xd-gmbus） | planned（3 LW。HDMI の plug はユーザーの一覧） |
+| [p020](phase020/phase.md) | GMBUS と DDC の EDID の読み（xd-gmbus） | in-progress（3 LW。2026-10-16 q1228-i02 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回。HDMI の plug はユーザーの一覧） |
 | p021 | backlight の PWM（xd-panel） | planned（2 LW） |
 | p022 | panel power（PPS、xd-panel） | planned（3 LW） |
 | p023 | power well の操作（W1、xd-power。p006 の差分を当て直す） | planned（5 LW） |
@@ -168,3 +168,11 @@ Resume point: 2026-10-16 q1225-i02（P1）の区切り: p047・p016・p017・p01
 | p045 | display 11（Ice Lake） | planned（8 LW。実機は無い） |
 | p046 | 規約の全文の見直しと p045 の出典の監査 | planned（3 LW） |
 合計 38 段、161 LW（±40 %。改訂 6 の 159 に、p018 を p018・p053 に分けた +2: 2026-10-16 q1223）。5330 の素の起動は段の kernel で最少 37 回、基準の起動と `i915.debug=display` の起動を含めて見込み約 50 回（最大 70〜85 回、design.md §6.6）。
+
+### 段の境の SHA（二分探索用、2026-10-16 から。branch agent/p1-ws245）
+
+各段の最後の WIP commit。5330 の回帰で失敗した時は、この表の真ん中の段までを main に merge した kernel で流す。
+
+| 段 | 最後の commit | 親（前の段の境） |
+| --- | --- | --- |
+| p019 | 343c8516a | fb66c84d0 |

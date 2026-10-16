@@ -198,6 +198,21 @@ i915_xd_io_test_poll(void)
 	i915_xd_io_test_setup(&io);
 	error = drv_i915_xd_io_poll(&io, I915_XD_DBUF_CTL_S1, I915_XD_DBUF_POWER_STATE, I915_XD_DBUF_POWER_STATE, 0U, NULL);
 	i915_host_check(error == ETIMEDOUT && i915_xd_fake_now() == 0U && i915_xd_fake_reads() == 1U, "poll: a wait of 0 us reads once");
+
+	/* A wait for any of two bits ends at the first one that comes, either of them. */
+	i915_xd_io_test_setup(&io);
+	i915_xd_fake_later(40U, I915_XD_DBUF_CTL_S1, 0U, 0x00000400U);
+	error = drv_i915_xd_io_poll_any(&io, I915_XD_DBUF_CTL_S1, 0x00000800U | 0x00000400U, 1000U, &last);
+	i915_host_check(error == 0 && i915_xd_fake_now() == 40U && last == 0x00000400U, "poll any: the second bit ends the wait when it comes");
+
+	/* A wait for any of two bits times out like a wait for a value, and is recorded. */
+	i915_xd_io_test_setup(&io);
+	i915_xd_fake_set(I915_XD_DBUF_CTL_S1, 0x00000200U);
+	error = drv_i915_xd_io_poll_any(&io, I915_XD_DBUF_CTL_S1, 0x00000800U | 0x00000400U, 1000U, &last);
+	count = drv_i915_xd_io_records(&io, records, 4U);
+	i915_host_check(error == ETIMEDOUT && i915_xd_fake_now() == 1000U && last == 0x00000200U && count == 1U &&
+			records[0].kind == I915_XD_IO_RECORD_TIMEOUT,
+			"poll any: none of the bits times out after the whole wait, recorded");
 }
 
 /* Checks the write record: order, steps, and the wrap-around. */

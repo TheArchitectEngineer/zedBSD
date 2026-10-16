@@ -6,21 +6,20 @@
  */
 
 /*
- * The GMBUS I2C controller of the hotplug path (see gmbus.h).
+ * The GMBUS I2C buses of the hotplug path (see gmbus.h).
  *
- * The transfer follows Linux v6.8.12 intel_gmbus.c: one controller serves
- * every DDC pin, a transfer is a sequence of GMBUS1 cycles whose data moves
- * through GMBUS3 four bytes at a time, and GMBUS2 reports ready, wait phase,
- * NAK and activity.  Linux makes every valid pin's bus at display init
- * (intel_gmbus_setup()); here a bus is made on the first request for its
- * pin.  The bit-banging fallback over GPIO is not ported: a transfer that
- * falls back to it is a recorded step answering -EIO.
+ * A bus is an I2C adapter for one DDC pin, made on the first request for
+ * the pin.  Its transfer takes the controller lock and the GMBUS power,
+ * hands the messages to the controller (xd-gmbus.c), and turns what the
+ * controller reports into the Linux errno values the EDID reader of the
+ * DP environment compares (-I915_HPD_ENXIO for a refusal,
+ * -I915_HPD_ETIMEDOUT, -I915_HPD_EAGAIN), with the same log lines as
+ * before.  A transfer whose controller never became ready asks to be
+ * retried over GPIO bit-banging, which is not ported: the retry is a
+ * recorded step answering -EIO.
  *
- * The transfer functions answer Linux errno values (-I915_HPD_ENXIO for a
- * NAK, -I915_HPD_ETIMEDOUT, -I915_HPD_EAGAIN), because the EDID reader of
- * the DP environment compares them.
- *
- * The Linux text this file follows carries this notice:
+ * The bus bookkeeping, the bit-banging fallback and the log lines follow
+ * Linux v6.8.12 intel_gmbus.c, which carries this notice:
  *
  * Copyright (c) 2006 Dave Airlie <airlied@linux.ie>
  * Copyright (c) 2006-2008,2010 Intel Corporation
@@ -52,36 +51,41 @@
 
 #include "hotplug-internal.h"
 #include "gmbus.h"
+#include "xd-gmbus.h"
+#include "xd-io.h"
 #include <kern/kcrt.h>
 
 #include <kern/klog.h>
 #include <kern/lock.h>
 
 #include <stddef.h>
+#include <stdint.h>
 
-/* The force_bit bit a transfer sets when GMBUS asked to be retried over GPIO. */
+/* The force_bit bit a transfer sets when the controller asked to be retried over GPIO. */
 #define GMBUS_FORCE_BIT_RETRY (1U << 31)
-
-/* The longest read one burst of a display version 10+ controller moves. */
-#define INTEL_GMBUS_BURST_READ_MAX_LEN 767U
 
 /* The length of the adapter name prefix "i915 gmbus ". */
 #define I915_GMBUS_NAME_PREFIX_LENGTH 11u
 
+/* The most messages one transfer carries (an EDID block read sends three). */
+#define I915_GMBUS_MESSAGES_MAX 4
+
+/*
+ * What the events of one transfer are logged with: the adapter, whose
+ * name the lines carry, and the messages, which the refusal line
+ * describes.  It lives on the stack of the transfer.
+ */
+struct i915_gmbus_transfer_log {
+	struct i2c_adapter *adapter;
+	struct i2c_msg *msgs;
+};
+
 static struct intel_gmbus *i915_to_intel_gmbus(struct i2c_adapter *i2c);
-static bool i915_has_gmbus_irq(struct drm_i915_private *i915);
-static int i915_gmbus_wait(struct drm_i915_private *i915, u32 status, u32 irq_en);
-static int i915_gmbus_wait_idle(struct drm_i915_private *i915);
-static unsigned int i915_gmbus_max_xfer_size(struct drm_i915_private *i915);
-static int i915_gmbus_xfer_read_chunk(struct drm_i915_private *i915, unsigned short addr, u8 *buf, unsigned int len, u32 gmbus0_reg, u32 gmbus1_index);
-static int i915_gmbus_xfer_read(struct drm_i915_private *i915, struct i2c_msg *msg, u32 gmbus0_reg, u32 gmbus1_index);
-static int i915_gmbus_xfer_write_chunk(struct drm_i915_private *i915, unsigned short addr, u8 *buf, unsigned int len, u32 gmbus1_index);
-static int i915_gmbus_xfer_write(struct drm_i915_private *i915, struct i2c_msg *msg, u32 gmbus1_index);
-static bool i915_gmbus_is_index_xfer(struct i2c_msg *msgs, int i, int num);
-static int i915_gmbus_index_xfer(struct drm_i915_private *i915, struct i2c_msg *msgs, u32 gmbus0_reg);
-static int i915_gmbus_xfer_messages(struct drm_i915_private *i915, struct i2c_msg *msgs, int num, u32 gmbus0_reg, int *index);
-static int i915_gmbus_clear_error(struct drm_i915_private *i915, struct i2c_adapter *adapter, struct i2c_msg *msgs, int index);
-static int i915_do_gmbus_xfer(struct i2c_adapter *adapter, struct i2c_msg *msgs, int num, u32 gmbus0_source);
+static void i915_gmbus_prepare(struct i915_hpd_world *world);
+static uint32_t i915_gmbus_model_read(void *context, uint32_t offset);
+static void i915_gmbus_model_write(void *context, uint32_t offset, uint32_t value);
+static void i915_gmbus_noted(void *context, unsigned note, unsigned message);
+static int i915_do_gmbus_xfer(struct i2c_adapter *adapter, struct i2c_msg *msgs, int num);
 static int i915_gmbus_xfer(struct i2c_adapter *adapter, struct i2c_msg *msgs, int num);
 static int i915_hpd_gmbus_xfer_locked(struct i2c_adapter *adapter, struct i2c_msg *msgs, int num);
 static int i915_hpd_bit_xfer_step(struct i2c_adapter *adap, struct i2c_msg *msgs, int num);
@@ -115,9 +119,11 @@ void
 i915_hpd_intel_gmbus_reset(
 	struct drm_i915_private *i915)
 {
-	/* Deselects the pin, then disables the controller's interrupts. */
-	i915_hpd_intel_de_write(i915, GMBUS0(i915), 0);
-	i915_hpd_intel_de_write(i915, GMBUS4(i915), 0);
+	struct i915_hpd_world *world;
+
+	/* Leaves the controller idle through the world's window. */
+	world = i915_hpd_world_of(i915);
+	drv_i915_xd_gmbus_reset(&world->hpd_gmbus_io);
 }
 
 /*
@@ -175,24 +181,23 @@ i915_hpd_intel_gmbus_is_forced_bit(
 }
 
 /*
- * Handles the GMBUS interrupt: wakes the transfer waiting on the controller.
+ * Handles the GMBUS interrupt: counts the wake-up of a transfer.
  *
- * The transfer polls GMBUS2 and never sleeps on the wait queue, so the
- * wake-up is only counted in the world.
+ * The transfer polls the controller's status and never sleeps on the
+ * interrupt, so the wake-up is only counted in the world.
  */
 void
 i915_hpd_intel_gmbus_irq_handler(
 	struct drm_i915_private *i915)
 {
-	/* Counts the wake-up of the GMBUS wait queue (the Linux wake_up_all()). */
+	/* Counts the wake-up in the device's world. */
 	drv_i915_hpd_gmbus_woken(i915_hpd_world_of(i915));
 }
 
 /*
  * Returns the GMBUS I2C adapter of a DDC pin, making the bus on first use.
  *
- * Follows Linux intel_gmbus_setup() and intel_gmbus_get_adapter() for the
- * ICP pin table; returns NULL for a pin that is not valid there.
+ * Returns NULL for a pin the controller does not have.
  */
 struct i2c_adapter *
 drv_i915_hpd_gmbus_adapter(
@@ -207,11 +212,11 @@ drv_i915_hpd_gmbus_adapter(
 	struct intel_gmbus *bus;
 	const char *name;
 	unsigned position;
+	int valid;
 
-	/* Refuses a pin outside the ICP table (the Linux intel_gmbus_is_valid_pin()). */
-	if (pin >= GMBUS_NUM_PINS)
-		return NULL;
-	if (names[pin] == NULL)
+	/* Refuses a pin the controller does not have. */
+	valid = drv_i915_xd_gmbus_pin_valid(pin);
+	if (valid == 0)
 		return NULL;
 
 	/* Finds the pin's bus in the world. */
@@ -222,14 +227,11 @@ drv_i915_hpd_gmbus_adapter(
 	if (bus->i915 != NULL)
 		return &bus->adapter;
 
-	/* Prepares the controller lock once for every bus of the world. */
+	/* Prepares the controller lock, window and counters once for every bus of the instance. */
 	if (world->hpd_gmbus_mutex_inited == 0) {
-		(void)mutex_init(&i915->display.gmbus.mutex, LOCK_RANK_DEVICE, "i915-gmbus");
+		i915_gmbus_prepare(world);
 		world->hpd_gmbus_mutex_inited = 1;
 	}
-
-	/* The PCH-split controller sits at the PCH display base. */
-	i915->display.gmbus.mmio_base = PCH_DISPLAY_BASE;
 
 	/* Names the adapter "i915 gmbus <pin name>". */
 	kern_memset(bus, 0, sizeof(*bus));
@@ -243,13 +245,10 @@ drv_i915_hpd_gmbus_adapter(
 	}
 	bus->adapter.name[position] = '\0';
 
-	/*
-	 * Binds the locked GMBUS transfer, one retry, and the pin at the
-	 * conservative 100 kHz rate.  A nonzero i915 marks the bus as made.
-	 */
+	/* Binds the locked transfer, one retry, and the pin.  A nonzero i915 marks the bus as made. */
 	bus->adapter.algo = &i915_hpd_gmbus_algorithm;
 	bus->adapter.retries = 1;
-	bus->reg0 = pin | GMBUS_RATE_100KHZ;
+	bus->pin = pin;
 	bus->i915 = i915;
 
 	/* Leaves the controller idle before the bus is used. */
@@ -266,12 +265,12 @@ void
 drv_i915_hpd_gmbus_forget(
 	struct i915_hpd_world *world)
 {
-	/* Clears the buses and marks the controller lock as not prepared. */
+	/* Clears the buses and marks the controller lock, window and counters as not prepared. */
 	kern_memset(world->hpd_gmbus_bus, 0, sizeof(world->hpd_gmbus_bus));
 	world->hpd_gmbus_mutex_inited = 0;
 }
 
-/* Returns the bus an adapter is embedded in (the Linux to_intel_gmbus()). */
+/* Returns the bus an adapter is embedded in. */
 static struct intel_gmbus *
 i915_to_intel_gmbus(
 	struct i2c_adapter *i2c)
@@ -280,657 +279,179 @@ i915_to_intel_gmbus(
 	return container_of(i2c, struct intel_gmbus, adapter);
 }
 
-/* Tells whether a transfer may use the GMBUS interrupt. */
-static bool
-i915_has_gmbus_irq(
-	struct drm_i915_private *i915)
-{
-	int version;
-	bool enabled;
-
-	/*
-	 * encoder->shutdown() may want to use GMBUS after irqs have already
-	 * been disabled.
-	 */
-	version = i915_hpd_display_ver(i915);
-	if (version < 4)
-		return false;
-
-	/* The interrupt helps only while the device's interrupts are on. */
-	enabled = i915_hpd_intel_irqs_enabled(i915);
-	if (!enabled)
-		return false;
-
-	/* Succeeded: the controller interrupt is usable. */
-	return true;
-}
-
 /*
- * Waits until GMBUS2 reports one of the status bits or a NAK.
- *
- * Answers 0, -I915_HPD_ENXIO for a NAK, or -I915_HPD_ETIMEDOUT.
+ * Prepares the controller of the running instance: its lock, the window
+ * on the instance's registers (the MMIO, or a model test's registers
+ * through the world), and its counters.
  */
-static int
-i915_gmbus_wait(
-	struct drm_i915_private *i915,
-	u32 status,
-	u32 irq_en)
+static void
+i915_gmbus_prepare(
+	struct i915_hpd_world *world)
 {
-	u32 gmbus2;
-	int ret;
-	bool irq_usable;
+	struct i915_xd_io_hooks hooks;
 
-	/*
-	 * Important: The hw handles only the first bit, so set only one! Since
-	 * we also need to check for NAKs besides the hw ready/idle signal, we
-	 * need to wake up periodically and check that ourselves.
-	 */
-	irq_usable = i915_has_gmbus_irq(i915);
-	if (!irq_usable)
-		irq_en = 0;
+	/* Prepares the lock every transfer of every bus holds. */
+	(void)mutex_init(&world->hpd_i915.display.gmbus.mutex, LOCK_RANK_DEVICE, "i915-gmbus");
 
-	/*
-	 * Enables the one interrupt source; the wait queue is not slept on
-	 * (the poll below wakes itself), so nothing joins it.
-	 */
-	i915_hpd_intel_de_write_fw(i915, GMBUS4(i915), irq_en);
+	/* Opens the window on the instance's MMIO. */
+	drv_i915_xd_io_init(&world->hpd_gmbus_io, world->hpd.m, NULL);
 
-	/* Polls for the status or a NAK: 2 microseconds, then up to 50 ms. */
-	status |= GMBUS_SATOER;
-	gmbus2 = 0;
-	ret = I915_HPD_WAIT_FOR_US((gmbus2 = i915_hpd_intel_de_read_fw(i915, GMBUS2(i915))) & status, 2);
-	if (ret != 0)
-		ret = I915_HPD_WAIT_FOR((gmbus2 = i915_hpd_intel_de_read_fw(i915, GMBUS2(i915))) & status, 50);
-
-	/* Disables the interrupt again. */
-	i915_hpd_intel_de_write_fw(i915, GMBUS4(i915), 0);
-
-	/* A NAK from the slave wins over the wait's own outcome. */
-	if ((gmbus2 & GMBUS_SATOER) != 0)
-		return -I915_HPD_ENXIO;
-
-	/* Reports a timeout of the poll. */
-	if (ret != 0)
-		return ret;
-
-	/* Succeeded: GMBUS2 reported the status. */
-	return 0;
-}
-
-/*
- * Waits until the controller is no longer active.
- *
- * Answers 0 or -I915_HPD_ETIMEDOUT.
- */
-static int
-i915_gmbus_wait_idle(
-	struct drm_i915_private *i915)
-{
-	u32 irq_enable;
-	int ret;
-	bool irq_usable;
-
-	/* Important: The hw handles only the first bit, so set only one! */
-	irq_enable = 0;
-	irq_usable = i915_has_gmbus_irq(i915);
-	if (irq_usable)
-		irq_enable = GMBUS_IDLE_EN;
-
-	/* Enables the idle interrupt; the wait queue is not slept on. */
-	i915_hpd_intel_de_write_fw(i915, GMBUS4(i915), irq_enable);
-
-	/* Polls GMBUS2 until the controller is idle, for up to 10 ms. */
-	ret = intel_de_wait_for_register_fw(i915, GMBUS2(i915), GMBUS_ACTIVE, 0, 10);
-
-	/* Disables the interrupt again. */
-	i915_hpd_intel_de_write_fw(i915, GMBUS4(i915), 0);
-
-	/* Reports a controller that stayed active. */
-	if (ret != 0)
-		return ret;
-
-	/* Succeeded: the controller is idle. */
-	return 0;
-}
-
-/* Returns the longest transfer one GMBUS cycle moves. */
-static unsigned int
-i915_gmbus_max_xfer_size(
-	struct drm_i915_private *i915)
-{
-	int version;
-
-	/* Display version 9 widened the byte count field. */
-	version = i915_hpd_display_ver(i915);
-	if (version >= 9)
-		return GEN9_GMBUS_BYTE_COUNT_MAX;
-
-	/* Older controllers move at most 256 bytes. */
-	return GMBUS_BYTE_COUNT_MAX;
-}
-
-/*
- * Reads one chunk from the slave: one GMBUS1 read cycle, then four bytes
- * per GMBUS3 read.
- */
-static int
-i915_gmbus_xfer_read_chunk(
-	struct drm_i915_private *i915,
-	unsigned short addr,
-	u8 *buf,
-	unsigned int len,
-	u32 gmbus0_reg,
-	u32 gmbus1_index)
-{
-	unsigned int size;
-	unsigned int max_size;
-	bool burst_read;
-	bool extra_byte_added;
-	int ret;
-	u32 val;
-	u32 loop;
-
-	/* A chunk longer than one cycle moves is a burst read. */
-	size = len;
-	max_size = i915_gmbus_max_xfer_size(i915);
-	burst_read = false;
-	if (len > max_size)
-		burst_read = true;
-	extra_byte_added = false;
-
-	/* Programs the burst: the byte count override in GMBUS0. */
-	if (burst_read) {
-		/*
-		 * As per HW Spec, for 512Bytes need to read extra Byte and
-		 * Ignore the extra byte read.
-		 */
-		if (len == 512) {
-			extra_byte_added = true;
-			len++;
-		}
-		size = len % 256 + 256;
-		i915_hpd_intel_de_write_fw(i915, GMBUS0(i915), gmbus0_reg | GMBUS_BYTE_CNT_OVERRIDE);
+	/* A model test's registers are reached through the world; its time is the kernel's. */
+	if (world->hpd.fake != NULL) {
+		hooks.read = i915_gmbus_model_read;
+		hooks.write = i915_gmbus_model_write;
+		hooks.wait = NULL;
+		hooks.lock = NULL;
+		hooks.context = world;
+		drv_i915_xd_io_set_hooks(&world->hpd_gmbus_io, &hooks);
 	}
 
-	/* Starts the read cycle with the index, the size and the slave address. */
-	i915_hpd_intel_de_write_fw(i915, GMBUS1(i915), gmbus1_index | GMBUS_CYCLE_WAIT | (size << GMBUS_BYTE_COUNT_SHIFT) | (addr << GMBUS_SLAVE_ADDR_SHIFT) | GMBUS_SLAVE_READ | GMBUS_SW_RDY);
-
-	/* Collects the bytes four at a time as the controller has them ready. */
-	while (len != 0) {
-		loop = 0;
-
-		/* Waits until GMBUS3 holds the next bytes. */
-		ret = i915_gmbus_wait(i915, GMBUS_HW_RDY, GMBUS_HW_RDY_EN);
-		if (ret != 0)
-			return ret;
-
-		/* Stores up to four bytes, dropping the extra byte of a 512-byte burst. */
-		val = i915_hpd_intel_de_read_fw(i915, GMBUS3(i915));
-		for (;;) {
-			if (extra_byte_added && len == 1) {
-				len--;
-				break;
-			}
-
-			/* Stores the lowest byte and moves the next one down. */
-			*buf = (u8)(val & 0xff);
-			buf++;
-			val >>= 8;
-
-			/* Stops after the last byte or after four bytes of this read. */
-			len--;
-			if (len == 0)
-				break;
-			loop++;
-			if (loop >= 4)
-				break;
-		}
-
-		/* Resets the override bit once four bytes of the burst remain. */
-		if (burst_read && len == size - 4)
-			i915_hpd_intel_de_write_fw(i915, GMBUS0(i915), gmbus0_reg);
-	}
-
-	/* Succeeded: the chunk has been read. */
-	return 0;
+	/* Starts the controller's counters. */
+	drv_i915_xd_gmbus_init(&world->hpd_gmbus);
 }
 
-/* Reads one message from the slave, chunk by chunk. */
-static int
-i915_gmbus_xfer_read(
-	struct drm_i915_private *i915,
-	struct i2c_msg *msg,
-	u32 gmbus0_reg,
-	u32 gmbus1_index)
+/* Reads a register of a model test's instance through the world. */
+static uint32_t
+i915_gmbus_model_read(
+	void *context,
+	uint32_t offset)
 {
-	u8 *buf;
-	unsigned int rx_size;
-	unsigned int len;
-	unsigned int max_size;
-	int version;
-	int ret;
+	uint32_t value;
 
-	/* Reads the message in chunks of what one burst or one cycle moves. */
-	buf = msg->buf;
-	rx_size = msg->len;
-	do {
-		version = i915_hpd_display_ver(i915);
-		if (version >= 10) {
-			/* HAS_GMBUS_BURST_READ: a burst moves up to 767 bytes. */
-			len = min(rx_size, INTEL_GMBUS_BURST_READ_MAX_LEN);
-		} else {
-			/* Without bursts one cycle is the limit. */
-			max_size = i915_gmbus_max_xfer_size(i915);
-			len = min(rx_size, max_size);
-		}
+	/* The world routes the read to the model. */
+	value = drv_i915_hpd_read(context, offset);
 
-		/* Reads the chunk. */
-		ret = i915_gmbus_xfer_read_chunk(i915, msg->addr, buf, len, gmbus0_reg, gmbus1_index);
-		if (ret != 0)
-			return ret;
+	/* Succeeded: reports the register's value. */
+	return value;
+}
 
-		/* Moves past the bytes read. */
-		rx_size -= len;
-		buf += len;
-	} while (rx_size != 0);
+/* Writes a register of a model test's instance through the world. */
+static void
+i915_gmbus_model_write(
+	void *context,
+	uint32_t offset,
+	uint32_t value)
+{
+	/* The world routes the write to the model. */
+	(void)drv_i915_hpd_write(context, offset, value);
+}
 
-	/* Succeeded: the whole message has been read. */
-	return 0;
+/* Logs an event of a transfer with the lines the hotplug path has always printed. */
+static void
+i915_gmbus_noted(
+	void *context,
+	unsigned note,
+	unsigned message)
+{
+	struct i915_gmbus_transfer_log *log;
+	struct i2c_msg *msg;
+	char direction;
+
+	/* Finds the adapter and the message the event is about. */
+	log = context;
+	msg = &log->msgs[message];
+
+	/* Logs the event. */
+	switch (note) {
+	case I915_XD_GMBUS_NOTE_STAYED_ACTIVE:
+		I915_HPD_DRM_DBG_KMS(NULL, "GMBUS [%s] timed out after NAK\n", log->adapter->name);
+		break;
+	case I915_XD_GMBUS_NOTE_REFUSED:
+		direction = 'w';
+		if ((msg->flags & I2C_M_RD) != 0)
+			direction = 'r';
+		I915_HPD_DRM_DBG_KMS(NULL, "GMBUS [%s] NAK for addr: %04x %c(%d)\n", log->adapter->name, msg->addr, direction, msg->len);
+		break;
+	case I915_XD_GMBUS_NOTE_RETRY:
+		I915_HPD_DRM_DBG_KMS(NULL, "GMBUS [%s] NAK on first message, retry\n", log->adapter->name);
+		break;
+	default:
+		break;
+	}
 }
 
 /*
- * Writes one chunk to the slave: the first four bytes are loaded into
- * GMBUS3 before the cycle starts, the rest four at a time as it runs.
- */
-static int
-i915_gmbus_xfer_write_chunk(
-	struct drm_i915_private *i915,
-	unsigned short addr,
-	u8 *buf,
-	unsigned int len,
-	u32 gmbus1_index)
-{
-	unsigned int chunk_size;
-	u32 val;
-	u32 loop;
-	int ret;
-
-	/* Packs the first four bytes into one GMBUS3 value. */
-	chunk_size = len;
-	val = 0;
-	loop = 0;
-	while (len != 0 && loop < 4) {
-		val |= (u32)*buf << (8 * loop);
-		buf++;
-		loop++;
-		len -= 1;
-	}
-
-	/* Loads the first bytes and starts the write cycle. */
-	i915_hpd_intel_de_write_fw(i915, GMBUS3(i915), val);
-	i915_hpd_intel_de_write_fw(i915, GMBUS1(i915), gmbus1_index | GMBUS_CYCLE_WAIT | (chunk_size << GMBUS_BYTE_COUNT_SHIFT) | (addr << GMBUS_SLAVE_ADDR_SHIFT) | GMBUS_SLAVE_WRITE | GMBUS_SW_RDY);
-
-	/* Feeds the remaining bytes four at a time. */
-	while (len != 0) {
-		/* Packs up to four more bytes. */
-		val = 0;
-		loop = 0;
-		for (;;) {
-			val |= (u32)*buf << (8 * loop);
-			buf++;
-
-			/* Stops after the last byte or after four bytes of this value. */
-			len--;
-			if (len == 0)
-				break;
-			loop++;
-			if (loop >= 4)
-				break;
-		}
-
-		/* Hands them to the controller. */
-		i915_hpd_intel_de_write_fw(i915, GMBUS3(i915), val);
-
-		/* Waits until the controller took them. */
-		ret = i915_gmbus_wait(i915, GMBUS_HW_RDY, GMBUS_HW_RDY_EN);
-		if (ret != 0)
-			return ret;
-	}
-
-	/* Succeeded: the chunk has been written. */
-	return 0;
-}
-
-/* Writes one message to the slave, chunk by chunk. */
-static int
-i915_gmbus_xfer_write(
-	struct drm_i915_private *i915,
-	struct i2c_msg *msg,
-	u32 gmbus1_index)
-{
-	u8 *buf;
-	unsigned int tx_size;
-	unsigned int len;
-	unsigned int max_size;
-	int ret;
-
-	/* Writes the message in chunks of what one cycle moves. */
-	buf = msg->buf;
-	tx_size = msg->len;
-	do {
-		max_size = i915_gmbus_max_xfer_size(i915);
-		len = min(tx_size, max_size);
-
-		/* Writes the chunk. */
-		ret = i915_gmbus_xfer_write_chunk(i915, msg->addr, buf, len, gmbus1_index);
-		if (ret != 0)
-			return ret;
-
-		/* Moves past the bytes written. */
-		buf += len;
-		tx_size -= len;
-	} while (tx_size != 0);
-
-	/* Succeeded: the whole message has been written. */
-	return 0;
-}
-
-/*
- * Tells whether message i and the next one form one INDEX cycle.
- *
- * The gmbus controller can combine a 1 or 2 byte write with another
- * read/write that immediately follows it by using an "INDEX" cycle.
- */
-static bool
-i915_gmbus_is_index_xfer(
-	struct i2c_msg *msgs,
-	int i,
-	int num)
-{
-	/* There must be a following message. */
-	if (i + 1 >= num)
-		return false;
-
-	/* Both messages must address the same slave. */
-	if (msgs[i].addr != msgs[i + 1].addr)
-		return false;
-
-	/* The first message must be a write. */
-	if ((msgs[i].flags & I2C_M_RD) != 0)
-		return false;
-
-	/* The first message must be a one or two byte offset. */
-	if (msgs[i].len != 1 && msgs[i].len != 2)
-		return false;
-
-	/* The following message must move data. */
-	if (msgs[i + 1].len == 0)
-		return false;
-
-	/* Succeeded: the pair is one INDEX transfer. */
-	return true;
-}
-
-/*
- * Transfers an offset write and the message after it as one INDEX cycle.
- */
-static int
-i915_gmbus_index_xfer(
-	struct drm_i915_private *i915,
-	struct i2c_msg *msgs,
-	u32 gmbus0_reg)
-{
-	u32 gmbus1_index;
-	u32 gmbus5;
-	int ret;
-
-	/* A two-byte offset goes to GMBUS5, a one-byte offset into GMBUS1. */
-	gmbus1_index = 0;
-	gmbus5 = 0;
-	if (msgs[0].len == 2)
-		gmbus5 = GMBUS_2BYTE_INDEX_EN | msgs[0].buf[1] | (msgs[0].buf[0] << 8);
-	if (msgs[0].len == 1)
-		gmbus1_index = GMBUS_CYCLE_INDEX | (msgs[0].buf[0] << GMBUS_SLAVE_INDEX_SHIFT);
-
-	/* GMBUS5 holds 16-bit index */
-	if (gmbus5 != 0)
-		i915_hpd_intel_de_write_fw(i915, GMBUS5(i915), gmbus5);
-
-	/* Transfers the data message with the offset. */
-	if ((msgs[1].flags & I2C_M_RD) != 0) {
-		ret = i915_gmbus_xfer_read(i915, &msgs[1], gmbus0_reg, gmbus1_index);
-	} else {
-		ret = i915_gmbus_xfer_write(i915, &msgs[1], gmbus1_index);
-	}
-
-	/* Clear GMBUS5 after each index transfer */
-	if (gmbus5 != 0)
-		i915_hpd_intel_de_write_fw(i915, GMBUS5(i915), 0);
-
-	/* Reports a failed data transfer. */
-	if (ret != 0)
-		return ret;
-
-	/* Succeeded: both messages have been transferred. */
-	return 0;
-}
-
-/*
- * Selects the pin and transfers the messages from *index on, waiting for
- * the wait phase after each.
- *
- * On failure *index names the message that failed.  Answers 0 or the
- * failed step's Linux errno.
- */
-static int
-i915_gmbus_xfer_messages(
-	struct drm_i915_private *i915,
-	struct i2c_msg *msgs,
-	int num,
-	u32 gmbus0_reg,
-	int *index)
-{
-	int i;
-	int inc;
-	int ret;
-	bool index_xfer;
-
-	/* Selects the pin and the rate. */
-	i915_hpd_intel_de_write_fw(i915, GMBUS0(i915), gmbus0_reg);
-
-	/* Transfers every message, pairing an offset write with what follows. */
-	ret = 0;
-	for (i = *index; i < num; i += inc) {
-		inc = 1;
-		index_xfer = i915_gmbus_is_index_xfer(msgs, i, num);
-		if (index_xfer) {
-			/* An index transmission is two msgs. */
-			ret = i915_gmbus_index_xfer(i915, &msgs[i], gmbus0_reg);
-			inc = 2;
-		} else if ((msgs[i].flags & I2C_M_RD) != 0) {
-			ret = i915_gmbus_xfer_read(i915, &msgs[i], gmbus0_reg, 0);
-		} else {
-			ret = i915_gmbus_xfer_write(i915, &msgs[i], 0);
-		}
-
-		/* Waits for the wait phase that ends the message. */
-		if (ret == 0)
-			ret = i915_gmbus_wait(i915, GMBUS_HW_WAIT_PHASE, GMBUS_HW_WAIT_EN);
-
-		/* Stops at the failed message. */
-		if (ret != 0) {
-			*index = i;
-			return ret;
-		}
-	}
-
-	/* Succeeded: every message went through; the index passed the last one. */
-	*index = i;
-	return 0;
-}
-
-/*
- * Recovers the controller from a NAK and reports it.
- *
- * Answers -I915_HPD_ENXIO, or -I915_HPD_ETIMEDOUT when the bus did not go
- * idle.
- */
-static int
-i915_gmbus_clear_error(
-	struct drm_i915_private *i915,
-	struct i2c_adapter *adapter,
-	struct i2c_msg *msgs,
-	int index)
-{
-	int ret;
-	int idle;
-
-	/*
-	 * Wait for bus to IDLE before clearing NAK.
-	 * If we clear the NAK while bus is still active, then it will stay
-	 * active and the next transaction may fail.
-	 *
-	 * If no ACK is received during the address phase of a transaction, the
-	 * adapter must report -ENXIO. It is not clear what to return if no ACK
-	 * is received at other times. But we have to be careful to not return
-	 * spurious -ENXIO because that will prevent i2c and drm edid functions
-	 * from retrying. So return -ENXIO only when gmbus properly quiescents -
-	 * timing out seems to happen when there _is_ a ddc chip present, but
-	 * it's slow responding and only answers on the 2nd retry.
-	 */
-	ret = -I915_HPD_ENXIO;
-	idle = i915_gmbus_wait_idle(i915);
-	if (idle != 0) {
-		I915_HPD_DRM_DBG_KMS(&i915->drm, "GMBUS [%s] timed out after NAK\n", adapter->name);
-		ret = -I915_HPD_ETIMEDOUT;
-	}
-
-	/*
-	 * Toggle the Software Clear Interrupt bit. This has the effect
-	 * of resetting the GMBUS controller and so clearing the
-	 * BUS_ERROR raised by the slave's NAK.
-	 */
-	i915_hpd_intel_de_write_fw(i915, GMBUS1(i915), GMBUS_SW_CLR_INT);
-	i915_hpd_intel_de_write_fw(i915, GMBUS1(i915), 0);
-	i915_hpd_intel_de_write_fw(i915, GMBUS0(i915), 0);
-
-	/* Logs the message the slave refused. */
-	I915_HPD_DRM_DBG_KMS(&i915->drm, "GMBUS [%s] NAK for addr: %04x %c(%d)\n", adapter->name, msgs[index].addr, (msgs[index].flags & I2C_M_RD) ? 'r' : 'w', msgs[index].len);
-
-	/* Reports the NAK, or the bus that stayed busy after it. */
-	return ret;
-}
-
-/*
- * Transfers the messages over GMBUS (the Linux do_gmbus_xfer()).
+ * Transfers the messages over the controller.
  *
  * Answers the number of messages transferred, or a Linux errno:
- * -I915_HPD_ENXIO for a NAK, -I915_HPD_ETIMEDOUT for a bus that did not go
- * idle, -I915_HPD_EAGAIN to have the transfer retried over bit-banging.
+ * -I915_HPD_ENXIO when a target refused, -I915_HPD_ETIMEDOUT for a bus
+ * that did not go idle, -I915_HPD_EAGAIN to have the transfer retried
+ * over bit-banging, -I915_HPD_EIO for a transfer of more messages than
+ * the hotplug path ever sends.
  */
 static int
 i915_do_gmbus_xfer(
 	struct i2c_adapter *adapter,
 	struct i2c_msg *msgs,
-	int num,
-	u32 gmbus0_source)
+	int num)
 {
+	struct i915_xd_gmbus_message messages[I915_GMBUS_MESSAGES_MAX];
+	struct i915_xd_gmbus_request request;
+	struct i915_xd_gmbus_result result;
+	struct i915_gmbus_transfer_log log;
+	struct i915_hpd_world *world;
 	struct intel_gmbus *bus;
-	struct drm_i915_private *i915;
-	int i;
-	int try;
-	int ret;
-	int idle;
+	int index;
+	bool irqs;
 
-	/* Resolves the bus and its device. */
+	/* Resolves the bus and its world. */
 	bus = i915_to_intel_gmbus(adapter);
-	i915 = bus->i915;
-	i = 0;
-	try = 0;
+	world = i915_hpd_world_of(bus->i915);
 
-	/* Display WA #0868: skl,bxt,kbl,cfl,glk */
-	if (IS_GEMINILAKE(i915) || IS_BROXTON(i915)) {
-		i915_bxt_gmbus_clock_gating(i915, false);
-	} else if (HAS_PCH_SPT(i915) || HAS_PCH_CNP(i915)) {
-		i915_pch_gmbus_clock_gating(i915, false);
+	/* Refuses more messages than the request holds. */
+	if (num < 0 || num > I915_GMBUS_MESSAGES_MAX) {
+		I915_HPD_DRM_DBG_KMS(NULL, "GMBUS [%s] %d messages are more than a transfer carries\n", adapter->name, num);
+		return -I915_HPD_EIO;
 	}
 
-	/* Transfers the messages, retrying once when the first one was NAKed. */
-	for (;;) {
-		ret = i915_gmbus_xfer_messages(i915, msgs, num, gmbus0_source | bus->reg0, &i);
-		if (ret == 0) {
-			/*
-			 * Generate a STOP condition on the bus. Note that gmbus can't
-			 * generata a STOP on the very first cycle. To simplify the code
-			 * we unconditionally generate the STOP condition with an
-			 * additional gmbus cycle.
-			 */
-			i915_hpd_intel_de_write_fw(i915, GMBUS1(i915), GMBUS_CYCLE_STOP | GMBUS_SW_RDY);
+	/* Copies the messages into the controller's form. */
+	for (index = 0; index < num; index++) {
+		messages[index].address = msgs[index].addr;
+		messages[index].read = 0;
+		if ((msgs[index].flags & I2C_M_RD) != 0)
+			messages[index].read = 1;
+		messages[index].data = msgs[index].buf;
+		messages[index].length = msgs[index].len;
+	}
 
-			/*
-			 * Mark the GMBUS interface as disabled after waiting for idle.
-			 * We will re-enable it at the start of the next xfer,
-			 * till then let it sleep.
-			 */
-			idle = i915_gmbus_wait_idle(i915);
-			if (idle != 0) {
-				I915_HPD_DRM_DBG_KMS(&i915->drm, "GMBUS [%s] timed out waiting for idle\n", adapter->name);
-				ret = -I915_HPD_ETIMEDOUT;
-			}
-			i915_hpd_intel_de_write_fw(i915, GMBUS0(i915), 0);
+	/* Learns whether the controller may raise its interrupts: only while the device takes them. */
+	irqs = i915_hpd_intel_irqs_enabled(bus->i915);
 
-			/* Answers the number of messages, unless the bus stayed busy. */
-			if (ret == 0)
-				ret = i;
-			break;
-		}
+	/* Asks for the transfer on the bus's pin; its events are logged as they happen. */
+	log.adapter = adapter;
+	log.msgs = msgs;
+	request.pin = bus->pin;
+	request.messages = messages;
+	request.count = (unsigned)num;
+	request.interrupts = 0;
+	if (irqs)
+		request.interrupts = 1;
+	request.noted = i915_gmbus_noted;
+	request.context = &log;
+	drv_i915_xd_gmbus_transfer(&world->hpd_gmbus, &world->hpd_gmbus_io, &request, &result);
 
-		/* A stuck bus falls back to bit-banging. */
-		if (ret == -I915_HPD_ETIMEDOUT) {
-			I915_HPD_DRM_DBG_KMS(&i915->drm, "GMBUS [%s] timed out, falling back to bit banging on pin %d\n", bus->adapter.name, bus->reg0 & 0xff);
-			i915_hpd_intel_de_write_fw(i915, GMBUS0(i915), 0);
-
-			/*
-			 * Hardware may not support GMBUS over these pins? Try GPIO
-			 * bitbanging instead. Use EAGAIN to have i2c core retry.
-			 */
-			ret = -I915_HPD_EAGAIN;
-			break;
-		}
-
-		/* Clears the NAK and learns whether the bus went idle after it. */
-		ret = i915_gmbus_clear_error(i915, adapter, msgs, i);
-
-		/*
-		 * Passive adapters sometimes NAK the first probe. Retry the first
-		 * message once on -ENXIO for GMBUS transfers; the bit banging
-		 * algorithm has retries internally. See also the retry loop in
-		 * drm_do_probe_ddc_edid, which bails out on the first -ENXIO.
-		 */
-		if (ret == -I915_HPD_ENXIO && i == 0) {
-			if (try == 0) {
-				try++;
-				I915_HPD_DRM_DBG_KMS(&i915->drm, "GMBUS [%s] NAK on first message, retry\n", adapter->name);
-				continue;
-			}
-			try++;
-		}
+	/* Turns a failed outcome into the answer the I2C caller expects. */
+	switch (result.outcome) {
+	case I915_XD_GMBUS_DONE:
 		break;
+	case I915_XD_GMBUS_LINGERED:
+		I915_HPD_DRM_DBG_KMS(NULL, "GMBUS [%s] timed out waiting for idle\n", adapter->name);
+		return -I915_HPD_ETIMEDOUT;
+	case I915_XD_GMBUS_NOT_READY:
+		/*
+		 * The controller may not reach these pins: the I2C caller
+		 * retries, and the retry goes over bit-banging.
+		 */
+		I915_HPD_DRM_DBG_KMS(NULL, "GMBUS [%s] timed out, falling back to bit banging on pin %d\n", adapter->name, bus->pin);
+		return -I915_HPD_EAGAIN;
+	case I915_XD_GMBUS_HUNG:
+		return -I915_HPD_ETIMEDOUT;
+	default:
+		return -I915_HPD_ENXIO;
 	}
-
-	/* Display WA #0868: skl,bxt,kbl,cfl,glk */
-	if (IS_GEMINILAKE(i915) || IS_BROXTON(i915)) {
-		i915_bxt_gmbus_clock_gating(i915, true);
-	} else if (HAS_PCH_SPT(i915) || HAS_PCH_CNP(i915)) {
-		i915_pch_gmbus_clock_gating(i915, true);
-	}
-
-	/* Reports a failed transfer. */
-	if (ret < 0)
-		return ret;
 
 	/* Succeeded: reports the number of messages transferred. */
-	return ret;
+	return num;
 }
 
 /*
@@ -964,7 +485,7 @@ i915_gmbus_xfer(
 		if (ret < 0)
 			bus->force_bit &= ~GMBUS_FORCE_BIT_RETRY;
 	} else {
-		ret = i915_do_gmbus_xfer(adapter, msgs, num, 0);
+		ret = i915_do_gmbus_xfer(adapter, msgs, num);
 		if (ret == -I915_HPD_EAGAIN)
 			bus->force_bit |= GMBUS_FORCE_BIT_RETRY;
 	}
@@ -981,7 +502,7 @@ i915_gmbus_xfer(
 }
 
 /*
- * Transfers under the controller lock (the Linux gmbus_lock_bus()).
+ * Transfers under the controller lock.
  *
  * The single GMBUS controller is shared by every pin; the lock also keeps
  * the hotplug work's detection and a test thread's read apart.

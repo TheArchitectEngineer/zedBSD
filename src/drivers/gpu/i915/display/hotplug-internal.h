@@ -38,7 +38,7 @@
  *
  * The HDMI hotplug receive path is the Linux v6.8.12 text of
  * intel_hotplug.c, intel_hotplug_irq.c, intel_ddi.c (intel_ddi_hotplug),
- * intel_dp.c (intel_digital_port_connected), intel_gmbus.c, intel_hdmi.c
+ * intel_dp.c (intel_digital_port_connected), intel_hdmi.c
  * (the detect path), drm_probe_helper.c and drm_connector.c (the status
  * names).  The chain it runs is
  *
@@ -72,6 +72,7 @@
 #define DRIVERS_GPU_I915_DISPLAY_HOTPLUG_INTERNAL_H
 
 #include "internal.h"
+#include "xd-gmbus.h"
 
 #ifdef I915_DISPLAY_LINUX_WORLD
 #error "hotplug-internal.h cannot be included together with another Linux display environment"
@@ -172,83 +173,12 @@
 #define mutex_is_locked(m) mutex_owned(m)
 
 /*
- * Linux wait_for(): polls a condition every 10-50 microseconds until it holds
- * or MS milliseconds of scheduler ticks have passed.
- *
- * The condition is evaluated once more after the deadline expired, so a
- * condition that became true while the poller slept still succeeds.
- * Reports 0 or -I915_HPD_ETIMEDOUT.
- */
-#define I915_HPD_WAIT_FOR(COND, MS) ({ \
-	uint64_t _wf_dl = sched_ticks() + ((uint64_t)(MS) * KERN_CLOCK_HZ + 999u) / 1000u + 1u; \
-	int _wf_ret; \
-	for (;;) { \
-		bool _wf_expired = sched_ticks() > _wf_dl; \
-		if (COND) { \
-			_wf_ret = 0; \
-			break; \
-		} \
-		if (_wf_expired) { \
-			_wf_ret = -I915_HPD_ETIMEDOUT; \
-			break; \
-		} \
-		kern_usleep_range(10u, 50u); \
-	} \
-	_wf_ret; \
-})
-
-/*
- * Linux wait_for_us(): polls a condition US + 1 times, one microsecond apart.
- *
- * Reports 0 or -I915_HPD_ETIMEDOUT.
- */
-#define I915_HPD_WAIT_FOR_US(COND, US) ({ \
-	int _wu_ret = -I915_HPD_ETIMEDOUT; \
-	unsigned _wu_i; \
-	for (_wu_i = 0u; _wu_i <= (unsigned)(US); _wu_i++) { \
-		if (COND) { \
-			_wu_ret = 0; \
-			break; \
-		} \
-		kern_usleep_range(1u, 1u); \
-	} \
-	_wu_ret; \
-})
-
-/*
- * Linux intel_de_wait_for_register_fw(): waits until the masked register
- * reads the value, polling like I915_HPD_WAIT_FOR().
- */
-#define intel_de_wait_for_register_fw(i915, r, mask, value, ms) \
-	I915_HPD_WAIT_FOR((drv_i915_hpd_read(i915_hpd_world_of(i915), (r).reg) & (mask)) == (value), (ms))
-
-/*
  * Linux intel_uncore_rmw(): read-modify-write of a register through the
  * world the uncore belongs to; reports the value read.
  */
 #define intel_uncore_rmw(uncore, r, clear, set) \
 	drv_i915_hpd_rmw(i915_hpd_world_of(container_of((uncore), struct drm_i915_private, uncore)), (r).reg, (clear), (set))
 
-/*
- * The GMBUS wait queue.
- *
- * The Linux text polls GMBUS2 in wait_for(); the queue would only wake the
- * poller early, so waiting on it is nothing, and a wake-up is counted in the
- * world the queue belongs to.
- */
-#define DEFINE_WAIT(w) int w = 0
-#define add_wait_queue(q, w) ((void)(q), (void)(w))
-#define remove_wait_queue(q, w) ((void)(q), (void)(w))
-#define wake_up_all(q) \
-	drv_i915_hpd_gmbus_woken(i915_hpd_world_of(container_of((q), struct drm_i915_private, display.gmbus.wait_queue)))
-
-/* The platform checks of the GMBUS text: display version 4+ has the GMBUS interrupt, 10+ burst reads. */
-#define HAS_GMBUS_IRQ(i915) (i915_hpd_display_ver(i915) >= 4)
-#define HAS_GMBUS_BURST_READ(i915) (i915_hpd_display_ver(i915) >= 10)
-#define IS_GEMINILAKE(i915) (0)
-#define IS_BROXTON(i915) (0)
-#define HAS_PCH_SPT(i915) (0)
-#define HAS_PCH_CNP(i915) (0)
 
 /*
  * The modeset lock graph.
@@ -457,24 +387,17 @@ struct i2c_adapter {
 };
 
 /*
- * The bit-banging state of an adapter; unused, the algorithm is not ported.
- */
-struct i2c_algo_bit_data {
-	int unused;
-};
-
-/*
- * One GMBUS pin's I2C bus (intel_gmbus.c).
+ * One GMBUS pin's I2C bus.
  *
  * The world keeps one per GMBUS pin; a bus is made on the first request for
- * its pin and forgotten when the hotplug path starts again.
+ * its pin and forgotten when the hotplug path starts again.  force_bit counts
+ * the requests to use the (unported) GPIO bit-banging instead of the
+ * controller, with the top bit set while a timed-out transfer asks for it.
  */
 struct intel_gmbus {
 	struct i2c_adapter adapter;
 	u32 force_bit;
-	u32 reg0;
-	i915_reg_t gpio_reg;
-	struct i2c_algo_bit_data bit_algo;
+	unsigned pin;
 	struct drm_i915_private *i915;
 };
 
@@ -658,9 +581,7 @@ struct drm_i915_private {
 			const void *hotplug;
 		} funcs;
 		struct {
-			u32 mmio_base;
 			struct mutex mutex;
-			int wait_queue;
 		} gmbus;
 	} display;
 };
@@ -785,7 +706,7 @@ struct i915_hpd_instance {
 	unsigned ddi_triggers;
 	unsigned gmbus_irqs;
 
-	/* Display engine hotplug interrupts (the Type-C ports' DP-alt and Thunderbolt bits) entered, and those with no pin (ws051-p002b). */
+	/* Display engine hotplug interrupts (the Type-C ports' DP-alt and Thunderbolt bits) entered, and those with no pin. */
 	unsigned de_entries;
 	unsigned de_unexpected;
 
@@ -865,7 +786,7 @@ struct i915_hpd_world {
 	char hpd_conn_names[I915_HPD_MAX_CONNECTORS][16];
 
 	/*
-	 * The display topology (ws113-p002): the device's sequence, which
+	 * The display topology: the device's sequence, which
 	 * moves when a connector is connected or disconnected (it starts at 1,
 	 * the snapshot a new open must read first), and each connector's
 	 * generation, which moves with its own connection.  Made by the world's
@@ -908,8 +829,20 @@ struct i915_hpd_world {
 	 */
 	struct intel_gmbus hpd_gmbus_bus[GMBUS_NUM_PINS];
 
-	/* Nonzero once hpd_i915.display.gmbus.mutex is initialised; cleared with the buses. */
+	/*
+	 * Nonzero once hpd_i915.display.gmbus.mutex, the controller's register
+	 * window and the controller are prepared for the running instance;
+	 * cleared with the buses.
+	 */
 	int hpd_gmbus_mutex_inited;
+
+	/*
+	 * The GMBUS controller and the window its transfers reach the
+	 * registers through: the instance's MMIO, or a model's registers.
+	 * Used under hpd_i915.display.gmbus.mutex.
+	 */
+	struct i915_xd_io hpd_gmbus_io;
+	struct i915_xd_gmbus hpd_gmbus;
 
 	/*
 	 * The EDID slots, one per connector.  Written by the detection of
@@ -1449,26 +1382,6 @@ i915_intel_encoder_is_dig_port(
 	default:
 		return false;
 	}
-}
-
-/* Gates the GMBUS clock on Broxton-class parts (the Linux bxt_gmbus_clock_gating()); not this platform. */
-static __inline void
-i915_bxt_gmbus_clock_gating(
-	struct drm_i915_private *i915,
-	bool enable)
-{
-	UNUSED_PARAMETER(i915);
-	UNUSED_PARAMETER(enable);
-}
-
-/* Gates the GMBUS clock on SPT/CNP PCHs (the Linux pch_gmbus_clock_gating()); not this platform. */
-static __inline void
-i915_pch_gmbus_clock_gating(
-	struct drm_i915_private *i915,
-	bool enable)
-{
-	UNUSED_PARAMETER(i915);
-	UNUSED_PARAMETER(enable);
 }
 
 #endif

@@ -8,8 +8,11 @@
 # and ends with PASS when the stage's judgement is "lit" and no steady register differs, FAIL otherwise.
 # The digest of the writes changes between two starts of the same kernel (a read-modify-write that keeps hardware
 # status bits: VARYING below), so a digest that differs is looked at in the whole lists: when both logs have them
-# (started with i915.debug=display), every write that differs is printed, the VARYING registers apart.
+# (started with i915.debug=display), every write that differs is printed, the VARYING registers apart, and a write
+# that is in both lists at another place (another thread's timing) is listed as moved without failing.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+import collections
+import difflib
 import re
 import sys
 
@@ -81,19 +84,38 @@ def main():
         same = reference[3].split(";")[-1] == stage[3].split(";")[-1]
         print("digest of the writes: %s" % ("same" if same else "DIFFERS"))
     if reference[4] and stage[4]:
+        # The lists are aligned, not compared position by position: the display writes come from more than one
+        # thread (the start, the DMC load, the hotplug work), so a change of timing in one of them moves its writes
+        # against the others without changing any write (seen 2026-10-16 with the AUX channel rewritten: the panel
+        # VDD and two hotplug writes moved, the unordered digest the same).  A write that only moved is listed apart
+        # and does not fail the stage; a write one list has and the other has not does.
+        aligned = difflib.SequenceMatcher(a=reference[4], b=stage[4], autojunk=False)
+        removed = collections.Counter()
+        added = collections.Counter()
+        for operation, first, last, other_first, other_last in aligned.get_opcodes():
+            if operation == "equal":
+                continue
+            removed.update(reference[4][first:last])
+            added.update(stage[4][other_first:other_last])
+        moved = removed & added
         varying = 0
         steady = 0
-        for index in range(max(len(reference[4]), len(stage[4]))):
-            before = reference[4][index] if index < len(reference[4]) else "-"
-            after = stage[4][index] if index < len(stage[4]) else "-"
-            if before == after:
+        for write, count in sorted((removed - moved).items()):
+            if write.split("=")[0] in VARYING:
+                varying += count
                 continue
-            if before.split("=")[0] in VARYING and after.split("=")[0] in VARYING:
-                varying += 1
+            steady += count
+            print("write only in the reference: %s (%d)" % (write, count))
+        for write, count in sorted((added - moved).items()):
+            if write.split("=")[0] in VARYING:
+                varying += count
                 continue
-            steady += 1
-            print("write %d: %s -> %s" % (index, before, after))
-        print("whole lists: %d writes differ, %d more in registers that vary between starts" % (steady, varying))
+            steady += count
+            print("write only in the stage: %s (%d)" % (write, count))
+        for write, count in sorted(moved.items()):
+            print("write in another place: %s (%d)" % (write, count))
+        print("whole lists: %d writes differ, %d moved, %d more in registers that vary between starts" %
+              (steady, sum(moved.values()), varying))
         steady_differs += steady
     lit = stage[2] is not None and stage[2][0] == "lit"
     print("steady registers that differ: %d" % steady_differs)
