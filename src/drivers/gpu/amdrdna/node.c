@@ -119,8 +119,8 @@ amdrdna_node_create(
 	/* The renderer's queue and the recovery operations (the stop of a session, the fault). */
 	amdrdna_runtime_prepare(node);
 
-	/* With amdrdna.vk=1 the Vulkan executor makes the device a renderer (before it is registered). */
-	vk = amdrdna_parameter_number("amdrdna.vk", 0U);
+	/* The Vulkan executor makes the device a renderer (before it is registered), unless the boot says amdrdna.vk=0. */
+	vk = amdrdna_parameter_number("amdrdna.vk", 1U);
 	if (vk != 0U)
 		amdrdna_vk_node_bind(node);
 

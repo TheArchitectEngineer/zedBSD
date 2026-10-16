@@ -212,7 +212,7 @@
  * The two-source vector operations.
  *
  * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_opcodes.py
- * (the GFX10 numbers of the table VOP2, lines 896-966).
+ * (the GFX10 numbers of the table VOP2, lines 896-977).
  * Checked against llvm-mc 19 (-mcpu=gfx1010).
  */
 #define AMDRDNA_GFX10_V_CNDMASK_B32	0x01U
@@ -233,6 +233,7 @@
 #define AMDRDNA_GFX10_V_XOR_B32		0x1dU
 #define AMDRDNA_GFX10_V_ADD_NC_U32	0x25U
 #define AMDRDNA_GFX10_V_SUB_NC_U32	0x26U
+#define AMDRDNA_GFX10_V_CVT_PKRTZ_F16_F32 0x2fU
 
 /*
  * The one-source vector operations.

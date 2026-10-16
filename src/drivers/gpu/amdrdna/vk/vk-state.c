@@ -194,6 +194,7 @@ static void state_start_graphics(struct amdrdna_vk_pm4 *pm4);
 static void state_start_compute(struct amdrdna_vk_pm4 *pm4);
 static bool state_blend_factor(uint32_t factor, uint32_t *code);
 static bool state_blend_op(uint32_t op, uint32_t *code);
+static uint32_t state_blend_shortcut(uint32_t op);
 static uint32_t state_export_mask(uint32_t formats);
 static int32_t state_floor(int64_t value);
 static int32_t state_ceil(int64_t value);
@@ -444,7 +445,11 @@ amdrdna_vk_state_blend(
 			control |= AMDRDNA_CX_BLEND_SEPARATE_ALPHA;
 		}
 		control |= AMDRDNA_CX_BLEND_ENABLE;
-		shortcut = AMDRDNA_CX_BLEND_SHORTCUT_NONE;
+
+		/* The export unit keeps every channel and combines as the blend does. */
+		shortcut = AMDRDNA_CX_BLEND_SHORTCUT_KEEP_ALL;
+		shortcut |= state_blend_shortcut(blend->colour_op) << AMDRDNA_CX_BLEND_SHORTCUT_COLOUR_SHIFT;
+		shortcut |= state_blend_shortcut(blend->alpha_op) << AMDRDNA_CX_BLEND_SHORTCUT_ALPHA_SHIFT;
 	}
 
 	/* The blend, its shortcut, the channels written, the normal colour mode. */
@@ -945,6 +950,36 @@ state_blend_op(
 
 	/* Succeeded: the function is the unit's. */
 	return true;
+}
+
+/* Gives the export unit's combination of a blend function (one the blend function check took). */
+static uint32_t
+state_blend_shortcut(
+	uint32_t op)
+{
+	uint32_t code;
+
+	/* Each function's own; add for any other (the blend refused it before). */
+	switch (op) {
+	case VK_BLEND_OP_SUBTRACT:
+		code = AMDRDNA_SHORTCUT_SUBTRACT;
+		break;
+	case VK_BLEND_OP_REVERSE_SUBTRACT:
+		code = AMDRDNA_SHORTCUT_REVERSE_SUBTRACT;
+		break;
+	case VK_BLEND_OP_MIN:
+		code = AMDRDNA_SHORTCUT_MINIMUM;
+		break;
+	case VK_BLEND_OP_MAX:
+		code = AMDRDNA_SHORTCUT_MAXIMUM;
+		break;
+	default:
+		code = AMDRDNA_SHORTCUT_ADD;
+		break;
+	}
+
+	/* Succeeded: the export unit's combination. */
+	return code;
 }
 
 /* Reports the colour unit's mask of the channels the colour exports carry: four bits for each export with a format. */

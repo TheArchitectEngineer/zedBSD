@@ -413,6 +413,7 @@ static unsigned sample_opcode(const struct gfx10_sample *sample, int derivatives
 static void restrict_to_alive(struct gfx10_lowering *lowering);
 static int finish_exports(struct gfx10_lowering *lowering);
 static int export_location(struct gfx10_lowering *lowering, uint32_t target, uint32_t first_channel, uint32_t mask, uint32_t flags);
+static int export_colour(struct gfx10_lowering *lowering, uint32_t target, uint32_t first_channel, uint32_t flags);
 static int export_source(struct gfx10_lowering *lowering, uint32_t channel, unsigned *code);
 static void emit_export(struct gfx10_lowering *lowering, uint32_t target, const unsigned *sources, uint32_t mask, uint32_t flags);
 static int prologue(struct gfx10_lowering *lowering);
@@ -3664,11 +3665,7 @@ finish_exports(
 		flags = 0U;
 		if (location == last)
 			flags = AMDRDNA_GFX10_FLAG_LAST | AMDRDNA_GFX10_FLAG_VALID_MASK;
-		error = export_location(lowering,
-					AMDRDNA_GFX10_EXPORT_COLOR + location,
-					GFX10_OUTPUT_LOCATIONS + 4U * location,
-					0xfU,
-					flags);
+		error = export_colour(lowering, AMDRDNA_GFX10_EXPORT_COLOR + location, GFX10_OUTPUT_LOCATIONS + 4U * location, flags);
 		if (error != 0)
 			return error;
 	}
@@ -3704,6 +3701,60 @@ export_location(
 	emit_export(lowering, target, sources, mask, flags);
 
 	/* Succeeded: the channels are exported. */
+	return 0;
+}
+
+/*
+ * Exports a colour from the output channels from first_channel on as four
+ * 16-bit floats: red and green packed into one VGPR, blue and alpha into
+ * another (each rounded toward zero), in a compressed export.
+ *
+ * Procedure referenced: Mesa 25.0.7
+ * src/amd/compiler/instruction_selection/aco_select_ps_epilog.cpp
+ * (export_fs_mrt_color, the FP16_ABGR case of GFX10: v_cvt_pkrtz_f16_f32 of
+ * channels 0 and 1, and 2 and 3, all four channels enabled, compressed).
+ */
+static int
+export_colour(
+	struct gfx10_lowering *lowering,
+	uint32_t target,
+	uint32_t first_channel,
+	uint32_t flags)
+{
+	unsigned sources[4];
+	unsigned packed[4];
+	uint32_t channel;
+	uint32_t reg;
+	int error;
+
+	/* The VGPR each channel is read from. */
+	for (channel = 0U; channel < 4U; channel++) {
+		error = export_source(lowering, first_channel + channel, &sources[channel]);
+		if (error != 0)
+			return error;
+	}
+
+	/* Two VGPRs, each with two channels packed. */
+	packed[2] = 0U;
+	packed[3] = 0U;
+	for (channel = 0U; channel < 2U; channel++) {
+		error = take_vgpr(lowering, &reg);
+		if (error != 0)
+			return error;
+		packed[channel] = AMDRDNA_GFX10_V(reg);
+		emit_vector(lowering,
+			    AMDRDNA_GFX10_KIND_VECTOR_TWO,
+			    AMDRDNA_GFX10_V_CVT_PKRTZ_F16_F32,
+			    packed[channel],
+			    sources[2U * channel],
+			    sources[2U * channel + 1U],
+			    0U);
+	}
+
+	/* The export of the four channels. */
+	emit_export(lowering, target, packed, 0xfU, flags | AMDRDNA_GFX10_FLAG_COMPRESSED);
+
+	/* Succeeded: the colour is exported. */
 	return 0;
 }
 

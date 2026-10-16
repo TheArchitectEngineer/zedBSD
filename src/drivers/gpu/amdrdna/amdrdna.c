@@ -14,7 +14,7 @@
  * that is not a first-generation RDNA GPU the firmware posted is given
  * back to the firmware untouched.  A kept function gets a control device
  * and a bring-up thread, which runs the later stages: the ones the boot
- * line names (amdrdna.auto=, A1v by default) and the ones root asks for
+ * line names (amdrdna.auto=, A9 by default) and the ones root asks for
  * through the control device, one at a time and never again after one
  * failed.  A GPU whose A1 failed is kept too, with its failure recorded,
  * so the control device can still report what A0 and A1 read; no stage
@@ -33,6 +33,7 @@
 #include <kern/kmem.h>
 #include <kern/lock.h>
 #include <kern/sched.h>
+#include <kern/sysctl.h>
 #include <kern/thread.h>
 #include <kern/waitq.h>
 #include <uapi/amdrdna.h>
@@ -56,6 +57,7 @@ static int amdrdna_keep(struct amdrdna_device *device);
 static void amdrdna_thread(void *argument);
 static int amdrdna_run_stage(struct amdrdna_device *device, unsigned stage);
 static void amdrdna_give_back(struct amdrdna_device *device);
+static void amdrdna_attach_done(struct amdrdna_device *device);
 
 /*
  * Registers the amdrdna PCI driver for AMD display-class functions.
@@ -374,6 +376,7 @@ amdrdna_keep(
 {
 	struct thread *thread;
 	unsigned target;
+	bool display;
 	int error;
 
 	/* Makes the record PCI's to hand back at detach. */
@@ -393,9 +396,25 @@ amdrdna_keep(
 	if (device->failed_stage != AMDRDNA_STAGE_NONE)
 		device->target = device->stage;
 
+	/*
+	 * The stage that registers the GPU device: A8 with the display, A5s
+	 * without.  A boot whose stages reach it counts the GPU as attaching
+	 * until it is registered or a stage failed, so the graphical login
+	 * waits for the display instead of giving the console back.
+	 */
+	device->attach_stage = AMDRDNA_STAGE_A5S;
+	display = amdrdna_display_wanted();
+	if (display)
+		device->attach_stage = AMDRDNA_STAGE_A8;
+	if (device->target >= device->attach_stage) {
+		device->attach_counted = true;
+		kern_gpu_attach_begin();
+	}
+
 	/* Creates the bring-up thread. */
 	error = kthread_create(amdrdna_thread, device, SCHED_PRIORITY_DEFAULT, &thread);
 	if (error != 0) {
+		amdrdna_attach_done(device);
 		(void)drv_pci_device_set_driver_data(device->pci, NULL);
 		return error;
 	}
@@ -489,7 +508,14 @@ amdrdna_thread(
 			device->target = AMDRDNA_STAGE_A4;
 
 		spin_unlock_irqrestore(&device->state_lock, irq);
+
+		/* The GPU device is registered by now, or never will be by the boot's stages. */
+		if (error != 0 || next >= device->attach_stage)
+			amdrdna_attach_done(device);
 	}
+
+	/* A thread told to stop before the registration no longer counts the GPU as attaching. */
+	amdrdna_attach_done(device);
 
 	/* Tells the shutdown that the thread no longer touches the GPU. */
 	irq = spin_lock_irqsave(&device->state_lock);
@@ -553,6 +579,20 @@ amdrdna_run_stage(
 
 	/* Succeeded: the stage reported ok. */
 	return 0;
+}
+
+/* Stops counting the GPU as attaching, once: its device is registered or never will be by the boot. */
+static void
+amdrdna_attach_done(
+	struct amdrdna_device *device)
+{
+	/* Only a counted GPU is uncounted, and only once. */
+	if (!device->attach_counted)
+		return;
+
+	/* The count goes down; sessiond stops waiting for this GPU. */
+	device->attach_counted = false;
+	kern_gpu_attach_end();
 }
 
 /* Gives back what the read-only stages took, and the record. */

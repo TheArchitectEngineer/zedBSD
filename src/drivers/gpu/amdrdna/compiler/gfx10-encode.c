@@ -149,15 +149,16 @@
 
 /*
  * The places of the fields of an export: the valid mask bit (12), the
- * last-export bit (11), the target (9:4) and the channel enable (3:0) in
- * the first word; the four VGPRs, eight bits each from bit 0, in the
- * second.
+ * last-export bit (11), the compressed bit (10), the target (9:4) and the
+ * channel enable (3:0) in the first word; the four VGPRs, eight bits each
+ * from bit 0, in the second.
  *
  * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_assembler.cpp
  * (emit_exp_instruction, the GFX10 case).
  */
 #define GFX10_EXPORT_VALID		12U
 #define GFX10_EXPORT_LAST		11U
+#define GFX10_EXPORT_COMPRESSED		10U
 #define GFX10_EXPORT_TARGET		4U
 
 /* The bits of an 8-bit register field, the low bits of an operand code. */
@@ -442,8 +443,13 @@ amdrdna_gfx10_describe(
 	case AMDRDNA_GFX10_KIND_EXPORT:
 		add_read(access, AMDRDNA_GFX10_EXEC_LO, 1U);
 
-		/* Reads the VGPR of every enabled channel, which stays read until the export counter lets it go. */
+		/*
+		 * Reads the VGPR of every enabled channel (a compressed export's
+		 * first two), which stays read until the export counter lets it go.
+		 */
 		for (index = 0U; index < 4U; index++) {
+			if ((inst->flags & AMDRDNA_GFX10_FLAG_COMPRESSED) != 0U && index >= 2U)
+				break;
 			if ((inst->mask & (1U << index)) != 0U)
 				add_read(access, inst->src[index], 1U);
 		}
@@ -923,15 +929,19 @@ encode_export(
 		word |= 1U << GFX10_EXPORT_VALID;
 	if ((inst->flags & AMDRDNA_GFX10_FLAG_LAST) != 0U)
 		word |= 1U << GFX10_EXPORT_LAST;
+	if ((inst->flags & AMDRDNA_GFX10_FLAG_COMPRESSED) != 0U)
+		word |= 1U << GFX10_EXPORT_COMPRESSED;
 	word |= (uint32_t)inst->target << GFX10_EXPORT_TARGET;
 	word |= (uint32_t)inst->mask & 0xfU;
 	words[0] = word;
 
-	/* The second word: the VGPR of every enabled channel, 0 for the others. */
+	/* The second word: the VGPR of every enabled channel (of a compressed export, the first two), 0 for the others. */
 	word = 0U;
 	for (index = 0U; index < 4U; index++) {
-		/* A disabled channel names no register. */
+		/* A disabled channel names no register, nor do a compressed export's last two. */
 		if ((inst->mask & (1U << index)) == 0U)
+			continue;
+		if ((inst->flags & AMDRDNA_GFX10_FLAG_COMPRESSED) != 0U && index >= 2U)
 			continue;
 
 		/* An enabled channel's source is a VGPR. */

@@ -23,9 +23,10 @@
  * start, of a finished flip and of the hot-plug line, then flips to a
  * picture of colour bars and back.  Stage A7 takes the cursor's images,
  * sets the cursor up hidden, shows it in the middle of the screen, moves
- * it and hides it again.  Both run only when the boot asks the driver to
- * own the display (amdrdna.disp.own=1); amdrdna.disp.test=<seconds> holds
- * the bars and the moving cursor that long for an eye to check.
+ * it and hides it again.  Both run when the driver owns the display (the
+ * default; amdrdna.disp.own=0 leaves it to the firmware);
+ * amdrdna.disp.test=<seconds> holds the bars and the moving cursor that
+ * long for an eye to check.
  *
  * The interrupt thread acknowledges the display's events, counts them,
  * keeps the refresh count, follows the monitor's connection and wakes the
@@ -39,9 +40,11 @@
 
 #include <kern/clock.h>
 #include <kern/kcrt.h>
+#include <kern/kmem.h>
 #include <kern/lock.h>
 #include <kern/poll.h>
 #include <kern/sched.h>
+#include <kern/uaccess.h>
 #include <kern/waitq.h>
 #include <uapi/amdrdna.h>
 #include <uapi/errno.h>
@@ -174,6 +177,9 @@
 /* How many frames the cursor checks wait for a change to show. */
 #define DISPLAY_SETTLE_FRAMES		2U
 
+/* The longest row the screen readout copies, in words: 16 KiB (4096 pixels). */
+#define DISPLAY_SCREEN_ROW_WORDS	4096U
+
 /* The first lines of the topology: one, before any change of the monitor. */
 #define DISPLAY_TOPOLOGY_FIRST		1U
 
@@ -197,14 +203,14 @@ static int display_wait_frames(struct amdrdna_device *device, unsigned frames);
 static unsigned display_test_seconds(void);
 static uint32_t display_underflow(struct amdrdna_device *device, uint32_t *timing_underflow);
 
-/* Reports whether the boot asks the driver to own the display (amdrdna.disp.own=1). */
+/* Reports whether the driver owns the display: by default, unless the boot says amdrdna.disp.own=0. */
 bool
 amdrdna_display_wanted(void)
 {
 	unsigned own;
 
-	/* The boot word, off by default. */
-	own = amdrdna_parameter_number("amdrdna.disp.own", 0U);
+	/* The boot word, on by default. */
+	own = amdrdna_parameter_number("amdrdna.disp.own", 1U);
 	if (own != 0U)
 		return true;
 
@@ -249,7 +255,7 @@ amdrdna_a6_takeover(
 	amdrdna_mark("A6 begin");
 	display = &device->display;
 
-	/* Without amdrdna.disp.own=1 the firmware keeps its display. */
+	/* With amdrdna.disp.own=0 the firmware keeps its display. */
 	wanted = amdrdna_display_wanted();
 	if (!wanted) {
 		amdrdna_mark("A6 skip: the display stays the firmware's (amdrdna.disp.own=0)");
@@ -403,7 +409,7 @@ amdrdna_a7_cursor(
 	amdrdna_mark("A7 begin");
 	display = &device->display;
 
-	/* Without amdrdna.disp.own=1 the firmware keeps its display. */
+	/* With amdrdna.disp.own=0 the firmware keeps its display. */
 	wanted = amdrdna_display_wanted();
 	if (!wanted) {
 		amdrdna_mark("A7 skip: the display stays the firmware's (amdrdna.disp.own=0)");
@@ -1088,6 +1094,90 @@ amdrdna_display_report(
 		state->flags |= AMDRDNA_DISPLAY_CONNECTED;
 
 	spin_unlock_irqrestore(&display->lock, irq);
+}
+
+/*
+ * Copies the rows of the surface the plane reads now to a caller's buffer
+ * (the control device's screen readout): the picture's size, the address
+ * read and the bytes copied are reported.  Each row goes through a kernel
+ * bounce buffer from the CPU's window, after the host path's read cache is
+ * dropped.
+ *
+ * Returns 0, ENOENT before the takeover, ERANGE for a surface outside the
+ * CPU's window, ENOMEM, or the copy's error.
+ */
+int
+amdrdna_display_screen(
+	struct amdrdna_device *device,
+	struct amdrdna_screen *screen)
+{
+	struct amdrdna_display *display;
+	volatile const uint32_t *source;
+	uint32_t *row;
+	uint64_t address;
+	uint64_t vram;
+	uint32_t line;
+	uint32_t word;
+	uint32_t words;
+	uint32_t copied;
+	int error;
+
+	/* The display must be the driver's. */
+	display = &device->display;
+	if (!display->taken)
+		return ENOENT;
+
+	/* The surface the plane reads, inside the CPU's window, with rows the bounce buffer holds. */
+	address = display_shown_address(device);
+	if (address < device->frame_buffer_base)
+		return ERANGE;
+	vram = address - device->frame_buffer_base;
+	if (vram + (uint64_t)display->stride * display->height > device->vram_window_bytes)
+		return ERANGE;
+	if (display->stride > DISPLAY_SCREEN_ROW_WORDS * 4U)
+		return ERANGE;
+
+	/* The picture's description. */
+	screen->width = display->width;
+	screen->height = display->height;
+	screen->stride = display->stride;
+	screen->address = address;
+
+	/* The bounce buffer of one row. */
+	row = kern_malloc(display->stride);
+	if (row == NULL)
+		return ENOMEM;
+
+	/* Copies whole rows from the top while the buffer has room. */
+	amdrdna_host_path_drop(device);
+	words = display->stride / 4U;
+	copied = 0U;
+	error = 0;
+	for (line = 0U; line < display->height; line++) {
+		/* Stops when the next row does not fit. */
+		if (screen->length - copied < display->stride)
+			break;
+
+		/* The row through the bounce buffer. */
+		source = (volatile const uint32_t *)(volatile const void *)amdrdna_vram_cpu(device, vram + (uint64_t)line * display->stride);
+		for (word = 0U; word < words; word++)
+			row[word] = source[word];
+		error = copyout(row, (uintptr_t)(screen->buffer + copied), display->stride);
+		if (error != 0)
+			break;
+		copied += display->stride;
+	}
+
+	/* The bounce buffer goes. */
+	kern_free(row);
+
+	/* Reports a copy the caller's buffer refused. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the rows are the caller's. */
+	screen->copied = copied;
+	return 0;
 }
 
 /* Finds one instance of a display register; 0 for one the display block lacks. */

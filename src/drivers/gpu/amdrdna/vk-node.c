@@ -183,7 +183,7 @@ amdrdna_vk_node_blob_attach(
  * Runs stage A9: the executor's first draws on the GPU, in a session of
  * the driver's own: a quad of one colour, one of another inside it, and a
  * quad that samples the drawn image into a second one, every pixel of
- * both compared.  The executor must have been bound (amdrdna.vk=1) before
+ * both compared.  The executor must have been bound (not amdrdna.vk=0) before
  * stage A5s registered the device.
  *
  * Returns 0 when every pixel is as drawn, ENOTSUP without an executor,
@@ -210,7 +210,7 @@ amdrdna_a9_draw(
 		return ENODEV;
 	}
 	if (node->renderer == 0) {
-		amdrdna_mark("A9 fail: no executor bound (boot with amdrdna.vk=1)");
+		amdrdna_mark("A9 fail: no executor bound (the boot said amdrdna.vk=0)");
 		return ENOTSUP;
 	}
 

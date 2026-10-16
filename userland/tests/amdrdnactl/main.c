@@ -15,6 +15,8 @@
  *   amdrdnactl [-f DEVICE] vbios FILE     writes the video BIOS image to FILE
  *   amdrdnactl [-f DEVICE] display        prints the display the driver took
  *                                         over: its registers and counts
+ *   amdrdnactl [-f DEVICE] screen FILE    writes the picture the display shows
+ *                                         to FILE as a PPM image (root)
  *   amdrdnactl gpu [GPU-DEVICE]           checks the GPU device the driver
  *                                         registered (/dev/gpu0 by default)
  *
@@ -52,6 +54,7 @@ static int control_status(int descriptor);
 static int control_advance(int descriptor, const char *stage);
 static int control_vbios(int descriptor, const char *path);
 static int control_display(int descriptor);
+static int control_screen(int descriptor, const char *path);
 static const char *stage_name(uint32_t stage);
 static int stage_number(const char *name, uint32_t *stage);
 static void usage(void);
@@ -74,6 +77,7 @@ main(
 	int is_advance;
 	int is_vbios;
 	int is_display;
+	int is_screen;
 	int is_gpu;
 
 	/* The GPU device check needs no control device. */
@@ -107,6 +111,7 @@ main(
 	is_advance = strcmp(command, "advance") == 0;
 	is_vbios = strcmp(command, "vbios") == 0;
 	is_display = strcmp(command, "display") == 0;
+	is_screen = strcmp(command, "screen") == 0;
 
 	/* Opens the device. */
 	descriptor = open(path, O_RDONLY);
@@ -122,6 +127,8 @@ main(
 		result = control_vbios(descriptor, argv[first + 1]);
 	} else if (is_display && first + 1 == argc) {
 		result = control_display(descriptor);
+	} else if (is_screen && first + 2 == argc) {
+		result = control_screen(descriptor, argv[first + 1]);
 	} else {
 		usage();
 		result = 2;
@@ -375,6 +382,83 @@ control_display(
 	return 0;
 }
 
+/*
+ * Writes the picture the display shows to a file as a binary PPM (P6):
+ * the driver's rows of 32-bit B, G, R, A pixels become R, G, B triples.
+ */
+static int
+control_screen(
+	int descriptor,
+	const char *path)
+{
+	struct amdrdna_screen screen;
+	unsigned char *pixels;
+	unsigned char *rgb;
+	FILE *stream;
+	size_t bytes;
+	size_t written;
+	uint32_t x;
+	uint32_t y;
+	int result;
+
+	/* A buffer for the largest picture the driver keeps: 4096 by 2160. */
+	bytes = (size_t)16384U * 2160U;
+	pixels = malloc(bytes);
+	if (pixels == NULL)
+		return control_fail("screen", ENOMEM);
+
+	/* Asks the driver for the rows. */
+	memset(&screen, 0, sizeof(screen));
+	screen.version = AMDRDNA_INTERFACE_VERSION;
+	screen.size = sizeof(screen);
+	screen.buffer = (uint64_t)(uintptr_t)pixels;
+	screen.length = (uint32_t)bytes;
+	result = ioctl(descriptor, AMDRDNA_IOC_SCREEN, &screen);
+	if (result != 0) {
+		free(pixels);
+		return control_fail("screen", errno);
+	}
+
+	/* The R, G, B triples of every row copied. */
+	rgb = malloc((size_t)screen.width * screen.height * 3U);
+	if (rgb == NULL) {
+		free(pixels);
+		return control_fail("screen", ENOMEM);
+	}
+
+	/* Each row the driver copied, pixel by pixel. */
+	for (y = 0U; y < screen.height && (size_t)(y + 1U) * screen.stride <= screen.copied; y++) {
+		for (x = 0U; x < screen.width; x++) {
+			/* B, G, R, A in, R, G, B out. */
+			rgb[((size_t)y * screen.width + x) * 3U] = pixels[(size_t)y * screen.stride + x * 4U + 2U];
+			rgb[((size_t)y * screen.width + x) * 3U + 1U] = pixels[(size_t)y * screen.stride + x * 4U + 1U];
+			rgb[((size_t)y * screen.width + x) * 3U + 2U] = pixels[(size_t)y * screen.stride + x * 4U];
+		}
+	}
+
+	/* Writes the file. */
+	stream = fopen(path, "wb");
+	if (stream == NULL) {
+		free(rgb);
+		free(pixels);
+		return control_fail(path, errno);
+	}
+
+	/* The header, the rows, the close. */
+	fprintf(stream, "P6\n%u %u\n255\n", (unsigned)screen.width, (unsigned)y);
+	written = fwrite(rgb, 1U, (size_t)screen.width * y * 3U, stream);
+	result = fclose(stream);
+	free(rgb);
+	free(pixels);
+	if (written != (size_t)screen.width * y * 3U || result != 0)
+		return control_fail(path, EIO);
+
+	/* Says what was written. */
+	printf("screen=%s %ux%u stride=%u address=0x%llx\n", path, (unsigned)screen.width, (unsigned)y,
+	    (unsigned)screen.stride, (unsigned long long)screen.address);
+	return 0;
+}
+
 /* Names a stage number. */
 static const char *
 stage_name(
@@ -416,5 +500,5 @@ static void
 usage(void)
 {
 	/* The one usage line. */
-	fprintf(stderr, "usage: amdrdnactl [-f DEVICE] [status | advance STAGE | vbios FILE | display] | amdrdnactl gpu [GPU-DEVICE]\n");
+	fprintf(stderr, "usage: amdrdnactl [-f DEVICE] [status | advance STAGE | vbios FILE | display | screen FILE] | amdrdnactl gpu [GPU-DEVICE]\n");
 }

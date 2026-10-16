@@ -21,7 +21,9 @@
  *
  *   amdrdna.off=1        the driver does not look at the GPU at all
  *   amdrdna.auto=<stage> the stages up to this one run at boot without
- *                        being asked (A1v when the word is absent)
+ *                        being asked (A9 when the word is absent, the
+ *                        desktop's GPU; amdrdna.auto=A1v runs only the
+ *                        stages that read)
  *   amdrdna.train=0      memory training (stage A3t) is skipped
  *   amdrdna.train.blank=0
  *                        the firmware's picture is not blanked while
@@ -32,9 +34,11 @@
  *   amdrdna.kiq=0        stage A5 runs the graphics ring by its registers,
  *                        without the scheduler's queue and the compute
  *                        queues
- *   amdrdna.disp.own=1   stages A6 to A8 take the firmware's display over
- *                        and register the GPU device with it (without the
- *                        word they pass and the firmware keeps it)
+ *   amdrdna.disp.own=0   stages A6 to A8 pass and the firmware keeps its
+ *                        display (by default they take it over and
+ *                        register the GPU device with it)
+ *   amdrdna.vk=0         the GPU device renders nothing (by default the
+ *                        Vulkan executor makes it a renderer)
  *   amdrdna.disp.test=<n>
  *                        stages A6 and A7 hold their test picture and
  *                        cursor n seconds (at most 60) for an eye to check
@@ -178,8 +182,8 @@ amdrdna_parameter_auto(void)
 			return stage;
 	}
 
-	/* Without the word the boot runs the stages that only read. */
-	return AMDRDNA_STAGE_A1V;
+	/* Without the word the boot brings the GPU up as far as the desktop needs. */
+	return AMDRDNA_STAGE_A9;
 }
 
 /*
