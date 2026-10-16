@@ -53,9 +53,15 @@ enum i915_xd_regs_test_pipe {
 #include "../../intel/plane.h"
 #include "../../intel/dkl.h"
 #include "../../intel/hotplug.h"
+/* The DPCD header marks its packet structures packed, a name the display environment defines. */
+#ifndef __packed
+#define __packed __attribute__((__packed__))
+#endif
+#include "../../intel/dp.h"
 
 #include "../../intel/display-regs-xd.h"
 #include "../../intel/display-regs-xd-south.h"
+#include "../../intel/display-dpcd-xd.h"
 
 /* The pairs compared, for the report. */
 static unsigned i915_xd_regs_compared;

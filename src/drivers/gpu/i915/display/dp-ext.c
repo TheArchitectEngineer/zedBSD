@@ -14,6 +14,7 @@
  */
 
 #include "dp-ext.h"
+#include "xd-dp.h"
 
 /* The receiver capabilities (DPCD 0x000 to 0x00e). */
 #define I915_DP_EXT_DPCD_REV			0x000u
@@ -96,12 +97,6 @@
 #define I915_DP_EXT_LTTPR_MAX_LANE_COUNT	4u
 #define I915_DP_EXT_LTTPR_MIN_REV		0x14u
 
-/* A link bandwidth code is the rate in units of 0.27 Gbit/s; three codes name 128b/132b rates. */
-#define I915_DP_EXT_LINK_BW_UNIT		27000
-#define I915_DP_EXT_LINK_BW_10			0x01u
-#define I915_DP_EXT_LINK_BW_20			0x02u
-#define I915_DP_EXT_LINK_BW_13_5		0x04u
-
 /* The EDID bytes the probe reads: the revision, the input definition, and the extension tags. */
 #define I915_DP_EXT_EDID_REVISION		19u
 #define I915_DP_EXT_EDID_INPUT			20u
@@ -115,24 +110,6 @@
 /* The Linux error the probe reports for a short read (-EIO). */
 #define I915_DP_EXT_EIO				5
 
-/* The rate the defaults fall back to: RBR. */
-#define I915_DP_EXT_RATE_RBR			162000
-
-/* The 8b/10b link rates a sink can offer (RBR, HBR, HBR2, HBR3). */
-static const int i915_dp_ext_sink_rate_table[] = {
-	162000, 270000, 540000, 810000
-};
-
-/*
- * The 8b/10b link rates display versions 11 to 13 offer (the Linux
- * icl_rates); the 128b/132b rates of that table lie above every display
- * version 13 limit and are left out.
- */
-static const int i915_dp_ext_source_rate_table[] = {
-	162000, 216000, 270000, 324000, 432000, 540000, 648000, 810000
-};
-
-static int i915_dp_ext_bw_code_to_rate(uint8_t code);
 static void i915_dp_ext_read_lttpr(const struct i915_dp_ext_env *env, struct i915_dp_ext_sink *sink);
 static int i915_dp_ext_lttpr_count(uint8_t count_bits);
 static int i915_dp_ext_read_caps(const struct i915_dp_ext_env *env, struct i915_dp_ext_sink *sink);
@@ -313,7 +290,7 @@ drv_i915_dp_ext_short_pulse(
 
 /*
  * Tells whether a trained link must be trained again (the Linux
- * intel_dp_needs_link_retrain() with drm_dp_channel_eq_ok(), ws051-p005b):
+ * intel_dp_needs_link_retrain() with drm_dp_channel_eq_ok()):
  * the sink's link status is read, and the link needs it when the lanes
  * lost their alignment or a lane of the link's lane_count lost clock
  * recovery, equalisation or symbol lock.  A status that cannot be read, or
@@ -426,13 +403,11 @@ drv_i915_dp_ext_configure_converter(
 
 /*
  * Computes the link limits after a link training failed at a rate and a
- * lane count (the Linux intel_dp_get_link_train_fallback_values() for a
- * port that is not eDP, ws051-p004b).
- *
- * A rate above the lowest the source and sink share falls to the next
- * lower shared rate with the same lanes; otherwise the lanes are halved
- * at the highest shared rate.  Returns 1 with *max_rate and *max_lanes
- * the new limits, or 0 when one lane is left (nothing lower to try).
+ * lane count, through the xd DisplayPort code: a rate above the lowest
+ * the source and sink share falls to the next lower shared rate with the
+ * same lanes; otherwise the lanes are halved at the highest shared rate.
+ * Returns 1 with *max_rate and *max_lanes the new limits, or 0 when one
+ * lane is left (nothing lower to try).
  */
 int
 drv_i915_dp_ext_fallback_values(
@@ -442,32 +417,29 @@ drv_i915_dp_ext_fallback_values(
 	int *max_rate,
 	int *max_lanes)
 {
-	int index;
-	int found;
+	uint32_t common[I915_XD_DP_RATES];
+	uint32_t next_rate;
+	unsigned next_lanes;
+	unsigned count;
+	unsigned index;
+	int lower;
 
-	/* Finds the failed rate among the shared ones (-1: not shared). */
-	found = -1;
-	for (index = 0; index < sink->num_common_rates; index++) {
-		if (sink->common_rates[index] == rate)
-			found = index;
+	/* The shared rates, as the xd link takes them. */
+	count = 0;
+	for (index = 0; index < (unsigned)sink->num_common_rates && index < I915_XD_DP_RATES; index++) {
+		common[index] = (uint32_t)sink->common_rates[index];
+		count++;
 	}
 
-	/* A higher rate falls to the next lower one, with the same lanes. */
-	if (found > 0) {
-		*max_rate = sink->common_rates[found - 1];
-		*max_lanes = lanes;
-		return 1;
-	}
+	/* The next try's limits. */
+	lower = drv_i915_xd_dp_fallback(common, count, (uint32_t)rate, (unsigned)lanes, &next_rate, &next_lanes);
+	if (!lower)
+		return 0;
 
-	/* The lowest rate (or one not shared): half the lanes at the highest rate. */
-	if (lanes > 1 && sink->num_common_rates > 0) {
-		*max_rate = sink->common_rates[sink->num_common_rates - 1];
-		*max_lanes = lanes >> 1;
-		return 1;
-	}
-
-	/* One lane at the lowest rate: the link training was unsuccessful. */
-	return 0;
+	/* Succeeded: the limits of the next try. */
+	*max_rate = (int)next_rate;
+	*max_lanes = (int)next_lanes;
+	return 1;
 }
 
 /*
@@ -645,27 +617,6 @@ drv_i915_dp_ext_log(
 	}
 }
 
-/* Converts a link bandwidth code to its rate (the Linux drm_dp_bw_code_to_link_rate()). */
-static int
-i915_dp_ext_bw_code_to_rate(
-	uint8_t code)
-{
-	/* Three codes name 128b/132b rates; every other code counts units of 0.27 Gbit/s. */
-	switch (code) {
-	case I915_DP_EXT_LINK_BW_10:
-		return 1000000;
-	case I915_DP_EXT_LINK_BW_13_5:
-		return 1350000;
-	case I915_DP_EXT_LINK_BW_20:
-		return 2000000;
-	default:
-		break;
-	}
-
-	/* Succeeded: an 8b/10b rate. */
-	return (int)code * I915_DP_EXT_LINK_BW_UNIT;
-}
-
 /*
  * Reads the repeaters' common capabilities (the Linux
  * intel_dp_read_lttpr_common_caps() and drm_dp_lttpr_count()).
@@ -823,13 +774,11 @@ i915_dp_ext_read_desc(
 }
 
 /*
- * Sets the link rates each side offers and both share (the Linux
- * intel_dp_set_source_rates(), intel_dp_set_dpcd_sink_rates() for 8b/10b
- * and intel_dp_set_common_rates()).
- *
- * The source offers its table up to the lower of the platform's and the
- * VBT's limits; the sink offers the standard rates up to its maximum and
- * that of the repeaters.  A side left with nothing falls back to RBR.
+ * Sets the link rates each side offers and both share, through the xd
+ * DisplayPort code: the source offers its table up to the lower of the
+ * platform's and the VBT's limits; the sink offers the standard rates up
+ * to its maximum and that of the repeaters.  A side left with nothing
+ * falls back to RBR.
  */
 static void
 i915_dp_ext_set_rates(
@@ -837,87 +786,40 @@ i915_dp_ext_set_rates(
 	const struct i915_dp_ext_source *source,
 	struct i915_dp_ext_sink *sink)
 {
-	unsigned count;
-	unsigned i;
-	unsigned j;
-	int source_max;
-	int sink_max;
-	int lttpr_max;
+	struct i915_xd_dp_rates rates;
+	unsigned made_up;
+	unsigned index;
+	uint8_t repeater_code;
 
-	/* The source's limit: the platform's, and the VBT's when it is lower or the only one. */
-	source_max = source->max_rate;
-	if (source->vbt_max_rate != 0) {
-		if (source_max == 0 || source->vbt_max_rate < source_max)
-			source_max = source->vbt_max_rate;
-	}
-
-	/* The source's rates up to its limit. */
-	count = sizeof(i915_dp_ext_source_rate_table) / sizeof(i915_dp_ext_source_rate_table[0]);
-	sink->num_source_rates = 0;
-	for (i = 0u; i < count; i++) {
-		/* The table is in increasing order: the first rate above the limit ends it. */
-		if (source_max != 0 && i915_dp_ext_source_rate_table[i] > source_max)
-			break;
-
-		/* Offers the rate. */
-		sink->source_rates[sink->num_source_rates] = i915_dp_ext_source_rate_table[i];
-		sink->num_source_rates++;
-	}
-
-	/* The sink's limit: its own, and the repeaters' when they name one. */
-	sink_max = i915_dp_ext_bw_code_to_rate(sink->dpcd[I915_DP_EXT_MAX_LINK_RATE]);
-	lttpr_max = 0;
+	/* The repeaters' limit counts only when their capabilities were read. */
+	repeater_code = 0;
 	if (sink->lttpr_valid)
-		lttpr_max = i915_dp_ext_bw_code_to_rate(sink->lttpr[I915_DP_EXT_LTTPR_MAX_LINK_RATE]);
-	if (lttpr_max != 0 && lttpr_max < sink_max)
-		sink_max = lttpr_max;
+		repeater_code = sink->lttpr[I915_DP_EXT_LTTPR_MAX_LINK_RATE];
 
-	/* The sink's rates up to its limit. */
-	count = sizeof(i915_dp_ext_sink_rate_table) / sizeof(i915_dp_ext_sink_rate_table[0]);
-	sink->num_sink_rates = 0;
-	for (i = 0u; i < count; i++) {
-		/* The table is in increasing order: the first rate above the limit ends it. */
-		if (i915_dp_ext_sink_rate_table[i] > sink_max)
-			break;
+	/* The rates of both ends. */
+	made_up = drv_i915_xd_dp_rates((uint32_t)source->max_rate, (uint32_t)source->vbt_max_rate,
+				       sink->dpcd[I915_DP_EXT_MAX_LINK_RATE], repeater_code, &rates);
 
-		/* Offers the rate. */
-		sink->sink_rates[sink->num_sink_rates] = i915_dp_ext_sink_rate_table[i];
-		sink->num_sink_rates++;
-	}
-
-	/* A sink that offers no rate is given RBR. */
-	if (sink->num_sink_rates == 0) {
+	/* Notes a sink that offered nothing, and ends that meet nowhere. */
+	if ((made_up & I915_XD_DP_RATES_SINK_NONE) != 0)
 		env->log(env->ctx, "i915: DP-ext: invalid DPCD with no link rates (max code 0x%02x), using RBR\n", sink->dpcd[I915_DP_EXT_MAX_LINK_RATE]);
-		sink->sink_rates[0] = I915_DP_EXT_RATE_RBR;
-		sink->num_sink_rates = 1;
-	}
-
-	/* The rates both sides offer, lowest first; both lists are in increasing order. */
-	sink->num_common_rates = 0;
-	i = 0u;
-	j = 0u;
-	while (i < (unsigned)sink->num_source_rates && j < (unsigned)sink->num_sink_rates) {
-		/* A rate on both lists is shared; otherwise the list with the lower rate moves on. */
-		if (sink->source_rates[i] == sink->sink_rates[j]) {
-			sink->common_rates[sink->num_common_rates] = sink->source_rates[i];
-			sink->num_common_rates++;
-			i++;
-			j++;
-		} else if (sink->source_rates[i] < sink->sink_rates[j]) {
-			i++;
-		} else {
-			j++;
-		}
-	}
-
-	/* Something is always shared: RBR when the lists meet nowhere. */
-	if (sink->num_common_rates == 0) {
+	if ((made_up & I915_XD_DP_RATES_SHARED_NONE) != 0)
 		env->log(env->ctx, "i915: DP-ext: the source and the sink share no link rate, using RBR\n");
-		sink->common_rates[0] = I915_DP_EXT_RATE_RBR;
-		sink->num_common_rates = 1;
-	}
 
-	/* The highest shared rate. */
+	/* The source's rates. */
+	sink->num_source_rates = (int)rates.source_count;
+	for (index = 0; index < rates.source_count; index++)
+		sink->source_rates[index] = (int)rates.source[index];
+
+	/* The sink's rates. */
+	sink->num_sink_rates = (int)rates.sink_count;
+	for (index = 0; index < rates.sink_count; index++)
+		sink->sink_rates[index] = (int)rates.sink[index];
+
+	/* The shared rates, and the highest of them. */
+	sink->num_common_rates = (int)rates.common_count;
+	for (index = 0; index < rates.common_count; index++)
+		sink->common_rates[index] = (int)rates.common[index];
 	sink->max_rate = sink->common_rates[sink->num_common_rates - 1];
 }
 

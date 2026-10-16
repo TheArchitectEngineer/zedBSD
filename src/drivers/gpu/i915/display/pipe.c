@@ -72,6 +72,7 @@
 #include "ddi.h"
 #include "dp.h"
 #include "edid.h"
+#include "xd-dp.h"
 #include <kern/kcrt.h>
 
 /*
@@ -98,8 +99,6 @@
 /* The bit of the crtc itself in a scaler users mask (the Linux SKL_CRTC_INDEX). */
 #define I915_SKL_CRTC_INDEX		31
 
-static void i915_reduce_m_n_ratio(u32 *num, u32 *den);
-static void i915_compute_m_n(u32 *ret_m, u32 *ret_n, u32 m, u32 n, u32 constant_n);
 static void i915_set_m_n(struct drm_i915_private *i915, const struct intel_link_m_n *m_n, i915_reg_t data_m_reg, i915_reg_t data_n_reg, i915_reg_t link_m_reg, i915_reg_t link_n_reg);
 static bool i915_cpu_transcoder_has_m2_n2(struct drm_i915_private *dev_priv, enum transcoder transcoder);
 static void i915_cpu_transcoder_set_m1_n1(struct intel_crtc *crtc, enum transcoder transcoder, const struct intel_link_m_n *m_n);
@@ -217,11 +216,9 @@ drv_i915_lcd_intel_port_to_phy(
 }
 
 /*
- * Computes the data and link M/N values of a DP stream.
- *
- * The Linux intel_link_compute_m_n(): Windows and the BIOS use fixed N
- * values (0x8000000 for data, 0x80000 for link), and some DP dongles are
- * fussy about larger ones, so the driver follows suit.
+ * Computes the data and link M/N values of a DP stream through the xd
+ * DisplayPort code: fixed N values, the stream's share of the link's
+ * payload and the pixel clock against the link's symbol clock.
  */
 void
 drv_i915_link_compute_m_n(
@@ -232,23 +229,15 @@ drv_i915_link_compute_m_n(
 	int bw_overhead,
 	struct intel_link_m_n *m_n)
 {
-	u32 link_symbol_clock;
-	u32 data_m;
-	u32 data_n;
+	struct i915_xd_dp_m_n values;
 
-	/* The link's symbol clock, the stream's data rate and the link's capacity. */
-	link_symbol_clock = drv_i915_dp_link_symbol_clock(link_clock);
-	data_m = drv_i915_dp_effective_data_rate(pixel_clock, bits_per_pixel_x16, bw_overhead);
-	data_n = drv_i915_dp_max_data_rate(link_clock, nlanes);
-
-	/* The transfer unit is 64. */
-	m_n->tu = 64;
-
-	/* The data M/N: the stream's share of the link's data capacity. */
-	i915_compute_m_n(&m_n->data_m, &m_n->data_n, data_m, data_n, 0x8000000);
-
-	/* The link M/N: the pixel clock against the link's symbol clock. */
-	i915_compute_m_n(&m_n->link_m, &m_n->link_n, pixel_clock, link_symbol_clock, 0x80000);
+	/* The xd link's values, into the Linux structure. */
+	drv_i915_xd_dp_m_n(bits_per_pixel_x16, (unsigned)nlanes, (uint32_t)pixel_clock, (uint32_t)link_clock, (uint32_t)bw_overhead, &values);
+	m_n->tu = values.tu;
+	m_n->data_m = values.data_m;
+	m_n->data_n = values.data_n;
+	m_n->link_m = values.link_m;
+	m_n->link_n = values.link_n;
 }
 
 /*
@@ -1417,43 +1406,6 @@ drv_i915_crtc_wait_for_next_vblank(
 	I915_TAKEOVER_DRM_CRTC_WAIT_ONE_VBLANK(i915_lcd_to_i915(crtc->base.dev), &crtc->base);
 }
 
-/* Halves a ratio until both terms fit the M/N register fields (the Linux intel_reduce_m_n_ratio()). */
-static void
-i915_reduce_m_n_ratio(
-	u32 *num,
-	u32 *den)
-{
-	/* Drops one bit of precision from both terms at a time. */
-	while (*num > DATA_LINK_M_N_MASK ||
-	       *den > DATA_LINK_M_N_MASK) {
-		*num >>= 1;
-		*den >>= 1;
-	}
-}
-
-/* Computes one M/N pair with a fixed or a power-of-two N (the Linux compute_m_n()). */
-static void
-i915_compute_m_n(
-	u32 *ret_m,
-	u32 *ret_n,
-	u32 m,
-	u32 n,
-	u32 constant_n)
-{
-	/* N is the fixed value, or n rounded up to a power of two within the field. */
-	if (constant_n) {
-		*ret_n = constant_n;
-	} else {
-		*ret_n = min_t(unsigned int, i915_roundup_pow_of_two(n), DATA_LINK_N_MAX);
-	}
-
-	/* M keeps the ratio m / n. */
-	*ret_m = i915_div_u64(mul_u32_u32(m, *ret_n), n);
-
-	/* Fits both into the register fields. */
-	i915_reduce_m_n_ratio(ret_m, ret_n);
-}
-
 /*
  * Writes one set of M/N registers (the Linux intel_set_m_n()).
  *
@@ -1964,7 +1916,7 @@ i915_dotclock_calculate(
 		return 0;
 
 	/* The bits one link symbol carries. */
-	symbol_size = drv_i915_dp_link_symbol_size(link_freq);
+	symbol_size = (int)drv_i915_xd_dp_symbol_bits((uint32_t)link_freq);
 
 	/* Succeeded: reports the pixel clock rounded up. */
 	return DIV_ROUND_UP_ULL(mul_u32_u32(m_n->link_m, link_freq * 10), m_n->link_n * symbol_size);

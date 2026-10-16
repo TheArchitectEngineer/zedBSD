@@ -44,6 +44,7 @@
 #include "ddi.h"
 #include "edid.h"
 #include "xd-edid.h"
+#include "xd-dp.h"
 #include "pipe.h"
 #include "plane.h"
 #include <kern/kcrt.h>
@@ -820,8 +821,8 @@ drv_i915_lcd_compute(
 	out->link.lanes = out->link.sink_max_lanes;
 
 	/* The bandwidth the mode needs, and what the link carries. */
-	out->link.required_kbps = drv_i915_dp_link_required(out->mode.clock_khz, out->link.bpp);
-	out->link.available_kbps = drv_i915_dp_max_data_rate(out->link.rate_khz, out->link.lanes);
+	out->link.required_kbps = (int)drv_i915_xd_dp_need_kbps((uint32_t)out->mode.clock_khz, (unsigned)out->link.bpp);
+	out->link.available_kbps = (int)drv_i915_xd_dp_carry_kbps((uint32_t)out->link.rate_khz, (unsigned)out->link.lanes);
 
 	/*
 	 * Refuses a mode the link cannot carry.
@@ -1655,11 +1656,12 @@ i915_state_dp_ext_max_bpc(
 }
 
 /*
- * Finds the link of an external DP display's mode: for each depth from
- * max_bpc down to 6 in steps of 2, each shared rate from the lowest (up to
- * max_rate_khz when given), each lane count 1, 2, 4 (up to the sink's and
- * max_lanes when given); the first whose data rate carries the mode.
- * Returns 0 with link's rate, lanes, bpp and rates filled, or ENOSPC.
+ * Finds the link of an external DP display's mode through the xd
+ * DisplayPort code: for each depth from max_bpc down to 6 in steps of 2,
+ * each shared rate from the lowest (up to max_rate_khz when given), each
+ * lane count 1, 2, 4 (up to the sink's and max_lanes when given); the
+ * first whose data rate carries the mode.  Returns 0 with link's rate,
+ * lanes, bpp and rates filled, or ENOSPC.
  */
 static int
 i915_state_dp_ext_link(
@@ -1670,54 +1672,40 @@ i915_state_dp_ext_link(
 	int max_lanes,
 	struct i915_lcd_link *link)
 {
+	uint32_t common[I915_XD_DP_RATES];
+	struct i915_xd_dp_choice choice;
+	unsigned count;
+	unsigned index;
 	int lane_limit;
-	int bpc;
-	int bpp;
-	int index;
-	int rate;
-	int lanes;
-	int required;
-	int available;
+	int error;
 
 	/* The lanes the sink takes, under the fallback's limit. */
 	lane_limit = sink->max_lanes;
 	if (max_lanes > 0 && max_lanes < lane_limit)
 		lane_limit = max_lanes;
 
-	/* Tries each depth from the deepest. */
-	for (bpc = max_bpc; bpc >= I915_STATE_DP_EXT_MIN_BPC; bpc -= 2) {
-		bpp = 3 * bpc;
-		required = drv_i915_dp_link_required(mode->clock_khz, bpp);
-
-		/* Tries each shared rate from the lowest. */
-		for (index = 0; index < sink->num_common_rates; index++) {
-			rate = sink->common_rates[index];
-
-			/* A rate above the fallback's limit is not tried. */
-			if (max_rate_khz > 0 && rate > max_rate_khz)
-				continue;
-
-			/* Tries 1, 2 and 4 lanes. */
-			for (lanes = 1; lanes <= lane_limit; lanes <<= 1) {
-				available = drv_i915_dp_max_data_rate(rate, lanes);
-				if (required > available)
-					continue;
-
-				/* The first link that carries the mode. */
-				link->rate_khz = rate;
-				link->lanes = lanes;
-				link->bpp = bpp;
-				link->required_kbps = required;
-				link->available_kbps = available;
-
-				/* Succeeded: the link is found. */
-				return 0;
-			}
-		}
+	/* The shared rates, as the xd link takes them. */
+	count = 0;
+	for (index = 0; index < (unsigned)sink->num_common_rates && index < I915_XD_DP_RATES; index++) {
+		common[index] = (uint32_t)sink->common_rates[index];
+		count++;
 	}
 
-	/* No link carries the mode. */
-	return ENOSPC;
+	/* The first depth, rate and lane count that carry the mode. */
+	error = drv_i915_xd_dp_choose((uint32_t)mode->clock_khz, (unsigned)max_bpc, I915_STATE_DP_EXT_MIN_BPC, common, count,
+				      max_rate_khz > 0 ? (uint32_t)max_rate_khz : 0U, (unsigned)lane_limit, &choice);
+	if (error != 0)
+		return error;
+
+	/* The link the choice names. */
+	link->rate_khz = (int)choice.rate_khz;
+	link->lanes = (int)choice.lanes;
+	link->bpp = (int)choice.bpp;
+	link->required_kbps = (int)choice.need_kbps;
+	link->available_kbps = (int)choice.carry_kbps;
+
+	/* Succeeded: the link is found. */
+	return 0;
 }
 
 /* Copies a DKL PLL's words out of a PLL state, one word per register. */

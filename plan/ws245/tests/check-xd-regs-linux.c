@@ -84,6 +84,11 @@ struct ws245_gmbus_device {
 #include "display/intel_mg_phy_regs.h"
 #include "display/intel_pps_regs.h"
 #include "display/skl_watermark_regs.h"
+/* The DPCD header (include/drm/display/drm_dp.h) marks its packet structures packed. */
+#ifndef __packed
+#define __packed __attribute__((__packed__))
+#endif
+#include "../../../../include/drm/display/drm_dp.h"
 
 /* The GMBUS pin numbers, which the Linux GMBUS header defines beside its functions. */
 #define GMBUS_PIN_DISABLED	0
@@ -99,6 +104,7 @@ struct ws245_gmbus_device {
 
 #include "intel/display-regs-xd.h"
 #include "intel/display-regs-xd-south.h"
+#include "intel/display-dpcd-xd.h"
 
 /* A pointer the Linux macros name as their device; never dereferenced but by the stubs above. */
 static void *dev_priv;

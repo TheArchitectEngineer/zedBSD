@@ -8,9 +8,9 @@
 /*
  * The DP link of the one-screen modeset path (dp.c).
  *
- * The link rate and bandwidth arithmetic, the sink power state, the source
- * OUI, the eDP backlight enable, the DP infoframe enables, and the 8b/10b
- * link training with its DPCD link-status and LTTPR helpers.
+ * The sink power state, the source OUI, the eDP backlight enable, the DP
+ * infoframe enables, and the link training and link status of the xd
+ * DisplayPort code (xd-dp.c) on the environment's port.
  *
  * Every function here takes the modeset environment's Linux types, so the
  * declarations are visible only to a translation unit that has included
@@ -30,11 +30,6 @@ int drv_i915_drm_dp_dpcd_read_phy_link_status(struct drm_dp_aux *aux, enum dp_ph
 
 bool drv_i915_dp_is_edp(struct intel_dp *intel_dp);
 bool drv_i915_dp_is_uhbr(const struct intel_crtc_state *crtc_state);
-int drv_i915_dp_link_required(int pixel_clock, int bpp);
-int drv_i915_dp_link_symbol_size(int rate);
-int drv_i915_dp_link_symbol_clock(int rate);
-int drv_i915_dp_effective_data_rate(int pixel_clock, int bpp_x16, int bw_overhead);
-int drv_i915_dp_max_data_rate(int max_link_rate, int max_lanes);
 bool drv_i915_dp_needs_vsc_sdp(const struct intel_crtc_state *crtc_state, const struct drm_connector_state *conn_state);
 void drv_i915_dp_set_infoframes(struct intel_encoder *encoder, bool enable, const struct intel_crtc_state *crtc_state, const struct drm_connector_state *conn_state);
 void drv_i915_dp_set_link_params(struct intel_dp *intel_dp, int link_rate, int lane_count);
