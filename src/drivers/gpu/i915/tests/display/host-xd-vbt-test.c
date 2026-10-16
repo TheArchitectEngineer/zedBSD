@@ -840,6 +840,9 @@ static void
 test_edid(void)
 {
 	static uint8_t hdmi[256];
+	static uint8_t base[128];
+	struct i915_display_mode first;
+	unsigned index;
 	struct i915_xd_edid edid;
 	struct i915_lcd_mode mode;
 	unsigned at;
@@ -856,6 +859,22 @@ test_edid(void)
 	    edid.preferred.vdisplay == 1080U && edid.preferred.htotal == mode.htotal && edid.preferred.vtotal == mode.vtotal &&
 	    edid.preferred.edid_bpc == 6 && memcmp(edid.vendor, i915_dp_fixture_edid + 8U, 10U) == 0,
 	    "EDID of the panel: preferred 1920x1080 at 140.8 MHz, the output code's timing");
+
+	/* The first timing descriptor: the panel's is descriptor 0; a display descriptor before it is passed over. */
+	error = drv_i915_xd_edid_first_timing(i915_dp_fixture_edid, &first, &index);
+	i915_host_check(error == 0 && index == 0U && first.clock_khz == 140800 && first.hdisplay == 1920U &&
+	    first.vdisplay == 1080U && first.width_mm == 293U && first.height_mm == 165U && first.descriptor_index == 0U,
+	    "first timing of the panel: descriptor 0, 1920x1080 at 140.8 MHz, 293x165 mm (the timing's own size)");
+	memcpy(base, i915_dp_fixture_edid, 128U);
+	memmove(base + 54U + 18U, i915_dp_fixture_edid + 54U, 18U);
+	memset(base + 54U, 0, 18U);
+	base[54U + 3U] = 0xfcU;
+	error = drv_i915_xd_edid_first_timing(base, &first, &index);
+	i915_host_check(error == 0 && index == 1U && first.hdisplay == 1920U && first.descriptor_index == 1U,
+	    "first timing: a display descriptor before it is passed over");
+	memset(base + 54U, 0, 72U);
+	error = drv_i915_xd_edid_first_timing(base, &first, &index);
+	i915_host_check(error == EINVAL, "first timing: none in a block of display descriptors");
 
 	/* A made-up HDMI sink: the panel's base block with one CTA extension. */
 	memcpy(hdmi, i915_dp_fixture_edid, 128U);
