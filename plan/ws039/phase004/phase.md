@@ -2,7 +2,7 @@
 
 # ws039-p004: 段 A3t・A3・A4（Tier S）
 
-Status: in-progress（2026-10-16 P3、q1213-i01。実機 10.0.10.3 で A3t（skip）・A3・A4 mode=S ok を 3 回（warm reboot と cold power cycle の往復を含む）。Q1 の merge と clearance の判定待ち）
+Status: cleared（2026-10-16 Q1: 実機 10.0.10.3 で 3 回（warm の後・cold の後を含む）A3t skip・A3 ok・A4 ok mode=S、MSI の到着、Linux の値と照合が一致。main の merge ee5e55768、ci の vmunix warning 0。未確認: VM fault（A5）、training の道（この VBIOS は求めない）、high alert・CTF の fault、ASD の session の値）
 Disposition: normal
 Parent: [WS039](../ws.md)
 実行者: P3（worktree `/home/awe/zedBSD-worktrees/p3`、branch `agent/p3-ws039`、base main `6bbfcb15a`）
