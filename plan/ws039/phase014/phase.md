@@ -2,7 +2,7 @@
 
 # ws039-p014: 段 A10 mode set の 1（読むだけ＋AtomBIOS の interpreter）
 
-Status: in-progress（2026-10-16 22:15 P3: 実機の A10 ok（EDID・VBIOS の routine の照合・mode の一覧）。DP の AUX・DPCD は DP の sink が無く実機未確認。判定は Q1）
+Status: cleared（2026-10-16 Q1 が判定、merge 7c51b3ed6。2026-10-16 22:15 P3: 実機の A10 ok（EDID・VBIOS の routine の照合・mode の一覧）。DP の AUX・DPCD は DP の sink が無く実機未確認。判定は Q1）
 Disposition: normal
 Parent: [WS039](../ws.md)
 Queue: q1234 / q1234-i01（p013 → p014 → p015 → p016、各段は実機で ok の後に main）
