@@ -3,3 +3,4 @@ command=/sbin/cron
 after=syslogd,networking,ntpdate
 restart=on-failure
 required=NO
+late=yes

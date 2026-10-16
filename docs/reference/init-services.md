@@ -13,7 +13,8 @@ PID 1 creates `/run`, `/var`, and `/var/log`, loads one complete `rc.conf`
 snapshot, applies its `hostname`, and synchronously invokes `/sbin/mount -a`.
 The mount command—not init—parses `/etc/fstab`. Init then loads service
 definitions, creates the root-only `/run/init.sock`, starts enabled services in
-dependency order, and prints `init: system running`.
+dependency order (see [Boot order](#boot-order)), and prints
+`init: system running`.
 
 An invalid startup `rc.conf` does not expose a partially parsed policy. Init
 continues without enabled policy from that file and reports the load failure.
@@ -94,11 +95,53 @@ underscore, or hyphen characters, and `command` must be an absolute path.
 | `notify-timeout` | Readiness deadline in seconds, from 1 through 300; default 10 |
 | `required` | Parsed as current metadata; it does not yet make all boot failures fatal |
 | `replaces` | Another service this one stands in for (ws035-p098): while this one is enabled the other is not started (it shows as skipped); when this one ends and is not started again, the other starts.  Not while the system is stopping.  The graphical login's `greeter` replaces `getty_console` |
+| `late` | `yes` for a service the desktop does not need at once (the network, sound, Bluetooth, removable media, sshd, cron, the clock).  A boot that shows the desktop first starts it after the others and does not hold them for it; see [Boot order](#boot-order) |
 
 Daemons must remain in the foreground. Init tracks their child PID directly;
 pidfiles and double-forking are not the authority. `service reload` reloads the
 YAML policy only; it does not re-read definition files added or edited after
 boot.
+
+## Boot order
+
+A boot whose parameters ask for the graphical login and keep the kernel's
+messages off the screen (`login=graphical` and `kmsg=quiet`, which init reads
+as `sysctl kern.boot.login` and `kern.boot.kmsg`) shows the desktop first.
+Init starts the enabled services in two rounds:
+
+1. Every service that is not `late`, in dependency order.  A late service
+   named in `after=` is not waited for in this round; a service that
+   `requires=` a late one waits for the second round with it.  The graphical
+   login (`greeter`, ordered after `syslogd` and `networking`) therefore
+   starts as soon as `syslogd` has, without waiting for the network.
+2. Everything still waiting, the late services included, in dependency
+   order.
+
+Any other boot is a debug boot -- the kernel's messages on the console
+(`kmsg=console`, or Ctrl held at the loader) or the console's login
+(`login=console`, or Shift) -- and starts all services in one round, in the
+order their dependencies alone give, so the network is up before the login.
+
+Init writes when it started each service, when a daemon was running and when
+a oneshot ended to `/var/log/init.log`, a new file each boot.  Each line is
+the seconds since the kernel started, to the millisecond, an event and the
+service or step it is about:
+
+```text
+5.413 init started
+5.425 order desktop-first
+5.426 start greeter
+5.427 running greeter
+5.527 round desktop-started
+5.534 start networkd
+5.544 running networkd
+5.644 done networking
+5.651 system running
+```
+
+The services' own logs that count in milliseconds since the kernel started
+(`/var/log/sessiond.log`'s `at_ms=`, the session's `KWL STARTUP ... at_ms=`)
+use the same clock.
 
 ## FD 3 readiness
 

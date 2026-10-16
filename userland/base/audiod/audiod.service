@@ -3,3 +3,4 @@ command=/sbin/audiod
 after=syslogd
 restart=on-failure
 required=NO
+late=yes

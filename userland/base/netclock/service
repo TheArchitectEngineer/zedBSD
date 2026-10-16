@@ -4,3 +4,4 @@ arguments=-w pool.ntp.org
 after=networking
 restart=no
 required=NO
+late=yes
