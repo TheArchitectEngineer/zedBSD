@@ -609,6 +609,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-17（Q1 の技術判断）: WS245 p050d4（旧 file 約 4.4 万行、own の file が呼ぶ旧の口 45、ktest 12）を d4a（画面の口）・d4b（走らせ方の口）・d4c（始まりと終わり）・d4d（旧 file の削除）に分ける。
 - 2026-10-17（ユーザー）:「i915のリファクタリングを進めます。N=1でサブエージェントP1に依頼してください。」→ WS245 を P1（q1229-i10）で再開、N=1。
 - 2026-10-17（ユーザー）:「あなたの変更で上書きしてOKです。Pi4でもうまく利用できることを確認しました。」→ BUG-315・BUG-333 を resolved。別の session の BUG-315 の未 commit の記録（BUG-315.md・known-bugs.md・queue.md）は捨て、証拠の BUG-315/evidence-20261017 は残した。
 - 2026-10-17 6:2x（ユーザー）: OLED の touch（Goodix 27c6:8191 が zedBSD には Wacom 互換 056a:8191 を名乗り X が中央 1/3 の帯）について「タッチスクリーン全体が認識されるようになりました。デバイスIDは解決です。」「了解です、ではいったん仕様として受け止めます。デフォルトでUSBの挙動にマージしてほしいです。カーネルオプションは不要です」→ USB の数え上げの最初の要求を Linux・Windows と同じ 64 byte（full-speed の EP0 は 64 から）を既定に。1 本指の端の swipe は仕様。
