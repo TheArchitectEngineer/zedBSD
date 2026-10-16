@@ -290,6 +290,9 @@ kern_gpu_attach_begin(
 {
 	/* One more device is on its way to a published node. */
 	(void)atomic_fetch_add_relaxed(&gpu_attaching, 1U);
+
+	/* Notes when it began, against when it ends. */
+	kern_log_boot_step("a GPU device began attaching");
 }
 
 /*
@@ -312,6 +315,9 @@ kern_gpu_attach_end(
 		if (exchanged)
 			break;
 	}
+
+	/* Notes when a GPU's node came (or its driver gave up), which the graphical login waits for. */
+	kern_log_boot_step("a GPU device finished attaching");
 }
 
 /*
