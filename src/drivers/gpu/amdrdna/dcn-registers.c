@@ -195,7 +195,8 @@ static const uint16_t mark_set_offsets[AMDRDNA_DISPLAY_PIPES] = {
  * mmOTG0_OTG_INTERLACE_CONTROL, mmOTG0_OTG_CLOCK_CONTROL), the vertical
  * timing generators (mmVTG0_CONTROL), and the scaler's copy of the blank
  * and its blend size (mmDSCL0_OTG_H_BLANK, mmDSCL0_OTG_V_BLANK,
- * mmDSCL0_MPC_SIZE and the same of DSCL1 to DSCL5).
+ * mmDSCL0_MPC_SIZE and the same of DSCL1 to DSCL5), and the PHY PLL that
+ * clocks each timing generator (mmOTG0_PHYPLL_PIXEL_RATE_CNTL).
  * derived: the distances are the differences between the offsets of
  * instance 1 and instance 0 in the same header; a scaler register's
  * distance from its pixel processor's control word is the same in all six
@@ -350,7 +351,8 @@ static const struct dcn_place dcn_places[AMDRDNA_DCN_REGISTER_COUNT] = {
 	{ 2U, 0x0528U, 0x0001U, NULL },
 	{ 2U, 0x003bU, 0x0000U, pixel_processor_offsets },
 	{ 2U, 0x003cU, 0x0000U, pixel_processor_offsets },
-	{ 2U, 0x003fU, 0x0000U, pixel_processor_offsets }
+	{ 2U, 0x003fU, 0x0000U, pixel_processor_offsets },
+	{ 1U, 0x0083U, 0x0004U, NULL }
 };
 
 /*

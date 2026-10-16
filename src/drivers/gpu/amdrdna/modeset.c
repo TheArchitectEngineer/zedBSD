@@ -13,7 +13,7 @@
  * a pixel, unscaled through the pixel processor and the blend unit, into
  * a timing generator and the output's encoder.  A mode set keeps that
  * chain and its surface; it rewrites what depends on the mode: the pixel
- * clock (the video BIOS's routine, on the output's own PHY PLL), the
+ * clock (the video BIOS's routine, on the first PHY PLL), the
  * timing generator's timing and global sync, the pixel processor's copy
  * of the blank and its sizes, the plane's viewport, the plane's request,
  * deadline and arbitration fields and the hub's watermarks (the display
@@ -44,7 +44,7 @@
  * encoder 4, the pixel clock 12, the transmitter 76), the encoder's stream
  * setup (15), the transmitter's off (0) and on (1), the modes DVI (2) and
  * HDMI (3), 8 bits a colour (2), four lanes, the first PHY PLL's number
- * (20; the PLL of PHY n is 20 + n), and the pixel clock routine's flags
+ * (20), and the pixel clock routine's flags
  * (the crystal as the PLL's reference: 0).
  *
  * Values referenced: Linux v6.19
@@ -329,6 +329,7 @@ static void modeset_lock(struct amdrdna_device *device, const struct modeset_pip
 static void modeset_blank(struct amdrdna_device *device, const struct modeset_pipe *pipe, bool blank);
 static bool modeset_frames(struct amdrdna_device *device, const struct modeset_pipe *pipe, unsigned frames);
 static void modeset_look(struct amdrdna_device *device, const struct modeset_pipe *pipe, unsigned frames, struct modeset_check *check);
+static void modeset_note(struct amdrdna_device *device, const struct modeset_pipe *pipe, const char *step);
 static uint32_t modeset_read(struct amdrdna_device *device, enum amdrdna_dcn_register which, unsigned instance);
 static void modeset_write(struct amdrdna_device *device, enum amdrdna_dcn_register which, unsigned instance, uint32_t value);
 
@@ -787,7 +788,7 @@ modeset_other(
 /*
  * Sets a mode by the whole sequence: the picture blanked and the
  * transmitter off, the timing generator stopped, the pixel clock (the
- * output's PHY PLL), the timing, the pixel processor's sizes, the plane's
+ * first PHY PLL), the timing, the pixel processor's sizes, the plane's
  * viewport and fields, the watermarks and the global sync, the timing
  * generator started, then the encoder's stream and the transmitter, and
  * the picture shown.  Returns 0 or a routine's error (the rest still
@@ -836,10 +837,17 @@ modeset_switch(
 		kern_usleep_range(MODESET_STEP_US, MODESET_STEP_US * 2U);
 	}
 
-	/* The pixel clock on the output's PHY PLL, for this timing generator, the encoder and the mode. */
+	/*
+	 * The pixel clock on the first PHY PLL, for this timing generator, the
+	 * encoder and the mode: the reference driver's first free clock
+	 * source.  The firmware clocks the timing generator from the output's
+	 * own PHY's PLL, which the transmitter's off powers down with the PHY
+	 * (the routine then never sees it lock); the first PLL runs apart from
+	 * the transmitter.
+	 */
 	clock = (struct amdrdna_pixel_clock_command){ 0 };
 	clock.pixel_100hz = timing->pixel_khz * 10U;
-	clock.pll = (uint8_t)(MODESET_FIRST_PHY_PLL + pipe->sink->connector.transmitter);
+	clock.pll = (uint8_t)MODESET_FIRST_PHY_PLL;
 	clock.encoder_object = (uint8_t)(pipe->sink->connector.encoder_object & 255U);
 	clock.mode = (uint8_t)pipe->mode;
 	clock.flags = MODESET_CLOCK_FLAGS;
@@ -848,6 +856,7 @@ modeset_switch(
 	step = modeset_routine(device, MODESET_CLOCK_ROUTINE, words, "pixel clock");
 	if (error == 0)
 		error = step;
+	modeset_note(device, pipe, "clock");
 
 	/* The timing, the sizes, the plane, the watermarks and the global sync. */
 	modeset_timing(device, pipe, timing);
@@ -867,6 +876,7 @@ modeset_switch(
 			break;
 		kern_usleep_range(MODESET_STEP_US, MODESET_STEP_US * 2U);
 	}
+	modeset_note(device, pipe, "started");
 
 	/* The monitor without a signal a while, then the stream and the transmitter, two frames, and the picture. */
 	kern_usleep_range(MODESET_DARK_US, MODESET_DARK_US + MODESET_STEP_US);
@@ -876,6 +886,7 @@ modeset_switch(
 		error = step;
 	(void)modeset_frames(device, pipe, 2U);
 	modeset_blank(device, pipe, false);
+	modeset_note(device, pipe, "shown");
 
 	/* Reports a routine that failed. */
 	if (error != 0)
@@ -1366,6 +1377,24 @@ modeset_look(
 	(void)modeset_frames(device, pipe, 2U);
 	check->red_green = modeset_read(device, AMDRDNA_DCN_TIMING_CRC_RED_GREEN, pipe->timing);
 	check->blue = modeset_read(device, AMDRDNA_DCN_TIMING_CRC_BLUE, pipe->timing);
+}
+
+/* Notes the timing generator's state after a step of the mode set: its control and clock words, its pixel clock's sources and its frame and position. */
+static void
+modeset_note(
+	struct amdrdna_device *device,
+	const struct modeset_pipe *pipe,
+	const char *step)
+{
+	/* One line of the words. */
+	amdrdna_mark("A12 step %s: control=0x%08x clock=0x%08x rate=0x%08x phy=0x%08x frame=%u position=0x%08x",
+	    step,
+	    (unsigned)modeset_read(device, AMDRDNA_DCN_TIMING_CONTROL, pipe->timing),
+	    (unsigned)modeset_read(device, AMDRDNA_DCN_TIMING_CLOCK_CONTROL, pipe->timing),
+	    (unsigned)modeset_read(device, AMDRDNA_DCN_PIXEL_RATE_CONTROL, pipe->timing),
+	    (unsigned)modeset_read(device, AMDRDNA_DCN_PIXEL_RATE_SOURCE, pipe->timing),
+	    (unsigned)(modeset_read(device, AMDRDNA_DCN_TIMING_FRAME_COUNT, pipe->timing) & MODESET_FRAME_FIELD),
+	    (unsigned)modeset_read(device, AMDRDNA_DCN_TIMING_POSITION, pipe->timing));
 }
 
 /* Reads a display register (0 when the display block lacks it). */
