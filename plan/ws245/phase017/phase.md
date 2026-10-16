@@ -2,7 +2,7 @@
 
 # ws245-p017: VBT の解析（xd-vbt の値を本番に、旧 parser と影の比較）
 
-Status: in-progress（q1218-i01 P1: 実装・host 試験・build・5330 の素の起動の回帰に合格（2026-10-16 15:48）。merge の依頼を Q1 に送った）
+Status: in-progress（q1218-i01 P1: 5330 の素の起動の回帰に合格（2026-10-16 15:48）。main 45c83da79 に merge。clearance は Q1）
 Parent: [WS245](../ws.md)
 Queue: q1218 / q1218-i01（承認は phase047 と同じ）
 設計: [design.md](../design.md) §6.2 の p017 の行、§6.1 R3（影の比較）（改訂 6）
