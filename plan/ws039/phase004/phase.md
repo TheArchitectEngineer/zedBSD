@@ -2,7 +2,7 @@
 
 # ws039-p004: 段 A3t・A3・A4（Tier S）
 
-Status: in-progress（2026-10-16 P3、q1213-i01。実装・host 試験・build 済み、実機は未）
+Status: in-progress（2026-10-16 P3、q1213-i01。実機 10.0.10.3 で A3t（skip）・A3・A4 mode=S ok を 3 回（warm reboot と cold power cycle の往復を含む）。Q1 の merge と clearance の判定待ち）
 Disposition: normal
 Parent: [WS039](../ws.md)
 実行者: P3（worktree `/home/awe/zedBSD-worktrees/p3`、branch `agent/p3-ws039`、base main `6bbfcb15a`）
@@ -59,8 +59,30 @@ host 試験（実機の証拠ではない）:
 - `plan/ws039/tests/amdrdna-host-test.sh` に足した（firmware の cache を `AMDRDNA_FIRMWARE` で変えられる）。2026-10-16 11:3x PASS（PASS の行 190、audit-symbols を含む）。監査で Linux の symbol と同じ名前（static の関数 `psp_ring_create`、欄 `fence_value`）を見つけて改名、一般語 30 個を allow list に足した。
 - build: `make -j16 ZEDBSD_CONFIG=plan/ws039/tests/config.mk BUILD=build/p3/usb AMDRDNA_RUN=A1v build/p3/usb/vmunix build/p3/usb/bin/amdrdnactl` rc 0、warning 0、kernel include check PASS、amd64 vmunix check PASS。`plan/tools/style-check.py` の違反は新規・変えた file で 0（identify.c・readout.c・vbios.c の既存の条件演算子は範囲外で残る）。`git diff --check` OK。
 
+## 実機（2026-10-16、q1213-i01、10.0.10.3 の RX 5600 XT、USB の zedBSD は DHCP で 10.0.30.5）
+
+手順: Debian で USB の sda2 を mount し `vmunix` を差し替え（vmunix SHA-256 405dc28d…eef、前の物は Debian の `~/ws039/vmunix.a2`）→ `hw-run.sh boot 0001` → `AMDRDNA_ZED=root@10.0.30.5 hw-run.sh collect` → zedBSD の SSH で firmware 11 file を `/lib/firmware/amdgpu/` に scp（cksum が cache と一致）、新しい `amdrdnactl` を `/tmp` へ → `amdrdnactl advance A4` → 40 秒後に `status` と `dmesg`。証拠 `build/tmp/amdrdna-hw-p4-{1,2,3}/`（worktree の中、commit しない）。zedbsd.cfg は p003 のまま（`amdrdna.auto=A1v`）。
+
+**1 回目**（11:36、電源は p003 からの流れ（Debian の起動から 1 時間 20 分）、A0 `sos=0 smu=0x0`）: `advance A4` で A2 → A3t → A3 → A4 が続けて ok。
+- `A3t skip: the vbios does not ask for the long training`、`A3t ok train=skip`（VBIOS の caps=0x1）
+- `A3 firmware 11 files sos=0x00100d50 kdb=3872B sysdrv=100208B sos=78640B toc=1536B`、`A3 buffers private=0x200000 ring=0x80007eb000 …`、`A3 ih on, fault interrupts on`、`A3 boot kdb/sysdrv/sos … ok`、`A3 sos alive 0x04302b5f`、`A3 ring 0x80007eb000 4096B`、`psp load toc ok`、**`A3 toc tmr=9216KiB at 0x8010000000`**（Linux の dmesg の「reserve 0x900000 … for PSP TMR」と同じ大きさ）、`psp load smu ok`、`psp setup tmr ok`、sdma0・sdma1・ce・pfp・me・mec・mec2・rlc-control・rlc-gpm・rlc-srm・rlc の load ok、`psp autoload rlc ok`、`psp load asd ok`
+- **`A3 ok ih=ring0 msi=0 sos=0x00100d50 tmr=9216KiB fw=12 asd=0 warnings=0`**（PSP の応答の status は全部 0）
+- `A4 fan duty 50% (limits 0x96091a7d, duty 0x0181333e, mode 0x02c90c00)`（host 試験の期待値と同じ語）、`A4 alerts high=118C low=0C control=0xb8ff0076`（Linux が書いた値と同じ）、**`A4 irq check low=66C: low alerts 0 -> 1, messages 0 -> 1, entries 1, unknown 0`**（IH の enable の後に MSI が届き、IH の thread が THM の H2L の entry を dispatch した）
+- **`A4 ok if=0x37 smu=42.65.0 mode=S duty=50% fan=1285rpm driven=50% temp=46C max=46C limit=95C alert=118C irq=thm`**（fan は回り始め、10 秒後の status は 2127〜2129 rpm、温度 44〜45 ℃、監視の thread が 1 秒ごとに更新）。Linux の SMU IF 0x37（`SMU11_DRIVER_IF_VERSION_NV10`）と一致。
+- zedBSD の reboot（shutdown の hook: A4 → PSP → A2 の停止）→ Debian が約 40 秒で戻った（停止の印の行は log の file system の後なので disk に無い）。
+
+**2 回目**（11:40、Debian を経た warm reboot の後）: A0 は **`sos=0 smu=0x0`** → この機械は warm reboot で GPU の PSP・SMU が reset される（14 節の 2 の観測）。`advance A4` で 1 回目と同じ行（`A3 sos alive 0x03d0e684`、`A4 ok … fan=1280rpm … temp=46C … irq=thm`）、status は 2146 rpm・45 ℃。
+
+**3 回目**（11:43、cold power cycle の後: Debian を `systemctl poweroff`、ユーザーが電源ボタン）: A0 `sos=0 smu=0x0`、`advance A4` で同じ結果（`A3 ok … tmr=9216KiB fw=12 … warnings=0`、`A4 ok … fan=1282rpm driven=50% temp=46C … irq=thm`、status 2127 rpm・45 ℃）。その後 zedBSD の reboot で Debian に戻した（11:44）。
+
+照合: TMR 9216 KiB と SMU IF 0x37 は Linux（`temp/dump/dmesg-load.txt`、smu_v11_0.h）と一致。THM の alert の語 0xb8ff0076 は Linux が実機に残した値と一致。温度 45〜46 ℃ は p002 の cold の dump（CG_MULT_THERMAL_STATUS 0x5a2d = 45、hwmon の edge 43 ℃）と同程度。fan の回転は tach の値（rpm）で確かめた（目視・音は未確認）。
+
+確かめていない物（この Phase では起こせない・通らない）: memory training の道（この VBIOS は求めない）、VM fault の受け（CP・SDMA が動く A5 で）、THM の high alert と SMUIO の CTF と温度の上限による fault（起こしていない）、PSP・SMU の停止の行の disk への記録、ASD の session 0 が正しいか（Linux の値は見ていない）。
+
 ## 状態と次
 
 - [x] 実装、host 試験、build、firmware の package と取得
-- [ ] 実機（10.0.10.3）: A3t（skip の見込み）・A3・A4 mode=S、cold power cycle の往復
-- [ ] Q1: merge と clearance の判定、zedBSD-firmware への file の配置（ユーザー）、`config/drivers/firmware.list` に `CONFIG_DRIVER_PCI_AMDRDNA|amd-navi-firmware` の行（所有の外、Q1 に依頼）
+- [x] 実機（10.0.10.3）: A3t skip・A3 ok・A4 mode=S ok を 3 回（warm reboot と cold power cycle の往復を含む）
+- [x] zedBSD-firmware への配置（Q1、commit b6ae44174）と main の取り込み（d00649763）。package は zedBSD-firmware の `amd-navi/` から 13 file を取り照合が通る（2026-10-16 11:4x、upstream への fallback 無し、新しい cache の root で確かめた）
+- [x] `config/drivers/firmware.list` の行（a7567b516）と `config/ci/config-amd64.mk` に `amd-navi-firmware`（063d7656e、ユーザーの決定「AMD の firmware を CI・release の amd64 の image に入れます。」）。CI は `yes | make firmware-licenses` で他の firmware と同じく LICENSE.amdgpu を受ける（`make firmware-licenses-pending ZEDBSD_CONFIG=config/ci/config-amd64.mk` に amd-navi-firmware が出る）。menuconfig の check_driver_firmware の amd64 の部分（firmware.list と config-amd64.mk の不足）は 0
+- [ ] Q1: merge と clearance の判定

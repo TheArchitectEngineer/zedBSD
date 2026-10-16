@@ -9,7 +9,7 @@ Related Milestones: なし
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: q1213（P3、ws039-p004 の段 A3t・A3・A4 Tier S、2026-10-16 開始）。以前 q1212（p003、cleared）・q1211（p002、cleared）
-Resume point: p004 in-progress（2026-10-16 P3、q1213-i01、[phase004](phase004/phase.md)）: 実装・host 試験（PASS 190 行）・build（warning 0）済み、firmware の package `amd-navi-firmware` を linux-firmware から取得して照合済み。次は実機（10.0.10.3）で A3t（この VBIOS は 2STAGE の bit が無いので skip の見込み）・A3・A4 mode=S、cold power cycle の往復。以前: p003 cleared（実機で A2 ok、main 6e44a158e）。
+Resume point: p004 in-progress（2026-10-16 P3、q1213-i01、[phase004](phase004/phase.md)）: 実機（10.0.10.3）で **A3t skip（VBIOS が求めない）・A3 ok（PSP の 12 program・AUTOLOAD・ASD、TMR 9216KiB）・A4 ok mode=S（fan 50% で約 2130 rpm、45 ℃、IH の MSI の到着を確認）** を 3 回（warm reboot・cold power cycle の往復を含む。この機械は warm reboot でも SOS が消える）。次は Q1 の merge と clearance の判定、その後 p012（Tier F）か p005（A5）。以前: p003 cleared（実機で A2 ok、main 6e44a158e）。
 Target: 未定（2026-10-15 に開始・一時停止。以前の扱い: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」））
 <!-- awesome-plan-current:end -->
 
