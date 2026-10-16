@@ -16,6 +16,8 @@
  * that a detach while the core holds the lock can still join it.
  */
 
+#include <kern/boot.h>
+#include <kern/platform.h>
 #include <drivers/usb/usb-hub.h>
 #include <drivers/usb/usb.h>
 #include <kern/clock.h>
@@ -67,6 +69,7 @@ static int usb_hub_port_status(void *context, unsigned port, uint32_t *status);
 static int usb_hub_clear_feature(void *context, unsigned port, uint16_t feature);
 static int usb_hub_port_reset(void *context, unsigned port);
 static void usb_hub_sleep_ms(struct usb_hub *hub, unsigned milliseconds);
+static unsigned usb_hub_reset_recovery_ms(void);
 
 static const struct drv_usb_hub_ops usb_hub_ops = {
 	usb_hub_port_status,
@@ -382,8 +385,26 @@ usb_hub_port_reset(
 	if (waited >= USB_HUB_RESET_TIMEOUT_MS)
 		return ETIMEDOUT;
 	(void)usb_hub_clear_feature(hub, port, USB_HUB_C_PORT_RESET);
-	usb_hub_sleep_ms(hub, USB_HUB_RESET_RECOVERY_MS);
+	usb_hub_sleep_ms(hub, usb_hub_reset_recovery_ms());
 	return (status & 3U) == 3U ? 0 : ENODEV;
+}
+
+/*
+ * How long a port rests after its reset: the 10 ms of USB 2.0, or 60 ms
+ * under usb.resetwait=1, about what other systems' hosts leave before
+ * their first request.
+ */
+static unsigned
+usb_hub_reset_recovery_ms(
+	void)
+{
+	const char *line;
+
+	line = kern_boot_handoff("boot.command-line");
+	if (line != NULL &&
+	    kern_boot_parameters_token_present(line, "usb.resetwait=1"))
+		return 60U;
+	return USB_HUB_RESET_RECOVERY_MS;
 }
 
 /* Sleeps on the hub's thread, waking early when the hub is being stopped. */

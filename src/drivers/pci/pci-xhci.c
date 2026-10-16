@@ -9,6 +9,8 @@
  * PCI xHCI host controller
  */
 
+#include <kern/boot.h>
+#include <kern/platform.h>
 #include <drivers/pci/pci-xhci.h>
 #include <drivers/pci/pci.h>
 #include <drivers/pci/pci-xhci-capability.h>
@@ -428,6 +430,7 @@ static int xhci_device_request_busy_locked(const struct xhci_device *device);
 static void xhci_default_owner_release(struct xhci_controller *c, struct xhci_device *d);
 static void xhci_device_release(struct drv_usb_hcd *h, struct xhci_device *d);
 static int xhci_device_enable(struct drv_usb_hcd *h, struct drv_usb_device *u);
+static int xhci_first64(void);
 static int xhci_device_place(struct xhci_controller *c, struct xhci_device *d);
 static int xhci_hub_configure(struct drv_usb_hcd *h, struct drv_usb_device *u, unsigned ports, unsigned multi_tt, unsigned think_time);
 static int xhci_set_address(struct drv_usb_hcd *h, struct drv_usb_device *u, unsigned address);
@@ -2133,6 +2136,18 @@ xhci_hub_configure(
 	return error;
 }
 
+/* Whether the boot parameters ask for the first descriptor request of other systems' hosts. */
+static int
+xhci_first64(
+	void)
+{
+	const char *line;
+
+	line = kern_boot_handoff("boot.command-line");
+	return line != NULL &&
+	       kern_boot_parameters_token_present(line, "usb.first64=1");
+}
+
 /* Takes a slot for a newly attached device. */
 static int
 xhci_device_enable(
@@ -2222,6 +2237,10 @@ xhci_device_enable(
 	packet = drv_usb_device_speed(u) >= DRV_USB_SPEED_SUPER	 ? 512U
 		 : drv_usb_device_speed(u) >= DRV_USB_SPEED_HIGH ? 64U
 								 : 8U;
+
+	/* A full-speed device starts at 64 under usb.first64=1, as other systems' hosts start it. */
+	if (drv_usb_device_speed(u) == DRV_USB_SPEED_FULL && xhci_first64())
+		packet = 64U;
 	if (!drv_xhci_endpoint_context_encode(drv_usb_device_speed(u), 4U,
 					      (uint16_t)packet, 0, NULL,
 					      &endpoint_context)) {

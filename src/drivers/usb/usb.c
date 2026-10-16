@@ -18,6 +18,8 @@
 #include <drivers/usb/usb.h>
 #include <uapi/errno.h>
 #include <uapi/system.h>
+#include <kern/boot.h>
+#include <kern/platform.h>
 #include <kern/atomic.h>
 #include <kern/io-stats.h>
 #include <kern/sched.h>
@@ -162,6 +164,9 @@ struct drv_usb_bus {
 		unsigned connected;
 		unsigned enabled;
 		uint64_t connection_generation;
+		/* The hub's port reset, for a second reset during enumeration. */
+		int (*reset)(void *context, unsigned port);
+		void *reset_context;
 	} *ports;
 	unsigned number;
 	unsigned stopping;
@@ -298,6 +303,7 @@ static void device_publish_configuration(struct drv_usb_device *device, struct d
 static int legacy_root_port_reset(struct drv_usb_hcd *hcd, unsigned port);
 static int root_port_enumerate(struct drv_usb_bus *bus, struct drv_usb_hcd *hcd, unsigned port);
 static void usb_delay_ms(uint64_t milliseconds);
+static void usb_control_trace(const struct drv_usb_device *device, uint8_t request_type, uint8_t request, uint16_t value, uint16_t index, size_t length, int error, const size_t *actual);
 static int enumerate_port(struct drv_usb_bus *bus, struct drv_usb_device *parent, struct usb_port_state *state, unsigned port, uint32_t status);
 static int ep0_packet_size(enum drv_usb_speed speed, uint8_t encoded, unsigned *packet);
 static int allocate_address(struct drv_usb_bus *bus);
@@ -3030,6 +3036,8 @@ drv_usb_control(
 	error = usb_control_locked(device, request_type, request, value, index,
 				   buffer, length, timeout_ms, actual);
 	device_control_unlock(device);
+	usb_control_trace(device, request_type, request, value, index, length,
+			  error, actual);
 
 	/* Reports the failure. */
 	if (error != 0)
@@ -3037,6 +3045,49 @@ drv_usb_control(
 
 	/* Succeeded. */
 	return 0;
+}
+
+/*
+ * Under usb.ctltrace=1 the first control transfers go to the kernel's log
+ * with the time, the address, the setup words and the outcome, to compare
+ * the order and the timing of enumeration with other systems' hosts.
+ */
+static void
+usb_control_trace(
+	const struct drv_usb_device *device,
+	uint8_t request_type,
+	uint8_t request,
+	uint16_t value,
+	uint16_t index,
+	size_t length,
+	int error,
+	const size_t *actual)
+{
+	static int wanted = -1;
+	static unsigned logged;
+	const char *line;
+
+	/* Looked at once: the parameters do not change. */
+	if (wanted < 0) {
+		line = kern_boot_handoff("boot.command-line");
+		wanted = line != NULL &&
+			 kern_boot_parameters_token_present(line, "usb.ctltrace=1");
+	}
+	if (!wanted || logged >= 400U)
+		return;
+	logged++;
+	kern_logf("usb-ctl: t=%llu bus=%u addr=%u port=%u %02x %02x %04x %04x %04x error=%d actual=%u\n",
+		  (unsigned long long)clock_milliseconds(NULL),
+		  device->bus != NULL ? device->bus->number : 0U,
+		  device->address,
+		  device->port,
+		  request_type,
+		  request,
+		  value,
+		  index,
+		  (unsigned)length,
+		  error,
+		  (unsigned)(actual != NULL ? *actual : 0U));
 }
 
 /*
@@ -5351,6 +5402,8 @@ hub_scan_locked(
 		if (error == 0) {
 			port_state->connected = (status & 1U) != 0;
 			port_state->enabled = (status & 2U) != 0;
+			port_state->reset = state->ops->port_reset;
+			port_state->reset_context = state->context;
 			if ((status & 3U) == 3U)
 				error = enumerate_port(bus, hub, port_state, port, status);
 			else
@@ -5972,6 +6025,8 @@ root_port_enumerate(
 		return ENODEV;
 
 	/* Reports how the enumeration went. */
+	bus->ports[port].reset = NULL;
+	bus->ports[port].reset_context = NULL;
 	error = enumerate_port(bus, bus->root_hub, &bus->ports[port], port,
 			       status);
 	return error;
@@ -5991,6 +6046,9 @@ enumerate_port(
 	struct drv_usb_configuration *preferred;
 	struct drv_usb_interface *interface;
 	uint8_t first[8];
+	uint8_t first_long[64];
+	size_t first_length;
+	const char *boot_line;
 	size_t actual = 0;
 	unsigned configuration_index, other, packet;
 	int address = 0, cleanup_error, error = 0, preferred_score;
@@ -6017,6 +6075,21 @@ enumerate_port(
 	device->endpoint0.type = DRV_USB_TRANSFER_CONTROL;
 	device->endpoint0.descriptor.maximum_packet_size = 8U;
 
+	/*
+	 * Under usb.first64=1 the first request is the one other systems'
+	 * hosts make: 64 bytes on an endpoint zero of 64-byte packets (8 for
+	 * a low-speed device), so a device of 8-byte packets ends it after its
+	 * first packet.
+	 */
+	boot_line = kern_boot_handoff("boot.command-line");
+	first_length = sizeof(first);
+	if (boot_line != NULL &&
+	    kern_boot_parameters_token_present(boot_line, "usb.first64=1")) {
+		first_length = sizeof(first_long);
+		if (device->speed != DRV_USB_SPEED_LOW)
+			device->endpoint0.descriptor.maximum_packet_size = 64U;
+	}
+
 	/* Handles the device enable availability. */
 	if (bus->hcd->ops->device_enable != NULL) {
 		/* Checks the operation status. */
@@ -6031,8 +6104,16 @@ enumerate_port(
 					DRV_USB_RECIP_DEVICE,
 				USB_REQ_GET_DESCRIPTOR,
 				(uint16_t)(DRV_USB_DESCRIPTOR_DEVICE << 8), 0,
-				first, sizeof(first), USB_CONTROL_TIMEOUT_MS,
+				first_long, first_length, USB_CONTROL_TIMEOUT_MS,
 				&actual);
+	if (error == 0 && actual >= sizeof(first)) {
+		kern_memcpy(first, first_long, sizeof(first));
+		actual = sizeof(first);
+	}
+	if (first_length != sizeof(first))
+		kern_logf("usb-first64: usb%u port %u asked=%u got=%u error=%d\n",
+			  bus->number, port, (unsigned)first_length,
+			  (unsigned)(error == 0 ? actual : 0U), error);
 	if (error != 0 || actual != sizeof(first)) {
 		/* Checks the operation status. */
 		if (error == 0)
@@ -6052,6 +6133,22 @@ enumerate_port(
 	device->descriptor.descriptor_type = first[1];
 	device->descriptor.endpoint0_max_packet_size = first[7];
 	device->endpoint0.descriptor.maximum_packet_size = (uint16_t)packet;
+
+	/*
+	 * Under usb.winreset=1, the port is reset again after the first eight
+	 * bytes of the device descriptor and before SET_ADDRESS, the order the
+	 * hosts of other systems use; some devices pick the identity they
+	 * present from it.
+	 */
+	boot_line = kern_boot_handoff("boot.command-line");
+	if (state->reset != NULL && boot_line != NULL &&
+	    kern_boot_parameters_token_present(boot_line, "usb.winreset=1")) {
+		error = state->reset(state->reset_context, port);
+		kern_logf("usb-winreset: usb%u port %u reset again error=%d\n",
+			  bus->number, port, error);
+		if (error != 0)
+			goto fail;
+	}
 
 	/* Handles the address condition. */
 	address = allocate_address(bus);
