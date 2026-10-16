@@ -869,6 +869,11 @@ amdrdna_cp_graphics_reset(
 	unsigned context);
 
 int
+amdrdna_cp_compute_reset(
+	struct amdrdna_device *device,
+	unsigned index);
+
+int
 amdrdna_ring_submit(
 	struct amdrdna_device *device,
 	struct amdrdna_ring *ring,

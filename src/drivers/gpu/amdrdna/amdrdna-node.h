@@ -223,6 +223,7 @@ int amdrdna_vk_memory_create(void *owner, uint64_t bytes, uint64_t *va, void **b
 int amdrdna_vk_gpu_alloc(void *owner, uint64_t bytes, void **token, uint8_t **cpu, uint64_t *va);
 void amdrdna_vk_gpu_free(void *owner, void *token);
 int amdrdna_vk_gpu_run(void *owner, uint64_t va, uint32_t bytes);
+int amdrdna_vk_gpu_run_kernel(void *owner, uint64_t va, uint32_t bytes);
 void amdrdna_vk_gpu_copied(void *owner, uint64_t bytes);
 void amdrdna_vk_gpu_drawn(void *owner, uint32_t draws, uint32_t quads);
 void amdrdna_vk_blob_read(void *owner, uint8_t *to, const uint8_t *from, size_t length);

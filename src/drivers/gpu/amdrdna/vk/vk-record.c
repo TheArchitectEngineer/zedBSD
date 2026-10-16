@@ -50,6 +50,7 @@ static int record_scissor(struct amdrdna_vk_session *session, struct i915_wire_r
 static int record_sets(struct amdrdna_vk_session *session, struct i915_wire_reader *reader, struct amdrdna_vk_record *record);
 static int record_vertices(struct amdrdna_vk_session *session, struct i915_wire_reader *reader, struct amdrdna_vk_record *record);
 static int record_draw(struct i915_wire_reader *reader, struct amdrdna_vk_record *record);
+static int record_dispatch(struct i915_wire_reader *reader, struct amdrdna_vk_record *record);
 static int record_copy(struct amdrdna_vk_session *session, uint32_t opcode, struct i915_wire_reader *reader, struct amdrdna_vk_record *record);
 static int record_clear(struct amdrdna_vk_session *session, struct i915_wire_reader *reader, struct amdrdna_vk_record *record);
 static int record_colour(struct i915_wire_reader *reader, uint32_t *words);
@@ -92,6 +93,7 @@ amdrdna_vk_record_route(
 	case GPU_OP_CMD_BIND_DESCRIPTOR_SETS:
 	case GPU_OP_CMD_BIND_VERTEX_BUFFERS:
 	case GPU_OP_CMD_DRAW:
+	case GPU_OP_CMD_DISPATCH:
 	case GPU_OP_CMD_COPY_IMAGE:
 	case GPU_OP_CMD_BLIT_IMAGE:
 	case GPU_OP_CMD_COPY_BUFFER_TO_IMAGE:
@@ -190,6 +192,9 @@ record_decode(
 	case GPU_OP_CMD_DRAW:
 		error = record_draw(reader, record);
 		break;
+	case GPU_OP_CMD_DISPATCH:
+		error = record_dispatch(reader, record);
+		break;
 	case GPU_OP_CMD_COPY_IMAGE:
 	case GPU_OP_CMD_BLIT_IMAGE:
 	case GPU_OP_CMD_COPY_BUFFER_TO_IMAGE:
@@ -257,15 +262,21 @@ record_hold(
 	return 0;
 }
 
-/* vkCmdBindPipeline: [bind point][pipeline]; a graphics pipeline. */
+/*
+ * vkCmdBindPipeline: [bind point][pipeline]; a graphics pipeline at the
+ * graphics bind point or a compute pipeline at the compute one (the bind
+ * point kept in value 0).
+ */
 static int
 record_pipeline(
 	struct amdrdna_vk_session *session,
 	struct i915_wire_reader *reader,
 	struct amdrdna_vk_record *record)
 {
+	const struct amdrdna_vk_pipeline *bound;
 	uint32_t point;
 	uint64_t pipeline;
+	uint32_t compute;
 	int error;
 
 	/* The bind point and the pipeline. */
@@ -274,9 +285,10 @@ record_pipeline(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* Only the graphics bind point is run. */
-	if (point != VK_PIPELINE_BIND_POINT_GRAPHICS)
+	/* The graphics and the compute bind points are run. */
+	if (point != VK_PIPELINE_BIND_POINT_GRAPHICS && point != VK_PIPELINE_BIND_POINT_COMPUTE)
 		return ENOTSUP;
+	record->values[0] = point;
 
 	/* The record holds a known pipeline. */
 	error = record_hold(session, record, I915_VK_OBJ_PIPELINE, pipeline);
@@ -284,6 +296,12 @@ record_pipeline(
 		return error;
 	if (record->object_count == 0U)
 		return ENOENT;
+
+	/* A pipeline of the bind point's kind. */
+	bound = record->objects[0]->payload;
+	compute = (point == VK_PIPELINE_BIND_POINT_COMPUTE) ? 1U : 0U;
+	if (bound->compute != compute)
+		return ENOTSUP;
 
 	/* Succeeded: the pipeline is recorded. */
 	return 0;
@@ -383,8 +401,8 @@ record_line_width(
 
 /*
  * vkCmdBindDescriptorSets: [bind point][layout][first set][count][count]
- * {set}[dynamic count][count]{offset}; graphics sets, held, without
- * dynamic offsets.
+ * {set}[dynamic count][count]{offset}; graphics or compute sets (the bind
+ * point kept in value 0), held, without dynamic offsets.
  */
 static int
 record_sets(
@@ -411,8 +429,9 @@ record_sets(
 
 	/* Each set, held while the bind's sets fit a pipeline layout. */
 	refused = 0;
-	if (point != VK_PIPELINE_BIND_POINT_GRAPHICS)
+	if (point != VK_PIPELINE_BIND_POINT_GRAPHICS && point != VK_PIPELINE_BIND_POINT_COMPUTE)
 		refused = ENOTSUP;
+	record->values[0] = point;
 	if (record->first >= AMDRDNA_VK_SETS_MAX || count > AMDRDNA_VK_SETS_MAX - record->first)
 		refused = ENOTSUP;
 	for (index = 0U; index < count; index++) {
@@ -525,6 +544,23 @@ record_draw(
 		return EINVAL;
 
 	/* Succeeded: the draw is recorded. */
+	return 0;
+}
+
+/* vkCmdDispatch: [x][y][z] workgroups. */
+static int
+record_dispatch(
+	struct i915_wire_reader *reader,
+	struct amdrdna_vk_record *record)
+{
+	/* The three counts. */
+	record->values[0] = drv_i915_wire_read_u32(reader);
+	record->values[1] = drv_i915_wire_read_u32(reader);
+	record->values[2] = drv_i915_wire_read_u32(reader);
+	if (reader->error != 0)
+		return EINVAL;
+
+	/* Succeeded: the dispatch is recorded. */
 	return 0;
 }
 

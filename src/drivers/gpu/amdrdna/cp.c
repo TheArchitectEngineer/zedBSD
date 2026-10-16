@@ -1754,6 +1754,108 @@ amdrdna_cp_graphics_reset(
 	return 0;
 }
 
+/*
+ * Resets compute queue index after work on it did not end: the scheduler
+ * detaches the queue with a reset (its work is dropped), the queue is
+ * waited for until it is no longer active, its image is put back from the
+ * copy kept at the first attach, its ring emptied, and the scheduler
+ * attaches it again; a fence alone on it shows it runs.  As for the
+ * graphics queue, nothing else was on the ring.
+ *
+ * Returns 0, ENOTSUP for a queue the scheduler did not attach, or the
+ * error of the step that failed (the queue then takes no work).
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/gfx_v10_0.c (gfx_v10_0_reset_kcq: the
+ * unmap with the reset action, the wait for the queue's active bit with
+ * the queue selected, then gfx_v10_0_kcq_init_queue with the copy and an
+ * empty ring, and the map; the safe mode around the wait is for clock
+ * gating, which the driver does not turn on).
+ */
+int
+amdrdna_cp_compute_reset(
+	struct amdrdna_device *device,
+	unsigned index)
+{
+	uint32_t words[AMDRDNA_PM4_DETACH_WORDS + AMDRDNA_PM4_ATTACH_WORDS];
+	struct amdrdna_engines *engines;
+	struct amdrdna_ring *ring;
+	volatile uint32_t *slots;
+	unsigned long irq;
+	uint64_t step_ms[CP_RESET_STEPS];
+	uint32_t slot;
+	unsigned count;
+	int error;
+
+	/* Only a queue the scheduler attached is reset through it. */
+	engines = &device->engines;
+	if (!engines->scheduler_up || !engines->compute_running || index >= engines->compute_count)
+		return ENOTSUP;
+	ring = &engines->compute[index];
+
+	/* The queue takes nothing new until it is attached again. */
+	ring->up = false;
+	step_ms[0] = clock_milliseconds(NULL);
+
+	/* The scheduler detaches the queue and drops its work. */
+	count = amdrdna_pm4_queue_detach(words, AMDRDNA_QUEUE_ENGINE_COMPUTE, AMDRDNA_QUEUE_DETACH_RESET, ring->doorbell);
+	error = scheduler_fenced(device, words, count, "compute reset");
+	if (error != 0)
+		return error;
+
+	/* The queue no longer active, read with it selected. */
+	mutex_lock(&engines->select);
+
+	select_queue(device, &ring->place, 0U);
+	error = gc_wait(device, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_QUEUE_ACTIVE, 1U, 0U);
+	select_nothing(device);
+
+	mutex_unlock(&engines->select);
+
+	if (error != 0) {
+		amdrdna_mark("compute queue %u stayed active after its reset (%d)", index, error);
+		return error;
+	}
+	step_ms[1] = clock_milliseconds(NULL);
+
+	/* The image from its copy, the ring empty: filler words, both pointers 0. */
+	irq = spin_lock_irqsave(&ring->lock);
+
+	kern_memcpy(ring->image.dma.address, ring->image_copy, AMDRDNA_QUEUE_IMAGE_WORDS * 4U);
+	slots = ring->buffer.dma.address;
+	for (slot = 0U; slot < ring->bytes / 4U; slot++)
+		slots[slot] = amdrdna_pm4_filler();
+	ring->write_pointer = 0U;
+	*amdrdna_ring_word(device, ring, CP_WORD_READ) = 0U;
+	amdrdna_ring_word(device, ring, CP_WORD_WRITE)[0] = 0U;
+	amdrdna_ring_word(device, ring, CP_WORD_WRITE)[1] = 0U;
+	__atomic_thread_fence(__ATOMIC_SEQ_CST);
+
+	spin_unlock_irqrestore(&ring->lock, irq);
+
+	/* The scheduler attaches the queue again. */
+	count = amdrdna_pm4_queue_attach(words, &ring->place, AMDRDNA_QUEUE_ENGINE_COMPUTE,
+	    ring->doorbell, ring->image.gpu_address, ring_gpu_word(device, ring, CP_WORD_WRITE));
+	error = scheduler_fenced(device, words, count, "compute attach after the reset");
+	if (error != 0)
+		return error;
+	step_ms[2] = clock_milliseconds(NULL);
+
+	/* The ring runs commands: a fence alone on it. */
+	error = ring_fenced(device, ring);
+	if (error != 0)
+		return error;
+	step_ms[3] = clock_milliseconds(NULL);
+
+	/* Succeeded: the queue takes work again; the steps' times are said. */
+	ring->up = true;
+	amdrdna_mark("compute queue %u reset steps: reset %llums, attach %llums, test %llums", index,
+	    (unsigned long long)(step_ms[1] - step_ms[0]),
+	    (unsigned long long)(step_ms[2] - step_ms[1]),
+	    (unsigned long long)(step_ms[3] - step_ms[2]));
+	return 0;
+}
+
 /* Reports the words a ring can take before it would overwrite what the engine has not read. */
 static unsigned
 ring_room(

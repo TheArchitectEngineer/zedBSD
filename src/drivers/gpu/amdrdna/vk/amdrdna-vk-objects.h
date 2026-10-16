@@ -290,7 +290,16 @@ struct amdrdna_vk_fence {
 	bool signaled;
 };
 
-/* A VkCommandPool: only compared, to free and reset its command buffers with it. */
+/*
+ * The queue families: the universal one (graphics, compute and transfer,
+ * on the graphics queue) and the compute one (on a compute queue of its
+ * own).
+ */
+#define AMDRDNA_VK_FAMILY_UNIVERSAL	0U
+#define AMDRDNA_VK_FAMILY_COMPUTE	1U
+#define AMDRDNA_VK_FAMILIES		2U
+
+/* A VkCommandPool: its queue family, and compared to free and reset its command buffers with it. */
 struct amdrdna_vk_command_pool {
 	uint32_t family;
 };

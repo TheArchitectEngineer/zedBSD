@@ -226,6 +226,23 @@ amdrdna_vk_state_start(
 }
 
 /*
+ * Starts a buffer of the compute queue, which takes no graphics state: the
+ * registers every dispatch shares, then the caches emptied of what the
+ * CPU wrote.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/amd/vulkan/radv_queue.c
+ * (radv_emit_compute: the compute preamble alone on a compute queue).
+ */
+void
+amdrdna_vk_state_start_kernel(
+	struct amdrdna_vk_pm4 *pm4)
+{
+	/* What dispatches share, then everything the CPU wrote read anew. */
+	state_start_compute(pm4);
+	amdrdna_vk_pm4_cache_acquire(pm4, STATE_START_CACHES);
+}
+
+/*
  * Reports the colour target's layout word of a format (its format,
  * number type and component swap, clamped blending, simple floats); false
  * for a format the executor does not draw into.
@@ -711,6 +728,35 @@ amdrdna_vk_state_barrier(
 	amdrdna_vk_pm4_event_fence(pm4, AMDRDNA_PM4_EVENT_CACHES_FLUSHED, STATE_BARRIER_RELEASE, sync_address, sync_value);
 	amdrdna_vk_pm4_wait_value(pm4, sync_address, sync_value);
 	amdrdna_vk_pm4_fetcher_sync(pm4);
+
+	/* The shader caches read anew. */
+	amdrdna_vk_pm4_cache_acquire(pm4, STATE_BARRIER_ACQUIRE);
+}
+
+/*
+ * Writes a barrier of the compute queue: the compute programs drained,
+ * then an end-of-pipe event that writes back and invalidates the level-2
+ * cache and writes sync_value to sync_address, waited for, and the shader
+ * caches invalidated.  sync_value must differ from what the word held
+ * before (the session's counter).
+ *
+ * Procedure referenced: Mesa 25.0.7 src/amd/vulkan/radv_cs.c
+ * (gfx10_cs_emit_cache_flush on a compute queue: the compute partial
+ * flush, the end-of-pipe release waited for in memory, no fetcher's
+ * sync, then the acquire of the shader caches).
+ */
+void
+amdrdna_vk_state_barrier_kernel(
+	struct amdrdna_vk_pm4 *pm4,
+	uint64_t sync_address,
+	uint32_t sync_value)
+{
+	/* The compute programs drained. */
+	amdrdna_vk_pm4_event(pm4, AMDRDNA_PM4_EVENT_COMPUTE_DRAINED, AMDRDNA_PM4_EVENT_INDEX_DRAIN);
+
+	/* The caches written back at the end of the pipe, the value written, waited for. */
+	amdrdna_vk_pm4_event_fence(pm4, AMDRDNA_PM4_EVENT_CACHES_FLUSHED, STATE_BARRIER_RELEASE, sync_address, sync_value);
+	amdrdna_vk_pm4_wait_value(pm4, sync_address, sync_value);
 
 	/* The shader caches read anew. */
 	amdrdna_vk_pm4_cache_acquire(pm4, STATE_BARRIER_ACQUIRE);

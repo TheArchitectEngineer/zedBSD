@@ -14,13 +14,18 @@
  * A 64x64 B8G8R8A8 target is cleared and a quad over it is drawn with the
  * compositor's quad vertex program and a pixel program walking 3x + 1 from
  * 0 (never ending) or, with --loops, from 27 (111 steps, the control).
+ * With --compute, one dispatch on the queue of the compute-only family
+ * instead: one invocation walks 3x + 1 from a buffer's first word (0, or
+ * 27 with --loops) and writes its step count to the second
+ * (vkhang/walk.comp).
  * The submission is waited for (20 s at most) and one line says the end:
  *
- *   VKHANG lost after=<ms> result=<VkResult>    (the draw was given up)
+ *   VKHANG lost after=<ms> result=<VkResult>    (the work was given up)
  *   VKHANG ok after=<ms> pixel=<B8G8R8A8 word>  (the draw ended)
+ *   VKHANG ok after=<ms> steps=<count>          (the dispatch ended)
  *   VKHANG fail <step> <VkResult>
  *
- * usage: vkhang [--loops] [--device-index=N]
+ * usage: vkhang [--loops] [--compute] [--device-index=N]
  */
 
 #include <stdbool.h>
@@ -33,7 +38,7 @@
 
 #include "userland/desktop/wayland/shaders.h"
 
-/* The pixel programs, from vkhang/hang.frag and vkhang/loops.frag (made by vkhang-build.sh). */
+/* The pixel programs and the compute program, from vkhang/hang.frag, loops.frag and walk.comp (made by vkhang-build.sh). */
 #include "vkhang-programs.h"
 
 #define HANG_TARGET		64U
@@ -61,18 +66,32 @@ struct hang {
 	VkCommandPool pool;
 	VkCommandBuffer command;
 	VkFence fence;
+	VkBuffer walk;
+	VkShaderModule kernel_module;
+	VkDescriptorSetLayout set_layout;
+	VkDescriptorPool set_pool;
+	VkDescriptorSet set;
+	uint32_t family;
 };
 
 /* Where each resource lies in the one allocation. */
 #define HANG_TARGET_AT		0x00000U
 #define HANG_VERTICES_AT	0x10000U
 #define HANG_READBACK_AT	0x11000U
+#define HANG_WALK_AT		0x15000U
 #define HANG_MEMORY_BYTES	0x20000U
 
-static VkResult hang_device(struct hang *hang, int index);
+/* The walk's two words: where it starts (0 never ends, 27 ends after 111 steps) and its step count. */
+#define HANG_WALK_BYTES		8U
+#define HANG_WALK_FOREVER	0U
+#define HANG_WALK_CONTROL	27U
+#define HANG_WALK_UNWRITTEN	0xffffffffU
+
+static VkResult hang_device(struct hang *hang, int index, bool compute);
 static VkResult hang_resources(struct hang *hang);
 static VkResult hang_pipeline(struct hang *hang, bool loops);
 static VkResult hang_record(struct hang *hang);
+static VkResult hang_kernel(struct hang *hang, bool loops);
 static uint64_t hang_now_ms(void);
 static void hang_free(struct hang *hang);
 
@@ -88,34 +107,42 @@ main(
 	VkResult status;
 	uint64_t started;
 	uint32_t pixel;
+	uint32_t steps;
 	bool loops;
+	bool compute;
 	int index;
 	int argument;
 
 	/* The arguments. */
 	loops = false;
+	compute = false;
 	index = 0;
 	for (argument = 1; argument < argc; argument++) {
 		if (strcmp(argv[argument], "--loops") == 0) {
 			loops = true;
+		} else if (strcmp(argv[argument], "--compute") == 0) {
+			compute = true;
 		} else if (strncmp(argv[argument], "--device-index=", 15) == 0) {
 			index = atoi(argv[argument] + 15);
 		} else {
-			fprintf(stderr, "usage: vkhang [--loops] [--device-index=N]\n");
+			fprintf(stderr, "usage: vkhang [--loops] [--compute] [--device-index=N]\n");
 			return 2;
 		}
 	}
 
-	/* The device, the resources, the pipeline and the commands. */
+	/* The device, the resources, the pipeline (of the draw or of the dispatch) and the commands. */
 	memset(&hang, 0, sizeof(hang));
-	status = hang_device(&hang, index);
+	status = hang_device(&hang, index, compute);
 	if (status == VK_SUCCESS)
 		status = hang_resources(&hang);
-	if (status == VK_SUCCESS)
+	if (status == VK_SUCCESS && compute) {
+		status = hang_kernel(&hang, loops);
+	} else if (status == VK_SUCCESS) {
 		status = hang_pipeline(&hang, loops);
-	if (status == VK_SUCCESS) {
-		memcpy(hang.mapping + HANG_VERTICES_AT, corners, sizeof(corners));
-		status = hang_record(&hang);
+		if (status == VK_SUCCESS) {
+			memcpy(hang.mapping + HANG_VERTICES_AT, corners, sizeof(corners));
+			status = hang_record(&hang);
+		}
 	}
 	if (status != VK_SUCCESS) {
 		hang_free(&hang);
@@ -151,24 +178,36 @@ main(
 		hang_free(&hang);
 		return 1;
 	}
+	if (compute) {
+		memcpy(&steps, hang.mapping + HANG_WALK_AT + 4U, sizeof(steps));
+		printf("VKHANG ok after=%llu steps=%u\n", (unsigned long long)(hang_now_ms() - started), (unsigned)steps);
+		hang_free(&hang);
+		return 0;
+	}
 	memcpy(&pixel, hang.mapping + HANG_READBACK_AT, sizeof(pixel));
 	printf("VKHANG ok after=%llu pixel=%08x\n", (unsigned long long)(hang_now_ms() - started), (unsigned)pixel);
 	hang_free(&hang);
 	return 0;
 }
 
-/* Creates the instance and the device with its queue. */
+/*
+ * Creates the instance and the device with its queue: of family 0, or for
+ * compute of the first family that runs compute and does not draw.
+ */
 static VkResult
 hang_device(
 	struct hang *hang,
-	int index)
+	int index,
+	bool compute)
 {
 	VkApplicationInfo application;
 	VkInstanceCreateInfo instance;
 	VkPhysicalDevice physicals[8];
+	VkQueueFamilyProperties families[8];
 	VkDeviceQueueCreateInfo queue;
 	VkDeviceCreateInfo device;
 	float priority;
+	uint32_t family;
 	uint32_t count;
 	VkResult status;
 
@@ -195,10 +234,26 @@ hang_device(
 	}
 	hang->physical = physicals[index];
 
-	/* The device with one queue of family 0. */
+	/* The family: 0, or the compute-only one. */
+	family = 0U;
+	if (compute) {
+		count = 8U;
+		vkGetPhysicalDeviceQueueFamilyProperties(hang->physical, &count, families);
+		for (family = 0U; family < count; family++) {
+			if ((families[family].queueFlags & (VK_QUEUE_COMPUTE_BIT | VK_QUEUE_GRAPHICS_BIT)) == VK_QUEUE_COMPUTE_BIT)
+				break;
+		}
+		if (family >= count) {
+			printf("VKHANG fail family %d count=%u\n", (int)VK_ERROR_FEATURE_NOT_PRESENT, count);
+			return VK_ERROR_FEATURE_NOT_PRESENT;
+		}
+	}
+
+	/* The device with one queue of the family. */
 	priority = 1.0f;
 	memset(&queue, 0, sizeof(queue));
 	queue.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+	queue.queueFamilyIndex = family;
 	queue.queueCount = 1U;
 	queue.pQueuePriorities = &priority;
 	memset(&device, 0, sizeof(device));
@@ -210,7 +265,8 @@ hang_device(
 		printf("VKHANG fail device %d\n", (int)status);
 		return status;
 	}
-	vkGetDeviceQueue(hang->device, 0U, 0U, &hang->queue);
+	vkGetDeviceQueue(hang->device, family, 0U, &hang->queue);
+	hang->family = family;
 	return VK_SUCCESS;
 }
 
@@ -527,6 +583,145 @@ hang_record(
 	return status;
 }
 
+/*
+ * The dispatch: the walk's buffer (its start written), a set of it, the
+ * compute pipeline, and a command buffer of the device's family that binds
+ * both and dispatches one workgroup.
+ */
+static VkResult
+hang_kernel(
+	struct hang *hang,
+	bool loops)
+{
+	VkBufferCreateInfo buffer;
+	VkShaderModuleCreateInfo module;
+	VkDescriptorSetLayoutBinding binding;
+	VkDescriptorSetLayoutCreateInfo set_layout;
+	VkPipelineLayoutCreateInfo layout;
+	VkDescriptorPoolSize size;
+	VkDescriptorPoolCreateInfo set_pool;
+	VkDescriptorSetAllocateInfo set_allocate;
+	VkDescriptorBufferInfo walk;
+	VkWriteDescriptorSet write;
+	VkComputePipelineCreateInfo create;
+	VkCommandPoolCreateInfo pool;
+	VkCommandBufferAllocateInfo allocate;
+	VkCommandBufferBeginInfo begin;
+	uint32_t words[2];
+	VkResult status;
+
+	/* The buffer: the start, the count not written yet. */
+	words[0] = loops ? HANG_WALK_CONTROL : HANG_WALK_FOREVER;
+	words[1] = HANG_WALK_UNWRITTEN;
+	memcpy(hang->mapping + HANG_WALK_AT, words, sizeof(words));
+	memset(&buffer, 0, sizeof(buffer));
+	buffer.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	buffer.size = HANG_WALK_BYTES;
+	buffer.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+	status = vkCreateBuffer(hang->device, &buffer, NULL, &hang->walk);
+	if (status == VK_SUCCESS)
+		status = vkBindBufferMemory(hang->device, hang->walk, hang->memory, HANG_WALK_AT);
+
+	/* The module, the set's layout and the pipeline's. */
+	memset(&module, 0, sizeof(module));
+	module.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+	module.codeSize = sizeof(vkhang_walk_comp);
+	module.pCode = vkhang_walk_comp;
+	if (status == VK_SUCCESS)
+		status = vkCreateShaderModule(hang->device, &module, NULL, &hang->kernel_module);
+	memset(&binding, 0, sizeof(binding));
+	binding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	binding.descriptorCount = 1U;
+	binding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+	memset(&set_layout, 0, sizeof(set_layout));
+	set_layout.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	set_layout.bindingCount = 1U;
+	set_layout.pBindings = &binding;
+	if (status == VK_SUCCESS)
+		status = vkCreateDescriptorSetLayout(hang->device, &set_layout, NULL, &hang->set_layout);
+	memset(&layout, 0, sizeof(layout));
+	layout.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	layout.setLayoutCount = 1U;
+	layout.pSetLayouts = &hang->set_layout;
+	if (status == VK_SUCCESS)
+		status = vkCreatePipelineLayout(hang->device, &layout, NULL, &hang->layout);
+
+	/* The set of the buffer. */
+	memset(&size, 0, sizeof(size));
+	size.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	size.descriptorCount = 1U;
+	memset(&set_pool, 0, sizeof(set_pool));
+	set_pool.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	set_pool.maxSets = 1U;
+	set_pool.poolSizeCount = 1U;
+	set_pool.pPoolSizes = &size;
+	if (status == VK_SUCCESS)
+		status = vkCreateDescriptorPool(hang->device, &set_pool, NULL, &hang->set_pool);
+	memset(&set_allocate, 0, sizeof(set_allocate));
+	set_allocate.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	set_allocate.descriptorPool = hang->set_pool;
+	set_allocate.descriptorSetCount = 1U;
+	set_allocate.pSetLayouts = &hang->set_layout;
+	if (status == VK_SUCCESS)
+		status = vkAllocateDescriptorSets(hang->device, &set_allocate, &hang->set);
+	if (status == VK_SUCCESS) {
+		memset(&walk, 0, sizeof(walk));
+		walk.buffer = hang->walk;
+		walk.range = VK_WHOLE_SIZE;
+		memset(&write, 0, sizeof(write));
+		write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		write.dstSet = hang->set;
+		write.descriptorCount = 1U;
+		write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+		write.pBufferInfo = &walk;
+		vkUpdateDescriptorSets(hang->device, 1U, &write, 0U, NULL);
+	}
+
+	/* The pipeline. */
+	memset(&create, 0, sizeof(create));
+	create.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+	create.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	create.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+	create.stage.module = hang->kernel_module;
+	create.stage.pName = "main";
+	create.layout = hang->layout;
+	create.basePipelineIndex = -1;
+	if (status == VK_SUCCESS)
+		status = vkCreateComputePipelines(hang->device, VK_NULL_HANDLE, 1U, &create, NULL, &hang->pipeline);
+	if (status != VK_SUCCESS) {
+		printf("VKHANG fail kernel %d\n", (int)status);
+		return status;
+	}
+
+	/* The pool of the family, the command buffer, the dispatch of one workgroup. */
+	memset(&pool, 0, sizeof(pool));
+	pool.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	pool.queueFamilyIndex = hang->family;
+	status = vkCreateCommandPool(hang->device, &pool, NULL, &hang->pool);
+	memset(&allocate, 0, sizeof(allocate));
+	allocate.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocate.commandPool = hang->pool;
+	allocate.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocate.commandBufferCount = 1U;
+	if (status == VK_SUCCESS)
+		status = vkAllocateCommandBuffers(hang->device, &allocate, &hang->command);
+	memset(&begin, 0, sizeof(begin));
+	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	if (status == VK_SUCCESS)
+		status = vkBeginCommandBuffer(hang->command, &begin);
+	if (status != VK_SUCCESS) {
+		printf("VKHANG fail command %d\n", (int)status);
+		return status;
+	}
+	vkCmdBindPipeline(hang->command, VK_PIPELINE_BIND_POINT_COMPUTE, hang->pipeline);
+	vkCmdBindDescriptorSets(hang->command, VK_PIPELINE_BIND_POINT_COMPUTE, hang->layout, 0U, 1U, &hang->set, 0U, NULL);
+	vkCmdDispatch(hang->command, 1U, 1U, 1U);
+	status = vkEndCommandBuffer(hang->command);
+	if (status != VK_SUCCESS)
+		printf("VKHANG fail end %d\n", (int)status);
+	return status;
+}
+
 /* The monotonic clock in milliseconds. */
 static uint64_t
 hang_now_ms(
@@ -557,6 +752,14 @@ hang_free(
 			vkDestroyRenderPass(hang->device, hang->pass, NULL);
 		if (hang->layout != VK_NULL_HANDLE)
 			vkDestroyPipelineLayout(hang->device, hang->layout, NULL);
+		if (hang->set_pool != VK_NULL_HANDLE)
+			vkDestroyDescriptorPool(hang->device, hang->set_pool, NULL);
+		if (hang->set_layout != VK_NULL_HANDLE)
+			vkDestroyDescriptorSetLayout(hang->device, hang->set_layout, NULL);
+		if (hang->kernel_module != VK_NULL_HANDLE)
+			vkDestroyShaderModule(hang->device, hang->kernel_module, NULL);
+		if (hang->walk != VK_NULL_HANDLE)
+			vkDestroyBuffer(hang->device, hang->walk, NULL);
 		if (hang->fragment_module != VK_NULL_HANDLE)
 			vkDestroyShaderModule(hang->device, hang->fragment_module, NULL);
 		if (hang->vertex_module != VK_NULL_HANDLE)

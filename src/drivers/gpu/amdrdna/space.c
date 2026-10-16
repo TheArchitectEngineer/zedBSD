@@ -84,7 +84,7 @@ static int space_leaf(struct amdrdna_space *space, uint64_t address, struct amdr
 static void space_clear(struct amdrdna_space *space, uint64_t address, uint64_t bytes);
 static void space_changed(struct amdrdna_space *space);
 static void space_lose(struct amdrdna_space *space, int error);
-static void space_reset(struct amdrdna_device *device, unsigned context);
+static void space_reset(struct amdrdna_device *device, unsigned tracked, unsigned context);
 static uint64_t space_table_word(struct amdrdna_device *device, uint64_t vram);
 static bool space_quiet_locked(struct amdrdna_space *space);
 static uint32_t space_hub_read(struct amdrdna_device *device, enum amdrdna_hub_register which, unsigned instance);
@@ -506,15 +506,14 @@ amdrdna_space_run(
 
 	/*
 	 * Waits for the fence after the run.  A run that does not end loses
-	 * the space; on the graphics queue, which every session shares, the
-	 * queue is reset so the other sessions go on, and a queue that cannot
-	 * be reset fails the device.
+	 * the space, and its queue is reset so the other sessions go on (the
+	 * graphics queue every session shares, or a compute queue); a queue
+	 * that cannot be reset fails the device.
 	 */
 	error = amdrdna_ring_wait(device, ring, sequence, milliseconds);
 	if (error != 0) {
 		space_lose(space, ETIMEDOUT);
-		if (tracked == AMDRDNA_TRACKED_GRAPHICS)
-			space_reset(device, grant.context);
+		space_reset(device, tracked, grant.context);
 		return EIO;
 	}
 
@@ -1301,27 +1300,36 @@ space_lose(
 }
 
 /*
- * Resets the graphics queue after a run of a context did not end, and
- * says how long it took; a queue that cannot be reset fails the device
- * (every session's work then fails).
+ * Resets the tracked ring's queue (the graphics queue or a compute queue)
+ * after a run of a context did not end, and says how long it took; a
+ * queue that cannot be reset fails the device (every session's work then
+ * fails).
  */
 static void
 space_reset(
 	struct amdrdna_device *device,
+	unsigned tracked,
 	unsigned context)
 {
+	const char *queue;
 	uint64_t started;
 	uint64_t taken;
 	int error;
 
-	/* The reset, timed. */
+	/* The reset of the ring's queue, timed. */
 	started = clock_milliseconds(NULL);
-	error = amdrdna_cp_graphics_reset(device, context);
+	if (tracked == AMDRDNA_TRACKED_GRAPHICS) {
+		queue = "graphics";
+		error = amdrdna_cp_graphics_reset(device, context);
+	} else {
+		queue = "compute";
+		error = amdrdna_cp_compute_reset(device, tracked - AMDRDNA_TRACKED_COMPUTE);
+	}
 	taken = clock_milliseconds(NULL) - started;
 
 	/* Says how it went; a failed one ends the device's work. */
 	if (error != 0) {
-		amdrdna_mark("graphics queue reset for context %u failed (%d) after %llums; the device takes no more work", context, error,
+		amdrdna_mark("%s queue reset for context %u failed (%d) after %llums; the device takes no more work", queue, context, error,
 		    (unsigned long long)taken);
 		amdrdna_node_device_failed(device, EIO);
 		return;
@@ -1329,7 +1337,7 @@ space_reset(
 
 	/* Counted, and said. */
 	device->spaces.resets++;
-	amdrdna_mark("graphics queue reset for context %u in %llums, the queue runs again", context, (unsigned long long)taken);
+	amdrdna_mark("%s queue reset for context %u in %llums, the queue runs again", queue, context, (unsigned long long)taken);
 }
 
 /*

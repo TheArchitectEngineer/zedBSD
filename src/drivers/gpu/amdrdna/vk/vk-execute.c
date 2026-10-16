@@ -31,6 +31,12 @@
  * Between a pass or a transfer and what follows, and at the end of every
  * indirect buffer, a barrier drains the programs, writes the colour
  * caches back and empties the shader caches.
+ *
+ * A dispatch writes its kernel's resource table (from the sets bound at
+ * the compute bind point), the kernel and the workgroups, then a barrier.
+ * A command buffer of the compute queue family runs on a compute queue:
+ * its buffers start with the compute state alone and its barriers are
+ * the compute queue's; it runs dispatches only.
  */
 
 #include <stdbool.h>
@@ -141,6 +147,7 @@ struct amdrdna_vk_execute {
 	uint64_t program_va;
 	struct amdrdna_vk_program quad[EXECUTE_QUAD_PROGRAMS];
 	bool programs_ready;
+	bool kernel_queue;
 };
 
 /*
@@ -161,6 +168,8 @@ struct execute_state {
 	struct amdrdna_vk_target target;
 	bool target_written;
 	VkRect2D area;
+	const struct amdrdna_vk_pipeline *kernel_pipeline;
+	const struct amdrdna_vk_descriptor_set *kernel_sets[AMDRDNA_VK_SETS_MAX];
 };
 
 /*
@@ -197,6 +206,12 @@ static int execute_room(struct amdrdna_vk_session *session, struct amdrdna_vk_ex
 static void execute_barrier(struct amdrdna_vk_execute *execute);
 static int execute_record(struct amdrdna_vk_session *session, struct amdrdna_vk_execute *execute, struct execute_state *state, const struct amdrdna_vk_record *record);
 static void execute_bind(struct execute_state *state, const struct amdrdna_vk_record *record);
+static bool execute_kernel_binds(const struct amdrdna_vk_record *record);
+static void execute_bind_kernel(struct execute_state *state, const struct amdrdna_vk_record *record);
+static bool execute_graphics_only(uint32_t opcode);
+static int execute_dispatch(struct amdrdna_vk_execute *execute, struct execute_state *state, const struct amdrdna_vk_record *record);
+static int execute_kernel_resources(const struct amdrdna_gfx10_program *program, const struct execute_state *state, uint64_t groups_va, uint8_t *table);
+static int execute_part(struct amdrdna_vk_execute *execute, uint32_t bytes, uint8_t **cpu, uint64_t *va);
 static int execute_begin_pass(struct amdrdna_vk_session *session, struct amdrdna_vk_execute *execute, struct execute_state *state, const struct amdrdna_vk_record *record);
 static int execute_draw(struct amdrdna_vk_execute *execute, struct execute_state *state, const struct amdrdna_vk_record *record);
 static int execute_table(struct amdrdna_vk_execute *execute, const struct amdrdna_gfx10_program *program, uint8_t **cpu, uint64_t *va);
@@ -229,6 +244,7 @@ amdrdna_vk_execute(
 	struct amdrdna_vk_session *session,
 	struct amdrdna_vk_command_buffer *command)
 {
+	const struct amdrdna_vk_command_pool *pool;
 	struct amdrdna_vk_execute *execute;
 	struct execute_state *state;
 	uint32_t index;
@@ -250,6 +266,10 @@ amdrdna_vk_execute(
 	if (state == NULL)
 		return ENOMEM;
 
+	/* The queue of the command buffer's family: a compute queue for the compute family. */
+	pool = command->pool;
+	execute->kernel_queue = (pool != NULL && pool->family == AMDRDNA_VK_FAMILY_COMPUTE);
+
 	/* Each record in order, the indirect buffer started over when it fills. */
 	execute_start(execute);
 	error = 0;
@@ -262,10 +282,11 @@ amdrdna_vk_execute(
 			break;
 	}
 
-	/* The rest of the indirect buffer. */
+	/* The rest of the indirect buffer; the next buffer is the graphics queue's unless said. */
 	if (error == 0)
 		error = execute_flush(session, execute);
 	kern_free(state);
+	execute->kernel_queue = false;
 
 	/* Reports a run that failed. */
 	if (error != 0)
@@ -559,7 +580,10 @@ execute_start(
 {
 	/* The buffer over its part of the run. */
 	amdrdna_vk_pm4_start(&execute->pm4, (uint32_t *)(void *)(execute->cpu + EXECUTE_BUFFER_AT), EXECUTE_BUFFER_WORDS);
-	amdrdna_vk_state_start(&execute->pm4);
+	if (execute->kernel_queue)
+		amdrdna_vk_state_start_kernel(&execute->pm4);
+	else
+		amdrdna_vk_state_start(&execute->pm4);
 
 	/* Nothing of the tables is used. */
 	execute->tables = 0U;
@@ -587,7 +611,10 @@ execute_flush(
 
 	/* Counts its draws, then runs it. */
 	amdrdna_vk_gpu_drawn(session->owner, execute->draws, execute->quads);
-	error = amdrdna_vk_gpu_run(session->owner, execute->va + EXECUTE_BUFFER_AT, execute->pm4.count * 4U);
+	if (execute->kernel_queue)
+		error = amdrdna_vk_gpu_run_kernel(session->owner, execute->va + EXECUTE_BUFFER_AT, execute->pm4.count * 4U);
+	else
+		error = amdrdna_vk_gpu_run(session->owner, execute->va + EXECUTE_BUFFER_AT, execute->pm4.count * 4U);
 	if (error != 0)
 		return error;
 
@@ -634,9 +661,12 @@ static void
 execute_barrier(
 	struct amdrdna_vk_execute *execute)
 {
-	/* A value the word has not held since the last run began. */
+	/* A value the word has not held since the last run began; the compute queue's own form there. */
 	execute->sync++;
-	amdrdna_vk_state_barrier(&execute->pm4, execute->va + EXECUTE_SYNC_AT, execute->sync);
+	if (execute->kernel_queue)
+		amdrdna_vk_state_barrier_kernel(&execute->pm4, execute->va + EXECUTE_SYNC_AT, execute->sync);
+	else
+		amdrdna_vk_state_barrier(&execute->pm4, execute->va + EXECUTE_SYNC_AT, execute->sync);
 }
 
 /* Runs one record. */
@@ -648,6 +678,18 @@ execute_record(
 	const struct amdrdna_vk_record *record)
 {
 	int error;
+
+	/* What the compute bind point binds is kept apart from the graphics state. */
+	if (execute_kernel_binds(record)) {
+		execute_bind_kernel(state, record);
+		return 0;
+	}
+
+	/* A compute queue runs no graphics work. */
+	if (execute->kernel_queue && execute_graphics_only(record->opcode)) {
+		kern_logf("amdrdna: vk: command %u is not run on the compute queue\n", (unsigned)record->opcode);
+		return ENOTSUP;
+	}
 
 	/* The record's command. */
 	error = 0;
@@ -669,6 +711,9 @@ execute_record(
 		break;
 	case GPU_OP_CMD_DRAW:
 		error = execute_draw(execute, state, record);
+		break;
+	case GPU_OP_CMD_DISPATCH:
+		error = execute_dispatch(execute, state, record);
 		break;
 	case GPU_OP_CMD_COPY_IMAGE:
 	case GPU_OP_CMD_BLIT_IMAGE:
@@ -730,6 +775,198 @@ execute_bind(
 	default:
 		break;
 	}
+}
+
+/* Reports whether a record binds at the compute bind point (its value 0). */
+static bool
+execute_kernel_binds(
+	const struct amdrdna_vk_record *record)
+{
+	/* A pipeline or sets, at the compute bind point. */
+	if (record->opcode != GPU_OP_CMD_BIND_PIPELINE && record->opcode != GPU_OP_CMD_BIND_DESCRIPTOR_SETS)
+		return false;
+	return record->values[0] == VK_PIPELINE_BIND_POINT_COMPUTE;
+}
+
+/* Keeps what a record binds at the compute bind point for the dispatches after it. */
+static void
+execute_bind_kernel(
+	struct execute_state *state,
+	const struct amdrdna_vk_record *record)
+{
+	uint32_t index;
+
+	/* The compute pipeline, or the sets from the first. */
+	if (record->opcode == GPU_OP_CMD_BIND_PIPELINE) {
+		state->kernel_pipeline = record->objects[0]->payload;
+		return;
+	}
+	for (index = 0U; index < record->object_count; index++) {
+		if (record->objects[index] != NULL)
+			state->kernel_sets[record->first + index] = record->objects[index]->payload;
+	}
+}
+
+/* Reports whether a command draws or is drawn (a pass, a draw, a transfer), which a compute queue cannot run. */
+static bool
+execute_graphics_only(
+	uint32_t opcode)
+{
+	/* The commands the graphics queue's draws run. */
+	switch (opcode) {
+	case GPU_OP_CMD_BEGIN_RENDER_PASS:
+	case GPU_OP_CMD_END_RENDER_PASS:
+	case GPU_OP_CMD_DRAW:
+	case GPU_OP_CMD_COPY_IMAGE:
+	case GPU_OP_CMD_BLIT_IMAGE:
+	case GPU_OP_CMD_COPY_BUFFER_TO_IMAGE:
+	case GPU_OP_CMD_COPY_IMAGE_TO_BUFFER:
+	case GPU_OP_CMD_CLEAR_COLOR_IMAGE:
+		return true;
+	default:
+		return false;
+	}
+}
+
+/*
+ * Runs a dispatch: the workgroup counts where the kernel reads them, the
+ * kernel's resource table from the sets bound at the compute bind point
+ * and the push constants, the kernel, the workgroups, then a barrier so
+ * the next command reads what it wrote.
+ */
+static int
+execute_dispatch(
+	struct amdrdna_vk_execute *execute,
+	struct execute_state *state,
+	const struct amdrdna_vk_record *record)
+{
+	const struct amdrdna_vk_pipeline *pipeline;
+	uint8_t *groups;
+	uint64_t groups_va;
+	uint8_t *table;
+	uint64_t table_va;
+	int error;
+
+	/* A dispatch with a compute pipeline; no workgroup is nothing to run. */
+	pipeline = state->kernel_pipeline;
+	if (pipeline == NULL)
+		return EINVAL;
+	if (record->values[0] == 0U || record->values[1] == 0U || record->values[2] == 0U)
+		return 0;
+
+	/* The three counts, then the table. */
+	error = execute_part(execute, 3U * 4U, &groups, &groups_va);
+	if (error != 0)
+		return error;
+	execute_put_words(groups, 0U, record->values, 3U);
+	error = execute_table(execute, pipeline->kernel.compiled, &table, &table_va);
+	if (error == 0)
+		error = execute_kernel_resources(pipeline->kernel.compiled, state, groups_va, table);
+	if (error != 0)
+		return error;
+
+	/* The kernel with its table, the workgroups, and the barrier after them. */
+	amdrdna_vk_state_kernel(&execute->pm4, &pipeline->kernel, table_va);
+	amdrdna_vk_pm4_dispatch(&execute->pm4, record->values[0], record->values[1], record->values[2]);
+	execute_barrier(execute);
+
+	/* Succeeded: the dispatch is written. */
+	return 0;
+}
+
+/*
+ * Writes a kernel's resource table as execute_resources() writes a draw
+ * program's, from the sets bound at the compute bind point; the storage
+ * buffer of the system set (the compiler's for the workgroup counts) reads
+ * the three counts at groups_va.  A binding with nothing bound refuses the
+ * dispatch.
+ */
+static int
+execute_kernel_resources(
+	const struct amdrdna_gfx10_program *program,
+	const struct execute_state *state,
+	uint64_t groups_va,
+	uint8_t *table)
+{
+	const struct amdrdna_vk_descriptor_set *set;
+	const struct amdrdna_gfx10_binding *binding;
+	uint32_t image_words[AMDRDNA_IMAGE_WORDS];
+	uint32_t sampler_words[AMDRDNA_SAMPLER_WORDS];
+	uint32_t words[4];
+	uint32_t index;
+	int error;
+
+	/* The push constants the kernel reads. */
+	kern_memcpy(table, state->push, program->push_bytes);
+
+	/* The storage buffers: the workgroup counts, or a binding's whole range. */
+	for (index = 0U; index < program->storage_used; index++) {
+		binding = &program->storage[index];
+		if (binding->set == DRV_GPU_IR_SYSTEM_SET) {
+			amdrdna_gfx10_raw_buffer_descriptor(groups_va, 3U * 4U, words);
+		} else {
+			set = state->kernel_sets[binding->set];
+			if (set == NULL)
+				return EINVAL;
+			error = execute_buffer_slot(&set->slots[binding->binding], 0U, words);
+			if (error != 0)
+				return error;
+		}
+		execute_put_words(table, binding->table_offset, words, 4U);
+	}
+
+	/* The uniform buffers: the bytes the kernel reads, within the range. */
+	for (index = 0U; index < program->uniform_used; index++) {
+		binding = &program->uniforms[index];
+		set = state->kernel_sets[binding->set];
+		if (set == NULL)
+			return EINVAL;
+		error = execute_buffer_slot(&set->slots[binding->binding], binding->size, words);
+		if (error != 0)
+			return error;
+		execute_put_words(table, binding->table_offset, words, 4U);
+	}
+
+	/* The sampled images: the image descriptor, then the sampler's. */
+	for (index = 0U; index < program->texture_used; index++) {
+		binding = &program->textures[index];
+		set = state->kernel_sets[binding->set];
+		if (set == NULL)
+			return EINVAL;
+		error = execute_texture_slot(&set->slots[binding->binding], image_words, sampler_words);
+		if (error != 0)
+			return error;
+		execute_put_words(table, binding->table_offset, image_words, AMDRDNA_IMAGE_WORDS);
+		execute_put_words(table, binding->table_offset + AMDRDNA_IMAGE_WORDS * 4U, sampler_words, AMDRDNA_SAMPLER_WORDS);
+	}
+
+	/* Succeeded: the table holds every resource. */
+	return 0;
+}
+
+/* Gives bytes of the run's tables' part on the table boundary, cleared. */
+static int
+execute_part(
+	struct amdrdna_vk_execute *execute,
+	uint32_t bytes,
+	uint8_t **cpu,
+	uint64_t *va)
+{
+	uint32_t rounded;
+
+	/* The bytes on the boundary, within the part. */
+	rounded = (bytes + EXECUTE_TABLE_ALIGN - 1U) & ~(EXECUTE_TABLE_ALIGN - 1U);
+	if (execute->tables + rounded > EXECUTE_TABLES_BYTES)
+		return ENOSPC;
+
+	/* The part. */
+	*cpu = execute->cpu + EXECUTE_TABLES_AT + execute->tables;
+	*va = execute->va + EXECUTE_TABLES_AT + execute->tables;
+	kern_memset(*cpu, 0, rounded);
+	execute->tables += rounded;
+
+	/* Succeeded: the part is the caller's. */
+	return 0;
 }
 
 /*

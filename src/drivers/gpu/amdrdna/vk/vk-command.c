@@ -155,9 +155,9 @@ command_create_pool(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* A pool of the one queue family. */
+	/* A pool of one of the queue families. */
 	error = 0;
-	if (info.queueFamilyIndex != 0U)
+	if (info.queueFamilyIndex >= AMDRDNA_VK_FAMILIES)
 		error = EINVAL;
 
 	/* The pool. */
