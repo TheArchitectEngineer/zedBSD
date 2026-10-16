@@ -112,6 +112,9 @@
 /* How long a fence of the queue setup is waited for. */
 #define CP_FENCE_MS			1000U
 
+/* The timed steps of a queue's reset, with the start. */
+#define CP_RESET_STEPS			5U
+
 static uint32_t gc_read(struct amdrdna_device *device, unsigned window, uint32_t offset);
 static void gc_write(struct amdrdna_device *device, unsigned window, uint32_t offset, uint32_t value);
 static void gc_change(struct amdrdna_device *device, unsigned window, uint32_t offset, uint32_t clear, uint32_t set);
@@ -1613,6 +1616,7 @@ amdrdna_cp_graphics_reset(
 	struct amdrdna_ring *ring;
 	volatile uint32_t *slots;
 	unsigned long irq;
+	uint64_t times[CP_RESET_STEPS];
 	uint32_t reset_index;
 	uint32_t request;
 	uint32_t index;
@@ -1630,6 +1634,7 @@ amdrdna_cp_graphics_reset(
 
 	/* The queue takes nothing new until it is attached again. */
 	ring->up = false;
+	times[0] = clock_milliseconds(NULL);
 
 	/* The context's work on queue 0 of the pipe reset; then the image's active word and the register read 0. */
 	request = (1U << context) | (1U << (AMDRDNA_GC_CONTEXT_RESET_QUEUES_SHIFT + ring->place.queue));
@@ -1639,6 +1644,7 @@ amdrdna_cp_graphics_reset(
 	error = scheduler_run(device, words, count, "graphics reset");
 	if (error != 0)
 		return error;
+	times[1] = clock_milliseconds(NULL);
 
 	/* The image from its copy, the ring empty: filler words, both pointers 0. */
 	irq = spin_lock_irqsave(&ring->lock);
@@ -1671,16 +1677,24 @@ amdrdna_cp_graphics_reset(
 	error = scheduler_run(device, words, count, "graphics attach after the reset");
 	if (error != 0)
 		return error;
+	times[2] = clock_milliseconds(NULL);
 
 	/* The ring runs commands, and its preamble again. */
 	error = amdrdna_ring_test(device, ring);
+	times[3] = clock_milliseconds(NULL);
 	if (error == 0)
 		error = graphics_preamble(device);
 	if (error != 0)
 		return error;
+	times[4] = clock_milliseconds(NULL);
 
-	/* Succeeded: the queue takes work again. */
+	/* Succeeded: the queue takes work again; the steps' times are said. */
 	ring->up = true;
+	amdrdna_mark("graphics queue reset steps: reset %llums, attach %llums, test %llums, preamble %llums",
+	    (unsigned long long)(times[1] - times[0]),
+	    (unsigned long long)(times[2] - times[1]),
+	    (unsigned long long)(times[3] - times[2]),
+	    (unsigned long long)(times[4] - times[3]));
 	return 0;
 }
 

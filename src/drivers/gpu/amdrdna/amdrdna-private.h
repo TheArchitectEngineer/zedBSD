@@ -1050,6 +1050,12 @@ amdrdna_space_fault(
 	unsigned context);
 
 void
+amdrdna_space_command_error(
+	struct amdrdna_device *device,
+	unsigned context,
+	unsigned source);
+
+void
 amdrdna_space_describe(
 	struct amdrdna_space *space,
 	uint64_t address);

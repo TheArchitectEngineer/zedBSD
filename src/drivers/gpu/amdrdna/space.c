@@ -635,6 +635,62 @@ amdrdna_space_fault(
 }
 
 /*
+ * Takes a command error a ring reported for a context (a privileged
+ * register or instruction, or a bad opcode): the space the context is
+ * handed to is lost and its session told; its run is then given up when
+ * its time is up (the queue is reset).  An error of the kernel's context
+ * or of no known space is left to the log.
+ *
+ * Procedure referenced: plan/ws039/design.md 11.2 (the CP's exceptions
+ * lose the session at once, the queue's reset follows).
+ */
+void
+amdrdna_space_command_error(
+	struct amdrdna_device *device,
+	unsigned context,
+	unsigned source)
+{
+	struct amdrdna_space *space;
+	struct amdrdna_space *found;
+	unsigned long irq;
+	void *session;
+	bool first;
+
+	/* The kernel's context has no space. */
+	if (context == 0U)
+		return;
+
+	/* Finds the context's owner and marks it lost, once. */
+	found = NULL;
+	first = false;
+	session = NULL;
+	irq = spin_lock_irqsave(&device->spaces.lock);
+
+	for (space = device->spaces.list; space != NULL; space = space->next) {
+		if (space->context == context && device->spaces.pool.slots[context].owner == space->id) {
+			found = space;
+			break;
+		}
+	}
+	if (found != NULL && !found->lost) {
+		found->lost = true;
+		found->lost_error = EIO;
+		device->spaces.lost++;
+		session = found->session;
+		first = true;
+	}
+
+	spin_unlock_irqrestore(&device->spaces.lock, irq);
+
+	/* Says which space lost its work, the first time, and tells the session. */
+	if (!first)
+		return;
+	amdrdna_mark("space %u lost: command error 0x%x in context %u", (unsigned)found->id, source, context);
+	if (session != NULL)
+		amdrdna_node_session_lost(device, session, EIO);
+}
+
+/*
  * Marks what the hub and the tables say about an address of a space, for
  * a check that failed: the context the space holds, that context's table
  * words and control word as the hub reads them, the done word of the

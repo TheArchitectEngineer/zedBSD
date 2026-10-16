@@ -311,9 +311,10 @@ amdrdna_engines_interrupt(
 		return;
 	}
 
-	/* A command error: counted, and the first ones named. */
+	/* A command error: the context's space is lost; counted, and the first ones named. */
 	if (interrupt->source != AMDRDNA_SOURCE_END_OF_PIPE) {
 		engines->command_errors++;
+		amdrdna_space_command_error(device, interrupt->context, interrupt->source);
 		if (engines->command_errors > ENGINES_NAMED_ERRORS)
 			return;
 		amdrdna_mark("cp error source=%u ring=0x%x ctx=%u data=0x%08x",
