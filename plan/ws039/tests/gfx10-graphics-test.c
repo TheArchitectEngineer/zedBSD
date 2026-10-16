@@ -219,13 +219,13 @@ test_variant(
 		fclose(hex);
 	}
 
-	/* The register values: a vertex program's v0 .. v3, parameter count and primitive number, a pixel program's inputs and colours. */
+	/* The register values: the ordered vector memory counter, a vertex program's v0 .. v3, parameter count and primitive number, a pixel program's inputs and colours. */
 	amdrdna_gfx10_program_registers(program, &registers);
 	error = 0;
 	if (((registers.inputs >> 1) & 0x1fU) != program->user_sgprs)
 		error = 1;
 	if (stage == DRV_GPU_STAGE_VERTEX) {
-		if (((registers.counts >> 24) & 3U) != 3U || (registers.position_formats & 0xfU) != 4U)
+		if (((registers.counts >> 24) & 3U) != 3U || (registers.counts & (1U << 27)) == 0U || (registers.position_formats & 0xfU) != 4U)
 			error = 1;
 		if (program->parameter_outputs == 0U && registers.vertex_export_config != 0x80U)
 			error = 1;
@@ -235,6 +235,8 @@ test_variant(
 			error = 1;
 	} else {
 		if (registers.pixel_input_enable != program->pixel_inputs || (registers.pixel_input_enable & 2U) == 0U)
+			error = 1;
+		if ((registers.counts & (1U << 25)) == 0U)
 			error = 1;
 		if ((registers.interpolant_control & (1U << 15)) == 0U)
 			error = 1;

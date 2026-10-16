@@ -174,10 +174,11 @@ test_module(
 		fclose(hex);
 	}
 
-	/* The register values: the VGPR blocks, two user SGPRs, the workgroup ids, the local ids x, y, z, the shared memory. */
+	/* The register values: the VGPR blocks, the ordered vector memory counter, two user SGPRs, the workgroup ids, the local ids x, y, z, the shared memory. */
 	amdrdna_gfx10_program_registers(program, &registers);
 	if ((registers.counts & 0x3fU) != (program->vgpr_count - 1U) / 8U ||
 	    ((registers.counts >> 12) & 0xffU) != 0xf0U ||
+	    (registers.counts & (1U << 30)) == 0U ||
 	    ((registers.inputs >> 1) & 0x1fU) != 2U ||
 	    ((registers.inputs >> 7) & 7U) != 7U ||
 	    ((registers.inputs >> 11) & 3U) != 2U ||

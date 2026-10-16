@@ -36,6 +36,21 @@
 #define GFX10_COUNTS_VERTEX_VGPRS_SHIFT	24U
 
 /*
+ * The bit of the register count word that has the vector memory counter
+ * count loads, samples and atomics with return in the order they were
+ * issued, which the waits the compiler places by count rely on: bit 27 of
+ * a vertex program's, 25 of a pixel program's, 30 of a compute program's.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/registers/gfx10.json
+ * (SPI_SHADER_PGM_RSRC1_VS, SPI_SHADER_PGM_RSRC1_PS, COMPUTE_PGM_RSRC1:
+ * MEM_ORDERED) and src/amd/vulkan/radv_shader.c (radv_mem_ordered: set on
+ * GFX10 and GFX11, lines 1885-1888).
+ */
+#define GFX10_COUNTS_ORDERED_VERTEX	(1U << 27)
+#define GFX10_COUNTS_ORDERED_PIXEL	(1U << 25)
+#define GFX10_COUNTS_ORDERED_COMPUTE	(1U << 30)
+
+/*
  * The inputs word: the user SGPR count in bits 5:1; a compute program's
  * workgroup id x, y, z enables in bits 7, 8, 9, its local id VGPR count
  * less one in 12:11, and its shared memory in blocks of 512 bytes in
@@ -166,6 +181,15 @@ amdrdna_gfx10_program_registers(
 	registers->counts = (vgprs - 1U) / GFX10_COUNTS_VGPR_BLOCK;
 	registers->counts |= GFX10_COUNTS_FLOAT_DENORMS << GFX10_COUNTS_FLOAT_MODE_SHIFT;
 	registers->counts |= GFX10_COUNTS_NAN_CLAMP;
+
+	/* The vector memory counter in order, in the stage's own bit. */
+	if (program->stage == DRV_GPU_STAGE_VERTEX) {
+		registers->counts |= GFX10_COUNTS_ORDERED_VERTEX;
+	} else if (program->stage == DRV_GPU_STAGE_FRAGMENT) {
+		registers->counts |= GFX10_COUNTS_ORDERED_PIXEL;
+	} else {
+		registers->counts |= GFX10_COUNTS_ORDERED_COMPUTE;
+	}
 
 	/* The user SGPRs every stage loads. */
 	registers->inputs = program->user_sgprs << GFX10_INPUTS_USER_SGPR_SHIFT;
