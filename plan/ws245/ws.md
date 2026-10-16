@@ -3,12 +3,12 @@
 # WS245: i915 の Gen12 系（display 12・13）の display の書き直し
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-15 作成。p001 の [design.md](design.md) は改訂 6 で cleared（2026-10-16 Q1）。q1218（P1、2026-10-16）で段の実装を開始: p047（証拠の道具）cleared、p016（OpRegion）・p017（VBT の解析）は 5330 の素の起動の回帰に合格し main に merge（p016）/ merge の依頼済み（p017））
+Status: incomplete（2026-10-15 作成。p001 の [design.md](design.md) は改訂 6 で cleared（2026-10-16 Q1）。q1218（P1、2026-10-16）で段の実装を開始: p047（証拠の道具）cleared、p016（OpRegion）・p017（VBT の解析）は 5330 の素の起動の回帰に合格し main に merge（p016）/ merge の依頼済み（p017）。p019〜p024 は branch agent/p1-ws245 に実装済み（5330 は全部の段の後に 1 回））
 Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
 Related: [WS244](../ws244/ws.md)（i915 の Linux 由来の code の整理、棚卸し plan/ws244/inventory.md・tests/inventory.py）、[Guardrail](../guardrail.md)「MIT・GPL の出典のデータの引用」
-Resume point: 2026-10-16 の方針（ユーザー「i915は、実装だけ先に終わらせ、全部マージしたものをテストして、動かなければ二分探索で半分マージしてテスト、だめならさらに半分、で進めます。まずはぜんぶ実装してください。」、Q1 経由）: p020 以降の段を design の順に p046 まで branch（agent/p1-ws245）に積む。各段は host 試験・build（既定と `I915_TESTS=y` の 5 組）warning 0・WIP commit・phase.md の記録。5330 の回帰は全部の後に 1 回（基準は main の kernel、段は branch の tip）、動かなければ下の「段の境の SHA」で二分探索。p019 は T1-704（機能の基準は合格、書き込みの順のずれは別の thread の相対の順: [phase019](phase019/phase.md)）。今の段: p023 の後は p024（well の所属 W3 と refcount、design §6.2 の p024 の行）。引き継ぎ（2026-10-16 P1、q1229-i01 は p022・p023 まで）: (1) 方針案: xd-power に `struct i915_xd_power`（refs[64]・on・retained、§6.7 の `temp/p006-partial-20261015-untracked/xd-power.c` の get/put/has/wells_of/well_on/well_off/release を当て直す。DC_off の well は p025 まで殻の hook（`drv_i915_dc_off_enable` と DC の disable）で、xd の表の DC_off 行は hook を呼ぶ）。殻（power.c）は domain → xd の機能の集合（`I915_XD_POWERS_*`）の変換の表と wrapper だけにし、`pd->power_wells[]` は xd の表から作る写し（name・ops・`hw_enabled`。always-on の行は無くなる）、`pd->domain_wells[d]` は `drv_i915_xd_power_wells_of(platform, functions(d))`。INIT は Linux では DC_off・PW_2・PW_A〜D（TGL は PW_2〜PW_5）に入るので、機能の集合で表す（例: 全 pipe・transcoder B〜D・VGA・DC_OFF。TGL・ADL-P の両方で Linux の集合と一致するかを (2) で確かめてから決める）。DISPLAY_CORE は well 無し。(2) 受け入れの照合: scratch の harness（`plan/ws245/temp/harness/`、git の外。`run-wells.sh <tree> <out> [NEW]` は `-Wl,--wrap` で MMIO と wait を model に置き換え、display-host-lib で production を build。`XVER=-DVER=12` で TGL）を広げ、段の前（6d4e2f41d を `git archive`）と後で全 domain の well の集合（名前で）と get/put の書き込みの列を比べる。旧の host 試験は `temp/harness/oldtests.sh <tree> <out>`（dp 821 行・lcd 394 行が基準）。(3) 呼び手: `display.c:2494・2518`、`takeover.c:5796-5803`、`diagnostics.c:899-911`、`power.c` の init_hw・verify_state・`i915_wells_on`・core init（`drv_i915_power_well_by_id` で PW_1）、`interrupts.c:1002・1017` の `drv_i915_display_power_is_enabled`（spinlock の下か確かめる: 照会は lock 無しの atomic で）、`tc-kern.c`、emit の `power_get/put`。(4) build は `sh build/tmp/kbuild.sh p021`（既定と I915_TESTS の 5 組、約 3.5 分）。
+Resume point: 2026-10-16 の方針（ユーザー「i915は、実装だけ先に終わらせ、全部マージしたものをテストして、動かなければ二分探索で半分マージしてテスト、だめならさらに半分、で進めます。まずはぜんぶ実装してください。」、Q1 経由）: p020 以降の段を design の順に p046 まで branch（agent/p1-ws245）に積む。各段は host 試験・build（既定と `I915_TESTS=y` の 5 組）warning 0・WIP commit・phase.md の記録。5330 の回帰は全部の後に 1 回（基準は main の kernel、段は branch の tip）、動かなければ下の「段の境の SHA」で二分探索。p019 は T1-704（機能の基準は合格、書き込みの順のずれは別の thread の相対の順: [phase019](phase019/phase.md)）。今の段: p024 の後は p025（DC state と DC9、design §6.2 の p025 の行。xd-power に DC_STATE_EN の書き込みと DC off の enable/disable を移し、殻の `drv_i915_power_well_enable/disable` の DC_off の枝と `drv_i915_dc_off_enable`・`drv_i915_gen9_set_dc_state`・`drv_i915_display_dc9_enter/leave` と `dc9.c` を置き換える。§6.7 の south.h の SOUTH_CHICKEN1 の bit を patch から足す）。p024 の形（[phase024](phase024/phase.md)）: xd-power の数え `struct i915_xd_power`（`display->xd.power`）は well の on/off を owner の `struct i915_xd_power_switch` で行い、殻の `i915_pw_switch_on/off` が `drv_i915_power_well_enable/disable`（DC_off は殻の旧の本体）を呼ぶ。p025 で DC_off の on/off を xd に入れる時はこの switch の DC_off の枝を xd 側に移す。harness: `plan/ws245/temp/harness/wells24.c`・`run-wells24.sh <tree> <out> [NEW]`（`XVER=-DVER=12` で TGL。段の前の tree は `git archive` で build/p024/base に作った）。build は `sh build/tmp/kbuild.sh p021`（既定と I915_TESTS の 5 組、約 3.5 分）。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）
@@ -139,7 +139,7 @@ Resume point: 2026-10-16 の方針（ユーザー「i915は、実装だけ先に
 | [p021](phase021/phase.md) | backlight の PWM（xd-panel） | in-progress（2 LW。2026-10-16 実装・host 試験・build 済み、5330 は全部の段の後に 1 回） |
 | [p022](phase022/phase.md) | panel power（PPS、xd-panel） | in-progress（3 LW。2026-10-16 q1229-i01 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回） |
 | [p023](phase023/phase.md) | power well の操作（W1、xd-power。p006 の差分を当て直す） | in-progress（5 LW。2026-10-16 q1229-i01 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回） |
-| p024 | well の所属（W3）と refcount（xd-power） | planned（4 LW） |
+| [p024](phase024/phase.md) | well の所属（W3）と refcount（xd-power） | in-progress（4 LW。2026-10-16 q1229-i02 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回。節目: HDMI・USB-C DP の 2 画面、5320 はユーザーの一覧） |
 | p025 | DC state と DC9（xd-power、dc9.c を消す） | planned（3 LW） |
 | p026 | DMC（xd-dmc） | planned（4 LW） |
 | p027 | CDCLK（xd-clock） | planned（3 LW） |
@@ -180,3 +180,4 @@ Resume point: 2026-10-16 の方針（ユーザー「i915は、実装だけ先に
 | p021 | c619c69c0 | 09b7da423 |
 | p022 | 92ee105c0 | e58dc6f48（p021 の記録の commit） |
 | p023 | 6d4e2f41d | 92ee105c0 |
+| p024 | a249461a9 | 9a98be12f（p023 の記録の commit） |
