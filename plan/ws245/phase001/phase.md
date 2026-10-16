@@ -2,7 +2,7 @@
 
 # ws245-p001: Gen12 系（display 12・13）の display の書き直しの設計
 
-Status: in-progress（q1218 P1: design.md の改訂 6（レビュー 5 の反映）は済み。clearance は Q1。§7 #23〜#34 は既定の案で進める（2026-10-16 Q1: ユーザーは問いに答えず実装を指示した）
+Status: cleared（2026-10-16 Q1: design.md 改訂 6（0eb279a29、main の merge）、レビュー 1〜5 を全件反映、§7 #23〜#34 は既定の案（ユーザーが実装を指示）。改訂 6 のレビューは回していない。p047 の mmio.c の記録は GT と共有の hot path（off の時は load と分岐 1 回）で、今 GT の担当はいない）
 Parent: [WS245](../ws.md)
 Approval: 2026-10-15 ユーザー「同時にサブエージェントで、i915のリライトをやります。WSがあると思います。」
 
