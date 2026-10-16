@@ -354,7 +354,7 @@ static int modeset_output(struct amdrdna_device *device, const struct modeset_pi
 static void modeset_lock(struct amdrdna_device *device, const struct modeset_pipe *pipe, bool locked);
 static void modeset_blank(struct amdrdna_device *device, const struct modeset_pipe *pipe, bool blank);
 static bool modeset_frames(struct amdrdna_device *device, const struct modeset_pipe *pipe, unsigned frames);
-static void modeset_look(struct amdrdna_device *device, const struct modeset_pipe *pipe, unsigned frames, struct modeset_check *check);
+static void modeset_look(struct amdrdna_device *device, const struct modeset_pipe *pipe, const struct amdrdna_timing *timing, unsigned frames, struct modeset_check *check);
 static void modeset_note(struct amdrdna_device *device, const struct modeset_pipe *pipe, const char *step);
 static void modeset_dump(struct amdrdna_device *device, const char *step);
 static uint32_t modeset_read(struct amdrdna_device *device, enum amdrdna_dcn_register which, unsigned instance);
@@ -420,7 +420,7 @@ amdrdna_a12_mode(
 	modeset_marks(device, &plan, input.reference_khz);
 	modeset_sync(device, &pipe, &firmware, &plan);
 	modeset_lock(device, &pipe, false);
-	modeset_look(device, &pipe, MODESET_LOOK_FRAMES, &check);
+	modeset_look(device, &pipe, &firmware, MODESET_LOOK_FRAMES, &check);
 	amdrdna_mark("A12 same %ux%u start=%u prefetch=%u/4 ttu=%u marks=%u/%u/%u/%u frames=%u underflow=%u/%u",
 	    firmware.width,
 	    firmware.height,
@@ -455,7 +455,7 @@ amdrdna_a12_mode(
 	if (error != 0)
 		return error;
 	error = modeset_switch(device, &pipe, other, &plan, input.reference_khz);
-	modeset_look(device, &pipe, MODESET_LOOK_FRAMES, &check);
+	modeset_look(device, &pipe, other, MODESET_LOOK_FRAMES, &check);
 	amdrdna_mark("A12 mode %ux%u@%u.%03u pclk=%ukHz start=%u frames=%u underflow=%u/%u crc=%08x/%08x error=%d",
 	    other->width,
 	    other->height,
@@ -497,7 +497,7 @@ amdrdna_a12_mode(
 		return error;
 	}
 	error = modeset_switch(device, &pipe, &firmware, &plan, input.reference_khz);
-	modeset_look(device, &pipe, MODESET_LOOK_FRAMES, &check);
+	modeset_look(device, &pipe, &firmware, MODESET_LOOK_FRAMES, &check);
 
 	/* Reports a return that failed. */
 	if (error != 0)
@@ -523,6 +523,34 @@ amdrdna_a12_mode(
 
 	/* Succeeded: both modes were shown and the firmware's is back. */
 	return 0;
+}
+
+/*
+ * Sets the timing generator's first CRC to cover the active area: both
+ * windows from the top left to the width and height (the CRC takes their
+ * union).
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/display/dc/core/dc.c (dc_stream_configure_crc) and
+ * display/dc/optc/dcn10/dcn10_optc.c (optc1_configure_crc).
+ */
+void
+amdrdna_timing_crc_window(
+	struct amdrdna_device *device,
+	unsigned timing,
+	uint32_t width,
+	uint32_t height)
+{
+	uint32_t across;
+	uint32_t down;
+
+	/* From 0 to the width and to the height. */
+	across = (width & MODESET_LOW_FIELD) << MODESET_HIGH_SHIFT;
+	down = (height & MODESET_LOW_FIELD) << MODESET_HIGH_SHIFT;
+	modeset_write(device, AMDRDNA_DCN_TIMING_CRC_WINDOW_A_X, timing, across);
+	modeset_write(device, AMDRDNA_DCN_TIMING_CRC_WINDOW_A_Y, timing, down);
+	modeset_write(device, AMDRDNA_DCN_TIMING_CRC_WINDOW_B_X, timing, across);
+	modeset_write(device, AMDRDNA_DCN_TIMING_CRC_WINDOW_B_Y, timing, down);
 }
 
 /* Tells whether a look at the picture was good: 30 frames at least and no underflow. */
@@ -1380,12 +1408,13 @@ modeset_frames(
 /*
  * Looks at the picture for a number of frames: the underflow bits cleared
  * first, then the frames counted, the underflow bits read and the
- * picture's CRC taken.
+ * picture's CRC taken over its active area.
  */
 static void
 modeset_look(
 	struct amdrdna_device *device,
 	const struct modeset_pipe *pipe,
+	const struct amdrdna_timing *timing,
 	unsigned frames,
 	struct modeset_check *check)
 {
@@ -1408,6 +1437,7 @@ modeset_look(
 	/* The underflow bits and the CRC (on, continuous, two frames). */
 	check->underflow = amdrdna_display_underflow(device, &check->timing_underflow);
 	modeset_write(device, AMDRDNA_DCN_TIMING_CRC_CONTROL, pipe->timing, 0U);
+	amdrdna_timing_crc_window(device, pipe->timing, timing->width, timing->height);
 	modeset_write(device, AMDRDNA_DCN_TIMING_CRC_CONTROL, pipe->timing, MODESET_CRC_CONTINUOUS_ON);
 	(void)modeset_frames(device, pipe, 2U);
 	check->red_green = modeset_read(device, AMDRDNA_DCN_TIMING_CRC_RED_GREEN, pipe->timing);

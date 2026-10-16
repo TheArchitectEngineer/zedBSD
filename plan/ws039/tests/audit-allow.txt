@@ -5,6 +5,7 @@
 EINVAL
 above
 access
+across
 action
 active
 address
@@ -87,6 +88,7 @@ display
 divider
 done
 doorbell
+down
 dpcd
 driver
 drivers

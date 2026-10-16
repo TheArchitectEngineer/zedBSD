@@ -164,6 +164,10 @@ NAMES = [
     lambda n: "DSCL%d_OTG_V_BLANK" % n,
     lambda n: "DSCL%d_MPC_SIZE" % n,
     lambda n: "OTG%d_PHYPLL_PIXEL_RATE_CNTL" % n,
+    lambda n: "OTG%d_OTG_CRC0_WINDOWA_X_CONTROL" % n,
+    lambda n: "OTG%d_OTG_CRC0_WINDOWA_Y_CONTROL" % n,
+    lambda n: "OTG%d_OTG_CRC0_WINDOWB_X_CONTROL" % n,
+    lambda n: "OTG%d_OTG_CRC0_WINDOWB_Y_CONTROL" % n,
 ]
 
 

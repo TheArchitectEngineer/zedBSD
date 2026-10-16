@@ -1205,6 +1205,13 @@ int
 amdrdna_a12_mode(
 	struct amdrdna_device *device);
 
+void
+amdrdna_timing_crc_window(
+	struct amdrdna_device *device,
+	unsigned timing,
+	uint32_t width,
+	uint32_t height);
+
 /* sink.c: stage A10. */
 int
 amdrdna_a10_sink(

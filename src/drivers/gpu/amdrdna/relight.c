@@ -356,14 +356,24 @@ relight_blank(
 	}
 }
 
-/* Reads the CRC of the whole picture: the CRC set to run continuously, two frames, then its words. */
+/*
+ * Reads the CRC of the whole picture: the CRC set to run continuously
+ * over the active area (the union of two windows that both cover it),
+ * two frames, then its words.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/display/dc/core/dc.c (dc_stream_configure_crc: the
+ * full frame, UNION_WINDOW_A_B) and display/dc/optc/dcn10/dcn10_optc.c
+ * (optc1_configure_crc).
+ */
 static void
 relight_crc(
 	struct amdrdna_device *device,
 	struct relight_crc *crc)
 {
-	/* Continuous, on. */
+	/* Off, the whole active area as both windows, then continuous and on. */
 	relight_write(device, AMDRDNA_DCN_TIMING_CRC_CONTROL, device->gop.timing, 0U);
+	amdrdna_timing_crc_window(device, device->gop.timing, device->display.width, device->display.height);
 	relight_write(device, AMDRDNA_DCN_TIMING_CRC_CONTROL, device->gop.timing, RELIGHT_CRC_CONTINUOUS | RELIGHT_CRC_ON);
 
 	/* Two whole frames, then the words. */
