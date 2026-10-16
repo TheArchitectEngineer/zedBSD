@@ -91,17 +91,21 @@
 #define GFX10_OUTPUT_MISC_SIDE_BUS	(1U << 24)
 
 /*
- * A pixel program's colour export format (four 32-bit channels, 4 bits
- * per target), the interpolant count (bits 5:0) and the wave32 bit (15)
- * of the interpolant control, and an attribute's control word: the
- * parameter it reads (bits 5:0) and flat shading (bit 10).
+ * A pixel program's colour export format (four 16-bit floats, 4 bits per
+ * target: the format of an 8-bit colour target, the only kind the
+ * executor draws into; four 32-bit channels blend wrongly into one), the
+ * interpolant count (bits 5:0) and the wave32 bit (15) of the interpolant
+ * control, and an attribute's control word: the parameter it reads (bits
+ * 5:0) and flat shading (bit 10).
  *
  * Values referenced: Mesa 25.0.7 src/amd/registers/gfx10.json
- * (SPI_SHADER_COL_FORMAT; the enum SPI_SHADER_EX_FORMAT: SPI_SHADER_32_ABGR
- * 9; SPI_PS_IN_CONTROL: NUM_INTERP, PS_W32_EN; SPI_PS_INPUT_CNTL_0:
- * OFFSET, FLAT_SHADE).
+ * (SPI_SHADER_COL_FORMAT; the enum SPI_SHADER_EX_FORMAT: SPI_SHADER_FP16_ABGR
+ * 4; SPI_PS_IN_CONTROL: NUM_INTERP, PS_W32_EN; SPI_PS_INPUT_CNTL_0:
+ * OFFSET, FLAT_SHADE) and src/amd/common/ac_shader_util.c
+ * (ac_choose_spi_color_formats: FP16_ABGR for an 8_8_8_8 UNORM or SRGB
+ * target, blended or not).
  */
-#define GFX10_COLOR_FOUR_FLOATS		9U
+#define GFX10_COLOR_FOUR_HALVES		4U
 #define GFX10_INTERPOLANT_WAVE32	(1U << 15)
 #define GFX10_ATTRIBUTE_FLAT		(1U << 10)
 
@@ -232,10 +236,10 @@ amdrdna_gfx10_program_registers(
 	if (program->stage == DRV_GPU_STAGE_FRAGMENT) {
 		registers->pixel_input_enable = program->pixel_inputs;
 
-		/* Each colour location written exports four 32-bit channels. */
+		/* Each colour location written exports four 16-bit floats. */
 		for (location = 0U; location < 8U; location++) {
 			if ((program->color_outputs & (1U << location)) != 0U)
-				registers->color_formats |= GFX10_COLOR_FOUR_FLOATS << (4U * location);
+				registers->color_formats |= GFX10_COLOR_FOUR_HALVES << (4U * location);
 		}
 
 		/*

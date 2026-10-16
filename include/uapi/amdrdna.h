@@ -356,17 +356,41 @@ struct amdrdna_display_state {
 	uint32_t reserved[4];
 };
 
+/*
+ * Copies the picture the display shows now, the surface the plane reads,
+ * to the caller (AMDRDNA_IOC_SCREEN, root only): at most length bytes of
+ * its rows from the top, each row stride bytes, 32-bit pixels B, G, R, A
+ * in memory.  The driver reports the picture's width, height and stride,
+ * the GPU address it read and the bytes copied.  Inputs: version, size,
+ * buffer and length.
+ */
+struct amdrdna_screen {
+	uint32_t version;
+	uint32_t size;
+	uint64_t buffer;
+	uint32_t length;
+	uint32_t copied;
+	uint32_t width;
+	uint32_t height;
+	uint32_t stride;
+	uint32_t reserved0;
+	uint64_t address;
+	uint32_t reserved[4];
+};
+
 _Static_assert(sizeof(struct amdrdna_status) == 352U, "amdrdna status ABI size");
 _Static_assert(offsetof(struct amdrdna_status, frame_buffer_base) == 96U, "amdrdna status ABI alignment");
 _Static_assert(offsetof(struct amdrdna_status, gart_base) == 184U, "amdrdna status ABI alignment");
 _Static_assert(sizeof(struct amdrdna_advance) == 32U, "amdrdna advance ABI size");
 _Static_assert(sizeof(struct amdrdna_vbios_read) == 48U, "amdrdna vbios ABI size");
 _Static_assert(sizeof(struct amdrdna_display_state) == 216U, "amdrdna display ABI size");
+_Static_assert(sizeof(struct amdrdna_screen) == 64U, "amdrdna screen ABI size");
 _Static_assert(offsetof(struct amdrdna_display_state, frame_signals) == 136U, "amdrdna display ABI alignment");
 
 #define AMDRDNA_IOC_STATUS	_IOWR(KERN_AMDRDNA_IOC_GROUP, 1, struct amdrdna_status)
 #define AMDRDNA_IOC_ADVANCE	_IOW(KERN_AMDRDNA_IOC_GROUP, 2, struct amdrdna_advance)
 #define AMDRDNA_IOC_VBIOS	_IOWR(KERN_AMDRDNA_IOC_GROUP, 3, struct amdrdna_vbios_read)
 #define AMDRDNA_IOC_DISPLAY	_IOWR(KERN_AMDRDNA_IOC_GROUP, 4, struct amdrdna_display_state)
+#define AMDRDNA_IOC_SCREEN	_IOWR(KERN_AMDRDNA_IOC_GROUP, 5, struct amdrdna_screen)
 
 #endif

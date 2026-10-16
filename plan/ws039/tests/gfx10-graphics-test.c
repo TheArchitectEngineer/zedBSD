@@ -58,6 +58,7 @@ static int compare_storage(const struct drv_gpu_shader_ir *ir);
 static uint32_t random_word(uint32_t *state);
 static float random_float(uint32_t *state);
 static uint32_t float_bits(float value);
+static uint32_t half_word(uint32_t bits);
 static uint32_t *read_file(const char *path, size_t *words);
 
 /* The buffers of one trial. */
@@ -219,7 +220,7 @@ test_variant(
 		fclose(hex);
 	}
 
-	/* The register values: the ordered vector memory counter, a vertex program's v0 .. v3, parameter count and primitive number, a pixel program's inputs and colours. */
+	/* The register values: the ordered vector memory counter, a vertex program's v0 .. v3, parameter count and primitive number, a pixel program's inputs and colours (four 16-bit floats). */
 	amdrdna_gfx10_program_registers(program, &registers);
 	error = 0;
 	if (((registers.inputs >> 1) & 0x1fU) != program->user_sgprs)
@@ -241,7 +242,7 @@ test_variant(
 		if ((registers.interpolant_control & (1U << 15)) == 0U)
 			error = 1;
 		for (index = 0U; index < 8U; index++) {
-			if (((registers.color_formats >> (4U * index)) & 0xfU) != (((program->color_outputs >> index) & 1U) != 0U ? 9U : 0U))
+			if (((registers.color_formats >> (4U * index)) & 0xfU) != (((program->color_outputs >> index) & 1U) != 0U ? 4U : 0U))
 				error = 1;
 		}
 		for (index = 0U; index < registers.attribute_count; index++) {
@@ -574,6 +575,7 @@ pixel_trial(
 	const float *vertices;
 	uint32_t alive;
 	uint32_t exported_lanes;
+	uint32_t want;
 	uint32_t lane;
 	uint32_t location;
 	uint32_t channel;
@@ -730,9 +732,11 @@ pixel_trial(
 			for (channel = 0U; channel < 4U; channel++) {
 				if (reference_state.written[lane][slot][channel] == 0U)
 					continue;
+				want = reference_state.output[lane][slot][channel];
+				if ((graphics.export_flags[AMDRDNA_GFX10_EXPORT_COLOR + location] & 8U) != 0U)
+					want = half_word(want);
 				if (compare_slot("colour", lane, 4U * location + channel,
-						 graphics.exported[AMDRDNA_GFX10_EXPORT_COLOR + location][lane][channel],
-						 reference_state.output[lane][slot][channel]) != 0)
+						 graphics.exported[AMDRDNA_GFX10_EXPORT_COLOR + location][lane][channel], want) != 0)
 					return 1;
 			}
 		}
@@ -836,4 +840,36 @@ read_file(
 	fclose(file);
 	*words = (size_t)size / 4U;
 	return data;
+}
+
+/* A float's word as a compressed colour export carries it: rounded toward zero to a 16-bit float, and back. */
+static uint32_t
+half_word(
+	uint32_t bits)
+{
+	_Float16 half;
+	uint16_t code;
+	float value;
+	float back;
+	float back_size;
+	float value_size;
+
+	/* The nearest 16-bit float; a NaN as it is. */
+	memcpy(&value, &bits, sizeof(value));
+	if (value != value)
+		return bits;
+	half = (_Float16)value;
+	memcpy(&code, &half, sizeof(code));
+
+	/* One step toward zero when the nearest is farther from zero. */
+	back_size = fabsf((float)half);
+	value_size = fabsf(value);
+	if ((code & 0x7fffU) != 0U && back_size > value_size)
+		code--;
+
+	/* Back to a float's word. */
+	memcpy(&half, &code, sizeof(half));
+	back = (float)half;
+	memcpy(&bits, &back, sizeof(bits));
+	return bits;
 }

@@ -155,7 +155,7 @@ amdrdna_a8_register(
 	node = device->node;
 	display = &device->display;
 
-	/* Without amdrdna.disp.own=1 stage A5s registered the device without a display. */
+	/* With amdrdna.disp.own=0 stage A5s registered the device without a display. */
 	wanted = amdrdna_display_wanted();
 	if (!wanted) {
 		amdrdna_mark("A8 skip: the display stays the firmware's (amdrdna.disp.own=0)");
@@ -948,7 +948,7 @@ present_cursor_hide(
 
 /*
  * Answers the pairing query: the device shows images, and renders them
- * too when the renderer is bound (amdrdna.vk=1); it has no companion.
+ * too when the renderer is bound (not amdrdna.vk=0); it has no companion.
  */
 static int
 present_query_device(

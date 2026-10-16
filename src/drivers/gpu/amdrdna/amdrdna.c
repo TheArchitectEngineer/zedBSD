@@ -14,7 +14,7 @@
  * that is not a first-generation RDNA GPU the firmware posted is given
  * back to the firmware untouched.  A kept function gets a control device
  * and a bring-up thread, which runs the later stages: the ones the boot
- * line names (amdrdna.auto=, A1v by default) and the ones root asks for
+ * line names (amdrdna.auto=, A9 by default) and the ones root asks for
  * through the control device, one at a time and never again after one
  * failed.  A GPU whose A1 failed is kept too, with its failure recorded,
  * so the control device can still report what A0 and A1 read; no stage

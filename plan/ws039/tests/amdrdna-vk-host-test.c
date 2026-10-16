@@ -493,6 +493,9 @@ log_reset(void)
  */
 #define REPLAY_LANES		32U
 
+/* How near a colour exported as 16-bit floats (rounded toward zero) is to an 8-bit value: under half a step of 1/255. */
+#define COLOUR_HALF		0.001f
+
 struct replay {
 	int32_t x[REPLAY_LANES];
 	int32_t y[REPLAY_LANES];
@@ -2207,9 +2210,9 @@ test_submit(const char *directory)
 	    reg(quad_draw, 0xb028U) == pipeline->fragment.registers.counts && reg(quad_draw, 0xb02cU) == pipeline->fragment.registers.inputs,
 	    "submit: the pipeline's programs and their counts");
 	check(reg(quad_draw, 0x286ccU) == pipeline->fragment.compiled->pixel_inputs && reg(quad_draw, 0x286d0U) == reg(quad_draw, 0x286ccU) &&
-	    reg(quad_draw, 0x28714U) == 9U && reg(quad_draw, 0x2823cU) == 0xfU && (reg(quad_draw, 0x286d8U) & 0x3fU) == 1U &&
+	    reg(quad_draw, 0x28714U) == 4U && reg(quad_draw, 0x2823cU) == 0xfU && (reg(quad_draw, 0x286d8U) & 0x3fU) == 1U &&
 	    reg(quad_draw, 0x28644U) == 0U && reg(quad_draw, 0x286c4U) == 0U && reg(quad_draw, 0x2870cU) == 4U,
-	    "submit: one parameter exported and read as attribute 0, colour 0 of four floats");
+	    "submit: one parameter exported and read as attribute 0, colour 0 of four 16-bit floats");
 	check(reg(quad_draw, 0x28780U) == 0x40000501U && reg(quad_draw, 0x28238U) == 0xfU, "submit: the quad blends one, one minus source alpha");
 	check(reg(quad_draw, 0x2843cU) == 0x42000000U && reg(quad_draw, 0x28440U) == 0x42000000U && reg(quad_draw, 0x28444U) == 0x42000000U &&
 	    reg(quad_draw, 0x28448U) == 0x42000000U && reg(quad_draw, 0x2844cU) == 0x3f800000U && reg(quad_draw, 0x28450U) == 0U,
@@ -2276,7 +2279,7 @@ test_submit(const char *directory)
 	good = replayed.error == NULL;
 	for (lane = 0; good && lane < REPLAY_LANES; lane++) {
 		bytes_colour(scene + 0x4000 + (replayed.y[lane] - 20) * 256 + (replayed.x[lane] - 10) * 4, 0, expected);
-		good = colour_near(replayed.colour[lane], expected, 0.0f) && replayed.x[lane] >= 10 && replayed.x[lane] < 26;
+		good = colour_near(replayed.colour[lane], expected, COLOUR_HALF) && replayed.x[lane] >= 10 && replayed.x[lane] < 26;
 	}
 	check(good, "submit: the copy writes image 0x503's pixels one to one");
 
@@ -2284,7 +2287,7 @@ test_submit(const char *directory)
 	good = replayed.error == NULL;
 	for (lane = 0; good && lane < REPLAY_LANES; lane++) {
 		bytes_colour(scene + 0x8000 + replayed.y[lane] * 256 + replayed.x[lane] * 4, 1, expected);
-		good = colour_near(replayed.colour[lane], expected, 0.0f) && replayed.y[lane] < 8;
+		good = colour_near(replayed.colour[lane], expected, COLOUR_HALF) && replayed.y[lane] < 8;
 	}
 	check(good, "submit: the upload of 32x8 writes the buffer's pixels (blue first)");
 
@@ -2292,7 +2295,7 @@ test_submit(const char *directory)
 	good = replayed.error == NULL;
 	for (lane = 0; good && lane < REPLAY_LANES; lane++) {
 		bytes_colour(scene + 0x8100 + (replayed.y[lane] - 50) * 256 + (replayed.x[lane] - 10) * 4, 1, expected);
-		good = colour_near(replayed.colour[lane], expected, 0.0f) && replayed.x[lane] >= 10 && replayed.x[lane] < 14 &&
+		good = colour_near(replayed.colour[lane], expected, COLOUR_HALF) && replayed.x[lane] >= 10 && replayed.x[lane] < 14 &&
 		       replayed.y[lane] >= 50 && replayed.y[lane] < 53;
 	}
 	check(good, "submit: the upload from 0x100 writes its 4x3 pixels at (10, 50)");
@@ -2301,7 +2304,7 @@ test_submit(const char *directory)
 	good = replayed.error == NULL;
 	for (lane = 0; good && lane < REPLAY_LANES; lane++) {
 		bytes_colour(scene + 0x4000 + (replayed.y[lane] + 2) * 256 + (replayed.x[lane] + 4) * 4, 0, expected);
-		good = colour_near(replayed.colour[lane], expected, 0.0f) && replayed.x[lane] < 8 && replayed.y[lane] < 4;
+		good = colour_near(replayed.colour[lane], expected, COLOUR_HALF) && replayed.x[lane] < 8 && replayed.y[lane] < 4;
 	}
 	check(good, "submit: the download writes image 0x503's 8x4 pixels from (4, 2) into the buffer");
 
@@ -2435,8 +2438,9 @@ test_units(void)
 	blend.alpha_destination = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
 	blend.write_mask = 0xf;
 	check(amdrdna_vk_state_blend(&pm4, &blend) == 0 && decode_buffer(words, pm4.count, 0) == 0 &&
-	    registers.context[(0x28780U - 0x28000U) / 4U] == 0x40000501U && registers.context[(0x28760U - 0x28000U) / 4U] == 0U &&
-	    registers.context[(0x28238U - 0x28000U) / 4U] == 0xfU, "units: premultiplied blending (0x40000501)");
+	    registers.context[(0x28780U - 0x28000U) / 4U] == 0x40000501U &&
+	    registers.context[(0x28760U - 0x28000U) / 4U] == 0x01770177U &&
+	    registers.context[(0x28238U - 0x28000U) / 4U] == 0xfU, "units: premultiplied blending (0x40000501), every channel kept by the export unit");
 	log_reset();
 	amdrdna_vk_pm4_start(&pm4, words, 256);
 	blend.alpha_op = VK_BLEND_OP_MIN;

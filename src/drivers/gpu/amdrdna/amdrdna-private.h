@@ -1166,6 +1166,13 @@ amdrdna_display_report(
 	struct amdrdna_device *device,
 	struct amdrdna_display_state *state);
 
+struct amdrdna_screen;
+
+int
+amdrdna_display_screen(
+	struct amdrdna_device *device,
+	struct amdrdna_screen *screen);
+
 /* present.c: stage A8, the display's operations of the GPU device. */
 int
 amdrdna_a8_register(

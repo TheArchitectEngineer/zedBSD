@@ -36,7 +36,8 @@
  * that a buffer access's address register is a byte offset or a record
  * index; UNNORMALIZED reads an image at texel coordinates; LAST ends the
  * exports of a program and VALID_MASK says the export carries the lanes
- * that are alive.
+ * that are alive; COMPRESSED says an export carries four 16-bit channels,
+ * two in each of its first two VGPRs.
  */
 #define AMDRDNA_GFX10_FLAG_GLOBALLY_COHERENT	(1U << 0)
 #define AMDRDNA_GFX10_FLAG_OFFSET_ADDRESS	(1U << 1)
@@ -45,6 +46,7 @@
 #define AMDRDNA_GFX10_FLAG_LAST			(1U << 4)
 #define AMDRDNA_GFX10_FLAG_VALID_MASK		(1U << 5)
 #define AMDRDNA_GFX10_FLAG_DEVICE_COHERENT	(1U << 6)
+#define AMDRDNA_GFX10_FLAG_COMPRESSED		(1U << 7)
 
 /*
  * The kind of an instruction: which form it is written in.
@@ -126,7 +128,8 @@ enum amdrdna_gfx10_counter {
  *                             descriptor src[1] (eight SGPRs), sampler
  *                             src[2] (four SGPRs, NULL for a load)
  *   export                    target `target`, the VGPRs src[0..3] of the
- *                             channels `mask` enables
+ *                             channels `mask` enables (a compressed one:
+ *                             src[0] and src[1], two channels each)
  */
 struct amdrdna_gfx10_inst {
 	enum amdrdna_gfx10_kind kind;

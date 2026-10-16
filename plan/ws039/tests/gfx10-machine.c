@@ -102,6 +102,7 @@ static float as_float(uint32_t bits);
 static uint32_t as_bits(float value);
 static uint32_t half_from_float(float value);
 static float float_from_half(uint32_t half);
+static uint32_t half_toward_zero(float value);
 static int scalar_alu(struct run *run, struct wave *wave, uint32_t word, uint32_t literal, int *used_literal);
 static int control(struct run *run, struct wave *wave, uint32_t word);
 static int scalar_load(struct run *run, struct wave *wave, uint32_t word0, uint32_t word1);
@@ -502,6 +503,26 @@ half_from_float(
 
 	half = (_Float16)value;
 	memcpy(&bits, &half, sizeof(bits));
+	return bits;
+}
+
+/* The 16-bit float of a float rounded toward zero. */
+static uint32_t
+half_toward_zero(
+	float value)
+{
+	uint32_t bits;
+	float back_size;
+	float value_size;
+
+	/* The nearest. */
+	bits = half_from_float(value);
+	back_size = fabsf(float_from_half(bits));
+	value_size = fabsf(value);
+
+	/* One step toward zero when it is farther from zero than the value (a finite value past the largest becomes the largest). */
+	if (value == value && (bits & 0x7fffU) != 0U && back_size > value_size)
+		bits--;
 	return bits;
 }
 
@@ -1132,6 +1153,8 @@ vector_operation(
 		return a ^ b;
 	case 0x125U:
 		return a + b;
+	case 0x12fU:
+		return half_toward_zero(fa) | half_toward_zero(fb) << 16;
 	case 0x126U:
 		return a - b;
 	case 0x181U:
@@ -1655,6 +1678,7 @@ export_access(
 	unsigned channel;
 	unsigned lane;
 	unsigned code;
+	unsigned compressed;
 	int error;
 
 	if (run->graphics == NULL)
@@ -1662,17 +1686,32 @@ export_access(
 	target = (word0 >> 4) & 0x3fU;
 	mask = word0 & 0xfU;
 
-	/* The registers of the enabled channels are ready; they stay read until the export counter. */
+	/*
+	 * The registers of the enabled channels are ready; they stay read until
+	 * the export counter.  A compressed export's first two registers each
+	 * carry two 16-bit floats, kept as floats.
+	 */
+	compressed = (word0 >> 10) & 1U;
 	for (channel = 0U; channel < 4U; channel++) {
 		if ((mask & (1U << channel)) == 0U)
 			continue;
+		if (compressed != 0U && channel >= 2U)
+			break;
 		code = 256U + ((word1 >> (8U * channel)) & 0xffU);
 		error = check_vector_read(run, wave, code);
 		if (error != 0)
 			return error;
 		for (lane = 0U; lane < MACHINE_LANES; lane++) {
-			if ((wave->s[CODE_EXEC] & (1U << lane)) != 0U)
+			if ((wave->s[CODE_EXEC] & (1U << lane)) == 0U)
+				continue;
+			if (compressed == 0U) {
 				run->graphics->exported[target][lane][channel] = wave->v[code - 256U][lane];
+				continue;
+			}
+
+			/* A compressed export's two halves. */
+			run->graphics->exported[target][lane][2U * channel] = as_bits(float_from_half(wave->v[code - 256U][lane] & 0xffffU));
+			run->graphics->exported[target][lane][2U * channel + 1U] = as_bits(float_from_half(wave->v[code - 256U][lane] >> 16));
 		}
 		wave->pending[code] |= PENDING_EXPORT;
 	}
@@ -1680,7 +1719,7 @@ export_access(
 		return fail(run, "a target exported twice");
 	run->graphics->export_channels[target] = mask;
 	run->graphics->export_lanes[target] = wave->s[CODE_EXEC];
-	run->graphics->export_flags[target] = 1U | ((word0 >> 11) & 1U) << 1 | ((word0 >> 12) & 1U) << 2;
+	run->graphics->export_flags[target] = 1U | ((word0 >> 11) & 1U) << 1 | ((word0 >> 12) & 1U) << 2 | compressed << 3;
 	run->graphics->export_count++;
 	return 0;
 }

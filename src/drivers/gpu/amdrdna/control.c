@@ -50,6 +50,7 @@ static int control_status(struct amdrdna_device *device, uintptr_t argument);
 static int control_advance(struct amdrdna_device *device, uintptr_t argument);
 static int control_vbios(struct amdrdna_device *device, uintptr_t argument);
 static int control_display(struct amdrdna_device *device, uintptr_t argument);
+static int control_screen(struct amdrdna_device *device, uintptr_t argument);
 static void control_fill(struct amdrdna_device *device, struct amdrdna_status *status);
 static void control_fill_memory(struct amdrdna_device *device, struct amdrdna_status *status);
 static uint32_t control_fill_power(struct amdrdna_device *device, struct amdrdna_status *status);
@@ -141,6 +142,9 @@ control_ioctl(
 		break;
 	case AMDRDNA_IOC_DISPLAY:
 		error = control_display(device, argument);
+		break;
+	case AMDRDNA_IOC_SCREEN:
+		error = control_screen(device, argument);
 		break;
 	default:
 		error = ENOTTY;
@@ -338,6 +342,45 @@ control_display(
 		return error;
 
 	/* Succeeded: the caller has the display's state. */
+	return 0;
+}
+
+/* Copies the picture the display shows to the caller: AMDRDNA_IOC_SCREEN, for root only. */
+static int
+control_screen(
+	struct amdrdna_device *device,
+	uintptr_t argument)
+{
+	struct amdrdna_screen screen;
+	struct ucred *credential;
+	int superuser;
+	int error;
+
+	/* Refuses a caller that is not root: the screen may show another user's windows. */
+	credential = cred_current_ref();
+	superuser = cred_is_superuser(credential);
+	cred_release(credential);
+	if (!superuser)
+		return EPERM;
+
+	/* The caller's version and size must be this interface's. */
+	error = copyin(argument, &screen, sizeof(screen));
+	if (error != 0)
+		return error;
+	if (screen.version != AMDRDNA_INTERFACE_VERSION || screen.size != sizeof(screen))
+		return EINVAL;
+
+	/* Copies the rows. */
+	error = amdrdna_display_screen(device, &screen);
+	if (error != 0)
+		return error;
+
+	/* Reports the picture and the bytes copied. */
+	error = copyout(&screen, argument, sizeof(screen));
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller has the picture. */
 	return 0;
 }
 

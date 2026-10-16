@@ -323,7 +323,7 @@
  * destination 12:8, alpha source 20:16, function 23:21, destination 28:24,
  * separate alpha 29, enable 30); its factors and functions; the blend
  * shortcut that is off for a target that does not blend (6 in both
- * function fields, 10:8 and 26:24) or that blends (0 there, no shortcut).
+ * function fields, 10:8 and 26:24).
  *
  * Values referenced: Mesa 25.0.7 src/amd/registers/gfx10.json
  * (CB_COLOR_CONTROL: MODE, ROP3; the enum CBMode: CB_NORMAL 1;
@@ -339,8 +339,7 @@
  * COMB_MAX_DST_SRC 3, COMB_DST_MINUS_SRC 4; SX_MRT0_BLEND_OPT: COLOR_COMB_FCN,
  * ALPHA_COMB_FCN; the enum SX_OPT_COMB_FCN: OPT_COMB_NONE 0,
  * OPT_COMB_BLEND_DISABLED 6) and src/amd/vulkan/radv_cmd_buffer.c
- * (radv_emit_color_blend: the shortcut off without blending, none with
- * it as for a dual-source blend).
+ * (radv_emit_color_blend: the shortcut off without blending).
  */
 #define AMDRDNA_CX_COLOUR_CONTROL_NORMAL	((1U << 4) | (0xccU << 16))
 #define AMDRDNA_CX_BLEND_DESTINATION_SHIFT	8U
@@ -373,7 +372,31 @@
 #define AMDRDNA_BLEND_MAXIMUM			3U
 #define AMDRDNA_BLEND_REVERSE_SUBTRACT		4U
 #define AMDRDNA_CX_BLEND_SHORTCUT_OFF		((6U << 8) | (6U << 24))
-#define AMDRDNA_CX_BLEND_SHORTCUT_NONE		0U
+
+/*
+ * The shortcut of a blending target: every source and target channel kept
+ * (the export unit leaves nothing out; 7 in each of the colour's and the
+ * alpha's source and target fields, bits 2:0, 6:4, 18:16 and 22:20), and
+ * the blend's own combination in the colour's (10:8) and the alpha's
+ * (26:24) function fields: add 1, subtract 2, minimum 3, maximum 4,
+ * reverse subtract 5.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/registers/gfx10.json
+ * (SX_MRT0_BLEND_OPT: COLOR_SRC_OPT, COLOR_DST_OPT, COLOR_COMB_FCN,
+ * ALPHA_SRC_OPT, ALPHA_DST_OPT, ALPHA_COMB_FCN; the enums SX_BLEND_OPT:
+ * BLEND_OPT_PRESERVE_NONE_IGNORE_NONE 7, and SX_OPT_COMB_FCN: OPT_COMB_ADD
+ * 1, OPT_COMB_SUBTRACT 2, OPT_COMB_MIN 3, OPT_COMB_MAX 4,
+ * OPT_COMB_REVSUBTRACT 5) and src/amd/vulkan/radv_pipeline_graphics.h
+ * (radv_translate_blend_opt_function).
+ */
+#define AMDRDNA_CX_BLEND_SHORTCUT_KEEP_ALL	((7U << 0) | (7U << 4) | (7U << 16) | (7U << 20))
+#define AMDRDNA_CX_BLEND_SHORTCUT_COLOUR_SHIFT	8U
+#define AMDRDNA_CX_BLEND_SHORTCUT_ALPHA_SHIFT	24U
+#define AMDRDNA_SHORTCUT_ADD			1U
+#define AMDRDNA_SHORTCUT_SUBTRACT		2U
+#define AMDRDNA_SHORTCUT_MINIMUM		3U
+#define AMDRDNA_SHORTCUT_MAXIMUM		4U
+#define AMDRDNA_SHORTCUT_REVERSE_SUBTRACT	5U
 
 /*
  * The depth state of a pass without depth: the pixel program's depth
