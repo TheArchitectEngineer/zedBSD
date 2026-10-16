@@ -72,6 +72,15 @@
 #define I915_XD_SOUTH_DSPCLK_DPLS_UNGATE	0x20000000U
 
 /*
+ * The south chicken bit that lets the PCH stop the display's reference
+ * clock while the display is in DC9.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (SBCLK_RUN_REFCLK_DIS).
+ */
+#define I915_XD_SOUTH_CHICKEN1_REFCLK_STOP	0x00000080U
+
+/*
  * The fuse strap of the south display (bit 8 set: the raw clock is
  * 24 MHz, clear: 19.2 MHz), and the raw clock frequency word: the
  * integer MHz, the fraction's denominator less one and, from ICP on, its

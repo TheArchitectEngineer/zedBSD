@@ -40,7 +40,6 @@
 #include "power.h"
 #include "clock.h"
 #include "phy.h"
-#include "dc9.h"
 #include "takeover.h"
 #include "modeset.h"
 #include "dkl-phy.h"
@@ -71,16 +70,7 @@
 #define HSW_PWR_WELL_CTL2	0x45404u
 
 /* The DC state register and what the DC6 check reads (i915_reg.h). */
-#define DC_STATE_EN			0x45504u
-#define DC_STATE_EN_UPTO_DC5_DC6	0x3u
-#define DC_STATE_EN_DC3CO		0x40000000u
 
-/* SOUTH_CHICKEN1, whose reference-clock bit goes with DC9 (dc9.h). */
-#define I915_SOUTH_CHICKEN1		0xc2000u
-#define UTIL_PIN_CTL			0x48400u
-#define UTIL_PIN_ENABLE			0x80000000u
-#define UTIL_PIN_MODE_MASK		(0x1fu << 24)
-#define UTIL_PIN_MODE_PWM		(1u << 24)
 
 /* The PCH reset handshake and the DC power-request workarounds (i915_reg.h). */
 #define HSW_NDE_RSTWRN_OPT		0x46408u
@@ -207,13 +197,14 @@ static void i915_pw_copy_counts(struct i915_power_domains *pd);
 static int i915_pw_work_queue(void *context, int delay_ms);
 static int i915_pw_work_cancel(void *context, int sync);
 static void i915_pw_set_state(struct i915_pw_ctx *pwc, struct i915_power_well *well, int state);
-static uint32_t i915_gen9_dc_mask(int display_ver);
-static void i915_gen9_write_dc_state(struct i915_pw_ctx *pwc, uint32_t state);
+static void i915_pw_dc_off_on(struct i915_pw_ctx *pwc);
+static void i915_pw_dc_off_off(struct i915_pw_ctx *pwc);
+static struct i915_xd_power *i915_pw_dc_policy(struct i915_pw_ctx *pwc);
+static void i915_pw_dc_log(struct i915_pw_ctx *pwc, const struct i915_xd_dc_report *report);
 static void i915_power_rmw(struct i915_mmio *mmio, uint32_t reg, uint32_t clear, uint32_t set);
 static struct i915_trace *i915_core_trace(struct i915_display_core *dc);
 static struct i915_trace *i915_dc_off_trace(struct i915_pw_ctx *pwc);
 static uint8_t i915_dbuf_slice_mask(const struct i915_display_core *dc);
-static void i915_gen9_set_dc_state_disable(struct i915_display_core *dc);
 static void i915_pch_reset_handshake(struct i915_display_core *dc);
 static void i915_gen9_dbuf_slice_set(struct i915_display_core *dc, unsigned slice, int enable);
 static void i915_gen9_dbuf_slices_update(struct i915_display_core *dc, uint8_t req_slices);
@@ -224,7 +215,6 @@ static void i915_tgl_bw_buddy_init(struct i915_display_core *dc);
 static void i915_core_fault(struct i915_display_core *dc, const char *where);
 static int i915_icl_display_core_init(struct i915_display_core *dc, int resume);
 static void i915_icl_display_core_uninit(struct i915_display_core *dc);
-static int i915_pw2_enabled(struct i915_display_core *dc);
 static unsigned i915_wells_on(struct i915_power_domains *pd, struct i915_pw_ctx *pwc);
 
 /*
@@ -449,7 +439,7 @@ drv_i915_power_well_enable(
 
 	/* DC_off is enabled by leaving the DC states (gen9_dc_off_power_well_enable()). */
 	if (well->ops == I915_PW_OPS_DC_OFF) {
-		drv_i915_dc_off_enable(pwc);
+		i915_pw_dc_off_on(pwc);
 		i915_pw_set_state(pwc, well, 1);
 		return 0;
 	}
@@ -502,8 +492,7 @@ drv_i915_power_well_disable(
 	struct i915_pw_hook_ctx hook;
 	struct i915_xd_power_hooks hooks;
 	struct i915_xd_well_report report;
-	uint32_t util_pin;
-	uint32_t dc_state;
+	int enabled;
 	int xd_well;
 	int error;
 
@@ -519,41 +508,13 @@ drv_i915_power_well_disable(
 		return 0;
 	}
 
-	/* gen9_dc_off_power_well_disable(): enters the target DC state once the DMC payload is loaded. */
+	/* DC_off goes off by letting the DMC take the target DC state once its firmware is loaded. */
 	if (well->ops == I915_PW_OPS_DC_OFF) {
-		pwc->dc_off_disable_calls++;
-		if (pwc->dmc_has_payload) {
-			/* Enters the target DC state. */
-			switch (pwc->target_dc_state) {
-			case I915_DC_STATE_EN_DC3CO:
-				/* tgl_enable_dc3co() */
-				drv_i915_gen9_set_dc_state(pwc, I915_DC_STATE_EN_DC3CO);
-				break;
-			case I915_DC_STATE_EN_UPTO_DC6:
-				/* skl_enable_dc6(): assert_can_enable_dc6() only warns. */
-				util_pin = drv_i915_raw_read32(pwc->mmio, UTIL_PIN_CTL);
-				if ((util_pin & (UTIL_PIN_ENABLE | UTIL_PIN_MODE_MASK)) == (UTIL_PIN_ENABLE | UTIL_PIN_MODE_PWM))
-					kern_logf("i915: DC6: utility pin enabled in PWM mode\n");
-
-				/* Warns when DC6 is already requested. */
-				dc_state = drv_i915_raw_read32(pwc->mmio, DC_STATE_EN);
-				if ((dc_state & I915_DC_STATE_EN_UPTO_DC6) != 0u)
-					kern_logf("i915: DC6 already programmed to be enabled\n");
-
-				/* Requests DC6. */
-				drv_i915_gen9_set_dc_state(pwc, I915_DC_STATE_EN_UPTO_DC6);
-				break;
-			case I915_DC_STATE_EN_UPTO_DC5:
-				/* gen9_enable_dc5(): Wa Display #1183 is display version 9 only. */
-				drv_i915_gen9_set_dc_state(pwc, I915_DC_STATE_EN_UPTO_DC5);
-				break;
-			default:
-				break;
-			}
-		}
+		i915_pw_dc_off_off(pwc);
 
 		/* Records whether DC_off still reads as enabled. */
-		i915_pw_set_state(pwc, well, drv_i915_power_well_is_enabled(well, pwc));
+		enabled = drv_i915_power_well_is_enabled(well, pwc);
+		i915_pw_set_state(pwc, well, enabled);
 		return 0;
 	}
 
@@ -578,7 +539,8 @@ drv_i915_power_well_disable(
 		return EIO;
 
 	/* Records the driver's ownership (request and state both set). */
-	i915_pw_set_state(pwc, well, drv_i915_power_well_is_enabled(well, pwc));
+	enabled = drv_i915_power_well_is_enabled(well, pwc);
+	i915_pw_set_state(pwc, well, enabled);
 
 	/* Succeeded: the driver's request is gone. */
 	return 0;
@@ -592,8 +554,8 @@ drv_i915_power_well_is_enabled(
 	struct i915_power_well *well,
 	struct i915_pw_ctx *pwc)
 {
-	uint32_t dmask;
-	uint32_t value;
+	struct i915_xd_power *power;
+	int held;
 	int xd_well;
 	int owned;
 
@@ -601,15 +563,15 @@ drv_i915_power_well_is_enabled(
 	if (well->ops == I915_PW_OPS_ALWAYS_ON)
 		return 1;
 
-	/* gen9_dc_off_power_well_enabled(): DC_off is on while no DC5 / DC6 (and DC3CO) state is set. */
+	/* DC_off is on while the display is held out of the DC states; without the xd state it reads as off. */
 	if (well->ops == I915_PW_OPS_DC_OFF) {
-		dmask = I915_DC_STATE_EN_UPTO_DC5 | I915_DC_STATE_EN_UPTO_DC6;
-		if ((pwc->allowed_dc_mask & I915_DC_STATE_EN_DC3CO) != 0u)
-			dmask |= I915_DC_STATE_EN_DC3CO;
+		power = i915_pw_dc_policy(pwc);
+		if (power == NULL)
+			return 0;
 
-		/* Reads the DC state. */
-		value = drv_i915_raw_read32(pwc->mmio, DC_STATE_EN);
-		if ((value & dmask) != 0u)
+		/* Asks whether a DC state is set. */
+		held = drv_i915_xd_power_dc_off_held(power, &pwc->xd->io);
+		if (!held)
 			return 0;
 
 		/* Succeeded: no DC state is set. */
@@ -641,6 +603,7 @@ drv_i915_power_well_sync_hw(
 	struct i915_power_well *well,
 	struct i915_pw_ctx *pwc)
 {
+	int enabled;
 	int xd_well;
 
 	/* An always-on well is simply on. */
@@ -662,7 +625,8 @@ drv_i915_power_well_sync_hw(
 	}
 
 	/* Records what the hardware now says. */
-	i915_pw_set_state(pwc, well, drv_i915_power_well_is_enabled(well, pwc));
+	enabled = drv_i915_power_well_is_enabled(well, pwc);
+	i915_pw_set_state(pwc, well, enabled);
 }
 
 /*
@@ -973,42 +937,6 @@ drv_i915_pmdemand_init_early(
 }
 
 /*
- * Writes a DC state with the reference's checks (gen9_set_dc_state()).
- *
- * A state outside the allowed mask is reduced to it (the reference warns),
- * a DMC that ignored the last request is reported, and the software copy
- * follows the write.
- */
-void
-drv_i915_gen9_set_dc_state(
-	struct i915_pw_ctx *pwc,
-	uint32_t state)
-{
-	uint32_t value;
-	uint32_t mask;
-
-	/* drm_WARN_ON_ONCE in the reference: keeps only the allowed states. */
-	if ((state & ~pwc->allowed_dc_mask) != 0u)
-		state &= pwc->allowed_dc_mask;
-
-	/* Reads the current state and the bits this display version has. */
-	value = drv_i915_raw_read32(pwc->mmio, DC_STATE_EN);
-	mask = i915_gen9_dc_mask(pwc->display_ver);
-
-	/* Checks whether the DMC is ignoring the DC state requests. */
-	if ((value & mask) != pwc->dc_state) {
-		kern_logf("i915: DC state mismatch (0x%x -> 0x%x)\n",
-			pwc->dc_state, value & mask);
-	}
-
-	/* Writes the new state and records it as display.dmc.dc_state. */
-	value &= ~mask;
-	value |= state;
-	i915_gen9_write_dc_state(pwc, value);
-	pwc->dc_state = value & mask;
-}
-
-/*
  * Reports the DBUF slices that are powered now.
  */
 uint8_t
@@ -1063,76 +991,6 @@ drv_i915_gen9_dbuf_slices_update(
 	/* Keeps the request within the display's slices and applies it. */
 	slices = (uint8_t)(req_slices & i915_dbuf_slice_mask(dc));
 	i915_gen9_dbuf_slices_update(dc, slices);
-}
-
-/*
- * Leaves the DC states when DC_off is enabled (gen9_dc_off_power_well_enable()
- * -> gen9_disable_dc_states()).
- *
- * The current CDCLK and DBUF are read and compared with the saved state --
- * never re-initialized -- and the combo PHYs are restored.  The CDCLK and
- * DBUF objects are the device's own, shared through the well context.
- */
-void
-drv_i915_dc_off_enable(
-	struct i915_pw_ctx *pwc)
-{
-	struct i915_cdclk_config readout;
-	struct i915_trace *trace;
-	unsigned initialised;
-	unsigned slice;
-	uint8_t current_slices;
-	uint32_t value;
-
-	/* Counts the enable for the diagnostics. */
-	pwc->dc_off_enable_calls++;
-
-	/* A DC3CO target would take tgl_disable_dc3co(); the targets here are the DC5 / DC6 ones. */
-	if (pwc->target_dc_state == DC_STATE_EN_DC3CO)
-		return;
-
-	/*
-	 * gen9_set_dc_state(DC_STATE_DISABLE): the reference's own function, so
-	 * the write is verified and display.dmc.dc_state follows it.  A direct
-	 * register write once left the software copy behind, and the next DC
-	 * enable reported a false mismatch.
-	 */
-	drv_i915_gen9_set_dc_state(pwc, 0u);
-
-	/* Reads the CDCLK into a temporary and compares it with the saved state. */
-	if (pwc->cd != NULL) {
-		kern_memset(&readout, 0, sizeof(readout));
-		drv_i915_bxt_get_cdclk(pwc->cd, &readout);
-		pwc->dc_off_cdclk_readouts++;
-		if (readout.cdclk != pwc->cd->hw.cdclk || readout.vco != pwc->cd->hw.vco) {
-			kern_logf("i915: DC_off: cdclk needs modeset (hw %u/%u vs saved %u/%u)\n",
-				readout.cdclk, readout.vco, pwc->cd->hw.cdclk, pwc->cd->hw.vco);
-		}
-	}
-
-	/* gen9_assert_dbuf_enabled(): compares the powered slices with the saved mask. */
-	if (pwc->dbuf_slices != NULL) {
-		current_slices = 0u;
-		for (slice = 0u; slice < 4u; slice++) {
-			value = drv_i915_raw_read32(pwc->mmio, i915_dbuf_ctl_s[slice]);
-			if ((value & DBUF_POWER_STATE) != 0u)
-				current_slices |= (uint8_t)(1u << slice);
-		}
-
-		/* Counts the check and reports a mismatch. */
-		pwc->dc_off_dbuf_asserts++;
-		if (current_slices != *pwc->dbuf_slices) {
-			kern_logf("i915: DC_off: DBUF mismatch (hw 0x%x vs saved 0x%x)\n",
-				current_slices, *pwc->dbuf_slices);
-		}
-	}
-
-	/* The DMC loses combo PHY B's context across DC on display version 11+: restores it. */
-	trace = i915_dc_off_trace(pwc);
-	drv_i915_trace_init(trace);
-	initialised = 0u;
-	(void)drv_i915_combo_phy_init(pwc->mmio, trace, &initialised);
-	pwc->dc_off_combo_inits++;
 }
 
 /*
@@ -1347,39 +1205,34 @@ drv_i915_power_domains_suspend(
 }
 
 /*
- * Puts the display in DC9 for S0 idle (bxt_enable_dc9(), with the PCH's
- * Wa_14010685332).
+ * Puts the display in DC9 for S0 idle, with the PCH let stop the
+ * display's reference clock.
  *
  * The display core must be down and the interrupts off (irqs_enabled
- * zero).  It reports the check's refusal (dc9.h) without writing
- * anything.
+ * zero).  It reports the refusal of the xd power wells' check without
+ * writing anything.
  */
 int
 drv_i915_display_dc9_enter(
 	struct i915_display_core *dc,
 	int irqs_enabled)
 {
-	uint32_t dc_state;
-	uint32_t value;
-	int pw2_enabled;
+	struct i915_xd_power *power;
+	struct i915_xd_dc_report report;
 	int error;
 
-	/* Checks that DC9 may be entered. */
-	dc_state = drv_i915_raw_read32(dc->m, DC_STATE_EN);
-	pw2_enabled = i915_pw2_enabled(dc);
-	error = drv_i915_dc9_enter_check(dc_state, pw2_enabled, irqs_enabled);
+	/* A display without the xd state cannot enter DC9. */
+	power = i915_pw_dc_policy(dc->pwc);
+	if (power == NULL)
+		return EINVAL;
+
+	/* Enters DC9 when the checks allow it. */
+	error = drv_i915_xd_power_dc9_enter(power, &dc->pwc->xd->io, irqs_enabled, &report);
+	i915_pw_dc_log(dc->pwc, &report);
 	if (error != 0) {
-		kern_logf("i915: DC9: not entered (%d; DC_STATE_EN 0x%x, PW_2 %d, interrupts %d)\n", error, dc_state, pw2_enabled, irqs_enabled);
+		kern_logf("i915: DC9: not entered (%d; DC_STATE_EN 0x%x, PW_2 %d, interrupts %d)\n", error, report.checked, report.pw2_on, irqs_enabled);
 		return error;
 	}
-
-	/* Enters DC9 through the verified DC state write. */
-	drv_i915_gen9_set_dc_state(dc->pwc, I915_DC_STATE_EN_DC9);
-
-	/* Lets the PCH stop the display's reference clock in S0 idle. */
-	value = drv_i915_raw_read32(dc->m, I915_SOUTH_CHICKEN1);
-	value = drv_i915_dc9_south_chicken(value, 1);
-	drv_i915_raw_write32(dc->m, I915_SOUTH_CHICKEN1, value);
 
 	/* Succeeded: the display is in DC9. */
 	kern_logf("i915: DC9: entered\n");
@@ -1387,35 +1240,30 @@ drv_i915_display_dc9_enter(
 }
 
 /*
- * Leaves DC9 after S0 idle (bxt_disable_dc9()): the PCH's
- * reference clock first, then the DC state.  It reports the check's
- * refusal without writing the DC state.
+ * Leaves DC9 after S0 idle: the PCH's reference clock first, then the DC
+ * state.  It reports the refusal of the xd power wells' check without
+ * writing the DC state.
  */
 int
 drv_i915_display_dc9_leave(
 	struct i915_display_core *dc)
 {
-	uint32_t dc_state;
-	uint32_t value;
-	int pw2_enabled;
+	struct i915_xd_power *power;
+	struct i915_xd_dc_report report;
 	int error;
 
-	/* Gives the PCH's reference clock back. */
-	value = drv_i915_raw_read32(dc->m, I915_SOUTH_CHICKEN1);
-	value = drv_i915_dc9_south_chicken(value, 0);
-	drv_i915_raw_write32(dc->m, I915_SOUTH_CHICKEN1, value);
+	/* A display without the xd state cannot leave DC9. */
+	power = i915_pw_dc_policy(dc->pwc);
+	if (power == NULL)
+		return EINVAL;
 
-	/* Checks that DC9 may be left. */
-	dc_state = drv_i915_raw_read32(dc->m, DC_STATE_EN);
-	pw2_enabled = i915_pw2_enabled(dc);
-	error = drv_i915_dc9_leave_check(dc_state, pw2_enabled);
+	/* Leaves DC9 when the checks allow it. */
+	error = drv_i915_xd_power_dc9_leave(power, &dc->pwc->xd->io, &report);
+	i915_pw_dc_log(dc->pwc, &report);
 	if (error != 0) {
-		kern_logf("i915: DC9: not left (%d; DC_STATE_EN 0x%x, PW_2 %d)\n", error, dc_state, pw2_enabled);
+		kern_logf("i915: DC9: not left (%d; DC_STATE_EN 0x%x, PW_2 %d)\n", error, report.checked, report.pw2_on);
 		return error;
 	}
-
-	/* Leaves DC9 through the verified DC state write. */
-	drv_i915_gen9_set_dc_state(dc->pwc, 0u);
 
 	/* Succeeded: the display left DC9. */
 	kern_logf("i915: DC9: left\n");
@@ -2388,67 +2236,157 @@ i915_pw_set_state(
 	drv_i915_xd_power_record(&pwc->xd->power, well->xd_well, on);
 }
 
-/* The DC state bits a display version has (gen9_dc_mask()). */
-static uint32_t
-i915_gen9_dc_mask(
-	int display_ver)
-{
-	uint32_t mask;
-
-	/* DC5 always; DC6 and DC9 by version, DC3CO from 12. */
-	mask = I915_DC_STATE_EN_UPTO_DC5;
-	if (display_ver >= 12) {
-		mask |= I915_DC_STATE_EN_DC3CO | I915_DC_STATE_EN_UPTO_DC6 |
-			I915_DC_STATE_EN_DC9;
-	} else if (display_ver == 11) {
-		mask |= I915_DC_STATE_EN_UPTO_DC6 | I915_DC_STATE_EN_DC9;
-	} else {
-		mask |= I915_DC_STATE_EN_UPTO_DC6;
-	}
-
-	/* Succeeded: reports the version's bits. */
-	return mask;
-}
-
-/* Writes the DC state until it sticks (gen9_write_dc_state(): the DMC may keep returning the old value). */
+/*
+ * Leaves the DC states when DC_off is enabled.
+ *
+ * The current CDCLK and DBUF are read and compared with the saved state --
+ * never re-initialized -- and the combo PHYs, whose context the DMC does
+ * not keep across DC states, are restored.  The CDCLK and DBUF objects
+ * are the device's own, shared through the well context.
+ */
 static void
-i915_gen9_write_dc_state(
-	struct i915_pw_ctx *pwc,
-	uint32_t state)
+i915_pw_dc_off_on(
+
+	struct i915_pw_ctx *pwc)
 {
-	unsigned rewrites;
-	unsigned rereads;
+	struct i915_xd_power *power;
+	struct i915_xd_dc_report report;
+	struct i915_cdclk_config readout;
+	struct i915_trace *trace;
+	unsigned initialised;
+	unsigned slice;
+	uint8_t current_slices;
 	uint32_t value;
 
-	/* Writes the state once. */
-	drv_i915_raw_write32(pwc->mmio, DC_STATE_EN, state);
-	pwc->dc_state_writes++;
+	/* Counts the enable for the diagnostics. */
+	pwc->dc_off_enable_calls++;
 
-	/*
-	 * Rewrites while the register reads back another value, up to 100
-	 * times, and stops once the value was read back unchanged more than 5
-	 * times in a row.
-	 */
-	rewrites = 0u;
-	rereads = 0u;
-	do {
-		value = drv_i915_raw_read32(pwc->mmio, DC_STATE_EN);
-		if (value != state) {
-			drv_i915_raw_write32(pwc->mmio, DC_STATE_EN, state);
-			rewrites++;
-			rereads = 0u;
-		} else {
-			/* The value stuck for more than 5 reads in a row. */
-			if (rereads > 5u)
-				break;
-			rereads++;
+	/* Leaves the DC states through the verified write, which the copy of the state last written follows. */
+	power = i915_pw_dc_policy(pwc);
+	if (power != NULL) {
+		drv_i915_xd_power_dc_leave(power, &pwc->xd->io, &report);
+		i915_pw_dc_log(pwc, &report);
+	}
+
+	/* Reads the CDCLK into a temporary and compares it with the saved state. */
+	if (pwc->cd != NULL) {
+		kern_memset(&readout, 0, sizeof(readout));
+		drv_i915_bxt_get_cdclk(pwc->cd, &readout);
+		pwc->dc_off_cdclk_readouts++;
+		if (readout.cdclk != pwc->cd->hw.cdclk || readout.vco != pwc->cd->hw.vco) {
+			kern_logf("i915: DC_off: cdclk needs modeset (hw %u/%u vs saved %u/%u)\n",
+				readout.cdclk, readout.vco, pwc->cd->hw.cdclk, pwc->cd->hw.vco);
 		}
-	} while (rewrites < 100u);
+	}
 
-	/* Counts the rewrites and reports a state that never stuck. */
-	pwc->dc_state_rewrites += rewrites;
-	if (value != state)
-		kern_logf("i915: Writing dc state to 0x%x failed, now 0x%x\n", state, value);
+	/* gen9_assert_dbuf_enabled(): compares the powered slices with the saved mask. */
+	if (pwc->dbuf_slices != NULL) {
+		current_slices = 0u;
+		for (slice = 0u; slice < 4u; slice++) {
+			value = drv_i915_raw_read32(pwc->mmio, i915_dbuf_ctl_s[slice]);
+			if ((value & DBUF_POWER_STATE) != 0u)
+				current_slices |= (uint8_t)(1u << slice);
+		}
+
+		/* Counts the check and reports a mismatch. */
+		pwc->dc_off_dbuf_asserts++;
+		if (current_slices != *pwc->dbuf_slices) {
+			kern_logf("i915: DC_off: DBUF mismatch (hw 0x%x vs saved 0x%x)\n",
+				current_slices, *pwc->dbuf_slices);
+		}
+	}
+
+	/* The DMC loses combo PHY B's context across DC on display version 11+: restores it. */
+	trace = i915_dc_off_trace(pwc);
+	drv_i915_trace_init(trace);
+	initialised = 0u;
+	(void)drv_i915_combo_phy_init(pwc->mmio, trace, &initialised);
+	pwc->dc_off_combo_inits++;
+}
+
+
+/*
+ * Lets the DMC take the display into the target DC state when DC_off is
+ * disabled, once its firmware is loaded.
+ */
+static void
+i915_pw_dc_off_off(
+	struct i915_pw_ctx *pwc)
+{
+	struct i915_xd_power *power;
+	struct i915_xd_dc_report report;
+
+	/* Counts the disable for the diagnostics. */
+	pwc->dc_off_disable_calls++;
+
+	/* A context without the xd state writes no DC state. */
+	power = i915_pw_dc_policy(pwc);
+	if (power == NULL)
+		return;
+
+	/* Enters the target state; a write that does not read back is logged. */
+	(void)drv_i915_xd_power_dc_enter(power, &pwc->xd->io, &report);
+	i915_pw_dc_log(pwc, &report);
+}
+
+/*
+ * Hands the context's DC policy (the allowed states, the target, whether
+ * the DMC firmware is loaded) to the xd power wells and returns them, or
+ * NULL for a context without the xd state or before the power domains
+ * were built.
+ */
+static struct i915_xd_power *
+i915_pw_dc_policy(
+	struct i915_pw_ctx *pwc)
+{
+	struct i915_xd_power *power;
+
+	/* A context without the xd state has no DC states to change. */
+	if (pwc == NULL || pwc->xd == NULL)
+		return NULL;
+	power = &pwc->xd->power;
+	if (power->platform == NULL)
+		return NULL;
+
+	/* The policy follows the context, which the display core and the DMC load set. */
+	drv_i915_xd_power_dc_policy(power, pwc->allowed_dc_mask, pwc->target_dc_state, pwc->dmc_has_payload);
+
+	/* Succeeded: the power wells whose DC state the caller changes. */
+	return power;
+}
+
+/*
+ * Logs what a DC state change met and copies the state last written and
+ * the write counts into the context the older code reads.
+ */
+static void
+i915_pw_dc_log(
+	struct i915_pw_ctx *pwc,
+	const struct i915_xd_dc_report *report)
+{
+	struct i915_xd_power *power;
+
+	/* A utility pin driving a PWM keeps the display out of DC6. */
+	if (report->pwm_pin)
+		kern_logf("i915: DC6: utility pin enabled in PWM mode\n");
+
+	/* DC6 was requested already. */
+	if (report->dc6_already)
+		kern_logf("i915: DC6 already programmed to be enabled\n");
+
+	/* The DMC ignored the last request. */
+	if (report->mismatch)
+		kern_logf("i915: DC state mismatch (0x%x -> 0x%x)\n", report->expected, report->found);
+
+	/* The state never read back as written. */
+	if (report->not_taken)
+		kern_logf("i915: Writing dc state to 0x%x failed, now 0x%x\n", report->wanted, report->now);
+
+	/* Copies the state last written and the counts. */
+	power = &pwc->xd->power;
+	pwc->dc_state = power->dc_state;
+	pwc->dc_state_writes = power->dc_writes;
+	pwc->dc_state_rewrites = power->dc_rewrites;
 }
 
 /* Clears and sets bits of a display-core register with raw accesses. */
@@ -2516,25 +2454,6 @@ i915_dbuf_slice_mask(
 
 	/* Succeeded: reports the display's slices. */
 	return dc->dbuf_slice_mask;
-}
-
-/* Leaves every DC state (gen9_set_dc_state(DC_STATE_DISABLE) of the core init). */
-static void
-i915_gen9_set_dc_state_disable(
-	struct i915_display_core *dc)
-{
-	uint32_t mask;
-	uint32_t value;
-
-	/* The DC5 / DC6 bits, and DC3CO when it is allowed. */
-	mask = DC_STATE_EN_UPTO_DC5_DC6;
-	if ((dc->pd->allowed_dc_mask & DC_STATE_EN_DC3CO) != 0u)
-		mask |= DC_STATE_EN_DC3CO;
-
-	/* Clears them (state = DC_STATE_DISABLE, 0). */
-	value = drv_i915_raw_read32(dc->m, DC_STATE_EN);
-	value &= ~mask;
-	drv_i915_raw_write32(dc->m, DC_STATE_EN, value);
 }
 
 /* Enables the PCH reset handshake (intel_pch_reset_handshake(enable): no PICA bit before display version 14). */
@@ -2788,6 +2707,7 @@ i915_icl_display_core_init(
 	struct i915_display_core *dc,
 	int resume)
 {
+	struct i915_xd_power *power;
 	struct i915_trace *trace;
 	unsigned combo_initialised;
 	int index;
@@ -2801,9 +2721,11 @@ i915_icl_display_core_init(
 	trace = i915_core_trace(dc);
 	drv_i915_trace_init(trace);
 
-	/* gen9_set_dc_state(DC_STATE_DISABLE). */
+	/* Clears the DC states the firmware may have left, before anything else is written. */
 	dc->last_child = 1;
-	i915_gen9_set_dc_state_disable(dc);
+	power = i915_pw_dc_policy(dc->pwc);
+	if (power != NULL)
+		drv_i915_xd_power_dc_clear(power, &dc->pwc->xd->io);
 
 	/* 1. Enables the PCH reset handshake. */
 	dc->last_child = 2;
@@ -2892,10 +2814,16 @@ static void
 i915_icl_display_core_uninit(
 	struct i915_display_core *dc)
 {
+	struct i915_xd_power *power;
+	struct i915_xd_dc_report report;
 	int index;
 
-	/* gen9_disable_dc_states(): through the verified write, so the software copy follows. */
-	drv_i915_gen9_set_dc_state(dc->pwc, 0u);
+	/* Leaves the DC states through the verified write, so the copy of the state last written follows. */
+	power = i915_pw_dc_policy(dc->pwc);
+	if (power != NULL) {
+		drv_i915_xd_power_dc_leave(power, &dc->pwc->xd->io, &report);
+		i915_pw_dc_log(dc->pwc, &report);
+	}
 
 	/* Turns every DBUF slice off. */
 	drv_i915_gen9_dbuf_slices_update(dc, 0u);
@@ -2915,28 +2843,6 @@ i915_icl_display_core_uninit(
 
 	/* Takes the combo PHYs down. */
 	drv_i915_combo_phy_uninit(dc->m);
-}
-
-/* Reports whether power well 2 is on. */
-static int
-i915_pw2_enabled(
-	struct i915_display_core *dc)
-{
-	int index;
-	int enabled;
-
-	/* A display without the well has it off. */
-	index = drv_i915_power_well_by_id(dc->pd, I915_SKL_DISP_PW_2);
-	if (index < 0)
-		return 0;
-
-	/* Asks the well. */
-	enabled = drv_i915_power_well_is_enabled(&dc->pd->power_wells[index], dc->pwc);
-	if (enabled)
-		return 1;
-
-	/* The well is off. */
-	return 0;
 }
 
 /* Counts the wells that are on as the driver owns them. */

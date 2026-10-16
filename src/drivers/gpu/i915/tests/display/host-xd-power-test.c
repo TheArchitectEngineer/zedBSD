@@ -17,7 +17,9 @@
  * Above the switching, the counts: which wells power which functions,
  * the order wells come up and go down in, a well that fails to come up,
  * a well that has to stay on, the deferred give-back with its delayed
- * work, and the record of the wells that are on.
+ * work, and the record of the wells that are on.  Then the DC states:
+ * the verified write, DC off held and released with and without the
+ * DMC firmware, and DC9's checks and writes.
  */
 
 #include "host-test.h"
@@ -27,6 +29,7 @@
 #include "../../display/xd-platform.h"
 #include "../../display/xd-power.h"
 #include "../../intel/display-regs-xd.h"
+#include "../../intel/display-regs-xd-south.h"
 
 #include <uapi/errno.h>
 #include <stddef.h>
@@ -106,6 +109,10 @@ static int i915_xd_power_test_off(void *context, unsigned well);
 static int i915_xd_power_test_queue(void *context, int delay_ms);
 static int i915_xd_power_test_cancel(void *context, int sync);
 static uint64_t i915_xd_power_test_set(const struct i915_xd_platform *platform, const char *const *names, unsigned count);
+static void i915_xd_power_test_dc(void);
+static void i915_xd_power_test_dc9(void);
+static const struct i915_xd_platform *i915_xd_power_test_dc_setup(struct i915_xd_power *power, int firmware);
+static uint32_t i915_xd_power_test_stuck(uint32_t offset, uint32_t value, void *context);
 
 /*
  * Runs every check of the xd power wells and reports.
@@ -122,6 +129,8 @@ main(void)
 	i915_xd_power_test_disable();
 	i915_xd_power_test_counts();
 	i915_xd_power_test_deferred();
+	i915_xd_power_test_dc();
+	i915_xd_power_test_dc9();
 
 	/* Reports the result. */
 	failures = i915_host_report("host_xd_power_test");
@@ -852,4 +861,182 @@ i915_xd_power_test_set(
 
 	/* Succeeded: the set. */
 	return set;
+}
+
+/* Checks the DC state writes and DC off. */
+static void
+i915_xd_power_test_dc(void)
+{
+	static struct i915_xd_power power;
+	struct i915_xd_dc_report report;
+	uint32_t offsets[8];
+	uint32_t values[8];
+	unsigned count;
+	int held;
+	int error;
+
+	/* Leaving the DC states writes no DC state, keeps the other bits, and records it. */
+	if (i915_xd_power_test_dc_setup(&power, 1) == NULL)
+		return;
+	i915_xd_fake_set(I915_XD_DC_STATE_EN, 0x00100002U);
+	power.dc_state = I915_XD_DC_STATE_DC6;
+	drv_i915_xd_power_dc_leave(&power, &i915_xd_power_test_io, &report);
+	count = i915_xd_power_test_writes(offsets, values, 8U);
+	i915_host_check(count == 1U && offsets[0] == I915_XD_DC_STATE_EN && values[0] == 0x00100000U &&
+			power.dc_state == 0U && power.dc_writes == 1U && report.mismatch == 0 && report.not_taken == 0,
+			"power: leaving the DC states clears DC6 and keeps the other bits");
+
+	/* DC bits that are not the ones last written are reported as a DMC that ignored a request. */
+	i915_xd_fake_set(I915_XD_DC_STATE_EN, I915_XD_DC_STATE_DC5);
+	drv_i915_xd_power_dc_leave(&power, &i915_xd_power_test_io, &report);
+	i915_host_check(report.mismatch == 1 && report.expected == 0U && report.found == I915_XD_DC_STATE_DC5,
+			"power: DC bits that were not written are reported");
+
+	/* A state that never reads back is written again a hundred times and reported. */
+	i915_xd_fake_rule_read(I915_XD_DC_STATE_EN, i915_xd_power_test_stuck, NULL);
+	error = drv_i915_xd_power_dc_write(&power, &i915_xd_power_test_io, I915_XD_DC_STATE_DC6, &report);
+	i915_host_check(error == EIO && report.not_taken == 1 && report.wanted == I915_XD_DC_STATE_DC6 && report.now == I915_XD_DC_STATE_DC5 &&
+			power.dc_rewrites == 100U,
+			"power: a DC state that never reads back is rewritten 100 times and reported");
+
+	/* A state outside the allowed ones is reduced to them. */
+	if (i915_xd_power_test_dc_setup(&power, 1) == NULL)
+		return;
+	drv_i915_xd_power_dc_policy(&power, I915_XD_DC_STATE_DC9, I915_XD_DC_STATE_DC6, 1);
+	(void)drv_i915_xd_power_dc_write(&power, &i915_xd_power_test_io, I915_XD_DC_STATE_DC6, &report);
+	i915_host_check(i915_xd_fake_get(I915_XD_DC_STATE_EN) == 0U, "power: a DC state the options do not allow is not written");
+
+	/* Without the DMC firmware DC off's release writes nothing. */
+	if (i915_xd_power_test_dc_setup(&power, 0) == NULL)
+		return;
+	error = drv_i915_xd_power_dc_enter(&power, &i915_xd_power_test_io, &report);
+	count = i915_xd_power_test_writes(offsets, values, 8U);
+	held = drv_i915_xd_power_dc_off_held(&power, &i915_xd_power_test_io);
+	i915_host_check(error == 0 && count == 0U && held == 1, "power: without the DMC firmware the display stays out of DC states");
+
+	/* With it DC6 is written, and DC off no longer reads as held. */
+	if (i915_xd_power_test_dc_setup(&power, 1) == NULL)
+		return;
+	error = drv_i915_xd_power_dc_enter(&power, &i915_xd_power_test_io, &report);
+	count = i915_xd_power_test_writes(offsets, values, 8U);
+	held = drv_i915_xd_power_dc_off_held(&power, &i915_xd_power_test_io);
+	i915_host_check(error == 0 && count == 1U && values[0] == I915_XD_DC_STATE_DC6 && power.dc_state == I915_XD_DC_STATE_DC6 &&
+			held == 0 && report.pwm_pin == 0 && report.dc6_already == 0,
+			"power: releasing DC off with the firmware enters DC6");
+
+	/* A utility pin driving a PWM, and DC6 requested already, are reported. */
+	if (i915_xd_power_test_dc_setup(&power, 1) == NULL)
+		return;
+	i915_xd_fake_set(I915_XD_UTIL_PIN_CTL, I915_XD_UTIL_PIN_ENABLE | I915_XD_UTIL_PIN_MODE_PWM);
+	i915_xd_fake_set(I915_XD_DC_STATE_EN, I915_XD_DC_STATE_DC6);
+	(void)drv_i915_xd_power_dc_enter(&power, &i915_xd_power_test_io, &report);
+	i915_host_check(report.pwm_pin == 1 && report.dc6_already == 1, "power: a PWM utility pin and a DC6 already requested are reported");
+
+	/* DC5 as the target, and the clear at the core's start that keeps the other bits and the record. */
+	if (i915_xd_power_test_dc_setup(&power, 1) == NULL)
+		return;
+	drv_i915_xd_power_dc_policy(&power, 0x4000000bU, I915_XD_DC_STATE_DC5, 1);
+	(void)drv_i915_xd_power_dc_enter(&power, &i915_xd_power_test_io, &report);
+	i915_host_check(i915_xd_fake_get(I915_XD_DC_STATE_EN) == I915_XD_DC_STATE_DC5, "power: a DC5 target enters DC5");
+	i915_xd_fake_set(I915_XD_DC_STATE_EN, 0x40000103U);
+	drv_i915_xd_power_dc_clear(&power, &i915_xd_power_test_io);
+	i915_host_check(i915_xd_fake_get(I915_XD_DC_STATE_EN) == 0x00000100U && power.dc_state == I915_XD_DC_STATE_DC5,
+			"power: the core's clear drops DC5, DC6 and an allowed DC3CO only");
+}
+
+/* Checks DC9's checks and writes. */
+static void
+i915_xd_power_test_dc9(void)
+{
+	static struct i915_xd_power power;
+	struct i915_xd_dc_report report;
+	uint32_t offsets[8];
+	uint32_t values[8];
+	unsigned count;
+	int error;
+
+	/* Entering: DC9 first, then the PCH's reference clock let go. */
+	if (i915_xd_power_test_dc_setup(&power, 1) == NULL)
+		return;
+	i915_xd_fake_set(I915_XD_SOUTH_CHICKEN1, I915_XD_SOUTH_CHICKEN1_SECOND_PPS_IO);
+	error = drv_i915_xd_power_dc9_enter(&power, &i915_xd_power_test_io, 0, &report);
+	count = i915_xd_power_test_writes(offsets, values, 8U);
+	i915_host_check(error == 0 && count == 2U &&
+			offsets[0] == I915_XD_DC_STATE_EN && values[0] == I915_XD_DC_STATE_DC9 &&
+			offsets[1] == I915_XD_SOUTH_CHICKEN1 && values[1] == (I915_XD_SOUTH_CHICKEN1_SECOND_PPS_IO | I915_XD_SOUTH_CHICKEN1_REFCLK_STOP),
+			"power: DC9 is written, then the PCH may stop the reference clock");
+
+	/* Entering again is refused as done already. */
+	error = drv_i915_xd_power_dc9_enter(&power, &i915_xd_power_test_io, 0, &report);
+	i915_host_check(error == EALREADY, "power: DC9 set already is refused");
+
+	/* Leaving: the reference clock first, then no DC state. */
+	if (i915_xd_power_test_dc_setup(&power, 1) == NULL)
+		return;
+	i915_xd_fake_set(I915_XD_DC_STATE_EN, I915_XD_DC_STATE_DC9);
+	i915_xd_fake_set(I915_XD_SOUTH_CHICKEN1, I915_XD_SOUTH_CHICKEN1_REFCLK_STOP);
+	power.dc_state = I915_XD_DC_STATE_DC9;
+	error = drv_i915_xd_power_dc9_leave(&power, &i915_xd_power_test_io, &report);
+	count = i915_xd_power_test_writes(offsets, values, 8U);
+	i915_host_check(error == 0 && count == 2U &&
+			offsets[0] == I915_XD_SOUTH_CHICKEN1 && values[0] == 0U &&
+			offsets[1] == I915_XD_DC_STATE_EN && values[1] == 0U && report.mismatch == 0,
+			"power: leaving DC9 gives the reference clock back, then clears the state");
+
+	/* The refusals: DC6 set, power well 2 on, the interrupts on. */
+	if (i915_xd_power_test_dc_setup(&power, 1) == NULL)
+		return;
+	i915_xd_fake_set(I915_XD_DC_STATE_EN, I915_XD_DC_STATE_DC6);
+	error = drv_i915_xd_power_dc9_enter(&power, &i915_xd_power_test_io, 0, &report);
+	i915_host_check(error == EBUSY && report.checked == I915_XD_DC_STATE_DC6, "power: DC9 is refused while DC6 is set");
+	i915_xd_fake_set(I915_XD_DC_STATE_EN, 0U);
+	i915_xd_fake_set(I915_XD_PWR_WELL_CTL, I915_XD_PWR_WELL_REQUEST(I915_XD_WELL_PW_2) | I915_XD_PWR_WELL_STATE(I915_XD_WELL_PW_2));
+	error = drv_i915_xd_power_dc9_enter(&power, &i915_xd_power_test_io, 0, &report);
+	i915_host_check(error == EBUSY && report.pw2_on == 1, "power: DC9 is refused while power well 2 is on");
+	error = drv_i915_xd_power_dc9_leave(&power, &i915_xd_power_test_io, &report);
+	i915_host_check(error == EBUSY, "power: leaving DC9 is refused while power well 2 is on");
+	i915_xd_fake_set(I915_XD_PWR_WELL_CTL, 0U);
+	error = drv_i915_xd_power_dc9_enter(&power, &i915_xd_power_test_io, 1, &report);
+	count = i915_xd_power_test_writes(offsets, values, 8U);
+	i915_host_check(error == EINVAL && count == 1U, "power: DC9 is refused while the interrupts are on, nothing more is written");
+}
+
+/*
+ * Starts a fresh model and the counts of the Alder Lake-P description
+ * with the policy of the 5330: DC9, DC3CO and up to DC6 allowed, DC6 the
+ * target, and the DMC firmware loaded or not.
+ */
+static const struct i915_xd_platform *
+i915_xd_power_test_dc_setup(
+	struct i915_xd_power *power,
+	int firmware)
+{
+	const struct i915_xd_platform *platform;
+
+	/* A fresh model and the description. */
+	platform = i915_xd_power_test_setup();
+	if (platform == NULL)
+		return NULL;
+
+	/* The counts and the policy. */
+	drv_i915_xd_power_init(power, platform);
+	drv_i915_xd_power_dc_policy(power, 0x4000000aU, I915_XD_DC_STATE_DC6, firmware);
+
+	/* Succeeded: the description. */
+	return platform;
+}
+
+/* Reads DC_STATE_EN as DC5 whatever was written: a DMC that keeps its own state. */
+static uint32_t
+i915_xd_power_test_stuck(
+	uint32_t offset,
+	uint32_t value,
+	void *context)
+{
+	UNUSED_PARAMETER(offset);
+	UNUSED_PARAMETER(value);
+	UNUSED_PARAMETER(context);
+
+	/* Succeeded: the state the DMC keeps. */
+	return I915_XD_DC_STATE_DC5;
 }

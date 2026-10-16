@@ -93,8 +93,8 @@
 /*
  * How many entries the GGTT table in RAM has: the GT window (memory.h) and
  * 512 entries below it.  It was 512 alone while the window was 256 pages;
- * the window is 64 MiB since ws035-p066 (T1-334: the window check failed and
- * the GT memory tests after it did not run).  The table is allocated at
+ * the window is 64 MiB now (a window check that failed kept the GT memory
+ * tests after it from running).  The table is allocated at
  * the first run (about 132 KiB) and kept, not in the kernel image.
  */
 #define I915_KTEST_GGTT_ENTRIES		(I915_GT_GGTT_PAGES + 512U)
@@ -1504,8 +1504,7 @@ i915_ktest_gt_rps(
 
 	/*
 	 * RP_IDLE_HYSTERSIS is programmed, then RPNSWREQ asks for the minimum
-	 * (rps_reset(); ws075-p020: the interrupts raise it from the node's
-	 * start), with the LOW_POWER thresholds: 16 ms up at 95 %, 32 ms down
+	 * (rps_reset(); the interrupts raise it from the node's start), with the LOW_POWER thresholds: 16 ms up at 95 %, 32 ms down
 	 * at 85 %, in units of 16 clocks.
 	 */
 	hysteresis = i915_fake_wt_find(&t->fake, 0xa070U, 0xaU, 0xffffffffU);
@@ -3554,7 +3553,7 @@ i915_ktest_gt_hotplug(
 		    pin_tc1 == I915_HPD_PORT_TC1 &&
 		    pin_d == I915_HPD_PORT_D &&
 		    pin_tc1_ver12 == I915_HPD_PORT_TC1,
-		"p7: P7-HPD-PIN DDI A/B default pins, TC1+ from PORT_TC1 (ver 12+), D/E from PORT_D_XELPD (ver 13)");
+		"HPD-PIN DDI A/B default pins, TC1+ from PORT_TC1 (ver 12+), D/E from PORT_D_XELPD (ver 13)");
 
 	/* The Gen11 and ICP registers for encoders on A and B. */
 	i915_ktest_gt_hotplug_setup(ktest, t);
@@ -3621,7 +3620,7 @@ i915_ktest_gt_hotplug_setup(
 		    filter >= 0 &&
 		    de_hpd_imr < 0 &&
 		    hp->sdeimr_skipped == 0,
-		"p7: P7-HPD-SETUP DDI A/B enabled in SHOTPLUG_CTL_DDI, TC/TBT cleared, SDEIMR unmasks A/B, filter 250, DE HPD IMR untouched");
+		"HPD-SETUP DDI A/B enabled in SHOTPLUG_CTL_DDI, TC/TBT cleared, SDEIMR unmasks A/B, filter 250, DE HPD IMR untouched");
 
 	/* Runs it again before intel_irq_install(): the driver's interrupts are not enabled yet. */
 	i915_fake_gen_set(&t->fake, I915_SDEIMR, 0xffffffffU);
@@ -3636,11 +3635,11 @@ i915_ktest_gt_hotplug_setup(
 		hp->sdeimr_skipped == 1 &&
 		    sdeimr == 0xffffffffU &&
 		    sdeimr_write < 0,
-		"p7: P7-HPD-NOIRQ ibx_display_interrupt_update() refuses while intel_irqs_enabled() is false");
+		"HPD-NOIRQ ibx_display_interrupt_update() refuses while intel_irqs_enabled() is false");
 
 	/* Runs it with display interrupts disabled: hpd_irq_setup is skipped. */
 	drv_i915_hpd_init(hp, &t->mmio, 13, I915_PCH_ADP, 0, 1);
-	drv_i915_ktest_check(ktest, hp->irq_setup_skipped == 1, "p7: P7-HPD-NODISP hpd_irq_setup needs display_irqs_enabled");
+	drv_i915_ktest_check(ktest, hp->irq_setup_skipped == 1, "HPD-NODISP hpd_irq_setup needs display_irqs_enabled");
 }
 
 /* Checks that the DC_off power well's disable enters the target DC state and its enable leaves it. */
@@ -3654,6 +3653,7 @@ i915_ktest_gt_dc6(
 	struct i915_pw_ctx *pwc;
 	uint32_t dc_state;
 	int enabled;
+	int choose;
 
 	/*
 	 * The DC_off enable finds its trace ring through the display that
@@ -3662,11 +3662,21 @@ i915_ktest_gt_dc6(
 	 */
 	display = kern_calloc(1U, sizeof(*display));
 	if (display == NULL) {
-		drv_i915_ktest_skip(ktest, "p7: P7-DC6-NODMC", "no memory for a private display");
-		drv_i915_ktest_skip(ktest, "p7: P7-DC6", "no memory for a private display");
-		drv_i915_ktest_skip(ktest, "p7: P7-DC6-OFF", "no memory for a private display");
+		drv_i915_ktest_skip(ktest, "DC6-NODMC", "no memory for a private display");
+		drv_i915_ktest_skip(ktest, "DC6", "no memory for a private display");
+		drv_i915_ktest_skip(ktest, "DC6-OFF", "no memory for a private display");
 		return;
 	}
+
+	/*
+	 * The xd state of the display: an Alder Lake-P description over the
+	 * model, whose power wells write the DC states.
+	 */
+	drv_i915_xd_io_init(&display->xd.io, &t->mmio, NULL);
+	choose = drv_i915_xd_platform_choose(0x46a6U, 0x0cU, 0, 0U, &display->xd.choice);
+	if (choose == 0)
+		display->xd.chosen = 1;
+	drv_i915_xd_power_init(&display->xd.power, display->xd.choice.platform);
 
 	/* The DC_off well of an XE_LPD display that allows DC5 and DC6 and targets DC6. */
 	kern_memset(&well, 0, sizeof(well));
@@ -3674,6 +3684,7 @@ i915_ktest_gt_dc6(
 	well.ops = I915_PW_OPS_DC_OFF;
 	pwc = &display->pwc;
 	pwc->mmio = &t->mmio;
+	pwc->xd = &display->xd;
 	pwc->display_ver = 13;
 	pwc->allowed_dc_mask = 0x4000000aU;
 	pwc->target_dc_state = I915_DC_STATE_EN_UPTO_DC6;
@@ -3690,7 +3701,7 @@ i915_ktest_gt_dc6(
 		dc_state == 0U &&
 		    pwc->dc_state_writes == 0U &&
 		    well.hw_enabled == 1,
-		"p7: P7-DC6-NODMC without a DMC payload no DC state is enabled and the well stays on");
+		"DC6-NODMC without a DMC payload no DC state is enabled and the well stays on");
 
 	/* Disables it with the DMC payload loaded. */
 	pwc->dmc_has_payload = 1;
@@ -3706,7 +3717,7 @@ i915_ktest_gt_dc6(
 		    pwc->dc_state_writes == 1U &&
 		    well.hw_enabled == 0 &&
 		    enabled == 0,
-		"p7: P7-DC6 skl_enable_dc6: DC_STATE_EN gets UPTO_DC6, the well reads as off");
+		"DC6 skl_enable_dc6: DC_STATE_EN gets UPTO_DC6, the well reads as off");
 
 	/* Enables the well again. */
 	well.hw_enabled = 0;
@@ -3718,7 +3729,7 @@ i915_ktest_gt_dc6(
 	drv_i915_ktest_check(
 		ktest,
 		(dc_state & 0x40000003U) == 0U && enabled == 1,
-		"p7: P7-DC6-OFF enabling the well again clears the DC states");
+		"DC6-OFF enabling the well again clears the DC states");
 
 	kern_free(display);
 }
@@ -3750,7 +3761,7 @@ i915_ktest_gt_pxp(
 	i915_fake_open(&t->mmio, &t->fake);
 	error = drv_i915_engines_init(&t->engines, &t->defaults_gt, &t->gm, &t->pp);
 	if (error != 0) {
-		drv_i915_ktest_check(ktest, 0, "p7: P7-PXP intel_engines_init with a VCS failed");
+		drv_i915_ktest_check(ktest, 0, "PXP intel_engines_init with a VCS failed");
 		t->defaults_gt.num_engines = 1U;
 		return;
 	}
@@ -3760,7 +3771,7 @@ i915_ktest_gt_pxp(
 	/* Without has_pxp there is no PXP GT. */
 	kern_memset(px, 0, sizeof(*px));
 	error = drv_i915_pxp_init(px, &t->engines, &t->pp, &t->gm, 0);
-	drv_i915_ktest_check(ktest, error == ENODEV && px->inited == 0, "p7: P7-PXP-NONE without has_pxp there is no PXP GT");
+	drv_i915_ktest_check(ktest, error == ENODEV && px->inited == 0, "PXP-NONE without has_pxp there is no PXP GT");
 
 	/* With it, the full feature. */
 	error = drv_i915_pxp_init(px, &t->engines, &t->pp, &t->gm, 1);
@@ -3778,7 +3789,7 @@ i915_ktest_gt_pxp(
 		    px->component_added != 0 &&
 		    px->hwsp_ggtt == (uint32_t)t->engines.ge[1].hwsp_ggtt + 0x180U &&
 		    px->hwsp_cpu == &t->engines.ge[1].hwsp[0x60U],
-		"p7: P7-PXP pxp_init_full: a pinned 4 KiB context on the first VCS, HWS_PXP timeline, streaming page");
+		"PXP pxp_init_full: a pinned 4 KiB context on the first VCS, HWS_PXP timeline, streaming page");
 
 	/* destroy_vcs_context() and the streaming page. */
 	drv_i915_pxp_fini(px, &t->gm);
@@ -3787,7 +3798,7 @@ i915_ktest_gt_pxp(
 		t->gm.objects_live == live1 &&
 		    px->inited == 0 &&
 		    px->stream_cmd == NULL,
-		"p7: P7-PXP-FINI destroy_vcs_context + streaming page released");
+		"PXP-FINI destroy_vcs_context + streaming page released");
 
 	drv_i915_engines_release(&t->engines, &t->gm);
 	t->defaults_gt.num_engines = 1U;

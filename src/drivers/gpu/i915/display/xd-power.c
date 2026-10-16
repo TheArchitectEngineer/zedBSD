@@ -14,6 +14,7 @@
 #include "xd-power.h"
 
 #include "../intel/display-regs-xd.h"
+#include "../intel/display-regs-xd-south.h"
 
 #include <uapi/errno.h>
 #include <stddef.h>
@@ -40,6 +41,17 @@
 /* The distance from a well control to its BIOS copy, the first of the four. */
 #define I915_XD_POWER_BIOS_OFFSET	4U
 
+/*
+ * How often a DC state is written again while it reads back otherwise,
+ * and how many reads in a row must show it before it counts as taken.
+ *
+ * Values referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display_power_well.c
+ * (gen9_write_dc_state).
+ */
+#define I915_XD_DC_REWRITES		100U
+#define I915_XD_DC_STEADY_READS		5U
+
 static const struct i915_xd_well_desc *i915_xd_power_desc(const struct i915_xd_platform *platform, unsigned well);
 static uint32_t i915_xd_power_control(unsigned control);
 static int i915_xd_power_tc_port(const struct i915_xd_platform *platform, const struct i915_xd_well_desc *desc, unsigned *aux);
@@ -49,6 +61,11 @@ static void i915_xd_power_give_owed(struct i915_xd_power *power, unsigned set, c
 static void i915_xd_power_down(struct i915_xd_power *power, unsigned well, const struct i915_xd_power_switch *sw);
 static int i915_xd_power_take_owed(struct i915_xd_power *power, unsigned well);
 static void i915_xd_power_cancel_work(struct i915_xd_power *power);
+static uint32_t i915_xd_power_dc_mask(const struct i915_xd_platform *platform);
+static uint32_t i915_xd_power_dc_held_mask(const struct i915_xd_power *power);
+static int i915_xd_power_dc_store(struct i915_xd_power *power, struct i915_xd_io *io, uint32_t state, struct i915_xd_dc_report *report);
+static int i915_xd_power_pw2_on(const struct i915_xd_power *power, struct i915_xd_io *io);
+static void i915_xd_power_dc_report_clear(struct i915_xd_dc_report *report);
 
 /*
  * Finds the table entry of a well given by its control and its index
@@ -385,6 +402,14 @@ drv_i915_xd_power_init(
 	power->stats.requeues = 0U;
 	power->stats.flushes = 0U;
 	power->stats.errors = 0U;
+
+	/* No DC state is allowed or known to be written until the owner says. */
+	power->dc_allowed = 0U;
+	power->dc_target = 0U;
+	power->dc_firmware = 0;
+	power->dc_state = 0U;
+	power->dc_writes = 0U;
+	power->dc_rewrites = 0U;
 }
 
 /*
@@ -745,6 +770,268 @@ drv_i915_xd_power_record(
 }
 
 /*
+ * Sets the DC states the options allow, the one entered when DC off
+ * loses its last user, and whether the DMC firmware is loaded.  Nothing
+ * is written.
+ */
+void
+drv_i915_xd_power_dc_policy(
+	struct i915_xd_power *power,
+	uint32_t allowed,
+	uint32_t target,
+	int firmware)
+{
+	/* Records the policy the DC state changes follow. */
+	power->dc_allowed = allowed;
+	power->dc_target = target;
+	power->dc_firmware = firmware;
+}
+
+/*
+ * Writes a DC state and waits for it to read back: a state outside the
+ * allowed ones is reduced to them, the DC bits found before the write are
+ * compared with the ones last written (a DMC that ignored a request is
+ * reported), the other bits of the register are kept, and the state is
+ * written again while it reads back otherwise.  Returns 0, or EIO when
+ * the state never read back (the report holds it).
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display_power_well.c
+ * (gen9_set_dc_state, gen9_write_dc_state).
+ */
+int
+drv_i915_xd_power_dc_write(
+	struct i915_xd_power *power,
+	struct i915_xd_io *io,
+	uint32_t state,
+	struct i915_xd_dc_report *report)
+{
+	int error;
+
+	/* Writes the state with nothing reported yet. */
+	i915_xd_power_dc_report_clear(report);
+	error = i915_xd_power_dc_store(power, io, state, report);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the state reads back. */
+	return 0;
+}
+
+/*
+ * Keeps the display out of the DC states (DC off comes on): no DC5 or
+ * DC6 is left set.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display_power_well.c
+ * (gen9_disable_dc_states).
+ */
+void
+drv_i915_xd_power_dc_leave(
+	struct i915_xd_power *power,
+	struct i915_xd_io *io,
+	struct i915_xd_dc_report *report)
+{
+	/* Writes no DC state; a state that does not read back is in the report. */
+	(void)drv_i915_xd_power_dc_write(power, io, I915_XD_DC_STATE_OFF, report);
+}
+
+/*
+ * Lets the DMC take the display into the DC state the policy allows once
+ * DC off lost its last user: DC6 (noting a utility pin in PWM mode and a
+ * DC6 already requested) or DC5.  Without the DMC firmware nothing is
+ * written.  Returns 0, or EIO when the state never read back.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display_power_well.c
+ * (gen9_dc_off_power_well_disable, skl_enable_dc6, assert_can_enable_dc6,
+ * gen9_enable_dc5).
+ */
+int
+drv_i915_xd_power_dc_enter(
+	struct i915_xd_power *power,
+	struct i915_xd_io *io,
+	struct i915_xd_dc_report *report)
+{
+	uint32_t util_pin;
+	uint32_t dc_state;
+	int error;
+
+	/* Without the DMC firmware the display stays out of DC states. */
+	i915_xd_power_dc_report_clear(report);
+	if (!power->dc_firmware)
+		return 0;
+
+	/* Enters the target state. */
+	error = 0;
+	switch (power->dc_target) {
+	case I915_XD_DC_STATE_DC6:
+		/* A utility pin driving a PWM keeps the display out of DC6. */
+		util_pin = drv_i915_xd_io_read(io, I915_XD_UTIL_PIN_CTL);
+		if ((util_pin & (I915_XD_UTIL_PIN_ENABLE | I915_XD_UTIL_PIN_MODE_MASK)) == (I915_XD_UTIL_PIN_ENABLE | I915_XD_UTIL_PIN_MODE_PWM))
+			report->pwm_pin = 1;
+
+		/* DC6 should not be requested already. */
+		dc_state = drv_i915_xd_io_read(io, I915_XD_DC_STATE_EN);
+		if ((dc_state & I915_XD_DC_STATE_DC6) != 0U)
+			report->dc6_already = 1;
+
+		error = i915_xd_power_dc_store(power, io, I915_XD_DC_STATE_DC6, report);
+		break;
+	case I915_XD_DC_STATE_DC5:
+		error = i915_xd_power_dc_store(power, io, I915_XD_DC_STATE_DC5, report);
+		break;
+	default:
+		break;
+	}
+
+	/* Reports a state that never read back. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the DMC may take the state. */
+	return 0;
+}
+
+/*
+ * Tells whether the display is held out of DC5 and DC6 (and DC3CO when
+ * it is allowed): the state the DC off well reads as on (1 or 0).
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display_power_well.c
+ * (gen9_dc_off_power_well_enabled).
+ */
+int
+drv_i915_xd_power_dc_off_held(
+	const struct i915_xd_power *power,
+	struct i915_xd_io *io)
+{
+	uint32_t dc_state;
+
+	/* Any DC state bit set lets the DMC power the display down. */
+	dc_state = drv_i915_xd_io_read(io, I915_XD_DC_STATE_EN);
+	if ((dc_state & i915_xd_power_dc_held_mask(power)) != 0U)
+		return 0;
+
+	/* Succeeded: the display is held out of the DC states. */
+	return 1;
+}
+
+/*
+ * Clears DC5 and DC6 (and DC3CO when allowed) at the display core's
+ * start, before anything else is written; the state last written is not
+ * changed.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display_power.c
+ * (icl_display_core_init: gen9_set_dc_state(DC_STATE_DISABLE)).
+ */
+void
+drv_i915_xd_power_dc_clear(
+	struct i915_xd_power *power,
+	struct i915_xd_io *io)
+{
+	/* Clears the bits, keeping the rest of the register. */
+	(void)drv_i915_xd_io_rmw(io, I915_XD_DC_STATE_EN, i915_xd_power_dc_held_mask(power), 0U);
+}
+
+/*
+ * Enters DC9 before suspend: refused (EALREADY) when DC9 is set already,
+ * (EBUSY) while DC5 or DC6 is set or power well 2 is on, and (EINVAL)
+ * while the interrupts are enabled.  Then DC9 is written and the PCH is
+ * let stop the display's reference clock.  Returns 0 or the refusal;
+ * the report holds what the check read and a state that did not read
+ * back.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display_power_well.c
+ * (bxt_enable_dc9, assert_can_enable_dc9), and
+ * drivers/gpu/drm/i915/display/intel_display_power.c
+ * (icl_display_core_uninit: the reference clock's chicken bit).
+ */
+int
+drv_i915_xd_power_dc9_enter(
+	struct i915_xd_power *power,
+	struct i915_xd_io *io,
+	int interrupts_enabled,
+	struct i915_xd_dc_report *report)
+{
+	uint32_t dc_state;
+
+	/* Reads what the checks look at. */
+	i915_xd_power_dc_report_clear(report);
+	dc_state = drv_i915_xd_io_read(io, I915_XD_DC_STATE_EN);
+	report->checked = dc_state;
+	report->pw2_on = i915_xd_power_pw2_on(power, io);
+
+	/* Refuses a DC9 that is set already. */
+	if ((dc_state & I915_XD_DC_STATE_DC9) != 0U)
+		return EALREADY;
+
+	/* Refuses while the DMC may still take DC5 or DC6. */
+	if ((dc_state & I915_XD_DC_STATE_DC5_DC6_MASK) != 0U)
+		return EBUSY;
+
+	/* Refuses while power well 2 is on. */
+	if (report->pw2_on)
+		return EBUSY;
+
+	/* Refuses while the interrupts are enabled. */
+	if (interrupts_enabled)
+		return EINVAL;
+
+	/* Writes DC9; a state that does not read back is in the report. */
+	(void)i915_xd_power_dc_store(power, io, I915_XD_DC_STATE_DC9, report);
+
+	/* Lets the PCH stop the display's reference clock while the system idles. */
+	(void)drv_i915_xd_io_rmw(io, I915_XD_SOUTH_CHICKEN1, 0U, I915_XD_SOUTH_CHICKEN1_REFCLK_STOP);
+
+	/* Succeeded: the display is in DC9. */
+	return 0;
+}
+
+/*
+ * Leaves DC9 after resume: the PCH's reference clock first, then, unless
+ * power well 2 is on or DC5 or DC6 is set (EBUSY, which DC9 cannot have
+ * left behind), no DC state is written.  Returns 0 or the refusal.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display_power_well.c
+ * (bxt_disable_dc9, assert_can_disable_dc9).
+ */
+int
+drv_i915_xd_power_dc9_leave(
+	struct i915_xd_power *power,
+	struct i915_xd_io *io,
+	struct i915_xd_dc_report *report)
+{
+	uint32_t dc_state;
+
+	/* Gives the PCH's reference clock back. */
+	i915_xd_power_dc_report_clear(report);
+	(void)drv_i915_xd_io_rmw(io, I915_XD_SOUTH_CHICKEN1, I915_XD_SOUTH_CHICKEN1_REFCLK_STOP, 0U);
+
+	/* Reads what the checks look at. */
+	dc_state = drv_i915_xd_io_read(io, I915_XD_DC_STATE_EN);
+	report->checked = dc_state;
+	report->pw2_on = i915_xd_power_pw2_on(power, io);
+
+	/* Refuses while power well 2 is on. */
+	if (report->pw2_on)
+		return EBUSY;
+
+	/* Refuses DC5 or DC6 set alongside DC9. */
+	if ((dc_state & I915_XD_DC_STATE_DC5_DC6_MASK) != 0U)
+		return EBUSY;
+
+	/* Writes no DC state; a state that does not read back is in the report. */
+	(void)i915_xd_power_dc_store(power, io, I915_XD_DC_STATE_OFF, report);
+
+	/* Succeeded: the display left DC9. */
+	return 0;
+}
+
+/*
  * Gives back one user of each well in a set, in the reverse of the
  * table's order; a well whose last user leaves goes down, unless the
  * owner has to keep it on (it then keeps that user for good).
@@ -872,6 +1159,152 @@ i915_xd_power_cancel_work(
 
 	/* No arming is due any more. */
 	power->next_delay = 0;
+}
+
+/* Reports the DC state bits the platform's display has. */
+static uint32_t
+i915_xd_power_dc_mask(
+	const struct i915_xd_platform *platform)
+{
+	uint32_t mask;
+
+	/* DC5, DC6 and DC9 on every display the table describes. */
+	mask = I915_XD_DC_STATE_DC5 | I915_XD_DC_STATE_DC6 | I915_XD_DC_STATE_DC9;
+
+	/* DC3CO from display 12 on. */
+	if (platform->display_ver >= 12U)
+		mask |= I915_XD_DC_STATE_DC3CO;
+
+	/* Succeeded: the bits. */
+	return mask;
+}
+
+/* Reports the DC state bits that let the DMC power the display down: DC5, DC6, and DC3CO when allowed. */
+static uint32_t
+i915_xd_power_dc_held_mask(
+	const struct i915_xd_power *power)
+{
+	uint32_t mask;
+
+	/* DC5 and DC6 always. */
+	mask = I915_XD_DC_STATE_DC5_DC6_MASK;
+
+	/* DC3CO only when the options allow it. */
+	if ((power->dc_allowed & I915_XD_DC_STATE_DC3CO) != 0U)
+		mask |= I915_XD_DC_STATE_DC3CO;
+
+	/* Succeeded: the bits. */
+	return mask;
+}
+
+/*
+ * Writes a DC state into the report already started: see
+ * drv_i915_xd_power_dc_write().
+ */
+static int
+i915_xd_power_dc_store(
+	struct i915_xd_power *power,
+	struct i915_xd_io *io,
+	uint32_t state,
+	struct i915_xd_dc_report *report)
+{
+	uint32_t mask;
+	uint32_t value;
+	uint32_t written;
+	unsigned rewrites;
+	unsigned steady;
+
+	/* Keeps only the allowed states. */
+	state &= power->dc_allowed;
+
+	/* Notes DC bits that are not the ones last written: the DMC ignored a request. */
+	mask = i915_xd_power_dc_mask(power->platform);
+	value = drv_i915_xd_io_read(io, I915_XD_DC_STATE_EN);
+	if ((value & mask) != power->dc_state) {
+		report->mismatch = 1;
+		report->expected = power->dc_state;
+		report->found = value & mask;
+	}
+
+	/* Writes the state into the DC bits, keeping the others, and records it as the one last written. */
+	written = (value & ~mask) | state;
+	drv_i915_xd_io_write(io, I915_XD_DC_STATE_EN, written);
+	power->dc_writes++;
+	power->dc_state = written & mask;
+
+	/* Writes it again while it reads back otherwise, until it reads back steadily. */
+	rewrites = 0U;
+	steady = 0U;
+	while (rewrites < I915_XD_DC_REWRITES) {
+		/* Reads the register back. */
+		value = drv_i915_xd_io_read(io, I915_XD_DC_STATE_EN);
+
+		/* A state that did not stick is written again. */
+		if (value != written) {
+			drv_i915_xd_io_write(io, I915_XD_DC_STATE_EN, written);
+			rewrites++;
+			steady = 0U;
+			continue;
+		}
+
+		/* The state read back; enough reads in a row end the wait. */
+		if (steady > I915_XD_DC_STEADY_READS)
+			break;
+		steady++;
+	}
+	power->dc_rewrites += rewrites;
+
+	/* Reports a state that never read back. */
+	if (value != written) {
+		report->not_taken = 1;
+		report->wanted = written;
+		report->now = value;
+		return EIO;
+	}
+
+	/* Succeeded: the state reads back. */
+	return 0;
+}
+
+/* Tells whether power well 2 is on and requested by the driver (1 or 0). */
+static int
+i915_xd_power_pw2_on(
+	const struct i915_xd_power *power,
+	struct i915_xd_io *io)
+{
+	int well;
+	int owned;
+
+	/* A platform without power well 2 has it off. */
+	well = drv_i915_xd_power_find(power->platform, I915_XD_WELL_CONTROL_MAIN, I915_XD_WELL_PW_2);
+	if (well < 0)
+		return 0;
+
+	/* Asks the well's request and state. */
+	owned = drv_i915_xd_power_well_owned(io, power->platform, (unsigned)well);
+	if (owned)
+		return 1;
+
+	/* The well is off. */
+	return 0;
+}
+
+/* Starts a DC state change's report with nothing in it. */
+static void
+i915_xd_power_dc_report_clear(
+	struct i915_xd_dc_report *report)
+{
+	/* Nothing seen yet. */
+	report->mismatch = 0;
+	report->expected = 0U;
+	report->found = 0U;
+	report->not_taken = 0;
+	report->wanted = 0U;
+	report->now = 0U;
+	report->checked = 0U;
+	report->pw2_on = 0;
+	report->pwm_pin = 0;
+	report->dc6_already = 0;
 }
 
 /* Returns a well's entry in the platform's table, or NULL past its end. */

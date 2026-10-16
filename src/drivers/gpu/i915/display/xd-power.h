@@ -29,6 +29,12 @@
  * DDI, an AUX channel, the VGA plane, the exit from DC states), and the
  * wells whose sets hold them are brought up for the first user and taken
  * down after the last, the owner doing the switching.
+ *
+ * The DC states let the DMC firmware power the display down while it is
+ * idle: the DC off well keeps the display out of them, and when it loses
+ * its last user the state the options and the loaded firmware allow is
+ * written.  DC9, the deepest, is entered around suspend with the PCH's
+ * reference clock let go.
  */
 
 #ifndef DRIVERS_GPU_I915_DISPLAY_XD_POWER_H
@@ -160,6 +166,40 @@ struct i915_xd_power {
 
 	/* What the counts have seen. */
 	struct i915_xd_power_stats stats;
+
+	/*
+	 * The DC states: the ones the options allow, the one the display
+	 * enters when DC off loses its last user, and whether the DMC
+	 * firmware is loaded (without it no DC5 or DC6 is entered); the
+	 * owner sets them.  Then the DC state bits last written, and the
+	 * writes and the rewrites a state needed before it read back.
+	 */
+	uint32_t dc_allowed;
+	uint32_t dc_target;
+	int dc_firmware;
+	uint32_t dc_state;
+	unsigned dc_writes;
+	unsigned dc_rewrites;
+};
+
+/*
+ * What a DC state change met, for the owner's log: the DC state bits
+ * found before the write when they were not the ones last written (the
+ * DMC ignoring the requests), a state that never read back as written,
+ * DC_STATE_EN as read by a DC9 check, and, before DC6, the utility pin in
+ * PWM mode or DC6 already requested.
+ */
+struct i915_xd_dc_report {
+	int mismatch;
+	uint32_t expected;
+	uint32_t found;
+	int not_taken;
+	uint32_t wanted;
+	uint32_t now;
+	uint32_t checked;
+	int pw2_on;
+	int pwm_pin;
+	int dc6_already;
 };
 
 int drv_i915_xd_power_find(const struct i915_xd_platform *platform, unsigned control, unsigned index);
@@ -174,6 +214,14 @@ void drv_i915_xd_power_flush(struct i915_xd_power *power, const struct i915_xd_p
 int drv_i915_xd_power_owes(const struct i915_xd_power *power);
 int drv_i915_xd_power_has(const struct i915_xd_power *power, uint64_t functions);
 void drv_i915_xd_power_record(struct i915_xd_power *power, unsigned well, int on);
+void drv_i915_xd_power_dc_policy(struct i915_xd_power *power, uint32_t allowed, uint32_t target, int firmware);
+int drv_i915_xd_power_dc_write(struct i915_xd_power *power, struct i915_xd_io *io, uint32_t state, struct i915_xd_dc_report *report);
+void drv_i915_xd_power_dc_leave(struct i915_xd_power *power, struct i915_xd_io *io, struct i915_xd_dc_report *report);
+int drv_i915_xd_power_dc_enter(struct i915_xd_power *power, struct i915_xd_io *io, struct i915_xd_dc_report *report);
+int drv_i915_xd_power_dc_off_held(const struct i915_xd_power *power, struct i915_xd_io *io);
+void drv_i915_xd_power_dc_clear(struct i915_xd_power *power, struct i915_xd_io *io);
+int drv_i915_xd_power_dc9_enter(struct i915_xd_power *power, struct i915_xd_io *io, int interrupts_enabled, struct i915_xd_dc_report *report);
+int drv_i915_xd_power_dc9_leave(struct i915_xd_power *power, struct i915_xd_io *io, struct i915_xd_dc_report *report);
 int drv_i915_xd_power_well_enable(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned well, const struct i915_xd_power_hooks *hooks, struct i915_xd_well_report *report);
 int drv_i915_xd_power_well_disable(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned well, const struct i915_xd_power_hooks *hooks, struct i915_xd_well_report *report);
 int drv_i915_xd_power_well_owned(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned well);

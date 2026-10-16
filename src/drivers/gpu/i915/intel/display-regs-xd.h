@@ -216,6 +216,19 @@
 #define I915_XD_DC_STATE_DEBUG_MASK_MEMORY_UP	0x00000002U
 
 /*
+ * The utility pin: its enable and its mode field, whose PWM mode keeps
+ * the display out of DC6.
+ *
+ * Values referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_backlight_regs.h (UTIL_PIN_CTL,
+ * UTIL_PIN_ENABLE, UTIL_PIN_MODE_MASK, UTIL_PIN_MODE_PWM).
+ */
+#define I915_XD_UTIL_PIN_CTL			0x48400U
+#define I915_XD_UTIL_PIN_ENABLE			0x80000000U
+#define I915_XD_UTIL_PIN_MODE_MASK		0x0f000000U
+#define I915_XD_UTIL_PIN_MODE_PWM		0x01000000U
+
+/*
  * The display buffer slices: request and state of a slice's power, and
  * the tracker state service fields (the minimum one only on display 13).
  * Slice 0..3 is S1..S4.

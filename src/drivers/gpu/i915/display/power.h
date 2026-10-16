@@ -44,13 +44,11 @@ void drv_i915_display_power_flush_work(struct i915_power_domains *pd);
 void drv_i915_display_power_flush_work_sync(struct i915_power_domains *pd);
 
 void drv_i915_pmdemand_init_early(struct i915_pmdemand *pm);
-void drv_i915_gen9_set_dc_state(struct i915_pw_ctx *pwc, uint32_t state);
 
 uint8_t drv_i915_enabled_dbuf_slices_mask(struct i915_display_core *dc);
 uint32_t drv_i915_dbuf_ctl_reg(unsigned slice);
 void drv_i915_gen9_dbuf_slices_update(struct i915_display_core *dc, uint8_t req_slices);
 
-void drv_i915_dc_off_enable(struct i915_pw_ctx *pwc);
 void drv_i915_power_domains_init_hw(struct i915_display_core *dc, int resume);
 void drv_i915_power_domains_driver_remove(struct i915_display_core *dc);
 
