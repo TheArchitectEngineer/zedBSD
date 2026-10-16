@@ -63,11 +63,12 @@ commit: `3f0bda33c`（compiler の MEM_ORDERED）、`ce53cf96f`（`vk/` と試�
 ## 5. driver（P3）との口で合わせる事
 
 1. `amdrdna-vk.h` の node の関数（2 節の最後）は P3 の p011 の node が実装する。`gpu_run` は IB を session の VMID で GFX の ring に積み、完了まで待つ（design 9.4 の模型）。
-2. PM4 の opcode・register の offset を `vk/amdrdna-vk-gfx10.h` に置いた。P3 の p005（ring・fence・preamble）の定義と重なるなら、どちらに寄せるかを Q1 が決める。
+2. PM4 の opcode と register の offset を `vk/amdrdna-vk-gfx10.h` に置いた。**Q1 の決定（2026-10-16）**: driver の側（P3 の p005、`amdrdna-hw.h`・`command-format.c` の PACKET3 の定義）を正とする。p005 が main に入った後に、`vk/` をそれに合わせる（同じ定義を二か所に持たない）。それまでは今のままにする。
 3. preamble を executor が IB の始めに毎回書く（design 9.3 が許す形）。queue の reset の後に kernel が出し直す preamble（11.3）とは別に持つ。
 4. compiler の口: `amdrdna_gfx10_compile(..., options, ...)`、registers の `primitive_id_enable`・`interpolation_control`、RSRC1 の MEM_ORDERED。T#・S# は executor が作る（`vk-descriptor.c`）。SPI_PS_INPUT_ADDR = ENA。
-5. driver 全体の `audit-symbols.sh` は `compiler/` だけを除くので `vk/` を merge すると一般語で FAIL になる（`audit-allow-vk.txt` の 30 語）。`vk/` を除くか語を足すかは P3・Q1。
-6. design 9.2 は driver の出典を Mesa 25.3.6 とするが、`vk/` は手元の 25.0.7 で引用した（block ごとに版を書いた）。
+5. driver 全体の `audit-symbols.sh` は `compiler/` だけを除くので、`vk/` を merge すると一般語で FAIL になる（`audit-allow-vk.txt` の 30 語）。**Q1 の決定（2026-10-16）**: driver の `audit-symbols.sh` は `vk/` と `compiler/` を歩かない形にする。`vk/` は `audit-vk.sh` が、`compiler/` は compiler の監査が受け持つ。直すのは merge の時に、Q1 が P3 に頼む。
+6. 出典の版: design 9.2 は driver の側の出典を Mesa 25.3.6 とする。`vk/` は実際に読んだ 25.0.7 で引用し、block ごとに版を書いた。**Q1 の決定（2026-10-16）**: 実際に読んだ 25.0.7 でよい。design との違いはここと監査の表に書く。
+7. main への統合: **Q1 の決定（2026-10-16）**: p008 の host の部分は、実機で確かめる（p011 の session の後）まで main に入れず、branch に置いておく。ws.md の p008 の行と Status は、Q1 が merge の時に直す。
 
 ## 6. 実機で確かめる事（未実施、実機前）
 

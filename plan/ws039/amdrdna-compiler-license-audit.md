@@ -49,7 +49,7 @@
 
 ## executor の hardware の部分（ws039-p008、2026-10-16、P5）
 
-対象: `src/drivers/gpu/amdrdna/vk/` のうち hardware の部分（`amdrdna-vk-gfx10.h`・`vk-pm4.c`・`vk-state.c`・`vk-descriptor.c`・`vk-execute.c`・`vk-pipeline.c`・`vk-quad.c`・`vk-float.c`）。nvrtx から写した hardware に依らない部分（`vk-object.c` など 13 file）は zedBSD 自身の code で、引用は無い。出典の版は compiler と同じ Mesa 25.0.7（design 9.2 は driver の側を 25.3.6 としているが、P5 の手元に 25.3.6 の tree が無いので 25.0.7 を使い、block ごとに版を書いた）。上の表に既にある file（`radv_cmd_buffer.c`・`radv_queue.c`・`radv_shader.c`・`ac_gpu_info.c`・`ac_descriptors.c`・`gfx10.json`・`gfx10-rsrc.json`・`gfx9.json`）は executor からも引用する（取ったものは下の「追加」の欄）。
+対象: `src/drivers/gpu/amdrdna/vk/` のうち hardware の部分（`amdrdna-vk-gfx10.h`・`vk-pm4.c`・`vk-state.c`・`vk-descriptor.c`・`vk-execute.c`・`vk-pipeline.c`・`vk-quad.c`・`vk-float.c`）。nvrtx から写した hardware に依らない部分（`vk-object.c` など 13 file）は zedBSD 自身の code で、引用は無い。出典の版は compiler と同じ Mesa 25.0.7（design 9.2 は driver の側を 25.3.6 としているが、P5 の手元に 25.3.6 の tree が無いので、実際に読んだ 25.0.7 を使い、block ごとに版を書いた。2026-10-16 Q1 の決定: 25.0.7 でよく、design との違いを記録する）。上の表に既にある file（`radv_cmd_buffer.c`・`radv_queue.c`・`radv_shader.c`・`ac_gpu_info.c`・`ac_descriptors.c`・`gfx10.json`・`gfx10-rsrc.json`・`gfx9.json`）は executor からも引用する（取ったものは下の「追加」の欄）。
 
 | file | license | SHA-256 | 取ったもの（値 V / 手順 P） | 引用する executor の file |
 | --- | --- | --- | --- | --- |
@@ -72,4 +72,4 @@
 ### 確かめ（2026-10-16、P5）
 
 - `plan/ws039/tests/audit-vk.sh`（`audit-symbols.py` の規則を `vk/` に、許す一般語は `audit-allow.txt` と `audit-allow-vk.txt` を合わせて）: PASS（24 file、Mesa の引用元の識別子 8461、許した一般語 69）。Linux の tree は手元に無いので Mesa だけ。
-- 注意: driver 全体の `audit-symbols.sh` は `compiler/` だけを除いて歩くので、`vk/` を merge すると `vk/` の一般語（`requested`・`objects`・`result` など 30 語、`audit-allow-vk.txt`）で FAIL になる。`vk/` を除くか、許す語を `audit-allow.txt` に足すかは driver の側（P3）・Q1 の判断。
+- 注意: driver 全体の `audit-symbols.sh` は `compiler/` だけを除いて歩くので、`vk/` を merge すると `vk/` の一般語（`requested`・`objects`・`result` など 30 語、`audit-allow-vk.txt`）で FAIL になる。2026-10-16 Q1 の決定: driver の `audit-symbols.sh` は `vk/` と `compiler/` を歩かない形にする。merge の時に、Q1 が P3 に頼む。
