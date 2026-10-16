@@ -59,16 +59,17 @@
 
 /*
  * The south chicken word (the second panel power sequencer's IO select)
- * and the south clock gating word (the DPMG unit's clock gate).
+ * and the south clock gating word (the DPMG and DPLS units' clock gates).
  *
  * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
  * (SOUTH_CHICKEN1, ICP_SECOND_PPS_IO_SELECT, SOUTH_DSPCLK_GATE_D,
- * PCH_DPMGUNIT_CLOCK_GATE_DISABLE).
+ * PCH_DPMGUNIT_CLOCK_GATE_DISABLE, PCH_DPLSUNIT_CLOCK_GATE_DISABLE).
  */
 #define I915_XD_SOUTH_CHICKEN1			0xc2000U
 #define I915_XD_SOUTH_CHICKEN1_SECOND_PPS_IO	0x00000004U
 #define I915_XD_SOUTH_DSPCLK_GATE_D		0xc2020U
 #define I915_XD_SOUTH_DSPCLK_DPMG_UNGATE	0x00008000U
+#define I915_XD_SOUTH_DSPCLK_DPLS_UNGATE	0x20000000U
 
 /*
  * The fuse strap of the south display (bit 8 set: the raw clock is
@@ -161,13 +162,16 @@
  * delay), control (the unlock key, forced VDD, the backlight enable, the
  * reset and the power), the power-on and power-off delays (in 100 us
  * units, two 13-bit fields) and the power cycle delay (in 100 ms units
- * plus one).
+ * plus one; from the CNP south display on it is a field of the control
+ * word, before that a register of its own).
  *
  * Values referenced: Linux v6.8.12
  * drivers/gpu/drm/i915/display/intel_pps_regs.h (PCH_PPS_BASE,
  * _PP_STATUS, PP_ON, PP_SEQUENCE_MASK, PP_SEQUENCE_NONE,
  * PP_SEQUENCE_POWER_UP, PP_SEQUENCE_POWER_DOWN, PP_CYCLE_DELAY_ACTIVE,
- * _PP_CONTROL, PANEL_UNLOCK_MASK, PANEL_UNLOCK_REGS, EDP_FORCE_VDD,
+ * PP_SEQUENCE_STATE_MASK, PP_SEQUENCE_STATE_OFF_IDLE,
+ * PP_SEQUENCE_STATE_ON_IDLE, _PP_CONTROL, PANEL_UNLOCK_MASK,
+ * PANEL_UNLOCK_REGS, BXT_POWER_CYCLE_DELAY_MASK, EDP_FORCE_VDD,
  * EDP_BLC_ENABLE, PANEL_POWER_RESET, PANEL_POWER_ON, _PP_ON_DELAYS,
  * PANEL_POWER_UP_DELAY_MASK, PANEL_LIGHT_ON_DELAY_MASK, _PP_OFF_DELAYS,
  * PANEL_POWER_DOWN_DELAY_MASK, PANEL_LIGHT_OFF_DELAY_MASK, _PP_DIVISOR,
@@ -180,9 +184,13 @@
 #define I915_XD_PP_STATUS_SEQUENCE_UP		1U
 #define I915_XD_PP_STATUS_SEQUENCE_DOWN		2U
 #define I915_XD_PP_STATUS_CYCLE_DELAY		0x08000000U
+#define I915_XD_PP_STATUS_STATE			0x0000000fU
+#define I915_XD_PP_STATUS_STATE_OFF_IDLE	0x0U
+#define I915_XD_PP_STATUS_STATE_ON_IDLE		0x8U
 #define I915_XD_PP_CONTROL(pps)			(0xc7204U + 0x100U * (pps))
 #define I915_XD_PP_CONTROL_UNLOCK		0xabcd0000U
 #define I915_XD_PP_CONTROL_UNLOCK_FIELD		0xffff0000U
+#define I915_XD_PP_CONTROL_CYCLE		0x000001f0U
 #define I915_XD_PP_CONTROL_FORCE_VDD		0x00000008U
 #define I915_XD_PP_CONTROL_BACKLIGHT		0x00000004U
 #define I915_XD_PP_CONTROL_RESET		0x00000002U

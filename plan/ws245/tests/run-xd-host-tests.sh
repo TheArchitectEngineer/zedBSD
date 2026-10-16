@@ -14,7 +14,8 @@
 #                          words, the sink's replies, the tries and waits of the channel's faults
 #   host-xd-gmbus-test     the GMBUS controller: EDID reads with an offset and the segment pointer, the command words,
 #                          the interrupt enables, the target's refusals and the controller's faults
-#   host-xd-panel-test     the panel: the backlight PWM's period, lowest duty, scaling, controllers, start and stop
+#   host-xd-panel-test     the panel: the backlight PWM's period, lowest duty, scaling, controllers, start and stop;
+#                          the power sequencer's delays, VDD alone, power on and off and their waits
 # The check against the Linux tree itself is plan/ws245/tests/check-xd-regs-linux.sh (needs the unpacked tree).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -e
