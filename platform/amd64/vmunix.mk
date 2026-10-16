@@ -223,6 +223,14 @@ AMD64_AMDRDNA_SOURCES += src/drivers/gpu/amdrdna/amdrdna.c src/drivers/gpu/amdrd
 	src/drivers/gpu/amdrdna/hub-registers.c src/drivers/gpu/amdrdna/vm-format.c \
 	src/drivers/gpu/amdrdna/interrupt-format.c
 endif
+# The AMD RDNA shader compiler: SPIR-V to GFX10 through the shared frontend and optimizer (ws039-p007).
+AMD64_AMDRDNA_COMPILER_SOURCES :=
+ifeq ($(CONFIG_DRIVER_PCI_AMDRDNA),y)
+AMD64_AMDRDNA_COMPILER_SOURCES += src/drivers/gpu/amdrdna/compiler/gfx10-compile.c \
+	src/drivers/gpu/amdrdna/compiler/gfx10-encode.c src/drivers/gpu/amdrdna/compiler/gfx10-wait.c \
+	src/drivers/gpu/amdrdna/compiler/gfx10-program.c \
+	$(filter-out $(AMD64_I915_SOURCES) $(AMD64_NVRTX_SOURCES),src/drivers/gpu/compiler/spirv.c src/drivers/gpu/compiler/optimize.c)
+endif
 # The i915 test build: checkpoints the production code calls through weak symbols.
 # The runner runs the scenario -DI915_TEST_SCENARIO=<name> (in ZEDBSD_TEST_CPPFLAGS) after the start;
 # I915_TEST_ORACLE=y also links the draw readback the pixel oracle reads (slow: it dumps a frame).
@@ -387,6 +395,7 @@ AMD64_KERNEL_SOURCES := \
 	$(AMD64_I915_SOURCES) \
 	$(AMD64_NVRTX_SOURCES) \
 	$(AMD64_AMDRDNA_SOURCES) \
+	$(AMD64_AMDRDNA_COMPILER_SOURCES) \
 	$(AMD64_INTEL_WLAN_SOURCES) \
 	$(AMD64_ACPI_SOURCES) \
 	$(AMD64_I2C_SOURCES) \

@@ -31,6 +31,7 @@
 #define PENDING_VECTOR		0x01U
 #define PENDING_EXPORT		0x02U
 #define PENDING_SCALAR		0x04U
+#define PENDING_SHARED		0x08U
 
 /* The operand codes of the special scalar registers. */
 #define CODE_VCC		106U
@@ -52,6 +53,18 @@ struct wave {
 	uint32_t pc;
 	int state;
 	uint8_t pending[512];
+
+	/*
+	 * The in-order events: the vector memory loads and the shared memory
+	 * accesses issued so far, and for each register held by one of them
+	 * its event's number.  A counter wait to n settles an event when at
+	 * least n of its kind were issued after it; a scalar load may finish
+	 * last, so only a wait to zero settles it.
+	 */
+	uint32_t vector_issued;
+	uint32_t shared_issued;
+	uint32_t vector_order[512];
+	uint32_t shared_order[512];
 
 	/* The scalar registers vector memory (loads, stores) and shared memory read, and scalar loads read. */
 	uint8_t read_by_load[128];
@@ -331,8 +344,8 @@ check_scalar_read(
 	if (code >= 128U)
 		return 0;
 
-	/* A pending register is read before its wait. */
-	if (wave->pending[code] != 0U)
+	/* A pending register is read before its wait; an export's late read does not stop another read. */
+	if ((wave->pending[code] & ~PENDING_EXPORT) != 0U)
 		return fail(run, "a scalar register is read before the wait for it");
 	return 0;
 }
@@ -344,8 +357,8 @@ check_vector_read(
 	struct wave *wave,
 	unsigned code)
 {
-	/* A pending register is read before its wait. */
-	if (wave->pending[code] != 0U)
+	/* A pending register is read before its wait; an export's late read does not stop another read. */
+	if ((wave->pending[code] & ~PENDING_EXPORT) != 0U)
 		return fail(run, "a register is read before the wait for it");
 	return 0;
 }
@@ -1337,8 +1350,11 @@ buffer_access(
 	}
 
 	/* A load or a returning atomic leaves its register pending on the vector counter. */
-	if (opcode == 0x0cU || (opcode != 0x1cU && glc))
+	if (opcode == 0x0cU || (opcode != 0x1cU && glc)) {
+		wave->vector_issued++;
+		wave->vector_order[vdata] = wave->vector_issued;
 		wave->pending[vdata] |= PENDING_VECTOR;
+	}
 
 	/* The scalar registers read stay read for the VMEMtoScalarWrite hazard; the lane mask too. */
 	if (opcode == 0x0cU || (opcode != 0x1cU && glc)) {
@@ -1462,9 +1478,12 @@ shared_access(
 			wave->v[vdst - 256U][lane] = old;
 	}
 
-	/* A returning access leaves its register pending on the scalar (and shared) counter. */
-	if (returns)
-		wave->pending[vdst] |= PENDING_SCALAR;
+	/* Every shared access counts on the shared counter; a returning one leaves its register pending on it. */
+	wave->shared_issued++;
+	if (returns) {
+		wave->shared_order[vdst] = wave->shared_issued;
+		wave->pending[vdst] |= PENDING_SHARED;
+	}
 	mark_scalar_reads(wave->read_by_shared, CODE_EXEC, 1U);
 
 	/* The branch hazard: a vector memory access before a branch before this one. */
@@ -1476,31 +1495,42 @@ shared_access(
 	return 0;
 }
 
-/* Records a counter wait: the counters whose fields are zero are done. */
+/*
+ * Records a counter wait: an in-order event is done when at least the
+ * field's count of its kind were issued after it, any other when the
+ * field is zero.
+ */
 static void
 note_wait(
 	struct wave *wave,
 	uint32_t immediate)
 {
 	unsigned vector_count;
+	unsigned scalar_count;
 	unsigned index;
 	uint8_t done;
 
 	done = 0U;
 	vector_count = (immediate & 0xfU) | ((immediate >> 10) & 0x30U);
-	if (vector_count == 0U) {
-		done |= PENDING_VECTOR;
+	scalar_count = (immediate >> 8) & 0x3fU;
+	if (vector_count == 0U)
 		clear_set(wave->read_by_load);
-	}
 	if (((immediate >> 4) & 7U) == 0U)
 		done |= PENDING_EXPORT;
-	if (((immediate >> 8) & 0x3fU) == 0U) {
+	if (scalar_count == 0U) {
 		done |= PENDING_SCALAR;
 		clear_set(wave->read_by_shared);
 		clear_set(wave->read_by_scalar_load);
 	}
-	for (index = 0U; index < 512U; index++)
+	for (index = 0U; index < 512U; index++) {
 		wave->pending[index] = (uint8_t)(wave->pending[index] & ~done);
+		if ((wave->pending[index] & PENDING_VECTOR) != 0U &&
+		    wave->vector_issued - wave->vector_order[index] >= vector_count)
+			wave->pending[index] = (uint8_t)(wave->pending[index] & ~PENDING_VECTOR);
+		if ((wave->pending[index] & PENDING_SHARED) != 0U &&
+		    wave->shared_issued - wave->shared_order[index] >= scalar_count)
+			wave->pending[index] = (uint8_t)(wave->pending[index] & ~PENDING_SHARED);
+	}
 }
 
 /* Empties a set of scalar registers. */
@@ -1809,8 +1839,11 @@ format_fetch(
 			wave->v[vdata - 256U + channel][lane] = value;
 		}
 	}
-	for (channel = 0U; channel < 4U; channel++)
+	wave->vector_issued++;
+	for (channel = 0U; channel < 4U; channel++) {
+		wave->vector_order[vdata + channel] = wave->vector_issued;
 		wave->pending[vdata + channel] |= PENDING_VECTOR;
+	}
 	mark_scalar_reads(wave->read_by_load, descriptor, 4U);
 	mark_scalar_reads(wave->read_by_load, CODE_EXEC, 1U);
 	if (wave->branch_after_shared != 0)
@@ -1940,8 +1973,11 @@ image_access(
 		for (index = 0U; index < 4U; index++)
 			wave->v[vdata - 256U + index][lane] = out[index];
 	}
-	for (index = 0U; index < 4U; index++)
+	wave->vector_issued++;
+	for (index = 0U; index < 4U; index++) {
+		wave->vector_order[vdata + index] = wave->vector_issued;
 		wave->pending[vdata + index] |= PENDING_VECTOR;
+	}
 	mark_scalar_reads(wave->read_by_load, image, 8U);
 	if (fetch == 0)
 		mark_scalar_reads(wave->read_by_load, sampler, 4U);
