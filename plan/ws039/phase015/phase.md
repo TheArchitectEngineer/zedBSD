@@ -2,7 +2,7 @@
 
 # ws039-p015: 段 A11〜A13 mode set（re-light、別の mode、hotplug）
 
-Status: in-progress（2026-10-16 22:16 P3: 範囲は (B) TMDS を先に、と決まった）
+Status: in-progress（2026-10-17 00:31 P3: A11・A12 は実機で ok。残りは A13・DP の host 試験・display の mode の op・merge）
 Disposition: normal
 Parent: [WS039](../ws.md)
 Queue: q1234 / q1234-i01（p013 → p014 → p015 → p016、各段は実機で ok の後に main）
@@ -59,4 +59,45 @@ design は「DP を先に、DVI は範囲の外」。p014 の A10 で分かっ�
   - GOP の DLG の値は DML の式と合わない（`REF_FREQ_TO_PIX_FREQ`・`REFCYC_PER_HTOTAL`・`REFCYC_H_BLANK_END` が別々の refclk を示し、`DLG_V_BLANK_END=19` は OTG の vblank_end 41 と違う）。GOP の値は「この値でも underflow しない」実例にとどまり、式の照合の基準には使えない。
 - 事故（22:53〜23:05）: Debian で amdgpu を一時の firmware path で modprobe し直したら navi10 の firmware が無く（sos・smc が -2）modprobe が止まり、amdgpu が uncorrectable・`ACK should not assert` を出し続けた。reboot で戻らず、ユーザーが電源を入れ直した（23:05 に Debian、dmesg の該当の行 0）。**以後 Debian で amdgpu の load・rmmod・modprobe はしない（Q1 2026-10-16）。** Debian の永続の設定は変えていない。
 - A12 の値の照合（Q1 了解 2026-10-16）: Linux の DML（`display_mode_vba_20v2.c`・`display_rq_dlg_calc_20v2.c`、Navi10 は DML_PROJECT_NAVI10v2）を host で走らせる oracle（atom.c と同じ形、tree に入れず temp の Linux から build、shim は `plan/ws039/tests/`）を作り、amdrdna の固定小数の計算（単一 pipe・linear ARGB8888・scaling 無し・ODM 無し）を複数の mode で照合する。最後は実機の underflow 0。design.md 15 節 #8（DML の oracle は使わない）の変更になるので design に記録する。
+
+### A12 別の mode（2026-10-16 23:20〜2026-10-17 00:30、実機 RX 5600 XT、zedBSD）
+
+- 実装:
+  - `src/drivers/gpu/amdrdna/mode-plan.c`: 表示の plan。Navi10 の DML（`display_mode_vba_20v2.c`・`display_rq_dlg_calc_20v2.c`）の一つの plane・一つの pipe・linear 32 bpp・scaling 無しの場合を 64 bit 固定小数（32 bit の小数）で書き直したもの。prefetch mode の選び方は mode support（必要最小の clock、最後の start line）に合わせ、start line の loop は板の clock で回す。
+  - `src/drivers/gpu/amdrdna/modeset.c`: A12。
+    1. GOP の mode のまま DLG・TTU・RQ・watermark・global sync を plan の値に替える（OTG lock の下）。
+    2. 別の mode（EDID の 1280x720@60）に全手順で替える: blank → transmitter off → OTG 停止 → SetPixelClock（**PLL0**）→ OTG の timing → DSCL の blank の写し・RECOUT・MPC の大きさ → viewport → plane の欄 → watermark → global sync・VTG → OTG 開始 → encoder の STREAM_SETUP → transmitter on → unblank。3 秒保つ。
+    3. 全手順で GOP の mode に戻す。
+  - clock:
+    - hub の reference は crystal / hub timer の分周（50 MHz）。
+    - DISPCLK・DPPCLK は CLK3 の VCO / DENTIST の DID（163.8 MHz）。
+    - DCEFCLK・UCLK は VBIOS の getsmuclockinfo routine（506.7 MHz・101 MHz）。SMU の metrics の CurrClock は GFXCLK 以外 0 だった。
+  - `edid.c`: established・standard の timing に DMT の porch・sync 幅・極性を足した（無いと 1280x720 が sync 幅 0 で出て OTG の frame が数えられなかった）。
+  - register の表に HUBP の DLG・TTU・RQ、HUBBUB の watermark、OTG の global sync・CRC の window ほかを追加した（DCN compare 906 register）。
+- host 試験 (m) `plan/ws039/tests/amdrdna-dml-test.sh`:
+  - Linux の DML を host で build する oracle（`plan/ws039/tests/dml-oracle/`、tree に Linux を入れない）と照合する。
+  - 17 mode × 4 clock × 2 pitch で **8452 checks, 0 failures, 81 が最後の桁で ±1**（DML の float の丸め）。
+  - DML が 2 pipe（MPC combine）を要する mode は refuse を期待する。
+- 実機:
+  - r1・r2（PHY E の PLL を使った版）: 1280x720 で OTG の frame 0。PHY E の PLL は transmitter の off で落ちるため。PLL0 に替えた。
+  - r3・r4: sync 幅 0（EDID の DMT の欄が無かった）→ 直した。
+  - **r5〜r8 は 4 回とも ok**:
+    - `A12 same 1920x1080 start=31 prefetch=11/4 ... frames=60 underflow=0/0`
+    - `A12 mode 1280x720@60.000 pclk=74250kHz start=21 frames=60 underflow=0/0`
+    - `A12 ok 1280x720 and back to 1920x1080@60.000 frames=60 underflow=0`
+  - 証拠: `build/tmp/p15-a12-r5`〜`r8`（worktree の中）。
+- **CRC**:
+  - r7 までの CRC は window を設定しておらず空の window の CRC で、値が変わらなかった。**A11 の「crc=same」は証拠にならない。**
+  - dcd760d6c で window を active の全体にした（Linux の dc_stream_configure_crc と同じ）。r8 で 720p は `d40f9b3d/6db61baf`、1080p に戻した後は `8b3123aa/b196bac4` と変わることを確かめた。
+  - A11 の前後一致は、この版で取り直していない（未実施）。
+- 気づき（範囲の外、記録）: UCLK は idle で 101 MHz（UCLK の DPM が動いている）。SMU に display の watermark 表を渡していないため、UCLK の切り替えが表示中に起きると underflow の危険がある（WS039 の DPM の側の課題）。sink の mode の上限（A10 の limit）は boot の DISPCLK 625 MHz を使っており、実際の DISPCLK 163.8 MHz と違う。plan で判定する形に替えるのが残り。
+- 未実施: 1280x720 の画面の目視（Q1 が beta2 の U16 に載せた）。HDMI の connector。
+
+### 残り（2026-10-17 00:31 の時点）
+
+- A13 hotplug（HPD の割り込み、debounce、外れ・繋がりで blank と re-light）。
+- display の mode の op: present の大きさの変更を引き金に mode set。sink の上限を plan の判定に替える。
+- DP は host 試験まで（link training・AUX）。
+- p016（P7 の agent/p7-ws039 の 3f9a8fcb5）を取り込み、衝突を直し、実機で R1 を行う。
+- merge は p015（A11・A12）と p016 を別々に依頼してよい（Q1）。
 
