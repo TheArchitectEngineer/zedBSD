@@ -19,6 +19,7 @@
 | U11 | 5330（素の起動） | main 3e1e0c687 以降の amd64 の image | 普通に起動して desktop を使う | 内蔵 LCD に desktop が正しく映る、backlight が点く（i915 の display の書き直しの最初の段 p047 の後。ssh で取った register の証拠は合格、目視も 2026-10-16 15:00 ユーザーが合格「5330はデスクトップが起動しました。OKです。」。起動に約 1 分かかる件は WS253） |
 | U12 | SV7（Gen9、10.0.10.27） | main 9244ac507 以降の amd64 の image | 普通に起動して desktop を使う | 今までと同じに映り desktop が動く。dmesg に `i915: xd: no description of the device …` の 1 行が出て、OpRegion の行が前と同じ（i915 の表示の書き直し p016: OpRegion の読みの置き換えの後） |
 | U13 | RDNA 機（RX 5600 XT、10.0.10.3） | main f2ed268e4 以降の amd64 の image | 普通に起動し、dock から app を開く・閉じる、window を動かす | desktop の色が正しい、Terminal・Music・Calendar・Files が開く（Notes は BUG-329 で開かない）、乱れ・ちらつきが無い **合格**（2026-10-16 夜 ユーザー「お、RDNA機で多数のアプリが起動しました！目視。」） |
+| U14 | RDNA 機（RX 5600 XT、10.0.10.3） | P3 が知らせる BUG-331 の試験の kernel（X: console の map を UC、Y: WC） | App Home の開閉を 10 回ほどと app の開閉 | 固まらない、mouse が止まらない（BUG-331 の切り分け。P3 が自動で回すので任意） |
 
 ## 日程
 
