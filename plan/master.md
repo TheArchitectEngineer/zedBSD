@@ -609,6 +609,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-16 夜（ユーザーの訂正）:「あ、framebufferのスクロールはやめますが、マップの移動はやってください。」→ 止めるのは BUG-330（console のスクロール）だけ。WS039 p017 の 2 段目（BAR0 の移動と kernel の console の map の張り直し）は続ける。
 - 2026-10-16 夜（ユーザー）:「framebufferは今は変更をやめます。」→ BUG-330（P4: console のスクロール・固定の map の WC 化）を止めた。WS039 p017 の 2 段目の BAR0 の base の移動と console の framebuffer の map の変更も止めた（P3）。範囲はユーザーに確かめる。
 - 2026-10-16 夜（ユーザー、RDNA 機の目視）:「お、RDNA機で多数のアプリが起動しました！目視。」→ U13 合格（WS039 p017 の 1 段目、main f2ed268e4 以降）。
 - 2026-10-16 19:0x（ユーザー）:「もしかしてフレームバッファのスクロール、全部書き直してたりしません？1920x1080だと1秒に4行しか出力できず、めちゃくちゃ遅いみたいです。」→ そのとおり（kernel の text.c と HAL の cons.c の両方が毎行で全部の cell を描き直す）。BUG-330、P4 が q1232 で直す。
