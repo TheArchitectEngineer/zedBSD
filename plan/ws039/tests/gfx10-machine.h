@@ -82,6 +82,7 @@ struct machine_result {
  */
 struct machine_graphics {
 	uint32_t user[3];
+	uint32_t primitive_id[MACHINE_LANES];
 	uint32_t lanes;
 	uint32_t first_vertex_id;
 	uint32_t instance_id;

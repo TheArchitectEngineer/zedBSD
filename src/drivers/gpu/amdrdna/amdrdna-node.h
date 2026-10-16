@@ -164,6 +164,12 @@ void amdrdna_runtime_bind(struct amdrdna_node *node, amdrdna_node_execute execut
 void amdrdna_runtime_start(struct amdrdna_node *node);
 void amdrdna_runtime_stop(struct amdrdna_node *node);
 
+/* vk-node.c: the executor's binding to the node (with amdrdna.vk=1). */
+void amdrdna_vk_node_bind(struct amdrdna_node *node);
+int amdrdna_vk_node_open(struct amdrdna_session *session);
+int amdrdna_vk_node_close(struct amdrdna_session *session);
+int amdrdna_vk_node_blob_attach(struct amdrdna_session *session, uint64_t blob_id, struct amdrdna_backing *backing, uint64_t bytes);
+
 /*
  * vk-node.c: what the Vulkan executor reaches the node through.  owner is
  * the node's session; the executor holds the node's lock around every

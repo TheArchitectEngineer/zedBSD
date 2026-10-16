@@ -1,0 +1,41 @@
+#version 450
+// ws039-p007: comparisons kept as conditions: one condition read by several selections, a condition read across
+// another comparison, a division and a guarded store, a Boolean read both as a condition and as a value, and a
+// condition that ends a loop.
+layout(local_size_x = 64) in;
+layout(std430, set = 0, binding = 0) readonly buffer In { uint v[]; };
+layout(std430, set = 0, binding = 1) buffer Out { uint o[]; };
+void main()
+{
+	uint g = gl_GlobalInvocationID.x;
+	uint a = v[g];
+	uint b = v[g + 1u];
+	uint c = v[g + 2u] | 1u;
+	bool p = a < b;
+	uint s0 = p ? a : b;
+	uint s1 = p ? b + 1u : a + 2u;
+	uint s2 = p ? c : 5u;
+	bool q = (a & 3u) == (b & 3u);
+	uint t0 = q ? s0 : s1;
+	uint u0 = p ? a + 5u : t0;
+	uint d = a / c;
+	uint t1 = p ? d : u0;
+	if (q)
+		o[g * 8u + 7u] = t1;
+	uint t2 = p ? t1 + 3u : s2;
+	bool r = p && (c > 9u);
+	uint t3 = r ? 11u : 13u;
+	uint n = 0u;
+	uint x = a;
+	do {
+		x = x * 1664525u + 1013904223u;
+		n++;
+	} while ((x & 7u) != 0u && n < 20u);
+	o[g * 8u] = s0;
+	o[g * 8u + 1u] = s1;
+	o[g * 8u + 2u] = s2;
+	o[g * 8u + 3u] = t1;
+	o[g * 8u + 4u] = t2;
+	o[g * 8u + 5u] = t3 + (r ? 1u : 0u);
+	o[g * 8u + 6u] = n + (q ? 100u : 0u);
+}

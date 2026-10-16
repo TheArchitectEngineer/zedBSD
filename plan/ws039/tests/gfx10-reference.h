@@ -19,6 +19,7 @@
 #define PLAN_WS039_TESTS_GFX10_REFERENCE_H
 
 #include "drivers/gpu/compiler/ir.h"
+#include "plan/ws039/tests/gfx10-texture.h"
 
 #include <stdint.h>
 
@@ -39,7 +40,8 @@ struct reference_memory {
 /* The output slots of a graphics run: the locations, then the position and the point size. */
 #define REFERENCE_SLOT_POSITION		32U
 #define REFERENCE_SLOT_POINT_SIZE	33U
-#define REFERENCE_SLOTS			34U
+#define REFERENCE_SLOT_SECOND_COLOR	34U
+#define REFERENCE_SLOTS			35U
 
 /*
  * One wave of a vertex or pixel program for the reference: the lanes that
@@ -56,15 +58,14 @@ struct reference_graphics {
 	uint32_t instance_index[32];
 	uint32_t frag_coord[32][4];
 	uint32_t front_facing[32];
+	uint32_t point_coord[32][2];
+	uint32_t primitive_id[32];
 	uint32_t output[32][REFERENCE_SLOTS][4];
 	uint8_t written[32][REFERENCE_SLOTS][4];
 	uint8_t killed[32];
 
-	/*
-	 * Samples the sampled image (set, binding) at (u, v) (or fetches the
-	 * integer texel), with a texel offset; the four channels to out.
-	 */
-	void (*sample)(void *context, uint32_t set, uint32_t binding, uint32_t u, uint32_t v, int fetch, int offset_u, int offset_v, uint32_t *out);
+	/* Answers a texture request to the sampled image (set, binding); the four channels to out. */
+	void (*sample)(void *context, uint32_t set, uint32_t binding, const struct texture_request *request, uint32_t *out);
 	void *sample_context;
 };
 

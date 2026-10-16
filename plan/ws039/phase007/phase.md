@@ -2,7 +2,7 @@
 
 # ws039-p007: shader の compiler（SPIR-V → GFX10、RDNA1、Navi10 = gfx1010）
 
-Status: in-progress（2026-10-15 P5 着手・一時停止の後、同日夕に q1203 / q1203-i01 で P5 が再開）
+Status: in-progress（2026-10-15 P5 着手・一時停止の後、同日夕に q1203 / q1203-i01 で P5 が再開。2026-10-16 q1214 / q1214-i01 で P5 が段 D の続き・TEXTURE の残り・特殊な入出力。実機前）
 Disposition: normal
 Parent: [WS039](../ws.md)
 Queue: Q1 の割当（2026-10-15、P5: 「WS039 の shader の compiler（ws039-p007）」。ユーザーの決定 2026-10-15「担当を 2 人（driver と compiler）で並行してよいです。」）
@@ -113,7 +113,8 @@ compiler が program ごとに配置を決め、結果の記述に byte の offs
 | B | loop・除算・atomic・shared・barrier・fence | 済（2026-10-15、host） |
 | E | 頂点・fragment（頂点の fetch、補間、export、sample、KILL、UBO） | 済（2026-10-15、host。TEXTURE は SAMPLE・BIAS・LOD・LD の 4 種） |
 | F | desktop の全 shader の差分の試験（5 節の 4） | 済（2026-10-15、host、44 module × 200 回） |
-| D | 速さ（待ちを register ごとの counter に、uniform の値を SGPR のまま使う） | 一部（2026-10-15: uniform の SGPR・inline 定数・出力の直書き・chunk の cache。待ちの counter 数・loop の中の待ちは未） |
+| D | 速さ（待ちを register ごとの counter に、uniform の値を SGPR のまま使う） | 済（2026-10-16、host。7.9） |
+| G | TEXTURE の残りの message（2D）、POINT_COORD・PRIMITIVE_ID・SECOND_COLOR、whole quad の storage 書き込み | 済（2026-10-16、host。7.9。3D・cube・array は IR に次元が無く拒む） |
 
 ## 7. 記録
 
@@ -200,3 +201,53 @@ compiler が program ごとに配置を決め、結果の記述に byte の offs
 2. whole quad の fragment での storage 書き込み、IR の TEXTURE の他の message、POINT_COORD・PRIMITIVE_ID・SECOND_COLOR。
 3. P3 とのすり合わせ（`struct amdrdna_gfx10_program`・`struct amdrdna_gfx10_registers` の field、資源の表の配置、T#・S# は driver が作る、SPI_PS_INPUT_ADDR は ENA と同じ値）、vmunix.mk への compiler の 4 file の追加（P3 の `CONFIG_DRIVER_PCI_AMDRDNA` の行の後）、実機での確かめ（`v_rcp_iflag_f32` の精度に頼る除算、Navi1x の valid mask、早い終わり、constant bus）。
 4. Master の Tools への登録（Q1 に依頼済み）: `amdrdna-compiler-host-test.sh`・`amdrdna-compiler-desktop-test.sh`。
+
+### 7.9 段 D の続きと段 G（2026-10-16 q1214 / q1214-i01、P5、実機前）
+
+承認: 2026-10-16 ユーザー「RDNAのコンパイラや、パイプラインやexecutorの組み立てなど、別なサブエージェントで先に進められることがあれば、進めてオーケーです」（Q1 経由）。
+
+変更（`src/drivers/gpu/amdrdna/compiler/`）:
+- `gfx10-wait.c`: 待ちを counter の数で（vector memory の load・sample と shared は順に終わるので「後に出た同じ種類の数」まで、scalar load と export は 0 まで。`aco_insert_waitcnt.cpp` の `update_counters` を Procedure referenced）。label の状態を、そこへ落ちる道と分岐の道の状態の合流（register は小さい方の数、hazard は和）で求め、全 label が変わらなくなるまで歩き直す（16 回で収まらなければ従来の「label と分岐の前で全部を待つ」で 1 回）。export は VGPR だけを export の counter で保ち（EXEC は読んだ時点で済む）、読みは待たず書きだけが待つ。
+- `gfx10-compile.c`:
+  - 条件: VCC_LO が持つ Boolean を追い、同じ条件の v_cmp_ne を出さない。条件にだけ使う比較の結果は VGPR を持たず VCC_LO に残す（`plan_conditions`: 定義から最後の読みまでに VCC_LO を書く・lane を広げる命令が無い時）。guard の後は guard の条件が VCC_LO に残る。
+  - 使われない命令の除去（`find_dead`: 結果を誰も読まない副作用の無い命令を後ろから、読みの数を減らしながら）。
+  - operand のまま使う値: VS の fetch した channel と vertex・instance の番号、CS の local id・workgroup id、storage の大きさ、uniform の語（start の chunk、cache の entry は最後の読みまで保つ。全部保たれていれば予備の chunk に読んで写す）。
+  - VS の v0..v3 は prologue の後、fetch の VGPR は最後の読みの後に返す。出力は予約しない: 1 度だけ書かれる channel は値の VGPR から export が直に読み（値は最後まで生きる）、他は最初の書き込みで VGPR を取る。parameter の export は書かれた channel だけ。
+  - prologue の順: descriptor → vertex の fetch → uniform の chunk（fetch が uniform の load を待たない）。
+  - TEXTURE: 2D の全 message（SAMPLE・BIAS・LOD・COMPARE・BIAS_COMPARE・LOD_COMPARE・DERIVS・DERIV_COMPARE・LD・RESINFO）。address の順は offset・bias・reference・勾配（du/dx dv/dx du/dy dv/dy）・u・v・level（`visit_tex`）、compare は dmask 1、level 0 の定数は `_lz`。parameter の数が 2D と違う message（3D・cube・array）は IR が image の次元を持たないので拒む（共有の front は変えない）。
+  - PS の POINT_COORD（最後の attribute の次、PT_SPRITE_TEX・OFFSET 0x20）、PRIMITIVE_ID（その次、flat、parameter 31 を読む）、SECOND_COLOR（colour 1 として export、location 1 と同時は拒む、`dual_source`）。
+  - compile の options（`struct amdrdna_gfx10_compile_options`、`export_primitive_id`: VS が v2 の primitive 番号を parameter 31 に export）。`amdrdna_gfx10_compile`・`_compile_ir` の引数に options（NULL 可）を足した。
+  - whole quad の PS の storage 書き込み・atomic: 生きている lane（と述語）だけで（`guard_writes`、helper は書かない）。拒むのをやめた。
+- `gfx10-program.[ch]`: registers に `primitive_id_enable`（VGT_PRIMITIVEID_EN）・`interpolation_control`（SPI_INTERP_CONTROL_0、RADV の preamble と同じ値）、sprite・primitive の attribute の control。
+- `gfx10-isa.h`: image の opcode（resinfo・sample_d・c・c_d・c_l・c_b・c_lz と `_o`）、parameter 31 と NO_ATTRIBUTE。
+- `platform/amd64/vmunix.mk`: `AMD64_AMDRDNA_COMPILER_SOURCES`（P3 の `AMD64_AMDRDNA_SOURCES` の行は変えない。共有の spirv.c・optimize.c は i915・nvrtx と重ならないよう filter-out）。
+
+試験（`plan/ws039/tests/`）:
+- interpreter: counter の数の待ちを最悪の順で確かめる（vector と shared は順、scalar load は 0 でだけ済む）。export の保持は書きだけ止める。image の全 opcode（offset・bias・compare・勾配・level・lz・fetch・resinfo、dmask の channel だけ書く）。VS の v2 に primitive 番号。
+- texture の helper（`gfx10-texture.[ch]`）: request の struct（level・bias・勾配から LOD、LOD > 0 で縮小の filter、depth compare、size）。参照も同じ helper。
+- 参照: TEXTURE の全 message、POINT_COORD・PRIMITIVE_ID の入力、SECOND_COLOR の slot。
+- graphics 試験: VS は primitive の export の有無の 2 通り、PS の storage を参照の写しと語ごとに比べる、sprite・primitive の attribute の register の値。
+- 新しい shader: `condition.comp`・`query.vert`・`query.frag`・`sprite.frag`・`helpers.frag`。known words に image の 6 命令。
+
+結果（2026-10-16）:
+- `amdrdna-compiler-host-test.sh` PASS: known words 92/92、compute 12 module × 16、graphics 11 module（VS 4 は 2 通り）× 16、27 program の disassemble に誤り無し。
+- `amdrdna-compiler-desktop-test.sh` PASS: 44 module（VS は 2 通りで 62 program）× 200、disassemble 誤り無し。
+- desktop 44 program（primitive の版を除く）: 命令 6636 → 5649、s_waitcnt 338 → 249（VS は待ちの数が増え 1 つずつは短い、PS の discard は減る）、v_mov 888 → 127、最大 VGPR 75 → 48（全部が wave32 の満員の占有 ≤ 48）。
+- わざとの誤りで FAIL になることを確かめた: VCC の追いの忘れ（atomic で FAIL）、勾配の順の取り違え（query-frag）、helper の書き込み（helpers-frag）。
+- `make -j16 ZEDBSD_CONFIG=config/ci/config-amd64.mk vmunix` exit 0、warning 0（kernel の include の検査・vmunix の検査 PASS）。kernel の flag と `-Wdeclaration-after-statement` で 4 file とも warning 0。
+- `audit-symbols.sh`（Mesa の tree つき）PASS。監査の表に aco_insert_waitcnt.cpp・radv_cmd_buffer.c・radv_queue.c を足した。
+
+実機で確かめる事（未実施）: counter の数の待ち（vector memory の順、exec 0 の VMEM も counter を数える前提）、v2 の primitive 番号（VGT_PRIMITIVEID_EN）、point sprite の attribute（SPI_INTERP_CONTROL_0 は driver の preamble）、dual-source の colour 1、sample_c の dmask 1、resinfo の z。7.8 の 3 の項目も残る。
+
+### 7.10 再開点（2026-10-16）
+
+1. 3D・cube・array の sample: 共有の IR が image の次元を持たない（共有の front の変更は p007 の範囲外、Q1 に相談）。
+2. DDX・DDY（IR にある、desktop は使わない）、gather は未。
+3. driver との口は p008（executor）で使う形に合わせる（`amdrdna_gfx10_compile` の options、registers の新しい field）。
+
+### 7.11 p008 の途中で見つけた compiler の口の直し（2026-10-16 q1214、P5、実機前）
+
+- `gfx10-program.c`: register の数の語（RSRC1）に MEM_ORDERED（VS bit 27、PS bit 25、CS bit 30）を立てる。段 D の「vector memory の load・sample は順に終わる」待ち（counter の数で待つ）は GFX10 でこの bit が立っている時の動き（RADV は GFX10・GFX11 で常に立てる、`radv_mem_ordered`）。立てないと sample と load の counter が順に減らず、数の待ちが早すぎる。commit `3f0bda33c`。
+- 試験: compute・graphics の register の検査に 3 つの bit を足した。`amdrdna-compiler-host-test.sh` PASS（28 行の PASS、known words 92/92）。
+- `gfx10-texture.c`（試験の texture の道具）: sampler の unnormalized（bit 15）と記述子の channel の select（DST_SEL）を足した（p008 の executor の試験が使う。既存の試験は identity の select で結果は変わらない）。
+

@@ -634,7 +634,7 @@ test_against_compiler(
 
 	/* Compiles it. */
 	program = NULL;
-	error = amdrdna_gfx10_compile(words, count, DRV_GPU_STAGE_COMPUTE, &program, &diagnostic);
+	error = amdrdna_gfx10_compile(words, count, DRV_GPU_STAGE_COMPUTE, NULL, &program, &diagnostic);
 	free(words);
 	check(error == 0, "compiler comparison: compiles", "refused");
 	if (error != 0)

@@ -152,7 +152,7 @@ test_module(
 	/* The compiler. */
 	program = NULL;
 	memset(&diagnostic, 0, sizeof(diagnostic));
-	error = amdrdna_gfx10_compile(words, word_count, DRV_GPU_STAGE_COMPUTE, &program, &diagnostic);
+	error = amdrdna_gfx10_compile(words, word_count, DRV_GPU_STAGE_COMPUTE, NULL, &program, &diagnostic);
 	free(words);
 	if (error != 0) {
 		printf("FAIL %s: the compiler refused it at %u (%s)\n", name, diagnostic.instruction, diagnostic.reason);
@@ -174,10 +174,11 @@ test_module(
 		fclose(hex);
 	}
 
-	/* The register values: the VGPR blocks, two user SGPRs, the workgroup ids, the local ids x, y, z, the shared memory. */
+	/* The register values: the VGPR blocks, the ordered vector memory counter, two user SGPRs, the workgroup ids, the local ids x, y, z, the shared memory. */
 	amdrdna_gfx10_program_registers(program, &registers);
 	if ((registers.counts & 0x3fU) != (program->vgpr_count - 1U) / 8U ||
 	    ((registers.counts >> 12) & 0xffU) != 0xf0U ||
+	    (registers.counts & (1U << 30)) == 0U ||
 	    ((registers.inputs >> 1) & 0x1fU) != 2U ||
 	    ((registers.inputs >> 7) & 7U) != 7U ||
 	    ((registers.inputs >> 11) & 3U) != 2U ||

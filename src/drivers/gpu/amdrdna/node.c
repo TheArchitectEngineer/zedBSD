@@ -85,6 +85,7 @@ amdrdna_node_create(
 	struct amdrdna_device *device)
 {
 	struct amdrdna_node *node;
+	unsigned vk;
 
 	/* A node made by an earlier try of the stage is kept. */
 	if (device->node != NULL)
@@ -117,6 +118,11 @@ amdrdna_node_create(
 
 	/* The renderer's queue and the recovery operations (the stop of a session, the fault). */
 	amdrdna_runtime_prepare(node);
+
+	/* With amdrdna.vk=1 the Vulkan executor makes the device a renderer (before it is registered). */
+	vk = amdrdna_parameter_number("amdrdna.vk", 0U);
+	if (vk != 0U)
+		amdrdna_vk_node_bind(node);
 
 	/* Succeeded: the node is the device's. */
 	device->node = node;
@@ -330,6 +336,13 @@ node_open(
 	if (error != 0)
 		return error;
 
+	/* Its executor session when the device is a renderer. */
+	error = amdrdna_vk_node_open(opened);
+	if (error != 0) {
+		amdrdna_node_session_close(private_data, opened);
+		return error;
+	}
+
 	/* Succeeded: the session is the core's. */
 	*session = opened;
 	return 0;
@@ -341,6 +354,13 @@ node_close(
 	void *private_data,
 	void *session)
 {
+	int error;
+
+	/* The executor session first: it gives back its memory in the address space. */
+	error = amdrdna_vk_node_close(session);
+	if (error != 0)
+		return;
+
 	/* The address space and the record. */
 	amdrdna_node_session_close(private_data, session);
 }
@@ -506,6 +526,20 @@ node_blob_create(
 	resource->bytes = request->bytes;
 	resource->backing = backing;
 
+	/*
+	 * A blob of the renderer's made for a VkDeviceMemory (its blob_id is
+	 * the memory's identity) is that memory's storage: the memory takes a
+	 * reference to the backing and the session's address space maps it.
+	 */
+	if (request->blob_id != 0U && node->renderer != 0) {
+		error = amdrdna_vk_node_blob_attach(session, request->blob_id, backing, request->bytes);
+		if (error != 0) {
+			amdrdna_backing_put(node->device, backing);
+			kern_free(resource);
+			return error;
+		}
+	}
+
 	/* Succeeded: the blob is the session's, numbered for the protocol and listed. */
 	*resource_id = amdrdna_node_resource_id(node);
 	amdrdna_node_blob_listed(node, session, resource, *resource_id);
@@ -633,13 +667,17 @@ node_resource_map(
 		return 0;
 	}
 
-	/* A blob: its place in the window. */
+	/*
+	 * A blob: its place in the window, the pages it was asked for (the
+	 * backing is whole runs of the address spaces' 64 KiB; libvulkan maps
+	 * exactly the pages it asked for).
+	 */
 	mapping->physical = amdrdna_vram_bus(node->device, resource->backing->vram);
 	mapping->address = (void *)(uintptr_t)amdrdna_backing_cpu(node->device, resource->backing);
-	mapping->bytes = resource->backing->bytes;
+	mapping->bytes = (resource->bytes + NODE_PAGE_BYTES - 1U) & ~((uint64_t)NODE_PAGE_BYTES - 1U);
 	mapping->attributes = DRV_GPU_MAPPING_DEVICE;
 
-	/* Succeeded: the view covers the whole backing. */
+	/* Succeeded: the view covers the blob's pages. */
 	return 0;
 }
 

@@ -11,16 +11,26 @@
  *
  * The waits: an instruction that reads or writes a register a memory
  * instruction has not yet filled waits first, by the counter of that
- * memory instruction, until the counter is zero.  The export reads its
- * registers late, so a write to one of them waits for the export counter.
- * Waiting to zero is always correct; waiting for fewer is left for later.
+ * memory instruction, until the counter has fallen far enough.  The
+ * vector memory loads and the shared memory accesses finish in the order
+ * they were issued, so a register filled by one of them is ready once the
+ * counter is no more than the number of those issued after it; a scalar
+ * load may finish in any order and an export is only followed to its
+ * end, so theirs wait for zero.  The export reads its registers late, so a
+ * write to one of them waits for the export counter.
  *
  * The hazards: GFX10.1 has four sequences the hardware does not guard,
  * each broken by an instruction placed between their two halves (the
  * VMEMtoScalarWrite, SMEMtoVectorWrite, VcmpxExecWAR and LdsBranchVmemWAR
- * hazards).  The pass follows one straight line of instructions; at a
- * label and before a branch it waits for everything and breaks every
- * hazard still open, so that every path into a label starts clean.
+ * hazards).
+ *
+ * The pass walks the list once per pass.  What it knows at a label is
+ * everything it knew on each path into it: the line that falls into the
+ * label and each branch to it.  A loop's label learns of its back branch
+ * only at the end of a pass, so the walk is repeated until no label
+ * learns anything new; should that take too many passes, a last pass
+ * waits for everything and breaks every hazard at each label and branch
+ * instead, which is always correct.
  */
 
 #include "gfx10-wait.h"
@@ -45,8 +55,35 @@
 #define GFX10_ADDED_PER_INST		8U
 #define GFX10_ADDED_AT_END		8U
 
-/* The bit of a counter in a set of counters. */
-#define GFX10_COUNTER_BIT(counter)	(1U << (unsigned)(counter))
+/* The counters a register can wait on, indexed by enum amdrdna_gfx10_counter. */
+#define GFX10_COUNTER_SLOTS		5U
+
+/* A register no event of a counter has yet to fill. */
+#define GFX10_NOT_PENDING		0xffU
+
+/* The passes after which the labels' states are taken not to settle. */
+#define GFX10_SETTLE_PASSES		16U
+
+/*
+ * The fields of the counter wait's immediate: the vector memory count's
+ * low four bits at bit 0 and its high two bits at bit 14, the export
+ * count at bit 4, the shared memory and scalar count at bit 8.  The
+ * largest value of each field waits for nothing, so a register is counted
+ * behind at most one less than it.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_ir.cpp
+ * (wait_imm::pack, the GFX10 case; wait_imm::max: vm 63, exp 7, lgkm 63).
+ */
+#define GFX10_WAIT_VECTOR_LOW_MASK	0xfU
+#define GFX10_WAIT_VECTOR_HIGH_SHIFT	10U
+#define GFX10_WAIT_VECTOR_HIGH_MASK	0x30U
+#define GFX10_WAIT_EXPORT_SHIFT		4U
+#define GFX10_WAIT_EXPORT_FIELD		0x7U
+#define GFX10_WAIT_SCALAR_SHIFT		8U
+#define GFX10_WAIT_SCALAR_FIELD		0x3fU
+#define GFX10_VECTOR_COUNT_MAX		62U
+#define GFX10_EXPORT_COUNT_MAX		6U
+#define GFX10_SCALAR_COUNT_MAX		62U
 
 /*
  * The fields of the dependency wait's immediate that say whether it waits
@@ -63,17 +100,24 @@
 #define GFX10_DEPEND_SA_SDST_MASK	0x1U
 
 /*
- * What the pass knows at one point of the straight line.
+ * What the pass knows at one point of the code.
  *
- * Lives on the stack of amdrdna_gfx10_place_waits(): emptied at every
- * label and every branch.
+ * One lives for the walk and one for each label; they are allocated by
+ * amdrdna_gfx10_place_waits() and freed before it returns.  A label's
+ * state only ever learns more (a register pending for fewer events, a
+ * hazard open), so the passes end.
  */
 struct wait_state {
-	/* For each register (by code), the counters whose completion it waits for. */
-	uint8_t pending[GFX10_CODES];
+	/*
+	 * For each register (by code) and counter: the count the counter
+	 * must fall to before the register is filled, or before an export
+	 * has read it; GFX10_NOT_PENDING when no event of the counter holds
+	 * it.
+	 */
+	uint8_t pending[GFX10_CODES][GFX10_COUNTER_SLOTS];
 
-	/* The counters any register waits for. */
-	uint32_t outstanding;
+	/* For each register: the scalar counter event that holds it is a scalar load, which may finish in any order. */
+	uint8_t unordered[GFX10_CODES];
 
 	/*
 	 * The scalar registers read by a vector memory load, by a vector
@@ -115,14 +159,25 @@ struct wait_output {
 	int track_branch_hazard;
 };
 
-static void wait_counters(struct wait_state *state, struct wait_output *output, uint32_t counters);
+static int walk(const struct amdrdna_gfx10_inst *list, uint32_t count, struct wait_output *output, struct wait_state *state, struct wait_state *labels, int conservative);
+static void state_clear(struct wait_state *state);
+static int state_join(struct wait_state *into, const struct wait_state *from);
+static int join_set(uint32_t *into, const uint32_t *from);
+static int join_flag(int *into, int from);
+static int ends_line(const struct amdrdna_gfx10_inst *inst);
+static void wait_for(struct wait_state *state, struct wait_output *output, const uint8_t *needed);
 static void resolve_all(struct wait_state *state, struct wait_output *output);
 static void break_hazards(struct wait_state *state, struct wait_output *output, const struct amdrdna_gfx10_inst *inst, const struct amdrdna_gfx10_access *access);
 static void note_issued(struct wait_state *state, const struct amdrdna_gfx10_inst *inst, const struct amdrdna_gfx10_access *access);
+static void count_behind(struct wait_state *state, unsigned counter);
+static void hold_range(struct wait_state *state, const struct amdrdna_gfx10_range *range, unsigned counter, int ordered);
 static void note_wait(struct wait_state *state, const struct amdrdna_gfx10_inst *inst);
+static void release(struct wait_state *state, unsigned counter, unsigned count);
 static void append(struct wait_output *output, const struct amdrdna_gfx10_inst *inst);
 static void append_control(struct wait_output *output, unsigned opcode, uint32_t immediate);
-static uint32_t needed_counters(const struct wait_state *state, const struct amdrdna_gfx10_access *access);
+static int needed_counts(const struct wait_state *state, const struct amdrdna_gfx10_access *access, uint8_t *needed);
+static void need_range(const struct wait_state *state, const struct amdrdna_gfx10_range *range, int written, uint8_t *needed);
+static unsigned count_limit(unsigned counter);
 static int is_vector_alu(const struct amdrdna_gfx10_inst *inst);
 static int is_scalar_alu(const struct amdrdna_gfx10_inst *inst);
 static int is_vector_memory(const struct amdrdna_gfx10_inst *inst);
@@ -142,9 +197,8 @@ static int insert_idle_after(struct amdrdna_gfx10_inst **list, uint32_t *count, 
  *
  * Each instruction is preceded by what it needs: a wait for the counters
  * of the registers it reads or writes that a memory instruction has not
- * filled, and the break of any hazard it would complete.  Labels and
- * branches are preceded by a wait for everything and the break of every
- * open hazard.
+ * filled, and the break of any hazard it would complete.  The walk is
+ * repeated until every label knows all the paths into it.
  */
 int
 amdrdna_gfx10_place_waits(
@@ -153,15 +207,16 @@ amdrdna_gfx10_place_waits(
 	struct amdrdna_gfx10_inst **out,
 	uint32_t *out_count)
 {
-	struct wait_state state;
 	struct wait_output output;
-	struct amdrdna_gfx10_access access;
-	const struct amdrdna_gfx10_inst *inst;
-	uint32_t needed;
+	struct wait_state *state;
+	struct wait_state *labels;
+	uint32_t label_count;
 	uint32_t index;
+	uint32_t pass;
 	int has_vector_memory;
 	int has_shared_memory;
 	int vector_memory;
+	int changed;
 
 	*out = NULL;
 	*out_count = 0U;
@@ -176,49 +231,58 @@ amdrdna_gfx10_place_waits(
 	/* The branch hazard needs both a vector memory access and a shared memory access in the program. */
 	has_vector_memory = 0;
 	has_shared_memory = 0;
+	label_count = 0U;
 	for (index = 0U; index < count; index++) {
 		vector_memory = is_vector_memory(&list[index]);
 		if (vector_memory != 0)
 			has_vector_memory = 1;
 		if (list[index].kind == AMDRDNA_GFX10_KIND_SHARED)
 			has_shared_memory = 1;
+
+		/* The labels are numbered from 0; one past the highest named. */
+		if (list[index].kind == AMDRDNA_GFX10_KIND_LABEL || list[index].kind == AMDRDNA_GFX10_KIND_BRANCH) {
+			if (list[index].label + 1U > label_count)
+				label_count = list[index].label + 1U;
+		}
 	}
 	output.track_branch_hazard = 0;
 	if (has_vector_memory != 0 && has_shared_memory != 0)
 		output.track_branch_hazard = 1;
 
-	/* Starts with nothing outstanding. */
-	kern_memset(&state, 0, sizeof(state));
-
-	/* Walks the straight line once. */
-	for (index = 0U; index < count; index++) {
-		inst = &list[index];
-
-		/* A label is reached from elsewhere: everything is settled before it. */
-		if (inst->kind == AMDRDNA_GFX10_KIND_LABEL) {
-			resolve_all(&state, &output);
-			append(&output, inst);
-			continue;
-		}
-
-		/* A branch leaves the line: everything is settled before it. */
-		if (inst->kind == AMDRDNA_GFX10_KIND_BRANCH)
-			resolve_all(&state, &output);
-
-		/* Waits for the registers the instruction uses that memory has not filled. */
-		amdrdna_gfx10_describe(inst, &access);
-		needed = needed_counters(&state, &access);
-		if (needed != 0U)
-			wait_counters(&state, &output, needed);
-
-		/* Breaks the hazards the instruction would complete. */
-		break_hazards(&state, &output, inst, &access);
-
-		/* Places the instruction and records what it leaves outstanding. */
-		append(&output, inst);
-		note_wait(&state, inst);
-		note_issued(&state, inst, &access);
+	/* The state of the walk. */
+	state = kern_calloc(1U, sizeof(*state));
+	if (state == NULL) {
+		kern_free(output.list);
+		return ENOMEM;
 	}
+
+	/* Each label's state, knowing nothing of any path yet. */
+	labels = kern_calloc(label_count + 1U, sizeof(*labels));
+	if (labels == NULL) {
+		kern_free(state);
+		kern_free(output.list);
+		return ENOMEM;
+	}
+	for (index = 0U; index <= label_count; index++)
+		state_clear(&labels[index]);
+
+	/* Walks until no label learns of a new path state. */
+	changed = 1;
+	for (pass = 0U; pass < GFX10_SETTLE_PASSES; pass++) {
+		output.count = 0U;
+		changed = walk(list, count, &output, state, labels, 0);
+		if (changed == 0)
+			break;
+	}
+
+	/* Labels that never settled: a last walk that settles everything at each label and branch. */
+	if (changed != 0) {
+		output.count = 0U;
+		changed = walk(list, count, &output, state, labels, 1);
+	}
+
+	kern_free(labels);
+	kern_free(state);
 
 	/* Succeeded: the caller owns the new list. */
 	*out = output.list;
@@ -382,27 +446,243 @@ amdrdna_gfx10_assemble(
 	return 0;
 }
 
-/* Waits until the given counters are zero, and forgets the registers they held. */
+/*
+ * Walks the list once, building the output with its waits and breaks.
+ *
+ * Each label takes, as its own state joined with the line falling into
+ * it, what each branch to it carried; conservative instead settles
+ * everything before each label and branch.  Returns nonzero when a
+ * label's state learned something new, so another walk is needed.
+ */
+static int
+walk(
+	const struct amdrdna_gfx10_inst *list,
+	uint32_t count,
+	struct wait_output *output,
+	struct wait_state *state,
+	struct wait_state *labels,
+	int conservative)
+{
+	struct amdrdna_gfx10_access access;
+	const struct amdrdna_gfx10_inst *inst;
+	uint8_t needed[GFX10_COUNTER_SLOTS];
+	uint32_t index;
+	int changed;
+	int reached;
+	int joined;
+	int ends;
+	int needs;
+
+	/* Starts with nothing outstanding, at a place the program reaches. */
+	state_clear(state);
+	changed = 0;
+	reached = 1;
+
+	/* Walks the list in order. */
+	for (index = 0U; index < count; index++) {
+		inst = &list[index];
+
+		/* A label settles everything, or joins the paths into it. */
+		if (inst->kind == AMDRDNA_GFX10_KIND_LABEL) {
+			if (conservative != 0) {
+				resolve_all(state, output);
+			} else {
+				/* The line falls into the label unless it ended just before. */
+				if (reached != 0) {
+					joined = state_join(&labels[inst->label], state);
+					if (joined != 0)
+						changed = 1;
+				}
+				*state = labels[inst->label];
+			}
+			reached = 1;
+			append(output, inst);
+			continue;
+		}
+
+		/* A branch settles everything before it in the conservative walk. */
+		if (conservative != 0 && inst->kind == AMDRDNA_GFX10_KIND_BRANCH)
+			resolve_all(state, output);
+
+		/* Waits for the registers the instruction uses that memory has not filled. */
+		amdrdna_gfx10_describe(inst, &access);
+		needs = needed_counts(state, &access, needed);
+		if (needs != 0)
+			wait_for(state, output, needed);
+
+		/* Breaks the hazards the instruction would complete. */
+		break_hazards(state, output, inst, &access);
+
+		/* Places the instruction and records what it leaves outstanding. */
+		append(output, inst);
+		note_wait(state, inst);
+		note_issued(state, inst, &access);
+
+		/* A branch carries the state to its label. */
+		if (conservative == 0 && inst->kind == AMDRDNA_GFX10_KIND_BRANCH) {
+			joined = state_join(&labels[inst->label], state);
+			if (joined != 0)
+				changed = 1;
+		}
+
+		/* After the end or a branch taken always, the next code is reached only through a label. */
+		ends = ends_line(inst);
+		if (ends != 0) {
+			state_clear(state);
+			reached = 0;
+		}
+	}
+
+	/* Reports whether a label learned something. */
+	return changed;
+}
+
+/* Empties a state: nothing pending, no hazard open. */
 static void
-wait_counters(
+state_clear(
+	struct wait_state *state)
+{
+	/* Everything zero, then every register free of every counter. */
+	kern_memset(state, 0, sizeof(*state));
+	kern_memset(state->pending, GFX10_NOT_PENDING, sizeof(state->pending));
+}
+
+/*
+ * Joins what one path knows into a label's state: a register is pending
+ * for the fewer of the two counts, a hazard is open when it is on either.
+ * Returns nonzero when the label's state changed.
+ */
+static int
+state_join(
+	struct wait_state *into,
+	const struct wait_state *from)
+{
+	uint32_t code;
+	uint32_t counter;
+	int changed;
+	int joined;
+
+	changed = 0;
+
+	/* Each register's counts: the smaller one waits longer, which serves both paths. */
+	for (code = 0U; code < GFX10_CODES; code++) {
+		for (counter = 0U; counter < GFX10_COUNTER_SLOTS; counter++) {
+			if (from->pending[code][counter] < into->pending[code][counter]) {
+				into->pending[code][counter] = from->pending[code][counter];
+				changed = 1;
+			}
+		}
+
+		/* A scalar load on either path keeps the register's wait at zero. */
+		if (from->unordered[code] != 0U && into->unordered[code] == 0U) {
+			into->unordered[code] = 1U;
+			changed = 1;
+		}
+	}
+
+	/* The hazards open on either path. */
+	joined = join_set(into->read_by_load, from->read_by_load);
+	joined |= join_set(into->read_by_store, from->read_by_store);
+	joined |= join_set(into->read_by_shared, from->read_by_shared);
+	joined |= join_set(into->read_by_scalar_load, from->read_by_scalar_load);
+	joined |= join_flag(&into->lane_mask_read, from->lane_mask_read);
+	joined |= join_flag(&into->vector_memory, from->vector_memory);
+	joined |= join_flag(&into->shared_memory, from->shared_memory);
+	joined |= join_flag(&into->branch_after_vector, from->branch_after_vector);
+	joined |= join_flag(&into->branch_after_shared, from->branch_after_shared);
+	joined |= join_flag(&into->m0_written, from->m0_written);
+	if (joined != 0)
+		changed = 1;
+
+	/* Reports whether the label learned something. */
+	return changed;
+}
+
+/* Adds a set's registers to another; returns nonzero when that one grew. */
+static int
+join_set(
+	uint32_t *into,
+	const uint32_t *from)
+{
+	uint32_t index;
+	int changed;
+
+	/* Each word of the sets. */
+	changed = 0;
+	for (index = 0U; index < GFX10_SCALAR_SET_WORDS; index++) {
+		if ((from[index] & ~into[index]) != 0U) {
+			into[index] |= from[index];
+			changed = 1;
+		}
+	}
+
+	/* Reports whether the set grew. */
+	return changed;
+}
+
+/* Sets a flag that another path has set; returns nonzero when it was clear. */
+static int
+join_flag(
+	int *into,
+	int from)
+{
+	/* Only a flag set on the other path and clear here changes. */
+	if (from == 0)
+		return 0;
+	if (*into != 0)
+		return 0;
+
+	/* The flag is now set. */
+	*into = 1;
+	return 1;
+}
+
+/* Reports whether an instruction is never followed by the next one: the end, or a branch taken always. */
+static int
+ends_line(
+	const struct amdrdna_gfx10_inst *inst)
+{
+	/* The end of the program. */
+	if (inst->kind == AMDRDNA_GFX10_KIND_CONTROL && inst->opcode == AMDRDNA_GFX10_S_ENDPGM)
+		return 1;
+
+	/* A branch without a condition. */
+	if (inst->kind == AMDRDNA_GFX10_KIND_BRANCH && inst->opcode == AMDRDNA_GFX10_S_BRANCH)
+		return 1;
+
+	/* Anything else falls through. */
+	return 0;
+}
+
+/* Places one counter wait for the counts needed, and lets go of the registers it settles. */
+static void
+wait_for(
 	struct wait_state *state,
 	struct wait_output *output,
-	uint32_t counters)
+	const uint8_t *needed)
 {
 	struct amdrdna_gfx10_inst inst;
 	uint32_t immediate;
-	uint32_t index;
+	unsigned vector_count;
 
-	/* The counter wait zeroes the fields of the counters asked for and leaves the rest at their largest. */
+	/* Each counter's field gets its count; the others keep the value that waits for nothing. */
 	immediate = AMDRDNA_GFX10_WAIT_NONE;
-	if ((counters & GFX10_COUNTER_BIT(AMDRDNA_GFX10_COUNTER_VECTOR_LOAD)) != 0U)
+	if (needed[AMDRDNA_GFX10_COUNTER_VECTOR_LOAD] != GFX10_NOT_PENDING) {
+		vector_count = needed[AMDRDNA_GFX10_COUNTER_VECTOR_LOAD];
 		immediate &= ~AMDRDNA_GFX10_WAIT_VECTOR_MASK;
-	if ((counters & GFX10_COUNTER_BIT(AMDRDNA_GFX10_COUNTER_EXPORT)) != 0U)
+		immediate |= vector_count & GFX10_WAIT_VECTOR_LOW_MASK;
+		immediate |= (vector_count & GFX10_WAIT_VECTOR_HIGH_MASK) << GFX10_WAIT_VECTOR_HIGH_SHIFT;
+	}
+	if (needed[AMDRDNA_GFX10_COUNTER_EXPORT] != GFX10_NOT_PENDING) {
 		immediate &= ~AMDRDNA_GFX10_WAIT_EXPORT_MASK;
-	if ((counters & GFX10_COUNTER_BIT(AMDRDNA_GFX10_COUNTER_SCALAR)) != 0U)
+		immediate |= (uint32_t)needed[AMDRDNA_GFX10_COUNTER_EXPORT] << GFX10_WAIT_EXPORT_SHIFT;
+	}
+	if (needed[AMDRDNA_GFX10_COUNTER_SCALAR] != GFX10_NOT_PENDING) {
 		immediate &= ~AMDRDNA_GFX10_WAIT_SCALAR_MASK;
+		immediate |= (uint32_t)needed[AMDRDNA_GFX10_COUNTER_SCALAR] << GFX10_WAIT_SCALAR_SHIFT;
+	}
 
-	/* Places the counter wait, when it waits for anything. */
+	/* Places the counter wait, when it waits for anything, and notes what it lets go. */
 	if (immediate != AMDRDNA_GFX10_WAIT_NONE) {
 		append_control(output, AMDRDNA_GFX10_S_WAITCNT, immediate);
 		kern_memset(&inst, 0, sizeof(inst));
@@ -411,21 +691,6 @@ wait_counters(
 		inst.immediate = immediate;
 		note_wait(state, &inst);
 	}
-
-	/* The stores are waited for by their own instruction. */
-	if ((counters & GFX10_COUNTER_BIT(AMDRDNA_GFX10_COUNTER_VECTOR_STORE)) != 0U) {
-		kern_memset(&inst, 0, sizeof(inst));
-		inst.kind = AMDRDNA_GFX10_KIND_SCALAR_CONSTANT;
-		inst.opcode = AMDRDNA_GFX10_S_WAITCNT_VSCNT;
-		inst.dst = AMDRDNA_GFX10_NULL;
-		append(output, &inst);
-		note_wait(state, &inst);
-	}
-
-	/* Forgets the registers the zeroed counters held. */
-	for (index = 0U; index < GFX10_CODES; index++)
-		state->pending[index] = (uint8_t)(state->pending[index] & ~counters);
-	state->outstanding &= ~counters;
 }
 
 /* Waits for every counter and breaks every open hazard, so that what follows starts clean. */
@@ -435,12 +700,27 @@ resolve_all(
 	struct wait_output *output)
 {
 	struct amdrdna_gfx10_inst inst;
+	uint8_t needed[GFX10_COUNTER_SLOTS];
+	uint32_t code;
+	uint32_t counter;
 	uint32_t depend;
 	int open;
+	int waits;
 
-	/* Waits for every counter a register still waits for. */
-	if (state->outstanding != 0U)
-		wait_counters(state, output, state->outstanding);
+	/* Waits for zero on every counter a register still waits on. */
+	waits = 0;
+	for (counter = 0U; counter < GFX10_COUNTER_SLOTS; counter++)
+		needed[counter] = GFX10_NOT_PENDING;
+	for (code = 0U; code < GFX10_CODES; code++) {
+		for (counter = 0U; counter < GFX10_COUNTER_SLOTS; counter++) {
+			if (state->pending[code][counter] != GFX10_NOT_PENDING) {
+				needed[counter] = 0U;
+				waits = 1;
+			}
+		}
+	}
+	if (waits != 0)
+		wait_for(state, output, needed);
 
 	/* The scalar registers vector memory or shared memory read, and the lane mask a scalar read, are let go. */
 	depend = 0xffffU;
@@ -582,17 +862,25 @@ break_hazards(
 		state->lane_mask_read = 0;
 }
 
-/* Records what an instruction leaves outstanding and which hazards it opens. */
+/*
+ * Records what an instruction leaves outstanding and which hazards it
+ * opens.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/amd/compiler/aco_insert_waitcnt.cpp
+ * (update_counters and target_info: the scalar loads are the events that
+ * finish out of order; the vector memory and the shared memory events
+ * finish in the order they were issued).
+ */
 static void
 note_issued(
 	struct wait_state *state,
 	const struct amdrdna_gfx10_inst *inst,
 	const struct amdrdna_gfx10_access *access)
 {
-	uint32_t bit;
 	uint32_t index;
-	uint32_t code;
 	uint32_t *read_set;
+	unsigned counter;
+	int ordered;
 	int vector_alu;
 	int scalar_alu;
 	int vector_memory;
@@ -602,26 +890,33 @@ note_issued(
 	scalar_alu = is_scalar_alu(inst);
 	vector_memory = is_vector_memory(inst);
 
-	/* The registers a memory instruction writes wait for its counter; an export's read ones wait for the export counter. */
-	if (access->counter != AMDRDNA_GFX10_COUNTER_NONE) {
-		bit = GFX10_COUNTER_BIT(access->counter);
-		state->outstanding |= bit;
+	/*
+	 * A memory event: the registers held by earlier events of its counter
+	 * that finish in order are now one more event behind, and the
+	 * registers it fills (an export: reads) wait for it.  The stores fill
+	 * nothing, and are waited for only by fences.
+	 */
+	counter = (unsigned)access->counter;
+	if (counter != AMDRDNA_GFX10_COUNTER_NONE && counter != AMDRDNA_GFX10_COUNTER_VECTOR_STORE) {
+		ordered = 0;
+		if (counter == AMDRDNA_GFX10_COUNTER_VECTOR_LOAD)
+			ordered = 1;
+		if (counter == AMDRDNA_GFX10_COUNTER_SCALAR && inst->kind == AMDRDNA_GFX10_KIND_SHARED)
+			ordered = 1;
 
-		/* The writes of a load, and the reads of an export. */
-		if (access->counter == AMDRDNA_GFX10_COUNTER_EXPORT) {
+		/* An event that finishes in order counts the earlier ones of its kind behind it. */
+		if (ordered != 0)
+			count_behind(state, counter);
+
+		/* The writes of a load, and the VGPRs an export reads (the lane mask it reads at once). */
+		if (counter == AMDRDNA_GFX10_COUNTER_EXPORT) {
 			for (index = 0U; index < access->reads_used; index++) {
-				for (code = access->reads[index].first; code < access->reads[index].first + access->reads[index].count; code++) {
-					if (code < GFX10_CODES)
-						state->pending[code] = (uint8_t)(state->pending[code] | bit);
-				}
+				if (access->reads[index].first >= GFX10_SCALAR_CODES)
+					hold_range(state, &access->reads[index], counter, ordered);
 			}
 		} else {
-			for (index = 0U; index < access->writes_used; index++) {
-				for (code = access->writes[index].first; code < access->writes[index].first + access->writes[index].count; code++) {
-					if (code < GFX10_CODES)
-						state->pending[code] = (uint8_t)(state->pending[code] | bit);
-				}
-			}
+			for (index = 0U; index < access->writes_used; index++)
+				hold_range(state, &access->writes[index], counter, ordered);
 		}
 	}
 
@@ -683,37 +978,83 @@ note_issued(
 	}
 }
 
+/*
+ * Counts every register an in-order event of a counter holds one event
+ * further behind, up to the most a wait field can count.  A register held
+ * by a scalar load stays at zero: that event may finish last.
+ */
+static void
+count_behind(
+	struct wait_state *state,
+	unsigned counter)
+{
+	uint32_t code;
+	unsigned limit;
+
+	limit = count_limit(counter);
+
+	/* Each register held by the counter. */
+	for (code = 0U; code < GFX10_CODES; code++) {
+		if (state->pending[code][counter] == GFX10_NOT_PENDING)
+			continue;
+		if (counter == AMDRDNA_GFX10_COUNTER_SCALAR && state->unordered[code] != 0U)
+			continue;
+		if (state->pending[code][counter] < limit)
+			state->pending[code][counter]++;
+	}
+}
+
+/* Holds a range of registers on an event that was just issued. */
+static void
+hold_range(
+	struct wait_state *state,
+	const struct amdrdna_gfx10_range *range,
+	unsigned counter,
+	int ordered)
+{
+	uint32_t code;
+
+	/* Each register of the range: ready once the counter falls to zero, sooner for later in-order events. */
+	for (code = range->first; code < (uint32_t)range->first + range->count; code++) {
+		if (code >= GFX10_CODES)
+			break;
+		state->pending[code][counter] = 0U;
+		if (counter == AMDRDNA_GFX10_COUNTER_SCALAR) {
+			state->unordered[code] = 1U;
+			if (ordered != 0)
+				state->unordered[code] = 0U;
+		}
+	}
+}
+
 /* Records what a wait the list already has lets go. */
 static void
 note_wait(
 	struct wait_state *state,
 	const struct amdrdna_gfx10_inst *inst)
 {
-	uint32_t zeroed;
-	uint32_t index;
 	unsigned vector_count;
+	unsigned export_count;
+	unsigned scalar_count;
 	unsigned depend_vector;
 
-	/* A counter wait: the counters whose fields are zero are done. */
+	/* A counter wait: each register held no further behind than its counter's field is done. */
 	if (inst->kind == AMDRDNA_GFX10_KIND_CONTROL && inst->opcode == AMDRDNA_GFX10_S_WAITCNT) {
-		zeroed = 0U;
-		vector_count = (inst->immediate & 0xfU) | ((inst->immediate >> 10) & 0x30U);
-		if (vector_count == 0U) {
-			zeroed |= GFX10_COUNTER_BIT(AMDRDNA_GFX10_COUNTER_VECTOR_LOAD);
+		vector_count = (inst->immediate & GFX10_WAIT_VECTOR_LOW_MASK) |
+			       ((inst->immediate >> GFX10_WAIT_VECTOR_HIGH_SHIFT) & GFX10_WAIT_VECTOR_HIGH_MASK);
+		export_count = (inst->immediate >> GFX10_WAIT_EXPORT_SHIFT) & GFX10_WAIT_EXPORT_FIELD;
+		scalar_count = (inst->immediate >> GFX10_WAIT_SCALAR_SHIFT) & GFX10_WAIT_SCALAR_FIELD;
+		release(state, AMDRDNA_GFX10_COUNTER_VECTOR_LOAD, vector_count);
+		release(state, AMDRDNA_GFX10_COUNTER_EXPORT, export_count);
+		release(state, AMDRDNA_GFX10_COUNTER_SCALAR, scalar_count);
+
+		/* The counters waited to zero also end the hazards of the reads their events made. */
+		if (vector_count == 0U)
 			set_clear(state->read_by_load);
-		}
-		if ((inst->immediate & AMDRDNA_GFX10_WAIT_EXPORT_MASK) == 0U)
-			zeroed |= GFX10_COUNTER_BIT(AMDRDNA_GFX10_COUNTER_EXPORT);
-		if ((inst->immediate & AMDRDNA_GFX10_WAIT_SCALAR_MASK) == 0U) {
-			zeroed |= GFX10_COUNTER_BIT(AMDRDNA_GFX10_COUNTER_SCALAR);
+		if (scalar_count == 0U) {
 			set_clear(state->read_by_shared);
 			set_clear(state->read_by_scalar_load);
 		}
-
-		/* Forgets the registers the zeroed counters held. */
-		for (index = 0U; index < GFX10_CODES; index++)
-			state->pending[index] = (uint8_t)(state->pending[index] & ~zeroed);
-		state->outstanding &= ~zeroed;
 		return;
 	}
 
@@ -740,6 +1081,33 @@ note_wait(
 		}
 		if ((inst->immediate & GFX10_DEPEND_SA_SDST_MASK) == 0U)
 			state->lane_mask_read = 0;
+	}
+}
+
+/*
+ * Lets go of the registers a counter wait to count settles: those held at
+ * least count events behind (a scalar load's, held at zero, only by a
+ * wait to zero).
+ */
+static void
+release(
+	struct wait_state *state,
+	unsigned counter,
+	unsigned count)
+{
+	uint32_t code;
+
+	/* Each register the counter holds. */
+	for (code = 0U; code < GFX10_CODES; code++) {
+		if (state->pending[code][counter] == GFX10_NOT_PENDING)
+			continue;
+		if (count > state->pending[code][counter])
+			continue;
+
+		/* The register's event is done. */
+		state->pending[code][counter] = GFX10_NOT_PENDING;
+		if (counter == AMDRDNA_GFX10_COUNTER_SCALAR)
+			state->unordered[code] = 0U;
 	}
 }
 
@@ -776,35 +1144,81 @@ append_control(
 	append(output, &inst);
 }
 
-/* Reports the counters the registers an instruction reads or writes wait for. */
-static uint32_t
-needed_counters(
+/*
+ * Finds the count each counter must fall to before an instruction may
+ * read or write its registers.  Returns nonzero when any counter must.
+ */
+static int
+needed_counts(
 	const struct wait_state *state,
-	const struct amdrdna_gfx10_access *access)
+	const struct amdrdna_gfx10_access *access,
+	uint8_t *needed)
 {
-	uint32_t needed;
 	uint32_t index;
-	uint32_t code;
+	uint32_t counter;
+
+	/* Nothing is needed yet. */
+	for (counter = 0U; counter < GFX10_COUNTER_SLOTS; counter++)
+		needed[counter] = GFX10_NOT_PENDING;
 
 	/* Every register read. */
-	needed = 0U;
-	for (index = 0U; index < access->reads_used; index++) {
-		for (code = access->reads[index].first; code < access->reads[index].first + access->reads[index].count; code++) {
-			if (code < GFX10_CODES)
-				needed |= state->pending[code];
+	for (index = 0U; index < access->reads_used; index++)
+		need_range(state, &access->reads[index], 0, needed);
+
+	/* Every register written: a late result must not land after the new value, nor before an export's late read. */
+	for (index = 0U; index < access->writes_used; index++)
+		need_range(state, &access->writes[index], 1, needed);
+
+	/* Reports whether any counter is waited for. */
+	for (counter = 0U; counter < GFX10_COUNTER_SLOTS; counter++) {
+		if (needed[counter] != GFX10_NOT_PENDING)
+			return 1;
+	}
+	return 0;
+}
+
+/*
+ * Lowers each counter's needed count to what a range of registers needs.
+ * A register an export still reads may be read again at once; only a
+ * write waits for it.
+ */
+static void
+need_range(
+	const struct wait_state *state,
+	const struct amdrdna_gfx10_range *range,
+	int written,
+	uint8_t *needed)
+{
+	uint32_t code;
+	uint32_t counter;
+
+	/* Each register of the range, on each counter. */
+	for (code = range->first; code < (uint32_t)range->first + range->count; code++) {
+		if (code >= GFX10_CODES)
+			break;
+		for (counter = 0U; counter < GFX10_COUNTER_SLOTS; counter++) {
+			if (counter == AMDRDNA_GFX10_COUNTER_EXPORT && written == 0)
+				continue;
+			if (state->pending[code][counter] < needed[counter])
+				needed[counter] = state->pending[code][counter];
 		}
 	}
+}
 
-	/* Every register written: a late result must not land after the new value. */
-	for (index = 0U; index < access->writes_used; index++) {
-		for (code = access->writes[index].first; code < access->writes[index].first + access->writes[index].count; code++) {
-			if (code < GFX10_CODES)
-				needed |= state->pending[code];
-		}
+/* Reports the most events a register of a counter is counted behind. */
+static unsigned
+count_limit(
+	unsigned counter)
+{
+	/* Picks the limit by the counter's field. */
+	switch (counter) {
+	case AMDRDNA_GFX10_COUNTER_VECTOR_LOAD:
+		return GFX10_VECTOR_COUNT_MAX;
+	case AMDRDNA_GFX10_COUNTER_EXPORT:
+		return GFX10_EXPORT_COUNT_MAX;
+	default:
+		return GFX10_SCALAR_COUNT_MAX;
 	}
-
-	/* Reports the counters. */
-	return needed;
 }
 
 /* Reports whether an instruction is a vector ALU instruction (interpolation included). */

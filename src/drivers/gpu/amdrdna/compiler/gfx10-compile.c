@@ -97,17 +97,18 @@
 #define GFX10_CS_GROUP_ID_X		2U
 
 /*
- * The VGPRs a vertex program's vertex number and instance number arrive in
- * (each without its base), with VGPR_COMP_CNT 3 so that v0 .. v3 are
- * delivered; and the SGPR a pixel program's primitive mask arrives in,
- * after its two user SGPRs.
+ * The VGPRs a vertex program's vertex number, primitive number (when the
+ * driver has it delivered) and instance number arrive in (each without its
+ * base), with VGPR_COMP_CNT 3 so that v0 .. v3 are delivered; and the SGPR
+ * a pixel program's primitive mask arrives in, after its two user SGPRs.
  *
  * Values referenced: Mesa 25.0.7 src/amd/vulkan/radv_shader_args.c
- * (declare_vs_input_vgprs, the legacy VS on GFX10: vertex_id, then
- * instance_id as the fourth, lines 152-183; declare_ps_input_vgprs and the
- * prim_mask SGPR, line 855).
+ * (declare_vs_input_vgprs, the legacy VS on GFX10: vertex_id, an unused
+ * one, vs_prim_id, then instance_id, lines 152-183;
+ * declare_ps_input_vgprs and the prim_mask SGPR, line 855).
  */
 #define GFX10_VS_VERTEX_ID		0U
+#define GFX10_VS_PRIMITIVE_ID		2U
 #define GFX10_VS_INSTANCE_ID		3U
 #define GFX10_VS_INPUT_VGPRS		4U
 #define GFX10_PS_PRIM_MASK		2U
@@ -132,6 +133,16 @@
 
 /* The colour targets a pixel program writes. */
 #define GFX10_COLOR_TARGETS		8U
+
+/*
+ * The output channels a program stores, by number: a vertex program's
+ * position (4) and point size, then for each location four channels (a
+ * vertex program's parameter, a pixel program's colour).
+ */
+#define GFX10_OUTPUT_POSITION		0U
+#define GFX10_OUTPUT_POINT_SIZE		4U
+#define GFX10_OUTPUT_LOCATIONS		8U
+#define GFX10_OUTPUT_CHANNELS		(GFX10_OUTPUT_LOCATIONS + 4U * AMDRDNA_GFX10_LOCATIONS)
 
 /* A value whose operand is its VGPR (it has no SGPR or inline constant of its own). */
 #define GFX10_NO_OPERAND		0xffffU
@@ -166,15 +177,15 @@
 #define GFX10_SAMPLER_SGPRS		4U
 
 /*
- * The most address VGPRs a sample takes (an offset, a bias, u, v and a
- * level), and the bits of one channel of a packed texel offset: 6 bits,
- * the next channel 8 bits up.
+ * The most address VGPRs a sample takes (an offset, a bias, a depth
+ * reference, four gradients, u, v and a level), and the bits of one
+ * channel of a packed texel offset: 6 bits, the next channel 8 bits up.
  *
  * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_instruction_selection.cpp
  * (visit_tex: each constant offset & 0x3F shifted by 8 * i, lines
  * 9150-9160).
  */
-#define GFX10_SAMPLE_ADDRESSES		4U
+#define GFX10_SAMPLE_ADDRESSES		10U
 #define GFX10_OFFSET_CHANNEL_MASK	0x3fU
 #define GFX10_OFFSET_CHANNEL_SHIFT	8U
 
@@ -185,8 +196,9 @@
  * allocated there and freed before it returns.
  */
 struct gfx10_lowering {
-	/* The program, the result being built, and where a refusal is described. */
+	/* The program, the options it is compiled with, the result being built, and where a refusal is described. */
 	const struct drv_gpu_shader_ir *ir;
+	struct amdrdna_gfx10_compile_options options;
 	struct amdrdna_gfx10_program *program;
 	struct amdrdna_gfx10_diagnostic *diagnostic;
 
@@ -204,13 +216,17 @@ struct gfx10_lowering {
 	uint8_t *moved;
 
 	/*
-	 * Each value stored to an output and read by nothing else, where the
-	 * output is stored only once: the output's register, which the value
-	 * is defined into so that the store needs no copy (GFX10_NO_REG for
-	 * the others).  A sample's first channel stands for its four when all
-	 * four go to one output in order.
+	 * Each output channel: the value its export reads where it lives
+	 * (GFX10_NOT_DEFINED for none), when the channel is stored once with
+	 * a value that has a VGPR of its own, which then lives to the end;
+	 * otherwise the VGPR the stores copy into (GFX10_NO_REG until the
+	 * first store takes one, kept to the end).
 	 */
-	uint16_t *output_home;
+	uint32_t output_value[GFX10_OUTPUT_CHANNELS];
+	uint16_t output_reg[GFX10_OUTPUT_CHANNELS];
+
+	/* Each output channel the program writes, which a parameter's export enables. */
+	uint8_t output_written[GFX10_OUTPUT_CHANNELS];
 
 	/*
 	 * The chunks of 16 uniform bytes loaded at the start: the uniform
@@ -222,11 +238,18 @@ struct gfx10_lowering {
 	uint32_t chunk_sgpr[GFX10_UNIFORM_CHUNKS];
 	uint32_t chunk_count;
 
-	/* The cache of uniform chunks: its first SGPR, each entry's buffer and offset and whether it holds one, the next to replace. */
+	/*
+	 * The cache of uniform chunks: its first SGPR, each entry's buffer and
+	 * offset and whether it holds one, the IR instruction (plus one) up
+	 * to which a value read straight from its SGPRs keeps it, and the
+	 * next to replace.  One more chunk after the entries is loaded when
+	 * every entry is kept; its words are copied at once.
+	 */
 	uint32_t cache_sgpr;
 	uint32_t cache_slot[GFX10_CHUNK_CACHE];
 	uint32_t cache_offset[GFX10_CHUNK_CACHE];
 	uint8_t cache_valid[GFX10_CHUNK_CACHE];
+	uint32_t cache_until[GFX10_CHUNK_CACHE];
 	uint32_t cache_next;
 
 	/* The scratch VGPRs taken for the IR instruction being lowered, given back after it. */
@@ -256,29 +279,38 @@ struct gfx10_lowering {
 
 	/*
 	 * A vertex program: the VGPRs of the vertex and instance numbers (with
-	 * their bases), of each fetched location's four channels, of the
-	 * position, the point size and each parameter's four channels; the
+	 * their bases) and of each fetched location's four channels; the
 	 * first SGPR of each fetched location's descriptor.
 	 */
 	uint32_t vertex_index_vgpr;
 	uint32_t instance_index_vgpr;
 	uint32_t input_vgpr[AMDRDNA_GFX10_LOCATIONS];
 	uint32_t vertex_sgpr[AMDRDNA_GFX10_LOCATIONS];
-	uint32_t position_vgpr;
-	uint32_t point_size_vgpr;
-	uint32_t parameter_vgpr[AMDRDNA_GFX10_LOCATIONS];
+
+	/*
+	 * A vertex program: the IR instruction (plus one) after which each
+	 * fetched location's VGPRs, and the vertex and instance numbers', are
+	 * read no more (0: only by the start); their VGPRs go back then.  The
+	 * bit of each location whose VGPRs went back, and whether the
+	 * numbers' and the hardware's input VGPRs did.
+	 */
+	uint32_t input_until[AMDRDNA_GFX10_LOCATIONS];
+	uint32_t vertex_index_until;
+	uint32_t instance_index_until;
+	uint32_t inputs_returned;
+	int vertex_index_returned;
+	int instance_index_returned;
 
 	/*
 	 * A pixel program: the first VGPR of the perspective and the linear
-	 * barycentrics, of the position and of the face; the first VGPR of
-	 * each colour's four channels; the SGPR of the lanes still alive, and
+	 * barycentrics, of the position and of the face; the SGPR of the lanes
+	 * still alive, and
 	 * the label of the early end a discard of every lane takes.
 	 */
 	uint32_t perspective_vgpr;
 	uint32_t screen_linear_vgpr;
 	uint32_t position_input_vgpr;
 	uint32_t face_vgpr;
-	uint32_t color_vgpr[GFX10_COLOR_TARGETS];
 	uint32_t live_sgpr;
 	uint32_t early_end_label;
 
@@ -308,12 +340,60 @@ struct gfx10_lowering {
 
 	/* The IR instruction being lowered. */
 	uint32_t index;
+
+	/*
+	 * The Boolean whose lanes VCC_LO holds now (GFX10_NOT_DEFINED for
+	 * none): a comparison leaves its own there, a condition taken from a
+	 * Boolean leaves that one.  Any other write of VCC_LO or of the lane
+	 * mask, and any label, forgets it.
+	 */
+	uint32_t vcc_value;
+
+	/*
+	 * Each value that is a Boolean only ever used as a condition, with VCC_LO
+	 * kept from its comparison to its last use: it gets no VGPR.
+	 */
+	uint8_t *condition_only;
+
+	/* Nonzero when a condition the lowering counted on was not in VCC_LO. */
+	int lost_condition;
+
+	/* The Boolean a guard narrowed the lanes by, which VCC_LO still holds when the guard ends. */
+	uint32_t guard_condition;
+
+	/* Each IR instruction whose results nothing reads and that has no other effect: it is not lowered. */
+	uint8_t *dead;
+};
+
+/*
+ * What one texture instruction asks of the image: the values of its
+ * coordinate, depth reference, bias, level and gradients (du/dx, dv/dx,
+ * du/dy, dv/dy), and which of them it has; a fetch of an integer texel, or
+ * a size query of a level.
+ *
+ * Lives on the stack of lower_sample().
+ */
+struct gfx10_sample {
+	uint32_t u;
+	uint32_t v;
+	uint32_t reference;
+	uint32_t bias;
+	uint32_t level;
+	uint32_t gradient[4];
+	int compared;
+	int biased;
+	int leveled;
+	int level_zero;
+	int gradients;
+	int fetch;
+	int size_query;
 };
 
 static int refuse(struct gfx10_lowering *lowering, int error, const char *reason);
 static int ir_sources(const struct drv_gpu_shader_ir_inst *instruction, uint32_t *sources);
 static int ir_defines(const struct drv_gpu_shader_ir_inst *instruction);
 static int prepare(struct gfx10_lowering *lowering);
+static int find_dead(struct gfx10_lowering *lowering);
 static int extend_loops(struct gfx10_lowering *lowering);
 static int map_uniforms(struct gfx10_lowering *lowering);
 static int prepare_graphics(struct gfx10_lowering *lowering);
@@ -321,13 +401,20 @@ static const struct drv_gpu_shader_ir_io *find_input(const struct drv_gpu_shader
 static int plan_registers(struct gfx10_lowering *lowering);
 static uint32_t reserve_vgprs(struct gfx10_lowering *lowering, uint32_t count);
 static void prologue_vertex(struct gfx10_lowering *lowering);
+static void plan_input_lifetimes(struct gfx10_lowering *lowering);
+static void return_inputs(struct gfx10_lowering *lowering, uint32_t upto);
+static uint32_t cache_chunk(struct gfx10_lowering *lowering, uint32_t slot, uint32_t offset, int spare);
+static int alias_uniform(struct gfx10_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction);
 static int lower_input(struct gfx10_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction, uint32_t dst);
 static int lower_output(struct gfx10_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction);
 static void lower_kill(struct gfx10_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction);
 static int lower_sample(struct gfx10_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction, uint32_t dst);
+static unsigned sample_opcode(const struct gfx10_sample *sample, int derivatives, int offset);
 static void restrict_to_alive(struct gfx10_lowering *lowering);
-static void finish_exports(struct gfx10_lowering *lowering);
-static void emit_export(struct gfx10_lowering *lowering, uint32_t target, uint32_t first, uint32_t mask, uint32_t flags);
+static int finish_exports(struct gfx10_lowering *lowering);
+static int export_location(struct gfx10_lowering *lowering, uint32_t target, uint32_t first_channel, uint32_t mask, uint32_t flags);
+static int export_source(struct gfx10_lowering *lowering, uint32_t channel, unsigned *code);
+static void emit_export(struct gfx10_lowering *lowering, uint32_t target, const unsigned *sources, uint32_t mask, uint32_t flags);
 static int prologue(struct gfx10_lowering *lowering);
 static int lower(struct gfx10_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction, uint32_t dst);
 static int lower_float(struct gfx10_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction, uint32_t dst);
@@ -345,6 +432,7 @@ static void lower_sync(struct gfx10_lowering *lowering, const struct drv_gpu_sha
 static void emit_waits(struct gfx10_lowering *lowering, uint32_t fences);
 static int finish(struct gfx10_lowering *lowering);
 static void guard_begin(struct gfx10_lowering *lowering, uint32_t predicate);
+static int guard_writes(struct gfx10_lowering *lowering, uint32_t predicate);
 static void guard_end(struct gfx10_lowering *lowering);
 static void condition_from_boolean(struct gfx10_lowering *lowering, uint32_t value);
 static void boolean_from_condition(struct gfx10_lowering *lowering, uint32_t dst);
@@ -365,8 +453,13 @@ static void legalize_scalars(struct gfx10_lowering *lowering, struct amdrdna_gfx
 static unsigned vector_reads(const struct amdrdna_gfx10_inst *inst);
 static void plan_uniforms(struct gfx10_lowering *lowering, uint32_t *sgpr);
 static int has_operand(struct gfx10_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction);
-static int plan_output_homes(struct gfx10_lowering *lowering);
-static uint32_t output_register(const struct gfx10_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction);
+static int plan_outputs(struct gfx10_lowering *lowering);
+static void plan_conditions(struct gfx10_lowering *lowering);
+static int defines_condition(const struct gfx10_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction);
+static uint32_t condition_source(const struct drv_gpu_shader_ir_inst *instruction);
+static int touches_condition(const struct gfx10_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction);
+static void forget_condition(struct gfx10_lowering *lowering, const struct amdrdna_gfx10_inst *inst);
+static uint32_t output_channel(const struct gfx10_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction);
 static unsigned next_scalar_temp(struct gfx10_lowering *lowering);
 static int take_vgpr(struct gfx10_lowering *lowering, uint32_t *reg);
 static int take_vgpr_pair(struct gfx10_lowering *lowering, uint32_t *reg);
@@ -388,12 +481,13 @@ amdrdna_gfx10_compile(
 	const uint32_t *words,
 	size_t word_count,
 	enum drv_gpu_shader_stage stage,
+	const struct amdrdna_gfx10_compile_options *options,
 	struct amdrdna_gfx10_program **program,
 	struct amdrdna_gfx10_diagnostic *diagnostic)
 {
 	struct drv_gpu_shader_ir *ir;
 	struct drv_gpu_shader_ir optimized;
-	struct drv_gpu_shader_optimize_options options;
+	struct drv_gpu_shader_optimize_options optimize_options;
 	struct drv_gpu_compile_diagnostic parse_diagnostic;
 	int error;
 
@@ -424,11 +518,11 @@ amdrdna_gfx10_compile(
 	}
 
 	/* Optimizes a private copy: every block runs (nothing is skipped), and the known bits fold. */
-	kern_memset(&options, 0, sizeof(options));
-	options.runs_every_block = 1U;
-	options.simplify = 1U;
-	kern_memset(options.needed, 1, sizeof(options.needed));
-	error = drv_gpu_shader_optimize(ir, &options, &optimized);
+	kern_memset(&optimize_options, 0, sizeof(optimize_options));
+	optimize_options.runs_every_block = 1U;
+	optimize_options.simplify = 1U;
+	kern_memset(optimize_options.needed, 1, sizeof(optimize_options.needed));
+	error = drv_gpu_shader_optimize(ir, &optimize_options, &optimized);
 	if (error != 0) {
 		drv_gpu_shader_ir_free(ir);
 		return error;
@@ -436,16 +530,16 @@ amdrdna_gfx10_compile(
 
 	/* Lowers the rewritten program, or the parsed one when the optimizer left it alone. */
 	if (optimized.instructions != NULL) {
-		error = amdrdna_gfx10_compile_ir(&optimized, program, diagnostic);
+		error = amdrdna_gfx10_compile_ir(&optimized, options, program, diagnostic);
 	} else {
-		error = amdrdna_gfx10_compile_ir(ir, program, diagnostic);
+		error = amdrdna_gfx10_compile_ir(ir, options, program, diagnostic);
 	}
 
 	/* A rewritten program refused for any reason but memory is lowered from the parsed one. */
 	if (optimized.instructions != NULL && error != 0 && error != ENOMEM) {
 		if (diagnostic != NULL)
 			kern_memset(diagnostic, 0, sizeof(*diagnostic));
-		error = amdrdna_gfx10_compile_ir(ir, program, diagnostic);
+		error = amdrdna_gfx10_compile_ir(ir, options, program, diagnostic);
 	}
 
 	/* The IR retires before the program is handed over. */
@@ -470,6 +564,7 @@ amdrdna_gfx10_compile(
 int
 amdrdna_gfx10_compile_ir(
 	const struct drv_gpu_shader_ir *ir,
+	const struct amdrdna_gfx10_compile_options *options,
 	struct amdrdna_gfx10_program **program,
 	struct amdrdna_gfx10_diagnostic *diagnostic)
 {
@@ -490,12 +585,16 @@ amdrdna_gfx10_compile_ir(
 	kern_memset(&lowering, 0, sizeof(lowering));
 	lowering.ir = ir;
 	lowering.diagnostic = diagnostic;
+	if (options != NULL)
+		lowering.options = *options;
 
 	/* The result. */
 	lowering.program = kern_calloc(1U, sizeof(*lowering.program));
 	if (lowering.program == NULL)
 		return ENOMEM;
 	lowering.program->stage = ir->stage;
+	lowering.program->point_coord_attribute = AMDRDNA_GFX10_NO_ATTRIBUTE;
+	lowering.program->primitive_id_attribute = AMDRDNA_GFX10_NO_ATTRIBUTE;
 
 	/* Checks the program, finds the last reads, maps the uniforms and places the registers. */
 	error = prepare(&lowering);
@@ -509,6 +608,10 @@ amdrdna_gfx10_compile_ir(
 		instruction = &ir->instructions[index];
 		lowering.index = index;
 
+		/* An instruction whose results nothing reads is not lowered. */
+		if (lowering.dead[index] != 0U)
+			continue;
+
 		/* A constant or a uniform word with an operand of its own needs no instruction. */
 		defines = has_operand(&lowering, instruction);
 		if (defines != 0)
@@ -518,21 +621,17 @@ amdrdna_gfx10_compile_ir(
 		dst = GFX10_NO_REG;
 		defines = ir_defines(instruction);
 		if (defines == 4) {
-			/* A sample's channels written straight into an output's registers, or a block of their own. */
-			if (lowering.output_home[instruction->dst] != GFX10_NO_REG) {
-				dst = lowering.output_home[instruction->dst];
-			} else {
-				error = take_vgpr_block(&lowering, 4U, &dst);
-				if (error != 0)
-					break;
-			}
+			/* A sample's channels in a block of their own. */
+			error = take_vgpr_block(&lowering, 4U, &dst);
+			if (error != 0)
+				break;
 			for (block = 0U; block < 4U; block++)
 				lowering.vgpr[instruction->dst + block] = (uint16_t)(dst + block);
+		} else if (defines != 0 && lowering.condition_only[instruction->dst] != 0U) {
+			/* A Boolean used only as a condition stays in VCC_LO. */
+			dst = GFX10_NO_REG;
 		} else if (defines != 0) {
-			if (lowering.vgpr[instruction->dst] == GFX10_NO_REG && lowering.output_home[instruction->dst] != GFX10_NO_REG) {
-				/* A value only stored to an output lives in the output's register. */
-				lowering.vgpr[instruction->dst] = lowering.output_home[instruction->dst];
-			} else if (lowering.vgpr[instruction->dst] == GFX10_NO_REG) {
+			if (lowering.vgpr[instruction->dst] == GFX10_NO_REG) {
 				error = take_vgpr(&lowering, &dst);
 				if (error != 0)
 					break;
@@ -552,9 +651,16 @@ amdrdna_gfx10_compile_ir(
 			break;
 		}
 
+		/* A condition expected in VCC_LO that was not there is the compiler's own fault, refused. */
+		if (lowering.lost_condition != 0) {
+			error = refuse(&lowering, ENOTSUP, "a condition was not kept where the compiler expected it");
+			break;
+		}
+
 		/* The scratch VGPRs, and the VGPRs of values no later instruction reads, go back. */
 		give_scratch(&lowering);
 		retire(&lowering, instruction);
+		return_inputs(&lowering, index + 1U);
 	}
 
 	/* The end of the program, its waits and its code. */
@@ -566,7 +672,8 @@ amdrdna_gfx10_compile_ir(
 	kern_free(lowering.last_use);
 	kern_free(lowering.operand_code);
 	kern_free(lowering.moved);
-	kern_free(lowering.output_home);
+	kern_free(lowering.condition_only);
+	kern_free(lowering.dead);
 	kern_free(lowering.slot);
 	kern_free(lowering.list);
 
@@ -830,18 +937,30 @@ prepare(
 	if (lowering->moved == NULL)
 		return ENOMEM;
 
-	lowering->output_home = kern_calloc(ir->value_count + 1U, sizeof(*lowering->output_home));
-	if (lowering->output_home == NULL)
+	lowering->condition_only = kern_calloc(ir->value_count + 1U, sizeof(*lowering->condition_only));
+	if (lowering->condition_only == NULL)
 		return ENOMEM;
+
+	lowering->dead = kern_calloc(ir->instruction_count + 1U, sizeof(*lowering->dead));
+	if (lowering->dead == NULL)
+		return ENOMEM;
+
+	/* VCC_LO holds no Boolean at the start. */
+	lowering->vcc_value = GFX10_NOT_DEFINED;
 
 	/* No value has a VGPR or an operand of its own yet. */
 	for (index = 0U; index <= ir->value_count; index++) {
 		lowering->vgpr[index] = GFX10_NO_REG;
 		lowering->operand_code[index] = GFX10_NO_OPERAND;
-		lowering->output_home[index] = GFX10_NO_REG;
 	}
 
-	/* Each instruction: covered, its values in range, its sources' last reads. */
+	/* No output channel has its value or its VGPR yet. */
+	for (index = 0U; index < GFX10_OUTPUT_CHANNELS; index++) {
+		lowering->output_value[index] = GFX10_NOT_DEFINED;
+		lowering->output_reg[index] = GFX10_NO_REG;
+	}
+
+	/* Each instruction: covered, its values in range. */
 	for (index = 0U; index < ir->instruction_count; index++) {
 		instruction = &ir->instructions[index];
 		lowering->index = index;
@@ -860,12 +979,25 @@ prepare(
 		if (instruction->op == DRV_GPU_IR_MOVE)
 			lowering->moved[instruction->dst] = 1U;
 
-		/* Each source is a value of the program, read last here so far. */
+		/* Each source is a value of the program. */
 		for (source = 0U; source < (uint32_t)count; source++) {
 			if (sources[source] >= ir->value_count)
 				return refuse(lowering, EINVAL, "a source is not a value of the program");
-			lowering->last_use[sources[source]] = index + 1U;
 		}
+	}
+
+	/* The instructions whose results nothing reads. */
+	error = find_dead(lowering);
+	if (error != 0)
+		return error;
+
+	/* Each value's last read by an instruction that is lowered. */
+	for (index = 0U; index < ir->instruction_count; index++) {
+		if (lowering->dead[index] != 0U)
+			continue;
+		count = ir_sources(&ir->instructions[index], sources);
+		for (source = 0U; count > 0 && source < (uint32_t)count; source++)
+			lowering->last_use[sources[source]] = index + 1U;
 	}
 
 	/* Values read inside a loop that were made before it live to the loop's end. */
@@ -883,10 +1015,21 @@ prepare(
 	if (error != 0)
 		return error;
 
+	/* The outputs exported where their values live. */
+	error = plan_outputs(lowering);
+	if (error != 0)
+		return error;
+
 	/* The registers the inputs, the descriptors and the lowering keep. */
 	error = plan_registers(lowering);
 	if (error != 0)
 		return error;
+
+	/* The Booleans that live in VCC_LO alone. */
+	plan_conditions(lowering);
+
+	/* How long a vertex program's inputs are read. */
+	plan_input_lifetimes(lowering);
 
 	/* The program's interface. */
 	lowering->program->local_size[0] = ir->local_size[0];
@@ -897,6 +1040,67 @@ prepare(
 
 	/* Succeeded: the program can be lowered. */
 	lowering->index = 0U;
+	return 0;
+}
+
+/*
+ * Finds the instructions not to lower: those that only define values,
+ * none of which any instruction still lowered reads.  Walking backwards,
+ * a dropped instruction's own reads no longer count, so a chain that only
+ * fed it goes too.  An atomic always runs.
+ */
+static int
+find_dead(
+	struct gfx10_lowering *lowering)
+{
+	const struct drv_gpu_shader_ir *ir;
+	const struct drv_gpu_shader_ir_inst *instruction;
+	uint32_t sources[GFX10_MAX_SOURCES];
+	uint32_t *reads;
+	uint32_t index;
+	uint32_t source;
+	uint32_t channel;
+	int count;
+	int defines;
+	int unread;
+
+	ir = lowering->ir;
+
+	/* How many instructions read each value. */
+	reads = kern_calloc(ir->value_count + 1U, sizeof(*reads));
+	if (reads == NULL)
+		return ENOMEM;
+	for (index = 0U; index < ir->instruction_count; index++) {
+		count = ir_sources(&ir->instructions[index], sources);
+		for (source = 0U; count > 0 && source < (uint32_t)count; source++)
+			reads[sources[source]]++;
+	}
+
+	/* From the last instruction back: one whose values nobody reads is dropped, with its reads. */
+	for (index = ir->instruction_count; index > 0U; index--) {
+		instruction = &ir->instructions[index - 1U];
+		defines = ir_defines(instruction);
+		if (defines == 0 || instruction->op == DRV_GPU_IR_ATOMIC)
+			continue;
+
+		/* Every value it defines is unread. */
+		unread = 1;
+		for (channel = 0U; channel < (uint32_t)defines; channel++) {
+			if (reads[instruction->dst + channel] != 0U)
+				unread = 0;
+		}
+		if (unread == 0)
+			continue;
+
+		/* The instruction goes, and its sources lose a reader. */
+		lowering->dead[index - 1U] = 1U;
+		count = ir_sources(instruction, sources);
+		for (source = 0U; count > 0 && source < (uint32_t)count; source++)
+			reads[sources[source]]--;
+	}
+	kern_free(reads);
+
+	/* Succeeded: the dropped instructions are marked. */
 	return 0;
 }
 
@@ -971,8 +1175,10 @@ extend_loops(
 		depth--;
 		start = starts[depth];
 
-		/* The body's reads of earlier values. */
+		/* The body's reads of earlier values, by the instructions that are lowered. */
 		for (inner = start + 1U; inner <= index; inner++) {
+			if (lowering->dead[inner] != 0U)
+				continue;
 			count = ir_sources(&ir->instructions[inner], sources);
 			for (source = 0U; count > 0 && source < (uint32_t)count; source++) {
 				if (first_definition[sources[source]] >= start)
@@ -1109,6 +1315,7 @@ plan_registers(
 	uint32_t index;
 	uint32_t depth;
 	uint32_t deepest;
+	uint32_t reg;
 	int error;
 
 	program = lowering->program;
@@ -1120,9 +1327,14 @@ plan_registers(
 		program->user_sgprs = AMDRDNA_GFX10_ABI_USER_SGPRS;
 		lowering->vgpr_first = GFX10_CS_INPUT_VGPRS;
 	} else if (lowering->ir->stage == DRV_GPU_STAGE_VERTEX) {
-		/* The table, the base vertex, the first instance and the instance mask in s0 .. s4; v0 .. v3. */
+		/*
+		 * The table, the base vertex, the first instance and the instance
+		 * mask in s0 .. s4; v0 .. v3, taken until the start has read them.
+		 */
 		program->user_sgprs = AMDRDNA_GFX10_ABI_USER_SGPRS_VS;
-		lowering->vgpr_first = GFX10_VS_INPUT_VGPRS;
+		lowering->vgpr_first = 0U;
+		for (index = 0U; index < GFX10_VS_INPUT_VGPRS; index++)
+			lowering->taken[index] = 1U;
 	} else {
 		/* The table in s0 .. s1, the primitive mask in s2; the enabled inputs packed from v0. */
 		program->user_sgprs = AMDRDNA_GFX10_ABI_USER_SGPRS;
@@ -1137,26 +1349,30 @@ plan_registers(
 	}
 	lowering->vgpr_highest = lowering->vgpr_first;
 
-	/* A vertex program keeps its indices, its fetched locations, its position, point size and parameters. */
+	/* A vertex program takes its vertex and instance numbers and fetched locations until their last read. */
 	if (lowering->ir->stage == DRV_GPU_STAGE_VERTEX) {
-		lowering->vertex_index_vgpr = reserve_vgprs(lowering, 1U);
-		lowering->instance_index_vgpr = reserve_vgprs(lowering, 1U);
-		for (index = 0U; index < AMDRDNA_GFX10_LOCATIONS; index++) {
-			if ((program->fetched_locations & (1U << index)) != 0U)
-				lowering->input_vgpr[index] = reserve_vgprs(lowering, 4U);
-			if ((program->parameter_outputs & (1U << index)) != 0U)
-				lowering->parameter_vgpr[index] = reserve_vgprs(lowering, 4U);
-		}
-		lowering->position_vgpr = reserve_vgprs(lowering, 4U);
-		if (program->writes_point_size != 0U)
-			lowering->point_size_vgpr = reserve_vgprs(lowering, 1U);
-	}
+		lowering->vgpr_highest = GFX10_VS_INPUT_VGPRS;
 
-	/* A pixel program keeps the four channels of each colour it writes. */
-	if (lowering->ir->stage == DRV_GPU_STAGE_FRAGMENT) {
-		for (index = 0U; index < GFX10_COLOR_TARGETS; index++) {
-			if ((program->color_outputs & (1U << index)) != 0U)
-				lowering->color_vgpr[index] = reserve_vgprs(lowering, 4U);
+		/* The primitive number, copied at the start into the register its export reads. */
+		if (program->exports_primitive_id != 0U) {
+			error = take_vgpr(lowering, &reg);
+			if (error != 0)
+				return error;
+			lowering->output_reg[GFX10_OUTPUT_LOCATIONS + 4U * AMDRDNA_GFX10_PRIMITIVE_ID_PARAMETER] = (uint16_t)reg;
+		}
+
+		error = take_vgpr(lowering, &lowering->vertex_index_vgpr);
+		if (error != 0)
+			return error;
+		error = take_vgpr(lowering, &lowering->instance_index_vgpr);
+		if (error != 0)
+			return error;
+		for (index = 0U; index < AMDRDNA_GFX10_LOCATIONS; index++) {
+			if ((program->fetched_locations & (1U << index)) == 0U)
+				continue;
+			error = take_vgpr_block(lowering, 4U, &lowering->input_vgpr[index]);
+			if (error != 0)
+				return error;
 		}
 	}
 
@@ -1225,23 +1441,24 @@ plan_registers(
 	if (sgpr > AMDRDNA_GFX10_SGPR_COUNT)
 		return refuse(lowering, ENOTSUP, "the descriptors and the loops leave no SGPRs for the uniform words");
 
-	/* The values defined straight into their output's registers. */
-	error = plan_output_homes(lowering);
-	if (error != 0)
-		return error;
-
 	/* Succeeded: the registers are placed. */
 	lowering->sgpr_highest = sgpr;
 	return 0;
 }
 
-/* Loads the descriptors of the buffers the program uses into their SGPRs. */
+/*
+ * Loads what every lane shares: the descriptors first, then a vertex
+ * program's fetches (which wait only for the descriptors), then the
+ * uniform words loaded once; a pixel program points M0 at its primitive's
+ * attributes and keeps its alive lanes.
+ */
 static int
 prologue(
 	struct gfx10_lowering *lowering)
 {
 	struct amdrdna_gfx10_program *program;
 	uint32_t index;
+	uint32_t location;
 
 	program = lowering->program;
 
@@ -1265,6 +1482,38 @@ prologue(
 				 4U);
 	}
 
+	/* Each sampled image's descriptor and sampler. */
+	for (index = 0U; index < program->texture_used; index++) {
+		emit_scalar_load(lowering,
+				 AMDRDNA_GFX10_S_LOAD_DWORDX8,
+				 lowering->image_sgpr[index],
+				 AMDRDNA_GFX10_ABI_TABLE,
+				 program->textures[index].table_offset,
+				 GFX10_IMAGE_SGPRS);
+		emit_scalar_load(lowering,
+				 AMDRDNA_GFX10_S_LOAD_DWORDX4,
+				 lowering->sampler_sgpr[index],
+				 AMDRDNA_GFX10_ABI_TABLE,
+				 program->textures[index].table_offset + AMDRDNA_GFX10_IMAGE_DESCRIPTOR_BYTES,
+				 GFX10_SAMPLER_SGPRS);
+	}
+
+	/* Each fetched location's vertex buffer descriptor. */
+	for (location = 0U; location < AMDRDNA_GFX10_LOCATIONS; location++) {
+		if ((program->fetched_locations & (1U << location)) == 0U)
+			continue;
+		emit_scalar_load(lowering,
+				 AMDRDNA_GFX10_S_LOAD_DWORDX4,
+				 lowering->vertex_sgpr[location],
+				 AMDRDNA_GFX10_ABI_TABLE,
+				 program->vertex_table_offset + AMDRDNA_GFX10_BUFFER_DESCRIPTOR_BYTES * location,
+				 4U);
+	}
+
+	/* A vertex program fetches its inputs. */
+	if (lowering->ir->stage == DRV_GPU_STAGE_VERTEX)
+		prologue_vertex(lowering);
+
 	/* The uniform words used, 16 bytes at a time: the push constants from the table, the others through their buffer. */
 	for (index = 0U; index < lowering->chunk_count; index++) {
 		if (lowering->chunk_slot[index] == GFX10_NO_SLOT) {
@@ -1284,25 +1533,7 @@ prologue(
 		}
 	}
 
-	/* Each sampled image's descriptor and sampler. */
-	for (index = 0U; index < program->texture_used; index++) {
-		emit_scalar_load(lowering,
-				 AMDRDNA_GFX10_S_LOAD_DWORDX8,
-				 lowering->image_sgpr[index],
-				 AMDRDNA_GFX10_ABI_TABLE,
-				 program->textures[index].table_offset,
-				 GFX10_IMAGE_SGPRS);
-		emit_scalar_load(lowering,
-				 AMDRDNA_GFX10_S_LOAD_DWORDX4,
-				 lowering->sampler_sgpr[index],
-				 AMDRDNA_GFX10_ABI_TABLE,
-				 program->textures[index].table_offset + AMDRDNA_GFX10_IMAGE_DESCRIPTOR_BYTES,
-				 GFX10_SAMPLER_SGPRS);
-	}
-
-	/* A vertex program fetches its inputs; a pixel program points M0 at its primitive's attributes. */
-	if (lowering->ir->stage == DRV_GPU_STAGE_VERTEX)
-		prologue_vertex(lowering);
+	/* A pixel program points M0 at its primitive's attributes. */
 	if (lowering->ir->stage == DRV_GPU_STAGE_FRAGMENT) {
 		emit_scalar(lowering,
 			    AMDRDNA_GFX10_KIND_SCALAR_ONE,
@@ -1338,11 +1569,18 @@ prologue(
 		}
 	}
 
+	/* A vertex program's hardware inputs, and the inputs only the start read, go back. */
+	if (lowering->ir->stage == DRV_GPU_STAGE_VERTEX) {
+		for (index = 0U; index < GFX10_VS_INPUT_VGPRS; index++)
+			give_vgpr(lowering, index);
+		return_inputs(lowering, 0U);
+	}
+
 	/* A list that could not grow fails the compile. */
 	if (lowering->out_of_memory != 0)
 		return ENOMEM;
 
-	/* Succeeded: the descriptors are on their way. */
+	/* Succeeded: the shared values are on their way. */
 	return 0;
 }
 
@@ -1756,7 +1994,7 @@ lower_compare(
 		break;
 	}
 
-	/* The comparison writes VCC_LO, which becomes the Boolean. */
+	/* The comparison writes VCC_LO, which holds the Boolean from now on. */
 	emit_vector(lowering,
 		    AMDRDNA_GFX10_KIND_VECTOR_COMPARE,
 		    opcode,
@@ -1764,7 +2002,11 @@ lower_compare(
 		    value_operand(lowering, instruction->src[0]),
 		    value_operand(lowering, instruction->src[1]),
 		    0U);
-	boolean_from_condition(lowering, dst);
+	lowering->vcc_value = instruction->dst;
+
+	/* A Boolean read as a value too is made in its VGPR. */
+	if (lowering->condition_only[instruction->dst] == 0U)
+		boolean_from_condition(lowering, dst);
 
 	/* Succeeded: the comparison is lowered. */
 	return 0;
@@ -1780,9 +2022,7 @@ lower_uniform(
 	const struct drv_gpu_shader_ir_uniform *uniform;
 	uint32_t slot;
 	uint32_t offset;
-	uint32_t entry;
 	uint32_t found;
-	uint32_t base;
 
 	/* The buffer: the push constants, or a uniform buffer of the program. */
 	slot = GFX10_NO_SLOT;
@@ -1800,32 +2040,8 @@ lower_uniform(
 	}
 	offset = instruction->immediate & ~15U;
 
-	/* The 16 bytes around the word, from the cache of chunks or loaded into its next entry. */
-	found = GFX10_NO_SLOT;
-	for (entry = 0U; entry < GFX10_CHUNK_CACHE; entry++) {
-		if (lowering->cache_valid[entry] != 0U &&
-		    lowering->cache_slot[entry] == slot &&
-		    lowering->cache_offset[entry] == offset)
-			found = entry;
-	}
-	if (found == GFX10_NO_SLOT) {
-		found = lowering->cache_next;
-		lowering->cache_next = (lowering->cache_next + 1U) % GFX10_CHUNK_CACHE;
-		base = lowering->cache_sgpr + 4U * found;
-		if (slot == GFX10_NO_SLOT) {
-			emit_scalar_load(lowering, AMDRDNA_GFX10_S_LOAD_DWORDX4, base, AMDRDNA_GFX10_ABI_TABLE, offset, 4U);
-		} else {
-			emit_scalar_load(lowering,
-					 AMDRDNA_GFX10_S_BUFFER_LOAD_DWORDX4,
-					 base,
-					 lowering->uniform_sgpr[slot],
-					 offset,
-					 4U);
-		}
-		lowering->cache_valid[found] = 1U;
-		lowering->cache_slot[found] = slot;
-		lowering->cache_offset[found] = offset;
-	}
+	/* The 16 bytes around the word, from the cache of chunks or loaded where there is room. */
+	found = cache_chunk(lowering, slot, offset, 1);
 
 	/* Every lane gets the word. */
 	emit_vector(lowering,
@@ -1911,6 +2127,7 @@ lower_storage(
 	const struct drv_gpu_shader_ir_uniform *uniform;
 	struct amdrdna_gfx10_inst inst;
 	uint32_t slot;
+	uint32_t predicate;
 	int guarded;
 
 	/* The uniform is a storage buffer of the program. */
@@ -1938,9 +2155,11 @@ lower_storage(
 	if (instruction->op == DRV_GPU_IR_LOAD_STORAGE && instruction->component != 0U) {
 		guard_begin(lowering, instruction->src[1]);
 		guarded = 1;
-	} else if (instruction->op == DRV_GPU_IR_STORE_STORAGE && instruction->component != 0U) {
-		guard_begin(lowering, instruction->src[2]);
-		guarded = 1;
+	} else if (instruction->op == DRV_GPU_IR_STORE_STORAGE) {
+		predicate = GFX10_NOT_DEFINED;
+		if (instruction->component != 0U)
+			predicate = instruction->src[2];
+		guarded = guard_writes(lowering, predicate);
 	}
 
 	/* The access: the byte offset in a VGPR, the descriptor, no scalar offset. */
@@ -2214,6 +2433,7 @@ lower_atomic(
 	unsigned opcode;
 	int returns;
 	int compare_swap;
+	int guarded;
 	int error;
 
 	/* The uniform is a storage buffer of the program. */
@@ -2283,13 +2503,14 @@ lower_atomic(
 	if (compare_swap != 0)
 		emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_ONE, AMDRDNA_GFX10_V_MOV_B32, AMDRDNA_GFX10_V(pair + 1U), value_operand(lowering, instruction->src[2]), 0U, 0U);
 
-	/* A predicated atomic runs only for the lanes whose predicate holds. */
+	/* A predicated atomic runs only for the lanes whose predicate holds (and never for a pixel program's helpers). */
+	predicate = GFX10_NOT_DEFINED;
 	if (instruction->component == DRV_GPU_IR_ATOMIC_PREDICATED) {
 		predicate = instruction->src[2];
 		if (compare_swap != 0)
 			predicate = instruction->src[3];
-		guard_begin(lowering, predicate);
 	}
+	guarded = guard_writes(lowering, predicate);
 
 	/* The atomic: the byte offset in a VGPR, the descriptor, no scalar offset. */
 	kern_memset(&inst, 0, sizeof(inst));
@@ -2306,8 +2527,8 @@ lower_atomic(
 	}
 	emit(lowering, &inst);
 
-	/* The lanes come back after a predicated atomic. */
-	if (instruction->component == DRV_GPU_IR_ATOMIC_PREDICATED)
+	/* The lanes come back after a guarded atomic. */
+	if (guarded != 0)
 		guard_end(lowering);
 
 	/* A compare-and-swap's old value moves from the pair to dst. */
@@ -2501,21 +2722,30 @@ prepare_graphics(
 	struct amdrdna_gfx10_program *program;
 	uint32_t index;
 	uint32_t location;
+	uint32_t next;
 	int uses_linear;
+	int reads_point_coord;
+	int reads_primitive_id;
+	int writes_color_1;
 
 	ir = lowering->ir;
 	program = lowering->program;
 	uses_linear = 0;
+	reads_point_coord = 0;
+	reads_primitive_id = 0;
+	writes_color_1 = 0;
 
 	/* A compute program has none of these. */
 	if (ir->stage == DRV_GPU_STAGE_COMPUTE)
 		return 0;
 
-	/* Each input read and output written. */
+	/* Each input read and output written by an instruction that is lowered. */
 	for (index = 0U; index < ir->instruction_count; index++) {
 		instruction = &ir->instructions[index];
 		lowering->index = index;
 		location = instruction->location;
+		if (lowering->dead[index] != 0U)
+			continue;
 
 		/* A discard, in a pixel program only. */
 		if (instruction->op == DRV_GPU_IR_KILL) {
@@ -2531,7 +2761,9 @@ prepare_graphics(
 				lowering->whole_quads = 1;
 			} else if (instruction->op == DRV_GPU_IR_TEXTURE &&
 				   ((instruction->component & 0x1fU) == DRV_GPU_IR_TEXTURE_SAMPLE ||
-				    (instruction->component & 0x1fU) == DRV_GPU_IR_TEXTURE_SAMPLE_BIAS)) {
+				    (instruction->component & 0x1fU) == DRV_GPU_IR_TEXTURE_SAMPLE_BIAS ||
+				    (instruction->component & 0x1fU) == DRV_GPU_IR_TEXTURE_SAMPLE_COMPARE ||
+				    (instruction->component & 0x1fU) == DRV_GPU_IR_TEXTURE_SAMPLE_BIAS_COMPARE)) {
 				lowering->whole_quads = 1;
 			}
 		}
@@ -2567,19 +2799,30 @@ prepare_graphics(
 			continue;
 		}
 
-		/* A pixel program's output: a colour. */
+		/* A pixel program's output: a colour, or the second colour of a dual-source blend, exported as colour 1. */
 		if (instruction->op == DRV_GPU_IR_STORE_OUTPUT) {
+			if (location == DRV_GPU_IR_LOCATION_SECOND_COLOR) {
+				program->dual_source = 1U;
+				program->color_outputs |= 1U << 1;
+				continue;
+			}
 			if (location >= GFX10_COLOR_TARGETS)
 				return refuse(lowering, ENOTSUP, "a fragment output that is not compiled yet");
+			if (location == 1U)
+				writes_color_1 = 1;
 			program->color_outputs |= 1U << location;
 			continue;
 		}
 
-		/* A pixel program's input: the position, the face, or an attribute. */
+		/* A pixel program's input: the position, the face, the point sprite coordinate, the primitive number, or an attribute. */
 		if (location == DRV_GPU_SHADER_LOCATION_FRAG_COORD) {
 			program->pixel_inputs |= GFX10_PS_POSITION;
 		} else if (location == DRV_GPU_SHADER_LOCATION_FRONT_FACING) {
 			program->pixel_inputs |= GFX10_PS_FRONT_FACE;
+		} else if (location == DRV_GPU_SHADER_LOCATION_POINT_COORD) {
+			reads_point_coord = 1;
+		} else if (location == DRV_GPU_SHADER_LOCATION_PRIMITIVE_ID) {
+			reads_primitive_id = 1;
 		} else if (location < AMDRDNA_GFX10_LOCATIONS) {
 			program->attribute_inputs |= 1U << location;
 			input = find_input(ir, location);
@@ -2593,20 +2836,50 @@ prepare_graphics(
 		}
 	}
 
-	/* A pixel program that runs whole quads would write memory from its helper lanes. */
-	if (lowering->whole_quads != 0) {
-		for (index = 0U; index < ir->instruction_count; index++) {
-			lowering->index = index;
-			if (ir->instructions[index].op == DRV_GPU_IR_STORE_STORAGE || ir->instructions[index].op == DRV_GPU_IR_ATOMIC)
-				return refuse(lowering, ENOTSUP, "storage writes in a fragment shader that samples with derivatives are not compiled yet");
-		}
-	}
-
 	/* A pixel program always has the perspective barycentrics; the linear ones when an input needs them. */
 	if (ir->stage == DRV_GPU_STAGE_FRAGMENT) {
 		program->pixel_inputs |= GFX10_PS_PERSP_CENTER;
 		if (uses_linear != 0)
 			program->pixel_inputs |= GFX10_PS_LINEAR_CENTER;
+	}
+
+	/* The second colour takes colour 1's export. */
+	if (program->dual_source != 0U && writes_color_1 != 0)
+		return refuse(lowering, ENOTSUP, "a second colour with a colour at location 1");
+
+	/*
+	 * The point sprite coordinate and the primitive number take the
+	 * attributes after the highest the program reads: the hardware makes
+	 * the coordinate, the primitive number is read flat from the parameter
+	 * the vertex program exports it in.
+	 */
+	next = 0U;
+	for (index = 0U; index < AMDRDNA_GFX10_LOCATIONS; index++) {
+		if ((program->attribute_inputs & (1U << index)) != 0U)
+			next = index + 1U;
+	}
+	if (reads_point_coord != 0) {
+		if (next == AMDRDNA_GFX10_LOCATIONS)
+			return refuse(lowering, ENOTSUP, "no attribute is left for the point sprite coordinate");
+		program->point_coord_attribute = next;
+		program->attribute_inputs |= 1U << next;
+		next++;
+	}
+	if (reads_primitive_id != 0) {
+		if (next == AMDRDNA_GFX10_LOCATIONS)
+			return refuse(lowering, ENOTSUP, "no attribute is left for the primitive number");
+		program->primitive_id_attribute = next;
+		program->attribute_inputs |= 1U << next;
+		program->flat_inputs |= 1U << next;
+		next++;
+	}
+
+	/* A vertex program asked to export the primitive number keeps its parameter free for it. */
+	if (ir->stage == DRV_GPU_STAGE_VERTEX && lowering->options.export_primitive_id != 0U) {
+		if ((program->parameter_outputs & (1U << AMDRDNA_GFX10_PRIMITIVE_ID_PARAMETER)) != 0U)
+			return refuse(lowering, ENOTSUP, "the primitive number's parameter is an output of the program");
+		program->parameter_outputs |= 1U << AMDRDNA_GFX10_PRIMITIVE_ID_PARAMETER;
+		program->exports_primitive_id = 1U;
 	}
 
 	/* Succeeded: the interface is known. */
@@ -2651,10 +2924,10 @@ reserve_vgprs(
 }
 
 /*
- * Loads a vertex program's inputs: the vertex and instance numbers with
+ * Fetches a vertex program's inputs: the vertex and instance numbers with
  * their bases, and the four channels of each fetched location, by the
  * vertex number or, where the instance mask has the location's bit, by
- * the instance number.
+ * the instance number.  The descriptors were loaded before.
  */
 static void
 prologue_vertex(
@@ -2667,6 +2940,17 @@ prologue_vertex(
 	unsigned index_vgpr;
 
 	program = lowering->program;
+
+	/* The primitive number into the register its export reads. */
+	if (program->exports_primitive_id != 0U) {
+		emit_vector(lowering,
+			    AMDRDNA_GFX10_KIND_VECTOR_ONE,
+			    AMDRDNA_GFX10_V_MOV_B32,
+			    AMDRDNA_GFX10_V(lowering->output_reg[GFX10_OUTPUT_LOCATIONS + 4U * AMDRDNA_GFX10_PRIMITIVE_ID_PARAMETER]),
+			    AMDRDNA_GFX10_V(GFX10_VS_PRIMITIVE_ID),
+			    0U,
+			    0U);
+	}
 
 	/* The numbers: v0 plus the base vertex, v3 plus the first instance. */
 	emit_vector(lowering,
@@ -2688,14 +2972,6 @@ prologue_vertex(
 	for (location = 0U; location < AMDRDNA_GFX10_LOCATIONS; location++) {
 		if ((program->fetched_locations & (1U << location)) == 0U)
 			continue;
-
-		/* Its descriptor from the table. */
-		emit_scalar_load(lowering,
-				 AMDRDNA_GFX10_S_LOAD_DWORDX4,
-				 lowering->vertex_sgpr[location],
-				 AMDRDNA_GFX10_ABI_TABLE,
-				 program->vertex_table_offset + AMDRDNA_GFX10_BUFFER_DESCRIPTOR_BYTES * location,
-				 4U);
 
 		/*
 		 * Its record number, chosen for every lane: the instance mask's
@@ -2750,6 +3026,7 @@ lower_input(
 	const struct drv_gpu_shader_ir_io *input;
 	struct amdrdna_gfx10_inst inst;
 	uint32_t location;
+	uint32_t attribute;
 	uint32_t barycentric;
 	unsigned source;
 
@@ -2805,26 +3082,40 @@ lower_input(
 			    AMDRDNA_GFX10_ZERO,
 			    AMDRDNA_GFX10_V(lowering->face_vgpr),
 			    0U);
-		boolean_from_condition(lowering, dst);
+		lowering->vcc_value = instruction->dst;
+		if (lowering->condition_only[instruction->dst] == 0U)
+			boolean_from_condition(lowering, dst);
 		return 0;
+	}
+
+	/* The attribute: the point sprite coordinate's, the primitive number's, or the location's own. */
+	attribute = location;
+	if (location == DRV_GPU_SHADER_LOCATION_POINT_COORD) {
+		attribute = lowering->program->point_coord_attribute;
+	} else if (location == DRV_GPU_SHADER_LOCATION_PRIMITIVE_ID) {
+		attribute = lowering->program->primitive_id_attribute;
+	} else if (location >= AMDRDNA_GFX10_LOCATIONS) {
+		return refuse(lowering, ENOTSUP, "a fragment input that is not compiled yet");
 	}
 
 	/* An attribute: flat from the provoking vertex, or interpolated in two steps. */
 	kern_memset(&inst, 0, sizeof(inst));
 	inst.kind = AMDRDNA_GFX10_KIND_INTERPOLATE;
 	inst.dst = (uint16_t)AMDRDNA_GFX10_V(dst);
-	inst.target = (uint8_t)location;
+	inst.target = (uint8_t)attribute;
 	inst.channel = (uint8_t)instruction->component;
-	if ((lowering->program->flat_inputs & (1U << location)) != 0U) {
+	if ((lowering->program->flat_inputs & (1U << attribute)) != 0U) {
 		inst.opcode = AMDRDNA_GFX10_V_INTERP_MOV_F32;
 		inst.src[0] = AMDRDNA_GFX10_INTERP_P0;
 		emit(lowering, &inst);
 		return 0;
 	}
 
-	/* The barycentrics: linear for a noperspective input, perspective otherwise. */
+	/* The barycentrics: linear for a noperspective input, perspective otherwise (the point sprite coordinate too). */
 	barycentric = lowering->perspective_vgpr;
-	input = find_input(lowering->ir, location);
+	input = NULL;
+	if (location < AMDRDNA_GFX10_LOCATIONS)
+		input = find_input(lowering->ir, location);
 	if (input != NULL && input->noperspective != 0U)
 		barycentric = lowering->screen_linear_vgpr;
 
@@ -2840,37 +3131,42 @@ lower_input(
 	return 0;
 }
 
-/* Lowers the write of an output: into the register the export at the end reads. */
+/*
+ * Lowers the write of an output: nothing when the export reads the value
+ * where it lives, otherwise a copy into the channel's VGPR, taken at the
+ * first store and kept to the end.
+ */
 static int
 lower_output(
 	struct gfx10_lowering *lowering,
 	const struct drv_gpu_shader_ir_inst *instruction)
 {
-	uint32_t location;
-	uint32_t target;
+	uint32_t channel;
+	uint32_t reg;
+	int error;
 
-	location = instruction->location;
-
-	/* Picks the register by the stage and the location. */
-	if (lowering->ir->stage == DRV_GPU_STAGE_FRAGMENT) {
-		target = lowering->color_vgpr[location] + instruction->component;
-	} else if (lowering->ir->stage != DRV_GPU_STAGE_VERTEX) {
+	/* The output channel stored. */
+	channel = output_channel(lowering, instruction);
+	if (channel == GFX10_OUTPUT_CHANNELS)
 		return refuse(lowering, ENOTSUP, "outputs of this stage are not compiled");
-	} else if (location == DRV_GPU_IR_LOCATION_POSITION) {
-		target = lowering->position_vgpr + instruction->component;
-	} else if (location == DRV_GPU_IR_LOCATION_POINT_SIZE) {
-		target = lowering->point_size_vgpr;
-	} else {
-		target = lowering->parameter_vgpr[location] + instruction->component;
+
+	/* The export reads the value where it lives. */
+	if (lowering->output_value[channel] == instruction->src[0])
+		return 0;
+
+	/* The channel's own VGPR, taken at its first store. */
+	if (lowering->output_reg[channel] == GFX10_NO_REG) {
+		error = take_vgpr(lowering, &reg);
+		if (error != 0)
+			return error;
+		lowering->output_reg[channel] = (uint16_t)reg;
 	}
 
-	/* The value into the register, unless it was defined there. */
-	if (value_operand(lowering, instruction->src[0]) == AMDRDNA_GFX10_V(target))
-		return 0;
+	/* The value into it. */
 	emit_vector(lowering,
 		    AMDRDNA_GFX10_KIND_VECTOR_ONE,
 		    AMDRDNA_GFX10_V_MOV_B32,
-		    AMDRDNA_GFX10_V(target),
+		    AMDRDNA_GFX10_V(lowering->output_reg[channel]),
 		    value_operand(lowering, instruction->src[0]),
 		    0U,
 		    0U);
@@ -2937,18 +3233,27 @@ restrict_to_alive(
 }
 
 /*
- * Lowers a sample of a sampled image, or a fetch of one of its texels.
+ * Lowers a sample of a sampled image, a fetch of one of its texels, or a
+ * query of its size.
  *
  * The address VGPRs are copied in a row in the order the image access
- * takes them: the packed constant offset, the bias, u and v, the level.
- * A pixel program samples with the derivatives its whole quads give;
- * another stage samples level 0 (or the level given).  The four channels
- * go to the four values from dst, which have consecutive VGPRs.
+ * takes them: the packed constant offset, the bias, the depth reference,
+ * the gradients (du/dx, dv/dx, du/dy, dv/dy), u and v, the level; a size
+ * query takes the level alone.  A pixel program samples with the
+ * derivatives its whole quads give; another stage samples level 0 (or the
+ * level given).  The channels go to the values from dst, which have
+ * consecutive VGPRs: four, or for a depth compare the one result.
+ *
+ * Only a 2D image (or a 1D one, which the executor makes a 2D image one
+ * texel high) is sampled: the IR does not say an image's dimension, which
+ * the image access needs, so a message with the parameters of a 3D image,
+ * a cube or an array is refused.
  *
  * Procedure referenced: Mesa 25.0.7
  * src/amd/compiler/aco_instruction_selection.cpp (visit_tex: the address
- * order offset, bias, compare, derivatives, coordinates, then the level,
- * lines 9216 and 9411-9427).
+ * order offset, bias, compare, derivatives (ddx, then ddy), coordinates,
+ * then the level, lines 9216 and 9411-9427; the size query with the level
+ * alone and no sampler, line 9279).
  */
 static int
 lower_sample(
@@ -2958,24 +3263,21 @@ lower_sample(
 {
 	const struct drv_gpu_shader_ir_uniform *uniform;
 	struct amdrdna_gfx10_inst inst;
+	struct gfx10_sample sample;
 	uint32_t addresses[GFX10_SAMPLE_ADDRESSES];
 	uint32_t count;
 	uint32_t index;
 	uint32_t slot;
 	uint32_t message;
+	uint32_t first;
+	uint32_t params;
+	uint32_t expected;
 	uint32_t offset_bits;
 	uint32_t packed;
 	uint32_t block;
-	uint32_t coordinate_u;
-	uint32_t coordinate_v;
 	uint32_t inst_count;
-	uint32_t level;
-	uint32_t bias;
 	int32_t offset_u;
 	int32_t offset_v;
-	int leveled;
-	int biased;
-	int fetch;
 	int derivatives;
 	int error;
 
@@ -2991,55 +3293,136 @@ lower_sample(
 	if (slot == GFX10_NO_SLOT)
 		return refuse(lowering, EINVAL, "a sample names no sampled image");
 
-	/* The message: its kind, its parameters and its constant offset. */
-	leveled = 0;
-	biased = 0;
-	fetch = 0;
-	level = 0U;
-	bias = 0U;
-	coordinate_u = instruction->src[0];
-	coordinate_v = instruction->src[1];
+	/* The sample's parameters, from the two-coordinate operations. */
+	kern_memset(&sample, 0, sizeof(sample));
+	sample.u = instruction->src[0];
+	sample.v = instruction->src[1];
 	offset_bits = (instruction->component >> 4) & 0xffU;
 	if (instruction->op == DRV_GPU_IR_SAMPLE_BIAS) {
-		biased = 1;
-		bias = instruction->src[2];
+		sample.biased = 1;
+		sample.bias = instruction->src[2];
 	} else if (instruction->op == DRV_GPU_IR_SAMPLE_LOD) {
-		leveled = 1;
-		level = instruction->src[2];
-	} else if (instruction->op == DRV_GPU_IR_TEXTURE) {
-		/* The message's parameters in order, the offset in bits 23:8. */
-		message = instruction->component & 0x1fU;
-		offset_bits = (instruction->component >> 12) & 0xffU;
-		coordinate_u = instruction->src[0];
-		coordinate_v = instruction->src[0] + 1U;
-		if (message == DRV_GPU_IR_TEXTURE_SAMPLE) {
-			leveled = 0;
-		} else if (message == DRV_GPU_IR_TEXTURE_SAMPLE_BIAS && instruction->src[1] >= 3U) {
-			biased = 1;
-			bias = instruction->src[0];
-			coordinate_u = instruction->src[0] + 1U;
-			coordinate_v = instruction->src[0] + 2U;
-		} else if (message == DRV_GPU_IR_TEXTURE_SAMPLE_LOD && instruction->src[1] >= 3U) {
-			leveled = 1;
-			level = instruction->src[0];
-			coordinate_u = instruction->src[0] + 1U;
-			coordinate_v = instruction->src[0] + 2U;
-		} else if (message == DRV_GPU_IR_TEXTURE_LD && instruction->src[1] >= 3U) {
-			fetch = 1;
-			leveled = 1;
-			level = instruction->src[0] + 2U;
-		} else {
-			return refuse(lowering, ENOTSUP, "the texture message is not compiled yet");
-		}
-		if (instruction->src[1] < 2U)
-			return refuse(lowering, EINVAL, "a texture message without its coordinates");
+		sample.leveled = 1;
+		sample.level = instruction->src[2];
 	}
 
-	/* A bias outside a pixel program has no derivatives to move. */
+	/* A message's parameters in order, the offset in bits 23:8; the count says a 2D image. */
+	if (instruction->op == DRV_GPU_IR_TEXTURE) {
+		message = instruction->component & 0x1fU;
+		offset_bits = (instruction->component >> 12) & 0xffU;
+		first = instruction->src[0];
+		params = instruction->src[1];
+
+		/* Picks the parameters by the message. */
+		switch (message) {
+		case DRV_GPU_IR_TEXTURE_SAMPLE:
+			expected = 2U;
+			sample.u = first;
+			sample.v = first + 1U;
+			break;
+		case DRV_GPU_IR_TEXTURE_SAMPLE_BIAS:
+			expected = 3U;
+			sample.biased = 1;
+			sample.bias = first;
+			sample.u = first + 1U;
+			sample.v = first + 2U;
+			break;
+		case DRV_GPU_IR_TEXTURE_SAMPLE_LOD:
+			expected = 3U;
+			sample.leveled = 1;
+			sample.level = first;
+			sample.u = first + 1U;
+			sample.v = first + 2U;
+			break;
+		case DRV_GPU_IR_TEXTURE_SAMPLE_COMPARE:
+			expected = 3U;
+			sample.compared = 1;
+			sample.reference = first;
+			sample.u = first + 1U;
+			sample.v = first + 2U;
+			break;
+		case DRV_GPU_IR_TEXTURE_SAMPLE_BIAS_COMPARE:
+			expected = 4U;
+			sample.compared = 1;
+			sample.reference = first;
+			sample.biased = 1;
+			sample.bias = first + 1U;
+			sample.u = first + 2U;
+			sample.v = first + 3U;
+			break;
+		case DRV_GPU_IR_TEXTURE_SAMPLE_LOD_COMPARE:
+			expected = 4U;
+			sample.compared = 1;
+			sample.reference = first;
+			sample.leveled = 1;
+			sample.level = first + 1U;
+			sample.u = first + 2U;
+			sample.v = first + 3U;
+			break;
+		case DRV_GPU_IR_TEXTURE_SAMPLE_DERIVS:
+			/* u, du/dx, du/dy, v, dv/dx, dv/dy. */
+			expected = 6U;
+			sample.gradients = 1;
+			sample.u = first;
+			sample.gradient[0] = first + 1U;
+			sample.gradient[2] = first + 2U;
+			sample.v = first + 3U;
+			sample.gradient[1] = first + 4U;
+			sample.gradient[3] = first + 5U;
+			break;
+		case DRV_GPU_IR_TEXTURE_SAMPLE_DERIV_COMPARE:
+			expected = 7U;
+			sample.compared = 1;
+			sample.reference = first;
+			sample.gradients = 1;
+			sample.u = first + 1U;
+			sample.gradient[0] = first + 2U;
+			sample.gradient[2] = first + 3U;
+			sample.v = first + 4U;
+			sample.gradient[1] = first + 5U;
+			sample.gradient[3] = first + 6U;
+			break;
+		case DRV_GPU_IR_TEXTURE_LD:
+			expected = 3U;
+			sample.fetch = 1;
+			sample.u = first;
+			sample.v = first + 1U;
+			sample.leveled = 1;
+			sample.level = first + 2U;
+			break;
+		case DRV_GPU_IR_TEXTURE_RESINFO:
+			expected = 1U;
+			sample.size_query = 1;
+			sample.leveled = 1;
+			sample.level = first;
+			break;
+		default:
+			return refuse(lowering, ENOTSUP, "the texture message is not compiled yet");
+		}
+
+		/* More parameters than a 2D image's: a 3D image, a cube or an array. */
+		if (params != expected)
+			return refuse(lowering, ENOTSUP, "a texture message of an image other than 2D (the IR does not carry the image's dimension)");
+	}
+
+	/* A sample at the constant level 0 takes the access without a level. */
+	if (sample.leveled != 0 &&
+	    sample.fetch == 0 &&
+	    sample.size_query == 0 &&
+	    lowering->operand_code[sample.level] == constant_operand(0U)) {
+		sample.leveled = 0;
+		sample.level_zero = 1;
+	}
+
+	/* The implicit derivatives a pixel program's whole quads give; a bias needs them. */
 	derivatives = 0;
-	if (lowering->ir->stage == DRV_GPU_STAGE_FRAGMENT && leveled == 0)
+	if (lowering->ir->stage == DRV_GPU_STAGE_FRAGMENT &&
+	    sample.leveled == 0 &&
+	    sample.level_zero == 0 &&
+	    sample.gradients == 0 &&
+	    sample.size_query == 0)
 		derivatives = 1;
-	if (biased != 0 && derivatives == 0)
+	if (sample.biased != 0 && derivatives == 0)
 		return refuse(lowering, ENOTSUP, "a biased sample outside a fragment shader");
 
 	/* The constant offset: u in bits 7:4 and v in 3:0 of the IR's byte, each from -8 to 7. */
@@ -3051,36 +3434,46 @@ lower_sample(
 		offset_v -= 16;
 	packed = ((uint32_t)offset_u & GFX10_OFFSET_CHANNEL_MASK) |
 		 (((uint32_t)offset_v & GFX10_OFFSET_CHANNEL_MASK) << GFX10_OFFSET_CHANNEL_SHIFT);
-	if (fetch != 0)
+	if (sample.fetch != 0 || sample.size_query != 0)
 		packed = 0U;
 
 	/* The address VGPRs in order. */
 	count = 0U;
-	if (packed != 0U)
-		addresses[count++] = GFX10_NOT_DEFINED;
-	if (biased != 0)
-		addresses[count++] = bias;
-	addresses[count++] = coordinate_u;
-	addresses[count++] = coordinate_v;
-	if (leveled != 0)
-		addresses[count++] = level;
+	if (sample.size_query != 0) {
+		addresses[count++] = sample.level;
+	} else {
+		if (packed != 0U)
+			addresses[count++] = GFX10_NOT_DEFINED;
+		if (sample.biased != 0)
+			addresses[count++] = sample.bias;
+		if (sample.compared != 0)
+			addresses[count++] = sample.reference;
+		if (sample.gradients != 0) {
+			for (index = 0U; index < 4U; index++)
+				addresses[count++] = sample.gradient[index];
+		}
+		addresses[count++] = sample.u;
+		addresses[count++] = sample.v;
+		if (sample.leveled != 0)
+			addresses[count++] = sample.level;
+	}
 
 	/* The coordinates alone already in two VGPRs in a row are the address as they are. */
 	if (count == 2U &&
-	    lowering->operand_code[coordinate_u] == GFX10_NO_OPERAND &&
-	    lowering->operand_code[coordinate_v] == GFX10_NO_OPERAND &&
-	    lowering->vgpr[coordinate_v] == lowering->vgpr[coordinate_u] + 1U) {
-		block = lowering->vgpr[coordinate_u];
+	    addresses[0] == sample.u &&
+	    lowering->operand_code[sample.u] == GFX10_NO_OPERAND &&
+	    lowering->operand_code[sample.v] == GFX10_NO_OPERAND &&
+	    lowering->vgpr[sample.v] == lowering->vgpr[sample.u] + 1U) {
+		block = lowering->vgpr[sample.u];
 		count = 0U;
+		inst_count = 2U;
 	} else {
 		/* A block of address VGPRs. */
 		error = take_vgpr_block(lowering, count, &block);
 		if (error != 0)
 			return error;
+		inst_count = count;
 	}
-	inst_count = count;
-	if (count == 0U)
-		inst_count = 2U;
 
 	/* The address VGPRs filled in order. */
 	for (index = 0U; index < count; index++) {
@@ -3103,36 +3496,70 @@ lower_sample(
 		}
 	}
 
-	/* The image access: the kind by the level, the bias, the offset and the stage. */
+	/* The image access: the opcode by what the sample has; a fetch and a size query take no sampler. */
 	kern_memset(&inst, 0, sizeof(inst));
 	inst.kind = AMDRDNA_GFX10_KIND_IMAGE;
+	inst.opcode = (uint16_t)sample_opcode(&sample, derivatives, packed != 0U);
 	inst.dst = (uint16_t)AMDRDNA_GFX10_V(dst);
 	inst.src[0] = (uint16_t)AMDRDNA_GFX10_V(block);
 	inst.src[1] = (uint16_t)lowering->image_sgpr[slot];
 	inst.src[2] = (uint16_t)lowering->sampler_sgpr[slot];
 	inst.mask = 0xfU;
 	inst.count = (uint8_t)inst_count;
-	if (fetch != 0) {
-		inst.opcode = AMDRDNA_GFX10_IMAGE_LOAD_MIP;
+	if (sample.fetch != 0) {
 		inst.src[2] = AMDRDNA_GFX10_NULL;
 		inst.flags = AMDRDNA_GFX10_FLAG_UNNORMALIZED;
-	} else if (leveled != 0) {
-		inst.opcode = packed != 0U ? AMDRDNA_GFX10_IMAGE_SAMPLE_L_O : AMDRDNA_GFX10_IMAGE_SAMPLE_L;
-	} else if (biased != 0) {
-		inst.opcode = packed != 0U ? AMDRDNA_GFX10_IMAGE_SAMPLE_B_O : AMDRDNA_GFX10_IMAGE_SAMPLE_B;
-	} else if (derivatives != 0) {
-		inst.opcode = packed != 0U ? AMDRDNA_GFX10_IMAGE_SAMPLE_O : AMDRDNA_GFX10_IMAGE_SAMPLE;
-	} else {
-		inst.opcode = packed != 0U ? AMDRDNA_GFX10_IMAGE_SAMPLE_LZ_O : AMDRDNA_GFX10_IMAGE_SAMPLE_LZ;
 	}
+	if (sample.size_query != 0)
+		inst.src[2] = AMDRDNA_GFX10_NULL;
+	if (sample.compared != 0)
+		inst.mask = 0x1U;
 	emit(lowering, &inst);
 
 	/* The address block goes back. */
 	for (index = 0U; index < count; index++)
 		give_vgpr(lowering, block + index);
 
-	/* Succeeded: the four channels are in the values from dst. */
+	/* Succeeded: the channels are in the values from dst. */
 	return 0;
+}
+
+/* Picks the image opcode of a sample by what it has: a compare, gradients, a level, a bias, the implicit derivatives, an offset. */
+static unsigned
+sample_opcode(
+	const struct gfx10_sample *sample,
+	int derivatives,
+	int offset)
+{
+	/* A fetch and a size query. */
+	if (sample->fetch != 0)
+		return AMDRDNA_GFX10_IMAGE_LOAD_MIP;
+	if (sample->size_query != 0)
+		return AMDRDNA_GFX10_IMAGE_GET_RESINFO;
+
+	/* A depth compare. */
+	if (sample->compared != 0) {
+		if (sample->gradients != 0)
+			return offset != 0 ? AMDRDNA_GFX10_IMAGE_SAMPLE_C_D_O : AMDRDNA_GFX10_IMAGE_SAMPLE_C_D;
+		if (sample->leveled != 0)
+			return offset != 0 ? AMDRDNA_GFX10_IMAGE_SAMPLE_C_L_O : AMDRDNA_GFX10_IMAGE_SAMPLE_C_L;
+		if (sample->biased != 0)
+			return offset != 0 ? AMDRDNA_GFX10_IMAGE_SAMPLE_C_B_O : AMDRDNA_GFX10_IMAGE_SAMPLE_C_B;
+		if (derivatives != 0)
+			return offset != 0 ? AMDRDNA_GFX10_IMAGE_SAMPLE_C_O : AMDRDNA_GFX10_IMAGE_SAMPLE_C;
+		return offset != 0 ? AMDRDNA_GFX10_IMAGE_SAMPLE_C_LZ_O : AMDRDNA_GFX10_IMAGE_SAMPLE_C_LZ;
+	}
+
+	/* A plain sample. */
+	if (sample->gradients != 0)
+		return offset != 0 ? AMDRDNA_GFX10_IMAGE_SAMPLE_D_O : AMDRDNA_GFX10_IMAGE_SAMPLE_D;
+	if (sample->leveled != 0)
+		return offset != 0 ? AMDRDNA_GFX10_IMAGE_SAMPLE_L_O : AMDRDNA_GFX10_IMAGE_SAMPLE_L;
+	if (sample->biased != 0)
+		return offset != 0 ? AMDRDNA_GFX10_IMAGE_SAMPLE_B_O : AMDRDNA_GFX10_IMAGE_SAMPLE_B;
+	if (derivatives != 0)
+		return offset != 0 ? AMDRDNA_GFX10_IMAGE_SAMPLE_O : AMDRDNA_GFX10_IMAGE_SAMPLE;
+	return offset != 0 ? AMDRDNA_GFX10_IMAGE_SAMPLE_LZ_O : AMDRDNA_GFX10_IMAGE_SAMPLE_LZ;
 }
 
 /*
@@ -3148,35 +3575,64 @@ lower_sample(
  * src/amd/common/nir/ac_nir_prerast_utils.c (ac_nir_export_position: the
  * position exports first, valid_mask on POS0 for GFX10, lines 235-300).
  */
-static void
+static int
 finish_exports(
 	struct gfx10_lowering *lowering)
 {
 	struct amdrdna_gfx10_program *program;
+	unsigned nothing[4];
 	uint32_t location;
+	uint32_t channel;
+	uint32_t mask;
 	uint32_t last;
 	uint32_t flags;
+	int error;
 
 	program = lowering->program;
+	nothing[0] = 0U;
+	nothing[1] = 0U;
+	nothing[2] = 0U;
+	nothing[3] = 0U;
 
 	/* A vertex program: the positions, then the parameters. */
 	if (lowering->ir->stage == DRV_GPU_STAGE_VERTEX) {
 		flags = AMDRDNA_GFX10_FLAG_VALID_MASK;
 		if (program->writes_point_size == 0U)
 			flags |= AMDRDNA_GFX10_FLAG_LAST;
-		emit_export(lowering, AMDRDNA_GFX10_EXPORT_POSITION, lowering->position_vgpr, 0xfU, flags);
-		if (program->writes_point_size != 0U)
-			emit_export(lowering, AMDRDNA_GFX10_EXPORT_POSITION + 1U, lowering->point_size_vgpr, 0x1U, AMDRDNA_GFX10_FLAG_LAST);
-		for (location = 0U; location < AMDRDNA_GFX10_LOCATIONS; location++) {
-			if ((program->parameter_outputs & (1U << location)) != 0U)
-				emit_export(lowering, AMDRDNA_GFX10_EXPORT_PARAMETER + location, lowering->parameter_vgpr[location], 0xfU, 0U);
+		error = export_location(lowering, AMDRDNA_GFX10_EXPORT_POSITION, GFX10_OUTPUT_POSITION, 0xfU, flags);
+		if (error != 0)
+			return error;
+
+		/* The point size, the last position. */
+		if (program->writes_point_size != 0U) {
+			error = export_location(lowering, AMDRDNA_GFX10_EXPORT_POSITION + 1U, GFX10_OUTPUT_POINT_SIZE, 0x1U, AMDRDNA_GFX10_FLAG_LAST);
+			if (error != 0)
+				return error;
 		}
-		return;
+
+		/* Each parameter, the channels the program writes. */
+		for (location = 0U; location < AMDRDNA_GFX10_LOCATIONS; location++) {
+			if ((program->parameter_outputs & (1U << location)) == 0U)
+				continue;
+			mask = 0U;
+			for (channel = 0U; channel < 4U; channel++) {
+				if (lowering->output_written[GFX10_OUTPUT_LOCATIONS + 4U * location + channel] != 0U)
+					mask |= 1U << channel;
+			}
+			error = export_location(lowering,
+						AMDRDNA_GFX10_EXPORT_PARAMETER + location,
+						GFX10_OUTPUT_LOCATIONS + 4U * location,
+						mask,
+						0U);
+			if (error != 0)
+				return error;
+		}
+		return 0;
 	}
 
 	/* Only a pixel program exports otherwise. */
 	if (lowering->ir->stage != DRV_GPU_STAGE_FRAGMENT)
-		return;
+		return 0;
 
 	/* The lanes exported are those alive. */
 	if (program->discards != 0U || lowering->whole_quads != 0) {
@@ -3190,8 +3646,8 @@ finish_exports(
 
 	/* A program that writes no colour exports nothing. */
 	if (program->color_outputs == 0U) {
-		emit_export(lowering, AMDRDNA_GFX10_EXPORT_NOTHING, 0U, 0U, AMDRDNA_GFX10_FLAG_LAST | AMDRDNA_GFX10_FLAG_VALID_MASK);
-		return;
+		emit_export(lowering, AMDRDNA_GFX10_EXPORT_NOTHING, nothing, 0U, AMDRDNA_GFX10_FLAG_LAST | AMDRDNA_GFX10_FLAG_VALID_MASK);
+		return 0;
 	}
 
 	/* The last colour written. */
@@ -3208,16 +3664,104 @@ finish_exports(
 		flags = 0U;
 		if (location == last)
 			flags = AMDRDNA_GFX10_FLAG_LAST | AMDRDNA_GFX10_FLAG_VALID_MASK;
-		emit_export(lowering, AMDRDNA_GFX10_EXPORT_COLOR + location, lowering->color_vgpr[location], 0xfU, flags);
+		error = export_location(lowering,
+					AMDRDNA_GFX10_EXPORT_COLOR + location,
+					GFX10_OUTPUT_LOCATIONS + 4U * location,
+					0xfU,
+					flags);
+		if (error != 0)
+			return error;
 	}
+
+	/* Succeeded: every result is exported. */
+	return 0;
 }
 
-/* Appends an export of the channels mask enables from the VGPRs from first. */
+/* Exports the channels mask enables of the output channels from first_channel to a target. */
+static int
+export_location(
+	struct gfx10_lowering *lowering,
+	uint32_t target,
+	uint32_t first_channel,
+	uint32_t mask,
+	uint32_t flags)
+{
+	unsigned sources[4];
+	uint32_t channel;
+	int error;
+
+	/* The VGPR each enabled channel is read from. */
+	for (channel = 0U; channel < 4U; channel++) {
+		sources[channel] = 0U;
+		if ((mask & (1U << channel)) == 0U)
+			continue;
+		error = export_source(lowering, first_channel + channel, &sources[channel]);
+		if (error != 0)
+			return error;
+	}
+
+	/* The export. */
+	emit_export(lowering, target, sources, mask, flags);
+
+	/* Succeeded: the channels are exported. */
+	return 0;
+}
+
+/*
+ * Finds the VGPR an output channel is exported from: its value's own,
+ * the VGPR its stores copied into, or (a value without a VGPR, a channel
+ * never stored) a VGPR taken now, the value copied into it.
+ */
+static int
+export_source(
+	struct gfx10_lowering *lowering,
+	uint32_t channel,
+	unsigned *code)
+{
+	unsigned source;
+	uint32_t reg;
+	int error;
+
+	/* The value where it lives, when that is a VGPR. */
+	source = GFX10_NO_OPERAND;
+	if (lowering->output_value[channel] != GFX10_NOT_DEFINED) {
+		source = value_operand(lowering, lowering->output_value[channel]);
+		if (source >= AMDRDNA_GFX10_VGPR_FIRST) {
+			*code = source;
+			return 0;
+		}
+	}
+
+	/* The channel's own VGPR, taken now when no store took it. */
+	if (lowering->output_reg[channel] == GFX10_NO_REG) {
+		error = take_vgpr(lowering, &reg);
+		if (error != 0)
+			return error;
+		lowering->output_reg[channel] = (uint16_t)reg;
+	}
+
+	/* A value without a VGPR is copied into it. */
+	if (source != GFX10_NO_OPERAND) {
+		emit_vector(lowering,
+			    AMDRDNA_GFX10_KIND_VECTOR_ONE,
+			    AMDRDNA_GFX10_V_MOV_B32,
+			    AMDRDNA_GFX10_V(lowering->output_reg[channel]),
+			    source,
+			    0U,
+			    0U);
+	}
+
+	/* Succeeded: the channel's VGPR. */
+	*code = AMDRDNA_GFX10_V(lowering->output_reg[channel]);
+	return 0;
+}
+
+/* Appends an export of the channels mask enables, each from its VGPR in sources[]. */
 static void
 emit_export(
 	struct gfx10_lowering *lowering,
 	uint32_t target,
-	uint32_t first,
+	const unsigned *sources,
 	uint32_t mask,
 	uint32_t flags)
 {
@@ -3232,7 +3776,7 @@ emit_export(
 	inst.flags = (uint8_t)flags;
 	for (channel = 0U; channel < 4U; channel++) {
 		if ((mask & (1U << channel)) != 0U)
-			inst.src[channel] = (uint16_t)AMDRDNA_GFX10_V(first + channel);
+			inst.src[channel] = (uint16_t)sources[channel];
 	}
 
 	/* Places it. */
@@ -3247,6 +3791,7 @@ finish(
 	struct amdrdna_gfx10_program *program;
 	struct amdrdna_gfx10_inst inst;
 	struct amdrdna_gfx10_inst *waited;
+	unsigned nothing[4];
 	uint32_t waited_count;
 	uint32_t failed;
 	int error;
@@ -3254,7 +3799,9 @@ finish(
 	program = lowering->program;
 
 	/* A graphics program exports its results. */
-	finish_exports(lowering);
+	error = finish_exports(lowering);
+	if (error != 0)
+		return error;
 
 	/* The program ends. */
 	kern_memset(&inst, 0, sizeof(inst));
@@ -3279,7 +3826,11 @@ finish(
 			    AMDRDNA_GFX10_EXEC_LO,
 			    AMDRDNA_GFX10_ZERO,
 			    0U);
-		emit_export(lowering, AMDRDNA_GFX10_EXPORT_NOTHING, 0U, 0U, AMDRDNA_GFX10_FLAG_LAST | AMDRDNA_GFX10_FLAG_VALID_MASK);
+		nothing[0] = 0U;
+		nothing[1] = 0U;
+		nothing[2] = 0U;
+		nothing[3] = 0U;
+		emit_export(lowering, AMDRDNA_GFX10_EXPORT_NOTHING, nothing, 0U, AMDRDNA_GFX10_FLAG_LAST | AMDRDNA_GFX10_FLAG_VALID_MASK);
 		emit(lowering, &inst);
 	}
 	if (lowering->out_of_memory != 0)
@@ -3321,6 +3872,59 @@ guard_begin(
 		    lowering->guard_save,
 		    AMDRDNA_GFX10_VCC_LO,
 		    0U);
+	lowering->guard_condition = predicate;
+}
+
+/*
+ * Narrows the lanes of a memory write to those whose predicate holds
+ * (GFX10_NOT_DEFINED: every lane run) and, in a pixel program that runs
+ * whole quads, to the lanes alive: the helper lanes write nothing.
+ * Returns nonzero when the lanes were narrowed, for guard_end().
+ */
+static int
+guard_writes(
+	struct gfx10_lowering *lowering,
+	uint32_t predicate)
+{
+	unsigned narrowed;
+
+	/* Without helper lanes only a predicate narrows. */
+	if (lowering->whole_quads == 0) {
+		if (predicate == GFX10_NOT_DEFINED)
+			return 0;
+		guard_begin(lowering, predicate);
+		return 1;
+	}
+
+	/* The alive lanes alone, VCC_LO left as it is. */
+	if (predicate == GFX10_NOT_DEFINED) {
+		lowering->guard_condition = lowering->vcc_value;
+		emit_scalar(lowering,
+			    AMDRDNA_GFX10_KIND_SCALAR_ONE,
+			    AMDRDNA_GFX10_S_AND_SAVEEXEC_B32,
+			    lowering->guard_save,
+			    lowering->live_sgpr,
+			    0U);
+		return 1;
+	}
+
+	/* The predicate's lanes that are alive, through a scalar temporary so that VCC_LO keeps the predicate. */
+	condition_from_boolean(lowering, predicate);
+	narrowed = next_scalar_temp(lowering);
+	emit_scalar(lowering,
+		    AMDRDNA_GFX10_KIND_SCALAR_TWO,
+		    AMDRDNA_GFX10_S_AND_B32,
+		    narrowed,
+		    AMDRDNA_GFX10_VCC_LO,
+		    lowering->live_sgpr);
+	emit_scalar(lowering,
+		    AMDRDNA_GFX10_KIND_SCALAR_ONE,
+		    AMDRDNA_GFX10_S_AND_SAVEEXEC_B32,
+		    lowering->guard_save,
+		    narrowed,
+		    0U);
+	lowering->guard_condition = predicate;
+	return 1;
 }
 
 /* Restores the lane mask a guard saved. */
@@ -3335,6 +3939,9 @@ guard_end(
 		    AMDRDNA_GFX10_EXEC_LO,
 		    lowering->guard_save,
 		    0U);
+
+	/* The guarded access wrote no VCC_LO, and the lanes are those the predicate was taken for. */
+	lowering->vcc_value = lowering->guard_condition;
 }
 
 /* Sets VCC_LO for the lanes where a Boolean value is true. */
@@ -3343,6 +3950,16 @@ condition_from_boolean(
 	struct gfx10_lowering *lowering,
 	uint32_t value)
 {
+	/* VCC_LO already holds it. */
+	if (lowering->vcc_value == value)
+		return;
+
+	/* A Boolean kept only in VCC_LO has no VGPR to take it from. */
+	if (lowering->condition_only[value] != 0U) {
+		lowering->lost_condition = 1;
+		return;
+	}
+
 	/* A lane's Boolean is true when it is not zero. */
 	emit_vector(lowering,
 		    AMDRDNA_GFX10_KIND_VECTOR_COMPARE,
@@ -3351,6 +3968,7 @@ condition_from_boolean(
 		    AMDRDNA_GFX10_ZERO,
 		    value_operand(lowering, value),
 		    0U);
+	lowering->vcc_value = value;
 }
 
 /* Makes a Boolean value (all ones or zero) of VCC_LO. */
@@ -3415,6 +4033,9 @@ emit(
 	/* Appends the instruction. */
 	lowering->list[lowering->count] = *inst;
 	lowering->count++;
+
+	/* A write of VCC_LO or of the lane mask, or a label, leaves VCC_LO holding no known Boolean. */
+	forget_condition(lowering, inst);
 }
 
 /* Appends a vector ALU instruction. */
@@ -3810,10 +4431,10 @@ plan_uniforms(
 	uint32_t found;
 	uint32_t base;
 
-	/* The chunks start at a multiple of four SGPRs, after the cache for the words that get none. */
+	/* The chunks start at a multiple of four SGPRs, after the cache (and its spare chunk) for the words that get none. */
 	base = (*sgpr + 3U) & ~3U;
 	lowering->cache_sgpr = base;
-	base += 4U * GFX10_CHUNK_CACHE;
+	base += 4U * (GFX10_CHUNK_CACHE + 1U);
 	*sgpr = base;
 
 	/* Each uniform read at a constant offset. */
@@ -3822,6 +4443,8 @@ plan_uniforms(
 		if (instruction->op != DRV_GPU_IR_LOAD_PUSH && instruction->op != DRV_GPU_IR_LOAD_UBO)
 			continue;
 		if (lowering->moved[instruction->dst] != 0U)
+			continue;
+		if (lowering->dead[index] != 0U)
 			continue;
 
 		/* The buffer and the chunk. */
@@ -3867,95 +4490,310 @@ plan_uniforms(
 }
 
 /*
- * Finds the values that can be defined straight into an output's
- * registers: a value read only by the one store to an output that is
- * stored once in the program, and not written by a MOVE; or the four
- * channels of a sample all stored, in order, to the four channels of one
- * output stored once each.
+ * Finds the output channels exported where their values live: a channel
+ * stored once in the program, with a value no MOVE writes that an
+ * instruction makes in a VGPR of its own (not a constant, a uniform word
+ * or a built-in value, which have other operands).  Such a value lives to
+ * the end of the program.
  */
 static int
-plan_output_homes(
+plan_outputs(
 	struct gfx10_lowering *lowering)
 {
 	const struct drv_gpu_shader_ir *ir;
 	const struct drv_gpu_shader_ir_inst *instruction;
-	uint32_t sources[GFX10_MAX_SOURCES];
-	uint32_t *reads;
-	uint32_t *stores;
+	uint32_t *definer;
+	uint32_t stores[GFX10_OUTPUT_CHANNELS];
+	uint32_t stored[GFX10_OUTPUT_CHANNELS];
 	uint32_t index;
-	uint32_t source;
-	uint32_t target;
-	uint32_t value;
 	uint32_t channel;
-	int count;
-	int whole;
+	uint32_t value;
+	int defines;
 
 	ir = lowering->ir;
 	if (ir->stage == DRV_GPU_STAGE_COMPUTE)
 		return 0;
 
-	/* How many times each value is read, and how many times each output register is stored. */
-	reads = kern_calloc(ir->value_count + 1U, sizeof(*reads));
-	if (reads == NULL)
+	/* The operation that first defines each value, among those lowered. */
+	definer = kern_calloc(ir->value_count + 1U, sizeof(*definer));
+	if (definer == NULL)
 		return ENOMEM;
-	stores = kern_calloc(AMDRDNA_GFX10_VGPR_COUNT, sizeof(*stores));
-	if (stores == NULL) {
-		kern_free(reads);
-		return ENOMEM;
-	}
+	for (index = 0U; index <= ir->value_count; index++)
+		definer[index] = GFX10_NOT_DEFINED;
 	for (index = 0U; index < ir->instruction_count; index++) {
 		instruction = &ir->instructions[index];
-		count = ir_sources(instruction, sources);
-		for (source = 0U; count > 0 && source < (uint32_t)count; source++)
-			reads[sources[source]]++;
-		if (instruction->op == DRV_GPU_IR_STORE_OUTPUT) {
-			target = output_register(lowering, instruction);
-			if (target < AMDRDNA_GFX10_VGPR_COUNT)
-				stores[target]++;
+		if (lowering->dead[index] != 0U)
+			continue;
+		defines = ir_defines(instruction);
+		for (channel = 0U; channel < (uint32_t)defines; channel++) {
+			if (definer[instruction->dst + channel] == GFX10_NOT_DEFINED)
+				definer[instruction->dst + channel] = (uint32_t)instruction->op;
 		}
 	}
 
-	/* Each store of a value read only there, to a register stored only there. */
+	/* How many times each output channel is stored, and with what. */
+	for (channel = 0U; channel < GFX10_OUTPUT_CHANNELS; channel++) {
+		stores[channel] = 0U;
+		stored[channel] = GFX10_NOT_DEFINED;
+	}
 	for (index = 0U; index < ir->instruction_count; index++) {
 		instruction = &ir->instructions[index];
-		if (instruction->op != DRV_GPU_IR_STORE_OUTPUT)
+		if (instruction->op != DRV_GPU_IR_STORE_OUTPUT || lowering->dead[index] != 0U)
 			continue;
-		value = instruction->src[0];
-		target = output_register(lowering, instruction);
-		if (target >= AMDRDNA_GFX10_VGPR_COUNT || stores[target] != 1U)
+		channel = output_channel(lowering, instruction);
+		if (channel == GFX10_OUTPUT_CHANNELS)
 			continue;
-		if (reads[value] != 1U || lowering->moved[value] != 0U)
-			continue;
-		lowering->output_home[value] = (uint16_t)target;
+		stores[channel]++;
+		stored[channel] = instruction->src[0];
+		lowering->output_written[channel] = 1U;
 	}
 
-	/* A sample keeps its home only when its four channels go, in order, to one output's four registers. */
-	for (index = 0U; index < ir->instruction_count; index++) {
-		instruction = &ir->instructions[index];
-		if (ir_defines(instruction) != 4)
+	/* The primitive number a vertex program exports is written at the start. */
+	if (lowering->program->exports_primitive_id != 0U)
+		lowering->output_written[GFX10_OUTPUT_LOCATIONS + 4U * AMDRDNA_GFX10_PRIMITIVE_ID_PARAMETER] = 1U;
+
+	/* Each channel stored once with a value made in a VGPR of its own. */
+	for (channel = 0U; channel < GFX10_OUTPUT_CHANNELS; channel++) {
+		if (stores[channel] != 1U)
 			continue;
-		whole = 1;
-		for (channel = 0U; channel < 4U; channel++) {
-			if (lowering->output_home[instruction->dst + channel] == GFX10_NO_REG ||
-			    lowering->output_home[instruction->dst + channel] != lowering->output_home[instruction->dst] + channel)
-				whole = 0;
+		value = stored[channel];
+		if (lowering->moved[value] != 0U)
+			continue;
+
+		/* The operations whose values have operands of their own, or no definition. */
+		switch (definer[value]) {
+		case GFX10_NOT_DEFINED:
+		case DRV_GPU_IR_CONST:
+		case DRV_GPU_IR_ICONST:
+		case DRV_GPU_IR_BOOL:
+		case DRV_GPU_IR_LOAD_PUSH:
+		case DRV_GPU_IR_LOAD_UBO:
+		case DRV_GPU_IR_LOAD_SYSTEM:
+		case DRV_GPU_IR_STORAGE_SIZE:
+			continue;
+		default:
+			break;
 		}
-		for (channel = 1U; channel < 4U; channel++)
-			lowering->output_home[instruction->dst + channel] = GFX10_NO_REG;
-		if (whole == 0)
-			lowering->output_home[instruction->dst] = GFX10_NO_REG;
+
+		/* The export reads the value, which lives to the end. */
+		lowering->output_value[channel] = value;
+		lowering->last_use[value] = ir->instruction_count + 1U;
 	}
+	kern_free(definer);
 
-	kern_free(stores);
-	kern_free(reads);
-
-	/* Succeeded: the homes are chosen. */
+	/* Succeeded: the channels exported in place are chosen. */
 	return 0;
 }
 
-/* Reports the register an output store writes (past the VGPRs for one not kept in a register). */
+/*
+ * Finds the Booleans that never need a VGPR: made by a comparison, read
+ * only as the condition of selections, discards, a loop's end or guarded
+ * accesses, with nothing between the comparison and the last read that
+ * writes VCC_LO or widens the lane mask.  Such a Boolean stays in the
+ * VCC_LO its comparison wrote.
+ */
+static void
+plan_conditions(
+	struct gfx10_lowering *lowering)
+{
+	const struct drv_gpu_shader_ir *ir;
+	const struct drv_gpu_shader_ir_inst *instruction;
+	const struct drv_gpu_shader_ir_inst *reader;
+	uint32_t sources[GFX10_MAX_SOURCES];
+	uint32_t index;
+	uint32_t later;
+	uint32_t last;
+	uint32_t source;
+	uint32_t condition;
+	uint32_t value;
+	int count;
+	int defines;
+	int kept;
+	int touches;
+
+	ir = lowering->ir;
+
+	/* Each comparison. */
+	for (index = 0U; index < ir->instruction_count; index++) {
+		instruction = &ir->instructions[index];
+		defines = defines_condition(lowering, instruction);
+		if (defines == 0 || lowering->dead[index] != 0U)
+			continue;
+		value = instruction->dst;
+
+		/* A Boolean a MOVE writes, or that nothing reads, keeps the usual VGPR. */
+		if (lowering->moved[value] != 0U)
+			continue;
+		last = lowering->last_use[value];
+		if (last <= index + 1U)
+			continue;
+
+		/* Each instruction up to the last read must leave VCC_LO and widen no lanes. */
+		kept = 1;
+		for (later = index + 1U; kept != 0 && later < last && later < ir->instruction_count; later++) {
+			reader = &ir->instructions[later];
+			if (lowering->dead[later] != 0U)
+				continue;
+			condition = condition_source(reader);
+
+			/* The Boolean read as a value needs its VGPR. */
+			count = ir_sources(reader, sources);
+			for (source = 0U; count > 0 && source < (uint32_t)count; source++) {
+				if (sources[source] != value)
+					continue;
+				if (condition != GFX10_NOT_DEFINED && source == condition)
+					continue;
+				kept = 0;
+			}
+
+			/* An instruction that never touches VCC_LO or the lanes keeps the Boolean. */
+			touches = touches_condition(lowering, reader);
+			if (touches == 0)
+				continue;
+
+			/* Another condition, or a discard before the last read, ends it. */
+			if (condition == GFX10_NOT_DEFINED || reader->src[condition] != value) {
+				kept = 0;
+			} else if (reader->op == DRV_GPU_IR_KILL && later + 1U != last) {
+				kept = 0;
+			}
+		}
+
+		/* The Boolean lives in VCC_LO alone. */
+		if (kept != 0)
+			lowering->condition_only[value] = 1U;
+	}
+}
+
+/* Reports whether an IR instruction makes a Boolean with a comparison into VCC_LO. */
+static int
+defines_condition(
+	const struct gfx10_lowering *lowering,
+	const struct drv_gpu_shader_ir_inst *instruction)
+{
+	/* Picks by the operation. */
+	switch (instruction->op) {
+	case DRV_GPU_IR_FLT:
+	case DRV_GPU_IR_FGE:
+	case DRV_GPU_IR_FEQ:
+	case DRV_GPU_IR_FNEU:
+	case DRV_GPU_IR_ILT:
+	case DRV_GPU_IR_IGE:
+	case DRV_GPU_IR_ULT:
+	case DRV_GPU_IR_UGE:
+	case DRV_GPU_IR_IEQ:
+	case DRV_GPU_IR_INE:
+		return 1;
+	case DRV_GPU_IR_LOAD_INPUT:
+		/* The face of a pixel is compared too. */
+		if (lowering->ir->stage == DRV_GPU_STAGE_FRAGMENT &&
+		    instruction->location == DRV_GPU_SHADER_LOCATION_FRONT_FACING)
+			return 1;
+		return 0;
+	default:
+		return 0;
+	}
+}
+
+/*
+ * Reports which source of an IR instruction is read as a condition (the
+ * index into src[]), or GFX10_NOT_DEFINED when none is.
+ */
 static uint32_t
-output_register(
+condition_source(
+	const struct drv_gpu_shader_ir_inst *instruction)
+{
+	/* Picks by the operation and, for a guarded access, whether it is guarded. */
+	switch (instruction->op) {
+	case DRV_GPU_IR_SELECT:
+	case DRV_GPU_IR_KILL:
+	case DRV_GPU_IR_LOOP_END:
+		return 0U;
+	case DRV_GPU_IR_LOAD_STORAGE:
+	case DRV_GPU_IR_LOAD_SHARED:
+		if (instruction->component != 0U)
+			return 1U;
+		return GFX10_NOT_DEFINED;
+	case DRV_GPU_IR_STORE_STORAGE:
+	case DRV_GPU_IR_STORE_SHARED:
+		if (instruction->component != 0U)
+			return 2U;
+		return GFX10_NOT_DEFINED;
+	case DRV_GPU_IR_ATOMIC:
+		if (instruction->component != DRV_GPU_IR_ATOMIC_PREDICATED)
+			return GFX10_NOT_DEFINED;
+		if (instruction->immediate == DRV_GPU_IR_ATOMIC_CMPXCHG)
+			return 3U;
+		return 2U;
+	default:
+		return GFX10_NOT_DEFINED;
+	}
+}
+
+/* Reports whether lowering an IR instruction may write VCC_LO or change the lanes. */
+static int
+touches_condition(
+	const struct gfx10_lowering *lowering,
+	const struct drv_gpu_shader_ir_inst *instruction)
+{
+	uint32_t condition;
+	int defines;
+
+	/* A comparison writes VCC_LO. */
+	defines = defines_condition(lowering, instruction);
+	if (defines != 0)
+		return 1;
+
+	/* An instruction that takes a condition sets VCC_LO from it. */
+	condition = condition_source(instruction);
+	if (condition != GFX10_NOT_DEFINED)
+		return 1;
+
+	/* The loops and the divisions; everything else leaves VCC_LO and the lanes alone. */
+	switch (instruction->op) {
+	case DRV_GPU_IR_LOOP_BEGIN:
+	case DRV_GPU_IR_UDIV:
+	case DRV_GPU_IR_UMOD:
+	case DRV_GPU_IR_IDIV:
+	case DRV_GPU_IR_IREM:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+/* Forgets the Boolean VCC_LO held when an instruction writes it or the lane mask, or is a label. */
+static void
+forget_condition(
+	struct gfx10_lowering *lowering,
+	const struct amdrdna_gfx10_inst *inst)
+{
+	struct amdrdna_gfx10_access access;
+	uint32_t index;
+	uint32_t first;
+	uint32_t end;
+
+	/* A label is reached from elsewhere. */
+	if (inst->kind == AMDRDNA_GFX10_KIND_LABEL) {
+		lowering->vcc_value = GFX10_NOT_DEFINED;
+		return;
+	}
+
+	/* Each register the instruction writes. */
+	amdrdna_gfx10_describe(inst, &access);
+	for (index = 0U; index < access.writes_used; index++) {
+		first = access.writes[index].first;
+		end = first + access.writes[index].count;
+		if (first <= AMDRDNA_GFX10_VCC_LO && AMDRDNA_GFX10_VCC_LO < end)
+			lowering->vcc_value = GFX10_NOT_DEFINED;
+		if (first <= AMDRDNA_GFX10_EXEC_LO && AMDRDNA_GFX10_EXEC_LO < end)
+			lowering->vcc_value = GFX10_NOT_DEFINED;
+	}
+}
+
+/* Reports the output channel a store writes (GFX10_OUTPUT_CHANNELS for one the compiler does not export). */
+static uint32_t
+output_channel(
 	const struct gfx10_lowering *lowering,
 	const struct drv_gpu_shader_ir_inst *instruction)
 {
@@ -3963,55 +4801,329 @@ output_register(
 
 	location = instruction->location;
 
-	/* Picks the register by the stage and the location, as the store does. */
+	/* Four channels to a location. */
+	if (instruction->component > 3U)
+		return GFX10_OUTPUT_CHANNELS;
+
+	/* A pixel program's colours; the second colour is exported as colour 1. */
 	if (lowering->ir->stage == DRV_GPU_STAGE_FRAGMENT) {
-		if (location >= GFX10_COLOR_TARGETS || instruction->component > 3U)
-			return AMDRDNA_GFX10_VGPR_COUNT;
-		return lowering->color_vgpr[location] + instruction->component;
+		if (location == DRV_GPU_IR_LOCATION_SECOND_COLOR)
+			return GFX10_OUTPUT_LOCATIONS + 4U + instruction->component;
+		if (location >= GFX10_COLOR_TARGETS)
+			return GFX10_OUTPUT_CHANNELS;
+		return GFX10_OUTPUT_LOCATIONS + 4U * location + instruction->component;
 	}
+
+	/* Only a vertex program has the others. */
+	if (lowering->ir->stage != DRV_GPU_STAGE_VERTEX)
+		return GFX10_OUTPUT_CHANNELS;
+
+	/* The position, the point size, or a parameter. */
 	if (location == DRV_GPU_IR_LOCATION_POSITION)
-		return lowering->position_vgpr + instruction->component;
+		return GFX10_OUTPUT_POSITION + instruction->component;
 	if (location == DRV_GPU_IR_LOCATION_POINT_SIZE)
-		return lowering->point_size_vgpr;
-	if (location < AMDRDNA_GFX10_LOCATIONS && instruction->component <= 3U)
-		return lowering->parameter_vgpr[location] + instruction->component;
-	return AMDRDNA_GFX10_VGPR_COUNT;
+		return GFX10_OUTPUT_POINT_SIZE;
+	if (location < AMDRDNA_GFX10_LOCATIONS)
+		return GFX10_OUTPUT_LOCATIONS + 4U * location + instruction->component;
+	return GFX10_OUTPUT_CHANNELS;
 }
 
 /*
  * Reports whether an IR instruction defines a value that has an operand
- * of its own and so needs no instruction: a constant that is an inline
- * constant, or a uniform word loaded at the start.  Sets the constant's
- * operand on the way.
+ * of its own and so needs no instruction, and gives it that operand: an
+ * inline constant; a uniform word loaded at the start or into the cache;
+ * a vertex program's fetched channel or vertex or instance number; a
+ * compute program's workgroup id or local id; a storage buffer's size.
+ * A value a MOVE writes always lives in a VGPR of its own.
  */
 static int
 has_operand(
 	struct gfx10_lowering *lowering,
 	const struct drv_gpu_shader_ir_inst *instruction)
 {
+	const struct drv_gpu_shader_ir_uniform *uniform;
 	unsigned code;
+	int aliased;
 
 	/* A uniform word loaded at the start. */
 	if (instruction->op == DRV_GPU_IR_LOAD_PUSH || instruction->op == DRV_GPU_IR_LOAD_UBO) {
 		if (lowering->operand_code[instruction->dst] != GFX10_NO_OPERAND)
 			return 1;
-		return 0;
 	}
 
-	/* Only a constant otherwise, and one no MOVE writes. */
-	if (instruction->op != DRV_GPU_IR_CONST &&
-	    instruction->op != DRV_GPU_IR_ICONST &&
-	    instruction->op != DRV_GPU_IR_BOOL)
+	/* A value a MOVE writes, or an instruction that defines nothing, has no operand of its own. */
+	if (ir_defines(instruction) != 1)
 		return 0;
 	if (lowering->moved[instruction->dst] != 0U)
 		return 0;
 
-	/* An inline constant is its own operand. */
-	code = constant_operand(instruction->immediate);
-	if (code == AMDRDNA_GFX10_LITERAL)
+	/* Picks the operand by the operation. */
+	code = GFX10_NO_OPERAND;
+	switch (instruction->op) {
+	case DRV_GPU_IR_CONST:
+	case DRV_GPU_IR_ICONST:
+	case DRV_GPU_IR_BOOL:
+		/* An inline constant is its own operand; another one needs its literal moved. */
+		code = constant_operand(instruction->immediate);
+		if (code == AMDRDNA_GFX10_LITERAL)
+			return 0;
+		break;
+	case DRV_GPU_IR_LOAD_PUSH:
+	case DRV_GPU_IR_LOAD_UBO:
+		/* A uniform word read straight from the cache's SGPRs. */
+		aliased = alias_uniform(lowering, instruction);
+		return aliased;
+	case DRV_GPU_IR_LOAD_INPUT:
+		/* A vertex program's fetched channels and numbers stay in their VGPRs. */
+		if (lowering->ir->stage != DRV_GPU_STAGE_VERTEX)
+			return 0;
+		if (instruction->location == DRV_GPU_SHADER_LOCATION_VERTEX_INDEX) {
+			code = AMDRDNA_GFX10_V(lowering->vertex_index_vgpr);
+		} else if (instruction->location == DRV_GPU_SHADER_LOCATION_INSTANCE_INDEX) {
+			code = AMDRDNA_GFX10_V(lowering->instance_index_vgpr);
+		} else if (instruction->location < AMDRDNA_GFX10_LOCATIONS && instruction->component < 4U) {
+			code = AMDRDNA_GFX10_V(lowering->input_vgpr[instruction->location] + instruction->component);
+		} else {
+			return 0;
+		}
+		break;
+	case DRV_GPU_IR_LOAD_SYSTEM:
+		/* The ids a compute program receives stay where they arrive. */
+		if (lowering->ir->stage != DRV_GPU_STAGE_COMPUTE)
+			return 0;
+		if (instruction->component == DRV_GPU_IR_SYSTEM_LOCAL_ID_X) {
+			code = AMDRDNA_GFX10_V(GFX10_CS_LOCAL_ID_X);
+		} else if (instruction->component == DRV_GPU_IR_SYSTEM_LOCAL_ID_Y) {
+			code = AMDRDNA_GFX10_V(GFX10_CS_LOCAL_ID_Y);
+		} else if (instruction->component == DRV_GPU_IR_SYSTEM_LOCAL_ID_Z) {
+			code = AMDRDNA_GFX10_V(GFX10_CS_LOCAL_ID_Z);
+		} else if (instruction->component == DRV_GPU_IR_SYSTEM_GROUP_ID_X) {
+			code = AMDRDNA_GFX10_S(GFX10_CS_GROUP_ID_X);
+		} else if (instruction->component == DRV_GPU_IR_SYSTEM_GROUP_ID_Y) {
+			code = AMDRDNA_GFX10_S(GFX10_CS_GROUP_ID_X + 1U);
+		} else if (instruction->component == DRV_GPU_IR_SYSTEM_GROUP_ID_Z) {
+			code = AMDRDNA_GFX10_S(GFX10_CS_GROUP_ID_X + 2U);
+		} else {
+			return 0;
+		}
+		break;
+	case DRV_GPU_IR_STORAGE_SIZE:
+		/* The size is the record count word of the buffer's descriptor. */
+		if (instruction->location >= lowering->ir->uniform_count)
+			return 0;
+		uniform = &lowering->ir->uniforms[instruction->location];
+		if (uniform->kind != DRV_GPU_IR_UNIFORM_STORAGE)
+			return 0;
+		code = AMDRDNA_GFX10_S(lowering->storage_sgpr[lowering->slot[instruction->location]] + 2U);
+		break;
+	default:
 		return 0;
+	}
+
+	/* The value is its operand. */
 	lowering->operand_code[instruction->dst] = (uint16_t)code;
 	return 1;
+}
+
+/*
+ * Reads a uniform word straight from the cache's SGPRs: finds or loads
+ * its chunk in an entry, which then stays until the value's last read.
+ * Returns 0 when the read is malformed (lower_uniform() refuses it) or no
+ * entry is free.
+ */
+static int
+alias_uniform(
+	struct gfx10_lowering *lowering,
+	const struct drv_gpu_shader_ir_inst *instruction)
+{
+	const struct drv_gpu_shader_ir_uniform *uniform;
+	uint32_t slot;
+	uint32_t entry;
+
+	/* The buffer, the push constants or a uniform buffer; a malformed read is left to the lowering's refusal. */
+	slot = GFX10_NO_SLOT;
+	if (instruction->op == DRV_GPU_IR_LOAD_PUSH) {
+		if (instruction->immediate + 4U > lowering->ir->push_bytes)
+			return 0;
+	} else {
+		if (instruction->location >= lowering->ir->uniform_count)
+			return 0;
+		uniform = &lowering->ir->uniforms[instruction->location];
+		if (uniform->kind != DRV_GPU_IR_UNIFORM_BLOCK)
+			return 0;
+		slot = lowering->slot[instruction->location];
+	}
+
+	/* The chunk in an entry of the cache, without the spare chunk. */
+	entry = cache_chunk(lowering, slot, instruction->immediate & ~15U, 0);
+	if (entry == GFX10_NO_SLOT)
+		return 0;
+
+	/* The word's SGPR is the value; the entry stays until its last read. */
+	lowering->operand_code[instruction->dst] =
+		(uint16_t)AMDRDNA_GFX10_S(lowering->cache_sgpr + 4U * entry + (instruction->immediate & 15U) / 4U);
+	if (lowering->last_use[instruction->dst] > lowering->cache_until[entry])
+		lowering->cache_until[entry] = lowering->last_use[instruction->dst];
+
+	/* Succeeded: the word needs no copy. */
+	return 1;
+}
+
+/*
+ * Finds a chunk of 16 uniform bytes in the cache, or loads it into an
+ * entry no value still reads, the entries taken in turn.  When every
+ * entry is still read, it is loaded into the spare chunk after them if
+ * spare is nonzero (GFX10_CHUNK_CACHE is returned; the chunk is not kept),
+ * or GFX10_NO_SLOT is returned.
+ */
+static uint32_t
+cache_chunk(
+	struct gfx10_lowering *lowering,
+	uint32_t slot,
+	uint32_t offset,
+	int spare)
+{
+	uint32_t entry;
+	uint32_t step;
+	uint32_t found;
+	uint32_t base;
+
+	/* An entry holding the chunk. */
+	for (entry = 0U; entry < GFX10_CHUNK_CACHE; entry++) {
+		if (lowering->cache_valid[entry] != 0U &&
+		    lowering->cache_slot[entry] == slot &&
+		    lowering->cache_offset[entry] == offset)
+			return entry;
+	}
+
+	/* An entry no value still reads, from the next in turn. */
+	found = GFX10_NO_SLOT;
+	for (step = 0U; step < GFX10_CHUNK_CACHE; step++) {
+		entry = (lowering->cache_next + step) % GFX10_CHUNK_CACHE;
+		if (lowering->cache_until[entry] <= lowering->index) {
+			found = entry;
+			break;
+		}
+	}
+
+	/* Every entry is still read: the spare chunk, or nothing. */
+	if (found == GFX10_NO_SLOT && spare == 0)
+		return GFX10_NO_SLOT;
+	if (found == GFX10_NO_SLOT) {
+		found = GFX10_CHUNK_CACHE;
+	} else {
+		lowering->cache_next = (found + 1U) % GFX10_CHUNK_CACHE;
+		lowering->cache_valid[found] = 1U;
+		lowering->cache_slot[found] = slot;
+		lowering->cache_offset[found] = offset;
+		lowering->cache_until[found] = 0U;
+	}
+
+	/* Loads the chunk: the push constants from the table, a uniform buffer's through its descriptor. */
+	base = lowering->cache_sgpr + 4U * found;
+	if (slot == GFX10_NO_SLOT) {
+		emit_scalar_load(lowering, AMDRDNA_GFX10_S_LOAD_DWORDX4, base, AMDRDNA_GFX10_ABI_TABLE, offset, 4U);
+	} else {
+		emit_scalar_load(lowering,
+				 AMDRDNA_GFX10_S_BUFFER_LOAD_DWORDX4,
+				 base,
+				 lowering->uniform_sgpr[slot],
+				 offset,
+				 4U);
+	}
+
+	/* Reports where the chunk is. */
+	return found;
+}
+
+/*
+ * Finds how long a vertex program reads its fetched locations and its
+ * vertex and instance numbers: up to the last read of each value that
+ * stays in their VGPRs, or to the input read itself for a value a MOVE
+ * writes (which is copied out).
+ */
+static void
+plan_input_lifetimes(
+	struct gfx10_lowering *lowering)
+{
+	const struct drv_gpu_shader_ir_inst *instruction;
+	uint32_t index;
+	uint32_t until;
+	uint32_t location;
+
+	/* Only a vertex program fetches. */
+	if (lowering->ir->stage != DRV_GPU_STAGE_VERTEX)
+		return;
+
+	/* Each input read that is lowered. */
+	for (index = 0U; index < lowering->ir->instruction_count; index++) {
+		instruction = &lowering->ir->instructions[index];
+		if (instruction->op != DRV_GPU_IR_LOAD_INPUT || lowering->dead[index] != 0U)
+			continue;
+
+		/* The read itself, or the value's last read when it stays in the input VGPR. */
+		until = index + 1U;
+		if (lowering->moved[instruction->dst] == 0U && lowering->last_use[instruction->dst] > until)
+			until = lowering->last_use[instruction->dst];
+
+		/* The input it reads. */
+		location = instruction->location;
+		if (location == DRV_GPU_SHADER_LOCATION_VERTEX_INDEX) {
+			if (until > lowering->vertex_index_until)
+				lowering->vertex_index_until = until;
+		} else if (location == DRV_GPU_SHADER_LOCATION_INSTANCE_INDEX) {
+			if (until > lowering->instance_index_until)
+				lowering->instance_index_until = until;
+		} else if (location < AMDRDNA_GFX10_LOCATIONS) {
+			if (until > lowering->input_until[location])
+				lowering->input_until[location] = until;
+		}
+	}
+}
+
+/*
+ * Gives back a vertex program's input VGPRs read for the last time by now
+ * (upto is the IR instruction just lowered plus one, 0 at the start).
+ */
+static void
+return_inputs(
+	struct gfx10_lowering *lowering,
+	uint32_t upto)
+{
+	struct amdrdna_gfx10_program *program;
+	uint32_t location;
+	uint32_t channel;
+
+	program = lowering->program;
+
+	/* Only a vertex program fetches. */
+	if (lowering->ir->stage != DRV_GPU_STAGE_VERTEX)
+		return;
+
+	/* Each fetched location read no more. */
+	for (location = 0U; location < AMDRDNA_GFX10_LOCATIONS; location++) {
+		if ((program->fetched_locations & (1U << location)) == 0U)
+			continue;
+		if ((lowering->inputs_returned & (1U << location)) != 0U)
+			continue;
+		if (lowering->input_until[location] > upto)
+			continue;
+		for (channel = 0U; channel < 4U; channel++)
+			give_vgpr(lowering, lowering->input_vgpr[location] + channel);
+		lowering->inputs_returned |= 1U << location;
+	}
+
+	/* The vertex number, read no more. */
+	if (lowering->vertex_index_returned == 0 && lowering->vertex_index_until <= upto) {
+		give_vgpr(lowering, lowering->vertex_index_vgpr);
+		lowering->vertex_index_returned = 1;
+	}
+
+	/* The instance number, read no more. */
+	if (lowering->instance_index_returned == 0 && lowering->instance_index_until <= upto) {
+		give_vgpr(lowering, lowering->instance_index_vgpr);
+		lowering->instance_index_returned = 1;
+	}
 }
 
 /* Reports the next scalar temporary, in turn. */

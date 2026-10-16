@@ -34,7 +34,7 @@ cc $flags -o "$out/gfx10-compute-test" "$tests/gfx10-compute-test.c" "$tests/gfx
 	"$repo/src/drivers/gpu/compiler/optimize.c" -lm
 "$out/gfx10-compute-test" "$out" "$out/ids.spv:2,2,2" "$out/float.spv:2,1,1:float" "$out/integer.spv:3,1,1" \
 	"$out/loop.spv:2,1,1" "$out/uniform.spv:2,1,1" "$out/division.spv:3,1,1" \
-	"$out/atomic.spv:2,1,1" "$out/shared.spv:2,1,1" "$out/cache.spv:2,1,1" "$out/trig.spv:2,1,1:float" "$out/half.spv:2,1,1:float" || status=1
+	"$out/atomic.spv:2,1,1" "$out/shared.spv:2,1,1" "$out/cache.spv:2,1,1" "$out/condition.spv:2,1,1" "$out/trig.spv:2,1,1:float" "$out/half.spv:2,1,1:float" || status=1
 
 # 3. Vertex and pixel modules on the GFX10 interpreter and the IR reference.
 graphics=""
