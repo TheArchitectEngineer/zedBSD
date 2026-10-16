@@ -1854,6 +1854,13 @@ amdrdna_pm4_wait_memory(
 	bool fetcher);
 
 unsigned
+amdrdna_pm4_wait_register(
+	uint32_t *words,
+	uint32_t index,
+	uint32_t value,
+	uint32_t mask);
+
+unsigned
 amdrdna_pm4_fetcher_sync(
 	uint32_t *words);
 

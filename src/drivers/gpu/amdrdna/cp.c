@@ -131,6 +131,7 @@ static int compute_attach(struct amdrdna_device *device);
 static int graphics_attach(struct amdrdna_device *device);
 static void graphics_direct(struct amdrdna_device *device);
 static int graphics_begin(struct amdrdna_device *device);
+static int graphics_preamble(struct amdrdna_device *device);
 static unsigned ring_room(struct amdrdna_device *device, const struct amdrdna_ring *ring);
 static void ring_commit(struct amdrdna_device *device, struct amdrdna_ring *ring);
 static uint64_t ring_gpu_word(const struct amdrdna_device *device, const struct amdrdna_ring *ring, unsigned which);
@@ -1516,10 +1517,7 @@ graphics_begin(
 	struct amdrdna_device *device)
 {
 	struct amdrdna_engines *engines;
-	uint32_t *words;
-	uint32_t sequence;
 	uint32_t busy;
-	unsigned count;
 	int error;
 
 	/* The context limit and the device word. */
@@ -1537,7 +1535,35 @@ graphics_begin(
 		amdrdna_mark("A5 graphics engine unhalted but busy (0x%08x)", (unsigned)busy);
 	}
 
-	/* The preamble: the clear state and the partition. */
+	/* The preamble. */
+	error = graphics_preamble(device);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the graphics engine runs with its clear state. */
+	return 0;
+}
+
+/*
+ * Runs the graphics ring's preamble (the clear state and the constant
+ * engine's partition) and waits for its fence.  Returns 0, or the error of
+ * the submission or the fence.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/gfx_v10_0.c (gfx_v10_0_cp_gfx_start).
+ */
+static int
+graphics_preamble(
+	struct amdrdna_device *device)
+{
+	struct amdrdna_engines *engines;
+	uint32_t *words;
+	uint32_t sequence;
+	unsigned count;
+	int error;
+
+	/* The clear state and the partition. */
+	engines = &device->engines;
 	words = kern_malloc(((size_t)engines->clear_state_words + 4U) * 4U);
 	if (words == NULL)
 		return ENOMEM;
@@ -1550,11 +1576,111 @@ graphics_begin(
 	if (error == 0)
 		error = amdrdna_ring_wait(device, &engines->graphics, sequence, CP_FENCE_MS);
 	if (error != 0) {
-		amdrdna_mark("A5 fail: graphics preamble not done (%d)", error);
+		amdrdna_mark("graphics preamble not done (%d)", error);
 		return error;
 	}
 
-	/* Succeeded: the graphics engine runs with its clear state. */
+	/* Succeeded: the preamble ran. */
+	return 0;
+}
+
+/*
+ * Resets the graphics queue after work of a context did not end: the
+ * scheduler resets the context's work on the queue and waits until the
+ * queue went inactive; the queue's image comes back from its copy and its
+ * ring starts empty; the scheduler attaches the queue again; the ring is
+ * tested and the preamble runs again (the reset may have dropped the
+ * state).  The work that did not end is gone; nothing else was on the
+ * ring (every run is waited for before the next one is written).
+ *
+ * Returns 0, ENOTSUP for a graphics ring run without the scheduler, or the
+ * error of the step that failed (the device then has no graphics queue).
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/gfx_v10_0.c (gfx_v10_0_reset_kgq: the
+ * register write, the wait for the image's active word and for the
+ * register to read 0, then gfx_v10_0_kgq_init_queue with the copy and an
+ * empty ring, the attach and the ring tests) and amdgpu_ring.c
+ * (amdgpu_ring_reset_helper_end: the ring test after the reset).
+ */
+int
+amdrdna_cp_graphics_reset(
+	struct amdrdna_device *device,
+	unsigned context)
+{
+	uint32_t words[AMDRDNA_PM4_WRITE_WORDS + 2U * AMDRDNA_PM4_WAIT_WORDS + AMDRDNA_PM4_ATTACH_WORDS];
+	struct amdrdna_engines *engines;
+	struct amdrdna_ring *ring;
+	volatile uint32_t *slots;
+	unsigned long irq;
+	uint32_t reset_index;
+	uint32_t request;
+	uint32_t index;
+	unsigned count;
+	int error;
+
+	/* Only a queue the scheduler attached is reset through it. */
+	engines = &device->engines;
+	ring = &engines->graphics;
+	if (engines->direct || !engines->scheduler_up)
+		return ENOTSUP;
+	error = amdrdna_block_index(device, AMDRDNA_BLOCK_GC, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_CONTEXT_RESET, &reset_index);
+	if (error != 0)
+		return error;
+
+	/* The queue takes nothing new until it is attached again. */
+	ring->up = false;
+
+	/* The context's work on queue 0 of the pipe reset; then the image's active word and the register read 0. */
+	request = (1U << context) | (1U << (AMDRDNA_GC_CONTEXT_RESET_QUEUES_SHIFT + ring->place.queue));
+	count = amdrdna_pm4_write_register(words, reset_index, request, false);
+	count += amdrdna_pm4_wait_memory(words + count, ring->image.gpu_address + (uint64_t)AMDRDNA_GRAPHICS_IMAGE_ACTIVE * 4U, 0U, false);
+	count += amdrdna_pm4_wait_register(words + count, reset_index, 0U, 0xffffffffU);
+	error = scheduler_run(device, words, count, "graphics reset");
+	if (error != 0)
+		return error;
+
+	/* The image from its copy, the ring empty: filler words, both pointers 0. */
+	irq = spin_lock_irqsave(&ring->lock);
+
+	kern_memcpy(ring->image.dma.address, ring->image_copy, AMDRDNA_QUEUE_IMAGE_WORDS * 4U);
+	slots = ring->buffer.dma.address;
+	for (index = 0U; index < ring->bytes / 4U; index++)
+		slots[index] = amdrdna_pm4_filler();
+	ring->write_pointer = 0U;
+	*amdrdna_ring_word(device, ring, CP_WORD_READ) = 0U;
+	amdrdna_ring_word(device, ring, CP_WORD_WRITE)[0] = 0U;
+	amdrdna_ring_word(device, ring, CP_WORD_WRITE)[1] = 0U;
+	__atomic_thread_fence(__ATOMIC_SEQ_CST);
+
+	spin_unlock_irqrestore(&ring->lock, irq);
+
+	/* The graphics doorbells again, with the queue selected, as at the first attach. */
+	mutex_lock(&engines->select);
+
+	select_queue(device, &ring->place, 0U);
+	gc_write(device, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_GRAPHICS_DOORBELLS_LOW, (ring->doorbell << 2) & AMDRDNA_GC_DOORBELL_RANGE_MASK);
+	gc_write(device, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_GRAPHICS_DOORBELLS_HIGH, AMDRDNA_GC_DOORBELL_RANGE_MASK);
+	select_nothing(device);
+
+	mutex_unlock(&engines->select);
+
+	/* The scheduler attaches the queue again. */
+	count = amdrdna_pm4_queue_attach(words, &ring->place, AMDRDNA_QUEUE_ENGINE_GRAPHICS,
+	    ring->doorbell, ring->image.gpu_address, ring_gpu_word(device, ring, CP_WORD_WRITE));
+	error = scheduler_run(device, words, count, "graphics attach after the reset");
+	if (error != 0)
+		return error;
+
+	/* The ring runs commands, and its preamble again. */
+	error = amdrdna_ring_test(device, ring);
+	if (error == 0)
+		error = graphics_preamble(device);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the queue takes work again. */
+	ring->up = true;
 	return 0;
 }
 

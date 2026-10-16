@@ -521,6 +521,20 @@
 #define AMDRDNA_GC_REG_COMPUTE_DOORBELLS_HIGH	0x1dfdU
 #define AMDRDNA_GC_REG_POINTER_POLL		0x1e23U
 #define AMDRDNA_GC_REG_QUEUE_STATUS		0x1e58U
+
+/*
+ * The register a queue's work is reset through: a request bit for each
+ * context (15:0) and, for the graphics pipe 0, a bit for each of its
+ * queues (23:16); it reads 0 once the reset is done.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/asic_reg/gc/gc_10_1_0_offset.h
+ * (mmCP_VMID_RESET 0x1e53) and gc_10_1_0_sh_mask.h
+ * (CP_VMID_RESET__RESET_REQUEST_MASK 0xffff,
+ * CP_VMID_RESET__PIPE0_QUEUES__SHIFT 0x10).
+ */
+#define AMDRDNA_GC_REG_CONTEXT_RESET		0x1e53U
+#define AMDRDNA_GC_CONTEXT_RESET_QUEUES_SHIFT	16U
 #define AMDRDNA_GC_COMPUTE_HALT_FIRST		0x40000000U
 #define AMDRDNA_GC_COMPUTE_HALT_SECOND		0x10000000U
 #define AMDRDNA_GC_GRAPHICS_HALT_CONSTANT	0x01000000U
