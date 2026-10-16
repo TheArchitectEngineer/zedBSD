@@ -2,7 +2,9 @@
 # ws245: takes the regression evidence of one bare start of the Latitude 5330 running zedBSD (design.md §6.3, ws.md
 # "5330 の素の起動での段ごとの回帰の手順" 3 and 6): the login mode, the session log's start and handoff, the kernel
 # log's i915 lines (the survey of the first picture and the digest of the display writes among them), the dropped
-# log bytes, and the backlight device read, set to 100 and read again.
+# log bytes, the backlight device read, set to 100 and read again, and the userland's evidence of what the screen did
+# later (the compositor's screen off, sleep, failures and exits in /var/log/messages, greeter.log and session.log),
+# with the previous start's kernel log (/var/log/kernel.log.old) for a start that could not be reached.
 #   sh plan/ws245/tests/5330-survey.sh <zedBSD address> <name> [OUT]
 #     The summary goes to OUT/<name>.md (default OUT plan/ws245/tests/evidence, kept in git) and the whole kernel log
 #     to LOGS/<name>-dmesg.txt (default LOGS plan/ws245/temp/5330, not in git).  plan/ws245/tests/5330-survey-diff.py
@@ -27,7 +29,12 @@ remote() {
 }
 
 # The kernel log, whole (sudo reads it; the password goes on stdin).
-remote "echo $PASS | sudo -S -p '' dmesg" > "$LOGS/$NAME-dmesg.txt"
+remote "echo $PASS | sudo -S dmesg" > "$LOGS/$NAME-dmesg.txt"
+
+# The previous start's kernel log and the userland logs, whole.
+for log in /var/log/kernel.log.old /var/log/messages /var/log/greeter.log /run/user/1000/session.log; do
+	remote "echo $PASS | sudo -S cat $log" > "$LOGS/$NAME-$(basename "$log")" 2> /dev/null || true
+done
 
 # The backlight probe, copied to the machine's /tmp.
 sshpass -p "$PASS" scp $SSH_OPTS "$PROBE" "kei@$HOST:/tmp/backlight-probe" > /dev/null
@@ -66,6 +73,20 @@ sshpass -p "$PASS" scp $SSH_OPTS "$PROBE" "kei@$HOST:/tmp/backlight-probe" > /de
 	echo
 	echo '```'
 	grep -E 'i915: survey|i915: w: ' "$LOGS/$NAME-dmesg.txt" || echo '(no survey lines)'
+	echo '```'
+	echo
+	echo "## the screen later: the compositor and the session (messages, greeter.log, session.log)"
+	echo
+	echo '```'
+	grep -hE 'sessiond|networkd|KWL (SLEEP|LID|FAILED|EXIT)|screen off|screen on' "$LOGS/$NAME-messages" "$LOGS/$NAME-greeter.log" "$LOGS/$NAME-session.log" 2>/dev/null | tail -40 || true
+	echo '```'
+	echo
+	echo "## the previous start (kernel.log.old)"
+	echo
+	echo '```'
+	printf 'lines: %s, perf windows: %s\n' "$(wc -l < "$LOGS/$NAME-kernel.log.old" 2>/dev/null || echo 0)" "$(grep -c 'perf: [0-9]* ms' "$LOGS/$NAME-kernel.log.old" 2>/dev/null || echo 0)"
+	grep -E 'i915: survey: |i915: w: |device lost' "$LOGS/$NAME-kernel.log.old" 2>/dev/null || true
+	tail -5 "$LOGS/$NAME-kernel.log.old" 2>/dev/null || true
 	echo '```'
 } > "$OUT/$NAME.md"
 echo "5330-survey: $OUT/$NAME.md"
