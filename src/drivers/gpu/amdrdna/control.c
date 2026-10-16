@@ -52,6 +52,7 @@ static int control_vbios(struct amdrdna_device *device, uintptr_t argument);
 static int control_display(struct amdrdna_device *device, uintptr_t argument);
 static int control_screen(struct amdrdna_device *device, uintptr_t argument);
 static int control_reset(struct amdrdna_device *device, uintptr_t argument);
+static int control_hotplug(struct amdrdna_device *device, uintptr_t argument);
 static void control_fill(struct amdrdna_device *device, struct amdrdna_status *status);
 static void control_fill_memory(struct amdrdna_device *device, struct amdrdna_status *status);
 static uint32_t control_fill_power(struct amdrdna_device *device, struct amdrdna_status *status);
@@ -149,6 +150,9 @@ control_ioctl(
 		break;
 	case AMDRDNA_IOC_RESET:
 		error = control_reset(device, argument);
+		break;
+	case AMDRDNA_IOC_HOTPLUG:
+		error = control_hotplug(device, argument);
 		break;
 	default:
 		error = ENOTTY;
@@ -271,6 +275,59 @@ control_reset(
 		return error;
 
 	/* Succeeded: the reset ran; its result is in the answer. */
+	return 0;
+}
+
+/*
+ * Acts as if the monitor went away or came: AMDRDNA_IOC_HOTPLUG, for root
+ * only.  The answer carries the action's result, whether the output is
+ * dark and the mode; the request itself fails only when it is refused.
+ */
+static int
+control_hotplug(
+	struct amdrdna_device *device,
+	uintptr_t argument)
+{
+	struct amdrdna_hotplug_ask ask;
+	struct ucred *credential;
+	int superuser;
+	int result;
+	int error;
+
+	/* Refuses a caller that is not root. */
+	credential = cred_current_ref();
+	superuser = cred_is_superuser(credential);
+	cred_release(credential);
+	if (!superuser)
+		return EPERM;
+
+	/* The caller's version and size must be this interface's. */
+	error = copyin(argument, &ask, sizeof(ask));
+	if (error != 0)
+		return error;
+	if (ask.version != AMDRDNA_INTERFACE_VERSION || ask.size != sizeof(ask))
+		return EINVAL;
+
+	/* The action, run by the bring-up thread; a refusal is the request's error. */
+	result = amdrdna_hotplug_ask(device, ask.level);
+	if (result == EINVAL ||
+	    result == ENOENT ||
+	    result == ENODEV)
+		return result;
+
+	/* The answer. */
+	ask.result = result;
+	ask.dark = 0U;
+	if (device->display.output_dark)
+		ask.dark = 1U;
+	ask.width = device->display.width;
+	ask.height = device->display.height;
+	ask.refresh_millihz = device->display.refresh_millihz;
+	error = copyout(&ask, argument, sizeof(ask));
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the action ran; its result is in the answer. */
 	return 0;
 }
 

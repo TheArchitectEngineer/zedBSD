@@ -199,6 +199,21 @@ struct amdrdna_training {
 };
 
 /*
+ * What the power side tells the timing marks about the clocks: the watch's
+ * last readings, the highest graphics clock and activity it read since the
+ * previous report, how many times the driver raised the graphics clock for
+ * work, and whether it is raised now.  One report lives on the caller's
+ * stack.
+ */
+struct amdrdna_power_clock_report {
+	struct amdrdna_power_readings now;
+	unsigned gfx_clock_top;
+	unsigned gfx_activity_top;
+	uint64_t boosts;
+	bool boosted;
+};
+
+/*
  * The power and thermal side of the driver (stage A4: the unit's firmware
  * runs the fan and the thermal control, or the driver drives the fan at a
  * static duty when the firmware will not).
@@ -216,9 +231,21 @@ struct amdrdna_training {
  * thread reads the temperatures and the fan once a second, from the
  * firmware's readings when its features run and from the thermal block
  * always, and the clocks (MHz) and the graphics engine's activity from
- * the firmware's readings (clocked says they were read); lock protects
- * what it publishes (the readings, the fault and the alert counts) and
- * the thread's stop, and waitq wakes it to stop.
+ * the firmware's readings (clocked says they were read), keeping the
+ * highest graphics clock and activity since the timing marks last took
+ * them (gfx_clock_top, gfx_activity_top).
+ *
+ * When the graphics clock's levels run, gfx_lowest and gfx_highest are
+ * the lowest and highest level the firmware gave (MHz, 0 when not read),
+ * and boost_mode says how the driver raises the clock for work: not at
+ * all, with the workload profile for 3D only, or with the profile and the
+ * clock's floor at the highest level.  A run of commands notes the time
+ * (busy_ticks) and, when the clock is not raised, sets boost_wanted and
+ * wakes the watch, which raises it (boosted, counted in boosts) and lowers
+ * it again a second after the last run.  lock protects what the watch
+ * publishes (the readings, the fault and the alert counts), the boost's
+ * state and the thread's stop, and waitq wakes the thread to stop or to
+ * raise the clock.
  */
 struct amdrdna_thermal {
 	struct mutex mailbox;
@@ -259,6 +286,15 @@ struct amdrdna_thermal {
 	unsigned display_engine_clock;
 	unsigned gfx_average;
 	unsigned gfx_activity;
+	unsigned gfx_clock_top;
+	unsigned gfx_activity_top;
+	unsigned gfx_lowest;
+	unsigned gfx_highest;
+	unsigned boost_mode;
+	bool boost_wanted;
+	bool boosted;
+	uint64_t busy_ticks;
+	uint64_t boosts;
 	unsigned readings;
 	bool faulted;
 	uint64_t high_alerts;
@@ -373,6 +409,27 @@ struct amdrdna_engines {
 
 struct amdrdna_node;
 
+/*
+ * A change of the monitor for the bring-up thread to act on (stage A13).
+ *
+ * The interrupt thread asks when the console's hot-plug line changed;
+ * root's control request and stage A13 ask with the level to act on as if
+ * read (asked_level: 0 the line's own, 1 gone, 2 there).  lock serializes
+ * the control callers (one waits at a time); the device's state lock
+ * covers requested, asked_level, finished and result, which the thread and a waiting
+ * caller share through the device's state wait queue: the caller sets
+ * requested and waits for finished to move, the thread acts and sets
+ * result.  Requests that come while one waits are served as one.
+ */
+struct amdrdna_hotplug_work {
+	struct mutex lock;
+	bool requested;
+	unsigned asked_level;
+	uint64_t finished;
+	int result;
+	uint32_t pad_word;
+};
+
 /* The frames the display shows clients' storage in, flipped between. */
 #define AMDRDNA_DISPLAY_FRAMES		2U
 
@@ -385,8 +442,15 @@ struct amdrdna_node;
  * stop writes them back); console is the GPU address of the firmware's
  * surface, which the text console keeps writing to and which the plane is
  * flipped back to when the display is given up, and requested the address
- * the plane was last asked to show.  width, height and stride describe the
- * surface every frame must have (the firmware's).  The frames and the
+ * the plane was last asked to show.  width, height and refresh_millihz
+ * are the mode shown now and stride the rows of every frame (the
+ * firmware's surface's); a mode set (modeset.c) changes the mode, never
+ * the stride or the frames, so a mode is never larger than the
+ * firmware's.  mode is the timing shown now and firmware_mode the one the
+ * firmware lit, both read from the timing generator at the first mode
+ * set (mode_known); output_dark says a monitor's unplug turned the
+ * transmitter off.  mode_lock puts the mode sets and the output's off and
+ * on in one order (after the node's locks).  The frames and the
  * cursor's image are VRAM of the CPU's pool, the driver's for the GPU's
  * lifetime; the cursor has two image slots, so a new image is written
  * into the slot the cursor does not read (cursor_slot is the one it
@@ -416,6 +480,11 @@ struct amdrdna_display {
 	uint32_t height;
 	uint32_t stride;
 	uint32_t refresh_millihz;
+	struct amdrdna_timing mode;
+	struct amdrdna_timing firmware_mode;
+	bool mode_known;
+	bool output_dark;
+	struct mutex mode_lock;
 	uint64_t frames[AMDRDNA_DISPLAY_FRAMES];
 	uint64_t frame_bytes;
 	uint64_t cursor_vram;
@@ -539,8 +608,12 @@ struct amdrdna_spaces {
  * EDID's bytes and decode, how the video BIOS's own I2C read compared
  * (0 the same) and its instructions, a DisplayPort receiver's first
  * capability bytes and whether they were read, the highest pixel clock
- * the output carries now and the modes inside it, and the pad word the
- * I2C engine keeps for its give-back.
+ * the signal carries, which of the listed modes the output shows (inside
+ * that clock, held by the display's frames and planned at the board's
+ * clocks) and how many, and the pad word the I2C engine keeps for its
+ * give-back.  A monitor's plug reads a new record (sink_next, the
+ * bring-up thread's) and copies it over this one under the node's
+ * display lock.
  */
 struct amdrdna_sink {
 	bool ready;
@@ -555,6 +628,7 @@ struct amdrdna_sink {
 	bool dpcd_read;
 	int dpcd_error;
 	uint32_t limit_khz;
+	bool carried[AMDRDNA_EDID_MODES];
 	unsigned usable_modes;
 	uint32_t pad_word;
 };
@@ -663,7 +737,9 @@ struct amdrdna_device {
 	struct amdrdna_node *node;
 	struct amdrdna_display display;
 	struct amdrdna_sink sink;
+	struct amdrdna_sink sink_next;
 	struct amdrdna_reset reset;
+	struct amdrdna_hotplug_work hotplug_work;
 
 	struct spinlock state_lock;
 	struct wait_queue state_waitq;
@@ -895,7 +971,11 @@ amdrdna_thermal_interrupt(
 bool
 amdrdna_power_clocks(
 	struct amdrdna_device *device,
-	struct amdrdna_power_readings *speeds_now);
+	struct amdrdna_power_clock_report *report);
+
+void
+amdrdna_power_busy(
+	struct amdrdna_device *device);
 
 /* cp.c: stage A5's command processor. */
 int
@@ -1208,6 +1288,32 @@ int
 amdrdna_a12_mode(
 	struct amdrdna_device *device);
 
+int
+amdrdna_mode_clocks(
+	struct amdrdna_device *device,
+	struct amdrdna_mode_plan_input *input);
+
+void
+amdrdna_mode_timing_input(
+	const struct amdrdna_timing *timing,
+	uint32_t pitch,
+	struct amdrdna_mode_plan_input *input);
+
+int
+amdrdna_mode_current(
+	struct amdrdna_device *device,
+	struct amdrdna_timing *timing);
+
+int
+amdrdna_mode_set(
+	struct amdrdna_device *device,
+	const struct amdrdna_timing *timing);
+
+int
+amdrdna_mode_output(
+	struct amdrdna_device *device,
+	bool on);
+
 void
 amdrdna_timing_crc_window(
 	struct amdrdna_device *device,
@@ -1247,6 +1353,48 @@ amdrdna_sink_check(
 	uint32_t width,
 	uint32_t height,
 	uint32_t *refresh_millihz);
+
+int
+amdrdna_sink_read(
+	struct amdrdna_device *device,
+	struct amdrdna_sink *sink);
+
+int
+amdrdna_sink_choose(
+	const struct amdrdna_device *device,
+	uint32_t width,
+	uint32_t height,
+	uint32_t refresh_millihz,
+	struct amdrdna_timing *timing);
+
+bool
+amdrdna_sink_carries(
+	const struct amdrdna_sink *sink,
+	const struct amdrdna_timing *timing);
+
+bool
+amdrdna_sink_preferred(
+	const struct amdrdna_sink *sink,
+	struct amdrdna_timing *timing);
+
+/* hotplug.c: stage A13, a change of the monitor. */
+int
+amdrdna_a13_hotplug(
+	struct amdrdna_device *device);
+
+void
+amdrdna_hotplug_request(
+	struct amdrdna_device *device);
+
+int
+amdrdna_hotplug_ask(
+	struct amdrdna_device *device,
+	unsigned asked_level);
+
+unsigned long
+amdrdna_hotplug_serve(
+	struct amdrdna_device *device,
+	unsigned long irq);
 
 /* display.c: stages A6 and A7 and the display taken over from the firmware. */
 bool
@@ -1337,6 +1485,18 @@ uint64_t
 amdrdna_display_topology(
 	struct amdrdna_device *device,
 	bool *connected);
+
+void
+amdrdna_display_topology_move(
+	struct amdrdna_device *device);
+
+bool
+amdrdna_display_sense(
+	struct amdrdna_device *device);
+
+uint32_t
+amdrdna_display_frame_count(
+	struct amdrdna_device *device);
 
 uint64_t
 amdrdna_display_now_us(void);

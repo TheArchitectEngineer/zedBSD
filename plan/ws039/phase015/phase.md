@@ -2,7 +2,7 @@
 
 # ws039-p015: 段 A11〜A13 mode set（re-light、別の mode、hotplug）
 
-Status: in-progress（2026-10-17 00:31 P3: A11・A12 は実機で ok。残りは A13・DP の host 試験・display の mode の op・merge）
+Status: in-progress（2026-10-17 01:56 P3: A11・A12・A13 と present の大きさでの mode set・sink の上限の plan での判定は実機で ok。残りは DP の host 試験と本物の HPD（cable の抜き差し）。clearance の判定は Q1）
 Disposition: normal
 Parent: [WS039](../ws.md)
 Queue: q1234 / q1234-i01（p013 → p014 → p015 → p016、各段は実機で ok の後に main）
@@ -93,11 +93,29 @@ design は「DP を先に、DVI は範囲の外」。p014 の A10 で分かっ�
 - 気づき（範囲の外、記録）: UCLK は idle で 101 MHz（UCLK の DPM が動いている）。SMU に display の watermark 表を渡していないため、UCLK の切り替えが表示中に起きると underflow の危険がある（WS039 の DPM の側の課題）。sink の mode の上限（A10 の limit）は boot の DISPCLK 625 MHz を使っており、実際の DISPCLK 163.8 MHz と違う。plan で判定する形に替えるのが残り。
 - 未実施: 1280x720 の画面の目視（Q1 が beta2 の U16 に載せた）。HDMI の connector。
 
-### 残り（2026-10-17 00:31 の時点）
+### 残り（2026-10-17 00:31 の時点、下で一部済み）
 
-- A13 hotplug（HPD の割り込み、debounce、外れ・繋がりで blank と re-light）。
-- display の mode の op: present の大きさの変更を引き金に mode set。sink の上限を plan の判定に替える。
-- DP は host 試験まで（link training・AUX）。
-- p016（P7 の agent/p7-ws039 の 3f9a8fcb5）を取り込み、衝突を直し、実機で R1 を行う。
-- merge は p015（A11・A12）と p016 を別々に依頼してよい（Q1）。
+- A13 hotplug（HPD の割り込み、debounce、外れ・繋がりで blank と re-light）。→ 済（下）。
+- display の mode の op: present の大きさの変更を引き金に mode set。sink の上限を plan の判定に替える。→ 済（下）。
+- DP は host 試験まで（link training・AUX）。→ 未着手（残件）。
+- p016 の取り込みと R1 → 済（[phase016](../phase016/phase.md)）。
 
+### mode の op・sink の上限・A13（2026-10-17 00:45〜01:46、P3）
+
+- 実装（commit 6df3c4b92・2d97bd05f・bf4fb396f）:
+  - `modeset.c`: 公開の `amdrdna_mode_clocks`（板の clock を plan の input に）、`amdrdna_mode_timing_input`、`amdrdna_mode_current`（firmware の mode を最初の呼び出しで OTG から読み、EDID の同じ mode の pixel clock を使う）、`amdrdna_mode_set`（全手順の mode set、frame に収まらない・plan が断る mode は ERANGE、30 frame と underflow で確かめ、display の width・height・refresh を更新）、`amdrdna_mode_output`（blank と transmitter の off、on と unblank。OTG は回し続ける）。`modeset_switch` は OTG を止めるので refresh の数の base を取り直す。
+  - `sink.c`: A10 の読みを `amdrdna_sink_read`（record に読む、hotplug でも使う）に分け、mode ごとに `carried`（信号の上限・sync の幅が分かる・frame に収まる・板の clock で plan が通る）。上限は boot の DISPCLK ではなく plan で判定（実際の DISPCLK 163.8 MHz）。`amdrdna_sink_choose`・`amdrdna_sink_carries`・`amdrdna_sink_preferred`。refresh 0 は出せる mode の中から選ぶ。
+  - `present.c`: present の大きさが今の mode と違えば、display が出せる mode なら mode set してから flip（`present_resize`）、出せなければ EINVAL。lease の終わりで console を見せた後に firmware の mode に戻す（`present_firmware_mode`）。query の max は GOP の大きさ。mode・sink は node の display lock の下で読む。
+  - `hotplug.c`（新）: 段 A13 と、HPD の割り込みの後の仕事（bring-up の thread、100 ms 待って HPD の level を読む）。外れ: blank と transmitter の off。繋がり: EDID を読み直し、同じ monitor か今の mode を出せる monitor なら同じ mode で点け直し、出せなければ新しい monitor の推奨の mode に mode set して topology を進める。root の `AMDRDNA_IOC_HOTPLUG`（7、`struct amdrdna_hotplug_ask` 32 byte）で外れ・繋がりを模して試せる。lock の順は node の present → display → display の mode lock。
+  - `relight.c`: pixel clock 0 の時は今の mode（EDID の値）を使う。`amdrdnactl present WxH [s]`・`amdrdnactl hotplug off|on`（`userland/tests/amdrdnactl/present.c`）。
+- build warning 0・include check/vmunix check PASS、host 試験（host・vk・bytecode・reset・dml）PASS。新しい関数の host 試験は無い（kernel の I2C・VBIOS を使う）。
+- 実機（10.0.10.3、text login・`amdrdna.auto=A9` → `amdrdnactl advance A13`、kernel bf4fb396f、01:45〜01:46。前の 2 版は 01:35・01:39）:
+  - `A10 ok … modes=13/15 limit=165000kHz`、`A11 ok relit 1920x1080@60.000 … pclk=148500kHz … underflow=0/0`、`A12 ok 1280x720 and back …`、**`A13 ok output off and on 1920x1080@60.000 dark=1924ms frames=30 underflow=0/0 edid=DEL modes=13`**。
+  - `amdrdnactl present 1280x720`・`800x600`・`1024x768`（01:41・01:45）: `mode set ok 1280x720@60.000 pclk=74250kHz (was 1920x1080) … underflow=0`、`mode set ok 800x600@75.000 pclk=49500kHz …`、`mode set ok 1024x768@75.029 pclk=78750kHz …`、lease の終わりで `mode set ok 1920x1080@60.000 pclk=148500kHz … underflow=0`。frame の sequence 1・2 が出て query の current がその大きさ。`1234x567` は EINVAL（validate も refuse）。
+  - `amdrdnactl hotplug off` → `dark=1`、`on` → `dark=0`、frame は進み続け underflow 0。status `failed=none`、`underflow=0`。
+  - 証拠 `build/tmp/p15-m1/`・`p15-m2/`・`p15-m3/`（worktree の中、commit しない）。
+- 未実施・残件:
+  - **本物の HPD**（cable の抜き差し・別の monitor）: 割り込みの道と debounce は実機で通していない（この monitor は transmitter を切っても HPD を落とさない）。ユーザーの一覧へ。
+  - **DP**（link training・AUX の DPCD の書き・MSA）: host 試験も未着手。DP の monitor がつながった時に実機。
+  - HDMI の connector、mode set の画面の目視（1280x720・800x600 の絵）、Keiland が present の大きさを変える道（今の compositor は変えない）。
+  - blob の present は stride が display の stride（GOP の pitch）と同じ時だけ（mode set しても plane の pitch は替えない）。

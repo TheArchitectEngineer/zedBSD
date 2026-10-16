@@ -9,7 +9,9 @@
  * Stage A8: the display of the amdrdna GPU device.
  *
  * One display: the output the firmware lit and the driver took over
- * (display.c), in the firmware's mode, the only one.  One lease at a
+ * (display.c), in the firmware's mode or another the monitor lists that a
+ * present of its size set (modeset.c; the lease's end sets the
+ * firmware's again for the console).  One lease at a
  * time; FIFO presentation of storage frames (copied by the CPU into one
  * of the display's two frames, then flipped to) and of blobs (flipped to
  * as they are, when their rows are the display's).  A presentation
@@ -133,6 +135,8 @@ static const struct drv_gpu_scanout_ops present_scanout_ops = {
 
 static int present_admit(struct amdrdna_node *node, void *session, const struct amdrdna_resource *resource, const struct gpu_display_present *request, bool blob, uint64_t *address);
 static void present_copy(struct amdrdna_node *node, const struct amdrdna_resource *resource, const struct gpu_display_present *request);
+static int present_resize(struct amdrdna_node *node, const struct gpu_display_present *request);
+static void present_firmware_mode(struct amdrdna_node *node);
 static void present_end_lease(struct amdrdna_node *node);
 static void present_broken(struct amdrdna_node *node, int error);
 static void present_text_hold(struct amdrdna_node *node);
@@ -348,7 +352,11 @@ present_query(
 	if (connected)
 		request->flags |= GPU_DISPLAY_CONNECTED;
 
-	/* Active while a lease has frames on it; powered off while its holder asked. */
+	/*
+	 * Active while a lease has frames on it, powered off while its holder
+	 * asked; the mode and the sink under the display lock (a mode set and
+	 * a monitor's plug change them under it).
+	 */
 	mutex_lock(&node->display_lock);
 
 	if (node->owner != NULL && node->sequence != 0U)
@@ -356,20 +364,18 @@ present_query(
 	if (node->powered_off != 0)
 		request->flags |= GPU_DISPLAY_POWERED_OFF;
 
-	mutex_unlock(&node->display_lock);
-
-	/* One plane, the one packed format, and the largest frame. */
+	/* One plane, the one packed format, and the largest frame: the firmware's surface. */
 	request->plane_count = 1U;
 	request->formats = GPU_DISPLAY_FORMAT_BGRA8888;
-	request->max_frame_bytes = (uint64_t)display->stride * display->height;
+	request->max_frame_bytes = display->frame_bytes;
 
-	/* The firmware's mode is the current, preferred and largest one. */
+	/* The mode shown now; the largest is the frames' (the firmware's mode). */
 	request->current_width = display->width;
 	request->current_height = display->height;
 	request->preferred_width = display->width;
 	request->preferred_height = display->height;
-	request->max_width = display->width;
-	request->max_height = display->height;
+	request->max_width = node->device->gop.viewport_width;
+	request->max_height = node->device->gop.viewport_height;
 	request->refresh_millihz = display->refresh_millihz;
 
 	/* The sink's size, name and preferred mode when stage A10 read its EDID. */
@@ -389,6 +395,8 @@ present_query(
 		if (sink->edid.name[0] != '\0')
 			kern_strcpy(request->name, sink->edid.name);
 	}
+
+	mutex_unlock(&node->display_lock);
 
 	/* Succeeded: the display is described. */
 	return 0;
@@ -422,10 +430,15 @@ present_mode(
 	if (request->generation != PRESENT_GENERATION)
 		return ESTALE;
 
-	/* Enumeration: the index-th mode, or the count. */
+	/* Enumeration: the index-th mode, or the count (the mode and the sink under the display lock). */
 	if (request->operation == GPU_DISPLAY_MODE_ENUMERATE) {
+		mutex_lock(&node->display_lock);
+
 		found = amdrdna_sink_mode(node->device, request->index, &request->width, &request->height, &request->refresh_millihz,
 		    &count);
+
+		mutex_unlock(&node->display_lock);
+
 		request->count = count;
 		if (request->index == GPU_DISPLAY_COUNT_ONLY)
 			return 0;
@@ -434,9 +447,14 @@ present_mode(
 		return 0;
 	}
 
-	/* Validation: a mode offered (0 asks for its preferred refresh); one past the output's limit is ERANGE. */
+	/* Validation: a mode offered (0 asks for its preferred refresh); one the output does not show is ERANGE. */
 	refresh = request->refresh_millihz;
+	mutex_lock(&node->display_lock);
+
 	error = amdrdna_sink_check(node->device, request->width, request->height, &refresh);
+
+	mutex_unlock(&node->display_lock);
+
 	if (error != 0)
 		return error;
 
@@ -531,11 +549,13 @@ present_release(
  *
  * A blob is flipped to as it is: its rows the display's, its image on a
  * 256-byte boundary of the VRAM.  Storage is copied into the display's
- * frame not on the screen, which is flipped to.  Either way the frame has
- * the display's size and the call returns once the flip has begun.
- * Returns 0 with the frame's sequence, EINVAL for another session's lease
- * or a frame the display cannot show, ESTALE for another generation, or
- * EIO when the flip did not begin (the display is then broken).
+ * frame not on the screen, which is flipped to.  A frame of another size
+ * than the mode shown sets a mode of its size first (one the display
+ * offers, at the refresh asked for); the call returns once the flip has
+ * begun.  Returns 0 with the frame's sequence, EINVAL for another
+ * session's lease or a frame the display cannot show, ESTALE for another
+ * generation, or EIO when the mode set failed or the flip did not begin
+ * (the display is then broken).
  */
 static int
 present_present(
@@ -549,6 +569,7 @@ present_present(
 	struct amdrdna_device *device;
 	uint64_t address;
 	bool blob;
+	bool resize;
 	int error;
 
 	/* The node and what the core passed in. */
@@ -561,19 +582,27 @@ present_present(
 	if ((request->flags & GPU_DISPLAY_PRESENT_BLOB) != 0U)
 		blob = true;
 
-	/* The frame has the display's size and format. */
-	if (request->width != device->display.width || request->height != device->display.height)
-		return EINVAL;
+	/* The frame has the display's format. */
 	if (request->format != GPU_PIXEL_BGRA8888)
 		return EINVAL;
 
 	/* One presentation at a time; the lease cannot end while it runs. */
 	mutex_lock(&node->present_lock);
 
-	/* Checks the lease and picks the surface under the display lock. */
+	/*
+	 * Checks the lease and picks the surface under the display lock; a
+	 * frame of another size sets a mode of its size first.
+	 */
 	mutex_lock(&node->display_lock);
 
 	error = present_admit(node, session, resource, request, blob, &address);
+	resize = false;
+	if (error == 0) {
+		if (request->width != device->display.width || request->height != device->display.height)
+			resize = true;
+	}
+	if (resize)
+		error = present_resize(node, request);
 
 	mutex_unlock(&node->display_lock);
 
@@ -1169,6 +1198,10 @@ present_end_lease(
 			node->shown = NULL;
 	}
 
+	/* The console's mode, the firmware's, when the lease set another. */
+	if (node->broken == 0 && node->stopped == 0)
+		present_firmware_mode(node);
+
 	/* A broken display keeps the blob it may still read. */
 	if (node->shown != NULL) {
 		amdrdna_backing_keep(device, node->shown->backing);
@@ -1183,6 +1216,82 @@ present_end_lease(
 	node->owner = NULL;
 	node->lease = 0U;
 	node->sequence = 0U;
+}
+
+/*
+ * Sets the mode of a frame's size before it is shown: the firmware's, or
+ * a mode the sink lists that the output shows, at the refresh asked for
+ * (0 the first of that size).  The caller holds the node's present lock
+ * and its display lock.
+ *
+ * Returns 0; EINVAL for a size the display does not offer or a mode the
+ * board cannot show; EIO when the mode set failed (the timing generator
+ * then runs the new mode, which frames of its size are still shown in).
+ */
+static int
+present_resize(
+	struct amdrdna_node *node,
+	const struct gpu_display_present *request)
+{
+	struct amdrdna_device *device;
+	struct amdrdna_timing timing;
+	int error;
+
+	/* The mode of that size. */
+	device = node->device;
+	error = amdrdna_sink_choose(device, request->width, request->height, request->refresh_millihz, &timing);
+	if (error != 0)
+		return EINVAL;
+
+	/* The mode set, in the display's order. */
+	mutex_lock(&device->display.mode_lock);
+
+	error = amdrdna_mode_set(device, &timing);
+
+	mutex_unlock(&device->display.mode_lock);
+
+	/* Reports a mode the board cannot show, or a set that failed. */
+	if (error == ERANGE ||
+	    error == ENOENT ||
+	    error == ENOTSUP)
+		return EINVAL;
+	if (error != 0)
+		return EIO;
+
+	/* Succeeded: the frame's size is the display's. */
+	return 0;
+}
+
+/*
+ * Sets the firmware's mode again when a lease set another, so the console
+ * is shown as the firmware lit it.  The caller holds the node's present
+ * lock and its display lock.  A failed set is said and left: the display
+ * keeps running in the mode the set left.
+ */
+static void
+present_firmware_mode(
+	struct amdrdna_node *node)
+{
+	struct amdrdna_display *display;
+	int error;
+
+	/* Only after a mode set of the lease. */
+	display = &node->device->display;
+	mutex_lock(&display->mode_lock);
+
+	error = 0;
+	if (display->mode_known) {
+		if (display->mode.width != display->firmware_mode.width ||
+		    display->mode.height != display->firmware_mode.height ||
+		    display->mode.pixel_khz != display->firmware_mode.pixel_khz)
+			error = amdrdna_mode_set(node->device, &display->firmware_mode);
+	}
+
+	mutex_unlock(&display->mode_lock);
+
+	/* Says a set that failed. */
+	if (error != 0)
+		amdrdna_mark("gpu device: the firmware's mode was not set again (%d)", error);
 }
 
 /*

@@ -70,6 +70,7 @@ static void test_refusals(void);
 static void test_firmware_file(void);
 static void test_readings(void);
 static void test_features(void);
+static void test_settings(void);
 static void test_linux(const char *directory);
 static void test_dump(const char *directory);
 static void test_real_firmware(const char *directory);
@@ -112,6 +113,7 @@ main(
 	test_firmware_file();
 	test_readings();
 	test_features();
+	test_settings();
 
 	/* Runs the cases of each directory given. */
 	if (linux_directory != NULL) {
@@ -332,6 +334,35 @@ test_features(void)
 	check(!amdrdna_power_features_on(0x80000000U, 0x00000001U), "features.no-thermal", "a missing thermal control is taken");
 }
 
+/* The averaging settings: six time constants of 10 ms, then zeros. */
+static void
+test_settings(void)
+{
+	uint8_t table[AMDRDNA_SMU_SETTINGS_BYTES];
+	unsigned at;
+	int good;
+
+	/* Fills the table with a pattern the builder must overwrite. */
+	memset(table, 0xa5, sizeof(table));
+	amdrdna_power_settings_build(table);
+
+	/* The six constants, little-endian. */
+	good = 1;
+	for (at = 0U; at < 12U; at += 2U) {
+		if (table[at] != 10U || table[at + 1U] != 0U)
+			good = 0;
+	}
+	check(good, "settings.averages", "the six averages are not 10 ms");
+
+	/* The firmware's part. */
+	good = 1;
+	for (at = 12U; at < AMDRDNA_SMU_SETTINGS_BYTES; at++) {
+		if (table[at] != 0U)
+			good = 0;
+	}
+	check(good, "settings.rest", "the rest of the table is not zero");
+}
+
 /* The tables amdrdna-power-linux laid out with the Linux structures. */
 static void
 test_linux(
@@ -340,17 +371,31 @@ test_linux(
 	struct amdrdna_power_limits limits;
 	struct amdrdna_power_readings readings;
 	uint8_t table[AMDRDNA_SMU_POWER_TABLE_BYTES];
+	uint8_t built_settings[AMDRDNA_SMU_SETTINGS_BYTES];
 	uint8_t *power;
 	uint8_t *board;
 	uint8_t *expected;
 	uint8_t *metrics;
 	uint8_t *legacy;
+	uint8_t *settings;
 	size_t power_bytes;
 	size_t board_bytes;
 	size_t expected_bytes;
 	size_t metrics_bytes;
 	size_t legacy_bytes;
+	size_t settings_bytes;
 	int error;
+
+	/* The averaging settings Linux hands over, against the driver's. */
+	settings = read_named(directory, "settings.bin", &settings_bytes);
+	check(settings != NULL, "linux.settings-file", "the Linux settings file is missing");
+	if (settings != NULL) {
+		amdrdna_power_settings_build(built_settings);
+		check(settings_bytes == AMDRDNA_SMU_SETTINGS_BYTES, "linux.settings-size", "the settings are not the driver's size");
+		check(settings_bytes == AMDRDNA_SMU_SETTINGS_BYTES && memcmp(settings, built_settings, settings_bytes) == 0,
+		    "linux.settings", "the settings differ from the ones Linux hands over");
+		free(settings);
+	}
 
 	/* Reads the five files. */
 	power = read_named(directory, "power.bin", &power_bytes);

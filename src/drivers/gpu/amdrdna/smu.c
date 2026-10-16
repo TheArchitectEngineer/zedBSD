@@ -117,6 +117,40 @@
 #define SMU_TABLE_READINGS		6U
 
 /*
+ * The messages that move the graphics clock once its levels run: the
+ * frequency of one of a clock's levels (the index 0xff asks how many
+ * levels it has), its floor and its ceiling (in MHz in the low 16 bits,
+ * the clock in the high 16 bits; floor 0 and ceiling 0xffff leave the
+ * firmware free), and the workloads the firmware tunes its levels for (a
+ * mask of the default and the 3D workloads).  Bit 31 of a level's answer
+ * is not part of the frequency.  Then the table of the averaging settings,
+ * and the graphics clock's number.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/pm/swsmu/inc/pmfw_if/smu_v11_0_ppsmc.h
+ * (PPSMC_MSG_GetDpmFreqByIndex, PPSMC_MSG_SetSoftMinByFreq,
+ * PPSMC_MSG_SetSoftMaxByFreq, PPSMC_MSG_SetWorkloadMask),
+ * drivers/gpu/drm/amd/pm/swsmu/inc/pmfw_if/smu11_driver_if_navi10.h
+ * (WORKLOAD_PPLIB_DEFAULT_BIT, WORKLOAD_PPLIB_FULL_SCREEN_3D_BIT,
+ * TABLE_DRIVER_SMU_CONFIG, PPCLK_GFXCLK) and
+ * drivers/gpu/drm/amd/pm/swsmu/smu11/smu_v11_0.c
+ * (smu_v11_0_get_dpm_level_count, smu_v11_0_get_dpm_freq_by_index,
+ * smu_v11_0_set_soft_freq_limited_range: the arguments and the answer).
+ */
+#define SMU_MESSAGE_FLOOR		0x1aU
+#define SMU_MESSAGE_CEILING		0x1bU
+#define SMU_MESSAGE_LEVEL		0x20U
+#define SMU_MESSAGE_WORKLOADS		0x24U
+#define SMU_LEVEL_COUNT			0xffU
+#define SMU_LEVEL_FREQUENCY_MASK	0x7fffffffU
+#define SMU_FLOOR_FREE			0x0000U
+#define SMU_CEILING_FREE		0xffffU
+#define SMU_WORKLOAD_DEFAULT		0x01U
+#define SMU_WORKLOAD_3D			0x02U
+#define SMU_TABLE_SETTINGS		7U
+#define SMU_CLOCK_GFX			0U
+
+/*
  * The table page: one page of VRAM, as large as the largest table and
  * aligned to it.
  */
@@ -161,6 +195,31 @@
  */
 #define THERMAL_COMPARE_READING		10U
 
+/*
+ * How the driver raises the graphics clock for work (amdrdna.smu.boost=):
+ * not at all (0), with the firmware's 3D workload profile while the GPU
+ * works (1, the default), or with the profile and the clock's floor at
+ * its highest level (2).  Linux switches to the 3D profile while a
+ * graphics ring is in use; the floor is the driver's own, for the short
+ * bursts of a desktop.  The firmware raises the clock to its highest
+ * level under a steady load by itself, and the floor made a measured
+ * draw no faster there, so it is not the default.
+ */
+#define THERMAL_BOOST_NONE		0U
+#define THERMAL_BOOST_PROFILE		1U
+#define THERMAL_BOOST_FLOOR		2U
+
+/*
+ * The boost's times: it ends a second after the last run of commands, and
+ * the watch reads the firmware a tenth of a second after it raised the
+ * clock, so the raised clock shows in the readings.
+ *
+ * Value referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/amdgpu_gfx.h (GFX_PROFILE_IDLE_TIMEOUT).
+ */
+#define THERMAL_BOOST_IDLE_TICKS	KERN_CLOCK_HZ
+#define THERMAL_BOOST_READ_TICKS	(KERN_CLOCK_HZ / 10U)
+
 /* How long the stop waits for the watch thread, and its step. */
 #define THERMAL_STOP_WAIT_US		2000000U
 #define THERMAL_STOP_STEP_US		10000U
@@ -174,7 +233,11 @@ static int power_features(struct amdrdna_device *device, const uint8_t *table);
 static int power_features_ask(struct amdrdna_device *device);
 static int power_features_running(struct amdrdna_device *device, uint32_t *low, uint32_t *high);
 static void power_features_off(struct amdrdna_device *device);
-static int power_table_send(struct amdrdna_device *device, const uint8_t *table);
+static int power_table_send(struct amdrdna_device *device, uint32_t id, const uint8_t *table, size_t bytes);
+static void power_clock_setup(struct amdrdna_device *device, unsigned wanted);
+static int power_clock_levels(struct amdrdna_device *device, uint32_t *count, uint32_t *lowest, uint32_t *highest);
+static int power_boost(struct amdrdna_device *device, bool raising);
+static void power_boost_end(struct amdrdna_device *device, unsigned mode, bool raising, int error);
 static int power_readings_fetch(struct amdrdna_device *device, struct amdrdna_power_readings *readings);
 static void power_alerts(struct amdrdna_device *device);
 static bool power_interrupt_check(struct amdrdna_device *device);
@@ -196,9 +259,11 @@ static void thermal_write(struct amdrdna_device *device, uint32_t offset, uint32
  * control and move the graphics clock (amdrdna.smu.features=0 leaves
  * that out; amdrdna.smu.gfxclk=0 keeps the graphics clock at the video
  * BIOS's boot clock), falling back to the static duty
- * when it will not; sends the thermal alerts to the interrupt
- * ring and checks that one arrives, reads the temperatures and the fan,
- * and starts the watch.
+ * when it will not; when the graphics clock moves, hands the firmware
+ * its averaging settings and workload, reads the clock's levels and sets
+ * up how the clock is raised for work (amdrdna.smu.boost=); sends the
+ * thermal alerts to the interrupt ring and checks that one arrives, reads
+ * the temperatures and the fan, and starts the watch.
  *
  * Returns 0, ENODEV when the block table lacks the unit or the thermal
  * block, ETIMEDOUT when the unit's firmware does not run or does not
@@ -220,6 +285,7 @@ amdrdna_a4_power(
 	const char *tier;
 	uint32_t index;
 	unsigned wanted;
+	unsigned raise_mode;
 	bool delivered;
 	int error;
 
@@ -270,6 +336,10 @@ amdrdna_a4_power(
 	if (amdrdna_parameter_number("amdrdna.smu.gfxclk", 1U) != 0U)
 		thermal->clock_levels = true;
 
+	/* How the clock is raised for work once it moves; nothing is raised until then. */
+	raise_mode = amdrdna_parameter_number("amdrdna.smu.boost", THERMAL_BOOST_PROFILE);
+	thermal->boost_mode = THERMAL_BOOST_NONE;
+
 	/* Asks the firmware for its features when the table is ready and the boot line allows it. */
 	wanted = amdrdna_parameter_number("amdrdna.smu.features", 1U);
 	if (error != 0) {
@@ -284,6 +354,9 @@ amdrdna_a4_power(
 		if (error != 0) {
 			power_features_off(device);
 			(void)power_fan(device);
+		} else if ((thermal->features_low & AMDRDNA_SMU_FEATURE_GFX_LEVELS) != 0U) {
+			/* The graphics clock moves: sets up its averages, workload, levels and boost. */
+			power_clock_setup(device, raise_mode);
 		}
 	}
 
@@ -560,14 +633,16 @@ amdrdna_thermal_interrupt(
 
 /*
  * Gives the clocks and the graphics engine's activity the watch last read
- * from the firmware (the clock fields of speeds_now; the others are left as
- * they are).  Returns false when the firmware gave no readings: its
- * features do not run, or the watch has not read yet.
+ * from the firmware (the clock fields of report->now; the others are left
+ * as they are), the highest graphics clock and activity it read since the
+ * previous call, which start over, and the boost's count and state.
+ * Returns false when the firmware gave no readings: its features do not
+ * run, or the watch has not read yet.
  */
 bool
 amdrdna_power_clocks(
 	struct amdrdna_device *device,
-	struct amdrdna_power_readings *speeds_now)
+	struct amdrdna_power_clock_report *report)
 {
 	struct amdrdna_thermal *thermal;
 	unsigned long irq;
@@ -578,18 +653,61 @@ amdrdna_power_clocks(
 	irq = spin_lock_irqsave(&thermal->lock);
 
 	clocked = thermal->clocked;
-	speeds_now->gfx_clock = thermal->gfx_clock;
-	speeds_now->system_clock = thermal->system_clock;
-	speeds_now->memory_clock = thermal->memory_clock;
-	speeds_now->return_clock = thermal->return_clock;
-	speeds_now->display_engine_clock = thermal->display_engine_clock;
-	speeds_now->gfx_average = thermal->gfx_average;
-	speeds_now->gfx_activity = thermal->gfx_activity;
+	report->now.gfx_clock = thermal->gfx_clock;
+	report->now.system_clock = thermal->system_clock;
+	report->now.memory_clock = thermal->memory_clock;
+	report->now.return_clock = thermal->return_clock;
+	report->now.display_engine_clock = thermal->display_engine_clock;
+	report->now.gfx_average = thermal->gfx_average;
+	report->now.gfx_activity = thermal->gfx_activity;
+	report->gfx_clock_top = thermal->gfx_clock_top;
+	report->gfx_activity_top = thermal->gfx_activity_top;
+	report->boosts = thermal->boosts;
+	report->boosted = thermal->boosted;
+
+	/* The highest readings start over for the next report. */
+	thermal->gfx_clock_top = 0U;
+	thermal->gfx_activity_top = 0U;
 
 	spin_unlock_irqrestore(&thermal->lock, irq);
 
 	/* Succeeded when they were read. */
 	return clocked;
+}
+
+/*
+ * Notes that the GPU runs commands now: the boost (when the graphics
+ * clock is raised for work at all) ends a second after the last such
+ * note, and a note while the clock is not raised has the watch raise it.
+ * Called before each run of commands; it only takes the power side's lock.
+ */
+void
+amdrdna_power_busy(
+	struct amdrdna_device *device)
+{
+	struct amdrdna_thermal *thermal;
+	unsigned long irq;
+
+	/* The power side's state. */
+	thermal = &device->thermal;
+
+	/* Notes the time, and asks the watch for the boost once when the clock is not raised. */
+	irq = spin_lock_irqsave(&thermal->lock);
+
+	thermal->busy_ticks = sched_ticks();
+	if (thermal->boost_mode != THERMAL_BOOST_NONE &&
+	    !thermal->boosted &&
+	    !thermal->boost_wanted) {
+		/*
+		 * boost_wanted tells the watch to raise the clock; it stays set
+		 * until the watch has taken it, so the runs before that do not
+		 * wake the watch again.
+		 */
+		thermal->boost_wanted = true;
+		waitq_wake_all(&thermal->waitq);
+	}
+
+	spin_unlock_irqrestore(&thermal->lock, irq);
 }
 
 /*
@@ -965,7 +1083,7 @@ power_features(
 	}
 
 	/* Hands over the board's power table. */
-	error = power_table_send(device, table);
+	error = power_table_send(device, SMU_TABLE_POWER, table, AMDRDNA_SMU_POWER_TABLE_BYTES);
 	if (error != 0) {
 		amdrdna_mark("A4 features: the power table refused (%d)", error);
 		return error;
@@ -1128,9 +1246,9 @@ power_features_off(
 }
 
 /*
- * Copies the board's power table into the table page and has the unit's
- * firmware take it.  The copy and the message happen under the mailbox,
- * which owns the page.
+ * Copies a table of bytes bytes (a multiple of 4) into the table page and
+ * has the unit's firmware take it as the table id.  The copy and the
+ * message happen under the mailbox, which owns the page.
  *
  * Procedure referenced: Linux v6.19
  * drivers/gpu/drm/amd/pm/swsmu/smu_cmn.c (smu_cmn_update_table, the copy to
@@ -1140,7 +1258,9 @@ power_features_off(
 static int
 power_table_send(
 	struct amdrdna_device *device,
-	const uint8_t *table)
+	uint32_t id,
+	const uint8_t *table,
+	size_t bytes)
 {
 	struct amdrdna_thermal *thermal;
 	volatile uint8_t *page;
@@ -1156,7 +1276,7 @@ power_table_send(
 	mutex_lock(&thermal->mailbox);
 
 	/* Copies the table a word at a time. */
-	for (at = 0U; at < AMDRDNA_SMU_POWER_TABLE_BYTES; at += 4U) {
+	for (at = 0U; at < bytes; at += 4U) {
 		kern_memcpy(&word, table + at, sizeof(word));
 		kern_mmio_write32(page + at, word);
 	}
@@ -1165,7 +1285,7 @@ power_table_send(
 	amdrdna_host_path_flush(device);
 
 	/* Has the firmware take it. */
-	error = smu_message_held(device, SMU_MESSAGE_TABLE_FROM_PAGE, SMU_TABLE_POWER, NULL);
+	error = smu_message_held(device, SMU_MESSAGE_TABLE_FROM_PAGE, id, NULL);
 
 	mutex_unlock(&thermal->mailbox);
 
@@ -1175,6 +1295,253 @@ power_table_send(
 
 	/* Succeeded: the firmware has the table. */
 	return 0;
+}
+
+/*
+ * Sets up the graphics clock once its levels run, as Linux does after it
+ * switches the features on: reads the clock's levels, tells the firmware
+ * the workload is the default one, hands over the averaging settings, and
+ * takes the clock's ceiling off (the automatic level's ceiling).  Then
+ * chooses how the clock is raised for work: wanted (amdrdna.smu.boost=),
+ * the profile alone when the highest level is unknown, and not at all
+ * when the firmware refuses the workload.  A refusal here does not undo
+ * the features; the firmware keeps moving the clock on its own.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/pm/swsmu/amdgpu_smu.c (smu_smc_hw_setup:
+ * smu_set_default_dpm_table; smu_late_init: the workload of the
+ * initial task, then smu_apply_default_config_table_settings;
+ * smu_bump_power_profile_mode),
+ * drivers/gpu/drm/amd/pm/swsmu/smu11/navi10_ppt.c
+ * (navi10_set_power_profile_mode, navi10_set_config_table) and
+ * drivers/gpu/drm/amd/pm/swsmu/smu11/smu_v11_0.c
+ * (smu_v11_0_set_performance_level, the automatic level).
+ */
+static void
+power_clock_setup(
+	struct amdrdna_device *device,
+	unsigned wanted)
+{
+	struct amdrdna_thermal *thermal;
+	uint8_t settings[AMDRDNA_SMU_SETTINGS_BYTES];
+	unsigned long irq;
+	uint32_t count;
+	uint32_t lowest;
+	uint32_t highest;
+	const char *how;
+	unsigned mode;
+	int levels_error;
+	int workload_error;
+	int settings_error;
+	int ceiling_error;
+
+	/* The power side's state. */
+	thermal = &device->thermal;
+
+	/* Reads the graphics clock's levels: how many, the lowest and the highest. */
+	count = 0U;
+	lowest = 0U;
+	highest = 0U;
+	levels_error = power_clock_levels(device, &count, &lowest, &highest);
+
+	/* Tells the firmware the workload is the default one. */
+	workload_error = smu_message(device, SMU_MESSAGE_WORKLOADS, SMU_WORKLOAD_DEFAULT, NULL);
+
+	/* Hands over the averaging settings. */
+	amdrdna_power_settings_build(settings);
+	settings_error = power_table_send(device, SMU_TABLE_SETTINGS, settings, sizeof(settings));
+
+	/* Takes the graphics clock's ceiling off, so the firmware may go up to its highest level. */
+	ceiling_error = smu_message(device, SMU_MESSAGE_CEILING, (SMU_CLOCK_GFX << 16) | SMU_CEILING_FREE, NULL);
+
+	/* Chooses the boost: the floor needs the highest level, and any boost needs the workload. */
+	mode = wanted;
+	if (mode > THERMAL_BOOST_FLOOR)
+		mode = THERMAL_BOOST_FLOOR;
+	if (mode == THERMAL_BOOST_FLOOR && levels_error != 0)
+		mode = THERMAL_BOOST_PROFILE;
+	if (workload_error != 0)
+		mode = THERMAL_BOOST_NONE;
+
+	/* Names the boost for the log. */
+	how = "off";
+	if (mode == THERMAL_BOOST_PROFILE)
+		how = "3d profile";
+	if (mode == THERMAL_BOOST_FLOOR)
+		how = "3d profile and floor";
+
+	/* Publishes the levels and the boost, which the watch and the runs read from now on. */
+	irq = spin_lock_irqsave(&thermal->lock);
+
+	thermal->gfx_lowest = lowest;
+	thermal->gfx_highest = highest;
+	thermal->boost_mode = mode;
+
+	spin_unlock_irqrestore(&thermal->lock, irq);
+
+	/* Marks the setup with each step's answer. */
+	amdrdna_mark("A4 graphics clock: %u levels %u-%uMHz (%d), workload %d, averages %d, ceiling %d, boost %s",
+	    (unsigned)count,
+	    (unsigned)lowest,
+	    (unsigned)highest,
+	    levels_error,
+	    workload_error,
+	    settings_error,
+	    ceiling_error,
+	    how);
+}
+
+/*
+ * Reads how many levels the graphics clock has and the frequency of the
+ * lowest and the highest, in MHz.
+ *
+ * Returns 0, EIO when the firmware gives no level, or the error of the
+ * message that failed.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/pm/swsmu/smu11/smu_v11_0.c
+ * (smu_v11_0_set_single_dpm_table, smu_v11_0_get_dpm_level_count,
+ * smu_v11_0_get_dpm_freq_by_index).
+ */
+static int
+power_clock_levels(
+	struct amdrdna_device *device,
+	uint32_t *count,
+	uint32_t *lowest,
+	uint32_t *highest)
+{
+	uint32_t answer;
+	int error;
+
+	/* How many levels. */
+	answer = 0U;
+	error = smu_message(device, SMU_MESSAGE_LEVEL, (SMU_CLOCK_GFX << 16) | SMU_LEVEL_COUNT, &answer);
+	if (error != 0)
+		return error;
+
+	/* A clock without levels cannot be raised to one. */
+	*count = answer & SMU_LEVEL_FREQUENCY_MASK;
+	if (*count == 0U)
+		return EIO;
+
+	/* The lowest level's frequency. */
+	error = smu_message(device, SMU_MESSAGE_LEVEL, SMU_CLOCK_GFX << 16, &answer);
+	if (error != 0)
+		return error;
+	*lowest = answer & SMU_LEVEL_FREQUENCY_MASK;
+
+	/* The highest level's frequency. */
+	error = smu_message(device, SMU_MESSAGE_LEVEL, (SMU_CLOCK_GFX << 16) | (*count - 1U), &answer);
+	if (error != 0)
+		return error;
+	*highest = answer & SMU_LEVEL_FREQUENCY_MASK;
+
+	/* A highest level of 0 MHz is no level either. */
+	if (*highest == 0U)
+		return EIO;
+
+	/* Succeeded: the levels are read. */
+	return 0;
+}
+
+/*
+ * Raises the graphics clock for work, or lowers it again: the firmware's
+ * workloads become the default and the 3D one (raising) or the default one
+ * alone, and with the floor boost the clock's floor goes to its highest
+ * level (raising) or back to the firmware's choice.  A refusal ends the
+ * boost for good.
+ *
+ * Returns 0, or the error of the message the firmware refused.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/amdgpu_gfx.c
+ * (amdgpu_gfx_profile_ring_begin_use, amdgpu_gfx_profile_idle_work_handler:
+ * the 3D profile while a graphics ring is in use),
+ * drivers/gpu/drm/amd/pm/swsmu/smu11/navi10_ppt.c
+ * (navi10_set_power_profile_mode) and
+ * drivers/gpu/drm/amd/pm/swsmu/smu11/smu_v11_0.c
+ * (smu_v11_0_set_soft_freq_limited_range).
+ */
+static int
+power_boost(
+	struct amdrdna_device *device,
+	bool raising)
+{
+	struct amdrdna_thermal *thermal;
+	unsigned long irq;
+	uint32_t workloads;
+	uint32_t floor_mhz;
+	unsigned mode;
+	int error;
+
+	/* What the boost is; the setup and the watch alone change it. */
+	thermal = &device->thermal;
+	irq = spin_lock_irqsave(&thermal->lock);
+
+	mode = thermal->boost_mode;
+	floor_mhz = thermal->gfx_highest;
+
+	spin_unlock_irqrestore(&thermal->lock, irq);
+
+	/* A boost that ended does nothing. */
+	if (mode == THERMAL_BOOST_NONE)
+		return 0;
+
+	/* The workloads and the floor of the raised or the lowered clock. */
+	workloads = SMU_WORKLOAD_DEFAULT;
+	if (raising) {
+		workloads |= SMU_WORKLOAD_3D;
+	} else {
+		floor_mhz = SMU_FLOOR_FREE;
+	}
+
+	/* Tells the firmware the workloads, then moves the floor. */
+	error = smu_message(device, SMU_MESSAGE_WORKLOADS, workloads, NULL);
+	if (error == 0 && mode == THERMAL_BOOST_FLOOR)
+		error = smu_message(device, SMU_MESSAGE_FLOOR, (SMU_CLOCK_GFX << 16) | floor_mhz, NULL);
+
+	/* A refusal ends the boost for good. */
+	if (error != 0) {
+		power_boost_end(device, mode, raising, error);
+		return error;
+	}
+
+	/* Succeeded: the firmware has the workloads and the floor. */
+	return 0;
+}
+
+/*
+ * Ends the boost for good after the firmware refused a change of it: the
+ * runs no longer ask for it, the default workload and the free floor are
+ * asked for again, and the log says which change was refused.
+ */
+static void
+power_boost_end(
+	struct amdrdna_device *device,
+	unsigned mode,
+	bool raising,
+	int error)
+{
+	struct amdrdna_thermal *thermal;
+	unsigned long irq;
+
+	/* No boost from now on. */
+	thermal = &device->thermal;
+	irq = spin_lock_irqsave(&thermal->lock);
+
+	thermal->boost_mode = THERMAL_BOOST_NONE;
+	thermal->boost_wanted = false;
+	thermal->boosted = false;
+
+	spin_unlock_irqrestore(&thermal->lock, irq);
+
+	/* Puts the default workload and the free floor back, whatever the answers. */
+	(void)smu_message(device, SMU_MESSAGE_WORKLOADS, SMU_WORKLOAD_DEFAULT, NULL);
+	if (mode == THERMAL_BOOST_FLOOR)
+		(void)smu_message(device, SMU_MESSAGE_FLOOR, (SMU_CLOCK_GFX << 16) | SMU_FLOOR_FREE, NULL);
+
+	/* Says which change was refused. */
+	amdrdna_mark("smu: the graphics clock's boost refused (%s, %d); no more boosts", raising ? "raise" : "lower", error);
 }
 
 /*
@@ -1481,6 +1848,13 @@ power_read(
 	thermal->display_engine_clock = readings.display_engine_clock;
 	thermal->gfx_average = readings.gfx_average;
 	thermal->gfx_activity = readings.gfx_activity;
+
+	/* Keeps the highest graphics clock and activity until the timing marks take them. */
+	if (readings.gfx_clock > thermal->gfx_clock_top)
+		thermal->gfx_clock_top = readings.gfx_clock;
+	if (readings.gfx_activity > thermal->gfx_activity_top)
+		thermal->gfx_activity_top = readings.gfx_activity;
+
 	thermal->readings++;
 	count = thermal->readings;
 
@@ -1564,7 +1938,11 @@ power_watch_start(
 	return 0;
 }
 
-/* Reads the temperature and the fan once a second until told to stop. */
+/*
+ * Reads the temperature and the fan once a second until told to stop,
+ * and raises the graphics clock when work asks for it and lowers it a
+ * second after the last work.
+ */
 static void
 power_watch(
 	void *argument)
@@ -1573,24 +1951,48 @@ power_watch(
 	struct amdrdna_thermal *thermal;
 	unsigned long irq;
 	uint64_t sequence;
+	uint64_t next_read;
+	uint64_t now;
 	bool stopping;
+	bool raising;
+	bool lowering;
 
-	/* The GPU the thread watches. */
+	/* The GPU the thread watches, first read a period from now. */
 	device = argument;
 	thermal = &device->thermal;
+	next_read = sched_ticks() + THERMAL_WATCH_TICKS;
 
-	/* One reading per turn of the loop. */
+	/* One reading or one change of the boost per turn of the loop. */
 	for (;;) {
-		/* Sleeps one period, or until told to stop. */
+		/* Sleeps until the next reading, unless the stop or a boost is asked for. */
 		irq = spin_lock_irqsave(&thermal->lock);
 
-		if (!thermal->stopping) {
+		if (!thermal->stopping && !thermal->boost_wanted) {
 			sequence = waitq_sequence(&thermal->waitq);
-			(void)waitq_sleep(&thermal->waitq, &thermal->lock, sequence, sched_ticks() + THERMAL_WATCH_TICKS, 0U);
+			(void)waitq_sleep(&thermal->waitq, &thermal->lock, sequence, next_read, 0U);
 		}
 
 		/* Notes whether the stop came. */
 		stopping = thermal->stopping;
+		now = sched_ticks();
+
+		/*
+		 * Decides the boost: raised when work asked for it, lowered a
+		 * second after the last work.  boosted changes here, before the
+		 * messages, so work that comes while the clock is being lowered
+		 * asks for the boost again.
+		 */
+		raising = false;
+		lowering = false;
+		if (thermal->boost_wanted) {
+			thermal->boost_wanted = false;
+			thermal->boosted = true;
+			thermal->boosts++;
+			raising = true;
+		} else if (thermal->boosted && now - thermal->busy_ticks >= THERMAL_BOOST_IDLE_TICKS) {
+			thermal->boosted = false;
+			lowering = true;
+		}
 
 		spin_unlock_irqrestore(&thermal->lock, irq);
 
@@ -1598,8 +2000,19 @@ power_watch(
 		if (stopping)
 			break;
 
-		/* Reads and checks. */
-		power_read(device);
+		/* Raises the clock, and reads soon after so the readings show it; or lowers it. */
+		if (raising) {
+			(void)power_boost(device, true);
+			next_read = now + THERMAL_BOOST_READ_TICKS;
+		} else if (lowering) {
+			(void)power_boost(device, false);
+		}
+
+		/* Reads and checks once the reading is due. */
+		if (now >= next_read) {
+			power_read(device);
+			next_read = now + THERMAL_WATCH_TICKS;
+		}
 	}
 
 	/* Tells the stop that the thread no longer reads the block. */

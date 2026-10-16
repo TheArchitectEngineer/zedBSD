@@ -292,6 +292,10 @@
 #define MODESET_DARK_US			300000U
 #define MODESET_HOLD_US			3000000U
 
+/* Two refreshes within half a hertz are the same one; the bytes of a pixel of the surface. */
+#define MODESET_SAME_REFRESH_MILLIHZ	500U
+#define MODESET_PIXEL_BYTES		4U
+
 /* What a mode set works with: the output's mode word and the timing generator, plane and pixel processor. */
 struct modeset_pipe {
 	uint32_t mode;
@@ -338,6 +342,7 @@ static const struct modeset_range {
 
 static int modeset_pipe(struct amdrdna_device *device, struct modeset_pipe *pipe);
 static int modeset_input(struct amdrdna_device *device, const struct amdrdna_timing *timing, struct amdrdna_mode_plan_input *input);
+static void modeset_listed(const struct amdrdna_sink *sink, struct amdrdna_timing *timing);
 static bool modeset_good(const struct modeset_check *check);
 static int modeset_bios_clock(struct amdrdna_device *device, uint32_t pll, uint32_t clock, uint32_t *khz);
 static uint32_t modeset_divider(uint32_t id);
@@ -553,71 +558,19 @@ amdrdna_timing_crc_window(
 	modeset_write(device, AMDRDNA_DCN_TIMING_CRC_WINDOW_B_Y, timing, down);
 }
 
-/* Tells whether a look at the picture was good: 30 frames at least and no underflow. */
-static bool
-modeset_good(
-	const struct modeset_check *check)
-{
-	/* Too few frames, or an underflow of the plane or the timing generator. */
-	if (check->frames < MODESET_GOOD_FRAMES)
-		return false;
-	if (check->underflow != 0U)
-		return false;
-	if (check->timing_underflow != 0U)
-		return false;
-
-	/* Succeeded: the picture went on without underflow. */
-	return true;
-}
-
 /*
- * Finds the pipe the firmware lit and its output's mode: a TMDS output
- * stage A10 read the path of.  Returns 0, ENOENT or ENOTSUP.
- */
-static int
-modeset_pipe(
-	struct amdrdna_device *device,
-	struct modeset_pipe *pipe)
-{
-	/* Stage A10's path of a lit output. */
-	pipe->sink = amdrdna_sink_ready(device);
-	if (pipe->sink == NULL || !device->gop.has_output) {
-		amdrdna_mark("A12 fail: no output path (stage A10 first)");
-		return ENOENT;
-	}
-
-	/* A TMDS output. */
-	if (device->gop.output_kind == AMDRDNA_OUTPUT_DVI) {
-		pipe->mode = MODESET_MODE_DVI;
-	} else if (device->gop.output_kind == AMDRDNA_OUTPUT_HDMI) {
-		pipe->mode = MODESET_MODE_HDMI;
-	} else {
-		amdrdna_mark("A12 note: output kind %u is not TMDS", device->gop.output_kind);
-		return ENOTSUP;
-	}
-
-	/* The timing generator, the plane and its pixel processor (the plane's number). */
-	pipe->timing = device->gop.timing;
-	pipe->plane = device->gop.plane;
-	pipe->pixel = device->gop.plane;
-
-	/* Succeeded: the pipe is known. */
-	return 0;
-}
-
-/*
- * Gives the plan's input for a timing at the clocks the board runs: the
- * hub's reference (the crystal over the hub timer's divider), the display
- * and pipe clocks (the display clock generator's VCO over each one's
+ * Gives the clocks the board runs to a display plan's input: the hub's
+ * reference (the crystal over the hub timer's divider), the display and
+ * pipe clocks (the display clock generator's VCO over each one's
  * divider), the data return clock and the memory clock (the video BIOS's
  * clock routine, which reads them from the power controller's PLLs), the
- * fabric and the memory's transfers from the memory clock.  Returns 0, or
- * the clock routine's error.
+ * fabric and the memory's transfers from the memory clock.  The timing
+ * and the pitch are left as they are.  Returns 0, or the clock routine's
+ * error.
  */
-static int
-modeset_input(
+int
+amdrdna_mode_clocks(
 	struct amdrdna_device *device,
-	const struct amdrdna_timing *timing,
 	struct amdrdna_mode_plan_input *input)
 {
 	uint32_t word;
@@ -628,17 +581,6 @@ modeset_input(
 	uint32_t fabric_mhz;
 	uint32_t crystal_khz;
 	int error;
-
-	/* The mode and the surface (the plane's pitch word counts one less). */
-	*input = (struct amdrdna_mode_plan_input){ 0 };
-	input->h_total = (uint32_t)timing->width + timing->h_blanking;
-	input->width = timing->width;
-	input->h_front = timing->h_porch;
-	input->v_total = (uint32_t)timing->height + timing->v_blanking;
-	input->height = timing->height;
-	input->v_front = timing->v_porch;
-	input->pixel_khz = timing->pixel_khz;
-	input->pitch = device->gop.pitch_word + 1U;
 
 	/* The hub's reference: the crystal, halved when the hub timer divides it by 2. */
 	crystal_khz = device->vbios_info.display_reference_10khz * 10U;
@@ -678,8 +620,327 @@ modeset_input(
 	input->fabric_khz = fabric_mhz * 1000U;
 	input->memory_mts = memory_khz * MODESET_TRANSFERS / 1000U;
 
+	/* Succeeded: the clocks are in. */
+	return 0;
+}
+
+/*
+ * Gives a timing and a surface's pitch in pixels to a display plan's
+ * input (the clocks are left as they are).
+ */
+void
+amdrdna_mode_timing_input(
+	const struct amdrdna_timing *timing,
+	uint32_t pitch,
+	struct amdrdna_mode_plan_input *input)
+{
+	/* The totals, the active area, the front porches and the pixel clock. */
+	input->h_total = (uint32_t)timing->width + timing->h_blanking;
+	input->width = timing->width;
+	input->h_front = timing->h_porch;
+	input->v_total = (uint32_t)timing->height + timing->v_blanking;
+	input->height = timing->height;
+	input->v_front = timing->v_porch;
+	input->pixel_khz = timing->pixel_khz;
+
+	/* The surface. */
+	input->pitch = pitch;
+}
+
+/*
+ * Reports the mode the display shows: the firmware's, read from the
+ * timing generator at the first call (a mode the monitor lists with the
+ * same totals gives its exact pixel clock), or the last one set.  The
+ * caller holds the display's mode lock.
+ *
+ * Returns 0; ENOENT before stage A10 read the output's path; ENOTSUP for
+ * an output that is not TMDS.
+ */
+int
+amdrdna_mode_current(
+	struct amdrdna_device *device,
+	struct amdrdna_timing *timing)
+{
+	struct amdrdna_display *display;
+	struct modeset_pipe pipe;
+	int error;
+
+	/* The lit TMDS output. */
+	display = &device->display;
+	error = modeset_pipe(device, &pipe);
+	if (error != 0)
+		return error;
+
+	/* The firmware's mode, once: the timing generator's words, the listed pixel clock. */
+	if (!display->mode_known) {
+		modeset_timing_now(device, &pipe, &display->firmware_mode);
+		modeset_listed(pipe.sink, &display->firmware_mode);
+		display->mode = display->firmware_mode;
+		display->mode_known = true;
+	}
+
+	/* Succeeded: the mode shown now. */
+	*timing = display->mode;
+	return 0;
+}
+
+/*
+ * Sets a mode on the firmware's TMDS output by the whole sequence (the
+ * picture dark for a third of a second) and makes it the display's mode;
+ * the surface, its rows and the frames stay.  The caller holds the node's
+ * display lock when the node exists, and the display's mode lock.
+ *
+ * Returns 0; ENOENT or ENOTSUP as amdrdna_mode_current() does; ERANGE for
+ * a mode larger than the frames or one the plan refuses at the board's
+ * clocks; EIO when the picture stops or underflows after the set; or the
+ * error of a video BIOS routine.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/display/dc/hwss/dcn20/dcn20_hwseq.c
+ * (dcn20_enable_stream_timing, dcn20_program_pipe) and
+ * display/dc/link/link_dpms.c (the stream's off and on).
+ */
+int
+amdrdna_mode_set(
+	struct amdrdna_device *device,
+	const struct amdrdna_timing *timing)
+{
+	struct amdrdna_display *display;
+	struct amdrdna_timing now;
+	struct amdrdna_mode_plan_input input;
+	struct amdrdna_mode_plan plan;
+	struct modeset_check check;
+	struct modeset_pipe pipe;
+	bool good;
+	int error;
+
+	/* The mode shown now, and the output. */
+	display = &device->display;
+	error = amdrdna_mode_current(device, &now);
+	if (error != 0)
+		return error;
+	error = modeset_pipe(device, &pipe);
+	if (error != 0)
+		return error;
+
+	/* A mode the frames hold: its rows in the stride, its lines in a frame. */
+	if ((uint64_t)timing->width * MODESET_PIXEL_BYTES > display->stride ||
+	    (uint64_t)display->stride * timing->height > display->frame_bytes) {
+		amdrdna_mark("mode set refused: %ux%u is larger than the frames", timing->width, timing->height);
+		return ERANGE;
+	}
+
+	/* The plan at the board's clocks. */
+	error = modeset_input(device, timing, &input);
+	if (error != 0)
+		return error;
+	error = amdrdna_mode_plan(&input, &plan);
+	if (error != 0) {
+		amdrdna_mark("mode set refused: the plan refuses %ux%u at %ukHz (%d)", timing->width, timing->height,
+		    (unsigned)timing->pixel_khz, error);
+		return ERANGE;
+	}
+
+	/* The whole sequence, then a look at the picture. */
+	error = modeset_switch(device, &pipe, timing, &plan, input.reference_khz);
+	modeset_look(device, &pipe, timing, MODESET_GOOD_FRAMES, &check);
+
+	/* The timing generator runs the new mode whatever happened; the output is lit. */
+	display->mode = *timing;
+	display->width = timing->width;
+	display->height = timing->height;
+	display->refresh_millihz = timing->refresh_millihz;
+	display->output_dark = false;
+
+	/* Reports a routine that failed, or a picture that stopped. */
+	if (error != 0) {
+		amdrdna_mark("mode set fail: %ux%u, a routine failed (%d)", timing->width, timing->height, error);
+		return error;
+	}
+	good = modeset_good(&check);
+	if (!good) {
+		amdrdna_mark("mode set fail: %ux%u frames=%u underflow=%u/%u", timing->width, timing->height, (unsigned)check.frames,
+		    (unsigned)check.underflow, (unsigned)check.timing_underflow);
+		return EIO;
+	}
+
+	/* Says how it went. */
+	amdrdna_mark("mode set ok %ux%u@%u.%03u pclk=%ukHz (was %ux%u) start=%u frames=%u underflow=0 crc=%08x/%08x",
+	    timing->width,
+	    timing->height,
+	    (unsigned)(timing->refresh_millihz / 1000U),
+	    (unsigned)(timing->refresh_millihz % 1000U),
+	    (unsigned)timing->pixel_khz,
+	    now.width,
+	    now.height,
+	    (unsigned)plan.start_lines,
+	    (unsigned)check.frames,
+	    (unsigned)check.red_green,
+	    (unsigned)check.blue);
+
+	/* Succeeded: the mode is shown. */
+	return 0;
+}
+
+/*
+ * Turns the output off, the picture blanked and the transmitter off (the
+ * monitor went away), or on again in the mode shown, the encoder's stream
+ * set up, the transmitter on and the picture back.  The timing generator
+ * runs on either way, so frames and their events go on.  The caller holds
+ * the display's mode lock.
+ *
+ * Returns 0; ENOENT or ENOTSUP as amdrdna_mode_current() does; or the
+ * error of a video BIOS routine.
+ */
+int
+amdrdna_mode_output(
+	struct amdrdna_device *device,
+	bool on)
+{
+	struct amdrdna_timing now;
+	struct modeset_pipe pipe;
+	uint32_t pixel_10khz;
+	int error;
+
+	/* The mode shown, and the output. */
+	error = amdrdna_mode_current(device, &now);
+	if (error != 0)
+		return error;
+	error = modeset_pipe(device, &pipe);
+	if (error != 0)
+		return error;
+	pixel_10khz = (now.pixel_khz + 5U) / 10U;
+
+	/* Off: the picture blanked, the transmitter off; the output counts as dark whatever the routine said. */
+	if (!on) {
+		modeset_blank(device, &pipe, true);
+		error = modeset_output(device, &pipe, MODESET_TRANSMITTER_OFF, pixel_10khz);
+		device->display.output_dark = true;
+		if (error != 0)
+			return error;
+		return 0;
+	}
+
+	/* On: the stream and the transmitter, two frames for the monitor to lock, then the picture. */
+	error = modeset_output(device, &pipe, MODESET_TRANSMITTER_ON, pixel_10khz);
+	(void)modeset_frames(device, &pipe, 2U);
+	modeset_blank(device, &pipe, false);
+	if (error != 0)
+		return error;
+	device->display.output_dark = false;
+
+	/* Succeeded: the output is lit again. */
+	return 0;
+}
+
+/* Tells whether a look at the picture was good: 30 frames at least and no underflow. */
+static bool
+modeset_good(
+	const struct modeset_check *check)
+{
+	/* Too few frames, or an underflow of the plane or the timing generator. */
+	if (check->frames < MODESET_GOOD_FRAMES)
+		return false;
+	if (check->underflow != 0U)
+		return false;
+	if (check->timing_underflow != 0U)
+		return false;
+
+	/* Succeeded: the picture went on without underflow. */
+	return true;
+}
+
+/*
+ * Finds the pipe the firmware lit and its output's mode: a TMDS output
+ * stage A10 read the path of.  Returns 0, ENOENT or ENOTSUP.
+ */
+static int
+modeset_pipe(
+	struct amdrdna_device *device,
+	struct modeset_pipe *pipe)
+{
+	/* Stage A10's path of a lit output. */
+	pipe->sink = amdrdna_sink_ready(device);
+	if (pipe->sink == NULL || !device->gop.has_output) {
+		amdrdna_mark("mode set fail: no output path (stage A10 first)");
+		return ENOENT;
+	}
+
+	/* A TMDS output. */
+	if (device->gop.output_kind == AMDRDNA_OUTPUT_DVI) {
+		pipe->mode = MODESET_MODE_DVI;
+	} else if (device->gop.output_kind == AMDRDNA_OUTPUT_HDMI) {
+		pipe->mode = MODESET_MODE_HDMI;
+	} else {
+		amdrdna_mark("mode set note: output kind %u is not TMDS", device->gop.output_kind);
+		return ENOTSUP;
+	}
+
+	/* The timing generator, the plane and its pixel processor (the plane's number). */
+	pipe->timing = device->gop.timing;
+	pipe->plane = device->gop.plane;
+	pipe->pixel = device->gop.plane;
+
+	/* Succeeded: the pipe is known. */
+	return 0;
+}
+
+/*
+ * Gives the plan's input for a timing on the firmware's surface (its
+ * pitch) at the clocks the board runs.  Returns 0, or the clock routine's
+ * error.
+ */
+static int
+modeset_input(
+	struct amdrdna_device *device,
+	const struct amdrdna_timing *timing,
+	struct amdrdna_mode_plan_input *input)
+{
+	int error;
+
+	/* The mode and the surface (the plane's pitch word counts one less). */
+	*input = (struct amdrdna_mode_plan_input){ 0 };
+	amdrdna_mode_timing_input(timing, device->gop.pitch_word + 1U, input);
+
+	/* The clocks. */
+	error = amdrdna_mode_clocks(device, input);
+	if (error != 0)
+		return error;
+
 	/* Succeeded: the input is complete. */
 	return 0;
+}
+
+/*
+ * Takes the pixel clock and the refresh of a mode the monitor lists with
+ * the same active area, blanks and refresh (within half a hertz), which
+ * are exact where the measured ones are rounded.
+ */
+static void
+modeset_listed(
+	const struct amdrdna_sink *sink,
+	struct amdrdna_timing *timing)
+{
+	const struct amdrdna_timing *mode;
+	unsigned at;
+
+	/* Each listed mode, until one is the same. */
+	for (at = 0U; at < sink->edid.mode_count; at++) {
+		mode = &sink->edid.modes[at];
+		if (mode->pixel_khz == 0U || mode->interlaced)
+			continue;
+		if (mode->width != timing->width || mode->height != timing->height)
+			continue;
+		if (mode->h_blanking != timing->h_blanking || mode->v_blanking != timing->v_blanking)
+			continue;
+		if (mode->refresh_millihz + MODESET_SAME_REFRESH_MILLIHZ < timing->refresh_millihz)
+			continue;
+		if (mode->refresh_millihz > timing->refresh_millihz + MODESET_SAME_REFRESH_MILLIHZ)
+			continue;
+		timing->pixel_khz = mode->pixel_khz;
+		timing->refresh_millihz = mode->refresh_millihz;
+		return;
+	}
 }
 
 /*
@@ -878,6 +1139,7 @@ modeset_switch(
 	uint32_t words[AMDRDNA_COMMAND_WORDS];
 	uint32_t word;
 	uint32_t pixel_10khz;
+	unsigned long irq;
 	unsigned waited;
 	int error;
 	int step;
@@ -927,6 +1189,13 @@ modeset_switch(
 	modeset_plane(device, pipe, plan);
 	modeset_marks(device, plan, reference_khz);
 	modeset_sync(device, pipe, timing, plan);
+
+	/* The timing generator's frame counter starts again: the refresh count takes its next reading as a new base. */
+	irq = spin_lock_irqsave(&device->display.lock);
+
+	device->display.frame_valid = false;
+
+	spin_unlock_irqrestore(&device->display.lock, irq);
 
 	/* The timing generator started: its vertical generator first, then the master enable. */
 	word = modeset_read(device, AMDRDNA_DCN_VERTICAL_GENERATOR, pipe->timing);
@@ -1253,7 +1522,7 @@ modeset_routine(
 	/* The routine on the board's registers. */
 	error = amdrdna_bios_run(device, routine, words, AMDRDNA_COMMAND_WORDS, &steps);
 	if (error != 0) {
-		amdrdna_mark("A12 note: the %s routine failed (%d)", what, error);
+		amdrdna_mark("mode set note: the %s routine failed (%d)", what, error);
 		return error;
 	}
 
