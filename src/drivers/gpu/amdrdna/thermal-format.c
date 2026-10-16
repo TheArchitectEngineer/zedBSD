@@ -6,13 +6,16 @@
  */
 
 /*
- * The words of the GPU's thermal block: the temperature it reads, the fan
- * controller's duty and mode, the fan's speed from its tachometer, and the
- * thresholds of the thermal alerts.
+ * The words of the GPU's thermal block and the tables of its power side:
+ * the temperature the block reads, the fan controller's duty and mode, the
+ * fan's speed from its tachometer, the thresholds of the thermal alerts,
+ * the board's power table the system-management unit's firmware is handed,
+ * and the readings it hands back.
  *
- * Nothing here touches the hardware: every function turns words read from
- * the block into numbers, or numbers into words to write, so the same code
- * runs in the kernel and in the host tests.
+ * Nothing here touches the hardware: every function turns words or tables
+ * read from the GPU, the video BIOS or a firmware file into numbers, or
+ * numbers into words and tables to write, so the same code runs in the
+ * kernel and in the host tests.
  */
 
 #include <stdbool.h>
@@ -105,6 +108,95 @@
 #define FORMAT_ALERT_CREDITS_MASK		0xe0000000U
 #define FORMAT_ALERT_CREDITS			0xa0000000U
 #define FORMAT_ALERT_CLEAR_ALL			0x00000038U
+
+/*
+ * The board's power table in the video BIOS (and in the firmware file):
+ * its whole length, where the kind of thermal controller and the shutdown
+ * temperature are, and where the part the unit's firmware takes starts.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/pm/swsmu/inc/smu_v11_0_pptable.h
+ * (struct smu_11_0_powerplay_table, packed: thermal_controller_type,
+ * software_shutdown_temp, smc_pptable, and its size).
+ */
+#define FORMAT_POWER_BYTES			1674U
+#define FORMAT_POWER_CONTROLLER_AT		21U
+#define FORMAT_POWER_SHUTDOWN_AT		32U
+#define FORMAT_POWER_UNIT_PART_AT		482U
+
+/*
+ * The table the unit's firmware takes: the features it is to run (two
+ * words), the edge, hotspot and memory limits in degrees Celsius, and the
+ * board's part (from the I2C controllers through the board's reserved
+ * words), which the board table replaces.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/pm/swsmu/inc/pmfw_if/smu11_driver_if_navi10.h
+ * (PPTable_t, packed: FeaturesToRun, TedgeLimit, ThotspotLimit, TmemLimit,
+ * I2cControllers through BoardReserved).
+ */
+#define FORMAT_UNIT_FEATURES_AT			4U
+#define FORMAT_UNIT_EDGE_AT			52U
+#define FORMAT_UNIT_HOTSPOT_AT			54U
+#define FORMAT_UNIT_MEMORY_AT			56U
+#define FORMAT_UNIT_BOARD_AT			964U
+#define FORMAT_UNIT_BOARD_BYTES			196U
+
+/*
+ * The board table in the video BIOS: the one layout Navi 10 and Navi 14
+ * use (format 4, content 5), its length, and where its board part starts
+ * (right after the common header).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/atomfirmware.h
+ * (struct atom_smc_dpm_info_v4_5: I2cControllers, and its size) and
+ * drivers/gpu/drm/amd/pm/swsmu/smu11/navi10_ppt.c
+ * (navi10_append_powerplay_table: format 4, content 5).
+ */
+#define FORMAT_BOARD_FORMAT			4U
+#define FORMAT_BOARD_CONTENT			5U
+#define FORMAT_BOARD_BYTES			200U
+#define FORMAT_BOARD_PART_AT			4U
+
+/*
+ * The firmware file of the system-management unit: the header's layout
+ * version, and after the common header and the program's start address,
+ * either one power table (layout 2.0: its offset and size) or a list of
+ * them (layout 2.1: the count and the list's offset; each entry is an ID,
+ * an offset and a size).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/amdgpu_ucode.h
+ * (struct common_firmware_header, struct smc_firmware_header_v2_0,
+ * struct smc_firmware_header_v2_1, struct smc_soft_pptable_entry).
+ */
+#define FORMAT_FILE_MAJOR_AT			8U
+#define FORMAT_FILE_MINOR_AT			10U
+#define FORMAT_FILE_TABLES_MAJOR		2U
+#define FORMAT_FILE_ONE_TABLE			0U
+#define FORMAT_FILE_TABLE_LIST			1U
+#define FORMAT_FILE_FIRST_AT			36U
+#define FORMAT_FILE_SECOND_AT			40U
+#define FORMAT_FILE_HEADER_BYTES		44U
+#define FORMAT_ENTRY_IDENTITY_AT		0U
+#define FORMAT_ENTRY_OFFSET_AT			4U
+#define FORMAT_ENTRY_BYTES_AT			8U
+#define FORMAT_ENTRY_BYTES			12U
+
+/*
+ * The readings the unit's firmware hands back: the edge, hotspot and
+ * memory temperatures (degrees Celsius) and the fan's speed (turns per
+ * minute).  The older layout of the table puts them at the same places.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/pm/swsmu/inc/pmfw_if/smu11_driver_if_navi10.h
+ * (SmuMetrics_t and SmuMetrics_legacy_t: TemperatureEdge,
+ * TemperatureHotspot, TemperatureMem, CurrFanSpeed).
+ */
+#define FORMAT_READING_EDGE_AT			34U
+#define FORMAT_READING_HOTSPOT_AT		36U
+#define FORMAT_READING_MEMORY_AT		38U
+#define FORMAT_READING_FAN_AT			62U
 
 /*
  * Reads the temperature word: the reading the trip compares (the one the
@@ -310,4 +402,202 @@ amdrdna_alert_clear_word(void)
 {
 	/* The three clear bits. */
 	return FORMAT_ALERT_CLEAR_ALL;
+}
+
+/*
+ * Finds the board's power table a firmware file of the system-management
+ * unit carries in place of the video BIOS's.  Layout 2.0 carries one
+ * table, whatever the ID; layout 2.1 carries a list, and the entry with
+ * the ID is taken.
+ *
+ * Returns 0 with the table's offset and size in the file, ENOENT when the
+ * file carries no table (an older layout) or none with the ID, or EINVAL
+ * for a file whose header or list does not lie inside it, or whose table
+ * would run past its end.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/pm/swsmu/smu11/smu_v11_0.c
+ * (smu_v11_0_setup_pptable, smu_v11_0_set_pptable_v2_0,
+ * smu_v11_0_set_pptable_v2_1).
+ */
+int
+amdrdna_power_table_in_firmware(
+	const uint8_t *file,
+	size_t length,
+	uint32_t identity,
+	size_t *offset,
+	size_t *bytes)
+{
+	uint16_t major;
+	uint16_t minor;
+	uint32_t count;
+	uint32_t list;
+	uint32_t index;
+	size_t entry;
+	uint32_t entry_identity;
+	uint32_t found_offset;
+	uint32_t found_bytes;
+	bool found;
+
+	/* A file shorter than the header with the tables carries none. */
+	if (length < FORMAT_FILE_HEADER_BYTES)
+		return EINVAL;
+
+	/* Only layout 2 carries tables. */
+	major = amdrdna_le16(file, FORMAT_FILE_MAJOR_AT);
+	minor = amdrdna_le16(file, FORMAT_FILE_MINOR_AT);
+	if (major != FORMAT_FILE_TABLES_MAJOR)
+		return ENOENT;
+
+	/* Takes the one table of layout 2.0, or the list's entry with the ID. */
+	found = false;
+	found_offset = 0U;
+	found_bytes = 0U;
+	if (minor == FORMAT_FILE_ONE_TABLE) {
+		/* The one table, whatever the ID asked for. */
+		found_offset = amdrdna_le32(file, FORMAT_FILE_FIRST_AT);
+		found_bytes = amdrdna_le32(file, FORMAT_FILE_SECOND_AT);
+		found = true;
+	} else if (minor == FORMAT_FILE_TABLE_LIST) {
+		/* The list must lie inside the file. */
+		count = amdrdna_le32(file, FORMAT_FILE_FIRST_AT);
+		list = amdrdna_le32(file, FORMAT_FILE_SECOND_AT);
+		if ((uint64_t)list + (uint64_t)count * FORMAT_ENTRY_BYTES > length)
+			return EINVAL;
+
+		/* Looks for the entry with the ID. */
+		for (index = 0U; index < count; index++) {
+			/* Stops at the first entry with the ID. */
+			entry = (size_t)list + (size_t)index * FORMAT_ENTRY_BYTES;
+			entry_identity = amdrdna_le32(file, entry + FORMAT_ENTRY_IDENTITY_AT);
+			if (entry_identity == identity) {
+				found_offset = amdrdna_le32(file, entry + FORMAT_ENTRY_OFFSET_AT);
+				found_bytes = amdrdna_le32(file, entry + FORMAT_ENTRY_BYTES_AT);
+				found = true;
+				break;
+			}
+		}
+	} else {
+		/* A layout 2 the driver does not know. */
+		return EINVAL;
+	}
+
+	/* No entry has the ID. */
+	if (!found)
+		return ENOENT;
+
+	/* The table must lie inside the file. */
+	if ((uint64_t)found_offset + (uint64_t)found_bytes > length)
+		return EINVAL;
+
+	/* Succeeded: the table lies at the offset. */
+	*offset = found_offset;
+	*bytes = found_bytes;
+	return 0;
+}
+
+/*
+ * Puts together the table the unit's firmware takes: the firmware's part
+ * of the board's power table (from the video BIOS or the firmware file),
+ * with its board part replaced by the video BIOS's board table, and reads
+ * the temperature limits it carries.
+ *
+ * Returns 0 with the table (AMDRDNA_SMU_POWER_TABLE_BYTES bytes) and the
+ * limits, or EINVAL when the power table is too short or the board table
+ * is missing, too short or of a layout the driver does not know.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/pm/swsmu/smu11/navi10_ppt.c
+ * (navi10_setup_pptable, navi10_store_powerplay_table,
+ * navi10_append_powerplay_table: the board part is copied through the
+ * board's reserved words, and navi10_get_thermal_temperature_range).
+ */
+int
+amdrdna_power_table_build(
+	const uint8_t *power,
+	size_t power_bytes,
+	const uint8_t *board,
+	size_t board_bytes,
+	unsigned board_format,
+	unsigned board_content,
+	uint8_t *table,
+	struct amdrdna_power_limits *limits)
+{
+	size_t at;
+
+	/* The power table must hold the firmware's whole part. */
+	if (power_bytes < FORMAT_POWER_BYTES)
+		return EINVAL;
+
+	/* The board table must be the one layout Navi 10 uses, whole. */
+	if (board == NULL)
+		return EINVAL;
+	if (board_format != FORMAT_BOARD_FORMAT)
+		return EINVAL;
+	if (board_content != FORMAT_BOARD_CONTENT)
+		return EINVAL;
+	if (board_bytes < FORMAT_BOARD_BYTES)
+		return EINVAL;
+
+	/* Copies the firmware's part of the power table. */
+	for (at = 0U; at < AMDRDNA_SMU_POWER_TABLE_BYTES; at++)
+		table[at] = power[FORMAT_POWER_UNIT_PART_AT + at];
+
+	/* Replaces its board part with the board table's. */
+	for (at = 0U; at < FORMAT_UNIT_BOARD_BYTES; at++)
+		table[FORMAT_UNIT_BOARD_AT + at] = board[FORMAT_BOARD_PART_AT + at];
+
+	/* Reads the limits the finished table and the power table's header carry. */
+	limits->edge = amdrdna_le16(table, FORMAT_UNIT_EDGE_AT);
+	limits->hotspot = amdrdna_le16(table, FORMAT_UNIT_HOTSPOT_AT);
+	limits->memory = amdrdna_le16(table, FORMAT_UNIT_MEMORY_AT);
+	limits->shutdown = amdrdna_le16(power, FORMAT_POWER_SHUTDOWN_AT);
+	limits->controller = power[FORMAT_POWER_CONTROLLER_AT];
+	limits->features_low = amdrdna_le32(table, FORMAT_UNIT_FEATURES_AT);
+	limits->features_high = amdrdna_le32(table, FORMAT_UNIT_FEATURES_AT + 4U);
+
+	/* Succeeded: the table is ready for the firmware. */
+	return 0;
+}
+
+/*
+ * Reads the temperatures and the fan's speed from a table of readings the
+ * unit's firmware handed back (AMDRDNA_SMU_READINGS_BYTES bytes).
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/pm/swsmu/smu11/navi10_ppt.c
+ * (navi1x_get_smu_metrics_data, navi10_get_smu_metrics_data,
+ * navi10_get_legacy_smu_metrics_data).
+ */
+void
+amdrdna_power_readings_read(
+	const uint8_t *readings,
+	struct amdrdna_power_readings *result)
+{
+	/* The three temperatures and the fan. */
+	result->edge = amdrdna_le16(readings, FORMAT_READING_EDGE_AT);
+	result->hotspot = amdrdna_le16(readings, FORMAT_READING_HOTSPOT_AT);
+	result->memory = amdrdna_le16(readings, FORMAT_READING_MEMORY_AT);
+	result->fan_speed = amdrdna_le16(readings, FORMAT_READING_FAN_AT);
+}
+
+/*
+ * Reports whether the feature mask the unit's firmware reported has all
+ * three features the driver asked for.
+ */
+bool
+amdrdna_power_features_on(
+	uint32_t low,
+	uint32_t high)
+{
+	/* The critical-temperature stop. */
+	if ((low & AMDRDNA_SMU_FEATURES_LOW) != AMDRDNA_SMU_FEATURES_LOW)
+		return false;
+
+	/* The fan and the thermal control. */
+	if ((high & AMDRDNA_SMU_FEATURES_HIGH) != AMDRDNA_SMU_FEATURES_HIGH)
+		return false;
+
+	/* Succeeded: all three run. */
+	return true;
 }

@@ -6,20 +6,28 @@
  */
 
 /*
- * Stage A4, the static tier: the system-management unit's mailbox, a fan
- * at a fixed duty, the temperature, and the driver's watch over both.
+ * Stage A4: the system-management unit's mailbox, the fan and the thermal
+ * control, the temperatures, and the driver's watch over them.
  *
  * Stage A3 had the security processor start the system-management unit's
  * firmware (PMFW).  This stage checks that it runs and asks its versions,
- * but enables none of its features: the fan controller of the thermal
- * block is set to a static duty (50 % by default), the thermal block's
- * alerts are sent to the interrupt ring (high at the board's shutdown
- * temperature), and a thread reads the temperature and the fan's speed
- * once a second.  Past the limit (95 degrees Celsius by default), on a
- * high alert or on the critical-temperature trip, the driver faults the
- * GPU: it marks the fault and the GPU takes no more work; the system keeps
- * running.  The firmware's own trip protects the GPU at the hardware
- * limit.
+ * and first drives the fan controller of the thermal block at a static
+ * duty (50 % by default), so the fan turns whatever happens next.  It
+ * then puts the board's power table together from the video BIOS, hands
+ * it to the firmware and asks the firmware to run three of its features:
+ * its own critical-temperature stop, the fan control and the thermal
+ * control (the full tier, mode F).  When the firmware will not, the
+ * features are switched off again and the static duty stays (the static
+ * tier, mode S).  In both tiers the thermal block's alerts are sent to the
+ * interrupt ring (high at the board's shutdown temperature), and a thread
+ * reads the temperatures and the fan's speed once a second: from the
+ * firmware's readings in the full tier, and from the thermal block always,
+ * so the two can be compared.  Past the limit (the board's edge limit, or
+ * 95 degrees Celsius without one), on a high alert, on the
+ * critical-temperature trip, or when the firmware stops answering, the
+ * driver faults the GPU: it marks the fault and the GPU takes no more
+ * work; the system keeps running.  The firmware's own trip protects the
+ * GPU at the hardware limit.
  *
  * The stage also checks that the interrupt ring delivers: it raises the
  * low alert's threshold above the temperature for a moment, which makes
@@ -31,7 +39,9 @@
 #include <stdint.h>
 
 #include <kern/clock.h>
+#include <kern/device-io.h>
 #include <kern/kcrt.h>
+#include <kern/kmem.h>
 #include <kern/lock.h>
 #include <kern/sched.h>
 #include <kern/thread.h>
@@ -43,15 +53,26 @@
 #include "drivers/gpu/amdrdna/amdrdna-regs.h"
 
 /*
- * The messages the stage sends (the unit's firmware version, the
- * driver-interface version it implements, and the preparation for its
- * unload), the interface version this driver was written against, and
+ * The messages the stage sends: the unit's firmware version, the
+ * driver-interface version it implements, the features it may run (low
+ * and high words), all of them on and off, some of them on (low and
+ * high), the features that run (low and high), where the table page is
+ * (high and low words), a table copied to the page and from it, the boot
+ * calibration, how many displays there are, and the preparation for its
+ * unload.  Then the interface version this driver was written against, and
  * the mailbox's answers (OK, failed, unknown message, a prerequisite
  * missing, busy).
  *
  * Values referenced: Linux v6.19
  * drivers/gpu/drm/amd/pm/swsmu/inc/pmfw_if/smu_v11_0_ppsmc.h
  * (PPSMC_MSG_GetSmuVersion, PPSMC_MSG_GetDriverIfVersion,
+ * PPSMC_MSG_SetAllowedFeaturesMaskLow, PPSMC_MSG_SetAllowedFeaturesMaskHigh,
+ * PPSMC_MSG_EnableAllSmuFeatures, PPSMC_MSG_DisableAllSmuFeatures,
+ * PPSMC_MSG_EnableSmuFeaturesLow, PPSMC_MSG_EnableSmuFeaturesHigh,
+ * PPSMC_MSG_GetEnabledSmuFeaturesLow, PPSMC_MSG_GetEnabledSmuFeaturesHigh,
+ * PPSMC_MSG_SetDriverDramAddrHigh, PPSMC_MSG_SetDriverDramAddrLow,
+ * PPSMC_MSG_TransferTableSmu2Dram, PPSMC_MSG_TransferTableDram2Smu,
+ * PPSMC_MSG_RunBtc, PPSMC_MSG_NumOfDisplays,
  * PPSMC_MSG_PrepareMp1ForUnload, PPSMC_Result_OK, PPSMC_Result_Failed,
  * PPSMC_Result_UnknownCmd, PPSMC_Result_CmdRejectedPrereq,
  * PPSMC_Result_CmdRejectedBusy) and
@@ -60,6 +81,20 @@
  */
 #define SMU_MESSAGE_VERSION		0x02U
 #define SMU_MESSAGE_INTERFACE		0x03U
+#define SMU_MESSAGE_PERMIT_LOW		0x04U
+#define SMU_MESSAGE_PERMIT_HIGH		0x05U
+#define SMU_MESSAGE_ALL_ON		0x06U
+#define SMU_MESSAGE_ALL_OFF		0x07U
+#define SMU_MESSAGE_SOME_ON_LOW		0x08U
+#define SMU_MESSAGE_SOME_ON_HIGH	0x09U
+#define SMU_MESSAGE_RUNNING_LOW		0x0cU
+#define SMU_MESSAGE_RUNNING_HIGH	0x0dU
+#define SMU_MESSAGE_PAGE_HIGH		0x0eU
+#define SMU_MESSAGE_PAGE_LOW		0x0fU
+#define SMU_MESSAGE_TABLE_TO_PAGE	0x12U
+#define SMU_MESSAGE_TABLE_FROM_PAGE	0x13U
+#define SMU_MESSAGE_CALIBRATE		0x3aU
+#define SMU_MESSAGE_DISPLAYS		0x40U
 #define SMU_MESSAGE_UNLOAD		0x32U
 #define SMU_INTERFACE_EXPECTED		0x37U
 #define SMU_ANSWER_OK			0x01U
@@ -67,6 +102,28 @@
 #define SMU_ANSWER_UNKNOWN		0xfeU
 #define SMU_ANSWER_PREREQUISITE		0xfdU
 #define SMU_ANSWER_BUSY			0xfcU
+
+/*
+ * The tables the page carries, by the ID a copy message names in its low
+ * 16 bits: the board's power table, and the firmware's readings.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/pm/swsmu/inc/pmfw_if/smu11_driver_if_navi10.h
+ * (TABLE_PPTABLE, TABLE_SMU_METRICS) and
+ * drivers/gpu/drm/amd/pm/swsmu/smu_cmn.c (smu_cmn_update_table: the
+ * argument is the table's ID with a parameter in the high 16 bits).
+ */
+#define SMU_TABLE_POWER			0U
+#define SMU_TABLE_READINGS		6U
+
+/*
+ * The table page: one page of VRAM, as large as the largest table and
+ * aligned to it.
+ */
+#define SMU_TABLE_PAGE_BYTES		4096U
+
+/* The largest firmware file of the unit the stage reads for a power table of its own. */
+#define SMU_FILE_LIMIT			(1024U * 1024U)
 
 /*
  * The waits: an answer polled each millisecond for 2 s (Linux polls each
@@ -97,6 +154,13 @@
 #define THERMAL_CHECK_ABOVE		20U
 #define THERMAL_HIGH_ABOVE_LIMIT	10U
 
+/*
+ * The watch's reading that is marked in the log with both sources side
+ * by side (about 10 s after the stage), for the comparison of the
+ * firmware's temperatures with the thermal block's.
+ */
+#define THERMAL_COMPARE_READING		10U
+
 /* How long the stop waits for the watch thread, and its step. */
 #define THERMAL_STOP_WAIT_US		2000000U
 #define THERMAL_STOP_STEP_US		10000U
@@ -104,6 +168,14 @@
 static int power_firmware_running(struct amdrdna_device *device);
 static int power_versions(struct amdrdna_device *device);
 static int power_fan(struct amdrdna_device *device);
+static int power_table_prepare(struct amdrdna_device *device, uint8_t *table);
+static int power_table_from_firmware(struct amdrdna_device *device, const uint8_t *board, size_t board_bytes, uint8_t *table);
+static int power_features(struct amdrdna_device *device, const uint8_t *table);
+static int power_features_ask(struct amdrdna_device *device);
+static int power_features_running(struct amdrdna_device *device, uint32_t *low, uint32_t *high);
+static void power_features_off(struct amdrdna_device *device);
+static int power_table_send(struct amdrdna_device *device, const uint8_t *table);
+static int power_readings_fetch(struct amdrdna_device *device, struct amdrdna_power_readings *readings);
 static void power_alerts(struct amdrdna_device *device);
 static bool power_interrupt_check(struct amdrdna_device *device);
 static void power_spin_up(struct amdrdna_device *device);
@@ -112,27 +184,40 @@ static void power_fault(struct amdrdna_device *device, const char *why);
 static int power_watch_start(struct amdrdna_device *device);
 static void power_watch(void *argument);
 static int smu_message(struct amdrdna_device *device, uint32_t message, uint32_t argument, uint32_t *answer);
+static int smu_message_held(struct amdrdna_device *device, uint32_t message, uint32_t argument, uint32_t *answer);
 static uint32_t smu_wait_answer(struct amdrdna_device *device);
 static uint32_t thermal_read(struct amdrdna_device *device, uint32_t offset);
 static void thermal_write(struct amdrdna_device *device, uint32_t offset, uint32_t value);
 
 /*
- * Runs stage A4 in its static tier: checks that the unit's firmware runs
- * and asks its versions, drives the fan at the static duty, sends the
- * thermal alerts to the interrupt ring and checks that one arrives, waits
- * for the fan to turn, reads the temperature, and starts the watch.
+ * Runs stage A4: checks that the unit's firmware runs and asks its
+ * versions, drives the fan at the static duty, then puts the board's power
+ * table together and asks the firmware to run its fan and thermal
+ * control (amdrdna.smu.features=0 leaves that out), falling back to the
+ * static duty when it will not; sends the thermal alerts to the interrupt
+ * ring and checks that one arrives, reads the temperatures and the fan,
+ * and starts the watch.
  *
  * Returns 0, ENODEV when the block table lacks the unit or the thermal
  * block, ETIMEDOUT when the unit's firmware does not run or does not
- * answer, or EINVAL when the fan controller cannot be driven.
+ * answer its versions, EINVAL when the fan controller cannot be driven, or
+ * ENOMEM.  A firmware that will not run its features is not a failure:
+ * the stage ends in the static tier.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/pm/swsmu/amdgpu_smu.c (smu_hw_init,
+ * smu_smc_hw_setup: the order of the steps).
  */
 int
 amdrdna_a4_power(
 	struct amdrdna_device *device)
 {
 	struct amdrdna_thermal *thermal;
+	uint8_t *table;
 	const char *path;
+	const char *tier;
 	uint32_t index;
+	unsigned wanted;
 	bool delivered;
 	int error;
 
@@ -159,17 +244,54 @@ amdrdna_a4_power(
 	if (error != 0)
 		return error;
 
-	/* Drives the fan at the static duty. */
+	/* Drives the fan at the static duty, so it turns whatever the firmware does next. */
 	error = power_fan(device);
 	if (error != 0)
 		return error;
+
+	/* Holds the board's power table while it is put together and handed over. */
+	table = kern_malloc(AMDRDNA_SMU_POWER_TABLE_BYTES);
+	if (table == NULL) {
+		amdrdna_mark("A4 fail: no memory for the power table");
+		return ENOMEM;
+	}
+
+	/* Puts the table together; its limits serve the static tier too. */
+	error = power_table_prepare(device, table);
+
+	/* Asks the firmware for its features when the table is ready and the boot line allows it. */
+	wanted = amdrdna_parameter_number("amdrdna.smu.features", 1U);
+	if (error != 0) {
+		/* The firmware is not asked without the board's table. */
+		amdrdna_mark("A4 note: no power table (%d), the fan stays at its static duty", error);
+	} else if (wanted == 0U) {
+		/* The boot line keeps the static tier. */
+		amdrdna_mark("A4 note: amdrdna.smu.features=0, the fan stays at its static duty");
+	} else {
+		/* Asks; on a refusal the features go off and the static duty comes back. */
+		error = power_features(device, table);
+		if (error != 0) {
+			power_features_off(device);
+			(void)power_fan(device);
+		}
+	}
+
+	/* The table has been handed over or given up. */
+	kern_free(table);
+
+	/* A firmware that stopped answering cannot protect the GPU. */
+	if (thermal->hung)
+		power_fault(device, "the smu firmware stopped answering");
 
 	/* Sends the alerts to the interrupt ring, and checks that one arrives. */
 	power_alerts(device);
 	delivered = power_interrupt_check(device);
 
-	/* Waits for the fan to turn, and reads the temperature and the fan. */
-	power_spin_up(device);
+	/* Waits for the static duty to turn the fan; the firmware may keep it still while cool. */
+	if (!thermal->features_on)
+		power_spin_up(device);
+
+	/* Reads the temperatures and the fan. */
 	power_read(device);
 
 	/* Starts the watch. */
@@ -184,34 +306,51 @@ amdrdna_a4_power(
 	if (delivered)
 		path = "thm";
 
-	/* Marks the result. */
-	amdrdna_mark("A4 ok if=0x%x smu=%u.%u.%u mode=S duty=%u%% fan=%urpm driven=%u%% temp=%uC max=%uC limit=%uC alert=%uC irq=%s",
+	/* Names the tier: F when the firmware runs the fan and the thermal control. */
+	tier = "S";
+	if (thermal->features_on)
+		tier = "F";
+
+	/* Marks the result, and the readings on a line of their own (one mark line holds 160 columns). */
+	amdrdna_mark("A4 ok if=0x%x smu=%u.%u.%u mode=%s features=0x%08x%08x limit=%uC alert=%uC irq=%s",
 	    (unsigned)thermal->interface_version,
 	    (unsigned)((thermal->smu_version >> 16) & 0xffU),
 	    (unsigned)((thermal->smu_version >> 8) & 0xffU),
 	    (unsigned)(thermal->smu_version & 0xffU),
-	    thermal->duty_percent,
-	    (unsigned)thermal->fan_speed,
-	    thermal->fan_driven,
-	    thermal->temperature,
-	    thermal->highest,
+	    tier,
+	    (unsigned)thermal->features_high,
+	    (unsigned)thermal->features_low,
 	    thermal->limit,
 	    thermal->high_alert,
 	    path);
+	amdrdna_mark("A4 readings duty=%u%% fan=%urpm tach=%urpm driven=%u%% temp=%uC hotspot=%uC mem=%uC thm=%uC max=%uC",
+	    thermal->duty_percent,
+	    (unsigned)thermal->fan_speed,
+	    (unsigned)thermal->tachometer_speed,
+	    thermal->fan_driven,
+	    thermal->temperature,
+	    thermal->hotspot,
+	    thermal->memory_temperature,
+	    thermal->sensor,
+	    thermal->highest);
 
-	/* Succeeded: the fan turns at its duty and the driver watches the temperature. */
+	/* Succeeded: the fan turns under the firmware or at its duty, and the driver watches the temperature. */
 	return 0;
 }
 
 /*
  * Undoes stage A4 for the shutdown: stops the watch thread, masks the
- * thermal alerts and the unit's software interrupt, and tells the unit's
- * firmware it is about to be unloaded.  The fan keeps its static duty;
- * the next post of the video BIOS sets it again.
+ * thermal alerts and the unit's software interrupt, switches the
+ * firmware's features off when they run (the fan goes back to the static
+ * duty), and tells the unit's firmware it is about to be unloaded.  The
+ * fan keeps its static duty; the next post of the video BIOS sets it
+ * again.
  *
  * Procedure referenced: Linux v6.19
  * drivers/gpu/drm/amd/pm/swsmu/smu11/smu_v11_0.c (smu_v11_0_set_irq_state,
- * the disable case) and navi10_ppt.c (PrepareMp1ForUnload).
+ * the disable case), drivers/gpu/drm/amd/pm/swsmu/amdgpu_smu.c
+ * (smu_disable_dpms: all features off) and navi10_ppt.c
+ * (PrepareMp1ForUnload).
  */
 void
 amdrdna_power_stop(
@@ -263,6 +402,12 @@ amdrdna_power_stop(
 		word |= AMDRDNA_SMU_SOFT_INTERRUPT_MASKED;
 		amdrdna_block_write(device, AMDRDNA_BLOCK_SMU, AMDRDNA_SMU_WINDOW_MAILBOX, AMDRDNA_SMU_REG_SOFT_INTERRUPT_CONTROL, word);
 		thermal->alerts_on = false;
+	}
+
+	/* Switches the firmware's features off, and drives the fan at the static duty until the next post. */
+	if (thermal->features_on) {
+		power_features_off(device);
+		(void)power_fan(device);
 	}
 
 	/* Tells the unit's firmware it is about to be unloaded. */
@@ -483,10 +628,498 @@ power_fan(
 }
 
 /*
- * Sends the thermal alerts to the interrupt ring: high at the board's
- * shutdown temperature from the video BIOS (or 10 degrees above the
- * driver's limit without one), low at 0; and lets the unit raise its
- * software interrupt.
+ * Puts the board's power table together for the unit's firmware: the
+ * table the firmware file carries when the video BIOS names one (its power
+ * table ID is not 0), otherwise the video BIOS's own; then the video
+ * BIOS's board table over its board part.  Records the limits it carries.
+ *
+ * Returns 0 with the table (AMDRDNA_SMU_POWER_TABLE_BYTES bytes), ENOENT
+ * when the video BIOS has no power table, or the error of reading the
+ * firmware file or of putting the table together.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/pm/swsmu/smu11/smu_v11_0.c (smu_v11_0_setup_pptable:
+ * the firmware file's table when the ID is not 0) and navi10_ppt.c
+ * (navi10_setup_pptable).
+ */
+static int
+power_table_prepare(
+	struct amdrdna_device *device,
+	uint8_t *table)
+{
+	struct amdrdna_thermal *thermal;
+	const struct amdrdna_vbios_info *info;
+	const uint8_t *board;
+	const uint8_t *power;
+	size_t board_bytes;
+	size_t power_bytes;
+	const char *source;
+	int error;
+
+	/* The power side's state and what the video BIOS image says. */
+	thermal = &device->thermal;
+	info = &device->vbios_info;
+
+	/* Without the image there is no table to start from. */
+	if (device->vbios == NULL)
+		return ENOENT;
+
+	/* The board table, when the image has one; stage A1v checked that it lies inside the image. */
+	board = NULL;
+	board_bytes = 0U;
+	if (info->board_table != 0U) {
+		board = device->vbios + info->board_table;
+		board_bytes = amdrdna_le16(device->vbios, info->board_table);
+	}
+
+	/* Takes the firmware file's table when the image names one, else the image's own. */
+	if (info->power_table_id != 0U) {
+		/* The firmware file of the unit carries the table with the ID. */
+		source = "firmware";
+		error = power_table_from_firmware(device, board, board_bytes, table);
+	} else if (info->power_table != 0U) {
+		/* The image's power table, which stage A1v checked lies inside the image. */
+		source = "vbios";
+		power = device->vbios + info->power_table;
+		power_bytes = amdrdna_le16(device->vbios, info->power_table);
+		error = amdrdna_power_table_build(
+			power,
+			power_bytes,
+			board,
+			board_bytes,
+			info->board_format,
+			info->board_content,
+			table,
+			&thermal->limits);
+	} else {
+		/* Neither names a table. */
+		return ENOENT;
+	}
+
+	/* Reports a table that could not be put together. */
+	if (error != 0) {
+		amdrdna_mark("A4 note: the power table from the %s not built (%d; board table %u.%u, %uB)",
+		    source,
+		    error,
+		    (unsigned)info->board_format,
+		    (unsigned)info->board_content,
+		    (unsigned)board_bytes);
+		return error;
+	}
+
+	/* The limits are valid from now on. */
+	thermal->table_built = true;
+	amdrdna_mark("A4 power table from the %s id=%u: edge %uC hotspot %uC mem %uC shutdown %uC controller %u features 0x%08x%08x",
+	    source,
+	    (unsigned)info->power_table_id,
+	    thermal->limits.edge,
+	    thermal->limits.hotspot,
+	    thermal->limits.memory,
+	    thermal->limits.shutdown,
+	    thermal->limits.controller,
+	    (unsigned)thermal->limits.features_high,
+	    (unsigned)thermal->limits.features_low);
+
+	/* Succeeded: the table is ready for the firmware. */
+	return 0;
+}
+
+/*
+ * Puts the board's power table together from the one the firmware file
+ * of the unit carries under the video BIOS's power table ID.
+ *
+ * Returns 0 with the table, or the error of reading the file, of finding
+ * the ID in it, or of putting the table together.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/pm/swsmu/smu11/smu_v11_0.c
+ * (smu_v11_0_set_pptable_v2_1).
+ */
+static int
+power_table_from_firmware(
+	struct amdrdna_device *device,
+	const uint8_t *board,
+	size_t board_bytes,
+	uint8_t *table)
+{
+	const struct amdrdna_vbios_info *info;
+	struct amdrdna_blob blob;
+	char name[32];
+	size_t offset;
+	size_t bytes;
+	int error;
+
+	/* What the video BIOS image says. */
+	info = &device->vbios_info;
+
+	/* Reads the unit's firmware file whole. */
+	(void)kern_snprintf(name, sizeof(name), "%s_smc.bin", device->chip);
+	error = amdrdna_firmware_read(name, SMU_FILE_LIMIT, &blob);
+	if (error != 0) {
+		amdrdna_mark("A4 note: firmware %s not read (%d)", name, error);
+		return error;
+	}
+
+	/* Finds the table with the ID. */
+	error = amdrdna_power_table_in_firmware(blob.data, blob.size, info->power_table_id, &offset, &bytes);
+	if (error != 0) {
+		amdrdna_firmware_free(&blob);
+		amdrdna_mark("A4 note: %s carries no power table %u (%d)", name, (unsigned)info->power_table_id, error);
+		return error;
+	}
+
+	/* Puts the table together from it and the board table. */
+	error = amdrdna_power_table_build(
+		blob.data + offset,
+		bytes,
+		board,
+		board_bytes,
+		info->board_format,
+		info->board_content,
+		table,
+		&device->thermal.limits);
+	amdrdna_firmware_free(&blob);
+
+	/* Reports a table that could not be put together. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the table is built from the file's. */
+	return 0;
+}
+
+/*
+ * Asks the unit's firmware to run its fan and thermal control, in the
+ * order Linux sets the unit up, without the steps only the clock
+ * management needs: no display yet, the table page's place, the board's
+ * power table, the boot calibration, the three features permitted, then
+ * every permitted feature on and what runs read back.  When the firmware
+ * refuses them all at once or leaves one off, the three are asked for one
+ * word at a time.
+ *
+ * Returns 0 with the features running (the fan is then the firmware's),
+ * the error of the step that failed, or EIO when the features do not run.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/pm/swsmu/amdgpu_smu.c (smu_smc_hw_setup),
+ * drivers/gpu/drm/amd/pm/swsmu/smu11/smu_v11_0.c
+ * (smu_v11_0_init_display_count, smu_v11_0_set_driver_table_location,
+ * smu_v11_0_set_allowed_mask, smu_v11_0_system_features_control),
+ * drivers/gpu/drm/amd/pm/swsmu/smu11/navi10_ppt.c (navi10_run_btc) and
+ * drivers/gpu/drm/amd/pm/swsmu/smu_cmn.c (smu_cmn_write_pptable,
+ * smu_cmn_get_enabled_mask).
+ */
+static int
+power_features(
+	struct amdrdna_device *device,
+	const uint8_t *table)
+{
+	struct amdrdna_thermal *thermal;
+	uint64_t address;
+	uint32_t low;
+	uint32_t high;
+	const char *how;
+	bool on;
+	int error;
+
+	/* The power side's state. */
+	thermal = &device->thermal;
+
+	/* No display is counted yet. */
+	error = smu_message(device, SMU_MESSAGE_DISPLAYS, 0U, NULL);
+	if (error != 0) {
+		amdrdna_mark("A4 features: the display count refused (%d)", error);
+		return error;
+	}
+
+	/* Takes the table page once, for the record's life. */
+	if (!thermal->table_taken) {
+		error = amdrdna_vram_take(device, true, SMU_TABLE_PAGE_BYTES, SMU_TABLE_PAGE_BYTES, &thermal->table_vram);
+		if (error != 0) {
+			amdrdna_mark("A4 features: no VRAM for the table page (%d)", error);
+			return error;
+		}
+
+		/* The page is the firmware's to read and write from now on. */
+		thermal->table_taken = true;
+	}
+
+	/* Tells the firmware where the page is, by its GPU address, the high word first. */
+	address = device->frame_buffer_base + thermal->table_vram;
+	error = smu_message(device, SMU_MESSAGE_PAGE_HIGH, (uint32_t)(address >> 32), NULL);
+	if (error == 0)
+		error = smu_message(device, SMU_MESSAGE_PAGE_LOW, (uint32_t)address, NULL);
+	if (error != 0) {
+		amdrdna_mark("A4 features: the table page at 0x%llx refused (%d)", (unsigned long long)address, error);
+		return error;
+	}
+
+	/* Hands over the board's power table. */
+	error = power_table_send(device, table);
+	if (error != 0) {
+		amdrdna_mark("A4 features: the power table refused (%d)", error);
+		return error;
+	}
+
+	/* Runs the boot calibration. */
+	error = smu_message(device, SMU_MESSAGE_CALIBRATE, 0U, NULL);
+	if (error != 0) {
+		amdrdna_mark("A4 features: the boot calibration refused (%d)", error);
+		return error;
+	}
+
+	/* Permits the three features, the high word first. */
+	error = smu_message(device, SMU_MESSAGE_PERMIT_HIGH, AMDRDNA_SMU_FEATURES_HIGH, NULL);
+	if (error == 0)
+		error = smu_message(device, SMU_MESSAGE_PERMIT_LOW, AMDRDNA_SMU_FEATURES_LOW, NULL);
+	if (error != 0) {
+		amdrdna_mark("A4 features: the permitted features refused (%d)", error);
+		return error;
+	}
+
+	/* Switches every permitted feature on, and reads back what runs. */
+	how = "all";
+	low = 0U;
+	high = 0U;
+	on = false;
+	error = smu_message(device, SMU_MESSAGE_ALL_ON, 0U, NULL);
+	if (error == 0)
+		error = power_features_running(device, &low, &high);
+	if (error == 0)
+		on = amdrdna_power_features_on(low, high);
+
+	/* Asks for the three one word at a time when that did not do, unless the firmware stopped answering. */
+	if (!on && !thermal->hung) {
+		amdrdna_mark("A4 features: all on gave 0x%08x%08x (%d), asking one word at a time", (unsigned)high, (unsigned)low, error);
+		how = "by word";
+		error = power_features_ask(device);
+		if (error == 0)
+			error = power_features_running(device, &low, &high);
+		if (error == 0)
+			on = amdrdna_power_features_on(low, high);
+	}
+
+	/* Records what the firmware said runs. */
+	thermal->features_low = low;
+	thermal->features_high = high;
+
+	/* Reports features that do not run. */
+	if (!on) {
+		amdrdna_mark("A4 features: not running, 0x%08x%08x (%d)", (unsigned)high, (unsigned)low, error);
+		return EIO;
+	}
+
+	/*
+	 * features_on hands the fan to the firmware: the watch takes the
+	 * temperatures and the fan from its readings, and the stop switches
+	 * the features off again.
+	 */
+	thermal->features_on = true;
+	thermal->mode = AMDRDNA_FAN_FIRMWARE;
+	thermal->duty_percent = 0U;
+	amdrdna_mark("A4 features %s on: 0x%08x%08x, fan mode word 0x%08x",
+	    how,
+	    (unsigned)high,
+	    (unsigned)low,
+	    (unsigned)thermal_read(device, AMDRDNA_THM_REG_FAN_MODE));
+
+	/* Succeeded: the firmware runs the fan and the thermal control. */
+	return 0;
+}
+
+/*
+ * Asks the unit's firmware to switch the three features on, the low word
+ * first, then the high word.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/pm/swsmu/smu_cmn.c
+ * (smu_cmn_feature_update_enable_state).
+ */
+static int
+power_features_ask(
+	struct amdrdna_device *device)
+{
+	int error;
+
+	/* The critical-temperature stop. */
+	error = smu_message(device, SMU_MESSAGE_SOME_ON_LOW, AMDRDNA_SMU_FEATURES_LOW, NULL);
+	if (error != 0)
+		return error;
+
+	/* The fan and the thermal control. */
+	error = smu_message(device, SMU_MESSAGE_SOME_ON_HIGH, AMDRDNA_SMU_FEATURES_HIGH, NULL);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the firmware took both words. */
+	return 0;
+}
+
+/*
+ * Reads the features the unit's firmware runs, the high word first.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/pm/swsmu/smu_cmn.c (smu_cmn_get_enabled_mask).
+ */
+static int
+power_features_running(
+	struct amdrdna_device *device,
+	uint32_t *low,
+	uint32_t *high)
+{
+	int error;
+
+	/* The high word. */
+	error = smu_message(device, SMU_MESSAGE_RUNNING_HIGH, 0U, high);
+	if (error != 0)
+		return error;
+
+	/* The low word. */
+	error = smu_message(device, SMU_MESSAGE_RUNNING_LOW, 0U, low);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: both words are read. */
+	return 0;
+}
+
+/*
+ * Switches every feature of the unit's firmware off; the fan and the
+ * thermal control are no longer the firmware's.  A firmware that stopped
+ * answering is not asked.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/pm/swsmu/smu11/smu_v11_0.c
+ * (smu_v11_0_system_features_control).
+ */
+static void
+power_features_off(
+	struct amdrdna_device *device)
+{
+	struct amdrdna_thermal *thermal;
+	int error;
+
+	/* The power side's state. */
+	thermal = &device->thermal;
+
+	/* Asks for all features off. */
+	error = smu_message(device, SMU_MESSAGE_ALL_OFF, 0U, NULL);
+
+	/* The features are not counted on from now on, whatever the answer. */
+	thermal->features_on = false;
+	amdrdna_mark("smu: all features off, answered %d", error);
+}
+
+/*
+ * Copies the board's power table into the table page and has the unit's
+ * firmware take it.  The copy and the message happen under the mailbox,
+ * which owns the page.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/pm/swsmu/smu_cmn.c (smu_cmn_update_table, the copy to
+ * the firmware: the table copied, the host path flushed, then the message
+ * with the table's ID).
+ */
+static int
+power_table_send(
+	struct amdrdna_device *device,
+	const uint8_t *table)
+{
+	struct amdrdna_thermal *thermal;
+	volatile uint8_t *page;
+	uint32_t word;
+	size_t at;
+	int error;
+
+	/* The page as the CPU sees it. */
+	thermal = &device->thermal;
+	page = amdrdna_vram_cpu(device, thermal->table_vram);
+
+	/* One user of the page and the mailbox at a time. */
+	mutex_lock(&thermal->mailbox);
+
+	/* Copies the table a word at a time. */
+	for (at = 0U; at < AMDRDNA_SMU_POWER_TABLE_BYTES; at += 4U) {
+		kern_memcpy(&word, table + at, sizeof(word));
+		kern_mmio_write32(page + at, word);
+	}
+
+	/* Makes it visible to the firmware. */
+	amdrdna_host_path_flush(device);
+
+	/* Has the firmware take it. */
+	error = smu_message_held(device, SMU_MESSAGE_TABLE_FROM_PAGE, SMU_TABLE_POWER, NULL);
+
+	mutex_unlock(&thermal->mailbox);
+
+	/* Reports a table the firmware did not take. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the firmware has the table. */
+	return 0;
+}
+
+/*
+ * Has the unit's firmware write its readings into the table page and reads
+ * the temperatures and the fan's speed from them.  The message and the
+ * copy happen under the mailbox, which owns the page.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/pm/swsmu/smu_cmn.c (smu_cmn_update_table, the copy
+ * from the firmware: the message with the table's ID, the host path's read
+ * cache dropped, then the table copied; smu_cmn_get_metrics_table).
+ */
+static int
+power_readings_fetch(
+	struct amdrdna_device *device,
+	struct amdrdna_power_readings *readings)
+{
+	struct amdrdna_thermal *thermal;
+	uint8_t bytes[AMDRDNA_SMU_READINGS_BYTES];
+	volatile uint8_t *page;
+	uint32_t word;
+	size_t at;
+	int error;
+
+	/* The page as the CPU sees it. */
+	thermal = &device->thermal;
+	page = amdrdna_vram_cpu(device, thermal->table_vram);
+
+	/* One user of the page and the mailbox at a time. */
+	mutex_lock(&thermal->mailbox);
+
+	/* Has the firmware write its readings. */
+	error = smu_message_held(device, SMU_MESSAGE_TABLE_TO_PAGE, SMU_TABLE_READINGS, NULL);
+
+	/* Copies them out as the firmware wrote them. */
+	if (error == 0) {
+		amdrdna_host_path_drop(device);
+		for (at = 0U; at < AMDRDNA_SMU_READINGS_BYTES; at += 4U) {
+			word = kern_mmio_read32(page + at);
+			kern_memcpy(bytes + at, &word, sizeof(word));
+		}
+	}
+
+	mutex_unlock(&thermal->mailbox);
+
+	/* Reports readings the firmware did not write. */
+	if (error != 0)
+		return error;
+
+	/* Reads the temperatures and the fan from them. */
+	amdrdna_power_readings_read(bytes, readings);
+
+	/* Succeeded: the readings are read. */
+	return 0;
+}
+
+/*
+ * Sets the driver's temperature limit (amdrdna.temp.max=, else the board's
+ * edge limit, else 95 degrees Celsius) and sends the thermal alerts to the
+ * interrupt ring: high at the board's shutdown temperature from its power
+ * table or the video BIOS (or 10 degrees above the driver's limit without
+ * one), low at 0; and lets the unit raise its software interrupt.
  *
  * Procedure referenced: Linux v6.19
  * drivers/gpu/drm/amd/pm/swsmu/smu11/smu_v11_0.c (smu_v11_0_set_irq_state,
@@ -497,14 +1130,22 @@ power_alerts(
 	struct amdrdna_device *device)
 {
 	struct amdrdna_thermal *thermal;
+	unsigned fallback;
 	uint32_t word;
 
 	/* The power side's state. */
 	thermal = &device->thermal;
 
-	/* The driver's limit and the high alert's threshold. */
-	thermal->limit = amdrdna_parameter_number("amdrdna.temp.max", THERMAL_DEFAULT_LIMIT);
+	/* The driver's limit: the board's edge limit when its table was read, else the default. */
+	fallback = THERMAL_DEFAULT_LIMIT;
+	if (thermal->table_built && thermal->limits.edge != 0U)
+		fallback = thermal->limits.edge;
+	thermal->limit = amdrdna_parameter_number("amdrdna.temp.max", fallback);
+
+	/* The high alert's threshold: the shutdown temperature of the table, else of the video BIOS. */
 	thermal->high_alert = device->vbios_info.shutdown_temperature;
+	if (thermal->table_built && thermal->limits.shutdown != 0U)
+		thermal->high_alert = thermal->limits.shutdown;
 	if (thermal->high_alert == 0U)
 		thermal->high_alert = thermal->limit + THERMAL_HIGH_ABOVE_LIMIT;
 	if (thermal->high_alert > 255U)
@@ -627,48 +1268,108 @@ power_spin_up(
 }
 
 /*
- * Reads the temperature and the fan and publishes them; faults the GPU
- * past the limit.
+ * Reads the temperatures and the fan and publishes them; faults the GPU
+ * past the limit or when the unit's firmware gives no readings.  The
+ * thermal block is read always; when the firmware runs its features, its
+ * readings are the temperature and the fan the driver goes by, and the
+ * thermal block's are kept beside them for the comparison, which the
+ * watch's tenth reading marks in the log.
  *
  * Procedure referenced: Linux v6.19
  * drivers/gpu/drm/amd/pm/powerplay/hwmgr/vega10_thermal.c
- * (vega10_thermal_get_temperature) and
+ * (vega10_thermal_get_temperature),
  * drivers/gpu/drm/amd/pm/swsmu/smu11/smu_v11_0.c
- * (smu_v11_0_get_fan_speed_rpm, smu_v11_0_get_fan_speed_pwm).
+ * (smu_v11_0_get_fan_speed_rpm, smu_v11_0_get_fan_speed_pwm) and
+ * drivers/gpu/drm/amd/pm/swsmu/smu11/navi10_ppt.c
+ * (navi10_get_fan_speed_rpm: the firmware's speed while it runs the fan).
  */
 static void
 power_read(
 	struct amdrdna_device *device)
 {
 	struct amdrdna_thermal *thermal;
+	struct amdrdna_power_readings readings;
 	unsigned long irq;
 	unsigned sensor;
 	unsigned highest;
-	uint32_t speed;
 	unsigned driven;
+	unsigned temperature;
+	unsigned count;
+	uint32_t tachometer;
+	uint32_t speed;
 	uint32_t limits;
+	uint32_t word;
+	bool fetched;
+	int error;
 
 	/* The power side's state. */
 	thermal = &device->thermal;
 
-	/* Reads the thermal block. */
-	amdrdna_temperature_read(thermal_read(device, AMDRDNA_THM_REG_TEMPERATURE), &sensor, &highest);
-	speed = amdrdna_fan_speed(thermal_read(device, AMDRDNA_THM_REG_FAN_TACHOMETER));
+	/* Reads the thermal block: the temperatures, the tachometer's speed and the duty driven. */
+	word = thermal_read(device, AMDRDNA_THM_REG_TEMPERATURE);
+	amdrdna_temperature_read(word, &sensor, &highest);
+	word = thermal_read(device, AMDRDNA_THM_REG_FAN_TACHOMETER);
+	tachometer = amdrdna_fan_speed(word);
 	limits = thermal_read(device, AMDRDNA_THM_REG_FAN_LIMITS);
-	driven = amdrdna_fan_driven(thermal_read(device, AMDRDNA_THM_REG_FAN_STATUS), limits);
+	word = thermal_read(device, AMDRDNA_THM_REG_FAN_STATUS);
+	driven = amdrdna_fan_driven(word, limits);
 
-	/* Publishes the readings. */
+	/* Reads the firmware's readings while it runs its features. */
+	fetched = false;
+	readings.edge = 0U;
+	readings.hotspot = 0U;
+	readings.memory = 0U;
+	readings.fan_speed = 0U;
+	if (thermal->features_on) {
+		/* A firmware that gives no readings no longer watches the GPU either. */
+		error = power_readings_fetch(device, &readings);
+		if (error == 0) {
+			fetched = true;
+		} else {
+			power_fault(device, "the smu firmware gave no readings");
+		}
+	}
+
+	/* Goes by the firmware's readings when there are some, else by the thermal block. */
+	temperature = sensor;
+	speed = tachometer;
+	if (fetched) {
+		temperature = readings.edge;
+		speed = readings.fan_speed;
+	}
+
+	/* Publishes the readings, and counts them for the one comparison mark. */
 	irq = spin_lock_irqsave(&thermal->lock);
 
-	thermal->temperature = sensor;
+	thermal->temperature = temperature;
 	thermal->highest = highest;
+	thermal->sensor = sensor;
+	thermal->hotspot = readings.hotspot;
+	thermal->memory_temperature = readings.memory;
 	thermal->fan_speed = speed;
+	thermal->tachometer_speed = tachometer;
 	thermal->fan_driven = driven;
+	thermal->readings++;
+	count = thermal->readings;
 
 	spin_unlock_irqrestore(&thermal->lock, irq);
 
+	/* Marks the two sources side by side once, a while after the stage. */
+	if (count == THERMAL_COMPARE_READING) {
+		amdrdna_mark("thermal reading %u: edge %uC hotspot %uC mem %uC fan %urpm; thm %uC max %uC tach %urpm driven %u%%",
+		    count,
+		    readings.edge,
+		    readings.hotspot,
+		    readings.memory,
+		    readings.fan_speed,
+		    sensor,
+		    highest,
+		    (unsigned)tachometer,
+		    driven);
+	}
+
 	/* Past the limit the GPU is faulted. */
-	if (sensor >= thermal->limit)
+	if (temperature >= thermal->limit)
 		power_fault(device, "the temperature reached the limit");
 }
 
@@ -778,11 +1479,46 @@ power_watch(
 }
 
 /*
- * Sends one message to the unit's firmware and waits for its answer: all
- * but the first message wait for the previous answer first; the answer
- * word is cleared, the argument and the message written, and the answer
- * waited for.  On OK the output argument is read.  A unit that does not
- * answer is marked hung and sent nothing more.
+ * Sends one message to the unit's firmware and waits for its answer,
+ * under the mailbox.
+ *
+ * Returns what smu_message_held returns.
+ */
+static int
+smu_message(
+	struct amdrdna_device *device,
+	uint32_t message,
+	uint32_t argument,
+	uint32_t *answer)
+{
+	struct amdrdna_thermal *thermal;
+	int error;
+
+	/* The power side's state. */
+	thermal = &device->thermal;
+
+	/* One message at a time. */
+	mutex_lock(&thermal->mailbox);
+
+	error = smu_message_held(device, message, argument, answer);
+
+	mutex_unlock(&thermal->mailbox);
+
+	/* Reports a message the unit did not carry out. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the unit carried the message out. */
+	return 0;
+}
+
+/*
+ * Sends one message to the unit's firmware and waits for its answer; the
+ * caller holds the mailbox.  All but the first message wait for the
+ * previous answer first; the answer word is cleared, the argument and the
+ * message written, and the answer waited for.  On OK the output argument
+ * is read.  A unit that does not answer is marked hung and sent nothing
+ * more.
  *
  * Returns 0, EIO for a failed or hung unit, EINVAL for a message it does
  * not know, EAGAIN for a missing prerequisite, EBUSY, or ETIMEDOUT.
@@ -793,7 +1529,7 @@ power_watch(
  * smu_cmn_read_arg).
  */
 static int
-smu_message(
+smu_message_held(
 	struct amdrdna_device *device,
 	uint32_t message,
 	uint32_t argument,
@@ -806,20 +1542,14 @@ smu_message(
 	/* The power side's state. */
 	thermal = &device->thermal;
 
-	/* One message at a time. */
-	mutex_lock(&thermal->mailbox);
-
 	/* A hung unit is sent nothing. */
-	if (thermal->hung) {
-		mutex_unlock(&thermal->mailbox);
+	if (thermal->hung)
 		return EIO;
-	}
 
 	/* After the first message, the previous answer must have come. */
 	if (thermal->first_sent) {
 		word = smu_wait_answer(device);
 		if (word == 0U) {
-			mutex_unlock(&thermal->mailbox);
 			amdrdna_mark("smu: no answer to the previous message before 0x%x", (unsigned)message);
 			return ETIMEDOUT;
 		}
@@ -859,17 +1589,15 @@ smu_message(
 		break;
 	}
 
-	/* Reads the output argument of an answered message. */
-	if (error == 0 && answer != NULL)
-		*answer = amdrdna_block_read(device, AMDRDNA_BLOCK_SMU, AMDRDNA_SMU_WINDOW_MAILBOX, AMDRDNA_SMU_REG_ARGUMENT);
-
-	mutex_unlock(&thermal->mailbox);
-
 	/* Reports a message the unit did not carry out. */
 	if (error != 0) {
 		amdrdna_mark("smu: message 0x%x answered 0x%x (%d)", (unsigned)message, (unsigned)word, error);
 		return error;
 	}
+
+	/* Reads the output argument of an answered message. */
+	if (answer != NULL)
+		*answer = amdrdna_block_read(device, AMDRDNA_BLOCK_SMU, AMDRDNA_SMU_WINDOW_MAILBOX, AMDRDNA_SMU_REG_ARGUMENT);
 
 	/* Succeeded: the unit carried the message out. */
 	return 0;
