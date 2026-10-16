@@ -43,7 +43,7 @@
 #include "drivers/gpu/amdrdna/amdrdna-regs.h"
 
 /* The last stage this driver has; asking for a later one is refused. */
-#define AMDRDNA_LAST_STAGE		AMDRDNA_STAGE_A10
+#define AMDRDNA_LAST_STAGE		AMDRDNA_STAGE_A11
 
 /* How long the shutdown waits for the bring-up thread to end, and its step. */
 #define AMDRDNA_SHUTDOWN_WAIT_US	5000000U
@@ -576,6 +576,9 @@ amdrdna_run_stage(
 		break;
 	case AMDRDNA_STAGE_A10:
 		error = amdrdna_a10_sink(device);
+		break;
+	case AMDRDNA_STAGE_A11:
+		error = amdrdna_a11_relight(device);
 		break;
 	default:
 		error = ENOTSUP;

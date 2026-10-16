@@ -98,6 +98,10 @@ NAMES = [
     lambda n: "DP_AUX%d_AUX_SW_STATUS" % n,
     lambda n: "DP_AUX%d_AUX_SW_DATA" % n,
     lambda n: "DP_AUX%d_AUX_DPHY_RX_CONTROL0" % n,
+    lambda n: "OTG%d_OTG_BLANK_CONTROL" % n,
+    lambda n: "OTG%d_OTG_CRC_CNTL" % n,
+    lambda n: "OTG%d_OTG_CRC0_DATA_RG" % n,
+    lambda n: "OTG%d_OTG_CRC0_DATA_B" % n,
 ]
 
 

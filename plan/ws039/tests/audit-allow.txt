@@ -26,6 +26,7 @@ bios
 bits
 block
 blocks
+blue
 board
 bool
 boot
@@ -92,6 +93,7 @@ element
 else
 enable
 enabled
+encoder
 endif
 engine
 engines
@@ -258,6 +260,7 @@ root
 round
 running
 runs
+same
 sched
 scheduler
 scratch

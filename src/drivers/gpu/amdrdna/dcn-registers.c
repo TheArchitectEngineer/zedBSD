@@ -146,6 +146,10 @@ static const uint16_t i2c_transaction_offsets[AMDRDNA_DISPLAY_PIPES] = {
  * mmDP_AUX0_AUX_ARB_CONTROL, mmDP_AUX0_AUX_INTERRUPT_CONTROL,
  * mmDP_AUX0_AUX_SW_STATUS, mmDP_AUX0_AUX_SW_DATA,
  * mmDP_AUX0_AUX_DPHY_RX_CONTROL0 and the same of DP_AUX1 to DP_AUX5).
+ * The registers the mode set adds, from the same header: the timing
+ * generator's blank control, CRC control and the first CRC's words
+ * (mmOTG0_OTG_BLANK_CONTROL, mmOTG0_OTG_CRC_CNTL, mmOTG0_OTG_CRC0_DATA_RG,
+ * mmOTG0_OTG_CRC0_DATA_B).
  * derived: the distances are the differences between the offsets of
  * instance 1 and instance 0 in the same header; a scaler register's
  * distance from its pixel processor's control word is the same in all six
@@ -234,7 +238,11 @@ static const struct dcn_place dcn_places[AMDRDNA_DCN_REGISTER_COUNT] = {
 	{ 2U, 0x1f53U, 0x001cU, NULL },
 	{ 2U, 0x1f54U, 0x001cU, NULL },
 	{ 2U, 0x1f56U, 0x001cU, NULL },
-	{ 2U, 0x1f5aU, 0x001cU, NULL }
+	{ 2U, 0x1f5aU, 0x001cU, NULL },
+	{ 2U, 0x1b42U, 0x0080U, NULL },
+	{ 2U, 0x1b68U, 0x0080U, NULL },
+	{ 2U, 0x1b6eU, 0x0080U, NULL },
+	{ 2U, 0x1b6fU, 0x0080U, NULL }
 };
 
 /*

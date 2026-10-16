@@ -903,6 +903,21 @@ amdrdna_display_cursor_use(
 	device->display.cursor_slot = slot;
 }
 
+/* Reports the plane's underflow bits and the timing generator's underflow (for the mode set's checks). */
+uint32_t
+amdrdna_display_underflow(
+	struct amdrdna_device *device,
+	uint32_t *timing_underflow)
+{
+	uint32_t underflow;
+
+	/* The plane's and the timing generator's. */
+	underflow = display_underflow(device, timing_underflow);
+
+	/* Succeeded: the plane's underflow bits. */
+	return underflow;
+}
+
 /*
  * Blanks the plane (the screen shows the blend unit's background, black)
  * or shows it again; the timing generator keeps running.  A blank waits

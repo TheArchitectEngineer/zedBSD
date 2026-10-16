@@ -1193,6 +1193,11 @@ int
 amdrdna_a9_draw(
 	struct amdrdna_device *device);
 
+/* relight.c: stage A11. */
+int
+amdrdna_a11_relight(
+	struct amdrdna_device *device);
+
 /* sink.c: stage A10. */
 int
 amdrdna_a10_sink(
@@ -1201,6 +1206,14 @@ amdrdna_a10_sink(
 const struct amdrdna_sink *
 amdrdna_sink_ready(
 	const struct amdrdna_device *device);
+
+int
+amdrdna_bios_run(
+	struct amdrdna_device *device,
+	unsigned routine,
+	uint32_t *parameters,
+	uint32_t parameter_words,
+	uint32_t *steps);
 
 bool
 amdrdna_sink_mode(
@@ -1292,6 +1305,11 @@ void
 amdrdna_display_cursor_use(
 	struct amdrdna_device *device,
 	unsigned slot);
+
+uint32_t
+amdrdna_display_underflow(
+	struct amdrdna_device *device,
+	uint32_t *timing_underflow);
 
 int
 amdrdna_display_blank(
