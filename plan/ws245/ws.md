@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
 Related: [WS244](../ws244/ws.md)（i915 の Linux 由来の code の整理、棚卸し plan/ws244/inventory.md・tests/inventory.py）、[Guardrail](../guardrail.md)「MIT・GPL の出典のデータの引用」
-Resume point: 2026-10-16 q1218（P1）の区切り: 次は **p018**（EDID の decode を xd-edid に、旧 VBT parser の本体を消し本番の呼び手の 10 関数と drm_mode の helper を殻 `vbt-shell.c` に。design.md §6.2 の p018 の行）。p017 で旧の結果（`vbt_state.parsed`・`drv_i915_vbt_init_panel` の出力）は既に xd の値なので、p018 の殻は xd の parse を旧の型に写すだけ（`phase017/phase.md`）。N0 の読み（`takeover.c` の `drv_i915_opregion_locate_vbt`）は p036 まで旧なので、殻の `locate_vbt` は xd の find を `struct i915_opregion_info` に写す。5330 の回帰の手順は `phase047/phase.md`・`phase016/phase.md` の表の形（基準の kernel を親の main の source から build、`5330-survey.sh`、書き込みの digest が違えば `i915.debug=display` の起動で全部の列を `5330-survey-diff.py` で比べる。0x162100 は起動ごとに変わる）。USB の UEFI の entry は image を dd するたびに PARTUUID が変わるので `efibootmgr --create-only` で足す（今は Boot0007）。以前: q1209-i02（P1）で design.md 改訂 5、レビュー 5 は改訂 6 で反映。
+Resume point: 2026-10-16 q1218（P1）の区切り: 次は **p018**（[phase018](phase018/phase.md) に調べた依存: `dp-internal.h` が `vbt.h` を include し DP の環境が vbt.c の allocator・log の関数を使う、`I915_TEST_SET=execution` の ktest-display が旧 parser を呼ぶ）（EDID の decode を xd-edid に、旧 VBT parser の本体を消し本番の呼び手の 10 関数と drm_mode の helper を殻 `vbt-shell.c` に。design.md §6.2 の p018 の行）。p017 で旧の結果（`vbt_state.parsed`・`drv_i915_vbt_init_panel` の出力）は既に xd の値なので、p018 の殻は xd の parse を旧の型に写すだけ（`phase017/phase.md`）。N0 の読み（`takeover.c` の `drv_i915_opregion_locate_vbt`）は p036 まで旧なので、殻の `locate_vbt` は xd の find を `struct i915_opregion_info` に写す。5330 の回帰の手順は `phase047/phase.md`・`phase016/phase.md` の表の形（基準の kernel を親の main の source から build、`5330-survey.sh`、書き込みの digest が違えば `i915.debug=display` の起動で全部の列を `5330-survey-diff.py` で比べる。0x162100 は起動ごとに変わる）。USB の UEFI の entry は image を dd するたびに PARTUUID が変わるので `efibootmgr --create-only` で足す（今は Boot0007）。以前: q1209-i02（P1）で design.md 改訂 5、レビュー 5 は改訂 6 で反映。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）
@@ -132,7 +132,7 @@ Resume point: 2026-10-16 q1218（P1）の区切り: 次は **p018**（EDID の d
 | p047 | 回帰の証拠の道具: own の survey（PP_STATUS・PWM・frame counter・SURFLIVE・pipe CRC・underrun・TRANS_CONF などを picture up の後に dmesg へ）と `mmio.c` の書き込みの log（`i915.debug=display`）、`5330-survey.sh`（改訂 5、レビュー 4 の B3・M6） | cleared（4 LW。2026-10-16 main 3e1e0c687。LCD の目視は beta2.md の U11） |
 | [p016](phase016/phase.md) | OpRegion の場所と map（xd-vbt の find、`struct i915_xd` と io・platform の用意）。opregion.c を消す | in-progress（3 LW。2026-10-16 5330 の回帰に合格、main 9244ac507。SV7 は一覧） |
 | [p017](phase017/phase.md) | VBT の解析（xd-vbt を真に、旧 parser と影の比較を 1 段） | in-progress（4 LW。2026-10-16 5330 の回帰に合格、main 45c83da79。clearance は Q1） |
-| p018 | EDID の decode（xd-edid）+ vbt.c の parser の本体の削除（本番の呼び手 7 関数と drm_mode の helper は殻 `vbt-shell.c` に） | planned（3 LW） |
+| [p018](phase018/phase.md) | EDID の decode（xd-edid）+ vbt.c の parser の本体の削除（本番の呼び手 10 関数と drm_mode の helper は殻 `vbt-shell.c` に） | planned（3 LW。2026-10-16 調べだけ: DP の環境が vbt.h に依る、execution の試験の組が壊れる。phase018 に再開点） |
 | p019 | AUX の transaction（xd-aux。well・DC off・VDD は呼ぶ側） | planned（4 LW） |
 | p020 | GMBUS と DDC の EDID の読み（xd-gmbus） | planned（3 LW。HDMI の plug はユーザーの一覧） |
 | p021 | backlight の PWM（xd-panel） | planned（2 LW） |
