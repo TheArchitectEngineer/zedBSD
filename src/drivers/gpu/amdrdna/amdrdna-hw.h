@@ -578,6 +578,101 @@ struct amdrdna_transmitter_command {
 	uint8_t connector_id;
 };
 
+/*
+ * What the display plan (mode-plan.c) is given: a mode's timing (the
+ * totals, the active area and the front porches, the pixel clock in kHz),
+ * the surface's pitch in pixels (linear, 32 bits a pixel, shown unscaled
+ * on one pipe with a cursor), and the clocks the board runs in kHz (the hub's reference, the data fabric's return clock, the
+ * fabric, the display clock, the pipe clock) and the memory's transfer
+ * rate in MT/s.
+ */
+struct amdrdna_mode_plan_input {
+	uint32_t h_total;
+	uint32_t width;
+	uint32_t h_front;
+	uint32_t v_total;
+	uint32_t height;
+	uint32_t v_front;
+	uint32_t pixel_khz;
+	uint32_t pitch;
+	uint32_t reference_khz;
+	uint32_t return_khz;
+	uint32_t fabric_khz;
+	uint32_t display_khz;
+	uint32_t pipe_khz;
+	uint32_t memory_mts;
+};
+
+/*
+ * The display plan of a mode: what the memory may do in the vertical
+ * blank (0 change its clock and self-refresh, 1 only self-refresh, 2
+ * neither), whether its clock may change (0 never, 1 in the vertical
+ * blank, 2 in the active area too), the timing generator's global sync in
+ * lines and pixels, the hub's watermarks in ns, and the plane's request,
+ * deadline and arbitration fields as the registers take them.
+ */
+struct amdrdna_mode_plan {
+	unsigned vblank_use;
+	unsigned memory_switch;
+	uint32_t start_lines;
+	uint32_t update_offset;
+	uint32_t update_width;
+	uint32_t ready_offset;
+	uint32_t urgent_ns;
+	uint32_t switch_ns;
+	uint32_t refresh_exit_ns;
+	uint32_t refresh_enter_exit_ns;
+	uint32_t trip_ns;
+	uint32_t chunk_log;
+	uint32_t least_chunk_log;
+	uint32_t meta_chunk_log;
+	uint32_t least_meta_chunk_log;
+	uint32_t pte_group_log;
+	uint32_t meta_pte_group_log;
+	uint32_t pte_rows_log;
+	uint32_t swath_log;
+	uint32_t data_expansion;
+	uint32_t pte_expansion;
+	uint32_t meta_expansion;
+	uint32_t cursor_expansion;
+	uint32_t blank_end_cycles;
+	uint32_t blank_end_line;
+	uint32_t next_start_quarters;
+	uint32_t line_cycles;
+	uint32_t after_scaler_cycles;
+	uint32_t after_scaler_lines;
+	uint32_t prefetch_quarters;
+	uint32_t vm_vblank_quarters;
+	uint32_t row_vblank_quarters;
+	uint32_t vm_flip_quarters;
+	uint32_t row_flip_quarters;
+	uint32_t reference_to_pixel;
+	uint32_t prefetch_ratio;
+	uint32_t prefetch_ratio_chroma;
+	uint32_t pte_group_vblank_cycles;
+	uint32_t meta_chunk_vblank_cycles;
+	uint32_t pte_group_flip_cycles;
+	uint32_t meta_chunk_flip_cycles;
+	uint32_t pte_row_quarters;
+	uint32_t meta_row_quarters;
+	uint32_t pte_group_cycles;
+	uint32_t meta_chunk_cycles;
+	uint32_t line_delivery_prefetch_cycles;
+	uint32_t line_delivery_cycles;
+	uint32_t cursor_chunk_adjust;
+	uint32_t ready_after_zero;
+	uint32_t request_limit;
+	uint32_t low_level_mark;
+	uint32_t high_level_mark;
+	uint32_t vblank_ttu_cycles;
+	uint32_t flip_level;
+	uint32_t request_delivery_prefetch_cycles;
+	uint32_t request_delivery_cycles;
+	uint32_t cursor_delivery_prefetch_cycles;
+	uint32_t cursor_delivery_cycles;
+	uint32_t fixed_level;
+};
+
 /* The PCI place and identity a video BIOS image in the ACPI table names. */
 struct amdrdna_vbios_owner {
 	uint32_t bus;
@@ -1479,6 +1574,11 @@ amdrdna_command_pipe(
 	uint32_t *words,
 	uint32_t generator,
 	uint32_t on);
+
+int
+amdrdna_mode_plan(
+	const struct amdrdna_mode_plan_input *input,
+	struct amdrdna_mode_plan *plan);
 
 int
 amdrdna_vbios_connector(

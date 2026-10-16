@@ -109,14 +109,14 @@
 | `drivers/gpu/drm/amd/display/dc/resource/dcn20/dcn20_resource.c` | `b31b4bb591ae2f34b8d5874580c4bb5737911e569c167e9f5c9f5044b738469e` | MIT | 値（instance の数、register の addressing） |
 | `drivers/gpu/drm/amd/display/dc/hubp/dcn20/dcn20_hubp.c` | `03ed6b980a61fd3bc49a8e42de263069b71c9f8b2530255861aa4103139745f6` | MIT | 手順（flip、cursor、format）、値（format の code） |
 | `drivers/gpu/drm/amd/display/dc/hubp/dcn10/dcn10_hubp.c` | `1d9206b942fd4792ad37bd0ba24219be2cb81b79aaece5ea0f66efbaac05c982` | MIT | 手順（viewport、blank、cursor の pitch） |
-| `drivers/gpu/drm/amd/display/dc/optc/dcn10/dcn10_optc.c` | `0555e7f3d0fbd75c2fa3f70517de02b01e264dbdd61bddfc0521c3ff61c47846` | MIT | 手順（timing の読み、lock、blank）、値（timing の encode） |
+| `drivers/gpu/drm/amd/display/dc/optc/dcn10/dcn10_optc.c` | `0555e7f3d0fbd75c2fa3f70517de02b01e264dbdd61bddfc0521c3ff61c47846` | MIT | 手順（timing の読み、lock、blank、p015 の CRC の設定と読み）、値（timing の encode） |
 | `drivers/gpu/drm/amd/display/dc/optc/dcn20/dcn20_optc.c` | `0e4f24cc13bca54608e3eceabb2bc09431985ed7e9f552919e1491a6b7040dea` | MIT | 手順（OPP の source） |
 | `drivers/gpu/drm/amd/display/dc/mpc/dcn10/dcn10_mpc.c` | `7d61c9817f8460a12414352ea0fa424557a5ea06ef692f1d173129eac806d62e` | MIT | 手順（MPC の木の読み） |
 | `drivers/gpu/drm/amd/display/dc/mpc/dcn20/dcn20_mpc.c` | `6bc22917a2a5987e317cc3ab40891212129feabf09ca36a9d600763217e29df0` | MIT | 読むだけ |
 | `drivers/gpu/drm/amd/display/dc/dpp/dcn20/dcn20_dpp.c` | `50a4348765cb83a5ae6c113c21c97447bbe56eb9bd2375d3f993d54b9fc37429` | MIT | 手順（DPP の format、cursor） |
 | `drivers/gpu/drm/amd/display/dc/dpp/dcn10/dcn10_dpp.c` | `85f9491c2e1e83c4324ad696b6e125eeb060741bf44299845ec9688abe594749` | MIT | 手順（cursor の位置） |
-| `drivers/gpu/drm/amd/display/dc/dio/dcn10/dcn10_link_encoder.c` | `da115361a57013d981462759452eb9c49447454bb8463d7bb2708f57b35649db` | MIT | 値（DIG の mode・FE の select） |
-| `drivers/gpu/drm/amd/display/dc/dio/dcn10/dcn10_stream_encoder.c` | `3322bc2491c2e0e60c04c0b2b11e6e419fb4fc71b07cac6099bdbdeb14306467` | MIT | 値（FE の source） |
+| `drivers/gpu/drm/amd/display/dc/dio/dcn10/dcn10_link_encoder.c` | `da115361a57013d981462759452eb9c49447454bb8463d7bb2708f57b35649db` | MIT | 値（DIG の mode・FE の select）、手順（p015: TMDS の出力の on・off の transmitter の parameter） |
+| `drivers/gpu/drm/amd/display/dc/dio/dcn10/dcn10_stream_encoder.c` | `3322bc2491c2e0e60c04c0b2b11e6e419fb4fc71b07cac6099bdbdeb14306467` | MIT | 値（FE の source）、手順（p015: DVI の stream の設定の encoder の parameter） |
 | `drivers/gpu/drm/amd/display/dc/hwss/dcn20/dcn20_hwseq.c` | `03cf4aff1c4c53c8e8b417c9df49c090fda2b8c7febbb232102b1d73124a8765` | MIT | 読むだけ（init の挙動、power gating、blank） |
 | `drivers/gpu/drm/amd/display/dc/hwss/dcn10/dcn10_hwseq.c` | `9b8c6c123bcb51ad9ce2d7aa9e4ad6db8cd603809297e3bc91799fa919e2f0e8` | MIT | 読むだけ（init pipes、cursor の順） |
 | `drivers/gpu/drm/amd/display/dc/hwss/dce110/dce110_hwseq.c` | `05d914d6bbc1bef83c7090e194206a9cbe0c5a69ea25635db9647e8509aae311` | MIT | 読むだけ（accelerated mode） |
@@ -151,6 +151,15 @@
 | `drivers/gpu/drm/amd/display/dc/dce/dce_i2c_hw.c` | `5e733d7ea46ad8798f729dbb3c067165f46d97a7497336e5e84126c9adf46fc1` | MIT | 手順（I2C engine の取得・設定・transaction・返却、p014） |
 | `drivers/gpu/drm/amd/display/dc/dce/dce_i2c_hw.h` | `564cce137d26fa975dd83674984d9f8c10cf24d7431e081750cf1cd5561f5c5b` | MIT | 値（status の enum、time limit・reset 長・buffer） |
 | `drivers/gpu/drm/amd/display/dc/dce/dce_aux.c` | `00f35c65631a0aefb4568c8294109bb0b7dde9c7e008cf22bb53e7fd0e26cf5d` | MIT | 手順（AUX の取得・request・reply、p014。実機は DP の sink が無く未確認） |
+| `drivers/gpu/drm/amd/display/dc/bios/command_table2.c` | `855c542d3cd96616be4159d5ab8b73710c098a540c2e96dbc6c84c4be7e717c0` | MIT | 手順・値（p015 の `display-command.c`: pixel clock・encoder・transmitter・CRTC の routine の parameter の詰め方） |
+| `drivers/gpu/drm/amd/display/dc/bios/dce112/command_table_helper2_dce112.c` | `37cbef7de487824df0c60844331927c982edba543efdb39f8a16e5ca312291b1` | MIT | 値（p015: HPD の選択の番号、transmitter の FE の選択は 0） |
+| `drivers/gpu/drm/amd/display/dc/link/link_dpms.c` | `dfbf768f9c2af644c1ea03f8615bf78e2896eece99c1c3ec2ef90494cc9dfc11` | MIT | 手順（p015 の `relight.c`: stream の off・on の順） |
+| `drivers/gpu/drm/amd/display/dc/dml/dcn20/display_mode_vba_20v2.c` | `a6a308c3d5d5292a1581cb02ed7d9fc4ad77b784bee65001aec3750e2b25153f` | MIT | 手順・値（p015 の `mode-plan.c`: 一つの plane・一つの pipe の場合の prefetch・watermark・global sync の式を 64 bit の固定小数で書き直し。名前・構造は写さない）。host 試験 (m) の oracle として `build/tmp` で build（tree に入れない） |
+| `drivers/gpu/drm/amd/display/dc/dml/dcn20/display_rq_dlg_calc_20v2.c` | `b9a50bb297942e4ff5c332f9a6e83344ebd777a8d55b79f4a50721dd5e3a4f84` | MIT | 手順・値（p015 の `mode-plan.c`: request・deadline・arbitration の欄の式と固定値）、oracle の build |
+| `drivers/gpu/drm/amd/display/dc/dml/dcn20/dcn20_fpu.c` | `988bf94df0909ed2369b446220f533906b2e131790abac9ab9c5ac8f8d95da48` | MIT | 値（p015: dcn2_0_ip・dcn2_0_soc の値）、手順（pipe の埋め方、watermark・deadline の呼び方）。oracle の test が `dcn2_0_ip`・`dcn2_0_soc` の初期化子を `build/tmp` に切り出して build（tree に入れない） |
+| `drivers/gpu/drm/amd/display/dc/dml/display_mode_vba.c` | `66f311d4c7967994351d7180ad6631efd0b014bc1252d731063447e0e411ef92` | MIT | 値・手順（p015: pipe の値の取り込み、line buffer の bit、prefetch mode の選び方）、oracle の build |
+| `drivers/gpu/drm/amd/display/dc/dml/display_rq_dlg_helpers.c`、`dml/calcs/dcn_calc_math.c` | `aff9e0708443dd299e548e606f7046e1be71cbaacf67b82f772d672235940ca2`、`0bec846715ee48891d74fef318e5569a08319248bd9185980aeb07385b31cf73` | MIT | oracle の build だけ（`dcn_calc_math.c` の floor・ceiling の丸めの規則は `mode-plan.c` の注記に書いた） |
+| `drivers/gpu/drm/amd/display/dc/dml/display_mode_lib.h`、`display_mode_structs.h`、`display_mode_enums.h`、`display_mode_vba.h`、`dml_inline_defs.h` | `8ed6ea62183b272c5d438fa7e554e6a287ec9f5a064222483df302348d8e6b77`、`ca9502b61904f9ac7595ba9d737ed6c3dc9b1bbb5eb7793e5cef51d2e2a2ac19`、`eb0fe235de0aa7016916fda8554caa372ed2d6aa641e2834f13edd0c8d40520d`、`c7848622b82f0ffd805fe8153856b61320e4953ab180d7874114c7fd3955c522`、`5edc951c5a5d61c835ac1e6859e71be72c400ed887cb6e5a76460a57481fc4fe` | MIT | oracle の build（test の harness `plan/ws039/tests/dml-oracle/harness.c` が include する）と、構造体の欄の順（test の照合） |
 | `drivers/gpu/drm/amd/display/dc/gpio/hw_ddc.c` | `7c3416a412f4c006e876ebd3eb44a2fba01dcae975bbff799cf60bbe2c30f50e` | MIT | 手順（DDC の pad の I2C mode） |
 | `drivers/gpu/drm/amd/display/dc/gpio/hw_gpio.c` | `47d230c8f6f46ec81a6815940b0365d02ccb626d4f0592896a6c3d6d2f404632` | MIT | 手順（pad の hardware mode、close の戻し） |
 | `drivers/gpu/drm/amd/display/dc/bios/bios_parser2.c` | `28f672ed46b28bcabb2c268b6c47843e46dc63a7450c82fabf5c3f36f8728638` | MIT | 手順（path の record、I2C の id と pin の表、dce_info の crystal） |
