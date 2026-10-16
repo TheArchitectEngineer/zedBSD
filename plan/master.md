@@ -72,7 +72,7 @@
 <!-- master:blocked:start -->
 - **BUG-317**（Pi の main の kernel が起動 54 秒で停止、namei の context->lock）: 解析は途中で停止、結論なし。a9f0765..73476664c で src/kern は無変更、候補は usb-hid・hid-input（BUG-313 の遅い公開）、WS236 の V3D・MMAL、rpi4-bt。
 - WS037 RTX: R8・R9（パススルー）と方法 A の desktop は達成。T1-691 で P4m の間欠の失敗が再発（解析は ws037/phase007 の終わり）。
-- BUG-315（Pi の touch）: Y の quirk は main に入った。X の端の飽和は未確認。BUG-311（Pi の BT）: 7 回目は main に入った、未試験。
+- BUG-315（Pi の touch）: Y の quirk は main に入った。2026-10-17 の生 report で X は中央の約半分だけ変わり、左右の外側は 0・16383 に飽和すると確認。ホストの座標変換では外側の位置を復元できず、デバイス設定・firmware の調査が次。BUG-311（Pi の BT）: 7 回目は main に入った、未試験。
 - WS239（compositor の失敗時の console の login）: p001 は main、p002 の QEMU 試験は T3 が途中で停止、結果なし。
 - GitHub への記録の公開は保留。push はユーザーの指示の時だけ。
 <!-- master:blocked:end -->
