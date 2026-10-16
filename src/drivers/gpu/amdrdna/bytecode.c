@@ -509,18 +509,22 @@ amdrdna_bytecode_run(
 	return 0;
 }
 
-/* Reports whether the image has a routine of that number. */
+/* Reports whether the image has a routine of that number: an entry of its list that is not 0. */
 bool
 amdrdna_bytecode_has(
 	const struct amdrdna_bytecode *runner,
 	unsigned routine)
 {
+	uint32_t list_bytes;
 	uint32_t at;
 	uint32_t start;
 
-	/* The list's entry, inside the image. */
+	/* The list's entry, inside the list (its first word is its size) and the image. */
+	list_bytes = (uint32_t)runner->image[runner->command_list] | ((uint32_t)runner->image[runner->command_list + 1U] << 8);
 	at = (uint32_t)runner->command_list + BYTECODE_LIST_ENTRIES + 2U * routine;
 	if (routine > 0xffU || at + 2U > runner->length)
+		return false;
+	if (at + 2U > (uint32_t)runner->command_list + list_bytes)
 		return false;
 
 	/* A routine is there when its entry is not 0. */
@@ -549,9 +553,13 @@ bytecode_routine(
 	struct frame frame;
 	uint32_t base;
 	uint32_t at;
+	bool present;
 	bool going;
 
 	/* The routine's place; one the image lacks is not run. */
+	present = amdrdna_bytecode_has(runner, routine);
+	if (!present)
+		return ENOENT;
 	base = image_word(runner, (uint32_t)runner->command_list + BYTECODE_LIST_ENTRIES + 2U * routine);
 	if (runner->failure != NULL)
 		return EINVAL;
@@ -569,7 +577,7 @@ bytecode_routine(
 	frame.start = base;
 	frame.parameters = parameters;
 	frame.parameter_words = parameter_words;
-	frame.own_parameters = (image_byte(runner, base + BYTECODE_ROUTINE_PARAMETERS) & BYTECODE_ROUTINE_PARAMETERS) / 4U;
+	frame.own_parameters = (image_byte(runner, base + BYTECODE_ROUTINE_PARAMETERS_AT) & BYTECODE_ROUTINE_PARAMETERS) / 4U;
 	frame.work_words = image_byte(runner, base + BYTECODE_ROUTINE_WORK_AT);
 	if (runner->failure != NULL)
 		return EINVAL;
