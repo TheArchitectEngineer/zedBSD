@@ -199,6 +199,9 @@ static unsigned gpu_draws;
 static unsigned gpu_quads;
 static unsigned gpu_copies;
 static uint64_t gpu_copied_bytes;
+static unsigned gpu_moves;
+static uint64_t gpu_moved_bytes;
+static unsigned gpu_bad_moves;
 
 /*
  * What the runs' indirect buffers did, decoded: every packet in order (its
@@ -230,6 +233,7 @@ struct state_entry {
 };
 
 struct replay;
+static uint8_t *gpu_bytes(uint64_t va, uint64_t bytes);
 static void replay_draw(const struct state_entry *state, struct replay *out);
 static struct replay *replays[16];
 
@@ -274,7 +278,7 @@ amdrdna_vk_gpu_free(void *owner, void *token)
 	free(token);
 }
 
-/* Counts the CPU's copies the executor reports. */
+/* Counts the copies between a buffer and an image the executor moved and reports. */
 void
 amdrdna_vk_gpu_copied(void *owner, uint64_t bytes)
 {
@@ -335,6 +339,38 @@ decode_set(uint32_t *space, uint32_t first, const uint32_t *values, uint32_t cou
 		}
 		space[first + index] = values[index];
 	}
+}
+
+/*
+ * Does a memory move as the command processor would: six words, both
+ * addresses through the level-2 cache and the engine waiting for it, the
+ * bytes moved in the fake memory.  Anything else is counted bad.
+ */
+static void
+decode_move(const uint32_t *body, uint32_t words)
+{
+	uint64_t source;
+	uint64_t destination;
+	uint32_t bytes;
+	uint8_t *from;
+	uint8_t *to;
+
+	if (words != 6U || body[0] != 0xe0300000U) {
+		gpu_bad_moves++;
+		return;
+	}
+	source = (uint64_t)body[1] | ((uint64_t)body[2] << 32);
+	destination = (uint64_t)body[3] | ((uint64_t)body[4] << 32);
+	bytes = body[5] & 0x3ffffffU;
+	from = gpu_bytes(source, bytes);
+	to = gpu_bytes(destination, bytes);
+	if (bytes == 0U || from == NULL || to == NULL) {
+		gpu_bad_moves++;
+		return;
+	}
+	memmove(to, from, bytes);
+	gpu_moves++;
+	gpu_moved_bytes += bytes;
 }
 
 /*
@@ -418,6 +454,9 @@ decode_buffer(const uint32_t *words, uint32_t count, uint32_t run)
 				dispatch_log[dispatch_count].groups[2] = words[at + 3U];
 				dispatch_count++;
 			}
+			break;
+		case 0x50U:
+			decode_move(&words[at + 1U], body);
 			break;
 		case 0x10U:
 		case 0x12U:
@@ -610,6 +649,21 @@ replay_memory(struct machine_memory *memory)
 	memory->regions[memory->count].bytes = scene;
 	memory->regions[memory->count].size = sizeof(scene);
 	memory->count++;
+}
+
+/* Reports the fake memory of bytes at a GPU address (a run or the scene), or NULL when they are not all in one. */
+static uint8_t *
+gpu_bytes(uint64_t va, uint64_t bytes)
+{
+	uint64_t room;
+	uint8_t *cpu;
+
+	if (va >= 0x30000000ULL && va + bytes <= 0x30000000ULL + sizeof(scene))
+		return scene + (va - 0x30000000ULL);
+	cpu = gpu_cpu_room(va, &room);
+	if (cpu == NULL || bytes > room)
+		return NULL;
+	return cpu;
 }
 
 /* A program the registers name: its code (to its run's end) and VGPRs. */
@@ -1802,7 +1856,9 @@ test_submit(const char *directory)
 	VkImageCopy copy;
 	VkBufferImageCopy upload;
 	VkBufferImageCopy skewed;
+	VkBufferImageCopy rows;
 	VkBufferImageCopy download;
+	VkBufferImageCopy odd;
 	VkImageSubresourceRange whole;
 	VkImageView attachments[1];
 	VkDescriptorSetLayout layouts[1];
@@ -2145,9 +2201,10 @@ test_submit(const char *directory)
 	vulkan_write_u64(&client, 1);
 	vulkan_encode_VkBufferImageCopy(&client, &upload);
 	/*
-	 * Two regions: 4x3 pixels from offset 0x100 with rows of 256 bytes
-	 * (drawn: a linear image of 64 pixels a row), then 3x2 pixels from
-	 * offset 4 with rows of 12 bytes (copied by the CPU).
+	 * Three regions: 4x3 pixels from offset 0x100 with rows of 256 bytes
+	 * (drawn: a linear image of 64 pixels a row), 3x2 pixels from offset 4
+	 * with rows of 12 bytes (moved a row at a time), and the whole rows 60
+	 * and 61 from offset 0x2004 at the image's pitch (moved at once).
 	 */
 	skewed = upload;
 	skewed.bufferOffset = 0x100;
@@ -2162,15 +2219,28 @@ test_submit(const char *directory)
 	upload.imageOffset.y = 40;
 	upload.imageExtent.width = 3;
 	upload.imageExtent.height = 2;
+	rows = upload;
+	rows.bufferOffset = 0x2004;
+	rows.bufferRowLength = 64;
+	rows.imageOffset.x = 0;
+	rows.imageOffset.y = 60;
+	rows.imageExtent.width = 64;
+	rows.imageExtent.height = 2;
 	record_begin(&client, GPU_OP_CMD_COPY_BUFFER_TO_IMAGE, 0x513);
 	vulkan_write_u64(&client, 0x505);
 	vulkan_write_u64(&client, 0x502);
 	vulkan_write_u32(&client, VK_IMAGE_LAYOUT_GENERAL);
-	vulkan_write_u32(&client, 2);
-	vulkan_write_u64(&client, 2);
+	vulkan_write_u32(&client, 3);
+	vulkan_write_u64(&client, 3);
 	vulkan_encode_VkBufferImageCopy(&client, &skewed);
 	vulkan_encode_VkBufferImageCopy(&client, &upload);
-	/* Image 0x503's 8x4 pixels at (4, 2) into the staging buffer at 0x1000, rows of 256 bytes (drawn: the buffer is the target). */
+	vulkan_encode_VkBufferImageCopy(&client, &rows);
+	/*
+	 * Image 0x503's 8x4 pixels at (4, 2) into the staging buffer at 0x1000,
+	 * rows of 256 bytes (drawn: the buffer is the target), and its 3x2
+	 * pixels at (1, 3) to 0x3004 with rows of 20 bytes (moved a row at a
+	 * time, the buffer's 8 bytes between the rows left alone).
+	 */
 	memset(&download, 0, sizeof(download));
 	download.bufferOffset = 0x1000;
 	download.bufferRowLength = 64;
@@ -2181,13 +2251,21 @@ test_submit(const char *directory)
 	download.imageExtent.width = 8;
 	download.imageExtent.height = 4;
 	download.imageExtent.depth = 1;
+	odd = download;
+	odd.bufferOffset = 0x3004;
+	odd.bufferRowLength = 5;
+	odd.imageOffset.x = 1;
+	odd.imageOffset.y = 3;
+	odd.imageExtent.width = 3;
+	odd.imageExtent.height = 2;
 	record_begin(&client, GPU_OP_CMD_COPY_IMAGE_TO_BUFFER, 0x513);
 	vulkan_write_u64(&client, 0x503);
 	vulkan_write_u32(&client, VK_IMAGE_LAYOUT_GENERAL);
 	vulkan_write_u64(&client, 0x505);
-	vulkan_write_u32(&client, 1);
-	vulkan_write_u64(&client, 1);
+	vulkan_write_u32(&client, 2);
+	vulkan_write_u64(&client, 2);
 	vulkan_encode_VkBufferImageCopy(&client, &download);
+	vulkan_encode_VkBufferImageCopy(&client, &odd);
 	memset(&whole, 0, sizeof(whole));
 	whole.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	whole.levelCount = 1;
@@ -2215,7 +2293,7 @@ test_submit(const char *directory)
 	check(((struct amdrdna_vk_command_buffer *)amdrdna_vk_payload(session, I915_VK_OBJ_COMMAND_BUFFER, 0x513))->record_count == 14,
 	    "submit: fourteen records kept (the barrier is not)");
 
-	/* The staging buffer's bytes the CPU copies: 3x2 pixels from offset 4, rows of 12 bytes. */
+	/* The staging buffer's bytes moved a row at a time: 3x2 pixels from offset 4, rows of 12 bytes. */
 	for (index = 0; index < 24; index++)
 		scene[0x8000 + 4 + index] = (uint8_t)(0x40 + index);
 
@@ -2231,6 +2309,9 @@ test_submit(const char *directory)
 	gpu_quads = 0;
 	gpu_copies = 0;
 	gpu_copied_bytes = 0;
+	gpu_moves = 0;
+	gpu_moved_bytes = 0;
+	gpu_bad_moves = 0;
 	log_reset();
 	frame_begin(&client);
 	command_begin(&client, GPU_OP_QUEUE_SUBMIT);
@@ -2256,12 +2337,22 @@ test_submit(const char *directory)
 	at = TEST_REPLY_AT / 4U;
 	check(reply_u32(&at) == GPU_OP_QUEUE_SUBMIT && reply_u32(&at) == VK_SUCCESS, "submit: success");
 	check(reply_u32(&at) == GPU_OP_GET_FENCE_STATUS && reply_u32(&at) == VK_SUCCESS, "submit: the fence is signaled");
-	check(gpu_runs == 2 && decode_errors == 0, "submit: two runs of known packets (the CPU copy between them)");
+	check(gpu_runs == 1 && decode_errors == 0, "submit: one run of known packets (the copies off 256 bytes moved in it)");
 
-	/* The CPU copy: image 0x502 (at 0, rows of 256) at (5, 40). */
+	/* The moves: two rows, the two whole rows at once, two rows back to the buffer. */
+	check(gpu_moves == 5 && gpu_moved_bytes == 12 + 12 + 512 + 12 + 12 && gpu_bad_moves == 0,
+	    "submit: five moves through the cache, the engine waiting for each");
 	check(memcmp(scene + 40 * 256 + 5 * 4, scene + 0x8004, 12) == 0 && memcmp(scene + 41 * 256 + 5 * 4, scene + 0x8004 + 12, 12) == 0,
-	    "submit: the region off 256 bytes copied by the CPU");
-	check(gpu_copies == 1 && gpu_copied_bytes == 24, "submit: the CPU's copy counted with its 24 bytes");
+	    "submit: the region off 256 bytes moved into image 0x502 at (5, 40)");
+	check(memcmp(scene + 60 * 256, scene + 0x8000 + 0x2004, 512) == 0, "submit: the whole rows 60 and 61 moved at once");
+	good = memcmp(scene + 0x8000 + 0x3004, scene + 0x4000 + 3 * 256 + 4, 12) == 0 &&
+	       memcmp(scene + 0x8000 + 0x3004 + 20, scene + 0x4000 + 4 * 256 + 4, 12) == 0;
+	for (index = 0x3004 + 12; index < 0x3004 + 20; index++) {
+		if (scene[0x8000 + index] != (uint8_t)(index * 3U + 5U))
+			good = 0;
+	}
+	check(good, "submit: image 0x503's 3x2 pixels at (1, 3) moved into the buffer, the bytes between its rows left alone");
+	check(gpu_copies == 3 && gpu_copied_bytes == 24 + 512 + 24, "submit: the three moved regions counted with their bytes");
 
 	/* Each run starts with the context control, the defaults and the caches; every barrier writes a new value and waits for it. */
 	starts = 0;
@@ -2285,7 +2376,7 @@ test_submit(const char *directory)
 		}
 	}
 	check(starts == gpu_runs && acquires == gpu_runs, "submit: each run starts with the context control, the defaults and every cache");
-	check(releases == 13 && ordered, "submit: thirteen barriers (pass, five transfers, two run ends), each waited for with a new value");
+	check(releases == 12 && ordered, "submit: twelve barriers (pass, five transfers, the run's end), each waited for with a new value");
 	check(packets_with(0x46U, 16U | (4U << 8), 0) == releases && packets_with(0x46U, 46U, 0) == releases,
 	    "submit: each barrier drains the pixel programs and flushes the colour metadata");
 	check((ib_words_total % 8U) == 0, "submit: the buffers are whole numbers of eight words");

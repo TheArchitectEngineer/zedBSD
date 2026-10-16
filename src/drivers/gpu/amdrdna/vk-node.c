@@ -18,6 +18,11 @@
  * lock, and so do these; an address space's lock is taken inside it.
  * Every run of memory is mapped once into the session's space: the
  * address it gets lives as long as the run.
+ *
+ * With amdrdna.vk.timing=N on the boot line, the executor's work is timed
+ * and marked by the first frame after each N milliseconds: the frames,
+ * the commands by opcode, the waits for the GPU, the command streams read
+ * through the window, the memory made, and the copies moved.
  */
 
 #include <stdbool.h>
@@ -26,6 +31,7 @@
 
 #include <kern/kcrt.h>
 #include <kern/kmem.h>
+#include <kern/lock.h>
 #include <uapi/errno.h>
 
 #include "drivers/gpu/amdrdna/amdrdna-node.h"
@@ -33,6 +39,25 @@
 
 /* How long an indirect buffer may run before the executor calls the session lost. */
 #define VK_NODE_RUN_MS			2000U
+
+/* The opcodes the timing keeps apart; a larger one is counted with the last. */
+#define VK_NODE_TIMED_OPCODES		256U
+
+/* The opcodes a mark names, the longest first. */
+#define VK_NODE_TIMED_SHOWN		6U
+
+/*
+ * The kinds of timed work, each a tally: the frames, the waits for the
+ * GPU, the command streams read through the window, the memory made, the
+ * copies moved; then one per opcode of the commands.
+ */
+#define VK_NODE_FRAMES			0U
+#define VK_NODE_RUNS			1U
+#define VK_NODE_STREAMS			2U
+#define VK_NODE_MEMORY			3U
+#define VK_NODE_MOVES			4U
+#define VK_NODE_OPCODE_FIRST		5U
+#define VK_NODE_TALLIES			(VK_NODE_OPCODE_FIRST + VK_NODE_TIMED_OPCODES)
 
 /*
  * One run of the executor's own GPU memory: the backing and where the
@@ -43,8 +68,33 @@ struct vk_node_run {
 	uint64_t va;
 };
 
+/* One kind of timed work: how many, their bytes, their microseconds and the longest. */
+struct vk_node_tally {
+	uint64_t count;
+	uint64_t bytes;
+	uint64_t us;
+	uint64_t most_us;
+};
+
+/*
+ * The executor's timing: the period between marks and when the current
+ * one began (microseconds), and the tallies of the period; lock guards
+ * the tallies (the boot's own trials time outside the node's lock).
+ */
+struct amdrdna_vk_timing {
+	struct spinlock lock;
+	uint64_t period_us;
+	uint64_t started_us;
+	struct vk_node_tally tallies[VK_NODE_TALLIES];
+};
+
 static int vk_node_execute(struct amdrdna_session *session, const void *wire, uint32_t bytes);
 static uint64_t vk_node_timelines(struct amdrdna_session *session);
+static int vk_node_dispatch(struct amdrdna_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
+static void vk_node_count(struct amdrdna_node *node, uint32_t kind, uint64_t started_us, uint64_t bytes);
+static void vk_node_report(struct amdrdna_node *node);
+static void vk_node_report_opcodes(const struct vk_node_tally *tallies);
+static void vk_node_tally_add(struct vk_node_tally *tally, uint64_t us, uint64_t bytes);
 
 /*
  * Binds the Vulkan executor to the node before it is registered: the
@@ -54,8 +104,30 @@ void
 amdrdna_vk_node_bind(
 	struct amdrdna_node *node)
 {
+	struct amdrdna_vk_timing *timing;
+	unsigned period_ms;
+
 	/* The executor's frame runner and its record of its queues' timelines. */
 	amdrdna_runtime_bind(node, vk_node_execute, vk_node_timelines);
+
+	/* Timed only when the boot line asks for it. */
+	period_ms = amdrdna_parameter_number("amdrdna.vk.timing", 0U);
+	if (period_ms == 0U)
+		return;
+
+	/* The timing, kept for the node's lifetime. */
+	timing = kern_calloc(1U, sizeof(*timing));
+	if (timing == NULL) {
+		amdrdna_mark("vk timing: not timed (no memory)");
+		return;
+	}
+	spin_init(&timing->lock, LOCK_RANK_DEVICE, "amdrdna vk timing");
+	timing->period_us = (uint64_t)period_ms * 1000U;
+	timing->started_us = amdrdna_display_now_us();
+
+	/* Published before the device is registered, so before any frame. */
+	node->vk_timing = timing;
+	amdrdna_mark("vk timing: marks every %u ms (at the next frame)", period_ms);
 }
 
 /*
@@ -435,10 +507,12 @@ amdrdna_vk_memory_create(
 {
 	struct amdrdna_session *session;
 	struct amdrdna_backing *made;
+	uint64_t started_us;
 	int error;
 
-	/* The node session the executor names. */
+	/* The node session the executor names, and when the making began. */
 	session = owner;
+	started_us = amdrdna_display_now_us();
 
 	/* The VRAM, cleared, outside the window. */
 	error = amdrdna_backing_create(session->node->device, bytes, false, &made);
@@ -451,6 +525,9 @@ amdrdna_vk_memory_create(
 		amdrdna_backing_put(session->node->device, made);
 		return error;
 	}
+
+	/* Timed with its bytes. */
+	vk_node_count(session->node, VK_NODE_MEMORY, started_us, bytes);
 
 	/* Succeeded: the memory holds the backing's one reference. */
 	*backing = made;
@@ -471,10 +548,12 @@ amdrdna_vk_gpu_alloc(
 {
 	struct amdrdna_session *session;
 	struct vk_node_run *run;
+	uint64_t started_us;
 	int error;
 
-	/* The node session the executor names. */
+	/* The node session the executor names, and when the making began. */
 	session = owner;
+	started_us = amdrdna_display_now_us();
 
 	/* The record. */
 	run = kern_calloc(1U, sizeof(*run));
@@ -495,6 +574,9 @@ amdrdna_vk_gpu_alloc(
 		kern_free(run);
 		return error;
 	}
+
+	/* Timed with its bytes. */
+	vk_node_count(session->node, VK_NODE_MEMORY, started_us, bytes);
 
 	/* Succeeded: the run is the executor's. */
 	*token = run;
@@ -549,6 +631,7 @@ amdrdna_vk_gpu_run(
 	uint32_t bytes)
 {
 	struct amdrdna_session *session;
+	uint64_t started_us;
 	int error;
 
 	/* The node session the executor names. */
@@ -558,8 +641,10 @@ amdrdna_vk_gpu_run(
 	if (bytes == 0U || (bytes & 3U) != 0U)
 		return EINVAL;
 
-	/* Runs the buffer in the session's space and waits for it. */
+	/* Runs the buffer in the session's space and waits for it, timed with its bytes. */
+	started_us = amdrdna_display_now_us();
 	error = amdrdna_space_run(session->space, AMDRDNA_TRACKED_GRAPHICS, va, bytes / 4U, VK_NODE_RUN_MS);
+	vk_node_count(session->node, VK_NODE_RUNS, started_us, bytes);
 	if (error == EINVAL)
 		return EINVAL;
 	if (error != 0)
@@ -583,6 +668,7 @@ amdrdna_vk_gpu_run_kernel(
 	uint32_t bytes)
 {
 	struct amdrdna_session *session;
+	uint64_t started_us;
 	int error;
 
 	/* The node session the executor names. */
@@ -592,8 +678,10 @@ amdrdna_vk_gpu_run_kernel(
 	if (bytes == 0U || (bytes & 3U) != 0U)
 		return EINVAL;
 
-	/* Runs the buffer in the session's space and waits for it. */
+	/* Runs the buffer in the session's space and waits for it, timed with its bytes. */
+	started_us = amdrdna_display_now_us();
 	error = amdrdna_space_run(session->space, AMDRDNA_TRACKED_COMPUTE, va, bytes / 4U, VK_NODE_RUN_MS);
+	vk_node_count(session->node, VK_NODE_RUNS, started_us, bytes);
 	if (error == EINVAL)
 		return EINVAL;
 	if (error != 0)
@@ -603,13 +691,14 @@ amdrdna_vk_gpu_run_kernel(
 	return 0;
 }
 
-/* Counts a transfer the CPU did through the window instead of the GPU. */
+/* Counts a copy between a buffer and an image the command processor moved. */
 void
 amdrdna_vk_gpu_copied(
 	void *owner,
 	uint64_t bytes)
 {
 	struct amdrdna_session *session;
+	uint64_t now_us;
 
 	/* The node session the executor names. */
 	session = owner;
@@ -617,6 +706,10 @@ amdrdna_vk_gpu_copied(
 	/* One copy more, and its bytes. */
 	(void)__atomic_fetch_add(&session->node->copies, 1U, __ATOMIC_RELAXED);
 	(void)__atomic_fetch_add(&session->node->copy_bytes, bytes, __ATOMIC_RELAXED);
+
+	/* Counted for the timing too (the moves' time is the GPU's, in its run). */
+	now_us = amdrdna_display_now_us();
+	vk_node_count(session->node, VK_NODE_MOVES, now_us, bytes);
 }
 
 /* Counts the draws of a command buffer about to run: the application's and the executor's own quads. */
@@ -645,12 +738,15 @@ amdrdna_vk_blob_read(
 	size_t length)
 {
 	struct amdrdna_session *session;
+	uint64_t started_us;
 
 	/* The node session the executor names. */
 	session = owner;
 
-	/* The copy; the window is read without the CPU's cache. */
+	/* The copy, timed; the window is read without the CPU's cache. */
+	started_us = amdrdna_display_now_us();
 	kern_memcpy(to, from, length);
+	vk_node_count(session->node, VK_NODE_STREAMS, started_us, length);
 
 	/* One stream more, and its bytes. */
 	(void)__atomic_fetch_add(&session->node->streams, 1U, __ATOMIC_RELAXED);
@@ -665,11 +761,21 @@ vk_node_execute(
 	uint32_t bytes)
 {
 	struct amdrdna_vk_session *executor;
+	struct amdrdna_vk_timing *timing;
+	uint64_t started_us;
 	int error;
 
-	/* The frame's commands, decoded and dispatched by the executor. */
+	/* The frame's commands, decoded and dispatched by the executor (each timed when the node is). */
 	executor = session->vk;
-	error = amdrdna_vk_stream_execute(executor, wire, bytes, amdrdna_vk_dispatch);
+	timing = session->node->vk_timing;
+	if (timing == NULL) {
+		error = amdrdna_vk_stream_execute(executor, wire, bytes, amdrdna_vk_dispatch);
+	} else {
+		started_us = amdrdna_display_now_us();
+		error = amdrdna_vk_stream_execute(executor, wire, bytes, vk_node_dispatch);
+		vk_node_count(session->node, VK_NODE_FRAMES, started_us, bytes);
+		vk_node_report(session->node);
+	}
 	if (error != 0) {
 		amdrdna_mark("vk: a frame failed (%d): command %u refused, %u the last taken",
 		    error, (unsigned)executor->failed_opcode, (unsigned)executor->last_opcode);
@@ -698,4 +804,185 @@ vk_node_timelines(
 
 	/* Succeeded: the timelines. */
 	return timelines;
+}
+
+/* Runs one command of a timed node's frame through the executor's dispatcher and counts its time under its opcode. */
+static int
+vk_node_dispatch(
+	struct amdrdna_vk_session *session,
+	uint32_t opcode,
+	uint32_t requested,
+	struct i915_wire_reader *reader,
+	struct i915_wire_writer *reply)
+{
+	struct amdrdna_session *owner;
+	uint64_t started_us;
+	uint32_t slot;
+	int error;
+
+	/* The command, timed. */
+	owner = session->owner;
+	started_us = amdrdna_display_now_us();
+	error = amdrdna_vk_dispatch(session, opcode, requested, reader, reply);
+
+	/* Counted under its opcode, a large one under the last. */
+	slot = opcode;
+	if (slot >= VK_NODE_TIMED_OPCODES)
+		slot = VK_NODE_TIMED_OPCODES - 1U;
+	vk_node_count(owner->node, VK_NODE_OPCODE_FIRST + slot, started_us, 0U);
+
+	/* Reports a command the executor refused. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the command ran. */
+	return 0;
+}
+
+/* Adds one piece of work of a kind (VK_NODE_*) that began at started_us, of bytes, to a timed node's tallies. */
+static void
+vk_node_count(
+	struct amdrdna_node *node,
+	uint32_t kind,
+	uint64_t started_us,
+	uint64_t bytes)
+{
+	struct amdrdna_vk_timing *timing;
+	unsigned long irq;
+	uint64_t now_us;
+
+	/* An untimed node counts nothing. */
+	timing = node->vk_timing;
+	if (timing == NULL)
+		return;
+
+	/* Its time. */
+	now_us = amdrdna_display_now_us();
+
+	/* Into the kind's tally, under the timing's lock. */
+	irq = spin_lock_irqsave(&timing->lock);
+
+	vk_node_tally_add(&timing->tallies[kind], now_us - started_us, bytes);
+
+	spin_unlock_irqrestore(&timing->lock, irq);
+}
+
+/*
+ * Marks a timed node's period once it has passed: the frames, the waits
+ * for the GPU, the command streams read through the window, the memory
+ * made and the copies moved, each as how many, kilobytes, milliseconds
+ * and the longest; then the opcodes that took longest.  A new period
+ * starts.  Only the frame runner calls it (under the node's lock).
+ */
+static void
+vk_node_report(
+	struct amdrdna_node *node)
+{
+	const struct vk_node_tally *frames;
+	const struct vk_node_tally *runs;
+	const struct vk_node_tally *streams;
+	const struct vk_node_tally *memory;
+	const struct vk_node_tally *moves;
+	struct vk_node_tally *taken;
+	struct amdrdna_vk_timing *timing;
+	unsigned long irq;
+	uint64_t now_us;
+	uint64_t length_us;
+
+	/* Nothing to mark before the period has passed. */
+	timing = node->vk_timing;
+	now_us = amdrdna_display_now_us();
+	length_us = now_us - timing->started_us;
+	if (length_us < timing->period_us)
+		return;
+
+	/* The tallies taken aside, for marking outside the lock. */
+	taken = kern_malloc(sizeof(timing->tallies));
+	if (taken == NULL)
+		return;
+
+	/* Takes the period's tallies and starts the next period. */
+	irq = spin_lock_irqsave(&timing->lock);
+
+	kern_memcpy(taken, timing->tallies, sizeof(timing->tallies));
+	kern_memset(timing->tallies, 0, sizeof(timing->tallies));
+	timing->started_us = now_us;
+
+	spin_unlock_irqrestore(&timing->lock, irq);
+
+	/* The frames and the work in them. */
+	frames = &taken[VK_NODE_FRAMES];
+	runs = &taken[VK_NODE_RUNS];
+	streams = &taken[VK_NODE_STREAMS];
+	memory = &taken[VK_NODE_MEMORY];
+	moves = &taken[VK_NODE_MOVES];
+	amdrdna_mark("vk timing %llums: frames %llu %llums max %lluus | gpu runs %llu %llums max %lluus | moves %llu %lluKiB",
+	    (unsigned long long)(length_us / 1000U),
+	    (unsigned long long)frames->count, (unsigned long long)(frames->us / 1000U), (unsigned long long)frames->most_us,
+	    (unsigned long long)runs->count, (unsigned long long)(runs->us / 1000U), (unsigned long long)runs->most_us,
+	    (unsigned long long)moves->count, (unsigned long long)(moves->bytes >> 10));
+	amdrdna_mark("vk timing: streams %llu %lluKiB %llums max %lluus | memory %llu %lluKiB %llums max %lluus",
+	    (unsigned long long)streams->count, (unsigned long long)(streams->bytes >> 10),
+	    (unsigned long long)(streams->us / 1000U), (unsigned long long)streams->most_us,
+	    (unsigned long long)memory->count, (unsigned long long)(memory->bytes >> 10),
+	    (unsigned long long)(memory->us / 1000U), (unsigned long long)memory->most_us);
+
+	/* The opcodes that took longest. */
+	vk_node_report_opcodes(taken + VK_NODE_OPCODE_FIRST);
+	kern_free(taken);
+}
+
+/* Marks the VK_NODE_TIMED_SHOWN opcodes of a period that took the most time, the longest first. */
+static void
+vk_node_report_opcodes(
+	const struct vk_node_tally *tallies)
+{
+	bool shown[VK_NODE_TIMED_OPCODES];
+	uint32_t best;
+	uint32_t slot;
+	unsigned place;
+
+	/* None shown yet. */
+	kern_memset(shown, 0, sizeof(shown));
+
+	/* Each place: the opcode not yet shown with the most time. */
+	for (place = 0U; place < VK_NODE_TIMED_SHOWN; place++) {
+		/* The longest of the rest. */
+		best = VK_NODE_TIMED_OPCODES;
+		for (slot = 0U; slot < VK_NODE_TIMED_OPCODES; slot++) {
+			if (shown[slot] || tallies[slot].count == 0U)
+				continue;
+			if (best == VK_NODE_TIMED_OPCODES || tallies[slot].us > tallies[best].us)
+				best = slot;
+		}
+
+		/* No more opcodes ran. */
+		if (best == VK_NODE_TIMED_OPCODES)
+			break;
+
+		/* Its line. */
+		shown[best] = true;
+		amdrdna_mark("vk timing: op %u: %llu %llums max %lluus",
+		    (unsigned)best,
+		    (unsigned long long)tallies[best].count,
+		    (unsigned long long)(tallies[best].us / 1000U),
+		    (unsigned long long)tallies[best].most_us);
+	}
+}
+
+/* Adds one piece of work of us microseconds and bytes to a tally. */
+static void
+vk_node_tally_add(
+	struct vk_node_tally *tally,
+	uint64_t us,
+	uint64_t bytes)
+{
+	/* One more, its bytes and its time. */
+	tally->count++;
+	tally->bytes += bytes;
+	tally->us += us;
+
+	/* The longest so far. */
+	if (us > tally->most_us)
+		tally->most_us = us;
 }

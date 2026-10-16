@@ -502,6 +502,16 @@
 #define AMDRDNA_PRIMITIVE_TRIANGLE_STRIP	6U
 
 /*
+ * The most bytes one memory move takes: its 26-bit count, rounded down to
+ * 32 bytes so the next move starts aligned.
+ *
+ * Value referenced: Mesa 25.0.7 src/amd/vulkan/radv_cp_dma.c
+ * (cp_dma_max_byte_count: the GFX9 and later count, less the 32-byte
+ * alignment).
+ */
+#define AMDRDNA_VK_MOVE_MAX			0x03ffffe0U
+
+/*
  * An indirect buffer of packets being written: its words, how many are
  * written, and its capacity.  A packet that would pass the end is not
  * written and full is set; the writer is then used no more.
@@ -528,6 +538,7 @@ void amdrdna_vk_pm4_event_fence(struct amdrdna_vk_pm4 *pm4, uint32_t event, uint
 void amdrdna_vk_pm4_wait_value(struct amdrdna_vk_pm4 *pm4, uint64_t address, uint32_t value);
 void amdrdna_vk_pm4_cache_acquire(struct amdrdna_vk_pm4 *pm4, uint32_t caches);
 void amdrdna_vk_pm4_fetcher_sync(struct amdrdna_vk_pm4 *pm4);
+void amdrdna_vk_pm4_move(struct amdrdna_vk_pm4 *pm4, uint64_t source, uint64_t destination, uint32_t bytes);
 void amdrdna_vk_pm4_draw(struct amdrdna_vk_pm4 *pm4, uint32_t vertex_count, uint32_t instance_count);
 void amdrdna_vk_pm4_dispatch(struct amdrdna_vk_pm4 *pm4, uint32_t x, uint32_t y, uint32_t z);
 void amdrdna_vk_pm4_pad(struct amdrdna_vk_pm4 *pm4, uint32_t multiple);

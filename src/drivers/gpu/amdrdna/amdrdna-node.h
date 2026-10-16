@@ -111,6 +111,9 @@ typedef int (*amdrdna_node_execute)(struct amdrdna_session *session, const void 
 /* Reports the timelines (bit n: timeline n) the queues of a session's executor complete jobs on. */
 typedef uint64_t (*amdrdna_node_timelines)(struct amdrdna_session *session);
 
+/* The executor's timing (vk-node.c). */
+struct amdrdna_vk_timing;
+
 /*
  * The registered GPU device.
  *
@@ -127,8 +130,11 @@ typedef uint64_t (*amdrdna_node_timelines)(struct amdrdna_session *session);
  * is set by the core's fault or the stop: nothing new is taken and what
  * is queued completes with EIO.
  *
- * The counts the executor adds with relaxed atomics: transfers the CPU
- * did through the window, draws and quads, command streams read.
+ * The counts the executor adds with relaxed atomics: copies between a
+ * buffer and an image the command processor moved, draws and quads,
+ * command streams read.  vk_timing, made at the binding when the boot line
+ * asks for it (amdrdna.vk.timing, a period in milliseconds), times the
+ * executor's work and marks it once a period; NULL leaves it untimed.
  *
  * The display (present.c, stage A8 on, when display is set): the lease of
  * one open at a time and the frames it presents.  present_lock puts the
@@ -163,6 +169,7 @@ struct amdrdna_node {
 	uint64_t quads;
 	uint64_t streams;
 	uint64_t stream_bytes;
+	struct amdrdna_vk_timing *vk_timing;
 	int display;
 	struct mutex present_lock;
 	struct mutex display_lock;
