@@ -282,9 +282,11 @@ amdrdna_vk_blob(
 			break;
 	}
 
-	/* Refuses a number the session has no blob for. */
+	/* Refuses a number the session has no blob for, or a blob the CPU's window does not hold. */
 	if (resource == NULL)
 		return ENOENT;
+	if (!resource->backing->cpu)
+		return EINVAL;
 
 	/* The CPU reads what the GPU wrote, not what the host path held. */
 	amdrdna_host_path_drop(session->node->device);
@@ -311,19 +313,24 @@ amdrdna_vk_device_id(
 
 /*
  * Gives the bytes of VRAM the executor's memory may take: the mapped part
- * of the CPU's window, which every backing comes from.
+ * of the CPU's window (cpu true), or the VRAM only the GPU reaches.
  */
 uint64_t
 amdrdna_vk_heap_bytes(
-	void *owner)
+	void *owner,
+	bool cpu)
 {
+	struct amdrdna_device *device;
 	struct amdrdna_session *session;
 
 	/* The node session the executor names. */
 	session = owner;
+	device = session->node->device;
 
-	/* The window's mapped part. */
-	return session->node->device->window.size;
+	/* The window's mapped part, or the pool outside it. */
+	if (cpu)
+		return device->window.size;
+	return device->gpu_pool.end - device->gpu_pool.start;
 }
 
 /*
@@ -413,6 +420,44 @@ amdrdna_vk_memory_import(
 }
 
 /*
+ * Gives a VkDeviceMemory of its own storage: zeroed VRAM outside the CPU's
+ * window, mapped into the session's address space at *va; the backing
+ * goes back with amdrdna_vk_memory_detach().
+ *
+ * Returns 0, ENOMEM, or the clear's or the mapping's error.
+ */
+int
+amdrdna_vk_memory_create(
+	void *owner,
+	uint64_t bytes,
+	uint64_t *va,
+	void **backing)
+{
+	struct amdrdna_session *session;
+	struct amdrdna_backing *made;
+	int error;
+
+	/* The node session the executor names. */
+	session = owner;
+
+	/* The VRAM, cleared, outside the window. */
+	error = amdrdna_backing_create(session->node->device, bytes, false, &made);
+	if (error != 0)
+		return error;
+
+	/* And in the session's address space. */
+	error = amdrdna_space_map(session->space, made, va);
+	if (error != 0) {
+		amdrdna_backing_put(session->node->device, made);
+		return error;
+	}
+
+	/* Succeeded: the memory holds the backing's one reference. */
+	*backing = made;
+	return 0;
+}
+
+/*
  * Allocates a run of the executor's own GPU memory: VRAM the CPU writes
  * through its window and the session's address space maps at *va.
  */
@@ -437,7 +482,7 @@ amdrdna_vk_gpu_alloc(
 		return ENOMEM;
 
 	/* The VRAM, cleared, in the CPU's window. */
-	error = amdrdna_backing_create(session->node->device, bytes, &run->backing);
+	error = amdrdna_backing_create(session->node->device, bytes, true, &run->backing);
 	if (error != 0) {
 		kern_free(run);
 		return error;

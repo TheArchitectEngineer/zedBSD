@@ -100,6 +100,15 @@
 #define ENGINES_FENCE_MS		2000U
 #define ENGINES_INTERRUPT_MS		200U
 
+/*
+ * A clear's fill packets: at most 4 MiB each, at most 16 a submission.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/amd/amdgpu/sdma_v5_0.c
+ * (sdma_v5_0_buffer_funcs: fill_max_bytes 0x400000).
+ */
+#define ENGINES_FILL_BYTES		0x400000U
+#define ENGINES_FILL_PACKETS		16U
+
 /* How many command errors the log names before it stays quiet. */
 #define ENGINES_NAMED_ERRORS		8U
 
@@ -208,6 +217,59 @@ amdrdna_engines_stop(
 
 	/* Marks the stop, for the log of the reboot. */
 	amdrdna_mark("shutdown: A5 undone, queues detached, engines halted");
+}
+
+/*
+ * Zeroes a run of VRAM with the copy engine (VRAM the CPU's window does
+ * not reach), and waits until it is done.  vram and bytes are whole words.
+ *
+ * Returns 0, EBUSY when the copy engine does not run, or the ring's error.
+ */
+int
+amdrdna_engines_clear(
+	struct amdrdna_device *device,
+	uint64_t vram,
+	uint64_t bytes)
+{
+	uint32_t words[ENGINES_FILL_PACKETS * AMDRDNA_COPY_FILL_WORDS];
+	struct amdrdna_engines *engines;
+	uint64_t address;
+	uint64_t left;
+	uint32_t piece;
+	uint32_t sequence;
+	unsigned count;
+	unsigned packets;
+	int error;
+
+	/* The copy engine must run. */
+	engines = &device->engines;
+	if (!engines->copy_running || !engines->copy.up)
+		return EBUSY;
+
+	/* The run in fills of at most 4 MiB, a submission of at most 16 fills at a time. */
+	address = device->frame_buffer_base + vram;
+	left = bytes;
+	while (left != 0U) {
+		count = 0U;
+		for (packets = 0U; packets < ENGINES_FILL_PACKETS && left != 0U; packets++) {
+			piece = ENGINES_FILL_BYTES;
+			if (left < piece)
+				piece = (uint32_t)left;
+			count += amdrdna_copy_fill(words + count, address, 0U, piece);
+			address += piece;
+			left -= piece;
+		}
+
+		/* The submission, and its fence. */
+		error = amdrdna_ring_submit(device, &engines->copy, words, count, false, &sequence);
+		if (error == 0)
+			error = amdrdna_ring_wait(device, &engines->copy, sequence, ENGINES_FENCE_MS);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the run reads as zeroes. */
+	return 0;
 }
 
 /*

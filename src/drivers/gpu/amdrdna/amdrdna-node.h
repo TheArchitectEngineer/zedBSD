@@ -214,9 +214,10 @@ int amdrdna_vk_node_blob_attach(struct amdrdna_session *session, uint64_t blob_i
  */
 int amdrdna_vk_blob(void *owner, uint32_t resource_id, uint8_t **cpu, uint64_t *bytes);
 uint32_t amdrdna_vk_device_id(void *owner);
-uint64_t amdrdna_vk_heap_bytes(void *owner);
+uint64_t amdrdna_vk_heap_bytes(void *owner, bool cpu);
 void amdrdna_vk_memory_detach(void *owner, void *backing, uint64_t va, uint64_t bytes);
 int amdrdna_vk_memory_import(void *owner, uint32_t resource_id, uint64_t bytes, uint8_t **cpu, uint64_t *va, void **backing);
+int amdrdna_vk_memory_create(void *owner, uint64_t bytes, uint64_t *va, void **backing);
 int amdrdna_vk_gpu_alloc(void *owner, uint64_t bytes, void **token, uint8_t **cpu, uint64_t *va);
 void amdrdna_vk_gpu_free(void *owner, void *token);
 int amdrdna_vk_gpu_run(void *owner, uint64_t va, uint32_t bytes);

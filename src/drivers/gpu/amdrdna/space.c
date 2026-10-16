@@ -695,19 +695,22 @@ amdrdna_space_describe(
 }
 
 /*
- * Creates a backing: zeroed VRAM in the CPU's window, in whole 64 KiB
- * steps, held once by the caller.
+ * Creates a backing: zeroed VRAM in the CPU's window (cpu true) or in the
+ * VRAM only the GPU reaches, in whole 64 KiB steps, held once by the
+ * caller.
  *
- * Returns 0, EINVAL for no bytes, ENOMEM.
+ * Returns 0, EINVAL for no bytes, ENOMEM, or the copy engine's error for
+ * VRAM outside the window.
  */
 int
 amdrdna_backing_create(
 	struct amdrdna_device *device,
 	uint64_t bytes,
+	bool cpu,
 	struct amdrdna_backing **result)
 {
 	struct amdrdna_backing *backing;
-	volatile uint8_t *cpu;
+	volatile uint8_t *window;
 	uint64_t whole;
 	uint64_t at;
 	int error;
@@ -723,22 +726,32 @@ amdrdna_backing_create(
 	if (backing == NULL)
 		return ENOMEM;
 
-	/* The VRAM, from the CPU's pool. */
-	error = amdrdna_vram_take(device, true, whole, SPACE_MAPPING_ALIGN, &backing->vram);
+	/* The VRAM, from the pool asked for. */
+	error = amdrdna_vram_take(device, cpu, whole, SPACE_MAPPING_ALIGN, &backing->vram);
 	if (error != 0) {
 		kern_free(backing);
 		return ENOMEM;
 	}
 
-	/* Cleared through the window, so no earlier contents show. */
-	cpu = amdrdna_vram_cpu(device, backing->vram);
-	for (at = 0U; at < whole; at += 8U)
-		kern_mmio_write64(cpu + at, 0U);
+	/* Cleared, so no earlier contents show: through the window, or by the copy engine outside it. */
+	if (cpu) {
+		window = amdrdna_vram_cpu(device, backing->vram);
+		for (at = 0U; at < whole; at += 8U)
+			kern_mmio_write64(window + at, 0U);
+	} else {
+		error = amdrdna_engines_clear(device, backing->vram, whole);
+		if (error != 0) {
+			amdrdna_vram_give(device, false, backing->vram, whole);
+			kern_free(backing);
+			return error;
+		}
+	}
 
 	/* One holder: the caller. */
 	backing->bytes = whole;
 	backing->asked = bytes;
 	backing->refs = 1U;
+	backing->cpu = cpu;
 	backing->kept = false;
 
 	/* Succeeded: the backing is the caller's. */
@@ -790,7 +803,7 @@ amdrdna_backing_put(
 
 	/* The VRAM goes back unless it is kept for good. */
 	if (!kept)
-		amdrdna_vram_give(device, true, backing->vram, backing->bytes);
+		amdrdna_vram_give(device, backing->cpu, backing->vram, backing->bytes);
 
 	/* The record. */
 	kern_free(backing);
@@ -812,13 +825,17 @@ amdrdna_backing_keep(
 	spin_unlock_irqrestore(&device->spaces.lock, irq);
 }
 
-/* Reports where the CPU reads and writes a backing in its window. */
+/* Reports where the CPU reads and writes a backing in its window; NULL for one outside the window. */
 volatile uint8_t *
 amdrdna_backing_cpu(
 	struct amdrdna_device *device,
 	const struct amdrdna_backing *backing)
 {
 	volatile uint8_t *cpu;
+
+	/* Outside the window the CPU does not reach it. */
+	if (!backing->cpu)
+		return NULL;
 
 	/* The window's view of the VRAM. */
 	cpu = amdrdna_vram_cpu(device, backing->vram);

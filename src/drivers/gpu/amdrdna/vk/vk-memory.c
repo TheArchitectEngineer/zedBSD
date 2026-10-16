@@ -133,8 +133,9 @@ amdrdna_vk_memory_attach(
 }
 
 /*
- * Reports the GPU and CPU addresses of a bound buffer's first byte; EIO
- * when it is not bound or its memory has no storage.
+ * Reports the GPU and CPU addresses of a bound buffer's first byte (the
+ * CPU's NULL for memory outside the CPU's window); EIO when it is not
+ * bound or its memory has no storage.
  */
 int
 amdrdna_vk_buffer_address(
@@ -153,15 +154,18 @@ amdrdna_vk_buffer_address(
 
 	/* The memory's addresses moved by the buffer's offset. */
 	*va = memory->va + buffer->offset;
-	*cpu = memory->cpu + buffer->offset;
+	*cpu = NULL;
+	if (memory->cpu != NULL)
+		*cpu = memory->cpu + buffer->offset;
 
 	/* Succeeded: the buffer's addresses. */
 	return 0;
 }
 
 /*
- * Reports the GPU and CPU addresses of a bound image's first byte; EIO
- * when it is not bound or its memory has no storage.
+ * Reports the GPU and CPU addresses of a bound image's first byte (the
+ * CPU's NULL for memory outside the CPU's window); EIO when it is not
+ * bound or its memory has no storage.
  */
 int
 amdrdna_vk_image_address(
@@ -180,7 +184,9 @@ amdrdna_vk_image_address(
 
 	/* The memory's addresses moved by the image's offset. */
 	*va = memory->va + image->offset;
-	*cpu = memory->cpu + image->offset;
+	*cpu = NULL;
+	if (memory->cpu != NULL)
+		*cpu = memory->cpu + image->offset;
 
 	/* Succeeded: the image's addresses. */
 	return 0;
@@ -234,11 +240,11 @@ memory_allocate(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* A nonempty allocation of the one memory type. */
+	/* A nonempty allocation of one of the memory types. */
 	error = 0;
 	if (bytes == 0U) {
 		error = EINVAL;
-	} else if (type != AMDRDNA_VK_MEMORY_TYPE) {
+	} else if (type >= AMDRDNA_VK_MEMORY_TYPES) {
 		error = EINVAL;
 	}
 
@@ -253,6 +259,18 @@ memory_allocate(
 	/* An import takes its resource's storage now (the node maps it and holds its backing for the record). */
 	if (memory != NULL && imported != 0U) {
 		error = amdrdna_vk_memory_import(session->owner, imported, bytes, &memory->cpu, &memory->va, &memory->backing);
+		if (error == 0)
+			memory->attached = true;
+	}
+
+	/*
+	 * Device-local memory that is neither imported nor exported (libvulkan
+	 * makes no blob for it) takes its own storage now, outside the CPU's
+	 * window; exported memory waits for its blob, which the node places by
+	 * whether it is mapped.
+	 */
+	if (memory != NULL && imported == 0U && chain == 0U && type == AMDRDNA_VK_MEMORY_DEVICE) {
+		error = amdrdna_vk_memory_create(session->owner, bytes, &memory->va, &memory->backing);
 		if (error == 0)
 			memory->attached = true;
 	}
@@ -436,13 +454,13 @@ memory_requirements(
 			bytes = buffer->size;
 	}
 
-	/* Whole runs of the resource boundary, on that boundary, of the one memory type. */
+	/* Whole runs of the resource boundary, on that boundary, of either memory type. */
 	kern_memset(&requirements, 0, sizeof(requirements));
 	requirements.size = (bytes + AMDRDNA_VK_RESOURCE_ALIGN - 1U) & ~(uint64_t)(AMDRDNA_VK_RESOURCE_ALIGN - 1U);
 	requirements.alignment = AMDRDNA_VK_RESOURCE_ALIGN;
 	requirements.memoryTypeBits = 0U;
 	if (bytes != 0U)
-		requirements.memoryTypeBits = 1U << AMDRDNA_VK_MEMORY_TYPE;
+		requirements.memoryTypeBits = (1U << AMDRDNA_VK_MEMORY_DEVICE) | (1U << AMDRDNA_VK_MEMORY_HOST);
 
 	/* The requirements behind their presence word. */
 	drv_i915_wire_reply_u64(reply, 1U);

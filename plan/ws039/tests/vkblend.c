@@ -27,6 +27,7 @@
  * usage: vkblend [--device-index=N] [--case=NAME] [--dump=PREFIX]
  */
 
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -60,26 +61,34 @@ struct blend_case {
 	VkImageTiling tiling;
 	enum blend_mode mode;
 	enum blend_picture picture;
+	bool device;
+	uint32_t skew;
 };
 
 static const struct blend_case blend_cases[] = {
-	{ "read-240x135-optimal", 240U, 135U, VK_IMAGE_TILING_OPTIMAL, BLEND_NONE, PICTURE_COORDINATES },
-	{ "read-240x135-linear", 240U, 135U, VK_IMAGE_TILING_LINEAR, BLEND_NONE, PICTURE_COORDINATES },
-	{ "read-256x64-optimal", 256U, 64U, VK_IMAGE_TILING_OPTIMAL, BLEND_NONE, PICTURE_COORDINATES },
-	{ "read-256x64-linear", 256U, 64U, VK_IMAGE_TILING_LINEAR, BLEND_NONE, PICTURE_COORDINATES },
-	{ "read-1920x64-optimal", 1920U, 64U, VK_IMAGE_TILING_OPTIMAL, BLEND_NONE, PICTURE_COORDINATES },
-	{ "read-1920x64-linear", 1920U, 64U, VK_IMAGE_TILING_LINEAR, BLEND_NONE, PICTURE_COORDINATES },
-	{ "read-1180x40-optimal", 1180U, 40U, VK_IMAGE_TILING_OPTIMAL, BLEND_NONE, PICTURE_COORDINATES },
-	{ "read-100x30-optimal", 100U, 30U, VK_IMAGE_TILING_OPTIMAL, BLEND_NONE, PICTURE_COORDINATES },
-	{ "premul-240x135-optimal", 240U, 135U, VK_IMAGE_TILING_OPTIMAL, BLEND_PREMULTIPLIED, PICTURE_ALPHA_BANDS },
-	{ "straight-240x135-optimal", 240U, 135U, VK_IMAGE_TILING_OPTIMAL, BLEND_STRAIGHT, PICTURE_ALPHA_BANDS },
-	{ "premul-256x64-linear", 256U, 64U, VK_IMAGE_TILING_LINEAR, BLEND_PREMULTIPLIED, PICTURE_ALPHA_BANDS },
-	{ "straight-256x64-linear", 256U, 64U, VK_IMAGE_TILING_LINEAR, BLEND_STRAIGHT, PICTURE_ALPHA_BANDS },
-	{ "premul-1920x64-optimal", 1920U, 64U, VK_IMAGE_TILING_OPTIMAL, BLEND_PREMULTIPLIED, PICTURE_ALPHA_BANDS },
-	{ "straight-1920x64-optimal", 1920U, 64U, VK_IMAGE_TILING_OPTIMAL, BLEND_STRAIGHT, PICTURE_ALPHA_BANDS },
+	{ "read-240x135-optimal", 240U, 135U, VK_IMAGE_TILING_OPTIMAL, BLEND_NONE, PICTURE_COORDINATES, false, 0U },
+	{ "read-240x135-linear", 240U, 135U, VK_IMAGE_TILING_LINEAR, BLEND_NONE, PICTURE_COORDINATES, false, 0U },
+	{ "read-256x64-optimal", 256U, 64U, VK_IMAGE_TILING_OPTIMAL, BLEND_NONE, PICTURE_COORDINATES, false, 0U },
+	{ "read-256x64-linear", 256U, 64U, VK_IMAGE_TILING_LINEAR, BLEND_NONE, PICTURE_COORDINATES, false, 0U },
+	{ "read-1920x64-optimal", 1920U, 64U, VK_IMAGE_TILING_OPTIMAL, BLEND_NONE, PICTURE_COORDINATES, false, 0U },
+	{ "read-1920x64-linear", 1920U, 64U, VK_IMAGE_TILING_LINEAR, BLEND_NONE, PICTURE_COORDINATES, false, 0U },
+	{ "read-1180x40-optimal", 1180U, 40U, VK_IMAGE_TILING_OPTIMAL, BLEND_NONE, PICTURE_COORDINATES, false, 0U },
+	{ "read-100x30-optimal", 100U, 30U, VK_IMAGE_TILING_OPTIMAL, BLEND_NONE, PICTURE_COORDINATES, false, 0U },
+	{ "premul-240x135-optimal", 240U, 135U, VK_IMAGE_TILING_OPTIMAL, BLEND_PREMULTIPLIED, PICTURE_ALPHA_BANDS, false, 0U },
+	{ "straight-240x135-optimal", 240U, 135U, VK_IMAGE_TILING_OPTIMAL, BLEND_STRAIGHT, PICTURE_ALPHA_BANDS, false, 0U },
+	{ "premul-256x64-linear", 256U, 64U, VK_IMAGE_TILING_LINEAR, BLEND_PREMULTIPLIED, PICTURE_ALPHA_BANDS, false, 0U },
+	{ "straight-256x64-linear", 256U, 64U, VK_IMAGE_TILING_LINEAR, BLEND_STRAIGHT, PICTURE_ALPHA_BANDS, false, 0U },
+	{ "premul-1920x64-optimal", 1920U, 64U, VK_IMAGE_TILING_OPTIMAL, BLEND_PREMULTIPLIED, PICTURE_ALPHA_BANDS, false, 0U },
+	{ "straight-1920x64-optimal", 1920U, 64U, VK_IMAGE_TILING_OPTIMAL, BLEND_STRAIGHT, PICTURE_ALPHA_BANDS, false, 0U },
+	{ "skew-read-100x30-optimal", 100U, 30U, VK_IMAGE_TILING_OPTIMAL, BLEND_NONE, PICTURE_COORDINATES, false, 4U },
+	{ "device-read-240x135-optimal", 240U, 135U, VK_IMAGE_TILING_OPTIMAL, BLEND_NONE, PICTURE_COORDINATES, true, 0U },
+	{ "device-read-1920x64-optimal", 1920U, 64U, VK_IMAGE_TILING_OPTIMAL, BLEND_NONE, PICTURE_COORDINATES, true, 0U },
+	{ "device-premul-240x135-optimal", 240U, 135U, VK_IMAGE_TILING_OPTIMAL, BLEND_PREMULTIPLIED, PICTURE_ALPHA_BANDS, true, 0U },
+	{ "device-skew-read-1180x40-optimal", 1180U, 40U, VK_IMAGE_TILING_OPTIMAL, BLEND_NONE, PICTURE_COORDINATES, true, 4U },
+	{ "device-skew-premul-100x30-optimal", 100U, 30U, VK_IMAGE_TILING_OPTIMAL, BLEND_PREMULTIPLIED, PICTURE_ALPHA_BANDS, true, 4U },
 };
 
-/* One image or buffer with its own host-visible memory, mapped. */
+/* One image or buffer with its own memory: host-visible and mapped, or device-local only (mapping NULL). */
 struct blend_store {
 	VkImage image;
 	VkBuffer buffer;
@@ -95,6 +104,7 @@ struct blend {
 	VkDevice device;
 	VkQueue queue;
 	uint32_t memory_type;
+	uint32_t device_type;
 	VkSampler sampler;
 	VkShaderModule vertex_module;
 	VkShaderModule fragment_module;
@@ -126,7 +136,7 @@ struct blend_run {
 
 static VkResult blend_device(struct blend *blend, int index);
 static VkResult blend_pipelines(struct blend *blend);
-static VkResult blend_image(struct blend *blend, uint32_t width, uint32_t height, VkImageTiling tiling, VkImageUsageFlags usage,
+static VkResult blend_image(struct blend *blend, uint32_t width, uint32_t height, VkImageTiling tiling, VkImageUsageFlags usage, bool device,
 			    struct blend_store *store);
 static VkResult blend_buffer(struct blend *blend, VkDeviceSize bytes, VkBufferUsageFlags usage, struct blend_store *store);
 static int blend_case_run(struct blend *blend, const struct blend_case *test);
@@ -252,6 +262,20 @@ blend_device(
 		return VK_ERROR_FEATURE_NOT_PRESENT;
 	}
 	blend->memory_type = type;
+
+	/* A device-local type the CPU does not reach, when there is one. */
+	blend->device_type = UINT32_MAX;
+	for (type = 0U; type < memory.memoryTypeCount; type++) {
+		if ((memory.memoryTypes[type].propertyFlags & (VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) ==
+		    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) {
+			blend->device_type = type;
+			break;
+		}
+	}
+
+	/* The types found. */
+	printf("VKBLEND memory types=%u host=%u device=%d\n", memory.memoryTypeCount, blend->memory_type,
+	       blend->device_type == UINT32_MAX ? -1 : (int)blend->device_type);
 
 	priority = 1.0f;
 	memset(&queue, 0, sizeof(queue));
@@ -474,7 +498,7 @@ blend_pipelines(
 	return VK_SUCCESS;
 }
 
-/* Creates a 2D B8G8R8A8 image with its own memory, mapped, and its view. */
+/* Creates a 2D B8G8R8A8 image with its own memory (mapped unless device-local only), and its view. */
 static VkResult
 blend_image(
 	struct blend *blend,
@@ -482,6 +506,7 @@ blend_image(
 	uint32_t height,
 	VkImageTiling tiling,
 	VkImageUsageFlags usage,
+	bool device,
 	struct blend_store *store)
 {
 	VkImageCreateInfo create;
@@ -516,10 +541,13 @@ blend_image(
 	allocate.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	allocate.allocationSize = requirements.size;
 	allocate.memoryTypeIndex = blend->memory_type;
+	if (device)
+		allocate.memoryTypeIndex = blend->device_type;
+	mapping = NULL;
 	status = vkAllocateMemory(blend->device, &allocate, NULL, &store->memory);
 	if (status == VK_SUCCESS)
 		status = vkBindImageMemory(blend->device, store->image, store->memory, 0U);
-	if (status == VK_SUCCESS)
+	if (status == VK_SUCCESS && !device)
 		status = vkMapMemory(blend->device, store->memory, 0U, VK_WHOLE_SIZE, 0U, &mapping);
 	if (status != VK_SUCCESS) {
 		printf("VKBLEND fail image-memory %ux%u size=%llu %d\n", width, height, (unsigned long long)requirements.size, (int)status);
@@ -630,24 +658,29 @@ blend_case_run(
 	memset(&run, 0, sizeof(run));
 	tiling = test->tiling == VK_IMAGE_TILING_LINEAR ? "linear" : "optimal";
 	bytes = test->width * test->height * BLEND_PIXEL;
+	if (test->device && blend->device_type == UINT32_MAX) {
+		printf("VKBLEND %s no device-local type\n", test->name);
+		return 1;
+	}
 
 	/* The images and buffers. */
 	status = blend_image(blend, test->width, test->height, test->tiling,
-			     VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, &run.target);
+			     VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, test->device,
+			     &run.target);
 	if (status == VK_SUCCESS)
 		status = blend_image(blend, test->width, test->height, VK_IMAGE_TILING_OPTIMAL,
-				     VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, &run.copy);
+				     VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, test->device, &run.copy);
 	if (status == VK_SUCCESS)
 		status = blend_image(blend, test->width, test->height, VK_IMAGE_TILING_OPTIMAL,
-				     VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, &run.texture);
+				     VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, test->device, &run.texture);
 	if (status == VK_SUCCESS)
 		status = blend_buffer(blend, sizeof(corners), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, &run.vertices);
 	if (status == VK_SUCCESS)
-		status = blend_buffer(blend, bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &run.staging);
+		status = blend_buffer(blend, bytes + test->skew, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &run.staging);
 	if (status == VK_SUCCESS)
-		status = blend_buffer(blend, bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT, &run.readback);
+		status = blend_buffer(blend, bytes + test->skew, VK_BUFFER_USAGE_TRANSFER_DST_BIT, &run.readback);
 	if (status == VK_SUCCESS)
-		status = blend_buffer(blend, bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT, &run.readback2);
+		status = blend_buffer(blend, bytes + test->skew, VK_BUFFER_USAGE_TRANSFER_DST_BIT, &run.readback2);
 	if (status != VK_SUCCESS) {
 		printf("VKBLEND %s %ux%u %s %s setup-failed\n", test->name, test->width, test->height, tiling, modes[test->mode]);
 		blend_run_free(blend, &run);
@@ -658,9 +691,9 @@ blend_case_run(
 	memcpy(run.vertices.mapping, corners, sizeof(corners));
 	for (y = 0U; y < test->height; y++)
 		for (x = 0U; x < test->width; x++)
-			blend_source(test, x, y, run.staging.mapping + (y * test->width + x) * BLEND_PIXEL);
-	memset(run.readback.mapping, 0xa5, bytes);
-	memset(run.readback2.mapping, 0xa5, bytes);
+			blend_source(test, x, y, run.staging.mapping + test->skew + (y * test->width + x) * BLEND_PIXEL);
+	memset(run.readback.mapping, 0xa5, bytes + test->skew);
+	memset(run.readback2.mapping, 0xa5, bytes + test->skew);
 
 	/* The two sets: the picture for the first draw, the target for the second. */
 	memset(&size, 0, sizeof(size));
@@ -745,6 +778,7 @@ blend_case_run(
 	region.imageExtent.width = test->width;
 	region.imageExtent.height = test->height;
 	region.imageExtent.depth = 1U;
+	region.bufferOffset = test->skew;
 	memset(&barrier, 0, sizeof(barrier));
 	barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
 
@@ -797,19 +831,22 @@ blend_case_run(
 	largest = 0U;
 	largest_cpu = 0U;
 	largest_sample = 0U;
-	wrong_copy = blend_compare(test, "copy", run.readback.mapping, test->width * BLEND_PIXEL, &largest);
-	wrong_cpu = blend_compare(test, "cpu", run.target.mapping, run.target.pitch, &largest_cpu);
-	wrong_sample = blend_compare(test, "sample", run.readback2.mapping, test->width * BLEND_PIXEL, &largest_sample);
+	wrong_copy = blend_compare(test, "copy", run.readback.mapping + test->skew, test->width * BLEND_PIXEL, &largest);
+	wrong_cpu = 0U;
+	if (run.target.mapping != NULL)
+		wrong_cpu = blend_compare(test, "cpu", run.target.mapping, run.target.pitch, &largest_cpu);
+	wrong_sample = blend_compare(test, "sample", run.readback2.mapping + test->skew, test->width * BLEND_PIXEL, &largest_sample);
 	if (largest_cpu > largest)
 		largest = largest_cpu;
 	if (largest_sample > largest)
 		largest = largest_sample;
-	printf("VKBLEND %s %ux%u %s %s pitch=%u copy=%u cpu=%u sample=%u max=%u %s\n", test->name, test->width, test->height, tiling,
-	       modes[test->mode], run.target.pitch, wrong_copy, wrong_cpu, wrong_sample, largest,
-	       wrong_copy + wrong_cpu + wrong_sample == 0U ? "ok" : "FAIL");
-	blend_write(blend, test, "copy", run.readback.mapping, test->width * BLEND_PIXEL);
-	blend_write(blend, test, "cpu", run.target.mapping, run.target.pitch);
-	blend_write(blend, test, "sample", run.readback2.mapping, test->width * BLEND_PIXEL);
+	printf("VKBLEND %s %ux%u %s %s %s skew=%u pitch=%u copy=%u cpu=%u%s sample=%u max=%u %s\n", test->name, test->width, test->height,
+	       tiling, modes[test->mode], test->device ? "device" : "host", test->skew, run.target.pitch, wrong_copy, wrong_cpu,
+	       run.target.mapping == NULL ? "(none)" : "", wrong_sample, largest, wrong_copy + wrong_cpu + wrong_sample == 0U ? "ok" : "FAIL");
+	blend_write(blend, test, "copy", run.readback.mapping + test->skew, test->width * BLEND_PIXEL);
+	if (run.target.mapping != NULL)
+		blend_write(blend, test, "cpu", run.target.mapping, run.target.pitch);
+	blend_write(blend, test, "sample", run.readback2.mapping + test->skew, test->width * BLEND_PIXEL);
 	blend_run_free(blend, &run);
 	return wrong_copy + wrong_cpu + wrong_sample == 0U ? 0 : 1;
 }

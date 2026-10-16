@@ -208,6 +208,7 @@ static int execute_transfer(struct amdrdna_vk_session *session, struct amdrdna_v
 static int execute_copy_images(struct amdrdna_vk_session *session, struct amdrdna_vk_execute *execute, struct execute_state *state, const struct amdrdna_vk_record *record);
 static int execute_buffer_image(struct amdrdna_vk_session *session, struct amdrdna_vk_execute *execute, struct execute_state *state, const struct amdrdna_vk_record *record);
 static int execute_cpu_copy(const struct amdrdna_vk_buffer *buffer, const struct amdrdna_vk_image *image, const VkBufferImageCopy *region, bool to_image);
+static int execute_bounce_copy(struct amdrdna_vk_session *session, struct amdrdna_vk_execute *execute, const struct amdrdna_vk_buffer *buffer, const struct amdrdna_vk_image *image, const VkBufferImageCopy *region, bool to_image);
 static int execute_clear_image(struct amdrdna_vk_session *session, struct amdrdna_vk_execute *execute, struct execute_state *state, const struct amdrdna_vk_record *record);
 static int execute_quad(struct amdrdna_vk_execute *execute, const struct execute_quad *quad);
 static int execute_image_target(const struct amdrdna_vk_image *image, uint32_t format, struct amdrdna_vk_target *target);
@@ -1364,12 +1365,21 @@ execute_buffer_image(
 			return EINVAL;
 		start = buffer_va + region->bufferOffset;
 
-		/* A region not laid out as a linear image is copied by the CPU, after the work before it. */
+		/*
+		 * A region not laid out as a linear image is copied by the CPU,
+		 * after the work before it; for an image outside the CPU's window,
+		 * through a linear image the window holds.
+		 */
 		if ((start % AMDRDNA_VK_RESOURCE_ALIGN) != 0U || (pitch % AMDRDNA_VK_PITCH_ALIGN) != 0U ||
 		    pitch / AMDRDNA_VK_PIXEL_BYTES > AMDRDNA_VK_IMAGE_SIDE_MAX) {
 			error = execute_flush(session, execute);
-			if (error == 0)
+			if (error == 0 && image_cpu == NULL) {
+				error = execute_bounce_copy(session, execute, buffer, image, region, to_image);
+			} else if (error == 0) {
 				error = execute_cpu_copy(buffer, image, region, to_image);
+			}
+
+			/* A copy that failed ends the record. */
 			if (error != 0)
 				return error;
 
@@ -1443,12 +1453,14 @@ execute_cpu_copy(
 	uint32_t y;
 	int error;
 
-	/* The two views. */
+	/* The two views, both in the CPU's reach. */
 	error = amdrdna_vk_buffer_address(buffer, &va, &buffer_cpu);
 	if (error == 0)
 		error = amdrdna_vk_image_address(image, &va, &image_cpu);
 	if (error != 0)
 		return error;
+	if (buffer_cpu == NULL || image_cpu == NULL)
+		return EINVAL;
 
 	/* The rows: the buffer's at its row length, the image's at its pitch. */
 	row_pixels = region->bufferRowLength;
@@ -1468,6 +1480,124 @@ execute_cpu_copy(
 
 	/* Succeeded: the region is copied. */
 	return 0;
+}
+
+/*
+ * Copies one region between a buffer the CPU reaches and an image outside
+ * the CPU's window, through a linear image of the region in the window:
+ * to the image, the CPU writes the buffer's rows into it and a quad draws
+ * it into the image; from the image, a quad draws the image's region into
+ * it and the CPU reads its rows into the buffer.  The work before has run;
+ * this runs its own.  EINVAL for a buffer outside the window too.
+ */
+static int
+execute_bounce_copy(
+	struct amdrdna_vk_session *session,
+	struct amdrdna_vk_execute *execute,
+	const struct amdrdna_vk_buffer *buffer,
+	const struct amdrdna_vk_image *image,
+	const VkBufferImageCopy *region,
+	bool to_image)
+{
+	struct execute_quad quad;
+	void *token;
+	uint64_t buffer_va;
+	uint64_t image_va;
+	uint64_t bounce_va;
+	uint8_t *buffer_cpu;
+	uint8_t *image_cpu;
+	uint8_t *bounce_cpu;
+	uint8_t *buffer_row;
+	uint8_t *bounce_row;
+	uint32_t row_pixels;
+	uint32_t bounce_pitch;
+	uint32_t bytes;
+	uint32_t y;
+	int error;
+
+	/* The buffer in the CPU's reach, the image's address. */
+	error = amdrdna_vk_buffer_address(buffer, &buffer_va, &buffer_cpu);
+	if (error == 0)
+		error = amdrdna_vk_image_address(image, &image_va, &image_cpu);
+	if (error != 0)
+		return error;
+	if (buffer_cpu == NULL)
+		return EINVAL;
+
+	/* The linear image of the region, in the window. */
+	bounce_pitch = amdrdna_vk_pitch(region->imageExtent.width);
+	error = amdrdna_vk_gpu_alloc(session->owner, (uint64_t)bounce_pitch * region->imageExtent.height, &token, &bounce_cpu, &bounce_va);
+	if (error != 0)
+		return error;
+
+	/* The rows: the buffer's at its row length, the linear image's at its pitch. */
+	row_pixels = region->bufferRowLength;
+	if (row_pixels == 0U)
+		row_pixels = region->imageExtent.width;
+	bytes = region->imageExtent.width * AMDRDNA_VK_PIXEL_BYTES;
+
+	/* To the image: the buffer's rows into the linear image first. */
+	if (to_image) {
+		for (y = 0U; y < region->imageExtent.height; y++) {
+			buffer_row = buffer_cpu + region->bufferOffset + (uint64_t)y * row_pixels * AMDRDNA_VK_PIXEL_BYTES;
+			bounce_row = bounce_cpu + (uint64_t)y * bounce_pitch;
+			kern_memcpy(bounce_row, buffer_row, bytes);
+		}
+	}
+
+	/* The quad between the linear image and the image's region, one to one. */
+	kern_memset(&quad, 0, sizeof(quad));
+	quad.textured = true;
+	quad.filter = VK_FILTER_NEAREST;
+	if (to_image) {
+		error = execute_image_target(image, image->format, &quad.target);
+		quad.x0 = region->imageOffset.x;
+		quad.y0 = region->imageOffset.y;
+		quad.source = bounce_va;
+		quad.source_width = region->imageExtent.width;
+		quad.source_height = region->imageExtent.height;
+		quad.source_format = image->format;
+		quad.u0 = 0;
+		quad.v0 = 0;
+	} else {
+		quad.target.address = bounce_va;
+		quad.target.width = region->imageExtent.width;
+		quad.target.height = region->imageExtent.height;
+		quad.target.format = image->format;
+		quad.x0 = 0;
+		quad.y0 = 0;
+		quad.source = image_va;
+		quad.source_width = image->width;
+		quad.source_height = image->height;
+		quad.source_format = image->format;
+		quad.u0 = region->imageOffset.x;
+		quad.v0 = region->imageOffset.y;
+	}
+
+	/* The far corners. */
+	quad.x1 = quad.x0 + (int32_t)region->imageExtent.width;
+	quad.y1 = quad.y0 + (int32_t)region->imageExtent.height;
+	quad.u1 = quad.u0 + (int32_t)region->imageExtent.width;
+	quad.v1 = quad.v0 + (int32_t)region->imageExtent.height;
+
+	/* Drawn and run, so the linear image can go. */
+	if (error == 0)
+		error = execute_quad(execute, &quad);
+	if (error == 0)
+		error = execute_flush(session, execute);
+
+	/* From the image: the linear image's rows into the buffer. */
+	if (error == 0 && !to_image) {
+		for (y = 0U; y < region->imageExtent.height; y++) {
+			buffer_row = buffer_cpu + region->bufferOffset + (uint64_t)y * row_pixels * AMDRDNA_VK_PIXEL_BYTES;
+			bounce_row = bounce_cpu + (uint64_t)y * bounce_pitch;
+			kern_memcpy(buffer_row, bounce_row, bytes);
+		}
+	}
+
+	/* The linear image goes (no work reads it any more, or the session's work is kept from it). */
+	amdrdna_vk_gpu_free(session->owner, token);
+	return error;
 }
 
 /* Clears a whole image to a colour (it has one level and one layer) with a quad of the colour. */
