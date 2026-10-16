@@ -1,7 +1,7 @@
 # WS254 networkd: DHCP の失敗の後に 1 分おきに取り直す
 
 - ID: ws254、Master: [master.md](../master.md)、Primary Milestone: MG001
-- Status: incomplete（p001 を q1226 で実行中: 実装・host 試験・QEMU の確認 PASS、Q1 の判定待ち）
+- Status: incomplete（p001 cleared 2026-10-16: QEMU で確認、main 5cb63ff2a。実機は未実施。p002 規約の見直しが残り）
 - 起点（2026-10-16 ユーザー）:「また、networkdは、DHCPが失敗したあと、1分おきにDHCPを試みる修正を入れるのがいいと思います。別なサブエージェントで実施してOKです。」
 - 背景: 5330・RDNA 機で DHCP を取れずに ssh が届かず、ユーザーの手で network を直すことが続いた（BUG-326 の dhcpc の temp の残りは修正済み）。169.254 の割り当ては 2026-10-16 に外した。
 
