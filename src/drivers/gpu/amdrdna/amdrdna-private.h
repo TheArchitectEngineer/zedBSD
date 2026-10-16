@@ -17,6 +17,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <drivers/generic/dma.h>
 #include <drivers/pci/pci.h>
 #include <kern/lock.h>
 #include <kern/waitq.h>
@@ -95,6 +96,52 @@ struct amdrdna_gop {
 };
 
 /*
+ * A buffer of system memory the GPU reaches through the system-memory
+ * table: the CPU's view and bus address (dma), and the GPU address the
+ * table maps it at (0 until it is mapped).  allocated says the buffer
+ * holds memory; the driver keeps it for as long as the GPU may touch it.
+ */
+struct amdrdna_system_buffer {
+	struct drv_dma_buffer dma;
+	bool allocated;
+	uint64_t gpu_address;
+};
+
+/*
+ * The interrupt controller's ring and what serves it.
+ *
+ * The ring and the copy of its write pointer live in system memory the GPU
+ * reaches through the system-memory table.  The message interrupt only
+ * notes that something arrived and wakes the interrupt thread, which reads
+ * the entries up to the copied write pointer and tells the controller how
+ * far it read.  lock protects pending, stopping and thread_running, and
+ * waitq wakes the thread; read_offset and the counters belong to the
+ * thread alone.  enabled says the ring is on (stage A3 turns it on).
+ */
+struct amdrdna_interrupts {
+	struct amdrdna_system_buffer ring;
+	struct amdrdna_system_buffer pointer;
+	uint32_t ring_bytes;
+	uint32_t read_offset;
+	struct drv_pci_irq irq;
+	unsigned irq_count;
+	void *irq_cookie;
+	bool message;
+	bool prepared;
+	bool enabled;
+	struct spinlock lock;
+	struct wait_queue waitq;
+	bool pending;
+	bool stopping;
+	bool thread_running;
+	uint64_t signals;
+	uint64_t entries;
+	uint64_t unknown;
+	uint64_t faults;
+	uint64_t overflows;
+};
+
+/*
  * One RDNA GPU the driver keeps.
  *
  * The attach fills the identity and runs the read-only stages; the
@@ -103,7 +150,12 @@ struct amdrdna_gop {
  * state_lock, and state_waitq wakes the thread when target rises or the
  * machine is told to stop.  The register mapping, the block table and
  * the readouts are written by one stage at a time and only read after
- * that stage reported ok.  The record lives until the PCI function is
+ * that stage reported ok.  Stage A2 adds the VRAM window and the doorbell
+ * page, the pools (memory_lock serializes them, the system-memory table's
+ * writes and the CPU's invalidation requests), the dummy page, the table's
+ * place, the hubs' context words from before the stage (given back on a
+ * failure and at shutdown) and the interrupt ring; memory_ready says the
+ * table translates.  The record lives until the PCI function is
  * detached, which the driver refuses while the thread runs.
  */
 struct amdrdna_device {
@@ -155,6 +207,28 @@ struct amdrdna_device {
 	uint32_t vbios_source;
 	struct amdrdna_vbios_info vbios_info;
 
+	struct drv_dma_device *dma;
+	bool window_claimed;
+	struct drv_pci_mapping window;
+	uint64_t window_from;
+	bool doorbells_claimed;
+	struct drv_pci_mapping doorbells;
+	struct mutex memory_lock;
+	struct amdrdna_pool cpu_pool;
+	struct amdrdna_pool gpu_pool;
+	struct amdrdna_pool gart_space;
+	struct amdrdna_system_buffer dummy_page;
+	bool memory_ready;
+	uint64_t frame_buffer_end;
+	uint64_t gart_start;
+	uint64_t gart_table;
+	uint64_t scratch_page;
+	bool contexts_recorded;
+	uint32_t context_before[AMDRDNA_HUB_COUNT][16];
+	uint32_t underflow_before;
+	uint32_t underflow_after;
+	struct amdrdna_interrupts interrupts;
+
 	struct spinlock state_lock;
 	struct wait_queue state_waitq;
 	unsigned stage;
@@ -205,6 +279,21 @@ amdrdna_block_index(
 	uint32_t *index);
 
 uint32_t
+amdrdna_block_read(
+	struct amdrdna_device *device,
+	enum amdrdna_block block,
+	unsigned window,
+	uint32_t offset);
+
+void
+amdrdna_block_write(
+	struct amdrdna_device *device,
+	enum amdrdna_block block,
+	unsigned window,
+	uint32_t offset,
+	uint32_t value);
+
+uint32_t
 amdrdna_far_read(
 	struct amdrdna_device *device,
 	uint32_t address);
@@ -246,6 +335,54 @@ amdrdna_vbios_release(
 bool
 amdrdna_training_allowed(
 	const struct amdrdna_device *device);
+
+/* gmc.c: stage A2 and the memory it sets up. */
+int
+amdrdna_a2_memory(
+	struct amdrdna_device *device);
+
+void
+amdrdna_a2_stop(
+	struct amdrdna_device *device);
+
+void
+amdrdna_host_path_flush(
+	struct amdrdna_device *device);
+
+void
+amdrdna_host_path_drop(
+	struct amdrdna_device *device);
+
+int
+amdrdna_tlb_flush(
+	struct amdrdna_device *device,
+	enum amdrdna_hub hub,
+	unsigned context);
+
+int
+amdrdna_gart_map(
+	struct amdrdna_device *device,
+	struct amdrdna_system_buffer *buffer,
+	uint64_t alignment);
+
+void
+amdrdna_vm_fault(
+	struct amdrdna_device *device,
+	const struct amdrdna_interrupt *interrupt);
+
+void
+amdrdna_fault_interrupts(
+	struct amdrdna_device *device,
+	bool on);
+
+/* ih.c: the interrupt ring. */
+int
+amdrdna_ih_prepare(
+	struct amdrdna_device *device);
+
+void
+amdrdna_ih_stop(
+	struct amdrdna_device *device);
 
 /* control.c: the control device. */
 int

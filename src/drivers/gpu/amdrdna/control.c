@@ -49,6 +49,7 @@ static int control_status(struct amdrdna_device *device, uintptr_t argument);
 static int control_advance(struct amdrdna_device *device, uintptr_t argument);
 static int control_vbios(struct amdrdna_device *device, uintptr_t argument);
 static void control_fill(struct amdrdna_device *device, struct amdrdna_status *status);
+static void control_fill_memory(struct amdrdna_device *device, struct amdrdna_status *status);
 static uint32_t ip_version(const struct amdrdna_ip *ip);
 
 /* The device's operations: requests only. */
@@ -366,8 +367,41 @@ control_fill(
 			flags |= AMDRDNA_STATUS_TRAINING_ALLOWED;
 	}
 
+	/* The shared memory and the interrupts, set up by stage A2. */
+	if (status->stage >= AMDRDNA_STAGE_A2)
+		control_fill_memory(device, status);
+
 	/* Publishes the flags. */
 	status->flags = flags;
+}
+
+/* Fills the status answer's part that stage A2 set up. */
+static void
+control_fill_memory(
+	struct amdrdna_device *device,
+	struct amdrdna_status *status)
+{
+	/* The system-memory table's reach. */
+	status->gart_base = device->gart_start;
+	status->gart_mib = (uint32_t)(AMDRDNA_GART_BYTES >> 20);
+
+	/* The free VRAM of both pools, as one view. */
+	mutex_lock(&device->memory_lock);
+
+	status->cpu_pool_free_mib = (uint32_t)(device->cpu_pool.free_bytes >> 20);
+	status->gpu_pool_free_mib = (uint32_t)(device->gpu_pool.free_bytes >> 20);
+
+	mutex_unlock(&device->memory_lock);
+
+	/* The interrupt's kind. */
+	status->interrupt_kind = AMDRDNA_INTERRUPT_MSI;
+	if (device->interrupts.irq.type == DRV_PCI_IRQ_MSIX)
+		status->interrupt_kind = AMDRDNA_INTERRUPT_MSIX;
+
+	/* The counts so far and the display's underflow at the end of the stage. */
+	status->interrupt_signals = (uint32_t)device->interrupts.signals;
+	status->vm_faults = (uint32_t)device->interrupts.faults;
+	status->display_underflow = device->underflow_after;
 }
 
 /* Packs an IP block's version as major << 16 | minor << 8 | step; 0 for an unlisted block. */
