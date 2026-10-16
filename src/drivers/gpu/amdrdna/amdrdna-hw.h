@@ -104,6 +104,36 @@
 #define AMDRDNA_SOURCE_SMU_SOFT		0xfeU
 
 /*
+ * The interrupt clients and sources of the engines: the command processor
+ * (its end-of-pipe event, a bad opcode, a privileged register and a
+ * privileged instruction) and the first copy engine (its trap); and the
+ * ring field of a command processor's interrupt (engine 3:2, pipe 1:0,
+ * queue 6:4).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/soc15_ih_clientid.h
+ * (SOC15_IH_CLIENTID_GRBM_CP, SOC15_IH_CLIENTID_SDMA0),
+ * drivers/gpu/drm/amd/include/ivsrcid/gfx/irqsrcs_gfx_10_1.h
+ * (GFX_10_1__SRCID__CP_EOP_INTERRUPT, GFX_10_1__SRCID__CP_BAD_OPCODE_ERROR,
+ * GFX_10_1__SRCID__CP_PRIV_REG_FAULT, GFX_10_1__SRCID__CP_PRIV_INSTR_FAULT),
+ * ivsrcid/sdma0/irqsrcs_sdma0_5_0.h (SDMA0_5_0__SRCID__SDMA_TRAP) and
+ * drivers/gpu/drm/amd/amdgpu/gfx_v10_0.c (gfx_v10_0_eop_irq: the ring
+ * field).
+ */
+#define AMDRDNA_CLIENT_COMMAND		0x14U
+#define AMDRDNA_CLIENT_COPY0		0x08U
+#define AMDRDNA_SOURCE_END_OF_PIPE	0xb5U
+#define AMDRDNA_SOURCE_BAD_OPCODE	0xb7U
+#define AMDRDNA_SOURCE_PRIVILEGED_WORD	0xb8U
+#define AMDRDNA_SOURCE_PRIVILEGED_CODE	0xb9U
+#define AMDRDNA_SOURCE_COPY_TRAP	0xe0U
+#define AMDRDNA_RING_FIELD_ENGINE_MASK	0x0cU
+#define AMDRDNA_RING_FIELD_ENGINE_SHIFT	2U
+#define AMDRDNA_RING_FIELD_PIPE_MASK	0x03U
+#define AMDRDNA_RING_FIELD_QUEUE_MASK	0x70U
+#define AMDRDNA_RING_FIELD_QUEUE_SHIFT	4U
+
+/*
  * The IP blocks the driver knows by name.  The GPU's block table lists
  * many more; the others are counted but not kept.
  */
@@ -218,7 +248,9 @@ struct amdrdna_ip {
 /*
  * The shape of the graphics engine as the block table states it: the
  * shader engines, the arrays in each, the paired compute units in each
- * array, the render back ends and the level-2 cache channels.
+ * array, the render back ends and the level-2 cache channels, the wave
+ * width and waves per SIMD, and the scan converters of an engine and the
+ * packers of a converter.
  */
 struct amdrdna_shader_shape {
 	uint32_t engines;
@@ -228,6 +260,8 @@ struct amdrdna_shader_shape {
 	uint32_t cache_channels;
 	uint32_t wave_lanes;
 	uint32_t waves_per_simd;
+	uint32_t converters_per_engine;
+	uint32_t packers_per_converter;
 };
 
 /*
@@ -671,6 +705,238 @@ struct amdrdna_psp_reply {
 	uint32_t region_bytes;
 };
 
+/*
+ * The engines a queue lives on, as the queue select and the scheduler
+ * name them: the graphics engine, and the first and second compute
+ * engines.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/gfx_v10_0.c (gfx_v10_0_compute_ring_init:
+ * the compute engine of a ring is its compute processor plus one; the
+ * graphics ring is engine 0).
+ */
+#define AMDRDNA_ENGINE_GRAPHICS		0U
+#define AMDRDNA_ENGINE_COMPUTE_FIRST	1U
+#define AMDRDNA_ENGINE_COMPUTE_SECOND	2U
+
+/*
+ * The engine kinds of the scheduler's queue attach and detach packets
+ * (compute 0, graphics 4), and the detach actions the driver uses
+ * (preempt 0, reset 1).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/gfx_v10_0.c (gfx10_kiq_map_queues: the engine
+ * selection) and amdgpu_gfx.h (enum amdgpu_unmap_queues_action).
+ */
+#define AMDRDNA_QUEUE_ENGINE_COMPUTE	0U
+#define AMDRDNA_QUEUE_ENGINE_GRAPHICS	4U
+#define AMDRDNA_QUEUE_DETACH_PREEMPT	0U
+#define AMDRDNA_QUEUE_DETACH_RESET	1U
+
+/* The words of the packets the driver builds. */
+#define AMDRDNA_PM4_WRITE_WORDS		5U
+#define AMDRDNA_PM4_FENCE_WORDS		8U
+#define AMDRDNA_PM4_SYNC_WORDS		8U
+#define AMDRDNA_PM4_MOVE_WORDS		7U
+#define AMDRDNA_PM4_DISPATCH_WORDS	5U
+#define AMDRDNA_PM4_RESOURCES_WORDS	8U
+#define AMDRDNA_PM4_ATTACH_WORDS	7U
+#define AMDRDNA_PM4_DETACH_WORDS	6U
+#define AMDRDNA_COPY_WRITE_WORDS	5U
+#define AMDRDNA_COPY_LINEAR_WORDS	7U
+#define AMDRDNA_COPY_FENCE_WORDS	6U
+
+/*
+ * The register spaces the register-write packets address: the context
+ * registers, the shader registers and the user configuration registers.
+ */
+enum amdrdna_register_space {
+	AMDRDNA_SPACE_CONTEXT,
+	AMDRDNA_SPACE_SHADER,
+	AMDRDNA_SPACE_USER
+};
+
+/* One hardware queue of the command processor: its engine (AMDRDNA_ENGINE_*), pipe and queue. */
+struct amdrdna_queue_place {
+	uint32_t engine;
+	uint32_t pipe;
+	uint32_t queue;
+};
+
+/* The words of a queue image. */
+#define AMDRDNA_QUEUE_IMAGE_WORDS	512U
+
+/*
+ * The words of a compute queue image the driver fills: the header, the
+ * pipeline statistics, the compute units of the four shader engines, the
+ * reserved word; then, mirroring the queue's registers, the image's own
+ * address (low, high), active, context, persistent state, the pipe and
+ * queue priorities, the ring (low, high), the read pointer and its report
+ * address (low, high), the write pointer's poll address (low, high), the
+ * doorbell, the ring control, the indirect-buffer control, the dequeue
+ * request, the image control, the end-of-pipe buffer (low, high) and its
+ * control, and the write pointer (low, high).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/v10_structs.h (struct v10_compute_mqd).
+ */
+#define AMDRDNA_COMPUTE_IMAGE_HEADER		0U
+#define AMDRDNA_COMPUTE_IMAGE_STATISTICS	11U
+#define AMDRDNA_COMPUTE_IMAGE_UNITS_0		23U
+#define AMDRDNA_COMPUTE_IMAGE_UNITS_1		24U
+#define AMDRDNA_COMPUTE_IMAGE_UNITS_2		26U
+#define AMDRDNA_COMPUTE_IMAGE_UNITS_3		27U
+#define AMDRDNA_COMPUTE_IMAGE_RESERVED		32U
+#define AMDRDNA_COMPUTE_IMAGE_SELF_LOW		128U
+#define AMDRDNA_COMPUTE_IMAGE_SELF_HIGH		129U
+#define AMDRDNA_COMPUTE_IMAGE_ACTIVE		130U
+#define AMDRDNA_COMPUTE_IMAGE_CONTEXT		131U
+#define AMDRDNA_COMPUTE_IMAGE_PERSISTENT	132U
+#define AMDRDNA_COMPUTE_IMAGE_PIPE_PRIORITY	133U
+#define AMDRDNA_COMPUTE_IMAGE_QUEUE_PRIORITY	134U
+#define AMDRDNA_COMPUTE_IMAGE_RING_LOW		136U
+#define AMDRDNA_COMPUTE_IMAGE_RING_HIGH		137U
+#define AMDRDNA_COMPUTE_IMAGE_READ		138U
+#define AMDRDNA_COMPUTE_IMAGE_READ_REPORT_LOW	139U
+#define AMDRDNA_COMPUTE_IMAGE_READ_REPORT_HIGH	140U
+#define AMDRDNA_COMPUTE_IMAGE_WRITE_POLL_LOW	141U
+#define AMDRDNA_COMPUTE_IMAGE_WRITE_POLL_HIGH	142U
+#define AMDRDNA_COMPUTE_IMAGE_DOORBELL		143U
+#define AMDRDNA_COMPUTE_IMAGE_RING_CONTROL	145U
+#define AMDRDNA_COMPUTE_IMAGE_BUFFER_CONTROL	149U
+#define AMDRDNA_COMPUTE_IMAGE_DEQUEUE		152U
+#define AMDRDNA_COMPUTE_IMAGE_CONTROL		162U
+#define AMDRDNA_COMPUTE_IMAGE_END_LOW		165U
+#define AMDRDNA_COMPUTE_IMAGE_END_HIGH		166U
+#define AMDRDNA_COMPUTE_IMAGE_END_CONTROL	167U
+#define AMDRDNA_COMPUTE_IMAGE_WRITE_LOW		182U
+#define AMDRDNA_COMPUTE_IMAGE_WRITE_HIGH	183U
+
+/*
+ * The words of the graphics queue image the driver fills: the image's own
+ * address (low, high), active, context, priority, time quantum, the ring
+ * (low, high), the read pointer and its report address (low, high), the
+ * write pointer's poll address (low, high), the doorbell, the ring
+ * control, the write pointer (low, high) and the image control.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/v10_structs.h (struct v10_gfx_mqd).
+ */
+#define AMDRDNA_GRAPHICS_IMAGE_SELF_LOW		128U
+#define AMDRDNA_GRAPHICS_IMAGE_SELF_HIGH	129U
+#define AMDRDNA_GRAPHICS_IMAGE_ACTIVE		130U
+#define AMDRDNA_GRAPHICS_IMAGE_CONTEXT		131U
+#define AMDRDNA_GRAPHICS_IMAGE_PRIORITY		134U
+#define AMDRDNA_GRAPHICS_IMAGE_QUANTUM		135U
+#define AMDRDNA_GRAPHICS_IMAGE_RING_LOW		136U
+#define AMDRDNA_GRAPHICS_IMAGE_RING_HIGH	137U
+#define AMDRDNA_GRAPHICS_IMAGE_READ		138U
+#define AMDRDNA_GRAPHICS_IMAGE_READ_REPORT_LOW	139U
+#define AMDRDNA_GRAPHICS_IMAGE_READ_REPORT_HIGH	140U
+#define AMDRDNA_GRAPHICS_IMAGE_WRITE_POLL_LOW	141U
+#define AMDRDNA_GRAPHICS_IMAGE_WRITE_POLL_HIGH	142U
+#define AMDRDNA_GRAPHICS_IMAGE_DOORBELL		143U
+#define AMDRDNA_GRAPHICS_IMAGE_RING_CONTROL	145U
+#define AMDRDNA_GRAPHICS_IMAGE_WRITE_LOW	149U
+#define AMDRDNA_GRAPHICS_IMAGE_WRITE_HIGH	150U
+#define AMDRDNA_GRAPHICS_IMAGE_CONTROL		162U
+
+/*
+ * What a compute queue image is filled from: the GPU addresses of the
+ * image, the ring (its size in bytes), the read pointer's report word, the
+ * write pointer's copy and the end-of-pipe buffer; the doorbell (a dword
+ * index); whether the driver activates the queue itself; and the values
+ * the queue's end-of-pipe control, doorbell, image control, ring control,
+ * read pointer, persistent state and buffer control registers held.
+ */
+struct amdrdna_compute_image_input {
+	uint64_t image;
+	uint64_t ring;
+	uint32_t ring_bytes;
+	uint64_t read_report;
+	uint64_t write_poll;
+	uint64_t end_of_pipe;
+	uint32_t doorbell;
+	bool active;
+	uint32_t end_control;
+	uint32_t doorbell_control;
+	uint32_t image_control;
+	uint32_t ring_control;
+	uint32_t read_pointer;
+	uint32_t persistent;
+	uint32_t buffer_control;
+};
+
+/*
+ * What the graphics queue image is filled from: the GPU addresses of the
+ * image, the ring (its size in bytes), the read pointer's report word and
+ * the write pointer's copy; the doorbell; and the values the queue's image
+ * control, priority, quantum, ring control, doorbell control and read
+ * pointer registers held.
+ */
+struct amdrdna_graphics_image_input {
+	uint64_t image;
+	uint64_t ring;
+	uint32_t ring_bytes;
+	uint64_t read_report;
+	uint64_t write_poll;
+	uint32_t doorbell;
+	uint32_t image_control;
+	uint32_t priority;
+	uint32_t quantum;
+	uint32_t ring_control;
+	uint32_t doorbell_control;
+	uint32_t read_pointer;
+};
+
+/*
+ * One recommended register setting: the GC window and the register's
+ * offset in it, the bits to change (all of them when every bit is set)
+ * and their value.
+ */
+struct amdrdna_register_setting {
+	uint8_t window;
+	uint16_t offset;
+	uint32_t mask;
+	uint32_t value;
+};
+
+/* One run of context registers of the clear state: the first (an absolute index) and how many. */
+struct amdrdna_register_run {
+	uint32_t first;
+	uint32_t count;
+};
+
+/* One register of the clear state and its value. */
+struct amdrdna_register_value {
+	uint32_t index;
+	uint32_t value;
+};
+
+/* The longest run of the clear state. */
+#define AMDRDNA_CLEAR_RUN_LONGEST	272U
+
+/*
+ * The compute program the first dispatch runs: its code (code_words
+ * words, to be followed by end_word up to padded_words), the register
+ * values the compiler gave (counts and inputs), the workgroup size, where
+ * its two buffer descriptors go in its table and the table's size, and
+ * the dispatch's launch word.
+ */
+struct amdrdna_check_description {
+	const uint32_t *code;
+	uint32_t code_words;
+	uint32_t padded_words;
+	uint32_t end_word;
+	uint32_t counts;
+	uint32_t inputs;
+	uint32_t local_size[3];
+	uint32_t output_at;
+	uint32_t groups_at;
+	uint32_t table_bytes;
+	uint32_t initiator;
+};
+
 uint16_t
 amdrdna_le16(
 	const uint8_t *bytes,
@@ -1036,5 +1302,242 @@ amdrdna_alert_off_word(
 
 uint32_t
 amdrdna_alert_clear_word(void);
+
+/* command-format.c: the ring commands. */
+uint32_t
+amdrdna_pm4_filler(void);
+
+unsigned
+amdrdna_pm4_registers(
+	uint32_t *words,
+	enum amdrdna_register_space space,
+	uint32_t first,
+	const uint32_t *values,
+	unsigned count,
+	bool compute);
+
+unsigned
+amdrdna_pm4_write_memory(
+	uint32_t *words,
+	uint64_t address,
+	uint32_t value,
+	bool compute);
+
+unsigned
+amdrdna_pm4_write_register(
+	uint32_t *words,
+	uint32_t index,
+	uint32_t value,
+	bool compute);
+
+unsigned
+amdrdna_pm4_fence(
+	uint32_t *words,
+	uint64_t address,
+	uint32_t value,
+	bool interrupt,
+	bool compute);
+
+unsigned
+amdrdna_pm4_cache_sync(
+	uint32_t *words,
+	bool compute);
+
+unsigned
+amdrdna_pm4_move(
+	uint32_t *words,
+	uint64_t source,
+	uint64_t destination,
+	uint32_t bytes);
+
+unsigned
+amdrdna_pm4_dispatch(
+	uint32_t *words,
+	uint32_t x,
+	uint32_t y,
+	uint32_t z,
+	uint32_t initiator);
+
+unsigned
+amdrdna_pm4_queue_resources(
+	uint32_t *words,
+	uint64_t queue_mask);
+
+unsigned
+amdrdna_pm4_queue_attach(
+	uint32_t *words,
+	const struct amdrdna_queue_place *place,
+	uint32_t engine,
+	uint32_t doorbell,
+	uint64_t image,
+	uint64_t write_pointer);
+
+unsigned
+amdrdna_pm4_queue_detach(
+	uint32_t *words,
+	uint32_t engine,
+	uint32_t action,
+	uint32_t doorbell);
+
+unsigned
+amdrdna_pm4_bracket(
+	uint32_t *words,
+	bool begin);
+
+unsigned
+amdrdna_pm4_context_loads(
+	uint32_t *words);
+
+unsigned
+amdrdna_pm4_state_reset(
+	uint32_t *words);
+
+unsigned
+amdrdna_pm4_partition(
+	uint32_t *words);
+
+uint32_t
+amdrdna_copy_filler(void);
+
+unsigned
+amdrdna_copy_write(
+	uint32_t *words,
+	uint64_t address,
+	uint32_t value);
+
+unsigned
+amdrdna_copy_linear(
+	uint32_t *words,
+	uint64_t source,
+	uint64_t destination,
+	uint32_t bytes);
+
+unsigned
+amdrdna_copy_fence(
+	uint32_t *words,
+	uint64_t address,
+	uint32_t value,
+	bool interrupt);
+
+/* queue-format.c: the queue images and queue words. */
+void
+amdrdna_compute_image(
+	const struct amdrdna_compute_image_input *input,
+	uint32_t *image);
+
+void
+amdrdna_graphics_image(
+	const struct amdrdna_graphics_image_input *input,
+	uint32_t *image);
+
+uint32_t
+amdrdna_graphics_ring_word(
+	uint32_t ring_bytes);
+
+uint32_t
+amdrdna_queue_select_word(
+	const struct amdrdna_queue_place *place,
+	unsigned context);
+
+uint32_t
+amdrdna_scheduler_queue_word(
+	uint32_t old,
+	const struct amdrdna_queue_place *place);
+
+uint64_t
+amdrdna_queue_resource_mask(
+	const struct amdrdna_queue_place *places,
+	unsigned count);
+
+/* settings.c: the engine settings and the shape words. */
+const struct amdrdna_register_setting *
+amdrdna_graphics_settings(
+	unsigned *count);
+
+const struct amdrdna_register_setting *
+amdrdna_copy_settings(
+	unsigned *count);
+
+bool
+amdrdna_setting_reads(
+	const struct amdrdna_register_setting *setting);
+
+uint32_t
+amdrdna_setting_word(
+	const struct amdrdna_register_setting *setting,
+	uint32_t old);
+
+unsigned
+amdrdna_clear_state_words(void);
+
+unsigned
+amdrdna_clear_state(
+	uint32_t *words,
+	uint32_t steering);
+
+uint32_t
+amdrdna_backends_on(
+	uint32_t fused,
+	uint32_t off,
+	unsigned per_array);
+
+uint32_t
+amdrdna_groups_on(
+	uint32_t fused,
+	uint32_t off,
+	unsigned per_array);
+
+unsigned
+amdrdna_units_on(
+	uint32_t groups);
+
+uint32_t
+amdrdna_channels_off(
+	uint32_t fused,
+	uint32_t off);
+
+uint32_t
+amdrdna_tile_steering(
+	unsigned converters,
+	unsigned backends_per_converter,
+	unsigned packers);
+
+void
+amdrdna_harvest_words(
+	uint32_t groups,
+	unsigned per_array,
+	uint32_t old_translation,
+	uint32_t old_targets,
+	uint32_t *translation,
+	uint32_t *targets);
+
+uint32_t
+amdrdna_shader_memory_mode(void);
+
+uint32_t
+amdrdna_shader_apertures(void);
+
+/* check-program.c: the first dispatch's program. */
+void
+amdrdna_check_program(
+	struct amdrdna_check_description *description);
+
+void
+amdrdna_raw_buffer_descriptor(
+	uint64_t address,
+	uint32_t bytes,
+	uint32_t *words);
+
+uint32_t
+amdrdna_check_output_words(
+	const uint32_t *groups);
+
+bool
+amdrdna_check_output(
+	const uint32_t *words,
+	const uint32_t *groups,
+	uint32_t *bad_word,
+	uint32_t *expected,
+	uint32_t *found);
 
 #endif

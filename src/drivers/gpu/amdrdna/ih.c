@@ -597,6 +597,12 @@ ih_dispatch(
 		}
 	}
 
+	/* An event of the command processor or of the first copy engine. */
+	if (interrupt->client == AMDRDNA_CLIENT_COMMAND || interrupt->client == AMDRDNA_CLIENT_COPY0) {
+		amdrdna_engines_interrupt(device, interrupt);
+		return;
+	}
+
 	/* A thermal alert, the critical-temperature trip, or the power unit's software interrupt. */
 	if (interrupt->client == AMDRDNA_CLIENT_THERMAL ||
 	    interrupt->client == AMDRDNA_CLIENT_SMU_IO ||

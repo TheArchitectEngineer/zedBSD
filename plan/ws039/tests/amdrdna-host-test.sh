@@ -5,14 +5,16 @@
 # DCN 2.0 header, the memory and interrupt words of stage A2 (pools, table entries, hub words against the board's
 # Linux values, interrupt entries) and their register addresses against the Linux headers, the firmware headers, the
 # security processor's frames and commands and the thermal words of stages A3t to A4 (the real navi10 files of the
-# amd-navi-firmware cache when it exists; AMDRDNA_FIRMWARE overrides it), and the source audit.
+# amd-navi-firmware cache when it exists; AMDRDNA_FIRMWARE overrides it), the packets, queue images, settings and
+# shape words of stage A5 and its first dispatch's program on the GFX10 interpreter (their image positions, register
+# offsets and settings against the Linux sources), and the source audit.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 #
 # usage: plan/ws039/tests/amdrdna-host-test.sh [DUMP-DIRECTORY]
 #   DUMP-DIRECTORY holds the files plan/ws039/tests/hw-dump.py read on the board (default: plan/ws039/temp/dump/cold
 #   when it exists).  The Linux tree for the comparison and the audit is plan/ws039/temp/linux (AMDRDNA_LINUX
 #   overrides it); without it those two parts are skipped and say so.
-# Needs cc and python3.  Everything goes in a new directory below build/tmp; nothing is removed.
+# Needs cc, glslc and python3.  Everything goes in a new directory below build/tmp; nothing is removed.
 set -eu
 repo=$(cd "$(dirname "$0")/../../.." && pwd)
 tests="$repo/plan/ws039/tests"
@@ -31,7 +33,14 @@ cc $flags -include uapi/errno.h -o "$out/amdrdna-memory-test" "$tests/amdrdna-me
 	"$driver/hub-registers.c" "$driver/vm-format.c" "$driver/interrupt-format.c"
 cc $flags -include uapi/errno.h -o "$out/amdrdna-psp-test" "$tests/amdrdna-psp-test.c" "$driver/bytes.c" \
 	"$driver/firmware-format.c" "$driver/psp-format.c" "$driver/thermal-format.c"
+compiler="$driver/compiler"
+cc $flags -include uapi/errno.h -o "$out/amdrdna-engines-test" "$tests/amdrdna-engines-test.c" "$driver/command-format.c" \
+	"$driver/queue-format.c" "$driver/settings.c" "$driver/check-program.c" "$tests/gfx10-machine.c" \
+	"$tests/gfx10-texture.c" "$compiler/gfx10-program.c" "$compiler/gfx10-compile.c" "$compiler/gfx10-wait.c" \
+	"$compiler/gfx10-encode.c" "$repo/src/drivers/gpu/compiler/spirv.c" "$repo/src/drivers/gpu/compiler/optimize.c" -lm
+glslc --target-env=vulkan1.0 -fshader-stage=compute -o "$out/ids.spv" "$tests/shaders/ids.comp"
 status=0
+"$out/amdrdna-engines-test" "$out/ids.spv" || status=1
 "$out/amdrdna-memory-test" || status=1
 if [ -d "$firmware" ]; then
 	"$out/amdrdna-psp-test" "$firmware" || status=1
@@ -50,6 +59,8 @@ if [ -d "$linux/drivers/gpu/drm/amd" ]; then
 	python3 -I "$tests/amdrdna-dcn-compare.py" "$linux/drivers/gpu/drm/amd" < "$out/dcn.txt" || status=1
 	"$out/amdrdna-memory-test" --hub > "$out/hub.txt"
 	python3 -I "$tests/amdrdna-hub-compare.py" "$linux/drivers/gpu/drm/amd" < "$out/hub.txt" || status=1
+	"$out/amdrdna-engines-test" --layout > "$out/engines.txt"
+	python3 -I "$tests/amdrdna-engines-compare.py" "$linux/drivers/gpu/drm/amd" < "$out/engines.txt" || status=1
 	"$tests/audit-symbols.sh" "$linux" "$out" || status=1
 else
 	echo "SKIP the DCN comparison and the audit: no Linux tree at $linux"

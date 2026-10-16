@@ -200,6 +200,11 @@ control_status(
 	    (unsigned)status.temperature_highest, (unsigned)status.temperature_limit, (unsigned)status.thermal_alerts,
 	    fault,
 	    hung);
+	printf("engines flags=0x%x compute=%u gb=0x%08x rb=0x%x cu=%u tcc_off=0x%x fences=%u eop=%u traps=%u copied=%uB dispatch=%u\n",
+	    (unsigned)status.engine_flags, (unsigned)status.compute_queues, (unsigned)status.address_config,
+	    (unsigned)status.backends, (unsigned)status.compute_units, (unsigned)status.channels_off,
+	    (unsigned)status.fences, (unsigned)status.end_of_pipe_interrupts, (unsigned)status.copy_traps,
+	    (unsigned)status.copied_bytes, (unsigned)status.dispatch_words);
 	return 0;
 }
 
