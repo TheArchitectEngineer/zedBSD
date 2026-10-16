@@ -18,6 +18,7 @@
 #ifndef DRIVERS_GPU_I915_DISPLAY_XD_H
 #define DRIVERS_GPU_I915_DISPLAY_XD_H
 
+#include "xd-dmc.h"
 #include "xd-io.h"
 #include "xd-platform.h"
 #include "xd-power.h"
@@ -37,7 +38,8 @@ struct mutex;
  * whose display does not use the xd parts.  The OpRegion read is filled by
  * the OpRegion stage, the VBT parse (vbt_parsed nonzero) by the VBT stage.
  * The power well counts are prepared with the power domains and kept
- * under their lock.
+ * under their lock; the DMC firmware is parsed and loaded by the DMC
+ * loader's work.
  */
 struct i915_xd {
 	struct i915_xd_io io;
@@ -47,6 +49,7 @@ struct i915_xd {
 	struct i915_xd_vbt vbt;
 	int vbt_parsed;
 	struct i915_xd_power power;
+	struct i915_xd_dmc dmc;
 };
 
 void drv_i915_xd_start(struct i915_xd *xd, struct i915_mmio *mmio, struct mutex *mailbox_lock, uint16_t product, uint8_t revid);

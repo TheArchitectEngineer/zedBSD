@@ -1937,11 +1937,6 @@ i915_display_dmc_init(
 {
 	struct i915_display *display;
 	struct i915_gt *gt;
-	const char *path;
-	uint8_t revid;
-	int step;
-	char stepping;
-	char substepping;
 	int error;
 
 	display = device->display;
@@ -1952,27 +1947,14 @@ i915_display_dmc_init(
 	if (error != 0)
 		return;
 
-	/* The stepping from the live configuration space, as a letter and a digit. */
-	revid = drv_i915_pci_read8(&gt->pci, I915_PCI_REVISION);
-	step = drv_i915_adlp_display_step(revid);
-	stepping = (char)('A' + (step - I915_STEP_A0) / 4);
-	substepping = (char)('0' + (step - I915_STEP_A0) % 4);
-
-	/* The DMC of this display (intel_dmc.c: ADLP_DMC_PATH, TGL_DMC_PATH). */
-	path = "i915/tgl_dmc_ver2_12.bin";
-	if (gt->display_ver >= 13U)
-		path = "i915/adlp_dmc.bin";
-
-	/* Queues the load. */
+	/* Queues the load of the platform's firmware for the display's stepping. */
 	kern_memset(&display->dmc_dev, 0, sizeof(display->dmc_dev));
-	drv_i915_dmc_init(&display->dmc_dev, &display->dmc_wq, &gt->mmio, &display->power_domains, &display->pwc, (int)gt->display_ver, gt->is_alderlake_p, stepping, substepping, path);
+	drv_i915_dmc_init(&display->dmc_dev, &display->dmc_wq, &gt->mmio, &display->power_domains, &display->pwc);
 	display->dmc_inited = 1;
 	display->pwc.display_ver = (int)gt->display_ver;
-	kern_logf("i915: intel_dmc_init: revid=0x%x step=%c%c DMC load queued (path=%s, work_submitted=%d)\n",
-	    (unsigned)revid,
-	    stepping,
-	    substepping,
-	    display->dmc_dev.fw_path,
+	kern_logf("i915: intel_dmc_init: step=0x%02x DMC load queued (path=%s, work_submitted=%d)\n",
+	    (unsigned)display->xd.choice.step,
+	    display->dmc_dev.fw_path != NULL ? display->dmc_dev.fw_path : "-",
 	    display->dmc_dev.work_submitted);
 }
 
