@@ -52,6 +52,7 @@ Supported GPUs:
 - Intel iGPU (6th Skylake to 14th Raptor Lake Refresh)
 - Raspberry Pi (RPi4 VideoCore VI)
 - NVIDIA (RTX 20+)
+- AMD (RDNA+)
 
 ---
 
@@ -83,7 +84,7 @@ Supported hardware:
 
 - x86_64
     - CPU: Intel Core 6th to 14th gen
-    - GPU: Intel iGPU, NVIDIA RTX20+
+    - GPU: Intel iGPU, NVIDIA RTX 20+, AMD RDNA+
     - WiFi: Intel AX211, Realtek USB WiFi
     - Bluetooth: USB Bluetooth
     - USB: USB 3.0, USB-C DisplayPort Alt Mode
