@@ -72,6 +72,8 @@
 #include "dp.h"
 #include "hdmi-mode.h"
 #include "xd-ddi.h"
+
+#include "../intel/display-regs-xd.h"
 #include "pipe.h"
 #include <kern/kcrt.h>
 
@@ -127,7 +129,6 @@ static struct drm_i915_private *i915_ddi_cur_i915(const struct intel_encoder *en
 static struct i915_lcd_modeset *i915_encoders_bound(struct intel_atomic_state *state);
 static void i915_encoders_call(struct i915_lcd_modeset *ms, i915_ddi_encoder_hook_t hook, struct intel_atomic_state *state, const struct intel_crtc_state *crtc_state);
 static void i915_encoders_walk_disable(struct intel_atomic_state *state, struct intel_crtc *crtc, enum i915_ddi_disable_hook which);
-static u32 i915_ddi_buf_phy_link_rate(int port_clock);
 static void i915_ddi_init_dp_buf_reg(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state);
 static void i915_ddi_set_dp_msa(const struct intel_crtc_state *crtc_state, const struct drm_connector_state *conn_state);
 static u32 i915_bdw_trans_port_sync_master_select(enum transcoder master_transcoder);
@@ -159,13 +160,9 @@ static void i915_ddi_power_up_lanes(struct intel_encoder *encoder, const struct 
 static void i915_ddi_mso_configure(const struct intel_crtc_state *crtc_state);
 static enum transcoder i915_tgl_dp_tp_transcoder(const struct intel_crtc_state *crtc_state);
 static i915_reg_t i915_dp_tp_ctl_reg(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state);
-static i915_reg_t i915_dp_tp_status_reg(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state);
-static void i915_wait_ddi_buf_idle(struct drm_i915_private *cur_i915, struct drm_i915_private *dev_priv, enum port port);
-static void i915_wait_ddi_buf_active(struct drm_i915_private *cur_i915, struct drm_i915_private *dev_priv, enum port port);
 static void i915_ddi_prepare_link_retrain(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state);
 static void i915_ddi_set_link_train(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state, u8 dp_train_pat);
 static void i915_ddi_set_idle_link_train(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state);
-static void i915_ddi_disable_fec(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state);
 static void i915_disable_ddi_buf_ctl(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state);
 static void i915_disable_ddi_buf(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state);
 static void i915_ddi_disable_transcoder_func(struct drm_i915_private *cur_i915, const struct intel_crtc_state *crtc_state);
@@ -188,6 +185,9 @@ static const struct intel_ddi_buf_trans *i915_tgl_get_dkl_buf_trans(struct intel
 static const struct intel_ddi_buf_trans *i915_adlp_get_dkl_buf_trans_dp(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state, int *n_entries);
 static const struct intel_ddi_buf_trans *i915_adlp_get_dkl_buf_trans(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state, int *n_entries);
 static void i915_ddi_bind_buf_trans(struct intel_encoder *encoder);
+static void i915_ddi_xd_link(struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state, struct i915_xd_ddi_link *link);
+static void i915_ddi_tbt_to_dp_alt_hook(void *context);
+static void i915_ddi_report_late(struct drm_i915_private *i915, enum port port, unsigned late);
 static void i915_ddi_pre_enable_hdmi(struct intel_atomic_state *state, struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state, const struct drm_connector_state *conn_state);
 static void i915_enable_ddi_hdmi(struct intel_atomic_state *state, struct intel_encoder *encoder, const struct intel_crtc_state *crtc_state, const struct drm_connector_state *conn_state);
 static void i915_disable_ddi_hdmi(struct intel_atomic_state *state, struct intel_encoder *encoder, const struct intel_crtc_state *old_crtc_state, const struct drm_connector_state *old_conn_state);
@@ -1001,87 +1001,33 @@ i915_encoders_walk_disable(
 	}
 }
 
-/* Converts a DP port clock into the DDI_BUF_CTL PHY link rate field (the Linux ddi_buf_phy_link_rate()). */
-static u32
-i915_ddi_buf_phy_link_rate(
-	int port_clock)
-{
-	/* Each supported link rate has a field value of its own. */
-	switch (port_clock) {
-	case 162000:
-		return DDI_BUF_PHY_LINK_RATE(0);
-	case 216000:
-		return DDI_BUF_PHY_LINK_RATE(4);
-	case 243000:
-		return DDI_BUF_PHY_LINK_RATE(5);
-	case 270000:
-		return DDI_BUF_PHY_LINK_RATE(1);
-	case 324000:
-		return DDI_BUF_PHY_LINK_RATE(6);
-	case 432000:
-		return DDI_BUF_PHY_LINK_RATE(7);
-	case 540000:
-		return DDI_BUF_PHY_LINK_RATE(2);
-	case 810000:
-		return DDI_BUF_PHY_LINK_RATE(3);
-	default:
-		I915_LCD_MISSING_CASE(port_clock);
-		return DDI_BUF_PHY_LINK_RATE(0);
-	}
-}
-
-/* Computes the DDI_BUF_CTL value of a DP port into intel_dp->DP (the Linux intel_ddi_init_dp_buf_reg()). */
+/*
+ * Computes the DDI_BUF_CTL value of a DP port into intel_dp->DP through
+ * the xd DDI (the port's kept bits, the width, a display 13 Type-C port's
+ * PHY link rate); a Type-C port outside Thunderbolt-alt mode shows the
+ * PHY ownership in it, which the buffer keeps from the Type-C code.
+ */
 static void
 i915_ddi_init_dp_buf_reg(
 	struct intel_encoder *encoder,
 	const struct intel_crtc_state *crtc_state)
 {
-	struct drm_i915_private *i915;
+	struct drm_i915_private *i915 __maybe_unused;
 	struct intel_dp *intel_dp;
 	struct intel_digital_port *dig_port;
-	enum phy phy;
-	bool is_uhbr;
-	bool is_tc;
-	bool in_tbt_alt_mode;
-	int display_ver;
-	bool is_alderlake_p;
+	struct i915_xd_ddi_link link;
 
-	/* Finds the device, the DP half, the port and the PHY of the encoder. */
+	/* Finds the device, the DP half and the port of the encoder. */
 	i915 = i915_lcd_to_i915(encoder->base.dev);
 	intel_dp = enc_to_intel_dp(encoder);
 	dig_port = i915_lcd_enc_to_dig_port(encoder);
-	phy = drv_i915_lcd_intel_port_to_phy(i915, encoder->port);
 
-	/* DDI_BUF_CTL_ENABLE will be set by intel_ddi_prepare_link_retrain() later */
-	intel_dp->DP = dig_port->saved_port_bits |
-		DDI_PORT_WIDTH(crtc_state->lane_count) |
-		DDI_BUF_TRANS_SELECT(0);
+	/* The word; the enable is set by the link's start. */
+	i915_ddi_xd_link(encoder, crtc_state, &link);
+	intel_dp->DP = drv_i915_xd_ddi_dp_word(drv_i915_lcd_xd_platform(), &link);
 
-	/* Display version 14 and later select the port data width by the channel coding. */
-	display_ver = I915_LCD_DISPLAY_VER(i915);
-	if (display_ver >= 14) {
-		is_uhbr = drv_i915_dp_is_uhbr(crtc_state);
-		if (is_uhbr) {
-			intel_dp->DP |= DDI_BUF_PORT_DATA_40BIT;
-		} else {
-			intel_dp->DP |= DDI_BUF_PORT_DATA_10BIT;
-		}
-	}
-
-	/* Only an Alder Lake-P Type-C port adds more; any other port's value is complete. */
-	is_alderlake_p = I915_LCD_IS_ALDERLAKE_P(i915);
-	if (!is_alderlake_p)
-		return;
-
-	/* Asks whether the port's PHY is Type-C. */
-	is_tc = drv_i915_lcd_intel_phy_is_tc(i915, phy);
-	if (!is_tc)
-		return;
-
-	/* A Type-C port carries the PHY link rate, and the PHY ownership outside Thunderbolt-alt mode. */
-	intel_dp->DP |= i915_ddi_buf_phy_link_rate(crtc_state->port_clock);
-	in_tbt_alt_mode = i915_lcd_intel_tc_port_in_tbt_alt_mode(dig_port);
-	if (!in_tbt_alt_mode)
+	/* A display 13 Type-C port outside Thunderbolt-alt mode shows the PHY ownership. */
+	if (link.tc && I915_LCD_IS_ALDERLAKE_P(i915) && !i915_lcd_intel_tc_port_in_tbt_alt_mode(dig_port))
 		intel_dp->DP |= DDI_BUF_CTL_TC_PHY_OWNERSHIP;
 }
 
@@ -2349,122 +2295,11 @@ i915_dp_tp_ctl_reg(
 	return DP_TP_CTL(encoder->port);
 }
 
-/* Selects the DP_TP_STATUS register of the link (the Linux dp_tp_status_reg()). */
-static i915_reg_t
-i915_dp_tp_status_reg(
-	struct intel_encoder *encoder,
-	const struct intel_crtc_state *crtc_state)
-{
-	struct drm_i915_private *dev_priv __maybe_unused;
-	enum transcoder tp_transcoder;
-	int display_ver;
-
-	/* Finds the device. */
-	dev_priv = i915_lcd_to_i915(encoder->base.dev);
-
-	/* Display version 12 and later have it per transcoder. */
-	display_ver = I915_LCD_DISPLAY_VER(dev_priv);
-	if (display_ver >= 12) {
-		tp_transcoder = i915_tgl_dp_tp_transcoder(crtc_state);
-		return TGL_DP_TP_STATUS(tp_transcoder);
-	}
-
-	/* Succeeded: the earlier versions have it per port. */
-	return DP_TP_STATUS(encoder->port);
-}
-
 /*
- * Waits for a port's DDI buffer to become idle (the Linux
- * intel_wait_ddi_buf_idle(); the waits run on the entry point's device).
- */
-static void
-i915_wait_ddi_buf_idle(
-	struct drm_i915_private *cur_i915,
-	struct drm_i915_private *dev_priv,
-	enum port port)
-{
-	int wait_result;
-
-	/* Broxton only waits a fixed time. */
-	if (IS_BROXTON(dev_priv)) {
-		i915_lcd_udelay(cur_i915, 16);
-		return;
-	}
-
-	/* Polls the idle bit for 8 us. */
-	wait_result = I915_LCD_WAIT_FOR_US(cur_i915,
-					   (i915_lcd_intel_de_read(dev_priv, DDI_BUF_CTL(port)) &
-					    DDI_BUF_IS_IDLE),
-					   8);
-	if (wait_result) {
-		I915_LCD_DRM_ERR(&dev_priv->drm, "Timeout waiting for DDI BUF %c to get idle\n",
-				 port_name(port));
-	}
-}
-
-/*
- * Waits for a port's DDI buffer to become active (the Linux
- * intel_wait_ddi_buf_active(); the waits run on the entry point's device).
- */
-static void
-i915_wait_ddi_buf_active(
-	struct drm_i915_private *cur_i915,
-	struct drm_i915_private *dev_priv,
-	enum port port)
-{
-	enum phy phy;
-	int timeout_us;
-	int ret;
-	int display_ver;
-	bool is_tc;
-
-	/* Finds the port's PHY and the display version. */
-	phy = drv_i915_lcd_intel_port_to_phy(dev_priv, port);
-	display_ver = I915_LCD_DISPLAY_VER(dev_priv);
-
-	/* Wait > 518 usecs for DDI_BUF_CTL to be non idle */
-	if (display_ver < 10) {
-		i915_lcd_usleep_range(cur_i915, 518, 1000);
-		return;
-	}
-
-	/* The time the buffer is given, by platform and PHY. */
-	if (display_ver >= 14) {
-		timeout_us = 10000;
-	} else if (IS_DG2(dev_priv)) {
-		timeout_us = 1200;
-	} else if (display_ver >= 12) {
-		is_tc = drv_i915_lcd_intel_phy_is_tc(dev_priv, phy);
-		if (is_tc) {
-			timeout_us = 3000;
-		} else {
-			timeout_us = 1000;
-		}
-	} else {
-		timeout_us = 500;
-	}
-
-	/* Polls the version's idle bit until it clears. */
-	if (display_ver >= 14) {
-		ret = I915_LCD_WAIT_FOR_POLL(cur_i915,
-					     !(i915_lcd_intel_de_read(dev_priv, XELPDP_PORT_BUF_CTL1(port)) & XELPDP_PORT_BUF_PHY_IDLE),
-					     timeout_us, 10, 10);
-	} else {
-		ret = I915_LCD_WAIT_FOR_POLL(cur_i915,
-					     !(i915_lcd_intel_de_read(dev_priv, DDI_BUF_CTL(port)) & DDI_BUF_IS_IDLE),
-					     timeout_us, 10, 10);
-	}
-
-	/* A buffer that stayed idle is reported. */
-	if (ret) {
-		I915_LCD_DRM_ERR(&dev_priv->drm, "Timeout waiting for DDI BUF %c to get active\n",
-				 port_name(port));
-	}
-}
-
-/*
- * Restarts the link in training pattern 1 and enables the DDI buffer (the
- * Linux intel_ddi_prepare_link_retrain(), the prepare_link_retrain hook).
+ * Restarts the link in training pattern 1 and enables the DDI buffer
+ * through the xd DDI (the prepare_link_retrain hook).  An Alder Lake-P
+ * Type-C port in DP-alt or legacy mode takes the TBT-to-DP workaround
+ * between the transport and the buffer.
  */
 static void
 i915_ddi_prepare_link_retrain(
@@ -2474,74 +2309,29 @@ i915_ddi_prepare_link_retrain(
 	struct intel_digital_port *dig_port;
 	struct intel_encoder *encoder;
 	struct drm_i915_private *dev_priv;
-	struct drm_i915_private *cur_i915;
-	enum port port;
-	u32 dp_tp_ctl;
-	u32 ddi_buf_ctl;
-	bool wait;
-	bool has_dp_mst;
-	bool in_dp_alt_mode;
-	bool in_legacy_mode;
-	bool is_alderlake_p;
+	struct i915_xd_ddi_link link;
+	void (*before_buffer)(void *context);
+	unsigned late;
 
-	/* Finds the port object, its encoder, the devices and the port number. */
+	/* Finds the port object, its encoder and the device. */
 	dig_port = i915_lcd_dp_to_dig_port(intel_dp);
 	encoder = &dig_port->base;
 	dev_priv = i915_lcd_to_i915(encoder->base.dev);
-	cur_i915 = i915_ddi_cur_i915(encoder);
-	port = encoder->port;
-	wait = false;
 
-	/* A link already running is stopped first: its DDI buffer and DP_TP_CTL are disabled. */
-	dp_tp_ctl = i915_lcd_intel_de_read(dev_priv, i915_dp_tp_ctl_reg(encoder, crtc_state));
-	if (dp_tp_ctl & DP_TP_CTL_ENABLE) {
-		ddi_buf_ctl = i915_lcd_intel_de_read(dev_priv, DDI_BUF_CTL(port));
-		if (ddi_buf_ctl & DDI_BUF_CTL_ENABLE) {
-			i915_lcd_intel_de_write(dev_priv, DDI_BUF_CTL(port),
-						ddi_buf_ctl & ~DDI_BUF_CTL_ENABLE);
-			wait = true;
-		}
+	/* The workaround of an Alder Lake-P Type-C port in DP-alt or legacy mode. */
+	before_buffer = NULL;
+	if (I915_LCD_IS_ALDERLAKE_P(dev_priv) &&
+	    (intel_tc_port_in_dp_alt_mode(dig_port) || intel_tc_port_in_legacy_mode(dig_port)))
+		before_buffer = i915_ddi_tbt_to_dp_alt_hook;
 
-		dp_tp_ctl &= ~DP_TP_CTL_ENABLE;
-		i915_lcd_intel_de_write(dev_priv, i915_dp_tp_ctl_reg(encoder, crtc_state), dp_tp_ctl);
-		i915_lcd_intel_de_posting_read(dev_priv, i915_dp_tp_ctl_reg(encoder, crtc_state));
-
-		if (wait)
-			i915_wait_ddi_buf_idle(cur_i915, dev_priv, port);
-	}
-
-	/* Enables DP_TP_CTL in training pattern 1, in the stream's mode. */
-	dp_tp_ctl = DP_TP_CTL_ENABLE | DP_TP_CTL_LINK_TRAIN_PAT1;
-	has_dp_mst = intel_crtc_has_type(crtc_state, INTEL_OUTPUT_DP_MST);
-	if (has_dp_mst) {
-		dp_tp_ctl |= DP_TP_CTL_MODE_MST;
-	} else {
-		dp_tp_ctl |= DP_TP_CTL_MODE_SST;
-		if (crtc_state->enhanced_framing)
-			dp_tp_ctl |= DP_TP_CTL_ENHANCED_FRAME_ENABLE;
-	}
-	i915_lcd_intel_de_write(dev_priv, i915_dp_tp_ctl_reg(encoder, crtc_state), dp_tp_ctl);
-	i915_lcd_intel_de_posting_read(dev_priv, i915_dp_tp_ctl_reg(encoder, crtc_state));
-
-	/* An Alder Lake-P Type-C port in DP-alt or legacy mode needs the TBT-to-DP workaround. */
-	is_alderlake_p = I915_LCD_IS_ALDERLAKE_P(dev_priv);
-	if (is_alderlake_p) {
-		in_dp_alt_mode = intel_tc_port_in_dp_alt_mode(dig_port);
-		in_legacy_mode = intel_tc_port_in_legacy_mode(dig_port);
-		if (in_dp_alt_mode || in_legacy_mode)
-			i915_adlp_tbt_to_dp_alt_switch_wa(encoder);
-	}
-
-	/* Enables the DDI buffer with the value computed at the pre-enable. */
+	/* Starts the link with the word computed at the pre-enable. */
+	i915_ddi_xd_link(encoder, crtc_state, &link);
 	intel_dp->DP |= DDI_BUF_CTL_ENABLE;
-	i915_lcd_intel_de_write(dev_priv, DDI_BUF_CTL(port), intel_dp->DP);
-	i915_lcd_intel_de_posting_read(dev_priv, DDI_BUF_CTL(port));
-
-	/* Waits for the buffer to become active. */
-	i915_wait_ddi_buf_active(cur_i915, dev_priv, port);
+	late = drv_i915_xd_ddi_dp_start(drv_i915_lcd_xd_io(dev_priv), &link, intel_dp->DP & ~DDI_BUF_CTL_ENABLE, before_buffer, encoder);
+	i915_ddi_report_late(dev_priv, encoder->port, late);
 }
 
-/* Selects a training pattern in DP_TP_CTL (the Linux intel_ddi_set_link_train(), the set_link_train hook). */
+/* Selects a training pattern in DP_TP_CTL through the xd DDI (the set_link_train hook). */
 static void
 i915_ddi_set_link_train(
 	struct intel_dp *intel_dp,
@@ -2550,44 +2340,38 @@ i915_ddi_set_link_train(
 {
 	struct intel_encoder *encoder;
 	struct drm_i915_private *dev_priv;
-	u32 temp;
-	u8 pattern;
+	unsigned pattern;
 
 	/* Finds the port's encoder and its device. */
 	encoder = &i915_lcd_dp_to_dig_port(intel_dp)->base;
 	dev_priv = i915_lcd_to_i915(encoder->base.dev);
 
-	/* Reads DP_TP_CTL and clears its pattern field. */
-	temp = i915_lcd_intel_de_read(dev_priv, i915_dp_tp_ctl_reg(encoder, crtc_state));
-	temp &= ~DP_TP_CTL_LINK_TRAIN_MASK;
-
-	/* Sets the field of the requested pattern (without its scrambling bit). */
-	pattern = intel_dp_training_pattern_symbol(dp_train_pat);
-	switch (pattern) {
+	/* The field of the requested pattern (without its scrambling bit); an unknown one reads as pattern 1. */
+	switch (intel_dp_training_pattern_symbol(dp_train_pat)) {
 	case DP_TRAINING_PATTERN_DISABLE:
-		temp |= DP_TP_CTL_LINK_TRAIN_NORMAL;
-		break;
-	case DP_TRAINING_PATTERN_1:
-		temp |= DP_TP_CTL_LINK_TRAIN_PAT1;
+		pattern = I915_XD_DP_TP_PATTERN_NORMAL;
 		break;
 	case DP_TRAINING_PATTERN_2:
-		temp |= DP_TP_CTL_LINK_TRAIN_PAT2;
+		pattern = I915_XD_DP_TP_PATTERN_2;
 		break;
 	case DP_TRAINING_PATTERN_3:
-		temp |= DP_TP_CTL_LINK_TRAIN_PAT3;
+		pattern = I915_XD_DP_TP_PATTERN_3;
 		break;
 	case DP_TRAINING_PATTERN_4:
-		temp |= DP_TP_CTL_LINK_TRAIN_PAT4;
+		pattern = I915_XD_DP_TP_PATTERN_4;
+		break;
+	default:
+		pattern = I915_XD_DP_TP_PATTERN_1;
 		break;
 	}
 
-	/* Writes DP_TP_CTL. */
-	i915_lcd_intel_de_write(dev_priv, i915_dp_tp_ctl_reg(encoder, crtc_state), temp);
+	/* Writes it. */
+	drv_i915_xd_ddi_pattern(drv_i915_lcd_xd_io(dev_priv), (unsigned)i915_tgl_dp_tp_transcoder(crtc_state), pattern);
 }
 
 /*
- * Selects the idle pattern and waits for the idle patterns to be sent (the
- * Linux intel_ddi_set_idle_link_train(), the set_idle_link_train hook).
+ * Selects the idle pattern and waits for the idle patterns to be sent
+ * through the xd DDI (the set_idle_link_train hook).
  */
 static void
 i915_ddi_set_idle_link_train(
@@ -2596,64 +2380,20 @@ i915_ddi_set_idle_link_train(
 {
 	struct intel_encoder *encoder;
 	struct drm_i915_private *dev_priv;
-	enum port port;
-	int wait_result;
-	int display_ver;
+	unsigned late;
 
-	/* Finds the port's encoder, its device and its number. */
+	/* Finds the port's encoder and its device. */
 	encoder = &i915_lcd_dp_to_dig_port(intel_dp)->base;
 	dev_priv = i915_lcd_to_i915(encoder->base.dev);
-	port = encoder->port;
 
-	/* Selects the idle pattern. */
-	(void)i915_lcd_intel_de_rmw(dev_priv, i915_dp_tp_ctl_reg(encoder, crtc_state),
-				    DP_TP_CTL_LINK_TRAIN_MASK, DP_TP_CTL_LINK_TRAIN_IDLE);
-
-	/*
-	 * Until TGL on PORT_A we can have only eDP in SST mode. There the only
-	 * reason we need to set idle transmission mode is to work around a HW
-	 * issue where we enable the pipe while not in idle link-training mode.
-	 * In this case there is requirement to wait for a minimum number of
-	 * idle patterns to be sent.
-	 */
-	display_ver = I915_LCD_DISPLAY_VER(dev_priv);
-	if (port == PORT_A && display_ver < 12)
-		return;
-
-	/* Waits for the idle patterns to be sent. */
-	wait_result = intel_de_wait_for_set(dev_priv,
-					    i915_dp_tp_status_reg(encoder, crtc_state),
-					    DP_TP_STATUS_IDLE_DONE, 1);
-	if (wait_result) {
-		I915_LCD_DRM_ERR(&dev_priv->drm,
-				 "Timed out waiting for DP idle patterns\n");
-	}
-}
-
-/* Disables FEC in DP_TP_CTL when the stream used it (the Linux intel_ddi_disable_fec()). */
-static void
-i915_ddi_disable_fec(
-	struct intel_encoder *encoder,
-	const struct intel_crtc_state *crtc_state)
-{
-	struct drm_i915_private *dev_priv;
-
-	/* Finds the device. */
-	dev_priv = i915_lcd_to_i915(encoder->base.dev);
-
-	/* A stream without FEC has nothing to disable. */
-	if (!crtc_state->fec_enable)
-		return;
-
-	/* Clears the FEC enable and flushes the write. */
-	(void)i915_lcd_intel_de_rmw(dev_priv, i915_dp_tp_ctl_reg(encoder, crtc_state),
-				    DP_TP_CTL_FEC_ENABLE, 0);
-	i915_lcd_intel_de_posting_read(dev_priv, i915_dp_tp_ctl_reg(encoder, crtc_state));
+	/* The idle pattern and its wait. */
+	late = drv_i915_xd_ddi_idle_patterns(drv_i915_lcd_xd_io(dev_priv), (unsigned)i915_tgl_dp_tp_transcoder(crtc_state));
+	i915_ddi_report_late(dev_priv, encoder->port, late);
 }
 
 /*
- * Disables the DDI buffer and the link's DP_TP_CTL before display version
- * 14 (the Linux disable_ddi_buf()).
+ * Disables the DDI buffer, the link's DP_TP_CTL and FEC through the xd
+ * DDI, and waits for the buffer to go idle.
  */
 static void
 i915_disable_ddi_buf_ctl(
@@ -2661,39 +2401,14 @@ i915_disable_ddi_buf_ctl(
 	const struct intel_crtc_state *crtc_state)
 {
 	struct drm_i915_private *dev_priv;
-	struct drm_i915_private *cur_i915;
-	enum port port;
-	bool wait;
-	bool has_dp_encoder;
-	u32 val;
+	struct i915_xd_ddi_link link;
+	unsigned late;
 
-	/* Finds the devices and the port number. */
+	/* Stops the buffer (and for DP the transport). */
 	dev_priv = i915_lcd_to_i915(encoder->base.dev);
-	cur_i915 = i915_ddi_cur_i915(encoder);
-	port = encoder->port;
-	wait = false;
-
-	/* Disables an enabled DDI buffer; its idle state is waited for below. */
-	val = i915_lcd_intel_de_read(dev_priv, DDI_BUF_CTL(port));
-	if (val & DDI_BUF_CTL_ENABLE) {
-		val &= ~DDI_BUF_CTL_ENABLE;
-		i915_lcd_intel_de_write(dev_priv, DDI_BUF_CTL(port), val);
-		wait = true;
-	}
-
-	/* A DP stream also disables DP_TP_CTL. */
-	has_dp_encoder = intel_crtc_has_dp_encoder(crtc_state);
-	if (has_dp_encoder) {
-		(void)i915_lcd_intel_de_rmw(dev_priv, i915_dp_tp_ctl_reg(encoder, crtc_state),
-					    DP_TP_CTL_ENABLE, 0);
-	}
-
-	/* Disables FEC. */
-	i915_ddi_disable_fec(encoder, crtc_state);
-
-	/* Waits for the buffer that was disabled to become idle. */
-	if (wait)
-		i915_wait_ddi_buf_idle(cur_i915, dev_priv, port);
+	i915_ddi_xd_link(encoder, crtc_state, &link);
+	late = drv_i915_xd_ddi_stop(drv_i915_lcd_xd_io(dev_priv), &link, intel_crtc_has_dp_encoder(crtc_state) ? 1 : 0);
+	i915_ddi_report_late(dev_priv, encoder->port, late);
 }
 
 /* Disables the DDI buffer of the display version (the Linux intel_disable_ddi_buf()). */
@@ -2712,14 +2427,10 @@ i915_disable_ddi_buf(
 
 	/* Runs the disable of the display version. */
 	display_ver = I915_LCD_DISPLAY_VER(dev_priv);
-	if (display_ver >= 14) {
+	if (display_ver >= 14)
 		I915_LCD_MTL_DISABLE_DDI_BUF(cur_i915, encoder, crtc_state);
-
-		/* 3.f Disable DP_TP_CTL FEC Enable if it is needed */
-		i915_ddi_disable_fec(encoder, crtc_state);
-	} else {
+	else
 		i915_disable_ddi_buf_ctl(encoder, crtc_state);
-	}
 
 	/* Waits for FEC to report disabled. */
 	intel_ddi_wait_for_fec_status(encoder, crtc_state, false);
@@ -3217,9 +2928,8 @@ i915_enable_ddi_hdmi(
 	struct drm_connector *connector;
 	enum port port;
 	enum phy phy;
-	u32 buf_ctl;
-	u8 lane_count __maybe_unused;
-	u32 port_buf;
+	struct i915_xd_ddi_link link;
+	unsigned late;
 	i915_reg_t reg;
 	u32 val;
 	int display_ver;
@@ -3318,35 +3028,17 @@ i915_enable_ddi_hdmi(
 	 * is filled with lane count, already set in the crtc_state.
 	 * The same is required to be filled in PORT_BUF_CTL for C10/20 Phy.
 	 */
-	buf_ctl = dig_port->saved_port_bits | DDI_BUF_CTL_ENABLE;
 	if (display_ver >= 14) {
-		lane_count = mtl_get_port_width(crtc_state->lane_count);
-		port_buf = 0;
-
-		port_buf |= XELPDP_PORT_WIDTH(lane_count);
-
-		if (dig_port->saved_port_bits & DDI_BUF_PORT_REVERSAL)
-			port_buf |= XELPDP_PORT_REVERSAL;
-
-		(void)i915_lcd_intel_de_rmw(dev_priv, XELPDP_PORT_BUF_CTL1(port),
-					    XELPDP_PORT_WIDTH_MASK | XELPDP_PORT_REVERSAL, port_buf);
-
-		buf_ctl |= DDI_PORT_WIDTH(crtc_state->lane_count);
-
-		if (display_ver >= 20)
-			buf_ctl |= XE2LPD_DDI_BUF_D2D_LINK_ENABLE;
-	} else if (is_alderlake_p) {
+		I915_LCD_STEP(cur_i915, "mtl_enable_ddi_buf_hdmi");
+	} else {
+		/* The buffer through the xd DDI (a Type-C port only in legacy mode). */
 		is_tc = drv_i915_lcd_intel_phy_is_tc(dev_priv, phy);
-		if (is_tc) {
+		if (is_tc && is_alderlake_p)
 			(void)I915_LCD_DRM_WARN_ON(&dev_priv->drm, !intel_tc_port_in_legacy_mode(dig_port));
-			buf_ctl |= DDI_BUF_CTL_TC_PHY_OWNERSHIP;
-		}
+		i915_ddi_xd_link(encoder, crtc_state, &link);
+		late = drv_i915_xd_ddi_hdmi_start(drv_i915_lcd_xd_io(dev_priv), drv_i915_lcd_xd_platform(), &link);
+		i915_ddi_report_late(dev_priv, port, late);
 	}
-
-	/* Enables the DDI buffer and waits for it to become active. */
-	i915_lcd_intel_de_write(dev_priv, DDI_BUF_CTL(port), buf_ctl);
-
-	i915_wait_ddi_buf_active(cur_i915, dev_priv, port);
 }
 
 /* Resets the sink's scrambling and TMDS clock ratio (the Linux intel_disable_ddi_hdmi()). */
@@ -4980,4 +4672,63 @@ i915_ddi_bind_buf_trans(
 
 	/* A combo PHY takes its xd swing table. */
 	encoder->get_buf_trans = i915_combo_get_buf_trans;
+}
+
+/*
+ * Describes a port's link to the xd DDI: its DDI, the transcoder whose
+ * transport it uses, whether its PHY is Type-C, the lane count and rate,
+ * the bits the port keeps, and the stream's framing and FEC.
+ */
+static void
+i915_ddi_xd_link(
+	struct intel_encoder *encoder,
+	const struct intel_crtc_state *crtc_state,
+	struct i915_xd_ddi_link *link)
+{
+	struct drm_i915_private *i915;
+	struct intel_digital_port *dig_port;
+	enum phy phy;
+
+	/* The port and its PHY. */
+	i915 = i915_lcd_to_i915(encoder->base.dev);
+	dig_port = i915_lcd_enc_to_dig_port(encoder);
+	phy = drv_i915_lcd_intel_port_to_phy(i915, encoder->port);
+
+	/* The link. */
+	link->ddi = (unsigned)encoder->port;
+	link->trans = (unsigned)i915_tgl_dp_tp_transcoder(crtc_state);
+	link->tc = drv_i915_lcd_intel_phy_is_tc(i915, phy) ? 1 : 0;
+	link->lanes = (unsigned)crtc_state->lane_count;
+	link->rate_khz = (uint32_t)crtc_state->port_clock;
+	link->kept = dig_port->saved_port_bits;
+	link->mst = intel_crtc_has_type(crtc_state, INTEL_OUTPUT_DP_MST) ? 1 : 0;
+	link->enhanced = crtc_state->enhanced_framing ? 1 : 0;
+	link->fec = crtc_state->fec_enable ? 1 : 0;
+}
+
+/* Runs the TBT-to-DP workaround of an Alder Lake-P Type-C port for the xd DDI's start. */
+static void
+i915_ddi_tbt_to_dp_alt_hook(
+	void *context)
+{
+	/* The context is the port's encoder. */
+	i915_adlp_tbt_to_dp_alt_switch_wa(context);
+}
+
+/* Reports the DDI buffer and transport waits that ran out, as the modeset's errors. */
+static void
+i915_ddi_report_late(
+	struct drm_i915_private *i915,
+	enum port port,
+	unsigned late)
+{
+	UNUSED_PARAMETER(i915);
+
+	/* One error per wait. */
+	if ((late & I915_XD_DDI_LATE_IDLE) != 0U)
+		I915_LCD_DRM_ERR(&i915->drm, "Timeout waiting for DDI BUF %c to get idle\n", port_name(port));
+	if ((late & I915_XD_DDI_LATE_ACTIVE) != 0U)
+		I915_LCD_DRM_ERR(&i915->drm, "Timeout waiting for DDI BUF %c to get active\n", port_name(port));
+	if ((late & I915_XD_DDI_LATE_IDLE_PATTERNS) != 0U)
+		I915_LCD_DRM_ERR(&i915->drm, "Timed out waiting for DP idle patterns\n");
 }

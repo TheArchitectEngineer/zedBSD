@@ -44,6 +44,19 @@
 #define I915_XD_LANES_1_REVERSED	0x7U
 #define I915_XD_LANES_2_REVERSED	0x3U
 
+/*
+ * How long a DDI buffer may take to go idle, and to leave idle (a Type-C
+ * PHY's longer); how long the idle patterns may take.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (intel_wait_ddi_buf_idle, intel_wait_ddi_buf_active,
+ * intel_ddi_set_idle_link_train).
+ */
+#define I915_XD_DDI_IDLE_US		8U
+#define I915_XD_DDI_ACTIVE_US		1000U
+#define I915_XD_DDI_ACTIVE_TC_US	3000U
+#define I915_XD_DDI_IDLE_PATTERNS_US	1000U
+
 /* The bytes of COMP_DW1 that hold the process and voltage reference. */
 #define I915_XD_COMP_DW1_PROCMON	0x00ff00ffU
 
@@ -53,6 +66,7 @@ static int i915_xd_combo_check(struct i915_xd_io *io, uint32_t offset, uint32_t 
 static void i915_xd_combo_init_one(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned phy);
 static uint32_t i915_xd_combo_loadgen(const struct i915_xd_combo_levels *levels, unsigned lane);
 static void i915_xd_combo_swing(struct i915_xd_io *io, const struct i915_xd_platform *platform, const struct i915_xd_combo_levels *levels, uint32_t base);
+static unsigned i915_xd_ddi_wait_active(struct i915_xd_io *io, const struct i915_xd_ddi_link *link);
 
 /*
  * Tells whether a combo PHY reads as brought up: its IO compensation
@@ -500,4 +514,258 @@ i915_xd_combo_swing(
 		(void)drv_i915_xd_io_rmw(io, I915_XD_PORT_TX_DW_LN(base, lane, 7U), I915_XD_TX_DW7_N_SCALAR,
 			i915_xd_field_put(I915_XD_TX_DW7_N_SCALAR, row->n_scalar));
 	}
+}
+
+/*
+ * Works out the DisplayPort word of a DDI buffer (without the enable):
+ * the bits the port keeps, the translation select 0, the port width; on
+ * a display 13 Type-C port the PHY link rate of the link.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (ddi_buf_phy_link_rate), and drivers/gpu/drm/i915/i915_reg.h
+ * (DDI_PORT_WIDTH).
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (intel_ddi_init_dp_buf_reg).
+ */
+uint32_t
+drv_i915_xd_ddi_dp_word(
+	const struct i915_xd_platform *platform,
+	const struct i915_xd_ddi_link *link)
+{
+	static const uint32_t rates[][2] = {
+		{ 162000U, 0U }, { 216000U, 4U }, { 243000U, 5U }, { 270000U, 1U },
+		{ 324000U, 6U }, { 432000U, 7U }, { 540000U, 2U }, { 810000U, 3U }
+	};
+	uint32_t word;
+	uint32_t width;
+	unsigned index;
+
+	/* The kept bits and the width (three lanes are written as four). */
+	width = link->lanes == 3U ? 4U : link->lanes - 1U;
+	word = (link->kept & ~I915_XD_DDI_BUF_TC_OWNED) | i915_xd_field_put(I915_XD_DDI_BUF_WIDTH, width);
+
+	/* A display 13 Type-C port carries the PHY link rate (a rate it does not know as 1.62 GHz's). */
+	if (link->tc && platform->tc_flow == I915_XD_TC_FLOW_TCSS) {
+		for (index = 0U; index < sizeof(rates) / sizeof(rates[0]); index++) {
+			if (rates[index][0] == link->rate_khz)
+				word |= i915_xd_field_put(I915_XD_DDI_BUF_PHY_LINK_RATE, rates[index][1]);
+		}
+	}
+
+	/* Succeeded: the word. */
+	return word;
+}
+
+/*
+ * Starts a DisplayPort link: a link already running is stopped (the
+ * buffer, then the transport, then the wait for idle); the transport is
+ * enabled in training pattern 1 (single stream with its enhanced framing,
+ * or multi-stream); the caller's step before the buffer runs (a Type-C
+ * PHY's workaround); the buffer is enabled with the word (a Type-C port
+ * keeping the PHY ownership the buffer holds) and the wait for it to
+ * leave idle runs.  Returns the waits that ran out.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (intel_wait_ddi_buf_idle, intel_wait_ddi_buf_active: 8 us, 1 ms, 3 ms
+ * on a Type-C PHY).
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (intel_ddi_prepare_link_retrain, intel_wait_ddi_buf_idle,
+ * intel_wait_ddi_buf_active).
+ */
+unsigned
+drv_i915_xd_ddi_dp_start(
+	struct i915_xd_io *io,
+	const struct i915_xd_ddi_link *link,
+	uint32_t word,
+	void (*before_buffer)(void *context),
+	void *context)
+{
+	uint32_t transport;
+	uint32_t buffer;
+	unsigned late;
+	int was_on;
+
+	/* A running link stops first: the buffer, the transport, the wait for idle. */
+	late = 0U;
+	transport = drv_i915_xd_io_read(io, I915_XD_DP_TP_CTL(link->trans));
+	if ((transport & I915_XD_DP_TP_ENABLE) != 0U) {
+		was_on = 0;
+		buffer = drv_i915_xd_io_read(io, I915_XD_DDI_BUF_CTL(link->ddi));
+		if ((buffer & I915_XD_DDI_BUF_ENABLE) != 0U) {
+			drv_i915_xd_io_write(io, I915_XD_DDI_BUF_CTL(link->ddi), buffer & ~I915_XD_DDI_BUF_ENABLE);
+			was_on = 1;
+		}
+		drv_i915_xd_io_write(io, I915_XD_DP_TP_CTL(link->trans), transport & ~I915_XD_DP_TP_ENABLE);
+		drv_i915_xd_io_posting_read(io, I915_XD_DP_TP_CTL(link->trans));
+		if (was_on && drv_i915_xd_io_poll(io, I915_XD_DDI_BUF_CTL(link->ddi), I915_XD_DDI_BUF_IDLE, I915_XD_DDI_BUF_IDLE,
+		    I915_XD_DDI_IDLE_US, NULL) != 0)
+			late |= I915_XD_DDI_LATE_IDLE;
+	}
+
+	/* The transport in training pattern 1. */
+	transport = I915_XD_DP_TP_ENABLE | i915_xd_field_put(I915_XD_DP_TP_PATTERN, I915_XD_DP_TP_PATTERN_1);
+	if (link->mst)
+		transport |= I915_XD_DP_TP_MST;
+	else if (link->enhanced)
+		transport |= I915_XD_DP_TP_ENHANCED_FRAMING;
+	drv_i915_xd_io_write(io, I915_XD_DP_TP_CTL(link->trans), transport);
+	drv_i915_xd_io_posting_read(io, I915_XD_DP_TP_CTL(link->trans));
+
+	/* The caller's step before the buffer. */
+	if (before_buffer != NULL)
+		before_buffer(context);
+
+	/* The buffer; a Type-C port's PHY ownership is what the buffer holds, whatever the word says. */
+	buffer = word | I915_XD_DDI_BUF_ENABLE;
+	if (link->tc) {
+		buffer &= ~I915_XD_DDI_BUF_TC_OWNED;
+		buffer |= drv_i915_xd_io_read(io, I915_XD_DDI_BUF_CTL(link->ddi)) & I915_XD_DDI_BUF_TC_OWNED;
+	}
+	drv_i915_xd_io_write(io, I915_XD_DDI_BUF_CTL(link->ddi), buffer);
+	drv_i915_xd_io_posting_read(io, I915_XD_DDI_BUF_CTL(link->ddi));
+
+	/* Waits for the buffer to leave idle. */
+	late |= i915_xd_ddi_wait_active(io, link);
+
+	/* Succeeded: the waits that ran out. */
+	return late;
+}
+
+/*
+ * Selects a training pattern in a transcoder's transport (1, 2, 3, 4,
+ * idle or normal, as I915_XD_DP_TP_PATTERN_*).
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (intel_ddi_set_link_train).
+ */
+void
+drv_i915_xd_ddi_pattern(
+	struct i915_xd_io *io,
+	unsigned trans,
+	unsigned pattern)
+{
+	uint32_t transport;
+
+	/* Replaces the pattern field. */
+	transport = drv_i915_xd_io_read(io, I915_XD_DP_TP_CTL(trans));
+	transport &= ~I915_XD_DP_TP_PATTERN;
+	transport |= i915_xd_field_put(I915_XD_DP_TP_PATTERN, pattern);
+	drv_i915_xd_io_write(io, I915_XD_DP_TP_CTL(trans), transport);
+}
+
+/*
+ * Selects the idle pattern and waits for the idle patterns to be sent.
+ * Returns I915_XD_DDI_LATE_IDLE_PATTERNS when they were not.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (intel_ddi_set_idle_link_train: 1 ms).
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (intel_ddi_set_idle_link_train).
+ */
+unsigned
+drv_i915_xd_ddi_idle_patterns(
+	struct i915_xd_io *io,
+	unsigned trans)
+{
+	int error;
+
+	/* The idle pattern, then the wait. */
+	(void)drv_i915_xd_io_rmw(io, I915_XD_DP_TP_CTL(trans), I915_XD_DP_TP_PATTERN,
+		i915_xd_field_put(I915_XD_DP_TP_PATTERN, I915_XD_DP_TP_PATTERN_IDLE));
+	error = drv_i915_xd_io_poll(io, I915_XD_DP_TP_STATUS(trans), I915_XD_DP_TP_STATUS_IDLE_DONE, I915_XD_DP_TP_STATUS_IDLE_DONE,
+		I915_XD_DDI_IDLE_PATTERNS_US, NULL);
+	if (error != 0)
+		return I915_XD_DDI_LATE_IDLE_PATTERNS;
+
+	/* Succeeded: the patterns were sent. */
+	return 0U;
+}
+
+/*
+ * Starts an HDMI link's buffer: the kept bits and the enable (a display
+ * 13 Type-C port, which drives HDMI only in legacy mode, with the PHY
+ * ownership), then the wait for it to leave idle.  Returns the waits that
+ * ran out.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (intel_enable_ddi_hdmi).
+ */
+unsigned
+drv_i915_xd_ddi_hdmi_start(
+	struct i915_xd_io *io,
+	const struct i915_xd_platform *platform,
+	const struct i915_xd_ddi_link *link)
+{
+	uint32_t buffer;
+
+	/* The word. */
+	buffer = link->kept | I915_XD_DDI_BUF_ENABLE;
+	if (link->tc && platform->tc_flow == I915_XD_TC_FLOW_TCSS)
+		buffer |= I915_XD_DDI_BUF_TC_OWNED;
+	drv_i915_xd_io_write(io, I915_XD_DDI_BUF_CTL(link->ddi), buffer);
+
+	/* Succeeded: the wait for the buffer to leave idle. */
+	return i915_xd_ddi_wait_active(io, link);
+}
+
+/*
+ * Stops a link's buffer: the buffer disabled when it is enabled; for
+ * DisplayPort the transport disabled; FEC off when the link used it (with
+ * a posting read); then the wait for the buffer to go idle, when it was
+ * enabled.  Returns the waits that ran out.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (disable_ddi_buf, intel_ddi_disable_fec, intel_wait_ddi_buf_idle).
+ */
+unsigned
+drv_i915_xd_ddi_stop(
+	struct i915_xd_io *io,
+	const struct i915_xd_ddi_link *link,
+	int dp)
+{
+	uint32_t buffer;
+	int was_on;
+
+	/* The buffer. */
+	was_on = 0;
+	buffer = drv_i915_xd_io_read(io, I915_XD_DDI_BUF_CTL(link->ddi));
+	if ((buffer & I915_XD_DDI_BUF_ENABLE) != 0U) {
+		drv_i915_xd_io_write(io, I915_XD_DDI_BUF_CTL(link->ddi), buffer & ~I915_XD_DDI_BUF_ENABLE);
+		was_on = 1;
+	}
+
+	/* The transport and FEC. */
+	if (dp)
+		(void)drv_i915_xd_io_rmw(io, I915_XD_DP_TP_CTL(link->trans), I915_XD_DP_TP_ENABLE, 0U);
+	if (link->fec) {
+		(void)drv_i915_xd_io_rmw(io, I915_XD_DP_TP_CTL(link->trans), I915_XD_DP_TP_FEC, 0U);
+		drv_i915_xd_io_posting_read(io, I915_XD_DP_TP_CTL(link->trans));
+	}
+
+	/* Waits for the buffer to go idle. */
+	if (was_on && drv_i915_xd_io_poll(io, I915_XD_DDI_BUF_CTL(link->ddi), I915_XD_DDI_BUF_IDLE, I915_XD_DDI_BUF_IDLE,
+	    I915_XD_DDI_IDLE_US, NULL) != 0)
+		return I915_XD_DDI_LATE_IDLE;
+
+	/* Succeeded: no wait ran out. */
+	return 0U;
+}
+
+/* Waits for a DDI buffer to leave idle (longer on a Type-C PHY); returns I915_XD_DDI_LATE_ACTIVE when it did not. */
+static unsigned
+i915_xd_ddi_wait_active(
+	struct i915_xd_io *io,
+	const struct i915_xd_ddi_link *link)
+{
+	unsigned timeout_us;
+	int error;
+
+	/* The time a Type-C or a combo buffer is given. */
+	timeout_us = link->tc ? I915_XD_DDI_ACTIVE_TC_US : I915_XD_DDI_ACTIVE_US;
+	error = drv_i915_xd_io_poll(io, I915_XD_DDI_BUF_CTL(link->ddi), I915_XD_DDI_BUF_IDLE, 0U, timeout_us, NULL);
+	if (error != 0)
+		return I915_XD_DDI_LATE_ACTIVE;
+
+	/* Succeeded: the buffer is active. */
+	return 0U;
 }

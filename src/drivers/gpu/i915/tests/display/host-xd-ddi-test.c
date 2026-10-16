@@ -11,8 +11,11 @@
  * lanes: the check of a PHY the firmware brought up (the 5330's PHY A as
  * Linux left it, plan/ws051/tests/m3-5330-20261007/range-0x160000.txt),
  * the writes of a bring-up and of the stop, the lanes a port powers, the
- * swing table of each kind of output, and the signal levels of the
- * 5330's eDP against the same dump.
+ * swing table of each kind of output, the signal levels of the 5330's
+ * eDP against the same dump; and the DDI buffers: the DisplayPort word,
+ * the start of a link (and of one already running), the training
+ * patterns, the idle patterns, HDMI's start, the stop, a Type-C port's
+ * PHY ownership kept, and the waits that run out.
  */
 
 #include "host-test.h"
@@ -51,6 +54,9 @@ static void i915_xd_ddi_test_uninit(void);
 static void i915_xd_ddi_test_lanes(void);
 static void i915_xd_ddi_test_tables(void);
 static void i915_xd_ddi_test_levels(void);
+static void i915_xd_ddi_test_buffer_rule(uint32_t offset, uint32_t value, void *context);
+static void i915_xd_ddi_test_hook(void *context);
+static void i915_xd_ddi_test_buffers(void);
 
 /*
  * Runs every check of the xd combo PHYs and reports.
@@ -67,6 +73,7 @@ main(void)
 	i915_xd_ddi_test_lanes();
 	i915_xd_ddi_test_tables();
 	i915_xd_ddi_test_levels();
+	i915_xd_ddi_test_buffers();
 
 	/* Reports the result. */
 	failures = i915_host_report("host_xd_ddi_test");
@@ -435,4 +442,144 @@ i915_xd_ddi_test_levels(void)
 	i915_host_check((i915_xd_fake_get(I915_XD_PORT_PCS_DW_LN(I915_XD_COMBO_PHY_A, 0U, 1U)) & I915_XD_PCS_DW1_COMMON_KEEPER) == 0U &&
 			(i915_xd_fake_get(I915_XD_PORT_TX_DW_LN(I915_XD_COMBO_PHY_A, 1U, 4U)) & I915_XD_TX_DW4_LOADGEN) == 0U,
 			"ddi: HDMI clears the common keeper; above 6 GHz no lane takes the load generator");
+}
+
+/* The writes counted when the start's step before the buffer ran. */
+static unsigned i915_xd_ddi_test_hook_writes;
+
+/* Makes a DDI buffer idle while it is disabled, and active while it is enabled (unless context says it stays idle). */
+static void
+i915_xd_ddi_test_buffer_rule(
+	uint32_t offset,
+	uint32_t value,
+	void *context)
+{
+	/* The idle bit follows the enable. */
+	if ((value & I915_XD_DDI_BUF_ENABLE) != 0U && context == NULL)
+		i915_xd_fake_set(offset, value & ~I915_XD_DDI_BUF_IDLE);
+	else
+		i915_xd_fake_set(offset, value | I915_XD_DDI_BUF_IDLE);
+}
+
+/* Notes how many writes were made when the start's step before the buffer runs. */
+static void
+i915_xd_ddi_test_hook(
+	void *context)
+{
+	UNUSED_PARAMETER(context);
+
+	/* The count of writes so far. */
+	i915_xd_ddi_test_hook_writes = i915_xd_fake_writes();
+}
+
+/* Checks the DDI buffers. */
+static void
+i915_xd_ddi_test_buffers(void)
+{
+	static const uint32_t start_offsets[] = { 0x60540U, 0x64000U };
+	static const uint32_t start_values[] = { 0x80040000U, 0x80000002U };
+	static const uint32_t restart_offsets[] = { 0x64000U, 0x60540U, 0x60540U, 0x64000U };
+	static const uint32_t restart_values[] = { 0x00000002U, 0x00040300U, 0x80040000U, 0x80000002U };
+	static int stays_idle;
+	const struct i915_xd_platform *platform;
+	struct i915_xd_ddi_link link;
+	uint32_t offsets[I915_XD_DDI_TEST_WRITES];
+	uint32_t values[I915_XD_DDI_TEST_WRITES];
+	uint32_t word;
+	unsigned count;
+	unsigned late;
+	unsigned index;
+	int same;
+
+	/* The 5330's eDP: DDI A, transcoder A, two lanes at 2.7 GHz, enhanced framing. */
+	platform = i915_xd_ddi_test_setup(I915_XD_DDI_TEST_ADLP, I915_XD_DDI_TEST_ADLP_REVID);
+	if (platform == NULL)
+		return;
+	i915_xd_fake_rule_call(I915_XD_DDI_BUF_CTL(0U), i915_xd_ddi_test_buffer_rule, NULL);
+	i915_xd_fake_rule_call(I915_XD_DDI_BUF_CTL(4U), i915_xd_ddi_test_buffer_rule, NULL);
+	memset(&link, 0, sizeof(link));
+	link.ddi = 0U;
+	link.trans = 0U;
+	link.lanes = 2U;
+	link.rate_khz = 270000U;
+	link.enhanced = 1;
+	word = drv_i915_xd_ddi_dp_word(platform, &link);
+	i915_host_check(word == 0x00000002U, "ddi: the 5330's eDP word is two lanes, translation 0 (Linux's 0x80000002 without the enable)");
+
+	/* The start: the transport in pattern 1 with enhanced framing, the step before the buffer, the buffer. */
+	i915_xd_fake_set(I915_XD_DDI_BUF_CTL(0U), I915_XD_DDI_BUF_IDLE);
+	i915_xd_ddi_test_hook_writes = 0U;
+	late = drv_i915_xd_ddi_dp_start(&i915_xd_ddi_test_io, &link, word, i915_xd_ddi_test_hook, NULL);
+	count = i915_xd_ddi_test_writes(offsets, values, I915_XD_DDI_TEST_WRITES);
+	same = count == 2U && offsets[0] == start_offsets[0] && values[0] == start_values[0] &&
+	       offsets[1] == start_offsets[1] && values[1] == start_values[1];
+	i915_host_check(late == 0U && same && i915_xd_ddi_test_hook_writes == 1U,
+			"ddi: the start writes DP_TP_CTL 0x80040000, runs the step, then DDI_BUF_CTL 0x80000002 and waits for it to leave idle");
+
+	/* A running link stops first: the buffer, the transport, the wait for idle; then it starts again. */
+	i915_xd_fake_set(I915_XD_DP_TP_CTL(0U), 0x80040300U);
+	late = drv_i915_xd_ddi_dp_start(&i915_xd_ddi_test_io, &link, word, NULL, NULL);
+	count = i915_xd_ddi_test_writes(offsets, values, I915_XD_DDI_TEST_WRITES);
+	same = count == 6U;
+	for (index = 0U; same && index < 4U; index++) {
+		if (offsets[2U + index] != restart_offsets[index] || values[2U + index] != restart_values[index])
+			same = 0;
+	}
+	i915_host_check(late == 0U && same, "ddi: a running link stops (buffer off, transport off, idle) before it starts again");
+
+	/* The patterns. */
+	drv_i915_xd_ddi_pattern(&i915_xd_ddi_test_io, 0U, I915_XD_DP_TP_PATTERN_2);
+	i915_host_check(i915_xd_fake_get(I915_XD_DP_TP_CTL(0U)) == 0x80040100U, "ddi: pattern 2 replaces the field");
+	drv_i915_xd_ddi_pattern(&i915_xd_ddi_test_io, 0U, I915_XD_DP_TP_PATTERN_NORMAL);
+	i915_host_check(i915_xd_fake_get(I915_XD_DP_TP_CTL(0U)) == 0x80040300U, "ddi: normal replaces the field");
+	i915_xd_fake_set(I915_XD_DP_TP_STATUS(0U), I915_XD_DP_TP_STATUS_IDLE_DONE);
+	late = drv_i915_xd_ddi_idle_patterns(&i915_xd_ddi_test_io, 0U);
+	i915_host_check(late == 0U && i915_xd_fake_get(I915_XD_DP_TP_CTL(0U)) == 0x80040200U, "ddi: the idle pattern, and its patterns were sent");
+	i915_xd_fake_set(I915_XD_DP_TP_STATUS(0U), 0U);
+	late = drv_i915_xd_ddi_idle_patterns(&i915_xd_ddi_test_io, 0U);
+	i915_host_check(late == I915_XD_DDI_LATE_IDLE_PATTERNS, "ddi: idle patterns that are not sent are reported");
+
+	/* The stop with FEC: buffer off, transport off, FEC off, idle. */
+	link.fec = 1;
+	i915_xd_fake_set(I915_XD_DP_TP_CTL(0U), 0xc0040300U);
+	late = drv_i915_xd_ddi_stop(&i915_xd_ddi_test_io, &link, 1);
+	i915_host_check(late == 0U && i915_xd_fake_get(I915_XD_DP_TP_CTL(0U)) == 0x00040300U &&
+			(i915_xd_fake_get(I915_XD_DDI_BUF_CTL(0U)) & (I915_XD_DDI_BUF_ENABLE | I915_XD_DDI_BUF_IDLE)) == I915_XD_DDI_BUF_IDLE,
+			"ddi: the stop clears the buffer, the transport and FEC, and the buffer goes idle");
+
+	/*
+	 * A Type-C port (DDI 4 = TC2 on Alder Lake-P, the 5330's USB-C DP):
+	 * four lanes at 5.4 GHz, the reversal kept, the ownership the Type-C
+	 * code took kept.
+	 */
+	memset(&link, 0, sizeof(link));
+	link.ddi = 4U;
+	link.trans = 1U;
+	link.tc = 1;
+	link.lanes = 4U;
+	link.rate_khz = 540000U;
+	link.kept = I915_XD_DDI_BUF_REVERSAL | I915_XD_DDI_BUF_TC_OWNED;
+	word = drv_i915_xd_ddi_dp_word(platform, &link);
+	i915_host_check(word == (I915_XD_DDI_BUF_REVERSAL | 0x00200006U), "ddi: a display 13 Type-C word carries the link rate (5.4 GHz = 2), four lanes, the reversal, not the ownership");
+	i915_xd_fake_set(I915_XD_DDI_BUF_CTL(4U), I915_XD_DDI_BUF_TC_OWNED | I915_XD_DDI_BUF_IDLE);
+	late = drv_i915_xd_ddi_dp_start(&i915_xd_ddi_test_io, &link, word, NULL, NULL);
+	i915_host_check(late == 0U && (i915_xd_fake_get(I915_XD_DDI_BUF_CTL(4U)) & I915_XD_DDI_BUF_TC_OWNED) != 0U,
+			"ddi: the start keeps the Type-C PHY ownership bit 6 the Type-C code set");
+	i915_xd_fake_set(I915_XD_DDI_BUF_CTL(4U), I915_XD_DDI_BUF_IDLE);
+	late = drv_i915_xd_ddi_dp_start(&i915_xd_ddi_test_io, &link, word | I915_XD_DDI_BUF_TC_OWNED, NULL, NULL);
+	i915_host_check(late == 0U && (i915_xd_fake_get(I915_XD_DDI_BUF_CTL(4U)) & I915_XD_DDI_BUF_TC_OWNED) == 0U,
+			"ddi: ... and does not take it when the Type-C code did not, even with it in the word");
+
+	/* HDMI: the kept bits and the enable; a display 13 Type-C port takes the ownership. */
+	late = drv_i915_xd_ddi_hdmi_start(&i915_xd_ddi_test_io, platform, &link);
+	i915_host_check(late == 0U && (i915_xd_fake_get(I915_XD_DDI_BUF_CTL(4U)) & ~I915_XD_DDI_BUF_IDLE) ==
+			(I915_XD_DDI_BUF_ENABLE | I915_XD_DDI_BUF_REVERSAL | I915_XD_DDI_BUF_TC_OWNED),
+			"ddi: HDMI's buffer is the kept bits and the enable, with the ownership on a Type-C port");
+
+	/* A buffer that stays idle: the wait runs out (3 ms on Type-C). */
+	platform = i915_xd_ddi_test_setup(I915_XD_DDI_TEST_ADLP, I915_XD_DDI_TEST_ADLP_REVID);
+	i915_xd_fake_rule_call(I915_XD_DDI_BUF_CTL(4U), i915_xd_ddi_test_buffer_rule, &stays_idle);
+	late = drv_i915_xd_ddi_dp_start(&i915_xd_ddi_test_io, &link, word, NULL, NULL);
+	i915_host_check(late == I915_XD_DDI_LATE_ACTIVE && i915_xd_fake_now() >= 3000U,
+			"ddi: a buffer that stays idle is reported after the Type-C port's 3 ms");
 }

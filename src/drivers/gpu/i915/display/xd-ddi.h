@@ -6,7 +6,8 @@
  */
 
 /*
- * The DDIs of the display 12 and 13 code (xd-ddi.c): the combo PHYs.
+ * The DDIs of the display 12 and 13 code (xd-ddi.c): the combo PHYs and
+ * the DDI buffers.
  *
  * A combo PHY drives the lanes of one DDI.  It is brought up once, at the
  * display's start (and again after DC states that lose it): its IO
@@ -22,6 +23,15 @@
  * rate and by the VBT's low swing or HOBL setting, HDMI): each lane takes
  * the row of the level the sink asked for, with the load generator of the
  * lane, and the change is latched by the training enable.
+ *
+ * The DDI buffer drives the link.  For DisplayPort its word carries the
+ * lane count and lane reversal (and on a display 13 Type-C port the PHY
+ * link rate); the link starts with the transport in training pattern 1
+ * and the buffer enabled, then waits for the buffer to leave idle.  On a
+ * Type-C port the PHY ownership bit belongs to the Type-C code: the
+ * buffer keeps whatever it holds.  A link that is already running is
+ * stopped first.  The stop clears the buffer, the transport and FEC, and
+ * waits for the buffer to go idle.
  */
 
 #ifndef DRIVERS_GPU_I915_DISPLAY_XD_DDI_H
@@ -54,6 +64,29 @@ struct i915_xd_combo_levels {
 	uint8_t level[4];
 };
 
+/* The waits of the DDI buffer and the transport that ran out, as bits. */
+#define I915_XD_DDI_LATE_IDLE		0x1U
+#define I915_XD_DDI_LATE_ACTIVE		0x2U
+#define I915_XD_DDI_LATE_IDLE_PATTERNS	0x4U
+
+/*
+ * A DDI link: the DDI, the transcoder whose transport it uses, whether
+ * its PHY is a Type-C one, the lane count and link rate, the bits the
+ * port keeps in its buffer word (the lane reversal, DDI A's four lanes),
+ * and for DisplayPort the enhanced framing, multi-stream and FEC.
+ */
+struct i915_xd_ddi_link {
+	unsigned ddi;
+	unsigned trans;
+	int tc;
+	unsigned lanes;
+	uint32_t rate_khz;
+	uint32_t kept;
+	int enhanced;
+	int mst;
+	int fec;
+};
+
 int drv_i915_xd_combo_phy_ready(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned phy);
 unsigned drv_i915_xd_combo_phy_init(struct i915_xd_io *io, const struct i915_xd_platform *platform);
 unsigned drv_i915_xd_combo_phy_uninit(struct i915_xd_io *io, const struct i915_xd_platform *platform);
@@ -61,5 +94,11 @@ void drv_i915_xd_combo_lanes(struct i915_xd_io *io, unsigned phy, unsigned lanes
 const struct i915_xd_combo_swing_table *drv_i915_xd_combo_swing_table(const struct i915_xd_platform *platform, unsigned kind, uint32_t rate_khz, unsigned vbt);
 int drv_i915_xd_combo_swing_is_hobl(const struct i915_xd_platform *platform, const struct i915_xd_combo_swing_table *table);
 void drv_i915_xd_combo_signal_levels(struct i915_xd_io *io, const struct i915_xd_platform *platform, const struct i915_xd_combo_levels *levels);
+uint32_t drv_i915_xd_ddi_dp_word(const struct i915_xd_platform *platform, const struct i915_xd_ddi_link *link);
+unsigned drv_i915_xd_ddi_dp_start(struct i915_xd_io *io, const struct i915_xd_ddi_link *link, uint32_t word, void (*before_buffer)(void *context), void *context);
+void drv_i915_xd_ddi_pattern(struct i915_xd_io *io, unsigned trans, unsigned pattern);
+unsigned drv_i915_xd_ddi_idle_patterns(struct i915_xd_io *io, unsigned trans);
+unsigned drv_i915_xd_ddi_hdmi_start(struct i915_xd_io *io, const struct i915_xd_platform *platform, const struct i915_xd_ddi_link *link);
+unsigned drv_i915_xd_ddi_stop(struct i915_xd_io *io, const struct i915_xd_ddi_link *link, int dp);
 
 #endif /* DRIVERS_GPU_I915_DISPLAY_XD_DDI_H */

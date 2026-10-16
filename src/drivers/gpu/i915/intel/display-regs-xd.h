@@ -700,12 +700,14 @@
 
 /*
  * The DisplayPort transport control and status of a transcoder (display
- * 12 and 13): enable, the enhanced framing, the training pattern (1, 2,
+ * 12 and 13): enable, FEC, the multi-stream mode, the enhanced framing,
+ * the training pattern (1, 2,
  * 3, 4, idle, normal); the idle-done status.
  *
  * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
  * (_TGL_DP_TP_CTL_A, _TGL_DP_TP_STATUS_A, DP_TP_CTL_ENABLE,
- * DP_TP_CTL_MODE_SST, DP_TP_CTL_ENHANCED_FRAME_ENABLE,
+ * DP_TP_CTL_MODE_SST, DP_TP_CTL_FEC_ENABLE, DP_TP_CTL_MODE_MST,
+ * DP_TP_CTL_ENHANCED_FRAME_ENABLE,
  * DP_TP_CTL_LINK_TRAIN_MASK, DP_TP_CTL_LINK_TRAIN_PAT1,
  * DP_TP_CTL_LINK_TRAIN_PAT2, DP_TP_CTL_LINK_TRAIN_PAT3,
  * DP_TP_CTL_LINK_TRAIN_PAT4, DP_TP_CTL_LINK_TRAIN_IDLE,
@@ -714,6 +716,8 @@
 #define I915_XD_DP_TP_CTL(trans)		(0x60540U + I915_XD_TRANS_STRIDE * (trans))
 #define I915_XD_DP_TP_STATUS(trans)		(0x60544U + I915_XD_TRANS_STRIDE * (trans))
 #define I915_XD_DP_TP_ENABLE			0x80000000U
+#define I915_XD_DP_TP_FEC			0x40000000U
+#define I915_XD_DP_TP_MST			0x08000000U
 #define I915_XD_DP_TP_ENHANCED_FRAMING		0x00040000U
 #define I915_XD_DP_TP_PATTERN			0x00000700U
 #define I915_XD_DP_TP_PATTERN_1			0U
@@ -725,18 +729,22 @@
 #define I915_XD_DP_TP_STATUS_IDLE_DONE		0x02000000U
 
 /*
- * The DDI buffer control: enable, the PHY link rate (display 13 Type-C),
+ * The DDI buffer control: enable, the translation select, the PHY link
+ * rate (display 13 Type-C), the lane reversal,
  * the idle status, the Type-C PHY ownership (display 13), the four-lane
  * strap of DDI A, and the port width (lanes less one).
  *
  * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
- * (_DDI_BUF_CTL_A, DDI_BUF_CTL_ENABLE, DDI_BUF_PHY_LINK_RATE,
+ * (_DDI_BUF_CTL_A, DDI_BUF_CTL_ENABLE, DDI_BUF_TRANS_SELECT,
+ * DDI_BUF_PHY_LINK_RATE, DDI_BUF_PORT_REVERSAL,
  * DDI_BUF_IS_IDLE, DDI_BUF_CTL_TC_PHY_OWNERSHIP, DDI_A_4_LANES,
  * DDI_PORT_WIDTH_MASK).
  */
 #define I915_XD_DDI_BUF_CTL(port)		(0x64000U + I915_XD_DDI_STRIDE * (port))
 #define I915_XD_DDI_BUF_ENABLE			0x80000000U
+#define I915_XD_DDI_BUF_TRANS_SELECT		0x0f000000U
 #define I915_XD_DDI_BUF_PHY_LINK_RATE		0x00700000U
+#define I915_XD_DDI_BUF_REVERSAL		0x00010000U
 #define I915_XD_DDI_BUF_IDLE			0x00000080U
 #define I915_XD_DDI_BUF_TC_OWNED		0x00000040U
 #define I915_XD_DDI_BUF_A_4_LANES		0x00000010U

@@ -19,14 +19,12 @@
  *   C. trouble after the plane was armed (the pipe does not stop): the buffer stays protected
  *   D. the commit's outer part (DC_OFF, the crtc's power domains, DBUF, MBUS, CDCLK, bandwidth) and
  *      the observation of the running pipe
- *   E. a time-base fault is not a timeout
+ *   E. a time-base fault (in the stop's pipe-off wait) is not a timeout
  *   F. brightness and backlight while the picture stays up
  *   G. show / stop / show again on the same resident eDP
  *   H. the pipe's power cannot be released
  *   I. the synchronous flip; J. its event after a timeout, the stop, the relight, the evasion sleep
  * The pass criteria are read back from the models and the production objects, never from the trace.
- *
- *   sh plan/ws031/tests/run-lcd-modeset-host-test.sh
  */
 
 #include "host-test.h"
@@ -1761,33 +1759,33 @@ i915_ms_test_time_base(void)
 	int result;
 	int wait;
 	int named;
-	int refs;
+	int error;
 
-	/* The DP_TP_STATUS wait of the link training meets a time-base fault. */
+	/* The enable runs on a sound time base; the pipe-off wait of the stop meets a time-base fault. */
 	i915_ms_bring_up();
-	i915_ms_lcd.fault_time_base_reg = 0x60544U;
 	config = i915_ms_config();
 	result = i915_ms_prepare_enable(&config);
+	i915_host_check(result == I915_LCD_MS_OK, "E: the enable on a sound time base succeeds");
+	i915_ms_lcd.fault_time_base_reg = 0x70008U;
+	result = drv_i915_lcd_modeset_commit_disable(&i915_ms_display);
 	drv_i915_lcd_modeset_status(&i915_ms_display, &s);
-	wait = i915_ms_find(I915_LCD_T_WAIT, 0x60544U, NULL, 0U);
-	printf("  E: enable rc=%d errors=%u first=%s", result, s.errors, i915_ms_first_error(&s, "-\n"));
+	wait = i915_ms_find(I915_LCD_T_WAIT, 0x70008U, NULL, 0U);
+	printf("  E: disable rc=%d errors=%u first=%s", result, s.errors, i915_ms_first_error(&s, "-\n"));
 	named = i915_ms_error_names(&s, "time base");
 	i915_host_check(result == I915_LCD_MS_ERRORS &&
 			named &&
 			wait >= 0 &&
 			i915_ms_trace.e[wait].rc == I915_LCD_EIO,
-			"E: the wait returns -EIO (not -ETIMEDOUT) and the time-base fault is the FIRST anomaly, ahead of the reference's own error");
-	i915_host_check(i915_ms_lcd.plane_arms == 0U, "E: after that anomaly the plane was not armed");
+			"E: the pipe-off wait returns -EIO (not -ETIMEDOUT) and the time-base fault is the FIRST anomaly");
 
-	/* A transient fault: the stop itself runs on a sound time base and returns everything. */
+	/* A stop that was not confirmed keeps the display retained until the model that holds it is discarded. */
 	i915_ms_lcd.fault_time_base_reg = 0U;
-	result = drv_i915_lcd_modeset_commit_disable(&i915_ms_display);
 	drv_i915_lcd_modeset_status(&i915_ms_display, &s);
-	printf("  E: disable rc=%d retained=%d stop_unconfirmed=%d crtc_active=%d\n", result, s.retained, s.stop_unconfirmed, s.crtc_active);
-	refs = drv_i915_lcd_fake_power_refs_total(&i915_ms_lcd);
-	i915_host_check(result == I915_LCD_MS_OK && s.retained == 0 && s.crtc_active == 0 && refs == 0,
-			"E: with the time base sound again, the reference stop path returns everything");
-	drv_i915_lcd_modeset_plane_released(&i915_ms_display);
+	printf("  E: retained=%d stop_unconfirmed=%d\n", s.retained, s.stop_unconfirmed);
+	i915_host_check(s.retained == 1 && s.stop_unconfirmed == 1, "E: the stop that met the fault is not confirmed: the display is retained");
+	error = drv_i915_lcd_modeset_discard_model(&i915_ms_display, &i915_ms_trace.ops);
+	i915_host_check(error == 0 && drv_i915_lcd_modeset_retained(&i915_ms_display) == 0,
+			"E: discarding the model frees the object again");
 	(void)drv_i915_edp_end(i915_ms_display.dp_world, &i915_ms_res);
 }
 
