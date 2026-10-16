@@ -2,10 +2,10 @@
 
 # ws039-p019 desktop の描画の速さ（app の window を開く animation が 1 fps 未満）
 
-Status: in-progress（2026-10-17 P7 4 段目 q1235-i04: 3 段目の実機（P3 21:46〜21:59）で DPM を on にしても GFXCLK が 800 MHz から動かない理由を、Linux の navi10 の SMU と比べて切り分けた（15 節）。Linux と同じ初期化（levels の読み・workload・averaging settings・ceiling の解除）と、仕事の間だけ GFXCLK を上げる boost（3D の workload profile と floor、既定 `amdrdna.smu.boost=2`）を足した。timing の印には、その period の中の一番高い clock と busy を出す。host 試験と build まで。実機は P3 への依頼待ち（17 節）。commit 0f6b22184）
+Status: in-progress（2026-10-17 P7 5 段目 q1235-i05: 4 段目の実機（P3 01:20〜01:27、kernel D、boost=2 と 1）で GFXCLK の top が 1780 MHz でも 1 run の GPU の時間は 800 MHz の時と同じ（300→800 MHz では 2.6 倍速くなった）。ユーザーの見立て「1780 MHz は driver が許した最大値で、firmware は負荷が高くならないと上げない」を第一の仮説に、長く高い負荷を掛ける試験の app `vkload` を足し、clock が 1780 まで上がるかと 1 draw の時間を測る 1 回の実機の依頼を出した（18 節）。kernel は 4 段目の D のまま（変更なし）。commit 0f6b22184（kernel）・この段の WIP commit（vkload と記録））
 Disposition: normal
 Parent: [WS039](../ws.md)
-Queue: q1235 / q1235-i01（1 段目）・q1235-i02（2 段目）・q1235-i03（3 段目）・q1235-i04（4 段目、P7）（承認 2026-10-16 ユーザー「appの起動時のウィンドウが開くアニメーションが1fpsも出ていないですので、高速化は必要です。」、Q1 の割当）
+Queue: q1235 / q1235-i01（1 段目）・q1235-i02（2 段目）・q1235-i03（3 段目）・q1235-i04（4 段目、P7）・q1235-i05（5 段目、P7、2026-10-17 ユーザー「DPMは既定でオンにします」）（承認 2026-10-16 ユーザー「appの起動時のウィンドウが開くアニメーションが1fpsも出ていないですので、高速化は必要です。」、Q1 の割当）
 実行者: P5（phase-runner、worktree `/home/awe/zedBSD-worktrees/p5`、branch `agent/p5-ws039`）。4 段目は P7（worktree `/home/awe/zedBSD-worktrees/p7`、branch `agent/p7-p019`）
 依存: p008（executor）・p009（desktop）・p017（窓の 1 GiB）は main に入っている（main f391e6b3c を cebb5882e で取り込んだ）。
 
@@ -162,8 +162,62 @@ kernel D = commit 0f6b22184（main 8146bfc19 の上、既定 `amdrdna.smu.gfxclk
 - 目視: window・App Home の開く animation が 3 段目より滑らかか。
 落ちた時: `amdrdna.smu.boost=0` で boost 無し（3 段目と同じ）、`amdrdna.smu.gfxclk=0` で DPM 無しに戻る。固まったら電源。
 
+## 18. 5 段目の切り分け（2026-10-17 P7、4 段目の実機の生の file は P3 の worktree の `build/tmp/p19-d/{r1,r2}/`、3 段目は `build/tmp/p5-c/{r1,r2}/`）
+
+1 run あたりの GPU の時間（`gpu busy` の ms ÷ runs、App Home の開閉の period）:
+
+| 起動 | GFXCLK の設定 | 印の clock | 1 run の平均 | 1 run の最大 |
+| --- | --- | --- | --- | --- |
+| p5-c r1 | DPM 無し | 300 MHz（boot の値） | 5.1 ms（235/46） | 15.5 ms |
+| p5-c r2 | DPM on、boost 無し | 今 800、average 802 | 1.95 ms（125/64） | 6.2 ms |
+| p19-d r1 | DPM on、boost=2（profile と floor） | 今 800、**top 1780**、average 807〜808 | 1.89 ms（121/64） | 6.1 ms |
+| p19-d r2 | DPM on、boost=1（profile だけ） | 今 800、top 800〜1030 | 1.94 ms（125/64） | 6.2 ms |
+
+- 300→800 MHz で 2.6 倍（≒ 800/300 = 2.67）速くなった。この区間の run の時間は GFXCLK にほぼ比例する。800→「top 1780」では変わらない（3% 以内）。
+- 4 段目の `top` は watch の読み（1 s ごと、boost を上げた 100 ms 後にも 1 回）の `CurrClock` の最大で、boost の floor を送った直後の読みに出る。`average`（firmware の平均の clock、10 ms の時定数）は全 period で 807〜808 で、印の直前の idle の読み。仕事の間の average は記録していない。
+- **第一の仮説（ユーザーの見立て、2026-10-17）**: 「AMDですが、1780 MHzは、実際に負荷が高くならないと上がらない可能性があります。ファームウェアが賢いので。ドライバの指定は最大値かもしれないです」。→ `CurrClock` の 1780 は driver が許した値（floor）の表示で、desktop の短い仕事（1 run 2 ms、frame の間に 20 ms 程度の空き）では firmware が実際の clock を上げていない、と読む。run の時間が 800 MHz の時と同じことと、average が 807〜808 のままなことに合う（未確認）。
+- 他の候補（今回は測らず残件、10 節）: (a) UCLK（memory の clock）。DPM の UCLK を有効にしていないので、clock は VBIOS の boot の値（A1v の `mclk=875MHz`）のままの見込み。metrics の `CurrClock` の UCLK が 0 なのは DPM が無い clock を firmware が 0 で返すため（15 節）で、101 MHz という値は dmesg に無い。300→800 MHz で GFXCLK に比例した事から、800 MHz の手前まで memory 律速ではない。(c) run の中の待ち（barrier の flush・EOP の待ち、CP の packet の処理）。
+- ユーザー（2026-10-17、Q1 経由）:「300MHzと800MHzで変化があるなら、一回負荷を上げて測定した上で、記録として残していただき、先に進んでください。」→ 切り分けは広げず、高い負荷を長く掛ける 1 回の測定だけを足す。UCLK の実験・run の中の内訳の測定は残件（10 節）。
+
+### 試験の app `vkload`（2026-10-17 P7）
+
+- `plan/ws039/tests/vkload/main.c`・`vkload/spin.frag`、build は `plan/ws039/tests/vkload-build.sh BUILD`（vkhang と同じ形、glslc で SPIR-V の header を作り image の libvulkan に link）。
+- 正方形の B8G8R8A8 の target（`--side`、既定 1024）を clear し、compositor の quad の vertex program と、16384 歩の loop の pixel program（`x = x * 1664525 + 1013904223`、始まりと歩数は texcoord × 0 から作るので compiler が畳めない）の quad で覆う。command buffer を毎回 pool の reset から記録し直して submit・fence の待ちを `--seconds`（既定 10）の間くり返す。`--gap=MS` で draw の間に眠る（0 = 連続の負荷、20 = desktop の短い burst に近い形）。
+- 出力（submit から fence までの時間）: 1 秒ごとに `VKLOAD second=<s> draws=<n> mean=<us> min=<us> max=<us>`、最後に `VKLOAD ok seconds=<s> side=<n> gap=<ms> draws=<n> mean=<us> first=<us> last=<us>`（first・last は最初と最後の 1 秒の平均）、失敗は `VKLOAD fail <step> <VkResult>`。
+- 見込みの重さ（未測定）: 1024×1024 の 1 draw は 800 MHz で数十〜100 ms 前後、1780 MHz で半分以下。GPU の run の期限（2 s、`VK_NODE_RUN_MS`）より十分短い。draw の間は executor の node の lock を持つので desktop は止まりがちになる（試験の間だけ）。
+
+### 試験（host）と build（2026-10-17 P7）
+
+- `make -j16 ZEDBSD_CONFIG=plan/ws039/tests/config.mk BUILD=build/p7/usb build/p7/usb/dynamic/libvulkan.so build/p7/usb/dynamic/libc.so`: rc 0、`warning:` 0 行（link の相手）。
+- `sh plan/ws039/tests/vkload-build.sh build/p7/usb`: rc 0（`-Wall -Wextra -Werror`）、check-dynamic-elf PASS、`build/p7/usb/bin/vkload`（21640 byte）。
+- pixel program を amdrdna の GFX10 compiler と interpreter で: `gfx10-graphics-test`（amdrdna-compiler-host-test.sh の 3 と同じ build）に `spin.frag` を渡し `PASS spin-frag: 16 trials, 128 words, 9 VGPRs, 40 SGPRs`（IR の参照と一致。対照の vkhang の `loops.frag` も PASS）。
+- kernel は変えていない（4 段目の kernel D = 0f6b22184 のまま）。
+- 未実施: 実機（19 節）。
+
+## 19. 実機の依頼（5 段目、P3 へ、未実施）
+
+kernel D（commit 0f6b22184、P3 の `build/tmp/p19-d/vmunix` と同じ）と、app `vkload`（commit はこの段の WIP、`sh plan/ws039/tests/vkload-build.sh <BUILD>` で作り、guest に置く。P7 の build は `/home/awe/zedBSD-worktrees/p7/build/p7/usb/bin/vkload`）。2 回の起動:
+
+1. D、boot の行に `amdrdna.vk.timing=5000 amdrdna.smu.boost=0`（DPM は on、driver の boost 無し = firmware だけが clock を決める）。
+2. D、boot の行に `amdrdna.vk.timing=5000`（既定の boost=2、floor を最高の level に）。
+
+各回の手順（desktop が出た後、ssh で）:
+- `amdrdnactl status`（temp・fan を控える）→ 10 s 何もしない。
+- `vkload --seconds=20`（連続の負荷）→ 5 s 待つ → `vkload --seconds=20 --gap=20`（短い burst の負荷）→ `amdrdnactl status`。
+- 取る物: vkload の出力の全行、`dmesg` の `vk timing` の行（各 period の `clocks gfx … top …MHz average …`、`gfx busy … top …%`、`gpu busy … max`、`gpu runs`）、`amdrdnactl status` の power の行（temp・fan・fault）と display の underflow、`thermal` の行。
+
+見る物:
+- **1 の連続の負荷で firmware が GFXCLK を上げるか**: vkload の各秒の mean が 20 s の間に下がるか（first と last）、その period の `top` が 1780 付近まで上がるか。上がれば「firmware は長い高い負荷でだけ上げる」が確かめられる。上がらなければ、firmware が上げない別の理由（電力・温度の制限など）を疑う。
+- **1 と 2 の比べ**: 連続の負荷の mean（2 が 1 の約 800/1780 倍 = 0.45 倍なら、floor で実際に clock が上がっている）。burst（`--gap=20`）の mean も 1 と 2 で比べる（desktop の形の負荷で floor が効くか）。
+- 温度・fan: 2 で連続の負荷の後の temp・fan が 1 よりどれだけ上がるか、fault が無いこと、underflow 0。
+
+判定の後（Q1・P7）: 2 の floor で draw が速くならない（mean が 1 と同じ）なら、boost の floor は効かないので既定を 0 か 1 にする（温度・fan の増えに見合わない）。速くなるなら既定 2 のまま、desktop の 1 frame の速さは clock より仕事の作り（run ごとの同期の待ち、draw ごとの register の全書き、barrier）で詰める（Q1 2026-10-17 の方針）。
+
 ## 10. 残り・再開点
 
+- （5 段目の後）19 節の実機で firmware が連続の負荷で GFXCLK を上げるかと、boost=2 の floor で draw が速くなるかを見て、boost の既定（0・1・2）を温度・fan と効果で決め、merge を依頼する。
+- 残件（2026-10-17 ユーザーの指示で今回は測らない）: (a) UCLK の実際の値（metrics の `AverageUclkFrequency`・`AverageUclkActivity` を読む）と、UCLK を最高の level に固定する opt-in の実験（DPM_UCLK と 2 つの memory の電圧の feature を permit し、soft min を最高に。SMU に watermark の表を渡していないので display の underflow を監視、design 8 節の危険）。(b) firmware の `ThrottlerStatus`・平均の電力の読み、仕事の間の速い読み。(c) run の中の GPU の時刻の内訳（barrier ごとに、CP が着いた時・描画の終わり・flush の後の timestamp）。(d) clock を固定する実験の語（soft min = soft max）。
+- 削除の依頼（Q1、5 段目）: P7 の worktree の `build/tmp/p19e-libs.log`・`p19e-vkload.log`・`p19e-spin.*`。
 - （4 段目の後）17 節の実機で boost=2 の clock と gpu busy を見る。下がり方と温度・fan に問題が無ければ既定の 2 のまま。1 で十分に上がるなら、1 を既定にするかを Q1 経由でユーザーに諮る。上がった後の残り（draw ごとの register の全書き、barrier）は、その時の `gpu busy` で選ぶ（3 段目の残りの (3)、今回は未着手）。
 - 4 段目で入れていない Linux の物: DS_GFXCLK（idle の deep sleep。Linux は既定で permit。入れれば idle で 800 MHz より下がる）、SOCCLK・UCLK の DPM（UCLK は design 8 節の underflow の危険で入れない。SOCCLK は boot の clock のまま）、`NotifyPowerSource`。どれも今回の範囲（GFXCLK の上下）の外で、入れるかは実機の結果の後に決める。
 - design.md の 12 節（boot の parameter）に `amdrdna.smu.boost=0|1|2`（既定 2）、4.4 に「levels の読み・workload・averaging 設定・ceiling の解除、仕事の間の boost」を足す直しは Q1 へ（P7 は design.md を触っていない）。
