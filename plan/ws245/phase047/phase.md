@@ -2,7 +2,7 @@
 
 # ws245-p047: 回帰の証拠の道具（survey と書き込みの記録）
 
-Status: in-progress（q1218-i01 P1: 実装・host 試験・build・5330 の素の起動の回帰に合格（2026-10-16 14:47）。merge の依頼を Q1 に送った。clearance は merge の後に Q1）
+Status: cleared（2026-10-16 Q1: main 3e1e0c687 に merge（親 4aadd5780・38b4fed9e）、ci の vmunix は warning 0。5330 の素の起動の回帰に合格。LCD の目視は beta2.md の U11）
 Parent: [WS245](../ws.md)
 Queue: q1218 / q1218-i01（承認: 2026-10-16 ユーザー「別なサブエージェントで、i915の実装変更のWSを進めてオーケーです。こちらはmainに取り込む前にベアメタルテストして、オーケーならmainに取り込んでいきます。USBを挿しておくので、UEFIのエントリーを制御して自動テストしてほしいです。実機は 10.0.30.3 です。」）
 設計: [design.md](../design.md) §6.2 の p047 の行、§6.3「証拠の道」、表 R の PIPE_CRC_CTL の行（改訂 6）
