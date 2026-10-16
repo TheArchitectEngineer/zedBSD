@@ -39,10 +39,10 @@
 #include "modeset-internal.h"
 #include "power.h"
 #include "clock.h"
-#include "phy.h"
 #include "takeover.h"
 #include "modeset.h"
 #include "dkl-phy.h"
+#include "xd-ddi.h"
 #include "xd-power.h"
 #include "xd.h"
 #include <kern/kcrt.h>
@@ -216,6 +216,7 @@ static void i915_core_fault(struct i915_display_core *dc, const char *where);
 static int i915_icl_display_core_init(struct i915_display_core *dc, int resume);
 static void i915_icl_display_core_uninit(struct i915_display_core *dc);
 static unsigned i915_wells_on(struct i915_power_domains *pd, struct i915_pw_ctx *pwc);
+static void i915_combo_phys_up(struct i915_pw_ctx *pwc, struct i915_trace *trace);
 
 /*
  * Builds the power-domain state of a display (intel_power_domains_init()).
@@ -2253,7 +2254,6 @@ i915_pw_dc_off_on(
 	struct i915_xd_dc_report report;
 	struct i915_cdclk_config readout;
 	struct i915_trace *trace;
-	unsigned initialised;
 	unsigned slice;
 	uint8_t current_slices;
 	uint32_t value;
@@ -2299,8 +2299,7 @@ i915_pw_dc_off_on(
 	/* The DMC loses combo PHY B's context across DC on display version 11+: restores it. */
 	trace = i915_dc_off_trace(pwc);
 	drv_i915_trace_init(trace);
-	initialised = 0u;
-	(void)drv_i915_combo_phy_init(pwc->mmio, trace, &initialised);
+	i915_combo_phys_up(pwc, trace);
 	pwc->dc_off_combo_inits++;
 }
 
@@ -2709,7 +2708,6 @@ i915_icl_display_core_init(
 {
 	struct i915_xd_power *power;
 	struct i915_trace *trace;
-	unsigned combo_initialised;
 	int index;
 	int enable_result;
 	int faulted;
@@ -2733,8 +2731,7 @@ i915_icl_display_core_init(
 
 	/* 2. Initializes every combo PHY; the reference is void, so the fault state is checked after. */
 	dc->last_child = 3;
-	combo_initialised = 0u;
-	(void)drv_i915_combo_phy_init(dc->m, trace, &combo_initialised);
+	i915_combo_phys_up(dc->pwc, trace);
 	faulted = drv_i915_time_base_faulted();
 	if (faulted != 0) {
 		i915_core_fault(dc, "intel_combo_phy_init");
@@ -2816,6 +2813,7 @@ i915_icl_display_core_uninit(
 {
 	struct i915_xd_power *power;
 	struct i915_xd_dc_report report;
+	unsigned a_down;
 	int index;
 
 	/* Leaves the DC states through the verified write, so the copy of the state last written follows. */
@@ -2841,8 +2839,13 @@ i915_icl_display_core_uninit(
 		mutex_unlock(&dc->pd->lock);
 	}
 
-	/* Takes the combo PHYs down. */
-	drv_i915_combo_phy_uninit(dc->m);
+	/* Takes the combo PHYs down (xd DDI). */
+	if (dc->pwc->xd != NULL && dc->pwc->xd->chosen) {
+		a_down = drv_i915_xd_combo_phy_uninit(&dc->pwc->xd->io, dc->pwc->xd->choice.platform);
+		if (a_down != 0U)
+			kern_logf("i915: combo PHY A was not up before the uninit\n");
+		kern_logf("i915: combo PHYs: uninit\n");
+	}
 }
 
 /* Counts the wells that are on as the driver owns them. */
@@ -2865,4 +2868,38 @@ i915_wells_on(
 
 	/* Succeeded: reports how many are on. */
 	return count;
+}
+
+/* The trace stage of the combo PHY bring-up (the display's noirq stage). */
+#define I915_COMBO_TRACE_STAGE		4U
+
+/*
+ * Brings up the combo PHYs through the xd DDI (those that do not read as
+ * up), and records and logs how many it wrote.  A display without the xd
+ * description has none to bring up.
+ */
+static void
+i915_combo_phys_up(
+	struct i915_pw_ctx *pwc,
+	struct i915_trace *trace)
+{
+	unsigned written;
+	unsigned count;
+	unsigned phy;
+
+	/* Without the description there is nothing to write. */
+	written = 0U;
+	if (pwc->xd != NULL && pwc->xd->chosen)
+		written = drv_i915_xd_combo_phy_init(&pwc->xd->io, pwc->xd->choice.platform);
+
+	/* Counts the PHYs written. */
+	count = 0U;
+	for (phy = 0U; phy < 8U; phy++) {
+		if ((written & (1U << phy)) != 0U)
+			count++;
+	}
+
+	/* Records and logs what was programmed. */
+	drv_i915_trace_record(trace, I915_COMBO_TRACE_STAGE, I915_TRACE_ACQUIRE, "intel_combo_phy_init", (uint64_t)count, 0U);
+	kern_logf("i915: combo PHYs: %u initialised (mask 0x%x)\n", count, written);
 }

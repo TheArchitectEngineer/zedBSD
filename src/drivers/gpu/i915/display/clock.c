@@ -74,8 +74,8 @@
  * modeset object shares (the Linux text of intel_dpll_mgr.c's references,
  * readout and sanitize) and the Type-C PLL's words; the combo PLLs' and
  * the Thunderbolt PLL's words, enable, disable and read, and the DDI clock
- * map, are the xd clock's (xd-clock.c), reached through a window on the
- * modeset's backend.
+ * map, are the xd clock's (xd-clock.c), reached through the modeset's
+ * register window (drv_i915_lcd_xd_io()).
  */
 
 #include "modeset-internal.h"
@@ -144,10 +144,6 @@ static int i915_icl_ddi_tbt_pll_get_freq(struct drm_i915_private *i915, const st
 static bool i915_dkl_pll_get_hw_state(struct drm_i915_private *i915, struct intel_shared_dpll *pll, struct intel_dpll_hw_state *hw_state);
 static void i915_dkl_pll_write(struct drm_i915_private *i915, struct intel_shared_dpll *pll);
 static void i915_mg_pll_enable(struct drm_i915_private *i915, struct intel_shared_dpll *pll);
-static struct i915_xd_io *i915_dpll_window(struct drm_i915_private *i915);
-static uint32_t i915_dpll_window_read(void *context, uint32_t offset);
-static void i915_dpll_window_write(void *context, uint32_t offset, uint32_t value);
-static void i915_dpll_window_wait(void *context, unsigned microseconds);
 static const struct i915_xd_pll_desc *i915_dpll_xd_desc(const struct intel_shared_dpll *pll);
 static int i915_dpll_afc(const struct drm_i915_private *i915);
 static void i915_dpll_report(struct drm_i915_private *i915, const struct intel_shared_dpll *pll, unsigned late);
@@ -2659,89 +2655,6 @@ i915_mg_pll_enable(
 }
 
 /*
- * The register window the port PLLs and the DDI clock map are reached
- * through: the backend hooks of the device that runs the modeset, so the
- * xd clock's writes go where the rest of the modeset's go (the hardware,
- * or a host test's model).  Every user holds the device's DPLL lock or
- * runs in the display's start, before a modeset can.
- */
-static struct i915_xd_io i915_dpll_io;
-static int i915_dpll_io_ready;
-
-/* Points the window at a device's backend (prepared on first use) and returns it. */
-static struct i915_xd_io *
-i915_dpll_window(
-	struct drm_i915_private *i915)
-{
-	struct i915_xd_io_hooks hooks;
-
-	/* Prepares the window once. */
-	if (i915_dpll_io_ready == 0) {
-		drv_i915_xd_io_init(&i915_dpll_io, NULL, NULL);
-		i915_dpll_io_ready = 1;
-	}
-
-	/* Points it at this device's backend. */
-	hooks.read = i915_dpll_window_read;
-	hooks.write = i915_dpll_window_write;
-	hooks.wait = i915_dpll_window_wait;
-	hooks.lock = NULL;
-	hooks.context = i915;
-	drv_i915_xd_io_set_hooks(&i915_dpll_io, &hooks);
-
-	/* Succeeded: the window. */
-	return &i915_dpll_io;
-}
-
-/* Reads a register through the device's backend; the recorder, which cannot read, answers 0. */
-static uint32_t
-i915_dpll_window_read(
-	void *context,
-	uint32_t offset)
-{
-	struct drm_i915_private *i915;
-
-	/* The pure word recorder has no read hook. */
-	i915 = context;
-	if (i915->emit->read32 == NULL)
-		return 0U;
-
-	/* Succeeded: the register's value. */
-	return i915->emit->read32(i915->emit->ctx, offset);
-}
-
-/* Writes a register through the device's backend. */
-static void
-i915_dpll_window_write(
-	void *context,
-	uint32_t offset,
-	uint32_t value)
-{
-	struct drm_i915_private *i915;
-
-	/* Writes the register. */
-	i915 = context;
-	i915->emit->write32(i915->emit->ctx, offset, value);
-}
-
-/* Lets time pass through the device's backend, when it keeps time. */
-static void
-i915_dpll_window_wait(
-	void *context,
-	unsigned microseconds)
-{
-	struct drm_i915_private *i915;
-
-	/* A backend without a clock lets no time pass. */
-	i915 = context;
-	if (i915->emit->usleep == NULL)
-		return;
-
-	/* Sleeps. */
-	i915->emit->usleep(i915->emit->ctx, microseconds);
-}
-
-/*
  * Reports the xd description of a pool PLL: the platform's PLL whose
  * select value is the PLL's id.
  */
@@ -2816,7 +2729,7 @@ i915_combo_pll_get_hw_state(
 	words.cfgcr1 = hw_state->cfgcr1;
 	words.div0 = hw_state->div0;
 	words.div0_set = 0;
-	enabled = drv_i915_xd_dpll_read(i915_dpll_window(i915), drv_i915_lcd_xd_platform(), desc, i915_dpll_afc(i915), &words);
+	enabled = drv_i915_xd_dpll_read(drv_i915_lcd_xd_io(i915), drv_i915_lcd_xd_platform(), desc, i915_dpll_afc(i915), &words);
 	if (enabled) {
 		hw_state->cfgcr0 = words.cfgcr0;
 		hw_state->cfgcr1 = words.cfgcr1;
@@ -2881,7 +2794,7 @@ i915_combo_pll_enable(
 	words.div0_set = i915_dpll_afc(i915) != I915_XD_DPLL_AFC_NONE;
 
 	/* Turns it on and reports the waits that ran out. */
-	late = drv_i915_xd_dpll_enable(i915_dpll_window(i915), drv_i915_lcd_xd_platform(), desc, &words);
+	late = drv_i915_xd_dpll_enable(drv_i915_lcd_xd_io(i915), drv_i915_lcd_xd_platform(), desc, &words);
 	i915_dpll_report(i915, pll, late);
 }
 
@@ -2900,7 +2813,7 @@ i915_port_pll_disable(
 		return;
 
 	/* Turns it off and reports the waits that ran out. */
-	late = drv_i915_xd_dpll_disable(i915_dpll_window(i915), desc);
+	late = drv_i915_xd_dpll_disable(drv_i915_lcd_xd_io(i915), desc);
 	i915_dpll_report(i915, pll, late);
 }
 
@@ -2915,7 +2828,7 @@ drv_i915_dpll_map_ddi(
 	const struct intel_shared_dpll *pll)
 {
 	/* The PLL's id is the platform's select value. */
-	drv_i915_xd_dpll_map(i915_dpll_window(i915), drv_i915_lcd_xd_platform(), phy, (unsigned)pll->info->id);
+	drv_i915_xd_dpll_map(drv_i915_lcd_xd_io(i915), drv_i915_lcd_xd_platform(), phy, (unsigned)pll->info->id);
 }
 
 /* Gates a combo PHY's DDI clock through the xd clock.  The caller holds the device's DPLL lock. */
@@ -2925,7 +2838,7 @@ drv_i915_dpll_unmap_ddi(
 	unsigned phy)
 {
 	/* Sets the clock-off bit. */
-	drv_i915_xd_dpll_unmap(i915_dpll_window(i915), drv_i915_lcd_xd_platform(), phy);
+	drv_i915_xd_dpll_unmap(drv_i915_lcd_xd_io(i915), drv_i915_lcd_xd_platform(), phy);
 }
 
 /*
@@ -2939,5 +2852,5 @@ drv_i915_dpll_ddi_mapped(
 	unsigned *pll_id)
 {
 	/* Reads the map. */
-	return drv_i915_xd_dpll_mapped(i915_dpll_window(i915), drv_i915_lcd_xd_platform(), phy, pll_id);
+	return drv_i915_xd_dpll_mapped(drv_i915_lcd_xd_io(i915), drv_i915_lcd_xd_platform(), phy, pll_id);
 }

@@ -158,6 +158,9 @@ struct i915_resident_output_way {
  */
 static struct i915_lcd_world *i915_modeset_bound_world;
 
+static uint32_t i915_lcd_xd_window_read(void *context, uint32_t offset);
+static void i915_lcd_xd_window_write(void *context, uint32_t offset, uint32_t value);
+static void i915_lcd_xd_window_wait(void *context, unsigned microseconds);
 static struct i915_lcd_modeset *i915_modeset_selected_screen(struct i915_lcd_world *world);
 static void i915_modeset_bind_current(struct i915_display *display);
 static void i915_modeset_on_error(void *ctx, const char *what);
@@ -313,6 +316,89 @@ drv_i915_lcd_xd_platform(void)
 
 	/* Succeeded: no description of the version; the first one serves. */
 	return drv_i915_xd_platform_row(0U);
+}
+
+/*
+ * The register window the xd parts the modeset calls are reached through:
+ * the backend hooks of the device that runs the modeset, so their writes
+ * go where the rest of the modeset's go (the hardware, or a host test's
+ * model).  Every user holds the modeset's locks or runs in the display's
+ * start, before a modeset can.
+ */
+static struct i915_xd_io i915_lcd_xd_window;
+static int i915_lcd_xd_window_ready;
+
+/* Points the window at a device's backend (prepared on first use) and returns it. */
+struct i915_xd_io *
+drv_i915_lcd_xd_io(
+	struct drm_i915_private *i915)
+{
+	struct i915_xd_io_hooks hooks;
+
+	/* Prepares the window once. */
+	if (i915_lcd_xd_window_ready == 0) {
+		drv_i915_xd_io_init(&i915_lcd_xd_window, NULL, NULL);
+		i915_lcd_xd_window_ready = 1;
+	}
+
+	/* Points it at this device's backend. */
+	hooks.read = i915_lcd_xd_window_read;
+	hooks.write = i915_lcd_xd_window_write;
+	hooks.wait = i915_lcd_xd_window_wait;
+	hooks.lock = NULL;
+	hooks.context = i915;
+	drv_i915_xd_io_set_hooks(&i915_lcd_xd_window, &hooks);
+
+	/* Succeeded: the window. */
+	return &i915_lcd_xd_window;
+}
+
+/* Reads a register through the device's backend; the recorder, which cannot read, answers 0. */
+static uint32_t
+i915_lcd_xd_window_read(
+	void *context,
+	uint32_t offset)
+{
+	struct drm_i915_private *i915;
+
+	/* The pure word recorder has no read hook. */
+	i915 = context;
+	if (i915->emit->read32 == NULL)
+		return 0U;
+
+	/* Succeeded: the register's value. */
+	return i915->emit->read32(i915->emit->ctx, offset);
+}
+
+/* Writes a register through the device's backend. */
+static void
+i915_lcd_xd_window_write(
+	void *context,
+	uint32_t offset,
+	uint32_t value)
+{
+	struct drm_i915_private *i915;
+
+	/* Writes the register. */
+	i915 = context;
+	i915->emit->write32(i915->emit->ctx, offset, value);
+}
+
+/* Lets time pass through the device's backend, when it keeps time. */
+static void
+i915_lcd_xd_window_wait(
+	void *context,
+	unsigned microseconds)
+{
+	struct drm_i915_private *i915;
+
+	/* A backend without a clock lets no time pass. */
+	i915 = context;
+	if (i915->emit->usleep == NULL)
+		return;
+
+	/* Sleeps. */
+	i915->emit->usleep(i915->emit->ctx, microseconds);
 }
 
 /*

@@ -127,6 +127,7 @@
 
 #include "internal.h"
 #include "tc.h"
+#include "xd-io.h"
 #include "xd-platform.h"
 
 #ifdef I915_DISPLAY_LINUX_WORLD
@@ -2344,6 +2345,7 @@ void drv_i915_lcd_debug(const char *what);
 /* The display version of the device the probe found (12 = Tiger Lake, 13 = ADL-P class). */
 int drv_i915_lcd_display_ver(void);
 const struct i915_xd_platform *drv_i915_lcd_xd_platform(void);
+struct i915_xd_io *drv_i915_lcd_xd_io(struct drm_i915_private *i915);
 
 /* The mode object and name helpers of the EDID text. */
 void drv_i915_lcd_drm_mode_set_name(struct drm_display_mode *mode);
@@ -2399,7 +2401,6 @@ int drv_i915_lcd_ms_alloc_tc_plls(struct i915_lcd_world *world, struct i915_lcd_
 void drv_i915_lcd_ms_release_pll(struct i915_lcd_world *world, struct i915_lcd_modeset *ms);
 void drv_i915_lcd_ms_bind_encoder(struct i915_lcd_modeset *ms);
 void drv_i915_lcd_ms_bind_port_hooks(struct i915_lcd_modeset *ms);
-void drv_i915_lcd_ms_bind_buf_trans(struct intel_encoder *encoder);
 void drv_i915_lcd_ms_plane_data_rates(struct i915_lcd_modeset *ms);
 void drv_i915_lcd_ms_wm_compute_off(struct i915_wm_world *wm_world, struct i915_lcd_modeset *ms, unsigned keep_pipes);
 int drv_i915_lcd_ms_cdclk_check(struct i915_takeover_world *takeover, struct i915_lcd_modeset *ms);
@@ -2438,8 +2439,6 @@ void drv_i915_dpll_unmap_ddi(struct drm_i915_private *i915, unsigned phy);
 int drv_i915_dpll_ddi_mapped(struct drm_i915_private *i915, unsigned phy, unsigned *pll_id);
 void drv_i915_disable_shared_dpll(const struct intel_crtc_state *crtc_state);
 void drv_i915_lcd_ms_release_pipe(struct i915_lcd_world *world, enum pipe pipe);
-void drv_i915_combo_phy_power_up_lanes(struct drm_i915_private *dev_priv, enum phy phy, bool is_dsi, int lane_count, bool lane_reversal);
-bool drv_i915_is_hobl_buf_trans(const struct intel_ddi_buf_trans *table);
 void drv_i915_dmc_enable_pipe(struct drm_i915_private *i915, enum pipe pipe);
 void drv_i915_dmc_disable_pipe(struct drm_i915_private *i915, enum pipe pipe);
 
