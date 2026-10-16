@@ -68,6 +68,7 @@ Resume point: 2026-10-16 q1218（P1）の区切り: 次は **p018**（[phase018]
 - p025: src/drivers/gpu/i915/display/dc9.c・dc9.h（本番の呼び手 0、vmunix.mk から外し済み）、plan/ws052/tests/host-i915-dc9.c と plan/ws052/tests/Makefile の i915-dc9 の規則（期待値は host-xd-power-test の DC9 の check へ移した）。
 - p026: src/drivers/gpu/i915/display/dmc.c（中身は消して vmunix.mk から外し済み）。
 - p029: src/drivers/gpu/i915/display/phy.c・phy.h（中身は消し、vmunix.mk から外し済み）。
+- p037: src/drivers/gpu/i915/tests/display/host-native-decide-test.c（中身は消した）、plan/ws084/tests/run-native-decide-host-test.sh（参照されない）。
 - p028〜: master の Tools の plan/ws051/tests/host-vbt-pll.sh が takeover.c の PLL の表を読めず FAIL になる（表は xd の platform の表へ、PLL の check は host-xd-dpll-test へ移った）。merge の時に道具から adlp_plls の部分を外すか DVO だけの道具にし、Tools の行を直す。
 
 ## 全部を実装してから試験（2026-10-16 夕 ユーザー）
