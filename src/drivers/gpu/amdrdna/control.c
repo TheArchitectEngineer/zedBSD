@@ -29,6 +29,7 @@
 #include <uapi/amdrdna.h>
 #include <uapi/errno.h>
 
+#include "drivers/gpu/amdrdna/amdrdna-node.h"
 #include "drivers/gpu/amdrdna/amdrdna-private.h"
 #include "drivers/gpu/amdrdna/amdrdna-regs.h"
 
@@ -52,6 +53,7 @@ static void control_fill(struct amdrdna_device *device, struct amdrdna_status *s
 static void control_fill_memory(struct amdrdna_device *device, struct amdrdna_status *status);
 static uint32_t control_fill_power(struct amdrdna_device *device, struct amdrdna_status *status);
 static void control_fill_engines(struct amdrdna_device *device, struct amdrdna_status *status);
+static void control_fill_spaces(struct amdrdna_device *device, struct amdrdna_status *status);
 static uint32_t ip_version(const struct amdrdna_ip *ip);
 
 /* The device's operations: requests only. */
@@ -381,6 +383,10 @@ control_fill(
 	if (status->stage >= AMDRDNA_STAGE_A4)
 		control_fill_engines(device, status);
 
+	/* The address spaces and the GPU device, from stage A5s on (or as far as a failed A5s got). */
+	if (status->stage >= AMDRDNA_STAGE_A5)
+		control_fill_spaces(device, status);
+
 	/* Publishes the flags. */
 	status->flags = flags;
 }
@@ -533,6 +539,38 @@ control_fill_engines(
 	status->fences = engines->fences;
 	status->copied_bytes = engines->copied_bytes;
 	status->dispatch_words = engines->dispatch_words;
+}
+
+/* Fills the status answer's part that stage A5s set up. */
+static void
+control_fill_spaces(
+	struct amdrdna_device *device,
+	struct amdrdna_status *status)
+{
+	struct amdrdna_spaces *spaces;
+	struct amdrdna_node *node;
+	unsigned long irq;
+
+	/* The spaces open and kept, and the drops, under the spaces' lock. */
+	spaces = &device->spaces;
+	irq = spin_lock_irqsave(&spaces->lock);
+
+	status->spaces = (spaces->count & 0xffffU) | ((spaces->held & 0xffffU) << 16);
+	status->context_flushes = (uint32_t)spaces->pool.flushes;
+
+	spin_unlock_irqrestore(&spaces->lock, irq);
+
+	/* The GPU device's state. */
+	status->device_flags = 0U;
+	node = device->node;
+	if (node == NULL)
+		return;
+	if (node->gpu != NULL)
+		status->device_flags |= AMDRDNA_DEVICE_REGISTERED;
+	if (node->renderer != 0)
+		status->device_flags |= AMDRDNA_DEVICE_RENDERER;
+	if (node->faulted != 0 || spaces->faulted)
+		status->device_flags |= AMDRDNA_DEVICE_FAULTED;
 }
 
 /* Packs an IP block's version as major << 16 | minor << 8 | step; 0 for an unlisted block. */

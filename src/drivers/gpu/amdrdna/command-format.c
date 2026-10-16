@@ -42,14 +42,14 @@
 /*
  * The opcodes the driver uses: nothing (the filler), the partition base,
  * the state reset, the dispatch, the context loads, the value write, the
- * event fence, the state bracket, the memory move, the cache sync, the
+ * value wait, the indirect buffer, the fetcher's sync, the event fence, the state bracket, the memory move, the cache sync, the
  * context, shader and user register writes, and the scheduler's resource,
  * queue attach and queue detach packets.
  *
  * Values referenced: Linux v6.19 drivers/gpu/drm/amd/amdgpu/nvd.h
  * (PACKET3_NOP, PACKET3_SET_BASE, PACKET3_CLEAR_STATE,
  * PACKET3_DISPATCH_DIRECT, PACKET3_CONTEXT_CONTROL, PACKET3_WRITE_DATA,
- * PACKET3_INDIRECT_BUFFER,
+ * PACKET3_WAIT_REG_MEM, PACKET3_INDIRECT_BUFFER, PACKET3_PFP_SYNC_ME,
  * PACKET3_RELEASE_MEM, PACKET3_PREAMBLE_CNTL, PACKET3_DMA_DATA,
  * PACKET3_ACQUIRE_MEM, PACKET3_SET_CONTEXT_REG, PACKET3_SET_SH_REG,
  * PACKET3_SET_UCONFIG_REG, PACKET3_SET_RESOURCES, PACKET3_MAP_QUEUES,
@@ -61,7 +61,9 @@
 #define COMMAND_OP_DISPATCH		0x15U
 #define COMMAND_OP_CONTEXT_LOADS	0x28U
 #define COMMAND_OP_WRITE_VALUE		0x37U
+#define COMMAND_OP_WAIT_VALUE		0x3cU
 #define COMMAND_OP_INDIRECT		0x3fU
+#define COMMAND_OP_FETCHER_SYNC		0x42U
 #define COMMAND_OP_EVENT_FENCE		0x49U
 #define COMMAND_OP_STATE_BRACKET	0x4aU
 #define COMMAND_OP_MOVE			0x50U
@@ -97,6 +99,40 @@
 #define COMMAND_WRITE_TO_REGISTER	0x00000000U
 #define COMMAND_WRITE_TO_MEMORY		0x00000500U
 #define COMMAND_WRITE_CONFIRM		0x00100000U
+
+/*
+ * The engine that runs a value write or a value wait: the fetcher (the
+ * graphics ring's prefetch parser, 1 at bit 30 of a write and at bit 8 of
+ * a wait) instead of the micro engine.  The graphics ring writes a
+ * context's table and waits for its drop on the fetcher, which reads the
+ * indirect buffers that follow.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/amd/amdgpu/nvd.h
+ * (WRITE_DATA_ENGINE_SEL, WAIT_REG_MEM_ENGINE) and gfx_v10_0.c
+ * (gfx_v10_0_ring_emit_wreg, gfx_v10_0_ring_emit_reg_write_reg_wait: the
+ * graphics ring uses the prefetch parser).
+ */
+#define COMMAND_WRITE_BY_FETCHER	0x40000000U
+#define COMMAND_WAIT_BY_FETCHER		0x00000100U
+
+/*
+ * The value wait's control word: the comparison (bits 2:0, 3 for equal),
+ * the space it reads (bit 4: 0 a register, 1 memory) and the operation
+ * (bits 7:6: 0 wait only, 1 write the first register then wait on the
+ * second); and the poll interval of a register wait (0x20) and of a
+ * memory wait (4).
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/amd/amdgpu/nvd.h
+ * (WAIT_REG_MEM_FUNCTION, WAIT_REG_MEM_MEM_SPACE, WAIT_REG_MEM_OPERATION)
+ * and gfx_v10_0.c (gfx_v10_0_wait_reg_mem and its callers
+ * gfx_v10_0_ring_emit_reg_write_reg_wait and
+ * gfx_v10_0_ring_emit_pipeline_sync: the poll intervals).
+ */
+#define COMMAND_WAIT_EQUAL		0x00000003U
+#define COMMAND_WAIT_IN_MEMORY		0x00000010U
+#define COMMAND_WAIT_AFTER_WRITE	0x00000040U
+#define COMMAND_WAIT_REGISTER_POLL	0x00000020U
+#define COMMAND_WAIT_MEMORY_POLL	0x00000004U
 
 /*
  * The event fence's first control word: the cache flush and timestamp
@@ -668,6 +704,130 @@ amdrdna_pm4_partition(
 
 	/* Succeeded: four words. */
 	return 4U;
+}
+
+/*
+ * Writes a packet that has the graphics ring's fetcher write one register
+ * (an absolute index) and wait until the write landed.  Reports the words
+ * written.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/gfx_v10_0.c (gfx_v10_0_ring_emit_wreg, the
+ * graphics ring's case).
+ */
+unsigned
+amdrdna_pm4_fetcher_write_register(
+	uint32_t *words,
+	uint32_t index,
+	uint32_t value)
+{
+	/* The header and the control word: a register, by the fetcher, confirmed. */
+	words[0] = command_header(COMMAND_OP_WRITE_VALUE, 4U, false);
+	words[1] = COMMAND_WRITE_TO_REGISTER | COMMAND_WRITE_BY_FETCHER | COMMAND_WRITE_CONFIRM;
+
+	/* The register, a zero high word, and the value. */
+	words[2] = index;
+	words[3] = 0U;
+	words[4] = value;
+
+	/* Succeeded: five words. */
+	return AMDRDNA_PM4_WRITE_WORDS;
+}
+
+/*
+ * Writes a packet that writes value to the register request and then
+ * waits until the register done, masked by mask, equals value masked the
+ * same way: the way a ring asks a memory hub to drop a context's cached
+ * translations and waits for the hub's answer.  fetcher runs it on the
+ * graphics ring's fetcher.  Reports the words written.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/gfx_v10_0.c
+ * (gfx_v10_0_ring_emit_reg_write_reg_wait, gfx_v10_0_wait_reg_mem).
+ */
+unsigned
+amdrdna_pm4_write_and_wait(
+	uint32_t *words,
+	uint32_t request,
+	uint32_t done,
+	uint32_t value,
+	uint32_t mask,
+	bool fetcher)
+{
+	/* The header and the control word: write then wait, registers, equal. */
+	words[0] = command_header(COMMAND_OP_WAIT_VALUE, 6U, false);
+	words[1] = COMMAND_WAIT_EQUAL | COMMAND_WAIT_AFTER_WRITE;
+	if (fetcher)
+		words[1] |= COMMAND_WAIT_BY_FETCHER;
+
+	/* The register written and the register waited on. */
+	words[2] = request;
+	words[3] = done;
+
+	/* The value, the mask and the poll interval. */
+	words[4] = value;
+	words[5] = mask;
+	words[6] = COMMAND_WAIT_REGISTER_POLL;
+
+	/* Succeeded: seven words. */
+	return AMDRDNA_PM4_WAIT_WORDS;
+}
+
+/*
+ * Writes a packet that waits until the 32-bit word at address equals
+ * value: a ring waiting for its own fence, so the work before it has
+ * ended before what follows starts.  fetcher runs it on the graphics
+ * ring's fetcher.  Reports the words written.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/gfx_v10_0.c
+ * (gfx_v10_0_ring_emit_pipeline_sync, gfx_v10_0_wait_reg_mem).
+ */
+unsigned
+amdrdna_pm4_wait_memory(
+	uint32_t *words,
+	uint64_t address,
+	uint32_t value,
+	bool fetcher)
+{
+	/* The header and the control word: wait only, memory, equal. */
+	words[0] = command_header(COMMAND_OP_WAIT_VALUE, 6U, false);
+	words[1] = COMMAND_WAIT_EQUAL | COMMAND_WAIT_IN_MEMORY;
+	if (fetcher)
+		words[1] |= COMMAND_WAIT_BY_FETCHER;
+
+	/* The word's address, dword aligned. */
+	words[2] = (uint32_t)address & COMMAND_INDIRECT_ALIGN_MASK;
+	words[3] = (uint32_t)(address >> 32);
+
+	/* The value, every bit compared, and the poll interval. */
+	words[4] = value;
+	words[5] = 0xffffffffU;
+	words[6] = COMMAND_WAIT_MEMORY_POLL;
+
+	/* Succeeded: seven words. */
+	return AMDRDNA_PM4_WAIT_WORDS;
+}
+
+/*
+ * Writes the packet that holds the graphics ring's fetcher until the
+ * micro engine has caught up with it, so the fetcher does not read an
+ * indirect buffer through translations dropped behind it.  Reports the
+ * words written.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/gfx_v10_0.c (gfx_v10_0_ring_emit_vm_flush).
+ */
+unsigned
+amdrdna_pm4_fetcher_sync(
+	uint32_t *words)
+{
+	/* The header and a zero word. */
+	words[0] = command_header(COMMAND_OP_FETCHER_SYNC, 1U, false);
+	words[1] = 0U;
+
+	/* Succeeded: two words. */
+	return AMDRDNA_PM4_FETCH_SYNC_WORDS;
 }
 
 /* Reports the copy engine's one-word filler. */

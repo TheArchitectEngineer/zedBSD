@@ -290,6 +290,122 @@ amdrdna_engines_interrupt(
 }
 
 /*
+ * Loads the check program into a page of VRAM the CPU writes at vram and
+ * the GPU reads at code_address: the code and its padding at the start,
+ * the table of the output's and the counts' descriptors, and the workgroup
+ * counts.  The output is output_words words at output_address.
+ */
+void
+amdrdna_check_load(
+	volatile uint8_t *vram,
+	uint64_t code_address,
+	uint64_t output_address,
+	uint32_t output_words,
+	const uint32_t *groups)
+{
+	struct amdrdna_check_description program;
+	uint32_t descriptor[4];
+	uint64_t groups_address;
+	unsigned index;
+
+	/* The program's code and padding at the start of the page. */
+	amdrdna_check_program(&program);
+	for (index = 0U; index < program.padded_words; index++) {
+		if (index < program.code_words) {
+			kern_mmio_write32(vram + (size_t)index * 4U, program.code[index]);
+		} else {
+			kern_mmio_write32(vram + (size_t)index * 4U, program.end_word);
+		}
+	}
+
+	/* The workgroup counts. */
+	for (index = 0U; index < 3U; index++)
+		kern_mmio_write32(vram + ENGINES_GROUPS_AT + index * 4U, groups[index]);
+
+	/* The table: the output's descriptor and the counts' descriptor. */
+	groups_address = code_address + ENGINES_GROUPS_AT;
+	amdrdna_raw_buffer_descriptor(output_address, output_words * 4U, descriptor);
+	for (index = 0U; index < 4U; index++)
+		kern_mmio_write32(vram + ENGINES_TABLE_AT + program.output_at + index * 4U, descriptor[index]);
+	amdrdna_raw_buffer_descriptor(groups_address, 12U, descriptor);
+	for (index = 0U; index < 4U; index++)
+		kern_mmio_write32(vram + ENGINES_TABLE_AT + program.groups_at + index * 4U, descriptor[index]);
+}
+
+/*
+ * Writes the commands that dispatch the check program loaded at
+ * code_address: the caches synced, so the program, the table and the
+ * counts are read from memory; the program's address, counts, inputs,
+ * limits, start and workgroup size; the table's address in the first two
+ * user data words; and the workgroups.  compute marks a compute queue's
+ * cache sync.  Reports the words written (at most
+ * AMDRDNA_CHECK_COMMAND_WORDS).
+ */
+unsigned
+amdrdna_check_commands(
+	struct amdrdna_device *device,
+	uint32_t *words,
+	uint64_t code_address,
+	const uint32_t *groups,
+	bool compute)
+{
+	struct amdrdna_check_description program;
+	uint32_t values[8];
+	uint64_t table_address;
+	unsigned count;
+
+	/* The program and its table's address. */
+	amdrdna_check_program(&program);
+	table_address = code_address + ENGINES_TABLE_AT;
+
+	/* The caches synced, so the program, the table and the counts are read from memory. */
+	count = amdrdna_pm4_cache_sync(words, compute);
+
+	/* The program's address. */
+	values[0] = (uint32_t)(code_address >> 8);
+	values[1] = (uint32_t)(code_address >> 40);
+	count += amdrdna_pm4_registers(words + count, AMDRDNA_SPACE_SHADER, engines_shader_index(device, AMDRDNA_GC_REG_DISPATCH_PROGRAM), values, 2U, false);
+
+	/* The counts and the inputs the compiler gave. */
+	values[0] = program.counts;
+	values[1] = program.inputs;
+	count += amdrdna_pm4_registers(words + count, AMDRDNA_SPACE_SHADER, engines_shader_index(device, AMDRDNA_GC_REG_DISPATCH_COUNTS), values, 2U, false);
+
+	/* No third control word. */
+	values[0] = 0U;
+	count += amdrdna_pm4_registers(words + count, AMDRDNA_SPACE_SHADER, engines_shader_index(device, AMDRDNA_GC_REG_DISPATCH_MORE), values, 1U, false);
+
+	/* No limits, every compute unit of the four shader engines, no scratch. */
+	values[0] = 0U;
+	values[1] = 0xffffffffU;
+	values[2] = 0xffffffffU;
+	values[3] = 0U;
+	values[4] = 0xffffffffU;
+	values[5] = 0xffffffffU;
+	count += amdrdna_pm4_registers(words + count, AMDRDNA_SPACE_SHADER, engines_shader_index(device, AMDRDNA_GC_REG_DISPATCH_LIMITS), values, 6U, false);
+
+	/* The dispatch starts at workgroup 0, with the program's workgroup size. */
+	values[0] = 0U;
+	values[1] = 0U;
+	values[2] = 0U;
+	values[3] = program.local_size[0];
+	values[4] = program.local_size[1];
+	values[5] = program.local_size[2];
+	count += amdrdna_pm4_registers(words + count, AMDRDNA_SPACE_SHADER, engines_shader_index(device, AMDRDNA_GC_REG_DISPATCH_START), values, 6U, false);
+
+	/* The table's address in the first two user data words. */
+	values[0] = (uint32_t)table_address;
+	values[1] = (uint32_t)(table_address >> 32);
+	count += amdrdna_pm4_registers(words + count, AMDRDNA_SPACE_SHADER, engines_shader_index(device, AMDRDNA_GC_REG_DISPATCH_USER), values, 2U, false);
+
+	/* The workgroups. */
+	count += amdrdna_pm4_dispatch(words + count, groups[0], groups[1], groups[2], program.initiator);
+
+	/* Succeeded: the words. */
+	return count;
+}
+
+/*
  * Describes the rings and takes every buffer the stage uses: the
  * write-back page, each ring with its queue image and end-of-pipe buffer,
  * and the checks' buffers in system memory and VRAM.  Each is taken once
@@ -731,9 +847,7 @@ engines_dispatch(
 	struct amdrdna_ring *ring,
 	bool indirect)
 {
-	uint32_t words[96];
-	uint32_t values[8];
-	uint32_t descriptor[4];
+	uint32_t words[AMDRDNA_CHECK_COMMAND_WORDS];
 	uint32_t groups[3];
 	uint32_t pointer[AMDRDNA_PM4_INDIRECT_WORDS];
 	struct amdrdna_check_description program;
@@ -743,8 +857,6 @@ engines_dispatch(
 	uint32_t *buffer;
 	uint32_t *output;
 	uint64_t code_address;
-	uint64_t table_address;
-	uint64_t groups_address;
 	uint32_t output_words;
 	uint32_t bad_word;
 	uint32_t expected;
@@ -766,16 +878,6 @@ engines_dispatch(
 	groups[1] = ENGINES_GROUPS;
 	groups[2] = ENGINES_GROUPS;
 
-	/* The program's code and padding at the start of its VRAM page. */
-	vram = amdrdna_vram_cpu(device, engines->program_vram);
-	for (index = 0U; index < program.padded_words; index++) {
-		if (index < program.code_words) {
-			kern_mmio_write32(vram + (size_t)index * 4U, program.code[index]);
-		} else {
-			kern_mmio_write32(vram + (size_t)index * 4U, program.end_word);
-		}
-	}
-
 	/* The output marked unwritten. */
 	output = engines->output.dma.address;
 	output_words = amdrdna_check_output_words(groups);
@@ -783,66 +885,16 @@ engines_dispatch(
 		output[index] = ENGINES_UNWRITTEN;
 	__atomic_thread_fence(__ATOMIC_SEQ_CST);
 
-	/* The workgroup counts. */
-	for (index = 0U; index < 3U; index++)
-		kern_mmio_write32(vram + ENGINES_GROUPS_AT + index * 4U, groups[index]);
-
-	/* The table: the output's descriptor and the counts' descriptor. */
+	/* The program's code, its table and the workgroup counts in its VRAM page. */
+	vram = amdrdna_vram_cpu(device, engines->program_vram);
 	code_address = device->frame_buffer_base + engines->program_vram;
-	table_address = code_address + ENGINES_TABLE_AT;
-	groups_address = code_address + ENGINES_GROUPS_AT;
-	amdrdna_raw_buffer_descriptor(engines->output.gpu_address, output_words * 4U, descriptor);
-	for (index = 0U; index < 4U; index++)
-		kern_mmio_write32(vram + ENGINES_TABLE_AT + program.output_at + index * 4U, descriptor[index]);
-	amdrdna_raw_buffer_descriptor(groups_address, 12U, descriptor);
-	for (index = 0U; index < 4U; index++)
-		kern_mmio_write32(vram + ENGINES_TABLE_AT + program.groups_at + index * 4U, descriptor[index]);
+	amdrdna_check_load(vram, code_address, engines->output.gpu_address, output_words, groups);
 
 	/* The GPU must read what the CPU wrote to VRAM. */
 	amdrdna_host_path_flush(device);
 
-	/* The caches synced, so the program, the table and the counts are read from memory. */
-	count = amdrdna_pm4_cache_sync(words, compute);
-
-	/* The program's address. */
-	values[0] = (uint32_t)(code_address >> 8);
-	values[1] = (uint32_t)(code_address >> 40);
-	count += amdrdna_pm4_registers(words + count, AMDRDNA_SPACE_SHADER, engines_shader_index(device, AMDRDNA_GC_REG_DISPATCH_PROGRAM), values, 2U, false);
-
-	/* The counts and the inputs the compiler gave. */
-	values[0] = program.counts;
-	values[1] = program.inputs;
-	count += amdrdna_pm4_registers(words + count, AMDRDNA_SPACE_SHADER, engines_shader_index(device, AMDRDNA_GC_REG_DISPATCH_COUNTS), values, 2U, false);
-
-	/* No third control word. */
-	values[0] = 0U;
-	count += amdrdna_pm4_registers(words + count, AMDRDNA_SPACE_SHADER, engines_shader_index(device, AMDRDNA_GC_REG_DISPATCH_MORE), values, 1U, false);
-
-	/* No limits, every compute unit of the four shader engines, no scratch. */
-	values[0] = 0U;
-	values[1] = 0xffffffffU;
-	values[2] = 0xffffffffU;
-	values[3] = 0U;
-	values[4] = 0xffffffffU;
-	values[5] = 0xffffffffU;
-	count += amdrdna_pm4_registers(words + count, AMDRDNA_SPACE_SHADER, engines_shader_index(device, AMDRDNA_GC_REG_DISPATCH_LIMITS), values, 6U, false);
-
-	/* The dispatch starts at workgroup 0, with the program's workgroup size. */
-	values[0] = 0U;
-	values[1] = 0U;
-	values[2] = 0U;
-	values[3] = program.local_size[0];
-	values[4] = program.local_size[1];
-	values[5] = program.local_size[2];
-	count += amdrdna_pm4_registers(words + count, AMDRDNA_SPACE_SHADER, engines_shader_index(device, AMDRDNA_GC_REG_DISPATCH_START), values, 6U, false);
-
-	/* The table's address in the first two user data words. */
-	values[0] = (uint32_t)table_address;
-	values[1] = (uint32_t)(table_address >> 32);
-	count += amdrdna_pm4_registers(words + count, AMDRDNA_SPACE_SHADER, engines_shader_index(device, AMDRDNA_GC_REG_DISPATCH_USER), values, 2U, false);
-
-	/* The workgroups. */
-	count += amdrdna_pm4_dispatch(words + count, groups[0], groups[1], groups[2], program.initiator);
+	/* The caches synced, the program's registers and the workgroups. */
+	count = amdrdna_check_commands(device, words, code_address, groups, compute);
 
 	/* Runs it on the ring, or from the indirect buffer the ring points at. */
 	if (indirect) {

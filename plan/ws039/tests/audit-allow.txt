@@ -7,6 +7,7 @@ access
 action
 active
 address
+addresses
 after
 aligned
 alignment
@@ -14,6 +15,8 @@ allowed
 array
 asked
 attribute
+attributes
+available
 base
 before
 begin
@@ -27,6 +30,7 @@ bottom
 break
 buffer
 bytes
+capabilities
 capability
 case
 channels
@@ -47,6 +51,7 @@ contents
 context
 continue
 control
+copies
 copy
 count
 data
@@ -77,6 +82,7 @@ entries
 entry
 enum
 error
+execute
 expected
 false
 fault
@@ -87,6 +93,7 @@ file
 files
 first
 flags
+flush
 format
 found
 frame
@@ -105,6 +112,7 @@ header
 height
 high
 horizontal
+idle
 ifndef
 image
 include
@@ -117,6 +125,7 @@ instance
 instances
 int32_t
 interrupt
+invalidate
 known
 last
 layout
@@ -125,6 +134,7 @@ level
 limit
 line
 lines
+link
 list
 listed
 loaded
@@ -133,27 +143,34 @@ locked
 long
 mailbox
 major
+mapping
 mark
 mask
 message
 middle
 minor
 mode
+moved
 mutex
 mutex_lock
 mutex_unlock
 name
 needed
 next
+node
 number
+object
 offset
 opcode
 open
+opened
 order
+other
 output
 page
 parameter
 part
+pass
 path
 pending
 persistent
@@ -177,11 +194,14 @@ range
 ratio
 reading
 reads
+ready
 record
+refs
 registers
 request
 reserved
 result
+retired
 return
 revision
 right
@@ -189,6 +209,7 @@ ring
 root
 round
 running
+runs
 sched
 scheduler
 scratch
@@ -198,6 +219,8 @@ sequence
 session
 setting
 settings
+share
+shared
 shift
 side
 signature
@@ -212,6 +235,7 @@ speed
 spin_lock_irqsave
 spin_unlock_irqrestore
 start
+state
 static
 status
 step
@@ -220,6 +244,7 @@ stride
 struct
 suffix
 switch
+sync
 table
 target
 temperature
@@ -232,6 +257,7 @@ training
 translation
 true
 type
+typedef
 uint16_t
 uint32_t
 uint64_t
@@ -252,10 +278,12 @@ vertical
 void
 volatile
 vram
+wait
 want
 what
 which
 while
+whole
 width
 window
 word

@@ -205,6 +205,11 @@ control_status(
 	    (unsigned)status.backends, (unsigned)status.compute_units, (unsigned)status.channels_off,
 	    (unsigned)status.fences, (unsigned)status.end_of_pipe_interrupts, (unsigned)status.copy_traps,
 	    (unsigned)status.copied_bytes, (unsigned)status.dispatch_words);
+
+	/* The address spaces and the GPU device (stage A5s). */
+	printf("sessions spaces=%u held=%u flushes=%u device=0x%x\n",
+	    (unsigned)(status.spaces & 0xffffU), (unsigned)(status.spaces >> 16),
+	    (unsigned)status.context_flushes, (unsigned)status.device_flags);
 	return 0;
 }
 

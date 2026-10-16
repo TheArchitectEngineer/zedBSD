@@ -233,6 +233,12 @@ struct amdrdna_thermal {
 	uint64_t smu_interrupts;
 };
 
+/* The most words the commands of the check program's dispatch take. */
+#define AMDRDNA_CHECK_COMMAND_WORDS	64U
+
+/* The bytes of the check program's page: the code, its table at 2048 and the workgroup counts at 2304. */
+#define AMDRDNA_CHECK_PAGE_BYTES	4096U
+
 /* The compute queues stage A5 attaches, one on each pipe of the first compute engine. */
 #define AMDRDNA_COMPUTE_QUEUES		4U
 
@@ -331,6 +337,94 @@ struct amdrdna_engines {
 	uint32_t faults_seen;
 };
 
+struct amdrdna_node;
+
+/*
+ * A run of VRAM in the CPU's window that GPU work reads and writes: a
+ * blob of a session, the executor's own memory, or a check's buffer.
+ *
+ * vram is its offset and bytes its size in whole pages; asked is the size
+ * it was made for.  refs counts its holders (the blob, every export and
+ * import of it, every address space it is mapped in for the executor),
+ * under the address spaces' lock; the last one gives the VRAM back unless
+ * kept is set: GPU work nobody could stop may still touch it.
+ */
+struct amdrdna_backing {
+	uint64_t vram;
+	uint64_t bytes;
+	uint64_t asked;
+	uint32_t refs;
+	bool kept;
+};
+
+/*
+ * One page table of an address space, in VRAM: a directory of 512
+ * entries pointing at the tables of the next level (below holds them),
+ * or a leaf table of 512 page entries (below is NULL).  count is the
+ * entries in use, so an empty leaf table can be told from a used one.
+ */
+struct amdrdna_table {
+	uint64_t vram;
+	struct amdrdna_table **below;
+	unsigned count;
+};
+
+/*
+ * One GPU address space: the four levels of page tables of a session (or
+ * of a check of the driver's own) and what its runs need.
+ *
+ * id is the identifier the interrupt controller attaches to the page
+ * faults of the space's context, root the root table and root_word the
+ * word a hub context is pointed at it with.  lock serializes the tables
+ * and addresses, the free part of the space's addresses (from 4 GiB on,
+ * on 64 KiB boundaries).  Under the address spaces' lock: generation
+ * counts the changes of the tables (a context drops its translations
+ * when it lags), context is the hub context the space held last (0 for
+ * none), lost says the space's work failed (a page fault, a run that did
+ * not end) with its error, faults counts its page faults, and session
+ * names the node's session to report a loss to (NULL for the driver's
+ * own).  next links the device's spaces.
+ */
+struct amdrdna_space {
+	struct amdrdna_device *device;
+	struct amdrdna_space *next;
+	uint32_t id;
+	struct amdrdna_table *root;
+	uint64_t root_word;
+	struct mutex lock;
+	struct amdrdna_pool *addresses;
+	uint64_t generation;
+	unsigned context;
+	bool lost;
+	int lost_error;
+	uint64_t faults;
+	void *session;
+};
+
+/*
+ * The GPU's address spaces (stage A5s on).
+ *
+ * lock (an IRQ-safe spinlock, never held across a wait) guards the pool
+ * of hub contexts, the identifiers, the list of spaces with each space's
+ * fields named above, every backing's reference count and the counts.
+ * It is taken after a space's own lock and before a ring's.  ready says
+ * runs may be submitted; faulted that the device failed and nothing new
+ * runs.  held counts the spaces kept with their tables because their
+ * work could not be confirmed stopped.
+ */
+struct amdrdna_spaces {
+	struct spinlock lock;
+	struct amdrdna_context_pool pool;
+	struct amdrdna_space_ids ids;
+	struct amdrdna_space *list;
+	unsigned count;
+	unsigned held;
+	bool ready;
+	bool faulted;
+	uint64_t runs;
+	uint64_t lost;
+};
+
 /*
  * One RDNA GPU the driver keeps.
  *
@@ -347,7 +441,8 @@ struct amdrdna_engines {
  * failure and at shutdown) and the interrupt ring; memory_ready says the
  * table translates.  Stages A3t, A3 and A4 add the training's result,
  * the security processor's buffers and the power and thermal state;
- * stage A5 the command processor's and the copy engine's rings.  The
+ * stage A5 the command processor's and the copy engine's rings; stage A5s
+ * the address spaces and the GPU device (node) of the sessions.  The
  * record lives until the PCI function is detached, which the driver
  * refuses while the thread runs.
  */
@@ -426,6 +521,8 @@ struct amdrdna_device {
 	struct amdrdna_psp psp;
 	struct amdrdna_thermal thermal;
 	struct amdrdna_engines engines;
+	struct amdrdna_spaces spaces;
+	struct amdrdna_node *node;
 
 	struct spinlock state_lock;
 	struct wait_queue state_waitq;
@@ -719,6 +816,22 @@ amdrdna_engines_interrupt(
 	struct amdrdna_device *device,
 	const struct amdrdna_interrupt *interrupt);
 
+void
+amdrdna_check_load(
+	volatile uint8_t *vram,
+	uint64_t code_address,
+	uint64_t output_address,
+	uint32_t output_words,
+	const uint32_t *groups);
+
+unsigned
+amdrdna_check_commands(
+	struct amdrdna_device *device,
+	uint32_t *words,
+	uint64_t code_address,
+	const uint32_t *groups,
+	bool compute);
+
 /* stage.c: numbers on the boot line. */
 unsigned
 amdrdna_parameter_number(
@@ -735,5 +848,143 @@ int
 amdrdna_request_target(
 	struct amdrdna_device *device,
 	unsigned target);
+
+/* gmc.c: VRAM given back, its bus address, and the hubs' registers for ring commands. */
+void
+amdrdna_vram_give(
+	struct amdrdna_device *device,
+	bool cpu,
+	uint64_t offset,
+	uint64_t bytes);
+
+uint64_t
+amdrdna_vram_bus(
+	struct amdrdna_device *device,
+	uint64_t offset);
+
+uint32_t
+amdrdna_hub_register(
+	struct amdrdna_device *device,
+	enum amdrdna_hub hub,
+	enum amdrdna_hub_register which,
+	unsigned instance);
+
+/* cp.c: a ring's fences. */
+uint32_t
+amdrdna_ring_fence(
+	struct amdrdna_device *device,
+	const struct amdrdna_ring *ring);
+
+uint32_t
+amdrdna_ring_sequence(
+	struct amdrdna_ring *ring);
+
+uint64_t
+amdrdna_ring_fence_address(
+	const struct amdrdna_device *device,
+	const struct amdrdna_ring *ring);
+
+/* space.c: the address spaces, their backings and their runs. */
+void
+amdrdna_spaces_init(
+	struct amdrdna_device *device);
+
+void
+amdrdna_spaces_start(
+	struct amdrdna_device *device);
+
+void
+amdrdna_spaces_fault(
+	struct amdrdna_device *device);
+
+int
+amdrdna_space_create(
+	struct amdrdna_device *device,
+	void *session,
+	struct amdrdna_space **result);
+
+bool
+amdrdna_space_destroy(
+	struct amdrdna_space *space);
+
+int
+amdrdna_space_map(
+	struct amdrdna_space *space,
+	const struct amdrdna_backing *backing,
+	uint64_t *address);
+
+void
+amdrdna_space_unmap(
+	struct amdrdna_space *space,
+	uint64_t address,
+	uint64_t bytes);
+
+int
+amdrdna_space_run(
+	struct amdrdna_space *space,
+	unsigned tracked,
+	uint64_t address,
+	uint32_t words,
+	unsigned milliseconds);
+
+bool
+amdrdna_space_quiet(
+	struct amdrdna_space *space);
+
+bool
+amdrdna_space_lost(
+	struct amdrdna_space *space);
+
+void
+amdrdna_space_fault(
+	struct amdrdna_device *device,
+	const struct amdrdna_vm_fault *fault,
+	unsigned context);
+
+int
+amdrdna_backing_create(
+	struct amdrdna_device *device,
+	uint64_t bytes,
+	struct amdrdna_backing **result);
+
+void
+amdrdna_backing_get(
+	struct amdrdna_device *device,
+	struct amdrdna_backing *backing);
+
+void
+amdrdna_backing_put(
+	struct amdrdna_device *device,
+	struct amdrdna_backing *backing);
+
+void
+amdrdna_backing_keep(
+	struct amdrdna_device *device,
+	struct amdrdna_backing *backing);
+
+volatile uint8_t *
+amdrdna_backing_cpu(
+	struct amdrdna_device *device,
+	const struct amdrdna_backing *backing);
+
+/* node.c: the GPU device of the sessions. */
+int
+amdrdna_node_start(
+	struct amdrdna_device *device);
+
+void
+amdrdna_node_stop(
+	struct amdrdna_device *device);
+
+void
+amdrdna_node_session_lost(
+	struct amdrdna_device *device,
+	void *session,
+	int error);
+
+/* sessions.c: stage A5s. */
+int
+amdrdna_a5s_sessions(
+	struct amdrdna_device *device);
 
 #endif

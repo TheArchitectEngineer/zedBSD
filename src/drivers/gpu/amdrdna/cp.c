@@ -736,6 +736,57 @@ amdrdna_ring_word(
 	return words + which;
 }
 
+/* Reports the fence a ring last wrote: the sequence of its newest finished submission. */
+uint32_t
+amdrdna_ring_fence(
+	struct amdrdna_device *device,
+	const struct amdrdna_ring *ring)
+{
+	volatile uint32_t *fence;
+	uint32_t value;
+
+	/* The fence word of the ring's write-back slot. */
+	fence = amdrdna_ring_word(device, ring, CP_WORD_FENCE);
+	value = *fence;
+
+	/* Succeeded: the fence. */
+	return value;
+}
+
+/* Reports the sequence of the newest submission put on a ring. */
+uint32_t
+amdrdna_ring_sequence(
+	struct amdrdna_ring *ring)
+{
+	unsigned long irq;
+	uint32_t sequence;
+
+	/* The sequence, read under the ring's lock. */
+	irq = spin_lock_irqsave(&ring->lock);
+
+	sequence = ring->sequence;
+
+	spin_unlock_irqrestore(&ring->lock, irq);
+
+	/* Succeeded: the sequence. */
+	return sequence;
+}
+
+/* Reports the GPU's address of a ring's fence word. */
+uint64_t
+amdrdna_ring_fence_address(
+	const struct amdrdna_device *device,
+	const struct amdrdna_ring *ring)
+{
+	uint64_t address;
+
+	/* The fence word of the ring's write-back slot. */
+	address = ring_gpu_word(device, ring, CP_WORD_FENCE);
+
+	/* Succeeded: the address. */
+	return address;
+}
+
 /* Reads a register of the graphics block. */
 static uint32_t
 gc_read(
