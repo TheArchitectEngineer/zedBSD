@@ -15,6 +15,20 @@
  * the pipes that run together, and the check that the mode needs no
  * other CD clock, no other voltage level and no more memory bandwidth
  * than the allowed QGV point gives.  Nothing is written.
+ *
+ * Lighting and darkening a screen run its steps in the order an output is
+ * enabled and disabled (the same order for the three kinds; what differs
+ * between them is inside a step): for the light, the power, the display
+ * buffer, the setup, the pipe's DMC, the link's power, the PLL, the
+ * port, the pipe, the output, the check, the plane and the commit's
+ * settle; for the dark, the power, the plane, the output, the port, the
+ * PLL, the link's power, the pipe's DMC, the confirmation and the settle.
+ * Each step is the caller's (it owns the state the steps keep); the order,
+ * the trace of each step, what a failure skips, the undo of a failed
+ * light and the screen's phase are the screen's.  A failed step skips the
+ * rest but the settle of a light; a dark whose confirmation fails is
+ * retained: its settle is skipped, so nothing is given back under a pipe
+ * that may still run.
  */
 
 #ifndef DRIVERS_GPU_I915_DISPLAY_XD_SCREEN_H
@@ -25,6 +39,7 @@
 #include "display-internal.h"
 #include "xd-clock.h"
 #include "xd-dp.h"
+#include "xd-io.h"
 #include "xd-platform.h"
 
 /* The kinds of output a screen drives: the built-in panel, an HDMI or DVI sink, an external DisplayPort sink. */
@@ -123,9 +138,63 @@ struct i915_xd_plan {
 	unsigned refused;
 };
 
+/* The phases of a screen: off, planned, powered, linked (the port is up), lit, and retained after a stop not confirmed. */
+#define I915_XD_SCREEN_OFF		0U
+#define I915_XD_SCREEN_PLANNED		1U
+#define I915_XD_SCREEN_POWERED		2U
+#define I915_XD_SCREEN_LINKED		3U
+#define I915_XD_SCREEN_LIT		4U
+#define I915_XD_SCREEN_RETAINED		5U
+
+/*
+ * The caller's steps of a light and of a dark, each 0 or an error.  A
+ * step may be NULL (nothing to do).  The light's settle runs even after a
+ * failed step.
+ */
+struct i915_xd_screen_hooks {
+	int (*power)(void *context);
+	int (*dbuf)(void *context);
+	int (*setup)(void *context);
+	int (*dmc_on)(void *context);
+	int (*link_power)(void *context);
+	int (*pll)(void *context);
+	int (*port)(void *context);
+	int (*pipe)(void *context);
+	int (*output)(void *context);
+	int (*check)(void *context);
+	int (*plane)(void *context);
+	int (*settle)(void *context);
+	int (*dark_power)(void *context);
+	int (*plane_off)(void *context);
+	int (*output_off)(void *context);
+	int (*port_off)(void *context);
+	int (*pll_off)(void *context);
+	int (*link_power_off)(void *context);
+	int (*dmc_off)(void *context);
+	int (*confirm)(void *context);
+	int (*dark_settle)(void *context);
+	void *context;
+};
+
+/*
+ * One screen: its kind, its pipe, its phase, and the steps of the last
+ * light or dark (how many ran, the one that failed (-1 for none) and its
+ * error).
+ */
+struct i915_xd_screen {
+	unsigned kind;
+	unsigned pipe;
+	unsigned phase;
+	unsigned ran;
+	int failed;
+	int error;
+};
+
 unsigned drv_i915_xd_screen_plan_link(const struct i915_xd_plan_input *input, struct i915_xd_plan *plan);
 unsigned drv_i915_xd_screen_plan_check(const struct i915_xd_plan_input *input, struct i915_xd_plan *plan);
 unsigned drv_i915_xd_screen_plan(const struct i915_xd_plan_input *input, struct i915_xd_plan *plan);
 const char *drv_i915_xd_screen_refusal_name(unsigned refused);
+int drv_i915_xd_screen_light(struct i915_xd_screen *screen, struct i915_xd_io *io, const struct i915_xd_screen_hooks *hooks, int undo);
+int drv_i915_xd_screen_dark(struct i915_xd_screen *screen, struct i915_xd_io *io, const struct i915_xd_screen_hooks *hooks);
 
 #endif /* DRIVERS_GPU_I915_DISPLAY_XD_SCREEN_H */

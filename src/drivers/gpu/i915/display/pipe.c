@@ -104,7 +104,7 @@ static bool i915_cpu_transcoder_has_m2_n2(struct drm_i915_private *dev_priv, enu
 static void i915_xd_timing_of(const struct drm_display_mode *mode, struct i915_xd_timing *timing);
 static void i915_set_pipe_src_size(const struct intel_crtc_state *crtc_state);
 static void i915_hsw_configure_cpu_transcoder(const struct intel_crtc_state *crtc_state);
-static void i915_hsw_crtc_enable(struct intel_atomic_state *state, struct intel_crtc *crtc);
+static void i915_hsw_crtc_enable_part(struct intel_atomic_state *state, struct intel_crtc *crtc, unsigned part);
 static int i915_dotclock_calculate(int link_freq, const struct intel_link_m_n *m_n);
 static u32 i915_ilk_pipe_pixel_rate(const struct intel_crtc_state *crtc_state);
 static void i915_get_m_n(struct drm_i915_private *i915, struct intel_link_m_n *m_n, i915_reg_t data_m_reg, i915_reg_t data_n_reg, i915_reg_t link_m_reg, i915_reg_t link_n_reg);
@@ -115,7 +115,7 @@ static bool i915_is_hdr_mode(const struct intel_crtc_state *crtc_state);
 static void i915_bdw_set_pipe_misc(const struct intel_crtc_state *crtc_state);
 static void i915_icl_set_pipe_chicken(const struct intel_crtc_state *crtc_state);
 static void i915_hsw_set_linetime_wm(const struct intel_crtc_state *crtc_state);
-static void i915_hsw_crtc_disable(struct intel_atomic_state *state, struct intel_crtc *crtc);
+static void i915_hsw_crtc_disable_part(struct intel_atomic_state *state, struct intel_crtc *crtc, unsigned part);
 static void i915_get_crtc_power_domains(struct i915_lcd_world *world, struct intel_crtc_state *crtc_state, struct intel_power_domain_mask *mask);
 static u8 i915_hsw_panel_transcoders(struct drm_i915_private *i915);
 static u8 i915_hsw_enabled_transcoders(struct intel_crtc *crtc);
@@ -921,10 +921,10 @@ drv_i915_display_emit_cpu_transcoder(
 /*
  * Returns the display hooks of the one-screen path.
  *
- * The Linux text reaches hsw_get_pipe_config() and hsw_crtc_disable()
- * through them (intel_crtc_get_pipe_config(), the noatomic disable of the
- * takeover); the enable and disable of the modeset object call the crtc
- * hooks directly.
+ * The Linux text reaches hsw_get_pipe_config() through them
+ * (intel_crtc_get_pipe_config() of the readout); the enable and the
+ * disable are a screen's steps (drv_i915_lcd_ms_crtc_enable_part() and
+ * _disable_part()), not hooks.
  */
 const struct intel_display_funcs *
 drv_i915_lcd_ms_display_funcs(void)
@@ -932,8 +932,8 @@ drv_i915_lcd_ms_display_funcs(void)
 	/* The display hooks of display version 9 and later, as far as this path uses them. */
 	static const struct intel_display_funcs display_funcs = {
 		i915_hsw_get_pipe_config,
-		i915_hsw_crtc_enable,
-		i915_hsw_crtc_disable,
+		NULL,
+		NULL,
 	};
 
 	/* Succeeded: the table is constant and shared. */
@@ -941,14 +941,17 @@ drv_i915_lcd_ms_display_funcs(void)
 }
 
 /*
- * Enables the crtc of a modeset object (the Linux hsw_crtc_enable()).
- *
- * The atomic state is reduced to the object's one crtc state, which is
- * the new state of the enable.
+ * Runs one part of the enable of a modeset object's crtc (the Linux
+ * hsw_crtc_enable(), cut where a screen's light steps meet it): the
+ * pipe's DMC, the encoders before the PLL, the shared PLL, the encoders'
+ * pre-enable, the pipe (from here the crtc runs), the encoders' enable.
+ * The atomic state is reduced to the object's one crtc state, the new
+ * state of the enable.
  */
 void
-drv_i915_lcd_ms_crtc_enable(
-	struct i915_lcd_modeset *ms)
+drv_i915_lcd_ms_crtc_enable_part(
+	struct i915_lcd_modeset *ms,
+	unsigned part)
 {
 	/* The object's device is the one the Linux text works on from here. */
 	ms->world->i915_lcd_cur_i915 = &ms->i915;
@@ -958,19 +961,22 @@ drv_i915_lcd_ms_crtc_enable(
 	ms->state.crtc_state = &ms->crtc_state;
 	ms->state.old_crtc_state = 0;
 
-	/* Enables the crtc. */
-	i915_hsw_crtc_enable(&ms->state, &ms->crtc);
+	/* The part. */
+	i915_hsw_crtc_enable_part(&ms->state, &ms->crtc, part);
 }
 
 /*
- * Disables the crtc of a modeset object (the Linux hsw_crtc_disable()).
- *
- * The atomic state is reduced to the object's one crtc state, which is
- * the old state of the disable.
+ * Runs one part of the disable of a modeset object's crtc (the Linux
+ * hsw_crtc_disable(), cut where a screen's dark steps meet it): the
+ * encoders' disable, their post-disable (the transcoder stops), the
+ * shared PLL, the encoders after the PLL, the pipe's DMC (after which the
+ * crtc no longer runs).  The atomic state is the object's one crtc
+ * state, the old state of the disable.
  */
 void
-drv_i915_lcd_ms_crtc_disable(
-	struct i915_lcd_modeset *ms)
+drv_i915_lcd_ms_crtc_disable_part(
+	struct i915_lcd_modeset *ms,
+	unsigned part)
 {
 	/* The object's device is the one the Linux text works on from here. */
 	ms->world->i915_lcd_cur_i915 = &ms->i915;
@@ -980,11 +986,12 @@ drv_i915_lcd_ms_crtc_disable(
 	ms->state.crtc_state = 0;
 	ms->state.old_crtc_state = &ms->crtc_state;
 
-	/* Disables the crtc. */
-	i915_hsw_crtc_disable(&ms->state, &ms->crtc);
+	/* The part. */
+	i915_hsw_crtc_disable_part(&ms->state, &ms->crtc, part);
 
 	/* intel_old_crtc_state_disables() marks the crtc inactive after the hook. */
-	ms->crtc.active = false;
+	if (part == I915_LCD_CRTC_PART_DMC)
+		ms->crtc.active = false;
 }
 
 /*
@@ -1484,131 +1491,80 @@ i915_hsw_configure_cpu_transcoder(
 }
 
 /*
- * Enables a crtc (the Linux hsw_crtc_enable(), the crtc_enable hook).
- *
- * The order between the writers and the steps around them is the Linux
- * one: DMC, PLL and encoder pre-enable, the pipe source and misc words,
- * the transcoder, the panel fitter, the LUTs and colour words, the line
- * time watermark, the pipe chicken bits, the encoder enable.
+ * Runs one part of the crtc enable (the Linux hsw_crtc_enable(), cut into
+ * the parts a screen's light runs as steps; see
+ * drv_i915_lcd_ms_crtc_enable_part()).
  */
 static void
-i915_hsw_crtc_enable(
+i915_hsw_crtc_enable_part(
 	struct intel_atomic_state *state,
-	struct intel_crtc *crtc)
+	struct intel_crtc *crtc,
+	unsigned part)
 {
 	const struct intel_crtc_state *new_crtc_state;
 	struct drm_i915_private *dev_priv;
-	enum pipe hsw_workaround_pipe;
 	enum transcoder cpu_transcoder;
-	bool psl_clkgate_wa;
 	bool warned;
 	bool dsi;
-	struct intel_crtc *wa_crtc;
 
 	/* Finds the new state, the device and the transcoder. */
 	new_crtc_state = intel_atomic_get_new_crtc_state(state, crtc);
 	dev_priv = i915_lcd_to_i915(crtc->base.dev);
 	cpu_transcoder = new_crtc_state->cpu_transcoder;
 
-	/* A crtc that runs already is not enabled again. */
-	warned = I915_LCD_DRM_WARN_ON(&dev_priv->drm, crtc->active);
-	if (warned)
-		return;
-
-	/* The pipe's DMC event handlers. */
-	drv_i915_dmc_enable_pipe(dev_priv, crtc->pipe);
-
-	/* The encoders before and after the PLL, or the big-joiner slave's copy of the master's. */
-	if (!new_crtc_state->bigjoiner_pipes) {
+	/* The parts in the order of the Linux text. */
+	switch (part) {
+	case I915_LCD_CRTC_PART_DMC:
+		/* A crtc that runs already is not enabled again; the pipe's DMC event handlers. */
+		warned = I915_LCD_DRM_WARN_ON(&dev_priv->drm, crtc->active);
+		if (warned)
+			return;
+		drv_i915_dmc_enable_pipe(dev_priv, crtc->pipe);
+		break;
+	case I915_LCD_CRTC_PART_LINK:
+		/* The encoders before the PLL (no big joiner on this path). */
 		drv_i915_encoders_pre_pll_enable(state, crtc);
-
+		break;
+	case I915_LCD_CRTC_PART_PLL:
 		/* The shared PLL, when the crtc uses one. */
 		if (new_crtc_state->shared_dpll)
 			drv_i915_enable_shared_dpll(new_crtc_state);
-
-		/* The encoders' pre-enable. */
+		break;
+	case I915_LCD_CRTC_PART_PORT:
+		/* The encoders' pre-enable; DSC and the uncompressed joiner (display version 13). */
 		drv_i915_encoders_pre_enable(state, crtc);
-	} else {
-		icl_ddi_bigjoiner_pre_enable(state, new_crtc_state);
-	}
-
-	/* DSC and the uncompressed joiner (display version 13). */
-	intel_dsc_enable(new_crtc_state);
-	if (I915_LCD_DISPLAY_VER(dev_priv) >= 13)
-		intel_uncompressed_joiner_enable(new_crtc_state);
-
-	/* The pipe source size and the pipe misc word. */
-	i915_set_pipe_src_size(new_crtc_state);
-	if (I915_LCD_DISPLAY_VER(dev_priv) >= 9 || IS_BROADWELL(dev_priv))
+		intel_dsc_enable(new_crtc_state);
+		if (I915_LCD_DISPLAY_VER(dev_priv) >= 13)
+			intel_uncompressed_joiner_enable(new_crtc_state);
+		break;
+	case I915_LCD_CRTC_PART_PIPE:
+		/* The pipe source size, the pipe misc word and the CPU transcoder (not a DSI one). */
+		i915_set_pipe_src_size(new_crtc_state);
 		i915_bdw_set_pipe_misc(new_crtc_state);
-
-	/* The CPU transcoder, unless the crtc is a big-joiner slave or the transcoder is DSI. */
-	if (!intel_crtc_is_bigjoiner_slave(new_crtc_state)) {
 		dsi = transcoder_is_dsi(cpu_transcoder);
 		if (!dsi)
 			i915_hsw_configure_cpu_transcoder(new_crtc_state);
-	}
 
-	/* From here the crtc counts as running. */
-	crtc->active = true;
+		/* From here the crtc counts as running. */
+		crtc->active = true;
 
-	/* Display WA #1180: WaDisableScalarClockGating: glk. */
-	psl_clkgate_wa = false;
-	if (I915_LCD_DISPLAY_VER(dev_priv) == 10 && new_crtc_state->pch_pfit.enabled)
-		psl_clkgate_wa = true;
-	if (psl_clkgate_wa)
-		glk_pipe_scaler_clock_gating_wa(dev_priv, crtc->pipe, true);
-
-	/* The panel fitter. */
-	if (I915_LCD_DISPLAY_VER(dev_priv) >= 9) {
+		/* The panel fitter, the colour (loaded while the pipe's clocks run), the line time and the chicken bits. */
 		skl_pfit_enable(new_crtc_state);
-	} else {
-		ilk_pfit_enable(new_crtc_state);
-	}
-
-	/* On ILK+ the LUTs are loaded before the pipe runs but with its clocks enabled. */
-	drv_i915_color_load_luts(new_crtc_state);
-	drv_i915_color_commit_noarm(new_crtc_state);
-	drv_i915_color_commit_arm(new_crtc_state);
-
-	/* Before display version 9 DSPCNTR configures gamma and CSC for the pipe bottom colour. */
-	if (I915_LCD_DISPLAY_VER(dev_priv) < 9)
-		intel_disable_primary_plane(new_crtc_state);
-
-	/* The line time watermark and the pipe chicken bits. */
-	i915_hsw_set_linetime_wm(new_crtc_state);
-	if (I915_LCD_DISPLAY_VER(dev_priv) >= 11)
+		drv_i915_color_load_luts(new_crtc_state);
+		drv_i915_color_commit_noarm(new_crtc_state);
+		drv_i915_color_commit_arm(new_crtc_state);
+		i915_hsw_set_linetime_wm(new_crtc_state);
 		i915_icl_set_pipe_chicken(new_crtc_state);
 
-	/* The initial watermarks (skl_wm_funcs sets none: nothing happens). */
-	intel_initial_watermarks(state, crtc);
-
-	/* A big-joiner slave turns its vblank handling on here. */
-	if (intel_crtc_is_bigjoiner_slave(new_crtc_state))
-		intel_crtc_vblank_on(new_crtc_state);
-
-	/* The encoders' enable. */
-	drv_i915_encoders_enable(state, crtc);
-
-	/* The scaler clock gating goes back on one vblank later. */
-	if (psl_clkgate_wa) {
-		drv_i915_crtc_wait_for_next_vblank(crtc);
-		glk_pipe_scaler_clock_gating_wa(dev_priv, crtc->pipe, false);
-	}
-
-	/*
-	 * If the relative order between pipe and plane enabling changes, the
-	 * workaround changes with it.
-	 *
-	 * XXX: never taken (IS_HASWELL() is 0 here).  The crtc of the
-	 * workaround pipe would be the readout registry's, which this hook
-	 * cannot reach; the modeset text's own lookup answers NULL.
-	 */
-	hsw_workaround_pipe = new_crtc_state->hsw_workaround_pipe;
-	if (IS_HASWELL(dev_priv) && hsw_workaround_pipe != INVALID_PIPE) {
-		wa_crtc = I915_LCD_INTEL_CRTC_FOR_PIPE(dev_priv, hsw_workaround_pipe);
-		drv_i915_crtc_wait_for_next_vblank(wa_crtc);
-		drv_i915_crtc_wait_for_next_vblank(wa_crtc);
+		/* The initial watermarks (skl_wm_funcs sets none: nothing happens). */
+		intel_initial_watermarks(state, crtc);
+		break;
+	case I915_LCD_CRTC_PART_OUTPUT:
+		/* The encoders' enable. */
+		drv_i915_encoders_enable(state, crtc);
+		break;
+	default:
+		break;
 	}
 }
 
@@ -1825,15 +1781,15 @@ i915_hsw_set_linetime_wm(
 }
 
 /*
- * Disables a crtc (the Linux hsw_crtc_disable(), the crtc_disable hook).
- *
- * The encoders' disable and post-disable, the shared PLL, the encoders'
- * post-PLL disable and the pipe's DMC event handlers, in this order.
+ * Runs one part of the crtc disable (the Linux hsw_crtc_disable(), cut
+ * into the parts a screen's dark runs as steps; see
+ * drv_i915_lcd_ms_crtc_disable_part()).  No big joiner on this path.
  */
 static void
-i915_hsw_crtc_disable(
+i915_hsw_crtc_disable_part(
 	struct intel_atomic_state *state,
-	struct intel_crtc *crtc)
+	struct intel_crtc *crtc,
+	unsigned part)
 {
 	const struct intel_crtc_state *old_crtc_state;
 	struct drm_i915_private *i915;
@@ -1842,27 +1798,30 @@ i915_hsw_crtc_disable(
 	old_crtc_state = intel_atomic_get_old_crtc_state(state, crtc);
 	i915 = i915_lcd_to_i915(crtc->base.dev);
 
-	/* The encoders go off first (not for a big-joiner slave). */
-	if (!intel_crtc_is_bigjoiner_slave(old_crtc_state)) {
+	/* The parts in the order of the Linux text. */
+	switch (part) {
+	case I915_LCD_CRTC_PART_OUTPUT:
+		/* The encoders' disable. */
 		drv_i915_encoders_disable(state, crtc);
+		break;
+	case I915_LCD_CRTC_PART_PORT:
+		/* The encoders' post-disable: the transcoder stops, then the port. */
 		drv_i915_encoders_post_disable(state, crtc);
-	}
-
-	/* The shared PLL. */
-	drv_i915_disable_shared_dpll(old_crtc_state);
-
-	/*
-	 * The encoders after the PLL and the pipe's DMC event handlers.
-	 *
-	 * XXX: the Linux text then walks the crtcs of
-	 * intel_crtc_bigjoiner_slave_pipes() to disable their DMC handlers
-	 * too.  That mask is the constant 0 here (no big joiner), so the walk
-	 * visited nothing; it is not written out, since the registry it walks
-	 * belongs to the takeover world, which this hook cannot reach.
-	 */
-	if (!intel_crtc_is_bigjoiner_slave(old_crtc_state)) {
+		break;
+	case I915_LCD_CRTC_PART_PLL:
+		/* The shared PLL. */
+		drv_i915_disable_shared_dpll(old_crtc_state);
+		break;
+	case I915_LCD_CRTC_PART_LINK:
+		/* The encoders after the PLL. */
 		drv_i915_encoders_post_pll_disable(state, crtc);
+		break;
+	case I915_LCD_CRTC_PART_DMC:
+		/* The pipe's DMC event handlers. */
 		drv_i915_dmc_disable_pipe(i915, crtc->pipe);
+		break;
+	default:
+		break;
 	}
 }
 

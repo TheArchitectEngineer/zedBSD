@@ -152,6 +152,25 @@ struct i915_resident_output_way {
 };
 
 /*
+ * One commit of the selected screen, as its light's or dark's steps see
+ * it: the display, its modeset world and screen, the power domains the
+ * commit puts at its end, the new state of a disable, the error count a
+ * step compares with, and the results the commit reports.  Lives for one
+ * commit.
+ */
+struct i915_modeset_commit {
+	struct i915_display *display;
+	struct i915_lcd_world *world;
+	struct i915_lcd_modeset *ms;
+	struct intel_power_domain_mask put_domains;
+	struct intel_crtc_state *off_state;
+	unsigned before;
+	int enable_result;
+	int plane_result;
+	int crtc_result;
+};
+
+/*
  * The modeset world the Linux text's world-less hooks report to.
  *
  * Set by the world's creation and cleared by its destruction; one display
@@ -174,6 +193,29 @@ static void i915_modeset_flip_retire(struct i915_display *display);
 static int i915_modeset_prepare_state(struct i915_display *display, const struct i915_lcd_state *s, const struct i915_lcd_modeset_cfg *cfg, struct i915_lcd_emit *ops);
 static void i915_modeset_plan_check(const struct i915_lcd_state *s, const struct i915_lcd_modeset_cfg *cfg, const struct i915_lcd_modeset *ms, struct i915_xd_plan *plan);
 static void i915_modeset_plan_compare(const struct i915_xd_plan *plan, unsigned old_refused, const struct i915_lcd_modeset *ms);
+static void i915_modeset_light_hooks(struct i915_xd_screen_hooks *hooks, struct i915_modeset_commit *commit);
+static void i915_modeset_dark_hooks(struct i915_xd_screen_hooks *hooks, struct i915_modeset_commit *commit);
+static int i915_modeset_step_power(void *context);
+static int i915_modeset_step_dbuf(void *context);
+static int i915_modeset_step_setup(void *context);
+static int i915_modeset_step_dmc_on(void *context);
+static int i915_modeset_step_link_power(void *context);
+static int i915_modeset_step_pll(void *context);
+static int i915_modeset_step_port(void *context);
+static int i915_modeset_step_pipe(void *context);
+static int i915_modeset_step_output(void *context);
+static int i915_modeset_step_check(void *context);
+static int i915_modeset_step_plane(void *context);
+static int i915_modeset_step_settle(void *context);
+static int i915_modeset_step_dark_power(void *context);
+static int i915_modeset_step_plane_off(void *context);
+static int i915_modeset_step_output_off(void *context);
+static int i915_modeset_step_port_off(void *context);
+static int i915_modeset_step_pll_off(void *context);
+static int i915_modeset_step_link_power_off(void *context);
+static int i915_modeset_step_dmc_off(void *context);
+static int i915_modeset_step_confirm(void *context);
+static int i915_modeset_step_dark_settle(void *context);
 static void i915_show_anomaly(struct i915_lcd_show_report *r, const char *what, int rc);
 static void i915_show_reached(struct i915_lcd_show_env *env, struct i915_lcd_show_report *r, int stage);
 static int i915_show_first_error_after(const struct i915_lcd_trace *trace, unsigned from);
@@ -723,75 +765,6 @@ drv_i915_lcd_modeset_status(
 }
 
 /*
- * Enables the selected screen's crtc: the backlight setup, the active
- * timings and hsw_crtc_enable() with the DDI and DP callees below it.
- *
- * The evidence that the link trained is the sink's own status, not the
- * flag the stop function sets.  Returns I915_LCD_MS_OK,
- * I915_LCD_MS_NOT_PREPARED, I915_LCD_MS_ERRORS or
- * I915_LCD_MS_LINK_NOT_TRAINED.
- */
-int
-drv_i915_lcd_modeset_enable(
-	struct i915_display *display)
-{
-	struct i915_lcd_world *world;
-	struct i915_lcd_modeset *ms;
-	struct i915_lcd_modeset_status st;
-
-	world = display->lcd_world;
-	ms = i915_modeset_selected_screen(world);
-
-	/* Binds the screen's objects to the Linux text. */
-	i915_modeset_bind_current(display);
-
-	/* Only a prepared screen whose crtc is off can be enabled. */
-	if (!ms->prepared || ms->crtc.active)
-		return I915_LCD_MS_NOT_PREPARED;
-
-	/* The screen's device is the one the Linux text works on. */
-	world->i915_lcd_cur_i915 = &ms->i915;
-
-	/* The connector-init work that reads the hardware: the backlight setup (the panel only). */
-	if (!ms->output_hdmi && !ms->output_dp_ext) {
-		ms->backlight_setup_rc = drv_i915_lcd_ms_backlight_setup(ms);
-		if (ms->backlight_setup_rc != 0)
-			i915_modeset_on_error(world, "intel_backlight_setup failed (no PWM frequency from the hardware or the VBT)\n");
-	}
-
-	/* intel_enable_crtc(): the active timings before the crtc_enable hook. */
-	drv_i915_lcd_ms_active_timings(ms);
-	drv_i915_lcd_ms_crtc_enable(ms);
-
-	/* intel_backlight_device_register(): max_brightness = backlight.max, brightness = the level scaled to it. */
-	ms->bl_user_max = ms->connector.panel.backlight.max;
-	ms->bl_user = 0U;
-	if (ms->bl_user_max != 0U)
-		ms->bl_user = drv_i915_lcd_ms_user_level(ms, ms->bl_user_max);
-
-	/* An error of the Linux text fails the enable. */
-	if (world->ms_errors_pool[world->ms_sel] != 0U)
-		return I915_LCD_MS_ERRORS;
-
-	/* HDMI has no link training: the crtc being active is the whole of it. */
-	drv_i915_lcd_modeset_status(display, &st);
-	if (ms->output_hdmi) {
-		if (ms->crtc.active)
-			return I915_LCD_MS_OK;
-
-		return I915_LCD_MS_LINK_NOT_TRAINED;
-	}
-
-	/* Asks the sink whether clock recovery and channel equalisation hold. */
-	i915_modeset_read_link_status(ms, &st);
-	if (!ms->crtc.active || !st.cr_ok || !st.eq_ok)
-		return I915_LCD_MS_LINK_NOT_TRAINED;
-
-	/* Succeeded: the crtc runs and the sink reports a trained link. */
-	return I915_LCD_MS_OK;
-}
-
-/*
  * Arms the selected screen's plane on its framebuffer.
  *
  * Returns I915_LCD_MS_OK, I915_LCD_MS_NOT_PREPARED or I915_LCD_MS_ERRORS.
@@ -863,51 +836,6 @@ drv_i915_lcd_modeset_plane_disable(
 }
 
 /*
- * Disables the selected screen's crtc (hsw_crtc_disable()).
- *
- * Returns I915_LCD_MS_OK, I915_LCD_MS_NOT_PREPARED, I915_LCD_MS_ERRORS, or
- * I915_LCD_MS_STILL_OWNED when the PLL or a port power reference is still
- * held afterwards.
- */
-int
-drv_i915_lcd_modeset_disable(
-	struct i915_display *display)
-{
-	struct i915_lcd_world *world;
-	struct i915_lcd_modeset *ms;
-	unsigned before;
-
-	world = display->lcd_world;
-	ms = i915_modeset_selected_screen(world);
-
-	/* Only the errors of this disable decide. */
-	before = world->ms_errors_pool[world->ms_sel];
-
-	/* Binds the screen's objects to the Linux text. */
-	i915_modeset_bind_current(display);
-
-	/* Only a running crtc can be disabled. */
-	if (!ms->prepared || !ms->crtc.active)
-		return I915_LCD_MS_NOT_PREPARED;
-
-	/* Disables the crtc through the Linux text. */
-	drv_i915_lcd_ms_crtc_disable(ms);
-
-	/* An error of the Linux text fails the disable. */
-	if (world->ms_errors_pool[world->ms_sel] != before)
-		return I915_LCD_MS_ERRORS;
-
-	/* Everything the enable took must be given back. */
-	if (ms->pll.on || ms->pll.active_mask != 0)
-		return I915_LCD_MS_STILL_OWNED;
-	if (ms->dig_port.ddi_io_wakeref != 0 || ms->dig_port.aux_wakeref != 0)
-		return I915_LCD_MS_STILL_OWNED;
-
-	/* Succeeded: the crtc is off and nothing is held. */
-	return I915_LCD_MS_OK;
-}
-
-/*
  * Records that the caller confirmed on the hardware (frame counter,
  * scanline) that the plane is off: the framebuffer is the caller's again.
  */
@@ -949,30 +877,30 @@ drv_i915_lcd_modeset_link_status(
 }
 
 /*
- * Runs the enable commit of the selected screen.
- *
- * intel_atomic_commit_tail() reduced to this crtc, in the reference's order
- * and with its callees: DC_OFF get, the crtc's power domains, the DBUF
- * pre-plane update and the MBUS DBOX, the crtc enable and the plane
- * update, the DBUF post-plane update, the unused domains put, and DC_OFF
- * put asynchronously after 17 ms.  Adaptation: after an anomaly in the
- * enable the plane is not armed.  Returns I915_LCD_MS_* (the enable's
- * result first, then the plane update's).
+ * Runs the enable commit of the selected screen as the screen's light
+ * (xd-screen.c): the steps are intel_atomic_commit_tail() reduced to
+ * this crtc, in the reference's order and with its callees -- DC_OFF get
+ * and the crtc's power domains, the DBUF pre-plane update and the MBUS
+ * DBOX, the backlight setup and the active timings, the crtc enable's
+ * parts, the check of the link, the plane update, then the settle (the
+ * DBUF post-plane update, the unused domains put, and DC_OFF put
+ * asynchronously after 17 ms).  After an anomaly in the enable the plane
+ * is not armed; nothing is undone (the caller's disable stops the crtc).
+ * Returns I915_LCD_MS_* (the enable's result first, then the plane
+ * update's).
  */
 int
 drv_i915_lcd_modeset_commit_enable(
 	struct i915_display *display)
 {
+	struct i915_modeset_commit commit;
+	struct i915_xd_screen_hooks hooks;
 	struct i915_lcd_world *world;
 	struct i915_lcd_modeset *ms;
-	struct intel_power_domain_mask put_domains;
-	int enable_result;
-	int plane_result;
 	int retained;
 
 	world = display->lcd_world;
 	ms = i915_modeset_selected_screen(world);
-	plane_result = I915_LCD_MS_OK;
 
 	/* Binds the screen's objects to the Linux text. */
 	i915_modeset_bind_current(display);
@@ -988,99 +916,54 @@ drv_i915_lcd_modeset_commit_enable(
 	ms->state.base.dev = &ms->i915.drm;
 	ms->commits++;
 
-	/*
-	 * "During full modesets we write a lot of registers, wait for PLLs,
-	 * etc. Doing that while DC states are enabled is not a good idea."
-	 */
-	ms->dc_off_wakeref = i915_lcd_intel_display_power_get(&ms->i915, POWER_DOMAIN_DC_OFF);
-	ms->dc_off_held = 1;
-	i915_modeset_observe(world, I915_LCD_OBS_COMMIT_BEGIN);
-
-	/*
-	 * intel_atomic_prepare_plane_clear_colors() applies only to modifiers
-	 * with a clear-colour plane; this one is linear.
-	 */
-	drv_i915_modeset_get_crtc_power_domains(world, &ms->crtc_state, &put_domains);
-
-	/*
-	 * intel_commit_modeset_disables(): the old crtc state is inactive.
-	 * intel_pmdemand_pre_plane_update() returns below display version 14.
-	 * intel_set_cdclk_pre_plane_update(): the required CDCLK state is the
-	 * current one (checked in prepare).
-	 */
-	I915_LCD_DECIDED(&ms->i915, "intel_sagv_pre_plane_update: the QGV restriction stays as the initialisation left it (SAGV off, max-bandwidth point; bandwidth checked in prepare)");
-	drv_i915_dbuf_pre_plane_update(&ms->wm, &ms->state);
-	drv_i915_mbus_dbox_update(&ms->wm, &ms->state);
-
-	/* skl_commit_modeset_enables(): intel_enable_crtc(), then intel_update_crtc() and the planes. */
-	enable_result = drv_i915_lcd_modeset_enable(display);
-	i915_modeset_observe(world, I915_LCD_OBS_PIPE_ENABLED);
-	if (enable_result == I915_LCD_MS_OK) {
-		plane_result = drv_i915_lcd_modeset_plane_update(display);
-		i915_modeset_observe(world, I915_LCD_OBS_PLANE_ARMED);
-	} else {
-		I915_LCD_DECIDED(&ms->i915, "plane update skipped: the crtc enable reported an anomaly, the buffer is not handed to the display");
-	}
-
-	/* The post-plane half of the commit. */
-	drv_i915_dbuf_post_plane_update(&ms->wm, &ms->state);
-	drv_i915_modeset_put_crtc_power_domains(&ms->crtc, &put_domains);
-	I915_LCD_DECIDED(&ms->i915, "intel_sagv_post_plane_update: QGV points are not relaxed (SAGV stays off)");
-
-	/*
-	 * intel_set_cdclk_post_plane_update() and
-	 * intel_pmdemand_post_plane_update() have nothing to do, as above.  The
-	 * new global state is the current one from here on.
-	 */
-	ms->wm.old_dbuf = ms->wm.new_dbuf;
-	drv_i915_lcd_dbuf_publish(display->wm_world, &ms->wm.new_dbuf);
-	i915_modeset_observe(world, I915_LCD_OBS_COMMIT_END);
-
-	/* "Delay re-enabling DC states by 17 ms to avoid the off->on->off toggling overhead at and above 60 FPS." */
-	intel_display_power_put_async_delay(&ms->i915, POWER_DOMAIN_DC_OFF, ms->dc_off_wakeref, I915_LCD_DC_OFF_DELAY_MS);
-	ms->dc_off_held = 0;
+	/* The commit's steps. */
+	kern_memset(&commit, 0, sizeof(commit));
+	commit.display = display;
+	commit.world = world;
+	commit.ms = ms;
+	commit.enable_result = I915_LCD_MS_OK;
+	commit.plane_result = I915_LCD_MS_OK;
+	i915_modeset_light_hooks(&hooks, &commit);
+	ms->screen.pipe = (unsigned)ms->crtc.pipe;
+	(void)drv_i915_xd_screen_light(&ms->screen, drv_i915_lcd_xd_io(&ms->i915), &hooks, 0);
 
 	/* Reports a failed crtc enable first. */
-	if (enable_result != I915_LCD_MS_OK)
-		return enable_result;
+	if (commit.enable_result != I915_LCD_MS_OK)
+		return commit.enable_result;
 
 	/* Reports a failed plane update. */
-	if (plane_result != I915_LCD_MS_OK)
-		return plane_result;
+	if (commit.plane_result != I915_LCD_MS_OK)
+		return commit.plane_result;
 
 	/* Succeeded: the picture is armed. */
 	return I915_LCD_MS_OK;
 }
 
 /*
- * Runs the disable commit of the selected screen.
- *
- * DC_OFF get, the domains to drop, the plane disable and the crtc
- * disable, then the DBUF pre-plane update, the MBUS DBOX and the DBUF
- * post-plane update, the domains put, the PLL reference given back, and
- * DC_OFF put.  Adaptation: after an error in the disable nothing further is
- * given back (DBUF, power domains and DC_OFF stay as they are) and the
- * stop is marked unconfirmed.  Returns I915_LCD_MS_*.
+ * Runs the disable commit of the selected screen as the screen's dark
+ * (xd-screen.c): DC_OFF get and the domains to drop, the plane disable,
+ * the crtc disable's parts, the confirmation (an error, or the PLL or a
+ * port reference still held, leaves the stop unconfirmed: nothing
+ * further is given back), then the settle (the DBUF pre-plane update,
+ * the MBUS DBOX and the DBUF post-plane update, the domains put, the PLL
+ * reference given back, and DC_OFF put).  Returns I915_LCD_MS_*.
  */
 int
 drv_i915_lcd_modeset_commit_disable(
 	struct i915_display *display)
 {
+	struct i915_modeset_commit commit;
+	struct i915_xd_screen_hooks hooks;
 	struct i915_lcd_world *world;
 	struct i915_lcd_modeset *ms;
 	struct i915_lcd_modeset *other;
-	struct intel_crtc_state *off_state;
-	struct intel_power_domain_mask put_domains;
-	unsigned before;
 	unsigned keep_pipes;
 	unsigned screen;
-	int crtc_result;
-	int plane_result;
 	int retained;
+	int error;
 
 	world = display->lcd_world;
 	ms = i915_modeset_selected_screen(world);
-	off_state = &world->i915_lcd_modeset_commit_disable_off_state;
 
 	/* Binds the screen's objects to the Linux text. */
 	i915_modeset_bind_current(display);
@@ -1117,78 +1000,20 @@ drv_i915_lcd_modeset_commit_disable(
 	drv_i915_lcd_ms_wm_compute_off(display->wm_world, ms, keep_pipes);
 
 	/* The new state of this commit: the crtc inactive. */
-	*off_state = ms->crtc_state;
-	off_state->hw.active = false;
-	off_state->hw.enable = false;
+	kern_memset(&commit, 0, sizeof(commit));
+	commit.display = display;
+	commit.world = world;
+	commit.ms = ms;
+	commit.off_state = &world->i915_lcd_modeset_commit_disable_off_state;
+	*commit.off_state = ms->crtc_state;
+	commit.off_state->hw.active = false;
+	commit.off_state->hw.enable = false;
 
-	/* DC states off for the commit. */
-	ms->dc_off_wakeref = i915_lcd_intel_display_power_get(&ms->i915, POWER_DOMAIN_DC_OFF);
-	ms->dc_off_held = 1;
-	i915_modeset_observe(world, I915_LCD_OBS_COMMIT_BEGIN);
-
-	/* Nothing new is taken; everything held goes to put_domains. */
-	drv_i915_modeset_get_crtc_power_domains(world, off_state, &put_domains);
-
-	/*
-	 * intel_commit_modeset_disables() -> intel_old_crtc_state_disables():
-	 * the planes, then the crtc.  Only what this commit reports decides (an
-	 * enable that failed earlier has left its errors in the count).
-	 */
-	before = world->ms_errors_pool[world->ms_sel];
-	(void)drv_i915_lcd_modeset_plane_disable(display);
-	plane_result = I915_LCD_MS_OK;
-	if (world->ms_errors_pool[world->ms_sel] != before)
-		plane_result = I915_LCD_MS_ERRORS;
-
-	i915_modeset_observe(world, I915_LCD_OBS_PLANE_DISABLED);
-	crtc_result = drv_i915_lcd_modeset_disable(display);
-	i915_modeset_observe(world, I915_LCD_OBS_PIPE_DISABLED);
-
-	/*
-	 * The stop is not confirmed: shrinking the DBUF, dropping the pipe's
-	 * power domains or letting DC states back in under a pipe that may still
-	 * run is the one thing not to do.  Everything stays; the caller keeps
-	 * the buffer.
-	 */
-	if (crtc_result != I915_LCD_MS_OK || plane_result != I915_LCD_MS_OK) {
-		ms->stop_unconfirmed = 1;
-		I915_LCD_DECIDED(&ms->i915, "commit tail after a failed disable NOT run: DBUF slices, crtc power domains and DC_OFF stay held");
-		if (crtc_result != I915_LCD_MS_OK)
-			return crtc_result;
-
-		return plane_result;
-	}
-
-	/* The rest of the commit tail, its errors counted apart. */
-	I915_LCD_DECIDED(&ms->i915, "intel_sagv_pre_plane_update: the QGV restriction stays as the initialisation left it");
-	before = world->ms_errors_pool[world->ms_sel];
-	drv_i915_dbuf_pre_plane_update(&ms->wm, &ms->state);
-	drv_i915_mbus_dbox_update(&ms->wm, &ms->state);
-
-	/* skl_commit_modeset_enables(): nothing is enabled by this commit. */
-	drv_i915_dbuf_post_plane_update(&ms->wm, &ms->state);
-	drv_i915_modeset_put_crtc_power_domains(&ms->crtc, &put_domains);
-	ms->wm.old_dbuf = ms->wm.new_dbuf;
-	drv_i915_lcd_dbuf_publish(display->wm_world, &ms->wm.new_dbuf);
-
-	/* The crtc is off: its reference on the shared DPLL goes back (the object stays for any other pipe). */
-	drv_i915_lcd_ms_release_pll(world, ms);
-	i915_modeset_observe(world, I915_LCD_OBS_COMMIT_END);
-
-	/*
-	 * An error in the tail (e.g. the pipe's power well could not be turned
-	 * off because its interrupt drain failed): the stop is not confirmed;
-	 * DC_OFF stays held and the caller keeps the buffer.
-	 */
-	if (world->ms_errors_pool[world->ms_sel] != before) {
-		ms->stop_unconfirmed = 1;
-		I915_LCD_DECIDED(&ms->i915, "commit tail reported an error (power not released): DC_OFF kept, stop unconfirmed");
-		return I915_LCD_MS_ERRORS;
-	}
-
-	/* DC states come back 17 ms later. */
-	intel_display_power_put_async_delay(&ms->i915, POWER_DOMAIN_DC_OFF, ms->dc_off_wakeref, I915_LCD_DC_OFF_DELAY_MS);
-	ms->dc_off_held = 0;
+	/* The commit's steps. */
+	i915_modeset_dark_hooks(&hooks, &commit);
+	error = drv_i915_xd_screen_dark(&ms->screen, drv_i915_lcd_xd_io(&ms->i915), &hooks);
+	if (error != 0)
+		return error;
 
 	/* Succeeded: the screen is off and everything is given back. */
 	return I915_LCD_MS_OK;
@@ -4638,4 +4463,527 @@ i915_modeset_plan_compare(
 		    (unsigned)plan->slices, (unsigned)ms->wm.new_dbuf.slices[pipe],
 		    (unsigned)plan->joined, (int)ms->wm.new_dbuf.joined_mbus);
 	}
+}
+
+/* Fills the light's steps of an enable commit. */
+static void
+i915_modeset_light_hooks(
+	struct i915_xd_screen_hooks *hooks,
+	struct i915_modeset_commit *commit)
+{
+	/* The enable's steps; the dark's are not run by a light that does not undo. */
+	kern_memset(hooks, 0, sizeof(*hooks));
+	hooks->power = i915_modeset_step_power;
+	hooks->dbuf = i915_modeset_step_dbuf;
+	hooks->setup = i915_modeset_step_setup;
+	hooks->dmc_on = i915_modeset_step_dmc_on;
+	hooks->link_power = i915_modeset_step_link_power;
+	hooks->pll = i915_modeset_step_pll;
+	hooks->port = i915_modeset_step_port;
+	hooks->pipe = i915_modeset_step_pipe;
+	hooks->output = i915_modeset_step_output;
+	hooks->check = i915_modeset_step_check;
+	hooks->plane = i915_modeset_step_plane;
+	hooks->settle = i915_modeset_step_settle;
+	hooks->context = commit;
+}
+
+/* Fills the dark's steps of a disable commit. */
+static void
+i915_modeset_dark_hooks(
+	struct i915_xd_screen_hooks *hooks,
+	struct i915_modeset_commit *commit)
+{
+	/* The disable's steps. */
+	kern_memset(hooks, 0, sizeof(*hooks));
+	hooks->dark_power = i915_modeset_step_dark_power;
+	hooks->plane_off = i915_modeset_step_plane_off;
+	hooks->output_off = i915_modeset_step_output_off;
+	hooks->port_off = i915_modeset_step_port_off;
+	hooks->pll_off = i915_modeset_step_pll_off;
+	hooks->link_power_off = i915_modeset_step_link_power_off;
+	hooks->dmc_off = i915_modeset_step_dmc_off;
+	hooks->confirm = i915_modeset_step_confirm;
+	hooks->dark_settle = i915_modeset_step_dark_settle;
+	hooks->context = commit;
+}
+
+/*
+ * The light's power: DC_OFF held ("during full modesets we write a lot of
+ * registers, wait for PLLs, etc.  Doing that while DC states are enabled
+ * is not a good idea"), and the crtc's power domains.
+ */
+static int
+i915_modeset_step_power(
+	void *context)
+{
+	struct i915_modeset_commit *commit;
+	struct i915_lcd_modeset *ms;
+
+	/* DC_OFF, then the domains (the clear-colour planes are not on this linear path). */
+	commit = context;
+	ms = commit->ms;
+	ms->dc_off_wakeref = i915_lcd_intel_display_power_get(&ms->i915, POWER_DOMAIN_DC_OFF);
+	ms->dc_off_held = 1;
+	i915_modeset_observe(commit->world, I915_LCD_OBS_COMMIT_BEGIN);
+	drv_i915_modeset_get_crtc_power_domains(commit->world, &ms->crtc_state, &commit->put_domains);
+
+	/* Succeeded: the power is held. */
+	return 0;
+}
+
+/*
+ * The light's display buffer before the planes: intel_commit_modeset_disables()
+ * has an inactive old crtc state; the PM demand and the CD clock have
+ * nothing to do (checked in prepare); the DBUF pre-plane update and the
+ * MBUS DBOX.
+ */
+static int
+i915_modeset_step_dbuf(
+	void *context)
+{
+	struct i915_modeset_commit *commit;
+	struct i915_lcd_modeset *ms;
+
+	/* The DBUF and the MBUS. */
+	commit = context;
+	ms = commit->ms;
+	I915_LCD_DECIDED(&ms->i915, "intel_sagv_pre_plane_update: the QGV restriction stays as the initialisation left it (SAGV off, max-bandwidth point; bandwidth checked in prepare)");
+	drv_i915_dbuf_pre_plane_update(&ms->wm, &ms->state);
+	drv_i915_mbus_dbox_update(&ms->wm, &ms->state);
+
+	/* Succeeded: the buffer is ready for the pipe. */
+	return 0;
+}
+
+/* The light's setup: the panel's backlight setup (the connector-init work that reads the hardware) and the active timings. */
+static int
+i915_modeset_step_setup(
+	void *context)
+{
+	struct i915_modeset_commit *commit;
+	struct i915_lcd_modeset *ms;
+
+	/* The screen's objects and device. */
+	commit = context;
+	ms = commit->ms;
+	i915_modeset_bind_current(commit->display);
+	commit->world->i915_lcd_cur_i915 = &ms->i915;
+
+	/* The panel's backlight setup. */
+	if (!ms->output_hdmi && !ms->output_dp_ext) {
+		ms->backlight_setup_rc = drv_i915_lcd_ms_backlight_setup(ms);
+		if (ms->backlight_setup_rc != 0)
+			i915_modeset_on_error(commit->world, "intel_backlight_setup failed (no PWM frequency from the hardware or the VBT)\n");
+	}
+
+	/* intel_enable_crtc(): the active timings before the crtc enable. */
+	drv_i915_lcd_ms_active_timings(ms);
+
+	/* Succeeded: the setup ran. */
+	return 0;
+}
+
+/* The light's pipe DMC. */
+static int
+i915_modeset_step_dmc_on(
+	void *context)
+{
+	struct i915_modeset_commit *commit;
+
+	/* The crtc enable's first part. */
+	commit = context;
+	drv_i915_lcd_ms_crtc_enable_part(commit->ms, I915_LCD_CRTC_PART_DMC);
+
+	/* Succeeded: the part ran. */
+	return 0;
+}
+
+/* The light's link power: the encoders before the PLL. */
+static int
+i915_modeset_step_link_power(
+	void *context)
+{
+	struct i915_modeset_commit *commit;
+
+	/* The part. */
+	commit = context;
+	drv_i915_lcd_ms_crtc_enable_part(commit->ms, I915_LCD_CRTC_PART_LINK);
+
+	/* Succeeded: the part ran. */
+	return 0;
+}
+
+/* The light's PLL. */
+static int
+i915_modeset_step_pll(
+	void *context)
+{
+	struct i915_modeset_commit *commit;
+
+	/* The part. */
+	commit = context;
+	drv_i915_lcd_ms_crtc_enable_part(commit->ms, I915_LCD_CRTC_PART_PLL);
+
+	/* Succeeded: the part ran. */
+	return 0;
+}
+
+/* The light's port: the encoders' pre-enable (the panel's power, the DDI clocks and function, the link and its training). */
+static int
+i915_modeset_step_port(
+	void *context)
+{
+	struct i915_modeset_commit *commit;
+
+	/* The part. */
+	commit = context;
+	drv_i915_lcd_ms_crtc_enable_part(commit->ms, I915_LCD_CRTC_PART_PORT);
+
+	/* Succeeded: the part ran. */
+	return 0;
+}
+
+/* The light's pipe: its source, misc, transcoder, colour, line time and chicken. */
+static int
+i915_modeset_step_pipe(
+	void *context)
+{
+	struct i915_modeset_commit *commit;
+
+	/* The part. */
+	commit = context;
+	drv_i915_lcd_ms_crtc_enable_part(commit->ms, I915_LCD_CRTC_PART_PIPE);
+
+	/* Succeeded: the part ran. */
+	return 0;
+}
+
+/* The light's output: the encoders' enable (the transcoder runs, the backlight), then the backlight device's levels. */
+static int
+i915_modeset_step_output(
+	void *context)
+{
+	struct i915_modeset_commit *commit;
+	struct i915_lcd_modeset *ms;
+
+	/* The part. */
+	commit = context;
+	ms = commit->ms;
+	drv_i915_lcd_ms_crtc_enable_part(ms, I915_LCD_CRTC_PART_OUTPUT);
+
+	/* intel_backlight_device_register(): max_brightness = backlight.max, brightness = the level scaled to it. */
+	ms->bl_user_max = ms->connector.panel.backlight.max;
+	ms->bl_user = 0U;
+	if (ms->bl_user_max != 0U)
+		ms->bl_user = drv_i915_lcd_ms_user_level(ms, ms->bl_user_max);
+
+	/* Succeeded: the part ran. */
+	return 0;
+}
+
+/*
+ * The light's check: an error of the Linux text fails the enable; an
+ * HDMI crtc is enabled when it runs; a DisplayPort sink must report clock
+ * recovery and channel equalisation.  A failed check skips the plane.
+ */
+static int
+i915_modeset_step_check(
+	void *context)
+{
+	struct i915_modeset_commit *commit;
+	struct i915_lcd_modeset_status status;
+	struct i915_lcd_modeset *ms;
+	struct i915_lcd_world *world;
+	int result;
+
+	/* The result, by the rules of the kind. */
+	commit = context;
+	ms = commit->ms;
+	world = commit->world;
+	result = I915_LCD_MS_OK;
+	if (world->ms_errors_pool[world->ms_sel] != 0U) {
+		result = I915_LCD_MS_ERRORS;
+	} else if (ms->output_hdmi) {
+		drv_i915_lcd_modeset_status(commit->display, &status);
+		if (!ms->crtc.active)
+			result = I915_LCD_MS_LINK_NOT_TRAINED;
+	} else {
+		drv_i915_lcd_modeset_status(commit->display, &status);
+		i915_modeset_read_link_status(ms, &status);
+		if (!ms->crtc.active || !status.cr_ok || !status.eq_ok)
+			result = I915_LCD_MS_LINK_NOT_TRAINED;
+	}
+
+	/* The observation after the enable, and the plane kept back after an anomaly. */
+	commit->enable_result = result;
+	i915_modeset_observe(world, I915_LCD_OBS_PIPE_ENABLED);
+	if (result != I915_LCD_MS_OK) {
+		I915_LCD_DECIDED(&ms->i915, "plane update skipped: the crtc enable reported an anomaly, the buffer is not handed to the display");
+		return result;
+	}
+
+	/* Succeeded: the crtc runs and its link holds. */
+	return 0;
+}
+
+/* The light's plane: armed on the framebuffer. */
+static int
+i915_modeset_step_plane(
+	void *context)
+{
+	struct i915_modeset_commit *commit;
+
+	/* The plane update and its observation. */
+	commit = context;
+	commit->plane_result = drv_i915_lcd_modeset_plane_update(commit->display);
+	i915_modeset_observe(commit->world, I915_LCD_OBS_PLANE_ARMED);
+
+	/* Succeeded: the update ran (its result is the commit's to report). */
+	return 0;
+}
+
+/*
+ * The light's settle: the DBUF post-plane update, the unused domains put,
+ * the new global state published, DC_OFF given back 17 ms later ("to
+ * avoid the off->on->off toggling overhead at and above 60 FPS").
+ */
+static int
+i915_modeset_step_settle(
+	void *context)
+{
+	struct i915_modeset_commit *commit;
+	struct i915_lcd_modeset *ms;
+
+	/* The post-plane half of the commit. */
+	commit = context;
+	ms = commit->ms;
+	drv_i915_dbuf_post_plane_update(&ms->wm, &ms->state);
+	drv_i915_modeset_put_crtc_power_domains(&ms->crtc, &commit->put_domains);
+	I915_LCD_DECIDED(&ms->i915, "intel_sagv_post_plane_update: QGV points are not relaxed (SAGV stays off)");
+
+	/* The new global state is the current one from here on. */
+	ms->wm.old_dbuf = ms->wm.new_dbuf;
+	drv_i915_lcd_dbuf_publish(commit->display->wm_world, &ms->wm.new_dbuf);
+	i915_modeset_observe(commit->world, I915_LCD_OBS_COMMIT_END);
+
+	/* DC states come back later. */
+	intel_display_power_put_async_delay(&ms->i915, POWER_DOMAIN_DC_OFF, ms->dc_off_wakeref, I915_LCD_DC_OFF_DELAY_MS);
+	ms->dc_off_held = 0;
+
+	/* Succeeded: the commit is settled. */
+	return 0;
+}
+
+/* The dark's power: DC_OFF held, and every domain held goes to the commit's put (nothing new is taken). */
+static int
+i915_modeset_step_dark_power(
+	void *context)
+{
+	struct i915_modeset_commit *commit;
+	struct i915_lcd_modeset *ms;
+
+	/* DC_OFF, then the domains to drop. */
+	commit = context;
+	ms = commit->ms;
+	ms->dc_off_wakeref = i915_lcd_intel_display_power_get(&ms->i915, POWER_DOMAIN_DC_OFF);
+	ms->dc_off_held = 1;
+	i915_modeset_observe(commit->world, I915_LCD_OBS_COMMIT_BEGIN);
+	drv_i915_modeset_get_crtc_power_domains(commit->world, commit->off_state, &commit->put_domains);
+
+	/* Succeeded: the power is held. */
+	return 0;
+}
+
+/* The dark's plane: its disable armed; only what this commit reports decides. */
+static int
+i915_modeset_step_plane_off(
+	void *context)
+{
+	struct i915_modeset_commit *commit;
+	struct i915_lcd_world *world;
+	unsigned before;
+
+	/* The plane disable, its errors counted apart. */
+	commit = context;
+	world = commit->world;
+	before = world->ms_errors_pool[world->ms_sel];
+	(void)drv_i915_lcd_modeset_plane_disable(commit->display);
+	commit->plane_result = I915_LCD_MS_OK;
+	if (world->ms_errors_pool[world->ms_sel] != before)
+		commit->plane_result = I915_LCD_MS_ERRORS;
+	i915_modeset_observe(world, I915_LCD_OBS_PLANE_DISABLED);
+
+	/* The errors of the crtc disable are counted from here. */
+	commit->before = world->ms_errors_pool[world->ms_sel];
+	i915_modeset_bind_current(commit->display);
+
+	/* Succeeded: the step ran (the confirmation judges it). */
+	return 0;
+}
+
+/* The dark's output: the encoders' disable (the backlight). */
+static int
+i915_modeset_step_output_off(
+	void *context)
+{
+	struct i915_modeset_commit *commit;
+
+	/* The part. */
+	commit = context;
+	drv_i915_lcd_ms_crtc_disable_part(commit->ms, I915_LCD_CRTC_PART_OUTPUT);
+
+	/* Succeeded: the part ran. */
+	return 0;
+}
+
+/* The dark's port: the encoders' post-disable (the transcoder stops, then the port and the panel). */
+static int
+i915_modeset_step_port_off(
+	void *context)
+{
+	struct i915_modeset_commit *commit;
+
+	/* The part. */
+	commit = context;
+	drv_i915_lcd_ms_crtc_disable_part(commit->ms, I915_LCD_CRTC_PART_PORT);
+
+	/* Succeeded: the part ran. */
+	return 0;
+}
+
+/* The dark's PLL. */
+static int
+i915_modeset_step_pll_off(
+	void *context)
+{
+	struct i915_modeset_commit *commit;
+
+	/* The part. */
+	commit = context;
+	drv_i915_lcd_ms_crtc_disable_part(commit->ms, I915_LCD_CRTC_PART_PLL);
+
+	/* Succeeded: the part ran. */
+	return 0;
+}
+
+/* The dark's link power: the encoders after the PLL. */
+static int
+i915_modeset_step_link_power_off(
+	void *context)
+{
+	struct i915_modeset_commit *commit;
+
+	/* The part. */
+	commit = context;
+	drv_i915_lcd_ms_crtc_disable_part(commit->ms, I915_LCD_CRTC_PART_LINK);
+
+	/* Succeeded: the part ran. */
+	return 0;
+}
+
+/* The dark's pipe DMC, after which the crtc no longer runs. */
+static int
+i915_modeset_step_dmc_off(
+	void *context)
+{
+	struct i915_modeset_commit *commit;
+
+	/* The part. */
+	commit = context;
+	drv_i915_lcd_ms_crtc_disable_part(commit->ms, I915_LCD_CRTC_PART_DMC);
+
+	/* Succeeded: the part ran. */
+	return 0;
+}
+
+/*
+ * The dark's confirmation: an error of the crtc disable, or the PLL or a
+ * port reference still held, or an error of the plane's: the stop is not
+ * confirmed, and shrinking the DBUF, dropping the pipe's domains or
+ * letting DC states back in under a pipe that may still run is the one
+ * thing not to do.  Everything stays; the caller keeps the buffer.
+ */
+static int
+i915_modeset_step_confirm(
+	void *context)
+{
+	struct i915_modeset_commit *commit;
+	struct i915_lcd_modeset *ms;
+	struct i915_lcd_world *world;
+
+	/* The crtc disable's result. */
+	commit = context;
+	ms = commit->ms;
+	world = commit->world;
+	commit->crtc_result = I915_LCD_MS_OK;
+	if (world->ms_errors_pool[world->ms_sel] != commit->before) {
+		commit->crtc_result = I915_LCD_MS_ERRORS;
+	} else if (ms->pll.on || ms->pll.active_mask != 0) {
+		commit->crtc_result = I915_LCD_MS_STILL_OWNED;
+	} else if (ms->dig_port.ddi_io_wakeref != 0 || ms->dig_port.aux_wakeref != 0) {
+		commit->crtc_result = I915_LCD_MS_STILL_OWNED;
+	}
+	i915_modeset_observe(world, I915_LCD_OBS_PIPE_DISABLED);
+
+	/* A stop not confirmed. */
+	if (commit->crtc_result != I915_LCD_MS_OK || commit->plane_result != I915_LCD_MS_OK) {
+		ms->stop_unconfirmed = 1;
+		I915_LCD_DECIDED(&ms->i915, "commit tail after a failed disable NOT run: DBUF slices, crtc power domains and DC_OFF stay held");
+		if (commit->crtc_result != I915_LCD_MS_OK)
+			return commit->crtc_result;
+
+		return commit->plane_result;
+	}
+
+	/* Succeeded: the pipe stopped and nothing of the port is held. */
+	return 0;
+}
+
+/*
+ * The dark's settle, its errors counted apart: the DBUF pre-plane update,
+ * the MBUS DBOX and the DBUF post-plane update (nothing is enabled), the
+ * domains put, the new global state published, the PLL reference given
+ * back; DC_OFF back 17 ms later, unless the settle itself reported an
+ * error (a well that could not go off): then the stop is not confirmed.
+ */
+static int
+i915_modeset_step_dark_settle(
+	void *context)
+{
+	struct i915_modeset_commit *commit;
+	struct i915_lcd_modeset *ms;
+	struct i915_lcd_world *world;
+	unsigned before;
+
+	/* The rest of the commit tail. */
+	commit = context;
+	ms = commit->ms;
+	world = commit->world;
+	I915_LCD_DECIDED(&ms->i915, "intel_sagv_pre_plane_update: the QGV restriction stays as the initialisation left it");
+	before = world->ms_errors_pool[world->ms_sel];
+	drv_i915_dbuf_pre_plane_update(&ms->wm, &ms->state);
+	drv_i915_mbus_dbox_update(&ms->wm, &ms->state);
+	drv_i915_dbuf_post_plane_update(&ms->wm, &ms->state);
+	drv_i915_modeset_put_crtc_power_domains(&ms->crtc, &commit->put_domains);
+	ms->wm.old_dbuf = ms->wm.new_dbuf;
+	drv_i915_lcd_dbuf_publish(commit->display->wm_world, &ms->wm.new_dbuf);
+
+	/* The crtc is off: its reference on the shared DPLL goes back (the object stays for any other pipe). */
+	drv_i915_lcd_ms_release_pll(world, ms);
+	i915_modeset_observe(world, I915_LCD_OBS_COMMIT_END);
+
+	/* An error in the tail: DC_OFF stays held and the caller keeps the buffer. */
+	if (world->ms_errors_pool[world->ms_sel] != before) {
+		ms->stop_unconfirmed = 1;
+		I915_LCD_DECIDED(&ms->i915, "commit tail reported an error (power not released): DC_OFF kept, stop unconfirmed");
+		return I915_LCD_MS_ERRORS;
+	}
+
+	/* DC states come back 17 ms later. */
+	intel_display_power_put_async_delay(&ms->i915, POWER_DOMAIN_DC_OFF, ms->dc_off_wakeref, I915_LCD_DC_OFF_DELAY_MS);
+	ms->dc_off_held = 0;
+
+	/* Succeeded: the screen is off and everything is given back. */
+	return 0;
 }

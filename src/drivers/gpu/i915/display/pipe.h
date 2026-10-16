@@ -12,8 +12,8 @@
  * declarations are visible only to a translation unit that has included
  * modeset-internal.h first.  The functions the environment headers already
  * declare under their explicit names (drv_i915_lcd_intel_phy_is_tc(),
- * drv_i915_lcd_intel_port_to_phy(), drv_i915_lcd_ms_crtc_enable(),
- * drv_i915_lcd_ms_crtc_disable() and drv_i915_lcd_ms_display_funcs()) are
+ * drv_i915_lcd_intel_port_to_phy(), drv_i915_lcd_ms_crtc_enable_part(),
+ * drv_i915_lcd_ms_crtc_disable_part() and drv_i915_lcd_ms_display_funcs()) are
  * not repeated here.
  *
  * A function whose Linux text reached an object through a file-scope

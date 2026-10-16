@@ -13,10 +13,14 @@
  * more than the highest, another voltage level, the QGV point, the
  * sinks the plan does not drive, a link too slow), an HDMI sink's link
  * and WRPLL on DDI B, an external DisplayPort sink's link on a Type-C
- * port with a branch's limits, and Tiger Lake's pixel rate rule.
+ * port with a branch's limits, and Tiger Lake's pixel rate rule; the
+ * light's and the dark's order of steps, what a failed step skips, the
+ * undo of a failed light, and a dark retained when its stop is not
+ * confirmed.
  */
 
 #include "host-test.h"
+#include "xd-fake-regs.h"
 
 #include "../../display/xd-clock.h"
 #include "../../display/xd-dp.h"
@@ -34,6 +38,44 @@
 #define I915_XD_SCREEN_TEST_TGL		0x9a49U
 #define I915_XD_SCREEN_TEST_TGL_REVID	0x01U
 
+/*
+ * The steps the sequencer checks see, in order, and the step that fails
+ * (0 for none).
+ */
+struct i915_xd_screen_test_seen {
+	unsigned steps[32];
+	unsigned count;
+	unsigned fail;
+};
+
+/* The steps seen by the sequencer checks. */
+static struct i915_xd_screen_test_seen i915_xd_screen_test_seen;
+
+static int i915_xd_screen_test_note(unsigned step);
+static int i915_xd_screen_test_s1(void *context);
+static int i915_xd_screen_test_s2(void *context);
+static int i915_xd_screen_test_s3(void *context);
+static int i915_xd_screen_test_s4(void *context);
+static int i915_xd_screen_test_s5(void *context);
+static int i915_xd_screen_test_s6(void *context);
+static int i915_xd_screen_test_s7(void *context);
+static int i915_xd_screen_test_s8(void *context);
+static int i915_xd_screen_test_s9(void *context);
+static int i915_xd_screen_test_s10(void *context);
+static int i915_xd_screen_test_s11(void *context);
+static int i915_xd_screen_test_s12(void *context);
+static int i915_xd_screen_test_d1(void *context);
+static int i915_xd_screen_test_d2(void *context);
+static int i915_xd_screen_test_d3(void *context);
+static int i915_xd_screen_test_d4(void *context);
+static int i915_xd_screen_test_d5(void *context);
+static int i915_xd_screen_test_d6(void *context);
+static int i915_xd_screen_test_d7(void *context);
+static int i915_xd_screen_test_d8(void *context);
+static int i915_xd_screen_test_d9(void *context);
+static void i915_xd_screen_test_hooks(struct i915_xd_screen_hooks *hooks);
+static int i915_xd_screen_test_order(const unsigned *want, unsigned count);
+static void i915_xd_screen_test_sequencer(void);
 static const struct i915_xd_platform *i915_xd_screen_test_platform(uint16_t device, uint8_t revid);
 static void i915_xd_screen_test_mode(struct i915_display_mode *mode, int clock_khz);
 static void i915_xd_screen_test_panel_input(struct i915_xd_plan_input *input, const struct i915_xd_platform *platform, const struct i915_display_mode *mode);
@@ -59,6 +101,7 @@ main(void)
 	i915_xd_screen_test_hdmi();
 	i915_xd_screen_test_dp();
 	i915_xd_screen_test_tgl();
+	i915_xd_screen_test_sequencer();
 
 	/* Reports the result. */
 	failures = i915_host_report("host_xd_screen_test");
@@ -366,4 +409,351 @@ i915_xd_screen_test_tgl(void)
 	(void)drv_i915_xd_screen_plan(&input, &plan);
 	i915_host_check(plan.min_cdclk_khz == 140800U && plan.cdclk_khz >= 140800U, "tgl: needs the pixel rate itself");
 	i915_host_check(plan.refused == I915_XD_PLAN_CDCLK, "tgl: the running 179.2 MHz is not a Tiger Lake step: another CD clock");
+}
+
+/* Notes a step; the step the run names fails with EIO. */
+static int
+i915_xd_screen_test_note(
+	unsigned step)
+{
+	/* The step, when there is room. */
+	if (i915_xd_screen_test_seen.count < 32U) {
+		i915_xd_screen_test_seen.steps[i915_xd_screen_test_seen.count] = step;
+		i915_xd_screen_test_seen.count++;
+	}
+
+	/* The failing step. */
+	if (step == i915_xd_screen_test_seen.fail)
+		return 5;
+
+	/* Succeeded: the step ran. */
+	return 0;
+}
+
+/* Light step 1. */
+static int
+i915_xd_screen_test_s1(
+	void *context)
+{
+	/* Notes the step. */
+	(void)context;
+	return i915_xd_screen_test_note(1U);
+}
+
+/* Light step 2. */
+static int
+i915_xd_screen_test_s2(
+	void *context)
+{
+	/* Notes the step. */
+	(void)context;
+	return i915_xd_screen_test_note(2U);
+}
+
+/* Light step 3. */
+static int
+i915_xd_screen_test_s3(
+	void *context)
+{
+	/* Notes the step. */
+	(void)context;
+	return i915_xd_screen_test_note(3U);
+}
+
+/* Light step 4. */
+static int
+i915_xd_screen_test_s4(
+	void *context)
+{
+	/* Notes the step. */
+	(void)context;
+	return i915_xd_screen_test_note(4U);
+}
+
+/* Light step 5. */
+static int
+i915_xd_screen_test_s5(
+	void *context)
+{
+	/* Notes the step. */
+	(void)context;
+	return i915_xd_screen_test_note(5U);
+}
+
+/* Light step 6. */
+static int
+i915_xd_screen_test_s6(
+	void *context)
+{
+	/* Notes the step. */
+	(void)context;
+	return i915_xd_screen_test_note(6U);
+}
+
+/* Light step 7. */
+static int
+i915_xd_screen_test_s7(
+	void *context)
+{
+	/* Notes the step. */
+	(void)context;
+	return i915_xd_screen_test_note(7U);
+}
+
+/* Light step 8. */
+static int
+i915_xd_screen_test_s8(
+	void *context)
+{
+	/* Notes the step. */
+	(void)context;
+	return i915_xd_screen_test_note(8U);
+}
+
+/* Light step 9. */
+static int
+i915_xd_screen_test_s9(
+	void *context)
+{
+	/* Notes the step. */
+	(void)context;
+	return i915_xd_screen_test_note(9U);
+}
+
+/* Light step 10. */
+static int
+i915_xd_screen_test_s10(
+	void *context)
+{
+	/* Notes the step. */
+	(void)context;
+	return i915_xd_screen_test_note(10U);
+}
+
+/* Light step 11. */
+static int
+i915_xd_screen_test_s11(
+	void *context)
+{
+	/* Notes the step. */
+	(void)context;
+	return i915_xd_screen_test_note(11U);
+}
+
+/* Light step 12. */
+static int
+i915_xd_screen_test_s12(
+	void *context)
+{
+	/* Notes the step. */
+	(void)context;
+	return i915_xd_screen_test_note(12U);
+}
+
+/* Dark step 1. */
+static int
+i915_xd_screen_test_d1(
+	void *context)
+{
+	/* Notes the step. */
+	(void)context;
+	return i915_xd_screen_test_note(101U);
+}
+
+/* Dark step 2. */
+static int
+i915_xd_screen_test_d2(
+	void *context)
+{
+	/* Notes the step. */
+	(void)context;
+	return i915_xd_screen_test_note(102U);
+}
+
+/* Dark step 3. */
+static int
+i915_xd_screen_test_d3(
+	void *context)
+{
+	/* Notes the step. */
+	(void)context;
+	return i915_xd_screen_test_note(103U);
+}
+
+/* Dark step 4. */
+static int
+i915_xd_screen_test_d4(
+	void *context)
+{
+	/* Notes the step. */
+	(void)context;
+	return i915_xd_screen_test_note(104U);
+}
+
+/* Dark step 5. */
+static int
+i915_xd_screen_test_d5(
+	void *context)
+{
+	/* Notes the step. */
+	(void)context;
+	return i915_xd_screen_test_note(105U);
+}
+
+/* Dark step 6. */
+static int
+i915_xd_screen_test_d6(
+	void *context)
+{
+	/* Notes the step. */
+	(void)context;
+	return i915_xd_screen_test_note(106U);
+}
+
+/* Dark step 7. */
+static int
+i915_xd_screen_test_d7(
+	void *context)
+{
+	/* Notes the step. */
+	(void)context;
+	return i915_xd_screen_test_note(107U);
+}
+
+/* Dark step 8. */
+static int
+i915_xd_screen_test_d8(
+	void *context)
+{
+	/* Notes the step. */
+	(void)context;
+	return i915_xd_screen_test_note(108U);
+}
+
+/* Dark step 9. */
+static int
+i915_xd_screen_test_d9(
+	void *context)
+{
+	/* Notes the step. */
+	(void)context;
+	return i915_xd_screen_test_note(109U);
+}
+
+/* Fills every hook. */
+static void
+i915_xd_screen_test_hooks(
+	struct i915_xd_screen_hooks *hooks)
+{
+	/* The light's and the dark's steps, numbered in their order. */
+	memset(hooks, 0, sizeof(*hooks));
+	hooks->power = i915_xd_screen_test_s1;
+	hooks->dbuf = i915_xd_screen_test_s2;
+	hooks->setup = i915_xd_screen_test_s3;
+	hooks->dmc_on = i915_xd_screen_test_s4;
+	hooks->link_power = i915_xd_screen_test_s5;
+	hooks->pll = i915_xd_screen_test_s6;
+	hooks->port = i915_xd_screen_test_s7;
+	hooks->pipe = i915_xd_screen_test_s8;
+	hooks->output = i915_xd_screen_test_s9;
+	hooks->check = i915_xd_screen_test_s10;
+	hooks->plane = i915_xd_screen_test_s11;
+	hooks->settle = i915_xd_screen_test_s12;
+	hooks->dark_power = i915_xd_screen_test_d1;
+	hooks->plane_off = i915_xd_screen_test_d2;
+	hooks->output_off = i915_xd_screen_test_d3;
+	hooks->port_off = i915_xd_screen_test_d4;
+	hooks->pll_off = i915_xd_screen_test_d5;
+	hooks->link_power_off = i915_xd_screen_test_d6;
+	hooks->dmc_off = i915_xd_screen_test_d7;
+	hooks->confirm = i915_xd_screen_test_d8;
+	hooks->dark_settle = i915_xd_screen_test_d9;
+	hooks->context = NULL;
+}
+
+/* Tells whether the steps seen are exactly the wanted ones. */
+static int
+i915_xd_screen_test_order(
+	const unsigned *want,
+	unsigned count)
+{
+	unsigned index;
+
+	/* The count, then each step. */
+	if (i915_xd_screen_test_seen.count != count)
+		return 0;
+	for (index = 0U; index < count; index++) {
+		if (i915_xd_screen_test_seen.steps[index] != want[index])
+			return 0;
+	}
+
+	/* Succeeded: the same steps in the same order. */
+	return 1;
+}
+
+/* The light's and the dark's order, failures, the undo and the retained dark. */
+static void
+i915_xd_screen_test_sequencer(void)
+{
+	static const unsigned light[] = { 1U, 2U, 3U, 4U, 5U, 6U, 7U, 8U, 9U, 10U, 11U, 12U };
+	static const unsigned light_check_fails[] = { 1U, 2U, 3U, 4U, 5U, 6U, 7U, 8U, 9U, 10U, 12U };
+	static const unsigned light_port_undone[] = { 1U, 2U, 3U, 4U, 5U, 6U, 7U, 8U, 104U, 105U, 106U, 107U, 12U };
+	static const unsigned dark[] = { 101U, 102U, 103U, 104U, 105U, 106U, 107U, 108U, 109U };
+	static const unsigned dark_confirm_fails[] = { 101U, 102U, 103U, 104U, 105U, 106U, 107U, 108U };
+	struct i915_xd_screen_hooks hooks;
+	struct i915_xd_screen screen;
+	struct i915_xd_io_hooks io_hooks;
+	struct i915_xd_io io;
+	int error;
+
+	/* A window on the register model, for the steps' trace. */
+	i915_xd_fake_reset();
+	i915_xd_fake_hooks(&io_hooks);
+	drv_i915_xd_io_init(&io, NULL, NULL);
+	drv_i915_xd_io_set_hooks(&io, &io_hooks);
+	i915_xd_screen_test_hooks(&hooks);
+
+	/* A light. */
+	memset(&screen, 0, sizeof(screen));
+	memset(&i915_xd_screen_test_seen, 0, sizeof(i915_xd_screen_test_seen));
+	error = drv_i915_xd_screen_light(&screen, &io, &hooks, 0);
+	i915_host_check(error == 0 && i915_xd_screen_test_order(light, 12U) && screen.phase == I915_XD_SCREEN_LIT && screen.failed == -1,
+			"sequencer: the light's twelve steps in order, lit");
+
+	/* A failed check: the plane is skipped, the settle runs. */
+	memset(&screen, 0, sizeof(screen));
+	memset(&i915_xd_screen_test_seen, 0, sizeof(i915_xd_screen_test_seen));
+	i915_xd_screen_test_seen.fail = 10U;
+	error = drv_i915_xd_screen_light(&screen, &io, &hooks, 0);
+	i915_host_check(error == 5 && i915_xd_screen_test_order(light_check_fails, 11U) && screen.failed == 9 && screen.phase == I915_XD_SCREEN_LINKED,
+			"sequencer: a failed check skips the plane, the settle still runs, the screen stays linked");
+
+	/* A failed pipe with the undo: the dark from the port on, then the settle. */
+	memset(&screen, 0, sizeof(screen));
+	memset(&i915_xd_screen_test_seen, 0, sizeof(i915_xd_screen_test_seen));
+	i915_xd_screen_test_seen.fail = 8U;
+	error = drv_i915_xd_screen_light(&screen, &io, &hooks, 1);
+	i915_host_check(error == 5 && screen.phase == I915_XD_SCREEN_OFF && i915_xd_screen_test_order(light_port_undone, 13U),
+			"sequencer: a failed pipe with the undo runs the dark from the port off to the pipe DMC, then the settle; the screen is off");
+
+	/* A dark. */
+	memset(&screen, 0, sizeof(screen));
+	memset(&i915_xd_screen_test_seen, 0, sizeof(i915_xd_screen_test_seen));
+	screen.phase = I915_XD_SCREEN_LIT;
+	error = drv_i915_xd_screen_dark(&screen, &io, &hooks);
+	i915_host_check(error == 0 && i915_xd_screen_test_order(dark, 9U) && screen.phase == I915_XD_SCREEN_OFF, "sequencer: the dark's nine steps in order, off");
+
+	/* A stop not confirmed: retained, nothing given back. */
+	memset(&screen, 0, sizeof(screen));
+	memset(&i915_xd_screen_test_seen, 0, sizeof(i915_xd_screen_test_seen));
+	i915_xd_screen_test_seen.fail = 108U;
+	error = drv_i915_xd_screen_dark(&screen, &io, &hooks);
+	i915_host_check(error == 5 && i915_xd_screen_test_order(dark_confirm_fails, 8U) && screen.phase == I915_XD_SCREEN_RETAINED,
+			"sequencer: a stop not confirmed is retained, its settle not run");
+
+	/* A missing hook does nothing. */
+	memset(&hooks, 0, sizeof(hooks));
+	memset(&screen, 0, sizeof(screen));
+	error = drv_i915_xd_screen_light(&screen, &io, &hooks, 0);
+	i915_host_check(error == 0 && screen.ran == 12U && i915_xd_fake_writes() == 0U, "sequencer: without hooks every step runs and nothing is written");
 }

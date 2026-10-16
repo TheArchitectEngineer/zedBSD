@@ -129,6 +129,7 @@
 #include "tc.h"
 #include "xd-io.h"
 #include "xd-platform.h"
+#include "xd-screen.h"
 
 #ifdef I915_DISPLAY_LINUX_WORLD
 #error "modeset-internal.h: another Linux environment is already included in this translation unit"
@@ -2114,6 +2115,7 @@ struct i915_lcd_modeset {
 	u32 bl_user;			/* the backlight device's props.brightness */
 	u32 bl_user_max;		/* the backlight device's props.max_brightness */
 	int stop_unconfirmed;		/* the disable reported an error: nothing further was given back */
+	struct i915_xd_screen screen;	/* the screen's phase and the steps of its last light or dark */
 	unsigned commits;
 	struct drm_vblank_crtc vblank[4];	/* dev->vblank[]: hwmode, max_vblank_count */
 	int flip_event;			/* the event token of the pending update */
@@ -2418,8 +2420,21 @@ void drv_i915_lcd_ms_active_timings(struct i915_lcd_modeset *ms);
 void drv_i915_lcd_ms_plane_update_flip(struct i915_lcd_modeset *ms);
 void drv_i915_lcd_ms_color_check(struct i915_lcd_modeset *ms);
 int drv_i915_lcd_ms_backlight_setup(struct i915_lcd_modeset *ms);
-void drv_i915_lcd_ms_crtc_enable(struct i915_lcd_modeset *ms);
-void drv_i915_lcd_ms_crtc_disable(struct i915_lcd_modeset *ms);
+/*
+ * The parts of a crtc's enable and disable a screen's steps run: the
+ * pipe's DMC, the link's power (the encoders around the PLL), the shared
+ * PLL, the port (the encoders' pre-enable, or post-disable with the
+ * transcoder's stop), the pipe, and the output (the encoders' enable or
+ * disable).
+ */
+#define I915_LCD_CRTC_PART_DMC		0U
+#define I915_LCD_CRTC_PART_LINK		1U
+#define I915_LCD_CRTC_PART_PLL		2U
+#define I915_LCD_CRTC_PART_PORT		3U
+#define I915_LCD_CRTC_PART_PIPE		4U
+#define I915_LCD_CRTC_PART_OUTPUT	5U
+void drv_i915_lcd_ms_crtc_enable_part(struct i915_lcd_modeset *ms, unsigned part);
+void drv_i915_lcd_ms_crtc_disable_part(struct i915_lcd_modeset *ms, unsigned part);
 int drv_i915_lcd_ms_plane_prepare(struct i915_lcd_modeset *ms, u32 fourcc, u64 modifier, u32 width, u32 height, u32 pitch, u32 surf_ggtt_offset);
 void drv_i915_lcd_ms_plane_update(struct i915_lcd_modeset *ms);
 void drv_i915_lcd_ms_plane_disable(struct i915_lcd_modeset *ms);

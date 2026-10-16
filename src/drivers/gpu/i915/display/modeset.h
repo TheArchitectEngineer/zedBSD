@@ -68,11 +68,9 @@ int drv_i915_lcd_modeset_prepare(struct i915_display *display, const struct i915
 int drv_i915_lcd_modeset_commit_enable(struct i915_display *display);
 int drv_i915_lcd_modeset_commit_disable(struct i915_display *display);
 
-/* The stages the commits are made of (I915_LCD_MS_* results). */
-int drv_i915_lcd_modeset_enable(struct i915_display *display);
+/* The plane's stages of the commits (I915_LCD_MS_* results). */
 int drv_i915_lcd_modeset_plane_update(struct i915_display *display);
 int drv_i915_lcd_modeset_plane_disable(struct i915_display *display);
-int drv_i915_lcd_modeset_disable(struct i915_display *display);
 
 /* What the selected screen holds, and the sink's link status read now. */
 void drv_i915_lcd_modeset_status(struct i915_display *display, struct i915_lcd_modeset_status *out);
