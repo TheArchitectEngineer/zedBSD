@@ -5,7 +5,8 @@
 # DCN 2.0 header, the memory and interrupt words of stage A2 (pools, table entries, hub words against the board's
 # Linux values, interrupt entries) and their register addresses against the Linux headers, the firmware headers, the
 # security processor's frames and commands and the thermal words of stages A3t to A4 (the real navi10 files of the
-# amd-navi-firmware cache when it exists; AMDRDNA_FIRMWARE overrides it), the packets, queue images, settings and
+# amd-navi-firmware cache when it exists; AMDRDNA_FIRMWARE overrides it), the power tables of stage A4's full tier
+# (against tables laid out by the Linux structures, the board's video BIOS and the real smc file), the packets, queue images, settings and
 # shape words of stage A5 and its first dispatch's program on the GFX10 interpreter (their image positions, register
 # offsets and settings against the Linux sources), the hub contexts, address-space identifiers and ring commands of
 # stage A5s, the display's words of stages A6 to A8, and the source audit.
@@ -37,6 +38,8 @@ cc $flags -include uapi/errno.h -o "$out/amdrdna-sessions-test" "$tests/amdrdna-
 cc $flags -include uapi/errno.h -o "$out/amdrdna-display-test" "$tests/amdrdna-display-test.c" "$driver/display-format.c"
 cc $flags -include uapi/errno.h -o "$out/amdrdna-psp-test" "$tests/amdrdna-psp-test.c" "$driver/bytes.c" \
 	"$driver/firmware-format.c" "$driver/psp-format.c" "$driver/thermal-format.c"
+cc $flags -include uapi/errno.h -o "$out/amdrdna-power-test" "$tests/amdrdna-power-test.c" "$driver/bytes.c" \
+	"$driver/vbios-table.c" "$driver/thermal-format.c"
 compiler="$driver/compiler"
 cc $flags -include uapi/errno.h -o "$out/amdrdna-engines-test" "$tests/amdrdna-engines-test.c" "$driver/command-format.c" \
 	"$driver/queue-format.c" "$driver/settings.c" "$driver/check-program.c" "$tests/gfx10-machine.c" \
@@ -54,6 +57,23 @@ else
 	echo "SKIP firmware files: no $firmware"
 	"$out/amdrdna-psp-test" || status=1
 fi
+power_args=
+if [ -d "$firmware" ]; then
+	power_args="--firmware $firmware"
+fi
+if [ -d "$dump" ]; then
+	power_args="$power_args --dump $dump"
+fi
+if [ -d "$linux/drivers/gpu/drm/amd" ]; then
+	amd="$linux/drivers/gpu/drm/amd"
+	cc -std=gnu11 -O1 -I"$amd/include" -I"$amd/pm/swsmu/inc" -I"$amd/pm/swsmu/inc/pmfw_if" \
+		-o "$out/amdrdna-power-linux" "$tests/amdrdna-power-linux.c"
+	mkdir "$out/power-linux"
+	"$out/amdrdna-power-linux" "$out/power-linux"
+	power_args="$power_args --linux $out/power-linux"
+fi
+# shellcheck disable=SC2086
+"$out/amdrdna-power-test" $power_args || status=1
 if [ -d "$dump" ]; then
 	"$out/amdrdna-tables-test" --dump "$dump" || status=1
 else
