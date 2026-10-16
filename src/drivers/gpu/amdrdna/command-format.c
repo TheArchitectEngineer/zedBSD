@@ -1,0 +1,788 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The command words the amdrdna driver puts on the GPU's rings.
+ *
+ * The command processor reads type-3 packets: a header with the packet's
+ * opcode and the count of its body words, then the body.  The copy engine
+ * reads its own packets, whose first word holds an opcode and a
+ * sub-opcode.  Every function here writes one packet into a word array
+ * and reports how many words it wrote; nothing touches the hardware, so
+ * the host tests check the same words the kernel writes.
+ */
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include "drivers/gpu/amdrdna/amdrdna-hw.h"
+
+/*
+ * The type-3 header: the type in bits 31:30 (3), the count of body words
+ * less one in bits 29:16, the opcode in bits 15:8, and bit 1, which marks
+ * a packet of the compute pipeline.  The count 0x3fff makes the one-word
+ * filler.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/amd/amdgpu/nvd.h
+ * (PACKET_TYPE3, PACKET3, PACKET3_COMPUTE) and gfx_v10_0.c (the ring's
+ * nop word, PACKET3(PACKET3_NOP, 0x3FFF)).
+ */
+#define COMMAND_TYPE3			0xc0000000U
+#define COMMAND_COUNT_SHIFT		16U
+#define COMMAND_COUNT_MASK		0x3fffU
+#define COMMAND_OPCODE_SHIFT		8U
+#define COMMAND_COMPUTE			0x00000002U
+#define COMMAND_FILLER_COUNT		0x3fffU
+
+/*
+ * The opcodes the driver uses: nothing (the filler), the partition base,
+ * the state reset, the dispatch, the context loads, the value write, the
+ * event fence, the state bracket, the memory move, the cache sync, the
+ * context, shader and user register writes, and the scheduler's resource,
+ * queue attach and queue detach packets.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/amd/amdgpu/nvd.h
+ * (PACKET3_NOP, PACKET3_SET_BASE, PACKET3_CLEAR_STATE,
+ * PACKET3_DISPATCH_DIRECT, PACKET3_CONTEXT_CONTROL, PACKET3_WRITE_DATA,
+ * PACKET3_INDIRECT_BUFFER,
+ * PACKET3_RELEASE_MEM, PACKET3_PREAMBLE_CNTL, PACKET3_DMA_DATA,
+ * PACKET3_ACQUIRE_MEM, PACKET3_SET_CONTEXT_REG, PACKET3_SET_SH_REG,
+ * PACKET3_SET_UCONFIG_REG, PACKET3_SET_RESOURCES, PACKET3_MAP_QUEUES,
+ * PACKET3_UNMAP_QUEUES).
+ */
+#define COMMAND_OP_NOTHING		0x10U
+#define COMMAND_OP_PARTITION		0x11U
+#define COMMAND_OP_STATE_RESET		0x12U
+#define COMMAND_OP_DISPATCH		0x15U
+#define COMMAND_OP_CONTEXT_LOADS	0x28U
+#define COMMAND_OP_WRITE_VALUE		0x37U
+#define COMMAND_OP_INDIRECT		0x3fU
+#define COMMAND_OP_EVENT_FENCE		0x49U
+#define COMMAND_OP_STATE_BRACKET	0x4aU
+#define COMMAND_OP_MOVE			0x50U
+#define COMMAND_OP_CACHE_SYNC		0x58U
+#define COMMAND_OP_CONTEXT_REGISTERS	0x69U
+#define COMMAND_OP_SHADER_REGISTERS	0x76U
+#define COMMAND_OP_USER_REGISTERS	0x79U
+#define COMMAND_OP_QUEUE_RESOURCES	0xa0U
+#define COMMAND_OP_QUEUE_ATTACH		0xa2U
+#define COMMAND_OP_QUEUE_DETACH		0xa3U
+
+/*
+ * The first register of each space the register writes address relative
+ * to: the context registers, the shader registers and the user
+ * configuration registers (dword indices).
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/amd/amdgpu/nvd.h
+ * (PACKET3_SET_CONTEXT_REG_START, PACKET3_SET_SH_REG_START,
+ * PACKET3_SET_UCONFIG_REG_START).
+ */
+#define COMMAND_CONTEXT_FIRST		0xa000U
+#define COMMAND_SHADER_FIRST		0x2c00U
+#define COMMAND_USER_FIRST		0xc000U
+
+/*
+ * The value write's control word: the destination in bits 11:8 (0 a
+ * register, 5 memory written directly), the confirmation bit (20) that
+ * makes the engine wait until the write landed.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/amd/amdgpu/nvd.h
+ * (WRITE_DATA_DST_SEL, WR_CONFIRM).
+ */
+#define COMMAND_WRITE_TO_REGISTER	0x00000000U
+#define COMMAND_WRITE_TO_MEMORY		0x00000500U
+#define COMMAND_WRITE_CONFIRM		0x00100000U
+
+/*
+ * The event fence's first control word: the cache flush and timestamp
+ * event (0x14) with event index 5, the level-2 write-back (21), the
+ * metadata write-back and invalidate (12, 13), the sequential order of
+ * the cache actions (22) and the bypass cache policy (3 at bit 25); and
+ * its second: the low 32 bits of data (1 at bit 29) and the interrupt
+ * after the write is confirmed (2 at bit 24).
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/amd/amdgpu/nvd.h
+ * (PACKET3_RELEASE_MEM_EVENT_TYPE, PACKET3_RELEASE_MEM_EVENT_INDEX,
+ * PACKET3_RELEASE_MEM_GCR_GLM_WB, PACKET3_RELEASE_MEM_GCR_GLM_INV,
+ * PACKET3_RELEASE_MEM_GCR_GL2_WB, PACKET3_RELEASE_MEM_GCR_SEQ,
+ * PACKET3_RELEASE_MEM_CACHE_POLICY, PACKET3_RELEASE_MEM_DATA_SEL,
+ * PACKET3_RELEASE_MEM_INT_SEL), navi10_enum.h
+ * (CACHE_FLUSH_AND_INV_TS_EVENT) and gfx_v10_0.c
+ * (gfx_v10_0_ring_emit_fence).
+ * derived: 0x14 | 5 << 8 | 1 << 12 | 1 << 13 | 1 << 21 | 1 << 22 | 3 << 25
+ * = 0x06603514.
+ */
+#define COMMAND_FENCE_EVENT		0x06603514U
+#define COMMAND_FENCE_DATA_LOW		0x20000000U
+#define COMMAND_FENCE_INTERRUPT		0x02000000U
+
+/*
+ * The cache sync's coherence size (all of it, in two words), the poll
+ * interval, and its cache control: every instruction, scalar, vector,
+ * level-1, metadata and level-2 cache invalidated, the metadata and
+ * level-2 caches written back.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/amd/amdgpu/nvd.h
+ * (the PACKET3_ACQUIRE_MEM_GCR_CNTL fields) and gfx_v10_0.c
+ * (gfx_v10_0_emit_mem_sync).
+ * derived: 1 | 1 << 4 | 1 << 5 | 1 << 7 | 1 << 8 | 1 << 9 | 1 << 14 |
+ * 1 << 15 = 0xc3b1.
+ */
+#define COMMAND_SYNC_SIZE_LOW		0xffffffffU
+#define COMMAND_SYNC_SIZE_HIGH		0x00ffffffU
+#define COMMAND_SYNC_POLL		0x0000000aU
+#define COMMAND_SYNC_CACHES		0x0000c3b1U
+
+/*
+ * The memory move's control word, with both addresses in memory: the
+ * engine waits for the move before going on (bit 31); and its command
+ * word's byte count (bits 25:0).
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/amd/amdgpu/nvd.h
+ * (PACKET3_DMA_DATA_CP_SYNC, the DMA_DATA command word) and Mesa 25.3.6
+ * src/amd/vulkan/radv_cp_dma.c (radv_cs_emit_cp_dma: the 26-bit count of
+ * GFX9 and later).
+ */
+#define COMMAND_MOVE_SYNC		0x80000000U
+#define COMMAND_MOVE_COUNT_MASK		0x03ffffffU
+
+/*
+ * The indirect buffer's control word: the size in dwords (19:0), the
+ * valid bit a compute queue needs (23) and the context (27:24); and the
+ * low address word's dword alignment.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/amd/amdgpu/nvd.h
+ * (INDIRECT_BUFFER_VALID) and gfx_v10_0.c (gfx_v10_0_ring_emit_ib_gfx,
+ * gfx_v10_0_ring_emit_ib_compute).
+ */
+#define COMMAND_INDIRECT_SIZE_MASK	0x000fffffU
+#define COMMAND_INDIRECT_VALID		0x00800000U
+#define COMMAND_INDIRECT_CONTEXT_SHIFT	24U
+#define COMMAND_INDIRECT_ALIGN_MASK	0xfffffffcU
+
+/*
+ * The state bracket's begin and end of the clear state, the context
+ * loads' word that updates the load enables, and the partition base's
+ * index (the constant engine's partition, 3) and its two halves.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/amd/amdgpu/nvd.h
+ * (PACKET3_PREAMBLE_BEGIN_CLEAR_STATE, PACKET3_PREAMBLE_END_CLEAR_STATE,
+ * CE_PARTITION_BASE) and gfx_v10_0.c (gfx_v10_0_cp_gfx_start: 0x80000000
+ * twice, the partition 0x8000 and 0x8000).
+ */
+#define COMMAND_BRACKET_BEGIN		0x20000000U
+#define COMMAND_BRACKET_END		0x30000000U
+#define COMMAND_LOADS_UPDATE		0x80000000U
+#define COMMAND_PARTITION_CONSTANT	3U
+#define COMMAND_PARTITION_HALF		0x00008000U
+
+/*
+ * The queue attach packet's first word: the queue (bit 13 on), the pipe
+ * (16 on), the engine (18 on: 0 for the first compute engine, 1 for the
+ * graphics engine or the second compute engine), the engine kind (26
+ * on) and one queue (1 at bit 29); its doorbell word (the doorbell from
+ * bit 2).  The detach packet's first word: the action (1:0), the engine
+ * kind (26 on) and one queue; its doorbell word.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/amd/amdgpu/nvd.h
+ * (PACKET3_MAP_QUEUES_QUEUE, PACKET3_MAP_QUEUES_PIPE, PACKET3_MAP_QUEUES_ME,
+ * PACKET3_MAP_QUEUES_ENGINE_SEL, PACKET3_MAP_QUEUES_NUM_QUEUES,
+ * PACKET3_MAP_QUEUES_DOORBELL_OFFSET, PACKET3_UNMAP_QUEUES_ACTION,
+ * PACKET3_UNMAP_QUEUES_ENGINE_SEL, PACKET3_UNMAP_QUEUES_NUM_QUEUES,
+ * PACKET3_UNMAP_QUEUES_DOORBELL_OFFSET0) and gfx_v10_0.c
+ * (gfx10_kiq_map_queues: the engine field is 0 for engine 1 and 1
+ * otherwise).
+ */
+#define COMMAND_QUEUE_SHIFT		13U
+#define COMMAND_QUEUE_PIPE_SHIFT	16U
+#define COMMAND_QUEUE_ENGINE_SHIFT	18U
+#define COMMAND_QUEUE_KIND_SHIFT	26U
+#define COMMAND_QUEUE_ONE		0x20000000U
+#define COMMAND_QUEUE_DOORBELL_SHIFT	2U
+
+/*
+ * The copy engine's packets: the opcode in bits 7:0 and the sub-opcode in
+ * 15:8 of the first word; the opcodes of nothing, the linear copy, the
+ * linear write, the fence and the trap; the fence's memory type (3,
+ * uncached, at bit 16); a count of bytes or words less one.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/navi10_sdma_pkt_open.h (SDMA_OP_NOP,
+ * SDMA_OP_COPY, SDMA_OP_WRITE, SDMA_OP_FENCE, SDMA_OP_TRAP,
+ * SDMA_SUBOP_COPY_LINEAR, SDMA_SUBOP_WRITE_LINEAR,
+ * SDMA_PKT_FENCE_HEADER_mtype_shift) and sdma_v5_0.c
+ * (sdma_v5_0_ring_emit_fence: MTYPE 3; sdma_v5_0_emit_copy_buffer: the
+ * count less one).
+ */
+#define COMMAND_COPY_OP_NOTHING		0U
+#define COMMAND_COPY_OP_COPY		1U
+#define COMMAND_COPY_OP_WRITE		2U
+#define COMMAND_COPY_OP_FENCE		5U
+#define COMMAND_COPY_OP_TRAP		6U
+#define COMMAND_COPY_FENCE_UNCACHED	0x00030000U
+#define COMMAND_COPY_COUNT_MASK		0x003fffffU
+
+static uint32_t command_header(uint32_t opcode, unsigned body_words, bool compute);
+
+/* Reports the one-word filler that pads a command ring. */
+uint32_t
+amdrdna_pm4_filler(void)
+{
+	uint32_t word;
+
+	/* A nothing packet whose count says it has no body. */
+	word = COMMAND_TYPE3;
+	word |= COMMAND_FILLER_COUNT << COMMAND_COUNT_SHIFT;
+	word |= COMMAND_OP_NOTHING << COMMAND_OPCODE_SHIFT;
+
+	/* Succeeded: the filler word. */
+	return word;
+}
+
+/*
+ * Writes a packet that sets count consecutive registers of one space,
+ * from the absolute register index first on, to values.  Reports the
+ * words written: two and the values.
+ */
+unsigned
+amdrdna_pm4_registers(
+	uint32_t *words,
+	enum amdrdna_register_space space,
+	uint32_t first,
+	const uint32_t *values,
+	unsigned count,
+	bool compute)
+{
+	uint32_t opcode;
+	uint32_t base;
+	unsigned index;
+
+	/* The opcode and the first register of the space. */
+	opcode = COMMAND_OP_USER_REGISTERS;
+	base = COMMAND_USER_FIRST;
+	if (space == AMDRDNA_SPACE_CONTEXT) {
+		opcode = COMMAND_OP_CONTEXT_REGISTERS;
+		base = COMMAND_CONTEXT_FIRST;
+	} else if (space == AMDRDNA_SPACE_SHADER) {
+		opcode = COMMAND_OP_SHADER_REGISTERS;
+		base = COMMAND_SHADER_FIRST;
+	}
+
+	/* The header, and the first register relative to its space. */
+	words[0] = command_header(opcode, count + 1U, compute);
+	words[1] = first - base;
+
+	/* The values, one per register. */
+	for (index = 0U; index < count; index++)
+		words[2U + index] = values[index];
+
+	/* Succeeded: the header, the offset and the values. */
+	return 2U + count;
+}
+
+/*
+ * Writes a packet that writes one 32-bit value to memory and waits until
+ * the write landed.  Reports the words written.
+ */
+unsigned
+amdrdna_pm4_write_memory(
+	uint32_t *words,
+	uint64_t address,
+	uint32_t value,
+	bool compute)
+{
+	/* The header and the control word. */
+	words[0] = command_header(COMMAND_OP_WRITE_VALUE, 4U, compute);
+	words[1] = COMMAND_WRITE_TO_MEMORY | COMMAND_WRITE_CONFIRM;
+
+	/* The address and the value. */
+	words[2] = (uint32_t)address;
+	words[3] = (uint32_t)(address >> 32);
+	words[4] = value;
+
+	/* Succeeded: five words. */
+	return AMDRDNA_PM4_WRITE_WORDS;
+}
+
+/*
+ * Writes a packet that writes one register (an absolute index) and waits
+ * until the write landed.  Reports the words written.
+ */
+unsigned
+amdrdna_pm4_write_register(
+	uint32_t *words,
+	uint32_t index,
+	uint32_t value,
+	bool compute)
+{
+	/* The header and the control word. */
+	words[0] = command_header(COMMAND_OP_WRITE_VALUE, 4U, compute);
+	words[1] = COMMAND_WRITE_TO_REGISTER | COMMAND_WRITE_CONFIRM;
+
+	/* The register, a zero high word, and the value. */
+	words[2] = index;
+	words[3] = 0U;
+	words[4] = value;
+
+	/* Succeeded: five words. */
+	return AMDRDNA_PM4_WRITE_WORDS;
+}
+
+/*
+ * Writes the fence that ends a submission: once everything before it is
+ * done and the caches are written back, the engine writes value to the
+ * 32-bit word at address, and raises the end-of-pipe interrupt when
+ * asked.  Reports the words written.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/gfx_v10_0.c (gfx_v10_0_ring_emit_fence: the
+ * packet's eight words).
+ */
+unsigned
+amdrdna_pm4_fence(
+	uint32_t *words,
+	uint64_t address,
+	uint32_t value,
+	bool interrupt,
+	bool compute)
+{
+	/* The header, the event and its caches. */
+	words[0] = command_header(COMMAND_OP_EVENT_FENCE, 7U, compute);
+	words[1] = COMMAND_FENCE_EVENT;
+
+	/* The low 32 bits of data, with the interrupt when asked. */
+	words[2] = COMMAND_FENCE_DATA_LOW;
+	if (interrupt)
+		words[2] |= COMMAND_FENCE_INTERRUPT;
+
+	/* The address, the value (its high word 0) and a zero word. */
+	words[3] = (uint32_t)address;
+	words[4] = (uint32_t)(address >> 32);
+	words[5] = value;
+	words[6] = 0U;
+	words[7] = 0U;
+
+	/* Succeeded: eight words. */
+	return AMDRDNA_PM4_FENCE_WORDS;
+}
+
+/*
+ * Writes a packet that invalidates the GPU's caches and writes the dirty
+ * ones back, so what follows reads memory as the CPU and the earlier
+ * commands left it.  Reports the words written.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/gfx_v10_0.c (gfx_v10_0_emit_mem_sync).
+ */
+unsigned
+amdrdna_pm4_cache_sync(
+	uint32_t *words,
+	bool compute)
+{
+	/* The header and a zero coherence control. */
+	words[0] = command_header(COMMAND_OP_CACHE_SYNC, 7U, compute);
+	words[1] = 0U;
+
+	/* The whole address space. */
+	words[2] = COMMAND_SYNC_SIZE_LOW;
+	words[3] = COMMAND_SYNC_SIZE_HIGH;
+	words[4] = 0U;
+	words[5] = 0U;
+
+	/* The poll interval and the caches. */
+	words[6] = COMMAND_SYNC_POLL;
+	words[7] = COMMAND_SYNC_CACHES;
+
+	/* Succeeded: eight words. */
+	return AMDRDNA_PM4_SYNC_WORDS;
+}
+
+/*
+ * Writes a packet that has the command processor move bytes from one
+ * memory address to another and wait until the move is done.  Reports
+ * the words written.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/amd/vulkan/radv_cp_dma.c
+ * (radv_cs_emit_cp_dma).
+ */
+unsigned
+amdrdna_pm4_move(
+	uint32_t *words,
+	uint64_t source,
+	uint64_t destination,
+	uint32_t bytes)
+{
+	/* The header and the control word. */
+	words[0] = command_header(COMMAND_OP_MOVE, 6U, false);
+	words[1] = COMMAND_MOVE_SYNC;
+
+	/* The source and the destination. */
+	words[2] = (uint32_t)source;
+	words[3] = (uint32_t)(source >> 32);
+	words[4] = (uint32_t)destination;
+	words[5] = (uint32_t)(destination >> 32);
+
+	/* The byte count. */
+	words[6] = bytes & COMMAND_MOVE_COUNT_MASK;
+
+	/* Succeeded: seven words. */
+	return AMDRDNA_PM4_MOVE_WORDS;
+}
+
+/*
+ * Writes a packet that launches x by y by z workgroups of the compute
+ * program the shader registers name.  Reports the words written.
+ */
+unsigned
+amdrdna_pm4_dispatch(
+	uint32_t *words,
+	uint32_t x,
+	uint32_t y,
+	uint32_t z,
+	uint32_t initiator)
+{
+	/* The header. */
+	words[0] = command_header(COMMAND_OP_DISPATCH, 4U, true);
+
+	/* The workgroup counts and the launch word. */
+	words[1] = x;
+	words[2] = y;
+	words[3] = z;
+	words[4] = initiator;
+
+	/* Succeeded: five words. */
+	return AMDRDNA_PM4_DISPATCH_WORDS;
+}
+
+/*
+ * Writes the scheduler's resource packet: the compute queues it may run
+ * (queue_mask), no context of its own and no cleaner program.  Reports
+ * the words written.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/gfx_v10_0.c (gfx10_kiq_set_resources).
+ */
+unsigned
+amdrdna_pm4_queue_resources(
+	uint32_t *words,
+	uint64_t queue_mask)
+{
+	/* The header and the scheduler's own queue kind, no contexts. */
+	words[0] = command_header(COMMAND_OP_QUEUE_RESOURCES, 7U, false);
+	words[1] = 0U;
+
+	/* The queues. */
+	words[2] = (uint32_t)queue_mask;
+	words[3] = (uint32_t)(queue_mask >> 32);
+
+	/* No cleaner program, and no ordered-append or data-share heap. */
+	words[4] = 0U;
+	words[5] = 0U;
+	words[6] = 0U;
+	words[7] = 0U;
+
+	/* Succeeded: eight words. */
+	return AMDRDNA_PM4_RESOURCES_WORDS;
+}
+
+/*
+ * Writes the scheduler's packet that attaches one queue: its place, the
+ * engine kind (AMDRDNA_QUEUE_ENGINE_*), its doorbell, the address of its
+ * queue image and of its write pointer's copy.  Reports the words
+ * written.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/gfx_v10_0.c (gfx10_kiq_map_queues).
+ */
+unsigned
+amdrdna_pm4_queue_attach(
+	uint32_t *words,
+	const struct amdrdna_queue_place *place,
+	uint32_t engine,
+	uint32_t doorbell,
+	uint64_t image,
+	uint64_t write_pointer)
+{
+	uint32_t engine_field;
+
+	/* The engine field is 0 for the first compute engine and 1 for the others. */
+	engine_field = 1U;
+	if (place->engine == AMDRDNA_ENGINE_COMPUTE_FIRST)
+		engine_field = 0U;
+
+	/* The header and the queue's place. */
+	words[0] = command_header(COMMAND_OP_QUEUE_ATTACH, 6U, false);
+	words[1] = place->queue << COMMAND_QUEUE_SHIFT;
+	words[1] |= place->pipe << COMMAND_QUEUE_PIPE_SHIFT;
+	words[1] |= engine_field << COMMAND_QUEUE_ENGINE_SHIFT;
+	words[1] |= engine << COMMAND_QUEUE_KIND_SHIFT;
+	words[1] |= COMMAND_QUEUE_ONE;
+
+	/* The doorbell. */
+	words[2] = doorbell << COMMAND_QUEUE_DOORBELL_SHIFT;
+
+	/* The queue image and the write pointer's copy. */
+	words[3] = (uint32_t)image;
+	words[4] = (uint32_t)(image >> 32);
+	words[5] = (uint32_t)write_pointer;
+	words[6] = (uint32_t)(write_pointer >> 32);
+
+	/* Succeeded: seven words. */
+	return AMDRDNA_PM4_ATTACH_WORDS;
+}
+
+/*
+ * Writes the scheduler's packet that detaches the queue behind a doorbell:
+ * the engine kind and the action (AMDRDNA_QUEUE_DETACH_*).  Reports the
+ * words written.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/gfx_v10_0.c (gfx10_kiq_unmap_queues).
+ */
+unsigned
+amdrdna_pm4_queue_detach(
+	uint32_t *words,
+	uint32_t engine,
+	uint32_t action,
+	uint32_t doorbell)
+{
+	/* The header, the action, the engine kind, one queue. */
+	words[0] = command_header(COMMAND_OP_QUEUE_DETACH, 5U, false);
+	words[1] = action;
+	words[1] |= engine << COMMAND_QUEUE_KIND_SHIFT;
+	words[1] |= COMMAND_QUEUE_ONE;
+
+	/* The doorbell, and no trail fence. */
+	words[2] = doorbell << COMMAND_QUEUE_DOORBELL_SHIFT;
+	words[3] = 0U;
+	words[4] = 0U;
+	words[5] = 0U;
+
+	/* Succeeded: six words. */
+	return AMDRDNA_PM4_DETACH_WORDS;
+}
+
+/*
+ * Writes a packet that has the engine run count words from an indirect
+ * buffer at address, in a context; a compute queue's packet carries the
+ * valid bit.  Reports the words written.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/gfx_v10_0.c (gfx_v10_0_ring_emit_ib_gfx,
+ * gfx_v10_0_ring_emit_ib_compute).
+ */
+unsigned
+amdrdna_pm4_indirect(
+	uint32_t *words,
+	uint64_t address,
+	uint32_t count,
+	unsigned context,
+	bool compute)
+{
+	/* The header and the buffer's address. */
+	words[0] = command_header(COMMAND_OP_INDIRECT, 3U, false);
+	words[1] = (uint32_t)address & COMMAND_INDIRECT_ALIGN_MASK;
+	words[2] = (uint32_t)(address >> 32);
+
+	/* The size and the context, and the valid bit of a compute queue. */
+	words[3] = count & COMMAND_INDIRECT_SIZE_MASK;
+	words[3] |= (uint32_t)context << COMMAND_INDIRECT_CONTEXT_SHIFT;
+	if (compute)
+		words[3] |= COMMAND_INDIRECT_VALID;
+
+	/* Succeeded: four words. */
+	return AMDRDNA_PM4_INDIRECT_WORDS;
+}
+
+/*
+ * Writes the state bracket's begin (begin true) or end of the clear
+ * state.  Reports the words written.
+ */
+unsigned
+amdrdna_pm4_bracket(
+	uint32_t *words,
+	bool begin)
+{
+	/* The header and the bracket. */
+	words[0] = command_header(COMMAND_OP_STATE_BRACKET, 1U, false);
+	words[1] = COMMAND_BRACKET_END;
+	if (begin)
+		words[1] = COMMAND_BRACKET_BEGIN;
+
+	/* Succeeded: two words. */
+	return 2U;
+}
+
+/*
+ * Writes the packet that tells the engine which state the next commands
+ * load: the load enables are updated, nothing is shadowed.  Reports the
+ * words written.
+ */
+unsigned
+amdrdna_pm4_context_loads(
+	uint32_t *words)
+{
+	/* The header and the two control words. */
+	words[0] = command_header(COMMAND_OP_CONTEXT_LOADS, 2U, false);
+	words[1] = COMMAND_LOADS_UPDATE;
+	words[2] = COMMAND_LOADS_UPDATE;
+
+	/* Succeeded: three words. */
+	return 3U;
+}
+
+/*
+ * Writes the packet that resets the context state to the clear state.
+ * Reports the words written.
+ */
+unsigned
+amdrdna_pm4_state_reset(
+	uint32_t *words)
+{
+	/* The header and a zero word. */
+	words[0] = command_header(COMMAND_OP_STATE_RESET, 1U, false);
+	words[1] = 0U;
+
+	/* Succeeded: two words. */
+	return 2U;
+}
+
+/*
+ * Writes the packet that places the constant engine's partition.
+ * Reports the words written.
+ */
+unsigned
+amdrdna_pm4_partition(
+	uint32_t *words)
+{
+	/* The header, the partition's index and its two halves. */
+	words[0] = command_header(COMMAND_OP_PARTITION, 3U, false);
+	words[1] = COMMAND_PARTITION_CONSTANT;
+	words[2] = COMMAND_PARTITION_HALF;
+	words[3] = COMMAND_PARTITION_HALF;
+
+	/* Succeeded: four words. */
+	return 4U;
+}
+
+/* Reports the copy engine's one-word filler. */
+uint32_t
+amdrdna_copy_filler(void)
+{
+	/* The nothing packet with no body. */
+	return COMMAND_COPY_OP_NOTHING;
+}
+
+/*
+ * Writes the copy engine's packet that writes one 32-bit value to memory.
+ * Reports the words written.
+ */
+unsigned
+amdrdna_copy_write(
+	uint32_t *words,
+	uint64_t address,
+	uint32_t value)
+{
+	/* The linear write. */
+	words[0] = COMMAND_COPY_OP_WRITE;
+
+	/* The address, one word, the value. */
+	words[1] = (uint32_t)address;
+	words[2] = (uint32_t)(address >> 32);
+	words[3] = 0U;
+	words[4] = value;
+
+	/* Succeeded: five words. */
+	return AMDRDNA_COPY_WRITE_WORDS;
+}
+
+/*
+ * Writes the copy engine's packet that copies bytes from one address to
+ * another, at most 4 MiB.  Reports the words written.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/sdma_v5_0.c (sdma_v5_0_emit_copy_buffer).
+ */
+unsigned
+amdrdna_copy_linear(
+	uint32_t *words,
+	uint64_t source,
+	uint64_t destination,
+	uint32_t bytes)
+{
+	/* The linear copy. */
+	words[0] = COMMAND_COPY_OP_COPY;
+
+	/* The byte count less one, and no byte swap. */
+	words[1] = (bytes - 1U) & COMMAND_COPY_COUNT_MASK;
+	words[2] = 0U;
+
+	/* The source and the destination. */
+	words[3] = (uint32_t)source;
+	words[4] = (uint32_t)(source >> 32);
+	words[5] = (uint32_t)destination;
+	words[6] = (uint32_t)(destination >> 32);
+
+	/* Succeeded: seven words. */
+	return AMDRDNA_COPY_LINEAR_WORDS;
+}
+
+/*
+ * Writes the copy engine's fence: value to the 32-bit word at address once
+ * everything before it is done, and the trap that raises its interrupt
+ * when asked.  Reports the words written.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/sdma_v5_0.c (sdma_v5_0_ring_emit_fence).
+ */
+unsigned
+amdrdna_copy_fence(
+	uint32_t *words,
+	uint64_t address,
+	uint32_t value,
+	bool interrupt)
+{
+	/* The fence, uncached. */
+	words[0] = COMMAND_COPY_OP_FENCE | COMMAND_COPY_FENCE_UNCACHED;
+	words[1] = (uint32_t)address;
+	words[2] = (uint32_t)(address >> 32);
+	words[3] = value;
+
+	/* Without the interrupt, the fence is all. */
+	if (!interrupt)
+		return 4U;
+
+	/* The trap, with a zero context. */
+	words[4] = COMMAND_COPY_OP_TRAP;
+	words[5] = 0U;
+
+	/* Succeeded: the fence and the trap. */
+	return AMDRDNA_COPY_FENCE_WORDS;
+}
+
+/* Builds a type-3 header for an opcode and its body's word count. */
+static uint32_t
+command_header(
+	uint32_t opcode,
+	unsigned body_words,
+	bool compute)
+{
+	uint32_t word;
+
+	/* The type, the count less one and the opcode. */
+	word = COMMAND_TYPE3;
+	word |= ((uint32_t)(body_words - 1U) & COMMAND_COUNT_MASK) << COMMAND_COUNT_SHIFT;
+	word |= opcode << COMMAND_OPCODE_SHIFT;
+
+	/* The compute pipeline's mark. */
+	if (compute)
+		word |= COMMAND_COMPUTE;
+
+	/* Succeeded: the header. */
+	return word;
+}

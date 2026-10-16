@@ -233,6 +233,104 @@ struct amdrdna_thermal {
 	uint64_t smu_interrupts;
 };
 
+/* The compute queues stage A5 attaches, one on each pipe of the first compute engine. */
+#define AMDRDNA_COMPUTE_QUEUES		4U
+
+/* The kinds of ring the driver runs. */
+enum amdrdna_ring_kind {
+	AMDRDNA_RING_SCHEDULER,
+	AMDRDNA_RING_GRAPHICS,
+	AMDRDNA_RING_COMPUTE,
+	AMDRDNA_RING_COPY
+};
+
+/*
+ * One ring of commands the driver writes and an engine reads.
+ *
+ * The ring, its queue image and its end-of-pipe buffer are system memory
+ * the GPU reaches through the system-memory table; the read pointer the
+ * engine reports, the copy of the write pointer it polls and the fence
+ * word it writes are words of the engines' write-back page at slot.
+ * write_pointer counts every word ever written (dwords, or what the copy
+ * engine counts in bytes is four times it) and only grows.  lock
+ * serializes the writers of the ring, its sequence and its counts; the
+ * interrupt thread takes it to count the ring's interrupts.  image_copy
+ * keeps the queue image as it was filled, for a later reset.  up says the
+ * engine runs the ring.  The buffers live as long as the GPU may touch
+ * them, which is the record's life.
+ */
+struct amdrdna_ring {
+	const char *name;
+	enum amdrdna_ring_kind kind;
+	struct amdrdna_queue_place place;
+	uint32_t doorbell;
+	struct amdrdna_system_buffer buffer;
+	uint32_t bytes;
+	struct amdrdna_system_buffer image;
+	uint32_t *image_copy;
+	struct amdrdna_system_buffer end_of_pipe;
+	uint32_t slot;
+	struct spinlock lock;
+	uint64_t write_pointer;
+	uint32_t sequence;
+	uint64_t interrupts;
+	bool up;
+};
+
+/*
+ * The command processor and the copy engine (stage A5).
+ *
+ * select serializes the shader-array select and the queue select, which
+ * every register of a selected array or queue goes through; scheduler
+ * serializes the commands of the scheduler's own queue.  writeback is the
+ * page of system memory the rings' pointers and fences live in.  The
+ * clear state is VRAM the run-list controller reads.  The checks' buffers
+ * are the copy's source and destination and the dispatch's output in
+ * system memory with the indirect buffer the graphics ring's dispatch
+ * runs from, and the dispatch's program and the copy's middle stop
+ * in VRAM.  The shape words are
+ * what the stage read from the fuses.  direct says the graphics ring runs
+ * without the scheduler (amdrdna.kiq=0), in which case no compute queue
+ * is attached.  The flags say how far the stage got, so the stop undoes
+ * only that; the counts are what the checks saw.
+ */
+struct amdrdna_engines {
+	struct mutex select;
+	struct mutex scheduler_lock;
+	struct amdrdna_system_buffer writeback;
+	struct amdrdna_ring scheduler;
+	struct amdrdna_ring graphics;
+	struct amdrdna_ring compute[AMDRDNA_COMPUTE_QUEUES];
+	struct amdrdna_ring copy;
+	uint64_t clear_state_vram;
+	uint32_t clear_state_words;
+	struct amdrdna_system_buffer source;
+	struct amdrdna_system_buffer destination;
+	struct amdrdna_system_buffer output;
+	struct amdrdna_system_buffer indirect;
+	uint64_t program_vram;
+	uint64_t middle_vram;
+	bool direct;
+	unsigned compute_count;
+	uint32_t address_config;
+	uint32_t backends;
+	unsigned units;
+	uint32_t channels_off;
+	uint32_t steering;
+	bool buffers_ready;
+	bool interrupts_on;
+	bool scheduler_up;
+	bool graphics_running;
+	bool compute_running;
+	bool copy_running;
+	uint64_t copy_traps;
+	uint64_t command_errors;
+	uint32_t fences;
+	uint32_t copied_bytes;
+	uint32_t dispatch_words;
+	uint32_t faults_seen;
+};
+
 /*
  * One RDNA GPU the driver keeps.
  *
@@ -248,8 +346,10 @@ struct amdrdna_thermal {
  * place, the hubs' context words from before the stage (given back on a
  * failure and at shutdown) and the interrupt ring; memory_ready says the
  * table translates.  Stages A3t, A3 and A4 add the training's result,
- * the security processor's buffers and the power and thermal state.  The record lives until the PCI function is
- * detached, which the driver refuses while the thread runs.
+ * the security processor's buffers and the power and thermal state;
+ * stage A5 the command processor's and the copy engine's rings.  The
+ * record lives until the PCI function is detached, which the driver
+ * refuses while the thread runs.
  */
 struct amdrdna_device {
 	struct drv_pci_device *pci;
@@ -325,6 +425,7 @@ struct amdrdna_device {
 	struct amdrdna_training training;
 	struct amdrdna_psp psp;
 	struct amdrdna_thermal thermal;
+	struct amdrdna_engines engines;
 
 	struct spinlock state_lock;
 	struct wait_queue state_waitq;
@@ -548,6 +649,73 @@ amdrdna_power_stop(
 
 void
 amdrdna_thermal_interrupt(
+	struct amdrdna_device *device,
+	const struct amdrdna_interrupt *interrupt);
+
+/* cp.c: stage A5's command processor. */
+int
+amdrdna_cp_settings(
+	struct amdrdna_device *device);
+
+int
+amdrdna_cp_run_list(
+	struct amdrdna_device *device);
+
+int
+amdrdna_cp_start(
+	struct amdrdna_device *device);
+
+void
+amdrdna_cp_stop(
+	struct amdrdna_device *device);
+
+int
+amdrdna_ring_submit(
+	struct amdrdna_device *device,
+	struct amdrdna_ring *ring,
+	const uint32_t *words,
+	unsigned count,
+	bool interrupt,
+	uint32_t *sequence);
+
+int
+amdrdna_ring_wait(
+	struct amdrdna_device *device,
+	struct amdrdna_ring *ring,
+	uint32_t sequence,
+	unsigned milliseconds);
+
+int
+amdrdna_ring_test(
+	struct amdrdna_device *device,
+	struct amdrdna_ring *ring);
+
+volatile uint32_t *
+amdrdna_ring_word(
+	struct amdrdna_device *device,
+	const struct amdrdna_ring *ring,
+	unsigned which);
+
+/* sdma.c: stage A5's copy engine. */
+int
+amdrdna_sdma_start(
+	struct amdrdna_device *device);
+
+void
+amdrdna_sdma_stop(
+	struct amdrdna_device *device);
+
+/* engines.c: stage A5. */
+int
+amdrdna_a5_engines(
+	struct amdrdna_device *device);
+
+void
+amdrdna_engines_stop(
+	struct amdrdna_device *device);
+
+void
+amdrdna_engines_interrupt(
 	struct amdrdna_device *device,
 	const struct amdrdna_interrupt *interrupt);
 

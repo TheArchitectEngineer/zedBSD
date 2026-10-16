@@ -51,6 +51,7 @@ static int control_vbios(struct amdrdna_device *device, uintptr_t argument);
 static void control_fill(struct amdrdna_device *device, struct amdrdna_status *status);
 static void control_fill_memory(struct amdrdna_device *device, struct amdrdna_status *status);
 static uint32_t control_fill_power(struct amdrdna_device *device, struct amdrdna_status *status);
+static void control_fill_engines(struct amdrdna_device *device, struct amdrdna_status *status);
 static uint32_t ip_version(const struct amdrdna_ip *ip);
 
 /* The device's operations: requests only. */
@@ -376,6 +377,10 @@ control_fill(
 	if (status->stage >= AMDRDNA_STAGE_A2)
 		flags |= control_fill_power(device, status);
 
+	/* The engines, from stage A5 on (or as far as a failed A5 got). */
+	if (status->stage >= AMDRDNA_STAGE_A4)
+		control_fill_engines(device, status);
+
 	/* Publishes the flags. */
 	status->flags = flags;
 }
@@ -467,6 +472,67 @@ control_fill_power(
 
 	/* Succeeded: the flags of the three stages. */
 	return flags;
+}
+
+/* Fills the status answer's part that stage A5 set up. */
+static void
+control_fill_engines(
+	struct amdrdna_device *device,
+	struct amdrdna_status *status)
+{
+	struct amdrdna_engines *engines;
+	unsigned long irq;
+	uint64_t interrupts;
+	unsigned index;
+
+	/* What runs. */
+	engines = &device->engines;
+	status->engine_flags = 0U;
+	if (engines->scheduler_up)
+		status->engine_flags |= AMDRDNA_RUNS_SCHEDULER;
+	if (engines->graphics.up)
+		status->engine_flags |= AMDRDNA_RUNS_GRAPHICS;
+	if (engines->copy.up)
+		status->engine_flags |= AMDRDNA_RUNS_COPY;
+	if (engines->direct)
+		status->engine_flags |= AMDRDNA_RUNS_DIRECT;
+	status->compute_queues = engines->compute_count;
+
+	/* The shape the stage read. */
+	status->address_config = engines->address_config;
+	status->backends = engines->backends;
+	status->compute_units = engines->units;
+	status->channels_off = engines->channels_off;
+
+	/* The end-of-pipe interrupts of the graphics and compute rings, each read under its ring's lock. */
+	irq = spin_lock_irqsave(&engines->graphics.lock);
+
+	interrupts = engines->graphics.interrupts;
+
+	spin_unlock_irqrestore(&engines->graphics.lock, irq);
+	for (index = 0U; index < engines->compute_count; index++) {
+		/* One compute ring's count. */
+		irq = spin_lock_irqsave(&engines->compute[index].lock);
+
+		interrupts += engines->compute[index].interrupts;
+
+		spin_unlock_irqrestore(&engines->compute[index].lock, irq);
+	}
+
+	/* Publishes their sum. */
+	status->end_of_pipe_interrupts = (uint32_t)interrupts;
+
+	/* The copy engine's traps, under its ring's lock. */
+	irq = spin_lock_irqsave(&engines->copy.lock);
+
+	status->copy_traps = (uint32_t)engines->copy_traps;
+
+	spin_unlock_irqrestore(&engines->copy.lock, irq);
+
+	/* What the checks saw. */
+	status->fences = engines->fences;
+	status->copied_bytes = engines->copied_bytes;
+	status->dispatch_words = engines->dispatch_words;
 }
 
 /* Packs an IP block's version as major << 16 | minor << 8 | step; 0 for an unlisted block. */

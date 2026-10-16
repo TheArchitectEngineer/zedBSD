@@ -120,6 +120,16 @@
 #define AMDRDNA_INTERRUPT_MSI		1U
 #define AMDRDNA_INTERRUPT_MSIX		2U
 
+/*
+ * What stage A5 left running (engine_flags): the scheduler's own queue,
+ * the graphics queue, the first copy engine, and the graphics ring run
+ * without the scheduler (amdrdna.kiq=0).
+ */
+#define AMDRDNA_RUNS_SCHEDULER	0x00000001U
+#define AMDRDNA_RUNS_GRAPHICS		0x00000002U
+#define AMDRDNA_RUNS_COPY		0x00000004U
+#define AMDRDNA_RUNS_DIRECT		0x00000008U
+
 /* The output kind the firmware lit, as the display engine names it. */
 #define AMDRDNA_OUTPUT_NONE		0U
 #define AMDRDNA_OUTPUT_DP		1U
@@ -145,7 +155,14 @@
  * mode (AMDRDNA_FAN_*), its static duty and driven duty (percent) and its
  * speed (rpm), the temperature and the highest reading (degrees Celsius),
  * the limit past which the driver faults the GPU, and the thermal alerts
- * taken; and the interrupt entries read and those no block took.
+ * taken; and the interrupt entries read and those no block took.  From
+ * A5 on: what runs (AMDRDNA_RUNS_*) and the compute queues attached,
+ * the graphics engine's address configuration, the render back ends on
+ * (one bit each), the compute units on, the level-2 cache channels off
+ * (one bit each), the fences the checks waited for, the end-of-pipe
+ * interrupts of the graphics and compute rings and the copy engine's
+ * traps, the bytes the copy check moved, and the output words the
+ * dispatch check compared.
  */
 struct amdrdna_status {
 	uint32_t version;
@@ -219,7 +236,18 @@ struct amdrdna_status {
 	uint32_t thermal_alerts;
 	uint32_t interrupt_entries;
 	uint32_t interrupt_unknown;
-	uint32_t reserved[14];
+	uint32_t engine_flags;
+	uint32_t compute_queues;
+	uint32_t address_config;
+	uint32_t backends;
+	uint32_t compute_units;
+	uint32_t channels_off;
+	uint32_t fences;
+	uint32_t end_of_pipe_interrupts;
+	uint32_t copy_traps;
+	uint32_t copied_bytes;
+	uint32_t dispatch_words;
+	uint32_t reserved[3];
 };
 
 /* Asks the driver to run every stage up to target (AMDRDNA_IOC_ADVANCE, root only). */

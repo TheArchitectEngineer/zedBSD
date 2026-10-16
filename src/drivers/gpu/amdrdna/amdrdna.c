@@ -42,7 +42,7 @@
 #include "drivers/gpu/amdrdna/amdrdna-regs.h"
 
 /* The last stage this driver has; asking for a later one is refused. */
-#define AMDRDNA_LAST_STAGE		AMDRDNA_STAGE_A4
+#define AMDRDNA_LAST_STAGE		AMDRDNA_STAGE_A5
 
 /* How long the shutdown waits for the bring-up thread to end, and its step. */
 #define AMDRDNA_SHUTDOWN_WAIT_US	5000000U
@@ -153,6 +153,7 @@ amdrdna_attach(
 	const struct drv_pci_id *id)
 {
 	struct amdrdna_device *device;
+	unsigned index;
 	bool off;
 	int error;
 
@@ -186,6 +187,13 @@ amdrdna_attach(
 	(void)mutex_init(&device->thermal.mailbox, LOCK_RANK_DEVICE, "amdrdna smu");
 	spin_init(&device->thermal.lock, LOCK_RANK_DEVICE, "amdrdna thermal");
 	waitq_init(&device->thermal.waitq, "amdrdna thermal");
+	(void)mutex_init(&device->engines.select, LOCK_RANK_DEVICE, "amdrdna select");
+	(void)mutex_init(&device->engines.scheduler_lock, LOCK_RANK_DEVICE, "amdrdna kiq");
+	spin_init(&device->engines.scheduler.lock, LOCK_RANK_DEVICE, "amdrdna ring");
+	spin_init(&device->engines.graphics.lock, LOCK_RANK_DEVICE, "amdrdna ring");
+	for (index = 0U; index < AMDRDNA_COMPUTE_QUEUES; index++)
+		spin_init(&device->engines.compute[index].lock, LOCK_RANK_DEVICE, "amdrdna ring");
+	spin_init(&device->engines.copy.lock, LOCK_RANK_DEVICE, "amdrdna ring");
 
 	/* Stage A0: finds and identifies the GPU. */
 	device->running = AMDRDNA_STAGE_A0;
@@ -251,7 +259,8 @@ amdrdna_detach(
  * then undoes the stages that wrote.
  *
  * The thread is told to stop and waited for, for a bounded time.  Once it
- * has ended, the stages are undone in reverse: stage A4's watch stops and
+ * has ended, the stages are undone in reverse: stage A5's queues are
+ * detached and its engines halted, stage A4's watch stops and
  * the power unit is told it will be unloaded, stage A3's secure OS unloads
  * what the driver loaded and destroys its ring, and stage A2's interrupt
  * ring is stopped and the memory hubs' contexts get back the words the
@@ -304,7 +313,8 @@ amdrdna_shutdown(
 		return;
 	}
 
-	/* Undoes stage A4, then A3, then A2, as far as each ran. */
+	/* Undoes stage A5, then A4, A3 and A2, as far as each ran. */
+	amdrdna_engines_stop(device);
 	amdrdna_power_stop(device);
 	amdrdna_psp_stop(device);
 	amdrdna_a2_stop(device);
@@ -502,6 +512,9 @@ amdrdna_run_stage(
 		break;
 	case AMDRDNA_STAGE_A4:
 		error = amdrdna_a4_power(device);
+		break;
+	case AMDRDNA_STAGE_A5:
+		error = amdrdna_a5_engines(device);
 		break;
 	default:
 		error = ENOTSUP;

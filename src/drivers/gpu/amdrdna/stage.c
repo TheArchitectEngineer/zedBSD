@@ -29,6 +29,9 @@
  *   amdrdna.fan.duty=<n> the static fan duty in percent (50 by default)
  *   amdrdna.temp.max=<n> the temperature in degrees Celsius past which the
  *                        driver faults the GPU (95 by default)
+ *   amdrdna.kiq=0        stage A5 runs the graphics ring by its registers,
+ *                        without the scheduler's queue and the compute
+ *                        queues
  */
 
 #include <stdarg.h>

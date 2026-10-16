@@ -91,8 +91,8 @@
  * The graphics shape sub-table: its ID ("GC"), its length word, and the
  * dword fields of its first layout the driver reads: shader engines, the
  * two counts of compute-unit pairs per array, render back ends per engine,
- * level-2 cache channels, the wave width, waves per SIMD and arrays per
- * engine.
+ * level-2 cache channels, the wave width, waves per SIMD, scan converters
+ * per engine, arrays per engine and packers per scan converter.
  *
  * Values referenced: Linux v6.19
  * drivers/gpu/drm/amd/include/discovery.h (GC_TABLE_ID,
@@ -108,8 +108,10 @@
 #define SHAPE_CACHE_CHANNELS		4U
 #define SHAPE_WAVE_LANES		11U
 #define SHAPE_WAVES_PER_SIMD		12U
+#define SHAPE_CONVERTERS		15U
 #define SHAPE_ARRAYS			16U
-#define SHAPE_FIELD_COUNT		17U
+#define SHAPE_PACKERS			17U
+#define SHAPE_FIELD_COUNT		18U
 
 /*
  * Which known block each hardware ID of the table names.
@@ -497,6 +499,10 @@ read_shape(
 	/* The wave width and the waves a SIMD keeps. */
 	shape->wave_lanes = amdrdna_le32(bytes, fields + SHAPE_WAVE_LANES * 4U);
 	shape->waves_per_simd = amdrdna_le32(bytes, fields + SHAPE_WAVES_PER_SIMD * 4U);
+
+	/* The scan converters of an engine, and the packers of a converter. */
+	shape->converters_per_engine = amdrdna_le32(bytes, fields + SHAPE_CONVERTERS * 4U);
+	shape->packers_per_converter = amdrdna_le32(bytes, fields + SHAPE_PACKERS * 4U);
 }
 
 /* Reports which known block a hardware ID names. */
