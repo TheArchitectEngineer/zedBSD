@@ -11,8 +11,9 @@
  * Each command's wire is the one libvulkan sends (userland/desktop/
  * libvulkan: instance.c, device.c), and its records travel through the
  * generated codec, so the two ends cannot drift.  The device is one
- * physical device with one queue family (graphics, compute and transfer)
- * of one queue, and one memory type: the VRAM the CPU reaches through its
+ * physical device with two queue families of one queue each: the
+ * universal one (graphics, compute and transfer, on the graphics queue)
+ * and a compute one (on a compute queue of its own), and one memory type: the VRAM the CPU reaches through its
  * window, so it is device-local, host-visible and host-coherent.  The
  * formats are the ones the executor lays out (linear only, so both tilings
  * have the same features); the limits are values an RDNA1 part meets, not a
@@ -496,7 +497,8 @@ device_memory(
 
 /*
  * vkGetPhysicalDeviceQueueFamilyProperties: [physical][present][count][array count]
- * -> [present][count][array count][families].  One family of one queue.
+ * -> [present][count][array count][families].  Two families of one queue
+ * each: the universal family, then the compute family.
  */
 static int
 device_families(
@@ -506,6 +508,7 @@ device_families(
 {
 	VkQueueFamilyProperties family;
 	uint64_t array_count;
+	uint64_t index;
 
 	UNUSED_PARAMETER(session);
 
@@ -517,26 +520,28 @@ device_families(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* An array of more than the one family is malformed. */
-	if (array_count > 1U)
+	/* An array of more than the families is malformed. */
+	if (array_count > AMDRDNA_VK_FAMILIES)
 		return EINVAL;
 
-	/* The family: graphics with compute and transfer, one queue, any granularity. */
-	kern_memset(&family, 0, sizeof(family));
-	family.queueFlags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT;
-	family.queueCount = 1U;
-	family.minImageTransferGranularity.width = 1U;
-	family.minImageTransferGranularity.height = 1U;
-	family.minImageTransferGranularity.depth = 1U;
-
-	/* Replies the present word, the count and the family when the array holds it. */
+	/* Replies the present word, the count, then each family the array holds. */
 	drv_i915_wire_reply_u64(reply, 1U);
-	drv_i915_wire_reply_u32(reply, 1U);
+	drv_i915_wire_reply_u32(reply, AMDRDNA_VK_FAMILIES);
 	drv_i915_wire_reply_u64(reply, array_count);
-	if (array_count == 1U)
+	for (index = 0U; index < array_count; index++) {
+		/* Graphics with compute and transfer, or compute alone; one queue, any granularity. */
+		kern_memset(&family, 0, sizeof(family));
+		family.queueFlags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT;
+		if (index == AMDRDNA_VK_FAMILY_COMPUTE)
+			family.queueFlags = VK_QUEUE_COMPUTE_BIT;
+		family.queueCount = 1U;
+		family.minImageTransferGranularity.width = 1U;
+		family.minImageTransferGranularity.height = 1U;
+		family.minImageTransferGranularity.depth = 1U;
 		i915_vkc_enc_VkQueueFamilyProperties(reply, &family);
+	}
 
-	/* Succeeded: the family is reported. */
+	/* Succeeded: the families are reported. */
 	return 0;
 }
 
@@ -774,8 +779,8 @@ device_queue(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* Only the one family exists; its queue's jobs complete on a timeline of 1 to 63. */
-	if (family != 0U || timeline == 0U || timeline >= DEVICE_TIMELINES)
+	/* A family that exists; its queue's jobs complete on a timeline of 1 to 63. */
+	if (family >= AMDRDNA_VK_FAMILIES || timeline == 0U || timeline >= DEVICE_TIMELINES)
 		return EINVAL;
 
 	/* Remembers the queue; one asked for again is already remembered, and the reply is the same. */

@@ -1,0 +1,22 @@
+// vkhang --compute (ws039-p013): one invocation walks 3x + 1 from the buffer's first word and writes its step count
+// to the second.  From 0 it never reaches 1 (the compute queue's reset); from 27 it ends after 111 steps (the control).
+// Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+#version 450
+
+layout(local_size_x = 1) in;
+layout(std430, set = 0, binding = 0) buffer Walk {
+	uint start;
+	uint steps;
+};
+
+void main()
+{
+	uint x = start;
+	uint count = 0u;
+
+	while (x != 1u) {
+		x = (x & 1u) != 0u ? x * 3u + 1u : x / 2u;
+		count++;
+	}
+	steps = count;
+}

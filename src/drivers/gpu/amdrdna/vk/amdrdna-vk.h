@@ -205,6 +205,12 @@ void amdrdna_vk_gpu_free(void *owner, void *token);
 int amdrdna_vk_gpu_run(void *owner, uint64_t va, uint32_t bytes);
 
 /*
+ * The same on the compute queue the compute queue family's command
+ * buffers run on (provided by the node).
+ */
+int amdrdna_vk_gpu_run_kernel(void *owner, uint64_t va, uint32_t bytes);
+
+/*
  * Counts a copy between a buffer and an image the command processor
  * moved, for the node's counts (provided by the node).
  */

@@ -72,6 +72,7 @@ static void test_submit(const char *directory);
 static void test_compositor_shaders(void);
 static void test_units(void);
 static void test_kernel(const char *directory);
+static void test_compute(const char *directory);
 
 void *
 kern_malloc(size_t bytes)
@@ -501,6 +502,57 @@ amdrdna_vk_gpu_run(void *owner, uint64_t va, uint32_t bytes)
 	return 0;
 }
 
+/*
+ * Runs on the compute queue decoded as on the graphics queue, counted
+ * apart; a packet only the graphics queue takes (a context register, the
+ * context control, the clear state, the fetcher's sync, a draw) counts as
+ * an error.  Each dispatch's workgroups are replayed now.
+ */
+static unsigned kernel_runs;
+static unsigned kernel_graphics_packets;
+static const char *kernel_replay_error;
+
+static void replay_dispatch(const struct state_entry *state);
+
+int
+amdrdna_vk_gpu_run_kernel(void *owner, uint64_t va, uint32_t bytes)
+{
+	const uint8_t *buffer;
+	uint64_t room;
+	unsigned first_packet;
+	unsigned first;
+	unsigned index;
+	int error;
+
+	(void)owner;
+	buffer = gpu_cpu_room(va, &room);
+	if (buffer == NULL || bytes > room || (bytes % 32U) != 0U || bytes == 0U)
+		return EIO;
+	kernel_runs++;
+	first_packet = packet_count;
+	first = dispatch_count;
+	error = decode_buffer((const uint32_t *)(const void *)buffer, bytes / 4U, kernel_runs);
+	if (error != 0)
+		return error;
+	for (index = first_packet; index < packet_count; index++) {
+		switch (packet_log[index].op) {
+		case 0x69U:
+		case 0x28U:
+		case 0x12U:
+		case 0x42U:
+		case 0x2dU:
+		case 0x2fU:
+			kernel_graphics_packets++;
+			break;
+		default:
+			break;
+		}
+	}
+	for (; first < dispatch_count; first++)
+		replay_dispatch(&dispatch_log[first]);
+	return 0;
+}
+
 /* A register of a logged state, by its byte offset. */
 static uint32_t
 reg(const struct state_entry *state, uint32_t offset)
@@ -858,6 +910,7 @@ main(int argc, char **argv)
 	test_submit(argv[1]);
 	test_units();
 	test_kernel(argv[1]);
+	test_compute(argv[1]);
 	test_compositor_shaders();
 	printf("%s amdrdna vk: %u checks, %u failures\n", failures == 0 ? "PASS" : "FAIL", checks, failures);
 	return failures == 0 ? 0 : 1;
@@ -2685,6 +2738,346 @@ test_kernel(const char *directory)
 		    "kernel: 3x2x1 groups, the compute bit and the start word (shader, start at 0, order, wave32)");
 	}
 	amdrdna_gfx10_program_free(kernel.compiled);
+}
+
+/* Replays every workgroup of a logged dispatch on the interpreter; kernel_replay_error says why one could not run. */
+static void
+replay_dispatch(const struct state_entry *state)
+{
+	struct machine_memory memory;
+	struct machine_dispatch dispatch;
+	struct machine_result result;
+	uint32_t group[3];
+
+	replay_memory(&memory);
+	memset(&dispatch, 0, sizeof(dispatch));
+	if (!replay_program(state, 0xb830U, 0xb834U, 0xb848U, &dispatch)) {
+		kernel_replay_error = "the kernel's address";
+		return;
+	}
+	dispatch.table = reg(state, 0xb900U) | ((uint64_t)reg(state, 0xb904U) << 32);
+	dispatch.local_size[0] = reg(state, 0xb81cU);
+	dispatch.local_size[1] = reg(state, 0xb820U);
+	dispatch.local_size[2] = reg(state, 0xb824U);
+	for (group[2] = 0U; group[2] < state->groups[2]; group[2]++) {
+		for (group[1] = 0U; group[1] < state->groups[1]; group[1]++) {
+			for (group[0] = 0U; group[0] < state->groups[0]; group[0]++) {
+				dispatch.group_id[0] = group[0];
+				dispatch.group_id[1] = group[1];
+				dispatch.group_id[2] = group[2];
+				memset(&result, 0, sizeof(result));
+				machine_run_group(&dispatch, &memory, &result);
+				if (result.error != NULL && kernel_replay_error == NULL)
+					kernel_replay_error = result.error;
+			}
+		}
+	}
+}
+
+/*
+ * The compute queue family: two families reported, the second compute
+ * alone; a compute pipeline of ids.comp, a storage buffer in a set, a
+ * pool of the compute family and a command buffer that binds both at the
+ * compute bind point and dispatches 2x1x1 groups.  The submission runs on
+ * the compute queue only, with no graphics packet, and the replayed
+ * workgroups write every invocation's ids and the group counts.  A pool
+ * of a third family and a graphics pipeline bound at the compute bind
+ * point are refused.
+ */
+static void
+test_compute(const char *directory)
+{
+	struct amdrdna_vk_session *session;
+	struct vulkan_writer client;
+	struct vulkan_object handles[16];
+	VkShaderModuleCreateInfo module;
+	VkDescriptorSetLayoutBinding binding;
+	VkDescriptorSetLayoutCreateInfo set_layout;
+	VkPipelineLayoutCreateInfo pipeline_layout;
+	VkDescriptorPoolSize size;
+	VkDescriptorPoolCreateInfo pool;
+	VkDescriptorSetAllocateInfo allocate;
+	VkComputePipelineCreateInfo compute;
+	VkCommandPoolCreateInfo command_pool;
+	VkCommandBufferAllocateInfo command_allocate;
+	VkCommandBufferBeginInfo begin;
+	VkDescriptorSetLayout layouts[1];
+	const struct amdrdna_vk_pipeline *pipeline;
+	const uint32_t *words;
+	uint32_t *module_words;
+	uint32_t flags[2];
+	uint32_t invocation;
+	uint32_t local[3];
+	uint32_t group;
+	unsigned before;
+	unsigned at;
+	unsigned index;
+	size_t module_bytes;
+	int good;
+	int error;
+
+	module_words = read_spirv(directory, "ids", &module_bytes);
+	check(module_words != NULL, "compute: the module's SPIR-V");
+	if (module_words == NULL)
+		return;
+	before = allocations;
+	check(amdrdna_vk_session_open(NULL, &session) == 0, "compute: session opened");
+	memset(handles, 0, sizeof(handles));
+	for (index = 0; index < 16; index++)
+		handles[index].wire_id = 0x600 + index;
+
+	/* The families: the universal one, then compute alone. */
+	frame_begin(&client);
+	command_begin(&client, GPU_OP_GET_PHYSICAL_DEVICE_QUEUE_FAMILY_PROPERTIES);
+	vulkan_write_u64(&client, 0x101);
+	vulkan_write_u64(&client, 1);
+	vulkan_write_u32(&client, 2);
+	vulkan_write_u64(&client, 2);
+	error = frame_run(session, &client);
+	at = TEST_REPLY_AT / 4U;
+	check(error == 0 && reply_u32(&at) == GPU_OP_GET_PHYSICAL_DEVICE_QUEUE_FAMILY_PROPERTIES && reply_u64(&at) == 1 && reply_u32(&at) == 2 &&
+	    reply_u64(&at) == 2, "compute: two families reported");
+	flags[0] = reply_u32(&at);
+	at += 5;
+	flags[1] = reply_u32(&at);
+	check(flags[0] == (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT) && flags[1] == VK_QUEUE_COMPUTE_BIT && reply_u32(&at) == 1,
+	    "compute: the universal family, then one queue of compute alone");
+
+	/* Memory 0x601 at 0x30000000 with buffer 0x602 (0x2000 bytes) at 0x20000. */
+	frame_begin(&client);
+	write_allocate(&client, 0x601, 0x40000, 0);
+	write_buffer(&client, 0x602, 0x2000);
+	error = frame_run(session, &client);
+	check(error == 0 && amdrdna_vk_memory_attach(session, 0x601, 0x40000, scene, 0x30000000ULL, &backing_token) == 0, "compute: memory and buffer made");
+	frame_begin(&client);
+	write_bind(&client, GPU_OP_BIND_BUFFER_MEMORY, 0x602, 0x601, 0x20000);
+	error = frame_run(session, &client);
+	check(error == 0, "compute: the buffer bound");
+	memset(scene + 0x20000, 0xa5, 0x2000);
+
+	/* Module 0x603, set layout 0x604 of one storage buffer, pipeline layout 0x605, pool 0x606, set 0x607 of the buffer. */
+	frame_begin(&client);
+	memset(&module, 0, sizeof(module));
+	module.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+	module.codeSize = module_bytes;
+	module.pCode = module_words;
+	write_create(&client, GPU_OP_CREATE_SHADER_MODULE);
+	vulkan_encode_VkShaderModuleCreateInfo(&client, &module);
+	write_tail(&client, 0x603);
+	memset(&binding, 0, sizeof(binding));
+	binding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	binding.descriptorCount = 1;
+	binding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+	memset(&set_layout, 0, sizeof(set_layout));
+	set_layout.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	set_layout.bindingCount = 1;
+	set_layout.pBindings = &binding;
+	write_create(&client, GPU_OP_CREATE_DESCRIPTOR_SET_LAYOUT);
+	vulkan_encode_VkDescriptorSetLayoutCreateInfo(&client, &set_layout);
+	write_tail(&client, 0x604);
+	layouts[0] = (VkDescriptorSetLayout)(uintptr_t)&handles[4];
+	memset(&pipeline_layout, 0, sizeof(pipeline_layout));
+	pipeline_layout.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	pipeline_layout.setLayoutCount = 1;
+	pipeline_layout.pSetLayouts = layouts;
+	write_create(&client, GPU_OP_CREATE_PIPELINE_LAYOUT);
+	vulkan_encode_VkPipelineLayoutCreateInfo(&client, &pipeline_layout);
+	write_tail(&client, 0x605);
+	memset(&size, 0, sizeof(size));
+	size.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	size.descriptorCount = 1;
+	memset(&pool, 0, sizeof(pool));
+	pool.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	pool.maxSets = 1;
+	pool.poolSizeCount = 1;
+	pool.pPoolSizes = &size;
+	write_create(&client, GPU_OP_CREATE_DESCRIPTOR_POOL);
+	vulkan_encode_VkDescriptorPoolCreateInfo(&client, &pool);
+	write_tail(&client, 0x606);
+	memset(&allocate, 0, sizeof(allocate));
+	allocate.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	allocate.descriptorPool = (VkDescriptorPool)(uintptr_t)&handles[6];
+	allocate.descriptorSetCount = 1;
+	allocate.pSetLayouts = layouts;
+	command_begin(&client, GPU_OP_ALLOCATE_DESCRIPTOR_SETS);
+	vulkan_write_u64(&client, TEST_DEVICE);
+	vulkan_write_u64(&client, 1);
+	vulkan_encode_VkDescriptorSetAllocateInfo(&client, &allocate);
+	vulkan_write_u64(&client, 1);
+	vulkan_write_u64(&client, 0x607);
+	command_begin(&client, GPU_OP_UPDATE_DESCRIPTOR_SETS);
+	vulkan_write_u64(&client, TEST_DEVICE);
+	vulkan_write_u32(&client, 1);
+	vulkan_write_u64(&client, 1);
+	vulkan_write_u32(&client, VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET);
+	vulkan_write_u64(&client, 0);
+	vulkan_write_u64(&client, 0x607);
+	vulkan_write_u32(&client, 0);
+	vulkan_write_u32(&client, 0);
+	vulkan_write_u32(&client, 1);
+	vulkan_write_u32(&client, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+	vulkan_write_u64(&client, 0);
+	vulkan_write_u64(&client, 1);
+	vulkan_write_u64(&client, 0x602);
+	vulkan_write_u64(&client, 0);
+	vulkan_write_u64(&client, VK_WHOLE_SIZE);
+	vulkan_write_u64(&client, 0);
+	vulkan_write_u32(&client, 0);
+	vulkan_write_u64(&client, 0);
+
+	/* The compute pipeline 0x608, a pool 0x609 of the compute family and its command buffer 0x60a, a pool of a third family 0x60b. */
+	memset(&compute, 0, sizeof(compute));
+	compute.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+	compute.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	compute.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+	compute.stage.module = (VkShaderModule)(uintptr_t)&handles[3];
+	compute.stage.pName = "main";
+	compute.layout = (VkPipelineLayout)(uintptr_t)&handles[5];
+	compute.basePipelineIndex = -1;
+	command_begin(&client, GPU_OP_CREATE_COMPUTE_PIPELINES);
+	vulkan_write_u64(&client, TEST_DEVICE);
+	vulkan_write_u64(&client, 0);
+	vulkan_write_u32(&client, 1);
+	vulkan_write_u64(&client, 1);
+	vulkan_encode_VkComputePipelineCreateInfo(&client, &compute);
+	vulkan_write_u64(&client, 0);
+	vulkan_write_u64(&client, 1);
+	vulkan_write_u64(&client, 0x608);
+	memset(&command_pool, 0, sizeof(command_pool));
+	command_pool.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	command_pool.queueFamilyIndex = 1;
+	write_create(&client, GPU_OP_CREATE_COMMAND_POOL);
+	vulkan_encode_VkCommandPoolCreateInfo(&client, &command_pool);
+	write_tail(&client, 0x609);
+	memset(&command_allocate, 0, sizeof(command_allocate));
+	command_allocate.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	command_allocate.commandPool = (VkCommandPool)(uintptr_t)&handles[9];
+	command_allocate.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	command_allocate.commandBufferCount = 1;
+	command_begin(&client, GPU_OP_ALLOCATE_COMMAND_BUFFERS);
+	vulkan_write_u64(&client, TEST_DEVICE);
+	vulkan_write_u64(&client, 1);
+	vulkan_encode_VkCommandBufferAllocateInfo(&client, &command_allocate);
+	vulkan_write_u64(&client, 1);
+	vulkan_write_u64(&client, 0x60a);
+	command_pool.queueFamilyIndex = 2;
+	write_create(&client, GPU_OP_CREATE_COMMAND_POOL);
+	vulkan_encode_VkCommandPoolCreateInfo(&client, &command_pool);
+	write_tail(&client, 0x60b);
+	error = frame_run(session, &client);
+	check(error == 0, "compute: the objects made");
+	pipeline = amdrdna_vk_payload(session, I915_VK_OBJ_PIPELINE, 0x608);
+	check(pipeline != NULL && pipeline->compute == 1 && pipeline->kernel.compiled != NULL && pipeline->kernel.compiled->local_size[0] == 4 &&
+	    pipeline->kernel.compiled->local_size[1] == 3 && pipeline->kernel.compiled->local_size[2] == 2 && pipeline->kernel.va != 0,
+	    "compute: the pipeline's kernel of 4x3x2 compiled and placed");
+	check(amdrdna_vk_payload(session, I915_VK_OBJ_COMMAND_BUFFER, 0x60a) != NULL && amdrdna_vk_payload(session, I915_VK_OBJ_COMMAND_POOL, 0x60b) == NULL,
+	    "compute: a pool of the compute family; none of a third");
+	if (pipeline == NULL) {
+		free(module_words);
+		return;
+	}
+
+	/* The recording: the pipeline and the set at the compute bind point, a dispatch of 2x1x1. */
+	frame_begin(&client);
+	memset(&begin, 0, sizeof(begin));
+	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	command_begin(&client, GPU_OP_BEGIN_COMMAND_BUFFER);
+	vulkan_write_u64(&client, 0x60a);
+	vulkan_write_u64(&client, 1);
+	vulkan_encode_VkCommandBufferBeginInfo(&client, &begin);
+	record_begin(&client, GPU_OP_CMD_BIND_PIPELINE, 0x60a);
+	vulkan_write_u32(&client, VK_PIPELINE_BIND_POINT_COMPUTE);
+	vulkan_write_u64(&client, 0x608);
+	record_begin(&client, GPU_OP_CMD_BIND_DESCRIPTOR_SETS, 0x60a);
+	vulkan_write_u32(&client, VK_PIPELINE_BIND_POINT_COMPUTE);
+	vulkan_write_u64(&client, 0x605);
+	vulkan_write_u32(&client, 0);
+	vulkan_write_u32(&client, 1);
+	vulkan_write_u64(&client, 1);
+	vulkan_write_u64(&client, 0x607);
+	vulkan_write_u32(&client, 0);
+	vulkan_write_u64(&client, 0);
+	record_begin(&client, GPU_OP_CMD_DISPATCH, 0x60a);
+	vulkan_write_u32(&client, 2);
+	vulkan_write_u32(&client, 1);
+	vulkan_write_u32(&client, 1);
+	command_begin(&client, GPU_OP_END_COMMAND_BUFFER);
+	vulkan_write_u64(&client, 0x60a);
+	error = frame_run(session, &client);
+	at = TEST_REPLY_AT / 4U;
+	check(error == 0 && reply_u32(&at) == GPU_OP_BEGIN_COMMAND_BUFFER && reply_u32(&at) == VK_SUCCESS &&
+	    reply_u32(&at) == GPU_OP_END_COMMAND_BUFFER && reply_u32(&at) == VK_SUCCESS, "compute: recorded and executable");
+
+	/* The submission. */
+	gpu_runs = 0;
+	kernel_runs = 0;
+	kernel_graphics_packets = 0;
+	kernel_replay_error = NULL;
+	log_reset();
+	frame_begin(&client);
+	command_begin(&client, GPU_OP_QUEUE_SUBMIT);
+	vulkan_write_u64(&client, 0x104);
+	vulkan_write_u32(&client, 1);
+	vulkan_write_u64(&client, 1);
+	vulkan_write_u32(&client, VK_STRUCTURE_TYPE_SUBMIT_INFO);
+	vulkan_write_u64(&client, 0);
+	vulkan_write_u32(&client, 0);
+	vulkan_write_u64(&client, 0);
+	vulkan_write_u64(&client, 0);
+	vulkan_write_u32(&client, 1);
+	vulkan_write_u64(&client, 1);
+	vulkan_write_u64(&client, 0x60a);
+	vulkan_write_u32(&client, 0);
+	vulkan_write_u64(&client, 0);
+	vulkan_write_u64(&client, 0);
+	error = frame_run(session, &client);
+	at = TEST_REPLY_AT / 4U;
+	check(error == 0 && reply_u32(&at) == GPU_OP_QUEUE_SUBMIT && reply_u32(&at) == VK_SUCCESS, "compute: the submission succeeded");
+	check(gpu_runs == 0 && kernel_runs == 1 && decode_errors == 0 && kernel_graphics_packets == 0,
+	    "compute: one run on the compute queue of known packets, none of them the graphics queue's");
+	check(dispatch_count == 1 && dispatch_log[0].groups[0] == 2 && dispatch_log[0].groups[1] == 1 && dispatch_log[0].groups[2] == 1 &&
+	    (((uint64_t)reg(&dispatch_log[0], 0xb830U) << 8) | ((uint64_t)(reg(&dispatch_log[0], 0xb834U) & 0xffU) << 40)) == pipeline->kernel.va,
+	    "compute: one dispatch of 2x1x1 groups of the pipeline's kernel");
+	check(kernel_replay_error == NULL, "compute: every workgroup replayed");
+	if (kernel_replay_error != NULL)
+		printf("  replay: %s\n", kernel_replay_error);
+
+	/* Every invocation of the 2x1x1 groups of 4x3x2 wrote its eight words at its global index. */
+	words = (const uint32_t *)(const void *)(scene + 0x20000);
+	good = 1;
+	for (group = 0; good && group < 2U; group++) {
+		for (index = 0; good && index < 24U; index++) {
+			local[0] = index % 4U;
+			local[1] = (index / 4U) % 3U;
+			local[2] = index / 12U;
+			invocation = (group * 4U + local[0]) + 8U * (local[1] + 3U * local[2]);
+			good = words[invocation * 8U] == local[0] && words[invocation * 8U + 1U] == local[1] && words[invocation * 8U + 2U] == local[2] &&
+			       words[invocation * 8U + 3U] == index && words[invocation * 8U + 4U] == group && words[invocation * 8U + 5U] == 0U &&
+			       words[invocation * 8U + 6U] == 0U && words[invocation * 8U + 7U] == 2U + 10U + 100U;
+		}
+	}
+	check(good, "compute: each invocation's local ids, index, group and the counts 2, 1, 1");
+	check(words[48U * 8U] == 0xa5a5a5a5U, "compute: nothing past the 48 invocations");
+
+	/* A graphics pipeline cannot be bound at the compute bind point: its command buffer fails. */
+	frame_begin(&client);
+	command_begin(&client, GPU_OP_BEGIN_COMMAND_BUFFER);
+	vulkan_write_u64(&client, 0x60a);
+	vulkan_write_u64(&client, 1);
+	vulkan_encode_VkCommandBufferBeginInfo(&client, &begin);
+	record_begin(&client, GPU_OP_CMD_BIND_PIPELINE, 0x60a);
+	vulkan_write_u32(&client, VK_PIPELINE_BIND_POINT_GRAPHICS);
+	vulkan_write_u64(&client, 0x608);
+	command_begin(&client, GPU_OP_END_COMMAND_BUFFER);
+	vulkan_write_u64(&client, 0x60a);
+	error = frame_run(session, &client);
+	at = TEST_REPLY_AT / 4U;
+	check(error == 0 && reply_u32(&at) == GPU_OP_BEGIN_COMMAND_BUFFER && reply_u32(&at) == VK_SUCCESS &&
+	    reply_u32(&at) == GPU_OP_END_COMMAND_BUFFER && reply_u32(&at) != VK_SUCCESS, "compute: a compute pipeline at the graphics bind point is refused");
+
+	check(amdrdna_vk_session_close(&session) == 0, "compute: session closed");
+	check(allocations == before, "compute: nothing leaked");
+	free(module_words);
 }
 
 /* Every SPIR-V module the compositor embeds (wayland/shaders.h) compiles for GFX10 within what a draw binds. */

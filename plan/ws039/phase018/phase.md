@@ -15,3 +15,8 @@
 - p017 の 2 段目は X の形（console の map を HAL と同じ UC）で仕上げた。WC の別名（kernel の WC と HAL の UC が同じ GOP の page を map）が原因の候補として残る。
 - 再開の手順: Y を install（Debian から `~/ws039/mnt-boot` に USB の sda2 を mount して vmunix を置き、`hw-run.sh boot 0003`）、`plan/tools/aat/aat --target root@10.0.30.5`（`AAT_INPUT=/tmp/aat-input`、aat-input は build の `bin/aat-input` を /tmp に）で同じ試験。止まらなければ Y に WC と HAL の UC の別名が無い形（HAL の map も WC、P4 の BUG-330 の方向）も比べる。
 - 2026-10-16 21:0x P5 の発見（p019）: amdrdna の desktop の間も kernel の text console が GOP の framebuffer（UC）に描き、kmsg の 1 行ごとに 1920x1080 を描き直して node の lock の中で約 2 s 止まる（amdrdna の present_claim が kern_text_suspend を呼んでいない、i915・bcm2711 は呼ぶ）。停止との関係は未確認、P5 が present.c で直す。
+
+## 2026-10-16 21:00 P3 の追記（P5 の p019 の発見、Q1 経由）
+
+- amdrdna の desktop の間も kernel の text console が GOP の framebuffer（UC）に描き続け、kmsg の 1 行ごとに 1920x1080 を描き直し、node の lock の中で約 2 s 止まることがある（i915・bcm2711 と違い present_claim で `kern_text_suspend` を呼んでいない）。P5 が p019 で present.c に console の suspend/resume を足す。p013 の reset の印（各段 3〜4 ms なのに全体 250 ms 余り）も同じ現象と見られる。
+- BUG-331 との関係の候補: Y（console の map を WC）では、この全画面の描き直しが WC の別名で GOP の page に書かれていた。停止の原因かは未確認。再開の時は P5 の console の suspend の後で Y の形を試す。

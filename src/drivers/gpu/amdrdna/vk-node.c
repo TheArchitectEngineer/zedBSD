@@ -654,6 +654,43 @@ amdrdna_vk_gpu_run(
 	return 0;
 }
 
+/*
+ * Runs an indirect buffer of bytes at va on the compute queue of the
+ * compute queue family (the first compute queue) in the session's address
+ * space and waits until the GPU has done it.  Returns as
+ * amdrdna_vk_gpu_run() does; a run that does not finish resets only that
+ * queue.
+ */
+int
+amdrdna_vk_gpu_run_kernel(
+	void *owner,
+	uint64_t va,
+	uint32_t bytes)
+{
+	struct amdrdna_session *session;
+	uint64_t started_us;
+	int error;
+
+	/* The node session the executor names. */
+	session = owner;
+
+	/* Whole dwords. */
+	if (bytes == 0U || (bytes & 3U) != 0U)
+		return EINVAL;
+
+	/* Runs the buffer in the session's space and waits for it, timed with its bytes. */
+	started_us = amdrdna_display_now_us();
+	error = amdrdna_space_run(session->space, AMDRDNA_TRACKED_COMPUTE, va, bytes / 4U, VK_NODE_RUN_MS);
+	vk_node_count(session->node, VK_NODE_RUNS, started_us, bytes);
+	if (error == EINVAL)
+		return EINVAL;
+	if (error != 0)
+		return EIO;
+
+	/* Succeeded: the GPU has done the work. */
+	return 0;
+}
+
 /* Counts a copy between a buffer and an image the command processor moved. */
 void
 amdrdna_vk_gpu_copied(

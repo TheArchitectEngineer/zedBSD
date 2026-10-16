@@ -6,7 +6,7 @@
  */
 
 /*
- * The executor's graphics pipelines.
+ * The executor's graphics and compute pipelines.
  *
  * A pipeline's vertex and fragment modules are compiled for GFX10 by the
  * amdrdna compiler (compiler/gfx10-compile.c) when the pipeline is
@@ -20,6 +20,9 @@
  *
  * The fragment program is compiled first: when it reads the primitive
  * number, the vertex program is compiled to export it.
+ *
+ * A compute pipeline has one program, its kernel, compiled and copied the
+ * same way; a dispatch writes its registers and its resource table.
  */
 
 #include <stdbool.h>
@@ -47,13 +50,16 @@
 /* The locations a vertex attribute may have. */
 #define PIPELINE_LOCATIONS		16U
 
-/* The two modules of a pipeline being made. */
+/* The modules of a pipeline being made: the vertex and fragment modules, or the compute module. */
 struct pipeline_build {
 	const struct amdrdna_vk_shader *vertex_module;
 	const struct amdrdna_vk_shader *fragment_module;
+	const struct amdrdna_vk_shader *kernel_module;
 };
 
-static int pipeline_create(struct amdrdna_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
+static int pipeline_create(struct amdrdna_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply, bool kernel);
+static int pipeline_decode_kernel(struct amdrdna_vk_session *session, struct i915_wire_reader *reader, struct amdrdna_vk_pipeline *pipeline, struct pipeline_build *build);
+static int pipeline_compile_kernel(struct amdrdna_vk_session *session, struct amdrdna_vk_pipeline *pipeline, struct pipeline_build *build);
 static int pipeline_decode(struct amdrdna_vk_session *session, struct i915_wire_reader *reader, struct amdrdna_vk_pipeline *pipeline, struct pipeline_build *build);
 static int pipeline_decode_stages(struct amdrdna_vk_session *session, struct i915_wire_reader *reader, struct pipeline_build *build);
 static int pipeline_decode_vertex_input(struct amdrdna_vk_session *session, struct i915_wire_reader *reader, struct amdrdna_vk_pipeline *pipeline);
@@ -65,7 +71,6 @@ static int pipeline_compile_stage(const struct amdrdna_vk_shader *module, enum d
 static int pipeline_bindings(const struct amdrdna_gfx10_program *program);
 static void pipeline_program(struct amdrdna_vk_program *program, uint8_t *cpu, uint64_t va);
 static uint32_t pipeline_program_bytes(const struct amdrdna_gfx10_program *program);
-static int pipeline_compute(struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int pipeline_destroy(struct amdrdna_vk_session *session, void *payload);
 static void pipeline_float(uint32_t *destination, const float *source);
 
@@ -90,10 +95,10 @@ amdrdna_vk_pipeline_route(
 	*handled = 1;
 	switch (opcode) {
 	case GPU_OP_CREATE_GRAPHICS_PIPELINES:
-		error = pipeline_create(session, reader, reply);
+		error = pipeline_create(session, reader, reply, false);
 		break;
 	case GPU_OP_CREATE_COMPUTE_PIPELINES:
-		error = pipeline_compute(reader, reply);
+		error = pipeline_create(session, reader, reply, true);
 		break;
 	case GPU_OP_DESTROY_PIPELINE:
 		error = amdrdna_vk_destroy_plain(session, reader, I915_VK_OBJ_PIPELINE);
@@ -112,8 +117,9 @@ amdrdna_vk_pipeline_route(
 }
 
 /*
- * vkCreateGraphicsPipelines: [device][cache][count][count]{create info}
- * [allocator][count][identities] -> [result][count][identities].
+ * vkCreateGraphicsPipelines and vkCreateComputePipelines (kernel set):
+ * [device][cache][count][count]{create info}[allocator][count][identities]
+ * -> [result][count][identities].
  *
  * Every record is decoded (one that does not decode leaves the stream
  * unreadable and fails the command); then each pipeline is compiled and
@@ -124,7 +130,8 @@ static int
 pipeline_create(
 	struct amdrdna_vk_session *session,
 	struct i915_wire_reader *reader,
-	struct i915_wire_writer *reply)
+	struct i915_wire_writer *reply,
+	bool kernel)
 {
 	struct amdrdna_vk_pipeline *pipelines[PIPELINE_CREATED_MAX];
 	struct pipeline_build builds[PIPELINE_CREATED_MAX];
@@ -167,7 +174,10 @@ pipeline_create(
 
 		/* Each record decodes into an emptied scratch. */
 		session->arena.used = 0U;
-		decoded = pipeline_decode(session, reader, pipelines[index], &builds[index]);
+		if (kernel)
+			decoded = pipeline_decode_kernel(session, reader, pipelines[index], &builds[index]);
+		else
+			decoded = pipeline_decode(session, reader, pipelines[index], &builds[index]);
 		if (decoded == EINVAL) {
 			error = EINVAL;
 			break;
@@ -201,8 +211,12 @@ pipeline_create(
 	error = refused;
 
 	/* Compiles each pipeline's programs into its run. */
-	for (index = 0U; error == 0 && index < count; index++)
-		error = pipeline_compile(session, pipelines[index], &builds[index]);
+	for (index = 0U; error == 0 && index < count; index++) {
+		if (kernel)
+			error = pipeline_compile_kernel(session, pipelines[index], &builds[index]);
+		else
+			error = pipeline_compile(session, pipelines[index], &builds[index]);
+	}
 
 	/* Publishes each one, up to the first failure. */
 	published = 0U;
@@ -216,7 +230,7 @@ pipeline_create(
 
 	/* A create that failed leaves no pipeline. */
 	if (error != 0) {
-		kern_logf("amdrdna: vk: vkCreateGraphicsPipelines failed: %d\n", error);
+		kern_logf("amdrdna: vk: vkCreate%sPipelines failed: %d\n", kernel ? "Compute" : "Graphics", error);
 		for (index = 0U; index < published; index++)
 			(void)amdrdna_vk_object_remove(session, I915_VK_OBJ_PIPELINE, identities[index]);
 	}
@@ -239,6 +253,51 @@ pipeline_create(
 	}
 
 	/* Succeeded: the reply carries the create's result. */
+	return 0;
+}
+
+/*
+ * Decodes one VkComputePipelineCreateInfo as libvulkan's
+ * pipeline_encode_compute() writes it: [sType][pNext][flags]{stage}
+ * [layout][base pipeline][base index].  The compute stage of a known
+ * module, without specialization, is taken.
+ *
+ * Returns EINVAL when the record did not decode (the stream is then
+ * unreadable), ENOTSUP for a stage the executor does not run (the record
+ * is still read to its end).
+ */
+static int
+pipeline_decode_kernel(
+	struct amdrdna_vk_session *session,
+	struct i915_wire_reader *reader,
+	struct amdrdna_vk_pipeline *pipeline,
+	struct pipeline_build *build)
+{
+	VkComputePipelineCreateInfo info;
+	const struct amdrdna_vk_pipeline_layout *layout;
+
+	/* The record. */
+	kern_memset(&info, 0, sizeof(info));
+	i915_vkc_dec_VkComputePipelineCreateInfo(reader, &session->arena, &info);
+	if (reader->error != 0)
+		return EINVAL;
+
+	/* A compute pipeline; its layout's push constant bytes. */
+	pipeline->compute = 1U;
+	layout = amdrdna_vk_payload(session, I915_VK_OBJ_PIPELINE_LAYOUT, (uint64_t)(uintptr_t)info.layout);
+	if (layout != NULL)
+		pipeline->push_bytes = layout->push_bytes;
+
+	/* The compute stage of a known module, without specialization constants. */
+	if (info.stage.stage != VK_SHADER_STAGE_COMPUTE_BIT)
+		return ENOTSUP;
+	if (info.stage.pSpecializationInfo != NULL && info.stage.pSpecializationInfo->mapEntryCount != 0U)
+		return ENOTSUP;
+	build->kernel_module = amdrdna_vk_payload(session, I915_VK_OBJ_SHADER_MODULE, (uint64_t)(uintptr_t)info.stage.module);
+	if (build->kernel_module == NULL)
+		return ENOTSUP;
+
+	/* Succeeded: the pipeline's module is in the build. */
 	return 0;
 }
 
@@ -646,6 +705,40 @@ pipeline_compile(
 }
 
 /*
+ * Compiles a compute pipeline's module for GFX10 and copies the program
+ * into a run of the executor's GPU memory of its own.
+ */
+static int
+pipeline_compile_kernel(
+	struct amdrdna_vk_session *session,
+	struct amdrdna_vk_pipeline *pipeline,
+	struct pipeline_build *build)
+{
+	struct amdrdna_gfx10_compile_options options;
+	uint8_t *cpu;
+	uint64_t va;
+	int error;
+
+	/* The program, whose bindings a dispatch can bind. */
+	kern_memset(&options, 0, sizeof(options));
+	error = pipeline_compile_stage(build->kernel_module, DRV_GPU_STAGE_COMPUTE, &options, &pipeline->kernel);
+	if (error != 0)
+		return error;
+	error = pipeline_bindings(pipeline->kernel.compiled);
+	if (error != 0)
+		return error;
+
+	/* Its run, then the code copied and its address kept. */
+	error = amdrdna_vk_gpu_alloc(session->owner, pipeline_program_bytes(pipeline->kernel.compiled), &pipeline->code_token, &cpu, &va);
+	if (error != 0)
+		return error;
+	pipeline_program(&pipeline->kernel, cpu, va);
+
+	/* Succeeded: the kernel is in the GPU's memory. */
+	return 0;
+}
+
+/*
  * Compiles one module for a stage into a program, with its register
  * values; the reason of a refusal is shown.
  */
@@ -682,7 +775,8 @@ pipeline_compile_stage(
 
 /*
  * Checks the bindings a program reads: each buffer and sampled image in a
- * set and at a binding a descriptor set has, and no more sampled images
+ * set and at a binding a descriptor set has (or a kernel's workgroup
+ * counts, which the dispatch places), and no more sampled images
  * than a draw writes.  Returns 0 or ENOTSUP.
  */
 static int
@@ -691,8 +785,10 @@ pipeline_bindings(
 {
 	uint32_t index;
 
-	/* The storage buffers, the uniform buffers, the sampled images. */
+	/* The storage buffers (a kernel's workgroup counts are the dispatch's), the uniform buffers, the sampled images. */
 	for (index = 0U; index < program->storage_used; index++) {
+		if (program->stage == DRV_GPU_STAGE_COMPUTE && program->storage[index].set == DRV_GPU_IR_SYSTEM_SET)
+			continue;
 		if (program->storage[index].set >= AMDRDNA_VK_SETS_MAX || program->storage[index].binding >= AMDRDNA_VK_BINDINGS_MAX)
 			return ENOTSUP;
 	}
@@ -740,24 +836,6 @@ pipeline_program_bytes(
 
 	/* Succeeded: the program's share of the run. */
 	return bytes;
-}
-
-/*
- * vkCreateComputePipelines: the records cannot be skipped without decoding
- * them, and the executor runs no compute work, so the command is refused
- * (the frame fails).
- */
-static int
-pipeline_compute(
-	struct i915_wire_reader *reader,
-	struct i915_wire_writer *reply)
-{
-	UNUSED_PARAMETER(reader);
-	UNUSED_PARAMETER(reply);
-
-	/* Says so, then refuses. */
-	kern_logf("amdrdna: vk: vkCreateComputePipelines is not implemented\n");
-	return ENOTSUP;
 }
 
 /* Destroys a pipeline nothing holds: its programs' run goes back to the node. */
