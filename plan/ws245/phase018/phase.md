@@ -2,7 +2,7 @@
 
 # ws245-p018: 旧 VBT parser の本体の削除（殻 `vbt-shell.c`）
 
-Status: in-progress（q1223-i01 P1: 実装・host 試験・build・5330 の素の起動の回帰に合格（2026-10-16 16:06）。merge の依頼を Q1 に送った（消す file 4 つは Q1））
+Status: cleared（2026-10-16 Q1 が判定、merge 8fea53a1d。q1223-i01 P1: 実装・host 試験・build・5330 の素の起動の回帰に合格（2026-10-16 16:06）。merge の依頼を Q1 に送った（消す file 4 つは Q1））
 Parent: [WS245](../ws.md)
 Queue: q1223 / q1223-i01（Q1 の技術判断で範囲を広げた: 「DP の環境が使う vbt.c の allocator・log の関数は殻に残す。execution の試験の組の ktest-display.c・ktest-display-probe.c は … 参照されていなければ削除の対象 … LW の見積りを phase018 に書き直し、段が大きくなるなら 2 段に分けてよい。5330 の回帰に合格してから main。」）
 設計: [design.md](../design.md) §6.2 の p018 の行（改訂 6）
