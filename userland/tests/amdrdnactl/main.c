@@ -80,6 +80,19 @@ main(
 	int is_screen;
 	int is_gpu;
 	int is_modes;
+	int is_reset;
+
+	/* The reset opens the control device itself (one may be named). */
+	is_reset = 0;
+	if (argc >= 2)
+		is_reset = strcmp(argv[1], "reset") == 0;
+	if (is_reset && argc <= 3) {
+		path = CONTROL_DEVICE;
+		if (argc == 3)
+			path = argv[2];
+		result = control_reset(path);
+		return result;
+	}
 
 	/* The GPU device check and the modes need no control device. */
 	is_gpu = 0;
@@ -507,5 +520,5 @@ static void
 usage(void)
 {
 	/* The one usage line. */
-	fprintf(stderr, "usage: amdrdnactl [-f DEVICE] [status | advance STAGE | vbios FILE | display | screen FILE] | amdrdnactl gpu|modes [GPU-DEVICE]\n");
+	fprintf(stderr, "usage: amdrdnactl [-f DEVICE] [status | advance STAGE | vbios FILE | display | screen FILE] | amdrdnactl gpu|modes [GPU-DEVICE] | amdrdnactl reset [DEVICE]\n");
 }

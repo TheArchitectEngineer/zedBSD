@@ -23,6 +23,7 @@
 #include <kern/waitq.h>
 
 #include "drivers/gpu/amdrdna/amdrdna-hw.h"
+#include "drivers/gpu/amdrdna/amdrdna-reset.h"
 #include "drivers/gpu/amdrdna/amdrdna-sink.h"
 
 struct cdev;
@@ -662,6 +663,7 @@ struct amdrdna_device {
 	struct amdrdna_node *node;
 	struct amdrdna_display display;
 	struct amdrdna_sink sink;
+	struct amdrdna_reset reset;
 
 	struct spinlock state_lock;
 	struct wait_queue state_waitq;

@@ -110,6 +110,7 @@ amdrdna_request_target(
 	unsigned target)
 {
 	unsigned long irq;
+	bool allowed;
 	int error;
 
 	/* A stage number outside the list is refused. */
@@ -120,8 +121,14 @@ amdrdna_request_target(
 	if (target > AMDRDNA_LAST_STAGE)
 		return ENOTSUP;
 
-	/* A secure OS left running needs a cold power cycle before any stage that writes. */
-	if (target > AMDRDNA_STAGE_A1V && device->secure_os_word != 0U)
+	/*
+	 * A secure OS left running needs a cold power cycle before any stage
+	 * that writes, unless the boot lets the driver reset the GPU first.
+	 */
+	allowed = amdrdna_reset_allowed(device);
+	if (target > AMDRDNA_STAGE_A1V &&
+	    device->secure_os_word != 0U &&
+	    !allowed)
 		return EBUSY;
 
 	/* Raises the target and wakes the thread, unless a stage failed. */
@@ -199,6 +206,7 @@ amdrdna_attach(
 	spin_init(&device->display.lock, LOCK_RANK_DEVICE, "amdrdna display");
 	waitq_init(&device->display.waitq, "amdrdna display");
 	amdrdna_spaces_init(device);
+	amdrdna_reset_init(device);
 
 	/* Stage A0: finds and identifies the GPU. */
 	device->running = AMDRDNA_STAGE_A0;
@@ -376,6 +384,7 @@ amdrdna_keep(
 {
 	struct thread *thread;
 	unsigned target;
+	bool allowed;
 	bool display;
 	int error;
 
@@ -388,7 +397,10 @@ amdrdna_keep(
 	target = amdrdna_parameter_auto();
 	if (target > AMDRDNA_LAST_STAGE)
 		target = AMDRDNA_LAST_STAGE;
-	if (target > AMDRDNA_STAGE_A1V && device->secure_os_word != 0U)
+	allowed = amdrdna_reset_allowed(device);
+	if (target > AMDRDNA_STAGE_A1V &&
+	    device->secure_os_word != 0U &&
+	    !allowed)
 		target = AMDRDNA_STAGE_A1V;
 	device->target = target;
 
@@ -465,6 +477,7 @@ amdrdna_thread(
 		irq = spin_lock_irqsave(&device->state_lock);
 
 		while (!device->stopping &&
+		    !device->reset.requested &&
 		    (device->stage >= device->target ||
 		     device->failed_stage != AMDRDNA_STAGE_NONE)) {
 			sequence = waitq_sequence(&device->state_waitq);
@@ -475,6 +488,13 @@ amdrdna_thread(
 		if (device->stopping) {
 			spin_unlock_irqrestore(&device->state_lock, irq);
 			break;
+		}
+
+		/* A reset asked for runs between stages; the lock is let go while it runs. */
+		if (device->reset.requested) {
+			irq = amdrdna_reset_serve(device, irq);
+			spin_unlock_irqrestore(&device->state_lock, irq);
+			continue;
 		}
 
 		/* Claims the next stage; the control device shows it as running. */
@@ -517,10 +537,11 @@ amdrdna_thread(
 	/* A thread told to stop before the registration no longer counts the GPU as attaching. */
 	amdrdna_attach_done(device);
 
-	/* Tells the shutdown that the thread no longer touches the GPU. */
+	/* Tells the shutdown, and a caller waiting for a reset, that the thread no longer touches the GPU. */
 	irq = spin_lock_irqsave(&device->state_lock);
 
 	device->thread_running = false;
+	waitq_wake_all(&device->state_waitq);
 
 	spin_unlock_irqrestore(&device->state_lock, irq);
 }
@@ -539,7 +560,12 @@ amdrdna_run_stage(
 		error = amdrdna_a1v_vbios(device);
 		break;
 	case AMDRDNA_STAGE_A2:
-		error = amdrdna_a2_memory(device);
+		/* A secure OS left by an earlier driver is reset away first, when the boot allows it. */
+		error = 0;
+		if (device->secure_os_word != 0U)
+			error = amdrdna_reset_boot(device);
+		if (error == 0)
+			error = amdrdna_a2_memory(device);
 		break;
 	case AMDRDNA_STAGE_A3T:
 		error = amdrdna_a3t_training(device);

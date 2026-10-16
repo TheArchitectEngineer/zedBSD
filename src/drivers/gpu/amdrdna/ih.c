@@ -52,6 +52,9 @@
 #define INTERRUPT_STOP_WAIT_US		200000U
 #define INTERRUPT_STOP_STEP_US		10000U
 
+/* How long the quiet before a reset gives a read under way to end. */
+#define INTERRUPT_QUIET_US		20000U
+
 static int ih_allocate(struct amdrdna_device *device);
 static int ih_signal_setup(struct amdrdna_device *device);
 static void ih_registers(struct amdrdna_device *device, uint32_t ring_word);
@@ -248,6 +251,85 @@ amdrdna_ih_stop(
 
 	/* The thread is still reading; the reset follows anyway. */
 	amdrdna_mark("ih: the interrupt thread still runs; left to the reset");
+}
+
+/*
+ * Turns the interrupt ring off before a reset of the GPU, leaving its
+ * thread and its buffers: the ring and its message off, its pointers at
+ * zero, and the thread told to read nothing more.  A read already under
+ * way is given a moment to end.
+ */
+void
+amdrdna_ih_quiet(
+	struct amdrdna_device *device)
+{
+	struct amdrdna_interrupts *interrupts;
+	uint32_t word;
+
+	/* A ring that was never prepared has nothing to turn off. */
+	interrupts = &device->interrupts;
+	if (!interrupts->prepared)
+		return;
+
+	/* The thread reads nothing more; then the ring and its interrupt off, its pointers at zero. */
+	interrupts->enabled = false;
+	word = ih_read(device, AMDRDNA_IH_REG_RING_CONTROL);
+	word = amdrdna_interrupt_switch_word(word, false);
+	ih_write(device, AMDRDNA_IH_REG_RING_CONTROL, word);
+	ih_write(device, AMDRDNA_IH_REG_READ_POINTER, 0U);
+	ih_write(device, AMDRDNA_IH_REG_WRITE_POINTER, 0U);
+
+	/* A read the thread had begun ends within its bounded rounds. */
+	kern_usleep_range(INTERRUPT_QUIET_US, INTERRUPT_QUIET_US + INTERRUPT_QUIET_US / 4U);
+}
+
+/*
+ * Sets the interrupt ring up again after a reset of the GPU, with the
+ * buffers, the message interrupt and the thread stage A2 made: the ring
+ * and the pointer's copy zeroed, the controller's and the host bridge's
+ * registers written as the stage writes them, the ring left off (stage
+ * A3 turns it on), and the GPU's bus mastering on.
+ *
+ * Returns 0, EBUSY for a ring that was never prepared, or the error of
+ * the step that failed.
+ */
+int
+amdrdna_ih_restart(
+	struct amdrdna_device *device)
+{
+	struct amdrdna_interrupts *interrupts;
+	uint32_t ring_word;
+	uint32_t word;
+	int error;
+
+	/* Only a prepared ring is set up again. */
+	interrupts = &device->interrupts;
+	if (!interrupts->prepared)
+		return EBUSY;
+
+	/* Nothing read yet; the buffers zeroed. */
+	interrupts->enabled = false;
+	interrupts->read_offset = 0U;
+	kern_memset(interrupts->ring.dma.address, 0, interrupts->ring_bytes);
+	kern_memset(interrupts->pointer.dma.address, 0, INTERRUPT_POINTER_BYTES);
+	__atomic_thread_fence(__ATOMIC_SEQ_CST);
+
+	/* The ring's control word, as the stage made it. */
+	word = ih_read(device, AMDRDNA_IH_REG_RING_CONTROL);
+	error = amdrdna_interrupt_ring_word(word, interrupts->ring_bytes, interrupts->message, &ring_word);
+	if (error != 0)
+		return error;
+
+	/* The registers, the ring left off. */
+	ih_registers(device, ring_word);
+
+	/* The GPU may write to system memory and signal the CPU again. */
+	error = drv_pci_device_set_bus_master(device->pci, true);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the ring is ready to be turned on. */
+	return 0;
 }
 
 /* Allocates the ring and the write pointer's page in system memory and maps both for the GPU. */

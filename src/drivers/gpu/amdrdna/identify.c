@@ -74,6 +74,7 @@ amdrdna_a0_identify(
 	struct amdrdna_device *device)
 {
 	const struct amdrdna_product *product;
+	bool allowed;
 	int error;
 
 	/* Says which function the stage looks at. */
@@ -152,8 +153,15 @@ amdrdna_a0_identify(
 	    device->boot_database.present ? 1U : 0U);
 	identify_mark_blocks(device);
 
-	/* A secure OS left by an earlier driver keeps the stages that write from running. */
-	if (device->secure_os_word != 0U)
+	/*
+	 * A secure OS left by an earlier driver keeps the stages that write
+	 * from running, unless the boot lets the driver reset the GPU before
+	 * stage A2 (amdrdna.reset=1).
+	 */
+	allowed = amdrdna_reset_allowed(device);
+	if (device->secure_os_word != 0U && allowed)
+		amdrdna_mark("A0 note: sos alive (0x%08x); the GPU is reset before A2 (amdrdna.reset=1)", (unsigned)device->secure_os_word);
+	else if (device->secure_os_word != 0U)
 		amdrdna_mark("A0 hold: sos alive (0x%08x), cold power cycle needed; only A1 and A1v run", (unsigned)device->secure_os_word);
 
 	/* Succeeded: the GPU is identified and its registers stay mapped. */

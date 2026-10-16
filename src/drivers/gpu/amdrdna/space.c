@@ -149,6 +149,45 @@ amdrdna_spaces_fault(
 }
 
 /*
+ * Lets the address spaces run work again after a reset of the GPU, which
+ * took the hubs' contexts and VRAM: with no space left, every context is
+ * free again and runs are taken.  A space still there holds tables the
+ * reset lost, so the spaces stay refused then.
+ *
+ * Returns 0, or EBUSY when a space is still there.
+ */
+int
+amdrdna_spaces_restart(
+	struct amdrdna_device *device)
+{
+	struct amdrdna_spaces *spaces;
+	unsigned long irq;
+	unsigned count;
+
+	/* The contexts free again and the runs taken, only without a space. */
+	spaces = &device->spaces;
+	irq = spin_lock_irqsave(&spaces->lock);
+
+	count = spaces->count;
+	if (count == 0U) {
+		amdrdna_context_pool_init(&spaces->pool);
+		spaces->faulted = false;
+		spaces->ready = true;
+	}
+
+	spin_unlock_irqrestore(&spaces->lock, irq);
+
+	/* Reports spaces the reset left without their tables. */
+	if (count != 0U) {
+		amdrdna_mark("reset: %u address spaces remain; they run nothing more", count);
+		return EBUSY;
+	}
+
+	/* Succeeded: runs are taken again. */
+	return 0;
+}
+
+/*
  * Creates an address space for a session (session names it for the
  * report of a loss; NULL for a check of the driver's own): an identifier,
  * an empty root table and the free addresses.

@@ -211,6 +211,7 @@ void amdrdna_runtime_prepare(struct amdrdna_node *node);
 void amdrdna_runtime_bind(struct amdrdna_node *node, amdrdna_node_execute execute, amdrdna_node_timelines timelines);
 void amdrdna_runtime_start(struct amdrdna_node *node);
 void amdrdna_runtime_stop(struct amdrdna_node *node);
+void amdrdna_runtime_hold(struct amdrdna_node *node, bool held);
 
 /* vk-node.c: the executor's binding to the node (with amdrdna.vk=1). */
 void amdrdna_vk_node_bind(struct amdrdna_node *node);

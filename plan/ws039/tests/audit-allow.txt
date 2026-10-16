@@ -107,6 +107,7 @@ error
 execute
 expected
 extension
+extra
 failure
 false
 fault
@@ -116,6 +117,7 @@ field
 fields
 file
 files
+finished
 first
 flags
 flush
@@ -257,6 +259,7 @@ registration
 request
 requested
 reserved
+reset
 rest
 result
 retired

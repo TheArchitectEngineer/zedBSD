@@ -237,6 +237,11 @@ AMD64_AMDRDNA_SOURCES += src/drivers/gpu/amdrdna/amdrdna.c src/drivers/gpu/amdrd
 	src/drivers/gpu/amdrdna/vk-node.c src/drivers/gpu/amdrdna/sessions.c \
 	src/drivers/gpu/amdrdna/display-format.c src/drivers/gpu/amdrdna/display.c src/drivers/gpu/amdrdna/present.c
 endif
+# The AMD RDNA driver's reset of the GPU and its setting up again.
+ifeq ($(CONFIG_DRIVER_PCI_AMDRDNA),y)
+AMD64_AMDRDNA_SOURCES += src/drivers/gpu/amdrdna/reset.c src/drivers/gpu/amdrdna/reset-display.c \
+	src/drivers/gpu/amdrdna/reset-format.c
+endif
 # The AMD RDNA shader compiler: SPIR-V to GFX10 through the shared frontend and optimizer (ws039-p007).
 AMD64_AMDRDNA_COMPILER_SOURCES :=
 ifeq ($(CONFIG_DRIVER_PCI_AMDRDNA),y)
