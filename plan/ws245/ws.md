@@ -3,12 +3,12 @@
 # WS245: i915 の Gen12 系（display 12・13）の display の書き直し
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-15 作成。p001 の [design.md](design.md) は改訂 6 で cleared（2026-10-16 Q1）。q1218（P1、2026-10-16）で段の実装を開始: p047（証拠の道具）cleared、p016（OpRegion）・p017（VBT の解析）は 5330 の素の起動の回帰に合格し main に merge（p016）/ merge の依頼済み（p017）。p019〜p026 は branch agent/p1-ws245 に実装済み（5330 は全部の段の後に 1 回））
+Status: incomplete（2026-10-15 作成。p001 の [design.md](design.md) は改訂 6 で cleared（2026-10-16 Q1）。q1218（P1、2026-10-16）で段の実装を開始: p047（証拠の道具）cleared、p016（OpRegion）・p017（VBT の解析）は 5330 の素の起動の回帰に合格し main に merge（p016）/ merge の依頼済み（p017）。p019〜p027 は branch agent/p1-ws245 に実装済み（5330 は全部の段の後に 1 回））
 Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
 Related: [WS244](../ws244/ws.md)（i915 の Linux 由来の code の整理、棚卸し plan/ws244/inventory.md・tests/inventory.py）、[Guardrail](../guardrail.md)「MIT・GPL の出典のデータの引用」
-Resume point: 2026-10-16 の方針（ユーザー「i915は、実装だけ先に終わらせ、全部マージしたものをテストして、動かなければ二分探索で半分マージしてテスト、だめならさらに半分、で進めます。まずはぜんぶ実装してください。」、Q1 経由）: p020 以降の段を design の順に p046 まで branch（agent/p1-ws245）に積む。各段は host 試験・build（既定と `I915_TESTS=y` の 5 組）warning 0・WIP commit・phase.md の記録。5330 の回帰は全部の後に 1 回（基準は main の kernel、段は branch の tip）、動かなければ下の「段の境の SHA」で二分探索。p019 は T1-704（機能の基準は合格、書き込みの順のずれは別の thread の相対の順: [phase019](phase019/phase.md)）。今の段: p026 の後は p027（CDCLK、design §6.2 の p027 の行。xd-clock の CDCLK: 読み・sanitize・init（妥当なら保つ）・uninit（bypass）・set（pcode の prepare/voltage）、crawl/relock、voltage の段、`fits`。§6.7 の `temp/p006-partial-20261015-untracked/xd-clock.h` と patch の CD2X の divider の define。継ぎ目は `clock.c` の `drv_i915_cdclk_init_hw/uninit_hw`・`drv_i915_bxt_get_cdclk/set_cdclk/sanitize_cdclk`・`drv_i915_update_cdclk`・`drv_i915_max_cdclk_freq`・`drv_i915_init_cdclk_hooks`（display.c の core_init、takeover.c の `drv_i915_update_max_cdclk`）、殻が `display->cdclk` を写す。p026 の形（[phase026](phase026/phase.md)）: 消す旧 file は中身を消して vmunix.mk から外す（host の display の lib が display/*.c を全部 compile するので）、file の削除は merge の時に Q1（返り値で path を送る）。harness: `plan/ws245/temp/harness/wells24.c`〜`wells26.c` と `run-wells2N.sh <tree> <out> [NEW]`（`XVER=-DVER=12` で TGL、wells26 は `FW=<firmware>`。段の前の tree は `git archive <前の段の SHA>` を build/p0NN/base に）。旧の host 試験は `temp/harness/oldtests.sh <tree> <out>`。build は `sh build/tmp/kbuild.sh p021`（約 3.5 分。出力を grep する時は `-Werror` に当たる `error` を使わない）。
+Resume point: 2026-10-16 の方針（ユーザー「i915は、実装だけ先に終わらせ、全部マージしたものをテストして、動かなければ二分探索で半分マージしてテスト、だめならさらに半分、で進めます。まずはぜんぶ実装してください。」、Q1 経由）: p020 以降の段を design の順に p046 まで branch（agent/p1-ws245）に積む。各段は host 試験・build（既定と `I915_TESTS=y` の 5 組）warning 0・WIP commit・phase.md の記録。5330 の回帰は全部の後に 1 回（基準は main の kernel、段は branch の tip）、動かなければ下の「段の境の SHA」で二分探索。p019 は T1-704（機能の基準は合格、書き込みの順のずれは別の thread の相対の順: [phase019](phase019/phase.md)）。今の段: p027 の後は p028（combo DPLL、design §6.2 の p028 の行。xd-clock に DPLL: 表 T3 の語と 38.4 MHz の WA、HDMI の算法、enable/disable、DPCLKA の map、TRANS_CLK_SEL。継ぎ目は `clock.c` の `drv_i915_icl_dp_combo_pll/icl_hdmi_wrpll`・`drv_i915_dpll_get_hw_state/get_freq/sanitize_state`・`drv_i915_lcd_dplls_reset`・`drv_i915_enable_shared_dpll`、takeover.c の `drv_i915_dpll_readout`・`drv_i915_shared_dpll_init`、`ddi.c:1964〜1988` の map の rmw。p027 の形（[phase027](phase027/phase.md)）: 殻は旧の state と xd の state の変換と report の log だけ。p026 の形（[phase026](phase026/phase.md)）: 消す旧 file は中身を消して vmunix.mk から外す（host の display の lib が display/*.c を全部 compile するので）、file の削除は merge の時に Q1（返り値で path を送る）。harness: `plan/ws245/temp/harness/wells24.c`〜`wells26.c` と `run-wells2N.sh <tree> <out> [NEW]`（`XVER=-DVER=12` で TGL、wells26 は `FW=<firmware>`。段の前の tree は `git archive <前の段の SHA>` を build/p0NN/base に）。旧の host 試験は `temp/harness/oldtests.sh <tree> <out>`。build は `sh build/tmp/kbuild.sh p021`（約 3.5 分。出力を grep する時は `-Werror` に当たる `error` を使わない）。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）
@@ -142,7 +142,7 @@ Resume point: 2026-10-16 の方針（ユーザー「i915は、実装だけ先に
 | [p024](phase024/phase.md) | well の所属（W3）と refcount（xd-power） | in-progress（4 LW。2026-10-16 q1229-i02 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回。節目: HDMI・USB-C DP の 2 画面、5320 はユーザーの一覧） |
 | [p025](phase025/phase.md) | DC state と DC9（xd-power、dc9.c を消す） | in-progress（3 LW。2026-10-16 q1229-i02 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回。dc9.c・dc9.h と WS052 の host-i915-dc9 の削除は Q1 に依頼） |
 | [p026](phase026/phase.md) | DMC（xd-dmc） | in-progress（4 LW。2026-10-16 q1229-i02 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回。dmc.c の削除は merge の時に Q1） |
-| p027 | CDCLK（xd-clock） | planned（3 LW） |
+| [p027](phase027/phase.md) | CDCLK（xd-clock） | in-progress（3 LW。2026-10-16 q1229-i02 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回。節目: suspend → resume、5320 の起動はユーザーの一覧） |
 | p028 | combo DPLL（xd-clock） | planned（5 LW。5320 の節目） |
 | p029 | combo PHY（xd-ddi: init・lane・swing） | planned（4 LW） |
 | p030 | DDI の buffer（xd-ddi: BUF_CTL・DP_TP・idle） | planned（4 LW） |
@@ -183,3 +183,4 @@ Resume point: 2026-10-16 の方針（ユーザー「i915は、実装だけ先に
 | p024 | a249461a9 | 9a98be12f（p023 の記録の commit） |
 | p025 | 25bdbeb3e | 3a8408e90（p024 の記録の commit） |
 | p026 | 8e7b845fd | 92c67726b（p025 の記録の commit） |
+| p027 | 9833f6172 | 76fefb632（p026 の記録の commit） |
