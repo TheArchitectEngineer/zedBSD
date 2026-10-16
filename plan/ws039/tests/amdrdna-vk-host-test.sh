@@ -31,7 +31,7 @@ cc -std=gnu11 -O1 -g -D_POSIX_C_SOURCE=200809L -DKERN_USER_ABI_LP64 -include tim
 	"$vk/vk-object.c" "$vk/vk-session.c" "$vk/vk-stream.c" "$vk/vk-dispatch.c" "$vk/vk-device.c" \
 	"$vk/vk-reply.c" "$vk/vk-memory.c" "$vk/vk-resource.c" "$vk/vk-layout.c" "$vk/vk-target.c" "$vk/vk-pipeline.c" \
 	"$vk/vk-command.c" "$vk/vk-record.c" "$vk/vk-execute.c" "$vk/vk-queue.c" "$vk/vk-pm4.c" "$vk/vk-state.c" \
-	"$vk/vk-descriptor.c" "$vk/vk-quad.c" "$vk/vk-float.c" \
+	"$vk/vk-descriptor.c" "$vk/vk-quad.c" "$vk/vk-float.c" "$repo/src/drivers/gpu/amdrdna/command-format.c" \
 	"$compiler/gfx10-compile.c" "$compiler/gfx10-wait.c" "$compiler/gfx10-encode.c" "$compiler/gfx10-program.c" \
 	"$repo/src/drivers/gpu/compiler/spirv.c" "$repo/src/drivers/gpu/compiler/optimize.c" \
 	"$repo/src/drivers/gpu/i915/render/codec.c" "$repo/userland/desktop/libvulkan/wire.c" "$out/client-codec.c" -lm

@@ -2332,7 +2332,7 @@ test_units(void)
 	static const uint32_t identity[4] = { VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_G, VK_COMPONENT_SWIZZLE_B, VK_COMPONENT_SWIZZLE_A };
 	static const uint32_t swapped[4] = { VK_COMPONENT_SWIZZLE_B, VK_COMPONENT_SWIZZLE_G, VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_ONE };
 	static uint32_t words[256];
-	struct amdrdna_pm4 pm4;
+	struct amdrdna_vk_pm4 pm4;
 	struct amdrdna_vk_sampler sampler;
 	struct amdrdna_vk_blend blend;
 	struct amdrdna_vk_target target;
@@ -2398,7 +2398,7 @@ test_units(void)
 
 	/* A viewport flipped upward (y 64, height -64) and one off whole pixels (x 0.5, width 10.25). */
 	log_reset();
-	amdrdna_pm4_start(&pm4, words, 256);
+	amdrdna_vk_pm4_start(&pm4, words, 256);
 	viewport[0] = 0;
 	viewport[1] = 0x42800000U;
 	viewport[2] = 0x42800000U;
@@ -2426,7 +2426,7 @@ test_units(void)
 
 	/* Blends: one and one minus source alpha; separate alpha; a minimum takes ones; a factor that is not a factor. */
 	log_reset();
-	amdrdna_pm4_start(&pm4, words, 256);
+	amdrdna_vk_pm4_start(&pm4, words, 256);
 	memset(&blend, 0, sizeof(blend));
 	blend.enable = 1;
 	blend.colour_source = VK_BLEND_FACTOR_ONE;
@@ -2438,7 +2438,7 @@ test_units(void)
 	    registers.context[(0x28780U - 0x28000U) / 4U] == 0x40000501U && registers.context[(0x28760U - 0x28000U) / 4U] == 0U &&
 	    registers.context[(0x28238U - 0x28000U) / 4U] == 0xfU, "units: premultiplied blending (0x40000501)");
 	log_reset();
-	amdrdna_pm4_start(&pm4, words, 256);
+	amdrdna_vk_pm4_start(&pm4, words, 256);
 	blend.alpha_op = VK_BLEND_OP_MIN;
 	blend.alpha_source = VK_BLEND_FACTOR_DST_ALPHA;
 	blend.colour_op = VK_BLEND_OP_REVERSE_SUBTRACT;
@@ -2449,14 +2449,14 @@ test_units(void)
 	check(amdrdna_vk_state_blend(&pm4, &blend) == EINVAL, "units: an unknown factor is refused");
 	blend.enable = 0;
 	log_reset();
-	amdrdna_pm4_start(&pm4, words, 256);
+	amdrdna_vk_pm4_start(&pm4, words, 256);
 	check(amdrdna_vk_state_blend(&pm4, &blend) == 0 && decode_buffer(words, pm4.count, 0) == 0 &&
 	    registers.context[(0x28780U - 0x28000U) / 4U] == 0U && registers.context[(0x28760U - 0x28000U) / 4U] == ((6U << 8) | (6U << 24)),
 	    "units: no blending turns the shortcut off");
 
 	/* Targets: a blue-first sRGB target of 100x10; refused: a float format, an address off 256 bytes. */
 	log_reset();
-	amdrdna_pm4_start(&pm4, words, 256);
+	amdrdna_vk_pm4_start(&pm4, words, 256);
 	target.address = 0x12345678900ULL;
 	target.width = 100;
 	target.height = 10;
@@ -2475,21 +2475,21 @@ test_units(void)
 
 	/* Topologies: a fan is type 5, a strip 6; a patch list is refused. */
 	log_reset();
-	amdrdna_pm4_start(&pm4, words, 256);
+	amdrdna_vk_pm4_start(&pm4, words, 256);
 	check(amdrdna_vk_state_draw(&pm4, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN, 5, 2) == 0 && decode_buffer(words, pm4.count, 0) == 0 &&
 	    draw_count == 1 && draw_log[0].vertices == 5 && draw_log[0].instances == 2 && reg(&draw_log[0], 0x30908U) == 5U &&
 	    reg(&draw_log[0], 0x3096cU) == (128U | (256U << 9)), "units: a fan of five vertices, two instances");
 	check(amdrdna_vk_state_draw(&pm4, VK_PRIMITIVE_TOPOLOGY_PATCH_LIST, 3, 1) == EINVAL, "units: a patch list is refused");
 
 	/* A buffer too small: the packet that does not fit is not written, nor any after it. */
-	amdrdna_pm4_start(&pm4, words, 5);
-	amdrdna_pm4_set_context(&pm4, 0x28238U, 0xf);
-	amdrdna_pm4_set_context(&pm4, 0x28238U, 0xf);
-	amdrdna_pm4_event(&pm4, 16, 4);
+	amdrdna_vk_pm4_start(&pm4, words, 5);
+	amdrdna_vk_pm4_set_context(&pm4, 0x28238U, 0xf);
+	amdrdna_vk_pm4_set_context(&pm4, 0x28238U, 0xf);
+	amdrdna_vk_pm4_event(&pm4, 16, 4);
 	check(pm4.full && pm4.count == 3, "units: a full buffer holds whole packets only");
-	amdrdna_pm4_start(&pm4, words, 16);
-	amdrdna_pm4_event(&pm4, 16, 4);
-	amdrdna_pm4_pad(&pm4, 8);
+	amdrdna_vk_pm4_start(&pm4, words, 16);
+	amdrdna_vk_pm4_event(&pm4, 16, 4);
+	amdrdna_vk_pm4_pad(&pm4, 8);
 	check(!pm4.full && pm4.count == 8 && words[2] == 0xffff1000U, "units: the padding of one-word packets");
 }
 
@@ -2498,7 +2498,7 @@ static void
 test_kernel(const char *directory)
 {
 	static uint32_t words[256];
-	struct amdrdna_pm4 pm4;
+	struct amdrdna_vk_pm4 pm4;
 	struct amdrdna_vk_program kernel;
 	struct amdrdna_gfx10_diagnostic diagnostic;
 	uint32_t *module;
@@ -2521,9 +2521,9 @@ test_kernel(const char *directory)
 
 	/* The program, then a dispatch of 3x2x1 groups. */
 	log_reset();
-	amdrdna_pm4_start(&pm4, words, 256);
+	amdrdna_vk_pm4_start(&pm4, words, 256);
 	amdrdna_vk_state_kernel(&pm4, &kernel, 0x60000040ULL);
-	amdrdna_pm4_dispatch(&pm4, 3, 2, 1);
+	amdrdna_vk_pm4_dispatch(&pm4, 3, 2, 1);
 	check(!pm4.full && decode_buffer(words, pm4.count, 0) == 0 && dispatch_count == 1, "kernel: the packets decode to one dispatch");
 	if (dispatch_count == 1) {
 		check(reg(&dispatch_log[0], 0xb830U) == 0x23456789U && reg(&dispatch_log[0], 0xb834U) == 0x01U &&

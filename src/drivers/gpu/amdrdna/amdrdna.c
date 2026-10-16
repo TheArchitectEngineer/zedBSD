@@ -42,7 +42,7 @@
 #include "drivers/gpu/amdrdna/amdrdna-regs.h"
 
 /* The last stage this driver has; asking for a later one is refused. */
-#define AMDRDNA_LAST_STAGE		AMDRDNA_STAGE_A5S
+#define AMDRDNA_LAST_STAGE		AMDRDNA_STAGE_A9
 
 /* How long the shutdown waits for the bring-up thread to end, and its step. */
 #define AMDRDNA_SHUTDOWN_WAIT_US	5000000U
@@ -55,6 +55,7 @@ static int amdrdna_suspend(struct drv_pci_device *pci);
 static int amdrdna_keep(struct amdrdna_device *device);
 static void amdrdna_thread(void *argument);
 static int amdrdna_run_stage(struct amdrdna_device *device, unsigned stage);
+static int amdrdna_display_stage(unsigned stage);
 static void amdrdna_give_back(struct amdrdna_device *device);
 
 /*
@@ -522,6 +523,14 @@ amdrdna_run_stage(
 	case AMDRDNA_STAGE_A5S:
 		error = amdrdna_a5s_sessions(device);
 		break;
+	case AMDRDNA_STAGE_A6:
+	case AMDRDNA_STAGE_A7:
+	case AMDRDNA_STAGE_A8:
+		error = amdrdna_display_stage(stage);
+		break;
+	case AMDRDNA_STAGE_A9:
+		error = amdrdna_a9_draw(device);
+		break;
 	default:
 		error = ENOTSUP;
 		break;
@@ -532,6 +541,32 @@ amdrdna_run_stage(
 		return error;
 
 	/* Succeeded: the stage reported ok. */
+	return 0;
+}
+
+/*
+ * Runs one of the display's stages A6 to A8, which only run when the
+ * driver takes the display over (amdrdna.disp.own=1); without it the
+ * firmware's picture stays and the stage is passed over, so stage A9 can
+ * follow.  The takeover itself is not in the driver yet.
+ */
+static int
+amdrdna_display_stage(
+	unsigned stage)
+{
+	unsigned own;
+
+	/* Whether the boot asked for the display. */
+	own = amdrdna_parameter_number("amdrdna.disp.own", 0U);
+
+	/* The display the driver does not have yet is refused. */
+	if (own != 0U) {
+		amdrdna_mark("%s fail: the display's takeover is not in the driver yet", amdrdna_stage_name(stage));
+		return ENOTSUP;
+	}
+
+	/* Succeeded: the stage is passed over, the firmware's picture stays. */
+	amdrdna_mark("%s skip: the display stays the firmware's (amdrdna.disp.own=0)", amdrdna_stage_name(stage));
 	return 0;
 }
 

@@ -24,90 +24,23 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/*
- * The packet header: the type 3 in bits 31:30, the body's words less one
- * in 29:16, the operation in 15:8, the compute shader bit 1.
- *
- * Values referenced: Mesa 25.0.7 src/amd/common/sid.h (PKT_TYPE_S,
- * PKT_COUNT_S, PKT3_IT_OPCODE_S, PKT3_SHADER_TYPE_S).
- */
-#define AMDRDNA_PM4_TYPE3		(3U << 30)
-#define AMDRDNA_PM4_COUNT_SHIFT		16U
-#define AMDRDNA_PM4_COUNT_MASK		0x3fffU
-#define AMDRDNA_PM4_OP_SHIFT		8U
-#define AMDRDNA_PM4_COMPUTE		(1U << 1)
+#include "drivers/gpu/amdrdna/amdrdna-hw.h"
 
 /*
- * The packet operations: nothing, the clear of the context registers to
- * their defaults, a compute dispatch, the context control, a draw of
- * generated indices, the instance count, a write of words, a wait on a
- * memory word, the processor sync, an event, a release of memory with an
- * end-of-pipe event, a memory acquire (cache control), and the four
- * register setters (configuration, context, shader, user configuration
- * with an index).
+ * The packet header, the opcodes and the register spaces' first registers
+ are the driver's (amdrdna-hw.h), which the driver's ring commands use
+ * too.  What only the executor writes: the draw's generated-index source
+ * (2), the end-of-pipe write's destination (memory) and interrupt (none,
+ * after the write is confirmed) fields, and the place of an event's index.
  *
- * Values referenced: Mesa 25.0.7 src/amd/common/sid.h (PKT3_NOP,
- * PKT3_CLEAR_STATE, PKT3_DISPATCH_DIRECT, PKT3_CONTEXT_CONTROL,
- * PKT3_DRAW_INDEX_AUTO, PKT3_NUM_INSTANCES, PKT3_WRITE_DATA,
- * PKT3_WAIT_REG_MEM, PKT3_PFP_SYNC_ME, PKT3_EVENT_WRITE, PKT3_RELEASE_MEM,
- * PKT3_ACQUIRE_MEM, PKT3_SET_CONFIG_REG, PKT3_SET_CONTEXT_REG,
- * PKT3_SET_SH_REG, PKT3_SET_UCONFIG_REG, PKT3_SET_UCONFIG_REG_INDEX).
- */
-#define AMDRDNA_PM4_OP_NOTHING			0x10U
-#define AMDRDNA_PM4_OP_DEFAULT_CONTEXT		0x12U
-#define AMDRDNA_PM4_OP_DISPATCH			0x15U
-#define AMDRDNA_PM4_OP_CONTEXT_CONTROL		0x28U
-#define AMDRDNA_PM4_OP_DRAW_GENERATED		0x2dU
-#define AMDRDNA_PM4_OP_INSTANCES		0x2fU
-#define AMDRDNA_PM4_OP_WRITE_WORDS		0x37U
-#define AMDRDNA_PM4_OP_WAIT_VALUE		0x3cU
-#define AMDRDNA_PM4_OP_FETCHER_SYNC		0x42U
-#define AMDRDNA_PM4_OP_EVENT			0x46U
-#define AMDRDNA_PM4_OP_EVENT_FENCE		0x49U
-#define AMDRDNA_PM4_OP_CACHE_ACQUIRE		0x58U
-#define AMDRDNA_PM4_OP_SET_CONFIG		0x68U
-#define AMDRDNA_PM4_OP_SET_CONTEXT		0x69U
-#define AMDRDNA_PM4_OP_SET_SHADER		0x76U
-#define AMDRDNA_PM4_OP_SET_USER_CONFIG		0x79U
-#define AMDRDNA_PM4_OP_SET_USER_CONFIG_INDEXED	0x7aU
-
-/*
- * The bases of the register spaces the setters count from (in bytes), and
- * the index field of the indexed user configuration setter (bits 31:28).
- *
- * Values referenced: Mesa 25.0.7 src/amd/common/sid.h
- * (SI_CONFIG_REG_OFFSET, SI_SH_REG_OFFSET, SI_CONTEXT_REG_OFFSET,
- * CIK_UCONFIG_REG_OFFSET) and src/amd/vulkan/radv_cs.h
- * (radeon_set_uconfig_reg_idx: the index from bit 28).
- */
-#define AMDRDNA_PM4_CONFIG_BASE			0x8000U
-#define AMDRDNA_PM4_SHADER_BASE			0xb000U
-#define AMDRDNA_PM4_CONTEXT_BASE		0x28000U
-#define AMDRDNA_PM4_USER_CONFIG_BASE		0x30000U
-#define AMDRDNA_PM4_REGISTER_INDEX_SHIFT	28U
-
-/*
- * The words of the context control that load and keep every register
- * group's state (bit 31 of each), the draw's generated-index source (2),
- * the wait's "equal" function with the operand in memory, and the
- * end-of-pipe write's destination (memory), data (a 32-bit value) and
- * interrupt (none, after the write is confirmed) fields.
- *
- * Values referenced: Mesa 25.0.7 src/amd/common/sid.h
- * (CC0_UPDATE_LOAD_ENABLES, CC1_UPDATE_SHADOW_ENABLES, WAIT_REG_MEM_EQUAL,
- * WAIT_REG_MEM_MEM_SPACE, EOP_DST_SEL_MEM, EOP_DATA_SEL_VALUE_32BIT,
- * EOP_INT_SEL_SEND_DATA_AFTER_WR_CONFIRM, EVENT_TYPE, EVENT_INDEX) and
+ * Values referenced: Mesa 25.0.7 src/amd/common/sid.h (EOP_DST_SEL_MEM,
+ * EOP_INT_SEL_SEND_DATA_AFTER_WR_CONFIRM, EVENT_INDEX) and
  * src/amd/registers/gfx10.json (the enum VGT_DI_SOURCE_SELECT:
  * DI_SRC_SEL_AUTO_INDEX 2).
  */
-#define AMDRDNA_PM4_CONTROL_LOAD_ALL		(1U << 31)
-#define AMDRDNA_PM4_CONTROL_KEEP_ALL		(1U << 31)
 #define AMDRDNA_PM4_DRAW_GENERATED_INDICES	2U
-#define AMDRDNA_PM4_WAIT_EQUAL_IN_MEMORY	(3U | (1U << 4))
-#define AMDRDNA_PM4_WAIT_POLL_INTERVAL		4U
 #define AMDRDNA_PM4_FENCE_TO_MEMORY		(0U << 16)
 #define AMDRDNA_PM4_FENCE_INTERRUPT_AFTER_WRITE	(3U << 24)
-#define AMDRDNA_PM4_FENCE_DATA_32		(1U << 29)
 #define AMDRDNA_PM4_EVENT_INDEX_SHIFT		8U
 
 /*
@@ -145,8 +78,8 @@
  * cache invalidated (bits 1:0 = 1), the metadata cache written back and
  * invalidated (4, 5), the scalar cache invalidated (7), the vector cache
  * (8) and the per-array cache (9) invalidated, the level-2 cache
- * invalidated (14) and written back (15); and its fixed words: the whole
- * address space, and the poll interval.
+ * invalidated (14) and written back (15).  Its fixed words (the whole
+ * address space, the poll interval) are the driver's.
  *
  * Values referenced: Mesa 25.0.7 src/amd/registers/pkt3.json (GCR_CNTL:
  * GLI_INV 1:0, GLM_WB 4, GLM_INV 5, GLK_INV 7, GLV_INV 8, GL1_INV 9,
@@ -162,9 +95,6 @@
 #define AMDRDNA_PM4_ACQUIRE_LEVEL1		(1U << 9)
 #define AMDRDNA_PM4_ACQUIRE_LEVEL2_INVALIDATE	(1U << 14)
 #define AMDRDNA_PM4_ACQUIRE_LEVEL2_WRITE_BACK	(1U << 15)
-#define AMDRDNA_PM4_ACQUIRE_SIZE_LOW		0xffffffffU
-#define AMDRDNA_PM4_ACQUIRE_SIZE_HIGH		0xffffffU
-#define AMDRDNA_PM4_ACQUIRE_POLL		0xaU
 
 /*
  * The shader registers (bytes from 0): of the pixel program its code
@@ -553,29 +483,30 @@
  * written, and its capacity.  A packet that would pass the end is not
  * written and full is set; the writer is then used no more.
  */
-struct amdrdna_pm4 {
+struct amdrdna_vk_pm4 {
 	uint32_t *words;
 	uint32_t count;
 	uint32_t capacity;
 	bool full;
 };
 
-void amdrdna_pm4_start(struct amdrdna_pm4 *pm4, uint32_t *words, uint32_t capacity);
-void amdrdna_pm4_packet(struct amdrdna_pm4 *pm4, uint32_t operation, uint32_t body_words, bool compute);
-void amdrdna_pm4_word(struct amdrdna_pm4 *pm4, uint32_t word);
-void amdrdna_pm4_set_context(struct amdrdna_pm4 *pm4, uint32_t reg, uint32_t value);
-void amdrdna_pm4_set_context_run(struct amdrdna_pm4 *pm4, uint32_t reg, const uint32_t *values, uint32_t count);
-void amdrdna_pm4_set_shader(struct amdrdna_pm4 *pm4, uint32_t reg, uint32_t value);
-void amdrdna_pm4_set_shader_run(struct amdrdna_pm4 *pm4, uint32_t reg, const uint32_t *values, uint32_t count);
-void amdrdna_pm4_set_user_config(struct amdrdna_pm4 *pm4, uint32_t reg, uint32_t value);
-void amdrdna_pm4_set_user_config_indexed(struct amdrdna_pm4 *pm4, uint32_t reg, uint32_t index, uint32_t value);
-void amdrdna_pm4_event(struct amdrdna_pm4 *pm4, uint32_t event, uint32_t index);
-void amdrdna_pm4_event_fence(struct amdrdna_pm4 *pm4, uint32_t event, uint32_t caches, uint64_t address, uint32_t value);
-void amdrdna_pm4_wait_value(struct amdrdna_pm4 *pm4, uint64_t address, uint32_t value);
-void amdrdna_pm4_cache_acquire(struct amdrdna_pm4 *pm4, uint32_t caches);
-void amdrdna_pm4_fetcher_sync(struct amdrdna_pm4 *pm4);
-void amdrdna_pm4_draw(struct amdrdna_pm4 *pm4, uint32_t vertex_count, uint32_t instance_count);
-void amdrdna_pm4_dispatch(struct amdrdna_pm4 *pm4, uint32_t x, uint32_t y, uint32_t z);
-void amdrdna_pm4_pad(struct amdrdna_pm4 *pm4, uint32_t multiple);
+void amdrdna_vk_pm4_start(struct amdrdna_vk_pm4 *pm4, uint32_t *words, uint32_t capacity);
+void amdrdna_vk_pm4_packet(struct amdrdna_vk_pm4 *pm4, uint32_t operation, uint32_t body_words, bool compute);
+void amdrdna_vk_pm4_word(struct amdrdna_vk_pm4 *pm4, uint32_t word);
+void amdrdna_vk_pm4_context_start(struct amdrdna_vk_pm4 *pm4);
+void amdrdna_vk_pm4_set_context(struct amdrdna_vk_pm4 *pm4, uint32_t reg, uint32_t value);
+void amdrdna_vk_pm4_set_context_run(struct amdrdna_vk_pm4 *pm4, uint32_t reg, const uint32_t *values, uint32_t count);
+void amdrdna_vk_pm4_set_shader(struct amdrdna_vk_pm4 *pm4, uint32_t reg, uint32_t value);
+void amdrdna_vk_pm4_set_shader_run(struct amdrdna_vk_pm4 *pm4, uint32_t reg, const uint32_t *values, uint32_t count);
+void amdrdna_vk_pm4_set_user_config(struct amdrdna_vk_pm4 *pm4, uint32_t reg, uint32_t value);
+void amdrdna_vk_pm4_set_user_config_indexed(struct amdrdna_vk_pm4 *pm4, uint32_t reg, uint32_t index, uint32_t value);
+void amdrdna_vk_pm4_event(struct amdrdna_vk_pm4 *pm4, uint32_t event, uint32_t index);
+void amdrdna_vk_pm4_event_fence(struct amdrdna_vk_pm4 *pm4, uint32_t event, uint32_t caches, uint64_t address, uint32_t value);
+void amdrdna_vk_pm4_wait_value(struct amdrdna_vk_pm4 *pm4, uint64_t address, uint32_t value);
+void amdrdna_vk_pm4_cache_acquire(struct amdrdna_vk_pm4 *pm4, uint32_t caches);
+void amdrdna_vk_pm4_fetcher_sync(struct amdrdna_vk_pm4 *pm4);
+void amdrdna_vk_pm4_draw(struct amdrdna_vk_pm4 *pm4, uint32_t vertex_count, uint32_t instance_count);
+void amdrdna_vk_pm4_dispatch(struct amdrdna_vk_pm4 *pm4, uint32_t x, uint32_t y, uint32_t z);
+void amdrdna_vk_pm4_pad(struct amdrdna_vk_pm4 *pm4, uint32_t multiple);
 
 #endif /* DRIVERS_GPU_AMDRDNA_VK_AMDRDNA_VK_GFX10_H */

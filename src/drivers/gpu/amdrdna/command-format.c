@@ -23,72 +23,6 @@
 #include "drivers/gpu/amdrdna/amdrdna-hw.h"
 
 /*
- * The type-3 header: the type in bits 31:30 (3), the count of body words
- * less one in bits 29:16, the opcode in bits 15:8, and bit 1, which marks
- * a packet of the compute pipeline.  The count 0x3fff makes the one-word
- * filler.
- *
- * Values referenced: Linux v6.19 drivers/gpu/drm/amd/amdgpu/nvd.h
- * (PACKET_TYPE3, PACKET3, PACKET3_COMPUTE) and gfx_v10_0.c (the ring's
- * nop word, PACKET3(PACKET3_NOP, 0x3FFF)).
- */
-#define COMMAND_TYPE3			0xc0000000U
-#define COMMAND_COUNT_SHIFT		16U
-#define COMMAND_COUNT_MASK		0x3fffU
-#define COMMAND_OPCODE_SHIFT		8U
-#define COMMAND_COMPUTE			0x00000002U
-#define COMMAND_FILLER_COUNT		0x3fffU
-
-/*
- * The opcodes the driver uses: nothing (the filler), the partition base,
- * the state reset, the dispatch, the context loads, the value write, the
- * value wait, the indirect buffer, the fetcher's sync, the event fence, the state bracket, the memory move, the cache sync, the
- * context, shader and user register writes, and the scheduler's resource,
- * queue attach and queue detach packets.
- *
- * Values referenced: Linux v6.19 drivers/gpu/drm/amd/amdgpu/nvd.h
- * (PACKET3_NOP, PACKET3_SET_BASE, PACKET3_CLEAR_STATE,
- * PACKET3_DISPATCH_DIRECT, PACKET3_CONTEXT_CONTROL, PACKET3_WRITE_DATA,
- * PACKET3_WAIT_REG_MEM, PACKET3_INDIRECT_BUFFER, PACKET3_PFP_SYNC_ME,
- * PACKET3_RELEASE_MEM, PACKET3_PREAMBLE_CNTL, PACKET3_DMA_DATA,
- * PACKET3_ACQUIRE_MEM, PACKET3_SET_CONTEXT_REG, PACKET3_SET_SH_REG,
- * PACKET3_SET_UCONFIG_REG, PACKET3_SET_RESOURCES, PACKET3_MAP_QUEUES,
- * PACKET3_UNMAP_QUEUES).
- */
-#define COMMAND_OP_NOTHING		0x10U
-#define COMMAND_OP_PARTITION		0x11U
-#define COMMAND_OP_STATE_RESET		0x12U
-#define COMMAND_OP_DISPATCH		0x15U
-#define COMMAND_OP_CONTEXT_LOADS	0x28U
-#define COMMAND_OP_WRITE_VALUE		0x37U
-#define COMMAND_OP_WAIT_VALUE		0x3cU
-#define COMMAND_OP_INDIRECT		0x3fU
-#define COMMAND_OP_FETCHER_SYNC		0x42U
-#define COMMAND_OP_EVENT_FENCE		0x49U
-#define COMMAND_OP_STATE_BRACKET	0x4aU
-#define COMMAND_OP_MOVE			0x50U
-#define COMMAND_OP_CACHE_SYNC		0x58U
-#define COMMAND_OP_CONTEXT_REGISTERS	0x69U
-#define COMMAND_OP_SHADER_REGISTERS	0x76U
-#define COMMAND_OP_USER_REGISTERS	0x79U
-#define COMMAND_OP_QUEUE_RESOURCES	0xa0U
-#define COMMAND_OP_QUEUE_ATTACH		0xa2U
-#define COMMAND_OP_QUEUE_DETACH		0xa3U
-
-/*
- * The first register of each space the register writes address relative
- * to: the context registers, the shader registers and the user
- * configuration registers (dword indices).
- *
- * Values referenced: Linux v6.19 drivers/gpu/drm/amd/amdgpu/nvd.h
- * (PACKET3_SET_CONTEXT_REG_START, PACKET3_SET_SH_REG_START,
- * PACKET3_SET_UCONFIG_REG_START).
- */
-#define COMMAND_CONTEXT_FIRST		0xa000U
-#define COMMAND_SHADER_FIRST		0x2c00U
-#define COMMAND_USER_FIRST		0xc000U
-
-/*
  * The value write's control word: the destination in bits 11:8 (0 a
  * register, 5 memory written directly), the confirmation bit (20) that
  * makes the engine wait until the write landed.
@@ -116,23 +50,17 @@
 #define COMMAND_WAIT_BY_FETCHER		0x00000100U
 
 /*
- * The value wait's control word: the comparison (bits 2:0, 3 for equal),
- * the space it reads (bit 4: 0 a register, 1 memory) and the operation
- * (bits 7:6: 0 wait only, 1 write the first register then wait on the
- * second); and the poll interval of a register wait (0x20) and of a
- * memory wait (4).
+ * The value wait's operation (bits 7:6: 0 wait only, 1 write the first
+ * register then wait on the second) and the poll interval of a register
+ * wait (0x20); its comparison, space and memory poll interval are in
+ * amdrdna-hw.h.
  *
  * Values referenced: Linux v6.19 drivers/gpu/drm/amd/amdgpu/nvd.h
- * (WAIT_REG_MEM_FUNCTION, WAIT_REG_MEM_MEM_SPACE, WAIT_REG_MEM_OPERATION)
- * and gfx_v10_0.c (gfx_v10_0_wait_reg_mem and its callers
- * gfx_v10_0_ring_emit_reg_write_reg_wait and
- * gfx_v10_0_ring_emit_pipeline_sync: the poll intervals).
+ * (WAIT_REG_MEM_OPERATION) and gfx_v10_0.c (gfx_v10_0_wait_reg_mem and
+ * its caller gfx_v10_0_ring_emit_reg_write_reg_wait: the poll interval).
  */
-#define COMMAND_WAIT_EQUAL		0x00000003U
-#define COMMAND_WAIT_IN_MEMORY		0x00000010U
 #define COMMAND_WAIT_AFTER_WRITE	0x00000040U
 #define COMMAND_WAIT_REGISTER_POLL	0x00000020U
-#define COMMAND_WAIT_MEMORY_POLL	0x00000004U
 
 /*
  * The event fence's first control word: the cache flush and timestamp
@@ -154,14 +82,13 @@
  * = 0x06603514.
  */
 #define COMMAND_FENCE_EVENT		0x06603514U
-#define COMMAND_FENCE_DATA_LOW		0x20000000U
 #define COMMAND_FENCE_INTERRUPT		0x02000000U
 
 /*
- * The cache sync's coherence size (all of it, in two words), the poll
- * interval, and its cache control: every instruction, scalar, vector,
+ * The cache sync's cache control: every instruction, scalar, vector,
  * level-1, metadata and level-2 cache invalidated, the metadata and
- * level-2 caches written back.
+ * level-2 caches written back (its size and poll interval are in
+ * amdrdna-hw.h).
  *
  * Values referenced: Linux v6.19 drivers/gpu/drm/amd/amdgpu/nvd.h
  * (the PACKET3_ACQUIRE_MEM_GCR_CNTL fields) and gfx_v10_0.c
@@ -169,9 +96,6 @@
  * derived: 1 | 1 << 4 | 1 << 5 | 1 << 7 | 1 << 8 | 1 << 9 | 1 << 14 |
  * 1 << 15 = 0xc3b1.
  */
-#define COMMAND_SYNC_SIZE_LOW		0xffffffffU
-#define COMMAND_SYNC_SIZE_HIGH		0x00ffffffU
-#define COMMAND_SYNC_POLL		0x0000000aU
 #define COMMAND_SYNC_CACHES		0x0000c3b1U
 
 /*
@@ -276,8 +200,6 @@
 #define COMMAND_COPY_FENCE_UNCACHED	0x00030000U
 #define COMMAND_COPY_COUNT_MASK		0x003fffffU
 
-static uint32_t command_header(uint32_t opcode, unsigned body_words, bool compute);
-
 /* Reports the one-word filler that pads a command ring. */
 uint32_t
 amdrdna_pm4_filler(void)
@@ -285,9 +207,9 @@ amdrdna_pm4_filler(void)
 	uint32_t word;
 
 	/* A nothing packet whose count says it has no body. */
-	word = COMMAND_TYPE3;
-	word |= COMMAND_FILLER_COUNT << COMMAND_COUNT_SHIFT;
-	word |= COMMAND_OP_NOTHING << COMMAND_OPCODE_SHIFT;
+	word = AMDRDNA_PM4_TYPE3;
+	word |= AMDRDNA_PM4_FILLER_COUNT << AMDRDNA_PM4_COUNT_SHIFT;
+	word |= AMDRDNA_PM4_OP_NOTHING << AMDRDNA_PM4_OPCODE_SHIFT;
 
 	/* Succeeded: the filler word. */
 	return word;
@@ -312,18 +234,18 @@ amdrdna_pm4_registers(
 	unsigned index;
 
 	/* The opcode and the first register of the space. */
-	opcode = COMMAND_OP_USER_REGISTERS;
-	base = COMMAND_USER_FIRST;
+	opcode = AMDRDNA_PM4_OP_USER_REGISTERS;
+	base = AMDRDNA_PM4_USER_FIRST;
 	if (space == AMDRDNA_SPACE_CONTEXT) {
-		opcode = COMMAND_OP_CONTEXT_REGISTERS;
-		base = COMMAND_CONTEXT_FIRST;
+		opcode = AMDRDNA_PM4_OP_CONTEXT_REGISTERS;
+		base = AMDRDNA_PM4_CONTEXT_FIRST;
 	} else if (space == AMDRDNA_SPACE_SHADER) {
-		opcode = COMMAND_OP_SHADER_REGISTERS;
-		base = COMMAND_SHADER_FIRST;
+		opcode = AMDRDNA_PM4_OP_SHADER_REGISTERS;
+		base = AMDRDNA_PM4_SHADER_FIRST;
 	}
 
 	/* The header, and the first register relative to its space. */
-	words[0] = command_header(opcode, count + 1U, compute);
+	words[0] = amdrdna_pm4_header(opcode, count + 1U, compute);
 	words[1] = first - base;
 
 	/* The values, one per register. */
@@ -346,7 +268,7 @@ amdrdna_pm4_write_memory(
 	bool compute)
 {
 	/* The header and the control word. */
-	words[0] = command_header(COMMAND_OP_WRITE_VALUE, 4U, compute);
+	words[0] = amdrdna_pm4_header(AMDRDNA_PM4_OP_WRITE_VALUE, 4U, compute);
 	words[1] = COMMAND_WRITE_TO_MEMORY | COMMAND_WRITE_CONFIRM;
 
 	/* The address and the value. */
@@ -370,7 +292,7 @@ amdrdna_pm4_write_register(
 	bool compute)
 {
 	/* The header and the control word. */
-	words[0] = command_header(COMMAND_OP_WRITE_VALUE, 4U, compute);
+	words[0] = amdrdna_pm4_header(AMDRDNA_PM4_OP_WRITE_VALUE, 4U, compute);
 	words[1] = COMMAND_WRITE_TO_REGISTER | COMMAND_WRITE_CONFIRM;
 
 	/* The register, a zero high word, and the value. */
@@ -401,11 +323,11 @@ amdrdna_pm4_fence(
 	bool compute)
 {
 	/* The header, the event and its caches. */
-	words[0] = command_header(COMMAND_OP_EVENT_FENCE, 7U, compute);
+	words[0] = amdrdna_pm4_header(AMDRDNA_PM4_OP_EVENT_FENCE, 7U, compute);
 	words[1] = COMMAND_FENCE_EVENT;
 
 	/* The low 32 bits of data, with the interrupt when asked. */
-	words[2] = COMMAND_FENCE_DATA_LOW;
+	words[2] = AMDRDNA_PM4_FENCE_DATA_LOW;
 	if (interrupt)
 		words[2] |= COMMAND_FENCE_INTERRUPT;
 
@@ -434,17 +356,17 @@ amdrdna_pm4_cache_sync(
 	bool compute)
 {
 	/* The header and a zero coherence control. */
-	words[0] = command_header(COMMAND_OP_CACHE_SYNC, 7U, compute);
+	words[0] = amdrdna_pm4_header(AMDRDNA_PM4_OP_CACHE_SYNC, 7U, compute);
 	words[1] = 0U;
 
 	/* The whole address space. */
-	words[2] = COMMAND_SYNC_SIZE_LOW;
-	words[3] = COMMAND_SYNC_SIZE_HIGH;
+	words[2] = AMDRDNA_PM4_SYNC_SIZE_LOW;
+	words[3] = AMDRDNA_PM4_SYNC_SIZE_HIGH;
 	words[4] = 0U;
 	words[5] = 0U;
 
 	/* The poll interval and the caches. */
-	words[6] = COMMAND_SYNC_POLL;
+	words[6] = AMDRDNA_PM4_SYNC_POLL;
 	words[7] = COMMAND_SYNC_CACHES;
 
 	/* Succeeded: eight words. */
@@ -467,7 +389,7 @@ amdrdna_pm4_move(
 	uint32_t bytes)
 {
 	/* The header and the control word. */
-	words[0] = command_header(COMMAND_OP_MOVE, 6U, false);
+	words[0] = amdrdna_pm4_header(AMDRDNA_PM4_OP_MOVE, 6U, false);
 	words[1] = COMMAND_MOVE_SYNC;
 
 	/* The source and the destination. */
@@ -521,7 +443,7 @@ amdrdna_pm4_dispatch(
 	uint32_t initiator)
 {
 	/* The header. */
-	words[0] = command_header(COMMAND_OP_DISPATCH, 4U, true);
+	words[0] = amdrdna_pm4_header(AMDRDNA_PM4_OP_DISPATCH, 4U, true);
 
 	/* The workgroup counts and the launch word. */
 	words[1] = x;
@@ -547,7 +469,7 @@ amdrdna_pm4_queue_resources(
 	uint64_t queue_mask)
 {
 	/* The header and the scheduler's own queue kind, no contexts. */
-	words[0] = command_header(COMMAND_OP_QUEUE_RESOURCES, 7U, false);
+	words[0] = amdrdna_pm4_header(AMDRDNA_PM4_OP_QUEUE_RESOURCES, 7U, false);
 	words[1] = 0U;
 
 	/* The queues. */
@@ -590,7 +512,7 @@ amdrdna_pm4_queue_attach(
 		engine_field = 0U;
 
 	/* The header and the queue's place. */
-	words[0] = command_header(COMMAND_OP_QUEUE_ATTACH, 6U, false);
+	words[0] = amdrdna_pm4_header(AMDRDNA_PM4_OP_QUEUE_ATTACH, 6U, false);
 	words[1] = place->queue << COMMAND_QUEUE_SHIFT;
 	words[1] |= place->pipe << COMMAND_QUEUE_PIPE_SHIFT;
 	words[1] |= engine_field << COMMAND_QUEUE_ENGINE_SHIFT;
@@ -626,7 +548,7 @@ amdrdna_pm4_queue_detach(
 	uint32_t doorbell)
 {
 	/* The header, the action, the engine kind, one queue. */
-	words[0] = command_header(COMMAND_OP_QUEUE_DETACH, 5U, false);
+	words[0] = amdrdna_pm4_header(AMDRDNA_PM4_OP_QUEUE_DETACH, 5U, false);
 	words[1] = action;
 	words[1] |= engine << COMMAND_QUEUE_KIND_SHIFT;
 	words[1] |= COMMAND_QUEUE_ONE;
@@ -659,7 +581,7 @@ amdrdna_pm4_indirect(
 	bool compute)
 {
 	/* The header and the buffer's address. */
-	words[0] = command_header(COMMAND_OP_INDIRECT, 3U, false);
+	words[0] = amdrdna_pm4_header(AMDRDNA_PM4_OP_INDIRECT, 3U, false);
 	words[1] = (uint32_t)address & COMMAND_INDIRECT_ALIGN_MASK;
 	words[2] = (uint32_t)(address >> 32);
 
@@ -683,7 +605,7 @@ amdrdna_pm4_bracket(
 	bool begin)
 {
 	/* The header and the bracket. */
-	words[0] = command_header(COMMAND_OP_STATE_BRACKET, 1U, false);
+	words[0] = amdrdna_pm4_header(AMDRDNA_PM4_OP_STATE_BRACKET, 1U, false);
 	words[1] = COMMAND_BRACKET_END;
 	if (begin)
 		words[1] = COMMAND_BRACKET_BEGIN;
@@ -702,7 +624,7 @@ amdrdna_pm4_context_loads(
 	uint32_t *words)
 {
 	/* The header and the two control words. */
-	words[0] = command_header(COMMAND_OP_CONTEXT_LOADS, 2U, false);
+	words[0] = amdrdna_pm4_header(AMDRDNA_PM4_OP_CONTEXT_LOADS, 2U, false);
 	words[1] = COMMAND_LOADS_UPDATE;
 	words[2] = COMMAND_LOADS_UPDATE;
 
@@ -719,7 +641,7 @@ amdrdna_pm4_state_reset(
 	uint32_t *words)
 {
 	/* The header and a zero word. */
-	words[0] = command_header(COMMAND_OP_STATE_RESET, 1U, false);
+	words[0] = amdrdna_pm4_header(AMDRDNA_PM4_OP_STATE_RESET, 1U, false);
 	words[1] = 0U;
 
 	/* Succeeded: two words. */
@@ -735,7 +657,7 @@ amdrdna_pm4_partition(
 	uint32_t *words)
 {
 	/* The header, the partition's index and its two halves. */
-	words[0] = command_header(COMMAND_OP_PARTITION, 3U, false);
+	words[0] = amdrdna_pm4_header(AMDRDNA_PM4_OP_PARTITION, 3U, false);
 	words[1] = COMMAND_PARTITION_CONSTANT;
 	words[2] = COMMAND_PARTITION_HALF;
 	words[3] = COMMAND_PARTITION_HALF;
@@ -760,7 +682,7 @@ amdrdna_pm4_fetcher_write_register(
 	uint32_t value)
 {
 	/* The header and the control word: a register, by the fetcher, confirmed. */
-	words[0] = command_header(COMMAND_OP_WRITE_VALUE, 4U, false);
+	words[0] = amdrdna_pm4_header(AMDRDNA_PM4_OP_WRITE_VALUE, 4U, false);
 	words[1] = COMMAND_WRITE_TO_REGISTER | COMMAND_WRITE_BY_FETCHER | COMMAND_WRITE_CONFIRM;
 
 	/* The register, a zero high word, and the value. */
@@ -793,8 +715,8 @@ amdrdna_pm4_write_and_wait(
 	bool fetcher)
 {
 	/* The header and the control word: write then wait, registers, equal. */
-	words[0] = command_header(COMMAND_OP_WAIT_VALUE, 6U, false);
-	words[1] = COMMAND_WAIT_EQUAL | COMMAND_WAIT_AFTER_WRITE;
+	words[0] = amdrdna_pm4_header(AMDRDNA_PM4_OP_WAIT_VALUE, 6U, false);
+	words[1] = AMDRDNA_PM4_WAIT_EQUAL | COMMAND_WAIT_AFTER_WRITE;
 	if (fetcher)
 		words[1] |= COMMAND_WAIT_BY_FETCHER;
 
@@ -829,8 +751,8 @@ amdrdna_pm4_wait_memory(
 	bool fetcher)
 {
 	/* The header and the control word: wait only, memory, equal. */
-	words[0] = command_header(COMMAND_OP_WAIT_VALUE, 6U, false);
-	words[1] = COMMAND_WAIT_EQUAL | COMMAND_WAIT_IN_MEMORY;
+	words[0] = amdrdna_pm4_header(AMDRDNA_PM4_OP_WAIT_VALUE, 6U, false);
+	words[1] = AMDRDNA_PM4_WAIT_EQUAL | AMDRDNA_PM4_WAIT_IN_MEMORY;
 	if (fetcher)
 		words[1] |= COMMAND_WAIT_BY_FETCHER;
 
@@ -841,7 +763,7 @@ amdrdna_pm4_wait_memory(
 	/* The value, every bit compared, and the poll interval. */
 	words[4] = value;
 	words[5] = 0xffffffffU;
-	words[6] = COMMAND_WAIT_MEMORY_POLL;
+	words[6] = AMDRDNA_PM4_WAIT_MEMORY_POLL;
 
 	/* Succeeded: seven words. */
 	return AMDRDNA_PM4_WAIT_WORDS;
@@ -861,7 +783,7 @@ amdrdna_pm4_fetcher_sync(
 	uint32_t *words)
 {
 	/* The header and a zero word. */
-	words[0] = command_header(COMMAND_OP_FETCHER_SYNC, 1U, false);
+	words[0] = amdrdna_pm4_header(AMDRDNA_PM4_OP_FETCHER_SYNC, 1U, false);
 	words[1] = 0U;
 
 	/* Succeeded: two words. */
@@ -964,8 +886,8 @@ amdrdna_copy_fence(
 }
 
 /* Builds a type-3 header for an opcode and its body's word count. */
-static uint32_t
-command_header(
+uint32_t
+amdrdna_pm4_header(
 	uint32_t opcode,
 	unsigned body_words,
 	bool compute)
@@ -973,13 +895,13 @@ command_header(
 	uint32_t word;
 
 	/* The type, the count less one and the opcode. */
-	word = COMMAND_TYPE3;
-	word |= ((uint32_t)(body_words - 1U) & COMMAND_COUNT_MASK) << COMMAND_COUNT_SHIFT;
-	word |= opcode << COMMAND_OPCODE_SHIFT;
+	word = AMDRDNA_PM4_TYPE3;
+	word |= ((uint32_t)(body_words - 1U) & AMDRDNA_PM4_COUNT_MASK) << AMDRDNA_PM4_COUNT_SHIFT;
+	word |= opcode << AMDRDNA_PM4_OPCODE_SHIFT;
 
 	/* The compute pipeline's mark. */
 	if (compute)
-		word |= COMMAND_COMPUTE;
+		word |= AMDRDNA_PM4_COMPUTE;
 
 	/* Succeeded: the header. */
 	return word;

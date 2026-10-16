@@ -190,8 +190,8 @@
 #define STATE_BARRIER_ACQUIRE		(AMDRDNA_PM4_ACQUIRE_SCALAR | AMDRDNA_PM4_ACQUIRE_VECTOR | \
 					 AMDRDNA_PM4_ACQUIRE_LEVEL1)
 
-static void state_start_graphics(struct amdrdna_pm4 *pm4);
-static void state_start_compute(struct amdrdna_pm4 *pm4);
+static void state_start_graphics(struct amdrdna_vk_pm4 *pm4);
+static void state_start_compute(struct amdrdna_vk_pm4 *pm4);
 static bool state_blend_factor(uint32_t factor, uint32_t *code);
 static bool state_blend_op(uint32_t op, uint32_t *code);
 static uint32_t state_export_mask(uint32_t formats);
@@ -211,21 +211,17 @@ static uint32_t state_clamp(int32_t value);
  */
 void
 amdrdna_vk_state_start(
-	struct amdrdna_pm4 *pm4)
+	struct amdrdna_vk_pm4 *pm4)
 {
 	/* The context control and the defaults. */
-	amdrdna_pm4_packet(pm4, AMDRDNA_PM4_OP_CONTEXT_CONTROL, 2U, false);
-	amdrdna_pm4_word(pm4, AMDRDNA_PM4_CONTROL_LOAD_ALL);
-	amdrdna_pm4_word(pm4, AMDRDNA_PM4_CONTROL_KEEP_ALL);
-	amdrdna_pm4_packet(pm4, AMDRDNA_PM4_OP_DEFAULT_CONTEXT, 1U, false);
-	amdrdna_pm4_word(pm4, 0U);
+	amdrdna_vk_pm4_context_start(pm4);
 
 	/* What draws and dispatches share. */
 	state_start_graphics(pm4);
 	state_start_compute(pm4);
 
 	/* Everything the CPU wrote read anew. */
-	amdrdna_pm4_cache_acquire(pm4, STATE_START_CACHES);
+	amdrdna_vk_pm4_cache_acquire(pm4, STATE_START_CACHES);
 }
 
 /*
@@ -280,7 +276,7 @@ amdrdna_vk_pitch(
  */
 int
 amdrdna_vk_state_target(
-	struct amdrdna_pm4 *pm4,
+	struct amdrdna_vk_pm4 *pm4,
 	const struct amdrdna_vk_target *target)
 {
 	uint32_t layout;
@@ -295,16 +291,16 @@ amdrdna_vk_state_target(
 		return EINVAL;
 
 	/* The address in two parts, the first slice and level, the layout, one sample. */
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_TARGET_ADDRESS, (uint32_t)(target->address >> 8));
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_TARGET_ADDRESS_HIGH, (uint32_t)(target->address >> 40) & 0xffU);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_TARGET_VIEW, 0U);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_TARGET_LAYOUT, layout);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_TARGET_ATTRIBUTES, 0U);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_TARGET_ADDRESS, (uint32_t)(target->address >> 8));
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_TARGET_ADDRESS_HIGH, (uint32_t)(target->address >> 40) & 0xffU);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_TARGET_VIEW, 0U);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_TARGET_LAYOUT, layout);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_TARGET_ATTRIBUTES, 0U);
 
 	/* The size, and a linear 2D surface. */
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_TARGET_SIZE,
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_TARGET_SIZE,
 				(target->height - 1U) | ((target->width - 1U) << AMDRDNA_CX_TARGET_WIDTH_SHIFT));
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_TARGET_SURFACE, AMDRDNA_CX_TARGET_SURFACE_2D);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_TARGET_SURFACE, AMDRDNA_CX_TARGET_SURFACE_2D);
 
 	/* Succeeded: the draws after it write the target. */
 	return 0;
@@ -322,7 +318,7 @@ amdrdna_vk_state_target(
  */
 void
 amdrdna_vk_state_viewport(
-	struct amdrdna_pm4 *pm4,
+	struct amdrdna_vk_pm4 *pm4,
 	const uint32_t *viewport)
 {
 	uint32_t transform[6];
@@ -353,7 +349,7 @@ amdrdna_vk_state_viewport(
 	transform[3] = amdrdna_vk_float_fixed(2 * y + height, STATE_FRACTION + 1U);
 	transform[4] = amdrdna_vk_float_fixed(far - near, STATE_DEPTH_FRACTION);
 	transform[5] = viewport[4];
-	amdrdna_pm4_set_context_run(pm4, AMDRDNA_CX_VIEWPORT_TRANSFORM, transform, 6U);
+	amdrdna_vk_pm4_set_context_run(pm4, AMDRDNA_CX_VIEWPORT_TRANSFORM, transform, 6U);
 
 	/* The depth range, the smaller first. */
 	range[0] = viewport[4];
@@ -362,31 +358,31 @@ amdrdna_vk_state_viewport(
 		range[0] = viewport[5];
 		range[1] = viewport[4];
 	}
-	amdrdna_pm4_set_context_run(pm4, AMDRDNA_CX_VIEWPORT_DEPTH_RANGE, range, 2U);
+	amdrdna_vk_pm4_set_context_run(pm4, AMDRDNA_CX_VIEWPORT_DEPTH_RANGE, range, 2U);
 
 	/* The viewport's scissor: its corners rounded out, on the screen (a negative height spans upward). */
 	x0 = state_floor(width < 0 ? x + width : x);
 	x1 = state_ceil(width < 0 ? x : x + width);
 	y0 = state_floor(height < 0 ? y + height : y);
 	y1 = state_ceil(height < 0 ? y : y + height);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_VIEWPORT_SCISSOR,
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_VIEWPORT_SCISSOR,
 				state_clamp(x0) | (state_clamp(y0) << AMDRDNA_CX_SCISSOR_Y_SHIFT) | AMDRDNA_CX_SCISSOR_NO_WINDOW_OFFSET);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_VIEWPORT_SCISSOR + 4U, state_clamp(x1) | (state_clamp(y1) << AMDRDNA_CX_SCISSOR_Y_SHIFT));
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_VIEWPORT_SCISSOR + 4U, state_clamp(x1) | (state_clamp(y1) << AMDRDNA_CX_SCISSOR_Y_SHIFT));
 }
 
 /* Writes the scissor: the pixels from (x0, y0) up to, not including, (x1, y1). */
 void
 amdrdna_vk_state_scissor(
-	struct amdrdna_pm4 *pm4,
+	struct amdrdna_vk_pm4 *pm4,
 	uint32_t x0,
 	uint32_t y0,
 	uint32_t x1,
 	uint32_t y1)
 {
 	/* The near corner without the window offset, the far corner. */
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_GENERIC_SCISSOR,
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_GENERIC_SCISSOR,
 				x0 | (y0 << AMDRDNA_CX_SCISSOR_Y_SHIFT) | AMDRDNA_CX_SCISSOR_NO_WINDOW_OFFSET);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_GENERIC_SCISSOR + 4U, x1 | (y1 << AMDRDNA_CX_SCISSOR_Y_SHIFT));
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_GENERIC_SCISSOR + 4U, x1 | (y1 << AMDRDNA_CX_SCISSOR_Y_SHIFT));
 }
 
 /*
@@ -402,7 +398,7 @@ amdrdna_vk_state_scissor(
  */
 int
 amdrdna_vk_state_blend(
-	struct amdrdna_pm4 *pm4,
+	struct amdrdna_vk_pm4 *pm4,
 	const struct amdrdna_vk_blend *blend)
 {
 	uint32_t control;
@@ -452,10 +448,10 @@ amdrdna_vk_state_blend(
 	}
 
 	/* The blend, its shortcut, the channels written, the normal colour mode. */
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_BLEND, control);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_BLEND_SHORTCUT, shortcut);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_COLOUR_WRITE_MASK, blend->write_mask & STATE_EXPORT_CHANNELS);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_COLOUR_CONTROL, AMDRDNA_CX_COLOUR_CONTROL_NORMAL);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_BLEND, control);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_BLEND_SHORTCUT, shortcut);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_COLOUR_WRITE_MASK, blend->write_mask & STATE_EXPORT_CHANNELS);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_COLOUR_CONTROL, AMDRDNA_CX_COLOUR_CONTROL_NORMAL);
 
 	/* Succeeded: the draws after it blend so. */
 	return 0;
@@ -471,7 +467,7 @@ amdrdna_vk_state_blend(
  */
 void
 amdrdna_vk_state_raster(
-	struct amdrdna_pm4 *pm4,
+	struct amdrdna_vk_pm4 *pm4,
 	uint32_t cull_mode,
 	uint32_t front_face)
 {
@@ -485,7 +481,7 @@ amdrdna_vk_state_raster(
 		mode |= AMDRDNA_CX_RASTER_CULL_BACK;
 	if (front_face == VK_FRONT_FACE_CLOCKWISE)
 		mode |= AMDRDNA_CX_RASTER_CLOCKWISE;
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_RASTER_MODE, mode);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_RASTER_MODE, mode);
 }
 
 /*
@@ -502,7 +498,7 @@ amdrdna_vk_state_raster(
  */
 void
 amdrdna_vk_state_programs(
-	struct amdrdna_pm4 *pm4,
+	struct amdrdna_vk_pm4 *pm4,
 	const struct amdrdna_vk_program *vertex,
 	const struct amdrdna_vk_program *fragment,
 	uint64_t vertex_table,
@@ -524,43 +520,43 @@ amdrdna_vk_state_programs(
 	words[1] = (uint32_t)(vertex->va >> AMDRDNA_SH_CODE_HIGH_SHIFT) & 0xffU;
 	words[2] = vs->counts;
 	words[3] = vs->inputs;
-	amdrdna_pm4_set_shader_run(pm4, AMDRDNA_SH_VERTEX_CODE_LOW, words, 4U);
+	amdrdna_vk_pm4_set_shader_run(pm4, AMDRDNA_SH_VERTEX_CODE_LOW, words, 4U);
 	words[0] = (uint32_t)vertex_table;
 	words[1] = (uint32_t)(vertex_table >> 32);
 	words[2] = base_vertex;
 	words[3] = first_instance;
 	words[4] = instance_mask;
-	amdrdna_pm4_set_shader_run(pm4, AMDRDNA_SH_VERTEX_USER_DATA, words, 5U);
+	amdrdna_vk_pm4_set_shader_run(pm4, AMDRDNA_SH_VERTEX_USER_DATA, words, 5U);
 
 	/* The pixel program: its code, counts and inputs, its two user SGPRs. */
 	words[0] = (uint32_t)(fragment->va >> AMDRDNA_SH_CODE_LOW_SHIFT);
 	words[1] = (uint32_t)(fragment->va >> AMDRDNA_SH_CODE_HIGH_SHIFT) & 0xffU;
 	words[2] = ps->counts;
 	words[3] = ps->inputs;
-	amdrdna_pm4_set_shader_run(pm4, AMDRDNA_SH_PIXEL_CODE_LOW, words, 4U);
+	amdrdna_vk_pm4_set_shader_run(pm4, AMDRDNA_SH_PIXEL_CODE_LOW, words, 4U);
 	words[0] = (uint32_t)fragment_table;
 	words[1] = (uint32_t)(fragment_table >> 32);
-	amdrdna_pm4_set_shader_run(pm4, AMDRDNA_SH_PIXEL_USER_DATA, words, 2U);
+	amdrdna_vk_pm4_set_shader_run(pm4, AMDRDNA_SH_PIXEL_USER_DATA, words, 2U);
 
 	/* The vertex export: the parameters, the positions, the point size, the primitive number. */
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_VERTEX_EXPORT_CONFIG, vs->vertex_export_config);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_POSITION_FORMATS, vs->position_formats);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_VERTEX_OUTPUT_CONTROL, vs->vertex_output_control);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_PRIMITIVE_ID_ENABLE, vs->primitive_id_enable);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_VERTEX_EXPORT_CONFIG, vs->vertex_export_config);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_POSITION_FORMATS, vs->position_formats);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_VERTEX_OUTPUT_CONTROL, vs->vertex_output_control);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_PRIMITIVE_ID_ENABLE, vs->primitive_id_enable);
 
 	/* The pixel inputs: enabled and addressed alike, the interpolants, each attribute, the sprite. */
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_PIXEL_INPUT_ENABLE, ps->pixel_input_enable);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_PIXEL_INPUT_ADDRESS, ps->pixel_input_enable);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_PIXEL_INPUT_CONTROL, ps->interpolant_control);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_BARYCENTRIC_CONTROL, 0U);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_INTERPOLATION_CONTROL, ps->interpolation_control);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_PIXEL_INPUT_ENABLE, ps->pixel_input_enable);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_PIXEL_INPUT_ADDRESS, ps->pixel_input_enable);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_PIXEL_INPUT_CONTROL, ps->interpolant_control);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_BARYCENTRIC_CONTROL, 0U);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_INTERPOLATION_CONTROL, ps->interpolation_control);
 	if (ps->attribute_count != 0U)
-		amdrdna_pm4_set_context_run(pm4, AMDRDNA_CX_ATTRIBUTE_CONTROL, ps->attribute_control, ps->attribute_count);
+		amdrdna_vk_pm4_set_context_run(pm4, AMDRDNA_CX_ATTRIBUTE_CONTROL, ps->attribute_control, ps->attribute_count);
 
 	/* The colour exports and the channels the colour unit takes of them; no depth export. */
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_COLOUR_EXPORT_FORMATS, ps->color_formats);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_COLOUR_EXPORT_MASK, state_export_mask(ps->color_formats));
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_DEPTH_EXPORT_FORMAT, ps->depth_format);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_COLOUR_EXPORT_FORMATS, ps->color_formats);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_COLOUR_EXPORT_MASK, state_export_mask(ps->color_formats));
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_DEPTH_EXPORT_FORMAT, ps->depth_format);
 
 	/*
 	 * The depth unit: early then late, or late and always run for a
@@ -572,11 +568,11 @@ amdrdna_vk_state_programs(
 		depth = (depth & ~AMDRDNA_CX_DEPTH_SHADER_EARLY) | STATE_DEPTH_SHADER_WRITES;
 	if (ps->discards != 0U)
 		depth |= AMDRDNA_CX_DEPTH_SHADER_KILL;
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_DEPTH_SHADER_CONTROL, depth);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_DEPTH_SHADER_CONTROL, depth);
 
 	/* A legacy vertex program in wave32, no geometry program. */
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_STAGES, AMDRDNA_CX_STAGES_LEGACY_VERTEX);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_GEOMETRY_MODE, 0U);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_STAGES, AMDRDNA_CX_STAGES_LEGACY_VERTEX);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_GEOMETRY_MODE, 0U);
 }
 
 /*
@@ -592,7 +588,7 @@ amdrdna_vk_state_programs(
  */
 int
 amdrdna_vk_state_draw(
-	struct amdrdna_pm4 *pm4,
+	struct amdrdna_vk_pm4 *pm4,
 	uint32_t topology,
 	uint32_t vertex_count,
 	uint32_t instance_count)
@@ -629,9 +625,9 @@ amdrdna_vk_state_draw(
 	}
 
 	/* The type, the groups, then the instances and the vertices. */
-	amdrdna_pm4_set_user_config_indexed(pm4, AMDRDNA_UC_PRIMITIVE_TYPE, AMDRDNA_UC_PRIMITIVE_TYPE_INDEX, type);
-	amdrdna_pm4_set_user_config(pm4, AMDRDNA_UC_GEOMETRY_CONTROL, AMDRDNA_UC_GEOMETRY_GROUPS);
-	amdrdna_pm4_draw(pm4, vertex_count, instance_count);
+	amdrdna_vk_pm4_set_user_config_indexed(pm4, AMDRDNA_UC_PRIMITIVE_TYPE, AMDRDNA_UC_PRIMITIVE_TYPE_INDEX, type);
+	amdrdna_vk_pm4_set_user_config(pm4, AMDRDNA_UC_GEOMETRY_CONTROL, AMDRDNA_UC_GEOMETRY_GROUPS);
+	amdrdna_vk_pm4_draw(pm4, vertex_count, instance_count);
 
 	/* Succeeded: the draw is written. */
 	return 0;
@@ -649,7 +645,7 @@ amdrdna_vk_state_draw(
  */
 void
 amdrdna_vk_state_kernel(
-	struct amdrdna_pm4 *pm4,
+	struct amdrdna_vk_pm4 *pm4,
 	const struct amdrdna_vk_program *kernel,
 	uint64_t table)
 {
@@ -658,12 +654,12 @@ amdrdna_vk_state_kernel(
 	/* The code, the counts and inputs, no shared VGPRs, no limits. */
 	words[0] = (uint32_t)(kernel->va >> AMDRDNA_SH_CODE_LOW_SHIFT);
 	words[1] = (uint32_t)(kernel->va >> AMDRDNA_SH_CODE_HIGH_SHIFT) & 0xffU;
-	amdrdna_pm4_set_shader_run(pm4, AMDRDNA_SH_KERNEL_CODE_LOW, words, 2U);
+	amdrdna_vk_pm4_set_shader_run(pm4, AMDRDNA_SH_KERNEL_CODE_LOW, words, 2U);
 	words[0] = kernel->registers.counts;
 	words[1] = kernel->registers.inputs;
-	amdrdna_pm4_set_shader_run(pm4, AMDRDNA_SH_KERNEL_RESOURCES, words, 2U);
-	amdrdna_pm4_set_shader(pm4, AMDRDNA_SH_KERNEL_MORE_RESOURCES, 0U);
-	amdrdna_pm4_set_shader(pm4, AMDRDNA_SH_KERNEL_LIMITS, 0U);
+	amdrdna_vk_pm4_set_shader_run(pm4, AMDRDNA_SH_KERNEL_RESOURCES, words, 2U);
+	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_KERNEL_MORE_RESOURCES, 0U);
+	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_KERNEL_LIMITS, 0U);
 
 	/* The start at 0, 0, 0, then the workgroup's size. */
 	words[0] = 0U;
@@ -672,12 +668,12 @@ amdrdna_vk_state_kernel(
 	words[3] = kernel->compiled->local_size[0];
 	words[4] = kernel->compiled->local_size[1];
 	words[5] = kernel->compiled->local_size[2];
-	amdrdna_pm4_set_shader_run(pm4, AMDRDNA_SH_KERNEL_START, words, 6U);
+	amdrdna_vk_pm4_set_shader_run(pm4, AMDRDNA_SH_KERNEL_START, words, 6U);
 
 	/* The resource table. */
 	words[0] = (uint32_t)table;
 	words[1] = (uint32_t)(table >> 32);
-	amdrdna_pm4_set_shader_run(pm4, AMDRDNA_SH_KERNEL_USER_DATA, words, 2U);
+	amdrdna_vk_pm4_set_shader_run(pm4, AMDRDNA_SH_KERNEL_USER_DATA, words, 2U);
 }
 
 /*
@@ -697,22 +693,22 @@ amdrdna_vk_state_kernel(
  */
 void
 amdrdna_vk_state_barrier(
-	struct amdrdna_pm4 *pm4,
+	struct amdrdna_vk_pm4 *pm4,
 	uint64_t sync_address,
 	uint32_t sync_value)
 {
 	/* The programs drained, the metadata flushed. */
-	amdrdna_pm4_event(pm4, AMDRDNA_PM4_EVENT_PIXELS_DRAINED, AMDRDNA_PM4_EVENT_INDEX_DRAIN);
-	amdrdna_pm4_event(pm4, AMDRDNA_PM4_EVENT_COMPUTE_DRAINED, AMDRDNA_PM4_EVENT_INDEX_DRAIN);
-	amdrdna_pm4_event(pm4, AMDRDNA_PM4_EVENT_COLOUR_META_FLUSHED, 0U);
+	amdrdna_vk_pm4_event(pm4, AMDRDNA_PM4_EVENT_PIXELS_DRAINED, AMDRDNA_PM4_EVENT_INDEX_DRAIN);
+	amdrdna_vk_pm4_event(pm4, AMDRDNA_PM4_EVENT_COMPUTE_DRAINED, AMDRDNA_PM4_EVENT_INDEX_DRAIN);
+	amdrdna_vk_pm4_event(pm4, AMDRDNA_PM4_EVENT_COLOUR_META_FLUSHED, 0U);
 
 	/* The caches flushed at the end of the pipe, the value written, waited for. */
-	amdrdna_pm4_event_fence(pm4, AMDRDNA_PM4_EVENT_CACHES_FLUSHED, STATE_BARRIER_RELEASE, sync_address, sync_value);
-	amdrdna_pm4_wait_value(pm4, sync_address, sync_value);
-	amdrdna_pm4_fetcher_sync(pm4);
+	amdrdna_vk_pm4_event_fence(pm4, AMDRDNA_PM4_EVENT_CACHES_FLUSHED, STATE_BARRIER_RELEASE, sync_address, sync_value);
+	amdrdna_vk_pm4_wait_value(pm4, sync_address, sync_value);
+	amdrdna_vk_pm4_fetcher_sync(pm4);
 
 	/* The shader caches read anew. */
-	amdrdna_pm4_cache_acquire(pm4, STATE_BARRIER_ACQUIRE);
+	amdrdna_vk_pm4_cache_acquire(pm4, STATE_BARRIER_ACQUIRE);
 }
 
 /*
@@ -729,84 +725,84 @@ amdrdna_vk_state_barrier(
  */
 static void
 state_start_graphics(
-	struct amdrdna_pm4 *pm4)
+	struct amdrdna_vk_pm4 *pm4)
 {
 	static const uint32_t zeros[STATE_ACCUMULATORS] = { 0U, 0U, 0U, 0U };
 	static const uint32_t guard_band[4] = { STATE_FLOAT_ONE, STATE_FLOAT_ONE, STATE_FLOAT_ONE, STATE_FLOAT_ONE };
 
 	/* The programs run on every CU; the pixel program's requests; no accumulators. */
-	amdrdna_pm4_set_shader(pm4, AMDRDNA_SH_PIXEL_UNITS, AMDRDNA_SH_UNITS_ALL);
-	amdrdna_pm4_set_shader(pm4, AMDRDNA_SH_PIXEL_UNITS_HIGH, AMDRDNA_SH_UNITS_HIGH_ALL);
-	amdrdna_pm4_set_shader(pm4, AMDRDNA_SH_PIXEL_REQUESTS, AMDRDNA_SH_PIXEL_REQUEST_CONTROL);
-	amdrdna_pm4_set_shader_run(pm4, STATE_PIXEL_ACCUMULATORS, zeros, STATE_ACCUMULATORS);
-	amdrdna_pm4_set_shader(pm4, AMDRDNA_SH_VERTEX_UNITS, AMDRDNA_SH_UNITS_ALL);
-	amdrdna_pm4_set_shader(pm4, AMDRDNA_SH_VERTEX_UNITS_HIGH, AMDRDNA_SH_UNITS_HIGH_ALL);
-	amdrdna_pm4_set_shader(pm4, AMDRDNA_SH_VERTEX_REQUESTS, 0U);
-	amdrdna_pm4_set_shader_run(pm4, STATE_VERTEX_ACCUMULATORS, zeros, STATE_ACCUMULATORS);
+	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_PIXEL_UNITS, AMDRDNA_SH_UNITS_ALL);
+	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_PIXEL_UNITS_HIGH, AMDRDNA_SH_UNITS_HIGH_ALL);
+	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_PIXEL_REQUESTS, AMDRDNA_SH_PIXEL_REQUEST_CONTROL);
+	amdrdna_vk_pm4_set_shader_run(pm4, STATE_PIXEL_ACCUMULATORS, zeros, STATE_ACCUMULATORS);
+	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_VERTEX_UNITS, AMDRDNA_SH_UNITS_ALL);
+	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_VERTEX_UNITS_HIGH, AMDRDNA_SH_UNITS_HIGH_ALL);
+	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_VERTEX_REQUESTS, 0U);
+	amdrdna_vk_pm4_set_shader_run(pm4, STATE_VERTEX_ACCUMULATORS, zeros, STATE_ACCUMULATORS);
 
 	/* The depth unit's punch-out off, both units' cache policies. */
-	amdrdna_pm4_set_context(pm4, STATE_DEPTH_PUNCH_OUT, STATE_PUNCH_OUT_OFF);
-	amdrdna_pm4_set_context(pm4, STATE_DEPTH_CACHE, STATE_DEPTH_CACHE_STREAM);
-	amdrdna_pm4_set_context(pm4, STATE_COLOUR_CACHE, STATE_COLOUR_CACHE_STREAM);
+	amdrdna_vk_pm4_set_context(pm4, STATE_DEPTH_PUNCH_OUT, STATE_PUNCH_OUT_OFF);
+	amdrdna_vk_pm4_set_context(pm4, STATE_DEPTH_CACHE, STATE_DEPTH_CACHE_STREAM);
+	amdrdna_vk_pm4_set_context(pm4, STATE_COLOUR_CACHE, STATE_COLOUR_CACHE_STREAM);
 
 	/* The binner off, its limits, the primitive shader's deallocations, the reuse block. */
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_BINNER_CONTROL, AMDRDNA_CX_BINNER_OFF);
-	amdrdna_pm4_set_context(pm4, STATE_BINNER_LIMITS, STATE_BINNER_LIMITS_NAVI10);
-	amdrdna_pm4_set_context(pm4, STATE_PRIMITIVE_SHADER_MODE, STATE_DEALLOCATIONS);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_VERTEX_REUSE, 14U);
-	amdrdna_pm4_set_context(pm4, STATE_CLIP_NGG, 0U);
-	amdrdna_pm4_set_context(pm4, STATE_RESTART_INDEX, STATE_RESTART_ALL);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_BINNER_CONTROL, AMDRDNA_CX_BINNER_OFF);
+	amdrdna_vk_pm4_set_context(pm4, STATE_BINNER_LIMITS, STATE_BINNER_LIMITS_NAVI10);
+	amdrdna_vk_pm4_set_context(pm4, STATE_PRIMITIVE_SHADER_MODE, STATE_DEALLOCATIONS);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_VERTEX_REUSE, 14U);
+	amdrdna_vk_pm4_set_context(pm4, STATE_CLIP_NGG, 0U);
+	amdrdna_vk_pm4_set_context(pm4, STATE_RESTART_INDEX, STATE_RESTART_ALL);
 
 	/* The window and screen scissors over everything, the generic one until a draw sets it. */
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_WINDOW_OFFSET, 0U);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_WINDOW_SCISSOR, AMDRDNA_CX_SCISSOR_NO_WINDOW_OFFSET);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_WINDOW_SCISSOR + 4U, STATE_SCISSOR_FAR);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_CLIP_RECTANGLE_RULE, AMDRDNA_CX_CLIP_RECTANGLE_ALL);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_SCREEN_SCISSOR, 0U);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_SCREEN_SCISSOR + 4U, STATE_SCISSOR_FAR);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_GENERIC_SCISSOR, AMDRDNA_CX_SCISSOR_NO_WINDOW_OFFSET);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_GENERIC_SCISSOR + 4U, STATE_SCISSOR_FAR);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_WINDOW_OFFSET, 0U);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_WINDOW_SCISSOR, AMDRDNA_CX_SCISSOR_NO_WINDOW_OFFSET);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_WINDOW_SCISSOR + 4U, STATE_SCISSOR_FAR);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_CLIP_RECTANGLE_RULE, AMDRDNA_CX_CLIP_RECTANGLE_ALL);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_SCREEN_SCISSOR, 0U);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_SCREEN_SCISSOR + 4U, STATE_SCISSOR_FAR);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_GENERIC_SCISSOR, AMDRDNA_CX_SCISSOR_NO_WINDOW_OFFSET);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_GENERIC_SCISSOR + 4U, STATE_SCISSOR_FAR);
 
 	/* The rasteriser: the edge rule, the viewport's scissor, the walk, the clipping, the viewport enables. */
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_EDGE_RULE, AMDRDNA_CX_EDGE_RULE_PLAIN);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_SCAN_MODE, AMDRDNA_CX_SCAN_VIEWPORT_SCISSOR);
-	amdrdna_pm4_set_context(pm4, STATE_SCAN_MODE_MORE, STATE_SCAN_WALK);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_CLIP_CONTROL, AMDRDNA_CX_CLIP_D3D);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_VIEWPORT_ENABLE, AMDRDNA_CX_VIEWPORT_ALL);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_RASTER_MODE, 0U);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_EDGE_RULE, AMDRDNA_CX_EDGE_RULE_PLAIN);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_SCAN_MODE, AMDRDNA_CX_SCAN_VIEWPORT_SCISSOR);
+	amdrdna_vk_pm4_set_context(pm4, STATE_SCAN_MODE_MORE, STATE_SCAN_WALK);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_CLIP_CONTROL, AMDRDNA_CX_CLIP_D3D);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_VIEWPORT_ENABLE, AMDRDNA_CX_VIEWPORT_ALL);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_RASTER_MODE, 0U);
 
 	/* The vertex rounding, the guard band of 1.0, one sample with every bit of the mask. */
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_SAMPLE_CONFIG, 0U);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_VERTEX_ROUNDING, AMDRDNA_CX_VERTEX_ROUNDING_PLAIN);
-	amdrdna_pm4_set_context_run(pm4, AMDRDNA_CX_GUARD_BAND, guard_band, 4U);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_SAMPLE_MASK, AMDRDNA_CX_SAMPLE_MASK_ALL);
-	amdrdna_pm4_set_context(pm4, STATE_SAMPLE_MASK_MORE, AMDRDNA_CX_SAMPLE_MASK_ALL);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_SAMPLE_CONFIG, 0U);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_VERTEX_ROUNDING, AMDRDNA_CX_VERTEX_ROUNDING_PLAIN);
+	amdrdna_vk_pm4_set_context_run(pm4, AMDRDNA_CX_GUARD_BAND, guard_band, 4U);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_SAMPLE_MASK, AMDRDNA_CX_SAMPLE_MASK_ALL);
+	amdrdna_vk_pm4_set_context(pm4, STATE_SAMPLE_MASK_MORE, AMDRDNA_CX_SAMPLE_MASK_ALL);
 
 	/* Points and lines of 1.0, the small primitive filter, the stipple scale. */
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_POINT_SIZE, AMDRDNA_CX_POINT_SIZE_ONE);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_POINT_LIMITS, AMDRDNA_CX_POINT_LIMITS_ALL);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_LINE_WIDTH, AMDRDNA_CX_LINE_WIDTH_ONE);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_SMALL_PRIMITIVE_FILTER, AMDRDNA_CX_SMALL_PRIMITIVE_FILTER_ON);
-	amdrdna_pm4_set_context(pm4, STATE_STIPPLE_SCALE, STATE_FLOAT_ONE);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_POINT_SIZE, AMDRDNA_CX_POINT_SIZE_ONE);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_POINT_LIMITS, AMDRDNA_CX_POINT_LIMITS_ALL);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_LINE_WIDTH, AMDRDNA_CX_LINE_WIDTH_ONE);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_SMALL_PRIMITIVE_FILTER, AMDRDNA_CX_SMALL_PRIMITIVE_FILTER_ON);
+	amdrdna_vk_pm4_set_context(pm4, STATE_STIPPLE_SCALE, STATE_FLOAT_ONE);
 
 	/* No depth or stencil; the normal colour mode; no reuse off, the export unconverted. */
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_DEPTH_RENDER, 0U);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_DEPTH_LAYOUT, 0U);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_STENCIL_LAYOUT, 0U);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_DEPTH_CONTROL, 0U);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_COLOUR_CONTROL, AMDRDNA_CX_COLOUR_CONTROL_NORMAL);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_REUSE_OFF, 0U);
-	amdrdna_pm4_set_context(pm4, AMDRDNA_CX_EXPORT_CONVERSION, 0U);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_DEPTH_RENDER, 0U);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_DEPTH_LAYOUT, 0U);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_STENCIL_LAYOUT, 0U);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_DEPTH_CONTROL, 0U);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_COLOUR_CONTROL, AMDRDNA_CX_COLOUR_CONTROL_NORMAL);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_REUSE_OFF, 0U);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_EXPORT_CONVERSION, 0U);
 
 	/* The geometry engine: every index, no offset, instance 0, no user VGPRs, no stereo, no stipple. */
-	amdrdna_pm4_set_user_config(pm4, AMDRDNA_UC_INDEX_MINIMUM, 0U);
-	amdrdna_pm4_set_user_config(pm4, AMDRDNA_UC_INDEX_OFFSET, 0U);
-	amdrdna_pm4_set_user_config(pm4, AMDRDNA_UC_INDEX_MAXIMUM, 0xffffffffU);
-	amdrdna_pm4_set_user_config(pm4, AMDRDNA_UC_INSTANCE_BASE, 0U);
-	amdrdna_pm4_set_user_config(pm4, STATE_STEREO, 0U);
-	amdrdna_pm4_set_user_config(pm4, AMDRDNA_UC_USER_VGPRS, 0U);
-	amdrdna_pm4_set_user_config(pm4, STATE_STIPPLE_VALUE, 0U);
-	amdrdna_pm4_set_user_config(pm4, STATE_STIPPLE_STATE, 0U);
+	amdrdna_vk_pm4_set_user_config(pm4, AMDRDNA_UC_INDEX_MINIMUM, 0U);
+	amdrdna_vk_pm4_set_user_config(pm4, AMDRDNA_UC_INDEX_OFFSET, 0U);
+	amdrdna_vk_pm4_set_user_config(pm4, AMDRDNA_UC_INDEX_MAXIMUM, 0xffffffffU);
+	amdrdna_vk_pm4_set_user_config(pm4, AMDRDNA_UC_INSTANCE_BASE, 0U);
+	amdrdna_vk_pm4_set_user_config(pm4, STATE_STEREO, 0U);
+	amdrdna_vk_pm4_set_user_config(pm4, AMDRDNA_UC_USER_VGPRS, 0U);
+	amdrdna_vk_pm4_set_user_config(pm4, STATE_STIPPLE_VALUE, 0U);
+	amdrdna_vk_pm4_set_user_config(pm4, STATE_STIPPLE_STATE, 0U);
 }
 
 /*
@@ -818,20 +814,20 @@ state_start_graphics(
  */
 static void
 state_start_compute(
-	struct amdrdna_pm4 *pm4)
+	struct amdrdna_vk_pm4 *pm4)
 {
 	static const uint32_t zeros[STATE_ACCUMULATORS] = { 0U, 0U, 0U, 0U };
 
 	/* The delay, the CUs of engines 0 and 1. */
-	amdrdna_pm4_set_user_config(pm4, AMDRDNA_UC_COHERENCY_DELAY, STATE_COHERENCY_DELAY);
-	amdrdna_pm4_set_shader(pm4, AMDRDNA_SH_KERNEL_UNITS_ENGINE0, STATE_KERNEL_UNITS_ALL);
-	amdrdna_pm4_set_shader(pm4, AMDRDNA_SH_KERNEL_UNITS_ENGINE1, STATE_KERNEL_UNITS_ALL);
-	amdrdna_pm4_set_shader(pm4, AMDRDNA_SH_KERNEL_UNITS_ENGINE2, 0U);
-	amdrdna_pm4_set_shader(pm4, AMDRDNA_SH_KERNEL_UNITS_ENGINE3, 0U);
+	amdrdna_vk_pm4_set_user_config(pm4, AMDRDNA_UC_COHERENCY_DELAY, STATE_COHERENCY_DELAY);
+	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_KERNEL_UNITS_ENGINE0, STATE_KERNEL_UNITS_ALL);
+	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_KERNEL_UNITS_ENGINE1, STATE_KERNEL_UNITS_ALL);
+	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_KERNEL_UNITS_ENGINE2, 0U);
+	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_KERNEL_UNITS_ENGINE3, 0U);
 
 	/* No accumulators, no tunnel. */
-	amdrdna_pm4_set_shader_run(pm4, STATE_KERNEL_ACCUMULATORS, zeros, STATE_ACCUMULATORS);
-	amdrdna_pm4_set_shader(pm4, AMDRDNA_SH_KERNEL_TUNNEL, 0U);
+	amdrdna_vk_pm4_set_shader_run(pm4, STATE_KERNEL_ACCUMULATORS, zeros, STATE_ACCUMULATORS);
+	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_KERNEL_TUNNEL, 0U);
 }
 
 /*

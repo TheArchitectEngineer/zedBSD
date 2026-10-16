@@ -80,7 +80,7 @@ main(
 	/* Compiles it. */
 	program = NULL;
 	memset(&diagnostic, 0, sizeof(diagnostic));
-	error = amdrdna_gfx10_compile(words, count, DRV_GPU_STAGE_COMPUTE, &program, &diagnostic);
+	error = amdrdna_gfx10_compile(words, count, DRV_GPU_STAGE_COMPUTE, NULL, &program, &diagnostic);
 	free(words);
 	if (error != 0) {
 		fprintf(stderr, "refused at %u: %s\n", diagnostic.instruction, diagnostic.reason);

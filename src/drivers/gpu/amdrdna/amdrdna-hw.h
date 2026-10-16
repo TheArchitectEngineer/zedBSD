@@ -743,6 +743,96 @@ struct amdrdna_psp_reply {
 #define AMDRDNA_QUEUE_DETACH_PREEMPT	0U
 #define AMDRDNA_QUEUE_DETACH_RESET	1U
 
+/*
+ * The command packets of the graphics and compute queues, shared by the
+ * driver's ring commands (command-format.c) and the Vulkan executor's
+ * indirect buffers (vk/): the type-3 header (the type in bits 31:30, the
+ * body's words less one in 29:16, the opcode in 15:8, the compute
+ * pipeline's mark in bit 1), the count of the one-word filler that has no
+ * body, and every opcode either of them writes.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/amd/amdgpu/nvd.h
+ * (PACKET_TYPE3, PACKET3, PACKET3_COMPUTE, PACKET3_NOP,
+ * PACKET3_SET_BASE, PACKET3_CLEAR_STATE, PACKET3_DISPATCH_DIRECT,
+ * PACKET3_CONTEXT_CONTROL, PACKET3_DRAW_INDEX_AUTO, PACKET3_NUM_INSTANCES,
+ * PACKET3_WRITE_DATA, PACKET3_WAIT_REG_MEM, PACKET3_INDIRECT_BUFFER,
+ * PACKET3_PFP_SYNC_ME, PACKET3_EVENT_WRITE, PACKET3_RELEASE_MEM,
+ * PACKET3_PREAMBLE_CNTL, PACKET3_DMA_DATA, PACKET3_ACQUIRE_MEM,
+ * PACKET3_SET_CONFIG_REG, PACKET3_SET_CONTEXT_REG, PACKET3_SET_SH_REG,
+ * PACKET3_SET_UCONFIG_REG, PACKET3_SET_UCONFIG_REG_INDEX,
+ * PACKET3_SET_RESOURCES, PACKET3_MAP_QUEUES, PACKET3_UNMAP_QUEUES) and
+ * gfx_v10_0.c (the ring's nop word, PACKET3(PACKET3_NOP, 0x3FFF)).
+ */
+#define AMDRDNA_PM4_TYPE3			0xc0000000U
+#define AMDRDNA_PM4_COUNT_SHIFT			16U
+#define AMDRDNA_PM4_COUNT_MASK			0x3fffU
+#define AMDRDNA_PM4_OPCODE_SHIFT		8U
+#define AMDRDNA_PM4_COMPUTE			0x00000002U
+#define AMDRDNA_PM4_FILLER_COUNT		0x3fffU
+#define AMDRDNA_PM4_OP_NOTHING			0x10U
+#define AMDRDNA_PM4_OP_PARTITION		0x11U
+#define AMDRDNA_PM4_OP_STATE_RESET		0x12U
+#define AMDRDNA_PM4_OP_DISPATCH			0x15U
+#define AMDRDNA_PM4_OP_CONTEXT_LOADS		0x28U
+#define AMDRDNA_PM4_OP_DRAW_GENERATED		0x2dU
+#define AMDRDNA_PM4_OP_INSTANCES		0x2fU
+#define AMDRDNA_PM4_OP_WRITE_VALUE		0x37U
+#define AMDRDNA_PM4_OP_WAIT_VALUE		0x3cU
+#define AMDRDNA_PM4_OP_INDIRECT			0x3fU
+#define AMDRDNA_PM4_OP_FETCHER_SYNC		0x42U
+#define AMDRDNA_PM4_OP_EVENT			0x46U
+#define AMDRDNA_PM4_OP_EVENT_FENCE		0x49U
+#define AMDRDNA_PM4_OP_STATE_BRACKET		0x4aU
+#define AMDRDNA_PM4_OP_MOVE			0x50U
+#define AMDRDNA_PM4_OP_CACHE_SYNC		0x58U
+#define AMDRDNA_PM4_OP_CONFIG_REGISTERS		0x68U
+#define AMDRDNA_PM4_OP_CONTEXT_REGISTERS	0x69U
+#define AMDRDNA_PM4_OP_SHADER_REGISTERS		0x76U
+#define AMDRDNA_PM4_OP_USER_REGISTERS		0x79U
+#define AMDRDNA_PM4_OP_USER_REGISTERS_INDEXED	0x7aU
+#define AMDRDNA_PM4_OP_QUEUE_RESOURCES		0xa0U
+#define AMDRDNA_PM4_OP_QUEUE_ATTACH		0xa2U
+#define AMDRDNA_PM4_OP_QUEUE_DETACH		0xa3U
+
+/*
+ * The first register of each space the register writes address relative
+ * to (dword indices): the configuration, context, shader and user
+ * configuration registers; and where the indexed user configuration write
+ * puts its index (bits 31:28 of the register's word).
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/amd/amdgpu/nvd.h
+ * (PACKET3_SET_CONFIG_REG_START, PACKET3_SET_CONTEXT_REG_START,
+ * PACKET3_SET_SH_REG_START, PACKET3_SET_UCONFIG_REG_START) and Mesa 25.0.7
+ * src/amd/vulkan/radv_cs.h (radeon_set_uconfig_reg_idx: the index from
+ * bit 28).
+ */
+#define AMDRDNA_PM4_CONFIG_FIRST		0x2000U
+#define AMDRDNA_PM4_CONTEXT_FIRST		0xa000U
+#define AMDRDNA_PM4_SHADER_FIRST		0x2c00U
+#define AMDRDNA_PM4_USER_FIRST			0xc000U
+#define AMDRDNA_PM4_REGISTER_INDEX_SHIFT	28U
+
+/*
+ * The value wait's control word: the comparison (bits 2:0, 3 for equal)
+ * and the space it reads (bit 4: 1 memory); and the poll interval of a
+ * memory wait (4).  The memory acquire's fixed words: the whole address
+ * space (two words) and the poll interval.  The end-of-pipe release's
+ * data field: the low 32 bits of data (1 at bit 29).
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/amd/amdgpu/nvd.h
+ * (WAIT_REG_MEM_FUNCTION, WAIT_REG_MEM_MEM_SPACE,
+ * PACKET3_RELEASE_MEM_DATA_SEL) and gfx_v10_0.c
+ * (gfx_v10_0_ring_emit_pipeline_sync: the poll interval;
+ * gfx_v10_0_emit_mem_sync: the acquire's size and poll interval).
+ */
+#define AMDRDNA_PM4_WAIT_EQUAL			0x00000003U
+#define AMDRDNA_PM4_WAIT_IN_MEMORY		0x00000010U
+#define AMDRDNA_PM4_WAIT_MEMORY_POLL		0x00000004U
+#define AMDRDNA_PM4_SYNC_SIZE_LOW		0xffffffffU
+#define AMDRDNA_PM4_SYNC_SIZE_HIGH		0x00ffffffU
+#define AMDRDNA_PM4_SYNC_POLL			0x0000000aU
+#define AMDRDNA_PM4_FENCE_DATA_LOW		0x20000000U
+
 /* The words of the packets the driver builds. */
 #define AMDRDNA_PM4_WRITE_WORDS		5U
 #define AMDRDNA_PM4_FENCE_WORDS		8U
@@ -1424,6 +1514,12 @@ amdrdna_alert_clear_word(void);
 /* command-format.c: the ring commands. */
 uint32_t
 amdrdna_pm4_filler(void);
+
+uint32_t
+amdrdna_pm4_header(
+	uint32_t opcode,
+	unsigned body_words,
+	bool compute);
 
 unsigned
 amdrdna_pm4_registers(

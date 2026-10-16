@@ -992,4 +992,9 @@ int
 amdrdna_a5s_sessions(
 	struct amdrdna_device *device);
 
+/* vk-node.c: stage A9. */
+int
+amdrdna_a9_draw(
+	struct amdrdna_device *device);
+
 #endif
