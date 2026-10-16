@@ -27,3 +27,9 @@
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | 測定・原因の特定・init の service の順序の変更（通常は sessiond を先に、debug は今のまま）・依存の一覧 | in-progress（q1221、実装済み・5330 の確認待ち） | なし |
 | p002 | 規約の全文の見直し | planned | p001 |
+
+## 2026-10-16 5330 の測定（T1-703、main 1f22728f5、warm 2 回）
+
+- desktop shown: 1 回目 24.7 s（dd の直後の最初の起動、VFS の初期化 13 s）、2 回目 6.7 s（VFS 0.7 s、kernel→init 1.9 s）。reboot の命令から ssh まで 60.9 s・37.4 s（Linux の終了・UEFI の起動を含む）。
+- 2 回目の残り: compositor の wallpaper 1.8 s・glyphs-fonts 1.6 s（USB の読み込み、BUG-327）、networking 約 10 s（desktop の後）。
+- 出力: /home/awe/zedBSD-worktrees/t1/build/t1703-out/
