@@ -82,6 +82,7 @@ static int runtime_cancel(void *private_data, void *session, void *token, struct
 static int runtime_capacity(void *private_data, void *session, uint32_t timeline, unsigned *available);
 static int runtime_stop_begin(void *private_data, void *session, int error);
 static int runtime_stop_poll(void *private_data, void *session);
+static int runtime_isolate(void *private_data, void *session);
 static void runtime_fault(void *private_data, int error);
 static void runtime_worker(void *argument);
 static int runtime_execute(struct amdrdna_node *node, struct amdrdna_session *session, const void *wire, uint32_t bytes);
@@ -106,16 +107,16 @@ static const struct drv_gpu_job_ops runtime_jobs = {
 };
 
 /*
- * The recovery operations: a session's stop and its poll, and the
- * device's fault.  A session whose work cannot be confirmed stopped is not
- * isolated yet (the device faults instead), and the device is not reset.
+ * The recovery operations: a session's stop and its poll, the device's
+ * fault, and the isolation of a session whose run was given up and whose
+ * queue was reset; the device is not reset.
  */
 static const struct drv_gpu_recovery_ops runtime_recovery = {
 	runtime_stop_begin,
 	runtime_stop_poll,
 	runtime_fault,
 	NULL,
-	NULL
+	runtime_isolate
 };
 
 /*
@@ -691,6 +692,50 @@ runtime_stop_poll(
 		return EAGAIN;
 
 	/* Succeeded: the session's work has ended. */
+	return 0;
+}
+
+/*
+ * Isolates a session the core could not see stop: only one whose run was
+ * given up (its space lost) and of which nothing runs on the GPU any more
+ * (its queue was reset).  It takes no work from now on, and what it held
+ * stays the device's (its blobs' VRAM is kept when they are destroyed).
+ * EIO for any other: the device then faults.
+ *
+ * Procedure referenced: plan/ws039/design.md 11.3 and 11.4 (isolate is 0
+ * only for a session whose queue reset and remap succeeded).
+ */
+static int
+runtime_isolate(
+	void *private_data,
+	void *session)
+{
+	struct amdrdna_node *node;
+	struct amdrdna_session *owner;
+	unsigned long enabled;
+	bool lost;
+	bool quiet;
+
+	/* The node and what the core passed in. */
+	node = private_data;
+	owner = session;
+
+	/* A lost space of which nothing runs. */
+	lost = amdrdna_space_lost(owner->space);
+	quiet = amdrdna_space_quiet(owner->space);
+	if (!lost || !quiet)
+		return EIO;
+
+	/* No more work, and what it holds is kept. */
+	enabled = spin_lock_irqsave(&node->queue_lock);
+
+	owner->stopping = 1;
+	owner->isolated = 1;
+
+	spin_unlock_irqrestore(&node->queue_lock, enabled);
+
+	/* Succeeded: the session is isolated. */
+	amdrdna_mark("gpu device: a session is isolated; what it held stays until the device is reset");
 	return 0;
 }
 

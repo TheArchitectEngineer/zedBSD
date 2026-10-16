@@ -505,9 +505,9 @@ node_resource_destroy(
 	/* A blob leaves its session's list. */
 	node_blob_unlisted(node, resource);
 
-	/* Work of the session that may still run keeps the VRAM. */
+	/* Work of the session that may still run, or a session isolated, keeps the VRAM. */
 	quiet = amdrdna_space_quiet(owner->space);
-	if (!quiet)
+	if (!quiet || owner->isolated != 0)
 		amdrdna_backing_keep(node->device, resource->backing);
 
 	/* Drops the reference; the last one gives the VRAM back. */

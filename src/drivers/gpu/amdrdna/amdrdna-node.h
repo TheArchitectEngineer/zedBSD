@@ -76,7 +76,8 @@ struct amdrdna_resource {
  * space is its GPU address space, blobs lists its blobs by protocol
  * number, and vk is its executor session once an executor is bound.
  * pending counts its queued frames and its reserved or queued markers and
- * stopping refuses its new work (both under the node's queue_lock).
+ * stopping refuses its new work (both under the node's queue_lock);
+ * isolated says the core isolated it: what it held stays the device's.
  */
 struct amdrdna_session {
 	struct amdrdna_node *node;
@@ -85,6 +86,7 @@ struct amdrdna_session {
 	void *vk;
 	uint32_t pending;
 	int stopping;
+	int isolated;
 };
 
 /*
@@ -230,6 +232,7 @@ int amdrdna_vk_memory_create(void *owner, uint64_t bytes, uint64_t *va, void **b
 int amdrdna_vk_gpu_alloc(void *owner, uint64_t bytes, void **token, uint8_t **cpu, uint64_t *va);
 void amdrdna_vk_gpu_free(void *owner, void *token);
 int amdrdna_vk_gpu_run(void *owner, uint64_t va, uint32_t bytes);
+int amdrdna_vk_gpu_run_kernel(void *owner, uint64_t va, uint32_t bytes);
 void amdrdna_vk_gpu_copied(void *owner, uint64_t bytes);
 void amdrdna_vk_gpu_drawn(void *owner, uint32_t draws, uint32_t quads);
 void amdrdna_vk_blob_read(void *owner, uint8_t *to, const uint8_t *from, size_t length);

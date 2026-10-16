@@ -266,6 +266,11 @@ test_packets(void)
 	count = amdrdna_pm4_partition(words);
 	check(count == 4U && words[0] == 0xc0021100U && words[1] == 3U && words[2] == 0x8000U && words[3] == 0x8000U,
 	    "pm4 partition", "words");
+	/* The queue reset's register wait (gfx_v10_0_ring_emit_reg_wait: register space, equal, poll 0x20). */
+	count = amdrdna_pm4_wait_register(words, 0x1e53U, 0U, 0xffffffffU);
+	check(count == 7U && words[0] == 0xc0053c00U && words[1] == 3U && words[2] == 0x1e53U && words[3] == 0U && words[4] == 0U &&
+	    words[5] == 0xffffffffU && words[6] == 0x20U,
+	    "pm4 wait register", "words");
 }
 
 /* The copy engine's packets: Linux's sdma_v5_0.c builders, by hand. */
@@ -284,6 +289,9 @@ test_copy_packets(void)
 	    "copy write", "words");
 
 	/* The linear copy: the count less one. */
+	count = amdrdna_copy_fill(words, 0x8012345600ULL, 0U, 0x400000U);
+	check(count == 5U && words[0] == 11U && words[1] == 0x12345600U && words[2] == 0x80U && words[3] == 0U && words[4] == 0x3fffffU,
+	    "copy fill (sdma_v5_0_emit_fill_buffer)", "words");
 	count = amdrdna_copy_linear(words, 0x8000006000ULL, 0x1000000ULL, 4096U);
 	check(count == 7U && words[0] == 1U && words[1] == 4095U && words[2] == 0U, "copy linear: header and count", "words");
 	check(words[3] == 0x6000U && words[4] == 0x80U && words[5] == 0x1000000U && words[6] == 0U, "copy linear: addresses", "words");

@@ -888,6 +888,12 @@ amdrdna_cp_graphics_reset(
 	unsigned context);
 
 int
+amdrdna_cp_compute_reset(
+	struct amdrdna_device *device,
+	unsigned index,
+	unsigned context);
+
+int
 amdrdna_ring_submit(
 	struct amdrdna_device *device,
 	struct amdrdna_ring *ring,
@@ -1090,6 +1096,12 @@ amdrdna_space_fault(
 	struct amdrdna_device *device,
 	const struct amdrdna_vm_fault *fault,
 	unsigned context);
+
+void
+amdrdna_space_command_error(
+	struct amdrdna_device *device,
+	unsigned context,
+	unsigned source);
 
 void
 amdrdna_space_describe(

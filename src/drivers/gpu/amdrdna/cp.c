@@ -118,6 +118,9 @@
 /* How long a fence of the queue setup is waited for. */
 #define CP_FENCE_MS			1000U
 
+/* The timed steps of a queue's reset, with the start. */
+#define CP_RESET_STEPS			5U
+
 static uint32_t gc_read(struct amdrdna_device *device, unsigned window, uint32_t offset);
 static void gc_write(struct amdrdna_device *device, unsigned window, uint32_t offset, uint32_t value);
 static void gc_change(struct amdrdna_device *device, unsigned window, uint32_t offset, uint32_t clear, uint32_t set);
@@ -132,6 +135,8 @@ static void settings_harvest(struct amdrdna_device *device);
 static void interrupts_set(struct amdrdna_device *device, bool on);
 static void scheduler_registers(struct amdrdna_device *device);
 static int scheduler_run(struct amdrdna_device *device, const uint32_t *words, unsigned count, const char *what);
+static int scheduler_fenced(struct amdrdna_device *device, const uint32_t *words, unsigned count, const char *what);
+static int ring_fenced(struct amdrdna_device *device, struct amdrdna_ring *ring);
 static void compute_image(struct amdrdna_device *device, struct amdrdna_ring *ring, bool active);
 static int compute_attach(struct amdrdna_device *device);
 static int graphics_attach(struct amdrdna_device *device);
@@ -1327,6 +1332,58 @@ scheduler_run(
 }
 
 /*
+ * Hands words to the scheduler's queue with a fence and waits for the
+ * fence (the fence shows the queue ran them; no register test after).
+ * Returns 0, or the error of the submission or the fence.
+ */
+static int
+scheduler_fenced(
+	struct amdrdna_device *device,
+	const uint32_t *words,
+	unsigned count,
+	const char *what)
+{
+	struct amdrdna_ring *ring;
+	uint32_t sequence;
+	int error;
+
+	/* One command for the scheduler at a time; the words, their fence, the wait. */
+	ring = &device->engines.scheduler;
+	mutex_lock(&device->engines.scheduler_lock);
+
+	error = amdrdna_ring_submit(device, ring, words, count, false, &sequence);
+	if (error == 0)
+		error = amdrdna_ring_wait(device, ring, sequence, CP_FENCE_MS);
+
+	mutex_unlock(&device->engines.scheduler_lock);
+
+	/* Reports a scheduler that did not run the words. */
+	if (error != 0) {
+		amdrdna_mark("the scheduler did not run the %s (%d)", what, error);
+		return error;
+	}
+
+	/* Succeeded: the scheduler ran the words. */
+	return 0;
+}
+
+/* Tests that a ring runs: a fence alone on it, waited for.  Returns 0, or the error of the submission or the fence. */
+static int
+ring_fenced(
+	struct amdrdna_device *device,
+	struct amdrdna_ring *ring)
+{
+	uint32_t sequence;
+	int error;
+
+	/* The fence and the wait. */
+	error = amdrdna_ring_submit(device, ring, NULL, 0U, false, &sequence);
+	if (error == 0)
+		error = amdrdna_ring_wait(device, ring, sequence, CP_FENCE_MS);
+	return error;
+}
+
+/*
  * Fills a compute queue's image from the registers it holds now (the
  * queue is selected by this function; the caller holds the select mutex),
  * writes it where the firmware reads it, and keeps a copy.
@@ -1638,8 +1695,10 @@ graphics_preamble(
  * queue went inactive; the queue's image comes back from its copy and its
  * ring starts empty; the scheduler attaches the queue again; the ring is
  * tested and the preamble runs again (the reset may have dropped the
- * state).  The work that did not end is gone; nothing else was on the
- * ring (every run is waited for before the next one is written).
+ * state).  Each step is checked by a fence (the scratch register's test
+ * takes a quarter of a second each).  The work that did not end is gone;
+ * nothing else was on the ring (every run is waited for before the next
+ * one is written).
  *
  * Returns 0, ENOTSUP for a graphics ring run without the scheduler, or the
  * error of the step that failed (the device then has no graphics queue).
@@ -1661,6 +1720,7 @@ amdrdna_cp_graphics_reset(
 	struct amdrdna_ring *ring;
 	volatile uint32_t *slots;
 	unsigned long irq;
+	uint64_t step_ms[CP_RESET_STEPS];
 	uint32_t reset_index;
 	uint32_t request;
 	uint32_t index;
@@ -1678,15 +1738,17 @@ amdrdna_cp_graphics_reset(
 
 	/* The queue takes nothing new until it is attached again. */
 	ring->up = false;
+	step_ms[0] = clock_milliseconds(NULL);
 
 	/* The context's work on queue 0 of the pipe reset; then the image's active word and the register read 0. */
 	request = (1U << context) | (1U << (AMDRDNA_GC_CONTEXT_RESET_QUEUES_SHIFT + ring->place.queue));
 	count = amdrdna_pm4_write_register(words, reset_index, request, false);
 	count += amdrdna_pm4_wait_memory(words + count, ring->image.gpu_address + (uint64_t)AMDRDNA_GRAPHICS_IMAGE_ACTIVE * 4U, 0U, false);
 	count += amdrdna_pm4_wait_register(words + count, reset_index, 0U, 0xffffffffU);
-	error = scheduler_run(device, words, count, "graphics reset");
+	error = scheduler_fenced(device, words, count, "graphics reset");
 	if (error != 0)
 		return error;
+	step_ms[1] = clock_milliseconds(NULL);
 
 	/* The image from its copy, the ring empty: filler words, both pointers 0. */
 	irq = spin_lock_irqsave(&ring->lock);
@@ -1716,19 +1778,157 @@ amdrdna_cp_graphics_reset(
 	/* The scheduler attaches the queue again. */
 	count = amdrdna_pm4_queue_attach(words, &ring->place, AMDRDNA_QUEUE_ENGINE_GRAPHICS,
 	    ring->doorbell, ring->image.gpu_address, ring_gpu_word(device, ring, CP_WORD_WRITE));
-	error = scheduler_run(device, words, count, "graphics attach after the reset");
+	error = scheduler_fenced(device, words, count, "graphics attach after the reset");
 	if (error != 0)
 		return error;
+	step_ms[2] = clock_milliseconds(NULL);
 
-	/* The ring runs commands, and its preamble again. */
-	error = amdrdna_ring_test(device, ring);
+	/* The ring runs commands (a fence alone on it), and its preamble again. */
+	error = ring_fenced(device, ring);
+	step_ms[3] = clock_milliseconds(NULL);
 	if (error == 0)
 		error = graphics_preamble(device);
 	if (error != 0)
 		return error;
+	step_ms[4] = clock_milliseconds(NULL);
 
-	/* Succeeded: the queue takes work again. */
+	/* Succeeded: the queue takes work again; the steps' times are said. */
 	ring->up = true;
+	amdrdna_mark("graphics queue reset steps: reset %llums, attach %llums, test %llums, preamble %llums",
+	    (unsigned long long)(step_ms[1] - step_ms[0]),
+	    (unsigned long long)(step_ms[2] - step_ms[1]),
+	    (unsigned long long)(step_ms[3] - step_ms[2]),
+	    (unsigned long long)(step_ms[4] - step_ms[3]));
+	return 0;
+}
+
+/*
+ * Resets compute queue index after work of a context on it did not end:
+ * the context's waves are killed (a wave that never ends keeps the queue
+ * from being dequeued), the scheduler
+ * detaches the queue with a reset (its work is dropped), the queue is
+ * waited for until it is no longer active, its image is put back from the
+ * copy kept at the first attach, its ring emptied, and the scheduler
+ * attaches it again; a fence alone on it shows it runs.  As for the
+ * graphics queue, nothing else was on the ring.
+ *
+ * Returns 0, ENOTSUP for a queue the scheduler did not attach, or the
+ * error of the step that failed (the queue then takes no work).
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/gfx_v10_0.c (gfx_v10_0_reset_kcq: the
+ * unmap with the reset action, the wait for the queue's active bit with
+ * the queue selected, then gfx_v10_0_kcq_init_queue with the copy and an
+ * empty ring, and the map; the safe mode around the wait is for clock
+ * gating, which the driver does not turn on) and
+ * amdgpu_amdkfd_gfx_v10.c (kgd_wave_control_execute: the command written
+ * with every shader array selected, then the selection put back).
+ */
+int
+amdrdna_cp_compute_reset(
+	struct amdrdna_device *device,
+	unsigned index,
+	unsigned context)
+{
+	uint32_t words[AMDRDNA_PM4_DETACH_WORDS + AMDRDNA_PM4_ATTACH_WORDS];
+	struct amdrdna_engines *engines;
+	struct amdrdna_ring *ring;
+	volatile uint32_t *slots;
+	unsigned long irq;
+	uint64_t step_ms[CP_RESET_STEPS];
+	uint32_t active;
+	uint32_t dequeue;
+	uint32_t slot;
+	unsigned count;
+	int error;
+
+	/* Only a queue the scheduler attached is reset through it. */
+	engines = &device->engines;
+	if (!engines->scheduler_up || !engines->compute_running || index >= engines->compute_count)
+		return ENOTSUP;
+	ring = &engines->compute[index];
+
+	/* The queue takes nothing new until it is attached again. */
+	ring->up = false;
+	step_ms[0] = clock_milliseconds(NULL);
+
+	/* The context's waves killed in every shader array. */
+	mutex_lock(&engines->select);
+
+	select_all_arrays(device);
+	gc_write(device, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_WAVE_COMMAND,
+	    AMDRDNA_GC_WAVE_KILL | AMDRDNA_GC_WAVE_EVERY | AMDRDNA_GC_WAVE_OF_CONTEXT | ((uint32_t)context << AMDRDNA_GC_WAVE_CONTEXT_SHIFT));
+	select_all_arrays(device);
+
+	mutex_unlock(&engines->select);
+
+	/* The scheduler detaches the queue and drops its work; a detach that does not end shows the queue's state. */
+	count = amdrdna_pm4_queue_detach(words, AMDRDNA_QUEUE_ENGINE_COMPUTE, AMDRDNA_QUEUE_DETACH_RESET, ring->doorbell);
+	error = scheduler_fenced(device, words, count, "compute reset");
+	if (error != 0) {
+		mutex_lock(&engines->select);
+
+		select_queue(device, &ring->place, 0U);
+		active = gc_read(device, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_QUEUE_ACTIVE);
+		dequeue = gc_read(device, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_QUEUE_DEQUEUE);
+		select_nothing(device);
+
+		mutex_unlock(&engines->select);
+
+		amdrdna_mark("compute queue %u not detached: active=0x%x dequeue=0x%x", index, active, dequeue);
+		return error;
+	}
+
+	/* The queue no longer active, read with it selected. */
+	mutex_lock(&engines->select);
+
+	select_queue(device, &ring->place, 0U);
+	error = gc_wait(device, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_QUEUE_ACTIVE, 1U, 0U);
+	select_nothing(device);
+
+	mutex_unlock(&engines->select);
+
+	if (error != 0) {
+		amdrdna_mark("compute queue %u stayed active after its reset (%d)", index, error);
+		return error;
+	}
+	step_ms[1] = clock_milliseconds(NULL);
+
+	/* The image from its copy, the ring empty: filler words, both pointers 0. */
+	irq = spin_lock_irqsave(&ring->lock);
+
+	kern_memcpy(ring->image.dma.address, ring->image_copy, AMDRDNA_QUEUE_IMAGE_WORDS * 4U);
+	slots = ring->buffer.dma.address;
+	for (slot = 0U; slot < ring->bytes / 4U; slot++)
+		slots[slot] = amdrdna_pm4_filler();
+	ring->write_pointer = 0U;
+	*amdrdna_ring_word(device, ring, CP_WORD_READ) = 0U;
+	amdrdna_ring_word(device, ring, CP_WORD_WRITE)[0] = 0U;
+	amdrdna_ring_word(device, ring, CP_WORD_WRITE)[1] = 0U;
+	__atomic_thread_fence(__ATOMIC_SEQ_CST);
+
+	spin_unlock_irqrestore(&ring->lock, irq);
+
+	/* The scheduler attaches the queue again. */
+	count = amdrdna_pm4_queue_attach(words, &ring->place, AMDRDNA_QUEUE_ENGINE_COMPUTE,
+	    ring->doorbell, ring->image.gpu_address, ring_gpu_word(device, ring, CP_WORD_WRITE));
+	error = scheduler_fenced(device, words, count, "compute attach after the reset");
+	if (error != 0)
+		return error;
+	step_ms[2] = clock_milliseconds(NULL);
+
+	/* The ring runs commands: a fence alone on it. */
+	error = ring_fenced(device, ring);
+	if (error != 0)
+		return error;
+	step_ms[3] = clock_milliseconds(NULL);
+
+	/* Succeeded: the queue takes work again; the steps' times are said. */
+	ring->up = true;
+	amdrdna_mark("compute queue %u reset steps: reset %llums, attach %llums, test %llums", index,
+	    (unsigned long long)(step_ms[1] - step_ms[0]),
+	    (unsigned long long)(step_ms[2] - step_ms[1]),
+	    (unsigned long long)(step_ms[3] - step_ms[2]));
 	return 0;
 }
 
