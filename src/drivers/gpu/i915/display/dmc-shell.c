@@ -177,46 +177,6 @@ drv_i915_dmc_fini(
 	i915_dmc_shell_copy(dev);
 }
 
-/*
- * Switches a pipe's DMC on after the pipe runs (intel_dmc_enable_pipe()),
- * when the loader took a program for it.
- */
-void
-drv_i915_dmc_enable_pipe(
-	struct drm_i915_private *i915,
-	enum pipe pipe)
-{
-	unsigned loaded;
-
-	/* A pipe without a program has nothing to switch. */
-	loaded = has_dmc_id_fw(i915, I915_XD_DMC_PIPE((unsigned)pipe));
-	if (loaded == 0u)
-		return;
-
-	/* Sets the enable of the pipe's DMC. */
-	(void)i915_lcd_intel_de_rmw(i915, _MMIO(I915_XD_PIPEDMC_CONTROL((unsigned)pipe)), 0, I915_XD_PIPEDMC_ENABLE);
-}
-
-/*
- * Switches a pipe's DMC off before the pipe stops (intel_dmc_disable_pipe()),
- * when the loader took a program for it.
- */
-void
-drv_i915_dmc_disable_pipe(
-	struct drm_i915_private *i915,
-	enum pipe pipe)
-{
-	unsigned loaded;
-
-	/* A pipe without a program has nothing to switch. */
-	loaded = has_dmc_id_fw(i915, I915_XD_DMC_PIPE((unsigned)pipe));
-	if (loaded == 0u)
-		return;
-
-	/* Clears the enable of the pipe's DMC. */
-	(void)i915_lcd_intel_de_rmw(i915, _MMIO(I915_XD_PIPEDMC_CONTROL((unsigned)pipe)), I915_XD_PIPEDMC_ENABLE, 0);
-}
-
 /* Finds the display a DMC loader belongs to. */
 static struct i915_display *
 i915_dmc_shell_display(

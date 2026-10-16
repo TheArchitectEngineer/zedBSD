@@ -1253,69 +1253,6 @@ drv_i915_display_dc9_leave(
 }
 
 /*
- * Takes a domain into a crtc's power-domain set (intel_display_power_get_in_set()).
- */
-void
-drv_i915_display_power_get_in_set(
-	struct drm_i915_private *i915,
-	struct intel_display_power_domain_set *power_domain_set,
-	enum intel_display_power_domain domain)
-{
-	intel_wakeref_t wf;
-	bool already_in_set;
-
-	/* A domain already in the set is a warning of the Linux text. */
-	already_in_set = test_bit(domain, power_domain_set->mask.bits);
-	if (already_in_set)
-		drv_i915_lcd_error("WARN_ON(test_bit(domain, power_domain_set->mask.bits))\n");
-
-	/*
-	 * Takes the reference.  The cookie is kept only under
-	 * CONFIG_DRM_I915_DEBUG_RUNTIME_PM, which is not enabled.
-	 */
-	wf = i915_lcd_intel_display_power_get(i915, domain);
-	UNUSED_PARAMETER(wf);
-
-	/* Records the domain as held by the set. */
-	i915_set_bit(domain, power_domain_set->mask.bits);
-}
-
-/*
- * Gives the domains of a mask back from a crtc's power-domain set
- * (intel_display_power_put_mask_in_set()).
- */
-void
-drv_i915_display_power_put_mask_in_set(
-	struct drm_i915_private *i915,
-	struct intel_display_power_domain_set *power_domain_set,
-	struct intel_power_domain_mask *mask)
-{
-	enum intel_display_power_domain domain;
-	bool subset;
-	bool in_mask;
-
-	/* A domain the set does not hold is a warning of the Linux text. */
-	subset = i915_bitmap_subset(mask->bits, power_domain_set->mask.bits, POWER_DOMAIN_NUM);
-	if (!subset)
-		drv_i915_lcd_error("WARN_ON(!bitmap_subset(mask->bits, power_domain_set->mask.bits, POWER_DOMAIN_NUM))\n");
-
-	/*
-	 * Puts every domain of the mask (for_each_power_domain) with the cookie
-	 * -1: per-domain cookies are kept only under
-	 * CONFIG_DRM_I915_DEBUG_RUNTIME_PM.
-	 */
-	for (domain = 0; domain < POWER_DOMAIN_NUM; domain++) {
-		in_mask = test_bit(domain, mask->bits);
-		if (!in_mask)
-			continue;
-
-		/* Gives the reference back and forgets it. */
-		i915_lcd_intel_display_power_put(i915, domain, -1);
-		i915_clear_bit(domain, power_domain_set->mask.bits);
-	}
-}
-
-/*
  * Takes a power reference for a panel run (the run's power_get hook).
  *
  * Returns the cookie domain + 1, or 0 when the domain is unknown or could

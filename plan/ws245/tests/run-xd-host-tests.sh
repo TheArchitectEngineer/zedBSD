@@ -48,7 +48,8 @@
 #   host-xd-output-test    a screen's output: the 5330's panel lit (power uses in order, the display buffer, the
 #                          backlight from the VBT, the PLL, the port and its trained link, the pipe, the start) and
 #                          darkened in reverse; the backlight's levels; a PLL that does not lock, a link that does not
-#                          train, a refused power reference
+#                          train, a refused power reference; an HDMI sink on DDI B; a Type-C DisplayPort sink in
+#                          DisplayPort alternate and Thunderbolt mode
 # The check against the Linux tree itself is plan/ws245/tests/check-xd-regs-linux.sh (needs the unpacked tree).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -e

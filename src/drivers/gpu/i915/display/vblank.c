@@ -80,17 +80,6 @@ drv_i915_wait_for_pipe_scanline_stopped(
 }
 
 /*
- * Waits until the pipe's scanline counter moves.
- */
-void
-drv_i915_wait_for_pipe_scanline_moving(
-	struct intel_crtc *crtc)
-{
-	/* Waits for the counter to move. */
-	i915_wait_for_pipe_scanline_moving(crtc, true);
-}
-
-/*
  * Reads the scanline the pipe is on, with interrupts off around the read.
  *
  * The Linux intel_get_crtc_scanline(): the interrupt section is the named

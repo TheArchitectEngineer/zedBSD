@@ -125,5 +125,8 @@ int drv_i915_xd_dpll_read(struct i915_xd_io *io, const struct i915_xd_platform *
 void drv_i915_xd_dpll_map(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned phy, unsigned select);
 void drv_i915_xd_dpll_unmap(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned phy);
 int drv_i915_xd_dpll_mapped(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned phy, unsigned *select);
+uint32_t drv_i915_xd_tc_clock_select(int own_pll, uint32_t rate_khz);
+void drv_i915_xd_tc_clock_on(struct i915_xd_io *io, unsigned ddi, unsigned tc, uint32_t select);
+void drv_i915_xd_tc_clock_off(struct i915_xd_io *io, unsigned ddi, unsigned tc);
 
 #endif /* DRIVERS_GPU_I915_DISPLAY_XD_CLOCK_H */

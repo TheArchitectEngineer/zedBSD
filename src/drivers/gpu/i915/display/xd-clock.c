@@ -1148,6 +1148,78 @@ drv_i915_xd_dpll_unmap(
 }
 
 /*
+ * Returns the clock select of a Type-C port's DDI: its own PLL, or the
+ * Thunderbolt PLL's output of the link rate (none for a rate it does not
+ * put out).
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (icl_pll_to_ddi_clk_sel).
+ */
+uint32_t
+drv_i915_xd_tc_clock_select(
+	int own_pll,
+	uint32_t rate_khz)
+{
+	/* The port's own PLL. */
+	if (own_pll)
+		return I915_XD_DDI_CLK_SEL_TC_PLL;
+
+	/* The Thunderbolt PLL's output of the rate. */
+	switch (rate_khz) {
+	case 162000U:
+		return I915_XD_DDI_CLK_SEL_TBT_162;
+	case 270000U:
+		return I915_XD_DDI_CLK_SEL_TBT_270;
+	case 540000U:
+		return I915_XD_DDI_CLK_SEL_TBT_540;
+	case 810000U:
+		return I915_XD_DDI_CLK_SEL_TBT_810;
+	default:
+		break;
+	}
+
+	/* A rate the Thunderbolt PLL does not put out. */
+	return I915_XD_DDI_CLK_SEL_NONE;
+}
+
+/*
+ * Starts a Type-C port's DDI clock: the clock select, then the port's
+ * clock-off bit cleared (tc is the Type-C port, 0 for the first).
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (icl_ddi_tc_enable_clock).
+ */
+void
+drv_i915_xd_tc_clock_on(
+	struct i915_xd_io *io,
+	unsigned ddi,
+	unsigned tc,
+	uint32_t select)
+{
+	/* The source, then the gate. */
+	drv_i915_xd_io_write(io, I915_XD_DDI_CLK_SEL(ddi), select << 28);
+	(void)drv_i915_xd_io_rmw(io, I915_XD_DPCLKA_CFGCR0, I915_XD_DPCLKA_TC_OFF(tc), 0U);
+}
+
+/*
+ * Stops a Type-C port's DDI clock: the port's clock-off bit set, then no
+ * source selected.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (icl_ddi_tc_disable_clock).
+ */
+void
+drv_i915_xd_tc_clock_off(
+	struct i915_xd_io *io,
+	unsigned ddi,
+	unsigned tc)
+{
+	/* The gate, then the source. */
+	(void)drv_i915_xd_io_rmw(io, I915_XD_DPCLKA_CFGCR0, 0U, I915_XD_DPCLKA_TC_OFF(tc));
+	drv_i915_xd_io_write(io, I915_XD_DDI_CLK_SEL(ddi), I915_XD_DDI_CLK_SEL_NONE);
+}
+
+/*
  * Reads a combo PHY's DDI clock: the DPLL it selects, and returns 1 when
  * the clock is ungated.
  *

@@ -1045,8 +1045,7 @@ i915_xd_fw_clock_off(
 	}
 
 	/* A Type-C port's clock-off bit, then no PLL selected. */
-	(void)drv_i915_xd_io_rmw(io, I915_XD_DPCLKA_CFGCR0, 0U, I915_XD_DPCLKA_TC_OFF((unsigned)port->tc - 1U));
-	drv_i915_xd_io_write(io, I915_XD_DDI_CLK_SEL(port->ddi), I915_XD_DDI_CLK_SEL_NONE);
+	drv_i915_xd_tc_clock_off(io, port->ddi, (unsigned)port->tc - 1U);
 }
 
 /* Calls one of the caller's hooks when it has one. */

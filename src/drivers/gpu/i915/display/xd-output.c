@@ -117,6 +117,12 @@ static void i915_xd_output_observe(const struct i915_xd_output_env *env, unsigne
 static void i915_xd_output_dbuf_before(struct i915_xd_output *out, const struct i915_xd_output_env *env);
 static void i915_xd_output_dbuf_after(struct i915_xd_output *out, const struct i915_xd_output_env *env);
 static void i915_xd_output_give_crtc(struct i915_xd_output *out, const struct i915_xd_output_env *env);
+static int i915_xd_output_port_hdmi(struct i915_xd_output *out, const struct i915_xd_output_env *env);
+static void i915_xd_output_clock_on(struct i915_xd_output *out, const struct i915_xd_output_env *env);
+static void i915_xd_output_clock_off(struct i915_xd_output *out, const struct i915_xd_output_env *env);
+static void i915_xd_output_trans_clock(struct i915_xd_output *out, const struct i915_xd_output_env *env);
+static void i915_xd_output_func(const struct i915_xd_output *out, unsigned mode, struct i915_xd_trans_func *func);
+static void i915_xd_output_hdmi_levels(struct i915_xd_output *out, const struct i915_xd_output_env *env);
 static void i915_xd_output_ddi_link(const struct i915_xd_output *out, struct i915_xd_ddi_link *link);
 static const struct i915_xd_combo_swing_table *i915_xd_output_swing_table(const struct i915_xd_output *out, const struct i915_xd_output_env *env);
 static void i915_xd_output_dp_link(struct i915_xd_output_run *run, struct i915_xd_dp_link *link);
@@ -125,6 +131,7 @@ static void i915_xd_output_islands(struct i915_xd_output *out, const struct i915
 static void i915_xd_output_levels(void *context, const uint8_t set[4]);
 static void i915_xd_output_pattern(void *context, uint8_t pattern);
 static void i915_xd_output_prepare(void *context);
+static void i915_xd_output_phy_wa(void *context);
 static void i915_xd_output_idle(void *context);
 static void i915_xd_output_sleep(void *context, unsigned min_us, unsigned max_us);
 static void i915_xd_output_note(void *context, unsigned kind, const char *text);
@@ -356,13 +363,17 @@ drv_i915_xd_output_dmc(
 }
 
 /*
- * Takes the AUX power of the port's link before its PLL is enabled: the
- * AUX channel of a DisplayPort link must stay powered while the link
- * runs.  Returns 0, or EIO.
+ * Takes the power the port's link needs before its PLL is enabled: a
+ * Type-C port's link to its PHY first (and with it the mode the port is
+ * held in), then the AUX channel's power of a DisplayPort link, which
+ * must stay powered while the link runs, then the Type-C PHY's lanes for
+ * the display.  An HDMI port on a combo PHY needs nothing here.  Returns
+ * 0, or EIO.
  *
  * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
  * (intel_ddi_pre_pll_enable, main_link_aux_power_domain_get,
- * intel_ddi_main_link_aux_domain).
+ * intel_ddi_main_link_aux_domain), intel_tc.c (intel_tc_port_get_link,
+ * intel_tc_port_set_fia_lane_count).
  */
 int
 drv_i915_xd_output_link_power(
@@ -371,21 +382,38 @@ drv_i915_xd_output_link_power(
 {
 	int error;
 
+	/* A Type-C port's link, and the mode the port is held in. */
+	if (out->tc) {
+		env->tc->get_link(env->context, out->lanes);
+		out->tc_linked = 1;
+		out->tc_mode = env->tc->mode(env->context);
+	}
+
+	/* An HDMI port on a combo PHY has no AUX channel to keep powered. */
+	if (out->kind == I915_XD_SCREEN_HDMI && !out->tc)
+		return 0;
+
 	/* The AUX channel's power. */
 	error = i915_xd_output_take(out, env, I915_XD_OUTPUT_POWER_AUX);
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the link's AUX power is held. */
+	/* The Type-C PHY's lanes for the display, but in Thunderbolt mode. */
+	if (out->tc && out->tc_mode != I915_XD_OUTPUT_TC_TBT)
+		env->tc->lanes(env->context, out->lanes);
+
+	/* Succeeded: the link's power is held. */
 	return 0;
 }
 
 /*
  * Turns the port's PLL on for the pipe, under the PLLs' lock: the first
- * pipe on it turns it on with its words, a later one only joins it.
- * Returns 0, EBUSY when the pipe is on the PLL already, ENODEV for a PLL
- * the platform does not have, or EIO when the PLL did not power up or
- * lock.
+ * pipe on it turns it on with its words, a later one only joins it.  A
+ * Type-C port's PLL (its own in DisplayPort alternate or legacy mode,
+ * the Thunderbolt PLL the Type-C ports share otherwise) is the
+ * caller's.  Returns
+ * 0, EBUSY when the pipe is on the PLL already, ENODEV for a PLL the
+ * platform does not have, or EIO when the PLL did not power up or lock.
  *
  * Procedure referenced: Linux v6.8.12
  * drivers/gpu/drm/i915/display/intel_dpll_mgr.c (intel_enable_shared_dpll,
@@ -400,8 +428,19 @@ drv_i915_xd_output_pll(
 	uint8_t pipe_bit;
 	uint8_t before;
 	unsigned late;
+	int error;
 
 	pipe_bit = (uint8_t)(1U << out->pipe);
+
+	/* A Type-C port's PLL (its own, or the Thunderbolt PLL the Type-C ports share) is the caller's. */
+	if (out->tc) {
+		error = env->tc->pll(env->context, 1);
+		if (error != 0)
+			return error;
+		out->pll_pipes |= pipe_bit;
+		out->pll_on = 1;
+		return 0;
+	}
 
 	/* Joins the PLL or turns it on, under the PLLs' lock. */
 	i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_PLL, 1);
@@ -423,7 +462,7 @@ drv_i915_xd_output_pll(
 		return 0;
 	}
 
-	/* The PLL the platform knows by the select. */
+	/* The combo PLL as the platform knows it. */
 	pll = drv_i915_xd_dpll_desc(env->platform, out->pll);
 	if (pll == NULL) {
 		i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_PLL, 0);
@@ -447,23 +486,28 @@ drv_i915_xd_output_pll(
 }
 
 /*
- * Brings the port and its DisplayPort link up: the pipe's underruns
- * armed, the link's levels and the DDI buffer's word, the panel's power,
- * the DDI clock mapped to the PLL, the port's IO power, the transcoder's
- * clock and function, the signal levels and lanes, the splitter off, the
- * sink woken, the link trained and ended, then the stream's attributes.
- * A link that does not train is reported to the caller and the step
- * goes on (the pipe still lights, black).  Returns 0, or EIO when the
- * port's IO power could not be taken.
+ * Brings the port up.  A DisplayPort port (the panel's or a Type-C
+ * one): the pipe's underruns armed, the link's levels and the DDI
+ * buffer's word, the panel's power, the DDI clock from the PLL, the
+ * port's IO power (a Type-C port in Thunderbolt mode has none), the
+ * Type-C PHY's DisplayPort mode, the transcoder's clock and function,
+ * the signal levels and lanes, the splitter off, the sink woken (and a
+ * branch's converter set up), the link trained and ended, then the
+ * stream's attributes.  A link that does not train is reported to the
+ * caller and the step goes on (the pipe still lights, black).  An HDMI
+ * port: the DDI clock, the IO power, the transcoder's clock and the
+ * data island packets off; its buffer starts with the output.  Returns
+ * 0, or EIO when the port's IO power could not be taken.
  *
  * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
  * (intel_ddi_pre_enable, intel_ddi_pre_enable_dp, tgl_ddi_pre_enable_dp,
- * intel_ddi_init_dp_buf_reg, intel_ddi_enable_clock,
- * intel_ddi_enable_transcoder_clock, intel_ddi_config_transcoder_func,
- * intel_ddi_power_up_lanes, intel_ddi_mso_configure, intel_ddi_set_dp_msa),
- * intel_dp.c (intel_dp_set_link_params, intel_dp_set_power),
- * intel_dp_link_training.c (intel_dp_start_link_train,
- * intel_dp_stop_link_train).
+ * intel_ddi_pre_enable_hdmi, intel_ddi_init_dp_buf_reg,
+ * intel_ddi_enable_clock, intel_ddi_enable_transcoder_clock,
+ * intel_ddi_config_transcoder_func, intel_ddi_power_up_lanes,
+ * intel_ddi_mso_configure, intel_ddi_set_dp_msa), intel_dp.c
+ * (intel_dp_set_link_params, intel_dp_set_power,
+ * intel_dp_configure_protocol_converter), intel_dp_link_training.c
+ * (intel_dp_start_link_train, intel_dp_stop_link_train).
  */
 int
 drv_i915_xd_output_port(
@@ -475,63 +519,68 @@ drv_i915_xd_output_port(
 	struct i915_xd_dp_link link;
 	struct i915_xd_trans_func func;
 	struct i915_xd_msa msa;
-	uint32_t clock;
-	unsigned which;
 	int error;
 
 	/* Where the pipe's underruns are armed. */
 	i915_xd_output_observe(env, I915_XD_OUTPUT_SEE_UNDERRUN);
 
+	/* An HDMI port. */
+	if (out->kind == I915_XD_SCREEN_HDMI) {
+		error = i915_xd_output_port_hdmi(out, env);
+		if (error != 0)
+			return error;
+		return 0;
+	}
+
 	/* The link starts untrained from the lowest levels. */
 	kern_memset(out->set, 0, sizeof(out->set));
 	out->trained = 0;
 
-	/* The DDI buffer's word; its enable is set when the link starts. */
+	/* The DDI buffer's word; its enable is set when the link starts.  A Type-C PHY of display 13 the display owns says so in it. */
 	i915_xd_output_ddi_link(out, &ddi);
 	out->buf_word = drv_i915_xd_ddi_dp_word(env->platform, &ddi);
+	if (out->tc && env->platform->display_ver >= 13U && out->tc_mode != I915_XD_OUTPUT_TC_TBT)
+		out->buf_word |= I915_XD_DDI_BUF_TC_OWNED;
 
 	/* The panel's power. */
-	(void)i915_xd_output_panel(env, I915_XD_OUTPUT_PANEL_ON);
+	if (out->kind == I915_XD_SCREEN_PANEL)
+		(void)i915_xd_output_panel(env, I915_XD_OUTPUT_PANEL_ON);
 
-	/* The DDI clock from the port's PLL, under the PLLs' lock. */
-	i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_PLL, 1);
-	drv_i915_xd_dpll_map(env->io, env->platform, out->phy, out->pll);
-	i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_PLL, 0);
+	/* The DDI clock from the port's PLL. */
+	i915_xd_output_clock_on(out, env);
 
-	/* The port's IO power. */
-	error = i915_xd_output_take(out, env, I915_XD_OUTPUT_POWER_DDI_IO);
-	if (error != 0)
-		return error;
+	/* The port's IO power, but on a Type-C port in Thunderbolt mode. */
+	if (!out->tc || out->tc_mode != I915_XD_OUTPUT_TC_TBT) {
+		error = i915_xd_output_take(out, env, I915_XD_OUTPUT_POWER_DDI_IO);
+		if (error != 0)
+			return error;
+	}
 
-	/* The transcoder runs on the port's clock: the PHY's on display 13, the DDI's before. */
-	which = out->ddi;
-	if (env->platform->display_ver >= 13U)
-		which = out->phy;
-	clock = (which + 1U) << I915_XD_TRANS_CLK_SEL_SHIFT;
-	drv_i915_xd_io_write(env->io, I915_XD_TRANS_CLK_SEL(out->trans), clock);
+	/* The Type-C PHY's DisplayPort mode. */
+	if (out->tc)
+		env->tc->dp_mode(env->context);
+
+	/* The transcoder runs on the port's clock. */
+	i915_xd_output_trans_clock(out, env);
 
 	/* The transcoder's function, not yet enabled. */
-	kern_memset(&func, 0, sizeof(func));
-	func.ddi = out->ddi;
-	func.mode = I915_XD_FUNC_DP_SST;
-	func.bpp = out->bpp;
-	func.vsync_high = out->vsync_high;
-	func.hsync_high = out->hsync_high;
-	func.lanes = out->lanes;
-	func.sync_master = I915_XD_NO_TRANSCODER;
+	i915_xd_output_func(out, I915_XD_FUNC_DP_SST, &func);
 	drv_i915_xd_pipe_func_config(env->io, out->trans, &func);
 
-	/* The signal levels of the lowest levels, then the lanes the link uses. */
+	/* The signal levels of the lowest levels, then the lanes a combo port's link uses. */
 	run.out = out;
 	run.env = env;
 	i915_xd_output_levels(&run, out->set);
-	drv_i915_xd_combo_lanes(env->io, out->phy, out->lanes, (out->kept & I915_XD_DDI_BUF_REVERSAL) != 0U ? 1 : 0);
+	if (!out->tc)
+		drv_i915_xd_combo_lanes(env->io, out->phy, out->lanes, (out->kept & I915_XD_DDI_BUF_REVERSAL) != 0U ? 1 : 0);
 
-	/* No splitter: the panel is one stream. */
+	/* No splitter: the stream is one. */
 	(void)drv_i915_xd_io_rmw(env->io, I915_XD_PIPE_DSS_CTL1(out->pipe), I915_XD_PIPE_DSS_SPLITTER, 0U);
 
-	/* The sink wakes up. */
+	/* The sink wakes up, and a branch's converter is set up. */
 	i915_xd_output_sink_power(out, env, I915_XD_DPCD_POWER_D0);
+	if (env->converter != NULL)
+		env->converter(env->context);
 
 	/* Trains the link; one that did not train is the caller's to lower. */
 	i915_xd_output_dp_link(&run, &link);
@@ -560,8 +609,9 @@ drv_i915_xd_output_port(
 }
 
 /*
- * Sets the pipe up: its source size and word, the transcoder (M/N,
- * timing, frame start, the transcoder's configuration), then (the pipe
+ * Sets the pipe up: its source size and word, the transcoder (a
+ * DisplayPort link's M/N, the timing, frame start, the transcoder's
+ * configuration), then (the pipe
  * runs from here) the bottom colour and colour modes, the line time and
  * the chicken bits.  The output scans out the first plane alone, which
  * has the HDR path.
@@ -591,12 +641,14 @@ drv_i915_xd_output_pipe(
 	misc.hdr = 1;
 	drv_i915_xd_pipe_misc(env->io, env->platform, out->pipe, &misc);
 
-	/* The transcoder: the link's M/N, the timing, the frame start. */
+	/* The transcoder: a DisplayPort link's M/N, the timing, the frame start. */
 	kern_memset(&setup, 0, sizeof(setup));
 	setup.trans = out->trans;
 	setup.timing = out->timing;
-	setup.dp = 1;
-	setup.m_n = out->m_n;
+	if (out->kind != I915_XD_SCREEN_HDMI) {
+		setup.dp = 1;
+		setup.m_n = out->m_n;
+	}
 	setup.pixel_multiplier = out->pixel_multiplier;
 	setup.frame_start_delay = out->frame_start_delay;
 	drv_i915_xd_pipe_configure(env->io, env->platform, &setup);
@@ -614,15 +666,17 @@ drv_i915_xd_output_pipe(
 }
 
 /*
- * Starts the output: the transcoder's function enabled, the transcoder
- * started, the panel's backlight on (the PWM, then the sequencer's
- * enable), and the data island packets the panel does not use off.
- * Returns 0.
+ * Starts the output: the transcoder's function enabled and the
+ * transcoder started; then the panel's backlight on (the PWM, then the
+ * sequencer's enable) and the packets it does not use off, or an HDMI
+ * port's signal levels, lanes and DDI buffer (its sink in DVI mode, which
+ * needs no scrambling).  Returns 0, or EIO when an HDMI buffer did not
+ * leave idle.
  *
  * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
- * (intel_enable_ddi, intel_enable_ddi_dp), intel_display.c
- * (intel_enable_transcoder), intel_dp.c (intel_edp_backlight_on,
- * intel_dp_set_infoframes).
+ * (intel_enable_ddi, intel_enable_ddi_dp, intel_enable_ddi_hdmi),
+ * intel_display.c (intel_enable_transcoder), intel_dp.c
+ * (intel_edp_backlight_on, intel_dp_set_infoframes).
  */
 int
 drv_i915_xd_output_start(
@@ -630,17 +684,16 @@ drv_i915_xd_output_start(
 	const struct i915_xd_output_env *env)
 {
 	struct i915_xd_trans_func func;
+	struct i915_xd_ddi_link ddi;
+	unsigned mode;
+	unsigned late;
 	int ran;
 
-	/* The transcoder's function with its enable. */
-	kern_memset(&func, 0, sizeof(func));
-	func.ddi = out->ddi;
-	func.mode = I915_XD_FUNC_DP_SST;
-	func.bpp = out->bpp;
-	func.vsync_high = out->vsync_high;
-	func.hsync_high = out->hsync_high;
-	func.lanes = out->lanes;
-	func.sync_master = I915_XD_NO_TRANSCODER;
+	/* The transcoder's function with its enable: DVI for an HDMI port, single stream DisplayPort otherwise. */
+	mode = I915_XD_FUNC_DP_SST;
+	if (out->kind == I915_XD_SCREEN_HDMI)
+		mode = I915_XD_FUNC_DVI;
+	i915_xd_output_func(out, mode, &func);
 	drv_i915_xd_pipe_func_enable(env->io, out->trans, &func);
 
 	/* The transcoder starts; one found running is left as it is. */
@@ -648,10 +701,23 @@ drv_i915_xd_output_start(
 	if (ran)
 		i915_xd_output_error(env, "xd-output: the transcoder ran already\n");
 
-	/* The panel's backlight. */
-	drv_i915_xd_output_backlight_on(out, env);
+	/* An HDMI port: its levels, its lanes, then its buffer. */
+	if (out->kind == I915_XD_SCREEN_HDMI) {
+		i915_xd_output_hdmi_levels(out, env);
+		drv_i915_xd_combo_lanes(env->io, out->phy, out->lanes, (out->kept & I915_XD_DDI_BUF_REVERSAL) != 0U ? 1 : 0);
+		i915_xd_output_ddi_link(out, &ddi);
+		late = drv_i915_xd_ddi_hdmi_start(env->io, env->platform, &ddi);
+		i915_xd_output_ddi_late(env, late);
+		if (late != 0U)
+			return EIO;
+		return 0;
+	}
 
-	/* The packets the panel does not use. */
+	/* The panel's backlight. */
+	if (out->kind == I915_XD_SCREEN_PANEL)
+		drv_i915_xd_output_backlight_on(out, env);
+
+	/* The packets the output does not use. */
 	i915_xd_output_islands(out, env, 1);
 
 	/* Succeeded: the output shows the pipe. */
@@ -685,11 +751,12 @@ drv_i915_xd_output_settle(
 /*
  * Stops the output's picture before the transcoder: the link no longer
  * counts as trained, and the panel's backlight goes off (the sequencer's
- * enable, then the PWM).  Returns 0.
+ * enable, then the PWM).  An HDMI sink in DVI mode has nothing to reset.
+ * Returns 0.
  *
  * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
- * (intel_disable_ddi, intel_disable_ddi_dp), intel_dp.c
- * (intel_edp_backlight_off).
+ * (intel_disable_ddi, intel_disable_ddi_dp, intel_disable_ddi_hdmi),
+ * intel_dp.c (intel_edp_backlight_off).
  */
 int
 drv_i915_xd_output_stop(
@@ -699,28 +766,29 @@ drv_i915_xd_output_stop(
 	/* The link is no longer up. */
 	out->trained = 0;
 
-	/* The backlight. */
-	drv_i915_xd_output_backlight_off(out, env);
+	/* The panel's backlight. */
+	if (out->kind == I915_XD_SCREEN_PANEL)
+		drv_i915_xd_output_backlight_off(out, env);
 
-	/* Succeeded: the panel is dark. */
+	/* Succeeded: the picture is stopped. */
 	return 0;
 }
 
 /*
  * Stops the transcoder and the port: the pipe's pending vertical blank
  * event settled, the transcoder stopped and its function cleared, the
- * scalers off, the packets off, the sink put to sleep, the DDI buffer
- * stopped, no clock to the transcoder, the panel's power off (VDD held
- * for the sequence), the port's IO power given back and its clock gated.
- * Returns 0, or EIO when the transcoder did not stop or the buffer did
- * not go idle (the stop is then not confirmed).
+ * scalers off, the packets off, a DisplayPort sink put to sleep, the DDI
+ * buffer stopped, no clock to the transcoder, the panel's power off (VDD
+ * held for the sequence), the port's IO power given back and its clock
+ * gated.  Returns 0, or EIO when the transcoder did not stop or the
+ * buffer did not go idle (the stop is then not confirmed).
  *
  * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
  * (intel_ddi_post_disable, intel_ddi_post_disable_dp,
- * intel_ddi_disable_transcoder_func, intel_disable_ddi_buf,
- * intel_ddi_disable_transcoder_clock, intel_ddi_disable_clock),
- * intel_display.c (intel_disable_transcoder), intel_dp.c
- * (intel_dp_set_infoframes, intel_dp_set_power), intel_pps.c
+ * intel_ddi_post_disable_hdmi, intel_ddi_disable_transcoder_func,
+ * intel_disable_ddi_buf, intel_ddi_disable_transcoder_clock,
+ * intel_ddi_disable_clock), intel_display.c (intel_disable_transcoder),
+ * intel_dp.c (intel_dp_set_infoframes, intel_dp_set_power), intel_pps.c
  * (intel_pps_vdd_on, intel_pps_off).
  */
 int
@@ -732,8 +800,10 @@ drv_i915_xd_output_port_off(
 	unsigned late;
 	int was_running;
 	int error;
+	int dp;
 
 	error = 0;
+	dp = out->kind != I915_XD_SCREEN_HDMI;
 
 	/* The pipe's pending vertical blank event will not come. */
 	if (env->vblank_off != NULL)
@@ -751,12 +821,13 @@ drv_i915_xd_output_port_off(
 	drv_i915_xd_pipe_scalers_off(env->io, out->pipe);
 	i915_xd_output_islands(out, env, 0);
 
-	/* The sink goes to sleep before its link goes away. */
-	i915_xd_output_sink_power(out, env, I915_XD_DPCD_POWER_D3);
+	/* A DisplayPort sink goes to sleep before its link goes away. */
+	if (dp)
+		i915_xd_output_sink_power(out, env, I915_XD_DPCD_POWER_D3);
 
-	/* The DDI buffer and the transport. */
+	/* The DDI buffer (and a DisplayPort link's transport). */
 	i915_xd_output_ddi_link(out, &ddi);
-	late = drv_i915_xd_ddi_stop(env->io, &ddi, 1);
+	late = drv_i915_xd_ddi_stop(env->io, &ddi, dp);
 	i915_xd_output_ddi_late(env, late);
 	if ((late & I915_XD_DDI_LATE_IDLE) != 0U)
 		error = EIO;
@@ -766,14 +837,14 @@ drv_i915_xd_output_port_off(
 	drv_i915_xd_io_write(env->io, I915_XD_TRANS_CLK_SEL(out->trans), I915_XD_TRANS_CLK_SEL_NONE);
 
 	/* The panel's power, with VDD held for the sequence. */
-	(void)i915_xd_output_panel(env, I915_XD_OUTPUT_PANEL_VDD_ON);
-	(void)i915_xd_output_panel(env, I915_XD_OUTPUT_PANEL_OFF);
+	if (out->kind == I915_XD_SCREEN_PANEL) {
+		(void)i915_xd_output_panel(env, I915_XD_OUTPUT_PANEL_VDD_ON);
+		(void)i915_xd_output_panel(env, I915_XD_OUTPUT_PANEL_OFF);
+	}
 
 	/* The port's IO power, then its clock. */
 	i915_xd_output_give(out, env, I915_XD_OUTPUT_POWER_DDI_IO);
-	i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_PLL, 1);
-	drv_i915_xd_dpll_unmap(env->io, env->platform, out->phy);
-	i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_PLL, 0);
+	i915_xd_output_clock_off(out, env);
 
 	/* Reports a stop that was not confirmed. */
 	if (error != 0)
@@ -785,8 +856,9 @@ drv_i915_xd_output_port_off(
 
 /*
  * Takes the pipe off the port's PLL, under the PLLs' lock; the last pipe
- * turns it off.  Returns 0, EINVAL when the pipe is not on the PLL, or
- * EIO when the PLL did not unlock or power down.
+ * turns it off (a Type-C port's PLL is the caller's).  Returns 0,
+ * EINVAL when the pipe is not on the PLL, or EIO when the PLL did not
+ * unlock or power down.
  *
  * Procedure referenced: Linux v6.8.12
  * drivers/gpu/drm/i915/display/intel_dpll_mgr.c (intel_disable_shared_dpll,
@@ -800,8 +872,19 @@ drv_i915_xd_output_pll_off(
 	const struct i915_xd_pll_desc *pll;
 	uint8_t pipe_bit;
 	unsigned late;
+	int error;
 
 	pipe_bit = (uint8_t)(1U << out->pipe);
+
+	/* A Type-C port's PLL (its own, or the Thunderbolt PLL the Type-C ports share) is the caller's. */
+	if (out->tc) {
+		error = env->tc->pll(env->context, 0);
+		out->pll_pipes &= (uint8_t)~pipe_bit;
+		out->pll_on = 0;
+		if (error != 0)
+			return error;
+		return 0;
+	}
 
 	/* Leaves the PLL or turns it off, under the PLLs' lock. */
 	i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_PLL, 1);
@@ -843,10 +926,12 @@ drv_i915_xd_output_pll_off(
 }
 
 /*
- * Gives the AUX power of the port's link back after its PLL is off.
+ * Gives the AUX power of the port's link back after its PLL is off, then
+ * a Type-C port's link to its PHY.
  *
  * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
- * (intel_ddi_post_pll_disable, main_link_aux_power_domain_put).
+ * (intel_ddi_post_pll_disable, main_link_aux_power_domain_put), intel_tc.c
+ * (intel_tc_port_put_link).
  */
 int
 drv_i915_xd_output_link_power_off(
@@ -855,6 +940,12 @@ drv_i915_xd_output_link_power_off(
 {
 	/* The AUX channel's power. */
 	i915_xd_output_give(out, env, I915_XD_OUTPUT_POWER_AUX);
+
+	/* A Type-C port's link. */
+	if (out->tc_linked) {
+		env->tc->put_link(env->context);
+		out->tc_linked = 0;
+	}
 
 	/* Succeeded: the link's power is given back. */
 	return 0;
@@ -1317,7 +1408,163 @@ i915_xd_output_give_crtc(
 		i915_xd_output_give(out, env, I915_XD_OUTPUT_POWER_LANES);
 }
 
-/* Describes the port's link to the DDI: its DDI and transcoder, its lanes and rate, the bits it keeps, its framing. */
+/*
+ * Brings an HDMI port up before the pipe: the DDI clock from the PLL,
+ * the port's IO power, the transcoder's clock and the data island
+ * packets off (the sink is driven in DVI mode).  Returns 0, or EIO.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (intel_ddi_pre_enable_hdmi), intel_hdmi.c (hsw_set_infoframes).
+ */
+static int
+i915_xd_output_port_hdmi(
+	struct i915_xd_output *out,
+	const struct i915_xd_output_env *env)
+{
+	int error;
+
+	/* The DDI clock, then the port's IO power. */
+	i915_xd_output_clock_on(out, env);
+	error = i915_xd_output_take(out, env, I915_XD_OUTPUT_POWER_DDI_IO);
+	if (error != 0)
+		return error;
+
+	/* The transcoder's clock and the packets. */
+	i915_xd_output_trans_clock(out, env);
+	i915_xd_output_islands(out, env, 0);
+
+	/* Succeeded: the port is ready for its buffer. */
+	return 0;
+}
+
+/*
+ * Starts the port's DDI clock: a combo PHY's mapped to its PLL, a
+ * Type-C port's from its own PLL (DisplayPort alternate or legacy mode)
+ * or the Thunderbolt PLL, under the PLLs' lock.
+ */
+static void
+i915_xd_output_clock_on(
+	struct i915_xd_output *out,
+	const struct i915_xd_output_env *env)
+{
+	uint32_t select;
+	int own;
+
+	i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_PLL, 1);
+
+	/* A Type-C port's select and gate. */
+	if (out->tc) {
+		own = 0;
+		if (out->tc_mode == I915_XD_OUTPUT_TC_DP_ALT || out->tc_mode == I915_XD_OUTPUT_TC_LEGACY)
+			own = 1;
+		select = drv_i915_xd_tc_clock_select(own, out->rate_khz);
+		drv_i915_xd_tc_clock_on(env->io, out->ddi, out->tc_port, select);
+	} else {
+		drv_i915_xd_dpll_map(env->io, env->platform, out->phy, out->pll);
+	}
+
+	i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_PLL, 0);
+}
+
+/* Gates the port's DDI clock under the PLLs' lock (a Type-C port's source is deselected too). */
+static void
+i915_xd_output_clock_off(
+	struct i915_xd_output *out,
+	const struct i915_xd_output_env *env)
+{
+	i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_PLL, 1);
+
+	/* The gate. */
+	if (out->tc) {
+		drv_i915_xd_tc_clock_off(env->io, out->ddi, out->tc_port);
+	} else {
+		drv_i915_xd_dpll_unmap(env->io, env->platform, out->phy);
+	}
+
+	i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_PLL, 0);
+}
+
+/*
+ * Directs the port's clock to the transcoder: the PHY's on display 13,
+ * the DDI's before.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (intel_ddi_enable_transcoder_clock).
+ */
+static void
+i915_xd_output_trans_clock(
+	struct i915_xd_output *out,
+	const struct i915_xd_output_env *env)
+{
+	uint32_t clock;
+	unsigned which;
+
+	/* The clock's source by the display version. */
+	which = out->ddi;
+	if (env->platform->display_ver >= 13U)
+		which = out->phy;
+	clock = (which + 1U) << I915_XD_TRANS_CLK_SEL_SHIFT;
+	drv_i915_xd_io_write(env->io, I915_XD_TRANS_CLK_SEL(out->trans), clock);
+}
+
+/* Describes the transcoder's function of the output in a mode: the DDI, the depth, the sync polarities, the lanes. */
+static void
+i915_xd_output_func(
+	const struct i915_xd_output *out,
+	unsigned mode,
+	struct i915_xd_trans_func *func)
+{
+	/* No port sync master. */
+	kern_memset(func, 0, sizeof(*func));
+	func->ddi = out->ddi;
+	func->mode = mode;
+	func->bpp = out->bpp;
+	func->vsync_high = out->vsync_high;
+	func->hsync_high = out->hsync_high;
+	func->lanes = out->lanes;
+	func->sync_master = I915_XD_NO_TRANSCODER;
+}
+
+/*
+ * Programs an HDMI port's signal levels: every lane at the VBT's level
+ * of the platform's HDMI table, or at the table's own.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (icl_combo_phy_set_signal_levels, intel_ddi_hdmi_level).
+ */
+static void
+i915_xd_output_hdmi_levels(
+	struct i915_xd_output *out,
+	const struct i915_xd_output_env *env)
+{
+	struct i915_xd_combo_levels levels;
+	unsigned lane;
+	unsigned row;
+
+	/* The port's PHY, kind, clock and table. */
+	kern_memset(&levels, 0, sizeof(levels));
+	levels.phy = out->phy;
+	levels.kind = I915_XD_OUTPUT_HDMI;
+	levels.rate_khz = out->rate_khz;
+	levels.lanes = out->lanes;
+	levels.table = drv_i915_xd_combo_swing_table(env->platform, I915_XD_OUTPUT_HDMI, out->rate_khz, 0U);
+
+	/* The VBT's row, or the table's own, within the table. */
+	row = levels.table->hdmi_default;
+	if (out->hdmi_level >= 0)
+		row = (unsigned)out->hdmi_level;
+	if (levels.table->count != 0U && row >= levels.table->count) {
+		i915_xd_output_error(env, "xd-output: an HDMI level past the swing table\n");
+		row = levels.table->count - 1U;
+	}
+	for (lane = 0U; lane < 4U; lane++)
+		levels.level[lane] = (uint8_t)row;
+
+	/* Programs them. */
+	drv_i915_xd_combo_signal_levels(env->io, env->platform, &levels);
+}
+
+/* Describes the port's link to the DDI: its DDI and transcoder, its PHY's kind, its lanes and rate, the bits it keeps, its framing. */
 static void
 i915_xd_output_ddi_link(
 	const struct i915_xd_output *out,
@@ -1327,6 +1574,7 @@ i915_xd_output_ddi_link(
 	kern_memset(link, 0, sizeof(*link));
 	link->ddi = out->ddi;
 	link->trans = out->trans;
+	link->tc = out->tc;
 	link->lanes = out->lanes;
 	link->rate_khz = out->rate_khz;
 	link->kept = out->kept;
@@ -1334,9 +1582,9 @@ i915_xd_output_ddi_link(
 }
 
 /*
- * Chooses the port's swing table: the platform's eDP table for the rate,
- * with the VBT's low swing, and its high-efficiency table unless a link
- * failed with it.
+ * Chooses a combo port's DisplayPort swing table: the platform's table
+ * for the rate, for the panel with the VBT's low swing and its
+ * high-efficiency table unless a link failed with it.
  */
 static const struct i915_xd_combo_swing_table *
 i915_xd_output_swing_table(
@@ -1345,6 +1593,12 @@ i915_xd_output_swing_table(
 {
 	const struct i915_xd_combo_swing_table *table;
 	unsigned vbt;
+
+	/* An external sink's table by the rate alone. */
+	if (out->kind != I915_XD_SCREEN_PANEL) {
+		table = drv_i915_xd_combo_swing_table(env->platform, I915_XD_OUTPUT_DP, out->rate_khz, 0U);
+		return table;
+	}
 
 	/* The VBT's settings, without the high-efficiency table after a failure. */
 	vbt = out->swing_vbt;
@@ -1358,8 +1612,8 @@ i915_xd_output_swing_table(
 
 /*
  * Describes the training of the port's link: the plan's rate and lanes,
- * the source's limits (the swing table's highest swing, pre-emphasis 3,
- * levels per lane, patterns 3 and 4), no repeaters behind a panel, the
+ * the source's limits (the highest swing, pre-emphasis 3, levels per
+ * lane, patterns 3 and 4), repeaters behind an external sink only, the
  * sink's capabilities the output keeps, the sink through the caller and
  * the source through the output's hooks.
  */
@@ -1380,16 +1634,22 @@ i915_xd_output_dp_link(
 	link->enhanced = out->enhanced;
 	link->rate_index = out->rate_index;
 
-	/* The source's limits. */
-	table = i915_xd_output_swing_table(out, run->env);
-	link->swing_max = drv_i915_xd_combo_swing_max(table);
+	/* The source's limits: the swing a Type-C PHY reaches, or the combo table's. */
+	if (out->tc) {
+		link->swing_max = out->tc_swing_max;
+	} else {
+		table = i915_xd_output_swing_table(out, run->env);
+		link->swing_max = drv_i915_xd_combo_swing_max(table);
+	}
 	link->preemph_max = 3U;
 	link->per_lane = 1;
 	link->tps3 = 1;
 	link->tps4 = 1;
 
-	/* No repeaters behind a panel; a trained link is up. */
+	/* Repeaters are looked for behind an external sink, not a panel; a trained link is up. */
 	link->find_repeaters = 0;
+	if (out->kind != I915_XD_SCREEN_PANEL)
+		link->find_repeaters = 1;
 	link->active = out->trained;
 
 	/* The capabilities the output keeps. */
@@ -1410,8 +1670,8 @@ i915_xd_output_dp_link(
 
 /*
  * Sets the sink's power state: D3 sleeps (unless the sink is a branch
- * whose ports signal hotplug only while awake), D0 writes the source's
- * identifier first and gives the sink three tries to wake up.  A sink
+ * whose ports signal hotplug only while awake), D0 writes a panel's
+ * source identifier first and gives the sink three tries to wake up.  A sink
  * without power states, or one that does not answer, is only noted.
  *
  * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dp.c
@@ -1442,10 +1702,12 @@ i915_xd_output_sink_power(
 		return;
 	}
 
-	/* The source's identifier, as early as possible. */
-	written = env->sink.write(env->sink.context, I915_XD_OUTPUT_SOURCE_OUI, oui, I915_XD_OUTPUT_OUI_SIZE);
-	if (written < 0)
-		i915_xd_output_error(env, "xd-output: the source's identifier was not written\n");
+	/* A panel's source identifier, as early as possible. */
+	if (out->kind == I915_XD_SCREEN_PANEL) {
+		written = env->sink.write(env->sink.context, I915_XD_OUTPUT_SOURCE_OUI, oui, I915_XD_OUTPUT_OUI_SIZE);
+		if (written < 0)
+			i915_xd_output_error(env, "xd-output: the source's identifier was not written\n");
+	}
 
 	/* Wakes the sink, with time to wake between the tries. */
 	written = 0;
@@ -1464,11 +1726,12 @@ i915_xd_output_sink_power(
 
 /*
  * Turns the transcoder's data island packets off: the infoframes and the
- * VSC packet (a panel without self refresh uses none) on a start, the
- * picture parameters too on a stop.
+ * VSC packet (no output here uses them: the panel has no self refresh,
+ * the HDMI sink is in DVI mode), and the picture parameters too when a
+ * DisplayPort output stops.
  *
  * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dp.c
- * (intel_dp_set_infoframes).
+ * (intel_dp_set_infoframes), intel_hdmi.c (hsw_set_infoframes).
  */
 static void
 i915_xd_output_islands(
@@ -1481,7 +1744,7 @@ i915_xd_output_islands(
 
 	/* The packets cleared. */
 	packets = I915_XD_DIP_INFOFRAMES | I915_XD_DIP_VSC;
-	if (!on)
+	if (!on && out->kind != I915_XD_SCREEN_HDMI)
 		packets |= I915_XD_DIP_PPS;
 
 	/* The control word without them, flushed. */
@@ -1491,9 +1754,9 @@ i915_xd_output_islands(
 }
 
 /*
- * Programs the port's signal levels from the training's level bytes: the
- * swing table's row of each lane (the high-efficiency table is noted),
- * written through the combo PHY.
+ * Programs the port's signal levels from the training's level bytes: a
+ * Type-C PHY's through the caller; a combo port's from the swing table's
+ * row of each lane (the high-efficiency table is noted).
  *
  * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
  * (icl_combo_phy_set_signal_levels, intel_ddi_level, intel_ddi_dp_level).
@@ -1514,10 +1777,18 @@ i915_xd_output_levels(
 	out = run->out;
 	kern_memcpy(out->set, set, sizeof(out->set));
 
+	/* A Type-C PHY's levels are the caller's. */
+	if (out->tc) {
+		run->env->tc->levels(run->env->context, set);
+		return;
+	}
+
 	/* The port's PHY, kind, link and table. */
 	kern_memset(&levels, 0, sizeof(levels));
 	levels.phy = out->phy;
 	levels.kind = I915_XD_OUTPUT_EDP;
+	if (out->kind != I915_XD_SCREEN_PANEL)
+		levels.kind = I915_XD_OUTPUT_DP;
 	levels.rate_khz = out->rate_khz;
 	levels.lanes = out->lanes;
 	levels.table = i915_xd_output_swing_table(out, run->env);
@@ -1573,22 +1844,52 @@ i915_xd_output_pattern(
 	drv_i915_xd_ddi_pattern(run->env->io, run->out->trans, select);
 }
 
-/* Starts the link in training pattern 1 with the DDI buffer enabled. */
+/*
+ * Starts the link in training pattern 1 with the DDI buffer enabled; an
+ * Alder Lake-P Type-C PHY the display owns first leaves the core reset a
+ * Thunderbolt link may have left.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (intel_ddi_prepare_link_retrain, adlp_tbt_to_dp_alt_switch_wa).
+ */
 static void
 i915_xd_output_prepare(
 	void *context)
 {
 	struct i915_xd_output_run *run;
 	struct i915_xd_ddi_link ddi;
+	void (*before_buffer)(void *context);
 	unsigned late;
+	int owned;
 
 	run = context;
+
+	/* The PHY's reset, on an Alder Lake-P Type-C port in DisplayPort alternate or legacy mode. */
+	before_buffer = NULL;
+	owned = 0;
+	if (run->out->tc_mode == I915_XD_OUTPUT_TC_DP_ALT || run->out->tc_mode == I915_XD_OUTPUT_TC_LEGACY)
+		owned = 1;
+	if (run->out->tc && owned && run->env->platform->kind == I915_XD_KIND_ADLP)
+		before_buffer = i915_xd_output_phy_wa;
 
 	/* The buffer's word with its enable. */
 	i915_xd_output_ddi_link(run->out, &ddi);
 	run->out->buf_word |= I915_XD_DDI_BUF_ENABLE;
-	late = drv_i915_xd_ddi_dp_start(run->env->io, &ddi, run->out->buf_word & ~I915_XD_DDI_BUF_ENABLE, NULL, NULL);
+	late = drv_i915_xd_ddi_dp_start(run->env->io, &ddi, run->out->buf_word & ~I915_XD_DDI_BUF_ENABLE, before_buffer, run);
 	i915_xd_output_ddi_late(run->env, late);
+}
+
+/* Releases a Type-C PHY's core reset through the caller, between the transport and the buffer. */
+static void
+i915_xd_output_phy_wa(
+	void *context)
+{
+	struct i915_xd_output_run *run;
+
+	run = context;
+
+	/* The caller's part. */
+	run->env->tc->phy_wa(run->env->context);
 }
 
 /* Sends the idle pattern after the training and waits for it to be sent. */

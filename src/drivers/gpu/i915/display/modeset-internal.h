@@ -2117,7 +2117,7 @@ struct i915_lcd_modeset {
 	u32 bl_user_max;		/* the backlight device's props.max_brightness */
 	int stop_unconfirmed;		/* the disable reported an error: nothing further was given back */
 	struct i915_xd_screen screen;	/* the screen's phase and the steps of its last light or dark */
-	struct i915_xd_output xo;	/* the built-in panel's output: its description and what its light and dark hold */
+	struct i915_xd_output xo;	/* the screen's output: its description and what its light and dark hold */
 	unsigned commits;
 	struct drm_vblank_crtc vblank[4];	/* dev->vblank[]: hwmode, max_vblank_count */
 	int flip_event;			/* the event token of the pending update */
@@ -2204,12 +2204,6 @@ struct i915_lcd_world {
 	 */
 	const struct i915_xd_platform *xd_platform;
 
-	/*
-	 * The new state of the disable commit: the old crtc state with the crtc
-	 * made inactive (a function static of the commit's disable).  Filled at
-	 * the start of each disable commit and read only inside it.
-	 */
-	struct intel_crtc_state i915_lcd_modeset_commit_disable_off_state;
 
 	/*
 	 * The device the Linux text works on: the selected modeset object's
@@ -2421,21 +2415,6 @@ void drv_i915_lcd_dbuf_forget(struct i915_wm_world *wm_world);
 void drv_i915_lcd_ms_active_timings(struct i915_lcd_modeset *ms);
 void drv_i915_lcd_ms_plane_update_flip(struct i915_lcd_modeset *ms);
 void drv_i915_lcd_ms_color_check(struct i915_lcd_modeset *ms);
-/*
- * The parts of a crtc's enable and disable a screen's steps run: the
- * pipe's DMC, the link's power (the encoders around the PLL), the shared
- * PLL, the port (the encoders' pre-enable, or post-disable with the
- * transcoder's stop), the pipe, and the output (the encoders' enable or
- * disable).
- */
-#define I915_LCD_CRTC_PART_DMC		0U
-#define I915_LCD_CRTC_PART_LINK		1U
-#define I915_LCD_CRTC_PART_PLL		2U
-#define I915_LCD_CRTC_PART_PORT		3U
-#define I915_LCD_CRTC_PART_PIPE		4U
-#define I915_LCD_CRTC_PART_OUTPUT	5U
-void drv_i915_lcd_ms_crtc_enable_part(struct i915_lcd_modeset *ms, unsigned part);
-void drv_i915_lcd_ms_crtc_disable_part(struct i915_lcd_modeset *ms, unsigned part);
 int drv_i915_lcd_ms_plane_prepare(struct i915_lcd_modeset *ms, u32 fourcc, u64 modifier, u32 width, u32 height, u32 pitch, u32 surf_ggtt_offset);
 void drv_i915_lcd_ms_plane_update(struct i915_lcd_modeset *ms);
 void drv_i915_lcd_ms_plane_disable(struct i915_lcd_modeset *ms);
@@ -2444,33 +2423,27 @@ void drv_i915_lcd_ms_set_acpi(struct i915_lcd_modeset *ms, u32 user_level, u32 u
 void drv_i915_lcd_xd_timing(const struct drm_display_mode *mode, struct i915_xd_timing *timing);
 
 /*
- * The built-in panel's xd output on a modeset object (output-shell.c):
- * whether the object drives the panel, the output's environment on the
- * object's backend, its description from the object's state, the display
- * buffer around the commit, and the object's state brought in line with
- * what the output holds.
+ * The xd output of a modeset object's screen (output-shell.c): the
+ * output's environment on the object's backend, its description from
+ * the object's state, the display buffer around the commit, and the
+ * object's state brought in line with what the output holds; and the
+ * Type-C PHY hooks the shell gives the output.
  */
-int drv_i915_lcd_ms_xo_panel(const struct i915_lcd_modeset *ms);
 void drv_i915_lcd_ms_xo_env(struct i915_lcd_modeset *ms, struct i915_xd_output_env *env);
 void drv_i915_lcd_ms_xo_describe(struct i915_lcd_modeset *ms);
 void drv_i915_lcd_ms_xo_dbuf(struct i915_lcd_modeset *ms);
 void drv_i915_lcd_ms_xo_sync(struct i915_lcd_modeset *ms);
+void drv_i915_lcd_ms_tc_dp_mode(struct i915_lcd_modeset *ms);
+void drv_i915_lcd_ms_tc_phy_wa(struct i915_lcd_modeset *ms);
 
 /*
  * The power, clock, PHY and DMC functions the other modeset
  * files call, under the names they are exported by (power.c, clock.c,
  * phy.c, dmc.c).
  */
-void drv_i915_display_power_get_in_set(struct drm_i915_private *i915, struct intel_display_power_domain_set *power_domain_set, enum intel_display_power_domain domain);
-void drv_i915_display_power_put_mask_in_set(struct drm_i915_private *i915, struct intel_display_power_domain_set *power_domain_set, struct intel_power_domain_mask *mask);
 void drv_i915_enable_shared_dpll(const struct intel_crtc_state *crtc_state);
-void drv_i915_dpll_map_ddi(struct drm_i915_private *i915, unsigned phy, const struct intel_shared_dpll *pll);
-void drv_i915_dpll_unmap_ddi(struct drm_i915_private *i915, unsigned phy);
-int drv_i915_dpll_ddi_mapped(struct drm_i915_private *i915, unsigned phy, unsigned *pll_id);
 void drv_i915_disable_shared_dpll(const struct intel_crtc_state *crtc_state);
 void drv_i915_lcd_ms_release_pipe(struct i915_lcd_world *world, enum pipe pipe);
-void drv_i915_dmc_enable_pipe(struct drm_i915_private *i915, enum pipe pipe);
-void drv_i915_dmc_disable_pipe(struct drm_i915_private *i915, enum pipe pipe);
 
 /* The HDMI infoframe writer of the port (hsw_set_infoframes), as dig_port->set_infoframes. */
 void (*i915_lcd_hdmi_set_infoframes(void))(struct intel_encoder *, bool, const struct intel_crtc_state *, const struct drm_connector_state *);

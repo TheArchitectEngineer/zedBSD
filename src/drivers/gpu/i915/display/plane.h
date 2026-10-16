@@ -8,8 +8,7 @@
 /*
  * The universal plane of the one-screen path (plane.c).
  *
- * drv_i915_icl_hdr_plane_mask() takes no environment type.  The rest takes
- * the modeset environment's Linux types and is visible only to a
+ * Every function here takes the modeset environment's Linux types and is visible only to a
  * translation unit that has included modeset-internal.h first.  The
  * functions the environment headers already declare
  * (drv_i915_lcd_ms_plane_prepare(), _update(), _disable(), _min_cdclk(),
@@ -22,7 +21,6 @@
 
 #include "internal.h"
 
-u8 drv_i915_icl_hdr_plane_mask(void);
 
 #ifdef I915_DISPLAY_WORLD_MODESET
 

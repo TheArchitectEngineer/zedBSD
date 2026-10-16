@@ -32,7 +32,11 @@
  * what a light took, and a light that failed half way is darkened the
  * same way.
  *
- * The built-in panel (eDP) is driven here.
+ * Three kinds of output are driven: the built-in panel (eDP), an HDMI
+ * or DVI sink on a combo port, and an external DisplayPort sink on a
+ * Type-C port.  The Type-C port's own parts (its link to the PHY, the
+ * PHY's DisplayPort mode and signal levels, its own PLL) are the
+ * caller's, through the environment's Type-C hooks.
  */
 
 #ifndef DRIVERS_GPU_I915_DISPLAY_XD_OUTPUT_H
@@ -82,9 +86,40 @@
 #define I915_XD_OUTPUT_SEE_UNDERRUN	1U
 #define I915_XD_OUTPUT_SEE_END		2U
 
+/* The modes a Type-C port is held in: none, DisplayPort alternate mode, legacy (a fixed connector), Thunderbolt. */
+#define I915_XD_OUTPUT_TC_NONE		0U
+#define I915_XD_OUTPUT_TC_DP_ALT	1U
+#define I915_XD_OUTPUT_TC_LEGACY	2U
+#define I915_XD_OUTPUT_TC_TBT		3U
+
 /* The locks the output takes around a shared resource: the PLLs' and the backlight's. */
 #define I915_XD_OUTPUT_LOCK_PLL		0U
 #define I915_XD_OUTPUT_LOCK_BACKLIGHT	1U
+
+/*
+ * The caller's parts of a Type-C port.
+ *
+ * get_link takes the port's link (and with the first link the PHY) for
+ * a link of so many lanes, put_link gives it back; mode reports the
+ * mode the port is held in (I915_XD_OUTPUT_TC_*); lanes sets the lanes
+ * the PHY's flexible IO gives the display; dp_mode programs the PHY's
+ * DisplayPort mode for the link's lanes; levels programs the PHY's
+ * signal levels from the link's level bytes; pll turns the port's PLL
+ * on or off for the output's pipe (its own in DisplayPort alternate or
+ * legacy mode, the Thunderbolt PLL otherwise: 0 or an error); and phy_wa releases the PHY's core reset
+ * before the DDI buffer of a port that was in Thunderbolt mode starts.
+ * Each takes the environment's context.
+ */
+struct i915_xd_output_tc {
+	void (*get_link)(void *context, unsigned lanes);
+	void (*put_link)(void *context);
+	unsigned (*mode)(void *context);
+	void (*lanes)(void *context, unsigned lanes);
+	void (*dp_mode)(void *context);
+	void (*levels)(void *context, const uint8_t set[4]);
+	int (*pll)(void *context, int on);
+	void (*phy_wa)(void *context);
+};
 
 /*
  * What the caller lets the output reach.
@@ -99,8 +134,11 @@
  * takes (taken nonzero) or drops one of the output's locks.  vblank_off
  * settles the pipe's pending vertical blank event before its transcoder
  * stops.  link_failed hears that the link did not train (the caller may
- * ask for a lower link).  observe marks a point of the run.  error and
- * debug take the run's notes; error counts against the run.
+ * ask for a lower link).  converter sets up a branch's protocol
+ * converter after the sink woke (NULL: none).  tc holds the Type-C
+ * port's hooks (NULL for a combo port).  observe marks a point of the
+ * run.  error and debug take the run's notes; error counts against the
+ * run.
  */
 struct i915_xd_output_env {
 	struct i915_xd_io *io;
@@ -114,6 +152,8 @@ struct i915_xd_output_env {
 	void (*lock)(void *context, unsigned lock, int taken);
 	void (*vblank_off)(void *context);
 	void (*link_failed)(void *context);
+	void (*converter)(void *context);
+	const struct i915_xd_output_tc *tc;
 	void (*observe)(void *context, unsigned point);
 	void (*error)(void *context, const char *text);
 	void (*debug)(void *context, const char *text);
@@ -170,15 +210,19 @@ struct i915_xd_output_backlight {
  * dither, a limited colour range, the frame start delay and the pixel
  * multiplier; the link (rate, lanes, enhanced framing, M/N, the eDP rate
  * table's index or -1, the DDI bits the port keeps), the VBT's choice of
- * swing table (I915_XD_SWING_*); the port's PLL and its words; the
+ * swing table (I915_XD_SWING_*), the HDMI swing level the VBT names (-1:
+ * the table's own), whether the port is Type-C (and which, 0 for the
+ * first) and the highest swing its PHY reaches; the port's PLL and its words (a combo port's); the
  * colour words, the line time word; the DMC programs loaded (bit n for
  * DMC n); the sink's receiver capabilities and the display buffer's
  * change.
  *
  * The run: whether the transcoder runs, the PLL is on (and its pipes),
  * the references held (a bit per use, with their cookies), the DDI
- * buffer's word, the link's levels and whether it trained, and whether
- * the swing table was the high-efficiency one (and failed with it).
+ * buffer's word, the link's levels and whether it trained, whether the
+ * swing table was the high-efficiency one (and failed with it), the
+ * mode a Type-C port is held in, and whether the port's link to it is
+ * held.
  */
 struct i915_xd_output {
 	unsigned kind;
@@ -204,6 +248,10 @@ struct i915_xd_output {
 	int rate_index;
 	uint32_t kept;
 	unsigned swing_vbt;
+	int hdmi_level;
+	int tc;
+	unsigned tc_port;
+	uint8_t tc_swing_max;
 	unsigned pll;
 	struct i915_xd_dpll_words pll_words;
 	uint32_t gamma_mode;
@@ -226,6 +274,8 @@ struct i915_xd_output {
 	int trained;
 	int hobl_active;
 	int hobl_failed;
+	unsigned tc_mode;
+	int tc_linked;
 };
 
 int drv_i915_xd_output_dc_hold(struct i915_xd_output *out, const struct i915_xd_output_env *env);

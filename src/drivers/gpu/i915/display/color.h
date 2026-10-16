@@ -23,9 +23,6 @@
 
 #ifdef I915_DISPLAY_WORLD_MODESET
 
-void drv_i915_color_load_luts(const struct intel_crtc_state *crtc_state);
-void drv_i915_color_commit_noarm(const struct intel_crtc_state *crtc_state);
-void drv_i915_color_commit_arm(const struct intel_crtc_state *crtc_state);
 
 #endif /* I915_DISPLAY_WORLD_MODESET */
 

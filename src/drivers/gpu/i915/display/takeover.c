@@ -41,7 +41,6 @@
 #include "dmc.h"
 #include "dp.h"
 #include "dp-ext-kern.h"
-#include "hdmi-mode.h"
 #include "pipe.h"
 #include "power.h"
 #include "scanout.h"

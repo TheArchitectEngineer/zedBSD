@@ -11,10 +11,8 @@
  * Every function here takes the modeset environment's Linux types, so the
  * declarations are visible only to a translation unit that has included
  * modeset-internal.h first.  The functions the environment headers already
- * declare under their explicit names (drv_i915_lcd_intel_phy_is_tc(),
- * drv_i915_lcd_intel_port_to_phy(), drv_i915_lcd_ms_crtc_enable_part(),
- * drv_i915_lcd_ms_crtc_disable_part() and drv_i915_lcd_ms_display_funcs()) are
- * not repeated here.
+ * declare under their explicit names (drv_i915_lcd_intel_phy_is_tc() and
+ * drv_i915_lcd_intel_port_to_phy()) are not repeated here.
  *
  * A function whose Linux text reached an object through a file-scope
  * pointer takes that object's owner as its first argument: the modeset
@@ -41,17 +39,12 @@ void drv_i915_link_compute_m_n(u16 bits_per_pixel_x16, int nlanes, int pixel_clo
  * ==== The PHY and the power domains of a port or a crtc ====
  */
 
-bool drv_i915_phy_is_combo(struct drm_i915_private *dev_priv, enum phy phy);
 enum intel_display_power_domain drv_i915_aux_power_domain(struct intel_digital_port *dig_port);
-void drv_i915_modeset_get_crtc_power_domains(struct i915_lcd_world *world, struct intel_crtc_state *crtc_state, struct intel_power_domain_mask *old_domains);
-void drv_i915_modeset_put_crtc_power_domains(struct intel_crtc *crtc, struct intel_power_domain_mask *domains);
 
 /*
  * ==== The transcoder enable and disable ====
  */
 
-void drv_i915_enable_transcoder(const struct intel_crtc_state *new_crtc_state);
-void drv_i915_disable_transcoder(const struct intel_crtc_state *old_crtc_state);
 
 /*
  * ==== The pipe scalers ====

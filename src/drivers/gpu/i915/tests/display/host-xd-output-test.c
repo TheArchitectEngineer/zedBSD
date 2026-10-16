@@ -14,8 +14,10 @@
  * trained against a model sink, the transcoder's words, the start with
  * the backlight); the dark that gives everything back in reverse; the
  * backlight's levels (the user's range, the firmware's request, on and
- * off, a panel the other way round); and the faults: a PLL that does not
- * lock, a link that does not train, a pipe found running.
+ * off, a panel the other way round); the faults: a PLL that does not
+ * lock, a link that does not train, a pipe found running; an HDMI sink
+ * on DDI B; and an external DisplayPort sink on TC1 in DisplayPort
+ * alternate and in Thunderbolt mode.
  */
 
 #include "host-test.h"
@@ -51,6 +53,17 @@
 #define I915_XD_OT_OBSERVE		8U
 #define I915_XD_OT_DPCD_WRITE		9U
 #define I915_XD_OT_WRITE		10U
+#define I915_XD_OT_TC			11U
+
+/* The Type-C hooks' events: the link taken and given back, the lanes, the DP mode, the levels, the PLL on and off, the PHY's reset. */
+#define I915_XD_OT_TC_GET		1U
+#define I915_XD_OT_TC_PUT		2U
+#define I915_XD_OT_TC_LANES		3U
+#define I915_XD_OT_TC_DP_MODE		4U
+#define I915_XD_OT_TC_LEVELS		5U
+#define I915_XD_OT_TC_PLL_ON		6U
+#define I915_XD_OT_TC_PLL_OFF		7U
+#define I915_XD_OT_TC_WA		8U
 
 /* The most events the log keeps. */
 #define I915_XD_OT_LOG			512U
@@ -88,6 +101,7 @@ struct i915_xd_ot_run {
 	int locks;
 	int cookie_next;
 	int failing_get;
+	unsigned tc_mode;
 };
 
 /* The window, the run's log and the sink the checks share; each group starts them afresh. */
@@ -117,6 +131,14 @@ static int i915_xd_ot_sink_read(void *context, uint32_t address, uint8_t *buffer
 static int i915_xd_ot_sink_write(void *context, uint32_t address, const uint8_t *buffer, unsigned size);
 static int i915_xd_ot_sink_probe(void *context, uint32_t address);
 static int i915_xd_ot_sink_caps(void *context, uint8_t *caps);
+static void i915_xd_ot_tc_get_link(void *context, unsigned lanes);
+static void i915_xd_ot_tc_put_link(void *context);
+static unsigned i915_xd_ot_tc_mode(void *context);
+static void i915_xd_ot_tc_lanes(void *context, unsigned lanes);
+static void i915_xd_ot_tc_dp_mode(void *context);
+static void i915_xd_ot_tc_levels(void *context, const uint8_t set[4]);
+static int i915_xd_ot_tc_pll(void *context, int on);
+static void i915_xd_ot_tc_wa(void *context);
 static int i915_xd_ot_light(struct i915_xd_output *out, const struct i915_xd_output_env *env);
 static void i915_xd_ot_dark(struct i915_xd_output *out, const struct i915_xd_output_env *env);
 static void i915_xd_ot_test_rows(void);
@@ -124,6 +146,20 @@ static void i915_xd_ot_test_light(void);
 static void i915_xd_ot_test_dark(void);
 static void i915_xd_ot_test_backlight(void);
 static void i915_xd_ot_test_faults(void);
+static void i915_xd_ot_test_hdmi(void);
+static void i915_xd_ot_test_type_c(void);
+
+/* The Type-C hooks of the test: each one logged. */
+static const struct i915_xd_output_tc i915_xd_ot_tc = {
+	i915_xd_ot_tc_get_link,
+	i915_xd_ot_tc_put_link,
+	i915_xd_ot_tc_mode,
+	i915_xd_ot_tc_lanes,
+	i915_xd_ot_tc_dp_mode,
+	i915_xd_ot_tc_levels,
+	i915_xd_ot_tc_pll,
+	i915_xd_ot_tc_wa,
+};
 
 /*
  * Runs every check of the output and reports.
@@ -139,6 +175,8 @@ main(void)
 	i915_xd_ot_test_dark();
 	i915_xd_ot_test_backlight();
 	i915_xd_ot_test_faults();
+	i915_xd_ot_test_hdmi();
+	i915_xd_ot_test_type_c();
 
 	/* Reports the result. */
 	failures = i915_host_report("host_xd_output_test");
@@ -151,9 +189,9 @@ main(void)
 
 /*
  * Starts a fresh model, log and sink, with the hardware's answers the
- * output waits for: the PLL's power and lock follow their requests, the
- * DDI buffer leaves idle while enabled, the transcoder's state follows
- * its enable, the idle patterns are sent; returns the 5330's
+ * output waits for: the PLLs' power and lock follow their requests, the
+ * DDI buffers leave idle while enabled, the transcoders' state follows
+ * their enable, the idle patterns are sent; returns the 5330's
  * description.
  */
 static const struct i915_xd_platform *
@@ -162,7 +200,8 @@ i915_xd_ot_setup(void)
 	static const uint32_t watched[] = {
 		0x46010U, 0x164280U, 0x164284U, 0x164288U, 0x46140U, 0x60400U, 0x60410U, 0x6001cU, 0x70030U,
 		0x60030U, 0x70008U, 0x70034U, 0x45270U, 0x7003cU, 0x45250U, 0x60200U, 0x68180U, 0x68280U,
-		0xc8250U, 0xc8254U, 0xc8258U, 0x4438cU, 0x78000U, 0x60540U,
+		0xc8250U, 0xc8254U, 0xc8258U, 0x4438cU, 0x78000U, 0x60540U, 0x46144U, 0x61400U, 0x61030U, 0x61200U,
+		0x4610cU, 0x61540U, 0x71008U,
 	};
 	struct i915_xd_io_hooks hooks;
 	struct i915_xd_choice choice;
@@ -187,10 +226,16 @@ i915_xd_ot_setup(void)
 	/* The hardware's answers. */
 	i915_xd_fake_rule_mirror(0x46010U, 0x08000000U, 0x46010U, -1, 0U);
 	i915_xd_fake_rule_mirror(0x46010U, 0x80000000U, 0x46010U, -1, 0U);
+	i915_xd_fake_rule_mirror(0x46014U, 0x08000000U, 0x46014U, -1, 0U);
+	i915_xd_fake_rule_mirror(0x46014U, 0x80000000U, 0x46014U, -1, 0U);
 	i915_xd_fake_rule_mirror(0x70008U, 0x80000000U, 0x70008U, -1, 0U);
-	i915_xd_fake_rule_call(I915_XD_DDI_BUF_CTL(0U), i915_xd_ot_buffer, NULL);
-	i915_xd_fake_set(I915_XD_DDI_BUF_CTL(0U), I915_XD_DDI_BUF_IDLE);
+	i915_xd_fake_rule_mirror(0x71008U, 0x80000000U, 0x71008U, -1, 0U);
+	for (index = 0U; index < 4U; index++) {
+		i915_xd_fake_rule_call(I915_XD_DDI_BUF_CTL(index), i915_xd_ot_buffer, NULL);
+		i915_xd_fake_set(I915_XD_DDI_BUF_CTL(index), I915_XD_DDI_BUF_IDLE);
+	}
 	i915_xd_fake_set(0x60544U, 0x02000000U);
+	i915_xd_fake_set(0x61544U, 0x02000000U);
 
 	/* The registers whose writes the log keeps. */
 	for (index = 0U; index < sizeof(watched) / sizeof(watched[0]); index++)
@@ -659,6 +704,102 @@ i915_xd_ot_sink_caps(
 	return 0;
 }
 
+/* Logs the Type-C link taken for a link of so many lanes. */
+static void
+i915_xd_ot_tc_get_link(
+	void *context,
+	unsigned lanes)
+{
+	(void)context;
+
+	/* The event. */
+	i915_xd_ot_record(I915_XD_OT_TC, I915_XD_OT_TC_GET, lanes);
+}
+
+/* Logs the Type-C link given back. */
+static void
+i915_xd_ot_tc_put_link(
+	void *context)
+{
+	(void)context;
+
+	/* The event. */
+	i915_xd_ot_record(I915_XD_OT_TC, I915_XD_OT_TC_PUT, 0U);
+}
+
+/* Answers the mode the test holds the Type-C port in. */
+static unsigned
+i915_xd_ot_tc_mode(
+	void *context)
+{
+	struct i915_xd_ot_run *run;
+
+	/* The test's mode. */
+	run = context;
+	return run->tc_mode;
+}
+
+/* Logs the PHY's lanes given to the display. */
+static void
+i915_xd_ot_tc_lanes(
+	void *context,
+	unsigned lanes)
+{
+	(void)context;
+
+	/* The event. */
+	i915_xd_ot_record(I915_XD_OT_TC, I915_XD_OT_TC_LANES, lanes);
+}
+
+/* Logs the PHY's DisplayPort mode. */
+static void
+i915_xd_ot_tc_dp_mode(
+	void *context)
+{
+	(void)context;
+
+	/* The event. */
+	i915_xd_ot_record(I915_XD_OT_TC, I915_XD_OT_TC_DP_MODE, 0U);
+}
+
+/* Logs the PHY's signal levels by the first lane's byte. */
+static void
+i915_xd_ot_tc_levels(
+	void *context,
+	const uint8_t set[4])
+{
+	(void)context;
+
+	/* The event. */
+	i915_xd_ot_record(I915_XD_OT_TC, I915_XD_OT_TC_LEVELS, set[0]);
+}
+
+/* Logs the port's PLL on or off: 0. */
+static int
+i915_xd_ot_tc_pll(
+	void *context,
+	int on)
+{
+	(void)context;
+
+	/* The event. */
+	i915_xd_ot_record(I915_XD_OT_TC, on ? I915_XD_OT_TC_PLL_ON : I915_XD_OT_TC_PLL_OFF, 0U);
+
+	/* Succeeded: the PLL is switched. */
+	return 0;
+}
+
+/* Logs the PHY's reset released. */
+static void
+i915_xd_ot_tc_wa(
+	void *context)
+{
+	(void)context;
+
+	/* The event. */
+	i915_xd_ot_record(I915_XD_OT_TC, I915_XD_OT_TC_WA, 0U);
+}
+
 /* Runs a light's steps of the output as the screen orders them; the first failed step's error, or 0. */
 static int
 i915_xd_ot_light(
@@ -1109,4 +1250,172 @@ i915_xd_ot_test_faults(void)
 	out.dmc_programs = 0U;
 	(void)drv_i915_xd_output_dmc(&out, &env, 1);
 	i915_host_check(i915_xd_ot_find(I915_XD_OT_WRITE, 0x45250U, 0U) < 0, "output: a pipe without a DMC program has nothing switched");
+}
+
+/*
+ * Checks an HDMI sink on DDI B, pipe B: no AUX power, no panel, the
+ * transcoder without M/N in DVI mode, the signal levels and the buffer
+ * after the transcoder, and a dark without a sink to put to sleep.
+ */
+static void
+i915_xd_ot_test_hdmi(void)
+{
+	const struct i915_xd_platform *platform;
+	struct i915_xd_output_env env;
+	struct i915_xd_output out;
+	unsigned from;
+	int start;
+	int buffer;
+	int error;
+
+	/* An HDMI output on DDI B with DPLL 1. */
+	platform = i915_xd_ot_setup();
+	if (platform == NULL)
+		return;
+	i915_xd_ot_env(&env, platform);
+	i915_xd_ot_panel_output(&out);
+	out.kind = I915_XD_SCREEN_HDMI;
+	out.ddi = 1U;
+	out.phy = 1U;
+	out.aux = 1U;
+	out.pipe = 1U;
+	out.trans = 1U;
+	out.lanes = 4U;
+	out.rate_khz = 74250U;
+	out.bpp = 24U;
+	out.dither = 0;
+	out.pll = 1U;
+	out.hdmi_level = -1;
+	out.dmc_programs = 0U;
+	out.backlight.vbt_present = 0;
+	out.dbuf.pipes_after = 0x2U;
+	error = i915_xd_ot_light(&out, &env);
+	i915_host_check(error == 0 && i915_xd_ot_log.errors == 0U, "output: an HDMI sink's light runs through");
+
+	/* No AUX power, no panel, no DPCD. */
+	i915_host_check(i915_xd_ot_find(I915_XD_OT_GET, I915_XD_OUTPUT_POWER_AUX, 0U) < 0 &&
+			i915_xd_ot_find(I915_XD_OT_PANEL, I915_XD_OUTPUT_PANEL_ON, 0U) < 0 &&
+			i915_xd_ot_find(I915_XD_OT_DPCD_WRITE, I915_XD_DPCD_SET_POWER, 0U) < 0,
+			"output: HDMI takes no AUX power, runs no panel sequence, writes no DPCD");
+
+	/* The transcoder in DVI mode on PHY B's clock, without M/N. */
+	i915_host_check(i915_xd_fake_get(0x46144U) == 0x20000000U &&
+			(i915_xd_fake_get(0x61400U) & 0xff000000U) == 0x91000000U &&
+			i915_xd_ot_find(I915_XD_OT_WRITE, 0x61030U, 0U) < 0,
+			"output: transcoder B on PHY B's clock, its function DVI on DDI B, no M/N");
+
+	/* The buffer after the transcoder runs; the packets cleared before. */
+	start = i915_xd_ot_find_value(I915_XD_OT_WRITE, 0x71008U, 0x80000000U, 0U);
+	buffer = i915_xd_ot_find(I915_XD_OT_WRITE, I915_XD_DDI_BUF_CTL(1U), 0U);
+	i915_host_check(i915_xd_ot_find(I915_XD_OT_WRITE, 0x61200U, 0U) < start && buffer > start &&
+			(i915_xd_fake_get(I915_XD_DDI_BUF_CTL(1U)) & 0x80000080U) == 0x80000000U,
+			"output: the packets cleared before the pipe, DDI B's buffer started after the transcoder");
+
+	/* The dark: no sink to put to sleep, the buffer off, the clock gated. */
+	from = i915_xd_ot_log.count;
+	i915_xd_ot_dark(&out, &env);
+	i915_host_check(i915_xd_ot_find(I915_XD_OT_DPCD_WRITE, I915_XD_DPCD_SET_POWER, from) < 0 &&
+			(i915_xd_fake_get(I915_XD_DDI_BUF_CTL(1U)) & 0x80000080U) == 0x80U &&
+			(i915_xd_fake_get(0x164280U) & 0x800U) == 0x800U && out.held == 0U,
+			"output: HDMI's dark: no DPCD, DDI B's buffer off and idle, its clock gated, nothing held");
+}
+
+/*
+ * Checks an external DisplayPort sink on TC1, pipe B: the Type-C link
+ * before the AUX power, the lanes for the display, the port's own PLL
+ * through the caller, the clock select, the PHY's DP mode and levels,
+ * the PHY ownership in the buffer's word and the reset released before
+ * it (DisplayPort alternate mode); in Thunderbolt mode none of the PHY's
+ * parts; and the dark that gives the link back last.
+ */
+static void
+i915_xd_ot_test_type_c(void)
+{
+	const struct i915_xd_platform *platform;
+	struct i915_xd_output_env env;
+	struct i915_xd_output out;
+	unsigned from;
+	int get;
+	int aux;
+	int lanes;
+	int buffer;
+	int wa;
+	int error;
+
+	/* An external sink on TC1 in DisplayPort alternate mode. */
+	platform = i915_xd_ot_setup();
+	if (platform == NULL)
+		return;
+	i915_xd_ot_env(&env, platform);
+	env.tc = &i915_xd_ot_tc;
+	i915_xd_ot_log.tc_mode = I915_XD_OUTPUT_TC_DP_ALT;
+	i915_xd_ot_panel_output(&out);
+	out.kind = I915_XD_SCREEN_DP;
+	out.ddi = 3U;
+	out.phy = 5U;
+	out.aux = 3U;
+	out.pipe = 1U;
+	out.trans = 1U;
+	out.tc = 1;
+	out.tc_port = 0U;
+	out.tc_swing_max = 3U;
+	out.rate_khz = 162000U;
+	out.lanes = 4U;
+	out.dmc_programs = 0U;
+	out.backlight.vbt_present = 0;
+	out.dbuf.pipes_after = 0x2U;
+	error = i915_xd_ot_light(&out, &env);
+	i915_host_check(error == 0 && i915_xd_ot_log.errors == 0U && out.trained, "output: a Type-C sink's light runs through and trains");
+
+	/* The link, then the AUX power, then the lanes; the PLL through the caller. */
+	get = i915_xd_ot_find(I915_XD_OT_TC, I915_XD_OT_TC_GET, 0U);
+	aux = i915_xd_ot_find(I915_XD_OT_GET, I915_XD_OUTPUT_POWER_AUX, 0U);
+	lanes = i915_xd_ot_find(I915_XD_OT_TC, I915_XD_OT_TC_LANES, 0U);
+	i915_host_check(get >= 0 && aux > get && lanes > aux &&
+			i915_xd_ot_find(I915_XD_OT_TC, I915_XD_OT_TC_PLL_ON, 0U) > lanes &&
+			(i915_xd_fake_get(0x46010U) & 0x80000000U) == 0U,
+			"output: the Type-C link, the AUX power, the PHY's lanes, then the port's own PLL by the caller (no combo PLL)");
+
+	/* The clock from the port's own PLL, the TC1 gate open, the PHY's mode and levels. */
+	i915_host_check(i915_xd_fake_get(0x4610cU) == 0x80000000U &&
+			(i915_xd_fake_get(0x164280U) & (1U << 12)) == 0U &&
+			i915_xd_ot_find(I915_XD_OT_TC, I915_XD_OT_TC_DP_MODE, 0U) > 0 &&
+			i915_xd_ot_find(I915_XD_OT_TC, I915_XD_OT_TC_LEVELS, 0U) > 0 &&
+			i915_xd_fake_get(0x46144U) == 0x60000000U,
+			"output: TC1's clock from its own PLL, its gate open, the PHY's DP mode and levels, transcoder B on PHY F's clock");
+
+	/* The PHY's reset released before the buffer, which shows the display owns the PHY. */
+	wa = i915_xd_ot_find(I915_XD_OT_TC, I915_XD_OT_TC_WA, 0U);
+	buffer = i915_xd_ot_find(I915_XD_OT_WRITE, I915_XD_DDI_BUF_CTL(3U), 0U);
+	i915_host_check(wa > 0 && buffer > wa && (out.buf_word & I915_XD_DDI_BUF_TC_OWNED) != 0U &&
+			i915_xd_ot_find(I915_XD_OT_DPCD_WRITE, 0x300U, 0U) < 0,
+			"output: the PHY's reset released before TC1's buffer starts, the buffer owns the PHY, no source identifier");
+
+	/* The dark: the clock gated and deselected, the PLL off by the caller, then the AUX power, then the link. */
+	from = i915_xd_ot_log.count;
+	i915_xd_ot_dark(&out, &env);
+	i915_host_check(i915_xd_fake_get(0x4610cU) == 0U && (i915_xd_fake_get(0x164280U) & (1U << 12)) != 0U &&
+			i915_xd_ot_find(I915_XD_OT_TC, I915_XD_OT_TC_PLL_OFF, from) > 0 &&
+			i915_xd_ot_find(I915_XD_OT_TC, I915_XD_OT_TC_PUT, from) >
+			i915_xd_ot_find(I915_XD_OT_PUT, I915_XD_OUTPUT_POWER_AUX, from) &&
+			out.held == 0U && !out.tc_linked,
+			"output: TC1's clock gated and deselected, the PLL off, the AUX power, then the link given back");
+
+	/* In Thunderbolt mode: no IO power, no lanes, the Thunderbolt PLL's output, no ownership. */
+	platform = i915_xd_ot_setup();
+	if (platform == NULL)
+		return;
+	i915_xd_ot_env(&env, platform);
+	env.tc = &i915_xd_ot_tc;
+	i915_xd_ot_log.tc_mode = I915_XD_OUTPUT_TC_TBT;
+	out.held = 0U;
+	out.lit = 0;
+	out.pll_on = 0;
+	out.pll_pipes = 0U;
+	error = i915_xd_ot_light(&out, &env);
+	i915_host_check(error == 0 && i915_xd_ot_find(I915_XD_OT_GET, I915_XD_OUTPUT_POWER_DDI_IO, 0U) < 0 &&
+			i915_xd_ot_find(I915_XD_OT_TC, I915_XD_OT_TC_LANES, 0U) < 0 &&
+			i915_xd_ot_find(I915_XD_OT_TC, I915_XD_OT_TC_WA, 0U) < 0 &&
+			i915_xd_fake_get(0x4610cU) == 0xc0000000U && (out.buf_word & I915_XD_DDI_BUF_TC_OWNED) == 0U,
+			"output: in Thunderbolt mode no IO power, no PHY lanes or reset, the Thunderbolt PLL's 1.62 GHz output, no ownership");
 }

@@ -232,7 +232,6 @@ static int i915_skl_build_pipe_wm(struct i915_lcd_wm_ctx *wm, struct intel_atomi
 static int i915_skl_crtc_allocate_plane_ddb(struct i915_lcd_wm_ctx *wm, struct intel_atomic_state *state, struct intel_crtc *crtc);
 static unsigned int i915_intel_crtc_ddb_weight(const struct intel_crtc_state *crtc_state);
 static int i915_skl_crtc_allocate_ddb(struct i915_lcd_wm_ctx *wm, struct intel_crtc *crtc);
-static void i915_update_mbus_pre_enable(struct i915_lcd_wm_ctx *wm, struct intel_atomic_state *state);
 
 /*
  * Creates the watermark world of a display.
@@ -1120,140 +1119,6 @@ skl_write_plane_wm(
 	/* Writes the levels, the transition, the SAGV pair and the entry. */
 	drv_i915_xd_wm_write_plane(drv_i915_lcd_xd_io(i915), drv_i915_lcd_xd_platform(), (unsigned)plane->pipe,
 		(unsigned)i915->display.wm.num_levels, &xd_wm, pipe_wm->use_sagv_wm ? 1 : 0, &range);
-}
-
-/*
- * Updates the MBUS and enables the DBUF slices before the plane update
- * (intel_dbuf_pre_plane_update()).
- *
- * Nothing happens when neither the enabled slices nor the MBUS joining
- * change.  The slices of the old and the new state are both enabled until
- * the planes have moved.
- */
-void
-drv_i915_dbuf_pre_plane_update(
-	struct i915_lcd_wm_ctx *wm,
-	struct intel_atomic_state *state)
-{
-	struct drm_i915_private *i915;
-	const struct intel_dbuf_state *new_dbuf_state;
-	const struct intel_dbuf_state *old_dbuf_state;
-
-	/* The device, and the DBUF states of the commit. */
-	i915 = i915_lcd_to_i915(state->base.dev);
-	new_dbuf_state = i915_wm_intel_atomic_get_new_dbuf_state(wm);
-	old_dbuf_state = i915_wm_intel_atomic_get_old_dbuf_state(wm);
-
-	/* A commit without a DBUF state has nothing to update. */
-	if (!new_dbuf_state)
-		return;
-
-	/* Neither the enabled slices nor the MBUS joining change: nothing to update. */
-	if (new_dbuf_state->enabled_slices == old_dbuf_state->enabled_slices &&
-	    new_dbuf_state->joined_mbus == old_dbuf_state->joined_mbus)
-		return;
-
-	/* The change must have serialized the global state. */
-	I915_LCD_WARN_ON(!new_dbuf_state->base.changed);
-
-	/* Sets the MBUS joining, then enables the old and the new slices. */
-	i915_update_mbus_pre_enable(wm, state);
-	gen9_dbuf_slices_update(i915,
-				old_dbuf_state->enabled_slices |
-				new_dbuf_state->enabled_slices);
-}
-
-/*
- * Leaves only the new DBUF slices enabled after the plane update
- * (intel_dbuf_post_plane_update()).
- */
-void
-drv_i915_dbuf_post_plane_update(
-	struct i915_lcd_wm_ctx *wm,
-	struct intel_atomic_state *state)
-{
-	struct drm_i915_private *i915;
-	const struct intel_dbuf_state *new_dbuf_state;
-	const struct intel_dbuf_state *old_dbuf_state;
-
-	/* The device, and the DBUF states of the commit. */
-	i915 = i915_lcd_to_i915(state->base.dev);
-	new_dbuf_state = i915_wm_intel_atomic_get_new_dbuf_state(wm);
-	old_dbuf_state = i915_wm_intel_atomic_get_old_dbuf_state(wm);
-
-	/* A commit without a DBUF state has nothing to update. */
-	if (!new_dbuf_state)
-		return;
-
-	/* Neither the enabled slices nor the MBUS joining change: nothing to update. */
-	if (new_dbuf_state->enabled_slices == old_dbuf_state->enabled_slices &&
-	    new_dbuf_state->joined_mbus == old_dbuf_state->joined_mbus)
-		return;
-
-	/* The change must have serialized the global state. */
-	I915_LCD_WARN_ON(!new_dbuf_state->base.changed);
-
-	/* Enables exactly the new slices. */
-	gen9_dbuf_slices_update(i915,
-				new_dbuf_state->enabled_slices);
-}
-
-/*
- * Programs the MBUS DBOX credits of the active pipes (intel_mbus_dbox_update()).
- *
- * Nothing happens before display version 11, or when neither the MBUS
- * joining nor the active pipes change.  The pipes walked are the watermark
- * context's crtc when its pipe is active (the walk the Linux text had here).
- */
-void
-drv_i915_mbus_dbox_update(
-	struct i915_lcd_wm_ctx *wm,
-	struct intel_atomic_state *state)
-{
-	struct drm_i915_private *i915;
-	const struct intel_dbuf_state *new_dbuf_state;
-	const struct intel_dbuf_state *old_dbuf_state;
-	const struct intel_crtc *crtc;
-	int display_ver;
-	u32 pipe_val;
-	u32 val;
-
-	/* The device and its display version. */
-	i915 = i915_lcd_to_i915(state->base.dev);
-	display_ver = I915_LCD_DISPLAY_VER(i915);
-
-	/* Before display version 11 there is no DBOX to program. */
-	if (display_ver < 11)
-		return;
-
-	/* The DBUF states of the commit. */
-	new_dbuf_state = i915_wm_intel_atomic_get_new_dbuf_state(wm);
-	old_dbuf_state = i915_wm_intel_atomic_get_old_dbuf_state(wm);
-
-	/* A commit without a DBUF state has nothing to update. */
-	if (!new_dbuf_state)
-		return;
-
-	/* Neither the MBUS joining nor the active pipes change: nothing to update. */
-	if (new_dbuf_state->joined_mbus == old_dbuf_state->joined_mbus &&
-	    new_dbuf_state->active_pipes == old_dbuf_state->active_pipes)
-		return;
-
-	/* The pipe's credits. */
-	val = drv_i915_xd_dbuf_dbox_word(drv_i915_lcd_xd_platform(), new_dbuf_state->joined_mbus ? 1 : 0);
-
-	/* The crtcs of the active pipes: the watermark context's crtc, if its pipe is active. */
-	crtc = to_intel_crtc(wm->crtc_state->uapi.crtc);
-	if (crtc == NULL)
-		return;
-	if ((new_dbuf_state->active_pipes & BIT(crtc->pipe)) == 0)
-		return;
-
-	/* The word of the pipe. */
-	pipe_val = val;
-
-	/* Writes the pipe's DBOX control. */
-	drv_i915_xd_io_write(drv_i915_lcd_xd_io(i915), I915_XD_PIPE_MBUS_DBOX_CTL(crtc->pipe), pipe_val);
 }
 
 /* GENMASK(num - 1, 0): the low num bits. */
@@ -2194,21 +2059,4 @@ i915_skl_crtc_allocate_ddb(
 
 	/* Succeeded: the pipe has its DDB. */
 	return 0;
-}
-
-/* Joins or splits the MBUS before the plane update, through the xd DBUF. */
-static void
-i915_update_mbus_pre_enable(
-	struct i915_lcd_wm_ctx *wm,
-	struct intel_atomic_state *state)
-{
-	struct drm_i915_private *i915;
-	const struct intel_dbuf_state *dbuf_state;
-
-	/* The device and the new DBUF state. */
-	i915 = i915_lcd_to_i915(state->base.dev);
-	dbuf_state = i915_wm_intel_atomic_get_new_dbuf_state(wm);
-
-	/* The bus control and the tracker service. */
-	drv_i915_xd_dbuf_mbus(drv_i915_lcd_xd_io(i915), drv_i915_lcd_xd_platform(), dbuf_state->joined_mbus ? 1 : 0);
 }

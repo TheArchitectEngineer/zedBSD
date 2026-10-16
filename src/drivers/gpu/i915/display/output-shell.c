@@ -6,9 +6,9 @@
  */
 
 /*
- * The built-in panel's xd output (xd-output.c) on a modeset object.
+ * The xd output (xd-output.c) of a modeset object's screen.
  *
- * The modeset object still owns the panel's commit: its backend, its
+ * The modeset object still owns the screen's commit: its backend, its
  * locks, its error count and the state the status, the flips and the
  * plane read.  The output's steps reach the backend through the
  * environment filled here, the output is described from the object's
@@ -48,31 +48,41 @@ static void i915_output_shell_link_failed(void *context);
 static void i915_output_shell_observe(void *context, unsigned point);
 static void i915_output_shell_error(void *context, const char *text);
 static void i915_output_shell_debug(void *context, const char *text);
+static void i915_output_shell_converter(void *context);
+static void i915_output_shell_tc_get_link(void *context, unsigned lanes);
+static void i915_output_shell_tc_put_link(void *context);
+static unsigned i915_output_shell_tc_mode(void *context);
+static void i915_output_shell_tc_lanes(void *context, unsigned lanes);
+static void i915_output_shell_tc_dp_mode(void *context);
+static void i915_output_shell_tc_levels(void *context, const uint8_t set[4]);
+static int i915_output_shell_tc_pll(void *context, int on);
+static void i915_output_shell_tc_phy_wa(void *context);
 static enum intel_display_power_domain i915_output_shell_domain(struct i915_lcd_modeset *ms, unsigned use);
 static void i915_output_shell_domain_held(struct i915_lcd_modeset *ms, unsigned use, enum intel_display_power_domain domain);
 
 /*
- * Tells whether a modeset object drives the built-in panel, whose
- * commits run through the xd output.
+ * The Type-C hooks of an external DisplayPort sink's output: the
+ * object's Type-C port code (its link, its mode, its lanes), its PHY
+ * code (the DisplayPort mode, the signal levels, the reset of a port
+ * that was in Thunderbolt mode) and its PLL pool.  Constant.
  */
-int
-drv_i915_lcd_ms_xo_panel(
-	const struct i915_lcd_modeset *ms)
-{
-	/* An HDMI sink and an external DisplayPort sink are not the panel. */
-	if (ms->output_hdmi)
-		return 0;
-	if (ms->output_dp_ext)
-		return 0;
-
-	/* Succeeded: the object drives the panel. */
-	return 1;
-}
+static const struct i915_xd_output_tc i915_output_shell_tc = {
+	i915_output_shell_tc_get_link,
+	i915_output_shell_tc_put_link,
+	i915_output_shell_tc_mode,
+	i915_output_shell_tc_lanes,
+	i915_output_shell_tc_dp_mode,
+	i915_output_shell_tc_levels,
+	i915_output_shell_tc_pll,
+	i915_output_shell_tc_phy_wa,
+};
 
 /*
  * Fills the xd output's environment of a modeset object: the object's
  * register window and platform, its backend's power, panel, DPCD, DBUF
- * and lock hooks, and the modeset's notes.
+ * and lock hooks, the modeset's notes, and for an external DisplayPort
+ * sink its converter and the Type-C port's hooks (the object's Type-C
+ * and PHY code).
  */
 void
 drv_i915_lcd_ms_xo_env(
@@ -95,6 +105,12 @@ drv_i915_lcd_ms_xo_env(
 	env->vblank_off = i915_output_shell_vblank_off;
 	env->link_failed = i915_output_shell_link_failed;
 	env->observe = i915_output_shell_observe;
+
+	/* An external DisplayPort sink's converter and its Type-C port. */
+	if (ms->output_dp_ext) {
+		env->converter = i915_output_shell_converter;
+		env->tc = &i915_output_shell_tc;
+	}
 	env->error = i915_output_shell_error;
 	env->debug = i915_output_shell_debug;
 	env->context = ms;
@@ -126,6 +142,10 @@ drv_i915_lcd_ms_xo_describe(
 
 	/* The output, its port and its pipe. */
 	out->kind = I915_XD_SCREEN_PANEL;
+	if (ms->output_hdmi)
+		out->kind = I915_XD_SCREEN_HDMI;
+	if (ms->output_dp_ext)
+		out->kind = I915_XD_SCREEN_DP;
 	out->ddi = (unsigned)ms->dig_port.base.port;
 	out->phy = (unsigned)drv_i915_lcd_intel_port_to_phy(&ms->i915, ms->dig_port.base.port);
 	out->aux = (unsigned)ms->dig_port.aux_ch;
@@ -165,7 +185,18 @@ drv_i915_lcd_ms_xo_describe(
 		}
 	}
 
-	/* The VBT's swing table settings of the panel. */
+	/* A Type-C port, and the highest swing its PHY reaches. */
+	out->tc = ms->output_dp_ext ? 1 : 0;
+	out->tc_port = 0U;
+	out->tc_swing_max = 0U;
+	if (out->tc) {
+		out->tc_port = (unsigned)(ms->dig_port.base.port - PORT_TC1);
+		if (intel_dp->voltage_max != NULL)
+			out->tc_swing_max = (uint8_t)(intel_dp->voltage_max(intel_dp, crtc_state) & DP_TRAIN_VOLTAGE_SWING_MASK);
+	}
+
+	/* The VBT's HDMI level and swing table settings of the panel. */
+	out->hdmi_level = ms->hdmi_level_shift;
 	out->swing_vbt = 0U;
 	if (panel->vbt.edp.hobl)
 		out->swing_vbt |= I915_XD_SWING_HOBL;
@@ -268,9 +299,9 @@ drv_i915_lcd_ms_xo_sync(
 	kern_memcpy(intel_dp->lttpr_common_caps, out->repeater_caps, sizeof(intel_dp->lttpr_common_caps));
 	kern_memcpy(intel_dp->lttpr_phy_caps, out->repeater_phy_caps, sizeof(intel_dp->lttpr_phy_caps));
 
-	/* The PLL the check gave the crtc. */
+	/* A combo port's PLL the check gave the crtc (a Type-C port's PLLs keep the pool's own record). */
 	pll = ms->crtc_state.shared_dpll;
-	if (pll != NULL) {
+	if (pll != NULL && !out->tc) {
 		pll->on = out->pll_on != 0;
 		pll->active_mask = out->pll_pipes;
 	}
@@ -503,7 +534,137 @@ i915_output_shell_debug(
 	drv_i915_lcd_debug(text);
 }
 
-/* Returns the power domain a use of the panel's output names on the object's port and pipe. */
+/* Sets up a branch's protocol converter through the sink's own AUX channel. */
+static void
+i915_output_shell_converter(
+	void *context)
+{
+	struct i915_lcd_modeset *ms;
+
+	/* The object's sink. */
+	ms = context;
+	i915_lcd_dp_configure_protocol_converter(&ms->dig_port.dp);
+}
+
+/* Takes the Type-C port's link and picks the crtc's active port PLL by the port's mode. */
+static void
+i915_output_shell_tc_get_link(
+	void *context,
+	unsigned lanes)
+{
+	struct i915_lcd_modeset *ms;
+
+	/* The link, then the PLL the mode selects. */
+	ms = context;
+	intel_tc_port_get_link(&ms->dig_port, (int)lanes);
+	drv_i915_icl_update_active_dpll(&ms->state, &ms->crtc, &ms->dig_port.base);
+}
+
+/* Gives the Type-C port's link back. */
+static void
+i915_output_shell_tc_put_link(
+	void *context)
+{
+	struct i915_lcd_modeset *ms;
+
+	/* The object's port. */
+	ms = context;
+	I915_LCD_INTEL_TC_PORT_PUT_LINK(&ms->i915, &ms->dig_port);
+}
+
+/* Reports the mode the Type-C port is held in. */
+static unsigned
+i915_output_shell_tc_mode(
+	void *context)
+{
+	struct i915_lcd_modeset *ms;
+	bool in_mode;
+
+	ms = context;
+
+	/* Thunderbolt, DisplayPort alternate, legacy, or none of them. */
+	in_mode = i915_lcd_intel_tc_port_in_tbt_alt_mode(&ms->dig_port);
+	if (in_mode)
+		return I915_XD_OUTPUT_TC_TBT;
+	in_mode = intel_tc_port_in_dp_alt_mode(&ms->dig_port);
+	if (in_mode)
+		return I915_XD_OUTPUT_TC_DP_ALT;
+	in_mode = intel_tc_port_in_legacy_mode(&ms->dig_port);
+	if (in_mode)
+		return I915_XD_OUTPUT_TC_LEGACY;
+
+	/* Succeeded: the port is in none of the modes. */
+	return I915_XD_OUTPUT_TC_NONE;
+}
+
+/* Gives the display the Type-C PHY's lanes for a link of so many lanes. */
+static void
+i915_output_shell_tc_lanes(
+	void *context,
+	unsigned lanes)
+{
+	struct i915_lcd_modeset *ms;
+
+	/* The object's port. */
+	ms = context;
+	intel_tc_port_set_fia_lane_count(&ms->dig_port, (int)lanes);
+}
+
+/* Programs the Type-C PHY's DisplayPort mode. */
+static void
+i915_output_shell_tc_dp_mode(
+	void *context)
+{
+	/* The object's PHY. */
+	drv_i915_lcd_ms_tc_dp_mode(context);
+}
+
+/* Programs the Type-C PHY's signal levels from the training's level bytes. */
+static void
+i915_output_shell_tc_levels(
+	void *context,
+	const uint8_t set[4])
+{
+	struct i915_lcd_modeset *ms;
+	struct intel_encoder *encoder;
+
+	/* The port's levels, then its PHY's hook. */
+	ms = context;
+	kern_memcpy(ms->dig_port.dp.train_set, set, sizeof(ms->dig_port.dp.train_set));
+	encoder = &ms->dig_port.base;
+	encoder->set_signal_levels(encoder, &ms->crtc_state);
+}
+
+/* Turns the crtc's active port PLL on or off through the PLL pool: 0. */
+static int
+i915_output_shell_tc_pll(
+	void *context,
+	int on)
+{
+	struct i915_lcd_modeset *ms;
+
+	/* The pool's PLL of the crtc. */
+	ms = context;
+	if (on) {
+		drv_i915_enable_shared_dpll(&ms->crtc_state);
+	} else {
+		drv_i915_disable_shared_dpll(&ms->crtc_state);
+	}
+
+	/* Succeeded: the pool reports its own errors. */
+	return 0;
+}
+
+/* Releases the Type-C PHY's core reset before the DDI buffer starts. */
+static void
+i915_output_shell_tc_phy_wa(
+	void *context)
+{
+	/* The object's PHY. */
+	drv_i915_lcd_ms_tc_phy_wa(context);
+}
+
+/* Returns the power domain a use of the output names on the object's port and pipe. */
 static enum intel_display_power_domain
 i915_output_shell_domain(
 	struct i915_lcd_modeset *ms,

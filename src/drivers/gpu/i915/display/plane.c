@@ -79,17 +79,6 @@ static unsigned int i915_plane_relative_data_rate(const struct intel_crtc_state 
 static const struct drm_format_info *i915_xrgb8888_format(void);
 
 /*
- * Returns the planes that have the HDR pipeline (the Linux
- * icl_hdr_plane_mask()): the primary plane and the first two sprites.
- */
-u8
-drv_i915_icl_hdr_plane_mask(void)
-{
-	/* Succeeded: reports the mask. */
-	return BIT(PLANE_PRIMARY) | BIT(PLANE_SPRITE0) | BIT(PLANE_SPRITE1);
-}
-
-/*
  * Scales a pixel rate by a plane's downscaling (the Linux
  * intel_adjusted_rate()).
  *
