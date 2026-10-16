@@ -2,10 +2,10 @@
 
 # ws039-p008: Vulkan の executor（host の部分: nvrtx の写しと PM4 の組み立て）
 
-Status: in-progress（2026-10-16 q1214 / q1214-i01 で P5 が host の部分を書いた。実機前。GPU への投入（ring・fence）・renderer の node（RENDER の role、WSI、swapchain）は P3 の p005・p011 の口に依存し未着手）
+Status: in-progress（2026-10-16 q1219 / q1219-i01 で P5 が executor を kernel に組み込み、実機 10.0.10.3 で A9 ok と vkquad の pixel の一致。Q1 の merge と clearance の判定待ち）。以前: q1214-i01 で host の部分
 Disposition: normal
 Parent: [WS039](../ws.md)
-Queue: q1214 / q1214-i01（Q1 の割当 2026-10-16、P5: 「ws039-p007 の残り」と「p008 の host の部分」）
+Queue: q1219 / q1219-i01（段 A9: executor の組み込みと実機の描画、承認 2026-10-16 ユーザー「p008に進みます」）。以前 q1214 / q1214-i01（Q1 の割当 2026-10-16、P5: 「ws039-p007 の残り」と「p008 の host の部分」）
 承認: 2026-10-16 ユーザー「RDNAのコンパイラや、パイプラインやexecutorの組み立てなど、別なサブエージェントで先に進められることがあれば、進めてオーケーです」（Q1 経由）
 依存: p007（compiler、P5）。GPU で走らせる確かめは p005（GFX の ring・fence）と p011（node・memory・session）に依存する（P3）。
 実行者: P5（phase-runner）
@@ -84,3 +84,58 @@ commit: `3f0bda33c`（compiler の MEM_ORDERED）、`ce53cf96f`（`vk/` と試�
 1. node の側（P3 の p011 の口が main に入ってから）: `vk-node.c` に当たる物（renderer の node、RENDER の role、WSI、swapchain）、`AMD64_AMDRDNA_VK_SOURCES` を vmunix.mk に別の変数で足す（node が無いと link できないので今は入れていない）。
 2. compute pipeline（nvrtx と同じく拒んでいる）と vkCmdDispatch の record。
 3. 実機（6 節）は p005・p011 の後。
+
+## 8. q1219-i01: 組み込みと実機（2026-10-16 P5）
+
+### 8.1 したこと
+
+1. main（6307ecd3f、P3 の p011 を含む）を branch に merge（2e8bbc78f、衝突なし）。
+2. **PM4 の定義を driver の側に寄せた**（Q1 の決定、5 節の 2）: 型 3 の header の欄・全部の opcode（driver と executor の和）・register の空間の先頭（dword の index）・index 付きの setter の位置・wait の比較と memory の poll・acquire の大きさと poll・release の data の欄を `amdrdna-hw.h` に（出典 Linux v6.19 `nvd.h`・`gfx_v10_0.c`、Mesa 25.0.7 `radv_cs.h`）。`command-format.c` は同じ名前を使い、`command_header` を公開の `amdrdna_pm4_header` に。executor の writer は `amdrdna_vk_pm4_*`（struct `amdrdna_vk_pm4`）に改名し（driver の `amdrdna_pm4_dispatch`・`fetcher_sync` と名前がぶつかった）、driver も書く packet は driver の builder で作る（register の書き込み・context の loads と clear state・memory の wait・PFP_SYNC_ME・dispatch・filler）。executor だけの物（draw・instances・event・release・acquire の cache の bit・index 付きの setter）は `amdrdna-vk-gfx10.h` に残した。packet の語は host 試験で前と同じ（170 項目）。
+3. compiler の options の引数の変更に、P3 の試験の呼び手 2 つ（`amdrdna-dispatch-gen.c`・`amdrdna-engines-test.c`）を合わせた（NULL）。
+4. **継ぎ目**（P3 の file の最小の変更、Q1 了承 2026-10-16）:
+   - `node.c`: `amdrdna_node_create` で `amdrdna.vk=1`（既定 0）の時だけ `amdrdna_vk_node_bind`（登録の前）。`node_open` で `amdrdna_vk_node_open`、`node_close` で `amdrdna_vk_node_close`（EBUSY なら session を残す）。`node_blob_create` で blob_id があり renderer なら `amdrdna_vk_node_blob_attach`。**`node_resource_map` の blob の大きさを backing（64 KiB の単位）から頼まれた page 数に**（libvulkan は map の bytes が自分の page 数と同じでないと DEVICE_LOST にする。実機で見つけた、8.3）。
+   - `vk-node.c`: `amdrdna_vk_node_bind`（`amdrdna_runtime_bind(node, execute, timelines)`、execute は `amdrdna_vk_stream_execute(session->vk, …, amdrdna_vk_dispatch)`、失敗した frame は拒んだ command を印に出す）、`_open`・`_close`・`_blob_attach`（session の space に map → node の lock で `amdrdna_vk_memory_attach` → backing の参照）、段 A9 の `amdrdna_a9_draw`。
+   - `amdrdna.c`: 最後の段を A9 に。A6〜A8 は `amdrdna.disp.own=0` なら `Ax skip` の印で通る（=1 は p006 まで ENOTSUP）。A9 は `amdrdna_a9_draw`。`amdrdna-private.h`・`amdrdna-node.h` に宣言。`runtime.c` は変えていない。
+5. **段 A9**: driver 自身の session で executor の session を開き、`amdrdna_vk_execute_trial`（`vk-execute.c`）: 64x64 の BGRA の画像 2 つ、1 つ目に一色の quad（青）と中の正方形 16〜48（赤）、barrier の後に 1 つ目を unnormalized の nearest で sample して 2 つ目へ写す quad、run して待ち、全 pixel を照合。印 `A9 ok draw pixels=4096 copy=4096 quads=3 words=N renderer bound`。
+6. `platform/amd64/vmunix.mk`: `AMD64_AMDRDNA_VK_SOURCES`（vk/ の 20 file、codec は i915・nvrtx が build しない時だけ）。
+
+capset が renderer を名乗る（CAPSET・COMMAND・NOTIFICATION・JOB・JOB_CAPACITY）のは bind の時だけ（runtime.c の bind が足す）。`amdrdna.vk` の既定は 0（merge の後の既定を上げるかは Q1・ユーザーの判断）。
+
+### 8.2 host 試験と build
+
+- `amdrdna-vk-host-test.sh` PASS（170 checks、0 failures、定義を寄せた後と命名の後）。
+- `AMDRDNA_LINUX=<P3 の temp/linux> amdrdna-host-test.sh` PASS（PASS の行 308、audit-symbols 45 file PASS）。firmware と dump の項目は worktree に無く SKIP。
+- `make -j16 ZEDBSD_CONFIG=plan/ws039/tests/config.mk BUILD=build/p5/usb build/p5/usb/vmunix` rc 0、warning 0、kernel include check PASS、amd64 vmunix check PASS。`build/p5/usb/bin/amdrdnactl`・`vkquad` も。
+- `audit-vk.sh`（Linux の tree 無し）PASS（24 file）。**Linux の tree を渡すと FAIL 90 件**（`depth`・`view`・`handled`・`memory`・`push` など一般語、nvrtx から写した file と hardware の部分。p008 の前の 175405996 でも同じ 90 件で、今回の変更で増えていない）。allow list に足すかは Q1 の判断（driver の側は 29 語を足した前例）。
+
+### 8.3 実機（10.0.10.3 の RX 5600 XT、USB の zedBSD は DHCP 10.0.30.5）
+
+手順: Debian（awe@10.0.10.3）で USB の sda2 を mount し、`vmunix` を差し替え（前の物は Debian の `~/ws039/vmunix.before-p8`）、`zedbsd.cfg` に `amdrdna.vk=1` の行を足した（前の物は `~/ws039/zedbsd.cfg.before-p8`）→ `hw-run.sh boot 0001` → zedBSD に新しい `amdrdnactl`・`vkquad`・`libvulkan.so` を `/tmp` へ → `/tmp/amdrdnactl advance A9`（A2〜A9 が続けて走る）→ 状態 → `LD_LIBRARY_PATH=/tmp /tmp/vkquad` → dmesg → `hw-run.sh debian`。電源は全部 warm（Debian 経由）。証拠 `build/tmp/amdrdna-hw-p8-{1..5}/`（worktree の中、commit しない）。
+
+| 回 | kernel（vmunix の SHA-256 の先頭） | 結果 |
+| --- | --- | --- |
+| 1 | 715d148c（7746e04e4） | **A9 ok draw pixels=4096 copy=4096 quads=3 words=665**、`/dev/gpu0`、vkquad は `fail instance -4` |
+| 2 | 10a970a7（frame の失敗の印を足した） | A9 ok、vkquad `fail instance -4`、frame の失敗は 0。印を足した libvulkan（`build/tmp/vkdbg`、commit しない）で `context.c:674`: `GPU_RESOURCE_MAP` の bytes が頼んだ page 数と違う（node が backing の 64 KiB を返していた）→ map の大きさを直した |
+| 3 | b53c4120（0d1df6e2f） | A9 ok、**`VKQUAD ok device=zedBSD amdrdna (AMD RDNA1) pixels=4096`** を 6 回（今回の libvulkan 4 回・image の libvulkan 2 回）、`amdrdnactl gpu` ok、status `sessions spaces=0 held=1 device=0x3`（REGISTERED・RENDERER）、`vk: a frame failed` 0 |
+| 4 | 同上 | A9 ok、vkquad ok 2 回 |
+| 5 | 同上（09573e859。命名だけの変更で vmunix は同じ hash） | A9 ok、vkquad ok 3 回、`amdrdnactl gpu` ok、spaces=0 |
+
+vkquad（compositor の textured quad を Vulkan 1.0 で offscreen に描いて読み戻す）が確かめる物: render pass の clear（青）、buffer から 32x32 の R8G8B8A8 の texture への upload、compositor の quad.vert/quad.frag の pipeline と blend で 64x64 の B8G8R8A8 の target の中央に描く、image の copy、image の clear、target から buffer への download、全 4096 pixel の照合。
+
+### 8.4 6 節の「実機で確かめる事」
+
+- preamble と CLEAR_STATE の後の既定・binner off・SCAN_MODE: draw が正しい pixel を出したので、少なくとも 64x64 の target では成り立つ（個々の register の値を読んではいない）。
+- barrier の列（RELEASE_MEM の GL2 の writeback と invalidate、WAIT_REG_MEM、ACQUIRE_MEM）: A9 の「描く → barrier → sample」と vkquad の copy・download が一致 → 確かめた。TCC は 16（2 の冪、A0 の `l2=16`）で、2 の冪でない時の CB の後の GL2 は対象外（この chip では起きない）。
+- linear の target と T# の pitch（256 byte）、BGRA の COMP_SWAP と T# の DST_SEL: A9 と vkquad の B8G8R8A8 の target と R8G8B8A8 の texture で一致 → 確かめた。
+- 32_ABGR の export を 8 bit の target に（SX_PS_DOWNCONVERT 0）、DUAL_QUAD_DISABLE: 一致 → 確かめた（色の精度は 8 bit の完全一致の範囲）。
+- unnormalized の sampler（quad の copy）: A9 の copy が全 pixel 一致 → 確かめた。MEM_ORDERED の下の counter の待ち: 落ちず一致（個別の観察はしていない）。
+- 頂点の V#（stride 0 の record 数）: vkquad の頂点の取り方で一致（stride 0 の場合そのものは未確認）。
+- 未確認: cold power cycle の直後、compositor（keiland）の desktop（p009）、長い時間・多数の session、compute pipeline（拒んだまま）、大きな target・複数の pass の性能。
+
+commit: 7746e04e4（組み込み）、0d1df6e2f（map の大きさ・frame の印）、09573e859（命名）。
+
+### 8.5 再開点
+
+1. Q1: merge と clearance の判定。`amdrdna.vk` の既定（今は 0）。audit-vk の 90 件の一般語の扱い。
+2. p009: compositor が amdrdna で desktop を描く（WSI・swapchain・display は p006 の後）。
+3. compute pipeline と vkCmdDispatch（7 節の 2）。

@@ -53,7 +53,7 @@
 
 | file | license | SHA-256 | 取ったもの（値 V / 手順 P） | 引用する executor の file |
 | --- | --- | --- | --- | --- |
-| `src/amd/common/sid.h` | MIT（SPDX） | `3aff0d7daa12c83abbf0ed2908b560ce46483d084dbd397b68596c30fc41122e` | V: type-3 の header の欄、PKT3 の opcode、register の空間の base、CONTEXT_CONTROL・WAIT_REG_MEM・RELEASE_MEM の欄、NOP_PAD | `amdrdna-vk-gfx10.h`・`vk-pm4.c` |
+| `src/amd/common/sid.h` | MIT（SPDX） | `3aff0d7daa12c83abbf0ed2908b560ce46483d084dbd397b68596c30fc41122e` | V: RELEASE_MEM の欄（EOP の行き先・割り込み）、event の index の位置（2026-10-16 q1219: type-3 の header・opcode・register の空間の base・WAIT_REG_MEM・CONTEXT_CONTROL・NOP の詰め物は driver の `amdrdna-hw.h`・`command-format.c`（出典 Linux v6.19 `nvd.h`・`gfx_v10_0.c`）に寄せ、vk/ はそれを使う） | `amdrdna-vk-gfx10.h` |
 | `src/amd/registers/pkt3.json` | MIT（Mesa の既定） | `36f5c2eba891df4ba1f85807241d536e8e4cc6787e34328971f071f4cddf0242` | V: RELEASE_MEM の cache の操作の bit、ACQUIRE_MEM の GCR_CNTL の bit | `amdrdna-vk-gfx10.h` |
 | `src/amd/vulkan/radv_cs.c` | MIT（SPDX） | `8d37b923ea8b00d7f7eb544743b44495eae049e902dcab61865a9f3f58848818` | P: GFX10 の cache の flush（partial flush・metadata・timestamp の event と release の待ち・PFP_SYNC_ME・acquire）、end-of-pipe の書き込み | `vk-pm4.c`・`vk-state.c` |
 | `src/amd/vulkan/radv_cs.h` | MIT（SPDX） | `6482e3ff534af74b35a3b070c7545030be62aae21ae0e620a866c79127d7c9e6` | P: uconfig の index 付きの setter、memory の値の待ち | `vk-pm4.c` |
