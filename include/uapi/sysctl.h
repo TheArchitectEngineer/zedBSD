@@ -250,6 +250,14 @@ _Static_assert(sizeof(struct gpu_telemetry_entry) == 72U,
  * at each sysctl).  THERMAL_FLAG_CPU marks the processor's sensor.
  */
 #define HW_THERMAL	9
+/*
+ * hw.usb.trace (uint64_t): which USB transfers the kernel describes in its
+ * log, as bits.  HW_USB_TRACE_STORAGE writes a line "usb-storage-trace:"
+ * for each mass storage command with how long each of its stages took.  0,
+ * the default, describes none.  Only the superuser may write it.
+ */
+#define HW_USB_TRACE	10
+#define HW_USB_TRACE_STORAGE	1U
 
 /* The version of the hw.thermal layout. */
 #define THERMAL_VERSION	1U

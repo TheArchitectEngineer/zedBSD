@@ -74,7 +74,7 @@
 #define XHCI_WAIT_MS 1000U
 #define XHCI_ROOT_POLL_MS 100U
 /*
- * Isochronous endpoints (ws197-p007a1): the Isoch TRB's type, Block Event
+ * Isochronous endpoints: the Isoch TRB's type, Block Event
  * Interrupt, Interrupt-on-Short-Packet and Start Isoch ASAP bits; how long
  * a skip wait lasts before the worker stops the endpoint (more than two
  * URBs of 16 ms); and how often the worker looks when nothing wakes it.
@@ -89,7 +89,7 @@
 #define XHCI_PORT_RECOVERY_MS 10U
 #define XHCI_PCI_COMMAND 0x04U
 /*
- * Save and Restore State (xHCI 1.2 section 4.23.2, ws052-p004): the
+ * Save and Restore State (xHCI 1.2 section 4.23.2): the
  * command bits, the status bits, the device notification register, the
  * interrupter's registers, the port link states and the Stopped
  * completion codes.
@@ -266,7 +266,7 @@ struct xhci_controller {
 	 * controller runs and off after quiesce.  Every IMAN write is made
 	 * from this flag under event_lock, never by reading IMAN back, so the
 	 * IRQ handler's acknowledgement cannot enable a quiesced interrupter.
-	 * It is never masked while a command polls (BUG-116).
+	 * It is never masked while a command polls.
 	 */
 	unsigned interrupter_enabled;
 
@@ -290,7 +290,7 @@ struct xhci_controller {
 	struct xhci_controller *next;
 
 	/*
-	 * S0 idle (ws052-p004).  suspend_state, read and written under
+	 * S0 idle.  suspend_state, read and written under
 	 * active_lock (and read by the interrupt), moves from
 	 * XHCI_SUSPEND_NONE to GATED at the start of xhci_suspend(): from then
 	 * on operations wait, a submission puts its TRBs on the ring without
@@ -309,7 +309,7 @@ struct xhci_controller {
 
 	/*
 	 * The root ports whose connection a reset after the sleep reports as
-	 * changed (ws052-p004), so that the USB core takes the devices it
+	 * changed, so that the USB core takes the devices it
 	 * knew away and enumerates the ports again.  Cleared by the hub's
 	 * ClearPortFeature(C_PORT_CONNECTION).  Under active_lock for writes
 	 * by the resume; the root hub requests read and clear it on the port
@@ -318,7 +318,7 @@ struct xhci_controller {
 	uint8_t forced_port_change[32];
 
 	/*
-	 * Isochronous endpoints (ws197-p007a1, design 2.1a/2.1b): finished
+	 * Isochronous endpoints: finished
 	 * requests waiting for their callbacks (delivered even while a command
 	 * holds the ring, since an isochronous callback only wakes a thread),
 	 * whether a dispatch runs, and the worker that stops endpoints after a
@@ -1321,7 +1321,7 @@ command_ex(
 	 * and xhci_irq share the event-ring consumer under event_lock, and
 	 * the handler hands a matching Command Completion over through
 	 * command_event.  Masking IE here and restoring it afterwards lost
-	 * events (BUG-116): an event posted after the last poll left EHB set
+	 * events: an event posted after the last poll left EHB set
 	 * with no interrupt, and QEMU's xHCI unuses the MSI-X vector on IE=0
 	 * and re-raises IP on IE=1 before it uses the vector again, so that
 	 * interrupt was dropped and the ring stalled until the next command.
@@ -2424,7 +2424,7 @@ xhci_endpoint_enable(
 		return EINVAL;
 	}
 
-	/* An isochronous endpoint's bookkeeping, published once it is configured (ws197-p007a1). */
+	/* An isochronous endpoint's bookkeeping, published once it is configured. */
 	isoch = NULL;
 	if (type == 1U || type == 5U) {
 		e = xhci_isoch_open(c, &isoch);
@@ -2627,7 +2627,7 @@ xhci_endpoint_disable(
 		return 0;
 	ep = &d->endpoints[dci];
 
-	/* Handles the active availability (an isochronous endpoint only empty and idle, design 2.1b B-W4). */
+	/* Handles the active availability (an isochronous endpoint only empty and idle). */
 	irq = spin_lock_irqsave(&c->active_lock);
 	busy = xhci_isoch_busy_locked(ep);
 	if (ep->active != NULL || ep->recovering || d->quiescing || busy) {
@@ -2709,7 +2709,7 @@ transfer_claim(
 	int normal_short_valid = 1;
 	int isochronous;
 
-	/* An isochronous endpoint's event follows its own rules (ws197-p007a1). */
+	/* An isochronous endpoint's event follows its own rules. */
 	isochronous = xhci_isoch_event_locked(c, event);
 	if (isochronous)
 		return 1;
@@ -2725,10 +2725,13 @@ transfer_claim(
 		return 0;
 	}
 
+	/* A traced transfer notes when the controller reported it. */
+	drv_usb_urb_trace_event(request->urb);
+
 	/*
 	 * During a suspend, a request that Stop Endpoint stopped stays on its
 	 * ring: the resume rings the endpoint and the controller runs it on
-	 * from where it stopped (ws052-p004).
+	 * from where it stopped.
 	 */
 	if (c->suspend_state != XHCI_SUSPEND_NONE &&
 	    (code == XHCI_COMPLETION_STOPPED ||
@@ -2745,8 +2748,8 @@ transfer_claim(
 
 		/*
 		 * Stop Endpoint normally ends an idle interrupt read this way.
-		 * Keep other completions visible for timeout/completion races
-		 * (BUG-030), without logging every quiet hub polling interval.
+		 * Keep other completions visible for timeout/completion races,
+		 * without logging every quiet hub polling interval.
 		 */
 		if (code != XHCI_COMPLETION_STOPPED &&
 		    code != XHCI_COMPLETION_STOPPED_LENGTH) {
@@ -3545,8 +3548,8 @@ xhci_endpoint_reset(
 	endpoint = &d->endpoints[dci];
 
 	/*
-	 * An isochronous endpoint recovers only through its worker (design
-	 * 2.1b B-W4): the core's reset of a newly selected alternate's
+	 * An isochronous endpoint recovers only through its worker: the
+	 * core's reset of a newly selected alternate's
 	 * endpoints finds it empty and idle and has nothing to do; one with
 	 * requests or an owner is busy.  A halt it may have is the worker's
 	 * at the next enqueue (B-R3).
@@ -3855,7 +3858,7 @@ xhci_operation_enter(
 {
 	unsigned long irq;
 
-	/* Waits out a suspend: operations need the running controller (ws052-p004). */
+	/* Waits out a suspend: operations need the running controller. */
 	irq = spin_lock_irqsave(&c->active_lock);
 	while (c->suspend_state != XHCI_SUSPEND_NONE) {
 		spin_unlock_irqrestore(&c->active_lock, irq);
@@ -4120,7 +4123,7 @@ xhci_urb_enqueue(
 
 	ep = &d->endpoints[dci];
 
-	/* An isochronous endpoint queues on its FIFO (ws197-p007a1). */
+	/* An isochronous endpoint queues on its FIFO. */
 	if (q == NULL && ep->isoch != NULL) {
 		e = xhci_isoch_enqueue(c, h, d, ep, dci, u);
 		return e;
@@ -4358,7 +4361,7 @@ xhci_urb_enqueue(
 		}
 	}
 
-	/* Rings the endpoint, unless a suspend holds it: the resume rings every endpoint (ws052-p004). */
+	/* Rings the endpoint, unless a suspend holds it: the resume rings every endpoint. */
 	if (c->suspend_state == XHCI_SUSPEND_NONE)
 		xhci_ring_doorbell(c, d->slot, dci | (r->stream_id << 16));
 
@@ -4399,7 +4402,7 @@ xhci_endpoint_state(
 /*
  * Logs retained controller state after cancellation fails. Normal interrupt
  * polling timeouts do not need a ring snapshot. Pending events can explain
- * a completion that was posted but never consumed (BUG-030).
+ * a completion that was posted but never consumed.
  */
 static void
 xhci_cancel_diagnose(
@@ -4671,7 +4674,7 @@ xhci_urb_dequeue(
 		return EINVAL;
 	endpoint = &d->endpoints[dci];
 
-	/* An isochronous URB's cancel empties its whole endpoint (design 2.1a X5). */
+	/* An isochronous URB's cancel empties its whole endpoint. */
 	if (control == NULL && endpoint->isoch != NULL) {
 		error = xhci_isoch_cancel(c, d, endpoint, dci, u, DRV_USB_URB_CANCELLED);
 		return error;
@@ -4835,7 +4838,7 @@ xhci_device_quiesce(
 		sched_yield();
 	}
 
-	/* Every isochronous endpoint's URBs end DISCONNECTED (ws197-p007a1); a retained one keeps the device. */
+	/* Every isochronous endpoint's URBs end DISCONNECTED; a retained one keeps the device. */
 	for (dci = 1; dci < 32U; dci++) {
 		irq = spin_lock_irqsave(&c->active_lock);
 		busy = xhci_isoch_busy_locked(&d->endpoints[dci]);
@@ -5425,7 +5428,7 @@ xhci_controller_drain_requests(
 	unsigned dci;
 	unsigned long irq;
 
-	/* The isochronous FIFOs first, retained ones included (design 2.1b B-W4). */
+	/* The isochronous FIFOs first, retained ones included. */
 	xhci_isoch_drain_controller(c);
 
 	/* Continue until the operation reaches a terminal state. */
@@ -5656,7 +5659,7 @@ xhci_quiesce(
 	if (barrier_error != 0)
 		return barrier_error;
 
-	/* The isochronous worker stops before the DMA is declared quiesced (design 2.1b B-W1). */
+	/* The isochronous worker stops before the DMA is declared quiesced. */
 	xhci_isoch_worker_stop(c);
 
 	/* Turns the interrupter off for good and discards a pending interrupt. */
@@ -6631,7 +6634,7 @@ xhci_detach(
 }
 
 /*
- * Suspends the controller for S0 idle (ws052-p004), following the Save
+ * Suspends the controller for S0 idle, following the Save
  * State of xHCI 1.2 section 4.23.2.
  *
  * The gates close (operations wait, submissions do not ring), the
@@ -6656,7 +6659,7 @@ xhci_suspend(
 	if (c == NULL)
 		return ENODEV;
 
-	/* An isochronous stream refuses the sleep before the gates close (design 2.1b B-G2). */
+	/* An isochronous stream refuses the sleep before the gates close. */
 	irq = spin_lock_irqsave(&c->active_lock);
 	streaming = xhci_transfer_busy_isoch_locked(c);
 	spin_unlock_irqrestore(&c->active_lock, irq);
@@ -6668,7 +6671,7 @@ xhci_suspend(
 	if (error != 0)
 		return error;
 
-	/* Waits for the transfers that send or control; on a failure, what was queued meanwhile is rung (BUG-289). */
+	/* Waits for the transfers that send or control; on a failure, what was queued meanwhile is rung. */
 	error = xhci_suspend_wait_idle(c);
 	if (error != 0) {
 		xhci_resume_endpoints(c);
@@ -6853,7 +6856,7 @@ xhci_reinit_forget_devices(
 	unsigned busy;
 	unsigned dci;
 
-	/* The isochronous worker stops before the devices are forgotten (design 2.1b B-W1). */
+	/* The isochronous worker stops before the devices are forgotten. */
 	xhci_isoch_worker_stop(c);
 
 	/* dma_quiesced refuses new submissions and tells the drain the hardware no longer reaches the transfers. */
@@ -7165,7 +7168,7 @@ xhci_transfer_busy_locked(
 		}
 	}
 
-	/* An isochronous stream, or its owner at work (design 2.1a X10). */
+	/* An isochronous stream, or its owner at work. */
 	for (device = c->devices;
 	     device != NULL;
 	     device = device->next) {
@@ -7723,8 +7726,7 @@ xhci_sg_enqueue(
  */
 
 /*
- * Isochronous endpoints (ws197-p007a1; design 2.1a and 2.1b of
- * plan/ws197/phase007/phase.md).  Each isochronous endpoint keeps a FIFO
+ * Isochronous endpoints.  Each isochronous endpoint keeps a FIFO
  * of requests whose TDs (one Isoch TRB each) are on its ring; the
  * bookkeeping is pci-xhci-isoch.c's, under active_lock.  Events are matched
  * by the TRB they name; finished requests go to their own completion list,
@@ -8205,7 +8207,7 @@ xhci_isoch_enqueue(
 	if (!ep->enabled || ep->isoch == NULL || d->quiescing || c->controller_stopping) {
 		e = ENODEV;
 	} else if (c->suspend_state != XHCI_SUSPEND_NONE) {
-		/* A suspend is under way (design 2.1b B-G2). */
+		/* A suspend is under way. */
 		e = EBUSY;
 	} else {
 		/* A halted endpoint is the worker's first (B-R3). */
@@ -8378,7 +8380,7 @@ xhci_isoch_queued_locked(
 }
 
 /*
- * Cancels every URB of an isochronous endpoint (design 2.1a X5): owns the
+ * Cancels every URB of an isochronous endpoint: owns the
  * endpoint (waiting for the worker's command), stops it and empties its
  * ring, and ends the TDs without a result CANCELLED.  keep, the URB a
  * cancel was asked for, is left to the USB core to publish (0); the
@@ -8438,7 +8440,7 @@ xhci_isoch_cancel(
 		if (error != EBUSY)
 			return error;
 
-		/* The worker's command: sleep a tick, never spin (design 2.1b B-P1). */
+		/* The worker's command: sleep a tick, never spin. */
 		waited = sched_ticks() - started;
 		bound = kern_ms_to_ticks(XHCI_WAIT_MS * 6U);
 		if (waited >= bound)
@@ -8614,7 +8616,7 @@ xhci_isoch_work(
 	}
 }
 
-/* The isochronous worker's thread (default priority, design 2.1b B-P2). */
+/* The isochronous worker's thread (default priority). */
 static void
 xhci_isoch_worker(
 	void *argument)
