@@ -193,8 +193,9 @@ static void thermal_write(struct amdrdna_device *device, uint32_t offset, uint32
  * Runs stage A4: checks that the unit's firmware runs and asks its
  * versions, drives the fan at the static duty, then puts the board's power
  * table together and asks the firmware to run its fan and thermal
- * control (amdrdna.smu.features=0 leaves that out; amdrdna.smu.gfxclk=1
- * has it move the graphics clock too), falling back to the static duty
+ * control and move the graphics clock (amdrdna.smu.features=0 leaves
+ * that out; amdrdna.smu.gfxclk=0 keeps the graphics clock at the video
+ * BIOS's boot clock), falling back to the static duty
  * when it will not; sends the thermal alerts to the interrupt
  * ring and checks that one arrives, reads the temperatures and the fan,
  * and starts the watch.
@@ -261,12 +262,12 @@ amdrdna_a4_power(
 	error = power_table_prepare(device, table);
 
 	/*
-	 * The boot line may have the firmware move the graphics clock too
-	 * (amdrdna.smu.gfxclk=1); it stays at the video BIOS's boot clock
-	 * otherwise.  clock_levels tells the features to permit its levels.
+	 * The firmware moves the graphics clock too, unless the boot line
+	 * keeps it at the video BIOS's boot clock (amdrdna.smu.gfxclk=0).
+	 * clock_levels tells the features to permit its levels.
 	 */
 	thermal->clock_levels = false;
-	if (amdrdna_parameter_number("amdrdna.smu.gfxclk", 0U) != 0U)
+	if (amdrdna_parameter_number("amdrdna.smu.gfxclk", 1U) != 0U)
 		thermal->clock_levels = true;
 
 	/* Asks the firmware for its features when the table is ready and the boot line allows it. */
