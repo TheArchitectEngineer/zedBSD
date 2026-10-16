@@ -250,6 +250,7 @@ static void test_defaults(void);
 static void test_damaged(void);
 static void test_opregion(void);
 static void test_opregion_read(void);
+static void test_stage_shell(void);
 static int test_memory_map(void *context, uint64_t address, size_t size, const volatile uint8_t **bytes);
 static void test_memory_unmap(void *context, const volatile uint8_t *bytes, size_t size);
 static void test_sha256(void);
@@ -281,6 +282,7 @@ main(void)
 	test_damaged();
 	test_opregion();
 	test_opregion_read();
+	test_stage_shell();
 	test_sha256();
 	test_edid();
 
@@ -1109,3 +1111,63 @@ test_opregion_read(void)
 	i915_host_check(test_maps_open == 0, "OpRegion read: every mapping is given back after the refusals");
 }
 
+/*
+ * Checks the VBT stage of the display start: the old parser's result, which
+ * the display reads, carries the xd parse's values, which agree with the
+ * old parser's on the made-up VBTs of Alder Lake-P.
+ */
+static void
+test_stage_shell(void)
+{
+	static uint8_t bytes[TEST_VBT_BYTES];
+	static struct i915_trace trace;
+	static struct i915_vbt reference;
+	static struct i915_vbt_encoder expected[2][I915_VBT_MAX_ENCODERS];
+	const struct i915_vbt_encoder *encoder;
+	struct i915_vbt_panel panel;
+	struct i915_vbt_panel reference_panel[2];
+	char what[160];
+	unsigned expected_count[2];
+	unsigned index;
+	unsigned c;
+	size_t size;
+	int same;
+
+	/* The old parser alone on each VBT, for the expected values (before any stage ran). */
+	for (index = 0U; index < 2U; index++) {
+		size = test_build(&test_vbts[index], bytes);
+		i915_host_check(drv_i915_vbt_init(&reference, bytes, size, I915_VBT_ORIGIN_OPREGION) == 0, "stage: the old parser alone");
+		memset(&reference_panel[index], 0, sizeof(reference_panel[index]));
+		i915_host_check(drv_i915_vbt_init_panel(&reference, 0, i915_dp_fixture_edid, &reference_panel[index]) == 0, "stage: the old parser's panel");
+		expected_count[index] = reference.n_encoders;
+		memcpy(expected[index], reference.enc, sizeof(expected[index]));
+		drv_i915_vbt_fini(&reference);
+	}
+
+	drv_i915_trace_init(&trace);
+	for (index = 0U; index < 2U; index++) {
+		/* The stage on an Alder Lake-P display whose OpRegion holds the VBT. */
+		size = test_build(&test_vbts[index], bytes);
+		drv_i915_xd_start(&test_display.xd, NULL, NULL, 0x46a6U, 0x0cU);
+		drv_i915_bios_set_opregion_vbt(&test_display, bytes, size);
+		i915_host_check(drv_i915_bios_init_ex(&test_display, &test_display.vbt_state, NULL, 1, 0, &trace) == 0, "stage: the VBT stage runs");
+		i915_host_check(test_display.xd.vbt_parsed && test_display.vbt_state.vbt_found, "stage: the xd parse ran on the OpRegion's VBT");
+
+		/* Every output carries the values the old parser alone gives. */
+		same = test_display.vbt_state.parsed.n_encoders == expected_count[index];
+		for (c = 0U; same && c < expected_count[index]; c++) {
+			encoder = drv_i915_vbt_encoder_for_port(&test_display.vbt_state.parsed, expected[index][c].port);
+			if (encoder == NULL || memcmp(encoder, &expected[index][c], sizeof(*encoder)) != 0)
+				same = 0;
+		}
+		snprintf(what, sizeof(what), "stage: %s outputs as the old parser gives them", test_vbts[index].name);
+		i915_host_check(same, what);
+
+		/* The panel too. */
+		memset(&panel, 0, sizeof(panel));
+		i915_host_check(drv_i915_vbt_init_panel(&test_display.vbt_state.parsed, 0, i915_dp_fixture_edid, &panel) == 0, "stage: the panel");
+		snprintf(what, sizeof(what), "stage: %s panel as the old parser gives it", test_vbts[index].name);
+		i915_host_check(memcmp(&panel, &reference_panel[index], sizeof(panel)) == 0, what);
+		drv_i915_bios_driver_remove(&test_display.vbt_state);
+	}
+}

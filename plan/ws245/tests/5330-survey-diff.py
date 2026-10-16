@@ -6,15 +6,22 @@
 # Prints a table of every surveyed register whose value differs (the frame counter, the scanline, the CRC result
 # and the live surface move between any two starts and are listed apart), the two judgements and the two digests,
 # and ends with PASS when the stage's judgement is "lit" and no steady register differs, FAIL otherwise.
+# The digest of the writes changes between two starts of the same kernel (a read-modify-write that keeps hardware
+# status bits: VARYING below), so a digest that differs is looked at in the whole lists: when both logs have them
+# (started with i915.debug=display), every write that differs is printed, the VARYING registers apart.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 import re
 import sys
 
+# Writes whose value carries hardware status read back, seen to differ between two starts of the same kernel
+# (2026-10-16): the combo PHY A compensation control (ICL_PORT_COMP_DW0(PHY A), set by the PHY init's rmw).
+VARYING = {"162100"}
 MOVING = {"PIPE_FRMCNT", "PIPE_SCANLINE", "PIPE_CRC_RES_1", "PLANE_SURFLIVE", "PLANE_SURF", "PIPE_CRC_CTL"}
 SURVEY = re.compile(r"i915: survey ([12]) ([A-Z0-9_]+)=(0x[0-9a-f]{8}|unread)")
 HEADER = re.compile(r"i915: survey ([12]) pipe ([A-D]) \((.*)\), live surface (.*), underruns (\d+)")
 VERDICT = re.compile(r"i915: survey: (lit|NOT lit): (.*)")
 DIGEST = re.compile(r"i915: w: (.*)")
+WHOLE = re.compile(r"i915: w ([0-9a-f].*)")
 
 
 def read(path):
@@ -22,6 +29,7 @@ def read(path):
     headers = {}
     verdict = None
     digest = None
+    writes = []
     with open(path, encoding="utf-8", errors="replace") as log:
         for line in log:
             match = SURVEY.search(line)
@@ -39,7 +47,11 @@ def read(path):
             match = DIGEST.search(line)
             if match:
                 digest = match.group(1)
-    return values, headers, verdict, digest
+                continue
+            match = WHOLE.search(line)
+            if match:
+                writes.extend(match.group(1).split())
+    return values, headers, verdict, digest, writes
 
 
 def main():
@@ -68,6 +80,21 @@ def main():
     if reference[3] and stage[3]:
         same = reference[3].split(";")[-1] == stage[3].split(";")[-1]
         print("digest of the writes: %s" % ("same" if same else "DIFFERS"))
+    if reference[4] and stage[4]:
+        varying = 0
+        steady = 0
+        for index in range(max(len(reference[4]), len(stage[4]))):
+            before = reference[4][index] if index < len(reference[4]) else "-"
+            after = stage[4][index] if index < len(stage[4]) else "-"
+            if before == after:
+                continue
+            if before.split("=")[0] in VARYING and after.split("=")[0] in VARYING:
+                varying += 1
+                continue
+            steady += 1
+            print("write %d: %s -> %s" % (index, before, after))
+        print("whole lists: %d writes differ, %d more in registers that vary between starts" % (steady, varying))
+        steady_differs += steady
     lit = stage[2] is not None and stage[2][0] == "lit"
     print("steady registers that differ: %d" % steady_differs)
     print("PASS" if lit and steady_differs == 0 else "FAIL")
