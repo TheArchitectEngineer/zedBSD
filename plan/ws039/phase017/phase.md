@@ -1,6 +1,6 @@
 # ws039-p017 VRAM の 256 MiB の窓の固定の解除
 
-- 親: [WS039](../ws.md)、状態: in-progress（2026-10-16 P3: 段 (1) は実機で ok・merge 済み（f2ed268e4）、ユーザーの目視「お、RDNA機で多数のアプリが起動しました！目視。」。段 (2) は実機で BAR0 の 8 GiB への拡大まで動くが、同じ kernel でフリーズ（BUG-331）が 1 回、切り分け中で merge 依頼はまだ）
+- 親: [WS039](../ws.md)、状態: in-progress（2026-10-16 P3: 段 (1) は実機で ok・merge 済み（f2ed268e4）、ユーザーの目視「お、RDNA機で多数のアプリが起動しました！目視。」。段 (2) は console の map を UC の形で実機 ok、Q1 の merge と判定・T1 の QEMU の起動待ち。WC の形の 1 回のフリーズは BUG-331 / p018 へ）
 - Queue: q1231 / q1231-i01（2026-10-16 Q1 の割当）。実行者: P3（`agent/p3-ws039`）
 - 起点（2026-10-16 ユーザー）:「glassが解決したら、ファン制御をマージして、そのあと窓の固定は解除して自由に使えるように改善しましょう。」（§15 #7「まず256MBで実装します。」の後の段）
 - 順: p009 の glass の修正 → p012（SMU の Tier F、fan の制御）の実機と merge → この段。
@@ -53,3 +53,11 @@
   - **19:09 の起動（同じ kernel）で、ユーザーが App Home を閉じる animation の途中にフリーズ（mouse も止まる）→ 機械が reset して Debian へ（BUG-331）**。USB の sda2 の `log/boot-000019.txt` は「20 s after boot」（19:09:32）で終わり、止まる前の印は無い。直前の 19:08:18 に P3 の script がユーザーの操作中に reboot した（P3 の過ち、以後 reboot の前に Q1 に時刻を知らせる）。
   - A6 の `underflow=0/1` が 19:07 の起動で 1 回（19:09 は 0/0）。
 - 切り分けの順（Q1 了承）: X（console の map を UC に、test のみ 9e6bff2a）→ Y（WC、99d3b1f27）→ `amdrdna.bar.grow=0`。操作は ssh からの自動の入力で App Home の開閉を 20〜50 回。
+
+## 段 (2) の仕上げ（2026-10-16 夜 P3）
+
+- ユーザーの判断（Q1 経由）:「RDNA機はフリーズはいったんおいておいて、先にフェーズをすべて終わらせましょう。」→ 停止しなかった X の形で仕上げ: kernel の console の framebuffer の map を HAL の固定の map と同じ UC（`HAL_SPACE_NOCACHE`）に。WC の形の調べは [p018](../phase018/phase.md)。
+- 試験の image（`plan/ws039/tests/config.mk`）に `CONFIG_INPUT_TEST_INJECT := y` と `aat-input`（host から `plan/tools/aat/aat` で入力を注入、BUG-331 の自動の試験）。
+- 実機（kernel 4418743cf06f8345 = 最後の build と同じ byte、19:32 起動）: BAR0 0x4000000000 の 256 MiB → 0x4200000000 の 8 GiB、`graphics: boot framebuffer moved to 0x4200000000`、`A2 ok bar0=1024MiB pool=2 cpu=990MiB gpu=5103MiB`、A6〜A9 ok（A6 underflow 0/0）、App Home の開閉 70 回と app 5 つで停止なし、`fault=0 hung=0`、`cpu_free=935MiB`、vkblend 20 case ok。
+- host: `amdrdna-host-test.sh`（LINUX・FIRMWARE・dump 付き）PASS 438、vk host PASS（174）、build: 試験の config・`config/ci/config-amd64.mk`・`config-pcat.mk`・`config-rpi4.mk` の vmunix が warning 0、`amd64 vmunix check: PASS`。style-check は新しい指摘無し（試験の printf の条件演算子を除く）。
+- 未確認: QEMU の起動（他の device の PCI の割り当てと console が変わらない事。条件 (d)、T1 に依頼）、firmware の Re-Size BAR が on の時（BAR0 が既に大きい: grow は呼ばれない）、HPD・suspend の後の BAR の戻り。Debian への warm reboot では firmware が BAR0 を 256 MiB @0x4000000000 に戻す（19:08 に確かめた）。
