@@ -59,17 +59,17 @@
 
 /*
  * The size of the register window this driver maps, and the part of the
- * VRAM window it uses (the first 256 MiB, even when the firmware made the
- * window larger).
+ * VRAM window it maps for the CPU (the first 1 GiB of a larger window:
+ * the kernel's device mappings share a 2 GiB space).
  *
  * Values referenced: Linux v6.19
  * drivers/gpu/drm/amd/amdgpu/nbio_v2_3.c (the register hole at the end of
  * the first 512 KiB of the register window).
  * derived: the register window spans 0x80000 bytes; the CPU window is
- * 0x10000000 bytes.
+ * at most 0x40000000 bytes.
  */
 #define AMDRDNA_REGISTER_WINDOW_BYTES		0x80000U
-#define AMDRDNA_CPU_WINDOW_BYTES		0x10000000ULL
+#define AMDRDNA_CPU_WINDOW_BYTES		0x40000000ULL
 
 /*
  * The registers read before the block table is known: the indirect VRAM

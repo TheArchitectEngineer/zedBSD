@@ -29,3 +29,8 @@ ZEDBSD_BOOT_KERNEL_MESSAGES := y
 
 AMDRDNA_RUN ?= A1v
 ZEDBSD_BOOT_EXTRA_LINES := amdrdna.auto=$(AMDRDNA_RUN)
+
+# Input injected from the host for the desktop runs (BUG-331: App Home opened and closed many times over SSH with
+# plan/tools/aat/aat): the test-only inject device and its daemon, as the AAT images have them.
+CONFIG_INPUT_TEST_INJECT := y
+ZEDBSD_USER_PROGRAMS += aat-input

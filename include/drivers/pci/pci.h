@@ -436,6 +436,17 @@ drv_pci_device_assign_bar(
 	struct drv_pci_device *d,
 	unsigned i,
 	uint64_t a);
+/*
+ * Gives a resizable memory BAR a new size, keeping its address: the size
+ * must be one its Resizable BAR capability offers, and the address a
+ * multiple of it.  The BAR must not be claimed.  The device's command bits
+ * are as before on return; a failure leaves the old size.
+ */
+int
+drv_pci_device_resize_bar(
+	struct drv_pci_device *d,
+	unsigned i,
+	uint64_t size);
 int
 drv_pci_device_claim_bar(
 	struct drv_pci_device *d,

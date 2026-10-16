@@ -1129,9 +1129,9 @@ amdrdna_display_screen(
 		return ENOENT;
 
 	/*
-	 * The surface the plane reads, inside the VRAM (outside the CPU's
-	 * window it is read through the indirect window), with rows the bounce
-	 * buffer holds.
+	 * The surface the plane reads, inside the VRAM (outside the part of the
+	 * window the CPU maps it is read through the indirect window), with
+	 * rows the bounce buffer holds.
 	 */
 	address = display_shown_address(device);
 	if (address < device->frame_buffer_base)
@@ -1139,7 +1139,8 @@ amdrdna_display_screen(
 	vram = address - device->frame_buffer_base;
 	if (vram + (uint64_t)display->stride * display->height > device->vram_bytes)
 		return ERANGE;
-	outside = vram + (uint64_t)display->stride * display->height > device->vram_window_bytes;
+	outside = vram < device->window_from ||
+		  vram + (uint64_t)display->stride * display->height > device->window_from + device->window.size;
 	if (display->stride > DISPLAY_SCREEN_ROW_WORDS * 4U)
 		return ERANGE;
 
