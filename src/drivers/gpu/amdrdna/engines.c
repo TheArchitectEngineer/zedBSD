@@ -607,6 +607,15 @@ engines_ring(
 	if (error != 0)
 		return error;
 
+	/*
+	 * The ring starts empty, as the engine's own pointers do after a
+	 * reset: the write pointer and the sequence from 0 again (the
+	 * write-back page that holds the fence is zeroed too), not running.
+	 */
+	ring->write_pointer = 0U;
+	ring->sequence = 0U;
+	ring->up = false;
+
 	/* A ring without a queue image is done. */
 	if (!queue_buffers)
 		return 0;
