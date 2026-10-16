@@ -223,6 +223,7 @@ AMD64_AMDRDNA_SOURCES += src/drivers/gpu/amdrdna/amdrdna.c src/drivers/gpu/amdrd
 	src/drivers/gpu/amdrdna/vbios-table.c src/drivers/gpu/amdrdna/layout.c src/drivers/gpu/amdrdna/products.c \
 	src/drivers/gpu/amdrdna/bytecode.c src/drivers/gpu/amdrdna/edid.c src/drivers/gpu/amdrdna/sink.c \
 	src/drivers/gpu/amdrdna/display-command.c src/drivers/gpu/amdrdna/relight.c src/drivers/gpu/amdrdna/mode-plan.c \
+	src/drivers/gpu/amdrdna/modeset.c \
 	src/drivers/gpu/amdrdna/dcn-registers.c src/drivers/gpu/amdrdna/picture.c \
 	src/drivers/gpu/amdrdna/gmc.c src/drivers/gpu/amdrdna/ih.c src/drivers/gpu/amdrdna/span-pool.c \
 	src/drivers/gpu/amdrdna/hub-registers.c src/drivers/gpu/amdrdna/vm-format.c \

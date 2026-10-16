@@ -466,6 +466,7 @@ amdrdna_vbios_parse(
 	info->board_format = 0U;
 	info->board_content = 0U;
 	info->boot_display_clock_10khz = 0U;
+	info->display_reference_10khz = 0U;
 	for (index = 0U; index < AMDRDNA_VBIOS_COMMAND_COUNT; index++) {
 		info->commands[index].offset = 0U;
 		info->commands[index].work_bytes = 0U;
@@ -730,12 +731,13 @@ pin_register(
 
 /*
  * Reads the display table's boot display clock (a 32-bit word in 10 kHz
- * after the header and the capability word).
+ * after the header and the capability word) and the display's reference
+ * clock (the crystal, a 16-bit word in 10 kHz after it).
  *
  * Values referenced: Linux v6.19
  * drivers/gpu/drm/amd/include/atomfirmware.h
  * (struct atom_display_controller_info_v4_1: bootup_dispclk_10khz at
- * byte 8).
+ * byte 8, dce_refclk_10khz at byte 12).
  */
 static void
 read_display(
@@ -754,11 +756,12 @@ read_display(
 	if (error != 0)
 		return;
 	table_length = amdrdna_le16(image, table + COMMON_LENGTH_AT);
-	if (table_length < 12U)
+	if (table_length < 14U)
 		return;
 
-	/* The boot display clock. */
+	/* The boot display clock and the reference. */
 	info->boot_display_clock_10khz = amdrdna_le32(image, (size_t)table + 8U);
+	info->display_reference_10khz = amdrdna_le16(image, (size_t)table + 12U);
 }
 
 /* Finds one data table from the data list and checks that it lies inside the image. */

@@ -39,10 +39,12 @@ bytes
 capabilities
 capability
 case
+change
 changed
 channel
 channels
 char
+check
 checked
 chip
 clear
@@ -99,6 +101,7 @@ encoder
 endif
 engine
 engines
+enter
 entries
 entry
 enum
@@ -116,6 +119,7 @@ field
 fields
 file
 files
+firmware
 first
 flags
 flush
@@ -160,6 +164,7 @@ known
 lanes
 last
 layout
+leave
 left
 length
 level
@@ -320,6 +325,7 @@ total
 training
 translation
 transmitter
+trip
 true
 type
 typedef

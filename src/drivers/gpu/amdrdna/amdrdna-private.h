@@ -1200,6 +1200,11 @@ int
 amdrdna_a11_relight(
 	struct amdrdna_device *device);
 
+/* modeset.c: stage A12. */
+int
+amdrdna_a12_mode(
+	struct amdrdna_device *device);
+
 /* sink.c: stage A10. */
 int
 amdrdna_a10_sink(

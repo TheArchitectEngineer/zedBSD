@@ -522,7 +522,8 @@ enum amdrdna_vbios_command {
  * What the video BIOS image says that the driver uses: where its lists of
  * data tables and command routines are, the firmware description, the VRAM
  * the firmware keeps for itself, the power table's header and the board's
- * power-delivery table version, and the command routines named above.
+ * power-delivery table version, the display table's boot display clock and
+ * reference clock (in 10 kHz), and the command routines named above.
  *
  * A field whose table the image lacks is zero.
  */
@@ -557,6 +558,7 @@ struct amdrdna_vbios_info {
 	uint8_t board_format;
 	uint8_t board_content;
 	uint32_t boot_display_clock_10khz;
+	uint32_t display_reference_10khz;
 	struct amdrdna_vbios_routine commands[AMDRDNA_VBIOS_COMMAND_COUNT];
 };
 
