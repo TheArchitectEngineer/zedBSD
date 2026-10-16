@@ -14,3 +14,4 @@
   - **Y（kernel 2a215f07、WC）の試験は実施していない**: 19:40 に X から Debian に戻す手順が失敗し（`hw-run.sh debian` の既定の zedBSD の address が 10.0.10.3 で、10.0.30.5 の zedBSD に届かなかった）、Y は install されなかった。その後 ユーザーの判断で中断。
 - p017 の 2 段目は X の形（console の map を HAL と同じ UC）で仕上げた。WC の別名（kernel の WC と HAL の UC が同じ GOP の page を map）が原因の候補として残る。
 - 再開の手順: Y を install（Debian から `~/ws039/mnt-boot` に USB の sda2 を mount して vmunix を置き、`hw-run.sh boot 0003`）、`plan/tools/aat/aat --target root@10.0.30.5`（`AAT_INPUT=/tmp/aat-input`、aat-input は build の `bin/aat-input` を /tmp に）で同じ試験。止まらなければ Y に WC と HAL の UC の別名が無い形（HAL の map も WC、P4 の BUG-330 の方向）も比べる。
+- 2026-10-16 21:0x P5 の発見（p019）: amdrdna の desktop の間も kernel の text console が GOP の framebuffer（UC）に描き、kmsg の 1 行ごとに 1920x1080 を描き直して node の lock の中で約 2 s 止まる（amdrdna の present_claim が kern_text_suspend を呼んでいない、i915・bcm2711 は呼ぶ）。停止との関係は未確認、P5 が present.c で直す。
