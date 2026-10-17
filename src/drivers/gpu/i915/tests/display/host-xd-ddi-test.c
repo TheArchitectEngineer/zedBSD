@@ -9,7 +9,7 @@
  * The host test of the xd DDIs' combo PHYs (display/xd-ddi.c) on the
  * register model (xd-fake-regs.c), whose group words reach the four
  * lanes: the check of a PHY the firmware brought up (the 5330's PHY A as
- * Linux left it, plan/ws051/tests/m3-5330-20261007/range-0x160000.txt),
+ * Linux left it, read from the machine's registers at 0x160000),
  * the writes of a bring-up and of the stop, the lanes a port powers, the
  * swing table of each kind of output, the signal levels of the 5330's
  * eDP against the same dump; and the DDI buffers: the DisplayPort word,

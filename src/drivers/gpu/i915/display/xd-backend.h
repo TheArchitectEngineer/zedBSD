@@ -123,8 +123,8 @@ struct i915_xd_backend {
 	int (*power_domain)(void *ctx, unsigned use, unsigned index, int thunderbolt);
 	int (*power_get)(void *ctx, int domain);
 	int (*power_get_if_enabled)(void *ctx, int domain);
-	void (*power_put)(void *ctx, int domain, int wakeref);
-	void (*power_put_async)(void *ctx, int domain, int wakeref, int delay_ms);
+	void (*power_put)(void *ctx, int domain, int cookie);
+	void (*power_put_async)(void *ctx, int domain, int cookie, int delay_ms);
 	void (*dbuf_slices_update)(void *ctx, unsigned req_slices);
 	int (*vblank_get)(void *ctx, int pipe);
 	void (*vblank_put)(void *ctx, int pipe);

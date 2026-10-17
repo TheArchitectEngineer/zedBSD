@@ -56,8 +56,8 @@
 
 /*
  * The 5330's TC PLL 2 for its USB-C DisplayPort at 1.62 GHz on a 38.4 MHz
- * reference, as Linux left it (plan/ws051/tests/m3-5330-20261007, debugfs
- * i915_shared_dplls_info), and the raw registers behind those words.
+ * reference, as Linux left it (its debugfs i915_shared_dplls_info, and
+ * the machine's registers read), and the raw registers behind those words.
  */
 static const struct i915_xd_tc_pll_words i915_xd_tc_test_m3 = {
 	0x100U, 0xa00U, 0x6200U, 0x84269U, 0x1c0027U, 0x40002000U, 0x5e000000U, 0x52U, 0
@@ -720,7 +720,7 @@ i915_xd_tc_test_pll_read(void)
 	uint32_t port_khz;
 	int enabled;
 
-	/* The 5330's TC2 registers (plan/ws051/tests/m3-5330-20261007). */
+	/* The 5330's TC2 registers, as read from the machine under Linux. */
 	platform = i915_xd_tc_test_setup(I915_XD_TC_TEST_ADLP, I915_XD_TC_TEST_ADLP_REVID);
 	pll = drv_i915_xd_dpll_desc(platform, 4U);
 	i915_xd_fake_set(0x46040U, 0xcc000000U);

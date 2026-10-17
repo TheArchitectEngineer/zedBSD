@@ -86,8 +86,8 @@ static int i915_trace_read_dpcd_caps(void *ctx, uint8_t dpcd[15]);
 static int i915_trace_panel(void *ctx, int op);
 static int i915_trace_power_domain(void *ctx, unsigned use, unsigned index, int thunderbolt);
 static int i915_trace_power_get(void *ctx, int domain);
-static void i915_trace_power_put(void *ctx, int domain, int wakeref);
-static void i915_trace_power_put_async(void *ctx, int domain, int wakeref, int delay_ms);
+static void i915_trace_power_put(void *ctx, int domain, int cookie);
+static void i915_trace_power_put_async(void *ctx, int domain, int cookie, int delay_ms);
 static void i915_trace_dbuf_slices_update(void *ctx, unsigned req_slices);
 static void i915_trace_observe(void *ctx, int point);
 static int i915_trace_vblank_get(void *ctx, int pipe);
@@ -1011,7 +1011,7 @@ i915_trace_power_domain(
 	return domain;
 }
 
-/* Forwards a power domain get and records the wakeref it returned. */
+/* Forwards a power domain get and records the cookie it returned. */
 static int
 i915_trace_power_get(
 	void *ctx,
@@ -1019,23 +1019,23 @@ i915_trace_power_get(
 {
 	struct i915_lcd_trace *trace;
 	struct i915_lcd_trace_entry *entry;
-	int wakeref;
+	int cookie;
 
 	/* The trace the hook records in. */
 	trace = ctx;
 
 	/* Takes the reference first, then the entry. */
-	wakeref = trace->backend->power_get(trace->backend->ctx, domain);
+	cookie = trace->backend->power_get(trace->backend->ctx, domain);
 	entry = i915_trace_add(trace, I915_LCD_T_POWER_GET);
 
-	/* Records the domain and the wakeref. */
+	/* Records the domain and the cookie. */
 	if (entry != NULL) {
 		entry->a = (uint32_t)domain;
-		entry->rc = wakeref;
+		entry->rc = cookie;
 	}
 
-	/* Succeeded: the wakeref, 0 when the get failed. */
-	return wakeref;
+	/* Succeeded: the cookie, 0 when the get failed. */
+	return cookie;
 }
 
 /* Records a power domain put, then forwards it. */
@@ -1043,7 +1043,7 @@ static void
 i915_trace_power_put(
 	void *ctx,
 	int domain,
-	int wakeref)
+	int cookie)
 {
 	struct i915_lcd_trace *trace;
 	struct i915_lcd_trace_entry *entry;
@@ -1051,15 +1051,15 @@ i915_trace_power_put(
 	/* The trace the hook records in. */
 	trace = ctx;
 
-	/* Records the domain and the wakeref returned. */
+	/* Records the domain and the cookie returned. */
 	entry = i915_trace_add(trace, I915_LCD_T_POWER_PUT);
 	if (entry != NULL) {
 		entry->a = (uint32_t)domain;
-		entry->b = (uint32_t)wakeref;
+		entry->b = (uint32_t)cookie;
 	}
 
 	/* Forwards the put. */
-	trace->backend->power_put(trace->backend->ctx, domain, wakeref);
+	trace->backend->power_put(trace->backend->ctx, domain, cookie);
 }
 
 /* Records an asynchronous power domain put with its delay, then forwards it. */
@@ -1067,7 +1067,7 @@ static void
 i915_trace_power_put_async(
 	void *ctx,
 	int domain,
-	int wakeref,
+	int cookie,
 	int delay_ms)
 {
 	struct i915_lcd_trace *trace;
@@ -1080,13 +1080,13 @@ i915_trace_power_put_async(
 	entry = i915_trace_add(trace, I915_LCD_T_POWER_PUT);
 	if (entry != NULL) {
 		entry->a = (uint32_t)domain;
-		entry->b = (uint32_t)wakeref;
+		entry->b = (uint32_t)cookie;
 		entry->c = (uint32_t)delay_ms;
 		entry->d = 1u;
 	}
 
 	/* Forwards the put. */
-	trace->backend->power_put_async(trace->backend->ctx, domain, wakeref, delay_ms);
+	trace->backend->power_put_async(trace->backend->ctx, domain, cookie, delay_ms);
 }
 
 /* Records a DBUF slice request, then forwards it. */

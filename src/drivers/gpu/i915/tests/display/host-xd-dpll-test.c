@@ -38,9 +38,9 @@
 
 /*
  * The 5330's DPLL 0 for its eDP at 2.7 GHz on a 38.4 MHz reference, as
- * Linux left it (plan/ws031/display-ref/dbg-i915_shared_dplls_info.txt),
- * and the Thunderbolt PLL's DCO word of the same machine (off, as the
- * firmware leaves it: plan/ws051/tests/m3-5330-20261007).
+ * Linux left it (its debugfs i915_shared_dplls_info), and the
+ * Thunderbolt PLL's DCO word of the same machine (off, as the firmware
+ * leaves it, read from the machine's registers).
  */
 #define I915_XD_DPLL_TEST_HBR_CFGCR0	0x00e001a5U
 #define I915_XD_DPLL_TEST_HBR_CFGCR1	0x00000088U

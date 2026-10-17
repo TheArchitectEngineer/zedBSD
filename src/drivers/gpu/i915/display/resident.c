@@ -123,8 +123,8 @@ static int resident_power_number(uint64_t function);
 static uint64_t resident_power_functions(int number);
 static int resident_power_get(void *ctx, int number);
 static int resident_power_get_if_enabled(void *ctx, int number);
-static void resident_power_put(void *ctx, int number, int wakeref);
-static void resident_power_put_async(void *ctx, int number, int wakeref, int delay_ms);
+static void resident_power_put(void *ctx, int number, int cookie);
+static void resident_power_put_async(void *ctx, int number, int cookie, int delay_ms);
 static int resident_vblank_get(void *ctx, int pipe);
 static void resident_vblank_put(void *ctx, int pipe);
 static long resident_vblank_sleep(void *ctx, int pipe, long ticks);
@@ -1558,13 +1558,13 @@ static void
 resident_power_put(
 	void *ctx,
 	int number,
-	int wakeref)
+	int cookie)
 {
 	struct i915_lcd_kernel *k;
 	uint64_t functions;
 	unsigned refusals;
 
-	UNUSED_PARAMETER(wakeref);
+	UNUSED_PARAMETER(cookie);
 
 	/* The run the hook belongs to. */
 	k = ctx;
@@ -1599,13 +1599,13 @@ static void
 resident_power_put_async(
 	void *ctx,
 	int number,
-	int wakeref,
+	int cookie,
 	int delay_ms)
 {
 	struct i915_lcd_kernel *k;
 	uint64_t functions;
 
-	UNUSED_PARAMETER(wakeref);
+	UNUSED_PARAMETER(cookie);
 
 	/* The run the hook belongs to. */
 	k = ctx;
