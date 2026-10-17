@@ -30,12 +30,8 @@
  *   the display root    struct i915_display, which the device owns and which
  *                       holds every long-lived display object.
  *
- * The Linux display code is compiled in one of two Linux environments,
- * each a private header of its own:
- *
- *   dp-internal.h        the DP AUX, DP helper and EDID text of the
- *                        external DisplayPort ports (on vbt.h);
- *   vbt.h                the VBT parser's environment.
+ * The Linux display code left is the VBT parser's, compiled in its own
+ * environment, a private header (vbt.h).
  *
  * The same Linux type name (struct drm_i915_private, struct intel_dp,
  * struct drm_display_mode and others) has a different layout in each
@@ -228,10 +224,7 @@ i915_mmio_reg_equal(
  *	#endif
  *	#define I915_DISPLAY_LINUX_WORLD "<its name>"
  *
- * and defines I915_DISPLAY_WORLD_<NAME> for the headers layered on it
- * (watermark-internal.h and takeover-internal.h require
- * I915_DISPLAY_WORLD_MODESET, dp-internal.h requires I915_DISPLAY_WORLD_VBT
- * and replaces the world name with "dp").
+ * and defines I915_DISPLAY_WORLD_<NAME> for a header layered on it.
  */
 
 /*
@@ -777,7 +770,6 @@ struct i915_bw_state;
  * D's number.
  */
 #define I915_PORT_A      0
-#define I915_PORT_B      1
 #define I915_PORT_D      3
 #define I915_PORT_TC1    3
 
@@ -1202,21 +1194,10 @@ struct i915_opregion_data {
 };
 
 /*
- * The eDP sink bring-up (dp-sink.c).
- */
-/*
- * eDP panel bring-up, first stage: panel power sequencer
- * (PPS / VDD) ownership and the AUX channel, up to the sink's DPCD and EDID.
- *
- * The work is done by the reference's own functions (generated files in this
- * directory: panel.c, aux.c, dp-sink.c,
- * edid-read.c) in the order of intel_edp_init_connector().  This header is
- * the zedBSD-facing surface: plain C types only, so the probe and the GPU-free
- * tests can use it without the reference's environment.
- *
- * Every hardware and time dependency goes through struct i915_dp_env, so the
- * same production code runs on the real GPU (dp-sink.c binds it to the
- * MMIO / wait / power-domain layers) and on the register model (dp_fake_hw.c).
+ * The built-in panel's device (edp-device.c): the kernel backend it runs
+ * on (struct i915_dp_env, bound to the MMIO, the waits, the power domains,
+ * the locks and the delayed work), its configuration and what its start
+ * found.
  */
 
 struct i915_dp_env {
@@ -1266,7 +1247,6 @@ struct i915_dp_env {
 
 #define I915_DP_LOCK_PPS 0
 #define I915_DP_LOCK_AUX 1
-#define I915_DP_WORK_VDD_OFF 0        /* edp_panel_vdd_work */
 
 #define I915_EDP_MAX_EDID_BLOCKS 4u
 
@@ -1276,12 +1256,9 @@ struct i915_dp_env {
  */
 #define I915_EDP_EIO 5
 #define I915_EDP_ENXIO 6
-#define I915_EDP_E2BIG 7
 #define I915_EDP_EBUSY 16
 #define I915_EDP_EINVAL 22
-#define I915_EDP_EPROTO 71
 #define I915_EDP_ETIMEDOUT 110
-#define I915_EDP_EREMOTEIO 121
 
 /*
  * How to reach the eDP panel: port, AUX channel, raw clock and the VBT
@@ -1344,7 +1321,7 @@ struct i915_edp_result {
 /*
  * The modeset hooks (modeset.c).
  */
-/* panel power sequencer / backlight-power operations, executed by the resident eDP (dp-sink.c) */
+/* panel power sequencer / backlight-power operations, executed by the resident eDP (edp-device.c) */
 enum i915_lcd_panel_op {
 	I915_LCD_PANEL_ON = 0,          /* intel_pps_on() */
 	I915_LCD_PANEL_OFF,             /* intel_pps_off() */
@@ -1945,7 +1922,7 @@ struct i915_display_head {
 struct i915_lcd_world;
 struct kern_backlight;
 struct i915_wm_world;
-struct i915_dp_world;
+struct i915_dp_ext_world;
 struct i915_vbt_world;
 struct i915_hpd_world;
 
@@ -2143,7 +2120,7 @@ struct i915_display {
 	 * The Linux environments' own state.  Each is allocated and freed by
 	 * the owner file of its environment and is NULL outside that window.
 	 */
-	struct i915_dp_world *dp_world;
+	struct i915_dp_ext_world *dp_ext;
 	struct i915_vbt_world *vbt_world;
 	struct i915_hpd_world *hpd_world;
 

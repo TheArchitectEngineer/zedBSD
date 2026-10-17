@@ -30,7 +30,6 @@
 #include "diagnostics.h"
 #include "display.h"
 #include "dmc.h"
-#include "dp-sink.h"
 #include "edp-device.h"
 #include "head.h"
 #include "hpd.h"
@@ -1572,17 +1571,12 @@ drv_i915_detect_pch(
 	}
 }
 
-/* Allocates every Linux environment's state, stopping at the first failure. */
+/* Allocates the state of the VBT parser and of the hotplug, stopping at the first failure. */
 static int
 i915_display_create_worlds(
 	struct i915_display *display)
 {
 	int error;
-
-	/* The DP environment. */
-	error = drv_i915_dp_world_create(display);
-	if (error != 0)
-		return error;
 
 	/* The VBT environment. */
 	error = drv_i915_vbt_world_create(display);
@@ -1598,15 +1592,15 @@ i915_display_create_worlds(
 	return 0;
 }
 
-/* Frees every Linux environment's state that exists, in reverse. */
+/* Frees the hotplug's, the VBT parser's and the external DP ports' state that exists, in reverse. */
 static void
 i915_display_destroy_worlds(
 	struct i915_display *display)
 {
-	/* Each destroy leaves an absent world alone. */
+	/* Each destroy leaves an absent state alone. */
 	drv_i915_hpd_world_destroy(display);
 	drv_i915_vbt_world_destroy(display);
-	drv_i915_dp_world_destroy(display);
+	drv_i915_dp_ext_destroy(display);
 }
 
 /* Returns the device's display when it exists and the firmware display check kept it; NULL otherwise. */

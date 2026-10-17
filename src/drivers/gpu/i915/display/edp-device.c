@@ -21,7 +21,7 @@
 
 #include "internal.h"
 #include "edp-device.h"
-#include "dp-sink.h"
+#include "dp-ext-kern.h"
 #include "power.h"
 #include "vbt-parse.h"
 #include "xd-edid.h"
@@ -446,8 +446,8 @@ drv_i915_edp_device_fini(
 	if (!dev->started)
 		return;
 
-	/* The external DP ports stop using the backend first. */
-	drv_i915_dp_ext_stop_of(dev);
+	/* The external DP ports stop first. */
+	drv_i915_dp_ext_stop(container_of(dev, struct i915_display, edp_dev));
 
 	/* Lets the panel's sink go; the delayed VDD-off is called off before the sequencer is held. */
 	pd = dev->k.pd;
