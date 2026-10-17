@@ -22,15 +22,13 @@
 
 #include "internal.h"
 #include "resident.h"
-#include "aux.h"
 #include "diagnostics.h"
 #include "dp-ext.h"
 #include "dp-ext-kern.h"
-#include "dp-sink.h"
+#include "edp-device.h"
 #include "head.h"
 #include "modeset.h"
 #include "output.h"
-#include "panel.h"
 #include "pipe.h"
 #include "power.h"
 #include "present.h"
@@ -1368,10 +1366,10 @@ resident_preflight_panel(
 	ok = 1;
 
 	/* The resident eDP must be live and its link planned. */
-	if (!d->edp->connector_live || d->edp->lcd_rc != 0) {
+	if (!d->edp->connector_live || d->edp->link_rc != 0) {
 		kern_logf("i915: resident display: preflight: the panel is not live (connector_live=%d link rc=%d)\n",
 		    d->edp->connector_live,
-		    d->edp->lcd_rc);
+		    d->edp->link_rc);
 		return EBUSY;
 	}
 
@@ -1542,10 +1540,8 @@ resident_config_panel(
 	struct i915_lcd_kernel *k,
 	struct i915_xd_picture_config *config)
 {
-	struct i915_display_link link;
 	struct i915_display *display;
 	const struct i915_lcd_kernel_deps *d;
-	const struct i915_lcd_state *state;
 	struct i915_edp_device *edp;
 	struct i915_vbt_panel *pn;
 	unsigned allowed;
@@ -1641,24 +1637,7 @@ resident_config_panel(
 	}
 
 	/* The panel's mode and the link its plan chose. */
-	state = &edp->lcd;
-	kern_memset(&link, 0, sizeof(link));
-	if (state->link.rate_khz > 0)
-		link.rate_khz = (uint32_t)state->link.rate_khz;
-	if (state->link.lanes > 0)
-		link.lanes = (unsigned)state->link.lanes;
-	if (state->link.bpp > 0)
-		link.bpp = (unsigned)state->link.bpp;
-	link.tu = state->link.tu;
-	link.data_m = state->link.data_m;
-	link.data_n = state->link.data_n;
-	link.link_m = state->link.link_m;
-	link.link_n = state->link.link_n;
-	link.ref_khz = (uint32_t)state->pll.ref_khz;
-	link.cfgcr0 = state->pll.cfgcr0;
-	link.cfgcr1 = state->pll.cfgcr1;
-	link.div0 = state->pll.div0;
-	resident_config_link(&state->mode, &link, config);
+	resident_config_link(&edp->mode, &edp->link, config);
 
 	/* Logs every input. */
 	kern_logf("i915: resident display: inputs: VBT low_vswing=%d hobl=%d afc_override=%d backlight present=%d active_low=%d controller=%d pwm=%u Hz min=%u | rawclk=%u kHz | DDI_BUF_CTL at connector init 0x%08x -> saved bits 0x%x\n",

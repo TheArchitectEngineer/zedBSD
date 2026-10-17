@@ -2353,15 +2353,10 @@ struct i915_edp_device {
 	struct i915_dp_env env;
 	struct i915_edp_config cfg;
 	struct i915_edp_result res;           /* kept for the later display stages */
-	struct i915_lcd_state lcd;            /* LCD-A: mode, link, M/N, PLL words computed from `res` */
-	int lcd_rc;
-	struct i915_lcd_words lcd_words;      /* transcoder A M/N, timing and pipe-source words (computed, not written) */
-	int lcd_words_rc;
-	struct i915_lcd_words lcd_cpu_words;  /* hsw_configure_cpu_transcoder's operations (computed, not written) */
-	struct i915_lcd_words lcd_ddi_words;  /* TRANS_MSA_MISC, TRANS_DDI_FUNC_CTL2, TRANS_DDI_FUNC_CTL (computed, not written) */
-	uint32_t lcd_ddi_buf_ctl;               /* intel_dp->DP as intel_ddi_init_dp_buf_reg leaves it */
+	struct i915_display_mode mode;        /* the panel's mode, from its EDID */
+	struct i915_display_link link;        /* the link and the combo PLL the screen's plan chose for it */
+	int link_rc;                          /* 0, or why the mode or the link could not be planned */
 	uint32_t ddi_buf_ctl_readout;           /* DDI_BUF_CTL of the eDP port when the connector was initialised */
-	int lcd_cpu_words_rc, lcd_ddi_words_rc;
 	int vbt_bpp;
 	struct i915_vbt_state *vbt;
 	struct i915_xd_edp xe;                /* the panel's sink (xd-edp.c): its sequencer, DPCD and EDID */

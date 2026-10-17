@@ -16,6 +16,7 @@
 
 #include "../intel/display-dpcd-xd.h"
 #include "../intel/display-regs-xd.h"
+#include "../intel/xd-vbt-layout.h"
 
 #include "bootloader/include/amd64-handoff.h"
 
@@ -274,6 +275,93 @@ drv_i915_xd_check_firmware(
 
 	/* Succeeded: the record and its decision. */
 	return 0;
+}
+
+/*
+ * Makes the table of the display's ports from the VBT's outputs.
+ *
+ * Each output the VBT describes becomes a port when its DDI is one of
+ * ddi_mask and of the platform, no earlier output took the DDI, it is not
+ * a MIPI DSI output, and it carries DisplayPort, HDMI or DVI.  A port
+ * keeps its DDI, its Type-C port (0 for none), what it carries, its AUX
+ * channel (the platform's when the VBT names none) and the VBT's device
+ * type.  The outputs that did not become a port are counted.
+ */
+void
+drv_i915_xd_ports(
+	const struct i915_xd_platform *platform,
+	const struct i915_xd_vbt *vbt,
+	unsigned ddi_mask,
+	struct i915_xd_ports *ports)
+{
+	const struct i915_xd_port_desc *desc;
+	const struct i915_xd_vbt_child *child;
+	struct i915_xd_port *port;
+	unsigned index;
+	unsigned taken;
+
+	/* Starts with no port. */
+	kern_memset(ports, 0, sizeof(*ports));
+
+	/* A device without a description has no ports. */
+	if (platform == NULL)
+		return;
+
+	/* Each output of the VBT, in its order. */
+	taken = 0U;
+	for (index = 0U; index < vbt->nchildren; index++) {
+		child = &vbt->children[index];
+
+		/* An output on no DDI the platform has. */
+		if (child->ddi == I915_XD_VBT_NONE || child->ddi >= 32U) {
+			ports->skipped++;
+			continue;
+		}
+
+		/* An output on a DDI the platform or the caller does not drive, or that an earlier output took. */
+		desc = drv_i915_xd_platform_port(platform, child->ddi);
+		if (desc == NULL ||
+		    (ddi_mask & (1U << child->ddi)) == 0U ||
+		    (taken & (1U << child->ddi)) != 0U) {
+			ports->skipped++;
+			continue;
+		}
+
+		/* A MIPI DSI output, or one that carries neither DisplayPort nor HDMI nor DVI. */
+		if ((child->device_type & I915_XD_VBT_TYPE_MIPI) != 0U ||
+		    (!child->dp && !child->hdmi && !child->dvi)) {
+			ports->skipped++;
+			continue;
+		}
+
+		/* No room for another port. */
+		if (ports->n >= I915_XD_PORTS_MAX) {
+			ports->skipped++;
+			continue;
+		}
+
+		/* The port: its DDI, its Type-C port, what it carries, its AUX channel and the VBT's device type. */
+		port = &ports->port[ports->n];
+		port->ddi = child->ddi;
+		port->tc = desc->tc;
+		port->dp = child->dp;
+		port->edp = child->edp;
+		port->device_type = child->device_type;
+
+		/* A DVI output is driven as HDMI. */
+		port->hdmi = 0;
+		if (child->hdmi || child->dvi)
+			port->hdmi = 1;
+
+		/* The VBT's AUX channel, or the platform's when it names none. */
+		port->aux = child->aux_ch;
+		if (port->aux == I915_XD_VBT_NONE)
+			port->aux = desc->aux;
+
+		/* The port is in the table, and its DDI is taken. */
+		ports->n++;
+		taken |= 1U << child->ddi;
+	}
 }
 
 /* Maps device memory read-only for the OpRegion reader; 0, or EIO. */

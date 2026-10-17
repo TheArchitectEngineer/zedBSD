@@ -48,7 +48,6 @@
 
 #include "dp-internal.h"
 #include "dp-sink.h"
-#include "panel.h"
 #include "xd-io.h"
 #include "xd-panel.h"
 #include "../intel/display-regs-xd-south.h"
@@ -773,57 +772,6 @@ drv_i915_pps_init_late(
 		i915_edp_panel_vdd_schedule_off(intel_dp);
 
 	(void)drv_i915_pps_unlock(intel_dp, wakeref);
-}
-
-/*
- * Runs one panel power operation of the modeset hooks on the panel's sink.
- *
- * It is the panel hook of the modeset's register and panel hooks (struct
- * i915_lcd_emit): ctx is the panel run (struct i915_lcd_kernel), and op an
- * enum i915_lcd_panel_op.  It returns 0, or -I915_EDP_EINVAL without a live
- * eDP or for an unknown operation.
- */
-int
-drv_i915_edp_emit_panel(
-	void *ctx,
-	int op)
-{
-	struct i915_lcd_kernel *kernel;
-	unsigned step;
-	int error;
-
-	/* The step of the panel's sink the operation names. */
-	kernel = ctx;
-	switch (op) {
-	case I915_LCD_PANEL_ON:
-		step = I915_XD_EDP_PANEL_ON;
-		break;
-	case I915_LCD_PANEL_OFF:
-		step = I915_XD_EDP_PANEL_OFF;
-		break;
-	case I915_LCD_PANEL_VDD_ON:
-		step = I915_XD_EDP_PANEL_VDD_ON;
-		break;
-	case I915_LCD_PANEL_VDD_OFF_SYNC:
-		step = I915_XD_EDP_PANEL_VDD_OFF;
-		break;
-	case I915_LCD_PANEL_BACKLIGHT_ON:
-		step = I915_XD_EDP_BACKLIGHT_ON;
-		break;
-	case I915_LCD_PANEL_BACKLIGHT_OFF:
-		step = I915_XD_EDP_BACKLIGHT_OFF;
-		break;
-	default:
-		return -I915_EDP_EINVAL;
-	}
-
-	/* Runs it on the display's panel. */
-	error = drv_i915_xd_edp_panel(&kernel->d->edp->xe, step);
-	if (error != 0)
-		return -I915_EDP_EINVAL;
-
-	/* Succeeded: the step ran. */
-	return 0;
 }
 
 /* Names a power sequencer for the messages. */

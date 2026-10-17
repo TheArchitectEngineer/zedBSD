@@ -49,12 +49,7 @@ void drv_i915_shared_dpll_init(struct i915_display_nogem *d, const struct i915_x
 int drv_i915_crtc_init(struct i915_display_nogem *d, int display_ver, unsigned pipe);
 void drv_i915_display_wa_apply(struct i915_display_nogem *d, struct i915_mmio *m, int display_ver, int is_alderlake_p);
 void drv_i915_update_max_cdclk(struct i915_display_nogem *d, int display_ver, uint32_t cdclk_ref);
-void drv_i915_setup_outputs(struct i915_display_nogem *d, int display_ver, unsigned port_mask, const struct i915_vbt_state *vbt, struct i915_mmio *m);
-int drv_i915_ddi_crt_present(int display_ver);
-int drv_i915_dvo_port_to_port(int display_ver, uint8_t dvo_port);
-int drv_i915_port_to_phy(int display_ver, int port);
 int drv_i915_phy_is_tc(int display_ver, int phy);
-int drv_i915_ddi_is_tc(int display_ver, int port);
 
 /* The VGA arbiter client and the VGA plane. */
 int drv_i915_gmch_vga_set_state(struct i915_vga_client *c, int enable_decode);

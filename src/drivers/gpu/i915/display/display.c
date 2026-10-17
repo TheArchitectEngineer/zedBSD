@@ -31,6 +31,7 @@
 #include "display.h"
 #include "dmc.h"
 #include "dp-sink.h"
+#include "edp-device.h"
 #include "head.h"
 #include "hotplug.h"
 #include "interrupts.h"
@@ -666,7 +667,7 @@ drv_i915_display_register(
 		drv_i915_dp_ext_start(display);
 
 		/* Then the hotplug path, with the connectors of the encoders the output setup made. */
-		started = drv_i915_hpd_start(display, &dprobe->hp, &device->gt.mmio, &display->nogem, &display->power_domains, &display->pwc, display->pch.type, device->gt.irq.irqs_enabled, NULL);
+		started = drv_i915_hpd_start(display, &dprobe->hp, &device->gt.mmio, &display->xd.ports, &display->power_domains, &display->pwc, display->pch.type, device->gt.irq.irqs_enabled, NULL);
 		if (started == 0)
 			display->hpd_started = 1;
 	}
@@ -2126,55 +2127,66 @@ i915_display_nogem_front(
 }
 
 /*
- * intel_setup_outputs(): HAS_DDI -> intel_ddi_crt_present() (false on
- * version 9 and later) -> intel_bios_for_each_encoder(intel_ddi_init).  The
- * eDP connector is built inside intel_ddi_init, as the reference does.
+ * Makes the table of the display's ports from the VBT and builds the
+ * built-in panel's connector on the port that carries it.  A panel that
+ * could not be taken drops its port; the hotplug path and the Type-C
+ * ports read the table that is left.
  */
 static void
 i915_display_setup_outputs(
 	struct i915_device *device)
 {
 	struct i915_display *display;
-	struct i915_display_nogem *nogem;
-	struct i915_gt *gt;
-	unsigned i;
+	struct i915_xd_ports *ports;
+	struct i915_xd_port *port;
+	unsigned index;
+	unsigned kept;
+	int connector;
 
 	display = device->display;
-	gt = &device->gt;
-	nogem = &display->nogem;
+	ports = &display->xd.ports;
 
-	/* The resident eDP is prepared; the DDI init builds its connector. */
-	drv_i915_edp_device_prepare(&display->edp_dev, &gt->mmio, &display->power_domains, &display->pwc, &display->vbt_state);
-	nogem->dp_connector_init = drv_i915_edp_device_init_connector;
-	nogem->dp_connector_ctx = &display->edp_dev;
+	/* The ports the VBT describes on the DDIs this driver's hotplug and Type-C paths handle. */
+	drv_i915_xd_ports(display->xd.choice.platform, &display->xd.vbt, I915_DISPLAY_PORT_MASK, ports);
 
-	/* Runs the DDI decision chain over the ports A, B, TC1 to TC4. */
-	drv_i915_setup_outputs(nogem, (int)gt->display_ver, I915_DISPLAY_PORT_MASK, &display->vbt_state, &gt->mmio);
-	kern_logf("i915: setup_outputs: vbt_children=%u ddi_init=%u encoders=%u skipped=%u crt_present=%d\n",
-	    display->vbt_state.num_display_devices,
-	    nogem->ddi_init_calls,
-	    nogem->num_encoders,
-	    nogem->ddi_skipped,
-	    nogem->crt_present);
+	/* The panel's device is prepared; its connector is built on the first DisplayPort port the VBT gives the panel. */
+	drv_i915_edp_device_prepare(&display->edp_dev, &device->gt.mmio, &display->power_domains, &display->pwc, &display->vbt_state);
+	kept = 0U;
+	for (index = 0U; index < ports->n; index++) {
+		port = &ports->port[index];
 
-	/* Names every encoder made. */
-	for (i = 0U; i < nogem->num_encoders; i++) {
-		kern_logf("i915: encoder[%u]: port=%c phy=%d tc=%d clk=%d pd=%d dvo=0x%02x dev_type=0x%x dp=%d hdmi=%d\n",
-		    i,
-		    (char)('A' + nogem->encoders[i].port),
-		    nogem->encoders[i].phy,
-		    nogem->encoders[i].is_tc,
-		    nogem->encoders[i].clk_funcs,
-		    nogem->encoders[i].power_domain,
-		    (unsigned)nogem->encoders[i].dvo_port,
-		    nogem->encoders[i].device_type,
-		    nogem->encoders[i].init_dp,
-		    nogem->encoders[i].init_hdmi);
+		/* Builds the panel's connector on a DisplayPort port; a port without the panel answers 1. */
+		connector = 1;
+		if (port->dp)
+			connector = drv_i915_edp_device_init_connector(&display->edp_dev, (int)port->ddi);
+
+		/* A panel that could not be taken drops its port. */
+		if (connector < 0) {
+			kern_logf("i915: setup_outputs: the panel on DDI %c could not be taken (%d): its port is dropped\n", (char)('A' + port->ddi), connector);
+			ports->skipped++;
+			continue;
+		}
+
+		ports->port[kept] = *port;
+		kept++;
 	}
 
-	/* Names every port skipped and why. */
-	for (i = 0U; i < nogem->num_ddi_skips; i++)
-		kern_logf("i915: ddi skip[%u]: port=%d reason=%d\n", i, nogem->ddi_skip_port[i], nogem->ddi_skip_reason[i]);
+	ports->n = kept;
+
+	/* Names every port. */
+	kern_logf("i915: setup_outputs: vbt outputs=%u ports=%u skipped=%u\n", display->xd.vbt.nchildren, ports->n, ports->skipped);
+	for (index = 0U; index < ports->n; index++) {
+		port = &ports->port[index];
+		kern_logf("i915: port[%u]: DDI %c tc=%u dp=%d hdmi=%d edp=%d aux=%u type=0x%x\n",
+		    index,
+		    (char)('A' + port->ddi),
+		    (unsigned)port->tc,
+		    port->dp,
+		    port->hdmi,
+		    port->edp,
+		    (unsigned)port->aux,
+		    (unsigned)port->device_type);
+	}
 }
 
 /*
@@ -2233,13 +2245,13 @@ i915_display_driver_probe(
 	int intel_irqs_enabled)
 {
 	struct i915_driver_probe *p;
-	const struct i915_display_nogem *nogem;
+	const struct i915_xd_ports *ports;
 	struct i915_mmio *m;
 	int display_ver;
 	unsigned i;
 
 	p = &display->dprobe;
-	nogem = &display->nogem;
+	ports = &display->xd.ports;
 	m = &display->device->gt.mmio;
 	display_ver = (int)display->device->gt.display_ver;
 
@@ -2262,10 +2274,10 @@ i915_display_driver_probe(
 	p->overlay = 0;
 	p->fbdev = 0;
 
-	/* intel_hpd_init(): the encoders' pins are the ones intel_ddi_init() set. */
+	/* The hotplug pins of the display's ports. */
 	p->hp.n_encoders = 0U;
-	for (i = 0U; i < nogem->num_encoders && i < 8U; i++) {
-		p->hp.encoder_pin[p->hp.n_encoders] = drv_i915_ddi_hpd_pin(display_ver, nogem->encoders[i].port);
+	for (i = 0U; i < ports->n && i < 8U; i++) {
+		p->hp.encoder_pin[p->hp.n_encoders] = drv_i915_ddi_hpd_pin(display_ver, ports->port[i].ddi);
 		p->hp.n_encoders++;
 	}
 

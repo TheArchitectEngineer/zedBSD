@@ -1453,9 +1453,6 @@ long drv_i915_drm_dp_dpcd_write(struct drm_dp_aux *aux, unsigned offset, const v
 int drv_i915_drm_dp_dpcd_probe(struct drm_dp_aux *aux, unsigned offset);
 int drv_i915_drm_dp_read_dpcd_caps(struct drm_dp_aux *aux, u8 dpcd[DP_RECEIVER_CAP_SIZE]);
 
-/* Starts the eDP device's locks and threads unless they run already (dp-sink.c): 0 or the error. */
-int drv_i915_edp_device_start(struct i915_edp_device *dev);
-
 /* Stops the external DP ports before the eDP device's backend goes (dp-ext-kern.c). */
 void drv_i915_dp_ext_stop(struct i915_dp_world *world);
 

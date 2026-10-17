@@ -195,7 +195,7 @@ static void i915_hpd_dp_set_edid(struct i915_hpd_world *world, struct drm_connec
 static void i915_hpd_tc_link_reset_work(struct work_struct *work);
 static bool i915_hpd_tc_connected_step(struct intel_encoder *encoder);
 static enum intel_hotplug_state i915_hpd_hotplug_recorded(struct intel_encoder *encoder, struct intel_connector *connector);
-static void i915_hpd_make_objects(struct i915_hpd_world *world, const struct i915_display_nogem *nogem);
+static void i915_hpd_make_objects(struct i915_hpd_world *world, const struct i915_xd_ports *ports);
 
 /*
  * Test checkpoints.
@@ -441,7 +441,7 @@ drv_i915_hpd_start(
 	struct i915_display *display,
 	struct i915_hotplug *hp,
 	struct i915_mmio *m,
-	const struct i915_display_nogem *nogem,
+	const struct i915_xd_ports *ports,
 	struct i915_power_domains *pd,
 	struct i915_pw_ctx *c,
 	int pch_type,
@@ -464,7 +464,7 @@ drv_i915_hpd_start(
 	/* Refuses a second start and an instance with nothing to run on. */
 	if (world->hpd.started)
 		return EINVAL;
-	if (hp == NULL || nogem == NULL)
+	if (hp == NULL || ports == NULL)
 		return EINVAL;
 	if (m == NULL && fake == NULL)
 		return EINVAL;
@@ -558,7 +558,7 @@ drv_i915_hpd_start(
 	drv_i915_hpd_edid_forget(world);
 
 	/* Makes the connectors of the encoders the output setup found. */
-	i915_hpd_make_objects(world, nogem);
+	i915_hpd_make_objects(world, ports);
 
 	/* intel_hpd_init(): stats reset, every pin enabled (the registers were programmed at P7). */
 	for (pin = HPD_NONE + 1; pin < HPD_NUM_PINS; pin++) {
@@ -3492,9 +3492,9 @@ i915_hpd_hotplug_recorded(
 static void
 i915_hpd_make_objects(
 	struct i915_hpd_world *world,
-	const struct i915_display_nogem *nogem)
+	const struct i915_xd_ports *ports)
 {
-	const struct i915_encoder *pe;
+	const struct i915_xd_port *pe;
 	struct intel_digital_port *dp;
 	struct intel_connector *ic;
 	char *enc_name;
@@ -3514,8 +3514,8 @@ i915_hpd_make_objects(
 	world->hpd.hdmi = -1;
 
 	/* Makes the objects of each encoder while there is room. */
-	for (i = 0u; i < nogem->num_encoders && world->hpd.num < I915_HPD_MAX_CONNECTORS; i++) {
-		pe = &nogem->encoders[i];
+	for (i = 0u; i < ports->n && world->hpd.num < I915_HPD_MAX_CONNECTORS; i++) {
+		pe = &ports->port[i];
 		dp = &world->hpd_ports[world->hpd.num];
 		ic = &world->hpd_conns[world->hpd.num];
 		enc_name = world->hpd_enc_names[world->hpd.num];
@@ -3523,7 +3523,7 @@ i915_hpd_make_objects(
 
 		/* An eDP encoder is a DP encoder of an internal connector on port A. */
 		is_edp = 0;
-		if (pe->init_dp && (pe->device_type & I915_HPD_DEVICE_TYPE_INTERNAL) != 0u && pe->port == I915_PORT_A)
+		if (pe->dp && (pe->device_type & I915_HPD_DEVICE_TYPE_INTERNAL) != 0u && pe->ddi == I915_PORT_A)
 			is_edp = 1;
 
 		/* Starts both objects empty. */
@@ -3535,7 +3535,7 @@ i915_hpd_make_objects(
 		enc_name[1] = 'D';
 		enc_name[2] = 'I';
 		enc_name[3] = ' ';
-		enc_name[4] = (char)('A' + pe->port);
+		enc_name[4] = (char)('A' + pe->ddi);
 		enc_name[5] = '\0';
 
 		/*
@@ -3551,19 +3551,19 @@ i915_hpd_make_objects(
 		dp->base.type = INTEL_OUTPUT_DDI;
 		if (is_edp)
 			dp->base.type = INTEL_OUTPUT_EDP;
-		dp->base.port = (enum port)pe->port;
-		dp->base.hpd_pin = (enum hpd_pin)drv_i915_ddi_hpd_pin(13, pe->port);
+		dp->base.port = (enum port)pe->ddi;
+		dp->base.hpd_pin = (enum hpd_pin)drv_i915_ddi_hpd_pin(13, pe->ddi);
 		dp->base.hotplug = i915_hpd_hotplug_recorded;
 
 		/* The live-status check: SDEISR, or the unported Type-C check. */
-		if (pe->is_tc) {
+		if (pe->tc != 0U) {
 			dp->connected = i915_hpd_tc_connected_step;
 		} else {
 			dp->connected = i915_hpd_lpt_connected_fn();
 		}
 
 		/* A DP encoder takes pulses (intel_dp_hpd_pulse(): an unported step). */
-		if (pe->init_dp)
+		if (pe->dp)
 			dp->hpd_pulse = i915_hpd_dp_pulse_step;
 
 		/* The connector, as drm_connector_init() leaves it: attached, unknown, driven by no crtc. */
@@ -3575,7 +3575,7 @@ i915_hpd_make_objects(
 		world->hpd_conn_states[world->hpd.num].crtc = NULL;
 
 		/* The connector's kind: HDMI, eDP, or DP. */
-		if (pe->init_hdmi && !pe->init_dp) {
+		if (pe->hdmi && !pe->dp) {
 			ic->base.connector_type = DRM_MODE_CONNECTOR_HDMIA;
 			ic->base.funcs = drv_i915_hpd_hdmi_connector_funcs();
 			ic->base.helper_private = &i915_hpd_hdmi_helper_funcs;
@@ -3584,8 +3584,8 @@ i915_hpd_make_objects(
 			 * intel_hdmi_init_connector(): ddc = intel_gmbus_get_adapter(ddc_pin);
 			 * port B -> GMBUS_PIN_2_BXT (the VBT's ddc_pin 2 maps to the same pin).
 			 */
-			ddc_pin = (unsigned)(1 + pe->port);
-			if (pe->port == I915_PORT_B)
+			ddc_pin = (unsigned)(1 + pe->ddi);
+			if (pe->ddi == I915_PORT_B)
 				ddc_pin = GMBUS_PIN_2_BXT;
 			ic->base.ddc = drv_i915_hpd_gmbus_adapter(&world->hpd_i915, ddc_pin);
 			ic->polled = CONNECTOR_POLL_HPD;

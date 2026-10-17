@@ -644,21 +644,21 @@ tc_kern_declare_ports(
 	struct i915_display *display,
 	struct i915_tc_kern *k)
 {
-	const struct i915_encoder *encoder;
+	const struct i915_xd_port *port;
 	const struct i915_vbt_encoder *child;
 	unsigned index;
 	int tc_port;
 	int legacy;
 
-	/* Declares the port of each Type-C encoder. */
-	for (index = 0u; index < display->nogem.num_encoders; index++) {
-		/* Skips an encoder that is not a Type-C port's. */
-		encoder = &display->nogem.encoders[index];
-		if (!encoder->is_tc)
+	/* Declares each Type-C port of the display. */
+	for (index = 0u; index < display->xd.ports.n; index++) {
+		/* Skips a port that is not a Type-C port. */
+		port = &display->xd.ports.port[index];
+		if (port->tc == 0U)
 			continue;
 
-		/* Skips a Type-C encoder outside TC1 to TC4. */
-		tc_port = drv_i915_tc_kern_port_of(encoder->port);
+		/* Skips a Type-C port outside TC1 to TC4. */
+		tc_port = drv_i915_tc_kern_port_of((int)port->ddi);
 		if (tc_port < 0)
 			continue;
 
@@ -666,7 +666,7 @@ tc_kern_declare_ports(
 		legacy = 0;
 		child = NULL;
 		if (display->vbt_state.parsed_live)
-			child = drv_i915_vbt_encoder_for_port(&display->vbt_state.parsed, encoder->port);
+			child = drv_i915_vbt_encoder_for_port(&display->vbt_state.parsed, (int)port->ddi);
 
 		/* The VBT's child says whether the port has a receptacle, and its AUX channel. */
 		if (child != NULL) {
@@ -681,7 +681,7 @@ tc_kern_declare_ports(
 
 		/* Declares the port. */
 		drv_i915_tc_declare(&k->tc, (unsigned)tc_port, legacy);
-		kern_logf("i915: TC%d: declared (DDI %c, legacy %d, AUX channel %d)\n", tc_port + 1, (char)('A' + encoder->port), legacy, k->aux_ch[tc_port]);
+		kern_logf("i915: TC%d: declared (DDI %c, legacy %d, AUX channel %d)\n", tc_port + 1, (char)('A' + port->ddi), legacy, k->aux_ch[tc_port]);
 	}
 }
 

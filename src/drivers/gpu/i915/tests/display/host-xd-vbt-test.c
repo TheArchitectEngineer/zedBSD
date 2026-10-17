@@ -39,6 +39,7 @@
 #include "../../display/xd-edid.h"
 #include "../../display/xd-platform.h"
 #include "../../display/xd-vbt.h"
+#include "../../display/xd.h"
 #include "../../intel/xd-opregion-layout.h"
 #include "../../intel/xd-vbt-layout.h"
 
@@ -549,6 +550,7 @@ test_vbt_outputs(
 	static uint8_t bytes[TEST_VBT_BYTES];
 	const struct test_vbt *spec;
 	const struct i915_xd_vbt_child *child;
+	struct i915_xd_ports ports;
 	struct i915_xd_vbt vbt;
 	char what[160];
 	size_t size;
@@ -579,6 +581,30 @@ test_vbt_outputs(
 	/* The first output is the panel. */
 	snprintf(what, sizeof(what), "%s: output 0 is eDP", spec->name);
 	i915_host_check(vbt.children[0].edp == 1 && vbt.children[0].dp == 1 && vbt.children[0].hdmi == 0, what);
+
+	/* The port table: every output becomes a port on its DDI, in order, the panel's first. */
+	drv_i915_xd_ports(test_platform(test_devices[index]), &vbt, 0xffffffffU, &ports);
+	snprintf(what, sizeof(what), "%s: the port table has one port per output, the panel's first", spec->name);
+	i915_host_check(ports.n == spec->nchildren && ports.skipped == 0U && ports.port[0].edp == 1 && ports.port[0].dp == 1 &&
+	    ports.port[0].ddi == test_expects[index][0].ddi && ports.port[0].aux == test_expects[index][0].aux, what);
+	for (c = 0U; c < ports.n; c++) {
+		snprintf(what, sizeof(what), "%s: port %u on DDI %u", spec->name, c, test_expects[index][c].ddi);
+		i915_host_check(ports.port[c].ddi == test_expects[index][c].ddi, what);
+	}
+
+	/* A DDI the caller does not drive is skipped, and so is a second output on one DDI. */
+	drv_i915_xd_ports(test_platform(test_devices[index]), &vbt, ~(1U << test_expects[index][0].ddi), &ports);
+	snprintf(what, sizeof(what), "%s: a DDI outside the mask is skipped", spec->name);
+	i915_host_check(ports.n == spec->nchildren - 1U && ports.skipped == 1U && ports.port[0].edp == 0, what);
+	if (spec->nchildren >= 2U) {
+		vbt.children[1].ddi = vbt.children[0].ddi;
+		drv_i915_xd_ports(test_platform(test_devices[index]), &vbt, 0xffffffffU, &ports);
+		snprintf(what, sizeof(what), "%s: a second output on one DDI is skipped", spec->name);
+		i915_host_check(ports.n == spec->nchildren - 1U && ports.skipped == 1U, what);
+	}
+	drv_i915_xd_ports(NULL, &vbt, 0xffffffffU, &ports);
+	snprintf(what, sizeof(what), "%s: a device without a description has no ports", spec->name);
+	i915_host_check(ports.n == 0U, what);
 }
 
 /* Checks the panel one made-up VBT gives. */

@@ -1144,7 +1144,7 @@ drv_i915_display_panel_mode(
 		return ENODEV;
 
 	/* The pixels of one frame. */
-	m = &d->edp->lcd.mode;
+	m = &d->edp->mode;
 	pixels = (uint64_t)m->htotal * m->vtotal;
 
 	/* Refuses an empty mode. */
@@ -1182,12 +1182,12 @@ drv_i915_display_panel_size_mm(
 		return ENODEV;
 	if (d->edp == NULL)
 		return ENODEV;
-	if (d->edp->lcd.mode.width_mm == 0u)
+	if (d->edp->mode.width_mm == 0u)
 		return ENODEV;
 
 	/* The size the EDID reported. */
-	*width_mm = d->edp->lcd.mode.width_mm;
-	*height_mm = d->edp->lcd.mode.height_mm;
+	*width_mm = d->edp->mode.width_mm;
+	*height_mm = d->edp->mode.height_mm;
 
 	/* Succeeded: the panel size is reported. */
 	return 0;

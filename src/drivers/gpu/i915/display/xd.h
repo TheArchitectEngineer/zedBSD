@@ -35,6 +35,32 @@
 struct i915_mmio;
 struct mutex;
 
+/* The most ports a display's table holds. */
+#define I915_XD_PORTS_MAX	8U
+
+/*
+ * One port of the display, as the VBT and the platform describe it: its
+ * DDI, its Type-C port (0 for none, 1..6), whether it carries DisplayPort,
+ * HDMI (or DVI) and the built-in panel, its AUX channel and the VBT's
+ * device type of the output.
+ */
+struct i915_xd_port {
+	uint8_t ddi;
+	uint8_t tc;
+	int dp;
+	int hdmi;
+	int edp;
+	uint8_t aux;
+	uint16_t device_type;
+};
+
+/* The ports of a display, in the VBT's order, and how many outputs of the VBT did not become one. */
+struct i915_xd_ports {
+	unsigned n;
+	struct i915_xd_port port[I915_XD_PORTS_MAX];
+	unsigned skipped;
+};
+
 /*
  * The xd display state of one device.
  *
@@ -47,7 +73,8 @@ struct mutex;
  * loader's work.  The firmware's display is read once, before the first
  * display write, by the firmware check.  The Dekel PHY windows of the
  * Type-C ports are ready from the start, and so are the pictures of the
- * screens (their description follows the platform's).
+ * screens (their description follows the platform's).  The table of the
+ * ports is made from the VBT by the output setup.
  */
 struct i915_xd {
 	struct i915_xd_io io;
@@ -61,11 +88,13 @@ struct i915_xd {
 	struct i915_xd_firmware firmware;
 	struct i915_xd_dkl dkl;
 	struct i915_xd_pictures pictures;
+	struct i915_xd_ports ports;
 };
 
 void drv_i915_xd_start(struct i915_xd *xd, struct i915_mmio *mmio, struct mutex *mailbox_lock, uint16_t product, uint8_t revid);
 void drv_i915_xd_south(struct i915_xd *xd, uint16_t product, uint8_t revid, uint16_t pch_id);
 int drv_i915_xd_check_firmware(struct i915_xd *xd, uint64_t aperture_base, uint64_t aperture_size, uint32_t ggtt_pages, uint32_t driver_first_page, uint32_t asls);
+void drv_i915_xd_ports(const struct i915_xd_platform *platform, const struct i915_xd_vbt *vbt, unsigned ddi_mask, struct i915_xd_ports *ports);
 int drv_i915_xd_read_opregion(struct i915_xd *xd, uint32_t asls, uint8_t *opregion_copy, uint8_t *vbt_copy, size_t vbt_room);
 
 /*
