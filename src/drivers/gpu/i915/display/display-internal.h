@@ -529,7 +529,6 @@ struct i915_power_domains;
 struct i915_pw_ctx;
 struct i915_display_core;
 struct i915_cdclk_dev;
-struct i915_display_nogem;
 struct i915_display_state;
 struct i915_bw_state;
 struct i915_dmc_dev;
@@ -558,10 +557,9 @@ struct i915_lcd_kernel_deps {
 	struct i915_power_domains *pd;
 	struct i915_pw_ctx *pwc;
 
-	/* The display buffer's slices, the CD clock, the memory's watermark latencies, the bandwidth and the DMC. */
+	/* The display buffer's slices, the CD clock, the bandwidth and the DMC. */
 	struct i915_display_core *dcore;
 	struct i915_cdclk_dev *cdclk;
-	struct i915_display_nogem *nogem;
 	struct i915_display_state *dstate;
 	struct i915_bw_state *bw;
 	struct i915_dmc_dev *dmc;

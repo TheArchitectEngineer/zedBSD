@@ -351,6 +351,20 @@
 #define I915_XD_CLKGATE_PSL_EXT_PIPEDMC		0x00001000U
 
 /*
+ * The start's workarounds of display 11 and 12: the frame buffer
+ * compressor's dummy pixel chicken (compressor A) and the memory-up
+ * override of the clock request policy.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (ILK_DPFC_CHICKEN, DPFC_CHICKEN_COMP_DUMMY_PIXEL, CLKREQ_POLICY,
+ * CLKREQ_POLICY_MEM_UP_OVRD).
+ */
+#define I915_XD_DPFC_CHICKEN_A			0x43224U
+#define I915_XD_DPFC_CHICKEN_DUMMY_PIXEL	0x00004000U
+#define I915_XD_CLKREQ_POLICY			0x101038U
+#define I915_XD_CLKREQ_POLICY_MEM_UP		0x00000002U
+
+/*
  * The firmware's hold on ports (Rocket Lake and Alder Lake-S): which
  * DPLLs and which PHYs the firmware keeps for itself.
  *

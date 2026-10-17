@@ -1590,12 +1590,12 @@ resident_config_panel(
 	config->rawclk_khz = edp->cfg.rawclk_khz;
 
 	/* The watermark latencies and the SAGV block time the start read. */
-	for (i = 0U; i < 8U && i < I915_NOGEM_MAX_WM_LVL; i++)
-		config->wm_latency[i] = d->nogem->wm_skl_latency[i];
+	for (i = 0U; i < 8U; i++)
+		config->wm_latency[i] = display->xd.memory.latency[i];
 
-	config->wm_levels = (uint8_t)d->nogem->wm_num_levels;
+	config->wm_levels = (uint8_t)display->xd.memory.levels;
 	config->wm_ipc = d->ipc_enabled;
-	config->sagv_block_us = (uint8_t)d->nogem->sagv_block_time_us;
+	config->sagv_block_us = (uint8_t)display->xd.memory.sagv_block_us;
 
 	/* The display buffer of the device: display 13 has 4096 blocks over four slices, Tiger Lake 2048 over two. */
 	config->dbuf_size = I915_RESIDENT_DBUF_D13_BLOCKS;

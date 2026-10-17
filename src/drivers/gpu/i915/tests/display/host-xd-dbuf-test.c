@@ -37,12 +37,29 @@
 /* The window the checks write through. */
 static struct i915_xd_io i915_xd_dbuf_test_io;
 
+/*
+ * The memory firmware of the model: the two latency words it answers,
+ * the SAGV block time, a refusal of the latencies, and the commands it
+ * answered.
+ */
+struct i915_xd_dbuf_test_firmware {
+	uint32_t words[2];
+	uint32_t block_us;
+	int refuse_latency;
+	unsigned commands;
+};
+
+/* The memory firmware the mailbox rule answers from. */
+static struct i915_xd_dbuf_test_firmware i915_xd_dbuf_test_memory_firmware;
+
 static const struct i915_xd_platform *i915_xd_dbuf_test_setup(uint16_t device, uint8_t revid);
 static void i915_xd_dbuf_test_pipe(struct i915_xd_wm_pipe *pipe);
 static void i915_xd_dbuf_test_panel(void);
 static void i915_xd_dbuf_test_slices(void);
 static void i915_xd_dbuf_test_cuts(void);
 static void i915_xd_dbuf_test_writes(void);
+static void i915_xd_dbuf_test_memory(void);
+static void i915_xd_dbuf_test_firmware(uint32_t offset, uint32_t value, void *context);
 
 /*
  * Runs every check of the display buffer and watermarks and reports.
@@ -57,6 +74,7 @@ main(void)
 	i915_xd_dbuf_test_slices();
 	i915_xd_dbuf_test_cuts();
 	i915_xd_dbuf_test_writes();
+	i915_xd_dbuf_test_memory();
 
 	/* Reports the result. */
 	failures = i915_host_report("host_xd_dbuf_test");
@@ -335,4 +353,87 @@ i915_xd_dbuf_test_writes(void)
 		i915_host_check(i915_xd_fake_get(0x44300U) == 0U && i915_xd_fake_get(0x4438cU) == 0U,
 				"dbuf: Tiger Lake writes neither slices 3-4 nor the bus control");
 	}
+}
+
+/* Answers a mailbox command: the latency word asked for, the SAGV block time, or a refusal. */
+static void
+i915_xd_dbuf_test_firmware(
+	uint32_t offset,
+	uint32_t value,
+	void *context)
+{
+	struct i915_xd_dbuf_test_firmware *firmware;
+	uint32_t data;
+	uint32_t status;
+
+	UNUSED_PARAMETER(offset);
+
+	/* Only a command handed over is answered. */
+	firmware = context;
+	if ((value & I915_XD_GTDRIVER_MAILBOX_BUSY) == 0U)
+		return;
+
+	/* The latency words, by the word asked for, and the block time. */
+	firmware->commands++;
+	status = I915_XD_GTDRIVER_STATUS_OK;
+	data = i915_xd_fake_get(I915_XD_GTDRIVER_DATA0);
+	if ((value & 0xffU) == I915_XD_MAILBOX_READ_LATENCY) {
+		i915_xd_fake_set(I915_XD_GTDRIVER_DATA0, firmware->words[data & 1U]);
+		if (firmware->refuse_latency)
+			status = I915_XD_GTDRIVER_STATUS_REJECTED;
+	} else if ((value & 0xffU) == I915_XD_MAILBOX_SAGV_BLOCK_TIME) {
+		i915_xd_fake_set(I915_XD_GTDRIVER_DATA0, firmware->block_us);
+	}
+
+	/* The answer: no busy bit, the status. */
+	i915_xd_fake_set(I915_XD_GTDRIVER_MAILBOX, status);
+}
+
+/*
+ * The memory's report: the 5330's firmware words (level 0 reads 0 us, so
+ * 3 us go to each of its six levels; levels 6 and 7 are kept as read),
+ * its SAGV block time, a level that reads 0 us cutting the deeper ones,
+ * an SAGV the display does not control, a refused mailbox.
+ */
+static void
+i915_xd_dbuf_test_memory(void)
+{
+	static const uint16_t expect[8] = { 3, 54, 83, 102, 147, 147, 144, 144 };
+	const struct i915_xd_platform *platform;
+	struct i915_xd_dbuf_test_firmware *firmware;
+	struct i915_xd_memory memory;
+	unsigned index;
+	int same;
+	int error;
+
+	/* The 5330's firmware. */
+	platform = i915_xd_dbuf_test_setup(I915_XD_DBUF_TEST_ADLP, I915_XD_DBUF_TEST_ADLP_REVID);
+	firmware = &i915_xd_dbuf_test_memory_firmware;
+	memset(firmware, 0, sizeof(*firmware));
+	firmware->words[0] = 0U | (51U << 8) | (80U << 16) | (99U << 24);
+	firmware->words[1] = 144U | (144U << 8) | (144U << 16) | (144U << 24);
+	firmware->block_us = 35U;
+	i915_xd_fake_rule_call(I915_XD_GTDRIVER_MAILBOX, i915_xd_dbuf_test_firmware, firmware);
+	error = drv_i915_xd_memory_read(&i915_xd_dbuf_test_io, platform, 1, 0, &memory);
+	same = 1;
+	for (index = 0U; index < 8U; index++) {
+		if (memory.latency[index] != expect[index])
+			same = 0;
+	}
+	i915_host_check(error == 0 && memory.valid && memory.levels == 6U && same, "memory: the 5330's latencies, 3 us added to its six levels");
+	i915_host_check(memory.sagv_block_us == 35U && memory.sagv_error == 0 && firmware->commands == 3U, "memory: the SAGV block time, then the two latency words");
+
+	/* A level that reads 0 us turns off the deeper levels of the display. */
+	firmware->words[0] = 2U | (51U << 8) | (0U << 16) | (99U << 24);
+	error = drv_i915_xd_memory_read(&i915_xd_dbuf_test_io, platform, 1, 1, &memory);
+	i915_host_check(error == 0 && memory.latency[0] == 3U && memory.latency[1] == 51U && memory.latency[2] == 0U &&
+	    memory.latency[5] == 0U && memory.latency[6] == 144U && memory.levels == 6U,
+	    "memory: a level of 0 us turns the deeper ones off, the DIMM adjustment adds 1 us to level 0");
+
+	/* An SAGV the display does not control blocks nothing; a refused mailbox leaves the latencies unread. */
+	error = drv_i915_xd_memory_read(&i915_xd_dbuf_test_io, platform, 0, 0, &memory);
+	i915_host_check(error == 0 && memory.sagv_block_us == 0U, "memory: an SAGV not controlled blocks nothing");
+	firmware->refuse_latency = 1;
+	error = drv_i915_xd_memory_read(&i915_xd_dbuf_test_io, platform, 1, 0, &memory);
+	i915_host_check(error != 0 && !memory.valid && memory.sagv_block_us == 35U, "memory: refused latencies are not valid, the block time is still read");
 }

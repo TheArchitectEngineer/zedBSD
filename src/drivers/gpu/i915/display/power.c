@@ -39,7 +39,7 @@
 #include "modeset-internal.h"
 #include "power.h"
 #include "clock.h"
-#include "takeover.h"
+#include "vga.h"
 #include "modeset.h"
 #include "xd-ddi.h"
 #include "xd-power.h"

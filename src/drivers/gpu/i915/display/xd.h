@@ -74,7 +74,8 @@ struct i915_xd_ports {
  * display write, by the firmware check.  The Dekel PHY windows of the
  * Type-C ports are ready from the start, and so are the pictures of the
  * screens (their description follows the platform's).  The table of the
- * ports is made from the VBT by the output setup.
+ * ports is made from the VBT by the output setup, and the memory's
+ * watermark latencies are read at the front of the display's start.
  */
 struct i915_xd {
 	struct i915_xd_io io;
@@ -89,6 +90,7 @@ struct i915_xd {
 	struct i915_xd_dkl dkl;
 	struct i915_xd_pictures pictures;
 	struct i915_xd_ports ports;
+	struct i915_xd_memory memory;
 };
 
 void drv_i915_xd_start(struct i915_xd *xd, struct i915_mmio *mmio, struct mutex *mailbox_lock, uint16_t product, uint8_t revid);

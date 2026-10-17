@@ -75,6 +75,7 @@ static void i915_xd_core_test_adlp(void);
 static void i915_xd_core_test_tgl(void);
 static void i915_xd_core_test_faults(void);
 static void i915_xd_core_test_stop(void);
+static void i915_xd_core_test_wa(void);
 
 /*
  * Runs every check of the display core's start and stop and reports.
@@ -89,6 +90,7 @@ main(void)
 	i915_xd_core_test_tgl();
 	i915_xd_core_test_faults();
 	i915_xd_core_test_stop();
+	i915_xd_core_test_wa();
 
 	/* Reports the result. */
 	failures = i915_host_report("host_xd_core_test");
@@ -388,4 +390,39 @@ i915_xd_core_test_stop(void)
 			i915_xd_core_test_run.slices == 0U && i915_xd_core_test_run.steps[1] == I915_XD_CORE_TEST_CDCLK_OFF &&
 			i915_xd_core_test_run.steps[2] == I915_XD_CORE_TEST_WELL_OFF,
 			"core: the stop turns the DBUF off, the CD clock down, then power well 1 off");
+}
+
+/*
+ * The start's workarounds: display 13 turns the DPCE clock gate off and
+ * clears the DDI clock register access chicken, writing only what
+ * changes; display 12 writes the compressor's dummy pixel chicken and
+ * clears the clock request policy's memory-up override.
+ */
+static void
+i915_xd_core_test_wa(void)
+{
+	const struct i915_xd_platform *platform;
+	unsigned writes;
+
+	/* Display 13, from chickens the firmware left. */
+	platform = i915_xd_core_test_setup(I915_XD_CORE_TEST_ADLP, I915_XD_CORE_TEST_ADLP_REVID);
+	i915_xd_fake_set(I915_XD_CLKGATE_DIS_5, 0x1U);
+	i915_xd_fake_set(I915_XD_CHICKEN_DCPR_1, I915_XD_DCPR_1_DDI_CLOCK_REG_ACCESS | 0x2U);
+	drv_i915_xd_display_wa(&i915_xd_core_test_io, platform);
+	i915_host_check(i915_xd_fake_get(I915_XD_CLKGATE_DIS_5) == (0x1U | I915_XD_CLKGATE_DIS_5_DPCE) &&
+	    i915_xd_fake_get(I915_XD_CHICKEN_DCPR_1) == 0x2U && i915_xd_fake_get(I915_XD_DPFC_CHICKEN_A) == 0U,
+	    "wa: display 13 gates DPCE off and clears the DDI clock register access");
+
+	/* Applied again, nothing changes and nothing is written. */
+	writes = i915_xd_fake_writes();
+	drv_i915_xd_display_wa(&i915_xd_core_test_io, platform);
+	i915_host_check(i915_xd_fake_writes() == writes, "wa: display 13 writes nothing that holds its value already");
+
+	/* Display 12. */
+	platform = i915_xd_core_test_setup(I915_XD_CORE_TEST_TGL, I915_XD_CORE_TEST_TGL_REVID);
+	i915_xd_fake_set(I915_XD_CLKREQ_POLICY, I915_XD_CLKREQ_POLICY_MEM_UP | 0x4U);
+	drv_i915_xd_display_wa(&i915_xd_core_test_io, platform);
+	i915_host_check(i915_xd_fake_get(I915_XD_DPFC_CHICKEN_A) == I915_XD_DPFC_CHICKEN_DUMMY_PIXEL &&
+	    i915_xd_fake_get(I915_XD_CLKREQ_POLICY) == 0x4U && i915_xd_fake_get(I915_XD_CLKGATE_DIS_5) == 0U,
+	    "wa: display 12 writes the dummy pixel chicken and clears the memory-up override");
 }

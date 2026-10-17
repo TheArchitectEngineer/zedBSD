@@ -2769,7 +2769,6 @@ struct i915_display_head {
 struct i915_lcd_world;
 struct kern_backlight;
 struct i915_wm_world;
-struct i915_takeover_world;
 struct i915_dp_world;
 struct i915_vbt_world;
 struct i915_hpd_world;
@@ -2973,7 +2972,6 @@ struct i915_display {
 	 */
 	struct i915_lcd_world *lcd_world;
 	struct i915_wm_world *wm_world;
-	struct i915_takeover_world *takeover_world;
 	struct i915_dp_world *dp_world;
 	struct i915_vbt_world *vbt_world;
 	struct i915_hpd_world *hpd_world;

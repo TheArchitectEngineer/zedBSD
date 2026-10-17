@@ -37,7 +37,6 @@
 #include "../../display/dp-sink.h"
 #include "../../display/modeset.h"
 #include "../../display/state.h"
-#include "../../display/takeover.h"
 #include "../../display/vblank.h"
 #include "../../display/watermark.h"
 
@@ -226,12 +225,6 @@ main(
 		return 2;
 	}
 
-	error = drv_i915_takeover_world_create(&i915_ms_display);
-	if (error != 0) {
-		printf("takeover world: error %d\n", error);
-		return 2;
-	}
-
 	/* Runs the families in the order the state they leave requires. */
 	i915_ms_test_normal();
 	i915_ms_test_early_failures();
@@ -249,7 +242,6 @@ main(
 	i915_ms_test_dither();
 
 	/* Releases the worlds. */
-	drv_i915_takeover_world_destroy(&i915_ms_display);
 	drv_i915_wm_world_destroy(&i915_ms_display);
 	drv_i915_lcd_world_destroy(&i915_ms_display);
 	drv_i915_dp_world_destroy(&i915_ms_display);

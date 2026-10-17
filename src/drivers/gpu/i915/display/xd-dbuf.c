@@ -16,6 +16,8 @@
 
 #include "../intel/display-regs-xd.h"
 
+#include <kern/kcrt.h>
+
 #include <uapi/errno.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -71,6 +73,35 @@
  * a line, the blocks of its Y tile minimum (16.16), and the pipe's line
  * time rounded up (us).
  */
+/*
+ * The memory's watermark latencies: the levels a display of version 13
+ * has (the deeper two go to the SAGV watermark), the levels of an older
+ * one, the read latency added to every level when level 0 reads as 0
+ * (us, display 12 on and older), and the mailbox's wait (us).
+ *
+ * Values referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/skl_watermark.c (skl_read_wm_latency,
+ * adjust_wm_latency); drivers/gpu/drm/i915/display/intel_display_device.h
+ * (HAS_HW_SAGV_WM).
+ */
+#define I915_XD_MEMORY_LEVELS_13	6U
+#define I915_XD_MEMORY_LEVELS		8U
+#define I915_XD_MEMORY_READ_LATENCY_12	3U
+#define I915_XD_MEMORY_READ_LATENCY	2U
+#define I915_XD_MEMORY_MAILBOX_US	20500U
+
+/*
+ * The SAGV block time of a display that does not read it (us): display
+ * 11's, and the older ones'; and the largest the watermarks can add.
+ *
+ * Values referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/skl_watermark.c (intel_sagv_block_time,
+ * intel_sagv_init).
+ */
+#define I915_XD_SAGV_BLOCK_US_11	10U
+#define I915_XD_SAGV_BLOCK_US_OLD	30U
+#define I915_XD_SAGV_BLOCK_US_MAX	0xffffU
+
 struct i915_xd_wm_params {
 	int y_tiled;
 	uint32_t pixel_rate;
@@ -82,6 +113,7 @@ struct i915_xd_wm_params {
 };
 
 static uint32_t i915_xd_fixed_div(uint32_t value, uint32_t divisor);
+static void i915_xd_memory_levels(uint32_t word, uint16_t *latency);
 static uint32_t i915_xd_fixed_mul(uint32_t value, uint32_t fixed);
 static uint32_t i915_xd_fixed_round_up(uint32_t fixed);
 static uint32_t i915_xd_div_round_up(uint64_t numerator, uint64_t denominator);
@@ -714,6 +746,125 @@ drv_i915_xd_dbuf_dbox_word(
 	return word;
 }
 
+/*
+ * Reads what the memory's firmware reports for the watermarks: the
+ * latency of each level and the SAGV block time.
+ *
+ * The SAGV block time is read first, then the latencies, which come
+ * from the mailbox in two words of four levels.  A
+ * level that reads 0 us turns itself and every deeper level off; when
+ * level 0 reads 0 us the read latency is added to every level left on;
+ * dimm_adjust adds 1 us to level 0 (the 16 GB DIMM workaround).  The
+ * SAGV block time is read from the mailbox on display 12 on; it is 0
+ * when the display does not control the SAGV (sagv_controlled zero) or
+ * the mailbox reports more than the watermarks can add.  Returns 0, or
+ * the mailbox's error of the latencies (memory->valid stays 0; the block
+ * time is still read).
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/skl_watermark.c (skl_read_wm_latency,
+ * adjust_wm_latency, intel_sagv_block_time, intel_sagv_init).
+ */
+int
+drv_i915_xd_memory_read(
+	struct i915_xd_io *io,
+	const struct i915_xd_platform *platform,
+	int sagv_controlled,
+	int dimm_adjust,
+	struct i915_xd_memory *memory)
+{
+	uint32_t data0;
+	uint32_t data1;
+	unsigned read_latency;
+	unsigned level;
+	unsigned deeper;
+	unsigned on;
+	int latency_error;
+	int error;
+
+	/* Starts with nothing read. */
+	kern_memset(memory, 0, sizeof(*memory));
+
+	/* The levels of the display. */
+	memory->levels = I915_XD_MEMORY_LEVELS;
+	if (platform->display_ver >= 13U)
+		memory->levels = I915_XD_MEMORY_LEVELS_13;
+
+	/* The SAGV block time: read on display 12 on, fixed before. */
+	memory->sagv_block_us = I915_XD_SAGV_BLOCK_US_OLD;
+	if (platform->display_ver == 11U)
+		memory->sagv_block_us = I915_XD_SAGV_BLOCK_US_11;
+
+	if (platform->display_ver >= 12U) {
+		data0 = 0U;
+		data1 = 0U;
+		error = drv_i915_xd_io_mailbox(io, I915_XD_MAILBOX_SAGV_BLOCK_TIME, &data0, &data1, I915_XD_MEMORY_MAILBOX_US);
+		memory->sagv_block_us = data0;
+		if (error != 0) {
+			memory->sagv_block_us = 0U;
+			memory->sagv_error = error;
+		}
+	}
+
+	/* A block time the watermarks cannot add blocks nothing. */
+	if (memory->sagv_block_us > I915_XD_SAGV_BLOCK_US_MAX)
+		memory->sagv_block_us = 0U;
+
+	/* Nor does an SAGV the display does not control. */
+	if (!sagv_controlled)
+		memory->sagv_block_us = 0U;
+
+	/* Levels 0 to 3, then 4 to 7, one byte each. */
+	data0 = 0U;
+	data1 = 0U;
+	latency_error = drv_i915_xd_io_mailbox(io, I915_XD_MAILBOX_READ_LATENCY, &data0, &data1, I915_XD_MEMORY_MAILBOX_US);
+	if (latency_error == 0) {
+		i915_xd_memory_levels(data0, &memory->latency[0]);
+		data0 = 1U;
+		data1 = 0U;
+		latency_error = drv_i915_xd_io_mailbox(io, I915_XD_MAILBOX_READ_LATENCY, &data0, &data1, I915_XD_MEMORY_MAILBOX_US);
+	}
+
+	/* The latencies were read whole. */
+	if (latency_error == 0) {
+		i915_xd_memory_levels(data0, &memory->latency[4]);
+		memory->valid = 1;
+	}
+
+	/* A level that reads 0 us turns itself and every deeper level of the display off. */
+	on = memory->levels;
+	for (level = 1U; memory->valid && level < memory->levels; level++) {
+		if (memory->latency[level] != 0U)
+			continue;
+
+		for (deeper = level; deeper < memory->levels; deeper++)
+			memory->latency[deeper] = 0U;
+		on = level;
+		break;
+	}
+
+	/* Level 0 that reads 0 us: the read latency is added to every level left on. */
+	read_latency = I915_XD_MEMORY_READ_LATENCY;
+	if (platform->display_ver >= 12U)
+		read_latency = I915_XD_MEMORY_READ_LATENCY_12;
+
+	if (memory->valid && memory->latency[0] == 0U) {
+		for (level = 0U; level < on; level++)
+			memory->latency[level] = (uint16_t)(memory->latency[level] + read_latency);
+	}
+
+	/* The 16 GB DIMM workaround. */
+	if (memory->valid && dimm_adjust)
+		memory->latency[0] = (uint16_t)(memory->latency[0] + 1U);
+
+	/* The latencies could not be read. */
+	if (latency_error != 0)
+		return latency_error;
+
+	/* Succeeded: the latencies and the block time are read. */
+	return 0;
+}
+
 /* Divides into 16.16 fixed point, rounding up. */
 static uint32_t
 i915_xd_fixed_div(
@@ -1007,4 +1158,17 @@ i915_xd_ddb_write(
 	if (ddb->end != 0U)
 		word = i915_xd_field_put(I915_XD_BUF_CFG_END, ddb->end - 1U) | i915_xd_field_put(I915_XD_BUF_CFG_START, ddb->start);
 	drv_i915_xd_io_write(io, offset, word);
+}
+
+/* Unpacks four levels' latencies (us), one byte each from the lowest, out of a mailbox word. */
+static void
+i915_xd_memory_levels(
+	uint32_t word,
+	uint16_t *latency)
+{
+	unsigned index;
+
+	/* Each byte, level by level. */
+	for (index = 0U; index < 4U; index++)
+		latency[index] = (uint16_t)((word >> (I915_XD_MAILBOX_LATENCY_LEVEL_BITS * index)) & I915_XD_MAILBOX_LATENCY_LEVEL_MASK);
 }

@@ -42,7 +42,9 @@
 #include "resident.h"
 #include "scanout.h"
 #include "state.h"
-#include "takeover.h"
+#include "vga.h"
+#include "xd-core.h"
+#include "xd-gmbus.h"
 #include "tc-kern.h"
 #include "dp-ext-kern.h"
 #include "bootfb.h"
@@ -742,7 +744,6 @@ drv_i915_display_resident_deps(
 	rlcd->pwc = &display->pwc;
 	rlcd->dcore = &display->dcore;
 	rlcd->cdclk = &display->cdclk;
-	rlcd->nogem = &display->nogem;
 	rlcd->dstate = &display->dstate;
 	rlcd->bw = &display->bw_state;
 	rlcd->dmc = &display->dmc_dev;
@@ -973,9 +974,7 @@ drv_i915_display_stop_outputs(
 		return;
 
 	drv_i915_edp_device_fini(&display->edp_dev);
-	drv_i915_display_nogem_fini(&display->nogem);
 	display->nogem_inited = 0;
-	kern_logf("i915: stop: display-nogem fini (crtc/plane/dpll records released)\n");
 }
 
 /*
@@ -1624,11 +1623,6 @@ i915_display_create_worlds(
 	if (error != 0)
 		return error;
 
-	/* The takeover environment. */
-	error = drv_i915_takeover_world_create(display);
-	if (error != 0)
-		return error;
-
 	/* The DP environment. */
 	error = drv_i915_dp_world_create(display);
 	if (error != 0)
@@ -1657,7 +1651,6 @@ i915_display_destroy_worlds(
 	drv_i915_hpd_world_destroy(display);
 	drv_i915_vbt_world_destroy(display);
 	drv_i915_dp_world_destroy(display);
-	drv_i915_takeover_world_destroy(display);
 	drv_i915_wm_world_destroy(display);
 	drv_i915_lcd_world_destroy(display);
 }
@@ -2060,69 +2053,72 @@ i915_display_noirq_tail(
 }
 
 /*
- * the front section of the nogem probe -- watermark and SAGV
- * latencies, the PPS and GMBUS bases, the crtc and plane records, the
- * shared DPLL table, CDCLK init_hw and the ADL-P WAs, and the VGA plane
- * disable.
+ * The front of the display's start after the interrupts: the memory's
+ * watermark latencies and SAGV block time, the GMBUS controller's reset,
+ * the CD clock the hardware runs at, the start's workarounds, and the
+ * VGA plane switched off.  A display without a description reads no
+ * latencies and applies no workaround.
  */
 static int
 i915_display_nogem_front(
 	struct i915_device *device)
 {
+	const struct i915_xd_platform *platform;
+	struct i915_xd_memory *memory;
 	struct i915_display *display;
-	struct i915_display_nogem *nogem;
-	struct i915_gt *gt;
+	int sagv_controlled;
+	int vga_result;
 	int error;
 
 	display = device->display;
-	gt = &device->gt;
-	nogem = &display->nogem;
+	platform = display->xd.choice.platform;
+	memory = &display->xd.memory;
 
-	/* Runs the front section. */
-	error = drv_i915_display_nogem_front(display, nogem, (int)gt->display_ver, I915_DISPLAY_PIPE_MASK, &gt->mmio, &gt->sb_lock, &display->cdclk, &display->bw_state, &display->vga_client);
-	if (error != 0) {
-		device->stage = "intel_display_driver_probe_nogem";
-		if (nogem->fail_where != NULL)
-			device->stage = nogem->fail_where;
+	/* The SAGV's block time and the memory's watermark latencies; a display whose SAGV is not controlled blocks nothing. */
+	sagv_controlled = 1;
+	if (display->bw_state.sagv_status == (int)I915_SAGV_NOT_CONTROLLED)
+		sagv_controlled = 0;
 
-		return error;
-	}
+	kern_memset(memory, 0, sizeof(*memory));
+	error = 0;
+	if (platform != NULL)
+		error = drv_i915_xd_memory_read(&display->xd.io, platform, sagv_controlled, 0, memory);
+	if (error != 0)
+		kern_logf("i915: wm: the memory's latencies could not be read (%d)\n", error);
 
+	/* The GMBUS controller lets its pin go and silences its interrupts. */
+	drv_i915_xd_gmbus_reset(&display->xd.io);
+
+	/* The CD clock the hardware runs at. */
+	drv_i915_update_cdclk(&display->cdclk);
+	kern_logf("i915: Current CDCLK: cdclk=%u vco=%u ref=%u voltage=%u\n", display->cdclk.hw.cdclk, display->cdclk.hw.vco, display->cdclk.hw.ref, (unsigned)display->cdclk.hw.voltage_level);
+
+	/* The start's workarounds of the display's version. */
+	if (platform != NULL)
+		drv_i915_xd_display_wa(&display->xd.io, platform);
+
+	/* The VGA plane the driver never uses goes off. */
+	vga_result = drv_i915_vga_disable(display);
+
+	/* The front is done; the stop takes the panel's device apart from here on. */
 	display->nogem_inited = 1;
-	kern_logf("i915: wm: levels=%u latency=%u/%u/%u/%u/%u/%u/%u/%u valid=%d sagv_status=%d block_time=%uus\n",
-	    nogem->wm_num_levels,
-	    nogem->wm_skl_latency[0],
-	    nogem->wm_skl_latency[1],
-	    nogem->wm_skl_latency[2],
-	    nogem->wm_skl_latency[3],
-	    nogem->wm_skl_latency[4],
-	    nogem->wm_skl_latency[5],
-	    nogem->wm_skl_latency[6],
-	    nogem->wm_skl_latency[7],
-	    nogem->wm_latency_valid,
-	    nogem->sagv_status,
-	    nogem->sagv_block_time_us);
-	kern_logf("i915: objects: crtcs=%u planes/crtc=%u scalers=%u dplls=%u(mgr=%d) gmbus_pins=%u pps_base=0x%x gmbus_base=0x%x\n",
-	    nogem->num_crtcs,
-	    nogem->crtcs[0].num_planes,
-	    nogem->crtcs[0].num_scalers,
-	    nogem->num_dplls,
-	    nogem->dpll_mgr_present,
-	    nogem->gmbus_pins_present,
-	    nogem->pps_mmio_base,
-	    nogem->gmbus_mmio_base);
-	kern_logf("i915: hw: max_cdclk=%u nssc_ref=%u adlp_wa=%d hti_read=%d vga_already_off=%d vga_disabled=%d writes=%u (gmbus_adapters/hdcp_component unimplemented: %d/%d)\n",
-	    nogem->max_cdclk_freq,
-	    nogem->dpll_ref_nssc,
-	    nogem->adlp_wa_applied,
-	    nogem->hti_state_read,
-	    nogem->vga_already_disabled,
-	    nogem->vga_disable_done,
-	    nogem->mmio_writes,
-	    nogem->gmbus_adapters_unimplemented,
-	    nogem->hdcp_component_unimplemented);
+	kern_logf("i915: wm: levels=%u latency=%u/%u/%u/%u/%u/%u/%u/%u valid=%d sagv_status=%d block_time=%uus (mailbox %d) | vga %d\n",
+	    memory->levels,
+	    memory->latency[0],
+	    memory->latency[1],
+	    memory->latency[2],
+	    memory->latency[3],
+	    memory->latency[4],
+	    memory->latency[5],
+	    memory->latency[6],
+	    memory->latency[7],
+	    memory->valid,
+	    display->bw_state.sagv_status,
+	    memory->sagv_block_us,
+	    memory->sagv_error,
+	    vga_result);
 
-	/* Succeeded: the front section is done. */
+	/* Succeeded: the front is done. */
 	return 0;
 }
 

@@ -47,6 +47,7 @@
 #define I915_XD_CORE_BUDDY_TLB_TIMER	0x8U
 
 static void i915_xd_core_tracker(struct i915_xd_io *io, const struct i915_xd_platform *platform);
+static void i915_xd_core_change(struct i915_xd_io *io, uint32_t offset, uint32_t clear, uint32_t set);
 static void i915_xd_core_dbuf(struct i915_xd_io *io, const struct i915_xd_platform *platform, const struct i915_xd_core_hooks *hooks);
 static void i915_xd_core_abox(struct i915_xd_io *io, const struct i915_xd_platform *platform);
 static void i915_xd_core_buddy(struct i915_xd_io *io, const struct i915_xd_platform *platform, const struct i915_xd_core_input *input);
@@ -163,6 +164,46 @@ drv_i915_xd_core_stop(
 	*phy_a_down = drv_i915_xd_combo_phy_uninit(io, platform);
 }
 
+/*
+ * Applies the display's start workarounds, which the display's start
+ * writes after it read the CD clock: on display 13 the DPCE clock gate
+ * off and the DDI clock register access chicken cleared; on display 12
+ * the compressor's dummy pixel chicken and the clock request policy's
+ * memory-up override cleared; on display 11 the dummy pixel chicken and
+ * the power response delay.  A register that already holds its value is
+ * not written again.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display_wa.c
+ * (intel_display_wa_apply, adlp_display_wa_apply, xe_d_display_wa_apply,
+ * gen11_display_wa_apply).
+ */
+void
+drv_i915_xd_display_wa(
+	struct i915_xd_io *io,
+	const struct i915_xd_platform *platform)
+{
+	/* Display 13: the DPCE clock gate off, the DDI clock register access chicken cleared. */
+	if (platform->display_ver >= 13U) {
+		i915_xd_core_change(io, I915_XD_CLKGATE_DIS_5, 0U, I915_XD_CLKGATE_DIS_5_DPCE);
+		i915_xd_core_change(io, I915_XD_CHICKEN_DCPR_1, I915_XD_DCPR_1_DDI_CLOCK_REG_ACCESS, 0U);
+		return;
+	}
+
+	/* Display 12: the dummy pixel chicken written, the memory-up override cleared. */
+	if (platform->display_ver == 12U) {
+		drv_i915_xd_io_write(io, I915_XD_DPFC_CHICKEN_A, I915_XD_DPFC_CHICKEN_DUMMY_PIXEL);
+		i915_xd_core_change(io, I915_XD_CLKREQ_POLICY, I915_XD_CLKREQ_POLICY_MEM_UP, 0U);
+		return;
+	}
+
+	/* Display 11: the dummy pixel chicken written, the power response delayed. */
+	if (platform->display_ver == 11U) {
+		drv_i915_xd_io_write(io, I915_XD_DPFC_CHICKEN_A, I915_XD_DPFC_CHICKEN_DUMMY_PIXEL);
+		i915_xd_core_change(io, I915_XD_CHICKEN_DCPR_1, 0U, I915_XD_DCPR_1_DELAY_PMRSP);
+	}
+}
+
 /* Gives every DBUF slice of display 12 the tracker service of 8 (display 13 keeps the firmware's). */
 static void
 i915_xd_core_tracker(
@@ -271,4 +312,26 @@ i915_xd_core_buddy(
 				i915_xd_field_put(I915_XD_BW_BUDDY_TLB_REQ_TIMER, I915_XD_CORE_BUDDY_TLB_TIMER));
 		}
 	}
+}
+
+/* Clears and sets bits of a register, writing it only when its value changes. */
+static void
+i915_xd_core_change(
+	struct i915_xd_io *io,
+	uint32_t offset,
+	uint32_t clear,
+	uint32_t set)
+{
+	uint32_t old;
+	uint32_t value;
+
+	/* The register now and with the change. */
+	old = drv_i915_xd_io_read(io, offset);
+	value = (old & ~clear) | set;
+
+	/* A register that holds the value already is not written. */
+	if (value == old)
+		return;
+
+	drv_i915_xd_io_write(io, offset, value);
 }

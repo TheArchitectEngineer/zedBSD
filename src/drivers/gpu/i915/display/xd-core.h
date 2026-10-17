@@ -72,6 +72,7 @@ struct i915_xd_core_input {
 #define I915_XD_CORE_STOP_CDCLK		3U
 
 int drv_i915_xd_core_start(struct i915_xd_io *io, const struct i915_xd_platform *platform, struct i915_xd_power *power, const struct i915_xd_core_input *input, const struct i915_xd_core_hooks *hooks, unsigned *stop, unsigned *phys);
+void drv_i915_xd_display_wa(struct i915_xd_io *io, const struct i915_xd_platform *platform);
 void drv_i915_xd_core_stop(struct i915_xd_io *io, const struct i915_xd_platform *platform, struct i915_xd_power *power, const struct i915_xd_core_hooks *hooks, struct i915_xd_dc_report *report, unsigned *phy_a_down);
 
 #endif /* DRIVERS_GPU_I915_DISPLAY_XD_CORE_H */
