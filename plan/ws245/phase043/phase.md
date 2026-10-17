@@ -2,7 +2,7 @@
 
 # ws245-p043: 旧 code の残りの削除・試験の整理・出典の監査
 
-Status: in-progress（2026-10-17 q1229-i15: p043a 実装・host 試験・build 済み（35b24c912・7de79d444）、p043b は実装中）
+Status: in-progress（2026-10-17 q1229-i15: p043a 実装・host 試験・build 済み（35b24c912・7de79d444）、p043b の帯域済み（d16688474）、power は実装中）
 Parent: [WS245](../ws.md)
 Queue: q1229-i15（P1）
 設計: [design.md](../design.md) §6.2 の p043 の行、§5.4（引用の規則）、§6.4（今の試験の扱い）、guardrail「MIT・GPL の出典のデータの引用」
@@ -29,9 +29,17 @@ P1 の調べ: "Derived from the Linux kernel" が残るのは power.c（2605 行
 - build 3 組（35b24c912 の tree、`build/tmp/kbuild.sh p043a`）: default warn=0（vmunix sha256 の先頭 aea593c5c589dc35）、vke2 warn=0、execution warn=0。7de79d444 は comment だけ（5 file の構文の確認。build は p043b の時に通す）。
 - run-xd-host-tests（`build/p043a-host`）all passed（28 本、0 failures、段の順の check）。WS075 host-output-test 80/0、WS237 gen9 flip 48/0・mode 71/0・backlight 21/0、WS229 bootfb 20/0。
 
-## p043b（計画）
+## p043b の 1 つ目: 帯域（段の境 1、2026-10-17、commit d16688474）
 
-1. 帯域（段の境 1）: watermark.c の DRAM の検出（PCODE の memory の問い合わせ）、QGV/PSF の点と帯域、SAGV の強制 off（QGV の制限）を新しい xd の部品に。呼び手（display.c の read_tables・bandwidth_start、resident.c の QGV の帯域、ktest-sync.c）を付け替え、watermark.c・watermark.h を空に。
+- 新しい `xd-bandwidth.c/.h`（xd の型と xd-io だけ）: `drv_i915_xd_bw_read_dram`（mailbox の memory の記述: 種類・channel・QGV・PSF の数）、`drv_i915_xd_bw_read`（QGV の点の clock と timing、PSF の点、group ごとの plane の数と点ごとの display の取り分・peak）、`drv_i915_xd_bw_hold_sagv_off`（display 11〜13 で SAGV を display が持つ時、帯域の最大の点だけを残す mask を 1 ms + 50 ms の間 safe まで頼む）、`drv_i915_xd_bw_point_mbps`（plane の数の group: display 12 以降と display 11 の歩き方）、`drv_i915_xd_bw_allowed_points`。結果は `struct i915_xd` の `bandwidth`。値（mailbox の field、DRAM の種類ごとの burst・channel・幅・deinterleave、system agent の数）は Values referenced、手順は Procedure referenced（intel_dram.c・intel_bw.c・intel_pcode.c）。
+- 付け替え: display.c の read_tables（旧 dram_detect + bw_init_hw）、bandwidth_start（旧 bw_init の SAGV の強制 off）、memory_and_clocks の SAGV の判断、core の DRAM の種類（`dcore->dram_type` は xd の I915_XD_DRAM_*、power.c の写しの関数を消した）、resident.c の QGV の帯域（`rlcd->bandwidth`・`rlcd->platform`、旧 `dstate`・`bw`）。internal.h の DRAM・帯域・SAGV の型と field、watermark.c・watermark.h（空、vmunix.mk から外した）を消した。xd-platform.h に DDR3・LPDDR3、display-regs-xd.h に PSF の点の mailbox の語を足した。
+- 振る舞いは前と同じに保った: system agent の数は Alder Lake-P の物を全 platform で（Linux は TGL・RKL・ADL-S で別の値。前の code と同じ。直すなら p044 の platform の行で）、memory の記述が読めない時は点が 0 で SAGV は「切り替わる」扱い、点が読めない時は帯域を不明のまま（SAGV の強制 off は走る）。
+- 試験: ktest-sync.c の DRAM・帯域の ktest 3 つを消し、新しい `host-xd-bandwidth-test`（28 checks: 同じ firmware の語で、DDR4・2 channel・4 QGV・3 PSF、group 1 が 2 plane、取り分は 38000 MB/s の上限・peak 266688、PSF の帯域、mask 0x30e と 3 回目の safe・51 ms で ETIMEDOUT、QGV 1 点は何も頼まない、拒みと不明の種類、display 11 と 13 の group）を run-xd-host-tests に入れた。
+- 確かめた事: build 3 組（`kbuild.sh p043b1`）default warn=0（sha256 の先頭 f0156cd50774f276）、vke2 warn=0、execution warn=0。run-xd-host-tests（`build/p043b1-host`）all passed 29 本。WS075 80/0、WS237 flip 48/0・mode 71/0・backlight 21/0、WS229 bootfb 20/0。
+- 実機で見る事: 5330 の log の `display: memory: raw=… type=…`・`QGV n: … MB/s for one plane`・`display: bandwidth: restricted=1 … answer=0 sagv=1`（前の `Forcing SAGV disable: mask` と同じ mask）、resident の `QGV mask 0x… -> allowed 0x… bw … MB/s` が前と同じ値。
+
+## p043b（残りの計画）
+
 2. power（段の境 2）: power.c の domain 層（`drv_i915_display_power_get/_put/_put_async/_is_enabled`・wells の写し・core の init/uninit・DC9）を xd-power・xd-core の直の呼びに付け替え（呼び手 dmc-shell・dp-ext-kern・hpd・edp-device・tc-port・interrupts・resident・display.c、ktest-sync.c・ktest-gt.c）、power.c・power.h を空に。
 3. internal.h の Derived の表示と Linux の記述、check-sources.py を run-xd-host-tests に入れる。
 
@@ -44,3 +52,4 @@ P1 の調べ: "Derived from the Linux kernel" が残るのは power.c（2605 行
 
 - `src/drivers/gpu/i915/intel/` の connector.h・ddi.h・dkl.h・dp.h・hotplug.h・mreg.h・phy.h・plane.h・power-set.h・power.h・psr.h・ref.h・ref-inlines.h・trans.h・vbt.h・wm-dbuf.h・wm.h・fixed.h・fourcc.h（空）
 - `src/drivers/gpu/i915/tests/display/host-xd-regs-test.c`（空）、`src/drivers/gpu/i915/display/color.h`（空）
+- `src/drivers/gpu/i915/display/watermark.c`・`watermark.h`（空、p043b の帯域）

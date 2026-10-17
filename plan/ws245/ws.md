@@ -233,6 +233,7 @@ Resume point: 2026-10-16 の方針（ユーザー「i915は、実装だけ先に
 | p041 | 4045c6b0b | 75cd8f58a（p052 の残りの記録の commit） |
 | p042 | 93ec4f94a | 7ac68c76d（p042 の調べの記録の commit） |
 | p043a | 7de79d444 | d52337e50（p042 の記録の commit。途中の commit 35b24c912） |
+| p043b の帯域（段の境 1） | d16688474 | 5733e73dc（p043a の記録の commit） |
 
 ### merge の時に Q1 が消す物（段の殻で中身を空にし vmunix.mk から外した file と、範囲の外の試験）
 
@@ -264,5 +265,6 @@ Resume point: 2026-10-16 の方針（ユーザー「i915は、実装だけ先に
 | p042 | `src/drivers/gpu/i915/display/diagnostics.c`、`diagnostics.h` | 中身を空にした（xd-diag.c と run-log.c へ） |
 | p042 | `plan/bugs/BUG-266/tests/host-trace-tc.c`・`run-host-trace-tc.sh`（判断は Q1） | 空にした diagnostics.h を読む、resolved の bug の試験で参照なし |
 | p043a | `src/drivers/gpu/i915/intel/` の `connector.h`・`ddi.h`・`dkl.h`・`dp.h`・`hotplug.h`・`mreg.h`・`phy.h`・`plane.h`・`power-set.h`・`power.h`・`psr.h`・`ref.h`・`ref-inlines.h`・`trans.h`・`vbt.h`・`wm-dbuf.h`・`wm.h`・`fixed.h`・`fourcc.h`、`src/drivers/gpu/i915/tests/display/host-xd-regs-test.c`、`src/drivers/gpu/i915/display/color.h` | 中身を空にした（本番の include は 0、旧 header と比べる試験はそれと一緒に） |
+| p043b | `src/drivers/gpu/i915/display/watermark.c`、`watermark.h` | 中身を空にした（帯域は xd-bandwidth.c、ktest-sync の DRAM・帯域の ktest は host-xd-bandwidth-test に） |
 | p040（P6） | `src/drivers/gpu/i915/display/dkl-phy.c`、`src/drivers/gpu/i915/display/dkl-phy.h`、`src/drivers/gpu/i915/intel/dkl.h` | 中身を消した（Dekel の窓は xd-tc）。WS051 の `plan/ws051/tests/host-tc.sh`・`host-tc-tables.c` の DKL の 3 check と master の Tools の行の直しも Q1（phase040） |
 
