@@ -163,7 +163,11 @@ Resume point: 2026-10-16 の方針（ユーザー「i915は、実装だけ先に
 | [p050d1](phase050d1/phase.md) | 内蔵 panel の sink の取得（PPS の用意・VDD・DPCD・EDID）と kernel の panel・DPCD の hook を xd の部品に（旧の Linux の eDP の world は旧 host 試験の間残す） | in-progress（2026-10-17 q1229-i08 で実装・host 試験・build 済み（3604ddfa1、新しい xd-edp.c、I2C over AUX、EDID の読み）、5330 は全部の段の後に 1 回） |
 | [p050d2](phase050d2/phase.md) | prepare の check（state.c の compute・CDCLK）と WM/DBUF を xd-screen の plan・xd-dbuf に | in-progress（2026-10-17 q1229-i10 で実装・host 試験・build 済み（38eef56d3）、5330 は全部の段の後に 1 回） |
 | [p050d3](phase050d3/phase.md) | plane・flip・vblank を xd-pipe・xd-screen に | in-progress（2026-10-17 q1229-i10 で実装・host 試験・build 済み（c93202cf5）、5330 は全部の段の後に 1 回） |
-| [p050d4](phase050d4/phase.md) | 口 xd.h と own の file の付け替え、旧 file と旧 host 試験・ktest の削除（oracle を xd の試験へ） | planned（5320・SV7 の節目、QEMU の boot-test） |
+| [p050d4](phase050d4/phase.md) | 口 xd.h と own の file の付け替え、旧 file と旧 host 試験・ktest の削除（oracle を xd の試験へ） | 4 段に分けた（2026-10-17 Q1、q1229-i11）: 下の p050d4a〜d4d |
+| [p050d4a](phase050d4a/phase.md) | 画面の口: 新しい xd-picture.c に画面の object と prepare・light・dark・plane・flip・status・retained・backlight を own の型で、head.c・present.c・backlight.c を付け替え | in-progress（2026-10-17 q1229-i11） |
+| [p050d4b](phase050d4b/phase.md) | 走らせ方の口: resident run・show run・kernel の binding を xd-display へ、output.c の compute を xd-screen の plan_link に | planned |
+| [p050d4c](phase050d4c/phase.md) | 始まりと終わり: eDP の device・nogem・setup_outputs・VGA・world を xd へ | planned |
+| [p050d4d](phase050d4d/phase.md) | 旧 file の削除と旧 host 試験・fake の終わり（size、`I915_XD_STRICT`、5320・SV7・QEMU の節目） | planned |
 | p039 | hotplug（xd-hpd。hotplug.c を消す） | planned（6 LW。改訂 5 で p039 を p039・p051 に分けた。節目: HDMI の plug で 2 画面はユーザーの一覧） |
 | p051 | own の output.c の port の規則と head-rules の pipe の規則を platform の記述に（hdmi.c・hdmi-mode.c・head-rules.c を消す） | planned（3 LW） |
 | [p040](phase040/phase.md) | Dekel の窓と TC PHY、TC PLL（xd-tc の窓を dkl-phy.c と一緒に入れ替える、clock.c の残りを消す） | in-progress（5 LW。2026-10-17 P6 が q1236-i01 で並行に実装・host 試験・build 済み（806e0b063）。P1 の branch に merge（bd91827a5）し、xd-output の Type-C の DP mode・levels・PHY の WA・自前の TC PLL・swing の上限を xd-tc・xd-clock の直の呼びにした（6cbff0b73）。5330 は全部の段の後に 1 回。WS051 の host-tc.sh の DKL の行の直しは Q1） |
