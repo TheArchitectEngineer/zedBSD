@@ -5,9 +5,9 @@
 #   plan/ws084/tests/reboot-loop.sh HOST COUNT OUTDIR
 # Each boot n writes OUTDIR/boot<n>.dmesg and OUTDIR/boot<n>.ps and one line
 #   REBOOT-LOOP n ok|fail seconds=S reason=...
-# (S: the seconds until ssh answered again).  A boot is ok when its dmesg has "i915: N0 decision: PROCEED",
+# (S: the seconds until ssh answered again).  A boot is ok when its dmesg has
 # "i915: takeover: rc=0", "still active 0x0" and "i915: resident display: picture up", has none of "pipe_off wait timed
-# out", "LCD-B preflight: the display is not idle" and "resident display: not started", and ps shows the compositor
+# out", "resident display: preflight: the display is not idle" and "resident display: not started", and ps shows the compositor
 # (wayland).  When ssh does not come back within 300 s the loop stops there (reason=no-ssh).  The last line is
 #   reboot-loop: OK/COUNT ok
 # and the exit status is 0 only when every boot was ok.
@@ -63,12 +63,11 @@ while [ "$n" -le "$count" ]; do
 
 	# The checks of the boot, the first one missing named as the reason.
 	reason=
-	grep -q 'i915: N0 decision: PROCEED' "$out/boot$n.dmesg" || reason=${reason:-no-n0-proceed}
 	grep -q 'i915: takeover: rc=0,' "$out/boot$n.dmesg" || reason=${reason:-no-takeover-rc0}
 	grep -q 'i915: takeover: rc=0,.*still active 0x0' "$out/boot$n.dmesg" || reason=${reason:-pipe-still-active}
 	grep -q 'i915: resident display: picture up' "$out/boot$n.dmesg" || reason=${reason:-no-picture-up}
 	grep -q 'pipe_off wait timed out' "$out/boot$n.dmesg" && reason=${reason:-pipe-off-timeout}
-	grep -q 'LCD-B preflight: the display is not idle' "$out/boot$n.dmesg" && reason=${reason:-preflight-not-idle}
+	grep -q 'resident display: preflight: the display is not idle' "$out/boot$n.dmesg" && reason=${reason:-preflight-not-idle}
 	grep -q 'resident display: not started' "$out/boot$n.dmesg" && reason=${reason:-display-not-started}
 	grep -qE '(^|[ /])wayland( |$)' "$out/boot$n.ps" || reason=${reason:-no-compositor}
 	if [ -z "$reason" ]; then
@@ -79,7 +78,7 @@ while [ "$n" -le "$count" ]; do
 	fi
 
 	# The lines a reader compares between the boots.
-	grep -E 'N0 decision|takeover:|resident display|pipe_off|LCD-B preflight|DC_off' "$out/boot$n.dmesg" | sed "s/^/  boot$n: /"
+	grep -E 'firmware:|takeover:|resident display|pipe_off|DC_off' "$out/boot$n.dmesg" | sed "s/^/  boot$n: /"
 	n=$((n + 1))
 done
 

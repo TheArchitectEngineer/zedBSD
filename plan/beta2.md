@@ -24,6 +24,11 @@
 | U16 | RDNA 機（RX 5600 XT、10.0.10.3） | P3 の p015 の kernel（agent/p3-ws039 の 471f1e395 以降） | zedBSD を起動し、`amdrdnactl advance A12` | 画面が 1280x720 に変わって約 3 秒映り、1920x1080 に戻って同じ画面が映る（mode の切り替えの目視） |
 | U17 | RDNA 機（RX 5600 XT、10.0.10.3） | P3 の p015 の kernel（agent/p3-ws039 の bf4fb396f 以降） | desktop が出ている時に monitor の cable を抜いて数秒後に挿す | 挿した後に画面が戻る（本物の HPD。amdrdnactl hotplug off/on の模擬は ok 済み） |
 | U18 | RDNA 機（RX 5600 XT、10.0.10.3） | main 0c2a5c5e1 以降の amd64 の image | text の login で `amdrdnactl reset`、また `amdrdnactl present 1280x720`・`800x600` | reset の間に画面が消えて戻る、1280x720・800x600 の絵が映り 1920x1080 に戻る（目視） |
+| U19 | 5330 | main の WS245 の merge（2026-10-17）以降の amd64 の image | 蓋を閉じて suspend し、開けて戻す | desktop と backlight の明るさが戻る（i915 の書き換えの suspend の戻り） |
+| U20 | 5330 | main の WS245 の merge（2026-10-17）以降の amd64 の image | desktop で HDMI の monitor を挿し、抜く／USB-C の DP の monitor を挿し、抜く | 2 画面になり、抜くと 1 画面に戻る |
+| U21 | 5330 | main の WS245 の merge（2026-10-17）以降の amd64 の image | HDMI の monitor を挿したまま蓋を閉じて起動 | 外部の画面に desktop が出る |
+| U22 | SV7（Gen9） | main の WS245 の merge（2026-10-17）以降の amd64 の image | 起動して backlight を変える | desktop が出て明るさが変わる |
+| U23 | 5320（Tiger Lake） | main の WS245 の merge（2026-10-17）以降の amd64 の image | 起動、backlight、suspend と戻り | 今までと同じに動く（Tiger Lake の Type-C も新しい code で動かすようにした） |
 
 ## 日程
 

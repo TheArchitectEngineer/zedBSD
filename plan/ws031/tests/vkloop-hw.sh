@@ -70,8 +70,7 @@ case "$EXTRA" in test*)
 		vkx|vkc|vke1|vke2) I915_TEST_SET=$SCENARIO ;;
 		vkcs) I915_TEST_SET=compute ;;
 		ktest|eu|draw|r1|tex|t3|bl) I915_TEST_SET=execution ;;
-		display_ktest) I915_TEST_SET=display_ktest ;;
-		*) I915_TEST_SET=display ;;
+		*) echo "vkloop-hw: scenario $SCENARIO: the display scenarios and ktests went with the old modeset (WS245, 2026-10-17); use plan/ws245/tests/run-xd-host-tests.sh" >&2; exit 2 ;;
 		esac
 	fi
 	export I915_TEST_SET

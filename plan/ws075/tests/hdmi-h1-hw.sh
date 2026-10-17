@@ -44,7 +44,7 @@ list > h1-usb-baseline.txt
 i=0
 while [ ! -f h1-usb-stop ] && [ $i -lt 600 ]; do
 	now=$(list)
-	phase=$(grep -aE 'i915: (HDMI|LCD-B|test )' run-parity-serial.log 2>/dev/null | tail -1 | cut -c1-160)
+	phase=$(grep -aE 'i915: (HDMI|display run|test )' run-parity-serial.log 2>/dev/null | tail -1 | cut -c1-160)
 	echo "== $(date +%T) t=$i | $phase" >> h1-usb-poll.log
 	echo "$now" >> h1-usb-poll.log
 	echo "$now" | while read -r path id rest; do
