@@ -545,4 +545,4 @@ WS074 の記録の q590・q594〜q598（Codex の browser3）は main の同じ�
 | q1229 / q1229-i14 | P1（phase-runner、新しい起動） | ws245-p052 の残り → p041・p042・p043・p046 | phase052 の「再開の手順」1〜5 から。dp-ext.c は既定の案（xd-dp へ） | p041 と p042 の境で返却（p052 の残り e466cb254、p041 4045c6b0b、tip 7ac68c76d） |
 | q1229 / q1229-i15 | P1（phase-runner、新しい起動） | ws245-p042 → p043・p046 | phase042 の「再開の手順」から。段の縮約は (a) | p043b の帯域と power の境で返却（p042 93ec4f94a、p043a 7de79d444、帯域 d16688474、tip 2c49ef470） |
 | q1229 / q1229-i16 | P1（phase-runner、新しい起動） | ws245-p043b の power → p046 | phase043 の「p043b の 2 つ目」から | 実装の段は全部済みで返却（power 57967dfb0、p046 16de8c315、tip db95b5a6c）。p046 は全文の読み通しが残る |
-| q1229 / q1229-i17 | T1（test-runner） | ws245 の 5330 の素の起動の回帰（tip db95b5a6c） | phase046 の「T1 に渡す実機の確かめ」1〜5。FAIL なら段の境の SHA で二分探索 | in-progress |
+| q1229 / q1229-i17 | T1（test-runner） | ws245 の 5330 の素の起動の回帰（tip db95b5a6c） | phase046 の「T1 に渡す実機の確かめ」1〜5。FAIL なら段の境の SHA で二分探索 | uncleared（未実施、2026-10-17）: 5330 の 10.0.30.3 が ping・ssh・ARP とも応答なし。kernel は build 済み（t1 の build/t1229i17/main・tip）。再開の条件: 5330 が起きて ssh に応答する事 |
