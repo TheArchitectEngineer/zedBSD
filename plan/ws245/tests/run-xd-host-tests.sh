@@ -86,7 +86,7 @@ cd "$(dirname "$0")/../../.."
 T=src/drivers/gpu/i915/tests/display
 OUT=${1:-build/ws245-host}
 mkdir -p "$OUT"
-I915_HOST_EXTRA_PRODUCTION="src/drivers/gpu/i915/perf.c src/drivers/gpu/i915/mmio-record.c ${I915_HOST_EXTRA_PRODUCTION:-}"
+I915_HOST_EXTRA_PRODUCTION="src/drivers/gpu/i915/perf.c ${I915_HOST_EXTRA_PRODUCTION:-}"
 failed=0
 for test in host-xd-regs-test host-xd-io-test host-xd-platform-test host-xd-vbt-test host-xd-survey-test host-xd-aux-test host-xd-gmbus-test host-xd-panel-test host-xd-power-test host-xd-dmc-test host-xd-clock-test host-xd-dpll-test host-xd-ddi-test host-xd-dp-test host-xd-pipe-test host-xd-dbuf-test host-xd-core-test host-xd-takeover-test host-xd-screen-test host-xd-output-test host-xd-edp-test host-xd-tc-test host-xd-cover-test host-xd-icl-test host-xd-picture-test host-output-link-test; do
 	test -f "$T/$test.c" || continue
