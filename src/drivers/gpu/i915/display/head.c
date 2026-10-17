@@ -38,7 +38,6 @@
 #include "internal.h"
 #include "head.h"
 #include "head-rules.h"
-#include "modeset.h"
 #include "output.h"
 #include "present.h"
 #include "resident.h"

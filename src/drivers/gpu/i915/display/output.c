@@ -32,7 +32,7 @@
 #include "dp-ext-kern.h"
 #include "hdmi.h"
 #include "hotplug.h"
-#include "state.h"
+#include "edp-device.h"
 #include "tc-kern.h"
 
 #include <kern/boot.h>
@@ -198,6 +198,8 @@ static int i915_output_edid_block_find(const uint8_t *block, unsigned first, uns
 static void i915_output_edid_size(const uint8_t *edid, unsigned edid_size, struct i915_lcd_mode *mode);
 static uint32_t i915_output_cvt_vsync(uint32_t width, uint32_t height);
 static void i915_output_link_from_plan(const struct i915_xd_plan *plan, uint32_t ref_khz, struct i915_display_link *link);
+static int i915_output_panel_mode(const struct i915_lcd_kernel_deps *d, uint32_t *width, uint32_t *height, uint32_t *refresh_millihz);
+static int i915_output_panel_size_mm(const struct i915_lcd_kernel_deps *d, uint32_t *width_mm, uint32_t *height_mm);
 
 /*
  * Reads the firmware's output from the record of the firmware's display.
@@ -398,7 +400,7 @@ drv_i915_display_output_mode(
 
 	/* The panel: its own timing. */
 	if (display->output.kind == I915_OUTPUT_KIND_PANEL) {
-		error = drv_i915_display_panel_mode(display->rctx.lcd, width, height, refresh_millihz);
+		error = i915_output_panel_mode(display->rctx.lcd, width, height, refresh_millihz);
 		if (error != 0)
 			return ENXIO;
 
@@ -436,7 +438,7 @@ drv_i915_display_output_size_mm(
 
 	/* The panel: the size its EDID reported. */
 	if (display->output.kind == I915_OUTPUT_KIND_PANEL) {
-		error = drv_i915_display_panel_size_mm(display->rctx.lcd, width_mm, height_mm);
+		error = i915_output_panel_size_mm(display->rctx.lcd, width_mm, height_mm);
 		if (error != 0)
 			return ENODEV;
 
@@ -514,7 +516,7 @@ drv_i915_display_output_connector(
 		return 0;
 
 	/* The panel's own mode; without one there is no panel to show. */
-	error = drv_i915_display_panel_mode(display->rctx.lcd, &width, &height, &refresh_millihz);
+	error = i915_output_panel_mode(display->rctx.lcd, &width, &height, &refresh_millihz);
 	if (error != 0)
 		return 0;
 
@@ -525,7 +527,7 @@ drv_i915_display_output_connector(
 	found->refresh_millihz = refresh_millihz;
 
 	/* Its size, when its EDID gave one. */
-	error = drv_i915_display_panel_size_mm(display->rctx.lcd, &width_mm, &height_mm);
+	error = i915_output_panel_size_mm(display->rctx.lcd, &width_mm, &height_mm);
 	if (error == 0) {
 		found->width_mm = width_mm;
 		found->height_mm = height_mm;
@@ -1669,4 +1671,76 @@ i915_output_link_from_plan(
 		link->cfgcr1 = plan->pll.cfgcr1;
 		link->div0 = plan->pll.div0;
 	}
+}
+
+/*
+ * Reports the mode of the built-in panel: its size and refresh rate.
+ *
+ * The refresh rate is the pixel clock over the pixels of one frame, in
+ * millihertz and rounded to nearest.  ENODEV when there is no panel or its
+ * mode is empty.
+ */
+static int
+i915_output_panel_mode(
+	const struct i915_lcd_kernel_deps *d,
+	uint32_t *width,
+	uint32_t *height,
+	uint32_t *refresh_millihz)
+{
+	const struct i915_display_mode *mode;
+	uint64_t pixels;
+
+	/* Refuses a node without the panel. */
+	if (d == NULL)
+		return ENODEV;
+	if (d->edp == NULL)
+		return ENODEV;
+
+	/* The pixels of one frame, the blanks included. */
+	mode = &d->edp->mode;
+	pixels = (uint64_t)mode->htotal * mode->vtotal;
+
+	/* Refuses a mode the panel's EDID or the VBT left empty. */
+	if (mode->hdisplay == 0u)
+		return ENODEV;
+	if (mode->vdisplay == 0u)
+		return ENODEV;
+	if (pixels == 0u)
+		return ENODEV;
+	if (mode->clock_khz <= 0)
+		return ENODEV;
+
+	/* The visible size, and the frames a second in millihertz. */
+	*width = mode->hdisplay;
+	*height = mode->vdisplay;
+	*refresh_millihz = (uint32_t)(((uint64_t)mode->clock_khz * 1000000ull + pixels / 2u) / pixels);
+
+	/* Succeeded: the panel's mode is reported. */
+	return 0;
+}
+
+/*
+ * Reports the physical size of the built-in panel in millimetres; ENODEV
+ * when there is no panel or its EDID gave no size.
+ */
+static int
+i915_output_panel_size_mm(
+	const struct i915_lcd_kernel_deps *d,
+	uint32_t *width_mm,
+	uint32_t *height_mm)
+{
+	/* Refuses a node without the panel, or a panel without a size. */
+	if (d == NULL)
+		return ENODEV;
+	if (d->edp == NULL)
+		return ENODEV;
+	if (d->edp->mode.width_mm == 0u)
+		return ENODEV;
+
+	/* The size the panel's EDID reported. */
+	*width_mm = d->edp->mode.width_mm;
+	*height_mm = d->edp->mode.height_mm;
+
+	/* Succeeded: the panel's size is reported. */
+	return 0;
 }

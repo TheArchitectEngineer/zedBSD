@@ -272,10 +272,12 @@ i915_dp_aux_stalled(
 /*
  * Runs one AUX message on the port (the Linux intel_dp_aux_xfer()).
  *
- * The AUX power domain is taken, then the PPS lock, and VDD is forced on
- * for the message when it was not on already; all three are given back in
- * reverse order, the power reference asynchronously.  It returns the bytes
- * received, or a negative Linux errno.
+ * The AUX power domain is taken, then the display core's and the lock the
+ * ports' messages share; they are given back in reverse order, the AUX
+ * power reference asynchronously.  Only external DisplayPort ports come
+ * here: the built-in panel's sink, whose panel power and VDD a message
+ * needs, is taken by xd-edp.c.  It returns the bytes received, or a
+ * negative Linux errno.
  */
 static int
 i915_dp_aux_xfer(
@@ -293,9 +295,8 @@ i915_dp_aux_xfer(
 	bool connected;
 	int aux_domain;
 	intel_wakeref_t aux_wakeref;
-	intel_wakeref_t pps_wakeref;
+	intel_wakeref_t core_wakeref;
 	int transferred;
-	bool vdd;
 
 	/* Finds the port, the device, and whether the port is Type-C. */
 	dig_port = i915_dp_dp_to_dig_port(intel_dp);
@@ -317,34 +318,24 @@ i915_dp_aux_xfer(
 		}
 	}
 
-	/* Powers the channel and takes the PPS lock. */
+	/* Powers the channel and the display core, and takes the ports' message lock. */
 	aux_domain = i915_aux_power_domain(dig_port);
 
 	aux_wakeref = i915_dp_intel_display_power_get(i915, aux_domain);
-	pps_wakeref = drv_i915_pps_lock(intel_dp);
-
-	/*
-	 * Forces VDD on unless it already is (DPCD, EDID and OUI reads come
-	 * with VDD on and leave it to the upper layers to turn it off).
-	 */
-	vdd = drv_i915_pps_vdd_on_unlocked(intel_dp);
+	core_wakeref = i915_dp_intel_display_power_get(i915, POWER_DOMAIN_DISPLAY_CORE);
+	I915_DP_MUTEX_LOCK(&i915->display.pps.mutex);
 
 	/* Asks for the lowest wake-up latency: AUX is very sensitive to IRQ latency. */
 	cpu_latency_qos_update_request(&intel_dp->pm_qos, 0);
 
-	/* Warns when the panel has neither power nor VDD. */
-	drv_i915_pps_check_power_unlocked(intel_dp);
-
 	/* Runs the message on the hardware channel. */
 	transferred = i915_dp_aux_exchange(intel_dp, i915, send, send_bytes, recv, recv_size, hdcp_key);
 
-	/* Gives back the latency request, VDD, the lock and the power, in reverse order. */
+	/* Gives back the latency request, the lock and the power, in reverse order. */
 	cpu_latency_qos_update_request(&intel_dp->pm_qos, PM_QOS_DEFAULT_VALUE);
 
-	if (vdd)
-		drv_i915_pps_vdd_off_unlocked(intel_dp, false);
-
-	(void)drv_i915_pps_unlock(intel_dp, pps_wakeref);
+	I915_DP_MUTEX_UNLOCK(&i915->display.pps.mutex);
+	i915_dp_intel_display_power_put(i915, POWER_DOMAIN_DISPLAY_CORE, core_wakeref);
 	i915_dp_intel_display_power_put_async(i915, aux_domain, aux_wakeref);
 
 	/* Releases the Type-C port. */

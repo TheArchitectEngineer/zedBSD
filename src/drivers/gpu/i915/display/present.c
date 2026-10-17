@@ -50,7 +50,6 @@
 #include "internal.h"
 #include "display.h"
 #include "output.h"
-#include "modeset.h"
 #include "present.h"
 #include "resident.h"
 #include "scanout.h"

@@ -19,7 +19,7 @@
  * access.
  */
 
-#include "modeset-internal.h"
+#include "internal.h"
 #include "dmc.h"
 #include "power.h"
 #include "xd-dmc.h"

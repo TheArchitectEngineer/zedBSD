@@ -37,9 +37,6 @@ void drv_i915_lcd_trace_init(struct i915_lcd_trace *trace, struct i915_lcd_emit 
 /* Records a phase marker written by the caller. */
 void drv_i915_lcd_trace_phase(struct i915_lcd_trace *trace, const char *name);
 
-/* Finds the first entry of a kind at or after `from` (by name for named kinds, else by `a`); -1 when none. */
-int drv_i915_lcd_trace_find(const struct i915_lcd_trace *trace, int kind, uint32_t a, const char *name, unsigned from);
-
 /*
  * ==== The commit observer ====
  */
@@ -65,18 +62,9 @@ int drv_i915_lcd_observer_frames(struct i915_lcd_observer *observer, unsigned wi
 /* Reports the stop evidence; 0, EINVAL when none was taken, or EBUSY when the pipe was not stopped. */
 int drv_i915_lcd_observer_stopped(struct i915_lcd_observer *observer, unsigned window_ms, uint32_t *first, uint32_t *last);
 
-/* Reads TRANSCONF of the pipe; 1 when its state bit says enabled, 0 otherwise. */
-int drv_i915_lcd_observer_pipe_active(struct i915_lcd_observer *observer, uint32_t *transconf);
-
 /*
  * ==== The named registers and the last-resort stop ====
  */
-
-/* Fills and returns the world's register table for a pipe, port and DPLL; *n is its length. */
-const struct i915_lcd_named_reg *drv_i915_lcd_reg_table(struct i915_lcd_world *world, int pipe, int port, int dpll_id, unsigned *n);
-
-/* Returns the offset of a named register of pipe A / port A / DPLL 0; 0 for an unknown name. */
-uint32_t drv_i915_lcd_reg_by_name(struct i915_lcd_world *world, const char *name);
 
 /* Stops every pipe and DDI buffer still on; returns how many were stopped. */
 unsigned drv_i915_lcd_last_resort_stop(struct i915_mmio *mmio);
@@ -96,9 +84,6 @@ void drv_i915_display_survey(struct i915_display *display);
  * ==== The panel run's hooks and log ====
  */
 
-/* The note sink of the Linux text: prints one note. */
-void drv_i915_lcd_kernel_note_sink(const char *fmt);
-
 /* The step hook: counts and prints a decided or an unresolved callee (ctx is the struct i915_lcd_kernel). */
 void drv_i915_lcd_kernel_step(void *ctx, const char *name);
 
@@ -113,9 +98,6 @@ void drv_i915_lcd_debug_set(int enabled);
 
 /* Reports whether i915.debug=display asked for the detailed display log. */
 int drv_i915_lcd_debug_enabled(void);
-
-/* Logs the named registers, optionally next to Linux's dump. */
-void drv_i915_lcd_log_regs(struct i915_lcd_world *world, struct i915_lcd_kernel *k, const char *when, int compare);
 
 /* Logs the run log. */
 void drv_i915_lcd_log_trace(const struct i915_lcd_trace *trace);

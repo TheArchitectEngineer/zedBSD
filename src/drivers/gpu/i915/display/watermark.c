@@ -61,14 +61,7 @@
  */
 
 #include "internal.h"
-#include "modeset-internal.h"
-#include "watermark-internal.h"
-#include "takeover-internal.h"
 #include "watermark.h"
-#include "state.h"
-#include "edid.h"
-#include "pipe.h"
-#include "plane.h"
 #include "xd-dbuf.h"
 #include "xd-io.h"
 #include "xd-platform.h"
@@ -105,13 +98,6 @@
 #define ICL_PCODE_REQ_QGV_PT(x)           ((((unsigned)(x)) << 0) & ICL_PCODE_REQ_QGV_PT_MASK)
 #define ADLS_PCODE_REQ_PSF_PT_MASK        0x700u
 #define ADLS_PCODE_REQ_PSF_PT(x)          ((((unsigned)(x)) << 8) & ADLS_PCODE_REQ_PSF_PT_MASK)
-
-/* Wa_14016740474 (display version 14 A0..C0 only; never taken on ADL-P). */
-#define XELPD_CHICKEN_DCPR_3              0x46434u
-#define DMD_RSP_TIMEOUT_DISABLE           (1u << 19)
-
-/* The display stepping index of STEP_C0 (STEP_A0 is 0). */
-#define I915_WM_STEP_C0 8
 
 /*
  * The PCODE memory-subsystem requests (ICL_PCODE_MEM_SUBSYSYSTEM_INFO with
@@ -164,44 +150,8 @@ struct i915_qgv_info {
 	unsigned deinterleave;
 };
 
-/*
- * The parameters one plane's watermark levels are computed from (the Linux
- * struct skl_wm_params).
- */
-struct skl_wm_params {
-	bool x_tiled, y_tiled;
-	bool rc_surface;
-	bool is_planar;
-	u32 width;
-	u8 cpp;
-	u32 plane_pixel_rate;
-	u32 y_min_scanlines;
-	u32 plane_bytes_per_line;
-	uint_fixed_16_16_t plane_blocks_per_line;
-	uint_fixed_16_16_t y_tile_minimum;
-	u32 linetime_us;
-	u32 dbuf_block_size;
-};
-
-/*
- * The walk that hands out a pipe's DDB to its planes (the Linux struct
- * skl_plane_ddb_iter): what is left of the data rate and of the blocks.
- */
-struct skl_plane_ddb_iter {
-	u64 data_rate;
-	u16 start, size;
-};
-
-/*
- * The duplicate and destroy hooks of the bandwidth and PM demand global
- * objects: empty, as the atomic commit is not ported (see state.c).
- */
-static const struct i915_global_state_funcs i915_bw_funcs = { 0, 0 };
-static const struct i915_global_state_funcs i915_pmdemand_funcs = { 0, 0 };
-
 static unsigned i915_genmask_low(unsigned num);
 static int i915_is_power_of_2(unsigned n);
-static uint32_t i915_wm_rmw(struct i915_mmio *mmio, uint32_t reg, uint32_t clear, uint32_t set);
 static int i915_icl_get_qgv_points(struct mutex *sb_lock, struct i915_mmio *mmio, const struct i915_dram_info *di, struct i915_qgv_info *qi, int is_y_tile);
 static unsigned i915_sagv_max_dclk(const struct i915_qgv_info *qi);
 static unsigned i915_icl_max_bw_index(const struct i915_bw_state *bw, int num_planes, int qgv_point);
@@ -211,47 +161,6 @@ static unsigned i915_adl_psf_bw(const struct i915_bw_state *bw, int psf_gv_point
 static uint16_t i915_icl_prepare_qgv_points_mask(const struct i915_bw_state *bw, unsigned qgv_points, unsigned psf_points);
 static int i915_is_sagv_enabled(const struct i915_bw_state *bw, uint16_t points_mask);
 static void i915_icl_force_disable_sagv(struct i915_display_state *d, struct mutex *sb_lock, struct i915_mmio *mmio, int display_ver, struct i915_bw_state *bw, struct i915_bw_obj_state *bw_obj);
-
-/*
- * Creates the watermark world of a display.
- *
- * The world starts zeroed: no DBUF state is published and no watermark
- * context is bound.  Returns 0, or ENOMEM.
- */
-int
-drv_i915_wm_world_create(
-	struct i915_display *display)
-{
-	struct i915_wm_world *world;
-
-	/* Allocates the world cleared. */
-	world = kern_calloc(1, sizeof(*world));
-	if (world == NULL)
-		return ENOMEM;
-
-	/* The display owns the world until the destroy; the world knows its display. */
-	world->display = display;
-	display->wm_world = world;
-
-	/* Succeeded: the display has its watermark world. */
-	return 0;
-}
-
-/*
- * Destroys the watermark world of a display.
- */
-void
-drv_i915_wm_world_destroy(
-	struct i915_display *display)
-{
-	/* A display without a world has nothing to free. */
-	if (display->wm_world == NULL)
-		return;
-
-	/* Frees the world; the display no longer has one. */
-	kern_free(display->wm_world);
-	display->wm_world = NULL;
-}
 
 /*
  * Decodes the PCODE global memory information (the gen12 decode of
@@ -473,14 +382,14 @@ drv_i915_bw_init_hw(
 			/* The raw bandwidth, derated and capped, and the peak. */
 			bw_j = DIV_ROUND_UP((int)sp->dclk * clpchgroup * 32 * num_channels, ct);
 			bi->deratedbw[j] = (unsigned)min(maxdebw, bw_j * (100 - I915_ADLP_SA_DERATING) / 100);
-			bi->peakbw[j] = (unsigned)DIV_ROUND_CLOSEST((int)sp->dclk * num_channels * (int)qi.channel_width, 8);
+			bi->peakbw[j] = (unsigned)(((int)sp->dclk * num_channels * (int)qi.channel_width + 4) / 8);
 			kern_logf("i915: bw: BW%d/QGV%d num_planes=%u deratedbw=%u peakbw=%u\n",
 				i, j, bi->num_planes, bi->deratedbw[j], bi->peakbw[j]);
 		}
 
 		/* The bandwidth of each PSF GV point. */
 		for (j = 0; j < (int)qi.num_psf_points; j++) {
-			bi->psf_bw[j] = (unsigned)DIV_ROUND_CLOSEST(64 * (int)qi.psf_points[j].clk * 100, 6);
+			bi->psf_bw[j] = (unsigned)((64 * (int)qi.psf_points[j].clk * 100 + 3) / 6);
 			kern_logf("i915: bw: BW%d/PSF%d num_planes=%u bw=%u\n",
 				i, j, bi->num_planes, bi->psf_bw[j]);
 		}
@@ -723,19 +632,10 @@ drv_i915_bw_init(
 	struct mutex *sb_lock,
 	struct i915_mmio *mmio)
 {
-	int error;
 	int has_sagv;
 
-	/* Allocates the bandwidth state. */
-	error = drv_i915_alloc_global_state(d, &d->bw_obj_state, (unsigned)sizeof(d->bw_obj_state));
-	if (error != 0) {
-		d->fail_where = "intel_bw_init";
-		return error;
-	}
-
-	/* Registers the object on the global list and names it. */
-	drv_i915_atomic_global_obj_init(d, &d->bw_obj, &d->bw_obj_state.base, &i915_bw_funcs);
-	d->bw_obj.name = "bw";
+	/* The bandwidth state starts cleared. */
+	kern_memset(&d->bw_obj_state, 0, sizeof(d->bw_obj_state));
 
 	/* Forces SAGV off on display versions 11..13 when the display controls it. */
 	has_sagv = drv_i915_has_sagv(display_ver, I915_PLAT_NONE, bw->sagv_status);
@@ -745,43 +645,6 @@ drv_i915_bw_init(
 	}
 
 	/* Succeeded: the bandwidth object is registered. */
-	return 0;
-}
-
-/*
- * Creates the PM demand global object (intel_pmdemand_init()).
- *
- * Wa_14016740474 (IS_DISPLAY_IP_STEP(i915, IP_VER(14, 0), STEP_A0,
- * STEP_C0)) applies to display version 14 only and so never on ADL-P.
- * Returns 0, or the error of the state allocation.
- */
-int
-drv_i915_pmdemand_init(
-	struct i915_display_state *d,
-	int display_ver,
-	struct i915_mmio *mmio,
-	int ip_step)
-{
-	int error;
-
-	/* Allocates the PM demand state. */
-	error = drv_i915_alloc_global_state(d, &d->pmdemand_state, (unsigned)sizeof(d->pmdemand_state));
-	if (error != 0) {
-		d->fail_where = "intel_pmdemand_init";
-		return error;
-	}
-
-	/* Registers the object on the global list and names it. */
-	drv_i915_atomic_global_obj_init(d, &d->pmdemand_obj, &d->pmdemand_state.base, &i915_pmdemand_funcs);
-	d->pmdemand_obj.name = "pmdemand";
-
-	/* Wa_14016740474: display version 14, steppings A0 up to (not including) C0. */
-	if (display_ver == 14 && ip_step >= 0 && ip_step < I915_WM_STEP_C0) {
-		(void)i915_wm_rmw(mmio, XELPD_CHICKEN_DCPR_3, 0u, DMD_RSP_TIMEOUT_DISABLE);
-		d->pmdemand_wa_14016740474 = 1;
-	}
-
-	/* Succeeded: the PM demand object is registered. */
 	return 0;
 }
 
@@ -815,29 +678,6 @@ i915_is_power_of_2(
 
 	/* Succeeded: n is a power of two. */
 	return 1;
-}
-
-/* Clears and sets bits of a register, writing only when the value changes (intel_de_rmw()); reports the old value. */
-static uint32_t
-i915_wm_rmw(
-	struct i915_mmio *mmio,
-	uint32_t reg,
-	uint32_t clear,
-	uint32_t set)
-{
-	uint32_t old_value;
-	uint32_t new_value;
-
-	/* The register's value and its changed value. */
-	old_value = drv_i915_read32(mmio, reg);
-	new_value = (old_value & ~clear) | set;
-
-	/* Writes only a changed value. */
-	if (new_value != old_value)
-		drv_i915_write32(mmio, reg, new_value);
-
-	/* Succeeded: reports the value before the change. */
-	return old_value;
 }
 
 /* Reads the QGV and PSF points from the PCODE (icl_get_qgv_points(), display 12+, Y tiling assumed). */

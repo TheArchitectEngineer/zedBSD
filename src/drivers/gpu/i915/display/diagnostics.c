@@ -34,16 +34,13 @@
  */
 
 #include "internal.h"
-#include "modeset-internal.h"
-#include "watermark-internal.h"
+
 #include <kern/kcrt.h>
 
 /* The backlight PWM registers and the DDI / transcoder registers the table names. */
-#include "../intel/mreg.h"
-#include "../intel/trans.h"
+#include "../intel/display-regs-xd.h"
 
 #include "diagnostics.h"
-#include "modeset.h"
 #include "power.h"
 #include "../mmio.h"
 
@@ -197,9 +194,7 @@ static void i915_trace_named(struct i915_lcd_trace *trace, int kind, const char 
 static void i915_trace_step(void *ctx, const char *name);
 static void i915_trace_error(void *ctx, const char *what);
 static void i915_trace_debug(void *ctx, const char *what);
-static int i915_trace_kind_is_named(int kind);
 static void i915_observer_sample(struct i915_lcd_observer *observer, int point, int clear_all);
-static void i915_reg_table_row(struct i915_lcd_world *world, unsigned *count, const char *name, i915_reg_t reg, int has_linux, uint32_t linux_value, uint32_t compare_mask);
 static const char *i915_log_line_end(const char *text);
 static const char *i915_trace_kind_name(int kind);
 
@@ -345,56 +340,6 @@ drv_i915_lcd_trace_phase(
 }
 
 /*
- * Finds the first entry of a kind at or after an index.
- *
- * A named kind (step, error, phase, decided) matches when its name contains
- * `name`; any other kind matches when its first operand equals `a`.
- * Returns the index, or -1 when no entry matches.
- */
-int
-drv_i915_lcd_trace_find(
-	const struct i915_lcd_trace *trace,
-	int kind,
-	uint32_t a,
-	const char *name,
-	unsigned from)
-{
-	const struct i915_lcd_trace_entry *entry;
-	const char *found;
-	unsigned index;
-	int named;
-
-	/* Walks the record from the first index asked for. */
-	for (index = from; index < trace->n; index++) {
-		entry = &trace->e[index];
-
-		/* Skips an entry of another kind. */
-		if (entry->kind != kind)
-			continue;
-
-		/* A named kind is matched by its name, any other by its first operand. */
-		named = i915_trace_kind_is_named(kind);
-		if (named) {
-			/* An entry without a name, or a search without one, never matches. */
-			if (name == NULL)
-				continue;
-			if (entry->name == NULL)
-				continue;
-
-			/* The name matches when it contains the one searched for. */
-			found = kern_strstr(entry->name, name);
-			if (found != NULL)
-				return (int)index;
-		} else if (entry->a == a) {
-			return (int)index;
-		}
-	}
-
-	/* No entry of the record matches. */
-	return -1;
-}
-
-/*
  * ==== The commit observer ====
  */
 
@@ -416,16 +361,16 @@ drv_i915_lcd_observer_init(
 	observer->pipe = pipe;
 
 	/* Names the pipe's status, frame counter and interrupt mask registers. */
-	observer->status_reg = i915_mmio_reg_offset(ICL_PIPESTATUS(pipe));
-	observer->frame_reg = i915_mmio_reg_offset(PIPE_FRMCOUNT_G4X(pipe));
-	observer->imr_reg = i915_mmio_reg_offset(GEN8_DE_PIPE_IMR(pipe));
+	observer->status_reg = I915_XD_PIPE_STATUS((unsigned)pipe);
+	observer->frame_reg = I915_XD_PIPE_FRMCNT((unsigned)pipe);
+	observer->imr_reg = I915_XD_DE_PIPE_ISR((unsigned)pipe) + I915_XD_DE_IMR_OFFSET;
 
 	/* Selects the underrun bits of this display version and the vblank bit. */
-	observer->underrun_mask = PIPE_STATUS_UNDERRUN |
-				  PIPE_STATUS_SOFT_UNDERRUN_XELPD |
-				  PIPE_STATUS_HARD_UNDERRUN_XELPD |
-				  PIPE_STATUS_PORT_UNDERRUN_XELPD;
-	observer->vblank_bit = GEN8_PIPE_VBLANK;
+	observer->underrun_mask = I915_XD_PIPE_STATUS_UNDERRUN |
+				  I915_XD_PIPE_STATUS_UNDERRUN_SOFT |
+				  I915_XD_PIPE_STATUS_UNDERRUN_HARD |
+				  I915_XD_PIPE_STATUS_UNDERRUN_PORT;
+	observer->vblank_bit = I915_XD_PIPE_INT_VBLANK;
 }
 
 /*
@@ -563,7 +508,7 @@ drv_i915_lcd_observer_stopped(
 		return EINVAL;
 
 	/* The transcoder still reported itself enabled. */
-	if ((observer->stop_transconf & TRANSCONF_STATE_ENABLE) != 0u)
+	if ((observer->stop_transconf & I915_XD_TRANS_CONF_STATE) != 0u)
 		return EBUSY;
 
 	/* The frame counter still advanced after the disable. */
@@ -575,164 +520,8 @@ drv_i915_lcd_observer_stopped(
 }
 
 /*
- * Reads whether the observed pipe's transcoder is enabled.
- *
- * The TRANSCONF value read is reported when asked for.  Returns 1 when
- * its state bit says enabled, 0 otherwise.
- */
-int
-drv_i915_lcd_observer_pipe_active(
-	struct i915_lcd_observer *observer,
-	uint32_t *transconf)
-{
-	uint32_t transconf_reg;
-	uint32_t value;
-
-	/* Reads the transcoder's configuration. */
-	transconf_reg = i915_mmio_reg_offset(TRANSCONF((enum transcoder)observer->pipe));
-	value = observer->hw->read32(observer->hw->ctx, transconf_reg);
-
-	/* Reports the value read when asked for. */
-	if (transconf != NULL)
-		*transconf = value;
-
-	/* The state bit is clear: the transcoder is off. */
-	if ((value & TRANSCONF_STATE_ENABLE) == 0u)
-		return 0;
-
-	/* Succeeded: the transcoder is on. */
-	return 1;
-}
-
-/*
  * ==== The named registers and the last-resort stop ====
  */
-
-/*
- * Fills the world's register table for a pipe, port and DPLL.
- *
- * Each row names a register by its Linux macro and, where Linux's dump of
- * this machine (same panel, same mode) has one, the value Linux left there
- * and the bits compared.  The table is refilled on every call; *n is the
- * number of rows.
- */
-const struct i915_lcd_named_reg *
-drv_i915_lcd_reg_table(
-	struct i915_lcd_world *world,
-	int pipe,
-	int port,
-	int dpll_id,
-	unsigned *n)
-{
-	enum transcoder transcoder;
-	unsigned count;
-
-	/* The transcoder of the pipe has the pipe's number. */
-	transcoder = (enum transcoder)pipe;
-	count = 0;
-
-	/* The DPLL enable: only its enable, lock and power bits are compared. */
-	i915_reg_table_row(world, &count, "ICL_DPLL_ENABLE", ICL_DPLL_ENABLE(dpll_id), 1, 0xcc000000u, 0xcc000000u);
-
-	/* The DPLL's configuration words. */
-	i915_reg_table_row(world, &count, "TGL_DPLL_CFGCR0", TGL_DPLL_CFGCR0(dpll_id), 1, 0x00e001a5u, 0xffffffffu);
-	i915_reg_table_row(world, &count, "TGL_DPLL_CFGCR1", TGL_DPLL_CFGCR1(dpll_id), 1, 0x00000088u, 0xffffffffu);
-
-	/* The DDI clock selection, which the dump does not carry. */
-	i915_reg_table_row(world, &count, "ICL_DPCLKA_CFGCR0", ICL_DPCLKA_CFGCR0, 0, 0u, 0u);
-
-	/* The DDI buffer control: the idle bit (bit 7) is not compared. */
-	i915_reg_table_row(world, &count, "DDI_BUF_CTL", DDI_BUF_CTL(port), 1, 0x80000002u, 0xffffff7fu);
-
-	/* The transcoder's clock selection and DDI function. */
-	i915_reg_table_row(world, &count, "TRANS_CLK_SEL", TRANS_CLK_SEL(transcoder), 1, 0x10000000u, 0xffffffffu);
-	i915_reg_table_row(world, &count, "TRANS_DDI_FUNC_CTL", TRANS_DDI_FUNC_CTL(transcoder), 1, 0x8a210002u, 0xffffffffu);
-
-	/* The transcoder's enable and state bits. */
-	i915_reg_table_row(world, &count, "TRANSCONF", TRANSCONF(transcoder), 1, 0xc0000000u, 0xc0000000u);
-
-	/* The pipe's misc word: not in the register dump; Linux's display_info says dither=yes, bpp=18. */
-	i915_reg_table_row(world, &count, "PIPE_MISC", PIPE_MISC(pipe), 0, 0u, 0u);
-
-	/* The primary plane's control, colour, stride and size. */
-	i915_reg_table_row(world, &count, "PLANE_CTL_1", PLANE_CTL(pipe, PLANE_PRIMARY), 1, 0x94000000u, 0xffffffffu);
-	i915_reg_table_row(world, &count, "PLANE_COLOR_CTL_1", PLANE_COLOR_CTL(pipe, PLANE_PRIMARY), 1, 0x00002000u, 0xffffffffu);
-	i915_reg_table_row(world, &count, "PLANE_STRIDE_1", PLANE_STRIDE(pipe, PLANE_PRIMARY), 1, 0x00000078u, 0xffffffffu);
-	i915_reg_table_row(world, &count, "PLANE_SIZE_1", PLANE_SIZE(pipe, PLANE_PRIMARY), 1, 0x0437077fu, 0xffffffffu);
-
-	/* The primary plane's surface address, which differs from Linux's by nature. */
-	i915_reg_table_row(world, &count, "PLANE_SURF_1", PLANE_SURF(pipe, PLANE_PRIMARY), 0, 0u, 0u);
-
-	/* The primary plane's level-0 watermark and its DDB allocation. */
-	i915_reg_table_row(world, &count, "PLANE_WM_1_0", PLANE_WM(pipe, PLANE_PRIMARY, 0), 1, 0x80004010u, 0xffffffffu);
-	i915_reg_table_row(world, &count, "PLANE_BUF_CFG_1", PLANE_BUF_CFG(pipe, PLANE_PRIMARY), 1, 0x0fdb0000u, 0xffffffffu);
-
-	/* The MBUS control and the pipe's MBUS DBOX, which the dump does not carry. */
-	i915_reg_table_row(world, &count, "MBUS_CTL", MBUS_CTL, 1, 0xdc000700u, 0xffffffffu);
-	i915_reg_table_row(world, &count, "PIPE_MBUS_DBOX_CTL", PIPE_MBUS_DBOX_CTL(pipe), 0, 0u, 0u);
-
-	/* The four DBUF slices: Linux powered the first two. */
-	i915_reg_table_row(world, &count, "DBUF_CTL_S1", DBUF_CTL_S(DBUF_S1), 1, 0xc043c000u, 0xffffffffu);
-	i915_reg_table_row(world, &count, "DBUF_CTL_S2", DBUF_CTL_S(DBUF_S2), 1, 0xc043c000u, 0xffffffffu);
-	i915_reg_table_row(world, &count, "DBUF_CTL_S3", DBUF_CTL_S(DBUF_S3), 0, 0u, 0u);
-	i915_reg_table_row(world, &count, "DBUF_CTL_S4", DBUF_CTL_S(DBUF_S4), 0, 0u, 0u);
-
-	/* The backlight PWM control. */
-	i915_reg_table_row(world, &count, "BXT_BLC_PWM_CTL", BXT_BLC_PWM_CTL(0), 0, 0u, 0u);
-
-	/*
-	 * The backlight PWM frequency at 0xc8254: the dump tool labels it
-	 * BLC_PWM_PCH_CTL2; the CNP backlight code of the reference names it
-	 * BXT_BLC_PWM_FREQ(0).
-	 */
-	i915_reg_table_row(world, &count, "BXT_BLC_PWM_FREQ", BXT_BLC_PWM_FREQ(0), 1, 0x00017700u, 0xffffffffu);
-
-	/* The backlight PWM duty cycle. */
-	i915_reg_table_row(world, &count, "BXT_BLC_PWM_DUTY", BXT_BLC_PWM_DUTY(0), 0, 0u, 0u);
-
-	/* The pipe's status and interrupt registers and its frame counter. */
-	i915_reg_table_row(world, &count, "ICL_PIPESTATUS", ICL_PIPESTATUS(pipe), 0, 0u, 0u);
-	i915_reg_table_row(world, &count, "GEN8_DE_PIPE_IMR", GEN8_DE_PIPE_IMR(pipe), 0, 0u, 0u);
-	i915_reg_table_row(world, &count, "GEN8_DE_PIPE_IER", GEN8_DE_PIPE_IER(pipe), 0, 0u, 0u);
-	i915_reg_table_row(world, &count, "GEN8_DE_PIPE_IIR", GEN8_DE_PIPE_IIR(pipe), 0, 0u, 0u);
-	i915_reg_table_row(world, &count, "PIPE_FRMCOUNT_G4X", PIPE_FRMCOUNT_G4X(pipe), 0, 0u, 0u);
-
-	/* Reports the number of rows filled. */
-	*n = count;
-
-	/* Succeeded: the table lives in the world. */
-	return world->table;
-}
-
-/*
- * Returns the offset of a named register of pipe A, port A and DPLL 0.
- *
- * The name is one of the table's row names; an unknown name gives 0.
- */
-uint32_t
-drv_i915_lcd_reg_by_name(
-	struct i915_lcd_world *world,
-	const char *name)
-{
-	const struct i915_lcd_named_reg *table;
-	unsigned count;
-	unsigned index;
-	int order;
-
-	/* Fills the table for pipe A, port A and DPLL 0. */
-	count = 0;
-	table = drv_i915_lcd_reg_table(world, 0, 0, 0, &count);
-
-	/* Looks the name up among the rows. */
-	for (index = 0; index < count; index++) {
-		order = kern_strcmp(table[index].name, name);
-		if (order == 0)
-			return table[index].reg;
-	}
-
-	/* No row has that name. */
-	return 0u;
-}
 
 /*
  * Stops every pipe and DDI buffer that is still on.
@@ -939,19 +728,6 @@ drv_i915_display_survey(
  */
 
 /*
- * Prints one note of the Linux text.
- *
- * This is the note sink bound while the notes are traced.
- */
-void
-drv_i915_lcd_kernel_note_sink(
-	const char *fmt)
-{
-	/* The note is printed as it is, after the prefix. */
-	kern_logf("i915: N1 note: %s", fmt);
-}
-
-/*
  * Counts and prints a callee of the Linux text that is not ported.
  *
  * This is the step hook of a panel run; ctx is the struct i915_lcd_kernel.
@@ -1036,73 +812,6 @@ drv_i915_lcd_kernel_debug(
 	/* Prints the message as one line. */
 	line_end = i915_log_line_end(what);
 	kern_logf("i915: LCD-B debug: %s%s", what, line_end);
-}
-
-/*
- * Logs the named registers of pipe A, port A and DPLL 0.
- *
- * With compare set, each register Linux's dump has a value for is printed
- * next to it with the verdict, and the number of matches is printed last;
- * no value is copied from the dump.
- */
-void
-drv_i915_lcd_log_regs(
-	struct i915_lcd_world *world,
-	struct i915_lcd_kernel *k,
-	const char *when,
-	int compare)
-{
-	const struct i915_lcd_named_reg *table;
-	const char *verdict;
-	unsigned count;
-	unsigned index;
-	unsigned match;
-	unsigned compared;
-	uint32_t value;
-
-	/* Fills the table for pipe A, port A and DPLL 0. */
-	count = 0u;
-	match = 0u;
-	compared = 0u;
-	table = drv_i915_lcd_reg_table(world, 0, 0, 0, &count);
-
-	/* Reads and prints every row. */
-	for (index = 0u; index < count; index++) {
-		value = drv_i915_read32(k->d->mmio, table[index].reg);
-
-		/* A row with a Linux value is compared under its mask when asked for. */
-		if (compare && table[index].has_linux) {
-			compared++;
-			if ((value & table[index].compare_mask) == (table[index].linux_value & table[index].compare_mask)) {
-				match++;
-				verdict = "same";
-			} else {
-				verdict = "DIFFERENT";
-			}
-			kern_logf("i915: LCD-B reg[%s] %s 0x%05x = 0x%08x | Linux 0x%08x mask 0x%08x %s\n",
-				when,
-				table[index].name,
-				table[index].reg,
-				value,
-				table[index].linux_value,
-				table[index].compare_mask,
-				verdict);
-		} else {
-			kern_logf("i915: LCD-B reg[%s] %s 0x%05x = 0x%08x\n",
-				when,
-				table[index].name,
-				table[index].reg,
-				value);
-		}
-	}
-
-	/* Prints the number of matches of a comparison. */
-	if (compare) {
-		kern_logf("i915: LCD-B reg[%s] same as Linux's dump: %u/%u (comparison only; no value above was copied from it)\n",
-			when,
-			match,
-			compared);
-	}
 }
 
 /*
@@ -2049,26 +1758,6 @@ i915_trace_debug(
 		trace->backend->debug(trace->backend->ctx, what);
 }
 
-/* Reports whether entries of a kind are matched by name rather than by operand. */
-static int
-i915_trace_kind_is_named(
-	int kind)
-{
-	/* Steps, errors, phases and decided callees carry a name. */
-	switch (kind) {
-	case I915_LCD_T_STEP:
-	case I915_LCD_T_ERROR:
-	case I915_LCD_T_PHASE:
-	case I915_LCD_T_DECIDED:
-		return 1;
-	default:
-		break;
-	}
-
-	/* Succeeded: any other kind carries operands. */
-	return 0;
-}
-
 /*
  * Samples the pipe's status, interrupt mask and frame counter at a point.
  *
@@ -2120,7 +1809,7 @@ i915_observer_sample(
 	 * frame times apart).
 	 */
 	if (point == I915_LCD_OBS_PIPE_DISABLED) {
-		transconf_reg = i915_mmio_reg_offset(TRANSCONF((enum transcoder)observer->pipe));
+		transconf_reg = I915_XD_TRANS_CONF((unsigned)observer->pipe);
 		observer->stop_transconf = observer->hw->read32(observer->hw->ctx, transconf_reg);
 		observer->stop_frame0 = observer->hw->read32(observer->hw->ctx, observer->frame_reg);
 		observer->hw->usleep(observer->hw->ctx, I915_OBSERVER_STOP_SETTLE_US);
@@ -2157,33 +1846,6 @@ i915_observer_sample(
 	/* Clears them after, so the next period starts clean. */
 	if (bits != 0u || clear_all)
 		observer->hw->write32(observer->hw->ctx, observer->status_reg, bits);
-}
-
-/* Appends one row to the world's register table while it has room. */
-static void
-i915_reg_table_row(
-	struct i915_lcd_world *world,
-	unsigned *count,
-	const char *name,
-	i915_reg_t reg,
-	int has_linux,
-	uint32_t linux_value,
-	uint32_t compare_mask)
-{
-	struct i915_lcd_named_reg *row;
-
-	/* A full table takes no more rows. */
-	if (*count >= sizeof(world->table) / sizeof(world->table[0]))
-		return;
-
-	/* Fills the next row. */
-	row = &world->table[*count];
-	row->name = name;
-	row->reg = i915_mmio_reg_offset(reg);
-	row->has_linux = has_linux;
-	row->linux_value = linux_value;
-	row->compare_mask = compare_mask;
-	(*count)++;
 }
 
 /* Returns the newline a log line still needs after a text that may already end with one. */

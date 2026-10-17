@@ -27,7 +27,6 @@
 #include "dp-ext-kern.h"
 #include "edp-device.h"
 #include "head.h"
-#include "modeset.h"
 #include "output.h"
 #include "power.h"
 #include "present.h"
@@ -1092,13 +1091,6 @@ resident_at_stage(
 		}
 
 		break;
-	case I915_LCD_SHOW_PICTURE_UP:
-		/* The registers at picture-up. */
-		drv_i915_lcd_log_regs(display->lcd_world, k, "picture-up", 1);
-		break;
-	case I915_LCD_SHOW_DISABLE_RETURNED:
-		drv_i915_lcd_log_regs(display->lcd_world, k, "after-disable", 0);
-		break;
 	default:
 		break;
 	}
@@ -1607,7 +1599,6 @@ static int
 resident_preflight_panel(
 	struct i915_lcd_kernel *k)
 {
-	struct i915_display *display;
 	const struct i915_lcd_kernel_deps *d;
 	uint32_t transconf;
 	uint32_t plane_ctl;
@@ -1619,7 +1610,6 @@ resident_preflight_panel(
 	int masked;
 	int ok;
 
-	display = k->display;
 	d = k->d;
 	ok = 1;
 
@@ -1637,13 +1627,12 @@ resident_preflight_panel(
 		return EBUSY;
 	}
 
-	/* Logs the registers and reads the pipe, plane, PLL, DDI and interrupt mask. */
-	drv_i915_lcd_log_regs(display->lcd_world, k, "preflight", 0);
-	transconf = drv_i915_read32(d->mmio, drv_i915_lcd_reg_by_name(display->lcd_world, "TRANSCONF"));
-	plane_ctl = drv_i915_read32(d->mmio, drv_i915_lcd_reg_by_name(display->lcd_world, "PLANE_CTL_1"));
-	pll = drv_i915_read32(d->mmio, drv_i915_lcd_reg_by_name(display->lcd_world, "ICL_DPLL_ENABLE"));
-	ddi = drv_i915_read32(d->mmio, drv_i915_lcd_reg_by_name(display->lcd_world, "DDI_BUF_CTL"));
-	imr = drv_i915_read32(d->mmio, drv_i915_lcd_reg_by_name(display->lcd_world, "GEN8_DE_PIPE_IMR"));
+	/* Reads pipe A's transcoder and first plane, the first combo PLL, port A's buffer and pipe A's interrupt mask. */
+	transconf = drv_i915_read32(d->mmio, I915_XD_TRANS_CONF(0U));
+	plane_ctl = drv_i915_read32(d->mmio, I915_XD_PLANE_CTL(0U));
+	pll = drv_i915_read32(d->mmio, I915_XD_DPLL0_ENABLE);
+	ddi = drv_i915_read32(d->mmio, I915_XD_DDI_BUF_CTL(0U));
+	imr = drv_i915_read32(d->mmio, I915_XD_DE_PIPE_ISR(0U) + I915_XD_DE_IMR_OFFSET);
 
 	/* A running display means the start conditions are not the prepared ones: nothing may be written. */
 	if ((transconf & I915_RESIDENT_TRANS_ON_MASK) != 0U ||
@@ -1666,7 +1655,7 @@ resident_preflight_panel(
 	 * 21 from display version 13) masked.
 	 */
 	want = I915_RESIDENT_KEEP_MASKED_D12;
-	if (drv_i915_lcd_display_ver() >= 13)
+	if (k->display->device->gt.display_ver >= 13U)
 		want = I915_RESIDENT_KEEP_MASKED_D13;
 
 	if ((d->irq->de_irq_mask[0] & want) != want) {
@@ -1866,7 +1855,7 @@ resident_config_panel(
 
 	/* The slices powered now, and whether the bus is joined. */
 	config->dbuf_slices_now = d->dcore->dbuf_enabled_slices;
-	mbus = drv_i915_read32(d->mmio, drv_i915_lcd_reg_by_name(display->lcd_world, "MBUS_CTL"));
+	mbus = drv_i915_read32(d->mmio, I915_XD_MBUS_CTL);
 	config->mbus_joined_now = (int)((mbus >> 31) & 1U);
 
 	/* The CD clock the start left and its highest step. */

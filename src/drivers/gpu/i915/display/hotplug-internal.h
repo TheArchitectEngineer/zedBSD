@@ -894,12 +894,6 @@ struct intel_connector *drv_i915_hpd_connector_next(struct i915_hpd_world *world
 struct i2c_adapter *drv_i915_hpd_gmbus_adapter(struct drm_i915_private *i915, unsigned int pin);
 void drv_i915_hpd_gmbus_forget(struct i915_hpd_world *world);
 
-/*
- * The display version of the device the probe found (12 = Tiger Lake,
- * 13 = ADL-P class), from the modeset side.
- */
-int drv_i915_lcd_display_ver(void);
-
 /* The EDID reader of the DP environment (the Linux drm_do_probe_ddc_edid()). */
 int drv_i915_drm_edid_read(struct i2c_adapter *ddc, u8 *buf, unsigned max_blocks, unsigned *extensions);
 
@@ -960,22 +954,6 @@ i915_hpd_to_i915(
 {
 	/* The drm device is the device's drm member. */
 	return container_of(dev, struct drm_i915_private, drm);
-}
-
-/* The display version of the device (the Linux DISPLAY_VER() of this environment). */
-static __inline int
-i915_hpd_display_ver(
-	struct drm_i915_private *i915)
-{
-	int version;
-
-	UNUSED_PARAMETER(i915);
-
-	/* Asks the modeset side for the version of the device the probe found. */
-	version = drv_i915_lcd_display_ver();
-
-	/* Succeeded: reports the display version. */
-	return version;
 }
 
 /* The scheduler tick, which stands for the Linux jiffies. */

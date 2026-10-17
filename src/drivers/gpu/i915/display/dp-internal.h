@@ -1469,29 +1469,4 @@ bool drv_i915_drm_probe_ddc(struct i2c_adapter *ddc);
  */
 int drv_i915_drm_edid_read(struct i2c_adapter *ddc, u8 *buf, unsigned max_blocks, unsigned *extensions);
 
-/*
- * The panel power sequencer (panel.c, the Linux intel_pps_*()).
- *
- * The *_unlocked functions expect the PPS lock held (drv_i915_pps_lock());
- * the others take it themselves.
- */
-intel_wakeref_t drv_i915_pps_lock(struct intel_dp *intel_dp);
-intel_wakeref_t drv_i915_pps_unlock(struct intel_dp *intel_dp, intel_wakeref_t wakeref);
-void drv_i915_pps_check_power_unlocked(struct intel_dp *intel_dp);
-bool drv_i915_pps_vdd_on_unlocked(struct intel_dp *intel_dp);
-void drv_i915_pps_vdd_off_unlocked(struct intel_dp *intel_dp, bool sync);
-void drv_i915_pps_on_unlocked(struct intel_dp *intel_dp);
-void drv_i915_pps_off_unlocked(struct intel_dp *intel_dp);
-void drv_i915_pps_wait_power_cycle(struct intel_dp *intel_dp);
-void drv_i915_pps_vdd_on(struct intel_dp *intel_dp);
-void drv_i915_pps_vdd_off_sync(struct intel_dp *intel_dp);
-void drv_i915_pps_on(struct intel_dp *intel_dp);
-void drv_i915_pps_off(struct intel_dp *intel_dp);
-void drv_i915_pps_backlight_on(struct intel_dp *intel_dp);
-void drv_i915_pps_backlight_off(struct intel_dp *intel_dp);
-bool drv_i915_pps_have_panel_power_or_vdd(struct intel_dp *intel_dp);
-void drv_i915_pps_encoder_reset(struct intel_dp *intel_dp);
-bool drv_i915_pps_init(struct intel_dp *intel_dp);
-void drv_i915_pps_init_late(struct intel_dp *intel_dp);
-
 #endif /* DRIVERS_GPU_I915_DISPLAY_DP_INTERNAL_H */

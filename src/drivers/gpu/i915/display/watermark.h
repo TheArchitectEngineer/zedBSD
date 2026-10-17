@@ -41,8 +41,6 @@ struct i915_xd_plan;
  * ==== The watermark world ====
  */
 
-int drv_i915_wm_world_create(struct i915_display *display);
-void drv_i915_wm_world_destroy(struct i915_display *display);
 
 /*
  * ==== The DRAM and the bandwidth table (driver probe) ====
@@ -63,7 +61,6 @@ unsigned drv_i915_icl_max_bw_qgv_point_mask(const struct i915_bw_state *bw, int 
 unsigned drv_i915_icl_max_bw_psf_gv_point_mask(const struct i915_bw_state *bw);
 int drv_i915_icl_pcode_restrict_qgv_points(struct mutex *sb_lock, struct i915_mmio *mmio, int display_ver, struct i915_bw_state *bw, uint32_t points_mask);
 int drv_i915_bw_init(struct i915_display_state *d, int display_ver, struct i915_bw_state *bw, struct mutex *sb_lock, struct i915_mmio *mmio);
-int drv_i915_pmdemand_init(struct i915_display_state *d, int display_ver, struct i915_mmio *mmio, int ip_step);
 
 /*
  * ==== The bandwidth and watermark text of the modeset ====

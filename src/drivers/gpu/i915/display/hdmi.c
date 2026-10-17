@@ -484,7 +484,6 @@ i915_hdmi_detect(
 	struct intel_hdmi *intel_hdmi;
 	struct intel_encoder *encoder;
 	intel_wakeref_t wakeref;
-	int version;
 	bool live;
 	bool connected;
 
@@ -508,13 +507,11 @@ i915_hdmi_detect(
 	wakeref = drv_i915_hpd_intel_display_power_get(dev_priv, POWER_DOMAIN_GMBUS);
 
 	/*
-	 * From display version 11 the port's live status decides first: a
-	 * port with nothing plugged in is disconnected without an EDID read.
+	 * The port's live status decides first (every display this path serves
+	 * is version 11 or later): a port with nothing plugged in is
+	 * disconnected without an EDID read.
 	 */
-	live = true;
-	version = i915_hpd_display_ver(dev_priv);
-	if (version >= 11)
-		live = drv_i915_hpd_intel_digital_port_connected(encoder);
+	live = drv_i915_hpd_intel_digital_port_connected(encoder);
 
 	/* A live port is connected when a digital sink answers with its EDID. */
 	if (live) {

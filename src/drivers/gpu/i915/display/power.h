@@ -34,7 +34,6 @@ unsigned drv_i915_power_wells_sanitize(struct i915_power_domains *pd, struct i91
 void drv_i915_power_well_sync_hw(struct i915_power_well *well, struct i915_pw_ctx *pwc);
 
 int drv_i915_display_power_is_enabled(struct i915_power_domains *pd, enum i915_power_domain domain, struct i915_pw_ctx *pwc);
-int drv_i915_power_domain_hw_state_on(struct i915_power_domains *pd, enum i915_power_domain domain, struct i915_mmio *mmio);
 int drv_i915_display_power_get(struct i915_power_domains *pd, enum i915_power_domain domain, struct i915_pw_ctx *pwc);
 void drv_i915_display_power_put(struct i915_power_domains *pd, enum i915_power_domain domain, struct i915_pw_ctx *pwc);
 
@@ -46,7 +45,6 @@ void drv_i915_display_power_flush_work_sync(struct i915_power_domains *pd);
 
 void drv_i915_pmdemand_init_early(struct i915_pmdemand *pm);
 
-uint8_t drv_i915_enabled_dbuf_slices_mask(struct i915_display_core *dc);
 void drv_i915_gen9_dbuf_slices_update(struct i915_display_core *dc, uint8_t req_slices);
 
 void drv_i915_power_domains_init_hw(struct i915_display_core *dc, int resume);

@@ -36,11 +36,10 @@
  * until the driver probe gives it back.
  */
 
-#include "modeset-internal.h"
+#include "internal.h"
 #include "power.h"
 #include "clock.h"
 #include "vga.h"
-#include "modeset.h"
 #include "xd-ddi.h"
 #include "xd-power.h"
 #include "xd-dbuf.h"
@@ -110,8 +109,6 @@ static const uint32_t i915_dbuf_ctl_s[4] = { 0x45008u, 0x44FE8u, 0x44300u, 0x443
 static uint32_t i915_get_allowed_dc_mask(unsigned display_ver, int enable_dc);
 static uint32_t i915_sanitize_target_dc_state(const struct i915_power_domains *pd, uint32_t target);
 static int i915_sanitize_disable_power_well(int param);
-static unsigned i915_pw_driver_reg(enum i915_pw_ops_kind ops);
-static uint32_t i915_pw_state(unsigned idx);
 static int i915_pw_xd_well(const struct i915_power_well *well, struct i915_pw_ctx *pwc);
 static void i915_pw_xd_hooks(struct i915_pw_ctx *pwc, struct i915_power_well *well, struct i915_pw_hook_ctx *hook, struct i915_xd_power_hooks *hooks);
 static void i915_pw_hook_pipes_up(void *context, unsigned pipe_mask);
@@ -598,50 +595,6 @@ drv_i915_display_power_is_enabled(
 }
 
 /*
- * Tells whether every well of a domain is powered now, whoever requested
- * it (1 or 0).
- *
- * Read only: the state bit of the driver request register mirrors the
- * well's real state, and no request bit is read or written.  Always-on
- * wells count as on; DC_off gates no register access and is skipped.
- * Usable before intel_power_domains_init_hw().
- */
-int
-drv_i915_power_domain_hw_state_on(
-	struct i915_power_domains *pd,
-	enum i915_power_domain domain,
-	struct i915_mmio *mmio)
-{
-	uint64_t wells;
-	unsigned index;
-	struct i915_power_well *well;
-	uint32_t value;
-	uint32_t state_bit;
-
-	/* Walks the domain's wells, last one first. */
-	wells = drv_i915_power_domain_wells(pd, domain);
-	index = pd->num_power_wells;
-	while (index-- > 0u) {
-		if ((wells & ((uint64_t)1u << index)) == 0u)
-			continue;
-
-		/* Skips the wells that gate no register. */
-		well = &pd->power_wells[index];
-		if (well->always_on || well->ops == I915_PW_OPS_ALWAYS_ON || well->ops == I915_PW_OPS_DC_OFF)
-			continue;
-
-		/* Reads the well's state bit. */
-		value = drv_i915_raw_read32(mmio, i915_pw_driver_reg(well->ops));
-		state_bit = i915_pw_state(well->hsw_idx);
-		if ((value & state_bit) == 0u)
-			return 0;
-	}
-
-	/* Succeeded: every gating well of the domain is powered. */
-	return 1;
-}
-
-/*
  * Turns off every power well the firmware left on that nothing references
  * (intel_power_domains_sanitize_state()), the last well first; each well
  * is read afresh, not from the recorded state.  Returns how many were
@@ -912,29 +865,6 @@ drv_i915_pmdemand_init_early(
 
 	/* Marks the early initialization as done. */
 	pm->early_initialized = 1;
-}
-
-/*
- * Reports the DBUF slices that are powered now.
- */
-uint8_t
-drv_i915_enabled_dbuf_slices_mask(
-	struct i915_display_core *dc)
-{
-	uint8_t mask;
-	unsigned slice;
-	uint32_t value;
-
-	/* Reads each slice's power state. */
-	mask = 0u;
-	for (slice = 0u; slice < 4u; slice++) {
-		value = drv_i915_raw_read32(dc->m, i915_dbuf_ctl_s[slice]);
-		if ((value & DBUF_POWER_STATE) != 0u)
-			mask |= (uint8_t)(1u << slice);
-	}
-
-	/* Succeeded: reports the powered slices. */
-	return mask;
 }
 
 /*
@@ -1248,7 +1178,7 @@ drv_i915_lcd_power_get(
 	kernel = ctx;
 
 	/* Refuses an unknown domain. */
-	if (domain < 0 || domain >= (int)POWER_DOMAIN_NUM) {
+	if (domain < 0 || domain >= (int)I915_PW_DOMAIN_NUM) {
 		kernel->power_get_failures++;
 		return 0;
 	}
@@ -1288,7 +1218,7 @@ drv_i915_lcd_power_get_if_enabled(
 	kernel = ctx;
 
 	/* An unknown domain is not enabled. */
-	if (domain < 0 || domain >= (int)POWER_DOMAIN_NUM)
+	if (domain < 0 || domain >= (int)I915_PW_DOMAIN_NUM)
 		return 0;
 
 	/* The domain counts as enabled when every one of its wells is. */
@@ -1325,7 +1255,7 @@ drv_i915_lcd_power_put(
 	kernel = ctx;
 
 	/* Refuses a put without a reference of this run. */
-	if (domain < 0 || domain >= (int)POWER_DOMAIN_NUM || kernel->power_refs[domain] <= 0) {
+	if (domain < 0 || domain >= (int)I915_PW_DOMAIN_NUM || kernel->power_refs[domain] <= 0) {
 		kernel->errors++;
 		kern_logf("i915: LCD-B power put domain=%d without a reference of this run: NOT forwarded\n", domain);
 		return;
@@ -1364,7 +1294,7 @@ drv_i915_lcd_power_put_async(
 	kernel = ctx;
 
 	/* Refuses a put without a reference of this run. */
-	if (domain < 0 || domain >= (int)POWER_DOMAIN_NUM || kernel->power_refs[domain] <= 0) {
+	if (domain < 0 || domain >= (int)I915_PW_DOMAIN_NUM || kernel->power_refs[domain] <= 0) {
 		kernel->errors++;
 		kern_logf("i915: LCD-B async power put domain=%d without a reference of this run: NOT forwarded\n", domain);
 		return;
@@ -1534,34 +1464,6 @@ i915_sanitize_disable_power_well(
 
 	/* Succeeded: dynamic disabling is off. */
 	return 0;
-}
-
-/* Names the driver request register of a well family (i915_reg.h). */
-static unsigned
-i915_pw_driver_reg(
-	enum i915_pw_ops_kind ops)
-{
-	/* Picks the family's register. */
-	switch (ops) {
-	case I915_PW_OPS_ICL_AUX:
-		return ICL_PWR_WELL_CTL_AUX2;
-	case I915_PW_OPS_ICL_DDI:
-		return ICL_PWR_WELL_CTL_DDI2;
-	default:
-		break;
-	}
-
-	/* Every other family uses HSW_PWR_WELL_CTL2 (the driver's). */
-	return HSW_PWR_WELL_CTL2;
-}
-
-/* The state bit of a control index (HSW_PWR_WELL_CTL_STATE). */
-static uint32_t
-i915_pw_state(
-	unsigned idx)
-{
-	/* Each index owns two bits, the state the lower one. */
-	return 0x1u << (idx * 2u);
 }
 
 /*

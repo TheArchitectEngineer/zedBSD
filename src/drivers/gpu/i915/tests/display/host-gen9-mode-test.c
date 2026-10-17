@@ -6,13 +6,11 @@
  */
 
 /*
- * The host test of the Gen9 mode set's arithmetic (display/gen9-mode.c,
- * WS237 stage 3): the CD clock, the choice of a mode from an EDID, the DP
+ * The host test of the Gen9 mode set's arithmetic (display/gen9-mode.c):
+ * the CD clock, the choice of a mode from an EDID, the DP
  * link and its M and N, the DPLL words of DP rates and HDMI clocks, the
  * DDI buffer tables and signal levels, the training adjustments, and the
  * watermarks and DDB of one, two and three pipes.
- *
- *   sh plan/ws237/tests/run-gen9-mode-host-test.sh
  *
  * The expected numbers come from a separate model of the Linux kernel
  * 6.8.12's computations (intel_link_compute_m_n, skl_ddi_calculate_wrpll,
@@ -106,7 +104,7 @@ i915_host_pick_mode(void)
 		0x02, 0x3a, 0x80, 0x18, 0x71, 0x38, 0x2d, 0x40, 0x58,
 		0x2c, 0x45, 0x00, 0xc4, 0x8e, 0x21, 0x00, 0x00, 0x1e
 	};
-	struct i915_lcd_mode mode;
+	struct i915_display_mode mode;
 	uint8_t edid[256];
 	int error;
 

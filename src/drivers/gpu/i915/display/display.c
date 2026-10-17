@@ -35,13 +35,11 @@
 #include "head.h"
 #include "hotplug.h"
 #include "interrupts.h"
-#include "modeset.h"
 #include "output.h"
 #include "power.h"
 #include "present.h"
 #include "resident.h"
 #include "scanout.h"
-#include "state.h"
 #include "vga.h"
 #include "xd-core.h"
 #include "xd-gmbus.h"
@@ -427,8 +425,7 @@ drv_i915_display_init_opregion(
  * intel_power_domains_init, intel_pmdemand_init_early, then the firmware
  * display check before the first display write, then
  * intel_power_domains_init_hw, intel_dmc_init, the modeset and flip
- * workqueues, and the software state (mode config, CDCLK, colour, DBUF,
- * bandwidth, PM demand, quirks, FBC).  A firmware display check that stops
+ * workqueues, and the bandwidth state.  A firmware display check that stops
  * leaves the device without a display and returns 0.  Returns 0, or the
  * error of the stage named in device->stage.
  */
@@ -476,7 +473,7 @@ drv_i915_display_init_noirq(
 
 	kern_logf("i915: modeset/flip workqueues: modeset=%d flip=%d\n", display->modeset_wq_ok, display->flip_wq_ok);
 
-	/* The software state: mode config, CDCLK, colour, DBUF, bandwidth, PM demand, quirks and FBC. */
+	/* The bandwidth state and the forced SAGV disable. */
 	error = i915_display_noirq_tail(device);
 	if (error != 0)
 		return error;
@@ -998,13 +995,6 @@ drv_i915_display_fini(
 		return;
 
 	dmc = &display->dmc_dev;
-
-	/* The global objects and the FBC instances. */
-	if (display->dstate_inited) {
-		drv_i915_display_state_fini(&display->dstate);
-		display->dstate_inited = 0;
-		kern_logf("i915: stop: display-state fini (global objs released, fbc freed)\n");
-	}
 
 	/* The DMC first, then the workqueues. */
 	if (display->dmc_inited) {
@@ -1613,16 +1603,6 @@ i915_display_create_worlds(
 {
 	int error;
 
-	/* The modeset environment. */
-	error = drv_i915_lcd_world_create(display);
-	if (error != 0)
-		return error;
-
-	/* The watermark environment. */
-	error = drv_i915_wm_world_create(display);
-	if (error != 0)
-		return error;
-
 	/* The DP environment. */
 	error = drv_i915_dp_world_create(display);
 	if (error != 0)
@@ -1651,8 +1631,6 @@ i915_display_destroy_worlds(
 	drv_i915_hpd_world_destroy(display);
 	drv_i915_vbt_world_destroy(display);
 	drv_i915_dp_world_destroy(display);
-	drv_i915_wm_world_destroy(display);
-	drv_i915_lcd_world_destroy(display);
 }
 
 /* Returns the device's display when it exists and the firmware display check kept it; NULL otherwise. */
@@ -1864,10 +1842,6 @@ i915_display_core_init(
 	if (gt->is_alderlake_p)
 		dcore->is_alderlake_p = 1U;
 
-	/* The LCD path picks its tables from the display version. */
-	drv_i915_lcd_set_display_ver(display, (int)gt->display_ver);
-	if (display->xd.chosen)
-		drv_i915_lcd_set_xd_platform(display, display->xd.choice.platform);
 	dcore->dram_type = display->dram_info.type;
 	dcore->dram_channels = display->dram_info.num_channels;
 
@@ -1930,12 +1904,9 @@ i915_display_dmc_init(
 }
 
 /*
- * The tail of intel_display_driver_probe_noirq():
- * intel_mode_config_init, intel_cdclk_init, intel_color_init,
- * intel_dbuf_init, intel_bw_init (the bandwidth software state and the
- * forced SAGV disable), intel_pmdemand_init, intel_init_quirks and
- * intel_fbc_init.  The five that return an error share the reference's one
- * error label, which the device stop's order reproduces.
+ * The tail of the start before the interrupts: the memory's bandwidth
+ * points and the forced SAGV disable.  Returns 0, or the error of the
+ * stage named in device->stage.
  */
 static int
 i915_display_noirq_tail(
@@ -1944,48 +1915,22 @@ i915_display_noirq_tail(
 	struct i915_display *display;
 	struct i915_display_state *dstate;
 	struct i915_gt *gt;
-	uint16_t q_dev;
-	uint16_t q_svid;
-	uint16_t q_sdid;
-	int funcs;
 	int error;
 
 	display = device->display;
 	gt = &device->gt;
 	dstate = &display->dstate;
 
-	/* The mode config, with FBC's module parameter at its default. */
+	/* The bandwidth state starts cleared. */
 	kern_memset(dstate, 0, sizeof(*dstate));
-	dstate->enable_fbc_param = -1;
-	drv_i915_mode_config_init(dstate, (int)gt->display_ver, I915_PLAT_NONE);
-	display->dstate_inited = 1;
 
-	/* The CDCLK global object. */
-	device->stage = "intel_cdclk_init";
-	error = drv_i915_cdclk_init(dstate);
-	if (error != 0)
-		return error;
-
-	/* The colour init (display version 10 only; nothing here). */
-	device->stage = "intel_color_init";
-	error = drv_i915_color_init(dstate, (int)gt->display_ver);
-	if (error != 0)
-		return error;
-
-	/* The DBUF global object. */
-	device->stage = "intel_dbuf_init";
-	error = drv_i915_dbuf_init(dstate);
-	if (error != 0)
-		return error;
-
-	/* The bandwidth global object and the forced SAGV disable. */
+	/* The QGV points SAGV may use, and SAGV forced off where the display controls it. */
 	device->stage = "intel_bw_init";
 	error = drv_i915_bw_init(dstate, (int)gt->display_ver, &display->bw_state, &gt->sb_lock, &gt->mmio);
 	if (error != 0)
 		return error;
 
-	kern_logf("i915: intel_bw_init: obj=%u sagv_forced=%d qgv=0x%x psf=0x%x mask=0x%x pcode=%d sagv_status=%d\n",
-	    dstate->obj_count,
+	kern_logf("i915: intel_bw_init: sagv_forced=%d qgv=0x%x psf=0x%x mask=0x%x pcode=%d sagv_status=%d\n",
 	    dstate->sagv_force_disable_attempted,
 	    dstate->sagv_qgv_points,
 	    dstate->sagv_psf_points,
@@ -1993,62 +1938,7 @@ i915_display_noirq_tail(
 	    dstate->sagv_pcode_ret,
 	    display->bw_state.sagv_status);
 
-	/* The PM demand global object. */
-	device->stage = "intel_pmdemand_init";
-	error = drv_i915_pmdemand_init(dstate, (int)gt->display_ver, &gt->mmio, -1);
-	if (error != 0)
-		return error;
-
-	/* The quirks, by the live configuration space's ids. */
-	q_dev = drv_i915_pci_read16(&gt->pci, I915_PCI_DEVICE_ID);
-	q_svid = drv_i915_pci_read16(&gt->pci, I915_PCI_SUBSYSTEM_VENDOR);
-	q_sdid = drv_i915_pci_read16(&gt->pci, I915_PCI_SUBSYSTEM_DEVICE);
-
-	/* Diagnostic only: the cached PCI header next to a live read of the same fields. */
-	kern_logf("i915: PCIID cached: ven=0x%04x dev=0x%04x rev=0x%02x subsys=%04x:%04x | live: ven=0x%04x dev=0x%04x rev=0x%02x subsys=%04x:%04x\n",
-	    (unsigned)drv_pci_device_vendor(device->pci),
-	    (unsigned)drv_pci_device_product(device->pci),
-	    (unsigned)drv_pci_device_revision(device->pci),
-	    (unsigned)drv_pci_device_subvendor(device->pci),
-	    (unsigned)drv_pci_device_subproduct(device->pci),
-	    (unsigned)drv_i915_pci_read16(&gt->pci, 0x00U),
-	    (unsigned)drv_i915_pci_read16(&gt->pci, I915_PCI_DEVICE_ID),
-	    (unsigned)drv_i915_pci_read8(&gt->pci, I915_PCI_REVISION),
-	    (unsigned)drv_i915_pci_read16(&gt->pci, I915_PCI_SUBSYSTEM_VENDOR),
-	    (unsigned)drv_i915_pci_read16(&gt->pci, I915_PCI_SUBSYSTEM_DEVICE));
-	drv_i915_init_quirks(dstate, q_dev, q_svid, q_sdid);
-	kern_logf("i915: intel_init_quirks: dev=0x%x subsys=%04x:%04x quirk_mask=0x%x hooks=%u dmi_available=%d\n",
-	    (unsigned)q_dev,
-	    (unsigned)q_svid,
-	    (unsigned)q_sdid,
-	    dstate->quirk_mask,
-	    dstate->quirk_hooks_fired,
-	    dstate->dmi_available);
-
-	/* FBC: the XE_LPD runtime fbc_mask is FBC A. */
-	drv_i915_fbc_init(dstate, (int)gt->display_ver, I915_DISPLAY_FBC_MASK, 0, I915_PLAT_NONE);
-	funcs = -1;
-	if (dstate->fbc[0] != NULL)
-		funcs = dstate->fbc[0]->funcs_kind;
-
-	kern_logf("i915: intel_fbc_init: fbc_mask=0x%x enable_fbc=%d created=%u funcs=%d\n",
-	    dstate->fbc_mask,
-	    dstate->enable_fbc_sanitized,
-	    dstate->fbc_created,
-	    funcs);
-	kern_logf("i915: probe_noirq COMPLETE: global objs=%u (order: %s,%s,%s,%s) mode_config max=%ux%u cursor=%ux%u async_flip=%d\n",
-	    dstate->obj_count,
-	    dstate->cdclk_obj.name,
-	    dstate->dbuf_obj.name,
-	    dstate->bw_obj.name,
-	    dstate->pmdemand_obj.name,
-	    dstate->mode_config.max_width,
-	    dstate->mode_config.max_height,
-	    dstate->mode_config.cursor_width,
-	    dstate->mode_config.cursor_height,
-	    dstate->mode_config.async_page_flip);
-
-	/* Succeeded: the software state is complete. */
+	/* Succeeded: the bandwidth state is complete. */
 	return 0;
 }
 
