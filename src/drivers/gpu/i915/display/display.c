@@ -39,6 +39,7 @@
 #include "vga.h"
 #include "xd-core.h"
 #include "xd-diag.h"
+#include "xd-platform.h"
 #include "xd-gmbus.h"
 #include "tc-port.h"
 #include "dp-ext-kern.h"
@@ -107,38 +108,21 @@
 /* The largest frame the node's display accepts (64 MiB). */
 #define I915_DISPLAY_MAX_FRAME_BYTES	(64ULL << 20)
 
-/* soc/intel_pch.h: the PCH device id types, already masked with 0xff80. */
-#define INTEL_PCH_DEVICE_ID_MASK	0xff80U
-#define INTEL_PCH_IBX_DEVICE_ID_TYPE	0x3b00U
-#define INTEL_PCH_CPT_DEVICE_ID_TYPE	0x1c00U
-#define INTEL_PCH_PPT_DEVICE_ID_TYPE	0x1e00U
-#define INTEL_PCH_LPT_DEVICE_ID_TYPE	0x8c00U
-#define INTEL_PCH_LPT_LP_DEVICE_ID_TYPE	0x9c00U
-#define INTEL_PCH_WPT_DEVICE_ID_TYPE	0x8c80U
-#define INTEL_PCH_WPT_LP_DEVICE_ID_TYPE	0x9c80U
-#define INTEL_PCH_SPT_DEVICE_ID_TYPE	0xA100U
-#define INTEL_PCH_SPT_LP_DEVICE_ID_TYPE	0x9D00U
-#define INTEL_PCH_KBP_DEVICE_ID_TYPE	0xA280U
-#define INTEL_PCH_CNP_DEVICE_ID_TYPE	0xA300U
-#define INTEL_PCH_CNP_LP_DEVICE_ID_TYPE	0x9D80U
-#define INTEL_PCH_CMP_DEVICE_ID_TYPE	0x0280U
-#define INTEL_PCH_CMP2_DEVICE_ID_TYPE	0x0680U
-#define INTEL_PCH_CMP_V_DEVICE_ID_TYPE	0xA380U
-#define INTEL_PCH_ICP_DEVICE_ID_TYPE	0x3480U
-#define INTEL_PCH_ICP2_DEVICE_ID_TYPE	0x3880U
-#define INTEL_PCH_MCC_DEVICE_ID_TYPE	0x4B00U
-#define INTEL_PCH_TGP_DEVICE_ID_TYPE	0xA080U
-#define INTEL_PCH_TGP2_DEVICE_ID_TYPE	0x4380U
-#define INTEL_PCH_JSP_DEVICE_ID_TYPE	0x4D80U
-#define INTEL_PCH_ADP_DEVICE_ID_TYPE	0x7A80U
-#define INTEL_PCH_ADP2_DEVICE_ID_TYPE	0x5180U
-#define INTEL_PCH_ADP3_DEVICE_ID_TYPE	0x7A00U
-#define INTEL_PCH_ADP4_DEVICE_ID_TYPE	0x5480U
-#define INTEL_PCH_P2X_DEVICE_ID_TYPE	0x7100U
-#define INTEL_PCH_P3X_DEVICE_ID_TYPE	0x7000U
-#define INTEL_PCH_QEMU_DEVICE_ID_TYPE	0x2900U
-
-/* The vendor and subsystem ids of an emulated QEMU bridge. */
+/*
+ * The mask of a PCH id, the PCH ids an emulated ISA bridge carries,
+ * the Alder Lake PCH a guest of an Alder Lake GPU assumes, and the
+ * vendor and subsystem of an emulated QEMU bridge.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/soc/intel_pch.h
+ * (INTEL_PCH_DEVICE_ID_MASK, INTEL_PCH_P2X_DEVICE_ID_TYPE, INTEL_PCH_P3X_DEVICE_ID_TYPE,
+ * INTEL_PCH_QEMU_DEVICE_ID_TYPE, INTEL_PCH_ADP_DEVICE_ID_TYPE),
+ * drivers/gpu/drm/i915/soc/intel_pch.c (intel_is_virt_pch).
+ */
+#define I915_PCH_ID_MASK		0xff80U
+#define I915_PCH_ID_EMULATED_P2X	0x7100U
+#define I915_PCH_ID_EMULATED_P3X	0x7000U
+#define I915_PCH_ID_EMULATED_QEMU	0x2900U
+#define I915_PCH_ID_ALDER_LAKE		0x7a80U
 #define I915_PCI_VENDOR_INTEL		0x8086U
 #define I915_PCI_SUBVENDOR_QUMRANET	0x1af4U
 #define I915_PCI_SUBDEVICE_QEMU		0x1100U
@@ -169,7 +153,8 @@ static void i915_display_publish(struct i915_device *device);
 static void i915_display_unpublish(struct i915_device *device);
 static unsigned i915_display_wells_on(struct i915_display *display);
 static void i915_display_log_wells(struct i915_device *device);
-static void i915_virt_detect_pch(int is_alderlake, uint16_t *pch_id, int *pch_type);
+static int i915_display_pch_emulated(uint16_t id, uint16_t svid, uint16_t sdid);
+static void i915_display_pch_guess(int is_alderlake, uint16_t *pch_id, int *pch_type);
 static int i915_next_isa_bridge(struct i915_display *display, unsigned index, uint16_t *vendor, uint16_t *device, uint16_t *svid, uint16_t *sdid);
 static int i915_display_query(void *device, void *session, struct gpu_display_info *request);
 static int i915_display_mode(void *device, void *session, struct gpu_display_mode *request);
@@ -1033,123 +1018,13 @@ drv_i915_display_panel(
 }
 
 /*
- * Returns the PCH type of a masked PCH device id (intel_pch_type()), and
- * names the PCH found.
- */
-int
-drv_i915_pch_type(
-	uint16_t id)
-{
-	/* Names the PCH of each id type. */
-	switch (id) {
-	case INTEL_PCH_IBX_DEVICE_ID_TYPE:
-		kern_logf("i915: Found Ibex Peak PCH\n");
-		return I915_PCH_IBX;
-	case INTEL_PCH_CPT_DEVICE_ID_TYPE:
-		kern_logf("i915: Found CougarPoint PCH\n");
-		return I915_PCH_CPT;
-	case INTEL_PCH_PPT_DEVICE_ID_TYPE:
-		/* PPT is CPT compatible. */
-		kern_logf("i915: Found PantherPoint PCH\n");
-		return I915_PCH_CPT;
-	case INTEL_PCH_LPT_DEVICE_ID_TYPE:
-		kern_logf("i915: Found LynxPoint PCH\n");
-		return I915_PCH_LPT;
-	case INTEL_PCH_LPT_LP_DEVICE_ID_TYPE:
-		kern_logf("i915: Found LynxPoint LP PCH\n");
-		return I915_PCH_LPT;
-	case INTEL_PCH_WPT_DEVICE_ID_TYPE:
-		/* WPT is LPT compatible. */
-		kern_logf("i915: Found WildcatPoint PCH\n");
-		return I915_PCH_LPT;
-	case INTEL_PCH_WPT_LP_DEVICE_ID_TYPE:
-		/* WPT is LPT compatible. */
-		kern_logf("i915: Found WildcatPoint LP PCH\n");
-		return I915_PCH_LPT;
-	case INTEL_PCH_SPT_DEVICE_ID_TYPE:
-		kern_logf("i915: Found SunrisePoint PCH\n");
-		return I915_PCH_SPT;
-	case INTEL_PCH_SPT_LP_DEVICE_ID_TYPE:
-		kern_logf("i915: Found SunrisePoint LP PCH\n");
-		return I915_PCH_SPT;
-	case INTEL_PCH_KBP_DEVICE_ID_TYPE:
-		kern_logf("i915: Found Kaby Lake PCH (KBP)\n");
-		return I915_PCH_SPT;
-	case INTEL_PCH_CNP_DEVICE_ID_TYPE:
-		kern_logf("i915: Found Cannon Lake PCH (CNP)\n");
-		return I915_PCH_CNP;
-	case INTEL_PCH_CNP_LP_DEVICE_ID_TYPE:
-		kern_logf("i915: Found Cannon Lake LP PCH (CNP-LP)\n");
-		return I915_PCH_CNP;
-	case INTEL_PCH_CMP_DEVICE_ID_TYPE:
-	case INTEL_PCH_CMP2_DEVICE_ID_TYPE:
-		/* CMP is CNP compatible. */
-		kern_logf("i915: Found Comet Lake PCH (CMP)\n");
-		return I915_PCH_CNP;
-	case INTEL_PCH_CMP_V_DEVICE_ID_TYPE:
-		/* CMP-V is SPT compatible. */
-		kern_logf("i915: Found Comet Lake V PCH (CMP-V)\n");
-		return I915_PCH_SPT;
-	case INTEL_PCH_ICP_DEVICE_ID_TYPE:
-	case INTEL_PCH_ICP2_DEVICE_ID_TYPE:
-		kern_logf("i915: Found Ice Lake PCH\n");
-		return I915_PCH_ICP;
-	case INTEL_PCH_MCC_DEVICE_ID_TYPE:
-		/* MCC is TGP compatible. */
-		kern_logf("i915: Found Mule Creek Canyon PCH\n");
-		return I915_PCH_TGP;
-	case INTEL_PCH_TGP_DEVICE_ID_TYPE:
-	case INTEL_PCH_TGP2_DEVICE_ID_TYPE:
-		kern_logf("i915: Found Tiger Lake LP PCH\n");
-		return I915_PCH_TGP;
-	case INTEL_PCH_JSP_DEVICE_ID_TYPE:
-		/* JSP is ICP compatible. */
-		kern_logf("i915: Found Jasper Lake PCH\n");
-		return I915_PCH_ICP;
-	case INTEL_PCH_ADP_DEVICE_ID_TYPE:
-	case INTEL_PCH_ADP2_DEVICE_ID_TYPE:
-	case INTEL_PCH_ADP3_DEVICE_ID_TYPE:
-	case INTEL_PCH_ADP4_DEVICE_ID_TYPE:
-		kern_logf("i915: Found Alder Lake PCH\n");
-		return I915_PCH_ADP;
-	default:
-		return I915_PCH_NONE;
-	}
-}
-
-/*
- * Reports whether a PCH id and subsystem name an emulated bridge
- * (intel_is_virt_pch()).
- */
-int
-drv_i915_is_virt_pch(
-	uint16_t id,
-	uint16_t svendor,
-	uint16_t sdevice)
-{
-	/* The P2X and P3X ids of virtualised platforms. */
-	if (id == INTEL_PCH_P2X_DEVICE_ID_TYPE)
-		return 1;
-	if (id == INTEL_PCH_P3X_DEVICE_ID_TYPE)
-		return 1;
-
-	/* QEMU's Q35 bridge with the QEMU subsystem. */
-	if (id == INTEL_PCH_QEMU_DEVICE_ID_TYPE) {
-		if (svendor == I915_PCI_SUBVENDOR_QUMRANET && sdevice == I915_PCI_SUBDEVICE_QEMU)
-			return 1;
-	}
-
-	/* A real bridge. */
-	return 0;
-}
-
-/*
- * Detects the PCH the display pairs with (intel_detect_pch()).
+ * Finds the PCH the display pairs with, from the ISA bridges.
  *
- * The ISA bridges are scanned, not Dev31:Fun0, so that passthrough works:
- * a VMM only has to expose an ISA bridge.  All of them are scanned and the
- * first match is taken; an emulated one makes the platform guess the PCH,
- * and so does a guest with no bridge at all.
+ * The first Intel bridge whose id names a known PCH decides.  An emulated
+ * bridge, or no bridge at all in a guest, leaves the PCH to a guess from
+ * the GPU's platform.  A GPU without a display has no south display to
+ * talk to (I915_PCH_NOP).  display_ver is kept for the callers' shape and
+ * not read.
  */
 void
 drv_i915_detect_pch(
@@ -1164,12 +1039,13 @@ drv_i915_detect_pch(
 	uint16_t device;
 	uint16_t svid;
 	uint16_t sdid;
-	uint16_t id;
-	unsigned i;
-	int pch_type;
+	unsigned index;
+	int kind;
 	int found_bridge;
 	int more;
-	int virt;
+	int emulated;
+
+	UNUSED_PARAMETER(display_ver);
 
 	/* Starts with no PCH. */
 	p->type = I915_PCH_NONE;
@@ -1180,23 +1056,21 @@ drv_i915_detect_pch(
 	p->bridge_svid = 0U;
 	p->bridge_sdid = 0U;
 
-	/* A south display engine on the same PCI device is a fake PCH (display version 20 on). */
-	if (display_ver >= 20) {
-		p->type = I915_PCH_LNL;
-		return;
-	}
-
-	/* Scans every ISA bridge, taking the first Intel one whose id is known. */
+	/* Walks the ISA bridges until one names the PCH. */
 	found_bridge = 0;
 	vendor = 0U;
 	device = 0U;
 	svid = 0U;
 	sdid = 0U;
-	for (i = 0U;; i++) {
-		more = i915_next_isa_bridge(display, i, &vendor, &device, &svid, &sdid);
+	index = 0U;
+	more = 1;
+	while (more) {
+		/* The next bridge, or the end of the walk. */
+		more = i915_next_isa_bridge(display, index, &vendor, &device, &svid, &sdid);
 		if (!more)
 			break;
 
+		index++;
 		p->bridges_scanned++;
 		found_bridge = 1;
 
@@ -1204,12 +1078,11 @@ drv_i915_detect_pch(
 		if (vendor != I915_PCI_VENDOR_INTEL)
 			continue;
 
-		/* A real PCH id, or an emulated bridge that makes the platform guess. */
-		id = (uint16_t)(device & INTEL_PCH_DEVICE_ID_MASK);
-		pch_type = drv_i915_pch_type(id);
-		if (pch_type != I915_PCH_NONE) {
-			p->type = pch_type;
-			p->id = id;
+		/* A known PCH id decides. */
+		kind = drv_i915_xd_pch_kind(device);
+		if (kind != I915_PCH_NONE) {
+			p->type = kind;
+			p->id = (uint16_t)(device & I915_PCH_ID_MASK);
 			p->source = I915_PCH_SRC_REAL;
 			p->bridge_device = device;
 			p->bridge_svid = svid;
@@ -1217,9 +1090,10 @@ drv_i915_detect_pch(
 			break;
 		}
 
-		virt = drv_i915_is_virt_pch(id, svid, sdid);
-		if (virt) {
-			i915_virt_detect_pch(is_alderlake, &p->id, &p->type);
+		/* An emulated bridge leaves it to the guess. */
+		emulated = i915_display_pch_emulated((uint16_t)(device & I915_PCH_ID_MASK), svid, sdid);
+		if (emulated) {
+			i915_display_pch_guess(is_alderlake, &p->id, &p->type);
 			p->source = I915_PCH_SRC_VIRT;
 			p->bridge_device = device;
 			p->bridge_svid = svid;
@@ -1228,17 +1102,17 @@ drv_i915_detect_pch(
 		}
 	}
 
-	/* A PCH without a south display is NOP; a guest without a bridge guesses. */
+	/* A GPU without a display talks to no south display; a guest without a bridge guesses. */
 	if (found_bridge && !has_display) {
-		kern_logf("i915: Display disabled, reverting to NOP PCH\n");
+		kern_logf("i915: display: no display: the PCH's south display is not used\n");
 		p->type = I915_PCH_NOP;
 		p->id = 0U;
 	} else if (!found_bridge) {
 		if (run_as_guest && has_display) {
-			i915_virt_detect_pch(is_alderlake, &p->id, &p->type);
+			i915_display_pch_guess(is_alderlake, &p->id, &p->type);
 			p->source = I915_PCH_SRC_NO_BRIDGE;
 		} else {
-			kern_logf("i915: No PCH found.\n");
+			kern_logf("i915: display: no ISA bridge: no PCH\n");
 		}
 	}
 }
@@ -1603,7 +1477,7 @@ i915_display_core_init(
 
 	/* The CDCLK state of this display, over its xd description. */
 	kern_memset(&display->cdclk, 0, sizeof(display->cdclk));
-	drv_i915_init_cdclk_hooks(&display->cdclk, &display->xd);
+	drv_i915_cdclk_prepare(&display->cdclk, &display->xd);
 	display->cdclk.m = &gt->mmio;
 	display->cdclk.sb_lock = &gt->sb_lock;
 
@@ -1778,7 +1652,7 @@ i915_display_memory_and_clocks(
 	drv_i915_xd_gmbus_reset(&display->xd.io);
 
 	/* The CD clock the hardware runs at. */
-	drv_i915_update_cdclk(&display->cdclk);
+	drv_i915_cdclk_refresh(&display->cdclk);
 	kern_logf("i915: display: CD clock: cdclk=%u vco=%u ref=%u voltage=%u\n", display->cdclk.hw.cdclk, display->cdclk.hw.vco, display->cdclk.hw.ref, (unsigned)display->cdclk.hw.voltage_level);
 
 	/* The start's workarounds of the display's version. */
@@ -2090,13 +1964,35 @@ i915_display_log_wells(
 	    display->pwc.dmc_has_payload);
 }
 
+/* Tells whether a masked PCH id and a subsystem name an emulated bridge. */
+static int
+i915_display_pch_emulated(
+	uint16_t id,
+	uint16_t svid,
+	uint16_t sdid)
+{
+	/* The ids of virtualized platforms' bridges. */
+	if (id == I915_PCH_ID_EMULATED_P2X)
+		return 1;
+	if (id == I915_PCH_ID_EMULATED_P3X)
+		return 1;
+
+	/* QEMU's bridge with the QEMU subsystem. */
+	if (id == I915_PCH_ID_EMULATED_QEMU &&
+	    svid == I915_PCI_SUBVENDOR_QUMRANET &&
+	    sdid == I915_PCI_SUBDEVICE_QEMU)
+		return 1;
+
+	/* A real bridge. */
+	return 0;
+}
+
 /*
- * intel_virt_detect_pch(): in a passthrough guest the ISA bridge may not be
- * passed through, so the PCH is guessed from the graphics platform.  Only
- * the Alder Lake arm is reachable here.
+ * Guesses the PCH of a guest whose ISA bridge was not passed through:
+ * the Alder Lake PCH beside an Alder Lake GPU, none otherwise.
  */
 static void
-i915_virt_detect_pch(
+i915_display_pch_guess(
 	int is_alderlake,
 	uint16_t *pch_id,
 	int *pch_type)
@@ -2106,17 +2002,13 @@ i915_virt_detect_pch(
 	/* The Alder Lake PCH, or none. */
 	id = 0U;
 	if (is_alderlake)
-		id = INTEL_PCH_ADP_DEVICE_ID_TYPE;
+		id = I915_PCH_ID_ALDER_LAKE;
 
 	/* Names the guess. */
-	if (id != 0U) {
-		kern_logf("i915: Assuming PCH ID %04x\n", (unsigned)id);
-	} else {
-		kern_logf("i915: Assuming no PCH\n");
-	}
+	kern_logf("i915: display: PCH assumed: id 0x%04x\n", (unsigned)id);
 
-	/* Reports the type and the id. */
-	*pch_type = drv_i915_pch_type(id);
+	/* Reports the kind and the id. */
+	*pch_type = drv_i915_xd_pch_kind(id);
 	*pch_id = id;
 }
 

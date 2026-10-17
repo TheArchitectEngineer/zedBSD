@@ -2093,7 +2093,7 @@ i915_pw_dc_off_on(
 	/* Reads the CDCLK into a temporary and compares it with the saved state. */
 	if (pwc->cd != NULL) {
 		kern_memset(&readout, 0, sizeof(readout));
-		drv_i915_bxt_get_cdclk(pwc->cd, &readout);
+		drv_i915_cdclk_read(pwc->cd, &readout);
 		pwc->dc_off_cdclk_readouts++;
 		if (readout.cdclk != pwc->cd->hw.cdclk || readout.vco != pwc->cd->hw.vco) {
 			kern_logf("i915: DC_off: cdclk needs modeset (hw %u/%u vs saved %u/%u)\n",
@@ -2506,7 +2506,7 @@ i915_core_cdclk_on(
 
 	/* The clock's own start. */
 	dc = context;
-	drv_i915_cdclk_init_hw(dc->cd);
+	drv_i915_cdclk_start(dc->cd);
 }
 
 /* Takes the CD clock down. */
@@ -2518,7 +2518,7 @@ i915_core_cdclk_off(
 
 	/* The clock's own stop. */
 	dc = context;
-	drv_i915_cdclk_uninit_hw(dc->cd);
+	drv_i915_cdclk_stop(dc->cd);
 }
 
 /* Powers the DBUF slices asked for, within the display's. */

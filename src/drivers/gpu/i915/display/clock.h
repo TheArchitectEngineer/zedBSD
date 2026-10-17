@@ -17,11 +17,11 @@
 
 struct i915_xd;
 
-void drv_i915_init_cdclk_hooks(struct i915_cdclk_dev *cd, struct i915_xd *xd);
-void drv_i915_bxt_get_cdclk(struct i915_cdclk_dev *cd, struct i915_cdclk_config *cfg);
-void drv_i915_update_cdclk(struct i915_cdclk_dev *cd);
-void drv_i915_cdclk_init_hw(struct i915_cdclk_dev *cd);
-void drv_i915_cdclk_uninit_hw(struct i915_cdclk_dev *cd);
-uint32_t drv_i915_max_cdclk_freq(const struct i915_cdclk_dev *cd);
+void drv_i915_cdclk_prepare(struct i915_cdclk_dev *cd, struct i915_xd *xd);
+void drv_i915_cdclk_read(struct i915_cdclk_dev *cd, struct i915_cdclk_config *cfg);
+void drv_i915_cdclk_refresh(struct i915_cdclk_dev *cd);
+void drv_i915_cdclk_start(struct i915_cdclk_dev *cd);
+void drv_i915_cdclk_stop(struct i915_cdclk_dev *cd);
+uint32_t drv_i915_cdclk_max(const struct i915_cdclk_dev *cd);
 
 #endif

@@ -15,11 +15,9 @@
  * register value with an offset) and I915_XD_MAP_VAL(xd, linux) for a
  * bit, a mask or a number, includes the Linux names it compares against,
  * and includes this file.  Each pair is skipped when the includer has no
- * definition of the Linux name, so the same list serves the test against
- * the tree's older headers (host-xd-regs-test.c, which knows only some
- * of the names) and the check against the Linux tree itself (a host
- * program built against the unpacked Linux headers, which must know all
- * of them).  The pairs of display 11's eDP transcoder also need
+ * definition of the Linux name; the check against the Linux tree itself
+ * (a host program built against the unpacked Linux headers) must know
+ * all of them.  The pairs of display 11's eDP transcoder also need
  * I915_XD_MAP_EDP_TRANSCODER, which only an includer whose display
  * description places that transcoder defines.
  */

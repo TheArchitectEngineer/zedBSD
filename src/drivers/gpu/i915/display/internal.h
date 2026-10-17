@@ -455,24 +455,13 @@ struct i915_pw_ctx {
 /*
  * The CDCLK (clock.c).
  */
-/*
- * CDCLK init (see clock.c).
- *
- * Faithful port of the ADL-P CDCLK bring-up: intel_init_cdclk_hooks() selects
- * the platform table + callbacks (ADL-P D0 -> adlp_cdclk_table + tgl funcs);
- * intel_cdclk_init_hw() -> bxt_cdclk_init_hw() reads the pre-OS state
- * (bxt_get_cdclk via the DE PLL / CDCLK_CTL), sanitises it (bxt_sanitize_cdclk),
- * and only if the state is not a legal freq/VCO for this platform reprograms it
- * (bxt_set_cdclk, using the common PCODE mailbox).  This is intel_cdclk_init_hw,
- * NOT intel_cdclk_init (which reprograms to the min cdclk later in the start).
- */
 
 struct mutex;
 
 /*
- * intel_cdclk_config: dev_priv->display.cdclk.hw plus computed targets.
- * vco special values: 0 = PLL off (bypass), ~0u = unknown (sanitize wants a
- * full PLL disable+enable).  Never treat ~0u as a real frequency.
+ * One CD clock state: the reference, the PLL's VCO (0 when the PLL is
+ * off and the clock bypasses it, ~0 when it is not known), the CD clock
+ * and the bypass, in kHz, and the voltage level the clock needs.
  */
 struct i915_cdclk_config {
 	uint32_t ref;      /* refclk kHz */
@@ -489,7 +478,7 @@ struct i915_cdclk_config {
  * diagnostics of the last change.
  */
 struct i915_cdclk_dev {
-	struct i915_cdclk_config hw;          /* current HW state (display.cdclk.hw) */
+	struct i915_cdclk_config hw;          /* the hardware's current state */
 	struct i915_xd *xd;                   /* the xd window and platform description */
 	int display_ver;                         /* 13 for ADL-P */
 	int has_cdclk_crawl;                     /* ADL-P: 1 */
@@ -497,11 +486,11 @@ struct i915_cdclk_dev {
 	struct i915_mmio *m;                    /* MMIO backend */
 	struct mutex *sb_lock;                   /* PCODE sideband lock */
 
-	/* Diagnostics captured across init_hw (observed_before ... state_after). */
+	/* What the last start or change met. */
 	struct i915_cdclk_config diag_observed_before;
 	struct i915_cdclk_config diag_sanitized;
 	struct i915_cdclk_config diag_requested;
-	int diag_no_change;            /* 1 = sanitize accepted HW; nothing reprogrammed */
+	int diag_no_change;            /* 1 = the firmware's state was kept; nothing written */
 	int diag_prepare_status;       /* PCODE prepare-for-change result (0 / -errno) */
 	int diag_hw_sequence_reached;  /* 1 once the PLL/CDCLK_CTL writes ran */
 	int diag_notify_status;        /* PCODE voltage-notify result */

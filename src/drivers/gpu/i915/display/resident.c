@@ -1862,7 +1862,7 @@ resident_config_panel(
 	config->cdclk.ref_khz = d->cdclk->hw.ref;
 	config->cdclk.bypass_khz = d->cdclk->hw.bypass;
 	config->cdclk.voltage = d->cdclk->hw.voltage_level;
-	config->cdclk_max_khz = drv_i915_max_cdclk_freq(d->cdclk);
+	config->cdclk_max_khz = drv_i915_cdclk_max(d->cdclk);
 
 	/* SAGV is kept off, which leaves exactly one QGV point allowed: its bandwidth for one active plane. */
 	allowed = (unsigned)~d->dstate->bw_obj_state.qgv_points_mask & ((1U << d->bw->max[0].num_qgv_points) - 1U);

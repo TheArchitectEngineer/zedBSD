@@ -6,32 +6,6 @@
  */
 
 /*
- * Derived from the Linux kernel v6.8.12 (drivers/gpu/drm/i915/display/intel_cdclk.c),
- * which carries the following notice.
- *
- * Copyright © 2006-2017 Intel Corporation
- *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
- */
-
-/*
  * The display's CD clock (see clock.h).
  *
  * The CD clock state the display core and the resident run read, kept
@@ -63,7 +37,7 @@ static void i915_cdclk_report(struct i915_cdclk_dev *cd, const struct i915_xd_cd
  * display version, and whether the PLL may crawl to a new ratio.
  */
 void
-drv_i915_init_cdclk_hooks(
+drv_i915_cdclk_prepare(
 	struct i915_cdclk_dev *cd,
 	struct i915_xd *xd)
 {
@@ -81,11 +55,11 @@ drv_i915_init_cdclk_hooks(
 }
 
 /*
- * Reads the CDCLK state out of the hardware (bxt_get_cdclk()); the voltage
- * level is the one the frequency needs.
+ * Reads the CDCLK state out of the hardware; the voltage level is the one
+ * the frequency needs.
  */
 void
-drv_i915_bxt_get_cdclk(
+drv_i915_cdclk_read(
 	struct i915_cdclk_dev *cd,
 	struct i915_cdclk_config *cfg)
 {
@@ -97,22 +71,22 @@ drv_i915_bxt_get_cdclk(
 }
 
 /*
- * Reads the current CDCLK state into the device (intel_update_cdclk()).
+ * Reads the current CDCLK state into the device.
  */
 void
-drv_i915_update_cdclk(
+drv_i915_cdclk_refresh(
 	struct i915_cdclk_dev *cd)
 {
 	/* The device's state is the hardware's. */
-	drv_i915_bxt_get_cdclk(cd, &cd->hw);
+	drv_i915_cdclk_read(cd, &cd->hw);
 }
 
 /*
- * Brings the CDCLK up (intel_cdclk_init_hw()): keeps a legal state the
- * firmware left, and otherwise sets the table's lowest.
+ * Brings the CDCLK up: keeps a legal state the firmware left, and
+ * otherwise sets the table's lowest.
  */
 void
-drv_i915_cdclk_init_hw(
+drv_i915_cdclk_start(
 	struct i915_cdclk_dev *cd)
 {
 	struct i915_xd_cdclk state;
@@ -125,12 +99,12 @@ drv_i915_cdclk_init_hw(
 }
 
 /*
- * Takes the CDCLK down for a suspend (intel_cdclk_uninit_hw()): the bypass
- * frequency with the PLL off.  The resume's drv_i915_cdclk_init_hw() finds
- * the PLL off and sets the CDCLK again.
+ * Takes the CDCLK down for a suspend: the bypass frequency with the PLL
+ * off.  The resume's drv_i915_cdclk_start() finds the PLL off and sets the
+ * CDCLK again.
  */
 void
-drv_i915_cdclk_uninit_hw(
+drv_i915_cdclk_stop(
 	struct i915_cdclk_dev *cd)
 {
 	struct i915_xd_cdclk state;
@@ -144,10 +118,10 @@ drv_i915_cdclk_uninit_hw(
 }
 
 /*
- * Reports the highest CDCLK of the platform (intel_update_max_cdclk()).
+ * Reports the highest CDCLK of the platform.
  */
 uint32_t
-drv_i915_max_cdclk_freq(
+drv_i915_cdclk_max(
 	const struct i915_cdclk_dev *cd)
 {
 	struct i915_xd_cdclk state;
@@ -207,7 +181,7 @@ i915_cdclk_report(
 		cd->diag_no_change = report->kept;
 	}
 	if (report->replaced) {
-		kern_logf("i915: cdclk: sanitizing cdclk programmed by pre-os\n");
+		kern_logf("i915: display: CD clock: the firmware's state is not one of the table's: replaced\n");
 		cd->diag_sanitized.cdclk = 0u;
 		cd->diag_sanitized.vco = I915_XD_CDCLK_VCO_UNKNOWN;
 	}
@@ -222,15 +196,15 @@ i915_cdclk_report(
 	cd->diag_notify_status = report->voltage_error;
 	cd->diag_hw_sequence_reached = report->programmed;
 	if (report->prepare_error != 0)
-		kern_logf("i915: cdclk: PCU prepare failed (err %d, freq %u)\n", report->prepare_error, report->requested.cdclk_khz);
+		kern_logf("i915: display: CD clock: the firmware refused the change to %u kHz (%d)\n", report->requested.cdclk_khz, report->prepare_error);
 	if (report->voltage_error != 0)
-		kern_logf("i915: cdclk: PCODE freq set failed (err %d, freq %u)\n", report->voltage_error, report->requested.cdclk_khz);
+		kern_logf("i915: display: CD clock: the firmware refused the voltage of %u kHz (%d)\n", report->requested.cdclk_khz, report->voltage_error);
 
 	/* The PLL waits that ran out. */
 	if (report->unlock_late)
-		kern_logf("i915: cdclk: timeout waiting for CDCLK PLL unlock\n");
+		kern_logf("i915: display: CD clock: the PLL did not unlock in time\n");
 	if (report->lock_late)
-		kern_logf("i915: cdclk: timeout waiting for CDCLK PLL lock\n");
+		kern_logf("i915: display: CD clock: the PLL did not lock in time\n");
 	if (report->crawl_late)
-		kern_logf("i915: cdclk: timeout waiting for FREQ change ack\n");
+		kern_logf("i915: display: CD clock: the PLL did not acknowledge the crawl in time\n");
 }

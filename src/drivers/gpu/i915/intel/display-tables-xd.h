@@ -994,12 +994,17 @@ static const struct i915_xd_step_row i915_xd_steps_rplp[] = {
 
 /*
  * The PCH device ids (the bridge id masked with 0xff80) of the south
- * displays beside display 12 and 13 GPUs, and of the Comet Lake PCHs a
+ * displays beside display 12 and 13 GPUs, of the Comet Lake PCHs a
  * Rocket Lake may sit beside (whose south display the xd code does not
- * drive, so they are known only to be refused).
+ * drive, so they are known only to be refused), and of the Sunrise Point,
+ * Kaby Lake and Cannon Point PCHs beside display 9 GPUs, whose backlight
+ * layout the PCH decides.
  *
  * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/soc/intel_pch.h
- * (INTEL_PCH_DEVICE_ID_MASK, INTEL_PCH_CMP_DEVICE_ID_TYPE,
+ * (INTEL_PCH_DEVICE_ID_MASK, INTEL_PCH_SPT_DEVICE_ID_TYPE,
+ * INTEL_PCH_SPT_LP_DEVICE_ID_TYPE, INTEL_PCH_KBP_DEVICE_ID_TYPE,
+ * INTEL_PCH_CNP_DEVICE_ID_TYPE, INTEL_PCH_CNP_LP_DEVICE_ID_TYPE,
+ * INTEL_PCH_CMP_DEVICE_ID_TYPE,
  * INTEL_PCH_CMP2_DEVICE_ID_TYPE, INTEL_PCH_CMP_V_DEVICE_ID_TYPE,
  * INTEL_PCH_ICP_DEVICE_ID_TYPE,
  * INTEL_PCH_ICP2_DEVICE_ID_TYPE, INTEL_PCH_TGP_DEVICE_ID_TYPE,
@@ -1010,6 +1015,11 @@ static const struct i915_xd_step_row i915_xd_steps_rplp[] = {
 #define I915_XD_PCH_ID_MASK		0xff80U
 
 static const struct i915_xd_pch_id i915_xd_pch_ids[] = {
+	{ 0xa100, I915_PCH_SPT },
+	{ 0x9d00, I915_PCH_SPT },
+	{ 0xa280, I915_PCH_SPT },
+	{ 0xa300, I915_PCH_CNP },
+	{ 0x9d80, I915_PCH_CNP },
 	{ 0x0280, I915_PCH_CNP },
 	{ 0x0680, I915_PCH_CNP },
 	{ 0xa380, I915_PCH_SPT },

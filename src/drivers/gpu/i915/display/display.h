@@ -119,8 +119,6 @@ int drv_i915_display_panel(struct i915_display *display, uint32_t *width, uint32
  * ==== The PCH ====
  */
 
-int drv_i915_pch_type(uint16_t id);
-int drv_i915_is_virt_pch(uint16_t id, uint16_t svendor, uint16_t sdevice);
 void drv_i915_detect_pch(struct i915_display *display, struct i915_pch_state *p, int display_ver, int is_alderlake, int has_display, int run_as_guest);
 
 #endif /* DRIVERS_GPU_I915_DISPLAY_DISPLAY_H */
