@@ -8,10 +8,9 @@
 /*
  * The vertical blank helpers of the one-screen path (see vblank.h): the
  * nesting of the update section's interrupts on the device's backend,
- * the settling of a pending flip event, the evasion window of the
- * running mode (xd-pipe), and the backend hooks of a panel run that take
- * a vertical blank reference, sleep until the pipe's next blank and
- * complete the flip event.
+ * and the backend hooks of a panel run that take a vertical blank
+ * reference, sleep until the pipe's next blank and complete the flip
+ * event.
  */
 
 #include "modeset-internal.h"
@@ -64,91 +63,6 @@ drv_i915_lcd_irq_enable(
 
 	/* From here the section has interrupts on. */
 	world->i915_lcd_irqs_off = 0;
-}
-
-/*
- * Settles the pending flip event of the named world's selected screen (the
- * Linux intel_crtc_vblank_off() -> drm_crtc_vblank_off()).
- *
- * Linux sends the crtc's pending events with the current count and drops
- * the vblank reference each one held; nobody waits for them afterwards.
- * Here that is the flip's one event: the backend forgets the armed event
- * (a later wait is refused, a late vblank completes nothing), then the
- * reference goes -- exactly once, whatever happened to the flip.  The
- * event record is the waiting thread's own; the interrupt side only
- * advances the pipe's counters under the interrupt lock.
- */
-void
-drv_i915_lcd_ms_vblank_off(
-	struct i915_lcd_world *world)
-{
-	struct i915_lcd_modeset *ms;
-	struct i915_lcd_emit *ms_ops;
-
-	/* Finds the selected screen and its backend. */
-	ms = &world->ms_pool[world->ms_sel];
-	ms_ops = world->ms_ops_pool[world->ms_sel];
-
-	/* Nothing to settle without an event holding a reference, or without a backend. */
-	if (!ms->flip_event_ref)
-		return;
-	if (ms_ops == 0)
-		return;
-
-	/* The backend forgets the armed event. */
-	if (ms_ops->cancel_event != 0)
-		ms_ops->cancel_event(ms_ops->ctx, ms->crtc.pipe);
-
-	/* The event's vblank reference goes back. */
-	ms_ops->vblank_put(ms_ops->ctx, ms->crtc.pipe);
-
-	/* The event no longer holds a reference; one more event was cancelled. */
-	ms->flip_event_ref = 0;
-	ms->events_cancelled++;
-}
-
-/*
- * Computes the vblank evasion window of the selected screen: the lines
- * of its running mode before the vertical blank's start that a flip's
- * arming writes stay out of (xd-pipe).
- *
- * I915_LCD_MS_OK with the window filled, I915_LCD_MS_NOT_PREPARED when
- * the screen is not running, or I915_LCD_MS_ERRORS when the window does
- * not lie in the frame.
- */
-int
-drv_i915_lcd_modeset_evade_window(
-	struct i915_display *display,
-	int *min,
-	int *max,
-	int *vblank_start)
-{
-	struct i915_lcd_world *world;
-	struct i915_lcd_modeset *ms;
-	struct i915_xd_evade window;
-
-	/* Finds the selected screen. */
-	world = display->lcd_world;
-	ms = &world->ms_pool[world->ms_sel];
-
-	/* Only a prepared, running screen has a window. */
-	if (!ms->prepared)
-		return I915_LCD_MS_NOT_PREPARED;
-	if (!ms->crtc.active)
-		return I915_LCD_MS_NOT_PREPARED;
-
-	/* The window of the running mode. */
-	drv_i915_xd_pipe_evade_window((uint32_t)ms->plan.mode.clock_khz, ms->plan.mode.htotal, ms->plan.mode.vdisplay, &window);
-	*min = window.min;
-	*max = window.max;
-	*vblank_start = window.vblank_start;
-
-	/* A window that does not start inside the frame. */
-	if (window.min <= 0 || window.max <= 0)
-		return I915_LCD_MS_ERRORS;
-
-	/* Succeeded: the window is filled in. */
-	return I915_LCD_MS_OK;
 }
 
 /*

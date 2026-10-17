@@ -257,7 +257,7 @@ drv_i915_hpd_world_create(
 	if (world == NULL)
 		return ENOMEM;
 
-	/* The topology: the first snapshot, and every connector's first generation (ws113-p002). */
+	/* The topology: the first snapshot, and every connector's first generation. */
 	spin_init(&world->topology_lock, LOCK_RANK_DEVICE, "i915 display topology");
 	world->topology_sequence = 1U;
 	for (index = 0U; index < I915_HPD_MAX_CONNECTORS; index++)
@@ -669,7 +669,7 @@ drv_i915_hpd_icp_entry(
 /*
  * Hands a display engine hotplug interrupt (GEN11_DE_HPD_IIR: the DP-alt and
  * Thunderbolt bits of each Type-C port) to the hotplug path, which drops it
- * until it is started (ws051-p002b).
+ * until it is started.
  *
  * The caller has acknowledged the IIR and runs with interrupts disabled.
  */
@@ -802,8 +802,8 @@ drv_i915_hpd_probe_connector(
 		ic->base.status = status;
 
 	/*
-	 * The live status the detection went by (ws084: on bare metal the HDMI
-	 * sink was not found while the passthrough guest found it).
+	 * The live status the detection went by (on bare metal the HDMI sink
+	 * was not found while a passthrough guest found it).
 	 */
 	isr = drv_i915_hpd_read(world, I915_HPD_REG_SDEISR);
 	pin_bit = 0u;
@@ -821,27 +821,6 @@ drv_i915_hpd_probe_connector(
 /*
  * ==== What the path saw, for the diagnostics and the tests ====
  */
-
-/*
- * Returns a connector's name, or "-" for a connector the path does not have.
- */
-const char *
-drv_i915_hpd_connector_name(
-	struct i915_display *display,
-	unsigned idx)
-{
-	struct i915_hpd_world *world;
-
-	/* A connector outside the path has no name. */
-	world = i915_hpd_display_world(display);
-	if (world == NULL)
-		return "-";
-	if (idx >= world->hpd.num)
-		return "-";
-
-	/* Succeeded: reports the name the start gave the connector. */
-	return world->hpd_conn_names[idx];
-}
 
 /*
  * Copies out what the hotplug path saw and did.
@@ -900,48 +879,6 @@ drv_i915_hpd_summary(
 }
 
 /*
- * Returns hotplug interrupt record i, or NULL past the last one.
- */
-const struct i915_hpd_irq_record *
-drv_i915_hpd_irq_record(
-	struct i915_display *display,
-	unsigned i)
-{
-	struct i915_hpd_world *world;
-
-	/* A record not filled does not exist. */
-	world = i915_hpd_display_world(display);
-	if (world == NULL)
-		return NULL;
-	if (i >= world->hpd.n_irq)
-		return NULL;
-
-	/* Succeeded: reports the record. */
-	return &world->hpd.irq[i];
-}
-
-/*
- * Returns encoder->hotplug() record i, or NULL past the last one.
- */
-const struct i915_hpd_hotplug_record *
-drv_i915_hpd_hotplug_record(
-	struct i915_display *display,
-	unsigned i)
-{
-	struct i915_hpd_world *world;
-
-	/* A record not filled does not exist. */
-	world = i915_hpd_display_world(display);
-	if (world == NULL)
-		return NULL;
-	if (i >= world->hpd.n_hot)
-		return NULL;
-
-	/* Succeeded: reports the record. */
-	return &world->hpd.hot[i];
-}
-
-/*
  * Returns the pins whose hotplug event the hotplug work has not handled.
  */
 uint32_t
@@ -957,46 +894,6 @@ drv_i915_hpd_event_bits(
 
 	/* Succeeded: reports display.hotplug.event_bits. */
 	return world->hpd_i915.display.hotplug.event_bits;
-}
-
-/*
- * Returns the pins the hotplug work will detect again.
- */
-uint32_t
-drv_i915_hpd_retry_bits(
-	struct i915_display *display)
-{
-	struct i915_hpd_world *world;
-
-	/* A display without a world has no retries. */
-	world = i915_hpd_display_world(display);
-	if (world == NULL)
-		return 0u;
-
-	/* Succeeded: reports display.hotplug.retry_bits. */
-	return world->hpd_i915.display.hotplug.retry_bits;
-}
-
-/*
- * Returns a pin's state (display.hotplug.stats[pin].state), or -1 for a pin
- * that does not exist.
- */
-int
-drv_i915_hpd_pin_state(
-	struct i915_display *display,
-	int pin)
-{
-	struct i915_hpd_world *world;
-
-	/* A pin outside the table has no state. */
-	world = i915_hpd_display_world(display);
-	if (world == NULL)
-		return -1;
-	if (pin <= HPD_NONE || pin >= HPD_NUM_PINS)
-		return -1;
-
-	/* Succeeded: reports the pin's state. */
-	return (int)world->hpd_i915.display.hotplug.stats[pin].state;
 }
 
 /*
@@ -1022,55 +919,11 @@ drv_i915_hpd_pin_count(
 }
 
 /*
- * Returns a connector's polling mode (drm_connector.polled), or -1 for a
- * connector the path does not have.
- */
-int
-drv_i915_hpd_connector_polled(
-	struct i915_display *display,
-	unsigned idx)
-{
-	struct i915_hpd_world *world;
-
-	/* A connector outside the path has no polling mode. */
-	world = i915_hpd_display_world(display);
-	if (world == NULL)
-		return -1;
-	if (idx >= world->hpd.num)
-		return -1;
-
-	/* Succeeded: reports the polling mode. */
-	return world->hpd_conns[idx].base.polled;
-}
-
-/*
- * Returns a connector's status (enum connector_status), or -1 for a
- * connector the path does not have.
- */
-int
-drv_i915_hpd_connector_status(
-	struct i915_display *display,
-	unsigned idx)
-{
-	struct i915_hpd_world *world;
-
-	/* A connector outside the path has no status. */
-	world = i915_hpd_display_world(display);
-	if (world == NULL)
-		return -1;
-	if (idx >= world->hpd.num)
-		return -1;
-
-	/* Succeeded: reports the status. */
-	return (int)world->hpd_conns[idx].base.status;
-}
-
-/*
  * ==== The display lease's topology events ====
  */
 
 /*
- * Reports the display topology's sequence (ws113-p002): 1, the first
+ * Reports the display topology's sequence: 1, the first
  * snapshot, until a connector is connected or disconnected.  No hardware
  * access and no wait: the display events operation reads it in any
  * context.
@@ -1097,8 +950,8 @@ drv_i915_hpd_topology_sequence(
 
 /*
  * Tells the display sessions that the inventory changed without a
- * connector's change: the resident output moved back to the firmware's
- * (BUG-268), so index 0 names another display.
+ * connector's change: the resident output moved back to the firmware's,
+ * so index 0 names another display.
  */
 void
 drv_i915_hpd_topology_touch(
@@ -1122,8 +975,8 @@ drv_i915_hpd_topology_touch(
 }
 
 /*
- * Describes one connector of the hotplug path for the display inventory
- * (ws113-p002): its kind, port, whether a sink is connected, its
+ * Describes one connector of the hotplug path for the display inventory:
+ * its kind, port, whether a sink is connected, its
  * generation and its name.  0, or ENOENT for a connector the path does not
  * have.
  */
@@ -1193,7 +1046,7 @@ drv_i915_hpd_output_count(
  * Takes a connector's connection and preferred mode into the topology
  * once, without publishing a change: the baseline the first snapshot
  * reads (the resident output's choice probes the HDMI connector at the
- * device start, ws113-p002).
+ * device start).
  */
 void
 drv_i915_hpd_output_take(
@@ -1215,7 +1068,7 @@ drv_i915_hpd_output_take(
  * Takes a connector's connection and preferred mode (from the EDID its
  * detection read) into the topology under the short lock; with publish,
  * its generation and the device's topology sequence move too and pollers
- * are woken outside the lock (ws113-p002).  Runs in the hotplug work or
+ * are woken outside the lock.  Runs in the hotplug work or
  * the start, never in interrupt context.
  */
 static void
@@ -2060,7 +1913,7 @@ i915_hpd_intel_dp_phy_test(
 
 /*
  * Trains a DP link again when it lost its lock (the Linux
- * intel_dp_retrain_link(), ws051-p005b): the resident output's link on an
+ * intel_dp_retrain_link()): the resident output's link on an
  * external DP port is checked (dp-ext-kern.c), and one that lost its
  * alignment or a lane's lock is trained again by lighting the output
  * again from the window (present.c).  Other DP links are not retrained
@@ -3352,7 +3205,7 @@ i915_hpd_dp_pulse_step(
 	/*
 	 * A long pulse is a plug or an unplug: the hotplug work detects the
 	 * port, and a Type-C port's sink gets its own link limits back (the
-	 * Linux reset_link_params of intel_dp_hpd_pulse(), ws051-p004b).
+	 * Linux reset_link_params of intel_dp_hpd_pulse()).
 	 */
 	if (long_hpd) {
 		kern_logf("i915: hpd: long hpd on %s: detecting\n", dig_port->base.base.name);
@@ -3574,10 +3427,9 @@ i915_hpd_hotplug_recorded(
 	}
 
 	/*
-	 * A connector connected or disconnected is a topology change
-	 * (ws113-p002), and so is a connected connector whose EDID changed: a
-	 * display swapped within one detection may bring another mode
-	 * (ws051-p005a).
+	 * A connector connected or disconnected is a topology change, and so
+	 * is a connected connector whose EDID changed: a display swapped within
+	 * one detection may bring another mode.
 	 */
 	topology_changed = 0;
 	if (old != (int)connector->base.status &&
@@ -3591,7 +3443,7 @@ i915_hpd_hotplug_recorded(
 	if (topology_changed)
 		i915_hpd_topology_update(world, idx, 1);
 
-	/* The display the resident output was moved to went: its output stops at once (BUG-268). */
+	/* The display the resident output was moved to went: its output stops at once. */
 	if (old == connector_status_connected && connector->base.status != connector_status_connected && world->dp_display != NULL)
 		drv_i915_present_unplugged(world->dp_display, idx);
 
@@ -3814,8 +3666,8 @@ i915_hpd_tc_link_reset_work(
 	kern_logf("i915: hpd TC%u: the link has had no DP-alt partner for %u ms: it must be reset\n", reset->tc_port + 1u, (unsigned)I915_HPD_TC_LINK_RESET_DELAY);
 
 	/*
-	 * A lit output on the port stops as an unplugged display's does
-	 * (ws051-p005b), in case the connector's disconnection was not seen;
+	 * A lit output on the port stops as an unplugged display's does,
+	 * in case the connector's disconnection was not seen;
 	 * one stopped already is not asked again.
 	 */
 	if (world->dp_display != NULL)

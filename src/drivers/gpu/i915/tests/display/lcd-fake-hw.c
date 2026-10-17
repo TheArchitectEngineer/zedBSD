@@ -177,6 +177,7 @@ drv_i915_lcd_fake_init(
 	hw->ops.panel = i915_lcd_fake_panel;
 
 	/* The power domains and the DBUF slices. */
+	hw->ops.power_domain = drv_i915_lcd_power_domain_of;
 	hw->ops.power_get = i915_lcd_fake_power_get;
 	hw->ops.power_put = i915_lcd_fake_power_put;
 	hw->ops.power_put_async = i915_lcd_fake_power_put_async;

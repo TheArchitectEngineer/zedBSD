@@ -24,14 +24,9 @@
 
 #ifdef I915_DISPLAY_WORLD_MODESET
 
-bool drv_i915_drm_dp_channel_eq_ok(const u8 link_status[DP_LINK_STATUS_SIZE], int lane_count);
-bool drv_i915_drm_dp_clock_recovery_ok(const u8 link_status[DP_LINK_STATUS_SIZE], int lane_count);
-int drv_i915_drm_dp_dpcd_read_phy_link_status(struct drm_dp_aux *aux, enum dp_phy dp_phy, u8 link_status[DP_LINK_STATUS_SIZE]);
 
 bool drv_i915_dp_needs_vsc_sdp(const struct intel_crtc_state *crtc_state, const struct drm_connector_state *conn_state);
 
-void drv_i915_dp_sink_bind(struct intel_dp *intel_dp, struct i915_xd_dp_sink *sink);
-void drv_i915_dp_link_failed(struct intel_dp *intel_dp, const struct intel_crtc_state *crtc_state);
 
 #endif /* I915_DISPLAY_WORLD_MODESET */
 

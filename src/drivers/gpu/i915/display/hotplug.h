@@ -64,16 +64,9 @@ int drv_i915_hpd_probe_connector(struct i915_display *display, unsigned idx);
  * ==== What the path saw, for the diagnostics and the tests ====
  */
 
-const char *drv_i915_hpd_connector_name(struct i915_display *display, unsigned idx);
 void drv_i915_hpd_summary(struct i915_display *display, struct i915_hpd_summary *s);
-const struct i915_hpd_irq_record *drv_i915_hpd_irq_record(struct i915_display *display, unsigned i);
-const struct i915_hpd_hotplug_record *drv_i915_hpd_hotplug_record(struct i915_display *display, unsigned i);
 uint32_t drv_i915_hpd_event_bits(struct i915_display *display);
-uint32_t drv_i915_hpd_retry_bits(struct i915_display *display);
-int drv_i915_hpd_pin_state(struct i915_display *display, int pin);
 int drv_i915_hpd_pin_count(struct i915_display *display, int pin);
-int drv_i915_hpd_connector_polled(struct i915_display *display, unsigned idx);
-int drv_i915_hpd_connector_status(struct i915_display *display, unsigned idx);
 
 /*
  * ==== The display lease's topology events ====
@@ -83,7 +76,7 @@ uint64_t drv_i915_hpd_topology_sequence(struct i915_display *display);
 void drv_i915_hpd_topology_touch(struct i915_display *display);
 
 /*
- * ==== The connectors for the display inventory (ws113-p002) ====
+ * ==== The connectors for the display inventory ====
  */
 
 int drv_i915_hpd_output(struct i915_display *display, unsigned idx, struct i915_hpd_output *output);

@@ -91,6 +91,7 @@
 #include "dp-ext.h"
 #include "tc.h"
 #include "xd.h"
+#include "xd-backend.h"
 #include "xd-edp.h"
 
 /*
@@ -1950,15 +1951,15 @@ enum i915_lcd_panel_op {
 
 /* points of the commit at which the caller may look at the hardware (no writes of the path depend on them) */
 enum i915_lcd_observe {
-	I915_LCD_OBS_COMMIT_BEGIN = 0,        /* DC_OFF held, nothing written yet */
-	I915_LCD_OBS_UNDERRUN_ARM,            /* where the reference clears the pipe's underrun status and unmasks its interrupt */
-	I915_LCD_OBS_PIPE_ENABLED,            /* the crtc enable returned */
-	I915_LCD_OBS_PLANE_ARMED,             /* PLANE_SURF written */
-	I915_LCD_OBS_PLANE_DISABLED,          /* the plane disable was armed */
-	I915_LCD_OBS_UNDERRUN_DISARM,         /* where the reference masks the underrun interrupt again */
-	I915_LCD_OBS_PIPE_DISABLED,           /* the crtc disable returned */
-	I915_LCD_OBS_COMMIT_END,              /* before DC_OFF is dropped */
-	I915_LCD_OBS_NUM
+	I915_LCD_OBS_COMMIT_BEGIN = I915_XD_OBSERVE_COMMIT_BEGIN,
+	I915_LCD_OBS_UNDERRUN_ARM = I915_XD_OBSERVE_UNDERRUN_ARM,
+	I915_LCD_OBS_PIPE_ENABLED = I915_XD_OBSERVE_PIPE_ENABLED,
+	I915_LCD_OBS_PLANE_ARMED = I915_XD_OBSERVE_PLANE_ARMED,
+	I915_LCD_OBS_PLANE_DISABLED = I915_XD_OBSERVE_PLANE_DISABLED,
+	I915_LCD_OBS_UNDERRUN_DISARM = I915_XD_OBSERVE_UNDERRUN_DISARM,
+	I915_LCD_OBS_PIPE_DISABLED = I915_XD_OBSERVE_PIPE_DISABLED,
+	I915_LCD_OBS_COMMIT_END = I915_XD_OBSERVE_COMMIT_END,
+	I915_LCD_OBS_NUM = I915_XD_OBSERVE_POINTS
 };
 
 /*
@@ -1972,116 +1973,11 @@ enum i915_lcd_observe {
 #define I915_LCD_EIO       (-5)
 
 /*
- * The DPCD access of one sink's own AUX channel.
- *
- * A modeset object whose sink is not the one the backend's DPCD hooks
- * reach (those reach the panel's) names one of these: an external DP
- * port's sink, reached over its Type-C port's AUX channel.  The hooks have
- * the meaning of the backend's (bytes transferred, or a negative Linux
- * errno; 0 or a negative errno for the capabilities) and the owner of the
- * channel keeps it for as long as the object may use it.
+ * The sink hooks of an AUX channel of its own and the backend of a
+ * screen are the xd ones (xd-backend.h); the older code names them so.
  */
-struct i915_lcd_aux_emit {
-	void *ctx;
-	long (*dpcd_read)(void *ctx, unsigned offset, uint8_t *buf, size_t size);
-	long (*dpcd_write)(void *ctx, unsigned offset, const uint8_t *buf, size_t size);
-	int (*read_dpcd_caps)(void *ctx, uint8_t dpcd[15]);
-	/* Sets up a branch's protocol converter for the RGB stream (0, or a negative errno; NULL: none to set up). */
-	int (*configure_converter)(void *ctx);
-};
-
-/*
- * The hooks the modeset code reaches the outside through: registers,
- * waits, time, DPCD, panel power, display power, vblank, locks and errors.
- */
-struct i915_lcd_emit {
-	void *ctx;
-	int model;              /* 1: a register / sink MODEL (discarding it isolates whatever it holds); 0: real hardware */
-	void (*write32)(void *ctx, uint32_t reg, uint32_t value);
-	uint32_t (*rmw32)(void *ctx, uint32_t reg, uint32_t clear, uint32_t set);   /* returns the old value */
-	void (*posting_read)(void *ctx, uint32_t reg);                              /* may be NULL */
-	void (*step)(void *ctx, const char *name);      /* a callee of the reference that is not ported */
-	/* ---- may be NULL in the pure word recorder ---- */
-	uint32_t (*read32)(void *ctx, uint32_t reg);
-	/* intel_de_wait_for_set / _clear / _register: 0, or -110 (-ETIMEDOUT, Linux numbering) */
-	int (*wait_reg)(void *ctx, uint32_t reg, uint32_t mask, uint32_t value, unsigned timeout_ms);
-	void (*usleep)(void *ctx, unsigned us);         /* usleep_range / msleep: may yield */
-	void (*udelay)(void *ctx, unsigned us);         /* udelay: short, does not yield */
-	/* drm_dp_dpcd_read / _write on the panel's AUX channel: bytes transferred, or a negative errno */
-	long (*dpcd_read)(void *ctx, unsigned offset, uint8_t *buf, size_t size);
-	long (*dpcd_write)(void *ctx, unsigned offset, const uint8_t *buf, size_t size);
-	/* drm_dp_read_dpcd_caps(): receiver caps incl. the extended field; 0, or a negative errno */
-	int (*read_dpcd_caps)(void *ctx, uint8_t dpcd[15]);
-	int (*panel)(void *ctx, int op);                /* enum i915_lcd_panel_op; 0 = done */
-	/*
-	 * intel_display_power_get / _put; `domain` = the reference's enum intel_display_power_domain
-	 * value.  get returns a non-zero wakeref cookie (0 = failed); put takes it back.
-	 */
-	int (*power_get)(void *ctx, int domain);
-	/*
-	 * intel_display_power_get_if_enabled(): the cookie, or 0 when the well is OFF (a readout never
-	 * turns a well on).  NULL: the backend has no well state of its own (a model) -- the caller then
-	 * falls back to power_get.
-	 */
-	int (*power_get_if_enabled)(void *ctx, int domain);
-	void (*power_put)(void *ctx, int domain, int wakeref);
-	/* intel_display_power_put_async_delay(): the reference drops DC_OFF this way at the end of a commit */
-	void (*power_put_async)(void *ctx, int domain, int wakeref, int delay_ms);
-	/* gen9_dbuf_slices_update(): request exactly these DBUF slices (bit n = slice n+1) */
-	void (*dbuf_slices_update)(void *ctx, unsigned req_slices);
-	/*
-	 * The synchronous plane update (intel_pipe_update_start / _end) and its completion event:
-	 *   vblank_get / vblank_put   drm_crtc_vblank_get / _put of the pipe (0 / -EINVAL)
-	 *   vblank_sleep              schedule_timeout() on the pipe's vblank wait queue: sleep until the pipe's next vblank
-	 *                             interrupt or `ticks` display ticks of 10 ms (not kernel ticks); returns the ticks left (0 = timed out)
-	 *   irq_off / irq_on          local_irq_disable / _enable around the short update section
-	 *   arm_event                 drm_crtc_arm_vblank_event(): the event completes at the pipe's next vblank after now
-	 *   wait_event                wait for that completion (0; -110 not within timeout_ms; -5 time base / wait fault)
-	 */
-	int (*vblank_get)(void *ctx, int pipe);
-	void (*vblank_put)(void *ctx, int pipe);
-	long (*vblank_sleep)(void *ctx, int pipe, long ticks);
-	void (*irq_off)(void *ctx);
-	void (*irq_on)(void *ctx);
-	void (*arm_event)(void *ctx, int pipe);
-	int (*wait_event)(void *ctx, int pipe, unsigned timeout_ms);
-	/* drm_crtc_vblank_off() on a pending event: it will never be waited for again (no completion after this) */
-	void (*cancel_event)(void *ctx, int pipe);
-	/* optional: a named point of the commit was reached (enum i915_lcd_observe); the real device samples here */
-	void (*observe)(void *ctx, int point);
-	void (*lock)(void *ctx, int which, int take);   /* I915_LCD_LOCK_*; take = 1 lock, 0 unlock */
-	/* drm_err / drm_WARN in the reference text: the FIRST one is what a failed run is read from */
-	void (*error)(void *ctx, const char *what);
-	void (*debug)(void *ctx, const char *what);     /* drm_dbg_kms: the format string only */
-	/*
-	 * intel_tc_port_put_link(): an output's link to a Type-C port (0 = TC1)
-	 * is given back, and the last one gives the PHY back.  NULL in a
-	 * model: the step is recorded instead.
-	 */
-	void (*tc_put_link)(void *ctx, int tc_port);
-	/*
-	 * The rest of a Type-C port's link (tc_port 0 = TC1), all NULL in a
-	 * model, which records a step instead:
-	 *   tc_get_link            intel_tc_port_get_link(): an output takes a link, and with it the PHY for the lanes
-	 *   tc_mode                the mode the port is held in (enum i915_tc_mode of tc.h; a model answers NONE)
-	 *   tc_set_fia_lane_count  intel_tc_port_set_fia_lane_count(): the FIA's DP lanes, mirrored when lane_reversal
-	 *   tc_pin_assignment      intel_tc_port_get_pin_assignment_mask(): the FIA's DP pin assignment (a model answers 0)
-	 */
-	void (*tc_get_link)(void *ctx, int tc_port, int lanes);
-	int (*tc_mode)(void *ctx, int tc_port);
-	void (*tc_set_fia_lane_count)(void *ctx, int tc_port, int lanes, int lane_reversal);
-	unsigned (*tc_pin_assignment)(void *ctx, int tc_port);
-	/*
-	 * intel_dkl_phy_read / _write / _rmw: a register of a Type-C port's DKL
-	 * PHY at its PHY address (the bank in bits 15..12), under the lock the
-	 * ports' bank index shares.  NULL in a model: the bank index and the
-	 * window are written and read through write32 / read32 (xd-tc.c's
-	 * drv_i915_xd_dkl_window() gives the registers).
-	 */
-	uint32_t (*dkl_read)(void *ctx, int tc_port, uint32_t phy_address);
-	void (*dkl_write)(void *ctx, int tc_port, uint32_t phy_address, uint32_t value);
-	void (*dkl_rmw)(void *ctx, int tc_port, uint32_t phy_address, uint32_t clear, uint32_t set);
-};
+#define i915_lcd_aux_emit i915_xd_sink_hooks
+#define i915_lcd_emit i915_xd_backend
 /*
  * The state calculation (state.c).
  */
@@ -2350,80 +2246,23 @@ struct i915_lcd_modeset_cfg {
 };
 
 /*
- * What a modeset run reports: how far it got and what it holds.
+ * What a screen holds and what a flip did are the pictures' records
+ * (xd-picture.h); the older code names them and their results so.
  */
-struct i915_lcd_modeset_status {
-	int prepared, crtc_active, plane_armed;
-	/* link */
-	int link_rate, lane_count;
-	int link_trained_flag;          /* intel_dp->link_trained: set by intel_dp_stop_link_train() whatever the outcome */
-	int link_status_rc;             /* reading DPCD 0x202.. after the enable: 0, or a positive errno */
-	uint8_t link_status[6];
-	int cr_ok, eq_ok;               /* drm_dp_clock_recovery_ok / drm_dp_channel_eq_ok on that readout */
-	uint8_t train_set[4];
-	uint32_t ddi_buf_ctl_value;     /* intel_dp->DP */
-	/* backlight (PWM): what intel_backlight_setup() derived and whether it is on */
-	int backlight_present, backlight_enabled, backlight_setup_rc;
-	uint32_t backlight_pwm_max, backlight_level;
-	/* watermarks / DDB computed for the plane (software range [start, end) in DDB blocks) */
-	int wm_rc;
-	uint16_t ddb_start, ddb_end;
-	uint16_t wm0_blocks, wm0_lines; int wm0_enable;
-	uint8_t dbuf_slices_wanted; int mbus_joined;
-	/* the commit's outer part */
-	int cdclk_rc, cdclk_crtc_min, cdclk_bw_min, cdclk_required_khz, cdclk_required_vco, cdclk_required_level, cdclk_change_needed;
-	unsigned bw_data_rate;          /* MB/s this crtc needs */
-	int dc_off_held;                /* POWER_DOMAIN_DC_OFF is held (inside a commit, or kept after an unconfirmed stop) */
-	unsigned crtc_domains_held;     /* how many domains of get_crtc_power_domains() the crtc holds */
-	uint8_t dbuf_slices_now; int mbus_joined_now;   /* the current global DBUF state */
-	unsigned dbuf_active_pipes_now;                 /* its active pipes, the reserved ones included */
-	int stop_unconfirmed, retained;
-	int dither;
-	uint32_t cur_surf, pend_surf;       /* displayed / pending (valid while flip_pending) */
-	int flip_pending, flip_stuck; unsigned flip_gen;
-	int flip_event_ref;                     /* the pending event still holds its vblank reference */
-	unsigned events_cancelled;              /* events settled by the stop path (drm_crtc_vblank_off) */
-	uint32_t backlight_min;         /* panel->backlight.min (hw units) */
-	uint32_t backlight_max;
-	uint32_t backlight_user, backlight_user_max;   /* the user brightness (restore THIS, not the hw level) */                     /* crtc state: derived from pipe_bpp (intel_modeset_pipe_config) */
-	unsigned commits;
-	/* ownership */
-	int pll_on, pll_active_mask, pll_wakeref;
-	int pll_id;                     /* the shared DPLL this crtc was given (0 / 1) */
-	int pll_pipe_mask;              /* the pipes that hold a reference on it */
-	int ddi_io_wakeref, aux_wakeref;
-	/* the reference's drm_err / WARN lines since prepare */
-	unsigned errors;
-	const char *first_error;
-};
+#define i915_lcd_modeset_status i915_xd_picture_status
+#define i915_lcd_flip_result i915_xd_picture_flip
 
-/* results of _enable / _disable */
-#define I915_LCD_MS_OK 0
-#define I915_LCD_MS_NOT_PREPARED (-1)
-#define I915_LCD_MS_ERRORS (-2)            /* the reference reported an error (status.first_error) */
-#define I915_LCD_MS_LINK_NOT_TRAINED (-3)  /* the sink's link status does not show CR + EQ + symbol lock + alignment */
-#define I915_LCD_MS_STILL_OWNED (-4)       /* after the disable something is still held (status says what) */
+#define I915_LCD_MS_OK I915_XD_PICTURE_OK
+#define I915_LCD_MS_NOT_PREPARED I915_XD_PICTURE_NOT_READY
+#define I915_LCD_MS_ERRORS I915_XD_PICTURE_ERRORS
+#define I915_LCD_MS_LINK_NOT_TRAINED I915_XD_PICTURE_LINK_NOT_TRAINED
+#define I915_LCD_MS_STILL_OWNED I915_XD_PICTURE_STILL_OWNED
 
-/*
- * Flip the running picture to another buffer (same format / size / pitch): the reference's update of a running crtc
- * (plane noarm, intel_pipe_update_start -- vblank evasion --, plane arm, intel_pipe_update_end -- the event is armed).
- * COMPLETE only when the event completed AND the pipe's live surface (PLANE_SURFLIVE) is the new buffer; then the old
- * buffer is no longer displayed.  Otherwise both stay protected and further flips are refused (flip_stuck) until the
- * display is stopped.  One flip pending at a time; one display owner.
- */
-struct i915_lcd_flip_result {
-	unsigned gen;
-	uint32_t old_surf, new_surf, live_before, live_after;
-	uint32_t frame_before, frame_after;
-	int event_rc;
-	int update_errors;                      /* reference errors during the update (e.g. "Atomic update failure") */
-	int result;                             /* I915_LCD_FLIP_* */
-};
-#define I915_LCD_FLIP_DONE        0       /* the new buffer is displayed; the old one is released */
-#define I915_LCD_FLIP_NOT_LATCHED 1       /* the event came but the live surface is not the new one: both kept */
-#define I915_LCD_FLIP_TIMEOUT     2       /* no completion: both kept */
-#define I915_LCD_FLIP_REFUSED     3       /* nothing written (not running, a flip stuck, same buffer, bad address) */
-#define I915_LCD_FLIP_ARMED       4       /* armed without waiting: latches at the next vblank, both kept until then */
+#define I915_LCD_FLIP_DONE I915_XD_PICTURE_FLIP_DONE
+#define I915_LCD_FLIP_NOT_LATCHED I915_XD_PICTURE_FLIP_NOT_LATCHED
+#define I915_LCD_FLIP_TIMEOUT I915_XD_PICTURE_FLIP_TIMEOUT
+#define I915_LCD_FLIP_REFUSED I915_XD_PICTURE_FLIP_REFUSED
+#define I915_LCD_FLIP_ARMED I915_XD_PICTURE_FLIP_ARMED
 
 /*
  * The one picture on the panel (modeset.c).

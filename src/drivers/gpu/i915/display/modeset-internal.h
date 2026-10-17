@@ -208,9 +208,6 @@ enum tc_port {
 #define I915_LCD_EINVAL 22
 #define I915_LCD_ERANGE 34
 
-/* The number of screens (modeset objects) the one-screen path keeps at once. */
-#define I915_LCD_MS_SCREENS 2
-
 /*
  * The PLLs of the device's pool, in the reference's adlp_plls[] order:
  * DPLL 0 and DPLL 1 (the combo PHYs), the Thunderbolt PLL and TC PLL 1 to
@@ -874,18 +871,6 @@ enum tc_port {
  */
 #define intel_crtc_vblank_on(cs) \
 	I915_LCD_DECIDED(I915_LCD_SEQ_I915_CRTC_STATE(cs), "intel_crtc_vblank_on: DRM vblank events unused in this test; pipe vblank IRQ stays masked (checked by the binding)")
-
-/*
- * intel_crtc_vblank_off(): the flip path has one pending event with a
- * reference, and it is settled here.  The screen whose event is settled is
- * the selected screen of the world the caller names (the modeset text
- * reached it through a file-scope selector).
- */
-#define I915_LCD_INTEL_CRTC_VBLANK_OFF(world, cs) \
-	do { \
-		(void)(cs); \
-		drv_i915_lcd_ms_vblank_off(world); \
-	} while (0)
 
 /*
  * XXX: UNPORTED -- the enable-sequence callees that are not ported.  Each is
@@ -2161,38 +2146,6 @@ struct i915_lcd_modeset {
  */
 struct i915_lcd_world {
 	/*
-	 * The modeset objects of the screens (modeset.c).  One per
-	 * screen; prepare fills the selected one and the disable empties it.
-	 */
-	struct i915_lcd_modeset ms_pool[I915_LCD_MS_SCREENS];
-
-	/* The backend each screen's commit runs on, bound by prepare. */
-	struct i915_lcd_emit *ms_ops_pool[I915_LCD_MS_SCREENS];
-
-	/* The first error the Linux text reported in each screen's current run (NULL: none yet). */
-	const char *ms_first_error_pool[I915_LCD_MS_SCREENS];
-
-	/* How many errors the Linux text reported in each screen's current run. */
-	unsigned ms_errors_pool[I915_LCD_MS_SCREENS];
-
-	/*
-	 * Whether each screen's display was retained after an unconfirmed stop.
-	 * It outlives prepare's clearing of the modeset object: only discarding
-	 * the model clears it.
-	 */
-	int ms_retained_pool[I915_LCD_MS_SCREENS];
-
-	/* The backend the retained display of each screen belongs to (with ms_retained_pool). */
-	const struct i915_lcd_emit *ms_retained_ops_pool[I915_LCD_MS_SCREENS];
-
-	/*
-	 * The selected screen: the index into the pools above that every
-	 * modeset entry point works on.  Set by the entry point before it calls
-	 * into the Linux text.
-	 */
-	unsigned ms_sel;
-
-	/*
 	 * The display version of the device the probe found (12 or 13), which
 	 * the platform predicates answer from.  Starts at 13; set once by the
 	 * probe before the first modeset.
@@ -2213,12 +2166,6 @@ struct i915_lcd_world {
 	 * field lives until no caller reads it.
 	 */
 	struct drm_i915_private *i915_lcd_cur_i915;
-
-	/*
-	 * The one encoder of the modeset (drm_for_each_encoder_mask() visits
-	 * it): the selected screen's encoder, bound with the device.
-	 */
-	struct drm_encoder *i915_lcd_only_encoder;
 
 	/*
 	 * The crtc state of the CPU-transcoder word recorder (a function
@@ -2245,27 +2192,8 @@ struct i915_lcd_world {
 	/* The device of the DDI word recorder (a function static, as above). */
 	struct drm_i915_private i915_ddi_emit_i915;
 
-	/* The device of the combo PLL calculation (a function static): cleared at each call. */
-	struct drm_i915_private i915_icl_dp_combo_pll_i915;
-
-	/*
-	 * The device's PLLs (I915_LCD_DPLL_POOL_SIZE: the two combo PLLs, the
-	 * Thunderbolt PLL and the four Type-C PLLs): one pool for
-	 * the whole device, so two screens that want the same hardware state
-	 * share one object and its active_mask counts the pipes that drive it.
-	 * Built on first use (i915_lcd_dpll_pool_inited), cleared when the pool
-	 * is forgotten.
-	 */
-	struct intel_shared_dpll i915_lcd_dpll_pool[I915_LCD_DPLL_POOL_SIZE];
-
-	/* The descriptions of the pool's PLLs (name, hooks, id), built with the pool. */
-	struct dpll_info i915_lcd_dpll_pool_info[I915_LCD_DPLL_POOL_SIZE];
-
 	/* The atomic state's shared_dpll[] of the pool: the pipes using each PLL and its state. */
 	struct intel_shared_dpll_state i915_lcd_dpll_pool_state[I915_LCD_DPLL_POOL_SIZE];
-
-	/* Nonzero once the pool above is built; zero after it is forgotten. */
-	int i915_lcd_dpll_pool_inited;
 
 	/*
 	 * Whether the update section has interrupts off (local_irq_*): 1 between
@@ -2371,12 +2299,8 @@ void drv_i915_lcd_ms_bind_pll(struct i915_lcd_modeset *ms, int dpll_id);
  * the two PLLs a Type-C port's crtc reserves.
  */
 void drv_i915_dkl_pll_describe(struct dpll_info *info, enum tc_port tc_port);
-void drv_i915_tbt_pll_describe(struct dpll_info *info);
 int drv_i915_dkl_pll_calc(int port_clock, int is_hdmi, int ref_nssc, struct intel_dpll_hw_state *hw_state);
 int drv_i915_dkl_pll_freq(int ref_nssc, const struct intel_dpll_hw_state *hw_state);
-int drv_i915_icl_compute_tc_phy_dplls(struct intel_crtc_state *crtc_state, const struct intel_crtc_state *old_crtc_state);
-void drv_i915_icl_set_active_port_dpll(struct intel_crtc_state *crtc_state, enum icl_port_dpll_id port_dpll_id);
-void drv_i915_icl_update_active_dpll(struct intel_atomic_state *state, struct intel_crtc *crtc, struct intel_encoder *encoder);
 
 /*
  * The Dekel PHY windows the modeset's Type-C ports are reached through
@@ -2384,47 +2308,6 @@ void drv_i915_icl_update_active_dpll(struct intel_atomic_state *state, struct in
  * where the modeset's other writes go.
  */
 struct i915_xd_dkl *drv_i915_lcd_xd_dkl(struct drm_i915_private *i915);
-int drv_i915_lcd_ms_alloc_pll(struct i915_lcd_world *world, struct i915_lcd_modeset *ms, const struct intel_dpll_hw_state *hw_state);
-int drv_i915_lcd_ms_alloc_tc_plls(struct i915_lcd_world *world, struct i915_lcd_modeset *ms, enum tc_port tc_port);
-void drv_i915_lcd_ms_release_pll(struct i915_lcd_world *world, struct i915_lcd_modeset *ms);
-void drv_i915_lcd_ms_bind_encoder(struct i915_lcd_modeset *ms);
-void drv_i915_lcd_ms_bind_port_hooks(struct i915_lcd_modeset *ms);
-void drv_i915_lcd_ms_wm_compute_off(struct i915_wm_world *wm_world, struct i915_lcd_modeset *ms, unsigned keep_pipes);
-void drv_i915_lcd_ms_set_brightness(struct i915_lcd_modeset *ms, u32 user_level, u32 user_max);
-void drv_i915_lcd_ms_backlight_power(struct i915_lcd_modeset *ms, int on);
-u32 drv_i915_lcd_ms_user_level(struct i915_lcd_modeset *ms, u32 user_max);
-void drv_i915_lcd_ms_wm_compute(struct i915_wm_world *wm_world, struct i915_lcd_modeset *ms, const struct i915_xd_plan *plan);
-int drv_i915_lcd_dbuf_current(struct i915_wm_world *wm_world, struct intel_dbuf_state *out);
-void drv_i915_lcd_dbuf_publish(struct i915_wm_world *wm_world, const struct intel_dbuf_state *now);
-void drv_i915_lcd_dbuf_forget(struct i915_wm_world *wm_world);
-void drv_i915_lcd_ms_plane_update_flip(struct i915_lcd_modeset *ms);
-void drv_i915_lcd_ms_color_check(struct i915_lcd_modeset *ms);
-int drv_i915_lcd_ms_plane_prepare(struct i915_lcd_modeset *ms, u32 fourcc, u64 modifier, u32 width, u32 height, u32 pitch, u32 surf_ggtt_offset);
-void drv_i915_lcd_ms_plane_update(struct i915_lcd_modeset *ms);
-void drv_i915_lcd_ms_plane_disable(struct i915_lcd_modeset *ms);
-void drv_i915_lcd_ms_set_acpi(struct i915_lcd_modeset *ms, u32 user_level, u32 user_max);
-void drv_i915_lcd_xd_timing(const struct drm_display_mode *mode, struct i915_xd_timing *timing);
-
-/*
- * The xd output of a modeset object's screen (output-shell.c): the
- * output's environment on the object's backend, its description from
- * the object's state, the display buffer around the commit, and the
- * object's state brought in line with what the output holds; and the
- * Type-C PHY hooks the shell gives the output.
- */
-void drv_i915_lcd_ms_xo_env(struct i915_lcd_modeset *ms, struct i915_xd_output_env *env);
-void drv_i915_lcd_ms_xo_describe(struct i915_lcd_modeset *ms);
-void drv_i915_lcd_ms_xo_dbuf(struct i915_lcd_modeset *ms);
-void drv_i915_lcd_ms_xo_sync(struct i915_lcd_modeset *ms);
-
-/*
- * The power, clock, PHY and DMC functions the other modeset
- * files call, under the names they are exported by (power.c, clock.c,
- * phy.c, dmc.c).
- */
-void drv_i915_enable_shared_dpll(const struct intel_crtc_state *crtc_state);
-void drv_i915_disable_shared_dpll(const struct intel_crtc_state *crtc_state);
-void drv_i915_lcd_ms_release_pipe(struct i915_lcd_world *world, enum pipe pipe);
 
 /* The HDMI infoframe writer of the port (hsw_set_infoframes), as dig_port->set_infoframes. */
 void (*i915_lcd_hdmi_set_infoframes(void))(struct intel_encoder *, bool, const struct intel_crtc_state *, const struct drm_connector_state *);

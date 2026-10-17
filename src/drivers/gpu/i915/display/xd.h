@@ -22,6 +22,7 @@
 #include "xd-dmc.h"
 #include "xd-io.h"
 #include "xd-panel.h"
+#include "xd-picture.h"
 #include "xd-platform.h"
 #include "xd-power.h"
 #include "xd-takeover.h"
@@ -45,7 +46,8 @@ struct mutex;
  * under their lock; the DMC firmware is parsed and loaded by the DMC
  * loader's work.  The firmware's display is read once, before the first
  * display write, by the firmware check.  The Dekel PHY windows of the
- * Type-C ports are ready from the start.
+ * Type-C ports are ready from the start, and so are the pictures of the
+ * screens (their description follows the platform's).
  */
 struct i915_xd {
 	struct i915_xd_io io;
@@ -58,6 +60,7 @@ struct i915_xd {
 	struct i915_xd_dmc dmc;
 	struct i915_xd_firmware firmware;
 	struct i915_xd_dkl dkl;
+	struct i915_xd_pictures pictures;
 };
 
 void drv_i915_xd_start(struct i915_xd *xd, struct i915_mmio *mmio, struct mutex *mailbox_lock, uint16_t product, uint8_t revid);

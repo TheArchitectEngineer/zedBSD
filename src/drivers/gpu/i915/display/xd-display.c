@@ -89,6 +89,9 @@ drv_i915_xd_start(
 	/* The Dekel PHY windows of the Type-C ports, reached through that window. */
 	drv_i915_xd_dkl_init(&xd->dkl, &xd->io);
 
+	/* No screen is prepared yet, and none is described until a description is chosen. */
+	drv_i915_xd_pictures_init(&xd->pictures, NULL);
+
 	/* Chooses the description by the product and revision. */
 	error = drv_i915_xd_platform_choose(product, revid, 0, 0U, &xd->choice);
 	if (error != 0) {
@@ -96,8 +99,9 @@ drv_i915_xd_start(
 		return;
 	}
 
-	/* Records and reports the choice. */
+	/* Records and reports the choice; the screens are described by it. */
 	xd->chosen = 1;
+	drv_i915_xd_pictures_platform(&xd->pictures, xd->choice.platform);
 	kern_logf("i915: xd: platform %s, display %u, stepping %u (south display %s assumed until the PCH is read)\n",
 	    xd->choice.platform->name,
 	    (unsigned)xd->choice.platform->display_ver,
@@ -143,8 +147,9 @@ drv_i915_xd_south(
 	if (choice.platform != xd->choice.platform)
 		kern_logf("i915: xd: the PCH changed the description from %s to %s\n", xd->choice.platform->name, choice.platform->name);
 
-	/* Keeps the choice and reports the south display. */
+	/* Keeps the choice, which describes the screens, and reports the south display. */
 	xd->choice = choice;
+	drv_i915_xd_pictures_platform(&xd->pictures, choice.platform);
 	kern_logf("i915: xd: platform %s, south display %s (%s, PCH 0x%04x)\n",
 	    choice.platform->name,
 	    i915_xd_south_name(choice.pch_kind),

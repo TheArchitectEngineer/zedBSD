@@ -1639,7 +1639,7 @@ i915_present_target(
 
 	/* An armed flip that has not latched keeps the frame in the buffer it shows next. */
 	*flip = 1;
-	idle = drv_i915_lcd_modeset_flip_poll(display);
+	idle = drv_i915_xd_picture_flip_poll(&display->xd.pictures, I915_XD_PICTURE_RESIDENT);
 	if (!idle) {
 		*flip = 0;
 		return &display->resident_buf[display->resident_front];
@@ -1665,7 +1665,7 @@ i915_present_flip(
 {
 	struct i915_lcd_kernel *k;
 	struct i915_scanout *to;
-	struct i915_lcd_flip_result result;
+	struct i915_xd_picture_flip result;
 	uint64_t start;
 	int expected;
 	int error;
@@ -1695,8 +1695,8 @@ i915_present_flip(
 	 */
 	kern_memset(&result, 0, sizeof(result));
 	start = drv_i915_perf_now();
-	expected = I915_LCD_FLIP_ARMED;
-	error = drv_i915_lcd_modeset_flip_nowait(display, (uint32_t)to->surf, &result);
+	expected = I915_XD_PICTURE_FLIP_ARMED;
+	error = drv_i915_xd_picture_flip_nowait(&display->xd.pictures, I915_XD_PICTURE_RESIDENT, (uint32_t)to->surf, &result);
 	drv_i915_perf_add(&display->device->perf, I915_PERF_PRESENT_FLIP, start);
 
 	/* Says why the flip failed. */
@@ -1823,11 +1823,10 @@ i915_present_latch(
 
 	/*
 	 * The vblank the armed flip latches at (none armed returns at once),
-	 * timed, on the resident output's screen 0 by name: the worker may
-	 * have the second output's screen selected meanwhile.
+	 * timed, on the resident output's screen.
 	 */
 	start = drv_i915_perf_now();
-	error = drv_i915_lcd_modeset_flip_wait_screen(device->display, 0U);
+	error = drv_i915_xd_picture_flip_wait(&device->display->xd.pictures, I915_XD_PICTURE_RESIDENT);
 	drv_i915_perf_add(&device->perf, I915_PERF_PRESENT_FLIP, start);
 
 	/* Reports a flip that did not latch. */
@@ -1919,7 +1918,7 @@ i915_present_head(
 
 	/* FIFO: the head's armed flip latches before this frame takes the buffer it leaves. */
 	if (!I915_PRESENT_NO_VSYNC && head->up) {
-		error = drv_i915_lcd_modeset_flip_wait_screen(display, 1U);
+		error = drv_i915_xd_picture_flip_wait(&display->xd.pictures, I915_XD_PICTURE_HEAD);
 		if (error != 0) {
 			mutex_unlock(&head->mutex);
 			return ENXIO;
@@ -2002,7 +2001,7 @@ i915_present_head_wait(
 
 	/* The newest flip latches; a head that stopped meanwhile has nothing armed. */
 	if (!I915_PRESENT_NO_VSYNC && head->up) {
-		error = drv_i915_lcd_modeset_flip_wait_screen(display, 1U);
+		error = drv_i915_xd_picture_flip_wait(&display->xd.pictures, I915_XD_PICTURE_HEAD);
 		if (error != 0) {
 			mutex_unlock(&head->mutex);
 			return ENXIO;
@@ -2064,7 +2063,7 @@ i915_present_window_retry(
 	/* A run that holds something the display may read is not tried again, nor spared. */
 	retained = drv_i915_lcd_show_retained(display);
 	if (!retained)
-		retained = drv_i915_lcd_modeset_retained(display);
+		retained = drv_i915_xd_picture_retained(&display->xd.pictures, I915_XD_PICTURE_RESIDENT);
 	if (retained)
 		return 0;
 

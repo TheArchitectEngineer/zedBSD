@@ -938,24 +938,6 @@ drv_i915_enabled_dbuf_slices_mask(
 }
 
 /*
- * Reports the control register of a DBUF slice, or 0 past the fourth.
- *
- * The table itself, for an independent check against the reference's
- * macro.
- */
-uint32_t
-drv_i915_dbuf_ctl_reg(
-	unsigned slice)
-{
-	/* A slice past the table has no register. */
-	if (slice >= 4u)
-		return 0u;
-
-	/* Succeeded: reports the slice's register. */
-	return i915_dbuf_ctl_s[slice];
-}
-
-/*
  * Powers the requested DBUF slices on and the others off, within the
  * slices the display has (the body of intel_dbuf_pre/post_plane_update()).
  */

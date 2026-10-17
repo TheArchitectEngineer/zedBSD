@@ -72,16 +72,6 @@ struct i915_takeover_world {
 	struct i915_display *display;
 };
 
-/* The shared DPLL and CDCLK functions of clock.c. */
-struct intel_shared_dpll *drv_i915_get_shared_dpll_by_id(struct drm_i915_private *i915, enum intel_dpll_id id);
-void drv_i915_unreference_shared_dpll_crtc(const struct intel_crtc *crtc, const struct intel_shared_dpll *pll, struct intel_shared_dpll_state *shared_dpll_state);
-
-/* The colour and crtc hooks of the modeset object. */
-const struct intel_color_funcs *drv_i915_lcd_ms_color_funcs(void);
-
-/* Binds a device view to the named world's shared-DPLL pool. */
-void drv_i915_lcd_dpll_pool_bind(struct i915_lcd_world *world, struct drm_i915_private *i915);
-
 /*
  * The head-placement contracts the casts depend on: to_intel_crtc_state()
  * and to_intel_plane_state() are casts, and to_intel_crtc(NULL) must be

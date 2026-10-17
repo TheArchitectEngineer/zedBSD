@@ -45,74 +45,28 @@ int drv_i915_lcd_display_ver(void);
 void drv_i915_lcd_set_xd_platform(struct i915_display *display, const struct i915_xd_platform *platform);
 const struct i915_xd_platform *drv_i915_lcd_xd_platform(void);
 
-/* Records an anomaly the backend found (a power well kept on, a broken time base) as a Linux-text error. */
+/* Records an anomaly the backend found (a power well kept on, a broken time base) as an error of the screen whose operation runs. */
 void drv_i915_lcd_backend_fault(const char *what);
 
-/*
- * ==== The modeset object of the selected screen ====
- */
-
-/* Selects the screen the calls below work on: 0, or EINVAL for a screen out of range. */
-int drv_i915_lcd_modeset_select(struct i915_display *display, unsigned screen);
-unsigned drv_i915_lcd_modeset_selected(struct i915_display *display);
+/* Names the power domain of one power use of a screen's output: a screen backend's power_domain hook (pipe.c). */
+int drv_i915_lcd_power_domain_of(void *ctx, unsigned use, unsigned index, int thunderbolt);
 
 /*
- * Builds the new state of the selected screen and runs the check phase:
- * 0, EINVAL (a configuration this path does not cover) or EBUSY (the
- * screen is running or retained, or no DPLL is free), or a negative
- * watermark or CDCLK result of the Linux text.
+ * Converts a run's state and configuration of an output into the
+ * configuration a screen is prepared from (xd-picture.h).
  */
-int drv_i915_lcd_modeset_prepare(struct i915_display *display, const struct i915_lcd_state *s, const struct i915_lcd_modeset_cfg *cfg, struct i915_lcd_emit *ops);
-
-/* The two commits (I915_LCD_MS_* results). */
-int drv_i915_lcd_modeset_commit_enable(struct i915_display *display);
-int drv_i915_lcd_modeset_commit_disable(struct i915_display *display);
-
-/* The plane's stages of the commits (I915_LCD_MS_* results). */
-int drv_i915_lcd_modeset_plane_update(struct i915_display *display);
-int drv_i915_lcd_modeset_plane_disable(struct i915_display *display);
-
-/* What the selected screen holds, and the sink's link status read now. */
-void drv_i915_lcd_modeset_status(struct i915_display *display, struct i915_lcd_modeset_status *out);
-void drv_i915_lcd_modeset_link_status(struct i915_display *display, struct i915_lcd_modeset_status *out);
-
-/* The caller confirmed on the hardware that the plane is off. */
-void drv_i915_lcd_modeset_plane_released(struct i915_display *display);
-
-/* After an unconfirmed stop: the retained state and its only way out on a model backend. */
-void drv_i915_lcd_modeset_abandoned(struct i915_display *display);
-int drv_i915_lcd_modeset_retained(struct i915_display *display);
-int drv_i915_lcd_modeset_discard_model(struct i915_display *display, const struct i915_lcd_emit *ops);
-
-/* Flips the running picture to another buffer (I915_LCD_MS_* result, details in out). */
-int drv_i915_lcd_modeset_flip(struct i915_display *display, uint32_t new_surf, struct i915_lcd_flip_result *out);
-
-/*
- * Arms a flip without waiting for it; tells whether none is pending any
- * more (completing a latched one); waits for the armed one.
- */
-int drv_i915_lcd_modeset_flip_nowait(struct i915_display *display, uint32_t new_surf, struct i915_lcd_flip_result *out);
-int drv_i915_lcd_modeset_flip_poll(struct i915_display *display);
-int drv_i915_lcd_modeset_flip_settle(struct i915_display *display);
-int drv_i915_lcd_modeset_flip_wait(struct i915_display *display);
-int drv_i915_lcd_modeset_flip_wait_screen(struct i915_display *display, unsigned screen);
+void drv_i915_lcd_picture_config(const struct i915_lcd_state *s, const struct i915_lcd_modeset_cfg *cfg, struct i915_xd_picture_config *config);
 
 /*
  * ==== One picture on the panel ====
  */
-
-/* 0 when the picture was up for the whole window, the stop was confirmed and everything was given back. */
-int drv_i915_lcd_show_run(struct i915_display *display, struct i915_lcd_show_env *env, struct i915_lcd_show_report *out);
 
 /* Shows a buffer somebody else prepared; the buffer is not created, unpinned or destroyed here. */
 int drv_i915_lcd_show_prepared(struct i915_display *display, struct i915_lcd_show_env *env, struct i915_scanout *so, uint32_t (*verify)(void *ctx, const struct i915_scanout *so), void *verify_ctx, struct i915_lcd_show_report *out);
 
 /* The device-side latches of an unconfirmed stop and of a GPU not shown to be done. */
 int drv_i915_lcd_show_retained(struct i915_display *display);
-void drv_i915_lcd_show_retain_gpu(struct i915_display *display, const void *gm, const char *why);
 int drv_i915_lcd_show_gpu_retained(struct i915_display *display);
-int drv_i915_lcd_show_discard_gpu_model(struct i915_display *display, const void *gm, int gm_finalised);
-int drv_i915_lcd_show_discard_model(struct i915_display *display, struct i915_lcd_show_env *env);
 
 /*
  * ==== The steps of a panel run ====

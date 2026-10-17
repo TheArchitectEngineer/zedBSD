@@ -69,10 +69,5 @@ int drv_i915_pmdemand_init(struct i915_display_state *d, int display_ver, struct
  * ==== The bandwidth and watermark text of the modeset ====
  */
 
-void drv_i915_lcd_ms_wm_compute(struct i915_wm_world *wm_world, struct i915_lcd_modeset *ms, const struct i915_xd_plan *plan);
-void drv_i915_lcd_ms_wm_compute_off(struct i915_wm_world *wm_world, struct i915_lcd_modeset *ms, unsigned keep_pipes);
-int drv_i915_lcd_dbuf_current(struct i915_wm_world *wm_world, struct intel_dbuf_state *out);
-void drv_i915_lcd_dbuf_publish(struct i915_wm_world *wm_world, const struct intel_dbuf_state *now);
-void drv_i915_lcd_dbuf_forget(struct i915_wm_world *wm_world);
 
 #endif /* DRIVERS_GPU_I915_DISPLAY_WATERMARK_H */

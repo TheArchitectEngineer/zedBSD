@@ -78,9 +78,6 @@ const struct i915_lcd_named_reg *drv_i915_lcd_reg_table(struct i915_lcd_world *w
 /* Returns the offset of a named register of pipe A / port A / DPLL 0; 0 for an unknown name. */
 uint32_t drv_i915_lcd_reg_by_name(struct i915_lcd_world *world, const char *name);
 
-/* Returns the reference's DBUF_CTL_S(slice) offset (slice 0 = S1); 0 beyond S4. */
-uint32_t drv_i915_lcd_ref_dbuf_ctl(unsigned slice);
-
 /* Stops every pipe and DDI buffer still on; returns how many were stopped. */
 unsigned drv_i915_lcd_last_resort_stop(struct i915_mmio *mmio);
 
@@ -94,15 +91,6 @@ void drv_i915_display_survey(struct i915_display *display);
 /*
  * ==== The test picture ====
  */
-
-/* Returns the pixel of the test picture at (x, y). */
-uint32_t drv_i915_lcd_pattern_pixel(uint32_t x, uint32_t y, uint32_t width, uint32_t height, unsigned test_id);
-
-/* Draws the test picture and returns its FNV-1a hash. */
-uint64_t drv_i915_lcd_pattern_fill(uint32_t *pixels, uint32_t pitch, uint32_t width, uint32_t height, unsigned test_id);
-
-/* Counts the pixels that differ from the test picture and reports the first one. */
-uint32_t drv_i915_lcd_pattern_verify(const uint32_t *pixels, uint32_t pitch, uint32_t width, uint32_t height, unsigned test_id, uint32_t *first_x, uint32_t *first_y);
 
 /*
  * ==== The panel run's hooks and log ====
@@ -134,9 +122,6 @@ void drv_i915_lcd_log_trace(const struct i915_lcd_trace *trace);
 
 /* Logs the observer's findings and samples. */
 void drv_i915_lcd_log_observer(const struct i915_lcd_observer *observer);
-
-/* Logs a modeset status. */
-void drv_i915_lcd_log_status(const char *when, const struct i915_lcd_modeset_status *status);
 
 /* Reports whether a panel run kept display resources because its stop was not confirmed. */
 int drv_i915_lcd_kernel_abandoned(struct i915_display *display);

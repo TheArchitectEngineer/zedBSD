@@ -6,7 +6,7 @@
  */
 
 /*
- * The panel's backlight as a backlight device (ws113-p013).
+ * The panel's backlight as a backlight device.
  *
  * The kernel's backlight class calls the provider's operations on the
  * requesting thread; each is handed to the request worker and waited for,
@@ -19,7 +19,6 @@
 
 #include "internal.h"
 #include "backlight.h"
-#include "panel-backlight.h"
 
 #include "../i915.h"
 #include "../worker.h"
@@ -129,9 +128,9 @@ drv_i915_display_backlight_serve(
 	if (display->output.none || display->output.kind != I915_OUTPUT_KIND_PANEL)
 		return EBUSY;
 
-	/* Switches the light (the panel's power for the display control, ws113-p012): the pipe keeps running. */
+	/* Switches the light (the panel's power for the display control): the pipe keeps running. */
 	if (op == I915_BACKLIGHT_POWER) {
-		result = drv_i915_lcd_modeset_backlight(display, *value != 0U);
+		result = drv_i915_xd_picture_backlight(&display->xd.pictures, I915_XD_PICTURE_RESIDENT, *value != 0U);
 		error = i915_backlight_result(result);
 		if (error != 0)
 			return error;
@@ -142,7 +141,7 @@ drv_i915_display_backlight_serve(
 
 	/* Sets the brightness first, when asked to. */
 	if (op == I915_BACKLIGHT_SET) {
-		result = drv_i915_lcd_modeset_brightness(display, *value, I915_BACKLIGHT_PERCENT_MAX);
+		result = drv_i915_xd_picture_brightness(&display->xd.pictures, I915_XD_PICTURE_RESIDENT, *value, I915_BACKLIGHT_PERCENT_MAX);
 		error = i915_backlight_result(result);
 		if (error != 0)
 			return error;
@@ -150,7 +149,7 @@ drv_i915_display_backlight_serve(
 
 	/* Reads the brightness the panel has now. */
 	level = 0U;
-	result = drv_i915_lcd_modeset_brightness_get(display, I915_BACKLIGHT_PERCENT_MAX, &level);
+	result = drv_i915_xd_picture_brightness_get(&display->xd.pictures, I915_XD_PICTURE_RESIDENT, I915_BACKLIGHT_PERCENT_MAX, &level);
 	error = i915_backlight_result(result);
 	if (error != 0)
 		return error;
@@ -199,15 +198,15 @@ i915_backlight_set(
 	return 0;
 }
 
-/* Turns a panel result (I915_LCD_MS_*) into an errno value. */
+/* Turns a picture result (I915_XD_PICTURE_*) into an errno value. */
 static int
 i915_backlight_result(
 	int result)
 {
 	/* Says why the panel did not take or give the brightness. */
-	if (result == I915_LCD_MS_NOT_PREPARED)
+	if (result == I915_XD_PICTURE_NOT_READY)
 		return EBUSY;
-	if (result != I915_LCD_MS_OK)
+	if (result != I915_XD_PICTURE_OK)
 		return EIO;
 
 	/* Succeeded. */

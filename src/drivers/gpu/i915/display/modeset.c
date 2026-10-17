@@ -42,7 +42,6 @@
 #include "modeset.h"
 #include "aux.h"
 #include "clock.h"
-#include "color.h"
 #include "ddi.h"
 #include "diagnostics.h"
 #include "dp.h"
@@ -82,15 +81,6 @@
 
 /* The display version the platform predicates answer before the probe sets one. */
 #define I915_LCD_DEFAULT_DISPLAY_VER	13
-
-/* DP_ENHANCED_FRAME_CAP of DPCD byte 2. */
-#define I915_LCD_DPCD_ENHANCED_FRAME_CAP	0x80U
-
-/* How long the flip waits for its completion event. */
-#define I915_LCD_FLIP_EVENT_MS		100U
-
-/* The delay after which a commit drops DC_OFF again (17 ms, above 60 frames a second). */
-#define I915_LCD_DC_OFF_DELAY_MS	17
 
 /* DDI_BUF_PORT_REVERSAL and DDI_A_4_LANES of the DDI_BUF_CTL readout at connector init. */
 #define I915_LCD_SAVED_PORT_BITS	((1U << 16) | (1U << 4))
@@ -153,22 +143,6 @@ struct i915_resident_output_way {
 };
 
 /*
- * One commit of the selected screen, as its light's or dark's steps see
- * it: the display, its modeset world and screen, the error count a step
- * compares with, and the results the commit reports.  Lives for one
- * commit.
- */
-struct i915_modeset_commit {
-	struct i915_display *display;
-	struct i915_lcd_world *world;
-	struct i915_lcd_modeset *ms;
-	unsigned before;
-	int enable_result;
-	int plane_result;
-	int crtc_result;
-};
-
-/*
  * The modeset world the Linux text's world-less hooks report to.
  *
  * Set by the world's creation and cleared by its destruction; one display
@@ -176,52 +150,23 @@ struct i915_modeset_commit {
  */
 static struct i915_lcd_world *i915_modeset_bound_world;
 
+/*
+ * The display of the bound modeset world: its pictures hear the errors
+ * the older code reports outside a screen's hooks.  Set and cleared with
+ * the bound world.
+ */
+static struct i915_display *i915_modeset_bound_display;
+
 static uint32_t i915_lcd_xd_window_read(void *context, uint32_t offset);
 static void i915_lcd_xd_window_write(void *context, uint32_t offset, uint32_t value);
 static void i915_lcd_xd_window_wait(void *context, unsigned microseconds);
-static struct i915_lcd_modeset *i915_modeset_selected_screen(struct i915_lcd_world *world);
-static void i915_modeset_bind_current(struct i915_display *display);
 static void i915_modeset_on_error(void *ctx, const char *what);
-static void i915_modeset_read_link_status(struct i915_lcd_modeset *ms, struct i915_lcd_modeset_status *out);
-static void i915_modeset_observe(struct i915_lcd_world *world, int point);
-static uint32_t i915_modeset_live_surf(struct i915_lcd_world *world);
-static uint32_t i915_modeset_frame_now(struct i915_lcd_world *world);
-static int i915_modeset_flip_arm(struct i915_display *display, uint32_t new_surf, struct i915_lcd_flip_result *res, int *dc_off);
-static void i915_modeset_flip_retire(struct i915_display *display);
-static int i915_modeset_prepare_state(struct i915_display *display, const struct i915_lcd_state *s, const struct i915_lcd_modeset_cfg *cfg, struct i915_lcd_emit *ops);
-static void i915_modeset_plan_check(const struct i915_lcd_state *s, const struct i915_lcd_modeset_cfg *cfg, const struct i915_lcd_modeset *ms, struct i915_xd_plan *plan);
-static void i915_modeset_plan_publish(struct i915_lcd_modeset *ms, const struct i915_xd_plan *plan);
-static void i915_modeset_light_hooks(struct i915_xd_screen_hooks *hooks, struct i915_modeset_commit *commit);
-static void i915_modeset_dark_hooks(struct i915_xd_screen_hooks *hooks, struct i915_modeset_commit *commit);
-static int i915_modeset_step_power(void *context);
-static int i915_modeset_step_dbuf(void *context);
-static int i915_modeset_step_setup(void *context);
-static int i915_modeset_step_dmc_on(void *context);
-static int i915_modeset_step_link_power(void *context);
-static int i915_modeset_step_pll(void *context);
-static int i915_modeset_step_port(void *context);
-static int i915_modeset_step_pipe(void *context);
-static int i915_modeset_step_output(void *context);
-static int i915_modeset_step_check(void *context);
-static int i915_modeset_step_plane(void *context);
-static int i915_modeset_step_settle(void *context);
-static int i915_modeset_step_dark_power(void *context);
-static int i915_modeset_step_plane_off(void *context);
-static int i915_modeset_step_output_off(void *context);
-static int i915_modeset_step_port_off(void *context);
-static int i915_modeset_step_pll_off(void *context);
-static int i915_modeset_step_link_power_off(void *context);
-static int i915_modeset_step_dmc_off(void *context);
-static int i915_modeset_step_confirm(void *context);
-static int i915_modeset_step_dark_settle(void *context);
 static void i915_show_anomaly(struct i915_lcd_show_report *r, const char *what, int rc);
 static void i915_show_reached(struct i915_lcd_show_env *env, struct i915_lcd_show_report *r, int stage);
 static int i915_show_first_error_after(const struct i915_lcd_trace *trace, unsigned from);
 static int i915_show_display(struct i915_display *display, struct i915_lcd_show_env *env, struct i915_scanout *so, struct i915_lcd_show_report *r, uint32_t (*verify)(void *ctx, const struct i915_scanout *so), void *verify_ctx);
 static int i915_show_passed(struct i915_display *display, const struct i915_lcd_show_report *r, int released);
 static int i915_show_begin(struct i915_display *display, struct i915_lcd_show_env *env, struct i915_lcd_show_report *r);
-static uint32_t i915_show_pattern_verify(void *ctx, const struct i915_scanout *so);
-static void i915_show_release_unused(struct i915_scanout *so, struct i915_lcd_show_report *r);
 static struct i915_display *i915_kernel_display(void *ctx);
 static uint32_t i915_kernel_read32(void *ctx, uint32_t reg);
 static void i915_kernel_write32(void *ctx, uint32_t reg, uint32_t value);
@@ -275,9 +220,11 @@ drv_i915_lcd_world_create(
 	/* The display version the platform predicates answer until the probe sets one. */
 	world->i915_lcd_ver = I915_LCD_DEFAULT_DISPLAY_VER;
 
-	/* The display owns the world, and the world-less hooks report to it. */
+	/* The display owns the world, and the world-less hooks report to it and to its pictures. */
 	display->lcd_world = world;
 	i915_modeset_bound_world = world;
+	i915_modeset_bound_display = display;
+	drv_i915_lcd_error_bind(world, i915_modeset_on_error, display);
 
 	/* Succeeded: the modeset path has its state. */
 	return 0;
@@ -295,11 +242,115 @@ drv_i915_lcd_world_destroy(
 		return;
 
 	/* The world-less hooks no longer report to this world. */
-	if (i915_modeset_bound_world == display->lcd_world)
+	if (i915_modeset_bound_world == display->lcd_world) {
+		drv_i915_lcd_error_bind(NULL, NULL, NULL);
 		i915_modeset_bound_world = NULL;
+		i915_modeset_bound_display = NULL;
+	}
 
 	kern_free(display->lcd_world);
 	display->lcd_world = NULL;
+}
+
+/*
+ * Converts a run's state and configuration of an output into the
+ * configuration a screen is prepared from (xd-picture.h).
+ *
+ * Both an HDMI and an external DisplayPort sink, or a negative number,
+ * give a configuration the prepare refuses.
+ */
+void
+drv_i915_lcd_picture_config(
+	const struct i915_lcd_state *s,
+	const struct i915_lcd_modeset_cfg *cfg,
+	struct i915_xd_picture_config *config)
+{
+	unsigned index;
+
+	/* Starts empty. */
+	kern_memset(config, 0, sizeof(*config));
+
+	/* The kind of the output. */
+	config->kind = I915_XD_SCREEN_PANEL;
+	if (cfg->output_hdmi)
+		config->kind = I915_XD_SCREEN_HDMI;
+	if (cfg->output_dp_ext) {
+		config->kind = I915_XD_SCREEN_DP;
+		if (cfg->output_hdmi)
+			config->kind = 0U;
+	}
+
+	/* The port, the pipe, the transcoder, the AUX channel and the PLL the caller expects. */
+	config->ddi = (unsigned)cfg->port;
+	config->pipe = (unsigned)cfg->pipe;
+	config->trans = (unsigned)cfg->cpu_transcoder;
+	config->aux = (unsigned)cfg->aux_ch;
+	config->pll = (unsigned)cfg->dpll_id;
+	config->also_pipes = (uint8_t)cfg->also_active_pipes;
+	config->hdmi_level = cfg->vbt_hdmi_level_shift;
+	config->kept = cfg->saved_port_bits;
+	config->sink = cfg->aux_emit;
+
+	/* The sink's capabilities and the panel's VBT data. */
+	kern_memcpy(config->caps, cfg->dpcd, sizeof(config->caps));
+	kern_memcpy(config->edp_caps, cfg->edp_dpcd, sizeof(config->edp_caps));
+	config->vbt_low_vswing = cfg->vbt_low_vswing;
+	config->vbt_hobl = cfg->vbt_hobl;
+	config->vbt_backlight_present = cfg->vbt_backlight_present;
+	config->vbt_backlight_active_low = cfg->vbt_backlight_active_low;
+	config->vbt_backlight_controller = cfg->vbt_backlight_controller;
+	config->vbt_backlight_hz = cfg->vbt_backlight_pwm_freq_hz;
+	config->vbt_backlight_min = cfg->vbt_backlight_min_brightness;
+	config->rawclk_khz = cfg->rawclk_khz;
+
+	/* The memory's watermarks and the display buffer as the start found them. */
+	for (index = 0U; index < 8U; index++)
+		config->wm_latency[index] = cfg->wm_latency[index];
+	config->wm_levels = cfg->wm_num_levels;
+	config->wm_ipc = cfg->wm_ipc_enabled;
+	config->sagv_block_us = cfg->sagv_block_time_us;
+	config->dbuf_size = cfg->dbuf_size;
+	config->dbuf_slice_mask = cfg->dbuf_slice_mask;
+	config->dbuf_slices_now = cfg->dbuf_enabled_slices;
+	config->mbus_joined_now = cfg->mbus_joined;
+
+	/* The CD clock and its limit, the memory bandwidth, the DMC programs and the AFC override. */
+	config->cdclk.ref_khz = cfg->cdclk_ref_khz;
+	config->cdclk.vco_khz = cfg->cdclk_vco_khz;
+	config->cdclk.cdclk_khz = cfg->cdclk_khz;
+	config->cdclk.bypass_khz = cfg->cdclk_bypass_khz;
+	config->cdclk.voltage = cfg->cdclk_voltage_level;
+	config->cdclk_max_khz = cfg->cdclk_max_khz;
+	config->qgv_mbps = cfg->qgv_allowed_bw;
+	config->dmc_programs = cfg->dmc_fw_mask;
+	config->afc_override = cfg->vbt_override_afc_startup;
+
+	/* The mode and the link; a rate or a depth that is not positive stays 0. */
+	config->mode = s->mode;
+	if (s->link.rate_khz > 0)
+		config->rate_khz = (uint32_t)s->link.rate_khz;
+	config->lanes = (unsigned)s->link.lanes;
+	if (s->link.bpp > 0)
+		config->bpp = (unsigned)s->link.bpp;
+	config->m_n.tu = s->link.tu;
+	config->m_n.data_m = s->link.data_m;
+	config->m_n.data_n = s->link.data_n;
+	config->m_n.link_m = s->link.link_m;
+	config->m_n.link_n = s->link.link_n;
+
+	/* The reference clock and a combo PLL's words. */
+	config->pll_ref_khz = (uint32_t)s->pll.ref_khz;
+	config->pll_words.cfgcr0 = s->pll.cfgcr0;
+	config->pll_words.cfgcr1 = s->pll.cfgcr1;
+	config->pll_words.div0 = s->pll.div0;
+
+	/* The framebuffer. */
+	config->fb_fourcc = cfg->fb_fourcc;
+	config->fb_modifier = cfg->fb_modifier;
+	config->fb_width = cfg->fb_width;
+	config->fb_height = cfg->fb_height;
+	config->fb_pitch = cfg->fb_pitch;
+	config->fb_surf = cfg->fb_surf;
 }
 
 /*
@@ -469,974 +520,36 @@ void
 drv_i915_lcd_backend_fault(
 	const char *what)
 {
-	/* Without a world there is no run to report to. */
-	if (i915_modeset_bound_world == NULL)
+	/* Without a display there is no run to report to. */
+	if (i915_modeset_bound_display == NULL)
 		return;
 
-	/* Counts the fault like an error of the Linux text. */
-	i915_modeset_on_error(i915_modeset_bound_world, what);
+	/* Counts the fault as an error of the screen whose operation runs. */
+	i915_modeset_on_error(i915_modeset_bound_display, what);
 }
 
 /*
- * Hands a debug message of the Linux text to the selected screen's backend.
+ * Hands a debug message of the older code to the backend of the screen whose
+ * operation runs.
  */
 void
 drv_i915_lcd_debug(
 	const char *what)
 {
-	struct i915_lcd_world *world;
-	struct i915_lcd_emit *ms_ops;
+	const struct i915_xd_backend *backend;
+	struct i915_xd_pictures *pictures;
 
-	/* Without a world there is no backend to hand it to. */
-	world = i915_modeset_bound_world;
-	if (world == NULL)
+	/* Without a display there is no backend to hand it to. */
+	if (i915_modeset_bound_display == NULL)
 		return;
 
-	/* A backend without a debug hook ignores the message. */
-	ms_ops = world->ms_ops_pool[world->ms_sel];
-	if (ms_ops == NULL || ms_ops->debug == NULL)
+	/* The backend of the screen whose operation runs; one without a debug hook ignores the message. */
+	pictures = &i915_modeset_bound_display->xd.pictures;
+	backend = pictures->screen[pictures->current].backend;
+	if (backend == NULL || backend->debug == NULL)
 		return;
 
-	ms_ops->debug(ms_ops->ctx, what);
-}
-
-/*
- * Selects the screen the following calls work on.
- *
- * Every screen keeps its own state meanwhile.  Returns 0, or EINVAL for a
- * screen out of range.
- */
-int
-drv_i915_lcd_modeset_select(
-	struct i915_display *display,
-	unsigned screen)
-{
-	/* Refuses a screen the pools have no room for. */
-	if (screen >= I915_LCD_MS_SCREENS)
-		return EINVAL;
-
-	/* Selects it and binds its objects to the Linux text. */
-	display->lcd_world->ms_sel = screen;
-	i915_modeset_bind_current(display);
-
-	/* Succeeded: the calls below work on the screen. */
-	return 0;
-}
-
-/*
- * Returns the selected screen.
- */
-unsigned
-drv_i915_lcd_modeset_selected(
-	struct i915_display *display)
-{
-	/* Reports the index into the world's pools. */
-	return display->lcd_world->ms_sel;
-}
-
-/*
- * Builds the new state of the selected screen and runs the check phase.
- *
- * The state is what intel_dp_compute_config() / intel_crtc_compute_config()
- * would leave for the panel (or an HDMI sink without an EDID), the shared
- * DPLL the reference's rule gives it, the plane state of the framebuffer,
- * and the watermarks, DDB, CDCLK and memory bandwidth it needs; nothing is
- * written.  Returns 0; EINVAL for a configuration this path does not cover
- * (checked before anything is touched) or a CDCLK or bandwidth it cannot
- * serve; EBUSY when the screen is running or retained, or no DPLL is free;
- * or the plane, watermark or CDCLK result of the Linux text.
- */
-int
-drv_i915_lcd_modeset_prepare(
-	struct i915_display *display,
-	const struct i915_lcd_state *s,
-	const struct i915_lcd_modeset_cfg *cfg,
-	struct i915_lcd_emit *ops)
-{
-	struct i915_lcd_world *world;
-	struct i915_lcd_modeset *ms;
-	int state_error;
-
-	world = display->lcd_world;
-	ms = i915_modeset_selected_screen(world);
-
-	/* Refuses a call without its inputs. */
-	if (s == NULL || cfg == NULL || ops == NULL)
-		return EINVAL;
-
-	/* The backend must carry every hook the commits use. */
-	if (ops->write32 == NULL ||
-	    ops->rmw32 == NULL ||
-	    ops->read32 == NULL ||
-	    ops->wait_reg == NULL ||
-	    ops->usleep == NULL ||
-	    ops->udelay == NULL ||
-	    ops->dpcd_read == NULL ||
-	    ops->dpcd_write == NULL ||
-	    ops->read_dpcd_caps == NULL ||
-	    ops->panel == NULL ||
-	    ops->power_get == NULL ||
-	    ops->power_put == NULL ||
-	    ops->power_put_async == NULL ||
-	    ops->dbuf_slices_update == NULL ||
-	    ops->lock == NULL ||
-	    ops->step == NULL)
-		return EINVAL;
-
-	/* Pipes and transcoders A to D. */
-	if (cfg->pipe < 0 || cfg->pipe > 3)
-		return EINVAL;
-	if (cfg->cpu_transcoder < 0 || cfg->cpu_transcoder > 3)
-		return EINVAL;
-	if (s->link.rate_khz <= 0 || s->link.bpp <= 0)
-		return EINVAL;
-
-	/* An external DP sink: Type-C ports TC1 to TC4 and their TC PLLs; otherwise combo PHY ports A and B and the two combo PLLs. */
-	if (cfg->output_dp_ext) {
-		if (cfg->port < (int)PORT_TC1 || cfg->port > (int)PORT_TC4)
-			return EINVAL;
-		if (cfg->dpll_id != cfg->port - (int)PORT_TC1 + (int)DPLL_ID_ICL_MGPLL1)
-			return EINVAL;
-		if (cfg->output_hdmi)
-			return EINVAL;
-	} else {
-		if (cfg->port < 0 || cfg->port > 1)
-			return EINVAL;
-		if (cfg->dpll_id < 0 || cfg->dpll_id > 1)
-			return EINVAL;
-	}
-
-	/* HDMI carries the TMDS clock in link.rate_khz (up to 600 MHz). */
-	if (cfg->output_hdmi) {
-		if (s->link.rate_khz > 600000)
-			return EINVAL;
-	} else {
-		/* DP carries the link rate (8b/10b rates) and 1, 2 or 4 lanes on the port's own AUX channel. */
-		if (!cfg->output_dp_ext && cfg->aux_ch != cfg->port)
-			return EINVAL;
-		if (cfg->output_dp_ext && cfg->aux_emit == NULL)
-			return EINVAL;
-		if (s->link.rate_khz > 810000)
-			return EINVAL;
-		if (s->link.lanes != 1 && s->link.lanes != 2 && s->link.lanes != 4)
-			return EINVAL;
-	}
-
-	/* A retained state is never overwritten: refused before anything is initialised. */
-	if (world->ms_retained_pool[world->ms_sel])
-		return EBUSY;
-	if (ms->stop_unconfirmed)
-		return EBUSY;
-	if (ms->prepared) {
-		if (ms->crtc.active || ms->plane_armed || ms->dc_off_held)
-			return EBUSY;
-	}
-
-	/* Builds the state and runs the check phase. */
-	state_error = i915_modeset_prepare_state(display, s, cfg, ops);
-	if (state_error != 0)
-		return state_error;
-
-	/* PREPARED: the commits may run. */
-	ms->prepared = 1;
-
-	/* Succeeded: the state passed the check phase. */
-	return 0;
-}
-
-/*
- * Reports what the selected screen holds: how far it got, the link, the
- * backlight, the watermarks, the commit's outer part, the flip and what it
- * owns.
- */
-void
-drv_i915_lcd_modeset_status(
-	struct i915_display *display,
-	struct i915_lcd_modeset_status *out)
-{
-	struct i915_lcd_world *world;
-	struct i915_lcd_modeset *ms;
-	struct intel_shared_dpll *pll;
-	unsigned domain;
-	int held;
-
-	/* Without a record there is nothing to fill in. */
-	if (out == NULL)
-		return;
-
-	world = display->lcd_world;
-	ms = i915_modeset_selected_screen(world);
-	kern_memset(out, 0, sizeof(*out));
-
-	/* How far the screen got. */
-	out->prepared = ms->prepared;
-	out->crtc_active = ms->crtc.active;
-	out->plane_armed = ms->plane_armed;
-
-	/* The link as the driver set it; the sink's own status is read apart. */
-	out->link_rate = ms->dig_port.dp.link_rate;
-	out->lane_count = ms->dig_port.dp.lane_count;
-	out->link_trained_flag = ms->dig_port.dp.link_trained;
-	kern_memcpy(out->train_set, ms->dig_port.dp.train_set, sizeof(out->train_set));
-	out->ddi_buf_ctl_value = ms->dig_port.dp.DP;
-
-	/* The shared DPLL the crtc was given, when it has one. */
-	pll = ms->crtc_state.shared_dpll;
-	if (pll != NULL) {
-		out->pll_on = pll->on;
-		out->pll_active_mask = pll->active_mask;
-		out->pll_wakeref = pll->wakeref;
-		out->pll_pipe_mask = pll->state.pipe_mask;
-	}
-
-	out->pll_id = ms->dpll_id;
-
-	/* The encoder's power references. */
-	out->ddi_io_wakeref = ms->dig_port.ddi_io_wakeref;
-	out->aux_wakeref = ms->dig_port.aux_wakeref;
-
-	/* The backlight PWM as intel_backlight_setup() derived it. */
-	out->backlight_present = ms->connector.panel.backlight.present;
-	out->backlight_enabled = ms->connector.panel.backlight.enabled;
-	out->backlight_setup_rc = ms->backlight_setup_rc;
-	out->backlight_pwm_max = ms->connector.panel.backlight.pwm_level_max;
-	out->backlight_level = ms->connector.panel.backlight.level;
-
-	/* The watermarks and DDB computed for the plane. */
-	out->wm_rc = ms->wm_rc;
-	out->ddb_start = ms->plan.plane_ddb.start;
-	out->ddb_end = ms->plan.plane_ddb.end;
-	out->wm0_enable = ms->plan.wm.level[0].enable;
-	out->wm0_blocks = ms->plan.wm.level[0].blocks;
-	out->wm0_lines = ms->plan.wm.level[0].lines;
-	out->dbuf_slices_wanted = ms->wm.new_dbuf.enabled_slices;
-	out->mbus_joined = ms->wm.new_dbuf.joined_mbus;
-
-	/* The commit's outer part: CDCLK, bandwidth and DC_OFF. */
-	out->cdclk_rc = ms->cdclk_rc;
-	out->cdclk_crtc_min = ms->cdclk.crtc_min;
-	out->cdclk_bw_min = ms->cdclk.bw_min;
-	out->cdclk_required_khz = ms->cdclk.cdclk;
-	out->cdclk_required_vco = ms->cdclk.vco;
-	out->cdclk_required_level = ms->cdclk.voltage_level;
-	out->cdclk_change_needed = ms->cdclk.change_needed;
-	out->bw_data_rate = ms->bw_data_rate;
-	out->dc_off_held = ms->dc_off_held;
-
-	/* Counts the power domains the crtc holds. */
-	for (domain = 0U; domain < (unsigned)POWER_DOMAIN_NUM; domain++) {
-		held = test_bit(domain, ms->crtc.enabled_power_domains.mask.bits);
-		if (held)
-			out->crtc_domains_held++;
-	}
-
-	/* The current global DBUF state and what the stop left. */
-	out->dbuf_slices_now = ms->wm.old_dbuf.enabled_slices;
-	out->mbus_joined_now = ms->wm.old_dbuf.joined_mbus;
-	out->dbuf_active_pipes_now = ms->wm.old_dbuf.active_pipes;
-	out->stop_unconfirmed = ms->stop_unconfirmed;
-	out->retained = drv_i915_lcd_modeset_retained(display);
-	out->dither = ms->crtc_state.dither;
-
-	/* The flip. */
-	out->cur_surf = ms->flip.current;
-	out->pend_surf = ms->flip.pending;
-	out->flip_pending = ms->flip.armed;
-	out->flip_stuck = ms->flip.stuck;
-	out->flip_event_ref = ms->flip_event_ref;
-	out->events_cancelled = ms->events_cancelled;
-	out->flip_gen = ms->flip.gen;
-
-	/* The backlight range and the user brightness. */
-	out->backlight_min = ms->connector.panel.backlight.min;
-	out->backlight_max = ms->connector.panel.backlight.max;
-	out->backlight_user = ms->bl_user;
-	out->backlight_user_max = ms->bl_user_max;
-
-	/* The commits and the errors of the Linux text. */
-	out->commits = ms->commits;
-	out->errors = world->ms_errors_pool[world->ms_sel];
-	out->first_error = world->ms_first_error_pool[world->ms_sel];
-
-	/* The sink's link status has not been read into this record. */
-	out->link_status_rc = EINVAL;
-}
-
-/*
- * Arms the selected screen's plane on its framebuffer.
- *
- * Returns I915_LCD_MS_OK, I915_LCD_MS_NOT_PREPARED or I915_LCD_MS_ERRORS.
- */
-int
-drv_i915_lcd_modeset_plane_update(
-	struct i915_display *display)
-{
-	struct i915_lcd_world *world;
-	struct i915_lcd_modeset *ms;
-
-	world = display->lcd_world;
-	ms = i915_modeset_selected_screen(world);
-
-	/* Binds the screen's objects to the Linux text. */
-	i915_modeset_bind_current(display);
-
-	/* Only a running crtc takes a plane. */
-	if (!ms->prepared || !ms->crtc.active)
-		return I915_LCD_MS_NOT_PREPARED;
-
-	/* Arms the plane through the Linux text. */
-	world->i915_lcd_cur_i915 = &ms->i915;
-	drv_i915_lcd_ms_plane_update(ms);
-
-	/* An error of the Linux text fails the update. */
-	if (world->ms_errors_pool[world->ms_sel] != 0U)
-		return I915_LCD_MS_ERRORS;
-
-	/* Succeeded: the plane is armed. */
-	return I915_LCD_MS_OK;
-}
-
-/*
- * Disables the selected screen's plane.
- *
- * plane_armed is not cleared here: the write takes effect at the next
- * vblank, and only the caller, who watches the hardware, may decide that
- * the buffer is no longer scanned out.  Returns I915_LCD_MS_OK,
- * I915_LCD_MS_NOT_PREPARED or I915_LCD_MS_ERRORS.
- */
-int
-drv_i915_lcd_modeset_plane_disable(
-	struct i915_display *display)
-{
-	struct i915_lcd_world *world;
-	struct i915_lcd_modeset *ms;
-
-	world = display->lcd_world;
-	ms = i915_modeset_selected_screen(world);
-
-	/* Binds the screen's objects to the Linux text. */
-	i915_modeset_bind_current(display);
-
-	/* Only a prepared screen has a plane to disable. */
-	if (!ms->prepared)
-		return I915_LCD_MS_NOT_PREPARED;
-
-	/* Disables the plane through the Linux text. */
-	world->i915_lcd_cur_i915 = &ms->i915;
-	drv_i915_lcd_ms_plane_disable(ms);
-
-	/* An error of the Linux text fails the disable. */
-	if (world->ms_errors_pool[world->ms_sel] != 0U)
-		return I915_LCD_MS_ERRORS;
-
-	/* Succeeded: the plane disable is armed. */
-	return I915_LCD_MS_OK;
-}
-
-/*
- * Records that the caller confirmed on the hardware (frame counter,
- * scanline) that the plane is off: the framebuffer is the caller's again.
- */
-void
-drv_i915_lcd_modeset_plane_released(
-	struct i915_display *display)
-{
-	struct i915_lcd_modeset *ms;
-
-	ms = i915_modeset_selected_screen(display->lcd_world);
-
-	/* The display reads neither buffer any more. */
-	ms->plane_armed = 0;
-	ms->flip.armed = 0;
-	ms->flip.stuck = 0;
-}
-
-/*
- * Reads the sink's link status now into the record (for the run log).
- */
-void
-drv_i915_lcd_modeset_link_status(
-	struct i915_display *display,
-	struct i915_lcd_modeset_status *out)
-{
-	struct i915_lcd_world *world;
-	struct i915_lcd_modeset *ms;
-
-	world = display->lcd_world;
-	ms = i915_modeset_selected_screen(world);
-
-	/* Only a prepared screen has a sink to ask. */
-	if (out == NULL || !ms->prepared)
-		return;
-
-	/* Reads the link status on the screen's device. */
-	world->i915_lcd_cur_i915 = &ms->i915;
-	i915_modeset_read_link_status(ms, out);
-}
-
-/*
- * Runs the enable commit of the selected screen as the screen's light
- * (xd-screen.c): the steps are intel_atomic_commit_tail() reduced to
- * this crtc, in the reference's order and with its callees -- DC_OFF get
- * and the crtc's power domains, the DBUF pre-plane update and the MBUS
- * DBOX, the backlight setup and the active timings, the crtc enable's
- * parts, the check of the link, the plane update, then the settle (the
- * DBUF post-plane update, the unused domains put, and DC_OFF put
- * asynchronously after 17 ms).  After an anomaly in the enable the plane
- * is not armed; nothing is undone (the caller's disable stops the crtc).
- * Returns I915_LCD_MS_* (the enable's result first, then the plane
- * update's).
- */
-int
-drv_i915_lcd_modeset_commit_enable(
-	struct i915_display *display)
-{
-	struct i915_modeset_commit commit;
-	struct i915_xd_screen_hooks hooks;
-	struct i915_lcd_world *world;
-	struct i915_lcd_modeset *ms;
-	int retained;
-
-	world = display->lcd_world;
-	ms = i915_modeset_selected_screen(world);
-
-	/* Binds the screen's objects to the Linux text. */
-	i915_modeset_bind_current(display);
-
-	/* Only a prepared, idle screen that is not retained can be enabled. */
-	retained = drv_i915_lcd_modeset_retained(display);
-	if (!ms->prepared || ms->crtc.active || ms->dc_off_held || retained)
-		return I915_LCD_MS_NOT_PREPARED;
-
-	/* The screen's device and watermark state are the ones the Linux text works on. */
-	world->i915_lcd_cur_i915 = &ms->i915;
-	display->wm_world->i915_lcd_wm = &ms->wm;
-	ms->state.base.dev = &ms->i915.drm;
-	ms->commits++;
-
-	/* The screen's output is described from the crtc state and the commit's display buffer. */
-	drv_i915_lcd_ms_xo_describe(ms);
-	drv_i915_lcd_ms_xo_dbuf(ms);
-
-	/* The commit's steps. */
-	kern_memset(&commit, 0, sizeof(commit));
-	commit.display = display;
-	commit.world = world;
-	commit.ms = ms;
-	commit.enable_result = I915_LCD_MS_OK;
-	commit.plane_result = I915_LCD_MS_OK;
-	i915_modeset_light_hooks(&hooks, &commit);
-	ms->screen.pipe = (unsigned)ms->crtc.pipe;
-	(void)drv_i915_xd_screen_light(&ms->screen, drv_i915_lcd_xd_io(&ms->i915), &hooks, 0);
-
-	/* Reports a failed crtc enable first. */
-	if (commit.enable_result != I915_LCD_MS_OK)
-		return commit.enable_result;
-
-	/* Reports a failed plane update. */
-	if (commit.plane_result != I915_LCD_MS_OK)
-		return commit.plane_result;
-
-	/* Succeeded: the picture is armed. */
-	return I915_LCD_MS_OK;
-}
-
-/*
- * Runs the disable commit of the selected screen as the screen's dark
- * (xd-screen.c): DC_OFF get and the domains to drop, the plane disable,
- * the crtc disable's parts, the confirmation (an error, or the PLL or a
- * port reference still held, leaves the stop unconfirmed: nothing
- * further is given back), then the settle (the DBUF pre-plane update,
- * the MBUS DBOX and the DBUF post-plane update, the domains put, the PLL
- * reference given back, and DC_OFF put).  Returns I915_LCD_MS_*.
- */
-int
-drv_i915_lcd_modeset_commit_disable(
-	struct i915_display *display)
-{
-	struct i915_modeset_commit commit;
-	struct i915_xd_screen_hooks hooks;
-	struct i915_lcd_world *world;
-	struct i915_lcd_modeset *ms;
-	struct i915_lcd_modeset *other;
-	unsigned keep_pipes;
-	unsigned screen;
-	int retained;
-	int error;
-
-	world = display->lcd_world;
-	ms = i915_modeset_selected_screen(world);
-
-	/* Binds the screen's objects to the Linux text. */
-	i915_modeset_bind_current(display);
-
-	/* Only a running screen that is not retained can be disabled. */
-	retained = drv_i915_lcd_modeset_retained(display);
-	if (!ms->prepared || !ms->crtc.active || ms->dc_off_held || retained)
-		return I915_LCD_MS_NOT_PREPARED;
-
-	/* The screen's device is the one the Linux text works on. */
-	world->i915_lcd_cur_i915 = &ms->i915;
-	ms->state.base.dev = &ms->i915.drm;
-	ms->commits++;
-
-	/*
-	 * The check phase: the global DBUF state without this pipe, but with
-	 * every pipe another running screen lights or leaves room for.
-	 */
-	keep_pipes = 0U;
-	for (screen = 0U; screen < I915_LCD_MS_SCREENS; screen++) {
-		/* This screen, and a screen that does not run, keep nothing. */
-		other = &world->ms_pool[screen];
-		if (screen == world->ms_sel)
-			continue;
-		if (!other->prepared || !other->crtc.active)
-			continue;
-
-		/* The running screen's pipe and the pipes it left room for. */
-		keep_pipes |= 1U << (unsigned)other->crtc.pipe;
-		keep_pipes |= other->also_active_pipes;
-	}
-
-	/* The new DBUF state with only the pipes that stay; the screen's output takes it. */
-	drv_i915_lcd_ms_wm_compute_off(display->wm_world, ms, keep_pipes);
-	drv_i915_lcd_ms_xo_dbuf(ms);
-
-	/* The commit. */
-	kern_memset(&commit, 0, sizeof(commit));
-	commit.display = display;
-	commit.world = world;
-	commit.ms = ms;
-
-	/* The commit's steps. */
-	i915_modeset_dark_hooks(&hooks, &commit);
-	error = drv_i915_xd_screen_dark(&ms->screen, drv_i915_lcd_xd_io(&ms->i915), &hooks);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the screen is off and everything is given back. */
-	return I915_LCD_MS_OK;
-}
-
-/*
- * Records that the caller has taken the selected screen's retained
- * resources over after an unconfirmed stop.
- *
- * The object does not forget what it holds: stop_unconfirmed, the power
- * references, DC_OFF, the DBUF slices and the crtc state stay recorded,
- * and every later prepare is refused before anything is initialised.
- */
-void
-drv_i915_lcd_modeset_abandoned(
-	struct i915_display *display)
-{
-	struct i915_lcd_world *world;
-	struct i915_lcd_modeset *ms;
-
-	world = display->lcd_world;
-	ms = i915_modeset_selected_screen(world);
-
-	/*
-	 * The retained flag outlives prepare's clearing of the object and names
-	 * the backend the retained display belongs to.
-	 */
-	ms->stop_unconfirmed = 1;
-	world->ms_retained_pool[world->ms_sel] = 1;
-	world->ms_retained_ops_pool[world->ms_sel] = world->ms_ops_pool[world->ms_sel];
-}
-
-/*
- * Reports whether the selected screen's display is retained after an
- * unconfirmed stop.
- */
-int
-drv_i915_lcd_modeset_retained(
-	struct i915_display *display)
-{
-	struct i915_lcd_world *world;
-	struct i915_lcd_modeset *ms;
-
-	world = display->lcd_world;
-	ms = i915_modeset_selected_screen(world);
-
-	/* The caller took the resources over. */
-	if (world->ms_retained_pool[world->ms_sel])
-		return 1;
-
-	/* The disable did not confirm the stop. */
-	if (ms->stop_unconfirmed)
-		return 1;
-
-	/* Nothing is retained. */
-	return 0;
-}
-
-/*
- * Discards a retained display that belongs to a model backend.
- *
- * The only way out of a retained state: permitted solely when the
- * retained state belongs to a register model, whose discarding is itself
- * the isolation.  On real hardware nothing is released.  Returns 0, or
- * EPERM for real hardware or a backend that does not hold it.
- */
-int
-drv_i915_lcd_modeset_discard_model(
-	struct i915_display *display,
-	const struct i915_lcd_emit *ops)
-{
-	struct i915_lcd_world *world;
-	const struct i915_lcd_emit *holder;
-	int retained;
-
-	world = display->lcd_world;
-
-	/* Nothing is retained: nothing to discard. */
-	retained = drv_i915_lcd_modeset_retained(display);
-	if (!retained)
-		return 0;
-
-	/* The backend that holds the retained state. */
-	holder = world->ms_retained_ops_pool[world->ms_sel];
-	if (holder == NULL)
-		holder = world->ms_ops_pool[world->ms_sel];
-
-	/* Only the model that holds it may discard it. */
-	if (ops == NULL || ops != holder || !ops->model)
-		return EPERM;
-
-	/* Forgets the screen and its retained state. */
-	kern_memset(&world->ms_pool[world->ms_sel], 0, sizeof(world->ms_pool[world->ms_sel]));
-	world->ms_retained_pool[world->ms_sel] = 0;
-	world->ms_retained_ops_pool[world->ms_sel] = NULL;
-
-	/* Succeeded: the model's state is gone with it. */
-	return 0;
-}
-
-/*
- * Flips the running picture of the selected screen to another buffer of
- * the same format, size and pitch.
- *
- * The reference's update of a running crtc: plane noarm,
- * intel_pipe_update_start() (vblank evasion), plane arm,
- * intel_pipe_update_end() (the event is armed).  COMPLETE only when the
- * event completed and the pipe's live surface is the new buffer; then the
- * old buffer is no longer displayed.  Otherwise both stay protected and
- * further flips are refused (flip_stuck) until the display is stopped.
- * Returns I915_LCD_MS_OK, I915_LCD_MS_NOT_PREPARED or I915_LCD_MS_ERRORS,
- * with the details in out.
- */
-int
-drv_i915_lcd_modeset_flip(
-	struct i915_display *display,
-	uint32_t new_surf,
-	struct i915_lcd_flip_result *out)
-{
-	struct i915_lcd_world *world;
-	struct i915_lcd_modeset *ms;
-	struct i915_lcd_emit *ms_ops;
-	struct i915_lcd_flip_result res;
-	unsigned verdict;
-	int dc_off;
-	int armed;
-
-	world = display->lcd_world;
-	ms = i915_modeset_selected_screen(world);
-	ms_ops = world->ms_ops_pool[world->ms_sel];
-
-	/* Arms the flip; a refusal writes nothing. */
-	armed = i915_modeset_flip_arm(display, new_surf, &res, &dc_off);
-	if (armed != I915_LCD_MS_OK) {
-		if (out != NULL)
-			*out = res;
-		return armed;
-	}
-
-	/* Waits for the event the pipe's next vblank completes. */
-	res.event_rc = ms_ops->wait_event(ms_ops->ctx, ms->crtc.pipe, I915_LCD_FLIP_EVENT_MS);
-	res.live_after = i915_modeset_live_surf(world);
-	res.frame_after = i915_modeset_frame_now(world);
-
-	/* drm_atomic_helper_wait_for_flip_done() came first; then the commit drops DC_OFF (async, 17 ms). */
-	intel_display_power_put_async_delay(&ms->i915, POWER_DOMAIN_DC_OFF, dc_off, I915_LCD_DC_OFF_DELAY_MS);
-
-	/* drm_send_event: when the event came, its vblank reference goes back (otherwise the completion may still come). */
-	if (res.event_rc == 0) {
-		ms_ops->vblank_put(ms_ops->ctx, ms->crtc.pipe);
-		ms->flip_event_ref = 0;
-	}
-
-	/* The screen's flip judges what the flip did: the live surface decides whether the old buffer is free. */
-	verdict = drv_i915_xd_flip_judge(&ms->flip, res.event_rc, res.live_after);
-	res.result = I915_LCD_FLIP_TIMEOUT;
-	if (verdict == I915_XD_FLIP_DONE)
-		res.result = I915_LCD_FLIP_DONE;
-	if (verdict == I915_XD_FLIP_NOT_LATCHED)
-		res.result = I915_LCD_FLIP_NOT_LATCHED;
-
-	/* Reports the details. */
-	if (out != NULL)
-		*out = res;
-
-	/* A flip that did not complete keeps both buffers. */
-	if (res.result != I915_LCD_FLIP_DONE)
-		return I915_LCD_MS_ERRORS;
-
-	/* An error of the Linux text during the update fails the flip. */
-	if (res.update_errors != 0)
-		return I915_LCD_MS_ERRORS;
-
-	/* Succeeded: the new buffer is displayed and the old one is free. */
-	return I915_LCD_MS_OK;
-}
-
-/*
- * Flips the running picture of the selected screen to another buffer
- * without waiting for the flip to complete.
- *
- * The flip is armed as drv_i915_lcd_modeset_flip() arms it and latches at
- * the pipe's next vblank; until then both buffers stay protected.
- * drv_i915_lcd_modeset_flip_poll() tells when it has latched and
- * drv_i915_lcd_modeset_flip_settle() waits for it.  A flip still pending is
- * refused like a busy one, so the caller polls first.  Returns
- * I915_LCD_MS_OK with the result I915_LCD_FLIP_ARMED,
- * I915_LCD_MS_NOT_PREPARED for a refusal, or I915_LCD_MS_ERRORS for an
- * error of the Linux text during the update, with the details in out.
- */
-int
-drv_i915_lcd_modeset_flip_nowait(
-	struct i915_display *display,
-	uint32_t new_surf,
-	struct i915_lcd_flip_result *out)
-{
-	struct i915_lcd_modeset *ms;
-	struct i915_lcd_flip_result res;
-	int dc_off;
-	int armed;
-
-	ms = i915_modeset_selected_screen(display->lcd_world);
-
-	/* Arms the flip; a refusal writes nothing. */
-	armed = i915_modeset_flip_arm(display, new_surf, &res, &dc_off);
-	if (armed != I915_LCD_MS_OK) {
-		if (out != NULL)
-			*out = res;
-		return armed;
-	}
-
-	/*
-	 * Drops DC_OFF as the commit does after its wait; the drop is delayed
-	 * by 17 ms, longer than one frame, so the flip latches first.
-	 */
-	intel_display_power_put_async_delay(&ms->i915, POWER_DOMAIN_DC_OFF, dc_off, I915_LCD_DC_OFF_DELAY_MS);
-	res.result = I915_LCD_FLIP_ARMED;
-
-	/* Reports the details. */
-	if (out != NULL)
-		*out = res;
-
-	/* An error of the Linux text during the update fails the flip. */
-	if (res.update_errors != 0)
-		return I915_LCD_MS_ERRORS;
-
-	/* Succeeded: the flip is armed and latches at the next vblank. */
-	return I915_LCD_MS_OK;
-}
-
-/*
- * Tells whether the selected screen has no flip pending, completing an
- * armed flip that the pipe has latched.
- *
- * A latched flip (the live surface is the new buffer) is completed as the
- * event would complete it: the event is given up, its vblank reference goes
- * back and the old buffer is free.  Returns 1 when no flip is pending (a
- * stuck one included, which the next flip refuses), 0 while the armed flip
- * still waits for its vblank.
- */
-int
-drv_i915_lcd_modeset_flip_poll(
-	struct i915_display *display)
-{
-	struct i915_lcd_world *world;
-	struct i915_lcd_modeset *ms;
-	uint32_t live;
-	int idle;
-
-	world = display->lcd_world;
-	ms = i915_modeset_selected_screen(world);
-
-	/* Nothing pending, or a flip that will never complete. */
-	if (!ms->flip.armed || ms->flip.stuck)
-		return 1;
-
-	/* The screen's flip asks the live surface. */
-	live = i915_modeset_live_surf(world);
-	idle = drv_i915_xd_flip_idle(&ms->flip, live);
-	if (!idle)
-		return 0;
-
-	/* The flip has latched: its event is given up, and the new buffer is the current one. */
-	i915_modeset_flip_retire(display);
-
-	/* No flip is pending any more. */
-	return 1;
-}
-
-/*
- * Waits until the armed flip of the selected screen has latched, from a
- * thread that is not the worker: the presenting thread, so the worker is
- * free to run the next frame's rendering meanwhile.  Only for a display
- * whose worker never selects another screen (the tests): the resident
- * path names its screen (drv_i915_lcd_modeset_flip_wait_screen).
- *
- * Nothing of the screen's state is changed: the worker retires the latched
- * flip when it takes the next presentation (drv_i915_lcd_modeset_flip_poll()).
- * A flip that has latched already is not waited for, so a late caller does
- * not pay for one more vblank.  Returns 0 when the flip has latched, or
- * EIO when it did not within the flip event time.
- */
-int
-drv_i915_lcd_modeset_flip_wait(
-	struct i915_display *display)
-{
-	struct i915_lcd_world *world;
-	struct i915_lcd_modeset *ms;
-	struct i915_lcd_emit *ms_ops;
-	uint32_t live;
-	int event_rc;
-
-	world = display->lcd_world;
-	ms = i915_modeset_selected_screen(world);
-	ms_ops = world->ms_ops_pool[world->ms_sel];
-
-	/* Nothing armed, or a flip that will never complete: nothing to wait for. */
-	if (!ms->flip.armed || ms->flip.stuck)
-		return 0;
-
-	/* A flip that has latched already. */
-	live = i915_modeset_live_surf(world);
-	if (live == ms->flip.pending)
-		return 0;
-
-	/* Waits for the vblank the flip latches at, then checks that it did. */
-	event_rc = ms_ops->wait_event(ms_ops->ctx, ms->crtc.pipe, I915_LCD_FLIP_EVENT_MS);
-	live = i915_modeset_live_surf(world);
-	if (live == ms->flip.pending)
-		return 0;
-
-	/* The vblank came and went without the new buffer, or never came. */
-	kern_logf("i915: resident display: flip to 0x%08x did not latch: event_rc=%d live 0x%08x\n",
-	    ms->flip.pending,
-	    event_rc,
-	    live);
-	return EIO;
-}
-
-/*
- * Waits until the armed flip of a named screen has latched, from a thread
- * that is not the worker.
- *
- * As drv_i915_lcd_modeset_flip_wait(), but the screen is the caller's and
- * not the selected one: the worker selects the second output's screen
- * while it works on it, and a presenting thread must never wait on the
- * screen the worker happens to have selected.  Returns 0, EINVAL for a
- * screen out of range, or EIO when the flip did not latch.
- */
-int
-drv_i915_lcd_modeset_flip_wait_screen(
-	struct i915_display *display,
-	unsigned screen)
-{
-	struct i915_lcd_world *world;
-	struct i915_lcd_modeset *ms;
-	struct i915_lcd_emit *ms_ops;
-	uint32_t live;
-	int event_rc;
-
-	/* Refuses a screen the pools have no room for. */
-	if (screen >= I915_LCD_MS_SCREENS)
-		return EINVAL;
-
-	/* The named screen's object and hooks. */
-	world = display->lcd_world;
-	ms = &world->ms_pool[screen];
-	ms_ops = world->ms_ops_pool[screen];
-
-	/* A screen that never ran, nothing armed, or a flip that will never complete: nothing to wait for. */
-	if (ms_ops == NULL)
-		return 0;
-	if (!ms->flip.armed || ms->flip.stuck)
-		return 0;
-
-	/* A flip that has latched already. */
-	live = ms_ops->read32(ms_ops->ctx, I915_XD_PLANE_SURFLIVE((unsigned)ms->crtc.pipe));
-	if (live == ms->flip.pending)
-		return 0;
-
-	/* Waits for the vblank the flip latches at, then checks that it did. */
-	event_rc = ms_ops->wait_event(ms_ops->ctx, ms->crtc.pipe, I915_LCD_FLIP_EVENT_MS);
-	live = ms_ops->read32(ms_ops->ctx, I915_XD_PLANE_SURFLIVE((unsigned)ms->crtc.pipe));
-	if (live == ms->flip.pending)
-		return 0;
-
-	/* The vblank came and went without the new buffer, or never came. */
-	kern_logf("i915: display screen %u: flip to 0x%08x did not latch: event_rc=%d live 0x%08x\n",
-	    screen,
-	    ms->flip.pending,
-	    event_rc,
-	    live);
-	return EIO;
-}
-
-/*
- * Waits for the armed flip of the selected screen to complete, before the
- * buffers change hands (the stop, or a flip that waits).
- *
- * Returns 0 when no flip is pending any more, or EIO when the armed flip
- * did not complete in time or did not latch the new buffer; both buffers
- * then stay protected (flip_stuck).
- */
-int
-drv_i915_lcd_modeset_flip_settle(
-	struct i915_display *display)
-{
-	struct i915_lcd_world *world;
-	struct i915_lcd_modeset *ms;
-	struct i915_lcd_emit *ms_ops;
-	uint32_t live;
-	int settled;
-	int idle;
-	int event_rc;
-
-	world = display->lcd_world;
-	ms = i915_modeset_selected_screen(world);
-	ms_ops = world->ms_ops_pool[world->ms_sel];
-
-	/* A flip that has latched, or none, needs no wait. */
-	idle = drv_i915_lcd_modeset_flip_poll(display);
-	if (idle)
-		return 0;
-
-	/* Waits for the event the pipe's next vblank completes, then for the live surface. */
-	event_rc = ms_ops->wait_event(ms_ops->ctx, ms->crtc.pipe, I915_LCD_FLIP_EVENT_MS);
-	live = i915_modeset_live_surf(world);
-
-	/* The screen's flip judges it: an event that did not come, or a surface that did not latch, keeps both buffers. */
-	settled = drv_i915_xd_flip_settled(&ms->flip, event_rc, live);
-	if (settled != 0) {
-		kern_logf("i915: resident display: flip to 0x%08x did not complete: event_rc=%d live 0x%08x\n",
-		    ms->flip.pending,
-		    event_rc,
-		    live);
-		return EIO;
-	}
-
-	/* drm_send_event: the event's vblank reference goes back. */
-	ms_ops->vblank_put(ms_ops->ctx, ms->crtc.pipe);
-	ms->flip_event_ref = 0;
-
-	/* Succeeded: no flip is pending. */
-	return 0;
+	backend->debug(backend->ctx, what);
 }
 
 /*
@@ -1493,114 +606,6 @@ drv_i915_lcd_show_prepared(
 }
 
 /*
- * Shows one known picture in a buffer of its own and stops it safely.
- *
- * Creates, fills and publishes the buffer, shows it, stops it and
- * releases it.  Returns 0 when the picture was up for the whole window,
- * the stop was confirmed and everything was given back; EINVAL or EBUSY
- * when nothing was touched; EIO when the run did not pass.
- */
-int
-drv_i915_lcd_show_run(
-	struct i915_display *display,
-	struct i915_lcd_show_env *env,
-	struct i915_lcd_show_report *r)
-{
-	struct i915_scanout *so;
-	int begin_error;
-	int shown;
-
-	/* Refuses a call without its inputs. */
-	if (env == NULL || r == NULL || env->hw == NULL || env->gm == NULL || env->so == NULL || env->lcd == NULL)
-		return EINVAL;
-
-	/* An earlier run left resources the display or the GPU may still use: nothing is touched. */
-	begin_error = i915_show_begin(display, env, r);
-	if (begin_error != 0)
-		return begin_error;
-
-	/* The storage must be free (an earlier buffer may have been abandoned). */
-	so = env->so;
-	if (so->state != I915_SCANOUT_NONE) {
-		i915_show_anomaly(r, "the scanout storage is still in use (an earlier buffer was abandoned?)", EBUSY);
-		return EBUSY;
-	}
-
-	/* The display window of the GGTT; EBUSY means it was claimed earlier, which is fine. */
-	r->window_rc = drv_i915_gt_display_window_init(env->gm, I915_GT_DISPLAY_PAGES);
-	if (r->window_rc != 0 && r->window_rc != EBUSY) {
-		i915_show_anomaly(r, "display GGTT window", r->window_rc);
-		return EIO;
-	}
-
-	/* Creates the buffer at the panel's size. */
-	r->create_rc = drv_i915_scanout_create(env->gm, (uint32_t)env->lcd->mode.hdisplay, (uint32_t)env->lcd->mode.vdisplay, I915_FOURCC_XRGB8888, I915_MOD_LINEAR, so);
-	if (r->create_rc != 0) {
-		i915_show_anomaly(r, "scanout create", r->create_rc);
-		return EIO;
-	}
-
-	/* Pins it for the display. */
-	r->pin_rc = drv_i915_scanout_pin(so, "lcd-b");
-	if (r->pin_rc != 0) {
-		i915_show_anomaly(r, "scanout pin", r->pin_rc);
-		r->destroy_rc = drv_i915_scanout_destroy(so);
-		return EIO;
-	}
-
-	/* Draws the picture, publishes it and reads it back. */
-	r->surf = so->surf;
-	r->pattern_hash = drv_i915_lcd_pattern_fill(so->cpu, so->pitch, so->width, so->height, env->pattern_id);
-	drv_i915_scanout_publish(so);
-	r->readback_bad_before = drv_i915_lcd_pattern_verify(so->cpu, so->pitch, so->width, so->height, env->pattern_id, NULL, NULL);
-	if (r->readback_bad_before != 0U || (env->pattern_fnv != 0U && r->pattern_hash != env->pattern_fnv)) {
-		i915_show_anomaly(r, "the picture in the buffer is not the expected one", EIO);
-		i915_show_release_unused(so, r);
-		return EIO;
-	}
-
-	i915_show_reached(env, r, I915_LCD_SHOW_BUFFER_READY);
-
-	/* Shows it and stops it; a buffer the display never saw is released the ordinary way. */
-	shown = i915_show_display(display, env, so, r, i915_show_pattern_verify, env);
-	if (!shown) {
-		i915_show_release_unused(so, r);
-		return EIO;
-	}
-
-	/* The display let go: the buffer is released. */
-	if (r->display_released) {
-		r->unpin_rc = drv_i915_scanout_unpin(so);
-		r->destroy_rc = EBUSY;
-		if (r->unpin_rc == 0)
-			r->destroy_rc = drv_i915_scanout_destroy(so);
-
-		r->released = 0;
-		if (r->unpin_rc == 0 && r->destroy_rc == 0)
-			r->released = 1;
-
-		/* A buffer that cannot be released after a confirmed stop is an anomaly. */
-		if (!r->released) {
-			if (r->unpin_rc != 0) {
-				i915_show_anomaly(r, "the buffer could not be released after a confirmed stop", r->unpin_rc);
-			} else {
-				i915_show_anomaly(r, "the buffer could not be released after a confirmed stop", r->destroy_rc);
-			}
-		} else {
-			i915_show_reached(env, r, I915_LCD_SHOW_RELEASED);
-		}
-	}
-
-	/* Judges the run. */
-	r->pass = i915_show_passed(display, r, r->released);
-	if (!r->pass)
-		return EIO;
-
-	/* Succeeded: the picture was up, stopped and given back. */
-	return 0;
-}
-
-/*
  * Reports whether a run left resources the display or the GPU may still
  * use.
  *
@@ -1626,34 +631,6 @@ drv_i915_lcd_show_retained(
 }
 
 /*
- * Records that a buffer's other user, the GPU, is not shown to have
- * stopped using it.
- *
- * The same device-side retained state as an unconfirmed display stop; gm
- * names the memory manager that owns the kept objects.
- */
-void
-drv_i915_lcd_show_retain_gpu(
-	struct i915_display *display,
-	const void *gm,
-	const char *why)
-{
-	const char *reason;
-
-	/* The latch and the manager it belongs to. */
-	display->show_gpu_retained = 1;
-	display->show_gpu_retained_gm = gm;
-	display->show_gpu_retained_why = why;
-
-	/* Names the reason in the log. */
-	reason = "-";
-	if (why != NULL)
-		reason = why;
-
-	kern_logf("i915: retained (GPU not shown to be done): %s -- the buffer and every object the request may use are kept\n", reason);
-}
-
-/*
  * Reports whether the GPU was not shown to be done with a retained buffer.
  */
 int
@@ -1662,70 +639,6 @@ drv_i915_lcd_show_gpu_retained(
 {
 	/* Reports the latch. */
 	return display->show_gpu_retained;
-}
-
-/*
- * Drops the GPU latch for a memory manager that has since been finalised.
- *
- * Its objects are gone with it (GPU-free tests).  Returns 0, or EPERM for
- * another manager or one that still exists.
- */
-int
-drv_i915_lcd_show_discard_gpu_model(
-	struct i915_display *display,
-	const void *gm,
-	int gm_finalised)
-{
-	/* Nothing is latched. */
-	if (!display->show_gpu_retained)
-		return 0;
-
-	/* Only the finalised manager that holds it may drop it. */
-	if (gm == NULL || gm != display->show_gpu_retained_gm || !gm_finalised)
-		return EPERM;
-
-	/* Forgets the latch. */
-	display->show_gpu_retained = 0;
-	display->show_gpu_retained_gm = NULL;
-	display->show_gpu_retained_why = NULL;
-
-	/* Succeeded: the latch is dropped. */
-	return 0;
-}
-
-/*
- * Drops the display latch of a run on a register model.
- *
- * Returns 0, or EPERM for real hardware or a backend that does not hold it.
- */
-int
-drv_i915_lcd_show_discard_model(
-	struct i915_display *display,
-	struct i915_lcd_show_env *env)
-{
-	int discarded;
-
-	/* Nothing is latched. */
-	if (!display->show_retained)
-		return 0;
-
-	/* Only the model the retained run used may drop it. */
-	if (env == NULL || env->hw == NULL)
-		return EPERM;
-	if (env->hw != display->show_retained_hw || !env->hw->model)
-		return EPERM;
-
-	/* The modeset object of the model goes first. */
-	discarded = drv_i915_lcd_modeset_discard_model(display, &display->show_trace.ops);
-	if (discarded != 0)
-		return EPERM;
-
-	/* Forgets the latch. */
-	display->show_retained = 0;
-	display->show_retained_hw = NULL;
-
-	/* Succeeded: the latch is dropped. */
-	return 0;
 }
 
 /*
@@ -1795,7 +708,7 @@ drv_i915_lcd_kernel_resident_run(
 	 */
 	retained = drv_i915_lcd_show_retained(display);
 	if (!retained)
-		retained = drv_i915_lcd_modeset_retained(display);
+		retained = drv_i915_xd_picture_retained(&display->xd.pictures, I915_XD_PICTURE_RESIDENT);
 	kept = i915_resident_buffers_kept(display);
 	if (retained) {
 		kern_logf("i915: resident display: refused (resources of an earlier run are retained)\n");
@@ -1858,10 +771,8 @@ drv_i915_lcd_kernel_resident_run(
 		way.params(&display->output, &output_params);
 		k->p = &output_params;
 		lcd = &display->output.state;
-		if (way.own_pool) {
-			drv_i915_lcd_dplls_reset(display->lcd_world);
-			drv_i915_lcd_dbuf_forget(display->wm_world);
-		}
+		if (way.own_pool)
+			drv_i915_xd_pictures_forget(&display->xd.pictures);
 	}
 
 	/* The hardware must be as the initialisation left it, and the inputs must be complete. */
@@ -2157,6 +1068,7 @@ drv_i915_lcd_kernel_bind_ops(
 	k->ops.panel = drv_i915_edp_emit_panel;
 
 	/* Display power and the DBUF slices. */
+	k->ops.power_domain = drv_i915_lcd_power_domain_of;
 	k->ops.power_get = drv_i915_lcd_power_get;
 	k->ops.power_get_if_enabled = drv_i915_lcd_power_get_if_enabled;
 	k->ops.power_put = drv_i915_lcd_power_put;
@@ -2518,581 +1430,17 @@ drv_i915_lcd_kernel_at_stage(
 	}
 }
 
-/* Returns the modeset object of the world's selected screen. */
-static struct i915_lcd_modeset *
-i915_modeset_selected_screen(
-	struct i915_lcd_world *world)
-{
-	/* The selected screen is the index into the pool. */
-	return &world->ms_pool[world->ms_sel];
-}
-
-/*
- * Binds the selected screen's objects to the Linux text: its device, its
- * watermark state and its encoder (the text reaches them through the
- * world).
- */
-static void
-i915_modeset_bind_current(
-	struct i915_display *display)
-{
-	struct i915_lcd_world *world;
-	struct i915_lcd_modeset *ms;
-
-	world = display->lcd_world;
-	ms = i915_modeset_selected_screen(world);
-
-	/* A screen that is not prepared has nothing to bind. */
-	if (!ms->prepared)
-		return;
-
-	/* The device, the watermark state and the encoder of the selected screen. */
-	world->i915_lcd_cur_i915 = &ms->i915;
-	display->wm_world->i915_lcd_wm = &ms->wm;
-	drv_i915_lcd_ms_bind_encoder(ms);
-}
-
-/* Counts an error of the Linux text for the selected screen and hands it to the backend (ctx: the world). */
+/* Counts an error of the older code against the screen whose operation runs (ctx: the display). */
 static void
 i915_modeset_on_error(
 	void *ctx,
 	const char *what)
 {
-	struct i915_lcd_world *world;
-	struct i915_lcd_emit *ms_ops;
-
-	world = ctx;
-
-	/* The first error is what a failed run is read from. */
-	if (world->ms_errors_pool[world->ms_sel] == 0U)
-		world->ms_first_error_pool[world->ms_sel] = what;
-
-	world->ms_errors_pool[world->ms_sel]++;
-
-	/* Hands it to the backend's error hook. */
-	ms_ops = world->ms_ops_pool[world->ms_sel];
-	if (ms_ops != NULL && ms_ops->error != NULL)
-		ms_ops->error(ms_ops->ctx, what);
-}
-
-/* Reads the sink's link status and judges clock recovery and channel equalisation. */
-static void
-i915_modeset_read_link_status(
-	struct i915_lcd_modeset *ms,
-	struct i915_lcd_modeset_status *out)
-{
-	u8 ls[DP_LINK_STATUS_SIZE];
-	bool ok;
-
-	/* Reads DPCD 0x202 onwards of the DPRX. */
-	kern_memset(ls, 0, sizeof(ls));
-	out->link_status_rc = drv_i915_drm_dp_dpcd_read_phy_link_status(&ms->dig_port.dp.aux, DP_PHY_DPRX, ls);
-	kern_memcpy(out->link_status, ls, sizeof(out->link_status));
-
-	/* Judges the status only when it was read. */
-	out->cr_ok = 0;
-	out->eq_ok = 0;
-	if (out->link_status_rc != 0)
-		return;
-
-	/* Clock recovery on every lane. */
-	ok = drv_i915_drm_dp_clock_recovery_ok(ls, ms->crtc_state.lane_count);
-	if (ok)
-		out->cr_ok = 1;
-
-	/* Channel equalisation, symbol lock and inter-lane alignment. */
-	ok = drv_i915_drm_dp_channel_eq_ok(ls, ms->crtc_state.lane_count);
-	if (ok)
-		out->eq_ok = 1;
-}
-
-/* Tells the selected screen's backend that a named point of the commit was reached. */
-static void
-i915_modeset_observe(
-	struct i915_lcd_world *world,
-	int point)
-{
-	struct i915_lcd_emit *ms_ops;
-
-	/* A backend without the hook observes nothing. */
-	ms_ops = world->ms_ops_pool[world->ms_sel];
-	if (ms_ops == NULL || ms_ops->observe == NULL)
-		return;
-
-	ms_ops->observe(ms_ops->ctx, point);
-}
-
-/* Reads the surface the selected screen's primary plane is scanning out now. */
-static uint32_t
-i915_modeset_live_surf(
-	struct i915_lcd_world *world)
-{
-	struct i915_lcd_modeset *ms;
-	struct i915_lcd_emit *ms_ops;
-	uint32_t live;
-
-	ms = i915_modeset_selected_screen(world);
-	ms_ops = world->ms_ops_pool[world->ms_sel];
-
-	/*
-	 * The primary plane's live surface, read through the screen's own
-	 * backend: a presenting thread reads it too, and the shared xd window
-	 * is the worker's.
-	 */
-	live = ms_ops->read32(ms_ops->ctx, I915_XD_PLANE_SURFLIVE((unsigned)ms->crtc.pipe));
-
-	/* Reports the live surface. */
-	return live;
-}
-
-/*
- * Refuses or arms one flip of the selected screen: the first half of
- * drv_i915_lcd_modeset_flip(), up to the armed event.
- *
- * Refuses a screen that is not running, retained, busy with a flip or
- * stuck, the same buffer, an unaligned address, or a backend without the
- * vblank hooks (I915_LCD_MS_NOT_PREPARED, nothing written).  Otherwise the
- * plane is updated inside the vblank evasion, the event is armed and holds a
- * vblank reference, DC_OFF is held (its reference in `dc_off`, for the
- * caller to drop) and I915_LCD_MS_OK is returned; `res` has the details so
- * far either way.
- */
-static int
-i915_modeset_flip_arm(
-	struct i915_display *display,
-	uint32_t new_surf,
-	struct i915_lcd_flip_result *res,
-	int *dc_off)
-{
-	struct i915_lcd_world *world;
-	struct i915_lcd_modeset *ms;
-	struct i915_lcd_emit *ms_ops;
-	unsigned refused;
-	unsigned before;
-	int prepare_error;
-	int retained;
-	int lit;
-
-	world = display->lcd_world;
-	ms = i915_modeset_selected_screen(world);
-	ms_ops = world->ms_ops_pool[world->ms_sel];
-
-	/* Nothing written yet: the flip is refused until it is not. */
-	kern_memset(res, 0, sizeof(*res));
-	res->result = I915_LCD_FLIP_REFUSED;
-	res->old_surf = ms->flip.current;
-	res->new_surf = new_surf;
-
-	/*
-	 * Refuses a screen that is not running, retained, busy with a flip or
-	 * stuck, the same buffer, an unaligned address, or a backend without
-	 * the vblank hooks.
-	 */
-	retained = drv_i915_lcd_modeset_retained(display);
-	lit = ms->prepared && ms->crtc.active && ms->plane_armed;
-	refused = drv_i915_xd_flip_refused(&ms->flip, lit, retained, new_surf);
-	if (refused != I915_XD_FLIP_OK)
-		return I915_LCD_MS_NOT_PREPARED;
-	if (ms_ops->vblank_get == NULL || ms_ops->wait_event == NULL)
-		return I915_LCD_MS_NOT_PREPARED;
-
-	/* The flip's generation and the pipe as it is now. */
-	world->i915_lcd_cur_i915 = &ms->i915;
-	ms->flip.gen++;
-	res->gen = ms->flip.gen;
-	res->live_before = i915_modeset_live_surf(world);
-	res->frame_before = i915_modeset_frame_now(world);
-
-	/* The new plane state: the same layout, another surface; a refusal restores the current one. */
-	prepare_error = drv_i915_lcd_ms_plane_prepare(ms, ms->fb_fourcc, ms->fb_modifier, ms->fb_width, ms->fb_height, ms->fb_pitch, new_surf);
-	if (prepare_error != 0) {
-		(void)drv_i915_lcd_ms_plane_prepare(ms, ms->fb_fourcc, ms->fb_modifier, ms->fb_width, ms->fb_height, ms->fb_pitch, ms->flip.current);
-		return I915_LCD_MS_NOT_PREPARED;
-	}
-
-	/* From here both buffers may be read by the display until the completion is known. */
-	drv_i915_xd_flip_arm(&ms->flip, new_surf);
-	before = world->ms_errors_pool[world->ms_sel];
-
-	/* intel_atomic_commit_tail(): DC states off around every commit, fastsets and other updates too. */
-	*dc_off = i915_lcd_intel_display_power_get(&ms->i915, POWER_DOMAIN_DC_OFF);
-	drv_i915_lcd_ms_plane_update_flip(ms);
-
-	/* intel_pipe_update_end(): the armed event holds a vblank reference (drm_crtc_vblank_get()). */
-	ms->flip_event_ref = 1;
-	res->update_errors = (int)(world->ms_errors_pool[world->ms_sel] - before);
-
-	/* Succeeded: the flip is armed. */
-	return I915_LCD_MS_OK;
-}
-
-/*
- * Completes an armed flip the pipe has latched without waiting for its
- * event: the event is given up (drm_crtc_vblank_off() on it), its vblank
- * reference goes back, and the new buffer is the current one.
- */
-static void
-i915_modeset_flip_retire(
-	struct i915_display *display)
-{
-	struct i915_lcd_world *world;
-	struct i915_lcd_modeset *ms;
-	struct i915_lcd_emit *ms_ops;
-
-	world = display->lcd_world;
-	ms = i915_modeset_selected_screen(world);
-	ms_ops = world->ms_ops_pool[world->ms_sel];
-
-	/* The event will not be waited for; its reference goes back (the screen's flip has made the new buffer the current one). */
-	if (ms_ops->cancel_event != NULL)
-		ms_ops->cancel_event(ms_ops->ctx, ms->crtc.pipe);
-	ms_ops->vblank_put(ms_ops->ctx, ms->crtc.pipe);
-	ms->flip_event_ref = 0;
-}
-
-/* Reads the selected screen's hardware frame counter through the xd pipe. */
-static uint32_t
-i915_modeset_frame_now(
-	struct i915_lcd_world *world)
-{
-	struct i915_lcd_modeset *ms;
-	uint32_t frame;
-
-	ms = i915_modeset_selected_screen(world);
-
-	/* The pipe's frame counter. */
-	frame = drv_i915_xd_pipe_frame(drv_i915_lcd_xd_io(&ms->i915), (unsigned)ms->crtc.pipe);
-
-	/* Reports the frame count. */
-	return frame;
-}
-
-/*
- * Clears the selected screen's object and builds the state an atomic
- * check would have computed, then runs the check phase (watermarks, DDB,
- * CDCLK, bandwidth).  Nothing is written.
- */
-static int
-i915_modeset_prepare_state(
-	struct i915_display *display,
-	const struct i915_lcd_state *s,
-	const struct i915_lcd_modeset_cfg *cfg,
-	struct i915_lcd_emit *ops)
-{
-	struct i915_lcd_world *world;
-	struct i915_lcd_modeset *ms;
-	struct drm_display_mode *mode;
-	struct intel_dpll_hw_state want;
-	struct i915_xd_plan plan;
-	int dbuf_known;
-	int plane_error;
-	int tc_error;
-
-	world = display->lcd_world;
-	ms = i915_modeset_selected_screen(world);
-
-	/* Clears the object; it belongs to this world (the flip's interrupt nesting and the device bookkeeping live there). */
-	kern_memset(ms, 0, sizeof(*ms));
-	ms->world = world;
-	ms->output_hdmi = cfg->output_hdmi;
-	ms->output_dp_ext = cfg->output_dp_ext;
-	ms->hdmi_level_shift = cfg->vbt_hdmi_level_shift;
-	ms->also_active_pipes = cfg->also_active_pipes;
-	ms->aux_emit = cfg->aux_emit;
-
-	/* The backend of the screen's commits, and a clean error count bound to this world. */
-	world->ms_ops_pool[world->ms_sel] = ops;
-	world->ms_errors_pool[world->ms_sel] = 0U;
-	world->ms_first_error_pool[world->ms_sel] = NULL;
-	drv_i915_lcd_error_bind(world, i915_modeset_on_error, world);
-
-	/* The device: its hooks, its locks and what the normal initialisation found. */
-	ms->i915.emit = ops;
-	ms->i915.display.dpll.lock.which = I915_LCD_LOCK_DPLL;
-	ms->i915.display.backlight.lock.which = I915_LCD_LOCK_BACKLIGHT;
-	ms->i915.display.vbt.override_afc_startup = cfg->vbt_override_afc_startup != 0;
-	ms->i915.display.dmc.fw_mask = cfg->dmc_fw_mask;
-	kern_memcpy(ms->i915.display.wm.skl_latency, cfg->wm_latency, sizeof(ms->i915.display.wm.skl_latency));
-	ms->i915.display.wm.num_levels = cfg->wm_num_levels;
-	ms->i915.display.wm.ipc_enabled = cfg->wm_ipc_enabled != 0;
-	ms->i915.display.sagv.block_time_us = cfg->sagv_block_time_us;
-	ms->i915.display.device_info.dbuf.size = cfg->dbuf_size;
-	ms->i915.display.device_info.dbuf.slice_mask = cfg->dbuf_slice_mask;
-	ms->i915.display.runtime.pipe_mask = 0x0f;
-
-	/* The global DBUF state as it is now: the device's own, or what the caller read from the hardware. */
-	dbuf_known = drv_i915_lcd_dbuf_current(display->wm_world, &ms->wm.old_dbuf);
-	if (dbuf_known != 0) {
-		ms->wm.old_dbuf.enabled_slices = cfg->dbuf_enabled_slices;
-		ms->wm.old_dbuf.joined_mbus = cfg->mbus_joined != 0;
-	}
-
-	/* The CDCLK state the initialisation left, and the platform limit. */
-	ms->i915.display.device_info.has_ddi = true;
-	ms->i915.display.cdclk.hw.cdclk = cfg->cdclk_khz;
-	ms->i915.display.cdclk.hw.vco = cfg->cdclk_vco_khz;
-	ms->i915.display.cdclk.hw.ref = cfg->cdclk_ref_khz;
-	ms->i915.display.cdclk.hw.bypass = cfg->cdclk_bypass_khz;
-	ms->i915.display.cdclk.hw.voltage_level = cfg->cdclk_voltage_level;
-	ms->i915.display.cdclk.max_cdclk_freq = cfg->cdclk_max_khz;
-
-	/* The crtc. */
-	ms->crtc.base.dev = &ms->i915.drm;
-	ms->crtc.base.name = "pipe";
-	ms->crtc.pipe = (enum pipe)cfg->pipe;
-
-	/* The crtc state intel_dp_compute_config() / intel_crtc_compute_config() leave for an SST panel. */
-	ms->crtc_state.uapi.crtc = &ms->crtc.base;
-	ms->crtc_state.uapi.mode_changed = true;
-	ms->crtc_state.cpu_transcoder = cfg->cpu_transcoder;
-	ms->crtc_state.master_transcoder = INVALID_TRANSCODER;
-	ms->crtc_state.mst_master_transcoder = INVALID_TRANSCODER;
-	ms->crtc_state.hsw_workaround_pipe = INVALID_PIPE;
-
-	/* The adjusted mode: the panel's timing. */
-	mode = &ms->crtc_state.hw.adjusted_mode;
-	mode->clock = s->mode.clock_khz;
-	mode->hdisplay = s->mode.hdisplay;
-	mode->hsync_start = s->mode.hsync_start;
-	mode->hsync_end = s->mode.hsync_end;
-	mode->htotal = s->mode.htotal;
-	mode->vdisplay = s->mode.vdisplay;
-	mode->vsync_start = s->mode.vsync_start;
-	mode->vsync_end = s->mode.vsync_end;
-	mode->vtotal = s->mode.vtotal;
-
-	/* The sync polarities. */
-	mode->flags = 0;
-	if (s->mode.hsync_positive) {
-		mode->flags |= DRM_MODE_FLAG_PHSYNC;
-	} else {
-		mode->flags |= DRM_MODE_FLAG_NHSYNC;
-	}
-
-	if (s->mode.vsync_positive) {
-		mode->flags |= DRM_MODE_FLAG_PVSYNC;
-	} else {
-		mode->flags |= DRM_MODE_FLAG_NVSYNC;
-	}
-
-	/* The crtc timing derived from the mode. */
-	drv_i915_drm_mode_set_crtcinfo(mode, 0);
-	ms->crtc_state.pixel_rate = mode->crtc_clock;
-	ms->crtc_state.pipe_src.x2 = (int)cfg->fb_width;
-	ms->crtc_state.pipe_src.y2 = (int)cfg->fb_height;
-
-	/* The output: the eDP panel, an HDMI sink or an external DP sink, RGB. */
-	if (cfg->output_hdmi) {
-		ms->crtc_state.output_types = BIT(INTEL_OUTPUT_HDMI);
-	} else if (cfg->output_dp_ext) {
-		ms->crtc_state.output_types = BIT(INTEL_OUTPUT_DP);
-	} else {
-		ms->crtc_state.output_types = BIT(INTEL_OUTPUT_EDP);
-	}
-
-	ms->crtc_state.output_format = INTEL_OUTPUT_FORMAT_RGB;
-	ms->crtc_state.port_clock = s->link.rate_khz;
-	ms->crtc_state.lane_count = s->link.lanes;
-	ms->crtc_state.pipe_bpp = s->link.bpp;
-
-	/*
-	 * intel_modeset_pipe_config(): "Dithering seems to not pass-through bits
-	 * correctly when it should, so only enable it on 6bpc panels";
-	 * dither_force_disable is set by DP compliance tests only.
-	 */
-	ms->crtc_state.dither = ms->crtc_state.pipe_bpp == 6 * 3;
-	ms->crtc_state.pixel_multiplier = 1;
-	ms->crtc_state.framestart_delay = 1;
-
-	/* Enhanced framing when the DP sink offers it. */
-	ms->crtc_state.enhanced_framing = false;
-	if (!cfg->output_hdmi && (cfg->dpcd[2] & I915_LCD_DPCD_ENHANCED_FRAME_CAP) != 0U)
-		ms->crtc_state.enhanced_framing = true;
-
-	/*
-	 * What intel_hdmi_compute_config() leaves for a sink whose EDID could
-	 * not be read: DVI mode (no HDMI sink, no infoframes, no scrambling),
-	 * RGB 8 bpc, four lanes, the TMDS clock as the port clock.  ADAPTATION:
-	 * the reference derives has_hdmi_sink, bpc and colorimetry from the
-	 * EDID; without one it would not light the sink at all.
-	 */
-	if (cfg->output_hdmi) {
-		ms->crtc_state.has_hdmi_sink = false;
-		ms->crtc_state.has_infoframe = false;
-		ms->crtc_state.hdmi_scrambling = false;
-		ms->crtc_state.hdmi_high_tmds_clock_ratio = false;
-		ms->crtc_state.limited_color_range = false;
-		ms->crtc_state.lane_count = 4;
-		ms->crtc_state.dither = false;
-	}
-
-	/* The link M/N, the primary plane and the one encoder (drm_encoder_mask() of it). */
-	ms->crtc_state.dp_m_n.tu = s->link.tu;
-	ms->crtc_state.dp_m_n.data_m = s->link.data_m;
-	ms->crtc_state.dp_m_n.data_n = s->link.data_n;
-	ms->crtc_state.dp_m_n.link_m = s->link.link_m;
-	ms->crtc_state.dp_m_n.link_n = s->link.link_n;
-	ms->crtc_state.active_planes = (u8)BIT(PLANE_PRIMARY);
-	ms->crtc_state.uapi.encoder_mask = 1U << 0;
-
-	/* The encoder, digital port and DP object as intel_ddi_init() leaves them for a combo-PHY port. */
-	ms->dig_port.base.base.dev = &ms->i915.drm;
-	ms->dig_port.base.base.name = "DDI";
-	ms->dig_port.base.port = (enum port)cfg->port;
-	if (cfg->output_hdmi) {
-		ms->dig_port.base.type = INTEL_OUTPUT_DDI;
-	} else if (cfg->output_dp_ext) {
-		/* intel_ddi_init() leaves a DDI with DP that is not eDP as DDI. */
-		ms->dig_port.base.type = INTEL_OUTPUT_DDI;
-	} else {
-		ms->dig_port.base.type = INTEL_OUTPUT_EDP;
-	}
-
-	/* An HDMI port: its connector, no DP++ adaptor. */
-	if (cfg->output_hdmi) {
-		ms->dig_port.hdmi.attached_connector = &ms->connector;
-		ms->dig_port.hdmi.dp_dual_mode.type = DRM_DP_DUAL_MODE_NONE;
-	}
-
-	/* The port bits, the AUX channel, four lanes and the port's I/O domain (d13_port_domains[]: ports A to C, TC1 to TC4). */
-	ms->dig_port.saved_port_bits = cfg->saved_port_bits;
-	ms->dig_port.aux_ch = cfg->aux_ch;
-	ms->dig_port.max_lanes = 4;
-	if (cfg->output_dp_ext) {
-		ms->dig_port.ddi_io_power_domain = POWER_DOMAIN_PORT_DDI_IO_TC1 + (cfg->port - (int)PORT_TC1);
-	} else {
-		ms->dig_port.ddi_io_power_domain = POWER_DOMAIN_PORT_DDI_IO_A + cfg->port;
-	}
-
-	/* The DP object: its connector, the sink's capabilities and the AUX name. */
-	ms->dig_port.dp.attached_connector = &ms->connector;
-	kern_memcpy(ms->dig_port.dp.dpcd, cfg->dpcd, sizeof(ms->dig_port.dp.dpcd));
-	kern_memcpy(ms->dig_port.dp.edp_dpcd, cfg->edp_dpcd, sizeof(ms->dig_port.dp.edp_dpcd));
-	ms->dig_port.dp.aux.name = "AUX";
-
-	/* The connector and the panel's VBT data. */
-	if (cfg->output_hdmi) {
-		ms->connector.base.name = "HDMI";
-	} else if (cfg->output_dp_ext) {
-		ms->connector.base.name = "DP";
-	} else {
-		ms->connector.base.name = "eDP";
-	}
-
-	ms->connector.panel.vbt.edp.low_vswing = cfg->vbt_low_vswing != 0;
-	ms->connector.panel.vbt.edp.hobl = cfg->vbt_hobl != 0;
-	ms->connector.base.dev = &ms->i915.drm;
-	ms->connector.panel.vbt.backlight.present = cfg->vbt_backlight_present != 0;
-	ms->connector.panel.vbt.backlight.active_low_pwm = cfg->vbt_backlight_active_low != 0;
-	ms->connector.panel.vbt.backlight.controller = (s8)cfg->vbt_backlight_controller;
-	ms->connector.panel.vbt.backlight.pwm_freq_hz = cfg->vbt_backlight_pwm_freq_hz;
-	ms->connector.panel.vbt.backlight.min_brightness = cfg->vbt_backlight_min_brightness;
-	ms->i915.display.runtime.rawclk_freq = cfg->rawclk_khz;
-
-	/* The connector state: the connector drives this crtc through this encoder. */
-	ms->conn_state.colorspace = MODE_COLORIMETRY_DEFAULT;
-	ms->conn_state.connector = &ms->connector;
-	ms->conn_state.best_encoder = &ms->dig_port.base;
-	ms->conn_state.crtc = &ms->crtc.base;
-
-	/*
-	 * The PLL state icl_calc_dpll_state() computed, and the object that
-	 * carries it: the reference's rule over the device's pool, not a fixed
-	 * id (cfg->dpll_id is only the caller's expectation).
-	 */
-	if (cfg->output_dp_ext) {
-		/*
-		 * A Type-C port: the Thunderbolt PLL's and the port's TC PLL's
-		 * states for the link rate (icl_compute_tc_phy_dplls() from the
-		 * reference clock), then both PLLs reserved, the TC PLL active.
-		 */
-		ms->i915.display.dpll.ref_clks.nssc = s->pll.ref_khz;
-		tc_error = drv_i915_icl_compute_tc_phy_dplls(&ms->crtc_state, NULL);
-		if (tc_error != 0) {
-			i915_modeset_on_error(world, "the Type-C port's PLLs refused the link rate\n");
-			return EINVAL;
-		}
-
-		/* Reserves the two PLLs. */
-		ms->dpll_id = drv_i915_lcd_ms_alloc_tc_plls(world, ms, (enum tc_port)((int)TC_PORT_1 + cfg->port - (int)PORT_TC1));
-		if (ms->dpll_id < 0) {
-			i915_modeset_on_error(world, "the Type-C port's PLLs are used by another pipe with another state\n");
-			return EBUSY;
-		}
-	} else {
-		/* A combo PHY port: the DPLL that carries the computed words. */
-		kern_memset(&want, 0, sizeof(want));
-		want.cfgcr0 = s->pll.cfgcr0;
-		want.cfgcr1 = s->pll.cfgcr1;
-		want.div0 = s->pll.div0;
-		ms->dpll_id = drv_i915_lcd_ms_alloc_pll(world, ms, &want);
-		if (ms->dpll_id < 0) {
-			i915_modeset_on_error(world, "no shared DPLL is free for this pipe (both are used by other pipes with other states)\n");
-			return EBUSY;
-		}
-	}
-
-	/* Binds the encoder's hooks and checks the colour state. */
-	drv_i915_lcd_ms_bind_encoder(ms);
-	drv_i915_lcd_ms_color_check(ms);
-
-	/* The framebuffer and the plane state that shows it. */
-	ms->fb_fourcc = cfg->fb_fourcc;
-	ms->fb_modifier = cfg->fb_modifier;
-	ms->fb_width = cfg->fb_width;
-	ms->fb_height = cfg->fb_height;
-	ms->fb_pitch = cfg->fb_pitch;
-	ms->flip.current = cfg->fb_surf;
-	plane_error = drv_i915_lcd_ms_plane_prepare(ms, cfg->fb_fourcc, cfg->fb_modifier, cfg->fb_width, cfg->fb_height, cfg->fb_pitch, cfg->fb_surf);
-	if (plane_error != 0)
-		return plane_error;
-
-	/* The check phase needs the watermark latencies and the DBUF geometry. */
-	if (cfg->wm_num_levels == 0U || cfg->wm_num_levels > 8U)
-		return EINVAL;
-	if (cfg->dbuf_size == 0U || cfg->dbuf_slice_mask == 0U)
-		return EINVAL;
-
-	/* The new state is active. */
-	ms->crtc_state.hw.active = true;
-	ms->crtc_state.hw.enable = true;
-	ms->crtc_state.hw.pipe_mode = ms->crtc_state.hw.adjusted_mode;
-
-	/* The screen's plan: the watermarks, the display buffer, the CD clock and the bandwidth (nothing is written). */
-	world->i915_lcd_cur_i915 = &ms->i915;
-	i915_modeset_plan_check(s, cfg, ms, &plan);
-	ms->plan = plan;
-
-	/* The plan's watermarks and display buffer become the state the commits write. */
-	drv_i915_lcd_ms_wm_compute(display->wm_world, ms, &plan);
-	if (plan.refused == I915_XD_PLAN_WM) {
-		ms->wm_rc = plan.wm_error;
-		return ms->wm_rc;
-	}
-
-	/* What the CD clock and the bandwidth need, as the plan found it. */
-	i915_modeset_plan_publish(ms, &plan);
-
-	/* A need above the highest step, or one no step gives. */
-	if (plan.refused == I915_XD_PLAN_CDCLK && plan.cdclk_khz == 0U) {
-		ms->cdclk_rc = I915_LCD_EINVAL;
-		return ms->cdclk_rc;
-	}
-
-	/* Another CD clock or voltage level would be reprogrammed around the planes: not connected. */
-	if (ms->cdclk.change_needed) {
-		i915_modeset_on_error(world, "the mode requires a CDCLK state other than the current one: CDCLK programming is not connected\n");
-		return EINVAL;
-	}
-
-	/* The memory bandwidth of the allowed QGV point must cover the plane. */
-	if (plan.refused == I915_XD_PLAN_QGV) {
-		i915_modeset_on_error(world, "the memory bandwidth of the allowed QGV point is unknown or below what the plane needs\n");
-		return EINVAL;
-	}
-
-	/* Succeeded: the state is built and checked. */
-	return 0;
+	struct i915_display *display;
+
+	/* The display's pictures count it. */
+	display = ctx;
+	drv_i915_xd_pictures_fault(&display->xd.pictures, what);
 }
 
 /* Records the first anomaly of a run; later ones are its consequences. */
@@ -3160,12 +1508,15 @@ i915_show_display(
 	uint32_t (*verify)(void *ctx, const struct i915_scanout *so),
 	void *verify_ctx)
 {
+	struct i915_xd_picture_config config;
+	struct i915_xd_pictures *pictures;
 	struct i915_lcd_trace *trace;
 	unsigned disable_from;
 	unsigned waited;
 	uint32_t frame0;
 
 	trace = &display->show_trace;
+	pictures = &display->xd.pictures;
 	r->surf = so->surf;
 
 	/* The check phase: the framebuffer is the one the buffer describes. */
@@ -3183,8 +1534,9 @@ i915_show_display(
 	trace->tap_ctx = &r->obs;
 
 	/* Builds and checks the state. */
-	r->prepare_rc = drv_i915_lcd_modeset_prepare(display, env->lcd, &env->cfg, &trace->ops);
-	drv_i915_lcd_modeset_status(display, &r->at_enable);
+	drv_i915_lcd_picture_config(env->lcd, &env->cfg, &config);
+	r->prepare_rc = drv_i915_xd_picture_prepare(pictures, I915_XD_PICTURE_RESIDENT, &config, &trace->ops);
+	drv_i915_xd_picture_status(pictures, I915_XD_PICTURE_RESIDENT, &r->at_enable);
 	if (r->prepare_rc != 0) {
 		if (r->at_enable.first_error != NULL) {
 			i915_show_anomaly(r, r->at_enable.first_error, r->prepare_rc);
@@ -3206,9 +1558,9 @@ i915_show_display(
 
 	r->display_acquired = 1;
 	drv_i915_lcd_trace_phase(trace, "commit: enable");
-	r->enable_rc = drv_i915_lcd_modeset_commit_enable(display);
-	drv_i915_lcd_modeset_status(display, &r->at_enable);
-	drv_i915_lcd_modeset_link_status(display, &r->at_enable);
+	r->enable_rc = drv_i915_xd_picture_light(pictures, I915_XD_PICTURE_RESIDENT);
+	drv_i915_xd_picture_status(pictures, I915_XD_PICTURE_RESIDENT, &r->at_enable);
+	drv_i915_xd_picture_link_status(pictures, I915_XD_PICTURE_RESIDENT, &r->at_enable);
 	r->enable_errors = r->at_enable.errors;
 	r->first_error_trace_at = trace->first_error_at;
 	if (r->enable_rc != I915_LCD_MS_OK) {
@@ -3255,8 +1607,8 @@ i915_show_display(
 
 		/* The state at the end of the window. */
 		drv_i915_lcd_observer_steady_end(&r->obs);
-		drv_i915_lcd_modeset_status(display, &r->at_window_end);
-		drv_i915_lcd_modeset_link_status(display, &r->at_window_end);
+		drv_i915_xd_picture_status(pictures, I915_XD_PICTURE_RESIDENT, &r->at_window_end);
+		drv_i915_xd_picture_link_status(pictures, I915_XD_PICTURE_RESIDENT, &r->at_window_end);
 
 		/* A DP sink that lost the link while the picture was up. */
 		if (!r->output_hdmi && r->steady_rc == 0) {
@@ -3274,8 +1626,8 @@ i915_show_display(
 	/* Commit 2: the reference's stop path, whatever happened above. */
 	disable_from = trace->n;
 	drv_i915_lcd_trace_phase(trace, "commit: disable");
-	r->disable_rc = drv_i915_lcd_modeset_commit_disable(display);
-	drv_i915_lcd_modeset_status(display, &r->at_disable);
+	r->disable_rc = drv_i915_xd_picture_dark(pictures, I915_XD_PICTURE_RESIDENT);
+	drv_i915_xd_picture_status(pictures, I915_XD_PICTURE_RESIDENT, &r->at_disable);
 	r->cleanup_errors = r->at_disable.errors - r->enable_errors;
 	r->cleanup_first_error_trace_at = i915_show_first_error_after(trace, disable_from);
 	if (r->disable_rc != I915_LCD_MS_OK)
@@ -3297,7 +1649,7 @@ i915_show_display(
 	/* The stop is confirmed: the buffer is the caller's again. */
 	if (r->disable_rc == I915_LCD_MS_OK && r->stopped_rc == 0) {
 		i915_show_reached(env, r, I915_LCD_SHOW_STOP_CONFIRMED);
-		drv_i915_lcd_modeset_plane_released(display);
+		drv_i915_xd_picture_released(pictures, I915_XD_PICTURE_RESIDENT);
 		drv_i915_scanout_end(so);
 		r->display_released = 1;
 		if (verify != NULL)
@@ -3309,7 +1661,7 @@ i915_show_display(
 		 * keeps what it holds (DC_OFF, power domains, DBUF).
 		 */
 		drv_i915_scanout_abandon(so);
-		drv_i915_lcd_modeset_abandoned(display);
+		drv_i915_xd_picture_abandoned(pictures, I915_XD_PICTURE_RESIDENT);
 		display->show_retained = 1;
 		display->show_retained_hw = env->hw;
 		r->abandoned = 1;
@@ -3379,7 +1731,7 @@ i915_show_begin(
 	if (retained)
 		return EBUSY;
 
-	retained = drv_i915_lcd_modeset_retained(display);
+	retained = drv_i915_xd_picture_retained(&display->xd.pictures, I915_XD_PICTURE_RESIDENT);
 	if (retained)
 		return EBUSY;
 
@@ -3392,42 +1744,6 @@ i915_show_begin(
 
 	/* Succeeded: the run may start. */
 	return 0;
-}
-
-/* Counts the pixels of the buffer that differ from the environment's test picture. */
-static uint32_t
-i915_show_pattern_verify(
-	void *ctx,
-	const struct i915_scanout *so)
-{
-	const struct i915_lcd_show_env *env;
-	uint32_t bad;
-
-	env = ctx;
-
-	/* Compares the whole buffer with the picture. */
-	bad = drv_i915_lcd_pattern_verify(so->cpu, so->pitch, so->width, so->height, env->pattern_id, NULL, NULL);
-
-	/* Reports the wrong pixels. */
-	return bad;
-}
-
-/* Releases a buffer the display never saw, in the ordinary order. */
-static void
-i915_show_release_unused(
-	struct i915_scanout *so,
-	struct i915_lcd_show_report *r)
-{
-	/* Unpins, then destroys only what was unpinned. */
-	r->unpin_rc = drv_i915_scanout_unpin(so);
-	r->destroy_rc = EBUSY;
-	if (r->unpin_rc == 0)
-		r->destroy_rc = drv_i915_scanout_destroy(so);
-
-	/* Released when both succeeded. */
-	r->released = 0;
-	if (r->unpin_rc == 0 && r->destroy_rc == 0)
-		r->released = 1;
 }
 
 /* Returns the display a panel run belongs to (ctx: its struct i915_lcd_kernel). */
@@ -3756,7 +2072,7 @@ i915_resident_window(
 	(void)display->resident_serve(display->resident_serve_ctx);
 
 	/* A flip armed without waiting completes before the buffers change hands (it logs a failure). */
-	(void)drv_i915_lcd_modeset_flip_settle(display);
+	(void)drv_i915_xd_picture_flip_settle(&display->xd.pictures, I915_XD_PICTURE_RESIDENT);
 
 	/*
 	 * Lit again for two pipes next: buffer A, which the next
@@ -3776,7 +2092,7 @@ i915_resident_window(
 		flip_error = drv_i915_lcd_resident_flip(display);
 		if (flip_error != 0)
 			kern_logf("i915: resident display: XXX could not flip back to buffer A before the stop\n");
-		(void)drv_i915_lcd_modeset_flip_settle(display);
+		(void)drv_i915_xd_picture_flip_settle(&display->xd.pictures, I915_XD_PICTURE_RESIDENT);
 	}
 
 	/* The buffers are not the GPU's any more. */
@@ -4016,8 +2332,7 @@ i915_resident_takeover(
 		return error;
 
 	/* The run's own commit starts from an empty PLL pool and DBUF state. */
-	drv_i915_lcd_dplls_reset(display->lcd_world);
-	drv_i915_lcd_dbuf_forget(display->wm_world);
+	drv_i915_xd_pictures_forget(&display->xd.pictures);
 
 	/* Succeeded: the firmware's display is stopped and the pipes are the driver's. */
 	return 0;
@@ -4317,700 +2632,5 @@ i915_resident_output_way(
 	}
 
 	/* Succeeded: the way is known. */
-	return 0;
-}
-
-/*
- * Runs the check part of the screen's plan on the state the prepare
- * built: the mode and link computed, the CD clock the initialisation
- * left, the allowed QGV point, the pipes that run, the memory's
- * watermark levels and the display buffer as the other pipes use it.
- */
-static void
-i915_modeset_plan_check(
-	const struct i915_lcd_state *s,
-	const struct i915_lcd_modeset_cfg *cfg,
-	const struct i915_lcd_modeset *ms,
-	struct i915_xd_plan *plan)
-{
-	struct i915_xd_plan_input input;
-	unsigned index;
-
-	/* What the plan checks against. */
-	kern_memset(&input, 0, sizeof(input));
-	input.kind = I915_XD_SCREEN_PANEL;
-	if (cfg->output_hdmi)
-		input.kind = I915_XD_SCREEN_HDMI;
-	if (cfg->output_dp_ext)
-		input.kind = I915_XD_SCREEN_DP;
-	input.ddi = (unsigned)cfg->port;
-	input.pipe = (unsigned)cfg->pipe;
-	input.mode = &s->mode;
-	input.platform = drv_i915_lcd_xd_platform();
-	input.run_pipes = (uint8_t)(ms->wm.old_dbuf.active_pipes | (1U << cfg->pipe) | ms->also_active_pipes);
-	input.cdclk.ref_khz = cfg->cdclk_ref_khz;
-	input.cdclk.vco_khz = cfg->cdclk_vco_khz;
-	input.cdclk.cdclk_khz = cfg->cdclk_khz;
-	input.cdclk.bypass_khz = cfg->cdclk_bypass_khz;
-	input.cdclk.voltage = (uint8_t)cfg->cdclk_voltage_level;
-	input.cdclk_max_khz = cfg->cdclk_max_khz;
-	input.qgv_mbps = cfg->qgv_allowed_bw;
-	input.cpp = 4U;
-
-	/* The memory's watermark levels, the plane's buffer and the pipe's frame start delay. */
-	input.wm.levels = cfg->wm_num_levels;
-	for (index = 0U; index < I915_XD_WM_LEVELS; index++)
-		input.wm.latency_us[index] = cfg->wm_latency[index];
-	input.wm.ipc = 0;
-	if (cfg->wm_ipc_enabled)
-		input.wm.ipc = 1;
-	input.wm.sagv_block_us = cfg->sagv_block_time_us;
-	input.fb_width = cfg->fb_width;
-	input.fb_height = cfg->fb_height;
-	input.frame_start_delay = (unsigned)ms->crtc_state.framestart_delay;
-
-	/* The slices and weights the other pipes have now. */
-	for (index = 0U; index < 4U; index++) {
-		input.pipe_slices[index] = ms->wm.old_dbuf.slices[index];
-		input.pipe_weight[index] = (uint16_t)ms->wm.old_dbuf.weight[index];
-	}
-
-	/* The link the state computed. */
-	kern_memset(plan, 0, sizeof(*plan));
-	plan->kind = input.kind;
-	plan->pipe = input.pipe;
-	plan->mode = s->mode;
-	plan->rate_khz = (uint32_t)s->link.rate_khz;
-	plan->lanes = (unsigned)s->link.lanes;
-	plan->bpp = (unsigned)s->link.bpp;
-
-	/* The check. */
-	(void)drv_i915_xd_screen_plan_check(&input, plan);
-}
-
-/*
- * Copies what the screen's plan found the CD clock and the bandwidth
- * need into the screen's record (the status reports it): the pipe's and
- * the memory read bandwidth's needs, and once a step was found the step,
- * its VCO and voltage level and whether it differs from the running one;
- * the data rate once the CD clock passed.
- */
-static void
-i915_modeset_plan_publish(
-	struct i915_lcd_modeset *ms,
-	const struct i915_xd_plan *plan)
-{
-	/* The needs. */
-	ms->cdclk.crtc_min = (int)plan->crtc_min_cdclk_khz;
-	ms->cdclk.bw_min = (int)plan->bw_min_cdclk_khz;
-
-	/* A need no step gives records nothing more. */
-	if (plan->refused == I915_XD_PLAN_CDCLK && plan->cdclk_khz == 0U)
-		return;
-
-	/* The step the plan found. */
-	ms->cdclk.min_cdclk = (int)plan->min_cdclk_khz;
-	ms->cdclk.cdclk = (int)plan->cdclk_khz;
-	ms->cdclk.vco = (int)plan->vco_khz;
-	ms->cdclk.voltage_level = plan->voltage;
-
-	/* Another step or level than the running one is a change. */
-	ms->cdclk.change_needed = 0;
-	if (plan->refused == I915_XD_PLAN_CDCLK || plan->refused == I915_XD_PLAN_VOLTAGE) {
-		ms->cdclk.change_needed = 1;
-		return;
-	}
-
-	/* The bandwidth the QGV point is checked against. */
-	ms->bw_data_rate = plan->data_mbps;
-}
-
-/* Fills the light's steps of an enable commit. */
-static void
-i915_modeset_light_hooks(
-	struct i915_xd_screen_hooks *hooks,
-	struct i915_modeset_commit *commit)
-{
-	/* The enable's steps; the dark's are not run by a light that does not undo. */
-	kern_memset(hooks, 0, sizeof(*hooks));
-	hooks->power = i915_modeset_step_power;
-	hooks->dbuf = i915_modeset_step_dbuf;
-	hooks->setup = i915_modeset_step_setup;
-	hooks->dmc_on = i915_modeset_step_dmc_on;
-	hooks->link_power = i915_modeset_step_link_power;
-	hooks->pll = i915_modeset_step_pll;
-	hooks->port = i915_modeset_step_port;
-	hooks->pipe = i915_modeset_step_pipe;
-	hooks->output = i915_modeset_step_output;
-	hooks->check = i915_modeset_step_check;
-	hooks->plane = i915_modeset_step_plane;
-	hooks->settle = i915_modeset_step_settle;
-	hooks->context = commit;
-}
-
-/* Fills the dark's steps of a disable commit. */
-static void
-i915_modeset_dark_hooks(
-	struct i915_xd_screen_hooks *hooks,
-	struct i915_modeset_commit *commit)
-{
-	/* The disable's steps. */
-	kern_memset(hooks, 0, sizeof(*hooks));
-	hooks->dark_power = i915_modeset_step_dark_power;
-	hooks->plane_off = i915_modeset_step_plane_off;
-	hooks->output_off = i915_modeset_step_output_off;
-	hooks->port_off = i915_modeset_step_port_off;
-	hooks->pll_off = i915_modeset_step_pll_off;
-	hooks->link_power_off = i915_modeset_step_link_power_off;
-	hooks->dmc_off = i915_modeset_step_dmc_off;
-	hooks->confirm = i915_modeset_step_confirm;
-	hooks->dark_settle = i915_modeset_step_dark_settle;
-	hooks->context = commit;
-}
-
-/*
- * The light's power: DC states held off ("during full modesets we write a
- * lot of registers, wait for PLLs, etc.  Doing that while DC states are
- * enabled is not a good idea"), the commit's start, then the pipe's
- * power, through the screen's xd output.
- */
-static int
-i915_modeset_step_power(
-	void *context)
-{
-	struct i915_xd_output_env env;
-	struct i915_modeset_commit *commit;
-	struct i915_lcd_modeset *ms;
-
-	/* DC states held off, the commit's start, then the pipe's power. */
-	commit = context;
-	ms = commit->ms;
-	drv_i915_lcd_ms_xo_env(ms, &env);
-	(void)drv_i915_xd_output_dc_hold(&ms->xo, &env);
-	i915_modeset_observe(commit->world, I915_LCD_OBS_COMMIT_BEGIN);
-	(void)drv_i915_xd_output_power(&ms->xo, &env);
-	drv_i915_lcd_ms_xo_sync(ms);
-
-	/* Succeeded: the power is held. */
-	return 0;
-}
-
-/*
- * The light's display buffer before the planes: the QGV point stays as
- * the initialisation left it (the bandwidth was checked in prepare), the
- * bus and both layouts' slices, then the pipe's data box credits.
- */
-static int
-i915_modeset_step_dbuf(
-	void *context)
-{
-	struct i915_xd_output_env env;
-	struct i915_modeset_commit *commit;
-	struct i915_lcd_modeset *ms;
-
-	/* The buffer, through the screen's xd output. */
-	commit = context;
-	ms = commit->ms;
-	I915_LCD_DECIDED(&ms->i915, "intel_sagv_pre_plane_update: the QGV restriction stays as the initialisation left it (SAGV off, max-bandwidth point; bandwidth checked in prepare)");
-	drv_i915_lcd_ms_xo_env(ms, &env);
-	(void)drv_i915_xd_output_dbuf(&ms->xo, &env);
-
-	/* Succeeded: the buffer is ready for the pipe. */
-	return 0;
-}
-
-/* The light's setup: the panel's backlight setup (from the PWM the firmware left and the VBT) and the active timings. */
-static int
-i915_modeset_step_setup(
-	void *context)
-{
-	struct i915_xd_output_env env;
-	struct i915_modeset_commit *commit;
-	struct i915_lcd_modeset *ms;
-	int error;
-
-	/* The screen's objects and device. */
-	commit = context;
-	ms = commit->ms;
-	i915_modeset_bind_current(commit->display);
-	commit->world->i915_lcd_cur_i915 = &ms->i915;
-
-	/* The panel's backlight setup. */
-	if (ms->xo.kind == I915_XD_SCREEN_PANEL) {
-		drv_i915_lcd_ms_xo_env(ms, &env);
-		error = drv_i915_xd_output_backlight_setup(&ms->xo, &env);
-		drv_i915_lcd_ms_xo_sync(ms);
-		ms->backlight_setup_rc = 0;
-		if (error != 0) {
-			ms->backlight_setup_rc = -I915_LCD_ENODEV;
-			i915_modeset_on_error(commit->world, "intel_backlight_setup failed (no PWM frequency from the hardware or the VBT)\n");
-		}
-	}
-
-	/* Succeeded: the setup ran. */
-	return 0;
-}
-
-/* The light's pipe DMC. */
-static int
-i915_modeset_step_dmc_on(
-	void *context)
-{
-	struct i915_xd_output_env env;
-	struct i915_modeset_commit *commit;
-	struct i915_lcd_modeset *ms;
-
-	/* The pipe's DMC switched on. */
-	commit = context;
-	ms = commit->ms;
-	drv_i915_lcd_ms_xo_env(ms, &env);
-	(void)drv_i915_xd_output_dmc(&ms->xo, &env, 1);
-
-	/* Succeeded: the step ran. */
-	return 0;
-}
-
-/* The light's link power: a Type-C port's link and the link's AUX power before the PLL. */
-static int
-i915_modeset_step_link_power(
-	void *context)
-{
-	struct i915_xd_output_env env;
-	struct i915_modeset_commit *commit;
-	struct i915_lcd_modeset *ms;
-
-	/* The link's power. */
-	commit = context;
-	ms = commit->ms;
-	drv_i915_lcd_ms_xo_env(ms, &env);
-	(void)drv_i915_xd_output_link_power(&ms->xo, &env);
-	drv_i915_lcd_ms_xo_sync(ms);
-
-	/* Succeeded: the step ran. */
-	return 0;
-}
-
-/* The light's PLL. */
-static int
-i915_modeset_step_pll(
-	void *context)
-{
-	struct i915_xd_output_env env;
-	struct i915_modeset_commit *commit;
-	struct i915_lcd_modeset *ms;
-
-	/* The port's PLL on for the pipe. */
-	commit = context;
-	ms = commit->ms;
-	drv_i915_lcd_ms_xo_env(ms, &env);
-	(void)drv_i915_xd_output_pll(&ms->xo, &env);
-	drv_i915_lcd_ms_xo_sync(ms);
-
-	/* Succeeded: the step ran. */
-	return 0;
-}
-
-/* The light's port: the port up (a DisplayPort link trained); the object records the link it trained. */
-static int
-i915_modeset_step_port(
-	void *context)
-{
-	struct i915_xd_output_env env;
-	struct i915_modeset_commit *commit;
-	struct i915_lcd_modeset *ms;
-
-	/* The port. */
-	commit = context;
-	ms = commit->ms;
-	drv_i915_lcd_ms_xo_env(ms, &env);
-	if (ms->xo.kind != I915_XD_SCREEN_HDMI) {
-		ms->dig_port.dp.link_rate = (int)ms->xo.rate_khz;
-		ms->dig_port.dp.lane_count = (u8)ms->xo.lanes;
-	}
-	(void)drv_i915_xd_output_port(&ms->xo, &env);
-	drv_i915_lcd_ms_xo_sync(ms);
-
-	/* Succeeded: the step ran. */
-	return 0;
-}
-
-/* The light's pipe: its source, word, transcoder, colours, line time and chicken bits. */
-static int
-i915_modeset_step_pipe(
-	void *context)
-{
-	struct i915_xd_output_env env;
-	struct i915_modeset_commit *commit;
-	struct i915_lcd_modeset *ms;
-
-	/* The pipe. */
-	commit = context;
-	ms = commit->ms;
-	drv_i915_lcd_ms_xo_env(ms, &env);
-	(void)drv_i915_xd_output_pipe(&ms->xo, &env);
-	drv_i915_lcd_ms_xo_sync(ms);
-
-	/* Succeeded: the step ran. */
-	return 0;
-}
-
-/* The light's output: the transcoder runs and the output starts, then the backlight device's levels. */
-static int
-i915_modeset_step_output(
-	void *context)
-{
-	struct i915_xd_output_env env;
-	struct i915_modeset_commit *commit;
-	struct i915_lcd_modeset *ms;
-
-	/* The output. */
-	commit = context;
-	ms = commit->ms;
-	drv_i915_lcd_ms_xo_env(ms, &env);
-	(void)drv_i915_xd_output_start(&ms->xo, &env);
-	drv_i915_lcd_ms_xo_sync(ms);
-
-	/* The backlight device's range and brightness: the backlight's, the level scaled to it. */
-	ms->bl_user_max = ms->connector.panel.backlight.max;
-	ms->bl_user = 0U;
-	if (ms->bl_user_max != 0U)
-		ms->bl_user = drv_i915_lcd_ms_user_level(ms, ms->bl_user_max);
-
-	/* Succeeded: the step ran. */
-	return 0;
-}
-
-/*
- * The light's check: an error of the run fails the enable; an HDMI
- * crtc is enabled when it runs; a DisplayPort sink must report clock
- * recovery and channel equalisation.  A failed check skips the plane.
- */
-static int
-i915_modeset_step_check(
-	void *context)
-{
-	struct i915_modeset_commit *commit;
-	struct i915_lcd_modeset_status status;
-	struct i915_lcd_modeset *ms;
-	struct i915_lcd_world *world;
-	int result;
-
-	/* The result, by the rules of the kind. */
-	commit = context;
-	ms = commit->ms;
-	world = commit->world;
-	result = I915_LCD_MS_OK;
-	if (world->ms_errors_pool[world->ms_sel] != 0U) {
-		result = I915_LCD_MS_ERRORS;
-	} else if (ms->output_hdmi) {
-		drv_i915_lcd_modeset_status(commit->display, &status);
-		if (!ms->crtc.active)
-			result = I915_LCD_MS_LINK_NOT_TRAINED;
-	} else {
-		drv_i915_lcd_modeset_status(commit->display, &status);
-		i915_modeset_read_link_status(ms, &status);
-		if (!ms->crtc.active || !status.cr_ok || !status.eq_ok)
-			result = I915_LCD_MS_LINK_NOT_TRAINED;
-	}
-
-	/* The observation after the enable, and the plane kept back after an anomaly. */
-	commit->enable_result = result;
-	i915_modeset_observe(world, I915_LCD_OBS_PIPE_ENABLED);
-	if (result != I915_LCD_MS_OK) {
-		I915_LCD_DECIDED(&ms->i915, "plane update skipped: the crtc enable reported an anomaly, the buffer is not handed to the display");
-		return result;
-	}
-
-	/* Succeeded: the crtc runs and its link holds. */
-	return 0;
-}
-
-/* The light's plane: armed on the framebuffer. */
-static int
-i915_modeset_step_plane(
-	void *context)
-{
-	struct i915_modeset_commit *commit;
-
-	/* The plane update and its observation. */
-	commit = context;
-	commit->plane_result = drv_i915_lcd_modeset_plane_update(commit->display);
-	i915_modeset_observe(commit->world, I915_LCD_OBS_PLANE_ARMED);
-
-	/* Succeeded: the update ran (its result is the commit's to report). */
-	return 0;
-}
-
-/*
- * The light's settle: the new layout's slices alone and the unneeded
- * power given back, the new global state published, DC states let back
- * 17 ms later ("to avoid the off->on->off toggling overhead at and above
- * 60 FPS").
- */
-static int
-i915_modeset_step_settle(
-	void *context)
-{
-	struct i915_xd_output_env env;
-	struct i915_modeset_commit *commit;
-	struct i915_lcd_modeset *ms;
-
-	/* The post-plane half of the commit; the QGV points are not relaxed (SAGV stays off). */
-	commit = context;
-	ms = commit->ms;
-	drv_i915_lcd_ms_xo_env(ms, &env);
-	(void)drv_i915_xd_output_settle(&ms->xo, &env);
-	I915_LCD_DECIDED(&ms->i915, "intel_sagv_post_plane_update: QGV points are not relaxed (SAGV stays off)");
-
-	/* The new global state is the current one from here on. */
-	ms->wm.old_dbuf = ms->wm.new_dbuf;
-	drv_i915_lcd_dbuf_publish(commit->display->wm_world, &ms->wm.new_dbuf);
-	i915_modeset_observe(commit->world, I915_LCD_OBS_COMMIT_END);
-
-	/* DC states come back later. */
-	drv_i915_xd_output_dc_allow(&ms->xo, &env);
-	drv_i915_lcd_ms_xo_sync(ms);
-
-	/* Succeeded: the commit is settled. */
-	return 0;
-}
-
-/* The dark's power: DC states held off, the commit's start, and the pipe's power marked to go back (nothing new is taken). */
-static int
-i915_modeset_step_dark_power(
-	void *context)
-{
-	struct i915_xd_output_env env;
-	struct i915_modeset_commit *commit;
-	struct i915_lcd_modeset *ms;
-
-	/* DC states held off, the commit's start, the power marked. */
-	commit = context;
-	ms = commit->ms;
-	drv_i915_lcd_ms_xo_env(ms, &env);
-	(void)drv_i915_xd_output_dc_hold(&ms->xo, &env);
-	i915_modeset_observe(commit->world, I915_LCD_OBS_COMMIT_BEGIN);
-	(void)drv_i915_xd_output_dark_power(&ms->xo, &env);
-	drv_i915_lcd_ms_xo_sync(ms);
-
-	/* Succeeded: the power is held. */
-	return 0;
-}
-
-/* The dark's plane: its disable armed; only what this commit reports decides. */
-static int
-i915_modeset_step_plane_off(
-	void *context)
-{
-	struct i915_modeset_commit *commit;
-	struct i915_lcd_world *world;
-	unsigned before;
-
-	/* The plane disable, its errors counted apart. */
-	commit = context;
-	world = commit->world;
-	before = world->ms_errors_pool[world->ms_sel];
-	(void)drv_i915_lcd_modeset_plane_disable(commit->display);
-	commit->plane_result = I915_LCD_MS_OK;
-	if (world->ms_errors_pool[world->ms_sel] != before)
-		commit->plane_result = I915_LCD_MS_ERRORS;
-	i915_modeset_observe(world, I915_LCD_OBS_PLANE_DISABLED);
-
-	/* The errors of the crtc disable are counted from here. */
-	commit->before = world->ms_errors_pool[world->ms_sel];
-	i915_modeset_bind_current(commit->display);
-
-	/* Succeeded: the step ran (the confirmation judges it). */
-	return 0;
-}
-
-/* The dark's output: the picture stopped (the panel's backlight off). */
-static int
-i915_modeset_step_output_off(
-	void *context)
-{
-	struct i915_xd_output_env env;
-	struct i915_modeset_commit *commit;
-	struct i915_lcd_modeset *ms;
-
-	/* The output's picture. */
-	commit = context;
-	ms = commit->ms;
-	drv_i915_lcd_ms_xo_env(ms, &env);
-	(void)drv_i915_xd_output_stop(&ms->xo, &env);
-	drv_i915_lcd_ms_xo_sync(ms);
-
-	/* Succeeded: the step ran. */
-	return 0;
-}
-
-/* The dark's port: the transcoder stops, then the port (and the panel's power). */
-static int
-i915_modeset_step_port_off(
-	void *context)
-{
-	struct i915_xd_output_env env;
-	struct i915_modeset_commit *commit;
-	struct i915_lcd_modeset *ms;
-
-	/* The transcoder and the port. */
-	commit = context;
-	ms = commit->ms;
-	drv_i915_lcd_ms_xo_env(ms, &env);
-	(void)drv_i915_xd_output_port_off(&ms->xo, &env);
-	drv_i915_lcd_ms_xo_sync(ms);
-
-	/* Succeeded: the step ran (the confirmation judges it). */
-	return 0;
-}
-
-/* The dark's PLL. */
-static int
-i915_modeset_step_pll_off(
-	void *context)
-{
-	struct i915_xd_output_env env;
-	struct i915_modeset_commit *commit;
-	struct i915_lcd_modeset *ms;
-
-	/* The pipe off the port's PLL. */
-	commit = context;
-	ms = commit->ms;
-	drv_i915_lcd_ms_xo_env(ms, &env);
-	(void)drv_i915_xd_output_pll_off(&ms->xo, &env);
-	drv_i915_lcd_ms_xo_sync(ms);
-
-	/* Succeeded: the step ran (the confirmation judges it). */
-	return 0;
-}
-
-/* The dark's link power: the link's AUX power and a Type-C port's link after the PLL. */
-static int
-i915_modeset_step_link_power_off(
-	void *context)
-{
-	struct i915_xd_output_env env;
-	struct i915_modeset_commit *commit;
-	struct i915_lcd_modeset *ms;
-
-	/* The link's power. */
-	commit = context;
-	ms = commit->ms;
-	drv_i915_lcd_ms_xo_env(ms, &env);
-	(void)drv_i915_xd_output_link_power_off(&ms->xo, &env);
-	drv_i915_lcd_ms_xo_sync(ms);
-
-	/* Succeeded: the step ran. */
-	return 0;
-}
-
-/* The dark's pipe DMC, after which the crtc no longer runs. */
-static int
-i915_modeset_step_dmc_off(
-	void *context)
-{
-	struct i915_xd_output_env env;
-	struct i915_modeset_commit *commit;
-	struct i915_lcd_modeset *ms;
-
-	/* The pipe's DMC switched off. */
-	commit = context;
-	ms = commit->ms;
-	drv_i915_lcd_ms_xo_env(ms, &env);
-	(void)drv_i915_xd_output_dmc(&ms->xo, &env, 0);
-	drv_i915_lcd_ms_xo_sync(ms);
-
-	/* Succeeded: the step ran. */
-	return 0;
-}
-
-/*
- * The dark's confirmation: an error of the crtc disable, or the PLL or a
- * port reference still held, or an error of the plane's: the stop is not
- * confirmed, and shrinking the DBUF, dropping the pipe's domains or
- * letting DC states back in under a pipe that may still run is the one
- * thing not to do.  Everything stays; the caller keeps the buffer.
- */
-static int
-i915_modeset_step_confirm(
-	void *context)
-{
-	struct i915_modeset_commit *commit;
-	struct i915_lcd_modeset *ms;
-	struct i915_lcd_world *world;
-
-	/* The crtc disable's result. */
-	commit = context;
-	ms = commit->ms;
-	world = commit->world;
-	commit->crtc_result = I915_LCD_MS_OK;
-	if (world->ms_errors_pool[world->ms_sel] != commit->before) {
-		commit->crtc_result = I915_LCD_MS_ERRORS;
-	} else if (ms->xo.pll_on || ms->xo.pll_pipes != 0U) {
-		commit->crtc_result = I915_LCD_MS_STILL_OWNED;
-	} else if (ms->dig_port.ddi_io_wakeref != 0 || ms->dig_port.aux_wakeref != 0) {
-		commit->crtc_result = I915_LCD_MS_STILL_OWNED;
-	}
-	i915_modeset_observe(world, I915_LCD_OBS_PIPE_DISABLED);
-
-	/* A stop not confirmed. */
-	if (commit->crtc_result != I915_LCD_MS_OK || commit->plane_result != I915_LCD_MS_OK) {
-		ms->stop_unconfirmed = 1;
-		I915_LCD_DECIDED(&ms->i915, "commit tail after a failed disable NOT run: DBUF slices, crtc power domains and DC_OFF stay held");
-		if (commit->crtc_result != I915_LCD_MS_OK)
-			return commit->crtc_result;
-
-		return commit->plane_result;
-	}
-
-	/* Succeeded: the pipe stopped and nothing of the port is held. */
-	return 0;
-}
-
-/*
- * The dark's settle, its errors counted apart: the display buffer moved
- * to the layout without the pipe and the pipe's power given back, the
- * new global state published, the PLL reference given back; DC states
- * back 17 ms later, unless the settle itself reported an error (a well
- * that could not go off): then the stop is not confirmed.
- */
-static int
-i915_modeset_step_dark_settle(
-	void *context)
-{
-	struct i915_xd_output_env env;
-	struct i915_modeset_commit *commit;
-	struct i915_lcd_modeset *ms;
-	struct i915_lcd_world *world;
-	unsigned before;
-
-	/* The rest of the commit, its errors counted apart. */
-	commit = context;
-	ms = commit->ms;
-	world = commit->world;
-	I915_LCD_DECIDED(&ms->i915, "intel_sagv_pre_plane_update: the QGV restriction stays as the initialisation left it");
-	before = world->ms_errors_pool[world->ms_sel];
-	drv_i915_lcd_ms_xo_env(ms, &env);
-	(void)drv_i915_xd_output_dark_settle(&ms->xo, &env);
-	drv_i915_lcd_ms_xo_sync(ms);
-	ms->wm.old_dbuf = ms->wm.new_dbuf;
-	drv_i915_lcd_dbuf_publish(commit->display->wm_world, &ms->wm.new_dbuf);
-
-	/* The crtc is off: its reference on the shared DPLL goes back (the object stays for any other pipe). */
-	drv_i915_lcd_ms_release_pll(world, ms);
-	i915_modeset_observe(world, I915_LCD_OBS_COMMIT_END);
-
-	/* An error in the tail: DC states stay off and the caller keeps the buffer. */
-	if (world->ms_errors_pool[world->ms_sel] != before) {
-		ms->stop_unconfirmed = 1;
-		I915_LCD_DECIDED(&ms->i915, "commit tail reported an error (power not released): DC_OFF kept, stop unconfirmed");
-		return I915_LCD_MS_ERRORS;
-	}
-
-	/* DC states come back 17 ms later. */
-	drv_i915_xd_output_dc_allow(&ms->xo, &env);
-	drv_i915_lcd_ms_xo_sync(ms);
-
-	/* Succeeded: the screen is off and everything is given back. */
 	return 0;
 }

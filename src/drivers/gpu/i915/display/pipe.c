@@ -65,8 +65,8 @@
 #include "takeover-internal.h"
 #include "../intel/trans.h"
 #include "pipe.h"
+#include "modeset.h"
 #include "plane.h"
-#include "color.h"
 #include "vblank.h"
 #include "ddi.h"
 #include "dp.h"
@@ -202,28 +202,60 @@ drv_i915_link_compute_m_n(
 }
 
 /*
- * Returns the power domain of a port's AUX channel (the Linux
- * intel_aux_power_domain()).
+ * Names the power domain of one power use of a screen's output (a
+ * screen backend's power_domain hook, xd-backend.h): the domain that
+ * keeps the display out of DC states, the display core, the pipe's, the
+ * transcoder's, the port's lanes and IO (the combo ports A on, the
+ * Type-C ports from TC1 on), or the AUX channel's (a Type-C port's in
+ * Thunderbolt mode has a domain of its own).  The context is not read.
  */
-enum intel_display_power_domain
-drv_i915_aux_power_domain(
-	struct intel_digital_port *dig_port)
+int
+drv_i915_lcd_power_domain_of(
+	void *ctx,
+	unsigned use,
+	unsigned index,
+	int thunderbolt)
 {
-	bool tbt;
+	unsigned ver;
+	int domain;
 
-	/*
-	 * The domain helpers take the AUX domains from the display version's
-	 * port-domain table (power.c): a Type-C channel's domain is its
-	 * AUX_USBC well, which also blocks TC cold.
-	 */
+	UNUSED_PARAMETER(ctx);
 
-	/* A Type-C port in Thunderbolt-alt mode uses the Thunderbolt AUX domain. */
-	tbt = i915_lcd_intel_tc_port_in_tbt_alt_mode(dig_port);
-	if (tbt)
-		return intel_display_power_tbt_aux_domain(i915_lcd_to_i915(dig_port->base.base.dev), dig_port->aux_ch);
+	ver = (unsigned)drv_i915_lcd_display_ver();
 
-	/* Succeeded: the legacy AUX domain of the channel. */
-	return intel_display_power_legacy_aux_domain(i915_lcd_to_i915(dig_port->base.base.dev), dig_port->aux_ch);
+	/* The domain of each use. */
+	switch (use) {
+	case I915_XD_OUTPUT_POWER_DC_OFF:
+		domain = (int)POWER_DOMAIN_DC_OFF;
+		break;
+	case I915_XD_OUTPUT_POWER_PIPE:
+		domain = (int)POWER_DOMAIN_PIPE(index);
+		break;
+	case I915_XD_OUTPUT_POWER_TRANS:
+		domain = (int)POWER_DOMAIN_TRANSCODER(index);
+		break;
+	case I915_XD_OUTPUT_POWER_LANES:
+		domain = (int)POWER_DOMAIN_PORT_DDI_LANES_A + (int)index;
+		if (index >= (unsigned)PORT_TC1)
+			domain = (int)POWER_DOMAIN_PORT_DDI_LANES_TC1 + (int)index - (int)PORT_TC1;
+		break;
+	case I915_XD_OUTPUT_POWER_DDI_IO:
+		domain = (int)POWER_DOMAIN_PORT_DDI_IO_A + (int)index;
+		if (index >= (unsigned)PORT_TC1)
+			domain = (int)POWER_DOMAIN_PORT_DDI_IO_TC1 + (int)index - (int)PORT_TC1;
+		break;
+	case I915_XD_OUTPUT_POWER_AUX:
+		domain = drv_i915_aux_legacy_power_domain(ver, (int)index);
+		if (thunderbolt)
+			domain = drv_i915_aux_tbt_power_domain(ver, (int)index);
+		break;
+	default:
+		domain = (int)POWER_DOMAIN_DISPLAY_CORE;
+		break;
+	}
+
+	/* Succeeded: the domain. */
+	return domain;
 }
 
 /*
@@ -384,19 +416,6 @@ drv_i915_display_emit_cpu_transcoder(
 
 	/* Succeeded: the words are emitted. */
 	return 0;
-}
-
-/*
- * Describes the crtc timings of a mode to the xd transcoder (for a caller
- * that sets the transcoder up through the xd output).
- */
-void
-drv_i915_lcd_xd_timing(
-	const struct drm_display_mode *mode,
-	struct i915_xd_timing *timing)
-{
-	/* The mode's crtc timings. */
-	i915_xd_timing_of(mode, timing);
 }
 
 /* Converts the crtc timings of a mode into the xd transcoder's timings. */

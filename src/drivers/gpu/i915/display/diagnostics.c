@@ -106,40 +106,6 @@
 #define I915_SURVEY_DDI_BUF_CTL		0x64000u
 #define I915_SURVEY_DDI_STRIDE		0x100u
 
-/* The colours of the test picture (XRGB8888). */
-#define I915_PATTERN_BACKGROUND		0x00102040u
-#define I915_PATTERN_WHITE		0x00ffffffu
-#define I915_PATTERN_RED		0x00ff0000u
-#define I915_PATTERN_GREEN		0x0000ff00u
-#define I915_PATTERN_BLUE		0x000000ffu
-#define I915_PATTERN_YELLOW		0x00ffff00u
-
-/* The width of the white frame on the edge of the picture. */
-#define I915_PATTERN_FRAME		16u
-
-/* The FNV-1a offset basis and prime the fill's hash uses. */
-#define I915_PATTERN_FNV_BASIS		0xcbf29ce484222325ull
-#define I915_PATTERN_FNV_PRIME		0x100000001b3ull
-
-/*
- * The seven segments a..g (bits 0..6) lit for each of the digits 0..9.
- *
- * The test picture draws the test id with them; the table never changes.
- */
-static const uint8_t i915_pattern_seven_segments[10] = {
-	0x3f, 0x06, 0x5b, 0x4f, 0x66, 0x6d, 0x7d, 0x07, 0x7f, 0x6f
-};
-
-/*
- * The eight colour bars along the bottom of the test picture, left to right.
- *
- * The table never changes.
- */
-static const uint32_t i915_pattern_bars[8] = {
-	0x00ffffffu, 0x00ffff00u, 0x0000ffffu, 0x0000ff00u,
-	0x00ff00ffu, 0x00ff0000u, 0x000000ffu, 0x00000000u
-};
-
 /*
  * The names of the run log's entry kinds, indexed by enum
  * i915_lcd_trace_kind (0 is not a kind).
@@ -204,6 +170,7 @@ static long i915_trace_dpcd_read(void *ctx, unsigned offset, uint8_t *buf, size_
 static long i915_trace_dpcd_write(void *ctx, unsigned offset, const uint8_t *buf, size_t size);
 static int i915_trace_read_dpcd_caps(void *ctx, uint8_t dpcd[15]);
 static int i915_trace_panel(void *ctx, int op);
+static int i915_trace_power_domain(void *ctx, unsigned use, unsigned index, int thunderbolt);
 static int i915_trace_power_get(void *ctx, int domain);
 static void i915_trace_power_put(void *ctx, int domain, int wakeref);
 static void i915_trace_power_put_async(void *ctx, int domain, int wakeref, int delay_ms);
@@ -233,8 +200,6 @@ static void i915_trace_debug(void *ctx, const char *what);
 static int i915_trace_kind_is_named(int kind);
 static void i915_observer_sample(struct i915_lcd_observer *observer, int point, int clear_all);
 static void i915_reg_table_row(struct i915_lcd_world *world, unsigned *count, const char *name, i915_reg_t reg, int has_linux, uint32_t linux_value, uint32_t compare_mask);
-static int i915_pattern_in_rect(uint32_t x, uint32_t y, uint32_t x0, uint32_t y0, uint32_t w, uint32_t h);
-static int i915_pattern_in_digit(uint32_t x, uint32_t y, uint32_t x0, uint32_t y0, uint32_t w, uint32_t h, uint32_t t, unsigned digit);
 static const char *i915_log_line_end(const char *text);
 static const char *i915_trace_kind_name(int kind);
 
@@ -300,6 +265,13 @@ drv_i915_lcd_trace_init(
 	trace->ops.power_get = i915_trace_power_get;
 	trace->ops.power_put = i915_trace_power_put;
 
+	/* Names the backend's power domains, unrecorded, for a backend that names them. */
+	if (backend->power_domain != NULL) {
+		trace->ops.power_domain = i915_trace_power_domain;
+	} else {
+		trace->ops.power_domain = NULL;
+	}
+
 	/* Records the asynchronous put only for a backend that has one. */
 	if (backend->power_put_async != NULL) {
 		trace->ops.power_put_async = i915_trace_power_put_async;
@@ -333,8 +305,8 @@ drv_i915_lcd_trace_init(
 	}
 
 	/*
-	 * Forwards the Type-C ports' links only for a backend that has them
-	 * (BUG-266): without them a DisplayPort output on a Type-C port in
+	 * Forwards the Type-C ports' links only for a backend that has them:
+	 * without them a DisplayPort output on a Type-C port in
 	 * DP-alt mode would be lit as if the port were held in no mode -- its
 	 * PHY not taken for the lanes, the FIA's lanes not programmed -- and
 	 * its link would not train.
@@ -763,26 +735,6 @@ drv_i915_lcd_reg_by_name(
 }
 
 /*
- * Returns the reference's DBUF_CTL_S(slice) offset.
- *
- * It is the saved reference's own definition (the extracted
- * skl_watermark_regs.h), for an independent check of the table the power
- * domain initialisation uses; that table was once found shifted by one
- * slice.  Slice 0 is S1; a slice beyond S4 gives 0.
- */
-uint32_t
-drv_i915_lcd_ref_dbuf_ctl(
-	unsigned slice)
-{
-	/* Only the four slices of the reference exist. */
-	if (slice >= 4u)
-		return 0u;
-
-	/* Succeeded: the offset of that slice's control. */
-	return i915_mmio_reg_offset(DBUF_CTL_S((enum dbuf_slice)slice));
-}
-
-/*
  * Stops every pipe and DDI buffer that is still on.
  *
  * This is the last resort at the end of the device, not a Linux path: a
@@ -981,239 +933,6 @@ drv_i915_display_survey(
 /*
  * ==== The test picture ====
  */
-
-/*
- * Returns the pixel of the test picture at (x, y).
- *
- * A point outside the picture is black.
- */
-uint32_t
-drv_i915_lcd_pattern_pixel(
-	uint32_t x,
-	uint32_t y,
-	uint32_t width,
-	uint32_t height,
-	unsigned test_id)
-{
-	uint32_t frame;
-	uint32_t corner_w;
-	uint32_t corner_h;
-	uint32_t band_h;
-	uint32_t span;
-	uint32_t grey;
-	uint32_t fx;
-	uint32_t fy;
-	uint32_t fw;
-	uint32_t fh;
-	uint32_t ft;
-	uint32_t dw;
-	uint32_t dh;
-	uint32_t dt;
-	uint32_t dx;
-	uint32_t dy;
-	uint32_t i;
-	unsigned digit;
-	int inside;
-
-	/* Sizes the frame, the corner blocks and the two bands from the picture. */
-	frame = I915_PATTERN_FRAME;
-	corner_w = width / 8u;
-	corner_h = height / 6u;
-	band_h = height / 12u;
-
-	/* A point outside the picture is black. */
-	if (x >= width || y >= height)
-		return 0u;
-
-	/* The white frame on the very edge of the active area. */
-	if (x < frame ||
-	    y < frame ||
-	    x >= width - frame ||
-	    y >= height - frame)
-		return I915_PATTERN_WHITE;
-
-	/* The red block in the top left corner. */
-	inside = i915_pattern_in_rect(x, y, frame, frame, corner_w, corner_h);
-	if (inside)
-		return I915_PATTERN_RED;
-
-	/* The green block in the top right corner. */
-	inside = i915_pattern_in_rect(x, y, width - frame - corner_w, frame, corner_w, corner_h);
-	if (inside)
-		return I915_PATTERN_GREEN;
-
-	/* The blue block in the bottom left corner. */
-	inside = i915_pattern_in_rect(x, y, frame, height - frame - corner_h, corner_w, corner_h);
-	if (inside)
-		return I915_PATTERN_BLUE;
-
-	/* The yellow block in the bottom right corner. */
-	inside = i915_pattern_in_rect(x, y, width - frame - corner_w, height - frame - corner_h, corner_w, corner_h);
-	if (inside)
-		return I915_PATTERN_YELLOW;
-
-	/* The grey ramp along the top band, between the corner blocks. */
-	if (y >= frame &&
-	    y < frame + band_h &&
-	    x >= frame + corner_w &&
-	    x < width - frame - corner_w) {
-		span = width - 2u * (frame + corner_w);
-		grey = ((x - frame - corner_w) * 255u) / (span - 1u);
-		return (grey << 16) | (grey << 8) | grey;
-	}
-
-	/* The eight colour bars along the bottom band, between the corner blocks. */
-	if (y >= height - frame - band_h &&
-	    y < height - frame &&
-	    x >= frame + corner_w &&
-	    x < width - frame - corner_w) {
-		span = width - 2u * (frame + corner_w);
-		return i915_pattern_bars[((x - frame - corner_w) * 8u) / span];
-	}
-
-	/* Sizes and places the letter F, left of the centre. */
-	fh = height / 2u;
-	fw = fh / 2u;
-	ft = fh / 8u;
-	fx = width / 4u - fw / 2u;
-	fy = height / 4u;
-
-	/* The stem of the F. */
-	inside = i915_pattern_in_rect(x, y, fx, fy, ft, fh);
-	if (inside)
-		return I915_PATTERN_WHITE;
-
-	/* The top bar of the F. */
-	inside = i915_pattern_in_rect(x, y, fx, fy, fw, ft);
-	if (inside)
-		return I915_PATTERN_WHITE;
-
-	/* The middle bar of the F. */
-	inside = i915_pattern_in_rect(x, y, fx, fy + fh / 2u - ft, (fw * 3u) / 4u, ft);
-	if (inside)
-		return I915_PATTERN_WHITE;
-
-	/* Sizes and places the three seven-segment digits of the test id, right of the centre. */
-	dh = height / 3u;
-	dw = dh / 2u;
-	dt = dh / 10u;
-	dx = width / 2u + width / 16u;
-	dy = height / 3u;
-
-	/* Draws the hundreds, the tens and the units of the test id. */
-	for (i = 0u; i < 3u; i++) {
-		/* Picks the digit this position shows. */
-		if (i == 0u) {
-			digit = (test_id / 100u) % 10u;
-		} else if (i == 1u) {
-			digit = (test_id / 10u) % 10u;
-		} else {
-			digit = test_id % 10u;
-		}
-
-		/* A lit segment of the digit is yellow. */
-		inside = i915_pattern_in_digit(x, y, dx + i * (dw + dw / 2u), dy, dw, dh, dt, digit);
-		if (inside)
-			return I915_PATTERN_YELLOW;
-	}
-
-	/* Succeeded: everything else is background. */
-	return I915_PATTERN_BACKGROUND;
-}
-
-/*
- * Draws the test picture into a buffer.
- *
- * pitch is the distance between two rows in bytes.  Returns the FNV-1a
- * hash of the pixels, each hashed as four bytes, low byte first.
- */
-uint64_t
-drv_i915_lcd_pattern_fill(
-	uint32_t *pixels,
-	uint32_t pitch,
-	uint32_t width,
-	uint32_t height,
-	unsigned test_id)
-{
-	uint64_t hash;
-	uint32_t *row;
-	uint32_t pixel;
-	uint32_t x;
-	uint32_t y;
-	unsigned byte;
-
-	hash = I915_PATTERN_FNV_BASIS;
-
-	/* Draws every row of the picture. */
-	for (y = 0u; y < height; y++) {
-		row = (uint32_t *)((uint8_t *)pixels + (uint64_t)y * pitch);
-
-		/* Draws every pixel of the row and hashes it. */
-		for (x = 0u; x < width; x++) {
-			pixel = drv_i915_lcd_pattern_pixel(x, y, width, height, test_id);
-			row[x] = pixel;
-
-			/* Hashes the pixel's four bytes, low byte first. */
-			for (byte = 0u; byte < 4u; byte++) {
-				hash ^= (pixel >> (8u * byte)) & 0xffu;
-				hash *= I915_PATTERN_FNV_PRIME;
-			}
-		}
-	}
-
-	/* Succeeded: the picture is drawn; its hash identifies it. */
-	return hash;
-}
-
-/*
- * Counts the pixels of a buffer that differ from the test picture.
- *
- * pitch is the distance between two rows in bytes.  The position of the
- * first differing pixel is reported when asked for and when there is one.
- */
-uint32_t
-drv_i915_lcd_pattern_verify(
-	const uint32_t *pixels,
-	uint32_t pitch,
-	uint32_t width,
-	uint32_t height,
-	unsigned test_id,
-	uint32_t *first_x,
-	uint32_t *first_y)
-{
-	const uint32_t *row;
-	uint32_t expected;
-	uint32_t x;
-	uint32_t y;
-	uint32_t bad;
-
-	bad = 0u;
-
-	/* Compares every row of the buffer. */
-	for (y = 0u; y < height; y++) {
-		row = (const uint32_t *)((const uint8_t *)pixels + (uint64_t)y * pitch);
-
-		/* Compares every pixel of the row with the picture. */
-		for (x = 0u; x < width; x++) {
-			expected = drv_i915_lcd_pattern_pixel(x, y, width, height, test_id);
-			if (row[x] == expected)
-				continue;
-
-			/* The first difference is where the report points. */
-			if (bad == 0u) {
-				if (first_x != NULL)
-					*first_x = x;
-				if (first_y != NULL)
-					*first_y = y;
-			}
-
-			bad++;
-		}
-	}
-
-	/* Succeeded: reports the number of differing pixels. */
-	return bad;
-}
 
 /*
  * ==== The panel run's hooks and log ====
@@ -1486,56 +1205,6 @@ drv_i915_lcd_log_observer(
 }
 
 /*
- * Logs a modeset status: the software state, then what the sink reported.
- */
-void
-drv_i915_lcd_log_status(
-	const char *when,
-	const struct i915_lcd_modeset_status *status)
-{
-	/* Prints what the software holds. */
-	kern_logf("i915: LCD-B state[%s] software: prepared=%d crtc_active=%d plane_armed=%d pll_on=%d pll_mask=0x%x "
-		"wakerefs io=%d aux=%d crtc_domains=%u dc_off_held=%d dbuf_slices=0x%x mbus_joined=%d stop_unconfirmed=%d backlight=%d "
-		"level=%u/%u errors=%u\n",
-		when,
-		status->prepared,
-		status->crtc_active,
-		status->plane_armed,
-		status->pll_on,
-		status->pll_active_mask,
-		status->ddi_io_wakeref,
-		status->aux_wakeref,
-		status->crtc_domains_held,
-		status->dc_off_held,
-		status->dbuf_slices_now,
-		status->mbus_joined_now,
-		status->stop_unconfirmed,
-		status->backlight_enabled,
-		status->backlight_level,
-		status->backlight_pwm_max,
-		status->errors);
-
-	/* Prints what the sink reported about the link. */
-	kern_logf("i915: LCD-B state[%s] sink: link %d x%d rc=%d status %02x %02x %02x %02x %02x %02x cr_ok=%d eq_ok=%d "
-		"train_set %02x %02x (driver flag link_trained=%d is not evidence)\n",
-		when,
-		status->link_rate,
-		status->lane_count,
-		status->link_status_rc,
-		status->link_status[0],
-		status->link_status[1],
-		status->link_status[2],
-		status->link_status[3],
-		status->link_status[4],
-		status->link_status[5],
-		status->cr_ok,
-		status->eq_ok,
-		status->train_set[0],
-		status->train_set[1],
-		status->link_trained_flag);
-}
-
-/*
  * Reports whether a panel run kept display resources.
  *
  * A run keeps them when its stop was not confirmed, either by the show
@@ -1553,11 +1222,11 @@ drv_i915_lcd_kernel_abandoned(
 		return 1;
 
 	/* The modeset object kept what it holds. */
-	retained = drv_i915_lcd_modeset_retained(display);
+	retained = drv_i915_xd_picture_retained(&display->xd.pictures, I915_XD_PICTURE_RESIDENT);
 	if (retained)
 		return 1;
 
-	/* The second output's stop was not confirmed: pipe B may still read its buffers (ws113-p011). */
+	/* The second output's stop was not confirmed: pipe B may still read its buffers. */
 	if (display->head.broken)
 		return 1;
 
@@ -1928,6 +1597,25 @@ i915_trace_panel(
 
 	/* Succeeded: the operation's own result. */
 	return result;
+}
+
+/* Asks the backend for the domain of one power use of an output (not recorded: the get and the put are). */
+static int
+i915_trace_power_domain(
+	void *ctx,
+	unsigned use,
+	unsigned index,
+	int thunderbolt)
+{
+	struct i915_lcd_trace *trace;
+	int domain;
+
+	/* The backend names it. */
+	trace = ctx;
+	domain = trace->backend->power_domain(trace->backend->ctx, use, index, thunderbolt);
+
+	/* Succeeded: the domain. */
+	return domain;
 }
 
 /* Forwards a power domain get and records the wakeref it returned. */
@@ -2544,105 +2232,6 @@ i915_reg_table_row(
 	row->linux_value = linux_value;
 	row->compare_mask = compare_mask;
 	(*count)++;
-}
-
-/* Reports whether (x, y) lies in the w x h rectangle at (x0, y0). */
-static int
-i915_pattern_in_rect(
-	uint32_t x,
-	uint32_t y,
-	uint32_t x0,
-	uint32_t y0,
-	uint32_t w,
-	uint32_t h)
-{
-	/* Left of or right of the rectangle. */
-	if (x < x0)
-		return 0;
-	if (x >= x0 + w)
-		return 0;
-
-	/* Above or below the rectangle. */
-	if (y < y0)
-		return 0;
-	if (y >= y0 + h)
-		return 0;
-
-	/* Succeeded: the point is inside. */
-	return 1;
-}
-
-/* Reports whether (x, y) lies on a lit segment of a digit in the w x h box at (x0, y0) with segments t thick. */
-static int
-i915_pattern_in_digit(
-	uint32_t x,
-	uint32_t y,
-	uint32_t x0,
-	uint32_t y0,
-	uint32_t w,
-	uint32_t h,
-	uint32_t t,
-	unsigned digit)
-{
-	uint32_t half;
-	uint8_t segments;
-	int inside;
-
-	/* Looks the digit's segments up; the box splits at half its height. */
-	segments = i915_pattern_seven_segments[digit % 10u];
-	half = h / 2u;
-
-	/* Segment a: the top. */
-	if ((segments & 0x01u) != 0u) {
-		inside = i915_pattern_in_rect(x, y, x0, y0, w, t);
-		if (inside)
-			return 1;
-	}
-
-	/* Segment b: the upper right. */
-	if ((segments & 0x02u) != 0u) {
-		inside = i915_pattern_in_rect(x, y, x0 + w - t, y0, t, half);
-		if (inside)
-			return 1;
-	}
-
-	/* Segment c: the lower right. */
-	if ((segments & 0x04u) != 0u) {
-		inside = i915_pattern_in_rect(x, y, x0 + w - t, y0 + half, t, h - half);
-		if (inside)
-			return 1;
-	}
-
-	/* Segment d: the bottom. */
-	if ((segments & 0x08u) != 0u) {
-		inside = i915_pattern_in_rect(x, y, x0, y0 + h - t, w, t);
-		if (inside)
-			return 1;
-	}
-
-	/* Segment e: the lower left. */
-	if ((segments & 0x10u) != 0u) {
-		inside = i915_pattern_in_rect(x, y, x0, y0 + half, t, h - half);
-		if (inside)
-			return 1;
-	}
-
-	/* Segment f: the upper left. */
-	if ((segments & 0x20u) != 0u) {
-		inside = i915_pattern_in_rect(x, y, x0, y0, t, half);
-		if (inside)
-			return 1;
-	}
-
-	/* Segment g: the middle. */
-	if ((segments & 0x40u) != 0u) {
-		inside = i915_pattern_in_rect(x, y, x0, y0 + half - t / 2u, w, t);
-		if (inside)
-			return 1;
-	}
-
-	/* Succeeded: the point is on no lit segment. */
-	return 0;
 }
 
 /* Returns the newline a log line still needs after a text that may already end with one. */

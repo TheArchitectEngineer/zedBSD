@@ -26,7 +26,6 @@ struct i915_display;
  * ==== The vblank evasion window of the selected screen ====
  */
 
-int drv_i915_lcd_modeset_evade_window(struct i915_display *display, int *min, int *max, int *vblank_start);
 
 /*
  * ==== The vblank and event hooks of a panel run (ctx: struct i915_lcd_kernel) ====

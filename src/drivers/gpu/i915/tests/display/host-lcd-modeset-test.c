@@ -36,7 +36,6 @@
 #include "../../display/diagnostics.h"
 #include "../../display/dp-sink.h"
 #include "../../display/modeset.h"
-#include "../../display/panel-backlight.h"
 #include "../../display/state.h"
 #include "../../display/takeover.h"
 #include "../../display/vblank.h"
@@ -106,6 +105,7 @@ static const char *const i915_ms_kind_name[] = {
 static struct i915_edp_config i915_ms_vbt_config(void);
 static struct i915_lcd_modeset_cfg i915_ms_config(void);
 static void i915_ms_bring_up(void);
+static int i915_ms_prepare(const struct i915_lcd_state *state, const struct i915_lcd_modeset_cfg *config);
 static int i915_ms_prepare_enable(const struct i915_lcd_modeset_cfg *config);
 static void i915_ms_dump_trace(const char *title);
 static int i915_ms_all_released(const char *what);
@@ -167,6 +167,9 @@ main(
 		printf("lcd world: error %d\n", error);
 		return 2;
 	}
+
+	/* The screens, described by the platform the display version names. */
+	drv_i915_xd_pictures_init(&i915_ms_display.xd.pictures, drv_i915_lcd_xd_platform());
 
 	error = drv_i915_wm_world_create(&i915_ms_display);
 	if (error != 0) {
@@ -302,8 +305,7 @@ i915_ms_bring_up(void)
 	int error;
 
 	/* A fresh device: its shared DPLLs are unused and its DBUF / MBUS state is read from the hardware again. */
-	drv_i915_lcd_dplls_reset(i915_ms_display.lcd_world);
-	drv_i915_lcd_dbuf_forget(i915_ms_display.wm_world);
+	drv_i915_xd_pictures_forget(&i915_ms_display.xd.pictures);
 
 	/* The resident eDP: acquisition and late init on a fresh AUX / PPS model. */
 	config = i915_ms_vbt_config();
@@ -331,6 +333,25 @@ i915_ms_bring_up(void)
 	drv_i915_lcd_trace_init(&i915_ms_trace, &i915_ms_lcd.ops);
 }
 
+/* Prepares the resident screen from a state and a configuration on the run log: the prepare's answer. */
+static int
+i915_ms_prepare(
+	const struct i915_lcd_state *state,
+	const struct i915_lcd_modeset_cfg *config)
+{
+	struct i915_xd_picture_config picture;
+	int error;
+
+	/* The screen's configuration, then its prepare. */
+	drv_i915_lcd_picture_config(state, config, &picture);
+	error = drv_i915_xd_picture_prepare(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &picture, &i915_ms_trace.ops);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the screen is planned. */
+	return 0;
+}
+
 /* Prepares a modeset of the state on the run log and commits its enable; the prepare's error, or the commit's result. */
 static int
 i915_ms_prepare_enable(
@@ -340,12 +361,12 @@ i915_ms_prepare_enable(
 	int result;
 
 	/* The check phase. */
-	error = drv_i915_lcd_modeset_prepare(&i915_ms_display, &i915_ms_state, config, &i915_ms_trace.ops);
+	error = i915_ms_prepare(&i915_ms_state, config);
 	if (error != 0)
 		return error;
 
 	/* The enable commit. */
-	result = drv_i915_lcd_modeset_commit_enable(&i915_ms_display);
+	result = drv_i915_xd_picture_light(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
 	if (result != I915_LCD_MS_OK)
 		return result;
 
@@ -528,15 +549,15 @@ i915_ms_test_normal(void)
 	/* The check phase touches nothing. */
 	i915_ms_bring_up();
 	config = i915_ms_config();
-	error = drv_i915_lcd_modeset_prepare(&i915_ms_display, &i915_ms_state, &config, &i915_ms_trace.ops);
+	error = i915_ms_prepare(&i915_ms_state, &config);
 	i915_host_check(error == 0, "A: prepare");
 	i915_host_check(i915_ms_trace.n == 0U, "A: prepare touches nothing");
 
 	/* The enable commit. */
 	drv_i915_lcd_trace_phase(&i915_ms_trace, "commit: enable");
-	result = drv_i915_lcd_modeset_commit_enable(&i915_ms_display);
-	drv_i915_lcd_modeset_status(&i915_ms_display, &s);
-	drv_i915_lcd_modeset_link_status(&i915_ms_display, &s);
+	result = drv_i915_xd_picture_light(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
+	drv_i915_xd_picture_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
+	drv_i915_xd_picture_link_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
 	i915_ms_dump_trace("A: enable");
 	printf("  A: enable rc=%d errors=%u first=%s | link %d x%d trained_flag=%d status %02x %02x %02x cr=%d eq=%d train_set %02x %02x | DP=0x%08x | pll on=%d mask=%d | wakerefs io=%d aux=%d\n",
 	       result,
@@ -628,7 +649,7 @@ i915_ms_test_normal(void)
 	i915_host_check(i915_ms_trace.dropped == 0U, "A: the run log holds the whole commit");
 
 	/* The plane is armed once on the running pipe with this buffer. */
-	drv_i915_lcd_modeset_status(&i915_ms_display, &s);
+	drv_i915_xd_picture_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
 	i915_host_check(result == I915_LCD_MS_OK &&
 			s.plane_armed == 1 &&
 			i915_ms_lcd.plane_arms == 1U &&
@@ -673,16 +694,16 @@ i915_ms_test_normal(void)
 	/* The disable commit, on a fresh log (the backend keeps its state). */
 	drv_i915_lcd_trace_init(&i915_ms_trace, &i915_ms_lcd.ops);
 	drv_i915_lcd_trace_phase(&i915_ms_trace, "commit: disable");
-	result = drv_i915_lcd_modeset_commit_disable(&i915_ms_display);
+	result = drv_i915_xd_picture_dark(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
 	i915_host_check(result == I915_LCD_MS_OK &&
 			i915_ms_lcd.plane_disarms == 1U &&
 			drv_i915_lcd_fake_reg(&i915_ms_lcd, 0x70180U) == 0U,
 			"A: plane disabled (PLANE_CTL 0, then the arming PLANE_SURF write)");
-	drv_i915_lcd_modeset_status(&i915_ms_display, &s);
+	drv_i915_xd_picture_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
 	i915_host_check(s.plane_armed == 1, "A: the modeset does NOT declare the buffer free on its own");
 
 	/* The caller saw the pipe stand still. */
-	drv_i915_lcd_modeset_plane_released(&i915_ms_display);
+	drv_i915_xd_picture_released(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
 	i915_ms_dump_trace("A: plane update / disable / crtc disable");
 	i915_host_check(result == I915_LCD_MS_OK && s.errors == 0U && s.crtc_active == 0, "A: disable succeeds");
 	i915_host_check((drv_i915_lcd_fake_reg(&i915_ms_lcd, 0x70008U) & 0xc0000000U) == 0U &&
@@ -726,8 +747,8 @@ i915_ms_test_early_failures(void)
 	i915_ms_lcd.fault_pll_no_lock = 1;
 	config = i915_ms_config();
 	result = i915_ms_prepare_enable(&config);
-	drv_i915_lcd_modeset_status(&i915_ms_display, &s);
-	drv_i915_lcd_modeset_link_status(&i915_ms_display, &s);
+	drv_i915_xd_picture_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
+	drv_i915_xd_picture_link_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
 	printf("  B1: enable rc=%d errors=%u first=%s", result, s.errors, i915_ms_first_error(&s, "-\n"));
 	named = i915_ms_error_names(&s, "not locked");
 	i915_host_check(result == I915_LCD_MS_ERRORS && named,
@@ -741,8 +762,8 @@ i915_ms_test_early_failures(void)
 			"B1: the run log's first ERROR entry is that error, at the position it happened");
 
 	/* B1: the reference's disable gives back what the failed enable had taken. */
-	(void)drv_i915_lcd_modeset_commit_disable(&i915_ms_display);
-	drv_i915_lcd_modeset_status(&i915_ms_display, &s);
+	(void)drv_i915_xd_picture_dark(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
+	drv_i915_xd_picture_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
 	refs = drv_i915_lcd_fake_power_refs_total(&i915_ms_lcd);
 	i915_host_check(s.crtc_active == 0 &&
 			s.pll_on == 0 &&
@@ -758,13 +779,13 @@ i915_ms_test_early_failures(void)
 	i915_ms_lcd.fault_cr_never = 1;
 	config = i915_ms_config();
 	result = i915_ms_prepare_enable(&config);
-	drv_i915_lcd_modeset_status(&i915_ms_display, &s);
-	drv_i915_lcd_modeset_link_status(&i915_ms_display, &s);
+	drv_i915_xd_picture_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
+	drv_i915_xd_picture_link_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
 	printf("  B2: enable rc=%d errors=%u first=%s", result, s.errors, i915_ms_first_error(&s, "-\n"));
 	i915_host_check(result == I915_LCD_MS_ERRORS && s.cr_ok == 0, "B2: the sink never reports clock recovery: enable fails");
-	at = i915_ms_find(I915_LCD_T_ERROR, 0U, "FALLBACK", 0U);
+	at = i915_ms_find(I915_LCD_T_ERROR, 0U, "no lower link", 0U);
 	i915_host_check(at >= 0,
-			"B2: the reference asked for the (unported) fallback: recorded as an error, no other rate / lane count was tried");
+			"B2: the link that did not train is recorded as an error, no other rate / lane count was tried");
 	printf("  B2: training-pattern writes=%u train_set=%02x %02x\n", i915_ms_lcd.training_pattern_writes, s.train_set[0], s.train_set[1]);
 	i915_host_check(i915_ms_lcd.training_pattern_writes >= 2U &&
 			i915_ms_lcd.training_pattern_writes <= 12U &&
@@ -775,8 +796,8 @@ i915_ms_test_early_failures(void)
 			"B2: as in the reference, the pipe is still enabled after a failed training (the panel stays black) -- so the disable must run");
 
 	/* B2: the disable stops the pipe and gives everything back. */
-	(void)drv_i915_lcd_modeset_commit_disable(&i915_ms_display);
-	drv_i915_lcd_modeset_status(&i915_ms_display, &s);
+	(void)drv_i915_xd_picture_dark(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
+	drv_i915_xd_picture_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
 	refs = drv_i915_lcd_fake_power_refs_total(&i915_ms_lcd);
 	i915_host_check(s.crtc_active == 0 &&
 			s.pll_on == 0 &&
@@ -792,8 +813,8 @@ i915_ms_test_early_failures(void)
 	i915_ms_lcd.sink_want_preemph = 1U;
 	config = i915_ms_config();
 	result = i915_ms_prepare_enable(&config);
-	drv_i915_lcd_modeset_status(&i915_ms_display, &s);
-	drv_i915_lcd_modeset_link_status(&i915_ms_display, &s);
+	drv_i915_xd_picture_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
+	drv_i915_xd_picture_link_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
 	i915_host_check(result == I915_LCD_MS_OK &&
 			s.cr_ok != 0 &&
 			s.eq_ok != 0 &&
@@ -801,8 +822,8 @@ i915_ms_test_early_failures(void)
 			((s.train_set[0] >> 3) & 3U) == 1U,
 			"B3: a sink that asks for swing 2 / pre-emphasis 1 gets them (the levels come from the sink's answers at run time)");
 	i915_host_check(drv_i915_lcd_fake_violations(&i915_ms_lcd) == 0U, "B3: no violation");
-	result = drv_i915_lcd_modeset_commit_disable(&i915_ms_display);
-	drv_i915_lcd_modeset_plane_released(&i915_ms_display);
+	result = drv_i915_xd_picture_dark(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
+	drv_i915_xd_picture_released(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
 	released = i915_ms_all_released("B3");
 	i915_host_check(result == I915_LCD_MS_OK && released, "B3: disable + released");
 }
@@ -819,19 +840,19 @@ i915_ms_test_refused(void)
 	config = i915_ms_config();
 	config.port = 3;
 	config.aux_ch = 3;
-	error = drv_i915_lcd_modeset_prepare(&i915_ms_display, &i915_ms_state, &config, &i915_ms_trace.ops);
+	error = i915_ms_prepare(&i915_ms_state, &config);
 	i915_host_check(error == EINVAL && i915_ms_trace.n == 0U, "a Type-C port is refused, nothing touched");
 
 	/* A tiled framebuffer. */
 	config = i915_ms_config();
 	config.fb_modifier = 0x0100000000000002ULL;
-	error = drv_i915_lcd_modeset_prepare(&i915_ms_display, &i915_ms_state, &config, &i915_ms_trace.ops);
+	error = i915_ms_prepare(&i915_ms_state, &config);
 	i915_host_check(error == EINVAL && i915_ms_trace.n == 0U, "a tiled framebuffer is refused, nothing touched");
 
 	/* A backend without the panel hook. */
 	config = i915_ms_config();
 	i915_ms_trace.ops.panel = NULL;
-	error = drv_i915_lcd_modeset_prepare(&i915_ms_display, &i915_ms_state, &config, &i915_ms_trace.ops);
+	error = i915_ms_prepare(&i915_ms_state, &config);
 	i915_host_check(error == EINVAL, "a backend without the panel hook is refused (no half-connected run)");
 	(void)drv_i915_edp_end(i915_ms_display.dp_world, &i915_ms_res);
 }
@@ -852,8 +873,8 @@ i915_ms_test_ddb_model(void)
 			i915_ms_lcd.plane_armed_without_ddb == 1U &&
 			drv_i915_lcd_fake_violations(&i915_ms_lcd) == 1U,
 			"model self-test: with the PLANE_BUF_CFG write lost, arming the plane is counted as a violation");
-	(void)drv_i915_lcd_modeset_commit_disable(&i915_ms_display);
-	drv_i915_lcd_modeset_plane_released(&i915_ms_display);
+	(void)drv_i915_xd_picture_dark(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
+	drv_i915_xd_picture_released(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
 	(void)drv_i915_edp_end(i915_ms_display.dp_world, &i915_ms_res);
 }
 
@@ -874,8 +895,8 @@ i915_ms_test_stuck_pipe(void)
 	result = i915_ms_prepare_enable(&config);
 	i915_host_check(result == I915_LCD_MS_OK, "C: picture up");
 	i915_ms_lcd.fault_pipe_stuck_on = 1;
-	result = drv_i915_lcd_modeset_commit_disable(&i915_ms_display);
-	drv_i915_lcd_modeset_status(&i915_ms_display, &s);
+	result = drv_i915_xd_picture_dark(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
+	drv_i915_xd_picture_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
 	printf("  C: disable rc=%d errors=%u first=%s", result, s.errors, i915_ms_first_error(&s, "-\n"));
 	i915_host_check(result == I915_LCD_MS_ERRORS && s.first_error != NULL,
 			"C: a pipe that does not stop is reported by the reference's wait; the disable is NOT a success");
@@ -893,23 +914,23 @@ i915_ms_test_stuck_pipe(void)
 			i915_ms_lcd.power_dropped_with_pipe_on == 0U &&
 			i915_ms_lcd.dbuf_shrunk_under_plane == 0U,
 			"C: nothing was taken away from under the pipe: DC_OFF, the crtc's power domains, the DBUF slices and the MBUS joining all stay");
-	error = drv_i915_lcd_modeset_prepare(&i915_ms_display, &i915_ms_state, &config, &i915_ms_trace.ops);
+	error = i915_ms_prepare(&i915_ms_state, &config);
 	i915_host_check(error == EBUSY, "C: and a new modeset is refused while that is so");
 
 	/* After abandon, a second call of the same entry is refused (prepare and commit). */
-	drv_i915_lcd_modeset_abandoned(&i915_ms_display);
+	drv_i915_xd_picture_abandoned(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
 	not_model = i915_ms_trace.ops;
 	not_model.model = 0;
-	error = drv_i915_lcd_modeset_prepare(&i915_ms_display, &i915_ms_state, &config, &i915_ms_trace.ops);
+	error = i915_ms_prepare(&i915_ms_state, &config);
 	result = I915_LCD_MS_OK;
 	if (error == EBUSY)
-		result = drv_i915_lcd_modeset_commit_enable(&i915_ms_display);
+		result = drv_i915_xd_picture_light(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
 
 	i915_host_check(error == EBUSY && result == I915_LCD_MS_NOT_PREPARED,
 			"C: after abandon, a second call of the same entry is refused (prepare and commit)");
 
 	/* The retained state is still recorded: nothing was forgotten by the refused calls. */
-	drv_i915_lcd_modeset_status(&i915_ms_display, &s);
+	drv_i915_xd_picture_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
 	i915_host_check(s.retained == 1 &&
 			s.stop_unconfirmed == 1 &&
 			s.dc_off_held == 1 &&
@@ -920,11 +941,11 @@ i915_ms_test_stuck_pipe(void)
 			"C: ... and the retained state is still recorded: nothing was forgotten by the refused calls");
 
 	/* A backend that is not a model cannot release it; discarding the model that holds it can. */
-	error = drv_i915_lcd_modeset_discard_model(&i915_ms_display, &not_model);
-	retained = drv_i915_lcd_modeset_retained(&i915_ms_display);
+	error = drv_i915_xd_picture_discard_model(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &not_model);
+	retained = drv_i915_xd_picture_retained(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
 	i915_host_check(error == EPERM && retained == 1, "C: a backend that is not a model (real hardware) cannot release it");
-	error = drv_i915_lcd_modeset_discard_model(&i915_ms_display, &i915_ms_trace.ops);
-	retained = drv_i915_lcd_modeset_retained(&i915_ms_display);
+	error = drv_i915_xd_picture_discard_model(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &i915_ms_trace.ops);
+	retained = drv_i915_xd_picture_retained(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
 	i915_host_check(error == 0 && retained == 0,
 			"C: discarding the MODEL that holds it is the isolation: only then is the object free again");
 	(void)drv_i915_edp_end(i915_ms_display.dp_world, &i915_ms_res);
@@ -965,8 +986,8 @@ i915_ms_test_outer(void)
 	i915_ms_lcd.on_observe = drv_i915_lcd_observer_point;
 	i915_ms_lcd.on_observe_ctx = &i915_ms_obs;
 	config = i915_ms_config();
-	error = drv_i915_lcd_modeset_prepare(&i915_ms_display, &i915_ms_state, &config, &i915_ms_trace.ops);
-	drv_i915_lcd_modeset_status(&i915_ms_display, &s);
+	error = i915_ms_prepare(&i915_ms_state, &config);
+	drv_i915_xd_picture_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
 	printf("  D: cdclk: crtc min %d, bw min %d -> required %d kHz vco %d level %d, change needed %d | data rate %u MB/s" "\n",
 	       s.cdclk_crtc_min,
 	       s.cdclk_bw_min,
@@ -987,8 +1008,8 @@ i915_ms_test_outer(void)
 			"D: memory bandwidth of the one XRGB plane: 140.8 MHz x 4 bytes = 564 MB/s, below the allowed QGV point");
 
 	/* The enable commit. */
-	result = drv_i915_lcd_modeset_commit_enable(&i915_ms_display);
-	drv_i915_lcd_modeset_status(&i915_ms_display, &s);
+	result = drv_i915_xd_picture_light(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
+	drv_i915_xd_picture_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
 	i915_host_check(result == I915_LCD_MS_OK && s.errors == 0U && drv_i915_lcd_fake_violations(&i915_ms_lcd) == 0U,
 			"D: the enable commit succeeds without a model violation");
 	i915_host_check(s.dc_off_held == 0 &&
@@ -1078,8 +1099,8 @@ i915_ms_test_outer(void)
 
 	/* The disable commit returns the domains and shrinks DBUF only after the pipe stopped. */
 	drv_i915_lcd_trace_init(&i915_ms_trace, &i915_ms_lcd.ops);
-	result = drv_i915_lcd_modeset_commit_disable(&i915_ms_display);
-	drv_i915_lcd_modeset_status(&i915_ms_display, &s);
+	result = drv_i915_xd_picture_dark(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
+	drv_i915_xd_picture_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
 	refs = drv_i915_lcd_fake_power_refs_total(&i915_ms_lcd);
 	i915_host_check(result == I915_LCD_MS_OK &&
 			s.crtc_domains_held == 0U &&
@@ -1098,7 +1119,7 @@ i915_ms_test_outer(void)
 			"D: order from the run: the transcoder stops before both DBUF updates (old|new, then new)");
 	error = drv_i915_lcd_observer_stopped(&i915_ms_obs, 100U, &frame0, &frame1);
 	i915_host_check(error == 0, "D: after the stop the frame counter stands still");
-	drv_i915_lcd_modeset_plane_released(&i915_ms_display);
+	drv_i915_xd_picture_released(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
 	released = i915_ms_all_released("D");
 	i915_host_check(released, "D: nothing held after the eDP ends");
 
@@ -1111,8 +1132,8 @@ i915_ms_test_outer(void)
 			i915_ms_lcd.plane_armed_outside_slices == 1U &&
 			drv_i915_lcd_fake_violations(&i915_ms_lcd) == 1U,
 			"model self-test: DBUF slice requests lost -> the plane's DDB lies in slices that are off: counted");
-	(void)drv_i915_lcd_modeset_commit_disable(&i915_ms_display);
-	drv_i915_lcd_modeset_plane_released(&i915_ms_display);
+	(void)drv_i915_xd_picture_dark(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
+	drv_i915_xd_picture_released(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
 	(void)drv_i915_edp_end(i915_ms_display.dp_world, &i915_ms_res);
 
 	/* A lost MBUS_CTL write is noticed. */
@@ -1124,8 +1145,8 @@ i915_ms_test_outer(void)
 			i915_ms_lcd.plane_armed_outside_slices == 1U &&
 			drv_i915_lcd_fake_violations(&i915_ms_lcd) == 1U,
 			"model self-test: MBUS_CTL write lost -> a DDB beyond the un-joined half: counted");
-	(void)drv_i915_lcd_modeset_commit_disable(&i915_ms_display);
-	drv_i915_lcd_modeset_plane_released(&i915_ms_display);
+	(void)drv_i915_xd_picture_dark(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
+	drv_i915_xd_picture_released(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
 	(void)drv_i915_edp_end(i915_ms_display.dp_world, &i915_ms_res);
 }
 
@@ -1143,9 +1164,9 @@ i915_ms_test_outer_refusals(void)
 	config = i915_ms_config();
 	config.cdclk_khz = 307200U;
 	config.cdclk_vco_khz = 614400U;
-	error = drv_i915_lcd_modeset_prepare(&i915_ms_display, &i915_ms_state, &config, &i915_ms_trace.ops);
-	drv_i915_lcd_modeset_status(&i915_ms_display, &s);
-	named = i915_ms_error_names(&s, "CDCLK");
+	error = i915_ms_prepare(&i915_ms_state, &config);
+	drv_i915_xd_picture_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
+	named = i915_ms_error_names(&s, "CD clock");
 	i915_host_check(error == EINVAL &&
 			i915_ms_trace.writes + i915_ms_trace.rmws == 0U &&
 			s.cdclk_change_needed == 1 &&
@@ -1155,14 +1176,14 @@ i915_ms_test_outer_refusals(void)
 	/* An unknown memory bandwidth. */
 	config = i915_ms_config();
 	config.qgv_allowed_bw = 0U;
-	error = drv_i915_lcd_modeset_prepare(&i915_ms_display, &i915_ms_state, &config, &i915_ms_trace.ops);
+	error = i915_ms_prepare(&i915_ms_state, &config);
 	i915_host_check(error == EINVAL && i915_ms_trace.writes + i915_ms_trace.rmws == 0U,
 			"an unknown memory bandwidth is refused, nothing touched");
 
 	/* A backend without the DBUF hook. */
 	config = i915_ms_config();
 	i915_ms_trace.ops.dbuf_slices_update = NULL;
-	error = drv_i915_lcd_modeset_prepare(&i915_ms_display, &i915_ms_state, &config, &i915_ms_trace.ops);
+	error = i915_ms_prepare(&i915_ms_state, &config);
 	i915_host_check(error == EINVAL, "a backend without the DBUF hook is refused");
 	(void)drv_i915_edp_end(i915_ms_display.dp_world, &i915_ms_res);
 }
@@ -1198,8 +1219,8 @@ i915_ms_test_observation(void)
 			frame0 == frame1 &&
 			i915_ms_dpf.now_us - t0 >= 500000U,
 			"observation: half a second passed, the frame counter did not move -> NOT progress");
-	(void)drv_i915_lcd_modeset_commit_disable(&i915_ms_display);
-	drv_i915_lcd_modeset_plane_released(&i915_ms_display);
+	(void)drv_i915_xd_picture_dark(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
+	drv_i915_xd_picture_released(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
 	(void)drv_i915_edp_end(i915_ms_display.dp_world, &i915_ms_res);
 
 	/* An underrun while the pipe starts is recorded as such, and is not lost by the clear. */
@@ -1224,10 +1245,10 @@ i915_ms_test_observation(void)
 	i915_ms_lcd.fault_underrun_steady_after = (int)i915_ms_lcd.frame_reads_after_arm + 2;
 	(void)drv_i915_lcd_observer_frames(&i915_ms_obs, 1000U, 30U, &frame0, &frame1);
 	drv_i915_lcd_observer_steady_sample(&i915_ms_obs);
-	(void)drv_i915_lcd_modeset_commit_disable(&i915_ms_display);
+	(void)drv_i915_xd_picture_dark(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
 	i915_host_check((i915_ms_obs.seen_steady & 0x80000000U) != 0U && i915_ms_obs.n >= 8U && i915_ms_obs.dropped == 0U,
 			"observation: an underrun during the steady picture is kept in the STEADY record (and survives the stop's samples)");
-	drv_i915_lcd_modeset_plane_released(&i915_ms_display);
+	drv_i915_xd_picture_released(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
 	(void)drv_i915_edp_end(i915_ms_display.dp_world, &i915_ms_res);
 }
 
@@ -1254,7 +1275,7 @@ i915_ms_test_backlight(void)
 	i915_ms_bring_up();
 	config = i915_ms_config();
 	result = i915_ms_prepare_enable(&config);
-	drv_i915_lcd_modeset_status(&i915_ms_display, &s);
+	drv_i915_xd_picture_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
 	i915_host_check(result == I915_LCD_MS_OK &&
 			s.backlight_max == 96000U &&
 			s.backlight_min == (6U * 96000U + 127U) / 255U,
@@ -1266,27 +1287,27 @@ i915_ms_test_backlight(void)
 	disarms = i915_ms_lcd.plane_disarms;
 
 	/* User max, half and zero (scale_user_to_hw, rounded to closest). */
-	result = drv_i915_lcd_modeset_brightness(&i915_ms_display, max, max);
+	result = drv_i915_xd_picture_brightness(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, max, max);
 	i915_host_check(result == I915_LCD_MS_OK && drv_i915_lcd_fake_reg(&i915_ms_lcd, 0xc8258U) == max, "F: user max -> duty = max");
 	half = min + (uint32_t)(((uint64_t)(max / 2U) * (max - min) + max / 2U) / max);
-	result = drv_i915_lcd_modeset_brightness(&i915_ms_display, max / 2U, max);
+	result = drv_i915_xd_picture_brightness(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, max / 2U, max);
 	i915_host_check(result == I915_LCD_MS_OK && drv_i915_lcd_fake_reg(&i915_ms_lcd, 0xc8258U) == half,
 			"F: user half -> duty = min + half of (max - min) (scale_user_to_hw, rounded to closest)");
-	result = drv_i915_lcd_modeset_brightness(&i915_ms_display, 0U, max);
+	result = drv_i915_xd_picture_brightness(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, 0U, max);
 	i915_host_check(result == I915_LCD_MS_OK &&
 			drv_i915_lcd_fake_reg(&i915_ms_lcd, 0xc8258U) == min &&
 			drv_i915_lcd_fake_reg(&i915_ms_lcd, 0xc8254U) == max,
 			"F: user 0 -> duty = the VBT-derived minimum, never 0; the PWM period is unchanged");
 
 	/* Backlight off at half: the pipe keeps scanning out the same buffer. */
-	result = drv_i915_lcd_modeset_brightness(&i915_ms_display, max / 2U, max);
+	result = drv_i915_xd_picture_brightness(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, max / 2U, max);
 	frame0 = i915_ms_lcd.ops.read32(i915_ms_lcd.ops.ctx, 0x70040U);
 	if (result == I915_LCD_MS_OK)
-		result = drv_i915_lcd_modeset_backlight(&i915_ms_display, 0);
+		result = drv_i915_xd_picture_backlight(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, 0);
 
 	i915_ms_lcd.ops.usleep(i915_ms_lcd.ops.ctx, 200000U);
 	frame1 = i915_ms_lcd.ops.read32(i915_ms_lcd.ops.ctx, 0x70040U);
-	drv_i915_lcd_modeset_status(&i915_ms_display, &s);
+	drv_i915_xd_picture_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
 	i915_host_check(result == I915_LCD_MS_OK &&
 			(drv_i915_lcd_fake_reg(&i915_ms_lcd, 0xc8250U) & 0x80000000U) == 0U &&
 			(i915_ms_dpf.pp_control & 4U) == 0U &&
@@ -1298,8 +1319,8 @@ i915_ms_test_backlight(void)
 			"F: backlight off = PWM disabled + PPS backlight bit clear, while the pipe keeps scanning out the SAME buffer (still in use)");
 
 	/* Backlight on again restores the last level; no new modeset. */
-	result = drv_i915_lcd_modeset_backlight(&i915_ms_display, 1);
-	drv_i915_lcd_modeset_status(&i915_ms_display, &s);
+	result = drv_i915_xd_picture_backlight(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, 1);
+	drv_i915_xd_picture_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
 	i915_host_check(result == I915_LCD_MS_OK &&
 			(drv_i915_lcd_fake_reg(&i915_ms_lcd, 0xc8250U) & 0x80000000U) != 0U &&
 			(i915_ms_dpf.pp_control & 4U) == 4U &&
@@ -1309,28 +1330,28 @@ i915_ms_test_backlight(void)
 			"F: backlight on again restores the last level (half); no new modeset, no plane re-arm");
 
 	/* From the minimum it comes back at max (__intel_backlight_enable: level <= min -> max). */
-	result = drv_i915_lcd_modeset_brightness(&i915_ms_display, 0U, max);
+	result = drv_i915_xd_picture_brightness(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, 0U, max);
 	if (result == I915_LCD_MS_OK)
-		result = drv_i915_lcd_modeset_backlight(&i915_ms_display, 0);
+		result = drv_i915_xd_picture_backlight(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, 0);
 	if (result == I915_LCD_MS_OK)
-		result = drv_i915_lcd_modeset_backlight(&i915_ms_display, 1);
+		result = drv_i915_xd_picture_backlight(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, 1);
 
 	i915_host_check(result == I915_LCD_MS_OK && drv_i915_lcd_fake_reg(&i915_ms_lcd, 0xc8258U) == max,
 			"F: ... but from the minimum it comes back at MAX (__intel_backlight_enable: level <= min -> max)");
-	result = drv_i915_lcd_modeset_brightness(&i915_ms_display, original, max);
+	result = drv_i915_xd_picture_brightness(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, original, max);
 	i915_host_check(result == I915_LCD_MS_OK && drv_i915_lcd_fake_reg(&i915_ms_lcd, 0xc8258U) == original, "F: back to the original level");
 
 	/* A restore uses the saved user level, not the hardware level fed back as a user level. */
-	result = drv_i915_lcd_modeset_brightness(&i915_ms_display, 30000U, max);
+	result = drv_i915_xd_picture_brightness(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, 30000U, max);
 	duty0 = drv_i915_lcd_fake_reg(&i915_ms_lcd, 0xc8258U);
-	drv_i915_lcd_modeset_status(&i915_ms_display, &s);
+	drv_i915_xd_picture_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
 	user0 = s.backlight_user;
 	if (result == I915_LCD_MS_OK)
-		result = drv_i915_lcd_modeset_brightness(&i915_ms_display, max, max);
+		result = drv_i915_xd_picture_brightness(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, max, max);
 	if (result == I915_LCD_MS_OK)
-		result = drv_i915_lcd_modeset_brightness(&i915_ms_display, 0U, max);
+		result = drv_i915_xd_picture_brightness(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, 0U, max);
 	if (result == I915_LCD_MS_OK)
-		result = drv_i915_lcd_modeset_brightness(&i915_ms_display, user0, s.backlight_user_max);
+		result = drv_i915_xd_picture_brightness(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, user0, s.backlight_user_max);
 
 	i915_host_check(result == I915_LCD_MS_OK &&
 			user0 == 30000U &&
@@ -1340,9 +1361,9 @@ i915_ms_test_backlight(void)
 	i915_host_check(drv_i915_lcd_fake_violations(&i915_ms_lcd) == 0U, "F: no model violation");
 
 	/* After the stop, brightness requests are refused (no active crtc). */
-	result = drv_i915_lcd_modeset_commit_disable(&i915_ms_display);
-	drv_i915_lcd_modeset_plane_released(&i915_ms_display);
-	refused = drv_i915_lcd_modeset_brightness(&i915_ms_display, 1U, 2U);
+	result = drv_i915_xd_picture_dark(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
+	drv_i915_xd_picture_released(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
+	refused = drv_i915_xd_picture_brightness(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, 1U, 2U);
 	i915_host_check(result == I915_LCD_MS_OK && refused == I915_LCD_MS_NOT_PREPARED,
 			"F: after the stop, brightness requests are refused (no active crtc)");
 }
@@ -1366,8 +1387,8 @@ i915_ms_test_cycles(void)
 		config = i915_ms_config();
 		config.dbuf_enabled_slices = i915_ms_lcd.dbuf_enabled;
 		result = i915_ms_prepare_enable(&config);
-		drv_i915_lcd_modeset_status(&i915_ms_display, &s);
-		drv_i915_lcd_modeset_link_status(&i915_ms_display, &s);
+		drv_i915_xd_picture_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
+		drv_i915_xd_picture_link_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
 		if (result == I915_LCD_MS_OK &&
 		    s.cr_ok != 0 &&
 		    s.eq_ok != 0 &&
@@ -1375,9 +1396,9 @@ i915_ms_test_cycles(void)
 			good++;
 
 		/* The stop must leave nothing for the next cycle. */
-		result = drv_i915_lcd_modeset_commit_disable(&i915_ms_display);
-		drv_i915_lcd_modeset_plane_released(&i915_ms_display);
-		drv_i915_lcd_modeset_status(&i915_ms_display, &s);
+		result = drv_i915_xd_picture_dark(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
+		drv_i915_xd_picture_released(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
+		drv_i915_xd_picture_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
 		if (result != I915_LCD_MS_OK ||
 		    s.crtc_domains_held != 0U ||
 		    i915_ms_lcd.dbuf_enabled != 0x01U ||
@@ -1412,9 +1433,9 @@ i915_ms_test_power_kept(void)
 	result = i915_ms_prepare_enable(&config);
 	i915_ms_lcd.fault_put_refused_domain = I915_PW_DOMAIN_PIPE_A + 1;
 	if (result == I915_LCD_MS_OK)
-		result = drv_i915_lcd_modeset_commit_disable(&i915_ms_display);
+		result = drv_i915_xd_picture_dark(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
 
-	drv_i915_lcd_modeset_status(&i915_ms_display, &s);
+	drv_i915_xd_picture_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
 	named = i915_ms_error_names(&s, "kept");
 	i915_host_check(result == I915_LCD_MS_ERRORS &&
 			s.stop_unconfirmed == 1 &&
@@ -1425,10 +1446,10 @@ i915_ms_test_power_kept(void)
 			"H: a pipe power release refused in the commit tail -> the disable is NOT a success, DC_OFF and the pipe's power stay held");
 
 	/* Nothing new starts on top of it; the model is discarded. */
-	error = drv_i915_lcd_modeset_prepare(&i915_ms_display, &i915_ms_state, &config, &i915_ms_trace.ops);
+	error = i915_ms_prepare(&i915_ms_state, &config);
 	i915_host_check(error == EBUSY, "H: and nothing new starts on top of it");
-	drv_i915_lcd_modeset_abandoned(&i915_ms_display);
-	error = drv_i915_lcd_modeset_discard_model(&i915_ms_display, &i915_ms_trace.ops);
+	drv_i915_xd_picture_abandoned(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
+	error = drv_i915_xd_picture_discard_model(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &i915_ms_trace.ops);
 	i915_host_check(error == 0, "H: (the model is discarded)");
 	(void)drv_i915_edp_end(i915_ms_display.dp_world, &i915_ms_res);
 }
@@ -1468,8 +1489,8 @@ i915_ms_test_flip(void)
 		if (k != 0U)
 			old = sequence[k - 1U];
 
-		result = drv_i915_lcd_modeset_flip(&i915_ms_display, sequence[k], &flip);
-		drv_i915_lcd_modeset_status(&i915_ms_display, &s);
+		result = drv_i915_xd_picture_flip(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, sequence[k], &flip);
+		drv_i915_xd_picture_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
 		if (result == I915_LCD_MS_OK &&
 		    flip.result == I915_LCD_FLIP_DONE &&
 		    flip.gen == k + 1U &&
@@ -1519,7 +1540,7 @@ i915_ms_test_flip(void)
 
 	/* A flip to the buffer already shown is refused. */
 	arms1 = i915_ms_lcd.plane_arms;
-	result = drv_i915_lcd_modeset_flip(&i915_ms_display, I915_MS_SURF_A, &flip);
+	result = drv_i915_xd_picture_flip(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, I915_MS_SURF_A, &flip);
 	i915_host_check(result == I915_LCD_MS_NOT_PREPARED &&
 			flip.result == I915_LCD_FLIP_REFUSED &&
 			i915_ms_lcd.plane_arms == arms1,
@@ -1527,8 +1548,8 @@ i915_ms_test_flip(void)
 
 	/* An early (stale) completion: the event reports before any vblank; the live surface is still the old buffer. */
 	i915_ms_lcd.fault_early_event = 1;
-	result = drv_i915_lcd_modeset_flip(&i915_ms_display, I915_MS_SURF_B, &flip);
-	drv_i915_lcd_modeset_status(&i915_ms_display, &s);
+	result = drv_i915_xd_picture_flip(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, I915_MS_SURF_B, &flip);
+	drv_i915_xd_picture_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
 	i915_host_check(result == I915_LCD_MS_ERRORS &&
 			flip.result == I915_LCD_FLIP_NOT_LATCHED &&
 			flip.live_after == I915_MS_SURF_A &&
@@ -1541,14 +1562,14 @@ i915_ms_test_flip(void)
 
 	/* No further flip is submitted while one is unresolved. */
 	arms1 = i915_ms_lcd.plane_arms;
-	result = drv_i915_lcd_modeset_flip(&i915_ms_display, I915_MS_SURF_A, &flip);
+	result = drv_i915_xd_picture_flip(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, I915_MS_SURF_A, &flip);
 	i915_host_check(result == I915_LCD_MS_NOT_PREPARED && i915_ms_lcd.plane_arms == arms1,
 			"I: STALE and no further flip is submitted while one is unresolved");
 
 	/* The stop path still runs; once the display is stopped neither buffer is read. */
-	result = drv_i915_lcd_modeset_commit_disable(&i915_ms_display);
-	drv_i915_lcd_modeset_plane_released(&i915_ms_display);
-	drv_i915_lcd_modeset_status(&i915_ms_display, &s);
+	result = drv_i915_xd_picture_dark(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
+	drv_i915_xd_picture_released(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
+	drv_i915_xd_picture_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
 	printf("  I: stop rc=%d pending=%d stuck=%d violations=%u\n", result, s.flip_pending, s.flip_stuck, drv_i915_lcd_fake_violations(&i915_ms_lcd));
 	i915_host_check(result == I915_LCD_MS_OK &&
 			s.flip_pending == 0 &&
@@ -1564,15 +1585,15 @@ i915_ms_test_flip(void)
 	result = i915_ms_prepare_enable(&config);
 	i915_ms_lcd.fault_flip_never_latch = 1;
 	if (result == I915_LCD_MS_OK)
-		result = drv_i915_lcd_modeset_flip(&i915_ms_display, I915_MS_SURF_B, &flip);
+		result = drv_i915_xd_picture_flip(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, I915_MS_SURF_B, &flip);
 
 	i915_host_check(result == I915_LCD_MS_ERRORS &&
 			flip.result == I915_LCD_FLIP_NOT_LATCHED &&
 			flip.event_rc == 0 &&
 			flip.live_after == I915_MS_SURF_A,
 			"I: NOT-LIVE the register write alone (live surface unchanged after the vblank) is not a completion");
-	(void)drv_i915_lcd_modeset_commit_disable(&i915_ms_display);
-	drv_i915_lcd_modeset_plane_released(&i915_ms_display);
+	(void)drv_i915_xd_picture_dark(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
+	drv_i915_xd_picture_released(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
 	(void)drv_i915_edp_end(i915_ms_display.dp_world, &i915_ms_res);
 
 	/* No vblank arrives. */
@@ -1581,9 +1602,9 @@ i915_ms_test_flip(void)
 	result = i915_ms_prepare_enable(&config);
 	i915_ms_lcd.fault_no_vblank = 1;
 	if (result == I915_LCD_MS_OK)
-		result = drv_i915_lcd_modeset_flip(&i915_ms_display, I915_MS_SURF_B, &flip);
+		result = drv_i915_xd_picture_flip(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, I915_MS_SURF_B, &flip);
 
-	drv_i915_lcd_modeset_status(&i915_ms_display, &s);
+	drv_i915_xd_picture_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
 	i915_host_check(result == I915_LCD_MS_ERRORS &&
 			flip.result == I915_LCD_FLIP_TIMEOUT &&
 			flip.event_rc == I915_LCD_ETIMEDOUT &&
@@ -1591,8 +1612,8 @@ i915_ms_test_flip(void)
 			i915_ms_lcd.vblank_refs == 1,
 			"I: TIMEOUT no completion within the limit: both kept, the event's vblank reference stays (it may still complete)");
 	i915_ms_lcd.fault_no_vblank = 0;
-	(void)drv_i915_lcd_modeset_commit_disable(&i915_ms_display);
-	drv_i915_lcd_modeset_plane_released(&i915_ms_display);
+	(void)drv_i915_xd_picture_dark(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
+	drv_i915_xd_picture_released(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
 	(void)drv_i915_edp_end(i915_ms_display.dp_world, &i915_ms_res);
 }
 
@@ -1606,6 +1627,7 @@ i915_ms_test_flip_event(void)
 	unsigned events0;
 	unsigned underflows0;
 	unsigned refused0;
+	struct i915_xd_evade evade;
 	int window_min;
 	int window_max;
 	int vblank_start;
@@ -1622,9 +1644,9 @@ i915_ms_test_flip_event(void)
 	underflows0 = i915_ms_lcd.power_underflows;
 	i915_ms_lcd.fault_no_vblank = 1;
 	if (result == I915_LCD_MS_OK)
-		(void)drv_i915_lcd_modeset_flip(&i915_ms_display, I915_MS_SURF_B, &flip);
+		(void)drv_i915_xd_picture_flip(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, I915_MS_SURF_B, &flip);
 
-	drv_i915_lcd_modeset_status(&i915_ms_display, &s);
+	drv_i915_xd_picture_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
 	i915_host_check(flip.result == I915_LCD_FLIP_TIMEOUT &&
 			s.flip_event_ref == 1 &&
 			i915_ms_lcd.vblank_refs == 1 &&
@@ -1632,9 +1654,9 @@ i915_ms_test_flip_event(void)
 			"J1: TIMEOUT the armed event keeps its vblank reference (it may still complete)");
 
 	/* J1: the stop settles the event once. */
-	result = drv_i915_lcd_modeset_commit_disable(&i915_ms_display);
-	drv_i915_lcd_modeset_plane_released(&i915_ms_display);
-	drv_i915_lcd_modeset_status(&i915_ms_display, &s);
+	result = drv_i915_xd_picture_dark(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
+	drv_i915_xd_picture_released(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
+	drv_i915_xd_picture_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
 	i915_host_check(result == I915_LCD_MS_OK &&
 			s.flip_event_ref == 0 &&
 			s.events_cancelled == 1U &&
@@ -1658,9 +1680,9 @@ i915_ms_test_flip_event(void)
 	result = i915_ms_prepare_enable(&config);
 	events0 = i915_ms_lcd.events_done;
 	if (result == I915_LCD_MS_OK)
-		result = drv_i915_lcd_modeset_flip(&i915_ms_display, I915_MS_SURF_B, &flip);
+		result = drv_i915_xd_picture_flip(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, I915_MS_SURF_B, &flip);
 
-	drv_i915_lcd_modeset_status(&i915_ms_display, &s);
+	drv_i915_xd_picture_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
 	printf("  J1: relight rc=%d result=%d events %u->%u ref=%d refs=%d cancelled ms=%u model=%u\n",
 	       result,
 	       flip.result,
@@ -1679,9 +1701,11 @@ i915_ms_test_flip_event(void)
 			"J1: after the relight the next flip needs (and gets) its own new event; the cancelled one was not counted twice");
 
 	/* J2: the reference's evasion window of the running mode. */
-	result = drv_i915_lcd_modeset_evade_window(&i915_ms_display, &window_min, &window_max, &vblank_start);
-	i915_host_check(result == I915_LCD_MS_OK &&
-			window_min > 0 &&
+	drv_i915_xd_pipe_evade_window((uint32_t)i915_ms_state.mode.clock_khz, i915_ms_state.mode.htotal, i915_ms_state.mode.vdisplay, &evade);
+	window_min = evade.min;
+	window_max = evade.max;
+	vblank_start = evade.vblank_start;
+	i915_host_check(window_min > 0 &&
 			window_max >= window_min &&
 			window_max < vblank_start,
 			"J2: the reference's evasion window of the running mode: scanlines [min, max] before vblank start");
@@ -1692,7 +1716,7 @@ i915_ms_test_flip_event(void)
 	i915_ms_lcd.sleep_irq_off = 0U;
 	i915_ms_lcd.scanline_hold = (uint32_t)window_min;
 	i915_ms_lcd.scanline_hold_reads = 1U;
-	result = drv_i915_lcd_modeset_flip(&i915_ms_display, I915_MS_SURF_A, &flip);
+	result = drv_i915_xd_picture_flip(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, I915_MS_SURF_A, &flip);
 	i915_host_check(result == I915_LCD_MS_OK &&
 			flip.result == I915_LCD_FLIP_DONE &&
 			i915_ms_lcd.vblank_sleeps == 1U &&
@@ -1709,9 +1733,9 @@ i915_ms_test_flip_event(void)
 	i915_ms_lcd.scanline_hold = (uint32_t)window_min;
 	i915_ms_lcd.scanline_hold_reads = 1000U;
 	i915_ms_lcd.fault_no_vblank = 1;
-	result = drv_i915_lcd_modeset_flip(&i915_ms_display, I915_MS_SURF_B, &flip);
+	result = drv_i915_xd_picture_flip(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, I915_MS_SURF_B, &flip);
 	i915_ms_lcd.scanline_hold_reads = 0U;
-	drv_i915_lcd_modeset_status(&i915_ms_display, &s);
+	drv_i915_xd_picture_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
 	i915_host_check(result == I915_LCD_MS_ERRORS &&
 			flip.result == I915_LCD_FLIP_TIMEOUT &&
 			i915_ms_lcd.vblank_sleeps >= 1U &&
@@ -1727,9 +1751,9 @@ i915_ms_test_flip_event(void)
 
 	/* J3: the stop settles that event too. */
 	i915_ms_lcd.fault_no_vblank = 0;
-	result = drv_i915_lcd_modeset_commit_disable(&i915_ms_display);
-	drv_i915_lcd_modeset_plane_released(&i915_ms_display);
-	drv_i915_lcd_modeset_status(&i915_ms_display, &s);
+	result = drv_i915_xd_picture_dark(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
+	drv_i915_xd_picture_released(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT);
+	drv_i915_xd_picture_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
 	printf("  J3: stop rc=%d refs=%d ref=%d cancelled ms=%u model=%u under %u/%u\n",
 	       result,
 	       i915_ms_lcd.vblank_refs,
@@ -1760,9 +1784,9 @@ i915_ms_test_dither(void)
 	/* An 18 bpp pipe dithers (intel_modeset_pipe_config). */
 	i915_ms_bring_up();
 	config = i915_ms_config();
-	error = drv_i915_lcd_modeset_prepare(&i915_ms_display, &i915_ms_state, &config, &i915_ms_trace.ops);
+	error = i915_ms_prepare(&i915_ms_state, &config);
 	i915_host_check(error == 0, "dither: prepare at 18 bpp");
-	drv_i915_lcd_modeset_status(&i915_ms_display, &s);
+	drv_i915_xd_picture_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
 	i915_host_check(s.dither == 1, "dither: an 18 bpp pipe dithers (intel_modeset_pipe_config)");
 
 	/*
@@ -1772,9 +1796,9 @@ i915_ms_test_dither(void)
 	 */
 	state24 = i915_ms_state;
 	state24.link.bpp = 24;
-	error = drv_i915_lcd_modeset_prepare(&i915_ms_display, &state24, &config, &i915_ms_trace.ops);
+	error = i915_ms_prepare(&state24, &config);
 	if (error == 0) {
-		drv_i915_lcd_modeset_status(&i915_ms_display, &s);
+		drv_i915_xd_picture_status(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &s);
 		i915_host_check(s.dither == 0, "dither: a 24 bpp pipe does not");
 	} else {
 		i915_host_check(0, "dither: prepare at 24 bpp");

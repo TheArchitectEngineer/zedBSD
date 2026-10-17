@@ -36,7 +36,6 @@
 #include <kern/kcrt.h>
 
 #include "clock.h"
-#include "color.h"
 #include "ddi.h"
 #include "dmc.h"
 #include "dp.h"

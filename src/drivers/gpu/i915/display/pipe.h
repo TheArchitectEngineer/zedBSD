@@ -39,7 +39,6 @@ void drv_i915_link_compute_m_n(u16 bits_per_pixel_x16, int nlanes, int pixel_clo
  * ==== The PHY and the power domains of a port or a crtc ====
  */
 
-enum intel_display_power_domain drv_i915_aux_power_domain(struct intel_digital_port *dig_port);
 
 /*
  * ==== The transcoder enable and disable ====
