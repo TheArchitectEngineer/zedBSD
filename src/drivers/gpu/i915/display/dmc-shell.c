@@ -103,6 +103,8 @@ drv_i915_dmc_init(
 		kern_logf("i915: dmc: no platform description, no DMC firmware\n");
 		return;
 	}
+
+	/* Starts the xd DMC state empty and names the platform's firmware. */
 	drv_i915_xd_dmc_init(&xd->dmc);
 	dev->fw_path = xd->choice.platform->dmc_path;
 	dev->is_alderlake_p = 0;
@@ -264,6 +266,7 @@ i915_dmc_shell_log_parse(
 		if (parsed->program[id].refused == I915_XD_DMC_TAKEN)
 			continue;
 
+		/* Logs a program the load did not take. */
 		kern_logf("i915: dmc: program %u not taken (reason %d)\n", id, parsed->program[id].refused);
 	}
 }

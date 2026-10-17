@@ -99,6 +99,7 @@ drv_i915_xd_diag_firmware_left(
 		if (pll->enable == 0U)
 			continue;
 
+		/* Logs the PLL's enable word. */
 		value = drv_i915_xd_io_read(io, pll->enable);
 		kern_logf("i915: display: firmware left PLL %u (0x%05x): ENABLE=0x%08x\n", index, pll->enable, value);
 	}
@@ -141,6 +142,7 @@ drv_i915_xd_diag_stop_scanout(
 	uint32_t buffer;
 	int waited;
 
+	/* Nothing stopped yet. */
 	stopped = 0U;
 
 	/* Stops every pipe whose transcoder or primary plane is still on. */

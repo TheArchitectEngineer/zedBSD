@@ -214,15 +214,16 @@ i915_xd_core_tracker(
 		I915_XD_DBUF_CTL_S1, I915_XD_DBUF_CTL_S2, I915_XD_DBUF_CTL_S3, I915_XD_DBUF_CTL_S4
 	};
 	unsigned slice;
+	uint32_t service;
 
 	/* Only where the platform sets the service. */
 	if (!platform->tracker_state_service)
 		return;
 
 	/* Each slice. */
+	service = i915_xd_field_put(I915_XD_DBUF_TRACKER_STATE_SERVICE, I915_XD_CORE_TRACKER_SERVICE);
 	for (slice = 0U; slice < platform->dbuf_slices && slice < 4U; slice++)
-		drv_i915_xd_io_rmw(io, controls[slice], I915_XD_DBUF_TRACKER_STATE_SERVICE,
-			i915_xd_field_put(I915_XD_DBUF_TRACKER_STATE_SERVICE, I915_XD_CORE_TRACKER_SERVICE));
+		drv_i915_xd_io_rmw(io, controls[slice], I915_XD_DBUF_TRACKER_STATE_SERVICE, service);
 }
 
 /* Powers the DBUF slices the firmware left on, and at least slice 1. */
@@ -306,6 +307,7 @@ i915_xd_core_buddy(
 			continue;
 		}
 
+		/* Writes the buddy's page mask, and on display 12 its request timer. */
 		drv_i915_xd_io_write(io, I915_XD_BW_BUDDY_PAGE_MASK(buddy), row->page_mask);
 		if (platform->display_ver == 12U) {
 			drv_i915_xd_io_rmw(io, I915_XD_BW_BUDDY_CTL(buddy), I915_XD_BW_BUDDY_TLB_REQ_TIMER,
@@ -333,5 +335,6 @@ i915_xd_core_change(
 	if (value == old)
 		return;
 
+	/* Writes the new value. */
 	drv_i915_xd_io_write(io, offset, value);
 }

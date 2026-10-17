@@ -110,6 +110,8 @@ drv_i915_vga_register(
 		op = I915_TRACE_ACQUIRE;
 		what = "vga register";
 	}
+
+	/* Records the registration's outcome. */
 	drv_i915_trace_record(trace, I915_VGA_TRACE_STAGE, op, what, (uint64_t)(unsigned)reported_error, 0U);
 
 	/* Reports the client and the host bridge. */

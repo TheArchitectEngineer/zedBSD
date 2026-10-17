@@ -153,6 +153,7 @@ drv_i915_xd_gmbus_transfer(
 				result->outcome = I915_XD_GMBUS_LINGERED;
 			}
 
+			/* The transfer is over. */
 			return;
 		}
 
@@ -178,6 +179,7 @@ drv_i915_xd_gmbus_transfer(
 			i915_xd_gmbus_note(request, I915_XD_GMBUS_NOTE_STAYED_ACTIVE, failed);
 		}
 
+		/* Releases the controller: clears it and lets the pin go. */
 		drv_i915_xd_io_write(io, I915_XD_GMBUS1, I915_XD_GMBUS1_SW_CLEAR);
 		drv_i915_xd_io_write(io, I915_XD_GMBUS1, 0U);
 		drv_i915_xd_io_write(io, I915_XD_GMBUS0, I915_XD_GMBUS_PIN_NONE);
@@ -196,6 +198,7 @@ drv_i915_xd_gmbus_transfer(
 			return;
 		}
 
+		/* Counts the restart and notes the retry. */
 		gmbus->restarts++;
 		i915_xd_gmbus_note(request, I915_XD_GMBUS_NOTE_RETRY, failed);
 	}
@@ -276,6 +279,7 @@ i915_xd_gmbus_is_offset(
 	if (index + 1U >= request->count)
 		return 0;
 
+	/* The offset message and the data message. */
 	offset = &request->messages[index];
 	data = &request->messages[index + 1U];
 
@@ -410,6 +414,7 @@ i915_xd_gmbus_read(
 			}
 		}
 
+		/* The cycle's bytes are moved. */
 		remaining -= cycle;
 	} while (remaining != 0U);
 
@@ -460,6 +465,7 @@ i915_xd_gmbus_write(
 			left--;
 		}
 
+		/* Writes the first word and starts the cycle. */
 		drv_i915_xd_io_write(io, I915_XD_GMBUS3, word);
 		drv_i915_xd_io_write(io, I915_XD_GMBUS1, i915_xd_gmbus_command(message, command, cycle));
 
@@ -472,12 +478,14 @@ i915_xd_gmbus_write(
 				left--;
 			}
 
+			/* Writes the word once the controller is ready. */
 			drv_i915_xd_io_write(io, I915_XD_GMBUS3, word);
 			outcome = i915_xd_gmbus_wait(io, request, I915_XD_GMBUS2_HW_READY, I915_XD_GMBUS4_HW_READY, status);
 			if (outcome != I915_XD_GMBUS_DONE)
 				return outcome;
 		}
 
+		/* The cycle's bytes are moved. */
 		remaining -= cycle;
 	} while (remaining != 0U);
 

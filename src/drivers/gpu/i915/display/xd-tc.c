@@ -967,6 +967,7 @@ drv_i915_xd_tc_cold_functions(
 		if (mode != I915_XD_TC_MODE_LEGACY)
 			return 0U;
 
+		/* Succeeded: a legacy connector's AUX well. */
 		return I915_XD_POWERS_AUX(aux);
 	}
 
@@ -1037,6 +1038,8 @@ drv_i915_xd_tc_connect(
 	} else {
 		error = i915_xd_tc_connect_fia(io, platform, port, aux, mode, lanes, power, connection);
 	}
+
+	/* Reports a connection that failed. */
 	if (error != 0)
 		return error;
 
@@ -1292,6 +1295,8 @@ i915_xd_tc_connect_fia(
 			if (error == 0)
 				connection->owned = 1;
 		}
+
+		/* A port the PHY was not given to stays busy, unless its connector is legacy. */
 		error = 0;
 		if (!connection->owned && mode != I915_XD_TC_MODE_LEGACY)
 			error = EBUSY;
@@ -1431,6 +1436,7 @@ i915_xd_tc_dp_modes(
 			mode0 = I915_XD_DKL_DP_MODE_X2;
 			mode1 = I915_XD_DKL_DP_MODE_X2;
 		}
+
 		break;
 	case I915_XD_TC_PIN_A:
 		/* Assignment A doubles both lanes only for four lanes. */
@@ -1438,6 +1444,7 @@ i915_xd_tc_dp_modes(
 			mode0 = I915_XD_DKL_DP_MODE_X2;
 			mode1 = I915_XD_DKL_DP_MODE_X2;
 		}
+
 		break;
 	case I915_XD_TC_PIN_B:
 		/* Assignment B doubles both lanes only for two lanes. */
@@ -1445,6 +1452,7 @@ i915_xd_tc_dp_modes(
 			mode0 = I915_XD_DKL_DP_MODE_X2;
 			mode1 = I915_XD_DKL_DP_MODE_X2;
 		}
+
 		break;
 	case I915_XD_TC_PIN_C:
 	case I915_XD_TC_PIN_D:
@@ -1458,6 +1466,7 @@ i915_xd_tc_dp_modes(
 			mode0 = I915_XD_DKL_DP_MODE_X2;
 			mode1 = I915_XD_DKL_DP_MODE_X2;
 		}
+
 		break;
 	default:
 		/* The PHY has no mode for it. */

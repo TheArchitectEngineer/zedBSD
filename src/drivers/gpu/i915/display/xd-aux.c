@@ -278,6 +278,7 @@ drv_i915_xd_aux_exchange(
 	if (size > message->reply_room)
 		size = message->reply_room;
 
+	/* Copies the reply out of the data words. */
 	i915_xd_aux_unload(io, aux->channel, message->reply, size);
 
 	/* Succeeded: the reply is in the caller's room. */
@@ -321,6 +322,7 @@ drv_i915_xd_dpcd_read(
 		if (chunk > I915_XD_DPCD_CHUNK)
 			chunk = I915_XD_DPCD_CHUNK;
 
+		/* Reads the chunk. */
 		error = i915_xd_dpcd_message(aux, io, I915_XD_AUX_NATIVE_READ, address + done, buffer + done, chunk);
 		if (error != 0)
 			return error;
@@ -358,9 +360,11 @@ drv_i915_xd_dpcd_write(
 		if (chunk > I915_XD_DPCD_CHUNK)
 			chunk = I915_XD_DPCD_CHUNK;
 
+		/* Copies the chunk to send. */
 		for (index = 0U; index < chunk; index++)
 			data[index] = buffer[done + index];
 
+		/* Writes the chunk. */
 		error = i915_xd_dpcd_message(aux, io, I915_XD_AUX_NATIVE_WRITE, address + done, data, chunk);
 		if (error != 0)
 			return error;
@@ -424,11 +428,13 @@ drv_i915_xd_aux_i2c(
 			if (chunk > size)
 				chunk = size;
 
+			/* Moves the chunk over the channel. */
 			error = i915_xd_aux_i2c_drain(aux, io, request, address, messages[index].bytes + done, chunk, &size);
 			if (error != 0)
 				break;
 		}
 
+		/* A message that failed ends the transfer. */
 		if (error != 0)
 			break;
 	}
@@ -494,6 +500,8 @@ i915_xd_dpcd_message(
 	} else {
 		message.reply_room = 1U + size;
 	}
+
+	/* A native transaction over the channel's own wires, without HDCP keys. */
 	message.thunderbolt = 0;
 	message.hdcp_key = 0;
 
@@ -505,6 +513,7 @@ i915_xd_dpcd_message(
 		if (try != 0U && error != ETIMEDOUT)
 			(void)drv_i915_xd_io_delay(io, I915_XD_DPCD_REST_US);
 
+		/* Sends the message and acts on how it went. */
 		drv_i915_xd_aux_exchange(aux, io, &message, &result);
 		switch (result.outcome) {
 		case I915_XD_AUX_SENT:
@@ -515,6 +524,7 @@ i915_xd_dpcd_message(
 				if (request == I915_XD_AUX_NATIVE_READ && result.reply_bytes != 1U + size)
 					break;
 
+				/* Copies the data a read brought back. */
 				if (request == I915_XD_AUX_NATIVE_READ) {
 					for (index = 0U; index < size; index++)
 						data[index] = reply[1U + index];
@@ -523,6 +533,7 @@ i915_xd_dpcd_message(
 				/* Succeeded: the sink took the message. */
 				return 0;
 			}
+
 			break;
 		case I915_XD_AUX_NO_ANSWER:
 			error = ETIMEDOUT;
@@ -567,6 +578,7 @@ i915_xd_aux_wait_idle(
 		if ((*status & I915_XD_AUX_CTL_BUSY) == 0U)
 			return 0;
 
+		/* Waits a little before reading again. */
 		(void)drv_i915_xd_io_delay(io, I915_XD_AUX_IDLE_PAUSE_US);
 	}
 
@@ -771,6 +783,7 @@ i915_xd_aux_i2c_once(
 	unsigned base;
 	int reading;
 
+	/* Nothing came back or moved yet. */
 	*reply = 0U;
 	*moved = 0U;
 
@@ -798,6 +811,8 @@ i915_xd_aux_i2c_once(
 			send[4U + index] = data[index];
 		message.request_bytes += size;
 	}
+
+	/* An I2C transaction over the channel's own wires, without HDCP keys. */
 	message.thunderbolt = 0;
 	message.hdcp_key = 0;
 
@@ -995,6 +1010,7 @@ i915_xd_aux_i2c_drain(
 		if (moved < left && moved < *next_size)
 			*next_size = moved;
 
+		/* Moves past what was moved. */
 		data += moved;
 		left -= moved;
 	}

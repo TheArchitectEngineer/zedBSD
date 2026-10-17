@@ -187,6 +187,7 @@ drv_i915_display_power_stop(
 	if (!power->ready)
 		return;
 
+	/* Forgets the counts; the wells stay as they are. */
 	power->ready = 0;
 }
 
@@ -648,6 +649,8 @@ drv_i915_display_power_core_start(
 		} else {
 			display_power_core_fault(power, "CD clock");
 		}
+
+		/* Reports the fault; no reference is taken. */
 		return EIO;
 	}
 
@@ -953,6 +956,8 @@ display_power_well_off(
 		power->refusals++;
 		return EBUSY;
 	}
+
+	/* Reports a fault of the time base. */
 	if (error != 0)
 		return EIO;
 
@@ -1397,6 +1402,7 @@ display_power_dbuf_apply(
 		if ((late & (1U << slice)) == 0U)
 			continue;
 
+		/* Logs the slice that was late. */
 		kern_logf("i915: display power: display buffer slice %u did not turn %s in time\n",
 			slice,
 			(slices & (1U << slice)) != 0U ? "on" : "off");

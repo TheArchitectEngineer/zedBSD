@@ -406,6 +406,7 @@ drv_i915_gen11_display_irq_reset(
 {
 	unsigned pipe;
 	unsigned transcoder;
+	int powered;
 
 	/* A device without a display has no display sources. */
 	if (!d->has_display)
@@ -419,7 +420,8 @@ drv_i915_gen11_display_irq_reset(
 		for (transcoder = 0U; transcoder < 4U; transcoder++) {
 			if ((d->cpu_transcoder_mask & (1U << transcoder)) == 0U)
 				continue;
-			if (!i915_transcoder_power_on(d, transcoder))
+			powered = i915_transcoder_power_on(d, transcoder);
+			if (!powered)
 				continue;
 
 			i915_display_irq_write(d, TRANS_PSR_IMR(transcoder), 0xffffffffU, &d->irq->reset_writes);
@@ -431,7 +433,8 @@ drv_i915_gen11_display_irq_reset(
 	for (pipe = 0U; pipe < I915_IRQ_MAX_PIPES; pipe++) {
 		if ((d->pipe_mask & (1U << pipe)) == 0U)
 			continue;
-		if (!i915_pipe_power_on(d, pipe))
+		powered = i915_pipe_power_on(d, pipe);
+		if (!powered)
 			continue;
 
 		drv_i915_gen3_irq_reset(d->irq, GEN8_DE_PIPE_IMR(pipe), GEN8_DE_PIPE_IIR(pipe), GEN8_DE_PIPE_IER(pipe));
@@ -1052,6 +1055,7 @@ i915_gen8_de_irq_postinstall(
 	uint32_t de_hpd_enables;
 	unsigned pipe;
 	unsigned transcoder;
+	int powered;
 
 	/* A device without a display has no display sources. */
 	if (!d->has_display)
@@ -1097,7 +1101,8 @@ i915_gen8_de_irq_postinstall(
 		for (transcoder = 0U; transcoder < 4U; transcoder++) {
 			if ((d->cpu_transcoder_mask & (1U << transcoder)) == 0U)
 				continue;
-			if (!i915_transcoder_power_on(d, transcoder))
+			powered = i915_transcoder_power_on(d, transcoder);
+			if (!powered)
 				continue;
 
 			drv_i915_gen3_assert_iir_is_zero(d->irq, TRANS_PSR_IIR(transcoder));
@@ -1112,7 +1117,8 @@ i915_gen8_de_irq_postinstall(
 		d->de_irq_mask[pipe] = ~de_pipe_masked;
 
 		/* A pipe whose well is off is programmed by the well's post-enable. */
-		if (i915_pipe_power_on(d, pipe))
+		powered = i915_pipe_power_on(d, pipe);
+		if (powered)
 			drv_i915_gen3_irq_init(d->irq, GEN8_DE_PIPE_IMR(pipe), d->de_irq_mask[pipe], GEN8_DE_PIPE_IER(pipe), de_pipe_enables, GEN8_DE_PIPE_IIR(pipe));
 	}
 
@@ -1221,6 +1227,7 @@ i915_gen8_de_pipe_irq_handler(
 	uint32_t iir;
 	uint32_t fault_errors;
 	int closed;
+	uint32_t mask;
 
 	/*
 	 * Admission: the handler counts itself in first and then checks the
@@ -1266,11 +1273,13 @@ i915_gen8_de_pipe_irq_handler(
 	}
 
 	/* Counts a completed flip. */
-	if ((iir & drv_i915_gen8_de_pipe_flip_done_mask(d->display_ver)) != 0U)
+	mask = drv_i915_gen8_de_pipe_flip_done_mask(d->display_ver);
+	if ((iir & mask) != 0U)
 		d->de_flip_done_count++;
 
 	/* Counts an underrun. */
-	if ((iir & drv_i915_gen8_de_pipe_underrun_mask(d->display_ver)) != 0U)
+	mask = drv_i915_gen8_de_pipe_underrun_mask(d->display_ver);
+	if ((iir & mask) != 0U)
 		d->de_underrun_count++;
 
 	/* Reports plane faults. */

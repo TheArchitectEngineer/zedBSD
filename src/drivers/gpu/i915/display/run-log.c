@@ -303,6 +303,7 @@ drv_i915_lcd_observer_point(
 {
 	struct i915_lcd_observer *observer;
 
+	/* The observer the hook belongs to. */
 	observer = ctx;
 
 	/* A new commit ends the steady picture that stood before it. */
@@ -455,6 +456,7 @@ drv_i915_lcd_kernel_step(
 	struct i915_lcd_kernel *k;
 	int prefix;
 
+	/* The run the hook belongs to. */
 	k = ctx;
 
 	/* A decided callee is counted and printed as it is. */
@@ -486,6 +488,7 @@ drv_i915_lcd_kernel_error(
 	const char *phase;
 	const char *line_end;
 
+	/* The run the hook belongs to. */
 	k = ctx;
 
 	/* Counts the error in the phase of the run it belongs to. */
@@ -660,6 +663,7 @@ i915_trace_write32(
 	struct i915_lcd_trace *trace;
 	struct i915_lcd_trace_entry *entry;
 
+	/* The trace the hook records in. */
 	trace = ctx;
 
 	/* Records the write. */
@@ -686,6 +690,7 @@ i915_trace_rmw32(
 	struct i915_lcd_trace_entry *entry;
 	uint32_t old;
 
+	/* The trace the hook records in. */
 	trace = ctx;
 
 	/* Takes the entry, then forwards the operation. */
@@ -713,6 +718,7 @@ i915_trace_posting_read(
 {
 	struct i915_lcd_trace *trace;
 
+	/* The trace the hook records in. */
 	trace = ctx;
 
 	/* The posting read is optional in the backend. */
@@ -731,6 +737,7 @@ i915_trace_read32(
 	struct i915_lcd_trace_entry *last;
 	uint32_t value;
 
+	/* The trace the hook records in. */
 	trace = ctx;
 
 	/* Reads the register. */
@@ -772,6 +779,7 @@ i915_trace_wait_reg(
 	struct i915_lcd_trace_entry *entry;
 	int result;
 
+	/* The trace the hook records in. */
 	trace = ctx;
 
 	/* Waits first, then takes the entry. */
@@ -804,6 +812,7 @@ i915_trace_usleep(
 {
 	struct i915_lcd_trace *trace;
 
+	/* The trace the hook records in. */
 	trace = ctx;
 
 	/* Counts the sleep and the time slept. */
@@ -822,6 +831,7 @@ i915_trace_udelay(
 {
 	struct i915_lcd_trace *trace;
 
+	/* The trace the hook records in. */
 	trace = ctx;
 
 	/* Counts the time delayed. */
@@ -840,6 +850,7 @@ i915_trace_first_bytes(
 	uint32_t packed;
 	size_t i;
 
+	/* Nothing packed yet. */
 	packed = 0u;
 
 	/* Packs at most four bytes. */
@@ -862,6 +873,7 @@ i915_trace_dpcd_read(
 	struct i915_lcd_trace_entry *entry;
 	long result;
 
+	/* The trace the hook records in. */
 	trace = ctx;
 
 	/* Reads first, then takes the entry. */
@@ -876,6 +888,8 @@ i915_trace_dpcd_read(
 		} else {
 			entry->b = 0u;
 		}
+
+		/* Records the size asked for and what the read answered. */
 		entry->c = (uint32_t)size;
 		entry->rc = (int32_t)result;
 	}
@@ -896,6 +910,7 @@ i915_trace_dpcd_write(
 	struct i915_lcd_trace_entry *entry;
 	long result;
 
+	/* The trace the hook records in. */
 	trace = ctx;
 
 	/* Takes the entry, then writes. */
@@ -924,6 +939,7 @@ i915_trace_read_dpcd_caps(
 	struct i915_lcd_trace_entry *entry;
 	int result;
 
+	/* The trace the hook records in. */
 	trace = ctx;
 
 	/* Reads first, then takes the entry. */
@@ -938,6 +954,8 @@ i915_trace_read_dpcd_caps(
 		} else {
 			entry->b = 0u;
 		}
+
+		/* Records the capability bytes asked for and what the read answered. */
 		entry->c = 15u;
 		entry->rc = result;
 		entry->name = "drm_dp_read_dpcd_caps";
@@ -957,6 +975,7 @@ i915_trace_panel(
 	struct i915_lcd_trace_entry *entry;
 	int result;
 
+	/* The trace the hook records in. */
 	trace = ctx;
 
 	/* Takes the entry, then runs the operation. */
@@ -1002,6 +1021,7 @@ i915_trace_power_get(
 	struct i915_lcd_trace_entry *entry;
 	int wakeref;
 
+	/* The trace the hook records in. */
 	trace = ctx;
 
 	/* Takes the reference first, then the entry. */
@@ -1028,6 +1048,7 @@ i915_trace_power_put(
 	struct i915_lcd_trace *trace;
 	struct i915_lcd_trace_entry *entry;
 
+	/* The trace the hook records in. */
 	trace = ctx;
 
 	/* Records the domain and the wakeref returned. */
@@ -1052,6 +1073,7 @@ i915_trace_power_put_async(
 	struct i915_lcd_trace *trace;
 	struct i915_lcd_trace_entry *entry;
 
+	/* The trace the hook records in. */
 	trace = ctx;
 
 	/* Records the put; d = 1 marks it asynchronous. */
@@ -1076,6 +1098,7 @@ i915_trace_dbuf_slices_update(
 	struct i915_lcd_trace *trace;
 	struct i915_lcd_trace_entry *entry;
 
+	/* The trace the hook records in. */
 	trace = ctx;
 
 	/* Records the slices requested. */
@@ -1096,6 +1119,7 @@ i915_trace_observe(
 	struct i915_lcd_trace *trace;
 	struct i915_lcd_trace_entry *entry;
 
+	/* The trace the hook records in. */
 	trace = ctx;
 
 	/* Records the point. */
@@ -1121,6 +1145,7 @@ i915_trace_vblank_get(
 	struct i915_lcd_trace *trace;
 	int result;
 
+	/* The trace the hook records in. */
 	trace = ctx;
 
 	/* Takes the vblank reference. */
@@ -1138,6 +1163,7 @@ i915_trace_vblank_put(
 {
 	struct i915_lcd_trace *trace;
 
+	/* The trace the hook records in. */
 	trace = ctx;
 
 	/* Returns the vblank reference. */
@@ -1154,6 +1180,7 @@ i915_trace_vblank_sleep(
 	struct i915_lcd_trace *trace;
 	long left;
 
+	/* The trace the hook records in. */
 	trace = ctx;
 
 	/* Sleeps until the pipe's next vblank or the ticks run out. */
@@ -1170,6 +1197,7 @@ i915_trace_irq_off(
 {
 	struct i915_lcd_trace *trace;
 
+	/* The trace the hook records in. */
 	trace = ctx;
 
 	/* Disables the local interrupts. */
@@ -1183,6 +1211,7 @@ i915_trace_irq_on(
 {
 	struct i915_lcd_trace *trace;
 
+	/* The trace the hook records in. */
 	trace = ctx;
 
 	/* Enables the local interrupts. */
@@ -1197,6 +1226,7 @@ i915_trace_arm_event(
 {
 	struct i915_lcd_trace *trace;
 
+	/* The trace the hook records in. */
 	trace = ctx;
 
 	/* Arms the event for the pipe's next vblank. */
@@ -1213,6 +1243,7 @@ i915_trace_wait_event(
 	struct i915_lcd_trace *trace;
 	int result;
 
+	/* The trace the hook records in. */
 	trace = ctx;
 
 	/* Waits for the event to complete. */
@@ -1230,6 +1261,7 @@ i915_trace_cancel_event(
 {
 	struct i915_lcd_trace *trace;
 
+	/* The trace the hook records in. */
 	trace = ctx;
 
 	/* Cancels the pending event. */
@@ -1386,6 +1418,7 @@ i915_trace_lock(
 {
 	struct i915_lcd_trace *trace;
 
+	/* The trace the hook records in. */
 	trace = ctx;
 
 	/* Takes or gives back the lock. */
@@ -1416,6 +1449,7 @@ i915_trace_step(
 	struct i915_lcd_trace *trace;
 	int prefix;
 
+	/* The trace the hook records in. */
 	trace = ctx;
 
 	/* A decided callee is counted apart from an unported one. */
@@ -1441,6 +1475,7 @@ i915_trace_error(
 {
 	struct i915_lcd_trace *trace;
 
+	/* The trace the hook records in. */
 	trace = ctx;
 
 	/* The first error marks the entry a failed run is read from. */
@@ -1464,6 +1499,7 @@ i915_trace_debug(
 {
 	struct i915_lcd_trace *trace;
 
+	/* The trace the hook records in. */
 	trace = ctx;
 
 	/* The backend's debug hook is optional. */

@@ -1314,6 +1314,8 @@ i915_start_registers(
 	} else {
 		ranges = drv_i915_mmio_gen12_ranges(&range_count);
 	}
+
+	/* Opens the register window over the generation's ranges. */
 	drv_i915_mmio_init(&gt->mmio, drv_i915_mmio_window_ops(), &gt->regs_window, ranges, range_count, &gt->trace);
 	gt->mmio.graphics_ver = (int)gt->graphics_ver;
 	kern_logf("i915: uncore BAR mapped (%llu bytes)\n", (unsigned long long)gt->regs.size);

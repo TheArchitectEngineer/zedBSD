@@ -120,6 +120,7 @@ drv_i915_dp_kernel_sleep_us(
 	if (after < before)
 		return;
 
+	/* Counts the time the sleep took. */
 	(void)__atomic_add_fetch(&k->tick_slept_us, after - before, __ATOMIC_SEQ_CST);
 
 	/* A sleep shorter than asked is a time-base fault. */
@@ -368,6 +369,7 @@ drv_i915_edp_device_init_connector(
 	if (panel_found == 0)
 		have_panel = 1;
 
+	/* The configuration from the VBT's panel. */
 	i915_edp_cfg_from_panel(&dev->cfg, enc, &panel, have_panel);
 
 	/* Reports the configuration the eDP begins with. */
@@ -375,6 +377,7 @@ drv_i915_edp_device_init_connector(
 	if (have_panel)
 		panel_type = panel.panel_type;
 
+	/* Logs the configuration. */
 	kern_logf("i915: edp init_connector (in setup_outputs): vbt_source=%d port=%c aux_ch=%d "
 		  "panel_early=%d type=%d pps(100us) t1_t3=%u t8=%u t9=%u t10=%u t11_t12=%u controller=%d well_refs=%u\n",
 		  dev->vbt->source, 'A' + dev->cfg.port, dev->cfg.aux_ch, have_panel, panel_type,
@@ -389,6 +392,8 @@ drv_i915_edp_device_init_connector(
 	} else if (error != 0) {
 		rc = -I915_EDP_EIO;
 	}
+
+	/* Records and logs what the taking found. */
 	dev->init_rc = rc;
 	i915_edp_device_log_acquire(dev, error);
 
@@ -1094,6 +1099,7 @@ i915_edp_device_late(
 	if (late_panel)
 		panel_type = late_panel_data.panel_type;
 
+	/* Logs what the late step found. */
 	kern_logf("i915: edp late: panel_late=%d type=%d pps=%u delays(ms) up=%d down=%d cycle=%d | VDD held=%d, off in %d ms\n",
 		  late_panel, panel_type, dev->xe.pps, dev->res.delay_power_up_ms, dev->res.delay_power_down_ms,
 		  dev->res.delay_power_cycle_ms, dev->xe.vdd_cookie != 0 ? 1 : 0, dev->res.delay_power_cycle_ms * 5);
@@ -1140,6 +1146,8 @@ i915_edp_device_take(
 		config.sequencers = 2U;
 		config.muxed = 1;
 	}
+
+	/* The VBT's backlight controller and power sequence delays. */
 	config.controller = dev->cfg.bl_controller;
 	i915_edp_cfg_delays(&dev->cfg, &config.vbt);
 	config.long_power_cycle = 0;
@@ -1177,6 +1185,7 @@ i915_edp_device_result(
 	const struct i915_xd_edp *xe;
 	unsigned bytes;
 
+	/* The record of the result, cleared, and the sink it is read from. */
 	res = &dev->res;
 	xe = &dev->xe;
 	kern_memset(res, 0, sizeof(*res));
@@ -1196,6 +1205,8 @@ i915_edp_device_result(
 		kern_memcpy(res->dpcd, xe->caps, sizeof(res->dpcd));
 		res->dpcd_ok = 1;
 	}
+
+	/* The eDP capabilities, when they were read. */
 	if (xe->edp_caps_read) {
 		kern_memcpy(res->edp_dpcd, xe->edp_caps, sizeof(res->edp_dpcd));
 		res->edp_dpcd_ok = 1;
@@ -1401,6 +1412,7 @@ i915_edp_device_link(
 	uint32_t ref;
 	int error;
 
+	/* The display, the result, and the mode and link cleared. */
 	display = container_of(dev, struct i915_display, edp_dev);
 	res = &dev->res;
 	kern_memset(&dev->mode, 0, sizeof(dev->mode));

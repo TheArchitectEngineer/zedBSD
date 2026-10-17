@@ -1030,6 +1030,7 @@ i915_output_hdmi(
 		return ENODEV;
 	}
 
+	/* The HDMI connector on the firmware's port. */
 	connector = i915_output_connector_of(display, I915_HPD_OUTPUT_HDMI, display->gop.port);
 	if (connector < 0) {
 		*reason = "no HDMI connector on the firmware's port";
@@ -1090,6 +1091,7 @@ i915_output_hdmi_mode(
 		return ENXIO;
 	}
 
+	/* Refuses an HDMI port that is not a combo PHY port. */
 	error = i915_output_hdmi_port(display, found.port);
 	if (error != 0) {
 		*reason = "an HDMI port that is not a combo PHY port";
@@ -1765,6 +1767,7 @@ i915_output_hdmi_port(
 	if (display->xd.choice.platform == NULL || port < 0)
 		return EOPNOTSUPP;
 
+	/* The port's row of the platform's description. */
 	desc = drv_i915_xd_platform_port(display->xd.choice.platform, (unsigned)port);
 	if (desc == NULL)
 		return EOPNOTSUPP;

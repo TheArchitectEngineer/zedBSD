@@ -127,6 +127,7 @@ drv_i915_xd_hpd_init(
 	for (index = 0U; index < I915_XD_HPD_SOUTH_DDI_PINS; index++)
 		hpd->pin[I915_XD_HPD_PIN_DDI(index)].south = I915_XD_SDE_DDI_HPD(index);
 
+	/* The south bits of the Type-C pins. */
 	for (tc = 0U; tc < I915_XD_HPD_TC_PINS; tc++)
 		hpd->pin[I915_XD_HPD_PIN_TC(tc)].south = I915_XD_SDE_TC_HPD(tc);
 }
@@ -265,6 +266,7 @@ drv_i915_xd_hpd_arm(
 	if (hpd->south <= I915_PCH_TGP)
 		words->filter = I915_XD_SHPD_FILTER_500US_ADJUSTED;
 
+	/* Writes the filter. */
 	drv_i915_xd_io_write(io, I915_XD_SHPD_FILTER_CNT, words->filter);
 
 	/* The south mask, written only while the device takes interrupts. */
@@ -278,6 +280,7 @@ drv_i915_xd_hpd_arm(
 		words->sde_imr_written = 1;
 	}
 
+	/* Reads the south mask back. */
 	words->sde_imr = drv_i915_xd_io_read(io, I915_XD_SDE_IMR);
 
 	/* The south controls of the DDI pins and of the Type-C pins. */
@@ -319,6 +322,7 @@ drv_i915_xd_hpd_south_irq(
 	for (index = 0U; index < I915_XD_HPD_SOUTH_DDI_PINS; index++)
 		ddi_bits |= hpd->pin[I915_XD_HPD_PIN_DDI(index)].south;
 
+	/* The south bits of the Type-C pins. */
 	tc_bits = 0U;
 	for (index = 0U; index < I915_XD_HPD_TC_PINS; index++)
 		tc_bits |= hpd->pin[I915_XD_HPD_PIN_TC(index)].south;
@@ -439,6 +443,7 @@ drv_i915_xd_hpd_sort(
 		if ((pins & (1U << connector->pin)) == 0U)
 			continue;
 
+		/* A connector that takes no pulses is passed over. */
 		takes = i915_xd_hpd_takes_pulses(connector);
 		if (!takes)
 			continue;
@@ -465,6 +470,7 @@ drv_i915_xd_hpd_sort(
 			continue;
 		}
 
+		/* A pin that is not enabled is passed over. */
 		if (hpd->pin[pin].state != I915_XD_HPD_PIN_ENABLED)
 			continue;
 
@@ -515,6 +521,7 @@ drv_i915_xd_hpd_storms(
 		if (hpd->pin[pin].state != I915_XD_HPD_PIN_MARKED)
 			continue;
 
+		/* Disables the marked pin. */
 		hpd->pin[pin].state = I915_XD_HPD_PIN_DISABLED;
 		masked = 1;
 	}
@@ -582,6 +589,7 @@ drv_i915_xd_hpd_pulse(
 		if (env->dp_reset != NULL)
 			env->dp_reset(env->ctx, connector->ddi);
 
+		/* Succeeded: the pulse is handled. */
 		return 0;
 	}
 
@@ -687,6 +695,7 @@ drv_i915_xd_hpd_detect(
 	if (connector->kind == I915_XD_HPD_HDMI)
 		hdmi = 1;
 
+	/* Hands a sink other than the panel its link step. */
 	if (connector->kind != I915_XD_HPD_EDP && env->link != NULL)
 		env->link(env->ctx, connector->ddi, hdmi);
 
@@ -699,6 +708,7 @@ drv_i915_xd_hpd_detect(
 	if (connector->tc != 0U)
 		limit = I915_XD_HPD_RETRIES_TC;
 
+	/* A connector with tries left is tried again. */
 	if (connector->retries < limit)
 		return I915_XD_HPD_RETRY;
 
@@ -777,6 +787,7 @@ i915_xd_hpd_bits(
 		if (!hpd->pin[pin].used)
 			continue;
 
+		/* Gathers the pin's bits. */
 		*north_used |= hpd->pin[pin].north;
 		*south_used |= hpd->pin[pin].south;
 		if (hpd->pin[pin].state == I915_XD_HPD_PIN_ENABLED) {
@@ -829,6 +840,7 @@ i915_xd_hpd_enables(
 		if (hpd != NULL && !hpd->pin[first + index].used)
 			continue;
 
+		/* Enables the pin's detection. */
 		bits |= I915_XD_SHOTPLUG_ENABLE(index);
 	}
 
@@ -861,9 +873,11 @@ i915_xd_hpd_pins(
 		if (south)
 			bits = hpd->pin[first + index].south;
 
+		/* A pin that did not trigger is passed over. */
 		if ((trigger & bits) == 0U)
 			continue;
 
+		/* Records the pin, and whether its pulse was long. */
 		*pins |= 1U << (first + index);
 		if ((control & I915_XD_SHOTPLUG_LONG(index)) != 0U)
 			*longs |= 1U << (first + index);
@@ -1022,6 +1036,7 @@ i915_xd_hpd_probe_dp(
 	if (bytes > sizeof(edid))
 		bytes = 0U;
 
+	/* Keeps the EDID read. */
 	i915_xd_hpd_keep_edid(connector, edid, bytes);
 
 	/* Succeeded: the sink's state. */
@@ -1054,6 +1069,7 @@ i915_xd_hpd_live(
 		if (env->tc_live != NULL)
 			live = env->tc_live(env->ctx, connector->ddi);
 
+		/* Succeeded: the Type-C port's live state. */
 		return live;
 	}
 
@@ -1066,6 +1082,7 @@ i915_xd_hpd_live(
 	if (refused)
 		return 0;
 
+	/* Reads the south live state, then gives the power back. */
 	isr = drv_i915_xd_io_read(io, I915_XD_SDE_ISR);
 	(void)env->power(env->ctx, I915_XD_HPD_POWER_CORE, 0);
 
@@ -1132,6 +1149,7 @@ i915_xd_hpd_edid_block(
 	uint8_t offset_byte;
 	unsigned first;
 
+	/* The DDC, and the bytes of the segment and the offset. */
 	ddc = context;
 	segment_byte = (uint8_t)segment;
 	offset_byte = (uint8_t)offset;

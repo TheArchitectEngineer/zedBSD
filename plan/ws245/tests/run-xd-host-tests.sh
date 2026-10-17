@@ -93,6 +93,8 @@
 #                          channels' wells (directly and through Thunderbolt), a pipe's wells taken and given back, DC off
 #                          with and without the DMC's program, the deferred give-back (work, flush, unbound), a failed
 #                          drain that keeps every later well on, the wells the firmware left on turned off
+#   host-capture-test      the capture display's layout (display/capture.c with I915_TEST_CAPTURE): the header offsets
+#                          the host harness parses, the slots and their rotation, the ready protocol, the mode checks
 #   host-output-link-test  an output's planned link (display/output.c): the 5330's USB-C monitor at the link Linux
 #                          trained, the fallback's limits, a branch's depth and dot clock, an HDMI mode's link and PLL;
 #                          the firmware's output by the platform's ports
@@ -108,7 +110,7 @@ OUT=${1:-build/ws245-host}
 mkdir -p "$OUT"
 I915_HOST_EXTRA_PRODUCTION="src/drivers/gpu/i915/perf.c ${I915_HOST_EXTRA_PRODUCTION:-}"
 failed=0
-for test in host-xd-io-test host-xd-platform-test host-xd-vbt-test host-xd-survey-test host-xd-aux-test host-xd-gmbus-test host-xd-panel-test host-xd-power-test host-xd-dmc-test host-xd-clock-test host-xd-dpll-test host-xd-ddi-test host-xd-dp-test host-xd-pipe-test host-xd-dbuf-test host-xd-core-test host-xd-takeover-test host-xd-screen-test host-xd-output-test host-xd-edp-test host-xd-tc-test host-xd-tc-port-test host-xd-cover-test host-xd-icl-test host-xd-picture-test host-xd-hpd-test host-xd-diag-test host-xd-bandwidth-test host-display-power-test host-output-link-test; do
+for test in host-xd-io-test host-xd-platform-test host-xd-vbt-test host-xd-survey-test host-xd-aux-test host-xd-gmbus-test host-xd-panel-test host-xd-power-test host-xd-dmc-test host-xd-clock-test host-xd-dpll-test host-xd-ddi-test host-xd-dp-test host-xd-pipe-test host-xd-dbuf-test host-xd-core-test host-xd-takeover-test host-xd-screen-test host-xd-output-test host-xd-edp-test host-xd-tc-test host-xd-tc-port-test host-xd-cover-test host-xd-icl-test host-xd-picture-test host-xd-hpd-test host-xd-diag-test host-xd-bandwidth-test host-display-power-test host-capture-test host-output-link-test; do
 	test -f "$T/$test.c" || continue
 	i915_display_host_build "$OUT/$test" "$T/$test.c" "$T/xd-fake-regs.c" plan/ws084/tests/native-decide-stubs.c
 	if ! "$OUT/$test"; then

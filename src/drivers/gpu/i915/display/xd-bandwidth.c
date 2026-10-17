@@ -247,6 +247,7 @@ drv_i915_xd_bw_read(
 	if (bw->qgv_points == 1U)
 		bw->sagv = I915_XD_SAGV_NOT_CONTROLLED;
 
+	/* Logs what the memory's description said. */
 	kern_logf("i915: display: memory: sagv=%d qgv_points=%u psf_points=%u table_valid=%d\n",
 	    bw->sagv,
 	    bw->qgv_points,
@@ -383,6 +384,7 @@ drv_i915_xd_bw_point_mbps(
 				return bw->derated_mbps[group][point];
 		}
 
+		/* A plane count past the groups has no bandwidth. */
 		return 0U;
 	}
 
@@ -654,6 +656,7 @@ i915_xd_bw_table(
 		    bw->group_planes[5]);
 	}
 
+	/* Records whether the table holds. */
 	bw->table_valid = valid;
 }
 

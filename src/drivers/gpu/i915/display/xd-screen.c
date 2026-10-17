@@ -225,6 +225,8 @@ drv_i915_xd_screen_plan_link(
 	} else {
 		refused = i915_xd_screen_dp_link(input, plan);
 	}
+
+	/* Refuses a link the sink cannot take. */
 	if (refused != I915_XD_PLAN_OK) {
 		plan->refused = refused;
 		return refused;
@@ -309,6 +311,8 @@ drv_i915_xd_screen_plan_check(
 		if (clamp > need)
 			need = clamp;
 	}
+
+	/* The CD clock the pipe needs. */
 	plan->crtc_min_cdclk_khz = need;
 
 	/* The memory read bandwidth's need, from display 12 on. */
@@ -335,6 +339,8 @@ drv_i915_xd_screen_plan_check(
 		plan->refused = I915_XD_PLAN_CDCLK;
 		return plan->refused;
 	}
+
+	/* The VCO of the chosen step. */
 	plan->vco_khz = vco_khz;
 
 	/* Its voltage level with the port's need. */
@@ -351,6 +357,8 @@ drv_i915_xd_screen_plan_check(
 		plan->refused = I915_XD_PLAN_CDCLK;
 		return plan->refused;
 	}
+
+	/* Refuses a voltage level that differs from the current one. */
 	if (plan->voltage != input->cdclk.voltage) {
 		plan->refused = I915_XD_PLAN_VOLTAGE;
 		return plan->refused;
@@ -546,6 +554,7 @@ drv_i915_xd_screen_light(
 		if (screen->failed >= 0 && (step->flags & I915_XD_STEP_ALWAYS) == 0U)
 			continue;
 
+		/* Runs the step and counts it; the first failure is kept. */
 		error = i915_xd_screen_step_run(io, hooks, step);
 		screen->ran++;
 		if (error != 0 && screen->failed < 0) {
@@ -609,6 +618,7 @@ drv_i915_xd_screen_dark(
 			break;
 		}
 
+		/* The step's phase is reached. */
 		screen->phase = step->phase;
 	}
 
@@ -814,6 +824,8 @@ i915_xd_screen_panel_link(
 	default:
 		return I915_XD_PLAN_SINK;
 	}
+
+	/* Refuses a lane count the link cannot use. */
 	if (plan->lanes != 1U && plan->lanes != 2U && plan->lanes != 4U)
 		return I915_XD_PLAN_SINK;
 
@@ -868,6 +880,7 @@ i915_xd_screen_dp_link(
 	uint32_t clock;
 	unsigned max_bpc;
 	int error;
+	unsigned max_lanes;
 
 	/* A sink that shares no rate or lane. */
 	sink = &input->sink;
@@ -890,9 +903,21 @@ i915_xd_screen_dp_link(
 	if (sink->max_bpc > 0U && sink->max_bpc < max_bpc)
 		max_bpc = sink->max_bpc;
 
+	/* The most lanes: the sink's, or a lower limit put on them. */
+	max_lanes = sink->max_lanes;
+	if (sink->lane_limit != 0U && sink->lane_limit < sink->max_lanes)
+		max_lanes = sink->lane_limit;
+
 	/* The first depth, rate and lanes that carry the mode. */
-	error = drv_i915_xd_dp_choose(clock, max_bpc, I915_XD_SCREEN_DP_MIN_BPC, sink->rates, sink->nrates, sink->rate_limit_khz,
-	    sink->lane_limit != 0U && sink->lane_limit < sink->max_lanes ? sink->lane_limit : sink->max_lanes, &choice);
+	error = drv_i915_xd_dp_choose(
+		clock,
+		max_bpc,
+		I915_XD_SCREEN_DP_MIN_BPC,
+		sink->rates,
+		sink->nrates,
+		sink->rate_limit_khz,
+		max_lanes,
+		&choice);
 	if (error != 0)
 		return I915_XD_PLAN_LINK;
 
@@ -927,6 +952,8 @@ i915_xd_screen_combo_pll(
 	} else {
 		error = drv_i915_xd_dpll_dp_words(input->platform, input->ref_khz, plan->rate_khz, I915_XD_DPLL_AFC_NONE, &plan->pll);
 	}
+
+	/* Refuses a rate the PLL cannot make. */
 	if (error != 0)
 		return I915_XD_PLAN_PLL;
 

@@ -195,6 +195,7 @@ drv_i915_resident_run(
 	int fallback_error;
 	int run_error;
 
+	/* The run, its environment and its report, the display's own. */
 	k = &display->lk;
 	env = &display->resident_run_env;
 	rep = &display->resident_run_rep;
@@ -236,6 +237,7 @@ drv_i915_resident_run(
 			return EIO;
 		}
 
+		/* The run drives the other output. */
 		params = &output_params;
 	}
 
@@ -356,14 +358,17 @@ drv_i915_resident_run(
 	if (passed && released && held == 0)
 		verdict = "PASS";
 
+	/* Whether the display confirmed the stop. */
 	stop = "NOT confirmed";
 	if (rep->display_released)
 		stop = "confirmed";
 
+	/* The first thing that went wrong. */
 	first_anomaly = "none";
 	if (rep->first_anomaly != NULL)
 		first_anomaly = rep->first_anomaly;
 
+	/* Logs how the run ended. */
 	kern_logf("i915: resident display: ended %s (show rc=%d; flips %u, stop %s, buffers released=%d, power refs held %d, first anomaly: %s)\n",
 	    verdict,
 	    show_result,
@@ -732,6 +737,7 @@ resident_anomaly(
 	if (r->first_anomaly != NULL)
 		return;
 
+	/* Keeps the first anomaly, its stage and its code. */
 	r->first_anomaly = what;
 	r->first_anomaly_stage = r->stage;
 	r->first_anomaly_rc = rc;
@@ -801,6 +807,7 @@ resident_show(
 		return EINVAL;
 	}
 
+	/* The buffer is ready. */
 	resident_reached(env, r, I915_LCD_SHOW_BUFFER_READY);
 
 	/* Shows it and stops it. */
@@ -836,6 +843,7 @@ resident_show_display(
 	unsigned waited;
 	uint32_t frame0;
 
+	/* The trace and the pictures the show runs on, and the buffer's address. */
 	trace = &display->show_trace;
 	pictures = &display->xd.pictures;
 	r->surf = so->surf;
@@ -864,9 +872,11 @@ resident_show_display(
 			resident_anomaly(r, "the screen's prepare refused the configuration", r->prepare_rc);
 		}
 
+		/* The show ends; the report says why. */
 		return 0;
 	}
 
+	/* The prepare is done. */
 	resident_reached(env, r, I915_LCD_SHOW_PREPARED);
 
 	/* The light: from here on the display may read the buffer. */
@@ -876,6 +886,7 @@ resident_show_display(
 		return 0;
 	}
 
+	/* From here on the display may read the buffer: the light. */
 	r->display_acquired = 1;
 	drv_i915_lcd_trace_phase(trace, "commit: enable");
 	r->enable_rc = drv_i915_xd_picture_light(pictures, I915_XD_PICTURE_RESIDENT);
@@ -891,6 +902,7 @@ resident_show_display(
 		}
 	}
 
+	/* The light returned. */
 	resident_reached(env, r, I915_LCD_SHOW_ENABLE_RETURNED);
 
 	/* "The arm was written" is a software fact; whether the timing runs is asked of the frame counter. */
@@ -940,6 +952,7 @@ resident_show_display(
 		if (r->obs.seen_steady != 0U)
 			resident_anomaly(r, "underrun status during the steady picture", EIO);
 
+		/* The window is done. */
 		resident_reached(env, r, I915_LCD_SHOW_WINDOW_DONE);
 	}
 
@@ -953,6 +966,7 @@ resident_show_display(
 	if (r->disable_rc != I915_XD_PICTURE_OK)
 		resident_anomaly(r, "the disable commit did not succeed", r->disable_rc);
 
+	/* The dark returned. */
 	resident_reached(env, r, I915_LCD_SHOW_DISABLE_RETURNED);
 
 	/* Has the display let go of the buffer?  Only when the hardware says the pipe stands. */
@@ -1046,6 +1060,7 @@ resident_show_begin(
 	if (retained)
 		return EBUSY;
 
+	/* A screen the pictures still retain is busy. */
 	retained = drv_i915_xd_picture_retained(&display->xd.pictures, I915_XD_PICTURE_RESIDENT);
 	if (retained)
 		return EBUSY;
@@ -1074,6 +1089,7 @@ resident_at_stage(
 	struct i915_display *display;
 	int debug;
 
+	/* The run and its display. */
 	k = ctx;
 	display = k->display;
 
@@ -1124,6 +1140,7 @@ resident_read32(
 	struct i915_lcd_kernel *k;
 	uint32_t value;
 
+	/* The run the hook belongs to. */
 	k = ctx;
 
 	/* Reads the register. */
@@ -1152,6 +1169,7 @@ resident_write32(
 {
 	struct i915_lcd_kernel *k;
 
+	/* The run the hook belongs to. */
 	k = ctx;
 
 	/* The register trace prints every access (a diagnostic switch). */
@@ -1173,6 +1191,7 @@ resident_rmw32(
 	struct i915_lcd_kernel *k;
 	uint32_t old;
 
+	/* The run the hook belongs to. */
 	k = ctx;
 
 	/* Reads, clears, sets and writes back. */
@@ -1191,6 +1210,7 @@ resident_posting_read(
 {
 	struct i915_lcd_kernel *k;
 
+	/* The run the hook belongs to. */
 	k = ctx;
 
 	/* Reads the register and drops the value. */
@@ -1215,6 +1235,7 @@ resident_wait_reg(
 	uint32_t last;
 	int error;
 
+	/* The run, and no value read yet. */
 	k = ctx;
 	last = 0U;
 
@@ -1244,6 +1265,7 @@ resident_usleep(
 	struct i915_lcd_kernel *k;
 	unsigned before;
 
+	/* The run the hook belongs to. */
 	k = ctx;
 
 	/* Sleeps on the eDP's kernel backend and watches its time-fault count. */
@@ -1266,6 +1288,7 @@ resident_udelay(
 	struct i915_lcd_kernel *k;
 	int error;
 
+	/* The run the hook belongs to. */
 	k = ctx;
 
 	/* Spins for the delay; a failed time base is the run's anomaly. */
@@ -1284,6 +1307,7 @@ resident_dbuf_slices_update(
 {
 	struct i915_lcd_kernel *k;
 
+	/* The run the hook belongs to. */
 	k = ctx;
 
 	/* The same update the display core's start uses. */
@@ -1299,6 +1323,7 @@ resident_lock(
 {
 	struct i915_lcd_kernel *k;
 
+	/* The run the hook belongs to. */
 	k = ctx;
 
 	/* Only the two locks of the runs exist. */
@@ -1329,6 +1354,7 @@ resident_irq_off(
 {
 	struct i915_lcd_kernel *k;
 
+	/* The run the hook belongs to. */
 	k = ctx;
 
 	/* Turns the CPU's interrupts off and keeps the state they were in. */
@@ -1342,6 +1368,7 @@ resident_irq_on(
 {
 	struct i915_lcd_kernel *k;
 
+	/* The run the hook belongs to. */
 	k = ctx;
 
 	/* Interrupts that were off before the section stay off. */
@@ -1370,6 +1397,7 @@ resident_power_domain(
 	uint64_t function;
 	int number;
 
+	/* The run the hook belongs to. */
 	k = ctx;
 
 	/* The AUX wells are named by the display's version. */
@@ -1459,6 +1487,7 @@ resident_power_get(
 	uint64_t functions;
 	int error;
 
+	/* The run the hook belongs to. */
 	k = ctx;
 
 	/* Refuses an unknown number. */
@@ -1498,6 +1527,7 @@ resident_power_get_if_enabled(
 	int powered;
 	int cookie;
 
+	/* The run the hook belongs to. */
 	k = ctx;
 
 	/* An unknown number is not on. */
@@ -1536,6 +1566,7 @@ resident_power_put(
 
 	UNUSED_PARAMETER(wakeref);
 
+	/* The run the hook belongs to. */
 	k = ctx;
 
 	/* Refuses a put without a reference of this run. */
@@ -1576,6 +1607,7 @@ resident_power_put_async(
 
 	UNUSED_PARAMETER(wakeref);
 
+	/* The run the hook belongs to. */
 	k = ctx;
 
 	/* Refuses a put without a reference of this run. */
@@ -1604,6 +1636,7 @@ resident_vblank_get(
 	struct i915_lcd_kernel *k;
 	int error;
 
+	/* The run the hook belongs to. */
 	k = ctx;
 
 	/* Takes the reference on the display's interrupt state. */
@@ -1623,6 +1656,7 @@ resident_vblank_put(
 {
 	struct i915_lcd_kernel *k;
 
+	/* The run the hook belongs to. */
 	k = ctx;
 
 	/* Gives the reference back. */
@@ -1645,6 +1679,7 @@ resident_vblank_sleep(
 	bool on;
 	int error;
 
+	/* The run the hook belongs to. */
 	k = ctx;
 
 	/* Counts a sleep entered with the interrupts off; their state is put back as it was. */
@@ -1683,6 +1718,7 @@ resident_arm_event(
 {
 	struct i915_lcd_kernel *k;
 
+	/* The run the hook belongs to. */
 	k = ctx;
 
 	/* The armed event, its pipe and the frame it was armed in. */
@@ -1708,6 +1744,7 @@ resident_wait_event(
 	uint32_t frame;
 	int error;
 
+	/* The run the hook belongs to. */
 	k = ctx;
 
 	/* Refuses a wait for an event that is not armed on this pipe. */
@@ -1749,6 +1786,7 @@ resident_cancel_event(
 
 	UNUSED_PARAMETER(pipe);
 
+	/* The run the hook belongs to. */
 	k = ctx;
 
 	/* Counts an event that was still armed, and forgets it. */
@@ -1766,6 +1804,7 @@ resident_frame(
 	uint32_t frame;
 	unsigned pipe;
 
+	/* The run the hook belongs to. */
 	k = ctx;
 
 	/* The pipe the run drives. */
@@ -1798,6 +1837,7 @@ resident_preflight_panel(
 	int masked;
 	int ok;
 
+	/* The run's objects; nothing failed yet. */
 	d = k->d;
 	ok = 1;
 
@@ -1846,6 +1886,7 @@ resident_preflight_panel(
 	if (k->display->device->gt.display_ver >= 13U)
 		want = I915_RESIDENT_KEEP_MASKED_D13;
 
+	/* Refuses an interrupt state that leaves vblank or underrun unmasked. */
 	if ((d->irq->de_irq_mask[0] & want) != want) {
 		kern_logf("i915: resident display: preflight: the interrupt state's pipe A mask 0x%08x would leave vblank / underrun unmasked (this display needs 0x%08x)\n",
 		    d->irq->de_irq_mask[0],
@@ -1858,10 +1899,12 @@ resident_preflight_panel(
 	if ((pll & I915_RESIDENT_ENABLE_BIT) == 0U && (ddi & I915_RESIDENT_ENABLE_BIT) == 0U)
 		idle = 1;
 
+	/* Whether pipe A's interrupts are masked as the run wants. */
 	masked = 0;
 	if ((d->irq->de_irq_mask[0] & I915_RESIDENT_KEEP_MASKED_D13) == I915_RESIDENT_KEEP_MASKED_D13)
 		masked = 1;
 
+	/* Logs what the preflight found. */
 	kern_logf("i915: resident display: preflight: DDI / PLL idle=%d (pipe A registers read TRANSCONF 0x%08x PLANE_CTL 0x%08x IMR 0x%08x with its power well off) | interrupt state pipe A mask 0x%08x: vblank + underrun masked=%d\n",
 	    idle,
 	    transconf,
@@ -1890,6 +1933,7 @@ resident_preflight_hdmi(
 	uint32_t pll0;
 	uint32_t pll1;
 
+	/* The objects the run reads. */
 	d = k->d;
 
 	/* Reads the pipe, the port, the south display status and both combo PLLs. */
@@ -1935,6 +1979,7 @@ resident_preflight_dp_ext(
 	uint32_t buf_ctl;
 	uint32_t buf_ctl_reg;
 
+	/* The objects the run reads. */
 	d = k->d;
 
 	/* Reads the pipe's TRANS_CONF and the port's DDI_BUF_CTL. */
@@ -1988,6 +2033,7 @@ resident_config_panel(
 	uint32_t mbus;
 	int error;
 
+	/* The display, the run's objects and the panel. */
 	display = k->display;
 	d = k->d;
 	edp = d->edp;
@@ -2031,6 +2077,7 @@ resident_config_panel(
 	for (i = 0U; i < 8U; i++)
 		config->wm_latency[i] = display->xd.memory.latency[i];
 
+	/* The watermark levels, IPC and the SAGV block time. */
 	config->wm_levels = (uint8_t)display->xd.memory.levels;
 	config->wm_ipc = d->ipc_enabled;
 	config->sagv_block_us = (uint8_t)display->xd.memory.sagv_block_us;
@@ -2040,6 +2087,7 @@ resident_config_panel(
 	if (d->power->dbuf_mask == I915_RESIDENT_DBUF_TGL_SLICES)
 		config->dbuf_size = I915_RESIDENT_DBUF_TGL_BLOCKS;
 
+	/* The slices: the display's, or display 13's four. */
 	config->dbuf_slice_mask = I915_RESIDENT_DBUF_D13_SLICES;
 	if (d->power->dbuf_mask != 0U)
 		config->dbuf_slice_mask = d->power->dbuf_mask;
@@ -2065,6 +2113,7 @@ resident_config_panel(
 		while ((allowed & (1U << point)) == 0U)
 			point++;
 
+		/* The bandwidth of the highest allowed point for one plane. */
 		config->qgv_mbps = drv_i915_xd_bw_point_mbps(d->bandwidth, d->platform, 1U, point);
 	}
 
@@ -2135,6 +2184,7 @@ resident_config_hdmi(
 	const struct i915_lcd_kernel_deps *d;
 	uint32_t buf_ctl;
 
+	/* The objects the run reads. */
 	d = k->d;
 
 	/* The output's port, pipe and transcoder, DPLL 0, and the port's reversal and lane bits the firmware left. */
@@ -2187,6 +2237,7 @@ resident_config_dp_ext(
 {
 	struct i915_display *display;
 
+	/* The display the run belongs to. */
 	display = k->display;
 
 	/* The Type-C port's DDI, the output's pipe and transcoder, the port's TC PLL. */
@@ -2269,6 +2320,7 @@ resident_window(
 
 	UNUSED_PARAMETER(o);
 
+	/* The run and its display. */
 	k = ctx;
 	display = k->display;
 
@@ -2300,6 +2352,7 @@ resident_window(
 		if (flip_error != 0)
 			kern_logf("i915: resident display: could not flip back to buffer A before the stop\n");
 
+		/* Waits for the flip back to settle. */
 		(void)drv_i915_xd_picture_flip_settle(&display->xd.pictures, I915_XD_PICTURE_RESIDENT);
 	}
 
@@ -2328,6 +2381,7 @@ resident_buffers(
 	int error;
 	int i;
 
+	/* The two buffers. */
 	a = &display->resident_buf[0];
 	b = &display->resident_buf[1];
 
@@ -2353,6 +2407,7 @@ resident_buffers(
 			(void)drv_i915_scanout_destroy(&display->resident_buf[i]);
 		}
 
+		/* Reports the failure. */
 		return error;
 	}
 
@@ -2421,6 +2476,7 @@ resident_release(
 				drv_i915_scanout_abandon(so);
 		}
 
+		/* The buffers are abandoned, not released. */
 		return 0;
 	}
 

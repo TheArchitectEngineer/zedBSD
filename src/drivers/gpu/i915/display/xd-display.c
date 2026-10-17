@@ -375,7 +375,7 @@ i915_xd_map_device(
 	void *mapping;
 	int status;
 
-	(void)context;
+	UNUSED_PARAMETER(context);
 
 	/* Asks the HAL for a read-only kernel mapping. */
 	mapping = NULL;
@@ -582,6 +582,7 @@ drv_i915_xd_takeover(
 		if (ctx.ddi != 0U)
 			ctx.ddi--;
 
+		/* Stops the pipe and logs how it went. */
 		error = drv_i915_xd_takeover_stop(&xd->io, xd->choice.platform, &xd->dmc, &xd->firmware, pipe, &hooks, &report);
 		kern_logf("i915: takeover: pipe %c stopped: DDI %d mode %u, PLL %d, late 0x%x (rc %d)\n",
 		    'A' + (int)pipe,
@@ -596,6 +597,7 @@ drv_i915_xd_takeover(
 			continue;
 		}
 
+		/* The pipe was stopped. */
 		outcome->stopped |= 1U << pipe;
 	}
 
@@ -626,6 +628,7 @@ i915_xd_panel_controller(
 	struct i915_xd_vbt_panel panel;
 	int found;
 	int error;
+	int usable;
 
 	/* The VBT's controller of the panel's output, when it is one the display has. */
 	if (xd->vbt_parsed) {
@@ -633,9 +636,13 @@ i915_xd_panel_controller(
 		error = EINVAL;
 		if (child != NULL)
 			error = drv_i915_xd_vbt_panel(&xd->vbt, child, NULL, 0U, &panel);
-		if (error == 0 && panel.backlight_controller < I915_XD_PANEL_SEQUENCERS &&
-		    drv_i915_xd_pps_usable(&xd->io, panel.backlight_controller, I915_XD_PANEL_SEQUENCERS, I915_XD_PANEL_SEQUENCER_MUXED))
-			return panel.backlight_controller;
+
+		/* The VBT's controller, when it names one of the sequencers and it is usable. */
+		if (error == 0 && panel.backlight_controller < I915_XD_PANEL_SEQUENCERS) {
+			usable = drv_i915_xd_pps_usable(&xd->io, panel.backlight_controller, I915_XD_PANEL_SEQUENCERS, I915_XD_PANEL_SEQUENCER_MUXED);
+			if (usable)
+				return panel.backlight_controller;
+		}
 	}
 
 	/* The sequencer that has the panel powered. */
@@ -663,7 +670,7 @@ i915_xd_takeover_backlight_off(
 	struct i915_xd_takeover_ctx *ctx;
 	struct i915_xd_backlight backlight;
 
-	(void)pipe;
+	UNUSED_PARAMETER(pipe);
 
 	/* The sequencer's enable, and the time the panel takes to go dark. */
 	ctx = context;

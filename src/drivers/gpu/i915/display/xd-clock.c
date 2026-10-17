@@ -248,6 +248,8 @@ drv_i915_xd_cdclk_read(
 			divider_x2 = 2U;
 			break;
 		}
+
+		/* The CD clock the divider gives from the VCO. */
 		state->cdclk_khz = i915_xd_clock_div_round(state->vco_khz, divider_x2);
 	}
 
@@ -934,6 +936,7 @@ drv_i915_xd_dpll_hdmi_words(
 		if (dco_khz < I915_XD_DPLL_DCO_MIN_KHZ || dco_khz > I915_XD_DPLL_DCO_MAX_KHZ)
 			continue;
 
+		/* Keeps the divider whose DCO is nearest the middle. */
 		distance = dco_khz >= middle ? dco_khz - middle : middle - dco_khz;
 		if (distance < best_distance) {
 			best_distance = distance;
@@ -1194,9 +1197,11 @@ drv_i915_xd_dpll_read(
 	struct i915_xd_dpll_words *words)
 {
 	uint32_t div0;
+	uint32_t enable;
 
 	/* A PLL that is not enabled has no state. */
-	if ((drv_i915_xd_io_read(io, pll->enable) & I915_XD_PLL_ENABLE) == 0U)
+	enable = drv_i915_xd_io_read(io, pll->enable);
+	if ((enable & I915_XD_PLL_ENABLE) == 0U)
 		return 0;
 
 	/* The configuration words, when the PLL has them. */
@@ -1284,8 +1289,12 @@ drv_i915_xd_dpll_mapped(
 	value = drv_i915_xd_io_read(io, word);
 	*select = (value >> shift) & I915_XD_DPCLKA_SEL_BITS;
 
-	/* Succeeded: whether the clock runs. */
-	return (value & off) == 0U ? 1 : 0;
+	/* A clock whose off bit is set does not run. */
+	if ((value & off) != 0U)
+		return 0;
+
+	/* Succeeded: the clock runs. */
+	return 1;
 }
 
 /*
@@ -1556,6 +1565,8 @@ drv_i915_xd_tc_pll_read(
 		div0_fields |= I915_XD_DKL_PLL_DIV0_AFC_STARTUP;
 		words->afc_set = 1;
 	}
+
+	/* Reads the PLL's divider words, keeping the fields the enable writes. */
 	words->div0 = drv_i915_xd_dkl_read(dkl, tc, I915_XD_DKL_PLL_DIV0) & div0_fields;
 	words->div1 = drv_i915_xd_dkl_read(dkl, tc, I915_XD_DKL_PLL_DIV1) & I915_XD_TC_PLL_DIV1_FIELDS;
 
@@ -1626,6 +1637,8 @@ drv_i915_xd_mg_pll_words(
 		prediv = I915_XD_MG_PLL_FBPREDIV_HIGH;
 		integer = dco_khz / (ref_khz * prediv);
 	}
+
+	/* Refuses a divider past what the PLL takes. */
 	if (integer > I915_XD_MG_PLL_INT_MAX)
 		return EINVAL;
 	feedback_khz = ref_khz * prediv;
@@ -1707,6 +1720,8 @@ drv_i915_xd_mg_pll_words(
 		words->bias_mask = 0U;
 		words->tdc_mask = I915_XD_MG_TDC_COLDSTART;
 	}
+
+	/* Keeps the bias and the cold start bits the reference clock uses. */
 	words->bias &= words->bias_mask;
 	words->tdc &= words->tdc_mask;
 
@@ -1869,6 +1884,8 @@ drv_i915_xd_mg_pll_read(
 		words->bias_mask = 0U;
 		words->tdc_mask = I915_XD_MG_TDC_COLDSTART;
 	}
+
+	/* Reads the bias and the cold start bits the reference clock uses. */
 	words->bias = drv_i915_xd_io_read(io, base + I915_XD_MG_PLL_BIAS) & words->bias_mask;
 	words->tdc = drv_i915_xd_io_read(io, base + I915_XD_MG_PLL_TDC_COLDST_BIAS) & words->tdc_mask;
 

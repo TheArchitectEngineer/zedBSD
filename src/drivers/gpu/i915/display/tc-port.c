@@ -556,6 +556,7 @@ tc_port_power_get(
 	struct i915_display *display;
 	int error;
 
+	/* The ports' state and their display. */
 	world = context;
 	display = world->display;
 
@@ -580,6 +581,7 @@ tc_port_power_put(
 	struct i915_tc_port_world *world;
 	struct i915_display *display;
 
+	/* The ports' state and their display. */
 	world = context;
 	display = world->display;
 
@@ -724,6 +726,7 @@ tc_port_declare(
 		if (error != 0)
 			continue;
 
+		/* Logs the port as declared. */
 		tc = drv_i915_xd_tc_ports_index(&world->ports, port->ddi);
 		kern_logf("i915: TC%d: declared (DDI %c, legacy %d, AUX channel %u)\n", tc + 1, (char)('A' + port->ddi), legacy, (unsigned)port->aux);
 	}

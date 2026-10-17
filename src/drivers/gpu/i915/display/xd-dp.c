@@ -427,6 +427,7 @@ drv_i915_xd_dp_rates(
 		if (source_limit != 0U && i915_xd_dp_source_table[index] > source_limit)
 			break;
 
+		/* Keeps the rate. */
 		rates->source[rates->source_count] = i915_xd_dp_source_table[index];
 		rates->source_count++;
 	}
@@ -443,6 +444,7 @@ drv_i915_xd_dp_rates(
 		if (i915_xd_dp_sink_table[index] > sink_limit)
 			break;
 
+		/* Keeps the rate. */
 		rates->sink[rates->sink_count] = i915_xd_dp_sink_table[index];
 		rates->sink_count++;
 	}
@@ -835,6 +837,7 @@ drv_i915_xd_dp_read_status(
 		if (moved < 0)
 			return -moved;
 
+		/* Succeeded: the transfer is done. */
 		return 0;
 	}
 
@@ -1997,6 +2000,7 @@ i915_xd_dp_follow(
 			preemph = (uint8_t)(request & I915_XD_DPCD_PREEMPH);
 		}
 
+		/* Limits the levels to what the link can drive. */
 		link->set[lane] = i915_xd_dp_limit(link, hop, swing, preemph);
 	}
 }
@@ -2205,6 +2209,8 @@ i915_xd_dp_recover_clock(
 			i915_xd_dp_note(link, I915_XD_DP_NOTE_DEBUG, "xd-dp: the same levels were asked for 5 times\n");
 			return 0;
 		}
+
+		/* Stops when the levels are at the top. */
 		if (topped) {
 			i915_xd_dp_note(link, I915_XD_DP_NOTE_DEBUG, "xd-dp: the levels are at the top\n");
 			return 0;
@@ -2225,6 +2231,8 @@ i915_xd_dp_recover_clock(
 		} else {
 			same++;
 		}
+
+		/* Keeps the status for the next comparison. */
 		for (lane = 0U; lane < I915_XD_DPCD_STATUS_SIZE; lane++)
 			before[lane] = status[lane];
 

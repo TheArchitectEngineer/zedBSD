@@ -408,6 +408,8 @@ drv_i915_xd_pipe_func_word(
 		bpc = I915_XD_DDI_FUNC_BPC_6;
 		break;
 	}
+
+	/* Puts the bits per colour into the word. */
 	word |= i915_xd_field_put(I915_XD_DDI_FUNC_BPC, bpc);
 
 	/* The sync polarities. */
@@ -458,6 +460,8 @@ drv_i915_xd_pipe_func_enable(
 		second = I915_XD_DDI_FUNC2_PORT_SYNC |
 			 i915_xd_field_put(I915_XD_DDI_FUNC2_PORT_SYNC_MASTER, func->sync_master + 1U);
 	}
+
+	/* Writes the second word. */
 	drv_i915_xd_io_write(io, I915_XD_TRANS_DDI_FUNC_CTL2(trans), second);
 
 	/* The function. */
@@ -507,6 +511,8 @@ drv_i915_xd_pipe_func_word_11(
 		input = I915_XD_DDI_FUNC_EDP_INPUT_A_ON;
 		break;
 	}
+
+	/* Puts the eDP input into the word. */
 	word |= i915_xd_field_put(I915_XD_DDI_FUNC_EDP_INPUT, input);
 
 	/* Succeeded: the word. */
@@ -538,6 +544,8 @@ drv_i915_xd_pipe_func_enable_11(
 		second = I915_XD_DDI_FUNC2_PORT_SYNC |
 			 i915_xd_field_put(I915_XD_DDI_FUNC2_PORT_SYNC_MASTER, func->sync_master + 1U);
 	}
+
+	/* Writes the second word. */
 	drv_i915_xd_io_write(io, I915_XD_TRANS_DDI_FUNC_CTL2(trans), second);
 
 	/* The function. */
@@ -800,6 +808,8 @@ drv_i915_xd_pipe_wait_scanline(
 		} else {
 			left -= sleep;
 		}
+
+		/* Doubles the sleep up to its longest. */
 		if (sleep < I915_XD_PIPE_POLL_MAX_US)
 			sleep <<= 1;
 	}

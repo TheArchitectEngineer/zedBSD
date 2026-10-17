@@ -620,6 +620,7 @@ drv_i915_xd_power_wells_of(
 		if ((platform->wells[well].powers & functions) == 0ULL)
 			continue;
 
+		/* Adds the well. */
 		wells |= 1ULL << well;
 	}
 
@@ -773,6 +774,7 @@ drv_i915_xd_power_put_later(
 			continue;
 		}
 
+		/* Owes the user to the run. */
 		power->owed[set][well]++;
 	}
 
@@ -1042,6 +1044,7 @@ drv_i915_xd_power_dc_enter(
 		if ((dc_state & I915_XD_DC_STATE_DC6) != 0U)
 			report->dc6_already = 1;
 
+		/* Writes DC6. */
 		error = i915_xd_power_dc_store(power, io, I915_XD_DC_STATE_DC6, report);
 		break;
 	case I915_XD_DC_STATE_DC5:
@@ -1073,10 +1076,12 @@ drv_i915_xd_power_dc_off_held(
 	struct i915_xd_io *io)
 {
 	uint32_t dc_state;
+	uint32_t held_mask;
 
 	/* Any DC state bit set lets the DMC power the display down. */
 	dc_state = drv_i915_xd_io_read(io, I915_XD_DC_STATE_EN);
-	if ((dc_state & i915_xd_power_dc_held_mask(power)) != 0U)
+	held_mask = i915_xd_power_dc_held_mask(power);
+	if ((dc_state & held_mask) != 0U)
 		return 0;
 
 	/* Succeeded: the display is held out of the DC states. */
@@ -1418,6 +1423,8 @@ i915_xd_power_dc_store(
 			break;
 		steady++;
 	}
+
+	/* Counts the rewrites the state needed. */
 	power->dc_rewrites += rewrites;
 
 	/* Reports a state that never read back. */

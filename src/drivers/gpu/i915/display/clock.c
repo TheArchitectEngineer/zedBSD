@@ -180,6 +180,8 @@ i915_cdclk_report(
 		cd->diag_sanitized = cd->diag_observed_before;
 		cd->diag_no_change = report->kept;
 	}
+
+	/* Logs a firmware state that was not one of the table's. */
 	if (report->replaced) {
 		kern_logf("i915: display: CD clock: the firmware's state is not one of the table's: replaced\n");
 		cd->diag_sanitized.cdclk = 0u;

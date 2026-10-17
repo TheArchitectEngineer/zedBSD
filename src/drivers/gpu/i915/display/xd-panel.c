@@ -781,6 +781,8 @@ drv_i915_xd_pps_backlight(
 	} else {
 		control &= ~I915_XD_PP_CONTROL_BACKLIGHT;
 	}
+
+	/* Writes the control. */
 	drv_i915_xd_io_write(io, I915_XD_PP_CONTROL(pps), control);
 	drv_i915_xd_io_posting_read(io, I915_XD_PP_CONTROL(pps));
 }

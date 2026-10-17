@@ -279,6 +279,7 @@ drv_i915_xd_output_backlight_setup(
 	uint32_t duty;
 	int usable;
 
+	/* The panel's backlight. */
 	backlight = &out->backlight;
 
 	/* A panel the VBT gives no backlight has none to set up. */
@@ -436,7 +437,9 @@ drv_i915_xd_output_pll(
 	unsigned late;
 	int own;
 	int error;
+	int mg;
 
+	/* The pipe's bit among the PLL's users. */
 	pipe_bit = (uint8_t)(1U << out->pipe);
 
 	/* The Thunderbolt PLL the Type-C ports share is the caller's. */
@@ -481,16 +484,20 @@ drv_i915_xd_output_pll(
 		return ENODEV;
 	}
 
-	/* Turns it on with the plan's words: a combo PLL's own, or a Type-C PLL's in its PHY. */
-	if (out->tc && i915_xd_output_mg(out, env)) {
+	/* Turns it on with the plan's words: a combo PLL's own, or a Type-C PLL's in its PHY (an MG PHY's on display 11). */
+	mg = 0;
+	if (out->tc)
+		mg = i915_xd_output_mg(out, env);
+	if (mg) {
 		late = drv_i915_xd_mg_pll_enable(env->io, pll, &out->mg_pll_words);
 	} else if (out->tc) {
 		late = drv_i915_xd_tc_pll_enable(env->io, env->dkl, pll, &out->tc_pll_words);
 	} else {
 		late = drv_i915_xd_dpll_enable(env->io, env->platform, pll, &out->pll_words);
 	}
-	out->pll_on = 1;
 
+	/* The PLL is the output's from here on; the PLL lock goes. */
+	out->pll_on = 1;
 	i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_PLL, 0);
 
 	/* Reports the waits that ran out. */
@@ -671,6 +678,8 @@ drv_i915_xd_output_pipe(
 		setup.dp = 1;
 		setup.m_n = out->m_n;
 	}
+
+	/* The pixel multiplier and the frame start delay of the timing. */
 	setup.pixel_multiplier = out->pixel_multiplier;
 	setup.frame_start_delay = out->frame_start_delay;
 	drv_i915_xd_pipe_configure(env->io, env->platform, &setup);
@@ -828,6 +837,7 @@ drv_i915_xd_output_port_off(
 	int error;
 	int dp;
 
+	/* No error yet; the output is DisplayPort unless it is HDMI. */
 	error = 0;
 	dp = out->kind != I915_XD_SCREEN_HDMI;
 
@@ -841,6 +851,8 @@ drv_i915_xd_output_port_off(
 		i915_xd_output_error(env, "xd-output: the transcoder did not stop\n");
 		error = EIO;
 	}
+
+	/* Turns the transcoder's DDI function off. */
 	(void)drv_i915_xd_pipe_func_disable(env->io, out->trans, 0);
 
 	/* The scalers and the packets. */
@@ -907,6 +919,7 @@ drv_i915_xd_output_pll_off(
 	int own;
 	int error;
 
+	/* The pipe's bit among the PLL's users. */
 	pipe_bit = (uint8_t)(1U << out->pipe);
 
 	/* The Thunderbolt PLL the Type-C ports share is the caller's. */
@@ -1055,6 +1068,7 @@ drv_i915_xd_output_backlight_on(
 	struct i915_xd_output_backlight *backlight;
 	uint32_t duty;
 
+	/* The panel's backlight. */
 	backlight = &out->backlight;
 
 	/* The PWM, when the panel has a backlight. */
@@ -1096,6 +1110,7 @@ drv_i915_xd_output_backlight_off(
 	struct i915_xd_output_backlight *backlight;
 	uint32_t duty;
 
+	/* The panel's backlight. */
 	backlight = &out->backlight;
 
 	/* The sequencer's backlight enable. */
@@ -1134,6 +1149,7 @@ drv_i915_xd_output_brightness(
 	struct i915_xd_output_backlight *backlight;
 	uint32_t level;
 
+	/* The panel's backlight. */
 	backlight = &out->backlight;
 
 	/* A panel without a backlight has no brightness. */
@@ -1175,6 +1191,7 @@ drv_i915_xd_output_brightness_acpi(
 	struct i915_xd_output_backlight *backlight;
 	uint32_t level;
 
+	/* The panel's backlight. */
 	backlight = &out->backlight;
 
 	/* A panel without a backlight has no brightness. */
@@ -1216,6 +1233,7 @@ drv_i915_xd_output_user_level(
 	const struct i915_xd_output_backlight *backlight;
 	uint32_t level;
 
+	/* The panel's backlight. */
 	backlight = &out->backlight;
 
 	/* An empty range has no levels to scale from. */
@@ -1384,6 +1402,7 @@ i915_xd_output_dbuf_before(
 	const struct i915_xd_output_dbuf *dbuf;
 	uint32_t credits;
 
+	/* The output's display buffer. */
 	dbuf = &out->dbuf;
 
 	/* The bus and both layouts' slices. */
@@ -1413,6 +1432,7 @@ i915_xd_output_dbuf_after(
 {
 	const struct i915_xd_output_dbuf *dbuf;
 
+	/* The output's display buffer. */
 	dbuf = &out->dbuf;
 
 	/* Nothing changed. */
@@ -1431,6 +1451,7 @@ i915_xd_output_give_crtc(
 {
 	unsigned uses;
 
+	/* Takes the uses whose give-back is deferred. */
 	uses = out->put_later;
 	out->put_later = 0U;
 
@@ -1487,6 +1508,7 @@ i915_xd_output_clock_on(
 	struct i915_xd_pll_desc source;
 	uint32_t select;
 
+	/* Selects the port's clock under the PLL lock. */
 	i915_xd_output_lock(env, I915_XD_OUTPUT_LOCK_PLL, 1);
 
 	/* A Type-C port's select (its own PLL in DisplayPort alternate or legacy mode, the Thunderbolt PLL otherwise) and gate. */
@@ -1593,6 +1615,8 @@ i915_xd_output_hdmi_levels(
 		i915_xd_output_error(env, "xd-output: an HDMI level past the swing table\n");
 		row = levels.table->count - 1U;
 	}
+
+	/* Every lane takes the row. */
 	for (lane = 0U; lane < 4U; lane++)
 		levels.level[lane] = (uint8_t)row;
 
@@ -1666,6 +1690,7 @@ i915_xd_output_dp_link(
 	unsigned rows;
 	int mg;
 
+	/* The output, and the link cleared. */
 	out = run->out;
 	kern_memset(link, 0, sizeof(*link));
 
@@ -1691,6 +1716,8 @@ i915_xd_output_dp_link(
 		table = i915_xd_output_swing_table(out, run->env);
 		rows = table->count;
 	}
+
+	/* The highest swing and pre-emphasis the table offers. */
 	link->swing_max = drv_i915_xd_dp_swing_max(rows);
 	link->preemph_max = 3U;
 	link->per_lane = 1;
@@ -1767,6 +1794,7 @@ i915_xd_output_sink_power(
 		if (written == 1)
 			break;
 
+		/* Waits for the sink to wake. */
 		(void)drv_i915_xd_io_delay(env->io, I915_XD_OUTPUT_WAKE_US);
 	}
 
@@ -1824,6 +1852,7 @@ i915_xd_output_levels(
 	unsigned row;
 	int error;
 
+	/* The run, its output, and the levels the sink asked for. */
 	run = context;
 	out = run->out;
 	kern_memcpy(out->set, set, sizeof(out->set));
@@ -1870,6 +1899,7 @@ i915_xd_output_pattern(
 	struct i915_xd_output_run *run;
 	unsigned select;
 
+	/* The run the hook belongs to. */
 	run = context;
 
 	/* The transport's field of the DPCD's pattern (an unknown one is pattern 1). */
@@ -1913,6 +1943,7 @@ i915_xd_output_prepare(
 	unsigned late;
 	int owned;
 
+	/* The run the hook belongs to. */
 	run = context;
 
 	/* The PHY's reset, on a Type-C port in DisplayPort alternate or legacy mode of a platform that needs it. */
@@ -1943,6 +1974,7 @@ i915_xd_output_phy_wa(
 {
 	struct i915_xd_output_run *run;
 
+	/* The run the hook belongs to. */
 	run = context;
 
 	/* Both lanes of the port's PHY. */
@@ -2002,6 +2034,8 @@ i915_xd_output_tc_dp_mode(
 	} else {
 		error = drv_i915_xd_tc_dp_mode(env->dkl, out->tc_port, pin, out->lanes);
 	}
+
+	/* Reports a pin assignment the PHY has no mode for. */
 	if (error != 0)
 		i915_xd_output_error(env, "xd-output: a pin assignment the Type-C PHY has no mode for\n");
 }
@@ -2048,6 +2082,8 @@ i915_xd_output_tc_levels(
 			i915_xd_output_error(run->env, "xd-output: the platform has no Type-C swing table\n");
 			return;
 		}
+
+		/* Writes the MG PHY's levels. */
 		drv_i915_xd_tc_mg_signal_levels(run->env->io, run->out->tc_port, mg_table, rows, run->out->rate_khz);
 		return;
 	}
@@ -2111,6 +2147,7 @@ i915_xd_output_idle(
 	struct i915_xd_output_run *run;
 	unsigned late;
 
+	/* The run the hook belongs to. */
 	run = context;
 
 	/* The idle pattern. */
@@ -2127,8 +2164,9 @@ i915_xd_output_sleep(
 {
 	struct i915_xd_output_run *run;
 
-	(void)max_us;
+	UNUSED_PARAMETER(max_us);
 
+	/* The run the hook belongs to. */
 	run = context;
 
 	/* The shortest wait the step allows. */
@@ -2144,6 +2182,7 @@ i915_xd_output_note(
 {
 	struct i915_xd_output_run *run;
 
+	/* The run the hook belongs to. */
 	run = context;
 
 	/* An error counts against the run; a debug note is only told. */
@@ -2228,6 +2267,8 @@ i915_xd_output_scale(
 		i915_xd_output_error(env, "xd-output: an empty range to scale from\n");
 		return EINVAL;
 	}
+
+	/* Refuses an inverted range to scale to. */
 	if (to_min > to_max) {
 		i915_xd_output_error(env, "xd-output: an inverted range to scale to\n");
 		return EINVAL;

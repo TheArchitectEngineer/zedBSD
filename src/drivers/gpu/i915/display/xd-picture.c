@@ -753,6 +753,7 @@ drv_i915_xd_picture_status(
 	if (pic == NULL)
 		return;
 
+	/* The screen's output. */
 	out = &pic->out;
 
 	/* How far the screen got. */
@@ -1425,6 +1426,7 @@ i915_xd_picture_dkl_read(
 	uint32_t window;
 	uint32_t value;
 
+	/* The screen and its backend. */
 	pic = context;
 	backend = pic->backend;
 
@@ -1459,6 +1461,7 @@ i915_xd_picture_dkl_write(
 	uint32_t index_value;
 	uint32_t window;
 
+	/* The screen and its backend. */
 	pic = context;
 	backend = pic->backend;
 
@@ -1490,6 +1493,7 @@ i915_xd_picture_dkl_rmw(
 	uint32_t window;
 	uint32_t value;
 
+	/* The screen and its backend. */
 	pic = context;
 	backend = pic->backend;
 
@@ -1617,6 +1621,7 @@ i915_xd_picture_reserve(
 	int free_index;
 	int shared;
 
+	/* The pipe's bit among the PLL's users. */
 	pipe_bit = (uint8_t)(1U << pic->config.pipe);
 
 	/* The words the configuration computed, the AFC startup only with the VBT's override. */
@@ -1688,6 +1693,7 @@ i915_xd_picture_reserve_tc(
 	int same;
 	int error;
 
+	/* The platform and the pipe's bit. */
 	platform = pic->pictures->platform;
 	pipe_bit = (uint8_t)(1U << pic->config.pipe);
 
@@ -1709,6 +1715,7 @@ i915_xd_picture_reserve_tc(
 		error = drv_i915_xd_tc_pll_words(pic->config.pll_ref_khz, pic->config.rate_khz, 0, afc, &tc_words);
 	}
 
+	/* Refuses a rate the Type-C PLL has no words for. */
 	if (error != 0) {
 		i915_xd_picture_error(pic, "xd-picture: the Type-C port's PLL has no words for the link rate\n");
 		return EINVAL;
@@ -1803,6 +1810,7 @@ i915_xd_picture_describe(
 	const struct i915_xd_port_desc *port;
 	struct i915_xd_output *out;
 
+	/* The screen's configuration and output. */
 	config = &pic->config;
 	out = &pic->out;
 
@@ -1970,6 +1978,7 @@ i915_xd_picture_plan(
 	struct i915_xd_plan_input input;
 	unsigned index;
 
+	/* The screen's configuration. */
 	config = &pic->config;
 
 	/* The output, its mode, and the pipes lit beside it. */
@@ -2031,6 +2040,7 @@ i915_xd_picture_dbuf_on(
 	struct i915_xd_picture_dbuf *after;
 	unsigned pipe;
 
+	/* The screen's pipe and its new layout. */
 	pipe = pic->config.pipe;
 	after = &pic->new_dbuf;
 
@@ -2063,6 +2073,7 @@ i915_xd_picture_dbuf_off(
 	unsigned pipe;
 	uint8_t joined;
 
+	/* The platform and the screen's pipe. */
 	platform = pictures->platform;
 	pipe = pic->config.pipe;
 
@@ -2261,6 +2272,7 @@ i915_xd_picture_flip_arm(
 	int lit;
 	int error;
 
+	/* The screen's backend. */
 	backend = pic->backend;
 
 	/* Nothing written yet: the flip is refused until it is not. */
@@ -2681,6 +2693,7 @@ i915_xd_picture_step_setup(
 	struct i915_xd_picture *pic;
 	int error;
 
+	/* The commit and its screen. */
 	commit = context;
 	pic = commit->pic;
 
@@ -2843,6 +2856,7 @@ i915_xd_picture_step_check(
 	struct i915_xd_picture *pic;
 	int result;
 
+	/* The commit and its screen. */
 	commit = context;
 	pic = commit->pic;
 
@@ -3081,6 +3095,7 @@ i915_xd_picture_step_confirm(
 	const struct i915_xd_output *out;
 	uint8_t pipe_bit;
 
+	/* The commit, its screen and the output. */
 	commit = context;
 	pic = commit->pic;
 	out = &pic->out;
@@ -3099,6 +3114,8 @@ i915_xd_picture_step_confirm(
 	} else if ((out->held & (1U << I915_XD_OUTPUT_POWER_AUX)) != 0U) {
 		commit->crtc_result = I915_XD_PICTURE_STILL_OWNED;
 	}
+
+	/* Records the pipe as disabled. */
 	i915_xd_picture_observe(pic, I915_XD_OBSERVE_PIPE_DISABLED);
 
 	/* A stop not confirmed: the pipe's result first, then the plane's. */
@@ -3107,6 +3124,7 @@ i915_xd_picture_step_confirm(
 		if (commit->crtc_result != I915_XD_PICTURE_OK)
 			return commit->crtc_result;
 
+		/* Reports the plane's result when the pipe's was good. */
 		return commit->plane_result;
 	}
 
@@ -3241,6 +3259,7 @@ i915_xd_picture_power_domain(
 	int thunderbolt;
 	int domain;
 
+	/* The screen's backend. */
 	backend = pic->backend;
 
 	/* A Type-C port's AUX channel in Thunderbolt mode. */
@@ -3373,6 +3392,7 @@ i915_xd_picture_vblank_off(
 	const struct i915_xd_backend *backend;
 	struct i915_xd_picture *pic;
 
+	/* The screen and its backend. */
 	pic = context;
 	backend = pic->backend;
 
@@ -3431,6 +3451,7 @@ i915_xd_picture_converter(
 	const struct i915_xd_sink_hooks *sink;
 	struct i915_xd_picture *pic;
 
+	/* The screen and its sink's hooks. */
 	pic = context;
 	sink = pic->sink;
 
@@ -3458,6 +3479,7 @@ i915_xd_picture_output_observe(
 {
 	struct i915_xd_picture *pic;
 
+	/* The screen the hook belongs to. */
 	pic = context;
 
 	/* The pipe's underrun report armed. */
@@ -3629,6 +3651,7 @@ i915_xd_picture_tc_get_link(
 	const struct i915_xd_backend *backend;
 	struct i915_xd_picture *pic;
 
+	/* The screen and its backend. */
 	pic = context;
 	backend = pic->backend;
 
@@ -3650,6 +3673,7 @@ i915_xd_picture_tc_put_link(
 	const struct i915_xd_backend *backend;
 	struct i915_xd_picture *pic;
 
+	/* The screen and its backend. */
 	pic = context;
 	backend = pic->backend;
 
@@ -3672,6 +3696,7 @@ i915_xd_picture_tc_mode(
 	struct i915_xd_picture *pic;
 	int mode;
 
+	/* The screen and its backend. */
 	pic = context;
 	backend = pic->backend;
 
@@ -3709,6 +3734,7 @@ i915_xd_picture_tc_lanes(
 	unsigned mode;
 	int reversed;
 
+	/* The screen and its backend. */
 	pic = context;
 	backend = pic->backend;
 
@@ -3743,6 +3769,7 @@ i915_xd_picture_tc_pin(
 	struct i915_xd_picture *pic;
 	unsigned pin;
 
+	/* The screen and its backend. */
 	pic = context;
 	backend = pic->backend;
 
@@ -3776,6 +3803,7 @@ i915_xd_picture_tc_tbt_pll(
 	uint8_t pipe_bit;
 	unsigned late;
 
+	/* The screen, the Thunderbolt PLL and the pipe's bit. */
 	pic = context;
 	pll = &pic->pictures->pll[I915_XD_PICTURE_PLL_TBT];
 	pipe_bit = (uint8_t)(1U << pic->config.pipe);
@@ -3790,6 +3818,8 @@ i915_xd_picture_tc_tbt_pll(
 			late = drv_i915_xd_dpll_enable(&pic->window, pic->pictures->platform, desc, &pic->tbt_words);
 			pll->on = 1;
 		}
+
+		/* The pipe uses the PLL. */
 		pll->pipes |= pipe_bit;
 	} else {
 		pll->pipes &= (uint8_t)~pipe_bit;

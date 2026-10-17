@@ -167,6 +167,7 @@ drv_i915_xd_firmware_read(
 			continue;
 		}
 
+		/* Reads the pipe. */
 		i915_xd_fw_read_pipe(io, pipe, firmware);
 	}
 
@@ -214,6 +215,8 @@ drv_i915_xd_firmware_decide(
 		if (firmware->pipe[pipe].state == I915_XD_FW_PIPE_GARBLED)
 			firmware->walls |= I915_XD_FW_WALL_GARBLED;
 	}
+
+	/* Any lit pipe is recorded as a wall. */
 	if (firmware->lit_pipes != 0U)
 		firmware->walls |= I915_XD_FW_WALL_LIT;
 
@@ -226,6 +229,7 @@ drv_i915_xd_firmware_decide(
 		if ((firmware->lit_pipes & (1U << pipe)) == 0U)
 			continue;
 
+		/* A lit plane whose pages reach the driver's is an overlap. */
 		last_page = firmware->pipe[pipe].plane_surface >> I915_XD_FW_PAGE_SHIFT;
 		if (last_page + 1U > firmware->driver_first_page)
 			firmware->walls |= I915_XD_FW_WALL_OVERLAP;
@@ -573,6 +577,7 @@ drv_i915_xd_firmware_sanitize(
 	int unknown;
 	int lit;
 	int on;
+	int has_dmc;
 
 	/* Nothing changed yet. */
 	kern_memset(report, 0, sizeof(*report));
@@ -583,14 +588,20 @@ drv_i915_xd_firmware_sanitize(
 	used_plls = 0U;
 	unknown = 0;
 	for (pipe = 0U; pipe < I915_XD_FW_PIPES; pipe++) {
+		/* A pipe that is not lit is passed over. */
 		if ((firmware->lit_pipes & (1U << pipe)) == 0U)
 			continue;
 
-		if (dmc != NULL && drv_i915_xd_dmc_has(dmc, I915_XD_DMC_PIPE(pipe))) {
+		/* The pipe's DMC program runs again when the DMC has one. */
+		has_dmc = 0;
+		if (dmc != NULL)
+			has_dmc = drv_i915_xd_dmc_has(dmc, I915_XD_DMC_PIPE(pipe));
+		if (has_dmc) {
 			drv_i915_xd_dmc_pipe(dmc, io, pipe, 1);
 			report->dmc_pipes |= 1U << pipe;
 		}
 
+		/* The DDI the pipe's transcoder drives. */
 		function = drv_i915_xd_io_read(io, I915_XD_TRANS_DDI_FUNC_CTL(pipe));
 		select = (function & I915_XD_DDI_FUNC_SELECT) >> I915_XD_FW_DDI_SELECT_SHIFT;
 		if (select == 0U)
@@ -601,11 +612,15 @@ drv_i915_xd_firmware_sanitize(
 			unknown = 1;
 			continue;
 		}
+
+		/* The PLL the port runs on; an unknown one keeps every PLL. */
 		pll = i915_xd_fw_pll_of(io, platform, port);
 		if (pll == NULL) {
 			unknown = 1;
 			continue;
 		}
+
+		/* Marks the PLL as used. */
 		used_plls |= 1U << (unsigned)(pll - platform->plls);
 	}
 
@@ -629,9 +644,12 @@ drv_i915_xd_firmware_sanitize(
 			control = drv_i915_xd_io_read(io, I915_XD_DPCLKA_CFGCR0);
 			on = (control & I915_XD_DPCLKA_TC_OFF((unsigned)port->tc - 1U)) == 0U;
 		}
+
+		/* A port whose clock is off is passed over. */
 		if (!on)
 			continue;
 
+		/* Gates the clock of a port no lit pipe uses. */
 		i915_xd_fw_clock_off(io, platform, port);
 		report->clocks_gated |= 1U << port->ddi;
 	}
@@ -641,6 +659,8 @@ drv_i915_xd_firmware_sanitize(
 		report->plls_kept = 1;
 		return;
 	}
+
+	/* Turns off each PLL that is on and that no lit pipe uses. */
 	for (index = 0U; index < platform->nplls; index++) {
 		if ((used_plls & (1U << index)) != 0U)
 			continue;
@@ -651,6 +671,7 @@ drv_i915_xd_firmware_sanitize(
 		if (!lit)
 			continue;
 
+		/* Turns the PLL off. */
 		(void)drv_i915_xd_dpll_disable(io, pll);
 		report->plls_off |= 1U << index;
 	}
@@ -714,6 +735,7 @@ i915_xd_fw_pipe_powered(
 		if ((wells & (1ULL << well)) == 0ULL)
 			continue;
 
+		/* A well that is not powered fails the check. */
 		powered = drv_i915_xd_power_well_powered(io, platform, well);
 		if (!powered)
 			return 0;
@@ -774,6 +796,7 @@ i915_xd_fw_read_pipe_a_domain(
 		if (platform->plls[index].kind != I915_XD_PLL_COMBO)
 			continue;
 
+		/* Keeps the PLL's enable word. */
 		firmware->pll_enable[found] = drv_i915_xd_io_read(io, platform->plls[index].enable);
 		found++;
 	}
@@ -951,6 +974,7 @@ i915_xd_fw_planes_off(
 		if (now != frame)
 			return 0U;
 
+		/* Waits a millisecond before reading again. */
 		(void)drv_i915_xd_io_delay(io, 1000U);
 	}
 
@@ -976,6 +1000,7 @@ i915_xd_fw_pll_of(
 		if (!ungated)
 			return NULL;
 
+		/* Succeeded: the PLL the clock select names. */
 		return drv_i915_xd_dpll_desc(platform, select);
 	}
 
@@ -996,6 +1021,7 @@ i915_xd_fw_pll_of(
 		if (kind == I915_XD_PLL_TC && platform->plls[index].tc != port->tc)
 			continue;
 
+		/* Succeeded: the port's PLL. */
 		return &platform->plls[index];
 	}
 
@@ -1025,6 +1051,7 @@ i915_xd_fw_pll_shared(
 		if ((firmware->lit_pipes & (1U << index)) == 0U)
 			continue;
 
+		/* The DDI the pipe's transcoder drives. */
 		function = drv_i915_xd_io_read(io, I915_XD_TRANS_DDI_FUNC_CTL(index));
 		select = (function & I915_XD_DDI_FUNC_SELECT) >> I915_XD_FW_DDI_SELECT_SHIFT;
 		if (select == 0U)

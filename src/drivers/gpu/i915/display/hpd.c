@@ -271,6 +271,7 @@ drv_i915_hpd_start(
 	if (error != 0)
 		return ENOMEM;
 
+	/* The timer queue of the delayed works. */
 	error = drv_i915_timer_queue_create(&world->tq, &world->wq, "i915-hotplug-timer");
 	if (error != 0) {
 		drv_i915_workqueue_destroy(&world->wq);
@@ -300,6 +301,7 @@ drv_i915_hpd_start(
 		}
 	}
 
+	/* Logs the start. */
 	kern_logf("i915: hpd start: connectors=%u hdmi=%s storm limit=%d\n", world->xh.count, hdmi, I915_XD_HPD_STORM_LIMIT);
 
 	/* Succeeded: the hotplug runs. */
@@ -343,6 +345,7 @@ drv_i915_hpd_pch_irq(
 
 	spin_unlock_irqrestore(&world->lock, irq);
 
+	/* Hands the pulses to the hotplug. */
 	i915_hpd_irq(world, pins, longs);
 
 	/* The entry has left. */
@@ -387,6 +390,7 @@ drv_i915_hpd_de_irq(
 
 	spin_unlock_irqrestore(&world->lock, irq);
 
+	/* Logs the pins and hands them to the hotplug. */
 	kern_logf("i915: hpd north iir=0x%08x pins=0x%08x long=0x%08x\n", de_hpd_iir, pins, longs);
 	i915_hpd_irq(world, pins, longs);
 
@@ -423,6 +427,7 @@ drv_i915_hpd_stop(
 		if (inflight == 0U)
 			break;
 
+		/* Waits a moment before looking again. */
 		__asm__ volatile("pause");
 	}
 
@@ -490,6 +495,7 @@ drv_i915_hpd_suspend(
 		if (inflight == 0U)
 			break;
 
+		/* Waits a moment before looking again. */
 		__asm__ volatile("pause");
 	}
 
@@ -721,6 +727,7 @@ drv_i915_hpd_output(
 		output->kind = I915_HPD_OUTPUT_DP;
 	}
 
+	/* The output's port and name. */
 	output->port = (int)connector->ddi;
 	output->name = connector->name;
 
@@ -799,6 +806,7 @@ drv_i915_hpd_edid_bytes(
 	if (world == NULL || idx >= world->xh.count)
 		return NULL;
 
+	/* The connector; one without an EDID has none to give. */
 	connector = &world->xh.connector[idx];
 	if (connector->edid_size == 0U)
 		return NULL;
@@ -905,6 +913,7 @@ i915_hpd_pulse_work(
 	world = context;
 	world->pulse_works++;
 
+	/* Takes the pulses the interrupt left, under the lock. */
 	irq = spin_lock_irqsave(&world->lock);
 
 	long_ports = world->xh.long_ports;
@@ -947,6 +956,7 @@ i915_hpd_pulse_work(
 
 	spin_unlock_irqrestore(&world->lock, irq);
 
+	/* Runs the detection now. */
 	(void)drv_i915_delayed_queue(&world->tq, &world->detect_work, 0U);
 }
 
@@ -970,6 +980,7 @@ i915_hpd_detect_work(
 	uint32_t bit;
 	int masked;
 
+	/* The hotplug state the work belongs to. */
 	world = context;
 
 	/* Takes the events and the retries, and masks the storming pins. */
@@ -1000,6 +1011,7 @@ i915_hpd_detect_work(
 		if (connector->pin == I915_XD_HPD_PIN_NONE)
 			continue;
 
+		/* A connector whose pin has neither events nor retries is passed over. */
 		bit = 1U << connector->pin;
 		if (((events | retries) & bit) == 0U)
 			continue;
@@ -1022,6 +1034,7 @@ i915_hpd_detect_work(
 
 	spin_unlock_irqrestore(&world->lock, irq);
 
+	/* Comes back for the retries after a while. */
 	i915_hpd_requeue(world, &world->detect_work, I915_XD_HPD_RETRY_MS);
 }
 
@@ -1037,12 +1050,14 @@ i915_hpd_rearm_work(
 	world = context;
 	world->rearms++;
 
+	/* Arms the masked pins again, under the lock. */
 	irq = spin_lock_irqsave(&world->lock);
 
 	drv_i915_xd_hpd_rearm(&world->xh, &world->display->xd.io);
 
 	spin_unlock_irqrestore(&world->lock, irq);
 
+	/* Logs the rearm. */
 	kern_logf("i915: hpd: the pins a storm masked are armed again\n");
 }
 
@@ -1059,6 +1074,7 @@ i915_hpd_tc_reset_work(
 	struct i915_hpd_world *world;
 	int needs;
 
+	/* The reset and its hotplug state. */
 	reset = context;
 	world = reset->world;
 
@@ -1126,6 +1142,7 @@ i915_hpd_detect_one(
 		topology = 1;
 	}
 
+	/* Publishes a change of the topology. */
 	if (topology)
 		i915_hpd_topology_update(world, index, 1);
 
@@ -1172,14 +1189,17 @@ i915_hpd_topology_update(
 	if (connector->status == I915_XD_HPD_CONNECTED)
 		connected = 1;
 
+	/* Picks the mode from the EDID of a connected sink. */
 	error = EINVAL;
 	if (connected && connector->edid_size != 0U)
 		error = drv_i915_output_pick_mode(0U, 0U, 0U, connector->edid, connector->edid_size, &mode, &source);
 
+	/* The mode's pixels, when one was picked. */
 	pixels = 0U;
 	if (error == 0)
 		pixels = (uint64_t)mode.htotal * mode.vtotal;
 
+	/* Records the size of a sink that has a mode. */
 	if (pixels != 0U) {
 		taken.width = mode.hdisplay;
 		taken.height = mode.vdisplay;
@@ -1283,6 +1303,7 @@ i915_hpd_tc_live(
 	int connected;
 	int tc;
 
+	/* The hotplug state the hook belongs to. */
 	world = ctx;
 
 	/* Without the display's Type-C ports, or for a port they do not have, nothing is connected. */
@@ -1317,6 +1338,7 @@ i915_hpd_dp_probe(
 	struct i915_hpd_world *world;
 	enum i915_xd_dp_probe_status probed;
 
+	/* The hotplug state the hook belongs to. */
 	world = ctx;
 
 	/* Probes the sink. */
@@ -1342,6 +1364,7 @@ i915_hpd_dp_pulse(
 	struct i915_hpd_world *world;
 	int handled;
 
+	/* The hotplug state the hook belongs to. */
 	world = ctx;
 
 	/* Checks the sink. */
@@ -1361,6 +1384,7 @@ i915_hpd_dp_reset(
 {
 	struct i915_hpd_world *world;
 
+	/* The hotplug state the hook belongs to. */
 	world = ctx;
 
 	/* The sink's limits, before the detection looks. */
@@ -1384,6 +1408,7 @@ i915_hpd_link(
 	int needs;
 	int tc;
 
+	/* The hotplug state, and the port's Type-C number. */
 	world = ctx;
 	tc = drv_i915_tc_port_of(world->display, (int)ddi);
 

@@ -117,6 +117,7 @@ drv_i915_mmio_record_write(
 		if (kind != I915_MMIO_RECORD_IGNORED && i915_mmio_record.owner == NULL)
 			i915_mmio_record.owner = mmio;
 
+		/* Keeps a write of the owner's display. */
 		if (i915_mmio_record.owner == mmio) {
 			if (kind == I915_MMIO_RECORD_KEPT) {
 				i915_mmio_record_append_locked(offset, value);
@@ -206,6 +207,7 @@ drv_i915_mmio_record_close(
 		if (entry->count == 0U)
 			continue;
 
+		/* Folds the entry into both sums. */
 		order ^= i915_mmio_record_mix(entry->offset, entry->value);
 		order *= 16777619U;
 		set += i915_mmio_record_mix(entry->offset, entry->value);
@@ -317,6 +319,8 @@ drv_i915_mmio_record_log(
 		} else {
 			written = kern_snprintf(line + length, sizeof(line) - length, " %05x[%u]+%08x", entry->offset, entry->count, entry->value);
 		}
+
+		/* Moves past what was written. */
 		if (written > 0)
 			length += (unsigned)written;
 		pairs++;

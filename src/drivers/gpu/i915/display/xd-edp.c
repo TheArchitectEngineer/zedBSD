@@ -181,6 +181,7 @@ drv_i915_xd_edp_start(
 		return ENXIO;
 	}
 
+	/* The sequencer is chosen. */
 	edp->stage = I915_XD_EDP_STAGE_PPS;
 
 	/* The receiver capabilities: without them there is no link. */
@@ -191,6 +192,7 @@ drv_i915_xd_edp_start(
 		return error;
 	}
 
+	/* The capabilities are read. */
 	edp->stage = I915_XD_EDP_STAGE_CAPS;
 
 	/* The eDP display control capabilities, which a sink may not have. */
@@ -238,6 +240,7 @@ drv_i915_xd_edp_late(
 	if (!edp->live)
 		return;
 
+	/* Chooses under the sequencer's lock. */
 	cookie = i915_xd_edp_lock(edp);
 
 	/* The VBT's sequencer, when there is a choice and it names one. */
@@ -320,6 +323,7 @@ drv_i915_xd_edp_panel(
 
 		i915_xd_edp_unlock(edp, cookie);
 
+		/* Notes a second request. */
 		if (!first)
 			i915_xd_edp_note(edp, "xd-edp: VDD was already asked for\n");
 		break;
@@ -945,6 +949,7 @@ i915_xd_edp_caps(
 	if (extended[I915_XD_DPCD_REV] < caps[I915_XD_DPCD_REV])
 		return 0;
 
+	/* Takes the extended capabilities in place of the first ones. */
 	kern_memcpy(caps, extended, I915_XD_DPCD_CAPS_SIZE);
 
 	/* Succeeded: the extended capabilities are in their place. */
@@ -976,6 +981,7 @@ i915_xd_edp_edid_block(
 	unsigned first;
 	int error;
 
+	/* The panel's sink, and the bytes of the segment and the offset. */
 	edp = context;
 	segment_byte = (uint8_t)segment;
 	offset_byte = (uint8_t)offset;
@@ -1031,6 +1037,7 @@ i915_xd_edp_panel_on(
 	int ungate;
 	int error;
 
+	/* The steps run under the sequencer's lock. */
 	cookie = i915_xd_edp_lock(edp);
 
 	/* A panel already on. */
@@ -1070,6 +1077,7 @@ i915_xd_edp_panel_off(
 	int vdd_cookie;
 	int error;
 
+	/* The steps run under the sequencer's lock. */
 	cookie = i915_xd_edp_lock(edp);
 
 	/* The screen asked for VDD before; nobody wants it after. */

@@ -539,6 +539,8 @@ drv_i915_xd_wm_allocate(
 			break;
 		}
 	}
+
+	/* Refuses a plane whose level never fits. */
 	if (!fits)
 		return EINVAL;
 
@@ -551,6 +553,8 @@ drv_i915_xd_wm_allocate(
 		if (extra > size)
 			extra = size;
 	}
+
+	/* The level's blocks with the plane's share of what is left. */
 	blocks = wm->level[found].min_ddb + extra;
 	if (blocks != 0U) {
 		plane_ddb->start = range->start;
@@ -688,6 +692,7 @@ drv_i915_xd_dbuf_mbus(
 	uint32_t word;
 	unsigned ratio;
 	unsigned slice;
+	uint32_t service;
 
 	/* Display 12 has no joining. */
 	if (platform->display_ver < 13U)
@@ -704,9 +709,9 @@ drv_i915_xd_dbuf_mbus(
 	ratio = I915_XD_DBUF_MDCLK_RATIO;
 	if (joined)
 		ratio *= 2U;
+	service = i915_xd_field_put(I915_XD_DBUF_MIN_TRACKER_STATE_SERVICE, ratio - 1U);
 	for (slice = 0U; slice < platform->dbuf_slices && slice < 4U; slice++)
-		drv_i915_xd_io_rmw(io, controls[slice], I915_XD_DBUF_MIN_TRACKER_STATE_SERVICE,
-			i915_xd_field_put(I915_XD_DBUF_MIN_TRACKER_STATE_SERVICE, ratio - 1U));
+		drv_i915_xd_io_rmw(io, controls[slice], I915_XD_DBUF_MIN_TRACKER_STATE_SERVICE, service);
 }
 
 /*
@@ -795,6 +800,7 @@ drv_i915_xd_memory_read(
 	if (platform->display_ver == 11U)
 		memory->sagv_block_us = I915_XD_SAGV_BLOCK_US_11;
 
+	/* Display 12 and later read the latencies from the firmware's mailbox. */
 	if (platform->display_ver >= 12U) {
 		data0 = 0U;
 		data1 = 0U;
@@ -837,6 +843,7 @@ drv_i915_xd_memory_read(
 		if (memory->latency[level] != 0U)
 			continue;
 
+		/* A level with no latency disables it and every deeper one. */
 		for (deeper = level; deeper < memory->levels; deeper++)
 			memory->latency[deeper] = 0U;
 		on = level;
@@ -848,6 +855,7 @@ drv_i915_xd_memory_read(
 	if (platform->display_ver >= 12U)
 		read_latency = I915_XD_MEMORY_READ_LATENCY_12;
 
+	/* Adds the read latency to every enabled level when level 0 reads zero. */
 	if (memory->valid && memory->latency[0] == 0U) {
 		for (level = 0U; level < on; level++)
 			memory->latency[level] = (uint16_t)(memory->latency[level] + read_latency);
@@ -962,6 +970,8 @@ i915_xd_wm_params(
 		blocks = i915_xd_div_round_up(params->bytes_per_line, I915_XD_WM_BLOCK_BYTES) + 1U;
 		params->blocks_per_line = blocks << 16;
 	}
+
+	/* The fewest blocks a Y-tiled plane needs. */
 	params->y_tile_minimum = i915_xd_fixed_mul(I915_XD_WM_Y_LINES, params->blocks_per_line);
 
 	/* The pipe's line time. */
@@ -1098,6 +1108,8 @@ i915_xd_wm_transition(
 		if (y_minimum > blocks)
 			blocks = y_minimum;
 	}
+
+	/* The transition level adds its minimum and its amount to the blocks. */
 	blocks = (uint16_t)(blocks + I915_XD_WM_TRANS_MIN + I915_XD_WM_TRANS_AMOUNT + 1U);
 
 	/* Succeeded: the transition. */

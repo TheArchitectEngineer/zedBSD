@@ -296,6 +296,7 @@ drv_i915_xd_buddy_mask(
 		if (rows[index].channels != channels)
 			continue;
 
+		/* Succeeded: the row of the channels. */
 		return &rows[index];
 	}
 

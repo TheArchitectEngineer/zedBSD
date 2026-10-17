@@ -183,6 +183,7 @@ drv_i915_dp_ext_start(
 		return;
 	}
 
+	/* The lock that keeps one access at a time on the channels. */
 	error = mutex_init(&ext->aux_lock, LOCK_RANK_DEVICE, "i915 dp-ext aux");
 	if (error != 0) {
 		kern_free(ext);
@@ -190,6 +191,7 @@ drv_i915_dp_ext_start(
 		return;
 	}
 
+	/* The display and its Type-C ports. */
 	ext->display = display;
 	ext->tc = tc;
 
@@ -328,6 +330,7 @@ drv_i915_dp_ext_probe(
 	if (bytes > edid_size)
 		bytes = (unsigned)(edid_size / I915_XD_DP_PROBE_EDID_BLOCK_SIZE) * I915_XD_DP_PROBE_EDID_BLOCK_SIZE;
 
+	/* Copies the EDID the probe read. */
 	if (bytes != 0U)
 		kern_memcpy(edid, p->sink.edid, bytes);
 
@@ -370,6 +373,7 @@ drv_i915_dp_ext_pulse(
 		return 0;
 	}
 
+	/* Handles the pulse with the port's link held. */
 	drv_i915_xd_tc_ports_get_link(ext->tc, p->tc_port, I915_DP_EXT_KERN_PROBE_LANES);
 	handled = drv_i915_xd_dp_probe_short_pulse(&p->env, &p->sink);
 	drv_i915_xd_tc_ports_put_link(ext->tc, p->tc_port);
@@ -413,6 +417,7 @@ drv_i915_dp_ext_link_check(
 	if (display->output.port != port || !display->window.display_up)
 		return 0;
 
+	/* The lanes the output's link runs on. */
 	lanes = (int)display->output.link.lanes;
 
 	/* Only a declared Type-C port of bound external ports. */
@@ -429,6 +434,7 @@ drv_i915_dp_ext_link_check(
 		return 0;
 	}
 
+	/* Asks the sink with the port's link held. */
 	drv_i915_xd_tc_ports_get_link(ext->tc, p->tc_port, (unsigned)lanes);
 	needs = drv_i915_xd_dp_probe_link_needs_retrain(&p->env, lanes);
 	drv_i915_xd_tc_ports_put_link(ext->tc, p->tc_port);
@@ -777,6 +783,7 @@ i915_dp_ext_access_begin(
 		return -ENXIO;
 	}
 
+	/* Refuses a port with no partner plugged in. */
 	connected = drv_i915_xd_tc_ports_connected_locked(p->ext->tc, p->tc_port);
 	if (!connected) {
 		p->refused++;
@@ -792,6 +799,7 @@ i915_dp_ext_access_begin(
 		return -EIO;
 	}
 
+	/* The channel's power is held. */
 	access->aux_powered = 1;
 
 	/* One access at a time on the external ports' channels. */
@@ -810,6 +818,7 @@ i915_dp_ext_access_end(
 {
 	struct i915_display *display;
 
+	/* The display the access powered. */
 	display = p->ext->display;
 
 	/* The lock is held only once the channel's power was taken. */
@@ -915,6 +924,7 @@ i915_dp_ext_caps(
 	if (extended[I915_DP_EXT_KERN_DPCD_REV] < dpcd[I915_DP_EXT_KERN_DPCD_REV])
 		return 0;
 
+	/* Takes the extended capabilities in place of the first ones. */
 	kern_memcpy(dpcd, extended, I915_XD_DP_PROBE_DPCD_SIZE);
 
 	/* Succeeded: the extended capabilities are in their place. */
@@ -1059,6 +1069,7 @@ i915_dp_ext_edid_block(
 	unsigned first;
 	int error;
 
+	/* The port, and the bytes of the segment and the offset. */
 	p = context;
 	segment_byte = (uint8_t)segment;
 	offset_byte = (uint8_t)offset;

@@ -90,13 +90,22 @@ drv_i915_xd_combo_phy_ready(
 	const struct i915_xd_procmon *procmon;
 	uint32_t base;
 	int ready;
+	uint32_t value;
+	int has;
 
 	/* A PHY whose compensation is powered down or not started is not brought up. */
 	base = i915_xd_combo_base(phy);
-	if (i915_xd_combo_has(platform->phy_misc, phy) &&
-	    (drv_i915_xd_io_read(io, I915_XD_PHY_MISC(phy)) & I915_XD_PHY_MISC_IO_COMP_POWER_DOWN) != 0U)
-		return 0;
-	if ((drv_i915_xd_io_read(io, I915_XD_PORT_COMP_DW(base, 0U)) & I915_XD_COMP_DW0_INIT) == 0U)
+	has = i915_xd_combo_has(platform->phy_misc, phy);
+	if (has) {
+		/* The compensation's power down. */
+		value = drv_i915_xd_io_read(io, I915_XD_PHY_MISC(phy));
+		if ((value & I915_XD_PHY_MISC_IO_COMP_POWER_DOWN) != 0U)
+			return 0;
+	}
+
+	/* The compensation started. */
+	value = drv_i915_xd_io_read(io, I915_XD_PORT_COMP_DW(base, 0U));
+	if ((value & I915_XD_COMP_DW0_INIT) == 0U)
 		return 0;
 
 	/* The duty cycle corrector of display 12 on. */
@@ -116,7 +125,8 @@ drv_i915_xd_combo_phy_ready(
 	ready &= i915_xd_combo_check(io, I915_XD_PORT_COMP_DW(base, 10U), 0xffffffffU, procmon->dw10);
 
 	/* The reference current of a PHY with the resistor, and the common lane's power down. */
-	if (i915_xd_combo_has(platform->comp_masters, phy))
+	has = i915_xd_combo_has(platform->comp_masters, phy);
+	if (has)
 		ready &= i915_xd_combo_check(io, I915_XD_PORT_COMP_DW(base, 8U), I915_XD_COMP_DW8_IREFGEN, I915_XD_COMP_DW8_IREFGEN);
 	ready &= i915_xd_combo_check(io, I915_XD_PORT_CL_DW(base, 5U), I915_XD_CL_DW5_POWER_DOWN_ENABLE, I915_XD_CL_DW5_POWER_DOWN_ENABLE);
 
@@ -138,15 +148,21 @@ drv_i915_xd_combo_phy_init(
 {
 	unsigned written;
 	unsigned phy;
+	int has;
+	int ready;
 
 	/* Each combo PHY, first to last; one that is brought up is left alone. */
 	written = 0U;
 	for (phy = 0U; phy < 8U; phy++) {
-		if (!i915_xd_combo_has(platform->combo_phys, phy))
+		/* A PHY the platform does not have, or one already brought up, is passed over. */
+		has = i915_xd_combo_has(platform->combo_phys, phy);
+		if (!has)
 			continue;
-		if (drv_i915_xd_combo_phy_ready(io, platform, phy))
+		ready = drv_i915_xd_combo_phy_ready(io, platform, phy);
+		if (ready)
 			continue;
 
+		/* Brings the PHY up. */
 		i915_xd_combo_init_one(io, platform, phy);
 		written |= 1U << phy;
 	}
@@ -171,21 +187,31 @@ drv_i915_xd_combo_phy_uninit(
 {
 	unsigned phy;
 	unsigned a_not_ready;
+	int has;
+	int ready;
+	uint32_t base;
 
 	/* Each combo PHY, last to first. */
 	a_not_ready = 0U;
 	for (phy = 8U; phy-- > 0U;) {
-		if (!i915_xd_combo_has(platform->combo_phys, phy))
+		/* A PHY the platform does not have is passed over. */
+		has = i915_xd_combo_has(platform->combo_phys, phy);
+		if (!has)
 			continue;
 
 		/* PHY A is expected to read as brought up. */
-		if (phy == 0U && !drv_i915_xd_combo_phy_ready(io, platform, phy))
-			a_not_ready = 1U;
+		if (phy == 0U) {
+			ready = drv_i915_xd_combo_phy_ready(io, platform, phy);
+			if (!ready)
+				a_not_ready = 1U;
+		}
 
 		/* Powers the compensation down, then stops it. */
-		if (i915_xd_combo_has(platform->phy_misc, phy))
+		has = i915_xd_combo_has(platform->phy_misc, phy);
+		if (has)
 			(void)drv_i915_xd_io_rmw(io, I915_XD_PHY_MISC(phy), 0U, I915_XD_PHY_MISC_IO_COMP_POWER_DOWN);
-		(void)drv_i915_xd_io_rmw(io, I915_XD_PORT_COMP_DW(i915_xd_combo_base(phy), 0U), I915_XD_COMP_DW0_INIT, 0U);
+		base = i915_xd_combo_base(phy);
+		(void)drv_i915_xd_io_rmw(io, I915_XD_PORT_COMP_DW(base, 0U), I915_XD_COMP_DW0_INIT, 0U);
 	}
 
 	/* Succeeded: whether PHY A was down before. */
@@ -273,7 +299,11 @@ drv_i915_xd_combo_swing_is_hobl(
 	const struct i915_xd_combo_swing_table *table)
 {
 	/* Only that table. */
-	return table == platform->swing->edp_hobl ? 1 : 0;
+	if (table != platform->swing->edp_hobl)
+		return 0;
+
+	/* Succeeded: the HOBL table. */
+	return 1;
 }
 
 /*
@@ -429,8 +459,12 @@ i915_xd_combo_has(
 	if (phy >= 8U)
 		return 0;
 
-	/* Succeeded: the PHY's bit. */
-	return (mask & (1U << phy)) != 0U ? 1 : 0;
+	/* A PHY whose bit is clear is not there. */
+	if ((mask & (1U << phy)) == 0U)
+		return 0;
+
+	/* Succeeded: the PHY's bit is set. */
+	return 1;
 }
 
 /* Tells whether a word's bits under a mask read as a value (1 or 0). */
@@ -441,8 +475,17 @@ i915_xd_combo_check(
 	uint32_t mask,
 	uint32_t value)
 {
+	uint32_t word;
+
 	/* Reads the word. */
-	return (drv_i915_xd_io_read(io, offset) & mask) == value ? 1 : 0;
+	word = drv_i915_xd_io_read(io, offset);
+
+	/* A word whose bits differ does not match. */
+	if ((word & mask) != value)
+		return 0;
+
+	/* Succeeded: the bits read as the value. */
+	return 1;
 }
 
 /*
@@ -465,10 +508,12 @@ i915_xd_combo_init_one(
 	const struct i915_xd_procmon *procmon;
 	uint32_t base;
 	uint32_t value;
+	int has;
 
 	/* Powers the IO compensation. */
 	base = i915_xd_combo_base(phy);
-	if (i915_xd_combo_has(platform->phy_misc, phy)) {
+	has = i915_xd_combo_has(platform->phy_misc, phy);
+	if (has) {
 		value = drv_i915_xd_io_read(io, I915_XD_PHY_MISC(phy));
 		drv_i915_xd_io_write(io, I915_XD_PHY_MISC(phy), value & ~I915_XD_PHY_MISC_IO_COMP_POWER_DOWN);
 	}
@@ -480,6 +525,7 @@ i915_xd_combo_init_one(
 		value |= I915_XD_TX_DW8_ODCC_CLOCK_SELECT | i915_xd_field_put(I915_XD_TX_DW8_ODCC_DIVIDER, I915_XD_TX_DW8_ODCC_DIVIDE_BY_2);
 		drv_i915_xd_io_write(io, I915_XD_PORT_TX_DW_GRP(base, 8U), value);
 
+		/* The duty cycle corrector runs once. */
 		value = drv_i915_xd_io_read(io, I915_XD_PORT_PCS_DW_LN(base, 0U, 1U));
 		value &= ~I915_XD_PCS_DW1_DCC_MODE;
 		value |= i915_xd_field_put(I915_XD_PCS_DW1_DCC_MODE, I915_XD_PCS_DW1_DCC_RUN_ONCE);
@@ -493,7 +539,8 @@ i915_xd_combo_init_one(
 	drv_i915_xd_io_write(io, I915_XD_PORT_COMP_DW(base, 10U), procmon->dw10);
 
 	/* The reference current, the compensation started, the common lane's power down. */
-	if (i915_xd_combo_has(platform->comp_masters, phy))
+	has = i915_xd_combo_has(platform->comp_masters, phy);
+	if (has)
 		(void)drv_i915_xd_io_rmw(io, I915_XD_PORT_COMP_DW(base, 8U), 0U, I915_XD_COMP_DW8_IREFGEN);
 	(void)drv_i915_xd_io_rmw(io, I915_XD_PORT_COMP_DW(base, 0U), 0U, I915_XD_COMP_DW0_INIT);
 	(void)drv_i915_xd_io_rmw(io, I915_XD_PORT_CL_DW(base, 5U), 0U, I915_XD_CL_DW5_POWER_DOWN_ENABLE);
@@ -519,8 +566,12 @@ i915_xd_combo_loadgen(
 	if (levels->lanes == 4U)
 		return lane >= 1U ? I915_XD_TX_DW4_LOADGEN : 0U;
 
-	/* Succeeded: lanes 1 and 2. */
-	return (lane == 1U || lane == 2U) ? I915_XD_TX_DW4_LOADGEN : 0U;
+	/* Fewer lanes: lanes 1 and 2. */
+	if (lane == 1U || lane == 2U)
+		return I915_XD_TX_DW4_LOADGEN;
+
+	/* Succeeded: no load generator on the other lanes. */
+	return 0U;
 }
 
 /*
@@ -543,11 +594,13 @@ i915_xd_combo_swing(
 	uint32_t value;
 	uint32_t override;
 	unsigned lane;
+	int hobl;
 
 	/* eDP: the 4K2K mode override follows the HOBL table. */
 	if (levels->kind == I915_XD_OUTPUT_EDP) {
 		override = I915_XD_CL_DW10_EDP4K2K_OVERRIDE | I915_XD_CL_DW10_EDP4K2K_OPTIMIZED;
-		if (drv_i915_xd_combo_swing_is_hobl(platform, levels->table))
+		hobl = drv_i915_xd_combo_swing_is_hobl(platform, levels->table);
+		if (hobl)
 			(void)drv_i915_xd_io_rmw(io, I915_XD_PORT_CL_DW(base, 10U), override, override);
 		else
 			(void)drv_i915_xd_io_rmw(io, I915_XD_PORT_CL_DW(base, 10U), override, 0U);
@@ -657,6 +710,7 @@ drv_i915_xd_ddi_dp_start(
 	uint32_t buffer;
 	unsigned late;
 	int was_on;
+	int waited;
 
 	/* A running link stops first: the buffer, the transport, the wait for idle. */
 	late = 0U;
@@ -668,11 +722,21 @@ drv_i915_xd_ddi_dp_start(
 			drv_i915_xd_io_write(io, I915_XD_DDI_BUF_CTL(link->ddi), buffer & ~I915_XD_DDI_BUF_ENABLE);
 			was_on = 1;
 		}
+
+		/* The transport goes off; a buffer that was on is waited for until idle. */
 		drv_i915_xd_io_write(io, I915_XD_DP_TP_CTL(link->trans), transport & ~I915_XD_DP_TP_ENABLE);
 		drv_i915_xd_io_posting_read(io, I915_XD_DP_TP_CTL(link->trans));
-		if (was_on && drv_i915_xd_io_poll(io, I915_XD_DDI_BUF_CTL(link->ddi), I915_XD_DDI_BUF_IDLE, I915_XD_DDI_BUF_IDLE,
-		    I915_XD_DDI_IDLE_US, NULL) != 0)
-			late |= I915_XD_DDI_LATE_IDLE;
+		if (was_on) {
+			waited = drv_i915_xd_io_poll(
+				io,
+				I915_XD_DDI_BUF_CTL(link->ddi),
+				I915_XD_DDI_BUF_IDLE,
+				I915_XD_DDI_BUF_IDLE,
+				I915_XD_DDI_IDLE_US,
+				NULL);
+			if (waited != 0)
+				late |= I915_XD_DDI_LATE_IDLE;
+		}
 	}
 
 	/* The transport in training pattern 1. */
@@ -694,6 +758,8 @@ drv_i915_xd_ddi_dp_start(
 		buffer &= ~I915_XD_DDI_BUF_TC_OWNED;
 		buffer |= drv_i915_xd_io_read(io, I915_XD_DDI_BUF_CTL(link->ddi)) & I915_XD_DDI_BUF_TC_OWNED;
 	}
+
+	/* Enables the buffer. */
 	drv_i915_xd_io_write(io, I915_XD_DDI_BUF_CTL(link->ddi), buffer);
 	drv_i915_xd_io_posting_read(io, I915_XD_DDI_BUF_CTL(link->ddi));
 
@@ -798,6 +864,7 @@ drv_i915_xd_ddi_stop(
 {
 	uint32_t buffer;
 	int was_on;
+	int waited;
 
 	/* The buffer. */
 	was_on = 0;
@@ -815,10 +882,18 @@ drv_i915_xd_ddi_stop(
 		drv_i915_xd_io_posting_read(io, I915_XD_DP_TP_CTL(link->trans));
 	}
 
-	/* Waits for the buffer to go idle. */
-	if (was_on && drv_i915_xd_io_poll(io, I915_XD_DDI_BUF_CTL(link->ddi), I915_XD_DDI_BUF_IDLE, I915_XD_DDI_BUF_IDLE,
-	    I915_XD_DDI_IDLE_US, NULL) != 0)
-		return I915_XD_DDI_LATE_IDLE;
+	/* A buffer that was on is waited for until idle. */
+	if (was_on) {
+		waited = drv_i915_xd_io_poll(
+			io,
+			I915_XD_DDI_BUF_CTL(link->ddi),
+			I915_XD_DDI_BUF_IDLE,
+			I915_XD_DDI_BUF_IDLE,
+			I915_XD_DDI_IDLE_US,
+			NULL);
+		if (waited != 0)
+			return I915_XD_DDI_LATE_IDLE;
+	}
 
 	/* Succeeded: no wait ran out. */
 	return 0U;

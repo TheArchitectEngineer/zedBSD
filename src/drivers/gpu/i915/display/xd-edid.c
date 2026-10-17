@@ -143,6 +143,7 @@ drv_i915_xd_edid_read(
 	unsigned index;
 	int error;
 
+	/* Nothing read yet. */
 	*blocks = 0U;
 	*extensions = 0U;
 
@@ -155,6 +156,7 @@ drv_i915_xd_edid_read(
 	if (error != 0)
 		return error;
 
+	/* The base block is read; it names the extensions. */
 	*blocks = 1U;
 	*extensions = edid[I915_XD_EDID_EXTENSIONS];
 	total = 1U + *extensions;
@@ -165,6 +167,7 @@ drv_i915_xd_edid_read(
 		if (error != 0)
 			break;
 
+		/* Counts the block read. */
 		*blocks = index + 1U;
 	}
 
@@ -397,6 +400,8 @@ i915_xd_edid_cta_block(
 				out->nvics++;
 			}
 		}
+
+		/* Nothing else is read from a video block. */
 		return;
 	}
 
@@ -450,6 +455,7 @@ i915_xd_edid_read_one(
 				zero = 0;
 		}
 
+		/* A first try that read only zeros finds no sink. */
 		if (try == 0U && zero)
 			return ENXIO;
 

@@ -670,8 +670,12 @@ struct i915_lcd_observer {
 	uint32_t vblank_bit;
 	uint32_t saved_before;          /* status found before the run */
 	int begun, steady;
-	int powered;                    /* between the enable's underrun-arm point and the disable's pipe-disabled point the crtc holds
-	                                 * the pipe's power domain; outside, pipe A's registers (power well A) read 0 and say nothing */
+	/*
+	 * Between the enable's underrun-arm point and the disable's
+	 * pipe-disabled point the pipe holds its power wells; outside, pipe
+	 * A's registers (power well A) read 0 and say nothing.
+	 */
+	int powered;
 	uint32_t seen_transition;       /* underrun bits seen while the pipe was started / stopped */
 	uint32_t seen_steady;           /* underrun bits seen while the picture stood */
 	int vblank_unmasked_seen;

@@ -352,6 +352,7 @@ drv_i915_display_irq_log(
 	if (display == NULL)
 		return;
 
+	/* Logs the interrupt masks the install computed. */
 	kern_logf("i915: display: interrupt masks: pipe_masked=0x%x pipe_enables=0x%x port_masked=0x%x misc_masked=0x%x pipe_a_mask=0x%x master_enabled=%d\n",
 	    display->irq.de_pipe_masked,
 	    display->irq.de_pipe_enables,
@@ -946,6 +947,8 @@ drv_i915_display_bind_ops(
 		drv_i915_bootfb_bind_ops(device, ops);
 		return;
 	}
+
+	/* A display without a panel run binds no operations. */
 	if (display->rctx.lcd == NULL)
 		return;
 
@@ -1059,6 +1062,7 @@ drv_i915_detect_pch(
 		if (!more)
 			break;
 
+		/* Counts the bridge and moves to the next. */
 		index++;
 		p->bridges_scanned++;
 		found_bridge = 1;
@@ -1128,6 +1132,7 @@ i915_display_create(
 	if (display == NULL)
 		return ENOMEM;
 
+	/* The display belongs to its device. */
 	display->device = device;
 
 	/* The xd display: its register window and the description of the device. */
@@ -1144,6 +1149,7 @@ i915_display_create(
 		return error;
 	}
 
+	/* Publishes the display in the device. */
 	device->display = display;
 
 #ifdef I915_TEST_CAPTURE
@@ -1177,6 +1183,7 @@ i915_display_gen9_check(
 	unsigned driver_ggtt_first;
 	int error;
 
+	/* Resolves the GT whose GGTT the check reads. */
 	gt = &device->gt;
 
 	/* Only a display 9 controller is checked here. */
@@ -1220,6 +1227,7 @@ i915_display_read_tables(
 	int error;
 	uint16_t op;
 
+	/* Resolves the display, the GT and the platform's description. */
 	display = device->display;
 	gt = &device->gt;
 	platform = NULL;
@@ -1378,6 +1386,7 @@ i915_display_prepare_state(
 	if (error != 0)
 		return error;
 
+	/* The stop releases the display's power from here on. */
 	display->power_started = 1;
 
 	/* Succeeded: the display's state is ready for its first write. */
@@ -1479,10 +1488,12 @@ i915_display_core_init(
 		if (power->core_fault != NULL)
 			device->stage = power->core_fault;
 
+		/* Logs the step the fault stopped at. */
 		kern_logf("i915: display: core: fault at %s\n", device->stage);
 		return EIO;
 	}
 
+	/* Logs what the core started with. */
 	kern_logf("i915: display: core started: cdclk=%u vco=%u dbuf=0x%x start reference %s\n",
 	    display->cdclk.hw.cdclk,
 	    display->cdclk.hw.vco,
@@ -1585,6 +1596,7 @@ i915_display_memory_and_clocks(
 	if (display->xd.bandwidth.sagv == I915_XD_SAGV_NOT_CONTROLLED)
 		sagv_controlled = 0;
 
+	/* Reads the latencies through the platform's mailbox and logs a read that failed. */
 	kern_memset(memory, 0, sizeof(*memory));
 	error = 0;
 	if (platform != NULL)
@@ -1669,10 +1681,12 @@ i915_display_setup_outputs(
 			continue;
 		}
 
+		/* Keeps the port. */
 		ports->port[kept] = *port;
 		kept++;
 	}
 
+	/* The ports kept. */
 	ports->n = kept;
 
 	/* Names every port. */
@@ -1725,6 +1739,7 @@ i915_display_sanitize(
 	else
 		wells = drv_i915_display_power_sanitize(&display->power);
 
+	/* Logs what the sanitize corrected. */
 	kern_logf("i915: sanitize: lit pipes 0x%x, dmc pipes 0x%x, fbc off %d, clocks gated 0x%x, PLLs off 0x%x%s, wells off %u\n",
 	    display->xd.firmware.lit_pipes,
 	    report.dmc_pipes,
@@ -1746,6 +1761,7 @@ i915_display_arm(
 {
 	struct i915_driver_probe *dprobe;
 
+	/* The probe state the counts go to. */
 	dprobe = &display->dprobe;
 
 	/* The pipes the firmware left lit: the resident start's takeover or a stop of the start. */

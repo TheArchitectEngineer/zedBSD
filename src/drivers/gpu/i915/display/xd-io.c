@@ -565,6 +565,7 @@ i915_xd_io_wait(
 	/* Records the register and its last value, and reports the timeout. */
 	i915_xd_io_record(io, I915_XD_IO_RECORD_TIMEOUT, offset, word, NULL);
 
+	/* The wait ran out. */
 	return ETIMEDOUT;
 }
 

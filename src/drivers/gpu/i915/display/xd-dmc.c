@@ -186,12 +186,16 @@ drv_i915_xd_dmc_parse(
 		dmc->file_refused = I915_XD_DMC_FILE_CSS_LENGTH;
 		return EINVAL;
 	}
+
+	/* Refuses a header length other than the CSS header's. */
 	length = i915_xd_dmc_le32(data, I915_XD_DMC_CSS_LENGTH) * 4U;
 	if (length != I915_XD_DMC_CSS_SIZE) {
 		dmc->file_refused = I915_XD_DMC_FILE_CSS_LENGTH;
 		dmc->file_found = length;
 		return EINVAL;
 	}
+
+	/* The firmware's version. */
 	dmc->version = i915_xd_dmc_le32(data, I915_XD_DMC_CSS_VERSION);
 
 	/* The package header must fit; its version says how many entries it has room for. */
@@ -200,6 +204,8 @@ drv_i915_xd_dmc_parse(
 		dmc->file_refused = I915_XD_DMC_FILE_PACKAGE_LENGTH;
 		return EINVAL;
 	}
+
+	/* The package's version decides the size of its entries. */
 	dmc->package_version = package[I915_XD_DMC_PACKAGE_VERSION];
 	if (dmc->package_version == 1U) {
 		most = I915_XD_DMC_V1_ENTRIES;
@@ -217,6 +223,8 @@ drv_i915_xd_dmc_parse(
 		dmc->file_refused = I915_XD_DMC_FILE_PACKAGE_LENGTH;
 		return EINVAL;
 	}
+
+	/* Refuses a package whose own length disagrees. */
 	if ((size_t)package[I915_XD_DMC_PACKAGE_LENGTH] * 4U != package_size) {
 		dmc->file_refused = I915_XD_DMC_FILE_PACKAGE_LENGTH;
 		dmc->file_found = (uint32_t)package_size;
@@ -244,6 +252,7 @@ drv_i915_xd_dmc_parse(
 			continue;
 		}
 
+		/* Takes the program of the DMC. */
 		i915_xd_dmc_program(dmc, platform, id, data + at, size - at, store);
 	}
 
@@ -691,6 +700,8 @@ i915_xd_dmc_program(
 		program->refused = I915_XD_DMC_TRUNCATED;
 		return;
 	}
+
+	/* Refuses a header whose length is not its version's. */
 	if (header_length != header_size) {
 		program->refused = I915_XD_DMC_HEADER_LENGTH;
 		return;
@@ -704,6 +715,8 @@ i915_xd_dmc_program(
 	} else {
 		count = i915_xd_dmc_le32(data, I915_XD_DMC_V1_COUNT);
 	}
+
+	/* Refuses more registers than the header holds. */
 	if (count > most_registers) {
 		program->refused = I915_XD_DMC_TOO_MANY;
 		return;
@@ -714,11 +727,15 @@ i915_xd_dmc_program(
 		program->address[index] = i915_xd_dmc_le32(data, address_at + 4U * (size_t)index);
 		program->value[index] = i915_xd_dmc_le32(data, value_at + 4U * (size_t)index);
 	}
+
+	/* Refuses registers outside the DMC's range. */
 	in_range = i915_xd_dmc_in_range(platform, id, version, program->address, count);
 	if (!in_range) {
 		program->refused = I915_XD_DMC_OUT_OF_RANGE;
 		return;
 	}
+
+	/* Records the registers and the program's start. */
 	program->registers = count;
 	program->start = start;
 	program->header_version = version;
@@ -729,6 +746,8 @@ i915_xd_dmc_program(
 		program->refused = I915_XD_DMC_TRUNCATED;
 		return;
 	}
+
+	/* The largest program the display version takes. */
 	most_bytes = I915_XD_DMC_MAX_BYTES_12;
 	if (platform->display_ver >= 13U)
 		most_bytes = I915_XD_DMC_MAX_BYTES_13;
@@ -742,6 +761,8 @@ i915_xd_dmc_program(
 		program->refused = I915_XD_DMC_NO_ROOM;
 		return;
 	}
+
+	/* Copies the program into the display's storage. */
 	for (index = 0U; index < bytes; index++)
 		store->bytes[store->used + index] = data[header_length + index];
 	program->payload = &store->bytes[store->used];
