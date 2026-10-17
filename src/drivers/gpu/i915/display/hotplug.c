@@ -1078,7 +1078,7 @@ i915_hpd_topology_update(
 	int publish)
 {
 	struct i915_hpd_output_mode taken;
-	struct i915_lcd_mode mode;
+	struct i915_display_mode mode;
 	const uint8_t *edid;
 	const char *source;
 	unsigned edid_size;

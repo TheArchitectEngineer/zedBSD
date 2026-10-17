@@ -967,11 +967,11 @@ drv_i915_display_stop_outputs(
 		return;
 
 	/* The output setup never ran. */
-	if (!display->nogem_inited)
+	if (!display->front_done)
 		return;
 
 	drv_i915_edp_device_fini(&display->edp_dev);
-	display->nogem_inited = 0;
+	display->front_done = 0;
 }
 
 /*
@@ -1991,7 +1991,7 @@ i915_display_nogem_front(
 	vga_result = drv_i915_vga_disable(display);
 
 	/* The front is done; the stop takes the panel's device apart from here on. */
-	display->nogem_inited = 1;
+	display->front_done = 1;
 	kern_logf("i915: wm: levels=%u latency=%u/%u/%u/%u/%u/%u/%u/%u valid=%d sagv_status=%d block_time=%uus (mailbox %d) | vga %d\n",
 	    memory->levels,
 	    memory->latency[0],

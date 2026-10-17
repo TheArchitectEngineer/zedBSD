@@ -10,16 +10,15 @@
  * display/ that the display code links against, for the host display
  * tests.
  *
- * The tested paths reach the display code through its hooks (struct
- * i915_dp_env, struct i915_lcd_emit), which the register models of
- * dp-fake-hw.c and lcd-fake-hw.c serve; what they reach of the kernel is
- * the allocator, the locks, the log and the clock, which are served here
+ * The tested paths reach the display code through its hooks, which the
+ * tests' register models serve; what they reach of the kernel is the
+ * allocator, the locks, the log and the clock, which are served here
  * single-threaded.  Everything else (the MMIO BAR, the PCI bus, the GT
  * memory, the work queues, the worker) stands in only so the production
  * files link: a call ends the test with the name of the service, because
  * the tested path must not reach real hardware.
  *
- * Host only: built by the plan/ws031/tests/run-*-host-test.sh scripts.
+ * Host only: the kernel build never compiles this file.
  */
 
 #include "host-test.h"

@@ -870,7 +870,7 @@ test_edid(void)
 	struct i915_display_mode first;
 	unsigned index;
 	struct i915_xd_edid edid;
-	struct i915_lcd_mode mode;
+	struct i915_display_mode mode;
 	unsigned at;
 	unsigned sum;
 	int error;

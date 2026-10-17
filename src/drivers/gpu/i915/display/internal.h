@@ -15,15 +15,6 @@
  */
 
 /*
- * Type and constant definitions derived from the Linux kernel (drivers/gpu/drm/i915/display/intel_global_state.h),
- * which carries the following notice.
- *
- * SPDX-License-Identifier: MIT
- *
- * Copyright © 2020 Intel Corporation
- */
-
-/*
  * The display part's own types: what every display file shares.
  *
  * This header is private to src/drivers/gpu/i915/display/.  It holds three
@@ -39,14 +30,11 @@
  *   the display root    struct i915_display, which the device owns and which
  *                       holds every long-lived display object.
  *
- * The Linux display code is compiled in one of four Linux environments,
+ * The Linux display code is compiled in one of three Linux environments,
  * each a private header of its own:
  *
- *   modeset-internal.h   the modeset, DDI, DPLL, plane, colour, backlight and
- *                        vblank text (with watermark-internal.h and
- *                        takeover-internal.h layered on it);
- *   dp-internal.h        the DP AUX, panel power sequencer, DP helper and
- *                        EDID text (on vbt.h);
+ *   dp-internal.h        the DP AUX, DP helper and EDID text of the
+ *                        external DisplayPort ports (on vbt.h);
  *   vbt.h                the VBT parser's environment;
  *   hotplug-internal.h   the hotplug, GMBUS and HDMI detect text;
  *
@@ -95,11 +83,8 @@
 #include "xd-edp.h"
 
 /*
- * The old name of struct i915_display_mode (display-internal.h).
- *
- * The display 12 and 13 code that the xd rewrite replaces, and the tests
- * of other workstreams written against it, still spell the mode type by
- * this name.  The name goes with that code.
+ * The old name of struct i915_display_mode (display-internal.h), which
+ * host tests written against the older display code still spell.
  */
 #define i915_lcd_mode i915_display_mode
 
@@ -152,7 +137,6 @@ typedef struct {
  * same value, so the shift is kept.
  */
 #define REG_FIELD_PREP(mask, val) ((u32)((((u32)(val)) << __builtin_ctz(mask)) & (mask)))
-#define REG_FIELD_GET(mask, val) ((u32)((((u32)(val)) & (mask)) >> __builtin_ctz(mask)))
 
 /* Bit n of a mask that is not a register (the Linux BIT()). */
 #define BIT(n) (1u << (n))
@@ -500,15 +484,6 @@ struct i915_pmdemand {
 
 struct mutex;
 
-/* Display stepping ordinals (subset of enum intel_step; ordering is faithful). */
-enum i915_display_step {
-	I915_STEP_NONE = 0,
-	I915_STEP_A0, I915_STEP_A1, I915_STEP_A2, I915_STEP_A3,
-	I915_STEP_B0, I915_STEP_B1, I915_STEP_B2, I915_STEP_B3,
-	I915_STEP_C0, I915_STEP_C1, I915_STEP_C2, I915_STEP_C3,
-	I915_STEP_D0
-};
-
 /*
  * intel_cdclk_config: dev_priv->display.cdclk.hw plus computed targets.
  * vco special values: 0 = PLL off (bypass), ~0u = unknown (sanitize wants a
@@ -798,514 +773,35 @@ struct i915_bw_state {
 struct i915_bw_state;
 
 /*
- * ---------------------------------------------------------------- *
- * intel_global_state.h: intel_global_obj / intel_global_state
- * ----------------------------------------------------------------
+ * The port numbers the hotplug, Type-C and external DisplayPort code use:
+ * the combo ports A and B, and the first Type-C port, which is also port
+ * D's number.
  */
-
-struct i915_global_obj;
-
-/*
- * One global atomic state object's state, as the Linux intel_global_state
- * carries it.
- */
-struct i915_global_state {
-	struct i915_global_obj *obj;
-	unsigned ref;                 /* kref_init() -> 1 */
-	int changed;
-};
-
-/*
- * The duplicate and destroy hooks of a global atomic state object.
- */
-struct i915_global_state_funcs {
-	struct i915_global_state *(*duplicate_state)(struct i915_global_obj *obj);
-	void (*destroy_state)(struct i915_global_obj *obj,
-		struct i915_global_state *state);
-};
-
-/*
- * A global atomic state object (the Linux intel_global_obj): its hooks and
- * its current state.
- */
-struct i915_global_obj {
-	struct i915_global_obj *next;      /* list_head, appended at the TAIL */
-	struct i915_global_state *state;
-	const struct i915_global_state_funcs *funcs;
-	/*
-	 * Diagnostic only; the reference's intel_global_obj has no name.  Set by
-	 * the caller AFTER intel_atomic_global_obj_init (which memsets the obj).
-	 */
-	const char *name;
-};
-
-/* Per-user global state objects (the reference's *_state->base members). */
-struct i915_cdclk_obj_state {
-	struct i915_global_state base;
-};
-/*
- * The DBUF global state: which slices are enabled.
- */
-struct i915_dbuf_obj_state {
-	struct i915_global_state base;
-};
-/*
- * The bandwidth global state: the QGV points the display may use.
- */
-struct i915_bw_obj_state {
-	struct i915_global_state base;
-	uint16_t qgv_points_mask;
-};
-/*
- * The PM demand global state.
- */
-struct i915_pmdemand_obj_state {
-	struct i915_global_state base;
-};
-
-/*
- * The cursor/max-size ladders in intel_mode_config_init() branch on platforms
- * that predate everything this port targets.  They are kept as real branches
- * (so the ladder itself is exercised) and selected by this enum; ADL-P is
- * I915_PLAT_NONE and takes the modern "else" arms.
- */
-enum i915_legacy_platform {
-	I915_PLAT_NONE = 0,   /* ADL-P and every other modern part */
-	I915_PLAT_I845G,
-	I915_PLAT_I865G,
-	I915_PLAT_I830,
-	I915_PLAT_I85X,
-	I915_PLAT_I915G,
-	I915_PLAT_I915GM,
-	I915_PLAT_BROADWELL,
-	I915_PLAT_SKYLAKE,
-	I915_PLAT_BROXTON
-};
-
-/*
- * The mode configuration limits of the display (the Linux drm_mode_config
- * the display fills in).
- */
-struct i915_mode_config {
-	unsigned min_width, min_height;
-	unsigned max_width, max_height;
-	unsigned cursor_width, cursor_height;
-	unsigned preferred_depth;
-	int prefer_shadow;
-	int async_page_flip;
-	int funcs_set;             /* mode_config->funcs = &intel_mode_funcs */
-	int helper_private_set;    /* ->helper_private = &intel_mode_config_funcs */
-	int drm_mode_config_inited;
-};
-
-/*
- * ---------------------------------------------------------------- *
- * intel_fbc_init()
- * ----------------------------------------------------------------
- */
-
-#define I915_MAX_FBCS 4      /* I915_MAX_FBCS */
-
-enum i915_fbc_id {
-	I915_FBC_A = 0,
-	I915_FBC_B,
-	I915_FBC_C,
-	I915_FBC_D
-};
-
-/* Which intel_fbc_funcs vtable intel_fbc_create() selected. */
-enum i915_fbc_funcs_kind {
-	I915_FBC_FUNCS_NONE = 0,
-	I915_FBC_FUNCS_I8XX,
-	I915_FBC_FUNCS_I965,
-	I915_FBC_FUNCS_G4X,
-	I915_FBC_FUNCS_ILK,
-	I915_FBC_FUNCS_SNB,
-	I915_FBC_FUNCS_IVB
-};
-
-/*
- * One frame-buffer compression instance and its lock.
- */
-struct i915_fbc {
-	int id;                            /* enum i915_fbc_id */
-	int funcs_kind;                    /* enum i915_fbc_funcs_kind */
-	struct i915_work underrun_work; /* INIT_WORK(&fbc->underrun_work, ...) */
-	struct mutex lock;                 /* mutex_init(&fbc->lock) */
-	int lock_inited;
-	int in_use;
-};
-
-/* enum intel_quirk_id, values preserved (used as BIT(quirk)). */
-enum i915_quirk_id {
-	I915_QUIRK_BACKLIGHT_PRESENT = 0,
-	I915_QUIRK_INCREASE_DDI_DISABLED_TIME,
-	I915_QUIRK_INCREASE_T12_DELAY,
-	I915_QUIRK_INVERT_BRIGHTNESS,
-	I915_QUIRK_LVDS_SSC_DISABLE,
-	I915_QUIRK_NO_PPS_BACKLIGHT_POWER_HOOK,
-	I915_QUIRK_FW_SYNC_LEN
-};
-
-/*
- * ---------------------------------------------------------------- *
- * Device-owned display state of the noirq tail
- * ----------------------------------------------------------------
- */
-
-struct i915_display_state {
-	/* display.global.obj_list (INIT_LIST_HEAD in intel_mode_config_init) */
-	struct i915_global_obj *obj_list_head;
-	struct i915_global_obj *obj_list_tail;
-	unsigned obj_count;
-	int obj_list_inited;
-
-	struct i915_mode_config mode_config;
-
-	/* The four global state objects + their device-owned storage. */
-	struct i915_global_obj cdclk_obj, dbuf_obj, bw_obj, pmdemand_obj;
-	struct i915_cdclk_obj_state cdclk_state;
-	struct i915_dbuf_obj_state dbuf_state;
-	struct i915_bw_obj_state bw_obj_state;
-	struct i915_pmdemand_obj_state pmdemand_state;
-
-	/* intel_color_init */
-	int color_done;                 /* ran and returned 0 */
-
-	/* intel_bw_init / icl_force_disable_sagv */
-	int sagv_force_disable_attempted;
-	int sagv_pcode_ret;             /* icl_pcode_restrict_qgv_points() result */
-	unsigned sagv_qgv_points;       /* icl_max_bw_qgv_point_mask() */
-	unsigned sagv_psf_points;       /* icl_max_bw_psf_gv_point_mask() */
-
-	/* intel_pmdemand_init */
-	int pmdemand_wa_14016740474;    /* ver-14 A0..C0 WA applied (never on ADL-P) */
-
-	/* intel_init_quirks */
-	unsigned quirk_mask;            /* display.quirks.mask */
-	unsigned quirk_hooks_fired;
-	int dmi_scanned;                /* the DMI list was walked */
-	int dmi_available;              /* a DMI backend answered */
-
-	/* intel_fbc_init */
-	int enable_fbc_param;           /* display.params.enable_fbc IN (-1 = auto) */
-	int enable_fbc_sanitized;
-	unsigned fbc_mask;              /* DISPLAY_RUNTIME_INFO()->fbc_mask, post-WA */
-	int fbc_vtd_wa;                 /* need_fbc_vtd_wa() fired */
-	struct i915_fbc *fbc[I915_MAX_FBCS];
-	struct i915_fbc fbc_store[I915_MAX_FBCS];
-	unsigned fbc_created;
-
-	/* diagnostics */
-	unsigned state_allocs;          /* successful global-state allocations */
-	const char *fail_where;
-	int inited;
-};
-
-/*
- * The output setup, readout and sanitize (takeover.c).
- */
-/*
- * intel_display_driver_probe_nogem().
- *
- * covers the front section, up to (but not including) intel_setup_outputs():
- *
- *   intel_wm_init            -> skl_wm_init: intel_sagv_init + skl_setup_wm_latency
- *   intel_panel_sanitize_ssc -> LVDS/SSC; nothing to do on ADL-P
- *   intel_pps_setup          -> pps.mmio_base
- *   intel_gmbus_setup        -> gmbus.mmio_base, the ICP pin table, GMBUS reset
- *   intel_crtc_init x4       -> per-pipe CRTC + plane records
- *   intel_plane_possible_crtcs_init / intel_shared_dpll_init /
- *   intel_fdi_pll_freq_update / intel_update_czclk
- *   intel_display_driver_init_hw -> intel_update_cdclk + adlp_display_wa_apply
- *   intel_dpll_update_ref_clks / intel_hdcp_component_init /
- *   intel_update_max_cdclk / intel_hti_init / intel_vga_disable
- *
- * The DRM object model (drm_crtc / drm_plane / drm_encoder / drm_connector) is
- * NOT brought in; CRTCs, planes and shared DPLLs are the minimal records
- * the readout and sanitize phases actually consume.
- *
- * Confirmed from the reference device tables rather than assumed, for ADL-P
- * (xe_lpd, DISPLAY_VER 13, PCH_ADP):
- *   - num_scalers[pipe] = 2, num_sprites[pipe] = 4  -> 6 planes/pipe
- *     (1 primary + 4 sprites + 1 cursor)
- *   - has_hti is NOT set on xe_lpd (it is RKL/ADL-S only) -> intel_hti_init is
- *     a no-op here; HDPORT_STATE is not read.
- *   - HAS_HW_SAGV_WM (ver >= 13 && !DGFX) is true -> wm.num_levels = 6, not 8.
- *   - intel_ddi_crt_present() returns false for DISPLAY_VER >= 9.
- */
-
-struct i915_vbt_state;
-
-#define I915_NOGEM_MAX_PIPES    4
-#define I915_NOGEM_MAX_PLANES   6    /* primary + 4 sprites + cursor */
-#define I915_NOGEM_MAX_DPLLS    10   /* tgl_plls has 9, adlp_plls 7, + terminator */
-#define I915_NOGEM_MAX_WM_LVL   8    /* I915_MAX_WM / skl_latency[] */
-#define I915_NOGEM_MAX_GMBUS    15   /* pin indices 1..14 */
-#define I915_NOGEM_MAX_ENCODERS 8
-
-/* enum port (values preserved; PORT_TC1 aliases PORT_D). */
-#define I915_PORT_NONE   (-1)
 #define I915_PORT_A      0
 #define I915_PORT_B      1
-#define I915_PORT_C      2
 #define I915_PORT_D      3
 #define I915_PORT_TC1    3
-#define I915_PORT_TC2    4
-#define I915_PORT_TC3    5
-#define I915_PORT_TC4    6
 
-/* enum phy (values preserved). */
-#define I915_PHY_A 0
-#define I915_PHY_B 1
-#define I915_PHY_C 2
-#define I915_PHY_D 3
-#define I915_PHY_E 4
-#define I915_PHY_F 5
-#define I915_PHY_I 8
-
-/* Why intel_ddi_init() declined to create an encoder (diagnostic). */
-enum i915_ddi_skip {
-	I915_DDI_OK = 0,
-	I915_DDI_SKIP_PORT_NONE,
-	I915_DDI_SKIP_STRAP,
-	I915_DDI_SKIP_PORT_INVALID,
-	I915_DDI_SKIP_PORT_IN_USE,
-	I915_DDI_SKIP_DSI,
-	I915_DDI_SKIP_HTI,
-	I915_DDI_SKIP_NOT_DVI_HDMI_DP,
-	I915_DDI_SKIP_EDP_INIT_FAILED     /* intel_ddi_init_dp_connector() failed: the encoder is dropped */
-};
-
-/* Which clock vtable intel_ddi_init() selected. */
-enum i915_ddi_clk {
-	I915_DDI_CLK_NONE = 0,
-	I915_DDI_CLK_ICL_COMBO,
-	I915_DDI_CLK_ICL_TC
-};
-
-/* intel_encoder: the subset the readout and sanitize phases consume. */
-struct i915_encoder {
-	int port;               /* enum port */
-	int phy;                /* enum phy */
-	int is_tc;
-	int clk_funcs;          /* enum i915_ddi_clk */
-	int power_domain;       /* POWER_DOMAIN_PORT_DDI_LANES_* */
-	int init_hdmi, init_dp;
-	uint8_t dvo_port;
-	uint32_t device_type;
-	/* readout */
-	int crtc_linked;        /* encoder->base.crtc != NULL */
-	unsigned pipe_mask;
-	int is_mst;
-	int in_use;
-	int shared_dpll_id;     /* encoder->get_config: the PLL id feeding it (-1 = none / not read) */
-	uint32_t dpclka_cfgcr0; /* the value that id was read from */
-};
-
-/* intel_plane: the subset the readout/sanitize phases use. */
-enum i915_plane_type {
-	I915_PLANE_PRIMARY = 0,
-	I915_PLANE_SPRITE,
-	I915_PLANE_CURSOR
+/*
+ * The QGV points the display lets SAGV use, as the start's forced SAGV
+ * disable left them; the resident run reads the one allowed point's
+ * bandwidth from them.
+ */
+struct i915_bw_obj_state {
+	uint16_t qgv_points_mask;
 };
 
 /*
- * One plane record of the output setup: its id, pipe and the state the
- * readout found.
+ * The bandwidth state the start of the display keeps: the QGV points and
+ * what the forced SAGV disable asked the PCODE and got back.  Filled once
+ * by the start, read by the resident run and the start's log.
  */
-struct i915_plane {
-	int id;                 /* enum plane_id: PLANE_PRIMARY=0, SPRITE0.., CURSOR */
-	int type;               /* enum i915_plane_type */
-	unsigned pipe;
-	int visible;            /* plane_state->uapi.visible (readout) */
-	int in_use;
-};
-
-/* intel_crtc + the parts of intel_crtc_state the nogem probe fills in. */
-struct i915_crtc_state {
-	int active;             /* hw.active */
-	int enable;             /* hw.enable */
-	int cpu_transcoder;     /* -1 = INVALID_TRANSCODER */
-	int inherited;
-	unsigned active_planes;
-	/* readout results */
-	uint32_t transconf;
-	uint32_t trans_ddi_func_ctl;
-	unsigned enabled_transcoders;   /* hsw_enabled_transcoders() bitmask */
-	/* intel_get_transcoder_timings() */
-	unsigned hdisplay, htotal, vdisplay, vtotal;
-	unsigned pipe_src_w, pipe_src_h;
-	int power_gated;                /* the pipe/transcoder power was off */
-};
-
-/*
- * One crtc record of the output setup: its pipe and the state the readout
- * found.
- */
-struct i915_crtc {
-	unsigned pipe;
-	unsigned num_scalers;
-	unsigned plane_ids_mask;
-	int active;             /* crtc->active */
-	int enabled;            /* crtc->base.enabled */
-	struct i915_plane planes[I915_NOGEM_MAX_PLANES];
-	unsigned num_planes;
-	struct i915_crtc_state state;
-	int fifo_underrun_reporting;
-	int in_use;
-};
-
-/* intel_shared_dpll (adlp_plls). */
-enum i915_dpll_funcs {
-	I915_DPLL_FUNCS_NONE = 0,
-	I915_DPLL_FUNCS_COMBO,
-	I915_DPLL_FUNCS_TBT,
-	I915_DPLL_FUNCS_DKL
-};
-
-/*
- * One shared DPLL record: its id, its hooks and the state the readout
- * found.
- */
-struct i915_xd;
-struct i915_xd_pll_desc;
-
-struct i915_dpll {
-	const char *name;
-	int id;                 /* enum intel_dpll_id */
-	int funcs;              /* enum i915_dpll_funcs */
-	unsigned index;
-	uint32_t enable_reg;
-	const struct i915_xd_pll_desc *xd_pll;  /* the platform's PLL (xd clock) */
-	int on;                 /* readout */
-	unsigned pipe_mask;
-	unsigned active_mask;
-	int readout_incomplete; /* an active pipe's PLL could not be read (e.g. TC get_pll not ported): never disable */
-};
-
-/* One ICP gmbus pin (the adapter itself needs an i2c core we do not have). */
-struct i915_gmbus_pin {
-	const char *name;
-	unsigned gpio;
-	unsigned reg0;          /* pin | GMBUS_RATE_100KHZ */
-	int present;
-};
-
-/*
- * The records the output setup, the readout and the sanitize build and
- * read: crtcs, planes, DPLLs, encoders and their locks.
- */
-struct i915_display_nogem {
-	/* intel_wm_init -> skl_wm_init */
-	unsigned wm_num_levels;
-	uint16_t wm_skl_latency[I915_NOGEM_MAX_WM_LVL];
-	int wm_latency_valid;
-	int sagv_status;                /* mirrors display.sagv.status */
-	uint32_t sagv_block_time_us;
-
-	/* intel_pps_setup / intel_gmbus_setup */
-	uint32_t pps_mmio_base;
-	uint32_t gmbus_mmio_base;
-	struct mutex gmbus_lock;
-	struct wait_queue gmbus_waitq;
-	struct i915_gmbus_pin gmbus_pins[I915_NOGEM_MAX_GMBUS];
-	unsigned gmbus_pins_present;
-	int gmbus_adapters_unimplemented;   /* i2c core absent: recorded, not faked */
-
-	/* The xd display the DPLL readout and sanitize go through; NULL without a description. */
-	struct i915_xd *xd;
-
-	/* CRTCs / planes / DPLLs */
-	struct i915_crtc crtcs[I915_NOGEM_MAX_PIPES];
-	unsigned num_crtcs;
-	struct i915_dpll dplls[I915_NOGEM_MAX_DPLLS];
-	unsigned num_dplls;
-	int dpll_mgr_present;
-	struct mutex dpll_lock;
-	uint32_t dpll_ref_nssc;
-
-	/* cdclk-derived */
-	uint32_t max_cdclk_freq;
-	int cdclk_logical_set;          /* cdclk_state->logical = actual = hw */
-
-	/* WAs / misc */
-	int adlp_wa_applied;
-	/* the xe_d arm of intel_display_wa_apply() ran (Tiger Lake and friends) */
-	int xe_d_wa_applied;
-	int hti_state_read;             /* has_hti is 0 on xe_lpd -> stays 0 */
-	uint32_t hti_state;
-	int fdi_pll_freq_updated;       /* ADL-P: the function returns early */
-	int czclk_updated;              /* ADL-P: the function returns early */
-	int hdcp_component_unimplemented;
-
-	/* intel_vga_disable */
-	int vga_already_disabled;
-	int vga_disable_done;
-
-	/* intel_setup_outputs */
-	struct i915_encoder encoders[I915_NOGEM_MAX_ENCODERS];
-	unsigned num_encoders;
-	unsigned ddi_init_calls;
-	unsigned ddi_skipped;
-	int ddi_skip_reason[I915_NOGEM_MAX_ENCODERS];
-	int ddi_skip_port[I915_NOGEM_MAX_ENCODERS];
-	unsigned num_ddi_skips;
-	int crt_present;
-	int outputs_done;
-	/*
-	 * intel_ddi_init() -> intel_ddi_init_dp_connector() -> intel_dp_init_connector() ->
-	 * intel_edp_init_connector(), for a DP-capable encoder: 1 = not an eDP port (nothing
-	 * done), 0 = eDP initialised and KEPT by the hook's owner, < 0 = failed (the reference
-	 * then frees the encoder).  NULL = no connector construction (the pre-behaviour).
-	 */
-	int (*dp_connector_init)(void *ctx, int port);
-	void *dp_connector_ctx;
-	int edp_port;                       /* port whose eDP connector is live, or -1 */
-	int edp_init_rc;
-
-	/* intel_modeset_readout_hw_state */
-	unsigned active_pipes;          /* cdclk_state/dbuf_state->active_pipes */
-	unsigned readout_crtcs;
-	unsigned readout_planes_visible;
-	unsigned readout_encoders_linked;
-	unsigned readout_dplls_on;
-	int readout_done;
-	/*
-	 * Fields the reference reads that this port deliberately does NOT: color
-	 * config, DSC, VRR, bigjoiner, scaler detail, output_format, linetime,
-	 * pixel_multiplier, framestart_delay.  None of them feeds a sanitize
-	 * decision, and inventing them would be worse than recording the gap.
-	 */
-	int readout_detail_unimplemented;
-
-	/* intel_modeset_setup_hw_state, sanitize half */
-	int early_display_was_applied;   /* IS_DISPLAY_VER(10,12) only -> 0 on ADL-P */
-	int pch_sanitize_applied;        /* HAS_PCH_IBX only -> 0 */
-	int plane_mapping_sanitized;     /* DISPLAY_VER >= 4 returns -> 0 */
-	unsigned vblank_resets;
-	unsigned dmc_pipes_enabled;
-	unsigned vblank_on_count;
-	unsigned fbc_deactivated;
-	unsigned crtcs_disabled_noatomic;
-	unsigned encoder_clocks_gated;
-	unsigned dplls_disabled;
-	int cmtg_wa_applied;             /* ADL-P A0..B0 + DPLL0 only -> 0 on D0 */
-	unsigned wells_disabled;
-	int wm_hw_state_read;
-	/*
-	 * intel_crtc_disable_noatomic() would need the full modeset disable path
-	 * (hsw_crtc_disable: encoder post_disable, DDI, DPLL, pipe, DBUF).  It is
-	 * only reachable from an ACTIVE pipe with no encoders; when that happens
-	 * this flag is raised instead of pretending the pipe was disabled.
-	 */
-	int crtc_disable_noatomic_unimplemented;
-	int sanitize_done;
-
-	/* diagnostics */
-	unsigned mmio_writes;
-	const char *fail_where;
-	int inited;
+struct i915_display_state {
+	struct i915_bw_obj_state bw_obj_state;
+	int sagv_force_disable_attempted;
+	int sagv_pcode_ret;             /* the PCODE's answer to the restriction */
+	unsigned sagv_qgv_points;       /* the QGV points the restriction kept */
+	unsigned sagv_psf_points;       /* the PSF GV points the restriction kept */
 };
 
 /*
@@ -1369,15 +865,12 @@ struct i915_display_nogem;
 #define I915_HPD_PORT_B    5
 #define I915_HPD_PORT_C    6
 #define I915_HPD_PORT_D    7
-#define I915_HPD_PORT_E    8
 #define I915_HPD_PORT_TC1  9
 #define I915_HPD_PORT_TC6  14
 #define I915_HPD_NUM_PINS  15
 
 /* hotplug.stats[].state */
 #define I915_HPD_ENABLED        0
-#define I915_HPD_DISABLED       1
-#define I915_HPD_MARK_DISABLED  2
 
 /* Registers (i915_reg.h). */
 #define I915_GEN11_DE_HPD_IMR       0x44474u
@@ -1514,9 +1007,6 @@ struct i915_drm_device {
  */
 /* video/internal.h resource flags returned by the decode callback. */
 #define I915_VGA_RSRC_LEGACY_IO   0x01u
-#define I915_VGA_RSRC_LEGACY_MEM  0x02u
-#define I915_VGA_RSRC_NORMAL_IO   0x04u
-#define I915_VGA_RSRC_NORMAL_MEM  0x08u
 
 /* VGA arbiter client state (a faithful subset of the registration). */
 struct i915_vga_client {
@@ -1541,13 +1031,6 @@ struct i915_vga_io_ops {
 	void *ctx;
 };
 
-/*
- * The combo PHY (phy.c).
- */
-/* ADL-P combo PHYs. */
-#define I915_COMBO_PHY_A  0u
-#define I915_COMBO_PHY_B  1u
-#define I915_COMBO_PHY_NUM 2u
 /*
  * The VBT state (vbt.c).
  */
@@ -1885,19 +1368,6 @@ struct i915_edp_config {
 struct i915_edp_pps_regs { uint32_t pp_status, pp_control, pp_on_delays, pp_off_delays; };
 
 /*
- * How far the eDP sink bring-up got.
- */
-enum i915_edp_stage {
-	I915_EDP_STAGE_NONE = 0,
-	I915_EDP_STAGE_PPS_INIT,        /* intel_pps_init() */
-	I915_EDP_STAGE_DPCD,            /* intel_edp_init_dpcd(): receiver caps + eDP display control */
-	I915_EDP_STAGE_EDID,            /* drm_edid_read_ddc(): I2C-over-AUX */
-	I915_EDP_STAGE_ACQUIRED,        /* waiting for i915_edp_init_late() */
-	I915_EDP_STAGE_LATE,            /* intel_pps_init_late() done: VDD-off is scheduled */
-	I915_EDP_STAGE_ENDED,
-};
-
-/*
  * What the eDP sink bring-up found and did: the PPS registers, DPCD, EDID
  * and who holds what.
  */
@@ -1978,89 +1448,6 @@ enum i915_lcd_observe {
  */
 #define i915_lcd_aux_emit i915_xd_sink_hooks
 #define i915_lcd_emit i915_xd_backend
-/*
- * The state calculation (state.c).
- */
-/*
- * LCD-A, first slice: from what the panel and the VBT report
- * (EDID, DPCD, VBT colour depth) to the values the display hardware will be
- * programmed with: the panel mode, the link configuration and its bandwidth check,
- * the link / data M/N pair and the combo PLL configuration words.
- *
- * Calculation only: nothing is written to hardware.  The arithmetic is the
- * reference's own (generated files in this directory); the comparison target is
- * what Linux programmed on the same machine.
- *
- * NOT computed yet (LCD-A, next slices): DDI buffer translation / voltage swing,
- * transcoder timing register words, plane + scanout layout, CDCLK / bandwidth /
- * DBUF / watermark requirements, the enable and disable state sequences.
- */
-
-/*
- * The link parameters of one modeset: rate, lanes and the M/N values.
- */
-struct i915_lcd_link {
-	int sink_max_rate_khz, sink_max_lanes;    /* DPCD 0x001 / 0x002: the capability */
-	int rate_khz, lanes;                      /* the selected configuration */
-	int use_max_params;                       /* eDP < 1.4: the reference trains at the maximum */
-	int bpp;                                  /* pipe bits per pixel */
-	int required_kbps, available_kbps;        /* intel_dp_link_required / intel_dp_max_data_rate */
-	uint32_t tu, data_m, data_n, link_m, link_n;
-};
-
-/*
- * The DKL PLL words of a Type-C port's link clock: what
- * icl_calc_mg_pll_state() computes for display version 12 and later, one
- * word per DKL register.
- */
-struct i915_lcd_dkl_words {
-	uint32_t refclkin_ctl;
-	uint32_t clktop2_coreclkctl1;
-	uint32_t clktop2_hsclkctl;
-	uint32_t div0;
-	uint32_t div1;
-	uint32_t lf;
-	uint32_t frac_lock;
-	uint32_t ssc;
-	uint32_t bias;
-	uint32_t tdc_coldst_bias;
-};
-
-/*
- * The PLL state of one modeset.
- */
-struct i915_lcd_pll {
-	int ref_khz;                              /* display.dpll.ref_clks.nssc */
-	uint32_t cfgcr0, cfgcr1, div0;            /* a combo PHY's DPLL */
-	struct i915_lcd_dkl_words dkl;            /* a Type-C port's TC PLL (zero on a combo PHY) */
-};
-
-/*
- * The computed state of one modeset: mode, link and PLL.
- */
-struct i915_lcd_state {
-	struct i915_lcd_mode mode;
-	struct i915_lcd_link link;
-	struct i915_lcd_pll pll;
-	unsigned notes;                           /* messages the reference text emitted */
-};
-
-/* one register write, in the order the reference's writer functions issue them */
-struct i915_lcd_regwrite {
-	uint32_t reg, value;          /* a write: the value.  A read-modify-write: the bits SET */
-	uint32_t clear;               /* read-modify-write only: the bits cleared first */
-	uint8_t rmw;                  /* 1 = read-modify-write (the resulting word depends on the hardware) */
-	const char *step;             /* not a register operation: a reference callee that is not ported yet, at its position */
-};
-#define I915_LCD_MAX_REGWRITES 96u
-/*
- * The register words one modeset writes, recorded in order.
- */
-struct i915_lcd_words {
-	unsigned n;
-	unsigned overflow;
-	struct i915_lcd_regwrite w[I915_LCD_MAX_REGWRITES];
-};
 
 /*
  * The commit observation (diagnostics.c).
@@ -2120,16 +1507,6 @@ struct i915_lcd_observer {
 	unsigned n, dropped;
 	struct i915_lcd_obs_sample s[I915_LCD_OBS_MAX_SAMPLES];
 };
-
-/* the registers the run log reads back, by the reference's names (diagnostics.c) */
-struct i915_lcd_named_reg {
-	const char *name;
-	uint32_t reg;
-	int has_linux;                  /* Linux's dump of this machine has a value for it */
-	uint32_t linux_value, compare_mask;
-};
-
-       /* the reference's DBUF_CTL_S(slice), slice 0 = S1 */      /* pipe A / port A / DPLL 0; 0 = unknown name */
 
 /*
  * The modeset trace (diagnostics.c).
@@ -2193,19 +1570,6 @@ struct i915_lcd_trace {
  * (xd-picture.h); the older code names them and their results so.
  */
 #define i915_lcd_modeset_status i915_xd_picture_status
-#define i915_lcd_flip_result i915_xd_picture_flip
-
-#define I915_LCD_MS_OK I915_XD_PICTURE_OK
-#define I915_LCD_MS_NOT_PREPARED I915_XD_PICTURE_NOT_READY
-#define I915_LCD_MS_ERRORS I915_XD_PICTURE_ERRORS
-#define I915_LCD_MS_LINK_NOT_TRAINED I915_XD_PICTURE_LINK_NOT_TRAINED
-#define I915_LCD_MS_STILL_OWNED I915_XD_PICTURE_STILL_OWNED
-
-#define I915_LCD_FLIP_DONE I915_XD_PICTURE_FLIP_DONE
-#define I915_LCD_FLIP_NOT_LATCHED I915_XD_PICTURE_FLIP_NOT_LATCHED
-#define I915_LCD_FLIP_TIMEOUT I915_XD_PICTURE_FLIP_TIMEOUT
-#define I915_LCD_FLIP_REFUSED I915_XD_PICTURE_FLIP_REFUSED
-#define I915_LCD_FLIP_ARMED I915_XD_PICTURE_FLIP_ARMED
 
 /*
  * The show of a resident run (resident.c): the buffer's life (create, pin,
@@ -2309,18 +1673,8 @@ struct i915_fhd_render;
 struct i915_scanout;
 struct i915_gt_tlb;
 
-/* what the runner reports next to the probe result (the probe outcome itself is not changed by the LCD test) */
-struct i915_lcd_test_summary {
-	int ran, pass;
-	const char *stage;                      /* furthest stage */
-	const char *first_anomaly, *first_anomaly_stage;
-	int cleanup_rc;                         /* the disable commit's result */
-	unsigned cleanup_errors;
-	int retained;                           /* resources kept because the stop was not confirmed */
-};
-
 /*
- * The resident eDP device (dp-sink.c).
+ * The resident eDP device (edp-device.c).
  */
 /* the env's kernel backend: real mutexes, tick-driven sleeps, timer + worker threads */
 struct i915_dp_kernel {
@@ -2466,23 +1820,6 @@ struct i915_hpd_summary {
 
 struct i915_workqueue;
 
-/* the sanitized encoder of the readout (N1): port = enum port, output_type = enum intel_output_type */
-#define I915_OUTPUT_ANALOG  1
-#define I915_OUTPUT_DP      7
-#define I915_OUTPUT_EDP     8
-#define I915_OUTPUT_DSI     9
-#define I915_OUTPUT_DDI     10
-#define I915_OUTPUT_HDMI    6
-#define I915_OUTPUT_DP_MST  11
-
-/* the worker queue, the backlight policy (acpi_video_get_backlight_type), the connectors */
-#define I915_OPREGION_POLICY_VIDEO  1     /* acpi_backlight_video: BCLP requests are served */
-#define I915_OPREGION_POLICY_VENDOR 2
-#define I915_OPREGION_POLICY_NATIVE 3     /* acpi_backlight_native: the reference ignores ASLE backlight requests */
-
-/*
- * The takeover report (takeover.c).
- */
 struct i915_lcd_emit;
 
 /*
@@ -2814,14 +2151,11 @@ struct i915_display {
 	/* The DMC loader; its work runs on dmc_wq. */
 	struct i915_dmc_dev dmc_dev;
 
-	/* The display software state (mode config, global objects, FBC). */
+	/* The bandwidth state the start left (the QGV points SAGV may use). */
 	struct i915_display_state dstate;
 
 	/* The PCH the display found (intel_detect_pch). */
 	struct i915_pch_state pch;
-
-	/* The crtc, plane, DPLL and encoder records the output setup and the readout build. */
-	struct i915_display_nogem nogem;
 
 	/* The Linux driver-probe state after the noirq stage (hotplug, registration, IPC). */
 	struct i915_driver_probe dprobe;
@@ -2970,8 +2304,6 @@ struct i915_display {
 	 * The Linux environments' own state.  Each is allocated and freed by
 	 * the owner file of its environment and is NULL outside that window.
 	 */
-	struct i915_lcd_world *lcd_world;
-	struct i915_wm_world *wm_world;
 	struct i915_dp_world *dp_world;
 	struct i915_vbt_world *vbt_world;
 	struct i915_hpd_world *hpd_world;
@@ -2989,8 +2321,9 @@ struct i915_display {
 	int suspend_dc9;
 	int modeset_wq_ok;
 	int flip_wq_ok;
-	int dstate_inited;
-	int nogem_inited;
+
+	/* The front of the start after the interrupts ran: the stop takes the panel's device apart. */
+	int front_done;
 
 	/* Nonzero while the display half is bound to the interrupt device. */
 	int irq_bound;

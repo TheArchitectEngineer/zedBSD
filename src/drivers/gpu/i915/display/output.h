@@ -83,7 +83,7 @@ void drv_i915_display_output_panel(struct i915_display *display, struct i915_dis
  * Computes the CVT reduced-blanking (version 1) timing of a mode: 0, or
  * EINVAL for a size or rate the formula cannot serve.
  */
-int drv_i915_output_cvt_rb(uint32_t width, uint32_t height, uint32_t refresh_hz, struct i915_lcd_mode *mode);
+int drv_i915_output_cvt_rb(uint32_t width, uint32_t height, uint32_t refresh_hz, struct i915_display_mode *mode);
 
 /*
  * Picks the HDMI mode from display.mode= (width, height and refresh 0
@@ -91,7 +91,7 @@ int drv_i915_output_cvt_rb(uint32_t width, uint32_t height, uint32_t refresh_hz,
  * EDID (NULL when none was read): 0 with the mode and where it came from,
  * or EINVAL.
  */
-int drv_i915_output_pick_mode(uint32_t want_width, uint32_t want_height, uint32_t want_refresh_hz, const uint8_t *edid, unsigned edid_size, struct i915_lcd_mode *mode, const char **source);
+int drv_i915_output_pick_mode(uint32_t want_width, uint32_t want_height, uint32_t want_refresh_hz, const uint8_t *edid, unsigned edid_size, struct i915_display_mode *mode, const char **source);
 
 /* Plans the link and the combo PLL of an HDMI mode on DDI B: 0, or EINVAL. */
 int drv_i915_output_link_hdmi(const struct i915_xd_platform *platform, const struct i915_display_mode *mode, uint32_t ref_khz, struct i915_display_link *link);

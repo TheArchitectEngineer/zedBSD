@@ -421,21 +421,17 @@ drv_i915_bw_init_hw(
 /*
  * Tells whether the display controls SAGV (the Linux intel_has_sagv()).
  *
- * HAS_SAGV() is display version 9+ outside the LP parts, and the PCODE must
- * not have reported SAGV as out of the driver's control.
+ * SAGV is there from display version 9 (no part without it is driven
+ * here), and the PCODE must not have reported it as out of the driver's
+ * control.
  */
 int
 drv_i915_has_sagv(
 	int display_ver,
-	int legacy_platform,
 	int sagv_status)
 {
 	/* Before display version 9 there is no SAGV. */
 	if (display_ver < 9)
-		return 0;
-
-	/* IS_LP(): Broxton has none. */
-	if (legacy_platform == I915_PLAT_BROXTON)
 		return 0;
 
 	/* A SAGV the BIOS disabled is not controlled. */
@@ -638,7 +634,7 @@ drv_i915_bw_init(
 	kern_memset(&d->bw_obj_state, 0, sizeof(d->bw_obj_state));
 
 	/* Forces SAGV off on display versions 11..13 when the display controls it. */
-	has_sagv = drv_i915_has_sagv(display_ver, I915_PLAT_NONE, bw->sagv_status);
+	has_sagv = drv_i915_has_sagv(display_ver, bw->sagv_status);
 	if (has_sagv != 0) {
 		if (display_ver >= 11 && display_ver <= 13)
 			i915_icl_force_disable_sagv(d, sb_lock, mmio, display_ver, bw, &d->bw_obj_state);

@@ -54,7 +54,7 @@ int drv_i915_bw_init_hw(struct mutex *sb_lock, struct i915_mmio *mmio, const str
  * ==== SAGV, the QGV points and the bandwidth and PM demand objects ====
  */
 
-int drv_i915_has_sagv(int display_ver, int legacy_platform, int sagv_status);
+int drv_i915_has_sagv(int display_ver, int sagv_status);
 uint16_t drv_i915_icl_qgv_points_mask(const struct i915_bw_state *bw);
 unsigned drv_i915_icl_qgv_bw(const struct i915_bw_state *bw, int display_ver, int num_active_planes, int qgv_point);
 unsigned drv_i915_icl_max_bw_qgv_point_mask(const struct i915_bw_state *bw, int display_ver, int num_active_planes);

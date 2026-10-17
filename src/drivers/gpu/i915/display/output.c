@@ -126,7 +126,7 @@
  * before the CVT formula: every HDMI sink accepts formats 1, 4 and 16.
  * The table is constant.
  */
-static const struct i915_lcd_mode i915_output_cea_modes[] = {
+static const struct i915_display_mode i915_output_cea_modes[] = {
 	/* Format 1: 640x480 at 60 Hz, 25.175 MHz, negative syncs. */
 	{
 		.clock_khz = 25175,
@@ -191,11 +191,11 @@ static void i915_output_dp_tc_wait(struct i915_display *display, const char *nam
 static void i915_output_choose(struct i915_display *display);
 static void i915_output_inventory(struct i915_display *display);
 static int i915_output_wanted_mode(uint32_t *width, uint32_t *height, uint32_t *refresh_hz);
-static uint32_t i915_output_refresh_hz(const struct i915_lcd_mode *mode);
-static int i915_output_mode_matches(const struct i915_lcd_mode *mode, uint32_t width, uint32_t height, uint32_t refresh_hz);
-static int i915_output_edid_find(const uint8_t *edid, unsigned edid_size, uint32_t width, uint32_t height, uint32_t refresh_hz, struct i915_lcd_mode *mode);
-static int i915_output_edid_block_find(const uint8_t *block, unsigned first, unsigned last, uint32_t width, uint32_t height, uint32_t refresh_hz, struct i915_lcd_mode *mode);
-static void i915_output_edid_size(const uint8_t *edid, unsigned edid_size, struct i915_lcd_mode *mode);
+static uint32_t i915_output_refresh_hz(const struct i915_display_mode *mode);
+static int i915_output_mode_matches(const struct i915_display_mode *mode, uint32_t width, uint32_t height, uint32_t refresh_hz);
+static int i915_output_edid_find(const uint8_t *edid, unsigned edid_size, uint32_t width, uint32_t height, uint32_t refresh_hz, struct i915_display_mode *mode);
+static int i915_output_edid_block_find(const uint8_t *block, unsigned first, unsigned last, uint32_t width, uint32_t height, uint32_t refresh_hz, struct i915_display_mode *mode);
+static void i915_output_edid_size(const uint8_t *edid, unsigned edid_size, struct i915_display_mode *mode);
 static uint32_t i915_output_cvt_vsync(uint32_t width, uint32_t height);
 static void i915_output_link_from_plan(const struct i915_xd_plan *plan, uint32_t ref_khz, struct i915_display_link *link);
 static int i915_output_panel_mode(const struct i915_lcd_kernel_deps *d, uint32_t *width, uint32_t *height, uint32_t *refresh_millihz);
@@ -390,7 +390,7 @@ drv_i915_display_output_mode(
 	uint32_t *height,
 	uint32_t *refresh_millihz)
 {
-	const struct i915_lcd_mode *m;
+	const struct i915_display_mode *m;
 	uint64_t pixels;
 	int error;
 
@@ -658,7 +658,7 @@ drv_i915_display_output_pipe(
 int
 drv_i915_output_edid_timing(
 	const uint8_t *d,
-	struct i915_lcd_mode *mode)
+	struct i915_display_mode *mode)
 {
 	uint32_t clock;
 	uint32_t hactive;
@@ -741,7 +741,7 @@ drv_i915_output_cvt_rb(
 	uint32_t width,
 	uint32_t height,
 	uint32_t refresh_hz,
-	struct i915_lcd_mode *mode)
+	struct i915_display_mode *mode)
 {
 	uint64_t frame_ps;
 	uint64_t line_ps;
@@ -822,7 +822,7 @@ drv_i915_output_pick_mode(
 	uint32_t want_refresh_hz,
 	const uint8_t *edid,
 	unsigned edid_size,
-	struct i915_lcd_mode *mode,
+	struct i915_display_mode *mode,
 	const char **source)
 {
 	uint32_t refresh;
@@ -1069,7 +1069,7 @@ i915_output_hdmi_mode(
 	struct i915_display_output *output,
 	const char **reason)
 {
-	struct i915_lcd_mode mode;
+	struct i915_display_mode mode;
 	const uint8_t *edid;
 	unsigned edid_size;
 	uint32_t want_width;
@@ -1327,7 +1327,7 @@ i915_output_wanted_mode(
 /* Reports a mode's refresh rate, rounded to whole hertz. */
 static uint32_t
 i915_output_refresh_hz(
-	const struct i915_lcd_mode *mode)
+	const struct i915_display_mode *mode)
 {
 	uint64_t pixels;
 
@@ -1343,7 +1343,7 @@ i915_output_refresh_hz(
 /* Reports whether a mode has the wanted size and, when one is wanted, its refresh rate. */
 static int
 i915_output_mode_matches(
-	const struct i915_lcd_mode *mode,
+	const struct i915_display_mode *mode,
 	uint32_t width,
 	uint32_t height,
 	uint32_t refresh_hz)
@@ -1380,7 +1380,7 @@ i915_output_edid_find(
 	uint32_t width,
 	uint32_t height,
 	uint32_t refresh_hz,
-	struct i915_lcd_mode *mode)
+	struct i915_display_mode *mode)
 {
 	const uint8_t *block;
 	unsigned offset;
@@ -1427,9 +1427,9 @@ i915_output_edid_block_find(
 	uint32_t width,
 	uint32_t height,
 	uint32_t refresh_hz,
-	struct i915_lcd_mode *mode)
+	struct i915_display_mode *mode)
 {
-	struct i915_lcd_mode candidate;
+	struct i915_display_mode candidate;
 	unsigned position;
 	int matches;
 	int error;
@@ -1458,7 +1458,7 @@ static void
 i915_output_edid_size(
 	const uint8_t *edid,
 	unsigned edid_size,
-	struct i915_lcd_mode *mode)
+	struct i915_display_mode *mode)
 {
 	/* A mode with its own image size keeps it. */
 	if (mode->width_mm != 0U && mode->height_mm != 0U)
@@ -1520,7 +1520,7 @@ i915_output_dp_ext(
 	struct i915_display_output *output,
 	const char **reason)
 {
-	struct i915_lcd_mode mode;
+	struct i915_display_mode mode;
 	const struct i915_lcd_aux_emit *aux;
 	enum i915_dp_ext_status status;
 	uint8_t edid[I915_DP_EXT_EDID_BLOCKS * I915_DP_EXT_EDID_BLOCK_SIZE];
