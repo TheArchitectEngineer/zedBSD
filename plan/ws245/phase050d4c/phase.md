@@ -2,7 +2,7 @@
 
 # ws245-p050d4c: 始まりと終わり（eDP の device・nogem・setup_outputs・VGA・world）
 
-Status: planned（2026-10-17 Q1 の判断で p050d4 を 4 段に分けた 3 段目。p050d4b の後）
+Status: in-progress（2026-10-17 q1229-i12 で実装・host 試験・build 済み（43c3ed47c・f491cfcad）、5330 は全部の段の後に 1 回。world の削除は d4d へ）
 Parent: [WS245](../ws.md)
 Queue: q1229-i11（P1）
 設計: [design.md](../design.md) §6.2 の p050 の行、§3.6。分け方は [phase050d4](../phase050d4/phase.md)
@@ -32,3 +32,22 @@ nogem の記録の読み手: hotplug.c の `i915_hpd_make_objects`（encoders）
 5. 試験: host-dp-test の oracle は host-xd-edp-test・host-xd-aux-test に既にある物を確かめ、足りない物を足す。edp-ktest 等の ktest は d4a で組ごと外した。
 
 比べ: 段ごとに `sh build/tmp/stagecmp.sh <前> <名前> out50c-d4b.c out50c-d4b.c`（旧 host 試験が通る間）と run-xd-host-tests.sh。
+
+## 結果（2026-10-17 q1229-i12、P1。base 7211a06ef、段の commit 43c3ed47c（port の表と eDP の device）・f491cfcad（始まりの前半と VGA、takeover.c を空に））
+
+形:
+- **port の表**（xd-display.c、xd.h）: `drv_i915_xd_ports(platform, vbt, ddi_mask, &ports)` が xd-vbt の child から `struct i915_xd_ports`（DDI・Type-C・DP・HDMI・eDP・AUX・device type）を作る（platform に無い DDI・mask の外・同じ DDI の 2 つ目・MIPI・DP/HDMI/DVI でない child は数えて捨てる）。`struct i915_xd` の `ports`。display.c の `i915_display_setup_outputs` が表を作り、DP の port で eDP の connector を作る（取れない panel の port は落とす）。hotplug.c の `drv_i915_hpd_start`・`i915_hpd_make_objects`、tc-kern.c の `tc_kern_declare_ports`、display.c の hpd pin は表を読む（nogem の encoders は読まない）。mask は今の hotplug・TC の道が扱う DDI（A・B・TC1〜4）のまま（p051 で platform の規則に）。
+- **eDP の device**（新しい own の `edp-device.c/.h`）: dp-sink.c から device（prepare・start・init_connector・fini・late・result・xe の環境）と kernel の backend（`i915_dp_kernel`: lock・thread・遅延の work・電源・時計）を移し、aux.c・panel.c の resident 用の hook（`drv_i915_edp_emit_dpcd_read/_write/_read_dpcd_caps`・`_emit_panel`）も移した（aux.h・panel.h は空）。panel の mode と link は `drv_i915_lcd_compute` の代わりに xd-edid の first timing と decode の bpc と xd-screen の plan_link で `struct i915_edp_device` の `mode`・`link`・`link_rc` に（`lcd`・word の記録器の field を消し、「LCD-A」の log を `i915: edp link: …` の 1 行に）。dp-sink.c に残るのは DP の world、旧 host 試験の eDP の道（edp_begin ほか）と dp-ext の DPCD・I2C（p052 まで）、新しい `drv_i915_dp_ext_stop_of`。
+- **始まりの前半**（display.c の `i915_display_nogem_front` を書き直し）: xd-dbuf の新しい `drv_i915_xd_memory_read`（SAGV の block time、latency の 2 語、0 us の level の切り、read latency の足し、DIMM の調整: Procedure referenced: skl_watermark.c）、`drv_i915_xd_gmbus_reset`、旧 clock.c の `drv_i915_update_cdclk`（CD clock の dev は旧のまま: d4d 以降）、xd-core の新しい `drv_i915_xd_display_wa`（display 13・12・11 の WA、値の変わらない register は書かない）、VGA の plane の停止。結果は `struct i915_xd` の `memory`、resident の config が読む（deps の nogem を消した）。nogem の crtc・plane・DPLL・GMBUS の記録と `nogem_fini` は使われなくなった（`struct i915_display_nogem` の型と field は internal.h とともに d4d）。
+- **VGA**（新しい own の `vga.c/.h`）: arbiter の client の登録・解除、legacy I/O の reset、VGA の plane の停止。呼び手 0 の `drv_i915_gmch_vga_set_state/_set_decode`・`drv_i915_vga_io_test_set` は消した。log の `intel_vga_register` は `vga register` に。
+- **takeover.c・takeover.h** は中身を空にし vmunix.mk から外した（takeover world も消した）。takeover-internal.h は旧 file（vblank・clock・ddi・pipe・watermark）が include するので d4d。
+- 範囲の変更（既定の案、Q1 に報告）: modeset world（`drv_i915_lcd_world_create/_destroy`・`_set_display_ver`・`_set_xd_platform`）は旧 file（pipe・plane・clock・ddi・state・diagnostics の reg_by_name・log_regs）が呼ぶ間は消せないので、d4d の旧 file の削除と同じ段で消す。
+
+確かめた事:
+- 前後の比べ（`sh build/tmp/stagecmp.sh 7211a06ef d4c/cmp2 out50c-d4b.c out50c-d4b.c`）: dp SAME、lcd・out50c の差 0（旧 host 試験は旧の eDP の道を使うので、新しい device の道はこの比べに入らない）。
+- `run-xd-host-tests.sh` 26 本 all passed。足した check: host-xd-vbt-test に port の表（一つの output に一つの port、panel が先、mask の外、同じ DDI の 2 つ目、記述の無い device）、host-xd-dbuf-test に memory の読み（5330 の語で 3 us を 6 level に足す・level 6/7 は読んだまま、block time 35 us の後に latency の 2 語、0 us の level の切りと DIMM、SAGV を制御しない、拒まれた mailbox）、host-xd-core-test に WA（display 13・同じ値で書かない・display 12）。
+- build（kbuild.sh d4c、既定・vke2・execution）3 組 rc=0 warning 0。`git diff --check` 0。新しく死んだ export は 0（dead の基準は 7211a06ef）、古い宣言 0。R11: 触った file 全部 0。
+
+実機で確かめる事（5330 は全部の段の後に 1 回）: 起動の log の `i915: setup_outputs: … ports=` と `port[n]`、`i915: edp link: rc=0 …`（旧の LCD-A と同じ mode・link・CFGCR）、`i915: wm: levels=6 latency=…`（旧と同じ値）、VGA の plane の停止、HDMI・USB-C の hotplug（port の表から）、TC の declare。Tiger Lake（5320）は display 12 の WA。
+
+Q1 に頼む削除（中身を空にした file）: `src/drivers/gpu/i915/display/takeover.c`、`takeover.h`、`aux.h`、`panel.h`。
