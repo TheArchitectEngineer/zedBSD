@@ -836,6 +836,7 @@ drv_i915_xd_ddi_hdmi_start(
 	const struct i915_xd_ddi_link *link)
 {
 	uint32_t buffer;
+	unsigned late;
 
 	/* The word. */
 	buffer = link->kept | I915_XD_DDI_BUF_ENABLE;
@@ -843,8 +844,11 @@ drv_i915_xd_ddi_hdmi_start(
 		buffer |= I915_XD_DDI_BUF_TC_OWNED;
 	drv_i915_xd_io_write(io, I915_XD_DDI_BUF_CTL(link->ddi), buffer);
 
-	/* Succeeded: the wait for the buffer to leave idle. */
-	return i915_xd_ddi_wait_active(io, link);
+	/* Waits for the buffer to leave idle. */
+	late = i915_xd_ddi_wait_active(io, link);
+
+	/* Succeeded: the buffer is on; the wait that ran out, if any. */
+	return late;
 }
 
 /*

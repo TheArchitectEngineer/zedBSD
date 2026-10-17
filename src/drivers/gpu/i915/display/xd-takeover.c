@@ -993,6 +993,7 @@ i915_xd_fw_pll_of(
 	unsigned index;
 	unsigned kind;
 	int ungated;
+	const struct i915_xd_pll_desc *pll;
 
 	/* A combo PHY: the select in the clock map, when its clock is ungated. */
 	if (port->phy_kind == I915_XD_PHY_COMBO) {
@@ -1000,8 +1001,11 @@ i915_xd_fw_pll_of(
 		if (!ungated)
 			return NULL;
 
-		/* Succeeded: the PLL the clock select names. */
-		return drv_i915_xd_dpll_desc(platform, select);
+		/* The PLL the clock select names. */
+		pll = drv_i915_xd_dpll_desc(platform, select);
+
+		/* Succeeded: the PLL, or NULL for a select the platform does not have. */
+		return pll;
 	}
 
 	/* A Type-C PHY: the port's own PLL, the Thunderbolt PLL, or none. */

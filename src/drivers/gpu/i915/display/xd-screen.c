@@ -390,8 +390,13 @@ drv_i915_xd_screen_plan(
 	if (refused != I915_XD_PLAN_OK)
 		return refused;
 
-	/* Succeeded: the check's refusal, or none. */
-	return drv_i915_xd_screen_plan_check(input, plan);
+	/* The check. */
+	refused = drv_i915_xd_screen_plan_check(input, plan);
+	if (refused != I915_XD_PLAN_OK)
+		return refused;
+
+	/* Succeeded: the plan holds. */
+	return I915_XD_PLAN_OK;
 }
 
 /*
