@@ -45,7 +45,6 @@
 #include "dp-ext-kern.h"
 #include "bootfb.h"
 #include "vbt-parse.h"
-#include "watermark.h"
 #include <kern/kcrt.h>
 
 #ifdef I915_TEST_CAPTURE
@@ -522,8 +521,8 @@ drv_i915_display_resident_deps(
 	rlcd->pwc = &display->pwc;
 	rlcd->dcore = &display->dcore;
 	rlcd->cdclk = &display->cdclk;
-	rlcd->dstate = &display->dstate;
-	rlcd->bw = &display->bw_state;
+	rlcd->bandwidth = &display->xd.bandwidth;
+	rlcd->platform = display->xd.choice.platform;
 	rlcd->dmc = &display->dmc_dev;
 	rlcd->irq = &display->irq;
 	rlcd->gm = &gt->mem;
@@ -1223,16 +1222,19 @@ static void
 i915_display_read_tables(
 	struct i915_device *device)
 {
+	const struct i915_xd_platform *platform;
 	struct i915_display *display;
 	struct i915_gt *gt;
 	uint32_t asls;
-	int dram_error;
 	int bw_error;
 	int error;
 	uint16_t op;
 
 	display = device->display;
 	gt = &device->gt;
+	platform = NULL;
+	if (display->xd.chosen)
+		platform = display->xd.choice.platform;
 
 	/* ASLS (PCI configuration 0xFC) holds the OpRegion base. */
 	asls = drv_i915_pci_read32(&gt->pci, I915_PCI_ASLS);
@@ -1255,24 +1257,12 @@ i915_display_read_tables(
 	if (asls == 0U)
 		drv_i915_trace_record(&gt->trace, 0U, I915_TRACE_NOTE, "opregion_absent", 0U, 0U);
 
-	/* The DRAM the bandwidth code is given. */
-	dram_error = drv_i915_dram_detect(&gt->sb_lock, &gt->mmio, &display->dram_info);
-	op = I915_TRACE_NOTE;
-	if (dram_error == 0)
-		op = I915_TRACE_ACQUIRE;
-	drv_i915_trace_record(&gt->trace, 0U, op, "dram_detect", (uint64_t)(unsigned)display->dram_info.type, (uint64_t)display->dram_info.num_channels);
-
-	/* The display bandwidth table read from PCODE. */
-	bw_error = drv_i915_bw_init_hw(&gt->sb_lock, &gt->mmio, &display->dram_info, &display->bw_state);
+	/* The memory and the display's share of its bandwidth; a memory the firmware does not describe leaves no limits. */
+	bw_error = drv_i915_xd_bw_read(&display->xd.io, platform, &display->xd.bandwidth);
 	op = I915_TRACE_NOTE;
 	if (bw_error == 0)
 		op = I915_TRACE_ACQUIRE;
-	drv_i915_trace_record(&gt->trace, 0U, op, "bandwidth_read", (uint64_t)(unsigned)display->bw_state.sagv_status, 0U);
-
-	kern_logf("i915: display: memory: dram rc=%d bandwidth rc=%d sagv=%d\n",
-	    dram_error,
-	    bw_error,
-	    display->bw_state.sagv_status);
+	drv_i915_trace_record(&gt->trace, 0U, op, "bandwidth_read", (uint64_t)(unsigned)display->xd.bandwidth.sagv, (uint64_t)display->xd.bandwidth.dram_type);
 }
 
 /* Allocates the state of the VBT parser and of the hotplug, stopping at the first failure. */
@@ -1515,8 +1505,8 @@ i915_display_core_init(
 	if (gt->is_alderlake_p)
 		dcore->is_alderlake_p = 1U;
 
-	dcore->dram_type = display->dram_info.type;
-	dcore->dram_channels = display->dram_info.num_channels;
+	dcore->dram_type = (int)display->xd.bandwidth.dram_type;
+	dcore->dram_channels = display->xd.bandwidth.channels;
 
 	/* Brings the display core up. */
 	drv_i915_power_domains_init_hw(dcore, 0);
@@ -1576,41 +1566,36 @@ i915_display_dmc_init(
 }
 
 /*
- * The tail of the start before the interrupts: the memory's bandwidth
- * points and the forced SAGV disable.  Returns 0, or the error of the
- * stage named in device->stage.
+ * Keeps the memory at its points of the most bandwidth, where the display
+ * controls SAGV, so that a picture never waits for the memory to change
+ * its point.  A refusal of the firmware is logged and the start goes on.
+ * Returns 0.
  */
 static int
 i915_display_bandwidth_start(
 	struct i915_device *device)
 {
+	const struct i915_xd_platform *platform;
+	struct i915_xd_bandwidth *bw;
 	struct i915_display *display;
-	struct i915_display_state *dstate;
-	struct i915_gt *gt;
-	int error;
 
 	display = device->display;
-	gt = &device->gt;
-	dstate = &display->dstate;
+	bw = &display->xd.bandwidth;
+	platform = NULL;
+	if (display->xd.chosen)
+		platform = display->xd.choice.platform;
 
-	/* The bandwidth state starts cleared. */
-	kern_memset(dstate, 0, sizeof(*dstate));
+	/* Keeps SAGV off; a refusal is in the record and in the log. */
+	(void)drv_i915_xd_bw_hold_sagv_off(&display->xd.io, platform, bw);
+	kern_logf("i915: display: bandwidth: restricted=%d qgv=0x%x psf=0x%x mask=0x%x answer=%d sagv=%d\n",
+	    bw->restricted,
+	    bw->kept_qgv,
+	    bw->kept_psf,
+	    (unsigned)bw->restriction,
+	    bw->restrict_error,
+	    bw->sagv);
 
-	/* The QGV points SAGV may use, and SAGV forced off where the display controls it. */
-	device->stage = "bandwidth";
-	error = drv_i915_bw_init(dstate, (int)gt->display_ver, &display->bw_state, &gt->sb_lock, &gt->mmio);
-	if (error != 0)
-		return error;
-
-	kern_logf("i915: display: bandwidth: sagv_forced=%d qgv=0x%x psf=0x%x mask=0x%x pcode=%d sagv_status=%d\n",
-	    dstate->sagv_force_disable_attempted,
-	    dstate->sagv_qgv_points,
-	    dstate->sagv_psf_points,
-	    (unsigned)dstate->bw_obj_state.qgv_points_mask,
-	    dstate->sagv_pcode_ret,
-	    display->bw_state.sagv_status);
-
-	/* Succeeded: the bandwidth state is complete. */
+	/* Succeeded: the memory's points are settled. */
 	return 0;
 }
 
@@ -1638,7 +1623,7 @@ i915_display_memory_and_clocks(
 
 	/* The SAGV's block time and the memory's watermark latencies; a display whose SAGV is not controlled blocks nothing. */
 	sagv_controlled = 1;
-	if (display->bw_state.sagv_status == (int)I915_SAGV_NOT_CONTROLLED)
+	if (display->xd.bandwidth.sagv == I915_XD_SAGV_NOT_CONTROLLED)
 		sagv_controlled = 0;
 
 	kern_memset(memory, 0, sizeof(*memory));
@@ -1675,7 +1660,7 @@ i915_display_memory_and_clocks(
 	    memory->latency[6],
 	    memory->latency[7],
 	    memory->valid,
-	    display->bw_state.sagv_status,
+	    display->xd.bandwidth.sagv,
 	    memory->sagv_block_us,
 	    memory->sagv_error,
 	    vga_result);

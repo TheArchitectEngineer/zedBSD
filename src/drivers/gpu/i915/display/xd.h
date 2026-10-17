@@ -19,6 +19,7 @@
 #define DRIVERS_GPU_I915_DISPLAY_XD_H
 
 #include "xd-aux.h"
+#include "xd-bandwidth.h"
 #include "xd-dmc.h"
 #include "xd-io.h"
 #include "xd-panel.h"
@@ -91,6 +92,7 @@ struct i915_xd {
 	struct i915_xd_pictures pictures;
 	struct i915_xd_ports ports;
 	struct i915_xd_memory memory;
+	struct i915_xd_bandwidth bandwidth;
 };
 
 void drv_i915_xd_start(struct i915_xd *xd, struct i915_mmio *mmio, struct mutex *mailbox_lock, uint16_t product, uint8_t revid);

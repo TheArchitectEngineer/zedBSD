@@ -529,8 +529,8 @@ struct i915_power_domains;
 struct i915_pw_ctx;
 struct i915_display_core;
 struct i915_cdclk_dev;
-struct i915_display_state;
-struct i915_bw_state;
+struct i915_xd_bandwidth;
+struct i915_xd_platform;
 struct i915_dmc_dev;
 struct i915_gt_mem;
 struct i915_gt_engines;
@@ -560,8 +560,8 @@ struct i915_lcd_kernel_deps {
 	/* The display buffer's slices, the CD clock, the bandwidth and the DMC. */
 	struct i915_display_core *dcore;
 	struct i915_cdclk_dev *cdclk;
-	struct i915_display_state *dstate;
-	struct i915_bw_state *bw;
+	const struct i915_xd_bandwidth *bandwidth;
+	const struct i915_xd_platform *platform;
 	struct i915_dmc_dev *dmc;
 
 	/* The display half of the interrupt device: vblank references and waits. */

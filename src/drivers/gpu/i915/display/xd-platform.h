@@ -146,12 +146,15 @@
 #define I915_XD_STEP_FUTURE		0xffU
 
 /*
- * The memory types the bandwidth buddy masks are chosen by.
+ * The memory types the bandwidth buddy masks are chosen by, and the two
+ * older ones the firmware may still report (0 is a type not known).
  */
 #define I915_XD_DRAM_DDR4		1U
 #define I915_XD_DRAM_DDR5		2U
 #define I915_XD_DRAM_LPDDR4		3U
 #define I915_XD_DRAM_LPDDR5		4U
+#define I915_XD_DRAM_DDR3		5U
+#define I915_XD_DRAM_LPDDR3		6U
 
 /*
  * The platform kinds, for the log only: the steps of the code read the

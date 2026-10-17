@@ -31,7 +31,6 @@
 #include "../../workqueue.h"
 #include "../../display/power.h"
 #include "../../display/xd.h"
-#include "../../display/watermark.h"
 
 #include <hal/hal.h>
 #include <kern/clock.h>
@@ -301,9 +300,6 @@ static void i915_ktest_msi_distinct(struct i915_ktest *ktest);
 static void i915_ktest_wc_contract(struct i915_ktest *ktest);
 static void i915_ktest_reset(struct i915_ktest *ktest);
 static void i915_ktest_pcode(struct i915_ktest *ktest);
-static void i915_ktest_dram_decode(struct i915_ktest *ktest);
-static void i915_ktest_dram_bw(struct i915_ktest *ktest);
-static void i915_ktest_dram_bw_psf_failure(struct i915_ktest *ktest, struct mutex *sb_lock);
 static void i915_ktest_wc_full_range(struct i915_ktest *ktest);
 static void i915_ktest_irq_oneshot(struct i915_ktest *ktest);
 static void i915_ktest_rpm(struct i915_ktest *ktest);
@@ -384,11 +380,9 @@ drv_i915_ktest_sync(
 	i915_ktest_msi(ktest);
 	i915_ktest_wc_contract(ktest);
 
-	/* The reset, PCODE and DRAM paths against the register model. */
+	/* The reset and PCODE paths against the register model. */
 	i915_ktest_reset(ktest);
 	i915_ktest_pcode(ktest);
-	i915_ktest_dram_decode(ktest);
-	i915_ktest_dram_bw(ktest);
 
 	/* A refused aperture map and the map that follows it. */
 	i915_ktest_wc_full_range(ktest);
@@ -814,106 +808,6 @@ i915_ktest_pcode(
 	i915_ktest_fake.script_len = 1U;
 	error = drv_i915_pcode_read(&sb_lock, &i915_ktest_mmio, 0x0000000dU, &value, NULL);
 	drv_i915_ktest_check(ktest, error == ETIMEDOUT, "pcode: a mailbox timeout status maps to ETIMEDOUT");
-}
-
-/* Checks the decode of the PCODE global memory information word. */
-static void
-i915_ktest_dram_decode(
-	struct i915_ktest *ktest)
-{
-	struct i915_dram_info info;
-	int error;
-
-	/* A DDR4 word with two channels, four QGV points and three PSF points decodes. */
-	kern_memset(&info, 0, sizeof(info));
-	error = drv_i915_dram_decode(0x00003420U, &info);
-	drv_i915_ktest_check(ktest, error == 0, "dram_decode: valid word decodes");
-	drv_i915_ktest_check(ktest,
-			     info.type == (int)I915_DRAM_DDR4 &&
-			     info.num_channels == 2U &&
-			     info.num_qgv_points == 4U &&
-			     info.num_psf_gv_points == 3U,
-			     "dram_decode: DDR4/2ch/4qgv/3psf fields");
-
-	/* An unknown type field is refused. */
-	error = drv_i915_dram_decode(0x0000000fU, &info);
-	drv_i915_ktest_check(ktest, error == EINVAL, "dram_decode: an unknown type field is rejected");
-}
-
-/* Checks the DRAM detect and the bandwidth table it feeds, as saved in the caller's state. */
-static void
-i915_ktest_dram_bw(
-	struct i915_ktest *ktest)
-{
-	static const uint32_t ok_seq[6][3] = {
-		{ 0x00003420U, 0U, 0U },
-		{ 0x000f03e8U, 0x00000804U, 0U },
-		{ 0x000f03e8U, 0x00000804U, 0U },
-		{ 0x000f03e8U, 0x00000804U, 0U },
-		{ 0x000f03e8U, 0x00000804U, 0U },
-		{ 0x00302010U, 0U, 0U },
-	};
-	static struct i915_bw_state bw;
-	struct mutex sb_lock;
-	struct i915_dram_info info;
-	int error;
-
-	/* Detects the DRAM over the scripted PCODE. */
-	(void)mutex_init(&sb_lock, LOCK_RANK_DEVICE, "ktest-sb2");
-	i915_fake_open(&i915_ktest_mmio, &i915_ktest_fake);
-	i915_ktest_fake.script = ok_seq;
-	i915_ktest_fake.script_len = 6U;
-	kern_memset(&info, 0, sizeof(info));
-	kern_memset(&bw, 0, sizeof(bw));
-	error = drv_i915_dram_detect(&sb_lock, &i915_ktest_mmio, &info);
-	drv_i915_ktest_check(ktest, error == 0 && info.num_qgv_points == 4U, "dram_detect: decodes global info over PCODE");
-
-	/* Computes the bandwidth table from the four QGV points and the PSF points. */
-	error = drv_i915_bw_init_hw(&sb_lock, &i915_ktest_mmio, &info, &bw);
-	drv_i915_ktest_check(ktest, error == 0, "bw_init: returns success");
-	drv_i915_ktest_check(ktest, bw.valid == 1 && bw.sagv_status == (int)I915_SAGV_ENABLED, "bw_init: saved SAGV status is enabled");
-	drv_i915_ktest_check(ktest,
-			     bw.max[0].num_qgv_points == 4U && bw.max[0].num_psf_gv_points == 3U,
-			     "bw_init: saved per-group point counts");
-	drv_i915_ktest_check(ktest,
-			     bw.max[0].deratedbw[0] != 0U && bw.max[0].peakbw[0] != 0U,
-			     "bw_init: saved group-0 bandwidth values");
-	drv_i915_ktest_check(ktest,
-			     bw.max[0].num_planes == 0U && bw.max[1].num_planes != 0U,
-			     "bw_init: num_planes stored into the NEXT group");
-
-	/* A failed PSF read is tolerated. */
-	i915_ktest_dram_bw_psf_failure(ktest, &sb_lock);
-}
-
-/* Checks that a failed PSF point read is tolerated and leaves no PSF points. */
-static void
-i915_ktest_dram_bw_psf_failure(
-	struct i915_ktest *ktest,
-	struct mutex *sb_lock)
-{
-	static const uint32_t psf_fail_seq[6][3] = {
-		{ 0x00003420U, 0U, 0U },
-		{ 0x000f03e8U, 0x00000804U, 0U },
-		{ 0x000f03e8U, 0x00000804U, 0U },
-		{ 0x000f03e8U, 0x00000804U, 0U },
-		{ 0x000f03e8U, 0x00000804U, 0U },
-		{ 0U, 0U, 0x1U },
-	};
-	static struct i915_bw_state bw;
-	struct i915_dram_info info;
-	int error;
-
-	/* Detects the DRAM, then computes the table while the PSF read fails. */
-	i915_fake_open(&i915_ktest_mmio, &i915_ktest_fake);
-	i915_ktest_fake.script = psf_fail_seq;
-	i915_ktest_fake.script_len = 6U;
-	kern_memset(&info, 0, sizeof(info));
-	kern_memset(&bw, 0, sizeof(bw));
-	(void)drv_i915_dram_detect(sb_lock, &i915_ktest_mmio, &info);
-	error = drv_i915_bw_init_hw(sb_lock, &i915_ktest_mmio, &info, &bw);
-	drv_i915_ktest_check(ktest, error == 0, "bw_init: a PSF read failure is tolerated");
-	drv_i915_ktest_check(ktest, bw.max[0].num_psf_gv_points == 0U, "bw_init: PSF failure reflected in the saved num_psf_gv_points");
 }
 
 /* Checks that an oversized aperture map is refused and a valid map still works afterwards. */

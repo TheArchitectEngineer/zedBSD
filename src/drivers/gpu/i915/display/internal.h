@@ -524,7 +524,7 @@ struct i915_display_core {
 	struct mutex *sb_lock;             /* the one PCODE sideband lock */
 
 	/* DRAM info read at the start (BW_BUDDY table lookup). */
-	int dram_type;                     /* enum i915_dram_type */
+	int dram_type;                     /* I915_XD_DRAM_*, 0 when not known */
 	unsigned dram_channels;
 
 	/* Live state (not re-initialised per child). */
@@ -649,104 +649,6 @@ struct i915_dmc_dev {
 };
 
 /*
- * The DRAM and display bandwidth (watermark.c).
- */
-/*
- * DRAM info + display bandwidth (hw_probe tail).
- *
- * Ports intel_dram_detect() and intel_bw_init_hw() -> tgl_get_bw_info(&adlp_sa_info)
- * for ADL-P, driven by the common PCODE mailbox.  The results are written into a
- * device-owned bandwidth state (i915_bw_state) that later stages read, mirroring
- * the reference i915->display.bw.max[] / sagv.status.  Both are void in the
- * reference: a tolerated PCODE/data failure is logged and the caller continues.
- */
-
-#define I915_NUM_QGV_POINTS 8   /* I915_NUM_QGV_POINTS */
-#define I915_NUM_PSF_POINTS 3   /* I915_NUM_PSF_GV_POINTS */
-#define I915_BW_GROUPS      6   /* ARRAY_SIZE(display.bw.max) */
-
-/* INTEL_DRAM_* subset reachable on ADL-P's gen12 decode. */
-enum i915_dram_type {
-	I915_DRAM_DDR4 = 0,
-	I915_DRAM_DDR5,
-	I915_DRAM_LPDDR5,
-	I915_DRAM_LPDDR4,
-	I915_DRAM_DDR3,
-	I915_DRAM_LPDDR3,
-	I915_DRAM_UNKNOWN
-};
-
-/* SAGV status (display.sagv.status subset). */
-enum i915_sagv_status {
-	I915_SAGV_UNKNOWN = 0,
-	I915_SAGV_DISABLED,
-	I915_SAGV_ENABLED,
-	I915_SAGV_NOT_CONTROLLED
-};
-
-/* Subset of dram_info the bandwidth branch consumes. */
-struct i915_dram_info {
-	int type;                   /* enum i915_dram_type */
-	unsigned num_channels;
-	unsigned num_qgv_points;
-	unsigned num_psf_gv_points;
-	int wm_lv_0_adjust_needed;
-	int valid;                  /* global info decoded successfully */
-};
-
-/* Mirrors struct intel_bw_info (display.bw.max[i]). */
-struct i915_bw_group {
-	unsigned deratedbw[I915_NUM_QGV_POINTS];
-	unsigned peakbw[I915_NUM_QGV_POINTS];
-	unsigned psf_bw[I915_NUM_PSF_POINTS];
-	unsigned num_qgv_points;
-	unsigned num_psf_gv_points;
-	unsigned num_planes;
-};
-
-/* Device-owned display bandwidth state (display.bw / sagv.status). */
-struct i915_bw_state {
-	struct i915_bw_group max[I915_BW_GROUPS];
-	int sagv_status;
-	int valid;                  /* bandwidth table computed */
-};
-/*
- * The display software state (state.c, watermark.c).
- */
-/*
- * tail: intel_mode_config_init() .. intel_fbc_init().
- *
- * Ports the remainder of intel_display_driver_probe_noirq() that follows the
- * (asynchronous) DMC load and the modeset/flip workqueues:
- *
- *   intel_mode_config_init(i915);          -- void
- *   intel_cdclk_init(i915);                -- global state object
- *   intel_color_init(i915);                -- DISPLAY_VER == 10 only
- *   intel_dbuf_init(i915);                 -- global state object
- *   intel_bw_init(i915);                   -- global state object + forced SAGV disable
- *   intel_pmdemand_init(i915);             -- global state object
- *   intel_init_quirks(i915);               -- void
- *   intel_fbc_init(i915);                  -- void
- *
- * Four of them register an intel_global_obj on display.global.obj_list, so the
- * shared mechanism (intel_atomic_global_obj_init) is ported once here and the
- * insertion ORDER is observable: cdclk, dbuf, bw, pmdemand.
- *
- * Note the two distinct "bw" states the reference keeps, which the port also
- * keeps apart:
- *   - display.bw.max[] / sagv.status  -- the PCODE-probed HW table from the start,
- *     already owned by struct i915_bw_state (internal.h).
- *   - struct intel_bw_state           -- the ATOMIC global state object created
- *     here, holding qgv_points_mask (i915_bw_obj_state below).
- *
- * The reference kzalloc()s each state object and propagates -ENOMEM; the port
- * uses device-owned storage behind an explicit allocator so those failure paths
- * stay reachable and testable.
- */
-
-struct i915_bw_state;
-
-/*
  * The port numbers the hotplug, Type-C and external DisplayPort code use:
  * the combo ports A and B, and the first Type-C port, which is also port
  * D's number.
@@ -754,28 +656,6 @@ struct i915_bw_state;
 #define I915_PORT_A      0
 #define I915_PORT_D      3
 #define I915_PORT_TC1    3
-
-/*
- * The QGV points the display lets SAGV use, as the start's forced SAGV
- * disable left them; the resident run reads the one allowed point's
- * bandwidth from them.
- */
-struct i915_bw_obj_state {
-	uint16_t qgv_points_mask;
-};
-
-/*
- * The bandwidth state the start of the display keeps: the QGV points and
- * what the forced SAGV disable asked the PCODE and got back.  Filled once
- * by the start, read by the resident run and the start's log.
- */
-struct i915_display_state {
-	struct i915_bw_obj_state bw_obj_state;
-	int sagv_force_disable_attempted;
-	int sagv_pcode_ret;             /* the PCODE's answer to the restriction */
-	unsigned sagv_qgv_points;       /* the QGV points the restriction kept */
-	unsigned sagv_psf_points;       /* the PSF GV points the restriction kept */
-};
 
 /*
  * The Linux driver probe (display.c, power.c).
@@ -1473,7 +1353,6 @@ struct i915_lcd_show_report {
  */
 
 struct i915_edp_device;
-struct i915_display_state;
 struct i915_dmc_dev;
 struct i915_irq_dev;
 struct i915_display_irq;
@@ -1825,18 +1704,11 @@ struct i915_display {
 	/* The DMC loader; its work runs on dmc_wq. */
 	struct i915_dmc_dev dmc_dev;
 
-	/* The bandwidth state the start left (the QGV points SAGV may use). */
-	struct i915_display_state dstate;
-
 	/* The PCH the display found (display.c). */
 	struct i915_pch_state pch;
 
 	/* What the serve step left: the lit firmware pipes, IPC, the references given back. */
 	struct i915_driver_probe dprobe;
-
-	/* The DRAM the bandwidth code was given, and the bandwidth state (display.c). */
-	struct i915_dram_info dram_info;
-	struct i915_bw_state bw_state;
 
 	/* The display half of the interrupt device and its vblank delivery. */
 	struct i915_display_irq irq;

@@ -1865,14 +1865,14 @@ resident_config_panel(
 	config->cdclk_max_khz = drv_i915_cdclk_max(d->cdclk);
 
 	/* SAGV is kept off, which leaves exactly one QGV point allowed: its bandwidth for one active plane. */
-	allowed = (unsigned)~d->dstate->bw_obj_state.qgv_points_mask & ((1U << d->bw->max[0].num_qgv_points) - 1U);
+	allowed = drv_i915_xd_bw_allowed_points(d->bandwidth);
 	if (allowed != 0U && (allowed & (allowed - 1U)) == 0U) {
 		/* Finds the one allowed point. */
 		point = 0U;
 		while ((allowed & (1U << point)) == 0U)
 			point++;
 
-		config->qgv_mbps = drv_i915_icl_qgv_bw(d->bw, 13, 1, (int)point);
+		config->qgv_mbps = drv_i915_xd_bw_point_mbps(d->bandwidth, d->platform, 1U, point);
 	}
 
 	/* The DMC programs whose payload is loaded. */
@@ -1918,7 +1918,7 @@ resident_config_panel(
 	    config->cdclk.bypass_khz,
 	    config->cdclk.voltage,
 	    config->cdclk_max_khz,
-	    (unsigned)d->dstate->bw_obj_state.qgv_points_mask,
+	    (unsigned)d->bandwidth->restriction,
 	    allowed,
 	    config->qgv_mbps,
 	    config->dmc_programs);

@@ -138,7 +138,6 @@ static void i915_gen9_dbuf_slices_update(struct i915_display_core *dc, uint8_t r
 static void i915_core_fault(struct i915_display_core *dc, const char *where);
 static int i915_icl_display_core_init(struct i915_display_core *dc, int resume);
 static void i915_icl_display_core_uninit(struct i915_display_core *dc);
-static unsigned i915_core_dram_type(int dram_type);
 static void i915_core_hooks(struct i915_display_core *dc, struct i915_xd_core_hooks *hooks);
 static int i915_core_well1_on(void *context);
 static void i915_core_well1_off(void *context);
@@ -2344,7 +2343,7 @@ i915_icl_display_core_init(
 	/* The south display, the stepping and the memory. */
 	input.pch_kind = xd->choice.pch_kind;
 	input.step = xd->choice.step;
-	input.dram_type = i915_core_dram_type(dc->dram_type);
+	input.dram_type = (unsigned)dc->dram_type;
 	input.dram_channels = dc->dram_channels;
 
 	/* The core's sequence, with power well 1, the CD clock and the DBUF slices here. */
@@ -2404,29 +2403,6 @@ i915_icl_display_core_uninit(
 	if (a_down != 0U)
 		kern_logf("i915: combo PHY A was not up before the uninit\n");
 	kern_logf("i915: combo PHYs: uninit\n");
-}
-
-/* Converts the display core's memory type into the xd one (0: unknown). */
-static unsigned
-i915_core_dram_type(
-	int dram_type)
-{
-	/* The four memories the buddy tables know. */
-	switch (dram_type) {
-	case I915_DRAM_DDR4:
-		return I915_XD_DRAM_DDR4;
-	case I915_DRAM_DDR5:
-		return I915_XD_DRAM_DDR5;
-	case I915_DRAM_LPDDR4:
-		return I915_XD_DRAM_LPDDR4;
-	case I915_DRAM_LPDDR5:
-		return I915_XD_DRAM_LPDDR5;
-	default:
-		break;
-	}
-
-	/* Succeeded: a memory the tables do not know. */
-	return 0U;
 }
 
 /* Fills the xd core's hooks with the display core's parts. */
