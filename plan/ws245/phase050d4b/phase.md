@@ -2,9 +2,9 @@
 
 # ws245-p050d4b: 走らせ方の口（resident run・show run・kernel の binding）
 
-Status: planned（2026-10-17 Q1 の判断で p050d4 を 4 段に分けた 2 段目。p050d4a の後）
+Status: in-progress（2026-10-17 q1229-i12 で実装・host 試験・build 済み（9915b53dc）、5330 は全部の段の後に 1 回）
 Parent: [WS245](../ws.md)
-Queue: q1229-i11（P1）
+Queue: q1229-i11（P1）→ q1229-i12（P1、実行）
 設計: [design.md](../design.md) §6.2 の p050 の行、§3.6、§4.2。分け方は [phase050d4](../phase050d4/phase.md)
 
 ## 範囲
@@ -24,3 +24,28 @@ Queue: q1229-i11（P1）
 3. compute: state.c の `drv_i915_lcd_compute`（dp-sink.c:3313 の eDP の device が呼ぶ: d4c）、`_compute_hdmi`（output.c:992）、`_compute_dp_ext`（output.c:1470、modeset.c:2575 の dp_ext fallback）を xd-screen の `drv_i915_xd_screen_plan_link` に。state.c の word recorder（`drv_i915_lcd_emit_plane/_cpu_transcoder/_ddi/_transcoder`・`_words_*`）は試験だけが使う記録器（R7）: 呼び手を数えて 0 なら消す。`drv_i915_mode_config_init`〜`_atomic_global_obj_init` は display の start の Linux の段（d4c の nogem と一緒）。
 4. 比べ: `sh build/tmp/stagecmp.sh d089058b7 <名前> out50c-picture.c`（base 側も out50c-picture.c が通る: d4a 以降の tree）。host-lcd-modeset-test は `drv_i915_lcd_compute` と変換を使うので、d4b で型が変わるならこの試験も付け替える（d4d で消える）。`host-xd-picture-test` に resident run の規則の check を足すかは d4b で判断。
 5. build は `sh build/tmp/kbuild.sh <名前>`（既定・vke2・execution の 3 組。display の組は無くなった）。dead code は `sh build/tmp/killdead.sh build/tmp/d4a/dead-base.txt <build log>`（base の一覧は bfd44d75f の物: 新しい段では新しい base で作り直す: `python3 -I build/tmp/deadexp2.py build/tmp/ref-<sha>/src/drivers/gpu/i915/display build/tmp/ref-<sha>`）、古い宣言は `staledecl.py` の差分を `rmdecl.py` に、static の古い前方宣言は `build/tmp/d4a/rmstaticdecl.py`。
+
+## 結果（2026-10-17 q1229-i12、P1。base ec4951551、段の commit 9915b53dc）
+
+Q1 の判断（kernel の device の型は既定の案: own の型を display-internal.h へ移し、run の code は own の file に）に従った。
+
+形:
+- 新しい own の file `display/resident.c`・`resident.h`（Zlib）: modeset.c の show run・resident run・kernel の binding を移した。口は `drv_i915_resident_run`（旧 `drv_i915_lcd_kernel_resident_run`）、`_retained`（旧 `drv_i915_lcd_show_retained`）、`_abandoned`・`_gpu_retained`（旧 diagnostics.c の `drv_i915_lcd_kernel_abandoned/_gpu_retained` と `drv_i915_lcd_show_gpu_retained`）、`_output_params`、`_bind`（旧 locks_init と bind_ops。run は常に `k->display` を持つ: container_of を消した）、`_preflight`、`_config`（旧 fill_cfg と output_cfg: `struct i915_xd_picture_config` を直に作る）、`_link_fallback`。show の本体は static（`resident_show`）。
+- 型: `display-internal.h` に own の `struct i915_display_link`（新、出力の link: rate・lanes・bpp・M/N・PLL の reference と combo の語）、`struct i915_lcd_kernel_deps` と `struct i915_lcd_run_params`（kind・port・pipe だけに縮めた）を移した。`struct i915_display_output.state`（`i915_lcd_state`）は `mode` と `link` に。`struct i915_lcd_show_env.cfg` と `head.cfg` は `struct i915_xd_picture_config`。`struct i915_lcd_modeset_cfg` と変換 `drv_i915_lcd_picture_config` を消した。show の env・report・run の使われない field（pattern・readback・bl_freq0・draws_ok ほか）を消した。
+- output.c（own）: `drv_i915_output_link_hdmi`・`drv_i915_output_link_dp` が xd-screen の `drv_i915_xd_screen_plan_link` を直に呼ぶ（platform は `display->xd.choice.platform`）。state.c の `drv_i915_lcd_compute_hdmi/_dp_ext` と `i915_state_dkl_words`、clock.c の `drv_i915_dkl_pll_calc`（呼び手 0）を消した。panel の `drv_i915_lcd_compute` と `i915_state_from_plan` は dp-sink.c の eDP の device が呼ぶので d4c まで残る（resident の panel の config は `edp->lcd` から写す）。
+- modeset.c は world（create/destroy・display_ver・xd_platform・xd_io・backend_fault・debug）だけ（2636 → 282 行）。d4c で消える。
+- log: `i915: LCD-B preflight:`・`LCD-B input:` は段の符号（R11）なので `i915: resident display: preflight:`・`inputs:` に、`LCD-B PICTURE UP`・`observation window over` の行は捨てた。h4-ctl.py が読む `resident display: buffers …`・`picture up (buffer A surf …)` は同じ。
+- 振る舞いの差（実機の確かめは 5330 の 1 回で）: (1) DP-ext の出力の選びで旧は DKL の TC PLL の語を計算して失敗を返せた。今は link の plan だけで、TC PLL は picture の prepare が作る（旧も picture は自前の語を使っていた: d4a）。(2) HDMI の link の `ref_khz` を 38400 で持つ（旧は 0。picture は Type-C の時だけ読むので書き込みは同じ）。(3) 出力の kind が点けられない時の EIO を takeover の前に返す（旧は後。kind は panel・HDMI・DP-ext の 3 つだけなので起きない）。
+
+確かめた事:
+- 前後の比べ（`sh build/tmp/stagecmp.sh ec4951551 d4b/cmp2 out50c-d4b.c out50c-picture.c`、stagecmp.sh に ref の harness の引数を足した）: dp SAME、lcd の trnorm の差 0 行、out50c の差 0 行。旧 host 試験 dp 72・lcd 120 check とも 0 failures（host-lcd-modeset-test は変換を試験の中の helper に移した）。harness `temp/harness/out50c-d4b.c`（output.c の link の口と config を直に）。
+- `run-xd-host-tests.sh` 26 本 all passed。新しい `host-output-link-test`（21 check: WS051 の host-dpext-link の oracle（5330 の USB-C の monitor が RBR x4 24 bpp、limits、branch）を output.c の口に移し、HDMI の link と拒みを足した）。`I915_XD_STRICT` の xd の .c は全部通る。
+- build（`sh build/tmp/kbuild.sh d4b`、既定・vke2・execution）: 3 組 rc=0 warning 0。`git diff --check` 0。
+- 呼び手 0: 消した関数（compute_hdmi/_dp_ext・picture_config・dkl_pll_calc・lcd_kernel_abandoned/_gpu_retained・lcd_show_*・lcd_kernel_*・lcd_output_*）の参照は tree に 0（WS051 の host-dpext-link.c を除く: 下の削除の依頼）。deadexp で新しく死んだ export は 0（dkl_pll_calc を消した後）、古い宣言 0。
+- R11（触った file）: resident.c/h・modeset.c/h・internal.h・head.c・present.c・display.c・output.c/h・state.c/h・diagnostics.c/h・clock.c・modeset-internal.h は 0。display-internal.h 10 → 0、dp-ext-kern.c 3 → 0。日付つきの決定の記録を head.c 1・output.c 2・display-internal.h 1 消した。
+
+実機で確かめる事（5330 は全部の段の後に 1 回）: 起動・picture up・preflight と inputs の log、HDMI・USB-C DP の 2 画面（head の config）と DP の link fallback（ユーザーの一覧）。
+
+Q1 に頼む事:
+- 削除: `plan/ws051/tests/host-dpext-link.sh`・`host-dpext-link.c`（消した `drv_i915_lcd_compute_dp_ext` を呼ぶ。master の Tools・未完の Phase からの参照なし。oracle は `host-output-link-test` に移した）。
+- 他の WS の道具の文言: `plan/ws084/tests/reboot-loop.sh:10,71,82` が `LCD-B preflight: the display is not idle` を grep する → `resident display: preflight: the display is not idle`（R11 の基準で直すか消すかは Q1）。`plan/ws075/tests/hdmi-h1-hw.sh:47`・`hdmi/usb-poll.sh:20` の進みの表示の grep の `LCD-B` は他の語も含むので害なし。
