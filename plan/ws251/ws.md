@@ -3,11 +3,11 @@
 # WS251: source の tree 全体から開発の管理情報を削除する
 
 <!-- awesome-plan-current:start -->
-Status: planned（2026-10-15 作成、着手は後日。担当は未割当）
+Status: incomplete（2026-10-15 作成。2026-10-17 ユーザーの指示で GPU ドライバから着手: p002、P1）
 Primary Milestone: MG001
 Parent: [Master](../master.md)
 Related: [Guardrail](../guardrail.md)「source の中の開発の管理情報」、[WS247](../ws247/ws.md)（nvrtx で済み）、[WS248](../ws248/ws.md)（AX211、管理番号が残る）、[WS249](../ws249/ws.md)（BCM43455、削除を含む）
-Resume point: 着手はユーザーの指示で。
+Resume point: p002（GPU ドライバ、i915 から）を P1 が q1240-i01 で。p001 の tree 全体の棚卸しは後。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）
@@ -27,4 +27,5 @@ Resume point: 着手はユーザーの指示で。
 | Phase | 内容 | 状態 |
 | --- | --- | --- |
 | p001 | 棚卸し: 機械の検査で件数と file の一覧、log の文字列の照合先の一覧、群ごとの分け方 | planned |
-| p002〜 | 群ごとの削除（p001 で分割） | planned |
+| [p002](phase002/phase.md) | GPU ドライバ（src/drivers/gpu/）の comment と log。開発・試験の運用の話も消す（2026-10-17 ユーザー） | in-progress（q1240-i01、P1） |
+| p003〜 | 残りの群ごとの削除（p001 で分割） | planned |
