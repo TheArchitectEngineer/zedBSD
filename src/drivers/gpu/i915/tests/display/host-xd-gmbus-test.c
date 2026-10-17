@@ -140,6 +140,7 @@ i915_xd_gmbus_test_noted(
 	if (run->note_count == I915_XD_GMBUS_TEST_NOTES)
 		return;
 
+	/* Keeps the note and its message. */
 	run->notes[run->note_count] = note;
 	run->note_messages[run->note_count] = message;
 	run->note_count++;
@@ -213,6 +214,7 @@ i915_xd_gmbus_test_writes(
 		if (with_interrupts == 0 && records[index].offset == I915_XD_GMBUS4)
 			continue;
 
+		/* Keeps the write. */
 		offsets[kept] = records[index].offset;
 		values[kept] = records[index].value;
 		kept++;
@@ -257,6 +259,8 @@ i915_xd_gmbus_test_pins(void)
 			good = 0;
 		}
 	}
+
+	/* Checks pins 1 to 3 and 9 to 14 only. */
 	i915_host_check(good, "gmbus: pins 1 to 3 and 9 to 14 only");
 
 	/* A transfer on a pin without wires touches nothing. */
@@ -310,6 +314,8 @@ i915_xd_gmbus_test_reads(void)
 		if (bytes[index] != i915_xd_gmbus_test_run.target.memory[index])
 			same = 0;
 	}
+
+	/* Checks the base block's bytes, lowest of each word first. */
 	i915_host_check(same, "gmbus: the base block's bytes, lowest of each word first");
 
 	/* Every wait raises its interrupt and silences it: 32 data, the wait phase, the idle. */
@@ -329,6 +335,8 @@ i915_xd_gmbus_test_reads(void)
 			same = 0;
 		enables++;
 	}
+
+	/* Checks the interrupts of the 32 data waits, the wait phase and the idle. */
 	i915_host_check(enables == 68U && same, "gmbus: the interrupts of the 32 data waits, the wait phase and the idle");
 
 	/* Without interrupts the enables are all 0. */
@@ -340,6 +348,8 @@ i915_xd_gmbus_test_reads(void)
 		if (offsets[index] == I915_XD_GMBUS4 && values[index] != 0U)
 			same = 0;
 	}
+
+	/* Checks no interrupt is raised while the device takes none. */
 	i915_host_check(result.outcome == I915_XD_GMBUS_DONE && same, "gmbus: no interrupt is raised while the device takes none");
 
 	/* Block 2: the segment pointer is written first, then the indexed read. */
@@ -396,6 +406,8 @@ i915_xd_gmbus_test_reads(void)
 		if (bytes[index] != i915_xd_gmbus_test_run.target.memory[index])
 			same = 0;
 	}
+
+	/* Checks the 600 bytes read in two cycles. */
 	i915_host_check(result.outcome == I915_XD_GMBUS_DONE &&
 			i915_xd_gmbus_test_run.target.cycles == 2U &&
 			i915_xd_gmbus_test_run.target.commands[0] == 0x43ff00a1U &&
@@ -471,6 +483,7 @@ i915_xd_gmbus_test_refusals(void)
 	uint8_t segment;
 	unsigned count;
 
+	/* The run of the test. */
 	run = &i915_xd_gmbus_test_run;
 
 	/* Refused once: cleared, let go, started again, and read. */
@@ -537,6 +550,7 @@ i915_xd_gmbus_test_faults(void)
 	uint8_t offset;
 	unsigned count;
 
+	/* The run of the test, reading from offset 0. */
 	run = &i915_xd_gmbus_test_run;
 	offset = 0U;
 

@@ -191,7 +191,9 @@ i915_xd_dpll_test_words(void)
 	unsigned ref;
 	int all;
 	int error;
+	uint32_t port_khz;
 
+	/* The Alder Lake-P and Tiger Lake descriptions. */
 	adlp = i915_xd_dpll_test_setup(I915_XD_DPLL_TEST_ADLP, I915_XD_DPLL_TEST_ADLP_REVID, 1);
 	tgl = i915_xd_dpll_test_setup(I915_XD_DPLL_TEST_TGL, I915_XD_DPLL_TEST_TGL_REVID, 1);
 	rkl = i915_xd_dpll_test_setup(I915_XD_DPLL_TEST_RKL, 0U, 1);
@@ -225,10 +227,19 @@ i915_xd_dpll_test_words(void)
 	for (ref = 0U; ref < sizeof(refs) / sizeof(refs[0]); ref++) {
 		for (rate = 0U; rate < sizeof(rates) / sizeof(rates[0]); rate++) {
 			error = drv_i915_xd_dpll_dp_words(adlp, refs[ref], rates[rate], I915_XD_DPLL_AFC_NONE, &words);
-			if (error != 0 || drv_i915_xd_dpll_port_khz(adlp, refs[ref], &words) != rates[rate])
+			if (error != 0) {
+				all = 0;
+				continue;
+			}
+
+			/* The words give back the rate. */
+			port_khz = drv_i915_xd_dpll_port_khz(adlp, refs[ref], &words);
+			if (port_khz != rates[rate])
 				all = 0;
 		}
 	}
+
+	/* Checks every DisplayPort row gives back its link rate (19.2, 24, 38.4 MHz). */
 	i915_host_check(all, "dpll: every DisplayPort row gives back its link rate (19.2, 24, 38.4 MHz)");
 	words.cfgcr0 = I915_XD_DPLL_TEST_HBR_CFGCR0;
 	words.cfgcr1 = 0U;
@@ -252,6 +263,7 @@ i915_xd_dpll_test_hdmi(void)
 	int close;
 	int error;
 
+	/* The Alder Lake-P description. */
 	adlp = i915_xd_dpll_test_setup(I915_XD_DPLL_TEST_ADLP, I915_XD_DPLL_TEST_ADLP_REVID, 1);
 	if (adlp == NULL)
 		return;
@@ -275,6 +287,8 @@ i915_xd_dpll_test_hdmi(void)
 		if (error != 0 || port + 1U < clocks[index] || port > clocks[index] + 1U)
 			close = 0;
 	}
+
+	/* Checks the HDMI clocks from 25.2 to 594 MHz give themselves back. */
 	i915_host_check(close, "dpll: the HDMI clocks from 25.2 to 594 MHz give themselves back");
 
 	/* A clock no divider fits. */
@@ -377,6 +391,7 @@ i915_xd_dpll_test_read(void)
 	struct i915_xd_dpll_words words;
 	int enabled;
 
+	/* The Alder Lake-P description. */
 	platform = i915_xd_dpll_test_setup(I915_XD_DPLL_TEST_ADLP, I915_XD_DPLL_TEST_ADLP_REVID, 1);
 	if (platform == NULL)
 		return;

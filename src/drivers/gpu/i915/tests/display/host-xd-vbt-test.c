@@ -396,6 +396,7 @@ test_build(
 	unsigned index;
 	unsigned row;
 
+	/* An empty VBT and its panel. */
 	memset(bytes, 0, TEST_VBT_BYTES);
 	panel = &spec->panel;
 
@@ -468,6 +469,8 @@ test_build(
 		if ((int)index == spec->pnp_row)
 			memcpy(b + entry + TEST_PNP_AT, i915_dp_fixture_edid + 8U, I915_XD_VBT_PNP_BYTES);
 	}
+
+	/* The table pointers of a VBT that has them. */
 	if (spec->pointers != 0) {
 		block = data - I915_XD_BLOCK_HEADER_BYTES - 148U;
 		b[block + I915_XD_VBT_PTRS_ENTRIES] = 3U;
@@ -480,6 +483,8 @@ test_build(
 			test_put16(b, entry + I915_XD_VBT_PTRS_PNP, (unsigned)(data + index * TEST_ENTRY_BYTES + TEST_PNP_AT));
 			b[entry + I915_XD_VBT_PTRS_PNP + 2U] = I915_XD_VBT_PNP_BYTES;
 		}
+
+		/* The panel names' pointer. */
 		test_put16(b, block + I915_XD_VBT_PTRS_PANEL_NAME, (unsigned)(data + 16U * TEST_ENTRY_BYTES));
 		b[block + I915_XD_VBT_PTRS_PANEL_NAME + 2U] = I915_XD_VBT_PANEL_NAME_BYTES;
 	}
@@ -538,6 +543,7 @@ test_platform(
 {
 	struct i915_xd_choice choice;
 
+	/* Chooses the description of the device. */
 	(void)drv_i915_xd_platform_choose(device, 0U, 0, 0U, &choice);
 	return choice.platform;
 }
@@ -557,6 +563,7 @@ test_vbt_outputs(
 	unsigned c;
 	int error;
 
+	/* The VBT of the row, built. */
 	spec = &test_vbts[index];
 	size = test_build(spec, bytes);
 	error = drv_i915_xd_vbt_check(bytes, size);
@@ -602,6 +609,8 @@ test_vbt_outputs(
 		snprintf(what, sizeof(what), "%s: a second output on one DDI is skipped", spec->name);
 		i915_host_check(ports.n == spec->nchildren - 1U && ports.skipped == 1U, what);
 	}
+
+	/* Without a description there are no ports. */
 	drv_i915_xd_ports(NULL, &vbt, 0xffffffffU, &ports);
 	snprintf(what, sizeof(what), "%s: a device without a description has no ports", spec->name);
 	i915_host_check(ports.n == 0U, what);
@@ -621,7 +630,9 @@ test_vbt_panel(
 	unsigned row;
 	size_t size;
 	int error;
+	unsigned want_bpp;
 
+	/* The VBT of the row and its panel. */
 	spec = &test_vbts[index];
 	p = &spec->panel;
 	size = test_build(spec, bytes);
@@ -652,12 +663,20 @@ test_vbt_panel(
 	    panel.backlight_controller == 1U && panel.backlight_active_low == 0 &&
 	    panel.backlight_min == (uint8_t)(p->min_word / 255U), what);
 
+	/* The bits per pixel the VBT's code names: 18, 24 or 30. */
+	want_bpp = 30U;
+	if (p->bpp_code == 0U) {
+		want_bpp = 18U;
+	} else if (p->bpp_code == 1U) {
+		want_bpp = 24U;
+	}
+
 	/* The eDP link and the power sequence. */
 	snprintf(what, sizeof(what), "%s: eDP %u kHz, lanes code %u, swing levels 0x%02x, power sequence", spec->name, p->rate_khz, p->lanes_code, p->levels);
 	i915_host_check(panel.edp_rate_khz == p->rate_khz && panel.edp_lanes == (p->lanes_code == 3U ? 4U : p->lanes_code + 1U) &&
 	    panel.edp_preemphasis == (p->levels & 0xfU) && panel.edp_vswing == (p->levels >> 4) &&
 	    panel.low_vswing == (p->vswing_nibble == 0U) && panel.edp_max_rate_khz == (spec->version >= 244U ? 540000U : 0U) &&
-	    panel.bpp == (p->bpp_code == 0U ? 18U : (p->bpp_code == 1U ? 24U : 30U)) &&
+	    panel.bpp == want_bpp &&
 	    panel.t1_t3 == p->pps[0] && panel.t8 == p->pps[1] && panel.t9 == p->pps[2] && panel.t10 == p->pps[3] &&
 	    panel.t11_t12 == p->pps[4], what);
 
@@ -686,6 +705,7 @@ test_defaults(void)
 	unsigned c;
 	int same;
 
+	/* Each device's defaults. */
 	for (row = 0U; row < sizeof(expect) / sizeof(expect[0]); row++) {
 		(void)drv_i915_xd_vbt_parse(test_platform(expect[row].device), NULL, 0U, &vbt);
 		same = vbt.found == 0 && vbt.version == 155U && vbt.nchildren == expect[row].count;
@@ -693,6 +713,8 @@ test_defaults(void)
 			if (vbt.children[c].ddi != expect[row].ddis[c])
 				same = 0;
 		}
+
+		/* Checks the defaults of the device. */
 		snprintf(what, sizeof(what), "defaults of 0x%04x: %u outputs on the expected DDIs", expect[row].device, expect[row].count);
 		i915_host_check(same, what);
 	}
@@ -716,6 +738,7 @@ test_damaged(void)
 	size_t at;
 	int error;
 
+	/* The Alder Lake-P description and the first VBT. */
 	platform = test_platform(0x46a6U);
 	size = test_build(&test_vbts[0], bytes);
 
@@ -801,6 +824,7 @@ test_opregion(void)
 	int error;
 	int same;
 
+	/* Each OpRegion case. */
 	for (row = 0U; row < sizeof(cases) / sizeof(cases[0]); row++) {
 		memset(opregion, 0, sizeof(opregion));
 		memcpy(opregion, "IntelGraphicsMem", 16U);
@@ -820,6 +844,8 @@ test_opregion(void)
 			if (old.src != I915_OPVBT_MAILBOX4 || old.vbt_offset != where.mailbox_offset || old.vbt_max != where.mailbox_size)
 				same = 0;
 		}
+
+		/* Checks the row against today's reader. */
 		snprintf(what, sizeof(what), "OpRegion %s, as today's reader", cases[row].what);
 		i915_host_check(same, what);
 	}
@@ -850,6 +876,7 @@ test_sha256(void)
 	uint8_t digest[32];
 	uint8_t old_digest[32];
 
+	/* The SHA-256 of a known string. */
 	drv_i915_xd_sha256((const uint8_t *)"abc", 3U, digest);
 	i915_host_check(memcmp(digest, abc, 32U) == 0, "SHA-256 of \"abc\"");
 	drv_i915_xd_sha256((const uint8_t *)message, sizeof(message) - 1U, digest);
@@ -1000,6 +1027,7 @@ test_opregion_read(void)
 	size_t size;
 	int error;
 
+	/* The test's memory access. */
 	access.map = test_memory_map;
 	access.unmap = test_memory_unmap;
 	access.context = NULL;
@@ -1086,6 +1114,7 @@ test_stage_shell(void)
 	size_t size;
 	int same;
 
+	/* Each VBT parsed by both parsers. */
 	drv_i915_trace_init(&trace);
 	for (index = 0U; index < 2U; index++) {
 		/* The stage on an Alder Lake-P display whose OpRegion holds the VBT. */
@@ -1106,6 +1135,8 @@ test_stage_shell(void)
 				same = 0;
 				continue;
 			}
+
+			/* The encoder must carry the child's facts. */
 			if (encoder->device_type != child->device_type || encoder->dvo_port != child->dvo_port ||
 			    encoder->ddc_pin != child->gmbus_pin || encoder->supports_dp != child->dp ||
 			    encoder->supports_edp != child->edp || encoder->supports_hdmi != child->hdmi ||
@@ -1117,6 +1148,8 @@ test_stage_shell(void)
 			if (child->aux_ch != I915_XD_VBT_NONE && encoder->aux_ch != (int)child->aux_ch)
 				same = 0;
 		}
+
+		/* Checks the stage's outputs. */
 		snprintf(what, sizeof(what), "stage: %s outputs are the xd parse's", test_vbts[index].name);
 		i915_host_check(same, what);
 		i915_host_check(drv_i915_vbt_encoder_for_port(parsed, 0) != NULL && drv_i915_vbt_encoder_for_port(parsed, 0)->supports_edp == 1,

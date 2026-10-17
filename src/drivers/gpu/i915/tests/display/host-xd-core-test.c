@@ -347,6 +347,8 @@ i915_xd_core_test_faults(void)
 		i915_host_check(0, "core: the Alder Lake-P description");
 		return;
 	}
+
+	/* The south display, the stepping and the memory of the start. */
 	input.pch_kind = I915_PCH_ADP;
 	input.step = 0U;
 	input.dram_type = I915_XD_DRAM_LPDDR4;

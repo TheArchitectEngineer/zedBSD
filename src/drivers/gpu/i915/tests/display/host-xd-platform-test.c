@@ -107,12 +107,19 @@ i915_xd_test_choose(
 	struct i915_xd_choice choice;
 	int error;
 	int named;
+	int differs;
 
 	/* Chooses without a PCH. */
 	error = drv_i915_xd_platform_choose(device, revid, 0, 0U, &choice);
 	named = 0;
-	if (error == 0 && choice.platform != NULL && strcmp(choice.platform->name, name) == 0)
-		named = 1;
+	if (error == 0 && choice.platform != NULL) {
+		/* The row's name must be the one asked for. */
+		differs = strcmp(choice.platform->name, name);
+		if (differs == 0)
+			named = 1;
+	}
+
+	/* Checks the row's name. */
 	i915_host_check(named != 0, name);
 
 	/* Succeeded: reports the row, or NULL. */
@@ -248,6 +255,7 @@ i915_xd_test_accepted(void)
 	int all;
 	int listed;
 	int error;
+	unsigned rows;
 
 	/* Every display 12 id the driver accepts has a verified display 12 row. */
 	all = 1;
@@ -257,6 +265,8 @@ i915_xd_test_accepted(void)
 		if (error != 0 || choice.platform->display_ver != 12U || choice.platform->verified == 0)
 			all = 0;
 	}
+
+	/* Checks every accepted display 12 id has a verified display 12 row. */
 	i915_host_check(all != 0, "accepted: every accepted display 12 id has a verified display 12 row");
 
 	/* Every display 13 id the driver accepts has a verified display 13 row. */
@@ -267,10 +277,13 @@ i915_xd_test_accepted(void)
 		if (error != 0 || choice.platform->display_ver != 13U || choice.platform->verified == 0)
 			all = 0;
 	}
+
+	/* Checks every accepted display 13 id has a verified display 13 row. */
 	i915_host_check(all != 0, "accepted: every accepted display 13 id has a verified display 13 row");
 
 	/* A verified row lists only accepted ids; an unverified row lists none of them. */
-	for (row = 0U; row < drv_i915_xd_platform_count(); row++) {
+	rows = drv_i915_xd_platform_count();
+	for (row = 0U; row < rows; row++) {
 		platform = drv_i915_xd_platform_row(row);
 		all = 1;
 		for (index = 0U; index < platform->npci_ids; index++) {
@@ -282,6 +295,8 @@ i915_xd_test_accepted(void)
 			if (platform->verified == 0 && listed != 0)
 				all = 0;
 		}
+
+		/* Checks the row's ids. */
 		i915_host_check(all != 0, platform->name);
 	}
 }
@@ -298,9 +313,11 @@ i915_xd_test_shape(void)
 	unsigned mg;
 	int sane;
 	int well1;
+	unsigned rows;
 
 	/* Walks every row. */
-	for (row = 0U; row < drv_i915_xd_platform_count(); row++) {
+	rows = drv_i915_xd_platform_count();
+	for (row = 0U; row < rows; row++) {
 		platform = drv_i915_xd_platform_row(row);
 		sane = 1;
 
@@ -320,6 +337,8 @@ i915_xd_test_shape(void)
 			} else if (port->tc != 0U || port->north_pin != 0U) {
 				sane = 0;
 			}
+
+			/* A port's AUX channel is its DDI. */
 			if (port->aux != port->ddi)
 				sane = 0;
 		}
@@ -354,6 +373,7 @@ i915_xd_test_shape(void)
 		    platform->pipedmc_base != 0U || platform->swing->edp_hobl != NULL))
 			sane = 0;
 
+		/* Checks the row. */
 		i915_host_check(sane != 0, platform->name);
 	}
 }
@@ -385,6 +405,8 @@ i915_xd_test_lookups(void)
 		if (dpll->qdiv_mode != 0U)
 			cfgcr1 |= I915_XD_CFGCR1_QDIV_MODE;
 	}
+
+	/* Checks HBR at 38.4 MHz gives CFGCR0 0x00e001a5. */
 	i915_host_check(cfgcr0 == 0x00e001a5U, "lookups: HBR at 38.4 MHz gives CFGCR0 0x00e001a5");
 	i915_host_check(cfgcr1 == 0x00000088U, "lookups: HBR gives CFGCR1 0x88");
 

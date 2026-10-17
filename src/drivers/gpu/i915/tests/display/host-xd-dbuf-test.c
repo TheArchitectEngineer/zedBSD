@@ -156,6 +156,7 @@ i915_xd_dbuf_test_panel(void)
 	int joined;
 	int error;
 	int same;
+	uint32_t word;
 
 	/* Alder Lake-P. */
 	platform = i915_xd_dbuf_test_setup(I915_XD_DBUF_TEST_ADLP, I915_XD_DBUF_TEST_ADLP_REVID);
@@ -195,9 +196,13 @@ i915_xd_dbuf_test_panel(void)
 	drv_i915_xd_wm_write_plane(&i915_xd_dbuf_test_io, platform, 0U, pipe.levels, &wm, 0, &plane_ddb);
 	same = 1;
 	for (level = 0U; level < 6U; level++) {
-		if (i915_xd_fake_get(0x70240U + 4U * level) != words[level])
+		/* The level's word as the model holds it. */
+		word = i915_xd_fake_get(0x70240U + 4U * level);
+		if (word != words[level])
 			same = 0;
 	}
+
+	/* Checks the six level words of the driver's run (0x80004010 ... 0x800280a1). */
 	i915_host_check(same, "dbuf: the six level words of the driver's run (0x80004010 ... 0x800280a1)");
 	i915_host_check(i915_xd_fake_get(0x70268U) == 0x8000001eU && i915_xd_fake_get(0x70258U) == 0x8000c031U &&
 			i915_xd_fake_get(0x7025cU) == 0x8000003fU && i915_xd_fake_get(0x7027cU) == 0x0fdb0000U,
@@ -221,6 +226,8 @@ i915_xd_dbuf_test_slices(void)
 		i915_host_check(0, "dbuf: the Alder Lake-P description");
 		return;
 	}
+
+	/* Checks pipes A and B split the bus, A on slices 1-2 and B on 3-4. */
 	i915_host_check(drv_i915_xd_dbuf_joined(platform, 0x3U) == 0U &&
 			drv_i915_xd_dbuf_slices(platform, 0U, 0x3U, 0) == 0x3U && drv_i915_xd_dbuf_slices(platform, 1U, 0x3U, 0) == 0xcU,
 			"dbuf: pipes A and B split the bus, A on slices 1-2 and B on 3-4");
@@ -240,6 +247,8 @@ i915_xd_dbuf_test_slices(void)
 		i915_host_check(0, "dbuf: the Tiger Lake description");
 		return;
 	}
+
+	/* Checks Tiger Lake's slices (A alone both, A and B one each), never joined. */
 	i915_host_check(drv_i915_xd_dbuf_joined(tgl, 0x1U) == 0U && drv_i915_xd_dbuf_slices(tgl, 0U, 0x1U, 0) == 0x3U &&
 			drv_i915_xd_dbuf_slices(tgl, 0U, 0x3U, 0) == 0x2U && drv_i915_xd_dbuf_slices(tgl, 1U, 0x3U, 0) == 0x1U,
 			"dbuf: Tiger Lake's slices (A alone both, A and B one each), never joined");
@@ -273,6 +282,8 @@ i915_xd_dbuf_test_cuts(void)
 		i915_host_check(0, "dbuf: the Alder Lake-P description");
 		return;
 	}
+
+	/* The 5330's pipe and plane. */
 	i915_xd_dbuf_test_pipe(&pipe);
 	surface.width = 1920U;
 	surface.cpp = 4U;
@@ -322,6 +333,8 @@ i915_xd_dbuf_test_writes(void)
 		i915_host_check(0, "dbuf: the Alder Lake-P description");
 		return;
 	}
+
+	/* The slices' states follow their requests; slice 3 is on from the firmware. */
 	i915_xd_fake_rule_mirror(0x45008U, 0x80000000U, 0x45008U, -1, 0U);
 	i915_xd_fake_set(0x44300U, 0xc0000000U);
 	i915_xd_fake_rule_mirror(0x44300U, 0x80000000U, 0x44300U, -1, 0U);
@@ -420,6 +433,8 @@ i915_xd_dbuf_test_memory(void)
 		if (memory.latency[index] != expect[index])
 			same = 0;
 	}
+
+	/* Checks the 5330's latencies, 3 us added to its six levels. */
 	i915_host_check(error == 0 && memory.valid && memory.levels == 6U && same, "memory: the 5330's latencies, 3 us added to its six levels");
 	i915_host_check(memory.sagv_block_us == 35U && memory.sagv_error == 0 && firmware->commands == 3U, "memory: the SAGV block time, then the two latency words");
 

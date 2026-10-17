@@ -245,9 +245,11 @@ i915_xd_tc_test_read(
 	uint32_t phy_offset;
 	unsigned tc;
 	int window;
+	uint64_t now;
 
 	/* The microcontroller's health comes at its time. */
-	if (i915_xd_tc_test_model.health_at != 0U && i915_xd_fake_now() >= i915_xd_tc_test_model.health_at) {
+	now = i915_xd_fake_now();
+	if (i915_xd_tc_test_model.health_at != 0U && now >= i915_xd_tc_test_model.health_at) {
 		for (tc = 0U; tc < I915_XD_TC_PORTS; tc++)
 			*i915_xd_tc_test_phy(tc, I915_XD_DKL_CMN_UC_DW27) |= I915_XD_DKL_UC_HEALTH;
 	}
@@ -331,7 +333,7 @@ i915_xd_tc_test_route_rmw(
 {
 	uint32_t *word;
 
-	(void)context;
+	UNUSED_PARAMETER(context);
 
 	/* Counted and changed. */
 	i915_xd_tc_test_model.routed++;
@@ -619,6 +621,8 @@ i915_xd_tc_test_pll_words(void)
 				wrong++;
 		}
 	}
+
+	/* Checks pll words: RBR, HBR, HBR2 and HBR3 on 19.2, 24 and 38.4 MHz give their rates back. */
 	i915_host_check(wrong == 0U, "pll words: RBR, HBR, HBR2 and HBR3 on 19.2, 24 and 38.4 MHz give their rates back");
 
 	/* An eDP rate between them puts no DCO at 8.1 GHz. */
@@ -763,6 +767,8 @@ i915_xd_tc_test_power_get(
 		i915_xd_tc_test_power.functions[i915_xd_tc_test_power.count] = functions;
 		i915_xd_tc_test_power.count++;
 	}
+
+	/* One more reference held. */
 	i915_xd_tc_test_power.held++;
 
 	/* Succeeded: the wells are up. */
@@ -783,6 +789,8 @@ i915_xd_tc_test_power_put(
 		i915_xd_tc_test_power.functions[i915_xd_tc_test_power.count] = functions;
 		i915_xd_tc_test_power.count++;
 	}
+
+	/* One fewer reference held. */
 	i915_xd_tc_test_power.held--;
 }
 
@@ -829,8 +837,8 @@ i915_xd_tc_test_mailbox(
 {
 	uint32_t data;
 
-	(void)offset;
-	(void)context;
+	UNUSED_PARAMETER(offset);
+	UNUSED_PARAMETER(context);
 
 	/* Only a command. */
 	if ((value & I915_XD_GTDRIVER_MAILBOX_BUSY) == 0U)

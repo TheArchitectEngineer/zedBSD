@@ -219,7 +219,7 @@ tc_port_test_read(
 {
 	uint32_t value;
 
-	(void)context;
+	UNUSED_PARAMETER(context);
 
 	/* Reads the record. */
 	value = tc_port_test_get(offset);
@@ -280,7 +280,7 @@ tc_port_test_power_get(
 {
 	unsigned bit;
 
-	(void)context;
+	UNUSED_PARAMETER(context);
 
 	/* A refused set takes nothing. */
 	if ((functions & tc_port_test.refuse) != 0U)
@@ -291,6 +291,8 @@ tc_port_test_power_get(
 		if ((functions & (1ULL << bit)) != 0U)
 			tc_port_test.refs[bit]++;
 	}
+
+	/* Counts the get. */
 	tc_port_test.gets++;
 
 	/* Succeeded: the wells are on. */
@@ -305,7 +307,7 @@ tc_port_test_power_put(
 {
 	unsigned bit;
 
-	(void)context;
+	UNUSED_PARAMETER(context);
 
 	/* One reference fewer on each function. */
 	for (bit = 0U; bit < 64U; bit++) {
@@ -396,7 +398,7 @@ tc_port_test_log(
 	va_list arguments;
 	const char *timeout;
 
-	(void)ctx;
+	UNUSED_PARAMETER(ctx);
 
 	/* The line, counted when it tells of a wait that timed out. */
 	va_start(arguments, format);
@@ -579,6 +581,7 @@ tc_port_test_live(void)
 	tc_port_test_set(I915_XD_DE_HPD_ISR, I915_XD_HPD_INT_TC(1U) | I915_XD_HPD_INT_TBT(2U));
 	tc_port_test_set(I915_XD_SDE_ISR, I915_XD_SDE_TC_HPD(3U));
 
+	/* Reads TC2's live state. */
 	live = drv_i915_xd_tc_ports_live(&ports, 1U);
 	i915_host_check(live == I915_XD_TC_LIVE_DP_ALT, "live: TC2 DP-alt");
 	live = drv_i915_xd_tc_ports_live(&ports, 2U);
@@ -676,6 +679,7 @@ tc_port_test_connect(void)
 	unsigned mode;
 	unsigned own_write;
 	unsigned index;
+	uint32_t buffer_reg;
 
 	/* TC1: a DP-alt partner offering two lanes (FIA1 slot 0, mask 0x3), the PHY ready. */
 	tc_port_test_reset(TC_PORT_TEST_ADLP, TC_PORT_TEST_ADLP_REVID);
@@ -685,6 +689,7 @@ tc_port_test_connect(void)
 	tc_port_test_set(I915_XD_TCSS_DDI_STATUS(0U), I915_XD_TCSS_READY);
 	tc_port_test_set(I915_XD_FIA1_BASE + I915_XD_FIA_DFLEXDPSP, 0x3U);
 
+	/* Locks TC1 for two lanes. */
 	mode = drv_i915_xd_tc_ports_lock(&ports, 0U, 2U);
 	i915_host_check(mode == I915_XD_TC_MODE_DP_ALT, "connect: DP-alt for two lanes");
 	i915_host_check((tc_port_test_get(tc_port_test_buf(0U)) & I915_XD_DDI_BUF_TC_OWNED) != 0U, "connect: ownership taken");
@@ -694,12 +699,15 @@ tc_port_test_connect(void)
 
 	/* The ownership is the first write. */
 	own_write = TC_PORT_TEST_WRITES;
+	buffer_reg = tc_port_test_buf(0U);
 	for (index = 0U; index < tc_port_test.writes; index++) {
-		if (tc_port_test.write_reg[index] == tc_port_test_buf(0U)) {
+		if (tc_port_test.write_reg[index] == buffer_reg) {
 			own_write = index;
 			break;
 		}
 	}
+
+	/* Checks the ownership is the first write. */
 	i915_host_check(own_write == 0U, "connect: the ownership is the first write");
 
 	/* The unlock without a link gives the PHY back at once. */

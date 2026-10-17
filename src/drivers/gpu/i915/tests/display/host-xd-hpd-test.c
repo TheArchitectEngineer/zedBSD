@@ -166,6 +166,7 @@ i915_xd_hpd_test_edid(
 	for (index = 0U; index < 127U; index++)
 		sum += edid[index];
 
+	/* The checksum makes the block's bytes sum to 0. */
 	edid[127] = (uint8_t)(256U - sum % 256U);
 }
 
@@ -178,6 +179,7 @@ i915_xd_hpd_test_power(
 {
 	struct i915_xd_hpd_test *run;
 
+	/* The run the hook belongs to. */
 	run = ctx;
 
 	/* A refusal holds nothing. */
@@ -203,7 +205,7 @@ i915_xd_hpd_test_tc_live(
 {
 	struct i915_xd_hpd_test *run;
 
-	(void)ddi;
+	UNUSED_PARAMETER(ddi);
 	run = ctx;
 
 	/* Succeeded: the run's live state. */
@@ -221,7 +223,7 @@ i915_xd_hpd_test_dp_probe(
 {
 	struct i915_xd_hpd_test *run;
 
-	(void)ddi;
+	UNUSED_PARAMETER(ddi);
 	run = ctx;
 	run->dp_probes++;
 
@@ -244,7 +246,7 @@ i915_xd_hpd_test_dp_pulse(
 {
 	struct i915_xd_hpd_test *run;
 
-	(void)ddi;
+	UNUSED_PARAMETER(ddi);
 	run = ctx;
 
 	/* Succeeded: whether the sink is as it was. */
@@ -259,7 +261,7 @@ i915_xd_hpd_test_dp_reset(
 {
 	struct i915_xd_hpd_test *run;
 
-	(void)ddi;
+	UNUSED_PARAMETER(ddi);
 	run = ctx;
 	run->dp_resets++;
 }
@@ -273,8 +275,8 @@ i915_xd_hpd_test_link(
 {
 	struct i915_xd_hpd_test *run;
 
-	(void)ddi;
-	(void)hdmi;
+	UNUSED_PARAMETER(ddi);
+	UNUSED_PARAMETER(hdmi);
 	run = ctx;
 	run->links++;
 }
@@ -287,6 +289,7 @@ i915_xd_hpd_test_5330(void)
 	unsigned ddi;
 	int index;
 
+	/* The run of the test. */
 	run = &i915_xd_hpd_test_run;
 
 	/* The panel and HDMI. */
@@ -300,6 +303,7 @@ i915_xd_hpd_test_5330(void)
 	for (ddi = 3U; ddi <= 6U; ddi++)
 		(void)drv_i915_xd_hpd_add(&run->hpd, I915_XD_HPD_DP, ddi);
 
+	/* Checks the connectors of the 5330's ports. */
 	i915_host_check(run->hpd.count == 6U && strcmp(run->hpd.connector[5].name, "DP-4") == 0 && run->hpd.connector[2].tc == 1U,
 	    "5330: DP-1 to DP-4 on TC1 to TC4");
 }
@@ -311,6 +315,7 @@ i915_xd_hpd_test_pins(void)
 	struct i915_xd_hpd_test *run;
 	const struct i915_xd_platform *platform;
 
+	/* The run of the test. */
 	run = &i915_xd_hpd_test_run;
 
 	/* Alder Lake-P: A and B on the DDI pins, DDI 3 to 6 on TC1 to TC4, DDI 2 has none. */
@@ -350,6 +355,7 @@ i915_xd_hpd_test_arm(void)
 {
 	struct i915_xd_hpd_test *run;
 
+	/* The run of the test on the 5330's model. */
 	run = &i915_xd_hpd_test_run;
 	i915_xd_hpd_test_setup(I915_XD_HPD_TEST_ADLP, I915_XD_HPD_TEST_ADLP_REV, I915_PCH_ADP);
 	i915_xd_hpd_test_5330();
@@ -389,6 +395,7 @@ i915_xd_hpd_test_arm_two(void)
 	struct i915_xd_hpd_test *run;
 	unsigned writes;
 
+	/* The run of the test on the 5330's model. */
 	run = &i915_xd_hpd_test_run;
 	i915_xd_hpd_test_setup(I915_XD_HPD_TEST_ADLP, I915_XD_HPD_TEST_ADLP_REV, I915_PCH_ADP);
 	(void)drv_i915_xd_hpd_add(&run->hpd, I915_XD_HPD_EDP, 0U);
@@ -438,6 +445,7 @@ i915_xd_hpd_test_irqs(void)
 	uint32_t longs;
 	unsigned queue;
 
+	/* The run of the test on the 5330's model. */
 	run = &i915_xd_hpd_test_run;
 	i915_xd_hpd_test_setup(I915_XD_HPD_TEST_ADLP, I915_XD_HPD_TEST_ADLP_REV, I915_PCH_ADP);
 	i915_xd_hpd_test_5330();
@@ -473,6 +481,7 @@ i915_xd_hpd_test_irqs(void)
 	i915_host_check(pins == ((1U << I915_XD_HPD_PIN_TC(0U)) | (1U << I915_XD_HPD_PIN_TC(2U))) && longs == (1U << I915_XD_HPD_PIN_TC(0U)),
 	    "irq: north pulses on TC1 (long) and TC3 (short)");
 
+	/* Sorts the pulses into long and short ports. */
 	queue = drv_i915_xd_hpd_sort(&run->hpd, &run->io, pins, longs, 5000U);
 	i915_host_check(queue == I915_XD_HPD_QUEUE_PULSES && run->hpd.long_ports == (1U << 3U) && run->hpd.short_ports == (1U << 5U),
 	    "irq: DP-1's long pulse and DP-3's short one");
@@ -496,6 +505,7 @@ i915_xd_hpd_test_storm(void)
 	unsigned index;
 	int masked;
 
+	/* The run of the test on the 5330's model. */
 	run = &i915_xd_hpd_test_run;
 	i915_xd_hpd_test_setup(I915_XD_HPD_TEST_ADLP, I915_XD_HPD_TEST_ADLP_REV, I915_PCH_ADP);
 	i915_xd_hpd_test_5330();
@@ -508,6 +518,7 @@ i915_xd_hpd_test_storm(void)
 	for (index = 0U; index < 5U; index++)
 		queue |= drv_i915_xd_hpd_sort(&run->hpd, &run->io, pin, pin, 10000U + index);
 
+	/* Checks the pulses below the limit. */
 	i915_host_check((queue & I915_XD_HPD_STORM) == 0U && run->hpd.pin[I915_XD_HPD_PIN_DDI(1U)].count == 50, "storm: 50 within the limit");
 
 	/* The sixth in the same second is a storm: the pin is marked and masked, its event dropped. */
@@ -537,6 +548,7 @@ i915_xd_hpd_test_storm(void)
 	for (index = 0U; index < 80U; index++)
 		queue |= drv_i915_xd_hpd_sort(&run->hpd, &run->io, pin, 0U, 20000U);
 
+	/* Checks the short pulses. */
 	i915_host_check((queue & I915_XD_HPD_STORM) == 0U, "storm: short pulses are not counted");
 }
 
@@ -548,6 +560,7 @@ i915_xd_hpd_test_hdmi(void)
 	int status;
 	int state;
 
+	/* The run of the test on the 5330's model. */
 	run = &i915_xd_hpd_test_run;
 	i915_xd_hpd_test_setup(I915_XD_HPD_TEST_ADLP, I915_XD_HPD_TEST_ADLP_REV, I915_PCH_ADP);
 	i915_xd_hpd_test_5330();
@@ -609,6 +622,7 @@ i915_xd_hpd_test_dp(void)
 	unsigned index;
 	int state;
 
+	/* The run of the test on the 5330's model. */
 	run = &i915_xd_hpd_test_run;
 	i915_xd_hpd_test_setup(I915_XD_HPD_TEST_ADLP, I915_XD_HPD_TEST_ADLP_REV, I915_PCH_ADP);
 	i915_xd_hpd_test_5330();
@@ -633,6 +647,7 @@ i915_xd_hpd_test_dp(void)
 	for (index = 0U; index < 4U && state == I915_XD_HPD_RETRY; index++)
 		state = drv_i915_xd_hpd_detect(&run->hpd, &run->io, &run->env, 3U, 0);
 
+	/* Checks the retries of a Type-C port. */
 	i915_host_check(state == I915_XD_HPD_RETRY && run->hpd.connector[3].retries == 4U, "dp: a Type-C port retries up to five times");
 	state = drv_i915_xd_hpd_detect(&run->hpd, &run->io, &run->env, 3U, 0);
 	i915_host_check(state == I915_XD_HPD_UNCHANGED, "dp: unchanged after the fifth retry");
@@ -654,6 +669,7 @@ i915_xd_hpd_test_pulses(void)
 	struct i915_xd_hpd_test *run;
 	int taken;
 
+	/* The run of the test on the 5330's model. */
 	run = &i915_xd_hpd_test_run;
 	i915_xd_hpd_test_setup(I915_XD_HPD_TEST_ADLP, I915_XD_HPD_TEST_ADLP_REV, I915_PCH_ADP);
 	i915_xd_hpd_test_5330();

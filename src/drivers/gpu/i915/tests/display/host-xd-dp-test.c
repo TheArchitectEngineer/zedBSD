@@ -222,6 +222,8 @@ i915_xd_dp_test_read(
 		} else if (size >= 2U) {
 			buffer[1] = model->repeater_tx_cap;
 		}
+
+		/* Records the read. */
 		i915_xd_dp_test_record(0, address, size, buffer[0]);
 		return (int)size;
 	}
@@ -243,6 +245,8 @@ i915_xd_dp_test_read(
 			request = (uint8_t)(model->cr_swing | (model->eq_preemph << 2));
 			status[4U + (lane >> 1)] |= (uint8_t)(request << (4U * (lane & 1U)));
 		}
+
+		/* The lanes are aligned. */
 		status[2] = I915_XD_DPCD_ALIGN_DONE;
 
 		/* A repeater's status has no sink status byte. */
@@ -256,6 +260,8 @@ i915_xd_dp_test_read(
 			buffer[at++] = status[4];
 			buffer[at] = status[5];
 		}
+
+		/* Records the read. */
 		i915_xd_dp_test_record(0, address, size, buffer[0]);
 		return (int)size;
 	}
@@ -663,6 +669,8 @@ i915_xd_dp_test_train_edp(void)
 		    i915_xd_dp_test_model.log[index].first != expected[index].first)
 			same = 0;
 	}
+
+	/* Checks the panel trains at HBR x2 with the old path's DPCD accesses. */
 	i915_host_check(error == 0 && same, "dp: the panel trains at HBR x2 with the old path's DPCD accesses");
 
 	/* The source: prepared, pattern 1 then 2 without scrambling, levels at the start and once after, idle once. */
@@ -801,6 +809,8 @@ i915_xd_dp_test_train_repeaters(void)
 		if (i915_xd_dp_test_model.log[index].address == 0x102U && pattern_writes[0] == 0U)
 			pattern_writes[0] = index;
 	}
+
+	/* Checks repeater 2, then repeater 1, then the sink are trained. */
 	i915_host_check(pattern_writes[2] != 0U && pattern_writes[2] < pattern_writes[1] && pattern_writes[1] < pattern_writes[0],
 			"dp: repeater 2, then repeater 1, then the sink are trained");
 

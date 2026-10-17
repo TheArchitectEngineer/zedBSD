@@ -205,6 +205,7 @@ i915_xd_clock_test_writes(
 		if (kept >= max)
 			break;
 
+		/* Keeps the write. */
 		offsets[kept] = records[index].offset;
 		values[kept] = records[index].value;
 		kept++;

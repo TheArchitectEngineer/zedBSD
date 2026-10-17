@@ -166,6 +166,8 @@ i915_xd_pt_setup(void)
 		i915_xd_fake_rule_call(I915_XD_DDI_BUF_CTL(index), i915_xd_pt_buffer, NULL);
 		i915_xd_fake_set(I915_XD_DDI_BUF_CTL(index), I915_XD_DDI_BUF_IDLE);
 	}
+
+	/* The pipes' frame counters are running. */
 	i915_xd_fake_set(0x60544U, 0x02000000U);
 	i915_xd_fake_set(0x61544U, 0x02000000U);
 	for (index = 0U; index < 2U; index++) {
@@ -428,7 +430,7 @@ i915_xd_pt_wait_reg(
 {
 	uint32_t now;
 
-	(void)timeout_ms;
+	UNUSED_PARAMETER(timeout_ms);
 
 	/* The register now. */
 	now = i915_xd_pt_read32(ctx, reg);
@@ -487,6 +489,8 @@ i915_xd_pt_dpcd_read(
 			nibble |= I915_XD_DPCD_LANE_EQ | I915_XD_DPCD_LANE_LOCKED;
 		buf[lane >> 1] |= (uint8_t)(nibble << (4U * (lane & 1U)));
 	}
+
+	/* The lanes are aligned when the read reaches the word. */
 	if (size > 2U)
 		buf[2] = I915_XD_DPCD_ALIGN_DONE;
 
@@ -591,7 +595,7 @@ i915_xd_pt_power_put(
 {
 	struct i915_xd_pt_backend *backend;
 
-	(void)wakeref;
+	UNUSED_PARAMETER(wakeref);
 
 	/* One reference less. */
 	backend = ctx;
@@ -624,7 +628,7 @@ i915_xd_pt_dbuf_slices(
 {
 	struct i915_xd_pt_backend *backend;
 
-	(void)slices;
+	UNUSED_PARAMETER(slices);
 
 	/* One more request. */
 	backend = ctx;
@@ -639,7 +643,7 @@ i915_xd_pt_vblank_get(
 {
 	struct i915_xd_pt_backend *backend;
 
-	(void)pipe;
+	UNUSED_PARAMETER(pipe);
 
 	/* One more reference. */
 	backend = ctx;
@@ -657,7 +661,7 @@ i915_xd_pt_vblank_put(
 {
 	struct i915_xd_pt_backend *backend;
 
-	(void)pipe;
+	UNUSED_PARAMETER(pipe);
 
 	/* One reference less. */
 	backend = ctx;
@@ -714,7 +718,7 @@ i915_xd_pt_arm_event(
 {
 	struct i915_xd_pt_backend *backend;
 
-	(void)pipe;
+	UNUSED_PARAMETER(pipe);
 
 	/* One more event. */
 	backend = ctx;
@@ -745,7 +749,7 @@ i915_xd_pt_lock(
 {
 	struct i915_xd_pt_backend *backend;
 
-	(void)which;
+	UNUSED_PARAMETER(which);
 
 	/* Taken. */
 	backend = ctx;
@@ -759,6 +763,8 @@ i915_xd_pt_lock(
 		backend->lock_errors++;
 		return;
 	}
+
+	/* Drops it. */
 	backend->locks_held--;
 }
 
@@ -770,7 +776,7 @@ i915_xd_pt_error(
 {
 	struct i915_xd_pt_backend *backend;
 
-	(void)what;
+	UNUSED_PARAMETER(what);
 
 	/* One more error. */
 	backend = ctx;

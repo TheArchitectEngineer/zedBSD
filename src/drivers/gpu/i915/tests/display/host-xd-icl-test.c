@@ -176,6 +176,8 @@ i915_xd_icl_test_setup(
 		i915_xd_fake_rule_mirror(I915_XD_TC_PLL_ENABLE(index), I915_XD_PLL_POWER_ENABLE, I915_XD_TC_PLL_ENABLE(index), -1, 0U);
 		i915_xd_fake_rule_mirror(I915_XD_TC_PLL_ENABLE(index), I915_XD_PLL_ENABLE, I915_XD_TC_PLL_ENABLE(index), -1, 0U);
 	}
+
+	/* The combo DPLL's enable likewise. */
 	i915_xd_fake_rule_mirror(I915_XD_DPLL0_ENABLE, I915_XD_PLL_POWER_ENABLE, I915_XD_DPLL0_ENABLE, -1, 0U);
 	i915_xd_fake_rule_mirror(I915_XD_DPLL0_ENABLE, I915_XD_PLL_ENABLE, I915_XD_DPLL0_ENABLE, -1, 0U);
 
@@ -215,6 +217,7 @@ i915_xd_icl_test_writes(
 		if (kept >= max)
 			break;
 
+		/* Keeps the write. */
 		offsets[kept] = records[index].offset;
 		values[kept] = records[index].value;
 		kept++;
@@ -470,7 +473,13 @@ i915_xd_icl_test_mg_pll(void)
 	refclk = i915_xd_icl_test_index(offsets, count, base + I915_XD_MG_REFCLKIN_CTL);
 	div0 = i915_xd_icl_test_index(offsets, count, base + I915_XD_MG_PLL_DIV0);
 	tdc = i915_xd_icl_test_index(offsets, count, base + I915_XD_MG_PLL_TDC_COLDST_BIAS);
-	enable = power >= 0 ? i915_xd_icl_test_index(offsets + power + 1, count - (unsigned)power - 1U, 0x46034U) : -1;
+
+	/* The enable is the second write of the enable word, after the power. */
+	enable = -1;
+	if (power >= 0)
+		enable = i915_xd_icl_test_index(offsets + power + 1, count - (unsigned)power - 1U, 0x46034U);
+
+	/* Checks the order. */
 	i915_host_check(power == 0 && refclk == 1 && div0 == 4 && tdc == 10 && enable == 10,
 		"mg pll: power, the three clock tops, DIV0 to SSC, bias, TDC, then the enable");
 

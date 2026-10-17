@@ -251,6 +251,7 @@ i915_xd_dmc_test_writes(
 		if (kept >= max)
 			break;
 
+		/* Keeps the write. */
 		offsets[kept] = records[index].offset;
 		values[kept] = records[index].value;
 		kept++;
@@ -278,6 +279,7 @@ i915_xd_dmc_test_find(
 		if (offsets[index] != offset)
 			continue;
 
+		/* The register's last value. */
 		*value = values[index];
 		found = 1;
 	}

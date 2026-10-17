@@ -245,11 +245,14 @@ i915_xd_edp_test_status(
 	uint32_t value,
 	void *context)
 {
-	(void)offset;
-	(void)context;
+	uint32_t previous;
+
+	UNUSED_PARAMETER(offset);
+	UNUSED_PARAMETER(context);
 
 	/* The status follows the power bit when it changes. */
-	if ((value & I915_XD_PP_CONTROL_POWER_ON) != 0U && (i915_xd_fake_previous() & I915_XD_PP_CONTROL_POWER_ON) != 0U)
+	previous = i915_xd_fake_previous();
+	if ((value & I915_XD_PP_CONTROL_POWER_ON) != 0U && (previous & I915_XD_PP_CONTROL_POWER_ON) != 0U)
 		return;
 	if ((value & I915_XD_PP_CONTROL_POWER_ON) != 0U) {
 		i915_xd_fake_later(I915_XD_EDP_TEST_POWER_UP_US, I915_XD_PP_STATUS(0U), 0xffffffffU,
@@ -277,6 +280,7 @@ i915_xd_edp_test_vdd_ons(void)
 		if (records[index].kind != I915_XD_IO_RECORD_WRITE || records[index].offset != I915_XD_PP_CONTROL(0U))
 			continue;
 
+		/* Counts each time VDD is forced on from off. */
 		if ((records[index].value & I915_XD_PP_CONTROL_FORCE_VDD) != 0U && !held)
 			ons++;
 		held = 0;
@@ -325,7 +329,7 @@ i915_xd_edp_test_power_put(
 {
 	struct i915_xd_edp_test_env *env;
 
-	(void)cookie;
+	UNUSED_PARAMETER(cookie);
 
 	/* One fewer held. */
 	env = context;
@@ -341,7 +345,7 @@ i915_xd_edp_test_power_put_later(
 {
 	struct i915_xd_edp_test_env *env;
 
-	(void)cookie;
+	UNUSED_PARAMETER(cookie);
 
 	/* One fewer held. */
 	env = context;
@@ -358,6 +362,7 @@ i915_xd_edp_test_lock(
 {
 	struct i915_xd_edp_test_env *env;
 
+	/* The test's environment. */
 	env = context;
 
 	/* Drops it. */
@@ -432,7 +437,7 @@ i915_xd_edp_test_ddc(
 	uint8_t offset_byte;
 	int error;
 
-	(void)segment;
+	UNUSED_PARAMETER(segment);
 
 	/* The offset, then the bytes. */
 	aux = context;

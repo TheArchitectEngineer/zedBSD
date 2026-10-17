@@ -208,6 +208,8 @@ i915_xd_pipe_test_order(void)
 		i915_host_check(0, "pipe: the Alder Lake-P description");
 		return;
 	}
+
+	/* The 5330's panel, configured. */
 	i915_xd_pipe_test_panel(&setup);
 	drv_i915_xd_pipe_configure(&i915_xd_pipe_test_io, platform, &setup);
 
@@ -222,6 +224,8 @@ i915_xd_pipe_test_order(void)
 			same = 0;
 		writes++;
 	}
+
+	/* Checks the setup writes M/N, the timing, the refresh, the delays, then the configuration. */
 	i915_host_check(same && writes == sizeof(expected) / sizeof(expected[0]),
 			"pipe: the setup writes M/N, the timing, the refresh, the delays, then the configuration");
 
@@ -324,6 +328,8 @@ i915_xd_pipe_test_start_stop(void)
 		i915_host_check(0, "pipe: the Alder Lake-P description");
 		return;
 	}
+
+	/* Starts pipe A. */
 	ran = drv_i915_xd_pipe_start(&i915_xd_pipe_test_io, platform, 0U);
 	i915_host_check(ran == 0 && i915_xd_fake_get(0x70028U) == 0x2000U && i915_xd_fake_get(0x70008U) == 0x80000000U,
 			"pipe: the start takes the arbiter slots and enables the transcoder");
@@ -458,6 +464,8 @@ i915_xd_pipe_test_plane(void)
 		i915_host_check(0, "plane: the Alder Lake-P description");
 		return;
 	}
+
+	/* Plane 1 of pipe A with a 1920x1080 buffer. */
 	memset(&plane, 0, sizeof(plane));
 	plane.pipe = 0U;
 	plane.width = 1920U;
@@ -485,6 +493,8 @@ i915_xd_pipe_test_plane(void)
 			same = 0;
 		writes++;
 	}
+
+	/* Checks the unarmed words, then the control word and the surface. */
 	i915_host_check(same && writes == sizeof(expected) / sizeof(expected[0]), "plane: the unarmed words, then the control word and the surface");
 
 	/* A translucent plane on pipe B at an offset. */

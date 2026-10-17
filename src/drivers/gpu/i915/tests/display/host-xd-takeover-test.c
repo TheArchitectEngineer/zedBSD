@@ -277,6 +277,7 @@ i915_xd_to_test_power_pipe(
 		if ((wells & (1ULL << well)) == 0ULL)
 			continue;
 
+		/* The well, requested and on. */
 		desc = &platform->wells[well];
 		control = 0U;
 		if (desc->control == I915_XD_WELL_CONTROL_MAIN)
@@ -514,6 +515,7 @@ i915_xd_to_test_classify(void)
 	const struct i915_xd_platform *platform;
 	struct i915_xd_firmware firmware;
 
+	/* The model and its description. */
 	platform = i915_xd_to_test_setup();
 	if (platform == NULL)
 		return;
@@ -982,6 +984,8 @@ i915_xd_to_test_sanitize(void)
 		if (platform->ports[index].ddi != 0U)
 			others |= 1U << platform->ports[index].ddi;
 	}
+
+	/* Checks every port but the lit DDI A has its clock gated. */
 	i915_host_check(report.clocks_gated == others && (i915_xd_fake_get(I915_XD_DPCLKA_CFGCR0) & I915_XD_DPCLKA_DDI_OFF_A) == 0U &&
 			(i915_xd_fake_get(I915_XD_DPCLKA_CFGCR0) & I915_XD_DPCLKA_DDI_OFF_B) != 0U && (i915_xd_fake_get(I915_XD_DPCLKA_CFGCR0) & I915_XD_DPCLKA_TC_OFF(0U)) != 0U,
 			"sanitize: every port but the lit DDI A has its clock gated");

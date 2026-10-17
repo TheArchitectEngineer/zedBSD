@@ -239,6 +239,8 @@ i915_xd_ot_setup(void)
 		i915_xd_fake_rule_call(I915_XD_DDI_BUF_CTL(index), i915_xd_ot_buffer, NULL);
 		i915_xd_fake_set(I915_XD_DDI_BUF_CTL(index), I915_XD_DDI_BUF_IDLE);
 	}
+
+	/* The pipes' frame counters are running. */
 	i915_xd_fake_set(0x60544U, 0x02000000U);
 	i915_xd_fake_set(0x61544U, 0x02000000U);
 
@@ -445,6 +447,8 @@ i915_xd_ot_buffer(
 	} else {
 		i915_xd_fake_set(offset, value | I915_XD_DDI_BUF_IDLE);
 	}
+
+	/* Records the write. */
 	i915_xd_ot_record(I915_XD_OT_WRITE, offset, value);
 }
 
@@ -458,7 +462,7 @@ i915_xd_ot_power_get(
 	struct i915_xd_ot_run *run;
 	int cookie;
 
-	(void)index;
+	UNUSED_PARAMETER(index);
 
 	/* The test's refusal. */
 	run = context;
@@ -540,7 +544,7 @@ i915_xd_ot_lock(
 {
 	struct i915_xd_ot_run *run;
 
-	(void)lock;
+	UNUSED_PARAMETER(lock);
 
 	/* One more or one less. */
 	run = context;
@@ -632,6 +636,8 @@ i915_xd_ot_sink_read(
 			nibble |= I915_XD_DPCD_LANE_EQ | I915_XD_DPCD_LANE_LOCKED;
 		status[lane >> 1] |= (uint8_t)(nibble << (4U * (lane & 1U)));
 	}
+
+	/* The lanes are aligned. */
 	status[2] = I915_XD_DPCD_ALIGN_DONE;
 	memcpy(buffer, status, size < sizeof(status) ? size : sizeof(status));
 
@@ -666,6 +672,8 @@ i915_xd_ot_sink_write(
 		for (lane = 0U; lane + 1U < size && lane < 4U; lane++)
 			sink->set[lane] = buffer[1U + lane];
 	}
+
+	/* The levels the source set. */
 	if (address == I915_XD_DPCD_LEVELS_SET) {
 		for (lane = 0U; lane < size && lane < 4U; lane++)
 			sink->set[lane] = buffer[lane];
@@ -892,6 +900,8 @@ i915_xd_ot_test_rows(void)
 		if (error != 0 || row != index)
 			ordered = 0;
 	}
+
+	/* Checks the ten swing and pre-emphasis pairs take rows 0 to 9 in order. */
 	i915_host_check(ordered, "output: the ten swing and pre-emphasis pairs take rows 0 to 9 in order");
 
 	/* A pair beyond the tables, and the bits a level byte carries besides. */
@@ -1354,6 +1364,8 @@ i915_xd_ot_test_type_c(void)
 		i915_host_check(0, "output: the platform has TC PLL 1");
 		return;
 	}
+
+	/* The PLL's power and lock follow the request. */
 	i915_xd_fake_rule_mirror(pll->enable, 0x08000000U, pll->enable, -1, 0U);
 	i915_xd_fake_rule_mirror(pll->enable, 0x80000000U, pll->enable, -1, 0U);
 	dp_mode = i915_xd_ot_dkl_address(0U, I915_XD_DKL_DP_MODE + I915_XD_DKL_LANE_STRIDE);
@@ -1467,9 +1479,11 @@ i915_xd_ot_setup_icl(void)
 	struct i915_xd_choice choice;
 	unsigned index;
 	int error;
+	const struct i915_xd_platform *model;
 
 	/* The model of the other checks. */
-	if (i915_xd_ot_setup() == NULL)
+	model = i915_xd_ot_setup();
+	if (model == NULL)
 		return NULL;
 
 	/* The eDP transcoder's state, the ports' transports, the watched registers. */
@@ -1508,6 +1522,7 @@ i915_xd_ot_test_icl(void)
 	int last_train;
 	int buffer;
 	int error;
+	int next;
 
 	/* The panel on DDI A and the eDP transcoder (pipe A), its buffer in one slice. */
 	platform = i915_xd_ot_setup_icl();
@@ -1555,6 +1570,8 @@ i915_xd_ot_test_icl(void)
 		i915_host_check(0, "icl: the platform has MG PLL 1");
 		return;
 	}
+
+	/* The PLL's power and lock follow the request. */
 	i915_xd_fake_rule_mirror(pll->enable, 0x08000000U, pll->enable, -1, 0U);
 	i915_xd_fake_rule_mirror(pll->enable, 0x80000000U, pll->enable, -1, 0U);
 	dp_mode = I915_XD_MG_PHY(0U) + I915_XD_MG_DP_MODE;
@@ -1596,8 +1613,14 @@ i915_xd_ot_test_icl(void)
 	transport = I915_XD_DP_TP_CTL(I915_XD_DP_TP_PORT(2U));
 	clock = i915_xd_ot_find_value(I915_XD_OT_WRITE, I915_XD_TRANS_CLK_SEL(1U), 0x60000000U, 0U);
 	last_train = i915_xd_ot_find(I915_XD_OT_WRITE, transport, 0U);
-	while (last_train >= 0 && i915_xd_ot_find(I915_XD_OT_WRITE, transport, (unsigned)last_train + 1U) >= 0)
-		last_train = i915_xd_ot_find(I915_XD_OT_WRITE, transport, (unsigned)last_train + 1U);
+	next = last_train;
+	while (next >= 0) {
+		/* The next write of the transport after the last one found. */
+		last_train = next;
+		next = i915_xd_ot_find(I915_XD_OT_WRITE, transport, (unsigned)last_train + 1U);
+	}
+
+	/* Checks transcoder B's clock select (DDI C, 0x60000000) written once, after the training on port C's transport. */
 	i915_host_check(clock >= 0 && last_train >= 0 && clock > last_train && i915_xd_ot_find(I915_XD_OT_WRITE, I915_XD_TRANS_CLK_SEL(1U), 0U) == clock,
 			"icl: transcoder B's clock select (DDI C, 0x60000000) written once, after the training on port C's transport");
 

@@ -206,6 +206,7 @@ i915_xd_power_test_writes(
 		if (records[index].kind != I915_XD_IO_RECORD_WRITE)
 			continue;
 
+		/* Keeps the write. */
 		offsets[kept] = records[index].offset;
 		values[kept] = records[index].value;
 		kept++;
@@ -303,10 +304,12 @@ i915_xd_power_test_well(
 	const char *name)
 {
 	unsigned well;
+	int differs;
 
 	/* Looks for the name. */
 	for (well = 0U; well < platform->nwells; well++) {
-		if (strcmp(platform->wells[well].name, name) == 0)
+		differs = strcmp(platform->wells[well].name, name);
+		if (differs == 0)
 			return (int)well;
 	}
 
@@ -328,6 +331,7 @@ i915_xd_power_test_table(void)
 	unsigned well;
 	unsigned same;
 	int found;
+	int differs;
 
 	/* The wells, in the 5330's order. */
 	platform = i915_xd_power_test_setup();
@@ -337,9 +341,12 @@ i915_xd_power_test_table(void)
 	count = sizeof(i915_xd_power_test_5330) / sizeof(i915_xd_power_test_5330[0]);
 	same = 0U;
 	for (well = 0U; well < count && well < platform->nwells; well++) {
-		if (strcmp(platform->wells[well].name, i915_xd_power_test_5330[well]) == 0)
+		differs = strcmp(platform->wells[well].name, i915_xd_power_test_5330[well]);
+		if (differs == 0)
 			same++;
 	}
+
+	/* Checks the description's wells are the 5330's, in its order. */
 	i915_host_check(platform->nwells == count && same == count, "power: the description's wells are the 5330's, in its order");
 
 	/* Power well 1: index 0, power gate 1, nothing else. */
@@ -361,6 +368,8 @@ i915_xd_power_test_table(void)
 		if (desc->index == well + 2U && desc->fuse_gate == well + 3U && desc->irq_pipes == (1U << (well - 3U)))
 			same++;
 	}
+
+	/* Checks PW_A..PW_D are indexes 5..8, power gates 6..9, pipe interrupts A..D. */
 	i915_host_check(same == 4U, "power: PW_A..PW_D are indexes 5..8, power gates 6..9, pipe interrupts A..D");
 
 	/* The AUX_USBC wells take 500 ms; the Thunderbolt ones are marked. */
@@ -876,9 +885,11 @@ i915_xd_power_test_dc(void)
 	unsigned count;
 	int held;
 	int error;
+	const struct i915_xd_platform *platform;
 
 	/* Leaving the DC states writes no DC state, keeps the other bits, and records it. */
-	if (i915_xd_power_test_dc_setup(&power, 1) == NULL)
+	platform = i915_xd_power_test_dc_setup(&power, 1);
+	if (platform == NULL)
 		return;
 	i915_xd_fake_set(I915_XD_DC_STATE_EN, 0x00100002U);
 	power.dc_state = I915_XD_DC_STATE_DC6;
@@ -902,14 +913,16 @@ i915_xd_power_test_dc(void)
 			"power: a DC state that never reads back is rewritten 100 times and reported");
 
 	/* A state outside the allowed ones is reduced to them. */
-	if (i915_xd_power_test_dc_setup(&power, 1) == NULL)
+	platform = i915_xd_power_test_dc_setup(&power, 1);
+	if (platform == NULL)
 		return;
 	drv_i915_xd_power_dc_policy(&power, I915_XD_DC_STATE_DC9, I915_XD_DC_STATE_DC6, 1);
 	(void)drv_i915_xd_power_dc_write(&power, &i915_xd_power_test_io, I915_XD_DC_STATE_DC6, &report);
 	i915_host_check(i915_xd_fake_get(I915_XD_DC_STATE_EN) == 0U, "power: a DC state the options do not allow is not written");
 
 	/* Without the DMC firmware DC off's release writes nothing. */
-	if (i915_xd_power_test_dc_setup(&power, 0) == NULL)
+	platform = i915_xd_power_test_dc_setup(&power, 0);
+	if (platform == NULL)
 		return;
 	error = drv_i915_xd_power_dc_enter(&power, &i915_xd_power_test_io, &report);
 	count = i915_xd_power_test_writes(offsets, values, 8U);
@@ -917,7 +930,8 @@ i915_xd_power_test_dc(void)
 	i915_host_check(error == 0 && count == 0U && held == 1, "power: without the DMC firmware the display stays out of DC states");
 
 	/* With it DC6 is written, and DC off no longer reads as held. */
-	if (i915_xd_power_test_dc_setup(&power, 1) == NULL)
+	platform = i915_xd_power_test_dc_setup(&power, 1);
+	if (platform == NULL)
 		return;
 	error = drv_i915_xd_power_dc_enter(&power, &i915_xd_power_test_io, &report);
 	count = i915_xd_power_test_writes(offsets, values, 8U);
@@ -927,7 +941,8 @@ i915_xd_power_test_dc(void)
 			"power: releasing DC off with the firmware enters DC6");
 
 	/* A utility pin driving a PWM, and DC6 requested already, are reported. */
-	if (i915_xd_power_test_dc_setup(&power, 1) == NULL)
+	platform = i915_xd_power_test_dc_setup(&power, 1);
+	if (platform == NULL)
 		return;
 	i915_xd_fake_set(I915_XD_UTIL_PIN_CTL, I915_XD_UTIL_PIN_ENABLE | I915_XD_UTIL_PIN_MODE_PWM);
 	i915_xd_fake_set(I915_XD_DC_STATE_EN, I915_XD_DC_STATE_DC6);
@@ -935,7 +950,8 @@ i915_xd_power_test_dc(void)
 	i915_host_check(report.pwm_pin == 1 && report.dc6_already == 1, "power: a PWM utility pin and a DC6 already requested are reported");
 
 	/* DC5 as the target, and the clear at the core's start that keeps the other bits and the record. */
-	if (i915_xd_power_test_dc_setup(&power, 1) == NULL)
+	platform = i915_xd_power_test_dc_setup(&power, 1);
+	if (platform == NULL)
 		return;
 	drv_i915_xd_power_dc_policy(&power, 0x4000000bU, I915_XD_DC_STATE_DC5, 1);
 	(void)drv_i915_xd_power_dc_enter(&power, &i915_xd_power_test_io, &report);
@@ -956,9 +972,11 @@ i915_xd_power_test_dc9(void)
 	uint32_t values[8];
 	unsigned count;
 	int error;
+	const struct i915_xd_platform *platform;
 
 	/* Entering: DC9 first, then the PCH's reference clock let go. */
-	if (i915_xd_power_test_dc_setup(&power, 1) == NULL)
+	platform = i915_xd_power_test_dc_setup(&power, 1);
+	if (platform == NULL)
 		return;
 	i915_xd_fake_set(I915_XD_SOUTH_CHICKEN1, I915_XD_SOUTH_CHICKEN1_SECOND_PPS_IO);
 	error = drv_i915_xd_power_dc9_enter(&power, &i915_xd_power_test_io, 0, &report);
@@ -973,7 +991,8 @@ i915_xd_power_test_dc9(void)
 	i915_host_check(error == EALREADY, "power: DC9 set already is refused");
 
 	/* Leaving: the reference clock first, then no DC state. */
-	if (i915_xd_power_test_dc_setup(&power, 1) == NULL)
+	platform = i915_xd_power_test_dc_setup(&power, 1);
+	if (platform == NULL)
 		return;
 	i915_xd_fake_set(I915_XD_DC_STATE_EN, I915_XD_DC_STATE_DC9);
 	i915_xd_fake_set(I915_XD_SOUTH_CHICKEN1, I915_XD_SOUTH_CHICKEN1_REFCLK_STOP);
@@ -986,7 +1005,8 @@ i915_xd_power_test_dc9(void)
 			"power: leaving DC9 gives the reference clock back, then clears the state");
 
 	/* The refusals: DC6 set, power well 2 on, the interrupts on. */
-	if (i915_xd_power_test_dc_setup(&power, 1) == NULL)
+	platform = i915_xd_power_test_dc_setup(&power, 1);
+	if (platform == NULL)
 		return;
 	i915_xd_fake_set(I915_XD_DC_STATE_EN, I915_XD_DC_STATE_DC6);
 	error = drv_i915_xd_power_dc9_enter(&power, &i915_xd_power_test_io, 0, &report);

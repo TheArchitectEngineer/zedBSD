@@ -328,6 +328,7 @@ i915_xd_screen_test_refusals(void)
 	struct i915_xd_plan plan;
 	unsigned refused;
 
+	/* The Alder Lake-P description. */
 	platform = i915_xd_screen_test_platform(I915_XD_SCREEN_TEST_ADLP, I915_XD_SCREEN_TEST_ADLP_REVID);
 	if (platform == NULL)
 		return;
@@ -379,6 +380,7 @@ i915_xd_screen_test_wm(void)
 	struct i915_xd_plan plan;
 	unsigned refused;
 
+	/* The Tiger Lake description. */
 	platform = i915_xd_screen_test_platform(I915_XD_SCREEN_TEST_TGL, I915_XD_SCREEN_TEST_TGL_REVID);
 	if (platform == NULL)
 		return;
@@ -436,6 +438,7 @@ i915_xd_screen_test_sinks(void)
 	struct i915_xd_plan plan;
 	unsigned refused;
 
+	/* The Alder Lake-P description. */
 	platform = i915_xd_screen_test_platform(I915_XD_SCREEN_TEST_ADLP, I915_XD_SCREEN_TEST_ADLP_REVID);
 	if (platform == NULL)
 		return;
@@ -472,6 +475,7 @@ i915_xd_screen_test_hdmi(void)
 	unsigned refused;
 	int error;
 
+	/* The Alder Lake-P description. */
 	platform = i915_xd_screen_test_platform(I915_XD_SCREEN_TEST_ADLP, I915_XD_SCREEN_TEST_ADLP_REVID);
 	if (platform == NULL)
 		return;
@@ -501,6 +505,7 @@ i915_xd_screen_test_dp(void)
 	struct i915_xd_plan plan;
 	unsigned refused;
 
+	/* The Alder Lake-P description. */
 	platform = i915_xd_screen_test_platform(I915_XD_SCREEN_TEST_ADLP, I915_XD_SCREEN_TEST_ADLP_REVID);
 	if (platform == NULL)
 		return;

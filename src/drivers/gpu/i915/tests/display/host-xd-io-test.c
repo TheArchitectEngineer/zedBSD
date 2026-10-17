@@ -96,7 +96,7 @@ i915_xd_io_test_firmware(
 {
 	struct i915_xd_io_test_firmware *firmware;
 
-	(void)offset;
+	UNUSED_PARAMETER(offset);
 	firmware = context;
 
 	/* Only a write that hands over a command is answered. */
@@ -125,6 +125,7 @@ i915_xd_io_test_access(void)
 	struct i915_xd_io io;
 	uint32_t value;
 
+	/* A fresh window on the model. */
 	i915_xd_io_test_setup(&io);
 
 	/* A register the model holds reads back through the window. */
@@ -166,6 +167,7 @@ i915_xd_io_test_poll(void)
 	unsigned count;
 	int error;
 
+	/* A fresh window on the model. */
 	i915_xd_io_test_setup(&io);
 
 	/* A register already at the value ends the wait without time passing. */
@@ -225,6 +227,7 @@ i915_xd_io_test_record(void)
 	unsigned index;
 	int in_order;
 
+	/* A fresh window on the model. */
 	i915_xd_io_test_setup(&io);
 
 	/* Writes and steps are recorded in the order they happened. */
@@ -253,6 +256,8 @@ i915_xd_io_test_record(void)
 		if (records[index].value != index + 10U)
 			in_order = 0;
 	}
+
+	/* Checks the ring keeps the newest writes in order. */
 	i915_host_check(count == I915_XD_IO_RECORDS && in_order != 0, "record: the ring keeps the newest writes in order");
 }
 
@@ -338,6 +343,7 @@ i915_xd_io_test_locks(void)
 {
 	struct i915_xd_io io;
 
+	/* A fresh window on the model. */
 	i915_xd_io_test_setup(&io);
 
 	/* Taking the locks in the documented order is no violation. */

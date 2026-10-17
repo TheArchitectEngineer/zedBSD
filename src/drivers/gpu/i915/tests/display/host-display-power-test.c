@@ -342,6 +342,7 @@ display_power_test_sanitize(void)
 		control |= 3U << (2U * platform->wells[well].index);
 	}
 
+	/* Writes the requests and states the firmware left. */
 	i915_xd_fake_set(I915_XD_PWR_WELL_CTL, control);
 
 	/* The sanitize turns them off. */
@@ -386,6 +387,7 @@ display_power_test_setup(void)
 	if (error != 0)
 		return NULL;
 
+	/* The description is chosen. */
 	display->xd.chosen = 1;
 
 	/* The VGA client's ports are the test's. */
@@ -402,6 +404,7 @@ display_power_test_setup(void)
 	if (error != 0)
 		return NULL;
 
+	/* The VGA client, the trace ring and the interrupt hooks the wells' changes use. */
 	power->vga = &display->vga_client;
 	power->trace = &display->dc_trace;
 	power->irq_ops = &display_power_test_irq_ops;

@@ -56,13 +56,17 @@ main(void)
 	const struct i915_xd_platform *platform;
 	unsigned index;
 	int failures;
+	unsigned rows;
 
 	/* Each row. */
-	for (index = 0U; index < drv_i915_xd_platform_count(); index++) {
+	rows = drv_i915_xd_platform_count();
+	for (index = 0U; index < rows; index++) {
 		platform = drv_i915_xd_platform_row(index);
 		i915_xd_cover_test_row(platform);
 		i915_xd_cover_test_classify(platform);
 	}
+
+	/* The ids no row has. */
 	i915_xd_cover_test_unknown();
 
 	/* Reports the result. */
@@ -309,5 +313,7 @@ i915_xd_cover_test_unknown(void)
 		if (error == ENODEV && choice.platform == NULL)
 			refused++;
 	}
+
+	/* Checks Kaby Lake, Coffee Lake and Meteor Lake ids have no row. */
 	i915_host_check(refused == sizeof(ids) / sizeof(ids[0]), "unknown: Kaby Lake, Coffee Lake and Meteor Lake ids have no row");
 }

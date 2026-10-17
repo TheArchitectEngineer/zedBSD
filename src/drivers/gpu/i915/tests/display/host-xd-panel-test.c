@@ -109,6 +109,7 @@ i915_xd_panel_test_writes(
 		if (records[index].kind != I915_XD_IO_RECORD_WRITE)
 			continue;
 
+		/* Keeps the write. */
 		offsets[kept] = records[index].offset;
 		values[kept] = records[index].value;
 		kept++;

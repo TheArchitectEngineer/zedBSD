@@ -142,6 +142,7 @@ i915_xd_bw_test_answer(
 	if ((value & I915_XD_GTDRIVER_MAILBOX_BUSY) == 0U)
 		return;
 
+	/* Counts the command and answers it. */
 	firmware->commands++;
 	command = value & ~I915_XD_GTDRIVER_MAILBOX_BUSY;
 	status = I915_XD_GTDRIVER_STATUS_OK;
@@ -203,6 +204,8 @@ i915_xd_bw_test_table(void)
 		if (bw.derated_mbps[0][index] != 38000U || bw.peak_mbps[0][index] != 266688U)
 			same = 0;
 	}
+
+	/* Checks each point's share is the 38000 MB/s cap, its peak 266688 MB/s. */
 	i915_host_check(same, "table: each point's share is the 38000 MB/s cap, its peak 266688 MB/s");
 	i915_host_check(bw.psf_mbps[0] == 17067U && bw.psf_mbps[1] == 34133U && bw.psf_mbps[2] == 51200U,
 	    "table: the PSF points' bandwidth");

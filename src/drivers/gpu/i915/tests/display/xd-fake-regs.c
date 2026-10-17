@@ -14,6 +14,7 @@
  * bit appears.
  */
 
+#include "host-test.h"
 #include "xd-fake-regs.h"
 
 #include "../../intel/display-regs-xd.h"
@@ -408,6 +409,7 @@ i915_xd_fake_aux_script(
 			abort();
 		}
 
+		/* Appends the answer and its parameter. */
 		sink->answers[sink->script_length] = answer;
 		sink->params[sink->script_length] = param;
 		sink->script_length++;
@@ -467,6 +469,7 @@ i915_xd_fake_gmbus_script(
 			abort();
 		}
 
+		/* Appends the answer. */
 		target->answers[target->script_length] = answer;
 		target->script_length++;
 	}
@@ -521,7 +524,7 @@ i915_xd_fake_read_hook(
 {
 	uint32_t value;
 
-	(void)context;
+	UNUSED_PARAMETER(context);
 
 	/* Brings in every change that is due, then reads. */
 	i915_xd_fake_run_events();
@@ -573,7 +576,7 @@ i915_xd_fake_lock_hook(
 {
 	unsigned index;
 
-	(void)context;
+	UNUSED_PARAMETER(context);
 
 	/* A release removes the newest holding of that lock. */
 	if (taken == 0) {
@@ -669,6 +672,7 @@ i915_xd_fake_run_events(void)
 		i915_xd_fake_set(event->offset, value);
 	}
 
+	/* The events left. */
 	i915_xd_fake.event_count = kept;
 }
 
@@ -894,6 +898,7 @@ i915_xd_fake_aux_serve(
 			sink->i2c_offset++;
 		}
 
+		/* Succeeded: the bytes moved. */
 		return 1U + index;
 	}
 
@@ -920,6 +925,7 @@ i915_xd_fake_apply_readers(
 		if (rule->offset != offset || rule->reader == NULL)
 			continue;
 
+		/* The reader answers in place of the stored value. */
 		value = rule->reader(offset, value, rule->context);
 	}
 
@@ -949,7 +955,7 @@ i915_xd_fake_gmbus_command(
 	unsigned answer;
 	unsigned index;
 
-	(void)offset;
+	UNUSED_PARAMETER(offset);
 	target = context;
 
 	/* The software clear resets the controller. */
@@ -984,6 +990,7 @@ i915_xd_fake_gmbus_command(
 		target->script_next++;
 	}
 
+	/* A stuck target holds the bus. */
 	if (answer == I915_XD_FAKE_GMBUS_STUCK) {
 		target->stuck = 1;
 		return;
@@ -1014,6 +1021,7 @@ i915_xd_fake_gmbus_command(
 		return;
 	}
 
+	/* A single byte sets the offset. */
 	if (count == 1U) {
 		target->offset = data & 0xffU;
 		return;
@@ -1026,6 +1034,7 @@ i915_xd_fake_gmbus_command(
 		target->written_bytes++;
 	}
 
+	/* The bytes left to write. */
 	target->left = count - index;
 	target->writing = 1;
 }
@@ -1040,7 +1049,7 @@ i915_xd_fake_gmbus_feed(
 	struct i915_xd_fake_gmbus *target;
 	unsigned index;
 
-	(void)offset;
+	UNUSED_PARAMETER(offset);
 	target = context;
 
 	/* Only a write cycle with bytes still to come takes them. */
@@ -1054,6 +1063,7 @@ i915_xd_fake_gmbus_feed(
 			target->written_bytes++;
 		}
 
+		/* One byte fewer to read. */
 		target->left--;
 	}
 }
@@ -1067,7 +1077,7 @@ i915_xd_fake_gmbus_index(
 {
 	struct i915_xd_fake_gmbus *target;
 
-	(void)offset;
+	UNUSED_PARAMETER(offset);
 	target = context;
 
 	/* An enabled index is the offset of the next cycle. */
@@ -1089,8 +1099,8 @@ i915_xd_fake_gmbus_status(
 	struct i915_xd_fake_gmbus *target;
 	uint32_t status;
 
-	(void)offset;
-	(void)value;
+	UNUSED_PARAMETER(offset);
+	UNUSED_PARAMETER(value);
 	target = context;
 
 	/* A stuck controller is only busy. */
@@ -1128,7 +1138,7 @@ i915_xd_fake_gmbus_data(
 	uint32_t word;
 	unsigned index;
 
-	(void)offset;
+	UNUSED_PARAMETER(offset);
 	target = context;
 
 	/* Outside a read the register holds what was written. */

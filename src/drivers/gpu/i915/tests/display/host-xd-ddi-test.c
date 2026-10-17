@@ -213,6 +213,8 @@ i915_xd_ddi_test_ready(void)
 		i915_host_check(0, "ddi: the description is found");
 		return;
 	}
+
+	/* PHY A as the 5330's firmware leaves it reads as brought up. */
 	i915_xd_ddi_test_5330_phy_a();
 	i915_host_check(drv_i915_xd_combo_phy_ready(&i915_xd_ddi_test_io, platform, 0U) == 1,
 			"ddi: the 5330's PHY A (Linux's words) reads as brought up");
@@ -265,6 +267,8 @@ i915_xd_ddi_test_init(void)
 		if (offsets[index] != want_offsets[index] || values[index] != want_values[index])
 			same = 0;
 	}
+
+	/* Checks the start writes PHY B only, in Linux's order (PHY_MISC, ODCC, DCC, procmon, COMP_INIT, CL_DW5). */
 	i915_host_check(written == 0x2U && same, "ddi: the start writes PHY B only, in Linux's order (PHY_MISC, ODCC, DCC, procmon, COMP_INIT, CL_DW5)");
 
 	/* Brought up, PHY B reads as such, and a second start writes nothing. */
@@ -329,6 +333,7 @@ i915_xd_ddi_test_lanes(void)
 	const struct i915_xd_platform *platform;
 	uint32_t word;
 
+	/* The Alder Lake-P description. */
 	platform = i915_xd_ddi_test_setup(I915_XD_DDI_TEST_ADLP, I915_XD_DDI_TEST_ADLP_REVID);
 	if (platform == NULL)
 		return;
@@ -354,6 +359,7 @@ i915_xd_ddi_test_tables(void)
 	const struct i915_xd_platform *tgl;
 	const struct i915_xd_combo_swing_table *table;
 
+	/* The Alder Lake-P and Tiger Lake descriptions. */
 	adlp = i915_xd_ddi_test_setup(I915_XD_DDI_TEST_ADLP, I915_XD_DDI_TEST_ADLP_REVID);
 	tgl = i915_xd_ddi_test_setup(I915_XD_DDI_TEST_TGL, I915_XD_DDI_TEST_TGL_REVID);
 	if (adlp == NULL || tgl == NULL)
@@ -390,7 +396,13 @@ i915_xd_ddi_test_levels(void)
 	struct i915_xd_combo_levels levels;
 	unsigned lane;
 	int words;
+	uint32_t dw2;
+	uint32_t dw4;
+	uint32_t dw5;
+	uint32_t dw7;
+	uint32_t want4;
 
+	/* The Alder Lake-P description. */
 	platform = i915_xd_ddi_test_setup(I915_XD_DDI_TEST_ADLP, I915_XD_DDI_TEST_ADLP_REVID);
 	if (platform == NULL)
 		return;
@@ -407,6 +419,8 @@ i915_xd_ddi_test_levels(void)
 		i915_xd_fake_set(I915_XD_PORT_TX_DW_LN(I915_XD_COMBO_PHY_A, lane, 4U), 0x00280000U);
 		i915_xd_fake_set(I915_XD_PORT_TX_DW_LN(I915_XD_COMBO_PHY_A, lane, 5U), 0x00210000U);
 	}
+
+	/* The common lane's word, then the levels. */
 	i915_xd_fake_set(I915_XD_PORT_CL_DW(I915_XD_COMBO_PHY_A, 10U), 0x000300ccU);
 	drv_i915_xd_combo_signal_levels(&i915_xd_ddi_test_io, platform, &levels);
 
@@ -417,16 +431,29 @@ i915_xd_ddi_test_levels(void)
 	 */
 	words = 1;
 	for (lane = 0U; lane < 4U; lane++) {
-		if (i915_xd_fake_get(I915_XD_PORT_TX_DW_LN(I915_XD_COMBO_PHY_A, lane, 2U)) != 0x00009098U)
+		/* The lane's swing words. */
+		dw2 = i915_xd_fake_get(I915_XD_PORT_TX_DW_LN(I915_XD_COMBO_PHY_A, lane, 2U));
+		dw7 = i915_xd_fake_get(I915_XD_PORT_TX_DW_LN(I915_XD_COMBO_PHY_A, lane, 7U));
+		dw4 = i915_xd_fake_get(I915_XD_PORT_TX_DW_LN(I915_XD_COMBO_PHY_A, lane, 4U));
+		dw5 = i915_xd_fake_get(I915_XD_PORT_TX_DW_LN(I915_XD_COMBO_PHY_A, lane, 5U));
+
+		/* Lanes 1 and 2 have the load generator on. */
+		want4 = 0x0028003fU;
+		if (lane == 1U || lane == 2U)
+			want4 = 0x8028003fU;
+
+		/* Each word must read as the 5330's eDP levels. */
+		if (dw2 != 0x00009098U)
 			words = 0;
-		if (i915_xd_fake_get(I915_XD_PORT_TX_DW_LN(I915_XD_COMBO_PHY_A, lane, 7U)) != 0x4c000000U)
+		if (dw7 != 0x4c000000U)
 			words = 0;
-		if (i915_xd_fake_get(I915_XD_PORT_TX_DW_LN(I915_XD_COMBO_PHY_A, lane, 4U)) !=
-		    ((lane == 1U || lane == 2U) ? 0x8028003fU : 0x0028003fU))
+		if (dw4 != want4)
 			words = 0;
-		if (i915_xd_fake_get(I915_XD_PORT_TX_DW_LN(I915_XD_COMBO_PHY_A, lane, 5U)) != 0xa0290030U)
+		if (dw5 != 0xa0290030U)
 			words = 0;
 	}
+
+	/* Checks the 5330's eDP levels are Linux's words: DW2 0x9098, DW4 0x0028003f (load generator on lanes 1-2), DW5 0xa0290030, DW7 0x4c000000. */
 	i915_host_check(words, "ddi: the 5330's eDP levels are Linux's words: DW2 0x9098, DW4 0x0028003f (load generator on lanes 1-2), DW5 0xa0290030, DW7 0x4c000000");
 	i915_host_check(i915_xd_fake_get(I915_XD_PORT_CL_DW(I915_XD_COMBO_PHY_A, 10U)) == 0x000300c0U &&
 			(i915_xd_fake_get(I915_XD_PORT_CL_DW(I915_XD_COMBO_PHY_A, 5U)) & I915_XD_CL_DW5_SUS_CLOCK_CONFIG) == I915_XD_CL_DW5_SUS_CLOCK_CONFIG &&
@@ -525,6 +552,8 @@ i915_xd_ddi_test_buffers(void)
 		if (offsets[2U + index] != restart_offsets[index] || values[2U + index] != restart_values[index])
 			same = 0;
 	}
+
+	/* Checks a running link stops (buffer off, transport off, idle) before it starts again. */
 	i915_host_check(late == 0U && same, "ddi: a running link stops (buffer off, transport off, idle) before it starts again");
 
 	/* The patterns. */

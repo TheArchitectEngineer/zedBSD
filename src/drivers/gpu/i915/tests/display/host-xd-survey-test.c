@@ -147,6 +147,8 @@ i915_survey_test_table(void)
 		if (name == NULL)
 			named = 0;
 	}
+
+	/* Checks every register has a name. */
 	i915_host_check(named, "table: every register has a name");
 	i915_host_check(drv_i915_survey_register_name(I915_SURVEY_REGISTERS) == NULL, "table: no name past the table");
 
@@ -367,6 +369,7 @@ i915_survey_test_record_runs(void)
 	unsigned count;
 	unsigned i;
 
+	/* A display 12 register block. */
 	gen12.graphics_ver = 12;
 
 	/* Five consecutive timing registers stay five writes. */
@@ -402,6 +405,7 @@ i915_survey_test_record_limits(void)
 	struct i915_mmio_record_digest digest;
 	unsigned i;
 
+	/* A display 12 register block. */
 	gen12.graphics_ver = 12;
 
 	/* Writes to one register past the ring's size are dropped. */
@@ -430,6 +434,7 @@ i915_survey_test_record_digests(void)
 	struct i915_mmio_record_digest swapped;
 	struct i915_mmio_record_digest changed;
 
+	/* A display 12 register block. */
 	gen12.graphics_ver = 12;
 
 	/* Two writes in one order. */
