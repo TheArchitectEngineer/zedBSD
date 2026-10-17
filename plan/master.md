@@ -13,7 +13,7 @@
 <!-- master:agents:start -->
 - **2026-10-17 21:2x（ユーザー「あー、もう使用量が足りない。いったんラップアップしましょう。」）**: ラップアップ。
   - WS245（i915 の display の書き換え）: 実装の段は全部 main に merge 済み（89ff347f3、空の file の削除 61dde9d6b）。T1 の 5330 の再試験 q1229-i20 と merge 後の main の起動 q1229-i21 は PASS（実機）、5330 の USB の vmunix は merge 後の main の kernel。完了ではない: 43 の Phase が「5330 待ち」の in-progress のまま（次の Q1 が i20・i21 の証拠で判定し直す）、p046 の全文の目視、p044・p045（P6）、DC6 の判断、reboot の止める道は未確認、ユーザーの一覧 beta2.md U19〜U23。
-  - WS251 p002（GPU ドライバの comment・log から開発の管理情報を消す、2026-10-17 ユーザー）: P1（q1240-i01、worktree p1、branch agent/p1-ws251）に頼み、ラップアップを指示した。返却の内容は queue.md の q1240 の行と plan/ws251/phase002/phase.md。未 merge の commit があれば次の Q1 が確かめて merge する。
+  - WS251 p002（GPU ドライバの comment・log から開発の管理情報を消す、2026-10-17 ユーザー）: P1（q1240-i01）が i915 の display の群を済ませて返却、main に merge 済み（d600f983b）。残り 565 件は plan/ws251/phase002/phase.md の再開の手順から（基準の build は p1 の build/ws251p002-base）。
   - 他に動いている担当は無い。push はしていない（最後の push より後の commit は全部 local）。
 <!-- master:agents:end -->
 
