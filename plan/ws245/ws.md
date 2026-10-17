@@ -73,6 +73,7 @@ Resume point: 2026-10-16 q1218（P1）の区切り: 次は **p018**（[phase018]
 - p050d4b: plan/ws051/tests/host-dpext-link.sh・host-dpext-link.c（消した compute_dp_ext を呼ぶ、oracle は host-output-link-test に移した）を削除。plan/ws084/tests/reboot-loop.sh の 10・71・82 行の log の文字列 'LCD-B preflight' を 'resident display: preflight' に直す（merge の時に main の側で Q1）。
 - p050d4c・d4d: src/drivers/gpu/i915/display/takeover.c・takeover.h・aux.h・panel.h・vblank.c・vblank.h（中身を空にした）。
 - p050d4d（Q1 の判断）: plan/ws051/tests/host-n1-tc.c・host-n1-tc.sh（この段で壊れる）と host-power-map.c・host-power-map.sh（前から壊れていた）は master の Tools・未完の Phase に無いので削除。
+- p051（Q1 の判断）: plan/ws113/tests/host-head-rules.c・.sh（この段で壊れる）と host-gop.c・.sh（前から壊れていた）は master の Tools・未完の Phase に無ければ削除（merge の時に確かめる）。
 - p040（P6、agent/p6-ws245 の 806e0b063、p044 は aa14ff623）: src/drivers/gpu/i915/display/dkl-phy.c・dkl-phy.h・src/drivers/gpu/i915/intel/dkl.h（中身は空）。master の Tools の plan/ws051/tests/host-tc.sh が dkl-phy.c を grep/sed する 2 行と host-tc-tables.c の DKL の 3 check は、窓の check が host-xd-tc-test に移ったので merge の時に消す。
 - p028〜: master の Tools の plan/ws051/tests/host-vbt-pll.sh が takeover.c の PLL の表を読めず FAIL になる（表は xd の platform の表へ、PLL の check は host-xd-dpll-test へ移った）。merge の時に道具から adlp_plls の部分を外すか DVO だけの道具にし、Tools の行を直す。
 
