@@ -934,8 +934,7 @@ drv_i915_present_hold_prepare(
 
 /*
  * Asks for the resident output to be lit again because its external DP
- * link must be trained again (the Linux
- * intel_dp_retrain_link()): the worker leaves the window at the next frame
+ * link must be trained again: the worker leaves the window at the next frame
  * and the window's end lights the output again, its link trained afresh,
  * its buffers and picture kept.  Runs from the hotplug path.
  */

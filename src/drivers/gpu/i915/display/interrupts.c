@@ -271,7 +271,7 @@ drv_i915_irq_vblank_init(
 	/* Starts from an empty vblank state. */
 	kern_memset(v, 0, sizeof(*v));
 
-	/* Creates the lock that stands for the Linux irq_lock. */
+	/* Creates the lock of the display's interrupt state. */
 	spin_init(&v->lock, LOCK_RANK_DEVICE, "i915-irq-lock");
 
 	/* Creates the completion that wakes each pipe's waiter. */
@@ -1014,7 +1014,7 @@ i915_transcoder_power_on(
 	return enabled;
 }
 
-/* Reports the interrupt device's irqs_enabled (the Linux runtime_pm.irqs_enabled). */
+/* Reports whether the interrupt device has its interrupts enabled. */
 static int
 i915_irqs_enabled(
 	struct i915_display_irq *d)

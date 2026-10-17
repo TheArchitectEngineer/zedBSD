@@ -991,8 +991,8 @@ drv_i915_xd_tc_cold_functions(
  * the lane well given back.  The FIA flow (Tiger Lake): TC cold blocked,
  * the port's FIA, the PHY's ready and then the ownership, the lanes
  * checked.  Thunderbolt mode only blocks TC cold.  A legacy connector is
- * used even when the PHY is not ready or not taken (Linux warns and goes
- * on).  The lanes check: a legacy connector has four; in DisplayPort
+ * used even when the PHY is not ready or not taken (it is logged).  The
+ * lanes check: a legacy connector has four; in DisplayPort
  * alternate mode the sink must still be there and give enough lanes.  A
  * step that fails gives back what the earlier ones took.  Returns 0,
  * EBUSY (not ready or not taken), ENODEV (the sink left), ENOSPC (too

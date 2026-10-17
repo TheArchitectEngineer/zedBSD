@@ -1594,8 +1594,8 @@ i915_xd_power_wait_fuses(
  * Asks the firmware to block TC cold (block nonzero) or to allow it
  * again, up to three times 1 ms apart: a block the firmware answers with
  * the exit failed bit counts as failed.  A request that never succeeds
- * is noted in the report (state_late) and the well's change goes on, as
- * Linux does.  Returns 0, or EIO when the time base failed.
+ * is noted in the report (state_late) and the well's change goes on.
+ * Returns 0, or EIO when the time base failed.
  *
  * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
  * (TGL_PCODE_TCCOLD, TGL_PCODE_EXIT_TCCOLD_DATA_L_BLOCK_REQ,
@@ -1710,8 +1710,8 @@ i915_xd_power_combo_base(
  * request is made again, up to three times 1 ms apart, while the mailbox
  * is busy with another command, and an accepted one is given 1 ms to
  * finish.  A request that fails is noted in the report (state_late) and
- * the well's enable goes on, as Linux does.  Returns 0, or EIO when the
- * time base failed.
+ * the well's enable goes on: the PHY is used as the firmware left it.
+ * Returns 0, or EIO when the time base failed.
  *
  * Procedure referenced: Linux v6.8.12
  * drivers/gpu/drm/i915/display/intel_display_power_well.c

@@ -948,9 +948,8 @@ drv_i915_xd_dp_probe_forget(
 }
 
 /*
- * Probes the sink of an external DP port (the Linux intel_dp_detect() for
- * a port that is not eDP, after the live status said something is
- * plugged in).
+ * Probes the sink of an external DP port, after the live status said
+ * something is plugged in.
  *
  * The receiver, the repeaters, the identification, the rates and lanes,
  * the sink count of a branch and its downstream ports are read; a branch
@@ -1033,8 +1032,8 @@ drv_i915_xd_dp_probe_detect(
 }
 
 /*
- * Handles a short pulse (IRQ_HPD) of a sink the last probe found (the
- * Linux intel_dp_short_pulse() up to the service interrupts).
+ * Handles a short pulse (IRQ_HPD) of a sink the last probe found, up to
+ * its service interrupts.
  *
  * The receiver capabilities are read again, and a branch's sink count; a
  * read that fails, or capabilities or a count that changed, ask for a
@@ -1099,13 +1098,12 @@ drv_i915_xd_dp_probe_short_pulse(
 }
 
 /*
- * Tells whether a trained link must be trained again (the Linux
- * intel_dp_needs_link_retrain() with drm_dp_channel_eq_ok()):
- * the sink's link status is read, and the link needs it when the lanes
+ * Tells whether a trained link must be trained again: the sink's link
+ * status is read, and the link needs it when the lanes
  * lost their alignment or a lane of the link's lane_count lost clock
  * recovery, equalisation or symbol lock.  A status that cannot be read, or
- * a lane count out of 1 to 4, does not ask for it (as Linux, which
- * retrains only on a status it read).  Returns 1 or 0.
+ * a lane count out of 1 to 4, does not ask for it: a link is trained
+ * again only on a status that was read.  Returns 1 or 0.
  *
  * Procedure referenced: Linux v6.8.12
  * drivers/gpu/drm/i915/display/intel_dp.c (intel_dp_needs_link_retrain).
@@ -1147,14 +1145,13 @@ drv_i915_xd_dp_probe_link_needs_retrain(
 }
 
 /*
- * Sets up the protocol converter of a DPCD 1.3 branch for an RGB stream
- * (the Linux intel_dp_configure_protocol_converter() for an RGB sink
- * format): HDMI or DVI output by the display's EDID, no 4:2:0 conversion
- * and no RGB to YCbCr conversion.
+ * Sets up the protocol converter of a DPCD 1.3 branch for an RGB stream:
+ * HDMI or DVI output by the display's EDID, no 4:2:0 conversion and no
+ * RGB to YCbCr conversion.
  *
  * A sink that is no such branch is left alone.  Returns 0, or the
- * negative Linux errno of the first write that failed; every write is
- * tried, as Linux only logs a failure.
+ * negative errno of the first write that failed; every write is tried,
+ * a failure only being reported.
  *
  * Procedure referenced: Linux v6.8.12
  * drivers/gpu/drm/i915/display/intel_dp.c
@@ -1265,9 +1262,8 @@ drv_i915_xd_dp_probe_fallback_values(
 }
 
 /*
- * Checks a mode's pixel clock against a branch's downstream limits (the
- * Linux intel_dp_mode_valid_downstream() for RGB at 8 bits per colour,
- * where the TMDS clock is the pixel clock).
+ * Checks a mode's pixel clock against a branch's downstream limits, for
+ * RGB at 8 bits per colour, where the TMDS clock is the pixel clock.
  *
  * Procedure referenced: Linux v6.8.12
  * drivers/gpu/drm/i915/display/intel_dp.c
@@ -2379,8 +2375,7 @@ i915_xd_dp_end_hop(
 }
 
 /*
- * Reads the repeaters' common capabilities (the Linux
- * intel_dp_read_lttpr_common_caps() and drm_dp_lttpr_count()).
+ * Reads the repeaters' common capabilities and counts the repeaters.
  *
  * A sink below DPCD 1.4 is read a byte at a time: at least one monitor
  * returns corrupted values for larger reads of that range.  Capabilities
@@ -2431,8 +2426,7 @@ i915_xd_dp_probe_read_lttpr(
 
 /*
  * Counts the repeaters a count field names: one bit, 0x80 for one repeater
- * down to 0x01 for eight; anything else counts none (Linux reports an
- * error, which its caller treats as none).
+ * down to 0x01 for eight; anything else is not a count and counts none.
  */
 static int
 i915_xd_dp_probe_lttpr_count(
@@ -2461,13 +2455,12 @@ i915_xd_dp_probe_lttpr_count(
 }
 
 /*
- * Reads the repeaters and the receiver (the Linux
- * intel_dp_init_lttpr_and_dprx_caps() for a port that is not eDP): a
+ * Reads the repeaters and the receiver of a port that is not eDP: a
  * throw-away read at the repeaters' range wakes them, the receiver's
  * capabilities are read, then the repeaters', then the receiver's again,
  * as the source must read them after detecting the repeaters.
  *
- * Returns 0, or the negative Linux errno of the read that failed.
+ * Returns 0, or the negative errno of the read that failed.
  *
  * Procedure referenced: Linux v6.8.12
  * drivers/gpu/drm/i915/display/intel_dp_link_training.c
@@ -2509,8 +2502,7 @@ i915_xd_dp_probe_read_caps(
 
 /*
  * Reads the identification of a branch, or of the sink when it is no
- * branch (the Linux drm_dp_read_desc()); a read that fails leaves it
- * unknown, as Linux does not check it.
+ * branch; a read that fails leaves it unknown and is not reported.
  *
  * Procedure referenced: Linux v6.8.12
  * drivers/gpu/drm/display/drm_dp_helper.c (drm_dp_read_desc).
@@ -2598,9 +2590,7 @@ i915_xd_dp_probe_set_rates(
 }
 
 /*
- * Sets the lanes the sink takes and the lanes every party allows (the
- * Linux intel_dp_set_max_sink_lane_count() and
- * intel_dp_max_common_lane_count()).
+ * Sets the lanes the sink takes and the lanes every party allows.
  *
  * The sink takes 1, 2 or 4 lanes (1 when its DPCD says otherwise); the
  * repeaters, the source with the VBT's limit, and the FIA lower that.
@@ -2656,12 +2646,11 @@ i915_xd_dp_probe_set_lanes(
 }
 
 /*
- * Reads the sink count of a sink that reports one (the Linux
- * drm_dp_read_sink_count_cap() and drm_dp_read_sink_count(), no quirk).
+ * Reads the sink count of a sink that reports one.
  *
  * A branch of DPCD 1.1 or later reports how many displays are behind it.
  * Returns 0 when the count is not reported or is not zero, the negative
- * Linux errno of a failed read, or -EIO for a count of zero: an adapter
+ * errno of a failed read, or -EIO for a count of zero: an adapter
  * with no display behind it is disconnected.
  *
  * Procedure referenced: Linux v6.8.12
@@ -2704,13 +2693,12 @@ i915_xd_dp_probe_read_sink_count(
 }
 
 /*
- * Reads a branch's downstream port capabilities (the Linux
- * drm_dp_read_downstream_info()).
+ * Reads a branch's downstream port capabilities.
  *
  * A sink that is no branch, or a DPCD 1.0 one, has none to read, and a
  * branch may name zero ports.  Detailed capabilities take four bytes a
- * port, for at most four ports.  Returns 0, or the negative Linux errno of
- * the read (-EIO for a short one).
+ * port, for at most four ports.  Returns 0, or the negative errno of the
+ * read (-EIO for a short one).
  *
  * Procedure referenced: Linux v6.8.12
  * drivers/gpu/drm/display/drm_dp_helper.c (drm_dp_read_downstream_info).
@@ -2755,8 +2743,8 @@ i915_xd_dp_probe_read_downstream(
 }
 
 /*
- * Judges whether a display is behind the port (the Linux
- * intel_dp_detect_dpcd() after the DPCD was read; MST is not supported).
+ * Judges whether a display is behind the port once its DPCD was read
+ * (MST is not supported).
  *
  * A sink that is no branch is the display.  A branch with hot plug detect
  * on its port is believed by its sink count; otherwise a DDC that answers
@@ -2835,8 +2823,11 @@ i915_xd_dp_probe_read_edid(
 }
 
 /*
- * Tells whether the EDID describes a DisplayPort input (the Linux
- * is_edid_digital_input_dp(): EDID 1.4, digital, interface DP).
+ * Tells whether the EDID describes a DisplayPort input: EDID 1.4, a
+ * digital input, the DisplayPort interface.
+ *
+ * Values referenced: VESA Enhanced EDID Standard, release A revision 2
+ * (the base block's version and video input definition).
  */
 static int
 i915_xd_dp_probe_edid_is_digital_dp(
@@ -2941,9 +2932,8 @@ i915_xd_dp_probe_cea_block_has_hdmi(
 }
 
 /*
- * Takes a branch's downstream limits from its first port (the Linux
- * intel_dp_update_dfp(): drm_dp_downstream_max_bpc(),
- * drm_dp_downstream_max_dotclock() and the TMDS clock range).
+ * Takes a branch's downstream limits from its first port: the bits per
+ * colour, the pixel clock and the TMDS clock range.
  *
  * Procedure referenced: Linux v6.8.12
  * drivers/gpu/drm/i915/display/intel_dp.c (intel_dp_update_dfp).
@@ -2964,8 +2954,7 @@ i915_xd_dp_probe_set_downstream_limits(
 
 /*
  * Reports the highest TMDS clock a branch's HDMI or DVI port sends, in
- * kHz, or 0 when it sets no limit (the Linux
- * drm_dp_downstream_max_tmds_clock()).
+ * kHz, or 0 when it sets no limit.
  *
  * Without detailed capabilities an HDMI port is taken for 300 MHz (an HDMI
  * 1.4 converter: DPCD 1.4 HDMI 2.0 ports must give details) and a DVI port
@@ -3033,9 +3022,8 @@ i915_xd_dp_probe_downstream_max_tmds(
 
 /*
  * Reports the lowest TMDS clock a branch's HDMI or DVI port sends, in kHz,
- * or 0 when it sets no limit (the Linux
- * drm_dp_downstream_min_tmds_clock()): 25 MHz, as the converter cannot be
- * assumed to repeat pixels.
+ * or 0 when it sets no limit: 25 MHz, as the converter cannot be assumed
+ * to repeat pixels.
  *
  * Procedure referenced: Linux v6.8.12
  * drivers/gpu/drm/display/drm_dp_helper.c
@@ -3081,7 +3069,7 @@ i915_xd_dp_probe_downstream_min_tmds(
 
 /*
  * Reports the highest pixel clock a branch's VGA port takes, in kHz, or 0
- * when it sets no limit (the Linux drm_dp_downstream_max_dotclock()).
+ * when it sets no limit.
  *
  * Procedure referenced: Linux v6.8.12
  * drivers/gpu/drm/display/drm_dp_helper.c
@@ -3112,7 +3100,7 @@ i915_xd_dp_probe_downstream_max_dotclock(
 
 /*
  * Reports the most bits per colour a branch's port passes, or 0 when it
- * sets no limit (the Linux drm_dp_downstream_max_bpc()).
+ * sets no limit.
  *
  * Procedure referenced: Linux v6.8.12
  * drivers/gpu/drm/display/drm_dp_helper.c (drm_dp_downstream_max_bpc).
@@ -3172,7 +3160,7 @@ i915_xd_dp_probe_downstream_max_bpc(
 	return 8;
 }
 
-/* Writes one DPCD byte: 0, or the negative Linux errno (-EIO for a short write). */
+/* Writes one DPCD byte: 0, or a negative errno (-EIO for a short write). */
 static int
 i915_xd_dp_probe_dpcd_writeb(
 	const struct i915_xd_dp_probe_env *env,
