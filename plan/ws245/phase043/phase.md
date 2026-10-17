@@ -2,9 +2,9 @@
 
 # ws245-p043: 旧 code の残りの削除・試験の整理・出典の監査
 
-Status: in-progress（2026-10-17 q1229-i15: p043a 実装・host 試験・build 済み（35b24c912・7de79d444）、p043b の帯域済み（d16688474）。power（段の境 2）は次の世代: 下の「p043b の 2 つ目」）
+Status: in-progress（2026-10-17 q1229-i15: p043a 実装・host 試験・build 済み（35b24c912・7de79d444）、p043b の帯域済み（d16688474）。q1229-i16: p043b の power（段の境 2）済み（57967dfb0）。5330・SV7 は全部の段の後に 1 回）
 Parent: [WS245](../ws.md)
-Queue: q1229-i15（P1）
+Queue: q1229-i15（P1）、q1229-i16（P1、p043b の power）
 設計: [design.md](../design.md) §6.2 の p043 の行、§5.4（引用の規則）、§6.4（今の試験の扱い）、guardrail「MIT・GPL の出典のデータの引用」
 
 ## 段の分け方（2026-10-17 Q1 の判断）
@@ -64,9 +64,26 @@ power.c（約 2570 行）は既に xd-power の殻: domain（Linux の enum i915
 4. power.c・power.h を空にし vmunix.mk から外す。internal.h の power の型（`struct i915_power_domains`・`i915_power_well`・`i915_pw_ctx`・`i915_display_core`・domain の enum）を消す。check-sources.py を run-xd-host-tests に入れ、internal.h の Derived の表示（intel_display_limits.h の型）を直す。
 5. build 3 組、run-xd-host-tests・WS075/237/229、`host-xd-power-test` と `host-xd-core-test` が新しい呼びの順を見ているか。段の境 2 の SHA を ws.md の表へ。
 
+## p043b の 2 つ目: 実装（段の境 2、2026-10-17 q1229-i16、base 2c49ef470、commit 57967dfb0）
+
+- 新しい own の `display/display-power.c/.h`（Linux の形を持たない。`struct i915_display_power` が display の中に 1 つ）: 呼び手は xd の function の集合（`I915_XD_POWERS_*`）で `drv_i915_display_power_get/_put/_put_later/_is_on`、遅れた返しの work は `struct i915_xd_power_work` を `_bind_work`、`_work`・`_flush`。well の on/off は xd-power の hook（pipe の割り込みの復元と drain、VGA の書き直し、Type-C PHY の健康）で、DC off の well は DC の離れ（CD clock と DBUF の slice の比べ、combo PHY の上げ直し）と DMC の program がある時の入り。始まりの参照 `I915_DISPLAY_POWER_START`（全 pipe と DC off、旧 INIT）は `_core_start` が core の後に取り well の状態を読む（firmware の要求の引き取り）、`_serve`（旧 power_domains_enable: 前後の well の数・DC の状態・食い違いを probe に）、`_hold`（旧 disable）、`_core_stop`（旧 suspend）、`_dc9_enter/_leave`、`_sanitize`・`_wells_on`・`_check`・`_log`・`_dbuf`、AUX channel の function `drv_i915_display_power_aux(ver, ch, thunderbolt)`。DC の許す mask（DC9|DC3CO|DC6 = 0x4000000a、idle の DC6）は Values referenced。
+- 消した Linux の形: domain の enum と `i915_pw_functions` の写し、well の写しの配列（`struct i915_power_well`）、`struct i915_power_domains`・`i915_pw_ctx`・`i915_display_core`、`drv_i915_aux_*_power_domain`、`drv_i915_lcd_power_*`。power.c・power.h は空にし vmunix.mk から外した（vmunix.mk に display-power.c を足した）。dc9.c・dc9.h（p025 で呼び手 0、Q1 の削除待ち）は host の display の lib が compile して壊れるので空にした。
+- 呼び手の付け替え: display.c（start・core・serve・stop・suspend・resume・sanitize・log）、resident.c（run の power hook を resident.c の static に移し、番号は function の bit（0〜63）と「well の要らない使い」64、Thunderbolt の無い channel は -1 で拒む。`I915_LCD_POWER_SLOTS`）、edp-device.c（AUX の function、work の bind、fini の log は xd の counts の stats）、dmc-shell.c（`dev->power`・`dev->xd`、START の参照）、dp-ext-kern.c（AUX の function、display core の get/put は well が無いので消し、lock の印を `aux_locked` に）、hpd.c（display core と GMBUS は switched well が無いので何も数えない hook）、tc-port.c（function の集合を直に、Dekel は `power->dkl`）、interrupts.c（`power->irq_ops`・`irqs_enabled`、pipe と transcoder は `_is_on(PIPE/TRANS)`）、head.c。i915_dp_env の使われていない power hook と数（power_refs・power_get_failures など）も消した。
+- internal.h: Linux の base（u8〜s64、i915_reg_t・_MMIO・REG_*・BIT・_PICK_EVEN・ARRAY_SIZE・min/max・min_t/max_t・mmio_reg の helper、環境の約束の comment）は display の本番の使い手 0 なので消し（container_of と i915_lcd_mode の別名は残す: WS075 の host-output-test が使う）、Derived の表示（intel_display_limits.h）と Linux の probe の説明、DMC の (F1)〜(F3) の印を直した。display-internal.h の i915_display_irq・i915_lcd_kernel_deps は `struct i915_display_power *power`。
+- 振る舞いの差（既定の案、実機で見る）: (1) 遅れた返し（put_later）は旧は domain の最後の参照の時だけ遅らせたが、新は work が bind されていれば常に遅らせる（同じ well の他の使い手がいる間は差が出ない。差は他の使い手が work より先に返した時に well が最長 100 ms 遅れて落ちる事だけ）。(2) display core・GMBUS の get/put（旧も well を数えなかった）は呼ばない。(3) 起動の log の文言: `intel_power_domains_init:`→`display power: N wells …`、`combo PHYs: N initialised`→`display power: combo PHYs up: N`、`DC9: entered/left`→`display power: DC9 entered/left`、`BIOS left unused …`→`display power: well … was left on by the firmware and is unused: turned off`、`well X: refcount=… hw_enabled=…`→`display power: well X: N users, on/off`、`DC_STATE_EN=… DC_off disable_calls=…`→`display power: DC_STATE_EN=…, DC off released N times …`、`display: core started: … init_ref=… sync_hw=…`→`… start reference held`、`edp fini` の async put の数は xd の stats。読む道具は無い（2026-10-17 の grep: plan/tools・各 WS の tests・tests/）。device->stage の fault の名前は `combo PHYs`・`power well 1`・`CD clock`。(4) well の数（wells_on）は旧と同じく mailbox の TC cold を数えない。
+- 試験: ktest-sync.c の late fuse（fuse の遅れ）と ktest-gt.c の DC6 の ktest は host-xd-power-test が同じ事を見ている（fuse の遅れ・DMC の有無での DC6）ので消し、fake の fuse と well の model も消した。ktest の 2 file は UNUSED_PARAMETER のため `../../i915.h` を include。新しい `host-display-power-test`（19 checks: 始まりの DC と slice、AUX の function（display 12・13、Thunderbolt）、pipe B の well の get/put、DC off の DMC の有無、遅れた返し（work・flush・unbind）、drain の失敗で後の off を拒む、firmware が残した well の sanitize）を run-xd-host-tests に入れた。`check-sources.py` を run-xd-host-tests の最後に入れた（171 file、問題 0）。
+- R11: 触った file の開発の管理情報の数（`grep -cE 'ws[0-9]{3}|WS[0-9]{3}|BUG-[0-9]+|review [A-Z][0-9]|\bP[0-9]+[a-z]? |\(F[0-9]\)'`）は全部 0。
+
+### 確かめた事（p043b の power）
+
+- build 3 組（57967dfb0 の tree、`build/tmp/kbuild.sh p043b2`）: default rc=0 warn=0（vmunix sha256 の先頭 539c8f4ecddac882）、vke2 rc=0 warn=0、execution rc=0 warn=0。
+- run-xd-host-tests（`build/p043b2-host`）all passed: 30 本 0 failures（host-display-power-test 19 checks を含む）、段の順、check-sources 171 file。WS075 host-output-test 80/0、WS237 gen9 flip 48/0・mode 71/0・backlight 21/0、WS229 bootfb 20/0。`git diff --check` 0。
+- 未実施: 5330・SV7・5320（全部の段の後に T1）。
+
 ## 実機で確かめる事（T1、全部の段の後に 1 回）
 
 - 5330: 起動の log の `display: PCH type=8 … source=1`（ADP、以前の `intel_detect_pch: type=` と同じ種類と id）、`display: CD clock: …`、survey の判定。
+- 5330（power）: `i915: display power: <数> wells (Alder Lake-P), DC states allowed 0x4000000a, entered when idle 0x2`、`display: core started: … start reference held`、`display: serving: wells_on A -> B dc_state=… verify_mismatches=0`（前の kernel と同じ A・B）、`display power: well …: N users, on` の一覧、`DC_STATE_EN=0x00000002`（DMC の program がある時、表示が止まっている間）、takeover の後の `the start's power reference went back: wells on A -> B`。suspend → resume で `display power: DC9 entered`・`DC9 left` と core の上げ直し（ユーザーの一覧）。USB-C の DP（TC の AUX の well、Thunderbolt の AUX）で `TC: power functions … did not come` が出ない。
 - SV7（Gen9）: backlight（PCH の SPT/CNP の判定が xd の表に移った: `gen9 … backlight` の行）。
 
 ## 削除と掃除（merge の時に Q1）
@@ -74,3 +91,4 @@ power.c（約 2570 行）は既に xd-power の殻: domain（Linux の enum i915
 - `src/drivers/gpu/i915/intel/` の connector.h・ddi.h・dkl.h・dp.h・hotplug.h・mreg.h・phy.h・plane.h・power-set.h・power.h・psr.h・ref.h・ref-inlines.h・trans.h・vbt.h・wm-dbuf.h・wm.h・fixed.h・fourcc.h（空）
 - `src/drivers/gpu/i915/tests/display/host-xd-regs-test.c`（空）、`src/drivers/gpu/i915/display/color.h`（空）
 - `src/drivers/gpu/i915/display/watermark.c`・`watermark.h`（空、p043b の帯域）
+- `src/drivers/gpu/i915/display/power.c`・`power.h`（空、p043b の power）、`src/drivers/gpu/i915/display/dc9.c`・`dc9.h`（p025 の削除の行と同じ。この段で空にした）
