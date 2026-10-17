@@ -35,6 +35,8 @@ void drv_i915_power_well_sync_hw(struct i915_power_well *well, struct i915_pw_ct
 int drv_i915_display_power_is_enabled(struct i915_power_domains *pd, enum i915_power_domain domain, struct i915_pw_ctx *pwc);
 int drv_i915_display_power_get(struct i915_power_domains *pd, enum i915_power_domain domain, struct i915_pw_ctx *pwc);
 void drv_i915_display_power_put(struct i915_power_domains *pd, enum i915_power_domain domain, struct i915_pw_ctx *pwc);
+int drv_i915_display_power_get_set(struct i915_power_domains *pd, uint64_t functions, struct i915_pw_ctx *pwc);
+void drv_i915_display_power_put_set(struct i915_power_domains *pd, uint64_t functions, struct i915_pw_ctx *pwc);
 
 void drv_i915_display_power_async_bind(struct i915_power_domains *pd, const struct i915_pw_async_ops *ops, void *ctx, struct i915_pw_ctx *pwc);
 void drv_i915_display_power_put_async(struct i915_power_domains *pd, enum i915_power_domain domain, struct i915_pw_ctx *pwc, int delay_ms);

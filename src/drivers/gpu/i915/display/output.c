@@ -33,7 +33,7 @@
 #include "dp-ext-kern.h"
 #include "hpd.h"
 #include "edp-device.h"
-#include "tc-kern.h"
+#include "tc-port.h"
 
 #include <kern/boot.h>
 #include <kern/clock.h>
@@ -1539,7 +1539,7 @@ i915_output_dp_ext(
 	int error;
 
 	/* Only a Type-C port's DisplayPort is lit (a combo PHY's is not). */
-	tc_port = drv_i915_tc_kern_port_of(port);
+	tc_port = drv_i915_tc_port_of(display, port);
 	if (tc_port < 0) {
 		*reason = "a DisplayPort port that is not a Type-C port";
 		return EOPNOTSUPP;

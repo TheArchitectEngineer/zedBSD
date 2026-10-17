@@ -27,7 +27,7 @@
 #include "internal.h"
 #include "dp-ext-kern.h"
 #include "power.h"
-#include "tc-kern.h"
+#include "tc-port.h"
 #include "vbt-parse.h"
 #include "xd-aux.h"
 #include "xd-edid.h"
@@ -49,7 +49,7 @@
 #define I915_DP_EXT_KERN_MAX_LANES	4
 
 /* The lanes a probe asks the Type-C port for: AUX needs the PHY, not a lane count. */
-#define I915_DP_EXT_KERN_PROBE_LANES	1
+#define I915_DP_EXT_KERN_PROBE_LANES	1U
 
 /*
  * The receiver capability fields the capability read uses: the revision,
@@ -114,9 +114,9 @@ struct i915_dp_ext_port {
 struct i915_dp_ext_world {
 	struct i915_display *display;
 	int live;
-	struct i915_tc *tc;
+	struct i915_xd_tc_ports *tc;
 	struct mutex aux_lock;
-	struct i915_dp_ext_port port[I915_TC_PORTS];
+	struct i915_dp_ext_port port[I915_XD_TC_PORTS];
 };
 
 /* What an access of a sink holds: the Type-C port's lock, and the power it took. */
@@ -160,7 +160,7 @@ drv_i915_dp_ext_start(
 	struct i915_display *display)
 {
 	struct i915_dp_ext_world *ext;
-	struct i915_tc *tc;
+	struct i915_xd_tc_ports *tc;
 	unsigned tc_port;
 	unsigned bound;
 	int error;
@@ -170,7 +170,7 @@ drv_i915_dp_ext_start(
 		return;
 
 	/* Without bound Type-C ports there is no external DP port. */
-	tc = drv_i915_tc_kern_ports(display);
+	tc = drv_i915_tc_port_ports(display);
 	if (tc == NULL) {
 		kern_logf("i915: DP-ext: no Type-C ports: no external DP port\n");
 		return;
@@ -195,7 +195,7 @@ drv_i915_dp_ext_start(
 
 	/* Binds each declared Type-C port. */
 	bound = 0U;
-	for (tc_port = 0U; tc_port < I915_TC_PORTS; tc_port++) {
+	for (tc_port = 0U; tc_port < I915_XD_TC_PORTS; tc_port++) {
 		/* A port the VBT does not declare is never touched. */
 		if (!tc->port[tc_port].present)
 			continue;
@@ -233,7 +233,7 @@ drv_i915_dp_ext_stop(
 	ext->live = 0;
 
 	/* Waits out a probe that is running, port by port. */
-	for (tc_port = 0U; tc_port < I915_TC_PORTS; tc_port++) {
+	for (tc_port = 0U; tc_port < I915_XD_TC_PORTS; tc_port++) {
 		/* A port never bound has no lock. */
 		p = &ext->port[tc_port];
 		if (!p->declared)
@@ -303,7 +303,7 @@ drv_i915_dp_ext_probe(
 		return I915_DP_EXT_UNKNOWN;
 
 	/* Only a Type-C port is an external DP port here. */
-	tc_port = drv_i915_tc_kern_port_of(port);
+	tc_port = drv_i915_tc_port_of(display, port);
 	if (tc_port < 0)
 		return I915_DP_EXT_UNKNOWN;
 
@@ -370,9 +370,9 @@ drv_i915_dp_ext_pulse(
 		return 0;
 	}
 
-	drv_i915_tc_get_link(ext->tc, p->tc_port, I915_DP_EXT_KERN_PROBE_LANES);
+	drv_i915_xd_tc_ports_get_link(ext->tc, p->tc_port, I915_DP_EXT_KERN_PROBE_LANES);
 	handled = drv_i915_dp_ext_short_pulse(&p->env, &p->sink);
-	drv_i915_tc_put_link(ext->tc, p->tc_port);
+	drv_i915_xd_tc_ports_put_link(ext->tc, p->tc_port);
 	kern_logf("i915: DP-ext %s: short pulse %s\n", p->name, handled ? "handled" : "asks for a detection");
 
 	mutex_unlock(&p->lock);
@@ -429,9 +429,9 @@ drv_i915_dp_ext_link_check(
 		return 0;
 	}
 
-	drv_i915_tc_get_link(ext->tc, p->tc_port, lanes);
+	drv_i915_xd_tc_ports_get_link(ext->tc, p->tc_port, (unsigned)lanes);
 	needs = drv_i915_dp_ext_link_needs_retrain(&p->env, lanes);
-	drv_i915_tc_put_link(ext->tc, p->tc_port);
+	drv_i915_xd_tc_ports_put_link(ext->tc, p->tc_port);
 
 	mutex_unlock(&p->lock);
 
@@ -632,7 +632,7 @@ i915_dp_ext_bind_port(
 	/* The port, its DDI, and the VBT's child of that DDI. */
 	display = ext->display;
 	p = &ext->port[tc_port];
-	port = I915_PORT_TC1 + (int)tc_port;
+	port = (int)ext->tc->port[tc_port].desc->ddi;
 	child = NULL;
 	if (display->vbt_state.parsed_live)
 		child = drv_i915_vbt_encoder_for_port(&display->vbt_state.parsed, port);
@@ -642,7 +642,7 @@ i915_dp_ext_bind_port(
 	p->ext = ext;
 	p->tc_port = tc_port;
 	p->ddi = port;
-	(void)drv_i915_xd_aux_init(&p->aux, (unsigned)display->tck.aux_ch[tc_port]);
+	(void)drv_i915_xd_aux_init(&p->aux, drv_i915_tc_port_aux(display, tc_port));
 
 	/* What the source offers: HBR3 and 4 lanes, within the VBT's limits; the FIA's lanes are read at each probe. */
 	p->source.max_rate = I915_DP_EXT_KERN_MAX_RATE;
@@ -697,8 +697,8 @@ i915_dp_ext_probe_locked(
 	struct i915_dp_ext_world *ext,
 	struct i915_dp_ext_port *p)
 {
-	enum i915_tc_mode mode;
-	enum i915_tc_mode after;
+	unsigned mode;
+	unsigned after;
 	unsigned tc_port;
 
 	/* Counts the probe. */
@@ -706,39 +706,39 @@ i915_dp_ext_probe_locked(
 	p->probes++;
 
 	/* Holds the port for the whole probe: its PHY stays with the display between the accesses. */
-	drv_i915_tc_get_link(ext->tc, tc_port, I915_DP_EXT_KERN_PROBE_LANES);
+	drv_i915_xd_tc_ports_get_link(ext->tc, tc_port, I915_DP_EXT_KERN_PROBE_LANES);
 
 	/* The mode the link fixed, and the lanes the FIA gave DisplayPort (read with the port held). */
-	mode = drv_i915_tc_lock(ext->tc, tc_port, I915_DP_EXT_KERN_PROBE_LANES);
+	mode = drv_i915_xd_tc_ports_lock(ext->tc, tc_port, I915_DP_EXT_KERN_PROBE_LANES);
 
-	p->source.fia_lanes = drv_i915_tc_max_lanes(ext->tc, tc_port);
+	p->source.fia_lanes = (int)drv_i915_xd_tc_ports_max_lanes(ext->tc, tc_port);
 
-	drv_i915_tc_unlock(ext->tc, tc_port);
+	drv_i915_xd_tc_ports_unlock(ext->tc, tc_port);
 
 	/* Only a port the display holds for DP has a sink to probe; Thunderbolt is outside the driver's scope. */
-	if (mode != I915_TC_MODE_DP_ALT && mode != I915_TC_MODE_LEGACY) {
+	if (mode != I915_XD_TC_MODE_DP_ALT && mode != I915_XD_TC_MODE_LEGACY) {
 		drv_i915_dp_ext_forget(&p->sink);
 		p->sink.step = I915_DP_EXT_STEP_PHY;
-		kern_logf("i915: DP-ext %s: held in %s mode, not DP: no sink probed\n", p->name, drv_i915_tc_mode_name(mode));
+		kern_logf("i915: DP-ext %s: held in %s mode, not DP: no sink probed\n", p->name, drv_i915_xd_tc_mode_name(mode));
 	} else {
 		/* Probes the sink; one the AUX channel could not reach has the port's Type-C state logged while it is still held. */
 		drv_i915_dp_ext_detect(&p->env, &p->source, &p->sink);
 		if (p->sink.status == I915_DP_EXT_DISCONNECTED && p->sink.error != 0)
-			drv_i915_tc_log_state(ext->tc, tc_port, "AUX failed");
+			drv_i915_xd_tc_ports_log_state(ext->tc, tc_port, "AUX failed");
 	}
 
 	/* Gives the link back: the port's last link gives the PHY back at once. */
-	drv_i915_tc_put_link(ext->tc, tc_port);
-	after = drv_i915_tc_mode(ext->tc, tc_port);
+	drv_i915_xd_tc_ports_put_link(ext->tc, tc_port);
+	after = drv_i915_xd_tc_ports_mode(ext->tc, tc_port);
 
 	/* Logs what the probe found and how the port was left. */
 	drv_i915_dp_ext_log(&p->env, &p->sink, p->name);
 	kern_logf("i915: DP-ext %s: probe %u held the port in %s mode (FIA lanes %d), %s after it | AUX tries %u no answers %u\n",
 	    p->name,
 	    p->probes,
-	    drv_i915_tc_mode_name(mode),
+	    drv_i915_xd_tc_mode_name(mode),
 	    p->source.fia_lanes,
-	    drv_i915_tc_mode_name(after),
+	    drv_i915_xd_tc_mode_name(after),
 	    p->aux.tries,
 	    p->aux.no_answers);
 }
@@ -756,7 +756,7 @@ i915_dp_ext_access_begin(
 	struct i915_dp_ext_access *access)
 {
 	struct i915_display *display;
-	enum i915_tc_mode mode;
+	unsigned mode;
 	int connected;
 	int error;
 
@@ -767,17 +767,17 @@ i915_dp_ext_access_begin(
 	access->core_powered = 0;
 
 	/* The Type-C port, brought up to what is plugged in when no output holds it. */
-	mode = drv_i915_tc_lock(p->ext->tc, p->tc_port, I915_DP_EXT_KERN_PROBE_LANES);
+	mode = drv_i915_xd_tc_ports_lock(p->ext->tc, p->tc_port, I915_DP_EXT_KERN_PROBE_LANES);
 	access->tc_locked = 1;
 
 	/* Only DP-alt and legacy carry DisplayPort AUX here, and only with the partner there. */
-	if (mode != I915_TC_MODE_DP_ALT && mode != I915_TC_MODE_LEGACY) {
+	if (mode != I915_XD_TC_MODE_DP_ALT && mode != I915_XD_TC_MODE_LEGACY) {
 		p->refused++;
 		i915_dp_ext_access_end(p, access);
 		return -ENXIO;
 	}
 
-	connected = drv_i915_tc_connected_locked(p->ext->tc, p->tc_port);
+	connected = drv_i915_xd_tc_ports_connected_locked(p->ext->tc, p->tc_port);
 	if (!connected) {
 		p->refused++;
 		i915_dp_ext_access_end(p, access);
@@ -785,7 +785,7 @@ i915_dp_ext_access_begin(
 	}
 
 	/* The channel's power, then the display core's. */
-	access->aux_domain = (int)drv_i915_aux_legacy_power_domain(display->tck.display_ver, (int)p->aux.channel);
+	access->aux_domain = (int)drv_i915_aux_legacy_power_domain(display->power_domains.display_ver, (int)p->aux.channel);
 	error = drv_i915_display_power_get(&display->power_domains, (enum i915_power_domain)access->aux_domain, &display->pwc);
 	if (error != 0) {
 		i915_dp_ext_access_end(p, access);
@@ -830,7 +830,7 @@ i915_dp_ext_access_end(
 
 	/* The Type-C port; a port no link holds gives its PHY back at once. */
 	if (access->tc_locked)
-		drv_i915_tc_unlock(p->ext->tc, p->tc_port);
+		drv_i915_xd_tc_ports_unlock(p->ext->tc, p->tc_port);
 }
 
 /* Reads DPCD bytes of a port's sink: the bytes read, or a negative error. */
@@ -1247,7 +1247,7 @@ i915_dp_ext_declared(
 		return NULL;
 
 	/* Only a declared Type-C port is one. */
-	tc_port = drv_i915_tc_kern_port_of(port);
+	tc_port = drv_i915_tc_port_of(display, port);
 	if (tc_port < 0)
 		return NULL;
 

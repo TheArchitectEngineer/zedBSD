@@ -686,6 +686,61 @@ drv_i915_display_power_put(
 }
 
 /*
+ * Takes one reference on the wells of a set of power functions
+ * (I915_XD_POWERS_*), for a user that names what it powers rather than a
+ * domain (the Type-C ports).  Returns 0, or the error of the well that
+ * could not be turned on (the wells already taken are given back).
+ */
+int
+drv_i915_display_power_get_set(
+	struct i915_power_domains *pd,
+	uint64_t functions,
+	struct i915_pw_ctx *pwc)
+{
+	struct i915_pw_switch_ctx ctx;
+	struct i915_xd_power_switch sw;
+	int get_result;
+
+	/* Takes the wells under the domains lock. */
+	i915_pw_switch(pd, pwc, &ctx, &sw);
+	mutex_lock(&pd->lock);
+
+	get_result = drv_i915_xd_power_get(&pd->xd->power, functions, &sw);
+	i915_pw_copy_counts(pd);
+
+	mutex_unlock(&pd->lock);
+
+	/* Reports a well that did not turn on. */
+	if (get_result != 0)
+		return get_result;
+
+	/* Succeeded: the caller holds the wells. */
+	return 0;
+}
+
+/*
+ * Gives one reference on the wells of a set of power functions back.
+ */
+void
+drv_i915_display_power_put_set(
+	struct i915_power_domains *pd,
+	uint64_t functions,
+	struct i915_pw_ctx *pwc)
+{
+	struct i915_pw_switch_ctx ctx;
+	struct i915_xd_power_switch sw;
+
+	/* Gives the wells back under the domains lock. */
+	i915_pw_switch(pd, pwc, &ctx, &sw);
+	mutex_lock(&pd->lock);
+
+	drv_i915_xd_power_put(&pd->xd->power, functions, &sw);
+	i915_pw_copy_counts(pd);
+
+	mutex_unlock(&pd->lock);
+}
+
+/*
  * Binds the delayed work behind the asynchronous put and the well context
  * it releases with; a NULL ops unbinds it.
  */

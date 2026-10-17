@@ -31,7 +31,7 @@
 #include "power.h"
 #include "present.h"
 #include "scanout.h"
-#include "tc-kern.h"
+#include "tc-port.h"
 #include "interrupts.h"
 #include "vbt-parse.h"
 #include "clock.h"
@@ -2005,7 +2005,7 @@ resident_config_dp_ext(
 	config->kept = 0U;
 
 	/* The port's AUX channel, and the sink reached over it. */
-	config->aux = (unsigned)display->tck.aux_ch[output->tc_port];
+	config->aux = drv_i915_tc_port_aux(display, output->tc_port);
 	config->sink = drv_i915_dp_ext_aux_emit(display, output->port);
 	kern_memcpy(config->caps, output->sink.dpcd, sizeof(config->caps));
 	kern_memset(config->edp_caps, 0, sizeof(config->edp_caps));

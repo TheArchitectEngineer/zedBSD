@@ -24,8 +24,7 @@
 #include "output.h"
 #include "power.h"
 #include "present.h"
-#include "tc.h"
-#include "tc-kern.h"
+#include "tc-port.h"
 #include "xd-hpd.h"
 
 #include "../workqueue.h"
@@ -86,7 +85,7 @@ struct i915_hpd_world {
 	struct i915_display *display;
 	struct i915_xd_hpd xh;
 	struct i915_xd_hpd_env env;
-	struct i915_tc *tc;
+	struct i915_xd_tc_ports *tc;
 	struct spinlock lock;
 	struct mutex probe_lock;
 	struct spinlock topology_lock;
@@ -99,7 +98,7 @@ struct i915_hpd_world {
 	struct i915_work pulse_work;
 	struct i915_delayed_work detect_work;
 	struct i915_delayed_work rearm_work;
-	struct i915_hpd_tc_reset tc_reset[I915_TC_PORTS];
+	struct i915_hpd_tc_reset tc_reset[I915_XD_TC_PORTS];
 	int armed;
 	int started;
 	int live;
@@ -266,7 +265,7 @@ drv_i915_hpd_start(
 		return EINVAL;
 
 	/* The Type-C ports the detection asks the live state of. */
-	world->tc = drv_i915_tc_kern_ports(display);
+	world->tc = drv_i915_tc_port_ports(display);
 
 	/* The work queue and the timer queue its delayed works are armed on. */
 	error = drv_i915_workqueue_create(&world->wq, "i915-hotplug");
@@ -283,7 +282,7 @@ drv_i915_hpd_start(
 	drv_i915_work_init(&world->pulse_work, i915_hpd_pulse_work, world);
 	drv_i915_delayed_work_init(&world->detect_work, i915_hpd_detect_work, world);
 	drv_i915_delayed_work_init(&world->rearm_work, i915_hpd_rearm_work, world);
-	for (tc = 0U; tc < I915_TC_PORTS; tc++) {
+	for (tc = 0U; tc < I915_XD_TC_PORTS; tc++) {
 		world->tc_reset[tc].world = world;
 		world->tc_reset[tc].tc = tc;
 		drv_i915_delayed_work_init(&world->tc_reset[tc].work, i915_hpd_tc_reset_work, &world->tc_reset[tc]);
@@ -443,7 +442,7 @@ drv_i915_hpd_stop(
 	(void)drv_i915_cancel_work_sync(&world->wq, &world->pulse_work, deadline);
 	(void)drv_i915_delayed_cancel_sync(&world->tq, &world->detect_work, deadline);
 	(void)drv_i915_delayed_cancel_sync(&world->tq, &world->rearm_work, deadline);
-	for (tc = 0U; tc < I915_TC_PORTS; tc++)
+	for (tc = 0U; tc < I915_XD_TC_PORTS; tc++)
 		(void)drv_i915_delayed_cancel_sync(&world->tq, &world->tc_reset[tc].work, deadline);
 
 	/* Destroys the queues. */
@@ -963,7 +962,7 @@ i915_hpd_tc_reset_work(
 		return;
 
 	/* A partner that came back keeps the link. */
-	needs = drv_i915_tc_link_needs_reset(world->tc, reset->tc);
+	needs = drv_i915_xd_tc_ports_link_needs_reset(world->tc, reset->tc);
 	if (!needs) {
 		kern_logf("i915: hpd TC%u: the DisplayPort partner is back: the link is kept\n", reset->tc + 1U);
 		return;
@@ -1192,16 +1191,16 @@ i915_hpd_tc_live(
 	world = ctx;
 
 	/* Without the display's Type-C ports, or for a port they do not have, nothing is connected. */
-	tc = drv_i915_tc_kern_port_of((int)ddi);
+	tc = drv_i915_tc_port_of(world->display, (int)ddi);
 	if (world->tc == NULL || tc < 0)
 		return 0;
 
 	/* The port's live state in the mode it is held in. */
-	connected = drv_i915_tc_connected(world->tc, (unsigned)tc);
+	connected = drv_i915_xd_tc_ports_connected(world->tc, (unsigned)tc);
 	kern_logf("i915: hpd TC%d connected=%d\n", tc + 1, connected);
 
 	/* Tells the Type-C layer what the port has of DisplayPort now. */
-	drv_i915_tc_kern_report(world->tc, (unsigned)tc);
+	drv_i915_tc_port_report(world->tc, (unsigned)tc);
 
 	/* Nothing the display uses is plugged in. */
 	if (!connected)
@@ -1291,11 +1290,11 @@ i915_hpd_link(
 	int tc;
 
 	world = ctx;
-	tc = drv_i915_tc_kern_port_of((int)ddi);
+	tc = drv_i915_tc_port_of(world->display, (int)ddi);
 
 	/* A Type-C link without its partner: looked at again later. */
-	if (world->tc != NULL && tc >= 0 && tc < (int)I915_TC_PORTS) {
-		needs = drv_i915_tc_link_needs_reset(world->tc, (unsigned)tc);
+	if (world->tc != NULL && tc >= 0 && tc < (int)I915_XD_TC_PORTS) {
+		needs = drv_i915_xd_tc_ports_link_needs_reset(world->tc, (unsigned)tc);
 		if (needs) {
 			(void)drv_i915_delayed_queue(&world->tq, &world->tc_reset[tc].work, I915_HPD_TC_RESET_MS);
 			kern_logf("i915: hpd TC%d: the link lost its DisplayPort partner: looking again in %u ms\n", tc + 1, I915_HPD_TC_RESET_MS);

@@ -65,6 +65,10 @@
 #                          and link clocks, the enable and the read of a TC PLL; Tiger Lake's TC cold well; a port's
 #                          live state, FIA, lanes and pin; the connect and disconnect of the FIA flow (Tiger Lake) and
 #                          of the TCSS flow (display 13)
+#   host-xd-tc-port-test   the Type-C ports: the live state, the readout of the firmware's port, the connect's order and
+#                          its unwinding, the fallback to the port's default, the FIA's lanes, slots and pins, the
+#                          legacy flag's correction, the connected answer, the link reset, the Type-C layer's sample,
+#                          the legacy PHY's wait on the clock, the stop; Tiger Lake's FIA flow with TC cold kept off
 #   host-xd-cover-test     every platform row: found by its PCI id, the links (eDP, HDMI, the first Type-C connector)
 #                          planned with PLL words that give them, a CD clock step, the firmware's output classified
 #   host-xd-icl-test       display 11 (Ice Lake): the rows, the MG PLL (Linux's words, the enable's order and masks, the
@@ -93,7 +97,7 @@ OUT=${1:-build/ws245-host}
 mkdir -p "$OUT"
 I915_HOST_EXTRA_PRODUCTION="src/drivers/gpu/i915/perf.c ${I915_HOST_EXTRA_PRODUCTION:-}"
 failed=0
-for test in host-xd-regs-test host-xd-io-test host-xd-platform-test host-xd-vbt-test host-xd-survey-test host-xd-aux-test host-xd-gmbus-test host-xd-panel-test host-xd-power-test host-xd-dmc-test host-xd-clock-test host-xd-dpll-test host-xd-ddi-test host-xd-dp-test host-xd-pipe-test host-xd-dbuf-test host-xd-core-test host-xd-takeover-test host-xd-screen-test host-xd-output-test host-xd-edp-test host-xd-tc-test host-xd-cover-test host-xd-icl-test host-xd-picture-test host-xd-hpd-test host-output-link-test; do
+for test in host-xd-regs-test host-xd-io-test host-xd-platform-test host-xd-vbt-test host-xd-survey-test host-xd-aux-test host-xd-gmbus-test host-xd-panel-test host-xd-power-test host-xd-dmc-test host-xd-clock-test host-xd-dpll-test host-xd-ddi-test host-xd-dp-test host-xd-pipe-test host-xd-dbuf-test host-xd-core-test host-xd-takeover-test host-xd-screen-test host-xd-output-test host-xd-edp-test host-xd-tc-test host-xd-tc-port-test host-xd-cover-test host-xd-icl-test host-xd-picture-test host-xd-hpd-test host-output-link-test; do
 	test -f "$T/$test.c" || continue
 	i915_display_host_build "$OUT/$test" "$T/$test.c" "$T/xd-fake-regs.c" plan/ws084/tests/native-decide-stubs.c
 	if ! "$OUT/$test"; then

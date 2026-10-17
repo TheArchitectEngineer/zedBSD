@@ -536,7 +536,7 @@ struct i915_gt_mem;
 struct i915_gt_engines;
 struct i915_gt_ppgtt;
 struct i915_driver_probe;
-struct i915_tc;
+struct i915_xd_tc_ports;
 struct spinlock;
 
 /*
@@ -584,7 +584,7 @@ struct i915_lcd_kernel_deps {
 	struct i915_driver_probe *dprobe;
 
 	/* The display's Type-C ports, whose links an output's dark gives back. */
-	struct i915_tc *tc;
+	struct i915_xd_tc_ports *tc;
 };
 
 /*

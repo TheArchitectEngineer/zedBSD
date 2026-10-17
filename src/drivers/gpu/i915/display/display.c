@@ -42,7 +42,7 @@
 #include "vga.h"
 #include "xd-core.h"
 #include "xd-gmbus.h"
-#include "tc-kern.h"
+#include "tc-port.h"
 #include "dp-ext-kern.h"
 #include "bootfb.h"
 #include "vbt-parse.h"
@@ -636,7 +636,7 @@ drv_i915_display_register(
 	 */
 	if (error == 0) {
 		/* The Type-C ports first: the hotplug path asks them whether something is plugged in. */
-		drv_i915_tc_kern_start(display, &device->gt.mmio, (unsigned)device->gt.display_ver);
+		drv_i915_tc_port_start(display);
 
 		/* Then the external DP ports on them, whose sinks the DP connectors' detection probes. */
 		drv_i915_dp_ext_start(display);
@@ -728,7 +728,7 @@ drv_i915_display_resident_deps(
 	rlcd->gmadr_base = gt->gmadr_base;
 	rlcd->gmadr_size = gt->gmadr_size;
 	rlcd->dprobe = &display->dprobe;
-	rlcd->tc = drv_i915_tc_kern_ports(display);
+	rlcd->tc = drv_i915_tc_port_ports(display);
 
 	/* What the serving thread needs, with the panel. */
 	rctx->device = device;
@@ -776,7 +776,7 @@ drv_i915_display_stop_early(
 	}
 
 	/* The Type-C ports' PHYs and TC cold blocks go back to the Type-C subsystem. */
-	drv_i915_tc_kern_stop(display);
+	drv_i915_tc_port_stop(display);
 
 	/*
 	 * i915_driver_remove() -> i915_driver_unregister(): runtime PM back to
@@ -1592,7 +1592,7 @@ i915_display_create_worlds(
 	return 0;
 }
 
-/* Frees the hotplug's, the VBT parser's and the external DP ports' state that exists, in reverse. */
+/* Frees the hotplug's, the VBT parser's, the external DP ports' and the Type-C ports' state that exists, in reverse. */
 static void
 i915_display_destroy_worlds(
 	struct i915_display *display)
@@ -1601,6 +1601,7 @@ i915_display_destroy_worlds(
 	drv_i915_hpd_world_destroy(display);
 	drv_i915_vbt_world_destroy(display);
 	drv_i915_dp_ext_destroy(display);
+	drv_i915_tc_port_destroy(display);
 }
 
 /* Returns the device's display when it exists and the firmware display check kept it; NULL otherwise. */

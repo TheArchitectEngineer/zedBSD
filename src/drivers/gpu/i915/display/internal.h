@@ -72,7 +72,6 @@
 #include "../workqueue.h"
 #include "display-internal.h"
 #include "dp-ext.h"
-#include "tc.h"
 #include "xd.h"
 #include "xd-backend.h"
 #include "xd-edp.h"
@@ -1745,41 +1744,6 @@ struct i915_lcd_kernel {
 #define I915_NATIVE_VBT_COPY_SIZE 16384u
 
 /*
- * What binds the display's Type-C ports (tc.c) to the device (tc-kern.c).
- *
- * It lives in the display for the device's lifetime and is filled once the
- * display probe has made its encoders.  Each port's mutex is the lock tc.c
- * takes through its environment; it is taken before the power domains'
- * lock.  aux_ch is the AUX channel the VBT gives each port, whose AUX_USBC
- * domain blocks TC cold.  live is zero on a display without Type-C ports,
- * and then nothing here is used.
- */
-struct i915_tc_kern {
-	/* The Type-C core and its ports. */
-	struct i915_tc tc;
-
-	/* Each port's lock. */
-	struct mutex locks[I915_TC_PORTS];
-
-	/* Each port's AUX channel (enum aux_ch). */
-	int aux_ch[I915_TC_PORTS];
-
-	/* The registers and the power the ports use. */
-	struct i915_mmio *mmio;
-	struct i915_power_domains *pd;
-	struct i915_pw_ctx *pwc;
-
-	/* The display version the domains are named for. */
-	unsigned display_ver;
-
-	/* How many power gets of the ports failed (diagnostics). */
-	unsigned power_failures;
-
-	/* Nonzero once the ports are bound. */
-	int live;
-};
-
-/*
  * The display part of one device.
  *
  * The device owns exactly one; the device start fills it in the order of
@@ -1923,6 +1887,7 @@ struct i915_lcd_world;
 struct kern_backlight;
 struct i915_wm_world;
 struct i915_dp_ext_world;
+struct i915_tc_port_world;
 struct i915_vbt_world;
 struct i915_hpd_world;
 
@@ -1998,8 +1963,6 @@ struct i915_display {
 	/* The firmware's output read from the firmware check's record, the only one the driver lights by itself. */
 	struct i915_gop_output gop;
 
-	/* The Type-C ports and what binds them to this display (tc-kern.c). */
-	struct i915_tc_kern tck;
 
 	/* Nonzero once the display core was initialized (intel_power_domains_init_hw). */
 	int display_core_inited;
@@ -2121,6 +2084,7 @@ struct i915_display {
 	 * the owner file of its environment and is NULL outside that window.
 	 */
 	struct i915_dp_ext_world *dp_ext;
+	struct i915_tc_port_world *tc_ports;
 	struct i915_vbt_world *vbt_world;
 	struct i915_hpd_world *hpd_world;
 
