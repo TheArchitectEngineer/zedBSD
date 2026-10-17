@@ -452,12 +452,6 @@ struct i915_pw_ctx {
 	struct i915_xd *xd;
 };
 
-/* pmdemand state: mutex + waitqueue, initialised early. */
-struct i915_pmdemand {
-	struct mutex lock;
-	struct wait_queue waitqueue;
-	int early_initialized;
-};
 /*
  * The CDCLK (clock.c).
  */
@@ -849,87 +843,20 @@ struct i915_display_nogem;
 #define I915_DISP_IPC_ENABLE        (1u << 3)
 
 /*
- * What the Linux display driver probe leaves after its noirq stage:
- * hotplug, registrations and the IPC setting.
+ * What the display's serve step leaves: the pipes the firmware left lit,
+ * IPC, and the start's power and runtime references given back (or the
+ * power reference kept for the takeover), with the wells counted around
+ * the power reference's give-back.
  */
 struct i915_driver_probe {
-	/* intel_display_driver_probe */
 	unsigned active_crtcs;
-	int initial_commit_rc;
-	int initial_commit_unimplemented;   /* an active crtc needs the atomic commit */
-	int power_domains_enable_deferred;  /* the INIT reference is KEPT until the takeover */
-	int overlay;                        /* HAS_OVERLAY */
-	int fbdev;                          /* CONFIG_DRM_FBDEV_EMULATION */
+	int power_domains_enable_deferred;
 	int ipc_enabled;
-
-	/* i915_driver_register */
-	int opregion_registered;
-	unsigned na_registrations;          /* userspace-facing steps recorded N/A */
 	unsigned wells_on_before, wells_on_after;
-	int dc_state_after;                 /* DC_STATE_EN & mask after the INIT put */
+	int dc_state_after;
 	unsigned verify_mismatches;
 	int rpm_usage_after;
 	int registered;
-
-	int err;
-	const char *err_where;
-};
-/*
- * The DRM device and vblank workers (device.c).
- */
-/*
- * minimal DRM device management + vblank (see device.c).
- *
- * Ports the drm_dev_init() side of DRM device state, a drmm managed-resource
- * list with the drm_add_action_or_reset() contract, and drm_vblank_init() /
- * drm_vblank_worker_init() for the display "noirq" bring-up.  It does not
- * open /dev/dri, start display output, or wait on real vblanks.
- */
-
-struct i915_device;
-
-#define I915_DRM_MAX_PIPES  4    /* ADL-P pipe_mask = A|B|C|D */
-#define I915_DRMM_MAX      16    /* managed cleanup-action slots */
-
-/* A managed cleanup action (drmm_add_action_or_reset). */
-struct i915_drmm_action {
-	void (*fn)(void *arg);
-	void *arg;
-};
-
-/* Per-CRTC vblank state (drm_vblank_crtc subset). */
-struct i915_drm_vblank_crtc {
-	struct spinlock lock;        /* per-CRTC vblank lock */
-	struct wait_queue queue;     /* vblank wait queue */
-	unsigned pipe;               /* CRTC/pipe index */
-	uint64_t count;              /* vblank sequence (seqlock-guarded in the reference) */
-	uint32_t seqlock;            /* seqlock generation (even = stable) */
-	int disable_timer_inited;    /* vblank-disable timer state (modelled) */
-	uint64_t disable_deadline;
-	struct i915_workqueue worker;  /* per-CRTC vblank worker (drm_vblank_worker_init) */
-	int worker_created;
-	int inited;
-};
-
-/* DRM device management state (drm_device subset). */
-struct i915_drm_device {
-	struct i915_device *parent;  /* back-reference to the parent device */
-	uint32_t driver_features;    /* DRIVER_* feature flags subset */
-	int open_count;              /* device open refcount */
-
-	struct spinlock managed_lock;/* drmm managed-resource list lock */
-	struct i915_drmm_action drmm[I915_DRMM_MAX];
-	unsigned drmm_count;
-
-	struct spinlock event_lock;  /* event list lock */
-	int minor_registered;        /* minor bookkeeping; 0 = not published */
-
-	unsigned num_crtcs;          /* INTEL_NUM_PIPES fully initialised */
-	int vblank_disable_immediate;
-	struct i915_drm_vblank_crtc vblank[I915_DRM_MAX_PIPES];
-	int vblank_inited;
-
-	int inited;
 };
 /*
  * The VGA plane and arbiter (takeover.c).
@@ -1173,23 +1100,6 @@ struct i915_gop_output {
 	int port;
 	unsigned mode;
 	unsigned pipes;
-};
-
-/*
- * The OpRegion as DATA (VBT_ONLY): the start maps it read-only, copies the 8 KiB and the VBT it names, checks the
- * VBT.  The runtime protocol (ACPI notifier, drdy / ardy / chpd / csts / DIDL / CADL, ASLE) is NOT joined: runtime =
- * DISABLED, reason ACPI_RUNTIME_UNAVAILABLE.  The mailboxes' current values are observed only.
- */
-struct i915_opregion_data {
-	int present;                    /* ASLS != 0 */
-	int mapped;
-	struct i915_opregion_info op;
-	int vbt_valid;
-	const uint8_t *vbt;             /* the copy handed to the parser (0 = none) */
-	uint32_t vbt_size;
-	uint8_t vbt_sha256[32];
-	int runtime_enabled;            /* always 0 here */
-	const char *runtime_reason;
 };
 
 /*
@@ -1899,23 +1809,17 @@ struct i915_display {
 	struct i915_xd xd;
 
 	/*
-	 * Probe state (the probe's static locals, device lifetime).
+	 * The start's state, for the device's lifetime.
 	 */
 
-	/* The DRM device management and the per-pipe vblank workers (drm_dev_init, drm_vblank_init). */
-	struct i915_drm_device drm_dev;
-
-	/* The VBT the parser was given and what it found (intel_bios_init). */
+	/* The VBT the parser was given and what it found (display.c). */
 	struct i915_vbt_state vbt_state;
 
-	/* The VGA arbiter client (intel_vga_register). */
+	/* The VGA arbiter client (vga.c). */
 	struct i915_vga_client vga_client;
 
 	/* The power wells and domains; its own lock protects the reference counts. */
 	struct i915_power_domains power_domains;
-
-	/* The PM demand lock and wait queue (intel_pmdemand_init_early). */
-	struct i915_pmdemand pmdemand;
 
 	/* The CDCLK state and hooks. */
 	struct i915_cdclk_dev cdclk;
@@ -1935,13 +1839,13 @@ struct i915_display {
 	/* The bandwidth state the start left (the QGV points SAGV may use). */
 	struct i915_display_state dstate;
 
-	/* The PCH the display found (intel_detect_pch). */
+	/* The PCH the display found (display.c). */
 	struct i915_pch_state pch;
 
-	/* The Linux driver-probe state after the noirq stage (hotplug, registration, IPC). */
+	/* What the serve step left: the lit firmware pipes, IPC, the references given back. */
 	struct i915_driver_probe dprobe;
 
-	/* The DRAM the bandwidth code was given, and the bandwidth state (intel_bw_init_hw). */
+	/* The DRAM the bandwidth code was given, and the bandwidth state (display.c). */
 	struct i915_dram_info dram_info;
 	struct i915_bw_state bw_state;
 
@@ -1949,25 +1853,20 @@ struct i915_display {
 	struct i915_display_irq irq;
 	struct i915_irq_vblank irq_vblank;
 
-	/* The DMC, modeset and flip workqueues (intel_modeset_wq, intel_flip_wq). */
-	struct i915_workqueue dmc_wq, modeset_wq, flip_wq;
+	/* The DMC loader's workqueue. */
+	struct i915_workqueue dmc_wq;
 
-	/* The OpRegion data read at the start (read-only acquisition); p2_opd points at opd or is NULL. */
-	struct i915_opregion_data opd;
-	const struct i915_opregion_data *p2_opd;
-
-	/* Nonzero when the start found an OpRegion, and one with a usable VBT. */
-	int opregion_present;
+	/* Nonzero when the start found an OpRegion with a usable VBT. */
 	int opregion_vbt_present;
 
 	/* The firmware's output read from the firmware check's record, the only one the driver lights by itself. */
 	struct i915_gop_output gop;
 
 
-	/* Nonzero once the display core was initialized (intel_power_domains_init_hw). */
+	/* Nonzero once the display core was started. */
 	int display_core_inited;
 
-	/* Nonzero while the hotplug path runs (started after the display probe). */
+	/* Nonzero while the hotplug path runs (started by the serve step). */
 	int hpd_started;
 
 	/* The resident run: what the serving thread needs, and the panel dependencies it uses. */
@@ -2044,20 +1943,17 @@ struct i915_display {
 	int show_retained;
 	const struct i915_lcd_emit *show_retained_hw;
 	int show_gpu_retained;
-	const void *show_gpu_retained_gm;
-	const char *show_gpu_retained_why;
 
 	/*
 	 * Former file-scope state of the world-neutral display files.
 	 */
 
-	/* The VBT bytes the parser reads, the OpRegion's VBT, and the pinned VBT's PCI ids (vbt.c; the ids only in the test build). */
+	/* The VBT bytes the parser reads and the OpRegion's VBT (vbt-shell.c). */
 	uint8_t i915_vbt_buf[I915_VBT_MAX];
 	const void *opregion_vbt_buf;
 	size_t opregion_vbt_size;
-	uint16_t pinned_vendor, pinned_device;
 
-	/* The DMC firmware image as loaded, and how much of it is used (dmc.c). */
+	/* The DMC firmware image as loaded, and how much of it is used (dmc-shell.c). */
 	uint8_t g_dmc_arena[I915_DMC_ARENA_SIZE];
 	unsigned g_dmc_arena_used;
 
@@ -2068,19 +1964,14 @@ struct i915_display {
 	uint8_t i915_opregion_read_data_opcopy[I915_OPREGION_SIZE];
 	uint8_t i915_opregion_read_data_vbtcopy[I915_NATIVE_VBT_COPY_SIZE];
 
-	/* The ACPI notifier chain of the OpRegion service; chain_lock protects chain_head (opregion.c). */
-	struct mutex chain_lock;
-	int chain_lock_live;
-	struct notifier_block *chain_head;
-
-	/* The last ISA bridge the PCH search looked at (device-info.c). */
+	/* The last ISA bridge the PCH search looked at (display.c). */
 	struct drv_pci_device *next_isa_bridge_cursor;
 
-	/* The VGA I/O port operations (takeover.c); NULL until the VGA part is bound. */
+	/* The VGA I/O port operations (vga.c); NULL until the VGA part is bound. */
 	const struct i915_vga_io_ops *g_vga_io;
 
 	/*
-	 * The Linux environments' own state.  Each is allocated and freed by
+	 * The state of the parts still kept apart.  Each is allocated and freed by
 	 * the owner file of its environment and is NULL outside that window.
 	 */
 	struct i915_dp_ext_world *dp_ext;
@@ -2089,18 +1980,15 @@ struct i915_display {
 	struct i915_hpd_world *hpd_world;
 
 	/*
-	 * The stages of the display start that completed, so the stop takes
-	 * apart exactly what the start built (the probe's local flags).
+	 * The steps of the display start that completed, so the stop takes
+	 * apart exactly what the start built.
 	 */
-	int drm_inited;
 	int vga_registered;
 	int power_domains_inited;
 	int dmc_inited;
 
 	/* DC9 was entered for a suspend and is to be left by the resume. */
 	int suspend_dc9;
-	int modeset_wq_ok;
-	int flip_wq_ok;
 
 	/* The front of the start after the interrupts ran: the stop takes the panel's device apart. */
 	int front_done;

@@ -15,7 +15,7 @@
  */
 
 #include "internal.h"
-#include "diagnostics.h"
+#include "run-log.h"
 #include "survey.h"
 #include "xd-io.h"
 

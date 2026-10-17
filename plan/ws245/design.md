@@ -501,6 +501,8 @@ IN_USE → FREE は無条件ではない: links が 0 になった後に遅延�
 
 `display.h` の段の名前（`init_opregion`・`init_noirq`・`irq_prepare`・`init_nogem`・`register`）は Linux の probe の段で、呼ぶ側の `device.c` は棚卸しで derived（レビュー 2 の M11 (b)）。段の表の p016〜p041 では段の名前と分け方を保ち（殻の継ぎ目として使う: §6.1 R7）、**p042 で own の段（start・serve・suspend・resume・stop）に縮め、`device.c` の呼び側も直す**（§7 #12、2026-10-15 ユーザー「この WS で縮める」）。下の表の「新しい中身」は p016〜p041 の段で順に xd に変わる（§6.2）。
 
+**p042 の実装（2026-10-17、Q1 の判断で案 (a)）**: GT・割り込みの install との挟まりは変えず、隣り合う段だけをまとめて own の名前にした。`drv_i915_display_start`（旧 create・Gen9 の firmware の check・init_opregion・init_noirq。`device.c` の `i915_start_memory` の後、間に何も無い）→ `drv_i915_display_irq_prepare`・`_irq_log`（install の前後、名前は同じ）→ `drv_i915_display_outputs`（旧 init_nogem）→ GT → `drv_i915_display_serve`（旧 register）。止める側は `drv_i915_display_stop_serving`（旧 stop_early）→ `drv_i915_display_stop_outputs` → 割り込みの uninstall → `drv_i915_display_stop`（旧 fini）→ `drv_i915_display_destroy`。suspend/resume の 4 つと `resident_deps` は同じ。DRM の device・drmm・per-pipe の vblank の worker（使う物が無かった）と PM demand・modeset/flip の workqueue（同じく）は消した。順は `plan/ws245/tests/check-display-steps.py` が `device.c` で確かめる。
+
 | `display.c` の口（保つ） | 今の中身（Linux の probe の段） | 新しい中身（`xd.h` の段） |
 | --- | --- | --- |
 | `drv_i915_display_create` | worlds の確保 | `struct i915_xd` を zero にし、io・lock を用意、platform の記述を **product ID と revid で**選ぶ（PCH の ID はこの時点では分からない: `drv_i915_detect_pch` は `drv_i915_display_irq_prepare`（`display.c:490`、`device.c:1741`）で、create（`device.c:1499`）より後。南の種類は irq_prepare の後に、`drv_i915_detect_pch` の結果で `drv_i915_xd_platform_choose` を PCH ありで呼び直して埋める。create の時は PCH 無しで呼ぶので、`xd-platform.c:74-77` の `pch_assumed = 1`（platform の既定の PCH を仮定）になる。呼び直しの結果の行が create の時と違えば log する: レビュー 5 の m2）。Gen9・未知の ID・VM では 0 を返して xd を使わない（create の error は i915 の start を止める: `device.c:1497`）。boot の語は無い（R5） |
@@ -809,6 +811,24 @@ p002（土台）と p004（VBT・EDID の解析）は cleared（呼ばれない�
 | `host-native-decide-test.c`、`host-bootfb-test.c`、`host-gen9-*` | 残す（own・Gen9）。native-decide は p036 で xd-takeover に付け替える |
 | `plan/ws031/display-ref/`、`plan/ws051/tests/m3-5330-20261007/` | 残す（oracle のデータ。VBT の bytes は無い） |
 | p002・p004 の `host-xd-regs-test`・`host-xd-io-test`・`host-xd-platform-test`・`host-xd-vbt-test`、`check-xd-regs-linux.sh`、`check-xd-tables-linux.py`、`check-xd-vbt-layout-linux.sh` | 残して段ごとに足す。`host-xd-regs-test`（旧 header と比べる）は p043 で dump の一覧と比べる形に置き換える |
+
+#### 6.4.1 log の文言の一覧（p042 で確定、2026-10-17）
+
+残す接頭辞（AAT・T1 の道具・ユーザーの目視が読む。文言を変える時は読む道具を同じ段で追従させる）:
+
+| 接頭辞 | 出す所 | 読む物 |
+| --- | --- | --- |
+| `i915: survey <回> <名前>=…`・`i915: survey <回> pipe …`・`i915: survey: lit/NOT lit: …`・`i915: w: …`・`i915: w <語>` | survey.c・mmio-record.c | `plan/ws245/tests/5330-survey.sh`・`5330-survey-diff.py`（書式は正規表現で固定） |
+| `i915: resident display: buffers …`・`… picture up (buffer A surf …)`・`… flip <n>: surf … -> …` | resident.c・present.c | `plan/ws075/tests/hdmi/h4-ctl.py:62-64`（3 行の書式は run-xd-host-tests の grep で固定。§4.4 の `modeset.c:3802`・`:3904` は p050 で resident.c に移った） |
+| `i915: takeover: …`・`i915: firmware: …`（旧 N0） | resident.c・xd-takeover.c・display.c | 5330 の回帰の目視、`reboot-loop.sh` の `takeover:` |
+| `i915: display: …`・`i915: display run: …`（旧 `LCD-B`）・`i915: display head: …`・`i915: display output: …` | display.c・run-log.c・power.c・head.c・output.c | 目視。`display run:` は `plan/ws075/tests/hdmi-h1-hw.sh:47`・`hdmi/usb-poll.sh:20` の進み具合の表示の grep（`LCD-B` を読む: 直しは Q1） |
+| `i915: hpd …`・`i915: hotplug path: …`・`i915: TC: …`・`i915: DP-ext: …` | hpd.c・tc-port.c・xd-dp.c など | 目視 |
+| `i915: dmc: …`・`i915: bootfb: …`・`i915: capture: …`・`i915: xd: …`・`i915: stop: …`・`i915: opregion: …` | 各 file | 目視 |
+| `i915: gen9 …`・`i915: N0-lite (gen9): …` | gen9-*.c（WS244、この WS の外） | — |
+
+捨てた文言（p042 まで）: `i915: N0: …`・`N1`（→ `firmware:`・`takeover:`）、`i915: LCD-B …`（→ `display run:`）、`i915: P5-0 survey …`（→ `display: firmware left …`）、`i915: LAST-RESORT …`（→ `stop: pipe … is still on`）、`drm_vblank_init`・`display_driver_probe_noirq enter`・`intel_bios_init done`・`intel_power_domains_init_hw(false) done`・`intel_dmc_init`・`intel_bw_init`・`hw_probe tail`・`modeset/flip workqueues`・`intel_detect_pch`・`de masks`・`display_driver_probe:`・`driver_register:`・`setup_outputs:`・`Current CDCLK`（→ `display: …` の own の文言）。run-xd-host-tests が `N0`・`N1`・`LCD-B`・`P5-0`・`LAST-RESORT` の再来を grep で拒む。
+
+p043 に残す物（旧の殻の file の Linux の文言。殻ごと書き直すか消す段で）: display.c の PCH の判定の `i915: Found <名前> PCH`（Linux の intel_pch.c の写し、§5.4 の監査の対象）、power.c の `intel_power_domains_init:`、clock.c の `cdclk:`、watermark.c の `bw:`・`dram:`、interrupts.c の `WARN bdw_update_pipe_irq`、power.c の `DC9:`・`DC_off:`・`DBUF slice`・`combo`・`power well`。
 
 ### 6.5 大きさの見積もり（新しい xd）
 

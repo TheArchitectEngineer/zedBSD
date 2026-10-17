@@ -71,12 +71,12 @@ uint32_t drv_i915_gen8_de_pipe_flip_done_mask(int display_ver);
  */
 
 /*
- * drm_vblank_get() / drm_vblank_put() with bdw_enable_vblank() /
- * bdw_disable_vblank(); the last put disables at once.  get: 0, or EINVAL
- * when interrupts are not enabled.
+ * A pipe's vblank references: the first get unmasks its vblank interrupt,
+ * the last put masks it at once.  get: 0, or EINVAL when interrupts are
+ * not enabled.
  */
-int drv_i915_drm_vblank_get(struct i915_display_irq *d, unsigned pipe);
-void drv_i915_drm_vblank_put(struct i915_display_irq *d, unsigned pipe);
+int drv_i915_display_vblank_get(struct i915_display_irq *d, unsigned pipe);
+void drv_i915_display_vblank_put(struct i915_display_irq *d, unsigned pipe);
 
 /*
  * Waits for n new vblanks of a pipe (the vblank count and the hardware

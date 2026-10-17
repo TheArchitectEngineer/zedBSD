@@ -890,21 +890,6 @@ drv_i915_display_power_flush_work_sync(
 }
 
 /*
- * Prepares the PM demand lock and wait queue (intel_pmdemand_init_early()).
- */
-void
-drv_i915_pmdemand_init_early(
-	struct i915_pmdemand *pm)
-{
-	/* Prepares the lock and the queue. */
-	(void)mutex_init(&pm->lock, LOCK_RANK_DEVICE, "i915-pmdemand");
-	waitq_init(&pm->waitqueue, "i915-pmdemand");
-
-	/* Marks the early initialization as done. */
-	pm->early_initialized = 1;
-}
-
-/*
  * Powers the requested DBUF slices on and the others off, within the
  * slices the display has (the body of intel_dbuf_pre/post_plane_update()).
  */
@@ -1224,7 +1209,7 @@ drv_i915_lcd_power_get(
 	get_result = drv_i915_display_power_get(kernel->d->pd, (enum i915_power_domain)domain, kernel->d->pwc);
 	if (get_result != 0) {
 		kernel->power_get_failures++;
-		kern_logf("i915: LCD-B power get domain=%d FAILED rc=%d\n", domain, get_result);
+		kern_logf("i915: display run: power get domain=%d FAILED rc=%d\n", domain, get_result);
 		return 0;
 	}
 
@@ -1294,7 +1279,7 @@ drv_i915_lcd_power_put(
 	/* Refuses a put without a reference of this run. */
 	if (domain < 0 || domain >= (int)I915_PW_DOMAIN_NUM || kernel->power_refs[domain] <= 0) {
 		kernel->errors++;
-		kern_logf("i915: LCD-B power put domain=%d without a reference of this run: NOT forwarded\n", domain);
+		kern_logf("i915: display run: power put domain=%d without a reference of this run: NOT forwarded\n", domain);
 		return;
 	}
 
@@ -1333,7 +1318,7 @@ drv_i915_lcd_power_put_async(
 	/* Refuses a put without a reference of this run. */
 	if (domain < 0 || domain >= (int)I915_PW_DOMAIN_NUM || kernel->power_refs[domain] <= 0) {
 		kernel->errors++;
-		kern_logf("i915: LCD-B async power put domain=%d without a reference of this run: NOT forwarded\n", domain);
+		kern_logf("i915: display run: async power put domain=%d without a reference of this run: NOT forwarded\n", domain);
 		return;
 	}
 

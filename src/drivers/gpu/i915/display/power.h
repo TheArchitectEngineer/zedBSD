@@ -44,8 +44,6 @@ void drv_i915_display_power_async_work(struct i915_power_domains *pd);
 void drv_i915_display_power_flush_work(struct i915_power_domains *pd);
 void drv_i915_display_power_flush_work_sync(struct i915_power_domains *pd);
 
-void drv_i915_pmdemand_init_early(struct i915_pmdemand *pm);
-
 void drv_i915_gen9_dbuf_slices_update(struct i915_display_core *dc, uint8_t req_slices);
 
 void drv_i915_power_domains_init_hw(struct i915_display_core *dc, int resume);

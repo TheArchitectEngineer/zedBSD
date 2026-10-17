@@ -84,6 +84,9 @@
 #                          (the 5330's ports; ports A and B with the interrupts on and off), the pulses'
 #                          acknowledgment and length, their sorting, a storm's mask and rearming, an HDMI monitor's
 #                          detection over GMBUS, a Type-C DisplayPort sink's through the hooks, the retries, the pulses
+#   host-xd-diag-test      the display's diagnostics: the stop of a pipe and a buffer still on when the device goes
+#                          away (a transcoder that never turns off ends the wait at its bound), and the log of what the
+#                          firmware left, which reads and never writes
 #   host-output-link-test  an output's planned link (display/output.c): the 5330's USB-C monitor at the link Linux
 #                          trained, the fallback's limits, a branch's depth and dot clock, an HDMI mode's link and PLL;
 #                          the firmware's output by the platform's ports
@@ -97,7 +100,7 @@ OUT=${1:-build/ws245-host}
 mkdir -p "$OUT"
 I915_HOST_EXTRA_PRODUCTION="src/drivers/gpu/i915/perf.c ${I915_HOST_EXTRA_PRODUCTION:-}"
 failed=0
-for test in host-xd-regs-test host-xd-io-test host-xd-platform-test host-xd-vbt-test host-xd-survey-test host-xd-aux-test host-xd-gmbus-test host-xd-panel-test host-xd-power-test host-xd-dmc-test host-xd-clock-test host-xd-dpll-test host-xd-ddi-test host-xd-dp-test host-xd-pipe-test host-xd-dbuf-test host-xd-core-test host-xd-takeover-test host-xd-screen-test host-xd-output-test host-xd-edp-test host-xd-tc-test host-xd-tc-port-test host-xd-cover-test host-xd-icl-test host-xd-picture-test host-xd-hpd-test host-output-link-test; do
+for test in host-xd-regs-test host-xd-io-test host-xd-platform-test host-xd-vbt-test host-xd-survey-test host-xd-aux-test host-xd-gmbus-test host-xd-panel-test host-xd-power-test host-xd-dmc-test host-xd-clock-test host-xd-dpll-test host-xd-ddi-test host-xd-dp-test host-xd-pipe-test host-xd-dbuf-test host-xd-core-test host-xd-takeover-test host-xd-screen-test host-xd-output-test host-xd-edp-test host-xd-tc-test host-xd-tc-port-test host-xd-cover-test host-xd-icl-test host-xd-picture-test host-xd-hpd-test host-xd-diag-test host-output-link-test; do
 	test -f "$T/$test.c" || continue
 	i915_display_host_build "$OUT/$test" "$T/$test.c" "$T/xd-fake-regs.c" plan/ws084/tests/native-decide-stubs.c
 	if ! "$OUT/$test"; then
@@ -119,6 +122,26 @@ if grep -nE '(->|\.)kind (==|!=) I915_XD_KIND_|(->|\.)verified\b' src/drivers/gp
 	echo "run-xd-host-tests: an xd file branches on the platform's kind or on verified" >&2
 	failed=1
 fi
+# The display's steps in the device start and stop come in their order (device.c): start, the interrupt half, the
+# outputs, serve; and stop serving, the outputs, stop, destroy.
+if ! python3 -I plan/ws245/tests/check-display-steps.py src/drivers/gpu/i915/device.c; then
+	failed=1
+fi
+# The log words of the display (design.md section 6.4): the development stage symbols and the old run prefix are gone
+# from the display's files, and the three lines the HDMI harness reads (plan/ws075/tests/hdmi/h4-ctl.py) keep their
+# format.
+if grep -nE '"i915: (N0|N1|N0-lite \(xd\)|LCD-B|P5-0|LAST-RESORT)' src/drivers/gpu/i915/display/*.c \
+    | grep -v '/gen9-'; then
+	echo "run-xd-host-tests: a dropped log word is back" >&2
+	failed=1
+fi
+for line in 'resident display: buffers %ux%u pitch %u: A surf 0x%08x cpu %p, B surf 0x%08x cpu %p' \
+    'resident display: picture up (buffer A surf 0x%08x)' 'resident display: flip %u: surf 0x%08x -> 0x%08x'; do
+	if ! grep -qF "$line" src/drivers/gpu/i915/display/resident.c src/drivers/gpu/i915/display/present.c; then
+		echo "run-xd-host-tests: the harness's line is gone: $line" >&2
+		failed=1
+	fi
+done
 if [ "$failed" -ne 0 ]; then
 	echo "run-xd-host-tests: FAILED" >&2
 	exit 1

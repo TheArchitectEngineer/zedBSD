@@ -22,7 +22,7 @@
 
 #include "internal.h"
 #include "resident.h"
-#include "diagnostics.h"
+#include "run-log.h"
 #include "xd-dp.h"
 #include "dp-ext-kern.h"
 #include "edp-device.h"
@@ -1414,7 +1414,7 @@ resident_vblank_get(
 	k = ctx;
 
 	/* Takes the reference on the display's interrupt state. */
-	error = drv_i915_drm_vblank_get(k->d->irq, (unsigned)pipe);
+	error = drv_i915_display_vblank_get(k->d->irq, (unsigned)pipe);
 	if (error != 0)
 		return I915_RESIDENT_EINVAL;
 
@@ -1433,7 +1433,7 @@ resident_vblank_put(
 	k = ctx;
 
 	/* Gives the reference back. */
-	drv_i915_drm_vblank_put(k->d->irq, (unsigned)pipe);
+	drv_i915_display_vblank_put(k->d->irq, (unsigned)pipe);
 }
 
 /*

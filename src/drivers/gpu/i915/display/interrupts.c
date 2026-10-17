@@ -670,14 +670,13 @@ drv_i915_irq_drain_pipes(
 }
 
 /*
- * Takes a vblank reference on a pipe (drm_vblank_get()).
+ * Takes a vblank reference on a pipe.
  *
- * The first reference enables the pipe's vblank interrupt
- * (bdw_enable_vblank()).  Returns 0, or EINVAL when the vblank state is not
+ * The first reference unmasks the pipe's vblank interrupt.  Returns 0, or EINVAL when the vblank state is not
  * bound, the pipe is out of range or interrupts are not enabled.
  */
 int
-drv_i915_drm_vblank_get(
+drv_i915_display_vblank_get(
 	struct i915_display_irq *d,
 	unsigned pipe)
 {
@@ -716,16 +715,13 @@ drv_i915_drm_vblank_get(
 }
 
 /*
- * Drops a vblank reference on a pipe (drm_vblank_put()).
+ * Drops a vblank reference on a pipe.
  *
- * The last reference masks the pipe's vblank interrupt at once
- * (bdw_disable_vblank(), vblank_disable_immediate).  Adaptation: Linux still
- * disables through the vblank core after the pending vblank and event
- * processing; this path has no DRM events or workers, so it masks inside
- * the put.
+ * The last reference masks the pipe's vblank interrupt at once: nothing
+ * else delivers vblank events, so nothing waits for a pending one first.
  */
 void
-drv_i915_drm_vblank_put(
+drv_i915_display_vblank_put(
 	struct i915_display_irq *d,
 	unsigned pipe)
 {
