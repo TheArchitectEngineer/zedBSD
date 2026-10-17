@@ -6,7 +6,7 @@
  */
 
 /*
- * The side channels of the Gen9 outputs (WS237 stage 3, see gen9-ddc.h).
+ * The side channels of the Gen9 outputs (see gen9-ddc.h).
  *
  * The AUX transfer follows the Linux kernel 6.8.12's
  * intel_dp_aux_xfer() and skl_get_aux_send_ctl() (MIT): wait for a

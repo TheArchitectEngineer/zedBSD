@@ -980,7 +980,7 @@ i915_edp_cfg_from_panel(
 	/*
 	 * The raw clock: only a sequencer with a PP_DIVISOR register reads it,
 	 * which the south displays this driver drives do not have.  19200 kHz
-	 * is the 5330's raw clock.
+	 * is the raw clock of a 19.2 MHz reference.
 	 */
 	cfg->rawclk_khz = 19200u;
 

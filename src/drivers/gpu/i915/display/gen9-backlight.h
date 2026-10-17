@@ -6,7 +6,7 @@
  */
 
 /*
- * The panel's backlight of a Gen9 node (gen9-backlight.c, WS237 stage 2).
+ * The panel's backlight of a Gen9 node (gen9-backlight.c).
  *
  * The south display's PWM drives the eDP panel's backlight.  Its period
  * and its duty are offered as the kernel's backlight device
@@ -79,7 +79,7 @@ void drv_i915_gen9_backlight_start(struct i915_device *device);
 /* Withdraws the backlight device. */
 void drv_i915_gen9_backlight_stop(struct i915_device *device);
 
-/* Turns the panel's light off for a sleep (whatever the step), and back on after it (WS237 p005). */
+/* Turns the panel's light off for a sleep (whatever the step), and back on after it. */
 void drv_i915_gen9_backlight_suspend(struct i915_device *device);
 void drv_i915_gen9_backlight_resume(struct i915_device *device);
 

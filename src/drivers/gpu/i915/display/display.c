@@ -1361,7 +1361,7 @@ i915_display_prepare_state(
 	gt = &device->gt;
 
 	/*
-	 * The VBT the parser reads: the explicit blob (test build only), the
+	 * The VBT the parser reads: the explicit blob (when one is built in), the
 	 * OpRegion's or the PCI ROM's, or the defaults when there is none.  A
 	 * VBT that cannot be read never stops the start.
 	 */
@@ -2066,7 +2066,7 @@ i915_display_query(
 		request->physical_height_mm = height_mm;
 	}
 
-	/* The output's name: its port's key (D-ID A2): the panel's DDI A, or the other output's port. */
+	/* The output's name: its port's key: the panel's DDI A, or the other output's port. */
 	kind = I915_HPD_OUTPUT_EDP;
 	port = 0;
 	if (display->output.kind == I915_OUTPUT_KIND_HDMI) {

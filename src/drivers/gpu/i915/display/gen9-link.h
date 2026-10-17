@@ -6,7 +6,7 @@
  */
 
 /*
- * The DP link of a Gen9 DDI port (gen9-link.c, WS237 stage 3): the
+ * The DP link of a Gen9 DDI port (gen9-link.c): the
  * buffer translations and signal levels, the transport, and the link
  * training (clock recovery, then channel equalisation) with the sink over
  * the AUX channel.

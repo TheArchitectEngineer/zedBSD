@@ -62,7 +62,7 @@
 #define I915_OUTPUT_PORT_A		0
 #define I915_OUTPUT_PORT_TC1		3
 
-/* The pipes N0 reads. */
+/* The pipes the firmware's readout covers. */
 #define I915_OUTPUT_PIPES		4U
 
 /* The connector status of a sink that is not there (enum connector_status). */

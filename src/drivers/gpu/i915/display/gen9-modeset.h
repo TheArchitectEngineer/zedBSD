@@ -6,8 +6,8 @@
  */
 
 /*
- * The register sequences of the Gen9 mode set (gen9-modeset.c, WS237
- * stage 3): the power wells an external port needs, the DPLLs, lighting
+ * The register sequences of the Gen9 mode set (gen9-modeset.c): the
+ * power wells an external port needs, the DPLLs, lighting
  * and darkening an external DP or HDMI output on a pipe, the watermarks
  * and DDB of a pipe, the first plane of a pipe, and the hotplug sense of
  * the ports.

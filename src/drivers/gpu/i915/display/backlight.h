@@ -6,7 +6,7 @@
  */
 
 /*
- * The panel's backlight as a backlight device (backlight.c, ws113-p013).
+ * The panel's backlight as a backlight device (backlight.c).
  *
  * A node whose output is the eDP panel registers it with the kernel's
  * backlight class (/dev/backlight/backlight0) when the request worker
@@ -26,7 +26,7 @@
 
 struct i915_device;
 
-/* What a backlight item of the worker does: read or set the brightness, or switch the light (ws113-p012). */
+/* What a backlight item of the worker does: read or set the brightness, or switch the light. */
 #define I915_BACKLIGHT_GET	0
 #define I915_BACKLIGHT_SET	1
 #define I915_BACKLIGHT_POWER	2

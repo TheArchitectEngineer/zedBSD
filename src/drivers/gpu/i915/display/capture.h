@@ -6,12 +6,13 @@
  */
 
 /*
- * The capture display of the test build (capture.c, I915_TEST_CAPTURE).
+ * The capture display (capture.c, I915_TEST_CAPTURE).
  *
- * The test build run under QEMU leaves the display hardware alone and shows
- * every presentation in an area of guest RAM the host reads.  The layout of
- * that area is the contract with the host harness; capture.c describes it
- * in full.  Only the capture build and the host test include this header.
+ * The capture display leaves the display hardware alone and shows every
+ * presentation in an area of RAM a reader outside the kernel reads.  The
+ * layout of that area is the contract with that reader; capture.c
+ * describes it in full.  Only the capture build and the host test include
+ * this header.
  */
 
 #ifndef DRIVERS_GPU_I915_DISPLAY_CAPTURE_H

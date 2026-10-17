@@ -6,8 +6,7 @@
  */
 
 /*
- * The external outputs of a Gen9 display (WS237 stage 3, see
- * gen9-outputs.h).
+ * The external outputs of a Gen9 display (see gen9-outputs.h).
  *
  * A port's sink is found as the Linux kernel 6.8.12 finds it on display 9
  * (MIT): the south display's live hotplug state (ibx_digital_port_connected

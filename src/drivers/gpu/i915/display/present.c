@@ -2028,8 +2028,8 @@ i915_present_head_wait(
  * or a run for two pipes that failed before the display was
  * handed anything, which is tried for one pipe with the second output
  * latched limited.  A run for two pipes that failed after it was lit but
- * gave everything back is not tried again (no lease may be waiting, review
- * F9); spared says that the display is not to be failed for it.  Runs on
+ * gave everything back is not tried again (no lease may be waiting);
+ * spared says that the display is not to be failed for it.  Runs on
  * the worker.
  */
 static int

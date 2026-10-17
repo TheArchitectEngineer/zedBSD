@@ -6,7 +6,7 @@
  */
 
 /*
- * The side channels of the Gen9 outputs (gen9-ddc.c, WS237 stage 3): the
+ * The side channels of the Gen9 outputs (gen9-ddc.c): the
  * DP AUX channel of a DDI port (native DPCD reads and writes, and the
  * EDID over I2C-over-AUX) and the GMBUS of an HDMI port's DDC pins.
  */

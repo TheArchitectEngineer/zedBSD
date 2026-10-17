@@ -564,7 +564,7 @@ i915_scanout_device_query(
  * Answers the scanout constraints of a display of the resident node:
  * shared or copied, BGRA or RGBA, 64-byte alignments.
  *
- * The display is named as the display operations name it (ws113-p011a):
+ * The display is named as the display operations name it:
  * the resident output by its connector's ID and generation, or another
  * connected connector, which a claim moves the output to.  Returns 0,
  * ENOENT for no display of the ID, ESTALE for another generation, or

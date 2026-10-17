@@ -6,8 +6,7 @@
  */
 
 /*
- * How far the i915 drives the display of a Gen9 node (gen9-display.c,
- * WS237).
+ * How far the i915 drives the display of a Gen9 node (gen9-display.c).
  *
  * A Gen9 or Gen9.5 node keeps the firmware's display unless the boot line
  * asks for more with i915.gen9.display=: each word takes every step of the
@@ -40,7 +39,7 @@
  * not have is not a failure (the node goes on without the device), and a
  * backlight device once offered stays.  The panel's mode, the clocks and
  * the power wells stay the firmware's at every step;
- * i915.gen9.display=copy keeps the display exactly as it was before WS237.
+ * i915.gen9.display=copy keeps the firmware's display and only copies into it.
  */
 
 #ifndef DRIVERS_GPU_I915_DISPLAY_GEN9_DISPLAY_H
@@ -55,8 +54,8 @@
 
 /*
  * The step a Gen9 node takes when the boot line has no i915.gen9.display=:
- * the one place the default is chosen (full, 2026-10-15 user: Gen9 display
- * control on by default).
+ * the one place the default is chosen (full: the display control is on by
+ * default).
  */
 #define I915_GEN9_DISPLAY_DEFAULT	I915_GEN9_DISPLAY_FULL
 

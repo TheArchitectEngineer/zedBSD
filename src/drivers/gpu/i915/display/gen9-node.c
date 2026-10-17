@@ -6,7 +6,7 @@
  */
 
 /*
- * The external displays of a Gen9 node (WS237 stage 3, see gen9-node.h).
+ * The external displays of a Gen9 node (see gen9-node.h).
  *
  * The registers are reached through the device's MMIO by the register
  * table of gen9-io.h; the outputs' work is gen9-outputs.c's.  This file

@@ -6,9 +6,9 @@
  */
 
 /*
- * The flip display of a Gen9 node (gen9-flip.c, WS237).
+ * The flip display of a Gen9 node (gen9-flip.c).
  *
- * A Gen9 or Gen9.5 node keeps the mode the firmware set (WS229).  When the
+ * A Gen9 or Gen9.5 node keeps the mode the firmware set.  When the
  * firmware lit exactly one pipe whose first plane scans out a linear
  * XRGB8888 surface, the boot framebuffer display (bootfb.c) shows the
  * desktop by flipping that plane between two buffers of the driver's own

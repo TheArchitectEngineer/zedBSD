@@ -6,7 +6,7 @@
  */
 
 /*
- * The arithmetic of the Gen9 mode set (gen9-mode.c, WS237 stage 3).
+ * The arithmetic of the Gen9 mode set (gen9-mode.c).
  *
  * Everything here works on numbers only and never touches a register, so
  * the host tests run it as the kernel does: the CD clock of a DPLL0 and
