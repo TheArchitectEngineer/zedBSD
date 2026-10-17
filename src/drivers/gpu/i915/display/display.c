@@ -1832,9 +1832,15 @@ i915_display_publish(
 	display = device->display;
 	dprobe = &display->dprobe;
 
-	/* The start's power reference, or its deferral to the takeover. */
+	/*
+	 * The start's power reference, or its deferral to the takeover (the
+	 * wells then stay as they are: the same count before and after).
+	 */
 	if (display->xd.firmware.take_over) {
 		dprobe->power_release_deferred = 1;
+		dprobe->wells_on_before = drv_i915_display_power_wells_on(&display->power);
+		dprobe->wells_on_after = dprobe->wells_on_before;
+		dprobe->dc_state_after = (int)display->xd.power.dc_state;
 		kern_logf("i915: display: the start's power reference is kept until the takeover\n");
 	} else {
 		drv_i915_display_power_serve(&display->power, dprobe);

@@ -113,6 +113,17 @@ struct i915_xd_takeover_outcome {
 	int error;
 };
 
-int drv_i915_xd_takeover(struct i915_xd *xd, struct i915_xd_takeover_outcome *outcome);
+/*
+ * The caller's power for a takeover: get takes one user of every well
+ * that powers some functions (I915_XD_POWERS_*) and returns 0 or the
+ * error of a well that did not come up; put gives them back.
+ */
+struct i915_xd_takeover_power {
+	int (*get)(void *context, uint64_t functions);
+	void (*put)(void *context, uint64_t functions);
+	void *context;
+};
+
+int drv_i915_xd_takeover(struct i915_xd *xd, const struct i915_xd_takeover_power *power, struct i915_xd_takeover_outcome *outcome);
 
 #endif /* DRIVERS_GPU_I915_DISPLAY_XD_H */

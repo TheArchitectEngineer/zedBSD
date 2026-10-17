@@ -40,17 +40,26 @@ static unsigned i915_xd_panel_controller(struct i915_xd *xd);
 static void i915_xd_takeover_backlight_off(void *context, unsigned pipe);
 static void i915_xd_takeover_sink_after(void *context, unsigned pipe);
 static void i915_xd_takeover_panel_off(void *context, unsigned pipe);
+static void i915_xd_takeover_port_release(void *context, unsigned pipe);
+static void i915_xd_takeover_link_release(void *context, unsigned pipe);
 
 /*
  * What the hooks of a takeover's stop work with: the display, the
- * stopped pipe's DDI, and the panel's power sequencer and its waits.
+ * stopped pipe's DDI, the panel's power sequencer and its waits, the
+ * caller's power, and the functions held for the stopped pipe's port
+ * (its DDI IO) and link (its AUX channel), 0 for none held.
  */
 struct i915_xd_takeover_ctx {
 	struct i915_xd *xd;
 	unsigned ddi;
 	unsigned pps;
 	struct i915_xd_pps_waits waits;
+	const struct i915_xd_takeover_power *power;
+	uint64_t port_held;
+	uint64_t link_held;
 };
+
+static void i915_xd_takeover_hold(struct i915_xd_takeover_ctx *ctx, unsigned pipe);
 
 /*
  * The panel power sequencers of the south displays of display 12 and 13
@@ -519,15 +528,23 @@ i915_xd_panel_ddi(
  * and its power last; a DisplayPort sink is put to sleep before its port
  * stops.  An HDMI sink that was scrambling ends it by itself once the
  * scrambled clock is gone, so it is not told.  The caller holds the
- * display's INIT power reference (every well on and the display out of
- * its deep power states), which is what the AUX channel and the panel's
- * sequencer need; no other reference is taken or given back.  Returns 0
- * when every lit pipe was stopped, or the error of the first that was
- * not (outcome says which pipes are still lit).
+ * display's start reference (every pipe's wells and the display out of
+ * its deep power states); the wells of the stopped pipe's port (its DDI
+ * IO) and, on DisplayPort, of its AUX channel are taken through power
+ * for the stop and given back where an output's disable gives them back:
+ * the port's after the DDI is off, the AUX channel's after the PLL.
+ * power may be NULL (nothing taken).  Returns 0 when every lit pipe was
+ * stopped, or the error of the first that was not (outcome says which
+ * pipes are still lit).
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_ddi.c (intel_ddi_get_power_domains,
+ * intel_ddi_post_disable_dp, intel_ddi_post_disable).
  */
 int
 drv_i915_xd_takeover(
 	struct i915_xd *xd,
+	const struct i915_xd_takeover_power *power,
 	struct i915_xd_takeover_outcome *outcome)
 {
 	struct i915_xd_takeover_hooks hooks;
@@ -559,6 +576,7 @@ drv_i915_xd_takeover(
 	 */
 	kern_memset(&ctx, 0, sizeof(ctx));
 	ctx.xd = xd;
+	ctx.power = power;
 	ctx.pps = i915_xd_panel_controller(xd);
 	drv_i915_xd_pps_read_delays(&xd->io, ctx.pps, &firmware);
 	kern_memset(&vbt, 0, sizeof(vbt));
@@ -569,6 +587,8 @@ drv_i915_xd_takeover(
 	hooks.backlight_off = i915_xd_takeover_backlight_off;
 	hooks.sink_after = i915_xd_takeover_sink_after;
 	hooks.panel_off = i915_xd_takeover_panel_off;
+	hooks.port_release = i915_xd_takeover_port_release;
+	hooks.link_release = i915_xd_takeover_link_release;
 	hooks.context = &ctx;
 
 	/* Stops each lit pipe, the lowest first. */
@@ -582,8 +602,13 @@ drv_i915_xd_takeover(
 		if (ctx.ddi != 0U)
 			ctx.ddi--;
 
-		/* Stops the pipe and logs how it went. */
+		/* The port's and the link's wells, held for the stop. */
+		i915_xd_takeover_hold(&ctx, pipe);
+
+		/* Stops the pipe and logs how it went; the hooks gave the wells back. */
 		error = drv_i915_xd_takeover_stop(&xd->io, xd->choice.platform, &xd->dmc, &xd->firmware, pipe, &hooks, &report);
+		i915_xd_takeover_port_release(&ctx, pipe);
+		i915_xd_takeover_link_release(&ctx, pipe);
 		kern_logf("i915: takeover: pipe %c stopped: DDI %d mode %u, PLL %d, late 0x%x (rc %d)\n",
 		    'A' + (int)pipe,
 		    report.ddi,
@@ -684,10 +709,14 @@ i915_xd_takeover_backlight_off(
 
 /*
  * A takeover's DisplayPort sink to sleep (D3) over its port's AUX
- * channel; a sink that does not answer is only logged.
+ * channel, whose well the takeover holds; the panel's VDD is turned on
+ * for the channel and left on for the panel's power off.  A sink that
+ * does not answer is only logged.
  *
  * Procedure referenced: Linux v6.8.12
- * drivers/gpu/drm/i915/display/intel_dp.c (intel_dp_set_power).
+ * drivers/gpu/drm/i915/display/intel_dp.c (intel_dp_set_power),
+ * intel_dp_aux.c (intel_dp_aux_xfer), intel_pps.c
+ * (intel_pps_vdd_on_unlocked).
  */
 static void
 i915_xd_takeover_sink_after(
@@ -698,6 +727,8 @@ i915_xd_takeover_sink_after(
 	struct i915_xd_takeover_ctx *ctx;
 	struct i915_xd_aux aux;
 	uint8_t power;
+	int forced;
+	int powered;
 	int error;
 
 	/* The port's AUX channel. */
@@ -709,6 +740,20 @@ i915_xd_takeover_sink_after(
 	if (error != 0)
 		return;
 
+	/*
+	 * The panel's AUX channel answers with VDD on: held from here until
+	 * the panel's power goes off (a panel without power gets its
+	 * power-up delay first).
+	 */
+	if ((int)ctx->ddi == ctx->xd->firmware.panel_ddi) {
+		forced = drv_i915_xd_pps_vdd_forced(&ctx->xd->io, ctx->pps);
+		if (!forced) {
+			powered = drv_i915_xd_pps_vdd_on(&ctx->xd->io, ctx->pps);
+			if (!powered)
+				(void)drv_i915_xd_io_delay(&ctx->xd->io, ctx->waits.power_up_ms * 1000U);
+		}
+	}
+
 	/* The sink to D3. */
 	power = I915_XD_DPCD_POWER_D3;
 	error = drv_i915_xd_dpcd_write(&aux, &ctx->xd->io, I915_XD_DPCD_SET_POWER, &power, 1U);
@@ -718,8 +763,9 @@ i915_xd_takeover_sink_after(
 
 /*
  * A takeover's panel power off: VDD held first (the sequencer needs it
- * to turn the panel off), then the power, the reset, VDD and the
- * backlight enable together, and the wait for the panel to be off.
+ * to turn the panel off; the sink's D3 has normally turned it on
+ * already), then the power, the reset, VDD and the backlight enable
+ * together, and the wait for the panel to be off.
  *
  * Procedure referenced: Linux v6.8.12
  * drivers/gpu/drm/i915/display/intel_pps.c (intel_pps_off_unlocked).
@@ -730,12 +776,118 @@ i915_xd_takeover_panel_off(
 	unsigned pipe)
 {
 	struct i915_xd_takeover_ctx *ctx;
+	int forced;
 	int error;
 
-	/* VDD on, then everything off. */
+	/* VDD on when it is not already. */
 	ctx = context;
-	(void)drv_i915_xd_pps_vdd_on(&ctx->xd->io, ctx->pps);
+	forced = drv_i915_xd_pps_vdd_forced(&ctx->xd->io, ctx->pps);
+	if (!forced)
+		(void)drv_i915_xd_pps_vdd_on(&ctx->xd->io, ctx->pps);
+
+	/* Everything off. */
 	error = drv_i915_xd_pps_power_off(&ctx->xd->io, ctx->pps);
 	if (error != 0)
 		kern_logf("i915: takeover: pipe %c: the panel did not go off (rc %d)\n", 'A' + (int)pipe, error);
+}
+
+/*
+ * Takes the wells of a lit pipe's port for its stop: the DDI's IO, then,
+ * on DisplayPort, its AUX channel.  A well that does not come up is
+ * logged and not held; the stop goes on.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_ddi.c (intel_ddi_get_power_domains).
+ */
+static void
+i915_xd_takeover_hold(
+	struct i915_xd_takeover_ctx *ctx,
+	unsigned pipe)
+{
+	const struct i915_xd_port_desc *port;
+	uint64_t functions;
+	uint32_t function;
+	unsigned mode;
+	int error;
+
+	/* Nothing held yet; without the caller's power nothing is taken. */
+	ctx->port_held = 0U;
+	ctx->link_held = 0U;
+	if (ctx->power == NULL)
+		return;
+
+	/* The port the pipe drives; one the description does not have is not stopped either. */
+	port = drv_i915_xd_platform_port(ctx->xd->choice.platform, ctx->ddi);
+	if (port == NULL)
+		return;
+
+	/* The DDI's IO. */
+	functions = I915_XD_POWERS_DDI_IO(ctx->ddi);
+	error = ctx->power->get(ctx->power->context, functions);
+	if (error != 0) {
+		kern_logf("i915: takeover: pipe %c: the DDI IO well did not come up (rc %d)\n", 'A' + (int)pipe, error);
+	} else {
+		ctx->port_held = functions;
+	}
+
+	/* A DisplayPort link's AUX channel, which the sink's D3 goes over. */
+	function = ctx->xd->firmware.pipe[pipe].ddi_function;
+	mode = i915_xd_field_get(I915_XD_DDI_FUNC_MODE, function);
+	if (mode != I915_XD_DDI_FUNC_MODE_DP_SST)
+		return;
+	functions = I915_XD_POWERS_AUX(port->aux);
+	error = ctx->power->get(ctx->power->context, functions);
+	if (error != 0) {
+		kern_logf("i915: takeover: pipe %c: the AUX well did not come up (rc %d)\n", 'A' + (int)pipe, error);
+		return;
+	}
+
+	/* Succeeded: the link's well is held. */
+	ctx->link_held = functions;
+}
+
+/*
+ * A takeover's port wells back once its DDI is off (and after the stop
+ * for a pipe that stopped early).
+ */
+static void
+i915_xd_takeover_port_release(
+	void *context,
+	unsigned pipe)
+{
+	struct i915_xd_takeover_ctx *ctx;
+
+	UNUSED_PARAMETER(pipe);
+
+	/* Nothing held. */
+	ctx = context;
+	if (ctx->port_held == 0U)
+		return;
+
+	/* Gives the DDI IO back. */
+	ctx->power->put(ctx->power->context, ctx->port_held);
+	ctx->port_held = 0U;
+}
+
+/*
+ * A takeover's link wells back once the PLL is off (and after the stop
+ * for a pipe that stopped early).
+ */
+static void
+i915_xd_takeover_link_release(
+	void *context,
+	unsigned pipe)
+{
+	struct i915_xd_takeover_ctx *ctx;
+
+	UNUSED_PARAMETER(pipe);
+
+	/* Nothing held. */
+	ctx = context;
+	if (ctx->link_held == 0U)
+		return;
+
+	/* Gives the AUX channel back. */
+	ctx->power->put(ctx->power->context, ctx->link_held);
+	ctx->link_held = 0U;
 }

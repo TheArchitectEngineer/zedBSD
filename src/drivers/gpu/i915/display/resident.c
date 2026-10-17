@@ -146,6 +146,8 @@ static int resident_buffers_kept(struct i915_display *display);
 static int resident_release(struct i915_display *display, const struct i915_lcd_show_report *rep);
 static int resident_passed(const struct i915_lcd_show_report *rep);
 static int resident_takeover(struct i915_display *display);
+static int resident_takeover_power_get(void *context, uint64_t functions);
+static void resident_takeover_power_put(void *context, uint64_t functions);
 static void resident_log_run(struct i915_display *display, const struct i915_lcd_show_report *rep, int passed, int released, int held);
 
 /*
@@ -2550,7 +2552,8 @@ resident_passed(
 /*
  * Takes over the display the firmware left running: every pipe the
  * firmware check found lit is stopped through the xd takeover, with the
- * start's power reference kept for it.  The PLLs and the display buffer
+ * start's power reference kept for it and the display's power for the
+ * wells of each stopped port.  The PLLs and the display buffer
  * start empty for the run's own light.  The firmware's framebuffer is never
  * written.  Returns 0, or the errno of the pipe that could not be stopped
  * (logged).
@@ -2560,6 +2563,7 @@ resident_takeover(
 	struct i915_display *display)
 {
 	struct i915_xd_takeover_outcome outcome;
+	struct i915_xd_takeover_power power;
 	int error;
 
 	/* What the firmware left lit. */
@@ -2569,8 +2573,11 @@ resident_takeover(
 	    'A' + (int)display->xd.firmware.output_pipe,
 	    display->xd.firmware.output_ddi);
 
-	/* Stops every lit pipe. */
-	error = drv_i915_xd_takeover(&display->xd, &outcome);
+	/* Stops every lit pipe, the ports' wells taken through the display's power. */
+	power.get = resident_takeover_power_get;
+	power.put = resident_takeover_power_put;
+	power.context = display;
+	error = drv_i915_xd_takeover(&display->xd, &power, &outcome);
 	kern_logf("i915: takeover: rc=%d, crtcs stopped %u, still active 0x%x\n",
 	    error,
 	    (unsigned)__builtin_popcount(outcome.stopped),
@@ -2583,6 +2590,38 @@ resident_takeover(
 
 	/* Succeeded: the firmware's display is stopped and the pipes are the driver's. */
 	return 0;
+}
+
+/* Takes the wells of a takeover's port through the display's power: 0, or the error. */
+static int
+resident_takeover_power_get(
+	void *context,
+	uint64_t functions)
+{
+	struct i915_display *display;
+	int error;
+
+	/* The display's power. */
+	display = context;
+	error = drv_i915_display_power_get(&display->power, functions);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the wells are held. */
+	return 0;
+}
+
+/* Gives the wells of a takeover's port back through the display's power. */
+static void
+resident_takeover_power_put(
+	void *context,
+	uint64_t functions)
+{
+	struct i915_display *display;
+
+	/* The display's power. */
+	display = context;
+	drv_i915_display_power_put(&display->power, functions);
 }
 
 /*

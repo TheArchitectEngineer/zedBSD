@@ -100,6 +100,28 @@ static struct i915_xd_to_test_vtd i915_xd_to_test_unit;
 /* The caller's side of the stop being checked. */
 static struct i915_xd_to_test_run i915_xd_to_test_run;
 
+/*
+ * What the display's takeover did with the caller's power and the panel's
+ * VDD: the functions taken and given back in order, the sink's power state
+ * at each, and the VDD holds the sequencer was written with.
+ */
+struct i915_xd_to_test_power {
+	uint64_t gets[4];
+	uint8_t get_sink[4];
+	unsigned ngets;
+	uint64_t puts[4];
+	uint8_t put_sink[4];
+	uint32_t put_status[4];
+	uint32_t put_dpll[4];
+	unsigned nputs;
+	unsigned vdd_writes;
+	unsigned vdd_before_d3;
+	struct i915_xd_fake_aux *sink;
+};
+
+/* The record of the display's takeover. */
+static struct i915_xd_to_test_power i915_xd_to_test_power;
+
 static void i915_xd_to_test_base(struct i915_xd_firmware *firmware);
 static int i915_xd_to_test_reason_has(const struct i915_xd_firmware *firmware, const char *word);
 static int i915_xd_to_test_vtd_read(void *context, uint64_t base, uint32_t *version, uint32_t *status, uint32_t *protect);
@@ -131,6 +153,8 @@ static void i915_xd_to_test_sanitize(void);
 static void i915_xd_to_test_sanitize_unknown(void);
 static void i915_xd_to_test_pps_status(uint32_t offset, uint32_t value, void *context);
 static void i915_xd_to_test_takeover(void);
+static int i915_xd_to_test_power_get(void *context, uint64_t functions);
+static void i915_xd_to_test_power_put(void *context, uint64_t functions);
 
 /*
  * Runs every check of the firmware's display and reports.
@@ -1034,9 +1058,16 @@ i915_xd_to_test_pps_status(
 	uint32_t value,
 	void *context)
 {
+	/* Counts the VDD holds, and one written while the sink is still awake. */
+	UNUSED_PARAMETER(offset);
+	UNUSED_PARAMETER(context);
+	if ((value & I915_XD_PP_CONTROL_FORCE_VDD) != 0U) {
+		i915_xd_to_test_power.vdd_writes++;
+		if (i915_xd_to_test_power.sink != NULL && i915_xd_to_test_power.sink->dpcd[I915_XD_DPCD_SET_POWER] == I915_XD_DPCD_POWER_D0)
+			i915_xd_to_test_power.vdd_before_d3++;
+	}
+
 	/* On and idle with the power, off and idle without. */
-	(void)offset;
-	(void)context;
 	if ((value & I915_XD_PP_CONTROL_POWER_ON) != 0U) {
 		i915_xd_fake_set(I915_XD_PP_STATUS(0U), I915_XD_PP_STATUS_ON | I915_XD_PP_STATUS_STATE_ON_IDLE);
 	} else {
@@ -1055,6 +1086,7 @@ i915_xd_to_test_takeover(void)
 	static struct i915_xd xd;
 	static struct i915_xd_fake_aux sink;
 	struct i915_xd_takeover_outcome outcome;
+	struct i915_xd_takeover_power power;
 	struct i915_xd_io_hooks hooks;
 	int error;
 
@@ -1088,8 +1120,15 @@ i915_xd_to_test_takeover(void)
 	xd.firmware.pipe[0].ddi_function = I915_XD_TO_TEST_FUNC_EDP;
 	xd.firmware.panel_ddi = 0;
 
+	/* The caller's power, recording what the takeover takes and gives back. */
+	memset(&i915_xd_to_test_power, 0, sizeof(i915_xd_to_test_power));
+	i915_xd_to_test_power.sink = &sink;
+	power.get = i915_xd_to_test_power_get;
+	power.put = i915_xd_to_test_power_put;
+	power.context = &i915_xd_to_test_power;
+
 	/* Takes it over. */
-	error = drv_i915_xd_takeover(&xd, &outcome);
+	error = drv_i915_xd_takeover(&xd, &power, &outcome);
 	i915_host_check(error == 0 && outcome.lit == 1U && outcome.stopped == 1U && outcome.still_lit == 0U && xd.firmware.lit_pipes == 0U,
 			"takeover: pipe A found lit and stopped, nothing left lit");
 	i915_host_check((i915_xd_fake_get(I915_XD_SBLC_PWM_CTL(0U)) & I915_XD_SBLC_PWM_ENABLE) == 0U && i915_xd_fake_get(I915_XD_SBLC_PWM_DUTY(0U)) == 0U,
@@ -1100,14 +1139,75 @@ i915_xd_to_test_takeover(void)
 			"takeover: the panel's power, VDD, reset and backlight enable off, the panel off");
 	i915_host_check((i915_xd_fake_get(I915_XD_TRANS_CONF(0U)) & I915_XD_TRANS_CONF_ENABLE) == 0U && (i915_xd_fake_get(I915_XD_DPLL0_ENABLE) & I915_XD_PLL_ENABLE) == 0U,
 			"takeover: the transcoder and DPLL0 off");
+	i915_host_check(i915_xd_to_test_power.ngets == 2U &&
+			i915_xd_to_test_power.gets[0] == I915_XD_POWERS_DDI_IO(0U) &&
+			i915_xd_to_test_power.gets[1] == I915_XD_POWERS_AUX(0U) &&
+			i915_xd_to_test_power.get_sink[1] == I915_XD_DPCD_POWER_D0,
+			"takeover: DDI A's IO well, then AUX A's, taken before the sink's D3");
+	i915_host_check(i915_xd_to_test_power.nputs == 2U &&
+			i915_xd_to_test_power.puts[0] == I915_XD_POWERS_DDI_IO(0U) &&
+			(i915_xd_to_test_power.put_status[0] & I915_XD_PP_STATUS_ON) == 0U &&
+			(i915_xd_to_test_power.put_dpll[0] & I915_XD_PLL_ENABLE) != 0U,
+			"takeover: DDI A's IO well given back with the panel off, before the PLL");
+	i915_host_check(i915_xd_to_test_power.puts[1] == I915_XD_POWERS_AUX(0U) &&
+			i915_xd_to_test_power.put_sink[1] == I915_XD_DPCD_POWER_D3 &&
+			(i915_xd_to_test_power.put_dpll[1] & I915_XD_PLL_ENABLE) == 0U,
+			"takeover: AUX A's well given back after the sink's D3 and the PLL");
+	i915_host_check(i915_xd_to_test_power.vdd_writes == 1U && i915_xd_to_test_power.vdd_before_d3 == 1U,
+			"takeover: the panel's VDD held once, before the sink's D3, through the power off");
 
 	/* Nothing lit: nothing to do. */
-	error = drv_i915_xd_takeover(&xd, &outcome);
-	i915_host_check(error == 0 && outcome.lit == 0U && outcome.stopped == 0U, "takeover: again, nothing lit and nothing done");
+	i915_xd_to_test_power.ngets = 0U;
+	i915_xd_to_test_power.nputs = 0U;
+	error = drv_i915_xd_takeover(&xd, &power, &outcome);
+	i915_host_check(error == 0 && outcome.lit == 0U && outcome.stopped == 0U && i915_xd_to_test_power.ngets == 0U, "takeover: again, nothing lit, nothing done or taken");
 
 	/* A device without a description cannot stop a lit pipe. */
 	xd.chosen = 0;
 	xd.firmware.lit_pipes = 1U;
-	error = drv_i915_xd_takeover(&xd, &outcome);
+	error = drv_i915_xd_takeover(&xd, NULL, &outcome);
 	i915_host_check(error == ENODEV && outcome.still_lit == 1U, "takeover: no description, the lit pipe left (ENODEV)");
+}
+
+/* Records a get of the display's takeover; every well comes up. */
+static int
+i915_xd_to_test_power_get(
+	void *context,
+	uint64_t functions)
+{
+	struct i915_xd_to_test_power *record;
+
+	/* The function and the sink's state, while there is room. */
+	record = context;
+	if (record->ngets < 4U) {
+		record->gets[record->ngets] = functions;
+		record->get_sink[record->ngets] = record->sink->dpcd[I915_XD_DPCD_SET_POWER];
+	}
+
+	/* Counts the get, kept or not. */
+	record->ngets++;
+
+	/* Succeeded: held. */
+	return 0;
+}
+
+/* Records a put of the display's takeover, with the panel and DPLL0 as they are. */
+static void
+i915_xd_to_test_power_put(
+	void *context,
+	uint64_t functions)
+{
+	struct i915_xd_to_test_power *record;
+
+	/* The function, the sink's state, the panel's status and DPLL0, while there is room. */
+	record = context;
+	if (record->nputs < 4U) {
+		record->puts[record->nputs] = functions;
+		record->put_sink[record->nputs] = record->sink->dpcd[I915_XD_DPCD_SET_POWER];
+		record->put_status[record->nputs] = i915_xd_fake_get(I915_XD_PP_STATUS(0U));
+		record->put_dpll[record->nputs] = i915_xd_fake_get(I915_XD_DPLL0_ENABLE);
+	}
+
+	/* Counts the put, kept or not. */
+	record->nputs++;
 }
