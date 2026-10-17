@@ -33,7 +33,7 @@
 #include "dp-sink.h"
 #include "edp-device.h"
 #include "head.h"
-#include "hotplug.h"
+#include "hpd.h"
 #include "interrupts.h"
 #include "output.h"
 #include "power.h"
@@ -630,33 +630,10 @@ drv_i915_display_register(
 	    dprobe->overlay,
 	    dprobe->fbdev,
 	    dprobe->ipc_enabled);
-	kern_logf("i915: hpd_init: encoders=%u pins=%d,%d setups=%u skipped=%d | de: enabled=0x%x hotplug=0x%x IMR=0x%08x TC_CTL=0x%08x TBT_CTL=0x%08x | pch: enabled=0x%x hotplug=0x%x SHPD_FILTER=0x%x SDEIMR=0x%08x%s SHOTPLUG_DDI=0x%08x SHOTPLUG_TC=0x%08x | poll: works=%u core_gets=%u\n",
-	    dprobe->hp.n_encoders,
-	    dprobe->hp.encoder_pin[0],
-	    dprobe->hp.encoder_pin[1],
-	    dprobe->hp.irq_setups,
-	    dprobe->hp.irq_setup_skipped,
-	    dprobe->hp.de_enabled_irqs,
-	    dprobe->hp.de_hotplug_irqs,
-	    dprobe->hp.de_hpd_imr,
-	    dprobe->hp.tc_ctl,
-	    dprobe->hp.tbt_ctl,
-	    dprobe->hp.pch_enabled_irqs,
-	    dprobe->hp.pch_hotplug_irqs,
-	    dprobe->hp.shpd_filter,
-	    dprobe->hp.sdeimr,
-	    dprobe->hp.sdeimr_skipped ? "(not written: irqs off)" : "",
-	    dprobe->hp.shotplug_ddi,
-	    dprobe->hp.shotplug_tc,
-	    dprobe->hp.poll_init_works,
-	    dprobe->hp.poll_core_gets);
-
 	/*
-	 * The hotplug path: intel_hpd_init_early() and the connectors of the
-	 * encoders the output setup made; from here on the display interrupt
-	 * handler hands SDEIIR to icp_irq_handler().  Adaptation: the reference
-	 * makes the connectors in intel_ddi_init(); they are made here, once
-	 * the hotplug registers are programmed.
+	 * The hotplug: the Type-C ports and the external DisplayPort ports
+	 * the detection asks first, then the interrupt entry and the works of
+	 * the connectors the probe made.
 	 */
 	if (error == 0) {
 		/* The Type-C ports first: the hotplug path asks them whether something is plugged in. */
@@ -666,7 +643,7 @@ drv_i915_display_register(
 		drv_i915_dp_ext_start(display);
 
 		/* Then the hotplug path, with the connectors of the encoders the output setup made. */
-		started = drv_i915_hpd_start(display, &dprobe->hp, &device->gt.mmio, &display->xd.ports, &display->power_domains, &display->pwc, display->pch.type, device->gt.irq.irqs_enabled, NULL);
+		started = drv_i915_hpd_start(display);
 		if (started == 0)
 			display->hpd_started = 1;
 	}
@@ -694,10 +671,9 @@ drv_i915_display_register(
 
 	/* i915_driver_register(). */
 	i915_driver_register(device);
-	kern_logf("i915: driver_register: na_registrations=%u opregion=%d kms_poll=%d | power_domains_enable: wells_on %u -> %u dc_state=0x%x verify_mismatches=%u | runtime_pm_enable: probe usage=%d active=%d (autosuspend not armed: intel_runtime_suspend unimplemented)\n",
+	kern_logf("i915: driver_register: na_registrations=%u opregion=%d | power_domains_enable: wells_on %u -> %u dc_state=0x%x verify_mismatches=%u | runtime_pm_enable: probe usage=%d active=%d (autosuspend not armed: intel_runtime_suspend unimplemented)\n",
 	    dprobe->na_registrations,
 	    dprobe->opregion_registered,
-	    dprobe->hp.kms_poll_inited,
 	    dprobe->wells_on_before,
 	    dprobe->wells_on_after,
 	    (unsigned)dprobe->dc_state_after,
@@ -2131,15 +2107,10 @@ i915_display_driver_probe(
 	int intel_irqs_enabled)
 {
 	struct i915_driver_probe *p;
-	const struct i915_xd_ports *ports;
 	struct i915_mmio *m;
-	int display_ver;
-	unsigned i;
 
 	p = &display->dprobe;
-	ports = &display->xd.ports;
 	m = &display->device->gt.mmio;
-	display_ver = (int)display->device->gt.display_ver;
 
 	/*
 	 * intel_initial_commit(): an active crtc gets its planes added and its
@@ -2160,18 +2131,8 @@ i915_display_driver_probe(
 	p->overlay = 0;
 	p->fbdev = 0;
 
-	/* The hotplug pins of the display's ports. */
-	p->hp.n_encoders = 0U;
-	for (i = 0U; i < ports->n && i < 8U; i++) {
-		p->hp.encoder_pin[p->hp.n_encoders] = drv_i915_ddi_hpd_pin(display_ver, ports->port[i].ddi);
-		p->hp.n_encoders++;
-	}
-
-	drv_i915_hpd_init_pins(&p->hp, display_ver, display->pch.type);
-	drv_i915_hpd_init(&p->hp, m, display_ver, display->pch.type, 1, intel_irqs_enabled);
-
-	/* intel_hpd_poll_disable(). */
-	drv_i915_hpd_poll_disable(&p->hp, &display->power_domains, &display->pwc);
+	/* The connectors of the display's ports, and their hotplug pins armed. */
+	drv_i915_hpd_arm(display, intel_irqs_enabled);
 
 	/* skl_watermark_ipc_init(): XE_LPD has IPC; ADL-P is not SKL, KBL, CFL or CML. */
 	p->ipc_enabled = i915_skl_watermark_ipc_init(m, 1, 1);
@@ -2263,12 +2224,10 @@ i915_driver_register(
 	/*
 	 * intel_display_driver_register(): intel_opregion_register() acts only
 	 * with an OpRegion header, whose runtime is not registered (VBT_ONLY);
-	 * the ACPI video, audio components, debugfs and fbdev config are N/A;
-	 * then drm_kms_helper_poll_init().
+	 * the ACPI video, audio components, debugfs and fbdev config are N/A.
 	 */
 	p->opregion_registered = 0;
 	p->na_registrations += 4U;
-	p->hp.kms_poll_inited = 1;
 
 	/*
 	 * intel_power_domains_enable(): the INIT reference taken during
@@ -2322,7 +2281,6 @@ i915_driver_unregister(
 	drv_i915_power_domains_disable(&display->dcore);
 
 	/* The display is unregistered. */
-	p->hp.kms_poll_inited = 0;
 	p->opregion_registered = 0;
 	p->registered = 0;
 }

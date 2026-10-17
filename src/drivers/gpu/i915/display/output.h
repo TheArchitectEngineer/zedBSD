@@ -22,6 +22,7 @@
 
 #include "internal.h"
 #include "output-timing.h"
+#include "hpd.h"
 
 /* The HDMI output: port B, pipe B, transcoder B. */
 #define I915_OUTPUT_HDMI_PORT		1

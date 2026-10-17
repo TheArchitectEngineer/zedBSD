@@ -55,7 +55,7 @@
 #include "scanout.h"
 #include "control.h"
 #include "head.h"
-#include "hotplug.h"
+#include "hpd.h"
 #include "survey.h"
 #include <kern/kcrt.h>
 

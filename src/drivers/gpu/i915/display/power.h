@@ -24,7 +24,6 @@ struct i915_xd;
 
 int drv_i915_power_domains_init(struct i915_power_domains *pd, unsigned display_ver, struct i915_xd *xd, int enable_dc_param, int disable_pw_param, struct i915_trace *trace);
 void drv_i915_power_domains_cleanup(struct i915_power_domains *pd);
-uint64_t drv_i915_power_domain_wells(const struct i915_power_domains *pd, enum i915_power_domain domain);
 int drv_i915_power_well_by_id(const struct i915_power_domains *pd, int id);
 
 int drv_i915_power_well_enable(struct i915_power_well *well, struct i915_pw_ctx *pwc);

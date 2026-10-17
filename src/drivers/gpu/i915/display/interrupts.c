@@ -28,7 +28,7 @@
 
 #include "internal.h"
 #include "interrupts.h"
-#include "hotplug.h"
+#include "hpd.h"
 #include "power.h"
 #include <kern/kcrt.h>
 
@@ -1199,7 +1199,7 @@ i915_gen8_de_irq_handler(
 	/*
 	 * An ICP or later PCH below display version 14 has no PICA block: the
 	 * south display IIR is read and acknowledged directly, and handed to
-	 * the hotplug path (icp_irq_handler()).
+	 * the hotplug (hpd.c).
 	 */
 	if (d->pch != NULL && d->pch->type >= I915_PCH_ICP && (master_ctl & GEN8_DE_PCH_IRQ) != 0U) {
 		iir = drv_i915_read32(d->m, SDEIIR);

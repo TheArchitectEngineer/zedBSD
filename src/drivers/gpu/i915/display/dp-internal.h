@@ -1465,7 +1465,6 @@ bool drv_i915_drm_probe_ddc(struct i2c_adapter *ddc);
 /*
  * Reads the base EDID block and its extensions over a DDC adapter
  * (edid-read.c): the number of valid blocks, or a negative Linux errno.
- * hotplug-internal.h declares it for the HDMI detection as well.
  */
 int drv_i915_drm_edid_read(struct i2c_adapter *ddc, u8 *buf, unsigned max_blocks, unsigned *extensions);
 

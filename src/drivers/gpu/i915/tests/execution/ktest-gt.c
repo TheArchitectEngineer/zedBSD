@@ -15,9 +15,9 @@
  * window, the kernel PPGTT, the engines, the context image, the requests,
  * the execlists submission and its context status buffer, the resume
  * pieces, the default-state recording, the workaround verification, and the
- * migrate and PXP contexts.  The hotplug interrupt setup and the DC_off
- * power well of the display probe, and the fixed batches and states the
- * hardware tests submit, are checked at the end.
+ * migrate and PXP contexts.  The DC_off power well of the display probe,
+ * and the fixed batches and states the hardware tests submit, are checked
+ * at the end.
  *
  * Nothing here touches the started device.  Every register access goes to
  * the register model of this file.  The GT memory is a pool of this file's
@@ -48,7 +48,6 @@
 #include "../../submit.h"
 #include "../../verify-workarounds.h"
 #include "../../workarounds.h"
-#include "../../display/hotplug.h"
 #include "../../display/power.h"
 
 #include <drivers/generic/dma.h>
@@ -244,9 +243,6 @@ struct i915_ktest_gt_state {
 	struct i915_gt_migrate migrate;
 	struct i915_pxp pxp;
 
-	/* The hotplug state of the hotplug interrupt tests. */
-	struct i915_hotplug hotplug;
-
 	/* The batch and state buffers and the test images of the fixture tests. */
 	uint32_t batch_a[I915_KTEST_BATCH_DWORDS];
 	uint32_t batch_b[I915_KTEST_BATCH_DWORDS];
@@ -327,8 +323,6 @@ static void i915_ktest_gt_migrate_context(struct i915_ktest *ktest, struct i915_
 static void i915_ktest_gt_migrate_tree(const struct i915_gt_migrate *mg, int *tree_ok, int *pts_ok, int *window_ok);
 static void i915_ktest_gt_migrate_tables(const struct i915_gt_migrate *mg, int *tree_ok, int *window_ok);
 
-static void i915_ktest_gt_hotplug(struct i915_ktest *ktest, struct i915_ktest_gt_state *t);
-static void i915_ktest_gt_hotplug_setup(struct i915_ktest *ktest, struct i915_ktest_gt_state *t);
 static void i915_ktest_gt_dc6(struct i915_ktest *ktest, struct i915_ktest_gt_state *t);
 static void i915_ktest_gt_pxp(struct i915_ktest *ktest, struct i915_ktest_gt_state *t);
 
@@ -1677,8 +1671,7 @@ i915_ktest_gt_memory(
 	i915_ktest_gt_verify_wa(ktest, t);
 	i915_ktest_gt_migrate(ktest, t);
 
-	/* The hotplug interrupt setup, the DC_off power well and the PXP context. */
-	i915_ktest_gt_hotplug(ktest, t);
+	/* The DC_off power well and the PXP context. */
 	i915_ktest_gt_dc6(ktest, t);
 	i915_ktest_gt_pxp(ktest, t);
 
@@ -3526,120 +3519,6 @@ i915_ktest_gt_migrate_tables(
 	/* The entry after the window is scratch. */
 	if (win[8] != scratch[0])
 		*window_ok = 0;
-}
-
-/* Checks the hotplug pins of the DDI ports and the hotplug interrupt setup. */
-static void
-i915_ktest_gt_hotplug(
-	struct i915_ktest *ktest,
-	struct i915_ktest_gt_state *t)
-{
-	int pin_a;
-	int pin_b;
-	int pin_tc1;
-	int pin_d;
-	int pin_tc1_ver12;
-
-	/* intel_ddi_init()'s hotplug pin per port. */
-	pin_a = drv_i915_ddi_hpd_pin(13, 0);
-	pin_b = drv_i915_ddi_hpd_pin(13, 1);
-	pin_tc1 = drv_i915_ddi_hpd_pin(13, 3);
-	pin_d = drv_i915_ddi_hpd_pin(13, 7);
-	pin_tc1_ver12 = drv_i915_ddi_hpd_pin(12, 3);
-	drv_i915_ktest_check(
-		ktest,
-		pin_a == I915_HPD_PORT_A &&
-		    pin_b == I915_HPD_PORT_B &&
-		    pin_tc1 == I915_HPD_PORT_TC1 &&
-		    pin_d == I915_HPD_PORT_D &&
-		    pin_tc1_ver12 == I915_HPD_PORT_TC1,
-		"HPD-PIN DDI A/B default pins, TC1+ from PORT_TC1 (ver 12+), D/E from PORT_D_XELPD (ver 13)");
-
-	/* The Gen11 and ICP registers for encoders on A and B. */
-	i915_ktest_gt_hotplug_setup(ktest, t);
-}
-
-/* Checks the Gen11 and ICP hotplug registers for encoders on ports A and B. */
-static void
-i915_ktest_gt_hotplug_setup(
-	struct i915_ktest *ktest,
-	struct i915_ktest_gt_state *t)
-{
-	struct i915_hotplug *hp;
-	uint32_t shotplug_ddi;
-	uint32_t shotplug_tc;
-	uint32_t tc_ctl;
-	uint32_t tbt_ctl;
-	uint32_t sdeimr;
-	int filter;
-	int de_hpd_imr;
-	int sdeimr_write;
-
-	hp = &t->hotplug;
-
-	/* Two encoders, on the pins of ports A and B. */
-	kern_memset(hp, 0, sizeof(*hp));
-	hp->encoder_pin[0] = I915_HPD_PORT_A;
-	hp->encoder_pin[1] = I915_HPD_PORT_B;
-	hp->n_encoders = 2U;
-
-	/* Registers the firmware left with every port enabled and every interrupt masked. */
-	i915_fake_open(&t->mmio, &t->fake);
-	i915_fake_gen_set(&t->fake, I915_SHOTPLUG_CTL_DDI, 0x8888U);
-	i915_fake_gen_set(&t->fake, I915_SHOTPLUG_CTL_TC, 0x00888888U);
-	i915_fake_gen_set(&t->fake, I915_GEN11_TC_HOTPLUG_CTL, 0x00888888U);
-	i915_fake_gen_set(&t->fake, I915_GEN11_TBT_HOTPLUG_CTL, 0x00888888U);
-	i915_fake_gen_set(&t->fake, I915_SDEIMR, 0xffffffffU);
-	i915_fake_gen_set(&t->fake, I915_GEN11_DE_HPD_IMR, 0xffffffffU);
-
-	/* Runs intel_hpd_init() with display and driver interrupts enabled. */
-	t->fake.wt_n = 0U;
-	drv_i915_hpd_init(hp, &t->mmio, 13, I915_PCH_ADP, 1, 1);
-
-	/* A and B enabled in SHOTPLUG_CTL_DDI, TC and TBT cleared, SDEIMR unmasks A and B, filter 250, DE HPD IMR untouched. */
-	shotplug_ddi = i915_fake_gen_get(&t->fake, I915_SHOTPLUG_CTL_DDI);
-	shotplug_tc = i915_fake_gen_get(&t->fake, I915_SHOTPLUG_CTL_TC);
-	tc_ctl = i915_fake_gen_get(&t->fake, I915_GEN11_TC_HOTPLUG_CTL);
-	tbt_ctl = i915_fake_gen_get(&t->fake, I915_GEN11_TBT_HOTPLUG_CTL);
-	sdeimr = i915_fake_gen_get(&t->fake, I915_SDEIMR);
-	filter = i915_fake_wt_find(&t->fake, I915_SHPD_FILTER_CNT, I915_SHPD_FILTER_CNT_250, 0xffffffffU);
-	de_hpd_imr = i915_fake_wt_find(&t->fake, I915_GEN11_DE_HPD_IMR, 0U, 0U);
-	drv_i915_ktest_check(
-		ktest,
-		hp->irq_setups == 1U &&
-		    hp->state[I915_HPD_PORT_A] == I915_HPD_ENABLED &&
-		    hp->de_hotplug_irqs == 0U &&
-		    hp->de_enabled_irqs == 0U &&
-		    hp->pch_hotplug_irqs == 0x30000U &&
-		    hp->pch_enabled_irqs == 0x30000U &&
-		    shotplug_ddi == 0x88U &&
-		    shotplug_tc == 0U &&
-		    tc_ctl == 0U &&
-		    tbt_ctl == 0U &&
-		    sdeimr == 0xfffcffffU &&
-		    filter >= 0 &&
-		    de_hpd_imr < 0 &&
-		    hp->sdeimr_skipped == 0,
-		"HPD-SETUP DDI A/B enabled in SHOTPLUG_CTL_DDI, TC/TBT cleared, SDEIMR unmasks A/B, filter 250, DE HPD IMR untouched");
-
-	/* Runs it again before intel_irq_install(): the driver's interrupts are not enabled yet. */
-	i915_fake_gen_set(&t->fake, I915_SDEIMR, 0xffffffffU);
-	t->fake.wt_n = 0U;
-	drv_i915_hpd_init(hp, &t->mmio, 13, I915_PCH_ADP, 1, 0);
-
-	/* ibx_display_interrupt_update() refuses: SDEIMR is not written. */
-	sdeimr = i915_fake_gen_get(&t->fake, I915_SDEIMR);
-	sdeimr_write = i915_fake_wt_find(&t->fake, I915_SDEIMR, 0U, 0U);
-	drv_i915_ktest_check(
-		ktest,
-		hp->sdeimr_skipped == 1 &&
-		    sdeimr == 0xffffffffU &&
-		    sdeimr_write < 0,
-		"HPD-NOIRQ ibx_display_interrupt_update() refuses while intel_irqs_enabled() is false");
-
-	/* Runs it with display interrupts disabled: hpd_irq_setup is skipped. */
-	drv_i915_hpd_init(hp, &t->mmio, 13, I915_PCH_ADP, 0, 1);
-	drv_i915_ktest_check(ktest, hp->irq_setup_skipped == 1, "HPD-NODISP hpd_irq_setup needs display_irqs_enabled");
 }
 
 /* Checks that the DC_off power well's disable enters the target DC state and its enable leaves it. */

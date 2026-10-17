@@ -297,24 +297,6 @@ drv_i915_power_domains_cleanup(
 }
 
 /*
- * Reports the bitmask of the wells that provide a domain.
- */
-uint64_t
-drv_i915_power_domain_wells(
-	const struct i915_power_domains *pd,
-	enum i915_power_domain domain)
-{
-	/* A missing state or an unknown domain has no wells. */
-	if (pd == NULL)
-		return 0u;
-	if ((unsigned)domain >= I915_PW_DOMAIN_NUM)
-		return 0u;
-
-	/* Succeeded: reports the domain's wells. */
-	return pd->domain_wells[domain];
-}
-
-/*
  * Finds the index of the well with a power-well id, or -1.
  */
 int

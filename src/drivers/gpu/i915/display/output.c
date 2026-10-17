@@ -30,8 +30,7 @@
 
 #include "output.h"
 #include "dp-ext-kern.h"
-#include "hdmi.h"
-#include "hotplug.h"
+#include "hpd.h"
 #include "edp-device.h"
 #include "tc-kern.h"
 
@@ -1080,7 +1079,7 @@ i915_output_hdmi_mode(
 
 	/* The EDID the detection read, if it read one. */
 	edid_size = 0U;
-	edid = drv_i915_hpd_edid_bytes(display->hpd_world, connector, &edid_size);
+	edid = drv_i915_hpd_edid_bytes(display, connector, &edid_size);
 	if (edid == NULL)
 		edid_size = 0U;
 

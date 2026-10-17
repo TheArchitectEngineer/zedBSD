@@ -30,13 +30,12 @@
  *   the display root    struct i915_display, which the device owns and which
  *                       holds every long-lived display object.
  *
- * The Linux display code is compiled in one of three Linux environments,
+ * The Linux display code is compiled in one of two Linux environments,
  * each a private header of its own:
  *
  *   dp-internal.h        the DP AUX, DP helper and EDID text of the
  *                        external DisplayPort ports (on vbt.h);
- *   vbt.h                the VBT parser's environment;
- *   hotplug-internal.h   the hotplug, GMBUS and HDMI detect text;
+ *   vbt.h                the VBT parser's environment.
  *
  * The same Linux type name (struct drm_i915_private, struct intel_dp,
  * struct drm_display_mode and others) has a different layout in each
@@ -805,7 +804,7 @@ struct i915_display_state {
 };
 
 /*
- * The Linux driver probe (display.c, hotplug.c, power.c).
+ * The Linux driver probe (display.c, power.c).
  */
 /*
  * the rest of i915_driver_probe() after i915_gem_init().
@@ -818,12 +817,7 @@ struct i915_display_state {
  *                                        no active crtc it commits nothing
  *     intel_overlay_setup()              HAS_OVERLAY: gen2-4 only
  *     intel_fbdev_init()                 CONFIG_DRM_FBDEV_EMULATION
- *     intel_hpd_init()                   every pin HPD_ENABLED, then
- *                                        hpd_irq_setup = gen11_hpd_irq_setup:
- *                                        GEN11_DE_HPD_IMR, TC/TBT_HOTPLUG_CTL,
- *                                        and (PCH >= ICP) SHPD_FILTER_CNT,
- *                                        SDEIMR, SHOTPLUG_CTL_DDI/TC
- *     intel_hpd_poll_disable()           poll_enabled = false + poll_init_work
+ *     the hotplug pins                   armed by hpd.c (xd-hpd.c)
  *     skl_watermark_ipc_init()           HAS_IPC: DISP_ARB_CTL2.DISP_IPC_ENABLE
  *   i915_driver_register(i915):
  *     gem/pmu/vgpu/drm_dev/debugfs/sysfs/perf/gt sysfs/hwmon registrations
@@ -859,71 +853,15 @@ struct i915_rpm;
 struct i915_display_core;
 struct i915_display_nogem;
 
-/* enum hpd_pin (intel_display_limits.h) */
-#define I915_HPD_NONE      0
-#define I915_HPD_PORT_A    4
-#define I915_HPD_PORT_B    5
-#define I915_HPD_PORT_C    6
-#define I915_HPD_PORT_D    7
-#define I915_HPD_PORT_TC1  9
-#define I915_HPD_PORT_TC6  14
-#define I915_HPD_NUM_PINS  15
-
-/* hotplug.stats[].state */
-#define I915_HPD_ENABLED        0
-
-/* Registers (i915_reg.h). */
-#define I915_GEN11_DE_HPD_IMR       0x44474u
-#define I915_GEN11_TBT_HOTPLUG_CTL  0x44030u
-#define I915_GEN11_TC_HOTPLUG_CTL   0x44038u
-/* The DP-alt (bits 16 to 21) and Thunderbolt (bits 0 to 5) hotplug bits of TC1 to TC6 in GEN11_DE_HPD_IIR. */
-#define I915_GEN11_DE_TC_HOTPLUG_MASK   0x003f0000u
-#define I915_GEN11_DE_TBT_HOTPLUG_MASK  0x0000003fu
-#define I915_SDEIMR                 0xc4004u
-#define I915_SHOTPLUG_CTL_DDI       0xc4030u
-#define I915_SHOTPLUG_CTL_TC        0xc4034u
-#define I915_SHPD_FILTER_CNT        0xc4038u
-#define I915_SHPD_FILTER_CNT_500_ADJ 0x001d9u
-#define I915_SHPD_FILTER_CNT_250     0x000f8u
+/* The display arbiter control and its isochronous priority control enable. */
 #define I915_DISP_ARB_CTL2          0x45004u
 #define I915_DISP_IPC_ENABLE        (1u << 3)
-
-/*
- * The hotplug state of the Linux driver probe: the poll work and the pins
- * it watches.
- */
-struct i915_hotplug {
-	/* intel_hpd_init_pins(): hpd_gen11 / hpd_icp */
-	uint32_t hpd[I915_HPD_NUM_PINS];
-	uint32_t pch_hpd[I915_HPD_NUM_PINS];
-	int pins_inited;
-
-	/* encoder->hpd_pin of every encoder intel_setup_outputs() created */
-	int encoder_pin[8];
-	unsigned n_encoders;
-
-	int state[I915_HPD_NUM_PINS];
-	unsigned count[I915_HPD_NUM_PINS];
-	int poll_enabled;          /* display.hotplug.poll_enabled */
-	int kms_poll_inited;       /* drm_kms_helper_poll_init(): mode_config.poll_enabled */
-
-	/* what the last hpd_irq_setup computed and left in the registers */
-	unsigned irq_setups;
-	int irq_setup_skipped;     /* !display_irqs_enabled */
-	uint32_t de_enabled_irqs, de_hotplug_irqs, pch_enabled_irqs, pch_hotplug_irqs;
-	uint32_t de_hpd_imr, tc_ctl, tbt_ctl, shpd_filter, sdeimr, shotplug_ddi, shotplug_tc;
-	int sdeimr_skipped;        /* ibx_display_interrupt_update: !intel_irqs_enabled */
-	unsigned poll_init_works;
-	unsigned poll_core_gets;
-};
 
 /*
  * What the Linux display driver probe leaves after its noirq stage:
  * hotplug, registrations and the IPC setting.
  */
 struct i915_driver_probe {
-	struct i915_hotplug hp;
-
 	/* intel_display_driver_probe */
 	unsigned active_crtcs;
 	int initial_commit_rc;
@@ -1714,108 +1652,6 @@ struct i915_edp_device {
 	int vbt_bpp;
 	struct i915_vbt_state *vbt;
 	struct i915_xd_edp xe;                /* the panel's sink (xd-edp.c): its sequencer, DPCD and EDID */
-};
-
-/*
- * The hotplug (hotplug.c).
- */
-/*
- * Linux-derived -- the HDMI hotplug receive path, the zedBSD side of the generated reference text.
- * zedBSD project code.  No Linux types here: device.c, interrupts.c and the tests use this interface.
- *
- *   start   intel_hpd_init_early() + the connectors intel_setup_outputs() would have made (one per encoder: eDP-1,
- *           HDMI-A-1, DP-1, DP-2), each encoder's ->hotplug = intel_ddi_hotplug and ->connected =
- *           lpt_digital_port_connected / TC (the latter recorded as unported), then the IRQ entry is opened
- *   irq     from gen8_de_irq_handler(): the acked SDEIIR value -> icp_irq_handler() (IRQ context)
- *   stop    the IRQ entry is closed, in-flight entries drained, then intel_hpd_cancel_work()
- */
-
-struct i915_hotplug;
-
-#define I915_HPD_MAX_CONNECTORS 8u
-#define I915_HPD_MAX_IRQ_RECORDS 64u
-#define I915_HPD_MAX_HOTPLUG_RECORDS 64u
-
-/*
- * The register model a test starts the hotplug path on instead of the MMIO
- * BAR.  Its layout belongs to the test build (tests/display/hpd-model.h);
- * production only passes the pointer on.
- */
-struct i915_hpd_fake_regs;
-
-/* the last EDID read over DDC (drm_edid_read_ddc) */
-struct i915_hpd_edid_info {
-	int rc;                         /* blocks read (>= 1) or a negative errno */
-	unsigned blocks, extensions, product, serial, version, revision, digital, checksum;
-	unsigned pixel_clock_khz, hactive, vactive;     /* the first detailed timing descriptor */
-	unsigned reads, fails;
-	char mfg[4];
-};
-
-/*
- * One hotplug interrupt as the hotplug path recorded it.
- */
-struct i915_hpd_irq_record {
-	uint64_t tick;
-	uint32_t sde_iir;               /* the acked SDEIIR value handed to icp_irq_handler() */
-	uint32_t shotplug_ddi;          /* what its rmw of SHOTPLUG_CTL_DDI read (0 when the DDI trigger was clear) */
-	uint32_t event_bits_after;      /* display.hotplug.event_bits when the handler returned */
-};
-
-/* one encoder->hotplug() call of the hotplug work (the reference's "Connector %s (pin %i) received hotplug event") */
-struct i915_hpd_hotplug_record {
-	uint64_t tick;
-	unsigned connector;
-	int pin, retries;
-	int old_status, new_status;     /* enum connector_status (1 connected, 2 disconnected, 3 unknown) */
-	int state;                      /* enum intel_hotplug_state (0 UNCHANGED, 1 CHANGED, 2 RETRY) */
-	int live;                       /* SDEISR & pch_hpd[pin] at the detection */
-	int edid_rc;                    /* the EDID read of this detection: blocks read, or a negative errno */
-	unsigned edid_blocks;
-};
-
-/*
- * What the hotplug path saw and did.
- */
-/* One connector of the hotplug path as the display inventory sees it. */
-#define I915_HPD_OUTPUT_OTHER	0U
-#define I915_HPD_OUTPUT_EDP	1U
-#define I915_HPD_OUTPUT_HDMI	2U
-#define I915_HPD_OUTPUT_DP	3U
-
-struct i915_hpd_output {
-	unsigned kind;
-	int port;
-	int connected;
-	uint64_t generation;
-	const char *name;
-	uint32_t width;
-	uint32_t height;
-	uint32_t refresh_millihz;
-	uint32_t width_mm;
-	uint32_t height_mm;
-};
-
-/* A connector's preferred mode as the topology last took it from its EDID (0 when none). */
-struct i915_hpd_output_mode {
-	uint32_t width;
-	uint32_t height;
-	uint32_t refresh_millihz;
-	uint32_t width_mm;
-	uint32_t height_mm;
-};
-
-struct i915_hpd_summary {
-	int started, live;
-	unsigned num_connectors;
-	unsigned irq_entries, irq_dropped, ddi_triggers, gmbus_irqs;
-	unsigned hotplug_works, digport_works, reenable_works, retries_armed;
-	unsigned hpd_pulse_steps, hotplug_events, irq_setups, storms, warnings;
-	unsigned irq_records, hotplug_records;
-	unsigned to_connected, to_disconnected;     /* HDMI-A connector status transitions */
-	int hdmi_connector;                         /* index, -1 = none */
-	int hdmi_status;                            /* enum connector_status, now */
-	unsigned long long hdmi_epoch;
 };
 
 struct i915_workqueue;

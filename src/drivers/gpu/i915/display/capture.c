@@ -81,7 +81,7 @@
 #include "internal.h"
 #include "capture.h"
 #include "display.h"
-#include "hotplug.h"
+#include "hpd.h"
 #include "present.h"
 #include "scanout.h"
 #include <kern/kcrt.h>
