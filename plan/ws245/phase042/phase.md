@@ -2,9 +2,9 @@
 
 # ws245-p042: display.c の段の縮約・log の文言・xd-diag
 
-Status: planned（2026-10-17 q1229-i14 で P1 が調べだけ。実装は次の世代: 下の「再開の手順」）
+Status: in-progress（2026-10-17 q1229-i15 で実装・host 試験・build 済み（93ec4f94a）。5330・SV7 は全部の段の後に 1 回（T1））
 Parent: [WS245](../ws.md)
-Queue: q1229-i14（P1、未着手）
+Queue: q1229-i14（P1、調べだけ）、q1229-i15（P1、実装）
 設計: [design.md](../design.md) §6.2 の p042 の行、§3.6（段の表）、§4.2 の末尾（`struct i915_display` から消える field）、§4.4（残す・捨てる log）、§7 #12（ユーザー「この WS で縮める」）
 
 ## 範囲（design の行）
@@ -35,3 +35,32 @@ Queue: q1229-i14（P1、未着手）
 4. §4.2 の末尾の旧 field の残りを grep で数え、本番の読み手 0 の物を消す。
 5. log の一覧を §6.4 に書き、`h4-ctl.py:62-64` の正規表現（`modeset.c:3802`・`:3904`、`present.c:1711` の書式）が今の文言に当たるか確かめる（当たらなければ R11 の基準で直すか消すかを Q1 に）。
 6. build 3 組 warning 0、run-xd-host-tests と他の WS の試験、記録（ws.md の表・段の境の SHA）。SV7 の起動は T1 に頼む物として記録。
+
+## 実装（2026-10-17 q1229-i15、P1、base 7ac68c76d、commit 93ec4f94a）
+
+Q1 の判断: 段の縮約は (a)（GT と display の挟まりは変えず、隣り合う段だけまとめて own の名前にする。device.c の並べ替えはしない）。
+
+- **段の縮約**（display.h・display.c・device.c）: `drv_i915_display_start`（旧 create + Gen9 の firmware の check + init_opregion + init_noirq。device.c の `i915_start_memory` の末尾から display の部分を外し、続く `i915_start_display` で呼ぶ。間に何も無いので順は同じ）、`drv_i915_display_irq_prepare`・`_irq_log`（同じ）、`drv_i915_display_outputs`（旧 init_nogem）、`drv_i915_display_serve`（旧 register）、`drv_i915_display_stop_serving`（旧 stop_early）、`drv_i915_display_stop`（旧 fini）、`drv_i915_display_destroy`。display.c の static の段も own の名前に（`prepare_state`・`check_firmware`・`bandwidth_start`・`memory_and_clocks`・`arm`・`enable_ipc`・`publish`・`unpublish`）。device->stage の名前も own に（`gen9_firmware_check`・`vga_register`・`power_wells_map`・`display_core`・`bandwidth`・`firmware_display_lit`）。
+- **消した Linux の残り**: DRM の device・drmm の list・per-pipe の vblank の worker（4 つの workqueue を作るだけで使う物が無かった）、PM demand（power.c の関数も）、modeset/flip の workqueue（使う物が無かった）、`struct i915_opregion_data`（opd・p2_opd）、`opregion_present`、`chain_*`・`pinned_*`・`show_gpu_retained_gm/_why`・`drm_inited`・`modeset_wq_ok`・`flip_wq_ok`（本番の読み手 0）、`struct i915_driver_probe` の Linux だけの field（initial_commit・overlay・fbdev・na_registrations・opregion_registered・err）、display.c の未使用の define 13。`drv_i915_drm_vblank_get/_put` は `drv_i915_display_vblank_get/_put` に改名（interrupts.c・resident.c）。
+- **diagnostics.c の分割**: 新しい `xd-diag.c/.h`（xd の型と xd-io だけ: `drv_i915_xd_diag_firmware_left`（platform の pipe・port・PLL・well の記述で、well が on の pipe だけ読む。旧 survey は旧の power domains で gate した）、`drv_i915_xd_diag_stop_scanout`（旧 last-resort stop。待ちは `drv_i915_xd_io_poll` の 200 ms、旧は 100 回の 1〜2 ms））と own の殻 `run-log.c/.h`（recorder・observer・step/error/debug の hook・i915.debug=display の switch・log。中身は旧の写しで、Linux の記述と `LCD-B` を除いた）。diagnostics.c・.h は空にし vmunix.mk から外した（削除は Q1）。`i915.debug=display` の xd-io の記録の dump は xd-io の `drv_i915_xd_io_log_records` が既に持つ。capture.c は diagnostics を使っていないので付け替えは要らなかった。
+- **log の文言**: 一覧を design.md §6.4.1 に書いた。`i915: N0:` → `i915: firmware:`、`LCD-B` → `display run:`（run-log.c・power.c）、`P5-0 survey` → `display: firmware left …`、`LAST-RESORT` → `stop: pipe … is still on`、Linux の段の名前の log を `display: …` に。H4 の harness の 3 行（resident.c・present.c）は変えていない（run-xd-host-tests が grep で固定）。
+- **R11**（触った file の開発の管理情報、`grep -cE 'ws[0-9]{3}|WS[0-9]{3}|BUG-[0-9]+|review [A-Z][0-9]|\bP[0-9]+[a-z]? |LCD-B'`）: 後で 0（display.c・display.h・internal.h・power.c/h・interrupts.c/h・resident.c・survey.c・run-log.c/h・xd-diag.c/h・device.c）。device.c は 5（ws052-p009 ×3、ws075-p020、ws134-p007）を消した。
+
+## 確かめた事（host・build）
+
+- build 3 組（`sh build/tmp/kbuild.sh p042b`）: default rc=0 warn=0（vmunix sha256 の先頭 9b8ad91b5f46d1bd）、vke2 rc=0 warn=0、execution rc=0 warn=0。
+- `run-xd-host-tests.sh build/p042-host`（host-xd-diag-test を runner に足す前の run）: all passed（新しい check: `check-display-steps.py` が device.c の 10 関数の段の順、log の捨てた語の grep、H4 の 3 行）。新しい `host-xd-diag-test` は単独で（`build/tmp/one-host-test.sh`）17 checks 0 failures（点いた pipe A と DDI A の止め方、止まらない transcoder の待ちの上限、何も無い時に書かない、firmware left は書かない・well が off なら pipe を読まない・記述が無ければ読まない）。
+- 他の WS: WS075 host-output-test 80/0、WS237 gen9 flip 48/0・mode 71/0、WS229 bootfb 20/0。
+
+## 実機で確かめる事（T1、全部の段の後に 1 回）
+
+- 5330: 起動の log に `i915: firmware: the firmware's output: …`・`display: firmware left …`・`display: core started`・`display: serving: …`・`hotplug path: started`、survey の判定（p047）。`dmesg | grep -c 'drm_vblank_init\|LCD-B\|N0:'` が 0。stop の道（reboot）で `stop: pipe … is still on` が出ない事（driver が自分で暗くしている）。
+- SV7（Gen9）: 起動（Gen9 の firmware の check が start の中に移った。`N0-lite (gen9)` の行と GPU の node）。
+- 既定の案で進めた点: last-resort の待ちを 200 ms の poll にした（旧 100〜200 ms）。firmware left の pipe の gate を xd の well の状態で（旧は power domains の hw_enabled）。
+
+## 残り・Q1 に渡す物
+
+- 削除（merge の時）: `src/drivers/gpu/i915/display/diagnostics.c`・`diagnostics.h`（空）。`plan/bugs/BUG-266/tests/host-trace-tc.c`・`run-host-trace-tc.sh`（resolved の bug の試験、diagnostics.h を include、master の一覧・未完の WS から参照なし: 2026-10-06 の基準で削除）。
+- 他の WS の道具の直し（Q1）: `plan/ws075/tests/hdmi-h1-hw.sh:47`・`plan/ws075/tests/hdmi/usb-poll.sh:20` の進み具合の grep の `LCD-B` を `display run` に（master の Tools に載る h1-hw）。
+- `host-capture-test.c` は走らせる runner が無い（README だけ）: 2026-10-06 の基準なら削除候補。design §6.4 は「残す」なので判断は Q1。
+- p043 へ: display.c の PCH の判定（Linux の intel_pch.c の写しと `Found … PCH` の log）、power.c・clock.c・watermark.c・interrupts.c の Linux の文言（design §6.4.1 の末尾）。
