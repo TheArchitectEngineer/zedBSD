@@ -70,6 +70,7 @@ Resume point: 2026-10-16 q1218（P1）の区切り: 次は **p018**（[phase018]
 - p029: src/drivers/gpu/i915/display/phy.c・phy.h（中身は消し、vmunix.mk から外し済み）。
 - p037: src/drivers/gpu/i915/tests/display/host-native-decide-test.c（中身は消した）、plan/ws084/tests/run-native-decide-host-test.sh（参照されない）。
 - p050d4a（Q1 の判断 2026-10-17）: P1 が中身を空にした display の file と ktest の file（P1 の branch の ws.md の一覧）を消す。plan/ws051/tests/host-dkl.sh・host-dkl-test.c・host-dkl-linux.c は master の Tools にも未完の Phase にも無く、消した関数を呼ぶので削除（試験の整理の基準）。plan/ws031/tests/vkloop-hw.sh の display・display_ktest・display_ktest2 の場面と plan/tools/hw5330/README.md の 302〜303 行の該当の記述は、その組が無くなるので外す（main の側で Q1 が直す）。
+- p050d4b: plan/ws051/tests/host-dpext-link.sh・host-dpext-link.c（消した compute_dp_ext を呼ぶ、oracle は host-output-link-test に移した）を削除。plan/ws084/tests/reboot-loop.sh の 10・71・82 行の log の文字列 'LCD-B preflight' を 'resident display: preflight' に直す（merge の時に main の側で Q1）。
 - p040（P6、agent/p6-ws245 の 806e0b063、p044 は aa14ff623）: src/drivers/gpu/i915/display/dkl-phy.c・dkl-phy.h・src/drivers/gpu/i915/intel/dkl.h（中身は空）。master の Tools の plan/ws051/tests/host-tc.sh が dkl-phy.c を grep/sed する 2 行と host-tc-tables.c の DKL の 3 check は、窓の check が host-xd-tc-test に移ったので merge の時に消す。
 - p028〜: master の Tools の plan/ws051/tests/host-vbt-pll.sh が takeover.c の PLL の表を読めず FAIL になる（表は xd の platform の表へ、PLL の check は host-xd-dpll-test へ移った）。merge の時に道具から adlp_plls の部分を外すか DVO だけの道具にし、Tools の行を直す。
 
