@@ -622,6 +622,8 @@ drv_i915_gen9_node_claim(
 		error = i915_gen9_node_light(node, index, (uint32_t)screen->buffer[0].surf);
 		light_tried = 1;
 	}
+
+	/* A lit output becomes the session's screen with a new lease. */
 	if (error == 0) {
 		screen->owner = session;
 		screen->lease = ((uint64_t)output->port << I915_GEN9_NODE_LEASE_SHIFT) | (node->next_lease & I915_GEN9_NODE_LEASE_MASK);
@@ -821,6 +823,8 @@ drv_i915_gen9_node_wait(
 		if (error != 0)
 			i915_gen9_node_failed(node, "an external display's flip did not latch", error);
 	}
+
+	/* A latched flip completes the request at the screen's sequence. */
 	if (error == 0) {
 		request->completed_sequence = screen->sequence;
 		request->present_time_ns = screen->latched_tick * (KERN_NSEC_PER_SEC / KERN_CLOCK_HZ);

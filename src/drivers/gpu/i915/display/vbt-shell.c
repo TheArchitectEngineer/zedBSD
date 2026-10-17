@@ -104,6 +104,7 @@ drv_i915_vbt_world_destroy(
 	if (display->vbt_world == NULL)
 		return;
 
+	/* Frees the state. */
 	kern_free(display->vbt_world);
 	display->vbt_world = NULL;
 }
@@ -146,8 +147,8 @@ drv_i915_bios_init_ex(
 	int origin;
 	int error;
 
-	(void)opregion_has_vbt;
-	(void)explicit_blob;
+	UNUSED_PARAMETER(opregion_has_vbt);
+	UNUSED_PARAMETER(explicit_blob);
 
 	/* Starts the record empty. */
 	kern_memset(vbt, 0, sizeof(*vbt));
@@ -175,6 +176,8 @@ drv_i915_bios_init_ex(
 		(void)drv_i915_xd_vbt_parse(display->xd.choice.platform, NULL, 0U, &display->xd.vbt);
 		vbt->vbt_found = 0;
 	}
+
+	/* The xd VBT holds a parse, the VBT's or the defaults, from here on. */
 	display->xd.vbt_parsed = 1;
 
 	/* Puts the parse in the older code's types. */
@@ -212,6 +215,7 @@ drv_i915_bios_driver_remove(
 	if (vbt == NULL)
 		return;
 
+	/* Forgets the parse. */
 	vbt->parsed_live = 0;
 	vbt->parsed.inited = 0;
 	vbt->parsed.xd = NULL;
@@ -528,6 +532,8 @@ i915_bios_oprom_get_vbt(
 		drv_i915_pci_write32(pci, I915_VBT_PCI_ROM_BASE, original);
 		return 0;
 	}
+
+	/* A mapping without an address cannot be read. */
 	if (rom == NULL) {
 		drv_i915_pci_write32(pci, I915_VBT_PCI_ROM_BASE, original);
 		return 0;
@@ -546,6 +552,7 @@ i915_bios_oprom_get_vbt(
 		if (bytes[i + 3U] != 'T')
 			continue;
 
+		/* The signature's start. */
 		found = (int)i;
 		break;
 	}

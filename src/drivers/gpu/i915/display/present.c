@@ -50,12 +50,12 @@
 #include "internal.h"
 #include "display.h"
 #include "output.h"
-#include "modeset.h"
 #include "present.h"
+#include "resident.h"
 #include "scanout.h"
 #include "control.h"
 #include "head.h"
-#include "hotplug.h"
+#include "hpd.h"
 #include "survey.h"
 #include <kern/kcrt.h>
 
@@ -753,13 +753,13 @@ drv_i915_present_window(
 	 */
 	moved = drv_i915_display_output_moved(display);
 	spared = 0;
-	error = drv_i915_lcd_kernel_resident_run(display, display->rctx.lcd, i915_present_window_serve, display);
+	error = drv_i915_resident_run(display, display->rctx.lcd, i915_present_window_serve, display);
 	unplugged = i915_present_unplug_take(display);
 	retry = 0;
 	if (!unplugged)
 		retry = i915_present_window_retry(display, error, &spared);
 	while (retry) {
-		error = drv_i915_lcd_kernel_resident_run(display, display->rctx.lcd, i915_present_window_serve, display);
+		error = drv_i915_resident_run(display, display->rctx.lcd, i915_present_window_serve, display);
 		unplugged = i915_present_unplug_take(display);
 		retry = 0;
 		if (!unplugged)
@@ -778,7 +778,7 @@ drv_i915_present_window(
 		kern_logf("i915: resident display: the %s display did not come back after the sleep (%d); trying the built-in panel\n", drv_i915_display_output_name(display), error);
 		drv_i915_display_output_panel(display, &display->output);
 		moved = drv_i915_display_output_moved(display);
-		error = drv_i915_lcd_kernel_resident_run(display, display->rctx.lcd, i915_present_window_serve, display);
+		error = drv_i915_resident_run(display, display->rctx.lcd, i915_present_window_serve, display);
 	}
 
 	/*
@@ -934,8 +934,7 @@ drv_i915_present_hold_prepare(
 
 /*
  * Asks for the resident output to be lit again because its external DP
- * link must be trained again (the Linux
- * intel_dp_retrain_link()): the worker leaves the window at the next frame
+ * link must be trained again: the worker leaves the window at the next frame
  * and the window's end lights the output again, its link trained afresh,
  * its buffers and picture kept.  Runs from the hotplug path.
  */
@@ -1639,7 +1638,7 @@ i915_present_target(
 
 	/* An armed flip that has not latched keeps the frame in the buffer it shows next. */
 	*flip = 1;
-	idle = drv_i915_lcd_modeset_flip_poll(display);
+	idle = drv_i915_xd_picture_flip_poll(&display->xd.pictures, I915_XD_PICTURE_RESIDENT);
 	if (!idle) {
 		*flip = 0;
 		return &display->resident_buf[display->resident_front];
@@ -1665,7 +1664,7 @@ i915_present_flip(
 {
 	struct i915_lcd_kernel *k;
 	struct i915_scanout *to;
-	struct i915_lcd_flip_result result;
+	struct i915_xd_picture_flip result;
 	uint64_t start;
 	int expected;
 	int error;
@@ -1695,8 +1694,8 @@ i915_present_flip(
 	 */
 	kern_memset(&result, 0, sizeof(result));
 	start = drv_i915_perf_now();
-	expected = I915_LCD_FLIP_ARMED;
-	error = drv_i915_lcd_modeset_flip_nowait(display, (uint32_t)to->surf, &result);
+	expected = I915_XD_PICTURE_FLIP_ARMED;
+	error = drv_i915_xd_picture_flip_nowait(&display->xd.pictures, I915_XD_PICTURE_RESIDENT, (uint32_t)to->surf, &result);
 	drv_i915_perf_add(&display->device->perf, I915_PERF_PRESENT_FLIP, start);
 
 	/* Says why the flip failed. */
@@ -1823,11 +1822,10 @@ i915_present_latch(
 
 	/*
 	 * The vblank the armed flip latches at (none armed returns at once),
-	 * timed, on the resident output's screen 0 by name: the worker may
-	 * have the second output's screen selected meanwhile.
+	 * timed, on the resident output's screen.
 	 */
 	start = drv_i915_perf_now();
-	error = drv_i915_lcd_modeset_flip_wait_screen(device->display, 0U);
+	error = drv_i915_xd_picture_flip_wait(&device->display->xd.pictures, I915_XD_PICTURE_RESIDENT);
 	drv_i915_perf_add(&device->perf, I915_PERF_PRESENT_FLIP, start);
 
 	/* Reports a flip that did not latch. */
@@ -1911,15 +1909,15 @@ i915_present_head(
 	}
 
 	/* The frame must fit the head's mode. */
-	if (request->width > (uint32_t)head->output.state.mode.hdisplay ||
-	    request->height > (uint32_t)head->output.state.mode.vdisplay) {
+	if (request->width > (uint32_t)head->output.mode.hdisplay ||
+	    request->height > (uint32_t)head->output.mode.vdisplay) {
 		mutex_unlock(&head->mutex);
 		return EINVAL;
 	}
 
 	/* FIFO: the head's armed flip latches before this frame takes the buffer it leaves. */
 	if (!I915_PRESENT_NO_VSYNC && head->up) {
-		error = drv_i915_lcd_modeset_flip_wait_screen(display, 1U);
+		error = drv_i915_xd_picture_flip_wait(&display->xd.pictures, I915_XD_PICTURE_HEAD);
 		if (error != 0) {
 			mutex_unlock(&head->mutex);
 			return ENXIO;
@@ -2002,7 +2000,7 @@ i915_present_head_wait(
 
 	/* The newest flip latches; a head that stopped meanwhile has nothing armed. */
 	if (!I915_PRESENT_NO_VSYNC && head->up) {
-		error = drv_i915_lcd_modeset_flip_wait_screen(display, 1U);
+		error = drv_i915_xd_picture_flip_wait(&display->xd.pictures, I915_XD_PICTURE_HEAD);
 		if (error != 0) {
 			mutex_unlock(&head->mutex);
 			return ENXIO;
@@ -2062,9 +2060,9 @@ i915_present_window_retry(
 		return 0;
 
 	/* A run that holds something the display may read is not tried again, nor spared. */
-	retained = drv_i915_lcd_show_retained(display);
+	retained = drv_i915_resident_retained(display);
 	if (!retained)
-		retained = drv_i915_lcd_modeset_retained(display);
+		retained = drv_i915_xd_picture_retained(&display->xd.pictures, I915_XD_PICTURE_RESIDENT);
 	if (retained)
 		return 0;
 

@@ -15,8 +15,8 @@
  * a shared blob) and flipping.  A release does not leave the window at
  * once: the output holds the last picture for the next lease, whose first
  * frame is only a flip.  A hold that runs out, or the shutdown, makes the
- * worker leave the window, and the panel is stopped through the Linux stop
- * path.
+ * worker leave the window, and the panel is darkened through the picture's
+ * stop.
  *
  * The header is neutral: the request worker (../worker.c) includes it
  * without the display's types.
@@ -59,8 +59,8 @@ void drv_i915_present_retrain_request(struct i915_display *display);
 
 /*
  * Leaves the window at once when the display the lit resident output shows
- * is unplugged: a moved output's (BUG-268), or the firmware's own external
- * display (ws051-p005b); a Type-C port whose partner stayed away counts as
+ * is unplugged: a moved output's, or the firmware's own external
+ * display; a Type-C port whose partner stayed away counts as
  * its display's unplug (the hotplug path).
  */
 void drv_i915_present_unplugged(struct i915_display *display, unsigned connector);

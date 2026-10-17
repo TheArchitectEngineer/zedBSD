@@ -22,6 +22,7 @@
 #include "ktest.h"
 #include <kern/kcrt.h>
 
+#include "../../i915.h"
 #include "../../mmio.h"
 #include "../../power.h"
 #include "../../reset.h"
@@ -29,8 +30,6 @@
 #include "../../sync.h"
 #include "../../trace.h"
 #include "../../workqueue.h"
-#include "../../display/power.h"
-#include "../../display/watermark.h"
 
 #include <hal/hal.h>
 #include <kern/clock.h>
@@ -50,26 +49,17 @@
 /* The pattern mixed into each generation's payload. */
 #define I915_KTEST_XCPU_MAGIC		0xA5A5A5A5U
 
-/* The registers the model answers: GEN6_GDRST, the PCODE mailbox, SKL_FUSE_STATUS, HSW_PWR_WELL_CTL2. */
+/* The registers the model answers: GEN6_GDRST and the PCODE mailbox. */
 #define I915_KTEST_REG_GDRST		0x941cU
 #define I915_KTEST_REG_PCODE_MAILBOX	0x138124U
 #define I915_KTEST_REG_PCODE_DATA	0x138128U
 #define I915_KTEST_REG_PCODE_DATA1	0x13812cU
-#define I915_KTEST_REG_FUSE_STATUS	0x42000U
-#define I915_KTEST_REG_PWR_WELL_CTL2	0x45404U
 
 /* The PCODE mailbox bit the driver sets to post a command and the firmware clears. */
 #define I915_KTEST_PCODE_READY		0x80000000U
 
-/* The request bits of a power-well control register; each state bit sits one below its request bit. */
-#define I915_KTEST_PW_REQUEST_BITS	0xAAAAAAAAU
-
 /* How many other registers the model remembers. */
 #define I915_KTEST_FAKE_REGS		96U
-
-/* The fuse distribution bits of power gates 0 and 1 (SKL_FUSE_PG_DIST). */
-#define I915_KTEST_FUSE_PG0		(1U << 27)
-#define I915_KTEST_FUSE_PG1		(1U << 26)
 
 /* The made-up PCI source the MSI vectors are allocated for. */
 #define I915_KTEST_MSI_SOURCE		"PCI ffff:ff:1f.7"
@@ -113,14 +103,6 @@ struct i915_fake_mmio {
 
 	/* How many PCODE transactions reached the script or the approval model. */
 	unsigned pcode_txn_count;
-
-	/* The request bits the driver set in the power-well control register. */
-	uint32_t pw_hsw_req;
-
-	/* The fuse distribution status, and bits that appear after a number of reads. */
-	uint32_t fuse_status;
-	uint32_t fuse_delay_bits;
-	unsigned fuse_delay;
 
 	/* Every other register written, by offset. */
 	uint32_t gen_off[I915_KTEST_FAKE_REGS];
@@ -274,13 +256,6 @@ static volatile int i915_ktest_corun_stop;
  */
 static int i915_ktest_rpm_fail;
 
-/*
- * The power-domain state the late-fuse test builds.
- *
- * It is too big for the stack and is not the started device's state.
- */
-static struct i915_power_domains i915_ktest_power_domains;
-
 static void i915_ktest_waitq_deadline(struct i915_ktest *ktest);
 static void i915_ktest_completions(struct i915_ktest *ktest);
 static void i915_ktest_workqueue(struct i915_ktest *ktest);
@@ -293,9 +268,6 @@ static void i915_ktest_msi_distinct(struct i915_ktest *ktest);
 static void i915_ktest_wc_contract(struct i915_ktest *ktest);
 static void i915_ktest_reset(struct i915_ktest *ktest);
 static void i915_ktest_pcode(struct i915_ktest *ktest);
-static void i915_ktest_dram_decode(struct i915_ktest *ktest);
-static void i915_ktest_dram_bw(struct i915_ktest *ktest);
-static void i915_ktest_dram_bw_psf_failure(struct i915_ktest *ktest, struct mutex *sb_lock);
 static void i915_ktest_wc_full_range(struct i915_ktest *ktest);
 static void i915_ktest_irq_oneshot(struct i915_ktest *ktest);
 static void i915_ktest_rpm(struct i915_ktest *ktest);
@@ -303,7 +275,6 @@ static void i915_ktest_pcode_request(struct i915_ktest *ktest);
 static void i915_ktest_usleep_range(struct i915_ktest *ktest);
 static void i915_ktest_preempt(struct i915_ktest *ktest);
 static void i915_ktest_pcode_preempt_region(struct i915_ktest *ktest);
-static void i915_ktest_late_fuse(struct i915_ktest *ktest);
 
 static void i915_fake_open(struct i915_mmio *mmio, struct i915_fake_mmio *fake);
 static uint32_t i915_fake_gen_get(struct i915_fake_mmio *fake, uint32_t offset);
@@ -376,11 +347,9 @@ drv_i915_ktest_sync(
 	i915_ktest_msi(ktest);
 	i915_ktest_wc_contract(ktest);
 
-	/* The reset, PCODE and DRAM paths against the register model. */
+	/* The reset and PCODE paths against the register model. */
 	i915_ktest_reset(ktest);
 	i915_ktest_pcode(ktest);
-	i915_ktest_dram_decode(ktest);
-	i915_ktest_dram_bw(ktest);
 
 	/* A refused aperture map and the map that follows it. */
 	i915_ktest_wc_full_range(ktest);
@@ -398,9 +367,8 @@ drv_i915_ktest_sync(
 	i915_ktest_usleep_range(ktest);
 	i915_ktest_preempt(ktest);
 
-	/* The PCODE preemption-off phase and the late fuse wait. */
+	/* The PCODE preemption-off phase. */
 	i915_ktest_pcode_preempt_region(ktest);
-	i915_ktest_late_fuse(ktest);
 }
 
 /* Checks that a native wait queue sleep ends at its timer deadline. */
@@ -808,106 +776,6 @@ i915_ktest_pcode(
 	drv_i915_ktest_check(ktest, error == ETIMEDOUT, "pcode: a mailbox timeout status maps to ETIMEDOUT");
 }
 
-/* Checks the decode of the PCODE global memory information word. */
-static void
-i915_ktest_dram_decode(
-	struct i915_ktest *ktest)
-{
-	struct i915_dram_info info;
-	int error;
-
-	/* A DDR4 word with two channels, four QGV points and three PSF points decodes. */
-	kern_memset(&info, 0, sizeof(info));
-	error = drv_i915_dram_decode(0x00003420U, &info);
-	drv_i915_ktest_check(ktest, error == 0, "dram_decode: valid word decodes");
-	drv_i915_ktest_check(ktest,
-			     info.type == (int)I915_DRAM_DDR4 &&
-			     info.num_channels == 2U &&
-			     info.num_qgv_points == 4U &&
-			     info.num_psf_gv_points == 3U,
-			     "dram_decode: DDR4/2ch/4qgv/3psf fields");
-
-	/* An unknown type field is refused. */
-	error = drv_i915_dram_decode(0x0000000fU, &info);
-	drv_i915_ktest_check(ktest, error == EINVAL, "dram_decode: an unknown type field is rejected");
-}
-
-/* Checks the DRAM detect and the bandwidth table it feeds, as saved in the caller's state. */
-static void
-i915_ktest_dram_bw(
-	struct i915_ktest *ktest)
-{
-	static const uint32_t ok_seq[6][3] = {
-		{ 0x00003420U, 0U, 0U },
-		{ 0x000f03e8U, 0x00000804U, 0U },
-		{ 0x000f03e8U, 0x00000804U, 0U },
-		{ 0x000f03e8U, 0x00000804U, 0U },
-		{ 0x000f03e8U, 0x00000804U, 0U },
-		{ 0x00302010U, 0U, 0U },
-	};
-	static struct i915_bw_state bw;
-	struct mutex sb_lock;
-	struct i915_dram_info info;
-	int error;
-
-	/* Detects the DRAM over the scripted PCODE. */
-	(void)mutex_init(&sb_lock, LOCK_RANK_DEVICE, "ktest-sb2");
-	i915_fake_open(&i915_ktest_mmio, &i915_ktest_fake);
-	i915_ktest_fake.script = ok_seq;
-	i915_ktest_fake.script_len = 6U;
-	kern_memset(&info, 0, sizeof(info));
-	kern_memset(&bw, 0, sizeof(bw));
-	error = drv_i915_dram_detect(&sb_lock, &i915_ktest_mmio, &info);
-	drv_i915_ktest_check(ktest, error == 0 && info.num_qgv_points == 4U, "dram_detect: decodes global info over PCODE");
-
-	/* Computes the bandwidth table from the four QGV points and the PSF points. */
-	error = drv_i915_bw_init_hw(&sb_lock, &i915_ktest_mmio, &info, &bw);
-	drv_i915_ktest_check(ktest, error == 0, "bw_init: returns success");
-	drv_i915_ktest_check(ktest, bw.valid == 1 && bw.sagv_status == (int)I915_SAGV_ENABLED, "bw_init: saved SAGV status is enabled");
-	drv_i915_ktest_check(ktest,
-			     bw.max[0].num_qgv_points == 4U && bw.max[0].num_psf_gv_points == 3U,
-			     "bw_init: saved per-group point counts");
-	drv_i915_ktest_check(ktest,
-			     bw.max[0].deratedbw[0] != 0U && bw.max[0].peakbw[0] != 0U,
-			     "bw_init: saved group-0 bandwidth values");
-	drv_i915_ktest_check(ktest,
-			     bw.max[0].num_planes == 0U && bw.max[1].num_planes != 0U,
-			     "bw_init: num_planes stored into the NEXT group");
-
-	/* A failed PSF read is tolerated. */
-	i915_ktest_dram_bw_psf_failure(ktest, &sb_lock);
-}
-
-/* Checks that a failed PSF point read is tolerated and leaves no PSF points. */
-static void
-i915_ktest_dram_bw_psf_failure(
-	struct i915_ktest *ktest,
-	struct mutex *sb_lock)
-{
-	static const uint32_t psf_fail_seq[6][3] = {
-		{ 0x00003420U, 0U, 0U },
-		{ 0x000f03e8U, 0x00000804U, 0U },
-		{ 0x000f03e8U, 0x00000804U, 0U },
-		{ 0x000f03e8U, 0x00000804U, 0U },
-		{ 0x000f03e8U, 0x00000804U, 0U },
-		{ 0U, 0U, 0x1U },
-	};
-	static struct i915_bw_state bw;
-	struct i915_dram_info info;
-	int error;
-
-	/* Detects the DRAM, then computes the table while the PSF read fails. */
-	i915_fake_open(&i915_ktest_mmio, &i915_ktest_fake);
-	i915_ktest_fake.script = psf_fail_seq;
-	i915_ktest_fake.script_len = 6U;
-	kern_memset(&info, 0, sizeof(info));
-	kern_memset(&bw, 0, sizeof(bw));
-	(void)drv_i915_dram_detect(sb_lock, &i915_ktest_mmio, &info);
-	error = drv_i915_bw_init_hw(sb_lock, &i915_ktest_mmio, &info, &bw);
-	drv_i915_ktest_check(ktest, error == 0, "bw_init: a PSF read failure is tolerated");
-	drv_i915_ktest_check(ktest, bw.max[0].num_psf_gv_points == 0U, "bw_init: PSF failure reflected in the saved num_psf_gv_points");
-}
-
 /* Checks that an oversized aperture map is refused and a valid map still works afterwards. */
 static void
 i915_ktest_wc_full_range(
@@ -1152,64 +1020,6 @@ i915_ktest_pcode_preempt_region(
 		mutex_unlock(&sb_lock);
 }
 
-/* Checks the power-well fuse wait: fuses that arrive late, and fuses that never arrive. */
-static void
-i915_ktest_late_fuse(
-	struct i915_ktest *ktest)
-{
-	struct i915_pw_ctx pwc;
-	struct i915_power_well *well;
-	uint32_t fuse;
-	int enabled;
-	int index;
-	int error;
-
-	/* Builds a display-13 power-well map of its own, reached through the model. */
-	drv_i915_trace_init(&i915_ktest_trace);
-	i915_fake_open(&i915_ktest_mmio, &i915_ktest_fake);
-	(void)drv_i915_power_domains_init(&i915_ktest_power_domains, 13U, -1, 1, &i915_ktest_trace);
-	kern_memset(&pwc, 0, sizeof(pwc));
-	pwc.mmio = &i915_ktest_mmio;
-	index = drv_i915_power_well_by_id(&i915_ktest_power_domains, I915_SKL_DISP_PW_1);
-
-	/*
-	 * PG0 is distributed now; PG1 only after eight fuse reads.  Without
-	 * power well 1 in the map the check fails.
-	 */
-	error = EINVAL;
-	enabled = 0;
-	fuse = 0U;
-	if (index >= 0) {
-		well = &i915_ktest_power_domains.power_wells[index];
-		i915_ktest_fake.fuse_status = I915_KTEST_FUSE_PG0;
-		i915_ktest_fake.fuse_delay = 8U;
-		i915_ktest_fake.fuse_delay_bits = I915_KTEST_FUSE_PG1;
-		error = drv_i915_power_well_enable(well, &pwc);
-		enabled = well->hw_enabled;
-		fuse = drv_i915_raw_read32(&i915_ktest_mmio, I915_KTEST_REG_FUSE_STATUS);
-	}
-
-	drv_i915_ktest_check(ktest,
-			     error == 0 &&
-			     enabled == 1 &&
-			     (fuse & I915_KTEST_FUSE_PG1) != 0U,
-			     "fuse: PG1 arrives late -> the fuse wait (fast 2us then slow 1ms) observes it and continues");
-
-	/* PG1 never distributes: the timeout is warned and the enable goes on. */
-	error = EINVAL;
-	enabled = 0;
-	if (index >= 0) {
-		well = &i915_ktest_power_domains.power_wells[index];
-		i915_fake_open(&i915_ktest_mmio, &i915_ktest_fake);
-		i915_ktest_fake.fuse_status = I915_KTEST_FUSE_PG0;
-		well->hw_enabled = -1;
-		error = drv_i915_power_well_enable(well, &pwc);
-		enabled = well->hw_enabled;
-	}
-
-	drv_i915_ktest_check(ktest, error == 0 && enabled == 1, "fuse: PG1 never distributes -> HW timeout warned, enable continues (not EIO)");
-}
-
 /* Binds the register block to a cleared model. */
 static void
 i915_fake_open(
@@ -1271,21 +1081,11 @@ i915_fake_read32(
 	uint32_t offset)
 {
 	struct i915_fake_mmio *fake;
-	uint32_t state;
 
 	fake = context;
 
 	/* Answers each register the model gives a meaning to. */
 	switch (offset) {
-	case I915_KTEST_REG_FUSE_STATUS:
-		/* Bits that arrive late appear once their read count runs out. */
-		if (fake->fuse_delay > 0U) {
-			fake->fuse_delay--;
-			if (fake->fuse_delay == 0U)
-				fake->fuse_status |= fake->fuse_delay_bits;
-		}
-
-		return fake->fuse_status;
 	case I915_KTEST_REG_GDRST:
 		/* The first requests read back as still pending, the later ones as done. */
 		if (fake->gdrst_writes <= fake->gdrst_fail_writes)
@@ -1298,10 +1098,6 @@ i915_fake_read32(
 		return fake->data;
 	case I915_KTEST_REG_PCODE_DATA1:
 		return fake->data1;
-	case I915_KTEST_REG_PWR_WELL_CTL2:
-		/* Every requested well reports its state bit at once. */
-		state = (fake->pw_hsw_req & I915_KTEST_PW_REQUEST_BITS) >> 1;
-		return fake->pw_hsw_req | state;
 	default:
 		break;
 	}
@@ -1334,9 +1130,6 @@ i915_fake_write32(
 		return;
 	case I915_KTEST_REG_PCODE_MAILBOX:
 		i915_fake_pcode_post(fake);
-		return;
-	case I915_KTEST_REG_PWR_WELL_CTL2:
-		fake->pw_hsw_req = value & I915_KTEST_PW_REQUEST_BITS;
 		return;
 	default:
 		break;

@@ -21,6 +21,16 @@
 #include <stdint.h>
 
 /*
+ * Marks a parameter a test's hook receives by contract but does not use.
+ *
+ * The same definition as the driver's (../../i915.h), for the tests that
+ * include none of the driver's headers.
+ */
+#ifndef UNUSED_PARAMETER
+#define UNUSED_PARAMETER(parameter) ((void)(parameter))
+#endif
+
+/*
  * Whether the run is verbose.
  *
  * Set by a test from its command line before the first check; a verbose

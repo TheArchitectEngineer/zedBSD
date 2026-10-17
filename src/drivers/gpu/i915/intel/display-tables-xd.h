@@ -482,12 +482,81 @@ static const struct i915_xd_dkl_swing_table i915_xd_dkl_swing_dp_high_adlp = {
 };
 
 /*
+ * The MG PHY swing tables of Ice Lake: DisplayPort up to 2.7 GHz and
+ * above it, and HDMI (its last row is the default).  Each row:
+ * de-emphasis override bits 17..12, 11..6 and 5..0.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi_buf_trans.c
+ * (_icl_mg_phy_trans_rbr_hbr, _icl_mg_phy_trans_hbr2_hbr3,
+ * _icl_mg_phy_trans_hdmi, icl_mg_phy_trans_hdmi).
+ */
+static const struct i915_xd_mg_swing i915_xd_mg_swing_dp_low_icl_rows[] = {
+	{ 0x00, 0x18, 0x00 },
+	{ 0x05, 0x1d, 0x00 },
+	{ 0x0c, 0x24, 0x00 },
+	{ 0x14, 0x2b, 0x00 },
+	{ 0x00, 0x21, 0x00 },
+	{ 0x08, 0x2b, 0x00 },
+	{ 0x0f, 0x30, 0x00 },
+	{ 0x03, 0x31, 0x00 },
+	{ 0x0b, 0x34, 0x00 },
+	{ 0x00, 0x3f, 0x00 },
+};
+
+static const struct i915_xd_mg_swing_table i915_xd_mg_swing_dp_low_icl = {
+	i915_xd_mg_swing_dp_low_icl_rows,
+	sizeof(i915_xd_mg_swing_dp_low_icl_rows) / sizeof(i915_xd_mg_swing_dp_low_icl_rows[0]),
+	0U
+};
+
+static const struct i915_xd_mg_swing i915_xd_mg_swing_dp_high_icl_rows[] = {
+	{ 0x00, 0x18, 0x00 },
+	{ 0x05, 0x1d, 0x00 },
+	{ 0x0c, 0x24, 0x00 },
+	{ 0x14, 0x2b, 0x00 },
+	{ 0x00, 0x26, 0x00 },
+	{ 0x07, 0x2c, 0x00 },
+	{ 0x0c, 0x33, 0x00 },
+	{ 0x00, 0x2e, 0x00 },
+	{ 0x09, 0x36, 0x00 },
+	{ 0x00, 0x3f, 0x00 },
+};
+
+static const struct i915_xd_mg_swing_table i915_xd_mg_swing_dp_high_icl = {
+	i915_xd_mg_swing_dp_high_icl_rows,
+	sizeof(i915_xd_mg_swing_dp_high_icl_rows) / sizeof(i915_xd_mg_swing_dp_high_icl_rows[0]),
+	0U
+};
+
+static const struct i915_xd_mg_swing i915_xd_mg_swing_hdmi_icl_rows[] = {
+	{ 0x00, 0x1a, 0x00 },
+	{ 0x00, 0x20, 0x00 },
+	{ 0x00, 0x29, 0x00 },
+	{ 0x00, 0x32, 0x00 },
+	{ 0x00, 0x3f, 0x00 },
+	{ 0x05, 0x3a, 0x00 },
+	{ 0x06, 0x39, 0x00 },
+	{ 0x07, 0x38, 0x00 },
+	{ 0x08, 0x37, 0x00 },
+	{ 0x09, 0x36, 0x00 },
+};
+
+static const struct i915_xd_mg_swing_table i915_xd_mg_swing_hdmi_icl = {
+	i915_xd_mg_swing_hdmi_icl_rows,
+	sizeof(i915_xd_mg_swing_hdmi_icl_rows) / sizeof(i915_xd_mg_swing_hdmi_icl_rows[0]),
+	sizeof(i915_xd_mg_swing_hdmi_icl_rows) / sizeof(i915_xd_mg_swing_hdmi_icl_rows[0]) - 1U
+};
+
+/*
  * The swing tables of each platform, by the case they serve.
  *
  * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi_buf_trans.c
  * (tgl_get_combo_buf_trans, tgl_get_dkl_buf_trans, rkl_get_combo_buf_trans,
  * adls_get_combo_buf_trans, adlp_get_combo_buf_trans,
- * adlp_get_dkl_buf_trans).
+ * adlp_get_dkl_buf_trans, icl_get_combo_buf_trans,
+ * icl_get_combo_buf_trans_edp, icl_get_combo_buf_trans_dp,
+ * icl_get_mg_buf_trans, icl_get_mg_buf_trans_dp: Ice Lake's combo
+ * DisplayPort takes one table at every rate, and its eDP no HOBL table).
  */
 static const struct i915_xd_swing_set i915_xd_swing_tgl = {
 	&i915_xd_combo_swing_dp_low_tgl,
@@ -498,7 +567,10 @@ static const struct i915_xd_swing_set i915_xd_swing_tgl = {
 	&i915_xd_combo_swing_hdmi,
 	&i915_xd_dkl_swing_dp_low_tgl,
 	&i915_xd_dkl_swing_dp_high_tgl,
-	&i915_xd_dkl_swing_hdmi
+	&i915_xd_dkl_swing_hdmi,
+	NULL,
+	NULL,
+	NULL
 };
 
 static const struct i915_xd_swing_set i915_xd_swing_tgl_uy = {
@@ -510,7 +582,10 @@ static const struct i915_xd_swing_set i915_xd_swing_tgl_uy = {
 	&i915_xd_combo_swing_hdmi,
 	&i915_xd_dkl_swing_dp_low_tgl,
 	&i915_xd_dkl_swing_dp_high_tgl,
-	&i915_xd_dkl_swing_hdmi
+	&i915_xd_dkl_swing_hdmi,
+	NULL,
+	NULL,
+	NULL
 };
 
 static const struct i915_xd_swing_set i915_xd_swing_rkl = {
@@ -520,6 +595,9 @@ static const struct i915_xd_swing_set i915_xd_swing_rkl = {
 	&i915_xd_combo_swing_edp_hobl,
 	&i915_xd_combo_swing_edp_hbr3_common,
 	&i915_xd_combo_swing_hdmi,
+	NULL,
+	NULL,
+	NULL,
 	NULL,
 	NULL,
 	NULL
@@ -534,6 +612,9 @@ static const struct i915_xd_swing_set i915_xd_swing_adls = {
 	&i915_xd_combo_swing_hdmi,
 	NULL,
 	NULL,
+	NULL,
+	NULL,
+	NULL,
 	NULL
 };
 
@@ -546,7 +627,25 @@ static const struct i915_xd_swing_set i915_xd_swing_adlp = {
 	&i915_xd_combo_swing_hdmi,
 	&i915_xd_dkl_swing_dp_low_adlp,
 	&i915_xd_dkl_swing_dp_high_adlp,
-	&i915_xd_dkl_swing_hdmi
+	&i915_xd_dkl_swing_hdmi,
+	NULL,
+	NULL,
+	NULL
+};
+
+static const struct i915_xd_swing_set i915_xd_swing_icl = {
+	&i915_xd_combo_swing_edp_hbr3_common,
+	&i915_xd_combo_swing_edp_hbr3_common,
+	&i915_xd_combo_swing_edp_low_common,
+	NULL,
+	&i915_xd_combo_swing_edp_hbr3_common,
+	&i915_xd_combo_swing_hdmi,
+	NULL,
+	NULL,
+	NULL,
+	&i915_xd_mg_swing_dp_low_icl,
+	&i915_xd_mg_swing_dp_high_icl,
+	&i915_xd_mg_swing_hdmi_icl
 };
 
 /*
@@ -592,6 +691,19 @@ static const struct i915_xd_dpll_dp_row i915_xd_dpll_dp_24[] = {
 static const struct i915_xd_dpll_dco i915_xd_tbt_pll_19p2 = { 0x54, 0x3000 };
 
 static const struct i915_xd_dpll_dco i915_xd_tbt_pll_24 = { 0x43, 0x4000 };
+
+/*
+ * The words of Ice Lake's Thunderbolt PLL at a 19.2 or 38.4 MHz reference
+ * and at a 24 MHz reference: unlike the later PLL its dividers are used.
+ * Each: no link rate, DCO integer and fraction, Q divider ratio and mode,
+ * and the K and P dividers in their register codes.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dpll_mgr.c
+ * (icl_tbt_pll_19_2MHz_values, icl_tbt_pll_24MHz_values, icl_calc_tbt_pll).
+ */
+static const struct i915_xd_dpll_dp_row i915_xd_tbt_pll_icl_19p2 = { 0, 0x1a5, 0x7000, 0, 0, 1, 0x4 };
+
+static const struct i915_xd_dpll_dp_row i915_xd_tbt_pll_icl_24 = { 0, 0x151, 0x4000, 0, 0, 1, 0x4 };
 
 /*
  * The CD clock steps: Tiger Lake and Alder Lake-S, Rocket Lake (the
@@ -685,23 +797,26 @@ static const struct i915_xd_cdclk_row i915_xd_cdclk_rplu[] = {
 
 /*
  * The highest CD clock (kHz) of each voltage level, lowest level first:
- * display 12 and 13, and Raptor Lake-U.
+ * display 12 and 13, Raptor Lake-U, and Ice Lake (three levels).
  *
  * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_cdclk.c
- * (tgl_calc_voltage_level, rplu_calc_voltage_level).
+ * (tgl_calc_voltage_level, rplu_calc_voltage_level, icl_calc_voltage_level).
  */
 static const uint32_t i915_xd_voltage_tgl[] = { 312000, 326400, 556800, 652800 };
 
 static const uint32_t i915_xd_voltage_rplu[] = { 312000, 480000, 556800, 652800 };
 
+static const uint32_t i915_xd_voltage_icl[] = { 312000, 556800, 652800 };
+
 /*
  * The display buffer slices each set of active pipes gets: display 12
- * (two slices) and display 13 (four slices; a single pipe A or B may
- * have the bus joined to it, and those rows come first).  Each row: the
- * pipes (bit per pipe), joined, the slices (bit per slice) of pipes A..D.
+ * (two slices), display 13 (four slices; a single pipe A or B may have
+ * the bus joined to it, and those rows come first) and Ice Lake (two
+ * slices, one slice a pipe).  Each row: the pipes (bit per pipe),
+ * joined, the slices (bit per slice) of pipes A..D.
  *
  * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/skl_watermark.c
- * (tgl_allowed_dbufs, adlp_allowed_dbufs).
+ * (tgl_allowed_dbufs, adlp_allowed_dbufs, icl_allowed_dbufs).
  */
 static const struct i915_xd_dbuf_rule i915_xd_dbuf_tgl[] = {
 	{ 0x1, 0, { 0x3, 0x0, 0x0, 0x0 } },
@@ -741,9 +856,20 @@ static const struct i915_xd_dbuf_rule i915_xd_dbuf_adlp[] = {
 	{ 0xf, 0, { 0x3, 0xc, 0xc, 0x3 } },
 };
 
+static const struct i915_xd_dbuf_rule i915_xd_dbuf_icl[] = {
+	{ 0x1, 0, { 0x1, 0x0, 0x0, 0x0 } },
+	{ 0x2, 0, { 0x0, 0x1, 0x0, 0x0 } },
+	{ 0x3, 0, { 0x1, 0x2, 0x0, 0x0 } },
+	{ 0x4, 0, { 0x0, 0x0, 0x2, 0x0 } },
+	{ 0x5, 0, { 0x1, 0x0, 0x2, 0x0 } },
+	{ 0x6, 0, { 0x0, 0x1, 0x2, 0x0 } },
+	{ 0x7, 0, { 0x1, 0x1, 0x2, 0x0 } },
+};
+
 /*
- * The memory bus data box credits: display 12, and display 13 with its
- * larger A credit when the bus is joined (Wa_22010947358).  Each:
+ * The memory bus data box credits: display 12, display 13 with its
+ * larger A credit when the bus is joined (Wa_22010947358), and Ice Lake
+ * (no regulated back-to-back transactions: a maximum of 0).  Each:
  * A credit joined and not, BW credit, B credit, back-to-back maximum and
  * delay.
  *
@@ -753,6 +879,8 @@ static const struct i915_xd_dbuf_rule i915_xd_dbuf_adlp[] = {
 static const struct i915_xd_dbox_credit i915_xd_dbox_tgl = { 2, 2, 2, 12, 16, 1 };
 
 static const struct i915_xd_dbox_credit i915_xd_dbox_adlp = { 6, 4, 2, 8, 16, 1 };
+
+static const struct i915_xd_dbox_credit i915_xd_dbox_icl = { 2, 2, 1, 8, 0, 0 };
 
 /*
  * The bandwidth buddy page masks by memory type and channel count: the
@@ -811,9 +939,13 @@ static const struct i915_xd_procmon i915_xd_procmon[] = {
  * next row; one past the last row is a future stepping.
  *
  * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/intel_step.c
- * (tgl_revids, tgl_uy_revids, rkl_revids, adls_revids, adls_rpls_revids,
+ * (icl_revids, tgl_revids, tgl_uy_revids, rkl_revids, adls_revids, adls_rpls_revids,
  * adlp_revids, adlp_n_revids, adlp_rplp_revids, intel_step_init).
  */
+static const struct i915_xd_step_row i915_xd_steps_icl[] = {
+	{ 0x07, I915_XD_STEP_D0 },
+};
+
 static const struct i915_xd_step_row i915_xd_steps_tgl[] = {
 	{ 0x00, I915_XD_STEP_B0 },
 	{ 0x01, I915_XD_STEP_D0 },
@@ -862,12 +994,17 @@ static const struct i915_xd_step_row i915_xd_steps_rplp[] = {
 
 /*
  * The PCH device ids (the bridge id masked with 0xff80) of the south
- * displays beside display 12 and 13 GPUs, and of the Comet Lake PCHs a
+ * displays beside display 12 and 13 GPUs, of the Comet Lake PCHs a
  * Rocket Lake may sit beside (whose south display the xd code does not
- * drive, so they are known only to be refused).
+ * drive, so they are known only to be refused), and of the Sunrise Point,
+ * Kaby Lake and Cannon Point PCHs beside display 9 GPUs, whose backlight
+ * layout the PCH decides.
  *
  * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/soc/intel_pch.h
- * (INTEL_PCH_DEVICE_ID_MASK, INTEL_PCH_CMP_DEVICE_ID_TYPE,
+ * (INTEL_PCH_DEVICE_ID_MASK, INTEL_PCH_SPT_DEVICE_ID_TYPE,
+ * INTEL_PCH_SPT_LP_DEVICE_ID_TYPE, INTEL_PCH_KBP_DEVICE_ID_TYPE,
+ * INTEL_PCH_CNP_DEVICE_ID_TYPE, INTEL_PCH_CNP_LP_DEVICE_ID_TYPE,
+ * INTEL_PCH_CMP_DEVICE_ID_TYPE,
  * INTEL_PCH_CMP2_DEVICE_ID_TYPE, INTEL_PCH_CMP_V_DEVICE_ID_TYPE,
  * INTEL_PCH_ICP_DEVICE_ID_TYPE,
  * INTEL_PCH_ICP2_DEVICE_ID_TYPE, INTEL_PCH_TGP_DEVICE_ID_TYPE,
@@ -878,6 +1015,11 @@ static const struct i915_xd_step_row i915_xd_steps_rplp[] = {
 #define I915_XD_PCH_ID_MASK		0xff80U
 
 static const struct i915_xd_pch_id i915_xd_pch_ids[] = {
+	{ 0xa100, I915_PCH_SPT },
+	{ 0x9d00, I915_PCH_SPT },
+	{ 0xa280, I915_PCH_SPT },
+	{ 0xa300, I915_PCH_CNP },
+	{ 0x9d80, I915_PCH_CNP },
 	{ 0x0280, I915_PCH_CNP },
 	{ 0x0680, I915_PCH_CNP },
 	{ 0xa380, I915_PCH_SPT },
@@ -892,19 +1034,31 @@ static const struct i915_xd_pch_id i915_xd_pch_ids[] = {
 };
 
 /*
- * The PCI device ids of each platform row.  Tiger Lake's UY row has
+ * The PCI device ids of each platform row.  Ice Lake's row with port F
+ * has the port F ids, its other row the rest; Tiger Lake's UY row has
  * the GT2 ids; Raptor Lake-P's row leaves out the Raptor Lake-U ids,
  * which have a row of their own.  The Alder Lake-N row also has the two
  * later ids (0x46d3, 0x46d4) the driver already accepts.
  *
  * Values referenced: Linux v6.8.12 include/drm/i915_pciids.h
- * (INTEL_TGL_12_GT1_IDS, INTEL_TGL_12_GT2_IDS, INTEL_RKL_IDS,
+ * (INTEL_ICL_PORT_F_IDS, INTEL_ICL_11_IDS, INTEL_TGL_12_GT1_IDS, INTEL_TGL_12_GT2_IDS, INTEL_RKL_IDS,
  * INTEL_ADLS_IDS, INTEL_RPLS_IDS, INTEL_ADLP_IDS, INTEL_ADLN_IDS,
  * INTEL_RPLP_IDS, INTEL_RPLU_IDS), Linux v6.8.12
  * drivers/gpu/drm/i915/intel_device_info.c (subplatform_uy_ids,
  * subplatform_n_ids, subplatform_rpl_ids, subplatform_rplu_ids), and
- * this tree's src/drivers/gpu/i915/intel/pci-ids.h (INTEL_ADLN_IDS).
+ * this tree's src/drivers/gpu/i915/intel/pci-ids.h (INTEL_ADLN_IDS),
+ * and Linux v6.8.12 drivers/gpu/drm/i915/display/intel_display_device.c
+ * (icl_display, intel_display_device_info_runtime_init: port F).
  */
+static const uint16_t i915_xd_ids_icl[] = {
+	0x8a50, 0x8a52, 0x8a53, 0x8a54, 0x8a56, 0x8a57, 0x8a58, 0x8a59,
+	0x8a5a, 0x8a5b, 0x8a5c, 0x8a70, 0x8a71,
+};
+
+static const uint16_t i915_xd_ids_icl_no_f[] = {
+	0x8a51, 0x8a5d,
+};
+
 static const uint16_t i915_xd_ids_tgl[] = {
 	0x9a60, 0x9a68, 0x9a70,
 };
@@ -2094,21 +2248,287 @@ static const struct i915_xd_well_desc i915_xd_wells_adlp[] = {
 };
 
 /*
+ * The power wells of Ice Lake: PW_1 (switched by the DMC in DC states),
+ * the DC state well, PW_2 and PW_3 (which hold pipe B, transcoders A to
+ * C, the lanes of DDIs B to F, the VGA plane, the audio and the AUX
+ * channels B to F), the DDI IO wells A to F, the AUX wells A to F, the
+ * Thunderbolt AUX wells of the four Type-C ports, and PW_4 (pipe C).
+ * The fuse gate of PW_n is n.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_display_power_map.c
+ * (icl_power_wells_pw_1, icl_power_wells_main, icl_pwdoms_pw_2 to
+ * icl_pwdoms_pw_4, icl_pwdoms_dc_off, glk_pwdoms_ddi_io_a to
+ * glk_pwdoms_ddi_io_c, icl_pwdoms_ddi_io_d to icl_pwdoms_ddi_io_f,
+ * icl_pwdoms_aux_a to icl_pwdoms_aux_f, icl_pwdoms_aux_tbt1 to
+ * icl_pwdoms_aux_tbt4).
+ */
+static const struct i915_xd_well_desc i915_xd_wells_icl[] = {
+	{
+		"PW_1",
+		I915_XD_WELL_CONTROL_MAIN,
+		I915_XD_WELL_PW_1,
+		1U,
+		I915_XD_WELL_DMC_OWNED,
+		0U,
+		1U,
+		0ULL
+	},
+	{
+		"DC_off",
+		I915_XD_WELL_CONTROL_DC_OFF,
+		0U,
+		I915_XD_WELL_NO_FUSE,
+		0U,
+		0U,
+		1U,
+		I915_XD_POWERS_PIPE(1U) | I915_XD_POWERS_PIPE(2U) | I915_XD_POWERS_TRANS(0U) | I915_XD_POWERS_TRANS(1U) | I915_XD_POWERS_TRANS(2U) |
+		I915_XD_POWERS_LANES(1U) | I915_XD_POWERS_LANES(2U) | I915_XD_POWERS_LANES(3U) | I915_XD_POWERS_LANES(4U) | I915_XD_POWERS_LANES(5U) |
+		I915_XD_POWERS_VGA |
+		I915_XD_POWERS_AUDIO |
+		I915_XD_POWERS_AUX_IO(1U) | I915_XD_POWERS_AUX_IO(2U) | I915_XD_POWERS_AUX_IO(3U) | I915_XD_POWERS_AUX_IO(4U) | I915_XD_POWERS_AUX_IO(5U) |
+		I915_XD_POWERS_AUX(1U) | I915_XD_POWERS_AUX(2U) | I915_XD_POWERS_AUX(3U) | I915_XD_POWERS_AUX(4U) | I915_XD_POWERS_AUX(5U) |
+		I915_XD_POWERS_TBT_AUX(0U) | I915_XD_POWERS_TBT_AUX(1U) | I915_XD_POWERS_TBT_AUX(2U) | I915_XD_POWERS_TBT_AUX(3U) |
+		I915_XD_POWERS_AUX(0U) |
+		I915_XD_POWERS_DC_OFF
+	},
+	{
+		"PW_2",
+		I915_XD_WELL_CONTROL_MAIN,
+		I915_XD_WELL_PW_2,
+		2U,
+		0U,
+		0U,
+		1U,
+		I915_XD_POWERS_PIPE(1U) | I915_XD_POWERS_PIPE(2U) | I915_XD_POWERS_TRANS(0U) | I915_XD_POWERS_TRANS(1U) | I915_XD_POWERS_TRANS(2U) |
+		I915_XD_POWERS_LANES(1U) | I915_XD_POWERS_LANES(2U) | I915_XD_POWERS_LANES(3U) | I915_XD_POWERS_LANES(4U) | I915_XD_POWERS_LANES(5U) |
+		I915_XD_POWERS_VGA |
+		I915_XD_POWERS_AUDIO |
+		I915_XD_POWERS_AUX_IO(1U) | I915_XD_POWERS_AUX_IO(2U) | I915_XD_POWERS_AUX_IO(3U) | I915_XD_POWERS_AUX_IO(4U) | I915_XD_POWERS_AUX_IO(5U) |
+		I915_XD_POWERS_AUX(1U) | I915_XD_POWERS_AUX(2U) | I915_XD_POWERS_AUX(3U) | I915_XD_POWERS_AUX(4U) | I915_XD_POWERS_AUX(5U) |
+		I915_XD_POWERS_TBT_AUX(0U) | I915_XD_POWERS_TBT_AUX(1U) | I915_XD_POWERS_TBT_AUX(2U) | I915_XD_POWERS_TBT_AUX(3U)
+	},
+	{
+		"PW_3",
+		I915_XD_WELL_CONTROL_MAIN,
+		I915_XD_WELL_PW_3,
+		3U,
+		I915_XD_WELL_VGA,
+		0x2U,
+		1U,
+		I915_XD_POWERS_PIPE(1U) | I915_XD_POWERS_PIPE(2U) | I915_XD_POWERS_TRANS(0U) | I915_XD_POWERS_TRANS(1U) | I915_XD_POWERS_TRANS(2U) |
+		I915_XD_POWERS_LANES(1U) | I915_XD_POWERS_LANES(2U) | I915_XD_POWERS_LANES(3U) | I915_XD_POWERS_LANES(4U) | I915_XD_POWERS_LANES(5U) |
+		I915_XD_POWERS_VGA |
+		I915_XD_POWERS_AUDIO |
+		I915_XD_POWERS_AUX_IO(1U) | I915_XD_POWERS_AUX_IO(2U) | I915_XD_POWERS_AUX_IO(3U) | I915_XD_POWERS_AUX_IO(4U) | I915_XD_POWERS_AUX_IO(5U) |
+		I915_XD_POWERS_AUX(1U) | I915_XD_POWERS_AUX(2U) | I915_XD_POWERS_AUX(3U) | I915_XD_POWERS_AUX(4U) | I915_XD_POWERS_AUX(5U) |
+		I915_XD_POWERS_TBT_AUX(0U) | I915_XD_POWERS_TBT_AUX(1U) | I915_XD_POWERS_TBT_AUX(2U) | I915_XD_POWERS_TBT_AUX(3U)
+	},
+	{
+		"DDI_IO_A",
+		I915_XD_WELL_CONTROL_DDI,
+		I915_XD_WELL_DDI(0U),
+		I915_XD_WELL_NO_FUSE,
+		0U,
+		0U,
+		1U,
+		I915_XD_POWERS_DDI_IO(0U)
+	},
+	{
+		"DDI_IO_B",
+		I915_XD_WELL_CONTROL_DDI,
+		I915_XD_WELL_DDI(1U),
+		I915_XD_WELL_NO_FUSE,
+		0U,
+		0U,
+		1U,
+		I915_XD_POWERS_DDI_IO(1U)
+	},
+	{
+		"DDI_IO_C",
+		I915_XD_WELL_CONTROL_DDI,
+		I915_XD_WELL_DDI(2U),
+		I915_XD_WELL_NO_FUSE,
+		0U,
+		0U,
+		1U,
+		I915_XD_POWERS_DDI_IO(2U)
+	},
+	{
+		"DDI_IO_D",
+		I915_XD_WELL_CONTROL_DDI,
+		I915_XD_WELL_DDI(3U),
+		I915_XD_WELL_NO_FUSE,
+		0U,
+		0U,
+		1U,
+		I915_XD_POWERS_DDI_IO(3U)
+	},
+	{
+		"DDI_IO_E",
+		I915_XD_WELL_CONTROL_DDI,
+		I915_XD_WELL_DDI(4U),
+		I915_XD_WELL_NO_FUSE,
+		0U,
+		0U,
+		1U,
+		I915_XD_POWERS_DDI_IO(4U)
+	},
+	{
+		"DDI_IO_F",
+		I915_XD_WELL_CONTROL_DDI,
+		I915_XD_WELL_DDI(5U),
+		I915_XD_WELL_NO_FUSE,
+		0U,
+		0U,
+		1U,
+		I915_XD_POWERS_DDI_IO(5U)
+	},
+	{
+		"AUX_A",
+		I915_XD_WELL_CONTROL_AUX,
+		I915_XD_WELL_AUX(0U),
+		I915_XD_WELL_NO_FUSE,
+		0U,
+		0U,
+		1U,
+		I915_XD_POWERS_AUX_IO(0U) |
+		I915_XD_POWERS_AUX(0U)
+	},
+	{
+		"AUX_B",
+		I915_XD_WELL_CONTROL_AUX,
+		I915_XD_WELL_AUX(1U),
+		I915_XD_WELL_NO_FUSE,
+		0U,
+		0U,
+		1U,
+		I915_XD_POWERS_AUX_IO(1U) |
+		I915_XD_POWERS_AUX(1U)
+	},
+	{
+		"AUX_C",
+		I915_XD_WELL_CONTROL_AUX,
+		I915_XD_WELL_AUX(2U),
+		I915_XD_WELL_NO_FUSE,
+		0U,
+		0U,
+		1U,
+		I915_XD_POWERS_AUX_IO(2U) |
+		I915_XD_POWERS_AUX(2U)
+	},
+	{
+		"AUX_D",
+		I915_XD_WELL_CONTROL_AUX,
+		I915_XD_WELL_AUX(3U),
+		I915_XD_WELL_NO_FUSE,
+		0U,
+		0U,
+		1U,
+		I915_XD_POWERS_AUX_IO(3U) |
+		I915_XD_POWERS_AUX(3U)
+	},
+	{
+		"AUX_E",
+		I915_XD_WELL_CONTROL_AUX,
+		I915_XD_WELL_AUX(4U),
+		I915_XD_WELL_NO_FUSE,
+		0U,
+		0U,
+		1U,
+		I915_XD_POWERS_AUX_IO(4U) |
+		I915_XD_POWERS_AUX(4U)
+	},
+	{
+		"AUX_F",
+		I915_XD_WELL_CONTROL_AUX,
+		I915_XD_WELL_AUX(5U),
+		I915_XD_WELL_NO_FUSE,
+		0U,
+		0U,
+		1U,
+		I915_XD_POWERS_AUX_IO(5U) |
+		I915_XD_POWERS_AUX(5U)
+	},
+	{
+		"AUX_TBT1",
+		I915_XD_WELL_CONTROL_AUX,
+		I915_XD_WELL_AUX_TBT_ICL(0U),
+		I915_XD_WELL_NO_FUSE,
+		I915_XD_WELL_TBT_AUX,
+		0U,
+		1U,
+		I915_XD_POWERS_TBT_AUX(0U)
+	},
+	{
+		"AUX_TBT2",
+		I915_XD_WELL_CONTROL_AUX,
+		I915_XD_WELL_AUX_TBT_ICL(1U),
+		I915_XD_WELL_NO_FUSE,
+		I915_XD_WELL_TBT_AUX,
+		0U,
+		1U,
+		I915_XD_POWERS_TBT_AUX(1U)
+	},
+	{
+		"AUX_TBT3",
+		I915_XD_WELL_CONTROL_AUX,
+		I915_XD_WELL_AUX_TBT_ICL(2U),
+		I915_XD_WELL_NO_FUSE,
+		I915_XD_WELL_TBT_AUX,
+		0U,
+		1U,
+		I915_XD_POWERS_TBT_AUX(2U)
+	},
+	{
+		"AUX_TBT4",
+		I915_XD_WELL_CONTROL_AUX,
+		I915_XD_WELL_AUX_TBT_ICL(3U),
+		I915_XD_WELL_NO_FUSE,
+		I915_XD_WELL_TBT_AUX,
+		0U,
+		1U,
+		I915_XD_POWERS_TBT_AUX(3U)
+	},
+	{
+		"PW_4",
+		I915_XD_WELL_CONTROL_MAIN,
+		I915_XD_WELL_PW_4,
+		4U,
+		0U,
+		0x4U,
+		1U,
+		I915_XD_POWERS_PIPE(2U)
+	}
+};
+
+/*
  * The ports of each platform: Tiger Lake's A and B on combo PHYs and
  * TC1..TC6 on Dekel PHYs D..I (its DDI C is not used); Rocket Lake's A,
  * B, TC1 and TC2 all on combo PHYs A..D; Alder Lake-S's A and TC1..TC4
  * on combo PHYs A..E; display 13's A and B on combo PHYs and TC1..TC4 on
- * Dekel PHYs F..I.  A port's default AUX channel is its DDI, and its
- * hotplug pin follows its DDI (A, B on the DDI pins, the others on the
- * Type-C pins, which Rocket Lake with a TGP south display uses too).
+ * Dekel PHYs F..I; Ice Lake's A and B on combo PHYs and C..F (TC1..TC4,
+ * F only on some parts) on MG PHYs C..F.  A port's default AUX channel
+ * is its DDI, and its hotplug pin follows its DDI (A, B on the DDI pins,
+ * the others on the Type-C pins, which Rocket Lake with a TGP south
+ * display uses too).
  *
  * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_display_device.c
- * (tgl_display, rkl_display, adl_s_display, xe_lpd_display: port_mask),
+ * (icl_display, tgl_display, rkl_display, adl_s_display, xe_lpd_display: port_mask,
+ * intel_display_device_info_runtime_init: port F),
  * Linux v6.8.12 drivers/gpu/drm/i915/display/intel_display.c (intel_port_to_phy,
  * intel_phy_is_combo, intel_phy_is_tc, intel_port_to_tc),
- * Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c (tgl_hpd_pin, rkl_hpd_pin,
+ * Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c (icl_hpd_pin, tgl_hpd_pin, rkl_hpd_pin,
  * xelpd_hpd_pin), and Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dp_aux.c (default_aux_ch).
  */
+static const struct i915_xd_port_desc i915_xd_ports_icl[] = {
+	{ 0, I915_XD_PHY_COMBO, 0, 0, 0, 0, I915_XD_SOUTH_PIN_DDI, 0 },
+	{ 1, I915_XD_PHY_COMBO, 1, 0, 1, 0, I915_XD_SOUTH_PIN_DDI, 1 },
+	{ 2, I915_XD_PHY_MG, 2, 1, 2, 1, I915_XD_SOUTH_PIN_TC, 0 },
+	{ 3, I915_XD_PHY_MG, 3, 2, 3, 2, I915_XD_SOUTH_PIN_TC, 1 },
+	{ 4, I915_XD_PHY_MG, 4, 3, 4, 3, I915_XD_SOUTH_PIN_TC, 2 },
+	{ 5, I915_XD_PHY_MG, 5, 4, 5, 4, I915_XD_SOUTH_PIN_TC, 3 },
+};
+
 static const struct i915_xd_port_desc i915_xd_ports_tgl[] = {
 	{ 0, I915_XD_PHY_COMBO, 0, 0, 0, 0, I915_XD_SOUTH_PIN_DDI, 0 },
 	{ 1, I915_XD_PHY_COMBO, 1, 0, 1, 0, I915_XD_SOUTH_PIN_DDI, 1 },
@@ -2148,15 +2568,27 @@ static const struct i915_xd_port_desc i915_xd_ports_adlp[] = {
  * The PLLs of each platform: the combo DPLLs (Rocket Lake's third one
  * and Alder Lake-S's DPLL2 select as 2 and use the words at 0x164294;
  * Alder Lake-S's DPLL3 has its own), the Thunderbolt PLL and the Type-C
- * PLLs (display 13 moved their enables).
+ * PLLs (display 13 moved their enables; Ice Lake's are the MG PLLs, whose
+ * words are in the MG PHY; Ice Lake's DPLLs and Thunderbolt PLL have
+ * their words at its own places).
  *
  * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dpll_mgr.c
- * (tgl_plls, rkl_plls, adls_plls, adlp_plls, intel_combo_pll_enable_reg,
+ * (icl_plls, tgl_plls, rkl_plls, adls_plls, adlp_plls, intel_combo_pll_enable_reg,
  * intel_tc_pll_enable_reg, icl_dpll_write), and
  * Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dpll_mgr.h (DPLL_ID_ICL_DPLL0,
  * DPLL_ID_ICL_DPLL1, DPLL_ID_EHL_DPLL4, DPLL_ID_ICL_TBTPLL,
- * DPLL_ID_DG1_DPLL2, DPLL_ID_DG1_DPLL3).
+ * DPLL_ID_ICL_MGPLL1, DPLL_ID_DG1_DPLL2, DPLL_ID_DG1_DPLL3).
  */
+static const struct i915_xd_pll_desc i915_xd_plls_icl[] = {
+	{ I915_XD_PLL_COMBO, 0, 0, I915_XD_DPLL0_ENABLE, I915_XD_DPLL_CFGCR0_ICL(0U), I915_XD_DPLL_CFGCR1_ICL(0U) },
+	{ I915_XD_PLL_COMBO, 1, 0, I915_XD_DPLL1_ENABLE, I915_XD_DPLL_CFGCR0_ICL(1U), I915_XD_DPLL_CFGCR1_ICL(1U) },
+	{ I915_XD_PLL_TBT, 2, 0, I915_XD_TBT_PLL_ENABLE, I915_XD_DPLL_CFGCR0_ICL(2U), I915_XD_DPLL_CFGCR1_ICL(2U) },
+	{ I915_XD_PLL_TC, 3, 1, I915_XD_TC_PLL_ENABLE(0U), 0U, 0U },
+	{ I915_XD_PLL_TC, 4, 2, I915_XD_TC_PLL_ENABLE(1U), 0U, 0U },
+	{ I915_XD_PLL_TC, 5, 3, I915_XD_TC_PLL_ENABLE(2U), 0U, 0U },
+	{ I915_XD_PLL_TC, 6, 4, I915_XD_TC_PLL_ENABLE(3U), 0U, 0U },
+};
+
 static const struct i915_xd_pll_desc i915_xd_plls_tgl[] = {
 	{ I915_XD_PLL_COMBO, 0, 0, I915_XD_DPLL0_ENABLE, I915_XD_DPLL_CFGCR0(0U), I915_XD_DPLL_CFGCR1(0U) },
 	{ I915_XD_PLL_COMBO, 1, 0, I915_XD_DPLL1_ENABLE, I915_XD_DPLL_CFGCR0(1U), I915_XD_DPLL_CFGCR1(1U) },
@@ -2316,27 +2748,35 @@ static const struct i915_xd_vbt_maps i915_xd_vbt_maps_adlp = {
 /*
  * The platform descriptions: Tiger Lake (and its UY parts), Rocket Lake
  * beside a TGP south display, Alder Lake-S and Raptor Lake-S, Alder
- * Lake-P and its N and Raptor Lake-P and -U parts.  Only Tiger Lake and
- * the display 13 rows were checked on a machine (verified); the others
- * are built from the tables alone.
+ * Lake-P and its N and Raptor Lake-P and -U parts, and Ice Lake (with
+ * and without port F), last so that the first row stays Tiger Lake's.  Only Tiger Lake and the display 13 rows were checked on a
+ * machine (verified); the others are built from the tables alone.  Ice
+ * Lake's ports C..F are Type-C ports on MG PHYs with one FIA; a legacy
+ * one leaves TC cold through its AUX well and the firmware.
  *
  * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_display_device.c
- * (XE_D_DISPLAY, XE_LPD_FEATURES, tgl_display, rkl_display, adl_s_display,
- * xe_lpd_display: pipe_mask, abox_mask, dbuf, has_hti,
- * has_cdclk_crawl), Linux v6.8.12 drivers/gpu/drm/i915/display/intel_display_power.c
- * (icl_mbus_init, gen12_dbuf_slices_config, tgl_bw_buddy_init),
+ * (ICL_DISPLAY, XE_D_DISPLAY, XE_LPD_FEATURES, icl_display, tgl_display,
+ * rkl_display, adl_s_display, xe_lpd_display: pipe_mask, abox_mask, dbuf,
+ * has_hti, has_cdclk_crawl), Linux v6.8.12 drivers/gpu/drm/i915/soc/intel_pch.c
+ * (intel_pch_type: the ICP south display of Ice Lake),
+ * Linux v6.8.12 drivers/gpu/drm/i915/display/intel_display_power_well.c
+ * (icl_combo_phy_aux_power_well_enable: the AUX lane and display WA #1178),
+ * Linux v6.8.12 drivers/gpu/drm/i915/display/intel_display_power.c (icl_mbus_init, gen12_dbuf_slices_config, tgl_bw_buddy_init),
  * Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dpll_mgr.c (ehl_combo_pll_div_frac_wa_needed),
  * Linux v6.8.12 drivers/gpu/drm/i915/display/intel_combo_phy.c (phy_is_master, has_phy_misc),
  * Linux v6.8.12 drivers/gpu/drm/i915/display/intel_cdclk.c (intel_init_cdclk_hooks),
  * Linux v6.8.12 drivers/gpu/drm/i915/display/skl_watermark.c (skl_wm_init, adjust_wm_latency),
- * Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dmc.c (TGL_DMC_PATH, RKL_DMC_PATH,
+ * Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dmc.c (ICL_DMC_PATH, TGL_DMC_PATH, RKL_DMC_PATH,
  * ADLS_DMC_PATH, ADLP_DMC_PATH, disable_dmc_evt, pipedmc_clock_gating_wa),
  * Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dmc_regs.h (_TGL_PIPEDMC_REG_MMIO_BASE_A,
  * _ADLP_PIPEDMC_REG_MMIO_BASE_A), Linux v6.8.12 drivers/gpu/drm/i915/display/intel_display_wa.c
- * (xe_d_display_wa_apply, adlp_display_wa_apply),
+ * (xe_d_display_wa_apply, adlp_display_wa_apply), Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (tgl_dkl_phy_set_signal_levels: the load generator of Alder Lake-P),
+ * Linux v6.8.12 drivers/gpu/drm/i915/display/intel_cdclk.c (intel_crtc_compute_min_cdclk: the
+ * Tiger Lake minimum of the pixel rate),
  * Linux v6.8.12 drivers/gpu/drm/i915/display/intel_display_power_well.c (hsw_power_well_enable), and
- * Linux v6.8.12 drivers/gpu/drm/i915/display/intel_tc.c (the TC cold handling of Tiger Lake and
- * display 13).
+ * Linux v6.8.12 drivers/gpu/drm/i915/display/intel_tc.c (the TC cold handling of Ice Lake,
+ * Tiger Lake and display 13, icl_tc_phy_init: Ice Lake's single FIA).
  */
 static const struct i915_xd_platform i915_xd_platforms[] = {
 	{
@@ -2383,8 +2823,11 @@ static const struct i915_xd_platform i915_xd_platforms[] = {
 		"i915/tgl_dmc_ver2_12.bin",
 		I915_XD_DMC_PIPE_BASE_TGL,
 		&i915_xd_swing_tgl,
-		I915_XD_WA_DMC_CLK_MSEC_VBLANK | I915_XD_WA_XE_D_CHICKENS,
-		&i915_xd_vbt_maps_tgl
+		I915_XD_WA_DMC_CLK_MSEC_VBLANK | I915_XD_WA_XE_D_CHICKENS | I915_XD_WA_CDCLK_PIXEL_RATE,
+		&i915_xd_vbt_maps_tgl,
+		I915_XD_FIA_READ_MODULAR,
+		NULL,
+		NULL
 	},
 	{
 		"Tiger Lake UY",
@@ -2430,8 +2873,11 @@ static const struct i915_xd_platform i915_xd_platforms[] = {
 		"i915/tgl_dmc_ver2_12.bin",
 		I915_XD_DMC_PIPE_BASE_TGL,
 		&i915_xd_swing_tgl_uy,
-		I915_XD_WA_DMC_CLK_MSEC_VBLANK | I915_XD_WA_XE_D_CHICKENS,
-		&i915_xd_vbt_maps_tgl
+		I915_XD_WA_DMC_CLK_MSEC_VBLANK | I915_XD_WA_XE_D_CHICKENS | I915_XD_WA_CDCLK_PIXEL_RATE,
+		&i915_xd_vbt_maps_tgl,
+		I915_XD_FIA_READ_MODULAR,
+		NULL,
+		NULL
 	},
 	{
 		"Rocket Lake",
@@ -2478,7 +2924,10 @@ static const struct i915_xd_platform i915_xd_platforms[] = {
 		I915_XD_DMC_PIPE_BASE_TGL,
 		&i915_xd_swing_rkl,
 		I915_XD_WA_BUDDY_1409767108_A0 | I915_XD_WA_XE_D_CHICKENS,
-		&i915_xd_vbt_maps_rkl
+		&i915_xd_vbt_maps_rkl,
+		I915_XD_FIA_READ_MODULAR,
+		NULL,
+		NULL
 	},
 	{
 		"Alder Lake-S",
@@ -2525,7 +2974,10 @@ static const struct i915_xd_platform i915_xd_platforms[] = {
 		I915_XD_DMC_PIPE_BASE_TGL,
 		&i915_xd_swing_adls,
 		I915_XD_WA_BUDDY_1409767108 | I915_XD_WA_DMC_VBLANK_A | I915_XD_WA_XE_D_CHICKENS,
-		&i915_xd_vbt_maps_adls
+		&i915_xd_vbt_maps_adls,
+		I915_XD_FIA_READ_MODULAR,
+		NULL,
+		NULL
 	},
 	{
 		"Raptor Lake-S",
@@ -2572,7 +3024,10 @@ static const struct i915_xd_platform i915_xd_platforms[] = {
 		I915_XD_DMC_PIPE_BASE_TGL,
 		&i915_xd_swing_adls,
 		I915_XD_WA_BUDDY_1409767108 | I915_XD_WA_DMC_VBLANK_A | I915_XD_WA_XE_D_CHICKENS,
-		&i915_xd_vbt_maps_adls
+		&i915_xd_vbt_maps_adls,
+		I915_XD_FIA_READ_MODULAR,
+		NULL,
+		NULL
 	},
 	{
 		"Alder Lake-P",
@@ -2618,8 +3073,12 @@ static const struct i915_xd_platform i915_xd_platforms[] = {
 		"i915/adlp_dmc.bin",
 		I915_XD_DMC_PIPE_BASE_ADLP,
 		&i915_xd_swing_adlp,
-		I915_XD_WA_PW1_FLR_SOURCE | I915_XD_WA_DPCE_UNGATE | I915_XD_WA_PIPEDMC_UNGATE | I915_XD_WA_ARB_PROG_SLOTS,
-		&i915_xd_vbt_maps_adlp
+		I915_XD_WA_PW1_FLR_SOURCE | I915_XD_WA_DPCE_UNGATE | I915_XD_WA_PIPEDMC_UNGATE | I915_XD_WA_ARB_PROG_SLOTS |
+		I915_XD_WA_DKL_LOADGEN | I915_XD_WA_TC_RESET_AFTER_TBT,
+		&i915_xd_vbt_maps_adlp,
+		I915_XD_FIA_READ_MODULAR,
+		NULL,
+		NULL
 	},
 	{
 		"Alder Lake-N",
@@ -2665,8 +3124,12 @@ static const struct i915_xd_platform i915_xd_platforms[] = {
 		"i915/adlp_dmc.bin",
 		I915_XD_DMC_PIPE_BASE_ADLP,
 		&i915_xd_swing_adlp,
-		I915_XD_WA_PW1_FLR_SOURCE | I915_XD_WA_DPCE_UNGATE | I915_XD_WA_PIPEDMC_UNGATE | I915_XD_WA_ARB_PROG_SLOTS,
-		&i915_xd_vbt_maps_adlp
+		I915_XD_WA_PW1_FLR_SOURCE | I915_XD_WA_DPCE_UNGATE | I915_XD_WA_PIPEDMC_UNGATE | I915_XD_WA_ARB_PROG_SLOTS |
+		I915_XD_WA_DKL_LOADGEN | I915_XD_WA_TC_RESET_AFTER_TBT,
+		&i915_xd_vbt_maps_adlp,
+		I915_XD_FIA_READ_MODULAR,
+		NULL,
+		NULL
 	},
 	{
 		"Raptor Lake-P",
@@ -2712,8 +3175,12 @@ static const struct i915_xd_platform i915_xd_platforms[] = {
 		"i915/adlp_dmc.bin",
 		I915_XD_DMC_PIPE_BASE_ADLP,
 		&i915_xd_swing_adlp,
-		I915_XD_WA_PW1_FLR_SOURCE | I915_XD_WA_DPCE_UNGATE | I915_XD_WA_PIPEDMC_UNGATE | I915_XD_WA_ARB_PROG_SLOTS,
-		&i915_xd_vbt_maps_adlp
+		I915_XD_WA_PW1_FLR_SOURCE | I915_XD_WA_DPCE_UNGATE | I915_XD_WA_PIPEDMC_UNGATE | I915_XD_WA_ARB_PROG_SLOTS |
+		I915_XD_WA_DKL_LOADGEN | I915_XD_WA_TC_RESET_AFTER_TBT,
+		&i915_xd_vbt_maps_adlp,
+		I915_XD_FIA_READ_MODULAR,
+		NULL,
+		NULL
 	},
 	{
 		"Raptor Lake-U",
@@ -2759,9 +3226,113 @@ static const struct i915_xd_platform i915_xd_platforms[] = {
 		"i915/adlp_dmc.bin",
 		I915_XD_DMC_PIPE_BASE_ADLP,
 		&i915_xd_swing_adlp,
-		I915_XD_WA_PW1_FLR_SOURCE | I915_XD_WA_DPCE_UNGATE | I915_XD_WA_PIPEDMC_UNGATE | I915_XD_WA_ARB_PROG_SLOTS,
-		&i915_xd_vbt_maps_adlp
+		I915_XD_WA_PW1_FLR_SOURCE | I915_XD_WA_DPCE_UNGATE | I915_XD_WA_PIPEDMC_UNGATE | I915_XD_WA_ARB_PROG_SLOTS |
+		I915_XD_WA_DKL_LOADGEN | I915_XD_WA_TC_RESET_AFTER_TBT,
+		&i915_xd_vbt_maps_adlp,
+		I915_XD_FIA_READ_MODULAR,
+		NULL,
+		NULL
 	},
+	{
+		"Ice Lake",
+		I915_XD_KIND_ICL,
+		11U,
+		I915_PCH_ICP,
+		0x7U,
+		0,
+		i915_xd_ids_icl,
+		sizeof(i915_xd_ids_icl) / sizeof(i915_xd_ids_icl[0]),
+		i915_xd_steps_icl,
+		sizeof(i915_xd_steps_icl) / sizeof(i915_xd_steps_icl[0]),
+		i915_xd_ports_icl,
+		sizeof(i915_xd_ports_icl) / sizeof(i915_xd_ports_icl[0]),
+		0x3U,
+		0x1U,
+		0x3U,
+		0U,
+		I915_XD_TC_FLOW_FIA,
+		I915_XD_TCCOLD_AUX_WELL_EXIT,
+		i915_xd_wells_icl,
+		sizeof(i915_xd_wells_icl) / sizeof(i915_xd_wells_icl[0]),
+		i915_xd_plls_icl,
+		sizeof(i915_xd_plls_icl) / sizeof(i915_xd_plls_icl[0]),
+		I915_XD_PLL_MAP_CFGCR0,
+		0,
+		i915_xd_cdclk_tgl,
+		sizeof(i915_xd_cdclk_tgl) / sizeof(i915_xd_cdclk_tgl[0]),
+		i915_xd_voltage_icl,
+		sizeof(i915_xd_voltage_icl) / sizeof(i915_xd_voltage_icl[0]),
+		0,
+		2U,
+		2048U,
+		i915_xd_dbuf_icl,
+		sizeof(i915_xd_dbuf_icl) / sizeof(i915_xd_dbuf_icl[0]),
+		&i915_xd_dbox_icl,
+		0x1U,
+		0x0U,
+		0,
+		8U,
+		2U,
+		0,
+		"i915/icl_dmc_ver1_09.bin",
+		0U,
+		&i915_xd_swing_icl,
+		I915_XD_WA_COMBO_AUX_LANE | I915_XD_WA_AUX_ANAOVRD_1178,
+		&i915_xd_vbt_maps_tgl,
+		I915_XD_FIA_SINGLE,
+		&i915_xd_tbt_pll_icl_19p2,
+		&i915_xd_tbt_pll_icl_24
+	},
+	{
+		"Ice Lake without port F",
+		I915_XD_KIND_ICL,
+		11U,
+		I915_PCH_ICP,
+		0x7U,
+		0,
+		i915_xd_ids_icl_no_f,
+		sizeof(i915_xd_ids_icl_no_f) / sizeof(i915_xd_ids_icl_no_f[0]),
+		i915_xd_steps_icl,
+		sizeof(i915_xd_steps_icl) / sizeof(i915_xd_steps_icl[0]),
+		i915_xd_ports_icl,
+		sizeof(i915_xd_ports_icl) / sizeof(i915_xd_ports_icl[0]) - 1U,
+		0x3U,
+		0x1U,
+		0x3U,
+		0U,
+		I915_XD_TC_FLOW_FIA,
+		I915_XD_TCCOLD_AUX_WELL_EXIT,
+		i915_xd_wells_icl,
+		sizeof(i915_xd_wells_icl) / sizeof(i915_xd_wells_icl[0]),
+		i915_xd_plls_icl,
+		sizeof(i915_xd_plls_icl) / sizeof(i915_xd_plls_icl[0]),
+		I915_XD_PLL_MAP_CFGCR0,
+		0,
+		i915_xd_cdclk_tgl,
+		sizeof(i915_xd_cdclk_tgl) / sizeof(i915_xd_cdclk_tgl[0]),
+		i915_xd_voltage_icl,
+		sizeof(i915_xd_voltage_icl) / sizeof(i915_xd_voltage_icl[0]),
+		0,
+		2U,
+		2048U,
+		i915_xd_dbuf_icl,
+		sizeof(i915_xd_dbuf_icl) / sizeof(i915_xd_dbuf_icl[0]),
+		&i915_xd_dbox_icl,
+		0x1U,
+		0x0U,
+		0,
+		8U,
+		2U,
+		0,
+		"i915/icl_dmc_ver1_09.bin",
+		0U,
+		&i915_xd_swing_icl,
+		I915_XD_WA_COMBO_AUX_LANE | I915_XD_WA_AUX_ANAOVRD_1178,
+		&i915_xd_vbt_maps_tgl,
+		I915_XD_FIA_SINGLE,
+		&i915_xd_tbt_pll_icl_19p2,
+		&i915_xd_tbt_pll_icl_24
+	}
 };
 
 #endif /* DRIVERS_GPU_I915_INTEL_DISPLAY_TABLES_XD_H */

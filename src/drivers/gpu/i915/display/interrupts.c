@@ -28,8 +28,8 @@
 
 #include "internal.h"
 #include "interrupts.h"
-#include "hotplug.h"
-#include "power.h"
+#include "hpd.h"
+#include "display-power.h"
 #include <kern/kcrt.h>
 
 #include "../i915.h"
@@ -178,7 +178,7 @@ static const struct i915_irq_display_ops i915_display_irq_ops = {
 /*
  * The pipe interrupt hooks of the power wells.
  *
- * The power-well code calls them through pwc->irq_ops with the display's
+ * The display's power calls them through its irq_ops with the display's
  * struct i915_display_irq as the context.  The table never changes.
  */
 const struct i915_pw_irq_ops drv_i915_pw_irq_ops = {
@@ -211,13 +211,12 @@ drv_i915_display_irq_bind(
 	/* Names the device's registers and the power state the pipes live in. */
 	d->irq = irq;
 	d->m = irq->m;
-	d->pd = &display->power_domains;
-	d->pwc = &display->pwc;
+	d->power = &display->power;
 
 	/* Binds the pipes' vblank delivery and the power-well hooks that restore and stop it. */
 	drv_i915_irq_vblank_init(d, &display->irq_vblank);
-	display->pwc.irq_ops = &drv_i915_pw_irq_ops;
-	display->pwc.irq_ctx = d;
+	display->power.irq_ops = &drv_i915_pw_irq_ops;
+	display->power.irq_ctx = d;
 
 	/*
 	 * The platform: the PCH, the display version, pipes and transcoders A
@@ -271,7 +270,7 @@ drv_i915_irq_vblank_init(
 	/* Starts from an empty vblank state. */
 	kern_memset(v, 0, sizeof(*v));
 
-	/* Creates the lock that stands for the Linux irq_lock. */
+	/* Creates the lock of the display's interrupt state. */
 	spin_init(&v->lock, LOCK_RANK_DEVICE, "i915-irq-lock");
 
 	/* Creates the completion that wakes each pipe's waiter. */
@@ -407,6 +406,7 @@ drv_i915_gen11_display_irq_reset(
 {
 	unsigned pipe;
 	unsigned transcoder;
+	int powered;
 
 	/* A device without a display has no display sources. */
 	if (!d->has_display)
@@ -420,7 +420,8 @@ drv_i915_gen11_display_irq_reset(
 		for (transcoder = 0U; transcoder < 4U; transcoder++) {
 			if ((d->cpu_transcoder_mask & (1U << transcoder)) == 0U)
 				continue;
-			if (!i915_transcoder_power_on(d, transcoder))
+			powered = i915_transcoder_power_on(d, transcoder);
+			if (!powered)
 				continue;
 
 			i915_display_irq_write(d, TRANS_PSR_IMR(transcoder), 0xffffffffU, &d->irq->reset_writes);
@@ -432,7 +433,8 @@ drv_i915_gen11_display_irq_reset(
 	for (pipe = 0U; pipe < I915_IRQ_MAX_PIPES; pipe++) {
 		if ((d->pipe_mask & (1U << pipe)) == 0U)
 			continue;
-		if (!i915_pipe_power_on(d, pipe))
+		powered = i915_pipe_power_on(d, pipe);
+		if (!powered)
 			continue;
 
 		drv_i915_gen3_irq_reset(d->irq, GEN8_DE_PIPE_IMR(pipe), GEN8_DE_PIPE_IIR(pipe), GEN8_DE_PIPE_IER(pipe));
@@ -670,14 +672,13 @@ drv_i915_irq_drain_pipes(
 }
 
 /*
- * Takes a vblank reference on a pipe (drm_vblank_get()).
+ * Takes a vblank reference on a pipe.
  *
- * The first reference enables the pipe's vblank interrupt
- * (bdw_enable_vblank()).  Returns 0, or EINVAL when the vblank state is not
+ * The first reference unmasks the pipe's vblank interrupt.  Returns 0, or EINVAL when the vblank state is not
  * bound, the pipe is out of range or interrupts are not enabled.
  */
 int
-drv_i915_drm_vblank_get(
+drv_i915_display_vblank_get(
 	struct i915_display_irq *d,
 	unsigned pipe)
 {
@@ -716,16 +717,13 @@ drv_i915_drm_vblank_get(
 }
 
 /*
- * Drops a vblank reference on a pipe (drm_vblank_put()).
+ * Drops a vblank reference on a pipe.
  *
- * The last reference masks the pipe's vblank interrupt at once
- * (bdw_disable_vblank(), vblank_disable_immediate).  Adaptation: Linux still
- * disables through the vblank core after the pending vblank and event
- * processing; this path has no DRM events or workers, so it masks inside
- * the put.
+ * The last reference masks the pipe's vblank interrupt at once: nothing
+ * else delivers vblank events, so nothing waits for a pending one first.
  */
 void
-drv_i915_drm_vblank_put(
+drv_i915_display_vblank_put(
 	struct i915_display_irq *d,
 	unsigned pipe)
 {
@@ -874,9 +872,9 @@ i915_display_irq_set_enabled(
 
 	d = context;
 
-	/* The power-well post-enable path is gated on this same flag. */
-	if (d->pwc != NULL)
-		d->pwc->irqs_enabled = enabled;
+	/* The power wells' restore of a pipe's interrupts is gated on this same flag. */
+	if (d->power != NULL)
+		d->power->irqs_enabled = enabled;
 }
 
 /* Warns about vblank references still held when interrupts are uninstalled. */
@@ -988,7 +986,7 @@ i915_display_irq_write(
 		(*counter)++;
 }
 
-/* Reports whether a pipe's power domain is enabled. */
+/* Reports whether a pipe's power wells are on. */
 static int
 i915_pipe_power_on(
 	struct i915_display_irq *d,
@@ -996,14 +994,14 @@ i915_pipe_power_on(
 {
 	int enabled;
 
-	/* Asks the power domains about PIPE_A + pipe. */
-	enabled = drv_i915_display_power_is_enabled(d->pd, (enum i915_power_domain)(I915_PW_DOMAIN_PIPE_A + pipe), d->pwc);
+	/* Asks whether the pipe's wells are on. */
+	enabled = drv_i915_display_power_is_on(d->power, I915_XD_POWERS_PIPE(pipe));
 
 	/* Reports the pipe's power. */
 	return enabled;
 }
 
-/* Reports whether a transcoder's power domain is enabled. */
+/* Reports whether a transcoder's power wells are on. */
 static int
 i915_transcoder_power_on(
 	struct i915_display_irq *d,
@@ -1011,14 +1009,14 @@ i915_transcoder_power_on(
 {
 	int enabled;
 
-	/* Asks the power domains about TRANSCODER_A + transcoder. */
-	enabled = drv_i915_display_power_is_enabled(d->pd, (enum i915_power_domain)(I915_PW_DOMAIN_TRANSCODER_A + transcoder), d->pwc);
+	/* Asks whether the transcoder's wells are on. */
+	enabled = drv_i915_display_power_is_on(d->power, I915_XD_POWERS_TRANS(transcoder));
 
 	/* Reports the transcoder's power. */
 	return enabled;
 }
 
-/* Reports the interrupt device's irqs_enabled (the Linux runtime_pm.irqs_enabled). */
+/* Reports whether the interrupt device has its interrupts enabled. */
 static int
 i915_irqs_enabled(
 	struct i915_display_irq *d)
@@ -1057,6 +1055,7 @@ i915_gen8_de_irq_postinstall(
 	uint32_t de_hpd_enables;
 	unsigned pipe;
 	unsigned transcoder;
+	int powered;
 
 	/* A device without a display has no display sources. */
 	if (!d->has_display)
@@ -1102,7 +1101,8 @@ i915_gen8_de_irq_postinstall(
 		for (transcoder = 0U; transcoder < 4U; transcoder++) {
 			if ((d->cpu_transcoder_mask & (1U << transcoder)) == 0U)
 				continue;
-			if (!i915_transcoder_power_on(d, transcoder))
+			powered = i915_transcoder_power_on(d, transcoder);
+			if (!powered)
 				continue;
 
 			drv_i915_gen3_assert_iir_is_zero(d->irq, TRANS_PSR_IIR(transcoder));
@@ -1117,7 +1117,8 @@ i915_gen8_de_irq_postinstall(
 		d->de_irq_mask[pipe] = ~de_pipe_masked;
 
 		/* A pipe whose well is off is programmed by the well's post-enable. */
-		if (i915_pipe_power_on(d, pipe))
+		powered = i915_pipe_power_on(d, pipe);
+		if (powered)
 			drv_i915_gen3_irq_init(d->irq, GEN8_DE_PIPE_IMR(pipe), d->de_irq_mask[pipe], GEN8_DE_PIPE_IER(pipe), de_pipe_enables, GEN8_DE_PIPE_IIR(pipe));
 	}
 
@@ -1199,7 +1200,7 @@ i915_gen8_de_irq_handler(
 	/*
 	 * An ICP or later PCH below display version 14 has no PICA block: the
 	 * south display IIR is read and acknowledged directly, and handed to
-	 * the hotplug path (icp_irq_handler()).
+	 * the hotplug (hpd.c).
 	 */
 	if (d->pch != NULL && d->pch->type >= I915_PCH_ICP && (master_ctl & GEN8_DE_PCH_IRQ) != 0U) {
 		iir = drv_i915_read32(d->m, SDEIIR);
@@ -1226,6 +1227,7 @@ i915_gen8_de_pipe_irq_handler(
 	uint32_t iir;
 	uint32_t fault_errors;
 	int closed;
+	uint32_t mask;
 
 	/*
 	 * Admission: the handler counts itself in first and then checks the
@@ -1271,11 +1273,13 @@ i915_gen8_de_pipe_irq_handler(
 	}
 
 	/* Counts a completed flip. */
-	if ((iir & drv_i915_gen8_de_pipe_flip_done_mask(d->display_ver)) != 0U)
+	mask = drv_i915_gen8_de_pipe_flip_done_mask(d->display_ver);
+	if ((iir & mask) != 0U)
 		d->de_flip_done_count++;
 
 	/* Counts an underrun. */
-	if ((iir & drv_i915_gen8_de_pipe_underrun_mask(d->display_ver)) != 0U)
+	mask = drv_i915_gen8_de_pipe_underrun_mask(d->display_ver);
+	if ((iir & mask) != 0U)
 		d->de_underrun_count++;
 
 	/* Reports plane faults. */

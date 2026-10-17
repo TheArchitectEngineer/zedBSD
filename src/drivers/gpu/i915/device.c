@@ -27,8 +27,7 @@
 #include "engine.h"
 #include "irq.h"
 #include "display/display.h"
-#include "display/diagnostics.h"
-#include "display/gen9-firmware.h"
+#include "display/run-log.h"
 #include "display/gen9-flip.h"
 #include "render/render.h"
 #include <kern/kcrt.h>
@@ -223,9 +222,9 @@ static void i915_start_launch(void);
 static void i915_start_worker(void *argument);
 static void i915_attach_settled_locked(struct i915_device *device);
 static int i915_start_prepare(struct i915_device *device);
-static int i915_start_display_noirq(struct i915_device *device);
-static int i915_start_display_nogem(struct i915_device *device);
-static int i915_start_display_register(struct i915_device *device);
+static int i915_start_display(struct i915_device *device);
+static int i915_start_display_outputs(struct i915_device *device);
+static int i915_start_display_serve(struct i915_device *device);
 static int i915_start_registers(struct i915_device *device);
 static int i915_start_gt_info(struct i915_device *device);
 static int i915_start_memory(struct i915_device *device);
@@ -413,13 +412,13 @@ drv_i915_device_start(
 	if (error != 0)
 		return error;
 
-	/* Sets up 39-bit DMA, the GGTT, the aperture, bus mastering, the MSI vector and the display's data sources. */
+	/* Sets up 39-bit DMA, the GGTT, the aperture, bus mastering and the MSI vector. */
 	error = i915_start_memory(device);
 	if (error != 0)
 		return error;
 
-	/* Brings the display up to the point before interrupts (intel_display_driver_probe_noirq()). */
-	error = i915_start_display_noirq(device);
+	/* Starts the display before the interrupts: its tables, the firmware check and its core. */
+	error = i915_start_display(device);
 	if (error != 0)
 		return error;
 
@@ -428,8 +427,8 @@ drv_i915_device_start(
 	if (error != 0)
 		return error;
 
-	/* Builds the outputs and reads back and sanitizes what the firmware left (intel_display_driver_probe_nogem()). */
-	error = i915_start_display_nogem(device);
+	/* Builds the display's outputs and corrects what the firmware left unused. */
+	error = i915_start_display_outputs(device);
 	if (error != 0)
 		return error;
 
@@ -441,8 +440,8 @@ drv_i915_device_start(
 	/* Creates the protected-content context; its failure never stops the start. */
 	i915_start_pxp(device);
 
-	/* Probes the display and registers the driver (intel_display_driver_probe(), i915_driver_register()). */
-	error = i915_start_display_register(device);
+	/* Serves the display: the hotplug path and the Type-C ports start, the start's references go back. */
+	error = i915_start_display_serve(device);
 	if (error != 0)
 		return error;
 
@@ -529,7 +528,7 @@ drv_i915_device_stop(
 }
 
 /*
- * Lets the GT go idle for a park of the request worker (ws052-p009).
+ * Lets the GT go idle for a park of the request worker.
  *
  * The worker's thread calls it once it has nothing running: the RPS
  * evaluations stop and every forcewake domain the published node held is
@@ -589,8 +588,7 @@ drv_i915_device_unpark_gt(
 }
 
 /*
- * Takes the hardware down for a suspend, after the request worker parked
- * (ws052-p009).
+ * Takes the hardware down for a suspend, after the request worker parked.
  *
  * The display holds its wells, every interrupt source is masked and
  * cleared (with the GT awake for the writes), and the display core goes
@@ -640,7 +638,7 @@ drv_i915_device_suspend_hw(
 
 /*
  * Brings the hardware back after a resume, before the request worker
- * leaves its park (ws052-p009).
+ * leaves its park.
  *
  * The display core comes up again, the GGTT is written again, the GT
  * resumes (engines, workarounds, MOCS, RC6) with the fence registers
@@ -1201,55 +1199,56 @@ i915_start_prepare(
 }
 
 /*
- * Runs the display noirq probe; a start without a display skips it.
+ * Starts the display before the interrupts; a start without a display
+ * skips it.
  *
  * A firmware display check that stops leaves the device without a display
  * and the start continues.
  */
 static int
-i915_start_display_noirq(
+i915_start_display(
 	struct i915_device *device)
 {
 	int error;
 
-	/* The DRM device, the VBT, the power domains, the firmware check, the display core, DMC and software state. */
-	error = drv_i915_display_init_noirq(device);
+	/* The display, its tables, the firmware check, the display core and the DMC's load. */
+	error = drv_i915_display_start(device);
 	if (error != 0)
 		return error;
 
-	/* Succeeded: intel_display_driver_probe_noirq() returned 0. */
+	/* Succeeded: the display may bind its interrupt half. */
 	return 0;
 }
 
-/* Runs the display survey and nogem probe; a start without a display skips it. */
+/* Builds the display's outputs; a start without a display skips it. */
 static int
-i915_start_display_nogem(
+i915_start_display_outputs(
 	struct i915_device *device)
 {
 	int error;
 
-	/* The survey, the output setup, the readout and the sanitize. */
-	error = drv_i915_display_init_nogem(device);
+	/* The ports, the panel's connector and the correction of the firmware's leftovers. */
+	error = drv_i915_display_outputs(device);
 	if (error != 0)
 		return error;
 
-	/* Succeeded: intel_display_driver_probe_nogem() returned 0. */
+	/* Succeeded: the outputs are known. */
 	return 0;
 }
 
-/* Runs the display probe and the driver registration; a start without a display skips it. */
+/* Serves the display; a start without a display skips it. */
 static int
-i915_start_display_register(
+i915_start_display_serve(
 	struct i915_device *device)
 {
 	int error;
 
-	/* The display probe, the hotplug path, the OpRegion and driver registration. */
-	error = drv_i915_display_register(device);
+	/* The hotplug path, the Type-C ports and the references given back. */
+	error = drv_i915_display_serve(device);
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the driver is registered. */
+	/* Succeeded: the display is served. */
 	return 0;
 }
 
@@ -1315,6 +1314,8 @@ i915_start_registers(
 	} else {
 		ranges = drv_i915_mmio_gen12_ranges(&range_count);
 	}
+
+	/* Opens the register window over the generation's ranges. */
 	drv_i915_mmio_init(&gt->mmio, drv_i915_mmio_window_ops(), &gt->regs_window, ranges, range_count, &gt->trace);
 	gt->mmio.graphics_ver = (int)gt->graphics_ver;
 	kern_logf("i915: uncore BAR mapped (%llu bytes)\n", (unsigned long long)gt->regs.size);
@@ -1437,8 +1438,6 @@ i915_start_memory(
 		1
 	};
 	struct i915_gt *gt;
-	unsigned driver_ggtt_first;
-	unsigned reserved;
 	int error;
 
 	gt = &device->gt;
@@ -1494,34 +1493,7 @@ i915_start_memory(
 	kern_logf("i915: pci_enable_msi ok (vector programmed, msi_enabled=%d, handler unattached)\n",
 	    drv_i915_pci_msi_enabled(&gt->pci));
 
-	/* Creates the display and its Linux environments; a failure stops the start. */
-	device->stage = "display_create";
-	error = drv_i915_display_create(device);
-	if (error != 0)
-		return error;
-
-	/*
-	 * A Gen9 display controller is not driven: the firmware's picture is
-	 * kept and the display stages are skipped.  The check refuses a start
-	 * whose GT memory would overwrite the firmware's scanout.
-	 */
-	if (gt->graphics_ver == 9U && device->display != NULL) {
-		reserved = I915_GT_GGTT_PAGES + I915_GT_DISPLAY_PAGES;
-		driver_ggtt_first = 0U;
-		if (gt->ggtt_entries > reserved)
-			driver_ggtt_first = gt->ggtt_entries - reserved;
-
-		/* Checks what the firmware scans out before the GT start writes its GGTT pages. */
-		device->stage = "n0_lite_gen9";
-		error = drv_i915_gen9_firmware_check(device->display, &gt->mmio, driver_ggtt_first);
-		if (error != 0)
-			return error;
-	}
-
-	/* The end of the hardware probe: the OpRegion and its VBT, the DRAM and the display bandwidth. */
-	drv_i915_display_init_opregion(device);
-
-	/* Succeeded: DMA, the GGTT, the MSI vector and the display's data sources are ready. */
+	/* Succeeded: DMA, the GGTT and the MSI vector are ready. */
 	return 0;
 }
 
@@ -2026,11 +1998,11 @@ i915_start_publish(
 
 	gt->forcewake_held = held;
 
-	/* Lets the GT frequency follow the load from here on (ws075-p020); without it the frequency stays requested. */
+	/* Lets the GT frequency follow the load from here on; without it the frequency stays requested. */
 	device->stage = "rps_start";
 	(void)drv_i915_rps_start(&gt->init.rps, &gt->irq, &gt->mmio);
 
-	/* Lists the GPU in hw.gputelemetry (ws134-p007), which only reads what the RPS keeps; a full list leaves it out. */
+	/* Lists the GPU in hw.gputelemetry, which only reads what the RPS keeps; a full list leaves it out. */
 	(void)kern_gpu_telemetry_register("i915", drv_i915_rps_telemetry_read, &gt->init.rps);
 
 	/* Creates the request worker's state. */
@@ -2079,8 +2051,8 @@ i915_stop_gt(
 	i915_forcewake_put_all(gt, gt->forcewake_held);
 	gt->forcewake_held = 0U;
 
-	/* Stops anything still scanned out, the hotplug path, and unregisters the driver. */
-	drv_i915_display_stop_early(device);
+	/* Stops anything still scanned out and the hotplug path, and takes the display's references back. */
+	drv_i915_display_stop_serving(device);
 
 	/* Frees the protected-content context. */
 	if (gt->pxp_inited != 0U) {
@@ -2187,7 +2159,7 @@ i915_stop_hardware(
 	}
 
 	/* Takes the rest of the display apart in reverse order. */
-	drv_i915_display_fini(device);
+	drv_i915_display_stop(device);
 
 	/* Frees the MSI vector. */
 	enabled = drv_i915_pci_msi_enabled(&gt->pci);

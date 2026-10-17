@@ -41,6 +41,7 @@
 #define I915_XD_IO_LONG_STEP_US		100U
 
 static void i915_xd_io_record(struct i915_xd_io *io, unsigned kind, uint32_t offset, uint32_t value, const char *step);
+static int i915_xd_io_wait(struct i915_xd_io *io, uint32_t offset, uint32_t mask, uint32_t value, int any, unsigned timeout_us, uint32_t *last);
 static unsigned i915_xd_io_poll_step(unsigned elapsed, unsigned timeout_us);
 static int i915_xd_io_mailbox_status(uint32_t command, uint32_t reply);
 
@@ -210,39 +211,43 @@ drv_i915_xd_io_poll(
 	unsigned timeout_us,
 	uint32_t *last)
 {
-	uint32_t word;
-	unsigned elapsed;
-	unsigned step;
 	int error;
 
-	/* Reads the register until it shows the value or the time is up. */
-	elapsed = 0U;
-	for (;;) {
-		/* Reads the register and hands back what it held. */
-		word = drv_i915_xd_io_read(io, offset);
-		if (last != NULL)
-			*last = word;
+	/* Waits for the field to read the value. */
+	error = i915_xd_io_wait(io, offset, mask, value, 0, timeout_us, last);
+	if (error != 0)
+		return error;
 
-		/* The register shows the value: the wait is over. */
-		if ((word & mask) == value)
-			return 0;
+	/* Succeeded: the register shows the value. */
+	return 0;
+}
 
-		/* The time is up: the wait failed. */
-		if (elapsed >= timeout_us)
-			break;
+/*
+ * Waits until at least one of some bits of a register is set.
+ *
+ * It waits as drv_i915_xd_io_poll() does, for a register that reports
+ * one of several outcomes in different bits (a controller that is
+ * either ready or refused).  *last (when not NULL) receives the last
+ * value read, which tells the outcomes apart.  Returns 0, ETIMEDOUT
+ * (recorded), or EIO when the time base failed.
+ */
+int
+drv_i915_xd_io_poll_any(
+	struct i915_xd_io *io,
+	uint32_t offset,
+	uint32_t bits,
+	unsigned timeout_us,
+	uint32_t *last)
+{
+	int error;
 
-		/* Lets the next step of time pass. */
-		step = i915_xd_io_poll_step(elapsed, timeout_us);
-		error = drv_i915_xd_io_delay(io, step);
-		if (error != 0)
-			return error;
-		elapsed += step;
-	}
+	/* Waits for any of the bits. */
+	error = i915_xd_io_wait(io, offset, bits, 0U, 1, timeout_us, last);
+	if (error != 0)
+		return error;
 
-	/* Records the register and its last value, and reports the timeout. */
-	i915_xd_io_record(io, I915_XD_IO_RECORD_TIMEOUT, offset, word, NULL);
-
-	return ETIMEDOUT;
+	/* Succeeded: one of the bits is set. */
+	return 0;
 }
 
 /*
@@ -507,6 +512,61 @@ i915_xd_io_record(
 	} else {
 		kern_logf("i915: xd: write 0x%06x 0x%08x\n", offset, value);
 	}
+}
+
+/*
+ * Reads a register until its masked bits equal a value, or (any
+ * nonzero) until one of them is set, or the time is up; the waits of
+ * drv_i915_xd_io_poll() and drv_i915_xd_io_poll_any().
+ */
+static int
+i915_xd_io_wait(
+	struct i915_xd_io *io,
+	uint32_t offset,
+	uint32_t mask,
+	uint32_t value,
+	int any,
+	unsigned timeout_us,
+	uint32_t *last)
+{
+	uint32_t word;
+	unsigned elapsed;
+	unsigned step;
+	int error;
+
+	/* Reads the register until it shows what is waited for or the time is up. */
+	elapsed = 0U;
+	for (;;) {
+		/* Reads the register and hands back what it held. */
+		word = drv_i915_xd_io_read(io, offset);
+		if (last != NULL)
+			*last = word;
+
+		/* A wait for any of the bits is over when one is set. */
+		if (any != 0 && (word & mask) != 0U)
+			return 0;
+
+		/* A wait for a value is over when the field shows it. */
+		if (any == 0 && (word & mask) == value)
+			return 0;
+
+		/* The time is up: the wait failed. */
+		if (elapsed >= timeout_us)
+			break;
+
+		/* Lets the next step of time pass. */
+		step = i915_xd_io_poll_step(elapsed, timeout_us);
+		error = drv_i915_xd_io_delay(io, step);
+		if (error != 0)
+			return error;
+		elapsed += step;
+	}
+
+	/* Records the register and its last value, and reports the timeout. */
+	i915_xd_io_record(io, I915_XD_IO_RECORD_TIMEOUT, offset, word, NULL);
+
+	/* The wait ran out. */
+	return ETIMEDOUT;
 }
 
 /* Chooses the length of the next step of a wait. */

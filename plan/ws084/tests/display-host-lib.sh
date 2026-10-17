@@ -30,7 +30,17 @@ i915_display_host_build() {
 	objects=$out.objects
 	: > "$objects/commands"
 	: > "$objects/list"
-	for source in src/drivers/gpu/i915/display/*.c src/drivers/gpu/i915/trace.c ${I915_HOST_EXTRA_PRODUCTION:-}; do
+	# The display's start records its register writes (mmio-record.c), so every test links the recorder; a source
+	# a runner also names in I915_HOST_EXTRA_PRODUCTION is compiled once.
+	seen=
+	for source in src/drivers/gpu/i915/display/*.c src/drivers/gpu/i915/trace.c src/drivers/gpu/i915/mmio-record.c \
+	    ${I915_HOST_EXTRA_PRODUCTION:-}; do
+		case " $seen " in
+		*" $source "*)
+			continue
+			;;
+		esac
+		seen="$seen $source"
 		object=$objects/production-$(basename "$source" .c).o
 		echo "${CC:-cc} $I915_HOST_BASE $I915_HOST_PRODUCTION_WARNINGS -c $source -o $object" >> "$objects/commands"
 		echo "$object" >> "$objects/list"

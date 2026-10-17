@@ -96,7 +96,7 @@ i915_xd_io_test_firmware(
 {
 	struct i915_xd_io_test_firmware *firmware;
 
-	(void)offset;
+	UNUSED_PARAMETER(offset);
 	firmware = context;
 
 	/* Only a write that hands over a command is answered. */
@@ -125,6 +125,7 @@ i915_xd_io_test_access(void)
 	struct i915_xd_io io;
 	uint32_t value;
 
+	/* A fresh window on the model. */
 	i915_xd_io_test_setup(&io);
 
 	/* A register the model holds reads back through the window. */
@@ -166,6 +167,7 @@ i915_xd_io_test_poll(void)
 	unsigned count;
 	int error;
 
+	/* A fresh window on the model. */
 	i915_xd_io_test_setup(&io);
 
 	/* A register already at the value ends the wait without time passing. */
@@ -198,6 +200,21 @@ i915_xd_io_test_poll(void)
 	i915_xd_io_test_setup(&io);
 	error = drv_i915_xd_io_poll(&io, I915_XD_DBUF_CTL_S1, I915_XD_DBUF_POWER_STATE, I915_XD_DBUF_POWER_STATE, 0U, NULL);
 	i915_host_check(error == ETIMEDOUT && i915_xd_fake_now() == 0U && i915_xd_fake_reads() == 1U, "poll: a wait of 0 us reads once");
+
+	/* A wait for any of two bits ends at the first one that comes, either of them. */
+	i915_xd_io_test_setup(&io);
+	i915_xd_fake_later(40U, I915_XD_DBUF_CTL_S1, 0U, 0x00000400U);
+	error = drv_i915_xd_io_poll_any(&io, I915_XD_DBUF_CTL_S1, 0x00000800U | 0x00000400U, 1000U, &last);
+	i915_host_check(error == 0 && i915_xd_fake_now() == 40U && last == 0x00000400U, "poll any: the second bit ends the wait when it comes");
+
+	/* A wait for any of two bits times out like a wait for a value, and is recorded. */
+	i915_xd_io_test_setup(&io);
+	i915_xd_fake_set(I915_XD_DBUF_CTL_S1, 0x00000200U);
+	error = drv_i915_xd_io_poll_any(&io, I915_XD_DBUF_CTL_S1, 0x00000800U | 0x00000400U, 1000U, &last);
+	count = drv_i915_xd_io_records(&io, records, 4U);
+	i915_host_check(error == ETIMEDOUT && i915_xd_fake_now() == 1000U && last == 0x00000200U && count == 1U &&
+			records[0].kind == I915_XD_IO_RECORD_TIMEOUT,
+			"poll any: none of the bits times out after the whole wait, recorded");
 }
 
 /* Checks the write record: order, steps, and the wrap-around. */
@@ -210,6 +227,7 @@ i915_xd_io_test_record(void)
 	unsigned index;
 	int in_order;
 
+	/* A fresh window on the model. */
 	i915_xd_io_test_setup(&io);
 
 	/* Writes and steps are recorded in the order they happened. */
@@ -238,6 +256,8 @@ i915_xd_io_test_record(void)
 		if (records[index].value != index + 10U)
 			in_order = 0;
 	}
+
+	/* Checks the ring keeps the newest writes in order. */
 	i915_host_check(count == I915_XD_IO_RECORDS && in_order != 0, "record: the ring keeps the newest writes in order");
 }
 
@@ -323,6 +343,7 @@ i915_xd_io_test_locks(void)
 {
 	struct i915_xd_io io;
 
+	/* A fresh window on the model. */
 	i915_xd_io_test_setup(&io);
 
 	/* Taking the locks in the documented order is no violation. */

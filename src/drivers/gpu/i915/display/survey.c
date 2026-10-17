@@ -15,7 +15,7 @@
  */
 
 #include "internal.h"
-#include "diagnostics.h"
+#include "run-log.h"
 #include "survey.h"
 #include "xd-io.h"
 
@@ -254,6 +254,7 @@ drv_i915_survey_read(
 		if (!powered)
 			continue;
 
+		/* Reads which buffer the pipe's plane shows. */
 		offset = drv_i915_survey_register_offset(I915_SURVEY_PLANE_SURF, pipe);
 		surface = drv_i915_xd_io_read(io, offset);
 		buffer = i915_survey_buffer_of(scene, surface);
@@ -275,6 +276,7 @@ drv_i915_survey_read(
 		if (reg->pipe_stride != 0U && !reading->pipe_powered)
 			continue;
 
+		/* Reads the register. */
 		offset = drv_i915_survey_register_offset(index, reading->pipe);
 		reading->value[index] = drv_i915_xd_io_read(io, offset);
 		reading->read[index] = 1;
@@ -509,6 +511,7 @@ drv_i915_survey_window_open(
 	if (i915_survey.phase != I915_SURVEY_IDLE)
 		return;
 
+	/* Records the display; a later window is not surveyed. */
 	i915_survey.display = display;
 	i915_survey.phase = I915_SURVEY_DONE;
 
@@ -586,6 +589,7 @@ drv_i915_survey_flip(
 		if (error == 0)
 			crc_read = 1;
 
+		/* Stops the CRC. */
 		drv_i915_survey_crc_stop(&i915_survey.io, i915_survey.crc_pipe);
 		i915_survey.crc_running = 0;
 	}

@@ -90,7 +90,8 @@
  * GEN9_MEM_LATENCY_LEVEL_3_7_MASK, SKL_PCODE_CDCLK_CONTROL,
  * SKL_CDCLK_PREPARE_FOR_CHANGE, SKL_CDCLK_READY_FOR_CHANGE,
  * ICL_PCODE_MEM_SUBSYSYSTEM_INFO, ICL_PCODE_MEM_SS_READ_GLOBAL_INFO,
- * ICL_PCODE_MEM_SS_READ_QGV_POINT_INFO, ICL_PCODE_SAGV_DE_MEM_SS_CONFIG,
+ * ICL_PCODE_MEM_SS_READ_QGV_POINT_INFO, ADL_PCODE_MEM_SS_READ_PSF_GV_INFO,
+ * ICL_PCODE_SAGV_DE_MEM_SS_CONFIG,
  * ICL_PCODE_REP_QGV_MASK, ICL_PCODE_REQ_QGV_PT_MASK,
  * ADLS_PCODE_REP_PSF_MASK, ADLS_PCODE_REQ_PSF_PT_MASK,
  * ICL_PCODE_EXIT_TCCOLD, TGL_PCODE_TCCOLD,
@@ -107,6 +108,7 @@
 #define I915_XD_MAILBOX_MEMORY_INFO		0x0dU
 #define I915_XD_MAILBOX_MEMORY_INFO_GLOBAL	0x00000000U
 #define I915_XD_MAILBOX_MEMORY_INFO_QGV(point)	(((point) << 16) | 0x100U)
+#define I915_XD_MAILBOX_MEMORY_INFO_PSF		0x00000200U
 #define I915_XD_MAILBOX_SAGV_CONFIG		0x0eU
 #define I915_XD_MAILBOX_SAGV_REPLY_QGV		0x00000003U
 #define I915_XD_MAILBOX_SAGV_REQUEST_QGV	0x000000ffU
@@ -172,6 +174,15 @@
 #define I915_XD_WELL_AUX_TBT(tc)		(9U + (tc))
 
 /*
+ * The indexes of Ice Lake's Thunderbolt AUX wells, right after its six
+ * AUX wells A..F.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (ICL_PW_CTL_IDX_AUX_TBT1 to ICL_PW_CTL_IDX_AUX_TBT4).
+ */
+#define I915_XD_WELL_AUX_TBT_ICL(tc)		(8U + (tc))
+
+/*
  * The indexes of the DDI IO wells: one per DDI, numbered like the DDIs
  * (display 13 calls 7 and 8 DDI D and E).
  *
@@ -214,6 +225,19 @@
 #define I915_XD_DC_STATE_DEBUG			0x45520U
 #define I915_XD_DC_STATE_DEBUG_MASK_CORES	0x00000001U
 #define I915_XD_DC_STATE_DEBUG_MASK_MEMORY_UP	0x00000002U
+
+/*
+ * The utility pin: its enable and its mode field, whose PWM mode keeps
+ * the display out of DC6.
+ *
+ * Values referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_backlight_regs.h (UTIL_PIN_CTL,
+ * UTIL_PIN_ENABLE, UTIL_PIN_MODE_MASK, UTIL_PIN_MODE_PWM).
+ */
+#define I915_XD_UTIL_PIN_CTL			0x48400U
+#define I915_XD_UTIL_PIN_ENABLE			0x80000000U
+#define I915_XD_UTIL_PIN_MODE_MASK		0x0f000000U
+#define I915_XD_UTIL_PIN_MODE_PWM		0x01000000U
 
 /*
  * The display buffer slices: request and state of a slice's power, and
@@ -329,6 +353,20 @@
 #define I915_XD_CLKGATE_PSL_EXT_PIPEDMC		0x00001000U
 
 /*
+ * The start's workarounds of display 11 and 12: the frame buffer
+ * compressor's dummy pixel chicken (compressor A) and the memory-up
+ * override of the clock request policy.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (ILK_DPFC_CHICKEN, DPFC_CHICKEN_COMP_DUMMY_PIXEL, CLKREQ_POLICY,
+ * CLKREQ_POLICY_MEM_UP_OVRD).
+ */
+#define I915_XD_DPFC_CHICKEN_A			0x43224U
+#define I915_XD_DPFC_CHICKEN_DUMMY_PIXEL	0x00004000U
+#define I915_XD_CLKREQ_POLICY			0x101038U
+#define I915_XD_CLKREQ_POLICY_MEM_UP		0x00000002U
+
+/*
  * The firmware's hold on ports (Rocket Lake and Alder Lake-S): which
  * DPLLs and which PHYs the firmware keeps for itself.
  *
@@ -432,7 +470,8 @@
  *
  * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
  * (CDCLK_CTL, BXT_CDCLK_CD2X_DIV_SEL_MASK, BXT_CDCLK_CD2X_DIV_SEL_1,
- * BXT_CDCLK_CD2X_DIV_SEL_2, TGL_CDCLK_CD2X_PIPE, TGL_CDCLK_CD2X_PIPE_NONE,
+ * BXT_CDCLK_CD2X_DIV_SEL_1_5, BXT_CDCLK_CD2X_DIV_SEL_2,
+ * BXT_CDCLK_CD2X_DIV_SEL_4, TGL_CDCLK_CD2X_PIPE, TGL_CDCLK_CD2X_PIPE_NONE,
  * ICL_CDCLK_CD2X_PIPE_NONE,
  * CDCLK_FREQ_DECIMAL_MASK, SKL_DSSM, ICL_DSSM_CDCLK_PLL_REFCLK_MASK,
  * ICL_DSSM_CDCLK_PLL_REFCLK_24MHz, ICL_DSSM_CDCLK_PLL_REFCLK_19_2MHz,
@@ -443,7 +482,9 @@
 #define I915_XD_CDCLK_CTL			0x46000U
 #define I915_XD_CDCLK_CD2X_DIV			0x00c00000U
 #define I915_XD_CDCLK_CD2X_DIV_1		0U
+#define I915_XD_CDCLK_CD2X_DIV_1_5		1U
 #define I915_XD_CDCLK_CD2X_DIV_2		2U
+#define I915_XD_CDCLK_CD2X_DIV_4		3U
 #define I915_XD_CDCLK_CD2X_PIPE_FIELD		0x00380000U
 #define I915_XD_CDCLK_CD2X_PIPE(pipe)		((pipe) << 20U)
 #define I915_XD_CDCLK_CD2X_PIPE_NONE		0x00380000U
@@ -515,6 +556,19 @@
 #define I915_XD_DPLL_DIV0_AFC_STARTUP		0x0e000000U
 
 /*
+ * The configuration words of Ice Lake's combo DPLLs and Thunderbolt PLL,
+ * by their PLL number (0 and 1, the Thunderbolt PLL 2), 0x80 apart; Ice
+ * Lake has no DIV0 word.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (_ICL_DPLL0_CFGCR0, _ICL_DPLL1_CFGCR0, _ICL_DPLL0_CFGCR1,
+ * _ICL_DPLL1_CFGCR1), and Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_dpll_mgr.c (icl_dpll_write).
+ */
+#define I915_XD_DPLL_CFGCR0_ICL(pll)		(0x164000U + 0x80U * (pll))
+#define I915_XD_DPLL_CFGCR1_ICL(pll)		(0x164004U + 0x80U * (pll))
+
+/*
  * The fields of the DPLL configuration words: the DCO fraction and
  * integer; the Q divider ratio and mode, the K and P dividers, and the
  * central frequency select.
@@ -536,9 +590,10 @@
 /*
  * The map of the DDIs to the combo DPLLs.  On Tiger Lake and display 13
  * one word holds, per combo PHY, a two-bit DPLL select at twice the PHY
- * and a clock-off bit (PHY A, B, C at bits 10, 11, 24), and a clock-off
- * bit per Type-C port.  Rocket Lake moves the selects of PHY D and the
- * clock-off bits; Alder Lake-S uses two words of three PHYs each.
+ * and a clock-off bit (PHY A, B, C at bits 10, 11, 24; PHY D and E,
+ * which only Alder Lake-S has, at bits 4 and 5 of their own word), and a
+ * clock-off bit per Type-C port.  Rocket Lake moves the selects of PHY D
+ * and the clock-off bits; Alder Lake-S uses two words of three PHYs each.
  *
  * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
  * (ICL_DPCLKA_CFGCR0, ICL_DPCLKA_CFGCR0_DDI_CLK_OFF,
@@ -555,6 +610,8 @@
 #define I915_XD_DPCLKA_DDI_OFF_A		0x00000400U
 #define I915_XD_DPCLKA_DDI_OFF_B		0x00000800U
 #define I915_XD_DPCLKA_DDI_OFF_C		0x01000000U
+#define I915_XD_DPCLKA_DDI_OFF_D		0x00000010U
+#define I915_XD_DPCLKA_DDI_OFF_E		0x00000020U
 #define I915_XD_DPCLKA_TC_OFF(tc)		(1U << ((tc) < 3U ? (tc) + 12U : (tc) - 3U + 21U))
 #define I915_XD_DPCLKA_RKL_SEL_SHIFT_D		27U
 #define I915_XD_DPCLKA_RKL_DDI_OFF(phy)		(1U << ((phy) + 10U))
@@ -589,6 +646,7 @@
  */
 #define I915_XD_TRANS_CLK_SEL(trans)		(0x46140U + 4U * (trans))
 #define I915_XD_TRANS_CLK_SEL_FIELD		0xf0000000U
+#define I915_XD_TRANS_CLK_SEL_SHIFT		28U
 #define I915_XD_TRANS_CLK_SEL_NONE		0x0U
 
 /*
@@ -681,20 +739,32 @@
 
 /*
  * The DisplayPort transport control and status of a transcoder (display
- * 12 and 13): enable, the enhanced framing, the training pattern (1, 2,
+ * 12 and 13): enable, FEC, the multi-stream mode, the enhanced framing,
+ * the training pattern (1, 2,
  * 3, 4, idle, normal); the idle-done status.
  *
+ * Display 11 has the transport in its port instead: a transport is
+ * named by its transcoder on display 12 and 13 and by
+ * I915_XD_DP_TP_PORT(ddi) on display 11, and the two addresses follow
+ * from the name.
+ *
  * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
- * (_TGL_DP_TP_CTL_A, _TGL_DP_TP_STATUS_A, DP_TP_CTL_ENABLE,
- * DP_TP_CTL_MODE_SST, DP_TP_CTL_ENHANCED_FRAME_ENABLE,
+ * (_TGL_DP_TP_CTL_A, _TGL_DP_TP_STATUS_A, _DP_TP_CTL_A, _DP_TP_CTL_B,
+ * _DP_TP_STATUS_A, _DP_TP_STATUS_B, DP_TP_CTL_ENABLE,
+ * DP_TP_CTL_MODE_SST, DP_TP_CTL_FEC_ENABLE, DP_TP_CTL_MODE_MST,
+ * DP_TP_CTL_ENHANCED_FRAME_ENABLE,
  * DP_TP_CTL_LINK_TRAIN_MASK, DP_TP_CTL_LINK_TRAIN_PAT1,
  * DP_TP_CTL_LINK_TRAIN_PAT2, DP_TP_CTL_LINK_TRAIN_PAT3,
  * DP_TP_CTL_LINK_TRAIN_PAT4, DP_TP_CTL_LINK_TRAIN_IDLE,
  * DP_TP_CTL_LINK_TRAIN_NORMAL, DP_TP_STATUS_IDLE_DONE).
  */
-#define I915_XD_DP_TP_CTL(trans)		(0x60540U + I915_XD_TRANS_STRIDE * (trans))
-#define I915_XD_DP_TP_STATUS(trans)		(0x60544U + I915_XD_TRANS_STRIDE * (trans))
+#define I915_XD_DP_TP_PORT(ddi)			(0x100U + (ddi))
+#define I915_XD_DP_TP_CTL(tp)			((tp) >= I915_XD_DP_TP_PORT(0U) ? 0x64040U + 0x100U * ((tp) - I915_XD_DP_TP_PORT(0U)) : \
+						 0x60540U + I915_XD_TRANS_STRIDE * (tp))
+#define I915_XD_DP_TP_STATUS(tp)		(I915_XD_DP_TP_CTL(tp) + 4U)
 #define I915_XD_DP_TP_ENABLE			0x80000000U
+#define I915_XD_DP_TP_FEC			0x40000000U
+#define I915_XD_DP_TP_MST			0x08000000U
 #define I915_XD_DP_TP_ENHANCED_FRAMING		0x00040000U
 #define I915_XD_DP_TP_PATTERN			0x00000700U
 #define I915_XD_DP_TP_PATTERN_1			0U
@@ -706,35 +776,40 @@
 #define I915_XD_DP_TP_STATUS_IDLE_DONE		0x02000000U
 
 /*
- * The DDI buffer control: enable, the PHY link rate (display 13 Type-C),
+ * The DDI buffer control: enable, the translation select, the PHY link
+ * rate (display 13 Type-C), the lane reversal,
  * the idle status, the Type-C PHY ownership (display 13), the four-lane
  * strap of DDI A, and the port width (lanes less one).
  *
  * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
- * (_DDI_BUF_CTL_A, DDI_BUF_CTL_ENABLE, DDI_BUF_PHY_LINK_RATE,
+ * (_DDI_BUF_CTL_A, DDI_BUF_CTL_ENABLE, DDI_BUF_TRANS_SELECT,
+ * DDI_BUF_PHY_LINK_RATE, DDI_BUF_PORT_REVERSAL,
  * DDI_BUF_IS_IDLE, DDI_BUF_CTL_TC_PHY_OWNERSHIP, DDI_A_4_LANES,
  * DDI_PORT_WIDTH_MASK).
  */
 #define I915_XD_DDI_BUF_CTL(port)		(0x64000U + I915_XD_DDI_STRIDE * (port))
 #define I915_XD_DDI_BUF_ENABLE			0x80000000U
+#define I915_XD_DDI_BUF_TRANS_SELECT		0x0f000000U
 #define I915_XD_DDI_BUF_PHY_LINK_RATE		0x00700000U
+#define I915_XD_DDI_BUF_REVERSAL		0x00010000U
 #define I915_XD_DDI_BUF_IDLE			0x00000080U
 #define I915_XD_DDI_BUF_TC_OWNED		0x00000040U
 #define I915_XD_DDI_BUF_A_4_LANES		0x00000010U
 #define I915_XD_DDI_BUF_WIDTH			0x0000000eU
 
 /*
- * The AUX channel of a DDI: the control word (busy, done, the timeout
- * and receive errors, the timeout length, the message size, the
- * Thunderbolt IO select and the two sync pulse counts less one) and the
- * five data words.
+ * The AUX channel of a DDI: the control word (busy, done, the done
+ * interrupt, the timeout and receive errors, the timeout length, the
+ * message size, the HDCP key select, the Thunderbolt IO select and the
+ * two sync pulse counts less one) and the five data words.
  *
  * Values referenced: Linux v6.8.12
  * drivers/gpu/drm/i915/display/intel_dp_aux_regs.h (_DPA_AUX_CH_CTL,
  * _DPB_AUX_CH_CTL, _DPA_AUX_CH_DATA1, DP_AUX_CH_CTL_SEND_BUSY,
- * DP_AUX_CH_CTL_DONE, DP_AUX_CH_CTL_TIME_OUT_ERROR,
- * DP_AUX_CH_CTL_TIME_OUT_MASK, DP_AUX_CH_CTL_TIME_OUT_MAX,
- * DP_AUX_CH_CTL_RECEIVE_ERROR, DP_AUX_CH_CTL_MESSAGE_SIZE_MASK,
+ * DP_AUX_CH_CTL_DONE, DP_AUX_CH_CTL_INTERRUPT,
+ * DP_AUX_CH_CTL_TIME_OUT_ERROR, DP_AUX_CH_CTL_TIME_OUT_MASK,
+ * DP_AUX_CH_CTL_TIME_OUT_MAX, DP_AUX_CH_CTL_RECEIVE_ERROR,
+ * DP_AUX_CH_CTL_MESSAGE_SIZE_MASK, DP_AUX_CH_CTL_AUX_AKSV_SELECT,
  * DP_AUX_CH_CTL_TBT_IO, DP_AUX_CH_CTL_FW_SYNC_PULSE_SKL_MASK,
  * DP_AUX_CH_CTL_SYNC_PULSE_SKL_MASK).
  */
@@ -743,11 +818,13 @@
 #define I915_XD_DDI_AUX_DATA_WORDS		5U
 #define I915_XD_AUX_CTL_BUSY			0x80000000U
 #define I915_XD_AUX_CTL_DONE			0x40000000U
+#define I915_XD_AUX_CTL_INTERRUPT		0x20000000U
 #define I915_XD_AUX_CTL_TIMEOUT_ERROR		0x10000000U
 #define I915_XD_AUX_CTL_TIMEOUT			0x0c000000U
 #define I915_XD_AUX_CTL_TIMEOUT_MAX		3U
 #define I915_XD_AUX_CTL_RECEIVE_ERROR		0x02000000U
 #define I915_XD_AUX_CTL_SIZE			0x01f00000U
+#define I915_XD_AUX_CTL_HDCP_KEY		0x00008000U
 #define I915_XD_AUX_CTL_TBT_IO			0x00000800U
 #define I915_XD_AUX_CTL_FW_SYNC_PULSE		0x000003e0U
 #define I915_XD_AUX_CTL_SYNC_PULSE		0x0000001fU
@@ -767,7 +844,9 @@
  * PIPE_MISC_DITHER_ENABLE, PIPE_MISC_DITHER_TYPE_MASK,
  * PIPE_MISC_PIXEL_ROUNDING_TRUNC, _PIPEA_CHICKEN,
  * UNDERRUN_RECOVERY_DISABLE_ADLP, _ICL_PIPE_A_STATUS,
- * PIPE_STATUS_UNDERRUN), and Linux v6.8.12
+ * PIPE_STATUS_UNDERRUN, PIPE_STATUS_SOFT_UNDERRUN_XELPD,
+ * PIPE_STATUS_HARD_UNDERRUN_XELPD, PIPE_STATUS_PORT_UNDERRUN_XELPD), and
+ * Linux v6.8.12
  * drivers/gpu/drm/i915/display/intel_color_regs.h (_SKL_BOTTOM_COLOR_A,
  * _SKL_BOTTOM_COLOR_B, SKL_BOTTOM_COLOR_GAMMA_ENABLE,
  * SKL_BOTTOM_COLOR_CSC_ENABLE).
@@ -797,6 +876,9 @@
 #define I915_XD_PIPE_FLIPCNT(pipe)		(0x70044U + I915_XD_PIPE_STRIDE * (pipe))
 #define I915_XD_PIPE_STATUS(pipe)		(0x70058U + I915_XD_PIPE_STRIDE * (pipe))
 #define I915_XD_PIPE_STATUS_UNDERRUN		0x80000000U
+#define I915_XD_PIPE_STATUS_UNDERRUN_SOFT	0x10000000U
+#define I915_XD_PIPE_STATUS_UNDERRUN_HARD	0x08000000U
+#define I915_XD_PIPE_STATUS_UNDERRUN_PORT	0x04000000U
 
 /*
  * The pipe's colour controls the display sets to pass pixels through:
@@ -825,6 +907,48 @@
  */
 #define I915_XD_PS_CTRL_1(pipe)			(0x68180U + 0x800U * (pipe))
 #define I915_XD_PS_CTRL_ENABLE			0x80000000U
+
+/*
+ * A pipe's two scalers, each with its control, window position and
+ * window size (all three are cleared when the pipe stops).
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (_PS_1A_CTRL, _PS_2A_CTRL, _PS_1B_CTRL, _PS_WIN_POS_1A, _PS_WIN_SZ_1A).
+ */
+#define I915_XD_SCALERS				2U
+#define I915_XD_PS_CTRL(pipe, scaler)		(0x68180U + 0x800U * (pipe) + 0x100U * (scaler))
+#define I915_XD_PS_WIN_POS(pipe, scaler)	(0x68170U + 0x800U * (pipe) + 0x100U * (scaler))
+#define I915_XD_PS_WIN_SZ(pipe, scaler)		(0x68174U + 0x800U * (pipe) + 0x100U * (scaler))
+
+/*
+ * A transcoder's data island packets: the control word with the enables
+ * of the infoframes (AVI, GCP, VS, GMP, SPD and the HDR metadata's), of
+ * the DisplayPort VSC packet and of the picture parameter packet.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (_HSW_VIDEO_DIP_CTL_A, VIDEO_DIP_ENABLE_AVI_HSW,
+ * VIDEO_DIP_ENABLE_GCP_HSW, VIDEO_DIP_ENABLE_VS_HSW,
+ * VIDEO_DIP_ENABLE_GMP_HSW, VIDEO_DIP_ENABLE_SPD_HSW,
+ * VIDEO_DIP_ENABLE_DRM_GLK, VIDEO_DIP_ENABLE_VSC_HSW, VDIP_ENABLE_PPS).
+ */
+#define I915_XD_DIP_CTL(trans)			(0x60200U + I915_XD_TRANS_STRIDE * (trans))
+#define I915_XD_DIP_INFOFRAMES			0x10011111U
+#define I915_XD_DIP_VSC				0x00100000U
+#define I915_XD_DIP_PPS				0x01000000U
+
+/*
+ * A pipe's splitter for an eDP panel driven as several streams: its
+ * enable, the number of segments and the overlapping pixels (the three
+ * fields are cleared when no splitter is used).  The address is that of
+ * pipe B's and C's control with pipe A one step below them.
+ *
+ * Values referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_vdsc_regs.h (_ICL_PIPE_DSS_CTL1_PB,
+ * _ICL_PIPE_DSS_CTL1_PC, ICL_PIPE_DSS_CTL1, SPLITTER_ENABLE,
+ * SPLITTER_CONFIGURATION_MASK, OVERLAP_PIXELS_MASK).
+ */
+#define I915_XD_PIPE_DSS_CTL1(pipe)		(0x78000U + 0x200U * (pipe))
+#define I915_XD_PIPE_DSS_SPLITTER		0x860f0000U
 
 /*
  * The first universal plane of a pipe: control (enable, the arbiter
@@ -955,6 +1079,7 @@
  * _ICL_COMBOPHY_B, _EHL_COMBOPHY_C, _RKL_COMBOPHY_D, _ADL_COMBOPHY_E,
  * ICL_PORT_CL_DW5, CL_POWER_DOWN_ENABLE, SUS_CLOCK_CONFIG,
  * ICL_PORT_CL_DW10, PWR_DOWN_LN_MASK, PWR_UP_ALL_LANES,
+ * EDP4K2K_MODE_OVRD_EN, EDP4K2K_MODE_OVRD_OPTIMIZED,
  * PWR_DOWN_LN_3_2_1, PWR_DOWN_LN_3_2, PWR_DOWN_LN_3, PWR_DOWN_LN_2_1_0,
  * PWR_DOWN_LN_1_0, PWR_DOWN_LN_3_1, PWR_DOWN_LN_3_1_0,
  * ICL_PORT_CL_DW12, ICL_LANE_ENABLE_AUX, _ICL_PORT_COMP, COMP_INIT,
@@ -975,6 +1100,8 @@
 #define I915_XD_CL_DW5_POWER_DOWN_ENABLE	0x00000010U
 #define I915_XD_CL_DW5_SUS_CLOCK_CONFIG		0x00000003U
 #define I915_XD_CL_DW10_LANE_POWER_DOWN		0x000000f0U
+#define I915_XD_CL_DW10_EDP4K2K_OVERRIDE	0x00000008U
+#define I915_XD_CL_DW10_EDP4K2K_OPTIMIZED	0x00000004U
 #define I915_XD_CL_DW12_AUX_LANE_ENABLE		0x00000001U
 #define I915_XD_PORT_COMP_DW(base, dw)		((base) + 0x100U + 4U * (dw))
 #define I915_XD_COMP_DW0_INIT			0x80000000U
@@ -1003,6 +1130,19 @@
 #define I915_XD_TX_DW7_N_SCALAR			0x7f000000U
 
 /*
+ * The AUX analog override word of Ice Lake's combo PHYs A and B (0x398
+ * into the PHY's block), with its LDO bypass and enable bits (display WA
+ * #1178).
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (_ICL_AUX_ANAOVRD1_A, _ICL_AUX_ANAOVRD1_B, ICL_AUX_ANAOVRD1_LDO_BYPASS,
+ * ICL_AUX_ANAOVRD1_ENABLE).
+ */
+#define I915_XD_AUX_ANAOVRD1(base)		((base) + 0x398U)
+#define I915_XD_AUX_ANAOVRD1_LDO_BYPASS		0x00000080U
+#define I915_XD_AUX_ANAOVRD1_ENABLE		0x00000001U
+
+/*
  * The duty cycle corrector of a combo PHY on display 12 and 13: the
  * ODCC clock select and its divider (DW8 of the transmit lanes) and the
  * DCC mode (DW1 of the PCS lanes), which the PHY init sets to run once.
@@ -1018,6 +1158,17 @@
 #define I915_XD_TX_DW8_ODCC_DIVIDE_BY_2		1U
 #define I915_XD_PCS_DW1_DCC_MODE		0x00300000U
 #define I915_XD_PCS_DW1_DCC_RUN_ONCE		0U
+
+/*
+ * The frame buffer compressor of pipe A (display 12 and 13 have that one
+ * only): its control register and enable.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (ILK_DPFC_CONTROL, DPFC_CTL_EN); intel_display_device.c (the fbc_mask
+ * of display 12 and 13: FBC A).
+ */
+#define I915_XD_DPFC_CONTROL_A			0x43208U
+#define I915_XD_DPFC_CONTROL_ENABLE		0x80000000U
 
 /*
  * The display 12 chickens of the start: the frame buffer compression
@@ -1073,6 +1224,26 @@
 #define I915_XD_DFLEXDPCSSS_OWNED(idx)		(1U << (idx))
 #define I915_XD_DFLEXPA1_PIN(idx)		(0xfU << ((idx) * 4U))
 #define I915_XD_DFLEXDPMLE1_LANES(idx)		(0xfU << ((idx) * 4U))
+
+/*
+ * The lanes the sink of a Type-C port assigned to DisplayPort (in
+ * DFLEXDPSP, a nibble at the port's byte), and the main link lanes the
+ * display uses (in DFLEXDPMLE1, the port's nibble): lane 0, lanes 1..0,
+ * lane 3, lanes 3..2, lanes 3..0.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (DP_LANE_ASSIGNMENT_SHIFT, DP_LANE_ASSIGNMENT_MASK), and
+ * drivers/gpu/drm/i915/display/intel_mg_phy_regs.h
+ * (DFLEXDPMLE1_DPMLETC_ML0, DFLEXDPMLE1_DPMLETC_ML1_0,
+ * DFLEXDPMLE1_DPMLETC_ML3, DFLEXDPMLE1_DPMLETC_ML3_2,
+ * DFLEXDPMLE1_DPMLETC_ML3_0).
+ */
+#define I915_XD_DFLEXDPSP_LANES(idx)		(0xfU << ((idx) * 8U))
+#define I915_XD_DFLEXDPMLE1_ML0			0x1U
+#define I915_XD_DFLEXDPMLE1_ML1_0		0x3U
+#define I915_XD_DFLEXDPMLE1_ML3			0x8U
+#define I915_XD_DFLEXDPMLE1_ML3_2		0xcU
+#define I915_XD_DFLEXDPMLE1_ML3_0		0xfU
 
 /*
  * The Type-C subsystem status of display 13: the pin assignment, the
@@ -1150,5 +1321,331 @@
 #define I915_XD_DKL_TX_LOADGEN_TX1		0x00000018U
 #define I915_XD_DKL_TX_LOADGEN_TX2		0x00000060U
 #define I915_XD_DKL_TX_DISABLE_WAIT_INIT	0x00000080U
+
+/*
+ * The fields of the Type-C PLL words in a Dekel PHY: the reference clock
+ * input mux, the core clock A divider, the high-speed clock control (the
+ * core input select, the line driver clock select, the HS divider and the
+ * DS divider), the PLL dividers (integral and proportional coefficients,
+ * feedback pre-divider, integer feedback divider), the current reference
+ * trim and the TDC target count, the SSC words (reference divider ratio,
+ * step length and count, enable), the fractional feedback divider and its
+ * enable, and the TDC SSC step size and feed-forward gain; and the codes
+ * of the HS divider for the divisors 2, 3, 5 and 7.
+ *
+ * Values referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_mg_phy_regs.h
+ * (MG_REFCLKIN_CTL_OD_2_MUX_MASK, MG_CLKTOP2_CORECLKCTL1_A_DIVRATIO_MASK,
+ * MG_CLKTOP2_HSCLKCTL_CORE_INPUTSEL_MASK,
+ * MG_CLKTOP2_HSCLKCTL_TLINEDRV_CLKSEL_MASK,
+ * MG_CLKTOP2_HSCLKCTL_HSDIV_RATIO_MASK, MG_CLKTOP2_HSCLKCTL_HSDIV_RATIO_2,
+ * MG_CLKTOP2_HSCLKCTL_HSDIV_RATIO_3, MG_CLKTOP2_HSCLKCTL_HSDIV_RATIO_5,
+ * MG_CLKTOP2_HSCLKCTL_HSDIV_RATIO_7, MG_CLKTOP2_HSCLKCTL_DSDIV_RATIO_MASK)
+ * and Linux v6.8.12 drivers/gpu/drm/i915/display/intel_dkl_phy_regs.h
+ * (DKL_PLL_DIV0_INTEG_COEFF_MASK, DKL_PLL_DIV0_PROP_COEFF_MASK,
+ * DKL_PLL_DIV0_FBPREDIV_MASK, DKL_PLL_DIV0_FBDIV_INT_MASK,
+ * DKL_PLL_DIV1_IREF_TRIM_MASK, DKL_PLL_DIV1_TDC_TARGET_CNT_MASK,
+ * DKL_PLL_SSC_IREF_NDIV_RATIO_MASK, DKL_PLL_SSC_STEP_LEN_MASK,
+ * DKL_PLL_SSC_STEP_NUM_MASK, DKL_PLL_SSC_EN, DKL_PLL_BIAS_FRAC_EN_H,
+ * DKL_PLL_BIAS_FBDIV_FRAC_MASK, DKL_PLL_TDC_SSC_STEP_SIZE_MASK,
+ * DKL_PLL_TDC_FEED_FWD_GAIN_MASK).
+ */
+#define I915_XD_DKL_REFCLKIN_OD_2_MUX		0x00000700U
+#define I915_XD_DKL_CORECLK_A_DIVRATIO		0x0000ff00U
+#define I915_XD_DKL_HSCLK_CORE_INPUTSEL		0x00010000U
+#define I915_XD_DKL_HSCLK_TLINEDRV		0x0000c000U
+#define I915_XD_DKL_HSCLK_HSDIV			0x00003000U
+#define I915_XD_DKL_HSCLK_HSDIV_2		0U
+#define I915_XD_DKL_HSCLK_HSDIV_3		1U
+#define I915_XD_DKL_HSCLK_HSDIV_5		2U
+#define I915_XD_DKL_HSCLK_HSDIV_7		3U
+#define I915_XD_DKL_HSCLK_DSDIV			0x00000f00U
+#define I915_XD_DKL_DIV0_INTEG_COEFF		0x001f0000U
+#define I915_XD_DKL_DIV0_PROP_COEFF		0x0000f000U
+#define I915_XD_DKL_DIV0_FBPREDIV		0x00000f00U
+#define I915_XD_DKL_DIV0_FBDIV_INT		0x000000ffU
+#define I915_XD_DKL_DIV1_IREF_TRIM		0x001f0000U
+#define I915_XD_DKL_DIV1_TDC_TARGET		0x000000ffU
+#define I915_XD_DKL_SSC_IREF_NDIV		0xe0000000U
+#define I915_XD_DKL_SSC_STEP_LEN		0x00ff0000U
+#define I915_XD_DKL_SSC_STEP_NUM		0x00003800U
+#define I915_XD_DKL_SSC_ENABLE			0x00000200U
+#define I915_XD_DKL_BIAS_FRAC_ENABLE		0x40000000U
+#define I915_XD_DKL_BIAS_FBDIV_FRAC		0x3fffff00U
+#define I915_XD_DKL_TDC_SSC_STEP_SIZE		0x0000ff00U
+#define I915_XD_DKL_TDC_FEED_FWD_GAIN		0x000000ffU
+
+/*
+ * The registers of an MG PHY, the Type-C PHY of display 11, reached
+ * directly rather than through a window: Type-C port n's block is 0x1000
+ * above port 0's, and lane 1's copy of a lane register is 0x400 above
+ * lane 0's.  The lane registers of the two transmitters (TX1, TX2): the
+ * link parameters (the FS32 use), the swing control (de-emphasis bits
+ * 17..12), the drive control (de-emphasis bits 11..6 and 5..0 and their
+ * override), the duty-cycle correction (the AMI clock divider override),
+ * the PISO read load (the calculation init); the lane's clock hub (the
+ * low-rate lock enable) and its DisplayPort mode word.  The PLL words:
+ * the reference input, the clock tops, the dividers, the loop filter,
+ * the fractional lock, the SSC, the bias and the TDC cold start bias.
+ *
+ * Values referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_mg_phy_regs.h
+ * (MG_PHY_PORT_LN, MG_TX_LINK_PARAMS_TX1LN0_PORT1,
+ * MG_TX_LINK_PARAMS_TX2LN0_PORT1, CRI_USE_FS32,
+ * MG_TX_PISO_READLOAD_TX1LN0_PORT1, MG_TX_PISO_READLOAD_TX2LN0_PORT1,
+ * CRI_CALCINIT, MG_TX_SWINGCTRL_TX1LN0_PORT1,
+ * MG_TX_SWINGCTRL_TX2LN0_PORT1, CRI_TXDEEMPH_OVERRIDE_17_12_MASK,
+ * MG_TX_DRVCTRL_TX1LN0_TXPORT1, MG_TX_DRVCTRL_TX2LN0_PORT1,
+ * CRI_TXDEEMPH_OVERRIDE_11_6_MASK, CRI_TXDEEMPH_OVERRIDE_EN,
+ * CRI_TXDEEMPH_OVERRIDE_5_0_MASK, MG_CLKHUB_LN0_PORT1,
+ * CFG_LOW_RATE_LKREN_EN, MG_TX_DCC_TX1LN0_PORT1, MG_TX_DCC_TX2LN0_PORT1,
+ * CFG_AMI_CK_DIV_OVERRIDE_VAL_MASK, CFG_AMI_CK_DIV_OVERRIDE_EN,
+ * MG_DP_MODE_LN0_ACU_PORT1, _MG_REFCLKIN_CTL_PORT1,
+ * _MG_CLKTOP2_CORECLKCTL1_PORT1, _MG_CLKTOP2_HSCLKCTL_PORT1,
+ * _MG_PLL_DIV0_PORT1, _MG_PLL_DIV1_PORT1, _MG_PLL_LF_PORT1,
+ * _MG_PLL_FRAC_LOCK_PORT1, _MG_PLL_SSC_PORT1, _MG_PLL_BIAS_PORT1,
+ * _MG_PLL_TDC_COLDST_BIAS_PORT1).
+ */
+#define I915_XD_MG_PHY(tc)			(0x168000U + 0x1000U * (tc))
+#define I915_XD_MG_LANE_STRIDE			0x400U
+#define I915_XD_MG_TX1_LINK_PARAMS		0x012cU
+#define I915_XD_MG_TX2_LINK_PARAMS		0x00acU
+#define I915_XD_MG_TX_USE_FS32			0x00000020U
+#define I915_XD_MG_TX1_PISO_READLOAD		0x014cU
+#define I915_XD_MG_TX2_PISO_READLOAD		0x00ccU
+#define I915_XD_MG_TX_CALCINIT			0x00000002U
+#define I915_XD_MG_TX1_SWINGCTRL		0x0148U
+#define I915_XD_MG_TX2_SWINGCTRL		0x00c8U
+#define I915_XD_MG_TX_DEEMPH_17_12		0x0000003fU
+#define I915_XD_MG_TX1_DRVCTRL			0x0144U
+#define I915_XD_MG_TX2_DRVCTRL			0x00c4U
+#define I915_XD_MG_TX_DEEMPH_11_6		0x3f000000U
+#define I915_XD_MG_TX_DEEMPH_OVERRIDE		0x00400000U
+#define I915_XD_MG_TX_DEEMPH_5_0		0x003f0000U
+#define I915_XD_MG_CLKHUB			0x039cU
+#define I915_XD_MG_CLKHUB_LOW_RATE_LKREN	0x00000800U
+#define I915_XD_MG_TX1_DCC			0x0110U
+#define I915_XD_MG_TX2_DCC			0x0090U
+#define I915_XD_MG_DCC_AMI_DIV			0x06000000U
+#define I915_XD_MG_DCC_AMI_DIV_OVERRIDE		0x01000000U
+#define I915_XD_MG_DP_MODE			0x03a0U
+#define I915_XD_MG_REFCLKIN_CTL			0x092cU
+#define I915_XD_MG_CLKTOP2_HSCLKCTL		0x08d4U
+#define I915_XD_MG_CLKTOP2_CORECLKCTL1		0x08d8U
+#define I915_XD_MG_PLL_DIV0			0x0a00U
+#define I915_XD_MG_PLL_DIV1			0x0a04U
+#define I915_XD_MG_PLL_LF			0x0a08U
+#define I915_XD_MG_PLL_FRAC_LOCK		0x0a0cU
+#define I915_XD_MG_PLL_SSC			0x0a10U
+#define I915_XD_MG_PLL_BIAS			0x0a14U
+#define I915_XD_MG_PLL_TDC_COLDST_BIAS		0x0a18U
+
+/*
+ * The fields of the MG PLL words.  DIV0: the fraction enable, the 22-bit
+ * fractional and the 8-bit integer feedback divider.  DIV1: the current
+ * reference divider ratio, the dither divider of 2, the N divider ratio
+ * and the feedback pre-divider.  The loop filter: the TDC target count,
+ * the AFC counter select of 512, the gain control, the integral and the
+ * proportional coefficient.  The fractional lock: the true and the early
+ * lock criteria of 32, the lock threshold, the DCO dither enable, the
+ * feed-forward calibration enable and gain.  The SSC: the enable, the
+ * type, the step length and count, the FLL enable and the step size.
+ * The bias: the bias GB select, the initial DCO amplitude, the bias
+ * bonus, the bias calibration enable, the C trim, the reference RDAC and
+ * the current reference trim.  The TDC cold start bias: the current
+ * reference integer enable, the reference bias start pulse width, the
+ * cold start, the TDC overcurrent correction enable and the TDC select.
+ *
+ * Values referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_mg_phy_regs.h (MG_PLL_DIV0_FRACNEN_H,
+ * MG_PLL_DIV0_FBDIV_FRAC_MASK, MG_PLL_DIV0_FBDIV_INT_MASK,
+ * MG_PLL_DIV1_IREF_NDIVRATIO, MG_PLL_DIV1_DITHER_DIV_2,
+ * MG_PLL_DIV1_NDIVRATIO, MG_PLL_DIV1_FBPREDIV_MASK,
+ * MG_PLL_LF_TDCTARGETCNT, MG_PLL_LF_AFCCNTSEL_512, MG_PLL_LF_GAINCTRL,
+ * MG_PLL_LF_INT_COEFF, MG_PLL_LF_PROP_COEFF,
+ * MG_PLL_FRAC_LOCK_TRUELOCK_CRIT_32, MG_PLL_FRAC_LOCK_EARLYLOCK_CRIT_32,
+ * MG_PLL_FRAC_LOCK_LOCKTHRESH, MG_PLL_FRAC_LOCK_DCODITHEREN,
+ * MG_PLL_FRAC_LOCK_FEEDFWRDCAL_EN, MG_PLL_FRAC_LOCK_FEEDFWRDGAIN,
+ * MG_PLL_SSC_EN, MG_PLL_SSC_TYPE, MG_PLL_SSC_STEPLENGTH,
+ * MG_PLL_SSC_STEPNUM, MG_PLL_SSC_FLLEN, MG_PLL_SSC_STEPSIZE,
+ * MG_PLL_BIAS_BIAS_GB_SEL, MG_PLL_BIAS_INIT_DCOAMP,
+ * MG_PLL_BIAS_BIAS_BONUS, MG_PLL_BIAS_BIASCAL_EN, MG_PLL_BIAS_CTRIM,
+ * MG_PLL_BIAS_VREF_RDAC, MG_PLL_BIAS_IREFTRIM,
+ * MG_PLL_TDC_COLDST_IREFINT_EN, MG_PLL_TDC_COLDST_REFBIAS_START_PULSE_W,
+ * MG_PLL_TDC_COLDST_COLDSTART, MG_PLL_TDC_TDCOVCCORR_EN,
+ * MG_PLL_TDC_TDCSEL).
+ */
+#define I915_XD_MG_DIV0_FRAC_ENABLE		0x40000000U
+#define I915_XD_MG_DIV0_FBDIV_FRAC		0x3fffff00U
+#define I915_XD_MG_DIV0_FBDIV_INT		0x000000ffU
+#define I915_XD_MG_DIV1_IREF_NDIV(x)		((x) << 16)
+#define I915_XD_MG_DIV1_DITHER_DIV_2		0x00001000U
+#define I915_XD_MG_DIV1_NDIV(x)			((x) << 4)
+#define I915_XD_MG_DIV1_FBPREDIV		0x0000000fU
+#define I915_XD_MG_LF_TDC_TARGET(x)		((x) << 24)
+#define I915_XD_MG_LF_AFC_COUNT_512		0x00100000U
+#define I915_XD_MG_LF_GAIN(x)			((x) << 16)
+#define I915_XD_MG_LF_INT_COEFF(x)		((x) << 8)
+#define I915_XD_MG_LF_PROP_COEFF(x)		((x) << 0)
+#define I915_XD_MG_FRAC_LOCK_TRUELOCK_32	0x00040000U
+#define I915_XD_MG_FRAC_LOCK_EARLYLOCK_32	0x00010000U
+#define I915_XD_MG_FRAC_LOCK_THRESHOLD(x)	((x) << 11)
+#define I915_XD_MG_FRAC_LOCK_DCO_DITHER		0x00000400U
+#define I915_XD_MG_FRAC_LOCK_FEED_FWD_CAL	0x00000100U
+#define I915_XD_MG_FRAC_LOCK_FEED_FWD_GAIN(x)	((x) << 0)
+#define I915_XD_MG_SSC_ENABLE			0x10000000U
+#define I915_XD_MG_SSC_TYPE(x)			((x) << 26)
+#define I915_XD_MG_SSC_STEP_LENGTH(x)		((x) << 16)
+#define I915_XD_MG_SSC_STEP_NUM(x)		((x) << 10)
+#define I915_XD_MG_SSC_FLL_ENABLE		0x00000200U
+#define I915_XD_MG_SSC_STEP_SIZE(x)		((x) << 0)
+#define I915_XD_MG_BIAS_GB_SEL(x)		((x) << 30)
+#define I915_XD_MG_BIAS_INIT_DCOAMP(x)		((x) << 24)
+#define I915_XD_MG_BIAS_BONUS(x)		((x) << 16)
+#define I915_XD_MG_BIAS_CAL_ENABLE		0x00008000U
+#define I915_XD_MG_BIAS_CTRIM(x)		((x) << 8)
+#define I915_XD_MG_BIAS_VREF_RDAC(x)		((x) << 5)
+#define I915_XD_MG_BIAS_IREF_TRIM(x)		((x) << 0)
+#define I915_XD_MG_TDC_IREFINT_ENABLE		0x08000000U
+#define I915_XD_MG_TDC_REFBIAS_PULSE(x)		((x) << 17)
+#define I915_XD_MG_TDC_COLDSTART		0x00010000U
+#define I915_XD_MG_TDC_OVERCURRENT_CORR		0x00000004U
+#define I915_XD_MG_TDC_SELECT(x)		((x) << 0)
+
+/*
+ * Display 11's transcoder differences: the eDP transcoder, whose
+ * registers lie 0xF000 above transcoder A's (so the transcoder register
+ * macros reach them with the index 15) and whose chicken word lies
+ * apart; the DDI select of a transcoder's DDI function (the DDI index
+ * itself, in bits 30..28); the eDP input of the eDP transcoder's DDI
+ * function (pipe A always on, pipe B or C switched with the panel); and
+ * the transcoder clock select (the DDI index plus one, in bits 31..29).
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_display_device.c
+ * (TRANSCODER_A_OFFSET, TRANSCODER_EDP_OFFSET, ICL_DISPLAY), and
+ * Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h (_CHICKEN_TRANS_EDP,
+ * TRANS_DDI_PORT_MASK, TRANS_DDI_SELECT_PORT, TRANS_DDI_EDP_INPUT_A_ON,
+ * TRANS_DDI_EDP_INPUT_B_ONOFF, TRANS_DDI_EDP_INPUT_C_ONOFF,
+ * TRANS_CLK_SEL_PORT).
+ */
+#define I915_XD_TRANS_EDP			15U
+#define I915_XD_CHICKEN_TRANS_EDP		0x420ccU
+#define I915_XD_DDI_FUNC_SELECT_11		0x70000000U
+#define I915_XD_DDI_FUNC_EDP_INPUT_A_ON		0U
+#define I915_XD_DDI_FUNC_EDP_INPUT_B_ONOFF	5U
+#define I915_XD_DDI_FUNC_EDP_INPUT_C_ONOFF	6U
+#define I915_XD_TRANS_CLK_SEL_FIELD_11		0xe0000000U
+
+/*
+ * The transcoder's chicken word: the vblank with the delay of the set
+ * context latency (display 12 and 13), the frame start delay (lines less
+ * one), and the FEC stall release of a stopping transcoder.  Transcoder D
+ * lies apart from A to C.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (_CHICKEN_TRANS_A, _CHICKEN_TRANS_B, _CHICKEN_TRANS_C,
+ * _CHICKEN_TRANS_D, PIPE_VBLANK_WITH_DELAY, HSW_FRAME_START_DELAY_MASK,
+ * FECSTALL_DIS_DPTSTREAM_DPTTG).
+ */
+#define I915_XD_CHICKEN_TRANS(trans)		((trans) == 3U ? 0x420d8U : 0x420c0U + 4U * (trans))
+#define I915_XD_CHICKEN_TRANS_VBLANK_DELAY	0x80000000U
+#define I915_XD_CHICKEN_TRANS_FRAME_START	0x18000000U
+#define I915_XD_CHICKEN_TRANS_FEC_STALL		0x00800000U
+
+/*
+ * The transcoder's pixel multiplier (less one), its variable refresh
+ * words (control: the ignored maximum shift, the flip line enable, the
+ * pipeline full lines and their override on display 12, the guardband on
+ * display 13; the vertical maximum, minimum and the flip line, each less
+ * one), and the interlace field of the transcoder configuration
+ * (progressive, or interlaced with the field indication).
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (_TRANS_MULT_A, _TRANS_VRR_CTL_A, VRR_CTL_IGN_MAX_SHIFT,
+ * VRR_CTL_FLIP_LINE_EN, VRR_CTL_PIPELINE_FULL_MASK,
+ * VRR_CTL_PIPELINE_FULL_OVERRIDE, XELPD_VRR_CTL_VRR_GUARDBAND_MASK,
+ * _TRANS_VRR_VMAX_A, _TRANS_VRR_VMIN_A, _TRANS_VRR_FLIPLINE_A,
+ * TRANSCONF_INTERLACE_MASK_ILK, TRANSCONF_INTERLACE_IF_ID_ILK).
+ */
+#define I915_XD_TRANS_MULT(trans)		(0x6002cU + I915_XD_TRANS_STRIDE * (trans))
+#define I915_XD_TRANS_VRR_CTL(trans)		(0x60420U + I915_XD_TRANS_STRIDE * (trans))
+#define I915_XD_VRR_IGNORE_MAX_SHIFT		0x40000000U
+#define I915_XD_VRR_FLIP_LINE			0x20000000U
+#define I915_XD_VRR_PIPELINE_FULL		0x000007f8U
+#define I915_XD_VRR_PIPELINE_FULL_OVERRIDE	0x00000001U
+#define I915_XD_VRR_GUARDBAND			0x0000ffffU
+#define I915_XD_TRANS_VRR_VMAX(trans)		(0x60424U + I915_XD_TRANS_STRIDE * (trans))
+#define I915_XD_TRANS_VRR_VMIN(trans)		(0x60434U + I915_XD_TRANS_STRIDE * (trans))
+#define I915_XD_TRANS_VRR_FLIPLINE(trans)	(0x60438U + I915_XD_TRANS_STRIDE * (trans))
+#define I915_XD_TRANS_CONF_INTERLACE		0x00e00000U
+#define I915_XD_TRANS_CONF_INTERLACED		3U
+
+/*
+ * The rest of the pipe words the transcoder's setup writes: the pipe
+ * chicken word's per-pixel alpha bypass and frame buffer pass-through
+ * rounding; the miscellaneous word's YUV 4:2:0 (and its full blend), the
+ * HDR precision and the YUV output.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (PER_PIXEL_ALPHA_BYPASS_EN, PIXEL_ROUNDING_TRUNC_FB_PASSTHRU,
+ * PIPE_MISC_YUV420_ENABLE, PIPE_MISC_YUV420_MODE_FULL_BLEND,
+ * PIPE_MISC_HDR_MODE_PRECISION, PIPE_MISC_OUTPUT_COLORSPACE_YUV).
+ */
+#define I915_XD_PIPE_CHICKEN_ALPHA_BYPASS	0x00000080U
+#define I915_XD_PIPE_CHICKEN_FB_PASSTHRU	0x00008000U
+#define I915_XD_PIPE_MISC_YUV420		0x08000000U
+#define I915_XD_PIPE_MISC_YUV420_FULL_BLEND	0x04000000U
+#define I915_XD_PIPE_MISC_HDR_PRECISION		0x00800000U
+#define I915_XD_PIPE_MISC_OUTPUT_YUV		0x00000800U
+
+/*
+ * The rest of the transcoder's DDI function words: the multi-stream
+ * mode, the multi-stream transport's master transcoder, HDCP signalling,
+ * the HDMI high TMDS character rate and scrambling; the second word's
+ * port sync enable and master select.  The MSA word's colour depth codes
+ * of 10 and 12 bits, and its colour formats (CEA RGB, YCbCr 4:4:4 BT.709,
+ * and the one that points at the VSC SDP).
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (TRANS_DDI_MODE_SELECT_DP_MST, TRANS_DDI_MST_TRANSPORT_SELECT_MASK,
+ * TRANS_DDI_HDCP_SIGNALLING, TRANS_DDI_HIGH_TMDS_CHAR_RATE,
+ * TRANS_DDI_HDMI_SCRAMBLING, PORT_SYNC_MODE_ENABLE,
+ * PORT_SYNC_MODE_MASTER_SELECT_MASK), and Linux v6.8.12
+ * include/drm/display/drm_dp.h (DP_MSA_MISC_10_BPC, DP_MSA_MISC_12_BPC,
+ * DP_MSA_MISC_COLOR_CEA_RGB, DP_MSA_MISC_COLOR_YCBCR_444_BT709,
+ * DP_MSA_MISC_COLOR_VSC_SDP).
+ */
+#define I915_XD_DDI_FUNC_MODE_DP_MST		3U
+#define I915_XD_DDI_FUNC_MST_MASTER		0x00000c00U
+#define I915_XD_DDI_FUNC_HDCP			0x00000200U
+#define I915_XD_DDI_FUNC_HIGH_TMDS		0x00000010U
+#define I915_XD_DDI_FUNC_SCRAMBLING		0x00000001U
+#define I915_XD_DDI_FUNC2_PORT_SYNC		0x00000010U
+#define I915_XD_DDI_FUNC2_PORT_SYNC_MASTER	0x00000007U
+#define I915_XD_MSA_BPC_10			0x00000040U
+#define I915_XD_MSA_BPC_12			0x00000060U
+#define I915_XD_MSA_CEA_RGB			0x00000008U
+#define I915_XD_MSA_YCBCR_444_BT709		0x0000001cU
+#define I915_XD_MSA_VSC_SDP			0x00004000U
+
+/*
+ * The rest of the first universal plane's words: the colour key's value,
+ * mask (with the constant alpha enable) and maximum (with the plane
+ * alpha in the top byte), the distance to an auxiliary surface, the
+ * chroma upsampler control, and the colour control's plane gamma off.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (_PLANE_KEYVAL_1_A, _PLANE_KEYMSK_1_A, PLANE_KEYMSK_ALPHA_ENABLE,
+ * _PLANE_KEYMAX_1_A, PLANE_KEYMAX_ALPHA_MASK, _PLANE_AUX_DIST_1_A,
+ * _PLANE_CUS_CTL_1_A, PLANE_COLOR_PLANE_GAMMA_DISABLE).
+ */
+#define I915_XD_PLANE_KEYVAL(pipe)		(0x70194U + I915_XD_PIPE_STRIDE * (pipe))
+#define I915_XD_PLANE_KEYMSK(pipe)		(0x70198U + I915_XD_PIPE_STRIDE * (pipe))
+#define I915_XD_PLANE_KEYMSK_ALPHA		0x80000000U
+#define I915_XD_PLANE_KEYMAX(pipe)		(0x701a0U + I915_XD_PIPE_STRIDE * (pipe))
+#define I915_XD_PLANE_KEYMAX_ALPHA		0xff000000U
+#define I915_XD_PLANE_AUX_DIST(pipe)		(0x701c0U + I915_XD_PIPE_STRIDE * (pipe))
+#define I915_XD_PLANE_CUS_CTL(pipe)		(0x701c8U + I915_XD_PIPE_STRIDE * (pipe))
+#define I915_XD_PLANE_COLOR_GAMMA_OFF		0x00002000U
 
 #endif /* DRIVERS_GPU_I915_INTEL_DISPLAY_REGS_XD_H */

@@ -107,19 +107,26 @@ i915_xd_test_choose(
 	struct i915_xd_choice choice;
 	int error;
 	int named;
+	int differs;
 
 	/* Chooses without a PCH. */
 	error = drv_i915_xd_platform_choose(device, revid, 0, 0U, &choice);
 	named = 0;
-	if (error == 0 && choice.platform != NULL && strcmp(choice.platform->name, name) == 0)
-		named = 1;
+	if (error == 0 && choice.platform != NULL) {
+		/* The row's name must be the one asked for. */
+		differs = strcmp(choice.platform->name, name);
+		if (differs == 0)
+			named = 1;
+	}
+
+	/* Checks the row's name. */
 	i915_host_check(named != 0, name);
 
 	/* Succeeded: reports the row, or NULL. */
 	return choice.platform;
 }
 
-/* Checks the row chosen for a representative id of each of the nine rows. */
+/* Checks the row chosen for a representative id of each of the eleven rows. */
 static void
 i915_xd_test_rows(void)
 {
@@ -127,8 +134,8 @@ i915_xd_test_rows(void)
 	struct i915_xd_choice choice;
 	int error;
 
-	/* Nine rows, nine representative ids. */
-	i915_host_check(drv_i915_xd_platform_count() == 9U, "rows: nine platform rows");
+	/* Eleven rows, eleven representative ids. */
+	i915_host_check(drv_i915_xd_platform_count() == 11U, "rows: eleven platform rows");
 	platform = i915_xd_test_choose(0x9a60U, 1U, "Tiger Lake");
 	i915_host_check(platform != NULL && platform->display_ver == 12U && platform->verified != 0, "rows: Tiger Lake is display 12 and verified");
 	platform = i915_xd_test_choose(0x9a49U, 1U, "Tiger Lake UY");
@@ -145,11 +152,19 @@ i915_xd_test_rows(void)
 	platform = i915_xd_test_choose(0xa7a1U, 4U, "Raptor Lake-U");
 	i915_host_check(platform != NULL && platform->ncdclk == 18U && platform->nvoltage == 4U && platform->voltage_steps[1] == 480000U, "rows: Raptor Lake-U has the 480 MHz steps");
 
-	/* A GPU that is not display 12 or 13 has no row (a Kaby Lake, an Ice Lake). */
+	/* Ice Lake: display 11 with port F on most parts, one FIA, MG PHYs, a 2 us read latency. */
+	platform = i915_xd_test_choose(0x8a52U, 7U, "Ice Lake");
+	i915_host_check(platform != NULL && platform->display_ver == 11U && platform->verified == 0 && platform->nports == 6U &&
+		platform->fia == I915_XD_FIA_SINGLE && platform->tccold == I915_XD_TCCOLD_AUX_WELL_EXIT && platform->wm_read_latency_us == 2U,
+		"rows: Ice Lake is unverified display 11 with port F, one FIA and the TC cold exit");
+	platform = i915_xd_test_choose(0x8a51U, 7U, "Ice Lake without port F");
+	i915_host_check(platform != NULL && platform->nports == 5U && platform->ports[4].ddi == 4U, "rows: Ice Lake without port F stops at DDI E");
+
+	/* A GPU that is not display 11 to 13 has no row (a Kaby Lake, a Meteor Lake). */
 	error = drv_i915_xd_platform_choose(0x5917U, 0U, 0, 0U, &choice);
 	i915_host_check(error == ENODEV && choice.platform == NULL, "rows: a Kaby Lake id has no row");
-	error = drv_i915_xd_platform_choose(0x8a52U, 0U, 0, 0U, &choice);
-	i915_host_check(error == ENODEV, "rows: an Ice Lake id has no row yet");
+	error = drv_i915_xd_platform_choose(0x7d55U, 0U, 0, 0U, &choice);
+	i915_host_check(error == ENODEV, "rows: a Meteor Lake id has no row");
 }
 
 /* Checks the steppings, including revisions between and past the rows. */
@@ -240,6 +255,7 @@ i915_xd_test_accepted(void)
 	int all;
 	int listed;
 	int error;
+	unsigned rows;
 
 	/* Every display 12 id the driver accepts has a verified display 12 row. */
 	all = 1;
@@ -249,6 +265,8 @@ i915_xd_test_accepted(void)
 		if (error != 0 || choice.platform->display_ver != 12U || choice.platform->verified == 0)
 			all = 0;
 	}
+
+	/* Checks every accepted display 12 id has a verified display 12 row. */
 	i915_host_check(all != 0, "accepted: every accepted display 12 id has a verified display 12 row");
 
 	/* Every display 13 id the driver accepts has a verified display 13 row. */
@@ -259,10 +277,13 @@ i915_xd_test_accepted(void)
 		if (error != 0 || choice.platform->display_ver != 13U || choice.platform->verified == 0)
 			all = 0;
 	}
+
+	/* Checks every accepted display 13 id has a verified display 13 row. */
 	i915_host_check(all != 0, "accepted: every accepted display 13 id has a verified display 13 row");
 
 	/* A verified row lists only accepted ids; an unverified row lists none of them. */
-	for (row = 0U; row < drv_i915_xd_platform_count(); row++) {
+	rows = drv_i915_xd_platform_count();
+	for (row = 0U; row < rows; row++) {
 		platform = drv_i915_xd_platform_row(row);
 		all = 1;
 		for (index = 0U; index < platform->npci_ids; index++) {
@@ -274,6 +295,8 @@ i915_xd_test_accepted(void)
 			if (platform->verified == 0 && listed != 0)
 				all = 0;
 		}
+
+		/* Checks the row's ids. */
 		i915_host_check(all != 0, platform->name);
 	}
 }
@@ -287,33 +310,49 @@ i915_xd_test_shape(void)
 	unsigned row;
 	unsigned index;
 	unsigned dekel;
+	unsigned mg;
 	int sane;
 	int well1;
+	unsigned rows;
 
 	/* Walks every row. */
-	for (row = 0U; row < drv_i915_xd_platform_count(); row++) {
+	rows = drv_i915_xd_platform_count();
+	for (row = 0U; row < rows; row++) {
 		platform = drv_i915_xd_platform_row(row);
 		sane = 1;
 
-		/* Dekel ports have a Type-C port and a north pin; combo ports have neither. */
+		/* Dekel and MG ports have a Type-C port and a north pin; combo ports have neither. */
 		dekel = 0U;
+		mg = 0U;
 		for (index = 0U; index < platform->nports; index++) {
 			port = &platform->ports[index];
 			if (port->phy_kind == I915_XD_PHY_DEKEL) {
 				dekel++;
 				if (port->tc == 0U || port->north_pin != port->tc)
 					sane = 0;
+			} else if (port->phy_kind == I915_XD_PHY_MG) {
+				mg++;
+				if (port->tc == 0U || port->north_pin != port->tc)
+					sane = 0;
 			} else if (port->tc != 0U || port->north_pin != 0U) {
 				sane = 0;
 			}
+
+			/* A port's AUX channel is its DDI. */
 			if (port->aux != port->ddi)
 				sane = 0;
 		}
 
-		/* A platform with Dekel ports has a Type-C flow, its TC PLLs and its Dekel swing tables. */
+		/* A platform with Dekel or MG ports has a Type-C flow and that PHY's swing tables, and only those. */
 		if (dekel != 0U && (platform->tc_flow == I915_XD_TC_FLOW_NONE || platform->swing->dkl_dp_low == NULL))
 			sane = 0;
-		if (dekel == 0U && (platform->tc_flow != I915_XD_TC_FLOW_NONE || platform->swing->dkl_dp_low != NULL))
+		if (dekel == 0U && platform->swing->dkl_dp_low != NULL)
+			sane = 0;
+		if (mg != 0U && (platform->tc_flow == I915_XD_TC_FLOW_NONE || platform->swing->mg_dp_low == NULL))
+			sane = 0;
+		if (mg == 0U && platform->swing->mg_dp_low != NULL)
+			sane = 0;
+		if (dekel == 0U && mg == 0U && platform->tc_flow != I915_XD_TC_FLOW_NONE)
 			sane = 0;
 
 		/* The first well is PW_1, owned by the DMC. */
@@ -330,7 +369,11 @@ i915_xd_test_shape(void)
 			sane = 0;
 		if (platform->display_ver == 12U && (platform->wm_levels != 8U || platform->hw_sagv_wm != 0 || platform->dbuf_blocks != 2048U))
 			sane = 0;
+		if (platform->display_ver == 11U && (platform->wm_levels != 8U || platform->hw_sagv_wm != 0 || platform->dbuf_blocks != 2048U ||
+		    platform->pipedmc_base != 0U || platform->swing->edp_hobl != NULL))
+			sane = 0;
 
+		/* Checks the row. */
 		i915_host_check(sane != 0, platform->name);
 	}
 }
@@ -362,6 +405,8 @@ i915_xd_test_lookups(void)
 		if (dpll->qdiv_mode != 0U)
 			cfgcr1 |= I915_XD_CFGCR1_QDIV_MODE;
 	}
+
+	/* Checks HBR at 38.4 MHz gives CFGCR0 0x00e001a5. */
 	i915_host_check(cfgcr0 == 0x00e001a5U, "lookups: HBR at 38.4 MHz gives CFGCR0 0x00e001a5");
 	i915_host_check(cfgcr1 == 0x00000088U, "lookups: HBR gives CFGCR1 0x88");
 

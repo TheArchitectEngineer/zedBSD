@@ -907,7 +907,7 @@ i915_xd_vbt_defaults(
 	for (ddi = 0U; ddi < I915_XD_VBT_DEFAULT_DDIS; ddi++) {
 		/* A Type-C port's mode comes from the VBT, so without one it gets no output. */
 		port = drv_i915_xd_platform_port(vbt->platform, ddi);
-		if (port != NULL && port->phy_kind == I915_XD_PHY_DEKEL)
+		if (port != NULL && port->tc != 0U)
 			continue;
 
 		/* The output's DVO port: HDMI A..D for DDI A..D, then HDMI E and F. */
@@ -1242,6 +1242,8 @@ i915_xd_vbt_tables(
 	} else {
 		error = i915_xd_vbt_made_pointers(vbt, tables);
 	}
+
+	/* A VBT without the tables' pointers has no panel tables. */
 	if (error != 0)
 		return;
 
@@ -1443,6 +1445,8 @@ i915_xd_vbt_tables_fit(
 		if (tables->pnp[panel] + I915_XD_VBT_PNP_BYTES > block_size)
 			return EINVAL;
 	}
+
+	/* Refuses a name table past the block. */
 	if (tables->name_offset + I915_XD_VBT_PANEL_TYPES * tables->name_size > block_size)
 		return EINVAL;
 
@@ -2141,6 +2145,8 @@ i915_xd_sha256_finish(
 		i915_xd_sha256_block(sha);
 		sha->used = 0U;
 	}
+
+	/* Pads the final block with zeros. */
 	kern_memset(sha->block + sha->used, 0, I915_XD_SHA256_BLOCK - sha->used);
 
 	/* The message length in bits, big endian, ends the last block. */
@@ -2175,6 +2181,8 @@ i915_xd_sha256_block(
 		    ((uint32_t)sha->block[round * 4U + 2U] << 8) |
 		    (uint32_t)sha->block[round * 4U + 3U];
 	}
+
+	/* Expands the schedule to 64 words. */
 	for (round = 16U; round < 64U; round++) {
 		sigma0 = i915_xd_sha256_rotr(schedule[round - 15U], 7U) ^ i915_xd_sha256_rotr(schedule[round - 15U], 18U) ^ (schedule[round - 15U] >> 3);
 		sigma1 = i915_xd_sha256_rotr(schedule[round - 2U], 17U) ^ i915_xd_sha256_rotr(schedule[round - 2U], 19U) ^ (schedule[round - 2U] >> 10);

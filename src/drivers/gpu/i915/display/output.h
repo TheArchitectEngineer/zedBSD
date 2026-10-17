@@ -22,24 +22,25 @@
 
 #include "internal.h"
 #include "output-timing.h"
+#include "hpd.h"
 
-/* The HDMI output: port B, pipe B, transcoder B. */
-#define I915_OUTPUT_HDMI_PORT		1
-#define I915_OUTPUT_HDMI_PIPE		1
-
-/*
- * An external DisplayPort display's pipe and transcoder:
- * pipe B, as the HDMI output's (one output at a time, the DBUF and
- * watermark combination already proved on pipe B).
- */
-#define I915_OUTPUT_DP_EXT_PIPE		1
+/* The panel's pipe when the firmware did not light it: pipe A. */
+#define I915_OUTPUT_PANEL_PIPE		0U
 
 /*
- * Reads the firmware's output from what it left on the display (the N0
- * report): the first lit pipe whose transcoder drives a port, and every
- * lit pipe.  Pure: reads only the report.
+ * The pipe of an HDMI or an external DisplayPort display a claim lights
+ * (the second output beside the panel, or the output moved off it): pipe
+ * B, the panel's being A.
  */
-void drv_i915_gop_output_read(const struct i915_native_report *report, struct i915_gop_output *gop);
+#define I915_OUTPUT_OTHER_PIPE		1U
+
+/*
+ * Reads the firmware's output from what it left on the display (the
+ * record of the firmware's display), by the platform's ports: the first
+ * lit pipe whose transcoder drives a port, and every lit pipe.  Pure:
+ * reads only the record and the description.
+ */
+void drv_i915_gop_output_read(const struct i915_xd_platform *platform, const struct i915_xd_firmware *firmware, struct i915_gop_output *gop);
 
 /*
  * Names the firmware's output for the log ("eDP on DDI A", "HDMI on DDI B",
@@ -83,7 +84,7 @@ void drv_i915_display_output_panel(struct i915_display *display, struct i915_dis
  * Computes the CVT reduced-blanking (version 1) timing of a mode: 0, or
  * EINVAL for a size or rate the formula cannot serve.
  */
-int drv_i915_output_cvt_rb(uint32_t width, uint32_t height, uint32_t refresh_hz, struct i915_lcd_mode *mode);
+int drv_i915_output_cvt_rb(uint32_t width, uint32_t height, uint32_t refresh_hz, struct i915_display_mode *mode);
 
 /*
  * Picks the HDMI mode from display.mode= (width, height and refresh 0
@@ -91,6 +92,12 @@ int drv_i915_output_cvt_rb(uint32_t width, uint32_t height, uint32_t refresh_hz,
  * EDID (NULL when none was read): 0 with the mode and where it came from,
  * or EINVAL.
  */
-int drv_i915_output_pick_mode(uint32_t want_width, uint32_t want_height, uint32_t want_refresh_hz, const uint8_t *edid, unsigned edid_size, struct i915_lcd_mode *mode, const char **source);
+int drv_i915_output_pick_mode(uint32_t want_width, uint32_t want_height, uint32_t want_refresh_hz, const uint8_t *edid, unsigned edid_size, struct i915_display_mode *mode, const char **source);
+
+/* Plans the link and the combo PLL of an HDMI mode on DDI B: 0, or EINVAL. */
+int drv_i915_output_link_hdmi(const struct i915_xd_platform *platform, unsigned ddi, const struct i915_display_mode *mode, uint32_t ref_khz, struct i915_display_link *link);
+
+/* Plans the link and the M/N of an external DisplayPort mode within the fallback's limits (0: none): 0, EINVAL or ENOSPC. */
+int drv_i915_output_link_dp(const struct i915_xd_platform *platform, unsigned ddi, const struct i915_display_mode *mode, const struct i915_xd_dp_probe *sink, int max_rate_khz, int max_lanes, uint32_t ref_khz, struct i915_display_link *link);
 
 #endif /* DRIVERS_GPU_I915_DISPLAY_OUTPUT_H */
