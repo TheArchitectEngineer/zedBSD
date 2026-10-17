@@ -1338,7 +1338,7 @@ drv_i915_lcd_power_put(
 	refusals_before = kernel->d->pwc->disable_refusals;
 	drv_i915_display_power_put(kernel->d->pd, (enum i915_power_domain)domain, kernel->d->pwc);
 	if (kernel->d->pwc->disable_refusals != refusals_before) {
-		drv_i915_lcd_backend_fault("a power well was NOT turned off: the pipe interrupt drain failed (the stop is not "
+		drv_i915_xd_pictures_fault(&kernel->display->xd.pictures, "a power well was NOT turned off: the pipe interrupt drain failed (the stop is not "
 			"confirmed; display power is kept)\n");
 	}
 }

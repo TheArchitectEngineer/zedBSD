@@ -26,7 +26,6 @@
 #include "control.h"
 #include "output.h"
 #include "present.h"
-#include "vblank.h"
 #include "xd-pipe.h"
 
 #include "../i915.h"

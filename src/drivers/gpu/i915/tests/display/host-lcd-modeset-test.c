@@ -37,7 +37,6 @@
 #include "../../display/dp-sink.h"
 #include "../../display/modeset.h"
 #include "../../display/state.h"
-#include "../../display/vblank.h"
 #include "../../display/watermark.h"
 
 #include <errno.h>

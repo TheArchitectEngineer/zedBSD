@@ -67,7 +67,6 @@
 #include "pipe.h"
 #include "modeset.h"
 #include "plane.h"
-#include "vblank.h"
 #include "ddi.h"
 #include "dp.h"
 #include "edid.h"

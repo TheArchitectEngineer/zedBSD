@@ -29,17 +29,17 @@
 #include "head.h"
 #include "modeset.h"
 #include "output.h"
-#include "pipe.h"
 #include "power.h"
 #include "present.h"
 #include "scanout.h"
 #include "tc-kern.h"
-#include "vblank.h"
+#include "interrupts.h"
 #include "vbt-parse.h"
 #include "clock.h"
 #include "watermark.h"
 #include <kern/kcrt.h>
 
+#include "../intel/display-regs-xd.h"
 #include "../i915.h"
 #include "../ggtt.h"
 #include "../memory.h"
@@ -93,6 +93,15 @@
 #define I915_RESIDENT_KEEP_MASKED_D13	0x80600001U
 #define I915_RESIDENT_KEEP_MASKED_D12	0x80000001U
 
+/*
+ * The negative errors the run's hooks answer, in the numbering the
+ * backend's callers compare: an invalid request, a wait that ran out, a
+ * broken time base.
+ */
+#define I915_RESIDENT_EINVAL		(-22)
+#define I915_RESIDENT_ETIMEDOUT		(-110)
+#define I915_RESIDENT_EIO		(-5)
+
 /* The scan line register of pipe A the update's probe watches, and its line bits. */
 #define I915_RESIDENT_PIPE_DSL_A	0x70000U
 #define I915_RESIDENT_PIPE_DSL_MASK	0x1fffU
@@ -116,6 +125,14 @@ static void resident_udelay(void *ctx, unsigned us);
 static void resident_dbuf_slices_update(void *ctx, unsigned slices);
 static void resident_lock(void *ctx, int which, int take);
 static void resident_irq_off(void *ctx);
+static int resident_power_domain(void *ctx, unsigned use, unsigned index, int thunderbolt);
+static int resident_vblank_get(void *ctx, int pipe);
+static void resident_vblank_put(void *ctx, int pipe);
+static long resident_vblank_sleep(void *ctx, int pipe, long ticks);
+static void resident_arm_event(void *ctx, int pipe);
+static int resident_wait_event(void *ctx, int pipe, unsigned timeout_ms);
+static void resident_cancel_event(void *ctx, int pipe);
+static uint32_t resident_frame(void *ctx);
 static void resident_irq_on(void *ctx);
 static int resident_preflight_panel(struct i915_lcd_kernel *k);
 static int resident_preflight_hdmi(struct i915_lcd_kernel *k);
@@ -534,7 +551,7 @@ drv_i915_resident_bind(
 	k->ops.panel = drv_i915_edp_emit_panel;
 
 	/* Display power and the display buffer's slices. */
-	k->ops.power_domain = drv_i915_lcd_power_domain_of;
+	k->ops.power_domain = resident_power_domain;
 	k->ops.power_get = drv_i915_lcd_power_get;
 	k->ops.power_get_if_enabled = drv_i915_lcd_power_get_if_enabled;
 	k->ops.power_put = drv_i915_lcd_power_put;
@@ -560,14 +577,14 @@ drv_i915_resident_bind(
 	k->ops.dkl_rmw = drv_i915_lcd_dkl_rmw;
 
 	/* The update within one frame: vblank references, the vblank sleep, the section's interrupts and the event. */
-	k->ops.vblank_get = drv_i915_lcd_kernel_vblank_get;
-	k->ops.vblank_put = drv_i915_lcd_kernel_vblank_put;
-	k->ops.vblank_sleep = drv_i915_lcd_kernel_vblank_sleep;
+	k->ops.vblank_get = resident_vblank_get;
+	k->ops.vblank_put = resident_vblank_put;
+	k->ops.vblank_sleep = resident_vblank_sleep;
 	k->ops.irq_off = resident_irq_off;
 	k->ops.irq_on = resident_irq_on;
-	k->ops.arm_event = drv_i915_lcd_kernel_arm_event;
-	k->ops.wait_event = drv_i915_lcd_kernel_wait_event;
-	k->ops.cancel_event = drv_i915_lcd_kernel_cancel_event;
+	k->ops.arm_event = resident_arm_event;
+	k->ops.wait_event = resident_wait_event;
+	k->ops.cancel_event = resident_cancel_event;
 }
 
 /*
@@ -1190,8 +1207,8 @@ resident_posting_read(
 
 /*
  * The register wait hook of a run: 2 us of polling without sleeping, then
- * sleeping up to timeout_ms.  Returns 0, I915_LCD_ETIMEDOUT, or
- * I915_LCD_EIO for a time base or wait primitive fault, which is also the
+ * sleeping up to timeout_ms.  Returns 0, I915_RESIDENT_ETIMEDOUT, or
+ * I915_RESIDENT_EIO for a time base or wait primitive fault, which is also the
  * run's anomaly.
  */
 static int
@@ -1217,13 +1234,13 @@ resident_wait_reg(
 	/* The device did not reach the condition in time. */
 	if (error == ETIMEDOUT) {
 		k->wait_timeouts++;
-		return I915_LCD_ETIMEDOUT;
+		return I915_RESIDENT_ETIMEDOUT;
 	}
 
 	/* Anything else is the time source failing: not a timeout, and the run's first anomaly. */
 	k->time_faults++;
-	drv_i915_lcd_backend_fault("time base / wait primitive fault in a register wait (not a timeout)\n");
-	return I915_LCD_EIO;
+	drv_i915_xd_pictures_fault(&k->display->xd.pictures, "time base / wait primitive fault in a register wait (not a timeout)\n");
+	return I915_RESIDENT_EIO;
 }
 
 /* The sleep hook of a run: the resident eDP's tick sleep. */
@@ -1244,7 +1261,7 @@ resident_usleep(
 	/* A sleep that returned early or found the clock failed is the run's anomaly. */
 	if (k->d->edp->k.time_faults != before) {
 		k->time_faults++;
-		drv_i915_lcd_backend_fault("time base fault during a sleep (returned early or the clock failed)\n");
+		drv_i915_xd_pictures_fault(&k->display->xd.pictures, "time base fault during a sleep (returned early or the clock failed)\n");
 	}
 }
 
@@ -1263,7 +1280,7 @@ resident_udelay(
 	error = drv_i915_udelay(us);
 	if (error != 0) {
 		k->time_faults++;
-		drv_i915_lcd_backend_fault("time base fault during a short delay\n");
+		drv_i915_xd_pictures_fault(&k->display->xd.pictures, "time base fault during a short delay\n");
 	}
 }
 
@@ -1338,6 +1355,247 @@ resident_irq_on(
 	/* Interrupts that were off before the section stay off. */
 	if (k->irq_was_on)
 		kern_irq_enable();
+}
+
+/*
+ * The power hook of a run: names the power domain of one power use of
+ * the screen's output (the DC states held off, a pipe, a transcoder, a
+ * DDI's lanes or IO, an AUX channel in its legacy or Thunderbolt use).
+ */
+static int
+resident_power_domain(
+	void *ctx,
+	unsigned use,
+	unsigned index,
+	int thunderbolt)
+{
+	struct i915_lcd_kernel *k;
+	unsigned version;
+	int domain;
+
+	k = ctx;
+
+	/* The AUX domains are named by the display's version. */
+	version = 13U;
+	if (k->display->xd.choice.platform != NULL)
+		version = k->display->xd.choice.platform->display_ver;
+
+	/* The domain of each use; the Type-C ports' lanes and IO from TC1 (DDI 3) on. */
+	switch (use) {
+	case I915_XD_OUTPUT_POWER_DC_OFF:
+		domain = (int)I915_PW_DOMAIN_DC_OFF;
+		break;
+	case I915_XD_OUTPUT_POWER_PIPE:
+		domain = (int)I915_PW_DOMAIN_PIPE_A + (int)index;
+		break;
+	case I915_XD_OUTPUT_POWER_TRANS:
+		domain = (int)I915_PW_DOMAIN_TRANSCODER_A + (int)index;
+		break;
+	case I915_XD_OUTPUT_POWER_LANES:
+		domain = (int)I915_PW_DOMAIN_PORT_DDI_LANES_A + (int)index;
+		if (index >= I915_XD_PICTURE_FIRST_TC_DDI)
+			domain = (int)I915_PW_DOMAIN_PORT_DDI_LANES_TC1 + (int)(index - I915_XD_PICTURE_FIRST_TC_DDI);
+		break;
+	case I915_XD_OUTPUT_POWER_DDI_IO:
+		domain = (int)I915_PW_DOMAIN_PORT_DDI_IO_A + (int)index;
+		if (index >= I915_XD_PICTURE_FIRST_TC_DDI)
+			domain = (int)I915_PW_DOMAIN_PORT_DDI_IO_TC1 + (int)(index - I915_XD_PICTURE_FIRST_TC_DDI);
+		break;
+	case I915_XD_OUTPUT_POWER_AUX:
+		domain = (int)drv_i915_aux_legacy_power_domain(version, (int)index);
+		if (thunderbolt)
+			domain = (int)drv_i915_aux_tbt_power_domain(version, (int)index);
+		break;
+	default:
+		domain = (int)I915_PW_DOMAIN_DISPLAY_CORE;
+		break;
+	}
+
+	/* Succeeded: the domain. */
+	return domain;
+}
+
+/* The vblank hook of a run: takes a vblank reference of the pipe; 0, or I915_RESIDENT_EINVAL when its interrupts are off. */
+static int
+resident_vblank_get(
+	void *ctx,
+	int pipe)
+{
+	struct i915_lcd_kernel *k;
+	int error;
+
+	k = ctx;
+
+	/* Takes the reference on the display's interrupt state. */
+	error = drv_i915_drm_vblank_get(k->d->irq, (unsigned)pipe);
+	if (error != 0)
+		return I915_RESIDENT_EINVAL;
+
+	/* Succeeded: the pipe's vblank interrupt is on and referenced. */
+	return 0;
+}
+
+/* The vblank hook of a run: gives a vblank reference of the pipe back; the last one turns the interrupt off. */
+static void
+resident_vblank_put(
+	void *ctx,
+	int pipe)
+{
+	struct i915_lcd_kernel *k;
+
+	k = ctx;
+
+	/* Gives the reference back. */
+	drv_i915_drm_vblank_put(k->d->irq, (unsigned)pipe);
+}
+
+/*
+ * The sleep hook of a run: sleeps until the pipe's next vblank interrupt
+ * or the ticks (10 ms each) run out.  Returns the ticks left (at least 1)
+ * when the vblank came, 0 when it did not.  A sleep entered with the
+ * interrupts off is counted, and a broken time base is the run's anomaly.
+ */
+static long
+resident_vblank_sleep(
+	void *ctx,
+	int pipe,
+	long ticks)
+{
+	struct i915_lcd_kernel *k;
+	bool on;
+	int error;
+
+	k = ctx;
+
+	/* Counts a sleep entered with the interrupts off; their state is put back as it was. */
+	on = kern_irq_disable();
+	if (on) {
+		kern_irq_enable();
+	} else {
+		k->sleep_irq_off++;
+	}
+
+	/* Waits for one new vblank of the pipe. */
+	error = drv_i915_wait_vblank(k->d->irq, (unsigned)pipe, 1U, (unsigned)ticks * 10U, resident_frame, k, 0);
+	k->vblank_sleeps++;
+
+	/* A broken time base is the run's anomaly, not a timeout. */
+	if (error == EIO)
+		drv_i915_xd_pictures_fault(&k->display->xd.pictures, "time base fault while waiting for a vblank\n");
+
+	/* A sleep that ended without the vblank. */
+	if (error != 0)
+		return 0;
+
+	/* A sleep that ended on the vblank leaves at least one tick. */
+	if (ticks > 1)
+		return ticks - 1;
+
+	/* Succeeded: the vblank came in the last tick. */
+	return 1;
+}
+
+/* The event hook of a run: arms the flip event, which completes at the pipe's next vblank after now. */
+static void
+resident_arm_event(
+	void *ctx,
+	int pipe)
+{
+	struct i915_lcd_kernel *k;
+
+	k = ctx;
+
+	/* The armed event, its pipe and the frame it was armed in. */
+	k->event_armed = 1;
+	k->event_pipe = pipe;
+	k->event_frame = resident_frame(k);
+}
+
+/*
+ * The event hook of a run: waits for the armed flip event, which
+ * completes with a new vblank of its pipe and the frame counter past the
+ * arming frame.  Returns 0, I915_RESIDENT_EINVAL when no event of the pipe is
+ * armed, I915_RESIDENT_ETIMEDOUT when it did not complete in time, or
+ * I915_RESIDENT_EIO when the time base failed.
+ */
+static int
+resident_wait_event(
+	void *ctx,
+	int pipe,
+	unsigned timeout_ms)
+{
+	struct i915_lcd_kernel *k;
+	uint32_t frame;
+	int error;
+
+	k = ctx;
+
+	/* Refuses a wait for an event that is not armed on this pipe. */
+	if (!k->event_armed)
+		return I915_RESIDENT_EINVAL;
+	if (pipe != k->event_pipe)
+		return I915_RESIDENT_EINVAL;
+
+	/* Waits for a new vblank of the pipe. */
+	error = drv_i915_wait_vblank(k->d->irq, (unsigned)pipe, 1U, timeout_ms, resident_frame, k, 0);
+
+	/* A vblank that left the frame counter at the arming frame did not complete the event. */
+	if (error == 0) {
+		frame = resident_frame(k);
+		if (frame == k->event_frame)
+			error = ETIMEDOUT;
+	}
+
+	/* A broken time base. */
+	if (error == EIO)
+		return I915_RESIDENT_EIO;
+
+	/* An event that did not complete in time. */
+	if (error != 0)
+		return I915_RESIDENT_ETIMEDOUT;
+
+	/* Succeeded: the event completed and is no longer armed. */
+	k->event_armed = 0;
+	return 0;
+}
+
+/* The event hook of a run: forgets the armed flip event; a later wait is refused and a late vblank completes nothing. */
+static void
+resident_cancel_event(
+	void *ctx,
+	int pipe)
+{
+	struct i915_lcd_kernel *k;
+
+	UNUSED_PARAMETER(pipe);
+
+	k = ctx;
+
+	/* Counts an event that was still armed, and forgets it. */
+	if (k->event_armed)
+		k->events_cancelled++;
+	k->event_armed = 0;
+}
+
+/* Reads the frame counter of the run's pipe: its parameters' pipe, or the panel's pipe A. */
+static uint32_t
+resident_frame(
+	void *ctx)
+{
+	struct i915_lcd_kernel *k;
+	uint32_t frame;
+	unsigned pipe;
+
+	k = ctx;
+
+	/* The pipe the run drives. */
+	pipe = 0U;
+	if (k->p != NULL)
+		pipe = (unsigned)k->p->pipe;
+
+	/* Succeeded: the pipe's frame counter. */
+	frame = drv_i915_read32(k->d->mmio, I915_XD_PIPE_FRMCNT(pipe));
+	return frame;
 }
 
 /*
