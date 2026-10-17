@@ -21,7 +21,7 @@
  * link back at the end: the port's last link gives the PHY back at once,
  * so a port the display does not drive is released as soon as it has been
  * looked at (the firmware updates the other Type-C ports' hot plug only
- * after that).  The sink's probe itself is dp-ext.c.
+ * after that).  The sink's probe itself is xd-dp.c.
  */
 
 #include "internal.h"
@@ -91,9 +91,9 @@ struct i915_dp_ext_port {
 	unsigned tc_port;
 	int ddi;
 	struct i915_xd_aux aux;
-	struct i915_dp_ext_env env;
-	struct i915_dp_ext_source source;
-	struct i915_dp_ext_sink sink;
+	struct i915_xd_dp_probe_env env;
+	struct i915_xd_dp_probe_source source;
+	struct i915_xd_dp_probe sink;
 	struct mutex lock;
 	unsigned probes;
 	unsigned refused;
@@ -133,11 +133,11 @@ static int i915_dp_ext_access_begin(struct i915_dp_ext_port *p, struct i915_dp_e
 static void i915_dp_ext_access_end(struct i915_dp_ext_port *p, struct i915_dp_ext_access *access);
 static long i915_dp_ext_read(struct i915_dp_ext_port *p, unsigned offset, uint8_t *buffer, size_t size);
 static long i915_dp_ext_write(struct i915_dp_ext_port *p, unsigned offset, const uint8_t *buffer, size_t size);
-static int i915_dp_ext_caps(struct i915_dp_ext_port *p, uint8_t dpcd[I915_DP_EXT_DPCD_SIZE]);
+static int i915_dp_ext_caps(struct i915_dp_ext_port *p, uint8_t dpcd[I915_XD_DP_PROBE_DPCD_SIZE]);
 static long i915_dp_ext_dpcd_read(void *ctx, unsigned offset, uint8_t *buffer, size_t size);
 static long i915_dp_ext_dpcd_write(void *ctx, unsigned offset, const uint8_t *buffer, size_t size);
 static int i915_dp_ext_dpcd_probe(void *ctx, unsigned offset);
-static int i915_dp_ext_read_caps(void *ctx, uint8_t dpcd[I915_DP_EXT_DPCD_SIZE]);
+static int i915_dp_ext_read_caps(void *ctx, uint8_t dpcd[I915_XD_DP_PROBE_DPCD_SIZE]);
 static int i915_dp_ext_ddc_probe(void *ctx);
 static int i915_dp_ext_edid_read(void *ctx, uint8_t *buffer, unsigned max_blocks, unsigned *extensions);
 static int i915_dp_ext_edid_block(void *context, unsigned segment, unsigned offset, uint8_t *buffer, unsigned size);
@@ -245,7 +245,7 @@ drv_i915_dp_ext_stop(
 		kern_logf("i915: DP-ext %s: stopped after %u probe(s), last %s (AUX tries %u, no answers %u, refused %u)\n",
 		    p->name,
 		    p->probes,
-		    drv_i915_dp_ext_status_name(p->sink.status),
+		    drv_i915_xd_dp_probe_status_name(p->sink.status),
 		    p->aux.tries,
 		    p->aux.no_answers,
 		    p->refused);
@@ -280,7 +280,7 @@ drv_i915_dp_ext_destroy(
  * declare.  *edid_bytes receives the EDID bytes copied (whole blocks, 0
  * without an EDID).
  */
-enum i915_dp_ext_status
+enum i915_xd_dp_probe_status
 drv_i915_dp_ext_probe(
 	struct i915_display *display,
 	int port,
@@ -290,7 +290,7 @@ drv_i915_dp_ext_probe(
 {
 	struct i915_dp_ext_world *ext;
 	struct i915_dp_ext_port *p;
-	enum i915_dp_ext_status status;
+	enum i915_xd_dp_probe_status status;
 	unsigned bytes;
 	int tc_port;
 
@@ -300,33 +300,33 @@ drv_i915_dp_ext_probe(
 	/* Without bound external ports the sink cannot be asked. */
 	ext = display->dp_ext;
 	if (ext == NULL || !ext->live)
-		return I915_DP_EXT_UNKNOWN;
+		return I915_XD_DP_PROBE_UNKNOWN;
 
 	/* Only a Type-C port is an external DP port here. */
 	tc_port = drv_i915_tc_port_of(display, port);
 	if (tc_port < 0)
-		return I915_DP_EXT_UNKNOWN;
+		return I915_XD_DP_PROBE_UNKNOWN;
 
 	/* A port the VBT does not declare has no sink. */
 	p = &ext->port[tc_port];
 	if (!p->declared)
-		return I915_DP_EXT_DISCONNECTED;
+		return I915_XD_DP_PROBE_DISCONNECTED;
 
 	/* Probes under the port's lock, unless the ports stopped meanwhile. */
 	mutex_lock(&p->lock);
 
 	if (!ext->live) {
 		mutex_unlock(&p->lock);
-		return I915_DP_EXT_UNKNOWN;
+		return I915_XD_DP_PROBE_UNKNOWN;
 	}
 
 	i915_dp_ext_probe_locked(ext, p);
 	status = p->sink.status;
 
 	/* Copies as many of the EDID's whole blocks as the caller has room for. */
-	bytes = p->sink.edid_blocks * I915_DP_EXT_EDID_BLOCK_SIZE;
+	bytes = p->sink.edid_blocks * I915_XD_DP_PROBE_EDID_BLOCK_SIZE;
 	if (bytes > edid_size)
-		bytes = (unsigned)(edid_size / I915_DP_EXT_EDID_BLOCK_SIZE) * I915_DP_EXT_EDID_BLOCK_SIZE;
+		bytes = (unsigned)(edid_size / I915_XD_DP_PROBE_EDID_BLOCK_SIZE) * I915_XD_DP_PROBE_EDID_BLOCK_SIZE;
 
 	if (bytes != 0U)
 		kern_memcpy(edid, p->sink.edid, bytes);
@@ -342,7 +342,7 @@ drv_i915_dp_ext_probe(
  * Handles a short pulse (IRQ_HPD) of an external DP port.
  *
  * The port is held for the accesses as for a probe, and its sink is
- * checked against what the last probe found (dp-ext.c).  Returns 1 when
+ * checked against what the last probe found (xd-dp.c).  Returns 1 when
  * the pulse is handled, 0 when the port must be detected again (the
  * hotplug then probes it); a port that cannot be asked returns 0.
  */
@@ -371,7 +371,7 @@ drv_i915_dp_ext_pulse(
 	}
 
 	drv_i915_xd_tc_ports_get_link(ext->tc, p->tc_port, I915_DP_EXT_KERN_PROBE_LANES);
-	handled = drv_i915_dp_ext_short_pulse(&p->env, &p->sink);
+	handled = drv_i915_xd_dp_probe_short_pulse(&p->env, &p->sink);
 	drv_i915_xd_tc_ports_put_link(ext->tc, p->tc_port);
 	kern_logf("i915: DP-ext %s: short pulse %s\n", p->name, handled ? "handled" : "asks for a detection");
 
@@ -430,7 +430,7 @@ drv_i915_dp_ext_link_check(
 	}
 
 	drv_i915_xd_tc_ports_get_link(ext->tc, p->tc_port, (unsigned)lanes);
-	needs = drv_i915_dp_ext_link_needs_retrain(&p->env, lanes);
+	needs = drv_i915_xd_dp_probe_link_needs_retrain(&p->env, lanes);
 	drv_i915_xd_tc_ports_put_link(ext->tc, p->tc_port);
 
 	mutex_unlock(&p->lock);
@@ -453,7 +453,7 @@ int
 drv_i915_dp_ext_sink_copy(
 	struct i915_display *display,
 	int port,
-	struct i915_dp_ext_sink *sink)
+	struct i915_xd_dp_probe *sink)
 {
 	struct i915_dp_ext_port *p;
 
@@ -506,7 +506,7 @@ drv_i915_dp_ext_link_limits(
 
 /*
  * Lowers an external DP port's link limits after a link training failed
- * at a rate and lane count (drv_i915_dp_ext_fallback_values()).  Returns
+ * at a rate and lane count (drv_i915_xd_dp_probe_fallback_values()).  Returns
  * 0, ENOSPC when no lower link is left, or ENXIO when the port is not a
  * declared Type-C port.
  */
@@ -533,7 +533,7 @@ drv_i915_dp_ext_link_fallback(
 	mutex_lock(&p->lock);
 
 	error = ENOSPC;
-	lowered = drv_i915_dp_ext_fallback_values(&p->sink, rate, lanes, &max_rate, &max_lanes);
+	lowered = drv_i915_xd_dp_probe_fallback_values(&p->sink, rate, lanes, &max_rate, &max_lanes);
 	if (lowered) {
 		p->max_link_rate = max_rate;
 		p->max_link_lanes = max_lanes;
@@ -674,7 +674,7 @@ i915_dp_ext_bind_port(
 
 	/* The lock, and a sink not yet probed. */
 	(void)mutex_init(&p->lock, LOCK_RANK_DEVICE, "i915 dp-ext port");
-	drv_i915_dp_ext_forget(&p->sink);
+	drv_i915_xd_dp_probe_forget(&p->sink);
 	p->declared = 1;
 
 	/* Logs the binding. */
@@ -717,13 +717,13 @@ i915_dp_ext_probe_locked(
 
 	/* Only a port the display holds for DP has a sink to probe; Thunderbolt is outside the driver's scope. */
 	if (mode != I915_XD_TC_MODE_DP_ALT && mode != I915_XD_TC_MODE_LEGACY) {
-		drv_i915_dp_ext_forget(&p->sink);
-		p->sink.step = I915_DP_EXT_STEP_PHY;
+		drv_i915_xd_dp_probe_forget(&p->sink);
+		p->sink.step = I915_XD_DP_PROBE_STEP_PHY;
 		kern_logf("i915: DP-ext %s: held in %s mode, not DP: no sink probed\n", p->name, drv_i915_xd_tc_mode_name(mode));
 	} else {
 		/* Probes the sink; one the AUX channel could not reach has the port's Type-C state logged while it is still held. */
-		drv_i915_dp_ext_detect(&p->env, &p->source, &p->sink);
-		if (p->sink.status == I915_DP_EXT_DISCONNECTED && p->sink.error != 0)
+		drv_i915_xd_dp_probe_detect(&p->env, &p->source, &p->sink);
+		if (p->sink.status == I915_XD_DP_PROBE_DISCONNECTED && p->sink.error != 0)
 			drv_i915_xd_tc_ports_log_state(ext->tc, tc_port, "AUX failed");
 	}
 
@@ -732,7 +732,7 @@ i915_dp_ext_probe_locked(
 	after = drv_i915_xd_tc_ports_mode(ext->tc, tc_port);
 
 	/* Logs what the probe found and how the port was left. */
-	drv_i915_dp_ext_log(&p->env, &p->sink, p->name);
+	drv_i915_xd_dp_probe_log(&p->env, &p->sink, p->name);
 	kern_logf("i915: DP-ext %s: probe %u held the port in %s mode (FIA lanes %d), %s after it | AUX tries %u no answers %u\n",
 	    p->name,
 	    p->probes,
@@ -902,13 +902,13 @@ i915_dp_ext_write(
 static int
 i915_dp_ext_caps(
 	struct i915_dp_ext_port *p,
-	uint8_t dpcd[I915_DP_EXT_DPCD_SIZE])
+	uint8_t dpcd[I915_XD_DP_PROBE_DPCD_SIZE])
 {
-	uint8_t extended[I915_DP_EXT_DPCD_SIZE];
+	uint8_t extended[I915_XD_DP_PROBE_DPCD_SIZE];
 	long transferred;
 
 	/* The receiver's own capabilities. */
-	transferred = i915_dp_ext_read(p, I915_DP_EXT_KERN_DPCD_REV, dpcd, I915_DP_EXT_DPCD_SIZE);
+	transferred = i915_dp_ext_read(p, I915_DP_EXT_KERN_DPCD_REV, dpcd, I915_XD_DP_PROBE_DPCD_SIZE);
 	if (transferred < 0)
 		return (int)transferred;
 
@@ -917,13 +917,13 @@ i915_dp_ext_caps(
 		return 0;
 
 	/* The extended ones, which replace the receiver's unless their revision is lower. */
-	transferred = i915_dp_ext_read(p, I915_DP_EXT_KERN_EXTENDED_CAPS, extended, I915_DP_EXT_DPCD_SIZE);
+	transferred = i915_dp_ext_read(p, I915_DP_EXT_KERN_EXTENDED_CAPS, extended, I915_XD_DP_PROBE_DPCD_SIZE);
 	if (transferred < 0)
 		return (int)transferred;
 	if (extended[I915_DP_EXT_KERN_DPCD_REV] < dpcd[I915_DP_EXT_KERN_DPCD_REV])
 		return 0;
 
-	kern_memcpy(dpcd, extended, I915_DP_EXT_DPCD_SIZE);
+	kern_memcpy(dpcd, extended, I915_XD_DP_PROBE_DPCD_SIZE);
 
 	/* Succeeded: the extended capabilities are in their place. */
 	return 0;
@@ -989,7 +989,7 @@ i915_dp_ext_dpcd_probe(
 static int
 i915_dp_ext_read_caps(
 	void *ctx,
-	uint8_t dpcd[I915_DP_EXT_DPCD_SIZE])
+	uint8_t dpcd[I915_XD_DP_PROBE_DPCD_SIZE])
 {
 	int error;
 
@@ -1201,7 +1201,7 @@ i915_dp_ext_emit_read_caps(
 
 /*
  * Sets up the protocol converter of the port's sink for the RGB stream
- * (dp-ext.c, from what the last probe found), with the port's lock held;
+ * (xd-dp.c, from what the last probe found), with the port's lock held;
  * refused once the ports stopped.
  */
 static int
@@ -1219,7 +1219,7 @@ i915_dp_ext_emit_configure_converter(
 	/* Sets the converter up from the probe's result. */
 	mutex_lock(&p->lock);
 
-	error = drv_i915_dp_ext_configure_converter(&p->env, &p->sink);
+	error = drv_i915_xd_dp_probe_configure_converter(&p->env, &p->sink);
 
 	mutex_unlock(&p->lock);
 

@@ -23,7 +23,7 @@
 #include "internal.h"
 #include "resident.h"
 #include "diagnostics.h"
-#include "dp-ext.h"
+#include "xd-dp.h"
 #include "dp-ext-kern.h"
 #include "edp-device.h"
 #include "head.h"

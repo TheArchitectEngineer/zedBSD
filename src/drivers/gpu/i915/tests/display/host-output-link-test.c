@@ -43,7 +43,7 @@
 #define OUTPUT_LINK_TEST_REF_KHZ	38400U
 
 static const struct i915_xd_platform *output_link_test_platform(void);
-static void output_link_test_sink(struct i915_dp_ext_sink *sink);
+static void output_link_test_sink(struct i915_xd_dp_probe *sink);
 static void output_link_test_monitor_mode(struct i915_display_mode *mode);
 static void output_link_test_monitor(const struct i915_xd_platform *platform);
 static void output_link_test_limits(const struct i915_xd_platform *platform);
@@ -110,11 +110,11 @@ output_link_test_platform(void)
 /* The 5330's USB-C monitor as the probe found it: RBR, HBR, HBR2 shared, 4 lanes, not a branch. */
 static void
 output_link_test_sink(
-	struct i915_dp_ext_sink *sink)
+	struct i915_xd_dp_probe *sink)
 {
 	/* A connected DPCD 1.4 sink. */
 	memset(sink, 0, sizeof(*sink));
-	sink->status = I915_DP_EXT_CONNECTED;
+	sink->status = I915_XD_DP_PROBE_CONNECTED;
 	sink->dpcd[0] = 0x14;
 	sink->dpcd_valid = 1;
 
@@ -152,7 +152,7 @@ static void
 output_link_test_monitor(
 	const struct i915_xd_platform *platform)
 {
-	struct i915_dp_ext_sink sink;
+	struct i915_xd_dp_probe sink;
 	struct i915_display_mode mode;
 	struct i915_display_link link;
 	int error;
@@ -174,7 +174,7 @@ static void
 output_link_test_limits(
 	const struct i915_xd_platform *platform)
 {
-	struct i915_dp_ext_sink sink;
+	struct i915_xd_dp_probe sink;
 	struct i915_display_mode mode;
 	struct i915_display_link link;
 	int error;
@@ -204,7 +204,7 @@ static void
 output_link_test_branch(
 	const struct i915_xd_platform *platform)
 {
-	struct i915_dp_ext_sink sink;
+	struct i915_xd_dp_probe sink;
 	struct i915_display_mode mode;
 	struct i915_display_link link;
 	int error;

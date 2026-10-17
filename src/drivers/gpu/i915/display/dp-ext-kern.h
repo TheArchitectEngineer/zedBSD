@@ -15,20 +15,20 @@
 #define DRIVERS_GPU_I915_DISPLAY_DP_EXT_KERN_H
 
 #include "internal.h"
-#include "dp-ext.h"
+#include "xd-dp.h"
 
 void drv_i915_dp_ext_start(struct i915_display *display);
 void drv_i915_dp_ext_stop(struct i915_display *display);
 void drv_i915_dp_ext_destroy(struct i915_display *display);
 int drv_i915_dp_ext_pulse(struct i915_display *display, int port);
-enum i915_dp_ext_status drv_i915_dp_ext_probe(struct i915_display *display, int port, uint8_t *edid, size_t edid_size, unsigned *edid_bytes);
+enum i915_xd_dp_probe_status drv_i915_dp_ext_probe(struct i915_display *display, int port, uint8_t *edid, size_t edid_size, unsigned *edid_bytes);
 
 /*
  * Copies what the last probe of an external DP port (the Type-C port of a
  * DDI port) found: 0, or ENXIO when the ports are not bound or the port is
  * not a declared Type-C port.
  */
-int drv_i915_dp_ext_sink_copy(struct i915_display *display, int port, struct i915_dp_ext_sink *sink);
+int drv_i915_dp_ext_sink_copy(struct i915_display *display, int port, struct i915_xd_dp_probe *sink);
 
 /*
  * Reports the link limits a failed link training left on an external DP

@@ -71,7 +71,7 @@
 #include "../trace.h"
 #include "../workqueue.h"
 #include "display-internal.h"
-#include "dp-ext.h"
+#include "xd-dp.h"
 #include "xd.h"
 #include "xd-backend.h"
 #include "xd-edp.h"
@@ -1805,7 +1805,7 @@ struct i915_display_output {
 	 */
 	unsigned tc_port;
 	int port;
-	struct i915_dp_ext_sink sink;
+	struct i915_xd_dp_probe sink;
 
 	/* Where the mode came from, for the log: "EDID", "display.mode", "CEA 4". */
 	const char *mode_source;

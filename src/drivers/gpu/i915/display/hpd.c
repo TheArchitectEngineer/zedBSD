@@ -19,7 +19,7 @@
 
 #include "internal.h"
 #include "hpd.h"
-#include "dp-ext.h"
+#include "xd-dp.h"
 #include "dp-ext-kern.h"
 #include "output.h"
 #include "power.h"
@@ -1220,18 +1220,18 @@ i915_hpd_dp_probe(
 	unsigned *bytes)
 {
 	struct i915_hpd_world *world;
-	enum i915_dp_ext_status probed;
+	enum i915_xd_dp_probe_status probed;
 
 	world = ctx;
 
 	/* Probes the sink. */
 	probed = drv_i915_dp_ext_probe(world->display, (int)ddi, edid, size, bytes);
-	kern_logf("i915: hpd DP probe DDI %u: %s, EDID %u bytes\n", ddi, drv_i915_dp_ext_status_name(probed), *bytes);
+	kern_logf("i915: hpd DP probe DDI %u: %s, EDID %u bytes\n", ddi, drv_i915_xd_dp_probe_status_name(probed), *bytes);
 
 	/* A display the probe found is connected; a sink without one is not. */
-	if (probed == I915_DP_EXT_CONNECTED)
+	if (probed == I915_XD_DP_PROBE_CONNECTED)
 		return I915_XD_HPD_CONNECTED;
-	if (probed == I915_DP_EXT_DISCONNECTED)
+	if (probed == I915_XD_DP_PROBE_DISCONNECTED)
 		return I915_XD_HPD_DISCONNECTED;
 
 	/* Succeeded: the probe could not tell. */

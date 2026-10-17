@@ -953,7 +953,7 @@ drv_i915_output_link_dp(
 	const struct i915_xd_platform *platform,
 	unsigned ddi,
 	const struct i915_display_mode *mode,
-	const struct i915_dp_ext_sink *sink,
+	const struct i915_xd_dp_probe *sink,
 	int max_rate_khz,
 	int max_lanes,
 	uint32_t ref_khz,
@@ -1526,8 +1526,8 @@ i915_output_dp_ext(
 {
 	struct i915_display_mode mode;
 	const struct i915_lcd_aux_emit *aux;
-	enum i915_dp_ext_status status;
-	uint8_t edid[I915_DP_EXT_EDID_BLOCKS * I915_DP_EXT_EDID_BLOCK_SIZE];
+	enum i915_xd_dp_probe_status status;
+	uint8_t edid[I915_XD_DP_PROBE_EDID_BLOCKS * I915_XD_DP_PROBE_EDID_BLOCK_SIZE];
 	unsigned edid_bytes;
 	uint32_t want_width;
 	uint32_t want_height;
@@ -1554,7 +1554,7 @@ i915_output_dp_ext(
 
 	/* Probes the sink again: the claim acts on what is plugged in now. */
 	status = drv_i915_dp_ext_probe(display, port, edid, sizeof(edid), &edid_bytes);
-	if (status != I915_DP_EXT_CONNECTED) {
+	if (status != I915_XD_DP_PROBE_CONNECTED) {
 		*reason = "the DisplayPort sink does not answer as connected";
 		return ENXIO;
 	}
