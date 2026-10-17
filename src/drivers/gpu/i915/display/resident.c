@@ -74,11 +74,6 @@
 #define I915_RESIDENT_DBUF_D13_BLOCKS	4096U
 #define I915_RESIDENT_DBUF_D13_SLICES	0x0fU
 
-/* The registers the preflights read: TRANS_CONF of pipe B, DDI_BUF_CTL of port A and the distance between ports. */
-#define I915_RESIDENT_TRANS_CONF_B	0x71008U
-#define I915_RESIDENT_DDI_BUF_CTL_A	0x64000U
-#define I915_RESIDENT_DDI_BUF_CTL_STRIDE	0x100U
-
 /* The south display's interrupt status and the two combo PLLs' enables, logged by the HDMI preflight. */
 #define I915_RESIDENT_SDE_ISR		0xc4000U
 #define I915_RESIDENT_DPLL0_ENABLE	0x46010U
@@ -488,16 +483,16 @@ drv_i915_resident_output_params(
 	/* Each kind's port and pipe. */
 	switch (output->kind) {
 	case I915_OUTPUT_KIND_HDMI:
-		/* DDI B on pipe B, in DVI mode. */
+		/* The HDMI port on the output's pipe, in DVI mode. */
 		params->output_hdmi = 1;
-		params->port = I915_OUTPUT_HDMI_PORT;
-		params->pipe = I915_OUTPUT_HDMI_PIPE;
+		params->port = output->port;
+		params->pipe = (int)output->pipe;
 		break;
 	case I915_OUTPUT_KIND_DP_EXT:
-		/* The Type-C port's DDI on pipe B. */
+		/* The Type-C port's DDI on the output's pipe. */
 		params->output_dp_ext = 1;
 		params->port = output->port;
-		params->pipe = I915_OUTPUT_DP_EXT_PIPE;
+		params->pipe = (int)output->pipe;
 		break;
 	default:
 		return EOPNOTSUPP;
@@ -696,7 +691,7 @@ drv_i915_resident_link_fallback(
 		return ENOSPC;
 
 	/* The mode's link under them, planned apart so a refusal leaves the output as it was. */
-	error = drv_i915_output_link_dp(display->xd.choice.platform, &output->mode, &output->sink, max_rate, max_lanes, output->link.ref_khz, &next);
+	error = drv_i915_output_link_dp(display->xd.choice.platform, (unsigned)output->port, &output->mode, &output->sink, max_rate, max_lanes, output->link.ref_khz, &next);
 	if (error != 0) {
 		kern_logf("i915: resident display: DP on TC%u: no lower link carries the mode (%d)\n", output->tc_port + 1U, error);
 		return ENOSPC;
@@ -1705,29 +1700,31 @@ resident_preflight_hdmi(
 	d = k->d;
 
 	/* Reads the pipe, the port, the south display status and both combo PLLs. */
-	transconf = drv_i915_read32(d->mmio, I915_RESIDENT_TRANS_CONF_B);
-	buf_ctl = drv_i915_read32(d->mmio, I915_RESIDENT_DDI_BUF_CTL_A + I915_RESIDENT_DDI_BUF_CTL_STRIDE * (uint32_t)I915_OUTPUT_HDMI_PORT);
+	transconf = drv_i915_read32(d->mmio, I915_XD_TRANS_CONF((uint32_t)k->p->pipe));
+	buf_ctl = drv_i915_read32(d->mmio, I915_XD_DDI_BUF_CTL((uint32_t)k->p->port));
 	south = drv_i915_read32(d->mmio, I915_RESIDENT_SDE_ISR);
 	pll0 = drv_i915_read32(d->mmio, I915_RESIDENT_DPLL0_ENABLE);
 	pll1 = drv_i915_read32(d->mmio, I915_RESIDENT_DPLL1_ENABLE);
 
 	/* The scanout buffer needs the GT memory's GGTT. */
 	if (!d->gm->inited) {
-		kern_logf("i915: HDMI-B preflight: no GT memory (GGTT) for the scanout buffer\n");
+		kern_logf("i915: HDMI preflight: no GT memory (GGTT) for the scanout buffer\n");
 		return EBUSY;
 	}
 
 	/* Logs what was read. */
-	kern_logf("i915: HDMI-B preflight: TRANSCONF(B)=0x%08x DDI_BUF_CTL(B)=0x%08x SDEISR=0x%08x DPLL0=0x%08x DPLL1=0x%08x\n",
+	kern_logf("i915: HDMI preflight: TRANSCONF(%c)=0x%08x DDI_BUF_CTL(%c)=0x%08x SDEISR=0x%08x DPLL0=0x%08x DPLL1=0x%08x\n",
+	    (char)('A' + k->p->pipe),
 	    transconf,
+	    (char)('A' + k->p->port),
 	    buf_ctl,
 	    south,
 	    pll0,
 	    pll1);
 
-	/* Pipe B and DDI B must be off. */
+	/* The pipe and the port must be off. */
 	if ((transconf & I915_RESIDENT_ENABLE_BIT) != 0U || (buf_ctl & I915_RESIDENT_ENABLE_BIT) != 0U) {
-		kern_logf("i915: HDMI-B preflight: pipe B / DDI B are not idle\n");
+		kern_logf("i915: HDMI preflight: the pipe / the port are not idle\n");
 		return EBUSY;
 	}
 
@@ -1735,7 +1732,7 @@ resident_preflight_hdmi(
 	return 0;
 }
 
-/* Checks that pipe B and the Type-C port's DDI are idle for an external DP run, and that the GT memory is there. */
+/* Checks that the run's pipe and the Type-C port's DDI are idle for an external DP run, and that the GT memory is there. */
 static int
 resident_preflight_dp_ext(
 	struct i915_lcd_kernel *k)
@@ -1747,9 +1744,9 @@ resident_preflight_dp_ext(
 
 	d = k->d;
 
-	/* Reads TRANS_CONF(B) and the port's DDI_BUF_CTL. */
-	buf_ctl_reg = I915_RESIDENT_DDI_BUF_CTL_A + I915_RESIDENT_DDI_BUF_CTL_STRIDE * (uint32_t)k->p->port;
-	transconf = drv_i915_read32(d->mmio, I915_RESIDENT_TRANS_CONF_B);
+	/* Reads the pipe's TRANS_CONF and the port's DDI_BUF_CTL. */
+	buf_ctl_reg = I915_XD_DDI_BUF_CTL((uint32_t)k->p->port);
+	transconf = drv_i915_read32(d->mmio, I915_XD_TRANS_CONF((uint32_t)k->p->pipe));
 	buf_ctl = drv_i915_read32(d->mmio, buf_ctl_reg);
 
 	/* The scanout buffer needs the GT memory's GGTT. */
@@ -1759,14 +1756,15 @@ resident_preflight_dp_ext(
 	}
 
 	/* Logs the pipe and the port. */
-	kern_logf("i915: DP-ext preflight: TRANSCONF(B)=0x%08x DDI_BUF_CTL(0x%05x)=0x%08x\n",
+	kern_logf("i915: DP-ext preflight: TRANSCONF(%c)=0x%08x DDI_BUF_CTL(0x%05x)=0x%08x\n",
+	    (char)('A' + k->p->pipe),
 	    transconf,
 	    buf_ctl_reg,
 	    buf_ctl);
 
-	/* Pipe B and the port's DDI must be off. */
+	/* The pipe and the port's DDI must be off. */
 	if ((transconf & I915_RESIDENT_ENABLE_BIT) != 0U || (buf_ctl & I915_RESIDENT_ENABLE_BIT) != 0U) {
-		kern_logf("i915: DP-ext preflight: pipe B / the Type-C port's DDI are not idle\n");
+		kern_logf("i915: DP-ext preflight: the pipe / the Type-C port's DDI are not idle\n");
 		return EBUSY;
 	}
 
@@ -1946,21 +1944,21 @@ resident_config_hdmi(
 
 	d = k->d;
 
-	/* Port B, pipe and transcoder B, DPLL 0, and the port's reversal and lane bits the firmware left. */
-	buf_ctl = drv_i915_read32(d->mmio, I915_RESIDENT_DDI_BUF_CTL_A + I915_RESIDENT_DDI_BUF_CTL_STRIDE * (uint32_t)I915_OUTPUT_HDMI_PORT);
+	/* The output's port, pipe and transcoder, DPLL 0, and the port's reversal and lane bits the firmware left. */
+	buf_ctl = drv_i915_read32(d->mmio, I915_XD_DDI_BUF_CTL((uint32_t)output->port));
 	config->kind = I915_XD_SCREEN_HDMI;
-	config->ddi = I915_OUTPUT_HDMI_PORT;
-	config->pipe = I915_OUTPUT_HDMI_PIPE;
-	config->trans = I915_OUTPUT_HDMI_PIPE;
+	config->ddi = (unsigned)output->port;
+	config->pipe = output->pipe;
+	config->trans = output->pipe;
 	config->pll = 0U;
-	config->aux = I915_OUTPUT_HDMI_PORT;
+	config->aux = (unsigned)output->port;
 	config->kept = buf_ctl & I915_RESIDENT_SAVED_PORT_BITS;
 
 	/* An external display has no backlight of ours. */
 	config->vbt_backlight_present = 0;
 
 	/* The VBT child of the port: its HDMI level, or the table's default entry when it names none. */
-	encoder = drv_i915_vbt_encoder_for_port(&d->edp->vbt->parsed, I915_OUTPUT_HDMI_PORT);
+	encoder = drv_i915_vbt_encoder_for_port(&d->edp->vbt->parsed, output->port);
 	config->hdmi_level = -1;
 	if (encoder != NULL)
 		config->hdmi_level = encoder->hdmi_level_shift;
@@ -1998,11 +1996,11 @@ resident_config_dp_ext(
 
 	display = k->display;
 
-	/* The Type-C port's DDI, pipe and transcoder B, the port's TC PLL. */
+	/* The Type-C port's DDI, the output's pipe and transcoder, the port's TC PLL. */
 	config->kind = I915_XD_SCREEN_DP;
 	config->ddi = (unsigned)output->port;
-	config->pipe = I915_OUTPUT_DP_EXT_PIPE;
-	config->trans = I915_OUTPUT_DP_EXT_PIPE;
+	config->pipe = output->pipe;
+	config->trans = output->pipe;
 	config->pll = I915_XD_PICTURE_PLL_FIRST_TC + output->tc_port;
 	config->kept = 0U;
 

@@ -151,7 +151,7 @@ AMD64_I915_SOURCES += src/drivers/gpu/i915/command.c src/drivers/gpu/i915/compil
 AMD64_I915_SOURCES += src/drivers/gpu/i915/display/tc.c src/drivers/gpu/i915/display/tc-kern.c
 # The external DP ports on the Type-C ports: the sink probe and its binding (ws051-p004a).
 AMD64_I915_SOURCES += src/drivers/gpu/i915/display/dp-ext.c src/drivers/gpu/i915/display/dp-ext-kern.c
-AMD64_I915_SOURCES += src/drivers/gpu/i915/display/head.c src/drivers/gpu/i915/display/head-rules.c
+AMD64_I915_SOURCES += src/drivers/gpu/i915/display/head.c
 # The display 12 and 13 rewrite: compiled from its first files on, not yet called by the driver.
 AMD64_I915_SOURCES += src/drivers/gpu/i915/display/xd-io.c src/drivers/gpu/i915/display/xd-platform.c src/drivers/gpu/i915/display/xd-display.c
 # The record of the display writes of a start and the survey of the first picture, which two kernels are compared by.

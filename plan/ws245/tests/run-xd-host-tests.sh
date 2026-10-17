@@ -81,7 +81,8 @@
 #                          acknowledgment and length, their sorting, a storm's mask and rearming, an HDMI monitor's
 #                          detection over GMBUS, a Type-C DisplayPort sink's through the hooks, the retries, the pulses
 #   host-output-link-test  an output's planned link (display/output.c): the 5330's USB-C monitor at the link Linux
-#                          trained, the fallback's limits, a branch's depth and dot clock, an HDMI mode's link and PLL
+#                          trained, the fallback's limits, a branch's depth and dot clock, an HDMI mode's link and PLL;
+#                          the firmware's output by the platform's ports
 # The check against the Linux tree itself is plan/ws245/tests/check-xd-regs-linux.sh (needs the unpacked tree).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -e

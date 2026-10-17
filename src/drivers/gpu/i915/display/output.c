@@ -11,11 +11,12 @@
  * The resident node has one display, and it is the output the firmware
  * (GOP) was scanning out when the driver started: the driver starts no
  * scanout of its own choosing on any other output.  The firmware's
- * output is read from the transcoders it left lit (the N0 report): DDI A in DP SST mode is
- * the eDP panel; DDI B in HDMI or DVI mode is the HDMI display, which runs
- * on pipe B in DVI mode (no infoframes, no audio), the combination the
- * HDMI-B test scenario proved on this machine.  The firmware's output on
- * any other interface is one this driver cannot light yet: the display is
+ * output is read from the transcoders it left lit, by the platform's
+ * ports: DDI A in DP SST mode is the eDP panel; a combo PHY port in HDMI
+ * or DVI mode is the HDMI display, which runs on pipe B in DVI mode (no
+ * infoframes, no audio); another port in DP SST mode is the external
+ * DisplayPort display.  The firmware's output on any other interface is
+ * one this driver cannot light yet: the display is
  * then left as the firmware left it (display.c marks the node without a
  * display before the first display write).  Without a lit pipe (no
  * firmware picture at all) the built-in panel is the output.  display= no
@@ -57,11 +58,9 @@
 #define I915_OUTPUT_MODE_DP_SST		2U
 #define I915_OUTPUT_MODE_DP_MST		3U
 
-/* The ports: A (the panel's DDI), B (the HDMI path's), the first Type-C port (enum port), and how many Type-C ports. */
+/* The ports: A (the panel's DDI), and the first Type-C port's DDI, from which the log names ports TC1 on. */
 #define I915_OUTPUT_PORT_A		0
-#define I915_OUTPUT_PORT_B		1
 #define I915_OUTPUT_PORT_TC1		3
-#define I915_OUTPUT_PORT_TC_COUNT	4
 
 /* The pipes N0 reads. */
 #define I915_OUTPUT_PIPES		4U
@@ -197,21 +196,30 @@ static int i915_output_edid_block_find(const uint8_t *block, unsigned first, uns
 static void i915_output_edid_size(const uint8_t *edid, unsigned edid_size, struct i915_display_mode *mode);
 static uint32_t i915_output_cvt_vsync(uint32_t width, uint32_t height);
 static void i915_output_link_from_plan(const struct i915_xd_plan *plan, uint32_t ref_khz, struct i915_display_link *link);
+static int i915_output_hdmi_port(const struct i915_display *display, int port);
+static int i915_output_connector_of(struct i915_display *display, unsigned kind, int port);
 static int i915_output_panel_mode(const struct i915_lcd_kernel_deps *d, uint32_t *width, uint32_t *height, uint32_t *refresh_millihz);
 static int i915_output_panel_size_mm(const struct i915_lcd_kernel_deps *d, uint32_t *width_mm, uint32_t *height_mm);
 
 /*
- * Reads the firmware's output from the record of the firmware's display.
+ * Reads the firmware's output from the record of the firmware's display,
+ * by the platform's ports.
  *
  * Every lit pipe is recorded; the output is the first lit pipe whose
  * transcoder is enabled and drives a port (a firmware that clones onto two
- * outputs gives the lowest pipe, the panel's on this machine).
+ * outputs gives the lowest pipe, the panel's on these machines).  DDI A in
+ * DP SST mode is the panel; a combo PHY port in HDMI or DVI mode is the
+ * HDMI path; any other port of the platform in DP SST mode is the external
+ * DisplayPort path; anything else (a port the platform does not drive,
+ * DP MST, HDMI on a Type-C port) is not lit by the driver.
  */
 void
 drv_i915_gop_output_read(
+	const struct i915_xd_platform *platform,
 	const struct i915_xd_firmware *firmware,
 	struct i915_gop_output *gop)
 {
+	const struct i915_xd_port_desc *port;
 	const struct i915_xd_fw_pipe *pipe;
 	unsigned select;
 	unsigned index;
@@ -240,22 +248,31 @@ drv_i915_gop_output_read(
 		if (gop->kind != I915_GOP_NONE)
 			continue;
 
-		/* The output: its pipe, port and mode. */
+		/* The output: its pipe, port and mode, of a port the platform may not drive. */
 		gop->pipe = index;
 		gop->port = (int)select - 1;
 		gop->mode = (function >> I915_OUTPUT_DDI_MODE_SHIFT) & I915_OUTPUT_DDI_MODE_MASK;
 		gop->kind = I915_GOP_OTHER;
+		port = NULL;
+		if (platform != NULL)
+			port = drv_i915_xd_platform_port(platform, (unsigned)gop->port);
 
-		/* DDI A in DP SST mode is the panel; DDI B in HDMI or DVI mode is the HDMI path. */
-		if (gop->port == I915_OUTPUT_PORT_A && gop->mode == I915_OUTPUT_MODE_DP_SST)
+		/* DDI A in DP SST mode is the panel. */
+		if (gop->port == I915_OUTPUT_PORT_A && gop->mode == I915_OUTPUT_MODE_DP_SST) {
 			gop->kind = I915_GOP_EDP;
-		if (gop->port == I915_OUTPUT_PORT_B && (gop->mode == I915_OUTPUT_MODE_HDMI || gop->mode == I915_OUTPUT_MODE_DVI))
+			continue;
+		}
+
+		/* A port the platform does not drive is not lit. */
+		if (port == NULL)
+			continue;
+
+		/* A combo PHY port in HDMI or DVI mode is the HDMI path. */
+		if (port->phy_kind == I915_XD_PHY_COMBO && (gop->mode == I915_OUTPUT_MODE_HDMI || gop->mode == I915_OUTPUT_MODE_DVI))
 			gop->kind = I915_GOP_HDMI;
 
-		/* A Type-C port's DDI in DP SST mode is the external DP path; its HDMI and DP MST are not. */
-		if (gop->port >= I915_OUTPUT_PORT_TC1 &&
-		    gop->port < I915_OUTPUT_PORT_TC1 + I915_OUTPUT_PORT_TC_COUNT &&
-		    gop->mode == I915_OUTPUT_MODE_DP_SST)
+		/* Any other port in DP SST mode is the external DisplayPort path. */
+		if (gop->mode == I915_OUTPUT_MODE_DP_SST)
 			gop->kind = I915_GOP_DP_TC;
 	}
 }
@@ -365,7 +382,9 @@ i915_output_choose(
 
 	/* The node shows the HDMI display from here on. */
 	refresh = i915_output_refresh_hz(&display->output.mode);
-	kern_logf("i915: display output: HDMI on DDI B, pipe B, DVI mode, the firmware's output (%s): %ux%u@%u Hz %d kHz (mode from %s) %ux%u mm\n",
+	kern_logf("i915: display output: HDMI on DDI %c, pipe %c, DVI mode, the firmware's output (%s): %ux%u@%u Hz %d kHz (mode from %s) %ux%u mm\n",
+	    (char)('A' + display->output.port),
+	    (char)('A' + display->output.pipe),
 	    name,
 	    display->output.mode.hdisplay,
 	    display->output.mode.vdisplay,
@@ -464,7 +483,7 @@ const char *
 drv_i915_display_output_name(
 	const struct i915_display *display)
 {
-	/* The HDMI display of DDI B, or an external DisplayPort display. */
+	/* An HDMI display, or an external DisplayPort display. */
 	if (display->output.kind == I915_OUTPUT_KIND_HDMI)
 		return "HDMI";
 	if (display->output.kind == I915_OUTPUT_KIND_DP_EXT)
@@ -544,7 +563,7 @@ drv_i915_display_output_connector(
  * this is the one place that chooses among them.  Returns 0, ENXIO for a
  * connector that is gone or not connected, EOPNOTSUPP for a kind this
  * driver does not light (a DisplayPort display off the Type-C ports, an
- * HDMI port other than DDI B), or the preparation's error; reason says
+ * HDMI port that is not a combo PHY port), or the preparation's error; reason says
  * why.
  */
 int
@@ -580,13 +599,7 @@ drv_i915_display_output_prepare(
 		output->connector = connector;
 		break;
 	case I915_HPD_OUTPUT_HDMI:
-		/* An HDMI display: only DDI B's path (pipe B, DVI mode) is lit. */
-		if (found.port != I915_OUTPUT_PORT_B) {
-			*reason = "an HDMI port other than DDI B";
-			return EOPNOTSUPP;
-		}
-
-		/* Its mode from the EDID the hotplug path read. */
+		/* An HDMI display on a combo PHY port, in DVI mode: its mode from the EDID the hotplug path read. */
 		error = i915_output_hdmi_mode(display, connector, output, reason);
 		if (error != 0)
 			return error;
@@ -616,35 +629,26 @@ drv_i915_display_output_panel(
 	struct i915_display *display,
 	struct i915_display_output *output)
 {
-	/* The panel, of no known connector yet. */
+	/* The panel on its pipe, of no known connector yet. */
 	kern_memset(output, 0, sizeof(*output));
 	output->kind = I915_OUTPUT_KIND_PANEL;
+	output->pipe = I915_OUTPUT_PANEL_PIPE;
 
 	/* Succeeded: its connector, when there is one. */
 	i915_output_panel_connector(display, output);
 }
 
 /*
- * Gives the pipe the resident run drives the output on: the panel's pipe
- * A, the HDMI display's and the external DisplayPort display's pipe B (the
- * one place that says so for each kind).
+ * Gives the pipe the resident run drives the output on: the one its
+ * preparation chose (the panel's pipe A, pipe B for an HDMI or an
+ * external DisplayPort display).
  */
 unsigned
 drv_i915_display_output_pipe(
 	const struct i915_display_output *output)
 {
-	/* Each kind's pipe. */
-	switch (output->kind) {
-	case I915_OUTPUT_KIND_HDMI:
-		return I915_OUTPUT_HDMI_PIPE;
-	case I915_OUTPUT_KIND_DP_EXT:
-		return I915_OUTPUT_DP_EXT_PIPE;
-	default:
-		break;
-	}
-
-	/* Succeeded: the panel's pipe. */
-	return 0U;
+	/* Succeeded: the output's pipe. */
+	return output->pipe;
 }
 
 /*
@@ -886,7 +890,7 @@ drv_i915_output_pick_mode(
 }
 
 /*
- * Plans the link and the combo PLL of an HDMI mode on DDI B.
+ * Plans the link and the combo PLL of an HDMI mode on a combo PHY port.
  *
  * The link runs four lanes at the mode's TMDS clock, which at 8 bits per
  * colour is its pixel clock.  Nothing is written to the hardware.
@@ -896,6 +900,7 @@ drv_i915_output_pick_mode(
 int
 drv_i915_output_link_hdmi(
 	const struct i915_xd_platform *platform,
+	unsigned ddi,
 	const struct i915_display_mode *mode,
 	uint32_t ref_khz,
 	struct i915_display_link *link)
@@ -913,7 +918,7 @@ drv_i915_output_link_hdmi(
 	/* The screen's plan of the link and of the PLL. */
 	kern_memset(&input, 0, sizeof(input));
 	input.kind = I915_XD_SCREEN_HDMI;
-	input.ddi = (unsigned)I915_OUTPUT_PORT_B;
+	input.ddi = ddi;
 	input.mode = mode;
 	input.platform = platform;
 	input.ref_khz = ref_khz;
@@ -930,7 +935,7 @@ drv_i915_output_link_hdmi(
 
 /*
  * Plans the link and the M/N of an external DisplayPort mode on a Type-C
- * port.
+ * port's DDI.
  *
  * The bits per colour start from the EDID's depth (8 when undefined),
  * capped at 8 and at a branch's downstream limit, and drop by 2 down to 6;
@@ -946,6 +951,7 @@ drv_i915_output_link_hdmi(
 int
 drv_i915_output_link_dp(
 	const struct i915_xd_platform *platform,
+	unsigned ddi,
 	const struct i915_display_mode *mode,
 	const struct i915_dp_ext_sink *sink,
 	int max_rate_khz,
@@ -978,7 +984,7 @@ drv_i915_output_link_dp(
 	/* The sink and the limits the plan works within. */
 	kern_memset(&input, 0, sizeof(input));
 	input.kind = I915_XD_SCREEN_DP;
-	input.ddi = (unsigned)I915_OUTPUT_PORT_TC1;
+	input.ddi = ddi;
 	input.mode = mode;
 	input.sink.rates = common;
 	input.sink.nrates = index;
@@ -1014,25 +1020,24 @@ i915_output_hdmi(
 	struct i915_display *display,
 	const char **reason)
 {
-	struct i915_hpd_summary summary;
+	int connector;
 	int status;
 	int error;
 
-	/* The hotplug path must run and know the HDMI connector. */
+	/* The hotplug path must run and know the HDMI connector of the firmware's port. */
 	if (!display->hpd_started) {
 		*reason = "the hotplug path did not start";
 		return ENODEV;
 	}
 
-	/* Reads which connector is the HDMI one. */
-	drv_i915_hpd_summary(display, &summary);
-	if (!summary.started || summary.hdmi_connector < 0) {
-		*reason = "no HDMI connector";
+	connector = i915_output_connector_of(display, I915_HPD_OUTPUT_HDMI, display->gop.port);
+	if (connector < 0) {
+		*reason = "no HDMI connector on the firmware's port";
 		return ENODEV;
 	}
 
 	/* Detects the sink once, the way the connector's first probe does; it reads the EDID too. */
-	status = drv_i915_hpd_probe_connector(display, (unsigned)summary.hdmi_connector);
+	status = drv_i915_hpd_probe_connector(display, (unsigned)connector);
 #ifdef I915_TEST_HDMI_ABSENT
 	/*
 	 * The panel fallback test: the probe ran, but its answer is
@@ -1047,7 +1052,7 @@ i915_output_hdmi(
 	}
 
 	/* The mode from the EDID the detection read. */
-	error = i915_output_hdmi_mode(display, (unsigned)summary.hdmi_connector, &display->output, reason);
+	error = i915_output_hdmi_mode(display, (unsigned)connector, &display->output, reason);
 	if (error != 0)
 		return error;
 
@@ -1068,6 +1073,7 @@ i915_output_hdmi_mode(
 	struct i915_display_output *output,
 	const char **reason)
 {
+	struct i915_hpd_output found;
 	struct i915_display_mode mode;
 	const uint8_t *edid;
 	unsigned edid_size;
@@ -1076,6 +1082,19 @@ i915_output_hdmi_mode(
 	uint32_t want_refresh;
 	int ref_khz;
 	int error;
+
+	/* The connector's port, which must be a combo PHY port of the platform. */
+	error = drv_i915_hpd_output(display, connector, &found);
+	if (error != 0) {
+		*reason = "no such connector";
+		return ENXIO;
+	}
+
+	error = i915_output_hdmi_port(display, found.port);
+	if (error != 0) {
+		*reason = "an HDMI port that is not a combo PHY port";
+		return EOPNOTSUPP;
+	}
 
 	/* The EDID the detection read, if it read one. */
 	edid_size = 0U;
@@ -1109,17 +1128,19 @@ i915_output_hdmi_mode(
 		ref_khz = I915_OUTPUT_REF_KHZ;
 
 	/* Plans the link and the PLL of the mode; the output's mode and link are written whole. */
-	error = drv_i915_output_link_hdmi(display->xd.choice.platform, &mode, (uint32_t)ref_khz, &output->link);
+	error = drv_i915_output_link_hdmi(display->xd.choice.platform, (unsigned)found.port, &mode, (uint32_t)ref_khz, &output->link);
 	output->mode = mode;
 	if (error != 0) {
 		*reason = "the PLL refused the mode's clock";
 		return error;
 	}
 
-	/* Succeeded: the output is that HDMI display. */
+	/* Succeeded: the output is that HDMI display, on its port and the other pipe than the panel's. */
 	output->kind = I915_OUTPUT_KIND_HDMI;
 	output->has_connector = 1;
 	output->connector = connector;
+	output->port = found.port;
+	output->pipe = I915_OUTPUT_OTHER_PIPE;
 	return 0;
 }
 
@@ -1183,31 +1204,15 @@ i915_output_dp_tc_wait(
 	struct i915_display *display,
 	const char *name)
 {
-	struct i915_hpd_output found;
 	const char *reason;
 	unsigned waited_ms;
-	unsigned count;
-	unsigned index;
 	int connector;
 	int error;
 
 	/* The firmware's port's DP connector, which the hotplug path made. */
 	connector = -1;
-	count = 0U;
 	if (display->hpd_started)
-		count = drv_i915_hpd_output_count(display);
-	for (index = 0U; index < count; index++) {
-		/* A connector of another kind or port. */
-		error = drv_i915_hpd_output(display, index, &found);
-		if (error != 0)
-			continue;
-		if (found.kind != I915_HPD_OUTPUT_DP || found.port != display->gop.port)
-			continue;
-
-		/* The port's connector. */
-		connector = (int)index;
-		break;
-	}
+		connector = i915_output_connector_of(display, I915_HPD_OUTPUT_DP, display->gop.port);
 
 	/* Without the connector there is nothing to prepare. */
 	if (connector < 0) {
@@ -1588,7 +1593,7 @@ i915_output_dp_ext(
 		ref_khz = I915_OUTPUT_REF_KHZ;
 
 	/* Plans the link and its M/N; the output's mode and link are written whole. */
-	error = drv_i915_output_link_dp(display->xd.choice.platform, &mode, &output->sink, max_rate, max_lanes, (uint32_t)ref_khz, &output->link);
+	error = drv_i915_output_link_dp(display->xd.choice.platform, (unsigned)port, &mode, &output->sink, max_rate, max_lanes, (uint32_t)ref_khz, &output->link);
 	output->mode = mode;
 	if (error != 0) {
 		*reason = "no DisplayPort link carries the mode";
@@ -1615,6 +1620,7 @@ i915_output_dp_ext(
 	output->connector = connector;
 	output->tc_port = (unsigned)tc_port;
 	output->port = port;
+	output->pipe = I915_OUTPUT_OTHER_PIPE;
 	return 0;
 }
 
@@ -1742,4 +1748,61 @@ i915_output_panel_size_mm(
 
 	/* Succeeded: the panel's size is reported. */
 	return 0;
+}
+
+/*
+ * Tells whether an HDMI display on a port can be lit: the port must be
+ * one of the platform's combo PHY ports.  0, or EOPNOTSUPP.
+ */
+static int
+i915_output_hdmi_port(
+	const struct i915_display *display,
+	int port)
+{
+	const struct i915_xd_port_desc *desc;
+
+	/* A display without a description, or a port it does not drive. */
+	if (display->xd.choice.platform == NULL || port < 0)
+		return EOPNOTSUPP;
+
+	desc = drv_i915_xd_platform_port(display->xd.choice.platform, (unsigned)port);
+	if (desc == NULL)
+		return EOPNOTSUPP;
+
+	/* A Type-C port's HDMI is not lit. */
+	if (desc->phy_kind != I915_XD_PHY_COMBO)
+		return EOPNOTSUPP;
+
+	/* Succeeded: the port can carry HDMI. */
+	return 0;
+}
+
+/* Finds the hotplug path's connector of a kind on a port: its index, or -1. */
+static int
+i915_output_connector_of(
+	struct i915_display *display,
+	unsigned kind,
+	int port)
+{
+	struct i915_hpd_output found;
+	unsigned count;
+	unsigned index;
+	int error;
+
+	/* Each connector of the hotplug path. */
+	count = drv_i915_hpd_output_count(display);
+	for (index = 0U; index < count; index++) {
+		/* A connector of another kind or port. */
+		error = drv_i915_hpd_output(display, index, &found);
+		if (error != 0)
+			continue;
+		if (found.kind != kind || found.port != port)
+			continue;
+
+		/* Succeeded: the port's connector. */
+		return (int)index;
+	}
+
+	/* None. */
+	return -1;
 }

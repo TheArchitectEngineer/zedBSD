@@ -1746,7 +1746,7 @@ i915_display_native_check(
 	}
 
 	/* The firmware's output, the only one the driver lights by itself (the GPU scanout rule). */
-	drv_i915_gop_output_read(firmware, &display->gop);
+	drv_i915_gop_output_read(display->xd.choice.platform, firmware, &display->gop);
 	drv_i915_gop_output_name(&display->gop, name, sizeof(name));
 	kern_logf("i915: N0: the firmware's output: %s (lit pipes 0x%x)\n", name, display->gop.pipes);
 
@@ -2543,7 +2543,7 @@ i915_display_query(
 	port = 0;
 	if (display->output.kind == I915_OUTPUT_KIND_HDMI) {
 		kind = I915_HPD_OUTPUT_HDMI;
-		port = I915_OUTPUT_HDMI_PORT;
+		port = display->output.port;
 	} else if (display->output.kind == I915_OUTPUT_KIND_DP_EXT) {
 		kind = I915_HPD_OUTPUT_DP;
 	}

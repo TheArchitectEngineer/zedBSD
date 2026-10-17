@@ -1172,9 +1172,9 @@ struct i915_opregion_info {
  */
 #define I915_GOP_NONE		0U	/* no pipe was lit */
 #define I915_GOP_EDP		1U	/* DDI A in DP SST mode: the built-in panel */
-#define I915_GOP_HDMI		2U	/* DDI B in HDMI or DVI mode: the driver's HDMI path */
+#define I915_GOP_HDMI		2U	/* a combo PHY port in HDMI or DVI mode: the driver's HDMI path */
 #define I915_GOP_OTHER		3U	/* an interface this driver cannot light yet */
-#define I915_GOP_DP_TC		4U	/* a Type-C port's DDI in DP SST mode (DP-alt): the external DP path */
+#define I915_GOP_DP_TC		4U	/* another port of the platform in DP SST mode: the external DP path */
 
 struct i915_gop_output {
 	unsigned kind;
@@ -1840,8 +1840,11 @@ enum i915_output_kind {
  * Zeroed, it is the eDP panel of an unknown connector.
  */
 struct i915_display_output {
-	/* What it is: the panel, an HDMI display (DDI B on pipe B, DVI mode), an external DP display. */
+	/* What it is: the panel, an HDMI display (on a combo PHY port, DVI mode), an external DP display. */
 	enum i915_output_kind kind;
+
+	/* The pipe and transcoder it is lit on. */
+	unsigned pipe;
 
 	/* Nonzero: the node drives no output (the firmware's output could not be driven). */
 	int none;
@@ -1855,9 +1858,9 @@ struct i915_display_output {
 	struct i915_display_link link;
 
 	/*
-	 * An external DP display's Type-C port (0 = TC1) and DDI port, and
-	 * what its sink's probe found when the output was prepared;
-	 * unused for the other kinds.
+	 * The DDI port of an HDMI or an external DP display; an external DP
+	 * display's Type-C port (0 = TC1) and what its sink's probe found
+	 * when the output was prepared.  Unused for the panel.
 	 */
 	unsigned tc_port;
 	int port;

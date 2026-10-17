@@ -7,7 +7,8 @@
 
 /*
  * The host test of an output's planned link (display/output.c's
- * drv_i915_output_link_dp() and drv_i915_output_link_hdmi()):
+ * drv_i915_output_link_dp() and drv_i915_output_link_hdmi()) and of the
+ * firmware's output:
  *
  *   - the 5330's USB-C monitor (RBR, HBR and HBR2 shared, 4 lanes,
  *     1920x1280 at 164.36 MHz) takes RBR x4 at 24 bpp, the link Linux
@@ -20,6 +21,10 @@
  *   - an HDMI mode runs four lanes at its pixel clock on combo PLL words,
  *     and a mode without a clock or a device without a description is
  *     refused.
+ *   - the firmware's output by the platform's ports
+ *     (drv_i915_gop_output_read()): the panel on DDI A, HDMI on a combo
+ *     port, external DisplayPort on another port (Tiger Lake's TC5,
+ *     Rocket Lake's combo TC1), and what is not lit.
  */
 
 #include "host-test.h"
@@ -44,6 +49,8 @@ static void output_link_test_monitor(const struct i915_xd_platform *platform);
 static void output_link_test_limits(const struct i915_xd_platform *platform);
 static void output_link_test_branch(const struct i915_xd_platform *platform);
 static void output_link_test_hdmi(const struct i915_xd_platform *platform);
+static unsigned output_link_test_gop(const struct i915_xd_platform *platform, unsigned pipe, unsigned ddi, unsigned mode);
+static void output_link_test_gops(const struct i915_xd_platform *platform);
 
 /*
  * Runs the checks and reports the tally.
@@ -77,6 +84,7 @@ main(
 	output_link_test_limits(platform);
 	output_link_test_branch(platform);
 	output_link_test_hdmi(platform);
+	output_link_test_gops(platform);
 
 	/* Reports the tally. */
 	report = i915_host_report("host-output-link-test");
@@ -152,7 +160,7 @@ output_link_test_monitor(
 	/* Plans the link without limits. */
 	output_link_test_sink(&sink);
 	output_link_test_monitor_mode(&mode);
-	error = drv_i915_output_link_dp(platform, &mode, &sink, 0, 0, OUTPUT_LINK_TEST_REF_KHZ, &link);
+	error = drv_i915_output_link_dp(platform, 3U, &mode, &sink, 0, 0, OUTPUT_LINK_TEST_REF_KHZ, &link);
 	i915_host_check(error == 0, "monitor: the link is planned");
 	i915_host_check(link.rate_khz == 162000U && link.lanes == 4U, "monitor: RBR x4 (the link Linux trained)");
 	i915_host_check(link.bpp == 24U, "monitor: 24 bpp");
@@ -174,20 +182,20 @@ output_link_test_limits(
 	/* Two lanes: HBR x2 is the first that carries the mode. */
 	output_link_test_sink(&sink);
 	output_link_test_monitor_mode(&mode);
-	error = drv_i915_output_link_dp(platform, &mode, &sink, 540000, 2, OUTPUT_LINK_TEST_REF_KHZ, &link);
+	error = drv_i915_output_link_dp(platform, 3U, &mode, &sink, 540000, 2, OUTPUT_LINK_TEST_REF_KHZ, &link);
 	i915_host_check(error == 0 && link.rate_khz == 270000U && link.lanes == 2U, "limits: two lanes give HBR x2");
 
 	/* RBR at two lanes carries no depth of the mode, not even 18 bpp. */
-	error = drv_i915_output_link_dp(platform, &mode, &sink, 162000, 2, OUTPUT_LINK_TEST_REF_KHZ, &link);
+	error = drv_i915_output_link_dp(platform, 3U, &mode, &sink, 162000, 2, OUTPUT_LINK_TEST_REF_KHZ, &link);
 	i915_host_check(error == ENOSPC, "limits: RBR x2 carries no depth of the mode (ENOSPC)");
 
 	/* RBR at four lanes is the link when HBR is excluded. */
-	error = drv_i915_output_link_dp(platform, &mode, &sink, 162000, 4, OUTPUT_LINK_TEST_REF_KHZ, &link);
+	error = drv_i915_output_link_dp(platform, 3U, &mode, &sink, 162000, 4, OUTPUT_LINK_TEST_REF_KHZ, &link);
 	i915_host_check(error == 0 && link.rate_khz == 162000U && link.lanes == 4U, "limits: RBR x4 under the RBR limit");
 
 	/* A sink that shares no rate is not a sink to drive. */
 	sink.num_common_rates = 0;
-	error = drv_i915_output_link_dp(platform, &mode, &sink, 0, 0, OUTPUT_LINK_TEST_REF_KHZ, &link);
+	error = drv_i915_output_link_dp(platform, 3U, &mode, &sink, 0, 0, OUTPUT_LINK_TEST_REF_KHZ, &link);
 	i915_host_check(error == EINVAL, "limits: no shared rate is EINVAL");
 }
 
@@ -206,18 +214,18 @@ output_link_test_branch(
 	output_link_test_monitor_mode(&mode);
 	sink.branch = 1;
 	sink.max_bpc = 6;
-	error = drv_i915_output_link_dp(platform, &mode, &sink, 0, 0, OUTPUT_LINK_TEST_REF_KHZ, &link);
+	error = drv_i915_output_link_dp(platform, 3U, &mode, &sink, 0, 0, OUTPUT_LINK_TEST_REF_KHZ, &link);
 	i915_host_check(error == 0 && link.bpp == 18U, "branch: 6 bpc downstream gives 18 bpp");
 
 	/* A deep-colour EDID is still driven at 8 bpc. */
 	sink.max_bpc = 0;
 	mode.edid_bpc = 10;
-	error = drv_i915_output_link_dp(platform, &mode, &sink, 0, 0, OUTPUT_LINK_TEST_REF_KHZ, &link);
+	error = drv_i915_output_link_dp(platform, 3U, &mode, &sink, 0, 0, OUTPUT_LINK_TEST_REF_KHZ, &link);
 	i915_host_check(error == 0 && link.bpp == 24U, "branch: a 10 bpc display is driven at 24 bpp");
 
 	/* A dot clock limit below the mode refuses it. */
 	sink.max_dotclock_khz = 148500;
-	error = drv_i915_output_link_dp(platform, &mode, &sink, 0, 0, OUTPUT_LINK_TEST_REF_KHZ, &link);
+	error = drv_i915_output_link_dp(platform, 3U, &mode, &sink, 0, 0, OUTPUT_LINK_TEST_REF_KHZ, &link);
 	i915_host_check(error == ENOSPC, "branch: a mode above the downstream dot clock is ENOSPC");
 }
 
@@ -246,7 +254,7 @@ output_link_test_hdmi(
 	mode.edid_bpc = 8;
 
 	/* The link and the PLL of the mode. */
-	error = drv_i915_output_link_hdmi(platform, &mode, OUTPUT_LINK_TEST_REF_KHZ, &link);
+	error = drv_i915_output_link_hdmi(platform, 1U, &mode, OUTPUT_LINK_TEST_REF_KHZ, &link);
 	i915_host_check(error == 0, "hdmi: the link is planned");
 	i915_host_check(link.lanes == 4U && link.bpp == 24U, "hdmi: four lanes at 24 bpp");
 	i915_host_check(link.rate_khz == 74250U, "hdmi: the link runs at the pixel clock");
@@ -255,9 +263,92 @@ output_link_test_hdmi(
 
 	/* A mode without a clock, and a device without a description, are refused. */
 	mode.clock_khz = 0;
-	error = drv_i915_output_link_hdmi(platform, &mode, OUTPUT_LINK_TEST_REF_KHZ, &link);
+	error = drv_i915_output_link_hdmi(platform, 1U, &mode, OUTPUT_LINK_TEST_REF_KHZ, &link);
 	i915_host_check(error == EINVAL, "hdmi: a mode without a clock is EINVAL");
 	mode.clock_khz = 74250;
-	error = drv_i915_output_link_hdmi(NULL, &mode, OUTPUT_LINK_TEST_REF_KHZ, &link);
+	error = drv_i915_output_link_hdmi(NULL, 1U, &mode, OUTPUT_LINK_TEST_REF_KHZ, &link);
 	i915_host_check(error == EINVAL, "hdmi: a device without a description is EINVAL");
+}
+
+/*
+ * Classifies the firmware's output of a record with one lit pipe whose
+ * transcoder drives a DDI in a mode (TRANS_DDI_FUNC_CTL: enable, the
+ * port select DDI + 1, the mode select), and reports its kind.
+ */
+static unsigned
+output_link_test_gop(
+	const struct i915_xd_platform *platform,
+	unsigned pipe,
+	unsigned ddi,
+	unsigned mode)
+{
+	struct i915_xd_firmware firmware;
+	struct i915_gop_output gop;
+
+	/* The record: one lit pipe. */
+	memset(&firmware, 0, sizeof(firmware));
+	firmware.pipe[pipe].state = I915_XD_FW_PIPE_LIT;
+	firmware.pipe[pipe].ddi_function = 0x80000000U | ((ddi + 1U) << 27) | (mode << 24);
+
+	/* Succeeded: the kind it reads as. */
+	drv_i915_gop_output_read(platform, &firmware, &gop);
+	return gop.kind;
+}
+
+/*
+ * Checks the firmware's output by the platform's ports: the panel on DDI
+ * A, HDMI on the combo ports, external DisplayPort on the other ports
+ * (Tiger Lake's TC5 and TC6, Rocket Lake's combo TC1), and what is not
+ * lit (a port the platform does not drive, HDMI on a Type-C port, DP MST).
+ */
+static void
+output_link_test_gops(
+	const struct i915_xd_platform *platform)
+{
+	struct i915_xd_firmware firmware;
+	struct i915_xd_choice choice;
+	struct i915_gop_output gop;
+	unsigned kind;
+	int error;
+
+	/* Alder Lake-P: DP SST on A is the panel, HDMI or DVI on A or B the HDMI path, DP SST on TC1 external. */
+	kind = output_link_test_gop(platform, 0U, 0U, 2U);
+	i915_host_check(kind == I915_GOP_EDP, "gop: DP SST on DDI A is the panel");
+	kind = output_link_test_gop(platform, 1U, 1U, 1U);
+	i915_host_check(kind == I915_GOP_HDMI, "gop: DVI on DDI B is the HDMI path");
+	kind = output_link_test_gop(platform, 1U, 0U, 0U);
+	i915_host_check(kind == I915_GOP_HDMI, "gop: HDMI on DDI A, a combo port, is the HDMI path");
+	kind = output_link_test_gop(platform, 1U, 3U, 2U);
+	i915_host_check(kind == I915_GOP_DP_TC, "gop: DP SST on TC1 is the external DisplayPort path");
+
+	/* What is not lit: DDI C (Alder Lake-P has none), HDMI on TC1, DP MST on TC2. */
+	kind = output_link_test_gop(platform, 1U, 2U, 2U);
+	i915_host_check(kind == I915_GOP_OTHER, "gop: a port the platform does not drive is not lit");
+	kind = output_link_test_gop(platform, 1U, 3U, 0U);
+	i915_host_check(kind == I915_GOP_OTHER, "gop: HDMI on a Type-C port is not lit");
+	kind = output_link_test_gop(platform, 1U, 4U, 3U);
+	i915_host_check(kind == I915_GOP_OTHER, "gop: DP MST is not lit");
+
+	/* Tiger Lake's TC5 (DDI 7) in DP SST mode is external DisplayPort. */
+	error = drv_i915_xd_platform_choose(0x9a49U, 0x0U, 0, 0U, &choice);
+	kind = I915_GOP_NONE;
+	if (error == 0)
+		kind = output_link_test_gop(choice.platform, 1U, 7U, 2U);
+	i915_host_check(kind == I915_GOP_DP_TC, "gop: Tiger Lake's TC5 in DP SST mode is external DisplayPort");
+
+	/* Rocket Lake's TC1 (a combo port, DDI 3) in DP SST mode is external DisplayPort, in HDMI mode HDMI. */
+	error = drv_i915_xd_platform_choose(0x4c8aU, 0x0U, 0, 0U, &choice);
+	kind = I915_GOP_NONE;
+	if (error == 0)
+		kind = output_link_test_gop(choice.platform, 1U, 3U, 2U);
+	i915_host_check(kind == I915_GOP_DP_TC, "gop: Rocket Lake's TC1 in DP SST mode is external DisplayPort");
+	if (error == 0)
+		kind = output_link_test_gop(choice.platform, 1U, 3U, 0U);
+	i915_host_check(kind == I915_GOP_HDMI, "gop: Rocket Lake's combo TC1 in HDMI mode is the HDMI path");
+
+	/* A lit pipe whose transcoder drives no port is not an output. */
+	memset(&firmware, 0, sizeof(firmware));
+	firmware.pipe[0].state = I915_XD_FW_PIPE_LIT;
+	drv_i915_gop_output_read(platform, &firmware, &gop);
+	i915_host_check(gop.kind == I915_GOP_NONE && gop.pipes == 1U, "gop: a lit pipe that drives no port is no output");
 }

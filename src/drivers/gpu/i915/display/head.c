@@ -9,7 +9,7 @@
  * The second output, the head.
  *
  * While Keiland holds the resident output's lease, a claim of another
- * connected connector makes it the head (head-rules.c decides): an HDMI
+ * connected connector makes it the head (i915_head_claim_way() decides): an HDMI
  * or an external DisplayPort display on pipe B beside the built-in panel
  * on pipe A.  The claim writes no hardware; it prepares the output (its
  * mode, link and PLL) and gives the head a lease of its own.
@@ -37,7 +37,6 @@
 
 #include "internal.h"
 #include "head.h"
-#include "head-rules.h"
 #include "output.h"
 #include "present.h"
 #include "resident.h"
@@ -66,6 +65,51 @@
 #define I915_HEAD_PIPE_STRIDE		0x1000U
 #define I915_HEAD_TRANSCONF_ON		0xc0000000U
 
+/* What a head's claim is decided on: the kinds of output. */
+enum i915_head_kind {
+	I915_HEAD_KIND_PANEL = 0,
+	I915_HEAD_KIND_HDMI,
+	I915_HEAD_KIND_DP_EXT,
+	I915_HEAD_KIND_OTHER
+};
+
+/*
+ * The facts of one claim of a connector that is not the resident output,
+ * gathered under the locks that keep them still.
+ *
+ * It lives on the caller's stack for the one decision.
+ */
+struct i915_head_claim_facts {
+	/* Nonzero while a session holds the resident output's lease. */
+	int resident_leased;
+
+	/* The resident output's kind. */
+	enum i915_head_kind resident_kind;
+
+	/* Nonzero while a head is claimed (by any lease). */
+	int head_claimed;
+
+	/* Nonzero once a head's stop could not be confirmed: no head is lit again. */
+	int head_broken;
+
+	/* Nonzero while this connector is latched limited for the current topology. */
+	int limited;
+
+	/* The claimed connector's kind. */
+	enum i915_head_kind kind;
+};
+
+/*
+ * What a head's claim comes to: a move of the resident output (no lease
+ * held), the head, or a refusal for the limit of the outputs shown at
+ * once.
+ */
+enum i915_head_claim_way {
+	I915_HEAD_CLAIM_MOVE = 0,
+	I915_HEAD_CLAIM_HEAD,
+	I915_HEAD_CLAIM_LIMIT
+};
+
 static int i915_head_light(struct i915_display *display);
 static int i915_head_light_once(struct i915_display *display, int *enable_rc);
 static int i915_head_buffers(struct i915_display *display);
@@ -82,6 +126,7 @@ static int i915_head_resident_leased(struct i915_display *display);
 static unsigned i915_head_held_refs(const struct i915_lcd_kernel *k);
 static int i915_head_may_light_locked(struct i915_display *display);
 static void i915_head_log_dbuf(struct i915_display *display, const char *when);
+static enum i915_head_claim_way i915_head_claim_way(const struct i915_head_claim_facts *facts, const char **reason);
 
 /*
  * Prepares the head's lease once: its mutex.
@@ -132,7 +177,6 @@ drv_i915_head_claim(
 	unsigned long irq;
 	unsigned resident_pipe;
 	unsigned head_pipe;
-	int conflict;
 	int error;
 
 	display = device->display;
@@ -165,7 +209,7 @@ drv_i915_head_claim(
 	spin_unlock_irqrestore(&device->irq_lock, irq);
 
 	/* What the claim comes to; a move is the caller's. */
-	way = drv_i915_head_claim_way(&facts, &reason);
+	way = i915_head_claim_way(&facts, &reason);
 	if (way == I915_HEAD_CLAIM_MOVE)
 		return EAGAIN;
 	if (way == I915_HEAD_CLAIM_LIMIT) {
@@ -184,8 +228,7 @@ drv_i915_head_claim(
 	/* One pipe drives one output. */
 	resident_pipe = drv_i915_display_output_pipe(&display->output);
 	head_pipe = drv_i915_display_output_pipe(&next);
-	conflict = drv_i915_head_pipes_conflict(resident_pipe, head_pipe);
-	if (conflict) {
+	if (resident_pipe == head_pipe) {
 		kern_logf("i915: display head: claim of connector %u refused: its pipe %u is the resident output's (the limit of outputs shown at once)\n", connector, head_pipe);
 		return ENOSPC;
 	}
@@ -436,7 +479,7 @@ drv_i915_head_connector_state(
 		return;
 
 	/* Succeeded: whether a claim now is the limit. */
-	way = drv_i915_head_claim_way(&facts, &reason);
+	way = i915_head_claim_way(&facts, &reason);
 	if (way == I915_HEAD_CLAIM_LIMIT)
 		*limited = 1;
 }
@@ -1393,4 +1436,69 @@ i915_head_log_dbuf(
 	    status.dbuf_active_pipes_now,
 	    (unsigned)status.dbuf_slices_now,
 	    status.mbus_joined_now);
+}
+
+/*
+ * Decides what a claim of a connector that is not the resident output
+ * comes to, with the reason of a refusal for the log (an empty string
+ * otherwise).  Without the resident output's lease the resident output
+ * moves to the connector; with it, the connector becomes the head beside
+ * the built-in panel, one head at a time; anything else is the limit of
+ * the outputs shown at once (a limit, not a failure).
+ */
+static enum i915_head_claim_way
+i915_head_claim_way(
+	const struct i915_head_claim_facts *facts,
+	const char **reason)
+{
+	/* Nothing to say yet. */
+	*reason = "";
+
+	/*
+	 * No resident lease held: the resident output moves to the connector,
+	 * unless a head is still claimed, whose pipe or connector the move
+	 * could take.
+	 */
+	if (!facts->resident_leased) {
+		if (facts->head_claimed) {
+			*reason = "the resident output does not move while a second output is shown";
+			return I915_HEAD_CLAIM_LIMIT;
+		}
+
+		/* Succeeded: a move. */
+		return I915_HEAD_CLAIM_MOVE;
+	}
+
+	/* One head at a time. */
+	if (facts->head_claimed) {
+		*reason = "a second output is shown already";
+		return I915_HEAD_CLAIM_LIMIT;
+	}
+
+	/* A head whose stop was not confirmed may still be read by the display: none is lit again. */
+	if (facts->head_broken) {
+		*reason = "an earlier second output was not stopped cleanly";
+		return I915_HEAD_CLAIM_LIMIT;
+	}
+
+	/* A connector that could not be lit stays limited until the topology changes. */
+	if (facts->limited) {
+		*reason = "the connector could not be lit beside the resident output (until the next hotplug)";
+		return I915_HEAD_CLAIM_LIMIT;
+	}
+
+	/* The head is lit beside the built-in panel only. */
+	if (facts->resident_kind != I915_HEAD_KIND_PANEL) {
+		*reason = "a second output is lit beside the built-in panel only";
+		return I915_HEAD_CLAIM_LIMIT;
+	}
+
+	/* The head is an HDMI or an external DisplayPort display. */
+	if (facts->kind != I915_HEAD_KIND_HDMI && facts->kind != I915_HEAD_KIND_DP_EXT) {
+		*reason = "a second output of this kind is not lit";
+		return I915_HEAD_CLAIM_LIMIT;
+	}
+
+	/* Succeeded: the connector becomes the head. */
+	return I915_HEAD_CLAIM_HEAD;
 }
