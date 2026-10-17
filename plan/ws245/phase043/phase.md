@@ -2,7 +2,7 @@
 
 # ws245-p043: 旧 code の残りの削除・試験の整理・出典の監査
 
-Status: in-progress（2026-10-17 q1229-i15: p043a 実装・host 試験・build 済み（35b24c912・7de79d444）、p043b の帯域済み（d16688474）、power は実装中）
+Status: in-progress（2026-10-17 q1229-i15: p043a 実装・host 試験・build 済み（35b24c912・7de79d444）、p043b の帯域済み（d16688474）。power（段の境 2）は次の世代: 下の「p043b の 2 つ目」）
 Parent: [WS245](../ws.md)
 Queue: q1229-i15（P1）
 設計: [design.md](../design.md) §6.2 の p043 の行、§5.4（引用の規則）、§6.4（今の試験の扱い）、guardrail「MIT・GPL の出典のデータの引用」
@@ -38,10 +38,31 @@ P1 の調べ: "Derived from the Linux kernel" が残るのは power.c（2605 行
 - 確かめた事: build 3 組（`kbuild.sh p043b1`）default warn=0（sha256 の先頭 f0156cd50774f276）、vke2 warn=0、execution warn=0。run-xd-host-tests（`build/p043b1-host`）all passed 29 本。WS075 80/0、WS237 flip 48/0・mode 71/0・backlight 21/0、WS229 bootfb 20/0。
 - 実機で見る事: 5330 の log の `display: memory: raw=… type=…`・`QGV n: … MB/s for one plane`・`display: bandwidth: restricted=1 … answer=0 sagv=1`（前の `Forcing SAGV disable: mask` と同じ mask）、resident の `QGV mask 0x… -> allowed 0x… bw … MB/s` が前と同じ値。
 
-## p043b（残りの計画）
+## p043b の 2 つ目: power（段の境 2、次の世代へ。2026-10-17 P1 の調べ）
 
-2. power（段の境 2）: power.c の domain 層（`drv_i915_display_power_get/_put/_put_async/_is_enabled`・wells の写し・core の init/uninit・DC9）を xd-power・xd-core の直の呼びに付け替え（呼び手 dmc-shell・dp-ext-kern・hpd・edp-device・tc-port・interrupts・resident・display.c、ktest-sync.c・ktest-gt.c）、power.c・power.h を空に。
-3. internal.h の Derived の表示と Linux の記述、check-sources.py を run-xd-host-tests に入れる。
+power.c（約 2570 行）は既に xd-power の殻: domain（Linux の enum i915_power_domain、`I915_PW_DOMAIN_*`）を `i915_pw_functions(display_ver, domain)` で xd の function の bit（`I915_XD_POWERS_*`）に写して `drv_i915_xd_power_get/_put/_put_later` を呼び、Linux 形の well の写し（`struct i915_power_well` の name・refcount・hw_enabled・ops）を数え直している。残る Linux の形: domain の enum と写し、well の写しの配列、DC の許す mask（`i915_get_allowed_dc_mask`・`i915_sanitize_target_dc_state`・`i915_sanitize_disable_power_well`）、`struct i915_display_core`・`struct i915_pw_ctx`・`struct i915_power_domains`（internal.h）、`drv_i915_lcd_power_*`（resident の run の hook、domain の番号で）。
+
+呼び手（2026-10-17 の grep）:
+
+| file | 使う物 |
+| --- | --- |
+| display.c | `power_domains_init/_cleanup/_init_hw/_driver_remove/_enable/_disable/_suspend`、`dc9_enter/_leave`、`power_well_is_enabled`（wells_on・log_wells）、`power_wells_sanitize`、`pwc`・`dcore` の用意 |
+| resident.c | `lcd_power_get/_get_if_enabled/_put/_put_async`（run の hook、DC_OFF・DISPLAY_CORE・PIPE_A・TRANSCODER_A・PORT_DDI_IO/LANES_A/TC1）、`power_domains_enable`（takeover の後の start の参照の返し）、`gen9_dbuf_slices_update` |
+| edp-device.c | `display_power_get/_put/_put_async`（DISPLAY_CORE）、`async_bind/_work/_flush_work_sync` |
+| dmc-shell.c | `display_power_get/_put`（INIT） |
+| dp-ext-kern.c | `display_power_get/_put/_put_async`（DISPLAY_CORE） |
+| hpd.c | `display_power_get/_put`（DISPLAY_CORE・GMBUS） |
+| tc-port.c | `display_power_get_set/_put_set`（function の集合を直に） |
+| interrupts.c | `display_power_is_enabled`（PIPE_x・TRANSCODER_x） |
+| head.c | `I915_PW_DOMAIN_NUM` |
+| tests/execution/ktest-sync.c・ktest-gt.c | `power_domains_init`・`power_well_by_id/_enable/_disable/_is_enabled`（execution の組の ktest。DC_off の well の ktest は host-xd-power-test が同じ事を見ているか確かめ、見ていれば ktest を消す） |
+
+既定の案（次の世代）:
+1. 新しい own の `display-power.c/.h`（Linux の形を持たない）: 呼び手は xd の function の集合（`I915_XD_POWERS_*`）で `drv_i915_display_power_get(display, functions)`・`_put`・`_put_later(delay_ms)`・`_flush`・`_is_on`。xd-power の counts と switch（well の on/off の hook: pipes up/down・VGA reset・TC の PHY の健康）を持つ。well の写しの配列と domain の enum は作らない（log は xd の well の記述の名前と `drv_i915_xd_power_well_powered`）。
+2. core の start/stop・suspend・DC9・DC off（start の参照の保持と返し）は `xd-core`・`xd-power` の直の呼びで display.c に（`struct i915_display_core` の dbuf の slice・fault の記録は display.c の小さな own の struct に）。DC の許す mask は xd-power の `drv_i915_xd_power_dc_policy` の入力として display.c で決める（Values referenced）。
+3. 呼び手の付け替え（上の表）。resident.c の run の hook（`drv_i915_lcd_power_*` は domain の番号の int を受ける: run の kernel の hook の型 `power_get(ctx, int domain)` は xd-backend.h の口。番号を xd の function の bit の index にするか、hook の型を uint64_t の集合に変える）。
+4. power.c・power.h を空にし vmunix.mk から外す。internal.h の power の型（`struct i915_power_domains`・`i915_power_well`・`i915_pw_ctx`・`i915_display_core`・domain の enum）を消す。check-sources.py を run-xd-host-tests に入れ、internal.h の Derived の表示（intel_display_limits.h の型）を直す。
+5. build 3 組、run-xd-host-tests・WS075/237/229、`host-xd-power-test` と `host-xd-core-test` が新しい呼びの順を見ているか。段の境 2 の SHA を ws.md の表へ。
 
 ## 実機で確かめる事（T1、全部の段の後に 1 回）
 
