@@ -6,7 +6,7 @@
  */
 
 /*
- * The external outputs of a Gen9 display (gen9-outputs.c, WS237 stage 3):
+ * The external outputs of a Gen9 display (gen9-outputs.c):
  * which of ports B to D have a sink, what it is (DP or HDMI) and the mode
  * it is shown, and lighting and darkening one on a pipe beside the panel
  * the firmware lit, with the watermarks and DDB of every lit pipe moved

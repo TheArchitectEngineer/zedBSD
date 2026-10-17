@@ -2419,7 +2419,7 @@ resident_buffers(
 		drv_i915_scanout_publish(&display->resident_buf[i]);
 	}
 
-	/* Names both buffers: the kernel addresses let a debugger or the QEMU monitor read the picture. */
+	/* Names both buffers: the kernel addresses let a debugger or a virtual machine's monitor read the picture. */
 	kern_logf("i915: resident display: buffers %ux%u pitch %u: A surf 0x%08x cpu %p, B surf 0x%08x cpu %p\n",
 	    a->width,
 	    a->height,

@@ -6,7 +6,7 @@
  */
 
 /*
- * How the Gen9 mode set reaches the display registers (WS237 stage 3).
+ * How the Gen9 mode set reaches the display registers.
  *
  * The mode set, the DDC and the link training (gen9-modeset.c,
  * gen9-ddc.c, gen9-link.c) read and write the registers and wait through

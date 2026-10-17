@@ -161,10 +161,10 @@ static const unsigned i915_survey_pipe_well_13[I915_SURVEY_PIPES] = {
 };
 
 /*
- * The test scenario's panel start, linked only by the display scenarios'
- * test build.  Those scenarios take the pipe CRC themselves, so the survey
- * leaves the CRC alone when this symbol is there; in every other kernel it
- * has no address.
+ * The test scenario's panel start, linked only into a kernel built with
+ * the display scenarios.  Those scenarios take the pipe CRC themselves, so
+ * the survey leaves the CRC alone when this symbol is there; in every
+ * other kernel it has no address.
  */
 struct i915_lcd_run_params;
 extern struct i915_lcd_kernel *drv_i915_test_lcd_start(struct i915_display *display, const struct i915_lcd_run_params *params) __attribute__((weak));

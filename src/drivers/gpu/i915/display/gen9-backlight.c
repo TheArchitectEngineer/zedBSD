@@ -6,8 +6,7 @@
  */
 
 /*
- * The panel's backlight of a Gen9 node (WS237 stage 2, see
- * gen9-backlight.h).
+ * The panel's backlight of a Gen9 node (see gen9-backlight.h).
  *
  * The PWM is the PCH's.  A Sunrise Point or Kaby Point PCH (Skylake, Kaby
  * Lake) keeps the period and the duty in one register; a Cannon Point or
@@ -77,7 +76,7 @@ struct i915_gen9_backlight {
 static struct i915_gen9_backlight i915_gen9_backlight_state;
 
 /*
- * The PWM control a sleep turned off, and whether one did (WS237 p005).
+ * The PWM control a sleep turned off, and whether one did.
  * Written by the suspend and the resume, which the one thread of S0 idle
  * runs one after the other.
  */

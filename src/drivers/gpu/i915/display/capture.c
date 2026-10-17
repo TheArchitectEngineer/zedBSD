@@ -6,15 +6,15 @@
  */
 
 /*
- * The capture display of the test build (I915_TEST_CAPTURE=y).
+ * The capture display (I915_TEST_CAPTURE=y).
  *
- * The test build run under QEMU does not bring the panel up: no modeset,
+ * The capture display does not bring the panel up: no modeset,
  * no panel power or backlight, no link training and no scanout.  The display
  * stages are skipped as for a device whose firmware display check stopped
  * (display.c), and the node offers one virtual display instead.  Every
  * presentation is copied by the GPU into a physically contiguous area of
- * guest RAM that the QEMU host reads with the QMP command pmemsave: the iGPU
- * has no memory of its own, and guest RAM is the host's memfd.
+ * RAM that a reader outside the kernel (a virtual machine's host) reads by
+ * its physical address: the iGPU has no memory of its own.
  *
  * The display answers as the panel does: one output, connected, FIFO
  * presentation of shared (BLOB) or copied frames, one plane, BGRA or RGBA,
@@ -528,7 +528,7 @@ i915_capture_allocate(void)
 	capture->map_va = 0U;
 	capture->allocated = 1;
 
-	/* The line the host harness reads the area's address from. */
+	/* The line the host reads the area's address from. */
 	kern_logf("i915: capture: base=0x%llx bytes=%llu slots=%u slot_bytes=%llu pixel_offset=%u\n",
 	    (unsigned long long)capture->run.paddr,
 	    (unsigned long long)I915_CAPTURE_AREA_BYTES,

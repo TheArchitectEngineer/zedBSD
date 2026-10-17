@@ -6,7 +6,7 @@
  */
 
 /*
- * The display control of the resident output (control.c, ws113-p012): its
+ * The display control of the resident output (control.c): its
  * refresh boundaries (GPU_DISPLAY_REFRESH) and its power
  * (GPU_DISPLAY_POWER).  The display operations (display.c) check the
  * display and its generation, then call these.

@@ -130,14 +130,14 @@ drv_i915_gen9_firmware_check(
 	/* Reads which display power wells the firmware left up, and where the driver's GGTT pages begin. */
 	power = drv_i915_raw_read32(mmio, I915_SKL_PWR_WELL_CTL2);
 	driver_start = (uint64_t)driver_ggtt_first * I915_GEN9_FIRMWARE_PAGE_BYTES;
-	kern_logf("i915: N0-lite (gen9): PWR_WELL_CTL2=0x%08x driver GGTT from 0x%llx\n",
+	kern_logf("i915: gen9 firmware display: PWR_WELL_CTL2=0x%08x driver GGTT from 0x%llx\n",
 		  power,
 		  (unsigned long long)driver_start);
 
 	/* Logs the eDP transcoder, which a laptop's firmware drives its panel with and which needs power well 1. */
 	if ((power & I915_SKL_PW_1_STATE) != 0U) {
 		edp_transconf = drv_i915_raw_read32(mmio, I915_SKL_TRANSCONF_EDP);
-		kern_logf("i915: N0-lite (gen9): TRANSCONF_EDP=0x%08x\n", edp_transconf);
+		kern_logf("i915: gen9 firmware display: TRANSCONF_EDP=0x%08x\n", edp_transconf);
 	}
 
 	/* Asks whether a hypervisor runs the machine, and reads the GPU's VT-d unit. */
@@ -150,7 +150,7 @@ drv_i915_gen9_firmware_check(
 		where_running = "guest";
 
 	/* Logs what the translation unit looks like. */
-	kern_logf("i915: N0-lite (gen9): GFXVTBAR=0x%llx enabled=%d %s readable=%d GSTS=0x%08x PMEN=0x%08x\n",
+	kern_logf("i915: gen9 firmware display: GFXVTBAR=0x%llx enabled=%d %s readable=%d GSTS=0x%08x PMEN=0x%08x\n",
 		  (unsigned long long)vtd.gfxvtbar,
 		  vtd.enabled,
 		  where_running,
@@ -185,11 +185,11 @@ drv_i915_gen9_firmware_check(
 
 	/* Records that the display controller is not driven: the GPU node has no display. */
 	display->absent = 1;
-	kern_logf("i915: N0-lite (gen9): the firmware's picture is kept; the GPU node has no display\n");
+	kern_logf("i915: gen9 firmware display: the firmware's picture is kept; the GPU node has no display\n");
 
 	/* Refuses a GT start whose DMA the VT-d unit would translate or block. */
 	if (vtd_active != 0) {
-		kern_logf("i915: N0-lite (gen9): the GPU's VT-d unit translates or protects memory and zedBSD has no IOMMU driver: the GT is not started\n");
+		kern_logf("i915: gen9 firmware display: the GPU's VT-d unit translates or protects memory and zedBSD has no IOMMU driver: the GT is not started\n");
 		return EIO;
 	}
 
@@ -338,7 +338,7 @@ i915_gen9_firmware_plane(
 	stride = drv_i915_raw_read32(mmio, I915_SKL_PLANE_STRIDE_1_A + offset);
 	size = drv_i915_raw_read32(mmio, I915_SKL_PLANE_SIZE_1_A + offset);
 	surface = drv_i915_raw_read32(mmio, I915_SKL_PLANE_SURF_1_A + offset);
-	kern_logf("i915: N0-lite (gen9): pipe %u PLANE_CTL=0x%08x STRIDE=0x%08x SIZE=0x%08x SURF=0x%08x\n",
+	kern_logf("i915: gen9 firmware display: pipe %u PLANE_CTL=0x%08x STRIDE=0x%08x SIZE=0x%08x SURF=0x%08x\n",
 		  pipe,
 		  control,
 		  stride,
@@ -356,7 +356,7 @@ i915_gen9_firmware_plane(
 
 	/* A picture that ends inside the driver's pages would be overwritten. */
 	if (surface_start + surface_bytes > driver_start) {
-		kern_logf("i915: N0-lite (gen9): pipe %u scans out 0x%llx..0x%llx, inside the driver's GGTT pages\n",
+		kern_logf("i915: gen9 firmware display: pipe %u scans out 0x%llx..0x%llx, inside the driver's GGTT pages\n",
 			  pipe,
 			  (unsigned long long)surface_start,
 			  (unsigned long long)(surface_start + surface_bytes));

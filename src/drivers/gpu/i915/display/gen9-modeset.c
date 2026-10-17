@@ -6,8 +6,7 @@
  */
 
 /*
- * The register sequences of the Gen9 mode set (WS237 stage 3, see
- * gen9-modeset.h).
+ * The register sequences of the Gen9 mode set (see gen9-modeset.h).
  *
  * The order of the writes is the Linux kernel 6.8.12's for display 9
  * (MIT): hsw_power_well_enable() for power well 2 and the DDI IO wells;

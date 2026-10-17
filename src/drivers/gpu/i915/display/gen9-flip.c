@@ -6,7 +6,7 @@
  */
 
 /*
- * The flip display of a Gen9 node (WS237, stage 1).
+ * The flip display of a Gen9 node.
  *
  * The display controller of Gen9 and Gen9.5 keeps the mode the firmware
  * set: nothing here enables a pipe, a port, a clock or a power well.  At

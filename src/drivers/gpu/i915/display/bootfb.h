@@ -6,9 +6,9 @@
  */
 
 /*
- * The boot framebuffer display of a Gen9 node (bootfb.c, BUG-310).
+ * The boot framebuffer display of a Gen9 node (bootfb.c).
  *
- * The display controller of Gen9 and Gen9.5 is not driven yet (WS229):
+ * The mode of the display controller of Gen9 and Gen9.5 is the firmware's:
  * the firmware's picture stays on the screen and the node has no panel.
  * The node offers one display on the firmware's framebuffer instead, so the
  * desktop can be shown at the resolution the firmware chose.  Every

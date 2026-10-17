@@ -6,7 +6,7 @@
  */
 
 /*
- * The arithmetic of the Gen9 mode set (WS237 stage 3, see gen9-mode.h).
+ * The arithmetic of the Gen9 mode set (see gen9-mode.h).
  *
  * The rules are the Linux kernel 6.8.12's for display 9 (MIT): the CD
  * clock readout of skl_get_cdclk(), the DP link choice of

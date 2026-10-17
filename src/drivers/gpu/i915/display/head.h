@@ -6,7 +6,7 @@
  */
 
 /*
- * The second output, the head (head.c, ws113-p011).
+ * The second output, the head (head.c).
  *
  * While Keiland holds the resident output's lease, a claim of another
  * connected connector makes it the head: an HDMI or an external

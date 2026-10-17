@@ -394,8 +394,8 @@ struct i915_vbt_state {
 /*
  * Whether the explicit VBT is asked for.
  *
- * Never: the test build has no captured VBT of the test machine, so the kernel takes the VBT
- * from the OpRegion or the PCI ROM, or the Linux defaults.
+ * Never: no VBT blob is built in, so the kernel takes the VBT from the
+ * OpRegion or the PCI ROM, or the Linux defaults.
  *
  * XXX: the explicit-blob bookkeeping it leaves (the EXPLICIT_BLOB source and
  * origin, the blob fields) is dead and can go with the next change of vbt.c.

@@ -6,16 +6,15 @@
  */
 
 /*
- * The boot framebuffer display of a Gen9 node (BUG-310).
+ * The boot framebuffer display of a Gen9 node.
  *
- * The driver does not drive the display controller of Gen9 and Gen9.5 yet
- * (WS229): the firmware's plane keeps scanning out the framebuffer the
+ * The driver does not set the mode of the display controller of Gen9 and
+ * Gen9.5: the firmware's plane keeps scanning out the framebuffer the
  * loader handed over, and the node would have no display, so the desktop
  * could not start (VK_KHR_display found no display).  This file gives such
  * a node one display on that framebuffer.
  *
- * The display answers as the capture display of the test build does
- * (capture.c): one output, connected, FIFO presentation of shared (BLOB) or
+ * The display answers as the capture display does (capture.c): one output, connected, FIFO presentation of shared (BLOB) or
  * copied frames, one plane, BGRA or RGBA, one lease at a time, and one mode:
  * the firmware's extent at 60 Hz.  A presentation is synchronous: the GPU
  * copies the frame into a physically contiguous staging area of RAM (the
@@ -35,7 +34,7 @@
  * When the firmware's plane can be flipped and the boot line asks for it
  * (i915.gen9.display=flip or a later step, gen9-display.h), the frames
  * are shown by flipping that plane between two buffers of the driver's
- * instead (gen9-flip.c, WS237): no CPU copy, and no tearing.  The display
+ * instead (gen9-flip.c): no CPU copy, and no tearing.  The display
  * then reports the plane's extent and refresh.  When the flips fail (a
  * flip that does not latch, a plane fault, buffers that cannot be mapped)
  * the copies come back for the rest of the boot, and the frame that found
@@ -214,7 +213,7 @@ drv_i915_bootfb_bind_ops(
 
 	bootfb = &i915_bootfb_display;
 
-	/* Only a Gen9 node whose display was left to the firmware (WS229) gets it. */
+	/* Only a Gen9 node whose display was left to the firmware gets it. */
 	if (device->display == NULL)
 		return;
 	if (!device->display->absent)
@@ -266,17 +265,17 @@ drv_i915_bootfb_bind_ops(
 	bootfb->height = bootfb->layout.height;
 	bootfb->refresh_millihz = I915_BOOTFB_REFRESH_MILLIHZ;
 
-	/* Flips the firmware's plane when the boot line asks for it and the plane allows it (WS237). */
+	/* Flips the firmware's plane when the boot line asks for it and the plane allows it. */
 	error = drv_i915_gen9_flip_start(device, bootfb->layout.fb_physical);
 	if (error == 0) {
 		bootfb->flip = 1;
 		drv_i915_gen9_flip_extent(&bootfb->width, &bootfb->height, &bootfb->refresh_millihz);
 	}
 
-	/* Offers the panel's brightness when the boot line asks for it (WS237). */
+	/* Offers the panel's brightness when the boot line asks for it. */
 	drv_i915_gen9_backlight_start(device);
 
-	/* Offers the external displays beside a flipped panel when the boot line asks for the mode set (WS237). */
+	/* Offers the external displays beside a flipped panel when the boot line asks for the mode set. */
 	if (bootfb->flip)
 		drv_i915_gen9_node_start(device);
 

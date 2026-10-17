@@ -6,7 +6,7 @@
  */
 
 /*
- * The DP link of a Gen9 DDI port (WS237 stage 3, see gen9-link.h).
+ * The DP link of a Gen9 DDI port (see gen9-link.h).
  *
  * The order is the Linux kernel 6.8.12's for display 9 (MIT):
  * hsw_prepare_dp_ddi_buffers() and hsw_set_signal_levels() with
