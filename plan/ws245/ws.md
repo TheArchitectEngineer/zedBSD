@@ -76,6 +76,7 @@ Resume point: 2026-10-16 q1218（P1）の区切り: 次は **p018**（[phase018]
 - p051（Q1 の判断）: plan/ws113/tests/host-head-rules.c・.sh（この段で壊れる）と host-gop.c・.sh（前から壊れていた）は master の Tools・未完の Phase に無ければ削除（merge の時に確かめる）。
 - p052（Q1 の判断）: WS051 の host-tc の 112 checks を xd の試験に移したら、plan/ws051/tests/host-tc.sh と関係の file を消し、master の Tools の host-tc の行を run-xd-host-tests の行に替える（merge の時に main の側で Q1）。
 - q1229-i14 の返却（2026-10-17、Q1 の判断）: plan/ws051/tests/host-dpext.sh・host-dpext.c は base で既に link error で参照も無いので、試験の整理の基準で merge の時に消す。p042 の段の縮約は (a)（GT と display の挟まりは変えず、隣り合う段だけまとめて own の名前にする。device.c の並べ替えは 5330 の起動を変える危険があるため取らない）。
+- p042（2026-10-17、Q1 の判断、merge の時に main で）: `src/drivers/gpu/i915/display/diagnostics.c/.h` を消す。plan/ws075/tests/hdmi-h1-hw.sh（master の Tools にある）の grep の `LCD-B` を `display run` に直す。plan/ws075/tests/hdmi/usb-poll.sh は master・tests/・未完了の Phase から参照が無いので直さずに消す。plan/bugs/BUG-266/tests/host-trace-tc.c・run-host-trace-tc.sh（BUG-266 は resolved）は消し、BUG-266.md の参照の行を外す。
 - p040（P6、agent/p6-ws245 の 806e0b063、p044 は aa14ff623）: src/drivers/gpu/i915/display/dkl-phy.c・dkl-phy.h・src/drivers/gpu/i915/intel/dkl.h（中身は空）。master の Tools の plan/ws051/tests/host-tc.sh が dkl-phy.c を grep/sed する 2 行と host-tc-tables.c の DKL の 3 check は、窓の check が host-xd-tc-test に移ったので merge の時に消す。
 - p028〜: master の Tools の plan/ws051/tests/host-vbt-pll.sh が takeover.c の PLL の表を読めず FAIL になる（表は xd の platform の表へ、PLL の check は host-xd-dpll-test へ移った）。merge の時に道具から adlp_plls の部分を外すか DVO だけの道具にし、Tools の行を直す。
 
