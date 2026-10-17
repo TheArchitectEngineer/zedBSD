@@ -11,13 +11,10 @@
 -->
 
 <!-- master:agents:start -->
-- **2026-10-15 20:01（ユーザー「待ってください、書き換えが一度に大幅すぎます。すべての作業を即時中断してください。」）**: Q1 が P1（WS245 p006 の途中）・P3（WS039 design.md 改訂 2 の調べの途中）・P4（WS250 design.md の書き足しの途中）を TaskStop で止めた。未 commit の差分は残してある: p1 の worktree（xd-platform.h・display-regs-xd*.h・display-tables-xd.h・xd-regs-map.h、p006 の途中）、p4 の worktree（plan/ws250/design.md）。main に入った物は全部 merge 済み（main 8f2e76f8c まで）。再開はユーザーの指示で。
-- **2026-10-15 15:50（Q1、記録の整合の点検の後）**: 動いている担当は無い。全 worktree に未 merge の commit は無い（t1・t2・t3 に未追跡の作業 file だけ）。今日の成果と残り: WS247 は p001〜p003 cleared（completed にはユーザーの判断 2 点）、WS245 は design.md 改訂 2 とレビュー 2 が main（次: レビュー 2 の反映・display 12 の差・display 11 の Phase）、WS242 は既定 on の決定（未実装）。詳しくは [handover-20261015b.md](agents/handover-20261015b.md) と [record-integrity.md](record-integrity.md)。前の経過の 2 行（前の session の状況・RTX の順）は decisions-log へ移した。
-- AMD RDNA（2026-10-15 ユーザー）: RX 5600 XT が今日届く。[WS039](ws039/ws.md) amdrdna を開始（RDNA1 を動かし RDNA2・3 は認識だけ、到達点は desktop、VCN は後、素の起動で試験、GPL の参照の規則を WS039 に広げた、driver P3・compiler P5）。 同日ユーザーの指示で一時停止の後、夕に再開（P3 が p001 の設計、q1202。p007 compiler は停止のまま）。
-- 体制（2026-10-15 ユーザー）: P1・P2・P3 は誰でも何でも、T1・T2・T3 は試験、B1 は Web。ユーザーは逐次に 1 つずつ解決する進め方。
-- Pi 4（10.0.30.2）: 2026-10-15 Q1 が SD を焼き直した（ユーザー「Piのイメージを焼いてください。」、BUG-294 の直しの後の main 9640a1cc1 の config/ci/config-rpi4.mk、`build/uat/main-rpi4-sd/hdd-image.img` sha256 d582e576…、書いた後に cmp で一致）。kei の公開鍵・host key・/home/kei の試験の file（Video.mp4・ws236/）は消えた。壊れた前の UFS の写しは build/q1/bug294/（BUG-294）。kei の password は kei。新しい host key は ED25519 SHA256:7IzFEK4j…（2026-10-15、焼き直しの後）。
-- RTX 機（10.0.30.5、i5-13400F＋RTX 2070、2026-10-15 ユーザー）:「RTXは kei@10.0.30.5 パスワードkeiです。」「RTX機は再起動するとzedBSDが起動しますので、カーネルなどアップデートして再起動してOKです。」→ USB の zedBSD（RAk の image）が起動する。T・Q1 が SSH（password kei、sudo も kei の見込み）で kernel・userland を差し替えて reboot してよい。network は使える（SSH が通る）。host key は焼き直し・差し替えで変わる（ユーザーの指示で ~/.ssh/known_hosts から消して入れ直した）。
-- Latitude 5330（10.0.30.3、2026-10-15 夕 ユーザー）:「Latitude 5330が10.0.30.3で入れますので、テストが必要なら使ってください。」→ 試験の担当が使ってよい。予定: WS248 の p002 の後に AX211 の試験（WS218 p002 の MSI-X の書く順の確かめも兼ねる）。
+- **2026-10-17 21:2x（ユーザー「あー、もう使用量が足りない。いったんラップアップしましょう。」）**: ラップアップ。
+  - WS245（i915 の display の書き換え）: 実装の段は全部 main に merge 済み（89ff347f3、空の file の削除 61dde9d6b）。T1 の 5330 の再試験 q1229-i20 と merge 後の main の起動 q1229-i21 は PASS（実機）、5330 の USB の vmunix は merge 後の main の kernel。完了ではない: 43 の Phase が「5330 待ち」の in-progress のまま（次の Q1 が i20・i21 の証拠で判定し直す）、p046 の全文の目視、p044・p045（P6）、DC6 の判断、reboot の止める道は未確認、ユーザーの一覧 beta2.md U19〜U23。
+  - WS251 p002（GPU ドライバの comment・log から開発の管理情報を消す、2026-10-17 ユーザー）: P1（q1240-i01、worktree p1、branch agent/p1-ws251）に頼み、ラップアップを指示した。返却の内容は queue.md の q1240 の行と plan/ws251/phase002/phase.md。未 merge の commit があれば次の Q1 が確かめて merge する。
+  - 他に動いている担当は無い。push はしていない（最後の push より後の commit は全部 local）。
 <!-- master:agents:end -->
 
 ### 統合と試験の待ち
