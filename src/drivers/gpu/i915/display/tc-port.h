@@ -23,6 +23,8 @@
 struct i915_display;
 
 void drv_i915_tc_port_start(struct i915_display *display);
+void drv_i915_tc_port_suspend(struct i915_display *display);
+void drv_i915_tc_port_resume(struct i915_display *display);
 void drv_i915_tc_port_stop(struct i915_display *display);
 void drv_i915_tc_port_destroy(struct i915_display *display);
 struct i915_xd_tc_ports *drv_i915_tc_port_ports(struct i915_display *display);

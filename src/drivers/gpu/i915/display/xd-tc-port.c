@@ -52,6 +52,7 @@ static void i915_xd_tc_port_update_mode(struct i915_xd_tc_ports *ports, struct i
 static void i915_xd_tc_port_readout(struct i915_xd_tc_ports *ports, struct i915_xd_tc_port *p);
 static int i915_xd_tc_port_connected(struct i915_xd_tc_ports *ports, const struct i915_xd_tc_port *p);
 static unsigned i915_xd_tc_port_fia_number(const struct i915_xd_tc_fia *fia);
+static void i915_xd_tc_port_settle_all(struct i915_xd_tc_ports *ports, const char *why);
 
 /*
  * Binds the device to the Type-C ports of a display.
@@ -180,30 +181,67 @@ void
 drv_i915_xd_tc_ports_readout(
 	struct i915_xd_tc_ports *ports)
 {
+	/* Reads and settles each declared port, logged as the start's readout. */
+	i915_xd_tc_port_settle_all(ports, "readout");
+}
+
+/*
+ * Gives every Type-C port back before the display goes down for a
+ * suspend: the outputs were darkened before, so a link still held is
+ * logged and dropped; the connection is given back with the platform's
+ * flow (TC cold unblocked, the PHY's ownership cleared).  The ports stay
+ * declared and live for the resume.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_tc.c
+ * (intel_tc_port_suspend, intel_tc_port_cleanup).
+ */
+void
+drv_i915_xd_tc_ports_suspend(
+	struct i915_xd_tc_ports *ports)
+{
 	struct i915_xd_tc_port *p;
 	unsigned index;
+	unsigned mode;
+	unsigned links;
 
-	/* Ports that are not live have nothing to read. */
+	/* Ports that are not live hold nothing. */
 	if (!ports->live)
 		return;
 
-	/* Reads and settles each declared port. */
+	/* Gives each declared port back. */
 	for (index = 0U; index < I915_XD_TC_PORTS; index++) {
 		/* Skips a port nobody declared. */
 		p = &ports->port[index];
 		if (!p->present)
 			continue;
 
-		/* Reads and settles the port under its lock. */
+		/* Drops the links and gives the connection back under the port's lock. */
 		ports->env.lock(ports->env.ctx, index);
 
-		i915_xd_tc_port_readout(ports, p);
+		mode = p->connection.mode;
+		links = p->links;
+		p->links = 0U;
+		i915_xd_tc_port_disconnect(ports, p);
 
 		ports->env.unlock(ports->env.ctx, index);
 
-		/* Logs what the readout found and left. */
-		drv_i915_xd_tc_ports_log_state(ports, index, "readout");
+		/* Logs a port that still held something. */
+		if (mode != I915_XD_TC_MODE_NONE || links != 0U)
+			ports->env.log(ports->env.ctx, "i915: TC%u: suspend: %s connection given back (%u link(s) dropped)\n", index + 1U, drv_i915_xd_tc_mode_name(mode), links);
 	}
+}
+
+/*
+ * Reads every declared Type-C port again after a resume, as the start's
+ * readout does: the firmware brought the Type-C subsystem up again, a
+ * legacy port's PHY is waited for, and a PHY left held is given back.
+ */
+void
+drv_i915_xd_tc_ports_resume(
+	struct i915_xd_tc_ports *ports)
+{
+	/* Reads and settles each declared port, logged as the resume's. */
+	i915_xd_tc_port_settle_all(ports, "resume");
 }
 
 /*
@@ -1415,4 +1453,36 @@ i915_xd_tc_port_fia_number(
 
 	/* Succeeded: a FIA the log cannot name. */
 	return 0U;
+}
+
+/* Reads and settles every declared port under its lock, and logs each one for a reason. */
+static void
+i915_xd_tc_port_settle_all(
+	struct i915_xd_tc_ports *ports,
+	const char *why)
+{
+	struct i915_xd_tc_port *p;
+	unsigned index;
+
+	/* Ports that are not live have nothing to read. */
+	if (!ports->live)
+		return;
+
+	/* Reads and settles each declared port. */
+	for (index = 0U; index < I915_XD_TC_PORTS; index++) {
+		/* Skips a port nobody declared. */
+		p = &ports->port[index];
+		if (!p->present)
+			continue;
+
+		/* Reads and settles the port under its lock. */
+		ports->env.lock(ports->env.ctx, index);
+
+		i915_xd_tc_port_readout(ports, p);
+
+		ports->env.unlock(ports->env.ctx, index);
+
+		/* Logs what the reading found and left. */
+		drv_i915_xd_tc_ports_log_state(ports, index, why);
+	}
 }

@@ -461,6 +461,112 @@ drv_i915_hpd_stop(
 }
 
 /*
+ * Quiesces the hotplug for a suspend: closes the interrupt entry, waits
+ * for the entries inside, forgets every pending pulse, event and retry,
+ * and cancels the works (a running detection is waited for).  The queues
+ * stay for the resume.
+ */
+void
+drv_i915_hpd_suspend(
+	struct i915_display *display)
+{
+	struct i915_hpd_world *world;
+	unsigned long irq;
+	uint64_t deadline;
+	unsigned inflight;
+	unsigned spins;
+	unsigned tc;
+
+	/* A hotplug that does not run has nothing to quiesce. */
+	world = display->hpd_world;
+	if (world == NULL || !world->started)
+		return;
+
+	/* Closes the interrupt entry: a new interrupt is dropped. */
+	__atomic_store_n(&world->live, 0, __ATOMIC_SEQ_CST);
+
+	/* Waits, boundedly, for the entries already inside. */
+	for (spins = 0U; spins < I915_HPD_DRAIN_SPINS; spins++) {
+		inflight = __atomic_load_n(&world->inflight, __ATOMIC_SEQ_CST);
+		if (inflight == 0U)
+			break;
+
+		__asm__ volatile("pause");
+	}
+
+	/* Forgets every pending pulse, event and retry. */
+	irq = spin_lock_irqsave(&world->lock);
+
+	world->xh.long_ports = 0U;
+	world->xh.short_ports = 0U;
+	world->xh.events = 0U;
+	world->xh.retries = 0U;
+
+	spin_unlock_irqrestore(&world->lock, irq);
+
+	/* Cancels every work and waits for a running one. */
+	deadline = i915_hpd_deadline();
+	(void)drv_i915_cancel_work_sync(&world->wq, &world->pulse_work, deadline);
+	(void)drv_i915_delayed_cancel_sync(&world->tq, &world->detect_work, deadline);
+	(void)drv_i915_delayed_cancel_sync(&world->tq, &world->rearm_work, deadline);
+	for (tc = 0U; tc < I915_XD_TC_PORTS; tc++)
+		(void)drv_i915_delayed_cancel_sync(&world->tq, &world->tc_reset[tc].work, deadline);
+
+	/* Logs what the hotplug handled before the sleep. */
+	kern_logf("i915: hpd suspend: interrupts=%u detections=%u\n", world->irq_entries, world->detections);
+}
+
+/*
+ * Brings the hotplug back after a resume, once the interrupts are back:
+ * arms the pins again (the hotplug registers were lost with the display
+ * core), opens the interrupt entry, and asks for a detection of every
+ * connector, so one plugged or unplugged while the machine slept is seen.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display_driver.c
+ * (intel_display_driver_resume), intel_hotplug.c (intel_hpd_init,
+ * intel_hpd_poll_disable).
+ */
+void
+drv_i915_hpd_resume(
+	struct i915_display *display)
+{
+	struct i915_hpd_world *world;
+	unsigned long irq;
+	unsigned index;
+	uint32_t pins;
+
+	/* A hotplug that does not run has nothing to bring back. */
+	world = display->hpd_world;
+	if (world == NULL || !world->started)
+		return;
+
+	/* Arms the pins again, with the interrupts on. */
+	drv_i915_hpd_arm(display, 1);
+
+	/* Every connector's pin, which the detection looks at once. */
+	pins = 0U;
+	for (index = 0U; index < world->xh.count; index++) {
+		if (world->xh.connector[index].pin != I915_XD_HPD_PIN_NONE)
+			pins |= 1U << world->xh.connector[index].pin;
+	}
+
+	/* Gives the detection an event on every pin. */
+	irq = spin_lock_irqsave(&world->lock);
+
+	world->xh.events |= pins;
+
+	spin_unlock_irqrestore(&world->lock, irq);
+
+	/* Opens the interrupt entry: a hotplug interrupt is taken from now on. */
+	__atomic_store_n(&world->live, 1, __ATOMIC_SEQ_CST);
+
+	/* Looks at every connector at once. */
+	(void)drv_i915_delayed_queue(&world->tq, &world->detect_work, 0U);
+	kern_logf("i915: hpd resume: pins=0x%x looked at again\n", pins);
+}
+
+/*
  * Detects a connector once, as its first probe does (it reads the sink's
  * EDID).  Returns its state (1 connected, 2 disconnected, 3 unknown), or
  * EINVAL for a hotplug that does not run or a connector it does not have.

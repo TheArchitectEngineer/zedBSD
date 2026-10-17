@@ -113,6 +113,8 @@ void drv_i915_xd_tc_ports_init(struct i915_xd_tc_ports *ports, struct i915_xd_io
 int drv_i915_xd_tc_ports_declare(struct i915_xd_tc_ports *ports, unsigned ddi, int legacy, unsigned aux);
 int drv_i915_xd_tc_ports_index(const struct i915_xd_tc_ports *ports, unsigned ddi);
 void drv_i915_xd_tc_ports_readout(struct i915_xd_tc_ports *ports);
+void drv_i915_xd_tc_ports_suspend(struct i915_xd_tc_ports *ports);
+void drv_i915_xd_tc_ports_resume(struct i915_xd_tc_ports *ports);
 void drv_i915_xd_tc_ports_stop(struct i915_xd_tc_ports *ports);
 unsigned drv_i915_xd_tc_ports_live(struct i915_xd_tc_ports *ports, unsigned tc);
 int drv_i915_xd_tc_ports_connected(struct i915_xd_tc_ports *ports, unsigned tc);

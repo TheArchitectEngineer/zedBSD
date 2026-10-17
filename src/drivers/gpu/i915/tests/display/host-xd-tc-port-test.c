@@ -107,6 +107,7 @@ static void tc_port_test_dp_sample(void);
 static void tc_port_test_fia_lanes(void);
 static void tc_port_test_wait_ready(void);
 static void tc_port_test_stop(void);
+static void tc_port_test_suspend(void);
 static void tc_port_test_tiger_lake(void);
 
 /*
@@ -128,6 +129,7 @@ main(void)
 	tc_port_test_fia_lanes();
 	tc_port_test_wait_ready();
 	tc_port_test_stop();
+	tc_port_test_suspend();
 	tc_port_test_tiger_lake();
 
 	/* Reports the result. */
@@ -1120,6 +1122,56 @@ tc_port_test_stop(void)
 	i915_host_check(mode == I915_XD_TC_MODE_NONE, "stop: a lock after the stop holds no mode");
 	i915_host_check(tc_port_test.writes == writes && tc_port_test.gets == gets, "stop: nothing written or powered after the stop");
 	i915_host_check(tc_port_test.lock_errors == 0, "stop: no lock taken after the stop");
+}
+
+/*
+ * The suspend and the resume: the suspend gives back a port the
+ * firmware's output held (its link dropped, logged), keeps the ports
+ * declared and live, and a port that held nothing is left alone; the
+ * resume reads the ports again as the start did, so a port the firmware
+ * left held after the sleep is read out, and an empty port is not.
+ */
+static void
+tc_port_test_suspend(void)
+{
+	struct i915_xd_tc_ports ports;
+	unsigned writes;
+
+	/* TC1 held by the firmware's output with one link, TC3 declared and empty. */
+	tc_port_test_reset(TC_PORT_TEST_ADLP, TC_PORT_TEST_ADLP_REVID);
+	tc_port_test_bind(&ports);
+	tc_port_test_declare(&ports, 0U, 0);
+	tc_port_test_declare(&ports, 2U, 0);
+	tc_port_test_set(I915_XD_DE_HPD_ISR, I915_XD_HPD_INT_TC(0U));
+	tc_port_test_set(I915_XD_TCSS_DDI_STATUS(0U), I915_XD_TCSS_READY);
+	tc_port_test_set(tc_port_test_buf(0U), I915_XD_DDI_BUF_ENABLE | I915_XD_DDI_BUF_TC_OWNED);
+	drv_i915_xd_tc_ports_readout(&ports);
+
+	/* The suspend gives TC1 back and keeps the ports. */
+	drv_i915_xd_tc_ports_suspend(&ports);
+	i915_host_check(ports.port[0].connection.mode == I915_XD_TC_MODE_NONE && ports.port[0].links == 0U, "suspend: TC1 holds nothing");
+	i915_host_check((tc_port_test_get(tc_port_test_buf(0U)) & I915_XD_DDI_BUF_TC_OWNED) == 0U && tc_port_test_balanced(0U), "suspend: TC1's PHY and TC cold given back");
+	i915_host_check(ports.live && ports.port[0].present && ports.port[2].present, "suspend: the ports stay declared and live");
+	i915_host_check(tc_port_test.lock_errors == 0, "suspend: locks balanced");
+
+	/* A second suspend finds nothing held and writes nothing. */
+	writes = tc_port_test.writes;
+	drv_i915_xd_tc_ports_suspend(&ports);
+	i915_host_check(tc_port_test.writes == writes, "suspend: a port that holds nothing is left alone");
+
+	/* The resume with nothing plugged in reads the ports and holds nothing. */
+	tc_port_test_set(I915_XD_DE_HPD_ISR, 0U);
+	drv_i915_xd_tc_ports_resume(&ports);
+	i915_host_check(ports.port[0].connection.mode == I915_XD_TC_MODE_NONE && ports.port[2].connection.mode == I915_XD_TC_MODE_NONE && tc_port_test_balanced(0U),
+		"resume: empty ports hold nothing");
+
+	/* A resume that finds the firmware's output again keeps it with one link. */
+	tc_port_test_set(I915_XD_DE_HPD_ISR, I915_XD_HPD_INT_TC(0U));
+	tc_port_test_set(tc_port_test_buf(0U), I915_XD_DDI_BUF_ENABLE | I915_XD_DDI_BUF_TC_OWNED);
+	drv_i915_xd_tc_ports_resume(&ports);
+	i915_host_check(ports.port[0].connection.mode == I915_XD_TC_MODE_DP_ALT && ports.port[0].links == 1U, "resume: a held output is read out again");
+	drv_i915_xd_tc_ports_put_link(&ports, 0U);
+	i915_host_check(tc_port_test_balanced(0U) && tc_port_test.lock_errors == 0, "resume: power and locks balanced");
 }
 
 /*

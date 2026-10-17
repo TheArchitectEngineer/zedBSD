@@ -185,6 +185,49 @@ drv_i915_tc_port_stop(
 }
 
 /*
+ * Gives the display's Type-C ports back before the display goes down for
+ * a suspend (the hotplug was quiesced and the outputs darkened before).
+ */
+void
+drv_i915_tc_port_suspend(
+	struct i915_display *display)
+{
+	/* A display whose ports were never bound has nothing to give back. */
+	if (display->tc_ports == NULL)
+		return;
+
+	/* Gives every port's connection back; the ports stay declared. */
+	drv_i915_xd_tc_ports_suspend(&display->tc_ports->ports);
+}
+
+/*
+ * Reads the display's Type-C ports again after a resume, once the display
+ * core runs and the interrupts are back, and tells the Type-C connector
+ * layer what each has of DisplayPort.
+ */
+void
+drv_i915_tc_port_resume(
+	struct i915_display *display)
+{
+	struct i915_tc_port_world *world;
+	unsigned tc;
+
+	/* A display whose ports were never bound has nothing to read. */
+	world = display->tc_ports;
+	if (world == NULL)
+		return;
+
+	/* Reads and settles every port as the start did. */
+	drv_i915_xd_tc_ports_resume(&world->ports);
+
+	/* Tells the Type-C layer what each declared port has of DisplayPort now. */
+	for (tc = 0U; tc < I915_XD_TC_PORTS; tc++) {
+		if (world->ports.port[tc].present)
+			drv_i915_tc_port_report(&world->ports, tc);
+	}
+}
+
+/*
  * Frees the display's Type-C ports, which must have been stopped.
  */
 void

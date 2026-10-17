@@ -59,6 +59,8 @@ void drv_i915_hpd_arm(struct i915_display *display, int interrupts);
 int drv_i915_hpd_start(struct i915_display *display);
 void drv_i915_hpd_pch_irq(struct i915_display *display, uint32_t sde_iir);
 void drv_i915_hpd_de_irq(struct i915_display *display, uint32_t de_hpd_iir);
+void drv_i915_hpd_suspend(struct i915_display *display);
+void drv_i915_hpd_resume(struct i915_display *display);
 void drv_i915_hpd_stop(struct i915_display *display);
 int drv_i915_hpd_probe_connector(struct i915_display *display, unsigned idx);
 void drv_i915_hpd_summary(struct i915_display *display, struct i915_hpd_summary *s);

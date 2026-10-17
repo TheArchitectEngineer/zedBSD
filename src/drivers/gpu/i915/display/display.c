@@ -183,6 +183,7 @@ static int i915_display_noirq_tail(struct i915_device *device);
 static int i915_display_nogem_front(struct i915_device *device);
 static void i915_display_setup_outputs(struct i915_device *device);
 static void i915_display_sanitize(struct i915_device *device);
+static void i915_display_resume_front(struct i915_display *display);
 static int i915_display_driver_probe(struct i915_display *display, int intel_irqs_enabled);
 static int i915_skl_watermark_ipc_init(struct i915_mmio *m, int has_ipc, int platform_can);
 static uint32_t i915_display_rmw(struct i915_mmio *m, uint32_t reg, uint32_t clear, uint32_t set);
@@ -794,10 +795,17 @@ drv_i915_display_stop_early(
 }
 
 /*
- * Begins the display's suspend: takes the INIT reference
- * again (intel_power_domains_disable()), which keeps every well on while
- * the suspend goes on.  The outputs were stopped when the request worker
- * left the display window for its park.
+ * Begins the display's suspend.  The outputs were darkened when the
+ * request worker left the display window for its park.  The hotplug is
+ * quiesced (no interrupt is taken and no detection runs from here on),
+ * the Type-C ports give their connections back, and the INIT reference
+ * is taken again, which keeps every well on and the display out of DC
+ * states while the suspend goes on.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/i915_driver.c (i915_drm_suspend),
+ * drivers/gpu/drm/i915/display/intel_display_driver.c
+ * (intel_display_driver_suspend).
  */
 void
 drv_i915_display_suspend_begin(
@@ -809,6 +817,12 @@ drv_i915_display_suspend_begin(
 	display = device->display;
 	if (display == NULL || !display->power_domains_inited)
 		return;
+
+	/* Stops the hotplug before anything it reads goes down. */
+	drv_i915_hpd_suspend(display);
+
+	/* Gives the Type-C ports' PHYs and TC cold blocks back. */
+	drv_i915_tc_port_suspend(display);
 
 	/* Holds the wells for the rest of the suspend. */
 	drv_i915_power_domains_disable(&display->dcore);
@@ -852,8 +866,16 @@ drv_i915_display_suspend_end(
 /*
  * Begins the display's resume, before the interrupts come back: DC9 is
  * left, the display core comes up again with the INIT reference held
- * (intel_power_domains_init_hw(resume)), and the DMC's program is loaded
- * again.  It reports the first step that failed; the later ones still run.
+ * (intel_power_domains_init_hw(resume)), the DMC's program is loaded
+ * again, and what the start set beside the core is set again (the VGA
+ * plane off, the display's workarounds, the GMBUS controller reset).  It
+ * reports the first step that failed; the later ones still run.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/i915_driver.c (i915_drm_resume_early,
+ * i915_drm_resume), drivers/gpu/drm/i915/display/intel_vga.c
+ * (intel_vga_redisable), drivers/gpu/drm/i915/i915_suspend.c
+ * (i915_restore_display).
  */
 int
 drv_i915_display_resume_begin(
@@ -892,6 +914,10 @@ drv_i915_display_resume_begin(
 			first_error = error;
 	}
 
+	/* Restores what the start set beside the display core, once the start had set it. */
+	if (display->front_done)
+		i915_display_resume_front(display);
+
 	/* Reports the first step that failed. */
 	if (first_error != 0)
 		return first_error;
@@ -901,10 +927,18 @@ drv_i915_display_resume_begin(
 }
 
 /*
- * Ends the display's resume: gives the INIT reference back
- * (intel_power_domains_enable()), so that DC6 is allowed again.  The
- * outputs come back with the next presentation, which enters the display
- * window again.
+ * Ends the display's resume, with the interrupts back: gives the INIT
+ * reference back (intel_power_domains_enable()), so that DC6 is allowed
+ * again, reads the Type-C ports again, and brings the hotplug back with
+ * a look at every connector (one plugged or unplugged during the sleep
+ * is seen).  The outputs come back with the next presentation, which
+ * enters the display window again and lights them with every register
+ * written (the panel's power sequencer delays and the backlight's PWM
+ * among them).
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display_driver.c
+ * (intel_display_driver_resume).
  */
 void
 drv_i915_display_resume_end(
@@ -919,6 +953,12 @@ drv_i915_display_resume_end(
 
 	/* Gives the INIT reference back. */
 	drv_i915_power_domains_enable(&display->dprobe, &display->dcore);
+
+	/* Reads the Type-C ports again, before the hotplug asks them. */
+	drv_i915_tc_port_resume(display);
+
+	/* Arms the hotplug again and looks at every connector. */
+	drv_i915_hpd_resume(display);
 
 	/* The next entry into the window is the first after the sleep. */
 	display->window.after_resume = 1;
@@ -1590,6 +1630,37 @@ i915_display_create_worlds(
 
 	/* Succeeded: every environment has its state. */
 	return 0;
+}
+
+/*
+ * Sets again, after a resume, what the start's front set beside the
+ * display core: the VGA plane off, the display's workarounds, and the
+ * GMBUS controller's pin let go with its interrupts silenced.
+ */
+static void
+i915_display_resume_front(
+	struct i915_display *display)
+{
+	const struct i915_xd_platform *platform;
+	int vga_result;
+
+	/* The platform's description, when the display has one. */
+	platform = NULL;
+	if (display->xd.chosen)
+		platform = display->xd.choice.platform;
+
+	/* The VGA plane the firmware may have turned on again goes off. */
+	vga_result = drv_i915_vga_disable(display);
+
+	/* The display's workarounds, which the core's power-down lost. */
+	if (platform != NULL)
+		drv_i915_xd_display_wa(&display->xd.io, platform);
+
+	/* The GMBUS controller lets its pin go and silences its interrupts. */
+	drv_i915_xd_gmbus_reset(&display->xd.io);
+
+	/* Logs the VGA plane's state. */
+	kern_logf("i915: resume: vga %d, workarounds %s\n", vga_result, platform != NULL ? "applied" : "none");
 }
 
 /* Frees the hotplug's, the VBT parser's, the external DP ports' and the Type-C ports' state that exists, in reverse. */
