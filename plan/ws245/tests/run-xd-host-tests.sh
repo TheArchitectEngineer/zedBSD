@@ -89,9 +89,15 @@
 #   host-xd-bandwidth-test the memory's bandwidth for the display: the firmware's description of the memory and its
 #                          points, the display's share of each point by plane count (display 11, 12 and later), the
 #                          restriction that keeps SAGV off (its mask, a firmware that agrees late or never), refusals
+#   host-display-power-test the display's power (display/display-power.c): the start's DC states and slices, the AUX
+#                          channels' wells (directly and through Thunderbolt), a pipe's wells taken and given back, DC off
+#                          with and without the DMC's program, the deferred give-back (work, flush, unbound), a failed
+#                          drain that keeps every later well on, the wells the firmware left on turned off
 #   host-output-link-test  an output's planned link (display/output.c): the 5330's USB-C monitor at the link Linux
 #                          trained, the fallback's limits, a branch's depth and dot clock, an HDMI mode's link and PLL;
 #                          the firmware's output by the platform's ports
+# The source audit (plan/ws245/tests/check-sources.py) runs last: no file of the display 11 to 13 code names a source at
+# its head or carries a copied notice, and every referenced: block is a multi-line comment naming its source.
 # The check against the Linux tree itself is plan/ws245/tests/check-xd-regs-linux.sh (needs the unpacked tree).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -e
@@ -102,7 +108,7 @@ OUT=${1:-build/ws245-host}
 mkdir -p "$OUT"
 I915_HOST_EXTRA_PRODUCTION="src/drivers/gpu/i915/perf.c ${I915_HOST_EXTRA_PRODUCTION:-}"
 failed=0
-for test in host-xd-io-test host-xd-platform-test host-xd-vbt-test host-xd-survey-test host-xd-aux-test host-xd-gmbus-test host-xd-panel-test host-xd-power-test host-xd-dmc-test host-xd-clock-test host-xd-dpll-test host-xd-ddi-test host-xd-dp-test host-xd-pipe-test host-xd-dbuf-test host-xd-core-test host-xd-takeover-test host-xd-screen-test host-xd-output-test host-xd-edp-test host-xd-tc-test host-xd-tc-port-test host-xd-cover-test host-xd-icl-test host-xd-picture-test host-xd-hpd-test host-xd-diag-test host-xd-bandwidth-test host-output-link-test; do
+for test in host-xd-io-test host-xd-platform-test host-xd-vbt-test host-xd-survey-test host-xd-aux-test host-xd-gmbus-test host-xd-panel-test host-xd-power-test host-xd-dmc-test host-xd-clock-test host-xd-dpll-test host-xd-ddi-test host-xd-dp-test host-xd-pipe-test host-xd-dbuf-test host-xd-core-test host-xd-takeover-test host-xd-screen-test host-xd-output-test host-xd-edp-test host-xd-tc-test host-xd-tc-port-test host-xd-cover-test host-xd-icl-test host-xd-picture-test host-xd-hpd-test host-xd-diag-test host-xd-bandwidth-test host-display-power-test host-output-link-test; do
 	test -f "$T/$test.c" || continue
 	i915_display_host_build "$OUT/$test" "$T/$test.c" "$T/xd-fake-regs.c" plan/ws084/tests/native-decide-stubs.c
 	if ! "$OUT/$test"; then
@@ -144,6 +150,10 @@ for line in 'resident display: buffers %ux%u pitch %u: A surf 0x%08x cpu %p, B s
 		failed=1
 	fi
 done
+# The source audit of the display 11 to 13 files (design.md section 5.4).
+if ! python3 -I plan/ws245/tests/check-sources.py src/drivers/gpu/i915; then
+	failed=1
+fi
 if [ "$failed" -ne 0 ]; then
 	echo "run-xd-host-tests: FAILED" >&2
 	exit 1

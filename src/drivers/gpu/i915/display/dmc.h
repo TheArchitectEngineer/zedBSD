@@ -19,7 +19,7 @@
 #include "internal.h"
 
 int drv_i915_dmc_has_payload(const struct i915_dmc *dmc);
-void drv_i915_dmc_init(struct i915_dmc_dev *dev, struct i915_workqueue *wq, struct i915_mmio *mmio, struct i915_power_domains *pd, struct i915_pw_ctx *pwc);
+void drv_i915_dmc_init(struct i915_dmc_dev *dev, struct i915_workqueue *wq, struct i915_mmio *mmio, struct i915_display_power *power, struct i915_xd *xd);
 void drv_i915_dmc_fini(struct i915_dmc_dev *dev, uint64_t deadline);
 int drv_i915_dmc_resume(struct i915_dmc_dev *dev);
 

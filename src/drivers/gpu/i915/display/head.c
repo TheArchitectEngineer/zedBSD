@@ -1370,7 +1370,7 @@ i915_head_held_refs(
 
 	/* Every domain's count. */
 	held = 0U;
-	for (domain = 0U; domain < I915_PW_DOMAIN_NUM; domain++)
+	for (domain = 0U; domain < I915_LCD_POWER_SLOTS; domain++)
 		held += (unsigned)k->power_refs[domain];
 
 	/* Succeeded: the references held. */

@@ -38,6 +38,7 @@
 #include "../../engine.h"
 #include "../../ggtt.h"
 #include "../../gt-power.h"
+#include "../../i915.h"
 #include "../../irq.h"
 #include "../../memory.h"
 #include "../../migrate.h"
@@ -48,7 +49,6 @@
 #include "../../submit.h"
 #include "../../verify-workarounds.h"
 #include "../../workarounds.h"
-#include "../../display/power.h"
 
 #include <drivers/generic/dma.h>
 #include <hal/hal.h>
@@ -81,9 +81,6 @@
 /* The clock registers the GT information step reads. */
 #define I915_KTEST_REG_CTC_MODE		0xa26cU
 #define I915_KTEST_REG_RPM_CONFIG0	0xd00U
-
-/* DC_STATE_EN, the register the DC_off power well moves. */
-#define I915_KTEST_REG_DC_STATE_EN	0x45504U
 
 /* How many other registers the model remembers, and how many writes its trace keeps. */
 #define I915_KTEST_FAKE_REGS		96U
@@ -323,7 +320,6 @@ static void i915_ktest_gt_migrate_context(struct i915_ktest *ktest, struct i915_
 static void i915_ktest_gt_migrate_tree(const struct i915_gt_migrate *mg, int *tree_ok, int *pts_ok, int *window_ok);
 static void i915_ktest_gt_migrate_tables(const struct i915_gt_migrate *mg, int *tree_ok, int *window_ok);
 
-static void i915_ktest_gt_dc6(struct i915_ktest *ktest, struct i915_ktest_gt_state *t);
 static void i915_ktest_gt_pxp(struct i915_ktest *ktest, struct i915_ktest_gt_state *t);
 
 static void i915_ktest_gt_eu_batch(struct i915_ktest *ktest, struct i915_ktest_gt_state *t);
@@ -1671,8 +1667,7 @@ i915_ktest_gt_memory(
 	i915_ktest_gt_verify_wa(ktest, t);
 	i915_ktest_gt_migrate(ktest, t);
 
-	/* The DC_off power well and the PXP context. */
-	i915_ktest_gt_dc6(ktest, t);
+	/* The PXP context. */
 	i915_ktest_gt_pxp(ktest, t);
 
 	/* The batches and states of the test fixtures. */
@@ -3519,98 +3514,6 @@ i915_ktest_gt_migrate_tables(
 	/* The entry after the window is scratch. */
 	if (win[8] != scratch[0])
 		*window_ok = 0;
-}
-
-/* Checks that the DC_off power well's disable enters the target DC state and its enable leaves it. */
-static void
-i915_ktest_gt_dc6(
-	struct i915_ktest *ktest,
-	struct i915_ktest_gt_state *t)
-{
-	struct i915_display *display;
-	struct i915_power_well well;
-	struct i915_pw_ctx *pwc;
-	uint32_t dc_state;
-	int enabled;
-	int choose;
-
-	/*
-	 * The DC_off enable finds its trace ring through the display that
-	 * embeds the well context, so the context must sit in a display.  A
-	 * private, zeroed display serves; the started device's is not touched.
-	 */
-	display = kern_calloc(1U, sizeof(*display));
-	if (display == NULL) {
-		drv_i915_ktest_skip(ktest, "DC6-NODMC", "no memory for a private display");
-		drv_i915_ktest_skip(ktest, "DC6", "no memory for a private display");
-		drv_i915_ktest_skip(ktest, "DC6-OFF", "no memory for a private display");
-		return;
-	}
-
-	/*
-	 * The xd state of the display: an Alder Lake-P description over the
-	 * model, whose power wells write the DC states.
-	 */
-	drv_i915_xd_io_init(&display->xd.io, &t->mmio, NULL);
-	choose = drv_i915_xd_platform_choose(0x46a6U, 0x0cU, 0, 0U, &display->xd.choice);
-	if (choose == 0)
-		display->xd.chosen = 1;
-	drv_i915_xd_power_init(&display->xd.power, display->xd.choice.platform);
-
-	/* The DC_off well of an XE_LPD display that allows DC5 and DC6 and targets DC6. */
-	kern_memset(&well, 0, sizeof(well));
-	well.name = "DC_off";
-	well.ops = I915_PW_OPS_DC_OFF;
-	pwc = &display->pwc;
-	pwc->mmio = &t->mmio;
-	pwc->xd = &display->xd;
-	pwc->display_ver = 13;
-	pwc->allowed_dc_mask = 0x4000000aU;
-	pwc->target_dc_state = I915_DC_STATE_EN_UPTO_DC6;
-	i915_fake_gen_set(&t->fake, I915_KTEST_REG_DC_STATE_EN, 0U);
-
-	/* Disables the well without a DMC payload. */
-	pwc->dmc_has_payload = 0;
-	(void)drv_i915_power_well_disable(&well, pwc);
-
-	/* No DC state is entered and the well stays on. */
-	dc_state = i915_fake_gen_get(&t->fake, I915_KTEST_REG_DC_STATE_EN);
-	drv_i915_ktest_check(
-		ktest,
-		dc_state == 0U &&
-		    pwc->dc_state_writes == 0U &&
-		    well.hw_enabled == 1,
-		"DC6-NODMC without a DMC payload no DC state is enabled and the well stays on");
-
-	/* Disables it with the DMC payload loaded. */
-	pwc->dmc_has_payload = 1;
-	(void)drv_i915_power_well_disable(&well, pwc);
-
-	/* skl_enable_dc6(): DC_STATE_EN gets UPTO_DC6 and the well reads as off. */
-	dc_state = i915_fake_gen_get(&t->fake, I915_KTEST_REG_DC_STATE_EN);
-	enabled = drv_i915_power_well_is_enabled(&well, pwc);
-	drv_i915_ktest_check(
-		ktest,
-		dc_state == I915_DC_STATE_EN_UPTO_DC6 &&
-		    pwc->dc_state == I915_DC_STATE_EN_UPTO_DC6 &&
-		    pwc->dc_state_writes == 1U &&
-		    well.hw_enabled == 0 &&
-		    enabled == 0,
-		"DC6 skl_enable_dc6: DC_STATE_EN gets UPTO_DC6, the well reads as off");
-
-	/* Enables the well again. */
-	well.hw_enabled = 0;
-	(void)drv_i915_power_well_enable(&well, pwc);
-
-	/* The DC states are cleared. */
-	dc_state = i915_fake_gen_get(&t->fake, I915_KTEST_REG_DC_STATE_EN);
-	enabled = drv_i915_power_well_is_enabled(&well, pwc);
-	drv_i915_ktest_check(
-		ktest,
-		(dc_state & 0x40000003U) == 0U && enabled == 1,
-		"DC6-OFF enabling the well again clears the DC states");
-
-	kern_free(display);
 }
 
 /* Checks pxp_init_full(): a pinned context on the first video engine and the streaming page. */

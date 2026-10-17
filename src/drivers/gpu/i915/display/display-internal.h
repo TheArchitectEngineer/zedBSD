@@ -97,8 +97,7 @@ struct i915_gt_mem;
 struct i915_gt_object;
 struct i915_irq_dev;
 struct i915_mmio;
-struct i915_power_domains;
-struct i915_pw_ctx;
+struct i915_display_power;
 struct i915_ppgtt;
 
 /*
@@ -270,9 +269,8 @@ struct i915_display_irq {
 	/* The register access of the device. */
 	struct i915_mmio *m;
 
-	/* The power wells, which enable and disable pipe interrupts as they change. */
-	struct i915_power_domains *pd;
-	struct i915_pw_ctx *pwc;
+	/* The display's power, whose wells enable and disable pipe interrupts as they change. */
+	struct i915_display_power *power;
 
 	/* The south display block the reset and the postinstall reach. */
 	const struct i915_pch_state *pch;
@@ -525,9 +523,7 @@ struct i915_display_link {
 
 struct i915_edp_device;
 struct i915_mmio;
-struct i915_power_domains;
-struct i915_pw_ctx;
-struct i915_display_core;
+struct i915_display_power;
 struct i915_cdclk_dev;
 struct i915_xd_bandwidth;
 struct i915_xd_platform;
@@ -544,7 +540,7 @@ struct spinlock;
  * uses.
  *
  * One instance lives in the display for the device's lifetime and is
- * filled once the start has built the panel, the power domains and the
+ * filled once the start has built the panel, the display's power and the
  * GT memory; a run only reads it, and none of the objects it names is
  * copied or made again by a run.
  */
@@ -552,13 +548,11 @@ struct i915_lcd_kernel_deps {
 	/* The built-in panel: its sink, its mode and link, its panel power and its VBT. */
 	struct i915_edp_device *edp;
 
-	/* The registers, the power domains and the context their wells run in. */
+	/* The registers, and the display's power (its wells, the display buffer's slices). */
 	struct i915_mmio *mmio;
-	struct i915_power_domains *pd;
-	struct i915_pw_ctx *pwc;
+	struct i915_display_power *power;
 
-	/* The display buffer's slices, the CD clock, the bandwidth and the DMC. */
-	struct i915_display_core *dcore;
+	/* The CD clock, the bandwidth and the DMC. */
 	struct i915_cdclk_dev *cdclk;
 	const struct i915_xd_bandwidth *bandwidth;
 	const struct i915_xd_platform *platform;

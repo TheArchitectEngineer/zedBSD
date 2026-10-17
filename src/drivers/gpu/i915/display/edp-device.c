@@ -22,7 +22,7 @@
 #include "internal.h"
 #include "edp-device.h"
 #include "dp-ext-kern.h"
-#include "power.h"
+#include "display-power.h"
 #include "vbt-parse.h"
 #include "xd-edid.h"
 #include <kern/kcrt.h>
@@ -46,26 +46,12 @@
 static int i915_dp_kernel_pd_async_queue(void *ctx, int delay_ms);
 static int i915_dp_kernel_pd_async_cancel(void *ctx, int sync);
 
-/*
- * The delayed-work backend of the asynchronous power put.
- *
- * It is constant; the power domains use it while the panel device is
- * started.
- */
-static const struct i915_pw_async_ops i915_dp_kernel_pd_async_ops = {
-	i915_dp_kernel_pd_async_queue,
-	i915_dp_kernel_pd_async_cancel,
-};
-
 static uint32_t i915_dp_kernel_read32(void *ctx, uint32_t reg);
 static void i915_dp_kernel_write32(void *ctx, uint32_t reg, uint32_t value);
 static int i915_dp_kernel_wait_reg(void *ctx, uint32_t reg, uint32_t mask, uint32_t value, unsigned fast_us, unsigned slow_ms, uint32_t *out);
 static int i915_dp_kernel_now_us(struct i915_dp_kernel *kernel, uint64_t *us);
 static void i915_dp_kernel_sleep(void *ctx, unsigned us);
 static uint64_t i915_dp_kernel_now_ms(void *ctx);
-static int i915_dp_kernel_power_get(void *ctx, int domain);
-static void i915_dp_kernel_power_put(void *ctx, int domain);
-static void i915_dp_kernel_power_put_async(void *ctx, int domain);
 static void i915_dp_kernel_lock(void *ctx, int which);
 static void i915_dp_kernel_unlock(void *ctx, int which);
 static int i915_dp_kernel_delayed_queue(void *ctx, int which, unsigned delay_ms);
@@ -75,14 +61,14 @@ static void i915_dp_kernel_vdd_off_body(void *arg);
 static void i915_dp_kernel_async_put_body(void *arg);
 static void i915_edp_log_bytes(const char *tag, const uint8_t *bytes, unsigned count);
 static void i915_edp_cfg_from_panel(struct i915_edp_config *cfg, const struct i915_vbt_encoder *enc, const struct i915_vbt_panel *panel, int have_panel);
-static unsigned i915_edp_well_refs(struct i915_power_domains *pd);
+static unsigned i915_edp_well_refs(const struct i915_display_power *power);
 static void i915_edp_device_log_acquire(struct i915_edp_device *dev, int error);
 static void i915_edp_device_late(struct i915_edp_device *dev, const struct i915_vbt_encoder *enc, int port);
 static int i915_edp_device_take(struct i915_edp_device *dev);
 static void i915_edp_cfg_delays(const struct i915_edp_config *cfg, struct i915_xd_pps_delays *delays);
 static void i915_edp_device_result(struct i915_edp_device *dev);
 static uint64_t i915_edp_xe_now(void *context);
-static int i915_edp_xe_domain(struct i915_edp_device *dev, unsigned use);
+static uint64_t i915_edp_xe_functions(struct i915_edp_device *dev, unsigned use);
 static int i915_edp_xe_power_get(void *context, unsigned use);
 static void i915_edp_xe_power_put(void *context, unsigned use, int cookie);
 static void i915_edp_xe_power_put_later(void *context, unsigned use, int cookie);
@@ -239,8 +225,7 @@ drv_i915_dp_kernel_bind_sync(
 
 /*
  * Binds every hook of an environment to the eDP's kernel backend: MMIO,
- * waits, sleeps, the clock, the power domains, the locks and the delayed
- * work.
+ * waits, sleeps, the clock, the locks and the delayed work.
  */
 void
 drv_i915_dp_kernel_bind(
@@ -262,23 +247,17 @@ drv_i915_dp_kernel_bind(
 	/* The sleeps and the clock. */
 	env->sleep_us = i915_dp_kernel_sleep;
 	env->now_ms = i915_dp_kernel_now_ms;
-
-	/* The power domains, with the asynchronous put. */
-	env->power_get = i915_dp_kernel_power_get;
-	env->power_put = i915_dp_kernel_power_put;
-	env->power_put_async = i915_dp_kernel_power_put_async;
 }
 
 /*
- * Prepares the resident eDP device of a display: the MMIO, the power
- * domains and their context, and the VBT the output setup reads.
+ * Prepares the resident eDP device of a display: the MMIO, the display's
+ * power, and the VBT the output setup reads.
  */
 void
 drv_i915_edp_device_prepare(
 	struct i915_edp_device *dev,
 	struct i915_mmio *mmio,
-	struct i915_power_domains *pd,
-	struct i915_pw_ctx *pwc,
+	struct i915_display_power *power,
 	struct i915_vbt_state *vbt)
 {
 	/* Starts from a device that has not begun. */
@@ -286,8 +265,7 @@ drv_i915_edp_device_prepare(
 
 	/* Records what the eDP runs on. */
 	dev->k.mmio = mmio;
-	dev->k.pd = pd;
-	dev->k.pwc = pwc;
+	dev->k.power = power;
 	dev->vbt = vbt;
 }
 
@@ -304,6 +282,7 @@ int
 drv_i915_edp_device_start(
 	struct i915_edp_device *dev)
 {
+	struct i915_xd_power_work work;
 	int error;
 
 	/* A started device keeps its threads. */
@@ -315,8 +294,11 @@ drv_i915_edp_device_start(
 	if (error != 0)
 		return error;
 
-	/* Binds the power layer's asynchronous put and every environment hook to them. */
-	drv_i915_display_power_async_bind(dev->k.pd, &i915_dp_kernel_pd_async_ops, &dev->k, dev->k.pwc);
+	/* Binds the display power's delayed give-back and every environment hook to them. */
+	work.queue = i915_dp_kernel_pd_async_queue;
+	work.cancel = i915_dp_kernel_pd_async_cancel;
+	work.context = &dev->k;
+	drv_i915_display_power_bind_work(dev->k.power, &work);
 	drv_i915_dp_kernel_bind(&dev->k, &dev->env);
 
 	/* The locks and threads exist until the device stops. */
@@ -397,7 +379,7 @@ drv_i915_edp_device_init_connector(
 		  "panel_early=%d type=%d pps(100us) t1_t3=%u t8=%u t9=%u t10=%u t11_t12=%u controller=%d well_refs=%u\n",
 		  dev->vbt->source, 'A' + dev->cfg.port, dev->cfg.aux_ch, have_panel, panel_type,
 		  dev->cfg.t1_t3, dev->cfg.t8, dev->cfg.t9, dev->cfg.t10, dev->cfg.t11_t12, dev->cfg.bl_controller,
-		  i915_edp_well_refs(dev->k.pd));
+		  i915_edp_well_refs(dev->k.power));
 
 	/* Takes the panel's sink up to its EDID and reports what it found. */
 	error = i915_edp_device_take(dev);
@@ -438,7 +420,8 @@ void
 drv_i915_edp_device_fini(
 	struct i915_edp_device *dev)
 {
-	struct i915_power_domains *pd;
+	struct i915_display_power *power;
+	const struct i915_xd_power_stats *stats;
 
 	/* Nothing to stop when the device never started. */
 	if (dev == NULL)
@@ -450,25 +433,25 @@ drv_i915_edp_device_fini(
 	drv_i915_dp_ext_stop(container_of(dev, struct i915_display, edp_dev));
 
 	/* Lets the panel's sink go; the delayed VDD-off is called off before the sequencer is held. */
-	pd = dev->k.pd;
+	power = dev->k.power;
 	if (dev->connector_live) {
 		drv_i915_xd_edp_stop(&dev->xe);
 		dev->connector_live = 0;
 	}
 
-	/* Flushes the parked references and unbinds the backend. */
-	drv_i915_display_power_flush_work_sync(pd);
-	drv_i915_display_power_async_bind(pd, NULL, NULL, NULL);
+	/* Gives the deferred references back and unbinds the delayed work. */
+	drv_i915_display_power_flush(power);
+	drv_i915_display_power_bind_work(power, NULL);
+	stats = &power->xd->power.stats;
 
 	/* Reports what the stop left and what the works and the power layer did. */
 	kern_logf("i915: edp fini: vdd held=%d | vdd-off work armed=%u fired=%u ran=%d cancelled(timer/queue)=%u/%u | "
-		  "async put: puts=%u parked=%u grabs=%u work_runs=%u released=%u flushes=%u state_errors=%u "
-		  "use_count_errors=%u | well_refs=%u\n",
+		  "later puts=%u deferred=%u taken over=%u work runs=%u released=%u flushes=%u errors=%u | well_refs=%u\n",
 		  dev->xe.vdd_cookie != 0 ? 1 : 0,
 		  dev->k.vdd_off_work.armed_count, dev->k.vdd_off_work.fired_count, dev->k.vdd_off_work.work.ran_count,
 		  dev->k.vdd_off_work.cancelled_armed, dev->k.vdd_off_work.cancelled_pending,
-		  pd->async_puts, pd->async_parked, pd->async_grabs, pd->async_work_runs, pd->async_released,
-		  pd->async_flushes, pd->async_state_errors, pd->use_count_errors, i915_edp_well_refs(pd));
+		  power->later_puts, stats->deferred, stats->taken_over, stats->work_runs, stats->released,
+		  stats->flushes, stats->errors, i915_edp_well_refs(power));
 
 	/* Ends the threads. */
 	drv_i915_dp_kernel_sync_stop(&dev->k);
@@ -773,51 +756,6 @@ i915_dp_kernel_now_ms(
 	return kernel->last_ms;
 }
 
-/* Takes a power-domain reference for the environment; returns 0 or the power layer's error. */
-static int
-i915_dp_kernel_power_get(
-	void *ctx,
-	int domain)
-{
-	struct i915_dp_kernel *kernel;
-	int error;
-
-	/* Takes the reference from the power domains. */
-	kernel = ctx;
-	error = drv_i915_display_power_get(kernel->pd, (enum i915_power_domain)domain, kernel->pwc);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the reference is held. */
-	return 0;
-}
-
-/* Returns a power-domain reference for the environment. */
-static void
-i915_dp_kernel_power_put(
-	void *ctx,
-	int domain)
-{
-	struct i915_dp_kernel *kernel;
-
-	/* Returns the reference to the power domains. */
-	kernel = ctx;
-	drv_i915_display_power_put(kernel->pd, (enum i915_power_domain)domain, kernel->pwc);
-}
-
-/* Hands a power-domain reference to the power layer's asynchronous put. */
-static void
-i915_dp_kernel_power_put_async(
-	void *ctx,
-	int domain)
-{
-	struct i915_dp_kernel *kernel;
-
-	/* Parks the reference with the default delay. */
-	kernel = ctx;
-	drv_i915_display_power_put_async(kernel->pd, (enum i915_power_domain)domain, kernel->pwc, -1);
-}
-
 /* Takes one of the eDP's mutexes for the environment (I915_DP_LOCK_*). */
 static void
 i915_dp_kernel_lock(
@@ -955,12 +893,12 @@ i915_dp_kernel_async_put_body(
 {
 	struct i915_dp_kernel *kernel;
 
-	/* Releases the parked references of the power domains. */
+	/* Gives back the references owed to this run. */
 	kernel = arg;
-	drv_i915_display_power_async_work(kernel->pd);
+	drv_i915_display_power_work(kernel->power);
 }
 
-/* Arms the asynchronous power put for the power domains; reports 1 when newly armed. */
+/* Arms the display power's delayed give-back; reports 1 when newly armed. */
 static int
 i915_dp_kernel_pd_async_queue(
 	void *ctx,
@@ -977,7 +915,7 @@ i915_dp_kernel_pd_async_queue(
 	return queued;
 }
 
-/* Cancels the asynchronous power put; with sync it also waits for a running body. */
+/* Cancels the display power's delayed give-back; with sync it also waits for a running body. */
 static int
 i915_dp_kernel_pd_async_cancel(
 	void *ctx,
@@ -1058,21 +996,21 @@ i915_edp_cfg_from_panel(
 	cfg->log_level = 1;
 }
 
-/* Reports the references all power wells hold. */
+/* Reports the users all power wells have. */
 static unsigned
 i915_edp_well_refs(
-	struct i915_power_domains *pd)
+	const struct i915_display_power *power)
 {
-	unsigned wi;
-	unsigned n;
+	unsigned well;
+	unsigned users;
 
-	/* Adds up every well's count. */
-	n = 0u;
-	for (wi = 0u; wi < pd->num_power_wells; wi++)
-		n += pd->power_wells[wi].refcount;
+	/* Adds up every well's users. */
+	users = 0U;
+	for (well = 0U; well < I915_XD_POWER_MAX_WELLS; well++)
+		users += power->xd->power.refs[well];
 
-	/* Succeeded: reports the sum. */
-	return n;
+	/* Succeeded: the sum. */
+	return users;
 }
 
 /* Logs what the taking of the panel's sink up to the EDID found. */
@@ -1293,25 +1231,29 @@ i915_edp_xe_now(
 	return now;
 }
 
-/* Returns the power domain a use of the panel's sink names: the display core, or the panel's AUX channel. */
-static int
-i915_edp_xe_domain(
+/*
+ * Returns the power functions a use of the panel's sink needs: none for
+ * the display core (no switched well powers it), the AUX channel's for
+ * the channel.
+ */
+static uint64_t
+i915_edp_xe_functions(
 	struct i915_edp_device *dev,
 	unsigned use)
 {
 	struct i915_display *display;
-	enum i915_power_domain domain;
+	uint64_t functions;
 
-	/* The display core. */
+	/* The display core needs no well. */
 	if (use == I915_XD_EDP_POWER_CORE)
-		return (int)I915_PW_DOMAIN_DISPLAY_CORE;
+		return 0ULL;
 
-	/* The AUX channel's domain on the display's version. */
+	/* The AUX channel's well on the display's version. */
 	display = container_of(dev, struct i915_display, edp_dev);
-	domain = drv_i915_aux_legacy_power_domain(display->xd.choice.platform->display_ver, (int)dev->cfg.aux_ch);
+	functions = drv_i915_display_power_aux(display->xd.choice.platform->display_ver, (int)dev->cfg.aux_ch, 0);
 
-	/* Succeeded: the channel's domain. */
-	return (int)domain;
+	/* Succeeded: the channel's functions. */
+	return functions;
 }
 
 /* Takes a power reference for a use of the panel's sink: 1, or 0 when it could not. */
@@ -1321,13 +1263,13 @@ i915_edp_xe_power_get(
 	unsigned use)
 {
 	struct i915_edp_device *dev;
-	int domain;
+	uint64_t functions;
 	int error;
 
-	/* The domain, through the power domains. */
+	/* The use's wells, through the display's power. */
 	dev = context;
-	domain = i915_edp_xe_domain(dev, use);
-	error = drv_i915_display_power_get(dev->k.pd, (enum i915_power_domain)domain, dev->k.pwc);
+	functions = i915_edp_xe_functions(dev, use);
+	error = drv_i915_display_power_get(dev->k.power, functions);
 	if (error != 0)
 		return 0;
 
@@ -1343,14 +1285,14 @@ i915_edp_xe_power_put(
 	int cookie)
 {
 	struct i915_edp_device *dev;
-	int domain;
+	uint64_t functions;
 
 	UNUSED_PARAMETER(cookie);
 
-	/* The domain, through the power domains. */
+	/* The use's wells, through the display's power. */
 	dev = context;
-	domain = i915_edp_xe_domain(dev, use);
-	drv_i915_display_power_put(dev->k.pd, (enum i915_power_domain)domain, dev->k.pwc);
+	functions = i915_edp_xe_functions(dev, use);
+	drv_i915_display_power_put(dev->k.power, functions);
 }
 
 /* Lets a power reference of the panel's sink go after the power layer's delay. */
@@ -1361,14 +1303,14 @@ i915_edp_xe_power_put_later(
 	int cookie)
 {
 	struct i915_edp_device *dev;
-	int domain;
+	uint64_t functions;
 
 	UNUSED_PARAMETER(cookie);
 
-	/* The domain, parked with the default delay. */
+	/* The use's wells, given back after the default delay. */
 	dev = context;
-	domain = i915_edp_xe_domain(dev, use);
-	drv_i915_display_power_put_async(dev->k.pd, (enum i915_power_domain)domain, dev->k.pwc, -1);
+	functions = i915_edp_xe_functions(dev, use);
+	drv_i915_display_power_put_later(dev->k.power, functions, -1);
 }
 
 /* Takes or drops one of the panel's sink's locks: the sequencer's or the AUX channel's mutex. */
@@ -1466,8 +1408,8 @@ i915_edp_device_link(
 
 	/* The PLLs' reference clock from the CD clock's readout, when known. */
 	ref = 0U;
-	if (dev->k.pwc != NULL && dev->k.pwc->cd != NULL)
-		ref = dev->k.pwc->cd->hw.ref;
+	if (dev->k.power != NULL && dev->k.power->cdclk != NULL)
+		ref = dev->k.power->cdclk->hw.ref;
 
 	/* The mode: the first detailed timing of the EDID's base block. */
 	index = 0U;

@@ -22,6 +22,7 @@
 #include "ktest.h"
 #include <kern/kcrt.h>
 
+#include "../../i915.h"
 #include "../../mmio.h"
 #include "../../power.h"
 #include "../../reset.h"
@@ -29,8 +30,6 @@
 #include "../../sync.h"
 #include "../../trace.h"
 #include "../../workqueue.h"
-#include "../../display/power.h"
-#include "../../display/xd.h"
 
 #include <hal/hal.h>
 #include <kern/clock.h>
@@ -50,26 +49,17 @@
 /* The pattern mixed into each generation's payload. */
 #define I915_KTEST_XCPU_MAGIC		0xA5A5A5A5U
 
-/* The registers the model answers: GEN6_GDRST, the PCODE mailbox, SKL_FUSE_STATUS, HSW_PWR_WELL_CTL2. */
+/* The registers the model answers: GEN6_GDRST and the PCODE mailbox. */
 #define I915_KTEST_REG_GDRST		0x941cU
 #define I915_KTEST_REG_PCODE_MAILBOX	0x138124U
 #define I915_KTEST_REG_PCODE_DATA	0x138128U
 #define I915_KTEST_REG_PCODE_DATA1	0x13812cU
-#define I915_KTEST_REG_FUSE_STATUS	0x42000U
-#define I915_KTEST_REG_PWR_WELL_CTL2	0x45404U
 
 /* The PCODE mailbox bit the driver sets to post a command and the firmware clears. */
 #define I915_KTEST_PCODE_READY		0x80000000U
 
-/* The request bits of a power-well control register; each state bit sits one below its request bit. */
-#define I915_KTEST_PW_REQUEST_BITS	0xAAAAAAAAU
-
 /* How many other registers the model remembers. */
 #define I915_KTEST_FAKE_REGS		96U
-
-/* The fuse distribution bits of power gates 0 and 1 (SKL_FUSE_PG_DIST). */
-#define I915_KTEST_FUSE_PG0		(1U << 27)
-#define I915_KTEST_FUSE_PG1		(1U << 26)
 
 /* The made-up PCI source the MSI vectors are allocated for. */
 #define I915_KTEST_MSI_SOURCE		"PCI ffff:ff:1f.7"
@@ -113,14 +103,6 @@ struct i915_fake_mmio {
 
 	/* How many PCODE transactions reached the script or the approval model. */
 	unsigned pcode_txn_count;
-
-	/* The request bits the driver set in the power-well control register. */
-	uint32_t pw_hsw_req;
-
-	/* The fuse distribution status, and bits that appear after a number of reads. */
-	uint32_t fuse_status;
-	uint32_t fuse_delay_bits;
-	unsigned fuse_delay;
 
 	/* Every other register written, by offset. */
 	uint32_t gen_off[I915_KTEST_FAKE_REGS];
@@ -274,20 +256,6 @@ static volatile int i915_ktest_corun_stop;
  */
 static int i915_ktest_rpm_fail;
 
-/*
- * The power-domain state the late-fuse test builds.
- *
- * It is too big for the stack and is not the started device's state.
- */
-static struct i915_power_domains i915_ktest_power_domains;
-
-/*
- * The xd state of that display: an Alder Lake-P description and a
- * register window over the model, whose power well counts the domains
- * use.  It lives as long as the test's power-domain state.
- */
-static struct i915_xd i915_ktest_xd;
-
 static void i915_ktest_waitq_deadline(struct i915_ktest *ktest);
 static void i915_ktest_completions(struct i915_ktest *ktest);
 static void i915_ktest_workqueue(struct i915_ktest *ktest);
@@ -307,7 +275,6 @@ static void i915_ktest_pcode_request(struct i915_ktest *ktest);
 static void i915_ktest_usleep_range(struct i915_ktest *ktest);
 static void i915_ktest_preempt(struct i915_ktest *ktest);
 static void i915_ktest_pcode_preempt_region(struct i915_ktest *ktest);
-static void i915_ktest_late_fuse(struct i915_ktest *ktest);
 
 static void i915_fake_open(struct i915_mmio *mmio, struct i915_fake_mmio *fake);
 static uint32_t i915_fake_gen_get(struct i915_fake_mmio *fake, uint32_t offset);
@@ -400,9 +367,8 @@ drv_i915_ktest_sync(
 	i915_ktest_usleep_range(ktest);
 	i915_ktest_preempt(ktest);
 
-	/* The PCODE preemption-off phase and the late fuse wait. */
+	/* The PCODE preemption-off phase. */
 	i915_ktest_pcode_preempt_region(ktest);
-	i915_ktest_late_fuse(ktest);
 }
 
 /* Checks that a native wait queue sleep ends at its timer deadline. */
@@ -1054,71 +1020,6 @@ i915_ktest_pcode_preempt_region(
 		mutex_unlock(&sb_lock);
 }
 
-/* Checks the power-well fuse wait: fuses that arrive late, and fuses that never arrive. */
-static void
-i915_ktest_late_fuse(
-	struct i915_ktest *ktest)
-{
-	struct i915_pw_ctx pwc;
-	struct i915_power_well *well;
-	uint32_t fuse;
-	int enabled;
-	int index;
-	int choose;
-	int error;
-
-	/* Builds a display-13 power-well map of its own, reached through the model. */
-	drv_i915_trace_init(&i915_ktest_trace);
-	i915_fake_open(&i915_ktest_mmio, &i915_ktest_fake);
-	kern_memset(&i915_ktest_xd, 0, sizeof(i915_ktest_xd));
-	drv_i915_xd_io_init(&i915_ktest_xd.io, &i915_ktest_mmio, NULL);
-	choose = drv_i915_xd_platform_choose(0x46a6U, 0x0cU, 0, 0U, &i915_ktest_xd.choice);
-	if (choose == 0)
-		i915_ktest_xd.chosen = 1;
-	(void)drv_i915_power_domains_init(&i915_ktest_power_domains, 13U, &i915_ktest_xd, -1, 1, &i915_ktest_trace);
-	kern_memset(&pwc, 0, sizeof(pwc));
-	pwc.mmio = &i915_ktest_mmio;
-	pwc.xd = &i915_ktest_xd;
-	index = drv_i915_power_well_by_id(&i915_ktest_power_domains, I915_SKL_DISP_PW_1);
-
-	/*
-	 * PG0 is distributed now; PG1 only after eight fuse reads.  Without
-	 * power well 1 in the map the check fails.
-	 */
-	error = EINVAL;
-	enabled = 0;
-	fuse = 0U;
-	if (index >= 0) {
-		well = &i915_ktest_power_domains.power_wells[index];
-		i915_ktest_fake.fuse_status = I915_KTEST_FUSE_PG0;
-		i915_ktest_fake.fuse_delay = 8U;
-		i915_ktest_fake.fuse_delay_bits = I915_KTEST_FUSE_PG1;
-		error = drv_i915_power_well_enable(well, &pwc);
-		enabled = well->hw_enabled;
-		fuse = drv_i915_raw_read32(&i915_ktest_mmio, I915_KTEST_REG_FUSE_STATUS);
-	}
-
-	drv_i915_ktest_check(ktest,
-			     error == 0 &&
-			     enabled == 1 &&
-			     (fuse & I915_KTEST_FUSE_PG1) != 0U,
-			     "fuse: PG1 arrives late -> the fuse wait (fast 2us then slow 1ms) observes it and continues");
-
-	/* PG1 never distributes: the timeout is warned and the enable goes on. */
-	error = EINVAL;
-	enabled = 0;
-	if (index >= 0) {
-		well = &i915_ktest_power_domains.power_wells[index];
-		i915_fake_open(&i915_ktest_mmio, &i915_ktest_fake);
-		i915_ktest_fake.fuse_status = I915_KTEST_FUSE_PG0;
-		well->hw_enabled = -1;
-		error = drv_i915_power_well_enable(well, &pwc);
-		enabled = well->hw_enabled;
-	}
-
-	drv_i915_ktest_check(ktest, error == 0 && enabled == 1, "fuse: PG1 never distributes -> HW timeout warned, enable continues (not EIO)");
-}
-
 /* Binds the register block to a cleared model. */
 static void
 i915_fake_open(
@@ -1180,21 +1081,11 @@ i915_fake_read32(
 	uint32_t offset)
 {
 	struct i915_fake_mmio *fake;
-	uint32_t state;
 
 	fake = context;
 
 	/* Answers each register the model gives a meaning to. */
 	switch (offset) {
-	case I915_KTEST_REG_FUSE_STATUS:
-		/* Bits that arrive late appear once their read count runs out. */
-		if (fake->fuse_delay > 0U) {
-			fake->fuse_delay--;
-			if (fake->fuse_delay == 0U)
-				fake->fuse_status |= fake->fuse_delay_bits;
-		}
-
-		return fake->fuse_status;
 	case I915_KTEST_REG_GDRST:
 		/* The first requests read back as still pending, the later ones as done. */
 		if (fake->gdrst_writes <= fake->gdrst_fail_writes)
@@ -1207,10 +1098,6 @@ i915_fake_read32(
 		return fake->data;
 	case I915_KTEST_REG_PCODE_DATA1:
 		return fake->data1;
-	case I915_KTEST_REG_PWR_WELL_CTL2:
-		/* Every requested well reports its state bit at once. */
-		state = (fake->pw_hsw_req & I915_KTEST_PW_REQUEST_BITS) >> 1;
-		return fake->pw_hsw_req | state;
 	default:
 		break;
 	}
@@ -1243,9 +1130,6 @@ i915_fake_write32(
 		return;
 	case I915_KTEST_REG_PCODE_MAILBOX:
 		i915_fake_pcode_post(fake);
-		return;
-	case I915_KTEST_REG_PWR_WELL_CTL2:
-		fake->pw_hsw_req = value & I915_KTEST_PW_REQUEST_BITS;
 		return;
 	default:
 		break;

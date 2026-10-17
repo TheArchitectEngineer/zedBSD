@@ -19,7 +19,7 @@
  */
 
 #include "internal.h"
-#include "power.h"
+#include "display-power.h"
 #include "tc-port.h"
 #include "xd-backend.h"
 #include "xd-vbt.h"
@@ -560,7 +560,7 @@ tc_port_power_get(
 	display = world->display;
 
 	/* Takes a reference on the wells. */
-	error = drv_i915_display_power_get_set(&display->power_domains, functions, &display->pwc);
+	error = drv_i915_display_power_get(&display->power, functions);
 	if (error != 0) {
 		world->power_failures++;
 		kern_logf("i915: TC: power functions 0x%llx did not come (error %d)\n", (unsigned long long)functions, error);
@@ -584,7 +584,7 @@ tc_port_power_put(
 	display = world->display;
 
 	/* Gives the reference back. */
-	drv_i915_display_power_put_set(&display->power_domains, functions, &display->pwc);
+	drv_i915_display_power_put(&display->power, functions);
 }
 
 /* Takes a port's lock for the ports. */
@@ -766,8 +766,8 @@ tc_port_lcd_dkl(
 	struct i915_lcd_kernel *kernel,
 	int tc_port)
 {
-	/* A run without the display's power context has no Dekel access. */
-	if (kernel->d == NULL || kernel->d->pwc == NULL || kernel->d->pwc->dkl == NULL) {
+	/* A run without the display's power has no Dekel access. */
+	if (kernel->d == NULL || kernel->d->power == NULL || kernel->d->power->dkl == NULL) {
 		kern_logf("i915: TC: Dekel access of TC%d without the display's Dekel PHYs: nothing done\n", tc_port + 1);
 		return NULL;
 	}
@@ -779,5 +779,5 @@ tc_port_lcd_dkl(
 	}
 
 	/* Succeeded: the display's Dekel access. */
-	return kernel->d->pwc->dkl;
+	return kernel->d->power->dkl;
 }

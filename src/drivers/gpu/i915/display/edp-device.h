@@ -29,7 +29,7 @@ void drv_i915_dp_kernel_bind_sync(struct i915_dp_kernel *k, struct i915_dp_env *
 void drv_i915_dp_kernel_bind(struct i915_dp_kernel *k, struct i915_dp_env *env);
 
 /* The panel device: prepared, started, its connector built on a port (1: not the panel's port), stopped. */
-void drv_i915_edp_device_prepare(struct i915_edp_device *dev, struct i915_mmio *mmio, struct i915_power_domains *pd, struct i915_pw_ctx *pwc, struct i915_vbt_state *vbt);
+void drv_i915_edp_device_prepare(struct i915_edp_device *dev, struct i915_mmio *mmio, struct i915_display_power *power, struct i915_vbt_state *vbt);
 int drv_i915_edp_device_start(struct i915_edp_device *dev);
 int drv_i915_edp_device_init_connector(void *ctx, int port);
 void drv_i915_edp_device_fini(struct i915_edp_device *dev);

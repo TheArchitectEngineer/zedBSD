@@ -6,46 +6,14 @@
  */
 
 /*
- * Type and constant definitions derived from the Linux kernel (drivers/gpu/drm/i915/display/intel_display_limits.h),
- * which carries the following notice.
+ * The display part's own types: what the display files that are not xd
+ * files share.
  *
- * SPDX-License-Identifier: MIT
- *
- * Copyright © 2022 Intel Corporation
- */
-
-/*
- * The display part's own types: what every display file shares.
- *
- * This header is private to src/drivers/gpu/i915/display/.  It holds three
- * things, in this order:
- *
- *   the Linux base      the few integer types and register helpers whose
- *                       meaning was identical in every display translation
- *                       unit of the old tree, so that one definition serves
- *                       all of them;
- *   the display state   the zedBSD types the display files pass to each
- *                       other (power wells, clocks, the panel, the VBT, the
- *                       scanout, the resident present path);
- *   the display root    struct i915_display, which the device owns and which
- *                       holds every long-lived display object.
- *
- * The Linux display code left is the VBT parser's, compiled in its own
- * environment, a private header (vbt.h).
- *
- * The same Linux type name (struct drm_i915_private, struct intel_dp,
- * struct drm_display_mode and others) has a different layout in each
- * environment, and several Linux helper names (intel_de_read, mutex_lock,
- * the connector and crtc iterators) mean something different in each.  A
- * translation unit therefore includes at most one environment: each one
- * records itself in I915_DISPLAY_LINUX_WORLD and refuses to be included
- * next to another.  A helper name whose meaning differed between
- * environments is not defined under its Linux name at all; every meaning
- * has an explicit name of its own in the environment it belongs to.
- *
- * Nothing in this header depends on an environment, so every display file
- * includes it first, and a file that uses no Linux text includes nothing
- * else of the display part.
+ * This header is private to src/drivers/gpu/i915/display/.  It holds the
+ * state the display files pass to each other (the CD clock, the DMC
+ * loader, the panel, the VBT, the scanout, the resident present path) and
+ * the display root, struct i915_display, which the device owns and which
+ * holds every long-lived display object.  The xd files do not include it.
  */
 
 #ifndef DRIVERS_GPU_I915_DISPLAY_INTERNAL_H
@@ -71,6 +39,7 @@
 #include "../trace.h"
 #include "../workqueue.h"
 #include "display-internal.h"
+#include "display-power.h"
 #include "xd-dp.h"
 #include "xd.h"
 #include "xd-backend.h"
@@ -82,375 +51,8 @@
  */
 #define i915_lcd_mode i915_display_mode
 
-/*
- * The Linux base: integer types.
- *
- * u64 and s64 were unsigned long long and long long in the hotplug
- * translation units and uint64_t and int64_t everywhere else; both are 64
- * bits wide, so only the spelling of the type (and the printf length
- * modifier a caller needs) differs.  The uint64_t spelling is kept.
- */
-typedef uint8_t u8;
-typedef uint16_t u16;
-typedef uint32_t u32;
-typedef uint64_t u64;
-typedef int8_t s8;
-typedef int16_t s16;
-typedef int32_t s32;
-typedef int64_t s64;
-
-/*
- * One display register, as the Linux register definitions name it.
- *
- * Wrapping the offset in a structure keeps a register from being passed
- * where a value is expected; every Linux register macro of the intel/ headers
- * builds one with _MMIO().
- */
-typedef struct {
-	/* The register's offset in the MMIO BAR. */
-	u32 reg;
-} i915_reg_t;
-
-/* Builds the register value of a Linux register macro. */
-#define _MMIO(r) ((const i915_reg_t){ .reg = (r) })
-
-/* The register value that names no register. */
-#define INVALID_MMIO_REG _MMIO(0)
-
-/* Bit n of a 32-bit register. */
-#define REG_BIT(n) ((u32)1u << (n))
-
-/* The contiguous bits h down to l of a 32-bit register. */
-#define REG_GENMASK(h, l) ((u32)((0xffffffffu >> (31 - (h))) & (0xffffffffu << (l))))
-
-/*
- * Places a field value into its mask, and takes it out again.
- *
- * The modeset translation units divided by the mask's lowest bit where the
- * DP ones shifted by its position; for a nonzero 32-bit mask both give the
- * same value, so the shift is kept.
- */
-#define REG_FIELD_PREP(mask, val) ((u32)((((u32)(val)) << __builtin_ctz(mask)) & (mask)))
-
-/* Bit n of a mask that is not a register (the Linux BIT()). */
-#define BIT(n) (1u << (n))
-
-/* Picks the register of instance index from the first two, evenly spaced. */
-#define _PICK_EVEN(index, a, b) ((a) + (index) * ((b) - (a)))
-
-/*
- * Picks from two evenly spaced ranges, the second starting at c_index.
- *
- * The modeset translation units added the Linux BUILD_BUG_ON_ZERO() check,
- * which was defined to 0 there; the value is the same without it.
- */
-#define _PICK_EVEN_2RANGES(index, c_index, a, b, c, d) \
-	((index) < (c_index) ? _PICK_EVEN(index, a, b) : _PICK_EVEN((index) - (c_index), c, d))
-
-/*
- * The register of a port, from the registers of ports A and B.
- *
- * The DP translation units spelled this through _PORT(), which is
- * _PICK_EVEN() under another name.
- */
-#define _MMIO_PORT(port, a, b) _MMIO(_PICK_EVEN(port, a, b))
-
-/* The number of elements of an array. */
-#define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
-
-/* n divided by d, rounded up. */
-#define DIV_ROUND_UP(n, d) (((n) + (d) - 1) / (d))
-
 /* The structure a member pointer points into. */
 #define container_of(ptr, type, member) ((type *)(void *)((char *)(ptr) - offsetof(type, member)))
-
-/*
- * The smaller and the larger of two values, each evaluated once.
- *
- * The hotplug translation units used a form that evaluated its arguments
- * twice.  Their only uses are the GMBUS transfer lengths, where the second
- * argument is a constant or gmbus_max_xfer_size(), which only reads the
- * display version; evaluating it once does not change the result.
- */
-#define min(a, b) ({ __typeof__(a) _a = (a); __typeof__(b) _b = (b); _a < _b ? _a : _b; })
-#define max(a, b) ({ __typeof__(a) _a = (a); __typeof__(b) _b = (b); _a > _b ? _a : _b; })
-#define min_t(t, a, b) ({ t _a = (t)(a); t _b = (t)(b); _a < _b ? _a : _b; })
-#define max_t(t, a, b) ({ t _a = (t)(a); t _b = (t)(b); _a > _b ? _a : _b; })
-
-/* The offset of a register value. */
-static __inline u32
-i915_mmio_reg_offset(
-	i915_reg_t reg)
-{
-	/* Reports the offset the register value carries. */
-	return reg.reg;
-}
-
-/* Tells whether a register value names a register. */
-static __inline bool
-i915_mmio_reg_valid(
-	i915_reg_t reg)
-{
-	/* Offset 0 is INVALID_MMIO_REG. */
-	if (reg.reg == 0U)
-		return false;
-
-	/* Succeeded: the value names a register. */
-	return true;
-}
-
-/* Tells whether two register values name the same register. */
-static __inline bool
-i915_mmio_reg_equal(
-	i915_reg_t a,
-	i915_reg_t b)
-{
-	/* Registers are the same when their offsets are. */
-	if (a.reg != b.reg)
-		return false;
-
-	/* Succeeded: both name one register. */
-	return true;
-}
-
-/*
- * The Linux environment protocol.
- *
- * Each environment header starts with
- *
- *	#ifdef I915_DISPLAY_LINUX_WORLD
- *	#error "..."
- *	#endif
- *	#define I915_DISPLAY_LINUX_WORLD "<its name>"
- *
- * and defines I915_DISPLAY_WORLD_<NAME> for a header layered on it.
- */
-
-/*
- * The power wells and domains (power.c).
- */
-/*
- * display power domains (structure + map), see power.c.
- *
- * The domains are the older display code's names for what it powers.
- * Each one stands for a set of functions of the xd power wells, whose
- * counts decide which wells are up; power_wells[] is a copy of the
- * platform's well table (its Type-C cold mailbox well left out) that the
- * older code reads: the names, the operations family, the users of each
- * well and the last known state.
- *
- * DC state values are the register-bit encodings (not abstract flags).
- */
-
-struct i915_trace;
-
-/* enum intel_display_power_domain (v6.8 order preserved). */
-enum i915_power_domain {
-	I915_PW_DOMAIN_DISPLAY_CORE = 0,
-	I915_PW_DOMAIN_PIPE_A, I915_PW_DOMAIN_PIPE_B,
-	I915_PW_DOMAIN_PIPE_C, I915_PW_DOMAIN_PIPE_D,
-	I915_PW_DOMAIN_PIPE_PANEL_FITTER_A, I915_PW_DOMAIN_PIPE_PANEL_FITTER_B,
-	I915_PW_DOMAIN_PIPE_PANEL_FITTER_C, I915_PW_DOMAIN_PIPE_PANEL_FITTER_D,
-	I915_PW_DOMAIN_TRANSCODER_A, I915_PW_DOMAIN_TRANSCODER_B,
-	I915_PW_DOMAIN_TRANSCODER_C, I915_PW_DOMAIN_TRANSCODER_D,
-	I915_PW_DOMAIN_TRANSCODER_EDP, I915_PW_DOMAIN_TRANSCODER_DSI_A,
-	I915_PW_DOMAIN_TRANSCODER_DSI_C, I915_PW_DOMAIN_TRANSCODER_VDSC_PW2,
-	I915_PW_DOMAIN_PORT_DDI_LANES_A, I915_PW_DOMAIN_PORT_DDI_LANES_B,
-	I915_PW_DOMAIN_PORT_DDI_LANES_C, I915_PW_DOMAIN_PORT_DDI_LANES_D,
-	I915_PW_DOMAIN_PORT_DDI_LANES_E, I915_PW_DOMAIN_PORT_DDI_LANES_F,
-	I915_PW_DOMAIN_PORT_DDI_LANES_TC1, I915_PW_DOMAIN_PORT_DDI_LANES_TC2,
-	I915_PW_DOMAIN_PORT_DDI_LANES_TC3, I915_PW_DOMAIN_PORT_DDI_LANES_TC4,
-	I915_PW_DOMAIN_PORT_DDI_LANES_TC5, I915_PW_DOMAIN_PORT_DDI_LANES_TC6,
-	I915_PW_DOMAIN_PORT_DDI_IO_A, I915_PW_DOMAIN_PORT_DDI_IO_B,
-	I915_PW_DOMAIN_PORT_DDI_IO_C, I915_PW_DOMAIN_PORT_DDI_IO_D,
-	I915_PW_DOMAIN_PORT_DDI_IO_E, I915_PW_DOMAIN_PORT_DDI_IO_F,
-	I915_PW_DOMAIN_PORT_DDI_IO_TC1, I915_PW_DOMAIN_PORT_DDI_IO_TC2,
-	I915_PW_DOMAIN_PORT_DDI_IO_TC3, I915_PW_DOMAIN_PORT_DDI_IO_TC4,
-	I915_PW_DOMAIN_PORT_DDI_IO_TC5, I915_PW_DOMAIN_PORT_DDI_IO_TC6,
-	I915_PW_DOMAIN_PORT_DSI, I915_PW_DOMAIN_PORT_CRT,
-	I915_PW_DOMAIN_PORT_OTHER, I915_PW_DOMAIN_VGA,
-	I915_PW_DOMAIN_AUDIO_MMIO, I915_PW_DOMAIN_AUDIO_PLAYBACK,
-	I915_PW_DOMAIN_AUX_IO_A, I915_PW_DOMAIN_AUX_IO_B, I915_PW_DOMAIN_AUX_IO_C,
-	I915_PW_DOMAIN_AUX_IO_D, I915_PW_DOMAIN_AUX_IO_E, I915_PW_DOMAIN_AUX_IO_F,
-	I915_PW_DOMAIN_AUX_A, I915_PW_DOMAIN_AUX_B, I915_PW_DOMAIN_AUX_C,
-	I915_PW_DOMAIN_AUX_D, I915_PW_DOMAIN_AUX_E, I915_PW_DOMAIN_AUX_F,
-	I915_PW_DOMAIN_AUX_USBC1, I915_PW_DOMAIN_AUX_USBC2, I915_PW_DOMAIN_AUX_USBC3,
-	I915_PW_DOMAIN_AUX_USBC4, I915_PW_DOMAIN_AUX_USBC5, I915_PW_DOMAIN_AUX_USBC6,
-	I915_PW_DOMAIN_AUX_TBT1, I915_PW_DOMAIN_AUX_TBT2, I915_PW_DOMAIN_AUX_TBT3,
-	I915_PW_DOMAIN_AUX_TBT4, I915_PW_DOMAIN_AUX_TBT5, I915_PW_DOMAIN_AUX_TBT6,
-	I915_PW_DOMAIN_GMBUS, I915_PW_DOMAIN_GT_IRQ,
-	I915_PW_DOMAIN_DC_OFF, I915_PW_DOMAIN_TC_COLD_OFF,
-	I915_PW_DOMAIN_INIT,
-	I915_PW_DOMAIN_NUM
-};
-
-/*
- * The AUX channel numbers of display versions 12 and 13 (enum aux_ch): the
- * combo channels A to C, then the Type-C channels USBC1 on from AUX_CH_D.
- * Display version 13 reuses USBC5 and USBC6 for its combo ports D and E.
- */
-#define I915_AUX_CH_A		0
-#define I915_AUX_CH_C		2
-#define I915_AUX_CH_USBC1	3
-#define I915_AUX_CH_USBC4	6
-#define I915_AUX_CH_USBC6	8
-#define I915_AUX_CH_D_XELPD	7
-#define I915_AUX_CH_E_XELPD	8
-
-enum i915_power_domain drv_i915_aux_legacy_power_domain(unsigned display_ver, int aux_ch);
-enum i915_power_domain drv_i915_aux_tbt_power_domain(unsigned display_ver, int aux_ch);
-enum i915_power_domain drv_i915_aux_io_power_domain(unsigned display_ver, int aux_ch);
-
-/* DC state flags -- reference register-bit encodings (intel_dmc_regs / power). */
-#define I915_DC_STATE_EN_UPTO_DC5   0x00000001u
-#define I915_DC_STATE_EN_UPTO_DC6   0x00000002u
-#define I915_DC_STATE_EN_DC9        0x00000008u
-#define I915_DC_STATE_EN_DC3CO      0x40000000u
-
-/* i915_power_well_id values (DISP_PW_ID_NONE must be 0). */
-#define I915_DISP_PW_ID_NONE   0
-#define I915_SKL_DISP_PW_1     8
-#define I915_SKL_DISP_PW_2     9
-#define I915_ICL_DISP_PW_3     10
-#define I915_SKL_DISP_DC_OFF   11
-
-/* Which ops family a well uses (bodies executed at init_hw). */
-enum i915_pw_ops_kind {
-	I915_PW_OPS_ALWAYS_ON = 0,
-	I915_PW_OPS_HSW,        /* hsw_power_well_ops */
-	I915_PW_OPS_ICL_DDI,    /* icl_ddi_power_well_ops */
-	I915_PW_OPS_ICL_AUX,    /* icl_aux_power_well_ops */
-	I915_PW_OPS_DC_OFF,     /* gen9_dc_off_power_well_ops */
-};
-
-/* A runtime power well (i915_power_well: desc data + separate live state). */
-struct i915_power_well {
-	const char *name;
-	enum i915_pw_ops_kind ops;
-	int always_on;
-	int has_vga;
-	int has_fuses;
-	int is_tc_tbt;
-	int fixed_enable_delay;
-	unsigned enable_timeout;     /* ms; 0 = ops default */
-	unsigned irq_pipe_mask;
-	unsigned hsw_idx;            /* HSW/ICL power-well control index (reference) */
-	int id;                     /* i915_power_well_id (0 = DISP_PW_ID_NONE) */
-	unsigned xd_well;           /* the well's entry in the platform's table */
-	/* Live state, copied from the xd power well counts and records: */
-	unsigned refcount;          /* the well's users */
-	int hw_enabled;             /* last known HW state (-1 = unknown until sync) */
-};
-
-#define I915_PW_MAX  40
-
-/* i915_power_domains: the whole power-domain state for the device. */
-struct i915_power_domains {
-	uint32_t allowed_dc_mask;
-	uint32_t target_dc_state;
-	int disable_power_well;      /* sanitized option */
-	struct mutex lock;
-	int async_put_work_inited;   /* INIT_DELAYED_WORK(async_put_work) */
-
-	struct i915_power_well power_wells[I915_PW_MAX];
-	unsigned num_power_wells;
-	/* per-domain -> bitmask of well indices that provide it. */
-	uint64_t domain_wells[I915_PW_DOMAIN_NUM];
-
-	/* The xd state whose power well counts the domains use, and the display version. */
-	struct i915_xd *xd;
-	unsigned display_ver;
-
-	int map_initialized;
-	int initialized;
-
-	/* domain_use_count[]: references per DOMAIN (the wells count separately) */
-	unsigned domain_use_count[I915_PW_DOMAIN_NUM];
-
-	/*
-	 * The delayed work behind a last reference put asynchronously: the
-	 * wells stay up, owed to the work, until it runs or a get takes them
-	 * over (the xd power well counts keep what is owed).  The counters
-	 * are copies of the counts' diagnostics, kept for the logs.
-	 */
-	const struct i915_pw_async_ops *async_ops;   /* NULL: put_async puts at once */
-	void *async_ctx;
-	struct i915_pw_ctx *async_pwc;              /* the context the delayed work uses */
-	unsigned async_puts, async_parked, async_grabs, async_work_runs, async_work_empty;
-	unsigned async_released, async_requeues, async_flushes, async_state_errors, use_count_errors;
-};
-
-/* the delayed work behind put_async; supplied by the embedder (real timer + worker, or a test) */
-struct i915_pw_async_ops {
-	int (*queue)(void *ctx, int delay_ms);    /* queue_delayed_work(): 1 newly queued */
-	int (*cancel)(void *ctx, int sync);       /* cancel_delayed_work[_sync]() */
-};
-
-struct i915_mmio;
-struct i915_vga_client;
-struct i915_cdclk_dev;
-
-/*
- * Context for the power-well operation bodies: the MMIO handle, the VGA client
- * (has_vga post-enable) and the IRQ-enabled gate (intel_irqs_enabled(); 0 before
- * the interrupts are set up).  The *_calls counters are diagnostics the GPU-free tests observe.
- */
-struct i915_xd_dkl;
-struct i915_pw_ctx {
-	struct i915_mmio *mmio;
-	struct i915_vga_client *vga;
-	int irqs_enabled;
-	unsigned vga_reset_calls;
-	unsigned irq_post_enable_calls;
-	unsigned irq_pre_disable_calls;
-	/*
-	 * Set when a pipe's interrupt drain failed before its well would have gone off.  From then on every well disable
-	 * is refused (the handler that did not finish may still touch display registers), the well that was about to go
-	 * off stays owned, and the probe's teardown keeps the IRQ handler attached and the device resources in place.
-	 */
-	int irq_sync_failed;
-	unsigned disable_refusals;             /* well disables refused because of it */
-	unsigned kept_wells;                   /* wells kept on by a refused disable */
-	const struct i915_pw_irq_ops *irq_ops;   /* NULL: the IRQ layer is not bound (GPU-free tests) */
-	void *irq_ctx;
-	unsigned ack_timeouts;   /* real HW ACK timeouts (warn+continue) */
-	/*
-	 * DC_off power-well enable (gen9_disable_dc_states) needs the shared CDCLK,
-	 * the saved DBUF slice mask and the target DC state -- these are the SAME
-	 * device objects the parent uses (not per-well copies).
-	 */
-	struct i915_cdclk_dev *cd;
-	uint8_t *dbuf_slices;          /* saved DBUF mask, for gen9_assert_dbuf_enabled */
-	uint32_t target_dc_state;
-	uint32_t allowed_dc_mask;
-	unsigned dc_off_enable_calls;  /* diagnostics observed by the GPU-free tests */
-	unsigned dc_off_cdclk_readouts;
-	unsigned dc_off_dbuf_asserts;
-	unsigned dc_off_combo_inits;
-	/*
-	 * DC_off power-well DISABLE (gen9_dc_off_power_well_disable): enables the
-	 * target DC state, but only once the DMC firmware payload is loaded.
-	 */
-	int display_ver;               /* gen9_dc_mask() */
-	int dmc_has_payload;           /* intel_dmc_has_payload() */
-	uint32_t dc_state;             /* display.dmc.dc_state: what we last wrote */
-	unsigned dc_off_disable_calls;
-	unsigned dc_state_writes;
-	unsigned dc_state_rewrites;
-	/*
-	 * The display's Dekel PHY windows, which a Type-C AUX well's enable reads
-	 * the PHY microcontroller's health through; NULL (the GPU-free tests)
-	 * skips that read.  tc_uc_health_timeouts counts the enables whose PHY did not
-	 * report itself healthy in time.
-	 */
-	struct i915_xd_dkl *dkl;
-	unsigned tc_uc_health_timeouts;
-	/*
-	 * The display's xd state: its register window and the platform's
-	 * description, whose power wells the well operations switch.
-	 */
-	struct i915_xd *xd;
-};
 
 /*
  * The CDCLK (clock.c).
@@ -497,77 +99,13 @@ struct i915_cdclk_dev {
 };
 
 /*
- * The display core (power.c).
- */
-/*
- * display-core HW bring-up (see power.c).
+ * The DMC firmware (dmc-shell.c, xd-dmc.c).
  *
- * Ports intel_power_domains_init_hw(false) -> icl_display_core_init(false) for
- * ADL-P: DC-state disable, PCH reset handshake, combo PHY init (with the void
- * contract's fault check), PW1 enable (fuses), CDCLK init, DBUF slice enable,
- * BW_BUDDY, the xe_lpd workarounds, then hold the POWER_DOMAIN_INIT reference
- * and sync every power well.  Children share ONE device state (same MMIO, the
- * same power-domains + cdclk + PCODE sb_lock); nothing is re-initialised per
- * child.  intel_power_domains_driver_remove() cancels the init wakeref's rpm
- * side while KEEPING the wells enabled (not a domain put).
- */
-
-struct i915_power_domains;
-struct i915_pw_ctx;
-
-/* Shared device state threaded through the display-core bring-up. */
-struct i915_display_core {
-	struct i915_power_domains *pd;   /* the one power-domains state */
-	struct i915_cdclk_dev *cd;       /* the one cdclk state (cd->m == m) */
-	struct i915_pw_ctx *pwc;         /* power-well op context (pwc->mmio == m) */
-	struct i915_mmio *m;              /* the one MMIO backend */
-	struct mutex *sb_lock;             /* the one PCODE sideband lock */
-
-	/* DRAM info read at the start (BW_BUDDY table lookup). */
-	int dram_type;                     /* I915_XD_DRAM_*, 0 when not known */
-	unsigned dram_channels;
-
-	/* Live state (not re-initialised per child). */
-	int initializing;
-	uint8_t dbuf_enabled_slices;
-	/* how many DBUF slices this display has (display version 13: 4, version 12: 2) */
-	uint8_t dbuf_slice_mask;
-	/*
-	 * which MBUS ABOX registers this display has (intel_display_device.c .abox_mask);
-	 * 0 = the platform programs none (Alder Lake-P and display 14+)
-	 */
-	uint8_t abox_mask;
-	int display_ver;                /* 12 = Tiger Lake, 13 = Alder Lake-P class */
-	/*
-	 * the reference gates a few display steps on the platform, not on the version
-	 * (gen12_dbuf_slices_config() returns immediately on Alder Lake-P alone)
-	 */
-	uint8_t is_alderlake_p;
-	int init_wakeref_held;             /* POWER_DOMAIN_INIT domain reference held */
-	int core_suspended;                /* the display core was taken down for a suspend */
-	int pm_wakeref;                    /* runtime-PM side of the init wakeref */
-
-	/* Diagnostics. */
-	int fault_stop;                    /* 1 once an adaptation-layer fault stopped us */
-	const char *fault_where;           /* child at which we stopped */
-	int reached_init_ref;
-	int reached_sync_hw;
-	int last_child;                    /* ordinal of the last child entered */
-};
-
-/*
- * The DMC firmware (dmc.c).
- */
-/*
- * DMC firmware parse (F1) + load (F2) + async lifecycle (F3).
- *
- * Faithful port of intel_dmc.c for ADL-P (display version 13).  This header
- * covers the parse: the firmware blob (from the read-only provider) is validated
- * (CSS / package / per-DMC headers), the entry matching the display stepping is
- * selected for each DMC id, and its payload is copied into DEVICE-OWNED storage
- * so it outlives the released firmware handle.  Length units differ per header
- * (CSS/package/v3 in dwords, v1 in bytes) and the entry offset is relative to the
- * end of the CSS+package, exactly as the reference.
+ * The image of the display's DMC programs as the loader keeps it: for
+ * each DMC (the main one and one per pipe), the entry chosen for the
+ * display's stepping, the registers its load writes and a copy of its
+ * program in storage the display owns, so that it outlives the firmware
+ * file.  Lengths are in 32-bit words unless a field says bytes.
  */
 
 enum i915_dmc_id {
@@ -610,7 +148,7 @@ struct i915_dmc {
 	uint32_t package_header_ver;
 	uint32_t num_entries;
 	int truncated;             /* set on a refused (truncated/invalid) blob */
-	/* F2 load diagnostics. */
+	/* What the load wrote. */
 	unsigned payload_writes;   /* DMC_PROGRAM DWORD writes performed */
 	unsigned aux_writes;       /* trailing per-DMC MMIO writes */
 	unsigned evt_disable_writes; /* event-handler CTL+HTP disable writes */
@@ -620,25 +158,27 @@ struct i915_dmc {
 };
 
 /*
- * DMC async lifecycle (F3).  intel_dmc_init takes the DMC's OWN POWER_DOMAIN_INIT
- * reference (distinct from the display-core parent's), prepares the state and
- * queues the load worker; the worker acquires the firmware, parses, loads and,
- * on success, releases the DMC reference; fini flushes the worker (flush, not
- * cancel), releases any still-held DMC reference, and frees the payload arena.
+ * The DMC loader of a display (dmc-shell.c).
+ *
+ * The start queues the load on the loader's workqueue and holds a power
+ * reference of its own (every pipe's wells and the exit from the DC
+ * states) until the load completes; the load reads the firmware, parses
+ * it and writes the programs.  The stop waits for the work, gives a
+ * reference still held back, and frees the payload's storage.
  */
 struct i915_dmc_dev {
 	struct i915_dmc dmc;
 	struct i915_mmio *m;
-	struct i915_power_domains *pd;
-	struct i915_pw_ctx *pwc;
+	struct i915_display_power *power;
+	struct i915_xd *xd;
 	struct i915_workqueue *wq;
 	const char *fw_path;
 	/* dmc_fallback_path() is a platform question, not a path question */
 	int is_alderlake_p;
 	struct i915_work work;
-	int dmc_wakeref_held;          /* DMC's own INIT reference is held */
+	int dmc_wakeref_held;          /* the loader's own power reference is held */
 	uint32_t dc_state;
-	/* diagnostics (kept distinct, per the reference). */
+	/* What the load met, for the logs. */
 	int work_submitted;
 	int worker_started;
 	int firmware_acquired;
@@ -657,54 +197,7 @@ struct i915_dmc_dev {
 #define I915_PORT_D      3
 #define I915_PORT_TC1    3
 
-/*
- * The Linux driver probe (display.c, power.c).
- */
-/*
- * the rest of i915_driver_probe() after i915_gem_init().
- *
- * The reference (i915_driver.c, 6.8.12):
- *   intel_pxp_init(i915)                 see pxp.h
- *   intel_display_driver_probe(i915)     display/intel_display_driver.c:
- *     intel_initial_commit()             an atomic commit that recomputes the
- *                                        plane state of every ACTIVE crtc; with
- *                                        no active crtc it commits nothing
- *     intel_overlay_setup()              HAS_OVERLAY: gen2-4 only
- *     intel_fbdev_init()                 CONFIG_DRM_FBDEV_EMULATION
- *     the hotplug pins                   armed by hpd.c (xd-hpd.c)
- *     skl_watermark_ipc_init()           HAS_IPC: DISP_ARB_CTL2.DISP_IPC_ENABLE
- *   i915_driver_register(i915):
- *     gem/pmu/vgpu/drm_dev/debugfs/sysfs/perf/gt sysfs/hwmon registrations
- *     intel_display_driver_register()    opregion register, acpi video, audio
- *                                        components, debugfs, fbdev config,
- *                                        drm_kms_helper_poll_init
- *     intel_power_domains_enable()       PUT the POWER_DOMAIN_INIT reference
- *                                        held since intel_power_domains_init_hw:
- *                                        every well with no other reference
- *                                        turns off, DC_off last (DC6 allowed)
- *     intel_runtime_pm_enable()          autosuspend 10 s, drop the probe ref
- *     dsm handler, vga switcheroo
- *   and the remove path mirrors it: intel_runtime_pm_disable (take the ref
- *   back), intel_power_domains_disable (get INIT again), display unregister.
- *
- * ADAPTATIONS (recorded):
- *   - No DRM object model here: intel_initial_commit is executed only in its
- *     no-active-crtc form (an active crtc is reported as unimplemented);
- *     connectors do not exist, so the poll_init work touches no connector
- *     (the DISPLAY_CORE power get/put around it is kept); the userspace-facing
- *     registrations (drm_dev, debugfs, sysfs, pmu, perf, hwmon, audio
- *     components, fbdev, acpi video, dsm, switcheroo) are recorded as N/A.
- *   - The poll_init work runs inline where the reference queues it.
- *   - intel_runtime_pm_enable drops the probe reference but does not arm
- *     autosuspend: intel_runtime_suspend() (what the PM core would run 10 s
- *     later) is not ported, so the device stays in D0.
- *   - intel_power_domains_verify_state() is compiled only under
- *     CONFIG_DRM_I915_DEBUG_RUNTIME_PM in the reference; here its per-well
- *     refcount/HW comparison is kept as a diagnostic.
- */
-
 struct i915_rpm;
-struct i915_display_core;
 struct i915_display_nogem;
 
 /* The display arbiter control and its isochronous priority control enable. */
@@ -719,7 +212,7 @@ struct i915_display_nogem;
  */
 struct i915_driver_probe {
 	unsigned active_crtcs;
-	int power_domains_enable_deferred;
+	int power_release_deferred;
 	int ipc_enabled;
 	unsigned wells_on_before, wells_on_after;
 	int dc_state_after;
@@ -994,13 +487,6 @@ struct i915_dp_env {
 	 * sets the hooks above sets it too
 	 */
 	struct i915_xd_io *aux_io;
-	int (*power_get)(void *ctx, int domain);        /* enum i915_power_domain value; 0 = ok */
-	void (*power_put)(void *ctx, int domain);
-	/*
-	 * intel_display_power_put_async(): the reference leaves the DP layer now; the power layer
-	 * parks it, hands it back to the next get of that domain, or releases it ~100 ms later
-	 */
-	void (*power_put_async)(void *ctx, int domain);
 	/* the PPS mutex and the AUX hardware mutex (I915_DP_LOCK_*): real mutual exclusion */
 	void (*lock)(void *ctx, int which);
 	void (*unlock)(void *ctx, int which);
@@ -1014,13 +500,9 @@ struct i915_dp_env {
 	int (*delayed_cancel)(void *ctx, int which, int sync);
 	int (*delayed_pending)(void *ctx, int which);
 	/* bookkeeping kept by the DP layer (read by the tests and the run log) */
-	int power_refs[2];                              /* [0] DISPLAY_CORE, [1] the AUX domain */
-	unsigned power_get_failures;
-	unsigned power_put_underflows;
 	unsigned sleeps;
 	uint64_t slept_us;
 	unsigned lock_errors;                           /* recursion / unlock of a free lock */
-	unsigned async_puts;
 };
 
 #define I915_DP_LOCK_PPS 0
@@ -1089,8 +571,6 @@ struct i915_edp_result {
 
 	/* ownership at the end of each phase */
 	int vdd_wanted, vdd_on_hw, vdd_wakeref_held, vdd_work_pending;
-	int power_refs_core, power_refs_aux;
-	unsigned power_get_failures, power_put_underflows;
 	unsigned i2c_defers, i2c_nacks;
 	unsigned log_errors;              /* drm_err / WARN lines the reference emitted */
 	uint64_t elapsed_ms;
@@ -1371,8 +851,7 @@ struct i915_gt_tlb;
 /* the env's kernel backend: real mutexes, tick-driven sleeps, timer + worker threads */
 struct i915_dp_kernel {
 	struct i915_mmio *mmio;
-	struct i915_power_domains *pd;
-	struct i915_pw_ctx *pwc;
+	struct i915_display_power *power;
 	struct mutex locks[2];                  /* I915_DP_LOCK_* */
 	struct i915_xd_io aux_io;               /* the AUX channels' and the PPS's window on mmio, under the PPS mutex */
 	struct i915_workqueue wq;            /* the display worker: VDD-off and async power put */
@@ -1469,6 +948,13 @@ struct drv_gpu_scanout_ops;
  * the teardown gives back exactly what the run holds.
  */
 
+/*
+ * The power numbers a run takes references by (resident.c): one per power
+ * function of the xd power wells (I915_XD_POWERS_*), and the last for a
+ * use that needs no well.
+ */
+#define I915_LCD_POWER_SLOTS	65
+
 struct i915_lcd_kernel {
 	/* The parameters of the run; NULL before it starts. */
 	const struct i915_lcd_run_params *p;
@@ -1485,8 +971,8 @@ struct i915_lcd_kernel {
 	/* The register, wait, panel, power and vblank hooks of the run. */
 	struct i915_lcd_emit ops;
 
-	/* Power references this run took and has not returned, per domain. */
-	int power_refs[I915_PW_DOMAIN_NUM];
+	/* Power references this run took and has not returned, per power number (resident.c). */
+	int power_refs[I915_LCD_POWER_SLOTS];
 
 	/* What went wrong, counted. */
 	unsigned power_get_failures, wait_timeouts, time_faults, unresolved_steps, decided, errors;
@@ -1686,20 +1172,14 @@ struct i915_display {
 	/* The VGA arbiter client (vga.c). */
 	struct i915_vga_client vga_client;
 
-	/* The power wells and domains; its own lock protects the reference counts. */
-	struct i915_power_domains power_domains;
+	/* The display's power: the counts of its wells, the DC states and the display core; its own lock protects the counts. */
+	struct i915_display_power power;
 
 	/* The CDCLK state and hooks. */
 	struct i915_cdclk_dev cdclk;
 
-	/* The context the power-well operations run in (MMIO, interrupt hooks, DMC). */
-	struct i915_pw_ctx pwc;
-
 	/* The resident eDP panel: outlives the output setup, released in the stop. */
 	struct i915_edp_device edp_dev;
-
-	/* The display core (DBUF slices, the init power reference). */
-	struct i915_display_core dcore;
 
 	/* The DMC loader; its work runs on dmc_wq. */
 	struct i915_dmc_dev dmc_dev;
@@ -1818,7 +1298,7 @@ struct i915_display {
 	uint8_t g_dmc_arena[I915_DMC_ARENA_SIZE];
 	unsigned g_dmc_arena_used;
 
-	/* The display core's own trace (power.c). */
+	/* The trace ring of the display core's start (display-power.c). */
 	struct i915_trace dc_trace;
 
 	/* The OpRegion and VBT copies of the OpRegion read. */
@@ -1845,7 +1325,7 @@ struct i915_display {
 	 * apart exactly what the start built.
 	 */
 	int vga_registered;
-	int power_domains_inited;
+	int power_started;
 	int dmc_inited;
 
 	/* DC9 was entered for a suspend and is to be left by the resume. */

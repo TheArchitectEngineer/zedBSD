@@ -21,7 +21,7 @@
 
 #include "internal.h"
 #include "dmc.h"
-#include "power.h"
+#include "display-power.h"
 #include "xd-dmc.h"
 #include "xd.h"
 
@@ -53,7 +53,7 @@ static void i915_dmc_shell_put_ref(struct i915_dmc_dev *dev);
 static void i915_dmc_shell_work(void *context);
 
 /*
- * Tells whether the main DMC's program was taken (intel_dmc_has_payload()).
+ * Tells whether the main DMC's program was taken.
  */
 int
 drv_i915_dmc_has_payload(
@@ -68,7 +68,7 @@ drv_i915_dmc_has_payload(
 }
 
 /*
- * Starts the DMC loader (intel_dmc_init()).
+ * Starts the DMC loader.
  *
  * Takes the loader's own power reference (kept when the load fails),
  * names the platform's firmware and queues the load work.  A display
@@ -79,14 +79,12 @@ drv_i915_dmc_init(
 	struct i915_dmc_dev *dev,
 	struct i915_workqueue *wq,
 	struct i915_mmio *mmio,
-	struct i915_power_domains *pd,
-	struct i915_pw_ctx *pwc)
+	struct i915_display_power *power,
+	struct i915_xd *xd)
 {
-	struct i915_xd *xd;
-
 	/* Binds the loader and starts its diagnostics from zero. */
-	dev->pd = pd;
-	dev->pwc = pwc;
+	dev->power = power;
+	dev->xd = xd;
 	dev->m = mmio;
 	dev->wq = wq;
 	dev->dmc_wakeref_held = 0;
@@ -101,7 +99,6 @@ drv_i915_dmc_init(
 	kern_memset(&dev->dmc, 0, sizeof(dev->dmc));
 
 	/* A display without a description has no firmware to load. */
-	xd = pwc->xd;
 	if (xd == NULL || !xd->chosen) {
 		kern_logf("i915: dmc: no platform description, no DMC firmware\n");
 		return;
@@ -170,8 +167,8 @@ drv_i915_dmc_fini(
 	i915_dmc_shell_put_ref(dev);
 
 	/* Forgets the programs and empties the display's storage. */
-	if (dev->pwc != NULL && dev->pwc->xd != NULL)
-		drv_i915_xd_dmc_init(&dev->pwc->xd->dmc);
+	if (dev->xd != NULL)
+		drv_i915_xd_dmc_init(&dev->xd->dmc);
 	display = i915_dmc_shell_display(dev);
 	display->g_dmc_arena_used = 0u;
 	i915_dmc_shell_copy(dev);
@@ -206,9 +203,9 @@ i915_dmc_shell_copy(
 	unsigned id;
 
 	/* A loader without the xd state has nothing to copy. */
-	if (dev->pwc == NULL || dev->pwc->xd == NULL)
+	if (dev->xd == NULL)
 		return;
-	parsed = &dev->pwc->xd->dmc;
+	parsed = &dev->xd->dmc;
 
 	/* The firmware and its package. */
 	dev->dmc.version = parsed->version;
@@ -279,7 +276,7 @@ i915_dmc_shell_load(
 	struct i915_xd *xd;
 
 	/* Loads the programs; the load leaves no DC state written. */
-	xd = dev->pwc->xd;
+	xd = dev->xd;
 	drv_i915_xd_dmc_load(&xd->dmc, &xd->io, xd->choice.platform);
 	dev->dc_state = 0u;
 	i915_dmc_shell_copy(dev);
@@ -290,8 +287,8 @@ static void
 i915_dmc_shell_get_ref(
 	struct i915_dmc_dev *dev)
 {
-	/* Takes the init domain; the flag says the loader holds it. */
-	(void)drv_i915_display_power_get(dev->pd, I915_PW_DOMAIN_INIT, dev->pwc);
+	/* Takes every pipe's wells and the exit from the DC states; the flag says the loader holds them. */
+	(void)drv_i915_display_power_get(dev->power, I915_DISPLAY_POWER_START);
 	dev->dmc_wakeref_held = 1;
 }
 
@@ -304,8 +301,8 @@ i915_dmc_shell_put_ref(
 	if (!dev->dmc_wakeref_held)
 		return;
 
-	/* Puts the init domain; the flag says the loader no longer holds it. */
-	drv_i915_display_power_put(dev->pd, I915_PW_DOMAIN_INIT, dev->pwc);
+	/* Gives them back; the flag says the loader no longer holds them. */
+	drv_i915_display_power_put(dev->power, I915_DISPLAY_POWER_START);
 	dev->dmc_wakeref_held = 0;
 }
 
@@ -329,7 +326,7 @@ i915_dmc_shell_work(
 	dev = context;
 	dev->worker_started = 1;
 	display = i915_dmc_shell_display(dev);
-	xd = dev->pwc->xd;
+	xd = dev->xd;
 
 	/* Acquires the platform's firmware. */
 	request_result = drv_i915_firmware_request(&fw, dev->fw_path);

@@ -26,7 +26,7 @@
 
 #include "internal.h"
 #include "dp-ext-kern.h"
-#include "power.h"
+#include "display-power.h"
 #include "tc-port.h"
 #include "vbt-parse.h"
 #include "xd-aux.h"
@@ -119,12 +119,12 @@ struct i915_dp_ext_world {
 	struct i915_dp_ext_port port[I915_XD_TC_PORTS];
 };
 
-/* What an access of a sink holds: the Type-C port's lock, and the power it took. */
+/* What an access of a sink holds: the Type-C port's lock, the AUX channel's power, and the channels' lock. */
 struct i915_dp_ext_access {
 	int tc_locked;
-	int aux_domain;
+	uint64_t aux_functions;
 	int aux_powered;
-	int core_powered;
+	int aux_locked;
 };
 
 static void i915_dp_ext_bind_port(struct i915_dp_ext_world *ext, unsigned tc_port);
@@ -764,7 +764,7 @@ i915_dp_ext_access_begin(
 	display = p->ext->display;
 	access->tc_locked = 0;
 	access->aux_powered = 0;
-	access->core_powered = 0;
+	access->aux_locked = 0;
 
 	/* The Type-C port, brought up to what is plugged in when no output holds it. */
 	mode = drv_i915_xd_tc_ports_lock(p->ext->tc, p->tc_port, I915_DP_EXT_KERN_PROBE_LANES);
@@ -784,25 +784,19 @@ i915_dp_ext_access_begin(
 		return -ENXIO;
 	}
 
-	/* The channel's power, then the display core's. */
-	access->aux_domain = (int)drv_i915_aux_legacy_power_domain(display->power_domains.display_ver, (int)p->aux.channel);
-	error = drv_i915_display_power_get(&display->power_domains, (enum i915_power_domain)access->aux_domain, &display->pwc);
+	/* The channel's power. */
+	access->aux_functions = drv_i915_display_power_aux(display->xd.choice.platform->display_ver, (int)p->aux.channel, 0);
+	error = drv_i915_display_power_get(&display->power, access->aux_functions);
 	if (error != 0) {
 		i915_dp_ext_access_end(p, access);
 		return -EIO;
 	}
 
 	access->aux_powered = 1;
-	error = drv_i915_display_power_get(&display->power_domains, I915_PW_DOMAIN_DISPLAY_CORE, &display->pwc);
-	if (error != 0) {
-		i915_dp_ext_access_end(p, access);
-		return -EIO;
-	}
-
-	access->core_powered = 1;
 
 	/* One access at a time on the external ports' channels. */
 	mutex_lock(&p->ext->aux_lock);
+	access->aux_locked = 1;
 
 	/* Succeeded: the channel is usable until the end of the access. */
 	return 0;
@@ -818,15 +812,13 @@ i915_dp_ext_access_end(
 
 	display = p->ext->display;
 
-	/* The lock is held only once both power references were taken. */
-	if (access->core_powered) {
+	/* The lock is held only once the channel's power was taken. */
+	if (access->aux_locked)
 		mutex_unlock(&p->ext->aux_lock);
-		drv_i915_display_power_put(&display->power_domains, I915_PW_DOMAIN_DISPLAY_CORE, &display->pwc);
-	}
 
 	/* The channel's power goes after a while, for the next access. */
 	if (access->aux_powered)
-		drv_i915_display_power_put_async(&display->power_domains, (enum i915_power_domain)access->aux_domain, &display->pwc, -1);
+		drv_i915_display_power_put_later(&display->power, access->aux_functions, -1);
 
 	/* The Type-C port; a port no link holds gives its PHY back at once. */
 	if (access->tc_locked)

@@ -22,7 +22,6 @@
 #include "xd-dp.h"
 #include "dp-ext-kern.h"
 #include "output.h"
-#include "power.h"
 #include "present.h"
 #include "tc-port.h"
 #include "xd-hpd.h"
@@ -1249,38 +1248,28 @@ i915_hpd_deadline(void)
 	return deadline;
 }
 
-/* Takes or gives back the power a detection needs: the display core's, or the GMBUS controller's (a hook). */
+/*
+ * Takes or gives back the power a detection needs (a hook): the display
+ * core's or the GMBUS controller's.  No switched well powers either on
+ * display 12 and 13: they stay powered while the display core is up, so
+ * no well is counted.
+ *
+ * Values referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display_power_map.c
+ * (tgl_power_wells, xelpd_power_wells: no well's domains name the GMBUS
+ * or the display core).
+ */
 static int
 i915_hpd_power(
 	void *ctx,
 	unsigned what,
 	int on)
 {
-	struct i915_hpd_world *world;
-	struct i915_display *display;
-	enum i915_power_domain domain;
-	int error;
+	UNUSED_PARAMETER(ctx);
+	UNUSED_PARAMETER(what);
+	UNUSED_PARAMETER(on);
 
-	world = ctx;
-	display = world->display;
-
-	/* The domain of the power asked for. */
-	domain = I915_PW_DOMAIN_DISPLAY_CORE;
-	if (what == I915_XD_HPD_POWER_DDC)
-		domain = I915_PW_DOMAIN_GMBUS;
-
-	/* Gives a reference back. */
-	if (!on) {
-		drv_i915_display_power_put(&display->power_domains, domain, &display->pwc);
-		return 0;
-	}
-
-	/* Takes one. */
-	error = drv_i915_display_power_get(&display->power_domains, domain, &display->pwc);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the reference is held. */
+	/* Succeeded: nothing to take or give back. */
 	return 0;
 }
 

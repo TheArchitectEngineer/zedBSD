@@ -28,14 +28,13 @@
 #include "edp-device.h"
 #include "head.h"
 #include "output.h"
-#include "power.h"
+#include "display-power.h"
 #include "present.h"
 #include "scanout.h"
 #include "tc-port.h"
 #include "interrupts.h"
 #include "vbt-parse.h"
 #include "clock.h"
-#include "watermark.h"
 #include <kern/kcrt.h>
 
 #include "../intel/display-regs-xd.h"
@@ -120,6 +119,12 @@ static void resident_dbuf_slices_update(void *ctx, unsigned slices);
 static void resident_lock(void *ctx, int which, int take);
 static void resident_irq_off(void *ctx);
 static int resident_power_domain(void *ctx, unsigned use, unsigned index, int thunderbolt);
+static int resident_power_number(uint64_t function);
+static uint64_t resident_power_functions(int number);
+static int resident_power_get(void *ctx, int number);
+static int resident_power_get_if_enabled(void *ctx, int number);
+static void resident_power_put(void *ctx, int number, int wakeref);
+static void resident_power_put_async(void *ctx, int number, int wakeref, int delay_ms);
 static int resident_vblank_get(void *ctx, int pipe);
 static void resident_vblank_put(void *ctx, int pipe);
 static long resident_vblank_sleep(void *ctx, int pipe, long ticks);
@@ -250,10 +255,10 @@ drv_i915_resident_run(
 		display->xd.firmware.take_over = 0;
 
 		/* The start's power reference kept for the takeover goes back now. */
-		if (display->dprobe.power_domains_enable_deferred) {
-			display->dprobe.power_domains_enable_deferred = 0;
-			drv_i915_power_domains_enable(&display->dprobe, &display->dcore);
-			kern_logf("i915: takeover: power_domains_enable: wells_on %u -> %u\n", display->dprobe.wells_on_before, display->dprobe.wells_on_after);
+		if (display->dprobe.power_release_deferred) {
+			display->dprobe.power_release_deferred = 0;
+			drv_i915_display_power_serve(&display->power, &display->dprobe);
+			kern_logf("i915: takeover: the start's power reference went back: wells on %u -> %u\n", display->dprobe.wells_on_before, display->dprobe.wells_on_after);
 		}
 	}
 
@@ -336,7 +341,7 @@ drv_i915_resident_run(
 
 	/* Counts the power references the run still holds. */
 	held = 0;
-	for (domain = 0U; domain < I915_PW_DOMAIN_NUM; domain++)
+	for (domain = 0U; domain < I915_LCD_POWER_SLOTS; domain++)
 		held += k->power_refs[domain];
 
 	/* Releases both buffers, or abandons them when the display may still read them. */
@@ -546,10 +551,10 @@ drv_i915_resident_bind(
 
 	/* Display power and the display buffer's slices. */
 	k->ops.power_domain = resident_power_domain;
-	k->ops.power_get = drv_i915_lcd_power_get;
-	k->ops.power_get_if_enabled = drv_i915_lcd_power_get_if_enabled;
-	k->ops.power_put = drv_i915_lcd_power_put;
-	k->ops.power_put_async = drv_i915_lcd_power_put_async;
+	k->ops.power_get = resident_power_get;
+	k->ops.power_get_if_enabled = resident_power_get_if_enabled;
+	k->ops.power_put = resident_power_put;
+	k->ops.power_put_async = resident_power_put_async;
 	k->ops.dbuf_slices_update = resident_dbuf_slices_update;
 
 	/* The locks, the steps, the errors and the debug messages. */
@@ -1281,8 +1286,8 @@ resident_dbuf_slices_update(
 
 	k = ctx;
 
-	/* The same update the power domains' start uses. */
-	drv_i915_gen9_dbuf_slices_update(k->d->dcore, (uint8_t)slices);
+	/* The same update the display core's start uses. */
+	drv_i915_display_power_dbuf(k->d->power, (uint8_t)slices);
 }
 
 /* The lock hook of a run: takes or gives back the PLL lock or the backlight lock. */
@@ -1345,9 +1350,13 @@ resident_irq_on(
 }
 
 /*
- * The power hook of a run: names the power domain of one power use of
+ * The power hook of a run: names the power number of one power use of
  * the screen's output (the DC states held off, a pipe, a transcoder, a
  * DDI's lanes or IO, an AUX channel in its legacy or Thunderbolt use).
+ *
+ * A number is the index of the use's power function (I915_XD_POWERS_*),
+ * I915_LCD_POWER_SLOTS - 1 for a use that needs no well, or -1 for an AUX
+ * channel that has no Thunderbolt well, which the get refuses.
  */
 static int
 resident_power_domain(
@@ -1358,48 +1367,232 @@ resident_power_domain(
 {
 	struct i915_lcd_kernel *k;
 	unsigned version;
-	int domain;
+	uint64_t function;
+	int number;
 
 	k = ctx;
 
-	/* The AUX domains are named by the display's version. */
+	/* The AUX wells are named by the display's version. */
 	version = 13U;
 	if (k->display->xd.choice.platform != NULL)
 		version = k->display->xd.choice.platform->display_ver;
 
-	/* The domain of each use; the Type-C ports' lanes and IO from TC1 (DDI 3) on. */
+	/* The function of each use; DDIs and AUX channels are numbered as the platform's ports are. */
 	switch (use) {
 	case I915_XD_OUTPUT_POWER_DC_OFF:
-		domain = (int)I915_PW_DOMAIN_DC_OFF;
+		function = I915_XD_POWERS_DC_OFF;
 		break;
 	case I915_XD_OUTPUT_POWER_PIPE:
-		domain = (int)I915_PW_DOMAIN_PIPE_A + (int)index;
+		function = I915_XD_POWERS_PIPE(index);
 		break;
 	case I915_XD_OUTPUT_POWER_TRANS:
-		domain = (int)I915_PW_DOMAIN_TRANSCODER_A + (int)index;
+		function = I915_XD_POWERS_TRANS(index);
 		break;
 	case I915_XD_OUTPUT_POWER_LANES:
-		domain = (int)I915_PW_DOMAIN_PORT_DDI_LANES_A + (int)index;
-		if (index >= I915_XD_PICTURE_FIRST_TC_DDI)
-			domain = (int)I915_PW_DOMAIN_PORT_DDI_LANES_TC1 + (int)(index - I915_XD_PICTURE_FIRST_TC_DDI);
+		function = I915_XD_POWERS_LANES(index);
 		break;
 	case I915_XD_OUTPUT_POWER_DDI_IO:
-		domain = (int)I915_PW_DOMAIN_PORT_DDI_IO_A + (int)index;
-		if (index >= I915_XD_PICTURE_FIRST_TC_DDI)
-			domain = (int)I915_PW_DOMAIN_PORT_DDI_IO_TC1 + (int)(index - I915_XD_PICTURE_FIRST_TC_DDI);
+		function = I915_XD_POWERS_DDI_IO(index);
 		break;
 	case I915_XD_OUTPUT_POWER_AUX:
-		domain = (int)drv_i915_aux_legacy_power_domain(version, (int)index);
-		if (thunderbolt)
-			domain = (int)drv_i915_aux_tbt_power_domain(version, (int)index);
+		function = drv_i915_display_power_aux(version, (int)index, thunderbolt);
+
+		/* A channel without a Thunderbolt well has no number. */
+		if (function == 0ULL)
+			return -1;
 		break;
 	default:
-		domain = (int)I915_PW_DOMAIN_DISPLAY_CORE;
+		function = 0ULL;
 		break;
 	}
 
-	/* Succeeded: the domain. */
-	return domain;
+	/* Numbers the function. */
+	number = resident_power_number(function);
+
+	/* Succeeded: the function's number. */
+	return number;
+}
+
+/* Numbers one power function by its bit, or a use that needs no well by the last slot. */
+static int
+resident_power_number(
+	uint64_t function)
+{
+	int bit;
+
+	/* A use that needs no well. */
+	if (function == 0ULL)
+		return (int)I915_LCD_POWER_SLOTS - 1;
+
+	/* The lowest bit of the function. */
+	bit = __builtin_ctzll(function);
+
+	/* Succeeded: the function's bit. */
+	return bit;
+}
+
+/* Gives the power functions of a power number: one bit, or none for the last slot. */
+static uint64_t
+resident_power_functions(
+	int number)
+{
+	/* The last slot needs no well. */
+	if (number == (int)I915_LCD_POWER_SLOTS - 1)
+		return 0ULL;
+
+	/* Succeeded: the function's bit. */
+	return 1ULL << (unsigned)number;
+}
+
+/*
+ * The power hook of a run: takes a power reference.
+ *
+ * Returns the cookie number + 1, or 0 when the number is unknown or its
+ * wells did not come up.  The run counts its references per number.
+ */
+static int
+resident_power_get(
+	void *ctx,
+	int number)
+{
+	struct i915_lcd_kernel *k;
+	uint64_t functions;
+	int error;
+
+	k = ctx;
+
+	/* Refuses an unknown number. */
+	if (number < 0 || number >= (int)I915_LCD_POWER_SLOTS) {
+		k->power_get_failures++;
+		return 0;
+	}
+
+	/* Takes the wells. */
+	functions = resident_power_functions(number);
+	error = drv_i915_display_power_get(k->d->power, functions);
+	if (error != 0) {
+		k->power_get_failures++;
+		kern_logf("i915: display run: power get %d FAILED rc=%d\n", number, error);
+		return 0;
+	}
+
+	/* The run's count of the references it holds on the number. */
+	k->power_refs[number]++;
+
+	/* Succeeded: the cookie names the number. */
+	return number + 1;
+}
+
+/*
+ * The power hook of a run: takes a power reference only when its wells
+ * are on already, so that a readout never turns a well on.  Returns the
+ * cookie, or 0 when they are off or the number is unknown.
+ */
+static int
+resident_power_get_if_enabled(
+	void *ctx,
+	int number)
+{
+	struct i915_lcd_kernel *k;
+	uint64_t functions;
+	int powered;
+	int cookie;
+
+	k = ctx;
+
+	/* An unknown number is not on. */
+	if (number < 0 || number >= (int)I915_LCD_POWER_SLOTS)
+		return 0;
+
+	/* The wells must all be on. */
+	functions = resident_power_functions(number);
+	powered = drv_i915_display_power_is_on(k->d->power, functions);
+	if (!powered)
+		return 0;
+
+	/* Takes the reference. */
+	cookie = resident_power_get(ctx, number);
+
+	/* Succeeded: the cookie (0 when the get failed). */
+	return cookie;
+}
+
+/*
+ * The power hook of a run: gives a power reference back.
+ *
+ * A put the run holds no reference for is counted and not forwarded.  A
+ * well that could not be turned off (a failed pipe interrupt drain) is a
+ * fault of the run's backend: the stop is not confirmed.
+ */
+static void
+resident_power_put(
+	void *ctx,
+	int number,
+	int wakeref)
+{
+	struct i915_lcd_kernel *k;
+	uint64_t functions;
+	unsigned refusals;
+
+	UNUSED_PARAMETER(wakeref);
+
+	k = ctx;
+
+	/* Refuses a put without a reference of this run. */
+	if (number < 0 ||
+	    number >= (int)I915_LCD_POWER_SLOTS ||
+	    k->power_refs[number] <= 0) {
+		k->errors++;
+		kern_logf("i915: display run: power put %d without a reference of this run: NOT forwarded\n", number);
+		return;
+	}
+
+	/* The run's count of the references it holds on the number. */
+	k->power_refs[number]--;
+
+	/* Gives the wells back, watching for a refused well off. */
+	functions = resident_power_functions(number);
+	refusals = k->d->power->refusals;
+	drv_i915_display_power_put(k->d->power, functions);
+	if (k->d->power->refusals != refusals) {
+		drv_i915_xd_pictures_fault(&k->display->xd.pictures, "a power well was NOT turned off: the pipe interrupt drain failed (the stop is not "
+			"confirmed; display power is kept)\n");
+	}
+}
+
+/*
+ * The power hook of a run: gives a power reference back after a delay.
+ * A put the run holds no reference for is counted and not forwarded.
+ */
+static void
+resident_power_put_async(
+	void *ctx,
+	int number,
+	int wakeref,
+	int delay_ms)
+{
+	struct i915_lcd_kernel *k;
+	uint64_t functions;
+
+	UNUSED_PARAMETER(wakeref);
+
+	k = ctx;
+
+	/* Refuses a put without a reference of this run. */
+	if (number < 0 ||
+	    number >= (int)I915_LCD_POWER_SLOTS ||
+	    k->power_refs[number] <= 0) {
+		k->errors++;
+		kern_logf("i915: display run: delayed power put %d without a reference of this run: NOT forwarded\n", number);
+		return;
+	}
+
+	/* The run's count of the references it holds on the number. */
+	k->power_refs[number]--;
+
+	/* Hands the reference to the delayed give-back. */
+	functions = resident_power_functions(number);
+	drv_i915_display_power_put_later(k->d->power, functions, delay_ms);
 }
 
 /* The vblank hook of a run: takes a vblank reference of the pipe; 0, or I915_RESIDENT_EINVAL when its interrupts are off. */
@@ -1844,15 +2037,15 @@ resident_config_panel(
 
 	/* The display buffer of the device: display 13 has 4096 blocks over four slices, Tiger Lake 2048 over two. */
 	config->dbuf_size = I915_RESIDENT_DBUF_D13_BLOCKS;
-	if (d->dcore->dbuf_slice_mask == I915_RESIDENT_DBUF_TGL_SLICES)
+	if (d->power->dbuf_mask == I915_RESIDENT_DBUF_TGL_SLICES)
 		config->dbuf_size = I915_RESIDENT_DBUF_TGL_BLOCKS;
 
 	config->dbuf_slice_mask = I915_RESIDENT_DBUF_D13_SLICES;
-	if (d->dcore->dbuf_slice_mask != 0U)
-		config->dbuf_slice_mask = d->dcore->dbuf_slice_mask;
+	if (d->power->dbuf_mask != 0U)
+		config->dbuf_slice_mask = d->power->dbuf_mask;
 
 	/* The slices powered now, and whether the bus is joined. */
-	config->dbuf_slices_now = d->dcore->dbuf_enabled_slices;
+	config->dbuf_slices_now = d->power->dbuf_slices;
 	mbus = drv_i915_read32(d->mmio, I915_XD_MBUS_CTL);
 	config->mbus_joined_now = (int)((mbus >> 31) & 1U);
 

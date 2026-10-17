@@ -29,7 +29,7 @@
 #include "internal.h"
 #include "interrupts.h"
 #include "hpd.h"
-#include "power.h"
+#include "display-power.h"
 #include <kern/kcrt.h>
 
 #include "../i915.h"
@@ -178,7 +178,7 @@ static const struct i915_irq_display_ops i915_display_irq_ops = {
 /*
  * The pipe interrupt hooks of the power wells.
  *
- * The power-well code calls them through pwc->irq_ops with the display's
+ * The display's power calls them through its irq_ops with the display's
  * struct i915_display_irq as the context.  The table never changes.
  */
 const struct i915_pw_irq_ops drv_i915_pw_irq_ops = {
@@ -211,13 +211,12 @@ drv_i915_display_irq_bind(
 	/* Names the device's registers and the power state the pipes live in. */
 	d->irq = irq;
 	d->m = irq->m;
-	d->pd = &display->power_domains;
-	d->pwc = &display->pwc;
+	d->power = &display->power;
 
 	/* Binds the pipes' vblank delivery and the power-well hooks that restore and stop it. */
 	drv_i915_irq_vblank_init(d, &display->irq_vblank);
-	display->pwc.irq_ops = &drv_i915_pw_irq_ops;
-	display->pwc.irq_ctx = d;
+	display->power.irq_ops = &drv_i915_pw_irq_ops;
+	display->power.irq_ctx = d;
 
 	/*
 	 * The platform: the PCH, the display version, pipes and transcoders A
@@ -870,9 +869,9 @@ i915_display_irq_set_enabled(
 
 	d = context;
 
-	/* The power-well post-enable path is gated on this same flag. */
-	if (d->pwc != NULL)
-		d->pwc->irqs_enabled = enabled;
+	/* The power wells' restore of a pipe's interrupts is gated on this same flag. */
+	if (d->power != NULL)
+		d->power->irqs_enabled = enabled;
 }
 
 /* Warns about vblank references still held when interrupts are uninstalled. */
@@ -984,7 +983,7 @@ i915_display_irq_write(
 		(*counter)++;
 }
 
-/* Reports whether a pipe's power domain is enabled. */
+/* Reports whether a pipe's power wells are on. */
 static int
 i915_pipe_power_on(
 	struct i915_display_irq *d,
@@ -992,14 +991,14 @@ i915_pipe_power_on(
 {
 	int enabled;
 
-	/* Asks the power domains about PIPE_A + pipe. */
-	enabled = drv_i915_display_power_is_enabled(d->pd, (enum i915_power_domain)(I915_PW_DOMAIN_PIPE_A + pipe), d->pwc);
+	/* Asks whether the pipe's wells are on. */
+	enabled = drv_i915_display_power_is_on(d->power, I915_XD_POWERS_PIPE(pipe));
 
 	/* Reports the pipe's power. */
 	return enabled;
 }
 
-/* Reports whether a transcoder's power domain is enabled. */
+/* Reports whether a transcoder's power wells are on. */
 static int
 i915_transcoder_power_on(
 	struct i915_display_irq *d,
@@ -1007,8 +1006,8 @@ i915_transcoder_power_on(
 {
 	int enabled;
 
-	/* Asks the power domains about TRANSCODER_A + transcoder. */
-	enabled = drv_i915_display_power_is_enabled(d->pd, (enum i915_power_domain)(I915_PW_DOMAIN_TRANSCODER_A + transcoder), d->pwc);
+	/* Asks whether the transcoder's wells are on. */
+	enabled = drv_i915_display_power_is_on(d->power, I915_XD_POWERS_TRANS(transcoder));
 
 	/* Reports the transcoder's power. */
 	return enabled;
