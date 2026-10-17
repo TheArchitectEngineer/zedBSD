@@ -46,6 +46,54 @@
 #include <stdlib.h>
 #include <string.h>
 
+/*
+ * The configuration the older modeset was filled with: the test keeps
+ * writing its cases in it and converts each into the screen's
+ * configuration (i915_ms_picture_config).
+ */
+struct i915_lcd_modeset_cfg {
+	int output_hdmi;                /* 0 = the eDP panel (DP SST), 1 = an HDMI sink on a combo-PHY DDI */
+	int output_dp_ext;              /* 1 = an external DP sink (SST) on a Type-C port's DDI */
+	int vbt_hdmi_level_shift;       /* the VBT child's HDMI level shift for this port; < 0 = the VBT has none */
+	unsigned also_active_pipes;     /* the other pipes this configuration lights (BIT(pipe)): the DDB is
+	                                 * computed for the whole set, as the reference's atomic check would */
+	int port;                       /* enum port: 0 = A, 1 = B (combo PHY); 3 .. 6 = TC1 .. TC4 (an external DP sink) */
+	int pipe, cpu_transcoder;       /* 0 = A */
+	int dpll_id;                    /* 0 = DPLL 0, 1 = DPLL 1; 3 .. 6 = TC PLL 1 .. 4 (an external DP sink) */
+	int aux_ch;                     /* enum aux_ch: 0 = A */
+	uint32_t saved_port_bits;       /* DDI_BUF_CTL readout & DDI_BUF_PORT_REVERSAL, | the VBT lane-reversal flag */
+	const struct i915_lcd_aux_emit *aux_emit;   /* the sink's own AUX channel (an external DP port's); NULL = the backend's */
+	uint8_t dpcd[15];               /* the sink's receiver capabilities (from the resident eDP) */
+	uint8_t edp_dpcd[3];
+	int vbt_low_vswing, vbt_hobl;   /* the panel's VBT eDP block */
+	/* the VBT backlight block of the panel, and the raw clock the PCH PWM divides (kHz, read out by the caller) */
+	int vbt_backlight_present, vbt_backlight_active_low, vbt_backlight_controller;
+	uint16_t vbt_backlight_pwm_freq_hz;
+	uint8_t vbt_backlight_min_brightness;
+	uint32_t rawclk_khz;
+	/* watermark / DDB inputs, as the normal initialisation read and keeps them */
+	uint16_t wm_latency[8];         /* skl_setup_wm_latency(): usec per level */
+	uint8_t wm_num_levels;
+	int wm_ipc_enabled;
+	uint8_t sagv_block_time_us;
+	uint32_t dbuf_size;             /* DISPLAY_INFO()->dbuf.size / slice_mask of the platform */
+	uint8_t dbuf_slice_mask;
+	uint8_t dbuf_enabled_slices;    /* the slices enabled now (the old global DBUF state) */
+	int mbus_joined;                /* MBUS_CTL as found (the old global DBUF state) */
+	/* the CDCLK state the normal initialisation left (display.cdclk.hw) and the platform limit */
+	uint32_t cdclk_khz, cdclk_vco_khz, cdclk_ref_khz, cdclk_bypass_khz, cdclk_max_khz;
+	uint8_t cdclk_voltage_level;
+	/* memory bandwidth (MB/s) of the QGV point the initialisation left allowed (SAGV is kept off); 0 = unknown = refuse */
+	uint32_t qgv_allowed_bw;
+	uint32_t dmc_fw_mask;           /* bit n: DMC firmware id n is loaded (1 = pipe A, 2 = pipe B ...; from the DMC loader) */
+	int vbt_override_afc_startup;   /* VBT general feature; the value is already in the state's pll.div0 */
+	/* the framebuffer to show: what the scanout object reports */
+	uint32_t fb_fourcc;
+	uint64_t fb_modifier;
+	uint32_t fb_width, fb_height, fb_pitch, fb_surf;
+};
+
+
 /* The two scanout buffers the flips alternate between. */
 #define I915_MS_SURF_A 0xfdfc0000U
 #define I915_MS_SURF_B 0xfd000000U
@@ -105,6 +153,7 @@ static const char *const i915_ms_kind_name[] = {
 static struct i915_edp_config i915_ms_vbt_config(void);
 static struct i915_lcd_modeset_cfg i915_ms_config(void);
 static void i915_ms_bring_up(void);
+static void i915_ms_picture_config(const struct i915_lcd_state *s, const struct i915_lcd_modeset_cfg *cfg, struct i915_xd_picture_config *config);
 static int i915_ms_prepare(const struct i915_lcd_state *state, const struct i915_lcd_modeset_cfg *config);
 static int i915_ms_prepare_enable(const struct i915_lcd_modeset_cfg *config);
 static void i915_ms_dump_trace(const char *title);
@@ -343,7 +392,7 @@ i915_ms_prepare(
 	int error;
 
 	/* The screen's configuration, then its prepare. */
-	drv_i915_lcd_picture_config(state, config, &picture);
+	i915_ms_picture_config(state, config, &picture);
 	error = drv_i915_xd_picture_prepare(&i915_ms_display.xd.pictures, I915_XD_PICTURE_RESIDENT, &picture, &i915_ms_trace.ops);
 	if (error != 0)
 		return error;
@@ -1805,4 +1854,99 @@ i915_ms_test_dither(void)
 	}
 
 	(void)drv_i915_edp_end(i915_ms_display.dp_world, &i915_ms_res);
+}
+
+/* Converts a case's state and configuration into the configuration a screen is prepared from. */
+static void
+i915_ms_picture_config(
+	const struct i915_lcd_state *s,
+	const struct i915_lcd_modeset_cfg *cfg,
+	struct i915_xd_picture_config *config)
+{
+	unsigned index;
+
+	/* Starts empty. */
+	kern_memset(config, 0, sizeof(*config));
+
+	/* The kind of the output. */
+	config->kind = I915_XD_SCREEN_PANEL;
+	if (cfg->output_hdmi)
+		config->kind = I915_XD_SCREEN_HDMI;
+	if (cfg->output_dp_ext) {
+		config->kind = I915_XD_SCREEN_DP;
+		if (cfg->output_hdmi)
+			config->kind = 0U;
+	}
+
+	/* The port, the pipe, the transcoder, the AUX channel and the PLL the caller expects. */
+	config->ddi = (unsigned)cfg->port;
+	config->pipe = (unsigned)cfg->pipe;
+	config->trans = (unsigned)cfg->cpu_transcoder;
+	config->aux = (unsigned)cfg->aux_ch;
+	config->pll = (unsigned)cfg->dpll_id;
+	config->also_pipes = (uint8_t)cfg->also_active_pipes;
+	config->hdmi_level = cfg->vbt_hdmi_level_shift;
+	config->kept = cfg->saved_port_bits;
+	config->sink = cfg->aux_emit;
+
+	/* The sink's capabilities and the panel's VBT data. */
+	kern_memcpy(config->caps, cfg->dpcd, sizeof(config->caps));
+	kern_memcpy(config->edp_caps, cfg->edp_dpcd, sizeof(config->edp_caps));
+	config->vbt_low_vswing = cfg->vbt_low_vswing;
+	config->vbt_hobl = cfg->vbt_hobl;
+	config->vbt_backlight_present = cfg->vbt_backlight_present;
+	config->vbt_backlight_active_low = cfg->vbt_backlight_active_low;
+	config->vbt_backlight_controller = cfg->vbt_backlight_controller;
+	config->vbt_backlight_hz = cfg->vbt_backlight_pwm_freq_hz;
+	config->vbt_backlight_min = cfg->vbt_backlight_min_brightness;
+	config->rawclk_khz = cfg->rawclk_khz;
+
+	/* The memory's watermarks and the display buffer as the start found them. */
+	for (index = 0U; index < 8U; index++)
+		config->wm_latency[index] = cfg->wm_latency[index];
+	config->wm_levels = cfg->wm_num_levels;
+	config->wm_ipc = cfg->wm_ipc_enabled;
+	config->sagv_block_us = cfg->sagv_block_time_us;
+	config->dbuf_size = cfg->dbuf_size;
+	config->dbuf_slice_mask = cfg->dbuf_slice_mask;
+	config->dbuf_slices_now = cfg->dbuf_enabled_slices;
+	config->mbus_joined_now = cfg->mbus_joined;
+
+	/* The CD clock and its limit, the memory bandwidth, the DMC programs and the AFC override. */
+	config->cdclk.ref_khz = cfg->cdclk_ref_khz;
+	config->cdclk.vco_khz = cfg->cdclk_vco_khz;
+	config->cdclk.cdclk_khz = cfg->cdclk_khz;
+	config->cdclk.bypass_khz = cfg->cdclk_bypass_khz;
+	config->cdclk.voltage = cfg->cdclk_voltage_level;
+	config->cdclk_max_khz = cfg->cdclk_max_khz;
+	config->qgv_mbps = cfg->qgv_allowed_bw;
+	config->dmc_programs = cfg->dmc_fw_mask;
+	config->afc_override = cfg->vbt_override_afc_startup;
+
+	/* The mode and the link; a rate or a depth that is not positive stays 0. */
+	config->mode = s->mode;
+	if (s->link.rate_khz > 0)
+		config->rate_khz = (uint32_t)s->link.rate_khz;
+	config->lanes = (unsigned)s->link.lanes;
+	if (s->link.bpp > 0)
+		config->bpp = (unsigned)s->link.bpp;
+	config->m_n.tu = s->link.tu;
+	config->m_n.data_m = s->link.data_m;
+	config->m_n.data_n = s->link.data_n;
+	config->m_n.link_m = s->link.link_m;
+	config->m_n.link_n = s->link.link_n;
+
+	/* The reference clock and a combo PLL's words. */
+	config->pll_ref_khz = (uint32_t)s->pll.ref_khz;
+	config->pll_words.cfgcr0 = s->pll.cfgcr0;
+	config->pll_words.cfgcr1 = s->pll.cfgcr1;
+	config->pll_words.div0 = s->pll.div0;
+
+	/* The framebuffer. */
+	config->fb_fourcc = cfg->fb_fourcc;
+	config->fb_modifier = cfg->fb_modifier;
+	config->fb_width = cfg->fb_width;
+	config->fb_height = cfg->fb_height;
+	config->fb_pitch = cfg->fb_pitch;
+	config->fb_surf = cfg->fb_surf;
 }

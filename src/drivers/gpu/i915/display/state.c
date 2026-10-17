@@ -56,13 +56,6 @@
 #include <uapi/errno.h>
 #include <stddef.h>
 
-/*
- * The DDIs the plan is told for an HDMI sink (DDI B) and an external
- * DisplayPort sink (a Type-C port, whose PLL is not the plan's).
- */
-#define I915_STATE_HDMI_DDI 1U
-#define I915_STATE_TC1_DDI 3U
-
 /* The PCI_ANY_ID of a quirk entry: any subsystem id matches. */
 #define I915_PCI_ANY_ID ((int)(-1))
 
@@ -203,7 +196,6 @@ static u32 i915_state_record_rmw(void *ctx, u32 reg, u32 clear, u32 set);
 static void i915_state_record_step(void *ctx, const char *name);
 static void i915_state_bind_recorder(struct i915_lcd_emit *emit, struct i915_lcd_words *out);
 static void i915_state_to_mode(const struct i915_lcd_state *s, struct drm_display_mode *mode, struct intel_link_m_n *m_n);
-static void i915_state_dkl_words(const struct intel_dpll_hw_state *hw, struct i915_lcd_dkl_words *words);
 static void i915_state_from_plan(const struct i915_xd_plan *plan, struct i915_lcd_state *out);
 
 /*
@@ -809,143 +801,6 @@ drv_i915_lcd_compute(
 		return I915_LCD_EINVAL;
 
 	/* Succeeded: the mode, link, M/N and PLL are computed. */
-	return 0;
-}
-
-/*
- * Computes the link and PLL values of an HDMI mode.
- *
- * At 8 bpc the TMDS clock is the pixel clock (intel_hdmi_tmds_clock()).
- * Returns 0, EINVAL for a missing or clockless mode, or the error of the
- * WRPLL calculation.
- */
-int
-drv_i915_lcd_compute_hdmi(
-	const struct i915_lcd_mode *mode,
-	int ref_nssc_khz,
-	struct i915_lcd_state *out)
-{
-	struct i915_xd_plan_input input;
-	struct i915_xd_plan plan;
-	unsigned refused;
-
-	/* Refuses a call without a mode with a clock, or without a result. */
-	if (mode == NULL)
-		return EINVAL;
-	if (out == NULL)
-		return EINVAL;
-	if (mode->clock_khz <= 0)
-		return EINVAL;
-
-	/* The 4-lane, 24 bpp link its TMDS clock runs at, and the WRPLL, through the screen's plan. */
-	kern_memset(&input, 0, sizeof(input));
-	input.kind = I915_XD_SCREEN_HDMI;
-	input.ddi = I915_STATE_HDMI_DDI;
-	input.mode = mode;
-	input.platform = drv_i915_lcd_xd_platform();
-	input.ref_khz = (uint32_t)ref_nssc_khz;
-	refused = drv_i915_xd_screen_plan_link(&input, &plan);
-
-	/* The mode and the link. */
-	kern_memset(out, 0, sizeof(*out));
-	out->mode = *mode;
-	i915_state_from_plan(&plan, out);
-	if (refused != I915_XD_PLAN_OK)
-		return I915_LCD_EINVAL;
-
-	/* Succeeded: the link and PLL are computed. */
-	return 0;
-}
-
-/*
- * Computes the link, M/N and Type-C PLL of an external DP display's mode
- * (Linux v6.8.12 intel_dp_compute_link_config_wide() for SST
- * without DSC).
- *
- * The bits per colour start from the EDID's depth (8 when undefined),
- * capped at 8 and at a branch's downstream limit, and drop by 2 down to 6;
- * for each depth the link rates the source and sink share are tried from
- * the lowest, and for each rate 1, 2 and then 4 lanes: the first that
- * carries the mode is the link.  max_rate_khz and max_lanes are the
- * fallback's limits (0: none).  The mode must be within the branch's
- * downstream clock limits.  Nothing is written to the hardware.  Returns 0,
- * EINVAL for missing input or a sink without a common rate or lane, ENOSPC
- * when no link carries the mode, or the error of the DKL PLL calculation.
- */
-int
-drv_i915_lcd_compute_dp_ext(
-	const struct i915_lcd_mode *mode,
-	const struct i915_dp_ext_sink *sink,
-	int max_rate_khz,
-	int max_lanes,
-	int ref_nssc_khz,
-	struct i915_lcd_state *out)
-{
-	uint32_t common[I915_XD_DP_RATES];
-	struct i915_xd_plan_input input;
-	struct intel_dpll_hw_state hw;
-	struct i915_xd_plan plan;
-	unsigned refused;
-	unsigned index;
-	int error;
-
-	/* Refuses a call without a mode with a clock, a sink or a result. */
-	if (mode == NULL)
-		return EINVAL;
-	if (sink == NULL)
-		return EINVAL;
-	if (out == NULL)
-		return EINVAL;
-	if (mode->clock_khz <= 0)
-		return EINVAL;
-
-	/* Refuses a sink that shares no rate or lane with the source. */
-	if (sink->num_common_rates <= 0)
-		return EINVAL;
-	if (sink->max_lanes <= 0)
-		return EINVAL;
-
-	/* Starts a clean result with the mode and the sink's capability. */
-	kern_memset(out, 0, sizeof(*out));
-	out->mode = *mode;
-	out->link.sink_max_rate_khz = sink->max_rate;
-	out->link.sink_max_lanes = sink->max_sink_lanes;
-
-	/* The link and its M/N through the screen's plan (a Type-C port's PLL is not the plan's). */
-	for (index = 0; index < (unsigned)sink->num_common_rates && index < I915_XD_DP_RATES; index++)
-		common[index] = (uint32_t)sink->common_rates[index];
-	kern_memset(&input, 0, sizeof(input));
-	input.kind = I915_XD_SCREEN_DP;
-	input.ddi = I915_STATE_TC1_DDI;
-	input.mode = mode;
-	input.sink.rates = common;
-	input.sink.nrates = index;
-	input.sink.max_lanes = (unsigned)sink->max_lanes;
-	input.sink.max_bpc = sink->max_bpc > 0 ? (unsigned)sink->max_bpc : 0U;
-	input.sink.max_dotclock_khz = (uint32_t)sink->max_dotclock_khz;
-	input.sink.min_tmds_khz = (uint32_t)sink->min_tmds_clock_khz;
-	input.sink.max_tmds_khz = (uint32_t)sink->max_tmds_clock_khz;
-	input.sink.rate_limit_khz = max_rate_khz > 0 ? (uint32_t)max_rate_khz : 0U;
-	input.sink.lane_limit = max_lanes > 0 ? (unsigned)max_lanes : 0U;
-	input.platform = drv_i915_lcd_xd_platform();
-	input.ref_khz = (uint32_t)ref_nssc_khz;
-	refused = drv_i915_xd_screen_plan_link(&input, &plan);
-	if (refused != I915_XD_PLAN_OK)
-		return ENOSPC;
-
-	/* The link and its M/N. */
-	i915_state_from_plan(&plan, out);
-
-	/* The Type-C port's DKL PLL of the link rate. */
-	out->pll.ref_khz = ref_nssc_khz;
-	error = drv_i915_dkl_pll_calc(out->link.rate_khz, 0, ref_nssc_khz, &hw);
-	if (error != 0)
-		return error;
-
-	/* Keeps the PLL's words. */
-	i915_state_dkl_words(&hw, &out->pll.dkl);
-
-	/* Succeeded: the link, M/N and PLL are computed. */
 	return 0;
 }
 
@@ -1596,27 +1451,6 @@ i915_state_to_mode(
 	m_n->data_n = s->link.data_n;
 	m_n->link_m = s->link.link_m;
 	m_n->link_n = s->link.link_n;
-}
-
-/* Copies a DKL PLL's words out of a PLL state, one word per register. */
-static void
-i915_state_dkl_words(
-	const struct intel_dpll_hw_state *hw,
-	struct i915_lcd_dkl_words *words)
-{
-	/* The reference clock input, the clock tops and the dividers. */
-	words->refclkin_ctl = hw->mg_refclkin_ctl;
-	words->clktop2_coreclkctl1 = hw->mg_clktop2_coreclkctl1;
-	words->clktop2_hsclkctl = hw->mg_clktop2_hsclkctl;
-	words->div0 = hw->mg_pll_div0;
-	words->div1 = hw->mg_pll_div1;
-
-	/* The loop filter, the lock, the spread spectrum and the bias. */
-	words->lf = hw->mg_pll_lf;
-	words->frac_lock = hw->mg_pll_frac_lock;
-	words->ssc = hw->mg_pll_ssc;
-	words->bias = hw->mg_pll_bias;
-	words->tdc_coldst_bias = hw->mg_pll_tdc_coldst_bias;
 }
 
 /* Copies a screen's plan into the computed state: the link, its M/N and a combo PLL's words. */

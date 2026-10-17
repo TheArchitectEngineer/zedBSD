@@ -2187,63 +2187,6 @@ struct i915_lcd_trace {
 	struct i915_lcd_trace_entry e[I915_LCD_TRACE_MAX];
 };
 
-/*
- * The modeset objects (modeset.c).
- */
-/*
- * one-screen modeset of the internal panel: prepare, enable (the reference's
- * hsw_crtc_enable with the DDI / DP callees below it), plane update, plane disable, disable (the
- * reference's hsw_crtc_disable).  zedBSD-facing surface: plain C types only.
- *
- * It is NOT an atomic-commit framework: one crtc, one eDP encoder on a combo-PHY port, one shared DPLL,
- * one primary plane on one linear XRGB8888 framebuffer.  What it keeps from the reference's commit is
- * the meaning of the steps: the new state is prepared before anything is written; the enable, the plane
- * update and the disable are the reference's own callers run on ONE set of objects; ownership that the
- * enable took (power references, the PLL, panel power, the armed plane) is what the disable gives back;
- * "the call returned" is never reported as "it worked" -- status carries what was read back.
- */
-
-struct i915_lcd_modeset_cfg {
-	int output_hdmi;                /* 0 = the eDP panel (DP SST), 1 = an HDMI sink on a combo-PHY DDI */
-	int output_dp_ext;              /* 1 = an external DP sink (SST) on a Type-C port's DDI */
-	int vbt_hdmi_level_shift;       /* the VBT child's HDMI level shift for this port; < 0 = the VBT has none */
-	unsigned also_active_pipes;     /* the other pipes this configuration lights (BIT(pipe)): the DDB is
-	                                 * computed for the whole set, as the reference's atomic check would */
-	int port;                       /* enum port: 0 = A, 1 = B (combo PHY); 3 .. 6 = TC1 .. TC4 (an external DP sink) */
-	int pipe, cpu_transcoder;       /* 0 = A */
-	int dpll_id;                    /* 0 = DPLL 0, 1 = DPLL 1; 3 .. 6 = TC PLL 1 .. 4 (an external DP sink) */
-	int aux_ch;                     /* enum aux_ch: 0 = A */
-	uint32_t saved_port_bits;       /* DDI_BUF_CTL readout & DDI_BUF_PORT_REVERSAL, | the VBT lane-reversal flag */
-	const struct i915_lcd_aux_emit *aux_emit;   /* the sink's own AUX channel (an external DP port's); NULL = the backend's */
-	uint8_t dpcd[15];               /* the sink's receiver capabilities (from the resident eDP) */
-	uint8_t edp_dpcd[3];
-	int vbt_low_vswing, vbt_hobl;   /* the panel's VBT eDP block */
-	/* the VBT backlight block of the panel, and the raw clock the PCH PWM divides (kHz, read out by the caller) */
-	int vbt_backlight_present, vbt_backlight_active_low, vbt_backlight_controller;
-	uint16_t vbt_backlight_pwm_freq_hz;
-	uint8_t vbt_backlight_min_brightness;
-	uint32_t rawclk_khz;
-	/* watermark / DDB inputs, as the normal initialisation read and keeps them */
-	uint16_t wm_latency[8];         /* skl_setup_wm_latency(): usec per level */
-	uint8_t wm_num_levels;
-	int wm_ipc_enabled;
-	uint8_t sagv_block_time_us;
-	uint32_t dbuf_size;             /* DISPLAY_INFO()->dbuf.size / slice_mask of the platform */
-	uint8_t dbuf_slice_mask;
-	uint8_t dbuf_enabled_slices;    /* the slices enabled now (the old global DBUF state) */
-	int mbus_joined;                /* MBUS_CTL as found (the old global DBUF state) */
-	/* the CDCLK state the normal initialisation left (display.cdclk.hw) and the platform limit */
-	uint32_t cdclk_khz, cdclk_vco_khz, cdclk_ref_khz, cdclk_bypass_khz, cdclk_max_khz;
-	uint8_t cdclk_voltage_level;
-	/* memory bandwidth (MB/s) of the QGV point the initialisation left allowed (SAGV is kept off); 0 = unknown = refuse */
-	uint32_t qgv_allowed_bw;
-	uint32_t dmc_fw_mask;           /* bit n: DMC firmware id n is loaded (1 = pipe A, 2 = pipe B ...; from the DMC loader) */
-	int vbt_override_afc_startup;   /* VBT general feature; the value is already in the state's pll.div0 */
-	/* the framebuffer to show: what the scanout object reports */
-	uint32_t fb_fourcc;
-	uint64_t fb_modifier;
-	uint32_t fb_width, fb_height, fb_pitch, fb_surf;
-};
 
 /*
  * What a screen holds and what a flip did are the pictures' records
@@ -2265,24 +2208,19 @@ struct i915_lcd_modeset_cfg {
 #define I915_LCD_FLIP_ARMED I915_XD_PICTURE_FLIP_ARMED
 
 /*
- * The one picture on the panel (modeset.c).
- */
-/*
- * Linux-derived -- LCD-B: show ONE known picture on the panel and stop safely.  zedBSD project code.
+ * The show of a resident run (resident.c): the buffer's life (create, pin,
+ * draw, publish, begin ... end, unpin, destroy, or abandon), the light and
+ * the dark of the screen, the observation between them, and the decision
+ * whether the buffer may be given back.
  *
- * This is the production body shared by the real GPU (modeset.c) and the GPU-free kernel test
- * (the display tests): the scanout object's life (create -> pin -> draw -> publish -> begin ... end -> unpin ->
- * destroy, or ABANDON), the two commits of the modeset object, the observation between them, and the decision
- * whether the buffer may be given back.  Only the backend (i915_lcd_ops) and the GGTT behind the gt_mem differ.
- *
- * Three records are kept APART, because they answer different questions:
- *   first anomaly     the first thing that went wrong, where, and how far the run had got -- never overwritten
- *                     by anything the cleanup reports afterwards;
- *   enabled state     what was really switched on when the enable commit returned (software state + what the sink
- *                     and the frame counter said);
- *   cleanup result    what the disable commit and the stop confirmation returned, and what is still held.
- * And three kinds of evidence are not mixed: software flags ("the arm was written"), hardware observation (frame
- * counter, underrun status, sink link status) and -- outside this code -- the photograph of the panel.
+ * Three records are kept apart, because they answer different questions:
+ * the first anomaly (the first thing that went wrong, where, and how far
+ * the run had got, never overwritten by what the cleanup reports), the
+ * state the light left (software state and what the sink and the frame
+ * counter said), and what the dark and the stop confirmation returned and
+ * what is still held.  Software flags ("the arm was written") and hardware
+ * observation (frame counter, underrun status, sink link status) are not
+ * mixed.
  */
 
 enum i915_lcd_show_stage {
@@ -2299,24 +2237,19 @@ enum i915_lcd_show_stage {
 };
 
 /*
- * What one picture on the panel needs: the modeset configuration, the
- * hooks, the GPU memory and the panel.
+ * What one show needs: the screen's configuration, the backend, the GPU
+ * memory, the pipe it watches, and the run's window and stage hooks.
  */
 struct i915_lcd_show_env {
 	struct i915_lcd_emit *hw;             /* the backend */
 	struct i915_gt_mem *gm;               /* where the scanout buffer lives */
-	struct i915_scanout *so;              /* caller-owned storage: it must outlive an abandoned buffer */
-	const struct i915_lcd_state *lcd;     /* LCD-A: mode, link, M/N, PLL words (from the resident eDP's DPCD / EDID) */
-	struct i915_lcd_modeset_cfg cfg;      /* everything but fb_*: filled by the caller from ITS sources */
+	struct i915_xd_picture_config cfg;    /* everything but the framebuffer: filled by the caller */
 	int pipe;
-	unsigned pattern_id;
-	uint64_t pattern_fnv;                   /* pinned hash of that picture at this size; 0 = do not compare */
 	unsigned first_frames_ms;               /* how long to wait for the first frames */
-	unsigned window_ms;                     /* the finite observation window (for the camera) */
-	/* optional: called when a stage is reached (register readbacks for the log; fault injection in tests) */
+	unsigned window_ms;                     /* the finite window after the in-window work */
 	/*
-	 * optional: a test that runs while the picture is up (after the first frames, before the window); 0 = passed.
-	 * A failure is recorded as the first anomaly (if none yet) and the reference stop path follows.
+	 * Optional: the work that runs while the picture is up (after the first frames, before the window); 0 = done.
+	 * A failure is recorded as the first anomaly (if none yet) and the dark follows.  at_stage is told every stage.
 	 */
 	int (*in_window)(void *ctx, struct i915_lcd_observer *o);
 	void *in_window_ctx;
@@ -2350,8 +2283,6 @@ struct i915_lcd_show_report {
 	uint32_t transconf_after_stop;
 	/* the buffer */
 	uint64_t surf;
-	uint64_t pattern_hash;
-	uint32_t readback_bad_before, readback_bad_after;
 	int released, abandoned;
 	int display_acquired;                   /* the buffer was handed to the display (the enable commit was attempted) */
 	int display_released;                   /* the display has provably stopped reading it (back to PINNED) */
@@ -2361,11 +2292,7 @@ struct i915_lcd_show_report {
 };
 
 /*
- * The panel runs (modeset.c, present.c).
- */
-/*
- * A panel run on the real GPU: one known picture on the panel, a finite
- * observation window, the reference's stop path, everything given back.
+ * The resident runs (resident.c, present.c, head.c).
  */
 
 struct i915_edp_device;
@@ -2377,41 +2304,6 @@ struct i915_gt_engines;
 struct i915_gt_ppgtt;
 struct spinlock;
 
-/* the objects of the normal initialisation this run reads and uses; none is copied, none is re-created */
-struct i915_driver_probe;
-/*
- * The objects of the normal initialisation a panel run reads and uses;
- * none is copied, none is re-created.
- */
-struct i915_lcd_kernel_deps {
-	struct i915_edp_device *edp;          /* resident panel: DPCD / EDID / LCD-A state, PPS, AUX, tick sleeps, VBT */
-	struct i915_mmio *mmio;
-	struct i915_power_domains *pd;
-	struct i915_pw_ctx *pwc;
-	struct i915_display_core *dcore;      /* DBUF slices */
-	struct i915_cdclk_dev *cdclk;
-	struct i915_display_nogem *nogem;     /* watermark latencies, SAGV block time */
-	struct i915_display_state *dstate;    /* the bandwidth object: QGV mask */
-	struct i915_bw_state *bw;             /* QGV / PSF bandwidth table */
-	struct i915_dmc_dev *dmc;
-	/*
-	 * The display half of the interrupt device (vblank references and
-	 * waits).  It was the whole interrupt device before the GT half moved
-	 * to struct i915_irq_dev.
-	 */
-	struct i915_display_irq *irq;
-	struct i915_gt_mem *gm;
-	int ipc_enabled;                        /* skl_watermark_ipc_init()'s result */
-	/* LCD-G only: the GT the draw is submitted to (forcewake is held by the caller) */
-	struct i915_gt_engines *es;
-	struct i915_gt_ppgtt *vm;
-	struct spinlock *uncore_lock;
-	/* the CPU-mappable aperture, and the probe state whose INIT reference the run returns */
-	uint64_t gmadr_base, gmadr_size;
-	struct i915_driver_probe *dprobe;
-	/* the display's Type-C ports, whose links an output's disable gives back */
-	struct i915_tc *tc;
-};
 /* the release decision after a draw and (maybe) a show -- exported for the GPU-free test */
 struct i915_fhd_render;
 struct i915_scanout;
@@ -2596,7 +2488,6 @@ struct i915_workqueue;
 /*
  * The takeover report (takeover.c).
  */
-struct i915_lcd_modeset_cfg;
 struct i915_lcd_emit;
 
 /*
@@ -2647,47 +2538,20 @@ struct drv_gpu_display_ops;
 struct drv_gpu_scanout_ops;
 
 
-/*
- * The parameters of one panel run.
- *
- * The resident run of the panel has none (its pointer stays NULL); the
- * resident run of another output and the second output name
- * the output's port, pipe and PLL; a scenario of the tests also names the
- * picture and the window.  It is kept with the run that points at it.
- */
-struct i915_lcd_run_params {
-	unsigned pattern_id;
-	uint64_t pattern_fnv;
-	unsigned window_ms;
-	int (*in_window)(void *ctx, struct i915_lcd_observer *o);
-	int output_hdmi;
-	int output_dp_ext;
-	int port;
-	int pipe;
-	int cpu_transcoder;
-	int dpll_id;
-	const struct i915_lcd_state *state;
-	const char *tag;
-	int reset_dplls;
-};
 
 /*
- * One run of the panel from the resident path or a scenario.
+ * One run of the resident output or of the second output (resident.c).
  *
- * The run's parameters are above; the rest is what the run took (power
- * references, events) and what it saw, kept so the teardown gives back
- * exactly what the run holds.
+ * The run's parameters (display-internal.h) name its output; the rest is
+ * what the run took (power references, events) and what it saw, kept so
+ * the teardown gives back exactly what the run holds.
  */
 
 struct i915_lcd_kernel {
 	/* The parameters of the run; NULL before it starts. */
 	const struct i915_lcd_run_params *p;
 
-	/*
-	 * The display the run belongs to; NULL for a run that is the display's
-	 * lk member (the hooks then find the display around it).  A second
-	 * output's run is not lk and names its display here.
-	 */
+	/* The display the run belongs to. */
 	struct i915_display *display;
 
 	/* What the run drives. */
@@ -2695,7 +2559,6 @@ struct i915_lcd_kernel {
 
 	/* The two modeset locks (dpll, backlight): lcdb_locks of the display. */
 	struct mutex *locks;
-	int locks_live;
 
 	/* The register, wait, panel, power and vblank hooks of the run. */
 	struct i915_lcd_emit ops;
@@ -2709,11 +2572,8 @@ struct i915_lcd_kernel {
 	/* Nonzero once the run is in its cleanup. */
 	int phase_cleanup;
 
-	/* The picture and the timing of the run. */
-	unsigned pattern_id, window_ms, post_before, pre_before, vbt_min;
-
-	/* The backlight PWM frequency found at the start. */
-	uint32_t bl_freq0;
+	/* The window of the run (ms). */
+	unsigned window_ms;
 
 	/* The interrupt and vblank event state of the run. */
 	int irq_was_on, event_armed, event_pipe;
@@ -2722,7 +2582,7 @@ struct i915_lcd_kernel {
 
 	/* The two flip buffers and what the flips did. */
 	struct i915_scanout *flip_a, *flip_b;
-	unsigned flips_done, draws_ok, probe_flips, cross_ok;
+	unsigned flips_done;
 
 	/* Set when the disable commit starts; errors are counted apart from then on. */
 	int probe_watch;
@@ -2822,8 +2682,9 @@ struct i915_display_output {
 	int has_connector;
 	unsigned connector;
 
-	/* The HDMI or DP mode (its physical size included, 0 when unknown), link and PLL. */
-	struct i915_lcd_state state;
+	/* The HDMI or DP mode (its physical size included, 0 when unknown), and the link and PLL its plan chose. */
+	struct i915_display_mode mode;
+	struct i915_display_link link;
 
 	/*
 	 * An external DP display's Type-C port (0 = TC1) and DDI port, and
@@ -2887,7 +2748,7 @@ struct i915_display_head {
 	/* The head's run: its hooks, its vblank event, its power references, the parameters its pipe is read from, its configuration (kept off the stack). */
 	struct i915_lcd_kernel k;
 	struct i915_lcd_run_params params;
-	struct i915_lcd_modeset_cfg cfg;
+	struct i915_xd_picture_config cfg;
 
 	/*
 	 * A connector that could not be lit beside the resident output, and the

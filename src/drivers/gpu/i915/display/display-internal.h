@@ -354,13 +354,13 @@ struct i915_resident_display {
 	/* Nonzero while the panel shows this node's frames. */
 	int active;
 
-	/* Nonzero while the lease holder has the panel's light off (GPU_DISPLAY_POWER, ws113-p012); the lease's end clears it. */
+	/* Nonzero while the lease holder has the panel's light off (GPU_DISPLAY_POWER); the lease's end clears it. */
 	int power_off;
 };
 
 /*
- * The refresh boundaries of the resident output (GPU_DISPLAY_REFRESH,
- * ws113-p012): the pipe's hardware frame counter, read while the display
+ * The refresh boundaries of the resident output (GPU_DISPLAY_REFRESH):
+ * the pipe's hardware frame counter, read while the display
  * window is up and extended to a count that never goes back.  The lock
  * covers the window's display_up too: the worker lowers it under the lock
  * before the pipe stops, so the counter is never read from a stopped pipe.
@@ -394,13 +394,13 @@ struct i915_present_window {
 	/*
 	 * Nonzero once the firmware's output failed to come up or to stop
 	 * cleanly: presentations fail from then on.  A moved output that fails
-	 * sets lease_failed instead (ws113-p011a).
+	 * sets lease_failed instead.
 	 */
 	int display_failed;
 
 	/*
 	 * Nonzero once a moved output's run failed and the firmware's output
-	 * became the resident output again (ws113-p011a): the rest of the
+	 * became the resident output again: the rest of the
 	 * lease's presentations fail, and the next claimed lease clears it, so
 	 * its first frame lights an output again.  The worker sets it and the
 	 * claim clears it, both under the device IRQ lock.
@@ -408,7 +408,7 @@ struct i915_present_window {
 	int lease_failed;
 
 	/*
-	 * Nonzero from a resume until the window is next entered (ws052-p009):
+	 * Nonzero from a resume until the window is next entered:
 	 * an HDMI display that does not come up then is taken to have been
 	 * unplugged during the sleep, and the built-in panel is tried in its
 	 * place.  The resume sets it while the worker is parked; only the
@@ -429,7 +429,7 @@ struct i915_present_window {
 	unsigned map_pages[2];
 
 	/*
-	 * The hold between two leases (ws075-p016).  A release does not leave
+	 * The hold between two leases.  A release does not leave
 	 * the window: the output stays lit with the last picture of the lease
 	 * that ended, so the next lease's first frame is a flip and not a
 	 * modeset.  holding is nonzero from the release until the next lease's
@@ -446,7 +446,7 @@ struct i915_present_window {
 
 	/*
 	 * Nonzero asks the hold in progress to end now, once (a claim that moves
-	 * the output, ws113-p011a); the worker clears it when it leaves the
+	 * the output); the worker clears it when it leaves the
 	 * window.  The device IRQ lock guards it.
 	 */
 	int hold_cut;
@@ -461,7 +461,7 @@ struct i915_present_window {
 
 	/*
 	 * The pipes besides the resident output's that the run lit the
-	 * resident output for (its DBUF share leaves them room, ws113-p011):
+	 * resident output for (its DBUF share leaves them room):
 	 * BIT(the head's pipe) when a head was claimed as the run began, else
 	 * 0.  Only the worker reads and writes it.
 	 */
@@ -470,8 +470,8 @@ struct i915_present_window {
 	/*
 	 * Nonzero asks the window to be left and the resident output lit again
 	 * at once, for two pipes, because a head's first frame came while the
-	 * run had no room for it (the 2026-10-07 user decision: the first
-	 * output is lit again when the second is added).  keep_buffers keeps
+	 * run had no room for it (the first output is lit again when the
+	 * second is added).  keep_buffers keeps
 	 * the resident buffers, and their picture, across that new lighting.
 	 * Only the worker reads and writes both.
 	 */
@@ -480,8 +480,8 @@ struct i915_present_window {
 
 	/*
 	 * Nonzero asks for the same, for the resident output alone, because
-	 * its external DP link lost its lock and must be trained again
-	 * (ws051-p005b): the hotplug path sets it, the worker takes it at the
+	 * its external DP link lost its lock and must be trained again:
+	 * the hotplug path sets it, the worker takes it at the
 	 * next frame and lights the output again.  Both hold the device IRQ
 	 * lock for it.
 	 */
@@ -489,12 +489,119 @@ struct i915_present_window {
 
 	/*
 	 * Nonzero asks the window to be left at once because the display the
-	 * resident output was moved to was unplugged (BUG-268): the hotplug
+	 * resident output was moved to was unplugged: the hotplug
 	 * path sets it, the worker leaves the window, the output is stopped
 	 * and the firmware's output comes back at the window's end, which
 	 * clears it.  The device IRQ lock guards it.
 	 */
 	int unplugged;
+};
+
+/*
+ * The link an output's plan chose for its mode.
+ *
+ * One instance belongs to an output the resident node or the second
+ * output drives: the link rate, the lanes and the pipe's bits per pixel,
+ * the data and link M/N values with their transfer unit, the reference
+ * clock of the port PLLs and, on a combo PHY port, the DPLL's three
+ * configuration words.  An HDMI output's rate is its TMDS clock on four
+ * lanes; a Type-C port's PLL words are the picture's own, so the combo
+ * words stay 0 there.
+ */
+struct i915_display_link {
+	uint32_t rate_khz;
+	unsigned lanes;
+	unsigned bpp;
+	uint32_t tu;
+	uint32_t data_m;
+	uint32_t data_n;
+	uint32_t link_m;
+	uint32_t link_n;
+	uint32_t ref_khz;
+	uint32_t cfgcr0;
+	uint32_t cfgcr1;
+	uint32_t div0;
+};
+
+struct i915_edp_device;
+struct i915_mmio;
+struct i915_power_domains;
+struct i915_pw_ctx;
+struct i915_display_core;
+struct i915_cdclk_dev;
+struct i915_display_nogem;
+struct i915_display_state;
+struct i915_bw_state;
+struct i915_dmc_dev;
+struct i915_gt_mem;
+struct i915_gt_engines;
+struct i915_gt_ppgtt;
+struct i915_driver_probe;
+struct i915_tc;
+struct spinlock;
+
+/*
+ * The objects of the display's start that a resident run reads and
+ * uses.
+ *
+ * One instance lives in the display for the device's lifetime and is
+ * filled once the start has built the panel, the power domains and the
+ * GT memory; a run only reads it, and none of the objects it names is
+ * copied or made again by a run.
+ */
+struct i915_lcd_kernel_deps {
+	/* The built-in panel: its sink, its mode and link, its panel power and its VBT. */
+	struct i915_edp_device *edp;
+
+	/* The registers, the power domains and the context their wells run in. */
+	struct i915_mmio *mmio;
+	struct i915_power_domains *pd;
+	struct i915_pw_ctx *pwc;
+
+	/* The display buffer's slices, the CD clock, the memory's watermark latencies, the bandwidth and the DMC. */
+	struct i915_display_core *dcore;
+	struct i915_cdclk_dev *cdclk;
+	struct i915_display_nogem *nogem;
+	struct i915_display_state *dstate;
+	struct i915_bw_state *bw;
+	struct i915_dmc_dev *dmc;
+
+	/* The display half of the interrupt device: vblank references and waits. */
+	struct i915_display_irq *irq;
+
+	/* The GT memory the scanout buffers live in. */
+	struct i915_gt_mem *gm;
+
+	/* Nonzero when the start enabled the isochronous priority control. */
+	int ipc_enabled;
+
+	/* The GT a draw is submitted to and the lock of its registers. */
+	struct i915_gt_engines *es;
+	struct i915_gt_ppgtt *vm;
+	struct spinlock *uncore_lock;
+
+	/* The CPU-mappable aperture, and the probe state whose start reference the takeover returns. */
+	uint64_t gmadr_base;
+	uint64_t gmadr_size;
+	struct i915_driver_probe *dprobe;
+
+	/* The display's Type-C ports, whose links an output's dark gives back. */
+	struct i915_tc *tc;
+};
+
+/*
+ * What a resident run drives besides the built-in panel.
+ *
+ * The resident run of another output and the second output's run point
+ * their run at one; the resident run of the panel points at none.  It
+ * names the kind of the output (HDMI or an external DisplayPort sink),
+ * its DDI port and its pipe; the vertical blank hooks read the pipe.
+ */
+struct i915_lcd_run_params {
+	int output_hdmi;
+	int output_dp_ext;
+	int port;
+	int pipe;
 };
 
 #endif /* DRIVERS_GPU_I915_DISPLAY_DISPLAY_INTERNAL_H */

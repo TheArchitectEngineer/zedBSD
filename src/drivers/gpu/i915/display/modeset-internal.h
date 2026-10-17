@@ -2299,7 +2299,6 @@ void drv_i915_lcd_ms_bind_pll(struct i915_lcd_modeset *ms, int dpll_id);
  * the two PLLs a Type-C port's crtc reserves.
  */
 void drv_i915_dkl_pll_describe(struct dpll_info *info, enum tc_port tc_port);
-int drv_i915_dkl_pll_calc(int port_clock, int is_hdmi, int ref_nssc, struct intel_dpll_hw_state *hw_state);
 int drv_i915_dkl_pll_freq(int ref_nssc, const struct intel_dpll_hw_state *hw_state);
 
 /*

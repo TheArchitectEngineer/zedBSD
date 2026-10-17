@@ -259,7 +259,7 @@ drv_i915_dp_ext_pulse(
 	if (!handled)
 		return 0;
 
-	/* A lit link that lost its lock goes to the detection, whose link check trains it again (ws051-p005b). */
+	/* A lit link that lost its lock goes to the detection, whose link check trains it again. */
 	retrain = drv_i915_dp_ext_link_check(display, port);
 	if (retrain)
 		return 0;
@@ -271,7 +271,7 @@ drv_i915_dp_ext_pulse(
 /*
  * Tells whether the resident output's trained link on an external DP port
  * must be trained again (the Linux intel_dp_needs_link_retrain() for a
- * link that is trained, ws051-p005b).
+ * link that is trained).
  *
  * Only the port whose DisplayPort display is the resident output, lit
  * now, has a trained link; its sink's link status is read with the port
@@ -295,7 +295,7 @@ drv_i915_dp_ext_link_check(
 		return 0;
 	if (display->output.port != port || !display->window.display_up)
 		return 0;
-	lanes = display->output.state.link.lanes;
+	lanes = (int)display->output.link.lanes;
 
 	/* Without bound external ports the sink cannot be asked. */
 	world = display->dp_world;
@@ -337,7 +337,7 @@ drv_i915_dp_ext_link_check(
 
 /*
  * Copies what the last probe of an external DP port found, for the
- * output a claim prepares (ws051-p004b).
+ * output a claim prepares.
  *
  * The copy is taken under the port's lock, so it is one probe's whole
  * result.  Returns 0, or ENXIO when the ports are not bound or the port is

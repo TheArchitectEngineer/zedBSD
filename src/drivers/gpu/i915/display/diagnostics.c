@@ -1204,54 +1204,6 @@ drv_i915_lcd_log_observer(
 	}
 }
 
-/*
- * Reports whether a panel run kept display resources.
- *
- * A run keeps them when its stop was not confirmed, either by the show
- * path or by the modeset object.  Returns 1 when it did, 0 otherwise.
- */
-int
-drv_i915_lcd_kernel_abandoned(
-	struct i915_display *display)
-{
-	int retained;
-
-	/* The show path kept its buffer and hooks. */
-	retained = drv_i915_lcd_show_retained(display);
-	if (retained)
-		return 1;
-
-	/* The modeset object kept what it holds. */
-	retained = drv_i915_xd_picture_retained(&display->xd.pictures, I915_XD_PICTURE_RESIDENT);
-	if (retained)
-		return 1;
-
-	/* The second output's stop was not confirmed: pipe B may still read its buffers. */
-	if (display->head.broken)
-		return 1;
-
-	/* Succeeded: nothing was kept. */
-	return 0;
-}
-
-/*
- * Reports whether a panel run kept a GPU buffer.
- *
- * The buffer is kept when the GPU was not shown to be done with it.
- */
-int
-drv_i915_lcd_kernel_gpu_retained(
-	struct i915_display *display)
-{
-	int retained;
-
-	/* Asks the show path whether it kept the GPU buffer. */
-	retained = drv_i915_lcd_show_gpu_retained(display);
-
-	/* Succeeded: reports whether the buffer is kept. */
-	return retained;
-}
-
 /* Appends an empty entry of a kind, or counts it as dropped when the record is full. */
 static struct i915_lcd_trace_entry *
 i915_trace_add(

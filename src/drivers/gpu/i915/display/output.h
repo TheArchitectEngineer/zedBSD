@@ -93,4 +93,10 @@ int drv_i915_output_cvt_rb(uint32_t width, uint32_t height, uint32_t refresh_hz,
  */
 int drv_i915_output_pick_mode(uint32_t want_width, uint32_t want_height, uint32_t want_refresh_hz, const uint8_t *edid, unsigned edid_size, struct i915_lcd_mode *mode, const char **source);
 
+/* Plans the link and the combo PLL of an HDMI mode on DDI B: 0, or EINVAL. */
+int drv_i915_output_link_hdmi(const struct i915_xd_platform *platform, const struct i915_display_mode *mode, uint32_t ref_khz, struct i915_display_link *link);
+
+/* Plans the link and the M/N of an external DisplayPort mode within the fallback's limits (0: none): 0, EINVAL or ENOSPC. */
+int drv_i915_output_link_dp(const struct i915_xd_platform *platform, const struct i915_display_mode *mode, const struct i915_dp_ext_sink *sink, int max_rate_khz, int max_lanes, uint32_t ref_khz, struct i915_display_link *link);
+
 #endif /* DRIVERS_GPU_I915_DISPLAY_OUTPUT_H */

@@ -52,6 +52,7 @@
 #include "output.h"
 #include "modeset.h"
 #include "present.h"
+#include "resident.h"
 #include "scanout.h"
 #include "control.h"
 #include "head.h"
@@ -753,13 +754,13 @@ drv_i915_present_window(
 	 */
 	moved = drv_i915_display_output_moved(display);
 	spared = 0;
-	error = drv_i915_lcd_kernel_resident_run(display, display->rctx.lcd, i915_present_window_serve, display);
+	error = drv_i915_resident_run(display, display->rctx.lcd, i915_present_window_serve, display);
 	unplugged = i915_present_unplug_take(display);
 	retry = 0;
 	if (!unplugged)
 		retry = i915_present_window_retry(display, error, &spared);
 	while (retry) {
-		error = drv_i915_lcd_kernel_resident_run(display, display->rctx.lcd, i915_present_window_serve, display);
+		error = drv_i915_resident_run(display, display->rctx.lcd, i915_present_window_serve, display);
 		unplugged = i915_present_unplug_take(display);
 		retry = 0;
 		if (!unplugged)
@@ -778,7 +779,7 @@ drv_i915_present_window(
 		kern_logf("i915: resident display: the %s display did not come back after the sleep (%d); trying the built-in panel\n", drv_i915_display_output_name(display), error);
 		drv_i915_display_output_panel(display, &display->output);
 		moved = drv_i915_display_output_moved(display);
-		error = drv_i915_lcd_kernel_resident_run(display, display->rctx.lcd, i915_present_window_serve, display);
+		error = drv_i915_resident_run(display, display->rctx.lcd, i915_present_window_serve, display);
 	}
 
 	/*
@@ -1910,8 +1911,8 @@ i915_present_head(
 	}
 
 	/* The frame must fit the head's mode. */
-	if (request->width > (uint32_t)head->output.state.mode.hdisplay ||
-	    request->height > (uint32_t)head->output.state.mode.vdisplay) {
+	if (request->width > (uint32_t)head->output.mode.hdisplay ||
+	    request->height > (uint32_t)head->output.mode.vdisplay) {
 		mutex_unlock(&head->mutex);
 		return EINVAL;
 	}
@@ -2061,7 +2062,7 @@ i915_present_window_retry(
 		return 0;
 
 	/* A run that holds something the display may read is not tried again, nor spared. */
-	retained = drv_i915_lcd_show_retained(display);
+	retained = drv_i915_resident_retained(display);
 	if (!retained)
 		retained = drv_i915_xd_picture_retained(&display->xd.pictures, I915_XD_PICTURE_RESIDENT);
 	if (retained)

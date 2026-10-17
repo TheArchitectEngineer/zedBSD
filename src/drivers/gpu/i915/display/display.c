@@ -38,6 +38,7 @@
 #include "output.h"
 #include "power.h"
 #include "present.h"
+#include "resident.h"
 #include "scanout.h"
 #include "state.h"
 #include "takeover.h"
@@ -1101,7 +1102,7 @@ drv_i915_display_abandoned(
 		return 0;
 
 	/* Asks the panel runs. */
-	abandoned = drv_i915_lcd_kernel_abandoned(device->display);
+	abandoned = drv_i915_resident_abandoned(device->display);
 
 	/* Reports whether resources are retained. */
 	return abandoned;
@@ -1122,7 +1123,7 @@ drv_i915_display_gpu_retained(
 		return 0;
 
 	/* Asks the panel runs. */
-	retained = drv_i915_lcd_kernel_gpu_retained(device->display);
+	retained = drv_i915_resident_gpu_retained(device->display);
 
 	/* Reports whether GPU objects are retained. */
 	return retained;

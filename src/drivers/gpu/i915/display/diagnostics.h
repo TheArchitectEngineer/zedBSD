@@ -123,10 +123,4 @@ void drv_i915_lcd_log_trace(const struct i915_lcd_trace *trace);
 /* Logs the observer's findings and samples. */
 void drv_i915_lcd_log_observer(const struct i915_lcd_observer *observer);
 
-/* Reports whether a panel run kept display resources because its stop was not confirmed. */
-int drv_i915_lcd_kernel_abandoned(struct i915_display *display);
-
-/* Reports whether a panel run kept a GPU buffer the GPU was not shown to be done with. */
-int drv_i915_lcd_kernel_gpu_retained(struct i915_display *display);
-
 #endif /* DRIVERS_GPU_I915_DISPLAY_DIAGNOSTICS_H */

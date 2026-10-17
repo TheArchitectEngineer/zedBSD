@@ -20,10 +20,10 @@
  * power references), two buffers at its mode's size.  Its DBUF share is
  * computed for both pipes, and so must the resident output's: when the
  * resident output was lit for one pipe, the window is left and the
- * resident output lit again for two first (the 2026-10-07 user decision,
- * present.c).  Each frame is copied into the head's back buffer and
- * flipped to, as the resident output's are.  The head's release, and the
- * window's end, stop it and the output goes dark (D-RELEASE, no hold).
+ * resident output lit again for two first (present.c).  Each frame is
+ * copied into the head's back buffer and flipped to, as the resident
+ * output's are.  The head's release, and the window's end, stop it and
+ * the output goes dark (D-RELEASE, no hold).
  *
  * A head that cannot be lit beside the resident output latches its
  * connector limited until the topology moves (D-LIMIT): its claims are
@@ -41,6 +41,7 @@
 #include "modeset.h"
 #include "output.h"
 #include "present.h"
+#include "resident.h"
 #include "scanout.h"
 #include <kern/kcrt.h>
 
@@ -772,7 +773,7 @@ i915_head_light(
 		/* Only a link that did not train, on a head stopped cleanly, is tried again. */
 		if (enable_rc != I915_XD_PICTURE_LINK_NOT_TRAINED || head->broken)
 			break;
-		fallback_error = drv_i915_lcd_output_link_fallback(display, &head->output, enable_rc);
+		fallback_error = drv_i915_resident_link_fallback(display, &head->output, enable_rc);
 		if (fallback_error != 0)
 			break;
 	}
@@ -808,12 +809,11 @@ i915_head_light_once(
 {
 	struct i915_display_head *head;
 	const struct i915_lcd_kernel_deps *d;
-	struct i915_xd_picture_config config;
 	struct i915_xd_picture_status status;
 	unsigned resident_pipe;
 	int params_error;
 	int preflight_error;
-	int fill_error;
+	int config_error;
 	const char *first_error;
 	unsigned held;
 	int buffers_error;
@@ -824,38 +824,30 @@ i915_head_light_once(
 	head = &display->head;
 	d = display->rctx.lcd;
 
-	/* The output's port, pipe and PLL, beside the resident output's PLL. */
-	kern_memset(&head->params, 0, sizeof(head->params));
-	params_error = drv_i915_lcd_output_params(&head->output, &head->params);
+	/* The output's port and pipe. */
+	params_error = drv_i915_resident_output_params(&head->output, &head->params);
 	if (params_error != 0) {
 		kern_logf("i915: display head: this driver does not light a %s beside the resident output\n", i915_head_kind_name(head->output.kind));
 		return ENXIO;
 	}
 
-	/* The head's own run context: its hooks, events, frame counter and power references. */
-	drv_i915_lcd_kernel_locks_init(display);
-	kern_memset(&head->k, 0, sizeof(head->k));
-	head->k.locks = display->lcdb_locks;
-	head->k.d = d;
-	head->k.display = display;
-	drv_i915_lcd_kernel_bind_ops(&head->k);
-	head->k.p = &head->params;
+	/* The head's own run: its hooks, events, frame counter and power references. */
+	drv_i915_resident_bind(display, &head->k, d, &head->params);
 
 	/* The head's pipe and port must be idle, and the inputs complete. */
-	preflight_error = drv_i915_lcd_kernel_preflight(&head->k);
-	fill_error = 0;
+	preflight_error = drv_i915_resident_preflight(&head->k);
+	config_error = 0;
 	if (preflight_error == 0)
-		fill_error = drv_i915_lcd_kernel_fill_cfg(&head->k, &head->cfg);
-	if (preflight_error != 0 || fill_error != 0) {
-		kern_logf("i915: display head: not lit (preflight %d, inputs %d: nothing was written)\n", preflight_error, fill_error);
+		config_error = drv_i915_resident_config(&head->k, &head->output, &head->cfg);
+	if (preflight_error != 0 || config_error != 0) {
+		kern_logf("i915: display head: not lit (preflight %d, inputs %d: nothing was written)\n", preflight_error, config_error);
 		head->k.p = NULL;
 		return ENXIO;
 	}
 
-	/* The output's encoder, its DBUF share computed beside the resident output's pipe. */
-	drv_i915_lcd_output_cfg(display, d, &head->output, &head->cfg);
+	/* The display buffer's share is computed beside the resident output's pipe. */
 	resident_pipe = drv_i915_display_output_pipe(&display->output);
-	head->cfg.also_active_pipes = 1U << resident_pipe;
+	head->cfg.also_pipes = (uint8_t)(1U << resident_pipe);
 
 	/* The two buffers, or the ones kept with the last picture over a window's end; the plane reads A first. */
 	if (head->dormant) {
@@ -877,8 +869,7 @@ i915_head_light_once(
 	head->cfg.fb_surf = (uint32_t)head->buf[0].surf;
 
 	/* The plan of the head's screen: nothing is written if it refuses (CDCLK, bandwidth, DBUF). */
-	drv_i915_lcd_picture_config(&head->output.state, &head->cfg, &config);
-	prepare_error = drv_i915_xd_picture_prepare(&display->xd.pictures, I915_XD_PICTURE_HEAD, &config, &head->k.ops);
+	prepare_error = drv_i915_xd_picture_prepare(&display->xd.pictures, I915_XD_PICTURE_HEAD, &head->cfg, &head->k.ops);
 	if (prepare_error != 0) {
 		kern_logf("i915: display head: the configuration beside the resident output was refused (%d): nothing was written\n", prepare_error);
 		i915_head_buffers_release(display, 1);
@@ -951,7 +942,7 @@ i915_head_buffers(
 		return window_error;
 
 	/* A at the head's mode's size, then B at A's. */
-	error = drv_i915_scanout_create(d->gm, (uint32_t)head->output.state.mode.hdisplay, (uint32_t)head->output.state.mode.vdisplay, I915_FOURCC_XRGB8888, I915_MOD_LINEAR, &head->buf[0]);
+	error = drv_i915_scanout_create(d->gm, (uint32_t)head->output.mode.hdisplay, (uint32_t)head->output.mode.vdisplay, I915_FOURCC_XRGB8888, I915_MOD_LINEAR, &head->buf[0]);
 	if (error == 0)
 		error = drv_i915_scanout_pin(&head->buf[0], "head A");
 	if (error == 0)

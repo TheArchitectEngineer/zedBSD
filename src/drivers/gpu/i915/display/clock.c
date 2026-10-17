@@ -119,7 +119,6 @@ static const struct i915_xd_pll_desc *i915_dpll_xd_desc(const struct intel_share
 static int i915_dpll_afc(const struct drm_i915_private *i915);
 static void i915_dpll_report(struct drm_i915_private *i915, const struct intel_shared_dpll *pll, unsigned late);
 static void i915_port_pll_disable(struct drm_i915_private *i915, struct intel_shared_dpll *pll);
-static void i915_tc_pll_words_to_state(const struct i915_xd_tc_pll_words *words, struct intel_dpll_hw_state *hw_state);
 static void i915_tc_pll_words_of_state(const struct intel_dpll_hw_state *hw_state, int afc_set, struct i915_xd_tc_pll_words *words);
 static int i915_tc_pll_get_freq(struct drm_i915_private *i915, const struct intel_shared_dpll *pll, const struct intel_dpll_hw_state *pll_state);
 static void i915_tc_pll_enable(struct drm_i915_private *i915, struct intel_shared_dpll *pll);
@@ -428,37 +427,6 @@ drv_i915_dkl_pll_describe(
 }
 
 /*
- * Computes the DKL PLL words of a Type-C port's link clock through the xd
- * clock.
- *
- * port_clock is the DP link rate or the HDMI TMDS clock in kHz, ref_nssc
- * the reference clock.  Returns 0, or I915_LCD_EINVAL when no divider fits
- * or the reference clock is not one the PHY takes.
- */
-int
-drv_i915_dkl_pll_calc(
-	int port_clock,
-	int is_hdmi,
-	int ref_nssc,
-	struct intel_dpll_hw_state *hw_state)
-{
-	struct i915_xd_tc_pll_words words;
-	int error;
-
-	/* The xd clock's words, without an AFC startup override. */
-	kern_memset(hw_state, 0, sizeof(*hw_state));
-	error = drv_i915_xd_tc_pll_words((uint32_t)ref_nssc, (uint32_t)port_clock, is_hdmi, I915_XD_DPLL_AFC_NONE, &words);
-	if (error != 0)
-		return error;
-
-	/* Copies the words into the state. */
-	i915_tc_pll_words_to_state(&words, hw_state);
-
-	/* Succeeded: the words are the caller's. */
-	return 0;
-}
-
-/*
  * The Dekel PHY windows the modeset's Type-C ports are reached through:
  * the xd PHY accesses routed to the device's own (its hooks take the lock
  * the ports share, or a host test's model takes the bank index and window
@@ -621,23 +589,6 @@ i915_port_pll_disable(
 	/* Turns it off and reports the waits that ran out. */
 	late = drv_i915_xd_dpll_disable(drv_i915_lcd_xd_io(i915), desc);
 	i915_dpll_report(i915, pll, late);
-}
-
-/* Copies a Type-C PLL's xd words into the older code's PLL state. */
-static void
-i915_tc_pll_words_to_state(
-	const struct i915_xd_tc_pll_words *words,
-	struct intel_dpll_hw_state *hw_state)
-{
-	/* One word per register. */
-	hw_state->mg_refclkin_ctl = words->refclkin;
-	hw_state->mg_clktop2_coreclkctl1 = words->coreclk;
-	hw_state->mg_clktop2_hsclkctl = words->hsclk;
-	hw_state->mg_pll_div0 = words->div0;
-	hw_state->mg_pll_div1 = words->div1;
-	hw_state->mg_pll_ssc = words->ssc;
-	hw_state->mg_pll_bias = words->bias;
-	hw_state->mg_pll_tdc_coldst_bias = words->tdc;
 }
 
 /* Copies the older code's PLL state of a Type-C PLL into the xd words. */
