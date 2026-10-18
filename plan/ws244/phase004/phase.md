@@ -37,11 +37,17 @@ Status: in-progress（2026-10-18 q1251-i01、P1。cleared は Q1）
 - 動作の確かめ: host 試験 `plan/ws244/tests/device-info-equiv/run.sh <前の device-info.c> <今の device-info.c> <新しい出力の dir>`。Gen12 の 18 と Gen9 の 7 の場面（crystal の 0〜7 と shift、divide logic、slice・DSS・EU の fuse、media の fuse で vcs0・vcs2・vecs0 が消える、fault の GGTT/PPGTT、EIR の stuck、版 11・13、Gen9 の slice の組と subslice の fuse、platform の mask の余り）で、register の読み書き・log と、できた GT の情報（clock・SSEU・engine の一覧・reset の bit・context の大きさ・capability）が前の版と一致（`device-info-equiv: PASS (522 lines)`）。
 - build: 2 組とも rc=0、warning 0。
 
+### 5. irq.c・irq.h（device の割り込み）— 済み（2026-10-19 q1260）
+
+- 前の版は「follow the reference's gen11_irq_reset(), gen11_irq_postinstall() and gen11_irq_handler() in order」で、関数の分け方と名前が Linux の gen11_gt_irq_reset/postinstall/handler・gen8_gt_irq_*・gen3_irq_reset/init・gen3_assert_iir_is_zero に 1 対 1 だった。
+- 書き直し: GT の割り込みの layout を表にした（`struct i915_irq_layout`: master の register と on の値、GT の close・open・serve、GU_MISC の有無）。Gen11 は engine の register の表（class の enable・pair の mask・上半分だけの mask の 3 種）と engine 以外の source（PM・GuC・crypto）の enable/mask の表から書き込みの列を作る。Gen8（Gen9）は bank の表（master の bit、engine の class・instance・bit の位置、PM の bank か）と serve の順（0・1・3・2）から作る。使われていなかった GuC の enable の書き込み（guc_mask が常に 0）は消した。値は block ごとに `Values referenced: Linux v6.19 …`。log の文言は同じ。
+- 公開の関数の Linux の名前を外した: `drv_i915_gen3_irq_reset` → `drv_i915_irq_regs_close`、`drv_i915_gen3_irq_init` → `drv_i915_irq_regs_open`、`drv_i915_gen3_assert_iir_is_zero` → `drv_i915_irq_regs_check_clear`、`drv_i915_gen11_gt_irq_handler` → `drv_i915_irq_gt_banks_serve`、`drv_i915_gen11_gt_irq_reset`・`_postinstall` は static に。呼び手 display/interrupts.c・tests/display/host-kernel.c・tests/execution/ktest-gt.c を追従（名前だけ）。irq.h の「the reference's intel_irq_install()」などの説明を外した。device.c の 1 行の「(gen3_irq_reset())」も外した。
+- 動作の確かめ: host 試験 `plan/ws244/tests/irq-equiv/run.sh <前の irq.c> <前の irq.h> <今の irq.c> <今の irq.h> <新しい出力の dir>`。Gen12・Gen9・GT 情報なしの 3 つで、install（display 表あり/なし、execlists/GuC、attach の失敗、stale な IIR）、uninstall（detach の失敗、2 回目）、handler（無効、spurious、Gen11 の bank 0/1 の identity・invalid・未知の class・未知の instance・bit なし・GTPM・display・GU_MISC の GSE あり/なし、Gen9 の master の各 bit と全部・PM の handler なし）、bank の serve、PM の IIR の reset（2 回で止む・16 回）、engine の wait・sequence、synchronize（均衡・timeout・time base の失敗）、register の helper で、register の読み書き・posting read・log・lock・wake・EOI・counter の全部が前の版と一致（`irq-equiv: PASS (33782 lines)`）。
+- build: amd64 の既定・I915_TESTS=y とも rc=0、warning 0、`amd64 vmunix check: PASS`。xd の host 試験 `sh plan/ws245/tests/run-xd-host-tests.sh build/ws244-xdhost` rc=0（host-kernel.c の改名の確かめ）。
+
 ### 残り（再開の手順）
 
-1. irq.c・irq.h（1,234 行、「follow the reference's gen11_irq_reset(), gen11_irq_postinstall() and gen11_irq_handler() in order」、Gen9 は gen8_* に沿う）: 次の対象。hal の handler の型が要るので、host の比べ合わせは reset-equiv の形（stub の kern・hal の header と、記録する mmio）で作る。
-2. ggtt.c（「This is intel_gt_init_scratch()」ほか）・ppgtt.c・ppgtt.h・memory.c・memory.h・dma.h・defaults.h ほか（inventory §3 の表の最後の行）: 多くは 1〜3 行の言及。手で読み、手順の写しがあれば書き直し、無ければ言及を外す。
-3. 前の版との比べ合わせ: 書き直す前に file を scratchpad に写して取っておき、`plan/ws244/tests/*-equiv/run.sh <前> <今> <新しい出力の dir>` の形で比べる。Linux 6.8.12 は build/ws229-p001/linux/linux-6.8.12.tar.xz から build/tmp の新しい dir に要る分だけ展開する。
+1. ggtt.c（「This is intel_gt_init_scratch()」ほか）・ppgtt.c・ppgtt.h・memory.c・memory.h・dma.h・defaults.h ほか（inventory §3 の表の最後の行）: 多くは 1〜3 行の言及。手で読み、手順の写しがあれば書き直し、無ければ言及を外す。
+2. 前の版との比べ合わせ: 書き直す前に file を scratchpad に写して取っておき、`plan/ws244/tests/*-equiv/run.sh <前> <今> <新しい出力の dir>` の形で比べる。Linux 6.8.12 は build/ws229-p001/linux/linux-6.8.12.tar.xz から build/tmp の新しい dir に要る分だけ展開する。
 
-- ggtt・ppgtt・memory・irq・dma.h ほか（inventory §3 の表）。
-- pcode-equiv・reset-equiv・device-info-equiv の試験は開発の確かめ用（前の版を入力に取る）。p004 が cleared になったら消してよい（path を Q1 へ）。
+- pcode-equiv・reset-equiv・device-info-equiv・irq-equiv の試験は開発の確かめ用（前の版を入力に取る）。p004 が cleared になったら消してよい（path を Q1 へ）。

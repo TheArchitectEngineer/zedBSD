@@ -830,7 +830,7 @@ i915_ktest_gt_irq(
 	drv_i915_raw_write32(&t->mmio, 0x190018U, 0x1U);
 	drv_i915_raw_write32(&t->mmio, 0x190060U, (1U << 31) | (0U << 16) | (0U << 20) | 0x101U);
 	t->fake.wt_n = 0U;
-	drv_i915_gen11_gt_irq_handler(&t->irq, 0x1U);
+	drv_i915_irq_gt_banks_serve(&t->irq, 0x1U);
 
 	/* One identity was read and decoded as RCS0 with USER and CONTEXT_SWITCH. */
 	drv_i915_ktest_check(
@@ -871,7 +871,7 @@ i915_ktest_gt_irq_classes(
 	drv_i915_raw_write32(&t->mmio, 0x190060U, 0U);
 	t->irq.gt_engine_intrs = 0U;
 	t->irq.gt_identity_invalid = 0U;
-	drv_i915_gen11_gt_irq_handler(&t->irq, 0x1U);
+	drv_i915_irq_gt_banks_serve(&t->irq, 0x1U);
 
 	/* The identity is counted as invalid and not treated as an engine. */
 	drv_i915_ktest_check(
@@ -884,7 +884,7 @@ i915_ktest_gt_irq_classes(
 	drv_i915_raw_write32(&t->mmio, 0x190060U, (1U << 31) | (4U << 16) | (1U << 20) | 0x4U);
 	t->irq.gt_other_intrs = 0U;
 	t->irq.gt_unknown_class = 0U;
-	drv_i915_gen11_gt_irq_handler(&t->irq, 0x1U);
+	drv_i915_irq_gt_banks_serve(&t->irq, 0x1U);
 
 	/* I915_GT_OTHER_CLASS (GuC/GTPM) is counted on its own, not as an unknown class. */
 	drv_i915_ktest_check(

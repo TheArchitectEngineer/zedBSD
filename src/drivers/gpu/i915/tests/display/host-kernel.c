@@ -641,10 +641,10 @@ drv_i915_flush_work(
 }
 
 /*
- * Stands in for drv_i915_gen3_assert_iir_is_zero(): the interrupt registers is not modelled on the host.
+ * Stands in for drv_i915_irq_regs_check_clear(): the interrupt registers is not modelled on the host.
  */
 void
-drv_i915_gen3_assert_iir_is_zero(
+drv_i915_irq_regs_check_clear(
 	struct i915_irq_dev *irq,
 	uint32_t iir)
 {
@@ -652,14 +652,14 @@ drv_i915_gen3_assert_iir_is_zero(
 	UNUSED_PARAMETER(iir);
 
 	/* Ends the test: the tested path reached a service the host does not have. */
-	i915_host_unreachable("drv_i915_gen3_assert_iir_is_zero");
+	i915_host_unreachable("drv_i915_irq_regs_check_clear");
 }
 
 /*
- * Stands in for drv_i915_gen3_irq_init(): the interrupt registers is not modelled on the host.
+ * Stands in for drv_i915_irq_regs_open(): the interrupt registers is not modelled on the host.
  */
 void
-drv_i915_gen3_irq_init(
+drv_i915_irq_regs_open(
 	struct i915_irq_dev *irq,
 	uint32_t imr,
 	uint32_t imr_value,
@@ -675,14 +675,14 @@ drv_i915_gen3_irq_init(
 	UNUSED_PARAMETER(iir);
 
 	/* Ends the test: the tested path reached a service the host does not have. */
-	i915_host_unreachable("drv_i915_gen3_irq_init");
+	i915_host_unreachable("drv_i915_irq_regs_open");
 }
 
 /*
- * Stands in for drv_i915_gen3_irq_reset(): the interrupt registers is not modelled on the host.
+ * Stands in for drv_i915_irq_regs_close(): the interrupt registers is not modelled on the host.
  */
 void
-drv_i915_gen3_irq_reset(
+drv_i915_irq_regs_close(
 	struct i915_irq_dev *irq,
 	uint32_t imr,
 	uint32_t iir,
@@ -694,7 +694,7 @@ drv_i915_gen3_irq_reset(
 	UNUSED_PARAMETER(ier);
 
 	/* Ends the test: the tested path reached a service the host does not have. */
-	i915_host_unreachable("drv_i915_gen3_irq_reset");
+	i915_host_unreachable("drv_i915_irq_regs_close");
 }
 
 /*
