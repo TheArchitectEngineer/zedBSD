@@ -18,7 +18,7 @@
 #   BOOT_TIMEOUT   seconds to wait for the login prompt (default 180)
 #   QEMU           emulator to run (default depends on BOOT_MODE)
 #   BOOT_MODE      uefi-nvme (default), uefi-usb, bios-ide, raspi4b,
-#                  riscv64-virt or riscv64-uboot
+#                  riscv64-virt, riscv64-uboot or riscv32-virt
 #   BOOT_PATTERN   what the screen must show, one regular expression per line;
 #                  every one must be seen on some screen (default the login
 #                  prompt, ^(?:\S+ )?login: ?)
@@ -60,7 +60,9 @@
 # virtio-blk through U-Boot (UBOOT, default the Debian u-boot-qemu
 # qemu-riscv64_smode build), with the same display.  Both run on TCG.  The
 # serial line is a socket only typed into by BOOT_THEN; what the guest writes
-# there is drained and not kept.
+# there is drained and not kept.  BOOT_MODE=riscv32-virt is riscv64-virt for
+# a 32-bit kernel (default build/riscv32-virt/vmunix) on qemu-system-riscv32,
+# with BOOT_MEMORY defaulting to 512M.
 #
 # It writes OUTPUT/login.png and prints its path.  The exit status is 0 only
 # when the login prompt was seen.
@@ -80,6 +82,10 @@ riscv64-virt)
 	;;
 riscv64-uboot)
 	image=${1:-${IMAGE:-$root/build/riscv64-virt/hdd-image.img}}
+	boot_interval=${BOOT_INTERVAL:-0.5}
+	;;
+riscv32-virt)
+	image=${1:-${IMAGE:-${KERNEL:-$root/build/riscv32-virt/vmunix}}}
 	boot_interval=${BOOT_INTERVAL:-0.5}
 	;;
 *)
@@ -120,6 +126,13 @@ raspi4b)
 	;;
 riscv64-virt)
 	qemu=${QEMU:-qemu-system-riscv64}
+	required=("$image")
+	if [[ -n ${INITRD:-} ]]; then
+		required+=("$INITRD")
+	fi
+	;;
+riscv32-virt)
+	qemu=${QEMU:-qemu-system-riscv32}
 	required=("$image")
 	if [[ -n ${INITRD:-} ]]; then
 		required+=("$INITRD")
@@ -169,7 +182,7 @@ screenshot=$output/login.png
 # overlay of the image (small, so that a work directory left for Q1's cleanup
 # costs little), and the firmware gets its own variable store.  A riscv64-virt
 # kernel is booted directly and has no disk.
-if [[ $boot_mode != riscv64-virt ]]; then
+if [[ $boot_mode != riscv64-virt && $boot_mode != riscv32-virt ]]; then
 	qemu-img create -q -f qcow2 -F raw -b "$(readlink -f -- "$image")" "$disk"
 fi
 if [[ $boot_mode == uefi-usb || $boot_mode == uefi-nvme ]]; then
@@ -208,14 +221,18 @@ if [[ $boot_mode == uefi-usb || $boot_mode == uefi-nvme ]]; then
 		-device usb-kbd,bus=xhci.0,port=2 \
 		-vga std -display none -no-reboot \
 		-qmp "unix:$monitor,server,nowait" >"$output/qemu.log" 2>&1 &
-elif [[ $boot_mode == riscv64-virt || $boot_mode == riscv64-uboot ]]; then
+elif [[ $boot_mode == riscv64-virt || $boot_mode == riscv64-uboot || $boot_mode == riscv32-virt ]]; then
 	# The virt machine with a ramfb display, the console the kernel draws,
 	# and its first serial line on a socket for typing into.
-	riscv_machine=(-machine virt -smp "${BOOT_SMP:-4}" -m "${BOOT_MEMORY:-2G}"
+	riscv_memory=2G
+	if [[ $boot_mode == riscv32-virt ]]; then
+		riscv_memory=512M
+	fi
+	riscv_machine=(-machine virt -smp "${BOOT_SMP:-4}" -m "${BOOT_MEMORY:-$riscv_memory}"
 		-device ramfb -display none -no-reboot
 		-serial "unix:$serial,server,nowait"
 		-qmp "unix:$monitor,server,nowait")
-	if [[ $boot_mode == riscv64-virt ]]; then
+	if [[ $boot_mode == riscv64-virt || $boot_mode == riscv32-virt ]]; then
 		riscv_boot=(-kernel "$image")
 		if [[ -n ${INITRD:-} ]]; then
 			riscv_boot+=(-initrd "$INITRD")

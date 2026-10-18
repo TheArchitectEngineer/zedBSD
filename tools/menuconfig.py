@@ -22,6 +22,7 @@ PLATFORMS = [
     ("pc98", "i386", "pc98", "NEC PC-9800"),
     ("rpi4", "arm64", "rpi4", "Raspberry Pi 4 Arm64"),
     ("riscv64-virt", "riscv64", "virt", "QEMU virt RISC-V 64"),
+    ("riscv32-virt", "riscv32", "virt", "QEMU virt RISC-V 32"),
     ("sun4u", "sparcv9", "sun4u", "SPARC V9 sun4u"),
     ("x68k", "m68k", "x68k", "Sharp X68000 MC68030"),
 ]
@@ -49,6 +50,7 @@ BOARD_VARIANTS = {
     ("i386", "pc98"): [("default", "Default")],
     ("arm64", "rpi4"): [("default", "Default")],
     ("riscv64", "virt"): [("default", "Default")],
+    ("riscv32", "virt"): [("default", "Default")],
     ("sparcv9", "sun4u"): [("default", "Default")],
     ("m68k", "x68k"): [("default", "Default")],
 }
@@ -79,6 +81,7 @@ MENU_CPUS = [
     ("i386", "i386", "pc98", "PC-9800"),
     ("i386", "i386", "i386", "PC/AT"),
     ("riscv64", "RISC-V 64", "riscv64-virt", "QEMU virt"),
+    ("riscv32", "RISC-V 32", "riscv32-virt", "QEMU virt"),
 ]
 
 # The user programs' groups the Base, Desktop and Firmware menus select
@@ -108,7 +111,7 @@ RETRO_PROGRAMS = ("Xzed", "zwm", "zshell", "zterm")
 # the Desktop's selection while i386 is chosen, so switching back to x86_64
 # or arm64 in the same session writes it again.  RISC-V 64 is treated the
 # same way: its port builds the base system only.
-NO_DESKTOP_ARCHITECTURES = ("i386", "riscv64")
+NO_DESKTOP_ARCHITECTURES = ("i386", "riscv64", "riscv32")
 
 
 def package_categories(rows: list[list[str]]) -> list[tuple[str, str]]:
