@@ -622,6 +622,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-18 19:33（ユーザー、クリック）WS256: #17 sifive_u の走りは「gdbstub で読んで判定」（WS256 の sifive_u に限り、gdbstub で CPU ごとの ready の印と tick の数を読んで判定に数える。serial の log は使わない）。#18 試験の道具の変更は「P2 に許可」（p009 で plan/tools の boot-test.sh・boot-test.py など 3 file だけ、既存の amd64・arm64 の mode は変えない、Q1 が merge の前に読む）。
 - 2026-10-18 19:32（ユーザー、クリック）WS256: 設計は「今の改訂 2 で判断する」（レビュー 2 は回さない）。#13 HAL の差分 3 件は「3 件とも承認」（Guardrail の表に記録）。
 - 2026-10-18 19:25（ユーザー）: gen9-ddc.c の先頭の comment「The AUX transfer follows the Linux kernel 6.8.12's」について「これはルール違反です」「この修正も全ドライバに対してP1で監査してほしいです」→ Q1 が gen9-ddc.c を直し（1a9fb5ae3）、WS258 を作って P1 に全ドライバの監査（q1248、q1246・q1247 より先）。
 - 2026-10-18 19:22（ユーザー）:「続けてください。」→ Q1 の解釈: P1 が WS245 p044・p045 の host の受け入れの残りと p046 の通読、続けて WS251 p002 の file ごとの目視を続ける（q1246・q1247）。WS256 は Q1 が design.md 改訂 2 の 2 回目のレビューを回し、その後 #13・#17・#18 をユーザーに聞く。

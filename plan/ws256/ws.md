@@ -60,3 +60,10 @@
 - [design.md](design.md)（P2、q1243。初版は main fc8e21f8c、改訂 2 は q1243-i02、main e4c67abc5）、HAL の差分の案 [proposed/hal-riscv64.md](proposed/hal-riscv64.md)（差分 1・2 と名前付き handoff object。未承認、適用しない）、boot.h の差分の案 [proposed/boot-h-riscv64.md](proposed/boot-h-riscv64.md)（案 (b)、既定は適用しない）。
 - レビュー 1: [design-review-1.md](design-review-1.md)（blocker 1・major 13・minor 24）→ 改訂 2 で全件を反映（design.md §11 の表）。
 - 改訂 2 で決めた事の要点: initrd は MBR の image（rpi4 と同じ root の道、kernel の vfs.c は変えない）、画面は ramfb を HAL の bsp-virt が fw_cfg で設定して 80x25 の console を描く（U-Boot の GOP に依らない、両方の入口で同じ）、timer は常に SBI・Svpbmt は使わない、TLS は全部 dynamic、PLIC の mask は priority、kernel 半分の table は init で封じる、loader は table を作らず satp=0 で物理の入口へ。
+
+## ユーザーの決定（2026-10-18、クリック、3 回目）
+
+7. 設計は「今の改訂 2 で判断する」（レビュー 2 は回さない）。
+8. #13 HAL の差分 3 件は「3 件とも承認」（[Guardrail](../guardrail.md) の表）。
+9. #17 sifive_u の走りは「gdbstub で読んで判定」（WS256 の sifive_u に限る例外。serial の log は使わない）。
+10. #18 試験の道具の変更は「P2 に許可」（p009 で plan/tools の 3 file だけ。既存の mode は変えない。Q1 が merge の前に読む）。
