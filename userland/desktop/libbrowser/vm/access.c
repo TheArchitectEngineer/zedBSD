@@ -12,7 +12,7 @@
  * the enumeration of for-in.
  *
  * The primitives other than strings get their prototypes (Number.prototype
- * and the rest) with the built-ins (ws074-p026); until then their
+ * and the rest) with the built-ins; until then their
  * properties read undefined.
  */
 
@@ -103,6 +103,69 @@ static int access_get_receiver(struct vm_realm *realm, vm_value base, vm_value k
 static int access_has_property(struct vm_realm *realm, struct vm_object *object, vm_value key, int *found);
 static int access_proxy_has(struct vm_realm *realm, struct vm_proxy *proxy, vm_value key, int *found);
 static int access_proxy_get(struct vm_realm *realm, struct vm_proxy *proxy, vm_value key, vm_value receiver, vm_value *result);
+
+/*
+ * Determines array identity through immutable Proxy targets without invoking any script operation.
+ */
+int
+vm_is_array(
+	struct vm_realm *realm,
+	vm_value value,
+	int *is_array)
+{
+	struct access_read_roots roots;
+	struct vm_object *object;
+	struct vm_proxy *proxy;
+	int is_object;
+	int status;
+
+	/* Primitives never coerce, and ordinary array identity requires no allocation. */
+	*is_array = 0;
+	is_object = vm_value_is_object(value);
+	if (!is_object)
+		return 0;
+	object = (struct vm_object *)vm_value_as_cell(value);
+	if (object->kind != VM_KIND_PROXY) {
+		if ((object->flags & VM_OBJECT_ARRAY) != 0U)
+			*is_array = 1;
+		return 0;
+	}
+
+	/* A revoked-target error may collect both its managed realm and otherwise unowned original Proxy. */
+	roots.realm = realm;
+	roots.base = value;
+	roots.key = VM_VALUE_UNDEFINED;
+	roots.receiver = VM_VALUE_UNDEFINED;
+	status = vm_heap_add_tracer(realm->heap, access_read_trace, &roots);
+	if (status != 0)
+		return status;
+
+	/* Targets are existing objects fixed at allocation, so the chain cannot form a cycle. */
+	while (object->kind == VM_KIND_PROXY) {
+		proxy = (struct vm_proxy *)object;
+		if (proxy->target == VM_VALUE_NULL) {
+			status = vm_throw_type_error(realm, "Cannot determine array identity of a revoked Proxy");
+			break;
+		}
+
+		/* Neither handler properties nor prototype access participates in IsArray. */
+		object = (struct vm_object *)vm_value_as_cell(proxy->target);
+	}
+
+	/* Only a successfully reached target contributes its immutable array identity. */
+	if (status == 0) {
+		if ((object->flags & VM_OBJECT_ARRAY) != 0U)
+			*is_array = 1;
+	}
+
+	/* Retire the native ownership frame before propagating an abrupt outcome. */
+	vm_heap_remove_tracer(realm->heap, access_read_trace, &roots);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the original Proxy frame no longer owns any collector edge. */
+	return 0;
+}
 
 /*
  * Gets a property of any value: an object's through its chain (calling an

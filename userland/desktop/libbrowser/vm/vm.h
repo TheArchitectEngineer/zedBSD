@@ -724,6 +724,10 @@ int vm_put(struct vm_realm *realm, vm_value base, vm_value key, vm_value value);
 int vm_set(struct vm_realm *realm, vm_value base, vm_value key, vm_value value, int strict);
 int vm_set_receiver(struct vm_realm *realm, struct vm_object *object, vm_value key, vm_value value, vm_value receiver, int *done);
 int vm_delete(struct vm_realm *realm, vm_value base, vm_value key, int strict, vm_value *result);
+
+/* Array identity unwraps native Proxy targets and rejects revoked records. */
+int vm_is_array(struct vm_realm *realm, vm_value value, int *is_array);
+
 int vm_has_property(struct vm_realm *realm, struct vm_object *object, vm_value key, int *found);
 int vm_in(struct vm_realm *realm, vm_value key, vm_value object, vm_value *result);
 int vm_instanceof(struct vm_realm *realm, vm_value value, vm_value constructor, vm_value *result);

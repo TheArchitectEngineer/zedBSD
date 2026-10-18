@@ -61,6 +61,7 @@ static const struct vm_native_operations proxy_sole_operations = {
 	proxy_sole_get_own, NULL, NULL, NULL, NULL
 };
 
+static int array_identity_pressure(struct page *page);
 static int typed_storage_pressure(struct page *page);
 static int proxy_canonical_index(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int proxy_to_bigint(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
@@ -219,6 +220,11 @@ main(
 	if (status != 0)
 		goto cleanup;
 	status = typed_storage_pressure(page);
+	if (status != 0)
+		goto cleanup;
+
+	/* Revoked IsArray errors retain their otherwise unowned realm and native record during real allocation. */
+	status = array_identity_pressure(page);
 
 cleanup:
 	/* Restore ordinary scanning before retiring the complete Page graph. */
@@ -1794,5 +1800,135 @@ cleanup:
 		return status;
 
 	/* Succeeded: actual pure native storage and its complete managed graph survived and retired correctly. */
+	return 0;
+}
+
+/* Observes revoked IsArray error allocation with only the production frame retaining its inputs. */
+static int
+array_identity_pressure(
+	struct page *page)
+{
+	struct vm_realm *realm;
+	struct vm_object *target;
+	struct vm_object *handler;
+	struct vm_cell *roots[4];
+	struct vm_cell *pressure;
+	struct vm_cell *found;
+	struct vm_heap_stats before;
+	struct vm_heap_stats after;
+	vm_value proxy;
+	uintptr_t realm_address;
+	uintptr_t proxy_address;
+	unsigned registered;
+	unsigned index;
+	int is_array;
+	int status;
+
+	/* Setup ownership is temporary and is retired before the operation under observation. */
+	memset(roots, 0, sizeof(roots));
+	registered = 0;
+	for (index = 0; index < 4U; index++) {
+		status = vm_heap_add_root(page->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* A bare managed realm reaches the real bootstrap TypeError allocation path. */
+	status = vm_realm_create_managed(page->heap, &realm);
+	if (status != 0)
+		goto cleanup;
+	roots[0] = &realm->cell;
+	realm_address = (uintptr_t)realm;
+	target = vm_object_create(page->heap, NULL);
+	if (target == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* The factory requires real target and handler objects before its genuine native record is revoked. */
+	roots[1] = &target->cell;
+	handler = vm_object_create(page->heap, NULL);
+	if (handler == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* The revoked record must survive solely through the production IsArray frame during the throw. */
+	roots[2] = &handler->cell;
+	status = vm_proxy_create(realm, vm_value_cell(target), vm_value_cell(handler), &proxy);
+	if (status != 0)
+		goto cleanup;
+	roots[3] = vm_value_as_cell(proxy);
+	proxy_address = (uintptr_t)roots[3];
+	status = vm_proxy_revoke(realm, proxy);
+	if (status != 0)
+		goto cleanup;
+
+	/* Ordinary threshold collection is triggered by the next actual error string allocation. */
+	vm_heap_collect(page->heap);
+	pressure = vm_heap_alloc(page->heap, &proxy_pressure_type, 8U * 1024U * 1024U);
+	if (pressure == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* No embedding root or conservative stack scan may supply the realm or Proxy edge. */
+	for (index = 0; index < 4U; index++)
+		roots[index] = NULL;
+	vm_heap_stats(page->heap, &before);
+	status = vm_is_array(realm, proxy, &is_array);
+	vm_heap_stats(page->heap, &after);
+	if (status != VM_THROWN ||
+	    is_array != 0 ||
+	    after.collections <= before.collections) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* Both otherwise unowned inputs must still exist after the collection inside the error path. */
+	found = vm_heap_find_cell(page->heap, realm_address);
+	if (found == NULL) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* A rooted owner alone would not keep the revoked record, so observe the input independently. */
+	found = vm_heap_find_cell(page->heap, proxy_address);
+	if (found == NULL) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* A completed abrupt operation leaves neither input retained by its former native frame. */
+	vm_heap_collect(page->heap);
+	found = vm_heap_find_cell(page->heap, realm_address);
+	if (found != NULL) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* The revoked record must be actually reclaimed as well as its managed owner. */
+	found = vm_heap_find_cell(page->heap, proxy_address);
+	if (found != NULL) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* Both the pressure collection and later release were independently observed. */
+	status = 0;
+
+cleanup:
+	/* Retire every setup registration on normal and abrupt completion. */
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(page->heap, &roots[registered]);
+	}
+
+	/* Preserve failures after releasing all embedding registrations. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the actual error path retained and then released both inputs. */
 	return 0;
 }

@@ -325,6 +325,19 @@
  check('typed-define-valueof-gc-retains-target',function(){var a=new BigInt64Array(1);return defineReadProperty(a,0,{value:{valueOf:function(){collectReadProxy();return '12';}}})&&a[0]===12n;});
  check('typed-proxy-receiver-gc-keeps-original-value',function(){var v={owned:13},r=makeReadProxy({},{getOwnPropertyDescriptor:function(){collectReadProxy();return undefined;},defineProperty:function(t,k,d){collectReadProxy();return d.value===v;}});return setReadReceiver(new Uint8Array(1),0,v,r);});
  check('typed-metadata-independent-of-user-prototype',function(){var a=new BigInt64Array(1);Object.setPrototypeOf(a,{});return setReadReceiver(a,0,'14')&&Object.getOwnPropertyDescriptor(a,'0').value===14n;});
+ check('isarray-native-array-target',function(){return Array.isArray(makeReadProxy([],{}));});
+ check('isarray-native-object-target',function(){return !Array.isArray(makeReadProxy({},{}));});
+ check('isarray-native-typed-target',function(){return !Array.isArray(makeReadProxy(new Uint8Array(1),{}));});
+ check('isarray-revoked-array-throws',function(){var p=makeReadProxy([],{});revokeReadProxy(p);return raises(function(){Array.isArray(p);},TypeError);});
+ check('isarray-revoked-object-throws',function(){var p=makeReadProxy({},{});revokeReadProxy(p);return raises(function(){Array.isArray(p);},TypeError);});
+ check('isarray-does-not-read-handler',function(){var calls=0,h={};Object.defineProperty(h,'get',{get:function(){calls++;throw 1;}});var p=makeReadProxy([],h);return Array.isArray(p)&&calls===0;});
+ check('isarray-does-not-call-get-trap',function(){var calls=0,p=makeReadProxy([],{get:function(){calls++;throw 1;}});return Array.isArray(p)&&calls===0;});
+ check('isarray-does-not-call-getprototype-trap',function(){var calls=0,p=makeReadProxy([],{getPrototypeOf:function(){calls++;throw 1;}});return Array.isArray(p)&&calls===0;});
+ check('isarray-changed-array-prototype',function(){var a=[];Object.setPrototypeOf(a,null);return Array.isArray(makeReadProxy(a,{}));});
+ check('isarray-array-prototype-imitation',function(){return !Array.isArray(makeReadProxy(Object.create(Array.prototype),{}));});
+ check('isarray-all-primitives-false',function(){return !Array.isArray()&&!Array.isArray(null)&&!Array.isArray(true)&&!Array.isArray(1)&&!Array.isArray('a')&&!Array.isArray(Symbol('a'))&&!Array.isArray(1n);});
+ check('isarray-no-coercion',function(){var calls=0,o={valueOf:function(){calls++;return [];},toString:function(){calls++;return '';}};return !Array.isArray(o)&&calls===0;});
+ check('isarray-handler-revoked-proxy-not-read',function(){var h=makeReadProxy({},{});revokeReadProxy(h);return Array.isArray(makeReadProxy([],h));});
  console.log('read-proxy controls: '+(count-failed)+'/'+count);
  return failed===0;
 })()

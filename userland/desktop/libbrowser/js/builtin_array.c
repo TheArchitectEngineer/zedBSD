@@ -6,15 +6,10 @@
  */
 
 /*
- * Array: the constructor, Array.isArray, Array.of, Array.from (array-like
- * objects; iterables arrive with the iterators of ws074-p028) and
+ * Array: the constructor, Array.isArray, Array.of, Array.from and
  * Array.prototype's methods, written as the generic algorithms of the
  * language (they work on any object with a length) over Get, Set,
  * HasProperty and DeleteProperty.
- *
- * The methods that make a new array make a plain array (the species
- * constructor needs Symbol.species, ws074-p028).  The iterator methods
- * (keys, values, entries, Symbol.iterator) arrive with the iterators too.
  */
 
 #include "js/builtin.h"
@@ -287,12 +282,16 @@ array_is_array(
 	vm_value *result)
 {
 	int is_array;
+	int status;
 
-	UNUSED_PARAMETER(realm);
 	UNUSED_PARAMETER(this_value);
 
-	/* An array object. */
-	is_array = array_is_array_value(js_argument(args, count, 0));
+	/* Native Proxy targets preserve array identity and revoked records throw. */
+	status = vm_is_array(realm, js_argument(args, count, 0), &is_array);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: publish only the completed abstract operation's Boolean. */
 	*result = vm_value_boolean(is_array);
 	return 0;
 }
