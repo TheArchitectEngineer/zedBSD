@@ -8,18 +8,18 @@
 /*
  * GT reset (see reset.h).
  *
- * The full reset follows Linux's __intel_gt_reset(ALL_ENGINES) through
- * gen8_reset_engines(), __gen11_reset_engines() and gen6_hw_domain_reset()
- * for an empty engine set: the reset runs before the engines are created, so
- * the reference's per-engine prepare and cancel iterations have nothing to
- * visit.
+ * GDRST resets the graphics domains whose bits are written to it; the
+ * hardware clears each bit when its domain is through.  A reset of the
+ * whole GT pulses the full-reset bit.  A reset of one engine pulses the
+ * engine's own bit, after a handshake on the engine's RESET_CTL that lets
+ * the engine reach a point where it may be reset, and with the scaler and
+ * format converter it uses held for the engine and reset with it.
  *
- * The reset of one engine follows __intel_gt_reset(engine->mask) through
- * gen8_reset_engines() and __gen11_reset_engines() with one attempt, as the
- * reference makes for an engine mask: the engine is asked to be ready
- * (gen8_engine_reset_prepare()), its scaler and format converter is locked
- * when it uses one (gen11_lock_sfc()), its GDRST domain is reset, and the
- * lock and the ready request are given back.
+ * Every pulse writes the bits and waits for them to clear twice on the GTs
+ * the driver serves, and the engines are given 50 us to settle after it.
+ * A pulse that does not clear is the only failure worth trying again, and
+ * only for the whole GT.  The whole-GT reset runs before the engines exist,
+ * so no engine needs a handshake then.
  */
 
 #include "reset.h"
@@ -40,108 +40,109 @@
 #include <kern/lock.h>
 
 #include <uapi/errno.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
 #include "intel/gt-regs.h"
 
-/* I915_GT_GEN6_GDRST: the graphics domain reset register. */
-#define I915_GDRST			0x941cU
+/*
+ * The graphics domain reset register, its full-reset bit, and the bit of
+ * the first scaler and format converter (the others follow it).
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_gt_regs.h
+ * (GEN6_GDRST, GEN11_GRDOM_FULL, GEN11_GRDOM_SFC0).
+ */
+#define I915_RESET_GDRST		0x941cU
+#define I915_RESET_FULL			0x1U
+#define I915_RESET_CONVERTER0		(1U << 17)
 
-/* GEN11_GRDOM_FULL: a full soft reset of every engine. */
-#define I915_GRDOM_FULL			0x1U
-
-/* How many attempts a reset whose acknowledge times out is given. */
-#define I915_RESET_MAX_RETRIES		3U
-
-/* How many write and poll passes one attempt makes on graphics IP before 12.70. */
+/*
+ * The limits: the whole-GT attempts, the write and wait passes of one
+ * pulse, the settle time after a pulse, the wait for an engine's handshake
+ * and for a converter's lock.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_reset.c
+ * (RESET_MAX_RETRIES, gen6_hw_domain_reset, gen8_engine_reset_prepare,
+ * gen11_lock_sfc).
+ */
+#define I915_RESET_ATTEMPTS		3U
 #define I915_RESET_PASSES		2U
-
-/* How long the engines are left to settle after the acknowledge (udelay(50)). */
 #define I915_RESET_SETTLE_US		50U
-
-/* How long an engine is given to say it is ready for its reset (gen8_engine_reset_prepare()). */
-#define I915_RESET_READY_US		700U
-
-/* How long a converter lock is given to be acknowledged (gen11_lock_sfc()). */
-#define I915_SFC_LOCK_ACK_US		1000U
+#define I915_RESET_HANDSHAKE_US		700U
+#define I915_RESET_CONVERTER_US		1000U
 
 /* A masked register word that sets, or clears, the named bits. */
-#define I915_RESET_MASKED_ENABLE(bits)	((((uint32_t)(bits)) << 16) | ((uint32_t)(bits)))
-#define I915_RESET_MASKED_DISABLE(bits)	(((uint32_t)(bits)) << 16)
+#define I915_RESET_MASKED_SET(bits)	((((uint32_t)(bits)) << 16) | ((uint32_t)(bits)))
+#define I915_RESET_MASKED_CLEAR(bits)	(((uint32_t)(bits)) << 16)
 
 /*
- * The converter registers of a video decode engine (GEN11_VCS_SFC_*): the
- * forced lock a reset asks for, and the status that says whether the MFX
- * pipe uses the converter and whether the lock was acknowledged.
- */
-#define I915_VCS_SFC_FORCED_LOCK(base)	((base) + 0x88cU)
-#define I915_VCS_SFC_FORCED_LOCK_BIT	(1U << 0)
-#define I915_VCS_SFC_LOCK_STATUS(base)	((base) + 0x890U)
-#define I915_VCS_SFC_USAGE_BIT		(1U << 0)
-#define I915_VCS_SFC_LOCK_ACK_BIT	(1U << 1)
-
-/* Whether the HEVC pipe of a video decode engine uses the converter (GEN12_HCP_SFC_LOCK_STATUS). */
-#define I915_HCP_SFC_LOCK_STATUS(base)	((base) + 0x2914U)
-#define I915_HCP_SFC_USAGE_BIT		(1U << 0)
-
-/* The converter registers of a video enhancement engine (GEN11_VECS_SFC_*). */
-#define I915_VECS_SFC_FORCED_LOCK(base)	((base) + 0x201cU)
-#define I915_VECS_SFC_FORCED_LOCK_BIT	(1U << 0)
-#define I915_VECS_SFC_LOCK_ACK(base)	((base) + 0x2018U)
-#define I915_VECS_SFC_LOCK_ACK_BIT	(1U << 0)
-#define I915_VECS_SFC_USAGE(base)	((base) + 0x2014U)
-#define I915_VECS_SFC_USAGE_BIT		(1U << 0)
-
-/*
- * The GDRST bit of the first converter (GEN11_GRDOM_SFC0).  A video decode
- * engine's converter is the one of its instance / 2, a video enhancement
- * engine's the one of its instance.
- */
-#define I915_GRDOM_SFC0			(1U << 17)
-
-/*
- * How the converter of one engine is locked for a reset (struct
- * sfc_lock_data): the forced lock, its acknowledge, the bit that says the
- * engine uses the converter, and the converter's own GDRST bit.
+ * Where an engine class reaches its scaler and format converter: the
+ * forced lock, its acknowledge and the in-use bit (offsets from the
+ * engine's base), and which converter it is (the engine's instance shifted
+ * right by converter_shift).  The decode engines share one converter
+ * between two instances; each enhancement engine has its own.
  *
- * It lives on the stack of one engine reset.
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_engine_regs.h
+ * (GEN11_VCS_SFC_FORCED_LOCK, GEN11_VCS_SFC_FORCED_LOCK_BIT,
+ * GEN11_VCS_SFC_LOCK_STATUS, GEN11_VCS_SFC_LOCK_ACK_BIT,
+ * GEN11_VCS_SFC_USAGE_BIT, GEN11_VECS_SFC_FORCED_LOCK,
+ * GEN11_VECS_SFC_FORCED_LOCK_BIT, GEN11_VECS_SFC_LOCK_ACK,
+ * GEN11_VECS_SFC_LOCK_ACK_BIT, GEN11_VECS_SFC_USAGE,
+ * GEN11_VECS_SFC_USAGE_BIT) and drivers/gpu/drm/i915/gt/intel_gt_regs.h
+ * (GEN11_VCS_SFC_RESET_BIT, GEN11_VECS_SFC_RESET_BIT).
  */
-struct i915_sfc_lock {
-	/* The register and bit that ask for the forced lock. */
-	uint32_t lock_reg;
+struct i915_reset_converter {
+	uint32_t lock_off;
 	uint32_t lock_bit;
-
-	/* The register and bit that acknowledge it. */
-	uint32_t ack_reg;
+	uint32_t ack_off;
 	uint32_t ack_bit;
-
-	/* The register and bit that say the engine uses the converter. */
-	uint32_t usage_reg;
-	uint32_t usage_bit;
-
-	/* The converter's GDRST bit. */
-	uint32_t reset_bit;
+	uint32_t use_off;
+	uint32_t use_bit;
+	unsigned converter_shift;
 };
 
-static int i915_gt_reset_attempt(struct spinlock *uncore_lock, struct i915_mmio *mmio, unsigned fast_us, unsigned attempt);
-static int i915_gt_domain_reset(struct i915_mmio *mmio, uint32_t domains, unsigned fast_us, unsigned *passes);
-static int i915_engine_reset_locked(struct i915_mmio *mmio, const struct i915_gt_info *gt, const struct i915_engine_info *engine, unsigned fast_us, uint32_t *domains, unsigned *passes);
-static int i915_engine_reset_ready(struct i915_mmio *mmio, const struct i915_engine_info *engine);
-static void i915_engine_reset_unready(struct i915_mmio *mmio, const struct i915_engine_info *engine);
-static void i915_sfc_lock_data(const struct i915_engine_info *engine, struct i915_sfc_lock *lock);
-static const struct i915_engine_info *i915_sfc_paired_vecs(const struct i915_gt_info *gt, const struct i915_engine_info *engine);
-static int i915_sfc_lock(struct i915_mmio *mmio, const struct i915_gt_info *gt, const struct i915_engine_info *engine, uint32_t *domains, const struct i915_engine_info **locked);
-static void i915_sfc_unlock(struct i915_mmio *mmio, const struct i915_engine_info *engine);
+static const struct i915_reset_converter i915_reset_converter_vcs = {
+	0x88cU, 1U << 0, 0x890U, 1U << 1, 0x890U, 1U << 0, 1U
+};
+static const struct i915_reset_converter i915_reset_converter_vecs = {
+	0x201cU, 1U << 0, 0x2018U, 1U << 0, 0x2014U, 1U << 0, 0U
+};
 
 /*
- * Resets every graphics domain (GEN11_GRDOM_FULL).
+ * The decode engine's HEVC pipe: whether it, rather than the engine's own
+ * pipe, uses the converter.
  *
- * The render and GT forcewake domains are held across the whole reset and,
- * inside each attempt, the uncore lock with interrupts off.  An attempt is
- * repeated, up to three in all, only while the acknowledge times out.  Each
- * acknowledge poll is a real-time busy wait bounded by fast_us.  Returns 0, a
- * forcewake error, ETIMEDOUT, or the time-base fault of the settle delay.
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_engine_regs.h
+ * (GEN12_HCP_SFC_LOCK_STATUS, GEN12_HCP_SFC_USAGE_BIT).
+ */
+#define I915_RESET_HEVC_USE(base)	((base) + 0x2914U)
+#define I915_RESET_HEVC_USE_BIT		(1U << 0)
+
+/* A converter held for a reset: the engine it was locked through and its layout. */
+struct i915_reset_hold {
+	const struct i915_engine_info *through;
+	const struct i915_reset_converter *layout;
+};
+
+static int i915_reset_pulse(struct i915_mmio *mmio, uint32_t domains, unsigned fast_us, unsigned *passes);
+static int i915_reset_gt_once(struct spinlock *uncore_lock, struct i915_mmio *mmio, unsigned fast_us, unsigned attempt);
+static int i915_reset_engine_locked(struct i915_mmio *mmio, const struct i915_gt_info *gt, const struct i915_engine_info *engine, unsigned fast_us, uint32_t *domains, unsigned *passes);
+static int i915_reset_handshake_enter(struct i915_mmio *mmio, const struct i915_engine_info *engine);
+static void i915_reset_handshake_leave(struct i915_mmio *mmio, const struct i915_engine_info *engine);
+static const struct i915_reset_converter *i915_reset_converter_of(const struct i915_gt_info *gt, const struct i915_engine_info *engine);
+static const struct i915_engine_info *i915_reset_converter_partner(const struct i915_gt_info *gt, const struct i915_engine_info *engine);
+static int i915_reset_converter_hold(struct i915_mmio *mmio, const struct i915_gt_info *gt, const struct i915_engine_info *engine, uint32_t *domains, struct i915_reset_hold *hold);
+static void i915_reset_converter_release(struct i915_mmio *mmio, const struct i915_reset_hold *hold);
+
+/*
+ * Resets every graphics domain.
+ *
+ * The render and GT forcewake domains are held across the reset.  Each
+ * attempt runs under the uncore lock with interrupts off, and a new one is
+ * made, up to three in all, only while the pulse does not clear.  Returns
+ * 0, a forcewake error, ETIMEDOUT, or the time-base fault of the settle
+ * time.
  */
 int
 drv_i915_gt_reset_all(
@@ -150,51 +151,35 @@ drv_i915_gt_reset_all(
 	unsigned fast_us)
 {
 	unsigned attempt;
-	int forcewake_error;
 	int error;
 
-	/* Wakes the render domain for the whole reset, outside the uncore lock. */
-	forcewake_error = drv_i915_forcewake_get(mmio, I915_FORCEWAKE_RENDER);
-	if (forcewake_error != 0)
-		return forcewake_error;
-
-	/* Wakes the GT domain as well, giving the render hold back if it cannot. */
-	forcewake_error = drv_i915_forcewake_get(mmio, I915_FORCEWAKE_GT);
-	if (forcewake_error != 0) {
-		(void)drv_i915_forcewake_put(mmio, I915_FORCEWAKE_RENDER);
-		return forcewake_error;
-	}
-
-	/* Repeats the reset only while its acknowledge times out. */
-	error = ETIMEDOUT;
-	for (attempt = 0U; attempt < I915_RESET_MAX_RETRIES; attempt++) {
-		error = i915_gt_reset_attempt(uncore_lock, mmio, fast_us, attempt);
-		if (error != ETIMEDOUT)
-			break;
-	}
-
-	/* Lets the GT and render domains sleep again. */
-	(void)drv_i915_forcewake_put(mmio, I915_FORCEWAKE_GT);
-	(void)drv_i915_forcewake_put(mmio, I915_FORCEWAKE_RENDER);
-
-	/* Reports why the reset did not complete. */
+	error = drv_i915_forcewake_get(mmio, I915_FORCEWAKE_RENDER);
 	if (error != 0)
 		return error;
+	error = drv_i915_forcewake_get(mmio, I915_FORCEWAKE_GT);
+	if (error != 0) {
+		(void)drv_i915_forcewake_put(mmio, I915_FORCEWAKE_RENDER);
+		return error;
+	}
 
-	/* Succeeded: every graphics domain acknowledged its reset. */
-	return 0;
+	error = ETIMEDOUT;
+	for (attempt = 0U; attempt < I915_RESET_ATTEMPTS && error == ETIMEDOUT; attempt++)
+		error = i915_reset_gt_once(uncore_lock, mmio, fast_us, attempt);
+
+	(void)drv_i915_forcewake_put(mmio, I915_FORCEWAKE_GT);
+	(void)drv_i915_forcewake_put(mmio, I915_FORCEWAKE_RENDER);
+	return error;
 }
 
 /*
- * Resets one engine, and its scaler and format converter when it uses one.
+ * Resets one engine, with the converter it uses.
  *
  * The GT forcewake domain and the engine's own are held across the reset,
- * and the uncore lock with interrupts off.  One attempt is made, as the
- * reference makes for an engine mask: an engine that never says it is ready
- * is not reset.  Each poll is a real-time busy wait.  Returns 0, EINVAL for
- * an engine without a reset domain, a forcewake error, ETIMEDOUT when the
- * engine was not ready or the converter lock or the reset was not
- * acknowledged, or the time-base fault of the settle delay.
+ * and the uncore lock with interrupts off.  One attempt is made: an engine
+ * that never reaches the point where it may be reset is not reset.
+ * Returns 0, EINVAL for an engine without a reset domain, a forcewake
+ * error, ETIMEDOUT when the handshake, the converter's lock or the pulse
+ * did not complete, or the time-base fault of the settle time.
  */
 int
 drv_i915_gt_reset_engine(
@@ -208,63 +193,64 @@ drv_i915_gt_reset_engine(
 	unsigned passes;
 	uint32_t domains;
 	int engine_domain;
-	int forcewake_error;
 	int error;
 
-	/* An engine without a reset domain cannot be reset alone. */
 	if (engine == NULL || engine->reset_domain == 0U)
 		return EINVAL;
 
-	/* Wakes the GT domain for the whole reset, outside the uncore lock. */
-	forcewake_error = drv_i915_forcewake_get(mmio, I915_FORCEWAKE_GT);
-	if (forcewake_error != 0)
-		return forcewake_error;
-
-	/* Wakes the engine's own domain as well, giving the GT hold back if it cannot. */
+	error = drv_i915_forcewake_get(mmio, I915_FORCEWAKE_GT);
+	if (error != 0)
+		return error;
 	engine_domain = drv_i915_mmio_domain_of(mmio, engine->mmio_base);
 	if (engine_domain >= 0) {
-		forcewake_error = drv_i915_forcewake_get(mmio, engine_domain);
-		if (forcewake_error != 0) {
+		error = drv_i915_forcewake_get(mmio, engine_domain);
+		if (error != 0) {
 			(void)drv_i915_forcewake_put(mmio, I915_FORCEWAKE_GT);
-			return forcewake_error;
+			return error;
 		}
 	}
 
-	/* Resets the engine under the uncore lock. */
 	irq = spin_lock_irqsave(uncore_lock);
-
-	error = i915_engine_reset_locked(mmio, gt, engine, fast_us, &domains, &passes);
-
+	error = i915_reset_engine_locked(mmio, gt, engine, fast_us, &domains, &passes);
 	spin_unlock_irqrestore(uncore_lock, irq);
 
-	/* Records how the reset ended. */
-	kern_logf("i915: engine_reset %s domains=0x%x passes=%u rc=%d\n",
-		  engine->name,
-		  domains,
-		  passes,
-		  error);
+	kern_logf("i915: engine_reset %s domains=0x%x passes=%u rc=%d\n", engine->name, domains, passes, error);
 
-	/* Lets the engine's domain and the GT domain sleep again. */
 	if (engine_domain >= 0)
 		(void)drv_i915_forcewake_put(mmio, engine_domain);
 	(void)drv_i915_forcewake_put(mmio, I915_FORCEWAKE_GT);
-
-	/* Reports why the engine was not reset. */
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the engine's domains acknowledged their reset. */
-	return 0;
+	return error;
 }
 
 /*
- * Runs one reset attempt under the uncore lock.
- *
- * Returns 0, ETIMEDOUT when the acknowledge never came, or the time-base
- * fault of the settle delay, which the caller must not retry.
+ * Writes domains to GDRST and waits for the hardware to clear them, pass
+ * after pass, stopping at the first pass that does not clear.  The caller
+ * holds the uncore lock.  Returns 0 or ETIMEDOUT, with the passes made.
  */
 static int
-i915_gt_reset_attempt(
+i915_reset_pulse(
+	struct i915_mmio *mmio,
+	uint32_t domains,
+	unsigned fast_us,
+	unsigned *passes)
+{
+	int error;
+
+	error = 0;
+	for (*passes = 0U; *passes < I915_RESET_PASSES && error == 0; (*passes)++) {
+		drv_i915_raw_write32(mmio, I915_RESET_GDRST, domains);
+		error = drv_i915_wait_reg(mmio, I915_RESET_GDRST, domains, 0U, fast_us, 0U, NULL);
+	}
+	return error;
+}
+
+/*
+ * One whole-GT attempt under the uncore lock: the pulse and the settle
+ * time.  A settle time whose time base faulted cannot bound another
+ * attempt either, so its fault is returned as it is and not retried.
+ */
+static int
+i915_reset_gt_once(
 	struct spinlock *uncore_lock,
 	struct i915_mmio *mmio,
 	unsigned fast_us,
@@ -272,93 +258,31 @@ i915_gt_reset_attempt(
 {
 	unsigned long irq;
 	unsigned passes;
-	int acknowledge_error;
-	int delay_error;
+	int pulse_error;
+	int settle_error;
 
-	/* Requests the full reset under the uncore lock (gen8_reset_engines()). */
 	irq = spin_lock_irqsave(uncore_lock);
-
-	acknowledge_error = i915_gt_domain_reset(mmio, I915_GRDOM_FULL, fast_us, &passes);
-
-	/*
-	 * Lets the engine state settle; it stays volatile briefly after the
-	 * acknowledge.  A time base that faulted cannot bound the next wait
-	 * either, so the reset is abandoned with the fault and not retried.
-	 */
-	delay_error = drv_i915_udelay(I915_RESET_SETTLE_US);
-	if (delay_error != 0) {
-		spin_unlock_irqrestore(uncore_lock, irq);
-		kern_logf("i915: gt_reset attempt=%u passes=%u time-base fault rc=%d\n",
-			  attempt,
-			  passes,
-			  delay_error);
-		return delay_error;
-	}
-
+	pulse_error = i915_reset_pulse(mmio, I915_RESET_FULL, fast_us, &passes);
+	settle_error = drv_i915_udelay(I915_RESET_SETTLE_US);
 	spin_unlock_irqrestore(uncore_lock, irq);
 
-	/* Records how the attempt ended. */
-	kern_logf("i915: gt_reset attempt=%u passes=%u rc=%d\n",
-		  attempt,
-		  passes,
-		  acknowledge_error);
-
-	/* Reports a pass whose acknowledge timed out. */
-	if (acknowledge_error != 0)
-		return acknowledge_error;
-
-	/* Succeeded: both passes were acknowledged. */
-	return 0;
-}
-
-/*
- * Requests a reset of GDRST domains and waits for the hardware to clear the
- * request bits, twice on Alder Lake-P, stopping at the first pass that times
- * out (gen6_hw_domain_reset() before its settle delay).  The caller holds
- * the uncore lock.  Returns 0 or ETIMEDOUT, with the passes made.
- */
-static int
-i915_gt_domain_reset(
-	struct i915_mmio *mmio,
-	uint32_t domains,
-	unsigned fast_us,
-	unsigned *passes)
-{
-	int acknowledge_error;
-
-	/* Writes the request and polls for its acknowledge, pass after pass. */
-	*passes = 0U;
-	for (;;) {
-		drv_i915_raw_write32(mmio, I915_GDRST, domains);
-		acknowledge_error = drv_i915_wait_reg(mmio, I915_GDRST, domains, 0U, fast_us, 0U, NULL);
-		(*passes)++;
-
-		/* A pass that timed out ends the reset. */
-		if (acknowledge_error != 0)
-			break;
-
-		/* The reset is complete after its last pass. */
-		if (*passes >= I915_RESET_PASSES)
-			break;
+	if (settle_error != 0) {
+		kern_logf("i915: gt_reset attempt=%u passes=%u time-base fault rc=%d\n", attempt, passes, settle_error);
+		return settle_error;
 	}
-
-	/* Reports a pass whose acknowledge timed out. */
-	if (acknowledge_error != 0)
-		return acknowledge_error;
-
-	/* Succeeded: every pass was acknowledged. */
-	return 0;
+	kern_logf("i915: gt_reset attempt=%u passes=%u rc=%d\n", attempt, passes, pulse_error);
+	return pulse_error;
 }
 
 /*
- * Runs the reset of one engine; the caller holds the uncore lock
- * (gen8_reset_engines() with one attempt).
- *
- * Returns 0, ETIMEDOUT, or the time-base fault of the settle delay, with
- * the GDRST domains asked for and the passes made.
+ * The reset of one engine with the uncore lock held: the handshake, the
+ * converter's hold, the pulse and the settle time, then the converter and
+ * the handshake given back whatever came of the pulse.  Returns 0,
+ * ETIMEDOUT, or the time-base fault of the settle time, with the domains
+ * pulsed and the passes made.
  */
 static int
-i915_engine_reset_locked(
+i915_reset_engine_locked(
 	struct i915_mmio *mmio,
 	const struct i915_gt_info *gt,
 	const struct i915_engine_info *engine,
@@ -366,285 +290,201 @@ i915_engine_reset_locked(
 	uint32_t *domains,
 	unsigned *passes)
 {
-	const struct i915_engine_info *locked;
+	struct i915_reset_hold hold;
+	int settle_error;
 	int error;
-	int delay_error;
 
-	/* Nothing is asked of GDRST yet. */
 	*domains = 0U;
 	*passes = 0U;
 
-	/* Asks the engine to be ready; an engine that never is, is not reset. */
-	error = i915_engine_reset_ready(mmio, engine);
+	error = i915_reset_handshake_enter(mmio, engine);
 	if (error != 0) {
-		i915_engine_reset_unready(mmio, engine);
+		i915_reset_handshake_leave(mmio, engine);
 		return error;
 	}
 
-	/* Locks the converter the engine uses, which takes the converter into the reset. */
 	*domains = engine->reset_domain;
-	locked = NULL;
-	error = i915_sfc_lock(mmio, gt, engine, domains, &locked);
+	hold.through = NULL;
+	hold.layout = NULL;
+	error = i915_reset_converter_hold(mmio, gt, engine, domains, &hold);
 
-	/* Resets the domains, then lets the engine state settle (gen6_hw_domain_reset()). */
-	delay_error = 0;
+	settle_error = 0;
 	if (error == 0) {
-		error = i915_gt_domain_reset(mmio, *domains, fast_us, passes);
-		delay_error = drv_i915_udelay(I915_RESET_SETTLE_US);
+		error = i915_reset_pulse(mmio, *domains, fast_us, passes);
+		settle_error = drv_i915_udelay(I915_RESET_SETTLE_US);
 	}
 
-	/* Gives back the converter lock that was asked for, whatever came of it. */
-	if (locked != NULL)
-		i915_sfc_unlock(mmio, locked);
+	i915_reset_converter_release(mmio, &hold);
+	i915_reset_handshake_leave(mmio, engine);
 
-	/* Withdraws the ready request, as the reference does after every reset. */
-	i915_engine_reset_unready(mmio, engine);
-
-	/* Reports a lock or a reset that was not acknowledged. */
 	if (error != 0)
 		return error;
-
-	/* Reports a time base that faulted in the settle delay. */
-	if (delay_error != 0)
-		return delay_error;
-
-	/* Succeeded: the engine's domains acknowledged their reset. */
-	return 0;
+	return settle_error;
 }
 
 /*
- * Asks an engine to be ready for its reset (gen8_engine_reset_prepare()).
+ * Brings an engine to the point where it may be reset.
  *
- * An engine already ready needs nothing.  A catastrophic error bypasses the
- * ready handshake (HAS#396813) and is cleared by the hardware.  The caller
- * holds the uncore lock.  Returns 0 or ETIMEDOUT.
+ * RESET_CTL says where the engine stands: an engine already ready needs
+ * nothing, an engine not yet ready is asked and waited for, and an engine
+ * in a catastrophic error skips the handshake: the error bit is written
+ * and the hardware clears it.  The caller holds the uncore lock.  Returns
+ * 0 or ETIMEDOUT.
  */
 static int
-i915_engine_reset_ready(
+i915_reset_handshake_enter(
 	struct i915_mmio *mmio,
 	const struct i915_engine_info *engine)
 {
 	uint32_t reg;
-	uint32_t status;
-	uint32_t request;
-	uint32_t mask;
-	uint32_t ack;
+	uint32_t state;
+	uint32_t ask;
+	uint32_t watch;
+	uint32_t want;
 	int error;
 
-	/* Reads where the engine's reset handshake stands. */
 	reg = I915_GT_RING_RESET_CTL(engine->mmio_base);
-	status = drv_i915_raw_read32(mmio, reg);
-
-	/* Chooses what to ask the engine for. */
-	if ((status & I915_GT_RESET_CTL_CAT_ERROR) != 0U) {
-		/* A catastrophic error is cleared rather than waited out. */
-		request = I915_GT_RESET_CTL_CAT_ERROR;
-		mask = I915_GT_RESET_CTL_CAT_ERROR;
-		ack = 0U;
-	} else if ((status & I915_GT_RESET_CTL_READY_TO_RESET) == 0U) {
-		/* An engine not yet ready is asked to become ready. */
-		request = I915_GT_RESET_CTL_REQUEST_RESET;
-		mask = I915_GT_RESET_CTL_READY_TO_RESET;
-		ack = I915_GT_RESET_CTL_READY_TO_RESET;
+	state = drv_i915_raw_read32(mmio, reg);
+	if ((state & I915_GT_RESET_CTL_CAT_ERROR) != 0U) {
+		ask = I915_GT_RESET_CTL_CAT_ERROR;
+		watch = I915_GT_RESET_CTL_CAT_ERROR;
+		want = 0U;
+	} else if ((state & I915_GT_RESET_CTL_READY_TO_RESET) == 0U) {
+		ask = I915_GT_RESET_CTL_REQUEST_RESET;
+		watch = I915_GT_RESET_CTL_READY_TO_RESET;
+		want = I915_GT_RESET_CTL_READY_TO_RESET;
 	} else {
-		/* An engine already ready needs nothing. */
 		return 0;
 	}
 
-	/* Asks, and waits for the engine's answer. */
-	drv_i915_raw_write32(mmio, reg, I915_RESET_MASKED_ENABLE(request));
-	error = drv_i915_wait_reg(mmio, reg, mask, ack, I915_RESET_READY_US, 0U, NULL);
+	drv_i915_raw_write32(mmio, reg, I915_RESET_MASKED_SET(ask));
+	error = drv_i915_wait_reg(mmio, reg, watch, want, I915_RESET_HANDSHAKE_US, 0U, NULL);
 	if (error != 0) {
-		status = drv_i915_raw_read32(mmio, reg);
-		kern_logf("i915: %s reset request timed out: request %08x RESET_CTL %08x\n",
-			  engine->name,
-			  request,
-			  status);
+		kern_logf("i915: %s reset request timed out: request %08x RESET_CTL %08x\n", engine->name, ask, drv_i915_raw_read32(mmio, reg));
 		return error;
 	}
-
-	/* Succeeded: the engine is ready for its reset. */
 	return 0;
 }
 
-/* Withdraws an engine's ready request (gen8_engine_reset_cancel()); the caller holds the uncore lock. */
+/* Withdraws the engine's reset request; the caller holds the uncore lock. */
 static void
-i915_engine_reset_unready(
+i915_reset_handshake_leave(
 	struct i915_mmio *mmio,
 	const struct i915_engine_info *engine)
 {
-	/* Clears the request bit through the register's mask half. */
-	drv_i915_raw_write32(mmio, I915_GT_RING_RESET_CTL(engine->mmio_base), I915_RESET_MASKED_DISABLE(I915_GT_RESET_CTL_REQUEST_RESET));
+	drv_i915_raw_write32(mmio, I915_GT_RING_RESET_CTL(engine->mmio_base), I915_RESET_MASKED_CLEAR(I915_GT_RESET_CTL_REQUEST_RESET));
 }
 
-/* Names the converter lock registers of a video decode or video enhancement engine (get_sfc_forced_lock_data()). */
-static void
-i915_sfc_lock_data(
-	const struct i915_engine_info *engine,
-	struct i915_sfc_lock *lock)
-{
-	uint32_t base;
-
-	/* The registers are relative to the engine's base. */
-	base = engine->mmio_base;
-
-	/* Chooses the layout of the engine's class. */
-	if (engine->class == I915_VIDEO_ENHANCEMENT_CLASS) {
-		/* A video enhancement engine owns the converter of its instance. */
-		lock->lock_reg = I915_VECS_SFC_FORCED_LOCK(base);
-		lock->lock_bit = I915_VECS_SFC_FORCED_LOCK_BIT;
-		lock->ack_reg = I915_VECS_SFC_LOCK_ACK(base);
-		lock->ack_bit = I915_VECS_SFC_LOCK_ACK_BIT;
-		lock->usage_reg = I915_VECS_SFC_USAGE(base);
-		lock->usage_bit = I915_VECS_SFC_USAGE_BIT;
-		lock->reset_bit = I915_GRDOM_SFC0 << (unsigned)engine->instance;
-	} else {
-		/* A video decode engine shares the converter of its instance / 2. */
-		lock->lock_reg = I915_VCS_SFC_FORCED_LOCK(base);
-		lock->lock_bit = I915_VCS_SFC_FORCED_LOCK_BIT;
-		lock->ack_reg = I915_VCS_SFC_LOCK_STATUS(base);
-		lock->ack_bit = I915_VCS_SFC_LOCK_ACK_BIT;
-		lock->usage_reg = I915_VCS_SFC_LOCK_STATUS(base);
-		lock->usage_bit = I915_VCS_SFC_USAGE_BIT;
-		lock->reset_bit = I915_GRDOM_SFC0 << ((unsigned)engine->instance >> 1);
-	}
-}
-
-/* Finds the video enhancement engine that shares a video decode engine's converter (find_sfc_paired_vecs_engine()), or NULL. */
-static const struct i915_engine_info *
-i915_sfc_paired_vecs(
+/*
+ * The converter layout of an engine that can have one: an enhancement
+ * engine, or a decode engine whose fuses give it converter access.  NULL
+ * for every other engine and for Gen9, which resets no converter.
+ */
+static const struct i915_reset_converter *
+i915_reset_converter_of(
 	const struct i915_gt_info *gt,
 	const struct i915_engine_info *engine)
 {
-	unsigned index;
+	if (gt->graphics_ver == 9)
+		return NULL;
+	if (engine->class == I915_VIDEO_ENHANCEMENT_CLASS)
+		return &i915_reset_converter_vecs;
+	if (engine->class == I915_VIDEO_DECODE_CLASS && (gt->vdbox_sfc_access & (1U << (unsigned)engine->instance)) != 0U)
+		return &i915_reset_converter_vcs;
+	return NULL;
+}
 
-	/* Looks for the enhancement instance that is the decode instance / 2. */
-	for (index = 0U; index < gt->num_engines; index++) {
-		if (gt->engines[index].class != I915_VIDEO_ENHANCEMENT_CLASS)
-			continue;
-		if (gt->engines[index].instance != engine->instance / 2)
-			continue;
+/* The enhancement engine that shares a decode engine's converter, or NULL when it is fused off. */
+static const struct i915_engine_info *
+i915_reset_converter_partner(
+	const struct i915_gt_info *gt,
+	const struct i915_engine_info *engine)
+{
+	unsigned i;
 
-		/* Succeeded: the partner shares the converter. */
-		return &gt->engines[index];
+	for (i = 0U; i < gt->num_engines; i++) {
+		if (gt->engines[i].class == I915_VIDEO_ENHANCEMENT_CLASS && gt->engines[i].instance == engine->instance / 2)
+			return &gt->engines[i];
 	}
-
-	/* The partner was fused off. */
 	return NULL;
 }
 
 /*
- * Locks the converter an engine uses before its reset (gen11_lock_sfc()).
+ * Holds the converter an engine uses for its reset.
  *
- * The lock is asked of the engine itself, or, when only the HEVC pipe of a
- * video decode engine uses the converter, of the video enhancement engine
- * that shares it (Wa_14010733141; the driver serves graphics 12 only).  The
- * engine the lock was asked of is left in *locked, for the caller to unlock
- * whatever this reports.  When the converter ended up locked to the engine
- * that uses it, its GDRST bit joins *domains.  Returns 0 or ETIMEDOUT.
+ * The lock goes through the engine itself when its own pipe uses the
+ * converter, or, for a decode engine whose HEVC pipe uses it, through the
+ * enhancement engine that shares it (Wa_14010733141).  A converter nobody
+ * uses is not held.  Once the lock was asked for, *hold names it for the
+ * release, whatever else comes of it.  The converter joins *domains when,
+ * after the lock, the engine that uses it is the one it was locked
+ * through; a converter that moved between the two is left alone and the
+ * engine is reset by itself.  Returns 0 or ETIMEDOUT.
  */
 static int
-i915_sfc_lock(
+i915_reset_converter_hold(
 	struct i915_mmio *mmio,
 	const struct i915_gt_info *gt,
 	const struct i915_engine_info *engine,
 	uint32_t *domains,
-	const struct i915_engine_info **locked)
+	struct i915_reset_hold *hold)
 {
-	const struct i915_engine_info *target;
-	struct i915_sfc_lock lock;
-	uint32_t usage;
-	uint32_t hcp_status;
-	uint32_t lock_value;
-	int lock_to_other;
-	int lock_obtained;
+	const struct i915_reset_converter *layout;
+	const struct i915_engine_info *through;
+	bool via_partner;
+	bool in_use;
+	uint32_t base;
 	int error;
 
-	/* Gen9, before graphics 11, does not lock the converter (gen6_reset_engines()). */
-	if (gt->graphics_ver == 9)
+	layout = i915_reset_converter_of(gt, engine);
+	if (layout == NULL)
 		return 0;
 
-	/* Only a decode engine with a converter, or an enhancement engine, has one to lock. */
-	if (engine->class == I915_VIDEO_DECODE_CLASS) {
-		if ((gt->vdbox_sfc_access & (1U << (unsigned)engine->instance)) == 0U)
-			return 0;
-	} else if (engine->class != I915_VIDEO_ENHANCEMENT_CLASS) {
-		return 0;
-	}
-
-	/* Starts from the engine's own converter registers. */
-	i915_sfc_lock_data(engine, &lock);
-	target = engine;
-	lock_to_other = 0;
-
-	/* Reads whether the engine's own pipe uses the converter. */
-	usage = drv_i915_raw_read32(mmio, lock.usage_reg);
-	if ((usage & lock.usage_bit) == 0U) {
-		/* Only a decode engine looks further, at its HEVC pipe. */
+	/* Whose pipe uses the converter decides whom the lock goes through. */
+	through = engine;
+	via_partner = false;
+	if ((drv_i915_raw_read32(mmio, engine->mmio_base + layout->use_off) & layout->use_bit) == 0U) {
 		if (engine->class != I915_VIDEO_DECODE_CLASS)
 			return 0;
-
-		/* A converter neither pipe uses needs no lock. */
-		hcp_status = drv_i915_raw_read32(mmio, I915_HCP_SFC_LOCK_STATUS(engine->mmio_base));
-		if ((hcp_status & I915_HCP_SFC_USAGE_BIT) == 0U)
+		if ((drv_i915_raw_read32(mmio, I915_RESET_HEVC_USE(engine->mmio_base)) & I915_RESET_HEVC_USE_BIT) == 0U)
 			return 0;
-
-		/* The HEVC pipe uses it: the lock is asked of the enhancement engine that shares it. */
-		target = i915_sfc_paired_vecs(gt, engine);
-		if (target == NULL)
+		through = i915_reset_converter_partner(gt, engine);
+		if (through == NULL)
 			return 0;
-
-		/* The partner's converter registers stand in for the engine's. */
-		i915_sfc_lock_data(target, &lock);
-		lock_to_other = 1;
+		layout = &i915_reset_converter_vecs;
+		via_partner = true;
 	}
 
-	/* Asks for the forced lock; from here the caller gives it back. */
-	lock_value = drv_i915_raw_read32(mmio, lock.lock_reg);
-	drv_i915_raw_write32(mmio, lock.lock_reg, lock_value | lock.lock_bit);
-	*locked = target;
+	base = through->mmio_base;
+	drv_i915_raw_write32(mmio, base + layout->lock_off, drv_i915_raw_read32(mmio, base + layout->lock_off) | layout->lock_bit);
+	hold->through = through;
+	hold->layout = layout;
 
-	/* Waits for the lock's acknowledge. */
-	error = drv_i915_wait_reg(mmio, lock.ack_reg, lock.ack_bit, lock.ack_bit, I915_SFC_LOCK_ACK_US, 0U, NULL);
-
-	/* Reads whether the converter is now held by the engine that uses it. */
-	usage = drv_i915_raw_read32(mmio, lock.usage_reg);
-	lock_obtained = 0;
-	if ((usage & lock.usage_bit) != 0U)
-		lock_obtained = 1;
-
-	/*
-	 * The converter is reset with the engine only when it was locked to
-	 * this engine and stayed in use, or was locked to the partner but went
-	 * free meanwhile; otherwise the engine is reset by itself.
-	 */
-	if (lock_obtained == lock_to_other)
+	error = drv_i915_wait_reg(mmio, base + layout->ack_off, layout->ack_bit, layout->ack_bit, I915_RESET_CONVERTER_US, 0U, NULL);
+	in_use = (drv_i915_raw_read32(mmio, base + layout->use_off) & layout->use_bit) != 0U;
+	if (in_use == via_partner)
 		return 0;
 
-	/* A lock that was never acknowledged fails the reset. */
 	if (error != 0) {
 		kern_logf("i915: %s: converter forced lock not acknowledged\n", engine->name);
 		return error;
 	}
-
-	/* Succeeded: the converter's bit joins the reset. */
-	*domains |= lock.reset_bit;
+	*domains |= I915_RESET_CONVERTER0 << ((unsigned)through->instance >> layout->converter_shift);
 	return 0;
 }
 
-/* Gives back a converter's forced lock (gen11_unlock_sfc()); the caller holds the uncore lock. */
+/* Gives back a held converter's lock, leaving the rest of the register; the caller holds the uncore lock. */
 static void
-i915_sfc_unlock(
+i915_reset_converter_release(
 	struct i915_mmio *mmio,
-	const struct i915_engine_info *engine)
+	const struct i915_reset_hold *hold)
 {
-	struct i915_sfc_lock lock;
-	uint32_t lock_value;
+	uint32_t reg;
 
-	/* Clears the lock bit and leaves the rest of the register. */
-	i915_sfc_lock_data(engine, &lock);
-	lock_value = drv_i915_raw_read32(mmio, lock.lock_reg);
-	drv_i915_raw_write32(mmio, lock.lock_reg, lock_value & ~lock.lock_bit);
+	if (hold->through == NULL)
+		return;
+	reg = hold->through->mmio_base + hold->layout->lock_off;
+	drv_i915_raw_write32(mmio, reg, drv_i915_raw_read32(mmio, reg) & ~hold->layout->lock_bit);
 }
 
 /*

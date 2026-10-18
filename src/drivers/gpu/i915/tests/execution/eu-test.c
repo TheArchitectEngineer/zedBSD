@@ -961,7 +961,7 @@ drv_i915_test_eu_invalidate_tlb(
 
 	/* Invalidates every engine's TLB. */
 	gt = &device->gt;
-	error = drv_i915_gt_invalidate_tlb_full(&i915_test_tlb, &gt->engines, &gt->mmio, &gt->uncore_lock);
+	error = drv_i915_tlb_invalidate_all(&i915_test_tlb, &gt->engines, &gt->mmio, &gt->uncore_lock);
 	if (error != 0)
 		return error;
 

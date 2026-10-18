@@ -510,7 +510,7 @@ drv_i915_test_fhd_render_release(
 		return EIO;
 
 	/* Invalidates the TLB before any page these mappings named may be reused. */
-	x->tlb_rc = drv_i915_gt_invalidate_tlb_full(tlb, es, m, uncore_lock);
+	x->tlb_rc = drv_i915_tlb_invalidate_all(tlb, es, m, uncore_lock);
 	if (x->tlb_rc != 0)
 		return x->tlb_rc;
 
@@ -706,7 +706,7 @@ drv_i915_test_fhd_rt_unmap(
 		return EIO;
 
 	/* Invalidates the TLB before any page these mappings named may be reused. */
-	b->tlb_rc = drv_i915_gt_invalidate_tlb_full(tlb, es, m, uncore_lock);
+	b->tlb_rc = drv_i915_tlb_invalidate_all(tlb, es, m, uncore_lock);
 	if (b->tlb_rc != 0)
 		return b->tlb_rc;
 

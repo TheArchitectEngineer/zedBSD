@@ -8,23 +8,23 @@
 /*
  * GT TLB invalidation (see tlb.h).
  *
- * The register numbers and the request and done encodings are Linux's
- * (gt/intel_gt_regs.h, i915_perf_oa_regs.h, intel_engine_cs.c
- * intel_engine_init_tlb_invalidation(), gt/intel_tlb.c
- * mmio_invalidate_full()).
+ * Every engine class has an invalidation control register with one bit per
+ * engine instance: writing the bit asks the engine to drop its TLB, and the
+ * hardware clears the bit when the engine is done.  On graphics version 12
+ * the video decode, video enhancement and compute registers are masked (the
+ * bit is written with its enable in the upper half); the others take the
+ * plain bit.  On Gen9 the registers are the Gen8 ones and are not masked.
  *
- * Where this differs from Linux, on purpose:
- *   - Linux skips engines that are not awake (intel_engine_pm_is_awake) and a
- *     GT that is asleep, because their TLBs do not survive power-down.  Here
- *     a parked engine is a software state that powers nothing down, so no
- *     engine is skipped.
- *   - Linux returns nothing and logs a timeout.  Here the error is returned,
- *     so the caller keeps every page (the release contract), and the seqno
- *     advances only on success.
- *   - No MCR lock is taken: the Alder Lake-P engine registers are not MCR.
- *   - The forcewake is returned at once; Linux uses a delayed put.
- *   - There is no invalidate_lock: the one owner of the GT serializes the
- *     callers.
+ * One invalidation covers every engine of the GT: all the forcewake domains
+ * are held, every engine's bit is written under the uncore lock (so a GT
+ * reset cannot run between the writes), Alder Lake-P's OA unit is
+ * invalidated with the engines, and then each engine's bit is waited for.
+ *
+ * Every engine is invalidated, parked or not: a parked engine is a software
+ * state that powers nothing down, so its TLB may still hold entries.  A
+ * timeout is returned, so the caller keeps every page it meant to free, and
+ * the generation advances only on success.  The engine registers of Alder
+ * Lake-P are not multicast, so no steering is needed.
  */
 
 #include "i915.h"
@@ -38,34 +38,8 @@
 #include <kern/lock.h>
 
 #include <uapi/errno.h>
+#include <stdbool.h>
 #include <stddef.h>
-
-/* The per-class TLB invalidation registers of Gen12. */
-#define GEN12_GFX_TLB_INV_CR		0xced8U
-#define GEN12_VD_TLB_INV_CR		0xcedcU
-#define GEN12_VE_TLB_INV_CR		0xcee0U
-#define GEN12_BLT_TLB_INV_CR		0xcee4U
-#define GEN12_COMPCTX_TLB_INV_CR	0xcf04U
-
-/* The OA unit's TLB invalidation register (Wa_2207587034). */
-#define GEN12_OA_TLB_INV_CR		0xceecU
-
-/*
- * The Gen8 per-class invalidation registers Gen9 uses (Linux 6.8.12
- * intel_gt_regs.h GEN8_RTCR, GEN8_M1TCR, GEN8_VTCR, GEN8_BTCR; values
- * unchanged).  Their request is not masked.
- */
-#define GEN8_RTCR			0x4260U
-#define GEN8_M1TCR			0x4264U
-#define GEN8_BTCR			0x426cU
-#define GEN8_VTCR			0x4270U
-
-/* How many forcewake domains a Gen9 invalidation wakes. */
-#define I915_TLB_FORCEWAKE_DOMAINS_GEN9	3U
-
-/* How long one engine's done bit may take to clear: a busy stage, then a sleeping one. */
-#define I915_TLB_INVAL_TIMEOUT_US	100U
-#define I915_TLB_INVAL_TIMEOUT_MS	4U
 
 /* The compute engine class, which has an invalidation register of its own. */
 #define I915_TLB_COMPUTE_CLASS		5
@@ -73,166 +47,163 @@
 /* How many engines one invalidation covers at most. */
 #define I915_TLB_MAX_ENGINES		16U
 
-/* How many forcewake domains an invalidation wakes. */
-#define I915_TLB_FORCEWAKE_DOMAINS	5U
+/*
+ * The OA unit's invalidation register, written with the engines'
+ * (Wa_2207587034).
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_perf_oa_regs.h
+ * (GEN12_OA_TLB_INV_CR).
+ */
+#define I915_TLB_OA_CONTROL		0xceecU
 
 /*
- * The forcewake domains FORCEWAKE_ALL stands for on this GT.
+ * How long one engine's bit may take to clear: a busy stage, then a
+ * sleeping one.
  *
- * They are taken in this order and released in the reverse order.  The
- * table is constant.
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_tlb.c
+ * (wait_for_invalidate).
  */
-static const int i915_tlb_forcewake_domains[I915_TLB_FORCEWAKE_DOMAINS] = {
+#define I915_TLB_BUSY_US		100U
+#define I915_TLB_SLEEP_MS		4U
+
+/* One engine class's invalidation register. */
+struct i915_tlb_control {
+	int class;
+	uint32_t reg;
+	bool masked;
+};
+
+/* What a GT generation invalidates with. */
+struct i915_tlb_layout {
+	const struct i915_tlb_control *controls;
+	size_t control_count;
+	int max_instance;
+	const int *domains;
+	unsigned domain_count;
+	bool oa;
+};
+
+/*
+ * The graphics version 12 registers.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_gt_regs.h
+ * (GEN12_GFX_TLB_INV_CR, GEN12_VD_TLB_INV_CR, GEN12_VE_TLB_INV_CR,
+ * GEN12_BLT_TLB_INV_CR, GEN12_COMPCTX_TLB_INV_CR) and
+ * drivers/gpu/drm/i915/gt/intel_engine_cs.c
+ * (intel_engine_init_tlb_invalidation, the masked classes).
+ */
+static const struct i915_tlb_control i915_tlb_controls_gen12[] = {
+	{ I915_RENDER_CLASS,		0xced8U, false },
+	{ I915_VIDEO_DECODE_CLASS,	0xcedcU, true },
+	{ I915_VIDEO_ENHANCEMENT_CLASS,	0xcee0U, true },
+	{ I915_COPY_ENGINE_CLASS,	0xcee4U, false },
+	{ I915_TLB_COMPUTE_CLASS,	0xcf04U, true },
+};
+
+/*
+ * The Gen9 registers.  The second video decode engine's register is not
+ * listed because that engine is not used.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_gt_regs.h
+ * (GEN8_RTCR, GEN8_M1TCR, GEN8_VTCR, GEN8_BTCR).
+ */
+static const struct i915_tlb_control i915_tlb_controls_gen9[] = {
+	{ I915_RENDER_CLASS,		0x4260U, false },
+	{ I915_VIDEO_DECODE_CLASS,	0x4264U, false },
+	{ I915_VIDEO_ENHANCEMENT_CLASS,	0x4270U, false },
+	{ I915_COPY_ENGINE_CLASS,	0x426cU, false },
+};
+
+/* The forcewake domains of each GT, taken in this order and released in the reverse order. */
+static const int i915_tlb_domains_gen12[] = {
 	I915_FORCEWAKE_RENDER,
 	I915_FORCEWAKE_GT,
 	I915_FORCEWAKE_MEDIA_VDBOX0,
 	I915_FORCEWAKE_MEDIA_VDBOX2,
 	I915_FORCEWAKE_MEDIA_VEBOX0
 };
-
-/*
- * The forcewake domains FORCEWAKE_ALL stands for on a Gen9 GT.
- *
- * The table is constant.
- */
-static const int i915_tlb_forcewake_domains_gen9[I915_TLB_FORCEWAKE_DOMAINS_GEN9] = {
+static const int i915_tlb_domains_gen9[] = {
 	I915_FORCEWAKE_RENDER,
 	I915_FORCEWAKE_GT,
 	I915_FORCEWAKE_MEDIA_GEN9
 };
 
-static int i915_tlb_engine_register(int class, int instance, uint32_t *reg, uint32_t *request, uint32_t *done);
-static int i915_gen9_tlb_engine_register(int class, int instance, uint32_t *reg, uint32_t *request, uint32_t *done);
+/* The layouts: Gen12 has 16 instances a class and the OA unit, Gen9 one instance a class. */
+static const struct i915_tlb_layout i915_tlb_gen12 = {
+	i915_tlb_controls_gen12, sizeof(i915_tlb_controls_gen12) / sizeof(i915_tlb_controls_gen12[0]), 15,
+	i915_tlb_domains_gen12, sizeof(i915_tlb_domains_gen12) / sizeof(i915_tlb_domains_gen12[0]), true
+};
+static const struct i915_tlb_layout i915_tlb_gen9 = {
+	i915_tlb_controls_gen9, sizeof(i915_tlb_controls_gen9) / sizeof(i915_tlb_controls_gen9[0]), 0,
+	i915_tlb_domains_gen9, sizeof(i915_tlb_domains_gen9) / sizeof(i915_tlb_domains_gen9[0]), false
+};
+
+static bool i915_tlb_control_of(const struct i915_tlb_layout *layout, int class, int instance, uint32_t *reg, uint32_t *request, uint32_t *done);
+static void i915_tlb_report_timeout(struct i915_gt_tlb *tlb, uint32_t reg, uint32_t done);
 
 /*
  * Invalidates every engine's TLB and waits for each to finish.
  *
- * This is intel_gt_invalidate_tlb_full(): each engine's invalidation
- * register is written, then GEN12_OA_TLB_INV_CR (Wa_2207587034, Alder
- * Lake-P), then each engine's done bit is waited for until it reads back 0
- * (wait_for_invalidate(): mask = done, value = 0).  Every forcewake domain
- * is held for the writes, and the uncore lock serializes them with a
- * reset.  Returns 0; EINVAL; ETIMEDOUT when an engine's bit did not clear
- * in 4 ms; or EIO when the time base or the forcewake failed.
+ * Returns 0; EINVAL; ETIMEDOUT when an engine's bit did not clear in 4 ms;
+ * or EIO when the time base or the forcewake failed.
  */
 int
-drv_i915_gt_invalidate_tlb_full(
+drv_i915_tlb_invalidate_all(
 	struct i915_gt_tlb *tlb,
 	struct i915_gt_engines *es,
 	struct i915_mmio *m,
 	struct spinlock *uncore_lock)
 {
+	const struct i915_tlb_layout *layout;
 	uint32_t reg[I915_TLB_MAX_ENGINES];
 	uint32_t done[I915_TLB_MAX_ENGINES];
 	uint32_t request;
-	const int *domains;
-	const char *backend;
-	const char *test_id;
 	unsigned long irq;
-	unsigned domain_count;
 	unsigned count;
 	unsigned held;
-	unsigned index;
-	int wake_error;
-	int known;
+	unsigned i;
 	int waited;
-	int gen9;
 	int error;
 
-	/* Refuses missing state and more engines than the invalidation tracks. */
-	if (tlb == NULL)
-		return EINVAL;
-	if (es == NULL)
-		return EINVAL;
-	if (m == NULL)
-		return EINVAL;
-	if (uncore_lock == NULL)
+	if (tlb == NULL || es == NULL || m == NULL || uncore_lock == NULL)
 		return EINVAL;
 	if (es->n > I915_TLB_MAX_ENGINES)
 		return EINVAL;
 
-	/* Tells a Gen9 GT, with its Gen8 registers and its three domains, from a Gen12 one. */
-	gen9 = 0;
+	layout = &i915_tlb_gen12;
 	if (es->n != 0U && es->ge[0].info->graphics_ver == 9)
-		gen9 = 1;
+		layout = &i915_tlb_gen9;
 
-	/* Takes the Gen12 domains unless the GT is Gen9. */
-	domains = i915_tlb_forcewake_domains;
-	domain_count = I915_TLB_FORCEWAKE_DOMAINS;
-	if (gen9 != 0) {
-		domains = i915_tlb_forcewake_domains_gen9;
-		domain_count = I915_TLB_FORCEWAKE_DOMAINS_GEN9;
-	}
-
-	/* Wakes every domain, stopping at the first one that does not come up (FORCEWAKE_ALL). */
+	/* Every domain must be up, or the writes would be dropped. */
 	error = 0;
 	held = 0U;
-	while (held < domain_count) {
-		wake_error = drv_i915_forcewake_get(m, domains[held]);
-		if (wake_error != 0)
-			break;
+	while (held < layout->domain_count && drv_i915_forcewake_get(m, layout->domains[held]) == 0)
 		held++;
-	}
-
-	/* A domain that stayed asleep would drop the writes; nothing is written. */
-	if (held != domain_count) {
+	if (held != layout->domain_count) {
 		tlb->fw_failures++;
 		error = EIO;
 		goto out;
 	}
 
-	/* Requests every engine's invalidation, serialized with a GT reset. */
+	/* The requests, with no reset in between. */
 	count = 0U;
 	irq = spin_lock_irqsave(uncore_lock);
-
-	for (index = 0U; index < es->n; index++) {
-		/* An engine class without an invalidation register is skipped. */
-		if (gen9 != 0) {
-			known = i915_gen9_tlb_engine_register(es->ge[index].info->class, es->ge[index].info->instance, &reg[count], &request, &done[count]);
-		} else {
-			known = i915_tlb_engine_register(es->ge[index].info->class, es->ge[index].info->instance, &reg[count], &request, &done[count]);
-		}
-
-		if (known != 0)
+	for (i = 0U; i < es->n; i++) {
+		if (!i915_tlb_control_of(layout, es->ge[i].info->class, es->ge[i].info->instance, &reg[count], &request, &done[count]))
 			continue;
-
 		drv_i915_raw_write32(m, reg[count], request);
 		count++;
 	}
-
-	/* Wa_2207587034:tgl,dg1,rkl,adl-s,adl-p: the OA unit's TLB goes with the engines'. */
-	if (count != 0U && gen9 == 0)
-		drv_i915_raw_write32(m, GEN12_OA_TLB_INV_CR, 1U);
-
+	if (count != 0U && layout->oa)
+		drv_i915_raw_write32(m, I915_TLB_OA_CONTROL, 1U);
 	spin_unlock_irqrestore(uncore_lock, irq);
 
-	/* Waits for every requested engine's done bit to clear. */
-	for (index = 0U; index < count; index++) {
-		waited = drv_i915_wait_reg(m, reg[index], done[index], 0U, I915_TLB_INVAL_TIMEOUT_US, I915_TLB_INVAL_TIMEOUT_MS, NULL);
-
-		/* A timeout is logged with who asked; a time-base failure is counted apart. */
+	/* Each engine's bit clears when its TLB is clean; the first failure is the one returned. */
+	for (i = 0U; i < count; i++) {
+		waited = drv_i915_wait_reg(m, reg[i], done[i], 0U, I915_TLB_BUSY_US, I915_TLB_SLEEP_MS, NULL);
 		if (waited == ETIMEDOUT) {
 			tlb->timeouts++;
-
-			/* Names the hardware when no backend is recorded. */
-			backend = tlb->backend;
-			if (backend == NULL)
-				backend = "HW";
-
-			/* Names no test when none is recorded. */
-			test_id = tlb->test_id;
-			if (test_id == NULL)
-				test_id = "-";
-
-			kern_logf("i915: TLB invalidation did not complete in %ums (reg 0x%x done bit 0x%x still set) backend=%s test=%s expected_fault=%d\n",
-				  I915_TLB_INVAL_TIMEOUT_MS,
-				  reg[index],
-				  done[index],
-				  backend,
-				  test_id,
-				  tlb->expected_fault);
-
-			/* The first failure is the one reported. */
+			i915_tlb_report_timeout(tlb, reg[i], done[i]);
 			if (error == 0)
 				error = ETIMEDOUT;
 		} else if (waited != 0) {
@@ -241,7 +212,7 @@ drv_i915_gt_invalidate_tlb_full(
 		}
 	}
 
-	/* A completed invalidation starts a new TLB generation (write_seqcount_invalidate). */
+	/* A completed invalidation starts a new TLB generation. */
 	tlb->engines_invalidated = count;
 	if (error == 0) {
 		tlb->invalidations++;
@@ -249,121 +220,56 @@ drv_i915_gt_invalidate_tlb_full(
 	}
 
 out:
-	/* Releases the domains in the reverse order they were taken. */
 	while (held > 0U) {
 		held--;
-		(void)drv_i915_forcewake_put(m, domains[held]);
+		(void)drv_i915_forcewake_put(m, layout->domains[held]);
 	}
-
-	/* Reports why the TLBs may still hold the old translations. */
-	if (error != 0)
-		return error;
-
-	/* Succeeded: no engine's TLB holds a translation older than this call. */
-	return 0;
-}
-
-/* Reports an engine's invalidation register, its request word and its done bit (the Gen12 table). */
-static int
-i915_tlb_engine_register(
-	int class,
-	int instance,
-	uint32_t *reg,
-	uint32_t *request,
-	uint32_t *done)
-{
-	uint32_t selected;
-	uint32_t bit;
-
-	/* Picks the class's invalidation register. */
-	switch (class) {
-	case I915_RENDER_CLASS:
-		selected = GEN12_GFX_TLB_INV_CR;
-		break;
-	case I915_VIDEO_DECODE_CLASS:
-		selected = GEN12_VD_TLB_INV_CR;
-		break;
-	case I915_VIDEO_ENHANCEMENT_CLASS:
-		selected = GEN12_VE_TLB_INV_CR;
-		break;
-	case I915_COPY_ENGINE_CLASS:
-		selected = GEN12_BLT_TLB_INV_CR;
-		break;
-	case I915_TLB_COMPUTE_CLASS:
-		selected = GEN12_COMPCTX_TLB_INV_CR;
-		break;
-	default:
-		return ERANGE;
-	}
-
-	/* Refuses an instance the register has no bit for. */
-	if (instance < 0 || instance > 15)
-		return ERANGE;
-
-	/* Each instance has its own bit, which is both the request and the done bit. */
-	bit = 1U << (unsigned)instance;
-	*reg = selected;
-	*done = bit;
-
-	/* On graphics version 12 the video decode, video enhancement and compute registers are masked. */
-	if (class == I915_VIDEO_DECODE_CLASS) {
-		*request = (bit << 16) | bit;
-	} else if (class == I915_VIDEO_ENHANCEMENT_CLASS) {
-		*request = (bit << 16) | bit;
-	} else if (class == I915_TLB_COMPUTE_CLASS) {
-		*request = (bit << 16) | bit;
-	} else {
-		*request = bit;
-	}
-
-	/* Succeeded: the engine has an invalidation register. */
-	return 0;
+	return error;
 }
 
 /*
- * Reports a Gen9 engine's invalidation register, its request word and its
- * done bit (the gen8_regs table of intel_engine_init_tlb_invalidation()).
- *
- * The bit is the instance's, unmasked; the second video decode engine's
- * register (GEN8_M2TCR) is not needed because that engine is not used.
+ * Finds an engine's register, request word and done bit; false for a class
+ * or an instance the layout has no bit for.
  */
-static int
-i915_gen9_tlb_engine_register(
+static bool
+i915_tlb_control_of(
+	const struct i915_tlb_layout *layout,
 	int class,
 	int instance,
 	uint32_t *reg,
 	uint32_t *request,
 	uint32_t *done)
 {
-	uint32_t selected;
+	uint32_t bit;
+	size_t i;
 
-	/* Picks the class's invalidation register. */
-	switch (class) {
-	case I915_RENDER_CLASS:
-		selected = GEN8_RTCR;
-		break;
-	case I915_VIDEO_DECODE_CLASS:
-		selected = GEN8_M1TCR;
-		break;
-	case I915_VIDEO_ENHANCEMENT_CLASS:
-		selected = GEN8_VTCR;
-		break;
-	case I915_COPY_ENGINE_CLASS:
-		selected = GEN8_BTCR;
-		break;
-	default:
-		return ERANGE;
+	if (instance < 0 || instance > layout->max_instance)
+		return false;
+	bit = 1U << (unsigned)instance;
+
+	for (i = 0; i < layout->control_count; i++) {
+		if (layout->controls[i].class != class)
+			continue;
+		*reg = layout->controls[i].reg;
+		*done = bit;
+		*request = layout->controls[i].masked ? (bit << 16) | bit : bit;
+		return true;
 	}
+	return false;
+}
 
-	/* Only instance 0 of each class is used on Gen9. */
-	if (instance != 0)
-		return ERANGE;
+/* Logs a timeout with who asked, so a test's intended fault is told from a hardware anomaly. */
+static void
+i915_tlb_report_timeout(
+	struct i915_gt_tlb *tlb,
+	uint32_t reg,
+	uint32_t done)
+{
+	const char *backend;
+	const char *test_id;
 
-	/* The request and the done bit are both bit 0. */
-	*reg = selected;
-	*request = 1U;
-	*done = 1U;
-
-	/* Succeeded: the engine has an invalidation register. */
-	return 0;
+	backend = tlb->backend != NULL ? tlb->backend : "HW";
+	test_id = tlb->test_id != NULL ? tlb->test_id : "-";
+	kern_logf("i915: TLB invalidation did not complete in %ums (reg 0x%x done bit 0x%x still set) backend=%s test=%s expected_fault=%d\n",
+		  I915_TLB_SLEEP_MS, reg, done, backend, test_id, tlb->expected_fault);
 }
