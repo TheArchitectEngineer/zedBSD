@@ -2,11 +2,11 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: uncleared（q48 IsArray consumer partial cleared、whole Proxy未達）
+Status: in-progress（q49 JSON stringify partial、whole Proxy未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
-Queue: ws074-q20261018-48-i01（q30〜q47 partial履歴保持）
+Queue: ws074-q20261018-49-i01（q30〜q48 partial履歴保持）
 Origin: p189/q29 original WebIDL2 parseがProxy未定義で停止。
 
 Objective / own criteria: native managed Proxyを実object internal methodsへ接続し、constructor/revocableと各internal operationのtrap/fallback/invariant/receiver/revocation/callability/GCを正しく実行する。original WebIDL2 actual parse/validatorに必要なget/set/array behaviorを通常APIで提供し、independent controls/原WPTを通す。部分read stageだけでwholeをclearしない。
@@ -288,3 +288,5 @@ Species/constructor/@@species/custom result/newtargetと2^53長・uint32/int32 s
 Archives: harness-all-raw 1676 members SHA2565bcd28a197329a988eeba2aa5384441abbb360b77471e7316953ee8b0a724e33, native-oracle-and-build-raw 104 members SHA256b5084aeaf6a9a39a6f028cf54906c7c8c2d10fac0ca60cc66754474094fe1483を全member順次read-back。runtime binaryはhash付きbuild保持・archive非同梱。
 
 [証拠](evidence/20261018-q48/README.md)。次finite scope未選定。
+
+Event ws074-p258-q49-selection: JSON.stringify realm IsArray/ownkeys/descriptor順とwriter/property/list/keyvector callback所有partialを選定。parse/reviver/幅/global等whole未達。[exact Queue](../queue.md)。main統合確認・master.md編集無し。
