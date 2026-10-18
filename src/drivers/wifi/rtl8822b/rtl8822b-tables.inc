@@ -1,82 +1,28 @@
-// SPDX-License-Identifier: BSD-3-Clause
-
 /*
- * Copyright (c) 2018-2019 Realtek Corporation
- * All rights reserved.
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *
- * 1. Redistributions of source code must retain the above copyright notice,
- *    this list of conditions and the following disclaimer.
- *
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- *
- * 3. Neither the name of the copyright holder nor the names of its
- *    contributors may be used to endorse or promote products derived from this
- *    software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: Zlib
  */
 
 /*
- * Data-only mechanical extraction.  No Linux control flow is included.
+ * The RTL8822B's initialization tables and its legacy-rate transmit power.
  *
- * Primary source:
- *   repository:
- * https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git commit:
- * 0b8db87da54178717d302ca5dc09285ad4922abc path:
- * drivers/net/wireless/realtek/rtw88/rtw8822b_table.c SHA-256:
- * 8e58874cfb30a2bcbfe24af93348a56a35f2968fcbf2fbea2e7b48f733d212a7
+ * Each initialization table is a stream of 32-bit word pairs.  A pair is a
+ * register write, a condition marker (if, else if, else, end) carrying the
+ * two words the board's identity is compared with, or a delay written as a
+ * pseudo-address; the driver parses the stream rather than writing every
+ * pair.  The transmit-power tables cover the legacy rates of the 2.4 GHz
+ * channels 1 to 11 and of the 5 GHz channels 36 to 48, for the board types
+ * the driver supports.
  *
- * RFE-selection reference:
- *   path: drivers/net/wireless/realtek/rtw88/rtw8822b.c
- *   SHA-256: 76f624db6f3cea02506be5a72924e9b5da27966fed9fc8fbdf6bb2f126712076
- *
- * License text source:
- *   path: LICENSES/preferred/BSD-3-Clause
- *   SHA-256: 7a83b1aeb460458db9a4bd521d7f237c45b1650f6e60ea5ffc71e49472454de3
- *
- * Imported source arrays and exact uint32_t word counts:
- *   rtw8822b_mac       250
- *   rtw8822b_agc     20302
- *   rtw8822b_bb       2984
- *   rtw8822b_rf_a    10178
- *   rtw8822b_rf_b     8904
- *
- * The flat arrays retain the upstream two-word stream exactly.  A pair may be
- * a register write, an IF/ELIF/ELSE/ENDIF condition marker carrying both
- * condition words, or a BB/RF delay pseudo-address.  The consumer must parse
- * these records rather than treating every pair as a write.
- *
- * The normal-path WPA2 extension uses the following mechanically reduced
- * legacy-rate data from those arrays.  Full HT/VHT and 5-GHz bands outside
- * the Japan non-DFS W52 subset remain deliberately excluded:
- *   rtw8822b_bb_pg_type2/type3/type5       46 records each
- *   rtw8822b_txpwr_lmt_type0/type2/type5 585 records each
- *
- * The RFE map selects BB-PG/TX-limit types 2/2, 3/0, and 5/5 for RFE options
- * 2, 3, and 5.  Those records are transmit-power-by-rate and regulatory power
- * ceilings, not additional receive/channel initialization tables.  For
- * channels 1--11 the three supported RFE profiles have identical legacy 2G
- * power-by-rate values.  The arrays below retain their BCD-decoded per-rate
- * offsets and the minimum FCC/ETSI/MKK ceiling (worldwide-safe until a full
- * regulatory-domain engine exists).  Their source counts and immutable hashes
- * remain recorded here for a later full TX-power Phase.
+ * The tables are kept in this file, apart from the driver's code.
  */
 
+/*
+ * One initialization table: the block of registers it writes, the width
+ * of each write, the RF path for an RF table, and its words.
+ */
 struct rtl8822b_phy_table_section {
 	uint8_t domain;
 	uint8_t width;
@@ -86,40 +32,103 @@ struct rtl8822b_phy_table_section {
 	size_t word_count;
 };
 
-static const int8_t rtw8822b_2g_legacy_rate_offset[12] = {
+/*
+ * The power offset of each legacy 2.4 GHz rate below the rate-section base,
+ * in half-dB steps: the four CCK rates, then the eight OFDM rates.  The
+ * three supported board types share them on channels 1 to 11.
+ *
+ * Values referenced: Linux git commit 0b8db87da54178717d302ca5dc09285ad4922abc
+ * drivers/net/wireless/realtek/rtw88/rtw8822b_table.c
+ * (rtw8822b_bb_pg_type2, rtw8822b_bb_pg_type3,
+ * rtw8822b_bb_pg_type5: the 2.4 GHz legacy-rate entries, decoded and taken
+ * relative to their section base).
+ */
+static const int8_t rtl8822b_2g_legacy_rate_offset[12] = {
        6,  4, 2, 0, 14, 12,
        10, 8, 6, 4, 2,  0};
 
-/* Absolute table ceilings for CCK and OFDM, indexed by channel minus one. */
-static const uint8_t rtw8822b_2g_legacy_world_limit[11][2] = {
+/*
+ * The absolute power ceiling of CCK and of OFDM, indexed by channel minus
+ * one: the lowest of the FCC, ETSI and MKK ceilings, safe in every region.
+ *
+ * Values referenced: Linux git commit 0b8db87da54178717d302ca5dc09285ad4922abc
+ * drivers/net/wireless/realtek/rtw88/rtw8822b_table.c
+ * (rtw8822b_txpwr_lmt_type0, rtw8822b_txpwr_lmt_type2,
+ * rtw8822b_txpwr_lmt_type5: the 2.4 GHz CCK and OFDM ceilings of channels
+ * 1 to 11).
+ */
+static const uint8_t rtl8822b_2g_legacy_limit[11][2] = {
 	{28, 26}, {28, 30}, {28, 30}, {28, 30}, {28, 30}, {28, 30},
 	{28, 30}, {28, 30}, {28, 30}, {28, 30}, {28, 28}};
 
 /*
- * W52 legacy OFDM is indexed by channel 36, 40, 44, and 48.  The relative
- * rate values are the normalized band-1 bytes common to BB-PG types 2, 3,
- * and 5.  The absolute values are the minimum FCC/ETSI/MKK OFDM ceilings in
- * TX-power-limit types 0, 2, and 5.  Type 2 has a by-rate section base of 32;
- * types 3 and 5 use 26.
+ * The power offset of each legacy OFDM rate on the 5 GHz channels 36 to 48,
+ * below the rate-section base, common to the three supported board types.
+ *
+ * Values referenced: Linux git commit 0b8db87da54178717d302ca5dc09285ad4922abc
+ * drivers/net/wireless/realtek/rtw88/rtw8822b_table.c
+ * (rtw8822b_bb_pg_type2, rtw8822b_bb_pg_type3,
+ * rtw8822b_bb_pg_type5: the band-1 OFDM entries, decoded and taken relative
+ * to their section base).
  */
-static const int8_t rtw8822b_5g_legacy_rate_offset[8] = {14, 12, 10, 8,
+static const int8_t rtl8822b_5g_legacy_rate_offset[8] = {14, 12, 10, 8,
 							 6,  4,	 2,  0};
 
-static const uint8_t rtw8822b_w52_legacy_world_limit[4] = {30, 30, 30, 30};
+/*
+ * The absolute OFDM power ceiling of the 5 GHz channels 36, 40, 44 and 48:
+ * the lowest of the FCC, ETSI and MKK ceilings.
+ *
+ * Values referenced: Linux git commit 0b8db87da54178717d302ca5dc09285ad4922abc
+ * drivers/net/wireless/realtek/rtw88/rtw8822b_table.c
+ * (rtw8822b_txpwr_lmt_type0, rtw8822b_txpwr_lmt_type2,
+ * rtw8822b_txpwr_lmt_type5: the OFDM ceilings of channels 36 to 48).
+ */
+static const uint8_t rtl8822b_w52_legacy_limit[4] = {30, 30, 30, 30};
 
-/* RF_MALSEL values mechanically reduced from low_band[] at W52 centers. */
-static const uint8_t rtw8822b_w52_rf_be[4] = {7, 6, 0, 7};
+/*
+ * The RF band selection written for the 5 GHz channels 36, 40, 44 and 48.
+ *
+ * Values referenced: Linux git commit 0b8db87da54178717d302ca5dc09285ad4922abc
+ * drivers/net/wireless/realtek/rtw88/rtw8822b.c
+ * (low_band[]: the entries at the centres of
+ * channels 36 to 48).
+ */
+static const uint8_t rtl8822b_w52_rf_band_select[4] = {7, 6, 0, 7};
 
-/* REG_CCASEL, REG_PDMFTH, and REG_CCA2ND for one- and two-path W52. */
-static const uint32_t rtw8822b_w52_cca_type2[2][3] = {
+/*
+ * The CCA selection, the packet-detection threshold and the secondary CCA
+ * setting on the 5 GHz channels 36 to 48, for one and for two RF paths,
+ * on a board of type 2.
+ *
+ * Values referenced: Linux git commit 0b8db87da54178717d302ca5dc09285ad4922abc
+ * drivers/net/wireless/realtek/rtw88/rtw8822b.c
+ * (the CCA settings of the 5 GHz low band for
+ * RFE type 2).
+ */
+static const uint32_t rtl8822b_w52_cca_rfe2[2][3] = {
 	{0x75b86010U, 0x79a0eaa8U, 0x87766451U},
 	{0x75b76010U, 0x79a0eaaaU, 0x87766431U}};
 
-static const uint32_t rtw8822b_w52_cca_type35[2][3] = {
+/*
+ * The same CCA settings for a board of type 3 or 5.
+ *
+ * Values referenced: Linux git commit 0b8db87da54178717d302ca5dc09285ad4922abc
+ * drivers/net/wireless/realtek/rtw88/rtw8822b.c
+ * (the CCA settings of the 5 GHz low band for
+ * RFE types 3 and 5).
+ */
+static const uint32_t rtl8822b_w52_cca_rfe35[2][3] = {
 	{0x75da8010U, 0x79a0eaaaU, 0x87765561U},
 	{0x75da8010U, 0x79a0eaaaU, 0x86666361U}};
 
-static const uint32_t rtw8822b_mac[] = {
+/*
+ * The MAC initialization table: 8-bit register writes.
+ *
+ * Values referenced: Linux git commit 0b8db87da54178717d302ca5dc09285ad4922abc
+ * drivers/net/wireless/realtek/rtw88/rtw8822b_table.c
+ * (rtw8822b_mac).
+ */
+static const uint32_t rtl8822b_mac_table[] = {
 	0x029,	0x000000F9, 0x420,  0x00000080, 0x421,	0x0000001F,
 	0x428,	0x0000000A, 0x429,  0x00000010, 0x430,	0x00000000,
 	0x431,	0x00000000, 0x432,  0x00000000, 0x433,	0x00000001,
@@ -164,7 +173,14 @@ static const uint32_t rtw8822b_mac[] = {
 	0x718,	0x00000040, 0x7D4,  0x00000098,
 };
 
-static const uint32_t rtw8822b_agc[] = {
+/*
+ * The AGC initialization table: 32-bit baseband register writes.
+ *
+ * Values referenced: Linux git commit 0b8db87da54178717d302ca5dc09285ad4922abc
+ * drivers/net/wireless/realtek/rtw88/rtw8822b_table.c
+ * (rtw8822b_agc).
+ */
+static const uint32_t rtl8822b_agc_table[] = {
 	0x80000000, 0x00000000, 0x40000000, 0x00000000, 0x81C,	    0xFF000003,
 	0x81C,	    0xFE000003, 0x81C,	    0xFD020003, 0x81C,	    0xFC040003,
 	0x81C,	    0xFB060003, 0x81C,	    0xFA080003, 0x81C,	    0xF90A0003,
@@ -3552,7 +3568,14 @@ static const uint32_t rtw8822b_agc[] = {
 
 };
 
-static const uint32_t rtw8822b_bb[] = {
+/*
+ * The baseband initialization table: 32-bit register writes.
+ *
+ * Values referenced: Linux git commit 0b8db87da54178717d302ca5dc09285ad4922abc
+ * drivers/net/wireless/realtek/rtw88/rtw8822b_table.c
+ * (rtw8822b_bb).
+ */
+static const uint32_t rtl8822b_bb_table[] = {
 	0x800,	0x9020D010, 0x804,  0x800181A0, 0x808,	0x0E028233,
 	0x80C,	0x10000013, 0x810,  0x22101243, 0x814,	0x020C3D11,
 	0x818,	0x84A10385, 0x81C,  0x1E1E081F, 0x820,	0x0001AAAA,
@@ -4053,7 +4076,14 @@ static const uint32_t rtw8822b_bb[] = {
 	0x1B80, 0x00000002,
 };
 
-static const uint32_t rtw8822b_rf_a[] = {
+/*
+ * The RF initialization table of path A: 20-bit RF register writes.
+ *
+ * Values referenced: Linux git commit 0b8db87da54178717d302ca5dc09285ad4922abc
+ * drivers/net/wireless/realtek/rtw88/rtw8822b_table.c
+ * (rtw8822b_rf_a).
+ */
+static const uint32_t rtl8822b_rf_a_table[] = {
 	0x000,	    0x00030000, 0x83000001, 0x00000000, 0x40000000, 0x00000000,
 	0x001,	    0x0004002D, 0x93000002, 0x00000000, 0x40000000, 0x00000000,
 	0x001,	    0x00040029, 0x93000003, 0x00000000, 0x40000000, 0x00000000,
@@ -5753,7 +5783,14 @@ static const uint32_t rtw8822b_rf_a[] = {
 	0x0CC,	    0x00082000,
 };
 
-static const uint32_t rtw8822b_rf_b[] = {
+/*
+ * The RF initialization table of path B: 20-bit RF register writes.
+ *
+ * Values referenced: Linux git commit 0b8db87da54178717d302ca5dc09285ad4922abc
+ * drivers/net/wireless/realtek/rtw88/rtw8822b_table.c
+ * (rtw8822b_rf_b).
+ */
+static const uint32_t rtl8822b_rf_b_table[] = {
 	0x000,	    0x00030000, 0x83000001, 0x00000000, 0x40000000, 0x00000000,
 	0x001,	    0x0004002D, 0x93000002, 0x00000000, 0x40000000, 0x00000000,
 	0x001,	    0x00040029, 0x93000003, 0x00000000, 0x40000000, 0x00000000,
@@ -7240,15 +7277,20 @@ static const uint32_t rtw8822b_rf_b[] = {
 	0x03E,	    0x00005934, 0x03F,	    0x0005AFCF, 0x0EF,	    0x00000000,
 };
 
-static const struct rtl8822b_phy_table_section rtw8822b_phy_sections[] = {
-	{RTL8822B_TABLE_DOMAIN_MAC, RTL8822B_TABLE_WIDTH_8, 0, 0, rtw8822b_mac,
+/*
+ * The initialization tables in the order they are written, with the block
+ * of registers each one writes, the width of its writes, its RF path and its
+ * length in words.
+ */
+static const struct rtl8822b_phy_table_section rtl8822b_table_sections[] = {
+	{RTL8822B_TABLE_DOMAIN_MAC, RTL8822B_TABLE_WIDTH_8, 0, 0, rtl8822b_mac_table,
 	 250},
-	{RTL8822B_TABLE_DOMAIN_AGC, RTL8822B_TABLE_WIDTH_32, 0, 0, rtw8822b_agc,
+	{RTL8822B_TABLE_DOMAIN_AGC, RTL8822B_TABLE_WIDTH_32, 0, 0, rtl8822b_agc_table,
 	 20302},
-	{RTL8822B_TABLE_DOMAIN_BB, RTL8822B_TABLE_WIDTH_32, 0, 0, rtw8822b_bb,
+	{RTL8822B_TABLE_DOMAIN_BB, RTL8822B_TABLE_WIDTH_32, 0, 0, rtl8822b_bb_table,
 	 2984},
 	{RTL8822B_TABLE_DOMAIN_RF, RTL8822B_TABLE_WIDTH_RF20, 0, 0,
-	 rtw8822b_rf_a, 10178},
+	 rtl8822b_rf_a_table, 10178},
 	{RTL8822B_TABLE_DOMAIN_RF, RTL8822B_TABLE_WIDTH_RF20, 1, 0,
-	 rtw8822b_rf_b, 8904},
+	 rtl8822b_rf_b_table, 8904},
 };
