@@ -8,11 +8,10 @@
 /*
  * GT TLB invalidation after page-table entries were removed.
  *
- * This is Linux intel_gt_invalidate_tlb_full() with mmio_invalidate_full()
- * for graphics IP 12.0 and 12.10, over the register table of
- * intel_engine_init_tlb_invalidation().  A page whose entries were pointed
- * back at scratch may be reused only after the invalidation succeeded,
- * because an engine's TLB may still hold the old translation.
+ * Every engine of a Gen9 or graphics version 12 GT drops its TLB.  A page
+ * whose entries were pointed back at scratch may be reused only after the
+ * invalidation succeeded, because an engine's TLB may still hold the old
+ * translation.
  */
 
 #ifndef DRIVERS_GPU_I915_TLB_H
@@ -32,9 +31,9 @@ struct spinlock;
  */
 struct i915_gt_tlb {
 	/*
-	 * gt->tlb.seqno: always even, and advanced by 2 after every completed
-	 * full invalidation, so a generation that failed is never taken as
-	 * completed.
+	 * The TLB generation: always even, and advanced by 2 after every
+	 * completed invalidation, so a generation that failed is never taken
+	 * as completed.
 	 */
 	uint32_t seqno;
 
@@ -57,6 +56,6 @@ struct i915_gt_tlb {
 	int expected_fault;
 };
 
-int drv_i915_gt_invalidate_tlb_full(struct i915_gt_tlb *tlb, struct i915_gt_engines *es, struct i915_mmio *m, struct spinlock *uncore_lock);
+int drv_i915_tlb_invalidate_all(struct i915_gt_tlb *tlb, struct i915_gt_engines *es, struct i915_mmio *m, struct spinlock *uncore_lock);
 
 #endif
