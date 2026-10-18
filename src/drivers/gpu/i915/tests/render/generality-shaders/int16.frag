@@ -6,7 +6,7 @@
  */
 
 /*
- * The generality test's 16-bit integer step (ws031-p039).  The operands are
+ * The generality test's 16-bit integer step.  The operands are
  * 32-bit boundary values truncated to 16 bits (int16_t of 0x12348000 is
  * -32768, its high half not zero where the compiler carries it), the first
  * by the column (x & 15), the second by the row group and the column's next

@@ -11,7 +11,7 @@
  * parses, the slot placement and rotation, the ready protocol, and the mode
  * and frame checks.
  *
- *   sh plan/ws245/tests/run-xd-host-tests.sh
+ *   sh run-xd-host-tests.sh
  *
  * capture.c is compiled only with I915_TEST_CAPTURE, and the host build
  * compiles the display sources without it, so this file includes it with

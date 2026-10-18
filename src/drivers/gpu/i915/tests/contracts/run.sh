@@ -69,9 +69,9 @@ build() {
 
 	sources=$(sources_for "$name")
 	objects=
-	# The render executor's tests (memory BUG-244, forget BUG-260) have the host's heap, locks and log (host_render.c), not the unreached stand-ins.
+	# The render executor's tests (memory, forget) have the host's heap, locks and log (host_render.c), not the unreached stand-ins.
 	unreached=$here/host_unreached.c
-	# The engine reset test (ws083-p007) frees the quarantine it releases, so it brings its own stand-ins as well.
+	# The engine reset test frees the quarantine it releases, so it brings its own stand-ins as well.
 	if [ "$name" = memory ] || [ "$name" = forget ] || [ "$name" = reset ]; then
 		unreached=
 	fi

@@ -6,7 +6,7 @@
  */
 
 /*
- * The generality test's derivative step (ws075-p004): dFdx, dFdy and fwidth
+ * The generality test's derivative step: dFdx, dFdy and fwidth
  * of a value linear in the pixel position (3 x + 5 y: 3, 5 and 8 at every
  * pixel), and the coarse x, fine x and coarse y derivatives of x * y, which
  * tell the rows and columns of a 2x2 quad apart: the coarse ones take the

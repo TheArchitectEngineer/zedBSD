@@ -6,7 +6,7 @@
  */
 
 /*
- * GRID (ws101-p007): one invocation writes the three group counts of an
+ * GRID: one invocation writes the three group counts of an
  * indirect dispatch at word `at` of G, so the dispatch after it reads counts
  * the GPU wrote.
  */

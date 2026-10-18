@@ -303,7 +303,7 @@ sched_ticks(void)
 /*
  * Computes a tick deadline as the kernel does (src/kern/clock.c): the sum,
  * or EOVERFLOW past the tick range.  The delayed works compute theirs with
- * it (ws075-p020: the RPS idle check arms one).
+ * it (the RPS idle check arms one).
  */
 int
 kern_deadline_after(

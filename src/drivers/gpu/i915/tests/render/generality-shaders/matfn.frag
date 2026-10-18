@@ -6,7 +6,7 @@
  */
 
 /*
- * The generality test's matrix function step (ws075-p004): determinant of
+ * The generality test's matrix function step: determinant of
  * a mat2, a mat3 and a mat4, inverse of each, and the half-float packing.
  * The matrices are made of small integers from the pixel, their
  * determinants of powers of two where they are inverted, so every result

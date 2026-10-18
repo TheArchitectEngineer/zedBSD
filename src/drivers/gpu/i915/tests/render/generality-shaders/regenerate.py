@@ -431,7 +431,7 @@ def spill_pixel(x, y, pairs):
     return bits(s)
 
 
-# ------------------------------------------------------------------ ws075-p004: aggregates
+# ------------------------------------------------------------------ aggregates
 
 AGG_TABLE = (3, -7, 11, 19, -23)
 
@@ -455,7 +455,7 @@ def agg_pixel(x, y):
     return u32(r + (u32(picked['a']) << 20))
 
 
-# ------------------------------------------------------------------ ws075-p004: matrix functions and halves
+# ------------------------------------------------------------------ matrix functions and halves
 
 def exact_det(columns):
     """The determinant of a square matrix of floats, exactly (Fractions), cofactor expansion."""
@@ -531,7 +531,7 @@ def matfn_pixel(x, y):
     return bits(f32(f32(back_x * 4.0) + back_y))
 
 
-# ------------------------------------------------------------------ ws075-p004: pixel position and derivatives
+# ------------------------------------------------------------------ pixel position and derivatives
 
 def coord_pixel(x, y):
     """coord.frag: x and y, the centre, z 0, w 1, agreeing with the interpolated coordinate."""
@@ -545,7 +545,7 @@ def deriv_pixel(x, y):
     return 3 | (5 << 2) | (8 << 5) | ((2 * y0 + 1) << 9) | ((2 * y + 1) << 16) | ((2 * x0 + 1) << 23)
 
 
-# ------------------------------------------------------------------ ws075-p004: interpolation without perspective
+# ------------------------------------------------------------------ interpolation without perspective
 
 # The interpolation step's corners: x, y in normalized device coordinates, their w, the corner's number.
 PERSP_CORNERS = ((-1.0, -1.0, 1.0, 2.0), (1.0, -1.0, 3.0, 1.0), (1.0, 1.0, 5.0, 3.0), (-1.0, 1.0, 2.0, 0.0))
@@ -577,7 +577,7 @@ def persp_pixel(x, y):
     return bits(persp_value(x, y))
 
 
-# ------------------------------------------------------------------ ws075-p004: points
+# ------------------------------------------------------------------ points
 
 # The point step's points: the centre's pixel corner x and y, the size, the number.
 POINTS = ((8, 8, 4, 1), (24, 10, 8, 2), (40, 40, 8, 3), (56, 20, 4, 4), (12, 50, 6, 5), (48, 56, 2, 6))
@@ -605,7 +605,7 @@ def point_pixel(x, y):
     return 0
 
 
-# ------------------------------------------------------------------ ws075-p004: vertex formats
+# ------------------------------------------------------------------ vertex formats
 
 # The format step's vertex: 64 bytes, the position first (written per corner by the kernel test), then the attributes.
 VFORMAT_STRIDE = 64
@@ -659,7 +659,7 @@ def vformat_pixel(x, y):
     return vformat_words()[x % 12]
 
 
-# ------------------------------------------------------------------ boundaries (ws031-p024)
+# ------------------------------------------------------------------ boundaries
 
 INT_MIN = -2 ** 31
 BOUNDARY = (0, 1, -1, 2, -2, 3, -7, 255, 256, 32767, -32768, 2 ** 31 - 1, INT_MIN, INT_MIN + 1,
@@ -720,7 +720,7 @@ def edge_pixel(x, y):
     return u32(r)
 
 
-# The int16 step's 32-bit values, truncated to 16 bits by the shader (int16.frag, ws031-p039).
+# The int16 step's 32-bit values, truncated to 16 bits by the shader (int16.frag).
 INT16_BOUNDARY = (0, 1, -1, 0x12348000, 0x00017fff, 0x7fff, -32768, 0x0003fffe, 2,
                   -7, 0x10000, 0xffff, 0x2345ff9c, 100, -100, 0x7ffe0005)
 INT16_TABLE = (11, 22, 33, 44)
@@ -914,7 +914,7 @@ def main():
     pairs = spill_pairs(directory)
     c_words(lines, 'i915_vke2_spill_expected', image(lambda x, y: spill_pixel(x, y, pairs)), per_line=8)
 
-    # ws075-p004: the steps of the GLES 2 core of the compiler.
+    # The steps of the GLES 2 core of the compiler.
     lines.extend(['', '/*',
                   ' * The interpolation step\'s four corners (x, y in normalized device coordinates, 0, w) and their',
                   ' * coordinate attribute (0, 0, the corner\'s number, 0), top left, top right, bottom right, bottom left.',

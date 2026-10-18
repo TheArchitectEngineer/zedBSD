@@ -7,7 +7,7 @@
 
 /*
  * Forty vertices of a line strip with room for sixty-four, the strip ended
- * after every third (ws075-p007a): 64 cut bits, written a dword at a time
+ * after every third: 64 cut bits, written a dword at a time
  * with a channel mask.
  */
 #version 450

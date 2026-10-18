@@ -6,7 +6,7 @@
  */
 
 /*
- * A geometry shader that spills (ws075-p007a a4): 96 values read from the
+ * A geometry shader that spills: 96 values read from the
  * input vertices stay live over three emits, each vertex summing all of
  * them with weights of its own, so they do not fit the registers below the
  * staged VUE and some go to scratch memory.  Every value is an integer, so

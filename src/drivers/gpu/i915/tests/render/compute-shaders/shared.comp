@@ -6,7 +6,7 @@
  */
 
 /*
- * SHARED (ws101-p006): each 8 x 8 group moves an 8 x 8 tile of a 64 x 64
+ * SHARED: each 8 x 8 group moves an 8 x 8 tile of a 64 x 64
  * matrix through shared memory, tile[ly][lx], and after the barrier writes
  * it back transposed, tile[lx][ly], at the mirrored tile: t = m transposed.
  */

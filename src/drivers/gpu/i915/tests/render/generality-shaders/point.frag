@@ -6,7 +6,7 @@
  */
 
 /*
- * The generality test's point step (ws075-p004), fragment stage: where in
+ * The generality test's point step, fragment stage: where in
  * its point the pixel is, gl_PointCoord in sixteenths (a pixel centre of a
  * point of an even size centred on a pixel corner is an odd number of them
  * for a size of 8, (2 k + 1) * 2 for a size of 4), and the point's number.

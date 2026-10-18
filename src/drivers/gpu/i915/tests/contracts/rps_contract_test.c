@@ -6,7 +6,7 @@
  */
 
 /*
- * The RPS contract (ws075-p020), checked on the host.
+ * The RPS contract, checked on the host.
  *
  * Runs gt-power.c's RPS against the mock register file: the frequency caps,
  * the enable at the minimum with the LOW_POWER thresholds; the interrupt way
@@ -97,7 +97,7 @@ main(void)
 	unsigned range_count;
 	int status;
 
-	contract_begin("RPS contract tests (mock, GPU-free, ws075-p020)");
+	contract_begin("RPS contract tests (mock, GPU-free)");
 
 	/* Binds the register access to an empty mock register file. */
 	drv_i915_trace_init(&trace);

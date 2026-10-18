@@ -27,13 +27,13 @@
  *  - TEX3: a fragment shader sampling three textures, bound at two
  *    bindings of set 0 and one of set 1 with a linear and two nearest
  *    samplers, the two sets bound by one vkCmdBindDescriptorSets;
- *  - TEXOPS (ws075-p004): texture() with and without a bias, textureLod(),
+ *  - TEXOPS: texture() with and without a bias, textureLod(),
  *    textureOffset() and textureLodOffset() of a texture of two levels;
- *  - TEXKINDS (ws075-p005): a 2D array, a 3D texture, a cube map, a 1D
+ *  - TEXKINDS: a 2D array, a 3D texture, a cube map, a 1D
  *    texture, texelFetch() of an integer texture, a depth comparison,
  *    textureGrad() (with the fine y derivative), textureSize(),
  *    textureQueryLevels(), textureProj() and texelFetch() of a level;
- *  - LEVELDRAW (ws075-p005): a draw into mip level 1 of array layer 2 of
+ *  - LEVELDRAW: a draw into mip level 1 of array layer 2 of
  *    a texture, through a framebuffer of a view of that level and layer.
  *
  * Each step logs "VKE1-<name> PASS" or "FAIL", then the thread logs the

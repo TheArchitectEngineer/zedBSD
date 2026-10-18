@@ -8,21 +8,21 @@ runs).  Each one starts a thread that waits for the node, opens a session of its
 own, runs its steps, logs `<SUITE>-<STEP> PASS` or `FAIL` per step and a
 `verdict` line, and closes the session.
 
-    flock /tmp/i915-hw.lock env BUILD=build/<dir> plan/ws031/tests/vkloop-hw.sh test vkc
-    flock /tmp/i915-hw.lock env BUILD=build/<dir> plan/ws031/tests/vkloop-hw.sh test vke1
-    flock /tmp/i915-hw.lock env BUILD=build/<dir> plan/ws031/tests/vkloop-hw.sh test vke2
-    flock /tmp/i915-hw.lock env BUILD=build/<dir> plan/ws031/tests/vkloop-hw.sh test vkx
-    flock /tmp/i915-hw.lock env BUILD=build/<dir> plan/ws031/tests/vkloop-hw.sh test vkcs
+    flock /tmp/i915-hw.lock env BUILD=build/<dir> vkloop-hw.sh test vkc
+    flock /tmp/i915-hw.lock env BUILD=build/<dir> vkloop-hw.sh test vke1
+    flock /tmp/i915-hw.lock env BUILD=build/<dir> vkloop-hw.sh test vke2
+    flock /tmp/i915-hw.lock env BUILD=build/<dir> vkloop-hw.sh test vkx
+    flock /tmp/i915-hw.lock env BUILD=build/<dir> vkloop-hw.sh test vkcs
 
-No test kernel holds every scenario (q762, 2026-10-05: the kernel without tests is within about 450 KiB of
+No test kernel holds every scenario (the kernel without tests is within about 450 KiB of
 `AMD64_KERNEL_MAX_BYTES`), so each scenario's image links the runner and the scenarios of one test set
 (`I915_TEST_SET`, `platform/amd64/vmunix.mk`): `vkx`, `vkc`, `vke1` and `vke2` one each, `compute` for `vkcs`,
 `execution` for ktest eu draw r1 tex t3 bl, `display` for the LCD/HDMI scenarios, `display_ktest` and
 `display_ktest2` for the two halves of display_ktest.  `vkloop-hw.sh` picks the set from the scenario (and the
-image's config, `plan/ws075/tests/config-test-hw.mk`, whose kernel console reaches the serial log the verdict lines
+image's config, `config-test-hw.mk`, whose kernel console reaches the serial log the verdict lines
 are read from) unless `I915_TEST_SET` or `ZEDBSD_CONFIG` is given.  `vke2`'s set has the compiler's boundary steps
-(ws031-p024: EDGE, KILLOOP, NOINPUT and, last, UNDEF; `-DI915_VKE2_BOUNDARY`).
-`plan/ws101/tests/hw/run-hw.sh` builds each scenario's image in its set outside the lock and runs it.
+(EDGE, KILLOOP, NOINPUT and, last, UNDEF; `-DI915_VKE2_BOUNDARY`).
+`run-hw.sh` builds each scenario's image in its set outside the lock and runs it.
 
 ## Suites
 
@@ -32,7 +32,7 @@ are read from) unless `I915_TEST_SET` or `ZEDBSD_CONFIG` is given.  `vke2`'s set
 | `vkc` | `compiler.c` | `compiler-shaders/` (+ mview's `mview.vert`) | 64x64 R32G32B32A32_SFLOAT | every component of every pixel inside the interval `regenerate.py` computed (exact where the operation is exact, otherwise the precision Vulkan requires); the draws go straight to `drv_i915_gfx_draw`, no wire |
 | `vke1` | `features.c` | `feature-shaders/` | 64x64 RGBA8 | the pixels `regenerate.py` computed from the Vulkan blend equation and the uniform data, each byte within 1 (2 for the textures) |
 | `vke2` | `generality.c` | `generality-shaders/` | 64x64 RGBA8 | every fragment shader writes the four bytes of one 32-bit word per pixel (an integer, or the bits of a float); the word must equal the one `regenerate.py` computed (bit for bit, or within 4 ulps for the float step) |
-| `vkcs` | `compute.c` | `compute-shaders/` | storage buffers (64x64 RGBA8 for MIXED) | compute pipelines made through the wire and dispatched (ws101-p005), shared memory and workgroup barriers (ws101-p006): every word a dispatch writes equals the one the scenario computes in integers (the atomics: every result that does not depend on the order); MIXED also the target's pixels, each byte within 1 |
+| `vkcs` | `compute.c` | `compute-shaders/` | storage buffers (64x64 RGBA8 for MIXED) | compute pipelines made through the wire and dispatched, shared memory and workgroup barriers: every word a dispatch writes equals the one the scenario computes in integers (the atomics: every result that does not depend on the order); MIXED also the target's pixels, each byte within 1 |
 
 `readback.c` is not a suite: it is the draw checkpoint of the test build that
 dumps the first draws' target for the vkdemo oracle.
@@ -64,7 +64,7 @@ dumps the first draws' target for the vkdemo oracle.
 | `OpKill` inside a loop with per-pixel trip counts, whole dispatches discarded | `vke2` KILLOOP |
 | a fragment shader with no input behind a vertex shader with no varying (3DSTATE_SBE with no attribute) | `vke2` NOINPUT |
 | division by zero, INT_MIN / -1, shifts by 32..63 (undefined values: the draw must finish and the guard rows be right; the values are logged) | `vke2` UNDEF |
-| mview's own shaders (per-vertex and, with `--shading=pixel`, per-pixel lighting with a uniform buffer, a loop over three lights and discard) | the capture run `CAPTURE=mview plan/ws031/tests/vkloop-hw.sh mview` (six viewer checks), not a suite of this directory |
+| mview's own shaders (per-vertex and, with `--shading=pixel`, per-pixel lighting with a uniform buffer, a loop over three lights and discard) | the capture run `CAPTURE=mview vkloop-hw.sh mview` (six viewer checks), not a suite of this directory |
 
 ## How the expectations are produced
 
@@ -82,8 +82,7 @@ Every shader directory holds the GLSL sources, the SPIR-V compiled from them
    (uniform blocks, push constants, vertices, texels) and the expected pixels
    or intervals, as C arrays and macros only.
 
-The scenario includes the generated file; so do the host fixtures of
-`plan/ws031/tests/` (`i915-vk-lower-test.c` runs the IR in an interpreter,
+The scenario includes the generated file; so do the host fixtures (`i915-vk-lower-test.c` runs the IR in an interpreter,
 `i915-vk-compile-test.c` runs the EU words in an instruction-semantics model,
 both against the same expectations; `run-vk-gentool-test.sh` has Mesa's
 assembler and disassembler judge every kernel).  A test is therefore checked
@@ -97,8 +96,8 @@ To change a shader, edit the GLSL and run its generator from the tree's root:
     python3 src/drivers/gpu/i915/tests/render/compute-shaders/regenerate.py   (SPIR-V only: vkcs computes its expectations in C)
     python3 src/drivers/gpu/i915/tests/render/shaders/regenerate.py
 
-then `plan/ws031/tests/run-vk-host-tests.sh` and
-`BRW_TOOLS=<mesa build>/src/intel/compiler plan/ws031/tests/run-vk-gentool-test.sh`
+then `run-vk-host-tests.sh` and
+`BRW_TOOLS=<mesa build>/src/intel/compiler run-vk-gentool-test.sh`
 before a hardware run.  The generated header records the glslc version and
 the SHA-256 of every source; mview's shaders have their own generator and
 `shaders/provenance.json` under `userland/tests/mview/shaders/`.
@@ -129,7 +128,3 @@ created) rather than approximating it.  Not covered, and refused where noted:
 - the software scoreboard serializes every instruction (no dual issue);
 - the hardware values of undefined operations (division by 0, INT_MIN / -1,
   shifts by 32 or more) are not checked.
-
-The full list of what was deferred, with the semi-normal and abnormal cases
-still to be checked, is the "後回し" section of
-`plan/ws031/phase014/phase.md`.

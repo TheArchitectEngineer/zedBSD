@@ -6,7 +6,7 @@
  */
 
 /*
- * The generality test's no-input step (ws031-p024): a fragment shader that
+ * The generality test's no-input step: a fragment shader that
  * reads no input, only gl_FragCoord, behind a vertex shader that writes no
  * varying (3DSTATE_SBE with no attribute).  Every pixel writes its x and y
  * as bytes and a mark in the top byte.

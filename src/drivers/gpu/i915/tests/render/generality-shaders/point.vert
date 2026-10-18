@@ -6,7 +6,7 @@
  */
 
 /*
- * The generality test's point step (ws075-p004), vertex stage: a point at
+ * The generality test's point step, vertex stage: a point at
  * (x, y) of the size position.w, its number (coordinate.x) passed on.
  */
 #version 450

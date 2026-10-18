@@ -19,7 +19,7 @@
  * then are the objects freed.  After a hang the engines are reset and the
  * objects are kept, because the GPU may still reach them.
  *
- * On a Gen9 GT (ws229-p005) the single-colour draw and the mixed test run
+ * On a Gen9 GT the single-colour draw and the mixed test run
  * in their Gen9 form: the draw fixture's Gen9 state and batch, and the
  * compute test's Gen9 kernel, descriptor and batch.  The three textured
  * scenarios are refused with a log line and I915_TEST_SKIPPED, which the

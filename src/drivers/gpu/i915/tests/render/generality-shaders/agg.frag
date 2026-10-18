@@ -6,7 +6,7 @@
  */
 
 /*
- * The generality test's aggregate step (ws075-p004): a local array written
+ * The generality test's aggregate step: a local array written
  * and read through dynamic indices, in a loop and after it, a constant
  * array read through a dynamic index, a local array of structures holding
  * an array (copied whole, a member of a dynamically indexed element

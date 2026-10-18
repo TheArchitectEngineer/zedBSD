@@ -6,7 +6,7 @@
  */
 
 /*
- * The generality test's integer boundary step (ws031-p024).  The operands
+ * The generality test's integer boundary step.  The operands
  * come from a table of boundary values -- zero, one, minus one, the
  * limits of 8, 16 and 32 bits, INT_MIN and INT_MIN + 1, large primes --
  * the first by the column (x & 15), the second by the row group and the

@@ -1,9 +1,9 @@
 /*
  * SPDX-License-Identifier: MIT
  *
- * GENERATED FILE - WS031 E-127 reference kernels.  Do not edit by hand.
+ * GENERATED FILE - reference kernels.  Do not edit by hand.
  *
- * Generator : plan/ws031/handover/tools/refvk.c (built inside the Mesa tree as
+ * Generator : refvk.c (built inside the Mesa tree as
  *             src/intel/compiler/brw/refvk.c; zedBSD project code)
  * Inputs    : Mesa main @ ab691a1cc7bcd264bec8f735deb2127861ad15ef (MIT): spirv_to_nir, brw_compile_vs,
  *             brw_compile_fs, genxml gen120; device ADL-P 0x46a8.

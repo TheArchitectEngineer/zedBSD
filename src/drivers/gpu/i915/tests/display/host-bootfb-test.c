@@ -7,10 +7,10 @@
 
 /*
  * The host test of the boot framebuffer display's arithmetic
- * (display/bootfb.c, BUG-310): the framebuffer's checks and layout, the
+ * (display/bootfb.c): the framebuffer's checks and layout, the
  * clip of a frame, the choice of the red and blue swap, and the row copy.
  *
- *   sh plan/ws229/tests/run-bootfb-host-test.sh
+ *   sh run-bootfb-host-test.sh
  *
  * The node operations need the GPU and are not reached; the link drops
  * them.

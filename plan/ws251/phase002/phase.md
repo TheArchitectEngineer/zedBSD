@@ -64,9 +64,16 @@ Parent: [WS251](../ws.md)
 - **残した物（Q1 の判断が要る）**: `bcm2711_stage_mark`・`bcm2711_stage_allowed`・`bcm2711_stage_pause` の段の名前（P0〜P5・N0・R0・V0〜V7）。これは boot の行の `rpi4gpu.stop=<stage>`・`v3d.stop=<stage>`（stage.c）が受ける名前で、log の文字列であると同時に boot parameter の値になっている。名前を変えると parameter の振る舞いが変わり、この Phase の「振る舞いは変えない」の外になる。案: (a) 段の名前は code の interface として残し、comment の中の「stage P0 found it」などだけ意味の言い方に直す、(b) 段の名前を意味の名前（discovery・readout・scanout…）に替え、parameter と照合の試験を一緒に直す（別の Phase）。
 - 確かめた事: x86 の build 3 組は bcm2711 を含まないので、Pi 4 の arm64 の build（`config/ci/config-rpi4.mk`）を前後で作った: `build/ws251p002-arm-base`（tree 31d130233 相当、変更の前を stash で）と `build/ws251p002-arm-g4` とも rc=0 warning 0。gpu の object 88 個に差なし、vmunix も同じ。
 
+### 群 5: i915 の tests（`src/drivers/gpu/i915/tests/`）— 済み（2026-10-18 q1242、P1）
+
+- comment・README・生成の道具の comment と、その出力の header（compute-shaders の regenerate.py と compute-shaders-gen.inc、feature・generality の regenerate.py の comment は出力と同じ文に）。i915/tests は 167 → 0 件、src/drivers/gpu 全体は 23 件。
+- 消した物: Phase・Queue・Bug・T1 の番号、WS031 E-118・E-127・T1 の生成の物の名、日付つきの経緯（q762）、render/README.md の `plan/ws031/phase014/phase.md` の「後回し」の段落。`plan/wsNNN/…/<file>` の path は file の名だけにした（試験の runner の `vkloop-hw.sh`・`run-*-host-test.sh`、gen9 の asm の入力、生成の道具）。それらの file は plan/ にあり、source の tree からは名前でしか指せない。
+- 残した物: 古い試験の名前（execution/README.md の P6B-RC6・P7-IPC などの表、LCD-G）は、移植しなかった試験の名前の一覧として残した。
+- 確かめた事: `sh build/tmp/kbuild.sh ws251p002-g5` 3 組 rc=0 warning 0、`ws251-objcmp.sh ws251p002-base2 ws251p002-g5` の差は群 3 と同じ memory.o・gpu.o（行番号）だけで vmunix は 3 組とも同じ。`run-xd-host-tests.sh build/ws251p002-g5-host` all passed。`git diff --check` 0。
+
 ### 残り・再開の手順
 
-- 残り 190 件（群 4 の後。i915 tests 167、venus 6、compiler 15、amdrdna 2、`include/uapi/gpu-op.h` 3）。
+- 残り 23 件（群 5 の後。venus 6、compiler 15、amdrdna 2、`include/uapi/gpu-op.h` 3）。
   i915 の render の image.c「design N3」・video.c「(N4)」、tests/execution/README.md の LCD-G・P7-IPC の類も対象。
   bcm2711 は `bcm2711_stage_mark` の log が N0・P0・R0 の段の符号を持つ（readout.c ほか）。照合する試験の grep が要る。
 - 手順: 群ごとに `git grep` で文脈を読み、comment を直す → `sh build/tmp/kbuild.sh ws251p002-gN` → `sh build/tmp/ws251-objcmp.sh ws251p002-base ws251p002-gN`

@@ -66,7 +66,7 @@ void drv_i915_test_after_start(struct i915_device *device);
  * scenario runs.
  *
  * Their files define them.  They are weak because the build's
- * I915_TEST_SET may leave a file out (ws101-p006: the compute set links the
+ * I915_TEST_SET may leave a file out (the compute set links the
  * runner and the compute scenario only); a missing one is a null entry in
  * the table and is reported as not linked.
  */
@@ -113,7 +113,7 @@ extern void drv_i915_test_display_ktest(struct i915_device *device) __attribute_
  * compiler on the GPU, likewise), "vke1" (blending, uniform buffers and
  * several sampled images, likewise), "vke2" (matrices, integers, loops,
  * sixteen varyings and attributes, likewise) and "vkcs" (compute pipelines
- * and dispatches, ws101-p005, likewise), then the display
+ * and dispatches, likewise), then the display
  * scenarios; the display test suite is "display_ktest", apart from the unit
  * test suite "ktest".  The table never changes.
  */

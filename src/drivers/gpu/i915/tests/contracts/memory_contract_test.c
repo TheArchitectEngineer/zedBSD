@@ -6,8 +6,7 @@
  */
 
 /*
- * The executor's VkDeviceMemory lifetime contract, checked on the host
- * (BUG-244).
+ * The executor's VkDeviceMemory lifetime contract, checked on the host.
  *
  * Runs render/memory.c and render/object.c with the wire commands
  * libvulkan sends: buffers and an image are bound to an allocation, and
@@ -63,7 +62,7 @@ main(void)
 	int failures;
 
 	/* The checks. */
-	contract_begin("i915 render memory lifetime contract (BUG-244)");
+	contract_begin("i915 render memory lifetime contract");
 	memory_check_free_bound();
 	memory_check_free_unknown();
 

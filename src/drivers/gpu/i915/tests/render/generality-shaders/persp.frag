@@ -6,7 +6,7 @@
  */
 
 /*
- * The generality test's interpolation step (ws075-p004), fragment stage of
+ * The generality test's interpolation step, fragment stage of
  * the PERSP draw: every pixel writes the bits of the corners' x + 3
  * interpolated with perspective, which the kernel test compares within
  * I915_VKE2_LOOSE_ULPS of the value regenerate.py computed.

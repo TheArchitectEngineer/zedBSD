@@ -7,7 +7,7 @@
 
 /*
  * A geometry shader that reads its inputs and writes its outputs but emits
- * no vertex (ws075-p007a, increment a2): located per-vertex inputs at a
+ * no vertex: located per-vertex inputs at a
  * vertex chosen at run time and at a constant one, gl_in's position at
  * both, gl_PrimitiveIDIn, and gl_Layer and gl_PrimitiveID written.  The
  * host fixture runs it on the EU model and reads the staged VUE.

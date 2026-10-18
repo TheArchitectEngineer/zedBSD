@@ -7,7 +7,7 @@
 
 /*
  * Writes a second colour (Location 0 Index 1) without the first, which the
- * compiler refuses: a dual-source write needs both (ws031-p032).
+ * compiler refuses: a dual-source write needs both.
  */
 #version 450
 

@@ -38,7 +38,7 @@
  *  - VIO16: a vertex shader reading sixteen attributes and writing sixteen
  *    varyings (it gathers its VUE and spills), read by vary16.frag;
  *
- * and the steps of the GLES 2 core of the compiler (ws075-p004):
+ * and the steps of the GLES 2 core of the compiler:
  *
  *  - AGG: local arrays and structures through dynamic indices, a constant
  *    array, structures copied whole;
@@ -56,7 +56,7 @@
  *    output array copied into a local one and indexed;
  *
  * and, when the build defines I915_VKE2_BOUNDARY (the test set "vke2" does,
- * platform/amd64/vmunix.mk), the compiler's boundaries (ws031-p024):
+ * platform/amd64/vmunix.mk), the compiler's boundaries:
  *
  *  - EDGE: integer operations over boundary values (0, 1, -1, the limits of
  *    8, 16 and 32 bits, INT_MIN), a marker where SPIR-V leaves a division
@@ -210,7 +210,7 @@
 #define I915_VKE2_COMPARE_FLOAT		1U
 #define I915_VKE2_COMPARE_LOOSE		2U
 
-/* Even rows bit for bit, odd rows only logged (a value SPIR-V leaves undefined, ws031-p024). */
+/* Even rows bit for bit, odd rows only logged (a value SPIR-V leaves undefined). */
 #define I915_VKE2_COMPARE_GUARD		3U
 
 /* The pipelines, in the order of their identities. */
@@ -465,7 +465,7 @@ i915_vke2_thread(
 	i915_vke2_step_points(x);
 	i915_vke2_step_draw(x, "VFORMAT", I915_VKE2_PIPE_VFORMAT, I915_VKE2_ID_FORMATS, 0U, I915_VKE2_COMPARE_EXACT);
 #if defined(I915_VKE2_BOUNDARY)
-	/* The compiler's boundaries (ws031-p024). */
+	/* The compiler's boundaries. */
 	i915_vke2_step_draw(x, "EDGE", I915_VKE2_PIPE_EDGE, I915_VKE2_ID_QUADS, I915_VKE2_PLAIN_VERTEX, I915_VKE2_COMPARE_EXACT);
 	i915_vke2_step_draw(x, "KILLOOP", I915_VKE2_PIPE_KILLOOP, I915_VKE2_ID_QUADS, I915_VKE2_PLAIN_VERTEX, I915_VKE2_COMPARE_EXACT);
 	i915_vke2_step_draw(x, "NOINPUT", I915_VKE2_PIPE_NOINPUT, I915_VKE2_ID_QUADS, I915_VKE2_PLAIN_VERTEX, I915_VKE2_COMPARE_EXACT);
@@ -794,7 +794,7 @@ i915_vke2_objects_init(
 				I915_VKE2_WIDE_STRIDE,
 				I915_VKE2_WIDE_ATTRIBUTES);
 
-	/* The ws075-p004 and ws031-p024 steps over the quad layout; the point step draws a point list. */
+	/* The later steps over the quad layout; the point step draws a point list. */
 	for (index = 0U; index < sizeof(p004) / sizeof(p004[0]); index++) {
 		i915_vke2_pipeline_init(&x->pipelines[p004[index].pipeline],
 					&shaders[p004[index].vertex],
@@ -1725,7 +1725,7 @@ i915_vke2_step_draw(
 		return;
 	}
 
-	/* Picks the step's words: generated for the arithmetic steps, sums for the interface steps, a rule for some ws075-p004 ones. */
+	/* Picks the step's words: generated for the arithmetic steps, sums for the interface steps, a rule for some later ones. */
 	generated = NULL;
 	twice = 0U;
 	switch (pipeline) {
@@ -1917,7 +1917,7 @@ i915_vke2_vformat_layout(
 }
 
 /*
- * Makes the words of the ws075-p004 steps that follow a rule simple enough
+ * Makes the words of the steps that follow a rule simple enough
  * to state here rather than generate (regenerate.py states the same and
  * checks it): COORD the pixel's x and y and five check bits; DERIV 3, 5
  * and 8, then twice the coarse x, fine x and coarse y derivatives of x y

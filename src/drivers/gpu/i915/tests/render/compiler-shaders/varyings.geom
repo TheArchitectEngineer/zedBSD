@@ -6,8 +6,7 @@
  */
 
 /*
- * WS068's GLSL 1.50 geometry test (plan/ws068/tests/glsl-host/pass/
- * glsl150-geometry.geom) in Vulkan GLSL: located per-vertex inputs, an
+ * The GLSL 1.50 geometry test (glsl150-geometry.geom) in Vulkan GLSL: located per-vertex inputs, an
  * array of interface blocks, gl_PrimitiveIDIn read and gl_PrimitiveID and
  * gl_Layer written.
  */

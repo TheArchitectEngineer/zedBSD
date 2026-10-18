@@ -6,7 +6,7 @@
  */
 
 /*
- * GENERATED FILE - the SPIR-V of the compute test (ws101-p005, the scenario "vkcs").
+ * GENERATED FILE - the SPIR-V of the compute test (the scenario "vkcs").
  * Do not edit by hand.
  *
  * Generator : src/drivers/gpu/i915/tests/render/compute-shaders/regenerate.py

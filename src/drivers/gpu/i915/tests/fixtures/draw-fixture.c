@@ -22,7 +22,7 @@
  * ones earlier hardware runs used, so every dword here is kept exactly as it
  * was first programmed.
  *
- * The single-colour draw also has a Gen9 form (ws229-p005): the same command
+ * The single-colour draw also has a Gen9 form: the same command
  * list in Gen9's packets (the forms render/state.c programs for Gen9), a
  * Gen9 pixel shader that does what the Gen12 one does, and Gen9's uncached
  * MOCS entry.  The Gen12 bytes are unchanged.  The textured draws stay
@@ -220,7 +220,7 @@ static const uint32_t i915_draw_eot_only[4] = {
  * and the data (g6) in one message, and opaque red written to render target
  * 0 from g112-g115 without a header, ending the thread.  Mesa 25.0.7's
  * brw_asm --gen=skl assembled it from
- * plan/ws229/tests/fixtures/draw-fixture-ps-gen9.asm; the dispatch GRF start
+ * draw-fixture-ps-gen9.asm; the dispatch GRF start
  * is 2 as on Gen12 (r0 and r1 are the whole SIMD8 payload).
  */
 static const uint32_t i915_draw_const_color_ps_gen9[] = {

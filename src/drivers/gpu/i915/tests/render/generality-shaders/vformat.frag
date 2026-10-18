@@ -6,7 +6,7 @@
  */
 
 /*
- * The generality test's vertex format step (ws075-p004), fragment stage:
+ * The generality test's vertex format step, fragment stage:
  * the twelve words of the flat input array, copied into a local one and
  * picked through a dynamic index, word x % 12 at column x.
  */

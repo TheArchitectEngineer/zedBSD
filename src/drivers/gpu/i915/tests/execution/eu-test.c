@@ -166,7 +166,7 @@ const uint32_t drv_i915_test_eu_kernel[I915_TEST_EU_KERNEL_DWORDS] = {
  * The store kernel of the compute test on Gen9.
  *
  * The same SIMD8 store in Gen9's encoding, assembled by Mesa 25.0.7's
- * brw_asm --gen=skl from plan/ws229/tests/eu-test-gen9.asm: the moves need no
+ * brw_asm --gen=skl from eu-test-gen9.asm: the moves need no
  * software scoreboard, the address (g3-g4) and the data (g5) go as one
  * three-register SEND to the data port 1, the thread ends with the "do not
  * dereference URB" bit a compute thread sets, and a NOP pads the table to the

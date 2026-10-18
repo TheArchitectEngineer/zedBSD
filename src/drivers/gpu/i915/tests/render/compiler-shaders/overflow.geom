@@ -6,7 +6,7 @@
  */
 
 /*
- * Emits five vertices with room for three (ws075-p007a): the vertices past
+ * Emits five vertices with room for three: the vertices past
  * OutputVertices are lost, never written past the output entry.
  */
 #version 450

@@ -6,13 +6,13 @@
  */
 
 /*
- * The host test of the Gen9 flip display's arithmetic (display/gen9-flip.c,
- * WS237): the readout of the firmware's display registers (a Let's Note
+ * The host test of the Gen9 flip display's arithmetic (display/gen9-flip.c):
+ * the readout of the firmware's display registers (a Let's Note
  * SV7 as its firmware leaves it, the variants the flips accept and every
  * refusal), the port and pixel clocks and the refresh, and the display
  * window's size.
  *
- *   sh plan/ws237/tests/run-gen9-flip-host-test.sh
+ *   sh run-gen9-flip-host-test.sh
  *
  * The node operations need the GPU and are not reached; the link drops
  * them.

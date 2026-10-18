@@ -6,7 +6,7 @@
  */
 
 /*
- * Places one vertex of the generality test's no-input step (ws031-p024) and
+ * Places one vertex of the generality test's no-input step and
  * passes nothing on: the fragment shader reads no varying, so the setup
  * stage gets no attribute.
  */

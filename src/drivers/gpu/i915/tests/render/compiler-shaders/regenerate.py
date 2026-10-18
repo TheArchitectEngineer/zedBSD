@@ -5,10 +5,10 @@ per-cell inputs and the bounds every output must fall in."""
 #
 # usage: python3 src/drivers/gpu/i915/tests/render/compiler-shaders/regenerate.py
 #
-# Writes <name>.spv next to each GLSL source (read by the host fixtures plan/ws031/tests/i915-vk-lower-test.c
+# Writes <name>.spv next to each GLSL source (read by the host fixtures i915-vk-lower-test.c
 # and i915-vk-compile-test.c) and tests/fixtures/compiler-shaders-gen.inc (included by tests/render/compiler.c).
-# The geometry shaders (ws075-p007a) and the hand-written assembly are only written as <name>.spv, for the host
-# fixtures (plan/ws031/tests/i915-vk-spirv-test.c); the kernel test does not embed them.
+# The geometry shaders and the hand-written assembly are only written as <name>.spv, for the host
+# fixtures (i915-vk-spirv-test.c); the kernel test does not embed them.
 #
 # The target is 64 x 64 pixels of R32G32B32A32_SFLOAT.  A "cell" test draws 16 x 16 cells of 4 x 4 pixels, each a
 # quad whose vertices all carry the same attributes, so every pixel of a cell receives them exactly; a "pixel" test
@@ -40,9 +40,9 @@ SHADERS = (
     ('shade.frag', 'fragment', 'i915_vkc_shade_frag'),
 )
 
-# The shaders of the geometry stage the host fixtures parse and compile (ws075-p007a): glxtest's three geometry
-# shaders, WS068's varyings, the ones the parser refuses, a fragment shader reading gl_PrimitiveID, and the vertex
-# shader varyings.geom reads (the three-stage pipelines of plan/ws031/tests/i915-vk-pipe-test.c).  Source, stage.
+# The shaders of the geometry stage the host fixtures parse and compile: glxtest's three geometry
+# shaders, the varyings test, the ones the parser refuses, a fragment shader reading gl_PrimitiveID, and the vertex
+# shader varyings.geom reads (the three-stage pipelines of i915-vk-pipe-test.c).  Source, stage.
 GEOMETRY = (
     ('points.geom', 'geometry'),
     ('adjacency.geom', 'geometry'),

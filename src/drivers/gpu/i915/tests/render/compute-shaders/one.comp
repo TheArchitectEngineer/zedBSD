@@ -6,7 +6,7 @@
  */
 
 /*
- * ONE (ws101-p005, the bring-up): one invocation a group, as the compute
+ * ONE: one invocation a group, as the compute
  * test of tests/execution/eu-test.c runs one thread of one channel; group g
  * writes one word at g.
  */

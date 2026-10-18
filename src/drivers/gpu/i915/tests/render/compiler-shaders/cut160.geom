@@ -7,7 +7,7 @@
 
 /*
  * A hundred and forty vertices of a line strip with room for a hundred and
- * sixty, the strip ended after every fifth (ws075-p007a): 160 cut bits,
+ * sixty, the strip ended after every fifth: 160 cut bits,
  * written a dword at a time with a channel mask and per-slot offsets.
  */
 #version 450
