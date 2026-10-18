@@ -10,13 +10,11 @@
  *
  * RC6 lets the GT drop into its low-power state when idle, and render and
  * media power gating let the idle units switch off.  RPS picks the GT clock.
- * Both follow the Linux intel_rc6.c and intel_rps.c paths that Alder Lake-P
- * takes with the GuC disabled: the driver writes the thresholds and the
- * enables itself.  RPS follows the load as Linux does for
- * graphics version 12: an evaluation every few milliseconds compares the
- * engines' busy time with the thresholds (Linux's rps_timer; the GT's own
- * up/down interrupts, which versions 6 to 11 use and which are kept here,
- * do not fire on Alder Lake-P), a work raises or lowers the requested
+ * The GuC does not run: the driver writes the thresholds and the enables
+ * itself.  On graphics version 12 RPS follows the load by an evaluation
+ * every few milliseconds that compares the engines' busy time with the
+ * thresholds (the GT's own up/down interrupts, which versions 6 to 11 use
+ * and which are kept here, do not fire on Gen12), a work raises or lowers the requested
  * frequency, a client waiting on work the GT has not started boosts it,
  * and an idle GT at the minimum stops the evaluations until the engines
  * run again.
@@ -39,8 +37,7 @@ struct i915_irq_dev;
 struct mutex;
 
 /*
- * The power modes the RPS thresholds are set for (Linux's LOW_POWER,
- * BETWEEN and HIGH_POWER): the higher the frequency, the sooner the GT
+ * The power modes the RPS thresholds are set for: the higher the frequency, the sooner the GT
  * counts as busy enough to go up and the later as idle enough to go down.
  * NONE means no thresholds have been written yet.
  */
@@ -116,8 +113,8 @@ struct i915_rps {
 	int pcode_ok;
 
 	/*
-	 * The range the work moves in (Linux's sysfs soft limits, which stay
-	 * the whole range here), the frequency a boost jumps to (RP0), the
+	 * The range the work moves in (soft limits, which stay the whole range
+	 * here), the frequency a boost jumps to (RP0), the
 	 * frequency the driver last settled on and the one it last wrote
 	 * (I915_RPS_FREQ_NONE before the first), and the last step the work
 	 * took (its sign says up or down; consecutive steps double).
@@ -161,9 +158,9 @@ struct i915_rps {
 	int work_ready;
 
 	/*
-	 * How the load is followed: nonzero for the busy-time evaluation
-	 * (Linux's rps_timer over the engines' busy stats, graphics version
-	 * 12), zero for the GT's up/down interrupts (versions 6 to 11).
+	 * How the load is followed: nonzero for the evaluation over the
+	 * engines' busy time (graphics version 12), zero for the GT's up/down
+	 * interrupts (versions 6 to 11).
 	 */
 	int use_timer;
 
@@ -211,12 +208,12 @@ struct i915_rps {
 };
 
 void drv_i915_rc6_init(struct i915_rc6 *rc6, struct i915_mmio *mmio);
-void drv_i915_gen11_rc6_enable(struct i915_rc6 *rc6, struct i915_mmio *mmio, const struct i915_gt_info *gt);
-void drv_i915_rc6_sanitize(struct i915_rc6 *rc6, struct i915_mmio *mmio);
+void drv_i915_rc6_enable(struct i915_rc6 *rc6, struct i915_mmio *mmio, const struct i915_gt_info *gt);
+void drv_i915_rc6_disable(struct i915_rc6 *rc6, struct i915_mmio *mmio);
 void drv_i915_rps_init(struct i915_rps *rps, struct mutex *sb_lock, struct i915_mmio *mmio);
 void drv_i915_rps_init_gen9(struct i915_rps *rps, struct i915_mmio *mmio);
 void drv_i915_rps_enable(struct i915_rps *rps, struct i915_mmio *mmio, uint32_t clock_frequency);
-void drv_i915_rps_sanitize(struct i915_rps *rps, struct i915_mmio *mmio);
+void drv_i915_rps_mask_all(struct i915_rps *rps, struct i915_mmio *mmio);
 int drv_i915_rps_start(struct i915_rps *rps, struct i915_irq_dev *irq, struct i915_mmio *mmio);
 void drv_i915_rps_stop(struct i915_rps *rps);
 void drv_i915_rps_irq(void *context, uint32_t pm_iir);

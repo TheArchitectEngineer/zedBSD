@@ -8,12 +8,9 @@
 /*
  * GT, engine and context workarounds, the register whitelist, MOCS and PAT.
  *
- * The GT has to end up in the register state Linux leaves it in, so every
- * workaround is kept as an explicit list of (register, clear, set, kind)
- * entries with its workaround name attached.  A list can be dumped and
- * compared with a Linux dump, applied to the hardware, and read back.  The
- * lists follow Linux intel_workarounds.c, the MOCS tables intel_mocs.c, and
- * the order of intel_gt_init() and intel_gt_init_hw().
+ * Every workaround is kept as an explicit list of (register, clear, set,
+ * kind) entries with its workaround name attached.  A list can be dumped
+ * and compared with another dump, applied to the hardware, and read back.
  */
 
 #ifndef DRIVERS_GPU_I915_WORKAROUNDS_H
@@ -65,7 +62,7 @@ enum i915_wa_kind {
 };
 
 /*
- * One register a workaround programs, as Linux struct i915_wa keeps it.
+ * One register a workaround programs.
  *
  * Entries live inside their list and are never freed.  In a whitelist the
  * register field holds the whitelisted address with its access flags, which
@@ -159,7 +156,7 @@ struct i915_mocs {
 };
 
 /*
- * Everything intel_gt_init() builds before the first submission, and what
+ * Everything the GT start builds before the first submission, and what
  * programming it into the hardware did.
  *
  * The device start owns it from the table construction to the device stop;
@@ -197,32 +194,32 @@ struct i915_gt_init {
 	int hw_programmed;
 };
 
-void drv_i915_wa_write_or(struct i915_wa_list *wal, uint32_t reg, uint32_t set, int is_mcr, const char *name);
-void drv_i915_wa_write_clr_set(struct i915_wa_list *wal, uint32_t reg, uint32_t clr, uint32_t set, int is_mcr, const char *name);
-void drv_i915_wa_masked_en(struct i915_wa_list *wal, uint32_t reg, uint32_t bits, int is_mcr, const char *name);
-void drv_i915_wa_masked_field_set(struct i915_wa_list *wal, uint32_t reg, uint32_t mask, uint32_t value, int is_mcr, const char *name);
+void drv_i915_wa_add_or(struct i915_wa_list *wal, uint32_t reg, uint32_t set, int is_mcr, const char *name);
+void drv_i915_wa_add_field(struct i915_wa_list *wal, uint32_t reg, uint32_t clr, uint32_t set, int is_mcr, const char *name);
+void drv_i915_wa_add_masked_bits(struct i915_wa_list *wal, uint32_t reg, uint32_t bits, int is_mcr, const char *name);
+void drv_i915_wa_add_masked_field(struct i915_wa_list *wal, uint32_t reg, uint32_t mask, uint32_t value, int is_mcr, const char *name);
 void drv_i915_wa_add_no_verify(struct i915_wa_list *wal, uint32_t reg, uint32_t clr, uint32_t set, int is_mcr, const char *name);
 
-void drv_i915_gt_init_workarounds_adlp(struct i915_wa_list *wal, const struct i915_gt_info *gt);
-void drv_i915_gt_init_workarounds_gen9(struct i915_wa_list *wal, const struct i915_gt_info *gt);
-void drv_i915_engine_init_workarounds(struct i915_wa_list *wal, const struct i915_engine_info *engine, int graphics_ver, unsigned mocs_uc_index);
-void drv_i915_engine_init_ctx_wa(struct i915_wa_list *wal, const struct i915_engine_info *engine, int graphics_ver, unsigned mocs_uc_index);
-void drv_i915_engine_init_whitelist(struct i915_wa_list *wal, const struct i915_engine_info *engine, int graphics_ver);
+void drv_i915_wa_build_gt_gen12(struct i915_wa_list *wal, const struct i915_gt_info *gt);
+void drv_i915_wa_build_gt_gen9(struct i915_wa_list *wal, const struct i915_gt_info *gt);
+void drv_i915_wa_build_engine(struct i915_wa_list *wal, const struct i915_engine_info *engine, int graphics_ver, unsigned mocs_uc_index);
+void drv_i915_wa_build_context(struct i915_wa_list *wal, const struct i915_engine_info *engine, int graphics_ver, unsigned mocs_uc_index);
+void drv_i915_wa_build_whitelist(struct i915_wa_list *wal, const struct i915_engine_info *engine, int graphics_ver);
 
 void drv_i915_wa_list_apply(const struct i915_wa_list *wal, struct i915_mmio *mmio, int verify, struct i915_wa_apply_result *result);
 void drv_i915_engine_apply_whitelist(const struct i915_wa_list *wal, const struct i915_engine_info *engine, struct i915_mmio *mmio);
 void drv_i915_wa_list_dump(const struct i915_wa_list *wal, const char *what);
 
-void drv_i915_get_mocs_settings(struct i915_mocs *table, int graphics_ver);
-void drv_i915_mocs_init(const struct i915_mocs *table, struct i915_mmio *mmio, unsigned *global_writes, unsigned *l3cc_writes);
-void drv_i915_init_l3cc_table(const struct i915_mocs *table, struct i915_mmio *mmio, unsigned *writes);
-void drv_i915_mocs_init_engine(const struct i915_mocs *table, const struct i915_engine_info *engine, struct i915_mmio *mmio, unsigned *writes);
+void drv_i915_mocs_build(struct i915_mocs *table, int graphics_ver);
+void drv_i915_mocs_program(const struct i915_mocs *table, struct i915_mmio *mmio, unsigned *global_writes, unsigned *l3cc_writes);
+void drv_i915_mocs_program_l3cc(const struct i915_mocs *table, struct i915_mmio *mmio, unsigned *writes);
+void drv_i915_mocs_program_engine(const struct i915_mocs *table, const struct i915_engine_info *engine, struct i915_mmio *mmio, unsigned *writes);
 
-void drv_i915_tgl_setup_private_ppat(struct i915_mmio *mmio, unsigned *writes);
-void drv_i915_bdw_setup_private_ppat(struct i915_mmio *mmio, unsigned *writes);
+void drv_i915_pat_program_gen12(struct i915_mmio *mmio, unsigned *writes);
+void drv_i915_pat_program_gen9(struct i915_mmio *mmio, unsigned *writes);
 
 void drv_i915_gt_init_tables(struct i915_gt_init *gt_init, const struct i915_gt_info *gt, int graphics_ver, struct mutex *sb_lock, struct i915_mmio *mmio);
-void drv_i915_gt_init_hw_core(struct i915_gt_init *gt_init, const struct i915_gt_info *gt, struct i915_mmio *mmio);
+void drv_i915_gt_program(struct i915_gt_init *gt_init, const struct i915_gt_info *gt, struct i915_mmio *mmio);
 void drv_i915_engine_apply_resume_wa(struct i915_gt_init *gt_init, const struct i915_gt_info *gt, unsigned index, struct i915_mmio *mmio);
 
 #endif

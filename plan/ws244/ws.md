@@ -32,17 +32,17 @@ Resume point: p001 の棚卸しは途中（plan/ws244/inventory.md、P7 5a352c47
 
 ## Phase（案、p001 で確定）
 
-| ID | 内容 | cleared（2026-10-19 Q1） |
-| --- | --- | cleared（2026-10-19 Q1） |
-| p001 | 棚卸し（[inventory.md](inventory.md)）と方針・順序・試験の道 | cleared（2026-10-19 Q1） |
-| [p002](phase002/phase.md) | intel/ の Gen9 の display の header（display-regs-gen9*.h）と bits.h: 先頭の表示を外し block ごとの referenced、`I915_*` に改名、使う 24 file を追従 | cleared（2026-10-19 Q1） |
+| ID | 内容 | 状態 |
+| --- | --- | --- |
+| p001 | 棚卸し（[inventory.md](inventory.md)）と方針・順序・試験の道 | cleared（2026-10-18 Q1） |
+| [p002](phase002/phase.md) | intel/ の Gen9 の display の header（display-regs-gen9*.h）と bits.h: 先頭の表示を外し block ごとの referenced、`I915_*` に改名、使う 24 file を追従 | cleared（2026-10-18 Q1、merge f6b4952b0） |
 | p003 | intel/ の GT の header・表（gt-regs.h・commands.h・gt-power.h・lrc-offsets.h・mocs*・workarounds.h・mcr-ranges・engine-table*・forcewake-ranges*・pci-ids.h）: 同上、使う 70 file を追従 | cleared（2026-10-19 Q1） |
 | p004 | GT の core の小さい物の書き直し: power.c（PCODE）・reset・tlb・device-info・ggtt・ppgtt・memory・irq・dma.h ほかの言及 | cleared（2026-10-19 Q1） |
 | [p005](phase005/phase.md) | GT の submit: context・request・submit・engine の書き直し（2026-10-19: defaults.c・defaults.h・worker.c の言及を p004 から移した） | cleared（2026-10-19 Q1） |
-| p006 | GT の電源と WA: gt-power.c・workarounds.c・verify-workarounds.c の書き直し | cleared（2026-10-19 Q1） |
-| p007 | compiler・render: genxml*・eu-encoding-*・null-state-gen9 の header（判断 1 に従う）と eu.c・compile.c・*.inc・render の Mesa の言及を Procedure/Values referenced に | cleared（2026-10-19 Q1） |
-| p008 | display の残り: internal.h の古い comment、xd-dp.h ほかの言及の掃除 | cleared（2026-10-19 Q1） |
-| p009 | license の package（userland/base/licenses/i915-driver/）の整理（判断 2）、規約の全文の見直し、T1 への実機の試験の依頼 | cleared（2026-10-19 Q1） |
+| [p006](phase006/phase.md) | GT の電源と WA: gt-power.c・workarounds.c・verify-workarounds.c の書き直し | in-progress（2026-10-19 q1260 P1: RC6 の表・RPS の mode の関数・WA の rule の表に書き直し（gt-power-equiv 608 行・workarounds-equiv 1559 行一致）。範囲は済み、Q1 の判定待ち） |
+| p007 | compiler・render: genxml*・eu-encoding-*・null-state-gen9 の header（判断 1 に従う）と eu.c・compile.c・*.inc・render の Mesa の言及を Procedure/Values referenced に | planned（判断 1） |
+| p008 | display の残り: internal.h の古い comment、xd-dp.h ほかの言及の掃除 | planned |
+| p009 | license の package（userland/base/licenses/i915-driver/）の整理（判断 2）、規約の全文の見直し、T1 への実機の試験の依頼 | planned（p002〜p008 の後） |
 
 ## ユーザーの決定（2026-10-18、クリック）
 

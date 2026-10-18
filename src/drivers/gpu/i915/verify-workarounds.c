@@ -51,7 +51,7 @@ struct i915_mcr_range {
 };
 
 /*
- * The Gen12 multicast register ranges (Linux mcr_ranges_gen12).
+ * The Gen12 multicast register ranges.
  *
  * A command streamer read inside one of them reaches an unsteered instance,
  * so those entries are not verified by the GPU.  The table never changes.
@@ -61,10 +61,11 @@ static const struct i915_mcr_range i915_mcr_ranges_gen12[] = {
 };
 
 /*
- * The Gen8 multicast register ranges, which Gen9 uses (Linux 6.8.12
- * intel_workarounds.c mcr_ranges_gen8, SHA-256
- * 912f7dd288e3924095d598b198ab006c28133e22b0ff2ad806a3f59aad891028; values
- * unchanged).  The table never changes.
+ * The Gen8 multicast register ranges, which Gen9 uses.  The table never
+ * changes.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/i915/gt/intel_workarounds.c
+ * (mcr_ranges_gen8).
  */
 static const struct i915_mcr_range i915_mcr_ranges_gen8[] = {
 	{ 0x5500U, 0x55ffU },
@@ -76,49 +77,28 @@ static const struct i915_mcr_range i915_mcr_ranges_gen8[] = {
 
 static int i915_verify_wa_fail(struct i915_gt_verify_wa *verify, int error, const char *where);
 static int i915_mcr_range_of(int graphics_ver, uint32_t offset);
+static int i915_mcr_in_ranges(const struct i915_mcr_range *ranges, unsigned count, uint32_t offset);
 static int i915_verify_wa_retired(struct i915_gt_request *rq, struct i915_execlists *execlists);
 static int i915_verify_wa_wait_engine(struct i915_gt_verify_wa *verify, unsigned index, struct i915_gt_engines *engines, struct i915_mmio *mmio, int want, unsigned timeout_ms);
 
-/*
- * Reports whether a register lies in a Gen12 multicast range.
- *
- * Linux mcr_range() for graphics version 12 below 12.50.
- */
+/* Reports whether a register lies in a Gen12 multicast range (graphics version 12 below 12.50). */
 int
-drv_i915_gen12_mcr_range(
+drv_i915_wa_multicast_gen12(
 	uint32_t offset)
 {
-	unsigned count;
-	unsigned index;
-
-	/* Looks for a range that contains the register. */
-	count = (unsigned)(sizeof(i915_mcr_ranges_gen12) / sizeof(i915_mcr_ranges_gen12[0]));
-	for (index = 0U; index < count; index++) {
-		/* A register below the range is not in it. */
-		if (offset < i915_mcr_ranges_gen12[index].start)
-			continue;
-
-		/* Nor is a register above it. */
-		if (offset > i915_mcr_ranges_gen12[index].end)
-			continue;
-
-		/* Succeeded: the register is multicast. */
-		return 1;
-	}
-
-	/* Succeeded: the register is not multicast. */
-	return 0;
+	/* Looks the register up in the Gen12 ranges. */
+	return i915_mcr_in_ranges(i915_mcr_ranges_gen12, (unsigned)(sizeof(i915_mcr_ranges_gen12) / sizeof(i915_mcr_ranges_gen12[0])), offset);
 }
 
 /*
  * Emits the register stores of one workaround list into a request.
  *
- * Linux wa_list_srm().  Each entry outside the multicast ranges is stored to
+ * Each entry outside the multicast ranges is stored to
  * scratch + 4 * its list index, so the skipped entries leave gaps.  The
  * emitted and skipped counts are reported before the ring is reserved.
  */
 int
-drv_i915_wa_list_srm(
+drv_i915_wa_list_store_regs(
 	struct i915_gt_request *rq,
 	const struct i915_wa_list *wal,
 	uint32_t scratch_ggtt,
@@ -190,7 +170,7 @@ drv_i915_wa_list_srm(
 /*
  * Compares the stored registers of one engine with its workaround list.
  *
- * Linux wa_verify() over the results page.  Reports ENXIO when any
+ * Each stored value is checked against its entry.  Reports ENXIO when any
  * workaround was lost.
  */
 int
@@ -284,8 +264,8 @@ drv_i915_wa_list_check(
 /*
  * Submits the register stores of one engine.
  *
- * Linux engine_wa_list_verify() up to i915_request_add(): the scratch page,
- * the request on the kernel context, the stores, and the submission.  An
+ * The scratch page, the request on the kernel context, the stores, and the
+ * submission.  An
  * engine with an empty list submits nothing and stays parked.
  */
 int
@@ -365,7 +345,7 @@ drv_i915_engine_verify_wa_submit(
 	 * only and has nothing to do here.
 	 */
 	verify->graphics_ver[index] = engine->info->graphics_ver;
-	error = drv_i915_wa_list_srm(rq, wal, (uint32_t)verify->scratch[index]->ggtt_offset, &verify->emitted[index], &verify->mcr_skipped[index]);
+	error = drv_i915_wa_list_store_regs(rq, wal, (uint32_t)verify->scratch[index]->ggtt_offset, &verify->emitted[index], &verify->mcr_skipped[index]);
 	if (error != 0)
 		return i915_verify_wa_fail(verify, error, "wa_list_srm");
 
@@ -451,7 +431,7 @@ drv_i915_engine_verify_wa_poll(
 /*
  * Switches one engine back to its kernel context after its verification.
  *
- * Linux intel_engine_pm_put() -> switch_to_kernel_context().  An engine on
+ * An engine on
  * which nothing ran since the last switch is already there.
  */
 int
@@ -526,8 +506,12 @@ drv_i915_engine_verify_wa_park(
 /*
  * Verifies the workarounds of every engine with the GPU.
  *
- * Linux __engines_verify_workarounds(): for each engine, store the listed
- * registers, wait, compare and park; then wait for every park switch.
+ * For each engine, store the listed registers, wait, compare and park; then
+ * wait for every park switch.
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/i915/gt/intel_workarounds.c
+ * (engine_wa_list_verify: store the listed registers with the command
+ * streamer and compare them).
  * Reports the first error recorded, or zero.
  */
 int
@@ -609,7 +593,7 @@ drv_i915_engines_verify_workarounds(
 		if (verify->state[index] != I915_VWA_SWITCH)
 			continue;
 
-		/* Waits for the engine to park, as intel_gt_wait_for_idle() does. */
+		/* Waits for the engine to park. */
 		error = i915_verify_wa_wait_engine(verify, index, engines, mmio, I915_VWA_PARKED, timeout_ms);
 		if (error != 0) {
 			/* Keeps an earlier engine error in preference to this one. */
@@ -761,35 +745,34 @@ i915_verify_wa_wait_engine(
 
 /*
  * Reports whether a register lies in a multicast range of its graphics
- * version (Linux mcr_range()): Gen9 takes the Gen8 ranges, every other
- * version the Gen12 ones.
+ * version: Gen9 takes the Gen8 ranges, every other version the Gen12 ones.
  */
 static int
 i915_mcr_range_of(
 	int graphics_ver,
 	uint32_t offset)
 {
-	unsigned count;
-	unsigned index;
-	int multicast;
-
 	/* A Gen12 register is looked up in the Gen12 ranges. */
-	if (graphics_ver != 9) {
-		multicast = drv_i915_gen12_mcr_range(offset);
-		return multicast;
-	}
+	if (graphics_ver != 9)
+		return drv_i915_wa_multicast_gen12(offset);
 
-	/* Looks for a Gen8 range that contains the register. */
-	count = (unsigned)(sizeof(i915_mcr_ranges_gen8) / sizeof(i915_mcr_ranges_gen8[0]));
+	/* A Gen9 register in the Gen8 ranges. */
+	return i915_mcr_in_ranges(i915_mcr_ranges_gen8, (unsigned)(sizeof(i915_mcr_ranges_gen8) / sizeof(i915_mcr_ranges_gen8[0])), offset);
+}
+
+/* Reports whether a register lies in one of a table of inclusive ranges. */
+static int
+i915_mcr_in_ranges(
+	const struct i915_mcr_range *ranges,
+	unsigned count,
+	uint32_t offset)
+{
+	unsigned index;
+
+	/* Looks for a range that contains the register. */
 	for (index = 0U; index < count; index++) {
-		/* A register outside the range is not in it. */
-		if (offset < i915_mcr_ranges_gen8[index].start)
-			continue;
-		if (offset > i915_mcr_ranges_gen8[index].end)
-			continue;
-
-		/* The register is multicast. */
-		return 1;
+		if (offset >= ranges[index].start && offset <= ranges[index].end)
+			return 1;
 	}
 
 	/* The register is not multicast. */

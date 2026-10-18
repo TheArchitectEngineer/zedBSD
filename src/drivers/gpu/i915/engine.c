@@ -530,13 +530,13 @@ drv_i915_gt_resume(
 	 * Nothing was ever submitted, so nothing is abandoned.  Quiets the RPS
 	 * interrupts.
 	 */
-	drv_i915_rps_sanitize(&gi->rps, mmio);
+	drv_i915_rps_mask_all(&gi->rps, mmio);
 
 	/* Turns RC6 and power gating off. */
-	drv_i915_rc6_sanitize(&gi->rc6, mmio);
+	drv_i915_rc6_disable(&gi->rc6, mmio);
 
 	/* Programs the GT workarounds and MOCS. */
-	drv_i915_gt_init_hw_core(gi, gt, mmio);
+	drv_i915_gt_program(gi, gt, mmio);
 
 	/* Enables RPS at the minimum, its thresholds counted in the GT's clock (the node's start raises it). */
 	drv_i915_rps_enable(&gi->rps, mmio, gt->clock_frequency);
@@ -555,9 +555,9 @@ drv_i915_gt_resume(
 		 * Gen9 programs the engine's own MOCS table, global MOCS has none,
 		 * and the render engine's L3CC table is programmed again.
 		 */
-		drv_i915_mocs_init_engine(&gi->mocs, ge->info, mmio, NULL);
+		drv_i915_mocs_program_engine(&gi->mocs, ge->info, mmio, NULL);
 		if (ge->info->class == I915_RENDER_CLASS)
-			drv_i915_init_l3cc_table(&gi->mocs, mmio, &es->l3cc_writes_rcs);
+			drv_i915_mocs_program_l3cc(&gi->mocs, mmio, &es->l3cc_writes_rcs);
 
 		/* Enables execlists; the breadcrumbs reset is software only. */
 		drv_i915_execlists_enable(ge, mmio);
@@ -565,7 +565,7 @@ drv_i915_gt_resume(
 	}
 
 	/* Enables RC6. */
-	drv_i915_gen11_rc6_enable(&gi->rc6, mmio, gt);
+	drv_i915_rc6_enable(&gi->rc6, mmio, gt);
 
 	/* Succeeded: the GT is resumed. */
 	return 0;
@@ -632,9 +632,9 @@ drv_i915_engine_reset(
 	drv_i915_engine_apply_resume_wa(gi, gt, index, mmio);
 
 	/* The engine's MOCS (Gen9) and the render engine's L3CC table are programmed again. */
-	drv_i915_mocs_init_engine(&gi->mocs, ge->info, mmio, NULL);
+	drv_i915_mocs_program_engine(&gi->mocs, ge->info, mmio, NULL);
 	if (ge->info->class == I915_RENDER_CLASS)
-		drv_i915_init_l3cc_table(&gi->mocs, mmio, &es->l3cc_writes_rcs);
+		drv_i915_mocs_program_l3cc(&gi->mocs, mmio, &es->l3cc_writes_rcs);
 
 	/* Enables execlists with the status page again. */
 	drv_i915_execlists_enable(ge, mmio);

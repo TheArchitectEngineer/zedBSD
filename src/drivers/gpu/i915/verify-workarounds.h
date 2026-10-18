@@ -6,33 +6,25 @@
  */
 
 /*
- * Engine workaround verification by the GPU itself.
+ * Engine workaround verification by the GPU itself, which runs always, as
+ * a diagnostic.  For each engine with a workaround list:
  *
- * Linux __engines_verify_workarounds(), which Linux compiles only under
- * CONFIG_DRM_I915_DEBUG_GEM and which runs here always, as a diagnostic.
- * For each engine with a workaround list:
- *
- *   - a one-page scratch object is bound into the GGTT
- *     (__vm_create_scratch_for_read)
+ *   - a one-page scratch object from the fixed pool is bound into the GGTT
  *   - a request on the engine's kernel context stores every listed register
  *     to scratch + 4 * list index with MI_STORE_REGISTER_MEM, skipping the
  *     multicast ranges: the MCR selector steers CPU accesses only, so the
- *     command streamer would read some other instance (wa_list_srm)
- *   - the request is submitted and waited for (i915_request_wait, HZ / 5)
- *   - every stored value is compared with the list (wa_verify); an entry
- *     whose read mask is 0 always passes
- *   - the engine parks by switching back to its kernel context
- *     (intel_engine_pm_put -> switch_to_kernel_context)
+ *     command streamer would read some other instance
+ *   - the request is submitted, and the CSB and the status page are polled
+ *     for at least the requested time
+ *   - every stored value is compared with the list; an entry whose read
+ *     mask is 0 always passes
+ *   - once the request has completed, the engine parks by switching back to
+ *     its kernel context (one request is kept in flight per engine); a
+ *     timed-out engine gets no park switch, since it is hung and a switch
+ *     queued behind the hang would fail the final wait the same way
  *
  * Any engine failure makes the whole verification fail, and so does a GT
- * that does not go idle afterwards (intel_gt_wait_for_idle).
- *
- * Adaptations: the wait polls the CSB and the status page for at least the
- * requested time; the park switch is submitted only once the verification
- * request has completed, since one request is kept in flight per engine; a
- * timed-out engine gets no park switch (it is hung, and a switch queued
- * behind the hang would fail the final wait the same way); the scratch page
- * is a driver object from the fixed pool rather than shmem.
+ * that does not go idle afterwards.
  */
 
 #ifndef DRIVERS_GPU_I915_VERIFY_WORKAROUNDS_H
@@ -119,8 +111,8 @@ struct i915_gt_verify_wa {
 	int timed_out;
 };
 
-int drv_i915_gen12_mcr_range(uint32_t offset);
-int drv_i915_wa_list_srm(struct i915_gt_request *rq, const struct i915_wa_list *wal, uint32_t scratch_ggtt, unsigned *emitted, unsigned *skipped);
+int drv_i915_wa_multicast_gen12(uint32_t offset);
+int drv_i915_wa_list_store_regs(struct i915_gt_request *rq, const struct i915_wa_list *wal, uint32_t scratch_ggtt, unsigned *emitted, unsigned *skipped);
 int drv_i915_wa_list_check(struct i915_gt_verify_wa *verify, unsigned index, const struct i915_wa_list *wal, const char *from);
 int drv_i915_engine_verify_wa_submit(struct i915_gt_verify_wa *verify, unsigned index, struct i915_gt_engines *engines, const struct i915_wa_list *wal, struct i915_gt_mem *gt_mem, struct i915_mmio *mmio);
 int drv_i915_engine_verify_wa_poll(struct i915_gt_verify_wa *verify, unsigned index, struct i915_gt_engines *engines, struct i915_mmio *mmio);
