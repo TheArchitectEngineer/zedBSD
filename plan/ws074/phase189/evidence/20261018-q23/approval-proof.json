@@ -1,0 +1,6 @@
+{
+  "source": "autonomy.md user instruction",
+  "queue_sha256": "535f75751934174da103ca562e69506b4bb2072b93b42e8159353307faaa54a0",
+  "prior_history_sha256": "baba65bddc68bbeae7a27016e91834f67248fe0463594d019a8ecc38b1cc5752",
+  "prior_terminal": "6e6cff13d9c1151e12b911f763cef8e9a9b761df"
+}

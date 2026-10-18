@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [ws074-q20261018-22](queue.md) finished（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+Queue: [ws074-q20261018-23](queue.md) active（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
 
 Latest verified（q21 finished）: flex-basis grammar/computed/content baseをnative修正。固定3 IDは27/27 callback PASS、2 whole/7 callback改善（parsing3は5、shorthandは2）。全1491 harnessは493 PASS（+2）・11538 PASS/20219 FAIL/14 NOTRUN、old whole/callback後退・欠損・追加・順序変更0。全static1561は844 PASS/717 FAIL（+5）・old839後退0、画素変更は改善5 IDだけ。5件の旧/新16 capturesを無改変pinned comparatorでも全FAIL→PASS確認。scripted413は105 PASS/283 FAIL/5 unsupported/20 missing・805 captures全RGB不変/388 edge primary一致、strict48は39 PASS/9 missing維持。確認済み1481/3805（38.922470%）、genuine native whole改善7。未attempt harness292と環境/API/native残差は分母保持。 host scoped partial cleared、p252 wholeの受け入れは今回のhost partialだけで認定せずuncleared。replaced/一般intrinsic/縦書き・negative inner base等の既存別未実装面とtarget full link/runtimeも保持。p240/p241/p189/p190/WS全体やp100を先取りclearしない。指定calc canonical順序の既存差は未修正。shared projection/GitHub pending、push無し。
 
@@ -643,7 +643,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p186](phase186/phase.md) | sharp text-shadow と見出し影を調べる | cleared（q1009-i01、sharp 単一 scope、Acid3差2451減） | p172〜p185 cleared、q1008 実測出力 |
 | [ws074-p187](phase187/phase.md) | 負の padding と第6色箱の幅を調べる | cleared（q1010-i01、Acid3差900減、negative padding fixture pass） | p172〜p186 cleared、q1009 実測出力 |
 | [ws074-p188](phase188/phase.md) | 同一ページで観測した訪問履歴と :visited の paint color | cleared（q1011-i01、Acid3差801減→0、privacy fixture pass） | p172〜p187 cleared、q1010 実測出力 |
-| [ws074-p189](phase189/phase.md) | Interop 2025 testharness 1,783件の結果取得 runner | uncleared / q22全1491同値493・未attempt292 | p173 q1012 固定manifest出力 |
+| [ws074-p189](phase189/phase.md) | Interop 2025 testharness 1,783件の結果取得 runner | in-progress / q23 generated17・old1491同値/未attempt292 | p173 q1012 固定manifest出力 |
 | [ws074-p190](phase190/phase.md) | Interop 2025 reftest 1,974件・crashtest48件のrunner coverage | uncleared / q20 partial cleared・105 scripted PASS・環境5 | p173 q1012 固定manifest出力 |
 | [ws074-p191](phase191/phase.md) | Interop 2025 textdecoration全16 testharnessのCSSOM互換 | cleared / q1023、16件16 PASS/0 FAIL | p173固定manifest、p189 q1015全16件baseline |
 | [ws074-p192](phase192/phase.md) | Interop 2025 Window named properties互換 | uncleared / q1025 partial cleared、一意id live lookup | p173固定manifest、p189 q1024 shard |
@@ -1240,3 +1240,5 @@ Event ws074-q21-finished-20261018: [exact history](history/ws074-q20261018-21.md
 Event ws074-p189-q22-selected-20261018: [Queue](queue.md)でharness HTTP shutdown待機のpoll1行→同1491の全callback同値と実測elapsedを最大45分へ選定。native C/全基準/未対応・確認済み1481は不変。q21 cc65dc3f6/history hash確認済み、shared projection pending。
 
 Event ws074-q22-finished-20261018: [exact history](history/ws074-q20261018-22.md)・[証拠](phase189/evidence/20261018-q22/README.md)。harness HTTP serve_foreverの停止確認pollだけを0.5→0.01秒へ変更。既存分類5対照通過、同じq21 frozen pairで全1491を実測し全ID/whole/returncode/全callback・completion status/項目順/メッセージが完全同値。493 PASS・11538 PASS/20219 FAIL/14 NOTRUN維持、後退/改善/欠損/追加/順序差/メッセージ差0。実測920.9→226.8秒（4.0604倍、694.1秒短縮）。raw/gzip/checkpoint/全tar member/read-back、fixed corpus/font/source/pair hash一致。 i01 scoped partial cleared、p189 wholeの未attempt292/環境/API/全1783は未達。browser C/WPT/他runner/判定基準/分母は不変。確認済み1481/3805（38.922470%）、PASS増分0。static/scripted/crash/DOM/C/Acidはbyte同一pairのq21証拠を再利用し不要な再測定を省略。shared projection/GitHub/target full/p100/WS未達、push無し。
+
+Event ws074-p189-q23-selected-20261018: [Queue](queue.md)でpinned Window/Any wrapper/META/内部WebIDL rewriteとnew generated専用header provider → 全1508/旧1491比較を最大90分へ選定。native API/源/分母不変、確認済み1481を実測まで保持。q22 6e6cff13d/history hash確認済み、shared projection pending。

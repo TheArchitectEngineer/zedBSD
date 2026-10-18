@@ -1,0 +1,218 @@
+[
+  {
+    "id": "/event-timing/idlharness.any.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/idlharness.any.js",
+    "metadata": [
+      "// META: global=window,worker",
+      "// META: script=/resources/WebIDLParser.js",
+      "// META: script=/resources/idlharness.js"
+    ],
+    "wrapper_header_files": []
+  },
+  {
+    "id": "/event-timing/supported-types.window.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/supported-types.window.js",
+    "metadata": [],
+    "wrapper_header_files": []
+  },
+  {
+    "id": "/html/semantics/scripting-1/the-script-element/import-attributes/dynamic-import-with-attributes-argument.any.html",
+    "focus": [
+      "modules"
+    ],
+    "type": "testharness",
+    "source": "html/semantics/scripting-1/the-script-element/import-attributes/dynamic-import-with-attributes-argument.any.js",
+    "metadata": [
+      "// META: global=window,dedicatedworker,sharedworker"
+    ],
+    "wrapper_header_files": []
+  },
+  {
+    "id": "/html/semantics/scripting-1/the-script-element/json-module/charset-bom.any.html",
+    "focus": [
+      "modules"
+    ],
+    "type": "testharness",
+    "source": "html/semantics/scripting-1/the-script-element/json-module/charset-bom.any.js",
+    "metadata": [
+      "// META: global=window,dedicatedworker,sharedworker",
+      "// META: script=/common/utils.js"
+    ],
+    "wrapper_header_files": []
+  },
+  {
+    "id": "/html/semantics/scripting-1/the-script-element/json-module/invalid-content-type.any.html",
+    "focus": [
+      "modules"
+    ],
+    "type": "testharness",
+    "source": "html/semantics/scripting-1/the-script-element/json-module/invalid-content-type.any.js",
+    "metadata": [
+      "// META: global=window,dedicatedworker,sharedworker"
+    ],
+    "wrapper_header_files": []
+  },
+  {
+    "id": "/html/semantics/scripting-1/the-script-element/json-module/non-object.any.html",
+    "focus": [
+      "modules"
+    ],
+    "type": "testharness",
+    "source": "html/semantics/scripting-1/the-script-element/json-module/non-object.any.js",
+    "metadata": [
+      "// META: global=window,dedicatedworker,sharedworker"
+    ],
+    "wrapper_header_files": []
+  },
+  {
+    "id": "/html/semantics/scripting-1/the-script-element/json-module/repeated-imports.any.html",
+    "focus": [
+      "modules"
+    ],
+    "type": "testharness",
+    "source": "html/semantics/scripting-1/the-script-element/json-module/repeated-imports.any.js",
+    "metadata": [
+      "// META: global=window,dedicatedworker,sharedworker",
+      "// META: script=/common/utils.js"
+    ],
+    "wrapper_header_files": []
+  },
+  {
+    "id": "/performance-timeline/buffered-flag-with-entryTypes-observer.tentative.any.html",
+    "focus": [
+      "webcompat"
+    ],
+    "type": "testharness",
+    "source": "performance-timeline/buffered-flag-with-entryTypes-observer.tentative.any.js",
+    "metadata": [],
+    "wrapper_header_files": []
+  },
+  {
+    "id": "/storage-access-api/idlharness.window.html",
+    "focus": [
+      "storageaccess"
+    ],
+    "type": "testharness",
+    "source": "storage-access-api/idlharness.window.js",
+    "metadata": [
+      "// META: global=window,worker",
+      "// META: script=/resources/WebIDLParser.js",
+      "// META: script=/resources/idlharness.js"
+    ],
+    "wrapper_header_files": []
+  },
+  {
+    "id": "/urlpattern/urlpattern-hasregexpgroups.any.html",
+    "focus": [
+      "urlpattern"
+    ],
+    "type": "testharness",
+    "source": "urlpattern/urlpattern-hasregexpgroups.any.js",
+    "metadata": [
+      "// META: global=window,worker",
+      "// META: script=resources/urlpattern-hasregexpgroups-tests.js"
+    ],
+    "wrapper_header_files": []
+  },
+  {
+    "id": "/urlpattern/urlpattern.any.html",
+    "focus": [
+      "urlpattern"
+    ],
+    "type": "testharness",
+    "source": "urlpattern/urlpattern.any.js",
+    "metadata": [
+      "// META: global=window,worker",
+      "// META: script=resources/urlpatterntests.js"
+    ],
+    "wrapper_header_files": []
+  },
+  {
+    "id": "/wasm/jsapi/js-string/basic.any.html",
+    "focus": [
+      "webassembly"
+    ],
+    "type": "testharness",
+    "source": "wasm/jsapi/js-string/basic.any.js",
+    "metadata": [
+      "// META: global=window,dedicatedworker,jsshell",
+      "// META: script=/wasm/jsapi/assertions.js",
+      "// META: script=/wasm/jsapi/wasm-module-builder.js",
+      "// META: script=/wasm/jsapi/js-string/polyfill.js"
+    ],
+    "wrapper_header_files": []
+  },
+  {
+    "id": "/wasm/jsapi/js-string/constants.any.html",
+    "focus": [
+      "webassembly"
+    ],
+    "type": "testharness",
+    "source": "wasm/jsapi/js-string/constants.any.js",
+    "metadata": [
+      "// META: global=window,dedicatedworker,jsshell",
+      "// META: script=/wasm/jsapi/wasm-module-builder.js"
+    ],
+    "wrapper_header_files": []
+  },
+  {
+    "id": "/wasm/jsapi/js-string/imports.any.html",
+    "focus": [
+      "webassembly"
+    ],
+    "type": "testharness",
+    "source": "wasm/jsapi/js-string/imports.any.js",
+    "metadata": [
+      "// META: global=window,dedicatedworker,jsshell",
+      "// META: script=/wasm/jsapi/wasm-module-builder.js"
+    ],
+    "wrapper_header_files": []
+  },
+  {
+    "id": "/wasm/jsapi/memory/to-fixed-length-buffer.any.html",
+    "focus": [
+      "webassembly"
+    ],
+    "type": "testharness",
+    "source": "wasm/jsapi/memory/to-fixed-length-buffer.any.js",
+    "metadata": [
+      "// META: global=window,dedicatedworker,jsshell",
+      "// META: script=/wasm/jsapi/wasm-module-builder.js"
+    ],
+    "wrapper_header_files": []
+  },
+  {
+    "id": "/wasm/jsapi/memory/to-resizable-buffer-shared.any.html",
+    "focus": [
+      "webassembly"
+    ],
+    "type": "testharness",
+    "source": "wasm/jsapi/memory/to-resizable-buffer-shared.any.js",
+    "metadata": [
+      "// META: global=window,dedicatedworker,jsshell",
+      "// META: script=/wasm/jsapi/wasm-module-builder.js"
+    ],
+    "wrapper_header_files": []
+  },
+  {
+    "id": "/wasm/jsapi/memory/to-resizable-buffer.any.html",
+    "focus": [
+      "webassembly"
+    ],
+    "type": "testharness",
+    "source": "wasm/jsapi/memory/to-resizable-buffer.any.js",
+    "metadata": [
+      "// META: global=window,dedicatedworker,jsshell",
+      "// META: script=/wasm/jsapi/wasm-module-builder.js"
+    ],
+    "wrapper_header_files": []
+  }
+]

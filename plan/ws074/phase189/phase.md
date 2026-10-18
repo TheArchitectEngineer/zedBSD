@@ -2,7 +2,7 @@
 
 # ws074-p189: Interop 2025 testharness 結果取得
 
-Status: uncleared（q22 shutdown partial cleared、適格1491/未対応292・whole未達）
+Status: in-progress（q23 generated17、old1491/未対応292・whole未達）
 
 ## ws074-q20261018-03 結果
 
@@ -311,3 +311,20 @@ Event ws074-p189-q22-selected-20261018: q21のnative改善7/全旧PASS維持と�
 
 
 Event ws074-q22-finished-20261018: [exact history](../history/ws074-q20261018-22.md)・[証拠](evidence/20261018-q22/README.md)。harness HTTP serve_foreverの停止確認pollだけを0.5→0.01秒へ変更。既存分類5対照通過、同じq21 frozen pairで全1491を実測し全ID/whole/returncode/全callback・completion status/項目順/メッセージが完全同値。493 PASS・11538 PASS/20219 FAIL/14 NOTRUN維持、後退/改善/欠損/追加/順序差/メッセージ差0。実測920.9→226.8秒（4.0604倍、694.1秒短縮）。raw/gzip/checkpoint/全tar member/read-back、fixed corpus/font/source/pair hash一致。 i01 scoped partial cleared、p189 wholeの未attempt292/環境/API/全1783は未達。browser C/WPT/他runner/判定基準/分母は不変。確認済み1481/3805（38.922470%）、PASS増分0。static/scripted/crash/DOM/C/Acidはbyte同一pairのq21証拠を再利用し不要な再測定を省略。shared projection/GitHub/target full/p100/WS未達、push無し。
+
+
+## q23 exact design / verification
+
+Timebox: 最大90分（17:44 JSTまで）。
+
+| Attempt | Phase | Exact scope | State | Dependencies |
+| --- | --- | --- | --- | --- |
+| ws074-q20261018-23-i01 | [p189](phase189/phase.md) official generated Window transport partial | pinned serve.pyのWindowHandler/AnyHtmlHandler wrapper literalをruntime ASTで読取り、sourcefile.pyと同じ先頭META連続block/global exposure/順序/escaping/script importsとquery/JS source pathを提供。pinned WebIDLParser.js→resources/webidl2/lib/webidl2.js internal GET rewriteをquery保持で提供。new generated contextだけでq20 verified static header provider/unsupported判定を再利用し、original testharnessreport.js bytes＋既存REPORT_SCRIPTを保持。元source/JS/resourcesとwrapper/headers/rewrite/hash/console binaryを記録、native APIや値は補完しない。既存physical1491のprovider/report/budgetは不変。primary byte/metadata/rewrite/HTTP比較、native Window/Any/context/meta-order/query/recording positiveとglobal/missing/unsupported/duplicate等のnegative controlsを確認 | in-progress | q22 same native pair/全1491 raw、pinned serve.py/sourcefile.py/server.py、q20 header source/29 controls、実17 input inventory |
+| ws074-q20261018-23-i02 | [p189](phase189/phase.md) fixed generated17 + full1508 census partial | i01 verified output後、HTTPS/worker/.sub以外で既存未attempt292中plain .window.html2/.any.html15の17 IDをcandidateへ追加し同じfrozen pair/fonts/settle5000/process20で全1508を実測。旧1491 subsetの全ID/whole/callback/status/order/欠損/追加とq22比較、new17全native attempt/各source/wrapper/requests/unsupported/stdio/bin/report保存、eligible digest/全1783 partition/残275未attemptを照合。native未実装・server unsupportedは非PASSとして分母保持、gainsを実測前に加算しない | pending | i01 native/primary controlsと原bytes/headers/rewriteのverified output、q22 whole493/全1491 baseline |
+
+Dependency graph: q22 history/pair/input inventory → i01 primary/native controls → i02全1508/old1491比較/archive。
+Generation bounds: plan/ws074/tests/run-interop2025-harness.py、run-interop2025-batch.py、新test-interop2025-generated.pyとWS074記録/証拠だけ。Python専用full standard無し、Guardrail/既存tool/FS規則を直接適用。q20 scripted toolの既存Handler/static header/limit helperはgeneratedだけlazy利用し、scripted/crash/census既存tool/native C/SDK/expectations/manifest/共有board/cache/toolchainは変えない。private .headers/pipe/.sub/generated server/testdriver/HTTPS/worker/外origin等未対応は非PASS。wrapper source .headers自体はこの17で存在しないことをinventoryで確認し未対応なら拒否、通常resource headersはfaithful配信する。WPT rootファイルを追加/変更せずaliasはHTTP provider内部で処理、templateとassetのoriginal pinned bytesを使用。
+Verification bounds: positive tool prerequisiteが欠ける/old subset後退が未解消/期限内未完ならaffected item uncleared、raw/resumeを保持。0 tests/invalid/multiple/failed fixtureをPASSにしない。17に全PASSを約束せず、未実装Native APIをJSで偽装/patchしない。native源不変なのでstatic/scripted/crash/DOM/C/Acidはq21 byte同一pair証拠を再利用し不要な再測定無し。push/削除/make check/QEMU無し。
+Upcoming Work Outlook: 残るHTTPS/worker/sub/origin等275、native module/URLPattern/Wasm/performance/animation/ViewTransition/anchor、p249/target/p100。
+
+Event ws074-p189-q23-selected-20261018: 固定未attempt292のactual plain Window17を具体化。pinned META parserは最初の非META行で終了し、Any window exposureの既定/first global、script/title/timeoutを原手順へ合わせる。WebIDLParserは原Gitに無いaliasで、同じpinned serve.py rewriteが既存125228-byte webidl2へ内部GET転送することを確認。Wrapper literalsは原sourceをruntime参照して原本をvendoringしない。既存q20 header実装をgeneratedだけ再利用し、physical1491は従来providerを保つ。whole p189/p173と未達/native APIは先取りclearしない。shared projection pending。
