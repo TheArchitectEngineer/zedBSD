@@ -1,0 +1,5 @@
+[772006:772006:1018/145502.724464:WARNING:sandbox/policy/linux/sandbox_linux.cc:405] InitializeSandbox() called with multiple threads in process gpu-process.
+[771960:771960:1018/145503.049323:WARNING:ui/base/idle/idle_linux.cc:111] None of the known D-Bus ScreenSaver services could be used.
+[771960:771960:1018/145503.283416:INFO:CONSOLE:2] "xhtml-inline", source: file:///home/awe/zedBSD-claude1/build/ws074-20261018/q18/xhtml-inline.xht (2)
+[771960:771960:1018/145503.284013:INFO:CONSOLE:3] "xhtml-domready", source: file:///home/awe/zedBSD-claude1/build/ws074-20261018/q18/xhtml-inline.xht (3)
+[771960:771960:1018/145503.284178:INFO:CONSOLE:4] "xhtml-load", source: file:///home/awe/zedBSD-claude1/build/ws074-20261018/q18/xhtml-inline.xht (4)

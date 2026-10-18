@@ -1,0 +1,21 @@
+{
+  "command": [
+    "cc",
+    "-std=gnu11",
+    "-O1",
+    "-g",
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "-Iuserland/desktop/include",
+    "plan/ws074/tests/wpt-ready-render.c",
+    "-Lbuild/ws074-20261018/q18/client",
+    "-Wl,-rpath,$ORIGIN",
+    "-lbrowser",
+    "-o",
+    "build/ws074-20261018/q18/client/wpt-ready-render"
+  ],
+  "exit": 1,
+  "stdout": "",
+  "stderr": "plan/ws074/tests/wpt-ready-render.c: In function \u2018ready_options\u2019:\nplan/ws074/tests/wpt-ready-render.c:144:23: error: \u2018struct browser_fonts\u2019 has no member named \u2018proportional\u2019\n  144 |         options->fonts.proportional = argv[4];\n      |                       ^\nplan/ws074/tests/wpt-ready-render.c:145:23: error: \u2018struct browser_fonts\u2019 has no member named \u2018monospace\u2019\n  145 |         options->fonts.monospace = argv[5];\n      |                       ^\n"
+}

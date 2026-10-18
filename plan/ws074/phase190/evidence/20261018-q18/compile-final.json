@@ -1,0 +1,21 @@
+{
+  "command": [
+    "cc",
+    "-std=gnu11",
+    "-O1",
+    "-g",
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "-Iuserland/desktop/include",
+    "plan/ws074/tests/wpt-ready-render.c",
+    "-Lbuild/ws074-20261018/q18/client",
+    "-Wl,-rpath,$ORIGIN",
+    "-lbrowser",
+    "-o",
+    "build/ws074-20261018/q18/client/wpt-ready-render"
+  ],
+  "exit": 0,
+  "stdout": "",
+  "stderr": ""
+}

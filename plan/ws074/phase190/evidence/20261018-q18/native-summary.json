@@ -1,0 +1,189 @@
+{
+  "exception": {
+    "outcome": "pass",
+    "returncode": 0,
+    "timed_out": false,
+    "readiness": {
+      "status": "ready",
+      "complete": [
+        {
+          "nonce": "native-exception",
+          "reply": [
+            "http://127.0.0.1:34037/exception.html",
+            "complete",
+            []
+          ],
+          "ready_state": "complete",
+          "probe_removed": true
+        }
+      ],
+      "errors": [],
+      "invalid": []
+    }
+  },
+  "permanent": {
+    "outcome": "readiness_missing",
+    "returncode": 0,
+    "timed_out": false,
+    "readiness": {
+      "status": "missing",
+      "complete": [],
+      "errors": [],
+      "invalid": []
+    }
+  },
+  "parent": {
+    "outcome": "pass",
+    "returncode": 0,
+    "timed_out": false,
+    "readiness": {
+      "status": "ready",
+      "complete": [
+        {
+          "nonce": "native-parent",
+          "reply": [
+            "http://127.0.0.1:39859/parent.html",
+            "complete",
+            []
+          ],
+          "ready_state": "complete",
+          "probe_removed": true
+        }
+      ],
+      "errors": [],
+      "invalid": []
+    }
+  },
+  "rendered": {
+    "outcome": "pass",
+    "returncode": 0,
+    "timed_out": false,
+    "readiness": {
+      "status": "ready",
+      "complete": [
+        {
+          "nonce": "native-rendered",
+          "reply": [
+            "http://127.0.0.1:39997/rendered.html",
+            "complete",
+            []
+          ],
+          "ready_state": "complete",
+          "probe_removed": true
+        }
+      ],
+      "errors": [],
+      "invalid": []
+    }
+  },
+  "plain": {
+    "outcome": "pass",
+    "returncode": 0,
+    "timed_out": false,
+    "readiness": {
+      "status": "ready",
+      "complete": [
+        {
+          "nonce": "native-plain",
+          "reply": [
+            "http://127.0.0.1:45303/plain.html",
+            "complete",
+            []
+          ],
+          "ready_state": "complete",
+          "probe_removed": true
+        }
+      ],
+      "errors": [],
+      "invalid": []
+    }
+  },
+  "xml": {
+    "outcome": "readiness_missing",
+    "returncode": 0,
+    "timed_out": false,
+    "readiness": {
+      "status": "missing",
+      "complete": [],
+      "errors": [],
+      "invalid": []
+    }
+  },
+  "zero-loop": {
+    "outcome": "timeout",
+    "returncode": null,
+    "timed_out": true,
+    "readiness": {
+      "status": "missing",
+      "complete": [],
+      "errors": [],
+      "invalid": []
+    }
+  },
+  "late": {
+    "outcome": "pass",
+    "returncode": 0,
+    "timed_out": false,
+    "readiness": {
+      "status": "ready",
+      "complete": [
+        {
+          "nonce": "native-late",
+          "reply": [
+            "http://127.0.0.1:44425/late.html",
+            "complete",
+            []
+          ],
+          "ready_state": "complete",
+          "probe_removed": true
+        }
+      ],
+      "errors": [],
+      "invalid": []
+    }
+  },
+  "delayed": {
+    "outcome": "pass",
+    "returncode": 0,
+    "timed_out": false,
+    "readiness": {
+      "status": "ready",
+      "complete": [
+        {
+          "nonce": "native-delayed",
+          "reply": [
+            "http://127.0.0.1:35265/delayed.html",
+            "complete",
+            []
+          ],
+          "ready_state": "complete",
+          "probe_removed": true
+        }
+      ],
+      "errors": [],
+      "invalid": []
+    }
+  },
+  "query": {
+    "outcome": "pass",
+    "returncode": 0,
+    "timed_out": false,
+    "readiness": {
+      "status": "ready",
+      "complete": [
+        {
+          "nonce": "native-query",
+          "reply": [
+            "http://127.0.0.1:34471/query.html?value=two%20words",
+            "complete",
+            []
+          ],
+          "ready_state": "complete",
+          "probe_removed": true
+        }
+      ],
+      "errors": [],
+      "invalid": []
+    }
+  }
+}

@@ -1,0 +1,17 @@
+........F.
+======================================================================
+FAIL: test_xhtml_reference (__main__.NativeCaptureTest.test_xhtml_reference)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/awe/zedBSD-claude1/plan/ws074/tests/test-interop2025-scripted-reftests.py", line 121, in test_xhtml_reference
+    self.assertEqual(record["outcome"], "pass", record)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'readiness_missing' != 'pass'
+- readiness_missing
++ pass
+ : {'url': 'http://127.0.0.1:44829/xml.xht', 'nonce': 'native-xml', 'outcome': 'readiness_missing', 'readiness': {'status': 'missing', 'complete': [], 'errors': [], 'invalid': []}, 'image': {'file': '/home/awe/zedBSD-claude1/build/ws074-20261018/q18/controls/retained-h4xez8e2/xml.ppm', 'size': [64, 64], 'sha256': 'c0d256f46cfdcc559aff9cbc6797320e598bc7ff34558d840b8a38ccd4550a44'}, 'returncode': 0, 'timed_out': False, 'stdout': '', 'stderr': 'READY_CAPTURE budget=5000 acknowledged=0\n', 'command': ['/home/awe/zedBSD-claude1/build/ws074-20261018/q18/client/wpt-ready-render', 'http://127.0.0.1:44829/xml.xht', '/home/awe/zedBSD-claude1/build/ws074-20261018/q18/controls/retained-h4xez8e2/xml.ppm', 'WPT_CRASH_READY {"nonce":"native-xml","reply":["http://127.0.0.1:44829/xml.xht","complete",[]],"ready_state":"complete","probe_removed":true}', '/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf', '/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf', '/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf', '64', '64', '5000'], 'source': '<!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml"><head><title>XML</title></head><body><div style="position:absolute;left:0;top:0;width:64px;height:64px;background:red"></div></body></html>', 'insertion_offset': 64, 'png': {'file': '/home/awe/zedBSD-claude1/build/ws074-20261018/q18/controls/retained-h4xez8e2/xml.png', 'sha256': 'b8362f8987e192949d8121a4a2f27510005771af62b2fd2b184c38b9f112f6e9', 'rgb_sha256': 'ba1897db6a16522aca021433abf095ed845bacf941a6257e4b9a33ce98b85f45'}}
+
+----------------------------------------------------------------------
+Ran 10 tests in 5.143s
+
+FAILED (failures=1)

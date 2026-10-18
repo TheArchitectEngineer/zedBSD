@@ -2,7 +2,7 @@
 
 # ws074-p190: Interop 2025 reftest・crashtest runner coverage
 
-Status: in-progress（q18 first-ready client/scripted413 partial、q17 partial履歴保持）
+Status: uncleared（q18 required XHTML positive未達、p196前提待ち）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -225,3 +225,5 @@ clientはabsolute budgetを1ms刻みで最大5000msまでsettleし、正しい�
 fixed omitted413（script402/script_reference5/variant6）を既存static1561とdisjointに全測定する候補。native ready-time/late timer・wait解除/永久wait・fonts/2RAF/TestRendered/child/query/XHTML/計測node除去のcontrols後、pixel/fuzzy上下限/zero例外・reference別条件・mixed match/mismatchの成功leaf・cycle/depth拒否をpinned primary contractと独立対照で確認する。testdriver/remote actionやAPI未対応は非PASSとして記録し、all raw/checkpoint/PPM・PNG/RGB/hashを保持する。C全文/style/format/host/target warning0/SDK境界を適用し、target link/runtime/p100・shared projectionは後段に保持。
 
 Event ws074-p190-q18-selected-20261018: first-ready撮影がscripted pixelsの必要outputであるためclientとrunnerを依存順の2 partialへ分離。q17 sourceの全体gateと39 strict crashは履歴保持、次Queueで413を測り未実行を削らない。元90分bound・new client source限定・pinned official wait/graph/fuzzy条件を固定。承認は自走契約、共有projection pending。
+
+Event ws074-p190-q18-xhtml-blocker-and-redesign-20261018: [p190 q18 evidence](evidence/20261018-q18/README.md)。公開SDK first-ready clientはnative10対照中9/10、XHTMLのみ未対応。独立XMLでChrome3 lifecycle行/native0を確認、最上位page_load_xhtmlがscriptsを実行せずloadを発火していた。q18-i01 uncleared/i02未着手uncleared、required criterionは弱めない。p196のgeneric HTML-namespace classic inline/CDATA実行をload前へ接続する有限outputを次Queue候補にし、p196 verified output→p190同10対照→scripted413へ依存を改訂。q1046 script-free/q17既存清算は保持。native codeはこのQueueでは変更せず、source不変の1369確認済みPASSを維持。shared projection pending。
