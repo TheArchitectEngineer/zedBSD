@@ -2,7 +2,7 @@
 
 # ws244-p003 intel/ の GT の header・表
 
-Status: in-progress（2026-10-18 q1251-i01、2026-10-19 q1260 P1 で残りの照合を済ませた。cleared は Q1）
+Status: cleared（2026-10-19 Q1 判定: 段 1 の改名 521・段 2 の表示の外しと block ごとの出典（merge 6204ecf3c）、v6.19 の照合（tarball の SHA 一致・署名 Good、照合 ok 236・差 0・欠け 0、9d9e01399、merge 81bdd4395）、build warning 0）（旧: in-progress（2026-10-18 q1251-i01、2026-10-19 q1260 P1 で残りの照合を済ませた。cleared は Q1））
 
 - 親: [WS244](../ws.md)。範囲: gt-regs.h・commands.h・gt-power.h・lrc-offsets.h・mocs.h・mocs-table*.inc・workarounds.h・mcr-ranges.inc・engine-table*.inc・forcewake-ranges*.inc・pci-ids.h と、それを使う file。
 
