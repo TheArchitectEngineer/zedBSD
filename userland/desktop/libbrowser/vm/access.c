@@ -37,20 +37,17 @@ enum access_own_key_list {
 };
 
 /*
- * The state of one for-in loop: the keys it will visit, found when it
- * started, and how far it has come.
- *
- * The keys are a malloc'd array freed with the cell; a key is checked
- * again before it is visited, so one deleted meanwhile is skipped.  The
- * cell lives in a register of the loop's frame and is never a value the
- * script sees.
+ * One for-in iterator owns the current prototype level, its unprocessed own
+ * keys and the names already seen.  Native vectors remain traced between
+ * interpreter steps and are released with this private cell.
  */
 struct access_for_in {
 	struct vm_cell cell;
 	vm_value object;
-	vm_value *keys;
-	uint32_t count;
-	uint32_t index;
+	struct wb_vector keys;
+	struct wb_vector visited;
+	size_t index;
+	int loaded;
 };
 
 /* One native Get frame keeps its realm and input values alive without conservative stack scanning. */
@@ -79,9 +76,6 @@ static void access_for_in_trace(struct vm_heap *heap, struct vm_cell *cell);
 static void access_for_in_finalize(struct vm_heap *heap, struct vm_cell *cell);
 static int access_string_property(struct vm_realm *realm, struct vm_string *string, vm_value key, vm_value *result, int *found);
 static int access_refuse(struct vm_realm *realm, int strict, const char *message);
-static int access_collect(struct vm_heap *heap, struct vm_object *object, struct wb_vector *keys);
-static int access_key_listed(const struct wb_vector *keys, size_t count, vm_value key);
-static int access_is_symbol(vm_value value);
 static struct vm_object *access_primitive_prototype(struct vm_realm *realm, vm_value value);
 static int access_base_error(struct vm_realm *realm, vm_value base, vm_value key, const char *verb, const char *gerund);
 static int access_set_primitive(struct vm_realm *realm, vm_value base, vm_value key, vm_value value, int strict);
@@ -94,6 +88,8 @@ static const struct vm_cell_type access_for_in_type = {
 	"for-in", access_for_in_trace, access_for_in_finalize
 };
 
+static int access_key_listed(const struct wb_vector *keys, size_t count, vm_value key);
+static int access_is_symbol(vm_value value);
 static void access_keys_trace(struct vm_heap *heap, void *context);
 static int access_property_key_list(struct vm_realm *realm, vm_value source, struct wb_vector *keys);
 static int access_proxy_own_keys(struct vm_realm *realm, struct vm_proxy *proxy, struct wb_vector *keys);
@@ -1755,10 +1751,9 @@ vm_same_value(
 }
 
 /*
- * Starts a for-in loop over a value: lists the enumerable string keys of
- * an object and its chain (a key shadowed by a nearer property is listed
- * once, by the nearer one), or a string's indices; undefined, null and the
- * other primitives list nothing.
+ * Starts a lazy for-in loop over the boxed value and its prototype chain.
+ * Undefined and null produce an empty iterator.  Each next call checks
+ * actual descriptors before yielding an enumerable string name once.
  */
 int
 vm_for_in_start(
@@ -1767,50 +1762,67 @@ vm_for_in_start(
 	vm_value *iterator)
 {
 	struct access_for_in *state;
-	struct wb_vector keys;
-	struct vm_string *string;
-	vm_value key;
-	uint32_t index;
-	int is_object;
-	int is_string;
+	struct vm_cell *roots[3];
+	vm_value object;
+	unsigned index;
+	unsigned registered;
+	int is_cell;
 	int status;
 
-	/* The keys of the object's chain, or of the string. */
-	wb_vector_init(&keys, sizeof(vm_value));
-	is_object = vm_value_is_object(value);
-	is_string = vm_value_is_string(value);
-	status = 0;
-	if (is_object)
-		status = access_collect(realm->heap, (struct vm_object *)vm_value_as_cell(value), &keys);
-	if (is_string) {
-		string = (struct vm_string *)vm_value_as_cell(value);
-		for (index = 0; status == 0 && index < string->length; index++) {
-			key = vm_value_int32((int32_t)index);
-			status = wb_vector_push(&keys, &key);
-		}
+	/* Direct native inputs and the managed caller survive boxing and iterator allocation. */
+	memset(roots, 0, sizeof(roots));
+	if (realm->managed)
+		roots[0] = &realm->cell;
+	is_cell = vm_value_is_cell(value);
+	if (is_cell)
+		roots[1] = vm_value_as_cell(value);
+	registered = 0;
+	for (index = 0; index < 3U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+
+		/* Cleanup owns the slot only after root registration succeeds. */
+		registered++;
 	}
 
-	/* A failure leaves nothing behind. */
-	if (status != 0) {
-		wb_vector_release(&keys);
-		return status;
+	/* Nullish loop heads are empty; every other primitive includes its boxed prototype chain. */
+	object = VM_VALUE_NULL;
+	if (value != VM_VALUE_UNDEFINED && value != VM_VALUE_NULL) {
+		status = vm_to_object(realm, value, &object);
+		if (status != 0)
+			goto cleanup;
+		roots[1] = vm_value_as_cell(object);
 	}
 
-	/* The loop's state, which takes the keys over. */
+	/* Publish only a fully initialized private cell; property methods run when next first visits a level. */
 	state = vm_heap_alloc(realm->heap, &access_for_in_type, sizeof(*state));
 	if (state == NULL) {
-		wb_vector_release(&keys);
-		return ENOMEM;
+		status = ENOMEM;
+		goto cleanup;
 	}
 
-	/* The keys, from the first. */
-	state->object = value;
-	state->keys = keys.items;
-	state->count = (uint32_t)keys.count;
+	/* Both empty vectors are safe to trace and finalize before any user trap is invoked. */
+	state->object = object;
+	wb_vector_init(&state->keys, sizeof(vm_value));
+	wb_vector_init(&state->visited, sizeof(vm_value));
 	state->index = 0;
-
-	/* Succeeded: the state as the loop's iterator. */
+	state->loaded = 0;
+	roots[2] = &state->cell;
 	*iterator = vm_value_cell(state);
+
+	/* Every acquired registration retires on success and all allocation failures. */
+cleanup:
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* Report why boxing or state allocation could not finish. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the caller owns a lazy for-in iterator. */
 	return 0;
 }
 
@@ -1826,46 +1838,125 @@ vm_for_in_next(
 	int *done)
 {
 	struct access_for_in *state;
-	struct vm_property property;
+	struct vm_descriptor descriptor;
 	struct vm_string *string;
+	struct vm_cell *roots[2];
 	vm_value candidate;
-	int is_object;
+	vm_value canonical;
+	vm_value prototype;
+	unsigned index;
+	unsigned registered;
+	int is_cell;
+	int is_symbol;
+	int listed;
 	int found;
 	int status;
 
-	/* The state; anything else in the register is a fault of the code. */
+	/* Only the private iterator kind belongs in the bytecode's iterator register. */
 	*done = 1;
+	*key = VM_VALUE_UNDEFINED;
+	is_cell = vm_value_is_cell(iterator);
+	if (!is_cell)
+		return EINVAL;
 	state = (struct access_for_in *)vm_value_as_cell(iterator);
 	if (state->cell.type != &access_for_in_type)
 		return EINVAL;
 
-	/* The next key the object still has. */
-	is_object = vm_value_is_object(state->object);
-	while (state->index < state->count) {
-		candidate = state->keys[state->index];
-		state->index++;
-		if (is_object) {
-			found = vm_object_find((struct vm_object *)vm_value_as_cell(state->object), candidate, &property);
-			if (found < 0)
-				return -found;
-
-			/* A missing descriptor follows the absence path after errors have been excluded. */
-			if (!found)
-				continue;
-		}
-
-		/* The key as a string. */
-		status = vm_to_string(realm, candidate, &string);
+	/* A bare native caller relies on this operation to retain its realm and all iterator-owned state. */
+	roots[0] = NULL;
+	if (realm->managed)
+		roots[0] = &realm->cell;
+	roots[1] = &state->cell;
+	registered = 0;
+	for (index = 0; index < 2U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
 		if (status != 0)
-			return status;
+			goto cleanup;
 
-		/* Succeeded: the key. */
-		*key = vm_value_cell(string);
-		*done = 0;
-		return 0;
+		/* Cleanup may retire this root only after acquisition succeeds. */
+		registered++;
 	}
 
-	/* Succeeded: the loop is over. */
+	/* Finish one own-key list before obtaining the next actual prototype. */
+	while (state->object != VM_VALUE_NULL) {
+		if (!state->loaded) {
+			/* A fresh level collects keys once, while the state tracer retains every appended entry. */
+			wb_vector_clear(&state->keys);
+			state->index = 0;
+			status = vm_own_property_keys(realm, (struct vm_object *)vm_value_as_cell(state->object), &state->keys);
+			if (status != 0)
+				goto cleanup;
+
+			/* Subsequent next calls resume this snapshot rather than invoking OwnPropertyKeys again. */
+			state->loaded = 1;
+		}
+
+		/* A processed present name shadows prototypes even when its descriptor is not enumerable. */
+		while (state->index < state->keys.count) {
+			candidate = *(vm_value *)wb_vector_at(&state->keys, state->index);
+			state->index++;
+			is_symbol = access_is_symbol(candidate);
+			if (is_symbol)
+				continue;
+
+			/* Canonical property keys compare by value even when a trap returned a fresh non-atom string. */
+			status = vm_to_key(realm, candidate, &canonical);
+			if (status != 0)
+				goto cleanup;
+			listed = access_key_listed(&state->visited, state->visited.count, canonical);
+			if (listed)
+				continue;
+
+			/* Absence does not mark a name visited, so a prototype may still supply that name. */
+			status = vm_get_own_property(realm, (struct vm_object *)vm_value_as_cell(state->object), canonical, &descriptor, &found);
+			if (status != 0)
+				goto cleanup;
+			if (!found)
+				continue;
+
+			/* Native vector growth does not collect; only descriptor attributes remain relevant afterward. */
+			status = wb_vector_push(&state->visited, &canonical);
+			if (status != 0)
+				goto cleanup;
+			if ((descriptor.attributes & VM_PROPERTY_ENUMERABLE) == 0U)
+				continue;
+
+			/* The yielded name is a string, while its canonical key remains owned by the visited list. */
+			status = vm_to_string(realm, canonical, &string);
+			if (status != 0)
+				goto cleanup;
+			*key = vm_value_cell(string);
+			*done = 0;
+			goto cleanup;
+		}
+
+		/* A fresh prototype result transfers directly to the traced current-level slot before another callback. */
+		status = vm_get_prototype(realm, (struct vm_object *)vm_value_as_cell(state->object), &prototype);
+		if (status != 0)
+			goto cleanup;
+		state->object = prototype;
+
+		/* The completed level no longer owns remaining keys; the next iteration must load its successor. */
+		wb_vector_clear(&state->keys);
+		state->index = 0;
+		state->loaded = 0;
+	}
+
+	/* Reaching null produces the done result without consulting another property method. */
+	status = 0;
+
+	/* Return values need no allocation after the realm and iterator registrations are retired. */
+cleanup:
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* Preserve original property-method exceptions and native errno after cleanup. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: key/done describe this one iterator step. */
 	return 0;
 }
 
@@ -2145,13 +2236,12 @@ access_for_in_trace(
 	struct vm_cell *cell)
 {
 	struct access_for_in *state;
-	uint32_t index;
 
-	/* The object, then each key. */
+	/* Current prototypes and initialized native key entries remain owned between interpreter steps. */
 	state = (struct access_for_in *)cell;
 	vm_heap_mark_value(heap, state->object);
-	for (index = 0; state->keys != NULL && index < state->count; index++)
-		vm_heap_mark_value(heap, state->keys[index]);
+	access_keys_trace(heap, &state->keys);
+	access_keys_trace(heap, &state->visited);
 }
 
 /* Frees a dead for-in state's keys. */
@@ -2164,10 +2254,10 @@ access_for_in_finalize(
 
 	UNUSED_PARAMETER(heap);
 
-	/* The array of keys. */
+	/* Neither native vector outlives the private iterator cell which owns its storage. */
 	state = (struct access_for_in *)cell;
-	free(state->keys);
-	state->keys = NULL;
+	wb_vector_release(&state->keys);
+	wb_vector_release(&state->visited);
 }
 
 /* Reads a string's own property: its length, or a character by index; found says whether it has the key. */
@@ -2228,75 +2318,6 @@ access_refuse(
 	/* Strict code throws. */
 	status = vm_throw_type_error(realm, message);
 	return status;
-}
-
-/* Lists the enumerable string keys of an object and its chain, each once, the nearest first. */
-static int
-access_collect(
-	struct vm_heap *heap,
-	struct vm_object *object,
-	struct wb_vector *keys)
-{
-	struct wb_vector seen;
-	struct wb_vector own;
-	struct vm_property property;
-	vm_value key;
-	size_t index;
-	size_t seen_before;
-	int is_symbol;
-	int listed;
-	int found;
-	int status;
-
-	/* Every key met so far (enumerable or not, since a non-enumerable one still shadows). */
-	wb_vector_init(&seen, sizeof(vm_value));
-	wb_vector_init(&own, sizeof(vm_value));
-	status = 0;
-
-	/* Each object of the chain, the nearest first. */
-	for (;
-	     status == 0 && object != NULL;
-	     object = object->prototype) {
-		wb_vector_clear(&own);
-		status = vm_object_own_keys(heap, object, &own);
-		if (status != 0)
-			break;
-
-		/* Each own key: symbols are never listed, and one met on a nearer object is shadowed. */
-		seen_before = seen.count;
-		for (index = 0; status == 0 && index < own.count; index++) {
-			key = *(vm_value *)wb_vector_at(&own, index);
-			is_symbol = access_is_symbol(key);
-			if (is_symbol)
-				continue;
-			listed = access_key_listed(&seen, seen_before, key);
-			if (listed)
-				continue;
-
-			/* The key is met; it is listed when enumerable. */
-			status = wb_vector_push(&seen, &key);
-			if (status != 0)
-				break;
-			found = vm_object_get_own(object, key, &property);
-			if (found < 0) {
-				status = -found;
-				break;
-			}
-
-			/* Present descriptors retain their ordinary accessor and attribute rules. */
-			if (found && (property.attributes & VM_PROPERTY_ENUMERABLE) != 0U)
-				status = wb_vector_push(keys, &key);
-		}
-	}
-
-	/* The working lists are no longer needed. */
-	wb_vector_release(&seen);
-	wb_vector_release(&own);
-	if (status != 0)
-		return status;
-
-	/* Succeeded: the keys are listed. */
-	return 0;
 }
 
 /* Tells whether a key is among the first count keys of a list. */

@@ -782,6 +782,36 @@
  check('copy-gc-fresh-values-across-later-descriptors',function(){var p=makeReadProxy({a:1,b:2},{getOwnPropertyDescriptor:function(t,k){collectReadProxy();return Object.getOwnPropertyDescriptor(t,k);},get:function(t,k){return {value:k};}}),r={...p};return r.a.value==='a'&&r.b.value==='b';});
  check('copy-gc-rest-excluded-and-saved-output',function(){var p=makeReadProxy({a:1,b:2,c:3},{get:function(t,k){collectReadProxy();return t[k];},getOwnPropertyDescriptor:function(t,k){collectReadProxy();return Object.getOwnPropertyDescriptor(t,k);}}),{a,...r}=p;return a===1&&r.b===2&&r.c===3;});
  check('copy-gc-ordinary-fresh-getters-preserved',function(){var r={...{get a(){collectReadProxy();return {fresh:1};},get b(){collectReadProxy();return 2;}}};return r.a.fresh===1&&r.b===2;});
+ function forInReadKeys(v){var a=[];for(var k in v)a.push(k);return a.join(',');}
+ check('forin-proxy-own-enumerable-strings',function(){return forInReadKeys(makeReadProxy({b:2,a:1},{}))==='b,a';});
+ check('forin-proxy-ownkeys-order',function(){return forInReadKeys(makeReadProxy({a:1,b:2},{ownKeys:function(){return ['b','a'];}}))==='b,a';});
+ check('forin-nested-proxy',function(){return forInReadKeys(makeReadProxy(makeReadProxy({a:1},{}),{}))==='a';});
+ check('forin-symbol-keys-ignored',function(){var s=Symbol('x'),t={a:1};t[s]=2;var calls=[];var p=makeReadProxy(t,{ownKeys:function(){return [s,'a'];},getOwnPropertyDescriptor:function(t,k){calls.push(k);return Object.getOwnPropertyDescriptor(t,k);}});return forInReadKeys(p)==='a'&&calls.indexOf(s)===-1&&calls.indexOf('a')!==-1;});
+ check('forin-proxy-prototype-enumerable',function(){var p=makeReadProxy({b:2},{}),t=Object.create(p);t.a=1;return forInReadKeys(t)==='a,b';});
+ check('forin-proxy-getprototype-result',function(){var p=makeReadProxy({a:1},{getPrototypeOf:function(){return {b:2};}});return forInReadKeys(p)==='a,b';});
+ check('forin-nonenumerable-shadows-prototype',function(){var t=Object.create({a:2,b:3});Object.defineProperty(t,'a',{value:1});t.c=4;return forInReadKeys(makeReadProxy(t,{}))==='c,b';});
+ check('forin-duplicate-names-across-prototypes-once',function(){var t=Object.create({a:2,b:3});t.a=1;return forInReadKeys(makeReadProxy(t,{}))==='a,b';});
+ check('forin-fresh-string-name-canonical-shadow',function(){var t=Object.create({same:2,next:3});t.same=1;return forInReadKeys(makeReadProxy(t,{ownKeys:function(){return ['sa','me'].join('').split(',');}}))==='same,next';});
+ check('forin-numeric-name-canonical-shadow',function(){var t=Object.create({'0':2,b:3});t[0]=1;return forInReadKeys(makeReadProxy(t,{ownKeys:function(){return ['0'];}}))==='0,b';});
+ check('forin-does-not-read-accessor-values',function(){var t={get a(){throw 1;}};return forInReadKeys(makeReadProxy(t,{}))==='a';});
+ check('forin-ordinary-order-indices-and-strings',function(){var t=Object.create({z:1});t.b=1;t[2]=1;t[0]=1;t.a=1;return forInReadKeys(t)==='0,2,b,a,z';});
+ check('forin-string-primitive-includes-prototype',function(){String.prototype.forInStringMarker=1;try{return forInReadKeys('ab')==='0,1,forInStringMarker';}finally{delete String.prototype.forInStringMarker;}});
+ check('forin-number-primitive-includes-prototype',function(){Number.prototype.forInNumberMarker=1;try{return forInReadKeys(1)==='forInNumberMarker';}finally{delete Number.prototype.forInNumberMarker;}});
+ check('forin-boolean-primitive-includes-prototype',function(){Boolean.prototype.forInBooleanMarker=1;try{return forInReadKeys(true)==='forInBooleanMarker';}finally{delete Boolean.prototype.forInBooleanMarker;}});
+ check('forin-null-and-undefined-empty',function(){return forInReadKeys(null)===''&&forInReadKeys(undefined)==='';});
+ check('forin-proxy-array-keys',function(){return forInReadKeys(makeReadProxy([1,,3],{}))==='0,2';});
+ check('forin-ownkeys-error-identity',function(){var e={},p=makeReadProxy({},{ownKeys:function(){throw e;}});try{forInReadKeys(p);}catch(x){return x===e;}return false;});
+ check('forin-descriptor-error-identity',function(){var e={},p=makeReadProxy({a:1},{getOwnPropertyDescriptor:function(){throw e;}});try{forInReadKeys(p);}catch(x){return x===e;}return false;});
+ check('forin-prototype-error-identity',function(){var e={},p=makeReadProxy({},{getPrototypeOf:function(){throw e;}});try{forInReadKeys(p);}catch(x){return x===e;}return false;});
+ check('forin-revoked-proxy-throws',function(){var p=makeReadProxy({},{});revokeReadProxy(p);return raises(function(){forInReadKeys(p);},TypeError);});
+ check('forin-duplicate-ownkeys-invariant',function(){var p=makeReadProxy({},{ownKeys:function(){return ['a','a'];}});return raises(function(){forInReadKeys(p);},TypeError);});
+ check('forin-ordinary-enumerable-own-descriptor',function(){var t={a:1};Object.defineProperty(t,'b',{value:2});return forInReadKeys(t)==='a';});
+ check('forin-proxy-nonstring-key-rejected',function(){var p=makeReadProxy({},{ownKeys:function(){return [1];}});return raises(function(){forInReadKeys(p);},TypeError);});
+ check('forin-gc-in-ownkeys-and-descriptor',function(){var p=makeReadProxy({a:1,b:2},{ownKeys:function(){collectReadProxy();return ['a','b'];},getOwnPropertyDescriptor:function(t,k){collectReadProxy();return Object.getOwnPropertyDescriptor(t,k);}});return forInReadKeys(p)==='a,b';});
+ check('forin-gc-fresh-prototype-proxy',function(){var p=makeReadProxy({a:1},{getPrototypeOf:function(){collectReadProxy();return makeReadProxy({b:2},{getOwnPropertyDescriptor:function(t,k){collectReadProxy();return Object.getOwnPropertyDescriptor(t,k);}});}});return forInReadKeys(p)==='a,b';});
+ check('forin-gc-revocation-during-descriptor-eventually-throws',function(){var p=makeReadProxy({a:1,b:2},{getOwnPropertyDescriptor:function(t,k){revokeReadProxy(p);collectReadProxy();return Object.getOwnPropertyDescriptor(t,k);}});return raises(function(){forInReadKeys(p);},TypeError);});
+ check('forin-gc-fresh-name-remains-shadowed',function(){var t=Object.create({same:2,next:3});t.same=1;var p=makeReadProxy(t,{ownKeys:function(){return [['sa','me'].join('')];},getOwnPropertyDescriptor:function(t,k){collectReadProxy();return Object.getOwnPropertyDescriptor(t,k);}});return forInReadKeys(p)==='same,next';});
+ check('forin-gc-ordinary-loop-body-state',function(){var a=[],t={x:1,y:2};for(var k in t){collectReadProxy();a.push(k);}return a.join(',')==='x,y';});
  console.log('read-proxy controls: '+(count-failed)+'/'+count);
  return failed===0;
 })()

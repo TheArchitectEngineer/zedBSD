@@ -16,6 +16,13 @@
 #include <stdio.h>
 #include <string.h>
 
+/* One for-in probe observes only integer addresses and actual callback counts during a direct API call. */
+struct for_in_observation {
+	struct vm_heap *heap;
+	uintptr_t addresses[3];
+	unsigned calls;
+};
+
 /* One direct copying probe observes live cells through integer addresses without creating collector edges. */
 struct spread_copy_observation {
 	struct vm_heap *heap;
@@ -72,6 +79,16 @@ struct extent_observation {
 	uintptr_t addresses[4];
 	unsigned collections;
 	unsigned mode;
+};
+
+/* Only for_in_pressure activates this synchronous observer, which supplies no collector ownership. */
+static struct for_in_observation for_in_case;
+
+static int for_in_descriptor(struct vm_object *object, vm_value key, struct vm_property *property);
+
+/* This pure native descriptor policy collects and returns negative errno without running script. */
+static const struct vm_native_operations for_in_operations = {
+	for_in_descriptor, NULL, NULL, NULL, NULL
 };
 
 /* Only spread_copy_pressure activates this synchronous observation, which never retains managed input cells. */
@@ -232,6 +249,7 @@ static int proxy_revoke(struct vm_realm *realm, vm_value receiver, const vm_valu
 static int proxy_get_receiver(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int proxy_collect(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int spread_copy_value(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int for_in_pressure(struct page *page);
 static int spread_copy_pressure(struct page *page);
 static int proxy_parse_pressure(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int proxy_script(struct vm_realm *realm, const char *source, vm_value *answer);
@@ -398,6 +416,12 @@ main(
 	if (status != 0)
 		goto cleanup;
 	puts("native object copy collection and reclamation: passed");
+
+	/* Direct start and next calls must own their managed caller, private state and source without embedding roots. */
+	status = for_in_pressure(page);
+	if (status != 0)
+		goto cleanup;
+	puts("native for-in collection and reclamation: passed");
 
 	/* Observe actual native graph retention after the shared protocol controls. */
 	status = proxy_lifetime(page);
@@ -4995,5 +5019,184 @@ cleanup:
 		return status;
 
 	/* Succeeded: errno and refusal retained all participants only as long as the API needed them. */
+	return 0;
+}
+
+/* Collect while the private for-in state and managed direct caller are the only production owners. */
+static int
+for_in_descriptor(
+	struct vm_object *object,
+	vm_value key,
+	struct vm_property *property)
+{
+	struct vm_cell *cell;
+	unsigned index;
+
+	UNUSED_PARAMETER(object);
+	UNUSED_PARAMETER(key);
+	UNUSED_PARAMETER(property);
+
+	/* No allocation after collection can reuse a dead participant address before these liveness checks. */
+	vm_heap_collect(for_in_case.heap);
+	for (index = 0; index < 3U; index++) {
+		cell = vm_heap_find_cell(for_in_case.heap, for_in_case.addresses[index]);
+		if (cell == NULL)
+			return -EFAULT;
+	}
+
+	/* The callback count records a policy that observed all three actual live participants. */
+	for_in_case.calls++;
+
+	/* Deliberately preserve a native descriptor errno after observing successful ownership. */
+	return -EACCES;
+}
+
+/* Verify allocation-time start ownership and callback-time next ownership with all setup roots cleared. */
+static int
+for_in_pressure(
+	struct page *page)
+{
+	struct vm_realm *caller;
+	struct vm_object *source;
+	struct vm_cell *roots[3];
+	struct vm_cell *pressure;
+	struct vm_cell *cell;
+	struct vm_heap_stats before;
+	struct vm_heap_stats after;
+	vm_value iterator;
+	vm_value key;
+	vm_value value;
+	unsigned index;
+	unsigned registered;
+	int done;
+	int outcome;
+	int status;
+
+	/* Register empty setup slots before creating an independent managed caller and a source without realm backedges. */
+	memset(roots, 0, sizeof(roots));
+	memset(&for_in_case, 0, sizeof(for_in_case));
+	for_in_case.heap = page->heap;
+	registered = 0;
+	for (index = 0; index < 3U; index++) {
+		status = vm_heap_add_root(page->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+
+		/* Cleanup owns only successfully acquired registry slots. */
+		registered++;
+	}
+
+	/* The independent realm has no source-object or embedding owner after setup finishes. */
+	status = vm_realm_create_managed(page->heap, &caller);
+	if (status != 0)
+		goto cleanup;
+	roots[0] = &caller->cell;
+	source = vm_object_create(page->heap, NULL);
+	if (source == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* A plain stored own key is visible to OwnPropertyKeys without invoking the later descriptor policy. */
+	roots[1] = &source->cell;
+	key = vm_key_from_ascii(page->heap, "x");
+	if (key == VM_VALUE_EMPTY) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* The initial ordinary property creates an own-key snapshot before the pure error policy is installed. */
+	value = vm_value_int32(1);
+	status = vm_object_define(page->heap, source, key, value, VM_PROPERTY_DEFAULT);
+	if (status != 0)
+		goto cleanup;
+	source->native_operations = &for_in_operations;
+	for_in_case.addresses[0] = (uintptr_t)caller;
+	for_in_case.addresses[1] = (uintptr_t)source;
+
+	/* The next iterator-cell allocation must collect after the direct start operation accepts ownership. */
+	vm_heap_collect(page->heap);
+	pressure = vm_heap_alloc(page->heap, &proxy_pressure_type, 8U * 1024U * 1024U);
+	if (pressure == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* No embedding slot or conservative C stack can retain the bare caller and source now. */
+	for (index = 0; index < 3U; index++)
+		roots[index] = NULL;
+	vm_heap_stats(page->heap, &before);
+	status = vm_for_in_start(caller, vm_value_cell(source), &iterator);
+	vm_heap_stats(page->heap, &after);
+	if (status != 0)
+		goto cleanup;
+	/* Start must cross the real allocation threshold with its direct inputs retained. */
+	if (after.collections <= before.collections) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* The newly returned private state has no embedding root before next accepts it. */
+	for_in_case.addresses[2] = (uintptr_t)vm_value_as_cell(iterator);
+	vm_heap_stats(page->heap, &before);
+	outcome = vm_for_in_next(caller, iterator, &key, &done);
+	vm_heap_stats(page->heap, &after);
+	if (outcome != EACCES) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* The descriptor error must originate from exactly one actual native policy invocation. */
+	if (for_in_case.calls != 1U) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* Next must observe another collection while its private state is its only source owner. */
+	if (after.collections <= before.collections) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* Native descriptor failure must leave the managed caller outside any property-recursion frame. */
+	if (caller->property_depth != 0U) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* The error path leaves all three actual cells live until this post-call collection. */
+	for (index = 0; index < 3U; index++) {
+		cell = vm_heap_find_cell(page->heap, for_in_case.addresses[index]);
+		if (cell == NULL) {
+			status = 1;
+			goto cleanup;
+		}
+	}
+
+	/* The iterator finalizer releases both vectors and no root may keep any participant alive afterward. */
+	vm_heap_collect(page->heap);
+	for (index = 0; index < 3U; index++) {
+		cell = vm_heap_find_cell(page->heap, for_in_case.addresses[index]);
+		if (cell != NULL) {
+			status = 1;
+			goto cleanup;
+		}
+	}
+
+	/* Both ownership intervals and final graph reclamation were actually observed. */
+	status = 0;
+
+cleanup:
+	memset(&for_in_case, 0, sizeof(for_in_case));
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(page->heap, &roots[registered]);
+	}
+
+	/* Preserve failures after retiring all temporary registry slots. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: start and next retained their direct inputs only as long as required. */
 	return 0;
 }
