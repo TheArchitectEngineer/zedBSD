@@ -1,0 +1,18 @@
+{
+  "old752_prefix_unchanged": true,
+  "new28_genuine_all_match": true,
+  "precode20_final_native_and_chrome_PASS": true,
+  "precode_gc_returncodes": [
+    1,
+    1,
+    1,
+    0
+  ],
+  "all4_gc_final_PASS": true,
+  "three_precode_gc_cases_functional_fail_not_SIGSEGV": true,
+  "ordinary_gc_case_precode_already_PASS": true,
+  "native_direct_copy_two_error_modes_actual_collection_and_four_participant_reclaim": true,
+  "fresh_payload_sentinel_excludes_address_reuse": true,
+  "old_independent_native_weak_gc_fixture_not_measured": true,
+  "stored_symbol_reclamation_not_claimed": true
+}

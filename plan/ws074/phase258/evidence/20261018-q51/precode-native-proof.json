@@ -1,0 +1,28 @@
+{
+  "returncode": 1,
+  "failed": [
+    "copy-spread-proxy-own-data",
+    "copy-spread-nested-proxy-own-data",
+    "copy-spread-symbol-and-string-keys",
+    "copy-spread-descriptor-get-interleaving",
+    "copy-rest-excluded-before-descriptor",
+    "copy-rest-symbol-excluded-before-descriptor",
+    "copy-spread-actual-getter-receiver",
+    "copy-spread-deletion-before-next-descriptor",
+    "copy-spread-enumerability-change-not-prefiltered",
+    "copy-spread-revoked-before-ownkeys",
+    "copy-spread-ownkeys-error-identity",
+    "copy-spread-descriptor-error-identity",
+    "copy-spread-value-error-identity",
+    "copy-spread-duplicate-ownkeys-invariant",
+    "copy-spread-own-definition-bypasses-prototype-setter",
+    "copy-spread-proto-name-does-not-set-prototype",
+    "copy-rest-empty-exclusion-list",
+    "copy-rest-excluded-inherited-value",
+    "copy-spread-no-has-or-set-consulted",
+    "copy-spread-synthetic-key-and-value"
+  ],
+  "control": [
+    "read-proxy controls: 756/776"
+  ]
+}

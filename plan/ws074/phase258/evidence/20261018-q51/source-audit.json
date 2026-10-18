@@ -1,0 +1,37 @@
+{
+  "product_fixture_changes_bounded_to_selected_functions_and_private_observation": true,
+  "all_other_engine_source_and_headers_unchanged": true,
+  "VM_native_operations_structure_definition_comment_unchanged": true,
+  "old752_prefix_unchanged": true,
+  "added_conditions": 28,
+  "full_changed_functions": {
+    "userland/desktop/libbrowser/vm/spread.c": [
+      "vm_object_rest",
+      "spread_copy",
+      "spread_trace_keys"
+    ],
+    "plan/ws074/tests/host-proxy-read.c": [
+      "main",
+      "spread_copy_value",
+      "spread_copy_define",
+      "spread_copy_pressure"
+    ]
+  },
+  "raw_allowed_cleanup": 69,
+  "only_single_forward_cleanup": true,
+  "other_checker_findings": 0,
+  "selected_normal_prototypes_after_all_tables": true,
+  "management_comments_removed": 2,
+  "manual_review": [
+    "full C standard declaration groups/multiline fn/normal prototypes/public-static ordering/semantic paragraphs/calls outside conditions/root protocol counters documented",
+    "CopyDataProperties owns managed realm/direct target/source/excluded/fresh payload before allocations or callbacks, ToObject result rooted, keyvector tracer starts empty before actual OwnKeys",
+    "each key exclusion\u2192actual GetOwn\u2192enumerability\u2192Get\u2192full default data actual Define, source changes affect later descriptors; false Define TypeError retains fresh payload through later GC",
+    "no heap-array materialization needed; native vector marks all initialized keys including unvisited fresh Symbols during earlier descriptor/exclusion calls",
+    "rest wrapper roots inputs/managed realm/result placeholder before first output allocation, result handed to caller before retiring wrapper",
+    "native direct-copy cases use managed caller with no source/target realm backedge, foreign page-realm getter creates fresh payload never cached in source",
+    "pure target native policy actual collection checks4 weak addresses; errno EACCES vs refusal then8MiB pressure strictly later TypeError collection; sentinel excludes weak-address reuse and final collection reclaims all4 participants",
+    "test key is ordinary interned x; no stored Symbol reclamation claim; shared fresh unvisited Symbol control checks survival only, known shape-cache retention remains qualified",
+    "old28 shared precode: first24 20FAIL; GC3 functionalFAIL/1alreadyPASS, not precode GC crash; old independent C weak fixture not measured",
+    "other iteration/spread_is_excluded/for-in unchanged; width/resource/source-context/call/global/whole acceptance pending"
+  ]
+}

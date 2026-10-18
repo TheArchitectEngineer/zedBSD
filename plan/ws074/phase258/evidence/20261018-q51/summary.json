@@ -1,0 +1,253 @@
+{
+  "source_commit": "1c53b3ebe5c5cb94b022c99686660a335cb428bf",
+  "selection": "8a890c368",
+  "source_hash_count": 317,
+  "conditions": 780,
+  "native_pass": 780,
+  "chrome_pass": 778,
+  "new_conditions": 28,
+  "precode_functional_conditions_failed": 20,
+  "precode_gc_isolated_returncodes": [
+    1,
+    1,
+    1,
+    0
+  ],
+  "final_all28_genuine_chrome_match": true,
+  "old752_prefix_unchanged": true,
+  "all_chrome_equality": false,
+  "oracle": "q36 classifier filter and q43 huge2 differences retained; all new28 genuine result rows match; Chrome collection bridge is a no-op",
+  "full_changed_C": {
+    "product_fixture_changes_bounded_to_selected_functions_and_private_observation": true,
+    "all_other_engine_source_and_headers_unchanged": true,
+    "VM_native_operations_structure_definition_comment_unchanged": true,
+    "old752_prefix_unchanged": true,
+    "added_conditions": 28,
+    "full_changed_functions": {
+      "userland/desktop/libbrowser/vm/spread.c": [
+        "vm_object_rest",
+        "spread_copy",
+        "spread_trace_keys"
+      ],
+      "plan/ws074/tests/host-proxy-read.c": [
+        "main",
+        "spread_copy_value",
+        "spread_copy_define",
+        "spread_copy_pressure"
+      ]
+    },
+    "raw_allowed_cleanup": 69,
+    "only_single_forward_cleanup": true,
+    "other_checker_findings": 0,
+    "selected_normal_prototypes_after_all_tables": true,
+    "management_comments_removed": 2,
+    "manual_review": [
+      "full C standard declaration groups/multiline fn/normal prototypes/public-static ordering/semantic paragraphs/calls outside conditions/root protocol counters documented",
+      "CopyDataProperties owns managed realm/direct target/source/excluded/fresh payload before allocations or callbacks, ToObject result rooted, keyvector tracer starts empty before actual OwnKeys",
+      "each key exclusion\u2192actual GetOwn\u2192enumerability\u2192Get\u2192full default data actual Define, source changes affect later descriptors; false Define TypeError retains fresh payload through later GC",
+      "no heap-array materialization needed; native vector marks all initialized keys including unvisited fresh Symbols during earlier descriptor/exclusion calls",
+      "rest wrapper roots inputs/managed realm/result placeholder before first output allocation, result handed to caller before retiring wrapper",
+      "native direct-copy cases use managed caller with no source/target realm backedge, foreign page-realm getter creates fresh payload never cached in source",
+      "pure target native policy actual collection checks4 weak addresses; errno EACCES vs refusal then8MiB pressure strictly later TypeError collection; sentinel excludes weak-address reuse and final collection reclaims all4 participants",
+      "test key is ordinary interned x; no stored Symbol reclamation claim; shared fresh unvisited Symbol control checks survival only, known shape-cache retention remains qualified",
+      "old28 shared precode: first24 20FAIL; GC3 functionalFAIL/1alreadyPASS, not precode GC crash; old independent C weak fixture not measured",
+      "other iteration/spread_is_excluded/for-in unchanged; width/resource/source-context/call/global/whole acceptance pending"
+    ]
+  },
+  "native_gates": [
+    {
+      "label": "proxy-read",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q51/final/engine/host-proxy-read",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q51/final/engine/proxy-read.js"
+      ],
+      "returncode": 0,
+      "seconds": 0.5
+    },
+    {
+      "label": "delegation",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q51/final/engine/host-generator-delegation"
+      ],
+      "returncode": 0,
+      "seconds": 0.5
+    },
+    {
+      "label": "interpreter",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q51/final/engine/host-interp"
+      ],
+      "returncode": 0,
+      "seconds": 0.7
+    },
+    {
+      "label": "vm-factory",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q51/final/engine/host-vm-factory"
+      ],
+      "returncode": 0,
+      "seconds": 0.8
+    },
+    {
+      "label": "dom",
+      "command": [
+        "python3",
+        "plan/ws074/tests/run-dom-tests.py",
+        "--program",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q51/final/engine/browser"
+      ],
+      "returncode": 0,
+      "seconds": 3.1
+    },
+    {
+      "label": "cssom",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q51/final/engine/host-cssom"
+      ],
+      "returncode": 0,
+      "seconds": 3.2
+    },
+    {
+      "label": "cssom-mutation",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q51/final/engine/host-cssom-mutation"
+      ],
+      "returncode": 0,
+      "seconds": 3.3
+    },
+    {
+      "label": "marks",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q51/final/engine/host-performance-marks"
+      ],
+      "returncode": 0,
+      "seconds": 3.4
+    },
+    {
+      "label": "observer",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q51/final/engine/host-performance-observer"
+      ],
+      "returncode": 0,
+      "seconds": 3.5
+    },
+    {
+      "label": "error-events",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q51/final/engine/host-error-events"
+      ],
+      "returncode": 0,
+      "seconds": 3.7
+    },
+    {
+      "label": "error-reporting",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q51/final/engine/host-error-reporting"
+      ],
+      "returncode": 0,
+      "seconds": 3.8
+    },
+    {
+      "label": "acid",
+      "command": [
+        "python3",
+        "plan/ws074/tests/run-acid-tests.py",
+        "--program",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q51/final/engine/browser",
+        "--out",
+        "build/ws074-20261018/q51/final/acid"
+      ],
+      "returncode": 0,
+      "seconds": 8.4
+    }
+  ],
+  "GC": [
+    "native direct API: EACCES and Define refusal; actual collection finds bare managed caller/target/source and fresh getter result live with setup roots cleared",
+    "refusal leaves8MiB inert pressure for strictly later TypeError allocation collection after inner Define retires; fresh payload sentinel excludes weak address reuse",
+    "after API return all4 participants are live, then actual collection reclaims all4; getter belongs to page realm and supplies no backedge to the managed caller",
+    "new shared unvisited fresh Symbol survives earlier descriptor GC; stored Symbol shape-cache reclamation not claimed",
+    "old shared GC3 functional failures/1alreadyPASS, no precode SIGSEGV; old independent C weak fixture not measured"
+  ],
+  "acid3_score": 100,
+  "acid3_inventory": 100,
+  "acid3_pixels": 0,
+  "acid2_existing_pixels": 873,
+  "original_webidl_q38_same_callbacks": true,
+  "additional_validator_negative_rule_callbacks": [
+    {
+      "name": "original interface validator yields missing Exposed rule",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "original namespace validator yields missing Exposed rule",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "validator rule detection does not mask intentional failure",
+      "status": 1,
+      "message": "assert_equals: intentional failure after original validator rule expected 0 but got 1"
+    }
+  ],
+  "harness_reused_from": "q49",
+  "harness_last_measured_seconds": 356.7,
+  "harness_current_pair_not_measured": true,
+  "harness": {
+    "completed": 1508,
+    "counts": {
+      "fail": 955,
+      "harness_error": 13,
+      "pass": 494,
+      "no_completion": 20,
+      "no_output": 24,
+      "multiple_completions": 2
+    },
+    "callbacks": {
+      "1": 20642,
+      "0": 11540,
+      "3": 14
+    },
+    "whole_pass_losses": [],
+    "whole_pass_gains": [],
+    "old_pass_callback_losses": [],
+    "changes": []
+  },
+  "harness_archive_reference": {
+    "path": "../20261018-q49/harness-all-raw.tar.gz",
+    "sha256": "5127febd2683798dd849e067f4999f96d78e1b36c1ea152f84b35bf52e6535c5",
+    "members": 1676
+  },
+  "official_score": 1482,
+  "denominator": 3805,
+  "held": 0,
+  "unattempted": 275,
+  "static_scripted_crash_reused": "q28",
+  "current_pair_images_crash_not_measured": true,
+  "archives": {
+    "native-oracle-and-build-raw": {
+      "sha256": "0a8156b8c909f5104fe24903a77c5fccb48dc11cd0a241dd1ce4740a4986e2ea",
+      "members": 106,
+      "all_members_readback": true
+    }
+  },
+  "main_integration": {
+    "source": "1c53b3ebe",
+    "main_contains_source": true,
+    "no_master_in_source": true,
+    "source_paths": [
+      "plan/ws074/tests/host-proxy-read.c",
+      "plan/ws074/tests/proxy-read.js",
+      "userland/desktop/libbrowser/vm/spread.c"
+    ],
+    "no_conflicts": true,
+    "source_parents": "1c53b3ebe c6f7bb84b"
+  },
+  "remaining": [
+    "for-in lazy own-key/prototype/visited state",
+    "private excluded-array ToKey/length contract and general uint32/int32 storage/resource bounds",
+    "newer JSON source-context/RawJSON/Species/newtarget/callable Proxy/primitive Set/outer instanceof/BoundFunction/call/construct/global Proxy/revocable/Reflect",
+    "immutable prototype/typed backing/p100/full target/WS acceptance",
+    "master.md not edited; shared projections pending Q1"
+  ]
+}

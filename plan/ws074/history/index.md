@@ -1,5 +1,9 @@
 # WS074 lane の Past Log
 
+## ws074-q20261018-51 / CopyDataProperties/rest consumer
+
+CopyDataProperties/rest partial clear、native780/Chrome778既知huge2、新28 genuine一致・precode20FAIL/GC3functionalFAIL改善・direct native2 modes実GC/4participant回収。最新全1508 q49再利用・q51未測定・1482/3805。main統合・master編集無し。[exact history](ws074-q20261018-51.md)。
+
 ## ws074-q20261018-50 / JSON parse/reviver consumer
 
 JSON.parse/reviver partial clear、native752/Chrome750既知huge2、新26 genuine一致・precode16FAIL/GC1SIGSEGV解消・dynamic text threshold GC。最新全1508 q49再利用・q50未測定・1482/3805。main統合・master編集無し。[exact history](ws074-q20261018-50.md)。
@@ -119,9 +123,5 @@ Follow-up: q23 i01/i02 clearanceは疎checkoutのIDL未配信が判明しunclear
 ## ws074-q20261018-22（2026-10-18）
 
 [履歴](ws074-q20261018-22.md)。harness HTTP serve_foreverの停止確認pollだけを0.5→0.01秒へ変更。既存分類5対照通過、同じq21 frozen pairで全1491を実測し全ID/whole/returncode/全callback・completion status/項目順/メッセージが完全同値。493 PASS・11538 PASS/20219 FAIL/14 NOTRUN維持、後退/改善/欠損/追加/順序差/メッセージ差0。実測920.9→226.8秒（4.0604倍、694.1秒短縮）。raw/gzip/checkpoint/全tar member/read-back、fixed corpus/font/source/pair hash一致。 i01 scoped partial cleared、p189 wholeの未attempt292/環境/API/全1783は未達。browser C/WPT/他runner/判定基準/分母は不変。確認済み1481/3805（38.922470%）、PASS増分0。static/scripted/crash/DOM/C/Acidはbyte同一pairのq21証拠を再利用し不要な再測定を省略。shared projection/GitHub/target full/p100/WS未達、push無し。 次はplain Window generated17の正しいserver環境を選定候補へ。
-
-## ws074-q20261018-21（2026-10-18）
-
-[履歴](ws074-q20261018-21.md)。flex-basis grammar/computed/content baseをnative修正。固定3 IDは27/27 callback PASS、2 whole/7 callback改善（parsing3は5、shorthandは2）。全1491 harnessは493 PASS（+2）・11538 PASS/20219 FAIL/14 NOTRUN、old whole/callback後退・欠損・追加・順序変更0。全static1561は844 PASS/717 FAIL（+5）・old839後退0、画素変更は改善5 IDだけ。5件の旧/新16 capturesを無改変pinned comparatorでも全FAIL→PASS確認。scripted413は105 PASS/283 FAIL/5 unsupported/20 missing・805 captures全RGB不変/388 edge primary一致、strict48は39 PASS/9 missing維持。確認済み1481/3805（38.922470%）、genuine native whole改善7。未attempt harness292と環境/API/native残差は分母保持。 host scoped partial cleared、p252 wholeの受け入れは今回のhost partialだけで認定せずuncleared。replaced/一般intrinsic/縦書き・negative inner base等の既存別未実装面とtarget full link/runtimeも保持。p240/p241/p189/p190/WS全体やp100を先取りclearしない。指定calc canonical順序の既存差は未修正。shared projection/GitHub pending、push無し。 独立39/DOM36/CSSOM12+12/ratio40・C/host/target warning0/Acid非増加。final whitespaceはtarget object/host runtime sections一致を証拠へ保存、whole受入と実行subsetを区別。次はp189停止待機短縮候補。
 
 以前のindex: [early 2026-10-18](early-20261018.md)。過去standing Queue投影: [原文archive](../queue-archive-through-q30.md)。

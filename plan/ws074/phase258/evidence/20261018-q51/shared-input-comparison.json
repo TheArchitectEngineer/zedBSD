@@ -1,0 +1,14 @@
+{
+  "userland/desktop/libbrowser/vm/spread.c": {
+    "old": "6590f625cd4106fba94962a7b2e310ce9e7b5eb819ad40ceb714130639ab3f5a",
+    "new": "6c9c456c40054bf5bf88652d618458020766a06f630767b7f1fed195fca7f5cc"
+  },
+  "plan/ws074/tests/host-proxy-read.c": {
+    "old": "6a12918a607a42f711222b3ff01ac9cf8461c1cb02784a21ce3bd10316ca641f",
+    "new": "77df937e6fcda51c402eaa01d368e7709c29d765f9ad3bf3585dbec9a5b96b7e"
+  },
+  "plan/ws074/tests/proxy-read.js": {
+    "old": "a2a466bc09364f9d9da6d523ae04b86de0419384f295abcbff6882cbb5d3a175",
+    "new": "c4967d01ff96898049c90d67ac4192036d670da4c1f87b2e40551188f39b24e3"
+  }
+}

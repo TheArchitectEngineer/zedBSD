@@ -1,0 +1,34 @@
+[
+  {
+    "case": "copy-gc-unvisited-fresh-symbol-key",
+    "returncode": 1,
+    "control": [
+      "console: read-proxy copy-gc-unvisited-fresh-symbol-key: FAIL",
+      "console: read-proxy controls: 0/1"
+    ]
+  },
+  {
+    "case": "copy-gc-fresh-values-across-later-descriptors",
+    "returncode": 1,
+    "control": [
+      "console: read-proxy copy-gc-fresh-values-across-later-descriptors: FAIL",
+      "console: read-proxy controls: 0/1"
+    ]
+  },
+  {
+    "case": "copy-gc-rest-excluded-and-saved-output",
+    "returncode": 1,
+    "control": [
+      "console: read-proxy copy-gc-rest-excluded-and-saved-output: FAIL",
+      "console: read-proxy controls: 0/1"
+    ]
+  },
+  {
+    "case": "copy-gc-ordinary-fresh-getters-preserved",
+    "returncode": 0,
+    "control": [
+      "console: read-proxy copy-gc-ordinary-fresh-getters-preserved: PASS",
+      "console: read-proxy controls: 1/1"
+    ]
+  }
+]

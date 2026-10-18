@@ -2,7 +2,7 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: in-progress（q51 object spread/rest partial、whole Proxy未達）
+Status: uncleared（q51 spread/rest partial cleared、whole Proxy未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
@@ -11,7 +11,7 @@ Origin: p189/q29 original WebIDL2 parseがProxy未定義で停止。
 
 Objective / own criteria: native managed Proxyを実object internal methodsへ接続し、constructor/revocableと各internal operationのtrap/fallback/invariant/receiver/revocation/callability/GCを正しく実行する。original WebIDL2 actual parse/validatorに必要なget/set/array behaviorを通常APIで提供し、independent controls/原WPTを通す。部分read stageだけでwholeをclearしない。
 Design: vm_native_operationsはscript-free heap interfaceのまま保持。Proxyにはmanaged target/handler recordを持たせ、scriptを実行可能なrealm-aware access/internal methodからtrapを呼ぶ。opaque JS constructor公開前に必要なoperationを段階的に整える。各段階は自走承認に基づく新finite Queueで正確に選定する。
-Current state: q50 JSON.parse/reviver partial clear、native752/Chrome750既知huge2差、新26一致・precode16FAIL/GC1SIGSEGV解消。dynamic fresh coercion text後actual threshold collection確認。全1508最新q49再利用・q50未測定・1482/3805。source-context/幅/for-in/call/global/p100/whole未達、main統合・master編集無し。
+Current state: q51 spread/rest partial clear、native780/Chrome778既知huge2差、新28一致・precode20FAILとGC3functionalFAIL改善。direct copy2 native error modes/実GC保持・4participant回収。全1508最新q49再利用・q51未測定・1482/3805。for-in/call/global/p100/whole未達、main統合・master編集無し。
 Standards: Guardrail/C全文/browser component全文、簡約版無し。一次 https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-proxy-object-internal-methods-and-internal-slots-get-p-receiver 。既存p100がWS全source near-final conformanceを所有し、本partialはnew/changed scopeの全文適合を検証。
 Verification/bounds/affected components: q30 snapshotの通り。private object kind/cell/newborn/trace/revokeとactual receiver/trap/invariant/GCをnative/Chromeで確認し、ordinary whole/callback PASSを守る。target single-source compileのみとfull target runtimeを区別。未達はunclearedとresume。
 
@@ -322,3 +322,18 @@ Raw archive107 members SHA2564bae3961e274c47e6d12546483995e5a78feea452751bb8f2da
 [証拠](evidence/20261018-q50/README.md)。次finite scope未選定。
 
 Event ws074-p258-q51-selection: CopyDataProperties/rest actual OwnKeys/GetOwn/Define・exclusion順/GC所有partialを選定。for-in/幅/global等whole未達。[exact Queue](../queue.md)。main統合・master編集無し。
+
+## q51 CopyDataProperties/rest result / resume
+
+Event ws074-p258-q51-partial-cleared-20261018: q51 CopyDataProperties/object rest scoped partial cleared。selection WIP8a890c368/source WIP1c53b3ebe。spread_copyをactual OwnKeys→per-key excluded判定→actual GetOwn→enumerableならGet→actual full default data Defineへ接続。restの既消費keyはdescriptor以前skip、Symbolもcopy、先行getterの削除/属性変化を後続descriptorで観測する。JSONの全descriptor snapshot方式を誤適用しない。Define falseはTypeError、native errno/元throwは伝播し、inherited settersを実行しない。
+private key Array materializationを廃して空native vectorからtracer登録し、全initialized keysをcollection前から保持。未訪問fresh Symbolは前のdescriptor callback実GCを越える。managed realm/target/converted source/excluded/fresh getter valueを独立root、payloadはinner Define退役後の拒否error生成まで保持。vm_object_restはsource/excluded/managed realm/output placeholderを最初のallocation前に登録して全exitで退役。selected normal helper prototypesを全table後へ、top2管理comment参照除去。他iterator/call/for-in/spread_is_excludedとVM headers/native_operations struct定義/commentは不変。
+old752 prefix同一、新28 native/genuine Chrome結果一致。precode q50 frozen first24条件756/776（追加20FAIL）、隔離4 GC returncodes1,1,1,0。最初3はProxy列挙未接続によるfunctional FAILでprecode GC crashではなく、ordinary GC1は既にPASS。final native780/Chrome778は既知q43huge2差だけ、q36negative-zero classifier filter継承、全pure genuine equalityではない。native collectは実GC/C stack scan無し、Chrome collectはno-opで結果を対照。
+新direct VM CopyDataProperties native fixture2 modesはmanaged caller/target/source/fresh getter outputの4 weak addressをobserve。target/sourceはcaller realmへbackedgeを持たず、getterはforeign page realm所属でfresh objectをsourceに保存しない。setup rootを全NULLにしてnative APIへ直接渡し、pure target define policy実GC中に4participant生存を確認。mode0 EACCES、mode1 false拒否→8MiB inert pressure→inner Define退役後のTypeError allocationでstrictly later実GC、status/counterを検証。fresh payload sentinelでweak address再利用の誤判定を排除し、API後4participant生存→後続実collectで4全回収。stored Symbolをfixtureに使わず既知shape-cache保持を偽って解消しない。旧independent native weak fixtureは未測定で、旧GC failure修復/全Symbol回収と主張しない。
+full changed7 C functions manual＋clang-format19/checked style許可single forward cleanup69・other0、唯一cleanup/全jump前方確認。full host final-reviewed warning0、その後fixture tableの書式だけを既存形へ戻して同じ223 engine objects/host flags/libraryリストを照合したselected-helper再link warning0。q02 literal vm/spread1 Csource -oだけ変更target warning0、versions実取得、final source317 hashes凍結照合。途中のsource-audit helperがformatterのtable閉じbrace位置を認識せず失敗したが、tableを既存形へ戻しfinal scope audit成功。product/fixture本体の未選定tokens不変を確認。
+focused proxy/delegation10/interp45/factory56/DOM41/CSSOM12+12/marks7/observer10/ErrorEvent9/ErrorReporting19/Acid全exit0、Acid3 score/inventory100/pixel0、Acid2既存873。元WebIDL4positive＋intentionalnegative source/callback q38同一、validator require-exposed2と意図的FAIL native/Chrome同一。
+今回はexact選定どおりfocusedだけ。全1508最新q49 356.7秒（q48全whole/callback/completion同一）再利用、q51pair全census未測定でwhole gain/同値を新実測としない。harness494 PASS/955 FAIL/13 harness_error/20 no_completion/24 no_output/2 multiple、callbacks11540 PASS/20642 FAIL/14 NOTRUN。static844/scripted105/crash39 q28証拠再利用、newpair全image/crash capture未測定。公式確認済1482/3805（38.948752%）・held0・未attempt275維持。
+for-in lazy own-key/prototype/visited state、private excluded-arrayの既存ToKey/raw length契約、uint32/int32幅/一般resource policy/newer JSON source-context/RawJSON/primitive Set/outer instanceof/BoundFunction/callable/call/construct/newtarget/Species/global Proxy・revocable/Reflect/typed backing/immutable prototype/p100/full target/whole p258/WS100%未達。global Proxy/Reflect非公開、ABI2/Wayland/WPT・runner・期待値/SDK/toolchain/sysroot不変。
+ユーザー「マージしながら」に従いsource1c53b3ebeのmain包含・競合無し・source commitにmaster.md変更無しを実確認。owned WIPとしてmainへ統合、ws.md/Phaseへ記録しmaster.md編集無し。共有Master/Queue/cache/GitHub投影はQ1所有/pending、push無し。
+Raw archive106 members SHA2560a8156b8c909f5104fe24903a77c5fccb48dc11cd0a241dd1ce4740a4986e2eaを全member順次read-back。runtime binaryはhash付きbuild保持・archive非同梱。q49 harness原archive1676 members SHA2565127febd2683798dd849e067f4999f96d78e1b36c1ea152f84b35bf52e6535c5を参照しq51実測とは混同しない。
+
+[証拠](evidence/20261018-q51/README.md)。次finite scope未選定。

@@ -1,0 +1,12 @@
+{
+  "source": "1c53b3ebe",
+  "main_contains_source": true,
+  "no_master_in_source": true,
+  "source_paths": [
+    "plan/ws074/tests/host-proxy-read.c",
+    "plan/ws074/tests/proxy-read.js",
+    "userland/desktop/libbrowser/vm/spread.c"
+  ],
+  "no_conflicts": true,
+  "source_parents": "1c53b3ebe c6f7bb84b"
+}
