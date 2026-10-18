@@ -2,7 +2,7 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: uncleared（q45 chain consumers partial cleared、whole Proxy未達）
+Status: in-progress（q46 object assignment routing partial、whole Proxy未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
@@ -236,3 +236,5 @@ whole p258/WS/p100/full target/100%未達。outer vm_instanceof/BoundFunction/ca
 Raw archive87 members SHA2568313f6c311a137fd6c4bcf5d2072d4d7f048a5f37e8e8134f89dd1c8e002a4e5全member read-back。runtime binaryはhash付きbuild保持・archive非同梱。q44 harness1676 member原archive SHA2567ba8f2ca5aa17ef5235bed2ac29e49034a1b2bcf2e1b153e03e9b6bb85ffde94を参照、q45実測と混同しない。
 
 [証拠](evidence/20261018-q45/README.md)。次finite scope未選定。
+
+Event ws074-p258-q46-selection: ordinary object assignmentをexisting receiver-aware Setへ接続するpartialだけ選定、dead length helper除去・全1508実測を含む。[exact Queue](../queue.md)。whole acceptance未変更。

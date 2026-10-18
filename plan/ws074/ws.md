@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [ws074-q20261018-45](queue.md) finished（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+Queue: [ws074-q20261018-46](queue.md) active（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
 
 Latest verified（q45）: isPrototypeOf/legacy lookup/OrdinaryHasInstance realm chain consumers partial clear、old552＋new33 native585/Chrome583は既知huge2差、precode21条件修正。direct API managed ownership/GC/error/reclamation保持。q44最新1508全callback/completion同値証拠再利用、q45全census未測定、公式確認済1482/3805・held0・未attempt275保持。images/crash q28再利用。ordinary Set/for-in/other invariants/nested/call/global/p100/full target未達。[証拠](phase258/evidence/20261018-q45/README.md)。共有投影pending。
 
@@ -706,7 +706,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p255](phase255/phase.md) | PerformanceObserver native mark登録・queue・task配信 | uncleared / q28 Window consumer/failure/held partial cleared・whole残り | p254 verified native mark output |
 | [ws074-p256](phase256/phase.md) | Window ErrorEvent・uncaught harness fidelity | uncleared / q28 runtime/inline source partial cleared・external/syntax等残り | 既存Event/Window/VM→p255再評価 |
 | [ws074-p257](phase257/phase.md) | synchronous generator yield* delegation | cleared / q29 sync own criteria・Chrome38/native GC10 | q28 VM/GC・p189 pinned WebIDL2 |
-| [ws074-p258](phase258/phase.md) | native Proxy internal methods・GC/revocation | uncleared / q45 chain consumers partial cleared、q44全1508証拠維持 | q29 VM/GC・p189 actual Proxy blocker |
+| [ws074-p258](phase258/phase.md) | native Proxy internal methods・GC/revocation | in-progress / q46 object assignment routing partial | q29 VM/GC・p189 actual Proxy blocker |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 
@@ -1357,3 +1357,5 @@ Event ws074-q44-finished-20261018: p258 Object callers partial clear、new51 gen
 Event ws074-q45-selection: p258のisPrototypeOf/AnnexB lookup/OrdinaryHasInstance consumer partial開始、q44既存検証維持、whole acceptance未変更。[Queue](queue.md)。共有投影pending。
 
 Event ws074-q45-finished-20261018: p258 chain consumers partial clear、native585/Chrome583既知huge2、新33 genuine一致/precode21修正。actual public lookup errno/GCとdirect ordinary-instance bare managed owner実保持/回収、元WebIDL/validator negative保持。q44全1508証拠再利用・q45未測定、公式確認済1482/3805保持。[history](history/ws074-q20261018-45.md)。共有投影pending。
+
+Event ws074-q46-selection: p258のordinary assignment realm dispatch partial開始、q45既存証拠を保持し全1508を再測定する。whole/global未達。[Queue](queue.md)。共有投影pending。
