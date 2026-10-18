@@ -3,11 +3,11 @@
 # WS252: i915 の Rocket Lake・Alder Lake-S/Raptor Lake-S・Ice Lake の GT（描画の engine）の対応
 
 <!-- awesome-plan-current:start -->
-Status: planned（2026-10-15 作成、担当は未割当）
+Status: incomplete（2026-10-15 作成。2026-10-19 p001 を P1 が q1262 で実施中）
 Primary Milestone: MG006
 Parent: [Master](../master.md)
 Related: [WS245](../ws245/ws.md)（Gen12 の display の書き直し、§7 #18・#20・#21）
-Resume point: 設計の担当の割り当て待ち。
+Resume point: p001 の design.md 版 1 の design-reviewer と §8 D1〜D5 のユーザーの判断。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（2026-10-15、クリック）
@@ -24,5 +24,5 @@ WS245 design.md §7 #20「RKL・ADL-S・ICL の GT（描画の engine）は起�
 
 | Phase | 内容 | 状態 |
 | --- | --- | --- |
-| p001 | 調べと設計: 今の Gen12 の GT（TGL・ADL-P）の code との差（RKL の GT は Gen12 系、ADL-S は Gen12、ICL は Gen11）、engine・firmware・WA、実機の有無、Phase の分割。design-reviewer を通す | planned |
+| p001 | 調べと設計: 今の Gen12 の GT（TGL・ADL-P）の code との差（RKL の GT は Gen12 系、ADL-S は Gen12、ICL は Gen11）、engine・firmware・WA、実機の有無、Phase の分割。design-reviewer を通す。[phase001](phase001/phase.md)、[design.md](design.md) | in-progress（q1262、design-reviewer 待ち） |
 - 決定（2026-10-19 ユーザー、クリック）: 「設計まで」（実機が無いので p001 の設計で止める。実装は実機ができてから）。
