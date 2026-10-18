@@ -1,0 +1,55 @@
+{
+  "source_commit": "786856b04a699d23238834f91716529a390a9f92",
+  "protocol_conditions": 93,
+  "native_chrome_exact": true,
+  "old68_source_prefix_identical": true,
+  "native_pressure": [
+    "source/conversion original read/Has lifetime and true reclamation retained",
+    "From null descriptor -> undefined",
+    "fresh data value and fresh getter each survive real threshold collection with setup roots dropped",
+    "managed bare realm retained by conversion alone",
+    "both unflagged large payload cells actually reclaimed during From allocation",
+    "sole output holds one original payload field with default data attributes",
+    "managed realm/payload/output actually reclaimed after releasing output root"
+  ],
+  "focused_gate_returncodes": {
+    "proxy-read": 0,
+    "delegation": 0,
+    "interpreter": 0,
+    "vm-factory": 0,
+    "dom": 0,
+    "cssom": 0,
+    "cssom-mutation": 0,
+    "marks": 0,
+    "observer": 0,
+    "error-events": 0,
+    "error-reporting": 0,
+    "acid": 1
+  },
+  "acid_network_rerun": "initial sandbox lacked localhost socket capability; original PermissionError retained; exact Acid command rerun with normal require_escalated network permission, exit0; actual Acid3/Acid2 criteria verified",
+  "acid3_score": 100,
+  "acid3_pixel_diff": 0,
+  "acid2_existing_pixel_diff": 873,
+  "raw_allowed_cleanup": 50,
+  "other_style_flags": 0,
+  "host_target_warnings": 0,
+  "archive": {
+    "path": "focused-native-oracle-build-raw.tar.gz",
+    "sha256": "3eda8931e35dce0f676f860cc7d6b1bfaefdb37731e7620ccb38a2f970fa7e4c",
+    "members": 55,
+    "readback_all_members": true
+  },
+  "current_certified_pass": 1482,
+  "denominator": 3805,
+  "held": 0,
+  "unattempted_harness": 275,
+  "harness_reused": "q31 all1508:494PASS/955FAIL/13harness_error/20no_completion/24no_output/2multiple; callbacks11540PASS/20642FAIL/14NOTRUN",
+  "static_scripted_crash_reused": "q28:844/105/39",
+  "whole_pass_gain": 0,
+  "limitations": [
+    "focused gates only; no q32 all1508 or all-image/strict crash measurement",
+    "frozen runtime binaries retained in build with source-proof hashes, not embedded in evidence archive",
+    "global Proxy unexposed; whole p258/WS074 remains incomplete",
+    "single-source target2 only; no full target link/runtime or whole-source p100 conformance"
+  ]
+}

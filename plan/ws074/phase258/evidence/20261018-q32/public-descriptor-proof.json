@@ -1,0 +1,6 @@
+{
+  "returncode": 0,
+  "exact_original_chrome_equal": true,
+  "output": "descriptor-order get TypeError\n",
+  "reference": "q31/precode-chrome.out"
+}

@@ -1,0 +1,57 @@
+{
+  "scope": {
+    "userland/desktop/libbrowser/vm/access.c": [
+      "vm_to_property_descriptor",
+      "vm_from_property_descriptor",
+      "vm_complete_property_descriptor",
+      "access_descriptor_field",
+      "access_descriptor_put",
+      "access_descriptor_trace"
+    ],
+    "userland/desktop/libbrowser/js/builtin_object.c": [
+      "object_to_descriptor",
+      "object_from_descriptor"
+    ],
+    "plan/ws074/tests/host-proxy-read.c": [
+      "main",
+      "descriptor_roundtrip",
+      "descriptor_pressure"
+    ]
+  },
+  "raw_checker_flags": 50,
+  "allowed_forward_cleanup": [
+    {
+      "function": "vm_to_property_descriptor",
+      "count": 10
+    },
+    {
+      "function": "vm_from_property_descriptor",
+      "count": 7
+    },
+    {
+      "function": "main",
+      "count": 14
+    },
+    {
+      "function": "descriptor_pressure",
+      "count": 19
+    }
+  ],
+  "other_checker_flags": 0,
+  "old68_prefix_equal": true,
+  "script_free_native_operations_byte_identical": true,
+  "host_warnings": 0,
+  "manual_review": [
+    "VM-only Has/Get conversion, immediate callability checks and original errors; no JS headers/helpers",
+    "From outputs only present flags in standard order, ordinary realm prototype and default output attributes; null maps to undefined",
+    "Complete accepts a valid partial descriptor, adds data/accessor defaults without script/allocation; missing flags clear stale attribute bits",
+    "combined tracer retains managed realm/source/flagged payloads/newborn; never reads absent payload slots; pressure cases verify real collection and subsequent actual reclamation",
+    "all new and changed C bodies/prototypes checked against full standard; own helper declarations after tables; public headers multiline; checker flags only forward shared cleanup",
+    "JS wrappers use same VM operations, no runner/WPT/ABI/native_operations mutation"
+  ],
+  "limitations": [
+    "whole p258 remains uncleared/private",
+    "focused gates only; harness q31/images-crash q28 reused",
+    "legacy whole-source rules belong to p100; no full target link/runtime"
+  ]
+}

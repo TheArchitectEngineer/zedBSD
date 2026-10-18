@@ -2,7 +2,7 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: in-progress（q32 shared descriptor conversion partial、q30/q31 verified）
+Status: uncleared（q32 shared descriptor conversion partial cleared、whole Proxy未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
@@ -44,3 +44,13 @@ i01 Has/descriptor prerequisite partialだけcleared。whole p258はrealm-aware 
 [Full evidence](evidence/20261018-q31/README.md)。次は必要なdescriptor internal methodsを新finite Queueで具体化し、partial FromPropertyDescriptorのpresenceとshared conversionの層/GCを確認する。global APIと全Proxy受入は未達に保つ。
 
 Event ws074-p258-q32-selected-20261018: Proxy GetOwn/Defineから標準descriptor処理を共有するため、q31でverifiedのTo順をVM-owned abstract operationへ移し、Fromのpartial field presenceとCompleteのdefaultsを提供する同一Phase内設計を具体化。既存Objectのcomplete descriptor出力を維持しprivate partialはnative/genuine Chromeで確認する。これはVM→JS依存を増やさず既存layerのVM側へ言語処理を集約する。exact source/criteria/max90分とfocused gatesはq32 Queue、全1508再実行・global公開を先取りしない。共有投影pending。
+
+## q32 partial result / resume
+
+Event ws074-p258-q32-partial-cleared-20261018: VM-owned ToPropertyDescriptor/FromPropertyDescriptor/CompletePropertyDescriptorを既存access層へ追加し、JS Objectの既存to/fromを薄いwrapperで共有した。ToのHas/Get6順とget即時callability/元errorを保持。Fromはpresent fieldsだけをvalue/writable/get/set/enumerable/configurable順にordinary data propertiesへ出し、NULL→undefined。Completeはvalid partialのdata/accessor/defaultsを無script/無allocationで補う。VMからJS moduleへの依存無し、native_operationsは全bytes不変。
+同じ93条件がnativeとChromium genuine Proxy define trap/通常Object APIで全件一致。old68 source prefixはbyte同一。partial snapshotとcomplete snapshotを独立対照し、native Cでは保守的C stack保持を無効にしてfresh value/getterの両modeにreal threshold GCを発生させ、caller setup roots無しでmanaged realmとpayloadの生存を確認。flags無しpayload2 cellはそのGCで実回収され、出力が元payloadとdefault data属性の1 fieldだけを持つこと、output root解放後にrealm/payload/outputが全て実回収されることを確認。q30/q31のGet/Has/revoke/sole result/実realm回収対照も維持した。
+source WIP786856b04、最終sourceを再buildしたimmutable pair/source hash317件を照合。host warning0、q02 exact access/builtin_object2 source target compile warning0。full new/changed Cのraw checker許可forward shared cleanup50・他0、通常helper宣言は全tables後、public fn headerはmultiline。DOM41、interpreter45/factory56、CSSOM12+12、marks7/observer10/ErrorEvent9/ErrorReporting19/delegation10を通過し、公開Object.definePropertyのinvalid getter順は元Chromeのgetだけ/TypeErrorと一致。Acid3 score/inventory100・pixel0、Acid2既存差873。初回Acidはsandbox localhost socket不足でPermissionError、原logを保存して同じcommandを通常network権限で再実行exit0、意味上の失敗と区別。
+今回はexact承認どおりfocused gatesだけ。全1508はq31、static/scripted/strict crashはq28の原証拠を再利用し、q32 pair全件同値/新whole PASS増分を主張しない。確認済1482/3805（38.948752%）・held0・未attempt275を保持。archive55 membersを順次全read-back、sha2563eda8931e35dce0f676f860cc7d6b1bfaefdb37731e7620ccb38a2f970fa7e4c。
+i01 shared descriptor conversion partialのみcleared、whole p258はrealm-aware Proxy getOwn/Define/Set/keys/prototype/extent/IsArray/call/construct/global constructor/revocable/原WebIDL2未達でuncleared。full target/whole-source p100/WS100%未達、共有Master/Queue/next/cache/GitHub投影pending、push無し。
+
+[証拠](evidence/20261018-q32/README.md)。次finite Queueでrealm-aware getOwn/Defineとordinary no-script outputを検証してからSetへ接続する。global Proxyは非公開を維持。

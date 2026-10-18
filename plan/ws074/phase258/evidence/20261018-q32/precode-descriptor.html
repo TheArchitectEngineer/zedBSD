@@ -1,0 +1,3 @@
+<!doctype html><script>
+var order=[];try{Object.defineProperty({},'x',{get get(){order.push('get');return 1;},get set(){order.push('set');throw 'setter-should-not-run';}});}catch(e){console.log('descriptor-order '+order.join(',')+' '+(e instanceof TypeError?'TypeError':String(e)));}
+</script>

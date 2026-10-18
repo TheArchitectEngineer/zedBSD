@@ -1,5 +1,9 @@
 # WS074 lane の Past Log
 
+## ws074-q20261018-32（2026-10-18）
+
+[履歴](ws074-q20261018-32.md)。VM共有descriptor変換partial cleared、native/Chrome93一致・実GCと回収・focused gates通過。全1508 q31/画像crash q28証拠を再利用し1482/3805・held0維持。whole Proxy/WS100%未達、共有投影pending。
+
 ## ws074-q20261018-31（2026-10-18）
 
 [履歴](ws074-q20261018-31.md)。native HasPropertyをrealm-aware VM pathへ追加し、通常inとprototype上Proxyを接続。actual target/string-or-symbol key2引数・handler this、GetMethod/null fallback/ToBoolean、非configurable own/nonextensible ownをfalseで隠さないinvariant、trap/getter中revoke後の元target/handler保持、GCとbounded property depthを実装。script-free heap hooksは不変。ToPropertyDescriptorのgetterは取得直後に検証し、setterのHas/Getを観測する前にinvalid getterのTypeErrorを返す。enum/config/value/writable/get/set順と元payload/input rootを保つ。 old read32 control source prefixをbyte同一に保ち、Has/descriptorを加えた同じ68条件がnative/Chrome genuine Proxy/Reflectで全件一致。nativeはC stackの保守的保持を無効にし、元Getに加えてHasでもscript-free descriptor callback内にmanaged realmを実GC、両方でowner生存・処理後の実回収を確認。fresh value/getterを後続descriptor getterのGCから保持、revoke/retention/ctor threshold pressure/sole returned objectとprivate target bounds・global Proxy非公開を維持。fixtureはfrozen control input pathをCLIで指定でき、pair内へ同じJS bytesを保存した。 公開Object.definePropertyのprecodeはq30 nativeがget,setを観測してsetterのthrow、Chromeがgetだけを観測してTypeError。q31 nativeも同じ元HTMLでgetだけ/TypeErrorへ一致し、この実bugを修正した。原HTML/旧native/Chrome/final nativeの全stdio・command/hashを保存。全1508 harnessは同じsettle5000/process20で237.4秒、q30 whole判定・全callback/completion objectが完全同一。494 PASS/955 FAIL/13 harness_error/20 no_completion/24 no_output/2 multiple、callbacks11540 PASS/20642 FAIL/14 NOTRUN、旧PASS後退/whole gain/差0。 final measured pairのsourceは3f9f3921d、規約follow-up sourceは2a0aa616d。変更対象object_to_descriptorの既存forward宣言を全tables後へ移し、宣言とseparator以外の全bytesを保持。host/target exact commandでfinal sourceを再compile warning0、両方のdebug除去object全bytesがbefore/after一致した。元frozen source-proof・preserved sourceとfinal-source-proofを分け、この等価性で既存測定をfinal semantic sourceへ対応付ける。literalに再link済みのpairと偽らず、不要なfull corpus再測定を増やさない。 DOM41/41、interpreter45・factory GC56、CSSOM12+12、producer7/observer10/ErrorEvent9/ErrorReporting19、generator delegation10、host warning0/target access・builtin_object exact2 source warning0を確認。C全文new/changed scopeは許可forward cleanup55以外0、own modified helper宣言も正規位置。未変更legacy全体の規約はp100に残す。Acid3 score/inventory100・pixel0、Acid2既存差873維持。static844/scripted105/strict39はq28原証拠を再利用、新pair全capture/strict equalityは未測定。確認済1482/3805（38.948752%）・held0/未attempt275を保持。 i01 Has/descriptor prerequisite partialだけcleared。whole p258はrealm-aware getOwn/Define、FromPropertyDescriptor partial field、Set/keys/prototype/extent/IsArray/call/construct・global constructor/revocable/actual original WebIDL2未達でuncleared。元q30 read partialを維持し次finite scopeへ継続、whole p189/p255/p256/p100/full target/WS100%未達。raw/archiveを全member sequential read-back済み。共有Master/Queue/next/cache/GitHub投影pending、push無し。
@@ -119,9 +123,5 @@ Follow-up: q23 i01/i02 clearanceは疎checkoutのIDL未配信が判明しunclear
 ## ws074-q20261018-03（2026-10-18）
 
 [履歴](ws074-q20261018-03.md)。全適格1,455 ID測定、485 PASS、910 FAIL、16 harness_error、20 no_completion、24 no_output。q1202旧481 PASSから後退0。未対応328とreftest/crashは100%の分母に保持。次はp242 DOM cleanup。共有投影pending。
-
-## ws074-q20261018-02（2026-10-18）
-
-[履歴](ws074-q20261018-02.md)。p241のhost部分cleared。stretchのdefinite cross sizeをratioへ渡し、補助WPT149→152/257・後退0、40/40 geometry、Acid3差0/Acid2差873。production link/targetとbasis/replacedは残る。次は公式2025の全体census。Master/共有Queue/GitHubへの投影はpending。
 
 以前のindex: [early 2026-10-18](early-20261018.md)。過去standing Queue投影: [原文archive](../queue-archive-through-q30.md)。
