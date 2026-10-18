@@ -8,9 +8,6 @@
 /*
  * Device interrupts: install, uninstall and the top-level handler.
  *
- * This is the Gen11+ path of the reference's intel_irq_install() and
- * intel_irq_uninstall():
- *
  *   install    mark interrupts enabled (before any source is enabled),
  *              reset every source, attach the handler to the MSI vector,
  *              then enable the sources and the master control
@@ -18,19 +15,17 @@
  *              handler and wait until no invocation is running
  *
  * The MSI vector itself is allocated and freed by the PCI part; this part
- * only attaches and detaches its handler, which maps the HAL's split MSI
- * contract onto the reference's request_irq() and free_irq().
+ * only attaches and detaches its handler.
  *
- * The HAL handler returns nothing and sends the EOI itself, where Linux
- * returns IRQ_HANDLED or IRQ_NONE.  With MSI, which is never shared, that
- * answer only feeds spurious-interrupt detection, so the outcome is counted
- * in the device instead.
+ * The HAL handler returns nothing and sends the EOI itself.  With MSI, which
+ * is never shared, whether an interrupt was ours only matters for spurious
+ * interrupt detection, so the outcome is counted in the device instead.
  *
  * The GT half (the engine interrupt banks) lives here.  The display half
  * (display engine pipes, ports and misc, the south display block, vblank)
  * is reached through a separate operations table that the display part
- * binds; the top-level flow calls it at exactly the points where the
- * reference calls the display functions.
+ * binds; the top-level flow calls it at fixed points of reset, postinstall
+ * and the handler.
  */
 
 #ifndef DRIVERS_GPU_I915_IRQ_H
@@ -45,7 +40,7 @@ struct i915_mmio;
 struct i915_gt_info;
 
 /*
- * Which arm of gen11_gt_irq_postinstall() the submission backend selects.
+ * The submission backend, which decides the engine interrupts that open.
  *
  * With execlists the driver owns the context switch and needs the command
  * streamer interrupts; with GuC submission those are left to the GuC.
@@ -81,22 +76,21 @@ struct i915_irq_display_ops {
 
 	/*
 	 * Masks, disables and clears every display source, including the
-	 * south display block (gen11_display_irq_reset()).  Called after the
+	 * south display block.  Called after the
 	 * GT reset and before the GU_MISC and PCU resets.
 	 */
 	void (*reset)(void *context);
 
 	/*
-	 * Enables the display sources and the display interrupt control
-	 * (gen11_de_irq_postinstall(), which also covers the south display
-	 * block).  Called after the GT postinstall and before the GU_MISC
-	 * enable.
+	 * Enables the display sources and the display interrupt control,
+	 * including the south display block.  Called after the GT postinstall
+	 * and before the GU_MISC enable.
 	 */
 	void (*postinstall)(void *context);
 
 	/*
-	 * Reads and acknowledges every pending display source
-	 * (gen11_display_irq_handler()).  Called from the handler with the
+	 * Reads and acknowledges every pending display source.  Called from
+	 * the handler with the
 	 * master control off, after the GT banks and before the GU_MISC
 	 * acknowledge, only when the master control reports a display
 	 * interrupt.
@@ -104,8 +98,8 @@ struct i915_irq_display_ops {
 	void (*handle)(void *context, uint32_t master_ctl);
 
 	/*
-	 * Delivers a graphics system event to the OpRegion
-	 * (intel_opregion_asle_intr()).  Called from the handler after the
+	 * Delivers a graphics system event to the OpRegion.  Called from the
+	 * handler after the
 	 * master control has been turned back on.
 	 */
 	void (*gse)(void *context);
@@ -141,8 +135,8 @@ struct i915_irq_dev {
 	void *display_context;
 
 	/*
-	 * The reference's runtime_pm.irqs_enabled and i915->irq_enabled.
-	 * Both are set before any source is enabled, so that the postinstall
+	 * Whether interrupts are enabled for the power wells (irqs_enabled)
+	 * and whether the handler is installed (irq_enabled).  Both are set before any source is enabled, so that the postinstall
 	 * steps see interrupts as enabled.
 	 */
 	int irqs_enabled;
@@ -158,8 +152,8 @@ struct i915_irq_dev {
 	int handler_attached;
 
 	/*
-	 * What the handler saw.  An MSI handler cannot report IRQ_NONE
-	 * upwards, so every outcome is counted here.
+	 * What the handler saw.  An MSI handler cannot report that an
+	 * interrupt was not its own, so every outcome is counted here.
 	 */
 	volatile unsigned irq_count;
 	volatile unsigned irq_none_count;
@@ -176,7 +170,7 @@ struct i915_irq_dev {
 	/*
 	 * GT source accounting.  Every asserted bank must be acknowledged,
 	 * and every identity handshake completed, or the master line stays
-	 * asserted.  The engine bottom halves (breadcrumbs, the CSB tasklet)
+	 * asserted.  The engine follow-up work (request completion, the status buffer)
 	 * belong to the submission backend; what was acknowledged is counted.
 	 */
 	volatile unsigned gt_bank_acks[2];
@@ -246,12 +240,10 @@ void drv_i915_gt_pm_reset_iir(struct i915_irq_dev *irq);
 
 void drv_i915_irq_reset(struct i915_irq_dev *irq);
 void drv_i915_irq_postinstall(struct i915_irq_dev *irq);
-void drv_i915_gen11_gt_irq_reset(struct i915_irq_dev *irq);
-void drv_i915_gen11_gt_irq_postinstall(struct i915_irq_dev *irq);
-void drv_i915_gen11_gt_irq_handler(struct i915_irq_dev *irq, uint32_t master_ctl);
+void drv_i915_irq_gt_banks_serve(struct i915_irq_dev *irq, uint32_t master_ctl);
 
-void drv_i915_gen3_irq_reset(struct i915_irq_dev *irq, uint32_t imr, uint32_t iir, uint32_t ier);
-void drv_i915_gen3_assert_iir_is_zero(struct i915_irq_dev *irq, uint32_t iir);
-void drv_i915_gen3_irq_init(struct i915_irq_dev *irq, uint32_t imr, uint32_t imr_value, uint32_t ier, uint32_t ier_value, uint32_t iir);
+void drv_i915_irq_regs_close(struct i915_irq_dev *irq, uint32_t imr, uint32_t iir, uint32_t ier);
+void drv_i915_irq_regs_check_clear(struct i915_irq_dev *irq, uint32_t iir);
+void drv_i915_irq_regs_open(struct i915_irq_dev *irq, uint32_t imr, uint32_t imr_value, uint32_t ier, uint32_t ier_value, uint32_t iir);
 
 #endif

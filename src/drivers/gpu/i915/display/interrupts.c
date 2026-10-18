@@ -440,19 +440,19 @@ drv_i915_gen11_display_irq_reset(
 		if (!powered)
 			continue;
 
-		drv_i915_gen3_irq_reset(d->irq, I915_GT_GEN8_DE_PIPE_IMR(pipe), I915_GT_GEN8_DE_PIPE_IIR(pipe), I915_GT_GEN8_DE_PIPE_IER(pipe));
+		drv_i915_irq_regs_close(d->irq, I915_GT_GEN8_DE_PIPE_IMR(pipe), I915_GT_GEN8_DE_PIPE_IIR(pipe), I915_GT_GEN8_DE_PIPE_IER(pipe));
 	}
 
 	/* Resets the port and misc sources. */
-	drv_i915_gen3_irq_reset(d->irq, I915_GT_GEN8_DE_PORT_IMR, I915_GT_GEN8_DE_PORT_IIR, I915_GT_GEN8_DE_PORT_IER);
-	drv_i915_gen3_irq_reset(d->irq, I915_GT_GEN8_DE_MISC_IMR, I915_GT_GEN8_DE_MISC_IIR, I915_GT_GEN8_DE_MISC_IER);
+	drv_i915_irq_regs_close(d->irq, I915_GT_GEN8_DE_PORT_IMR, I915_GT_GEN8_DE_PORT_IIR, I915_GT_GEN8_DE_PORT_IER);
+	drv_i915_irq_regs_close(d->irq, I915_GT_GEN8_DE_MISC_IMR, I915_GT_GEN8_DE_MISC_IIR, I915_GT_GEN8_DE_MISC_IER);
 
 	/* Display version below 14: the GEN11 hotplug block, not PICA. */
-	drv_i915_gen3_irq_reset(d->irq, GEN11_DE_HPD_IMR, GEN11_DE_HPD_IIR, GEN11_DE_HPD_IER);
+	drv_i915_irq_regs_close(d->irq, GEN11_DE_HPD_IMR, GEN11_DE_HPD_IIR, GEN11_DE_HPD_IER);
 
 	/* Resets the south display block of an ICP or later PCH. */
 	if (d->pch != NULL && d->pch->type >= I915_PCH_ICP)
-		drv_i915_gen3_irq_reset(d->irq, SDEIMR, SDEIIR, SDEIER);
+		drv_i915_irq_regs_close(d->irq, SDEIMR, SDEIIR, SDEIER);
 }
 
 /*
@@ -541,7 +541,7 @@ drv_i915_gen8_irq_power_well_post_enable(
 			continue;
 
 		/* GEN8_IRQ_INIT_NDX(uncore, DE_PIPE, pipe, de_irq_mask[pipe], ~de_irq_mask[pipe] | extra_ier) */
-		drv_i915_gen3_irq_init(d->irq, I915_GT_GEN8_DE_PIPE_IMR(pipe), d->de_irq_mask[pipe], I915_GT_GEN8_DE_PIPE_IER(pipe), ~d->de_irq_mask[pipe] | extra_ier, I915_GT_GEN8_DE_PIPE_IIR(pipe));
+		drv_i915_irq_regs_open(d->irq, I915_GT_GEN8_DE_PIPE_IMR(pipe), d->de_irq_mask[pipe], I915_GT_GEN8_DE_PIPE_IER(pipe), ~d->de_irq_mask[pipe] | extra_ier, I915_GT_GEN8_DE_PIPE_IIR(pipe));
 		d->vbl->post_imr[pipe] = d->de_irq_mask[pipe];
 		d->vbl->post_ier[pipe] = ~d->de_irq_mask[pipe] | extra_ier;
 
@@ -602,7 +602,7 @@ drv_i915_gen8_irq_power_well_pre_disable(
 		closing |= 1U << pipe;
 
 		/* GEN8_IRQ_RESET_NDX(uncore, DE_PIPE, pipe) */
-		drv_i915_gen3_irq_reset(d->irq, I915_GT_GEN8_DE_PIPE_IMR(pipe), I915_GT_GEN8_DE_PIPE_IIR(pipe), I915_GT_GEN8_DE_PIPE_IER(pipe));
+		drv_i915_irq_regs_close(d->irq, I915_GT_GEN8_DE_PIPE_IMR(pipe), I915_GT_GEN8_DE_PIPE_IIR(pipe), I915_GT_GEN8_DE_PIPE_IER(pipe));
 	}
 
 	spin_unlock_irqrestore(&d->vbl->lock, flags);
@@ -1041,7 +1041,7 @@ i915_icp_irq_postinstall(
 
 	/* Only GMBUS is unmasked; every source is enabled. */
 	mask = SDE_GMBUS_ICP;
-	drv_i915_gen3_irq_init(d->irq, SDEIMR, ~mask, SDEIER, 0xffffffffU, SDEIIR);
+	drv_i915_irq_regs_open(d->irq, SDEIMR, ~mask, SDEIER, 0xffffffffU, SDEIIR);
 }
 
 /* Computes the display masks and enables the pipe, port, misc and hotplug sources (gen8_de_irq_postinstall()). */
@@ -1108,7 +1108,7 @@ i915_gen8_de_irq_postinstall(
 			if (!powered)
 				continue;
 
-			drv_i915_gen3_assert_iir_is_zero(d->irq, TRANS_PSR_IIR(transcoder));
+			drv_i915_irq_regs_check_clear(d->irq, TRANS_PSR_IIR(transcoder));
 		}
 	}
 
@@ -1122,18 +1122,18 @@ i915_gen8_de_irq_postinstall(
 		/* A pipe whose well is off is programmed by the well's post-enable. */
 		powered = i915_pipe_power_on(d, pipe);
 		if (powered)
-			drv_i915_gen3_irq_init(d->irq, I915_GT_GEN8_DE_PIPE_IMR(pipe), d->de_irq_mask[pipe], I915_GT_GEN8_DE_PIPE_IER(pipe), de_pipe_enables, I915_GT_GEN8_DE_PIPE_IIR(pipe));
+			drv_i915_irq_regs_open(d->irq, I915_GT_GEN8_DE_PIPE_IMR(pipe), d->de_irq_mask[pipe], I915_GT_GEN8_DE_PIPE_IER(pipe), de_pipe_enables, I915_GT_GEN8_DE_PIPE_IIR(pipe));
 	}
 
 	/* Programs the port and misc sources. */
-	drv_i915_gen3_irq_init(d->irq, I915_GT_GEN8_DE_PORT_IMR, ~de_port_masked, I915_GT_GEN8_DE_PORT_IER, de_port_enables, I915_GT_GEN8_DE_PORT_IIR);
-	drv_i915_gen3_irq_init(d->irq, I915_GT_GEN8_DE_MISC_IMR, ~de_misc_masked, I915_GT_GEN8_DE_MISC_IER, de_misc_masked, I915_GT_GEN8_DE_MISC_IIR);
+	drv_i915_irq_regs_open(d->irq, I915_GT_GEN8_DE_PORT_IMR, ~de_port_masked, I915_GT_GEN8_DE_PORT_IER, de_port_enables, I915_GT_GEN8_DE_PORT_IIR);
+	drv_i915_irq_regs_open(d->irq, I915_GT_GEN8_DE_MISC_IMR, ~de_misc_masked, I915_GT_GEN8_DE_MISC_IER, de_misc_masked, I915_GT_GEN8_DE_MISC_IIR);
 
 	/* Display versions 11 to 13: the Type-C and Thunderbolt hotplug sources, all enabled, none unmasked. */
 	if (d->display_ver >= 11 && d->display_ver <= 13) {
 		de_hpd_masked = 0U;
 		de_hpd_enables = GEN11_DE_TC_HOTPLUG_MASK | GEN11_DE_TBT_HOTPLUG_MASK;
-		drv_i915_gen3_irq_init(d->irq, GEN11_DE_HPD_IMR, ~de_hpd_masked, GEN11_DE_HPD_IER, de_hpd_enables, GEN11_DE_HPD_IIR);
+		drv_i915_irq_regs_open(d->irq, GEN11_DE_HPD_IMR, ~de_hpd_masked, GEN11_DE_HPD_IER, de_hpd_enables, GEN11_DE_HPD_IIR);
 	}
 }
 
