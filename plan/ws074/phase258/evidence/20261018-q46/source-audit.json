@@ -1,0 +1,41 @@
+{
+  "tokens_outside_selected_functions_and_dead_length_helper_identical": true,
+  "other_engine_source_and_headers_unchanged": true,
+  "vm_header_tokens_unchanged_documented_EPERM_only": true,
+  "native_operations_definition_comment_unchanged": true,
+  "old585_prefix_unchanged": true,
+  "added_conditions": 37,
+  "precode_failed_conditions": 22,
+  "full_changed_functions": {
+    "userland/desktop/libbrowser/vm/access.c": [
+      "vm_set",
+      "access_define_length"
+    ],
+    "plan/ws074/tests/host-proxy-read.c": [
+      "main",
+      "assignment_refuse_define",
+      "assignment_pressure",
+      "array_length_delete",
+      "array_length_pressure"
+    ],
+    "userland/desktop/libbrowser/vm/object.c": [
+      "vm_array_set_length",
+      "object_array_key_compare",
+      "object_array_keys_trace",
+      "object_array_index"
+    ]
+  },
+  "removed_dead_helper": "access_set_length (definition and normal prototype only)",
+  "raw_allowed_cleanup": 62,
+  "other_checker_findings": 0,
+  "manual_review": [
+    "ANSI declaration first/multiline/public-static order/semantic paragraphs/check fallible calls",
+    "vm_set object branch replaced, null/undefined/primitive branches token-identical; scope revision9fbfca12c adds array helper/full uint32 key classification within shrink and actual post-conversion descriptor resampling",
+    "realm-aware vm_set_receiver input tracer retained until strict refusal TypeError allocation returns, prevents post-inner-call owner retirement",
+    "actual original receiver and value routed through ordinary/array/Proxy/typed dispatch; false mapped once to strict TypeError/sloppy success; direct Proxy message retained",
+    "array actual DefineLength replaces obsolete assignment helper, includes twice conversion/partial shrink/readonly length",
+    "real heap-level array shrink native GC/order/new length/partial EPERM/lower-payload preservation and actual reclamation; 2 real direct API native callback GC modes preserve bare managed realm/receiver/fresh object value/never-stored Symbol, then actual reclaim; strict refusal requires later post-callback error allocation GC",
+    "native callback supplies only collection/pure refusal/errno, no user JS",
+    "primitive exotic prototype/other invariant/nested/call/global/for-in/p100 remain pending"
+  ]
+}

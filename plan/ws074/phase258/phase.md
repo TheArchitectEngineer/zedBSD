@@ -2,16 +2,16 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: in-progress（q46 object assignment routing partial、whole Proxy未達）
+Status: uncleared（q46 object assignment/array shrink partial cleared、whole Proxy未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
-Queue: ws074-q20261018-44-i01（q30〜q43 partial履歴保持）
+Queue: ws074-q20261018-46-i01（q30〜q45 partial履歴保持、current projection修正）
 Origin: p189/q29 original WebIDL2 parseがProxy未定義で停止。
 
 Objective / own criteria: native managed Proxyを実object internal methodsへ接続し、constructor/revocableと各internal operationのtrap/fallback/invariant/receiver/revocation/callability/GCを正しく実行する。original WebIDL2 actual parse/validatorに必要なget/set/array behaviorを通常APIで提供し、independent controls/原WPTを通す。部分read stageだけでwholeをclearしない。
 Design: vm_native_operationsはscript-free heap interfaceのまま保持。Proxyにはmanaged target/handler recordを持たせ、scriptを実行可能なrealm-aware access/internal methodからtrapを呼ぶ。opaque JS constructor公開前に必要なoperationを段階的に整える。各段階は自走承認に基づく新finite Queueで正確に選定する。
-Current state: q45 chain consumers partial clear、native585/Chrome583は既知huge2のみ差。q44最新1508証拠維持、q45全census未測定。ordinary Set exotic prototype/for-in/nested/call/construct/globalとwhole未達。
+Current state: q46 object assignment receiver-aware routing/array shrink partial clear、native622/Chrome620は既知huge2のみ差、全1508 q44全whole/callback/completion同一。primitive Set/for-in/other invariant realm化/nested/call/construct/global/upper-index storage等whole未達。
 Standards: Guardrail/C全文/browser component全文、簡約版無し。一次 https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-proxy-object-internal-methods-and-internal-slots-get-p-receiver 。既存p100がWS全source near-final conformanceを所有し、本partialはnew/changed scopeの全文適合を検証。
 Verification/bounds/affected components: q30 snapshotの通り。private object kind/cell/newborn/trace/revokeとactual receiver/trap/invariant/GCをnative/Chromeで確認し、ordinary whole/callback PASSを守る。target single-source compileのみとfull target runtimeを区別。未達はunclearedとresume。
 
@@ -245,3 +245,15 @@ Event ws074-p258-q46-arraylength-design-revision-20261018: 最初の統合版を
 自走承認内の技術的reconciliationとして、同一deadline/単一i01にvm/object.c vm_array_set_length＋数値key comparator/key-vector tracer必要helper、vm/access.c access_define_lengthを追加、vm.hの既存length API commentだけEPERM partial-shrink契約を追記。新module/API signature/architecture変更無し。対象object.c管理コメントを除去。新current-source凍結前に改訂WIPを保存。
 Design: 既存own key snapshotをtraceし数値indexだけfilter/sort、new length metadataを先に設定→descending actual Delete→falseならfailed index+1へ復元してEPERM、higher deletions保持。fresh keyvector/arrayをnative callback GC中保持。length realm helperはvalue二回conversionの後actual old length descriptor再取得（conversion中のreadonly等変更を反映）、EPERMをBoolean refusalへ戻しrequested writable:falseを失敗時も適用。稀なENOMEM/native errnoは成功化しない。genuine additional sparse/uint32-index/descending/partial writability/conversion reentry controls、直接native length API actual GC/deletion order/EPERM対照を追加。target3 files access/object/header dependent compile exact q02、全1508比較等当初gate維持。
 Primary: https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-arraysetlength 。現行algorithmは二回conversion後にoldLengthDescを取得し、存在するown numeric indexを降順Delete、最初の拒否でindex+1とrequested writableを復元する。foreign Phase変更無し、whole p258/WS acceptance未変更。
+
+## q46 assignment / array shrink result and resume
+
+Event ws074-p258-q46-partial-cleared-20261018: q46 object assignment routing＋array length scoped partial cleared。selection WIP1c84bf011/technical revision WIP9fbfca12c/source WIPd38a8b622。同一90分deadline内。vm_set全object branchを既存receiver-aware Setへ統合、ordinary/array prototype上のProxy/TypedArrayにactual Setとoriginal receiver/value/keyを渡す。null/undefined/primitive branch tokens同一、direct Proxy refusal文言保持、ordinary refusal文言は共通readonlyへ集約（旧個別message完全同値は未約束）。外側tracerでinner Set退役後のstrict TypeError生成までmanaged owner/receiver/key/valueを保持。obsolete access_set_length宣言/定義除去。
+当初同一scopeのarray shrink criteriaが初期統合版613/615（JS失敗のためC所有gate未到達）で未達。既存heap shrinkがdenseを先に全消去・ascending deletionのfalse無視・length確定していた原因を記録し、criteria維持の技術改訂を実装前WIP。low-level vm_array_set_lengthはtraced own-key snapshotを数値indexへfilter/sortしrequested metadataを公開→降順real Delete、最初の固定indexで停止しindex+1に復元・EPERM、先行higher deletionとlower payloadを保持。access_define_lengthは二回conversion後actual old descriptor再取得、EPERMをBoolean refusalへ戻しrequested writable:falseを失敗時も適用。vm.hは既存length API EPERM契約commentのみ・tokens同一。private shrink parserは既存atom-backed upper uint32 indexに対応するが、general array creation/storageのupper-index分類は旧int32制約のまま・全upper array conformance未達。新module/signature/architecture変更無し。object.cの管理コメント2箇所も除去。
+old585 prefix同一、new37 native/genuine Chrome一致。q45 frozen precodeはoriginal615で18FAIL、revised622で22FAIL（22条件であって22個別bugや公式gainではない）。最終native622/Chrome620、差は既知q43巨大length2だけ。q36 negative-zero classifier filter継承、全pure genuine equalityではない。実GC対照はdirect vm_setのGetOwn negative errnoとnative Define拒否→inner Set後のstrict error生成でstrictly later GCの2 modes、bare managed caller/receiver/fresh value/never-stored Symbolの4participant実保持→全実回収。low-level array native Delete policyはrequested length1で3→2の降順を観測し各callback実collect、actual固定2拒否でEPERM/length3、lower payload保持→array/payload全実回収。pure hooksはuser JSを実行しない。旧版forced-GC differentialは未測定で、旧GC failure修復の実再現とは主張しない。
+full changed11 C functions manual＋clang-format19/checked styleは許可single forward cleanup62・other0。host revised warning0、target q02 literal access/object2 C source -oだけ変更warning0（vm.hはcomment-onlyで両C/full hostがinclude、独立3本目compileではない）。versions実取得。focused proxy/delegation10/interp45/factory56/DOM41/CSSOM12+12/marks7/observer10/ErrorEvent9/ErrorReporting19/Acid全exit0、Acid3 score/inventory100/pixel0、Acid2既存873。元WebIDL4positive＋intentionalnegative source/callback q38同一、original validator require-exposed2と意図的FAIL native/Chrome同一。
+固定1508全件をeligible digest82147e6edaec1b3b8d537e46eb71b64f2f03132cc12803e284c6ca72377779e7/settle5000/process20で256.7秒実測しq44全whole/callback/completion object完全同一。494 PASS/955 FAIL/13 harness_error/20 no_completion/24 no_output/2 multiple、callbacks11540 PASS/20642 FAIL/14 NOTRUN、whole gain/loss/old PASS callback loss/差0。static844/scripted105/crash39はq28原証拠再利用でnewpair全image/crash capture未測定。公式確認済1482/3805（38.948752%）・held0・未attempt275維持。
+whole p258/WS/p100/full target/100%未達。primitive Set exotic prototype/outer vm_instanceof/BoundFunction/for-in/spread/JSON/other invariant realm化/nested/call/construct/global constructor/revocable/array IsArray callers/upper-index storage/immutable prototype/typed backing等残件維持。global Proxy/Reflect非公開・factory callable/nested拒否/native_operations定義/comment/ABI2/Wayland/WPT・runner・期待値/SDK/toolchain/sysroot/共有Boards/cache不変。p189はこの測定のvalidation outputだけ投影し新attempt/clearance無し。共有Master/Queue/cache/GitHub投影pending Q1、push無し。
+Archives: harness-all-raw 1676 members SHA2564247433ec00c0cb9f7d6fcae320b1c9dd8f346ce90517456351ec87d79b60589, native-oracle-and-build-raw 105 members SHA2566d9d8c2eb89140b18348d19735c5ed805d463faa4100e59f83b6a748a96d976eを全member read-back。runtime binaryはhash付きbuild保持・archive非同梱。
+
+[証拠](evidence/20261018-q46/README.md)。次finite scope未選定。

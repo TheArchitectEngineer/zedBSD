@@ -1,5 +1,9 @@
 # WS074 lane の Past Log
 
+## ws074-q20261018-46 / assignment routing and array shrink
+
+object assignment/array shrink partial cleared、native622/Chrome620既知huge2、新37 genuine一致/precode22修正、実GC/partial metadata復元保持。全1508 q44全callback/completion同値・gain/loss0・1482/3805。[exact history](ws074-q20261018-46.md)。
+
 ## ws074-q20261018-45 / chain consumers
 
 q45 chain consumers scoped partial cleared。selection WIP827443d9a/source WIPdbcb42104。object_is_prototype_of/object_lookup_half/vm_ordinary_has_instanceの3関数だけをactual GetPrototypeOf/lookup GetOwnへ接続。nearest data shadowing/アクセサ未実行/ToObject→ToKey順/primitive-before-receiver/null/SameValue/例外identityを保持。fresh current link/boxed target/key/constructor prototype/managed direct callerをcallback中にroot、単一forward cleanupで退役。normal lookup helper宣言は全table後、initializer必要wrapper例外維持。native_operations定義/comment/ABI2/Wayland/global Proxy/Reflect/factory callable・nested拒否/WPT・runner・期待値/共有Boards/cache/SDK/toolchain/sysroot不変。確認済1482/3805保持、q45全census未測定。[exact history](ws074-q20261018-45.md)。
@@ -119,9 +123,5 @@ Follow-up: q23 i01/i02 clearanceは疎checkoutのIDL未配信が判明しunclear
 ## ws074-q20261018-17（2026-10-18）
 
 [履歴](ws074-q20261018-17.md)。ordinary attributes/native empty NodeListとpost-font producerのscoped outputを検証し全3 item partial cleared。全harness1491はwhole491・callback11531 PASS/20226 FAIL/14 NOTRUNを維持し、whole/callback後退・改善・欠損・追加・順序変更0。全static1561は839 PASS/722 FAIL、全reference pixel metrics unchanged。strict48は39 PASS/9 readiness_missing。最終source f1b83fa8f/pair hash read-back一致、固定WPT tracked clean。確認済み1369/3805（35.978975%）、q14から39増。未実行292 harness/413 reftest・native crash依存9は残す。 DOM35/Chrome22/controls15・budget6/font2・host/target/C/Acid通過。次候補はstrict scripted reftest413、native API/target/p100/共有projectionは残る。
-
-## ws074-q20261018-16（2026-10-18）
-
-[履歴](ws074-q20261018-16.md)。post-font native pumpを実装し独立7行/budget6/旧font2・DOM34・host/target/C/Acid通過。strict14/15でattribute observerの別未対応が判明、i01 uncleared/i02 unstarted uncleared。固定48は未実行、global1491/static1561はcombined final sourceへpendingとしてskipped。last full verified1330はq14 source、current candidate全体未判定。p253 attributes→p209新attempt再検証→p190を次Queue候補へ。全raw/candidate保持、共有projection pending。
 
 以前のindex: [early 2026-10-18](early-20261018.md)。過去standing Queue投影: [原文archive](../queue-archive-through-q30.md)。
