@@ -99,13 +99,13 @@ kern_platform_init(
 	struct kern_boot_device *devices,
 	size_t capacity)
 {
-	const struct rpi4_boot_handoff *rpi4;
 	const uint64_t *fdt_object;
 	const uint64_t *sdhci_object;
 	struct kern_boot_device *device;
 	uint64_t fdt_phys;
 	uint64_t sdhci_phys;
 #if CONFIG_DRIVER_BCM2711_GPU
+	struct kern_boot_framebuffer framebuffer;
 	struct drv_bcm2711_boot_screen screen;
 #endif
 	unsigned i;
@@ -113,18 +113,13 @@ kern_platform_init(
 	int ethernet_error;
 #endif
 
-	rpi4 = (const void *)handoff;
-
-	/* Rejects a handoff that is not an exact Raspberry Pi 4 description. */
+	/* Rejects a handoff that is not the common record. */
 	if (!handoff ||
 	    !devices ||
 	    capacity == 0 ||
 	    handoff->magic != KERN_HANDOFF_MAGIC ||
 	    handoff->version != KERN_HANDOFF_VERSION_MULTIBOOT ||
-	    handoff->size < sizeof(*rpi4) ||
-	    rpi4->extension_magic != KERN_RPI4_HANDOFF_MAGIC ||
-	    rpi4->extension_version != 1 ||
-	    rpi4->extension_size < sizeof(*rpi4) - sizeof(rpi4->common))
+	    handoff->size < sizeof(*handoff))
 		return 0;
 
 	/* Finds the SD controller the device tree names; without it nothing boots. */
@@ -205,13 +200,18 @@ kern_platform_init(
 #endif
 
 #if CONFIG_DRIVER_BCM2711_GPU
-	/* Describes the firmware's screen to the graphics driver. */
-	screen.physical = rpi4->framebuffer_phys;
-	screen.size = rpi4->framebuffer_size;
-	screen.width = rpi4->framebuffer_width;
-	screen.height = rpi4->framebuffer_height;
-	screen.pitch = rpi4->framebuffer_pitch;
-	screen.format = rpi4->framebuffer_format;
+	/*
+	 * Describes the firmware's screen to the graphics driver; a boot whose
+	 * firmware allocated none describes an empty one, which the record is
+	 * left as.
+	 */
+	(void)kern_boot_framebuffer("rpi4.framebuffer", &framebuffer);
+	screen.physical = framebuffer.physical_base;
+	screen.size = framebuffer.size;
+	screen.width = framebuffer.width;
+	screen.height = framebuffer.height;
+	screen.pitch = framebuffer.pitch;
+	screen.format = framebuffer.format;
 
 	/*
 	 * Finds the display path and the V3D engine.  A board or emulator

@@ -253,8 +253,8 @@ struct nvrtx_device {
 	int gop_on_gpu;
 	/*
 	 * That picture as the loader describes it: its offset in the VRAM
-	 * window, its size, its stride in pixels and its format (the loader's
-	 * ZBL6_FRAMEBUFFER_* code).
+	 * window, its size, its stride in pixels and its format (a
+	 * KERN_BOOT_FRAMEBUFFER_* code).
 	 */
 	uint64_t gop_offset;
 	uint32_t gop_width;

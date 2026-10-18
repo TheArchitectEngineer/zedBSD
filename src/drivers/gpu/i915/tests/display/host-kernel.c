@@ -1789,6 +1789,24 @@ kern_boot_handoff(
 }
 
 /*
+ * Stands in for kern_boot_framebuffer(): the boot handoff is not modelled on the host.
+ */
+int
+kern_boot_framebuffer(
+	const char *prefix,
+	struct kern_boot_framebuffer *framebuffer)
+{
+	UNUSED_PARAMETER(prefix);
+	UNUSED_PARAMETER(framebuffer);
+
+	/* Ends the test: the tested path reached a service the host does not have. */
+	i915_host_unreachable("kern_boot_framebuffer");
+
+	/* Not reached: i915_host_unreachable() does not return. */
+	return 0;
+}
+
+/*
  * Stands in for kern_io_in8(): the I/O ports is not modelled on the host.
  */
 uint8_t

@@ -23,7 +23,7 @@
 
 struct drv_gpu_ops;
 struct i915_device;
-struct zbl6_framebuffer;
+struct kern_boot_framebuffer;
 
 /* The refresh the display reports: the firmware's mode is not known, and 60 Hz is what laptop panels run at. */
 #define I915_BOOTFB_REFRESH_MILLIHZ	60000U
@@ -79,7 +79,7 @@ void drv_i915_bootfb_fini(struct i915_device *device);
  */
 
 /* Checks the boot handoff's framebuffer and lays out the display's use of it. */
-int drv_i915_bootfb_layout(const struct zbl6_framebuffer *fb, struct i915_bootfb_layout *layout);
+int drv_i915_bootfb_layout(const struct kern_boot_framebuffer *fb, struct i915_bootfb_layout *layout);
 
 /* Clips a presented frame to the framebuffer; reports the extent that is copied. */
 int drv_i915_bootfb_clip(const struct i915_bootfb_layout *layout, uint32_t width, uint32_t height, uint32_t *copy_width, uint32_t *copy_height);

@@ -20,7 +20,8 @@
 
 #include "../../display/bootfb.h"
 
-#include "bootloader/include/amd64-handoff.h"
+#include <kern/boot.h>
+#include <kern/platform.h>
 
 #include <uapi/errno.h>
 #include <uapi/gpu.h>
@@ -33,7 +34,7 @@ static void i915_host_bootfb_refusals(void);
 static void i915_host_bootfb_clip(void);
 static void i915_host_bootfb_swap(void);
 static void i915_host_bootfb_rows(void);
-static void i915_host_bootfb_fb(struct zbl6_framebuffer *fb, uint32_t width, uint32_t height, uint32_t stride, uint32_t format);
+static void i915_host_bootfb_fb(struct kern_boot_framebuffer *fb, uint32_t width, uint32_t height, uint32_t stride, uint32_t format);
 
 /*
  * Checks the boot framebuffer display's arithmetic.
@@ -65,12 +66,12 @@ main(void)
 static void
 i915_host_bootfb_layout(void)
 {
-	struct zbl6_framebuffer fb;
+	struct kern_boot_framebuffer fb;
 	struct i915_bootfb_layout layout;
 	int error;
 
 	/* The SV7's panel as GOP sets it: 1920x1080, stride 1920, B G R X. */
-	i915_host_bootfb_fb(&fb, 1920U, 1080U, 1920U, ZBL6_FRAMEBUFFER_BGRX8888);
+	i915_host_bootfb_fb(&fb, 1920U, 1080U, 1920U, KERN_BOOT_FRAMEBUFFER_BGRX8888);
 	error = drv_i915_bootfb_layout(&fb, &layout);
 	i915_host_check(error == 0 &&
 			layout.width == 1920U &&
@@ -85,7 +86,7 @@ i915_host_bootfb_layout(void)
 			"LAYOUT: 1920x1080 staging: rows of 7680 bytes, 2025 whole pages");
 
 	/* An RGBX framebuffer whose stride is wider than its rows (QEMU's VGA at 1280x800, stride 2048). */
-	i915_host_bootfb_fb(&fb, 1280U, 800U, 2048U, ZBL6_FRAMEBUFFER_RGBX8888);
+	i915_host_bootfb_fb(&fb, 1280U, 800U, 2048U, KERN_BOOT_FRAMEBUFFER_RGBX8888);
 	error = drv_i915_bootfb_layout(&fb, &layout);
 	i915_host_check(error == 0 &&
 			layout.fb_stride_bytes == 8192U &&
@@ -96,7 +97,7 @@ i915_host_bootfb_layout(void)
 			"LAYOUT: 1280x800 RGBX stride 2048: 8192 bytes a framebuffer row, 5120 a staging row");
 
 	/* An odd width rounds a staging row up to 64 bytes and the area up to whole pages. */
-	i915_host_bootfb_fb(&fb, 1366U, 768U, 1366U, ZBL6_FRAMEBUFFER_BGRX8888);
+	i915_host_bootfb_fb(&fb, 1366U, 768U, 1366U, KERN_BOOT_FRAMEBUFFER_BGRX8888);
 	error = drv_i915_bootfb_layout(&fb, &layout);
 	i915_host_check(error == 0 &&
 			layout.staging_stride_bytes == 5504U &&
@@ -109,17 +110,17 @@ i915_host_bootfb_layout(void)
 static void
 i915_host_bootfb_refusals(void)
 {
-	struct zbl6_framebuffer fb;
+	struct kern_boot_framebuffer fb;
 	struct i915_bootfb_layout layout;
 	int error;
 
 	/* An empty extent. */
-	i915_host_bootfb_fb(&fb, 0U, 1080U, 1920U, ZBL6_FRAMEBUFFER_BGRX8888);
+	i915_host_bootfb_fb(&fb, 0U, 1080U, 1920U, KERN_BOOT_FRAMEBUFFER_BGRX8888);
 	error = drv_i915_bootfb_layout(&fb, &layout);
 	i915_host_check(error == EINVAL, "REFUSE: a framebuffer 0 pixels wide");
 
 	/* A stride shorter than a row. */
-	i915_host_bootfb_fb(&fb, 1920U, 1080U, 1600U, ZBL6_FRAMEBUFFER_BGRX8888);
+	i915_host_bootfb_fb(&fb, 1920U, 1080U, 1600U, KERN_BOOT_FRAMEBUFFER_BGRX8888);
 	error = drv_i915_bootfb_layout(&fb, &layout);
 	i915_host_check(error == EINVAL, "REFUSE: a stride shorter than the width");
 
@@ -129,13 +130,13 @@ i915_host_bootfb_refusals(void)
 	i915_host_check(error == EINVAL, "REFUSE: a format other than RGBX8888 and BGRX8888");
 
 	/* A size that does not hold every visible row. */
-	i915_host_bootfb_fb(&fb, 1920U, 1080U, 1920U, ZBL6_FRAMEBUFFER_BGRX8888);
+	i915_host_bootfb_fb(&fb, 1920U, 1080U, 1920U, KERN_BOOT_FRAMEBUFFER_BGRX8888);
 	fb.size = 8294400U - 4U;
 	error = drv_i915_bootfb_layout(&fb, &layout);
 	i915_host_check(error == EINVAL, "REFUSE: a size one pixel short of the visible rows");
 
 	/* A side beyond the scanout layout's limit. */
-	i915_host_bootfb_fb(&fb, 8193U, 16U, 8193U, ZBL6_FRAMEBUFFER_BGRX8888);
+	i915_host_bootfb_fb(&fb, 8193U, 16U, 8193U, KERN_BOOT_FRAMEBUFFER_BGRX8888);
 	error = drv_i915_bootfb_layout(&fb, &layout);
 	i915_host_check(error == EINVAL, "REFUSE: a framebuffer 8193 pixels wide");
 }
@@ -144,14 +145,14 @@ i915_host_bootfb_refusals(void)
 static void
 i915_host_bootfb_clip(void)
 {
-	struct zbl6_framebuffer fb;
+	struct kern_boot_framebuffer fb;
 	struct i915_bootfb_layout layout;
 	uint32_t width;
 	uint32_t height;
 	int error;
 
 	/* A 1920x1080 framebuffer. */
-	i915_host_bootfb_fb(&fb, 1920U, 1080U, 1920U, ZBL6_FRAMEBUFFER_BGRX8888);
+	i915_host_bootfb_fb(&fb, 1920U, 1080U, 1920U, KERN_BOOT_FRAMEBUFFER_BGRX8888);
 	(void)drv_i915_bootfb_layout(&fb, &layout);
 
 	/* The same extent is copied whole. */
@@ -236,7 +237,7 @@ i915_host_bootfb_rows(void)
 /* Fills a boot handoff framebuffer record of the given extent, stride (pixels) and format, its size exactly its rows. */
 static void
 i915_host_bootfb_fb(
-	struct zbl6_framebuffer *fb,
+	struct kern_boot_framebuffer *fb,
 	uint32_t width,
 	uint32_t height,
 	uint32_t stride,
@@ -247,6 +248,6 @@ i915_host_bootfb_fb(
 	fb->size = (uint64_t)stride * 4U * height;
 	fb->width = width;
 	fb->height = height;
-	fb->stride = stride;
+	fb->pitch = stride;
 	fb->format = format;
 }

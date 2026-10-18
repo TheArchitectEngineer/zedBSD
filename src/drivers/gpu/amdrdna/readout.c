@@ -29,11 +29,10 @@
 #include <uapi/amdrdna.h>
 #include <uapi/errno.h>
 
-#include "bootloader/include/amd64-handoff.h"
 #include "drivers/gpu/amdrdna/amdrdna-private.h"
 #include "drivers/gpu/amdrdna/amdrdna-regs.h"
 
-/* The handoff object that describes the firmware's framebuffer. */
+/* The name prefix of the boot handoff values that describe the firmware's framebuffer. */
 #define READOUT_FRAMEBUFFER_HANDOFF	"pcat.framebuffer"
 
 /* The bytes of one pixel of the firmware's 32-bit picture. */
@@ -648,14 +647,17 @@ static int
 readout_loader(
 	struct amdrdna_device *device)
 {
-	const struct zbl6_framebuffer *framebuffer;
+	struct kern_boot_framebuffer boot_framebuffer;
+	const struct kern_boot_framebuffer *framebuffer;
 	struct amdrdna_gop *gop;
+	int error;
 
 	/* A boot without a framebuffer has no picture to compare. */
 	gop = &device->gop;
 	gop->loader_present = false;
-	framebuffer = kern_boot_handoff(READOUT_FRAMEBUFFER_HANDOFF);
-	if (framebuffer == NULL) {
+	framebuffer = &boot_framebuffer;
+	error = kern_boot_framebuffer(READOUT_FRAMEBUFFER_HANDOFF, &boot_framebuffer);
+	if (error != 0) {
 		amdrdna_mark("A1 note: the loader handed over no framebuffer");
 		return 0;
 	}
@@ -665,7 +667,7 @@ readout_loader(
 	gop->loader_physical = framebuffer->physical_base;
 	gop->loader_width = framebuffer->width;
 	gop->loader_height = framebuffer->height;
-	gop->loader_stride = framebuffer->stride;
+	gop->loader_stride = framebuffer->pitch;
 	gop->loader_on_gpu = false;
 	if (framebuffer->physical_base >= device->vram_bus &&
 	    framebuffer->physical_base - device->vram_bus < device->vram_window_bytes) {

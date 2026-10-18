@@ -18,8 +18,6 @@
 #include "../intel/display-regs-xd.h"
 #include "../intel/xd-vbt-layout.h"
 
-#include "bootloader/include/amd64-handoff.h"
-
 #include <hal/hal.h>
 #include <kern/kcrt.h>
 #include <kern/klog.h>
@@ -243,7 +241,7 @@ drv_i915_xd_check_firmware(
 	uint32_t driver_first_page,
 	uint32_t asls)
 {
-	const struct zbl6_framebuffer *framebuffer;
+	struct kern_boot_framebuffer framebuffer;
 	const struct i915_xd_platform *platform;
 	struct i915_xd_fw_env env;
 	int panel_ddi;
@@ -260,11 +258,11 @@ drv_i915_xd_check_firmware(
 	env.context = NULL;
 
 	/* The firmware's framebuffer from the boot handoff. */
-	framebuffer = kern_boot_handoff("pcat.framebuffer");
-	if (framebuffer != NULL) {
+	error = kern_boot_framebuffer("pcat.framebuffer", &framebuffer);
+	if (error == 0) {
 		env.fb_present = 1;
-		env.fb_base = framebuffer->physical_base;
-		env.fb_size = framebuffer->size;
+		env.fb_base = framebuffer.physical_base;
+		env.fb_size = framebuffer.size;
 	}
 
 	/* Reads and decides; a device without a description is recorded as one. */
