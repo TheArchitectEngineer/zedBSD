@@ -1,0 +1,29 @@
+{
+  "source_before_sha256": "4774f871d2cafe3b762c40e97e6898a2515d80101bccc042a43ab5dd2e3638f8",
+  "source_after_sha256": "21068159b269ee5339eec8459abbb4b1709099b5d3168d5d36cc7260eaf20df7",
+  "initializers_required_forward_declarations": 44,
+  "other_helpers_after_tables": 14,
+  "declaration_multiset_unchanged": true,
+  "remaining_tokens_unchanged": true,
+  "host_runtime_object_identical": true,
+  "command": [
+    "cc",
+    "-std=gnu11",
+    "-O1",
+    "-g",
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "-D_GNU_SOURCE",
+    "-fPIC",
+    "-Iuserland/desktop/libbrowser",
+    "-Iuserland/desktop/browser",
+    "-Iplan/ws074/tests",
+    "-Ibuild/ws074-20261018/include",
+    "-I.",
+    "-c",
+    "userland/desktop/libbrowser/bind/event.c",
+    "-o",
+    "build/ws074-20261018/q27/event-prototype-order-host.o"
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "cc --version": "cc (Debian 14.2.0-19) 14.2.0\nCopyright (C) 2024 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n",
+  "clang-format-19 --version": "Debian clang-format version 19.1.7 (3+b1)\n",
+  "build/llvm/bin/clang --version": "clang version 23.1.0 (git@github.com:awemorris/zedBSD.git 77a02e22ce6e9ff4b472c0cd7a0ea895aea1736f)\nTarget: x86_64-unknown-linux-gnu\nThread model: posix\nInstalledDir: /home/awe/zedBSD-claude1/build/llvm/bin\n",
+  "chromium --version": "Chromium 153.0.8010.52 built on Debian GNU/Linux 13 (trixie)\n",
+  "python3 --version": "Python 3.13.5\n"
+}

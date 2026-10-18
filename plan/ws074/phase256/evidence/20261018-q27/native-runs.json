@@ -1,0 +1,87 @@
+[
+  {
+    "label": "dom",
+    "command": [
+      "python3",
+      "plan/ws074/tests/run-dom-tests.py",
+      "--program",
+      "/home/awe/zedBSD-claude1/build/ws074-20261018/q27/final/engine/browser"
+    ],
+    "returncode": 0,
+    "seconds": 3.0
+  },
+  {
+    "label": "cssom",
+    "command": [
+      "/home/awe/zedBSD-claude1/build/ws074-20261018/q27/final/engine/host-cssom"
+    ],
+    "returncode": 0,
+    "seconds": 3.1
+  },
+  {
+    "label": "cssom-mutation",
+    "command": [
+      "/home/awe/zedBSD-claude1/build/ws074-20261018/q27/final/engine/host-cssom-mutation"
+    ],
+    "returncode": 0,
+    "seconds": 3.2
+  },
+  {
+    "label": "marks",
+    "command": [
+      "/home/awe/zedBSD-claude1/build/ws074-20261018/q27/final/engine/host-performance-marks"
+    ],
+    "returncode": 0,
+    "seconds": 3.4
+  },
+  {
+    "label": "observer",
+    "command": [
+      "/home/awe/zedBSD-claude1/build/ws074-20261018/q27/final/engine/host-performance-observer"
+    ],
+    "returncode": 0,
+    "seconds": 3.5
+  },
+  {
+    "label": "error-events",
+    "command": [
+      "/home/awe/zedBSD-claude1/build/ws074-20261018/q27/final/engine/host-error-events"
+    ],
+    "returncode": 0,
+    "seconds": 3.7
+  },
+  {
+    "label": "crash",
+    "command": [
+      "python3",
+      "plan/ws074/tests/run-interop2025-crashtests.py",
+      "--manifest",
+      "plan/ws074/phase173/evidence/20261013-q1012/manifest.json",
+      "--program",
+      "/home/awe/zedBSD-claude1/build/ws074-20261018/q27/final/engine/browser",
+      "--focus",
+      "all",
+      "--settle-ms",
+      "5000",
+      "--process-timeout",
+      "20",
+      "--out",
+      "build/ws074-20261018/q27/final/crash-report.json"
+    ],
+    "returncode": 0,
+    "seconds": 8.8
+  },
+  {
+    "label": "acid",
+    "command": [
+      "python3",
+      "plan/ws074/tests/run-acid-tests.py",
+      "--program",
+      "/home/awe/zedBSD-claude1/build/ws074-20261018/q27/final/engine/browser",
+      "--out",
+      "build/ws074-20261018/q27/final/acid"
+    ],
+    "returncode": 0,
+    "seconds": 17.2
+  }
+]

@@ -1,0 +1,54 @@
+{
+  "full_standard": "plan/coding-style.md section14 permits forward jumps to one shared cleanup label",
+  "checker_limitation": "style-check.py flags every goto without recognizing the permitted forward cleanup pattern",
+  "raw_goto_flags": 19,
+  "other_generated_or_fixture_flags": 0,
+  "manual_forward_cleanup_review": [
+    {
+      "function": "event_construct_error",
+      "forward_cleanup_jumps": 13,
+      "labels": [
+        "cleanup"
+      ],
+      "backward_jumps": 0
+    },
+    {
+      "function": "event_invoke",
+      "forward_cleanup_jumps": 3,
+      "labels": [
+        "cleanup"
+      ],
+      "backward_jumps": 0
+    },
+    {
+      "function": "error_retired_event",
+      "forward_cleanup_jumps": 3,
+      "labels": [
+        "cleanup"
+      ],
+      "backward_jumps": 0
+    }
+  ],
+  "unresolved_generated_conformance_findings": 0,
+  "functions": [
+    "event_trace",
+    "event_construct_error",
+    "event_error_scalar",
+    "event_error_this",
+    "event_error_message",
+    "event_error_filename",
+    "event_error_line",
+    "event_error_column",
+    "event_error_value",
+    "event_is_window_error",
+    "event_invoke",
+    "event_call_listener",
+    "window_error_event_tag",
+    "window_make_interface",
+    "error_collect",
+    "error_script",
+    "error_check",
+    "error_cases",
+    "error_retired_event"
+  ]
+}

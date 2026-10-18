@@ -1,0 +1,12 @@
+{
+  "rule": "plan/coding-style.md section2: only forward declarations required by initializers may precede constant tables",
+  "q27_event_c": "44 required declarations remain before tables;14 other helpers moved after all file-scope tables; runtime object identical",
+  "q26_remaining": {
+    "file": "userland/desktop/libbrowser/bind/environment.c",
+    "line": 176,
+    "helper": "environment_entries_snapshot",
+    "initializer_reference": false,
+    "source_unmodified_in_q27": true
+  },
+  "limitation": "This confirms an additional historic conformance defect, not a complete audit of all older declarations."
+}

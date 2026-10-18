@@ -1,0 +1,57 @@
+{
+  "eligible": 1508,
+  "eligible_sha256": "82147e6edaec1b3b8d537e46eb71b64f2f03132cc12803e284c6ca72377779e7",
+  "whole_changes": [],
+  "whole_regressions": [],
+  "whole_gains": [],
+  "callback_or_completion_changes": [],
+  "counts": {
+    "fail": 958,
+    "no_completion": 26,
+    "pass": 494,
+    "harness_error": 4,
+    "no_output": 24,
+    "multiple_completions": 2
+  },
+  "callbacks": {
+    "1": 20643,
+    "0": 11540,
+    "3": 14
+  },
+  "reviewed_retries": [
+    {
+      "id": "/css/css-anchor-position/anchor-size-parse-valid.html",
+      "initial_report": "shard-0000/test-079.json.gz",
+      "initial_outcome": "process_timeout",
+      "final_report": "retry-00078/test-079.json.gz",
+      "final_outcome": "fail",
+      "retry_directory": "retry-00078",
+      "retry_seconds": 8.902,
+      "command": [
+        "python3",
+        "plan/ws074/tests/run-interop2025-census.py",
+        "--manifest",
+        "plan/ws074/phase173/evidence/20261013-q1012/manifest.json",
+        "--program",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q27/final/engine/browser",
+        "--out",
+        "build/ws074-20261018/q27/final/after-harness/retry-00078",
+        "--offset",
+        "78",
+        "--limit",
+        "1",
+        "--settle-ms",
+        "5000",
+        "--process-timeout",
+        "20",
+        "--font-dir",
+        "userland/desktop/fonts",
+        "--gzip-raw"
+      ],
+      "process_timeout_unchanged": 20,
+      "settle_ms_unchanged": 5000,
+      "old_callback_and_completion_equal": true,
+      "reason": "One initial process timeout during concurrent corpus measurements; repeat only this ID after other owned suites finish. Original report/checkpoint/stdio remain archived; budgets and oracle unchanged."
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "idl": "interfaces/html.idl",
+  "idl_sha256": "f7fe99bc281aefaab46f5dc394e4fb409372e04d955b2fa35f891e87f7b855b1",
+  "html_reference": "https://html.spec.whatwg.org/multipage/webappapis.html#errorevent",
+  "handler_reference": "https://html.spec.whatwg.org/multipage/webappapis.html#the-event-handler-processing-algorithm",
+  "profile": "Native USVString filename follows pinned IDL/HTML; Chrome153 differs only for lone-surrogate filename in independent control."
+}

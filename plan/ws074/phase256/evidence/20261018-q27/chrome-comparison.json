@@ -1,0 +1,25 @@
+{
+  "command": [
+    "chromium",
+    "--headless",
+    "--no-sandbox",
+    "--disable-gpu",
+    "--enable-logging=stderr",
+    "--log-level=0",
+    "--user-data-dir=/tmp/ws074-q27-final-1792313793507037319",
+    "--virtual-time-budget=5000",
+    "--dump-dom",
+    "file:///home/awe/zedBSD-claude1/plan/ws074/tests/dom/error-events.html"
+  ],
+  "matched": 27,
+  "total": 28,
+  "differences": [
+    {
+      "index": 9,
+      "expected": "conversions PASS",
+      "chrome": "conversions FAIL"
+    }
+  ],
+  "primary_usvstring_expected": true,
+  "note": "Pinned html.idl and HTML specify USVString filename; Chrome153 preserves unmatched surrogate instead."
+}

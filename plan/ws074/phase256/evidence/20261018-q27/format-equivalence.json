@@ -1,0 +1,27 @@
+{
+  "change": "No-op verification: the five-clause condition was already correctly split. Source before and after is byte-identical; no final source mutation occurred.",
+  "source_before_sha256": "4774f871d2cafe3b762c40e97e6898a2515d80101bccc042a43ab5dd2e3638f8",
+  "source_after_sha256": "4774f871d2cafe3b762c40e97e6898a2515d80101bccc042a43ab5dd2e3638f8",
+  "host_runtime_object_identical": true,
+  "host_command": [
+    "cc",
+    "-std=gnu11",
+    "-O1",
+    "-g",
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "-D_GNU_SOURCE",
+    "-fPIC",
+    "-Iuserland/desktop/libbrowser",
+    "-Iuserland/desktop/browser",
+    "-Iplan/ws074/tests",
+    "-Ibuild/ws074-20261018/include",
+    "-I.",
+    "-c",
+    "userland/desktop/libbrowser/bind/event.c",
+    "-o",
+    "build/ws074-20261018/q27/event-postformat-host.o"
+  ],
+  "source_byte_identical": true
+}
