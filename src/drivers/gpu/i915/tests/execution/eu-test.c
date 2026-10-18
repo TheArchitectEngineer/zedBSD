@@ -786,8 +786,8 @@ drv_i915_test_eu_park(
 	error = drv_i915_request_create(&t->krq,
 	    &es->kernel_ce[t->engine_idx],
 	    kernel_seqno,
-	    (uint32_t)ge->hwsp_ggtt + I915_GEM_HWS_SEQNO_ADDR,
-	    &ge->hwsp[I915_GEM_HWS_SEQNO_ADDR / 4U]);
+	    (uint32_t)ge->hwsp_ggtt + I915_GT_HWS_SEQNO_ADDR,
+	    &ge->hwsp[I915_GT_HWS_SEQNO_ADDR / 4U]);
 	if (error == 0)
 		error = drv_i915_request_add(&t->krq);
 

@@ -99,8 +99,8 @@ drv_i915_pxp_init(
 	(void)drv_i915_lrc_update_regs(&x->ce, x->ce.ring.tail);
 
 	/* The context's timeline lives in the engine's status page. */
-	x->hwsp_ggtt = (uint32_t)ge->hwsp_ggtt + I915_GEM_HWS_PXP_ADDR;
-	x->hwsp_cpu = &ge->hwsp[I915_GEM_HWS_PXP_ADDR / 4U];
+	x->hwsp_ggtt = (uint32_t)ge->hwsp_ggtt + I915_GT_HWS_PXP_ADDR;
+	x->hwsp_cpu = &ge->hwsp[I915_GT_HWS_PXP_ADDR / 4U];
 
 	/* Allocates the streaming command page; a failure destroys the context. */
 	x->stream_cmd = drv_i915_gt_object_create(gm, I915_PXP_STREAM_CMD_BYTES);

@@ -276,7 +276,7 @@ drv_i915_request_create(
 	rq->seqno = seqno;
 	rq->hwsp_ggtt = hwsp_ggtt;
 	rq->hwsp_cpu = hwsp_cpu;
-	rq->preempt_ggtt = (uint32_t)ce->ge->hwsp_ggtt + I915_GEM_HWS_PREEMPT_ADDR;
+	rq->preempt_ggtt = (uint32_t)ce->ge->hwsp_ggtt + I915_GT_HWS_PREEMPT_ADDR;
 	rq->head = ce->ring.emit;
 
 	/* Refuses a breadcrumb slot that is not qword aligned or has bit 5 set. */

@@ -19,7 +19,7 @@
  *                           windows mapped itself, uncached, into the PTE
  *                           window, so a blit can rewrite the windows' PTEs
  *   the pinned context      a 512 KiB ring, the timeline in the engine's own
- *                           status page at I915_GEM_HWS_MIGRATE, built and
+ *                           status page at I915_GT_HWS_MIGRATE, built and
  *                           pinned as any context
  *
  * intel_gt_init() does not check the result: without a migrate context the
@@ -62,7 +62,7 @@ struct i915_gt_migrate {
 	int has_engine;
 	unsigned engine_idx;
 
-	/* The pinned timeline: the engine's status page at I915_GEM_HWS_MIGRATE. */
+	/* The pinned timeline: the engine's status page at I915_GT_HWS_MIGRATE. */
 	uint32_t hwsp_ggtt;
 	volatile uint32_t *hwsp_cpu;
 	uint32_t tl_seqno;

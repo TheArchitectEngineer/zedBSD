@@ -1,33 +1,16 @@
 /*
  * zedBSD
  * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
  */
 
 /*
- * SPDX-License-Identifier: MIT
- *
- * Copyright © 2014-2018 Intel Corporation
- * Copyright © 2022 Intel Corporation
- */
-
-/*
- * The workaround registers and values the driver quotes from Linux
- * intel_workarounds.c: multicast register steering, the GT, render engine and
- * render context workarounds of Alder Lake-P, and the registers the
- * whitelist opens to non-privileged batches.
- *
- * The workaround registers and values (Linux 6.8.12).
- * Modified for zedBSD: excerpted by hand from the Linux kernel 6.8.12 and
- * reformatted; values are unchanged.  Sources:
- *   drivers/gpu/drm/i915/gt/intel_workarounds.c
- *   drivers/gpu/drm/i915/gt/intel_gt_regs.h
- *   drivers/gpu/drm/i915/gt/intel_engine_regs.h
- * Rewrites: _MMIO(x) -> (x); REG_BIT/REG_GENMASK/REG_FIELD_PREP are expanded
- * to their constant values; integer constants gain a U suffix.
- * Only the registers and fields the Alder Lake-P workaround and whitelist
- * programming uses remain.  The MOCS and PAT values of the same excerpt are in
- * mocs.h; I915_GT_RING_CTX_TIMESTAMP, which the whitelist also opens, is in
- * gt-regs.h.
+ * The workaround registers and values: multicast register steering, the
+ * GT, render engine and render context workarounds of Alder Lake-P and of
+ * Gen9, and the registers the whitelist opens to non-privileged batches.
+ * The MOCS and PAT values are in mocs.h; I915_GT_RING_CTX_TIMESTAMP, which
+ * the whitelist also opens, is in gt-regs.h.
  */
 
 #ifndef DRIVERS_GPU_I915_INTEL_WORKAROUNDS_H
@@ -35,26 +18,59 @@
 
 #include <stdint.h>
 
-/* Multicast register steering (icl_wa_init_mcr). */
+/*
+ * Multicast register steering (icl_wa_init_mcr).
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_gt_regs.h
+ * (GEN8_MCR_SELECTOR, GEN11_MCR_SLICE_MASK, GEN11_MCR_SUBSLICE_MASK,
+ * GEN11_MCR_SLICE, GEN11_MCR_SUBSLICE).
+ */
 #define I915_GT_GEN8_MCR_SELECTOR			0x0fdcU
 #define I915_GT_GEN11_MCR_SLICE_MASK			0x78000000U
 #define I915_GT_GEN11_MCR_SUBSLICE_MASK			0x07000000U
 #define I915_GT_GEN11_MCR_SLICE(slice)			((((uint32_t)(slice)) & 0xfU) << 27)
 #define I915_GT_GEN11_MCR_SUBSLICE(subslice)		((((uint32_t)(subslice)) & 0x7U) << 24)
 
-/* gen12_gt_workarounds_init: Wa_14011060649. */
+/*
+ * gen12_gt_workarounds_init: Wa_14011060649.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_engine_regs.h
+ * (VDBOX_CGCTL3F10, IECPUNIT_CLKGATE_DIS).
+ */
 #define I915_GT_VDBOX_CGCTL3F10(base)			((base) + 0x3f10U)
 #define I915_GT_IECPUNIT_CLKGATE_DIS			(1U << 22)
 
-/* gen12_gt_workarounds_init: Wa_14011059788 (a multicast register). */
+/*
+ * gen12_gt_workarounds_init: Wa_14011059788 (a multicast register).
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_gt_regs.h
+ * (GEN10_DFR_RATIO_EN_AND_CHICKEN, DFR_DISABLE).
+ */
 #define I915_GT_GEN10_DFR_RATIO_EN_AND_CHICKEN		0x9550U
 #define I915_GT_DFR_DISABLE				(1U << 9)
 
-/* gen12_gt_workarounds_init: Wa_14015795083. */
+/*
+ * gen12_gt_workarounds_init: Wa_14015795083.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_gt_regs.h
+ * (GEN7_MISCCPCTL, GEN12_DOP_CLOCK_GATE_RENDER_ENABLE).
+ */
 #define I915_GT_GEN7_MISCCPCTL				0x9424U
 #define I915_GT_GEN12_DOP_CLOCK_GATE_RENDER_ENABLE	(1U << 1)
 
-/* rcs_engine_wa_init. */
+/*
+ * rcs_engine_wa_init.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_gt_regs.h
+ * (GEN9_CS_DEBUG_MODE1, FF_DOP_CLOCK_GATE_DISABLE, GEN8_ROW_CHICKEN2,
+ * GEN12_DISABLE_EARLY_READ, GEN12_PUSH_CONST_DEREF_HOLD_DIS,
+ * GEN10_SAMPLER_MODE, ENABLE_SMALLPL, GEN9_ROW_CHICKEN4,
+ * GEN12_DISABLE_TDL_PUSH, GEN7_FF_SLICE_CS_CHICKEN1,
+ * GEN9_FFSC_PERCTX_PREEMPT_CTRL); drivers/gpu/drm/i915/i915_reg.h
+ * (GEN7_FF_THREAD_MODE, GEN12_FF_TESSELATION_DOP_GATE_DISABLE);
+ * drivers/gpu/drm/i915/gt/intel_engine_regs.h (RING_PSMI_CTL,
+ * GEN8_RC_SEMA_IDLE_MSG_DISABLE, GEN12_WAIT_FOR_EVENT_POWER_DOWN_DISABLE).
+ */
 #define I915_GT_GEN9_CS_DEBUG_MODE1			0x20ecU
 #define I915_GT_FF_DOP_CLOCK_GATE_DISABLE		(1U << 1)
 #define I915_GT_GEN8_ROW_CHICKEN2			0xe4f4U
@@ -72,7 +88,17 @@
 #define I915_GT_GEN7_FF_SLICE_CS_CHICKEN1		0x20e0U
 #define I915_GT_GEN9_FFSC_PERCTX_PREEMPT_CTRL		(1U << 14)
 
-/* gen12_ctx_workarounds_init. */
+/*
+ * gen12_ctx_workarounds_init.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_gt_regs.h
+ * (GEN11_COMMON_SLICE_CHICKEN3, GEN12_DISABLE_CPS_AWARE_COLOR_PIPE,
+ * GEN8_CS_CHICKEN1, GEN9_PREEMPT_GPGPU_LEVEL_MASK,
+ * GEN9_PREEMPT_GPGPU_THREAD_GROUP_LEVEL, GEN12_FF_MODE2,
+ * FF_MODE2_GS_TIMER_224, FF_MODE2_TDS_TIMER_128, HIZ_CHICKEN,
+ * HZ_DEPTH_TEST_LE_GE_OPT_DISABLE, COMMON_SLICE_CHICKEN4,
+ * DISABLE_TDC_LOAD_BALANCING_CALC).
+ */
 #define I915_GT_GEN11_COMMON_SLICE_CHICKEN3		0x7304U
 #define I915_GT_GEN12_DISABLE_CPS_AWARE_COLOR_PIPE	(1U << 9)
 #define I915_GT_GEN8_CS_CHICKEN1			0x2580U
@@ -86,35 +112,55 @@
 #define I915_GT_COMMON_SLICE_CHICKEN4			0x7300U
 #define I915_GT_DISABLE_TDC_LOAD_BALANCING_CALC		(1U << 6)
 
-/* tgl_whitelist_build and allow_read_ctx_timestamp. */
+/*
+ * tgl_whitelist_build and allow_read_ctx_timestamp.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_gt_regs.h
+ * (PS_INVOCATION_COUNT, GEN7_COMMON_SLICE_CHICKEN1);
+ * drivers/gpu/drm/i915/gt/intel_engine_regs.h
+ * (RING_FORCE_TO_NONPRIV_ACCESS_RD, RING_FORCE_TO_NONPRIV_RANGE_4).
+ */
 #define I915_GT_PS_INVOCATION_COUNT			0x2348U
 #define I915_GT_GEN7_COMMON_SLICE_CHICKEN1		0x7010U
 #define I915_GT_RING_FORCE_TO_NONPRIV_ACCESS_RD		(1U << 28)
 #define I915_GT_RING_FORCE_TO_NONPRIV_RANGE_4		(1U << 0)
 
-/* intel_engine_apply_whitelist: the per-engine non-privileged slots. */
+/*
+ * intel_engine_apply_whitelist: the per-engine non-privileged slots.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_engine_regs.h
+ * (RING_FORCE_TO_NONPRIV, RING_NOPID, RING_MAX_NONPRIV_SLOTS).
+ */
 #define I915_GT_RING_FORCE_TO_NONPRIV(base, slot)	((base) + 0x4d0U + (unsigned)(slot) * 4U)
 #define I915_GT_RING_NOPID(base)			((base) + 0x94U)
 #define I915_GT_RING_MAX_NONPRIV_SLOTS			12U
 
 /*
  * The Gen9 (Skylake, Kaby Lake, Coffee Lake, Comet Lake) workaround,
- * whitelist and GTT-workaround registers, excerpted by hand from
- * the Linux 6.8.12 reference; values are unchanged.  Sources (SHA-256):
- *   drivers/gpu/drm/i915/gt/intel_gt_regs.h
- *     e0b8207e1799fc7e061eb38fe6ebc3e87bea8eca63040f4214358436ca115a83
- *   drivers/gpu/drm/i915/i915_reg.h
- *     efcb6385e32031ca3c5b97f7691c5ed1706c2a6709e3875ff78c2cf2eff0e626
- *   drivers/gpu/drm/i915/gt/intel_engine_regs.h (I915_GT_RING_SEMA_WAIT_POLL)
+ * whitelist and GTT-workaround registers.
  */
 
-/* gen9_wa_init_mcr: the Gen8 layout of the steering selector. */
+/*
+ * gen9_wa_init_mcr: the Gen8 layout of the steering selector.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_gt_regs.h
+ * (GEN8_MCR_SLICE, GEN8_MCR_SLICE_MASK, GEN8_MCR_SUBSLICE,
+ * GEN8_MCR_SUBSLICE_MASK).
+ */
 #define I915_GT_GEN8_MCR_SLICE(slice)			((((uint32_t)(slice)) & 0x3U) << 26)
 #define I915_GT_GEN8_MCR_SLICE_MASK			I915_GT_GEN8_MCR_SLICE(3U)
 #define I915_GT_GEN8_MCR_SUBSLICE(subslice)		((((uint32_t)(subslice)) & 0x3U) << 24)
 #define I915_GT_GEN8_MCR_SUBSLICE_MASK			I915_GT_GEN8_MCR_SUBSLICE(3U)
 
-/* gen9_gt_workarounds_init and the skl, kbl and cfl GT lists. */
+/*
+ * gen9_gt_workarounds_init and the skl, kbl and cfl GT lists.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_gt_regs.h
+ * (GAM_ECOCHK, BDW_DISABLE_HDC_INVALIDATION, ECOCHK_DIS_TLB, MMCD_MISC_CTRL,
+ * MMCD_PCLA, MMCD_HOTSPOT_EN, GEN7_UCGCTL4, GEN8_EU_GAUNIT_CLOCK_GATE_DISABLE,
+ * GEN9_GAMT_ECO_REG_RW_IA, GAMT_ECO_ENABLE_IN_PLACE_DECOMPRESS,
+ * GAMT_CHKN_BIT_REG, GAMT_CHKN_DISABLE_DYNAMIC_CREDIT_SHARING).
+ */
 #define I915_GT_GAM_ECOCHK				0x4090U
 #define I915_GT_BDW_DISABLE_HDC_INVALIDATION		(1U << 25)
 #define I915_GT_ECOCHK_DIS_TLB				(1U << 8)
@@ -128,7 +174,25 @@
 #define I915_GT_GAMT_CHKN_BIT_REG			0x4ab8U
 #define I915_GT_GAMT_CHKN_DISABLE_DYNAMIC_CREDIT_SHARING	(1U << 28)
 
-/* gen9_ctx_workarounds_init and the kbl and cfl context lists (COMMON_SLICE_CHICKEN2 is in gt-regs.h). */
+/*
+ * gen9_ctx_workarounds_init and the kbl and cfl context lists
+ * (COMMON_SLICE_CHICKEN2 is in gt-regs.h).
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_gt_regs.h
+ * (GEN9_PBE_COMPRESSED_HASH_SELECTION,
+ * GEN8_SBE_DISABLE_REPLAY_BUF_OPTIMIZATION, GEN9_HALF_SLICE_CHICKEN7,
+ * GEN9_SAMPLER_HASH_COMPRESSED_READ_ADDR, GEN9_ENABLE_YV12_BUGFIX,
+ * GEN9_ENABLE_GPGPU_PREEMPTION, GEN8_ROW_CHICKEN, FLOW_CONTROL_ENABLE,
+ * PARTIAL_INSTRUCTION_SHOOTDOWN_DISABLE, CACHE_MODE_1,
+ * GEN8_4x4_STC_OPTIMIZATION_DISABLE, GEN9_PARTIAL_RESOLVE_IN_VC_DISABLE,
+ * GEN9_HALF_SLICE_CHICKEN5, GEN9_CCS_TLB_PREFETCH_ENABLE, HDC_CHICKEN0,
+ * HDC_FORCE_CONTEXT_SAVE_RESTORE_NON_COHERENT,
+ * HDC_FORCE_CSR_NON_COHERENT_OVR_DISABLE, HDC_FORCE_NON_COHERENT,
+ * GEN8_HALF_SLICE_CHICKEN3, GEN8_SAMPLER_POWER_BYPASS_DIS,
+ * HALF_SLICE_CHICKEN2, GEN8_ST_PO_DISABLE, GEN9_PREEMPT_3D_OBJECT_LEVEL,
+ * GEN9_PREEMPT_GPGPU_COMMAND_LEVEL, GEN8_HALF_SLICE_CHICKEN1,
+ * GEN7_SBE_SS_CACHE_DISPATCH_PORT_SHARING_DISABLE).
+ */
 #define I915_GT_GEN9_PBE_COMPRESSED_HASH_SELECTION	(1U << 13)
 #define I915_GT_GEN8_SBE_DISABLE_REPLAY_BUF_OPTIMIZATION	(1U << 8)
 #define I915_GT_GEN9_HALF_SLICE_CHICKEN7		0xe194U
@@ -156,7 +220,18 @@
 #define I915_GT_GEN8_HALF_SLICE_CHICKEN1		0xe100U
 #define I915_GT_GEN7_SBE_SS_CACHE_DISPATCH_PORT_SHARING_DISABLE	(1U << 4)
 
-/* rcs_engine_wa_init and xcs_engine_wa_init for graphics version 9 (L3SQCREG4 is in gt-regs.h). */
+/*
+ * rcs_engine_wa_init and xcs_engine_wa_init for graphics version 9 (L3SQCREG4
+ * is in gt-regs.h).
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_gt_regs.h
+ * (GEN8_GARBCNTL, GEN9_GAPS_TSV_CREDIT_DISABLE, GEN9_CSFE_CHICKEN1_RCS,
+ * GEN9_PREEMPT_GPGPU_SYNC_SWITCH_DISABLE, BDW_SCRATCH1,
+ * GEN9_LBS_SLA_RETRY_TIMER_DECREMENT_ENABLE, EVICTION_PERF_FIX_ENABLE,
+ * GEN8_LQSQ_NONIA_COHERENT_ATOMICS_ENABLE, GEN9_SCRATCH_LNCF1,
+ * GEN9_LNCF_NONIA_COHERENT_ATOMICS_ENABLE);
+ * drivers/gpu/drm/i915/gt/intel_engine_regs.h (RING_SEMA_WAIT_POLL).
+ */
 #define I915_GT_GEN8_GARBCNTL				0xb004U
 #define I915_GT_GEN9_GAPS_TSV_CREDIT_DISABLE		(1U << 7)
 #define I915_GT_GEN9_CSFE_CHICKEN1_RCS			0x20d4U
@@ -169,11 +244,23 @@
 #define I915_GT_GEN9_LNCF_NONIA_COHERENT_ATOMICS_ENABLE	(1U << 0)
 #define I915_GT_RING_SEMA_WAIT_POLL(base)		((base) + 0x24cU)
 
-/* gen9_whitelist_build and its skl, kbl, cfl and cml callers. */
+/*
+ * gen9_whitelist_build and its skl, kbl, cfl and cml callers.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_gt_regs.h
+ * (GEN9_CTX_PREEMPT_REG, GEN8_HDC_CHICKEN1).
+ */
 #define I915_GT_GEN9_CTX_PREEMPT_REG			0x2248U
 #define I915_GT_GEN8_HDC_CHICKEN1			0x7304U
 
-/* gtt_write_workarounds for graphics version 9. */
+/*
+ * gtt_write_workarounds for graphics version 9.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_gt_regs.h
+ * (GEN8_L3_LRA_1_GPGPU, GEN9_L3_LRA_1_GPGPU_DEFAULT_VALUE_SKL,
+ * GEN8_GAMW_ECO_DEV_RW_IA, GAMW_ECO_ENABLE_64K_IPS_FIELD);
+ * drivers/gpu/drm/i915/i915_reg.h (HSW_GTT_CACHE_EN, GTT_CACHE_EN_ALL).
+ */
 #define I915_GT_GEN8_L3_LRA_1_GPGPU			0x4dd4U
 #define I915_GT_GEN9_L3_LRA_1_GPGPU_DEFAULT_VALUE_SKL	0x67F1427FU
 #define I915_GT_GEN8_GAMW_ECO_DEV_RW_IA			0x4080U

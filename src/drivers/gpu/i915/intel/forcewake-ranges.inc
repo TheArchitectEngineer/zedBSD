@@ -1,40 +1,17 @@
 /*
  * zedBSD
  * Copyright (C) 2026 Awe Morris
- */
-
-/*
- * Copyright © 2013 Intel Corporation
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice (including the next
- * paragraph) shall be included in all copies or substantial portions of the
- * Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
- * IN THE SOFTWARE.
+ * SPDX-License-Identifier: Zlib
  */
 
 /*
  * The rows of the Gen12 register to forcewake domain map; mmio.c includes
- * them inside the initializer of i915_gen12_ranges[].
+ * them inside the initializer of i915_gen12_ranges[].  The always-on ranges
+ * have no row, because no match already means always on.
  *
- * Generated from the Linux 6.8.12 reference (intel_uncore.c, __gen12_fw_ranges,
- * which uncore_forcewake_init() assigns to Alder Lake-P) by
- * gen_fw_ranges.py; the domain names were renamed
- * for this driver.  The always-on entries are omitted because no match
- * already means always on.  The notice above is the source file's own.
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/intel_uncore.c
+ * (__gen12_fw_ranges, the map uncore_forcewake_init() gives Alder Lake-P).
  */
 
 	/* 0x0 .. 0x1fff always-on */
