@@ -9,14 +9,13 @@
  * GT reset.
  *
  * The full-GT soft reset the device start issues before it programs the GT,
- * and that the recovery path issues after a hang.  The control flow is Linux's
- * __intel_gt_reset(ALL_ENGINES): an uncore-lock section per attempt, a retry
- * only while the acknowledge times out, two write and poll passes per attempt
- * on Alder Lake-P, and a settle delay after the acknowledge.
+ * and that the recovery path issues after a hang: up to three attempts,
+ * each a pulse of the full-reset bit under the uncore lock and a settle
+ * time, made again only while the pulse does not clear.
  *
  * The reset of one engine, which the recovery from a video engine hang
- * issues: __intel_gt_reset(engine->mask) with the engine's
- * ready handshake and the lock of the scaler and format converter it uses.
+ * issues: the engine's reset handshake, the scaler and format converter it
+ * uses held and reset with it, and one attempt.
  */
 
 #ifndef DRIVERS_GPU_I915_RESET_H

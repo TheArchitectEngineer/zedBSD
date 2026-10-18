@@ -23,7 +23,14 @@ Status: in-progress（2026-10-18 q1251-i01、P1。cleared は Q1）
 - 公開の関数の名前: `drv_i915_gt_invalidate_tlb_full` → `drv_i915_tlb_invalidate_all`（呼び手は試験の fhd-render.c・eu-test.c だけ）。tlb.h の Linux の説明を外した。
 - 動作の確かめ: 前の版と比べて、forcewake の get の順と失敗の止め方、uncore lock の中の engine の順の書き込み（番地と語）、OA の書き込み（Gen12 で 1 つ以上書いた時だけ）、wait の順と limit、counter の更新、domain の逆順の put が同じことを読んで確かめた（engine の型が要るので host の比べ合わせは作っていない）。build: 2 組とも rc=0、warning 0。
 
+### 3. reset.c の GT の reset の部分（reset.h を含む）— 済み
+
+- 前の版は「follows Linux's __intel_gt_reset(ALL_ENGINES) through gen8_reset_engines() …」で、関数の分け方と名前が Linux の gen6_hw_domain_reset・gen8_engine_reset_prepare/cancel・get_sfc_forced_lock_data・find_sfc_paired_vecs・gen11_lock_sfc/unlock に 1 対 1 だった。
+- 書き直し: GDRST の pulse（書いて clear を待つ、2 回）、whole-GT の 1 回の attempt、engine の reset、RESET_CTL の handshake の enter/leave、converter の層（class ごとの register の位置の表 `struct i915_reset_converter`、engine から layout を選ぶ、partner、hold/release、保持の記録 `struct i915_reset_hold`）に組み直した。値は block ごとに `Values referenced:`。log の文言は同じ。recovery の部分（node の回復）は zedBSD の物なので変えていない。
+- 動作の確かめ: host 試験 `plan/ws244/tests/reset-equiv/run.sh <前の reset.c> <今の reset.c> <新しい出力の dir>`（GT の reset の部分だけを stub で build）。whole-GT の 6 の場面（成功、3 回とも timeout、timeout の後に成功、settle の失敗、forcewake の失敗 2 つ）と engine の 22 の場面（reset domain 無し、handshake の 3 状態と timeout、engine の domain 無し、forcewake の失敗、converter を自分で保持・ack の timeout で空いた/使用中、HEVC の pipe で partner 経由・空いた・奪われた、誰も使わない、access の無い decode、partner 無し、enhancement、Gen9、pulse の timeout、settle の失敗）で、register の読み書き・wait・forcewake・lock・delay・log の列が前の版と一致（`reset-equiv: PASS (491 lines)`）。
+- build: 2 組とも rc=0、warning 0。
+
 ### 残り
 
-- reset・device-info・ggtt・ppgtt・memory・irq・dma.h ほか（inventory §3 の表）。
-- pcode-equiv の試験は開発の確かめ用（前の版を入力に取る）。p004 が cleared になったら消してよい（path を Q1 へ）。
+- device-info・ggtt・ppgtt・memory・irq・dma.h ほか（inventory §3 の表）。
+- pcode-equiv・reset-equiv の試験は開発の確かめ用（前の版を入力に取る）。p004 が cleared になったら消してよい（path を Q1 へ）。
