@@ -2,11 +2,11 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: uncleared（q52 for-in partial cleared、whole Proxy未達）
+Status: in-progress（q53 callable/Call/Construct partial、whole Proxy未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
-Queue: ws074-q20261018-52-i01（q30〜q51 partial履歴保持）
+Queue: ws074-q20261018-53-i01（q30〜q52 partial履歴保持）
 Origin: p189/q29 original WebIDL2 parseがProxy未定義で停止。
 
 Objective / own criteria: native managed Proxyを実object internal methodsへ接続し、constructor/revocableと各internal operationのtrap/fallback/invariant/receiver/revocation/callability/GCを正しく実行する。original WebIDL2 actual parse/validatorに必要なget/set/array behaviorを通常APIで提供し、independent controls/原WPTを通す。部分read stageだけでwholeをclearしない。
@@ -354,3 +354,5 @@ general infinite Proxy prototype sequenceは既存JS nontermination/resource pol
 Archives: harness-all-raw 1676 members SHA2565c417eb488896982c992103268c8f4f8341a4fa65ee963eaef0de3a51e2abd0f, native-oracle-and-build-raw 134 members SHA256328745eb3da2073f3d459a380e84211224bb2cf959f20d65808255e193bf3c1aを全member順次read-back。runtime binaryはhash付きbuild保持・archive非同梱。
 
 [証拠](evidence/20261018-q52/README.md)。次finite scope未選定。
+
+Event ws074-p258-q53-selection: Call/Construct metadata/VM＋bytecode dispatchとGetFunctionRealm/BoundTargetFunction slot・generic bind/toString/instanceof安全性を一つの有限範囲へ選定。VM-owned slotでJS data layoutへの逆依存を避ける内部技術設計、global公開は後続。[exact Queue](../queue.md)。browser ABI2/native_operations契約/whole acceptance未変更、main統合・master編集無し。
