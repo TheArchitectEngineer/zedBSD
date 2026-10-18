@@ -21,3 +21,4 @@
 | Phase | 目的 | 状態 |
 | --- | --- | --- |
 | p001 | 壊れの洗い出し（いつから・何が）、直す順、QEMU の起動と画面の判定の方法 | planning |
+- 決定（2026-10-18 ユーザー、クリック）: 判定は「画面の console を作る」（QEMU sun4u の VGA（PCI）の framebuffer の console を足し、boot-test.sh で判定）。sparcv9 は担当が直してよい（main の未 commit の変更は Q1 が先に commit）。

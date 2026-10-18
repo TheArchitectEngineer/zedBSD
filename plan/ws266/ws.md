@@ -20,3 +20,4 @@
 | --- | --- | --- |
 | p001 | 設計: QEMU の machine と画面の device、firmware・起動の道、toolchain、HAL の構成（既存の HAL との共有）、HAL の API の差分の案、試験の道具、Phase の表。code は書かない | planning |
 - 既知の欠け（2026-10-18 P2 の報告、Q1 の確かめ）: `bootloader/x68k/stage2.c` と `src/hal/m68k/bsp-x68k/boot.c` が使う `struct x68k_boot_handoff` の定義が、2026-10-03 のリポジトリの作り直しの時から tree のどこにも無く、x68k は build できない。p001 で扱いを決める（boot loader → HAL の構造体として HAL か bootloader/ に定義し直すか）。
+- 決定（2026-10-18 ユーザー、クリック）: QEMU の virt で 68030 の MMU が動かなければ「68040 で virt を動かす」（CPU 側に 68040 の MMU・cache・例外の frame・FPU の部品を足す。68030 の道は build だけ）。HAL の API は形を限った事前の承認（Guardrail の表）。

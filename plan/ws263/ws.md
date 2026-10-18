@@ -19,3 +19,4 @@
 | Phase | 目的 | 状態 |
 | --- | --- | --- |
 | p001 | 設計: QEMU の machine と画面の device、firmware・起動の道、toolchain、HAL の構成（既存の HAL との共有）、HAL の API の差分の案、試験の道具、Phase の表。code は書かない | planning |
+- 決定（2026-10-18 ユーザー、クリック）: HAL の API は形を限った事前の承認（Guardrail の表）。
