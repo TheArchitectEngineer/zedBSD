@@ -260,7 +260,9 @@ drv_i915_hpd_start(
 
 	/* Refuses a hotplug without connectors, and a second start. */
 	world = display->hpd_world;
-	if (world == NULL || !world->armed || world->started)
+	if (world == NULL ||
+	    !world->armed ||
+	    world->started)
 		return EINVAL;
 
 	/* The Type-C ports the detection asks the live state of. */
@@ -587,7 +589,9 @@ drv_i915_hpd_probe_connector(
 
 	/* Refuses a hotplug that does not run and a connector it does not have. */
 	world = display->hpd_world;
-	if (world == NULL || !world->started || idx >= world->xh.count)
+	if (world == NULL ||
+	    !world->started ||
+	    idx >= world->xh.count)
 		return EINVAL;
 
 	/* Detects the connector, serialized with the works. */
@@ -840,7 +844,9 @@ i915_hpd_add_connectors(
 		kind = I915_XD_HPD_DP;
 		if (port->hdmi && !port->dp) {
 			kind = I915_XD_HPD_HDMI;
-		} else if (port->dp && (port->device_type & I915_HPD_DEVICE_TYPE_INTERNAL) != 0U && port->ddi == I915_PORT_A) {
+		} else if (port->dp &&
+		           (port->device_type & I915_HPD_DEVICE_TYPE_INTERNAL) != 0U &&
+		           port->ddi == I915_PORT_A) {
 			kind = I915_XD_HPD_EDP;
 		}
 
@@ -1136,7 +1142,9 @@ i915_hpd_detect_one(
 
 	/* A connection or a disconnection, or a connected sink with another EDID, changes the topology. */
 	topology = 0;
-	if (old_status != connector->status && (connector->status == I915_XD_HPD_CONNECTED || old_status == I915_XD_HPD_CONNECTED)) {
+	if (old_status != connector->status &&
+	    (connector->status == I915_XD_HPD_CONNECTED ||
+	     old_status == I915_XD_HPD_CONNECTED)) {
 		topology = 1;
 	} else if (connector->status == I915_XD_HPD_CONNECTED && connector->epoch != old_epoch) {
 		topology = 1;
@@ -1367,7 +1375,7 @@ i915_hpd_dp_pulse(
 	/* The hotplug state the hook belongs to. */
 	world = ctx;
 
-	/* Checks the sink. */
+	/* Asks the external port whether the sink is as it was after the short pulse. */
 	handled = drv_i915_dp_ext_pulse(world->display, (int)ddi);
 	if (!handled)
 		return 0;
@@ -1413,7 +1421,9 @@ i915_hpd_link(
 	tc = drv_i915_tc_port_of(world->display, (int)ddi);
 
 	/* A Type-C link without its partner: looked at again later. */
-	if (world->tc != NULL && tc >= 0 && tc < (int)I915_XD_TC_PORTS) {
+	if (world->tc != NULL &&
+	    tc >= 0 &&
+	    tc < (int)I915_XD_TC_PORTS) {
 		needs = drv_i915_xd_tc_ports_link_needs_reset(world->tc, (unsigned)tc);
 		if (needs) {
 			(void)drv_i915_delayed_queue(&world->tq, &world->tc_reset[tc].work, I915_HPD_TC_RESET_MS);

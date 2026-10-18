@@ -301,7 +301,9 @@ drv_i915_mmio_record_log(
 		entry = &i915_mmio_record.entry[i];
 
 		/* A name, or a full line, ends the line under way. */
-		if (pairs != 0U && (entry->count == 0U || pairs == I915_MMIO_RECORD_LINE_PAIRS)) {
+		if (pairs != 0U &&
+		    (entry->count == 0U ||
+		     pairs == I915_MMIO_RECORD_LINE_PAIRS)) {
 			kern_logf("i915: w%s\n", line);
 			length = 0U;
 			pairs = 0U;

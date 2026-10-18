@@ -253,11 +253,18 @@ i915_xd_icl_test_words_equal(
 	const struct i915_xd_mg_pll_words *b)
 {
 	/* Every word. */
-	if (a->refclkin != b->refclkin || a->coreclk != b->coreclk || a->hsclk != b->hsclk)
+	if (a->refclkin != b->refclkin ||
+	    a->coreclk != b->coreclk ||
+	    a->hsclk != b->hsclk)
 		return 0;
-	if (a->div0 != b->div0 || a->div1 != b->div1 || a->lf != b->lf || a->frac_lock != b->frac_lock)
+	if (a->div0 != b->div0 ||
+	    a->div1 != b->div1 ||
+	    a->lf != b->lf ||
+	    a->frac_lock != b->frac_lock)
 		return 0;
-	if (a->ssc != b->ssc || a->bias != b->bias || a->bias_mask != b->bias_mask)
+	if (a->ssc != b->ssc ||
+	    a->bias != b->bias ||
+	    a->bias_mask != b->bias_mask)
 		return 0;
 	if (a->tdc != b->tdc || a->tdc_mask != b->tdc_mask)
 		return 0;

@@ -262,7 +262,9 @@ i915_xd_test_accepted(void)
 	count = sizeof(i915_xd_test_accepted_12) / sizeof(i915_xd_test_accepted_12[0]);
 	for (index = 0U; index < count; index++) {
 		error = drv_i915_xd_platform_choose(i915_xd_test_accepted_12[index], 0U, 0, 0U, &choice);
-		if (error != 0 || choice.platform->display_ver != 12U || choice.platform->verified == 0)
+		if (error != 0 ||
+		    choice.platform->display_ver != 12U ||
+		    choice.platform->verified == 0)
 			all = 0;
 	}
 
@@ -274,7 +276,9 @@ i915_xd_test_accepted(void)
 	count = sizeof(i915_xd_test_accepted_13) / sizeof(i915_xd_test_accepted_13[0]);
 	for (index = 0U; index < count; index++) {
 		error = drv_i915_xd_platform_choose(i915_xd_test_accepted_13[index], 0U, 0, 0U, &choice);
-		if (error != 0 || choice.platform->display_ver != 13U || choice.platform->verified == 0)
+		if (error != 0 ||
+		    choice.platform->display_ver != 13U ||
+		    choice.platform->verified == 0)
 			all = 0;
 	}
 
@@ -344,30 +348,47 @@ i915_xd_test_shape(void)
 		}
 
 		/* A platform with Dekel or MG ports has a Type-C flow and that PHY's swing tables, and only those. */
-		if (dekel != 0U && (platform->tc_flow == I915_XD_TC_FLOW_NONE || platform->swing->dkl_dp_low == NULL))
+		if (dekel != 0U &&
+		    (platform->tc_flow == I915_XD_TC_FLOW_NONE ||
+		     platform->swing->dkl_dp_low == NULL))
 			sane = 0;
 		if (dekel == 0U && platform->swing->dkl_dp_low != NULL)
 			sane = 0;
-		if (mg != 0U && (platform->tc_flow == I915_XD_TC_FLOW_NONE || platform->swing->mg_dp_low == NULL))
+		if (mg != 0U &&
+		    (platform->tc_flow == I915_XD_TC_FLOW_NONE ||
+		     platform->swing->mg_dp_low == NULL))
 			sane = 0;
 		if (mg == 0U && platform->swing->mg_dp_low != NULL)
 			sane = 0;
-		if (dekel == 0U && mg == 0U && platform->tc_flow != I915_XD_TC_FLOW_NONE)
+		if (dekel == 0U &&
+		    mg == 0U &&
+		    platform->tc_flow != I915_XD_TC_FLOW_NONE)
 			sane = 0;
 
 		/* The first well is PW_1, owned by the DMC. */
 		well1 = 0;
-		if (platform->nwells != 0U && platform->wells[0].index == I915_XD_WELL_PW_1 && (platform->wells[0].flags & I915_XD_WELL_DMC_OWNED) != 0U)
+		if (platform->nwells != 0U &&
+		    platform->wells[0].index == I915_XD_WELL_PW_1 &&
+		    (platform->wells[0].flags & I915_XD_WELL_DMC_OWNED) != 0U)
 			well1 = 1;
 		if (well1 == 0)
 			sane = 0;
 
 		/* The tables are all there and of the platform's display version. */
-		if (platform->ncdclk == 0U || platform->ndbuf == 0U || platform->nplls == 0U || platform->nsteps == 0U)
+		if (platform->ncdclk == 0U ||
+		    platform->ndbuf == 0U ||
+		    platform->nplls == 0U ||
+		    platform->nsteps == 0U)
 			sane = 0;
-		if (platform->display_ver == 13U && (platform->wm_levels != 6U || platform->hw_sagv_wm == 0 || platform->dbuf_blocks != 4096U))
+		if (platform->display_ver == 13U &&
+		    (platform->wm_levels != 6U ||
+		     platform->hw_sagv_wm == 0 ||
+		     platform->dbuf_blocks != 4096U))
 			sane = 0;
-		if (platform->display_ver == 12U && (platform->wm_levels != 8U || platform->hw_sagv_wm != 0 || platform->dbuf_blocks != 2048U))
+		if (platform->display_ver == 12U &&
+		    (platform->wm_levels != 8U ||
+		     platform->hw_sagv_wm != 0 ||
+		     platform->dbuf_blocks != 2048U))
 			sane = 0;
 		if (platform->display_ver == 11U && (platform->wm_levels != 8U || platform->hw_sagv_wm != 0 || platform->dbuf_blocks != 2048U ||
 		    platform->pipedmc_base != 0U || platform->swing->edp_hobl != NULL))

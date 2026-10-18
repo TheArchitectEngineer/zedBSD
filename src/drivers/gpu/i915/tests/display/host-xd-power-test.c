@@ -365,7 +365,9 @@ i915_xd_power_test_table(void)
 	same = 0U;
 	for (well = 3U; well < 7U; well++) {
 		desc = &platform->wells[well];
-		if (desc->index == well + 2U && desc->fuse_gate == well + 3U && desc->irq_pipes == (1U << (well - 3U)))
+		if (desc->index == well + 2U &&
+		    desc->fuse_gate == well + 3U &&
+		    desc->irq_pipes == (1U << (well - 3U)))
 			same++;
 	}
 

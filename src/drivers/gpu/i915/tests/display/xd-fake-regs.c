@@ -998,7 +998,9 @@ i915_xd_fake_gmbus_command(
 
 	/* A refused cycle, or one for an address nobody answers. */
 	address = i915_xd_field_get(I915_XD_GMBUS1_ADDRESS, value);
-	if (answer == I915_XD_FAKE_GMBUS_NAK || (address != target->address && address != 0x30U)) {
+	if (answer == I915_XD_FAKE_GMBUS_NAK ||
+	    (address != target->address &&
+	     address != 0x30U)) {
 		target->refused = 1;
 		return;
 	}
@@ -1117,7 +1119,9 @@ i915_xd_fake_gmbus_status(
 
 	/* Ready, at the wait phase, and active while the cycle has bytes left or the bus lingers. */
 	status = I915_XD_GMBUS2_HW_READY | I915_XD_GMBUS2_WAIT_PHASE;
-	if (target->active != 0 && (target->left != 0U || target->lingers != 0))
+	if (target->active != 0 &&
+	    (target->left != 0U ||
+	     target->lingers != 0))
 		status |= I915_XD_GMBUS2_ACTIVE;
 
 	/* Succeeded: the status the controller shows. */

@@ -616,7 +616,7 @@ i915_bios_oprom_lift(
 	for (k = 0U; k < (size_t)vbt_size; k++)
 		display->i915_vbt_buf[k] = rom[found + k];
 
-	/* Checks the copy. */
+	/* Refuses a copy whose header or checksum does not hold. */
 	valid = drv_i915_vbt_validate(display->i915_vbt_buf, vbt_size);
 	if (valid == 0)
 		return 0;

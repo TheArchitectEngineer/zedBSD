@@ -268,7 +268,9 @@ drv_i915_gop_output_read(
 			continue;
 
 		/* A combo PHY port in HDMI or DVI mode is the HDMI path. */
-		if (port->phy_kind == I915_XD_PHY_COMBO && (gop->mode == I915_OUTPUT_MODE_HDMI || gop->mode == I915_OUTPUT_MODE_DVI))
+		if (port->phy_kind == I915_XD_PHY_COMBO &&
+		    (gop->mode == I915_OUTPUT_MODE_HDMI ||
+		     gop->mode == I915_OUTPUT_MODE_DVI))
 			gop->kind = I915_GOP_HDMI;
 
 		/* Any other port in DP SST mode is the external DisplayPort path. */
