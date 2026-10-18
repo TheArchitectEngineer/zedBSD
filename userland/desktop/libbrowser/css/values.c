@@ -158,6 +158,7 @@ static int values_tracks(struct css_parse *parse, const struct css_token *tokens
 static int values_auto_tracks(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
 static int values_grid_auto_flow(const struct css_token *tokens, size_t count, struct css_value *value);
 static int values_track_list(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_track_list *list, int depth);
+static int values_track_minimum_rule(const struct css_token *token, int kind);
 static int values_one_track(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declared_track *track);
 static int values_track_size(struct css_parse *parse, const struct css_token *tokens, size_t count, int *kind, struct css_value *size);
 static size_t values_split_at(const struct css_token *tokens, size_t count, int type, uint32_t delim);
@@ -4979,6 +4980,32 @@ values_track_list(
 	return 0;
 }
 
+/* Classifies a parsed minmax lower bound without collapsing its intrinsic keyword. */
+static int
+values_track_minimum_rule(
+	const struct css_token *token,
+	int kind)
+{
+	int same;
+
+	/* Resolved lengths retain their existing cascade path and explicit lower bound. */
+	if (kind == CSS_TRACK_LENGTH)
+		return CSS_TRACK_MINIMUM_LENGTH;
+
+	/* The existing parser has already accepted one of the three intrinsic keywords. */
+	same = css_ident_equal(token, "min-content");
+	if (same)
+		return CSS_TRACK_MINIMUM_MIN_CONTENT;
+
+	/* Max-content has a different intrinsic minimum from either auto or min-content. */
+	same = css_ident_equal(token, "max-content");
+	if (same)
+		return CSS_TRACK_MINIMUM_MAX_CONTENT;
+
+	/* Succeeded: the remaining accepted lower bound is the automatic minimum. */
+	return CSS_TRACK_MINIMUM_AUTO;
+}
+
 /* Parses one track: a size, minmax(minimum, size), or fit-content() (as auto). */
 static int
 values_one_track(
@@ -5044,6 +5071,9 @@ values_one_track(
 			return error;
 		if (track->minimum_kind == CSS_TRACK_FR)
 			return EINVAL;
+
+		/* Keep the lower-bound rule while the existing coarse kind continues to size tracks. */
+		track->minimum_rule = values_track_minimum_rule(&tokens[start], track->minimum_kind);
 		start = values_skip_space(tokens, count - 1U, comma + 1U);
 		error = values_track_size(parse, tokens + start, count - 1U - start, &track->kind, &track->size);
 		return error;

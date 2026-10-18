@@ -1,0 +1,37 @@
+{
+  "state": "i01 targeted/static partial cleared; i02 pending full502",
+  "static_before": {
+    "pass": 227,
+    "fail": 302
+  },
+  "static_after": {
+    "fail": 302,
+    "pass": 227
+  },
+  "static_regressions": [],
+  "target_restored_regressions": 10,
+  "target_q07_callback_improvements": 9,
+  "target_q07_callback_regressions": 0,
+  "dom": "27/27",
+  "native_cssom": "12/12",
+  "native_cssom_mutation": "12/12",
+  "acid3_diff": 0,
+  "acid2_diff": 873,
+  "source_sha256": {
+    "css/css.h": "e8566abe961facd01e2c639ebd64c0f3329371eda47f1bd71a2050a9ba9f26a3",
+    "css/internal.h": "cc013905c6831c0fe8fd2e49518d317c49fffba43b8b64763e925b1790524dd9",
+    "css/values.c": "b64ebc9f8d3cf8f9fce897eb7b03342b2fccf2f1b55f2bf7a2358e0031c5753c",
+    "css/cascade.c": "2beeb0382d0544d668c250e1fe7af9541d1060155035601fba03aedd05b71de2",
+    "layout/grid.c": "41799f5d646726649ee6677493de82fbac337df1b5c044896667556d9efac832"
+  },
+  "binary_sha256": {
+    "browser": "25a66385edb7811c04e5e04fddd6bf3060ef2883f26d2781adbecf9d87debc02",
+    "libbrowser.so": "b306126eead4261c2ddb1308d23e2a9c68add0b1eac0beed3fe017469575001d"
+  },
+  "residuals": [
+    "general minimum floor distribution",
+    "intrinsic content minima sizing",
+    "auto distribution and indefinite percentage cycles",
+    "target production link/runtime"
+  ]
+}

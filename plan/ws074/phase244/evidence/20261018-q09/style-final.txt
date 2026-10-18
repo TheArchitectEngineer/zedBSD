@@ -1,0 +1,4 @@
+userland/desktop/libbrowser/css/values.c blank-after-brace=50 call-in-condition=54 conditional=4 forward-declaration=2 goto=15 nested-declaration=10 paragraph-comment=18
+userland/desktop/libbrowser/css/cascade.c blank-after-brace=8 call-in-condition=1 conditional=8 paragraph-comment=1
+userland/desktop/libbrowser/layout/grid.c blank-after-brace=69 call-in-condition=6 conditional=29 forward-declaration=5 multi-line-body=13 nested-declaration=3 paragraph-comment=13
+total 309

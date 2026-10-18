@@ -9,7 +9,11 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [ws074-q20261018-08](queue.md) finished（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+Queue: [ws074-q20261018-09](queue.md) active（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+
+Event ws074-p244-q09-i01-clear-i02-start-20261018: [証拠](phase244/evidence/20261018-q09/README.md)。target10後退回復・対象callback9改善/後退0、DOM27/27、static227/529維持。verified metadata/eligibility output後、p243が全502を再検証する。general minimum/target等wholeは未達。
+
+Event ws074-p244-q09-start-20261018: minimum ruleをparse/cascade/layoutへ保持し、guard eligibilityを修正する次の有限Queueを開始。p244 verified output後にp243が新attemptで全502を再検証する。
 
 Event ws074-p244-q08-invalidated-minimum-redesign-20261018: [i02証拠](phase243/evidence/20261018-q08-i02/README.md)。full502の10 callback後退でi01初期clearanceをinvalidate、q08 uncleared。p244のminimum ruleをparse/cascade/layoutで保持する設計へ変更し、p221にinterface影響を記録。修正後p243が新attemptで再検証する。q07/q08 history/whole条件は維持。
 
@@ -653,8 +657,8 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p240](phase240/phase.md) | flex item の aspect-ratio、自動最小サイズと flex basis | uncleared / ws074-q20261018-01 host partial cleared（WPT142→149、後退0） | p172 engine・p234 ratio の実装 |
 | [ws074-p241](phase241/phase.md) | definiteなstretch cross sizeをflex ratioのbase/minimumへ渡す | uncleared / ws074-q20261018-02 host partial cleared、target pending | p234 ratio・p240 minimum |
 | [ws074-p242](phase242/phase.md) | ParentNode.replaceChildren、cleanupのDOM一般操作 | uncleared / q04・q05 host部分cleared、factory/iterator/target等残り | p189 q03のcleanup失敗の実測 |
-| [ws074-p243](phase243/phase.md) | Grid used trackのresolved CSSOM | uncleared / q08-i02 callback10件未達 | p221のsolver、p189 q03 raw・p190 q06診断 |
-| [ws074-p244](phase244/phase.md) | 固定Grid行spanのoverflow | uncleared / q08初期clearance invalidated、minimum metadataへ | p243 q07で露出したsolver不備 |
+| [ws074-p243](phase243/phase.md) | Grid used trackのresolved CSSOM | in-progress / q09-i02全502再検証 | p221のsolver、p189 q03 raw・p190 q06診断 |
+| [ws074-p244](phase244/phase.md) | 固定Grid行spanのoverflow | uncleared / q09-i01 partial cleared、general minimum等残り | p243 q07で露出したsolver不備 |
 | [ws074-p245](phase245/phase.md) | no-boxのauto minimum resolved value | planned / Queue未選定 | p243/q08のGrid raw、actual box proof |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。

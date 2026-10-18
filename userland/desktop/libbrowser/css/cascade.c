@@ -4335,6 +4335,9 @@ cascade_tracks(
 		declared = &value->tracks->tracks[index];
 		memset(&tracks[index], 0, sizeof(tracks[index]));
 		tracks[index].kind = declared->kind;
+
+		/* Preserve the explicit lower-bound rule as its individual lengths resolve below. */
+		tracks[index].minimum_rule = declared->minimum_rule;
 		tracks[index].minimum.unit = CSS_UNIT_AUTO;
 
 		/* Its size: an fr share, or a nonnegative resolved length. */

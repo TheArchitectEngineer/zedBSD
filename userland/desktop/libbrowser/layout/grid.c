@@ -78,7 +78,8 @@ struct grid_sizes {
 	struct css_length margin[4];
 };
 
-static int grid_span_has_fixed_rows(const struct css_style *style, const struct grid_item *item, int row_count, layout_unit available);
+static int grid_span_has_fixed_rows(const struct css_style *style, const struct grid_item *item, const struct grid_state *grid, layout_unit gap, layout_unit available);
+static int grid_fixed_span_minimum(const struct layout_box *box, int64_t *minimum);
 static int grid_save_used_tracks(struct layout_tree *tree, struct layout_box *box, const struct grid_state *grid);
 static int grid_copy_used_axis(struct layout_tree *tree, const layout_unit *sizes, int count, double **copy);
 static int grid_collect(struct layout_box *box, struct grid_state *grid);
@@ -2700,25 +2701,30 @@ grid_lay_item(
 	return 0;
 }
 
-/* Tests whether every row crossed by this item has a definite fixed maximum. */
+/* Tests whether all crossed maxima remain fixed after supported minimum constraints. */
 static int
 grid_span_has_fixed_rows(
 	const struct css_style *style,
 	const struct grid_item *item,
-	int row_count,
+	const struct grid_state *grid,
+	layout_unit gap,
 	layout_unit available)
 {
 	const struct css_track *track;
+	int64_t capacity;
+	int64_t minimum;
 	int span;
 	int end;
 	int row;
+	int automatic;
+	int known;
 
 	/* The separate vertical sizing paths retain their existing behavior in this partial scope. */
 	if (style->writing_mode != CSS_WRITING_HORIZONTAL_TB)
 		return 0;
 
 	/* Only placed items with an existing row range can constrain this span. */
-	if (item->row < 0 || item->row >= row_count)
+	if (item->row < 0 || item->row >= grid->row_count)
 		return 0;
 
 	/* Bound the endpoint before adding indices, even for a very large authored span. */
@@ -2727,29 +2733,115 @@ grid_span_has_fixed_rows(
 		return 0;
 
 	/* No row past the actual grid can participate in sizing this item. */
-	if (span > row_count - item->row)
-		span = row_count - item->row;
+	if (span > grid->row_count - item->row)
+		span = grid->row_count - item->row;
 
-	/* Every crossed row must be definite; intrinsic or flexible tracks preserve their existing sizing. */
+	/* Wide capacity arithmetic preserves every existing track and gap without index overflow. */
+	capacity = (int64_t)gap * (span - 1);
+	automatic = 0;
 	end = item->row + span;
 	for (row = item->row; row < end; row++) {
 		track = grid_row_track(style, row);
 		if (track->kind != CSS_TRACK_LENGTH)
 			return 0;
 
-		/* Resolved absolute lengths impose fixed track maxima. */
-		if (track->size.unit == CSS_UNIT_PX)
-			continue;
+		/* A min-content or max-content floor needs its complete intrinsic sizing algorithm. */
+		if (track->minimum_rule == CSS_TRACK_MINIMUM_MIN_CONTENT ||
+		    track->minimum_rule == CSS_TRACK_MINIMUM_MAX_CONTENT)
+			return 0;
 
-		/* Percentage maxima are fixed only when the content height supplying their basis is definite. */
-		if (track->size.unit == CSS_UNIT_PERCENT && available >= 0)
-			continue;
+		/* An unresolved percentage lower bound needs its complete area-dependent calculation. */
+		if (track->minimum_rule == CSS_TRACK_MINIMUM_LENGTH && track->minimum.unit != CSS_UNIT_PX)
+			return 0;
 
-		/* An unresolved length cannot provide the fixed-only overflow rule. */
+		/* Automatic minima can raise a fixed maximum and require a contribution proof below. */
+		if (track->minimum_rule == CSS_TRACK_MINIMUM_AUTO)
+			automatic = 1;
+
+		/* A resolved absolute maximum has the capacity already held by the row. */
+		if (track->size.unit == CSS_UNIT_PX) {
+			capacity += grid->rows[row];
+			continue;
+		}
+
+		/* A percentage maximum is fixed only with a definite content-height basis. */
+		if (track->size.unit == CSS_UNIT_PERCENT && available >= 0) {
+			capacity += grid->rows[row];
+			continue;
+		}
+
+		/* An unresolved maximum cannot establish the fixed-only overflow rule. */
 		return 0;
 	}
 
-	/* Succeeded: excess item content must overflow rather than grow these fixed tracks. */
+	/* A supported automatic contribution must fit before a fixed maximum can be preserved. */
+	if (automatic) {
+		known = grid_fixed_span_minimum(item->box, &minimum);
+		if (!known)
+			return 0;
+
+		/* Existing minimum growth remains responsible for content larger than this capacity. */
+		if (minimum > capacity)
+			return 0;
+	}
+
+	/* Succeeded: excess content can overflow without discarding a known minimum. */
+	return 1;
+}
+
+/* Bounds the unavoidable outer height for supported automatic-minimum cases. */
+static int
+grid_fixed_span_minimum(
+	const struct layout_box *box,
+	int64_t *minimum)
+{
+	int64_t frame;
+	int64_t outside;
+	int64_t content;
+	layout_unit given;
+
+	/* Ratio-dependent and replaced automatic minima retain their complete existing sizing path. */
+	if (box->style.aspect_ratio > 0.0f)
+		return 0;
+
+	/* Intrinsic replacement dimensions require their own contribution calculation. */
+	if (box->replaced)
+		return 0;
+
+	/* Percentage and intrinsic minima depend on the final area and cannot prove this local bound. */
+	if (box->style.min_height.unit != CSS_UNIT_AUTO && box->style.min_height.unit != CSS_UNIT_PX)
+		return 0;
+
+	/* Borders, padding and margins cannot disappear when the automatic minimum grows. */
+	frame = (int64_t)box->border[CSS_TOP] + box->padding[CSS_TOP] +
+		box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
+	outside = frame + box->margin[CSS_TOP] + box->margin[CSS_BOTTOM];
+
+	/* A definite preferred height has already passed its native minimum/maximum constraints. */
+	if (box->style.height.unit == CSS_UNIT_PX) {
+		content = box->height;
+	} else if (box->style.height.unit == CSS_UNIT_AUTO) {
+		/* Auto preferred height leaves only its definite minimum and unavoidable frame. */
+		content = 0;
+		if (box->style.min_height.unit == CSS_UNIT_PX) {
+			given = layout_from_px(box->style.min_height.value);
+			content = given;
+
+			/* A border-box minimum already includes the frame in its authored length. */
+			if (box->style.box_sizing == CSS_BOX_SIZING_BORDER)
+				content -= frame;
+		}
+	} else {
+		/* Preferred percentages and intrinsic sizes cannot prove this local bound. */
+		return 0;
+	}
+
+	/* A frame can exceed a border-box minimum without creating negative content. */
+	if (content < 0)
+		content = 0;
+
+	/* Succeeded: this contribution includes all unavoidable outer-height constraints. */
+	*minimum = content + outside;
 	return 1;
 }
 
@@ -2833,7 +2925,7 @@ grid_size_rows(
 			continue;
 
 		/* Definite fixed tracks retain their maxima even when a spanning item's content is taller. */
-		fixed_rows = grid_span_has_fixed_rows(&box->style, item, grid->row_count, available);
+		fixed_rows = grid_span_has_fixed_rows(&box->style, item, grid, gap, available);
 		if (fixed_rows)
 			continue;
 

@@ -1,5 +1,24 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
+# ws074-q20261018-09 / Grid minimum ruleとfixed-span eligibility
+
+Status: active（2026-10-18 12:07 JST）
+Owner: このCodex chat単独。
+Approval: [ユーザー自走指示](autonomy.md)を以下の有限範囲へ適用。
+Timebox: 最大90分（13:37 JSTまで）。同じ修正と依存する再検証をまとめる。
+
+| Attempt | Phase | Exact scope | State | Dependencies |
+| --- | --- | --- | --- | --- |
+| ws074-q20261018-09-i01 | [p244](phase244/phase.md) eligibility repair partial | css_declared_track/css_trackへNONE/length/auto/min-content/max-contentのminimum ruleを保持しparse/cascadeで渡す。grid.c guardはexplicit/intrinsic minimumを区別し、minmax-autoではknown preferred/min heightとframe/marginがspan capacityを超えない場合だけ適用。unknown ratio/replaced/percentage/intrinsic minimumは従来経路へ。一般minimum分配は未修正として保持。独立7、q08後退10を含む対象2 WPT、static Grid529で旧227 PASS後退0、host/target compile warning0、C全文/format、Acid3差0/Acid2非増加。grammar/公開ABI/WPT/Master変更なし | cleared（[証拠](phase244/evidence/20261018-q09/README.md)） | 691909980のq08 evidence、p243 copy output |
+| ws074-q20261018-09-i02 | [p243](phase243/phase.md) primary revalidation partial | i01 verified outputで全Grid502/全callbackと14条件を再検証。q07の247 whole PASSと全6,410 PASS callbackを維持し、q07の1未達を回復。q08で増えたfixed-row callback改善も確認。全ID/名前/順序/hash/rawを照合、q07/q08 historyは保持 | in-progress | i01 metadata/eligibility output |
+
+Dependency graph: q08 diagnosis → p244 i01 → p243 i02。過去のoutput参照は現在のexecution cycleではない。
+Upcoming Work Outlook: general minimum分配/line names、p245 no-box minimum、child/vertical copy、runner coverage。
+
+---
+
+<!-- awesome-plan project=zedbsd record=queue -->
+
 # ws074-q20261018-08 / fixed Grid row span修正と再検証
 
 Status: finished（2026-10-18、uncleared）

@@ -453,6 +453,8 @@ struct css_declared_track {
 	struct css_value size;
 	int minimum_kind;
 	struct css_value minimum;
+	/* The semantic minimum survives the legacy coarse track kind until cascade. */
+	int minimum_rule;
 };
 
 /* A declared grid template, kept in the parse's arena (none is an empty list). */

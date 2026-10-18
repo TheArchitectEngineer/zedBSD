@@ -2,7 +2,7 @@
 
 # ws074-p244: 固定Grid行だけをまたぐitemのoverflow
 
-Status: uncleared（q08-i01 clearance invalidated、minimum rule区別が必要）
+Status: uncleared（q09-i01 targeted/static部分cleared、general minimum等whole未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
@@ -34,3 +34,7 @@ Event ws074-p244-q08-i01-partial-clear-20261018: [証拠](evidence/20261018-q08/
 Event ws074-p244-q08-i01-invalidated-20261018: [i02証拠](../phase243/evidence/20261018-q08-i02/README.md)。minmax(auto,0px)の10 callback後退によりi01のinitial clearanceをinvalidateし、current outcomeをunclearedとした。独立7/7・静的225→227の初期証拠は保持。
 
 Event ws074-p244-minimum-rule-redesign-20261018: plain fixed lengthとminmaxのauto/min-content/max-content/explicit length minimumをparse→cascade→layoutへ保持する。definite fixed maximaだけでなく、automatic minimumがcapacityを超えず、intrinsic minimumが未証明でないことをguard eligibilityで確認する。未証明のminimumには従来のgrowth経路を残す。一般minimumの均等分配は別の未達として保持。この変更はcss.h/internal.h/values.c/cascade.c/grid.cへ範囲が広がるため、q08を再使用せず次の有限Queueを選定する。新output後のp243は再度full502/全callbackを比較する。共有投影pending。
+
+Event ws074-p244-q09-start-20261018: User autonomyをmetadata/guard repair最大90分へ適用。minimum ruleをNONE/length/auto/min-content/max-contentとして保持。minmax-autoでknown preferred/minimum heightとframe/marginのcontributionがcapacityを超える場合、またはratio/replaced/percentage等でproofできない場合は新guardを適用せず従来経路へ戻す。一般minimum分配を修復したとはしない。verified output後、p243新attemptで全502を再照合する。
+
+Event ws074-p244-q09-i01-partial-clear-20261018: [証拠](evidence/20261018-q09/README.md)。minimum ruleを保持し、target10後退回復/q07元case維持、target全callback9改善/後退0、DOM27/27、static529の227 PASS維持。host/target3source warning0、Acid3差0/Acid2差873。targeted/static部分cleared、p244 whole未達。verified outputをp243 q09-i02へ渡す。

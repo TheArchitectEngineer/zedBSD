@@ -2,7 +2,7 @@
 
 # ws074-p243: Grid trackのresolved CSSOMを実レイアウトから取得
 
-Status: uncleared（q08-i02で10 callback後退、再設計へ）
+Status: in-progress（q09-i02 metadata修正後の全502再検証）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
@@ -48,3 +48,7 @@ Event ws074-p243-q08-i02-start-20261018: p244 q08-i01の独立7条件/静的529�
 Event ws074-p243-q08-i02-uncleared-20261018: [証拠](evidence/20261018-q08-i02/README.md)。whole247維持、callback9改善/10後退でattempt uncleared。p244 i01のinitial clearanceもinvalidate。
 
 Event ws074-p243-minimum-rule-redesign-20261018: p244がparse/cascade minimum ruleを保持してguard eligibilityを修正する設計へ変更。verified output後、新しいp243 partial attemptが全502/全callbackと14条件を再検証する。q07/q08 historyとwhole条件は維持。
+
+Event ws074-p243-q09-revalidation-selected-20261018: p244 q09-i01のmetadata/eligibility verified output後、q09-i02が全502とq07の6,410 PASS callbackを再確認する。q07/q08のuncleared historyは維持。
+
+Event ws074-p243-q09-i02-start-20261018: p244 q09-i01のtargeted/static proofを受け、固定binaryで全502/全callbackをq07 baselineと比較する。q08で増えた8 callbackも維持できるか確認する。

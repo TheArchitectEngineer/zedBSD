@@ -147,6 +147,15 @@ enum css_track_kind {
 	CSS_TRACK_AUTO
 };
 
+/* Retains the lower-bound sizing rule of minmax() through parsing and cascade. */
+enum css_track_minimum_rule {
+	CSS_TRACK_MINIMUM_NONE,
+	CSS_TRACK_MINIMUM_LENGTH,
+	CSS_TRACK_MINIMUM_AUTO,
+	CSS_TRACK_MINIMUM_MIN_CONTENT,
+	CSS_TRACK_MINIMUM_MAX_CONTENT
+};
+
 /* The values of container-type (ws074-p075): not a container, a container of its width, or of both sizes. */
 enum css_container_type {
 	CSS_CONTAINER_NORMAL,
@@ -448,6 +457,8 @@ struct css_track {
 	struct css_length size;
 	float fr;
 	struct css_length minimum;
+	/* NONE identifies an ordinary track; other rules preserve the explicit minmax lower bound. */
+	int minimum_rule;
 };
 
 /*

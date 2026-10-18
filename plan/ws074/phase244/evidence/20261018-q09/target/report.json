@@ -1,0 +1,33 @@
+{
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "eligible": 2,
+  "reason_counts": {
+    "candidate": 2
+  },
+  "eligible_sha256": "92bd19537d2957eb0606c026658ffb7306550ecceb6d10eb713499c7b3a4d692",
+  "offset": 0,
+  "limit": 128,
+  "font_dir": "userland/desktop/fonts",
+  "selected": [
+    "/css/css-grid/grid-items/grid-minimum-size-grid-items-025.html",
+    "/css/css-grid/layout-algorithm/grid-intrinsic-track-sizes-001.html"
+  ],
+  "results": [
+    {
+      "kind": "result",
+      "test_id": "/css/css-grid/grid-items/grid-minimum-size-grid-items-025.html",
+      "outcome": "fail",
+      "report": "test-001.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-grid/layout-algorithm/grid-intrinsic-track-sizes-001.html",
+      "outcome": "fail",
+      "report": "test-002.json.gz"
+    }
+  ],
+  "outcome_counts": {
+    "fail": 2
+  }
+}
