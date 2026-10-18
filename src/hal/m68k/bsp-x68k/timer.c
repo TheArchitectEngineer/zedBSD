@@ -31,6 +31,7 @@ x68k_timer_init(uint32_t frequency)
 	unsigned best_control = 0, index;
 	uint32_t best_data = 0, best_error = UINT32_MAX;
 	uint8_t control, enabled;
+	int error;
 
 	if (frequency == 0)
 		HAL_FATAL("invalid X68k timer frequency");
@@ -56,7 +57,9 @@ x68k_timer_init(uint32_t frequency)
 	x68k_mfp_write(MFP_TCDCR, (uint8_t)(control & 0x0fU));
 	x68k_mfp_write(MFP_VR, 0x40U);
 	x68k_mfp_write(MFP_TCDR, (uint8_t)best_data);
-	hal_irq_set_handler(X68K_TIMER_VECTOR, timer_interrupt, NULL);
+	error = hal_irq_register(X68K_TIMER_VECTOR, timer_interrupt, NULL);
+	if (error != HAL_OK)
+		HAL_FATAL("X68k timer vector is taken");
 	enabled = x68k_mfp_read(MFP_IERB);
 	x68k_mfp_write(MFP_IERB, (uint8_t)(enabled | MFP_TIMER_C_BIT));
 	enabled = x68k_mfp_read(MFP_IMRB);

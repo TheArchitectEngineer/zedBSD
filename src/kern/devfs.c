@@ -1789,8 +1789,10 @@ block_pwrite_data(
 		return -error;
 	position = range.position;
 
-	/* Excludes other mutations of the touched sectors. */
+	/* Excludes other mutations of the touched sectors; an empty write touches none. */
 	length = range.length;
+	first = 0;
+	last = 0;
 	if (length != 0) {
 		first = position / block_size;
 		last = (position + length - 1U) / block_size;

@@ -38,6 +38,7 @@ SECTIONS
 		. = ALIGN(1024);
 		KEEP(*(.vectors))
 		*(.text.boot)
+		*(.hightext)
 		*(.text .text.*)
 		__kernel_text_end = .;
 	} :text
@@ -58,6 +59,7 @@ SECTIONS
 		ALIGN(X68K_PAGE_SIZE)
 	{
 		__bss_start = .;
+		*(.vfs_bss*) *(.net_bss*)
 		*(.bss .bss.* COMMON)
 		__bss_end = .;
 	} :data

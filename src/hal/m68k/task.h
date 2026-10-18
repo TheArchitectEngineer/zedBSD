@@ -36,4 +36,12 @@ void m68k_cpu_idle(void);
 void m68k_task_enter_user_frame(struct m68k_saved_frame *frame);
 void m68k_task_leave_user_frame(void);
 
+/*
+ * Reports the number of tasks and the bytes of their kernel stacks.
+ */
+void
+m68k030_task_memory_stats(
+	uint32_t *count,
+	size_t *stack_bytes);
+
 #endif

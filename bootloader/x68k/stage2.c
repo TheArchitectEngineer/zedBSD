@@ -14,6 +14,7 @@
  */
 
 #include "bootloader/x68k/boot-layout.h"
+#include "bootloader/x68k/handoff.h"
 #include "drivers/platform/x68k/x68k-mb89352.h"
 #include "kern/boot.h"
 #include "kern/elf.h"
@@ -764,8 +765,8 @@ make_handoff(
 	handoff->common.boot_partition_lba = be32(&manifest->root_lba);
 
 	/* Fills the X68000 extension: RAM, the kernel's and the loader's ranges, and the memory map. */
-	handoff->extension_magic = KERN_X68K_HANDOFF_MAGIC;
-	handoff->extension_version = KERN_X68K_HANDOFF_VERSION;
+	handoff->extension_magic = X68K_HANDOFF_EXTENSION_MAGIC;
+	handoff->extension_version = X68K_HANDOFF_EXTENSION_VERSION;
 	handoff->extension_size = sizeof(*handoff) - sizeof(handoff->common);
 	handoff->ram_bytes = ram_bytes;
 	handoff->kernel_phys_start = X68K_KERNEL_LOW_MIN;

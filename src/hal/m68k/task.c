@@ -15,7 +15,7 @@ static size_t task_stack_bytes;
 static struct m68k_task *
 task_allocate(void)
 {
-	void *allocation = hal_malloc(sizeof(struct m68k_task) + 15U);
+	void *allocation = kernel_alloc(sizeof(struct m68k_task) + 15U);
 	struct m68k_task *task;
 
 	if (allocation == NULL)
@@ -90,19 +90,32 @@ read32(const uint8_t *field)
 	    (uint32_t)field[2] << 8 | field[3];
 }
 
-void
-hal_task_init(void)
+/*
+ * Wraps the processor's current context as its initial task.
+ */
+hal_task_t
+hal_task_create_for_init_context(
+	void)
 {
 	struct m68k_task *task;
+
+	/* The processor has one initial context. */
 	if (running_task != NULL)
-		HAL_FATAL("m68k task init called twice");
+		HAL_FATAL("m68k initial task made twice");
+
+	/* Allocates the task's record; the current context needs no stack of its own. */
 	task = task_allocate();
 	if (task == NULL)
-		HAL_FATAL("initial m68k task allocation failed");
+		return NULL;
+
+	/* Publishes the task as the one running. */
 	task->space = HAL_SPACE_SYS;
 	task->run_cpu = 0;
 	task_add(task);
 	running_task = task;
+
+	/* Succeeded: the boot context is now a task. */
+	return task;
 }
 
 hal_task_t
@@ -120,9 +133,9 @@ hal_task_create(hal_space_t space, void (*start)(void *), void *argument,
 	task = task_allocate();
 	if (task == NULL)
 		return NULL;
-	task->kernel_stack = hal_malloc(M68K_KERNEL_STACK_SIZE);
+	task->kernel_stack = kernel_alloc(M68K_KERNEL_STACK_SIZE);
 	if (task->kernel_stack == NULL) {
-		hal_free(task->allocation);
+		kernel_free(task->allocation);
 		return NULL;
 	}
 	task_stack_bytes += M68K_KERNEL_STACK_SIZE;
@@ -181,9 +194,9 @@ hal_task_fork_current(hal_space_t child_space, intptr_t child_result)
 	child = task_allocate();
 	if (child == NULL)
 		return NULL;
-	child->kernel_stack = hal_malloc(M68K_KERNEL_STACK_SIZE);
+	child->kernel_stack = kernel_alloc(M68K_KERNEL_STACK_SIZE);
 	if (child->kernel_stack == NULL) {
-		hal_free(child->allocation);
+		kernel_free(child->allocation);
 		return NULL;
 	}
 	task_stack_bytes += M68K_KERNEL_STACK_SIZE;
@@ -232,23 +245,47 @@ hal_task_exec_current(hal_space_t new_space, uintptr_t entry,
 	return 0;
 }
 
+/*
+ * Reports the stack pointer the current user exception returns to.
+ */
 uintptr_t
-hal_task_user_stack(void)
+hal_task_get_user_stack(
+	void)
 {
-	return running_task != NULL && running_task->active_user_frame != NULL ?
-		running_task->active_user_frame->usp : 0;
+	/* Outside a user exception there is none. */
+	if (running_task == NULL || running_task->active_user_frame == NULL)
+		return 0;
+
+	/* Succeeded: the user stack pointer the exception saved. */
+	return running_task->active_user_frame->usp;
 }
 
+/*
+ * Reports the program counter, the stack pointer and the return value the
+ * current user exception returns with.
+ */
 int
-hal_task_user_context(struct hal_user_context *context)
+hal_task_get_user_context(
+	uintptr_t *pc,
+	uintptr_t *stack_pointer,
+	intptr_t *return_value)
 {
-	struct m68k_saved_frame *frame = running_task != NULL ?
-		running_task->active_user_frame : NULL;
-	if (frame == NULL || context == NULL)
+	struct m68k_saved_frame *frame;
+
+	/* Outside a user exception there is none. */
+	if (running_task == NULL || running_task->active_user_frame == NULL)
 		return -1;
-	context->pc = read32(frame->hardware + 2U);
-	context->stack_pointer = frame->usp;
-	context->return_value = (intptr_t)(int32_t)frame->d[0];
+	frame = running_task->active_user_frame;
+
+	/* Reports what the caller asked for: the hardware frame's pc, the saved usp and %d0. */
+	if (pc != NULL)
+		*pc = read32(frame->hardware + 2U);
+	if (stack_pointer != NULL)
+		*stack_pointer = frame->usp;
+	if (return_value != NULL)
+		*return_value = (intptr_t)(int32_t)frame->d[0];
+
+	/* Succeeded. */
 	return 0;
 }
 
@@ -318,9 +355,9 @@ hal_task_destroy(hal_task_t handle)
 	task_remove(task);
 	if (task->kernel_stack != NULL) {
 		task_stack_bytes -= M68K_KERNEL_STACK_SIZE;
-		hal_free(task->kernel_stack);
+		kernel_free(task->kernel_stack);
 	}
-	hal_free(task->allocation);
+	kernel_free(task->allocation);
 }
 
 void
@@ -361,7 +398,7 @@ hal_task_transfer(hal_task_t handle, hal_cpu_id_t target_cpu)
 }
 
 void
-hal_m68k_task_memory_stats(uint32_t *count, size_t *stack_bytes)
+m68k030_task_memory_stats(uint32_t *count, size_t *stack_bytes)
 {
 	if (count != NULL)
 		*count = task_count;

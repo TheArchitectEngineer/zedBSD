@@ -1,328 +1,686 @@
-/* MC68030/X68000 physical page allocator. */
-/* Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib. */
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The X68000 physical page allocator.
+ *
+ * Memory is a span from physical address zero to the end of RAM, one bit
+ * per 4 KiB page, set when the page is in use or not available at all.
+ * The loader's available regions are released at boot; page zero (the
+ * exception vectors), the loader, the kernel image and the loader's
+ * reserved regions are taken back and never freed.
+ */
 
 #include <hal/hal.h>
 #include "bsp.h"
+#include "../defs.h"
 #include "../space.h"
+#include "../task.h"
 
-#define X68K_MAX_RAM_BYTES 0x00c00000U
-#define X68K_MAX_PAGES     (X68K_MAX_RAM_BYTES / M68K030_PAGE_SIZE)
-#define X68K_BITMAP_WORDS  (X68K_MAX_PAGES / 32U)
-#define BIT_GET(map, bit)  ((map)[(bit) >> 5] & (1U << ((bit) & 31U)))
-#define BIT_SET(map, bit)  ((map)[(bit) >> 5] |= (1U << ((bit) & 31U)))
-#define BIT_CLEAR(map, bit) ((map)[(bit) >> 5] &= ~(1U << ((bit) & 31U)))
+/* The most RAM the bitmap can describe: the X68030's 12 MiB. */
+#define PAGE_MAX_BYTES		0x00c00000ULL
+#define PAGE_MAX_PAGES		(PAGE_MAX_BYTES / M68K030_PAGE_SIZE)
+#define PAGE_BITMAP_WORDS	(PAGE_MAX_PAGES / 32U)
 
-static uint32_t used[X68K_BITMAP_WORDS];
-static uint32_t reserved[X68K_BITMAP_WORDS];
-static uint32_t physical_pages;
+/* The least RAM the port runs in. */
+#define PAGE_MIN_PAGES		512U
+
+/*
+ * One bit per page of the span: set in page_bitmap when the page is in use
+ * or not available, and in reserved_bitmap when it was never available.
+ * Changed with interrupts off after boot.
+ */
+static uint32_t page_bitmap[PAGE_BITMAP_WORDS];
+static uint32_t reserved_bitmap[PAGE_BITMAP_WORDS];
+
+/*
+ * The span's first physical address and its length in pages.  Set once by
+ * m68k030_page_init() before any allocation and constant afterwards.
+ */
+static uint64_t ram_base;
+static uint32_t ram_pages;
+
+/*
+ * The pages that were never available and the pages allocated now, for
+ * the memory statistics.  Changed with interrupts off.
+ */
 static uint32_t reserved_pages;
 static uint32_t allocated_pages;
-#define X68K_FIXED_CLAIMS 16U
-static struct hal_pmem fixed_claims[X68K_FIXED_CLAIMS];
 
-static void
-release_available(uint32_t base, uint32_t size)
-{
-	uint64_t limit = (uint64_t)physical_pages * M68K030_PAGE_SIZE;
-	uint64_t end;
-	uint32_t first, last, page;
+/*
+ * All pages below this one are in use.  An allocation moves it only across
+ * pages in use, and a free below it moves it back.  Changed with
+ * interrupts off; the port runs on one processor, so that is enough to
+ * keep the bitmaps, the counters and the cursor consistent.
+ */
+static uint32_t first_free_candidate;
 
-	if (size == 0 || base >= limit)
-		return;
-	end = (uint64_t)base + size;
-	if (end > limit)
-		end = limit;
-	first = (base + M68K030_PAGE_MASK) / M68K030_PAGE_SIZE;
-	last = (uint32_t)(end / M68K030_PAGE_SIZE);
-	for (page = first; page < last; page++) {
-		if (BIT_GET(used, page)) {
-			BIT_CLEAR(used, page);
-			BIT_CLEAR(reserved, page);
-			reserved_pages--;
-		}
-	}
-}
+static void release_range(uint64_t base, uint64_t size);
+static void reserve_range(uint64_t base, uint64_t size);
+static int page_is_set(const uint32_t *bitmap, uint32_t page);
+static void page_set(uint32_t *bitmap, uint32_t page);
+static void page_clear(uint32_t *bitmap, uint32_t page);
+static uint32_t next_free(uint32_t page, uint32_t end);
+static uint32_t next_occupied(uint32_t page, uint32_t end);
+static void claim_run(uint32_t first, uint32_t count);
+static int alloc_ram(size_t size, size_t alignment, hal_physaddr_t max_paddr, size_t boundary, hal_physaddr_t *block);
+static int free_ram(hal_physaddr_t *block, size_t size);
 
-static void
-reserve_range(uintptr_t base, size_t size)
-{
-	uint64_t limit = (uint64_t)physical_pages * M68K030_PAGE_SIZE;
-	uint64_t end;
-	uint32_t first, last, page;
-
-	if (size == 0 || base >= limit)
-		return;
-	end = (uint64_t)base + size;
-	if (end > limit)
-		end = limit;
-	first = (uint32_t)(base / M68K030_PAGE_SIZE);
-	last = (uint32_t)((end + M68K030_PAGE_MASK) /
-		M68K030_PAGE_SIZE);
-	if (last > physical_pages)
-		last = physical_pages;
-	for (page = first; page < last; page++) {
-		if (!BIT_GET(used, page)) {
-			BIT_SET(used, page);
-			reserved_pages++;
-		}
-		BIT_SET(reserved, page);
-	}
-}
-
+/*
+ * Builds the page bitmap from the loader's memory regions.
+ *
+ * Every page starts in use; the available regions are released, then
+ * page zero, the loader, the kernel image and the reserved regions are
+ * taken again.
+ */
 void
-m68k030_page_init(void)
+m68k030_page_init(
+	void)
 {
-	const struct x68k_boot_handoff *handoff = x68k_boot_handoff();
-	uint32_t bytes = handoff->ram_bytes;
+	const struct x68k_boot_handoff *handoff;
+	const struct x68k_memory_region *region;
+	uint64_t bytes;
 	unsigned index;
 
-	if (bytes > X68K_MAX_RAM_BYTES)
-		bytes = X68K_MAX_RAM_BYTES;
-	physical_pages = bytes / M68K030_PAGE_SIZE;
-	if (physical_pages < 512U)
+	/* The span is the RAM the loader found, within what the bitmap describes. */
+	handoff = x68k_boot_handoff();
+	bytes = handoff->ram_bytes & ~(uint64_t)M68K030_PAGE_MASK;
+	if (bytes > PAGE_MAX_BYTES)
+		bytes = PAGE_MAX_BYTES;
+	ram_base = 0;
+	ram_pages = (uint32_t)(bytes / M68K030_PAGE_SIZE);
+	if (ram_pages < PAGE_MIN_PAGES)
 		HAL_FATAL("X68k requires at least 2 MiB RAM");
-	hal_memset(used, 0xff, sizeof(used));
-	hal_memset(reserved, 0xff, sizeof(reserved));
-	reserved_pages = physical_pages;
-	allocated_pages = 0;
-	hal_memset(fixed_claims, 0, sizeof(fixed_claims));
 
-	for (index = 0; index < handoff->memory_region_count &&
-	    index < KERN_X68K_MAX_MEMORY_REGIONS; index++) {
-		const struct boot_memory_region32 *region =
-			&handoff->memory_regions[index];
-		if (region->type == KERN_MEMORY_AVAILABLE &&
-		    region->base <= UINT32_MAX - region->size)
-			release_available(region->base, region->size);
+	/* Starts with every page unavailable, then releases the available regions. */
+	hal_memset(page_bitmap, 0xff, sizeof(page_bitmap));
+	hal_memset(reserved_bitmap, 0xff, sizeof(reserved_bitmap));
+	reserved_pages = ram_pages;
+	allocated_pages = 0;
+	for (index = 0; index < handoff->memory_region_count; index++) {
+		region = &handoff->memory_regions[index];
+		if (region->type == KERN_MEMORY_AVAILABLE)
+			release_range(region->base, region->size);
 	}
 
-	/* Never allocate the exception vectors, loader/handoff/bootstrap, or any
-	 * part of the ELF load span.  Page zero remains permanently invalid. */
+	/* Takes back page zero, the loader and the kernel image. */
 	reserve_range(0, M68K030_PAGE_SIZE);
-	/* x68k_boot_init() validated ordering before making this handoff visible;
-	 * retain defensive guards so subtraction can never wrap independently. */
-	if (handoff->loader_phys_end > handoff->loader_phys_start)
-		reserve_range(handoff->loader_phys_start,
-			handoff->loader_phys_end - handoff->loader_phys_start);
-	if (handoff->kernel_phys_end > handoff->kernel_phys_start)
-		reserve_range(handoff->kernel_phys_start,
-			handoff->kernel_phys_end - handoff->kernel_phys_start);
-	for (index = 0; index < handoff->memory_region_count &&
-	    index < KERN_X68K_MAX_MEMORY_REGIONS; index++) {
-		const struct boot_memory_region32 *region =
-			&handoff->memory_regions[index];
-		if (region->type == KERN_MEMORY_RESERVED &&
-		    region->base <= UINT32_MAX - region->size)
+	reserve_range(handoff->loader_phys_start, (uint64_t)handoff->loader_phys_end - handoff->loader_phys_start);
+	reserve_range(handoff->kernel_phys_start, (uint64_t)handoff->kernel_phys_end - handoff->kernel_phys_start);
+
+	/* Takes back every region the loader reserved. */
+	for (index = 0; index < handoff->memory_region_count; index++) {
+		region = &handoff->memory_regions[index];
+		if (region->type == KERN_MEMORY_RESERVED)
 			reserve_range(region->base, region->size);
 	}
-	hal_printf("X68k RAM: %u KiB, free %u KiB\n", bytes / 1024U,
-		(physical_pages - reserved_pages) *
-		M68K030_PAGE_SIZE / 1024U);
+
+	/* The first allocation looks from the span's start. */
+	first_free_candidate = 0;
+	hal_printf("X68k RAM: %u KiB, free %u KiB\n",
+		   (uint32_t)(bytes / 1024U),
+		   (uint32_t)(((uint64_t)ram_pages - reserved_pages) * M68K030_PAGE_SIZE / 1024U));
 }
 
-static int
-allocate_pages(size_t size, size_t alignment, struct hal_pmem *descriptor)
-{
-	uintptr_t limit = (uintptr_t)physical_pages * M68K030_PAGE_SIZE;
-	uint32_t needed, first, end, start, index, align_pages;
-	bool enabled;
-
-	if (descriptor == NULL || size == 0 ||
-	    size > SIZE_MAX - M68K030_PAGE_MASK ||
-	    alignment < M68K030_PAGE_SIZE ||
-	    (alignment & (alignment - 1U)) != 0)
-		return HAL_ERR_INVALID;
-	needed = (uint32_t)((size + M68K030_PAGE_MASK) /
-		M68K030_PAGE_SIZE);
-	align_pages = (uint32_t)(alignment / M68K030_PAGE_SIZE);
-	first = 1U;
-	end = (uint32_t)(limit / M68K030_PAGE_SIZE);
-	if (needed == 0 || first >= end || needed > end - first)
-		return HAL_ERR_NOMEM;
-
-	enabled = hal_irq_disable();
-	for (start = first; start + needed <= end; start++) {
-		if ((start & (align_pages - 1U)) != 0)
-			continue;
-		for (index = 0; index < needed &&
-		    !BIT_GET(used, start + index); index++)
-			;
-		if (index == needed)
-			break;
-		start += index;
-	}
-	if (start + needed > end) {
-		if (enabled)
-			hal_irq_enable();
-		return HAL_ERR_NOMEM;
-	}
-	for (index = 0; index < needed; index++)
-		BIT_SET(used, start + index);
-	allocated_pages += needed;
-	if (enabled)
-		hal_irq_enable();
-
-	descriptor->paddr = (hal_physaddr_t)start * M68K030_PAGE_SIZE;
-	descriptor->vaddr = m68k030_phys_to_direct(descriptor->paddr);
-	descriptor->size = (size_t)needed * M68K030_PAGE_SIZE;
-	descriptor->type = HAL_PMEM_TYPE_RAM;
-	descriptor->attr = 0;
-	return HAL_OK;
-}
-
-static int
-free_ram(struct hal_pmem *descriptor)
-{
-	uint32_t first, count, index;
-	bool enabled;
-
-	if (descriptor == NULL || descriptor->size == 0 ||
-	    descriptor->type != HAL_PMEM_TYPE_RAM ||
-	    !m68k030_page_aligned(descriptor->paddr) ||
-	    (descriptor->size & M68K030_PAGE_MASK) != 0 ||
-	    descriptor->vaddr != m68k030_phys_to_direct(
-	    descriptor->paddr))
-		return HAL_ERR_INVALID;
-	first = (uint32_t)(descriptor->paddr /
-		M68K030_PAGE_SIZE);
-	count = (uint32_t)(descriptor->size / M68K030_PAGE_SIZE);
-	if (first >= physical_pages || count > physical_pages - first)
-		return HAL_ERR_INVALID;
-	enabled = hal_irq_disable();
-	for (index = 0; index < count; index++) {
-		if (!BIT_GET(used, first + index) ||
-		    BIT_GET(reserved, first + index)) {
-			if (enabled)
-				hal_irq_enable();
-			return HAL_ERR_STATE;
-		}
-	}
-	for (index = 0; index < count; index++)
-		BIT_CLEAR(used, first + index);
-	allocated_pages -= count;
-	if (enabled)
-		hal_irq_enable();
-	hal_memset(descriptor, 0, sizeof(*descriptor));
-	return HAL_OK;
-}
-
+/*
+ * Allocates one physical RAM block.
+ */
 int
-hal_pmem_alloc(const struct hal_pmem_request *request,
-	       struct hal_pmem *descriptor)
+hal_pmem_alloc(
+	size_t req_size,
+	size_t req_align,
+	hal_physaddr_t *block)
 {
 	size_t alignment;
-	unsigned i, free_slot = X68K_FIXED_CLAIMS;
-	hal_physaddr_t end;
 	bool enabled;
+	int error;
 
-	if (request == NULL || descriptor == NULL || request->size == 0 ||
-	    (request->attr & ~(HAL_PMEM_ATTR_NOCACHE |
-	    HAL_PMEM_ATTR_WRITETHRU)) != 0)
-		return HAL_ERR_INVALID;
-	alignment = request->alignment == 0 ? M68K030_PAGE_SIZE :
-		request->alignment;
-	if (alignment < M68K030_PAGE_SIZE ||
-	    (alignment & (alignment - 1U)) != 0)
-		return HAL_ERR_INVALID;
-	if (request->type == HAL_PMEM_TYPE_RAM) {
-		if (request->paddr != HAL_PMEM_PADDR_ANY || request->attr != 0)
-			return HAL_ERR_INVALID;
-		return allocate_pages(request->size, alignment, descriptor);
-	}
-	if ((request->type != HAL_PMEM_TYPE_MMIO &&
-	    request->type != HAL_PMEM_TYPE_VRAM) ||
-	    request->paddr == HAL_PMEM_PADDR_ANY ||
-	    request->paddr > UINT32_MAX - request->size ||
-	    (request->paddr & (alignment - 1U)) != 0)
-		return HAL_ERR_INVALID;
-	end = request->paddr + request->size;
+	/* No alignment asked means page alignment. */
+	alignment = req_align;
+	if (alignment == 0)
+		alignment = M68K030_PAGE_SIZE;
+
+	/* Allocates with no reachability or boundary constraint. */
 	enabled = hal_irq_disable();
-	for (i = 0; i < X68K_FIXED_CLAIMS; i++) {
-		hal_physaddr_t claim_end;
-		if (fixed_claims[i].size == 0) {
-			if (free_slot == X68K_FIXED_CLAIMS)
-				free_slot = i;
-			continue;
-		}
-		claim_end = fixed_claims[i].paddr + fixed_claims[i].size;
-		if (request->paddr < claim_end && end > fixed_claims[i].paddr) {
-			if (enabled)
-				hal_irq_enable();
-			return HAL_ERR_BUSY;
-		}
-	}
-	if (free_slot == X68K_FIXED_CLAIMS) {
-		if (enabled)
-			hal_irq_enable();
-		return HAL_ERR_NOMEM;
-	}
-	fixed_claims[free_slot].vaddr = (void *)(uintptr_t)request->paddr;
-	fixed_claims[free_slot].paddr = request->paddr;
-	fixed_claims[free_slot].size = request->size;
-	fixed_claims[free_slot].type = request->type;
-	fixed_claims[free_slot].attr = request->attr;
-	*descriptor = fixed_claims[free_slot];
+
+	error = alloc_ram(req_size, alignment, ~(hal_physaddr_t)0, 0, block);
+
 	if (enabled)
 		hal_irq_enable();
+
+	/* Reports why the block could not be allocated. */
+	if (error != HAL_OK)
+		return error;
+
+	/* Succeeded: the block is the caller's. */
 	return HAL_OK;
 }
 
+/*
+ * Allocates one physical RAM block a device can reach.
+ */
 int
-hal_pmem_free(struct hal_pmem *descriptor)
+hal_pmem_alloc_limited(
+	size_t req_size,
+	size_t req_align,
+	hal_physaddr_t max_paddr,
+	size_t boundary,
+	hal_physaddr_t *block)
 {
-	unsigned i;
+	size_t alignment;
 	bool enabled;
-	if (descriptor == NULL || descriptor->size == 0)
-		return HAL_ERR_INVALID;
-	if (descriptor->type == HAL_PMEM_TYPE_RAM)
-		return free_ram(descriptor);
+	int error;
+
+	/* No alignment asked means page alignment. */
+	alignment = req_align;
+	if (alignment == 0)
+		alignment = M68K030_PAGE_SIZE;
+
+	/* Applies the caller's reachability and boundary constraints. */
 	enabled = hal_irq_disable();
-	for (i = 0; i < X68K_FIXED_CLAIMS; i++)
-		if (fixed_claims[i].vaddr == descriptor->vaddr &&
-		    fixed_claims[i].paddr == descriptor->paddr &&
-		    fixed_claims[i].size == descriptor->size &&
-		    fixed_claims[i].type == descriptor->type)
-			break;
-	if (i == X68K_FIXED_CLAIMS) {
-		if (enabled)
-			hal_irq_enable();
-		return HAL_ERR_STATE;
-	}
-	hal_memset(&fixed_claims[i], 0, sizeof(fixed_claims[i]));
+
+	error = alloc_ram(req_size, alignment, max_paddr, boundary, block);
+
 	if (enabled)
 		hal_irq_enable();
-	hal_memset(descriptor, 0, sizeof(*descriptor));
+
+	/* Reports why the block could not be allocated. */
+	if (error != HAL_OK)
+		return error;
+
+	/* Succeeded: the block is the caller's. */
 	return HAL_OK;
 }
 
+/*
+ * Frees one physical RAM block.
+ */
+int
+hal_pmem_free(
+	hal_physaddr_t *block,
+	size_t size)
+{
+	bool enabled;
+	int error;
+
+	/* Releases the pages the matching allocation claimed. */
+	enabled = hal_irq_disable();
+
+	error = free_ram(block, size);
+
+	if (enabled)
+		hal_irq_enable();
+
+	/* Reports a block that was not the caller's to free. */
+	if (error != HAL_OK)
+		return error;
+
+	/* Succeeded: the pages are free again. */
+	return HAL_OK;
+}
+
+/*
+ * Translates a physical RAM address to its direct-map address.
+ */
+void *
+hal_pmem_to_kernel(
+	hal_physaddr_t paddr)
+{
+	void *address;
+
+	/* Reports no alias for an address outside managed RAM. */
+	if ((uint64_t)paddr < ram_base)
+		return NULL;
+	if ((uint64_t)paddr - ram_base >= (uint64_t)ram_pages * M68K030_PAGE_SIZE)
+		return NULL;
+
+	/* Managed RAM is direct-mapped into the kernel half. */
+	address = m68k030_phys_to_direct((uintptr_t)paddr);
+
+	/* Succeeded: the direct-map alias. */
+	return address;
+}
+
+/*
+ * Reports the size of managed RAM.
+ */
 size_t
-hal_pmem_get_total_size(void)
+hal_pmem_get_total_size(
+	void)
 {
-	return (size_t)physical_pages * M68K030_PAGE_SIZE;
+	/* Succeeded: the span in bytes. */
+	return (size_t)ram_pages * M68K030_PAGE_SIZE;
 }
 
-void __attribute__((weak))
-hal_m68k_task_memory_stats(uint32_t *count, size_t *stack_bytes)
+/*
+ * Refuses an uncached view of RAM: no device of the board needs one.
+ */
+int
+hal_pmem_map_uncached(
+	hal_physaddr_t paddr,
+	size_t size,
+	void **vaddr)
 {
-	if (count != NULL)
-		*count = 0;
-	if (stack_bytes != NULL)
-		*stack_bytes = 0;
+	UNUSED_PARAMETER(paddr);
+	UNUSED_PARAMETER(size);
+	UNUSED_PARAMETER(vaddr);
+
+	/* Failed: no such view exists on this port. */
+	return HAL_ERR_UNSUPPORTED;
 }
 
-void hal_m68k_space_memory_stats(uint32_t *, uint32_t *);
+/*
+ * Refuses to remove an uncached view, which this port never makes.
+ */
+int
+hal_pmem_unmap_uncached(
+	void *vaddr,
+	size_t size)
+{
+	UNUSED_PARAMETER(vaddr);
+	UNUSED_PARAMETER(size);
 
+	/* Failed: no such view exists on this port. */
+	return HAL_ERR_UNSUPPORTED;
+}
+
+/*
+ * Collects the physical, task and address-space statistics.
+ */
 void
-hal_pmem_get_stats(struct hal_pmem_stats *stats)
+hal_get_memstat(
+	struct hal_memstat *stat)
 {
-	if (stats == NULL)
+	bool enabled;
+
+	/* A caller with nowhere to put the answer asked for nothing. */
+	if (stat == NULL)
 		return;
-	hal_memset(stats, 0, sizeof(*stats));
-	stats->physical_total = (size_t)physical_pages * M68K030_PAGE_SIZE;
-	stats->physical_reserved = (size_t)reserved_pages * M68K030_PAGE_SIZE;
-	stats->physical_allocated = (size_t)allocated_pages * M68K030_PAGE_SIZE;
-	stats->physical_free = stats->physical_total - stats->physical_reserved -
-		stats->physical_allocated;
-	hal_m68k_task_memory_stats(&stats->task_count, &stats->task_stack_bytes);
-	hal_m68k_space_memory_stats(&stats->space_count, &stats->page_table_count);
+	hal_memset(stat, 0, sizeof(*stat));
+
+	/* Samples the page counters together. */
+	enabled = hal_irq_disable();
+
+	stat->physical_total = (size_t)ram_pages * M68K030_PAGE_SIZE;
+	stat->physical_reserved = (size_t)reserved_pages * M68K030_PAGE_SIZE;
+	stat->physical_allocated = (size_t)allocated_pages * M68K030_PAGE_SIZE;
+
+	if (enabled)
+		hal_irq_enable();
+
+	/* The free pages are what is neither reserved nor allocated. */
+	stat->physical_free = stat->physical_total - stat->physical_reserved - stat->physical_allocated;
+
+	/* Adds the task stacks and the page tables. */
+	m68k030_task_memory_stats(&stat->task_count, &stat->task_stack_bytes);
+	m68k030_space_memory_stats(&stat->space_count, &stat->page_table_count);
+}
+
+/* Makes the whole pages inside a range available. */
+static void
+release_range(
+	uint64_t base,
+	uint64_t size)
+{
+	uint64_t span_end;
+	uint64_t end;
+	uint64_t first;
+	uint64_t last;
+	uint64_t page;
+	int reserved;
+
+	/* Clips the range to the span. */
+	span_end = ram_base + (uint64_t)ram_pages * M68K030_PAGE_SIZE;
+	end = base + size;
+	if (base < ram_base)
+		base = ram_base;
+	if (end > span_end)
+		end = span_end;
+	if (size == 0 || base >= end)
+		return;
+
+	/* Releases each page wholly inside the range. */
+	first = (base - ram_base + M68K030_PAGE_SIZE - 1U) / M68K030_PAGE_SIZE;
+	last = (end - ram_base) / M68K030_PAGE_SIZE;
+	for (page = first; page < last; page++) {
+		reserved = page_is_set(reserved_bitmap, (uint32_t)page);
+		if (!reserved)
+			continue;
+		page_clear(page_bitmap, (uint32_t)page);
+		page_clear(reserved_bitmap, (uint32_t)page);
+		reserved_pages--;
+	}
+}
+
+/* Takes every page a range touches out of use for good. */
+static void
+reserve_range(
+	uint64_t base,
+	uint64_t size)
+{
+	uint64_t span_end;
+	uint64_t end;
+	uint64_t first;
+	uint64_t last;
+	uint64_t page;
+	int in_use;
+
+	/* Clips the range to the span. */
+	span_end = ram_base + (uint64_t)ram_pages * M68K030_PAGE_SIZE;
+	end = base + size;
+	if (base < ram_base)
+		base = ram_base;
+	if (end > span_end)
+		end = span_end;
+	if (size == 0 || base >= end)
+		return;
+
+	/* Reserves each page the range touches. */
+	first = (base - ram_base) / M68K030_PAGE_SIZE;
+	last = (end - ram_base + M68K030_PAGE_SIZE - 1U) / M68K030_PAGE_SIZE;
+	for (page = first; page < last; page++) {
+		in_use = page_is_set(page_bitmap, (uint32_t)page);
+		if (in_use)
+			continue;
+		page_set(page_bitmap, (uint32_t)page);
+		page_set(reserved_bitmap, (uint32_t)page);
+		reserved_pages++;
+	}
+}
+
+/* Reports whether a page's bit is set. */
+static int
+page_is_set(
+	const uint32_t *bitmap,
+	uint32_t page)
+{
+	/* The bit of the page in its word. */
+	if ((bitmap[page >> 5] & (1U << (page & 31U))) != 0)
+		return 1;
+	return 0;
+}
+
+/* Sets a page's bit. */
+static void
+page_set(
+	uint32_t *bitmap,
+	uint32_t page)
+{
+	/* The bit of the page in its word. */
+	bitmap[page >> 5] |= 1U << (page & 31U);
+}
+
+/* Clears a page's bit. */
+static void
+page_clear(
+	uint32_t *bitmap,
+	uint32_t page)
+{
+	/* The bit of the page in its word. */
+	bitmap[page >> 5] &= ~(1U << (page & 31U));
+}
+
+/* Finds the lowest free page in [page, end), or end; whole words in use are skipped at once. */
+static uint32_t
+next_free(
+	uint32_t page,
+	uint32_t end)
+{
+	uint32_t word;
+	uint32_t found;
+
+	/* Bits below the page in its first word count as in use. */
+	if (page >= end)
+		return end;
+	word = page_bitmap[page >> 5] | ((1U << (page & 31U)) - 1U);
+	page &= ~31U;
+
+	/* Skips whole words in use up to the end. */
+	while (word == UINT32_MAX) {
+		page += 32U;
+		if (page >= end)
+			return end;
+		word = page_bitmap[page >> 5];
+	}
+
+	/* The lowest clear bit, unless it lies at or past the end. */
+	found = page + (uint32_t)__builtin_ctz(~word);
+	if (found >= end)
+		return end;
+
+	/* Succeeded: the page is free. */
+	return found;
+}
+
+/* Finds the lowest page in use in [page, end), or end; whole free words are skipped at once. */
+static uint32_t
+next_occupied(
+	uint32_t page,
+	uint32_t end)
+{
+	uint32_t word;
+	uint32_t found;
+
+	/* Bits below the page in its first word count as free. */
+	if (page >= end)
+		return end;
+	word = page_bitmap[page >> 5] & ~((1U << (page & 31U)) - 1U);
+	page &= ~31U;
+
+	/* Skips whole free words up to the end. */
+	while (word == 0) {
+		page += 32U;
+		if (page >= end)
+			return end;
+		word = page_bitmap[page >> 5];
+	}
+
+	/* The lowest set bit, unless it lies at or past the end. */
+	found = page + (uint32_t)__builtin_ctz(word);
+	if (found >= end)
+		return end;
+
+	/* Succeeded: the page is in use. */
+	return found;
+}
+
+/* Marks a free run in use; the caller holds the lock. */
+static void
+claim_run(
+	uint32_t first,
+	uint32_t count)
+{
+	uint32_t end;
+
+	/* Single pages up to a word boundary, whole words, then the tail's pages. */
+	end = first + count;
+	while (first < end && (first & 31U) != 0) {
+		page_set(page_bitmap, first);
+		first++;
+	}
+	while (end - first >= 32U) {
+		page_bitmap[first >> 5] = UINT32_MAX;
+		first += 32U;
+	}
+	while (first < end) {
+		page_set(page_bitmap, first);
+		first++;
+	}
+}
+
+/*
+ * Finds and claims an aligned run of free pages.
+ *
+ * max_paddr is the highest byte the caller can address, and boundary,
+ * when not zero, is a power-of-two block the run must not cross.  The
+ * caller holds the lock.
+ */
+static int
+alloc_ram(
+	size_t size,
+	size_t alignment,
+	hal_physaddr_t max_paddr,
+	size_t boundary,
+	hal_physaddr_t *block)
+{
+	uint64_t first_byte;
+	uint64_t last_byte;
+	uint64_t base_page;
+	uint64_t aligned;
+	uint32_t need;
+	uint32_t end;
+	uint32_t start;
+	uint32_t align_pages;
+	uint32_t boundary_pages;
+	uint32_t occupied;
+
+	/* Requires a destination and a representable request. */
+	if (block == NULL || size == 0)
+		return HAL_ERR_INVALID;
+	if (size > SIZE_MAX - (M68K030_PAGE_SIZE - 1))
+		return HAL_ERR_INVALID;
+	if (alignment < M68K030_PAGE_SIZE)
+		return HAL_ERR_INVALID;
+	if ((alignment & (alignment - 1U)) != 0)
+		return HAL_ERR_INVALID;
+
+	/* Refuses a boundary that is not a power of two. */
+	if (boundary != 0 && (boundary & (boundary - 1U)) != 0)
+		return HAL_ERR_INVALID;
+
+	/* Rounds the request up to pages, as the free repeats it. */
+	need = (uint32_t)((size + M68K030_PAGE_SIZE - 1) / M68K030_PAGE_SIZE);
+	align_pages = (uint32_t)(alignment / M68K030_PAGE_SIZE);
+
+	/*
+	 * Limits the search to the pages the caller can address.  The span
+	 * starts at zero, so the highest address is compared before one is
+	 * added to it.
+	 */
+	end = ram_pages;
+	if ((uint64_t)max_paddr < ram_base)
+		return HAL_ERR_NOMEM;
+	if ((uint64_t)max_paddr - ram_base < (uint64_t)ram_pages * M68K030_PAGE_SIZE - 1U)
+		end = (uint32_t)(((uint64_t)max_paddr - ram_base + 1U) / M68K030_PAGE_SIZE);
+	if (need > end)
+		return HAL_ERR_NOMEM;
+
+	/* A run longer than the boundary block crosses it wherever it starts. */
+	boundary_pages = 0;
+	if (boundary != 0) {
+		if ((uint64_t)need * M68K030_PAGE_SIZE > boundary)
+			return HAL_ERR_NOMEM;
+		boundary_pages = (uint32_t)(boundary / M68K030_PAGE_SIZE);
+	}
+
+	/* Reuses the known prefix in use rather than scanning it each time. */
+	first_free_candidate = next_free(first_free_candidate, ram_pages);
+
+	/*
+	 * Finds the lowest fitting run.  The alignment is of the physical
+	 * address, so the span's first page is taken into account.
+	 */
+	base_page = ram_base / M68K030_PAGE_SIZE;
+	start = first_free_candidate;
+	for (;;) {
+		/* The lowest free page, moved up to the alignment of its physical address. */
+		start = next_free(start, end);
+		aligned = (base_page + start + align_pages - 1U) & ~((uint64_t)align_pages - 1U);
+		if (aligned - base_page >= end)
+			break;
+		start = (uint32_t)(aligned - base_page);
+		if (need > end - start)
+			break;
+
+		/* A run crossing a boundary moves to the next boundary block. */
+		if (boundary_pages != 0) {
+			first_byte = ram_base + (uint64_t)start * M68K030_PAGE_SIZE;
+			last_byte = first_byte + (uint64_t)need * M68K030_PAGE_SIZE - 1U;
+			if (first_byte / boundary != last_byte / boundary) {
+				start = (uint32_t)(((first_byte / boundary + 1U) * boundary - ram_base) / M68K030_PAGE_SIZE);
+				continue;
+			}
+		}
+
+		/* The run fits when nothing in it is in use; else the search goes past what is. */
+		occupied = next_occupied(start, start + need);
+		if (occupied == start + need)
+			break;
+		start = occupied + 1U;
+	}
+
+	/* Reports that no run fits. */
+	if (aligned - base_page >= end)
+		return HAL_ERR_NOMEM;
+	if (need > end - start)
+		return HAL_ERR_NOMEM;
+
+	/* Succeeded: the run is the caller's. */
+	claim_run(start, need);
+	allocated_pages += need;
+	*block = (hal_physaddr_t)(ram_base + (uint64_t)start * M68K030_PAGE_SIZE);
+	return HAL_OK;
+}
+
+/*
+ * Releases the pages of one allocation; the caller holds the lock.
+ *
+ * size is the size the matching allocation asked for, so the same
+ * rounding is repeated here and a smaller size splits the block.
+ */
+static int
+free_ram(
+	hal_physaddr_t *block,
+	size_t size)
+{
+	uint64_t offset;
+	uint32_t first;
+	uint32_t count;
+	uint32_t index;
+	int in_use;
+	int reserved;
+
+	/* Refuses an empty, unaligned or foreign release. */
+	if (block == NULL || size == 0)
+		return HAL_ERR_INVALID;
+	if (((uint64_t)*block & (M68K030_PAGE_SIZE - 1U)) != 0)
+		return HAL_ERR_INVALID;
+	if ((uint64_t)*block < ram_base)
+		return HAL_ERR_INVALID;
+
+	/* Repeats the rounding the allocation applied. */
+	offset = (uint64_t)*block - ram_base;
+	if (offset / M68K030_PAGE_SIZE >= ram_pages)
+		return HAL_ERR_INVALID;
+	first = (uint32_t)(offset / M68K030_PAGE_SIZE);
+	count = (uint32_t)((size + M68K030_PAGE_SIZE - 1) / M68K030_PAGE_SIZE);
+	if (count > ram_pages - first)
+		return HAL_ERR_INVALID;
+
+	/* Checks that every page was allocated, before any changes. */
+	for (index = 0; index < count; index++) {
+		in_use = page_is_set(page_bitmap, first + index);
+		if (!in_use)
+			return HAL_ERR_STATE;
+		reserved = page_is_set(reserved_bitmap, first + index);
+		if (reserved)
+			return HAL_ERR_STATE;
+	}
+
+	/* Releases the pages. */
+	for (index = 0; index < count; index++)
+		page_clear(page_bitmap, first + index);
+	allocated_pages -= count;
+
+	/* A later allocation looks at the released pages again. */
+	if (first < first_free_candidate)
+		first_free_candidate = first;
+
+	/* Succeeded: clears the caller's address so a double free shows. */
+	*block = 0;
+	return HAL_OK;
 }

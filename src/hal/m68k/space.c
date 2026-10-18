@@ -16,14 +16,37 @@ static uint32_t space_count;
 static uint32_t page_table_count;
 static struct m68k030_space *space_registry;
 
+/* Allocates one zeroed page for a table and reports its physical and kernel addresses. */
 static int
-alloc_page(struct hal_pmem *memory)
+alloc_page(
+	hal_physaddr_t *physical,
+	uint32_t **entries)
 {
-	const struct hal_pmem_request request = {
-		HAL_PMEM_PADDR_ANY, M68K030_PAGE_SIZE, M68K030_PAGE_SIZE,
-		HAL_PMEM_TYPE_RAM, 0
-	};
-	return hal_pmem_alloc(&request, memory);
+	int error;
+
+	/* Allocates the page. */
+	error = hal_pmem_alloc(M68K030_PAGE_SIZE, M68K030_PAGE_SIZE, physical);
+	if (error != HAL_OK)
+		return error;
+
+	/* Clears it through the direct map. */
+	*entries = hal_pmem_to_kernel(*physical);
+	hal_memset(*entries, 0, M68K030_PAGE_SIZE);
+
+	/* Succeeded: the page is the caller's. */
+	return HAL_OK;
+}
+
+/* Frees one table page. */
+static void
+free_page(
+	hal_physaddr_t physical)
+{
+	hal_physaddr_t block;
+
+	/* Releases the page; a page this file allocated is always accepted. */
+	block = physical;
+	(void)hal_pmem_free(&block, M68K030_PAGE_SIZE);
 }
 
 static int
@@ -96,21 +119,19 @@ create_table(struct m68k030_space *space, uintptr_t address)
 	struct m68k030_table_page *table;
 	unsigned root_index = m68k030_root_index(address);
 
-	table = hal_malloc(sizeof(*table));
+	table = kernel_alloc(sizeof(*table));
 	if (table == NULL)
 		return NULL;
 	hal_memset(table, 0, sizeof(*table));
-	if (alloc_page(&table->memory) != HAL_OK) {
-		hal_free(table);
+	if (alloc_page(&table->physical, &table->entries) != HAL_OK) {
+		kernel_free(table);
 		return NULL;
 	}
 	table->virtual_base = address & ~((uintptr_t)0x003fffffU);
-	table->entries = table->memory.vaddr;
-	hal_memset(table->entries, 0, M68K030_PAGE_SIZE);
 	table->next = space->tables;
 	space->tables = table;
 	space->root[root_index] =
-		m68k030_table_descriptor((uintptr_t)table->memory.paddr);
+		m68k030_table_descriptor((uintptr_t)table->physical);
 	hal_compiler_barrier();
 	page_table_count++;
 	return table;
@@ -155,8 +176,8 @@ free_detached_tables(struct m68k030_table_page *table)
 	while (table != NULL) {
 		struct m68k030_table_page *next = table->next;
 
-		(void)hal_pmem_free(&table->memory);
-		hal_free(table);
+		free_page(table->physical);
+		kernel_free(table);
 		if (page_table_count != 0)
 			page_table_count--;
 		table = next;
@@ -193,21 +214,19 @@ m68k030_space_init(uintptr_t empty_root_physical)
 hal_space_t
 hal_space_create(void)
 {
-	struct m68k030_space *space = hal_malloc(sizeof(*space));
+	struct m68k030_space *space = kernel_alloc(sizeof(*space));
 	bool enabled;
 
 	if (space == NULL)
 		return NULL;
 	hal_memset(space, 0, sizeof(*space));
-	if (alloc_page(&space->root_memory) != HAL_OK) {
-		hal_free(space);
+	if (alloc_page(&space->root_physical, &space->root) != HAL_OK) {
+		kernel_free(space);
 		return NULL;
 	}
-	space->root = space->root_memory.vaddr;
-	hal_memset(space->root, 0, M68K030_PAGE_SIZE);
 	space->root_pointer.attr = M68K030_ROOT_ATTR;
 	space->root_pointer.address = (uint32_t)(uintptr_t)
-		space->root_memory.paddr;
+		space->root_physical;
 	space->magic = M68K030_SPACE_MAGIC;
 	enabled = hal_irq_disable();
 	space->space_id = next_space_id++;
@@ -243,14 +262,14 @@ hal_space_destroy(hal_space_t handle)
 	*link = space->registry_next;
 	while ((table = space->tables) != NULL) {
 		space->tables = table->next;
-		(void)hal_pmem_free(&table->memory);
-		hal_free(table);
+		free_page(table->physical);
+		kernel_free(table);
 		if (page_table_count != 0)
 			page_table_count--;
 	}
 	space->magic = 0;
-	(void)hal_pmem_free(&space->root_memory);
-	hal_free(space);
+	free_page(space->root_physical);
+	kernel_free(space);
 	if (space_count != 0)
 		space_count--;
 	if (enabled)
@@ -553,7 +572,7 @@ hal_space_get_user_range(uintptr_t *minimum, uintptr_t *limit)
 }
 
 void
-hal_m68k_space_memory_stats(uint32_t *spaces, uint32_t *tables)
+m68k030_space_memory_stats(uint32_t *spaces, uint32_t *tables)
 {
 	bool enabled = hal_irq_disable();
 
@@ -563,4 +582,57 @@ hal_m68k_space_memory_stats(uint32_t *spaces, uint32_t *tables)
 		*tables = page_table_count;
 	if (enabled)
 		hal_irq_enable();
+}
+
+/*
+ * Maps a device physical range into kernel space.
+ *
+ * The X68000's devices lie in its 16 MiB physical space, which the kernel's
+ * direct map at 0x80000000 covers from boot: the bootstrap maps the device
+ * apertures uncached.  A range there is reached at its direct-map address;
+ * no other device memory exists.
+ */
+int
+hal_space_map_device(
+	hal_physaddr_t paddr,
+	size_t size,
+	uint32_t attr,
+	void **vaddr)
+{
+	/* Refuses a missing destination, an empty range, or executable device memory. */
+	if (vaddr == NULL || size == 0)
+		return HAL_ERR_INVALID;
+	if ((attr & HAL_SPACE_EXEC) != 0)
+		return HAL_ERR_INVALID;
+
+	/* Refuses a range outside the device apertures of the physical space. */
+	if (paddr < M68K030_DEVICE_FIRST || paddr >= M68K030_DIRECT_SIZE)
+		return HAL_ERR_UNSUPPORTED;
+	if (size > M68K030_DIRECT_SIZE - paddr)
+		return HAL_ERR_UNSUPPORTED;
+
+	/* Succeeded: the range is reached through the direct map. */
+	*vaddr = m68k030_phys_to_direct((uintptr_t)paddr);
+	return HAL_OK;
+}
+
+/*
+ * Removes a mapping made by hal_space_map_device(); the direct map stays.
+ */
+int
+hal_space_unmap_device(
+	void *vaddr,
+	size_t size)
+{
+	uintptr_t physical;
+
+	/* Refuses an address that hal_space_map_device() never gave. */
+	physical = m68k030_direct_to_phys(vaddr);
+	if (physical < M68K030_DEVICE_FIRST || physical >= M68K030_DIRECT_SIZE)
+		return HAL_ERR_INVALID;
+	if (size > M68K030_DIRECT_SIZE - physical)
+		return HAL_ERR_INVALID;
+
+	/* Succeeded: nothing is torn down, the direct map is permanent. */
+	return HAL_OK;
 }

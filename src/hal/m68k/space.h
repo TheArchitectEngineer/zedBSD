@@ -12,9 +12,12 @@
 #define M68K030_USER_LIMIT  0x80000000U
 #define M68K030_DIRECT_SIZE 0x01000000U
 
+/* The first device aperture of the physical space, after the 12 MiB of RAM. */
+#define M68K030_DEVICE_FIRST 0x00c00000U
+
 struct m68k030_table_page {
 	uintptr_t virtual_base;
-	struct hal_pmem memory;
+	hal_physaddr_t physical;
 	uint32_t *entries;
 	struct m68k030_table_page *next;
 };
@@ -25,7 +28,7 @@ struct m68k030_space {
 	unsigned lock;
 	unsigned destroying;
 	struct m68k030_space *registry_next;
-	struct hal_pmem root_memory;
+	hal_physaddr_t root_physical;
 	uint32_t *root;
 	struct m68k030_root_pointer root_pointer;
 	struct m68k030_table_page *tables;
@@ -45,5 +48,13 @@ m68k030_direct_to_phys(const void *address)
 
 void m68k030_space_init(uintptr_t empty_root_physical);
 void m68k030_page_init(void);
+
+/*
+ * Reports the number of address spaces and of page tables.
+ */
+void
+m68k030_space_memory_stats(
+	uint32_t *spaces,
+	uint32_t *tables);
 
 #endif
