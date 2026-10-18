@@ -1,0 +1,8 @@
+{
+  "returncode": 0,
+  "old_native": "asIntN-number 1\nasUintN-number-zero-bits 0\nconstructor-unicode-space SyntaxError\nconstructor-integer 2\nconstructor-fraction RangeError\n",
+  "chrome": "asIntN-number TypeError\nasUintN-number-zero-bits TypeError\nconstructor-unicode-space 42\nconstructor-integer 2\nconstructor-fraction RangeError\n",
+  "final_native": "asIntN-number TypeError\nasUintN-number-zero-bits TypeError\nconstructor-unicode-space 42\nconstructor-integer 2\nconstructor-fraction RangeError\n",
+  "original_html_unchanged": true,
+  "exact_independent_chrome_equal": true
+}

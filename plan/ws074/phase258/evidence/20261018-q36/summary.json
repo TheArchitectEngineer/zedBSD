@@ -1,0 +1,86 @@
+{
+  "source_commit": "dc2f452783813546175aa72ee5aafde50bb2acdd",
+  "protocol_conditions": 272,
+  "final_mixed_oracle_exact": true,
+  "original_genuine_chrome": "271/272; one ordinary-name group differs because Chromium153 TypedArray rejects -0.0; raw preserved",
+  "oracle_reconciliation": "same272 source and expectations; genuine TypedArray classification with documented primitive Number/Object.is negative-zero spelling filter; ToBigInt genuine asIntN4096 with bounded selected magnitudes",
+  "old235_source_prefix_identical": true,
+  "public_bigint_precode": {
+    "returncode": 0,
+    "old_native": "asIntN-number 1\nasUintN-number-zero-bits 0\nconstructor-unicode-space SyntaxError\nconstructor-integer 2\nconstructor-fraction RangeError\n",
+    "chrome": "asIntN-number TypeError\nasUintN-number-zero-bits TypeError\nconstructor-unicode-space 42\nconstructor-integer 2\nconstructor-fraction RangeError\n",
+    "final_native": "asIntN-number TypeError\nasUintN-number-zero-bits TypeError\nconstructor-unicode-space 42\nconstructor-integer 2\nconstructor-fraction RangeError\n",
+    "original_html_unchanged": true,
+    "exact_independent_chrome_equal": true
+  },
+  "native_pressure": [
+    "managed realm retained during Boolean result allocation",
+    "native valueOf returns sole fresh numeric string; actual strictly later parser collection after callback root removed",
+    "real input/source/string cell type live until conversion completes",
+    "completed output alone does not retain former realm/source/primitive; all actually reclaimed; final BigInt root controls output reclamation",
+    "q30-q35 managed Get/Has/GetOwn/Define/Set5 hook collections, independent value/receiver and From pressure/absence reclamation retained"
+  ],
+  "focused_gate_returncodes": {
+    "proxy-read": 0,
+    "delegation": 0,
+    "interpreter": 0,
+    "vm-factory": 0,
+    "dom": 0,
+    "cssom": 0,
+    "cssom-mutation": 0,
+    "marks": 0,
+    "observer": 0,
+    "error-events": 0,
+    "error-reporting": 0,
+    "acid": 0
+  },
+  "acid3_score": 100,
+  "acid3_pixel_diff": 0,
+  "acid2_existing_pixel_diff": 873,
+  "raw_allowed_cleanup": 51,
+  "other_style_flags": 0,
+  "host_target_warnings": 0,
+  "fixture_only_recompile_product_bytes_unchanged": true,
+  "archives": {
+    "harness-all-raw": {
+      "sha256": "dc0144561a9fcee39bf121eb3996733645dabe17e863a4bf7acdd74832a9cd9d",
+      "members": 1676,
+      "readback_all_members": true
+    },
+    "native-oracle-and-build-raw": {
+      "sha256": "4fff608736fac870313d709b6145495213e828fec05a35abe28fb1577c0e2924",
+      "members": 85,
+      "readback_all_members": true
+    }
+  },
+  "harness": {
+    "fail": 955,
+    "harness_error": 13,
+    "pass": 494,
+    "no_completion": 20,
+    "no_output": 24,
+    "multiple_completions": 2
+  },
+  "callbacks": {
+    "1": 20642,
+    "0": 11540,
+    "3": 14
+  },
+  "whole_pass_gains": [],
+  "whole_pass_losses": [],
+  "old_pass_callback_losses": [],
+  "changes": 0,
+  "current_raw_lower_bound": 1482,
+  "denominator": 3805,
+  "held": 0,
+  "unattempted_harness": 275,
+  "static_scripted_crash_reused": "q28:844/105/39",
+  "limitations": [
+    "new whole gains require separate prerequisite/negative-control audit before certification",
+    "original Chrome TypedArray -0.0 mismatch is retained; no claim all272 match the unadjusted exotic oracle",
+    "genuine ToBigInt Chrome4096-bit oracle only covers selected inputs within signed4096-bit range",
+    "frozen binaries retained in build with hashes, not embedded in archives",
+    "actual TypedArray Set remains ENOTSUP, ordinary vm_set prototype/primitive routing/global Proxy/p258/full target/p100/WS100% unfinished",
+    "static/scripted/strict q28 evidence reused; no q36 all-image/strict equality claim"
+  ]
+}

@@ -1,0 +1,5 @@
+asIntN-number TypeError
+asUintN-number-zero-bits TypeError
+constructor-unicode-space 42
+constructor-integer 2
+constructor-fraction RangeError

@@ -1,0 +1,41 @@
+{
+  "command": [
+    "chromium",
+    "--headless",
+    "--no-sandbox",
+    "--disable-gpu",
+    "--allow-file-access-from-files",
+    "--user-data-dir=/tmp/ws074-q36-diag-1792323475825947697",
+    "--enable-logging=stderr",
+    "--v=0",
+    "--virtual-time-budget=5000",
+    "--dump-dom",
+    "file:///home/awe/zedBSD-claude1/build/ws074-20261018/q36/canonical-diagnostic.html"
+  ],
+  "returncode": 0,
+  "lines": [
+    "\"\" defined=true formula=true",
+    "\" \" defined=true formula=true",
+    "\"+0\" defined=true formula=true",
+    "\"+1\" defined=true formula=true",
+    "\"00\" defined=true formula=true",
+    "\"01\" defined=true formula=true",
+    "\"1.0\" defined=true formula=true",
+    "\"-0.0\" defined=false formula=true",
+    "\"0.0\" defined=true formula=true",
+    "\"1e21\" defined=true formula=true",
+    "\"1e+0\" defined=true formula=true",
+    "\"1e-06\" defined=true formula=true",
+    "\"1e-6\" defined=true formula=true",
+    "\"0x10\" defined=true formula=true",
+    "\"0b10\" defined=true formula=true",
+    "\"0o10\" defined=true formula=true",
+    "\"1_0\" defined=true formula=true",
+    "\"nan\" defined=true formula=true",
+    "\"infinity\" defined=true formula=true",
+    "\" 1\" defined=true formula=true",
+    "\"\u00a01\" defined=true formula=true",
+    "\"1\u3000\" defined=true formula=true",
+    "\"\uff11\" defined=true formula=true"
+  ]
+}

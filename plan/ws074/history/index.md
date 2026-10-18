@@ -1,5 +1,9 @@
 # WS074 lane の Past Log
 
+## ws074-q20261018-36（2026-10-18）
+
+[履歴](ws074-q20261018-36.md)。canonical index/ToBigInt共有と公開BigInt3差を修正、272 native/mixed oracle・実GC/回収・focused gates。Chrome153負ゼロ反例は元raw保存。全1508 q31の全whole/callback/completion同値、1482/3805・held0維持。TypedArray Set等/global未達、共有投影pending。
+
 ## ws074-q20261018-35（2026-10-18）
 
 [履歴](ws074-q20261018-35.md)。ordinary/Proxy receiver-aware Set partial cleared、native/Chrome235一致・独立value/receiver実GC/回収・focused gates。全1508 q31/画像crash q28再利用、1482/3805・held0維持。TypedArray Set/通常prototype routing/global公開等未達、共有投影pending。
@@ -119,9 +123,5 @@ Follow-up: q23 i01/i02 clearanceは疎checkoutのIDL未配信が判明しunclear
 ## ws074-q20261018-07（2026-10-18）
 
 [履歴](ws074-q20261018-07.md)。Grid resolved track CSSOMは独立14/14、DOM26/26、公式whole245→247・433 callback改善。一方1 callback後退が固定行spanの既存solver不備を露出し、q07 uncleared。次はp244修正→p243新attemptで全502照合。Acid3差0/Acid2差873、host/target compile warning0。共有投影pending。
-
-## ws074-q20261018-06（2026-10-18）
-
-[履歴](ws074-q20261018-06.md)。全静的1,561件836 PASS/725 FAIL、error/timeout0。q1062比192改善/18悪化だが、18を含む全FAIL725はこのsession開始前にもFAIL、今回sessionの後退0。未対応413/crash48の最新確認が残る。既存runner cleanupをretainへ直してからp243 Grid CSSOM等を進める。共有投影pending。
 
 以前のindex: [early 2026-10-18](early-20261018.md)。過去standing Queue投影: [原文archive](../queue-archive-through-q30.md)。

@@ -1,0 +1,19 @@
+{
+  "old_native": "asIntN-number 1\nasUintN-number-zero-bits 0\nconstructor-unicode-space SyntaxError\nconstructor-integer 2\nconstructor-fraction RangeError\n",
+  "chrome": "asIntN-number TypeError\nasUintN-number-zero-bits TypeError\nconstructor-unicode-space 42\nconstructor-integer 2\nconstructor-fraction RangeError\n",
+  "native_returncode": 0,
+  "chrome_returncode": 0,
+  "command": [
+    "chromium",
+    "--headless",
+    "--no-sandbox",
+    "--disable-gpu",
+    "--allow-file-access-from-files",
+    "--user-data-dir=/tmp/ws074-q36-pre-1792323072519924669",
+    "--enable-logging=stderr",
+    "--v=0",
+    "--virtual-time-budget=5000",
+    "--dump-dom",
+    "file:///home/awe/zedBSD-claude1/build/ws074-20261018/q36/precode.html"
+  ]
+}

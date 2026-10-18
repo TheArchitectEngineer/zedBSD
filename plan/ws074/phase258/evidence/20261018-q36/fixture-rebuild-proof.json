@@ -1,0 +1,10 @@
+{
+  "product-before-fixture-instrumentation.json": {
+    "files": 3,
+    "all_bytes_unchanged": true
+  },
+  "compiled-product-before-fixture.json": {
+    "files": 227,
+    "all_bytes_unchanged": true
+  }
+}

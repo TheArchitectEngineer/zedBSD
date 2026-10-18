@@ -1,0 +1,64 @@
+{
+  "scope": {
+    "userland/desktop/libbrowser/vm/operation.c": [
+      "vm_string_to_number",
+      "vm_canonical_numeric_index",
+      "vm_to_bigint",
+      "operation_bigint_trace"
+    ],
+    "userland/desktop/libbrowser/js/builtin_bigint.c": [
+      "bigint_call",
+      "bigint_as_n"
+    ],
+    "plan/ws074/tests/host-proxy-read.c": [
+      "main",
+      "proxy_canonical_index",
+      "proxy_to_bigint",
+      "conversion_primitive",
+      "numeric_conversion_pressure"
+    ]
+  },
+  "raw_checker_flags": 51,
+  "allowed_forward_cleanup": [
+    {
+      "function": "vm_canonical_numeric_index",
+      "count": 3
+    },
+    {
+      "function": "vm_to_bigint",
+      "count": 6
+    },
+    {
+      "function": "main",
+      "count": 21
+    },
+    {
+      "function": "conversion_primitive",
+      "count": 2
+    },
+    {
+      "function": "numeric_conversion_pressure",
+      "count": 19
+    }
+  ],
+  "other_checker_flags": 0,
+  "old235_prefix_equal": true,
+  "script_free_native_operations_byte_identical": true,
+  "host_target_warnings": 0,
+  "manual_review": [
+    "canonical numeric key classifier runs no JS and allocates no VM cells, using only primitive string parser and exact shortest number formatter with C buffer cleanup; -0 special, symbols absent",
+    "ToBigInt roots managed owner/source/fresh primitive before ToPrimitive(number hint), rejects Numbers independently of constructor, handles BigInt identity/booleans/string syntax and full vm_is_space trim",
+    "StringToBigInt grammar copied to C buffer as ASCII after Unicode edge trim, invalid nonASCII interior or parse EINVAL becomes SyntaxError; existing BigInt parser untouched",
+    "constructor retains Number integer conversion and error string, preserving NaN -> isinf -> floor short-circuit order via guarded calls; nonNumber shares VM helper; asIntN/asUintN invoke ToBigInt after bit validation even for bits0",
+    "native controlled callback records collection count at return; final case requires strictly later parser collection after its local primitive root retired, exact string cell type survives, managed realm/input/output lifetimes independently checked",
+    "native Boolean allocation and sole fresh object-produced string use original threshold; output alone does not keep source/realm/primitive alive; every graph actually reclaimed after last root",
+    "late instrumentation rebuilt only fixture via checked-in host script prefix/helper command; all product source/object/browser/library bytes unchanged, target2 still matches final source",
+    "full changed C bodies/declarations/type/file-scope purpose/public/static order/manual/formatter/style review; raw flags only allowed forward cleanup"
+  ],
+  "limitations": [
+    "Chrome153 genuine TypedArray oracle differs from TC39 for -0.0; final independent oracle combines genuine exotic classification with Number/Object.is negative-zero spelling filter for nonexact -0; String/Symbol key controls only",
+    "ToBigInt Chrome oracle genuine asIntN4096 applies only to selected inputs within signed4096-bit range; no unbounded oracle claim",
+    "actual TypedArray Set remains ENOTSUP and ordinary prototype routing/global Proxy/p258/full target/p100 incomplete"
+  ],
+  "oracle_reconciliation": "oracle-negative-zero-reconciliation.json; original genuine TypedArray oracle271/272 retained, final272 source unchanged with documented negative-zero primitive spelling filter"
+}

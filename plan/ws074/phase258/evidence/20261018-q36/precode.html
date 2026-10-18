@@ -1,0 +1,8 @@
+<!doctype html><html><body><script>
+function report(name,fn){try{console.log(name+' '+String(fn()));}catch(e){console.log(name+' '+e.name);}}
+report('asIntN-number',function(){return BigInt.asIntN(8,1);});
+report('asUintN-number-zero-bits',function(){return BigInt.asUintN(0,1);});
+report('constructor-unicode-space',function(){return BigInt('\u00a0\u2028\ufeff42\u3000');});
+report('constructor-integer',function(){return BigInt(2);});
+report('constructor-fraction',function(){return BigInt(1.5);});
+</script></body></html>

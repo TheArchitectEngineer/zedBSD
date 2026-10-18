@@ -1,0 +1,11 @@
+{
+  "prior": "07f4783e7",
+  "existing_operation_c_all_bytes_equal_after_removing_new_additions": true,
+  "existing_StringToNumber_ToPrimitive_equalities_numeric_operators_untouched": true,
+  "removed_additions": [
+    "new root type and tracer prototype",
+    "three new public conversion helpers",
+    "new root tracer definition"
+  ],
+  "prior_sha256": "dd432f2c29214bbd7b73cedc7f31750894adcaef23c72c98efd2f656cbb4db61"
+}

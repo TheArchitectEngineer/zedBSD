@@ -2,7 +2,7 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: in-progress（q36 canonical index/ToBigInt prerequisite、q30〜q35 verified）
+Status: uncleared（q36 conversions/public BigInt partial cleared、whole Proxy未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
@@ -11,7 +11,7 @@ Origin: p189/q29 original WebIDL2 parseがProxy未定義で停止。
 
 Objective / own criteria: native managed Proxyを実object internal methodsへ接続し、constructor/revocableと各internal operationのtrap/fallback/invariant/receiver/revocation/callability/GCを正しく実行する。original WebIDL2 actual parse/validatorに必要なget/set/array behaviorを通常APIで提供し、independent controls/原WPTを通す。部分read stageだけでwholeをclearしない。
 Design: vm_native_operationsはscript-free heap interfaceのまま保持。Proxyにはmanaged target/handler recordを持たせ、scriptを実行可能なrealm-aware access/internal methodからtrapを呼ぶ。opaque JS constructor公開前に必要なoperationを段階的に整える。各段階は自走承認に基づく新finite Queueで正確に選定する。
-Current state: q35 ordinary/Proxy receiver-aware Set partialまでverified。TypedArray Set・通常prototype/primitive assignment routing・keys/delete/prototype/extent/IsArray/call/construct/global constructorとoriginal WebIDL2は未達。
+Current state: q36 canonical numeric key/ToBigInt prerequisitesと公開BigInt修正までverified。actual TypedArray Set/Define、通常prototype routing、delete/keys/prototype/extent/IsArray/call/construct/global Proxyと原WebIDL2は未達。
 Standards: Guardrail/C全文/browser component全文、簡約版無し。一次 https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-proxy-object-internal-methods-and-internal-slots-get-p-receiver 。既存p100がWS全source near-final conformanceを所有し、本partialはnew/changed scopeの全文適合を検証。
 Verification/bounds/affected components: q30 snapshotの通り。private object kind/cell/newborn/trace/revokeとactual receiver/trap/invariant/GCをnative/Chromeで確認し、ordinary whole/callback PASSを守る。target single-source compileのみとfull target runtimeを区別。未達はunclearedとresume。
 
@@ -95,3 +95,17 @@ focused gatesのみ。全1508はq31、static/scripted/strictはq28原証拠再�
 [全証拠](evidence/20261018-q35/README.md)。次finite QueueでTypedArray canonical keys/専用Set規則、通常prototype routingの不足を具体化する。
 
 Event ws074-p258-q36-selected-20261018: TypedArray Setの専用規則を調査しcanonical numeric indexとToBigIntのshared VM処理を先行具体化。既存typed_defineはOOB成功・conversion/属性拒否等の差を持ち、この新Queueではまだ修正しない。既存BigInt.asIntN/asUintNはconstructor経由でNumberを受け入れるため、ToBigInt共有と同時に公開APIの差を正規precodeで確認して修正する。constructor Number専用pathは保持しUnicode stringも共通VMへ。exact max90分/source/gates/all1508はq36 Queue、typedarray actual Set/global Proxy未達を保持。
+
+Event ws074-p258-q36-chrome-negative-zero-oracle-20261018: 初回fixed pair native272/272、Chrome genuine TypedArray oracle271/272でcanonical普通名controlが失敗。個々の原入力を分解するとChrome153のReflect.defineProperty(new Uint8Array(0),"-0.0",{value:1})がfalseだが、Number("-0.0")=-0、String(-0)="0"なのでTC39 CanonicalNumericIndexStringではsourceがexact "-0"でも数値のToStringと同一でもなくordinary key。VMのundefined判定を維持。元protocol/全rawはbuild/ws074-20261018/q36/oracle-before-negative-zeroに保全し、新oracleはこのnegative-zero spellingに限りgenuine Number/Object.isで補う。共有272 source/期待値/product/pairを変更せず、純粋なTypedArray oracle全一致という主張はしない。genuine TypedArray subset＋primitive controlのboundsを証拠へ明記。これはPhase内verification具体化、scope/標準受入/90分不変。全1508はprotocol成功後に開始する。
+
+## q36 partial result / resume
+
+Event ws074-p258-q36-partial-cleared-20261018: VM-owned vm_string_to_number/vm_canonical_numeric_index/vm_to_bigintを追加。canonical classifierはVM heap allocation/JS実行無しで既存StringToNumberとexact shortest formatterを共有し、内部integer/string/symbol key・-0/NaN/Infinity・指数/丸めの綴りを判定する。既存operation.cはnew type/prototype/public helpers/tracerを除いて全bytes同一。ToBigIntはnumber hintのToPrimitive、BigInt identity/boolean0・1、全vm_is_spaceのUnicode blanksをtrimしたStringToBigIntを実行し、Number/null/undefined/SymbolをTypeError、invalid stringをSyntaxErrorにする。VMからJS module依存とnative_operations変更は無し。
+公開BigInt.asIntN/asUintNはconstructor経由のNumber受理をToBigIntへ修正し、bits0でもNumberを拒否する。constructorはNumber専用integer/RangeError pathと元message/NaN→isinf→floor短絡順を保持し、nonNumberを共有してUnicode whitespace不足を修正。同じ原HTMLで旧nativeはasIntN(8,1)=1/asUintN(0,1)=0/Unicode string SyntaxError、ChromeはTypeError/TypeError/42。final nativeはChrome全5行と完全一致し、constructor integer2/1.5 RangeErrorも維持した。
+同じ272条件とold235 source prefix byte同一を確認。初回native272/272に対しgenuine Chrome TypedArray oracle271/272となり、原入力分解でChrome153のReflect.defineProperty(new Uint8Array(0),"-0.0",{value:1})がfalseと判明。TC39 canonicalはexact "-0"かNumberのToStringと同一な綴りだけなので"-0.0"はordinaryでVMが正しい。元protocol/全rawと診断を保存し、negative-zero spellingだけgenuine Number/Object.isで補うmixed oracleへ具体化。shared source/期待値/product/pairを変更せず272/272に一致した。未調整のgenuine TypedArray oracle全一致とは主張しない。ToBigInt対照はgenuine BigInt.asIntN(4096,v)、全選定有効入力はsigned4096-bit内で、unbounded oracleとはしない。
+nativeは保守的C stack保持を無効にし、Boolean結果allocationとnative valueOfからsole fresh stringを返す2modeで実GCを確認。callback返却時のcollection countより後のparser collectionを必須にし、callback root解放後の元managed realm/sourceと実string cell typeの生存を確認。出力BigIntだけをrootに残すとrealm/source/primitiveが実回収され、最後のoutput root解放でBigIntも実回収。従来Get/Has/GetOwn/Define/Set5回のmanaged hook GC・独立value/receiver・From pressure/absent payload回収を維持。
+source WIPdc2f45278、final source/pair/input hash317件を照合。host warning0・q02 exact operation/builtin_bigint2 source target compile warning0。追加GC instrumentationはfixtureだけをchecked-in host prefix/helper commandで再buildし、全product source・全host object/browser/library bytesの同一性を証明。full new/changed Cは許可forward shared cleanup51・他0。DOM41、VM45/factory56、CSSOM12+12、marks7/observer10/ErrorEvent9/ErrorReporting19/delegation10、Acid3 score/inventory100・pixel0/Acid2既存差873を維持。
+固定1508 harnessを同じsettle5000/process20で236.6秒実測。q31に対してwhole判定・全callback/completion objectが完全同一、494 PASS/955 FAIL/13 harness_error/20 no_completion/24 no_output/2 multiple、callbacks11540 PASS/20642 FAIL/14 NOTRUN、whole gains/losses/old PASS callback losses/差0。static844/scripted105/strict39はq28原証拠を再利用しcurrent pair全capture同値は未測定。確認済1482/3805（38.948752%）・held0・未attempt275を保持。
+harness archive1676 members SHA256dc0144561a9fcee39bf121eb3996733645dabe17e863a4bf7acdd74832a9cd9d、native/oracle/build archive85 members SHA2564fff608736fac870313d709b6145495213e828fec05a35abe28fb1577c0e2924を全member順次read-back。i01 conversions/public BigInt partialだけcleared。actual TypedArray SetのENOTSUP・typed Define/通常prototype routing/delete/keys/prototype/extent/IsArray/call/construct/global Proxy/revocable/原WebIDL2、full target/p100/WS100%未達。共有Master/Queue/next/cache/GitHub投影pending、push無し。
+
+[全証拠](evidence/20261018-q36/README.md)。次はVM↔JS依存やnative_operations契約を変えず、typed content-type metadata/専用Set/Defineの正規順を新finite Queueで具体化する。
