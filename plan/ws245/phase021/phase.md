@@ -41,3 +41,18 @@ Queue: Q1 の指示（2026-10-16「p020 以降の残りの段を全部（design 
 ## build
 
 - 2026-10-16: `make -j16 ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/p021/k-default build/p021/k-default/vmunix` warning 0（vmunix の sha256 42714c727e24549c…）。`I915_TESTS=y` の `I915_TEST_SET=vke2・display・display_ktest・display_ktest2・execution` の 5 組も warning 0。`git diff --check` は空。
+
+## 判定の材料（2026-10-18 P1、q1241）
+
+証拠: i20 = q1229-i20（T1、2026-10-17、5330 の実機、tip 92f134d99。survey の md は t1 の 396cbfce4 の `plan/ws245/tests/evidence/t1229i20-tip-20261017.md`・`t1229i20-tip-debug-20261017.md`、dmesg と `5330-survey-diff.py` の出力は t1 の worktree の `plan/ws245/temp/5330/t1229i20-*`（git の外））。i21 = q1229-i21（merge 後の main 61dde9d6b、24f2329ea の `t1229i21-main-merged-20261017.md`、dmesg は同じ場所）。基準 = q1229-i18 の main の dmesg（同じ場所の `t1229i18-main-*`）。debug の比べ（`t1229i20-diff-main-debug.txt`）の差は phase046 の q1229-i19 の表の I・H の行だけ（steady の差は PP_CONTROL の survey 2 の 0x6f/0x67 = H7 だけ）、素の起動の比べ（`t1229i20-diff-main.txt`）steady 差 0 PASS。i21 も steady 差 0。
+
+満たした基準:
+
+- 起動の基準（graphical、msgbuf_dropped 0、HANDOFF、lease 1 claimed、picture up、device lost 0、backlight-probe の get・set 100・get）は i20・i21 とも PASS（brightness=100）
+- survey の SBLC_PWM_CTL 0x80000000・FREQ 0x17700（= 96000）・DUTY が基準と同じ（steady 差 0）
+
+満たしていない・未確認の基準と残る物:
+
+- `backlight-probe` の range の行は survey の md に無い（FREQ の値で代えた）
+
+P1 の見立て（Status は変えない。判定は Q1）: cleared にしてよい。

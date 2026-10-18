@@ -43,3 +43,18 @@ Queue: q1229-i04（P1）
 - dbuf の check: 5330 の panel（latency 3/54/83/102/147/147、IPC、SAGV 35 µs）の 6 level の語 0x80004010〜0x800280a1・TRANS 0x8000001e・SAGV 0x8000c031/0x8000003f・BUF_CFG 0x0fdb0000（cursor 36 block）が driver の run と一致、join と slice（ADL-P の A 単独・A+B、TGL）、B の half、2 pipe の重み、短い blank（level 0 だけ、SAGV 無し）、小さい share（level 0・1、下の写し）、入らない share、slice の電源と遅れ、MBUS の join/split と tracker、DBOX（ADL-P join 0x01038806・split 0x01038804、TGL 0x01038c02）、TGL は S3/S4 と MBUS_CTL を書かない。
 - build（2026-10-16）: `sh build/tmp/kbuild.sh p034` で 6 組が rc 0・warning 0。`git diff --check` は空。
 - 5330: 未実施（全部の段の後に 1 回）。
+
+## 判定の材料（2026-10-18 P1、q1241）
+
+証拠: i20 = q1229-i20（T1、2026-10-17、5330 の実機、tip 92f134d99。survey の md は t1 の 396cbfce4 の `plan/ws245/tests/evidence/t1229i20-tip-20261017.md`・`t1229i20-tip-debug-20261017.md`、dmesg と `5330-survey-diff.py` の出力は t1 の worktree の `plan/ws245/temp/5330/t1229i20-*`（git の外））。i21 = q1229-i21（merge 後の main 61dde9d6b、24f2329ea の `t1229i21-main-merged-20261017.md`、dmesg は同じ場所）。基準 = q1229-i18 の main の dmesg（同じ場所の `t1229i18-main-*`）。debug の比べ（`t1229i20-diff-main-debug.txt`）の差は phase046 の q1229-i19 の表の I・H の行だけ（steady の差は PP_CONTROL の survey 2 の 0x6f/0x67 = H7 だけ）、素の起動の比べ（`t1229i20-diff-main.txt`）steady 差 0 PASS。i21 も steady 差 0。
+
+満たした基準:
+
+- 起動の基準（graphical、msgbuf_dropped 0、HANDOFF、lease 1 claimed、picture up、device lost 0、backlight-probe の get・set 100・get）は i20・i21 とも PASS
+- survey の PLANE_WM 系・PLANE_BUF_CFG・WM_LINETIME・MBUS_CTL・PIPE_MBUS_DBOX_CTL が基準と同じ、underruns none
+
+満たしていない・未確認の基準と残る物:
+
+- 5320（2 slice）、HDMI の 2 画面: ユーザーの一覧（beta2.md の U19〜U23）の項目で、未実施
+
+P1 の見立て（Status は変えない。判定は Q1）: cleared にしてよい。

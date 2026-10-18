@@ -83,3 +83,17 @@ host-xd-icl-test の中身: 行（D0・ICP・port C は MG PHY C の TC1・port 
   - MG PHY: TC の port の PHY が MG（`i915_xd_output_mg`、platform の port の `phy_kind`）なら DP mode は `drv_i915_xd_tc_mg_dp_mode`、signal levels は MG の表と `drv_i915_xd_tc_mg_signal_levels`、訓練の swing の上限は MG の表の行数、PLL は `drv_i915_xd_mg_pll_enable`（記述に `mg_pll_words` を足した。作るのは記述の作り手: ICL を attach する時）。
   - host 試験（`host-xd-output-test` 67 check、+9）: ICL の panel を transcoder EDP で灯す（function の語: DDI A の display 11 の select・pipe A の input・enable、clock select を書かない、port A の transport で訓練して function はその後、transcoder A の transport に触らない、dark で止めて function を消す）、TC1 の MG（MG PLL 1 の lock と DIV0、DP mode と swing、transcoder B の clock select 0x60000000 が訓練の後に 1 回、dark で clock を DDI C の buffer の前に外す）。
 - まだ無い物（この Phase の残り）: HDMI の display 11 の列（combo B。HDMI の port の順は display 12 と同じ。clock select は display 11 の field で入った）を Linux の列と比べる試験、ICL の 2 行を cover の列に足す事、xd-output の電源の use（transcoder の index 15）を xd-power の domain にどう写すか（attach の時）、ICL の takeover の readout、WM の read latency。build: 6 組 warning 0（`kbuild.sh d45`）。
+
+## 判定の材料（2026-10-18 P1、q1241）
+
+証拠: i20 = q1229-i20（T1、2026-10-17、5330 の実機、tip 92f134d99。survey の md は t1 の 396cbfce4 の `plan/ws245/tests/evidence/t1229i20-tip-20261017.md`・`t1229i20-tip-debug-20261017.md`、dmesg と `5330-survey-diff.py` の出力は t1 の worktree の `plan/ws245/temp/5330/t1229i20-*`（git の外））。i21 = q1229-i21（merge 後の main 61dde9d6b、24f2329ea の `t1229i21-main-merged-20261017.md`、dmesg は同じ場所）。基準 = q1229-i18 の main の dmesg（同じ場所の `t1229i18-main-*`）。debug の比べ（`t1229i20-diff-main-debug.txt`）の差は phase046 の q1229-i19 の表の I・H の行だけ（steady の差は PP_CONTROL の survey 2 の 0x6f/0x67 = H7 だけ）、素の起動の比べ（`t1229i20-diff-main.txt`）steady 差 0 PASS。i21 も steady 差 0。
+
+満たした基準:
+
+- 5330 の起動・survey・digest に差が無い（ADL-P の行は不変）
+
+満たしていない・未確認の基準と残る物:
+
+- host の受け入れの残り（ICL の enable/disable の列、ICL の takeover の readout、WM の read latency、FEC stall の bit）は phase.md の「残り」のとおり未実施。実機は無い
+
+P1 の見立て（Status は変えない。判定は Q1）: cleared にしない（host の受け入れが残る）。

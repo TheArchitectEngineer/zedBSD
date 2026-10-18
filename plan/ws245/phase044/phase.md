@@ -46,3 +46,18 @@ Branch: agent/p6-ws245（p040 の 806e0b063 の上）
 - build（2026-10-17）: `sh build/tmp/kbuild.sh p044` で既定と `I915_TESTS=y` の 5 組が rc 0・warning 0（既定の vmunix の sha256 の頭 c1ed65f8dbbc4e6d）。`git diff --check` は空。
 - 旧の host 試験（host-dp-test 72・host-lcd-modeset-test 120）は前の木（5342e0844）と出力が同じ（dp・lcd とも SAME）。
 - 5330: 未実施（全部の段の後に 1 回）。
+
+## 判定の材料（2026-10-18 P1、q1241）
+
+証拠: i20 = q1229-i20（T1、2026-10-17、5330 の実機、tip 92f134d99。survey の md は t1 の 396cbfce4 の `plan/ws245/tests/evidence/t1229i20-tip-20261017.md`・`t1229i20-tip-debug-20261017.md`、dmesg と `5330-survey-diff.py` の出力は t1 の worktree の `plan/ws245/temp/5330/t1229i20-*`（git の外））。i21 = q1229-i21（merge 後の main 61dde9d6b、24f2329ea の `t1229i21-main-merged-20261017.md`、dmesg は同じ場所）。基準 = q1229-i18 の main の dmesg（同じ場所の `t1229i18-main-*`）。debug の比べ（`t1229i20-diff-main-debug.txt`）の差は phase046 の q1229-i19 の表の I・H の行だけ（steady の差は PP_CONTROL の survey 2 の 0x6f/0x67 = H7 だけ）、素の起動の比べ（`t1229i20-diff-main.txt`）steady 差 0 PASS。i21 も steady 差 0。
+
+満たした基準:
+
+- 5330 の起動に差が無い（ADL-P の行は不変の見込みどおり、i20・i21 の steady 差 0）
+
+満たしていない・未確認の基準と残る物:
+
+- host の受け入れの残り（9 行 × 4 種の enable → disable の列の比べ、RKL・ADL-S の takeover の列、TGL の流れ B の配線）は phase.md の「残り」のとおり未実施
+- 5320: ユーザーの一覧（beta2.md の U19〜U23）の項目で、未実施
+
+P1 の見立て（Status は変えない。判定は Q1）: cleared にしない（host の受け入れが残る）。

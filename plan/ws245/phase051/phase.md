@@ -36,3 +36,18 @@ Queue: q1229-i13（P1）
 ## 削除と掃除（Q1）
 
 - `src/drivers/gpu/i915/display/head-rules.c`・`head-rules.h`（中身を空にした）。
+
+## 判定の材料（2026-10-18 P1、q1241）
+
+証拠: i20 = q1229-i20（T1、2026-10-17、5330 の実機、tip 92f134d99。survey の md は t1 の 396cbfce4 の `plan/ws245/tests/evidence/t1229i20-tip-20261017.md`・`t1229i20-tip-debug-20261017.md`、dmesg と `5330-survey-diff.py` の出力は t1 の worktree の `plan/ws245/temp/5330/t1229i20-*`（git の外））。i21 = q1229-i21（merge 後の main 61dde9d6b、24f2329ea の `t1229i21-main-merged-20261017.md`、dmesg は同じ場所）。基準 = q1229-i18 の main の dmesg（同じ場所の `t1229i18-main-*`）。debug の比べ（`t1229i20-diff-main-debug.txt`）の差は phase046 の q1229-i19 の表の I・H の行だけ（steady の差は PP_CONTROL の survey 2 の 0x6f/0x67 = H7 だけ）、素の起動の比べ（`t1229i20-diff-main.txt`）steady 差 0 PASS。i21 も steady 差 0。
+
+満たした基準:
+
+- 起動の基準（graphical、msgbuf_dropped 0、HANDOFF、lease 1 claimed、picture up、device lost 0、backlight-probe の get・set 100・get）は i20・i21 とも PASS
+- `display output: eDP panel, the firmware's output (DP SST on DDI A, pipe A, lit pipes 0x1)` が基準と同じ
+
+満たしていない・未確認の基準と残る物:
+
+- HDMI の 2 画面（head は pipe B）、蓋を閉じた起動の GOP の HDMI: ユーザーの一覧（beta2.md の U19〜U23）の項目で、未実施
+
+P1 の見立て（Status は変えない。判定は Q1）: cleared にしてよい。

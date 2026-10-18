@@ -56,3 +56,18 @@ Branch: agent/p6-ws245（P1 の agent/p1-ws245 の 5342e0844 から）
 - 旧の host 試験（host-dp-test 72・host-lcd-modeset-test 120）を前の木（5342e0844）と比べ、dp・lcd とも出力が同じ（`build/tmp/oldtests.sh`、P1 の harness の写し）。どちらも TC の道を通らない（出力に TC PLL・HIP_INDEX が無い）ので、TC は host-xd-tc-test と下の WS051 の試験で見た。
 - WS051 の試験: `sh plan/ws051/tests/host-dpext-link.sh build/p040/dpext-link` → 16 check pass（5330 の DP-2 の TC PLL の語 div0 0x84269 などが state.c → `drv_i915_dkl_pll_calc` → xd-clock で同じ）。`sh plan/ws051/tests/host-tc.sh` は **壊れた**（前の木では host-tc 112・host-tc-tables 34 が pass。後の半分 host-tc-tables が `dkl-phy.c` から窓の define と `drv_i915_dkl_phy_window` を sed で抜くため）。窓の 3 check は host-xd-tc-test の「windows」に移した。master の Tools の行の直し（host-tc.sh の DKL の 2 行と host-tc-tables.c の DKL の 3 check を消す。check は 34 → 31）は Q1 に依頼。
 - 5330: 未実施（全部の段の後に 1 回）。
+
+## 判定の材料（2026-10-18 P1、q1241）
+
+証拠: i20 = q1229-i20（T1、2026-10-17、5330 の実機、tip 92f134d99。survey の md は t1 の 396cbfce4 の `plan/ws245/tests/evidence/t1229i20-tip-20261017.md`・`t1229i20-tip-debug-20261017.md`、dmesg と `5330-survey-diff.py` の出力は t1 の worktree の `plan/ws245/temp/5330/t1229i20-*`（git の外））。i21 = q1229-i21（merge 後の main 61dde9d6b、24f2329ea の `t1229i21-main-merged-20261017.md`、dmesg は同じ場所）。基準 = q1229-i18 の main の dmesg（同じ場所の `t1229i18-main-*`）。debug の比べ（`t1229i20-diff-main-debug.txt`）の差は phase046 の q1229-i19 の表の I・H の行だけ（steady の差は PP_CONTROL の survey 2 の 0x6f/0x67 = H7 だけ）、素の起動の比べ（`t1229i20-diff-main.txt`）steady 差 0 PASS。i21 も steady 差 0。
+
+満たした基準:
+
+- 起動の基準（graphical、msgbuf_dropped 0、HANDOFF、lease 1 claimed、picture up、device lost 0、backlight-probe の get・set 100・get）は i20・i21 とも PASS
+- TC1・TC2 の declared・PHY mode・readout の行が基準と同じ、digest の差は I・H の行だけ（USB-C なし）
+
+満たしていない・未確認の基準と残る物:
+
+- USB-C DP（TC2）の 2 画面と TC PLL の語、5320: ユーザーの一覧（beta2.md の U19〜U23）の項目で、未実施
+
+P1 の見立て（Status は変えない。判定は Q1）: cleared にしてよい。

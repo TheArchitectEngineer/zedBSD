@@ -59,3 +59,18 @@ Q1 の判断（q1229-i08）: P6 が並行に作った p040（Dekel の窓・TC P
 - 付け替え（6cbff0b73）: `struct i915_xd_output_tc` の hook は接続が持つ物だけ（get_link・put_link・mode・lanes・`pin`（DFLEXPA1 の pin assignment、tc.c の記録）・`tbt_pll`（Type-C の port が共有する Thunderbolt PLL は pool の記録のまま））。xd-output が直に: DP mode（`drv_i915_xd_tc_dp_mode`）、signal levels（`drv_i915_xd_tc_swing_table`・`_signal_levels`、行は `drv_i915_xd_combo_level_row`）、PHY の core reset（`drv_i915_xd_tc_release_soft_reset`）、自前の TC PLL（`drv_i915_xd_tc_pll_enable`・`drv_i915_xd_dpll_disable`、記述の `tc_pll`・`tc_pll_words` は殻が pool の TC PLL の state から）、swing の上限（Dekel の表の行の数から、`drv_i915_xd_dp_swing_max`: `drv_i915_xd_combo_swing_max` を行の数を取る形に）。環境に `dkl`（Dekel の窓）。ddi.c から TC の DP mode・levels・WA の旧 code、buf trans の view と `voltage_max`、`index_to_dp_signal_levels` を消した（呼び手 0）、dp.c の `drv_i915_dp_is_uhbr`（呼び手 0）。殻の写し: 自前の TC PLL の pool の `on/active_mask` も xo_sync が更新（Thunderbolt PLL は pool のまま）。
 - 確かめた事: host（run-xd-host-tests.sh 全部 pass、output 58・tc 114・cover 91）。旧の host 試験（dp 72・lcd 120）は merge 前（e825d6e6e）と出力が同じ（dp SAME、lcd の trnorm の差 0）。harness out50c（HDMI・DP-TC・DP-alt）の trnorm の比べ: merge では Dekel の DP_MODE の HIP_INDEX の書き込みの順（2 語を読んでから 2 語を書く）と TC PLL の待ちの記録（poll の read）だけ、付け替えでは書き込みの列は同じで、error の文言（`PLL %d …` → `xd-output: the port PLL …`）、`intel_tc_port_in_mode` の問い合わせの行、model の mode none（Thunderbolt PLL）の DP-TC で pin 0 の error の 1 行（旧は legacy の問い合わせの答えで黙っていた。実機では mode none で lit しない）。build（`sh build/tmp/kbuild.sh m40b`）6 組 rc 0・warning 0。R11: 触った file の数は全部 0。
 - 実機で確かめる事: p040 の phase.md の「実機で確かめる事」（USB-C DP は p052 の後の節目）。
+
+## 判定の材料（2026-10-18 P1、q1241）
+
+証拠: i20 = q1229-i20（T1、2026-10-17、5330 の実機、tip 92f134d99。survey の md は t1 の 396cbfce4 の `plan/ws245/tests/evidence/t1229i20-tip-20261017.md`・`t1229i20-tip-debug-20261017.md`、dmesg と `5330-survey-diff.py` の出力は t1 の worktree の `plan/ws245/temp/5330/t1229i20-*`（git の外））。i21 = q1229-i21（merge 後の main 61dde9d6b、24f2329ea の `t1229i21-main-merged-20261017.md`、dmesg は同じ場所）。基準 = q1229-i18 の main の dmesg（同じ場所の `t1229i18-main-*`）。debug の比べ（`t1229i20-diff-main-debug.txt`）の差は phase046 の q1229-i19 の表の I・H の行だけ（steady の差は PP_CONTROL の survey 2 の 0x6f/0x67 = H7 だけ）、素の起動の比べ（`t1229i20-diff-main.txt`）steady 差 0 PASS。i21 も steady 差 0。
+
+満たした基準:
+
+- 起動の基準（graphical、msgbuf_dropped 0、HANDOFF、lease 1 claimed、picture up、device lost 0、backlight-probe の get・set 100・get）は i20・i21 とも PASS
+- 内蔵 LCD は p050b と同じ
+
+満たしていない・未確認の基準と残る物:
+
+- 外部出力（HDMI・USB-C DP）: ユーザーの一覧（beta2.md の U19〜U23）の項目で、未実施
+
+P1 の見立て（Status は変えない。判定は Q1）: cleared にしてよい。
