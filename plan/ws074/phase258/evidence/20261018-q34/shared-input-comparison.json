@@ -1,0 +1,14 @@
+{
+  "userland/desktop/libbrowser/vm/access.c": {
+    "old": "64dec466f07ba9deb11196042310bf5dde742b374384156aa1b279c1f92b81cd",
+    "new": "c81cd59bbc98ec377479b56fc40da95eebcaec3362d514dbe71114dbef9db577"
+  },
+  "plan/ws074/tests/host-proxy-read.c": {
+    "old": "0a3c90174d28bc19ba319ba321db106d75722d38699b466c77a901804ff90a5c",
+    "new": "61629f2fede5a42d41f8a7c387e78f44c6bcc28da59eba7f9aaa1e99b9c39dcc"
+  },
+  "plan/ws074/tests/proxy-read.js": {
+    "old": "2f8698abab47fb5bd5635bfe7b8a04aa3fe2ef9d3d1de660b6a787c54707a817",
+    "new": "39ee9558edbbbd02e774901fbb73e146e2a8855bca2c6e921f1ffa984f983377"
+  }
+}

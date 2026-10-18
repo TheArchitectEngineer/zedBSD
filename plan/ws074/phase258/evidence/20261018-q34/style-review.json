@@ -1,0 +1,53 @@
+{
+  "scope": {
+    "userland/desktop/libbrowser/vm/access.c": [
+      "vm_define_own_property",
+      "access_proxy_define"
+    ],
+    "plan/ws074/tests/host-proxy-read.c": [
+      "main",
+      "proxy_define_descriptor",
+      "proxy_gc_edges"
+    ]
+  },
+  "raw_checker_flags": 74,
+  "allowed_forward_cleanup": [
+    {
+      "function": "access_proxy_define",
+      "count": 16
+    },
+    {
+      "function": "main",
+      "count": 15
+    },
+    {
+      "function": "proxy_define_descriptor",
+      "count": 2
+    },
+    {
+      "function": "proxy_gc_edges",
+      "count": 41
+    }
+  ],
+  "other_checker_flags": 0,
+  "old135_prefix_equal": true,
+  "header_and_script_free_native_operations_byte_identical": true,
+  "host_target_warnings": 0,
+  "ordinary_define_tokens_identical": true,
+  "manual_review": [
+    "existing realm-aware Define adds only Proxy dispatch before unchanged ordinary/native/array body; full function reviewed/formatted, three-plus condition clauses split",
+    "snapshot original target/handler, managed owner/key/original flagged descriptor payload before dynamic trap getter; retain fresh method/normalized key/From newborn",
+    "From emits only present fields with ordinary default data attributes; trap receives handler this and exactly target/key/partial representation3 arguments",
+    "ToBoolean false returns done0 before target descriptor hook; true checks post-trap target/extensibility with original immutable C descriptor, not mutable representation",
+    "explicit configurable:false distinguished from omitted; new/nonextensible/fixed writable false/compatibility/SameValue/accessor invariant enforced",
+    "all depth paths balanced including registration failure/recursion rejection/trap errors/fallback/false, input roots acquired before error allocation",
+    "native trap removes representation.value; original native descriptor alone retains fresh payload through subsequent target hook GC; false does not invoke hook; real managed realm/input payload/output payload reclamation after final roots release",
+    "fixture Reflect-style bridge validates target then key then descriptor and roots a fresh converted key through descriptor getter GC; production global API not exposed",
+    "new helpers declared after tables, existing public function header retained; ANSI declarations/calls/paragraphs/manual review; raw flags only forward cleanup"
+  ],
+  "limitations": [
+    "global Proxy unexposed and callable/nested Proxy targets rejected; whole p258 incomplete",
+    "focused only; harness q31/images-crash q28 reused without current full-corpus equality claim",
+    "target access1 compile only, no full target runtime or whole-source p100 conformance"
+  ]
+}

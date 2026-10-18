@@ -1,0 +1,6 @@
+{
+  "prior": "e6b516827",
+  "ordinary_function_all_C_tokens_equal_after_removing_new_Proxy_branch": true,
+  "only_engine_source": "vm/access.c",
+  "header_and_script_free_native_operations_byte_identical": true
+}

@@ -1,0 +1,53 @@
+{
+  "source_commit": "bbddda9c29bc4c392f699394f28c86b8f648eb0b",
+  "protocol_conditions": 182,
+  "native_chrome_exact": true,
+  "old135_source_prefix_identical": true,
+  "ordinary_define_all_C_tokens_unchanged": true,
+  "native_pressure": [
+    "original Get/Has/GetOwn managed realm collection retained",
+    "Define trap erases representation.value, then sole original input payload survives post-trap native descriptor GC",
+    "managed bare realm alive in all four target descriptor collections; false Define trap does not invoke target hook",
+    "fresh Define input/GetOwn output and managed realm actually reclaimed after last embedding roots end",
+    "q32 From data/getter pressure and absent slot reclamation retained"
+  ],
+  "focused_gate_returncodes": {
+    "proxy-read": 0,
+    "delegation": 0,
+    "interpreter": 0,
+    "vm-factory": 0,
+    "dom": 0,
+    "cssom": 0,
+    "cssom-mutation": 0,
+    "marks": 0,
+    "observer": 0,
+    "error-events": 0,
+    "error-reporting": 0,
+    "acid": 0
+  },
+  "acid3_score": 100,
+  "acid3_pixel_diff": 0,
+  "acid2_existing_pixel_diff": 873,
+  "raw_allowed_cleanup": 74,
+  "other_style_flags": 0,
+  "host_target_warnings": 0,
+  "archive": {
+    "path": "focused-native-oracle-build-raw.tar.gz",
+    "sha256": "a0a709b71a0ff80624507ab6b71c86eb5837fafc67805fbda04d33fe39999899",
+    "members": 50,
+    "readback_all_members": true
+  },
+  "current_certified_pass": 1482,
+  "denominator": 3805,
+  "held": 0,
+  "unattempted_harness": 275,
+  "harness_reused": "q31 all1508:494PASS/955FAIL/13harness_error/20no_completion/24no_output/2multiple; callbacks11540PASS/20642FAIL/14NOTRUN",
+  "static_scripted_crash_reused": "q28:844/105/39",
+  "whole_pass_gain": 0,
+  "limitations": [
+    "focused gates only; no q34 all1508 or all-image/strict crash measurement",
+    "frozen runtime binaries retained in build with source-proof hashes, not embedded in evidence archive",
+    "global Proxy unexposed; whole p258/WS074 remains incomplete",
+    "single-source target access1 only; no full target link/runtime or whole-source p100 conformance"
+  ]
+}

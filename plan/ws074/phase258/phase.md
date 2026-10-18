@@ -2,7 +2,7 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: in-progress（q34 DefineOwnProperty partial、q30〜q33 verified）
+Status: uncleared（q34 DefineOwnProperty partial cleared、whole Proxy未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
@@ -11,7 +11,7 @@ Origin: p189/q29 original WebIDL2 parseがProxy未定義で停止。
 
 Objective / own criteria: native managed Proxyを実object internal methodsへ接続し、constructor/revocableと各internal operationのtrap/fallback/invariant/receiver/revocation/callability/GCを正しく実行する。original WebIDL2 actual parse/validatorに必要なget/set/array behaviorを通常APIで提供し、independent controls/原WPTを通す。部分read stageだけでwholeをclearしない。
 Design: vm_native_operationsはscript-free heap interfaceのまま保持。Proxyにはmanaged target/handler recordを持たせ、scriptを実行可能なrealm-aware access/internal methodからtrapを呼ぶ。opaque JS constructor公開前に必要なoperationを段階的に整える。各段階は自走承認に基づく新finite Queueで正確に選定する。
-Current state: q33 GetOwnPropertyまでprivateでverified、公開single Object descriptor APIは接続済み。Define/Set/keys/prototype/extent/IsArray/call/construct/global constructorとoriginal WebIDL2は未達。
+Current state: q34 DefineOwnPropertyまでprivateでverified。公開Object single descriptor/define APIは接続済み。Set/keys/prototype/extent/IsArray/call/construct/global constructorとoriginal WebIDL2は未達。
 Standards: Guardrail/C全文/browser component全文、簡約版無し。一次 https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-proxy-object-internal-methods-and-internal-slots-get-p-receiver 。既存p100がWS全source near-final conformanceを所有し、本partialはnew/changed scopeの全文適合を検証。
 Verification/bounds/affected components: q30 snapshotの通り。private object kind/cell/newborn/trace/revokeとactual receiver/trap/invariant/GCをnative/Chromeで確認し、ordinary whole/callback PASSを守る。target single-source compileのみとfull target runtimeを区別。未達はunclearedとresume。
 
@@ -70,3 +70,13 @@ exact承認どおりfocused gatesだけ。全1508はq31、static/scripted/strict
 [全証拠](evidence/20261018-q33/README.md)。次finite QueueでDefineとpartial descriptor trap/invariantを具体化する。
 
 Event ws074-p258-q34-selected-20261018: q33 GetOwn/private descriptor出力を前提にDefineOwnPropertyのtrap/partial descriptor/元input invariant/実GCを具体化。ordinary/native hookは不変のまま既存realm-aware defineのProxy分岐だけを追加する。exact scope/max90分/focused gatesはq34 Queue、Set/global公開は先取りしない。
+
+## q34 partial result / resume
+
+Event ws074-p258-q34-partial-cleared-20261018: 既存realm-aware vm_define_own_propertyへProxy分岐を追加。dynamic defineProperty GetMethod/null fallback、handler this・元target/string-or-symbol key/partial From objectの3引数、ToBoolean false時はtarget descriptorを読まずdone0。true時だけpost-trap target descriptor/extensibilityと元input descriptorを検証し、new/非拡張/fixed/explicit configurable:false・fixed writable:false・SameValue/accessor/data互換性を正規順で適用する。trapへ渡すrepresentationが変更されても、元input fieldsとpayloadを保持。元target/handlerはrevoke後も使用し、native property depthを全normal/abrupt終了で復帰する。
+既存ordinary/array/native hook bodyは新Proxy分岐を除いて全C tokens同一を証明。engine変更はaccess.cだけ、VM header/native_operations/JS moduleは不変。fixture-only Boolean bridgeはReflect相当のtarget→key→ToDescriptor順で実VM Defineを呼び、fresh symbol keyをdescriptor getter GCから保持。通常Object.definePropertyの成功は元Proxy/falseはTypeErrorを独立対照した。
+同じ182条件がnative/Chromium genuine Proxy/Reflectで全件一致、old135 source prefixはbyte同一。partial presence/属性/順、false/truthy、fixed NaN/符号付き0、trap後のtarget変更、representation変異/revoke/fresh key/accessor/value GC/有界再帰を確認。nativeでは保守的C stack保持を無効にし、Define trapがrepresentation.valueを削除してreturnした後のnative target hook内で実GC、元C descriptorだけが保持するsole fresh payloadの生存を確認。managed bare realmはGet/Has/GetOwn/Defineの4回のtarget hook GCで生存し、false Define時はhook未実行。最終root解放後にrealm/Define入力/GetOwn出力の各payloadが実回収される。q32 From pressure/absent slot実回収対照も維持。
+source WIPbbddda9c2、最終整形後に再buildしたimmutable pair/source hash317件を照合。host warning0・q02 exact access1 source target compile warning0。full new/changed Cの許可forward shared cleanup74・他0、3+条件の分割を含めmanual review。DOM41、VM45/factory56、CSSOM12+12、marks7/observer10/ErrorEvent9/ErrorReporting19/delegation10通過。Acid3 score/inventory100・pixel0、Acid2既存差873。archive50 membersを全read-back、sha256a0a709b71a0ff80624507ab6b71c86eb5837fafc67805fbda04d33fe39999899。
+focused gatesのみで全1508はq31、static/scripted/strictはq28原証拠再利用。q34全件同値/whole PASS増分は未測定。確認済1482/3805（38.948752%）・held0・未attempt275を維持。i01 Define partialだけcleared、whole p258はSet/keys/prototype/extent/IsArray/call/construct/global constructor/revocable/元WebIDL2未達でuncleared。private callable/Proxy target拒否とglobal Proxy非公開維持、full target/p100/WS100%未達。共有Master/Queue/next/cache/GitHub投影pending、push無し。
+
+[全証拠](evidence/20261018-q34/README.md)。次finite Queueでreceiver-aware Setとfallback/strict behaviorを具体化する。
