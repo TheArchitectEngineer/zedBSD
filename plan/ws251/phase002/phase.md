@@ -85,3 +85,11 @@ Parent: [WS251](../ws.md)
 - 残り: (1) bcm2711 の段の名前（P0〜P5・N0・R0・V0〜V7、boot parameter の値）の扱いは 2026-10-18 ユーザーの決定「(a) interface として残す」（名前は変えず comment の言い方だけ直す。群 4 で comment は済み）。(2) 完了の条件の「file ごとの目視の記録」: 今回は群ごとの grep（段の符号・design・QEMU・5330・test build）の目視までで、file ごとの記録は無い。(3) WS237 の gen9 の host 試験・WS229 の bootfb の host 試験は未実施（comment だけなので vmunix の比べで代えた）。(4) arm64 の build は群 4 の後で作っていない（群 6 の compiler の .inc）。(5) 範囲の外の include/libc/vulkan/API-PROVENANCE.md・include/kern/tty.h は Q1 の判断。
 - 基準の build: `build/ws251p002-base2`（0a59b8a8a）。手順: 直す → `sh build/tmp/kbuild.sh <名>` → `sh build/tmp/ws251-objcmp.sh ws251p002-base2 <名>`。
 - 掃除（Q1 に依頼）: `build/ws251p002-g5`・`-g5-host`・`-g6` と各 .log。
+
+### q1245（2026-10-18 P1）
+
+- 範囲の外だった 2 file の管理情報を消した（24ad9dfc1）: `include/libc/vulkan/API-PROVENANCE.md` の見出しの Queue・Phase の番号（q309・q310・ws103-p003・ws167-p002・ws083-p002・ws113-p003）と ws219-p001、WS014・WS030 を名指す 2 文（受け入れの在り処の記録）。`include/kern/tty.h` の `(ws035-p097)`。両方とも grep で 0 件。
+- Pi 4 の build（`config/ci/config-rpi4.mk`、`build/ws251p002-arm-q1245`）rc=0 warning 0、`check-arm64-vmunix.py` PASS。
+- host 試験: WS237 gen9 backlight 21/0・flip 48/0・mode 71/0・modeset 80/0、WS229 bootfb 20/0（全部 0 failures）。
+- file ごとの記録: p002 が変えた 202 file（0a59b8a8a..835732198 の src/drivers/gpu と include/uapi/gpu-op.h: i915 155・bcm2711 37・amdrdna 2・compiler 2・nvrtx 2・venus 2・gpu.c 1・gpu-op.h 1）の各 file で、`\b(ws|WS)[0-9]{3}\b|\bq[0-9]{3,4}\b|BUG-[0-9]+|plan/` の grep が 0 件である事を file ごとに確かめた（202 file 全部 0）。目視は群ごとの grep の結果の前後まで（file の通読ではない）。bcm2711 の段の名前はユーザーの決定 (a) のとおり残した。
+- 判定の材料: 残り (2)〜(5) は上で済み（(2) は grep の file ごとの記録まで、通読は無し）。P1 の見立て: (2) を file ごとの grep の記録で足りるとするなら cleared にできる。判定は Q1。
