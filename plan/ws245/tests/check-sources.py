@@ -7,7 +7,7 @@
 #   - no "Derived from the Linux kernel" and no copied license notice anywhere in the file;
 #   - every "Value(s) referenced:" and "Procedure referenced:" stands in a multi-line comment, never in a one-line
 #     /* ... */;
-#   - a "referenced:" names its source (Linux v6.8.12 and a path, an Intel or VESA, CTA or NIST document, this
+#   - a "referenced:" names its source (Linux v6.8.12 or v6.19 and a path, an Intel or VESA, CTA or NIST document, this
 #     tree's headers).
 #   python3 -I plan/ws245/tests/check-sources.py [TREE]   (TREE defaults to src/drivers/gpu/i915)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -21,7 +21,7 @@ BODY_FORBIDDEN = re.compile(r'Derived from the Linux|Permission is hereby grante
                             r'SPDX-License-Identifier: MIT|SPDX-License-Identifier: GPL')
 ONE_LINE_REFERENCE = re.compile(r'/\*.*referenced:.*\*/')
 REFERENCE = re.compile(r'(Values?|Procedure) referenced:\s*(.*)')
-REFERENCE_SOURCE = re.compile(r'^(Linux v6\.8\.12|Intel |the PRM|this tree|Mesa |VESA |CTA-861|NIST |the offsets are|$)')
+REFERENCE_SOURCE = re.compile(r'^(Linux v6\.8\.12|Linux v6\.19|Intel |the PRM|this tree|Mesa |VESA |CTA-861|NIST |the offsets are|$)')
 
 
 def files(tree):
