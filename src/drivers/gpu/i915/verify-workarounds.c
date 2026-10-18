@@ -155,7 +155,7 @@ drv_i915_wa_list_srm(
 		*skipped = wal->count - count;
 
 	/* Reserves four dwords per store. */
-	cs = drv_i915_ring_begin(rq, 4U * count);
+	cs = drv_i915_ring_reserve(rq, 4U * count);
 	if (cs == NULL) {
 		/* Reports the request's own error when it has one. */
 		if (rq->error != 0)
@@ -181,7 +181,7 @@ drv_i915_wa_list_srm(
 	}
 
 	/* Closes the reservation. */
-	drv_i915_ring_advance(rq, cs);
+	drv_i915_ring_commit(rq, cs);
 
 	/* Succeeded: the stores are in the ring. */
 	return 0;
@@ -351,7 +351,7 @@ drv_i915_engine_verify_wa_submit(
 	 */
 	engines->kernel_tl_seqno[index]++;
 	kernel_seqno = engines->kernel_tl_seqno[index];
-	error = drv_i915_request_create(
+	error = drv_i915_request_open(
 		rq,
 		&engines->kernel_ce[index],
 		kernel_seqno,
@@ -370,7 +370,7 @@ drv_i915_engine_verify_wa_submit(
 		return i915_verify_wa_fail(verify, error, "wa_list_srm");
 
 	/* Closes the request with its breadcrumb. */
-	error = drv_i915_request_add(rq);
+	error = drv_i915_request_close(rq);
 	if (error != 0)
 		return i915_verify_wa_fail(verify, error, "i915_request_add");
 
@@ -411,7 +411,7 @@ drv_i915_engine_verify_wa_poll(
 	/* Applies whatever the engine has reported since the last poll. */
 	execlists = &engines->el[index];
 	verify->polls++;
-	(void)drv_i915_execlists_process_csb(&engines->ge[index], execlists, mmio);
+	(void)drv_i915_execlists_drain_csb(&engines->ge[index], execlists, mmio);
 
 	/* Records an event the submission could not apply. */
 	if (execlists->csb_errors != 0U)
@@ -495,14 +495,14 @@ drv_i915_engine_verify_wa_park(
 	 */
 	engines->kernel_tl_seqno[index]++;
 	kernel_seqno = engines->kernel_tl_seqno[index];
-	error = drv_i915_request_create(
+	error = drv_i915_request_open(
 		krq,
 		&engines->kernel_ce[index],
 		kernel_seqno,
 		(uint32_t)engine->hwsp_ggtt + I915_GT_HWS_SEQNO_ADDR,
 		&engine->hwsp[I915_GT_HWS_SEQNO_ADDR / 4U]);
 	if (error == 0)
-		error = drv_i915_request_add(krq);
+		error = drv_i915_request_close(krq);
 
 	/*
 	 * Moves the wakeref serial past the switch: "check again on the next

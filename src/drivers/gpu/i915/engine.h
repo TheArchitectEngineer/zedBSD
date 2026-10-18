@@ -8,20 +8,17 @@
 /*
  * Engines: their setup, their kernel contexts, and the GT resume.
  *
- * This follows the reference for Gen12 (Alder Lake-P):
- *
- *   engine setup       init_status_page() -- one 4 KiB object pinned in the
+ *   engine setup       the status page -- one 4 KiB object pinned in the
  *                      GGTT and zeroed, whose GGTT address I915_GT_RING_HWS_PGA
  *                      takes -- and the software execlists state;
- *   engine set init    intel_engines_init(): per engine the setup, the
- *                      execlists registers (submit.h) and the pinned kernel
- *                      context with a 4 KiB ring, whose timeline lives in the
- *                      status page at I915_GT_HWS_SEQNO_ADDR;
- *   GT resume          intel_gt_resume() in the reference order (see
- *                      drv_i915_gt_resume());
- *   stop               intel_engine_stop_cs() and the Wa_22011802037 drain of
- *                      pending MI_FORCE_WAKEs, both used by the reset
- *                      preparation.
+ *   engine set init    per engine the setup, the execlists registers
+ *                      (submit.h) and the pinned kernel context with a 4 KiB
+ *                      ring, whose timeline lives in the status page at
+ *                      I915_GT_HWS_SEQNO_ADDR;
+ *   GT resume          see drv_i915_gt_resume();
+ *   stop               the command streamer stop and the Wa_22011802037
+ *                      drain of pending MI_FORCE_WAKEs, both used by the
+ *                      quiesce before a reset.
  *
  * Facts this rests on: on Gen11+ the CSB write pointer is status-page dword
  * 0x2f and the CSB holds 12 entries; I915_GT_RING_MODE_GEN7 gets
@@ -60,7 +57,7 @@ struct i915_gt_engine {
 	struct i915_engine_info *info;
 
 	/*
-	 * The image __engines_record_defaults() saved; every context created
+	 * The image the default-state recording saved; every context created
 	 * afterwards starts from it.  NULL until the defaults are recorded.
 	 */
 	struct i915_gt_object *default_state;

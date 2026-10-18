@@ -6,40 +6,31 @@
  */
 
 /*
- * Recording each engine's default context image (__engines_record_defaults()).
+ * Recording each engine's default context image.
  *
- * The reference, per engine:
+ * Per engine, a record context is created with a 4 KiB ring and its own
+ * timeline in a 4 KiB status page (its seqnos advance by 2, the first step
+ * being the initial breadcrumb).  The image is built with the restore
+ * inhibited, and one record request is written: the invalidate flush, the
+ * context workarounds, the Gen9 render engine's null render state, and the
+ * breadcrumb.  The request is submitted.
  *
- *   intel_context_create(engine)     a 4 KiB ring and a new timeline with its
- *                                    own 4 KiB status page; the timeline has
- *                                    an initial breadcrumb, so its seqnos
- *                                    advance by 2
- *   intel_renderstate_init()         pins the context: the image is built with
- *                                    the restore inhibited; no render state
- *                                    on Gen12
- *   i915_request_create()            the invalidate flush
- *   intel_engine_emit_ctx_wa()       the context workarounds
- *   i915_request_add()               the breadcrumb, then the submission
- *
- * then intel_gt_wait_for_idle(gt, I915_GEM_IDLE_TIMEOUT): each request
- * retires once its seqno lands, the engine parks, and the park switches to
- * the kernel context -- a request on the pinned kernel context -- unless the
- * engine's wakeref serial has caught up with its serial.  The record context
- * is switched out and its image written back; only when that second request
- * has retired is the engine idle.  Then a CSB error fails the recording with
- * EIO, and otherwise the record context's whole image becomes the engine's
- * default state.  Any error wedges the GT, which resets the engines.
+ * The recording then polls the CSB and the status pages for at least the
+ * timeout of real time.  Once a record request has completed in the CSB, the
+ * engine parks: a request on the pinned kernel context switches the record
+ * context out, so its image is written back, unless the engine's serial has
+ * not moved since the last park.  Only when that second request has
+ * completed is the engine idle.  A CSB error fails the recording with EIO;
+ * otherwise the record context's whole image becomes the engine's default
+ * state.  Any error resets the engines.
  *
  * Because the restore was inhibited, the engine does not load the record
  * context: it runs from its post-reset register state and saves that into
  * the image on switch-out.  That saved image is the default state.
  *
- * Two things differ from the reference.  The wait polls the CSB and the
- * status pages (what intel_engine_flush_submission() does inline on the wait
- * path) for at least the timeout of real time, instead of a retire worker.
- * And the park switch is submitted after the record context has completed in
- * the CSB, not merely after its seqno landed, because one request is in
- * flight per engine; the commands submitted are the same.
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/i915/gt/intel_gt.c
+ * (__engines_record_defaults: record an inhibited context per engine and
+ * keep the image saved on the switch to the kernel context).
  */
 
 #ifndef DRIVERS_GPU_I915_DEFAULTS_H

@@ -10,14 +10,11 @@
  *
  * The session operations queue under the device's IRQ lock and kick; the
  * worker takes the work in arrival order, drops the lock, runs it to its
- * end, and delivers the result.  A request is written as the reference's
- * execbuf writes one: the initial breadcrumb (gen8_emit_init_breadcrumb()),
- * the batch start (gen8_emit_bb_start()) unless the request is a marker, and
- * the final breadcrumb the request add writes.  Its end is found by
- * processing the context status buffer, as the reference's wait path does
- * when it runs the submission tasklet inline; between two looks the worker
- * sleeps until the engine's next interrupt (the final breadcrumb's user
- * interrupt, or a context switch).
+ * end, and delivers the result.  A request is the initial breadcrumb, the
+ * batch start unless the request is a marker, and the final breadcrumb the
+ * request close writes.  Its end is found by walking the context status
+ * buffer; between two looks the worker sleeps until the engine's next
+ * interrupt (the final breadcrumb's user interrupt, or a context switch).
  */
 
 #include "context.h"
@@ -1095,8 +1092,8 @@ drv_i915_worker_run_batch(
  * request running and the forcewake domains held.  Returns 0, ENODEV when
  * there is no worker or no VCS0, or the engine reset's error.
  *
- * XXX: unimplemented path for the render and copy records.  Linux:
- * intel_engine_reset() -> execlists reset_prepare/rewind/finish.  Logs and
+ * XXX: unimplemented path for the render and copy records (it would be the
+ * quiesce, the engine reset and the abandon of those engines).  Logs and
  * returns ENOTSUP.
  */
 int
@@ -1693,7 +1690,7 @@ i915_worker_run(
 		record->ce.ring.head = 0U;
 		record->ce.ring.tail = 0U;
 		record->ce.ring.emit = 0U;
-		(void)drv_i915_lrc_update_regs(&record->ce, 0U);
+		(void)drv_i915_lrc_set_ring(&record->ce, 0U);
 		kern_logf("i915: resident shim: ring rewound (idle context)\n");
 	}
 
@@ -1701,7 +1698,7 @@ i915_worker_run(
 	rq = &record->rq;
 	kern_memset(rq, 0, sizeof(*rq));
 	record->tl_seqno += 2U;
-	error = drv_i915_request_create(
+	error = drv_i915_request_open(
 		rq,
 		&record->ce,
 		record->tl_seqno,
@@ -1716,7 +1713,7 @@ i915_worker_run(
 		return error;
 
 	/* Closes the request with the final breadcrumb. */
-	error = drv_i915_request_add(rq);
+	error = drv_i915_request_close(rq);
 	if (error != 0)
 		return error;
 
@@ -1764,8 +1761,8 @@ i915_worker_emit(
 {
 	uint32_t *cs;
 
-	/* Reserves room for the initial breadcrumb (gen8_emit_init_breadcrumb()). */
-	cs = drv_i915_ring_begin(rq, 6U);
+	/* Reserves room for the initial breadcrumb. */
+	cs = drv_i915_ring_reserve(rq, 6U);
 	if (cs == NULL)
 		return rq->error;
 
@@ -1776,14 +1773,14 @@ i915_worker_emit(
 	*cs++ = rq->seqno - 1U;
 	*cs++ = I915_CMD_MI_NOOP;
 	*cs++ = I915_CMD_MI_ARB_CHECK;
-	drv_i915_ring_advance(rq, cs);
+	drv_i915_ring_commit(rq, cs);
 
 	/* A marker (a job with no batch) is the breadcrumbs alone. */
 	if (has_batch == 0)
 		return 0;
 
-	/* Reserves room for the batch start (gen8_emit_bb_start()). */
-	cs = drv_i915_ring_begin(rq, 6U);
+	/* Reserves room for the batch start. */
+	cs = drv_i915_ring_reserve(rq, 6U);
 	if (cs == NULL)
 		return rq->error;
 
@@ -1794,7 +1791,7 @@ i915_worker_emit(
 	*cs++ = (uint32_t)(batch_va >> 32);
 	*cs++ = I915_CMD_MI_ARB_ON_OFF;
 	*cs++ = I915_CMD_MI_NOOP;
-	drv_i915_ring_advance(rq, cs);
+	drv_i915_ring_commit(rq, cs);
 
 	/* Succeeded: the request's commands are in the ring. */
 	return 0;
@@ -1841,7 +1838,7 @@ i915_worker_wait(
 		observed = drv_i915_irq_engine_sequence(&device->gt.irq);
 
 		/* Applies what the engine reported. */
-		(void)drv_i915_execlists_process_csb(ge, el, &device->gt.mmio);
+		(void)drv_i915_execlists_drain_csb(ge, el, &device->gt.mmio);
 
 		/* An event with nothing to apply to fails the request; the first few failures say so. */
 		if (el->csb_errors != 0U) {
@@ -1941,7 +1938,7 @@ i915_worker_queue_sync(
 
 	spin_unlock_irqrestore(&device->irq_lock, irq);
 
-	/* The caller waits on a batch the GT has not started: the GT frequency is boosted until it is done (Linux's waitboost). */
+	/* The caller waits on a batch the GT has not started: the GT frequency is boosted until it is done. */
 	if (behind)
 		drv_i915_rps_boost_begin(&device->gt.init.rps);
 
@@ -2019,7 +2016,7 @@ i915_worker_context_fill(
 	record->vm.top_pd_dma = (uint64_t)context->vm->pml4.paddr;
 	record->vm.inited = 1;
 
-	/* Allocates the image and the ring on the engine (intel_context_create()); the engine's class picks the image's layout. */
+	/* Allocates the image and the ring on the engine; the engine's class picks the image's layout. */
 	error = drv_i915_lrc_alloc(
 		&record->ce,
 		&device->gt.engines.ge[gt_index],
@@ -2048,8 +2045,8 @@ i915_worker_context_fill(
 	}
 
 	/* Lays out the register state and points the image at the empty ring. */
-	drv_i915_lrc_init_state(&record->ce);
-	(void)drv_i915_lrc_update_regs(&record->ce, record->ce.ring.tail);
+	drv_i915_lrc_build_image(&record->ce);
+	(void)drv_i915_lrc_set_ring(&record->ce, record->ce.ring.tail);
 
 	/* The owner makes the record the session context's; the counts keep the worker alive. */
 	record->tl_seqno = 0U;
