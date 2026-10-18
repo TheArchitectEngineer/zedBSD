@@ -17,8 +17,7 @@
  * entries, the picture IDs, the motion vector buffers and the order counts
  * -- takes the reference's place in the decode's pReferenceSlots[] (the
  * same order anv uses).  An entry no reference uses names the output's own
- * picture and motion vectors rather than address zero, which nothing maps
- * (design D21).
+ * picture and motion vectors rather than address zero, which nothing maps.
  */
 
 #include "video-mfx.h"
@@ -112,7 +111,7 @@ drv_i915_video_mfx_matrices(
 
 /*
  * Checks the values of a picture's sequence and picture sets against what
- * the decoder takes (design §6.6, items 2 and 4, and the frame size of 3):
+ * the decoder takes:
  * returns NULL, or why the picture is skipped.
  */
 const char *
@@ -452,7 +451,7 @@ i915_mfx_dpb(
  * Writes the picture state: the picture's extent and size in macroblocks,
  * and the fields of its sets and of its picture information the slices
  * need (anv's mapping).  Only frame pictures of sequences of frames only
- * reach the builder (design §6.6, item 2), so the picture is a frame and
+ * reach the builder, so the picture is a frame and
  * MBAFF is off.
  */
 static void
@@ -535,7 +534,7 @@ i915_mfx_picture(
 /*
  * Writes the quantizer matrices: the 4x4 intra and inter ones always, the
  * 8x8 ones when the picture uses the 8x8 transform.  The lists are in scan
- * order and the hardware takes raster order (design B2).
+ * order and the hardware takes raster order.
  */
 static void
 i915_mfx_matrices(

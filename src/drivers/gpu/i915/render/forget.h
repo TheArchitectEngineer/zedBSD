@@ -6,8 +6,7 @@
  */
 
 /*
- * What a session's objects let go of when one of them is destroyed
- * (BUG-260).
+ * What a session's objects let go of when one of them is destroyed.
  *
  * The executor's objects name each other by pointer: a view its image, a
  * buffer view its buffer, a descriptor set its views, samplers, buffers and

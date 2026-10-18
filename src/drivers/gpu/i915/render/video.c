@@ -6,7 +6,7 @@
  */
 
 /*
- * The video decode part of the Vulkan executor (see video.h), ws083-p003b.
+ * The video decode part of the Vulkan executor (see video.h).
  *
  * The wire is libvulkan's (userland/desktop/libvulkan/video.c): a structure
  * is its sType, its chain, then its fields; a chain link is a 64-bit
@@ -83,13 +83,13 @@
 #endif
 #endif
 
-/* The H.264 decode limits the executor reports and holds sessions to (design §3.3). */
+/* The H.264 decode limits the executor reports and holds sessions to. */
 #define I915_VIDEO_MAX_DPB_SLOTS	17U
 #define I915_VIDEO_MAX_REFERENCES	16U
 #define I915_VIDEO_MAX_EXTENT		4096U
 #define I915_VIDEO_MB			16U
 
-/* The most slices of a picture the decoder takes (N4), and of slots one begin binds. */
+/* The most slices of a picture the decoder takes, and of slots one begin binds. */
 #define I915_VIDEO_MAX_SLICES		256U
 #define I915_VIDEO_MAX_BEGIN_SLOTS	32U
 
@@ -169,7 +169,7 @@
 #define I915_VIDEO_USAGE_DECODE_DPB		0x1000U
 #define I915_VIDEO_CONTROL_RESET		0x1U
 
-/* VkQueryResultStatusKHR: a decode that ran, and one that was skipped (ws083-p008). */
+/* VkQueryResultStatusKHR: a decode that ran, and one that was skipped. */
 #define I915_VIDEO_STATUS_COMPLETE		1
 #define I915_VIDEO_STATUS_ERROR			(-1)
 #define I915_VIDEO_FORMAT_NV12			1000156003U
@@ -223,7 +223,7 @@ struct i915_video_bind {
  * close.  Its DPB slots move only when a submission runs (their simulation
  * runs on a copy).  The batch is made on the first decode that writes MFX
  * commands; the batch of a session a video engine hang quarantined is
- * retained with the session's quarantine, not freed (design §6.1).  The slice bounds are the scratch of the decode
+ * retained with the session's quarantine, not freed.  The slice bounds are the scratch of the decode
  * being written (submissions of a session run one at a time).
  */
 struct i915_video_session {
@@ -375,7 +375,7 @@ struct i915_video_simulation {
 #ifdef I915_TEST_VIDEO_HANG_AT
 /*
  * The number of video runs since boot, in a test build that hangs some of
- * them (ws083-p007).
+ * them.
  *
  * Every run of every session takes the next number, so a run is hung once
  * and the runs after the hung ones decode as they would.  It only grows, and
@@ -663,8 +663,7 @@ drv_i915_video_submit(
 
 	/*
 	 * A session quarantined by a hang of its own is lost: it decodes
-	 * nothing more, so one program cannot spend the device's engine resets
-	 * (ws083 R-S3).
+	 * nothing more, so one program cannot spend the device's engine resets.
 	 */
 	if (session->gpu->quarantined != 0U) {
 		kern_logf("i915: video: submission refused: the session is quarantined after a hang\n");
@@ -800,7 +799,7 @@ i915_video_reply_capabilities(
 	/* The record's fields. */
 	switch (types[0]) {
 	case I915_VIDEO_TYPE_CAPABILITIES:
-		/* The general limits (design §3.3). */
+		/* The general limits. */
 		drv_i915_wire_reply_u32(reply, I915_VIDEO_SEPARATE_REFERENCE_IMAGES);
 		drv_i915_wire_reply_u64(reply, 32U);
 		drv_i915_wire_reply_u64(reply, 1U);
@@ -1041,7 +1040,7 @@ i915_video_session_create(
 		result = I915_VIDEO_ERROR_STD_VERSION;
 	}
 
-	/* A hung video engine takes no new session, nor does a session quarantined by a hang of its own (ws083 R-S3). */
+	/* A hung video engine takes no new session, nor does a session quarantined by a hang of its own. */
 	state = drv_i915_worker_video_state(session->vk->i915);
 	if (result == 0 && state != 0)
 		result = VK_ERROR_INITIALIZATION_FAILED;
@@ -1186,7 +1185,7 @@ i915_video_requirements(
 }
 
 /*
- * The size of one binding of a session (design §1.5, §6.4): the four row
+ * The size of one binding of a session: the four row
  * stores by the picture width in macroblocks, then a motion vector buffer
  * of 128 bytes a macroblock for each slot and for a picture without one,
  * each rounded up to 4 KiB.
@@ -2217,8 +2216,7 @@ i915_video_parameters_free(
 /*
  * Frees a video session.  Its batch, when it has one, is destroyed, unless
  * a video engine hang quarantined the session: then the batch joins the
- * session's quarantine and the checked reset frees it (design §6.1,
- * ws083-p007).  The engine runs one request at a time and the one that
+ * session's quarantine and the checked reset frees it.  The engine runs one request at a time and the one that
  * hung was the quarantined session's, so the batch of any other session
  * never ran on a hung engine and goes at once, whatever the engine's state.
  */
@@ -2290,7 +2288,7 @@ i915_video_simulated(
  * `apply` it runs: the same walk on the sessions themselves, where every
  * decode is checked against what the decoder takes and skipped, or written
  * and run; a batch that cannot be made returns ENOMEM, a run that fails on
- * the GPU its error.  A result status query (ws083-p008) is begun and ended
+ * the GPU its error.  A result status query is begun and ended
  * within a coding scope, one at a time; running, its end writes COMPLETE,
  * or ERROR when a decode within it was skipped.
  */
@@ -2360,7 +2358,7 @@ i915_video_simulate(
 				continue;
 			}
 			if (op->kind == I915_GFX_OP_QUERY_BEGIN) {
-				/* A result status query of its pool, begun in a scope, while no other is (ws083-p008). */
+				/* A result status query of its pool, begun in a scope, while no other is. */
 				status_pool = drv_i915_gfx_query_status_pool(op->u.query.pool, op->u.query.first);
 				if (begin == NULL ||
 				    !status_pool ||
@@ -2594,7 +2592,7 @@ i915_video_simulate_begin(
  * must be an active slot the begin bound, given once; a setup slot must be
  * a slot the begin bound to the decode's output.  After the decode the
  * setup slot holds the output when the picture is a reference, and is
- * inactive otherwise (design §6.5).
+ * inactive otherwise.
  */
 static int
 i915_video_simulate_decode(
@@ -2734,7 +2732,7 @@ i915_video_same_picture(
 }
 
 /*
- * Checks a decode against what the decoder takes (design §6.6, D17):
+ * Checks a decode against what the decoder takes:
  * returns NULL when it can be decoded, or why it is skipped.  A decode that
  * passes has its sets, its slices and its bitstream in `decode`.
  */
@@ -2814,14 +2812,14 @@ i915_video_check(
 }
 
 /*
- * Checks a decode's slices (design §6.6, items 5, 8 and 9): one to 256 of
+ * Checks a decode's slices: one to 256 of
  * them, strictly increasing offsets at least four bytes apart, inside the
  * range, which is inside the bitstream buffer, and each starting with a
  * start code (three or four bytes) in its first four bytes.  Each slice's
  * bounds go into the session's scratch, and the bitstream's addresses into
  * `decode`: the page the range starts in, the bytes into that page, and
  * the end of the buffer's bound range rounded up to its page (the MFX's
- * upper bound is a 4 KiB-aligned address, ws083 R-S1; the memory is bound
+ * upper bound is a 4 KiB-aligned address; the memory is bound
  * in whole pages, so the rest of that page is the buffer's memory).
  */
 static const char *
@@ -2903,7 +2901,7 @@ i915_video_check_slices(
 }
 
 /*
- * Checks one picture of a decode (design §6.6, items 3, 6 and 7): its
+ * Checks one picture of a decode: its
  * view's image must be NV12, large enough for the sequence, at a coded
  * offset and layer of zero, page-aligned, and, for a reference, laid out as
  * the output is.
@@ -2948,7 +2946,7 @@ i915_video_check_picture(
 	return NULL;
 }
 
-/* Checks that every binding of a session has a page-aligned GPU address (design §6.6, item 7). */
+/* Checks that every binding of a session has a page-aligned GPU address. */
 static const char *
 i915_video_check_binds(
 	struct i915_render_session *session,
@@ -3016,9 +3014,9 @@ i915_video_mbs(
  *
  * A run that hung or failed has already been handled by the worker, which
  * retained the hardware context and reset the video engine (or stopped
- * video for good when the reset failed, ws083-p007); here the session is
+ * video for good when the reset failed); here the session is
  * quarantined, so its address space, objects and batch stay for the
- * checked reset (design §6.1).
+ * checked reset.
  */
 static int
 i915_video_run(
@@ -3035,7 +3033,7 @@ i915_video_run(
 
 #ifdef I915_TEST_VIDEO_HANG_AT
 	/*
-	 * The hang recovery test (ws083-p007): the chosen runs end in a loop
+	 * The hang recovery test: the chosen runs end in a loop
 	 * that never finishes, as a stream that hangs MFX would.
 	 */
 	i915_video_test_hang(&video->cursor, video->batch->va);
@@ -3050,7 +3048,7 @@ i915_video_run(
 	 * A decode that hung or failed quarantines the session; the device's
 	 * video was reset or stopped.  A video engine stopped before this
 	 * request (ECANCELED: nothing ran) loses the submission without
-	 * quarantining a session that did not hang it (ws083 R-S2).
+	 * quarantining a session that did not hang it.
 	 */
 	if (error == ECANCELED) {
 		kern_logf("i915: video: the video engine is stopped; the decode did not run\n");

@@ -6,7 +6,7 @@
  */
 
 /*
- * The video decode part of the Vulkan executor (ws083): H.264 decode on the
+ * The video decode part of the Vulkan executor: H.264 decode on the
  * video decode engine VCS0, offered only on a device whose executor has
  * `video` set (the default, on a GT with VCS0).
  *

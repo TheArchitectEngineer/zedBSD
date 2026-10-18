@@ -29,7 +29,7 @@ struct i915_gfx_query_pool;
 void drv_i915_gfx_query_pool_free(struct i915_render_session *session, struct i915_gfx_query_pool *pool);
 int drv_i915_gfx_query_execute(struct i915_render_session *session, const struct i915_gfx_op *op);
 
-/* Result status queries of video decode (ws083-p008). */
+/* Result status queries of video decode. */
 int drv_i915_gfx_query_status_pool(const struct i915_gfx_query_pool *pool, uint32_t query);
 int drv_i915_gfx_query_in_range(const struct i915_gfx_query_pool *pool, uint32_t first, uint32_t count);
 void drv_i915_gfx_query_status_end(struct i915_gfx_query_pool *pool, uint32_t query, int32_t status);

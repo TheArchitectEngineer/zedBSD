@@ -39,7 +39,7 @@ struct i915_gfx_batch {
 	int overflow;
 
 	/*
-	 * The graphics version the commands are built for (ws229-p004): 9
+	 * The graphics version the commands are built for: 9
 	 * selects the Gen9 forms of the packets that differ; any other value
 	 * (12, or 0 in a batch a test makes by hand) the Gen12 ones.  The draw
 	 * path sets it from the GT when it makes the session's batch.

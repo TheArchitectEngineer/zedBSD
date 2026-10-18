@@ -248,7 +248,7 @@ i915_gfx_destroy_plain(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* Unpublishes a known object; what names it lets go of it (BUG-260), then it is freed. */
+	/* Unpublishes a known object; what names it lets go of it, then it is freed. */
 	object = drv_i915_object_lookup(session, kind, identity);
 	if (object != NULL) {
 		drv_i915_object_remove(session, kind, identity);

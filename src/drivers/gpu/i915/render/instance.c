@@ -303,7 +303,7 @@ i915_instance_properties(
 	properties->deviceType = VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
 	kern_memcpy(properties->deviceName, name, sizeof(name));
 
-	/* A Gen9 GT is named for what it is (ws229-p004). */
+	/* A Gen9 GT is named for what it is. */
 	if (session->vk->i915 != NULL && session->vk->i915->gt.graphics_ver == 9U)
 		kern_memcpy(properties->deviceName, name_gen9, sizeof(name_gen9));
 
@@ -373,7 +373,7 @@ i915_instance_limits(
 	limits->maxVertexOutputComponents = 64U;
 
 	/*
-	 * The geometry stage (ws075-p007b b4, design §5.5): Vulkan's least
+	 * The geometry stage: Vulkan's least
 	 * invocations and total output (the compiler refuses Invocations past
 	 * 1 and logs it), 16 vec4 in and out as the vertex stage, 256 vertices.
 	 */
@@ -463,10 +463,10 @@ i915_instance_limits(
 /*
  * vkGetPhysicalDeviceFeatures: [physical][present] -> [present][VkPhysicalDeviceFeatures].
  * The optional features claimed are vertexPipelineStoresAndAtomics (a
- * vertex shader stores to and loads from storage buffers, ws075-p006),
- * logicOp (the blend's logic operation, ws031-p032), shaderInt16 (16-bit
- * integers carried in 32-bit values, ws031-p039) and geometryShader (the
- * geometry stage, ws075-p007; its point size is not, so
+ * vertex shader stores to and loads from storage buffers),
+ * logicOp (the blend's logic operation), shaderInt16 (16-bit
+ * integers carried in 32-bit values) and geometryShader (the
+ * geometry stage; its point size is not, so
  * shaderTessellationAndGeometryPointSize stays off).  XXX: the vertex
  * stage's atomics are not compiled.
  */
@@ -610,7 +610,7 @@ i915_instance_queue_families(
 
 /*
  * Reports what the executor does with a format: render to it, sample it,
- * copy it; on a device with video decode, decode into NV12 (design D23).
+ * copy it; on a device with video decode, decode into NV12.
  */
 static void
 i915_instance_format_features(
@@ -890,7 +890,7 @@ i915_instance_image_format_properties(
 	/*
 	 * One sample; two or four for an optimal 2D image that is rendered to
 	 * and not stored: a colour image may also be sampled (texelFetch of a
-	 * sampler2DMS reads its samples as layers, ws075-p006), a depth or
+	 * sampler2DMS reads its samples as layers), a depth or
 	 * stencil one not (its samples are interleaved); a resource of up to
 	 * 1 GiB.
 	 */
@@ -921,7 +921,7 @@ i915_instance_image_format_properties(
 /*
  * Replies the properties of an NV12 image: a 2D picture in Y tiles used only
  * as decode output, reference pictures and transfer source, of one level, one
- * layer and one sample, at most 4096 a side (design §3.4).
+ * layer and one sample, at most 4096 a side.
  */
 static void
 i915_instance_video_image_properties(

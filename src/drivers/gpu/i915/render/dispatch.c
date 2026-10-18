@@ -74,7 +74,7 @@ drv_i915_render_dispatch(
 
 	/* A command the graphics path owned is finished, whatever it reported. */
 	if (handled != 0) {
-		/* Reports why the graphics path refused the command (the first few are logged, WS068 p006). */
+		/* Reports why the graphics path refused the command (the first few are logged). */
 		if (error != 0) {
 			i915_dispatch_refused(opcode, error);
 			return error;

@@ -112,7 +112,7 @@ drv_i915_gfx_session_get(
 
 	/*
 	 * Starts with an empty batch over the batch object, built for the GT's
-	 * graphics version (ws229-p004), and the first generation of windows.
+	 * graphics version, and the first generation of windows.
 	 */
 	work->cursor.cmds = work->batch->address;
 	work->cursor.count = 0U;
@@ -627,8 +627,8 @@ drv_i915_gfx_draw(
 
 	/*
 	 * A draw whose kernels have storage buffers may write them, and a later
-	 * operation that copies uniform data on the CPU must wait for it to run
-	 * (ws101-p004), as after a rectangle.
+	 * operation that copies uniform data on the CPU must wait for it to run,
+	 * as after a rectangle.
 	 */
 	writes = i915_draw_writes_storage(&kernels);
 	if (writes != 0)
@@ -675,7 +675,7 @@ drv_i915_gfx_draw(
  * Gives the kernels of an operation that spill their parts of the session's
  * scratch buffer, growing it when it has too little room.
  *
- * A dispatch takes its compute kernel's part with it (ws101-p004), as a draw
+ * A dispatch takes its compute kernel's part with it, as a draw
  * takes its vertex and pixel kernels' parts.  Returns 0 or the error of the
  * buffer's growth.
  */
@@ -1069,7 +1069,7 @@ i915_draw_build_batch(
 	drv_i915_batch_pointer(batch, GEN12_CMD_3DSTATE_VIEWPORT_STATE_POINTERS_SF_CLIP, I915_GFX_DYN_SF_CLIP_VIEWPORT);
 	drv_i915_batch_pointer(batch, GEN12_CMD_3DSTATE_SCISSOR_STATE_POINTERS, I915_GFX_DYN_SCISSOR);
 
-	/* Points it at the coarse pixel state, which only Gen12 has (ws229-p004). */
+	/* Points it at the coarse pixel state, which only Gen12 has. */
 	if (batch->graphics_ver != GEN9_GRAPHICS_VER)
 		drv_i915_batch_pointer(batch, GEN12_CMD_3DSTATE_CPS_POINTERS, I915_GFX_DYN_CPS);
 
@@ -1119,7 +1119,7 @@ i915_draw_build_batch(
 	/* The geometry kernel when the pipeline has one. */
 	drv_i915_gfx_emit_geometry_shader(batch, kernels);
 
-	/* No primitive replication, which only Gen12 has (ws229-p004). */
+	/* No primitive replication, which only Gen12 has. */
 	if (batch->graphics_ver != GEN9_GRAPHICS_VER)
 		drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_PRIMITIVE_REPLICATION, GEN12_3DSTATE_PRIMITIVE_REPLICATION_DWORDS);
 
@@ -1217,7 +1217,7 @@ drv_i915_gfx_object_destroy(
 
 /*
  * Counts one ended submission in the session's frame timing and logs the
- * window once five seconds have passed (ws075-p026): per submission, the
+ * window once five seconds have passed: per submission, the
  * runs and operations, the time inside the submission and in its runs
  * (the rest of it is the executor recording the operations on the CPU),
  * and the time between submissions (the application's own work and

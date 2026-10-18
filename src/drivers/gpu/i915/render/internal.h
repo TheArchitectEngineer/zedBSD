@@ -147,7 +147,7 @@ struct i915_render_device {
 	 * Every live VkDeviceMemory of the device's sessions, newest first, and
 	 * the lock of the list: a session's command stream, another session's
 	 * and a blob's attach or detach change or search it at once on
-	 * different CPUs (BUG-117).
+	 * different CPUs.
 	 */
 	struct i915_gfx_memory *memories;
 	struct mutex memories_lock;

@@ -49,7 +49,7 @@ static void memory_unbind_image(void *object, void *argument);
 
 /*
  * An allocation being freed and how many buffers and images still bound
- * to it were let go of (BUG-244), for the visits of the session's objects
+ * to it were let go of, for the visits of the session's objects
  * that vkFreeMemory makes.  It lives on the stack of the free.
  */
 struct memory_unbind {
@@ -224,7 +224,7 @@ drv_i915_render_blob_detach(
  *
  * It leaves the list the blob attach searches first, so no blob becomes its
  * storage afterwards.  Nothing may name it any more: vkFreeMemory lets the
- * session's buffers and images go of it first (BUG-244), and a closing
+ * session's buffers and images go of it first, and a closing
  * session frees its buffers and images without reading their allocation.
  */
 void
@@ -301,8 +301,8 @@ memory_import_object(
  * and a nonzero size are accepted.  An ordinary allocation has no storage
  * until its blob arrives.  An import (VkImportMemoryResourceInfoMESA) takes
  * as its storage the session's resource it names: an alias of another open's
- * object, such as a Wayland client's image the compositor samples
- * (ws035-p066).  An export declaration needs nothing here: sharing is by the
+ * object, such as a Wayland client's image the compositor samples.
+ * An export declaration needs nothing here: sharing is by the
  * node's resources.
  */
 int
@@ -429,7 +429,7 @@ drv_i915_gfx_free_memory(
 	drv_i915_object_remove(session, I915_VK_OBJ_MEMORY, identity);
 
 	/*
-	 * The buffers and images still bound to it let go of it (BUG-244): an
+	 * The buffers and images still bound to it let go of it: an
 	 * application that frees an allocation before what is bound to it
 	 * (against the Vulkan rules) leaves them without storage, whose
 	 * address is 0, instead of naming freed kernel memory.
@@ -724,7 +724,7 @@ i915_gfx_bind_buffer(
 	return 0;
 }
 
-/* Lets a buffer bound to the allocation being freed go of it (a visit of drv_i915_object_each, BUG-244). */
+/* Lets a buffer bound to the allocation being freed go of it (a visit of drv_i915_object_each). */
 static void
 memory_unbind_buffer(
 	void *object,
@@ -745,7 +745,7 @@ memory_unbind_buffer(
 	unbind->buffers++;
 }
 
-/* Lets an image bound to the allocation being freed go of it (a visit of drv_i915_object_each, BUG-244). */
+/* Lets an image bound to the allocation being freed go of it (a visit of drv_i915_object_each). */
 static void
 memory_unbind_image(
 	void *object,

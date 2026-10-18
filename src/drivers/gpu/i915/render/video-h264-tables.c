@@ -6,7 +6,7 @@
  */
 
 /*
- * The H.264 tables the MFX builder uses (ws083-p004): the frame zig-zag
+ * The H.264 tables the MFX builder uses: the frame zig-zag
  * scans and the default scaling lists, as Recommendation ITU-T H.264
  * defines them.
  */

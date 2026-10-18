@@ -101,7 +101,7 @@ drv_i915_batch_pointer(
  *
  * On Gen12 a render target cache flush also asks for the HDC pipeline flush
  * in the header dword, as the Gen12 flush of the render target requires;
- * Gen9 has no such bit and flushes the data cache instead (ws229-p004).
+ * Gen9 has no such bit and flushes the data cache instead.
  */
 void
 drv_i915_batch_pipe_control(
@@ -136,12 +136,12 @@ drv_i915_batch_pipe_control(
 
 /*
  * Appends a PIPE_CONTROL with the given flags, the HDC pipeline flush in the
- * header dword, and no post-sync write (ws101-p004).
+ * header dword, and no post-sync write.
  *
  * A compute dispatch ends with it before the pipeline goes back to 3D: the
  * data port's writes are flushed without a render target flush, which the
  * GPGPU pipeline does not take (anv, flush_pipeline_select()).  Gen9 has no
- * HDC pipeline flush; the data cache flush takes its place (ws229-p004).
+ * HDC pipeline flush; the data cache flush takes its place.
  */
 void
 drv_i915_batch_pipe_control_hdc(

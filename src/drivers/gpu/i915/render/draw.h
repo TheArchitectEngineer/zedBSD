@@ -110,7 +110,7 @@ struct i915_gfx_session {
 
 	/*
 	 * The session's frame timing over a window of five seconds, logged
-	 * when the window ends (ws075-p026): the submissions, the runs they
+	 * when the window ends: the submissions, the runs they
 	 * took and the operations the runs held, the runs forced by a full
 	 * batch (no slot left), the time inside the submissions and in their
 	 * runs, in nanoseconds, and when the window started.
