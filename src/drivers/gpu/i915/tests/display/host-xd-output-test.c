@@ -153,6 +153,7 @@ static void i915_xd_ot_test_hdmi(void);
 static void i915_xd_ot_test_type_c(void);
 static const struct i915_xd_platform *i915_xd_ot_setup_icl(void);
 static void i915_xd_ot_test_icl(void);
+static void i915_xd_ot_test_cover(void);
 
 /* The Type-C hooks of the test: each one logged. */
 static const struct i915_xd_output_tc i915_xd_ot_tc = {
@@ -181,6 +182,7 @@ main(void)
 	i915_xd_ot_test_hdmi();
 	i915_xd_ot_test_type_c();
 	i915_xd_ot_test_icl();
+	i915_xd_ot_test_cover();
 
 	/* Reports the result. */
 	failures = i915_host_report("host_xd_output_test");
@@ -1631,4 +1633,98 @@ i915_xd_ot_test_icl(void)
 	buffer = i915_xd_ot_find(I915_XD_OT_WRITE, I915_XD_DDI_BUF_CTL(2U), from);
 	i915_host_check(clock >= 0 && buffer > clock && (i915_xd_fake_get(pll->enable) & 0xc8000000U) == 0U && out.held == 0U,
 			"icl: the dark takes the clock off transcoder B before DDI C's buffer stops, MG PLL 1 off, everything given back");
+}
+
+/*
+ * Checks the panel's light and dark on every row of the descriptions:
+ * the same panel on DDI A with DPLL 0 (on display 11 through the eDP
+ * transcoder, in one slice, without the pipe's DMC) runs through on
+ * each, leaves DDI A's buffer and the transcoder's function on, and the
+ * dark turns both off and gives every power reference back.
+ */
+static void
+i915_xd_ot_test_cover(void)
+{
+	const struct i915_xd_platform *platform;
+	struct i915_xd_output_env env;
+	struct i915_xd_output out;
+	uint32_t func_ctl;
+	uint32_t buffer;
+	uint32_t function;
+	unsigned rows;
+	unsigned row;
+	unsigned index;
+	unsigned kind;
+	unsigned gets;
+	unsigned puts;
+	int lit;
+	int dark;
+	int error;
+
+	/* Each row, from a fresh model. */
+	rows = drv_i915_xd_platform_count();
+	for (row = 0U; row < rows; row++) {
+		/* The panel of the row's display version. */
+		platform = drv_i915_xd_platform_row(row);
+		i915_xd_ot_panel_output(&out);
+		func_ctl = I915_XD_TRANS_DDI_FUNC_CTL(0U);
+		if (platform->display_ver == 11U) {
+			(void)i915_xd_ot_setup_icl();
+			out.trans = I915_XD_TRANS_EDP;
+			out.dmc_programs = 0U;
+			out.dbuf.slices_after = 0x1U;
+			out.dbuf.joined_after = 0U;
+			func_ctl = I915_XD_TRANS_DDI_FUNC_CTL(I915_XD_TRANS_EDP);
+		} else {
+			(void)i915_xd_ot_setup();
+		}
+
+		/* The light on the row. */
+		i915_xd_ot_env(&env, platform);
+		error = i915_xd_ot_light(&out, &env);
+		buffer = i915_xd_fake_get(I915_XD_DDI_BUF_CTL(0U));
+		function = i915_xd_fake_get(func_ctl);
+
+		/* The light ran through, the buffer and the function on. */
+		lit = 1;
+		if (error != 0 || i915_xd_ot_log.errors != 0U)
+			lit = 0;
+		if (i915_xd_ot_log.locks != 0 || !out.lit)
+			lit = 0;
+		if ((buffer & 0x80000000U) == 0U || (function & I915_XD_DDI_FUNC_ENABLE) == 0U)
+			lit = 0;
+
+		/* Checks the row's light. */
+		i915_host_check(lit, platform->name);
+
+		/* The dark on the row. */
+		i915_xd_ot_dark(&out, &env);
+		buffer = i915_xd_fake_get(I915_XD_DDI_BUF_CTL(0U));
+		function = i915_xd_fake_get(func_ctl);
+
+		/* The references the light and the dark took and gave back, at once or later. */
+		gets = 0U;
+		puts = 0U;
+		for (index = 0U; index < i915_xd_ot_log.count; index++) {
+			kind = i915_xd_ot_log.log[index].kind;
+			if (kind == I915_XD_OT_GET)
+				gets++;
+			if (kind == I915_XD_OT_PUT || kind == I915_XD_OT_PUT_LATER)
+				puts++;
+		}
+
+		/* The dark ran through, the buffer and the function off, every reference back. */
+		dark = 1;
+		if (i915_xd_ot_log.errors != 0U || i915_xd_ot_log.locks != 0)
+			dark = 0;
+		if ((buffer & 0x80000000U) != 0U || (function & I915_XD_DDI_FUNC_ENABLE) != 0U)
+			dark = 0;
+		if (gets == 0U || gets != puts)
+			dark = 0;
+		if (out.held != 0U)
+			dark = 0;
+
+		/* Checks the row's dark. */
+		i915_host_check(dark, platform->name);
+	}
 }
