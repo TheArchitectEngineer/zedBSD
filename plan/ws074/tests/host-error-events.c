@@ -26,7 +26,11 @@ static int error_cases(struct page *page);
 static void error_check(int condition, const char *name);
 static int error_retired_event(struct page *page);
 
-/* Runs ordinary Page initialization before disabling conservative stack retention for the actual cases. */
+/*
+ * Runs ordinary Page initialization before disabling conservative stack retention.
+ *
+ * The fixture observes actual collector ownership rather than conservative C stack retention.
+ */
 int
 main(
 	void)

@@ -27,14 +27,14 @@ Upcoming Work Outlook: runtime errorの実出力→held再評価、外部source/
 
 # ws074-q20261018-27 / genuine native ErrorEvent constructor・Window.onerror dispatch
 
-Status: finished（2026-10-18、i01 scoped partial cleared）
+Status: finished（2026-10-18、q28 conformance follow-upによりi01 uncleared）
 Owner: このCodex chat単独。
 Approval: [ユーザー自走指示](autonomy.md)をこのfinite partial scopeへ適用。q26 terminal09e900655/history SHA256aad72442738a30c7e9a2dee17f7246b7eec822eb73c1bdd2f933d26e34a21eddをread-back。
 Timebox: 最大90分（2026-10-18 19:25 JSTまで）。
 
 | Attempt | Phase | Exact scope / criteria | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| ws074-q20261018-27-i01 | [p256](phase256/phase.md) native event prerequisite partial | genuine ErrorEvent private registry/constructor/Event inheritance/subclass/readonly enumerable message, USVString filename, uint32 lineno,colno, any error（default undefined）とnative brand/GCを実装。WebIDL辞書base→derived辞書順/primitive rejection/例外伝播、Event flags/composedを扱う。実Window dispatchでonerror handlerにmessage/source/line/column/errorの5引数、trueだけcancel、通常listenerはevent1引数・false非cancel、nonErrorEventや他EventTargetは通常handler semanticsを保つ。Chrome独立対照/native source-only GCとretired child lifetime、final pair全1508 harness/1561 static/413 scripted/48 strict、DOM/CSSOM/producer/observer/Acid非悪化、host/target exact event/window warning0・変更全文規約を検証しraw/hashを保存 | cleared | q26実Event/Window/VM/GC出力・pinned HTML IDL・HTML error handler processing |
+| ws074-q20261018-27-i01 | [p256](phase256/phase.md) native event prerequisite partial | genuine ErrorEvent private registry/constructor/Event inheritance/subclass/readonly enumerable message, USVString filename, uint32 lineno,colno, any error（default undefined）とnative brand/GCを実装。WebIDL辞書base→derived辞書順/primitive rejection/例外伝播、Event flags/composedを扱う。実Window dispatchでonerror handlerにmessage/source/line/column/errorの5引数、trueだけcancel、通常listenerはevent1引数・false非cancel、nonErrorEventや他EventTargetは通常handler semanticsを保つ。Chrome独立対照/native source-only GCとretired child lifetime、final pair全1508 harness/1561 static/413 scripted/48 strict、DOM/CSSOM/producer/observer/Acid非悪化、host/target exact event/window warning0・変更全文規約を検証しraw/hashを保存 | uncleared（public main header conformance follow-up） | q26実Event/Window/VM/GC出力・pinned HTML IDL・HTML error handler processing |
 
 Dependency graph: verified Event/Window/VM → native ErrorEvent+legacy handler（本partial）→ 次Queueのproduction exception reporter/source muting → p255 official harness negative/held再評価。
 Generation bounds: 既存bind/event.c/window.c/internal.h、new tests/dom/error-events.html/.expected、tests/host-error-events.cとWS074記録のみ。new module/publicABI2/Wayland/SDK/sysroot/toolchain/runner/WPT/manifest/期待値/共有Board/cacheは変更しない。C全文/Guardrail/browser component全文を直接適用、format19/full manual+checker。targetはq02 event/window exact commandで-oだけ変更。host build単独、unique frozen pair。

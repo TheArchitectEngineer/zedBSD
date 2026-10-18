@@ -17,3 +17,5 @@ static初回は通常sandboxのlocalhost socket拒否で停止、raw/logを保�
 Chrome153はfilenameのlone surrogateを保存するが、pinned html.idlとHTMLはUSVString。nativeは選定済み一次IDL通りrepairし、この1差を隠さない。Proxy constructorは未実装なのでbrand対照は別genuine Event/偽prototype/plain/nullのactual receiversを使用、Proxy対応は主張しない。legacy content attribute compilerのnamed parametersは今回のsource bounds外、IDL handler dispatchの確認と区別する。
 
 [次Queue向けsource調査](../../source-provenance-investigation.md)。code metadata候補であり実装未選定。shared Master/Queue/cache/GitHub projectionはQ1所有でpending、push/削除/make check/QEMUは無し。
+
+Event ws074-q27-main-header-conformance-followup-20261018: q28全文監査で、q27新host-error-events.cのpublic main定義前がone-line commentだったと確認（C全文§3はmulti-lineを要求）。q27 scoped i01のconformance0/clearanceをこの限定点によりunclearedへ訂正。元native28/GC9/全corpus/host/target/API出力とscore1481は保持し、原cleared記述を履歴へ残す。q28-i02の実装前scope supplementに基づきheader commentだけをmulti-line化し、全code tokens/string不変をpublic-main-header-proofへ保存。q28 final build/native9で修正版を再確認する。元q27を後日の修正に合わせて成功へ書換えず、follow-upとして扱う。

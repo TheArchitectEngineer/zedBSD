@@ -218,6 +218,11 @@ struct bind_window {
 	/* Owned windows are finalized with their realm; detached windows run no tasks. */
 	int owned;
 	int detached;
+	/* Error dispatch and extraction are separately bounded across reentrant reporting. */
+	int reporting_error;
+	unsigned exception_reports;
+	/* A checkpoint cannot recursively run its still-active microtask queue. */
+	int checkpoint_running;
 	/* Globals retain relatives; frame is cleared before child retirement. */
 	struct vm_object *parent_global;
 	struct vm_object *top_global;

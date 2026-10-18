@@ -372,7 +372,7 @@ bind_run_inline_script(
 
 	/* The actual child interpreter supplies native document globals and nested insertion writes. */
 	if (status == 0)
-		status = bind_run_script(window, text.data, text.length, "(document stream)");
+		status = bind_run_script_source(window, text.data, text.length, "(document stream)", 1);
 	wb_units_release(&text);
 	if (status != 0)
 		return status;

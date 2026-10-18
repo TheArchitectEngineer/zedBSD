@@ -459,6 +459,8 @@ struct vm_function {
 	struct vm_code *code;
 	struct vm_env *env;
 	vm_value data;
+	/* Embedding-owned immutable source metadata is inherited by nested closures. */
+	vm_value source;
 };
 
 /*
@@ -505,6 +507,8 @@ struct vm_realm {
 	struct vm_object *lexicals;
 	vm_value exception;
 	vm_value throw_value;
+	/* The first throwing frame contributes its opaque defining-source metadata. */
+	vm_value throw_source;
 	uint32_t throw_line;
 	char throw_stack[200];
 	uint32_t throw_column;

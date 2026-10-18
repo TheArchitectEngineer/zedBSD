@@ -308,6 +308,7 @@ realm_create(
 	made->managed = managed;
 	made->exception = VM_VALUE_UNDEFINED;
 	made->throw_value = VM_VALUE_UNDEFINED;
+	made->throw_source = VM_VALUE_UNDEFINED;
 	made->callee = VM_VALUE_UNDEFINED;
 	made->new_target = VM_VALUE_UNDEFINED;
 	wb_vector_init(&made->jobs, sizeof(struct vm_job));
@@ -454,6 +455,7 @@ realm_trace(
 		vm_heap_mark(heap, &realm->global->cell);
 	vm_heap_mark_value(heap, realm->exception);
 	vm_heap_mark_value(heap, realm->throw_value);
+	vm_heap_mark_value(heap, realm->throw_source);
 	if (realm->lexicals != NULL)
 		vm_heap_mark(heap, &realm->lexicals->cell);
 	vm_heap_mark_value(heap, realm->callee);

@@ -632,6 +632,11 @@ interpreter_step(
 		status = interpreter_return(run, registers[words[1]]);
 		return status;
 	case VM_OP_THROW:
+		/* An explicit new throw records its own frame even for the same primitive or undefined. */
+		run->realm->throw_value = VM_VALUE_UNDEFINED;
+		run->realm->throw_source = VM_VALUE_UNDEFINED;
+		run->realm->throw_line = 0;
+		run->realm->throw_column = 0;
 		status = vm_throw(run->realm, registers[words[1]]);
 		return status;
 	case VM_OP_SUSPEND:
@@ -1262,6 +1267,9 @@ interpreter_scope(
 		closure = vm_closure_create(realm, (struct vm_code *)vm_value_as_cell(run->code->constants[words[2]]), env);
 		if (closure == NULL)
 			return ENOMEM;
+
+		/* New closures retain the actual defining function's opaque source before publication. */
+		closure->source = function->source;
 		value = vm_value_cell(closure);
 		break;
 	default:
@@ -1782,10 +1790,14 @@ interpreter_unwind(
 	 * exception coming back out of a nested run keeps the place the inner
 	 * run found.
 	 */
-	if (realm->throw_value != realm->exception) {
+	if (realm->throw_line == 0 || realm->throw_value != realm->exception) {
 		realm->throw_value = realm->exception;
 		realm->throw_line = 0;
 		realm->throw_column = 0;
+
+		/* Preserve defining-source metadata before any bytecode frame is removed. */
+		function = interpreter_function(realm, run->base);
+		realm->throw_source = function->source;
 		vm_code_position(run->code, throw_pc, &realm->throw_line, &realm->throw_column);
 		interpreter_note_stack(run);
 	}
@@ -1805,6 +1817,7 @@ interpreter_unwind(
 
 			/* A caught exception's place is forgotten, so throwing it again records the new place. */
 			realm->throw_value = VM_VALUE_UNDEFINED;
+			realm->throw_source = VM_VALUE_UNDEFINED;
 			realm->throw_line = 0;
 			return 0;
 		}

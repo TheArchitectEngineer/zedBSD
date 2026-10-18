@@ -126,6 +126,7 @@ vm_function_create_native(
 	function->native = native;
 	function->object.kind = VM_KIND_FUNCTION;
 	function->data = VM_VALUE_UNDEFINED;
+	function->source = VM_VALUE_UNDEFINED;
 
 	/* Acquires the heap-owned length key before defining its configurable property. */
 	key = vm_key_from_ascii(heap, "length");
@@ -240,6 +241,7 @@ vm_function_create(
 	function->code = code;
 	function->object.kind = VM_KIND_FUNCTION;
 	function->data = VM_VALUE_UNDEFINED;
+	function->source = VM_VALUE_UNDEFINED;
 
 	/* Uses the parameter count before a default or rest parameter when the code records it. */
 	length = code->parameter_count;
@@ -1112,14 +1114,18 @@ function_transfer_exception(
 	/* Transfers the actual object rather than constructing a caller-realm copy. */
 	caller->exception = callee->exception;
 	caller->throw_value = callee->throw_value;
+	caller->throw_source = callee->throw_source;
 	caller->throw_line = callee->throw_line;
 	caller->throw_column = callee->throw_column;
+	memcpy(caller->throw_stack, callee->throw_stack, sizeof(caller->throw_stack));
 
 	/* The caller now owns the pending throw; the callee no longer retains it. */
 	callee->exception = VM_VALUE_UNDEFINED;
 	callee->throw_value = VM_VALUE_UNDEFINED;
+	callee->throw_source = VM_VALUE_UNDEFINED;
 	callee->throw_line = 0;
 	callee->throw_column = 0;
+	callee->throw_stack[0] = '\0';
 
 	/* Succeeded: the foreign exception is pending only in its caller. */
 	return;
@@ -1144,6 +1150,9 @@ function_trace(
 	if (function->env != NULL)
 		vm_heap_mark(heap, &function->env->cell);
 	vm_heap_mark_value(heap, function->data);
+
+	/* The embedding owns source interpretation; functions only retain its managed value. */
+	vm_heap_mark_value(heap, function->source);
 
 	/* Succeeded: the function's owned graph was marked. */
 	return;

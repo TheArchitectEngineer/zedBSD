@@ -23,6 +23,19 @@
 /* The longest console line kept for one call, in bytes (the rest is cut). */
 #define WINDOW_CONSOLE_MAX	(64U * 1024U)
 
+/* Known inline source metadata outlives its script through actual closures, without retaining a raw Window. */
+struct window_script_source {
+	struct vm_cell cell;
+	struct vm_string *filename;
+};
+
+static void window_script_source_trace(struct vm_heap *heap, struct vm_cell *cell);
+
+/* Only this binding creates verified inline provenance; the VM treats its value as opaque. */
+static const struct vm_cell_type window_script_source_type = {
+	"window-script-source", window_script_source_trace, NULL
+};
+
 static int window_queue_microtask(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int window_post_message(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int window_inner_width(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
@@ -178,6 +191,9 @@ static const struct bind_interface *const window_interfaces[BIND_INTERFACES] = {
 	&bind_error_event_interface
 };
 
+static int window_run_source(struct bind_window *window, const uint16_t *source, size_t length, int known_inline, vm_value *completion, struct js_syntax_error *syntax);
+static struct vm_cell *window_exception_cell(vm_value value);
+static int window_report_event(struct bind_window *window, vm_value exception, vm_value source, const struct wb_buffer *message, uint32_t line, uint32_t column, int *canceled);
 static int window_error_event_tag(struct vm_realm *realm, struct vm_object *prototype);
 static int window_make_interface(struct bind_window *window, int index, struct vm_function **constructors);
 static int window_enumerate_dom_member(struct vm_realm *realm, struct vm_object *prototype, const char *name);
@@ -387,19 +403,45 @@ bind_run_script(
 	size_t length,
 	const char *name)
 {
+	int status;
+
+	/* Unverified script origins retain no disclosure authority merely from a diagnostic name. */
+	status = bind_run_script_source(window, source, length, name, 0);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the script ran or its normal failure was reported. */
+	return 0;
+}
+
+/*
+ * Runs a classic script with explicit native knowledge that its source is inline.
+ *
+ * Only actual inline loader paths set known_inline; diagnostic names never establish origin.
+ */
+int
+bind_run_script_source(
+	struct bind_window *window,
+	const uint16_t *source,
+	size_t length,
+	const char *name,
+	int known_inline)
+{
 	struct js_syntax_error syntax;
 	struct wb_buffer line;
 	vm_value completion;
+	const char *reason;
+	int format_error;
 	int status;
 
 	/* Runs the script. */
-	status = js_run_script(window->realm, source, length, 0, &completion, &syntax);
+	status = window_run_source(window, source, length, known_inline, &completion, &syntax);
 
 	/* A script that does not parse, or uses what the engine does not support yet, is reported. */
 	if (status == EINVAL) {
 		wb_buffer_init(&line);
 		status = wb_buffer_printf(&line, "Uncaught SyntaxError: %s (%s:%u:%u)", syntax.message, name,
-		    (unsigned)syntax.line, (unsigned)syntax.column);
+					  (unsigned)syntax.line, (unsigned)syntax.column);
 		if (status == 0)
 			bind_console(window, BIND_CONSOLE_ERROR, wb_buffer_string(&line));
 		wb_buffer_release(&line);
@@ -417,7 +459,9 @@ bind_run_script(
 	/* Any other failure (the engine reached a limit it cannot report as an exception) ends the script; say so. */
 	if (status != 0) {
 		wb_buffer_init(&line);
-		if (wb_buffer_printf(&line, "Uncaught InternalError: the script stopped (%s) (%s)", strerror(status), name) == 0)
+		reason = strerror(status);
+		format_error = wb_buffer_printf(&line, "Uncaught InternalError: the script stopped (%s) (%s)", reason, name);
+		if (format_error == 0)
 			bind_console(window, BIND_CONSOLE_ERROR, wb_buffer_string(&line));
 		wb_buffer_release(&line);
 	}
@@ -447,12 +491,14 @@ window_report_stop(
 
 /*
  * Runs a microtask checkpoint: every queued microtask, each exception
- * reported to the console.
+ * reported through the Window and its console default.
  */
 int
 bind_checkpoint(
 	struct bind_window *window)
 {
+	struct vm_cell *realm_root;
+	int registered;
 	int queued;
 	int status;
 
@@ -463,15 +509,30 @@ bind_checkpoint(
 		return 0;
 	}
 
-	/* Runs the jobs already queued by the script. */
-	status = vm_run_jobs(window->realm, window_report_job, window);
-	if (status != 0) {
-		/* A job that stops the queue by an error that is not an exception is shown, not hidden. */
-		window_report_stop(window, status);
-		return status;
+	/* HTML's checkpoint flag prevents an error listener from running the same active microtask again. */
+	if (window->checkpoint_running)
+		return 0;
+
+	/* Foreign callbacks can retire this child while its native checkpoint still owns the Window record. */
+	realm_root = NULL;
+	registered = 0;
+	if (window->realm->managed) {
+		realm_root = &window->realm->cell;
+		status = vm_heap_add_root(window->realm->heap, &realm_root);
+		if (status != 0)
+			return status;
+		registered = 1;
 	}
 
-	/* DOM changes notify their observers as microtasks; a callback may make another change. */
+	/* Drain the real jobs once while nested checkpoints are suppressed. */
+	window->checkpoint_running = 1;
+	status = vm_run_jobs(window->realm, window_report_job, window);
+	if (status != 0) {
+		window_report_stop(window, status);
+		goto cleanup;
+	}
+
+	/* Mutation delivery can queue more jobs, but cannot start another concurrent drain. */
 	for (;;) {
 		status = bind_environment_checkpoint(window, &queued);
 		if (status != 0 || !queued)
@@ -481,18 +542,25 @@ bind_checkpoint(
 			break;
 	}
 
-	/* A callback failure ends the checkpoint. */
+	/* Host frame processing follows the completed checkpoint and may legitimately request another one. */
+	window->checkpoint_running = 0;
+	if (status == 0 &&
+	    !window->detached &&
+	    window->realm->depth == 0 &&
+	    window->host.checkpoint != NULL)
+		status = window->host.checkpoint(window->host.context);
+
+cleanup:
+	/* Every failure resets the guard and releases the same managed-owner edge. */
+	window->checkpoint_running = 0;
+	if (registered)
+		vm_heap_remove_root(window->realm->heap, &realm_root);
+
+	/* A failed job or host callback remains visible to the page driver. */
 	if (status != 0)
 		return status;
 
-	/* A page may now run tasks queued by DOM changes, but not from a nested script. */
-	if (window->realm->depth == 0 && window->host.checkpoint != NULL) {
-		status = window->host.checkpoint(window->host.context);
-		if (status != 0)
-			return status;
-	}
-
-	/* Succeeded: the queue is empty. */
+	/* Succeeded: no reentrant checkpoint ran the same pending work twice. */
 	return 0;
 }
 
@@ -509,46 +577,391 @@ bind_report_exception(
 	window_report_exception(window, exception, NULL);
 }
 
-/* Reports an exception, including the current script's name when it is known. */
+/* Retains one managed value without treating immediate values as heap pointers. */
+static struct vm_cell *
+window_exception_cell(
+	vm_value value)
+{
+	int managed;
+
+	/* A primitive contributes no collector edge. */
+	managed = vm_value_is_cell(value);
+	if (!managed)
+		return NULL;
+
+	/* Succeeded: the caller can protect the actual cell. */
+	return vm_value_as_cell(value);
+}
+
+/* Reports a real runtime exception while preserving its identity through reentrant script and collection. */
 static void
 window_report_exception(
 	struct bind_window *window,
 	vm_value exception,
 	const char *name)
 {
-	struct wb_buffer line;
+	struct vm_realm *realm;
+	struct wb_buffer text;
+	struct vm_cell *roots[5];
+	vm_value saved_exception;
+	vm_value saved_throw;
+	vm_value saved_source;
+	vm_value report_source;
 	uint32_t site_line;
 	uint32_t site_column;
+	uint32_t saved_line;
+	uint32_t saved_column;
+	char saved_stack[sizeof(realm->throw_stack)];
+	const char *stack_setting;
+	unsigned index;
+	unsigned registered;
+	int saved_reporting;
+	int promise;
 	int known;
+	int canceled;
 	int error;
+	int dispatched;
 
-	/* The line: the prefix (a promise's rejection nothing handled says so, ws074-p086) and the exception's text. */
-	wb_buffer_init(&line);
-	if (window->realm->reporting_rejection) {
-		error = wb_buffer_append_string(&line, "Uncaught (in promise) ");
-	} else {
-		error = wb_buffer_append_string(&line, "Uncaught ");
+	/* Retired contexts cannot execute exception conversion getters or notify listeners. */
+	if (window->detached)
+		return;
+
+	/* Snapshot native provenance before ToString, listeners or checkpoints can replace pending state. */
+	realm = window->realm;
+	saved_exception = realm->exception;
+	saved_throw = realm->throw_value;
+	saved_source = realm->throw_source;
+	saved_line = realm->throw_line;
+	saved_column = realm->throw_column;
+	memcpy(saved_stack, realm->throw_stack, sizeof(saved_stack));
+	saved_reporting = window->reporting_error;
+	promise = realm->reporting_rejection;
+	site_line = 0;
+	site_column = 0;
+	known = vm_throw_site(realm, exception, &site_line, &site_column);
+
+	/* A stale or unrelated pending trace never grants disclosure to this exception. */
+	report_source = VM_VALUE_UNDEFINED;
+	if (known)
+		report_source = saved_source;
+
+	/* A managed child Window and every suspended value survive removal during arbitrary user conversion. */
+	roots[0] = NULL;
+	if (realm->managed)
+		roots[0] = &realm->cell;
+	roots[1] = window_exception_cell(exception);
+	roots[2] = window_exception_cell(saved_exception);
+	roots[3] = window_exception_cell(saved_throw);
+	roots[4] = window_exception_cell(saved_source);
+	registered = 0;
+	wb_buffer_init(&text);
+	for (index = 0; index < 5U; index++) {
+		error = vm_heap_add_root(realm->heap, &roots[index]);
+		if (error != 0) {
+			bind_console(window, BIND_CONSOLE_ERROR, "Uncaught exception (error reporting could not retain its state)");
+			goto cleanup;
+		}
+
+		/* Cleanup owns only successfully acquired root slots. */
+		registered++;
 	}
 
-	/* The exception's text. */
-	if (error == 0)
-		error = js_exception_text(window->realm, exception, &line);
+	/* Reentrant reporting neither dispatches another global error nor recursively converts the same object. */
+	window->exception_reports++;
+	window->reporting_error = 1;
+	realm->exception = VM_VALUE_UNDEFINED;
+	realm->throw_value = VM_VALUE_UNDEFINED;
+	realm->throw_source = VM_VALUE_UNDEFINED;
+	realm->throw_line = 0;
+	realm->throw_column = 0;
 
-	/* The place the exception was thrown from, which a page's author needs to find the fault. */
-	known = vm_throw_site(window->realm, exception, &site_line, &site_column);
-	if (error == 0 && known && name != NULL)
-		error = wb_buffer_printf(&line, " (at %s:%u:%u)", name, (unsigned)site_line, (unsigned)site_column);
-	if (error == 0 && known && name == NULL)
-		error = wb_buffer_printf(&line, " (at %u:%u)", (unsigned)site_line, (unsigned)site_column);
+	/* Promise rejection retains its separate diagnostic path and never becomes a Window error event. */
+	if (promise) {
+		error = wb_buffer_append_string(&text, "Uncaught (in promise) ");
+	} else {
+		error = wb_buffer_append_string(&text, "Uncaught ");
+	}
 
-	/* A developer's diagnosis: BROWSER_STACK adds the function names the exception passed through. */
-	if (error == 0 && known && getenv("BROWSER_STACK") != NULL)
-		error = wb_buffer_printf(&line, " [in %s]", vm_throw_stack(window->realm, exception));
+	/* Convert once at the outer report; nested reports use a bounded script-free description. */
+	if (error == 0) {
+		if (window->exception_reports > 1U) {
+			error = wb_buffer_append_string(&text, "(an exception reported recursively)");
+		} else {
+			error = js_exception_text(realm, exception, &text);
+		}
+	}
 
-	/* Goes to the console as an error. */
-	if (error == 0)
-		bind_console(window, BIND_CONSOLE_ERROR, wb_buffer_string(&line));
-	wb_buffer_release(&line);
+	/* Trusted native dispatch does not consult mutable ErrorEvent or dispatchEvent globals. */
+	canceled = 0;
+	if (error == 0 &&
+	    !window->detached &&
+	    !promise &&
+	    !saved_reporting &&
+	    window->exception_reports == 1U) {
+		dispatched = window_report_event(window, exception, report_source, &text, site_line, site_column, &canceled);
+		if (dispatched != 0)
+			canceled = 0;
+	}
+
+	/* Preserve the established console location format independently of ErrorEvent disclosure. */
+	if (error == 0 &&
+	    known &&
+	    name != NULL)
+		error = wb_buffer_printf(&text, " (at %s:%u:%u)", name, (unsigned)site_line, (unsigned)site_column);
+
+	/* Timer and native callback diagnostics retain their existing unnamed throw position. */
+	if (error == 0 &&
+	    known &&
+	    name == NULL)
+		error = wb_buffer_printf(&text, " (at %u:%u)", (unsigned)site_line, (unsigned)site_column);
+
+	/* Optional developer stack text uses the saved original trace, never a listener's newer failure. */
+	if (error == 0 && known) {
+		stack_setting = getenv("BROWSER_STACK");
+		if (stack_setting != NULL)
+			error = wb_buffer_printf(&text, " [in %s]", saved_stack);
+	}
+
+	/* preventDefault and legacy onerror true suppress only this report's console default. */
+	if (!canceled) {
+		if (error == 0) {
+			bind_console(window, BIND_CONSOLE_ERROR, wb_buffer_string(&text));
+		} else {
+			bind_console(window, BIND_CONSOLE_ERROR, "Uncaught exception (error reporting could not allocate storage)");
+		}
+	}
+
+	/* Suspended pending state returns before roots are released, while consumed throw metadata cannot go stale. */
+	realm->exception = saved_exception;
+	realm->throw_value = saved_throw;
+	realm->throw_source = saved_source;
+	realm->throw_line = saved_line;
+	realm->throw_column = saved_column;
+	memcpy(realm->throw_stack, saved_stack, sizeof(saved_stack));
+	if (saved_throw == exception) {
+		realm->throw_value = VM_VALUE_UNDEFINED;
+		realm->throw_source = VM_VALUE_UNDEFINED;
+		realm->throw_line = 0;
+		realm->throw_column = 0;
+		realm->throw_stack[0] = '\0';
+	}
+
+	/* Restore the outer dispatch mode even when a listener retired this Window. */
+	window->reporting_error = saved_reporting;
+	window->exception_reports--;
+
+cleanup:
+	/* Both root registration failure and normal report completion release only owned roots. */
+	while (registered != 0) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* Temporary diagnostic storage never owns a managed value. */
+	wb_buffer_release(&text);
+
+	/* Succeeded: the original exception was notified or retained for the caller's failure cleanup. */
+	return;
+}
+
+/* Builds and dispatches a genuine trusted ErrorEvent with disclosure tied only to native source metadata. */
+static int
+window_report_event(
+	struct bind_window *window,
+	vm_value exception,
+	vm_value source,
+	const struct wb_buffer *message,
+	uint32_t line,
+	uint32_t column,
+	int *canceled)
+{
+	struct vm_realm *realm;
+	struct vm_cell *event_root;
+	struct vm_cell *cell;
+	struct window_script_source *origin;
+	struct bind_event *event;
+	struct vm_string *type;
+	struct vm_string *converted;
+	vm_value wrapper;
+	vm_value text;
+	int status;
+	int managed;
+
+	/* Only this binding's immutable source cell supplies inline disclosure authority. */
+	realm = window->realm;
+	origin = NULL;
+	managed = vm_value_is_cell(source);
+	if (managed) {
+		cell = vm_value_as_cell(source);
+		if (cell->type == &window_script_source_type)
+			origin = (struct window_script_source *)cell;
+	}
+
+	/* Protect the unpublished event before its message allocation or any listener can collect. */
+	event_root = NULL;
+	status = vm_heap_add_root(realm->heap, &event_root);
+	if (status != 0)
+		return status;
+	type = vm_atom_from_ascii(realm->heap, "error");
+	if (type == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* The native interface and its pristine prototype remain valid after global constructors are replaced. */
+	status = bind_event_create(window, BIND_ERROR_EVENT, type, &wrapper, &event);
+	if (status != 0)
+		goto cleanup;
+	event_root = vm_value_as_cell(wrapper);
+	event->trusted = 1;
+	event->cancelable = 1;
+
+	/* Unknown provenance is conservatively muted instead of guessing from a current script or URL. */
+	if (origin == NULL) {
+		status = bind_string(realm, "Script error.", &text);
+		event->detail = VM_VALUE_NULL;
+	} else {
+		converted = vm_string_from_utf8(realm->heap, wb_buffer_string(message), message->length);
+		status = 0;
+		if (converted == NULL) {
+			status = ENOMEM;
+		} else {
+			text = vm_value_cell(converted);
+		}
+
+		/* The message retains embedded NUL bytes rather than relying on a C string terminator. */
+		event->detail = exception;
+		event->error_filename = origin->filename;
+		event->error_line = line;
+		event->error_column = column;
+	}
+
+	/* The event owns its managed message before ordinary EventTarget dispatch invokes script. */
+	if (status != 0)
+		goto cleanup;
+	event->error_message = (struct vm_string *)vm_value_as_cell(text);
+	status = bind_dispatch(window, vm_value_cell(realm->global), wrapper, canceled);
+
+cleanup:
+	/* Successful dispatch and all earlier failures share the same event-root lifetime. */
+	vm_heap_remove_root(realm->heap, &event_root);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the caller knows whether the native report's default was canceled. */
+	return 0;
+}
+
+/* Traces the actual filename held by a source cell shared by real nested closures. */
+static void
+window_script_source_trace(
+	struct vm_heap *heap,
+	struct vm_cell *cell)
+{
+	struct window_script_source *source;
+
+	/* Source metadata owns only immutable text and never a raw Window or Document. */
+	source = (struct window_script_source *)cell;
+	if (source->filename != NULL)
+		vm_heap_mark(heap, &source->filename->cell);
+
+	/* Succeeded: retained closures preserve their defining source text safely. */
+	return;
+}
+
+/* Compiles real classic source and attaches embedding metadata before the first execution or publication. */
+static int
+window_run_source(
+	struct bind_window *window,
+	const uint16_t *source,
+	size_t length,
+	int known_inline,
+	vm_value *completion,
+	struct js_syntax_error *syntax)
+{
+	struct vm_realm *realm;
+	struct vm_function *function;
+	struct window_script_source *origin;
+	struct js_program program;
+	struct vm_cell *roots[3];
+	struct wb_buffer filename;
+	unsigned index;
+	unsigned registered;
+	int status;
+
+	/* A retired owner cannot compile or run saved source. */
+	*completion = VM_VALUE_UNDEFINED;
+	if (window->detached)
+		return 0;
+
+	/* Register the managed owner, unpublished function and source cell before any managed allocation. */
+	realm = window->realm;
+	roots[0] = NULL;
+	if (realm->managed)
+		roots[0] = &realm->cell;
+	roots[1] = NULL;
+	roots[2] = NULL;
+	registered = 0;
+	wb_buffer_init(&filename);
+	for (index = 0; index < 3U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+
+		/* Only completed registrations belong to this invocation's cleanup. */
+		registered++;
+	}
+
+	/* The ordinary production parser and compiler remain unchanged. */
+	status = js_parse(source, length, 0, &program, syntax);
+	if (status != 0)
+		goto cleanup;
+	status = js_compile(realm, &program, &function, syntax);
+	js_program_release(&program);
+	if (status != 0)
+		goto cleanup;
+	roots[1] = &function->object.cell;
+
+	/* Only actual inline loader paths create known source metadata, using the Document URL rather than base. */
+	if (known_inline) {
+		origin = vm_heap_alloc(realm->heap, &window_script_source_type, sizeof(*origin));
+		if (origin == NULL) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* The newborn metadata remains rooted while its actual URL is copied into managed storage. */
+		roots[2] = &origin->cell;
+		status = bind_document_url(window->document, 0, &filename);
+		if (status != 0)
+			goto cleanup;
+		origin->filename = vm_string_from_utf8(realm->heap, wb_buffer_string(&filename), filename.length);
+		if (origin->filename == NULL) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* The immutable opaque value is attached before code can create any nested closures. */
+		function->source = vm_value_cell(origin);
+	}
+
+	/* Classic top-level this remains the real Window global. */
+	status = vm_call(realm, vm_value_cell(function), vm_value_cell(realm->global), NULL, 0, completion);
+
+cleanup:
+	/* Both a completed execution and an early parse/compile/allocation failure release temporary owners. */
+	while (registered != 0) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* The compiled closures retain their own metadata after this temporary URL storage is released. */
+	wb_buffer_release(&filename);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: source ran through the ordinary VM with its actual defining context. */
+	return 0;
 }
 
 /*

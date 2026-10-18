@@ -1279,3 +1279,5 @@ Event ws074-q27-terminal-20261018: native ErrorEventをprivate registryへ追加
 Event ws074-q28-selected-20261018: q27のnative Event outputを前提にq28を選定。p255宣言順conformance partial、p256 runtime/inline provenance partial、p255 failure/held再評価の3 attempt。source policyはbinding所有のopaque managed metadata、unknownはredact、full Phases/100%の未達は保持。exact scopeは局所Queue、shared Master/Queue/cache/GitHub projection pending。
 
 Event ws074-q28-i01-cleared-i02-started-20261018: p255 declaration-only i01をhost/target/token/object同値でclearし、p256 runtime/source i02へ進む。whole p255/p100/held1と確認済1481は保持、q28 final gatesへ接続。
+
+Event ws074-q27-main-header-conformance-followup-20261018: q28全文監査で、q27新host-error-events.cのpublic main定義前がone-line commentだったと確認（C全文§3はmulti-lineを要求）。q27 scoped i01のconformance0/clearanceをこの限定点によりunclearedへ訂正。元native28/GC9/全corpus/host/target/API出力とscore1481は保持し、原cleared記述を履歴へ残す。q28-i02の実装前scope supplementに基づきheader commentだけをmulti-line化し、全code tokens/string不変をpublic-main-header-proofへ保存。q28 final build/native9で修正版を再確認する。元q27を後日の修正に合わせて成功へ書換えず、follow-upとして扱う。

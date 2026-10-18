@@ -769,7 +769,7 @@ page_run_script_element(
 		name = page->base;
 	bind_window_set_current_script(page->window, &script->node);
 	if (error == 0)
-		error = bind_run_script(page->window, text.data, text.length, name);
+		error = bind_run_script_source(page->window, text.data, text.length, name, 1);
 	bind_window_set_current_script(page->window, NULL);
 	wb_units_release(&text);
 	if (error != 0)
@@ -927,7 +927,7 @@ script_prepare_dynamic(
 		name = "(inline)";
 	bind_window_set_current_script(page->window, &script->node);
 	if (error == 0)
-		error = bind_run_script(page->window, text.data, text.length, name);
+		error = bind_run_script_source(page->window, text.data, text.length, name, 1);
 	bind_window_set_current_script(page->window, NULL);
 	wb_units_release(&text);
 

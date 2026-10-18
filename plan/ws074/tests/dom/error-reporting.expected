@@ -1,0 +1,16 @@
+timer-runtime PASS
+nested-closure-source PASS
+microtask-runtime PASS
+classic-inline-runtime PASS
+undefined-runtime PASS
+false-runtime PASS
+first-primitive-source PASS
+repeat-primitive-source PASS
+embedded-nul-message PASS
+same-object-first PASS
+same-object-again PASS
+legacy-onerror-runtime PASS
+native-report-ignores-global-replacements PASS
+current-script-spoof-ignored PASS
+actual-document-not-base PASS
+normal-callback-positive PASS
