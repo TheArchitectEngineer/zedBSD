@@ -302,11 +302,11 @@ static const struct i915_xd9_wrpll_divider {
 
 static uint32_t i915_xd_clock_div_round(uint32_t a, uint32_t b);
 static uint32_t i915_xd_cdclk_divider(uint32_t cdclk_khz, uint32_t vco_khz);
-static uint32_t i915_xd_cdclk_decimal(uint32_t cdclk_khz);
+static uint32_t i915_xd_cdclk_freq_field(uint32_t cdclk_khz);
 static int i915_xd_cdclk_prepare(struct i915_xd_io *io);
 static void i915_xd_cdclk_pll_off(struct i915_xd_io *io, struct i915_xd_cdclk *state, struct i915_xd_cdclk_report *report);
 static void i915_xd_cdclk_pll_on(struct i915_xd_io *io, struct i915_xd_cdclk *state, uint32_t vco_khz, struct i915_xd_cdclk_report *report);
-static void i915_xd_cdclk_pll_crawl(struct i915_xd_io *io, struct i915_xd_cdclk *state, uint32_t vco_khz, struct i915_xd_cdclk_report *report);
+static void i915_xd_cdclk_pll_retune(struct i915_xd_io *io, struct i915_xd_cdclk *state, uint32_t vco_khz, struct i915_xd_cdclk_report *report);
 static void i915_xd_cdclk_program(struct i915_xd_io *io, const struct i915_xd_platform *platform, struct i915_xd_cdclk *state, const struct i915_xd_cdclk *target, struct i915_xd_cdclk_report *report);
 static void i915_xd_cdclk_report_clear(struct i915_xd_cdclk_report *report);
 static void i915_xd_dpll_pack(const struct i915_xd_platform *platform, uint32_t ref_khz, uint32_t dco_integer, uint32_t dco_fraction, uint32_t qdiv_ratio, uint32_t qdiv_mode, uint32_t kdiv, uint32_t pdiv, int afc, struct i915_xd_dpll_words *words);
@@ -530,7 +530,7 @@ drv_i915_xd_cdclk_legal(
 
 	/* The control word must hold its divider and decimal frequency, whatever pipe it waited for. */
 	control = drv_i915_xd_io_read(io, I915_XD_CDCLK_CTL) & ~I915_XD_CDCLK_CD2X_PIPE_FIELD;
-	expected = i915_xd_cdclk_decimal(cdclk) | i915_xd_cdclk_divider(cdclk, vco);
+	expected = i915_xd_cdclk_freq_field(cdclk) | i915_xd_cdclk_divider(cdclk, vco);
 	if (control != expected)
 		return 0;
 
@@ -1046,7 +1046,7 @@ i915_xd_cdclk_divider(
  * (skl_cdclk_decimal).
  */
 static uint32_t
-i915_xd_cdclk_decimal(
+i915_xd_cdclk_freq_field(
 	uint32_t cdclk_khz)
 {
 	/* A CD clock below 1 MHz has no decimal. */
@@ -1169,7 +1169,7 @@ i915_xd_cdclk_pll_on(
  * (adlp_cdclk_pll_crawl).
  */
 static void
-i915_xd_cdclk_pll_crawl(
+i915_xd_cdclk_pll_retune(
 	struct i915_xd_io *io,
 	struct i915_xd_cdclk *state,
 	uint32_t vco_khz,
@@ -1228,7 +1228,7 @@ i915_xd_cdclk_program(
 	/* Moves the PLL to the target's rate. */
 	if (crawl) {
 		if (state->vco_khz != target->vco_khz)
-			i915_xd_cdclk_pll_crawl(io, state, target->vco_khz, report);
+			i915_xd_cdclk_pll_retune(io, state, target->vco_khz, report);
 	} else {
 		/* A PLL at another rate goes off first; then it comes on at the target's, unless that is off. */
 		if (state->vco_khz != 0U && state->vco_khz != target->vco_khz)
@@ -1240,7 +1240,7 @@ i915_xd_cdclk_program(
 	/* The control word: the divider, no pipe to wait for, the decimal frequency. */
 	control = i915_xd_cdclk_divider(target->cdclk_khz, target->vco_khz);
 	control |= I915_XD_CDCLK_CD2X_PIPE_NONE;
-	control |= i915_xd_cdclk_decimal(target->cdclk_khz);
+	control |= i915_xd_cdclk_freq_field(target->cdclk_khz);
 	drv_i915_xd_io_write(io, I915_XD_CDCLK_CTL, control);
 }
 

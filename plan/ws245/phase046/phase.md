@@ -172,3 +172,11 @@ P1 の見立て（Status は変えない。判定は Q1）: cleared にしない
    - 見立て: hardware の部品の名前（power well・PPS の VDD・CDCLK・combo PHY・MG PLL・GMBUS）と動詞の組で、自然な英語の名前が重なった物が大半。Linux に特有の言い回しの写しに近いのは `cdclk_pll_crawl`・`cdclk_decimal`・`tc_port_update_mode`・`tc_port_connected`・`gmbus_wait`。関数の中身（1 対 1 の構造の写し）は名前の当たった所を目視した範囲で、引数・段落の分け方が Linux と違う（xd の io・platform の記述を受ける形）。**改名は適用していない**: P1 が WS251 p002 で src/drivers/gpu を広く触っていて衝突しやすいのと、「自然な名前の一致を写しと見るか」の線引きが要るので Q1 に案を送った。
 - 確かめた事: `xd-dp.c` の変更は comment だけ（`git diff` で確かめた）。
 - 残り: comment の 1 行ずつの目視（意味を言っているか）の全行の通読は、機械の突き合わせで写しが無い事を確かめた所まで。改名（上の案の Q1 の判断の後）。
+
+## 改名（2026-10-19 P2、Q1 の判断 (a)）
+
+Q1 の判断: Linux 特有の言い回しに近い 5 つだけ改名し、他の 21 は自然な名前の重なりとして残す（Q1 の decisions-log）。全部 static で 1 file の中。
+- `xd-clock.c`: `i915_xd_cdclk_pll_crawl` → `i915_xd_cdclk_pll_retune`、`i915_xd_cdclk_decimal` → `i915_xd_cdclk_freq_field`
+- `xd-gmbus.c`: `i915_xd_gmbus_wait` → `i915_xd_gmbus_await_state`（`i915_xd_gmbus_wait_idle` はそのまま）
+- `xd-tc-port.c`: `i915_xd_tc_port_update_mode` → `i915_xd_tc_port_follow_live`、`i915_xd_tc_port_connected` → `i915_xd_tc_port_live_matches`
+- 確かめた事: 旧名の参照が tree に残らない（`git grep -w`）、`run-xd-host-tests.sh` all passed・warning 0、amd64 vmunix rc=0・warning 0・check PASS、`git diff --check` 空。`Procedure referenced:` の中の Linux の関数名は出典なのでそのまま。
