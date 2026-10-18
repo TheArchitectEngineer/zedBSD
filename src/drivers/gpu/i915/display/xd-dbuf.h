@@ -133,6 +133,9 @@ struct i915_xd9_pipe_plan {
 	uint32_t linetime;
 };
 
+void drv_i915_xd9_wm_write_pipe(struct i915_xd_io *io, unsigned pipe, const struct i915_xd9_pipe_plan *plan);
+void drv_i915_xd9_wm_arm_pipe(struct i915_xd_io *io, unsigned pipe, const struct i915_xd9_pipe_plan *plan);
+void drv_i915_xd9_wm_arm_pipes(struct i915_xd_io *io, const struct i915_xd9_pipe_plan *plans, unsigned count, int ascending, unsigned except);
 int drv_i915_xd9_dbuf_plan(const struct i915_xd_platform *platform, const uint16_t *latency, struct i915_xd9_pipe_plan *pipes, unsigned count);
 uint8_t drv_i915_xd_dbuf_joined(const struct i915_xd_platform *platform, uint8_t pipes);
 uint8_t drv_i915_xd_dbuf_slices(const struct i915_xd_platform *platform, unsigned pipe, uint8_t pipes, int joined);

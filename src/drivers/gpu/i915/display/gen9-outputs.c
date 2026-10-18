@@ -24,6 +24,8 @@
 
 #include "gen9-outputs.h"
 #include "gen9-ddc.h"
+#include "xd-dbuf.h"
+#include "xd-io.h"
 #include <kern/kcrt.h>
 #include <kern/klog.h>
 
@@ -58,7 +60,6 @@ static void i915_skl_outputs_mode(struct i915_skl_outputs *outputs, struct i915_
 static int i915_skl_outputs_config(struct i915_skl_outputs *outputs, struct i915_skl_output *output);
 static void i915_skl_outputs_pipes(const struct i915_skl_outputs *outputs, const struct i915_skl_output *with, struct i915_skl_pipe_wm pipes[3]);
 static void i915_skl_outputs_rewrite(struct i915_skl_outputs *outputs, const struct i915_skl_pipe_wm pipes[3], int ascending, unsigned except);
-static void i915_skl_outputs_arm(struct i915_skl_outputs *outputs, unsigned pipe, const struct i915_skl_pipe_wm *wm);
 
 /*
  * Decodes and adjusts the memory latencies PCODE answered (see
@@ -641,9 +642,8 @@ i915_skl_outputs_pipes(
 }
 
 /*
- * Gives each lit pipe but one its allocation, in ascending or descending
- * order of pipes, each taking effect at its vertical blank before the
- * next is written.
+ * Gives each lit pipe but one its allocation through the xd code's
+ * display 9 buffer, in ascending or descending order of pipes.
  */
 static void
 i915_skl_outputs_rewrite(
@@ -652,60 +652,11 @@ i915_skl_outputs_rewrite(
 	int ascending,
 	unsigned except)
 {
-	unsigned step;
+	struct i915_xd9_pipe_plan plans[I915_SKL_PIPES];
 	unsigned pipe;
 
-	/* Each pipe in the order. */
-	for (step = 0; step < I915_SKL_PIPES; step++) {
-		pipe = step;
-		if (!ascending)
-			pipe = I915_SKL_PIPES - 1U - step;
-		if (pipe == except || !pipes[pipe].active)
-			continue;
-		i915_skl_outputs_arm(outputs, pipe, &pipes[pipe]);
-	}
-}
-
-/*
- * Writes a lit pipe's watermarks and DDB and arms them: planes 2 and 3,
- * when off, lose their DDB; the cursor's and every plane's surface is
- * written again with its value; then the vertical blank they take effect
- * at.
- */
-static void
-i915_skl_outputs_arm(
-	struct i915_skl_outputs *outputs,
-	unsigned pipe,
-	const struct i915_skl_pipe_wm *wm)
-{
-	uint32_t offset;
-	uint32_t plane;
-	uint32_t control;
-	uint32_t surf;
-	unsigned extra;
-
-	/* The pipe's registers. */
-	offset = pipe * I915_SKL_PIPE_STRIDE;
-
-	/* The first plane's and the cursor's watermarks and DDB, and the line time. */
-	drv_i915_skl_write_pipe_wm(outputs->io, pipe, wm);
-
-	/* Planes 2 and 3: an off one gives its DDB up; each is armed. */
-	for (extra = 0; extra < 2U; extra++) {
-		plane = offset + extra * I915_SKL_PLANE_SPACING;
-		control = drv_i915_skl_read(outputs->io, I915_SKL_PLANE_CTL_2_A + plane);
-		if ((control & I915_SKL_PLANE_CTL_ENABLE) == 0U)
-			drv_i915_skl_write(outputs->io, I915_SKL_PLANE_BUF_CFG_2_A + plane, 0U);
-		surf = drv_i915_skl_read(outputs->io, I915_SKL_PLANE_SURF_2_A + plane);
-		drv_i915_skl_write(outputs->io, I915_SKL_PLANE_SURF_2_A + plane, surf);
-	}
-
-	/* The cursor and the first plane armed with their own surfaces. */
-	surf = drv_i915_skl_read(outputs->io, I915_SKL_CURBASE_A + offset);
-	drv_i915_skl_write(outputs->io, I915_SKL_CURBASE_A + offset, surf);
-	surf = drv_i915_skl_read(outputs->io, I915_SKL_PLANE_SURF_1_A + offset);
-	drv_i915_skl_write(outputs->io, I915_SKL_PLANE_SURF_1_A + offset, surf);
-
-	/* Succeeded once the vertical blank has taken them. */
-	(void)drv_i915_skl_wait_vblank(outputs->io, pipe);
+	/* Succeeded: the pipes in the xd code's form, moved. */
+	for (pipe = 0U; pipe < I915_SKL_PIPES; pipe++)
+		drv_i915_skl_xd_plan(&pipes[pipe], &plans[pipe]);
+	drv_i915_xd9_wm_arm_pipes(drv_i915_skl_xd_io(outputs->io), plans, I915_SKL_PIPES, ascending, except);
 }

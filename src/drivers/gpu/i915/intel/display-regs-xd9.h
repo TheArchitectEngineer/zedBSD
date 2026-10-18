@@ -251,4 +251,36 @@
 #define I915_XD9_CHICKEN_TRANS(trans)		(0x420c0U + 4U * (trans))
 #define I915_XD9_TRAINING_OVERRIDE		((1U << 19) | (1U << 18))
 
+/*
+ * A display 9 pipe's planes 2 and 3 (0x100 after the first, each 0x100
+ * apart: the control, the surface and the buffer range), the first
+ * plane's NV12 buffer range, and the cursor's base, whose writes arm the
+ * planes' and the cursor's watermarks and ranges, and the cursor's
+ * transition watermark.
+ *
+ * Values referenced: Intel Kaby Lake PRM Volume 2c, Command Reference:
+ * Registers (PLANE_CTL, PLANE_SURF, PLANE_BUF_CFG, PLANE_NV12_BUF_CFG,
+ * CURBASE, CUR_WM_TRANS).
+ */
+#define I915_XD9_PLANE_N_CTL(pipe, plane)	(0x70180U + 0x1000U * (pipe) + 0x100U * (plane))
+#define I915_XD9_PLANE_N_SURF(pipe, plane)	(0x7019cU + 0x1000U * (pipe) + 0x100U * (plane))
+#define I915_XD9_PLANE_N_BUF_CFG(pipe, plane)	(0x7027cU + 0x1000U * (pipe) + 0x100U * (plane))
+#define I915_XD9_PLANE_NV12_BUF_CFG(pipe)	(0x70278U + 0x1000U * (pipe))
+#define I915_XD9_CURBASE(pipe)			(0x70084U + 0x1000U * (pipe))
+#define I915_XD9_CUR_WM_TRANS(pipe)		(0x70168U + 0x1000U * (pipe))
+#define I915_XD9_WM_LINETIME_MASK		0x1ffU
+
+/*
+ * The south display's hotplug on the SPT, KBP, CNP and CMP PCHs: the live
+ * state of DDIs B to D in SDEISR, their sense enables in PCH_PORT_HOTPLUG,
+ * and the DDIs the board has in SFUSE_STRAP.
+ *
+ * Values referenced: Intel Kaby Lake PRM Volume 2c, Command Reference:
+ * Registers (SDEISR, PCH_PORT_HOTPLUG, SFUSE_STRAP).
+ */
+#define I915_XD9_SDE_HPD(ddi)			(1U << (20U + (ddi)))
+#define I915_XD9_PORT_HOTPLUG			0xc4030U
+#define I915_XD9_PORT_HOTPLUG_ENABLE(ddi)	(1U << (4U + 8U * ((ddi) - 1U)))
+#define I915_XD9_SFUSE_DDI_DETECTED(ddi)	(1U << (3U - (ddi)))
+
 #endif /* DRIVERS_GPU_I915_INTEL_DISPLAY_REGS_XD9_H */

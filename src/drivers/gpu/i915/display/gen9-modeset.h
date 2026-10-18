@@ -75,6 +75,11 @@ void drv_i915_skl_output_off(const struct i915_skl_io *io, const struct i915_skl
 /* Writes a pipe's first plane's watermarks and DDB, the cursor's DDB and the line time (skl_write_plane_wm). */
 void drv_i915_skl_write_pipe_wm(const struct i915_skl_io *io, unsigned pipe, const struct i915_skl_pipe_wm *wm);
 
+struct i915_xd9_pipe_plan;
+
+/* Fills the xd code's display 9 plan of a pipe from its watermarks and DDB. */
+void drv_i915_skl_xd_plan(const struct i915_skl_pipe_wm *wm, struct i915_xd9_pipe_plan *plan);
+
 /* Shows a surface on a pipe's first plane: control, stride, position, size, offset, then the surface (which arms them). */
 void drv_i915_skl_plane_on(const struct i915_skl_io *io, unsigned pipe, uint32_t surf, uint32_t stride_units, uint32_t width, uint32_t height, int rgbx);
 

@@ -21,16 +21,15 @@
 #include "gen9-ddc.h"
 #include "xd-aux.h"
 #include "xd-clock.h"
+#include "xd-dbuf.h"
 #include "xd-ddi.h"
+#include "xd-hpd.h"
 #include "xd-io.h"
 #include "xd-output.h"
 #include "xd-pipe.h"
 #include "xd-platform.h"
 #include "xd-power.h"
 #include <kern/kcrt.h>
-
-#include "../intel/display-regs-gen9.h"
-#include "../intel/display-regs-gen9-modeset.h"
 
 #include <uapi/errno.h>
 
@@ -182,43 +181,45 @@ drv_i915_skl_output_off(
 	drv_i915_xd9_output_off(drv_i915_skl_xd_io(io), i915_skl_modeset_platform(), &out, &port);
 }
 
-/*
- * Writes a pipe's first plane's watermarks (eight levels and no
- * transition one), its DDB, the cursor's watermarks (off) and DDB, and the
- * line time.  The plane's surface write arms them.
- *
- * Procedure referenced: Linux v6.8.12
- * drivers/gpu/drm/i915/display/skl_watermark.c (skl_write_plane_wm).
- */
+/* Writes a pipe's first plane's and cursor's watermarks and DDB and the line time through the xd code's display 9 buffer. */
 void
 drv_i915_skl_write_pipe_wm(
 	const struct i915_skl_io *io,
 	unsigned pipe,
 	const struct i915_skl_pipe_wm *wm)
 {
-	struct i915_skl_wm_level off;
-	uint32_t offset;
+	struct i915_xd9_pipe_plan plan;
+
+	/* The pipe in the xd code's form, written. */
+	drv_i915_skl_xd_plan(wm, &plan);
+	drv_i915_xd9_wm_write_pipe(drv_i915_skl_xd_io(io), pipe, &plan);
+}
+
+/* Fills the xd code's display 9 plan of a pipe from the node's watermarks and DDB. */
+void
+drv_i915_skl_xd_plan(
+	const struct i915_skl_pipe_wm *wm,
+	struct i915_xd9_pipe_plan *plan)
+{
 	unsigned level;
 
-	/* The pipe's registers, and a level that is off. */
-	offset = pipe * I915_SKL_PIPE_STRIDE;
-	kern_memset(&off, 0, sizeof(off));
-
-	/* The plane's levels, its transition watermark (unused on display 9) and its DDB. */
-	for (level = 0U; level < I915_SKL_WM_LEVELS; level++)
-		drv_i915_skl_write(io, I915_SKL_PLANE_WM_1_A_0 + offset + level * 4U, drv_i915_skl_wm_word(&wm->level[level]));
-	drv_i915_skl_write(io, I915_SKL_PLANE_WM_TRANS_1_A + offset, 0U);
-	drv_i915_skl_write(io, I915_SKL_PLANE_BUF_CFG_1_A + offset, drv_i915_skl_ddb_word(wm->plane_start, wm->plane_end));
-	drv_i915_skl_write(io, I915_SKL_PLANE_NV12_BUF_CFG_1_A + offset, 0U);
-
-	/* The cursor's levels (it stays off) and its DDB. */
-	for (level = 0U; level < I915_SKL_WM_LEVELS; level++)
-		drv_i915_skl_write(io, I915_SKL_CUR_WM_A_0 + offset + level * 4U, drv_i915_skl_wm_word(&off));
-	drv_i915_skl_write(io, I915_SKL_CUR_WM_TRANS_A + offset, 0U);
-	drv_i915_skl_write(io, I915_SKL_CUR_BUF_CFG_A + offset, drv_i915_skl_ddb_word(wm->cursor_start, wm->cursor_end));
-
-	/* The line time. */
-	drv_i915_skl_write(io, I915_SKL_WM_LINETIME_A + pipe * I915_SKL_WM_LINETIME_STRIDE, wm->linetime & I915_SKL_LINETIME_MASK);
+	/* Succeeded: whether it is lit, its ranges, its levels and its line time. */
+	kern_memset(plan, 0, sizeof(*plan));
+	plan->active = wm->active;
+	plan->computed = wm->active;
+	plan->pipe_ddb.start = (uint16_t)wm->ddb_start;
+	plan->pipe_ddb.end = (uint16_t)wm->ddb_end;
+	plan->plane_ddb.start = (uint16_t)wm->plane_start;
+	plan->plane_ddb.end = (uint16_t)wm->plane_end;
+	plan->cursor_ddb.start = (uint16_t)wm->cursor_start;
+	plan->cursor_ddb.end = (uint16_t)wm->cursor_end;
+	for (level = 0U; level < I915_XD_WM_LEVELS; level++) {
+		plan->wm.level[level].enable = (uint8_t)(wm->level[level].enable != 0);
+		plan->wm.level[level].blocks = (uint16_t)wm->level[level].blocks;
+		plan->wm.level[level].lines = (uint16_t)wm->level[level].lines;
+		plan->wm.level[level].min_ddb = (uint16_t)wm->level[level].min_ddb;
+	}
+	plan->linetime = wm->linetime;
 }
 
 /* Shows a surface on a pipe's first plane through the xd code's display 9 plane. */
@@ -263,64 +264,31 @@ drv_i915_skl_wait_vblank(
 	return 0;
 }
 
-/*
- * Turns on the PCH's hotplug sense of ports B to D
- * (spt_hpd_detection_setup).
- *
- * Procedure referenced: Linux v6.8.12
- * drivers/gpu/drm/i915/display/intel_hotplug_irq.c
- * (spt_hpd_detection_setup).
- */
+/* Turns on the PCH's hotplug sense of ports B to D through the xd code's display 9 hotplug. */
 void
 drv_i915_skl_hotplug_enable(
 	const struct i915_skl_io *io)
 {
-	/* The three ports' enables. */
-	(void)drv_i915_skl_rmw(io, I915_SKL_PCH_PORT_HOTPLUG, 0U, I915_SKL_PORTB_HOTPLUG_ENABLE | I915_SKL_PORTC_HOTPLUG_ENABLE | I915_SKL_PORTD_HOTPLUG_ENABLE);
+	/* The xd code's display 9 hotplug. */
+	drv_i915_xd9_hpd_enable(drv_i915_skl_xd_io(io));
 }
 
-/* Reports the ports the board has, from SFUSE_STRAP: bit 1 port B, bit 2 C, bit 3 D. */
+/* Reports the ports the board has: bit 1 port B, bit 2 C, bit 3 D. */
 unsigned
 drv_i915_skl_ports_present(
 	const struct i915_skl_io *io)
 {
-	uint32_t strap;
-	unsigned ports;
-
-	/* The strap's detected bits. */
-	strap = drv_i915_skl_read(io, I915_SKL_SFUSE_STRAP);
-	ports = 0U;
-	if ((strap & I915_SKL_SFUSE_STRAP_DDIB_DETECTED) != 0U)
-		ports |= 1U << I915_SKL_PORT_B;
-	if ((strap & I915_SKL_SFUSE_STRAP_DDIC_DETECTED) != 0U)
-		ports |= 1U << I915_SKL_PORT_C;
-	if ((strap & I915_SKL_SFUSE_STRAP_DDID_DETECTED) != 0U)
-		ports |= 1U << I915_SKL_PORT_D;
-
-	/* Succeeded: the ports. */
-	return ports;
+	/* The xd code's display 9 hotplug. */
+	return drv_i915_xd9_hpd_present(drv_i915_skl_xd_io(io));
 }
 
-/* Reports the ports a sink is attached to now, from the south display's live state (SDEISR). */
+/* Reports the ports a sink is attached to now. */
 unsigned
 drv_i915_skl_ports_connected(
 	const struct i915_skl_io *io)
 {
-	uint32_t live;
-	unsigned ports;
-
-	/* The live hotplug bits. */
-	live = drv_i915_skl_read(io, I915_SKL_SDEISR);
-	ports = 0U;
-	if ((live & I915_SKL_SDE_PORTB_HOTPLUG) != 0U)
-		ports |= 1U << I915_SKL_PORT_B;
-	if ((live & I915_SKL_SDE_PORTC_HOTPLUG) != 0U)
-		ports |= 1U << I915_SKL_PORT_C;
-	if ((live & I915_SKL_SDE_PORTD_HOTPLUG) != 0U)
-		ports |= 1U << I915_SKL_PORT_D;
-
-	/* Succeeded: the attached ports. */
-	return ports;
+	/* The xd code's display 9 hotplug. */
+	return drv_i915_xd9_hpd_connected(drv_i915_skl_xd_io(io));
 }
 
 /* Reports the display 9 platform the mode set's registers follow. */
