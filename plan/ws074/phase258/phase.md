@@ -2,11 +2,11 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: uncleared（q43 OwnPropertyKeys VM partial cleared、whole Proxy未達）
+Status: in-progress（q44 Object callers partial、whole Proxy未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
-Queue: ws074-q20261018-43-i01（q30〜q42 partial履歴保持）
+Queue: ws074-q20261018-44-i01（q30〜q43 partial履歴保持）
 Origin: p189/q29 original WebIDL2 parseがProxy未定義で停止。
 
 Objective / own criteria: native managed Proxyを実object internal methodsへ接続し、constructor/revocableと各internal operationのtrap/fallback/invariant/receiver/revocation/callability/GCを正しく実行する。original WebIDL2 actual parse/validatorに必要なget/set/array behaviorを通常APIで提供し、independent controls/原WPTを通す。部分read stageだけでwholeをclearしない。
@@ -205,3 +205,5 @@ i01 OwnPropertyKeys VM foundation partialだけcleared、normative native criter
 Final raw archive79 members全read-back、SHA2567b0b975906e8907c129f9bae85500dd8be5d6b374e957776ad6da7e4b7f3fc6a。runtime binaryはhash付きbuild保持・archive未同梱。
 
 [証拠](evidence/20261018-q43/README.md)。次finite scope未選定。
+
+Event ws074-p258-q44-selected-20261018: verified VM ownKeys/GetOwn/Define/extentへObject own-key/descriptor/integrity callersを最大90分で接続し全1508を再測定するpartialを選定。sealed余分GetOwn除去、TestIntegrity status/holds分離、vectors/partial descriptor rootsを整合。for-in/core routing/global等残件保持、exact Queue参照。

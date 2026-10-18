@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [ws074-q20261018-43](queue.md) finished（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+Queue: [ws074-q20261018-44](queue.md) active（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
 
 Latest verified（q43）: VM OwnPropertyKeys/private partial clear。native501/Chrome499、huge2はChrome getter前RangeErrorとnative primary-spec ordered Getの差をraw/診断で保持、全501一致とは認定せず元source/期待値不変。4 GC modesでaccumulated fresh Symbol/prefix・partial error rollback/実回収。host/target1 warning0・focused/元parser維持。public callers未接続・global/whole未達。all1508 q37/images-crash q28再利用、1482/3805・held0・未attempt275。[証拠](phase258/evidence/20261018-q43/README.md)。共有投影pending。
 
@@ -1347,3 +1347,5 @@ Event ws074-q42-finished-20261018: p258 prototype2/public/AnnexB partial clear�
 Event ws074-q43-selected-20261018: p258 OwnPropertyKeys VM foundation/private controlsを有限partial選定。public callersはverified output後の別scope、global/whole残件保持。[Queue](queue.md)。
 
 Event ws074-q43-finished-20261018: p258 OwnPropertyKeys VM foundation partial clear。native501/Chrome499、huge2は外部RangeError差をprimary/診断で保持し全一致false。4 GC modesでprefix/list Symbols保持・rollback後未使用capacity Symbol実回収。focused/元parser保持、1482/3805。次public callers候補、global/whole未達。[history](history/ws074-q20261018-43.md)。共有投影pending。
+
+Event ws074-q44-selected-20261018: p258 Object own-key/descriptor/integrity callersの有限partial＋全1508検証を選定、for-in/core/global/whole残件保持。[Queue](queue.md)。
