@@ -1,0 +1,18 @@
+{
+  "userland/desktop/libbrowser/js/builtin_array.c": {
+    "old": "1d2def7a1dc72bff7cd2f870ba4f3c483062c03c8fc70dbe0770859c56c974f3",
+    "new": "32de9ced51c4b9213b8abc4ae92664b30b5a5e2cee85e4a94dfeaf28aa1ca1b0"
+  },
+  "userland/desktop/libbrowser/js/builtin_object.c": {
+    "old": "75f8770f982d11ab292f5833a1024c68674a606988f540f74d88a3cd8cec960d",
+    "new": "3cdb5cf232609561eaa1d5657dbabe9bc2fd6be6ba2083df649284b7ad29f2fc"
+  },
+  "plan/ws074/tests/host-proxy-read.c": {
+    "old": "0685beb8df7c498a3fb2ff5f939d877bb3e4e911605309d415dcd2f087cee9cb",
+    "new": "15896c961eaa306fc4f7c96978da5d4ee486e8f05c7fc10b045ee7b99419e570"
+  },
+  "plan/ws074/tests/proxy-read.js": {
+    "old": "c715457f5486591b40312aee811c7275fd61e274cf0b1f2e6c812fd582aceab9",
+    "new": "7a60cbe2feb89b5465ba55f66fea2060decad1e162f7f6a4a3c447bca7d5d7ff"
+  }
+}

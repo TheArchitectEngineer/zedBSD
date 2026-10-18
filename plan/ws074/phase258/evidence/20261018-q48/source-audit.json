@@ -1,0 +1,47 @@
+{
+  "tokens_outside_selected_product_and_fixture_functions_identical": true,
+  "other_engine_source_and_headers_unchanged": true,
+  "all_VM_source_and_headers_unchanged": true,
+  "native_operations_definition_comment_unchanged": true,
+  "old658_prefix_unchanged": true,
+  "added_conditions": 32,
+  "precode_failed_conditions": 23,
+  "full_changed_functions": {
+    "userland/desktop/libbrowser/js/builtin_object.c": [
+      "object_to_string"
+    ],
+    "userland/desktop/libbrowser/js/builtin_array.c": [
+      "array_concat",
+      "array_flat",
+      "array_flat_map",
+      "array_flatten",
+      "array_is_concat_spreadable"
+    ],
+    "plan/ws074/tests/host-proxy-read.c": [
+      "main",
+      "flat_source_length",
+      "flat_source_depth",
+      "flat_source_pressure"
+    ]
+  },
+  "removed_old_kind_helper": "array_is_array_value",
+  "normal_helpers_after_tables": [
+    "array_flatten",
+    "array_is_concat_spreadable"
+  ],
+  "raw_allowed_cleanup": 77,
+  "only_single_forward_cleanup_proved": true,
+  "other_checker_findings": 0,
+  "manual_review": [
+    "ANSI declarations first/multiline/public-static order/semantic paragraphs and compound clauses",
+    "ObjectToString roots converted receiver then actual IsArray before custom tag Get; revoked errors propagate; saved builtin tag unaffected by later revocation",
+    "IsConcatSpreadable only objects Get symbol override, ToBoolean without object coercion; undefined only fallback IsArray",
+    "concat converted receiver/current item/fresh output element/result separate roots, own default data definitions bypass inherited setters and preserve holes",
+    "concat registration initializes placeholders before acquisition and uses one forward cleanup for partial registration/abrupt source/length operations",
+    "flat and flatMap root freshly boxed source after array_this until depth conversion/mapper/flatten completes; result placeholder rooted before allocation",
+    "flatten retains mapped fresh values, tests depth before actual IsArray, zero/negative depth never inspects revoked item identity; recursion source held by parent temporary root",
+    "new native weak observer sees actual Number wrapper during inherited length getter, later actual depth valueOf GC proves source box alive after array_this/length frames retire; output-only then source/depth reclaim then output reclaim, temporary Number intrinsic getter restored",
+    "Species/custom result/upper-index storage/wide lengths/general recursion resource policy/JSON/for-in/call/global/p100 remain pending",
+    "main source/terminal containment and conflicts verified separately; master.md never in owned staged paths"
+  ]
+}
