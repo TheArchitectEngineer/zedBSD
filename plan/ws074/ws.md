@@ -9,7 +9,11 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [ws074-q20261018-01](queue.md) finished（2026-10-18、Codex単独）。p240のhost部分cleared、whole未達。既存の後続有限Queue事前承認と今回の再開指示を適用。
+Queue: [ws074-q20261018-02](queue.md) finished（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+
+Event ws074-p241-host-partial-clear-20261018: [p241](phase241/phase.md)でstretch cross sizeをratioへ渡し、補助WPT149→152/257・後退0、40/40 geometry、Acid3差0/Acid2差873。host部分cleared、production link/targetはpending。257件は公式2025の分母外と確認したため、次はp189/p190の最新censusで全体の失敗群を測る。
+
+Event ws074-autonomy-p241-20261018: ユーザー「では、当分の間、100%を目指して自走をお願いします。」を受け、固定Interop2025全3,805IDの100%を目指して有限Queueを継続する。[p241](phase241/phase.md)を追加し、p240の残るstretch cross sizeを処理する。Master/共有Queue/GitHubへの投影はpending。
 
 Event ws074-p240-host-partial-clear-20261018: [p240](phase240/phase.md)でflex ratioの自動最小サイズを修正。[証拠](phase240/evidence/20261018/README.md)。同じWPT257 IDで142→149 PASS、後退0、独立29/29、DOM23/23、amd64 build warning0、Acid3差0/Acid2差873。部分cleared、Phase wholeはuncleared（target・stretch cross size・basis区別などが残る）。Chromiumとの28一致/1仕様差を記録。Master/共有Queue/GitHubの投影はpending。
 
@@ -615,6 +619,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p234](phase234/phase.md) | WPT Interop 2024・2023 の layout の領域（実 site でよく使う物）の PASS を増やす | cleared（host、2026-10-15 B1。aspect-ratio・object-fit・object-position、aspect-ratio の reftest 73→138。QEMU・実機は未実施） | p233 |
 | [ws074-p235](phase235/phase.md) | position: sticky（ページのスクロール）と、子を持つ箱の transform: scale | cleared（host、2026-10-15 B1。sticky・子つき scale。固定 WPT 483→485、css-position 51→54、css-transforms 221→226（偶然 pass 4 件が後退）。QEMU・実機は未実施。flex の aspect-ratio は未着手） | p234 |
 | [ws074-p240](phase240/phase.md) | flex item の aspect-ratio、自動最小サイズと flex basis | uncleared / ws074-q20261018-01 host partial cleared（WPT142→149、後退0） | p172 engine・p234 ratio の実装 |
+| [ws074-p241](phase241/phase.md) | definiteなstretch cross sizeをflex ratioのbase/minimumへ渡す | uncleared / ws074-q20261018-02 host partial cleared、target pending | p234 ratio・p240 minimum |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 

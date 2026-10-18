@@ -1,0 +1,37 @@
+{
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "auxiliary_scope": "css/css-sizing/aspect-ratio (no IDs in the fixed Interop2025 manifest)",
+  "before": {
+    "fail": 108,
+    "pass": 149
+  },
+  "after": {
+    "fail": 105,
+    "pass": 152
+  },
+  "improved": [
+    "css/css-sizing/aspect-ratio/flex-aspect-ratio-009.html",
+    "css/css-sizing/aspect-ratio/flex-aspect-ratio-045.html",
+    "css/css-sizing/aspect-ratio/flex-aspect-ratio-046.html"
+  ],
+  "regressions": [],
+  "same_ids": true,
+  "count": 257,
+  "geometry": {
+    "before": 32,
+    "after": 40,
+    "total": 40,
+    "chromium_matches": 39,
+    "known_spec_difference": 1
+  },
+  "acid": {
+    "acid2_difference": 873,
+    "acid3_difference": 0,
+    "acid3_score": "100"
+  },
+  "source_sha256": "77d5f559c74a5786076ae30bd51b59094f26b010e41567b5ffb4f40100cb1634",
+  "frozen_binaries": {
+    "build/ws074-20261018/q02/before/libbrowser.so": "97167c4a8b160e2c3411b61a2cd5c29d0221ed42990aad2b2f6105769959ee0b",
+    "build/ws074-20261018/q02/after/libbrowser.so": "7141c9dce14bff4af793ae1af5ee47ffe12fa773ee4c9c19eadb6d7454ee9dda"
+  }
+}

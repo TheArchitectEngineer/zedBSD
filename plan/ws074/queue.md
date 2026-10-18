@@ -1,5 +1,24 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
+# ws074-q20261018-02 / flex ratio の stretch cross size
+
+Status: finished（2026-10-18、host部分cleared）
+Owner: このCodex chat単独。
+Approval: ユーザー「では、当分の間、100%を目指して自走をお願いします。」を[自走の契約](autonomy.md)と次の有限範囲へ適用。
+Timebox: 最大90分。
+
+| Attempt | Phase | Exact scope | State | Dependencies |
+| --- | --- | --- | --- | --- |
+| ws074-q20261018-02-i01 | [p241](phase241/phase.md) host partial | 非置換の横書きrow/column、nowrap・definite cross size・stretch・auto cross size・非auto cross marginのratio base/minimum。明示px/%も共通化。frame/margin/minmax、wrap/auto margin非適用の独立例、固定WPT前後、build warning0、全文review、Acid差非増加 | cleared（host40例・WPT149→152・後退0、[証拠](phase241/evidence/20261018/README.md)） | p234 ratio・p240自動最小サイズの統合済み出力 |
+
+Dependency graph: p234 ratio → p240 minimum → p241 partial。
+Upcoming Work Outlook: flex-basis:content区別、replaced ratio、固定Interopの最新censusとrunner coverage。全3,805 IDの達成は未確認。
+
+Outcome: p241 host部分cleared、production link/target確認はpending。Acid3差0、Acid2差873。次は公式2025の最新census。
+History: [確定したscopeと結果](history/ws074-q20261018-02.md)。
+
+---
+
 # ws074-q20261018-01 / flex item の aspect-ratio（Codex）
 
 Status: finished（2026-10-18、host の有限部分 cleared、p240 whole uncleared）

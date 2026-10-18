@@ -69,6 +69,7 @@ struct flex_sizes {
 static int flex_collect(struct layout_box *box, struct flex_item **items, size_t *count);
 static int flex_base_size(struct layout_tree *tree, struct layout_box *box, struct flex_item *item, int row, layout_unit available);
 static layout_unit flex_ratio_definite_length(const struct css_length *length, layout_unit basis);
+static layout_unit flex_ratio_cross_size(struct layout_tree *tree, const struct layout_box *container, const struct layout_box *child, int row);
 static layout_unit flex_ratio_main_size(const struct layout_box *box, int row, layout_unit cross);
 static int flex_ratio_minimum(struct layout_tree *tree, struct layout_box *container, struct flex_item *item, int row, layout_unit available);
 static int flex_auto_minimums(struct layout_tree *tree, struct flex_item *items, size_t count, layout_unit available, layout_unit gap);
@@ -697,6 +698,7 @@ flex_base_size(
 	struct layout_box *child;
 	const struct css_length *basis;
 	layout_unit sizing;
+	layout_unit cross;
 	int start_side;
 	int end_side;
 	int error;
@@ -752,11 +754,17 @@ flex_base_size(
 	if (basis->unit == CSS_UNIT_PERCENT && available >= 0 && tree->measuring == 0)
 		item->base = flex_length(basis, available) - sizing;
 
-	/* A pixel height and an aspect-ratio give an auto width (an item with no flex-basis of its own). */
-	if (item->base < 0 && row && !child->replaced && child->style.aspect_ratio > 0.0f &&
-	    child->style.width.unit == CSS_UNIT_AUTO && child->style.height.unit == CSS_UNIT_PX &&
-	    basis == &child->style.width)
-		item->base = (layout_unit)((float)layout_from_px(child->style.height.value) * child->style.aspect_ratio) - sizing;
+	/* A definite cross size supplies the content basis through the ratio. */
+	if (item->base < 0) {
+		if (!child->replaced) {
+			if (child->style.aspect_ratio > 0.0f) {
+				/* Include single-line stretch before any flexing takes place. */
+				cross = flex_ratio_cross_size(tree, box, child, row);
+				if (cross >= 0)
+					item->base = flex_ratio_main_size(child, row, cross);
+			}
+		}
+	}
 
 	/* Otherwise the content's size: its widest line, or its height at the container's width. */
 	if (item->base < 0 && row) {
@@ -1034,6 +1042,112 @@ flex_ratio_definite_length(
 	return resolved;
 }
 
+/* Finds the definite cross size, including an eligible single-line stretch. */
+static layout_unit
+flex_ratio_cross_size(
+	struct layout_tree *tree,
+	const struct layout_box *container,
+	const struct layout_box *child,
+	int row)
+{
+	const struct css_length *length;
+	const struct css_length *minimum;
+	const struct css_length *maximum;
+	layout_unit basis;
+	layout_unit cross;
+	layout_unit frame;
+	layout_unit limit;
+	int first;
+	int last;
+	int align;
+
+	/* A row's cross percentages need the container's definite height. */
+	length = &child->style.height;
+	minimum = &child->style.min_height;
+	maximum = &child->style.max_height;
+	first = CSS_TOP;
+	last = CSS_BOTTOM;
+	basis = -1;
+	if (row) {
+		if (tree->containing_height_definite)
+			basis = tree->containing_height;
+	} else {
+		/* A column's cross size uses the container's content width. */
+		length = &child->style.width;
+		minimum = &child->style.min_width;
+		maximum = &child->style.max_width;
+		first = CSS_LEFT;
+		last = CSS_RIGHT;
+		basis = container->width;
+	}
+
+	/* Intrinsic measurement does not establish a percentage or stretch basis. */
+	if (tree->measuring != 0)
+		basis = -1;
+
+	/* A definite author-specified cross size needs no stretch inference. */
+	cross = flex_ratio_definite_length(length, basis);
+	frame = child->border[first] + child->padding[first] + child->padding[last] + child->border[last];
+	if (cross < 0) {
+		/* Only an automatic cross size can stretch. */
+		if (length->unit != CSS_UNIT_AUTO)
+			return -1;
+
+		/* Multiple lines determine their cross sizes after main sizing. */
+		if (container->style.flex_wrap != CSS_FLEX_NOWRAP)
+			return -1;
+
+		/* An indefinite container does not determine the item's cross size. */
+		if (basis < 0)
+			return -1;
+
+		/* Non-stretch alignment uses a content-based cross size. */
+		align = flex_align_of(container, child);
+		if (align != CSS_ALIGN_STRETCH)
+			return -1;
+
+		/* Auto cross margins consume the line's space instead of stretching. */
+		if (child->style.margin[first].unit == CSS_UNIT_AUTO)
+			return -1;
+
+		/* Either cross margin can prevent stretch. */
+		if (child->style.margin[last].unit == CSS_UNIT_AUTO)
+			return -1;
+
+		/* Fit the margin box to the container, then express the sizing box. */
+		cross = basis - child->margin[first] - child->margin[last];
+		if (child->style.box_sizing == CSS_BOX_SIZING_CONTENT)
+			cross -= frame;
+	}
+
+	/* The used cross size obeys a definite maximum. */
+	limit = flex_ratio_definite_length(maximum, basis);
+	if (limit >= 0) {
+		if (cross > limit)
+			cross = limit;
+	}
+
+	/* Its definite minimum wins over that maximum. */
+	limit = flex_ratio_definite_length(minimum, basis);
+	if (limit >= 0) {
+		if (cross < limit)
+			cross = limit;
+	}
+
+	/* Border-box sizing cannot make the content inside the frame negative. */
+	if (child->style.box_sizing == CSS_BOX_SIZING_BORDER) {
+		if (cross < frame)
+			cross = frame;
+	}
+
+	/* Content-box sizes likewise stop at zero. */
+	if (cross < 0)
+		cross = 0;
+
+	/* Succeeded: returns the definite cross size in the ratio's sizing box. */
+	return cross;
+}
+
 /* Converts the ratio box's cross size to its content size on the main axis. */
 static layout_unit
 flex_ratio_main_size(
@@ -1082,7 +1196,6 @@ flex_ratio_minimum(
 {
 	struct layout_box *child;
 	const struct css_length *main_size;
-	const struct css_length *cross_size;
 	const struct css_length *cross_minimum;
 	const struct css_length *cross_maximum;
 	struct css_length saved_height;
@@ -1113,7 +1226,6 @@ flex_ratio_minimum(
 
 	/* Select the physical dimensions used by this flex axis. */
 	main_size = &child->style.width;
-	cross_size = &child->style.height;
 	cross_minimum = &child->style.min_height;
 	cross_maximum = &child->style.max_height;
 	overflow = child->style.overflow_x;
@@ -1128,7 +1240,6 @@ flex_ratio_minimum(
 
 		/* Read the column's width constraints as cross-axis constraints. */
 		main_size = &child->style.height;
-		cross_size = &child->style.width;
 		cross_minimum = &child->style.min_width;
 		cross_maximum = &child->style.max_width;
 		overflow = child->style.overflow_y;
@@ -1160,7 +1271,7 @@ flex_ratio_minimum(
 	/* Resolve author constraints before measurement temporarily changes style. */
 	cross_limit_min = flex_ratio_definite_length(cross_minimum, cross_basis);
 	cross_limit_max = flex_ratio_definite_length(cross_maximum, cross_basis);
-	preferred_cross = flex_ratio_definite_length(cross_size, cross_basis);
+	preferred_cross = flex_ratio_cross_size(tree, container, child, row);
 	preferred_main = flex_ratio_definite_length(main_size, main_basis);
 
 	/* Measure actual content without letting the ratio manufacture content. */
@@ -1640,6 +1751,7 @@ flex_relay_cross(
 	struct layout_box *child;
 	layout_unit frame;
 	layout_unit height;
+	layout_unit ratio_cross;
 	size_t index;
 	int align;
 	int error;
@@ -1663,7 +1775,36 @@ flex_relay_cross(
 			if (child->style.box_sizing == CSS_BOX_SIZING_BORDER)
 				height -= frame;
 		} else if (child->style.height.unit == CSS_UNIT_AUTO && align == CSS_ALIGN_STRETCH) {
+			/* Ratio items with auto cross margins keep their intrinsic height. */
+			if (!child->replaced) {
+				if (child->style.aspect_ratio > 0.0f) {
+					/* An auto margin on either side prevents stretch. */
+					if (child->style.margin[CSS_TOP].unit == CSS_UNIT_AUTO)
+						continue;
+
+					/* The bottom margin has the same ownership of free space. */
+					if (child->style.margin[CSS_BOTTOM].unit == CSS_UNIT_AUTO)
+						continue;
+				}
+			}
+
+			/* Ordinary line stretch remains available when cross sizing is indefinite. */
 			height = line_cross - child->margin[CSS_TOP] - child->margin[CSS_BOTTOM] - frame;
+
+			/* Preserve the ratio calculation's constrained definite cross size. */
+			if (!child->replaced) {
+				if (child->style.aspect_ratio > 0.0f) {
+					/* The shared helper applies cross min/max and box sizing. */
+					ratio_cross = flex_ratio_cross_size(tree, box, child, row);
+					if (ratio_cross >= 0) {
+						height = ratio_cross;
+
+						/* layout_block receives a content-box height below. */
+						if (child->style.box_sizing == CSS_BOX_SIZING_BORDER)
+							height -= frame;
+					}
+				}
+			}
 		} else {
 			continue;
 		}
@@ -1845,11 +1986,18 @@ flex_place_line(
 		align = flex_align_of(box, child);
 		cross_outer = flex_cross_outer(child, row);
 		if (row && align == CSS_ALIGN_STRETCH && child->style.height.unit == CSS_UNIT_AUTO) {
-			frame = child->border[CSS_TOP] + child->padding[CSS_TOP] + child->padding[CSS_BOTTOM] + child->border[CSS_BOTTOM];
-			child->height = line_cross - child->margin[CSS_TOP] - child->margin[CSS_BOTTOM] - frame;
-			if (child->height < 0)
-				child->height = 0;
-			cross_outer = line_cross;
+			/* Ratio items already have their constrained size from cross relayout. */
+			if (child->style.aspect_ratio <= 0.0f || child->replaced) {
+				frame = child->border[CSS_TOP] + child->padding[CSS_TOP] + child->padding[CSS_BOTTOM] + child->border[CSS_BOTTOM];
+				child->height = line_cross - child->margin[CSS_TOP] - child->margin[CSS_BOTTOM] - frame;
+
+				/* Content inside a larger frame cannot have a negative height. */
+				if (child->height < 0)
+					child->height = 0;
+			}
+
+			/* Placement sees the actual cross size, including any cross constraints. */
+			cross_outer = flex_cross_outer(child, row);
 		}
 
 		/* The item's place along the cross axis within the line. */
