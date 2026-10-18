@@ -119,4 +119,4 @@
 2026-10-06 / 新しい session（q780〜q784、ユーザー承認、N=2）: P1 の新しい generation（phase-runner high、`agent/p1` を main 6ac5db98 に揃えた）は q780 → q782、P2 の新しい generation（phase-runner high、worktree p2 を `agent/p2` に戻し main 6ac5db98 に揃えた。`agent/p2-icons` は統合済み）は q784(a) → q781 → q783、T1 の新しい generation（test-runner、Sonnet 5.5 medium、`agent/t1` を main に揃えた）は q784(b)。前の generation は全て終了済み。
 | P3-merge BUG-258 | — | 1859f13f2..207dff477（base cc283689c） | usb-storage.c・usb-storage-media.h・kern/disk.c・plan/bugs/BUG-258・plan/ws132/tests | integrated（2026-10-08、T1-381 待ち） |
 | P1 / 2026-10-18 | phase-runner（Opus 5.5、low、レビューの子なし） | WS245（q1241）→ WS251 p002（q1242） | `/home/awe/zedBSD-worktrees/p1` / `agent/p1-q1241` | q1241 | q1242 | returned（2026-10-18） | 最後 23135a254 → main db594efb5 |
-| P2 / 2026-10-18 | kernel-and-driver-designer | WS256 p001（q1243） | `/home/awe/zedBSD-worktrees/p2` / `agent/p2-ws256` | q1243 | — | running | 基点 main 021d393ed |
+| P2 / 2026-10-18 | kernel-and-driver-designer | WS256 p001（q1243） | `/home/awe/zedBSD-worktrees/p2` / `agent/p2-ws256` | q1243 | — | returned（2026-10-18） | 最後 f1acb25c9 → main fc8e21f8c |

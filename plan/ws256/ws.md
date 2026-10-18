@@ -39,3 +39,13 @@
 - 実機の試験の接続（USB-UART・電源の制御・LAN）。AGENTS.md の「serial の log で判定しない」との関係（UART の login の判定の方法）。
 - 参照の方針: Linux・FreeBSD・OpenSBI・U-Boot の code の扱い（WS245 と同じく手順は参考にして code・comment は写さず、block ごとに Value(s)/Procedure referenced: を書くか）。
 - root の媒体（initrd か SD）、SD・eMMC・GbE・USB・display を後の WS にするか。
+
+## ユーザーの決定（2026-10-18、クリック、2 回目）
+
+5. 起動の確認: 「virt に画面を付ける」。QEMU の virt に ramfb か virtio-gpu を付け、boot-test.sh の画面で判定する（serial の log で判定する例外は作らない）。
+6. 外部の code の参照: 「WS245 と同じ」。手順は参考にし、code・comment・構造は写さず、block ごとに Value(s)/Procedure referenced: を書く。
+
+## 設計（p001）
+
+- [design.md](design.md)（P2、q1243、main fc8e21f8c）、HAL の差分の案 [proposed/hal-riscv64.md](proposed/hal-riscv64.md)（未承認、適用しない）。
+- レビュー 1: [design-review-1.md](design-review-1.md)（blocker 1・major 13・minor 24、未反映）。
