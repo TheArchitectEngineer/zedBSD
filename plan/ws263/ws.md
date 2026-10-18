@@ -3,7 +3,7 @@
 # WS263 riscv32 の virt（QEMU）への移植（framebuffer の console・VFS の段まで）
 
 - ID: ws263、Master: [master.md](../master.md)、Primary Milestone: MG008
-- Status: incomplete（2026-10-18 Q1 作成。2026-10-19 P1 が q1257 で p001・p002 を実施中）
+- Status: incomplete（2026-10-19: p001・p002 cleared、到達点は T1-711 で確かめた。残りは p003 の規約の見直し）
 - 起点（2026-10-18 ユーザー）:「さらに、virt riscv32, virt ppc32, virt ppc64, virt m68k (68030)も追加してほしいです。それぞれWSを作ってほしいです。フレームバッファでコンソールが出てVFSがマウントできないところまででいいです。」
 - 前提（Q1 の調べ）: QEMU の `qemu-system-riscv32 -M virt` がある。共有の LLVM は RISCV の target（riscv32 を含む）を持つ（WS256 p002・p010）。WS256 の riscv64 の HAL（`src/hal/riscv64/`、bsp-virt の ramfb の console、fw_cfg）と QEMU の道具（boot-test.sh の riscv64-virt の mode）を手本・共有の候補にする。Sv32 の MMU、32 bit の SBI の呼び方、`include/hal/arch/riscv32.h` の新規が要る見込み。
 
