@@ -11,8 +11,7 @@
  * Before any engine runs, the driver reads what the fuses and the clock
  * registers say about this particular part: how fast the command streamer
  * timestamp ticks, which subslices and EUs survived fusing, which L3 banks
- * replicated registers can be steered to, and which engines exist.  This is
- * the Linux intel_gt_init_mmio() step.
+ * replicated registers can be steered to, and which engines exist.
  *
  * Gen9 (Skylake and its Gen9.5 successors) reads the same facts from the
  * Gen8 fuse layout: GEN8_FUSE2 and one GEN9_EU_DISABLE register per slice,
@@ -41,10 +40,12 @@ struct i915_mmio;
 #define I915_SSEU_MAX_SUBSLICES		6
 
 /*
- * The engine identifiers (Linux enum intel_engine_id).
+ * The engine identifiers: a block of ids for each class, the instance
+ * added to the class's first id.  The interrupt code looks an engine up by
+ * class and instance through them.
  *
- * The values are Linux's own, because the interrupt code looks an engine up
- * by class and instance through them.
+ * Values referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/gt/intel_engine_types.h (enum intel_engine_id).
  */
 #define I915_RCS0			0
 #define I915_BCS0			1
@@ -52,7 +53,14 @@ struct i915_mmio;
 #define I915_VCS2			10
 #define I915_VECS0			16
 
-/* The engine classes (Linux enum intel_engine_class, the GuC and interrupt ordinals). */
+/*
+ * The engine classes, the ordinals the interrupt registers use.
+ *
+ * Values referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/gt/intel_engine_types.h (RENDER_CLASS,
+ * VIDEO_DECODE_CLASS, VIDEO_ENHANCEMENT_CLASS, COPY_ENGINE_CLASS,
+ * OTHER_CLASS).
+ */
 #define I915_RENDER_CLASS		0
 #define I915_VIDEO_DECODE_CLASS		1
 #define I915_VIDEO_ENHANCEMENT_CLASS	2
@@ -76,8 +84,7 @@ struct i915_mmio;
 /*
  * The slice, subslice and EU layout that survived fusing.
  *
- * It is the subset of Linux's struct sseu_dev_info this driver uses.  It is
- * filled once by the GT information step and only read afterwards; the
+ * It is filled once by the GT information step and only read afterwards; the
  * context images and the workarounds are built from it.
  */
 struct i915_sseu {
@@ -112,8 +119,8 @@ struct i915_sseu {
 /*
  * One engine the fuses left enabled.
  *
- * It is the subset of Linux's struct intel_engine_cs that is known before
- * any submission exists.  It lives inside the GT information for the life of
+ * It holds what is known of the engine before any submission exists.  It
+ * lives inside the GT information for the life of
  * the device; the execution side points at it rather than copying it.
  */
 struct i915_engine_info {
