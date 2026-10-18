@@ -81,6 +81,16 @@ Status: in-progress（2026-10-18 q1256-i01、P2）
 | uefi/include/uefi.h | 著作権の header、全部の型・関数の型の群・GUID の定数の役の comment | — |
 | uefi/transition.S | 著作権の header、「Stage 3」を「the third progress block」に、`ws035-p096` を消した | code の差なし |
 | uefi/README.md | `ws035-p096`・`ws174` を消した | — |
+| sparcv9/ofw.h | 型の役の comment、宣言の間の空行 | — |
+| sparcv9/ofw.c | file-scope 変数の役の comment、`OFW_FAILED` の定数、全部の static 関数の前方宣言、公開の関数を先に。条件の中の `ofw_call`・`ofw_getprop` を外へ（`/chosen` の handle の読みを `ofw_chosen_handle`、virtual の claim を `ofw_claim_virtual`、map を `ofw_map` に分けた、呼び出しの順は同じ）。`?:` の return を if に、`ofw_one_node` の結果の直の return を分けた、各段落の comment | DIFF-CODE（関数の分割）。handoff の host の同値の試験で ofw.c も一緒に一致 |
+| sparcv9/handoff.h | 点検のみ（P3 の WS261 の形、規約に合う） | — |
+| sparcv9/handoff.c | 全部の static 関数の前方宣言、公開の関数を先に。block の中の宣言と初期化子の中の呼び出しを先頭と文へ。カンマ演算子（`cells64`・`same_string`）を文に。条件の中の呼び出し（`property_u32`・`ofw_getprop`・`same_string`・`memory_ranges`・`walk_node`）を外へ（CPU と memory の調べを `discover_cpu`・`discover_memory` に分け、短絡の順は同じ）。Boolean の式の return を if に、`ports[found++]` を文に。各段落・return の comment | DIFF-CODE。host の同値の試験（下）で一致 |
+| sparcv9/stage1.c | file の説明、macro の comment、前方宣言、公開の関数を先に。条件の中の呼び出し（`ofw_bootpath`・`ofw_seek`・`ofw_read`・`get16`・`get32`・`checksum`）を外へ（header の 4 つの検査は同じ message の別々の guard に、`fail` は firmware へ戻って返らない）。`value += *bytes++` を文に | DIFF-CODE。stage1.bin 2997→3141 byte（check-sparcv9-boot.py PASS） |
+| sparcv9/stage2.c | 著作権の header を規約の形に、file の説明、macro・struct・typedef（`kernel_entry_t` を file scope へ）・file-scope 変数の comment、前方宣言、公開の関数を先に。`goto failed` を `stage2_boot()` の早い return に（失敗の message と exit は `sparcv9_stage2_main` に 1 つ）。大きな条件を `elf_header_acceptable`・`segment_acceptable`・`fat_entry_is_kernel`・`read_kernel` の guard に、cluster の鎖の一歩を `fat_follow_chain` に（評価の順は同じ）。`++steps` を条件の外へ、`?:` を if に、`path[length++]` を文に。GCC の maybe-uninitialized（`file.size`、分割で見えなくなった）を避けて `file.size = 0` を先に置いた | DIFF-CODE。stage2.bin 8243→8379 byte（PASS） |
+| sparcv9/stage2-format.h | macro の群の comment | — |
+| sparcv9/stage1-entry.S | 点検のみ | 同じ |
+| sparcv9/stage2-entry.S | file の説明を足した | code の差なし |
+| sparcv9/stage1.ld・stage2.ld | 著作権の header と説明 | — |
 
 ## 結果
 
@@ -103,6 +113,14 @@ Status: in-progress（2026-10-18 q1256-i01、P2）
   （bootx64.c を host で ASan 付きで build し、debug port の OUT は SIGSEGV の handler で飛ばす。125 文字＋改行＋7 文字を書く）。
   直す前の source: ASan の stack-buffer-overflow（`console_ascii` の WRITE of size 2）で exit 1。直した後: 報告なし、134 文字が届いて exit 0。
 
+- 2026-10-19 sparcv9（main 483b5b7ad を取り込んだ後。P3 の WS261 p002 の後の source を基準にした）:
+  `make ZEDBSD_CONFIG=plan/ws035/tests/config-sun4u.mk BUILD=build/p2-ws262/sparcv9-{before,after} bootloader`。前後とも warning 0、
+  `check-sparcv9-boot.py` PASS（stage1 2997→3141、stage2 8243→8379）。比べは stage1/stage2 の object と bin の全部が DIFF-CODE（stage1-entry.o・stage2-entry.o は同じ）。
+  host の同値の試験 [tests/sparc-handoff-run.sh](../tests/sparc-handoff-run.sh) 483b5b7ad build/p2-ws262/sparc2（handoff.c と ofw.c を偽の client interface の
+  乱数の device tree 20000 個で走らせ、handoff の全部の field を印字）: 20000 行の出力が一致（PASS）。成功は 26 回、他は CPU・memory・PCI・serial・IDE の
+  どれかが欠けた木で、各 discover の道を通る（IDE の発見 7460 回）。stage1.c・stage2.c は firmware と disk の I/O が主で host の試験は無い（review で照らした）。
+  sparcv9 の vmunix は前から build できず（WS267）、起動の確かめは T1 への依頼に入れない。
+
 ## x68k の比べ
 
 - `make -k ZEDBSD_CONFIG=plan/ws035/tests/config-x68k.mk BUILD=build/p2-ws262/x68k-after bootloader`: stage2.o は既知の欠けで作れない（前後とも）。
@@ -119,6 +137,23 @@ Status: in-progress（2026-10-18 q1256-i01、P2）
 - `bootloader/tests/payload*.ld` は今の ld.lld で link できない（`/DISCARD/ : { *(*) }` に「discarding .shstrtab section is not allowed」、基準でも同じ）。
   platform/pcat・pc98 の vmunix.mk の `payload32.elf`・`payload64.elf` の規則からしか参照されず、試験の一覧から参照されていなければ削除の候補（Q1 に報告）。
 
+## T1 への依頼（2026-10-19 に Q1 へ送った文面）
+
+- image: P2 の最後の commit を含む main の tree（72ddbf242 以降）で T1 が作る。boot loader の変更だけで kernel・userland は変えていない。
+- 流す試験（`plan/tools/boot-test.sh`、login prompt の PNG）:
+  1. amd64 UEFI（`config/ci/config-amd64.mk` の hdd-image、`BOOT_MODE=uefi-nvme`）: BOOTX64.EFI → login。logo の表示（logo= があれば）と login prompt。
+  2. amd64 の hybrid image を BIOS で（`BOOT_MODE=bios-ide`）: BOOTZBSD.EXE（ELF64）→ login。
+  3. i386 PC/AT（`config/ci/config-pcat.mk`、`BOOT_MODE=bios-ide`）: BOOTZBSD.EXE（ELF32）→ login。
+  4. PC-98（`config/ci/config-pc98.mk`）: T1 に PC-98 の起動の道具があれば login まで。無ければ未実施と返す。
+- 合否: 各 image で login prompt が PNG に出れば PASS。boot loader の段で止まる（UEFI の `A64 ...` の失敗の表示、BIOS の 1 文字の fatal）なら FAIL。
+- 対象外: x68k（stage2 が既知の欠けで build できない）、sparcv9（vmunix が build できない、WS267）、Pi 4（boot loader を持たない）。
+
+## 再開の手順
+
+- 規約の直しは bootloader/ の全部で済み（common・bios・include・pcat・pc98・tests・x68k・uefi・sparcv9）。残りは T1 の結果の判定（Q1）だけ。
+- FAIL が返ったら: 該当の loader の前後の比べ（`compare-build.sh`）と、host の同値の試験（`diff-run.sh`・`sparc-handoff-run.sh`）を見直し、
+  host の試験で覆っていない bootx64.c・stage1.c・stage2.c・x68k/stage2.c の分けた関数を先に疑う。
+
 ## 未実施
 
-- QEMU・実機の起動の確かめ（最後に T1 への依頼の文面を Q1 に送る）。
+- QEMU・実機の起動の確かめ（上の T1 への依頼）。x68k・sparcv9 の起動の確かめ（build できないため）。

@@ -1,3 +1,14 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Links the OpenBoot first stage at the address the firmware loads it to.
+ */
+
 OUTPUT_FORMAT("elf64-sparc")
 OUTPUT_ARCH(sparc:v9)
 ENTRY(_start)

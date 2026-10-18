@@ -12,8 +12,11 @@
 #ifndef BOOTLOADER_SPARCV9_OFW_H
 #define BOOTLOADER_SPARCV9_OFW_H
 
+/* One cell of the client interface's argument array, and its signed view. */
 typedef unsigned long ofw_cell_t;
 typedef long ofw_scell_t;
+
+/* The firmware's client interface entry, called with the argument array. */
 typedef ofw_cell_t (*ofw_client_t)(ofw_cell_t *);
 
 void
@@ -50,6 +53,7 @@ ofw_open(
 int
 ofw_close(
 	ofw_cell_t handle);
+
 long
 ofw_read(
 	ofw_cell_t handle,
