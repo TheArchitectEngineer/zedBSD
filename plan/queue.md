@@ -609,3 +609,4 @@ WS074 の記録の q590・q594〜q598（Codex の browser3）は main の同じ�
 | Queue | 担当 | Phase | 範囲 | 結果 |
 | --- | --- | --- | --- | --- |
 | q1254 / q1254-i01 | P3（phase-runner） | [ws261-p001](ws261/phase001/phase.md) | boot.h の PC-98・RPi の固有の構造体を除き、HAL → kernel は汎用の構造体と名前付きの object に、boot loader → HAL の固有の構造体は HAL の中に。振る舞いは変えない | in-progress |
+| q1253 / q1253-i02 | P1（phase-runner、Opus 5.5 low、子なし、新しい起動） | ws260-p011〜p015 | 同じ範囲の続き。p1 の worktree に残った p011 の途中の未 commit の変更を読んで続ける（2026-10-18 ユーザー「P1は私は止めた覚えがないので、継続していいです」） | in-progress |
