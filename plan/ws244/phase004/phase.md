@@ -2,7 +2,7 @@
 
 # ws244-p004 GT の core の小さい物の書き直し
 
-Status: in-progress（2026-10-18 q1251-i01、2026-10-19 q1260 P1 で範囲の残りを済ませた。cleared は Q1）
+Status: cleared（2026-10-19 Q1 判定: power.c・tlb.c・reset.c・device-info・irq・ppgtt の書き直しと ggtt・memory・dma.h ほかの言及の掃除。前の版との書き込みの列の比べ（pcode 25 場面・reset 28・device-info 25・irq 33782 行・ppgtt 774 行）が一致、tlb は読んで確かめた。build 4 組 warning 0（P1 の報告）。defaults・worker は p005 へ。merge 5d6449f94 以降の 11e405eb7・d518cadf3）（旧: in-progress（2026-10-18 q1251-i01、2026-10-19 q1260 P1 で範囲の残りを済ませた。cleared は Q1））
 
 - 親: [WS244](../ws.md)。範囲: power.c（PCODE）・reset・tlb・device-info・ggtt・ppgtt・memory・irq・dma.h ほかの言及。動作は変えない。
 
