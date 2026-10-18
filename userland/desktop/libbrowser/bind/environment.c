@@ -2789,6 +2789,8 @@ environment_attribute_record(
 				status = ENOMEM;
 				break;
 			}
+
+			/* Keep the unpublished payload alive while each property key is allocated. */
 			roots[4] = &record->cell;
 
 			/* Identify the ordinary attribute mutation. */
@@ -2850,6 +2852,8 @@ environment_attribute_record(
 					observer->records = NULL;
 					break;
 				}
+
+				/* A failed first append must undo this newly established pending ownership. */
 				new_pending = 1;
 			}
 

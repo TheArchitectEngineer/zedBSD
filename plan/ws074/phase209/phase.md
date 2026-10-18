@@ -2,7 +2,7 @@
 
 # ws074-p209: Document FontFaceSet readiness
 
-Status: uncleared（q16 required attributes control/global未達、p253前提待ち）
+Status: in-progress（q17再検証partial、q16 uncleared履歴保持）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -44,4 +44,4 @@ Event ws074-p253-attribute-redesign-from-q16-20261018: [p253](../phase253/phase.
 
 Event ws074-p253-q17-selected-20261018: [p253 q17](../phase253/phase.md)をordinary set/remove attribute records/filter/options/GCの有限partialで選定。本Phaseはそのneeded native outputと全15 controls成立後に新attemptを実行。q16 history/未達は保持し、global1491/static1561は同じcombined final sourceで初めて判定する。q17 exact scope/deadline/順をQueueへ保存、full API/WS/p100/targetは別関門。
 
-Event ws074-q17-preflight-20261018: ordinary attributes・post-font native controls15/15、Chrome新fixture21行一致、DOM35/35を確認。q17 final frozen pairでglobal1491/static1561とstrict固定48の実測へ進む。global未実行のためterminal clearanceは未判定。
+Event ws074-q17-preflight-20261018: ordinary attributes・post-font native controls15/15、Chrome新fixtureのpayload/options/GC出力一致、DOM35/35を確認。q17 final frozen pairでglobal1491/static1561とstrict固定48の実測へ進む。global未実行のためterminal clearanceは未判定。
