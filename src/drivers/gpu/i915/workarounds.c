@@ -70,14 +70,14 @@ static const struct i915_mocs_row i915_gen9_mocs_table[] = {
  * entry carries only a memory type.  The table never changes.
  */
 static const uint32_t i915_tgl_private_ppat[I915_PAT_ENTRIES] = {
-	GEN8_PPAT_WB,
-	GEN8_PPAT_WC,
-	GEN8_PPAT_WT,
-	GEN8_PPAT_UC,
-	GEN8_PPAT_WB,
-	GEN8_PPAT_WB,
-	GEN8_PPAT_WB,
-	GEN8_PPAT_WB
+	I915_GT_GEN8_PPAT_WB,
+	I915_GT_GEN8_PPAT_WC,
+	I915_GT_GEN8_PPAT_WT,
+	I915_GT_GEN8_PPAT_UC,
+	I915_GT_GEN8_PPAT_WB,
+	I915_GT_GEN8_PPAT_WB,
+	I915_GT_GEN8_PPAT_WB,
+	I915_GT_GEN8_PPAT_WB
 };
 
 static void i915_wa_add_entry(struct i915_wa_list *wal, uint32_t reg, uint32_t clr, uint32_t set, uint32_t read_mask, int kind, int is_mcr, const char *name);
@@ -206,16 +206,16 @@ drv_i915_gt_init_workarounds_adlp(
 	i915_wa_14011060649(wal, gt);
 
 	/* Wa_14011059788:tgl,rkl,adl-s,dg1,adl-p */
-	drv_i915_wa_write_or(wal, GEN10_DFR_RATIO_EN_AND_CHICKEN, DFR_DISABLE, 1, "Wa_14011059788");
+	drv_i915_wa_write_or(wal, I915_GT_GEN10_DFR_RATIO_EN_AND_CHICKEN, I915_GT_DFR_DISABLE, 1, "Wa_14011059788");
 
 	/*
-	 * Wa_14015795083.  Linux calls wa_add(wal, GEN7_MISCCPCTL,
-	 * GEN12_DOP_CLOCK_GATE_RENDER_ENABLE, 0, 0, false), whose arguments are
+	 * Wa_14015795083.  Linux calls wa_add(wal, I915_GT_GEN7_MISCCPCTL,
+	 * I915_GT_GEN12_DOP_CLOCK_GATE_RENDER_ENABLE, 0, 0, false), whose arguments are
 	 * (register, clear, set, read mask, masked): it clears the bit, and the
 	 * readback is not verified because firmware may have locked the
 	 * register.
 	 */
-	drv_i915_wa_add_no_verify(wal, GEN7_MISCCPCTL, GEN12_DOP_CLOCK_GATE_RENDER_ENABLE, 0U, 0, "Wa_14015795083");
+	drv_i915_wa_add_no_verify(wal, I915_GT_GEN7_MISCCPCTL, I915_GT_GEN12_DOP_CLOCK_GATE_RENDER_ENABLE, 0U, 0, "Wa_14015795083");
 }
 
 /*
@@ -239,29 +239,29 @@ drv_i915_gt_init_workarounds_gen9(
 
 	/* WaDisableKillLogic:skl,kbl */
 	if (gt->platform == I915_PLATFORM_SKYLAKE || gt->platform == I915_PLATFORM_KABYLAKE)
-		drv_i915_wa_write_or(wal, GAM_ECOCHK, ECOCHK_DIS_TLB, 0, "WaDisableKillLogic");
+		drv_i915_wa_write_or(wal, I915_GT_GAM_ECOCHK, I915_GT_ECOCHK_DIS_TLB, 0, "WaDisableKillLogic");
 
 	/* WaCompressedResourceSamplerPbeMediaNewHashMode:skl,kbl, which matches the display engine. */
-	drv_i915_wa_write_or(wal, MMCD_MISC_CTRL, MMCD_PCLA | MMCD_HOTSPOT_EN, 0, "WaCompressedResourceSamplerPbeMediaNewHashMode");
+	drv_i915_wa_write_or(wal, I915_GT_MMCD_MISC_CTRL, I915_GT_MMCD_PCLA | I915_GT_MMCD_HOTSPOT_EN, 0, "WaCompressedResourceSamplerPbeMediaNewHashMode");
 
 	/* WaDisableHDCInvalidation:skl,kbl,cfl */
-	drv_i915_wa_write_or(wal, GAM_ECOCHK, BDW_DISABLE_HDC_INVALIDATION, 0, "WaDisableHDCInvalidation");
+	drv_i915_wa_write_or(wal, I915_GT_GAM_ECOCHK, I915_GT_BDW_DISABLE_HDC_INVALIDATION, 0, "WaDisableHDCInvalidation");
 
 	/* WaDisableDynamicCreditSharing:kbl, before stepping C0 (revision 2). */
 	if (gt->platform == I915_PLATFORM_KABYLAKE && gt->revision < 2U)
-		drv_i915_wa_write_or(wal, GAMT_CHKN_BIT_REG, GAMT_CHKN_DISABLE_DYNAMIC_CREDIT_SHARING, 0, "WaDisableDynamicCreditSharing");
+		drv_i915_wa_write_or(wal, I915_GT_GAMT_CHKN_BIT_REG, I915_GT_GAMT_CHKN_DISABLE_DYNAMIC_CREDIT_SHARING, 0, "WaDisableDynamicCreditSharing");
 
 	/* WaDisableGafsUnitClkGating:skl,kbl,cfl */
-	drv_i915_wa_write_or(wal, GEN7_UCGCTL4, GEN8_EU_GAUNIT_CLOCK_GATE_DISABLE, 0, "WaDisableGafsUnitClkGating");
+	drv_i915_wa_write_or(wal, I915_GT_GEN7_UCGCTL4, I915_GT_GEN8_EU_GAUNIT_CLOCK_GATE_DISABLE, 0, "WaDisableGafsUnitClkGating");
 
 	/*
 	 * WaInPlaceDecompressionHang: every Kaby Lake, Coffee Lake and Comet
 	 * Lake, and Skylake before stepping H0 (revision 7).
 	 */
 	if (gt->platform != I915_PLATFORM_SKYLAKE) {
-		drv_i915_wa_write_or(wal, GEN9_GAMT_ECO_REG_RW_IA, GAMT_ECO_ENABLE_IN_PLACE_DECOMPRESS, 0, "WaInPlaceDecompressionHang");
+		drv_i915_wa_write_or(wal, I915_GT_GEN9_GAMT_ECO_REG_RW_IA, I915_GT_GAMT_ECO_ENABLE_IN_PLACE_DECOMPRESS, 0, "WaInPlaceDecompressionHang");
 	} else if (gt->revision < 7U) {
-		drv_i915_wa_write_or(wal, GEN9_GAMT_ECO_REG_RW_IA, GAMT_ECO_ENABLE_IN_PLACE_DECOMPRESS, 0, "WaInPlaceDecompressionHang");
+		drv_i915_wa_write_or(wal, I915_GT_GEN9_GAMT_ECO_REG_RW_IA, I915_GT_GAMT_ECO_ENABLE_IN_PLACE_DECOMPRESS, 0, "WaInPlaceDecompressionHang");
 	}
 }
 
@@ -286,15 +286,15 @@ drv_i915_engine_init_workarounds(
 		return;
 
 	/*
-	 * engine_fake_wa_init(): RING_CMD_CCTL names the default MOCS entry the
+	 * engine_fake_wa_init(): I915_GT_RING_CMD_CCTL names the default MOCS entry the
 	 * command streamer uses.  Alder Lake-P has no L3 CCS read, so both
 	 * halves take the uncached index.
 	 */
 	drv_i915_wa_masked_field_set(
 		wal,
-		RING_CMD_CCTL(engine->mmio_base),
-		CMD_CCTL_MOCS_MASK,
-		CMD_CCTL_MOCS_OVERRIDE(mocs_uc_index, mocs_uc_index),
+		I915_GT_RING_CMD_CCTL(engine->mmio_base),
+		I915_GT_CMD_CCTL_MOCS_MASK,
+		I915_GT_CMD_CCTL_MOCS_OVERRIDE(mocs_uc_index, mocs_uc_index),
 		0,
 		"fake: RING_CMD_CCTL MOCS");
 
@@ -308,28 +308,28 @@ drv_i915_engine_init_workarounds(
 		return;
 
 	/* Wa_1606700617 / Wa_22010271021 / Wa_14010826681 */
-	drv_i915_wa_masked_en(wal, GEN9_CS_DEBUG_MODE1, FF_DOP_CLOCK_GATE_DISABLE, 0, "Wa_1606700617");
+	drv_i915_wa_masked_en(wal, I915_GT_GEN9_CS_DEBUG_MODE1, I915_GT_FF_DOP_CLOCK_GATE_DISABLE, 0, "Wa_1606700617");
 
 	/* Wa_1606931601 */
-	drv_i915_wa_masked_en(wal, GEN8_ROW_CHICKEN2, GEN12_DISABLE_EARLY_READ, 1, "Wa_1606931601");
+	drv_i915_wa_masked_en(wal, I915_GT_GEN8_ROW_CHICKEN2, I915_GT_GEN12_DISABLE_EARLY_READ, 1, "Wa_1606931601");
 
 	/* Wa_14010919138 (and the tgl/dg1 aliases) */
-	drv_i915_wa_write_or(wal, GEN7_FF_THREAD_MODE, GEN12_FF_TESSELATION_DOP_GATE_DISABLE, 0, "Wa_14010919138");
+	drv_i915_wa_write_or(wal, I915_GT_GEN7_FF_THREAD_MODE, I915_GT_GEN12_FF_TESSELATION_DOP_GATE_DISABLE, 0, "Wa_14010919138");
 
 	/* Wa_1406941453 */
-	drv_i915_wa_masked_en(wal, GEN10_SAMPLER_MODE, ENABLE_SMALLPL, 1, "Wa_1406941453");
+	drv_i915_wa_masked_en(wal, I915_GT_GEN10_SAMPLER_MODE, I915_GT_ENABLE_SMALLPL, 1, "Wa_1406941453");
 
-	/* Wa_1409804808, which merges into the GEN8_ROW_CHICKEN2 entry above. */
-	drv_i915_wa_masked_en(wal, GEN8_ROW_CHICKEN2, GEN12_PUSH_CONST_DEREF_HOLD_DIS, 1, "Wa_1409804808");
+	/* Wa_1409804808, which merges into the I915_GT_GEN8_ROW_CHICKEN2 entry above. */
+	drv_i915_wa_masked_en(wal, I915_GT_GEN8_ROW_CHICKEN2, I915_GT_GEN12_PUSH_CONST_DEREF_HOLD_DIS, 1, "Wa_1409804808");
 
 	/* Wa_14010229206 */
-	drv_i915_wa_masked_en(wal, GEN9_ROW_CHICKEN4, GEN12_DISABLE_TDL_PUSH, 1, "Wa_14010229206");
+	drv_i915_wa_masked_en(wal, I915_GT_GEN9_ROW_CHICKEN4, I915_GT_GEN12_DISABLE_TDL_PUSH, 1, "Wa_14010229206");
 
 	/* Wa_1607297627 */
 	drv_i915_wa_masked_en(
 		wal,
-		RING_PSMI_CTL(engine->mmio_base),
-		GEN12_WAIT_FOR_EVENT_POWER_DOWN_DISABLE | GEN8_RC_SEMA_IDLE_MSG_DISABLE,
+		I915_GT_RING_PSMI_CTL(engine->mmio_base),
+		I915_GT_GEN12_WAIT_FOR_EVENT_POWER_DOWN_DISABLE | I915_GT_GEN8_RC_SEMA_IDLE_MSG_DISABLE,
 		0,
 		"Wa_1607297627");
 
@@ -337,8 +337,8 @@ drv_i915_engine_init_workarounds(
 	if (graphics_ver >= 9) {
 		drv_i915_wa_masked_en(
 			wal,
-			GEN7_FF_SLICE_CS_CHICKEN1,
-			GEN9_FFSC_PERCTX_PREEMPT_CTRL,
+			I915_GT_GEN7_FF_SLICE_CS_CHICKEN1,
+			I915_GT_GEN9_FFSC_PERCTX_PREEMPT_CTRL,
 			0,
 			"perctx preempt ctrl");
 	}
@@ -348,7 +348,7 @@ drv_i915_engine_init_workarounds(
  * Builds the context workaround list of one engine.
  *
  * Linux intel_engine_init_ctx_wa(): the workarounds applied inside every
- * context by MI_LOAD_REGISTER_IMM.
+ * context by I915_CMD_MI_LOAD_REGISTER_IMM.
  */
 void
 drv_i915_engine_init_ctx_wa(
@@ -364,14 +364,14 @@ drv_i915_engine_init_ctx_wa(
 	 * gen12_ctx_gt_fake_wa_init() applies to every engine.  Its
 	 * fakewa_disable_nestedbb_mode half needs IP version 12.55 or later
 	 * (Alder Lake-P is 12.10, so it is not taken); gen12_ctx_gt_mocs_init()
-	 * touches BLIT_CCTL, and only for the copy engine.
+	 * touches I915_GT_BLIT_CCTL, and only for the copy engine.
 	 */
 	if (graphics_ver >= 12 && engine->class == I915_COPY_ENGINE_CLASS) {
 		drv_i915_wa_write_clr_set(
 			wal,
-			BLIT_CCTL(engine->mmio_base),
-			BLIT_CCTL_MASK,
-			BLIT_CCTL_MOCS(mocs_uc_index, mocs_uc_index),
+			I915_GT_BLIT_CCTL(engine->mmio_base),
+			I915_GT_BLIT_CCTL_MASK,
+			I915_GT_BLIT_CCTL_MOCS(mocs_uc_index, mocs_uc_index),
 			0,
 			"gen12_ctx_gt_mocs_init: BLIT_CCTL");
 	}
@@ -381,14 +381,14 @@ drv_i915_engine_init_ctx_wa(
 		return;
 
 	/* Wa_1409142259 and the other nine aliases */
-	drv_i915_wa_masked_en(wal, GEN11_COMMON_SLICE_CHICKEN3, GEN12_DISABLE_CPS_AWARE_COLOR_PIPE, 0, "Wa_1409142259");
+	drv_i915_wa_masked_en(wal, I915_GT_GEN11_COMMON_SLICE_CHICKEN3, I915_GT_GEN12_DISABLE_CPS_AWARE_COLOR_PIPE, 0, "Wa_1409142259");
 
 	/* WaDisableGPGPUMidThreadPreemption:gen12 */
 	drv_i915_wa_masked_field_set(
 		wal,
-		GEN8_CS_CHICKEN1,
-		GEN9_PREEMPT_GPGPU_LEVEL_MASK,
-		GEN9_PREEMPT_GPGPU_THREAD_GROUP_LEVEL,
+		I915_GT_GEN8_CS_CHICKEN1,
+		I915_GT_GEN9_PREEMPT_GPGPU_LEVEL_MASK,
+		I915_GT_GEN9_PREEMPT_GPGPU_THREAD_GROUP_LEVEL,
 		0,
 		"WaDisableGPGPUMidThreadPreemption");
 
@@ -400,17 +400,17 @@ drv_i915_engine_init_ctx_wa(
 	 */
 	drv_i915_wa_add_no_verify(
 		wal,
-		GEN12_FF_MODE2,
+		I915_GT_GEN12_FF_MODE2,
 		0xffffffffU,
-		FF_MODE2_TDS_TIMER_128 | FF_MODE2_GS_TIMER_224,
+		I915_GT_FF_MODE2_TDS_TIMER_128 | I915_GT_FF_MODE2_GS_TIMER_224,
 		0,
 		"Wa_16011163337 (FF_MODE2)");
 
 	/* Wa_1806527549, which Alder Lake-P takes because it is not DG1. */
-	drv_i915_wa_masked_en(wal, HIZ_CHICKEN, HZ_DEPTH_TEST_LE_GE_OPT_DISABLE, 0, "Wa_1806527549");
+	drv_i915_wa_masked_en(wal, I915_GT_HIZ_CHICKEN, I915_GT_HZ_DEPTH_TEST_LE_GE_OPT_DISABLE, 0, "Wa_1806527549");
 
 	/* Wa_1606376872, which Alder Lake-P takes because it is not DG1. */
-	drv_i915_wa_masked_en(wal, COMMON_SLICE_CHICKEN4, DISABLE_TDC_LOAD_BALANCING_CALC, 0, "Wa_1606376872");
+	drv_i915_wa_masked_en(wal, I915_GT_COMMON_SLICE_CHICKEN4, I915_GT_DISABLE_TDC_LOAD_BALANCING_CALC, 0, "Wa_1606376872");
 }
 
 /*
@@ -434,7 +434,7 @@ drv_i915_engine_init_whitelist(
 
 	/* allow_read_ctx_timestamp(): a non-render engine whitelists only that. */
 	if (engine->class != I915_RENDER_CLASS) {
-		i915_whitelist_reg_ext(wal, RING_CTX_TIMESTAMP(engine->mmio_base), RING_FORCE_TO_NONPRIV_ACCESS_RD, "ctx timestamp RD");
+		i915_whitelist_reg_ext(wal, I915_GT_RING_CTX_TIMESTAMP(engine->mmio_base), I915_GT_RING_FORCE_TO_NONPRIV_ACCESS_RD, "ctx timestamp RD");
 		return;
 	}
 
@@ -444,18 +444,18 @@ drv_i915_engine_init_whitelist(
 	 */
 	i915_whitelist_reg_ext(
 		wal,
-		PS_INVOCATION_COUNT,
-		RING_FORCE_TO_NONPRIV_ACCESS_RD | RING_FORCE_TO_NONPRIV_RANGE_4,
+		I915_GT_PS_INVOCATION_COUNT,
+		I915_GT_RING_FORCE_TO_NONPRIV_ACCESS_RD | I915_GT_RING_FORCE_TO_NONPRIV_RANGE_4,
 		"Wa_1408556865 (PS_INVOCATION_COUNT x4)");
 
 	/* Wa_1808121037 / Wa_1508744258 */
-	i915_whitelist_reg_ext(wal, GEN7_COMMON_SLICE_CHICKEN1, 0U, "Wa_1508744258");
+	i915_whitelist_reg_ext(wal, I915_GT_GEN7_COMMON_SLICE_CHICKEN1, 0U, "Wa_1508744258");
 
 	/* Wa_1806527549 */
-	i915_whitelist_reg_ext(wal, HIZ_CHICKEN, 0U, "Wa_1806527549 (whitelist)");
+	i915_whitelist_reg_ext(wal, I915_GT_HIZ_CHICKEN, 0U, "Wa_1806527549 (whitelist)");
 
 	/* Required by the recommended tuning setting, not by a workaround. */
-	i915_whitelist_reg_ext(wal, GEN11_COMMON_SLICE_CHICKEN3, 0U, "tuning");
+	i915_whitelist_reg_ext(wal, I915_GT_GEN11_COMMON_SLICE_CHICKEN3, 0U, "tuning");
 }
 
 /*
@@ -577,8 +577,8 @@ drv_i915_wa_list_apply(
  * Programs the register whitelist of one engine.
  *
  * Linux intel_engine_apply_whitelist(): each entry fills one
- * RING_FORCE_TO_NONPRIV slot, and every remaining slot is pointed at
- * RING_NOPID so no garbage stays whitelisted.
+ * I915_GT_RING_FORCE_TO_NONPRIV slot, and every remaining slot is pointed at
+ * I915_GT_RING_NOPID so no garbage stays whitelisted.
  */
 void
 drv_i915_engine_apply_whitelist(
@@ -593,18 +593,18 @@ drv_i915_engine_apply_whitelist(
 		return;
 
 	/* Writes each whitelisted address with its access flags into a slot. */
-	for (slot = 0U; slot < wal->count && slot < RING_MAX_NONPRIV_SLOTS; slot++) {
+	for (slot = 0U; slot < wal->count && slot < I915_GT_RING_MAX_NONPRIV_SLOTS; slot++) {
 		drv_i915_write32(
 			mmio,
-			RING_FORCE_TO_NONPRIV(engine->mmio_base, slot),
+			I915_GT_RING_FORCE_TO_NONPRIV(engine->mmio_base, slot),
 			wal->list[slot].reg | wal->list[slot].set);
 	}
 
 	/* Points the slots that are left at a harmless register. */
 	for (;
-	     slot < RING_MAX_NONPRIV_SLOTS;
+	     slot < I915_GT_RING_MAX_NONPRIV_SLOTS;
 	     slot++)
-		drv_i915_write32(mmio, RING_FORCE_TO_NONPRIV(engine->mmio_base, slot), RING_NOPID(engine->mmio_base));
+		drv_i915_write32(mmio, I915_GT_RING_FORCE_TO_NONPRIV(engine->mmio_base, slot), I915_GT_RING_NOPID(engine->mmio_base));
 }
 
 /*
@@ -690,9 +690,9 @@ drv_i915_get_mocs_settings(
 	 * unused-entries index 1 (I915_MOCS_PTE), one table per engine.
 	 */
 	if (graphics_ver == 9) {
-		table->n_entries = GEN9_NUM_MOCS_ENTRIES;
-		table->uc_index = GEN9_MOCS_UC_INDEX;
-		table->unused_entries_index = GEN9_MOCS_UNUSED_ENTRIES_INDEX;
+		table->n_entries = I915_GT_GEN9_NUM_MOCS_ENTRIES;
+		table->uc_index = I915_GT_GEN9_MOCS_UC_INDEX;
+		table->unused_entries_index = I915_GT_GEN9_MOCS_UNUSED_ENTRIES_INDEX;
 		table->engine_mocs = 1;
 		row_count = (unsigned)(sizeof(i915_gen9_mocs_table) / sizeof(i915_gen9_mocs_table[0]));
 		i915_mocs_fill(table, i915_gen9_mocs_table, row_count);
@@ -706,9 +706,9 @@ drv_i915_get_mocs_settings(
 	}
 
 	/* Takes the size and the two special indices of the Gen12 table. */
-	table->n_entries = GEN9_NUM_MOCS_ENTRIES;
-	table->uc_index = GEN12_MOCS_UC_INDEX;
-	table->unused_entries_index = GEN12_MOCS_UNUSED_ENTRIES_INDEX;
+	table->n_entries = I915_GT_GEN9_NUM_MOCS_ENTRIES;
+	table->uc_index = I915_GT_GEN12_MOCS_UC_INDEX;
+	table->unused_entries_index = I915_GT_GEN12_MOCS_UNUSED_ENTRIES_INDEX;
 
 	/* Fills the table from the Gen12 rows. */
 	row_count = (unsigned)(sizeof(i915_gen12_mocs_table) / sizeof(i915_gen12_mocs_table[0]));
@@ -744,7 +744,7 @@ drv_i915_mocs_init(
 	/* Writes every control value into the global MOCS registers; Gen9 has per-engine tables instead. */
 	if (table->engine_mocs == 0) {
 		for (index = 0U; index < table->n_entries; index++) {
-			drv_i915_write32(mmio, GEN12_GLOBAL_MOCS(index), table->control[index]);
+			drv_i915_write32(mmio, I915_GT_GEN12_GLOBAL_MOCS(index), table->control[index]);
 			global_count++;
 		}
 	}
@@ -785,7 +785,7 @@ drv_i915_init_l3cc_table(
 	/* Writes each pair of entries into one LNCFCMOCS register. */
 	for (index = 0U; index < (table->n_entries + 1U) / 2U; index++) {
 		pair = (uint32_t)table->l3cc[2U * index] | ((uint32_t)table->l3cc[2U * index + 1U] << 16);
-		drv_i915_write32(mmio, GEN9_LNCFCMOCS(index), pair);
+		drv_i915_write32(mmio, I915_GT_GEN9_LNCFCMOCS(index), pair);
 		write_count++;
 	}
 
@@ -823,16 +823,16 @@ drv_i915_mocs_init_engine(
 	/* Picks the engine's table (mocs_offset()). */
 	switch (engine->id) {
 	case I915_RCS0:
-		base = GEN9_RCS0_MOCS0;
+		base = I915_GT_GEN9_RCS0_MOCS0;
 		break;
 	case I915_BCS0:
-		base = GEN9_BCS0_MOCS0;
+		base = I915_GT_GEN9_BCS0_MOCS0;
 		break;
 	case I915_VCS0:
-		base = GEN9_VCS0_MOCS0;
+		base = I915_GT_GEN9_VCS0_MOCS0;
 		break;
 	case I915_VECS0:
-		base = GEN9_VECS0_MOCS0;
+		base = I915_GT_GEN9_VECS0_MOCS0;
 		break;
 	default:
 		/* An engine without a Gen9 table is left alone. */
@@ -866,20 +866,20 @@ drv_i915_bdw_setup_private_ppat(
 	uint32_t high;
 
 	/* Entries 0 to 3. */
-	low = (GEN8_PPAT_WB | GEN8_PPAT_LLC) << 0;
-	low |= (GEN8_PPAT_WC | GEN8_PPAT_LLCELLC) << 8;
-	low |= (GEN8_PPAT_WB | GEN8_PPAT_ELLC_OVERRIDE) << 16;
-	low |= GEN8_PPAT_UC << 24;
+	low = (I915_GT_GEN8_PPAT_WB | I915_GT_GEN8_PPAT_LLC) << 0;
+	low |= (I915_GT_GEN8_PPAT_WC | I915_GT_GEN8_PPAT_LLCELLC) << 8;
+	low |= (I915_GT_GEN8_PPAT_WB | I915_GT_GEN8_PPAT_ELLC_OVERRIDE) << 16;
+	low |= I915_GT_GEN8_PPAT_UC << 24;
 
 	/* Entries 4 to 7. */
-	high = (GEN8_PPAT_WB | GEN8_PPAT_LLCELLC | GEN8_PPAT_AGE(0)) << 0;
-	high |= (GEN8_PPAT_WB | GEN8_PPAT_LLCELLC | GEN8_PPAT_AGE(1)) << 8;
-	high |= (GEN8_PPAT_WB | GEN8_PPAT_LLCELLC | GEN8_PPAT_AGE(2)) << 16;
-	high |= (GEN8_PPAT_WB | GEN8_PPAT_LLCELLC | GEN8_PPAT_AGE(3)) << 24;
+	high = (I915_GT_GEN8_PPAT_WB | I915_GT_GEN8_PPAT_LLCELLC | I915_GT_GEN8_PPAT_AGE(0)) << 0;
+	high |= (I915_GT_GEN8_PPAT_WB | I915_GT_GEN8_PPAT_LLCELLC | I915_GT_GEN8_PPAT_AGE(1)) << 8;
+	high |= (I915_GT_GEN8_PPAT_WB | I915_GT_GEN8_PPAT_LLCELLC | I915_GT_GEN8_PPAT_AGE(2)) << 16;
+	high |= (I915_GT_GEN8_PPAT_WB | I915_GT_GEN8_PPAT_LLCELLC | I915_GT_GEN8_PPAT_AGE(3)) << 24;
 
 	/* Writes both halves. */
-	drv_i915_write32(mmio, GEN8_PRIVATE_PAT_LO, low);
-	drv_i915_write32(mmio, GEN8_PRIVATE_PAT_HI, high);
+	drv_i915_write32(mmio, I915_GT_GEN8_PRIVATE_PAT_LO, low);
+	drv_i915_write32(mmio, I915_GT_GEN8_PRIVATE_PAT_HI, high);
 
 	/* Reports that every entry was written. */
 	if (writes != NULL)
@@ -901,7 +901,7 @@ drv_i915_tgl_setup_private_ppat(
 
 	/* Writes the memory type of every PAT index. */
 	for (index = 0U; index < I915_PAT_ENTRIES; index++)
-		drv_i915_write32(mmio, GEN12_PAT_INDEX(index), i915_tgl_private_ppat[index]);
+		drv_i915_write32(mmio, I915_GT_GEN12_PAT_INDEX(index), i915_tgl_private_ppat[index]);
 
 	/* Reports that every entry was written. */
 	if (writes != NULL)
@@ -959,7 +959,7 @@ drv_i915_gt_init_tables(
 
 	/*
 	 * A Gen9 GT reads RP1 from the capabilities (it has no
-	 * GEN10_FREQ_INFO_REC) and keeps its frequency fixed in its first
+	 * I915_GT_GEN10_FREQ_INFO_REC) and keeps its frequency fixed in its first
 	 * version.
 	 */
 	if (graphics_ver == 9)
@@ -1058,7 +1058,7 @@ drv_i915_engine_apply_resume_wa(
 	 * resumed.  The slot count is added even for an empty whitelist, which
 	 * writes nothing.
 	 */
-	gt_init->whitelist_writes += RING_MAX_NONPRIV_SLOTS;
+	gt_init->whitelist_writes += I915_GT_RING_MAX_NONPRIV_SLOTS;
 	gt_init->engines_resumed++;
 }
 
@@ -1177,9 +1177,9 @@ i915_icl_wa_init_mcr(
 	/* Adds the steering to the GT list. */
 	drv_i915_wa_write_clr_set(
 		wal,
-		GEN8_MCR_SELECTOR,
-		GEN11_MCR_SLICE_MASK | GEN11_MCR_SUBSLICE_MASK,
-		GEN11_MCR_SLICE(0) | GEN11_MCR_SUBSLICE(subslice),
+		I915_GT_GEN8_MCR_SELECTOR,
+		I915_GT_GEN11_MCR_SLICE_MASK | I915_GT_GEN11_MCR_SUBSLICE_MASK,
+		I915_GT_GEN11_MCR_SLICE(0) | I915_GT_GEN11_MCR_SUBSLICE(subslice),
 		0,
 		"MCR steering (icl_wa_init_mcr)");
 }
@@ -1209,7 +1209,7 @@ i915_wa_14011060649(
 		if ((engine->instance % 2) != 0)
 			continue;
 
-		drv_i915_wa_write_or(wal, VDBOX_CGCTL3F10(engine->mmio_base), IECPUNIT_CLKGATE_DIS, 0, "Wa_14011060649");
+		drv_i915_wa_write_or(wal, I915_GT_VDBOX_CGCTL3F10(engine->mmio_base), I915_GT_IECPUNIT_CLKGATE_DIS, 0, "Wa_14011060649");
 	}
 }
 
@@ -1289,9 +1289,9 @@ i915_gen9_wa_init_mcr(
 	/* Adds the steering to the GT list. */
 	drv_i915_wa_write_clr_set(
 		wal,
-		GEN8_MCR_SELECTOR,
-		GEN8_MCR_SLICE_MASK | GEN8_MCR_SUBSLICE_MASK,
-		GEN8_MCR_SLICE(slice) | GEN8_MCR_SUBSLICE(subslice),
+		I915_GT_GEN8_MCR_SELECTOR,
+		I915_GT_GEN8_MCR_SLICE_MASK | I915_GT_GEN8_MCR_SUBSLICE_MASK,
+		I915_GT_GEN8_MCR_SLICE(slice) | I915_GT_GEN8_MCR_SUBSLICE(subslice),
 		0,
 		"MCR steering (gen9_wa_init_mcr)");
 }
@@ -1300,7 +1300,7 @@ i915_gen9_wa_init_mcr(
  * Builds the workaround list of one Gen9 engine (rcs_engine_wa_init() and
  * xcs_engine_wa_init() for graphics version 9).
  *
- * Gen9 has no RING_CMD_CCTL default MOCS (engine_fake_wa_init() is Gen12+).
+ * Gen9 has no I915_GT_RING_CMD_CCTL default MOCS (engine_fake_wa_init() is Gen12+).
  */
 static void
 i915_gen9_engine_workarounds(
@@ -1322,29 +1322,29 @@ i915_gen9_engine_workarounds(
 			return;
 
 		/* Sets the semaphore wait poll of a Kaby Lake non-render engine, per the workaround above. */
-		drv_i915_wa_write_clr_set(wal, RING_SEMA_WAIT_POLL(engine->mmio_base), 0xffffffffU, 1U, 0, "WaKBLVECSSemaphoreWaitPoll");
+		drv_i915_wa_write_clr_set(wal, I915_GT_RING_SEMA_WAIT_POLL(engine->mmio_base), 0xffffffffU, 1U, 0, "WaKBLVECSSemaphoreWaitPoll");
 		return;
 	}
 
 	/* Per-context preemption control (graphics version 9 and later). */
-	drv_i915_wa_masked_en(wal, GEN7_FF_SLICE_CS_CHICKEN1, GEN9_FFSC_PERCTX_PREEMPT_CTRL, 0, "perctx preempt ctrl");
+	drv_i915_wa_masked_en(wal, I915_GT_GEN7_FF_SLICE_CS_CHICKEN1, I915_GT_GEN9_FFSC_PERCTX_PREEMPT_CTRL, 0, "perctx preempt ctrl");
 
 	/* WaEnableGapsTsvCreditFix:skl,kbl,cfl */
-	drv_i915_wa_write_or(wal, GEN8_GARBCNTL, GEN9_GAPS_TSV_CREDIT_DISABLE, 0, "WaEnableGapsTsvCreditFix");
+	drv_i915_wa_write_or(wal, I915_GT_GEN8_GARBCNTL, I915_GT_GEN9_GAPS_TSV_CREDIT_DISABLE, 0, "WaEnableGapsTsvCreditFix");
 
 	/* WaContextSwitchWithConcurrentTLBInvalidate:skl,kbl,cfl */
-	drv_i915_wa_masked_en(wal, GEN9_CSFE_CHICKEN1_RCS, GEN9_PREEMPT_GPGPU_SYNC_SWITCH_DISABLE, 0, "WaContextSwitchWithConcurrentTLBInvalidate");
+	drv_i915_wa_masked_en(wal, I915_GT_GEN9_CSFE_CHICKEN1_RCS, I915_GT_GEN9_PREEMPT_GPGPU_SYNC_SWITCH_DISABLE, 0, "WaContextSwitchWithConcurrentTLBInvalidate");
 
 	/* WaEnableLbsSlaRetryTimerDecrement:skl,kbl,cfl */
-	drv_i915_wa_write_or(wal, BDW_SCRATCH1, GEN9_LBS_SLA_RETRY_TIMER_DECREMENT_ENABLE, 1, "WaEnableLbsSlaRetryTimerDecrement");
+	drv_i915_wa_write_or(wal, I915_GT_BDW_SCRATCH1, I915_GT_GEN9_LBS_SLA_RETRY_TIMER_DECREMENT_ENABLE, 1, "WaEnableLbsSlaRetryTimerDecrement");
 
 	/* WaOCLCoherentLineFlush:skl,kbl,cfl */
-	drv_i915_wa_write_or(wal, GEN8_L3SQCREG4, GEN8_LQSC_FLUSH_COHERENT_LINES, 1, "WaOCLCoherentLineFlush");
+	drv_i915_wa_write_or(wal, I915_GT_GEN8_L3SQCREG4, I915_GT_GEN8_LQSC_FLUSH_COHERENT_LINES, 1, "WaOCLCoherentLineFlush");
 
 	/* Disables the L3 atomics, which can hang the GPU unrecoverably. */
-	drv_i915_wa_write_clr_set(wal, GEN9_SCRATCH_LNCF1, GEN9_LNCF_NONIA_COHERENT_ATOMICS_ENABLE, 0U, 0, "L3 atomics off (LNCF1)");
-	drv_i915_wa_write_clr_set(wal, GEN8_L3SQCREG4, GEN8_LQSQ_NONIA_COHERENT_ATOMICS_ENABLE, 0U, 1, "L3 atomics off (L3SQCREG4)");
-	drv_i915_wa_write_clr_set(wal, BDW_SCRATCH1, EVICTION_PERF_FIX_ENABLE, 0U, 1, "L3 atomics off (SCRATCH1)");
+	drv_i915_wa_write_clr_set(wal, I915_GT_GEN9_SCRATCH_LNCF1, I915_GT_GEN9_LNCF_NONIA_COHERENT_ATOMICS_ENABLE, 0U, 0, "L3 atomics off (LNCF1)");
+	drv_i915_wa_write_clr_set(wal, I915_GT_GEN8_L3SQCREG4, I915_GT_GEN8_LQSQ_NONIA_COHERENT_ATOMICS_ENABLE, 0U, 1, "L3 atomics off (L3SQCREG4)");
+	drv_i915_wa_write_clr_set(wal, I915_GT_BDW_SCRATCH1, I915_GT_EVICTION_PERF_FIX_ENABLE, 0U, 1, "L3 atomics off (SCRATCH1)");
 }
 
 /*
@@ -1368,36 +1368,36 @@ i915_gen9_ctx_workarounds(
 		return;
 
 	/* WaCompressedResourceSamplerPbeMediaNewHashMode:skl,kbl, which matches the display engine. */
-	drv_i915_wa_masked_en(wal, GEN9_COMMON_SLICE_CHICKEN2, GEN9_PBE_COMPRESSED_HASH_SELECTION, 0, "WaCompressedResourceSamplerPbeMediaNewHashMode");
-	drv_i915_wa_masked_en(wal, GEN9_HALF_SLICE_CHICKEN7, GEN9_SAMPLER_HASH_COMPRESSED_READ_ADDR, 1, "WaCompressedResourceSamplerPbeMediaNewHashMode");
+	drv_i915_wa_masked_en(wal, I915_GT_GEN9_COMMON_SLICE_CHICKEN2, I915_GT_GEN9_PBE_COMPRESSED_HASH_SELECTION, 0, "WaCompressedResourceSamplerPbeMediaNewHashMode");
+	drv_i915_wa_masked_en(wal, I915_GT_GEN9_HALF_SLICE_CHICKEN7, I915_GT_GEN9_SAMPLER_HASH_COMPRESSED_READ_ADDR, 1, "WaCompressedResourceSamplerPbeMediaNewHashMode");
 
 	/* WaClearFlowControlGpgpuContextSave, WaDisablePartialInstShootdown */
-	drv_i915_wa_masked_en(wal, GEN8_ROW_CHICKEN, FLOW_CONTROL_ENABLE | PARTIAL_INSTRUCTION_SHOOTDOWN_DISABLE, 1, "WaDisablePartialInstShootdown");
+	drv_i915_wa_masked_en(wal, I915_GT_GEN8_ROW_CHICKEN, I915_GT_FLOW_CONTROL_ENABLE | I915_GT_PARTIAL_INSTRUCTION_SHOOTDOWN_DISABLE, 1, "WaDisablePartialInstShootdown");
 
 	/* WaEnableYV12BugFixInHalfSliceChicken7, WaEnableSamplerGPGPUPreemptionSupport */
-	drv_i915_wa_masked_en(wal, GEN9_HALF_SLICE_CHICKEN7, GEN9_ENABLE_YV12_BUGFIX | GEN9_ENABLE_GPGPU_PREEMPTION, 1, "WaEnableSamplerGPGPUPreemptionSupport");
+	drv_i915_wa_masked_en(wal, I915_GT_GEN9_HALF_SLICE_CHICKEN7, I915_GT_GEN9_ENABLE_YV12_BUGFIX | I915_GT_GEN9_ENABLE_GPGPU_PREEMPTION, 1, "WaEnableSamplerGPGPUPreemptionSupport");
 
 	/* Wa4x4STCOptimizationDisable, WaDisablePartialResolveInVc */
-	drv_i915_wa_masked_en(wal, CACHE_MODE_1, GEN8_4x4_STC_OPTIMIZATION_DISABLE | GEN9_PARTIAL_RESOLVE_IN_VC_DISABLE, 0, "WaDisablePartialResolveInVc");
+	drv_i915_wa_masked_en(wal, I915_GT_CACHE_MODE_1, I915_GT_GEN8_4x4_STC_OPTIMIZATION_DISABLE | I915_GT_GEN9_PARTIAL_RESOLVE_IN_VC_DISABLE, 0, "WaDisablePartialResolveInVc");
 
 	/* WaCcsTlbPrefetchDisable */
-	drv_i915_wa_masked_field_set(wal, GEN9_HALF_SLICE_CHICKEN5, GEN9_CCS_TLB_PREFETCH_ENABLE, 0U, 1, "WaCcsTlbPrefetchDisable");
+	drv_i915_wa_masked_field_set(wal, I915_GT_GEN9_HALF_SLICE_CHICKEN5, I915_GT_GEN9_CCS_TLB_PREFETCH_ENABLE, 0U, 1, "WaCcsTlbPrefetchDisable");
 
 	/* WaForceContextSaveRestoreNonCoherent, then WaForceEnableNonCoherent on the same register. */
-	drv_i915_wa_masked_en(wal, HDC_CHICKEN0, HDC_FORCE_CONTEXT_SAVE_RESTORE_NON_COHERENT | HDC_FORCE_CSR_NON_COHERENT_OVR_DISABLE, 0, "WaForceContextSaveRestoreNonCoherent");
-	drv_i915_wa_masked_en(wal, HDC_CHICKEN0, HDC_FORCE_NON_COHERENT, 0, "WaForceEnableNonCoherent");
+	drv_i915_wa_masked_en(wal, I915_GT_HDC_CHICKEN0, I915_GT_HDC_FORCE_CONTEXT_SAVE_RESTORE_NON_COHERENT | I915_GT_HDC_FORCE_CSR_NON_COHERENT_OVR_DISABLE, 0, "WaForceContextSaveRestoreNonCoherent");
+	drv_i915_wa_masked_en(wal, I915_GT_HDC_CHICKEN0, I915_GT_HDC_FORCE_NON_COHERENT, 0, "WaForceEnableNonCoherent");
 
 	/* WaDisableSamplerPowerBypassForSOPingPong:skl,kbl,cfl */
-	drv_i915_wa_masked_en(wal, GEN8_HALF_SLICE_CHICKEN3, GEN8_SAMPLER_POWER_BYPASS_DIS, 1, "WaDisableSamplerPowerBypassForSOPingPong");
+	drv_i915_wa_masked_en(wal, I915_GT_GEN8_HALF_SLICE_CHICKEN3, I915_GT_GEN8_SAMPLER_POWER_BYPASS_DIS, 1, "WaDisableSamplerPowerBypassForSOPingPong");
 
 	/* WaDisableSTUnitPowerOptimization */
-	drv_i915_wa_masked_en(wal, HALF_SLICE_CHICKEN2, GEN8_ST_PO_DISABLE, 1, "WaDisableSTUnitPowerOptimization");
+	drv_i915_wa_masked_en(wal, I915_GT_HALF_SLICE_CHICKEN2, I915_GT_GEN8_ST_PO_DISABLE, 1, "WaDisableSTUnitPowerOptimization");
 
 	/* WaDisable3DMidCmdPreemption */
-	drv_i915_wa_masked_field_set(wal, GEN8_CS_CHICKEN1, GEN9_PREEMPT_3D_OBJECT_LEVEL, 0U, 0, "WaDisable3DMidCmdPreemption");
+	drv_i915_wa_masked_field_set(wal, I915_GT_GEN8_CS_CHICKEN1, I915_GT_GEN9_PREEMPT_3D_OBJECT_LEVEL, 0U, 0, "WaDisable3DMidCmdPreemption");
 
 	/* WaDisableGPGPUMidCmdPreemption */
-	drv_i915_wa_masked_field_set(wal, GEN8_CS_CHICKEN1, GEN9_PREEMPT_GPGPU_LEVEL_MASK, GEN9_PREEMPT_GPGPU_COMMAND_LEVEL, 0, "WaDisableGPGPUMidCmdPreemption");
+	drv_i915_wa_masked_field_set(wal, I915_GT_GEN8_CS_CHICKEN1, I915_GT_GEN9_PREEMPT_GPGPU_LEVEL_MASK, I915_GT_GEN9_PREEMPT_GPGPU_COMMAND_LEVEL, 0, "WaDisableGPGPUMidCmdPreemption");
 
 	/* Skylake has nothing more. */
 	if (gt->platform == I915_PLATFORM_SKYLAKE)
@@ -1408,13 +1408,13 @@ i915_gen9_ctx_workarounds(
 	 * and Kaby Lake from stepping C0 (revision 2) on.
 	 */
 	if (gt->platform != I915_PLATFORM_KABYLAKE) {
-		drv_i915_wa_masked_en(wal, GEN9_COMMON_SLICE_CHICKEN2, GEN8_SBE_DISABLE_REPLAY_BUF_OPTIMIZATION, 0, "WaToEnableHwFixForPushConstHWBug");
+		drv_i915_wa_masked_en(wal, I915_GT_GEN9_COMMON_SLICE_CHICKEN2, I915_GT_GEN8_SBE_DISABLE_REPLAY_BUF_OPTIMIZATION, 0, "WaToEnableHwFixForPushConstHWBug");
 	} else if (gt->revision >= 2U) {
-		drv_i915_wa_masked_en(wal, GEN9_COMMON_SLICE_CHICKEN2, GEN8_SBE_DISABLE_REPLAY_BUF_OPTIMIZATION, 0, "WaToEnableHwFixForPushConstHWBug");
+		drv_i915_wa_masked_en(wal, I915_GT_GEN9_COMMON_SLICE_CHICKEN2, I915_GT_GEN8_SBE_DISABLE_REPLAY_BUF_OPTIMIZATION, 0, "WaToEnableHwFixForPushConstHWBug");
 	}
 
 	/* WaDisableSbeCacheDispatchPortSharing:kbl,cfl */
-	drv_i915_wa_masked_en(wal, GEN8_HALF_SLICE_CHICKEN1, GEN7_SBE_SS_CACHE_DISPATCH_PORT_SHARING_DISABLE, 1, "WaDisableSbeCacheDispatchPortSharing");
+	drv_i915_wa_masked_en(wal, I915_GT_GEN8_HALF_SLICE_CHICKEN1, I915_GT_GEN7_SBE_SS_CACHE_DISPATCH_PORT_SHARING_DISABLE, 1, "WaDisableSbeCacheDispatchPortSharing");
 }
 
 /*
@@ -1433,27 +1433,27 @@ i915_gen9_whitelist(
 	/* Comet Lake lets every non-render engine read its context timestamp. */
 	if (engine->class != I915_RENDER_CLASS) {
 		if (gt->platform == I915_PLATFORM_COMETLAKE)
-			i915_whitelist_reg_ext(wal, RING_CTX_TIMESTAMP(engine->mmio_base), RING_FORCE_TO_NONPRIV_ACCESS_RD, "ctx timestamp RD");
+			i915_whitelist_reg_ext(wal, I915_GT_RING_CTX_TIMESTAMP(engine->mmio_base), I915_GT_RING_FORCE_TO_NONPRIV_ACCESS_RD, "ctx timestamp RD");
 		return;
 	}
 
 	/* gen9_whitelist_build(): WaVFEStateAfterPipeControlwithMediaStateClear and the preemption, HDC and push-constant chickens. */
-	i915_whitelist_reg_ext(wal, GEN9_CTX_PREEMPT_REG, 0U, "WaVFEStateAfterPipeControlwithMediaStateClear");
-	i915_whitelist_reg_ext(wal, GEN8_CS_CHICKEN1, 0U, "WaEnablePreemptionGranularityControlByUMD");
-	i915_whitelist_reg_ext(wal, GEN8_HDC_CHICKEN1, 0U, "WaAllowUMDToModifyHDCChicken1");
-	i915_whitelist_reg_ext(wal, GEN9_COMMON_SLICE_CHICKEN2, 0U, "WaSendPushConstantsFromMMIO");
+	i915_whitelist_reg_ext(wal, I915_GT_GEN9_CTX_PREEMPT_REG, 0U, "WaVFEStateAfterPipeControlwithMediaStateClear");
+	i915_whitelist_reg_ext(wal, I915_GT_GEN8_CS_CHICKEN1, 0U, "WaEnablePreemptionGranularityControlByUMD");
+	i915_whitelist_reg_ext(wal, I915_GT_GEN8_HDC_CHICKEN1, 0U, "WaAllowUMDToModifyHDCChicken1");
+	i915_whitelist_reg_ext(wal, I915_GT_GEN9_COMMON_SLICE_CHICKEN2, 0U, "WaSendPushConstantsFromMMIO");
 
 	/* Skylake and Kaby Lake: WaDisableLSQCROPERFforOCL. */
 	if (gt->platform == I915_PLATFORM_SKYLAKE || gt->platform == I915_PLATFORM_KABYLAKE) {
-		i915_whitelist_reg_ext(wal, GEN8_L3SQCREG4, 0U, "WaDisableLSQCROPERFforOCL");
+		i915_whitelist_reg_ext(wal, I915_GT_GEN8_L3SQCREG4, 0U, "WaDisableLSQCROPERFforOCL");
 		return;
 	}
 
 	/* Coffee Lake and Comet Lake: the four depth and invocation counters. */
 	i915_whitelist_reg_ext(
 		wal,
-		PS_INVOCATION_COUNT,
-		RING_FORCE_TO_NONPRIV_ACCESS_RD | RING_FORCE_TO_NONPRIV_RANGE_4,
+		I915_GT_PS_INVOCATION_COUNT,
+		I915_GT_RING_FORCE_TO_NONPRIV_ACCESS_RD | I915_GT_RING_FORCE_TO_NONPRIV_RANGE_4,
 		"WaAllowPMDepthAndInvocationCountAccessFromUMD");
 }
 
@@ -1469,14 +1469,14 @@ i915_gen9_gtt_write_workarounds(
 	uint32_t value;
 
 	/* WaIncreaseDefaultTLBEntries:skl,kbl,cfl */
-	drv_i915_write32(mmio, GEN8_L3_LRA_1_GPGPU, GEN9_L3_LRA_1_GPGPU_DEFAULT_VALUE_SKL);
+	drv_i915_write32(mmio, I915_GT_GEN8_L3_LRA_1_GPGPU, I915_GT_GEN9_L3_LRA_1_GPGPU_DEFAULT_VALUE_SKL);
 
 	/* Lets the page walker honour the IPS bit of a PDE. */
-	value = drv_i915_read32(mmio, GEN8_GAMW_ECO_DEV_RW_IA);
-	drv_i915_write32(mmio, GEN8_GAMW_ECO_DEV_RW_IA, value | GAMW_ECO_ENABLE_64K_IPS_FIELD);
+	value = drv_i915_read32(mmio, I915_GT_GEN8_GAMW_ECO_DEV_RW_IA);
+	drv_i915_write32(mmio, I915_GT_GEN8_GAMW_ECO_DEV_RW_IA, value | I915_GT_GAMW_ECO_ENABLE_64K_IPS_FIELD);
 
 	/* WaGttCachingOffByDefault */
-	drv_i915_write32(mmio, HSW_GTT_CACHE_EN, GTT_CACHE_EN_ALL);
+	drv_i915_write32(mmio, I915_GT_HSW_GTT_CACHE_EN, I915_GT_GTT_CACHE_EN_ALL);
 }
 
 /*

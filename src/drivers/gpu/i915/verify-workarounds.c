@@ -165,7 +165,7 @@ drv_i915_wa_list_srm(
 	}
 
 	/* Stores each readable register into its slot of the scratch page. */
-	command = MI_STORE_REGISTER_MEM_GEN8 | MI_SRM_LRM_GLOBAL_GTT;
+	command = I915_CMD_MI_STORE_REGISTER_MEM_GEN8 | I915_CMD_MI_SRM_LRM_GLOBAL_GTT;
 	for (index = 0U; index < wal->count; index++) {
 		offset = wal->list[index].reg;
 

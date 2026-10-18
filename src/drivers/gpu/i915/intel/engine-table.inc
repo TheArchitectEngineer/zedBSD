@@ -43,10 +43,10 @@
  * { id, class, instance, register base, name }.
  */
 
-	/* RENDER_RING_BASE */
+	/* I915_GT_RENDER_RING_BASE */
 	{ I915_RCS0, I915_RENDER_CLASS, 0, 0x02000U, "rcs0" },
 
-	/* BLT_RING_BASE */
+	/* I915_GT_BLT_RING_BASE */
 	{ I915_BCS0, I915_COPY_ENGINE_CLASS, 0, 0x22000U, "bcs0" },
 
 	/* GEN11_BSD_RING_BASE */

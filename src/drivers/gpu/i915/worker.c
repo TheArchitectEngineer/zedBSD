@@ -1770,12 +1770,12 @@ i915_worker_emit(
 		return rq->error;
 
 	/* Stores seqno - 1 in the timeline page: the request has started. */
-	*cs++ = MI_STORE_DWORD_IMM_GEN4 | MI_USE_GGTT;
+	*cs++ = I915_CMD_MI_STORE_DWORD_IMM_GEN4 | I915_CMD_MI_USE_GGTT;
 	*cs++ = rq->hwsp_ggtt;
 	*cs++ = 0U;
 	*cs++ = rq->seqno - 1U;
-	*cs++ = MI_NOOP;
-	*cs++ = MI_ARB_CHECK;
+	*cs++ = I915_CMD_MI_NOOP;
+	*cs++ = I915_CMD_MI_ARB_CHECK;
 	drv_i915_ring_advance(rq, cs);
 
 	/* A marker (a job with no batch) is the breadcrumbs alone. */
@@ -1788,12 +1788,12 @@ i915_worker_emit(
 		return rq->error;
 
 	/* Starts the non-secure batch in the context's address space with arbitration on around it. */
-	*cs++ = MI_ARB_ON_OFF | MI_ARB_ENABLE;
-	*cs++ = MI_BATCH_BUFFER_START_GEN8 | MI_BATCH_NON_SECURE_I965;
+	*cs++ = I915_CMD_MI_ARB_ON_OFF | I915_CMD_MI_ARB_ENABLE;
+	*cs++ = I915_CMD_MI_BATCH_BUFFER_START_GEN8 | I915_CMD_MI_BATCH_NON_SECURE_I965;
 	*cs++ = (uint32_t)batch_va;
 	*cs++ = (uint32_t)(batch_va >> 32);
-	*cs++ = MI_ARB_ON_OFF;
-	*cs++ = MI_NOOP;
+	*cs++ = I915_CMD_MI_ARB_ON_OFF;
+	*cs++ = I915_CMD_MI_NOOP;
 	drv_i915_ring_advance(rq, cs);
 
 	/* Succeeded: the request's commands are in the ring. */

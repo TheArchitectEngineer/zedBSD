@@ -929,7 +929,7 @@ drv_i915_gfx_mocs_uncached(
  * that hold state or read textures are invalidated after them.
  *
  * A Gen9 batch selects the pipeline with anv's Gen9 mask,
- * programs CACHE_MODE_1 as anv does once a context, has a 19-dword
+ * programs I915_GT_CACHE_MODE_1 as anv does once a context, has a 19-dword
  * STATE_BASE_ADDRESS, invalidates the vertex fetch cache the way the SKL
  * PRM asks (see i915_state_vf_invalidate()) and has no depth bounds.
  */
@@ -974,16 +974,16 @@ drv_i915_gfx_emit_context_setup(
 
 	/* Flushes and stalls before the pipeline is switched to 3D. */
 	drv_i915_batch_pipe_control(batch,
-				    PIPE_CONTROL_CS_STALL |
-				    PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
-				    PIPE_CONTROL_DEPTH_CACHE_FLUSH |
-				    PIPE_CONTROL_DC_FLUSH_ENABLE |
-				    PIPE_CONTROL_FLUSH_ENABLE);
+				    I915_CMD_PIPE_CONTROL_CS_STALL |
+				    I915_CMD_PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
+				    I915_CMD_PIPE_CONTROL_DEPTH_CACHE_FLUSH |
+				    I915_CMD_PIPE_CONTROL_DC_FLUSH_ENABLE |
+				    I915_CMD_PIPE_CONTROL_FLUSH_ENABLE);
 	drv_i915_batch_emit(batch, select);
 
-	/* Programs CACHE_MODE_1 on Gen9, as anv does after its first switch to 3D. */
+	/* Programs I915_GT_CACHE_MODE_1 on Gen9, as anv does after its first switch to 3D. */
 	if (gen9 != 0) {
-		drv_i915_batch_emit(batch, MI_LOAD_REGISTER_IMM(1));
+		drv_i915_batch_emit(batch, I915_CMD_MI_LOAD_REGISTER_IMM(1));
 		drv_i915_batch_emit(batch, GEN9_REG_CACHE_MODE_1);
 		drv_i915_batch_emit(batch, GEN9_CACHE_MODE_1_VALUE);
 	}
@@ -1030,12 +1030,12 @@ drv_i915_gfx_emit_context_setup(
 	 * write goes to the slot's scratch.
 	 */
 	i915_state_vf_invalidate(batch,
-				 PIPE_CONTROL_CS_STALL |
-				 PIPE_CONTROL_STATE_CACHE_INVALIDATE |
-				 PIPE_CONTROL_CONST_CACHE_INVALIDATE |
-				 PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE |
-				 PIPE_CONTROL_INSTRUCTION_CACHE_INVALIDATE |
-				 PIPE_CONTROL_VF_CACHE_INVALIDATE,
+				 I915_CMD_PIPE_CONTROL_CS_STALL |
+				 I915_CMD_PIPE_CONTROL_STATE_CACHE_INVALIDATE |
+				 I915_CMD_PIPE_CONTROL_CONST_CACHE_INVALIDATE |
+				 I915_CMD_PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE |
+				 I915_CMD_PIPE_CONTROL_INSTRUCTION_CACHE_INVALIDATE |
+				 I915_CMD_PIPE_CONTROL_VF_CACHE_INVALIDATE,
 				 state_va + I915_GFX_SCRATCH);
 
 	/* Clears the state anv clears once per context. */
@@ -2227,7 +2227,7 @@ drv_i915_gfx_emit_draw(
 
 	/* Syncs the pixel pipeline before the primitive. */
 	drv_i915_batch_pipe_control(batch,
-				    PIPE_CONTROL_CS_STALL |
+				    I915_CMD_PIPE_CONTROL_CS_STALL |
 				    PIPE_CONTROL_STALL_AT_SCOREBOARD |
 				    PIPE_CONTROL_DEPTH_STALL_ENABLE);
 
@@ -2251,15 +2251,15 @@ drv_i915_gfx_emit_draw(
 
 	/* Flushes what the primitive wrote. */
 	drv_i915_batch_pipe_control(batch,
-				    PIPE_CONTROL_CS_STALL |
-				    PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
-				    PIPE_CONTROL_DEPTH_CACHE_FLUSH |
-				    PIPE_CONTROL_DC_FLUSH_ENABLE |
-				    PIPE_CONTROL_FLUSH_ENABLE);
+				    I915_CMD_PIPE_CONTROL_CS_STALL |
+				    I915_CMD_PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
+				    I915_CMD_PIPE_CONTROL_DEPTH_CACHE_FLUSH |
+				    I915_CMD_PIPE_CONTROL_DC_FLUSH_ENABLE |
+				    I915_CMD_PIPE_CONTROL_FLUSH_ENABLE);
 }
 
 /*
- * Ends a batch: MI_BATCH_BUFFER_END, and one MI_NOOP that keeps the batch
+ * Ends a batch: I915_CMD_MI_BATCH_BUFFER_END, and one I915_CMD_MI_NOOP that keeps the batch
  * a whole number of quadwords.
  */
 void
@@ -2267,8 +2267,8 @@ drv_i915_gfx_emit_batch_end(
 	struct i915_gfx_batch *batch)
 {
 	/* Ends the batch. */
-	drv_i915_batch_emit(batch, MI_BATCH_BUFFER_END);
-	drv_i915_batch_emit(batch, MI_NOOP);
+	drv_i915_batch_emit(batch, I915_CMD_MI_BATCH_BUFFER_END);
+	drv_i915_batch_emit(batch, I915_CMD_MI_NOOP);
 }
 
 /* Translates a VkFormat to its genxml SURFACE_FORMAT; ENOTSUP for any other format. */
@@ -3863,7 +3863,7 @@ i915_state_vf_invalidate(
 	drv_i915_batch_pipe_control(batch, 0U);
 
 	/* The invalidation, writing an immediate zero to the post-sync address. */
-	drv_i915_batch_emit(batch, GFX_OP_PIPE_CONTROL(6));
+	drv_i915_batch_emit(batch, I915_CMD_GFX_OP_PIPE_CONTROL(6));
 	drv_i915_batch_emit(batch, flags | GEN9_PIPE_CONTROL_WRITE_IMMEDIATE);
 	drv_i915_batch_emit(batch, (uint32_t)post_sync_va);
 	drv_i915_batch_emit(batch, (uint32_t)(post_sync_va >> 32));
@@ -3887,8 +3887,8 @@ i915_state_depth_tail(
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_CLEAR_PARAMS, GEN12_3DSTATE_CLEAR_PARAMS_DWORDS);
 
 	/* Makes the post-sync write anv makes after the depth state (Wa_1408224581, Wa_14014097488, Wa_14016712196). */
-	drv_i915_batch_emit(batch, GFX_OP_PIPE_CONTROL(6));
-	drv_i915_batch_emit(batch, PIPE_CONTROL_QW_WRITE);
+	drv_i915_batch_emit(batch, I915_CMD_GFX_OP_PIPE_CONTROL(6));
+	drv_i915_batch_emit(batch, I915_CMD_PIPE_CONTROL_QW_WRITE);
 	drv_i915_batch_emit(batch, (uint32_t)scratch_va);
 	drv_i915_batch_emit(batch, (uint32_t)(scratch_va >> 32));
 	drv_i915_batch_emit(batch, 0U);

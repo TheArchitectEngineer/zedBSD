@@ -46,11 +46,11 @@
 
 /* The display interrupt summary control and the master control's display bits. */
 #define GEN11_DISPLAY_INT_CTL		0x44200U
-#define GEN8_DE_PCH_IRQ			(1U << 23)
-#define GEN8_DE_MISC_IRQ		(1U << 22)
+#define I915_GT_GEN8_DE_PCH_IRQ			(1U << 23)
+#define I915_GT_GEN8_DE_MISC_IRQ		(1U << 22)
 #define GEN11_DE_HPD_IRQ		(1U << 21)
-#define GEN8_DE_PORT_IRQ		(1U << 20)
-#define GEN8_DE_PIPE_IRQ(pipe)		(1U << (16U + (unsigned)(pipe)))
+#define I915_GT_GEN8_DE_PORT_IRQ		(1U << 20)
+#define I915_GT_GEN8_DE_PIPE_IRQ(pipe)		(1U << (16U + (unsigned)(pipe)))
 #define GEN11_DISPLAY_IRQ_ENABLE	(1U << 31)
 
 /* The PSR interrupt registers of a transcoder. */
@@ -58,17 +58,17 @@
 #define TRANS_PSR_IIR(t)		(0x60818U + 0x1000U * (unsigned)(t))
 
 /* The interrupt registers of a pipe. */
-#define GEN8_DE_PIPE_IMR(p)		(0x44404U + 0x10U * (unsigned)(p))
-#define GEN8_DE_PIPE_IIR(p)		(0x44408U + 0x10U * (unsigned)(p))
-#define GEN8_DE_PIPE_IER(p)		(0x4440cU + 0x10U * (unsigned)(p))
+#define I915_GT_GEN8_DE_PIPE_IMR(p)		(0x44404U + 0x10U * (unsigned)(p))
+#define I915_GT_GEN8_DE_PIPE_IIR(p)		(0x44408U + 0x10U * (unsigned)(p))
+#define I915_GT_GEN8_DE_PIPE_IER(p)		(0x4440cU + 0x10U * (unsigned)(p))
 
 /* The port, misc and Type-C hotplug interrupt registers. */
-#define GEN8_DE_PORT_IMR		0x44444U
-#define GEN8_DE_PORT_IIR		0x44448U
-#define GEN8_DE_PORT_IER		0x4444cU
-#define GEN8_DE_MISC_IMR		0x44464U
-#define GEN8_DE_MISC_IIR		0x44468U
-#define GEN8_DE_MISC_IER		0x4446cU
+#define I915_GT_GEN8_DE_PORT_IMR		0x44444U
+#define I915_GT_GEN8_DE_PORT_IIR		0x44448U
+#define I915_GT_GEN8_DE_PORT_IER		0x4444cU
+#define I915_GT_GEN8_DE_MISC_IMR		0x44464U
+#define I915_GT_GEN8_DE_MISC_IIR		0x44468U
+#define I915_GT_GEN8_DE_MISC_IER		0x4446cU
 #define GEN11_DE_HPD_IMR		0x44474U
 #define GEN11_DE_HPD_IIR		0x44478U
 #define GEN11_DE_HPD_IER		0x4447cU
@@ -440,12 +440,12 @@ drv_i915_gen11_display_irq_reset(
 		if (!powered)
 			continue;
 
-		drv_i915_gen3_irq_reset(d->irq, GEN8_DE_PIPE_IMR(pipe), GEN8_DE_PIPE_IIR(pipe), GEN8_DE_PIPE_IER(pipe));
+		drv_i915_gen3_irq_reset(d->irq, I915_GT_GEN8_DE_PIPE_IMR(pipe), I915_GT_GEN8_DE_PIPE_IIR(pipe), I915_GT_GEN8_DE_PIPE_IER(pipe));
 	}
 
 	/* Resets the port and misc sources. */
-	drv_i915_gen3_irq_reset(d->irq, GEN8_DE_PORT_IMR, GEN8_DE_PORT_IIR, GEN8_DE_PORT_IER);
-	drv_i915_gen3_irq_reset(d->irq, GEN8_DE_MISC_IMR, GEN8_DE_MISC_IIR, GEN8_DE_MISC_IER);
+	drv_i915_gen3_irq_reset(d->irq, I915_GT_GEN8_DE_PORT_IMR, I915_GT_GEN8_DE_PORT_IIR, I915_GT_GEN8_DE_PORT_IER);
+	drv_i915_gen3_irq_reset(d->irq, I915_GT_GEN8_DE_MISC_IMR, I915_GT_GEN8_DE_MISC_IIR, I915_GT_GEN8_DE_MISC_IER);
 
 	/* Display version below 14: the GEN11 hotplug block, not PICA. */
 	drv_i915_gen3_irq_reset(d->irq, GEN11_DE_HPD_IMR, GEN11_DE_HPD_IIR, GEN11_DE_HPD_IER);
@@ -541,7 +541,7 @@ drv_i915_gen8_irq_power_well_post_enable(
 			continue;
 
 		/* GEN8_IRQ_INIT_NDX(uncore, DE_PIPE, pipe, de_irq_mask[pipe], ~de_irq_mask[pipe] | extra_ier) */
-		drv_i915_gen3_irq_init(d->irq, GEN8_DE_PIPE_IMR(pipe), d->de_irq_mask[pipe], GEN8_DE_PIPE_IER(pipe), ~d->de_irq_mask[pipe] | extra_ier, GEN8_DE_PIPE_IIR(pipe));
+		drv_i915_gen3_irq_init(d->irq, I915_GT_GEN8_DE_PIPE_IMR(pipe), d->de_irq_mask[pipe], I915_GT_GEN8_DE_PIPE_IER(pipe), ~d->de_irq_mask[pipe] | extra_ier, I915_GT_GEN8_DE_PIPE_IIR(pipe));
 		d->vbl->post_imr[pipe] = d->de_irq_mask[pipe];
 		d->vbl->post_ier[pipe] = ~d->de_irq_mask[pipe] | extra_ier;
 
@@ -602,7 +602,7 @@ drv_i915_gen8_irq_power_well_pre_disable(
 		closing |= 1U << pipe;
 
 		/* GEN8_IRQ_RESET_NDX(uncore, DE_PIPE, pipe) */
-		drv_i915_gen3_irq_reset(d->irq, GEN8_DE_PIPE_IMR(pipe), GEN8_DE_PIPE_IIR(pipe), GEN8_DE_PIPE_IER(pipe));
+		drv_i915_gen3_irq_reset(d->irq, I915_GT_GEN8_DE_PIPE_IMR(pipe), I915_GT_GEN8_DE_PIPE_IIR(pipe), I915_GT_GEN8_DE_PIPE_IER(pipe));
 	}
 
 	spin_unlock_irqrestore(&d->vbl->lock, flags);
@@ -1122,12 +1122,12 @@ i915_gen8_de_irq_postinstall(
 		/* A pipe whose well is off is programmed by the well's post-enable. */
 		powered = i915_pipe_power_on(d, pipe);
 		if (powered)
-			drv_i915_gen3_irq_init(d->irq, GEN8_DE_PIPE_IMR(pipe), d->de_irq_mask[pipe], GEN8_DE_PIPE_IER(pipe), de_pipe_enables, GEN8_DE_PIPE_IIR(pipe));
+			drv_i915_gen3_irq_init(d->irq, I915_GT_GEN8_DE_PIPE_IMR(pipe), d->de_irq_mask[pipe], I915_GT_GEN8_DE_PIPE_IER(pipe), de_pipe_enables, I915_GT_GEN8_DE_PIPE_IIR(pipe));
 	}
 
 	/* Programs the port and misc sources. */
-	drv_i915_gen3_irq_init(d->irq, GEN8_DE_PORT_IMR, ~de_port_masked, GEN8_DE_PORT_IER, de_port_enables, GEN8_DE_PORT_IIR);
-	drv_i915_gen3_irq_init(d->irq, GEN8_DE_MISC_IMR, ~de_misc_masked, GEN8_DE_MISC_IER, de_misc_masked, GEN8_DE_MISC_IIR);
+	drv_i915_gen3_irq_init(d->irq, I915_GT_GEN8_DE_PORT_IMR, ~de_port_masked, I915_GT_GEN8_DE_PORT_IER, de_port_enables, I915_GT_GEN8_DE_PORT_IIR);
+	drv_i915_gen3_irq_init(d->irq, I915_GT_GEN8_DE_MISC_IMR, ~de_misc_masked, I915_GT_GEN8_DE_MISC_IER, de_misc_masked, I915_GT_GEN8_DE_MISC_IIR);
 
 	/* Display versions 11 to 13: the Type-C and Thunderbolt hotplug sources, all enabled, none unmasked. */
 	if (d->display_ver >= 11 && d->display_ver <= 13) {
@@ -1154,10 +1154,10 @@ i915_gen8_de_irq_handler(
 	unsigned pipe;
 
 	/* Acknowledges the misc sources; an empty IIR means the summary lied. */
-	if ((master_ctl & GEN8_DE_MISC_IRQ) != 0U) {
-		iir = drv_i915_read32(d->m, GEN8_DE_MISC_IIR);
+	if ((master_ctl & I915_GT_GEN8_DE_MISC_IRQ) != 0U) {
+		iir = drv_i915_read32(d->m, I915_GT_GEN8_DE_MISC_IIR);
 		if (iir != 0U) {
-			drv_i915_write32(d->m, GEN8_DE_MISC_IIR, iir);
+			drv_i915_write32(d->m, I915_GT_GEN8_DE_MISC_IIR, iir);
 			d->de_misc_acks++;
 		} else {
 			d->de_lied_count++;
@@ -1180,10 +1180,10 @@ i915_gen8_de_irq_handler(
 	}
 
 	/* Acknowledges the port sources. */
-	if ((master_ctl & GEN8_DE_PORT_IRQ) != 0U) {
-		iir = drv_i915_read32(d->m, GEN8_DE_PORT_IIR);
+	if ((master_ctl & I915_GT_GEN8_DE_PORT_IRQ) != 0U) {
+		iir = drv_i915_read32(d->m, I915_GT_GEN8_DE_PORT_IIR);
 		if (iir != 0U) {
-			drv_i915_write32(d->m, GEN8_DE_PORT_IIR, iir);
+			drv_i915_write32(d->m, I915_GT_GEN8_DE_PORT_IIR, iir);
 			d->de_port_acks++;
 		} else {
 			d->de_lied_count++;
@@ -1194,7 +1194,7 @@ i915_gen8_de_irq_handler(
 	for (pipe = 0U; pipe < I915_IRQ_MAX_PIPES; pipe++) {
 		if ((d->pipe_mask & (1U << pipe)) == 0U)
 			continue;
-		if ((master_ctl & GEN8_DE_PIPE_IRQ(pipe)) == 0U)
+		if ((master_ctl & I915_GT_GEN8_DE_PIPE_IRQ(pipe)) == 0U)
 			continue;
 
 		i915_gen8_de_pipe_irq_handler(d, pipe);
@@ -1205,7 +1205,7 @@ i915_gen8_de_irq_handler(
 	 * south display IIR is read and acknowledged directly, and handed to
 	 * the hotplug (hpd.c).
 	 */
-	if (d->pch != NULL && d->pch->type >= I915_PCH_ICP && (master_ctl & GEN8_DE_PCH_IRQ) != 0U) {
+	if (d->pch != NULL && d->pch->type >= I915_PCH_ICP && (master_ctl & I915_GT_GEN8_DE_PCH_IRQ) != 0U) {
 		iir = drv_i915_read32(d->m, SDEIIR);
 		if (iir != 0U) {
 			drv_i915_write32(d->m, SDEIIR, iir);
@@ -1245,7 +1245,7 @@ i915_gen8_de_pipe_irq_handler(
 	}
 
 	/* Reads the pipe's sources; an empty IIR means the summary lied. */
-	iir = drv_i915_read32(d->m, GEN8_DE_PIPE_IIR(pipe));
+	iir = drv_i915_read32(d->m, I915_GT_GEN8_DE_PIPE_IIR(pipe));
 	if (iir == 0U) {
 		d->de_lied_count++;
 		(void)__atomic_sub_fetch(&d->pipe_inflight[pipe], 1U, __ATOMIC_SEQ_CST);
@@ -1253,7 +1253,7 @@ i915_gen8_de_pipe_irq_handler(
 	}
 
 	/* Acknowledges them. */
-	drv_i915_write32(d->m, GEN8_DE_PIPE_IIR(pipe), iir);
+	drv_i915_write32(d->m, I915_GT_GEN8_DE_PIPE_IIR(pipe), iir);
 	d->de_pipe_iir_acks[pipe]++;
 	d->last_de_pipe_iir[pipe] = iir;
 
@@ -1329,8 +1329,8 @@ i915_bdw_update_pipe_irq(
 	/* Writes the register only when the kept mask changed. */
 	if (new_val != d->de_irq_mask[pipe]) {
 		d->de_irq_mask[pipe] = new_val;
-		drv_i915_write32(d->m, GEN8_DE_PIPE_IMR(pipe), d->de_irq_mask[pipe]);
-		drv_i915_posting_read32(d->m, GEN8_DE_PIPE_IMR(pipe));
+		drv_i915_write32(d->m, I915_GT_GEN8_DE_PIPE_IMR(pipe), d->de_irq_mask[pipe]);
+		drv_i915_posting_read32(d->m, I915_GT_GEN8_DE_PIPE_IMR(pipe));
 	}
 }
 

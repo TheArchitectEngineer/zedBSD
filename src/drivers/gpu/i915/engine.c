@@ -139,8 +139,8 @@ drv_i915_engine_release(
 /*
  * Stops an engine's command streamer (intel_engine_stop_cs()).
  *
- * Sets STOP_RING, stops the prefetcher as well (Wa_22011802037, Gen11 to
- * before 12.70), and waits for MODE_IDLE.  MODE_IDLE sometimes stays clear on
+ * Sets I915_GT_STOP_RING, stops the prefetcher as well (Wa_22011802037, Gen11 to
+ * before 12.70), and waits for I915_GT_MODE_IDLE.  I915_GT_MODE_IDLE sometimes stays clear on
  * an empty ring, so only a ring that still holds work is a timeout.  Returns
  * 0, EINVAL, EIO when the time base failed, or ETIMEDOUT.
  */
@@ -161,17 +161,17 @@ drv_i915_engine_stop_cs(
 
 	/* Names the engine's MI_MODE register. */
 	base = ge->info->mmio_base;
-	mode = RING_MI_MODE(base);
+	mode = I915_GT_RING_MI_MODE(base);
 
 	/* Asks the ring to stop. */
-	drv_i915_write32(mmio, mode, I915_MASKED_ENABLE(STOP_RING));
+	drv_i915_write32(mmio, mode, I915_MASKED_ENABLE(I915_GT_STOP_RING));
 
 	/* Stops the prefetcher too, so the streamer is really halted before a reset; Gen9 has no such stop. */
 	if (ge->info->graphics_ver != 9)
-		drv_i915_write32(mmio, RING_MODE_GEN7(base), I915_MASKED_ENABLE(GEN12_GFX_PREFETCH_DISABLE));
+		drv_i915_write32(mmio, I915_GT_RING_MODE_GEN7(base), I915_MASKED_ENABLE(I915_GT_GEN12_GFX_PREFETCH_DISABLE));
 
-	/* Waits for MODE_IDLE (__intel_wait_for_register_fw(mode, MODE_IDLE, 1000 us, stop timeout)). */
-	error = drv_i915_wait_reg(mmio, mode, MODE_IDLE, MODE_IDLE, I915_STOP_CS_FAST_US, I915_STOP_CS_TIMEOUT_MS, NULL);
+	/* Waits for I915_GT_MODE_IDLE (__intel_wait_for_register_fw(mode, I915_GT_MODE_IDLE, 1000 us, stop timeout)). */
+	error = drv_i915_wait_reg(mmio, mode, I915_GT_MODE_IDLE, I915_GT_MODE_IDLE, I915_STOP_CS_FAST_US, I915_STOP_CS_TIMEOUT_MS, NULL);
 	drv_i915_posting_read32(mmio, mode);
 
 	/* A failed time base says nothing about the hardware. */
@@ -180,8 +180,8 @@ drv_i915_engine_stop_cs(
 
 	/* A timeout counts only when the ring still holds work. */
 	if (error != 0) {
-		head = drv_i915_read32(mmio, RING_HEAD(base)) & HEAD_ADDR;
-		tail = drv_i915_read32(mmio, RING_TAIL(base)) & TAIL_ADDR;
+		head = drv_i915_read32(mmio, I915_GT_RING_HEAD(base)) & I915_GT_HEAD_ADDR;
+		tail = drv_i915_read32(mmio, I915_GT_RING_TAIL(base)) & I915_GT_TAIL_ADDR;
 		kern_logf("i915: %s stop_cs: MODE_IDLE timeout, head=%04x tail=%04x\n",
 		    ge->info->name,
 		    head,
@@ -227,7 +227,7 @@ drv_i915_engine_wait_for_pending_mi_fw(
 
 	/* Reads which forcewakes are pending (__cs_pending_mi_force_wakes()). */
 	value = drv_i915_read32(mmio, reg);
-	pending = (value & (value >> 16) & MSG_IDLE_FW_MASK) >> MSG_IDLE_FW_SHIFT;
+	pending = (value & (value >> 16) & I915_GT_MSG_IDLE_FW_MASK) >> I915_GT_MSG_IDLE_FW_SHIFT;
 	ge->mi_fw_pending = pending;
 	if (pending == 0U)
 		return;
@@ -236,7 +236,7 @@ drv_i915_engine_wait_for_pending_mi_fw(
 	(void)drv_i915_udelay(1U);
 
 	/* Waits for GPM to complete the pending forcewakes (__gpm_wait_for_fw_complete()). */
-	error = drv_i915_wait_reg(mmio, GEN9_PWRGT_DOMAIN_STATUS, pending, pending, I915_MI_FW_COMPLETE_US, 0U, NULL);
+	error = drv_i915_wait_reg(mmio, I915_GT_GEN9_PWRGT_DOMAIN_STATUS, pending, pending, I915_MI_FW_COMPLETE_US, 0U, NULL);
 	if (error != 0) {
 		kern_logf("i915: %s: pending forcewake 0x%x did not complete\n",
 		    ge->info->name,
@@ -289,17 +289,17 @@ drv_i915_engine_dump(
 
 	/* Reads the ring registers in the order the report prints them. */
 	base = ge->info->mmio_base;
-	head = drv_i915_read32(mmio, RING_HEAD(base));
-	tail = drv_i915_read32(mmio, RING_TAIL(base));
-	start = drv_i915_read32(mmio, RING_START(base));
-	ctl = drv_i915_read32(mmio, RING_CTL(base));
-	acthd_udw = drv_i915_read32(mmio, RING_ACTHD_UDW(base));
-	acthd = drv_i915_read32(mmio, RING_ACTHD(base));
-	ipehr = drv_i915_read32(mmio, RING_IPEHR(base));
-	instdone = drv_i915_read32(mmio, RING_INSTDONE(base));
-	mi_mode = drv_i915_read32(mmio, RING_MI_MODE(base));
-	esr = drv_i915_read32(mmio, RING_ESR(base));
-	eir = drv_i915_read32(mmio, RING_EIR(base));
+	head = drv_i915_read32(mmio, I915_GT_RING_HEAD(base));
+	tail = drv_i915_read32(mmio, I915_GT_RING_TAIL(base));
+	start = drv_i915_read32(mmio, I915_GT_RING_START(base));
+	ctl = drv_i915_read32(mmio, I915_GT_RING_CTL(base));
+	acthd_udw = drv_i915_read32(mmio, I915_GT_RING_ACTHD_UDW(base));
+	acthd = drv_i915_read32(mmio, I915_GT_RING_ACTHD(base));
+	ipehr = drv_i915_read32(mmio, I915_GT_RING_IPEHR(base));
+	instdone = drv_i915_read32(mmio, I915_GT_RING_INSTDONE(base));
+	mi_mode = drv_i915_read32(mmio, I915_GT_RING_MI_MODE(base));
+	esr = drv_i915_read32(mmio, I915_GT_RING_ESR(base));
+	eir = drv_i915_read32(mmio, I915_GT_RING_EIR(base));
 	kern_logf("i915: %s dump(%s): HEAD=%08x TAIL=%08x START=%08x CTL=%08x "
 	    "ACTHD=%08x:%08x IPEHR=%08x INSTDONE=%08x MI_MODE=%08x ESR=%08x EIR=%08x\n",
 	    ge->info->name,
@@ -337,9 +337,9 @@ drv_i915_engine_dump(
 	}
 
 	/* Reads the execlist status and the CSB pointer, then reports them with the status page. */
-	status_hi = drv_i915_read32(mmio, RING_EXECLIST_STATUS_HI(base));
-	status_lo = drv_i915_read32(mmio, RING_EXECLIST_STATUS_LO(base));
-	csb_ptr = drv_i915_read32(mmio, RING_CONTEXT_STATUS_PTR(base));
+	status_hi = drv_i915_read32(mmio, I915_GT_RING_EXECLIST_STATUS_HI(base));
+	status_lo = drv_i915_read32(mmio, I915_GT_RING_EXECLIST_STATUS_LO(base));
+	csb_ptr = drv_i915_read32(mmio, I915_GT_RING_CONTEXT_STATUS_PTR(base));
 	kern_logf("i915: %s dump(%s): EXECLIST_STATUS=%08x:%08x CSB_PTR=%08x "
 	    "hwsp: csb_write=%u preempt=%u seqno=%u | sw: csb_head=%u submits=%u "
 	    "promotes=%u completes=%u errors=%u late=%u mmio=%u last=%08x:%08x\n",
@@ -623,7 +623,7 @@ drv_i915_engine_reset(
 	error = drv_i915_gt_reset_engine(uncore_lock, mmio, gt, ge->info, I915_GT_RESET_ACK_US);
 	if (error != 0) {
 		es->engine_reset_failures++;
-		drv_i915_write32(mmio, RING_MI_MODE(base), I915_MASKED_DISABLE(STOP_RING));
+		drv_i915_write32(mmio, I915_GT_RING_MI_MODE(base), I915_MASKED_DISABLE(I915_GT_STOP_RING));
 		kern_logf("i915: %s: engine reset failed rc=%d; the engine stays stopped\n",
 		    ge->info->name,
 		    error);
@@ -648,7 +648,7 @@ drv_i915_engine_reset(
 	drv_i915_execlists_enable(ge, mmio);
 
 	/* Lets the streamer run again (intel_engine_cancel_stop_cs()). */
-	drv_i915_write32(mmio, RING_MI_MODE(base), I915_MASKED_DISABLE(STOP_RING));
+	drv_i915_write32(mmio, I915_GT_RING_MI_MODE(base), I915_MASKED_DISABLE(I915_GT_STOP_RING));
 	kern_logf("i915: %s: engine reset; the engine takes work again\n", ge->info->name);
 
 	/* Succeeded: the engine is reset and resumed. */
@@ -663,15 +663,15 @@ i915_msg_idle_reg(
 	/* Chooses the register by the engine. */
 	switch (engine_id) {
 	case I915_RCS0:
-		return MSG_IDLE_CS;
+		return I915_GT_MSG_IDLE_CS;
 	case I915_VCS0:
-		return MSG_IDLE_VCS0;
+		return I915_GT_MSG_IDLE_VCS0;
 	case I915_BCS0:
-		return MSG_IDLE_BCS;
+		return I915_GT_MSG_IDLE_BCS;
 	case I915_VECS0:
-		return MSG_IDLE_VECS0;
+		return I915_GT_MSG_IDLE_VECS0;
 	case I915_VCS2:
-		return MSG_IDLE_VCS2;
+		return I915_GT_MSG_IDLE_VCS2;
 	default:
 		break;
 	}

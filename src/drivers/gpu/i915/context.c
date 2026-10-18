@@ -238,7 +238,7 @@ drv_i915_lrc_reset(
  * Writes the ring registers, the render power state and the workaround
  * batches into a context image, as lrc_update_regs() does.
  *
- * Returns the lower dword of the descriptor with CTX_DESC_FORCE_RESTORE, the
+ * Returns the lower dword of the descriptor with I915_GT_CTX_DESC_FORCE_RESTORE, the
  * value the reference stores as ce->lrc.lrca; zero for a context without an
  * image.
  */
@@ -260,10 +260,10 @@ drv_i915_lrc_update_regs(
 
 	/* Points the image at the ring and gives it the ring's positions and size. */
 	regs = ce->lrc_reg_state;
-	regs[CTX_RING_START] = (uint32_t)ce->ring.ggtt_offset;
-	regs[CTX_RING_HEAD] = head;
-	regs[CTX_RING_TAIL] = ce->ring.tail;
-	regs[CTX_RING_CTL] = RING_CTL_SIZE(ce->ring.size) | RING_VALID;
+	regs[I915_GT_CTX_RING_START] = (uint32_t)ce->ring.ggtt_offset;
+	regs[I915_GT_CTX_RING_HEAD] = head;
+	regs[I915_GT_CTX_RING_TAIL] = ce->ring.tail;
+	regs[I915_GT_CTX_RING_CTL] = I915_GT_RING_CTL_SIZE(ce->ring.size) | I915_GT_RING_VALID;
 
 	/*
 	 * Without the power clock state the render engine may come up with its
@@ -272,9 +272,9 @@ drv_i915_lrc_update_regs(
 	 */
 	if (ce->ge->info->class == I915_RENDER_CLASS) {
 		if (gen9 != 0) {
-			regs[CTX_R_PWR_CLK_STATE] = i915_gen9_sseu_make_rpcs(ce->ge);
+			regs[I915_GT_CTX_R_PWR_CLK_STATE] = i915_gen9_sseu_make_rpcs(ce->ge);
 		} else {
-			regs[CTX_R_PWR_CLK_STATE] = i915_sseu_make_rpcs(ce->ge->sseu_slice_mask,
+			regs[I915_GT_CTX_R_PWR_CLK_STATE] = i915_sseu_make_rpcs(ce->ge->sseu_slice_mask,
 									ce->ge->sseu_has_slice_pg);
 		}
 	}
@@ -293,12 +293,12 @@ drv_i915_lrc_update_regs(
 	}
 
 	/*
-	 * The low dword of the descriptor carries CTX_DESC_FORCE_RESTORE until
+	 * The low dword of the descriptor carries I915_GT_CTX_DESC_FORCE_RESTORE until
 	 * the first submission clears it; the high dword is filled when the
 	 * context is scheduled in.
 	 */
 	ce->lrca = i915_lrc_descriptor(ce);
-	lrca = ce->lrca | (uint32_t)CTX_DESC_FORCE_RESTORE;
+	lrca = ce->lrca | (uint32_t)I915_GT_CTX_DESC_FORCE_RESTORE;
 	ce->lrc_desc = (ce->lrc_desc & 0xffffffff00000000ULL) | (uint64_t)lrca;
 
 	/* Succeeded: reports the descriptor's low dword as the reference returns it. */
@@ -318,15 +318,15 @@ drv_i915_lrc_aux_inv_reg(
 	/* Chooses the register by the engine. */
 	switch (engine_id) {
 	case I915_RCS0:
-		return GEN12_CCS_AUX_INV;
+		return I915_GT_GEN12_CCS_AUX_INV;
 	case I915_BCS0:
-		return GEN12_BCS0_AUX_INV;
+		return I915_GT_GEN12_BCS0_AUX_INV;
 	case I915_VCS0:
-		return GEN12_VD0_AUX_INV;
+		return I915_GT_GEN12_VD0_AUX_INV;
 	case I915_VCS2:
-		return GEN12_VD2_AUX_INV;
+		return I915_GT_GEN12_VD2_AUX_INV;
 	case I915_VECS0:
-		return GEN12_VE0_AUX_INV;
+		return I915_GT_GEN12_VE0_AUX_INV;
 	default:
 		break;
 	}
@@ -385,7 +385,7 @@ i915_lrc_alloc_objects(
 		return error;
 
 	/* The register state starts after the per-process status page. */
-	ce->lrc_reg_state = (uint32_t *)((char *)ce->state->cpu + LRC_STATE_OFFSET);
+	ce->lrc_reg_state = (uint32_t *)((char *)ce->state->cpu + I915_GT_LRC_STATE_OFFSET);
 
 	/* Refuses a ring whose size is not a power of two (intel_engine_create_ring()). */
 	if ((ring_size & (ring_size - 1U)) != 0U)
@@ -491,11 +491,11 @@ i915_lrc_set_offsets(
 		data++;
 
 		/* Writes the header: posted when the table says so, CS-relative on Gen11+. */
-		*regs = MI_LOAD_REGISTER_IMM(count);
+		*regs = I915_CMD_MI_LOAD_REGISTER_IMM(count);
 		if ((flags & I915_LRC_POSTED) != 0U)
-			*regs |= MI_LRI_FORCE_POSTED;
+			*regs |= I915_CMD_MI_LRI_FORCE_POSTED;
 		if (gen9 == 0)
-			*regs |= MI_LRI_LRM_CS_MMIO;
+			*regs |= I915_CMD_MI_LRI_LRM_CS_MMIO;
 		regs++;
 
 		/* Writes the offset of every register the header loads, leaving its value slot. */
@@ -522,7 +522,7 @@ i915_lrc_set_offsets(
 	 * sets bit 0 of the terminator.
 	 */
 	if (close != 0) {
-		*regs = MI_BATCH_BUFFER_END;
+		*regs = I915_CMD_MI_BATCH_BUFFER_END;
 		if (gen9 == 0)
 			*regs |= 1U;
 	}
@@ -552,12 +552,12 @@ i915_sseu_make_rpcs(
 
 	/* Requests every enabled slice. */
 	slices = (uint32_t)i915_hweight8(slice_mask);
-	slices <<= GEN11_RPCS_S_CNT_SHIFT;
-	slices &= GEN11_RPCS_S_CNT_MASK;
+	slices <<= I915_GT_GEN11_RPCS_S_CNT_SHIFT;
+	slices &= I915_GT_GEN11_RPCS_S_CNT_MASK;
 
 	/* Enables the request and the slice count. */
 	rpcs = 0U;
-	rpcs |= GEN8_RPCS_ENABLE | GEN8_RPCS_S_CNT_ENABLE | slices;
+	rpcs |= I915_GT_GEN8_RPCS_ENABLE | I915_GT_GEN8_RPCS_S_CNT_ENABLE | slices;
 
 	/* Reports the power clock state word. */
 	return rpcs;
@@ -608,7 +608,7 @@ i915_lrc_init_regs(
 	 * batch; Gen12 installs its batches from drv_i915_lrc_update_regs().
 	 */
 
-	/* Clears STOP_RING in the saved MI_MODE. */
+	/* Clears I915_GT_STOP_RING in the saved MI_MODE. */
 	i915_lrc_reset_stop_ring(ce);
 }
 
@@ -630,19 +630,19 @@ i915_lrc_init_common_regs(
 	 * only for an image that has nothing to restore.  The run-alone bit of a
 	 * protected context does not apply.
 	 */
-	control = I915_MASKED_ENABLE(CTX_CTRL_INHIBIT_SYN_CTX_SWITCH);
-	control |= I915_MASKED_DISABLE(CTX_CTRL_ENGINE_CTX_RESTORE_INHIBIT);
+	control = I915_MASKED_ENABLE(I915_GT_CTX_CTRL_INHIBIT_SYN_CTX_SWITCH);
+	control |= I915_MASKED_DISABLE(I915_GT_CTX_CTRL_ENGINE_CTX_RESTORE_INHIBIT);
 	if (inhibit != 0)
-		control |= CTX_CTRL_ENGINE_CTX_RESTORE_INHIBIT;
+		control |= I915_GT_CTX_CTRL_ENGINE_CTX_RESTORE_INHIBIT;
 
 	/* Before Gen11 the context also saves itself and runs without the resource streamer. */
 	if (gen9 != 0)
-		control |= I915_MASKED_DISABLE(CTX_CTRL_ENGINE_CTX_SAVE_INHIBIT | CTX_CTRL_RS_CTX_ENABLE);
+		control |= I915_MASKED_DISABLE(I915_GT_CTX_CTRL_ENGINE_CTX_SAVE_INHIBIT | I915_GT_CTX_CTRL_RS_CTX_ENABLE);
 
 	/* Writes the control word and a zero runtime (ce->stats.runtime.last). */
 	regs = ce->lrc_reg_state;
-	regs[CTX_CONTEXT_CONTROL] = control;
-	regs[CTX_TIMESTAMP] = 0U;
+	regs[I915_GT_CTX_CONTEXT_CONTROL] = control;
+	regs[I915_GT_CTX_TIMESTAMP] = 0U;
 
 	/* Clears the batch offset, whose slot exists on Gen9 and Gen12 at different places. */
 	if (gen9 != 0) {
@@ -667,11 +667,11 @@ i915_lrc_init_ppgtt_regs(
 	 */
 	regs = ce->lrc_reg_state;
 	address = ce->vm->top_pd_dma;
-	regs[CTX_PDP0_UDW] = (uint32_t)(address >> 32);
-	regs[CTX_PDP0_LDW] = (uint32_t)address;
+	regs[I915_GT_CTX_PDP0_UDW] = (uint32_t)(address >> 32);
+	regs[I915_GT_CTX_PDP0_LDW] = (uint32_t)address;
 }
 
-/* Clears STOP_RING in the saved MI_MODE and masks it in (__reset_stop_ring()). */
+/* Clears I915_GT_STOP_RING in the saved MI_MODE and masks it in (__reset_stop_ring()). */
 static void
 i915_lrc_reset_stop_ring(
 	struct i915_gt_context *ce)
@@ -690,8 +690,8 @@ i915_lrc_reset_stop_ring(
 
 	/* The restored MI_MODE lets the ring run. */
 	regs = ce->lrc_reg_state;
-	regs[index + 1] &= ~STOP_RING;
-	regs[index + 1] |= STOP_RING << 16;
+	regs[index + 1] &= ~I915_GT_STOP_RING;
+	regs[index + 1] |= I915_GT_STOP_RING << 16;
 }
 
 /* Returns the CPU view of the INDIRECT_CTX page, or of the PER_CTX_BB page. */
@@ -736,20 +736,20 @@ i915_lrc_emit_timestamp_wa(
 	base = ce->ge->info->mmio_base;
 
 	/* Loads GPR0 with the saved timestamp. */
-	*cs++ = MI_LOAD_REGISTER_MEM_GEN8 | MI_SRM_LRM_GLOBAL_GTT | MI_LRI_LRM_CS_MMIO;
-	*cs++ = GEN8_RING_CS_GPR(base, 0);
-	*cs++ = (uint32_t)ce->state->ggtt_offset + LRC_STATE_OFFSET + CTX_TIMESTAMP * 4U;
+	*cs++ = I915_CMD_MI_LOAD_REGISTER_MEM_GEN8 | I915_CMD_MI_SRM_LRM_GLOBAL_GTT | I915_CMD_MI_LRI_LRM_CS_MMIO;
+	*cs++ = I915_GT_GEN8_RING_CS_GPR(base, 0);
+	*cs++ = (uint32_t)ce->state->ggtt_offset + I915_GT_LRC_STATE_OFFSET + I915_GT_CTX_TIMESTAMP * 4U;
 	*cs++ = 0U;
 
 	/* Copies GPR0 into the context timestamp. */
-	*cs++ = MI_LOAD_REGISTER_REG | MI_LRR_SOURCE_CS_MMIO | MI_LRI_LRM_CS_MMIO;
-	*cs++ = GEN8_RING_CS_GPR(base, 0);
-	*cs++ = RING_CTX_TIMESTAMP(base);
+	*cs++ = I915_CMD_MI_LOAD_REGISTER_REG | I915_CMD_MI_LRR_SOURCE_CS_MMIO | I915_CMD_MI_LRI_LRM_CS_MMIO;
+	*cs++ = I915_GT_GEN8_RING_CS_GPR(base, 0);
+	*cs++ = I915_GT_RING_CTX_TIMESTAMP(base);
 
 	/* Copies it a second time: the register needs the write twice. */
-	*cs++ = MI_LOAD_REGISTER_REG | MI_LRR_SOURCE_CS_MMIO | MI_LRI_LRM_CS_MMIO;
-	*cs++ = GEN8_RING_CS_GPR(base, 0);
-	*cs++ = RING_CTX_TIMESTAMP(base);
+	*cs++ = I915_CMD_MI_LOAD_REGISTER_REG | I915_CMD_MI_LRR_SOURCE_CS_MMIO | I915_CMD_MI_LRI_LRM_CS_MMIO;
+	*cs++ = I915_GT_GEN8_RING_CS_GPR(base, 0);
+	*cs++ = I915_GT_RING_CTX_TIMESTAMP(base);
 
 	/* Reports where the next command goes. */
 	return cs;
@@ -767,15 +767,15 @@ i915_lrc_emit_cmd_buf_wa(
 	base = ce->ge->info->mmio_base;
 
 	/* Loads GPR0 with the saved CMD_BUF_CCTL. */
-	*cs++ = MI_LOAD_REGISTER_MEM_GEN8 | MI_SRM_LRM_GLOBAL_GTT | MI_LRI_LRM_CS_MMIO;
-	*cs++ = GEN8_RING_CS_GPR(base, 0);
-	*cs++ = (uint32_t)ce->state->ggtt_offset + LRC_STATE_OFFSET + (I915_LRC_RING_CMD_BUF_CCTL + 1) * 4U;
+	*cs++ = I915_CMD_MI_LOAD_REGISTER_MEM_GEN8 | I915_CMD_MI_SRM_LRM_GLOBAL_GTT | I915_CMD_MI_LRI_LRM_CS_MMIO;
+	*cs++ = I915_GT_GEN8_RING_CS_GPR(base, 0);
+	*cs++ = (uint32_t)ce->state->ggtt_offset + I915_GT_LRC_STATE_OFFSET + (I915_LRC_RING_CMD_BUF_CCTL + 1) * 4U;
 	*cs++ = 0U;
 
 	/* Copies GPR0 into CMD_BUF_CCTL. */
-	*cs++ = MI_LOAD_REGISTER_REG | MI_LRR_SOURCE_CS_MMIO | MI_LRI_LRM_CS_MMIO;
-	*cs++ = GEN8_RING_CS_GPR(base, 0);
-	*cs++ = RING_CMD_BUF_CCTL(base);
+	*cs++ = I915_CMD_MI_LOAD_REGISTER_REG | I915_CMD_MI_LRR_SOURCE_CS_MMIO | I915_CMD_MI_LRI_LRM_CS_MMIO;
+	*cs++ = I915_GT_GEN8_RING_CS_GPR(base, 0);
+	*cs++ = I915_GT_RING_CMD_BUF_CCTL(base);
 
 	/* Reports where the next command goes. */
 	return cs;
@@ -793,9 +793,9 @@ i915_lrc_emit_restore_scratch(
 	base = ce->ge->info->mmio_base;
 
 	/* Loads GPR0 with its own saved value. */
-	*cs++ = MI_LOAD_REGISTER_MEM_GEN8 | MI_SRM_LRM_GLOBAL_GTT | MI_LRI_LRM_CS_MMIO;
-	*cs++ = GEN8_RING_CS_GPR(base, 0);
-	*cs++ = (uint32_t)ce->state->ggtt_offset + LRC_STATE_OFFSET + (I915_LRC_RING_GPR0 + 1) * 4U;
+	*cs++ = I915_CMD_MI_LOAD_REGISTER_MEM_GEN8 | I915_CMD_MI_SRM_LRM_GLOBAL_GTT | I915_CMD_MI_LRI_LRM_CS_MMIO;
+	*cs++ = I915_GT_GEN8_RING_CS_GPR(base, 0);
+	*cs++ = (uint32_t)ce->state->ggtt_offset + I915_GT_LRC_STATE_OFFSET + (I915_LRC_RING_GPR0 + 1) * 4U;
 	*cs++ = 0U;
 
 	/* Reports where the next command goes. */
@@ -808,9 +808,9 @@ i915_lrc_emit_invalidate_state_cache(
 	uint32_t *cs)
 {
 	/* Sets the invalidate bit of CS_DEBUG_MODE2. */
-	*cs++ = MI_LOAD_REGISTER_IMM(1);
-	*cs++ = GEN12_CS_DEBUG_MODE2;
-	*cs++ = I915_MASKED_ENABLE(INSTRUCTION_STATE_CACHE_INVALIDATE);
+	*cs++ = I915_CMD_MI_LOAD_REGISTER_IMM(1);
+	*cs++ = I915_GT_GEN12_CS_DEBUG_MODE2;
+	*cs++ = I915_MASKED_ENABLE(I915_GT_INSTRUCTION_STATE_CACHE_INVALIDATE);
 
 	/* Reports where the next command goes. */
 	return cs;
@@ -830,23 +830,23 @@ i915_lrc_setup_predicate_disable_wa(
 	uint32_t *cs)
 {
 	/* Clears the predicate result: no predication. */
-	*cs++ = MI_STORE_DWORD_IMM_GEN4 | MI_USE_GGTT;
-	*cs++ = i915_lrc_indirect_bb(ce) + DG2_PREDICATE_RESULT_WA;
+	*cs++ = I915_CMD_MI_STORE_DWORD_IMM_GEN4 | I915_CMD_MI_USE_GGTT;
+	*cs++ = i915_lrc_indirect_bb(ce) + I915_GT_DG2_PREDICATE_RESULT_WA;
 	*cs++ = 0U;
 	*cs++ = 0U;
 
 	/* Ends the predicated batch and disables predication. */
-	*cs++ = MI_BATCH_BUFFER_END | (1U << 15);
-	*cs++ = MI_SET_PREDICATE | MI_SET_PREDICATE_DISABLE;
+	*cs++ = I915_CMD_MI_BATCH_BUFFER_END | (1U << 15);
+	*cs++ = I915_CMD_MI_SET_PREDICATE | I915_CMD_MI_SET_PREDICATE_DISABLE;
 
 	/* Sets the predicate result: predication is enabled before the next batch. */
-	*cs++ = MI_STORE_DWORD_IMM_GEN4 | MI_USE_GGTT;
-	*cs++ = i915_lrc_indirect_bb(ce) + DG2_PREDICATE_RESULT_WA;
+	*cs++ = I915_CMD_MI_STORE_DWORD_IMM_GEN4 | I915_CMD_MI_USE_GGTT;
+	*cs++ = i915_lrc_indirect_bb(ce) + I915_GT_DG2_PREDICATE_RESULT_WA;
 	*cs++ = 0U;
 	*cs++ = 1U;
 
 	/* Ends the batch. */
-	*cs++ = MI_BATCH_BUFFER_END;
+	*cs++ = I915_CMD_MI_BATCH_BUFFER_END;
 }
 
 /* Builds the INDIRECT_CTX batch and points the image at it (lrc_setup_indirect_ctx()). */
@@ -884,15 +884,15 @@ i915_lrc_setup_indirect_ctx_bb(
 
 	/* Pads the executed size to a whole number of cachelines. */
 	while ((((uintptr_t)cs - (uintptr_t)start) % I915_CACHELINE_BYTES) != 0U)
-		*cs++ = MI_NOOP;
+		*cs++ = I915_CMD_MI_NOOP;
 
 	/* Measures the executed batch, then writes the predicate batch past it. */
 	size = (uint32_t)((cs - start) * 4U);
-	i915_lrc_setup_predicate_disable_wa(ce, start + DG2_PREDICATE_RESULT_BB / 4U);
+	i915_lrc_setup_predicate_disable_wa(ce, start + I915_GT_DG2_PREDICATE_RESULT_BB / 4U);
 
 	/* Names the batch and its size in cachelines, and the default offset. */
 	regs[I915_LRC_RING_INDIRECT_PTR + 1] = i915_lrc_indirect_bb(ce) | (size / I915_CACHELINE_BYTES);
-	regs[I915_LRC_RING_INDIRECT_OFFSET + 1] = GEN12_CTX_RCS_INDIRECT_CTX_OFFSET_DEFAULT << I915_INDIRECT_CTX_OFFSET_SHIFT;
+	regs[I915_LRC_RING_INDIRECT_OFFSET + 1] = I915_GT_GEN12_CTX_RCS_INDIRECT_CTX_OFFSET_DEFAULT << I915_INDIRECT_CTX_OFFSET_SHIFT;
 
 	/* Records where the batch is and how much of it runs. */
 	ce->indirect_bb_ggtt = i915_lrc_indirect_bb(ce);
@@ -912,7 +912,7 @@ i915_lrc_setup_per_ctx_bb(
 	 * batch is only its terminator -- which PER_CTX_BB must still carry.
 	 */
 	cs = i915_lrc_wa_bb(ce, 1);
-	*cs = MI_BATCH_BUFFER_END;
+	*cs = I915_CMD_MI_BATCH_BUFFER_END;
 
 	/* Names the batch, to be run on every restore. */
 	regs = ce->lrc_reg_state;
@@ -935,9 +935,9 @@ i915_lrc_descriptor(
 	 * The context always has a 4-level address space on Alder Lake-P; the
 	 * L3LLC coherence bit is Gen8 only.
 	 */
-	flags = INTEL_LEGACY_64B_CONTEXT;
-	flags <<= GEN8_CTX_ADDRESSING_MODE_SHIFT;
-	flags |= GEN8_CTX_VALID | GEN8_CTX_PRIVILEGE;
+	flags = I915_GT_INTEL_LEGACY_64B_CONTEXT;
+	flags <<= I915_GT_GEN8_CTX_ADDRESSING_MODE_SHIFT;
+	flags |= I915_GT_GEN8_CTX_VALID | I915_GT_GEN8_CTX_PRIVILEGE;
 
 	/* Reports the image address with the flags. */
 	return (uint32_t)ce->state->ggtt_offset | flags;
@@ -977,17 +977,17 @@ i915_gen9_sseu_make_rpcs(
 	/* Requests every enabled slice. */
 	if (ge->sseu_has_slice_pg != 0) {
 		slices = (uint32_t)i915_hweight8(ge->sseu_slice_mask);
-		slices <<= GEN8_RPCS_S_CNT_SHIFT;
-		slices &= GEN8_RPCS_S_CNT_MASK;
-		rpcs |= GEN8_RPCS_ENABLE | GEN8_RPCS_S_CNT_ENABLE | slices;
+		slices <<= I915_GT_GEN8_RPCS_S_CNT_SHIFT;
+		slices &= I915_GT_GEN8_RPCS_S_CNT_MASK;
+		rpcs |= I915_GT_GEN8_RPCS_ENABLE | I915_GT_GEN8_RPCS_S_CNT_ENABLE | slices;
 	}
 
 	/* Requests every EU of each subslice, as the minimum and the maximum. */
 	if (ge->sseu_eu_per_subslice > 2U) {
 		eus = (uint32_t)ge->sseu_max_eus_per_subslice;
-		rpcs |= (eus << GEN8_RPCS_EU_MIN_SHIFT) & GEN8_RPCS_EU_MIN_MASK;
-		rpcs |= (eus << GEN8_RPCS_EU_MAX_SHIFT) & GEN8_RPCS_EU_MAX_MASK;
-		rpcs |= GEN8_RPCS_ENABLE;
+		rpcs |= (eus << I915_GT_GEN8_RPCS_EU_MIN_SHIFT) & I915_GT_GEN8_RPCS_EU_MIN_MASK;
+		rpcs |= (eus << I915_GT_GEN8_RPCS_EU_MAX_SHIFT) & I915_GT_GEN8_RPCS_EU_MAX_MASK;
+		rpcs |= I915_GT_GEN8_RPCS_ENABLE;
 	}
 
 	/* Reports the power clock state word. */
@@ -1002,7 +1002,7 @@ i915_lrc_emit_pipe_control(
 	uint32_t offset)
 {
 	/* The command, its flags and the address; the data dwords are zero. */
-	*cs++ = GFX_OP_PIPE_CONTROL(6);
+	*cs++ = I915_CMD_GFX_OP_PIPE_CONTROL(6);
 	*cs++ = flags;
 	*cs++ = offset;
 	*cs++ = 0U;
@@ -1039,55 +1039,55 @@ i915_gen9_setup_indirect_ctx_bb(
 
 	/* Nothing preempts the batch. */
 	cs = start;
-	*cs++ = MI_ARB_ON_OFF | MI_ARB_DISABLE;
+	*cs++ = I915_CMD_MI_ARB_ON_OFF | I915_CMD_MI_ARB_DISABLE;
 
 	/* Saves L3SQCREG4 (WaFlushCoherentL3CacheLinesAtContextSwitch). */
-	*cs++ = MI_STORE_REGISTER_MEM_GEN8 | MI_SRM_LRM_GLOBAL_GTT;
-	*cs++ = GEN8_L3SQCREG4;
+	*cs++ = I915_CMD_MI_STORE_REGISTER_MEM_GEN8 | I915_CMD_MI_SRM_LRM_GLOBAL_GTT;
+	*cs++ = I915_GT_GEN8_L3SQCREG4;
 	*cs++ = save;
 	*cs++ = 0U;
 
 	/* Asks L3 to flush its coherent lines. */
-	*cs++ = MI_LOAD_REGISTER_IMM(1);
-	*cs++ = GEN8_L3SQCREG4;
-	*cs++ = 0x40400000U | GEN8_LQSC_FLUSH_COHERENT_LINES;
+	*cs++ = I915_CMD_MI_LOAD_REGISTER_IMM(1);
+	*cs++ = I915_GT_GEN8_L3SQCREG4;
+	*cs++ = 0x40400000U | I915_GT_GEN8_LQSC_FLUSH_COHERENT_LINES;
 
 	/* Waits for the flush through a data-cache flush with a command streamer stall. */
-	cs = i915_lrc_emit_pipe_control(cs, PIPE_CONTROL_CS_STALL | PIPE_CONTROL_DC_FLUSH_ENABLE, 0U);
+	cs = i915_lrc_emit_pipe_control(cs, I915_CMD_PIPE_CONTROL_CS_STALL | I915_CMD_PIPE_CONTROL_DC_FLUSH_ENABLE, 0U);
 
 	/* Restores L3SQCREG4. */
-	*cs++ = MI_LOAD_REGISTER_MEM_GEN8 | MI_SRM_LRM_GLOBAL_GTT;
-	*cs++ = GEN8_L3SQCREG4;
+	*cs++ = I915_CMD_MI_LOAD_REGISTER_MEM_GEN8 | I915_CMD_MI_SRM_LRM_GLOBAL_GTT;
+	*cs++ = I915_GT_GEN8_L3SQCREG4;
 	*cs++ = save;
 	*cs++ = 0U;
 
 	/* Clears the shared local memory with an L3 flush (WaClearSlmSpaceAtContextSwitch). */
 	cs = i915_lrc_emit_pipe_control(
 		cs,
-		PIPE_CONTROL_FLUSH_L3 | PIPE_CONTROL_STORE_DATA_INDEX | PIPE_CONTROL_CS_STALL | PIPE_CONTROL_QW_WRITE,
-		LRC_PPHWSP_SCRATCH_ADDR);
+		I915_CMD_PIPE_CONTROL_FLUSH_L3 | I915_CMD_PIPE_CONTROL_STORE_DATA_INDEX | I915_CMD_PIPE_CONTROL_CS_STALL | I915_CMD_PIPE_CONTROL_QW_WRITE,
+		I915_GT_LRC_PPHWSP_SCRATCH_ADDR);
 
 	/* Sets the gather and provoking-vertex chicken bits (WaDisableGatherAtSetShaderCommonSlice, BSpec 11391, 11299). */
-	*cs++ = MI_LOAD_REGISTER_IMM(3);
-	*cs++ = GEN9_COMMON_SLICE_CHICKEN2;
-	*cs++ = GEN9_DISABLE_GATHER_AT_SET_SHADER_COMMON_SLICE << 16;
-	*cs++ = GEN9_FF_SLICE_CHICKEN;
-	*cs++ = I915_MASKED_ENABLE(GEN9_FF_SLICE_CHICKEN_CL_PROVOKING_VERTEX_FIX);
-	*cs++ = GEN9_3D_CHICKEN3;
-	*cs++ = I915_MASKED_ENABLE(GEN9_3D_CHICKEN_SF_PROVOKING_VERTEX_FIX);
-	*cs++ = MI_NOOP;
+	*cs++ = I915_CMD_MI_LOAD_REGISTER_IMM(3);
+	*cs++ = I915_GT_GEN9_COMMON_SLICE_CHICKEN2;
+	*cs++ = I915_GT_GEN9_DISABLE_GATHER_AT_SET_SHADER_COMMON_SLICE << 16;
+	*cs++ = I915_GT_GEN9_FF_SLICE_CHICKEN;
+	*cs++ = I915_MASKED_ENABLE(I915_GT_GEN9_FF_SLICE_CHICKEN_CL_PROVOKING_VERTEX_FIX);
+	*cs++ = I915_GT_GEN9_3D_CHICKEN3;
+	*cs++ = I915_MASKED_ENABLE(I915_GT_GEN9_3D_CHICKEN_SF_PROVOKING_VERTEX_FIX);
+	*cs++ = I915_CMD_MI_NOOP;
 
 	/* Lets the engine be preempted again. */
-	*cs++ = MI_ARB_ON_OFF | MI_ARB_ENABLE;
+	*cs++ = I915_CMD_MI_ARB_ON_OFF | I915_CMD_MI_ARB_ENABLE;
 
 	/* Pads the executed size to a whole number of cachelines. */
 	while ((((uintptr_t)cs - (uintptr_t)start) % I915_CACHELINE_BYTES) != 0U)
-		*cs++ = MI_NOOP;
+		*cs++ = I915_CMD_MI_NOOP;
 
 	/* Names the batch and its size in cachelines, and the Gen9 default offset. */
 	size = (uint32_t)((cs - start) * 4U);
 	regs[I915_GEN9_LRC_RING_INDIRECT_PTR + 1] = i915_lrc_indirect_bb(ce) | (size / I915_CACHELINE_BYTES);
-	regs[I915_GEN9_LRC_RING_INDIRECT_OFFSET + 1] = GEN9_CTX_RCS_INDIRECT_CTX_OFFSET_DEFAULT << I915_INDIRECT_CTX_OFFSET_SHIFT;
+	regs[I915_GEN9_LRC_RING_INDIRECT_OFFSET + 1] = I915_GT_GEN9_CTX_RCS_INDIRECT_CTX_OFFSET_DEFAULT << I915_INDIRECT_CTX_OFFSET_SHIFT;
 
 	/* Records where the batch is and how much of it runs. */
 	ce->indirect_bb_ggtt = i915_lrc_indirect_bb(ce);

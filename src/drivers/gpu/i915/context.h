@@ -14,7 +14,7 @@
  * Gen12 (Alder Lake-P):
  *
  *   - the image is page 0 = the per-process status page, then the register
- *     state from LRC_STATE_OFFSET on, then two extra pages: the INDIRECT_CTX
+ *     state from I915_GT_LRC_STATE_OFFSET on, then two extra pages: the INDIRECT_CTX
  *     batch the engine runs as part of a context restore, and the PER_CTX_BB
  *     batch it runs after it;
  *   - the register state is laid out by the reference's offset tables and
@@ -24,7 +24,7 @@
  *     and the AUX invalidate ends in a semaphore poll, so a wrong register
  *     there hangs the context restore rather than the batch.
  *
- * The Linux register-state indices (CTX_RING_TAIL and the rest) and the MI
+ * The Linux register-state indices (I915_GT_CTX_RING_TAIL and the rest) and the MI
  * commands come from intel/gt-regs.h and intel/commands.h, which context.c
  * includes.
  */
@@ -103,7 +103,7 @@ struct i915_gt_context {
 
 	/*
 	 * The whole descriptor: lrca in the low dword, with
-	 * CTX_DESC_FORCE_RESTORE until the first submission, and the context id
+	 * I915_GT_CTX_DESC_FORCE_RESTORE until the first submission, and the context id
 	 * fields in the high dword, filled when the context is scheduled in.
 	 */
 	uint64_t lrc_desc;

@@ -30,13 +30,13 @@
 #include "intel/gt-regs.h"
 
 /* Session object pages: present, writable, PAT index 0 (write-back through the LLC). */
-#define I915_PPGTT_PAGE_BITS		(GEN8_PAGE_PRESENT | GEN8_PAGE_RW)
+#define I915_PPGTT_PAGE_BITS		(I915_GT_GEN8_PAGE_PRESENT | I915_GT_GEN8_PAGE_RW)
 
 /* Session tables the driver fills: present, writable, PAT index 0. */
-#define I915_PPGTT_TABLE_BITS		(GEN8_PAGE_PRESENT | GEN8_PAGE_RW)
+#define I915_PPGTT_TABLE_BITS		(I915_GT_GEN8_PAGE_PRESENT | I915_GT_GEN8_PAGE_RW)
 
 /* Session scratch tables mirror Linux's uncached page-directory encoding (PAT index 3). */
-#define I915_PPGTT_SCRATCH_TABLE_BITS	(GEN8_PAGE_PRESENT | GEN8_PAGE_RW | GEN12_PPGTT_PTE_PAT0 | GEN12_PPGTT_PTE_PAT1)
+#define I915_PPGTT_SCRATCH_TABLE_BITS	(I915_GT_GEN8_PAGE_PRESENT | I915_GT_GEN8_PAGE_RW | I915_GT_GEN12_PPGTT_PTE_PAT0 | I915_GT_GEN12_PPGTT_PTE_PAT1)
 
 static void i915_gt_fill_px(struct i915_gt_object *object, uint64_t value, unsigned count);
 static unsigned i915_gt_ppgtt_pd_range(uint64_t start, uint64_t end, int lvl, unsigned *idx);
@@ -620,7 +620,7 @@ drv_i915_ppgtt_insert_uncached(
 	int error;
 
 	/* Maps the pages with PAT index 3. */
-	error = i915_ppgtt_insert_bits(vm, va, physical, pages, I915_PPGTT_PAGE_BITS | GEN12_PPGTT_PTE_PAT0 | GEN12_PPGTT_PTE_PAT1);
+	error = i915_ppgtt_insert_bits(vm, va, physical, pages, I915_PPGTT_PAGE_BITS | I915_GT_GEN12_PPGTT_PTE_PAT0 | I915_GT_GEN12_PPGTT_PTE_PAT1);
 	if (error != 0)
 		return error;
 

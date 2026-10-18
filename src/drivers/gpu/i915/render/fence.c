@@ -672,7 +672,7 @@ drv_i915_gfx_query_execute(
 		va = pool->object->va + 16U * (uint64_t)query;
 		if (op->kind == I915_GFX_OP_QUERY_END)
 			va += 8U;
-		drv_i915_batch_emit(space.batch, GFX_OP_PIPE_CONTROL(6));
+		drv_i915_batch_emit(space.batch, I915_CMD_GFX_OP_PIPE_CONTROL(6));
 		drv_i915_batch_emit(space.batch, PIPE_CONTROL_DEPTH_STALL_ENABLE | I915_QUERY_PC_DEPTH_COUNT);
 		drv_i915_batch_emit(space.batch, (uint32_t)va);
 		drv_i915_batch_emit(space.batch, (uint32_t)(va >> 32));
@@ -684,8 +684,8 @@ drv_i915_gfx_query_execute(
 	if (op->kind == I915_GFX_OP_QUERY_END || op->kind == I915_GFX_OP_QUERY_RESET) {
 		for (query = op->u.query.first; query < op->u.query.first + op->u.query.count; query++) {
 			va = pool->object->va + 16U * (uint64_t)pool->count + 8U * (uint64_t)query;
-			drv_i915_batch_emit(space.batch, GFX_OP_PIPE_CONTROL(6));
-			drv_i915_batch_emit(space.batch, PIPE_CONTROL_CS_STALL | PIPE_CONTROL_QW_WRITE);
+			drv_i915_batch_emit(space.batch, I915_CMD_GFX_OP_PIPE_CONTROL(6));
+			drv_i915_batch_emit(space.batch, I915_CMD_PIPE_CONTROL_CS_STALL | I915_CMD_PIPE_CONTROL_QW_WRITE);
 			drv_i915_batch_emit(space.batch, (uint32_t)va);
 			drv_i915_batch_emit(space.batch, (uint32_t)(va >> 32));
 			drv_i915_batch_emit(space.batch, (uint32_t)(op->kind == I915_GFX_OP_QUERY_END));

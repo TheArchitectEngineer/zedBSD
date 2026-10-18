@@ -18,7 +18,7 @@
  *
  * The request is shaped like an execbuf request: i915_request_create (the
  * invalidating flush), gen8_emit_init_breadcrumb (the seqno - 1 store and
- * MI_ARB_CHECK), gen8_emit_bb_start (arbitration on around a PPGTT batch
+ * I915_CMD_MI_ARB_CHECK), gen8_emit_bb_start (arbitration on around a PPGTT batch
  * start) and i915_request_add (the closing breadcrumb), on a fresh context of
  * the GT address space that inherits the engine's default state.  The test
  * passes when the command-streamer markers land and the EU store is visible;
@@ -187,7 +187,7 @@ const uint32_t drv_i915_test_eu_kernel_gen9[I915_TEST_EU_KERNEL_DWORDS] = {
 /*
  * The engine workaround registers the command-streamer verify cannot read.
  *
- * GEN8_ROW_CHICKEN2, GEN10_SAMPLER_MODE and GEN9_ROW_CHICKEN4 are multicast;
+ * I915_GT_GEN8_ROW_CHICKEN2, I915_GT_GEN10_SAMPLER_MODE and I915_GT_GEN9_ROW_CHICKEN4 are multicast;
  * the probe reads them once per dual-subslice.  The table never changes.
  */
 static const uint32_t i915_test_mcr_regs[I915_TEST_MCR_REGS] = {
@@ -346,19 +346,19 @@ drv_i915_test_eu_build_batch_gen(
 
 	/* Establishes 3D mode; the base addresses are applied in 3D (Wa_1607854226). */
 	i915_eu_emit_pipe_control(&batch,
-	    PIPE_CONTROL_CS_STALL |
-	    PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
-	    PIPE_CONTROL_DEPTH_CACHE_FLUSH |
-	    PIPE_CONTROL_DC_FLUSH_ENABLE |
-	    PIPE_CONTROL_FLUSH_ENABLE);
+	    I915_CMD_PIPE_CONTROL_CS_STALL |
+	    I915_CMD_PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
+	    I915_CMD_PIPE_CONTROL_DEPTH_CACHE_FLUSH |
+	    I915_CMD_PIPE_CONTROL_DC_FLUSH_ENABLE |
+	    I915_CMD_PIPE_CONTROL_FLUSH_ENABLE);
 	i915_eu_emit(&batch, i915_eu_pipeline_select(batch.graphics_ver, 0U));
 	i915_eu_emit_state_base_address(&batch, shared_va, inst_base, mocs);
 	i915_eu_emit_pipe_control(&batch,
-	    PIPE_CONTROL_CS_STALL |
-	    PIPE_CONTROL_STATE_CACHE_INVALIDATE |
-	    PIPE_CONTROL_CONST_CACHE_INVALIDATE |
-	    PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE |
-	    PIPE_CONTROL_INSTRUCTION_CACHE_INVALIDATE);
+	    I915_CMD_PIPE_CONTROL_CS_STALL |
+	    I915_CMD_PIPE_CONTROL_STATE_CACHE_INVALIDATE |
+	    I915_CMD_PIPE_CONTROL_CONST_CACHE_INVALIDATE |
+	    I915_CMD_PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE |
+	    I915_CMD_PIPE_CONTROL_INSTRUCTION_CACHE_INVALIDATE);
 
 	/* Has the GPU read the descriptor back through this context's address space. */
 	for (i = 0U; i < 8U; i++) {
@@ -385,38 +385,38 @@ drv_i915_test_eu_build_batch_gen(
 		i915_eu_emit(&batch, I915_TEST_3DSTATE_CC_STATE_POINTERS);
 		i915_eu_emit(&batch, 0U);
 		i915_eu_emit_pipe_control(&batch,
-		    PIPE_CONTROL_CS_STALL |
-		    PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
-		    PIPE_CONTROL_DEPTH_CACHE_FLUSH |
-		    PIPE_CONTROL_DC_FLUSH_ENABLE);
+		    I915_CMD_PIPE_CONTROL_CS_STALL |
+		    I915_CMD_PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
+		    I915_CMD_PIPE_CONTROL_DEPTH_CACHE_FLUSH |
+		    I915_CMD_PIPE_CONTROL_DC_FLUSH_ENABLE);
 		i915_eu_emit_pipe_control(&batch,
-		    PIPE_CONTROL_STATE_CACHE_INVALIDATE |
-		    PIPE_CONTROL_CONST_CACHE_INVALIDATE |
-		    PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE |
-		    PIPE_CONTROL_INSTRUCTION_CACHE_INVALIDATE);
+		    I915_CMD_PIPE_CONTROL_STATE_CACHE_INVALIDATE |
+		    I915_CMD_PIPE_CONTROL_CONST_CACHE_INVALIDATE |
+		    I915_CMD_PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE |
+		    I915_CMD_PIPE_CONTROL_INSTRUCTION_CACHE_INVALIDATE);
 	} else {
 		i915_eu_emit_pipe_control(&batch,
-		    PIPE_CONTROL_CS_STALL |
-		    PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
-		    PIPE_CONTROL_DEPTH_CACHE_FLUSH);
+		    I915_CMD_PIPE_CONTROL_CS_STALL |
+		    I915_CMD_PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
+		    I915_CMD_PIPE_CONTROL_DEPTH_CACHE_FLUSH);
 	}
 
 	/* Selects the GPGPU pipeline and stalls until the earlier work is visible. */
 	i915_eu_emit(&batch, i915_eu_pipeline_select(batch.graphics_ver, 2U));
-	i915_eu_emit_pipe_control(&batch, PIPE_CONTROL_CS_STALL | I915_TEST_PC_STALL_AT_SCOREBOARD);
+	i915_eu_emit_pipe_control(&batch, I915_CMD_PIPE_CONTROL_CS_STALL | I915_TEST_PC_STALL_AT_SCOREBOARD);
 
 	/* Loads the VFE state and the descriptor, marks readiness and dispatches the thread. */
 	i915_eu_emit_vfe_and_walker(&batch, max_threads);
 
 	/* Precedes the post-sync PIPE_CONTROL with a stalling flush without post-sync (Wa_1607156449). */
 	i915_eu_emit_pipe_control(&batch,
-	    PIPE_CONTROL_CS_STALL |
-	    PIPE_CONTROL_DC_FLUSH_ENABLE |
-	    PIPE_CONTROL_FLUSH_ENABLE);
+	    I915_CMD_PIPE_CONTROL_CS_STALL |
+	    I915_CMD_PIPE_CONTROL_DC_FLUSH_ENABLE |
+	    I915_CMD_PIPE_CONTROL_FLUSH_ENABLE);
 
 	/* Writes the done tag into the context's address space as the post-sync operation. */
-	i915_eu_emit(&batch, GFX_OP_PIPE_CONTROL(6));
-	i915_eu_emit(&batch, PIPE_CONTROL_CS_STALL | I915_TEST_PC_POST_SYNC_WRITE);
+	i915_eu_emit(&batch, I915_CMD_GFX_OP_PIPE_CONTROL(6));
+	i915_eu_emit(&batch, I915_CMD_PIPE_CONTROL_CS_STALL | I915_TEST_PC_POST_SYNC_WRITE);
 	i915_eu_emit(&batch, (uint32_t)done_va);
 	i915_eu_emit(&batch, (uint32_t)(done_va >> 32));
 	i915_eu_emit(&batch, I915_TEST_EU_DONE_TAG);
@@ -424,8 +424,8 @@ drv_i915_test_eu_build_batch_gen(
 
 	/* Marks that the command streamer got past everything, and ends the batch. */
 	i915_eu_emit_marker(&batch, shared_va + I915_TEST_EU_CS_OFF, I915_TEST_EU_CS_TAG);
-	i915_eu_emit(&batch, MI_BATCH_BUFFER_END);
-	i915_eu_emit(&batch, MI_NOOP);
+	i915_eu_emit(&batch, I915_CMD_MI_BATCH_BUFFER_END);
+	i915_eu_emit(&batch, I915_CMD_MI_NOOP);
 
 	/* Refuses a batch that did not fit. */
 	if (batch.overflow)
@@ -694,7 +694,7 @@ drv_i915_test_eu_wait_retired(
  * Builds one execbuf-shaped request for a batch.
  *
  * i915_request_create (the invalidating flush), gen8_emit_init_breadcrumb
- * (the seqno - 1 store, MI_ARB_CHECK), gen8_emit_bb_start (arbitration on
+ * (the seqno - 1 store, I915_CMD_MI_ARB_CHECK), gen8_emit_bb_start (arbitration on
  * around a PPGTT batch start) and i915_request_add (the closing breadcrumb).
  */
 int
@@ -723,12 +723,12 @@ drv_i915_test_eu_build_request(
 		return error;
 	}
 
-	*cs++ = MI_STORE_DWORD_IMM_GEN4 | MI_USE_GGTT;
+	*cs++ = I915_CMD_MI_STORE_DWORD_IMM_GEN4 | I915_CMD_MI_USE_GGTT;
 	*cs++ = rq->hwsp_ggtt;
 	*cs++ = 0U;
 	*cs++ = rq->seqno - 1U;
-	*cs++ = MI_NOOP;
-	*cs++ = MI_ARB_CHECK;
+	*cs++ = I915_CMD_MI_NOOP;
+	*cs++ = I915_CMD_MI_ARB_CHECK;
 	drv_i915_ring_advance(rq, cs);
 
 	/* Starts the batch in the context's address space with arbitration on (gen8_emit_bb_start). */
@@ -738,12 +738,12 @@ drv_i915_test_eu_build_request(
 		return error;
 	}
 
-	*cs++ = MI_ARB_ON_OFF | MI_ARB_ENABLE;
-	*cs++ = MI_BATCH_BUFFER_START_GEN8 | (1U << 8);
+	*cs++ = I915_CMD_MI_ARB_ON_OFF | I915_CMD_MI_ARB_ENABLE;
+	*cs++ = I915_CMD_MI_BATCH_BUFFER_START_GEN8 | (1U << 8);
 	*cs++ = (uint32_t)batch_va;
 	*cs++ = (uint32_t)(batch_va >> 32);
-	*cs++ = MI_ARB_ON_OFF;
-	*cs++ = MI_NOOP;
+	*cs++ = I915_CMD_MI_ARB_ON_OFF;
+	*cs++ = I915_CMD_MI_NOOP;
 	drv_i915_ring_advance(rq, cs);
 
 	/* Closes the request with its breadcrumb. */
@@ -1394,8 +1394,8 @@ drv_i915_test_eu_release(
  * Reads the engine workaround registers once per dual-subslice.
  *
  * The command-streamer verify reads multicast registers through the default
- * steering only; this reads GEN8_ROW_CHICKEN2, GEN10_SAMPLER_MODE and
- * GEN9_ROW_CHICKEN4 steered at every enabled dual-subslice of slice 0 and
+ * steering only; this reads I915_GT_GEN8_ROW_CHICKEN2, I915_GT_GEN10_SAMPLER_MODE and
+ * I915_GT_GEN9_ROW_CHICKEN4 steered at every enabled dual-subslice of slice 0 and
  * compares them with the workaround list the way wa_verify does.  The caller
  * holds forcewake; the multicast lock is the exclusive section.
  */
@@ -1601,23 +1601,23 @@ i915_eu_emit_pipe_control(
 	 * emitter does.  Gen9 has no such bit in dword 0: its callers flush the
 	 * data cache instead.
 	 */
-	header = GFX_OP_PIPE_CONTROL(6);
-	if (batch->graphics_ver != 9U && (flags & PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH) != 0U)
-		header |= PIPE_CONTROL0_HDC_PIPELINE_FLUSH;
+	header = I915_CMD_GFX_OP_PIPE_CONTROL(6);
+	if (batch->graphics_ver != 9U && (flags & I915_CMD_PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH) != 0U)
+		header |= I915_CMD_PIPE_CONTROL0_HDC_PIPELINE_FLUSH;
 
 	/*
 	 * A Gen9 CS stall must come with a flush, a stall or a post-sync
 	 * operation; one that comes with none stalls at the scoreboard too, as
 	 * the reference adds.
 	 */
-	stalls = PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
-	    PIPE_CONTROL_DEPTH_CACHE_FLUSH |
-	    PIPE_CONTROL_DC_FLUSH_ENABLE |
-	    PIPE_CONTROL_DEPTH_STALL |
+	stalls = I915_CMD_PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
+	    I915_CMD_PIPE_CONTROL_DEPTH_CACHE_FLUSH |
+	    I915_CMD_PIPE_CONTROL_DC_FLUSH_ENABLE |
+	    I915_CMD_PIPE_CONTROL_DEPTH_STALL |
 	    I915_TEST_PC_STALL_AT_SCOREBOARD |
 	    I915_TEST_PC_POST_SYNC_WRITE;
 	if (batch->graphics_ver == 9U &&
-	    (flags & PIPE_CONTROL_CS_STALL) != 0U &&
+	    (flags & I915_CMD_PIPE_CONTROL_CS_STALL) != 0U &&
 	    (flags & stalls) == 0U)
 		flags |= I915_TEST_PC_STALL_AT_SCOREBOARD;
 
@@ -1636,7 +1636,7 @@ i915_eu_emit_marker(
 	uint32_t value)
 {
 	/* MI_STORE_DWORD_IMM with the address split in two dwords. */
-	i915_eu_emit(batch, MI_STORE_DWORD_IMM_GEN4);
+	i915_eu_emit(batch, I915_CMD_MI_STORE_DWORD_IMM_GEN4);
 	i915_eu_emit(batch, (uint32_t)va);
 	i915_eu_emit(batch, (uint32_t)(va >> 32));
 	i915_eu_emit(batch, value);
@@ -2011,7 +2011,7 @@ i915_eu_walk_fixture(
 	unsigned i;
 
 	/* Compares PDP0 of the context with the top directory of the space. */
-	pdp0 = ((uint64_t)t->ce.lrc_reg_state[CTX_PDP0_UDW] << 32) | t->ce.lrc_reg_state[CTX_PDP0_LDW];
+	pdp0 = ((uint64_t)t->ce.lrc_reg_state[I915_GT_CTX_PDP0_UDW] << 32) | t->ce.lrc_reg_state[I915_GT_CTX_PDP0_LDW];
 	t->pdp0_matches_top = 0;
 	if (pdp0 == vm->top_pd_dma)
 		t->pdp0_matches_top = 1;
@@ -2429,10 +2429,10 @@ i915_eu_log_context(
 	pdp0_high = 0U;
 	pdp0_low = 0U;
 	if (t->ce.lrc_reg_state != NULL) {
-		context_control = t->ce.lrc_reg_state[CTX_CONTEXT_CONTROL];
-		ring_control = t->ce.lrc_reg_state[CTX_RING_CTL];
-		pdp0_high = t->ce.lrc_reg_state[CTX_PDP0_UDW];
-		pdp0_low = t->ce.lrc_reg_state[CTX_PDP0_LDW];
+		context_control = t->ce.lrc_reg_state[I915_GT_CTX_CONTEXT_CONTROL];
+		ring_control = t->ce.lrc_reg_state[I915_GT_CTX_RING_CTL];
+		pdp0_high = t->ce.lrc_reg_state[I915_GT_CTX_PDP0_UDW];
+		pdp0_low = t->ce.lrc_reg_state[I915_GT_CTX_PDP0_LDW];
 	}
 
 	state_ggtt = 0ULL;

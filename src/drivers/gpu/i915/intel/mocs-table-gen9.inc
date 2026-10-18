@@ -42,10 +42,10 @@
  */
 
 	/* I915_MOCS_UNCACHED */
-	{  0, LE_1_UC | LE_TC_2_LLC_ELLC, L3_1_UC },
+	{  0, I915_GT_LE_1_UC | I915_GT_LE_TC_2_LLC_ELLC, I915_GT_L3_1_UC },
 	/* I915_MOCS_PTE */
-	{  1, LE_0_PAGETABLE | LE_TC_0_PAGETABLE | LE_LRUM(3), L3_3_WB },
+	{  1, I915_GT_LE_0_PAGETABLE | I915_GT_LE_TC_0_PAGETABLE | I915_GT_LE_LRUM(3), I915_GT_L3_3_WB },
 	/* I915_MOCS_CACHED */
-	{  2, LE_3_WB | LE_TC_2_LLC_ELLC | LE_LRUM(3), L3_3_WB },
+	{  2, I915_GT_LE_3_WB | I915_GT_LE_TC_2_LLC_ELLC | I915_GT_LE_LRUM(3), I915_GT_L3_3_WB },
 	/* used by the L3 for all of its evictions, and to force L3 uncacheable cycles */
-	{ 63, LE_3_WB | LE_TC_1_LLC | LE_LRUM(3), L3_1_UC },
+	{ 63, I915_GT_LE_3_WB | I915_GT_LE_TC_1_LLC | I915_GT_LE_LRUM(3), I915_GT_L3_1_UC },

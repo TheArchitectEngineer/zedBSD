@@ -230,7 +230,7 @@ struct i915_driver_probe {
 struct i915_vga_client {
 	struct drv_pci_device *gpu;   /* display device (arbiter client) */
 	struct drv_pci_device *gmch;  /* host bridge 00:00.0 (GMCH_CTRL owner) */
-	unsigned display_ver;         /* selects SNB_GMCH_CTRL vs INTEL_GMCH_CTRL */
+	unsigned display_ver;         /* selects I915_GT_SNB_GMCH_CTRL vs INTEL_GMCH_CTRL */
 	int registered;               /* callback installed (0 after unregister) */
 };
 
@@ -640,7 +640,7 @@ enum i915_lcd_observe {
  *   - start / stop periods and the steady period are accumulated apart: an underrun while the pipe starts is a
  *     different statement from one while a picture stands.
  * The pipe's vblank interrupt must stay masked for the whole run (nothing here could service it): every sample also
- * reads GEN8_DE_PIPE_IMR and remembers if the vblank bit was ever found unmasked -- judged only while the pipe's
+ * reads I915_GT_GEN8_DE_PIPE_IMR and remembers if the vblank bit was ever found unmasked -- judged only while the pipe's
  * power well is held (the register lives in that well: before, it reads 0; the power-well enable programs the mask).
  * "Frames advance" is decided from the hardware frame counter alone -- never from elapsed time.
  */
@@ -655,7 +655,7 @@ struct i915_lcd_obs_sample {
 	int point;                      /* enum i915_lcd_observe, or I915_LCD_OBS_STEADY */
 	uint32_t status;                /* ICL_PIPESTATUS as read */
 	uint32_t frame;                 /* PIPE_FRMCOUNT_G4X as read */
-	uint32_t imr;                   /* GEN8_DE_PIPE_IMR as read */
+	uint32_t imr;                   /* I915_GT_GEN8_DE_PIPE_IMR as read */
 	int steady;
 };
 

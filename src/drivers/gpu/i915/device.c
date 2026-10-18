@@ -68,7 +68,7 @@
 /* How many forcewake domains a running Gen9 GT holds awake. */
 #define I915_START_DOMAINS_GEN9	3U
 
-/* GEN8_MCR_SELECTOR and the Gen11+ multicast bit it starts with. */
+/* I915_GT_GEN8_MCR_SELECTOR and the Gen11+ multicast bit it starts with. */
 #define I915_MCR_SELECTOR	0x0fdcU
 #define I915_MCR_MULTICAST	0x80000000U
 
@@ -743,17 +743,17 @@ drv_i915_product_kind(
 	uint16_t product,
 	struct i915_product_kind *kind)
 {
-	static const uint16_t tigerlake[] = { INTEL_TGL_IDS(I915_ID_VALUE) };
+	static const uint16_t tigerlake[] = { I915_PCI_TGL_IDS(I915_ID_VALUE) };
 	static const uint16_t alderlake[] = {
-		INTEL_ADLP_IDS(I915_ID_VALUE),
-		INTEL_ADLN_IDS(I915_ID_VALUE),
-		INTEL_RPLU_IDS(I915_ID_VALUE),
-		INTEL_RPLP_IDS(I915_ID_VALUE)
+		I915_PCI_ADLP_IDS(I915_ID_VALUE),
+		I915_PCI_ADLN_IDS(I915_ID_VALUE),
+		I915_PCI_RPLU_IDS(I915_ID_VALUE),
+		I915_PCI_RPLP_IDS(I915_ID_VALUE)
 	};
-	static const uint16_t skylake[] = { INTEL_SKL_IDS(I915_ID_VALUE) };
-	static const uint16_t kabylake[] = { INTEL_KBL_IDS(I915_ID_VALUE) };
-	static const uint16_t coffeelake[] = { INTEL_CFL_IDS(I915_ID_VALUE) };
-	static const uint16_t cometlake[] = { INTEL_CML_IDS(I915_ID_VALUE) };
+	static const uint16_t skylake[] = { I915_PCI_SKL_IDS(I915_ID_VALUE) };
+	static const uint16_t kabylake[] = { I915_PCI_KBL_IDS(I915_ID_VALUE) };
+	static const uint16_t coffeelake[] = { I915_PCI_CFL_IDS(I915_ID_VALUE) };
+	static const uint16_t cometlake[] = { I915_PCI_CML_IDS(I915_ID_VALUE) };
 	int listed;
 
 	/* Starts from a Gen9 part, the shape every Gen9 list shares. */
@@ -1282,12 +1282,12 @@ i915_start_registers(
 
 	/* Claims BAR0 and maps its lower half, the registers, uncached. */
 	device->stage = "pci_bar";
-	error = drv_pci_device_bar(device->pci, GEN4_GTTMMADR_BAR, &bar);
+	error = drv_pci_device_bar(device->pci, I915_GT_GEN4_GTTMMADR_BAR, &bar);
 	if (error != 0)
 		return error;
 
 	device->stage = "claim_bar";
-	error = drv_pci_device_claim_bar(device->pci, GEN4_GTTMMADR_BAR);
+	error = drv_pci_device_claim_bar(device->pci, I915_GT_GEN4_GTTMMADR_BAR);
 	if (error != 0)
 		return error;
 
@@ -1296,7 +1296,7 @@ i915_start_registers(
 	device->stage = "map_bar";
 	error = drv_pci_device_map_bar_region(
 		device->pci,
-		GEN4_GTTMMADR_BAR,
+		I915_GT_GEN4_GTTMMADR_BAR,
 		0U,
 		(size_t)(bar.size / 2U),
 		DRV_PCI_MAP_READ | DRV_PCI_MAP_WRITE | DRV_PCI_MAP_NOCACHE,
@@ -1526,7 +1526,7 @@ i915_start_ggtt(
 	/* The table fills the upper half of BAR0, at most. */
 	table_bytes = (uint64_t)(1U << ggms) << 20;
 	device->stage = "ggtt_bar";
-	error = drv_pci_device_bar(device->pci, GEN4_GTTMMADR_BAR, &bar);
+	error = drv_pci_device_bar(device->pci, I915_GT_GEN4_GTTMMADR_BAR, &bar);
 	if (error != 0)
 		return error;
 
@@ -1538,7 +1538,7 @@ i915_start_ggtt(
 	device->stage = "ggtt_map";
 	error = drv_pci_device_map_bar_region(
 		device->pci,
-		GEN4_GTTMMADR_BAR,
+		I915_GT_GEN4_GTTMMADR_BAR,
 		window_bytes,
 		(size_t)table_bytes,
 		DRV_PCI_MAP_READ | DRV_PCI_MAP_WRITE | DRV_PCI_MAP_NOCACHE,
@@ -1615,7 +1615,7 @@ i915_start_aperture(
 	drv_i915_trace_record(&gt->trace, 0U, I915_TRACE_NOTE, "address_space_init:GGTT", (uint64_t)gt->gtt.size * 512U, 0U);
 
 	/* A device without a GMADR BAR has no aperture to map. */
-	error = drv_pci_device_bar(device->pci, GEN4_GMADR_BAR, &aperture);
+	error = drv_pci_device_bar(device->pci, I915_GT_GEN4_GMADR_BAR, &aperture);
 	if (error == 0 && aperture.size != 0U) {
 		/* Checks that the aperture lies within the CPU's physical address range. */
 		physical_bits = i915_cpu_physical_bits();
@@ -2221,7 +2221,7 @@ i915_stop_hardware(
 	}
 
 	if (gt->bar_claimed != 0U) {
-		drv_pci_device_release_bar(device->pci, GEN4_GTTMMADR_BAR);
+		drv_pci_device_release_bar(device->pci, I915_GT_GEN4_GTTMMADR_BAR);
 		gt->bar_claimed = 0U;
 	}
 
@@ -2391,11 +2391,11 @@ i915_cpu_physical_bits(void)
  * Keeps the display interrupts switched off while the display is not connected.
  *
  * Gen12 has a display summary control to turn off.  Gen9 has none: its
- * display sources report straight into GEN8_MASTER_IRQ, so each one is
+ * display sources report straight into I915_GT_GEN8_MASTER_IRQ, so each one is
  * masked, disabled and cleared instead (the display half of
  * gen8_irq_reset() and ibx_irq_reset()): the eDP PSR, the pipes, the
  * ports, the miscellaneous sources and the south display.  A pipe whose
- * power well is down is not touched, and GEN8_MASTER_IRQ is not written.
+ * power well is down is not touched, and I915_GT_GEN8_MASTER_IRQ is not written.
  */
 static void
 i915_interim_display_irq_reset(
@@ -2429,12 +2429,12 @@ i915_interim_display_irq_reset(
 			break;
 
 		/* Silences the powered pipe's interrupt sources. */
-		i915_interim_irq_silence(&gt->mmio, GEN8_DE_PIPE_IMR(pipe), GEN8_DE_PIPE_IIR(pipe), GEN8_DE_PIPE_IER(pipe));
+		i915_interim_irq_silence(&gt->mmio, I915_GT_GEN8_DE_PIPE_IMR(pipe), I915_GT_GEN8_DE_PIPE_IIR(pipe), I915_GT_GEN8_DE_PIPE_IER(pipe));
 	}
 
 	/* Silences the port and miscellaneous display sources, which are always powered. */
-	i915_interim_irq_silence(&gt->mmio, GEN8_DE_PORT_IMR, GEN8_DE_PORT_IIR, GEN8_DE_PORT_IER);
-	i915_interim_irq_silence(&gt->mmio, GEN8_DE_MISC_IMR, GEN8_DE_MISC_IIR, GEN8_DE_MISC_IER);
+	i915_interim_irq_silence(&gt->mmio, I915_GT_GEN8_DE_PORT_IMR, I915_GT_GEN8_DE_PORT_IIR, I915_GT_GEN8_DE_PORT_IER);
+	i915_interim_irq_silence(&gt->mmio, I915_GT_GEN8_DE_MISC_IMR, I915_GT_GEN8_DE_MISC_IIR, I915_GT_GEN8_DE_MISC_IER);
 
 	/* Silences the south display, whose hotplug would otherwise interrupt. */
 	i915_interim_irq_silence(&gt->mmio, I915_GEN9_SDEIMR, I915_GEN9_SDEIIR, I915_GEN9_SDEIER);

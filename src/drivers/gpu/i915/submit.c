@@ -101,23 +101,23 @@ drv_i915_execlists_submission_setup(
 	/* A Gen9 engine submits through ELSP, with 6 CSB entries and no engine fields in the descriptor. */
 	base = ge->info->mmio_base;
 	if (ge->info->graphics_ver == 9) {
-		ge->submit_reg = RING_ELSP(base);
+		ge->submit_reg = I915_GT_RING_ELSP(base);
 		ge->ctrl_reg = 0U;
 		ge->csb_status = (volatile uint64_t *)&ge->hwsp[I915_HWS_CSB_BUF0_INDEX];
 		ge->csb_write = &ge->hwsp[I915_HWS_CSB_WRITE_INDEX];
-		ge->csb_size = GEN8_CSB_ENTRIES;
+		ge->csb_size = I915_GT_GEN8_CSB_ENTRIES;
 		ge->ccid = 0U;
 		return;
 	}
 
 	/* Names the submission and control registers. */
-	ge->submit_reg = RING_EXECLIST_SQ_CONTENTS(base);
-	ge->ctrl_reg = RING_EXECLIST_CONTROL(base);
+	ge->submit_reg = I915_GT_RING_EXECLIST_SQ_CONTENTS(base);
+	ge->ctrl_reg = I915_GT_RING_EXECLIST_CONTROL(base);
 
 	/* Points at the CSB entries and the write pointer in the status page. */
 	ge->csb_status = (volatile uint64_t *)&ge->hwsp[I915_HWS_CSB_BUF0_INDEX];
-	ge->csb_write = &ge->hwsp[ICL_HWS_CSB_WRITE_INDEX];
-	ge->csb_size = GEN11_CSB_ENTRIES;
+	ge->csb_write = &ge->hwsp[I915_GT_ICL_HWS_CSB_WRITE_INDEX];
+	ge->csb_size = I915_GT_GEN11_CSB_ENTRIES;
 
 	/*
 	 * Gen11 to before 12.50 carries the engine class and instance in the
@@ -125,15 +125,15 @@ drv_i915_execlists_submission_setup(
 	 * as the reference does.
 	 */
 	ge->ccid = 0U;
-	ge->ccid |= (uint32_t)ge->info->instance << (GEN11_ENGINE_INSTANCE_SHIFT - 32);
-	ge->ccid |= (uint32_t)ge->info->class << (GEN11_ENGINE_CLASS_SHIFT - 32);
+	ge->ccid |= (uint32_t)ge->info->instance << (I915_GT_GEN11_ENGINE_INSTANCE_SHIFT - 32);
+	ge->ccid |= (uint32_t)ge->info->class << (I915_GT_GEN11_ENGINE_CLASS_SHIFT - 32);
 }
 
 /*
  * Enables execlists on an engine (enable_execlists()).
  *
- * Writes RING_HWSTAM, disables the legacy ring-buffer mode, clears STOP_RING,
- * points RING_HWS_PGA at the status page, and unmasks the instruction error.
+ * Writes I915_GT_RING_HWSTAM, disables the legacy ring-buffer mode, clears I915_GT_STOP_RING,
+ * points I915_GT_RING_HWS_PGA at the status page, and unmasks the instruction error.
  */
 void
 drv_i915_execlists_enable(
@@ -153,21 +153,21 @@ drv_i915_execlists_enable(
 	base = ge->info->mmio_base;
 
 	/* Lets the engine write every status-page dword (intel_engine_set_hwsp_writemask(engine, ~0u)). */
-	i915_execlists_write(ge, mmio, RING_HWSTAM(base), ~0U);
+	i915_execlists_write(ge, mmio, I915_GT_RING_HWSTAM(base), ~0U);
 
-	/* Disables the legacy ring-buffer mode; GFX_RUN_LIST_ENABLE is the pre-Gen11 bit. */
+	/* Disables the legacy ring-buffer mode; I915_GT_GFX_RUN_LIST_ENABLE is the pre-Gen11 bit. */
 	if (ge->info->graphics_ver == 9) {
-		i915_execlists_write(ge, mmio, RING_MODE_GEN7(base), I915_MASKED_ENABLE(GFX_RUN_LIST_ENABLE));
+		i915_execlists_write(ge, mmio, I915_GT_RING_MODE_GEN7(base), I915_MASKED_ENABLE(I915_GT_GFX_RUN_LIST_ENABLE));
 	} else {
-		i915_execlists_write(ge, mmio, RING_MODE_GEN7(base), I915_MASKED_ENABLE(GEN11_GFX_DISABLE_LEGACY_MODE));
+		i915_execlists_write(ge, mmio, I915_GT_RING_MODE_GEN7(base), I915_MASKED_ENABLE(I915_GT_GEN11_GFX_DISABLE_LEGACY_MODE));
 	}
 
 	/* Lets the ring run. */
-	i915_execlists_write(ge, mmio, RING_MI_MODE(base), I915_MASKED_DISABLE(STOP_RING));
+	i915_execlists_write(ge, mmio, I915_GT_RING_MI_MODE(base), I915_MASKED_DISABLE(I915_GT_STOP_RING));
 
 	/* Gives the engine its status page. */
-	i915_execlists_write(ge, mmio, RING_HWS_PGA(base), (uint32_t)ge->hwsp_ggtt);
-	drv_i915_posting_read32(mmio, RING_HWS_PGA(base));
+	i915_execlists_write(ge, mmio, I915_GT_RING_HWS_PGA(base), (uint32_t)ge->hwsp_ggtt);
+	drv_i915_posting_read32(mmio, I915_GT_RING_HWS_PGA(base));
 
 	/*
 	 * A Gen9 engine also unmasks its own interrupts: the user interrupt,
@@ -177,8 +177,8 @@ drv_i915_execlists_enable(
 	 */
 	if (ge->info->graphics_ver == 9) {
 		engine_irqs = i915_gen9_engine_irqs(ge);
-		i915_execlists_write(ge, mmio, RING_IMR(base), ~engine_irqs);
-		drv_i915_posting_read32(mmio, RING_IMR(base));
+		i915_execlists_write(ge, mmio, I915_GT_RING_IMR(base), ~engine_irqs);
+		drv_i915_posting_read32(mmio, I915_GT_RING_IMR(base));
 	}
 
 	/* Unmasks the instruction error and marks the engine resumed. */
@@ -220,8 +220,8 @@ drv_i915_execlists_reset_csb_pointers(
 	i915_ring_set_paused(ge, 0);
 
 	/* Writes the hardware pointers the first time. */
-	drv_i915_write32(mmio, RING_CONTEXT_STATUS_PTR(base), pointer);
-	drv_i915_posting_read32(mmio, RING_CONTEXT_STATUS_PTR(base));
+	drv_i915_write32(mmio, I915_GT_RING_CONTEXT_STATUS_PTR(base), pointer);
+	drv_i915_posting_read32(mmio, I915_GT_RING_CONTEXT_STATUS_PTR(base));
 	ge->csb_reset_writes++;
 
 	/*
@@ -238,8 +238,8 @@ drv_i915_execlists_reset_csb_pointers(
 		ge->csb_status[index] = I915_CSB_UNWRITTEN;
 
 	/* Writes the hardware pointers the second time. */
-	drv_i915_write32(mmio, RING_CONTEXT_STATUS_PTR(base), pointer);
-	drv_i915_posting_read32(mmio, RING_CONTEXT_STATUS_PTR(base));
+	drv_i915_write32(mmio, I915_GT_RING_CONTEXT_STATUS_PTR(base), pointer);
+	drv_i915_posting_read32(mmio, I915_GT_RING_CONTEXT_STATUS_PTR(base));
 	ge->csb_reset_writes++;
 }
 
@@ -380,7 +380,7 @@ drv_i915_execlists_submit(
 
 	/* Loads the submit queue by hand; the ELSP loads itself on its last dword. */
 	if (ge->ctrl_reg != 0U)
-		drv_i915_write32(mmio, ge->ctrl_reg, EL_CTRL_LOAD);
+		drv_i915_write32(mmio, ge->ctrl_reg, I915_GT_EL_CTRL_LOAD);
 
 	/* A submission moves the engine's serial, which the park switch compares. */
 	el->serial++;
@@ -537,15 +537,15 @@ i915_enable_error_interrupt(
 	base = ge->info->mmio_base;
 
 	/* Masks every error and clears all existing ones. */
-	i915_execlists_write(ge, mmio, RING_EMR(base), ~0U);
-	i915_execlists_write(ge, mmio, RING_EIR(base), ~0U);
+	i915_execlists_write(ge, mmio, I915_GT_RING_EMR(base), ~0U);
+	i915_execlists_write(ge, mmio, I915_GT_RING_EIR(base), ~0U);
 
 	/*
 	 * The reference resets the engine when an error remains.  It is logged
 	 * instead of resetting behind the caller's back: a nonzero ESR at resume
 	 * is a condition the caller must see.
 	 */
-	ge->esr_at_resume = drv_i915_read32(mmio, RING_ESR(base));
+	ge->esr_at_resume = drv_i915_read32(mmio, I915_GT_RING_ESR(base));
 	if (ge->esr_at_resume != 0U) {
 		kern_logf("i915: engine '%s' resumed still in error: %08x\n",
 		    ge->info->name,
@@ -557,7 +557,7 @@ i915_enable_error_interrupt(
 	 * cases the hardware already suppresses, so the reference leaves it
 	 * masked.
 	 */
-	i915_execlists_write(ge, mmio, RING_EMR(base), ~(uint32_t)I915_ERROR_INSTRUCTION);
+	i915_execlists_write(ge, mmio, I915_GT_RING_EMR(base), ~(uint32_t)I915_ERROR_INSTRUCTION);
 }
 
 /*
@@ -616,15 +616,15 @@ i915_csb_report(
 
 	/* The engine's registers. */
 	kern_logf("i915: execlists: status %08x:%08x csb_ptr %08x head %08x tail %08x acthd %08x ipehr %08x eir %08x esr %08x\n",
-	    drv_i915_read32(mmio, RING_EXECLIST_STATUS_HI(base)),
-	    drv_i915_read32(mmio, RING_EXECLIST_STATUS_LO(base)),
-	    drv_i915_read32(mmio, RING_CONTEXT_STATUS_PTR(base)),
-	    drv_i915_read32(mmio, RING_HEAD(base)),
-	    drv_i915_read32(mmio, RING_TAIL(base)),
-	    drv_i915_read32(mmio, RING_ACTHD(base)),
-	    drv_i915_read32(mmio, RING_IPEHR(base)),
-	    drv_i915_read32(mmio, RING_EIR(base)),
-	    drv_i915_read32(mmio, RING_ESR(base)));
+	    drv_i915_read32(mmio, I915_GT_RING_EXECLIST_STATUS_HI(base)),
+	    drv_i915_read32(mmio, I915_GT_RING_EXECLIST_STATUS_LO(base)),
+	    drv_i915_read32(mmio, I915_GT_RING_CONTEXT_STATUS_PTR(base)),
+	    drv_i915_read32(mmio, I915_GT_RING_HEAD(base)),
+	    drv_i915_read32(mmio, I915_GT_RING_TAIL(base)),
+	    drv_i915_read32(mmio, I915_GT_RING_ACTHD(base)),
+	    drv_i915_read32(mmio, I915_GT_RING_IPEHR(base)),
+	    drv_i915_read32(mmio, I915_GT_RING_EIR(base)),
+	    drv_i915_read32(mmio, I915_GT_RING_ESR(base)));
 }
 
 /* Reports 1 when a Gen12 CSB entry promotes the pending ports, 0 when it completes the active one. */
@@ -644,10 +644,10 @@ i915_gen12_csb_parse(
 	 * Nothing switched away, or a new queue was loaded, means the pending
 	 * ports were promoted (__gen12_csb_parse()).
 	 */
-	away_id = (upper & GEN12_CSB_SW_CTX_ID_MASK) >> 15;
-	if (away_id == GEN12_IDLE_CTX_ID)
+	away_id = (upper & I915_GT_GEN12_CSB_SW_CTX_ID_MASK) >> 15;
+	if (away_id == I915_GT_GEN12_IDLE_CTX_ID)
 		return 1;
-	if ((lower & GEN12_CTX_STATUS_SWITCHED_TO_NEW_QUEUE) != 0U)
+	if ((lower & I915_GT_GEN12_CTX_STATUS_SWITCHED_TO_NEW_QUEUE) != 0U)
 		return 1;
 
 	/*
@@ -673,11 +673,11 @@ i915_gen8_csb_parse(
 	lower = (uint32_t)csb;
 
 	/* The engine went from idle to the pending ports. */
-	if ((lower & GEN8_CTX_STATUS_IDLE_ACTIVE) != 0U)
+	if ((lower & I915_GT_GEN8_CTX_STATUS_IDLE_ACTIVE) != 0U)
 		return 1;
 
 	/* The pending ports preempted the active ones. */
-	if ((lower & GEN8_CTX_STATUS_PREEMPTED) != 0U)
+	if ((lower & I915_GT_GEN8_CTX_STATUS_PREEMPTED) != 0U)
 		return 1;
 
 	/* Anything else is the active context completing. */
@@ -685,7 +685,7 @@ i915_gen8_csb_parse(
 }
 
 /*
- * Reports the interrupts a Gen9 engine keeps unmasked in its RING_IMR:
+ * Reports the interrupts a Gen9 engine keeps unmasked in its I915_GT_RING_IMR:
  * the user interrupt, the context switch, the error and the semaphore wait,
  * shifted to the engine's place in its GT bank (logical_ring_default_irqs()).
  */
@@ -699,13 +699,13 @@ i915_gen9_engine_irqs(
 	/* The copy engine sits in the upper half of its bank; the second video engine is not used. */
 	shift = 0U;
 	if (ge->info->id == I915_BCS0)
-		shift = GEN8_BCS_IRQ_SHIFT;
+		shift = I915_GT_GEN8_BCS_IRQ_SHIFT;
 
 	/* The engine's user, context switch, error and semaphore interrupts. */
-	irqs = GT_RENDER_USER_INTERRUPT;
-	irqs |= GT_CONTEXT_SWITCH_INTERRUPT;
-	irqs |= GT_CS_MASTER_ERROR_INTERRUPT;
-	irqs |= GT_WAIT_SEMAPHORE_INTERRUPT;
+	irqs = I915_GT_GT_RENDER_USER_INTERRUPT;
+	irqs |= I915_GT_GT_CONTEXT_SWITCH_INTERRUPT;
+	irqs |= I915_GT_GT_CS_MASTER_ERROR_INTERRUPT;
+	irqs |= I915_GT_GT_WAIT_SEMAPHORE_INTERRUPT;
 
 	/* Reports them at the engine's shift. */
 	return irqs << shift;
@@ -733,11 +733,11 @@ i915_schedule_in(
 	el->context_tag &= ~(((uint64_t)1) << tag);
 
 	/*
-	 * Gen12 before 12.50: (1 + tag) << (GEN11_SW_CTX_ID_SHIFT - 32), with the
+	 * Gen12 before 12.50: (1 + tag) << (I915_GT_GEN11_SW_CTX_ID_SHIFT - 32), with the
 	 * engine fields.  Gen9 takes the same id in its context id field, with
 	 * no engine fields.
 	 */
-	ccid = ((uint32_t)(1 + tag)) << (GEN11_SW_CTX_ID_SHIFT - 32);
+	ccid = ((uint32_t)(1 + tag)) << (I915_GT_GEN11_SW_CTX_ID_SHIFT - 32);
 	ccid |= ge->ccid;
 
 	/* Puts the fields into the descriptor's upper dword and records the id. */
@@ -804,17 +804,17 @@ i915_update_context(
 	/* Resubmitting the same or an earlier tail must force a full restore. */
 	direction = (int32_t)((tail - previous) << wrap);
 	if (direction <= 0)
-		desc |= CTX_DESC_FORCE_RESTORE;
+		desc |= I915_GT_CTX_DESC_FORCE_RESTORE;
 
 	/* Writes the tail into the image; the ring tail moves on past the workaround tail. */
-	ce->lrc_reg_state[CTX_RING_TAIL] = tail;
+	ce->lrc_reg_state[I915_GT_CTX_RING_TAIL] = tail;
 	rq->tail = rq->wa_tail;
 
 	/* The context image must be complete before the uncached ELSQ write. */
 	kern_io_write_barrier();
 
 	/* The forced restore applies to this submission only. */
-	ce->lrc_desc &= ~(uint64_t)CTX_DESC_FORCE_RESTORE;
+	ce->lrc_desc &= ~(uint64_t)I915_GT_CTX_DESC_FORCE_RESTORE;
 
 	/* Reports the descriptor to write. */
 	return desc;
@@ -881,10 +881,10 @@ i915_csb_read(
 		/* Falls back to the MMIO copy when the entry never became visible. */
 		if (entry == I915_CSB_UNWRITTEN) {
 			/* Chooses the MMIO status buffer that holds this entry. */
-			status = GEN8_EXECLISTS_STATUS_BUF;
+			status = I915_GT_GEN8_EXECLISTS_STATUS_BUF;
 			buffer_index = index;
 			if (buffer_index >= I915_CSB_MMIO_FIRST_ENTRIES) {
-				status = GEN11_EXECLISTS_STATUS_BUF2;
+				status = I915_GT_GEN11_EXECLISTS_STATUS_BUF2;
 				buffer_index -= I915_CSB_MMIO_FIRST_ENTRIES;
 			}
 

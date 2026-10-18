@@ -14,7 +14,7 @@
  * through the display operations table at the same points.
  *
  * A Gen9 GT takes the Gen8 layout instead (gen8_irq_reset(),
- * gen8_irq_postinstall(), gen8_irq_handler()): GEN8_MASTER_IRQ, and four GT
+ * gen8_irq_postinstall(), gen8_irq_handler()): I915_GT_GEN8_MASTER_IRQ, and four GT
  * banks of ISR, IMR, IIR and IER whose bits name the engines directly, with
  * no identity handshake.
  */
@@ -80,10 +80,10 @@
 #define I915_IRQ_SYNC_TIMEOUT_US	100000U
 #define I915_IRQ_SYNC_STEP_US		10U
 
-/* The GEN8_MASTER_IRQ bits that name GT sources, with the control bit; the rest are display and PCU. */
-#define I915_IRQ_GEN8_GT_BITS		(GEN8_MASTER_IRQ_CONTROL | GEN8_GT_RCS_IRQ | GEN8_GT_BCS_IRQ | \
-					 GEN8_GT_VCS0_IRQ | GEN8_GT_VCS1_IRQ | GEN8_GT_VECS_IRQ | \
-					 GEN8_GT_PM_IRQ | GEN8_GT_GUC_IRQ)
+/* The I915_GT_GEN8_MASTER_IRQ bits that name GT sources, with the control bit; the rest are display and PCU. */
+#define I915_IRQ_GEN8_GT_BITS		(I915_GT_GEN8_MASTER_IRQ_CONTROL | I915_GT_GEN8_GT_RCS_IRQ | I915_GT_GEN8_GT_BCS_IRQ | \
+					 I915_GT_GEN8_GT_VCS0_IRQ | I915_GT_GEN8_GT_VCS1_IRQ | I915_GT_GEN8_GT_VECS_IRQ | \
+					 I915_GT_GEN8_GT_PM_IRQ | I915_GT_GEN8_GT_GUC_IRQ)
 
 static void i915_irq_write(struct i915_irq_dev *irq, uint32_t offset, uint32_t value, unsigned *counter);
 static uint32_t i915_master_intr_disable(struct i915_irq_dev *irq);
@@ -423,9 +423,9 @@ drv_i915_irq_postinstall(
 	irq->reached_postinstall = 1;
 
 	/* Lets the device raise interrupts, and flushes the enable. */
-	master = GEN11_GFX_MSTR_IRQ;
+	master = I915_GT_GEN11_GFX_MSTR_IRQ;
 	if (gen9 != 0)
-		master = GEN8_MASTER_IRQ;
+		master = I915_GT_GEN8_MASTER_IRQ;
 
 	i915_master_intr_enable(irq);
 	drv_i915_posting_read32(irq->m, master);
@@ -444,25 +444,25 @@ drv_i915_gen11_gt_irq_reset(
 	struct i915_irq_dev *irq)
 {
 	/* Disables the RCS, BCS, VCS and VECS class interrupts. */
-	i915_irq_write(irq, GEN11_RENDER_COPY_INTR_ENABLE, 0U, &irq->reset_writes);
-	i915_irq_write(irq, GEN11_VCS_VECS_INTR_ENABLE, 0U, &irq->reset_writes);
+	i915_irq_write(irq, I915_GT_GEN11_RENDER_COPY_INTR_ENABLE, 0U, &irq->reset_writes);
+	i915_irq_write(irq, I915_GT_GEN11_VCS_VECS_INTR_ENABLE, 0U, &irq->reset_writes);
 
 	/* Masks every interrupt of the RCS, BCS, VCS and VECS engines. */
-	i915_irq_write(irq, GEN11_RCS0_RSVD_INTR_MASK, ~0U, &irq->reset_writes);
-	i915_irq_write(irq, GEN11_BCS_RSVD_INTR_MASK, ~0U, &irq->reset_writes);
-	i915_irq_write(irq, GEN11_VCS0_VCS1_INTR_MASK, ~0U, &irq->reset_writes);
-	i915_irq_write(irq, GEN11_VCS2_VCS3_INTR_MASK, ~0U, &irq->reset_writes);
-	i915_irq_write(irq, GEN11_VECS0_VECS1_INTR_MASK, ~0U, &irq->reset_writes);
+	i915_irq_write(irq, I915_GT_GEN11_RCS0_RSVD_INTR_MASK, ~0U, &irq->reset_writes);
+	i915_irq_write(irq, I915_GT_GEN11_BCS_RSVD_INTR_MASK, ~0U, &irq->reset_writes);
+	i915_irq_write(irq, I915_GT_GEN11_VCS0_VCS1_INTR_MASK, ~0U, &irq->reset_writes);
+	i915_irq_write(irq, I915_GT_GEN11_VCS2_VCS3_INTR_MASK, ~0U, &irq->reset_writes);
+	i915_irq_write(irq, I915_GT_GEN11_VECS0_VECS1_INTR_MASK, ~0U, &irq->reset_writes);
 
 	/* Disables and masks the power management and GuC interrupts. */
-	i915_irq_write(irq, GEN11_GPM_WGBOXPERF_INTR_ENABLE, 0U, &irq->reset_writes);
-	i915_irq_write(irq, GEN11_GPM_WGBOXPERF_INTR_MASK, ~0U, &irq->reset_writes);
-	i915_irq_write(irq, GEN11_GUC_SG_INTR_ENABLE, 0U, &irq->reset_writes);
-	i915_irq_write(irq, GEN11_GUC_SG_INTR_MASK, ~0U, &irq->reset_writes);
+	i915_irq_write(irq, I915_GT_GEN11_GPM_WGBOXPERF_INTR_ENABLE, 0U, &irq->reset_writes);
+	i915_irq_write(irq, I915_GT_GEN11_GPM_WGBOXPERF_INTR_MASK, ~0U, &irq->reset_writes);
+	i915_irq_write(irq, I915_GT_GEN11_GUC_SG_INTR_ENABLE, 0U, &irq->reset_writes);
+	i915_irq_write(irq, I915_GT_GEN11_GUC_SG_INTR_MASK, ~0U, &irq->reset_writes);
 
 	/* Disables and masks the crypto interrupts. */
-	i915_irq_write(irq, GEN11_CRYPTO_RSVD_INTR_ENABLE, 0U, &irq->reset_writes);
-	i915_irq_write(irq, GEN11_CRYPTO_RSVD_INTR_MASK, ~0U, &irq->reset_writes);
+	i915_irq_write(irq, I915_GT_GEN11_CRYPTO_RSVD_INTR_ENABLE, 0U, &irq->reset_writes);
+	i915_irq_write(irq, I915_GT_GEN11_CRYPTO_RSVD_INTR_MASK, ~0U, &irq->reset_writes);
 }
 
 /*
@@ -482,7 +482,7 @@ drv_i915_gen11_gt_irq_postinstall(
 	uint32_t smask;
 
 	/* Every backend needs the user interrupt that completes a request. */
-	irqs = GT_RENDER_USER_INTERRUPT;
+	irqs = I915_GT_GT_RENDER_USER_INTERRUPT;
 
 	/* intel_uc_wants_guc() is false with enable_guc=0. */
 	guc_mask = 0U;
@@ -492,9 +492,9 @@ drv_i915_gen11_gt_irq_postinstall(
 	 * needs the command streamer interrupts.  The GuC arm leaves them out.
 	 */
 	if (irq->submission != I915_SUBMISSION_GUC) {
-		irqs |= GT_CS_MASTER_ERROR_INTERRUPT;
-		irqs |= GT_CONTEXT_SWITCH_INTERRUPT;
-		irqs |= GT_WAIT_SEMAPHORE_INTERRUPT;
+		irqs |= I915_GT_GT_CS_MASTER_ERROR_INTERRUPT;
+		irqs |= I915_GT_GT_CONTEXT_SWITCH_INTERRUPT;
+		irqs |= I915_GT_GT_WAIT_SEMAPHORE_INTERRUPT;
 	}
 
 	/* Places the bits for both engines of a pair, or for the upper one only. */
@@ -507,26 +507,26 @@ drv_i915_gen11_gt_irq_postinstall(
 	irq->gt_smask = smask;
 
 	/* Enables the RCS, BCS, VCS and VECS class interrupts. */
-	i915_irq_write(irq, GEN11_RENDER_COPY_INTR_ENABLE, dmask, &irq->postinstall_writes);
-	i915_irq_write(irq, GEN11_VCS_VECS_INTR_ENABLE, dmask, &irq->postinstall_writes);
+	i915_irq_write(irq, I915_GT_GEN11_RENDER_COPY_INTR_ENABLE, dmask, &irq->postinstall_writes);
+	i915_irq_write(irq, I915_GT_GEN11_VCS_VECS_INTR_ENABLE, dmask, &irq->postinstall_writes);
 
 	/* Unmasks the interrupts of the RCS, BCS, VCS and VECS engines. */
-	i915_irq_write(irq, GEN11_RCS0_RSVD_INTR_MASK, ~smask, &irq->postinstall_writes);
-	i915_irq_write(irq, GEN11_BCS_RSVD_INTR_MASK, ~smask, &irq->postinstall_writes);
-	i915_irq_write(irq, GEN11_VCS0_VCS1_INTR_MASK, ~dmask, &irq->postinstall_writes);
-	i915_irq_write(irq, GEN11_VCS2_VCS3_INTR_MASK, ~dmask, &irq->postinstall_writes);
-	i915_irq_write(irq, GEN11_VECS0_VECS1_INTR_MASK, ~dmask, &irq->postinstall_writes);
+	i915_irq_write(irq, I915_GT_GEN11_RCS0_RSVD_INTR_MASK, ~smask, &irq->postinstall_writes);
+	i915_irq_write(irq, I915_GT_GEN11_BCS_RSVD_INTR_MASK, ~smask, &irq->postinstall_writes);
+	i915_irq_write(irq, I915_GT_GEN11_VCS0_VCS1_INTR_MASK, ~dmask, &irq->postinstall_writes);
+	i915_irq_write(irq, I915_GT_GEN11_VCS2_VCS3_INTR_MASK, ~dmask, &irq->postinstall_writes);
+	i915_irq_write(irq, I915_GT_GEN11_VECS0_VECS1_INTR_MASK, ~dmask, &irq->postinstall_writes);
 
 	/* Enables the GuC interrupts when the GuC is used. */
 	if (guc_mask != 0U)
-		i915_irq_write(irq, GEN11_GUC_SG_INTR_ENABLE, guc_mask << 16, &irq->postinstall_writes);
+		i915_irq_write(irq, I915_GT_GEN11_GUC_SG_INTR_ENABLE, guc_mask << 16, &irq->postinstall_writes);
 
 	/*
 	 * Leaves the RPS interrupts disabled and masked: they are enabled on
 	 * demand when RPS itself is (pm_ier = 0, pm_imr = ~0).
 	 */
-	i915_irq_write(irq, GEN11_GPM_WGBOXPERF_INTR_ENABLE, 0U, &irq->postinstall_writes);
-	i915_irq_write(irq, GEN11_GPM_WGBOXPERF_INTR_MASK, ~0U, &irq->postinstall_writes);
+	i915_irq_write(irq, I915_GT_GEN11_GPM_WGBOXPERF_INTR_ENABLE, 0U, &irq->postinstall_writes);
+	i915_irq_write(irq, I915_GT_GEN11_GPM_WGBOXPERF_INTR_MASK, ~0U, &irq->postinstall_writes);
 }
 
 /*
@@ -543,7 +543,7 @@ drv_i915_gen11_gt_irq_handler(
 
 	/* Serves each bank whose bit the master control carries. */
 	for (bank = 0U; bank < I915_IRQ_GT_BANKS; bank++) {
-		if ((master_ctl & GEN11_GT_DW_IRQ(bank)) != 0U)
+		if ((master_ctl & I915_GT_GEN11_GT_DW_IRQ(bank)) != 0U)
 			i915_gt_bank_handler(irq, bank);
 	}
 }
@@ -565,13 +565,13 @@ drv_i915_gt_pm_reset_iir(
 
 	/* Serves and clears the source while it stays pending, a few times at most. */
 	for (round = 0U; round < I915_IRQ_GTPM_RESETS; round++) {
-		intr_dw = drv_i915_raw_read32(irq->m, GEN11_GT_INTR_DW(0U));
+		intr_dw = drv_i915_raw_read32(irq->m, I915_GT_GEN11_GT_INTR_DW(0U));
 		if ((intr_dw & (1U << I915_IRQ_GTPM_BIT)) == 0U)
 			return;
 
 		/* The identity first, then the bit, or the register stays locked for everybody. */
 		(void)i915_gt_engine_identity(irq, 0U, I915_IRQ_GTPM_BIT);
-		drv_i915_raw_write32(irq->m, GEN11_GT_INTR_DW(0U), 1U << I915_IRQ_GTPM_BIT);
+		drv_i915_raw_write32(irq->m, I915_GT_GEN11_GT_INTR_DW(0U), 1U << I915_IRQ_GTPM_BIT);
 	}
 }
 
@@ -683,9 +683,9 @@ i915_master_intr_disable(
 
 	/* Picks the master control of the GT's layout. */
 	gen9 = i915_irq_gen9(irq);
-	master = GEN11_GFX_MSTR_IRQ;
+	master = I915_GT_GEN11_GFX_MSTR_IRQ;
 	if (gen9 != 0)
-		master = GEN8_MASTER_IRQ;
+		master = I915_GT_GEN8_MASTER_IRQ;
 
 	/* Stops the device from raising further interrupts. */
 	drv_i915_raw_write32(irq->m, master, 0U);
@@ -710,9 +710,9 @@ i915_master_intr_enable(
 	/* Lets the device raise interrupts again, through the master control of the GT's layout. */
 	gen9 = i915_irq_gen9(irq);
 	if (gen9 != 0) {
-		drv_i915_raw_write32(irq->m, GEN8_MASTER_IRQ, GEN8_MASTER_IRQ_CONTROL);
+		drv_i915_raw_write32(irq->m, I915_GT_GEN8_MASTER_IRQ, I915_GT_GEN8_MASTER_IRQ_CONTROL);
 	} else {
-		drv_i915_raw_write32(irq->m, GEN11_GFX_MSTR_IRQ, GEN11_MASTER_IRQ);
+		drv_i915_raw_write32(irq->m, I915_GT_GEN11_GFX_MSTR_IRQ, I915_GT_GEN11_MASTER_IRQ);
 	}
 }
 
@@ -727,7 +727,7 @@ i915_gt_engine_identity(
 	unsigned spins;
 
 	/* Asks the device for the identity behind this bit. */
-	drv_i915_raw_write32(irq->m, GEN11_IIR_REG_SELECTOR(bank), 1U << bit);
+	drv_i915_raw_write32(irq->m, I915_GT_GEN11_IIR_REG_SELECTOR(bank), 1U << bit);
 
 	/*
 	 * Waits for the identity to become valid.  This is a bounded spin,
@@ -735,8 +735,8 @@ i915_gt_engine_identity(
 	 */
 	identity = 0U;
 	for (spins = 0U; spins < I915_IRQ_IDENTITY_READS; spins++) {
-		identity = drv_i915_raw_read32(irq->m, GEN11_INTR_IDENTITY_REG(bank));
-		if ((identity & GEN11_INTR_DATA_VALID) != 0U)
+		identity = drv_i915_raw_read32(irq->m, I915_GT_GEN11_INTR_IDENTITY_REG(bank));
+		if ((identity & I915_GT_GEN11_INTR_DATA_VALID) != 0U)
 			break;
 	}
 
@@ -744,7 +744,7 @@ i915_gt_engine_identity(
 	irq->gt_identity_reads++;
 
 	/* The identity never became valid; there is nothing to acknowledge. */
-	if ((identity & GEN11_INTR_DATA_VALID) == 0U) {
+	if ((identity & I915_GT_GEN11_INTR_DATA_VALID) == 0U) {
 		kern_logf("i915: INTR_IDENTITY_REG%u:%u 0x%08x not valid!\n",
 		    bank,
 		    bit,
@@ -754,7 +754,7 @@ i915_gt_engine_identity(
 	}
 
 	/* Acknowledges the identity by writing DATA_VALID back. */
-	drv_i915_raw_write32(irq->m, GEN11_INTR_IDENTITY_REG(bank), GEN11_INTR_DATA_VALID);
+	drv_i915_raw_write32(irq->m, I915_GT_GEN11_INTR_IDENTITY_REG(bank), I915_GT_GEN11_INTR_DATA_VALID);
 
 	/* Succeeded: reports the class, instance and interrupt bits. */
 	return identity;
@@ -764,7 +764,7 @@ i915_gt_engine_identity(
  * Counts the sources of one engine interrupt.
  *
  * This is the decode of execlists_irq_handler().  The bottom halves
- * (RING_EIR handling, the semaphore yield, the CSB tasklet, the breadcrumb
+ * (I915_GT_RING_EIR handling, the semaphore yield, the CSB tasklet, the breadcrumb
  * signal) belong to the submission backend; here each source is counted,
  * and a user interrupt or a context switch wakes the threads waiting for an
  * engine (the request worker), which read the CSB themselves.
@@ -775,23 +775,23 @@ i915_gt_engine_irq(
 	uint32_t iir)
 {
 	/* The command streamer reported an error. */
-	if ((iir & GT_CS_MASTER_ERROR_INTERRUPT) != 0U)
+	if ((iir & I915_GT_GT_CS_MASTER_ERROR_INTERRUPT) != 0U)
 		irq->gt_error_intr++;
 
 	/* The engine is waiting on a semaphore. */
-	if ((iir & GT_WAIT_SEMAPHORE_INTERRUPT) != 0U)
+	if ((iir & I915_GT_GT_WAIT_SEMAPHORE_INTERRUPT) != 0U)
 		irq->gt_semaphore_intr++;
 
 	/* The engine switched context; the CSB has new entries. */
-	if ((iir & GT_CONTEXT_SWITCH_INTERRUPT) != 0U)
+	if ((iir & I915_GT_GT_CONTEXT_SWITCH_INTERRUPT) != 0U)
 		irq->gt_ctx_switch_intr++;
 
 	/* A user interrupt completed a request. */
-	if ((iir & GT_RENDER_USER_INTERRUPT) != 0U)
+	if ((iir & I915_GT_GT_RENDER_USER_INTERRUPT) != 0U)
 		irq->gt_user_intr++;
 
 	/* Wakes a thread waiting for a request's end or for new status entries. */
-	if ((iir & (GT_RENDER_USER_INTERRUPT | GT_CONTEXT_SWITCH_INTERRUPT)) != 0U)
+	if ((iir & (I915_GT_GT_RENDER_USER_INTERRUPT | I915_GT_GT_CONTEXT_SWITCH_INTERRUPT)) != 0U)
 		i915_engine_wake(irq);
 }
 
@@ -873,9 +873,9 @@ i915_gt_identity_handler(
 	int known;
 
 	/* Splits the identity into class, instance and interrupt bits. */
-	engine_class = GEN11_INTR_ENGINE_CLASS(identity);
-	instance = GEN11_INTR_ENGINE_INSTANCE(identity);
-	intr = GEN11_INTR_ENGINE_INTR(identity);
+	engine_class = I915_GT_GEN11_INTR_ENGINE_CLASS(identity);
+	instance = I915_GT_GEN11_INTR_ENGINE_INSTANCE(identity);
+	intr = I915_GT_GEN11_INTR_ENGINE_INTR(identity);
 	irq->last_gt_identity = identity;
 
 	/* An identity without interrupt bits, or one that never became valid. */
@@ -920,7 +920,7 @@ i915_gt_bank_handler(
 	unsigned bit;
 
 	/* Reads which sources of the bank are pending. */
-	intr_dw = drv_i915_raw_read32(irq->m, GEN11_GT_INTR_DW(bank));
+	intr_dw = drv_i915_raw_read32(irq->m, I915_GT_GEN11_GT_INTR_DW(bank));
 	irq->last_gt_intr_dw[bank] = intr_dw;
 
 	/* Serves each pending source through the identity handshake. */
@@ -933,7 +933,7 @@ i915_gt_bank_handler(
 	}
 
 	/* Clears the bank only after every shared identity has been served. */
-	drv_i915_raw_write32(irq->m, GEN11_GT_INTR_DW(bank), intr_dw);
+	drv_i915_raw_write32(irq->m, I915_GT_GEN11_GT_INTR_DW(bank), intr_dw);
 
 	/* Counts a bank that actually had something to acknowledge. */
 	if (intr_dw != 0U)
@@ -1005,7 +1005,7 @@ i915_irq_handler_body(
 	}
 
 	/* Serves the GT banks the master control reports. */
-	if ((master_ctl & (GEN11_GT_DW_IRQ(0) | GEN11_GT_DW_IRQ(1))) != 0U) {
+	if ((master_ctl & (I915_GT_GEN11_GT_DW_IRQ(0) | I915_GT_GEN11_GT_DW_IRQ(1))) != 0U) {
 		irq->gt_irq_count++;
 		drv_i915_gen11_gt_irq_handler(irq, master_ctl);
 	}
@@ -1016,7 +1016,7 @@ i915_irq_handler_body(
 	 * Without a display table the display sources are counted but
 	 * not acknowledged.
 	 */
-	if ((master_ctl & GEN11_DISPLAY_IRQ) != 0U) {
+	if ((master_ctl & I915_GT_GEN11_DISPLAY_IRQ) != 0U) {
 		irq->display_irq_count++;
 		if (irq->display_ops != NULL)
 			irq->display_ops->handle(irq->display_context, master_ctl);
@@ -1024,7 +1024,7 @@ i915_irq_handler_body(
 
 	/* Reads and clears GU_MISC while the master control is off (gen11_gu_misc_irq_ack()). */
 	gu_misc_iir = 0U;
-	if ((master_ctl & GEN11_GU_MISC_IRQ) != 0U) {
+	if ((master_ctl & I915_GT_GEN11_GU_MISC_IRQ) != 0U) {
 		gu_misc_iir = drv_i915_read32(irq->m, GEN11_GU_MISC_IIR);
 		if (gu_misc_iir != 0U)
 			drv_i915_write32(irq->m, GEN11_GU_MISC_IIR, gu_misc_iir);
@@ -1098,7 +1098,7 @@ i915_gen8_gt_irq_reset(
 
 	/* Bank 0 is RCS and BCS, 1 the video decode engines, 2 PM and GuC, 3 VECS. */
 	for (bank = 0U; bank < 4U; bank++)
-		drv_i915_gen3_irq_reset(irq, GEN8_GT_IMR(bank), GEN8_GT_IIR(bank), GEN8_GT_IER(bank));
+		drv_i915_gen3_irq_reset(irq, I915_GT_GEN8_GT_IMR(bank), I915_GT_GEN8_GT_IIR(bank), I915_GT_GEN8_GT_IER(bank));
 }
 
 /*
@@ -1118,15 +1118,15 @@ i915_gen8_gt_irq_postinstall(
 	uint32_t enhancement;
 
 	/* The interrupts every engine of the execlists backend needs. */
-	irqs = GT_CS_MASTER_ERROR_INTERRUPT;
-	irqs |= GT_RENDER_USER_INTERRUPT;
-	irqs |= GT_CONTEXT_SWITCH_INTERRUPT;
-	irqs |= GT_WAIT_SEMAPHORE_INTERRUPT;
+	irqs = I915_GT_GT_CS_MASTER_ERROR_INTERRUPT;
+	irqs |= I915_GT_GT_RENDER_USER_INTERRUPT;
+	irqs |= I915_GT_GT_CONTEXT_SWITCH_INTERRUPT;
+	irqs |= I915_GT_GT_WAIT_SEMAPHORE_INTERRUPT;
 
 	/* Places the bits of each engine in its bank. */
-	render_copy = (irqs << GEN8_RCS_IRQ_SHIFT) | (irqs << GEN8_BCS_IRQ_SHIFT);
-	video = (irqs << GEN8_VCS0_IRQ_SHIFT) | (irqs << GEN8_VCS1_IRQ_SHIFT);
-	enhancement = irqs << GEN8_VECS_IRQ_SHIFT;
+	render_copy = (irqs << I915_GT_GEN8_RCS_IRQ_SHIFT) | (irqs << I915_GT_GEN8_BCS_IRQ_SHIFT);
+	video = (irqs << I915_GT_GEN8_VCS0_IRQ_SHIFT) | (irqs << I915_GT_GEN8_VCS1_IRQ_SHIFT);
+	enhancement = irqs << I915_GT_GEN8_VECS_IRQ_SHIFT;
 
 	/* Keeps the masks for the diagnostics. */
 	irq->gt_irqs = irqs;
@@ -1134,10 +1134,10 @@ i915_gen8_gt_irq_postinstall(
 	irq->gt_smask = enhancement;
 
 	/* Enables and unmasks the engine banks; the PM bank is left masked (pm_imr = ~0, pm_ier = 0). */
-	drv_i915_gen3_irq_init(irq, GEN8_GT_IMR(0U), ~render_copy, GEN8_GT_IER(0U), render_copy, GEN8_GT_IIR(0U));
-	drv_i915_gen3_irq_init(irq, GEN8_GT_IMR(1U), ~video, GEN8_GT_IER(1U), video, GEN8_GT_IIR(1U));
-	drv_i915_gen3_irq_init(irq, GEN8_GT_IMR(2U), ~0U, GEN8_GT_IER(2U), 0U, GEN8_GT_IIR(2U));
-	drv_i915_gen3_irq_init(irq, GEN8_GT_IMR(3U), ~enhancement, GEN8_GT_IER(3U), enhancement, GEN8_GT_IIR(3U));
+	drv_i915_gen3_irq_init(irq, I915_GT_GEN8_GT_IMR(0U), ~render_copy, I915_GT_GEN8_GT_IER(0U), render_copy, I915_GT_GEN8_GT_IIR(0U));
+	drv_i915_gen3_irq_init(irq, I915_GT_GEN8_GT_IMR(1U), ~video, I915_GT_GEN8_GT_IER(1U), video, I915_GT_GEN8_GT_IIR(1U));
+	drv_i915_gen3_irq_init(irq, I915_GT_GEN8_GT_IMR(2U), ~0U, I915_GT_GEN8_GT_IER(2U), 0U, I915_GT_GEN8_GT_IIR(2U));
+	drv_i915_gen3_irq_init(irq, I915_GT_GEN8_GT_IMR(3U), ~enhancement, I915_GT_GEN8_GT_IER(3U), enhancement, I915_GT_GEN8_GT_IIR(3U));
 }
 
 /*
@@ -1154,27 +1154,27 @@ i915_gen8_gt_irq_handler(
 	uint32_t iir;
 
 	/* Serves the render and copy engines of bank 0. */
-	if ((master_ctl & (GEN8_GT_RCS_IRQ | GEN8_GT_BCS_IRQ)) != 0U) {
+	if ((master_ctl & (I915_GT_GEN8_GT_RCS_IRQ | I915_GT_GEN8_GT_BCS_IRQ)) != 0U) {
 		i915_gen8_gt_bank_ack(irq, 0U, &iir);
-		i915_gen8_engine_irq(irq, I915_RENDER_CLASS, 0, (iir >> GEN8_RCS_IRQ_SHIFT) & 0xffffU);
-		i915_gen8_engine_irq(irq, I915_COPY_ENGINE_CLASS, 0, (iir >> GEN8_BCS_IRQ_SHIFT) & 0xffffU);
+		i915_gen8_engine_irq(irq, I915_RENDER_CLASS, 0, (iir >> I915_GT_GEN8_RCS_IRQ_SHIFT) & 0xffffU);
+		i915_gen8_engine_irq(irq, I915_COPY_ENGINE_CLASS, 0, (iir >> I915_GT_GEN8_BCS_IRQ_SHIFT) & 0xffffU);
 	}
 
 	/* Serves the video decode engines of bank 1. */
-	if ((master_ctl & (GEN8_GT_VCS0_IRQ | GEN8_GT_VCS1_IRQ)) != 0U) {
+	if ((master_ctl & (I915_GT_GEN8_GT_VCS0_IRQ | I915_GT_GEN8_GT_VCS1_IRQ)) != 0U) {
 		i915_gen8_gt_bank_ack(irq, 1U, &iir);
-		i915_gen8_engine_irq(irq, I915_VIDEO_DECODE_CLASS, 0, (iir >> GEN8_VCS0_IRQ_SHIFT) & 0xffffU);
-		i915_gen8_engine_irq(irq, I915_VIDEO_DECODE_CLASS, 1, (iir >> GEN8_VCS1_IRQ_SHIFT) & 0xffffU);
+		i915_gen8_engine_irq(irq, I915_VIDEO_DECODE_CLASS, 0, (iir >> I915_GT_GEN8_VCS0_IRQ_SHIFT) & 0xffffU);
+		i915_gen8_engine_irq(irq, I915_VIDEO_DECODE_CLASS, 1, (iir >> I915_GT_GEN8_VCS1_IRQ_SHIFT) & 0xffffU);
 	}
 
 	/* Serves the video enhancement engine of bank 3. */
-	if ((master_ctl & GEN8_GT_VECS_IRQ) != 0U) {
+	if ((master_ctl & I915_GT_GEN8_GT_VECS_IRQ) != 0U) {
 		i915_gen8_gt_bank_ack(irq, 3U, &iir);
-		i915_gen8_engine_irq(irq, I915_VIDEO_ENHANCEMENT_CLASS, 0, (iir >> GEN8_VECS_IRQ_SHIFT) & 0xffffU);
+		i915_gen8_engine_irq(irq, I915_VIDEO_ENHANCEMENT_CLASS, 0, (iir >> I915_GT_GEN8_VECS_IRQ_SHIFT) & 0xffffU);
 	}
 
 	/* Hands the power management bank to the RPS handler. */
-	if ((master_ctl & (GEN8_GT_PM_IRQ | GEN8_GT_GUC_IRQ)) != 0U) {
+	if ((master_ctl & (I915_GT_GEN8_GT_PM_IRQ | I915_GT_GEN8_GT_GUC_IRQ)) != 0U) {
 		i915_gen8_gt_bank_ack(irq, 2U, &iir);
 		if (iir != 0U) {
 			irq->gt_other_intrs++;
@@ -1191,14 +1191,14 @@ i915_gen8_gt_bank_ack(
 	uint32_t *iir)
 {
 	/* Reads which sources of the bank are pending. */
-	*iir = drv_i915_raw_read32(irq->m, GEN8_GT_IIR(bank));
+	*iir = drv_i915_raw_read32(irq->m, I915_GT_GEN8_GT_IIR(bank));
 
 	/* Nothing pending: there is nothing to acknowledge. */
 	if (*iir == 0U)
 		return;
 
 	/* Acknowledges the bank; a bank of two engines is served for both. */
-	drv_i915_raw_write32(irq->m, GEN8_GT_IIR(bank), *iir);
+	drv_i915_raw_write32(irq->m, I915_GT_GEN8_GT_IIR(bank), *iir);
 
 	/* The diagnostics keep the first two banks, the engine banks of the Gen11 layout too. */
 	if (bank < I915_IRQ_GT_BANKS) {

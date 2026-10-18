@@ -979,7 +979,7 @@ i915_draw_walk_fixture(
 	unsigned i;
 
 	/* Checks that the context names the address space's top directory. */
-	pdp0 = ((uint64_t)t->ce.lrc_reg_state[CTX_PDP0_UDW] << 32) | t->ce.lrc_reg_state[CTX_PDP0_LDW];
+	pdp0 = ((uint64_t)t->ce.lrc_reg_state[I915_GT_CTX_PDP0_UDW] << 32) | t->ce.lrc_reg_state[I915_GT_CTX_PDP0_LDW];
 	t->pdp0_matches_top = 0;
 	if (pdp0 == vm->top_pd_dma)
 		t->pdp0_matches_top = 1;
