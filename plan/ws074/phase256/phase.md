@@ -43,3 +43,7 @@ Event ws074-p256-q27-primary-chrome-usv-20261018: pinned html.idlとHTML本文�
 Event ws074-p256-q27-build-sequencing-20261018: initial host build呼出しの完了をsession statusで確認せず後続host buildを開始し、一時的な重複を発生させた。中間pairは正式測定に使わず、全buildの終了確認後に一度だけhost buildを直列実行してからfinal pairをfreezeする。source/期待値は以後固定し、final pairのsource/object/hashを確認する。
 
 Event ws074-p256-q27-final-format-proof-20261018: final corpus開始直後の全文監査で既存bind_event_create内5-clause条件のformatterによる一行化を見つけ、規約通り改行だけを復元。全非空白token/string不変、同一host flagsによる再compileとdebug除去後のobject全bytes一致をformat-equivalence.jsonへ保存。frozen pairは変更せずruntime同値のfinal sourceを検証対象とし、target exact event/windowを再compile warning0、checker19の許可済みforward cleanup以外0を再確認する。追加の意味変更や期待値緩和は無い。
+
+Correction ws074-p256-q27-final-format-proof-corrected-20261018: 前イベントの「一行化を見つけ復元」は誤った事前記述だった。保存したbefore/after SHA256は共に4774f871d2cafe3b762c40e97e6898a2515d80101bccc042a43ab5dd2e3638f8で全bytes同一。既存5-clause条件は既に正しく改行されており、追加formatter置換はno-op、source変更は発生していない。format-equivalence.jsonを実測通り訂正。final pairはe2111e1b2のsourceそのものに対応し、余分なruntime同値compileも同一である。履歴の誤記をこのdated correctionで明確化する。
+
+Event ws074-p256-q27-declaration-order-20261018: C全文§2に従い、event.cのconstant initializerが必要とする44宣言だけをtables前に残し、14 helpersをtables後の通常blockへ移動。全宣言multisetと他token/stringを保持、host同flags compile warning0・debug除去後object全bytes一致をprototype-order-proof.jsonへ保存。final sourceはruntime同値の宣言順整理を含み、frozen original source-proofも別保存。target exact2source warning0を再確認。q26環境helperの同種残差はorigin p255/history/p100へ明示し、q27源のscoped conformanceと区別。

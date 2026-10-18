@@ -1,0 +1,23 @@
+# p256: q27中の次Queue向け調査（実装未選定）
+
+2026-10-18。q27はnative ErrorEvent/legacy handler partialのみ。以下は通常reporter接続の設計候補であり、新しいsource実行のQueueではない。
+
+## 実codeから確認したこと
+
+- bind/window.cのbind_run_scriptはjs_run_scriptを直接呼び、parser EINVALをconsole SyntaxError、VM_THROWNをwindow_report_exceptionへ送る。reporterはconsoleだけで、Window error event無し。
+- js/script.cのjs_exception_textはToString時の二次VM_THROWNを落として固定fallbackへ置換し、realm.exceptionをundefinedへ変える。元exception/throw metadataはreporter入口でroot/saveしないと再入で失う。
+- vm_realmはthrow_value/line/column/stackのみ。vm/interpreter.cの例外伝播が最初のthrow siteを記録し、catch時にclearする。vm/function.cはforeign realm例外をcallerへ移し、callee側をclearする。sourceを加えるならこの両経路とrealm tracerを対にする。
+- vm_codeはmanaged cellでnested codeをconstantsとして所有する。vm/code.cがmodelをcopy/traceし、js/emit.cのjs_emit_finishが全nested functionのmodelを生成する。sourceのimmutable metadataをcode生成時に与える候補なら、callback保存後も実際の定義元を保持できる。report時のcurrentScriptや現在のURLからの推測では、外部functionをinline scriptから呼んだ場合を判定できない。
+- js/compile.cのcompile_programはarena内js_compilerを作り、tracerを登録してnested codeをemitする。js_run_scriptはparse/compile/callをまとめる。明示的なprivate source-aware entry point、compiler内source保持/trace、emit modelへの引渡しが候補。bytecode作成後の無言の書換えは現行immutable契約と整合させる必要がある。
+- page/script.cのparser/dynamic inlineはbind_run_scriptを呼ぶ。bind/document.cのbind_run_inline_scriptも実child realmのinlineだけを呼ぶ。inlineのURLはbind_document_url(document,0,...)なら実Document URLで、base要素やblank fallbackと区別可能。
+- 同page/script.cのblocking/async外部scriptは独立経路。script_fetch_fileはprefetch cacheまたはpage_fetchからbytesだけ取り、最終URLを捨てる。page_prefetchedはlocation/error/bytesのみで、view/view.cのpage_add_prefetched呼出しからもfinal response/CORS taintを渡していない。外部scriptを単にname文字列から同一originと認定しない。
+
+## 分割候補と検証条件
+
+まずcode生成時のreal source metadataとthrow伝播/GCを検証し、known inline sourceは実URL・元errorを通知、unknown/muted sourceはScript error./empty filename/0/0/nullへ保守的にredactする有限partialが候補。外部scriptのsame-origin/redirect/CORS provenance、eval/Function/module/workerは必要なmetadataが未達なら明示残差に保持し、全対応を主張しない。この案のexact source roots/command/criteriaは次Queue前に確定する。
+
+Window report modeはWindowごとの再入抑止。native ErrorEventを実globalへtrusted/cancelableとしてdispatchし、preventDefault/legacy trueでconsoleを抑止。listener内throwの再帰eventを防ぎつつnested consoleと後続listenerを維持。元exception・pending exception・throw source/position/stackをroot/save/restoreし、ToString getter/handlerでのGC・再入・退役を検証する。Promise reporting_rejectionは通常error eventへ混同しない。syntax EINVALとnative engine unsupported/internal failureは分けて記録する。
+
+独立timer-only意図的throw＋公式harness negativeを必ず非PASSにし、正常timer positiveをPASSにする。次にq26のObserver negativeとprior/future positive、held原WPTを再評価。console文字列のrunner補正、WPT改変、heldの先取り加算はしない。最終pairでfixed全corpusと全文規約/host/target/GCを検証する。
+
+Primary: [HTML report an exception](https://html.spec.whatwg.org/multipage/webappapis.html#report-an-exception)。実コードはe2111e1b2周辺の読み取りに基づく。未解決の詳細をこの候補で完了扱いしない。

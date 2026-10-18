@@ -36,19 +36,14 @@
 static void event_trace(struct vm_heap *heap, struct vm_cell *cell);
 static void listeners_trace(struct vm_heap *heap, struct vm_cell *cell);
 static void listeners_finalize(struct vm_heap *heap, struct vm_cell *cell);
-static int event_this(struct vm_realm *realm, vm_value this_value, struct bind_event **event);
 static int event_target_construct(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_add_listener(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_remove_listener(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_dispatch_method(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
-static int event_listener_options(struct vm_realm *realm, vm_value options, int *capture, int *once);
-static void event_forget_listener(struct bind_listeners *listeners, size_t index);
 static int event_construct(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_construct_mouse(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_construct_custom(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_construct_error(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
-static int event_error_this(struct vm_realm *realm, vm_value receiver, struct bind_event **event);
-static int event_error_scalar(struct vm_realm *realm, vm_value given, struct vm_string **text);
 static int event_error_message(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_error_filename(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_error_line(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
@@ -77,20 +72,11 @@ static int event_init(struct vm_realm *realm, vm_value this_value, const vm_valu
 static int event_init_ui(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_ui_detail(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_view(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
-static int event_is_ui(int interface);
-static int event_ui_this(struct vm_realm *realm, vm_value this_value, struct bind_event **event);
-static int event_window_value(struct vm_realm *realm, vm_value given, vm_value *view);
-static void event_initialize(struct bind_event *event, struct vm_string *type, int bubbles, int cancelable);
 static int event_detail(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_message_origin(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_message_last_id(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_message_source(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_message_ports(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
-static int event_build_path(struct bind_window *window, vm_value target, const struct bind_event *event, struct vm_object *path);
-static int event_invoke(struct bind_window *window, vm_value current, vm_value event_value, int phase, unsigned kinds);
-static int event_call_listener(struct bind_window *window, vm_value callback, vm_value current, vm_value event_value, int legacy_error, vm_value *returned);
-static int event_is_window_error(struct bind_window *window, vm_value current, const struct bind_event *event, int handler);
-static int event_fire(struct bind_window *window, struct dom_node *target, int interface, const char *type, unsigned flags, const struct bind_mouse *mouse, int *canceled);
 
 /* The state of an event, which refers to its type, targets and detail. */
 static const struct vm_cell_type event_type_cell = { "event", event_trace, NULL };
@@ -260,6 +246,22 @@ static const struct bind_attribute error_event_attributes[] = {
 const struct bind_interface bind_error_event_interface = {
 	"ErrorEvent", BIND_EVENT, 1, event_construct_error, error_event_attributes, NULL, NULL
 };
+
+/* Helpers not referenced by constant initializers follow the file-scope tables. */
+static int event_this(struct vm_realm *realm, vm_value this_value, struct bind_event **event);
+static int event_listener_options(struct vm_realm *realm, vm_value options, int *capture, int *once);
+static void event_forget_listener(struct bind_listeners *listeners, size_t index);
+static int event_error_this(struct vm_realm *realm, vm_value receiver, struct bind_event **event);
+static int event_error_scalar(struct vm_realm *realm, vm_value given, struct vm_string **text);
+static int event_is_ui(int interface);
+static int event_ui_this(struct vm_realm *realm, vm_value this_value, struct bind_event **event);
+static int event_window_value(struct vm_realm *realm, vm_value given, vm_value *view);
+static void event_initialize(struct bind_event *event, struct vm_string *type, int bubbles, int cancelable);
+static int event_build_path(struct bind_window *window, vm_value target, const struct bind_event *event, struct vm_object *path);
+static int event_invoke(struct bind_window *window, vm_value current, vm_value event_value, int phase, unsigned kinds);
+static int event_call_listener(struct bind_window *window, vm_value callback, vm_value current, vm_value event_value, int legacy_error, vm_value *returned);
+static int event_is_window_error(struct bind_window *window, vm_value current, const struct bind_event *event, int handler);
+static int event_fire(struct bind_window *window, struct dom_node *target, int interface, const char *type, unsigned flags, const struct bind_mouse *mouse, int *canceled);
 
 /*
  * Reports the state of the event an Event object stands for, or NULL
