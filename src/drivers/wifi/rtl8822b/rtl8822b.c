@@ -3129,7 +3129,7 @@ radio_rf_channel_20(
 	error = journal_rf_update(
 		radio, journal, 0U, 0xbeU, 0x00038000U,
 		channel_is_w52(channel)
-			? rtw8822b_w52_rf_be[(channel - 36U) / 4U]
+			? rtl8822b_w52_rf_band_select[(channel - 36U) / 4U]
 			: 0U,
 		deadline_ticks);
 	if (error == 0) {
@@ -3281,8 +3281,8 @@ radio_cca_20(
 	/* Handles the channel is w52 condition. */
 	if (channel_is_w52(channel)) {
 		const uint32_t(*table)[3] = radio->board.rfe_option == 2U
-						    ? rtw8822b_w52_cca_type2
-						    : rtw8822b_w52_cca_type35;
+						    ? rtl8822b_w52_cca_rfe2
+						    : rtl8822b_w52_cca_rfe35;
 		path = radio->board.chip.rf_path_count > 1U ? 1U : 0U;
 
 		cca_select = table[path][0];
@@ -3505,11 +3505,11 @@ radio_table_section_apply(
 	size_t index;
 
 	/* Process each remaining element. */
-	for (index = 0; index < sizeof(rtw8822b_phy_sections) /
-					sizeof(rtw8822b_phy_sections[0]);
+	for (index = 0; index < sizeof(rtl8822b_table_sections) /
+					sizeof(rtl8822b_table_sections[0]);
 	     index++) {
 		/* Handles the section condition. */
-		section = &rtw8822b_phy_sections[index];
+		section = &rtl8822b_table_sections[index];
 		if (section->domain != domain ||
 		    (domain == RTL8822B_TABLE_DOMAIN_RF &&
 		     section->rf_path != rf_path))
@@ -3611,9 +3611,9 @@ radio_txagc_legacy_index(
 	unsigned section = rate < 4U ? 0U : 1U;
 	int section_base = section == 0U ? 32 : 28;
 	int limit_offset =
-		(int)rtw8822b_2g_legacy_world_limit[channel - 1U][section] -
+		(int)rtl8822b_2g_legacy_limit[channel - 1U][section] -
 		section_base;
-	int rate_offset = rtw8822b_2g_legacy_rate_offset[rate];
+	int rate_offset = rtl8822b_2g_legacy_rate_offset[rate];
 	int index;
 
 	/* Handles the rate offset condition. */
@@ -3659,9 +3659,9 @@ radio_txagc_5g_legacy_index(
 	unsigned group = radio_w52_power_group(channel);
 	unsigned channel_index = (channel - 36U) / 4U;
 	int section_base = board->rfe_option == 2U ? 32 : 26;
-	int limit_offset = (int)rtw8822b_w52_legacy_world_limit[channel_index] -
+	int limit_offset = (int)rtl8822b_w52_legacy_limit[channel_index] -
 			   section_base;
-	int rate_offset = rtw8822b_5g_legacy_rate_offset[rate - 4U];
+	int rate_offset = rtl8822b_5g_legacy_rate_offset[rate - 4U];
 	int index;
 
 	/* Handles the rate offset condition. */
