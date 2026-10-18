@@ -578,3 +578,12 @@ WS074 の記録の q590・q594〜q598（Codex の browser3）は main の同じ�
 | --- | --- | --- | --- | --- |
 | q1244 / q1244-i01 | P1 | ws245-p046・p044・p045 | p046 の目視の残り（tests/display と xd 以外の file、comment・関数名）、p044・p045 の host の受け入れの残り（各 phase.md の再開の手順）。動作は変えない | 区切り（2026-10-18）: p046 の非 xd の本番と試験の書き方（cebac0006）、host-xd-output-test の light/dark 11 行（be2e6c243）、判定の材料（af9e0e81e・b3be578c5）、merge e319b7d27。build 3 組 warning 0・run-xd-host-tests PASS は P1 の報告。p044・p045 の host の受け入れの残り（p044: 9 行×4 種の列・RKL・ADL-S の takeover・TGL の流れ B、p045: ICL の列・takeover・WM・FEC）は未実施、p046 は comment と関数名の通読が残る。3 Phase とも in-progress |
 | q1245 / q1245-i01 | P1（q1244 の後） | ws251-p002 | 残り: Pi 4 の build 1 回、WS237 gen9・WS229 bootfb の host 試験、file ごとの目視の記録、範囲外の include/libc/vulkan/API-PROVENANCE.md・include/kern/tty.h。bcm2711 の段の名前は残す（ユーザーの決定 (a)） | 返却（2026-10-18）: API-PROVENANCE.md・tty.h（24ad9dfc1）、記録（9c59634ce）、merge 7905ef996。Pi 4 の build warning 0・check PASS、gen9 の host 試験 4 本・bootfb 0 failures は P1 の報告。Q1 の確かめで tty.h に BUG-175 が 1 件残っていたので Q1 が直した（grep 0 件）。p002 は file ごとの目視の点検（完了の条件 2）が残るので in-progress |
+
+## 2026-10-18 夕: P1 の続き（q1246〜）
+
+承認: 2026-10-18 ユーザー「続けてください。」（Q1 の解釈は Master の decisions-log）。P1 は Opus 5.5 low、子のエージェントなし。worktree p1・branch agent/p1-q1246（基点 main）。
+
+| Queue | 担当 | Phase | 範囲 | 結果 |
+| --- | --- | --- | --- | --- |
+| q1246 / q1246-i01 | P1 | ws245-p044・p045・p046 | p044・p045 の host の受け入れの残り（各 phase.md の「判定の材料」の残り）、p046 の comment の 1 行ずつと関数名の写しの目視。動作は変えない | in-progress |
+| q1247 / q1247-i01 | P1（q1246 の後） | ws251-p002 | 完了の条件 2: p002 が変えた file ごとの目視の点検（開発の段・試験の運用の話）と記録 | pending |
