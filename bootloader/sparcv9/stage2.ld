@@ -1,3 +1,14 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Links the second stage at its 1 MiB load address, the stack and BSS after it.
+ */
+
 OUTPUT_FORMAT("elf64-sparc")
 OUTPUT_ARCH(sparc:v9)
 ENTRY(_start)

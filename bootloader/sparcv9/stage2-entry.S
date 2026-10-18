@@ -5,6 +5,12 @@
  * SPDX-License-Identifier: Zlib
  */
 
+/*
+ * The second stage's entry: it moves to its own stack, clears its BSS and
+ * calls sparcv9_stage2_main() with the client interface and the boot disk.
+ * It also holds the MMU switch the loader uses before copying the kernel.
+ */
+
 	.section ".text.entry", #alloc, #execinstr
 	.align 4
 	.global _start
