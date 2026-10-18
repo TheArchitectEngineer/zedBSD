@@ -2,7 +2,7 @@
 
 # ws263-p002 HAL の芯と vmunix（QEMU virt、OpenSBI からの直の起動）
 
-Status: in-progress（2026-10-19 P1、q1257。T1 の判定待ち）
+Status: cleared（2026-10-19 Q1 判定: T1-711 で A（4 CPU）・B（cpus=1）とも画面で HAL READY・SMP N ONLINE・VFS initialization failed を確かめた（QEMU、a194caab9、merge 52ad09aed））（旧: in-progress（2026-10-19 P1、q1257。T1 の判定待ち））
 
 - 親: [WS263](../ws.md)。設計: [design.md](../design.md)。
 - HAL の API の差分（事前の承認の範囲、Guardrail の 2026-10-18 の行。朝にユーザーへ報告）:

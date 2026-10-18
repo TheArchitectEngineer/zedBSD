@@ -582,7 +582,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS260](ws260/ws.md) | MG006 | i915 の Gen9 の display（gen9-*.c）を xd と同じく自前で書き直す（2026-10-18 ユーザー） | incomplete（p001 を P1、q1252） | p001 設計 |
 | [WS261](ws261/ws.md) | MG008 | include/kern/boot.h から PC-98・Raspberry Pi の固有の構造体を除く（2026-10-18 ユーザー） | completed（2026-10-18） | — |
 | [WS262](ws262/ws.md) | MG001 | boot loader（bootloader/）をコーディング規約の全文に合わせる（2026-10-18 ユーザー） | incomplete（p001 を P2、q1256） | p001 |
-| [WS263](ws263/ws.md) | MG008 | riscv32 の virt（QEMU）への移植、framebuffer の console・VFS の段まで（2026-10-18 ユーザー） | planning（担当は未定） | p001 設計 |
+| [WS263](ws263/ws.md) | MG008 | riscv32 の virt（QEMU）への移植、framebuffer の console・VFS の段まで（2026-10-18 ユーザー） | incomplete（p001・p002 cleared、T1-711） | p003 規約 |
 | [WS264](ws264/ws.md) | MG008 | ppc32 の QEMU の machine（「virt」相当）への移植、framebuffer の console・VFS の段まで（2026-10-18 ユーザー） | planning（担当は未定） | p001 設計 |
 | [WS265](ws265/ws.md) | MG008 | ppc64 の QEMU の machine（「virt」相当）への移植、framebuffer の console・VFS の段まで（2026-10-18 ユーザー） | planning（担当は未定） | p001 設計 |
 | [WS266](ws266/ws.md) | MG008 | m68k（68030）の virt（QEMU）への移植、framebuffer の console・VFS の段まで（2026-10-18 ユーザー） | planning（担当は未定） | p001 設計 |

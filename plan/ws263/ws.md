@@ -18,6 +18,7 @@
 
 | Phase | 目的 | 状態 |
 | --- | --- | --- |
-| [p001](phase001/phase.md) | 設計（[design.md](design.md)）: QEMU の machine と画面の device、firmware・起動の道、toolchain、HAL の構成、HAL の API の差分、試験の道具、Phase の表 | in-progress |
-| [p002](phase002/phase.md) | HAL の芯と vmunix（riscv32 の HAL・platform・build・boot-test の mode）、T1 の画面で到達点 | in-progress |
+| [p001](phase001/phase.md) | 設計（[design.md](design.md)）: QEMU の machine と画面の device、firmware・起動の道、toolchain、HAL の構成、HAL の API の差分、試験の道具、Phase の表 | cleared（2026-10-19 Q1） |
+| [p002](phase002/phase.md) | HAL の芯と vmunix（riscv32 の HAL・platform・build・boot-test の mode）、T1 の画面で到達点 | cleared（2026-10-19 Q1、T1-711） |
+| p003 | 規約の全文の見直し（WS263 で足した code を plan/coding-style.md の全文と照らす、書き方だけ） | planned（P1 の q1257 の最後） |
 - 決定（2026-10-18 ユーザー、クリック）: HAL の API は形を限った事前の承認（Guardrail の表）。
