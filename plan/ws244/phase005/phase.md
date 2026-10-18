@@ -2,7 +2,7 @@
 
 # ws244-p005 GT の submit: context・request・submit・engine の書き直し
 
-Status: in-progress（2026-10-19 q1260 P1。範囲は済み、cleared は Q1）
+Status: cleared（2026-10-19 Q1 判定: context・request・submit の書き直し（前の版との比べ context 559・request 292・submit 724 行一致）、engine・defaults・worker の言及の掃除、build 4 組 warning 0（P1 の報告）。ac058991c・0f4a846f2、merge 7ebce4341。log の文言に残る Linux の関数名は p009 で直す（Q1 の判断））（旧: in-progress（2026-10-19 q1260 P1。範囲は済み、cleared は Q1））
 
 - 親: [WS244](../ws.md)。範囲: context.c・context.h・request.c・request.h・submit.c・submit.h・engine.c・engine.h と、p004 から移した defaults.c・defaults.h・worker.c の言及。動作は変えない。
 
