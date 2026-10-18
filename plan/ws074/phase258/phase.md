@@ -2,11 +2,11 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: uncleared（q39 IsArray partial cleared、whole Proxy未達）
+Status: in-progress（q40 extensibility partial、whole Proxy未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
-Queue: ws074-q20261018-39-i01（q30〜q38 partial履歴保持）
+Queue: ws074-q20261018-40-i01（q30〜q39 partial履歴保持）
 Origin: p189/q29 original WebIDL2 parseがProxy未定義で停止。
 
 Objective / own criteria: native managed Proxyを実object internal methodsへ接続し、constructor/revocableと各internal operationのtrap/fallback/invariant/receiver/revocation/callability/GCを正しく実行する。original WebIDL2 actual parse/validatorに必要なget/set/array behaviorを通常APIで提供し、independent controls/原WPTを通す。部分read stageだけでwholeをclearしない。
@@ -149,3 +149,5 @@ exact finite scopeどおりfocused gatesのみ。all1508はq37、static/scripted
 Raw archive68 membersを全member read-back、SHA25656690aa90d83af6200e77c119bdff5902eebd5a171de50a78128163822260c7d。凍結binaryはhash付きbuildに保持しarchive未同梱。
 
 [証拠](evidence/20261018-q39/README.md)。次finite Queueはremaining internal methodsを具体化して選定する。
+
+Event ws074-p258-q40-selected-20261018: q38 actual差を元にIsExtensible/PreventExtensionsと公開2 wrappersを最大90分で選定。native no-script policy保持、other invariants/nested/global/seal/freezeは未選定。exact scopeはQueue、whole未達。
