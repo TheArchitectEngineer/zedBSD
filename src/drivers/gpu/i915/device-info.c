@@ -8,16 +8,16 @@
 /*
  * The GT and engine information of the device (see device-info.h).
  *
- * The step follows Linux's intel_gt_init_mmio() for Alder Lake-P:
- * the timestamp clock (intel_gt_init_clock_frequency()), the SSEU fuse
- * decode (gen12_sseu_info_init()), the L3 bank steering mask
- * (intel_gt_mcr_init()), the engine objects with the media fuses applied
- * (intel_engines_init_mmio()), and the check and clear of any GPU fault left
- * pending by the firmware (intel_gt_check_and_clear_faults()).
+ * The GT reports itself through fuses and clock registers: the command
+ * streamer timestamp's source and rate, which slices, subslices and EUs
+ * survived fusing, which L3 banks are usable, and which media engines are
+ * present.  The engines are then built from the platform's engine list,
+ * less the ones fused off, and any GPU fault the firmware left pending is
+ * reported and cleared.
  *
- * A Gen9 GT takes the Gen9 branch of each: gen9_read_clock_frequency(),
- * gen9_sseu_info_init(), no L3 bank steering, the Gen9 engine bases with no
- * media fuse, the Gen6 reset domains and the Gen8 fault registers.
+ * The two generations the driver serves differ in where they keep each of
+ * these, so each has a description (struct i915_gt_generation) and the
+ * steps below read it instead of testing the version at every turn.
  */
 
 #include "device-info.h"
@@ -25,124 +25,122 @@
 
 #include <kern/klog.h>
 
+#include <stdbool.h>
 #include <stddef.h>
 
-/* RPM_CONFIG0: the crystal clock frequency and the timestamp shift. */
-#define I915_RPM_CONFIG0				0x00d00U
-#define I915_RPM_CONFIG0_CRYSTAL_CLOCK_FREQ_SHIFT	3U
-#define I915_RPM_CONFIG0_CRYSTAL_CLOCK_FREQ_MASK	(0x7U << 3)
-#define I915_RPM_CONFIG0_CTC_SHIFT_PARAMETER_SHIFT	1U
-#define I915_RPM_CONFIG0_CTC_SHIFT_PARAMETER_MASK	(0x3U << 1)
-
-/* CTC_MODE: where the command streamer timestamp is derived from. */
-#define I915_CTC_MODE					0x0a26cU
-#define I915_CTC_SOURCE_PARAMETER_MASK			1U
-#define I915_CTC_SOURCE_DIVIDE_LOGIC			1U
-
-/* GEN9_TIMESTAMP_OVERRIDE: the timestamp frequency on the divide-logic path. */
-#define I915_TIMESTAMP_OVERRIDE				0x044074U
-
-/* GEN10_MIRROR_FUSE3: the L3 bank disable fuse. */
-#define I915_MIRROR_FUSE3				0x09118U
-#define I915_L3BANK_MASK				0x0fU
-
-/* CTC_MODE on Gen9 carries the timestamp shift itself, beside the source bit. */
-#define I915_CTC_SHIFT_PARAMETER_SHIFT			1U
-#define I915_CTC_SHIFT_PARAMETER_MASK			(0x3U << 1)
-
-/* The crystal clock of every non-LP Gen9 part: 24 MHz. */
-#define I915_GEN9_CRYSTAL_CLOCK				24000000U
-
-/* GEN8_FUSE2 on Gen9: the enabled slices and the subslices disabled in every slice. */
-#define I915_GEN8_FUSE2					0x09120U
-#define I915_GEN8_F2_S_ENA_SHIFT			25U
-#define I915_GEN8_F2_S_ENA_MASK				(0x7U << 25)
-#define I915_GEN9_F2_SS_DIS_SHIFT			20U
-#define I915_GEN9_F2_SS_DIS_MASK			(0xfU << 20)
-
-/* GEN9_EU_DISABLE(slice): eight disable bits for each subslice of a slice. */
-#define I915_GEN9_EU_DISABLE(slice)			(0x09134U + (uint32_t)(slice) * 4U)
-
-/* The Gen9 layout: at most 3 slices, 4 subslices each, 8 EUs per subslice. */
-#define I915_GEN9_MAX_SLICES				3U
-#define I915_GEN9_MAX_SUBSLICES				4U
-#define I915_GEN9_MAX_EUS_PER_SUBSLICE			8U
-
-/* The Gen11/Gen12 slice, subslice and EU fuses. */
-#define I915_EU_DISABLE					0x09134U
-#define I915_EU_DIS_MASK				0xffU
-#define I915_GT_SLICE_ENABLE				0x09138U
-#define I915_GT_S_ENA_MASK				0xffU
-#define I915_GT_GEOMETRY_DSS_ENABLE			0x0913cU
-
-/* GEN11_GT_VEBOX_VDBOX_DISABLE: the media engine fuses. */
-#define I915_GT_VEBOX_VDBOX_DISABLE			0x09140U
-#define I915_GT_VDBOX_DISABLE_MASK			0xffU
-#define I915_GT_VEBOX_DISABLE_SHIFT			16U
-#define I915_GT_VEBOX_DISABLE_MASK			(0x0fU << 16)
-
-/* The Gen12 GPU fault registers. */
-#define I915_FAULT_TLB_DATA0				0x0ceb8U
-#define I915_FAULT_TLB_DATA1				0x0cebcU
-#define I915_RING_FAULT_REG				0x0cec4U
-#define I915_RING_FAULT_VALID				(1U << 0)
-#define I915_RING_FAULT_ENGINE_ID_SHIFT			12U
-#define I915_RING_FAULT_ENGINE_ID_MASK			0x7U
-#define I915_FAULT_VA_HIGH_BITS				0xfU
-#define I915_FAULT_GTT_SEL				(1U << 4)
-
-/* The Gen8 GPU fault registers, which Gen9 uses. */
-#define I915_GEN8_FAULT_TLB_DATA0			0x04b10U
-#define I915_GEN8_FAULT_TLB_DATA1			0x04b14U
-#define I915_GEN8_RING_FAULT_REG			0x04094U
-
 /*
- * The error registers intel_gt_clear_error_registers() clears.
+ * The timestamp's source and rate: CTC_MODE picks the divide logic
+ * (TIMESTAMP_OVERRIDE) or the crystal; on Gen12 RPM_CONFIG0 names the
+ * crystal and the shift, on Gen9 the crystal is 24 MHz and CTC_MODE holds
+ * the shift.
  *
- * They sit in the render forcewake range.
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_gt_regs.h
+ * (RPM_CONFIG0, GEN11_RPM_CONFIG0_CRYSTAL_CLOCK_FREQ_MASK,
+ * GEN10_RPM_CONFIG0_CTC_SHIFT_PARAMETER_MASK, CTC_MODE,
+ * CTC_SOURCE_PARAMETER_MASK, CTC_SOURCE_DIVIDE_LOGIC,
+ * CTC_SHIFT_PARAMETER_MASK), drivers/gpu/drm/i915/i915_reg.h
+ * (GEN9_TIMESTAMP_OVERRIDE) and drivers/gpu/drm/i915/gt/intel_gt_clock_utils.c
+ * (read_reference_ts_freq, gen11_get_crystal_clock_freq,
+ * gen9_read_clock_frequency).
  */
-#define I915_PGTBL_ER					0x02024U
-#define I915_IPEIR_I965					0x02064U
-#define I915_GEN2_IIR					0x020a4U
-#define I915_EIR					0x020b0U
-#define I915_EMR					0x020b4U
-#define I915_MASTER_ERROR_INTERRUPT			(1U << 15)
+#define I915_INFO_RPM_CONFIG0		0x00d00U
+#define I915_INFO_CRYSTAL_SHIFT		3U
+#define I915_INFO_CRYSTAL_MASK		(0x7U << 3)
+#define I915_INFO_RPM_TICK_SHIFT	1U
+#define I915_INFO_RPM_TICK_MASK		(0x3U << 1)
+#define I915_INFO_CTC_MODE		0x0a26cU
+#define I915_INFO_CTC_DIVIDE_LOGIC	1U
+#define I915_INFO_CTC_TICK_SHIFT	1U
+#define I915_INFO_CTC_TICK_MASK		(0x3U << 1)
+#define I915_INFO_TIMESTAMP_OVERRIDE	0x044074U
+#define I915_INFO_GEN9_CRYSTAL_HZ	24000000U
 
-/* The logical ring context sizes (intel_engine_cs.c). */
-#define I915_CONTEXT_PAGE_SIZE				4096U
-#define I915_LR_CONTEXT_RENDER_SIZE			(14U * I915_CONTEXT_PAGE_SIZE)
-#define I915_GEN9_LR_CONTEXT_RENDER_SIZE		(22U * I915_CONTEXT_PAGE_SIZE)
-#define I915_LR_CONTEXT_OTHER_SIZE			(2U * I915_CONTEXT_PAGE_SIZE)
-
-/* How many video decode and video enhancement instances the media fuses describe. */
-#define I915_MAX_VCS					8U
-#define I915_MAX_VECS					4U
+static const uint32_t i915_info_crystal_hz[] = { 24000000U, 19200000U, 38400000U, 25000000U };
 
 /*
- * The per-engine reset domains (GEN11_GRDOM_*, intel_gt_regs.h).  VCS2 is
- * the third video decode instance, so its domain is MEDIA3, not MEDIA2.
- * (the media and enhancement bits were the Gen6 layout's, which
- * named the GuC domain for VCS0.)
+ * The fuses: the L3 bank disables, the Gen12 slice, DSS and EU fuses, the
+ * media engine disables, and the Gen9 slice and subslice fuse with its EU
+ * disables a slice.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_gt_regs.h
+ * (GEN10_MIRROR_FUSE3, GEN10_L3BANK_MASK, GEN11_EU_DISABLE, GEN11_EU_DIS_MASK,
+ * GEN11_GT_SLICE_ENABLE, GEN11_GT_S_ENA_MASK, GEN12_GT_GEOMETRY_DSS_ENABLE,
+ * GEN11_GT_VEBOX_VDBOX_DISABLE, GEN11_GT_VDBOX_DISABLE_MASK,
+ * GEN11_GT_VEBOX_DISABLE_MASK, GEN8_FUSE2, GEN8_F2_S_ENA_MASK,
+ * GEN9_F2_SS_DIS_MASK, GEN9_EU_DISABLE).
  */
-#define I915_GRDOM_RENDER				(1U << 1)
-#define I915_GRDOM_BLT					(1U << 2)
-#define I915_GRDOM_MEDIA				(1U << 5)
-#define I915_GRDOM_MEDIA3				(1U << 7)
-#define I915_GRDOM_VECS					(1U << 13)
+#define I915_INFO_MIRROR_FUSE3		0x09118U
+#define I915_INFO_L3BANK_MASK		0x0fU
+#define I915_INFO_EU_DISABLE		0x09134U
+#define I915_INFO_EU_DISABLE_MASK	0xffU
+#define I915_INFO_SLICE_ENABLE		0x09138U
+#define I915_INFO_SLICE_ENABLE_MASK	0xffU
+#define I915_INFO_DSS_ENABLE		0x0913cU
+#define I915_INFO_MEDIA_DISABLE		0x09140U
+#define I915_INFO_VDBOX_MASK		0xffU
+#define I915_INFO_VEBOX_SHIFT		16U
+#define I915_INFO_VEBOX_MASK		(0x0fU << 16)
+#define I915_INFO_GEN9_FUSE2		0x09120U
+#define I915_INFO_GEN9_SLICE_SHIFT	25U
+#define I915_INFO_GEN9_SLICE_MASK	(0x7U << 25)
+#define I915_INFO_GEN9_SS_OFF_SHIFT	20U
+#define I915_INFO_GEN9_SS_OFF_MASK	(0xfU << 20)
+#define I915_INFO_GEN9_EU_DISABLE(s)	(0x09134U + (uint32_t)(s) * 4U)
 
-/* The per-engine reset domains of Gen9 (GEN6_GRDOM_*, intel_gt_regs.h). */
-#define I915_GEN6_GRDOM_RENDER				(1U << 1)
-#define I915_GEN6_GRDOM_MEDIA				(1U << 2)
-#define I915_GEN6_GRDOM_BLT				(1U << 3)
-#define I915_GEN6_GRDOM_VECS				(1U << 4)
+/* The Gen9 shape (not the LP parts): 3 slices of 4 subslices of 8 EUs; Gen12: 1 slice of 6 DSS of 16 EUs. */
+#define I915_INFO_GEN9_SLICES		3U
+#define I915_INFO_GEN9_SUBSLICES	4U
+#define I915_INFO_GEN9_EUS		8U
+#define I915_INFO_GEN12_DSS		6U
+#define I915_INFO_GEN12_EUS		16U
 
-/* The user-visible engine capabilities (I915_VIDEO_CLASS_CAPABILITY_*). */
-#define I915_CAPABILITY_HEVC				(1U << 0)
-#define I915_CAPABILITY_SFC				(1U << 1)
+/* How many decode and enhancement instances the media fuse describes. */
+#define I915_INFO_MEDIA_VCS		8U
+#define I915_INFO_MEDIA_VECS		4U
 
 /*
- * One engine the platform may have, as the reference table describes it.
+ * The GPU fault registers (the ring fault, its valid bit and engine field,
+ * the two TLB data words, the address high bits and the GGTT select), and
+ * the error registers cleared with them.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_gt_regs.h
+ * (GEN12_FAULT_TLB_DATA0, GEN12_FAULT_TLB_DATA1, GEN12_RING_FAULT_REG,
+ * GEN8_FAULT_TLB_DATA0, GEN8_FAULT_TLB_DATA1, GEN8_RING_FAULT_REG,
+ * RING_FAULT_VALID, RING_FAULT_ENGINE_ID, FAULT_VA_HIGH_BITS, FAULT_GTT_SEL,
+ * IPEIR_I965), drivers/gpu/drm/i915/i915_reg.h (PGTBL_ER, GEN2_IIR, EIR,
+ * EMR, I915_MASTER_ERROR_INTERRUPT) and drivers/gpu/drm/i915/gt/intel_gt.c
+ * (gen8_check_faults, intel_gt_clear_error_registers).
  */
+#define I915_INFO_FAULT_VALID		(1U << 0)
+#define I915_INFO_FAULT_ENGINE_SHIFT	12U
+#define I915_INFO_FAULT_ENGINE_MASK	0x7U
+#define I915_INFO_FAULT_VA_HIGH		0xfU
+#define I915_INFO_FAULT_GGTT		(1U << 4)
+#define I915_INFO_PGTBL_ER		0x02024U
+#define I915_INFO_IPEIR			0x02064U
+#define I915_INFO_IIR			0x020a4U
+#define I915_INFO_EIR			0x020b0U
+#define I915_INFO_EMR			0x020b4U
+#define I915_INFO_MASTER_ERROR		(1U << 15)
+
+/*
+ * The logical ring context image sizes: render on Gen11 and Gen12, render
+ * on Gen9, and every other class.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_engine_cs.c
+ * (GEN11_LR_CONTEXT_RENDER_SIZE, GEN9_LR_CONTEXT_RENDER_SIZE,
+ * GEN8_LR_CONTEXT_OTHER_SIZE, intel_engine_context_size).
+ */
+#define I915_INFO_PAGE			4096U
+#define I915_INFO_RENDER_PAGES		14U
+#define I915_INFO_GEN9_RENDER_PAGES	22U
+#define I915_INFO_OTHER_PAGES		2U
+
+/* The capabilities user space sees on a video engine. */
+#define I915_INFO_CAP_HEVC		(1U << 0)
+#define I915_INFO_CAP_SFC		(1U << 1)
+
+/* One engine of a platform's list. */
 struct i915_engine_table_entry {
 	int id;
 	int class;
@@ -151,46 +149,83 @@ struct i915_engine_table_entry {
 	const char *name;
 };
 
-/*
- * The engines Alder Lake-P can have, in the reference's order.
- *
- * The table never changes and every device shares it.
- */
+/* An engine's own GDRST bit. */
+struct i915_info_reset_domain {
+	int id;
+	uint32_t domain;
+};
+
+/* The engines Alder Lake-P and a Gen9 GT can have. */
 static const struct i915_engine_table_entry i915_engine_table[] = {
 #include "intel/engine-table.inc"
 };
-
-/*
- * The engines a Gen9 GT can have, in the reference's order.
- *
- * The table never changes and every Gen9 device shares it.
- */
 static const struct i915_engine_table_entry i915_engine_table_gen9[] = {
 #include "intel/engine-table-gen9.inc"
 };
 
-static unsigned i915_hweight16(uint16_t bits);
-static unsigned i915_hweight32(uint32_t bits);
-static uint32_t i915_crystal_clock_frequency(uint32_t rpm_config);
-static uint32_t i915_reference_timestamp_frequency(struct i915_mmio *mmio);
-static uint32_t i915_read_clock_frequency(struct i915_mmio *mmio, uint32_t *period_ns);
-static uint32_t i915_gen9_read_clock_frequency(struct i915_mmio *mmio, uint32_t *period_ns);
-static void i915_compute_sseu_info(struct i915_sseu *sseu, uint32_t subslice_enable, uint16_t eu_enable);
-static void i915_sseu_info_init(struct i915_sseu *sseu, struct i915_mmio *mmio);
-static void i915_gen9_sseu_info_init(struct i915_sseu *sseu, struct i915_mmio *mmio);
-static uint32_t i915_engine_context_size(int graphics_ver, int class);
-static uint32_t i915_engine_mask_apply_media_fuses(struct i915_gt_info *gt, uint32_t engine_mask, struct i915_mmio *mmio);
-static uint32_t i915_engine_reset_domain(int graphics_ver, int id);
-static void i915_engine_setup_capabilities(const struct i915_gt_info *gt, struct i915_engine_info *engine);
-static void i915_check_and_clear_faults(struct i915_gt_info *gt, struct i915_mmio *mmio);
+/*
+ * The engines' own GDRST bits.  The third decode instance (VCS2) has the
+ * MEDIA3 bit.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_gt_regs.h
+ * (GEN11_GRDOM_RENDER, GEN11_GRDOM_BLT, GEN11_GRDOM_MEDIA, GEN11_GRDOM_MEDIA3,
+ * GEN11_GRDOM_VECS, GEN6_GRDOM_RENDER, GEN6_GRDOM_MEDIA, GEN6_GRDOM_BLT,
+ * GEN6_GRDOM_VECS) and drivers/gpu/drm/i915/gt/intel_engine_cs.c
+ * (get_reset_domain).
+ */
+static const struct i915_info_reset_domain i915_info_domains_gen12[] = {
+	{ I915_RCS0, 1U << 1 },
+	{ I915_BCS0, 1U << 2 },
+	{ I915_VCS0, 1U << 5 },
+	{ I915_VCS2, 1U << 7 },
+	{ I915_VECS0, 1U << 13 },
+};
+static const struct i915_info_reset_domain i915_info_domains_gen9[] = {
+	{ I915_RCS0, 1U << 1 },
+	{ I915_BCS0, 1U << 3 },
+	{ I915_VCS0, 1U << 2 },
+	{ I915_VECS0, 1U << 4 },
+};
+
+/* Where a generation keeps what the GT reports about itself. */
+struct i915_gt_generation {
+	const struct i915_engine_table_entry *engines;
+	size_t engine_count;
+	const struct i915_info_reset_domain *domains;
+	size_t domain_count;
+	uint32_t fault;
+	uint32_t fault_data0;
+	uint32_t fault_data1;
+	bool gen9;
+};
+
+static const struct i915_gt_generation i915_info_gen12 = {
+	i915_engine_table, sizeof(i915_engine_table) / sizeof(i915_engine_table[0]),
+	i915_info_domains_gen12, sizeof(i915_info_domains_gen12) / sizeof(i915_info_domains_gen12[0]),
+	0x0cec4U, 0x0ceb8U, 0x0cebcU, false
+};
+static const struct i915_gt_generation i915_info_gen9 = {
+	i915_engine_table_gen9, sizeof(i915_engine_table_gen9) / sizeof(i915_engine_table_gen9[0]),
+	i915_info_domains_gen9, sizeof(i915_info_domains_gen9) / sizeof(i915_info_domains_gen9[0]),
+	0x04094U, 0x04b10U, 0x04b14U, true
+};
+
+static unsigned i915_info_bits(uint32_t bits);
+static uint32_t i915_info_timestamp_hz(const struct i915_gt_generation *g, struct i915_mmio *mmio, uint32_t *period_ns);
+static void i915_info_sseu_gen12(struct i915_sseu *sseu, struct i915_mmio *mmio);
+static void i915_info_sseu_gen9(struct i915_sseu *sseu, struct i915_mmio *mmio);
+static uint32_t i915_info_media_fuses(struct i915_gt_info *gt, uint32_t engine_mask, struct i915_mmio *mmio);
+static uint32_t i915_info_context_size(int graphics_ver, int class);
+static uint32_t i915_info_reset_domain_of(const struct i915_gt_generation *g, int id);
+static uint32_t i915_info_capabilities(const struct i915_gt_info *gt, const struct i915_engine_info *engine);
+static void i915_info_faults(struct i915_gt_info *gt, const struct i915_gt_generation *g, struct i915_mmio *mmio);
 
 /*
- * Reads the GT and engine information of an Alder Lake-P device.
+ * Reads the GT and engine information.
  *
- * This is Linux's intel_gt_init_mmio().  The platform engine mask is the
- * device-table value (RCS0, BCS0, VECS0, VCS0 and VCS2 for Alder Lake-P); the
- * media fuses are applied to it here exactly as the reference does.  The
- * caller holds the render and GT forcewake domains.  Returns 0.
+ * platform_engine_mask is the platform's engine list (RCS0, BCS0, VECS0,
+ * VCS0 and VCS2 for Alder Lake-P); the media fuses take engines out of it.
+ * The caller holds the render and GT forcewake domains.  Returns 0.
  */
 int
 drv_i915_gt_init_mmio(
@@ -199,746 +234,396 @@ drv_i915_gt_init_mmio(
 	uint32_t platform_engine_mask,
 	struct i915_mmio *mmio)
 {
+	const struct i915_gt_generation *g;
 	const struct i915_engine_table_entry *entry;
 	struct i915_engine_info *engine;
-	unsigned table_length;
-	unsigned engine_count;
-	unsigned mask_weight;
-	const struct i915_engine_table_entry *table;
-	unsigned index;
 	uint32_t engine_mask;
-	uint32_t mirror_fuse;
+	unsigned built;
+	unsigned weight;
+	size_t i;
 
-	/* Records the graphics version every later step branches on. */
+	g = graphics_ver == 9 ? &i915_info_gen9 : &i915_info_gen12;
 	gt->graphics_ver = graphics_ver;
 
-	/* Reads the command streamer timestamp frequency (intel_gt_init_clock_frequency()). */
-	if (graphics_ver == 9) {
-		gt->clock_frequency = i915_gen9_read_clock_frequency(mmio, &gt->clock_period_ns);
-	} else {
-		gt->clock_frequency = i915_read_clock_frequency(mmio, &gt->clock_period_ns);
-	}
+	gt->clock_frequency = i915_info_timestamp_hz(g, mmio, &gt->clock_period_ns);
+	gt->clock_valid = gt->clock_frequency != 0U ? 1 : 0;
 
-	gt->clock_valid = 0;
-	if (gt->clock_frequency != 0U)
-		gt->clock_valid = 1;
+	if (g->gen9)
+		i915_info_sseu_gen9(&gt->sseu, mmio);
+	else
+		i915_info_sseu_gen12(&gt->sseu, mmio);
 
-	/* Decodes which subslices and EUs survived fusing (intel_sseu_info_init()). */
-	if (graphics_ver == 9) {
-		i915_gen9_sseu_info_init(&gt->sseu, mmio);
-	} else {
-		i915_sseu_info_init(&gt->sseu, mmio);
-	}
-
-	/*
-	 * Installs the L3 bank steering (intel_gt_mcr_init()): graphics 11 up to
-	 * 12.50 steer to an L3 bank, and the usable banks are the inverse of the
-	 * mirror fuse.  Gen9 has neither the fuse nor the steering.
-	 */
-	if (graphics_ver == 9) {
+	/* Gen12 steers to an L3 bank: the usable banks are the ones the mirror fuse leaves. */
+	if (g->gen9) {
 		gt->l3bank_mask = 0U;
 		gt->l3bank_steering = 0;
 	} else {
-		mirror_fuse = drv_i915_read32(mmio, I915_MIRROR_FUSE3);
-		gt->l3bank_mask = (~mirror_fuse) & I915_L3BANK_MASK;
+		gt->l3bank_mask = ~drv_i915_read32(mmio, I915_INFO_MIRROR_FUSE3) & I915_INFO_L3BANK_MASK;
 		if (gt->l3bank_mask == 0U)
 			kern_logf("i915: WARN L3 bank mask is all zero!\n");
-
-		/* The L3 banks are reached through steering. */
 		gt->l3bank_steering = 1;
 	}
 
-	/*
-	 * Drops the engines the media fuses disabled (intel_engines_init_mmio()).
-	 * Media versions before 11 have no such fuse: every engine of the
-	 * platform's mask is present.
-	 */
-	if (graphics_ver == 9) {
+	/* Gen9 has no media fuse: every engine of the list is there. */
+	if (g->gen9) {
 		engine_mask = platform_engine_mask;
 		gt->sfc_mask = 0U;
 		gt->vdbox_sfc_access = 0U;
 	} else {
-		engine_mask = i915_engine_mask_apply_media_fuses(gt, platform_engine_mask, mmio);
+		engine_mask = i915_info_media_fuses(gt, platform_engine_mask, mmio);
 	}
 
-	/* Picks the engine table of the graphics version. */
-	if (graphics_ver == 9) {
-		table = i915_engine_table_gen9;
-		table_length = sizeof(i915_engine_table_gen9) / sizeof(i915_engine_table_gen9[0]);
-	} else {
-		table = i915_engine_table;
-		table_length = sizeof(i915_engine_table) / sizeof(i915_engine_table[0]);
-	}
-
-	/* Builds one engine object for every engine that survived fusing. */
-	engine_count = 0U;
-	for (index = 0U; index < table_length; index++) {
-		entry = &table[index];
-
-		/* Skips an engine the platform does not have or the fuses removed. */
+	built = 0U;
+	for (i = 0; i < g->engine_count; i++) {
+		entry = &g->engines[i];
 		if ((engine_mask & (1U << (unsigned)entry->id)) == 0U)
 			continue;
-
-		/* Stops when the engine array is full. */
-		if (engine_count >= (unsigned)I915_MAX_ENGINES)
+		if (built >= (unsigned)I915_MAX_ENGINES)
 			break;
 
-		/* Claims the next engine slot. */
-		engine = &gt->engines[engine_count];
-		engine_count++;
-
-		/* Records who the engine is and where its registers are. */
+		engine = &gt->engines[built++];
 		engine->id = entry->id;
 		engine->graphics_ver = graphics_ver;
 		engine->class = entry->class;
 		engine->instance = entry->instance;
 		engine->mmio_base = entry->base;
 		engine->mask = 1U << (unsigned)entry->id;
-		engine->reset_domain = i915_engine_reset_domain(graphics_ver, entry->id);
+		engine->reset_domain = i915_info_reset_domain_of(g, entry->id);
 		engine->name = entry->name;
 		engine->logical_instance = (unsigned)entry->instance;
+		engine->context_size = i915_info_context_size(graphics_ver, entry->class);
 
-		/* Sizes the engine's context image. */
-		engine->context_size = i915_engine_context_size(graphics_ver, entry->class);
-
-		/*
-		 * Records what user space may use on the engine.  Gen9 offers no
-		 * video work, so its video engines advertise neither HEVC nor the
-		 * converter.
-		 */
-		engine->uabi_capabilities = 0U;
-		if (graphics_ver != 9)
-			i915_engine_setup_capabilities(gt, engine);
-
-		/* The slot now holds a built engine. */
+		/* Gen9 offers no video work, so its video engines advertise nothing. */
+		engine->uabi_capabilities = g->gen9 ? 0U : i915_info_capabilities(gt, engine);
 		engine->in_use = 1;
 	}
-
-	/* Publishes the engines that were built. */
-	gt->num_engines = engine_count;
+	gt->num_engines = built;
 	gt->engine_mask = engine_mask;
 
-	/* Reports an engine mask that does not match the engines built. */
-	mask_weight = i915_hweight32(engine_mask);
-	if (mask_weight != engine_count) {
-		kern_logf("i915: WARN engine_mask 0x%x has %u bits but %u engines were built\n",
-			  engine_mask,
-			  mask_weight,
-			  engine_count);
-	}
+	weight = i915_info_bits(engine_mask);
+	if (weight != built)
+		kern_logf("i915: WARN engine_mask 0x%x has %u bits but %u engines were built\n", engine_mask, weight, built);
 
-	/* Reports and clears any GPU fault the firmware left pending. */
-	i915_check_and_clear_faults(gt, mmio);
-
-	/* The information is complete. */
+	i915_info_faults(gt, g, mmio);
 	gt->inited = 1;
-
-	/* Succeeded: the GT information is filled. */
 	return 0;
 }
 
-/* Counts the set bits of a 16-bit mask. */
+/* The number of set bits. */
 static unsigned
-i915_hweight16(
-	uint16_t bits)
-{
-	unsigned count;
-
-	/* Adds up the bits one at a time. */
-	count = 0U;
-	while (bits != 0U) {
-		count += (unsigned)(bits & 1U);
-		bits = (uint16_t)(bits >> 1);
-	}
-
-	/* Reports the number of set bits. */
-	return count;
-}
-
-/* Counts the set bits of a 32-bit mask. */
-static unsigned
-i915_hweight32(
+i915_info_bits(
 	uint32_t bits)
 {
-	unsigned count;
+	unsigned n;
 
-	/* Adds up the bits one at a time. */
-	count = 0U;
-	while (bits != 0U) {
-		count += (unsigned)(bits & 1U);
-		bits >>= 1;
-	}
-
-	/* Reports the number of set bits. */
-	return count;
+	for (n = 0U; bits != 0U; bits >>= 1)
+		n += bits & 1U;
+	return n;
 }
 
-/* Decodes the crystal clock frequency RPM_CONFIG0 reports (gen11_get_crystal_clock_freq()). */
+/*
+ * The command streamer timestamp's rate in Hz, zero when unknown, and its
+ * period in nanoseconds (zero with it).  The timestamp ticks once every
+ * 2^(3 - shift) crystal cycles.
+ */
 static uint32_t
-i915_crystal_clock_frequency(
-	uint32_t rpm_config)
-{
-	uint32_t crystal_clock;
-
-	/* Extracts the crystal clock selector. */
-	crystal_clock = (rpm_config & I915_RPM_CONFIG0_CRYSTAL_CLOCK_FREQ_MASK) >> I915_RPM_CONFIG0_CRYSTAL_CLOCK_FREQ_SHIFT;
-
-	/* Translates the selector into Hz. */
-	switch (crystal_clock) {
-	case 0U:
-		/* 24 MHz. */
-		return 24000000U;
-	case 1U:
-		/* 19.2 MHz. */
-		return 19200000U;
-	case 2U:
-		/* 38.4 MHz. */
-		return 38400000U;
-	case 3U:
-		/* 25 MHz. */
-		return 25000000U;
-	default:
-		/* A selector the reference does not know leaves the frequency unknown. */
-		kern_logf("i915: MISSING_CASE crystal_clock=%u\n", crystal_clock);
-		return 0U;
-	}
-}
-
-/* Reads the timestamp frequency the divide logic produces (read_reference_ts_freq()). */
-static uint32_t
-i915_reference_timestamp_frequency(
-	struct i915_mmio *mmio)
-{
-	uint32_t timestamp_override;
-	uint32_t base_frequency;
-	uint32_t fraction_frequency;
-
-	/* Reads the timestamp override register. */
-	timestamp_override = drv_i915_read32(mmio, I915_TIMESTAMP_OVERRIDE);
-
-	/* The whole-MHz part is the low ten bits plus one. */
-	base_frequency = ((timestamp_override >> 0) & 0x3ffU) + 1U;
-	base_frequency *= 1000000U;
-
-	/* The fractional part is one MHz divided by the denominator field plus one. */
-	fraction_frequency = (timestamp_override >> 12) & 0xfU;
-	fraction_frequency = 1000000U / (fraction_frequency + 1U);
-
-	/* Reports the timestamp frequency in Hz. */
-	return base_frequency + fraction_frequency;
-}
-
-/* Reads the command streamer timestamp frequency and its period (gen11_read_clock_frequency()). */
-static uint32_t
-i915_read_clock_frequency(
+i915_info_timestamp_hz(
+	const struct i915_gt_generation *g,
 	struct i915_mmio *mmio,
 	uint32_t *period_ns)
 {
-	uint32_t ctc_mode;
-	uint32_t rpm_config;
+	uint32_t ctc;
+	uint32_t rpm;
+	uint32_t ov;
+	uint32_t crystal;
 	uint32_t shift;
-	uint32_t frequency;
+	uint32_t hz;
 
-	/*
-	 * CTC_MODE says whether the timestamp comes from TIMESTAMP_OVERRIDE or
-	 * from the crystal clock through RPM_CONFIG0.
-	 */
-	ctc_mode = drv_i915_read32(mmio, I915_CTC_MODE);
-	if ((ctc_mode & I915_CTC_SOURCE_PARAMETER_MASK) == I915_CTC_SOURCE_DIVIDE_LOGIC) {
-		frequency = i915_reference_timestamp_frequency(mmio);
+	ctc = drv_i915_read32(mmio, I915_INFO_CTC_MODE);
+	if ((ctc & I915_INFO_CTC_DIVIDE_LOGIC) == I915_INFO_CTC_DIVIDE_LOGIC) {
+		/* Whole MHz in 9:0 (less one), and 1 MHz over the denominator in 15:12 (less one). */
+		ov = drv_i915_read32(mmio, I915_INFO_TIMESTAMP_OVERRIDE);
+		hz = ((ov & 0x3ffU) + 1U) * 1000000U + 1000000U / (((ov >> 12) & 0xfU) + 1U);
+	} else if (g->gen9) {
+		shift = (ctc & I915_INFO_CTC_TICK_MASK) >> I915_INFO_CTC_TICK_SHIFT;
+		hz = I915_INFO_GEN9_CRYSTAL_HZ >> (3U - shift);
 	} else {
-		rpm_config = drv_i915_read32(mmio, I915_RPM_CONFIG0);
-		frequency = i915_crystal_clock_frequency(rpm_config);
-
-		/*
-		 * The timestamp may increment only every few crystal clock
-		 * cycles; the shift parameter says how many.
-		 */
-		shift = (rpm_config & I915_RPM_CONFIG0_CTC_SHIFT_PARAMETER_MASK) >> I915_RPM_CONFIG0_CTC_SHIFT_PARAMETER_SHIFT;
-		frequency >>= 3U - shift;
+		rpm = drv_i915_read32(mmio, I915_INFO_RPM_CONFIG0);
+		crystal = (rpm & I915_INFO_CRYSTAL_MASK) >> I915_INFO_CRYSTAL_SHIFT;
+		hz = 0U;
+		if (crystal < sizeof(i915_info_crystal_hz) / sizeof(i915_info_crystal_hz[0]))
+			hz = i915_info_crystal_hz[crystal];
+		else
+			kern_logf("i915: MISSING_CASE crystal_clock=%u\n", crystal);
+		shift = (rpm & I915_INFO_RPM_TICK_MASK) >> I915_INFO_RPM_TICK_SHIFT;
+		hz >>= 3U - shift;
 	}
 
-	/* Reports the period, or zero when the frequency is unknown. */
-	if (period_ns != NULL) {
-		if (frequency != 0U) {
-			*period_ns = 1000000000U / frequency;
-		} else {
-			*period_ns = 0U;
-		}
-	}
-
-	/* Reports the frequency in Hz, or zero when it is unknown. */
-	return frequency;
+	if (period_ns != NULL)
+		*period_ns = hz != 0U ? 1000000000U / hz : 0U;
+	return hz;
 }
 
-/* Reads the Gen9 command streamer timestamp frequency and its period (gen9_read_clock_frequency()). */
-static uint32_t
-i915_gen9_read_clock_frequency(
-	struct i915_mmio *mmio,
-	uint32_t *period_ns)
-{
-	uint32_t ctc_mode;
-	uint32_t shift;
-	uint32_t frequency;
-
-	/*
-	 * CTC_MODE says whether the timestamp comes from TIMESTAMP_OVERRIDE or
-	 * from the fixed 24 MHz crystal, and carries the crystal's shift itself.
-	 */
-	ctc_mode = drv_i915_read32(mmio, I915_CTC_MODE);
-	if ((ctc_mode & I915_CTC_SOURCE_PARAMETER_MASK) == I915_CTC_SOURCE_DIVIDE_LOGIC) {
-		frequency = i915_reference_timestamp_frequency(mmio);
-	} else {
-		/* The timestamp increments once every 2^(3 - shift) crystal cycles. */
-		shift = (ctc_mode & I915_CTC_SHIFT_PARAMETER_MASK) >> I915_CTC_SHIFT_PARAMETER_SHIFT;
-		frequency = I915_GEN9_CRYSTAL_CLOCK >> (3U - shift);
-	}
-
-	/* Reports the period, or zero when the frequency is unknown. */
-	if (period_ns != NULL) {
-		if (frequency != 0U) {
-			*period_ns = 1000000000U / frequency;
-		} else {
-			*period_ns = 0U;
-		}
-	}
-
-	/* Reports the frequency in Hz, or zero when it is unknown. */
-	return frequency;
-}
-
-/* Records the enabled subslices and EUs and counts them (gen11_compute_sseu_info()). */
+/*
+ * The Gen12 slice, DSS and EU fuses.  One slice; each enable bit of the EU
+ * fuse stands for a pair of EUs, the same in every DSS.
+ */
 static void
-i915_compute_sseu_info(
-	struct i915_sseu *sseu,
-	uint32_t subslice_enable,
-	uint16_t eu_enable)
-{
-	uint32_t valid_subslice_mask;
-	unsigned subslice;
-
-	/* Limits the subslice fuse to the subslices the generation has. */
-	if (sseu->max_subslices >= 32U) {
-		valid_subslice_mask = 0xffffffffU;
-	} else {
-		valid_subslice_mask = (1U << sseu->max_subslices) - 1U;
-	}
-
-	/* Slice 0 is present and holds the enabled subslices. */
-	sseu->slice_mask |= 1U;
-	sseu->subslice_mask = (uint16_t)(subslice_enable & valid_subslice_mask);
-
-	/* Gives every present subslice the same EU set (sseu_set_eus()). */
-	for (subslice = 0U; subslice < sseu->max_subslices; subslice++) {
-		if ((sseu->subslice_mask & (1U << subslice)) == 0U)
-			continue;
-
-		if (subslice < I915_SSEU_MAX_SUBSLICES)
-			sseu->eu_mask[subslice] = eu_enable;
-	}
-
-	/* Counts the EUs in one subslice. */
-	sseu->eu_per_subslice = (uint16_t)i915_hweight16(eu_enable);
-
-	/* Counts the EUs over the populated subslices (compute_eu_total()). */
-	sseu->eu_total = 0U;
-	for (subslice = 0U; subslice < sseu->max_subslices; subslice++) {
-		if (subslice >= I915_SSEU_MAX_SUBSLICES)
-			break;
-
-		sseu->eu_total = (uint16_t)(sseu->eu_total + i915_hweight16(sseu->eu_mask[subslice]));
-	}
-}
-
-/* Decodes the Gen12 slice, subslice and EU fuses (gen12_sseu_info_init()). */
-static void
-i915_sseu_info_init(
+i915_info_sseu_gen12(
 	struct i915_sseu *sseu,
 	struct i915_mmio *mmio)
 {
-	uint32_t slice_fuse;
-	uint32_t dss_enable;
-	uint32_t eu_disable;
-	uint16_t eu_enable;
-	uint8_t eu_enable_fuse;
-	uint8_t slice_enable;
-	unsigned index;
+	uint32_t slices;
+	uint32_t dss;
+	uint8_t pairs;
+	uint16_t eus;
+	unsigned i;
 
-	/*
-	 * Gen12 has Dual-Subslices, which behave like two Gen11 subslices:
-	 * one slice, six DSS, sixteen EUs per DSS (intel_sseu_set_info()).
-	 */
 	sseu->max_slices = 1U;
-	sseu->max_subslices = 6U;
-	sseu->max_eus_per_subslice = 16U;
+	sseu->max_subslices = (uint8_t)I915_INFO_GEN12_DSS;
+	sseu->max_eus_per_subslice = (uint8_t)I915_INFO_GEN12_EUS;
 	sseu->slice_mask = 0U;
 	sseu->subslice_mask = 0U;
+	for (i = 0U; i < I915_SSEU_MAX_SUBSLICES; i++)
+		sseu->eu_mask[i] = 0U;
 
-	/* Starts with no EU present in any subslice. */
-	for (index = 0U; index < I915_SSEU_MAX_SUBSLICES; index++)
-		sseu->eu_mask[index] = 0U;
+	slices = drv_i915_read32(mmio, I915_INFO_SLICE_ENABLE) & I915_INFO_SLICE_ENABLE_MASK;
+	if (slices != 0x1U)
+		kern_logf("i915: WARN GT_SLICE_ENABLE=0x%x (expected 0x1)\n", (unsigned)slices);
+	dss = drv_i915_read32(mmio, I915_INFO_DSS_ENABLE);
+	pairs = (uint8_t)~(drv_i915_read32(mmio, I915_INFO_EU_DISABLE) & I915_INFO_EU_DISABLE_MASK);
 
-	/* Tiger Lake, Rocket Lake, DG1 and Alder Lake only ever had a single slice. */
-	slice_fuse = drv_i915_read32(mmio, I915_GT_SLICE_ENABLE);
-	slice_enable = (uint8_t)(slice_fuse & I915_GT_S_ENA_MASK);
-	if (slice_enable != 0x1U)
-		kern_logf("i915: WARN GT_SLICE_ENABLE=0x%x (expected 0x1)\n", (unsigned)slice_enable);
-
-	/* Reads which DSS are enabled. */
-	dss_enable = drv_i915_read32(mmio, I915_GT_GEOMETRY_DSS_ENABLE);
-
-	/* Reads the EU disable fuse and inverts it into an enable fuse. */
-	eu_disable = drv_i915_read32(mmio, I915_EU_DISABLE);
-	eu_enable_fuse = (uint8_t)(~(eu_disable & I915_EU_DIS_MASK));
-
-	/* Expands each enabled pair of EUs into two EU bits. */
-	eu_enable = 0U;
-	for (index = 0U; index < (unsigned)(sseu->max_eus_per_subslice / 2U); index++) {
-		if ((eu_enable_fuse & (1U << index)) != 0U)
-			eu_enable = (uint16_t)(eu_enable | (1U << (index * 2U)) | (1U << (index * 2U + 1U)));
+	eus = 0U;
+	for (i = 0U; i < I915_INFO_GEN12_EUS / 2U; i++) {
+		if ((pairs & (1U << i)) != 0U)
+			eus = (uint16_t)(eus | (3U << (i * 2U)));
 	}
 
-	/* Records the enabled subslices and EUs. */
-	i915_compute_sseu_info(sseu, dss_enable, eu_enable);
+	/* Slice 0 holds the enabled DSS, each with the same EUs. */
+	sseu->slice_mask |= 1U;
+	sseu->subslice_mask = (uint16_t)(dss & ((1U << I915_INFO_GEN12_DSS) - 1U));
+	sseu->eu_total = 0U;
+	for (i = 0U; i < I915_INFO_GEN12_DSS && i < I915_SSEU_MAX_SUBSLICES; i++) {
+		if ((sseu->subslice_mask & (1U << i)) != 0U)
+			sseu->eu_mask[i] = eus;
+		sseu->eu_total = (uint16_t)(sseu->eu_total + i915_info_bits(sseu->eu_mask[i]));
+	}
+	sseu->eu_per_subslice = (uint16_t)i915_info_bits(eus);
 
-	/* Tiger Lake only supports slice-level power gating. */
+	/* Only the slice as a whole can be power gated. */
 	sseu->has_slice_pg = 1;
 	sseu->valid = 1;
 }
 
 /*
- * Decodes the Gen9 slice, subslice and EU fuses (gen9_sseu_info_init()).
- *
- * The subslice disable field of GEN8_FUSE2 applies to every enabled slice,
- * and each slice has its own EU disable register with eight bits for each
- * subslice.  The masks describe the lowest enabled slice; the EU total
- * counts every slice.
+ * The Gen9 slice, subslice and EU fuses.  The subslice disables of FUSE2
+ * apply to every enabled slice, and each slice has eight EU disable bits a
+ * subslice.  The masks describe the lowest enabled slice; the EU total and
+ * the EUs a subslice (rounded up, for the uneven die-recovery parts) count
+ * every slice.
  */
 static void
-i915_gen9_sseu_info_init(
+i915_info_sseu_gen9(
 	struct i915_sseu *sseu,
 	struct i915_mmio *mmio)
 {
 	uint32_t fuse2;
-	uint32_t subslice_enable;
-	uint32_t eu_disable;
-	uint16_t eu_enable;
-	unsigned subslice_total;
-	unsigned first_slice;
+	uint32_t live_ss;
+	uint32_t off;
+	uint16_t eus;
+	unsigned subslices;
 	unsigned slice;
-	unsigned slice_count;
-	unsigned subslice;
-	unsigned index;
-	int found;
+	unsigned ss;
+	bool first;
 
-	/* Gen9 (not the LP parts): three slices of four subslices of eight EUs. */
-	sseu->max_slices = (uint8_t)I915_GEN9_MAX_SLICES;
-	sseu->max_subslices = (uint8_t)I915_GEN9_MAX_SUBSLICES;
-	sseu->max_eus_per_subslice = (uint8_t)I915_GEN9_MAX_EUS_PER_SUBSLICE;
+	sseu->max_slices = (uint8_t)I915_INFO_GEN9_SLICES;
+	sseu->max_subslices = (uint8_t)I915_INFO_GEN9_SUBSLICES;
+	sseu->max_eus_per_subslice = (uint8_t)I915_INFO_GEN9_EUS;
 	sseu->subslice_mask = 0U;
 	sseu->eu_total = 0U;
 	sseu->eu_per_subslice = 0U;
+	for (ss = 0U; ss < I915_SSEU_MAX_SUBSLICES; ss++)
+		sseu->eu_mask[ss] = 0U;
 
-	/* Starts with no EU present in any subslice. */
-	for (index = 0U; index < I915_SSEU_MAX_SUBSLICES; index++)
-		sseu->eu_mask[index] = 0U;
+	fuse2 = drv_i915_read32(mmio, I915_INFO_GEN9_FUSE2);
+	sseu->slice_mask = (uint8_t)((fuse2 & I915_INFO_GEN9_SLICE_MASK) >> I915_INFO_GEN9_SLICE_SHIFT);
+	live_ss = ((1U << I915_INFO_GEN9_SUBSLICES) - 1U) & ~((fuse2 & I915_INFO_GEN9_SS_OFF_MASK) >> I915_INFO_GEN9_SS_OFF_SHIFT);
 
-	/* Reads which slices are enabled and which subslices every slice lost. */
-	fuse2 = drv_i915_read32(mmio, I915_GEN8_FUSE2);
-	sseu->slice_mask = (uint8_t)((fuse2 & I915_GEN8_F2_S_ENA_MASK) >> I915_GEN8_F2_S_ENA_SHIFT);
-	subslice_enable = (1U << I915_GEN9_MAX_SUBSLICES) - 1U;
-	subslice_enable &= ~((fuse2 & I915_GEN9_F2_SS_DIS_MASK) >> I915_GEN9_F2_SS_DIS_SHIFT);
-
-	/* Counts the EUs of every enabled subslice of every enabled slice. */
-	subslice_total = 0U;
-	first_slice = 0U;
-	found = 0;
-	for (slice = 0U; slice < I915_GEN9_MAX_SLICES; slice++) {
-		/* A disabled slice has no subslices. */
+	subslices = 0U;
+	first = true;
+	for (slice = 0U; slice < I915_INFO_GEN9_SLICES; slice++) {
 		if ((sseu->slice_mask & (1U << slice)) == 0U)
 			continue;
+		if (first)
+			sseu->subslice_mask = (uint16_t)live_ss;
 
-		/* The lowest enabled slice is the one the masks describe. */
-		if (found == 0) {
-			first_slice = slice;
-			sseu->subslice_mask = (uint16_t)subslice_enable;
-			found = 1;
-		}
-
-		/* Reads the slice's EU disable fuse. */
-		eu_disable = drv_i915_read32(mmio, I915_GEN9_EU_DISABLE(slice));
-		for (subslice = 0U; subslice < I915_GEN9_MAX_SUBSLICES; subslice++) {
-			/* A fused-off subslice has no EUs. */
-			if ((subslice_enable & (1U << subslice)) == 0U)
+		off = drv_i915_read32(mmio, I915_INFO_GEN9_EU_DISABLE(slice));
+		for (ss = 0U; ss < I915_INFO_GEN9_SUBSLICES; ss++) {
+			if ((live_ss & (1U << ss)) == 0U)
 				continue;
-
-			/* Inverts the subslice's eight disable bits into enable bits. */
-			eu_enable = (uint16_t)(~(eu_disable >> (subslice * 8U)) & 0xffU);
-			sseu->eu_total = (uint16_t)(sseu->eu_total + i915_hweight16(eu_enable));
-			subslice_total++;
-			if (slice == first_slice)
-				sseu->eu_mask[subslice] = eu_enable;
+			eus = (uint16_t)(~(off >> (ss * 8U)) & 0xffU);
+			sseu->eu_total = (uint16_t)(sseu->eu_total + i915_info_bits(eus));
+			subslices++;
+			if (first)
+				sseu->eu_mask[ss] = eus;
 		}
+		first = false;
 	}
 
-	/* Rounds the EUs per subslice up, as the reference does for the uneven die-recovery parts. */
-	if (subslice_total != 0U)
-		sseu->eu_per_subslice = (uint16_t)((sseu->eu_total + subslice_total - 1U) / subslice_total);
+	if (subslices != 0U)
+		sseu->eu_per_subslice = (uint16_t)((sseu->eu_total + subslices - 1U) / subslices);
 
 	/* Slice power gating needs more than one slice. */
-	slice_count = i915_hweight16(sseu->slice_mask);
-	sseu->has_slice_pg = 0;
-	if (slice_count > 1U)
-		sseu->has_slice_pg = 1;
-
-	/* The fuses are decoded. */
+	sseu->has_slice_pg = i915_info_bits(sseu->slice_mask) > 1U ? 1 : 0;
 	sseu->valid = 1;
 }
 
-/* Reports the size of an engine class's context image (intel_engine_context_size()). */
-static uint32_t
-i915_engine_context_size(
-	int graphics_ver,
-	int class)
-{
-	/* The render context size depends on the graphics version. */
-	if (class == I915_RENDER_CLASS) {
-		/* Picks the render context size of the graphics version. */
-		switch (graphics_ver) {
-		case 12:
-		case 11:
-			return I915_LR_CONTEXT_RENDER_SIZE;
-		case 9:
-			return I915_GEN9_LR_CONTEXT_RENDER_SIZE;
-		default:
-			/* An unknown version is reported and given the Gen11 size. */
-			kern_logf("i915: MISSING_CASE context size ver=%d\n", graphics_ver);
-			return I915_LR_CONTEXT_RENDER_SIZE;
-		}
-	}
-
-	/* Every non-render class on Gen8 and later uses the other size. */
-	return I915_LR_CONTEXT_OTHER_SIZE;
-}
-
 /*
- * Removes the media engines the fuses disabled (engine_mask_apply_media_fuses()).
- *
- * On media versions before 12.50 the register has disable semantics, so the
- * reference inverts it before extracting the masks.
+ * Takes the media engines the fuse disables out of the mask, and records
+ * which decode engines reach a scaler and format converter: on media 12 an
+ * even decode engine always does, an odd one only when the even one before
+ * it is fused off.  Every instance keeps its converter before media 12.50.
  */
 static uint32_t
-i915_engine_mask_apply_media_fuses(
+i915_info_media_fuses(
 	struct i915_gt_info *gt,
 	uint32_t engine_mask,
 	struct i915_mmio *mmio)
 {
-	uint32_t media_fuse;
-	uint32_t engine_bit;
-	uint16_t vdbox_mask;
-	uint16_t vebox_mask;
-	unsigned instance;
+	uint32_t live;
+	uint32_t bit;
+	uint16_t vcs;
+	uint16_t vecs;
+	unsigned i;
 
-	/* Reads the media fuse and inverts it into an enable mask. */
-	media_fuse = drv_i915_read32(mmio, I915_GT_VEBOX_VDBOX_DISABLE);
-	media_fuse = ~media_fuse;
-
-	/* Splits the enable mask into the video decode and enhancement halves. */
-	vdbox_mask = (uint16_t)(media_fuse & I915_GT_VDBOX_DISABLE_MASK);
-	vebox_mask = (uint16_t)((media_fuse & I915_GT_VEBOX_DISABLE_MASK) >> I915_GT_VEBOX_DISABLE_SHIFT);
-
-	/* Before media 12.50 every instance has its scaler and format converter. */
+	live = ~drv_i915_read32(mmio, I915_INFO_MEDIA_DISABLE);
+	vcs = (uint16_t)(live & I915_INFO_VDBOX_MASK);
+	vecs = (uint16_t)((live & I915_INFO_VEBOX_MASK) >> I915_INFO_VEBOX_SHIFT);
 	gt->sfc_mask = ~0U;
 
-	/* Drops the fused-off video decode engines and assigns the shared converters. */
-	for (instance = 0U; instance < I915_MAX_VCS; instance++) {
-		engine_bit = 1U << (I915_VCS0 + instance);
-
-		/* An engine the platform does not have is not in the fuse either. */
-		if ((engine_mask & engine_bit) == 0U) {
-			vdbox_mask = (uint16_t)(vdbox_mask & ~(1U << instance));
+	for (i = 0U; i < I915_INFO_MEDIA_VCS; i++) {
+		bit = 1U << (I915_VCS0 + i);
+		if ((engine_mask & bit) == 0U) {
+			vcs = (uint16_t)(vcs & ~(1U << i));
 			continue;
 		}
-
-		/* An engine the fuse disabled leaves the mask. */
-		if ((vdbox_mask & (1U << instance)) == 0U) {
-			engine_mask &= ~engine_bit;
-			kern_logf("i915: vcs%u fused off\n", instance);
+		if ((vcs & (1U << i)) == 0U) {
+			engine_mask &= ~bit;
+			kern_logf("i915: vcs%u fused off\n", i);
 			continue;
 		}
-
-		/*
-		 * On media 12 an even physical video decode engine always reaches
-		 * its converter, and an odd one only when the even engine before
-		 * it is fused off (gen11_vdbox_has_sfc(), MEDIA_VER >= 12).  The
-		 * Gen11 rule counted logical instances, which left VCS2 of Alder
-		 * Lake-P without one.
-		 */
-		if ((instance % 2U) == 0U) {
-			gt->vdbox_sfc_access |= 1U << instance;
-		} else if ((vdbox_mask & (1U << (instance - 1U))) == 0U) {
-			gt->vdbox_sfc_access |= 1U << instance;
-		}
+		if ((i % 2U) == 0U || (vcs & (1U << (i - 1U))) == 0U)
+			gt->vdbox_sfc_access |= 1U << i;
 	}
 
-	/* Drops the fused-off video enhancement engines. */
-	for (instance = 0U; instance < I915_MAX_VECS; instance++) {
-		engine_bit = 1U << (I915_VECS0 + instance);
-
-		/* An engine the platform does not have is not in the fuse either. */
-		if ((engine_mask & engine_bit) == 0U) {
-			vebox_mask = (uint16_t)(vebox_mask & ~(1U << instance));
+	for (i = 0U; i < I915_INFO_MEDIA_VECS; i++) {
+		bit = 1U << (I915_VECS0 + i);
+		if ((engine_mask & bit) == 0U) {
+			vecs = (uint16_t)(vecs & ~(1U << i));
 			continue;
 		}
-
-		/* An engine the fuse disabled leaves the mask. */
-		if ((vebox_mask & (1U << instance)) == 0U) {
-			engine_mask &= ~engine_bit;
-			kern_logf("i915: vecs%u fused off\n", instance);
+		if ((vecs & (1U << i)) == 0U) {
+			engine_mask &= ~bit;
+			kern_logf("i915: vecs%u fused off\n", i);
 		}
 	}
-
-	/* Reports the engine mask with the fused-off engines removed. */
 	return engine_mask;
 }
 
-/* Reports the GDRST bit that resets one engine alone (get_reset_domain()). */
+/* The context image size of an engine class; an unknown version gets the Gen11 render size. */
 static uint32_t
-i915_engine_reset_domain(
+i915_info_context_size(
 	int graphics_ver,
-	int id)
+	int class)
 {
-	/* Picks the Gen9 engine's own reset domain from the Gen6 layout. */
-	if (graphics_ver == 9) {
-		switch (id) {
-		case I915_RCS0:
-			return I915_GEN6_GRDOM_RENDER;
-		case I915_BCS0:
-			return I915_GEN6_GRDOM_BLT;
-		case I915_VCS0:
-			return I915_GEN6_GRDOM_MEDIA;
-		case I915_VECS0:
-			return I915_GEN6_GRDOM_VECS;
-		default:
-			/* An engine outside the table has no reset domain. */
-			return 0U;
-		}
-	}
-
-	/* Picks the engine's own reset domain from the Gen11 layout. */
-	switch (id) {
-	case I915_RCS0:
-		return I915_GRDOM_RENDER;
-	case I915_BCS0:
-		return I915_GRDOM_BLT;
-	case I915_VCS0:
-		return I915_GRDOM_MEDIA;
-	case I915_VCS2:
-		return I915_GRDOM_MEDIA3;
-	case I915_VECS0:
-		return I915_GRDOM_VECS;
-	default:
-		/* An engine outside the table has no reset domain. */
-		return 0U;
-	}
+	if (class != I915_RENDER_CLASS)
+		return I915_INFO_OTHER_PAGES * I915_INFO_PAGE;
+	if (graphics_ver == 9)
+		return I915_INFO_GEN9_RENDER_PAGES * I915_INFO_PAGE;
+	if (graphics_ver != 11 && graphics_ver != 12)
+		kern_logf("i915: MISSING_CASE context size ver=%d\n", graphics_ver);
+	return I915_INFO_RENDER_PAGES * I915_INFO_PAGE;
 }
 
-/* Records the features user space may use on an engine (intel_engine_setup_capabilities()). */
-static void
-i915_engine_setup_capabilities(
-	const struct i915_gt_info *gt,
-	struct i915_engine_info *engine)
+/* An engine's own GDRST bit, or 0 for an engine the generation has none for. */
+static uint32_t
+i915_info_reset_domain_of(
+	const struct i915_gt_generation *g,
+	int id)
 {
-	/* Video decode has HEVC everywhere and the converter where it was assigned. */
-	if (engine->class == I915_VIDEO_DECODE_CLASS) {
-		engine->uabi_capabilities |= I915_CAPABILITY_HEVC;
-		if ((gt->vdbox_sfc_access & (1U << (unsigned)engine->instance)) != 0U)
-			engine->uabi_capabilities |= I915_CAPABILITY_SFC;
-	} else if (engine->class == I915_VIDEO_ENHANCEMENT_CLASS) {
-		/* Video enhancement has the converter when its instance keeps one. */
-		if ((gt->sfc_mask & (1U << (unsigned)engine->instance)) != 0U)
-			engine->uabi_capabilities |= I915_CAPABILITY_SFC;
+	size_t i;
+
+	for (i = 0; i < g->domain_count; i++) {
+		if (g->domains[i].id == id)
+			return g->domains[i].domain;
 	}
+	return 0U;
+}
+
+/* What user space may use on a video engine: HEVC on decode, and the converter where the engine reaches one. */
+static uint32_t
+i915_info_capabilities(
+	const struct i915_gt_info *gt,
+	const struct i915_engine_info *engine)
+{
+	uint32_t caps;
+
+	caps = 0U;
+	if (engine->class == I915_VIDEO_DECODE_CLASS) {
+		caps |= I915_INFO_CAP_HEVC;
+		if ((gt->vdbox_sfc_access & (1U << (unsigned)engine->instance)) != 0U)
+			caps |= I915_INFO_CAP_SFC;
+	} else if (engine->class == I915_VIDEO_ENHANCEMENT_CLASS) {
+		if ((gt->sfc_mask & (1U << (unsigned)engine->instance)) != 0U)
+			caps |= I915_INFO_CAP_SFC;
+	}
+	return caps;
 }
 
 /*
- * Reports a pending GPU fault and clears the error registers.
- *
- * This is Linux's intel_gt_check_and_clear_faults() with the Gen12 register
- * set of gen8_check_faults(), followed by intel_gt_clear_error_registers().
+ * Reports a GPU fault the firmware left pending and clears the error
+ * registers.  An error that stays set after the clear is masked, since it
+ * can become stuck.  Only the valid bit of the ring fault register is
+ * cleared: writing the whole register to zero clobbers its other fields and
+ * leaves the GT in a state that breaks the later display bring-up.
  */
 static void
-i915_check_and_clear_faults(
+i915_info_faults(
 	struct i915_gt_info *gt,
+	const struct i915_gt_generation *g,
 	struct i915_mmio *mmio)
 {
 	uint32_t fault;
-	uint32_t ring_fault;
-	uint32_t tlb_data0;
-	uint32_t tlb_data1;
-	uint32_t error_identity;
-	uint32_t error_mask;
+	uint32_t data0;
+	uint32_t data1;
+	uint32_t stuck;
+	uint32_t mask;
 	uint64_t address;
-	uint32_t fault_register;
-	uint32_t data0_register;
-	uint32_t data1_register;
-	const char *space;
 
-	/* Picks the fault registers of the graphics version: Gen9 has the Gen8 set. */
-	if (gt->graphics_ver == 9) {
-		fault_register = I915_GEN8_RING_FAULT_REG;
-		data0_register = I915_GEN8_FAULT_TLB_DATA0;
-		data1_register = I915_GEN8_FAULT_TLB_DATA1;
-	} else {
-		fault_register = I915_RING_FAULT_REG;
-		data0_register = I915_FAULT_TLB_DATA0;
-		data1_register = I915_FAULT_TLB_DATA1;
-	}
-
-	/* Reads the ring fault register and reports a valid fault. */
-	fault = drv_i915_read32(mmio, fault_register);
+	fault = drv_i915_read32(mmio, g->fault);
 	gt->fault_reg = fault;
-	if ((fault & I915_RING_FAULT_VALID) != 0U) {
-		/* Rebuilds the faulting address from the two TLB data words. */
-		tlb_data0 = drv_i915_read32(mmio, data0_register);
-		tlb_data1 = drv_i915_read32(mmio, data1_register);
-		address = ((uint64_t)(tlb_data1 & I915_FAULT_VA_HIGH_BITS) << 44) | ((uint64_t)tlb_data0 << 12);
-
-		/* The select bit says whether the address is global or per-process. */
-		if ((tlb_data1 & I915_FAULT_GTT_SEL) != 0U) {
-			space = "GGTT";
-		} else {
-			space = "PPGTT";
-		}
-
-		/* Records that a fault was pending and reports it. */
+	if ((fault & I915_INFO_FAULT_VALID) != 0U) {
+		data0 = drv_i915_read32(mmio, g->fault_data0);
+		data1 = drv_i915_read32(mmio, g->fault_data1);
+		address = ((uint64_t)(data1 & I915_INFO_FAULT_VA_HIGH) << 44) | ((uint64_t)data0 << 12);
 		gt->fault_valid_seen = 1;
 		kern_logf("i915: Unexpected fault addr=0x%llx space=%s engine_id=%u\n",
 			  (unsigned long long)address,
-			  space,
-			  (fault >> I915_RING_FAULT_ENGINE_ID_SHIFT) & I915_RING_FAULT_ENGINE_ID_MASK);
+			  (data1 & I915_INFO_FAULT_GGTT) != 0U ? "GGTT" : "PPGTT",
+			  (fault >> I915_INFO_FAULT_ENGINE_SHIFT) & I915_INFO_FAULT_ENGINE_MASK);
 	}
 
-	/* Clears the page table and instruction error registers. */
-	drv_i915_write32(mmio, I915_PGTBL_ER, 0U);
-	drv_i915_write32(mmio, I915_IPEIR_I965, 0U);
-	drv_i915_write32(mmio, I915_EIR, 0U);
-
-	/* Masks an error that stays set after the clear, since it can become stuck. */
-	error_identity = drv_i915_read32(mmio, I915_EIR);
-	if (error_identity != 0U) {
-		error_mask = drv_i915_read32(mmio, I915_EMR);
-		kern_logf("i915: EIR stuck: 0x%08x, masking\n", error_identity);
-		drv_i915_write32(mmio, I915_EMR, error_mask | error_identity);
-		drv_i915_write32(mmio, I915_GEN2_IIR, I915_MASTER_ERROR_INTERRUPT);
+	drv_i915_write32(mmio, I915_INFO_PGTBL_ER, 0U);
+	drv_i915_write32(mmio, I915_INFO_IPEIR, 0U);
+	drv_i915_write32(mmio, I915_INFO_EIR, 0U);
+	stuck = drv_i915_read32(mmio, I915_INFO_EIR);
+	if (stuck != 0U) {
+		mask = drv_i915_read32(mmio, I915_INFO_EMR);
+		kern_logf("i915: EIR stuck: 0x%08x, masking\n", stuck);
+		drv_i915_write32(mmio, I915_INFO_EMR, mask | stuck);
+		drv_i915_write32(mmio, I915_INFO_IIR, I915_INFO_MASTER_ERROR);
 	}
 
-	/*
-	 * Clears only the valid bit of the ring fault register.  Writing the
-	 * whole register to zero clobbers its other fields and leaves the GT in
-	 * a state that breaks the later display bring-up.
-	 */
-	ring_fault = drv_i915_read32(mmio, fault_register);
-	drv_i915_write32(mmio, fault_register, ring_fault & ~I915_RING_FAULT_VALID);
-	drv_i915_posting_read32(mmio, fault_register);
+	drv_i915_write32(mmio, g->fault, drv_i915_read32(mmio, g->fault) & ~I915_INFO_FAULT_VALID);
+	drv_i915_posting_read32(mmio, g->fault);
 }
