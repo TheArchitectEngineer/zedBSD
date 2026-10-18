@@ -1,0 +1,291 @@
+{
+  "completed": 1508,
+  "counts": {
+    "fail": 955,
+    "pass": 494,
+    "no_output": 24,
+    "harness_error": 13,
+    "no_completion": 20,
+    "multiple_completions": 2
+  },
+  "whole_pass_losses": [],
+  "whole_pass_gains": [],
+  "changes": [
+    {
+      "id": "/navigation-api/navigation-history-entry/opaque-origin.html",
+      "old_outcome": "no_completion",
+      "new_outcome": "harness_error",
+      "old_callbacks": {},
+      "new_callbacks": {},
+      "old_completion": null,
+      "new_completion": {
+        "tests": [],
+        "status": 1,
+        "message": "Script error."
+      },
+      "new_stdout_tail": "WS074_WPT_COMPLETE {\"tests\":[],\"status\":1,\"message\":\"Script error.\"}\nUncaught TypeError: Cannot read properties of null (reading 'postMessage') (at http://127.0.0.1:33647/navigation-api/navigation-history-entry/opaque-origin.html:4094:9)\n",
+      "prior_uncaught_lines": [
+        "Uncaught TypeError: Cannot read properties of null (reading 'postMessage') (at http://127.0.0.1:39373/navigation-api/navigation-history-entry/opaque-origin.html:4094:9)"
+      ],
+      "all_old_pass_callbacks_retained": true
+    },
+    {
+      "id": "/navigation-api/navigation-methods/return-value/back-forward-opaque-origin.html",
+      "old_outcome": "no_completion",
+      "new_outcome": "harness_error",
+      "old_callbacks": {},
+      "new_callbacks": {},
+      "old_completion": null,
+      "new_completion": {
+        "tests": [],
+        "status": 1,
+        "message": "Script error."
+      },
+      "new_stdout_tail": "WS074_WPT_COMPLETE {\"tests\":[],\"status\":1,\"message\":\"Script error.\"}\nUncaught TypeError: Cannot read properties of null (reading 'postMessage') (at http://127.0.0.1:35869/navigation-api/navigation-methods/return-value/back-forward-opaque-origin.html:4094:9)\n",
+      "prior_uncaught_lines": [
+        "Uncaught TypeError: Cannot read properties of null (reading 'postMessage') (at http://127.0.0.1:39165/navigation-api/navigation-methods/return-value/back-forward-opaque-origin.html:4094:9)"
+      ],
+      "all_old_pass_callbacks_retained": true
+    },
+    {
+      "id": "/navigation-api/navigation-methods/return-value/navigate-opaque-origin.html",
+      "old_outcome": "no_completion",
+      "new_outcome": "harness_error",
+      "old_callbacks": {},
+      "new_callbacks": {},
+      "old_completion": null,
+      "new_completion": {
+        "tests": [],
+        "status": 1,
+        "message": "Script error."
+      },
+      "new_stdout_tail": "WS074_WPT_COMPLETE {\"tests\":[],\"status\":1,\"message\":\"Script error.\"}\nUncaught TypeError: Cannot read properties of null (reading 'postMessage') (at http://127.0.0.1:35457/navigation-api/navigation-methods/return-value/navigate-opaque-origin.html:4094:9)\n",
+      "prior_uncaught_lines": [
+        "Uncaught TypeError: Cannot read properties of null (reading 'postMessage') (at http://127.0.0.1:36061/navigation-api/navigation-methods/return-value/navigate-opaque-origin.html:4094:9)"
+      ],
+      "all_old_pass_callbacks_retained": true
+    },
+    {
+      "id": "/navigation-api/updateCurrentEntry-method/opaque-origin.html",
+      "old_outcome": "no_completion",
+      "new_outcome": "harness_error",
+      "old_callbacks": {},
+      "new_callbacks": {},
+      "old_completion": null,
+      "new_completion": {
+        "tests": [],
+        "status": 1,
+        "message": "Script error."
+      },
+      "new_stdout_tail": "WS074_WPT_COMPLETE {\"tests\":[],\"status\":1,\"message\":\"Script error.\"}\nUncaught TypeError: Cannot read properties of null (reading 'postMessage') (at http://127.0.0.1:44147/navigation-api/updateCurrentEntry-method/opaque-origin.html:4094:9)\n",
+      "prior_uncaught_lines": [
+        "Uncaught TypeError: Cannot read properties of null (reading 'postMessage') (at http://127.0.0.1:42155/navigation-api/updateCurrentEntry-method/opaque-origin.html:4094:9)"
+      ],
+      "all_old_pass_callbacks_retained": true
+    },
+    {
+      "id": "/wasm/jsapi/js-string/basic.any.html",
+      "old_outcome": "harness_error",
+      "new_outcome": "harness_error",
+      "old_callbacks": {},
+      "new_callbacks": {},
+      "old_completion": {
+        "tests": [],
+        "status": 1,
+        "message": "ReferenceError: WebAssembly is not defined"
+      },
+      "new_completion": {
+        "tests": [],
+        "status": 1,
+        "message": "Script error."
+      },
+      "new_stdout_tail": "WS074_WPT_COMPLETE {\"tests\":[],\"status\":1,\"message\":\"Script error.\"}\nUncaught ReferenceError: WebAssembly is not defined (at /wasm/jsapi/js-string/polyfill.js:65:20)\n",
+      "prior_uncaught_lines": [
+        "Uncaught ReferenceError: WebAssembly is not defined (at /wasm/jsapi/js-string/polyfill.js:65:20)"
+      ],
+      "all_old_pass_callbacks_retained": true
+    },
+    {
+      "id": "/css/css-anchor-position/position-try-tree-scoped.html",
+      "old_outcome": "fail",
+      "new_outcome": "harness_error",
+      "old_callbacks": {
+        "1": 1,
+        "0": 2
+      },
+      "new_callbacks": {
+        "1": 1,
+        "0": 2
+      },
+      "old_completion": {
+        "tests": [
+          {
+            "name": "Document position-try-fallbacks matches @position-try in document scope",
+            "status": 1,
+            "message": "assert_equals: expected 100 but got 999999"
+          },
+          {
+            "name": "Document position-try-fallbacks does not match @position-try in #outer_host scope",
+            "status": 0,
+            "message": ""
+          },
+          {
+            "name": "Document position-try-fallbacks does not match @position-try in #inner_host scope",
+            "status": 0,
+            "message": ""
+          }
+        ],
+        "status": 0,
+        "message": ""
+      },
+      "new_completion": {
+        "tests": [
+          {
+            "name": "Document position-try-fallbacks matches @position-try in document scope",
+            "status": 1,
+            "message": "assert_equals: expected 100 but got 999999"
+          },
+          {
+            "name": "Document position-try-fallbacks does not match @position-try in #outer_host scope",
+            "status": 0,
+            "message": ""
+          },
+          {
+            "name": "Document position-try-fallbacks does not match @position-try in #inner_host scope",
+            "status": 0,
+            "message": ""
+          }
+        ],
+        "status": 1,
+        "message": "Uncaught TypeError: Cannot read properties of undefined (reading 'querySelector')"
+      },
+      "new_stdout_tail": "WS074_WPT_RESULT {\"name\":\"Document position-try-fallbacks matches @position-try in document scope\",\"status\":1,\"message\":\"assert_equals: expected 100 but got 999999\"}\nWS074_WPT_RESULT {\"name\":\"Document position-try-fallbacks does not match @position-try in #outer_host scope\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"Document position-try-fallbacks does not match @position-try in #inner_host scope\",\"status\":0,\"message\":\"\"}\nUncaught TypeError: Cannot read properties of undefined (reading 'querySelector') (at http://127.0.0.1:38423/css/css-anchor-position/position-try-tree-scoped.html:15:22)\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"Document position-try-fallbacks matches @position-try in document scope\",\"status\":1,\"message\":\"assert_equals: expected 100 but got 999999\"},{\"name\":\"Document position-try-fallbacks does not match @position-try in #outer_host scope\",\"status\":0,\"message\":\"\"},{\"name\":\"Document position-try-fallbacks does not match @position-try in #inner_host scope\",\"status\":0,\"message\":\"\"}],\"status\":1,\"message\":\"Uncaught TypeError: Cannot read properties of undefined (reading 'querySelector')\"}\n",
+      "prior_uncaught_lines": [
+        "Uncaught TypeError: Cannot read properties of undefined (reading 'querySelector') (at http://127.0.0.1:39825/css/css-anchor-position/position-try-tree-scoped.html:15:22)"
+      ],
+      "all_old_pass_callbacks_retained": true
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-name-in-shadow-002.html",
+      "old_outcome": "no_completion",
+      "new_outcome": "harness_error",
+      "old_callbacks": {},
+      "new_callbacks": {},
+      "old_completion": null,
+      "new_completion": {
+        "tests": [],
+        "status": 1,
+        "message": "Uncaught TypeError: value is not a function"
+      },
+      "new_stdout_tail": "WS074_WPT_COMPLETE {\"tests\":[],\"status\":1,\"message\":\"Uncaught TypeError: value is not a function\"}\nUncaught TypeError: value is not a function (at http://127.0.0.1:36541/css/css-anchor-position/anchor-name-in-shadow-002.html:3:16)\n",
+      "prior_uncaught_lines": [
+        "Uncaught TypeError: value is not a function (at http://127.0.0.1:36891/css/css-anchor-position/anchor-name-in-shadow-002.html:3:16)"
+      ],
+      "all_old_pass_callbacks_retained": true
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-name-in-shadow.html",
+      "old_outcome": "no_completion",
+      "new_outcome": "harness_error",
+      "old_callbacks": {},
+      "new_callbacks": {},
+      "old_completion": null,
+      "new_completion": {
+        "tests": [],
+        "status": 1,
+        "message": "Uncaught TypeError: value is not a function"
+      },
+      "new_stdout_tail": "WS074_WPT_COMPLETE {\"tests\":[],\"status\":1,\"message\":\"Uncaught TypeError: value is not a function\"}\nUncaught TypeError: value is not a function (at http://127.0.0.1:46137/css/css-anchor-position/anchor-name-in-shadow.html:2:21)\nUncaught TypeError: value is not a function (at http://127.0.0.1:46137/css/css-anchor-position/anchor-name-in-shadow.html:2:28)\n",
+      "prior_uncaught_lines": [
+        "Uncaught TypeError: value is not a function (at http://127.0.0.1:41985/css/css-anchor-position/anchor-name-in-shadow.html:2:21)",
+        "Uncaught TypeError: value is not a function (at http://127.0.0.1:41985/css/css-anchor-position/anchor-name-in-shadow.html:2:28)"
+      ],
+      "all_old_pass_callbacks_retained": true
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-position-top-layer-007.html",
+      "old_outcome": "fail",
+      "new_outcome": "harness_error",
+      "old_callbacks": {
+        "1": 1
+      },
+      "new_callbacks": {},
+      "old_completion": {
+        "tests": [
+          {
+            "name": "#target 1",
+            "status": 1,
+            "message": "assert_equals: \n<dialog id=\"target\" data-offset-x=\"150\" data-offset-y=\"100\"></dialog>\noffsetLeft expected 150 but got 0"
+          }
+        ],
+        "status": 0,
+        "message": ""
+      },
+      "new_completion": {
+        "tests": [],
+        "status": 1,
+        "message": "Uncaught TypeError: value is not a function"
+      },
+      "new_stdout_tail": "WS074_WPT_COMPLETE {\"tests\":[],\"status\":1,\"message\":\"Uncaught TypeError: value is not a function\"}\nUncaught TypeError: value is not a function (at http://127.0.0.1:46877/css/css-anchor-position/anchor-position-top-layer-007.html:2:1)\nNo valid data-* attributes found in selector list : #target\n",
+      "prior_uncaught_lines": [
+        "Uncaught TypeError: value is not a function (at http://127.0.0.1:34985/css/css-anchor-position/anchor-position-top-layer-007.html:2:1)"
+      ],
+      "all_old_pass_callbacks_retained": true
+    },
+    {
+      "id": "/css/css-anchor-position/at-position-try-invalidation-shadow-dom.html",
+      "old_outcome": "fail",
+      "new_outcome": "harness_error",
+      "old_callbacks": {
+        "1": 2
+      },
+      "new_callbacks": {
+        "1": 2
+      },
+      "old_completion": {
+        "tests": [
+          {
+            "name": "#host is initially left: 999999px",
+            "status": 1,
+            "message": "assert_equals: expected 999999 but got 0"
+          },
+          {
+            "name": "#slotted is initially left: 999999px",
+            "status": 1,
+            "message": "assert_equals: expected 999999 but got 0"
+          }
+        ],
+        "status": 0,
+        "message": ""
+      },
+      "new_completion": {
+        "tests": [
+          {
+            "name": "#host is initially left: 999999px",
+            "status": 1,
+            "message": "assert_equals: expected 999999 but got 0"
+          },
+          {
+            "name": "#slotted is initially left: 999999px",
+            "status": 1,
+            "message": "assert_equals: expected 999999 but got 0"
+          }
+        ],
+        "status": 1,
+        "message": "Uncaught TypeError: Cannot read properties of undefined (reading 'styleSheets')"
+      },
+      "new_stdout_tail": "WS074_WPT_RESULT {\"name\":\"#host is initially left: 999999px\",\"status\":1,\"message\":\"assert_equals: expected 999999 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"#slotted is initially left: 999999px\",\"status\":1,\"message\":\"assert_equals: expected 999999 but got 0\"}\nUncaught TypeError: Cannot read properties of undefined (reading 'styleSheets') (at http://127.0.0.1:40465/css/css-anchor-position/at-position-try-invalidation-shadow-dom.html:10:3)\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"#host is initially left: 999999px\",\"status\":1,\"message\":\"assert_equals: expected 999999 but got 0\"},{\"name\":\"#slotted is initially left: 999999px\",\"status\":1,\"message\":\"assert_equals: expected 999999 but got 0\"}],\"status\":1,\"message\":\"Uncaught TypeError: Cannot read properties of undefined (reading 'styleSheets')\"}\n",
+      "prior_uncaught_lines": [
+        "Uncaught TypeError: Cannot read properties of undefined (reading 'styleSheets') (at http://127.0.0.1:33985/css/css-anchor-position/at-position-try-invalidation-shadow-dom.html:10:3)"
+      ],
+      "all_old_pass_callbacks_retained": true
+    }
+  ],
+  "all_old_pass_callbacks_retained": true,
+  "callbacks": {
+    "0": 11540,
+    "1": 20642,
+    "3": 14
+  },
+  "cause": "Normal Window error delivery now reaches the official harness for pre-existing native exceptions; one old FAIL callback no longer runs after fatal completion. No old whole or callback PASS is lost."
+}

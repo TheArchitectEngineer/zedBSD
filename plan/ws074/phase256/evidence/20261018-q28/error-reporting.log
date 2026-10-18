@@ -1,0 +1,4 @@
+console: Uncaught (an exception reported recursively) (at 1:442)
+console: Uncaught (an exception reported recursively) (at 1:112)
+console: Uncaught (in promise) rejection-stays-separate
+native error reporting: 19/19 passed

@@ -11,7 +11,7 @@ Origin: [p189 q23 native prerequisite holdback](../phase189/evidence/20261018-q2
 
 ## Objective / evidence
 
-現在のperformance.markはenvironment_performance_nothingへ接続し、getEntries*は常に空。p077で明示的に受け入れた最小readonly/compat範囲を越える実記録はまだ無い。q23の追加17中1 IDはWPT上PASSでも、事前のmarkが作成されないため観測抑止の試験前提が無い。[native/Chrome probe](../phase189/evidence/20261018-q23/performance-prereq/probe.html)はnative prior/future各0、Chrome各1とfuture-only通知を示す。p077の既存受け入れ/履歴をinvalidateせず、新しいproducerとして実データを提供する。
+q23時点のperformance.markはenvironment_performance_nothingへ接続し、getEntries*は常に空だった（q25以後はnative producerを使用）。p077で明示的に受け入れた最小readonly/compat範囲を越える実記録はまだ無い。q23の追加17中1 IDはWPT上PASSでも、事前のmarkが作成されないため観測抑止の試験前提が無い。[native/Chrome probe](../phase189/evidence/20261018-q23/performance-prereq/probe.html)はnative prior/future各0、Chrome各1とfuture-only通知を示す。p077の既存受け入れ/履歴をinvalidateせず、新しいproducerとして実データを提供する。
 
 Own goal: native PerformanceEntry/PerformanceMarkの実状態・prototype/brand/readonly fields、performance.markの実記録、getEntries/ByName/ByTypeの実buffer snapshot/順序・clearMarks、Window独立・saved entry/GC/retired frameのlifetime。name/type/startTime/duration/detailのうち最初の有限scopeはdefault optionsとprimitive detail/明示startTime等を正確に選定し、複雑detailのstructured clone/measure/resource/event/worker等は未達を明示する。native Observerの登録/通知はp255が所有する。
 
@@ -55,3 +55,5 @@ Event ws074-q25-finished-20261018: [history](../history/ws074-q20261018-25.md)�
 Event ws074-q25-conformance-followup-20261018: q26全文監査でq25追加host-performance-marks.cのsplit callが最後のsource引数とanswer引数を同じ行に置く§8違反を検出。元q25のmanual conformance未解消0という判定を訂正し、i01のstandards clearanceをinvalidate/unclearedへ追記する。原API実装・独立Chrome38/native7・全fixed corpusの実測結果/原Outcome/commit/hashは保持、名前付きproducer機能出力は引き続きverifiedなのでq26のconsumer前提は満たす。q26が既に許可するhost fixture追従範囲でformatを修正し、C tokens/全string literal不変を実照合、native7と全q26最終gateで再確認する。whole p254は元からunclearedであり状態不変、goal1481も不変。shared projection pending。
 
 Event ws074-q26-producer-revalidated-20261018: [q26証拠](../phase255/evidence/20261018-q26/README.md)でproducer7/Chrome38/DOM/全corpus旧PASSとtoken不変fixture規約修正を再検証。q25 dated uncleared履歴は保持し、現producer機能出力は引き続きverified。q26 consumerのErrorEvent fidelity未達はp256→p255へ渡し、このproducer/API未実装残差を消した扱いにしない。
+
+Event ws074-p254-q28-consumer-revalidation-20261018: 公式harnessのtimer/Observer intentional failureは同じ原JSでnative/Chrome双方harness_error/completion1、正常timerとactual future-only Observerは双方PASS。prior/future実entry各1・futureだけ通知を再確認し、原held WPTをindex1496で再実行、full censusと全callback/completionが同一PASS、原JSはpinned Git blob SHA256427af82a2e3231c62432a40ff8ba7af4b7fed05b01472ca76a0e672d82447855とbyte同一。この1 IDの既知no-op/未通知/失敗通知前提がすべて解消したためheld1を解除。raw PASS1482は維持し確認済1481→1482/3805（38.948752%）、未attempt275は分母へ保持。新whole gainは0。 q28 final pairでproducer native7/observer10/Event9/runtime GC19を再検証。complex detail/id/navigationId等の本Phasewhole残差と旧conformance履歴は保持。

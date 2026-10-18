@@ -1,0 +1,199 @@
+{
+  "source_commit": "27726847e1166f3fe2507abfae3bbc9156e3ae9d",
+  "harness": {
+    "eligible": 1508,
+    "eligible_sha256": "82147e6edaec1b3b8d537e46eb71b64f2f03132cc12803e284c6ca72377779e7",
+    "whole_changes": [
+      [
+        "/css/css-anchor-position/anchor-name-in-shadow-002.html",
+        "no_completion",
+        "harness_error"
+      ],
+      [
+        "/css/css-anchor-position/anchor-name-in-shadow.html",
+        "no_completion",
+        "harness_error"
+      ],
+      [
+        "/css/css-anchor-position/anchor-position-top-layer-007.html",
+        "fail",
+        "harness_error"
+      ],
+      [
+        "/css/css-anchor-position/at-position-try-invalidation-shadow-dom.html",
+        "fail",
+        "harness_error"
+      ],
+      [
+        "/css/css-anchor-position/position-try-tree-scoped.html",
+        "fail",
+        "harness_error"
+      ],
+      [
+        "/navigation-api/navigation-history-entry/opaque-origin.html",
+        "no_completion",
+        "harness_error"
+      ],
+      [
+        "/navigation-api/navigation-methods/return-value/back-forward-opaque-origin.html",
+        "no_completion",
+        "harness_error"
+      ],
+      [
+        "/navigation-api/navigation-methods/return-value/navigate-opaque-origin.html",
+        "no_completion",
+        "harness_error"
+      ],
+      [
+        "/navigation-api/updateCurrentEntry-method/opaque-origin.html",
+        "no_completion",
+        "harness_error"
+      ]
+    ],
+    "whole_regressions": [],
+    "whole_gains": [],
+    "callback_or_completion_changes": [
+      "/css/css-anchor-position/anchor-name-in-shadow-002.html",
+      "/css/css-anchor-position/anchor-name-in-shadow.html",
+      "/css/css-anchor-position/anchor-position-top-layer-007.html",
+      "/css/css-anchor-position/at-position-try-invalidation-shadow-dom.html",
+      "/css/css-anchor-position/position-try-tree-scoped.html",
+      "/navigation-api/navigation-history-entry/opaque-origin.html",
+      "/navigation-api/navigation-methods/return-value/back-forward-opaque-origin.html",
+      "/navigation-api/navigation-methods/return-value/navigate-opaque-origin.html",
+      "/navigation-api/updateCurrentEntry-method/opaque-origin.html",
+      "/wasm/jsapi/js-string/basic.any.html"
+    ],
+    "counts": {
+      "fail": 955,
+      "harness_error": 13,
+      "pass": 494,
+      "no_completion": 20,
+      "no_output": 24,
+      "multiple_completions": 2
+    },
+    "callbacks": {
+      "1": 20642,
+      "0": 11540,
+      "3": 14
+    },
+    "reviewed_retries": []
+  },
+  "static": {
+    "eligible": 1561,
+    "eligible_sha256": "0f90e8fac9af5a97e11cce8ac0dfc16fc9360b1903031d742cf8bf1361f48d93",
+    "counts": {
+      "fail": 717,
+      "pass": 844
+    },
+    "whole_gains": [],
+    "whole_regressions": [],
+    "pixel_metric_changes": []
+  },
+  "scripted": {
+    "counts": {
+      "fail": 283,
+      "readiness_missing": 20,
+      "pass": 105,
+      "unsupported_environment": 5
+    },
+    "whole_regressions": [],
+    "whole_changes": [],
+    "captures": 805,
+    "rgb_changes": []
+  },
+  "crash": {
+    "counts": {
+      "pass": 39,
+      "readiness_missing": 9
+    },
+    "changes": {}
+  },
+  "raw_fixed_pass": 1482,
+  "verified_fixed_pass": 1482,
+  "denominator": 3805,
+  "held_error_report_fidelity": 0,
+  "prior_held_revalidated": "/performance-timeline/buffered-flag-with-entryTypes-observer.tentative.any.html",
+  "unattempted_harness": 275,
+  "archives": {
+    "harness-all-raw": {
+      "sha256": "0dd667e739b92573711d70f03fd83994596ac4b30d7878c0be9ed09dceeaac40",
+      "members": 1676
+    },
+    "scripted-all-native-captures": {
+      "sha256": "246d884435807ade28d7e09534273619693c2173bc712b0b2b0efbc49bf9a59b",
+      "members": 6442
+    },
+    "crash-all-raw": {
+      "sha256": "b67b5723a1a2812e4000421f7e7214f065ee8ff95e94f729e7c685c1b8d592c4",
+      "members": 193
+    },
+    "native-controls": {
+      "sha256": "a4c1ae227898c98110a17e1d8e382ba84dc15cde46bd92511fc4e45cdc3b7769",
+      "members": 257
+    },
+    "oracle-and-held-all-raw": {
+      "members": 156,
+      "sha256": "f49cd10e11717cda08e2088fdfd07d0c62521597c1a54a36626bf9beec319f32"
+    },
+    "acid-all-raw": {
+      "sha256": "4a20245e5ab5c7f9bf874dd31d818e584a2bedeb381f4c570d6e1eb6d5328c2e",
+      "members": 27,
+      "acid_comparison": {
+        "acid2_different_pixels": 873,
+        "acid3_score": "100",
+        "acid3_pixels": 0,
+        "inventory": 100,
+        "same_baseline": true
+      }
+    }
+  },
+  "dom_cases": 40,
+  "runtime_error_independent_conditions": 16,
+  "runtime_error_chrome_exact": 16,
+  "native_error_event_gc_cases": 9,
+  "native_error_reporting_gc_cases": 19,
+  "native_mark_gc_cases": 7,
+  "native_observer_gc_cases": 10,
+  "target_sources": 7,
+  "target_warnings": 0,
+  "scoped_clearance_only": true,
+  "whole_phase_uncleared": true,
+  "whole_phase_remaining": "Unknown/external/eval/Function/module/worker source provenance, syntax/global reporting, content handler named parameters and full target/p100 remain pending.",
+  "official_failure_controls": [
+    {
+      "control": "timer-negative",
+      "expected": "harness_error",
+      "native": "harness_error",
+      "chrome": "harness_error",
+      "original_source_equal": true,
+      "prior_q26_source_identical": true
+    },
+    {
+      "control": "timer-positive",
+      "expected": "pass",
+      "native": "pass",
+      "chrome": "pass",
+      "original_source_equal": true,
+      "prior_q26_source_identical": true
+    },
+    {
+      "control": "observer-negative",
+      "expected": "harness_error",
+      "native": "harness_error",
+      "chrome": "harness_error",
+      "original_source_equal": true,
+      "prior_q26_source_identical": true
+    },
+    {
+      "control": "observer-positive-captured",
+      "expected": "pass",
+      "native": "pass",
+      "chrome": "pass",
+      "original_source_equal": true,
+      "prior_q26_source_identical": true
+    }
+  ],
+  "all_old_pass_callbacks_retained": true,
+  "held_revalidation": "held-revalidation.json"
+}

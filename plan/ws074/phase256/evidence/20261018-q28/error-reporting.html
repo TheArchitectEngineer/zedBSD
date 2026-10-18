@@ -1,0 +1,43 @@
+<!doctype html><html><body><script>
+(function () {
+ var NativeErrorEvent=ErrorEvent, nativeDispatch=window.dispatchEvent;
+ var cases=[], observed=[], active=null, next=0, legacy=false, legacyArgs=null, firstPrimitiveLine=0;
+ var basic=new Error('known-timer'), closureError=new TypeError('known-closure'), microError=new Error('known-microtask');
+ var microRuns=0;
+ var classicError=new Error('known-classic'), nulError='embedded\0message', objectAgain=new Error('same-object');
+ window.classicReportSentinel=classicError;
+ function check(name, good){console.log(name+' '+(good?'PASS':'FAIL'));}
+ function add(name,run,verify){cases.push({name:name,run:run,verify:verify});}
+ function handle(event){observed.push(event);if(!legacy)event.preventDefault();}
+ window.addEventListener('error',handle);
+ function common(event,payload){
+  return event instanceof NativeErrorEvent && event instanceof Event && Object.prototype.toString.call(event)==='[object ErrorEvent]' && event.type==='error' && event.isTrusted && event.cancelable && !event.bubbles && !event.composed && event.error===payload && event.target===window && event.currentTarget===null && event.eventPhase===0 && event.filename.endsWith('error-reporting.html') && event.lineno>0 && event.colno>0;
+ }
+ function one(payload){return observed.length===1&&common(observed[0],payload)&&observed[0].defaultPrevented;}
+ add('timer-runtime',function(){throw basic;},function(){return one(basic)&&observed[0].message.indexOf('known-timer')>=0;});
+ add('nested-closure-source',function(){setTimeout((function(){return function(){throw closureError;};})(),0);},function(){return one(closureError)&&observed[0].message.indexOf('known-closure')>=0;});
+ add('microtask-runtime',function(){queueMicrotask(function(){microRuns++;throw microError;});},function(){return microRuns===1&&one(microError)&&observed[0].message.indexOf('known-microtask')>=0;});
+ add('classic-inline-runtime',function(){var script=document.createElement('script');script.textContent='throw window.classicReportSentinel;';document.body.appendChild(script);},function(){return one(classicError)&&observed[0].message.indexOf('known-classic')>=0;});
+ add('undefined-runtime',function(){throw undefined;},function(){return one(undefined)&&observed[0].message.indexOf('undefined')>=0;});
+ add('false-runtime',function(){throw false;},function(){return one(false)&&observed[0].message.indexOf('false')>=0;});
+ add('first-primitive-source',function(){throw 42;},function(){if(!one(42))return false;firstPrimitiveLine=observed[0].lineno;return firstPrimitiveLine>0;});
+ add('repeat-primitive-source',function(){throw 42;},function(){return one(42)&&observed[0].lineno>firstPrimitiveLine;});
+ add('embedded-nul-message',function(){throw nulError;},function(){return one(nulError)&&observed[0].message.indexOf('\0')>=0;});
+ add('same-object-first',function(){throw objectAgain;},function(){return one(objectAgain);});
+ add('same-object-again',function(){throw objectAgain;},function(){return one(objectAgain);});
+ add('legacy-onerror-runtime',function(){legacy=true;window.onerror=function(message,filename,line,column,error){legacyArgs=[this===window,arguments.length,message,filename,line,column,error];return true;};throw basic;},function(){var good=one(basic)&&legacyArgs[0]&&legacyArgs[1]===5&&legacyArgs[2]===observed[0].message&&legacyArgs[3]===observed[0].filename&&legacyArgs[4]===observed[0].lineno&&legacyArgs[5]===observed[0].colno&&legacyArgs[6]===basic;window.onerror=null;legacy=false;return good;});
+ var fakeConstructorCalls=0,fakeDispatchCalls=0;
+ add('native-report-ignores-global-replacements',function(){window.ErrorEvent=function(){fakeConstructorCalls++;};window.dispatchEvent=function(){fakeDispatchCalls++;};throw basic;},function(){var good=one(basic)&&fakeConstructorCalls===0&&fakeDispatchCalls===0;window.ErrorEvent=NativeErrorEvent;window.dispatchEvent=nativeDispatch;return good;});
+ add('current-script-spoof-ignored',function(){Object.defineProperty(document,'currentScript',{value:{src:'https://unverified.invalid/fake.js'},configurable:true});throw basic;},function(){var good=one(basic);delete document.currentScript;return good;});
+ var base=null;
+ add('actual-document-not-base',function(){base=document.createElement('base');base.href='https://unverified.invalid/base/';document.head.appendChild(base);var script=document.createElement('script');script.textContent='setTimeout(function(){throw window.classicReportSentinel;},0);';document.body.appendChild(script);},function(){var good=one(classicError);base.remove();return good;});
+ add('normal-callback-positive',function(){window.normalReportPositive=true;},function(){return window.normalReportPositive===true&&observed.length===0;});
+ function runNext(){
+  if(next===cases.length){window.removeEventListener('error',handle);window.onerror=null;return;}
+  active=cases[next++];observed=[];
+  setTimeout(function(){check(active.name,active.verify());runNext();},80);
+  setTimeout(active.run,0);
+ }
+ runNext();
+})();
+</script></body></html>

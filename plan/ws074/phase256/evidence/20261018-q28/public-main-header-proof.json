@@ -1,0 +1,14 @@
+[
+  {
+    "file": "plan/ws074/tests/host-error-events.c",
+    "before_sha256": "777fac94bdff105ca0d689cddd561a7524d9de322f02fcd303007c2ce7d8a1e6",
+    "after_sha256": "83bd5eba09fe01a5e9ac0db2c8630b4dc670bb6e1311bd464016655db6f2dcd2",
+    "all_code_tokens_and_literals_unchanged": true
+  },
+  {
+    "file": "plan/ws074/tests/host-error-reporting.c",
+    "before_sha256": "42faf715639a44e695b1621cdcb6ce3ff42938a519663401b57b644d30dd452a",
+    "after_sha256": "4c0ea5a5fa85082684a8c5c995571f889f5f91c6ae45cbb95bb08afa268f37e5",
+    "all_code_tokens_and_literals_unchanged": true
+  }
+]

@@ -1,0 +1,34 @@
+[
+  {
+    "control": "timer-negative",
+    "expected": "harness_error",
+    "native": "harness_error",
+    "chrome": "harness_error",
+    "original_source_equal": true,
+    "prior_q26_source_identical": true
+  },
+  {
+    "control": "timer-positive",
+    "expected": "pass",
+    "native": "pass",
+    "chrome": "pass",
+    "original_source_equal": true,
+    "prior_q26_source_identical": true
+  },
+  {
+    "control": "observer-negative",
+    "expected": "harness_error",
+    "native": "harness_error",
+    "chrome": "harness_error",
+    "original_source_equal": true,
+    "prior_q26_source_identical": true
+  },
+  {
+    "control": "observer-positive-captured",
+    "expected": "pass",
+    "native": "pass",
+    "chrome": "pass",
+    "original_source_equal": true,
+    "prior_q26_source_identical": true
+  }
+]

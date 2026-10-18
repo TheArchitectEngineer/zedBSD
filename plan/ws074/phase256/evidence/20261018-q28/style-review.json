@@ -1,0 +1,48 @@
+{
+  "raw_goto_flags": 35,
+  "other_generated_or_fixture_flags": 0,
+  "manual_forward_cleanup_review": [
+    {
+      "function": "bind_checkpoint",
+      "forward_cleanup_jumps": 1,
+      "backward_jumps": 0
+    },
+    {
+      "function": "window_report_exception",
+      "forward_cleanup_jumps": 1,
+      "backward_jumps": 0
+    },
+    {
+      "function": "window_report_event",
+      "forward_cleanup_jumps": 3,
+      "backward_jumps": 0
+    },
+    {
+      "function": "window_run_source",
+      "forward_cleanup_jumps": 6,
+      "backward_jumps": 0
+    },
+    {
+      "function": "vm_function_create_native",
+      "forward_cleanup_jumps": 8,
+      "backward_jumps": 0
+    },
+    {
+      "function": "vm_function_create",
+      "forward_cleanup_jumps": 8,
+      "backward_jumps": 0
+    },
+    {
+      "function": "report_source_lifetime",
+      "forward_cleanup_jumps": 8,
+      "backward_jumps": 0
+    }
+  ],
+  "new_or_changed_scope_unresolved_findings": 0,
+  "full_standard": "plan/coding-style.md sections2/3/14; new private declarations follow table ownership; public main headers corrected before final build",
+  "interpreter_case_scope": [
+    "VM_OP_THROW metadata reset",
+    "VM_OP_NEW_CLOSURE metadata copy"
+  ],
+  "unchanged_legacy_source": "Retained for full WS p100; no claim of whole source conformance."
+}

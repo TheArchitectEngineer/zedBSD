@@ -1,0 +1,10 @@
+<!doctype html><script>
+performance.clearMarks();
+var returnedMark=performance.mark('prior-probe');
+console.log('mark-return '+returnedMark.entryType+':'+returnedMark.name);
+console.log('prior-entry-count '+performance.getEntriesByName('prior-probe').length);
+var observedMark=new PerformanceObserver(function(list,observer){console.log('observed '+list.getEntries().map(function(entry){return entry.name;}).join(','));observer.disconnect();});
+observedMark.observe({entryTypes:['mark'],buffered:true});
+performance.mark('future-probe');
+console.log('future-entry-count '+performance.getEntriesByName('future-probe').length);
+</script>

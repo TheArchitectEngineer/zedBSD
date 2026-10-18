@@ -1,0 +1,74 @@
+[
+  {
+    "label": "harness",
+    "returncode": 0,
+    "seconds": 236.5,
+    "command": [
+      "python3",
+      "build/ws074-20261018/q28/final/census.py",
+      "after",
+      "/home/awe/zedBSD-claude1/build/ws074-20261018/q28/final/engine/browser"
+    ]
+  },
+  {
+    "label": "static",
+    "returncode": 0,
+    "seconds": 536.9,
+    "command": [
+      "python3",
+      "plan/ws074/tests/run-wpt-reftests.py",
+      "--program",
+      "/home/awe/zedBSD-claude1/build/ws074-20261018/q28/final/engine/browser",
+      "--root",
+      ".",
+      "--selection-manifest",
+      "plan/ws074/phase173/evidence/20261013-q1012/manifest.json",
+      "--limit",
+      "0",
+      "--render-timeout",
+      "20",
+      "--save-failures",
+      "2",
+      "--out",
+      "build/ws074-20261018/q28/final/after-static"
+    ]
+  },
+  {
+    "label": "scripted",
+    "returncode": 0,
+    "seconds": 648.7,
+    "command": [
+      "python3",
+      "plan/ws074/tests/run-interop2025-scripted-reftests.py",
+      "--manifest",
+      "plan/ws074/phase173/evidence/20261013-q1012/manifest.json",
+      "--program",
+      "/home/awe/zedBSD-claude1/build/ws074-20261018/q28/final/engine/wpt-ready-render",
+      "--out",
+      "build/ws074-20261018/q28/final/scripted-413",
+      "--budget-seconds",
+      "1800"
+    ]
+  },
+  {
+    "label": "crash",
+    "returncode": 0,
+    "seconds": 652.6,
+    "command": [
+      "python3",
+      "plan/ws074/tests/run-interop2025-crashtests.py",
+      "--manifest",
+      "plan/ws074/phase173/evidence/20261013-q1012/manifest.json",
+      "--program",
+      "/home/awe/zedBSD-claude1/build/ws074-20261018/q28/final/engine/browser",
+      "--focus",
+      "all",
+      "--settle-ms",
+      "5000",
+      "--process-timeout",
+      "20",
+      "--out",
+      "build/ws074-20261018/q28/final/crash-report.json"
+    ]
+  }
+]

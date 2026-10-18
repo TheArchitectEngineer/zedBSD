@@ -1,0 +1,79 @@
+{
+  "eligible": 1508,
+  "eligible_sha256": "82147e6edaec1b3b8d537e46eb71b64f2f03132cc12803e284c6ca72377779e7",
+  "whole_changes": [
+    [
+      "/css/css-anchor-position/anchor-name-in-shadow-002.html",
+      "no_completion",
+      "harness_error"
+    ],
+    [
+      "/css/css-anchor-position/anchor-name-in-shadow.html",
+      "no_completion",
+      "harness_error"
+    ],
+    [
+      "/css/css-anchor-position/anchor-position-top-layer-007.html",
+      "fail",
+      "harness_error"
+    ],
+    [
+      "/css/css-anchor-position/at-position-try-invalidation-shadow-dom.html",
+      "fail",
+      "harness_error"
+    ],
+    [
+      "/css/css-anchor-position/position-try-tree-scoped.html",
+      "fail",
+      "harness_error"
+    ],
+    [
+      "/navigation-api/navigation-history-entry/opaque-origin.html",
+      "no_completion",
+      "harness_error"
+    ],
+    [
+      "/navigation-api/navigation-methods/return-value/back-forward-opaque-origin.html",
+      "no_completion",
+      "harness_error"
+    ],
+    [
+      "/navigation-api/navigation-methods/return-value/navigate-opaque-origin.html",
+      "no_completion",
+      "harness_error"
+    ],
+    [
+      "/navigation-api/updateCurrentEntry-method/opaque-origin.html",
+      "no_completion",
+      "harness_error"
+    ]
+  ],
+  "whole_regressions": [],
+  "whole_gains": [],
+  "callback_or_completion_changes": [
+    "/css/css-anchor-position/anchor-name-in-shadow-002.html",
+    "/css/css-anchor-position/anchor-name-in-shadow.html",
+    "/css/css-anchor-position/anchor-position-top-layer-007.html",
+    "/css/css-anchor-position/at-position-try-invalidation-shadow-dom.html",
+    "/css/css-anchor-position/position-try-tree-scoped.html",
+    "/navigation-api/navigation-history-entry/opaque-origin.html",
+    "/navigation-api/navigation-methods/return-value/back-forward-opaque-origin.html",
+    "/navigation-api/navigation-methods/return-value/navigate-opaque-origin.html",
+    "/navigation-api/updateCurrentEntry-method/opaque-origin.html",
+    "/wasm/jsapi/js-string/basic.any.html"
+  ],
+  "counts": {
+    "fail": 955,
+    "harness_error": 13,
+    "pass": 494,
+    "no_completion": 20,
+    "no_output": 24,
+    "multiple_completions": 2
+  },
+  "callbacks": {
+    "1": 20642,
+    "0": 11540,
+    "3": 14
+  },
+  "reviewed_retries": []
+}

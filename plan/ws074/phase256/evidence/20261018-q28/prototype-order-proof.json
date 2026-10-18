@@ -1,0 +1,29 @@
+{
+  "source_before_sha256": "463f9267cafe36c71ce409f67fda9ae7e64d25d488e7f356faabd516d522a1c8",
+  "source_after_sha256": "e016fc2b2a821611a66aacf4c869a0bafc7201268220553f42274fda4081ebd5",
+  "initializers_required_forward_declarations": 34,
+  "other_helpers_after_tables": 59,
+  "declaration_multiset_unchanged": true,
+  "remaining_tokens_unchanged": true,
+  "host_runtime_object_identical": true,
+  "command": [
+    "cc",
+    "-std=gnu11",
+    "-O1",
+    "-g",
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "-D_GNU_SOURCE",
+    "-fPIC",
+    "-Iuserland/desktop/libbrowser",
+    "-Iuserland/desktop/browser",
+    "-Iplan/ws074/tests",
+    "-Ibuild/ws074-20261018/include",
+    "-I.",
+    "-c",
+    "userland/desktop/libbrowser/bind/environment.c",
+    "-o",
+    "build/ws074-20261018/q28/environment-prototype-order-host.o"
+  ]
+}

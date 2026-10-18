@@ -1,0 +1,21 @@
+[
+  "python3",
+  "plan/ws074/tests/run-interop2025-census.py",
+  "--manifest",
+  "plan/ws074/phase173/evidence/20261013-q1012/manifest.json",
+  "--program",
+  "/home/awe/zedBSD-claude1/build/ws074-20261018/q28/final/engine/browser",
+  "--out",
+  "build/ws074-20261018/q28/final/held-recheck",
+  "--offset",
+  "1496",
+  "--limit",
+  "1",
+  "--settle-ms",
+  "5000",
+  "--process-timeout",
+  "20",
+  "--font-dir",
+  "userland/desktop/fonts",
+  "--gzip-raw"
+]

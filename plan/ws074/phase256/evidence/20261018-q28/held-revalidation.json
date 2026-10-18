@@ -1,0 +1,54 @@
+{
+  "id": "/performance-timeline/buffered-flag-with-entryTypes-observer.tentative.any.html",
+  "eligible_index": 1496,
+  "source_path": "performance-timeline/buffered-flag-with-entryTypes-observer.tentative.any.js",
+  "original_source_sha256": "427af82a2e3231c62432a40ff8ba7af4b7fed05b01472ca76a0e672d82447855",
+  "pinned_source_byte_identical": true,
+  "full_census_and_recheck_callbacks_completion_identical": true,
+  "prior_future_probe": [
+    "mark-return mark:prior-probe",
+    "prior-entry-count 1",
+    "future-entry-count 1",
+    "observed future-probe"
+  ],
+  "official_harness_controls": [
+    {
+      "control": "timer-negative",
+      "expected": "harness_error",
+      "native": "harness_error",
+      "chrome": "harness_error",
+      "original_source_equal": true,
+      "prior_q26_source_identical": true
+    },
+    {
+      "control": "timer-positive",
+      "expected": "pass",
+      "native": "pass",
+      "chrome": "pass",
+      "original_source_equal": true,
+      "prior_q26_source_identical": true
+    },
+    {
+      "control": "observer-negative",
+      "expected": "harness_error",
+      "native": "harness_error",
+      "chrome": "harness_error",
+      "original_source_equal": true,
+      "prior_q26_source_identical": true
+    },
+    {
+      "control": "observer-positive-captured",
+      "expected": "pass",
+      "native": "pass",
+      "chrome": "pass",
+      "original_source_equal": true,
+      "prior_q26_source_identical": true
+    }
+  ],
+  "prior_held": 1,
+  "remaining_known_held": 0,
+  "raw_fixed_pass": 1482,
+  "verified_fixed_pass": 1482,
+  "denominator": 3805,
+  "note": "Original entryTypes+buffered WPT now has actual prior mark production and actual future-only observer delivery; its assertion would reach the normal global error listener if invoked. No runner/original WPT expectation mutation."
+}

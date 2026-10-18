@@ -1,0 +1,74 @@
+[
+  {
+    "label": "dom",
+    "command": [
+      "python3",
+      "plan/ws074/tests/run-dom-tests.py",
+      "--program",
+      "/home/awe/zedBSD-claude1/build/ws074-20261018/q28/final/engine/browser"
+    ],
+    "returncode": 0,
+    "seconds": 2.1
+  },
+  {
+    "label": "cssom",
+    "command": [
+      "/home/awe/zedBSD-claude1/build/ws074-20261018/q28/final/engine/host-cssom"
+    ],
+    "returncode": 0,
+    "seconds": 2.2
+  },
+  {
+    "label": "cssom-mutation",
+    "command": [
+      "/home/awe/zedBSD-claude1/build/ws074-20261018/q28/final/engine/host-cssom-mutation"
+    ],
+    "returncode": 0,
+    "seconds": 2.4
+  },
+  {
+    "label": "marks",
+    "command": [
+      "/home/awe/zedBSD-claude1/build/ws074-20261018/q28/final/engine/host-performance-marks"
+    ],
+    "returncode": 0,
+    "seconds": 2.5
+  },
+  {
+    "label": "observer",
+    "command": [
+      "/home/awe/zedBSD-claude1/build/ws074-20261018/q28/final/engine/host-performance-observer"
+    ],
+    "returncode": 0,
+    "seconds": 2.6
+  },
+  {
+    "label": "error-events",
+    "command": [
+      "/home/awe/zedBSD-claude1/build/ws074-20261018/q28/final/engine/host-error-events"
+    ],
+    "returncode": 0,
+    "seconds": 2.7
+  },
+  {
+    "label": "error-reporting",
+    "command": [
+      "/home/awe/zedBSD-claude1/build/ws074-20261018/q28/final/engine/host-error-reporting"
+    ],
+    "returncode": 0,
+    "seconds": 2.8
+  },
+  {
+    "label": "acid",
+    "command": [
+      "python3",
+      "plan/ws074/tests/run-acid-tests.py",
+      "--program",
+      "/home/awe/zedBSD-claude1/build/ws074-20261018/q28/final/engine/browser",
+      "--out",
+      "build/ws074-20261018/q28/final/acid"
+    ],
+    "returncode": 0,
+    "seconds": 7.4
+  }
+]

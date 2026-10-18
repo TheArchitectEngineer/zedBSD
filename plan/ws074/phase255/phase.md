@@ -2,17 +2,17 @@
 
 # ws074-p255: PerformanceObserverのnative mark登録・queue・task配信
 
-Status: in-progress（q28-i03 actual failure fidelity/held再評価）
+Status: uncleared（q28 Window mark/failure/held partial cleared・full conformance/whole残り）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
-Queue: [ws074-q20261018-26-i01](../queue.md)
+Queue: [ws074-q20261018-28-i01/i03](../queue.md)
 Origin: [p189 q23 holdback](../phase189/evidence/20261018-q23/native-prerequisite-holdback.json)
 Prerequisite: [p254](../phase254/phase.md)の実mark記録/取得とmanaged lifecycleのverified output。
 
 ## Own goal / current evidence
 
-prelude-source.incのPerformanceObserverはobserve/disconnectが何もせずtakeRecordsが空、supportedEntryTypesも空のcompat placeholder。q23 negative WPTは過去entryが作られずobserverも機能しない状態でPASSとなった。original raw resultは保存し、確認済みgoal PASSへの加算はholdする。markとobserver両方のpositiveを提供して過去entry抑止が本当に機能することを検証する。
+q23時点のprelude-source.inc fallbackはobserve/disconnectが何もせずtakeRecords/supportedEntryTypesが空だった（q26以後はnative globalが先に存在しこのfallbackを実行しない）。q23 negative WPTは過去entryが作られずobserverも機能しない状態でPASSとなった。original raw resultは保存し、確認済みgoal PASSへの加算はholdする。markとobserver両方のpositiveを提供して過去entry抑止が本当に機能することを検証する。
 
 Native constructor/callback brand、markの実登録/filter/buffer・takeRecords/disconnect/reobserve、Window-owned task source/batching/再入・例外/GC・retired contextの停止、PerformanceObserverEntryList snapshotと正しいsupportedEntryTypesを実装する。p254のdefault markだけでなく、将来のtype拡張を名前だけ先に宣伝しない。試験用JS stubやtest URL分岐で結果を補正しない。
 
@@ -57,3 +57,5 @@ Event ws074-p255-q28-selected-20261018: q26 declaration findingをq28-i01の宣�
 Event ws074-p255-q28-i01-cleared-20261018: q28-i01宣言順partialを実行しcleared。34 required declarations/59 normal helpersへ整理、全宣言multiset/他token不変・host debug除去object全bytes一致、exact environment target warning0。API/body不変でq27 verified functional outputと同値。q26旧unclearedを保持し、このdeclaration findingだけを解消。whole Phaseはruntime prerequisite/consumer fidelityが未達でunclearedを維持。combined q28 runtime/header変更後のgateはi02/i03へ残す。[evidence](evidence/20261018-q28-declarations/README.md)。
 
 Event ws074-p255-q28-i03-started-20261018: active q28/28491bf89（routine main header supplement fa65e0524）を確認し、i01 declaration output・i02 actual native ErrorEvent/harness negativeとfinal frozen pair/full gatesを実検証。原q26 assertion JSは現在native/Chrome双方harness_error/completion1で、正常timer/actual future-only Observerは双方PASS。ここからprior/future entry実数と原held IDを再測定する。原q26/q27 historical unclearedは保持し、真に基準を満たす場合のみheld1を解除する。
+
+Event ws074-p255-q28-i03-cleared-partial-20261018: 公式harnessのtimer/Observer intentional failureは同じ原JSでnative/Chrome双方harness_error/completion1、正常timerとactual future-only Observerは双方PASS。prior/future実entry各1・futureだけ通知を再確認し、原held WPTをindex1496で再実行、full censusと全callback/completionが同一PASS、原JSはpinned Git blob SHA256427af82a2e3231c62432a40ff8ba7af4b7fed05b01472ca76a0e672d82447855とbyte同一。この1 IDの既知no-op/未通知/失敗通知前提がすべて解消したためheld1を解除。raw PASS1482は維持し確認済1481→1482/3805（38.948752%）、未attempt275は分母へ保持。新whole gainは0。 final source27726847e/frozen pairでDOM40、runtime Chrome/native16一致、非保守的GC19（opaque sourceがfilenameだけを保持し退役Document/realmを保持しないこと、foreign conversion/job中の実owner保持・回収を含む）、旧Event9/producer7/observer10/CSSOM12+12、host warning0/target exact7source warning0を確認。C全文のnew/changed scopeはraw35の許可forward cleanup以外0。Acid3 score/inventory100・pixel0、Acid2既存差873を維持。 原q26 unclearedを保持しnew i03 partialをclear、wholeはfull conformance/target等未達を保持。[evidence](../phase256/evidence/20261018-q28/README.md)。
