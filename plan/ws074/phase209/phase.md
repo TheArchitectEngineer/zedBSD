@@ -41,3 +41,7 @@ Event ws074-p209-q16-selected-20261018: q15 source/API証拠とqueue archive rea
 Event ws074-p209-q16-uncleared-20261018: [q16証拠](../phase209/evidence/20261018-q16/README.md)。post-font native producerは独立7行/budget6・oldfont2/DOM34/host-target/C/Acidを確認したが、strict全15は14/15でattributes observerが未対応。q16-i01はrequired controls/global未達でuncleared、i02はunstarted scoped item uncleared・fixed48本実行無し。全1491/static1561 gateはknown prerequisiteを直すcombined final sourceへpendingとしてskipped。last verified1330はq14 sourceの結果で、current candidate全体は未判定。
 
 Event ws074-p253-attribute-redesign-from-q16-20261018: [p253](../phase253/phase.md)へordinary attributesのgeneric native notificationを分離。p209 q16 verified preflight → p253 attributes → 全15control/p209新attempt global gate → p190 actual48というscoped output順で再開する。origin/foreignの自身のscope/verification/resumeを記録、q15/q16uncleared履歴とinitial ready/childListの過去partialを保持。新Queue選定まで属性sourceを生成しない。
+
+Event ws074-p253-q17-selected-20261018: [p253 q17](../phase253/phase.md)をordinary set/remove attribute records/filter/options/GCの有限partialで選定。本Phaseはそのneeded native outputと全15 controls成立後に新attemptを実行。q16 history/未達は保持し、global1491/static1561は同じcombined final sourceで初めて判定する。q17 exact scope/deadline/順をQueueへ保存、full API/WS/p100/targetは別関門。
+
+Event ws074-q17-preflight-20261018: ordinary attributes・post-font native controls15/15、Chrome新fixture21行一致、DOM35/35を確認。q17 final frozen pairでglobal1491/static1561とstrict固定48の実測へ進む。global未実行のためterminal clearanceは未判定。

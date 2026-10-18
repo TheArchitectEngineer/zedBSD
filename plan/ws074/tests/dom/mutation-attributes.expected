@@ -1,0 +1,21 @@
+count 6
+payload attributes:true:data-a:null:null|attributes:true:data-a:null:one|attributes:true:data-a:null:two|attributes:true:data-a:null:two|attributes:true:class:null:null|attributes:true:class:null:a
+list 0:null:undefined:true:true:false:true
+brand true
+immutable 0:null
+own-only 1
+style 2:style:null:width: 10px;
+implicit 1
+empty 0
+invalid true:true:true:true:true
+getters attributeFilter,attributeOldValue,attributes,characterData,characterDataOldValue,childList,subtree
+sequence next0,string,next1
+close 0:true
+invalid-preserves 1
+inherited 1
+reobserve 1
+disconnect 0
+mixed attributes,childList,attributes
+child 2:one:true:false
+retained 0:null
+delivery 1024:a,b

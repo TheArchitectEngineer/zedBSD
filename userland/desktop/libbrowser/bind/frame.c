@@ -220,6 +220,7 @@ bind_frames_attach(
 	/* Managed Document.context already supplies the traced lifetime edge. */
 	window->document->view = window;
 	window->document->removed = frame_removed;
+	window->document->attribute_changed = bind_environment_attribute_mutation;
 
 	/* Succeeded: wrapper creation and removal can find the actual owner. */
 	return;
@@ -250,6 +251,7 @@ bind_frames_release(
 	bind_window_detach(window);
 	window->document->view = NULL;
 	window->document->removed = NULL;
+	window->document->attribute_changed = NULL;
 
 	/* Succeeded: subsequent DOM removal cannot call the released primary host. */
 	return;

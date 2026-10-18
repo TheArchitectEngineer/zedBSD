@@ -24,7 +24,8 @@ enum collection_kind {
 	COLLECTION_SECTION_ROWS,
 	COLLECTION_ROW_CELLS,
 	COLLECTION_OPTIONS,
-	COLLECTION_IMAGES
+	COLLECTION_IMAGES,
+	COLLECTION_EMPTY_NODE_LIST
 };
 
 /* A wrapper retains its actual root and therefore its relevant Document owner. */
@@ -486,6 +487,27 @@ bind_select_options(
 	return 0;
 }
 
+/*
+ * Creates a genuine immutable-empty NodeList core in the owning Document's realm.
+ */
+int
+bind_empty_node_list(
+	struct bind_window *window,
+	vm_value *result)
+{
+	struct vm_object *wrapper;
+	int status;
+
+	/* The native backing keeps the relevant owner and never traverses later DOM changes. */
+	status = collection_create(window->realm, &window->document->node, COLLECTION_EMPTY_NODE_LIST, NULL, &wrapper);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: prototype, brand, indexed access and item belong to native NodeList storage. */
+	*result = vm_value_cell(wrapper);
+	return 0;
+}
+
 /* Marks the root even when no external variable retains a Node or Document wrapper. */
 static void
 collection_trace(
@@ -550,6 +572,12 @@ collection_create(
 		index = BIND_HTML_FORM_CONTROLS_COLLECTION;
 	if (kind == COLLECTION_RADIO)
 		index = BIND_RADIO_NODE_LIST;
+
+	/* Attribute mutations own empty NodeLists with the genuine base prototype. */
+	if (kind == COLLECTION_EMPTY_NODE_LIST)
+		index = BIND_NODE_LIST;
+
+	/* Option collections retain their existing native interface. */
 	if (kind == COLLECTION_OPTIONS)
 		index = BIND_HTML_OPTIONS_COLLECTION;
 
@@ -684,7 +712,9 @@ collection_this(
 
 	/* NodeList and HTMLCollection are independent brands despite shared storage helpers. */
 	if (list) {
-		if (((struct collection_state *)cell)->kind != COLLECTION_RADIO) {
+		/* NodeList operations accept both duplicate live lists and immutable empty lists. */
+		if (((struct collection_state *)cell)->kind != COLLECTION_RADIO &&
+		    ((struct collection_state *)cell)->kind != COLLECTION_EMPTY_NODE_LIST) {
 			status = bind_throw_illegal(realm);
 			if (status != VM_THROWN)
 				return status;
@@ -692,8 +722,20 @@ collection_this(
 			/* Succeeded: the requested native exception is installed. */
 			return VM_THROWN;
 		}
+
+		/* Radio-only accessors reject a genuine base NodeList as well as lookalikes. */
+		if (list == 2 && ((struct collection_state *)cell)->kind != COLLECTION_RADIO) {
+			status = bind_throw_illegal(realm);
+			if (status != VM_THROWN)
+				return status;
+
+			/* Succeeded: the distinct RadioNodeList brand is enforced. */
+			return VM_THROWN;
+		}
 	} else {
-		if (((struct collection_state *)cell)->kind == COLLECTION_RADIO) {
+		/* HTMLCollection methods cannot read either genuine NodeList kind. */
+		if (((struct collection_state *)cell)->kind == COLLECTION_RADIO ||
+		    ((struct collection_state *)cell)->kind == COLLECTION_EMPTY_NODE_LIST) {
 			status = bind_throw_illegal(realm);
 			if (status != VM_THROWN)
 				return status;
@@ -715,6 +757,10 @@ collection_next(
 	struct dom_node *node)
 {
 	struct dom_node *root;
+
+	/* A static empty NodeList never gains members when its owner Document changes. */
+	if (state->kind == COLLECTION_EMPTY_NODE_LIST)
+		return NULL;
 
 	/* Native options use the same current membership as typed numeric addition. */
 	if (state->kind == COLLECTION_OPTIONS) {
@@ -1854,7 +1900,7 @@ radio_value_get(
 	UNUSED_PARAMETER(count);
 
 	/* The indexed NodeList brand currently denotes genuine RadioNodeList state. */
-	status = collection_this(realm, receiver, 1, &state);
+	status = collection_this(realm, receiver, 2, &state);
 	if (status != 0)
 		return status;
 
@@ -1919,7 +1965,7 @@ radio_value_set(
 
 	/* Native identity precedes DOMString conversion, which may mutate the entire live list. */
 	*result = VM_VALUE_UNDEFINED;
-	status = collection_this(realm, receiver, 1, &state);
+	status = collection_this(realm, receiver, 2, &state);
 	if (status != 0)
 		return status;
 

@@ -6,7 +6,7 @@
  */
 
 /*
- * The DOM (plan/ws074/design.md §4): the node tree the parser builds, the
+ * The DOM: the node tree the parser builds, the
  * style and layout read and, later, scripts change.
  *
  * Every node is a cell of its document's heap and lives while something
@@ -309,8 +309,7 @@ struct dom_attribute {
  * button's checkedness once checked_dirty says it no longer follows the
  * checked attribute.  preedit is the text an input method is composing
  * at the caret (UTF-16, not part of the value; empty when none), drawn
- * underlined there with its own cursor preedit_cursor units into it
- * (ws090-p025).
+ * underlined there with its own cursor preedit_cursor units into it.
  *
  * The rest is what the display list last drew (drawn says it did), in
  * layout units in the document's coordinates: the text's unscrolled origin
@@ -331,7 +330,7 @@ struct dom_control {
 	int indeterminate;
 	struct wb_units preedit;
 	size_t preedit_cursor;
-	/* Where the composed text's chosen part (an input method's clause) starts, in units; the part runs to preedit_cursor, none when it is not before it (ws177-p019). */
+	/* Where the composed text's chosen part (an input method's clause) starts, in units; the part runs to preedit_cursor, none when it is not before it. */
 	size_t preedit_begin;
 	int drawn;
 	int32_t scroll_x;
@@ -433,7 +432,7 @@ struct dom_doctype {
  *
  * compose_session grows each time the focus moves to another element and
  * each time the page itself ends what an input method was composing (a
- * click, a script's value; ws177-p019), so the program can start its input
+ * click, a script's value), so the program can start its input
  * method's text input again and the input method drops its own composing.
  */
 struct dom_document {
@@ -469,6 +468,8 @@ struct dom_document {
 	enum dom_quirks quirks;
 	uint32_t generation;
 	uint32_t compose_session;
+	/* Ordinary attribute commits lend snapshots until this hook roots them before allocating. */
+	int (*attribute_changed)(struct dom_document *document, struct dom_element *element, struct vm_string *name, struct vm_string *old_value);
 };
 
 /* Separately allocated weak subscriptions own a token, never their GC context. */
@@ -490,7 +491,7 @@ void dom_removal_set_split(struct dom_removal_subscription *subscription, void (
 void dom_split_notify(struct dom_document *document, struct dom_node *node, struct dom_node *created, uint32_t offset);
 void dom_removal_release(struct dom_document *document);
 
-/* The HTML serialization of nodes (serialize.c, ws074-p081). */
+/* The HTML serialization of nodes (serialize.c). */
 int dom_serialize_children(const struct dom_node *node, int scripting, struct wb_units *out);
 int dom_serialize_node(const struct dom_node *node, int scripting, struct wb_units *out);
 

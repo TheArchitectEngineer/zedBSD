@@ -54,3 +54,7 @@ Event ws074-p242-q05-partial-clear-20261018: [証拠](evidence/20261018-q05/READ
 q05 source/証拠のWIP commit: d328827f5。q06はこの固定browser/libraryを再利用し、hashをp190 q06 summaryへ保存した。
 
 Event ws074-p253-attribute-model-plan-20261018: [p253](../phase253/phase.md)が既存childList registration/pending queue/GC outputを利用してordinary attributesを追加する候補。replaceChildrenの既存scope/history/whole未達は維持。attributes observe flags/record pathとDOM hookのownershipを別Phaseで検証し、その後childList controlsも非悪化確認する。新Queueまで実装しない。
+
+Event ws074-p253-q17-selected-20261018: ordinary attributesのrecord/flags/filterを既存childList pending queueへ追加し、trace/clearへfilter ownershipを反映するq17を選定。childList生成/replaceChildren batchは不変、old DOM/混在record/GCを非悪化検証する。p242 own scope/whole未達/q04-q05 historyは変更しない。
+
+Event ws074-p253-native-empty-list-provider-20261018: source確認でchildList用environment_node_listはArrayにconstructor名を付けるNodeList-shaped snapshotで、native NodeList全IDLではない。q04/q05の検証済みbatch/root/順序は保持し、完全NodeListと再解釈しない。p253 attributesはcollection.cのgenuine empty NodeList coreを新設して使い、このPhaseのchildList snapshot helperは未改修として残す。p242 whole未達と完全snapshot/IDLの再開条件を保持。

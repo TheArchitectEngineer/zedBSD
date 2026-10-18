@@ -699,7 +699,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p250](phase250/phase.md) | computed fit-content bound | cleared / q14 computed own criteria | p246 scalar output、q12 raw、q13 runner |
 | [ws074-p251](phase251/phase.md) | linear calc zero percentage type | cleared / q14 direct linear type | q12/q13 raw、precode Chrome |
 | [ws074-p252](phase252/phase.md) | flex-basis grammar/computed・non-replaced content base | planned / Queue未選定 | p240/p241残り、q14 final output待ち |
-| [ws074-p253](phase253/phase.md) | ordinary attribute mutation records | planned / Queue未選定 | p209 q16 preflight、p242 observer model |
+| [ws074-p253](phase253/phase.md) | ordinary attribute mutation records | in-progress / q17 ordinary partial | p209 q16 preflight、p242 observer model |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 
@@ -1205,3 +1205,7 @@ Event ws074-q15-i02-uncleared-and-p209-redesign-20261018: [p190 q15](phase190/ev
 Event ws074-q16-native-producer-selected-20261018: [p209](phase209/phase.md)のpost-font eligible tasksと[p190](phase190/phase.md) strict48再検証を最大90分Queueで選定。q15 archive/d2cee8244 read-back済み。native preflight → controls → actual48を守り、元budget/ABI/WPT protocolを維持。global1491/static1561のlatest verified rawでold whole491/839を比較。両Phaseへ自身のdesign/resume eventを配送、full APIs/WS100%と共有projectionはpending。
 
 Event ws074-q16-uncleared-p253-added-20261018: [q16証拠](phase209/evidence/20261018-q16/README.md)。producer独立7行/budget6/DOM34/C/Acidは通るが全15は14/15、attribute MutationObserver未対応で両item uncleared（i02 unstarted）。global1491/static1561はcombined final sourceへpendingとしてskipped、last verified1330/3805はq14でありcurrent candidate全体を未検証で維持としない。[p253](phase253/phase.md)を追加しp209/p190/p242へ自身の変更・再開条件を配送。q16 limited output → attributes → p209新attempt/control/global → actual48を新Queue候補とする。共有projection pending。
+
+Event ws074-q17-attribute-combined-selected-20261018: [p253](phase253/phase.md)ordinary attribute records → [p209](phase209/phase.md)新attempt再検証 → [p190](phase190/phase.md) strict48を最大90分で選定。q16 hash/48704d92b read-back後に開始、各Phaseへ自身の設計/resumeを配送。namespace/Attr/multi-target/characterData等は未実装面として明示。latest full q14 rawをbeforeとするcombined final1491/static1561でold whole491/839を確認し、条件/分母/WPTを緩めない。共有projection pending。
+
+Event ws074-p253-native-list-owner-design-20261018: p253新attribute recordではArrayのconstructor名を付けるhelperを使わず、native collection/NodeList brandとempty coreを実装する設計へ確定。source collection.cを同Phase内部providerとして追加、Radio/HTMLCollection既存brandを維持。active Window-owned ordinary setterがfirst partial、standalone/cross-doc/namespace/Attr/multi-target/full IDL等は未実装を明示。p242へ既存snapshot helperの限界も記録し、strict15/1491/static1561 gateは不変。共有projection pending。

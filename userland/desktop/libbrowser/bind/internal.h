@@ -206,7 +206,7 @@ struct environment_mutation_observer;
  * too), and time_origin the moment the window was made, in milliseconds
  * since 1970 (performance.timeOrigin).  local_storage and session_storage
  * are the window's Storage objects, made when a script first asks for them
- * (NULL until then; ws074-p080).
+ * (NULL until then).
  */
 struct bind_window {
 	struct vm_realm *realm;
@@ -491,10 +491,12 @@ void bind_environment_release(struct bind_window *window);
 void bind_environment_trace(struct vm_heap *heap, struct bind_window *window);
 void bind_environment_disconnect(struct bind_window *window);
 int bind_environment_checkpoint(struct bind_window *window, int *queued);
+int bind_environment_attribute_mutation(struct dom_document *document, struct dom_element *element, struct vm_string *name, struct vm_string *old_value);
+int bind_empty_node_list(struct bind_window *window, vm_value *result);
 int bind_environment_children_mutation(struct bind_window *window, struct dom_node *parent, struct dom_node *const *added, size_t added_count, struct dom_node *const *removed, size_t removed_count, struct dom_node *previous, struct dom_node *next);
 int bind_environment_child_mutation(struct bind_window *window, struct dom_node *parent, struct dom_node *added, struct dom_node *removed);
 
-/* Markup (markup.c, ws074-p081). */
+/* Markup (markup.c). */
 int bind_template_contents(struct dom_element *element, struct dom_node **contents);
 int bind_inner_html_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 int bind_inner_html_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
@@ -504,14 +506,14 @@ int bind_insert_adjacent_html(struct vm_realm *realm, vm_value this_value, const
 int bind_insert_adjacent_element(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 int bind_insert_adjacent_text(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 
-/* Web Storage (storage.c, ws074-p080). */
+/* Web Storage (storage.c). */
 int bind_local_storage(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 int bind_session_storage(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 
-/* The inline style (style.c, ws074-p031). */
+/* The inline style (style.c). */
 int bind_style_install(struct bind_window *window);
 
-/* The computed style (computed.c, ws074-p082). */
+/* The computed style (computed.c). */
 int bind_get_computed_style(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 int bind_computed_element(vm_value value, struct dom_element **element);
 int bind_computed_value(struct vm_realm *realm, struct dom_element *element, const struct vm_string *name, vm_value *result);
@@ -520,7 +522,7 @@ const char *bind_computed_name(size_t index);
 int bind_style(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 int bind_style_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 
-/* The Selectors API, classList and dataset (query.c, ws074-p031). */
+/* The Selectors API, classList and dataset (query.c). */
 int bind_query_selector(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 int bind_query_selector_all(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 int bind_matches(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
@@ -529,7 +531,7 @@ int bind_class_list(struct vm_realm *realm, vm_value this_value, const vm_value 
 int bind_dataset(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 int bind_split_classes(struct vm_realm *realm, const struct vm_string *classes, struct vm_object *names);
 
-/* The geometry of elements and the window's scrolling (geometry.c, ws074-p031). */
+/* The geometry of elements and the window's scrolling (geometry.c). */
 int bind_geometry_install(struct bind_window *window);
 int bind_get_bounding_client_rect(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 int bind_get_client_rects(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);

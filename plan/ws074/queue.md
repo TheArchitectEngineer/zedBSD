@@ -1,5 +1,27 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
+# ws074-q20261018-17 / ordinary attribute observer・combined verification
+
+Status: active（2026-10-18 14:12 JST）
+Owner: このCodex chat単独。
+Approval: [ユーザー自走指示](autonomy.md)を次の有限scopeへ適用。q16 history/hash・WIP48704d92b read-back済み。
+Timebox: 最大90分（15:42 JSTまで）。
+
+| Attempt | Phase | Exact scope | State | Dependencies |
+| --- | --- | --- | --- | --- |
+| ws074-q20261018-17-i01 | [p253](phase253/phase.md) ordinary attributes partial | DOMのplain set/remove backendからgeneric属性recordを通知（setAttribute/removeAttribute/reflection/classList/CSSOM経路）。attributes/subtree/attributeOldValue/iterable attributeFilterのsnapshot/implicit flags/invalid combinationsを扱い、record type/target/name/null namespace/oldValue/native empty NodeList core（prototype/brand/index/item）を既存queueへ完全構築してappend。private opaque document hookをframe attach/releaseへ結びGC/managed lifetimeを守る。namespace/Attr-node API・characterData・multi-target registration等は未実装面として保持。独立Chrome/DOM payload/options/order・takeRecords/disconnect/non-reentrant多observer/childList/child context/GC、strict15、host/target warning0/C全文format/Acidを確認し、combined全1491/static1561 old whole491/839維持・全callback診断 | in-progress | q16 native producerの独立7行/budget6 scoped output、p242 childListモデル、DOM/WebIDL原典 |
+| ws074-q20261018-17-i02 | [p209](phase209/phase.md) producer revalidation partial | i01のnative attribute output後にq16 producerを新attemptで再検証。全15controls/DOM34+新fixture、budget6/初期font2、combined final pairのglobal1491/static1561・全callback/old whole維持、C source hash/host target/Acidを確認。q16 unclearedを履歴で書換えず、full FontFaceSet/API/WSは別受け入れ | in-progress | i01 scoped attributes output、q16 source48704d92b |
+| ws074-q20261018-17-i03 | [p190](phase190/phase.md) strict48 revalidation partial | 全native controls成立後、pinned strict wait script/ID/nonce/単一complete/load/fonts/2RAF/test-wait/exit/最終paintを保持して固定48を全実行。all outcomes/raw/PPM/checkpoint/PNG RGB・source/pair/WPT hashを記録、missing/invalid/duplicate/timeoutは非PASS、JS exception単独はcrash FAILにしない。48 PASSを先取りせずcoverage部分だけ判定。runnerの自分の実装バグは同contract内で修復可。WPT/製品API/Master不変 | in-progress | i01/i02 independent positive15 scoped output、retained strict runner |
+
+Dependency graph: q16 producer preflight → p253 attributes → 全15/p209 revalidation preflight → actual48。i01/i02 global gateは同じfinal frozen pairでi03中にも実行可、whole Phase clearanceは必要outputの検証だけで先取りしない。
+Upcoming Work Outlook: p252 flex-basis、p249 empty margin、native fit/animation、generated contexts。
+Generation bounds: dom/dom.h・dom/node.c、bind/internal.h・frame.c・environment.c・collection.c中心。DOMへbinding headerを入れずpublic browser ABI/Wayland/WPT FS/他WS/他runner結果判定は不変。DOM add_attribute_uriのURI publication前no-VM-allocation invariantを保持し、hookはordinary set/removeに限定。namespace/Attr APIのsilent completionはしない。GC可能なrecord構築の前にborrowed旧name/value/targetをrootし、detach後は通知しない。元90分boundを超えるならoutcomeとresumeを残す。
+
+Precode design clarification: p253の新recordにArrayのconstructor名を付けてNodeListと見せる既存helperを流用せず、native collection backingのempty NodeList coreを追加する。Window-owned ordinary set/removeがfirst partial、standalone/XML/cross-document/namespace/Attr/multi-target/全IDL・iterable等は未実装として明示。strict protocol/全体gateの義務は保持。
+
+---
+<!-- awesome-plan project=zedbsd record=queue -->
+
 # ws074-q20261018-16 / post-font native settle・strict crash revalidation
 
 Status: finished（2026-10-18、両item uncleared・i02未着手）
@@ -367,3 +389,5 @@ Timebox: 最大90分（15:43 JSTまで）。
 Dependency graph: q1197先頭子 → q1198-i01。p217/p189/p173 wholeは部分受け入れに含めない。
 
 Upcoming Work Outlook: non-static008–012 frame variants、auto lines、stretch005–016、RTL字形視覚、RTL行軸017、baseline、runner未対応。共有 `plan/queue.md` / Master / GitHub publication はQ1との競合を避けpending projection。
+
+2026-10-18 q17 design correction: WebIDL sequence conversion原典§3.2.21.1と独立Chromium actualを再確認。member ToStringのthrowではIteratorCloseを行わず即abrupt completion（return呼出し0）。前のclose想定を撤回し例外identity/registration保持を検証する。既存MutationObserverとPromiseのmicrotask相対順は今回のordinary attributes partialに含めず、timerから通常deliveryを確認。full observer schedulingは残課題。

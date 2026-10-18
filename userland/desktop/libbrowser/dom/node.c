@@ -43,6 +43,8 @@ static const struct vm_cell_type character_data_type = { "character-data", chara
 /* A DOCTYPE node, which also refers to its strings. */
 static const struct vm_cell_type doctype_type = { "document-type", doctype_trace, NULL };
 
+static int node_attribute_notify(struct dom_element *element, struct vm_string *name, struct vm_string *old_value);
+
 /*
  * Makes an empty document in a heap, in no-quirks mode.
  */
@@ -63,6 +65,9 @@ dom_document_create(
 	document->heap = heap;
 	document->quirks = DOM_NO_QUIRKS;
 	document->content = DOM_CONTENT_HTML;
+
+	/* A binding owner installs mutation notification only after attaching its Window. */
+	document->attribute_changed = NULL;
 
 	/* Succeeded: the document is empty. */
 	return document;
@@ -516,23 +521,32 @@ dom_element_set_attribute(
 	struct vm_string *value)
 {
 	struct dom_attribute *attribute;
+	struct vm_string *old_value;
 	int error;
 
-	/* An attribute the element has takes the new value, which puts the style out of date. */
+	/* Existing attributes lend their retired value until the notification hook roots it. */
+	old_value = NULL;
 	attribute = dom_element_find_attribute(element, DOM_NS_NONE, name);
 	if (attribute != NULL) {
+		/* These native value, select-state and generation updates allocate no VM cells. */
+		old_value = attribute->value;
+		name = attribute->name;
 		attribute->value = value;
 		dom_select_attribute_changed(element, name, 1, 1);
 		element->node.document->generation++;
-		return 0;
+	} else {
+		/* Append publishes all native attribute edges before any notification can allocate. */
+		error = dom_element_add_attribute(element, DOM_NS_NONE, NULL, name, value);
+		if (error != 0)
+			return error;
 	}
 
-	/* Otherwise the attribute is added at the end. */
-	error = dom_element_add_attribute(element, DOM_NS_NONE, NULL, name, value);
+	/* The ordinary commit is complete, including a same-value assignment. */
+	error = node_attribute_notify(element, name, old_value);
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the element has the attribute with the value. */
+	/* Succeeded: the attribute and every interested observer see the committed change. */
 	return 0;
 }
 
@@ -546,27 +560,33 @@ dom_element_remove_attribute(
 	struct vm_string *name)
 {
 	struct dom_attribute *attribute;
+	struct vm_string *old_name;
+	struct vm_string *old_value;
 	size_t index;
 	size_t after;
+	int error;
 
-	/* An element without the attribute stays as it is. */
+	/* Removing an absent attribute has no mutation to report. */
 	attribute = dom_element_find_attribute(element, DOM_NS_NONE, name);
 	if (attribute == NULL)
 		return 0;
 
-	/* The attributes after it move down one place, keeping their order. */
+	/* Array compaction and select-state updates allocate no VM cells before the hook roots these snapshots. */
+	old_name = attribute->name;
+	old_value = attribute->value;
 	index = (size_t)(attribute - element->attributes);
 	after = element->attribute_count - index - 1U;
 	memmove(&element->attributes[index], &element->attributes[index + 1U], after * sizeof(*attribute));
 	element->attribute_count--;
-
-	/* The committed presence transition updates clean option defaults and select fallback. */
-	dom_select_attribute_changed(element, name, 1, 0);
-
-	/* The attributes changed: the document's style is out of date. */
+	dom_select_attribute_changed(element, old_name, 1, 0);
 	element->node.document->generation++;
 
-	/* Succeeded: the attribute is gone. */
+	/* The retired strings are borrowed only until the hook establishes its temporary roots. */
+	error = node_attribute_notify(element, old_name, old_value);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the attribute is absent and its prior value was reported. */
 	return 0;
 }
 
@@ -1107,4 +1127,28 @@ character_data_create(
 
 	/* Succeeded: the node is detached. */
 	return &text->node;
+}
+
+/* Delivers committed ordinary attribute snapshots through an opaque binding-owner hook. */
+static int
+node_attribute_notify(
+	struct dom_element *element,
+	struct vm_string *name,
+	struct vm_string *old_value)
+{
+	struct dom_document *document;
+	int error;
+
+	/* Parser and standalone Documents have no attached notification owner. */
+	document = element->node.document;
+	if (document->attribute_changed == NULL)
+		return 0;
+
+	/* The hook must root every borrowed snapshot before performing a VM allocation. */
+	error = document->attribute_changed(document, element, name, old_value);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: all interested owner registrations accepted this change. */
+	return 0;
 }
