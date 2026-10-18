@@ -2,7 +2,7 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: in-progress（q31 Has/descriptor prerequisite partial、q30 read partial cleared）
+Status: uncleared（q31 Has/descriptor prerequisite partial cleared、whole Proxy operations未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
@@ -31,3 +31,14 @@ i01 selected read foundation partialだけcleared、whole p258はwrite/descripto
 Event ws074-p258-q31-internal-design-selected-20261018: Setのfallbackにはdescriptor処理が必要で、さらにToPropertyDescriptorはHasPropertyを使うため、未選定の内部順をHas→descriptor→Setへ具体化した。これはこのPhase内の外部契約不変の設計具体化で、q30承認scope/historyを変更しない。既存Object.definePropertyではinvalid getterの後にsetter getterを読む差をprecode native/Chromeで実証（native get,set + setterのthrow、Chrome getだけ + TypeError）。[q31 Queue exact scope](../queue.md)でHasと即時getter検証だけをmax90分選定し、actual native/core pathから対処する。write/descriptor internal methods/global公開は後続scopeに残し、whole p258はまだ達成しない。共有投影pending。
 
 Event ws074-p258-q31-own-helper-declaration-review-20261018: final C全文§2 reviewで変更対象object_to_descriptorの既存forward宣言がconstant tablesより前にあることを確認。q31の同関数scope内で全file-scope tables後の通常blockへ移す。宣言と追加separator以外の全bytesと宣言multisetを保存し、host/target exact objectのdebug除去全bytes同一を証明して、immutable3f9 pairの測定を意味不変のfinal sourceへ対応付ける。approval criteria/timebox/API不変、whole p258/p100未達。
+
+## q31 partial result / resume
+
+Event ws074-p258-q31-partial-cleared-20261018: native HasPropertyをrealm-aware VM pathへ追加し、通常inとprototype上Proxyを接続。actual target/string-or-symbol key2引数・handler this、GetMethod/null fallback/ToBoolean、非configurable own/nonextensible ownをfalseで隠さないinvariant、trap/getter中revoke後の元target/handler保持、GCとbounded property depthを実装。script-free heap hooksは不変。ToPropertyDescriptorのgetterは取得直後に検証し、setterのHas/Getを観測する前にinvalid getterのTypeErrorを返す。enum/config/value/writable/get/set順と元payload/input rootを保つ。
+old read32 control source prefixをbyte同一に保ち、Has/descriptorを加えた同じ68条件がnative/Chrome genuine Proxy/Reflectで全件一致。nativeはC stackの保守的保持を無効にし、元Getに加えてHasでもscript-free descriptor callback内にmanaged realmを実GC、両方でowner生存・処理後の実回収を確認。fresh value/getterを後続descriptor getterのGCから保持、revoke/retention/ctor threshold pressure/sole returned objectとprivate target bounds・global Proxy非公開を維持。fixtureはfrozen control input pathをCLIで指定でき、pair内へ同じJS bytesを保存した。
+公開Object.definePropertyのprecodeはq30 nativeがget,setを観測してsetterのthrow、Chromeがgetだけを観測してTypeError。q31 nativeも同じ元HTMLでgetだけ/TypeErrorへ一致し、この実bugを修正した。原HTML/旧native/Chrome/final nativeの全stdio・command/hashを保存。全1508 harnessは同じsettle5000/process20で237.4秒、q30 whole判定・全callback/completion objectが完全同一。494 PASS/955 FAIL/13 harness_error/20 no_completion/24 no_output/2 multiple、callbacks11540 PASS/20642 FAIL/14 NOTRUN、旧PASS後退/whole gain/差0。
+final measured pairのsourceは3f9f3921d、規約follow-up sourceは2a0aa616d。変更対象object_to_descriptorの既存forward宣言を全tables後へ移し、宣言とseparator以外の全bytesを保持。host/target exact commandでfinal sourceを再compile warning0、両方のdebug除去object全bytesがbefore/after一致した。元frozen source-proof・preserved sourceとfinal-source-proofを分け、この等価性で既存測定をfinal semantic sourceへ対応付ける。literalに再link済みのpairと偽らず、不要なfull corpus再測定を増やさない。
+DOM41/41、interpreter45・factory GC56、CSSOM12+12、producer7/observer10/ErrorEvent9/ErrorReporting19、generator delegation10、host warning0/target access・builtin_object exact2 source warning0を確認。C全文new/changed scopeは許可forward cleanup55以外0、own modified helper宣言も正規位置。未変更legacy全体の規約はp100に残す。Acid3 score/inventory100・pixel0、Acid2既存差873維持。static844/scripted105/strict39はq28原証拠を再利用、新pair全capture/strict equalityは未測定。確認済1482/3805（38.948752%）・held0/未attempt275を保持。
+i01 Has/descriptor prerequisite partialだけcleared。whole p258はrealm-aware getOwn/Define、FromPropertyDescriptor partial field、Set/keys/prototype/extent/IsArray/call/construct・global constructor/revocable/actual original WebIDL2未達でuncleared。元q30 read partialを維持し次finite scopeへ継続、whole p189/p255/p256/p100/full target/WS100%未達。raw/archiveを全member sequential read-back済み。共有Master/Queue/next/cache/GitHub投影pending、push無し。
+
+[Full evidence](evidence/20261018-q31/README.md)。次は必要なdescriptor internal methodsを新finite Queueで具体化し、partial FromPropertyDescriptorのpresenceとshared conversionの層/GCを確認する。global APIと全Proxy受入は未達に保つ。

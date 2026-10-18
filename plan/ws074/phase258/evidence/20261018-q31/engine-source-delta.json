@@ -1,0 +1,5 @@
+[
+  "userland/desktop/libbrowser/js/builtin_object.c",
+  "userland/desktop/libbrowser/vm/access.c",
+  "userland/desktop/libbrowser/vm/vm.h"
+]

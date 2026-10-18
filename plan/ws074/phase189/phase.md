@@ -2,7 +2,7 @@
 
 # ws074-p189: Interop 2025 testharness 結果取得
 
-Status: uncleared（q30 held0・適格1508/未attempt275・global Proxy/IDL/native残り）
+Status: uncleared（q31 held0・適格1508/未attempt275・global Proxy/IDL/native残り）
 
 ## ws074-q20261018-03 結果
 
@@ -360,3 +360,5 @@ Event ws074-p189-q28-held-revalidated-20261018: 公式harnessのtimer/Observer i
 Event ws074-p189-q29-delegation-output-20261018: [p257](../phase257/phase.md)のnative sync yield* verified output後に同じ全1508を237.1秒で再測定。whole/callback countsと全旧PASS不変、差2 IDのIDL setupはProxy未定義へ進んだ。original WebIDL2 load/parse APIは実在し、actual parser/validatorはまだProxyを必要とする。Chrome actual4/4に対しnative1/4、negative after-parseもnativeは未到達と保存、正規IDL conformanceを先取り認定しない。q28 held0/確認済1482は維持。次のProxy native design/実装は新finite Queueで選定する。runner/WPT/期待値不変、whole p189 uncleared。 [q29 full evidence](../phase257/evidence/20261018-q29/README.md)。
 
 Event ws074-p189-q30-native-read-output-20261018: [p258](../phase258/phase.md) private Proxy read foundationのnative/Chrome32・実GC出力を検証後、固定全1508を同条件238.2秒で実測。q29全whole/callback/completion完全同値、確認済1482/3805・held0/未attempt275維持。global Proxyはまだ公開せず、original IDL parseのProxy blocker解消やAPI full適合を先取りしない。次internal methods/global readinessはp258の新finite Queueへ。 [q30 full evidence](../phase258/evidence/20261018-q30/README.md)。whole p189 uncleared/共有投影pending。
+
+Event ws074-p189-q31-has-descriptor-output-20261018: p258 Has/descriptor ordering partialのnative/Chrome68・実managed realm/Get/Has GCとpublic descriptor bug修正を確認し、全1508を同条件237.4秒で実測。q30全whole/callback/completion同値、確認済1482/3805・held0/未attempt275維持。global Proxyは未公開で元IDL blockerはまだ残す。[p258/q31](../phase258/evidence/20261018-q31/README.md)。whole p189 uncleared、共有投影pending。

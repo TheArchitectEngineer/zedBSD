@@ -1,0 +1,7 @@
+{
+  "old_source_sha256": "6d2d4fb9d145da12446723652b23fd569000778be7d105ac13ddd5f36ad47856",
+  "final_source_sha256": "2a406bf77661e4008ea23128433123f7c99832ba0820764284a0dcffb6450e25",
+  "declaration": "static int object_to_descriptor(struct vm_realm *realm, vm_value value, struct vm_descriptor *descriptor);",
+  "all_other_bytes_identical_after_excluding_moved_declaration_and_separator": true,
+  "scope": "same changed object_to_descriptor declaration only; other legacy helpers remain p100"
+}

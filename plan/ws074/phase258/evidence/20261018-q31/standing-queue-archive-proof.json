@@ -1,0 +1,8 @@
+{
+  "payload_sha256": "60982722f95e40a492d9554b1694f63c2de32b38a88a21f56ed51d22f31c97bc",
+  "archive_sha256": "112321d0ab0712d840b1049e50136c909e9269b87128c4fc273572f8d63eba9e",
+  "source_commit": "b2a2030e7",
+  "source_path": "plan/ws074/queue.md",
+  "payload_original_bytes_equal": true,
+  "archive": "plan/ws074/queue-archive-through-q30.md"
+}

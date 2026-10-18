@@ -1,0 +1,76 @@
+{
+  "old_source_sha256": "6d2d4fb9d145da12446723652b23fd569000778be7d105ac13ddd5f36ad47856",
+  "final_source_sha256": "2a406bf77661e4008ea23128433123f7c99832ba0820764284a0dcffb6450e25",
+  "declaration": "static int object_to_descriptor(struct vm_realm *realm, vm_value value, struct vm_descriptor *descriptor);",
+  "all_other_bytes_identical_after_excluding_moved_declaration_and_separator": true,
+  "scope": "same changed object_to_descriptor declaration only; other legacy helpers remain p100",
+  "commands": [
+    [
+      "cc",
+      "-std=gnu11",
+      "-O1",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-D_GNU_SOURCE",
+      "-fPIC",
+      "-Iuserland/desktop/libbrowser",
+      "-Iuserland/desktop/browser",
+      "-Iplan/ws074/tests",
+      "-Ibuild/ws074-20261018/include",
+      "-I.",
+      "-c",
+      "userland/desktop/libbrowser/js/builtin_object.c",
+      "-o",
+      "build/ws074-20261018/q31/host-object-after-declaration.o"
+    ],
+    [
+      "/home/awe/zedBSD-claude1/build/llvm/bin/clang",
+      "--target=x86_64-unknown-zedbsd",
+      "--sysroot=/home/awe/zedBSD-claude1/build/amd64/sysroot",
+      "-nostdinc",
+      "-I.",
+      "-Iinclude",
+      "-isystem",
+      "/home/awe/zedBSD-claude1/build/amd64/sysroot/usr/include",
+      "-DHAL_ARCH_AMD64",
+      "-DKERN_USER_ABI_LP64",
+      "-DKERN_DYNAMIC_LIBC",
+      "-Iuserland/desktop/libbrowser",
+      "-m64",
+      "-march=x86-64",
+      "-mno-red-zone",
+      "-Os",
+      "-ffreestanding",
+      "-fPIC",
+      "-fno-builtin",
+      "-fno-stack-protector",
+      "-fasynchronous-unwind-tables",
+      "-ftls-model=global-dynamic",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-MMD",
+      "-MP",
+      "-c",
+      "userland/desktop/libbrowser/js/builtin_object.c",
+      "-o",
+      "build/ws074-20261018/q31/target-object-after-declaration.o"
+    ]
+  ],
+  "objects": {
+    "host": {
+      "stripped_all_bytes_equal": true,
+      "sha256": "61ff033799761f4c953e4644a8ea23c5b7e2b4fd817aa0bc1f0d6bd6b2090e51",
+      "before_bytes": 32184,
+      "after_bytes": 32184
+    },
+    "target": {
+      "stripped_all_bytes_equal": true,
+      "sha256": "c05f5004f543ae9fafa56b579bc070c79614013bc7a5bd5c952c24f61b5913e9",
+      "before_bytes": 30760,
+      "after_bytes": 30760
+    }
+  }
+}

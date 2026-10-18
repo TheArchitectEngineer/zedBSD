@@ -1,0 +1,20 @@
+{
+  "completed": 1508,
+  "counts": {
+    "fail": 955,
+    "harness_error": 13,
+    "pass": 494,
+    "no_completion": 20,
+    "no_output": 24,
+    "multiple_completions": 2
+  },
+  "callbacks": {
+    "1": 20642,
+    "0": 11540,
+    "3": 14
+  },
+  "whole_pass_losses": [],
+  "whole_pass_gains": [],
+  "old_pass_callback_losses": [],
+  "changes": []
+}

@@ -1,0 +1,78 @@
+{
+  "scope": {
+    "userland/desktop/libbrowser/vm/access.c": [
+      "vm_in",
+      "vm_has_property",
+      "access_has_property",
+      "access_proxy_has"
+    ],
+    "userland/desktop/libbrowser/js/builtin_object.c": [
+      "object_to_descriptor"
+    ],
+    "plan/ws074/tests/host-proxy-read.c": [
+      "main",
+      "proxy_gc_edges"
+    ]
+  },
+  "raw_checker_flags": 55,
+  "allowed_forward_cleanup": [
+    {
+      "function": "vm_in",
+      "forward_shared_cleanup_jumps": 3,
+      "labels": [
+        "cleanup"
+      ]
+    },
+    {
+      "function": "access_proxy_has",
+      "forward_shared_cleanup_jumps": 11,
+      "labels": [
+        "cleanup"
+      ]
+    },
+    {
+      "function": "object_to_descriptor",
+      "forward_shared_cleanup_jumps": 10,
+      "labels": [
+        "cleanup"
+      ]
+    },
+    {
+      "function": "main",
+      "forward_shared_cleanup_jumps": 12,
+      "labels": [
+        "cleanup"
+      ]
+    },
+    {
+      "function": "proxy_gc_edges",
+      "forward_shared_cleanup_jumps": 19,
+      "labels": [
+        "cleanup"
+      ]
+    }
+  ],
+  "other_checker_flags": 0,
+  "unresolved_changed_scope": 0,
+  "script_free_native_operations_byte_identical": true,
+  "prior32_source_prefix_identical": true,
+  "target_sources": 2,
+  "host_target_warnings": 0,
+  "manual_review": [
+    "C full standard applied to all new/changed function bodies and prototypes; new helpers declared only after file-scope tables; public HasProperty header is multiline; no C99 declarations/split-call multiple arguments/function-in-condition/Boolean-expression assignment introduced",
+    "vm_in validates RHS before key coercion while rooting original operands and converted fresh key; status APIs keep VM_THROWN distinct from found/missing/negative-errno heap lookups",
+    "vm_has_property roots the managed owner/object/key, shares separate bounded property depth with Get and balances every entry on success/exception/allocation failure",
+    "ordinary HasProperty checks own descriptors without invoking accessors and dispatches a Proxy encountered at any prototype level",
+    "Proxy has snapshots/roots original target/handler before GetMethod, preserves dynamic trap/fallback/null/callability/handler this and exactly2 arguments, normalizes index keys to string and preserves symbols",
+    "Has result uses ToBoolean without user coercion; false checks original target post-trap own descriptor and nonextensibility; true does not query target descriptor; private nonProxy target bound retained",
+    "ToPropertyDescriptor follows six field order and checks getter before inspecting setter; each fallible operation has immediate error handling; original descriptor/input tracers retain fresh value/getter through later GC; mixed descriptor check remains last",
+    "fixture frozen source argument removes dependence on later mutable control files; old32 control prefix unchanged; native managed-realm descriptor collector now checks independent Get and Has collections, payload and later actual realm reclamation",
+    "no new module/ABI2/Wayland/JS global Proxy/FromPropertyDescriptor/internal GetOwn/Define/Set/WPT/runner/SDK/sysroot/toolchain changes"
+  ],
+  "limitations": [
+    "whole p258 remains unexposed partial: descriptor internal methods/write/prototype/keys/extent/IsArray/call/construct/global publication remain",
+    "legacy unchanged source conformance belongs to p100; target2 compile only, no full target link/runtime"
+  ],
+  "own_changed_object_to_descriptor_forward_declaration_after_all_tables": true,
+  "declaration_runtime_equivalence": "declaration-equivalence.json"
+}

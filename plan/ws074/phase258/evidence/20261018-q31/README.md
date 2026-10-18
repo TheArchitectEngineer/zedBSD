@@ -1,0 +1,21 @@
+# q31: Proxy HasProperty and descriptor ordering
+
+native HasPropertyをrealm-aware VM pathへ追加し、通常inとprototype上Proxyを接続。actual target/string-or-symbol key2引数・handler this、GetMethod/null fallback/ToBoolean、非configurable own/nonextensible ownをfalseで隠さないinvariant、trap/getter中revoke後の元target/handler保持、GCとbounded property depthを実装。script-free heap hooksは不変。ToPropertyDescriptorのgetterは取得直後に検証し、setterのHas/Getを観測する前にinvalid getterのTypeErrorを返す。enum/config/value/writable/get/set順と元payload/input rootを保つ。
+old read32 control source prefixをbyte同一に保ち、Has/descriptorを加えた同じ68条件がnative/Chrome genuine Proxy/Reflectで全件一致。nativeはC stackの保守的保持を無効にし、元Getに加えてHasでもscript-free descriptor callback内にmanaged realmを実GC、両方でowner生存・処理後の実回収を確認。fresh value/getterを後続descriptor getterのGCから保持、revoke/retention/ctor threshold pressure/sole returned objectとprivate target bounds・global Proxy非公開を維持。fixtureはfrozen control input pathをCLIで指定でき、pair内へ同じJS bytesを保存した。
+公開Object.definePropertyのprecodeはq30 nativeがget,setを観測してsetterのthrow、Chromeがgetだけを観測してTypeError。q31 nativeも同じ元HTMLでgetだけ/TypeErrorへ一致し、この実bugを修正した。原HTML/旧native/Chrome/final nativeの全stdio・command/hashを保存。全1508 harnessは同じsettle5000/process20で237.4秒、q30 whole判定・全callback/completion objectが完全同一。494 PASS/955 FAIL/13 harness_error/20 no_completion/24 no_output/2 multiple、callbacks11540 PASS/20642 FAIL/14 NOTRUN、旧PASS後退/whole gain/差0。
+final measured pairのsourceは3f9f3921d、規約follow-up sourceは2a0aa616d。変更対象object_to_descriptorの既存forward宣言を全tables後へ移し、宣言とseparator以外の全bytesを保持。host/target exact commandでfinal sourceを再compile warning0、両方のdebug除去object全bytesがbefore/after一致した。元frozen source-proof・preserved sourceとfinal-source-proofを分け、この等価性で既存測定をfinal semantic sourceへ対応付ける。literalに再link済みのpairと偽らず、不要なfull corpus再測定を増やさない。
+DOM41/41、interpreter45・factory GC56、CSSOM12+12、producer7/observer10/ErrorEvent9/ErrorReporting19、generator delegation10、host warning0/target access・builtin_object exact2 source warning0を確認。C全文new/changed scopeは許可forward cleanup55以外0、own modified helper宣言も正規位置。未変更legacy全体の規約はp100に残す。Acid3 score/inventory100・pixel0、Acid2既存差873維持。static844/scripted105/strict39はq28原証拠を再利用、新pair全capture/strict equalityは未測定。確認済1482/3805（38.948752%）・held0/未attempt275を保持。
+i01 Has/descriptor prerequisite partialだけcleared。whole p258はrealm-aware getOwn/Define、FromPropertyDescriptor partial field、Set/keys/prototype/extent/IsArray/call/construct・global constructor/revocable/actual original WebIDL2未達でuncleared。元q30 read partialを維持し次finite scopeへ継続、whole p189/p255/p256/p100/full target/WS100%未達。raw/archiveを全member sequential read-back済み。共有Master/Queue/next/cache/GitHub投影pending、push無し。
+
+## Evidence
+
+- summary.json / harness-outcome-audit.json: all1508・old PASS/callback保持、全outcome/callback/completion object同値。
+- final-protocol.json / proxy-read.js / host-proxy-read.c: identical68 oracle source・old32 prefix、native Get/Has managed GCと実回収、frozen input CLI。Chrome collector helperはinertで、GC ownershipはnativeで別に実検証。
+- public-descriptor-proof.json / precode-proof.json / final-public-descriptor.out: same original HTMLによるgetter/TypeError順序の実修正。
+- source-proof.json / source-commit.txt: actual measured3f9 source/pair。final-source-proof.json / final-source-commit.txtとdeclaration-equivalence.jsonは2a0 final semantic sourceへの厳密host/target object等価性。builtin-object-before-declaration.cは原hashを保持。
+- style-review.json / style-generated.log: full changed scope、raw許可cleanup55・他0。target-commands-2.jsonとdeclaration-equivalence.jsonは各final sourceのsingle-source compileのみ、full target runtime未実施。
+- harness-all-raw.tar.gz / native-oracle-and-build-raw.tar.gz: summary記載hash/member数を順次read-back、raw JS/stdio/binary/Chrome/C data/build/Acid・frozen control sourceを保持。
+
+Primary [Proxy HasProperty](https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-proxy-object-internal-methods-and-internal-slots-hasproperty-p) / [ToPropertyDescriptor](https://tc39.es/ecma262/multipage/ecmascript-data-types-and-values.html#sec-topropertydescriptor)。global Proxyの公開/正規IDL parse完了はまだ主張しない。
+
+Record-audit（2026-10-18 finish）: WS074由来のfindingは0。共有WS256のp009 table=planning/Phase=in-progressというTABLEDIFFを観測し、所有範囲として変更せず残す。このchatからQ1への送信は行わず、WS074のexecution/acceptanceと区別する。原logはrecord-audit-final.log。

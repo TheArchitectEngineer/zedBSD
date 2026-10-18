@@ -1,0 +1,29 @@
+{
+  "input_sha256": "40bb208001ca4a58520c5480c5ef8ed9c9af2f5202499d176bcf2fe27b209132",
+  "baseline_native_command": [
+    "/home/awe/zedBSD-claude1/build/ws074-20261018/q30/final/engine/browser",
+    "--run",
+    "/home/awe/zedBSD-claude1/build/ws074-20261018/q31/precode-descriptor.html"
+  ],
+  "reference_chrome_command": [
+    "chromium",
+    "--headless",
+    "--no-sandbox",
+    "--disable-gpu",
+    "--allow-file-access-from-files",
+    "--user-data-dir=/tmp/ws074-q31-pre-1792319924726595377",
+    "--enable-logging=stderr",
+    "--v=0",
+    "--virtual-time-budget=5000",
+    "--dump-dom",
+    "file:///home/awe/zedBSD-claude1/build/ws074-20261018/q31/precode-descriptor.html"
+  ],
+  "final_native_command": [
+    "build/ws074-20261018/q31/final/engine/browser",
+    "--run",
+    "build/ws074-20261018/q31/precode-descriptor.html"
+  ],
+  "baseline_native": "descriptor-order get,set setter-should-not-run\n",
+  "chrome": "descriptor-order get TypeError\n",
+  "final_native": "descriptor-order get TypeError\n"
+}
