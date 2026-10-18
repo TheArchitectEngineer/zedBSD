@@ -15,7 +15,7 @@
 #define PROPERTY_BUFFER_SIZE 512U
 
 struct discovery {
-	struct kern_sun4u_boot_handoff *handoff;
+	struct sun4u_boot_handoff *handoff;
 	int have_cpu;
 	int have_memory;
 	int have_pci_io;
@@ -122,7 +122,7 @@ static int
 memory_ranges(
 	ofw_cell_t node,
 	const char *name,
-	struct kern_sun4u_memory_range *ranges,
+	struct sun4u_memory_range *ranges,
 	unsigned char *count)
 {
 	unsigned char bytes[PROPERTY_BUFFER_SIZE];
@@ -145,7 +145,7 @@ memory_ranges(
 		return -1;
 
 	entries = (unsigned int)length / stride;
-	if (entries == 0 || entries > KERN_SUN4U_MAX_MEMORY_RANGES)
+	if (entries == 0 || entries > SUN4U_MAX_MEMORY_RANGES)
 		return -1;
 
 	for (index = 0; index < entries; index++) {
@@ -341,7 +341,7 @@ copy_bootpath(
 	unsigned int index;
 
 	for (index = 0;
-	     index + 1U < KERN_SUN4U_BOOTPATH_SIZE && source[index] != '\0';
+	     index + 1U < SUN4U_BOOTPATH_SIZE && source[index] != '\0';
 	     index++)
 		destination[index] = source[index];
 
@@ -350,7 +350,7 @@ copy_bootpath(
 
 int
 sparcv9_handoff_build(
-	struct kern_sun4u_boot_handoff *handoff,
+	struct sun4u_boot_handoff *handoff,
 	const char *bootpath)
 {
 	struct discovery state;
@@ -358,15 +358,15 @@ sparcv9_handoff_build(
 
 	clear_bytes(handoff, sizeof(*handoff));
 	handoff->common.magic = KERN_HANDOFF_MAGIC;
-	handoff->common.version = KERN_HANDOFF_VERSION_SUN4U;
+	handoff->common.version = SUN4U_HANDOFF_COMMON_VERSION;
 	handoff->common.size = sizeof(*handoff);
 	handoff->common.device_count = 1;
 	handoff->common.boot_bios_id = 0x80;
 	handoff->common.boot_partition_scheme = KERN_PARTITION_SCHEME_SUN;
 	handoff->common.boot_partition_index = 1;
 	handoff->common.boot_partition_lba = 4096;
-	handoff->extension_magic = KERN_SUN4U_HANDOFF_MAGIC;
-	handoff->extension_version = KERN_SUN4U_HANDOFF_VERSION;
+	handoff->extension_magic = SUN4U_HANDOFF_EXTENSION_MAGIC;
+	handoff->extension_version = SUN4U_HANDOFF_EXTENSION_VERSION;
 	handoff->extension_size = sizeof(*handoff) - sizeof(handoff->common);
 	copy_bootpath(handoff->bootpath, bootpath);
 

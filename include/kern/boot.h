@@ -18,7 +18,6 @@
 
 #define KERN_HANDOFF_MAGIC				0x48323842U
 #define KERN_HANDOFF_VERSION_MULTIBOOT			3U
-#define KERN_HANDOFF_VERSION_SUN4U			4U
 #define KERN_HANDOFF_VERSION_X68K			5U
 
 #define KERN_BOOT_SOURCE_SLOT_COUNT			4U
@@ -72,12 +71,6 @@
 #define KERN_X68K_HANDOFF_MAGIC				0x58363848U /* "X68H" */
 #define KERN_X68K_HANDOFF_VERSION			1U
 #define KERN_X68K_MAX_MEMORY_REGIONS			4U
-
-/* XXX: To be removed. Use the common one. */
-#define KERN_SUN4U_HANDOFF_MAGIC	0x53345548U /* "S4UH" */
-#define KERN_SUN4U_HANDOFF_VERSION	1U
-#define KERN_SUN4U_MAX_MEMORY_RANGES	16U
-#define KERN_SUN4U_BOOTPATH_SIZE	256U
 
 #ifndef __ASSEMBLER__
 
@@ -251,36 +244,6 @@ struct kern_boot_provenance {
 	struct kern_boot_partition_identity firmware;
 	struct kern_boot_partition_identity configuration;
 };
-
-/* XXX: To be removed. Use the common one. */
-struct kern_sun4u_memory_range {
-	uint64_t base;
-	uint64_t size;
-} __attribute__((packed));
-
-/* XXX: To be removed. Use the common one. */
-struct kern_sun4u_boot_handoff {
-	struct kern_boot_handoff common;
-	uint32_t extension_magic;
-	uint16_t extension_version;
-	uint16_t extension_size;
-	uint64_t tick_frequency;
-	uint8_t installed_count;
-	uint8_t available_count;
-	uint8_t boot_channel;
-	uint8_t boot_drive;
-	struct kern_sun4u_memory_range installed[KERN_SUN4U_MAX_MEMORY_RANGES];
-	struct kern_sun4u_memory_range available[KERN_SUN4U_MAX_MEMORY_RANGES];
-	uint64_t pci_io_base;
-	uint32_t serial_io_offset;
-	uint16_t ide_vendor;
-	uint16_t ide_device;
-	uint16_t ide_primary_command;
-	uint16_t ide_primary_control;
-	uint16_t ide_secondary_command;
-	uint16_t ide_secondary_control;
-	char bootpath[KERN_SUN4U_BOOTPATH_SIZE];
-} __attribute__((packed));
 
 /*
  * Parse at most input_capacity readable bytes, including the terminating NUL.

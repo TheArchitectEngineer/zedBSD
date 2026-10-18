@@ -1358,7 +1358,9 @@ vfs_log_boot_handoff(
 	const struct kern_boot_handoff *handoff,
 	unsigned device_count)
 {
-	if (handoff->version == KERN_HANDOFF_VERSION_SUN4U) {
+	if (handoff->version == KERN_HANDOFF_VERSION_MULTIBOOT &&
+	    handoff->boot_partition_scheme == KERN_PARTITION_SCHEME_SUN) {
+		/* The loader named a slice of a Sun-labelled disk. */
 		VFS_LOG("vfs: boot BIOS=%02x Sun slice=%u devices=%u\n",
 			handoff->boot_bios_id, handoff->boot_partition_index,
 			device_count);
@@ -1498,7 +1500,7 @@ vfs_scan_physical_disks(
 			    entries[slot].p_index + 1U ==
 			    handoff->boot_partition_index)
 				matches = 1;
-			else if (handoff->version == KERN_HANDOFF_VERSION_SUN4U &&
+			else if (handoff->version == KERN_HANDOFF_VERSION_MULTIBOOT &&
 			    handoff->boot_partition_scheme ==
 			    KERN_PARTITION_SCHEME_SUN &&
 			    entries[slot].p_index == handoff->boot_partition_index)
