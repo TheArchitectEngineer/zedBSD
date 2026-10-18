@@ -2,11 +2,11 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: uncleared（q30 private read foundation partial cleared、whole Proxy operations未達）
+Status: in-progress（q31 Has/descriptor prerequisite partial、q30 read partial cleared）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
-Queue: ws074-q20261018-30-i01
+Queue: ws074-q20261018-31-i01（q30-i01 cleared履歴保持）
 Origin: p189/q29 original WebIDL2 parseがProxy未定義で停止。
 
 Objective / own criteria: native managed Proxyを実object internal methodsへ接続し、constructor/revocableと各internal operationのtrap/fallback/invariant/receiver/revocation/callability/GCを正しく実行する。original WebIDL2 actual parse/validatorに必要なget/set/array behaviorを通常APIで提供し、independent controls/原WPTを通す。部分read stageだけでwholeをclearしない。
@@ -27,3 +27,5 @@ Acid3 score/inventory100・pixel0、Acid2既存差873を再確認。static844/sc
 i01 selected read foundation partialだけcleared、whole p258はwrite/descriptor/ownkeys/prototype/extent/has/delete/IsArray/call/construct・global constructor/revocable/actual WebIDL2未達でuncleared。次finite Queueで必要なinternal methodを選定して継続する。whole p189/p255/p256/p100/full target link/runtime/WS100%未達。全native/oracle/build/Acid/census rawをarchive全member sequential read-back済み。共有Master/Queue/next/cache/GitHub投影pending、push無し。
 
 [Full evidence](evidence/20261018-q30/README.md)。次scopeの開始前に最新source/required methods/原WebIDL2とexact Queueを再確認する。global公開は後続readinessの別scope、whole acceptanceをread-only出力だけでclearしない。
+
+Event ws074-p258-q31-internal-design-selected-20261018: Setのfallbackにはdescriptor処理が必要で、さらにToPropertyDescriptorはHasPropertyを使うため、未選定の内部順をHas→descriptor→Setへ具体化した。これはこのPhase内の外部契約不変の設計具体化で、q30承認scope/historyを変更しない。既存Object.definePropertyではinvalid getterの後にsetter getterを読む差をprecode native/Chromeで実証（native get,set + setterのthrow、Chrome getだけ + TypeError）。[q31 Queue exact scope](../queue.md)でHasと即時getter検証だけをmax90分選定し、actual native/core pathから対処する。write/descriptor internal methods/global公開は後続scopeに残し、whole p258はまだ達成しない。共有投影pending。
