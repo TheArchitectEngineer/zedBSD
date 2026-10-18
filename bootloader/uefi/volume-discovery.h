@@ -1,5 +1,14 @@
-/* Bounded helpers for UEFI zedbsd.cfg volume discovery. */
-/* Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib */
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The bounded helpers for UEFI zedbsd.cfg volume discovery.
+ */
+
 #ifndef KERN_UEFI_VOLUME_DISCOVERY_H
 #define KERN_UEFI_VOLUME_DISCOVERY_H
 
@@ -7,18 +16,26 @@
 #include <stdint.h>
 #include "../../include/kern/boot.h"
 
+/* The bounds discovery enforces on the firmware's handles, paths and blocks. */
 #define ZBL_UEFI_VOLUME_MAX_HANDLES 128U
 #define ZBL_UEFI_DEVICE_PATH_MAX_BYTES 4096U
 #define ZBL_UEFI_DEVICE_PATH_MAX_NODES 128U
 #define ZBL_UEFI_FAT_MAX_BLOCK_SIZE 4096U
+
+/* The storage of a FAT UUID in XXXX-XXXX form with its terminator. */
 #define ZBL_UEFI_FAT_UUID_SIZE 10U
 
-/* Values match the ZBL6 handoff partition-scheme constants. */
+/*
+ * The partition table a partition belongs to.
+ *
+ * Values match the ZBL6 handoff partition-scheme constants.
+ */
 enum zbl_uefi_partition_style {
 	ZBL_UEFI_PARTITION_MBR = 1,
 	ZBL_UEFI_PARTITION_GPT = 4
 };
 
+/* The outcome of parsing a firmware device path. */
 enum zbl_uefi_device_path_result {
 	ZBL_UEFI_DEVICE_PATH_OK = 0,
 	ZBL_UEFI_DEVICE_PATH_INVALID_ARGUMENT,
@@ -30,6 +47,8 @@ enum zbl_uefi_device_path_result {
 };
 
 /*
+ * One parsed partition device path.
+ *
  * The view borrows the firmware-owned path.  disk_prefix_size excludes the
  * HD() node and every child node, so two partition paths compare only their
  * provable physical-device prefix.
@@ -45,20 +64,15 @@ struct zbl_uefi_partition_path {
 	enum zbl_uefi_partition_style style;
 };
 
-enum zbl_uefi_device_path_result zbl_uefi_partition_path_parse(
-	const void *path, size_t available_bytes,
-	struct zbl_uefi_partition_path *view);
+enum zbl_uefi_device_path_result zbl_uefi_partition_path_parse(const void *path, size_t available_bytes, struct zbl_uefi_partition_path *view);
 
-int zbl_uefi_partition_identity_copy(const struct zbl_uefi_partition_path *path,
-    struct kern_boot_partition_identity *identity);
+int zbl_uefi_partition_identity_copy(const struct zbl_uefi_partition_path *path, struct kern_boot_partition_identity *identity);
 
-int zbl_uefi_partition_paths_same_disk(
-	const struct zbl_uefi_partition_path *left,
-	const struct zbl_uefi_partition_path *right);
+int zbl_uefi_partition_paths_same_disk(const struct zbl_uefi_partition_path *left, const struct zbl_uefi_partition_path *right);
 
-const char *zbl_uefi_device_path_result_name(
-	enum zbl_uefi_device_path_result result);
+const char *zbl_uefi_device_path_result_name(enum zbl_uefi_device_path_result result);
 
+/* The outcome of ordering the volume handles to search. */
 enum zbl_uefi_handle_order_result {
 	ZBL_UEFI_HANDLE_ORDER_OK = 0,
 	ZBL_UEFI_HANDLE_ORDER_INVALID_ARGUMENT,
@@ -70,16 +84,15 @@ enum zbl_uefi_handle_order_result {
  * Place loaded_handle first, then append the first occurrence of each
  * firmware handle without changing firmware order.  No allocation occurs.
  */
-enum zbl_uefi_handle_order_result zbl_uefi_volume_order_handles(
-	void *loaded_handle, void *const *firmware_handles,
-	size_t firmware_handle_count, void **ordered_handles,
-	size_t ordered_capacity, size_t *ordered_count);
+enum zbl_uefi_handle_order_result zbl_uefi_volume_order_handles(void *loaded_handle, void *const *firmware_handles, size_t firmware_handle_count, void **ordered_handles, size_t ordered_capacity, size_t *ordered_count);
 
+/* The FAT types the kernel mounts, numbered by their entry width. */
 enum zbl_uefi_fat_type {
 	ZBL_UEFI_FAT16 = 16,
 	ZBL_UEFI_FAT32 = 32
 };
 
+/* The outcome of parsing a FAT boot sector. */
 enum zbl_uefi_fat_result {
 	ZBL_UEFI_FAT_OK = 0,
 	ZBL_UEFI_FAT_INVALID_ARGUMENT,
@@ -92,6 +105,7 @@ enum zbl_uefi_fat_result {
 	ZBL_UEFI_FAT_NO_SERIAL
 };
 
+/* What discovery keeps of a FAT volume's boot sector. */
 struct zbl_uefi_fat_info {
 	enum zbl_uefi_fat_type type;
 	uint16_t bytes_per_sector;
@@ -107,19 +121,17 @@ struct zbl_uefi_fat_info {
  * intentionally matches the kernel FAT driver: 512-byte media blocks and a
  * FAT BPB bytes-per-sector value of either 512 or 1024.
  */
-enum zbl_uefi_fat_result zbl_uefi_fat_bpb_parse(
-	const void *boot_sector, size_t boot_sector_bytes,
-	uint32_t media_block_size, uint64_t media_block_count,
-	struct zbl_uefi_fat_info *info);
+enum zbl_uefi_fat_result zbl_uefi_fat_bpb_parse(const void *boot_sector, size_t boot_sector_bytes, uint32_t media_block_size, uint64_t media_block_count, struct zbl_uefi_fat_info *info);
 
-/* Format the canonical FAT UUID as XXXX-XXXX. */
-void zbl_uefi_fat_uuid(uint32_t serial,
-	char output[ZBL_UEFI_FAT_UUID_SIZE]);
+/* Formats the canonical FAT UUID as XXXX-XXXX. */
+void zbl_uefi_fat_uuid(uint32_t serial, char output[ZBL_UEFI_FAT_UUID_SIZE]);
 
 const char *zbl_uefi_fat_result_name(enum zbl_uefi_fat_result result);
 
 /*
- * A successful marker open owns two resources until p003 consumes them.
+ * One volume that holds zedbsd.cfg.
+ *
+ * A successful marker open owns two resources until the loader consumes them.
  * record_match() returns KEEP for the first match and transfers those opaque
  * resources to the state.  RELEASE leaves later resources with the caller,
  * which must close them immediately.  take_selected() moves the retained
@@ -134,6 +146,11 @@ struct zbl_uefi_volume_match {
 	char uuid[ZBL_UEFI_FAT_UUID_SIZE];
 };
 
+/*
+ * The search for the one volume that holds zedbsd.cfg.
+ *
+ * It lives for the discovery pass, counts every match and keeps the first.
+ */
 struct zbl_uefi_volume_selection {
 	size_t match_count;
 	size_t last_match_order;
@@ -141,12 +158,14 @@ struct zbl_uefi_volume_selection {
 	struct zbl_uefi_volume_match selected;
 };
 
+/* What the caller does with a match's open resources. */
 enum zbl_uefi_volume_match_action {
 	ZBL_UEFI_VOLUME_MATCH_INVALID = 0,
 	ZBL_UEFI_VOLUME_MATCH_KEEP,
 	ZBL_UEFI_VOLUME_MATCH_RELEASE
 };
 
+/* How many volumes matched. */
 enum zbl_uefi_volume_selection_result {
 	ZBL_UEFI_VOLUME_SELECTION_INVALID_ARGUMENT = 0,
 	ZBL_UEFI_VOLUME_SELECTION_NOT_FOUND,
@@ -154,19 +173,12 @@ enum zbl_uefi_volume_selection_result {
 	ZBL_UEFI_VOLUME_SELECTION_MULTIPLE
 };
 
-void zbl_uefi_volume_selection_init(
-	struct zbl_uefi_volume_selection *selection);
+void zbl_uefi_volume_selection_init(struct zbl_uefi_volume_selection *selection);
 
-enum zbl_uefi_volume_match_action zbl_uefi_volume_selection_record_match(
-	struct zbl_uefi_volume_selection *selection, void *handle,
-	size_t order, const struct zbl_uefi_fat_info *fat,
-	void *root, void *config);
+enum zbl_uefi_volume_match_action zbl_uefi_volume_selection_record_match(struct zbl_uefi_volume_selection *selection, void *handle, size_t order, const struct zbl_uefi_fat_info *fat, void *root, void *config);
 
-enum zbl_uefi_volume_selection_result zbl_uefi_volume_selection_finish(
-	const struct zbl_uefi_volume_selection *selection);
+enum zbl_uefi_volume_selection_result zbl_uefi_volume_selection_finish(const struct zbl_uefi_volume_selection *selection);
 
-int zbl_uefi_volume_selection_take(
-	struct zbl_uefi_volume_selection *selection,
-	struct zbl_uefi_volume_match *match);
+int zbl_uefi_volume_selection_take(struct zbl_uefi_volume_selection *selection, struct zbl_uefi_volume_match *match);
 
 #endif

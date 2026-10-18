@@ -1,5 +1,3 @@
-/* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
-
 /*
  * zedBSD
  * Copyright (C) 2026 Awe Morris
@@ -7,7 +5,10 @@
  * SPDX-License-Identifier: Zlib
  */
 
-/* Selects an explicitly requested GOP mode without changing boot record ABI. */
+/*
+ * Selects an explicitly requested GOP mode without changing boot record ABI.
+ */
+
 #include "video.h"
 #include "bootloader/include/boot-parameter-handoff.h"
 
@@ -19,7 +20,7 @@ static EFI_STATUS video_set(EFI_BOOT_SERVICES *boot, EFI_GRAPHICS_OUTPUT_PROTOCO
 /*
  * Selects video=WIDTHxHEIGHT from an already assembled parameter record.
  * Without video=, a preferred mode (preferred_width by preferred_height,
- * both nonzero; ws035-p112: 1920x1080 for the boot splash) is set when the
+ * both nonzero, such as 1920x1080 for the boot splash) is set when the
  * firmware has it, and the current mode is kept when it has not or when
  * setting it fails.  The caller must rebuild its framebuffer mapping after
  * success.
@@ -35,6 +36,7 @@ zbl_uefi_video_select(
 {
 	UINT32 width;
 	UINT32 height;
+	EFI_STATUS status;
 	int parsed;
 
 	/* The configuration's request, when there is one, must be met. */
@@ -42,8 +44,14 @@ zbl_uefi_video_select(
 	if (parsed < 0)
 		return EFI_INVALID_PARAMETER;
 
-	if (parsed > 0)
-		return video_set(boot, gop, width, height);
+	/* Sets the requested mode, which must exist. */
+	if (parsed > 0) {
+		status = video_set(boot, gop, width, height);
+		if (EFI_ERROR(status))
+			return status;
+
+		return EFI_SUCCESS;
+	}
 
 	/* Else the preferred mode, which is only a wish: the current mode stays without it. */
 	if (preferred_width != 0U && preferred_height != 0U)
@@ -78,9 +86,14 @@ video_set(
 	if (boot == 0 || gop == 0)
 		return EFI_UNSUPPORTED;
 
-	if (boot->FreePool == 0 || gop->QueryMode == 0 || gop->SetMode == 0 || gop->Mode == 0)
+	/* Refuses a protocol without the services the selection uses. */
+	if (boot->FreePool == 0 ||
+	    gop->QueryMode == 0 ||
+	    gop->SetMode == 0 ||
+	    gop->Mode == 0)
 		return EFI_UNSUPPORTED;
 
+	/* Refuses a firmware with no modes, or an unbounded number of them. */
 	count = gop->Mode->MaxMode;
 	if (count == 0 || count > 4096U)
 		return EFI_UNSUPPORTED;
@@ -92,6 +105,7 @@ video_set(
 
 	/* Visits each advertised mode, retaining no pool allocation across calls. */
 	for (index = 0; index < count; index++) {
+		/* Asks the firmware to describe the mode. */
 		info = 0;
 		size = 0;
 		status = gop->QueryMode(gop, index, &size, &info);
@@ -102,6 +116,7 @@ video_set(
 		if (info == 0)
 			return EFI_DEVICE_ERROR;
 
+		/* Checks the mode, then releases the firmware's description of it. */
 		matches = video_mode_matches(info, size, width, height);
 		release_status = boot->FreePool(info);
 		if (EFI_ERROR(release_status))
@@ -117,6 +132,7 @@ video_set(
 			if (gop->Mode == 0)
 				return EFI_DEVICE_ERROR;
 
+			/* The active mode is the one asked for. */
 			matches = video_mode_matches(gop->Mode->Info, gop->Mode->SizeOfInfo, width, height);
 			if (!matches || gop->Mode->Mode != index)
 				return EFI_DEVICE_ERROR;
@@ -144,16 +160,20 @@ video_dimension(
 
 	/* Requires a canonical positive decimal number. */
 	start = *position;
-	if (start == end || text[start] < '1' || text[start] > '9')
+	if (start == end ||
+	    text[start] < '1' ||
+	    text[start] > '9')
 		return 0;
 
 	/* Bounds arithmetic before multiplying, including arbitrarily long input. */
 	pixels = 0;
 	while (*position < end && text[*position] >= '0' && text[*position] <= '9') {
+		/* Refuses a dimension beyond 16384 pixels. */
 		digit = (UINT32)(text[*position] - '0');
 		if (pixels > (16384U - digit) / 10U)
 			return 0;
 
+		/* Takes the digit and moves past it. */
 		pixels = pixels * 10U + digit;
 		(*position)++;
 	}
@@ -181,6 +201,7 @@ video_parse(
 	if (text == 0 || length > KERN_BOOT_PARAMETERS_TEXT_MAX)
 		return -1;
 
+	/* Refuses a text that is not terminated where its length says. */
 	if (text[length] != '\0')
 		return -1;
 
@@ -188,6 +209,7 @@ video_parse(
 	position = 0;
 	found = 0;
 	while (position < length) {
+		/* Finds the end of the token. */
 		start = position;
 		while (position < length && text[position] != ' ') {
 			/* Rejects interior terminators and non-printable transport bytes. */
@@ -197,6 +219,7 @@ video_parse(
 			position++;
 		}
 
+		/* Moves past the separating space. */
 		end = position;
 		if (position < length)
 			position++;
@@ -205,24 +228,34 @@ video_parse(
 		if (end - start < 6U)
 			continue;
 
-		if (text[start] != 'v' || text[start + 1] != 'i' || text[start + 2] != 'd' ||
-		    text[start + 3] != 'e' || text[start + 4] != 'o' || text[start + 5] != '=')
+		/* A token that is not video= belongs to someone else. */
+		if (text[start] != 'v' ||
+		    text[start + 1] != 'i' ||
+		    text[start + 2] != 'd' ||
+		    text[start + 3] != 'e' ||
+		    text[start + 4] != 'o' ||
+		    text[start + 5] != '=')
 			continue;
 
+		/* Refuses a second video= token. */
 		if (found)
 			return -1;
 
 		/* Requires the entire value to be WIDTHxHEIGHT. */
 		start += 6U;
 		valid = video_dimension(text, end, &start, width);
-		if (!valid || start == end || text[start] != 'x')
+		if (!valid ||
+		    start == end ||
+		    text[start] != 'x')
 			return -1;
 
+		/* The height follows the 'x' and ends the token. */
 		start++;
 		valid = video_dimension(text, end, &start, height);
 		if (!valid || start != end)
 			return -1;
 
+		/* The token is the one request. */
 		found = 1;
 	}
 
@@ -242,12 +275,15 @@ video_mode_matches(
 	if (info == 0 || size < sizeof(*info))
 		return 0;
 
+	/* The mode is of another size. */
 	if (info->HorizontalResolution != width || info->VerticalResolution != height)
 		return 0;
 
+	/* The mode's rows are narrower than its width. */
 	if (info->PixelsPerScanLine < width)
 		return 0;
 
+	/* The mode's pixel layout is not one the kernel takes. */
 	if (info->PixelFormat != PixelRedGreenBlueReserved8BitPerColor &&
 	    info->PixelFormat != PixelBlueGreenRedReserved8BitPerColor)
 		return 0;

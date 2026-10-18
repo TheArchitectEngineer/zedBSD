@@ -6,7 +6,7 @@
  */
 
 /*
- * The boot logo (ws035-p096).
+ * The boot logo.
  *
  * zedbsd.cfg names the logo with logo=PATH, a path relative to the boot
  * volume like kernel=.  The file is a binary PPM (P6, maximum value 255, at
@@ -16,7 +16,7 @@
  * kernel does not know logo=; it ignores it as an unknown name.
  *
  * A picture whose header has the comment "fit=contain" (the Kei boot
- * splash, 1920x1080, tools/build/make-boot-splash.py, ws035-p112) is drawn
+ * splash, 1920x1080, tools/build/make-boot-splash.py) is drawn
  * whole in the middle of a black screen: at its own size when the screen
  * holds it, else shrunk bilinearly, its proportions kept, to the largest
  * size the screen holds.  The sides it does not reach stay black bars.
@@ -69,7 +69,11 @@ zbl_uefi_logo_draw(
 	int error;
 
 	/* The magic: P6. */
-	if (data == NULL || framebuffer == NULL || size < 2U || data[0] != 'P' || data[1] != '6')
+	if (data == NULL ||
+	    framebuffer == NULL ||
+	    size < 2U ||
+	    data[0] != 'P' ||
+	    data[1] != '6')
 		return 0;
 
 	/* The width, the height and the maximum value, which must be 255 (a comment may ask for bars). */
@@ -78,27 +82,42 @@ zbl_uefi_logo_draw(
 	error = logo_header_number(data, size, &at, &width, &contain);
 	if (error != 0)
 		return 0;
+
+	/* The height. */
 	error = logo_header_number(data, size, &at, &height, &contain);
 	if (error != 0)
 		return 0;
+
+	/* The maximum value, which must be 255. */
 	error = logo_header_number(data, size, &at, &maximum, &contain);
 	if (error != 0 || maximum != 255U)
 		return 0;
-	if (width == 0U || height == 0U || width > LOGO_SIDE_MAX || height > LOGO_SIDE_MAX)
+
+	/* Refuses an empty logo and one larger than the loader draws. */
+	if (width == 0U ||
+	    height == 0U ||
+	    width > LOGO_SIDE_MAX ||
+	    height > LOGO_SIDE_MAX)
 		return 0;
 
 	/* One whitespace byte, then the pixels, all of them. */
 	at++;
 	if (at > size || (size_t)width * height * 3U > size - at)
 		return 0;
+
+	/* The pixels start there. */
 	image = data + at;
 
 	/* A framebuffer the loader can write whole pixels to. */
-	if (framebuffer->physical_base == 0U || framebuffer->width == 0U || framebuffer->height == 0U)
+	if (framebuffer->physical_base == 0U ||
+	    framebuffer->width == 0U ||
+	    framebuffer->height == 0U)
 		return 0;
+
+	/* Views the framebuffer as pixels. */
 	pixels = (volatile uint32_t *)(uintptr_t)framebuffer->physical_base;
 
-	/* A picture over black bars is drawn whole. */
+	/* A picture over black bars is drawn whole, its stores made visible before the kernel. */
 	if (contain) {
 		logo_draw_contain(image, width, height, framebuffer, pixels);
 		__asm__ volatile("sfence" : : : "memory");
@@ -138,8 +157,10 @@ zbl_uefi_logo_draw(
 		}
 	}
 
-	/* Succeeded: the logo is on the screen. */
+	/* Makes the framebuffer stores visible before the kernel takes over. */
 	__asm__ volatile("sfence" : : : "memory");
+
+	/* Succeeded: the logo is on the screen. */
 	return 1;
 }
 
@@ -188,6 +209,7 @@ logo_draw_contain(
 
 	/* Each screen pixel is black outside the picture, else samples it where its centre falls (16.16). */
 	for (y = 0; y < framebuffer->height; y++) {
+		/* A row above or below the picture is a bar. */
 		if (y < origin_y || y - origin_y >= scaled_height) {
 			for (x = 0; x < framebuffer->width; x++)
 				pixels[(uint64_t)y * framebuffer->stride + x] = 0U;
@@ -197,13 +219,14 @@ logo_draw_contain(
 		/* A row of the picture between the bars on the left and right. */
 		fy = (((uint64_t)(y - origin_y) * 2U + 1U) * height << 16) / (scaled_height * 2U);
 		for (x = 0; x < framebuffer->width; x++) {
+			/* A pixel left or right of the picture is a bar. */
 			if (x < origin_x || x - origin_x >= scaled_width) {
 				pixels[(uint64_t)y * framebuffer->stride + x] = 0U;
 				continue;
 			}
 
 			/* A pixel of the picture, sampled where its centre falls. */
-			fx =(((uint64_t)(x - origin_x) * 2U + 1U) * width << 16) / (scaled_width * 2U);
+			fx = (((uint64_t)(x - origin_x) * 2U + 1U) * width << 16) / (scaled_width * 2U);
 			pixels[(uint64_t)y * framebuffer->stride + x] = logo_sample(image, width, height, fx, fy, framebuffer);
 		}
 	}
@@ -233,6 +256,7 @@ logo_sample(
 	uint32_t wy;
 	uint32_t top;
 	uint32_t bottom;
+	uint32_t pixel;
 	unsigned channel;
 
 	/* From the half-unit centres to the pixels' corners; the first half pixel keeps the edge. */
@@ -240,6 +264,8 @@ logo_sample(
 		fx -= 32768U;
 	else
 		fx = 0U;
+
+	/* The same for the rows. */
 	if (fy > 32768U)
 		fy -= 32768U;
 	else
@@ -255,7 +281,7 @@ logo_sample(
 		wx = 0U;
 	}
 
-	/* The same for the rows. */
+	/* The row at or above the place, the one below it, and how far towards it. */
 	y0 = (uint32_t)(fy >> 16);
 	wy = (uint32_t)(fy & 0xffffU) >> 8;
 	y1 = y0 + 1U;
@@ -276,8 +302,11 @@ logo_sample(
 		rgb[channel] = (uint8_t)((top * (256U - wy) + bottom * wy + 32768U) >> 16);
 	}
 
-	/* The mixed pixel, in the framebuffer's layout. */
-	return logo_pixel(framebuffer, rgb);
+	/* Packs the mixed pixel in the framebuffer's layout. */
+	pixel = logo_pixel(framebuffer, rgb);
+
+	/* Reports the mixed pixel. */
+	return pixel;
 }
 
 /* Reads one decimal number of a PPM header after whitespace and comments. */
@@ -301,6 +330,8 @@ logo_header_number(
 	while (*at < size && data[*at] >= '0' && data[*at] <= '9') {
 		if (digits >= 6U)
 			return -1;
+
+		/* Takes the digit and moves past it. */
 		value = value * 10U + (uint32_t)(data[*at] - '0');
 		digits++;
 		(*at)++;
@@ -327,18 +358,27 @@ logo_skip_space(
 
 	/* Blanks, and comments to their line's end. */
 	while (*at < size) {
+		/* A comment may ask for black bars; it runs to the line's end. */
 		if (data[*at] == '#') {
 			asked = logo_comment_contain(data, size, *at + 1U);
 			if (asked)
 				*contain = 1;
+
+			/* Steps to the end of the comment's line. */
 			while (*at < size && data[*at] != '\n')
 				(*at)++;
+
 			continue;
 		}
 
 		/* Anything but a blank is where the next field starts. */
-		if (data[*at] != ' ' && data[*at] != '\t' && data[*at] != '\r' && data[*at] != '\n')
+		if (data[*at] != ' ' &&
+		    data[*at] != '\t' &&
+		    data[*at] != '\r' &&
+		    data[*at] != '\n')
 			return;
+
+		/* Steps over the blank. */
 		(*at)++;
 	}
 }
@@ -350,6 +390,7 @@ logo_comment_contain(
 	size_t size,
 	size_t at)
 {
+	/* The comment that asks for black bars. */
 	static const char word[] = LOGO_CONTAIN_WORD;
 	size_t index;
 
@@ -365,8 +406,13 @@ logo_comment_contain(
 
 	/* Nothing but blanks after it on the line. */
 	at += index;
-	while (at < size && (data[at] == ' ' || data[at] == '\t' || data[at] == '\r'))
+	while (at < size &&
+	       (data[at] == ' ' ||
+		data[at] == '\t' ||
+		data[at] == '\r'))
 		at++;
+
+	/* Refuses a comment with more than the word on its line. */
 	if (at < size && data[at] != '\n')
 		return 0;
 
