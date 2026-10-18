@@ -298,13 +298,6 @@ elif [[ $boot_mode == riscv64-virt || $boot_mode == riscv64-uboot || $boot_mode 
 	read -r -a riscv_extra <<<"${QEMU_EXTRA:-}"
 	"$qemu" "${riscv_machine[@]}" "${riscv_boot[@]}" "${riscv_extra[@]}" \
 		>"$output/qemu.log" 2>&1 &
-elif [[ $boot_mode == sun4u ]]; then
-	# OpenBIOS boots the IDE disk; the standard VGA is the machine's own.
-	"$qemu" -machine sun4u -m "${BOOT_MEMORY:-256}" \
-		-drive "if=ide,format=qcow2,file=$disk" -boot c \
-		-display none -no-reboot \
-		-serial "unix:$serial,server,nowait" \
-		-qmp "unix:$monitor,server,nowait" >"$output/qemu.log" 2>&1 &
 elif [[ $boot_mode == m68k-virt ]]; then
 	# The virt machine with an MC68040 and a virtio GPU, the console the
 	# kernel draws, and its terminal line on a socket for typing into.
@@ -332,6 +325,13 @@ elif [[ $boot_mode == ppc64-pseries ]]; then
 		-serial "unix:$serial,server,nowait" \
 		-qmp "unix:$monitor,server,nowait" \
 		-kernel "$image" "${ppc_extra[@]}" >"$output/qemu.log" 2>&1 &
+elif [[ $boot_mode == sun4u ]]; then
+	# OpenBIOS boots the IDE disk; the standard VGA is the machine's own.
+	"$qemu" -machine sun4u -m "${BOOT_MEMORY:-256}" \
+		-drive "if=ide,format=qcow2,file=$disk" -boot c \
+		-display none -no-reboot \
+		-serial "unix:$serial,server,nowait" \
+		-qmp "unix:$monitor,server,nowait" >"$output/qemu.log" 2>&1 &
 elif [[ $boot_mode == raspi4b ]]; then
 	"$qemu" -machine raspi4b -m 2G -kernel "$kernel" -dtb "$dtb" \
 		-drive "if=sd,format=qcow2,file=$disk" \
