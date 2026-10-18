@@ -180,3 +180,32 @@ Q1 の判断: Linux 特有の言い回しに近い 5 つだけ改名し、他の
 - `xd-gmbus.c`: `i915_xd_gmbus_wait` → `i915_xd_gmbus_await_state`（`i915_xd_gmbus_wait_idle` はそのまま）
 - `xd-tc-port.c`: `i915_xd_tc_port_update_mode` → `i915_xd_tc_port_follow_live`、`i915_xd_tc_port_connected` → `i915_xd_tc_port_live_matches`
 - 確かめた事: 旧名の参照が tree に残らない（`git grep -w`）、`run-xd-host-tests.sh` all passed・warning 0、amd64 vmunix rc=0・warning 0・check PASS、`git diff --check` 空。`Procedure referenced:` の中の Linux の関数名は出典なのでそのまま。
+
+## comment の 1 行ずつの読み通し（2026-10-19 P2、q1261）
+
+範囲: WS245 が足した・変えた行（`git diff -U0 0c25c87a7 HEAD`）の comment。xd-*・xd9-*・gen9-*・bootfb を除く `display/` の 34 file と `tests/display/` の 47 file（81 file、comment の行 8,700）。1 行の comment 4,259 個は直後の code の行と並べて全部読んだ（`display/` は全部、`tests/display/` は全部の行を流し読みし、短い・決まり文句の形を機械で拾って目視）。複数行の comment（block）339 個は `referenced:` の行を除いて全部読んだ。関数名は変えていない。道具は scratch（commit しない）。
+
+直した物（comment だけ）:
+
+| file | 直した comment |
+| --- | --- |
+| display/display-internal.h | `struct i915_scanout` の 4 つの小文字の見出し（`layout`・`placement requirements`・`backing, mapping, GGTT`・`users`）を、その群が何かを言う文に |
+| display/display-power.c | `Asks the record.` → 何を聞くか、power well 1 の hook の `The well's row.` 2 つ（`power = context` の段落を言っていなかった）、CD clock の hook の `The clock's own start/stop.`、DBUF の hook の `The slices of the display.` |
+| display/display.c | firmware の check の `Reads and decides.` → 何を読み何を決めるか |
+| display/head.c | `The light.` → `Lights the head's screen.` |
+| display/internal.h | 小文字の断片の field の comment 3 つを文に（`driver_remove` という関数名を、何がいつ放すかの言葉に） |
+| display/interrupts.c | 段落の comment の中の Linux の関数名の括弧書き（`gen11_hpd_irq_handler()`）を消した |
+| display/output.c | `None.` → 何が無いのか |
+| display/resident.c | 判定の `Passed.` 2 つ → `Succeeded: the run passed.` |
+| display/vga.c | `!PCI_DISPLAY_CLASS_VGA: …`（code の様な comment）を文に、`Production:` の 2 つ（試験と本番の区別の言い方）を accessor の有無の言葉に |
+| display/vbt-shell.c | `XXX: the old function returned -1 …`（前の版の話）を消して、何を返すかだけに |
+| tests/display/host-xd-dmc-test.c・host-xd-edp-test.c・host-xd-picture-test.c・host-xd-takeover-test.c・host-xd-tc-test.c・host-xd-output-test.c | 1 語の comment（`Parses.`・`Disarmed.`・`Taken.` 2・`Sanitizes.` 2・`Released.`・`Recorded.`）と、私が足した `Checks it.` 2 つを、その段落が何をするかの文に |
+
+見て残した物:
+- 段落の comment の大半は「何の段落か」を caller の言葉で言っている（hook の `The run the hook belongs to.` など、`ctx` を自分の型に取る段落の決まった言い方は意味を言っているので残した）。
+- `tests` の 1〜3 語の comment（`Alder Lake-P.`・`The start.`・`The stop.` など）は、check の群の見出しとして前後の check の文で意味が通るので残した。
+- `display-internal.h`・`edp-device.c`・`survey.c` の「GPU-free tests」「display scenarios」に触れる block は、hook を差し替える設計・link の形の説明なので残した（開発の管理情報の全体の見直しは WS251）。
+- `display/internal.h` の `explicit blob bookkeeping (… since the test VBT was removed …)` は WS245 が足した行ではない（範囲の外）。
+
+確かめた事: `git diff --check` 空、amd64 vmunix rc=0・warning 0。`run-xd-host-tests.sh build/p2-ws245-host` は全部の host 試験が 0 failures だが、check-sources が **main の時点で** 3 つ落ちる（下）ので全体は FAILED。QEMU・実機は未実施。
+- check-sources の失敗（私の変更ではない）: `display/dp-ext-kern.h:44`、`display/internal.h:410`・`:1010` の `referenced:` が `Linux v6.19` で、check-sources.py の版の規則（`Linux v6.8.12` など）に合わない。main（9a810240d）の check-sources でも同じ 3 つが落ちる。入ったのは f5652e937（2026-10-19 02:45）。Q1 に報告。

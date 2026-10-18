@@ -329,7 +329,7 @@ struct i915_vbt {
 	int int_lvds_support, display_clock_mode, lvds_use_ssc, lvds_ssc_freq, crt_ddc_pin;
 	unsigned arena_used, arena_peak, alloc_failures;
 	unsigned log_errors;              /* error lines the parse logged */
-	/* the xd parse the values come from (vbt-shell.c), or NULL */
+	/* The xd parse the values come from (vbt-shell.c), or NULL before a parse. */
 	const struct i915_xd_vbt *xd;
 };
 
@@ -376,7 +376,7 @@ struct i915_vbt_state {
 	unsigned num_display_devices;    /* display_devices list length */
 	struct i915_vbt_child display_devices[8];
 
-	/* the parser's result (vbt-shell.c); device-owned, released by driver_remove */
+	/* The parser's result (vbt-shell.c), which the device owns until the display forgets it at its stop. */
 	struct i915_vbt parsed;
 	int parsed_live;
 
@@ -578,7 +578,7 @@ struct i915_edp_result {
 /*
  * The modeset hooks (edp-device.c).
  */
-/* panel power sequencer / backlight-power operations, executed by the resident eDP (edp-device.c) */
+/* The panel power sequencer's and the backlight power's operations, which the resident eDP runs (edp-device.c). */
 enum i915_lcd_panel_op {
 	I915_LCD_PANEL_ON = 0,          /* panel power on */
 	I915_LCD_PANEL_OFF,             /* panel power off */

@@ -200,7 +200,7 @@ i915_vga_client_register(
 {
 	uint32_t class_code;
 
-	/* !PCI_DISPLAY_CLASS_VGA: not an arbiter client. */
+	/* A device that is not of the PCI VGA display class is not an arbiter client. */
 	class_code = drv_pci_device_class(c->gpu);
 	if ((class_code & I915_PCI_CLASS_VGA_MASK) != I915_PCI_CLASS_VGA)
 		return ENODEV;
@@ -220,7 +220,7 @@ i915_vga_get_legacy_io(
 	const struct i915_vga_io_ops *ops;
 	int owned;
 
-	/* Production: the driver owns the legacy VGA I/O on this device, so the get succeeds. */
+	/* Without an accessor of its own the driver owns the legacy VGA I/O of this device, so the get succeeds. */
 	ops = display->g_vga_io;
 	if (ops == NULL)
 		return 1;
@@ -294,7 +294,7 @@ i915_vga_out8(
 		kern_io_out8(port, value);
 }
 
-/* Gives the legacy VGA I/O resource back; production holds nothing to give back. */
+/* Gives the legacy VGA I/O resource back; without an accessor of its own there is nothing to give back. */
 static void
 i915_vga_put_legacy_io(
 	struct i915_display *display)

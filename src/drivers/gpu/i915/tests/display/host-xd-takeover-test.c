@@ -1040,7 +1040,7 @@ i915_xd_to_test_sanitize(void)
 	firmware.lit_pipes = 1U;
 	firmware.pipe[0].state = I915_XD_FW_PIPE_LIT;
 
-	/* Sanitizes. */
+	/* Corrects what the firmware left on but unused. */
 	drv_i915_xd_firmware_sanitize(&i915_xd_to_test_io, platform, NULL, &firmware, &report);
 	others = 0U;
 	for (index = 0U; index < platform->nports; index++) {
@@ -1082,7 +1082,7 @@ i915_xd_to_test_sanitize_unknown(void)
 	firmware.lit_pipes = 1U;
 	firmware.pipe[0].state = I915_XD_FW_PIPE_LIT;
 
-	/* Sanitizes. */
+	/* Corrects what the firmware left on but unused. */
 	drv_i915_xd_firmware_sanitize(&i915_xd_to_test_io, platform, NULL, &firmware, &report);
 	i915_host_check(report.plls_kept == 1 && report.plls_off == 0U && (i915_xd_fake_get(I915_XD_DPLL0_ENABLE) & I915_XD_PLL_ENABLE) != 0U,
 			"sanitize unknown: a lit port's PLL unknown, every PLL kept");

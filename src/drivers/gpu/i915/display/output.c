@@ -1808,6 +1808,6 @@ i915_output_connector_of(
 		return (int)index;
 	}
 
-	/* None. */
+	/* No connector of that kind is on the port. */
 	return -1;
 }

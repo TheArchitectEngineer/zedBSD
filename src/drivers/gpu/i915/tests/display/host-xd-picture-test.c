@@ -751,7 +751,7 @@ i915_xd_pt_lock(
 
 	UNUSED_PARAMETER(which);
 
-	/* Taken. */
+	/* Counts a lock taken. */
 	backend = ctx;
 	if (take) {
 		backend->locks_held++;

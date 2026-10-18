@@ -927,7 +927,7 @@ i915_head_light_once(
 		return ENXIO;
 	}
 
-	/* The light. */
+	/* Lights the head's screen. */
 	*enable_rc = drv_i915_xd_picture_light(&display->xd.pictures, I915_XD_PICTURE_HEAD);
 	if (*enable_rc == I915_XD_PICTURE_OK) {
 		head->up = 1;

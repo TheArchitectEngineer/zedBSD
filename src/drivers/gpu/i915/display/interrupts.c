@@ -1162,7 +1162,7 @@ i915_gen8_de_irq_handler(
 		}
 	}
 
-	/* Acknowledges the Type-C hotplug sources and hands them to the hotplug path (gen11_hpd_irq_handler()). */
+	/* Acknowledges the Type-C hotplug sources and hands them to the hotplug path. */
 	if (d->display_ver >= 11 && (master_ctl & GEN11_DE_HPD_IRQ) != 0U) {
 		iir = drv_i915_read32(d->m, GEN11_DE_HPD_IIR);
 		if (iir != 0U) {

@@ -1054,7 +1054,7 @@ resident_show_passed(
 	if (display->show_trace.dropped != 0U)
 		return 0;
 
-	/* Passed. */
+	/* Succeeded: the run passed. */
 	return 1;
 }
 
@@ -2555,7 +2555,7 @@ resident_passed(
 	if (rep->trace->wait_timeouts != 0U)
 		return 0;
 
-	/* Passed. */
+	/* Succeeded: the run passed. */
 	return 1;
 }
 

@@ -580,7 +580,7 @@ i915_xd_tc_test_soft_reset(void)
 	*i915_xd_tc_test_phy(I915_XD_TC_TEST_M3_TC, I915_XD_DKL_PCS_DW5) = I915_XD_DKL_PCS_DW5_CORE_SOFTRESET | 0x3U;
 	*i915_xd_tc_test_phy(I915_XD_TC_TEST_M3_TC, I915_XD_DKL_PCS_DW5 + I915_XD_DKL_LANE_STRIDE) = I915_XD_DKL_PCS_DW5_CORE_SOFTRESET;
 
-	/* Released. */
+	/* Releases the PHY's soft reset: only the reset bits clear. */
 	drv_i915_xd_tc_release_soft_reset(&i915_xd_tc_test_dkl, I915_XD_TC_TEST_M3_TC);
 	i915_host_check(*i915_xd_tc_test_phy(I915_XD_TC_TEST_M3_TC, I915_XD_DKL_PCS_DW5) == 0x3U &&
 		*i915_xd_tc_test_phy(I915_XD_TC_TEST_M3_TC, I915_XD_DKL_PCS_DW5 + I915_XD_DKL_LANE_STRIDE) == 0U,
@@ -787,7 +787,7 @@ i915_xd_tc_test_power_put(
 {
 	(void)context;
 
-	/* Recorded. */
+	/* Records the put while the record has room. */
 	if (i915_xd_tc_test_power.count < I915_XD_TC_TEST_CALLS) {
 		i915_xd_tc_test_power.op[i915_xd_tc_test_power.count] = -1;
 		i915_xd_tc_test_power.functions[i915_xd_tc_test_power.count] = functions;

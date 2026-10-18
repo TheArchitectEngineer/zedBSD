@@ -290,7 +290,7 @@ drv_i915_display_power_is_on(
 	if (!power->ready)
 		return 0;
 
-	/* Asks the record. */
+	/* Asks the record of the wells whether every well of the functions is on. */
 	powered = drv_i915_xd_power_has(&power->xd->power, functions);
 	if (!powered)
 		return 0;
@@ -1434,7 +1434,7 @@ display_power_core_well1_on(
 	int well;
 	int error;
 
-	/* The well's row. */
+	/* The display's power the hook acts for, and power well 1's row of its table. */
 	power = context;
 	well = drv_i915_xd_power_find(power->xd->choice.platform, I915_XD_WELL_CONTROL_MAIN, I915_XD_WELL_PW_1);
 	if (well < 0)
@@ -1463,7 +1463,7 @@ display_power_core_well1_off(
 	struct i915_display_power *power;
 	int well;
 
-	/* The well's row. */
+	/* The display's power the hook acts for, and power well 1's row of its table. */
 	power = context;
 	well = drv_i915_xd_power_find(power->xd->choice.platform, I915_XD_WELL_CONTROL_MAIN, I915_XD_WELL_PW_1);
 	if (well < 0)
@@ -1484,7 +1484,7 @@ display_power_core_cdclk_on(
 {
 	struct i915_display_power *power;
 
-	/* The clock's own start. */
+	/* Starts the display's CD clock. */
 	power = context;
 	drv_i915_cdclk_start(power->cdclk);
 }
@@ -1496,7 +1496,7 @@ display_power_core_cdclk_off(
 {
 	struct i915_display_power *power;
 
-	/* The clock's own stop. */
+	/* Stops the display's CD clock. */
 	power = context;
 	drv_i915_cdclk_stop(power->cdclk);
 }
@@ -1509,7 +1509,7 @@ display_power_core_dbuf(
 {
 	struct i915_display_power *power;
 
-	/* The slices of the display. */
+	/* Powers the slices asked for that the display has. */
 	power = context;
 	display_power_dbuf_apply(power, (uint8_t)(slices & power->dbuf_mask));
 }
