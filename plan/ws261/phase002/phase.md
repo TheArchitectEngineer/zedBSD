@@ -2,7 +2,7 @@
 
 # ws261-p002 boot.h の sun4u の構造体を除く
 
-Status: in-progress（2026-10-18 q1255-i01、P3。実装・build・host 試験済み、cbae237f7・9b32b9ec6。QEMU の起動の確かめは sun4u の vmunix の既存の build の壊れで未実施）
+Status: cleared（2026-10-18 Q1 判定: boot.h から sun4u の構造体・定数を除き、loader → HAL は bootloader/sparcv9/handoff.h、HAL → kernel は共通の record と名前ごとの値 2 つ。stage1.bin・stage2.bin と handoff.o・stage2.o は前と byte で一致、HAL の cmain.o・boot.o は -Werror で作れ、作れない object の error の集合は前と同じ、host 試験 16 checks 0 failures、amd64・rpi4・pc98・pcat の vmunix warning 0（P3 の報告）。QEMU sun4u の起動は vmunix が前から build できないので WS267 へ移した（T1 への依頼の文面はこの phase.md）。）（旧: in-progress（2026-10-18 q1255-i01、P3。実装・build・host 試験済み、cbae237f7・9b32b9ec6。QEMU の起動の確かめは sun4u の vmunix の既存の build の壊れで未実施））
 
 - 親: [WS261](../ws.md)。Queue: q1255-i01。
 - 起点: 2026-10-18 ユーザー「WS261ですが、sparcv9も対象にしてほしいです。」
