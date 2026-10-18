@@ -113,7 +113,7 @@ P1 の見立て（Status は変えない。判定は Q1）: p043a は cleared �
 ## p043b の well の数の 1 の差の調べ（2026-10-19 P2、q1259）
 
 - 差: takeover の後の `wells on` が基準（q1229-i18 の main）`8 -> 3`、tip（q1229-i20）`7 -> 2`。
-- 原因: 数え方の対象の違い。基準の kernel の well の表には Linux の形の仮の well `always_on`（ops が ALWAYS_ON、`drv_i915_power_well_is_enabled()` が常に 1 を返す）があり、数に入っていた。基準の dmesg の一覧（`t1229i18-main-20261017-dmesg.txt` 504 行）の先頭が `well always_on: refcount=3 hw_enabled=1`。tip の一覧（`t1229i20-tip-20261017-dmesg.txt` 398〜406 行）は PW_1 から始まり、`always_on` の行が無い。新しい `drv_i915_display_power_wells_on()`（display-power.c）は platform の表の well（mailbox の TC cold を除く）だけを数え、仮の well を持たない。
+- 原因: 数え方の対象の違い。基準の kernel の well の表には Linux の形の仮の well `always_on` があり、数に入っていた（旧 power.c の `drv_i915_power_well_is_enabled()` は ops が ALWAYS_ON の well に常に 1 を返す。基準の kernel の source の行そのものは見ておらず、表に仮の well があった事は dmesg の一覧で確かめた）。基準の dmesg の一覧（`t1229i18-main-20261017-dmesg.txt` 504 行）の先頭が `well always_on: refcount=3 hw_enabled=1`。tip の一覧（`t1229i20-tip-20261017-dmesg.txt` 398〜406 行）は PW_1 から始まり、`always_on` の行が無い。新しい `drv_i915_display_power_wells_on()`（display-power.c）は platform の表の well（mailbox の TC cold を除く）だけを数え、仮の well を持たない。
 - 残りの 9 つの well の状態は両方で同じ: PW_1（0 users / refcount=0、on）、DC_off 3、PW_2・PW_A〜PW_D 2、DDI_IO_A 0（on）、AUX_A 1。survey の PWR_WELL_CTL も同じ（phase の「判定の材料」）。よって takeover の前後とも hardware の状態は同じで、差は常に 1（8−7、3−2）。不具合ではない。
 - 証拠の場所: t1 の worktree の `plan/ws245/temp/5330/`（git の外）。比べは grep（`wells on|well .*users|refcount=`）。
 - p043b の保留の残り: DC6 の H6（`DC_STATE_EN=0x00000002` 未観測）、SV7 の backlight・suspend の DC9（ユーザーの一覧、実機待ち）。
