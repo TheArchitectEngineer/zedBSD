@@ -1,0 +1,17 @@
+{
+  "outcome": "uncleared",
+  "parser_controls": "8 passed",
+  "native_controls": "1 passed, 6 failed; permanent-wait nonPASS alone is not sufficient positive proof",
+  "fixed48_executed": false,
+  "official_crash_pass_increment": 0,
+  "blocked_on": "p209 native FontFaceSet.ready callbacks schedule RAF after the last page_settle pump",
+  "source_sha256": {
+    "run-interop2025-crashtests.py": "31ea1b847c958538d0e4f3ed175b8cafb3e63474e8c120927ddefe9550b63616",
+    "test-interop2025-crashtests.py": "6769d97a41218085dda59a315d338cab4b40141f851cc08ed9665cc89d60b00a"
+  },
+  "engine_sha256": {
+    "browser": "25a66385edb7811c04e5e04fddd6bf3060ef2883f26d2781adbecf9d87debc02",
+    "libbrowser.so": "a7aa493f2f97eeda7ddbba09d376cda77e5b61107393f46702c9c5cab2575bb2"
+  },
+  "retained_control_directory": "build/ws074-crash-controls/retained-twb4hdon"
+}

@@ -1,0 +1,36 @@
+{
+  "test_id": "/permanent.html",
+  "outcome": "readiness_missing",
+  "returncode": 0,
+  "timed_out": false,
+  "image": {
+    "file": "/home/awe/zedBSD-claude1/build/ws074-crash-controls/retained-twb4hdon/permanent.ppm",
+    "size": [
+      64,
+      64
+    ],
+    "sha256": "75f5e1247eaa678fd44003e328cf20838a380e06be24e52dbc992ba7f70dfb5a"
+  },
+  "readiness": {
+    "status": "missing",
+    "complete": [],
+    "errors": [],
+    "invalid": []
+  },
+  "nonce": "control-permanent",
+  "stdout": "",
+  "stderr": "",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-20261018/q15/frozen/browser",
+    "--render",
+    "--async",
+    "--settle-ms=500",
+    "--output=/home/awe/zedBSD-claude1/build/ws074-crash-controls/retained-twb4hdon/permanent.ppm",
+    "--width=64",
+    "--height=64",
+    "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+    "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+    "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+    "http://127.0.0.1:42087/permanent.html"
+  ]
+}

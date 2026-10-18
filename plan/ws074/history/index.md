@@ -1,6 +1,10 @@
 # WS074 lane の Past Log
 
-## 最新: ws074-q20261018-14（2026-10-18）
+## 最新: ws074-q20261018-15（2026-10-18）
+
+[履歴](ws074-q20261018-15.md)。crash retained raw i01 cleared、strict wait i02 uncleared。official waitのnative6 positive controlsでfonts.ready後のRAFが未処理と確認（parser8 pass/negative1 pass）。fixed48は前提未達で本実行せず、正式crash増分0・1330/3805を維持。全raw/PPM/control保持、engine不変。p209 producerの次finite修復→p190再検証を設計し、p252は後続候補。共有projection pending。
+
+## ws074-q20261018-14（2026-10-18）
 
 [履歴](ws074-q20261018-14.md)。linear calc percentage type/fit-content computed bound own criteria cleared。全harness1491 whole489→491・old PASS後退0、callback13改善/16 animation偽陽性露出、全static1561 whole839/pixel count維持。独立20 computed/4実寸/fit17行Chromium一致、DOM33/33・host/target warning0・Acid非増加。source88713badd、最終pairで全再測定しrawを保持。確認済み1330/3805、未対応292/413/crash48正式条件、native fit/animation/target/p100等は未達。次候補はcrash正式待機/retentionを優先しp252へ、共有投影pending。
 

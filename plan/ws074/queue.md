@@ -2,7 +2,7 @@
 
 # ws074-q20261018-15 / crashtest retained raw・official readiness
 
-Status: active（2026-10-18 13:43 JST）
+Status: finished（2026-10-18、i01 cleared/i02 uncleared）
 Owner: このCodex chat単独。
 Approval: [ユーザー自走指示](autonomy.md)を次の有限scopeへ適用。q14 history/hash・WIP98acae7a6 read-back済み。
 Timebox: 最大60分（14:43 JSTまで）。
@@ -10,11 +10,15 @@ Timebox: 最大60分（14:43 JSTまで）。
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
 | ws074-q20261018-15-i01 | [p190](phase190/phase.md) retention partial | TemporaryDirectory/unlinkを外しcase別unique image/raw/stdout/stderr/checkpointを保持、browser/libbrowser両hashを保存。frozen q14 pairで固定1 IDをactual実行しimage/hash/record/retained outputを照合。legacy local画像成功は正式crash PASSへ加算しない。既存classification controls/syntax/diff。engine/WPT/result readinessはこのitemで変更しない | cleared | q14 final frozen pair・旧runner source確認 |
-| ws074-q20261018-15-i02 | [p190](phase190/phase.md) strict wait partial | pinned WPT test-wait.jsを第三者test fixtureとしてruntimeで読み、main-page head bootstrapからload handler終了後にofficial font/2RAF/test-wait/TestRendered/MutationObserver完了protocolを実行。native終了0・正しいIDの単一complete・valid最終paintがある場合だけPASS。missing/invalid/duplicate完了は未成功、JS exception単独はcrash FAILにしない。ready/async解除/永久wait/throw/no-image/signal等controlを確認し固定48全件とraw/ID/hash/retained artifactsを記録。probe child混入・source byte不変を検証しunsupportedをPASS扱いしない。2 Python toolsだけ、C/public ABI/WPT FS/他runner/Master不変 | in-progress | i01 retention verified output、pinned official wait/source metadata、q14 byte-identical engine |
+| ws074-q20261018-15-i02 | [p190](phase190/phase.md) strict wait partial | pinned WPT test-wait.jsを第三者test fixtureとしてruntimeで読み、main-page head bootstrapからload handler終了後にofficial font/2RAF/test-wait/TestRendered/MutationObserver完了protocolを実行。native終了0・正しいIDの単一complete・valid最終paintがある場合だけPASS。missing/invalid/duplicate完了は未成功、JS exception単独はcrash FAILにしない。ready/async解除/永久wait/throw/no-image/signal等controlを確認し固定48全件とraw/ID/hash/retained artifactsを記録。probe child混入・source byte不変を検証しunsupportedをPASS扱いしない。2 Python toolsだけ、C/public ABI/WPT FS/他runner/Master不変 | uncleared | i01 retention verified output、pinned official wait/source metadata、q14 byte-identical engine |
 
 Dependency graph: q14 final pair → p190 retention i01 → strict wait controls → fixed48 actual i02。
 Upcoming Work Outlook: p252 flex-basis、p249 empty margin、native fit/animation、generated contexts。Phase completion/正式48 PASSを先取りしない。
 Selection reason: 48 local画像PASSの正式条件が未検証のため、p252より先に分母の未確認を解消する。source auditは48 all plain HTML/同一origin・testdriver reference/個別headers無し、15ページにtest-wait/RAF/load等。通常WPT wait scriptの実行はpinned外部test toolで、製品sourceへ転載しない。bootstrapはhead内/implicit headに置き、load後deferred実行でtest onload/root removalを先に処理。実際に実行できないprotocolはunknown/unclearedで残し独立後続へ進む。
+
+Outcome: i01 retention cleared（WIP ab3d462be）、i02 strict wait uncleared。parser8 pass/native positive6 FAIL、fonts.ready後のRAF pumpがnativeに不足。fixed48本実行は未着手、正式PASS増分0。全raw/control/PPM保持。[証拠](phase190/evidence/20261018-q15-i02/README.md)。p209 producer修復のverified outputを新Queueで得てから新attemptで再検証する。engine/WPT/他runner不変、q14の1330/3805を維持、共有projection pending。
+
+History: [scopeとoutcome](history/ws074-q20261018-15.md)。
 
 ---
 <!-- awesome-plan project=zedbsd record=queue -->

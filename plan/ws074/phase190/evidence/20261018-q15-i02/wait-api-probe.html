@@ -1,0 +1,6 @@
+<!doctype html><head><script>
+console.log('identity',typeof window.top,window.top===window,window.parent===window,document.readyState);
+addEventListener('load',function(){console.log('LOAD',document.readyState);setTimeout(function(){console.log('TIMER',document.readyState);requestAnimationFrame(function(){console.log('RAF1');requestAnimationFrame(function(){console.log('RAF2');});});},0);});
+console.log('hook-installed');
+</script></head><body>probe</body>
+<script>document.fonts.ready.then(function(){console.log('FONTREADY');requestAnimationFrame(function(){console.log('FONT_RAF1');requestAnimationFrame(function(){console.log('FONT_RAF2');});});});</script>

@@ -21,3 +21,11 @@ Event ws074-p209-addition-q1065-20261014: q1064のno_completion299件中280件�
 ## q1065-i01 結果（2026-10-14 04:02 JST）
 
 Event ws074-p209-q1065-outcome-20261014: 初期`document.fonts` SameObjectと`ready` Promiseを、stylesheet/font fetch完了後のlayoutへ接続。[証拠](evidence/20261014-q1065/README.md)。固定CSS Grid3 IDは旧no_completion→completion付きFAIL（subtest1/1・4/9・0/4 PASS）。固定font指定の一時起動wrapperでWPT runner sourceを変えず確認。host fixture各5/5・native properties65/65・realm30/30・parser8/8・stream9/9・images10/10、warning0 build、Acid3差0/Acid2差1865。q1065-i01 partial cleared、p209 whole uncleared。動的FontFaceSet/API・既定runner font設定と280件再測定、p173全件100%が残る。共有投影/GitHub publication保留。
+
+## q15からのproducer依存 / 再設計（2026-10-18）
+
+[p190 q15-i02](../phase190/evidence/20261018-q15-i02/README.md)のofficial wait controlsは、initial fonts.ready完了後の2RAFを待つため6 positive controlsが停止。own API probeで通常load→timer→2RAFは通り、fonts.ready→2RAFはFONTREADYだけで終わる。browser_view_settleがpage_settle後にlayout/font readyを解決してbind_checkpointし、そのjobsが作ったRAF/timersを再pumpしていない。
+
+既存初期readyの解決条件を早めず、native headless settleでlayout/font checkpoint後のeligible tasksを同じ絶対budget内で再処理するfinite producer修正を候補とする。public browser ABIとWPT/runner待機条件は不変、無限RAF/interval/zero budget/child/view lifetime/DOM mutationを明示検証しbounded exhaustionは成功にしない。sourceはlibbrowser/view/view.c中心、C全文/Guardrail/browser standard適用。独立fonts.ready→RAF2、q1065 initial SameObject/order、p190全controlsと固定harness1491/static1561のlatest verified baselineを照合する。新Queue選定までsource生成しない。
+
+Event ws074-p209-post-font-tail-redesign-20261018: p190の具体的prerequisite不足を本producerへ接続。old q1065初期readiness partial clearedとfull API未達は保持。p209 verified native tail output → p190 strict48 revalidationというscoped output dependencyを追加。native code修正/pumpの全体gateが実際に検証されるまで本Phase全体やp190をclearしない。

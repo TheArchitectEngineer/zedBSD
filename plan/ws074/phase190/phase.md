@@ -2,7 +2,7 @@
 
 # ws074-p190: Interop 2025 reftest・crashtest runner coverage
 
-Status: in-progress（q15 crash retention/readiness partial、whole未達）
+Status: uncleared（q15-i01 retention cleared、i02 native post-font RAF依存でuncleared）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -189,3 +189,7 @@ Python専用full standardは無いため既存tool styleとGuardrail/権限/FS/�
 Event ws074-p190-q15-design-selected-20261018: ユーザーautonomyを正確なQueueへ適用。q14 completed evidenceを検証後、既知未確認の正式crash coverageをp252より優先。p190自身のrunner設計/verification/resumeを更新し、WS/Queueへ投影。旧q1040画像成功の履歴を保持し、現時点で正式PASSへ加算しない。共有投影pending。
 
 Event ws074-p190-q15-i01-cleared-20261018: [証拠](evidence/20261018-q15-i01/README.md)。retention部分cleared、固定1 IDのPPM/raw/console/checkpoint全保持・hash/PNG RGB同値、unit6/syntax pass。q14と同じbrowser/library bytes、C/WPT不変。schema1 pass_semantics=local_image_onlyを明示、正式crash加算0。i02のverified prerequisite outputとしてstrict waitへ進む。whole p190未達/active i02を保持。
+
+Event ws074-p190-q15-i02-uncleared-20261018: [証拠](evidence/20261018-q15-i02/README.md)。strict official-wait toolを実装、parser8 pass/実native7は1 pass・6 positive FAIL、font ready後のRAFがheadless settleから残るとown probe/sourceで確認。固定48本実行はprerequisite不足のため未着手、正式crash増分0。C/engine/WPT/他runnerは不変。i02 uncleared、i01 clearedを保持。再開条件: p209 producerがpost-font tasksを元のbudget内で処理し、同じ全native controlsが適切に通ること。画像だけ/条件skipでclearしない。
+
+Event ws074-p209-post-font-tail-redesign-20261018: [p209](../phase209/phase.md)でinitial FontFaceSet.ready後のeligible RAF/timerをnative budget内で再pumpするoutputを設計。p190はofficial waitを変更せず、そのverified preflight outputと全controls成立後に新attemptで固定48へ進む。q15-i02 unclearedを後日成功で書換えない。native修復は新Queueが必要。

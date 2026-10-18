@@ -1,0 +1,78 @@
+FFFF.FF........
+======================================================================
+FAIL: test_async_class_removal (__main__.BrowserWaitTest.test_async_class_removal)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/awe/zedBSD-claude1/plan/ws074/tests/test-interop2025-crashtests.py", line 134, in test_async_class_removal
+    self.assertEqual(record["outcome"], "pass", record["stderr"])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'readiness_missing' != 'pass'
+- readiness_missing
++ pass
+ : 
+
+======================================================================
+FAIL: test_child_report_is_not_mixed_with_parent (__main__.BrowserWaitTest.test_child_report_is_not_mixed_with_parent)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/awe/zedBSD-claude1/plan/ws074/tests/test-interop2025-crashtests.py", line 155, in test_child_report_is_not_mixed_with_parent
+    self.assertEqual(record["outcome"], "pass", record["stderr"])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'readiness_missing' != 'pass'
+- readiness_missing
++ pass
+ : 
+
+======================================================================
+FAIL: test_exception_does_not_replace_readiness (__main__.BrowserWaitTest.test_exception_does_not_replace_readiness)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/awe/zedBSD-claude1/plan/ws074/tests/test-interop2025-crashtests.py", line 145, in test_exception_does_not_replace_readiness
+    self.assertEqual(record["outcome"], "pass", record["stderr"])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'readiness_missing' != 'pass'
+- readiness_missing
++ pass
+ : console: Uncaught Error: control expected exception (at http://127.0.0.1:38645/exception.html:1:1)
+
+
+======================================================================
+FAIL: test_onload_root_removal_precedes_wait (__main__.BrowserWaitTest.test_onload_root_removal_precedes_wait)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/awe/zedBSD-claude1/plan/ws074/tests/test-interop2025-crashtests.py", line 151, in test_onload_root_removal_precedes_wait
+    self.assertEqual(record["outcome"], "pass", record["stderr"])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'readiness_missing' != 'pass'
+- readiness_missing
++ pass
+ : 
+
+======================================================================
+FAIL: test_plain_page (__main__.BrowserWaitTest.test_plain_page)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/awe/zedBSD-claude1/plan/ws074/tests/test-interop2025-crashtests.py", line 123, in test_plain_page
+    self.assertEqual(record["outcome"], "pass", record["stderr"])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'readiness_missing' != 'pass'
+- readiness_missing
++ pass
+ : 
+
+======================================================================
+FAIL: test_test_rendered_event (__main__.BrowserWaitTest.test_test_rendered_event)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/awe/zedBSD-claude1/plan/ws074/tests/test-interop2025-crashtests.py", line 140, in test_test_rendered_event
+    self.assertEqual(record["outcome"], "pass", record["stderr"])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'readiness_missing' != 'pass'
+- readiness_missing
++ pass
+ : 
+
+----------------------------------------------------------------------
+Ran 15 tests in 3.601s
+
+FAILED (failures=6)

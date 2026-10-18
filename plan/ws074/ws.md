@@ -642,7 +642,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p187](phase187/phase.md) | 負の padding と第6色箱の幅を調べる | cleared（q1010-i01、Acid3差900減、negative padding fixture pass） | p172〜p186 cleared、q1009 実測出力 |
 | [ws074-p188](phase188/phase.md) | 同一ページで観測した訪問履歴と :visited の paint color | cleared（q1011-i01、Acid3差801減→0、privacy fixture pass） | p172〜p187 cleared、q1010 実測出力 |
 | [ws074-p189](phase189/phase.md) | Interop 2025 testharness 1,783件の結果取得 runner | uncleared / q14全1491 whole491・未対応292 | p173 q1012 固定manifest出力 |
-| [ws074-p190](phase190/phase.md) | Interop 2025 reftest 1,974件・crashtest48件のrunner coverage | in-progress / q15 crash partial、q14静的839 PASS/722 FAIL・未対応413、crash正式待機を検証 | p173 q1012 固定manifest出力 |
+| [ws074-p190](phase190/phase.md) | Interop 2025 reftest 1,974件・crashtest48件のrunner coverage | uncleared / q15 retention cleared・strict waitはp209依存、静的839/未対応413 | p173 q1012 固定manifest出力 |
 | [ws074-p191](phase191/phase.md) | Interop 2025 textdecoration全16 testharnessのCSSOM互換 | cleared / q1023、16件16 PASS/0 FAIL | p173固定manifest、p189 q1015全16件baseline |
 | [ws074-p192](phase192/phase.md) | Interop 2025 Window named properties互換 | uncleared / q1025 partial cleared、一意id live lookup | p173固定manifest、p189 q1024 shard |
 | [ws074-p193](phase193/phase.md) | Interop 2025 details/hidden until-found互換 | uncleared / q1032計測6 PASS/10 FAIL/2 no output、q1035/q1036で2件追加PASS、reftest25/crashtest3未実行 | p189 q1024 shard、p192 q1025一意id output |
@@ -1198,3 +1198,5 @@ Event ws074-q14-both-cleared-20261018: [p251](phase251/phase.md) linear percenta
 Event ws074-q15-crash-readiness-selected-20261018: [p190](phase190/phase.md)をretention→official wait protocolの最大60分Queueで実行。q14 archive/hash/98acae7a6 read-back後に選定、既知未確認48の正しい計測を[p252](phase252/phase.md)より優先。p252はq14 output verified/planned、両Phaseへ自身のresumeを記録。native C/WPT/public ABI/他runnerは変更せず、正式PASS数はactual確認まで加算しない。共有projection pending。
 
 Event ws074-p190-q15-i01-cleared-20261018: [p190 retention証拠](phase190/evidence/20261018-q15-i01/README.md)。i01部分cleared・正式crash増分0。artifact/hash/checkpointのverified outputでi02 strict waitを開始、Phase/WS whole未達と共有projection pendingを保持。
+
+Event ws074-q15-i02-uncleared-and-p209-redesign-20261018: [p190 q15](phase190/evidence/20261018-q15-i02/README.md)はparser8 pass/native positive6 FAILでi02 uncleared。fixed48未実行/正式PASS増分0、i01 retained artifactsはcleared。原因producerの[p209](phase209/phase.md)へpost-font eligible tasksを同じbudgetで処理する設計を追加し、p209 verified preflight → p190全controls → fixed48を明記。origin/foreign両Phaseへevent配送、q1065/q15履歴/1330固定PASSは保持。次Queue候補はnative producerとstrict48再試行、p252はその後。共有projection pending。
