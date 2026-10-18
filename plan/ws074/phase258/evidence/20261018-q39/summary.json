@@ -1,0 +1,178 @@
+{
+  "source_commit": "c84e12f0878e1196f42df40279a5d8392386d3c2",
+  "explicit_source_commit": "c84e12f08",
+  "selection": "3a24e9028",
+  "source_hash_count": 317,
+  "conditions": 336,
+  "old323_prefix_unchanged": true,
+  "oracle": "q36 negative-zero primitive filter inherited for original classifier conditions; new13 IsArray cases genuine Chromium; no pure exotic full336 equality claim",
+  "native_pressure": "bare managed realm/revoked Proxy setup roots dropped, actual error allocation threshold collection, both independently survive and are actually reclaimed after frame retirement; conservative C stack scanning disabled",
+  "native_gates": [
+    {
+      "label": "proxy-read",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q39/final/engine/host-proxy-read",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q39/final/engine/proxy-read.js"
+      ],
+      "returncode": 0,
+      "seconds": 0.2
+    },
+    {
+      "label": "delegation",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q39/final/engine/host-generator-delegation"
+      ],
+      "returncode": 0,
+      "seconds": 0.2
+    },
+    {
+      "label": "interpreter",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q39/final/engine/host-interp"
+      ],
+      "returncode": 0,
+      "seconds": 0.4
+    },
+    {
+      "label": "vm-factory",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q39/final/engine/host-vm-factory"
+      ],
+      "returncode": 0,
+      "seconds": 0.5
+    },
+    {
+      "label": "dom",
+      "command": [
+        "python3",
+        "plan/ws074/tests/run-dom-tests.py",
+        "--program",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q39/final/engine/browser"
+      ],
+      "returncode": 0,
+      "seconds": 3.1
+    },
+    {
+      "label": "cssom",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q39/final/engine/host-cssom"
+      ],
+      "returncode": 0,
+      "seconds": 3.4
+    },
+    {
+      "label": "cssom-mutation",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q39/final/engine/host-cssom-mutation"
+      ],
+      "returncode": 0,
+      "seconds": 3.6
+    },
+    {
+      "label": "marks",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q39/final/engine/host-performance-marks"
+      ],
+      "returncode": 0,
+      "seconds": 4.0
+    },
+    {
+      "label": "observer",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q39/final/engine/host-performance-observer"
+      ],
+      "returncode": 0,
+      "seconds": 4.2
+    },
+    {
+      "label": "error-events",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q39/final/engine/host-error-events"
+      ],
+      "returncode": 0,
+      "seconds": 4.4
+    },
+    {
+      "label": "error-reporting",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q39/final/engine/host-error-reporting"
+      ],
+      "returncode": 0,
+      "seconds": 4.6
+    },
+    {
+      "label": "acid",
+      "command": [
+        "python3",
+        "plan/ws074/tests/run-acid-tests.py",
+        "--program",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q39/final/engine/browser",
+        "--out",
+        "build/ws074-20261018/q39/final/acid"
+      ],
+      "returncode": 0,
+      "seconds": 9.4
+    }
+  ],
+  "acid3_score": 100,
+  "acid3_inventory": 100,
+  "acid3_pixels": 0,
+  "acid2_existing_pixels": 873,
+  "original_webidl_same_callbacks_q38": true,
+  "public_global_proxy": false,
+  "full_changed_C": {
+    "userland/desktop/libbrowser/vm/access.c": {
+      "old_tokens_except_selected_functions_equal": true
+    },
+    "userland/desktop/libbrowser/js/builtin_array.c": {
+      "old_tokens_except_selected_functions_equal": true
+    },
+    "userland/desktop/libbrowser/vm/vm.h": {
+      "old_tokens_except_selected_functions_equal": true
+    },
+    "full_changed_functions": {
+      "userland/desktop/libbrowser/vm/access.c": [
+        "vm_is_array"
+      ],
+      "userland/desktop/libbrowser/js/builtin_array.c": [
+        "array_is_array"
+      ],
+      "plan/ws074/tests/host-proxy-read.c": [
+        "main",
+        "array_identity_pressure"
+      ]
+    },
+    "allowed_forward_cleanup_gotos": 35,
+    "other_checker_findings": 0,
+    "formatter": "clang-format-19 / InheritParentConfig / ColumnLimit0, multiline signatures and compound conditions restored",
+    "manual_review": [
+      "C89 leading declarations, public/static order, existing table-required prototypes retained",
+      "no calls in conditions or Boolean expression assignments",
+      "immutable target traversal, no user script/prototype/handler access",
+      "managed realm and original input traced through error; registrations retired on all outcomes",
+      "private factory callable/nested bounds and native_operations definition/comment unchanged",
+      "public ABI2 and Wayland boundaries unchanged",
+      "unselected array concat/flatten consumers unchanged; whole conformance p100 pending"
+    ]
+  },
+  "archive": {
+    "sha256": "56690aa90d83af6200e77c119bdff5902eebd5a171de50a78128163822260c7d",
+    "members": 68,
+    "readback_all_members": true
+  },
+  "official_score": 1482,
+  "denominator": 3805,
+  "held": 0,
+  "unattempted": 275,
+  "all1508_reused": "q37",
+  "static_scripted_crash_reused": "q28",
+  "full_census_new_pair_not_measured": true,
+  "remaining": [
+    "internal concat/flatten IsArray consumers not changed",
+    "keys/delete/prototype/extensibility/call/construct/global constructor/revocable",
+    "nested/callable factory targets still rejected",
+    "TypedArray remaining exotic/prototype/backing semantics",
+    "p258/p100/full target/WS100% incomplete",
+    "runtime binaries retained at hashed build paths, not embedded in archive"
+  ]
+}

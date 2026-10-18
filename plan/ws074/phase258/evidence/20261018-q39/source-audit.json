@@ -1,0 +1,35 @@
+{
+  "userland/desktop/libbrowser/vm/access.c": {
+    "old_tokens_except_selected_functions_equal": true
+  },
+  "userland/desktop/libbrowser/js/builtin_array.c": {
+    "old_tokens_except_selected_functions_equal": true
+  },
+  "userland/desktop/libbrowser/vm/vm.h": {
+    "old_tokens_except_selected_functions_equal": true
+  },
+  "full_changed_functions": {
+    "userland/desktop/libbrowser/vm/access.c": [
+      "vm_is_array"
+    ],
+    "userland/desktop/libbrowser/js/builtin_array.c": [
+      "array_is_array"
+    ],
+    "plan/ws074/tests/host-proxy-read.c": [
+      "main",
+      "array_identity_pressure"
+    ]
+  },
+  "allowed_forward_cleanup_gotos": 35,
+  "other_checker_findings": 0,
+  "formatter": "clang-format-19 / InheritParentConfig / ColumnLimit0, multiline signatures and compound conditions restored",
+  "manual_review": [
+    "C89 leading declarations, public/static order, existing table-required prototypes retained",
+    "no calls in conditions or Boolean expression assignments",
+    "immutable target traversal, no user script/prototype/handler access",
+    "managed realm and original input traced through error; registrations retired on all outcomes",
+    "private factory callable/nested bounds and native_operations definition/comment unchanged",
+    "public ABI2 and Wayland boundaries unchanged",
+    "unselected array concat/flatten consumers unchanged; whole conformance p100 pending"
+  ]
+}

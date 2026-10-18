@@ -2,16 +2,16 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: uncleared（q37 fixed-buffer TypedArray Set/Define partial cleared、whole Proxy未達）
+Status: uncleared（q39 IsArray partial cleared、whole Proxy未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
-Queue: ws074-q20261018-37-i01（q30〜q36 partial cleared履歴保持）
+Queue: ws074-q20261018-39-i01（q30〜q38 partial履歴保持）
 Origin: p189/q29 original WebIDL2 parseがProxy未定義で停止。
 
 Objective / own criteria: native managed Proxyを実object internal methodsへ接続し、constructor/revocableと各internal operationのtrap/fallback/invariant/receiver/revocation/callability/GCを正しく実行する。original WebIDL2 actual parse/validatorに必要なget/set/array behaviorを通常APIで提供し、independent controls/原WPTを通す。部分read stageだけでwholeをclearしない。
 Design: vm_native_operationsはscript-free heap interfaceのまま保持。Proxyにはmanaged target/handler recordを持たせ、scriptを実行可能なrealm-aware access/internal methodからtrapを呼ぶ。opaque JS constructor公開前に必要なoperationを段階的に整える。各段階は自走承認に基づく新finite Queueで正確に選定する。
-Current state: q37 existing fixed-buffer TypedArray Set/Defineまでverified、native policyはpure。global Proxy/原WebIDL2、IsArray/keys/delete/prototype/extent/call/construct、remaining typed exotic/backing/通常prototype routing/whole conformanceは未達。
+Current state: q39 public/native IsArrayまでverified、q38原parser private4/4・negative元assertion到達。global Proxyとkeys/delete/prototype/extent/call/construct等・通常prototype routing/TypedArray残りは未達。
 Standards: Guardrail/C全文/browser component全文、簡約版無し。一次 https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-proxy-object-internal-methods-and-internal-slots-get-p-receiver 。既存p100がWS全source near-final conformanceを所有し、本partialはnew/changed scopeの全文適合を検証。
 Verification/bounds/affected components: q30 snapshotの通り。private object kind/cell/newborn/trace/revokeとactual receiver/trap/invariant/GCをnative/Chromeで確認し、ordinary whole/callback PASSを守る。target single-source compileのみとfull target runtimeを区別。未達はunclearedとresume。
 
@@ -136,3 +136,16 @@ Raw archive 35 membersを全member read-back、SHA25699bd5f62cb9cc343215251b79b1
 [証拠](evidence/20261018-q38/README.md)。
 
 Event ws074-p258-q39-selected-20261018: q38のIsArray実差を元にProxy-aware VM/public Array.isArrayとGC/native/genuine対照を最大90分で選定。concat/flatten等別consumers/global公開は残件、exact範囲はQueue。whole p258/WS未達。
+
+Event ws074-p258-q39-projection-reconciled-20261018: p258冒頭のq37表示がq38調査結果を未投影だったため、既存dated q38結果を保持して現在q39 attemptへ投影。q38 original parserはprivate4/4/negative到達でpublic未達。q39開始timeboxはselection commit21:11:21を実開始としdeadline22:41:21に訂正、原snapshotとcriteriaは保持。
+
+## q39 IsArray partial result / resume
+
+Event ws074-p258-q39-partial-cleared-20261018: vm_is_arrayを追加し公開Array.isArrayを接続。primitive/ordinaryは従来どおり無allocation/no-coercionで判定し、native Proxyはimmutable target chainを反復、revokedは正規TypeErrorを返す。handler/prototype/get/GetPrototypeOf trapを一切呼ばず、managed realmと元Proxy graphを既存read tracerでエラー生成まで保持し、normal/abruptともframeを外す。concat/flatten等internal array_is_array_value consumersは選定外として完全保持、private factory callable/nested target拒否とglobal Proxy非公開を維持。
+旧323 source prefix全bytes同一、追加13のIsArray genuine Chromium条件を含む336がnative/oracle対照で通過。旧canonical key分類のq36 negative-zero primitive filterを継承しており全336をpure genuine exotic一致とは主張しない。native C stack保守保持無し。bare managed realmと実revoked Proxyのsetup rootsを落とし、actual bootstrap TypeError string allocationのthreshold collectionが発生、realmと元Proxyを独立に生存確認。終了後に両者の実回収を確認した。従来Proxy5-hook/sole results/write inputs/From/BigInt parser/typed storage GC対照も保持。
+source WIPc84e12f08、final source/pair/input317 hash照合。host final warning0、q02 exact access/builtin_array2 target warning0。全文/manual reviewとclang-format19、full changed Cの許可forward cleanup35・他checker0。既存DOM41、VM45/factory56、CSSOM12+12、marks7/observer10/ErrorEvent9/ErrorReporting19/delegation10を通過。Acid3 score/inventory100・pixel0、Acid2既存873を維持。q38と同じ元WebIDL2/testharness/source bytesをfinal pairで再実行、baseline Proxy undefined、private adapter positive4/4・元intentional negative assertion到達の全callbackを完全保持。これは公式WPT/global constructorの成功認定ではない。
+exact finite scopeどおりfocused gatesのみ。all1508はq37、static/scripted/crashはq28を明示再利用し、q39全capture/全callback同値は未測定。公式gain加算0、確認済1482/3805（38.948752%）・held0・未attempt275維持。i01 IsArray partialだけcleared、whole p258/WS/p100/full target/100%未達。keys/delete/prototype/extent/call/construct/global/revocable、array別consumers/typed残りを保持。共有Master/Queue/cache/GitHub投影pending、push無し。
+管理commentに残っていた旧Phase名を触れたsource headerから除去。選定snapshotの21:17という将来時刻の記載誤りはoriginalを保存し、selection commitの21:11:21をactual startとしdeadline22:41:21へ狭めた。scope/criteria不変。p258冒頭の旧q37投影もdated q38履歴を保持してq39へ復旧。
+Raw archive68 membersを全member read-back、SHA25656690aa90d83af6200e77c119bdff5902eebd5a171de50a78128163822260c7d。凍結binaryはhash付きbuildに保持しarchive未同梱。
+
+[証拠](evidence/20261018-q39/README.md)。次finite Queueはremaining internal methodsを具体化して選定する。
