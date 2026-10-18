@@ -601,3 +601,11 @@ WS074 の記録の q590・q594〜q598（Codex の browser3）は main の同じ�
 | q1252 / q1252-i01 | P1（WS244 より先） | ws260-p001 | Gen9 の display の書き直しの設計: gen9-*.c の棚卸しと写しの点検、xd の部品の共有の範囲、段の分け方、回帰の方法（2026-10-18 ユーザー「P1 に WS244 より先に」）。code は書かない | 済み: 設計（b9fe9a6d6、merge 6d8b00743）、判断 5 点はユーザーが回答、p001 cleared。P1 はその間 WS244 を続ける: p003 段 2（7aa549ae1）・p004 の power.c の PCODE の書き直し（56e4a144b、host の等価試験 25 場面 PASS は P1 の報告）、merge 6204ecf3c |
 | q1253 / q1253-i01 | P1（WS244 より先） | ws260-p002〜 | WS260 の書き直しを design.md §3 の段の順に（p002 試験の土台の golden から）。段ごとに golden の書き込みの列・数の表の一致、build 3 組 warning 0、commit と merge 依頼。実機は p015 で T1 に 1 回。ユーザーの決定 5 点（ws260/ws.md）に従う | in-progress: p002〜p007（122e34b30〜8d0b4ee99、merge 7aae0ba2c。golden の意図した違いは p004 の HDMI WRPLL の 19.2 MHz の 2053 行と p006 の xd の AUX・GMBUS の手順、P1 が記録し直し）。p008 へ |
 | q1249 / q1249-i02 | P2（phase-runner、新しい起動） | ws256-p003 | T1-707 の FAIL の解析と直し: A の判定の行が画面から流れる、B・C の TIMER TICK の割り込み、`cpus=` が unknown parameter、F の sifive_u で hart0 が pc=0x80010e32 で止まる（gdbstub で解析、ユーザーの決定 #17）。直したら T1 に再試験を依頼 | 返却（2026-10-18）: A〜C は HAL の最後に要約の 1 行（RISCV64 HAL READY SBI vX.Y PAGING PASS TIMER TICK）、TIMER TICK を割り込みの中で出さない、`cpus=` は変えず（arm64 と同じ情報の行）、F は kernel の不具合ではなく QEMU の sifive_uart が -serial null で送信を流さず OpenSBI が止まる、U54 は gdb の inferior 2（read.gdb）。11e1b8822・83d71758b、merge 0aeee3cf8。再試験は T1-708 |
+
+## 2026-10-18 夜: P3 の WS261（q1254）
+
+承認: 2026-10-18 ユーザー「…boot.hのPC98やRPiの構造体は、削除します。この削除対応を、WSを作って別なサブエージェントで進めてください。」（N=3、P3 を追加）。worktree p3・branch agent/p3-q1254。
+
+| Queue | 担当 | Phase | 範囲 | 結果 |
+| --- | --- | --- | --- | --- |
+| q1254 / q1254-i01 | P3（phase-runner） | [ws261-p001](ws261/phase001/phase.md) | boot.h の PC-98・RPi の固有の構造体を除き、HAL → kernel は汎用の構造体と名前付きの object に、boot loader → HAL の固有の構造体は HAL の中に。振る舞いは変えない | in-progress |

@@ -1,0 +1,27 @@
+<!-- awesome-plan project=zedbsd record=ws261 -->
+
+# WS261 include/kern/boot.h から PC-98・Raspberry Pi の固有の構造体を除く
+
+- ID: ws261、Master: [master.md](../master.md)、Primary Milestone: MG008
+- Status: incomplete（2026-10-18 Q1 作成、p001 を P3）
+- 起点（2026-10-18 ユーザー）:「HALからカーネルへは、汎用の構造体しか渡せない規約です。固有の情報は、名前文字列で取得するAPIがありますので、それを使ってください。ブートローダからHALへは、固有の構造体を使えますが、それはHAL内に定義を置きます。また、boot.hのPC98やRPiの構造体は、削除します。この削除対応を、WSを作って別なサブエージェントで進めてください。」
+- 規約: [Guardrail](../guardrail.md)「HAL と kernel・boot loader と HAL の受け渡し」。
+
+## 対象（2026-10-18 Q1 の grep）
+
+- `include/kern/boot.h` の `struct kern_pc98_parameter_handoff`、`KERN_PC98_*`・`KERN_HANDOFF_VERSION_PC98`、`struct rpi4_boot_handoff`、`KERN_RPI4_HANDOFF_MAGIC` など（「XXX: To be removed」の印）。
+- 使っている所: `src/hal/arm64/`（cmain・bsp・page・smp・space、bsp-rpi4 の boot・fdt・gic・cons）、`src/kern/platform/rpi4.c`、`src/drivers/platform/rpi4/`（bt・audio・ethernet・sdhci）、`src/drivers/platform/pc98/`、PC-98 の HAL（`src/hal/i386/` の pc98 の部分）と boot loader（`bootloader/pc98/`）。
+- 範囲外（ユーザーの指示に無い）: 同じ印の `struct kern_sun4u_*`（sparcv9）。扱いはユーザーに聞く。
+
+## 完了の条件
+
+1. `include/kern/boot.h` に PC-98・Raspberry Pi の固有の構造体と定数が無い。
+2. HAL → kernel は汎用の `kern_boot_handoff` と、固有の情報は `hal_get_arch_handoff(name)` の名前付きの object だけで渡す。新しく足す名前の一覧と中身を記録する（HAL の責務の追加。hal.h の宣言は変えない）。
+3. boot loader → HAL の固有の構造体は HAL の中（例 `src/hal/arm64/bsp-rpi4/`、PC-98 の HAL の directory）に定義を置く。
+4. 振る舞いは変えない: build（config-rpi4.mk・config-pc98.mk・config-amd64.mk）warning 0。Pi 4 と PC-98 の起動の確かめは T1（QEMU の raspi4b と PC-98 の QEMU）に依頼する。
+
+## Phase
+
+| Phase | 目的 | 状態 |
+| --- | --- | --- |
+| [p001](phase001/phase.md) | 使っている所の洗い出し、名前付きの object の一覧と HAL 内の定義の置き場所の案、置き換え、build、T1 への依頼 | in-progress（q1254、P3） |

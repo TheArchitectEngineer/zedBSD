@@ -93,6 +93,13 @@ zedBSD の貢献の規則と標準の索引。Queue・backlog・実行許可で�
 
 2026-09-25 以降、hal.h を変えない `src/hal/` の実装の変更は承認を要しない（上の規則）。hal.h の変更はこの表の承認が要る。
 
+## HAL と kernel・boot loader と HAL の受け渡し（2026-10-18 ユーザー）
+
+ユーザー:「HALからカーネルへは、汎用の構造体しか渡せない規約です。固有の情報は、名前文字列で取得するAPIがありますので、それを使ってください。ブートローダからHALへは、固有の構造体を使えますが、それはHAL内に定義を置きます。また、boot.hのPC98やRPiの構造体は、削除します。この削除対応を、WSを作って別なサブエージェントで進めてください。」
+- HAL → kernel は汎用の構造体（`include/kern/boot.h` の `kern_boot_handoff` など）だけを渡す。platform・architecture に固有の情報は、名前の文字列で取る API（`hal_get_arch_handoff(name)`）で渡す。
+- boot loader → HAL は固有の構造体を使ってよいが、その定義は HAL の中に置く（`include/kern/` に置かない）。
+- `include/kern/boot.h` の PC-98・Raspberry Pi の固有の構造体は削除する（WS261）。
+
 ## WS141（Raspberry Pi 4 の GPU）の GPL の参照の扱い（2026-10-04 ユーザー）
 
 Linux の vc4・v3d（GPL-2.0）から作る作業の文書は `plan/ws141/temp/` に置き commit しない（書き写し可）。zedBSD の code を書く前に定数を全て一括で独自の名前に変え、WS の最後に license と字面・設計の類似を監査する。BLOB は `userland/firmware/` へ移して file から load。register の定義と packet の形は MIT の Mesa（`src/broadcom/`）・Broadcom の公開の文書・device tree の binding から取り、file ごとに license を監査する。**改訂（2026-10-04 ユーザー、クリックの回答「事実として使う」）**: V3D・HVS・pixelvalve・HDMI の register の offset と bit は GPL の header にしか無いので、値はハードウェアの事実として使ってよい。名前は一括で独自に改名し、配置・comment・構造は写さず自分で書き、WS の最後の類似の監査で確かめる。zedBSD の code は Zlib。詳細は [WS141](ws141/ws.md) の「ライセンスの扱い」。範囲は WS141 と [WS037](ws037/ws.md)（nvrtx、2026-10-04 ユーザー「やりかたはVC4と同じです」。GSP の firmware は `userland/firmware/`）と [WS214](ws214/ws.md)（Pi 4 の HVS の plane、2026-10-12 ユーザー（クリック）「WS214 にも広げる」: 公開の文書の無い HVS5 の scaled の plane の値も同じ規則で使う、値ごとの出典は `plan/ws214/phase003/hvs-values.md`）と [WS039](ws039/ws.md)（AMD RDNA の amdrdna、2026-10-15 ユーザー「値は事実として使い、名前・構造・comment は写さない、をこの WS にも広げます。」: Linux の amdgpu の GPL の file の値も同じ規則で使う、MIT の file・Mesa の RADV・ACO は file ごとに license を監査して出典として使う）だけ（他の WS の GPL の参照には適用しない）。
