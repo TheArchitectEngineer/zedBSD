@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [ws074-q20261018-42](queue.md) finished（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+Queue: [ws074-q20261018-43](queue.md) active（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
 
 Latest verified（q42）: native Proxy Get/SetPrototypeOfとObject/AnnexB4 wrappers partial cleared。452 native/Chrome対照（旧canonical負ゼロfilterを継承）、4 GC modesでprototypeだけ保持し元participantsを実回収、後にprototypeも実回収。host/target2 warning0・focused gates/Acid・元WebIDL2 private4/4/negative維持。全1508はq37、images/crashはq28再利用、公式1482/3805・held0・未attempt275。global/whole/p100/full target未達、次own keys候補。[証拠](phase258/evidence/20261018-q42/README.md)。共有投影pending。
 
@@ -1343,3 +1343,5 @@ Event ws074-q41-finished-20261018: p258 DeleteProperty partial clear、406対照
 Event ws074-q42-selected-20261018: p258 prototype2 operations/public/AnnexB wrappersの有限partialを選定、global/whole残件保持。[Queue](queue.md)。
 
 Event ws074-q42-finished-20261018: p258 prototype2/public/AnnexB partial clear、452対照・4 GC modesでprototypeと元graphの独立保持/実回収。ordinary helperをVMへ移管・cyclewalk非通常stop、focused/元parser保持、1482/3805。tool versionsはq35と現q42一致、q39〜q41記録不足をdated followupに明示。次own keys候補、global/whole未達。[history](history/ws074-q20261018-42.md)。共有投影pending。
+
+Event ws074-q43-selected-20261018: p258 OwnPropertyKeys VM foundation/private controlsを有限partial選定。public callersはverified output後の別scope、global/whole残件保持。[Queue](queue.md)。
