@@ -21,3 +21,9 @@ Event ws074-p224-addition-20261014: q1134で旧PASSの行track compositionがFAI
 ## q1135-i02 結果（2026-10-14 10:29 JST）
 
 Event ws074-p224-q1135-partial-clear-20261014: [証拠](evidence/20261014-q1135/README.md)。q1124前は行track computed CSSOMが空でactual/expected両方空となり、旧PASSはanimation動作の証明でなかった。現在は`@keyframes`指定でも50pxの元値のまま、`Element.prototype.animate`は不在。CSS animation/transitionとWeb Animationsの一般実装が必要。読取・最小probeのみでq1135-i02診断部分cleared、p224 whole/p189/p173全件100%未達。共有投影/GitHub publication保留。
+
+## Native primitiveとの実装境界（2026-10-18）
+
+[p248](../phase248/phase.md)がnative clock/Animation DOM stateとGC/seek/pause/cancel/frame invalidationを提供し、そのverified scoped outputを受けて本PhaseがGrid track list matching・intrinsic/fit/minmaxのinterpolation/compositionとCSS/WA統合を所有する。必要API/timingが実コードで検証されるまで補間の実行Queueは選定しない。p224 q1135診断部分clearedとwhole未達は維持する。固定Grid animation12 ID/全Grid/影響領域のwhole/callback、独立補間・合成/host/target/規約/Acidを検証する。
+
+Event ws074-animation-phase-ownership-reconciled-20261018: q14の待機中に既存[p224](../phase224/phase.md) q1135を再確認。新p248とGrid track goalが重複していたため、p224の既存goal/history/未達を保持し、p248をnative timing/DOM lifecycleという前提outputへ限定。p248 verified output → p224 Grid interpolation/compositionと依存を明示。p246/q11未達とq14のcomputed-only scope/criteria/approvalは不変。両Phaseは未選定であり、この設計改訂だけでは実装を開始しない。

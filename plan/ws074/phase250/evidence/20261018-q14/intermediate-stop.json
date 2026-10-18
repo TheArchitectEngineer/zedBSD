@@ -1,0 +1,12 @@
+{
+  "reason": "fit-bound full initialization review; restart final full gate",
+  "root_pids": [
+    673769,
+    673854
+  ],
+  "signalled_pids": [
+    673769,
+    673854,
+    682647
+  ]
+}

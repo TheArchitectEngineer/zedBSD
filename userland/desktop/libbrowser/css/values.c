@@ -5089,6 +5089,9 @@ values_one_track(
 	memset(track, 0, sizeof(*track));
 	track->minimum_kind = CSS_TRACK_AUTO;
 
+	/* Initializes every fit-bound field before either parser fills its active unit. */
+	memset(&limit, 0, sizeof(limit));
+
 	/* Functional breadths use their existing grammar before keyword classification. */
 	if (tokens[0].type == CSS_TOKEN_FUNCTION) {
 		/* A calculated length is an ordinary breadth without an explicit lower bound. */

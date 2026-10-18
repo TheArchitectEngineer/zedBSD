@@ -39,3 +39,5 @@ Event ws074-p246-q11-uncleared-20261018: [証拠](evidence/20261018-q11/README.m
 Event ws074-p250-computed-fit-design-20261018: [p250](../phase250/phase.md)がmaximum_rule FIT_CONTENTと既存sizeにcomputed fit limitを保持する。calcを実際に解析し、computed fallbackで関数をserialize。native autoのfit capは未実装のまま維持するようstretch判定はknown min/maxのみへ明示化。新pointer/公開ABIなし。Grid502/静的529/独立computedとnative不変を確認し、known animation lossを全記録する。既存whole条件/historyは不変。
 
 Event ws074-p251-linear-type-design-20261018: [p251](../phase251/phase.md)がdirect linear calcのpercentage存在を保持する。0係数でもCSS_UNIT_PERCENTとなるためdependent computed/used pathsを全1491/static1561と独立値で検証。nonlinear min/max/clampの既存近似は未変更。p250はこのoutput後にcomputed fitを検証し、p246/q11等history/whole残りは維持。
+
+Event ws074-animation-phase-ownership-reconciled-20261018: q11から追加した[p248](../phase248/phase.md)をnative timing/DOM lifecycleへ限定し、以前からGrid animationを所有する[p224](../phase224/phase.md)へtrack補間・合成を集約。p248 verified primitives → p224 integrated Grid output → p246必要output再検証。q11 uncleared/24 callback lossとcomputed-only q14 scopeは不変。両foreign Phaseへ自身の変更と検証/resumeを記録、共有投影pending。

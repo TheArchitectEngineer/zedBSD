@@ -694,7 +694,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p245](phase245/phase.md) | no-boxのauto minimum resolved value | cleared / q10 no-box own acceptance | p243/q08のGrid raw、actual box proof |
 | [ws074-p246](phase246/phase.md) | intrinsic track breadth/contribution | uncleared / q11 24 animation callback loss | q09 minimum rule、q10 output |
 | [ws074-p247](phase247/phase.md) | zero font glyph advance/ink | cleared / q12 zero glyph own criteria | q11診断、p185 strut |
-| [ws074-p248](phase248/phase.md) | native Grid animation/transition | planning / Queue未選定 | p246 scalar output、native timing設計 |
+| [ws074-p248](phase248/phase.md) | native animation timing/DOM lifecycle | planning / Queue未選定 | p246 scalar output、p224へprimitive提供 |
 | [ws074-p249](phase249/phase.md) | zero line/empty margin eligibility | planned / Queue未選定 | p247 zero ink output、p198 BFC基礎 |
 | [ws074-p250](phase250/phase.md) | computed fit-content bound | in-progress / q14 | p246 scalar output、q12 raw、q13 runner |
 | [ws074-p251](phase251/phase.md) | linear calc zero percentage type | in-progress / q14-i01 | q12/q13 raw、precode Chrome |
@@ -1183,3 +1183,5 @@ Event ws074-p189-q1147-outcome-20261014: [p189 q1147](phase189/evidence/20261014
 - p235（`position: sticky` のページの scroll、子を持つ箱の `transform: scale`）は main に merge 済み（6e74bfd3d）、host のみ。B1 は p235 の後は未起動。
 - Q1 の後始末の残り: `git worktree remove /home/awe/zedBSD-worktrees/b1-base`、b1 の build/b1p235 の wpt・wpt-base・a-*・b-*・acid*、build/ws074-suites/wpt/acid/zedbsd-acid*.html。
 - 残り: inner scroll container、子つきの rotate・skew、flex item の aspect-ratio（31 件）、GPU の経路での sticky の確かめ。
+
+Event ws074-animation-phase-ownership-reconciled-20261018: 既存[p224](phase224/phase.md)へGrid track interpolation/compositionのgoalを維持し、新[p248](phase248/phase.md)はnative timing/DOM lifecycleのprerequisite outputへ限定。重複した受け入れを整理、p248 → p224 → p246再検証の依存を明記。各Phaseへeventを配送。history/未達/固定分母とq14 implementation scopeは変更なし、共有projection pending。

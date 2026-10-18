@@ -31,3 +31,5 @@ Event ws074-p250-q14-selected-20261018: user autonomyをcomputed fit bound最大
 Event ws074-p250-percentage-dependency-20261018: 17条件参照でzero/cancelled %を保持する依存を確認。p251をq14-i01へ追加しverified output後にi02のcomputed fitを検証する。初期scope snapshotは保存、全1491/static1561で正しいlinear typeによる影響を検証。fit coarse sizingの不変とfull native fit cap未達は維持。
 
 Event ws074-p251-linear-type-design-20261018: [p251](../phase251/phase.md)がdirect linear calcのpercentage存在を保持する。0係数でもCSS_UNIT_PERCENTとなるためdependent computed/used pathsを全1491/static1561と独立値で検証。nonlinear min/max/clampの既存近似は未変更。p250はこのoutput後にcomputed fitを検証し、p246/q11等history/whole残りは維持。
+
+Event ws074-p250-fit-bound-initialization-review-20261018: 未使用pointer/fieldsまで含めたvalue object初期化を確認し、一時limitをzero初期化する修正を追加。unitでguardされるため現行computed/native検証に異常は無いが、fully initialized publicationを保つ。初回globalはintermediate pairの診断として保存し、修正後pairで全1491/static1561を最初から再検証する。scope/criteria/deadlineは不変、clearance未判定。
