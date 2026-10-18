@@ -11,6 +11,8 @@ Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
 Queue: [q1198](queue.md) finished（14:15 ごろ Codex の使用量の上限で中断、uncleared、2026-10-14 Q1 が差分を commit）/ p217 framed horizontal Grid second vertical auto-inset child。2026-10-14 14:13 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
 
+Event ws074-p240-start-20261018: ユーザー「では、WS074を続けてください。」により [p240](phase240/phase.md) を追加。p234/p235 の残りの flex item の aspect-ratio を最大90分の [ws074-q20261018-01](queue.md) で調査・修正する。Codex 単独、Master/共有 Queue/GitHub の projection は pending。全件100%と WS acceptance は未達のまま。
+
 Event ws074-p232-yahoo-feed-20261014: [p232](phase232/phase.md) B1。yahoo.co.jp のニュース feed（見出しと画像）が出る。原因は fetch の不足と、`Object.freeze` が配列の要素で EPERM を漏らして bundle が止まっていたこと、core-js が Promise を差し替えて microtask が動かなかったこと。fetch・Headers・Request・Response・Blob・FormData・TextEncoder・非同期 XHR（POST・header・status）・focus を実装。host の fetch 試験 38/38（blocking と --async）。
 
 Event ws074-p231-google-script-20261014: [p231](phase231/phase.md) B1。google.com の script（BigInt・型付き配列・currentScript・defer・URL・dynamic link ほか）と Grid の高さ（item の max-height と grid item の auto margin）。live の ink 一致 23.47%→73.28%（全体 97.30%→99.36%）、script errors 2→0。固定 WPT 1,455 ID は 483 pass のまま後退 0。
@@ -610,6 +612,8 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p233](phase233/phase.md) | yahoo.co.jp の feed の画像まわりの枠（`transform: scale` と `transform-origin`、hairline の枠） | cleared（host、2026-10-14 B1。QEMU・実機は未実施） | p232 |
 | [ws074-p234](phase234/phase.md) | WPT Interop 2024・2023 の layout の領域（実 site でよく使う物）の PASS を増やす | cleared（host、2026-10-15 B1。aspect-ratio・object-fit・object-position、aspect-ratio の reftest 73→138。QEMU・実機は未実施） | p233 |
 | [ws074-p235](phase235/phase.md) | position: sticky（ページのスクロール）と、子を持つ箱の transform: scale | cleared（host、2026-10-15 B1。sticky・子つき scale。固定 WPT 483→485、css-position 51→54、css-transforms 221→226（偶然 pass 4 件が後退）。QEMU・実機は未実施。flex の aspect-ratio は未着手） | p234 |
+
+| [ws074-p240](phase240/phase.md) | flex item の aspect-ratio、自動最小サイズと flex basis | in-progress / ws074-q20261018-01 partial | p172 engine・p234 ratio の実装 |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 
