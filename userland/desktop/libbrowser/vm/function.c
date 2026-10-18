@@ -66,7 +66,7 @@ static int function_add_generator_prototype(struct vm_realm *realm, struct vm_fu
 static int function_default_prototype(struct vm_realm *realm, vm_value target, struct vm_object *fallback, struct vm_object **prototype);
 static void function_proxy_trace(struct vm_heap *heap, void *context);
 static int function_proxy_invoke(struct vm_realm *realm, vm_value callee, vm_value receiver, const vm_value *args, unsigned count, vm_value new_target, int construct, vm_value *result);
-static int function_run_native(struct vm_function *function, vm_native native, vm_value this_value, const vm_value *args, unsigned count, vm_value new_target, vm_value *result);
+static int function_run_native(struct vm_realm *realm, struct vm_function *function, vm_native native, vm_value this_value, const vm_value *args, unsigned count, vm_value new_target, vm_value *result);
 static void function_transfer_exception(struct vm_realm *caller, struct vm_realm *callee, int status);
 
 /*
@@ -680,6 +680,7 @@ vm_call(
 	vm_value *result)
 {
 	struct vm_function *function;
+	struct vm_realm *native_realm;
 	struct vm_object *object;
 	struct function_roots roots;
 	vm_value inputs[2];
@@ -745,7 +746,12 @@ vm_call(
 		}
 
 		/* Preserves the native caller's callee and construction state. */
+		/* Bound forwarding has no execution context of its own; ordinary natives enter their creation realm. */
+		native_realm = function->realm;
+		if (function->bound_target != VM_VALUE_UNDEFINED)
+			native_realm = realm;
 		status = function_run_native(
+		    native_realm,
 		    function,
 		    function->native,
 		    this_value,
@@ -754,7 +760,7 @@ vm_call(
 		    VM_VALUE_UNDEFINED,
 		    result);
 		if (status != 0) {
-			function_transfer_exception(realm, function->realm, status);
+			function_transfer_exception(realm, native_realm, status);
 			goto cleanup;
 		}
 	}
@@ -785,6 +791,7 @@ vm_construct(
 	vm_value *result)
 {
 	struct vm_function *function;
+	struct vm_realm *native_realm;
 	struct vm_object *object;
 	struct function_roots roots;
 	vm_value inputs[2];
@@ -828,7 +835,12 @@ vm_construct(
 	/* A native constructor creates its object in its own realm. */
 	function = (struct vm_function *)vm_value_as_cell(constructor);
 	if (function->code == NULL) {
+		/* Bound forwarding has no execution context of its own; ordinary natives enter their creation realm. */
+		native_realm = function->realm;
+		if (function->bound_target != VM_VALUE_UNDEFINED)
+			native_realm = realm;
 		status = function_run_native(
+		    native_realm,
 		    function,
 		    function->construct,
 		    VM_VALUE_UNDEFINED,
@@ -837,7 +849,7 @@ vm_construct(
 		    new_target,
 		    result);
 		if (status != 0) {
-			function_transfer_exception(realm, function->realm, status);
+			function_transfer_exception(realm, native_realm, status);
 			goto cleanup;
 		}
 	} else if ((function->code->flags & VM_CODE_DERIVED) != 0U) {
@@ -855,16 +867,14 @@ vm_construct(
 			goto cleanup;
 		}
 	} else {
-		/* Allocates this using new.target's prototype and the callee's fallback. */
+		/* Ordinary construction resolves new.target before entering the callee's execution context. */
 		status = vm_construct_prototype(
-		    function->realm,
+		    realm,
 		    new_target,
-		    function->realm->object_prototype,
+		    realm->object_prototype,
 		    &prototype);
-		if (status != 0) {
-			function_transfer_exception(realm, function->realm, status);
+		if (status != 0)
 			goto cleanup;
-		}
 
 		/* Makes the ordinary constructor's receiver in the shared heap. */
 		made = vm_object_create(function->realm->heap, prototype);
@@ -1287,9 +1297,10 @@ function_default_prototype(
 	return 0;
 }
 
-/* Runs a native with scoped callee/new.target state, including reentrant calls. */
+/* Runs a native in its selected execution realm while retaining scoped callee/new.target state. */
 static int
 function_run_native(
+	struct vm_realm *realm,
 	struct vm_function *function,
 	vm_native native,
 	vm_value this_value,
@@ -1298,13 +1309,11 @@ function_run_native(
 	vm_value new_target,
 	vm_value *result)
 {
-	struct vm_realm *realm;
 	struct function_roots roots;
 	vm_value saved[2];
 	int status;
 
 	/* Retains suspended callee and new.target edges before temporarily replacing them. */
-	realm = function->realm;
 	saved[0] = realm->callee;
 	saved[1] = realm->new_target;
 	status = function_retain(realm, saved, 2, NULL, 0, &roots);

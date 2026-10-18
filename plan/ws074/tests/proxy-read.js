@@ -865,6 +865,10 @@
  check('invoke-bound-foreign-default-realm',function(){var f=makeForeignReadConstructor(),b=Function.prototype.bind.call(f,null),p=makeReadProxy(b,{get:function(t,k){if(k==='prototype')return 1;return t[k];}});return Object.getPrototypeOf(new p())===f.prototype;});
  check('invoke-derived-class-through-proxy',function(){var p=makeReadProxy(class Base{constructor(v){this.v=v;}},{});class Child extends p{constructor(v){super(v);this.child=true;}}var r=new Child(7);return r.v===7&&r.child&&r instanceof Child;});
  check('invoke-revoked-arrow-remains-nonconstructor',function(){var p=makeReadProxy(()=>1,{construct:function(){return {};}});revokeReadProxy(p);return typeof p==='function'&&raises(function(){p();},TypeError)&&raises(function(){new p();},TypeError);});
+ check('invoke-foreign-ordinary-revoked-realm-is-caller',function(){var f=makeForeignReadConstructor(true),p=makeReadProxy(f,{get:function(t,k){if(k==='prototype'){revokeReadProxy(p);return 1;}return t[k];}});try{new p();}catch(x){return x instanceof TypeError&&!(x instanceof f.TypeError);}return false;});
+ check('invoke-foreign-ordinary-primitive-prototype-fallback',function(){var f=makeForeignReadConstructor(true),p=makeReadProxy(f,{get:function(t,k){if(k==='prototype')return 1;return t[k];}});return Object.getPrototypeOf(new p())===f.prototype;});
+ check('invoke-foreign-bound-construct-keeps-caller-realm',function(){var f=makeForeignReadConstructor(true),b=f.bind(null),p=makeReadProxy(b,{get:function(t,k){if(k==='prototype'){revokeReadProxy(p);return 1;}return t[k];}});try{new p();}catch(x){return x instanceof TypeError&&!(x instanceof f.TypeError);}return false;});
+ check('invoke-foreign-bound-call-keeps-caller-realm',function(){var f=makeForeignReadConstructor(true),p=makeReadProxy(f,{apply:false}),b=p.bind(null);try{b();}catch(x){return x instanceof TypeError&&!(x instanceof f.TypeError);}return false;});
  console.log('read-proxy controls: '+(count-failed)+'/'+count);
  return failed===0;
 })()

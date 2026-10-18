@@ -5325,13 +5325,13 @@ proxy_foreign_constructor(
 	struct vm_cell *roots[2];
 	vm_value key;
 	vm_value error;
+	vm_value ordinary;
+	int ordinary_requested;
 	unsigned registered;
 	unsigned index;
 	int status;
 
 	UNUSED_PARAMETER(receiver);
-	UNUSED_PARAMETER(args);
-	UNUSED_PARAMETER(count);
 
 	/* Register empty placeholders before any collectible realm or function allocation. */
 	memset(roots, 0, sizeof(roots));
@@ -5351,15 +5351,29 @@ proxy_foreign_constructor(
 	status = js_install_builtins(foreign);
 	if (status != 0)
 		goto cleanup;
-	function = vm_function_create_native(foreign, "Foreign", 0, proxy_foreign_construct);
-	if (function == NULL) {
-		status = ENOMEM;
-		goto cleanup;
+
+	/* An optional control returns a true foreign bytecode function rather than a native constructor. */
+	ordinary_requested = 0;
+	if (count > 0U)
+		ordinary_requested = vm_to_boolean(args[0]);
+	if (ordinary_requested) {
+		status = proxy_script(foreign, "(function Foreign(){})", &ordinary);
+		if (status != 0)
+			goto cleanup;
+		function = (struct vm_function *)vm_value_as_cell(ordinary);
+	} else {
+		function = vm_function_create_native(foreign, "Foreign", 0, proxy_foreign_construct);
+		if (function == NULL) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* Only the native helper uses the explicit native construction callback. */
+		function->construct = proxy_foreign_construct;
 	}
 
 	/* The function owns its managed realm after the temporary setup root retires. */
 	roots[1] = &function->object.cell;
-	function->construct = proxy_foreign_construct;
 	key = vm_key_from_ascii(realm->heap, "prototype");
 	if (key == VM_VALUE_EMPTY) {
 		status = ENOMEM;
