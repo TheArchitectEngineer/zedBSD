@@ -6,8 +6,8 @@
  */
 
 /*
- * The platform descriptions of the display 12 and 13 code
- * (xd-platform.c).
+ * The platform descriptions of the xd display code (xd-platform.c):
+ * display 11 to 13, and display 9 in a table of its own.
  *
  * A description (struct i915_xd_platform; its tables are in
  * intel/display-tables-xd.h) says, as data, everything about one
@@ -30,12 +30,14 @@
 /*
  * The kinds of PHY behind a port: a combo PHY, a Dekel Type-C PHY (display
  * 12 and 13, reached through a window), an MG Type-C PHY (display 11,
- * reached directly), or none (the port is not driven).
+ * reached directly), the DDI's own buffer with no PHY of its own (display
+ * 9), or none (the port is not driven).
  */
 #define I915_XD_PHY_NONE		0U
 #define I915_XD_PHY_COMBO		1U
 #define I915_XD_PHY_DEKEL		2U
 #define I915_XD_PHY_MG			3U
+#define I915_XD_PHY_DDI			4U
 
 /*
  * Where a port's hotplug pin is in the south display: none, a DDI pin
@@ -74,12 +76,14 @@
 /*
  * How a platform maps a DDI to a combo DPLL: in DPCLKA_CFGCR0 with the
  * two-bit select at twice the PHY (Tiger Lake and display 13), with the
- * Rocket Lake places of PHY D and of the clock-off bits, or in the two
- * words of Alder Lake-S with three PHYs each.
+ * Rocket Lake places of PHY D and of the clock-off bits, in the two
+ * words of Alder Lake-S with three PHYs each, or in DPLL_CTRL2 with a
+ * clock select and an override bit for each DDI (display 9).
  */
 #define I915_XD_PLL_MAP_CFGCR0		0U
 #define I915_XD_PLL_MAP_CFGCR0_RKL	1U
 #define I915_XD_PLL_MAP_CFGCR_ADLS	2U
+#define I915_XD_PLL_MAP_DPLL_CTRL2	3U
 
 /*
  * The kinds of PLL a platform has: a combo DPLL, the Thunderbolt PLL,
@@ -165,6 +169,10 @@
 #define I915_XD_KIND_ADLS		3U
 #define I915_XD_KIND_ADLP		4U
 #define I915_XD_KIND_ICL		5U
+#define I915_XD_KIND_SKL		6U
+#define I915_XD_KIND_KBL		7U
+#define I915_XD_KIND_CFL		8U
+#define I915_XD_KIND_CML		9U
 
 /*
  * The workarounds a platform takes, as bits of its description (the
@@ -515,6 +523,9 @@ uint8_t drv_i915_xd_platform_step(const struct i915_xd_platform *platform, uint8
 int drv_i915_xd_pch_kind(uint16_t pch_device);
 unsigned drv_i915_xd_platform_count(void);
 const struct i915_xd_platform *drv_i915_xd_platform_row(unsigned index);
+int drv_i915_xd_platform_choose_display9(uint16_t device, uint8_t revid, int pch_present, uint16_t pch_device, struct i915_xd_choice *choice);
+unsigned drv_i915_xd_platform_display9_count(void);
+const struct i915_xd_platform *drv_i915_xd_platform_display9_row(unsigned index);
 const struct i915_xd_port_desc *drv_i915_xd_platform_port(const struct i915_xd_platform *platform, unsigned ddi);
 const struct i915_xd_procmon *drv_i915_xd_procmon(uint32_t comp_dw3);
 const struct i915_xd_dpll_dp_row *drv_i915_xd_dpll_dp(unsigned ref_khz, unsigned link_khz);
