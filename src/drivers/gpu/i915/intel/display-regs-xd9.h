@@ -49,6 +49,30 @@
 #define I915_XD9_DPLL_CTRL1_RATE_MASK		0x7U
 #define I915_XD9_DPLL_CTRL1_HDMI		(1U << 5)
 #define I915_XD9_DPLL_CTRL2			0x6c05cU
+#define I915_XD9_DPLL_CTRL2_BITS		3U
+#define I915_XD9_DPLL_CTRL2_OVERRIDE		(1U << 0)
+#define I915_XD9_DPLL_CTRL2_SELECT_SHIFT	1U
+#define I915_XD9_DPLL_CTRL2_SELECT_MASK		0x3U
+#define I915_XD9_DPLL_CTRL2_CLOCK_OFF(ddi)	(1U << ((ddi) + 15U))
+
+/*
+ * The DPLLs' enables (DPLL 0 is LCPLL1, DPLL 1 LCPLL2, DPLLs 2 and 3 the
+ * WRPLLs), their configuration words in HDMI mode, and their locks.
+ *
+ * Values referenced: Intel Kaby Lake PRM Volume 2c, Command Reference:
+ * Registers (LCPLL1_CTL, LCPLL2_CTL, WRPLL_CTL, DPLL_CFGCR1, DPLL_CFGCR2,
+ * DPLL_STATUS).
+ */
+#define I915_XD9_DPLL0_CTL			0x46010U
+#define I915_XD9_DPLL1_CTL			0x46014U
+#define I915_XD9_DPLL2_CTL			0x46040U
+#define I915_XD9_DPLL3_CTL			0x46060U
+#define I915_XD9_DPLL_ENABLE			(1U << 31)
+#define I915_XD9_DPLL1_CFGCR1			0x6c040U
+#define I915_XD9_DPLL2_CFGCR1			0x6c048U
+#define I915_XD9_DPLL3_CFGCR1			0x6c050U
+#define I915_XD9_DPLL_STATUS			0x6c060U
+#define I915_XD9_DPLL_LOCK(dpll)		(1U << ((dpll) * 8U))
 
 /*
  * The link rates of DPLL_CTRL1's rate field, named by the link clock in

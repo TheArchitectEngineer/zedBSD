@@ -27,7 +27,7 @@
 | [p006](phase006/phase.md) | AUX・GMBUS・EDID を xd-aux・xd-gmbus・xd-edid へ（gen9-ddc.c を殻に） | in-progress（q1253、P1） |
 | [p007](phase007/phase.md) | backlight: SPT/KBP の LPT の形と CNP/CMP の形を xd-panel へ（gen9-backlight.c を殻に） | in-progress（q1253、P1） |
 | [p008](phase008/phase.md) | power well（PW2・DDI IO・AUX）を xd-power へ | in-progress（q1253、P1） |
-| p009 | DPLL の enable/disable と DDI clock の選択を xd-clock へ | planned（3 LW） |
+| [p009](phase009/phase.md) | DPLL の enable/disable と DDI clock の選択を xd-clock へ | in-progress（q1253、P1） |
 | p010 | DDI buffer・signal level・iboost・DP_TP と link training を xd-ddi・xd-dp へ（gen9-link.c を殻に） | planned（5 LW） |
 | p011 | transcoder・pipe・plane の点灯と消灯を xd-pipe へ（gen9-modeset.c の残り） | planned（5 LW） |
 | p012 | WM・DDB の書き込みと順序、hotplug の sense を xd-dbuf・xd-hpd へ | planned（4 LW） |

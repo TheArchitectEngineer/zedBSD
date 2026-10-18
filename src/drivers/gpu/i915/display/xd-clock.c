@@ -292,6 +292,14 @@ static const struct i915_xd9_wrpll_divider {
 /* The AFE clock of an HDMI port is five times its pixel clock. */
 #define I915_XD9_AFE_PER_PIXEL		5U
 
+/*
+ * How long a display 9 DPLL may take to lock, in microseconds.
+ *
+ * Values referenced: Intel Kaby Lake PRM Volume 12, Display Engine (the
+ * DPLL enable sequence's lock time, with room).
+ */
+#define I915_XD9_DPLL_LOCK_US		5000U
+
 static uint32_t i915_xd_clock_div_round(uint32_t a, uint32_t b);
 static uint32_t i915_xd_cdclk_divider(uint32_t cdclk_khz, uint32_t vco_khz);
 static uint32_t i915_xd_cdclk_decimal(uint32_t cdclk_khz);
@@ -865,6 +873,103 @@ drv_i915_xd9_dpll_hdmi_words(
 	/* Succeeded: the DPLL makes the pixel clock's TMDS clock. */
 	words->port_khz = pixel_khz;
 	return 0;
+}
+
+/*
+ * Starts a display 9 DPLL with its words: its six bits of DPLL_CTRL1, its
+ * configuration words (zero for DisplayPort), its enable, and the wait for
+ * its lock.  DPLL 0 makes the CD clock and is never started here.
+ * Returns 0, EINVAL for a DPLL the platform does not let the driver
+ * start, or ETIMEDOUT (the DPLL is left enabled for the caller to stop).
+ */
+int
+drv_i915_xd9_dpll_enable(
+	struct i915_xd_io *io,
+	const struct i915_xd_platform *platform,
+	unsigned id,
+	const struct i915_xd9_dpll_words *words)
+{
+	const struct i915_xd_pll_desc *pll;
+	uint32_t shift;
+	int error;
+
+	/* DPLLs 1 to 3 only. */
+	if (id == 0U)
+		return EINVAL;
+	pll = drv_i915_xd_dpll_desc(platform, id);
+	if (pll == NULL)
+		return EINVAL;
+
+	/* The DPLL's field of DPLL_CTRL1: HDMI mode, link rate and override. */
+	shift = id * I915_XD9_DPLL_CTRL1_BITS;
+	(void)drv_i915_xd_io_rmw(io, I915_XD9_DPLL_CTRL1, 0x3fU << shift, words->ctrl1 << shift);
+	drv_i915_xd_io_posting_read(io, I915_XD9_DPLL_CTRL1);
+
+	/* The configuration words, pushed out. */
+	drv_i915_xd_io_write(io, pll->cfgcr0, words->cfgcr1);
+	drv_i915_xd_io_write(io, pll->cfgcr1, words->cfgcr2);
+	drv_i915_xd_io_posting_read(io, pll->cfgcr0);
+	drv_i915_xd_io_posting_read(io, pll->cfgcr1);
+
+	/* The enable, and the lock. */
+	(void)drv_i915_xd_io_rmw(io, pll->enable, 0U, I915_XD9_DPLL_ENABLE);
+	error = drv_i915_xd_io_poll(io, I915_XD9_DPLL_STATUS, I915_XD9_DPLL_LOCK(id), I915_XD9_DPLL_LOCK(id), I915_XD9_DPLL_LOCK_US, NULL);
+	if (error != 0)
+		return ETIMEDOUT;
+
+	/* Succeeded: the DPLL runs. */
+	return 0;
+}
+
+/*
+ * Stops a display 9 DPLL other than DPLL 0.
+ */
+void
+drv_i915_xd9_dpll_disable(
+	struct i915_xd_io *io,
+	const struct i915_xd_platform *platform,
+	unsigned id)
+{
+	const struct i915_xd_pll_desc *pll;
+
+	/* DPLL 0 is never stopped here. */
+	if (id == 0U)
+		return;
+	pll = drv_i915_xd_dpll_desc(platform, id);
+	if (pll == NULL)
+		return;
+
+	/* Succeeded: the enable off, pushed out. */
+	(void)drv_i915_xd_io_rmw(io, pll->enable, I915_XD9_DPLL_ENABLE, 0U);
+	drv_i915_xd_io_posting_read(io, pll->enable);
+}
+
+/*
+ * Clocks a display 9 DDI from a DPLL (on: the DDI's clock on and the DPLL
+ * selected under the override), or turns the DDI's clock off.
+ */
+void
+drv_i915_xd9_ddi_clock(
+	struct i915_xd_io *io,
+	unsigned ddi,
+	unsigned dpll,
+	int on)
+{
+	uint32_t shift;
+	uint32_t clear;
+	uint32_t set;
+
+	/* Off: the DDI's clock off bit. */
+	if (!on) {
+		(void)drv_i915_xd_io_rmw(io, I915_XD9_DPLL_CTRL2, 0U, I915_XD9_DPLL_CTRL2_CLOCK_OFF(ddi));
+		return;
+	}
+
+	/* On: the off bit and the old select cleared, the DPLL selected with the override. */
+	shift = ddi * I915_XD9_DPLL_CTRL2_BITS;
+	clear = I915_XD9_DPLL_CTRL2_CLOCK_OFF(ddi) | (I915_XD9_DPLL_CTRL2_SELECT_MASK << (shift + I915_XD9_DPLL_CTRL2_SELECT_SHIFT));
+	set = (dpll << (shift + I915_XD9_DPLL_CTRL2_SELECT_SHIFT)) | (I915_XD9_DPLL_CTRL2_OVERRIDE << shift);
+	(void)drv_i915_xd_io_rmw(io, I915_XD9_DPLL_CTRL2, clear, set);
 }
 
 /* Divides, rounding to the closest. */

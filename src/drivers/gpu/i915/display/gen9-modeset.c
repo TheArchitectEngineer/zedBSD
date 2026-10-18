@@ -19,6 +19,7 @@
 
 #include "gen9-modeset.h"
 #include "gen9-ddc.h"
+#include "xd-clock.h"
 #include "xd-io.h"
 #include "xd-platform.h"
 #include "xd-power.h"
@@ -28,9 +29,6 @@
 #include "../intel/display-regs-gen9-modeset.h"
 
 #include <uapi/errno.h>
-
-/* How long a DPLL's lock may take, in microseconds. */
-#define I915_SKL_DPLL_LOCK_US		5000U
 
 /* How long a transcoder may take to start or stop, in microseconds. */
 #define I915_SKL_TRANSCONF_WAIT_US	100000U
@@ -50,7 +48,6 @@
 /* The DDI buffer translation entry HDMI uses (entry 9). */
 #define I915_SKL_HDMI_TRANS_ENTRY	9U
 
-static uint32_t i915_skl_dpll_ctl(unsigned id);
 static void i915_skl_ddi_clock(const struct i915_skl_io *io, unsigned port, unsigned dpll, int on);
 static void i915_skl_transcoder_timings(const struct i915_skl_io *io, unsigned transcoder, const struct i915_display_mode *mode);
 static void i915_skl_transcoder_m_n(const struct i915_skl_io *io, unsigned transcoder, const struct i915_skl_link *link);
@@ -102,13 +99,8 @@ drv_i915_skl_ddi_io_power(
 }
 
 /*
- * Starts a DPLL with its words (skl_ddi_pll_enable): its six DPLL_CTRL1
- * bits, its configuration words, its enable, and the wait for its lock.
- * Returns 0, or ETIMEDOUT (the DPLL is left enabled for the caller to
- * stop).
- *
- * Procedure referenced: Linux v6.8.12
- * drivers/gpu/drm/i915/display/intel_dpll_mgr.c (skl_ddi_pll_enable).
+ * Starts a DPLL with its words.  Returns 0, EINVAL for DPLL0 or no DPLL,
+ * or ETIMEDOUT (the DPLL is left enabled for the caller to stop).
  */
 int
 drv_i915_skl_dpll_on(
@@ -116,29 +108,19 @@ drv_i915_skl_dpll_on(
 	unsigned id,
 	const struct i915_skl_dpll_words *words)
 {
-	uint32_t shift;
-	uint32_t cfgcr1;
+	const struct i915_xd_platform *platform;
+	struct i915_xd9_dpll_words xd;
 	int error;
 
-	/* Only DPLL1 to DPLL3: DPLL0 also clocks the CD clock and stays the firmware's. */
-	if (id == 0U || id > 3U)
-		return EINVAL;
+	/* The words in the xd code's form. */
+	xd.ctrl1 = words->ctrl1;
+	xd.cfgcr1 = words->cfgcr1;
+	xd.cfgcr2 = words->cfgcr2;
+	xd.port_khz = words->port_khz;
 
-	/* The DPLL's six bits of DPLL_CTRL1: HDMI mode, SSC, link rate and override. */
-	shift = id * I915_SKL_DPLL_CTRL1_BITS;
-	(void)drv_i915_skl_rmw(io, I915_SKL_DPLL_CTRL1, 0x3fU << shift, words->ctrl1 << shift);
-	(void)drv_i915_skl_read(io, I915_SKL_DPLL_CTRL1);
-
-	/* The configuration words (zero for DP). */
-	cfgcr1 = I915_SKL_DPLL1_CFGCR1 + (id - 1U) * I915_SKL_DPLL_CFGCR_STRIDE;
-	drv_i915_skl_write(io, cfgcr1, words->cfgcr1);
-	drv_i915_skl_write(io, cfgcr1 + 4U, words->cfgcr2);
-	(void)drv_i915_skl_read(io, cfgcr1);
-	(void)drv_i915_skl_read(io, cfgcr1 + 4U);
-
-	/* The enable, and the lock. */
-	(void)drv_i915_skl_rmw(io, i915_skl_dpll_ctl(id), 0U, I915_SKL_DPLL_ENABLE);
-	error = drv_i915_skl_wait(io, I915_SKL_DPLL_STATUS, I915_SKL_DPLL_LOCK(id), I915_SKL_DPLL_LOCK(id), I915_SKL_DPLL_LOCK_US, NULL);
+	/* The xd code's display 9 DPLL. */
+	platform = drv_i915_xd_platform_display9_class(I915_XD_KIND_KBL, I915_XD_POWER_CLASS_H);
+	error = drv_i915_xd9_dpll_enable(drv_i915_skl_xd_io(io), platform, id, &xd);
 	if (error != 0)
 		return error;
 
@@ -147,23 +129,18 @@ drv_i915_skl_dpll_on(
 }
 
 /*
- * Stops a DPLL (skl_ddi_pll_disable).
- *
- * Procedure referenced: Linux v6.8.12
- * drivers/gpu/drm/i915/display/intel_dpll_mgr.c (skl_ddi_pll_disable).
+ * Stops a DPLL other than DPLL0.
  */
 void
 drv_i915_skl_dpll_off(
 	const struct i915_skl_io *io,
 	unsigned id)
 {
-	/* DPLL0 is never stopped here. */
-	if (id == 0U || id > 3U)
-		return;
+	const struct i915_xd_platform *platform;
 
-	/* The enable off. */
-	(void)drv_i915_skl_rmw(io, i915_skl_dpll_ctl(id), I915_SKL_DPLL_ENABLE, 0U);
-	(void)drv_i915_skl_read(io, i915_skl_dpll_ctl(id));
+	/* The xd code's display 9 DPLL. */
+	platform = drv_i915_xd_platform_display9_class(I915_XD_KIND_KBL, I915_XD_POWER_CLASS_H);
+	drv_i915_xd9_dpll_disable(drv_i915_skl_xd_io(io), platform, id);
 }
 
 /*
@@ -499,22 +476,7 @@ drv_i915_skl_ports_connected(
 	return ports;
 }
 
-/* Reports a DPLL's enable register (LCPLL2_CTL, WRPLL_CTL1, WRPLL_CTL2 for DPLL1 to 3). */
-static uint32_t
-i915_skl_dpll_ctl(
-	unsigned id)
-{
-	/* DPLL1 is LCPLL2; DPLL2 and DPLL3 are the WRPLLs. */
-	if (id == 1U)
-		return I915_SKL_DPLL1_CTL;
-	if (id == 2U)
-		return I915_SKL_DPLL2_CTL;
-
-	/* Succeeded: DPLL3. */
-	return I915_SKL_DPLL3_CTL;
-}
-
-/* Gives a port the DPLL's clock (skl_ddi_enable_clock), or takes it away (skl_ddi_disable_clock). */
+/* Clocks a DDI port from a DPLL, or turns its clock off. */
 static void
 i915_skl_ddi_clock(
 	const struct i915_skl_io *io,
@@ -522,19 +484,8 @@ i915_skl_ddi_clock(
 	unsigned dpll,
 	int on)
 {
-	uint32_t shift;
-
-	/* Off: the port's clock off bit. */
-	if (!on) {
-		(void)drv_i915_skl_rmw(io, I915_SKL_DPLL_CTRL2, 0U, I915_SKL_DPLL_CTRL2_CLK_OFF(port));
-		return;
-	}
-
-	/* On: the off bit and the old select cleared, the DPLL selected with the override. */
-	shift = port * I915_SKL_DPLL_CTRL2_BITS;
-	(void)drv_i915_skl_rmw(io, I915_SKL_DPLL_CTRL2,
-	    I915_SKL_DPLL_CTRL2_CLK_OFF(port) | (I915_SKL_DPLL_CTRL2_SELECT_MASK << (shift + I915_SKL_DPLL_CTRL2_SELECT_SHIFT)),
-	    (dpll << (shift + I915_SKL_DPLL_CTRL2_SELECT_SHIFT)) | (1U << shift));
+	/* The xd code's display 9 DDI clock. */
+	drv_i915_xd9_ddi_clock(drv_i915_skl_xd_io(io), port, dpll, on);
 }
 
 /* Writes a transcoder's timings (intel_set_transcoder_timings, progressive). */

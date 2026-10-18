@@ -15,6 +15,7 @@
 #include "xd-platform.h"
 
 #include "../intel/display-tables-xd.h"
+#include "../intel/display-regs-xd9.h"
 #include "../intel/display-tables-xd9.h"
 
 #include <uapi/errno.h>

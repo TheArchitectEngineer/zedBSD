@@ -397,10 +397,26 @@ static const struct i915_xd_well_desc i915_xd9_wells[] = {
 };
 
 /*
+ * The DPLLs of display 9: DPLL 0 (which also makes the CD clock, so the
+ * firmware's stays), DPLL 1, and the WRPLLs DPLL 2 and 3, each selected
+ * for a DDI by its number in DPLL_CTRL2, with its enable and its HDMI
+ * configuration words (CFGCR2 follows CFGCR1).
+ *
+ * Values referenced: Intel Kaby Lake PRM Volume 2c, Command Reference:
+ * Registers (DPLL_CTRL2, LCPLL1_CTL, LCPLL2_CTL, WRPLL_CTL, DPLL_CFGCR1).
+ */
+static const struct i915_xd_pll_desc i915_xd9_plls[] = {
+	{ I915_XD_PLL_COMBO, 0U, 0U, I915_XD9_DPLL0_CTL, 0U, 0U },
+	{ I915_XD_PLL_COMBO, 1U, 0U, I915_XD9_DPLL1_CTL, I915_XD9_DPLL1_CFGCR1, I915_XD9_DPLL1_CFGCR1 + 4U },
+	{ I915_XD_PLL_COMBO, 2U, 0U, I915_XD9_DPLL2_CTL, I915_XD9_DPLL2_CFGCR1, I915_XD9_DPLL2_CFGCR1 + 4U },
+	{ I915_XD_PLL_COMBO, 3U, 0U, I915_XD9_DPLL3_CTL, I915_XD9_DPLL3_CFGCR1, I915_XD9_DPLL3_CFGCR1 + 4U }
+};
+
+/*
  * Builds one display 9 row from the parts that differ between rows: the
  * name, the kind, the south display's kind, the PCI ids, the power class
  * and the DDI buffer tables.  Every other field is the same on every
- * display 9 part: three pipes, the ports and the power wells above, one
+ * display 9 part: three pipes, the ports, the power wells and the DPLLs above, one
  * display buffer slice of 892 blocks, eight watermark levels.
  *
  * Values referenced: Intel Kaby Lake PRM Volume 12, Display Engine (the
@@ -427,8 +443,8 @@ static const struct i915_xd_well_desc i915_xd9_wells[] = {
 		I915_XD_TCCOLD_NONE,					\
 		i915_xd9_wells,						\
 		sizeof(i915_xd9_wells) / sizeof(i915_xd9_wells[0]),	\
-		NULL,							\
-		0U,							\
+		i915_xd9_plls,						\
+		sizeof(i915_xd9_plls) / sizeof(i915_xd9_plls[0]),	\
 		I915_XD_PLL_MAP_DPLL_CTRL2,				\
 		0,							\
 		NULL,							\
