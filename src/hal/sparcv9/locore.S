@@ -1,7 +1,13 @@
 /*
- * SPARC V9 kernel entry skeleton.
+ * zedBSD
  * Copyright (C) 2026 Awe Morris
+ *
  * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The kernel's entry from the loader: the boot stack, the loader's
+ * arguments kept, and sparcv9_cmain() called with the handoff.
  */
 
 	.section ".text.boot", #alloc, #execinstr

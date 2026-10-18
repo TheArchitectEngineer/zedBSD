@@ -1,4 +1,15 @@
-/* Opaque SPARC V9 task context switch. */
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The task context switch: every register window and the window registers
+ * of one task are saved and another's loaded, and the first entries of a
+ * new kernel task, a new user task and a forked user task.
+ */
 	.section ".text", #alloc, #execinstr
 	.register %g2, #ignore
 	.register %g3, #ignore
