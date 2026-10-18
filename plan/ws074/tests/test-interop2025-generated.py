@@ -175,6 +175,47 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(server.rewrite_records, [dict(incoming="/resources/WebIDLParser.js?unchanged=1", destination="/resources/webidl2/lib/webidl2.js?unchanged=1")])
         self.assertEqual(RUNNER.generated_environment(root, server, context, tool), [])
 
+    def test_missing_pinned_idl_wire_query_and_real_404(self):
+        from urllib.error import HTTPError
+        root, row, server, context, tool, worker = fixture("pinned-idl", script=b"test(function(){}, 'wire');")
+        base = "http://127.0.0.1:%d" % server.server_port
+        request = "/interfaces/event-timing.idl?source=pinned"
+        expected = subprocess.check_output(["git", "-C", str(WPT), "show", RUNNER.WPT_COMMIT + ":interfaces/event-timing.idl"])
+        try:
+            with urlopen(base + request) as response:
+                self.assertEqual(response.read(), expected)
+                self.assertEqual(response.headers.get_all("Content-Type"), ["application/octet-stream"])
+                self.assertEqual(int(response.headers["Content-Length"]), len(expected))
+            with self.assertRaises(HTTPError) as caught:
+                urlopen(base + "/interfaces/nonexistent-ws074-control.idl")
+            self.assertEqual(caught.exception.code, 404)
+            caught.exception.close()
+            # A pinned non-IDL resource must remain a diagnosed unsupported input.
+            with self.assertRaises(HTTPError) as caught:
+                urlopen(base + "/resources/idlharness.js")
+            self.assertEqual(caught.exception.code, 404)
+            caught.exception.close()
+        finally:
+            stop(server, worker)
+        self.assertFalse((root / "interfaces/event-timing.idl").exists())
+        limits = RUNNER.generated_environment(root, server, context, tool)
+        self.assertIn(["/resources/idlharness.js", "missing_pinned_resource"], limits)
+        self.assertNotIn(["/interfaces/nonexistent-ws074-control.idl", "missing_pinned_resource"], limits)
+        asset = next(x for x in context["assets"] if x["path"] == "interfaces/event-timing.idl")
+        self.assertEqual(asset["sha256"], hashlib.sha256(expected).hexdigest())
+        self.assertEqual(asset["request"], request)
+        self.assertEqual(len(asset["absent_header_paths"]), 4)
+        result = dict(outcome="pass")
+        RUNNER.generated_result(result, root, server, context, tool)
+        self.assertEqual(result["outcome"], "unsupported_environment")
+
+    def test_pinned_idl_metadata_is_never_silently_ignored(self):
+        contract = dict(CONTRACT, pinned_paths=CONTRACT["pinned_paths"] | {"interfaces/__dir__.sub.headers"})
+        with self.assertRaisesRegex(ValueError, "headers"):
+            RUNNER.generated_git_resource("interfaces/dom.idl", contract)
+        for path in ["interfaces/../resources/testharness.js", "interfaces/other/nested.idl", "resources/idlharness.js"]:
+            self.assertIsNone(RUNNER.generated_git_resource(path, CONTRACT))
+
     def test_missing_meta_and_wrapper_headers_are_refused(self):
         root = RETAINED / "refused"
         root.mkdir()

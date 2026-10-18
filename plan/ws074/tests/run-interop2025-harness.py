@@ -155,7 +155,8 @@ def generated_contract(wpt):
     import ast
     import re
     sources = {}
-    for path in ("tools/serve/serve.py", "tools/manifest/sourcefile.py", "tools/wptserve/wptserve/server.py"):
+    for path in ("tools/serve/serve.py", "tools/manifest/sourcefile.py", "tools/wptserve/wptserve/server.py",
+                 "tools/wptserve/wptserve/handlers.py", "tools/wptserve/wptserve/constants.py"):
         sources[path] = subprocess.check_output(["git", "-C", str(wpt), "show", WPT_COMMIT + ":" + path])
     templates = {}
     rewrites = None
@@ -179,7 +180,15 @@ def generated_contract(wpt):
         raise ValueError("pinned generated-wrapper contract is incomplete")
     if rewrites != [("GET", "/resources/WebIDLParser.js", "/resources/webidl2/lib/webidl2.js")]:
         raise ValueError("pinned resource rewrite needs an explicit review")
-    return dict(templates=templates, pattern=re.compile(pattern), variants=variants, defaults=defaults,
+    content_types = None
+    for node in ast.parse(sources["tools/wptserve/wptserve/constants.py"]).body:
+        if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "content_types" for t in node.targets):
+            content_types = {extension: mime for mime, extensions in ast.literal_eval(node.value.args[0]).items() for extension in extensions}
+    if content_types is None or "idl" in content_types:
+        raise ValueError("pinned IDL MIME needs an explicit review")
+    paths = subprocess.check_output(["git", "-C", str(wpt), "ls-tree", "-r", "--name-only", "-z", WPT_COMMIT])
+    pinned_paths = set(paths.decode("utf-8").rstrip("\0").split("\0"))
+    return dict(repo=str(wpt.resolve()), pinned_paths=pinned_paths, templates=templates, pattern=re.compile(pattern), variants=variants, defaults=defaults,
                 rewrites=rewrites, provenance={path: hashlib.sha256(data).hexdigest() for path, data in sources.items()})
 
 
@@ -244,6 +253,24 @@ def generated_http_tool():
     return module
 
 
+def generated_git_resource(path, contract):
+    """Provide only missing plain IDL blobs whose pinned header metadata is absent."""
+    import re
+    if re.fullmatch(r"interfaces/[A-Za-z0-9_.-]+\.idl", path) is None:
+        return None
+    if path not in contract["pinned_paths"]:
+        return None
+    metadata = [base + suffix for base in ("interfaces/__dir__", path)
+                for suffix in (".headers", ".sub.headers")]
+    if any(item in contract["pinned_paths"] for item in metadata):
+        raise ValueError("pinned IDL headers require their separate handler contract")
+    body = subprocess.check_output(["git", "-C", contract["repo"], "show", WPT_COMMIT + ":" + path])
+    record = dict(path=path, sha256=hashlib.sha256(body).hexdigest(),
+                  provider="pinned-git-blob", commit=WPT_COMMIT,
+                  absent_header_paths=metadata, mime="application/octet-stream")
+    return body, record
+
+
 def generated_server(root, row, contract, raw):
     """Prepare a generated-only provider and retain its exact input artifacts."""
     from urllib.parse import urljoin, urlunsplit
@@ -284,7 +311,22 @@ def generated_server(root, row, contract, raw):
             if urlsplit(self.path).path == "/resources/testharnessreport.js":
                 self.server.probes[self.path] = (report, "text/javascript; charset=utf-8")
             try:
-                tool.resource_path(root, self.path)
+                target = tool.resource_path(root, self.path)
+                relative = str(target.relative_to(root))
+                if not target.is_file() and self.path not in self.server.probes:
+                    try:
+                        supplied = generated_git_resource(relative, contract)
+                    except ValueError as error:
+                        self.server.input_limits.append([self.path, str(error)])
+                        supplied = None
+                    if supplied is not None:
+                        data, record = supplied
+                        record["request"] = self.path
+                        self.server.probes[self.path] = (data, record["mime"])
+                        self.server.pinned_resources.append(record)
+                        (raw / ("git-asset-%03d.idl" % len(self.server.pinned_resources))).write_bytes(data)
+                    elif relative in contract["pinned_paths"]:
+                        self.server.input_limits.append([self.path, "missing_pinned_resource"])
             except tool.Unsupported:
                 self.send_error(403)
                 self.path = incoming
@@ -301,6 +343,7 @@ def generated_server(root, row, contract, raw):
     server = WptServer(("127.0.0.1", 0), functools.partial(GeneratedHandler, directory=str(root)))
     server.probes = {top_request: (body, "text/html")}
     server.requests, server.header_records, server.logical_requests, server.rewrite_records = [], [], [], []
+    server.pinned_resources, server.input_limits = [], []
     context.update(top_request=top_request, raw_directory=str(raw), report_original_sha256=hashlib.sha256(report_original).hexdigest(),
                    report_instrumented_sha256=hashlib.sha256(report).hexdigest(), header_tool_sha256=hashlib.sha256(Path(tool.__file__).read_bytes()).hexdigest())
     return server, context, tool
@@ -309,7 +352,7 @@ def generated_server(root, row, contract, raw):
 def generated_environment(root, server, context, tool):
     """Reject unsupported environment success and audit every served static input."""
     instruments = [context["top_request"]] + [x for x in server.requests if urlsplit(x).path == "/resources/testharnessreport.js"]
-    limits = []
+    limits = list(server.input_limits)
     for instrument in instruments:
         for limit in tool.request_limits(root, server.requests, server.header_records, instrument):
             if limit not in limits:
@@ -320,6 +363,7 @@ def generated_environment(root, server, context, tool):
         if path.is_file():
             original = path.read_bytes()
             assets.append(dict(request=request, path=str(path.relative_to(root)), sha256=hashlib.sha256(original).hexdigest()))
+    assets.extend(server.pinned_resources)
     context.update(requests=server.requests, logical_requests=server.logical_requests, rewrites=server.rewrite_records,
                    response_headers=server.header_records, unsupported=limits, assets=assets)
     raw = Path(context["raw_directory"])
