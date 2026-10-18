@@ -491,7 +491,7 @@ venus_open(
 
 	mutex_unlock(&controller->mutex);
 
-	/* Names which process the context is (the aperture's report counts by context, BUG-144). */
+	/* Names which process the context is (the aperture's report counts by context). */
 	thread = thread_current();
 	pid = -1;
 	if (thread != NULL && thread->proc != NULL)
@@ -1734,7 +1734,7 @@ venus_aperture_reserve(
 
 /*
  * Logs why a CPU-mappable allocation found no room in the host-visible
- * aperture (BUG-144): the request, the aperture's size, the bytes and blobs
+ * aperture: the request, the aperture's size, the bytes and blobs
  * reserved, the largest free hole, and the bytes each context holds, so
  * that a failed vkAllocateMemory can be told apart from other limits.  The
  * caller holds the controller's mutex.

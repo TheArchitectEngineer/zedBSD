@@ -6,7 +6,7 @@
  */
 
 /*
- * The generality test's discard-in-a-loop step (ws031-p024).  Each pixel
+ * The generality test's discard-in-a-loop step.  Each pixel
  * loops x & 15 times and discards in the pass y & 15, so in one SIMD8
  * dispatch some channels leave the loop by discard while the others go
  * on, and a dispatch whose channels all discard ends early.  A pixel that

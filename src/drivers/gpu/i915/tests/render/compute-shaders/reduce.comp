@@ -6,7 +6,7 @@
  */
 
 /*
- * REDUCE (ws101-p006): the sum of each group's 128 words by a tree in
+ * REDUCE: the sum of each group's 128 words by a tree in
  * shared memory, seven halvings with a barrier after each; invocation 0
  * writes the group's sum.
  */

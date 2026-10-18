@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: Zlib
  */
 
-/* REFUSE (ws101-p006): a workgroup barrier in a loop only some invocations enter. */
+/* REFUSE: a workgroup barrier in a loop only some invocations enter. */
 #version 450
 
 layout(local_size_x = 64) in;

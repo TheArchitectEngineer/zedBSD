@@ -29,7 +29,7 @@
  *
  * They are weak because the display test sets link this file for its
  * tally (drv_i915_ktest_check(), drv_i915_ktest_skip()) without the parts
- * (q762: no test kernel holds every scenario); a part the set leaves out is
+ * (no test kernel holds every scenario); a part the set leaves out is
  * a null drv_i915_ktest_run() reports as not linked.  The "execution" set
  * links them all (platform/amd64/vmunix.mk).
  */

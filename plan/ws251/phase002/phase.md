@@ -64,12 +64,24 @@ Parent: [WS251](../ws.md)
 - **残した物（Q1 の判断が要る）**: `bcm2711_stage_mark`・`bcm2711_stage_allowed`・`bcm2711_stage_pause` の段の名前（P0〜P5・N0・R0・V0〜V7）。これは boot の行の `rpi4gpu.stop=<stage>`・`v3d.stop=<stage>`（stage.c）が受ける名前で、log の文字列であると同時に boot parameter の値になっている。名前を変えると parameter の振る舞いが変わり、この Phase の「振る舞いは変えない」の外になる。案: (a) 段の名前は code の interface として残し、comment の中の「stage P0 found it」などだけ意味の言い方に直す、(b) 段の名前を意味の名前（discovery・readout・scanout…）に替え、parameter と照合の試験を一緒に直す（別の Phase）。
 - 確かめた事: x86 の build 3 組は bcm2711 を含まないので、Pi 4 の arm64 の build（`config/ci/config-rpi4.mk`）を前後で作った: `build/ws251p002-arm-base`（tree 31d130233 相当、変更の前を stash で）と `build/ws251p002-arm-g4` とも rc=0 warning 0。gpu の object 88 個に差なし、vmunix も同じ。
 
+### 群 5: i915 の tests（`src/drivers/gpu/i915/tests/`）— 済み（2026-10-18 q1242、P1）
+
+- comment・README・生成の道具の comment と、その出力の header（compute-shaders の regenerate.py と compute-shaders-gen.inc、feature・generality の regenerate.py の comment は出力と同じ文に）。i915/tests は 167 → 0 件、src/drivers/gpu 全体は 23 件。
+- 消した物: Phase・Queue・Bug・T1 の番号、WS031 E-118・E-127・T1 の生成の物の名、日付つきの経緯（q762）、render/README.md の `plan/ws031/phase014/phase.md` の「後回し」の段落。`plan/wsNNN/…/<file>` の path は file の名だけにした（試験の runner の `vkloop-hw.sh`・`run-*-host-test.sh`、gen9 の asm の入力、生成の道具）。それらの file は plan/ にあり、source の tree からは名前でしか指せない。
+- 残した物: 古い試験の名前（execution/README.md の P6B-RC6・P7-IPC などの表、LCD-G）は、移植しなかった試験の名前の一覧として残した。
+- 確かめた事: `sh build/tmp/kbuild.sh ws251p002-g5` 3 組 rc=0 warning 0、`ws251-objcmp.sh ws251p002-base2 ws251p002-g5` の差は群 3 と同じ memory.o・gpu.o（行番号）だけで vmunix は 3 組とも同じ。`run-xd-host-tests.sh build/ws251p002-g5-host` all passed。`git diff --check` 0。
+
+### 群 6: compiler・venus・amdrdna・nvrtx・include/uapi/gpu-op.h — 済み（2026-10-18 q1242、P1）
+
+- comment だけ。完了の条件の grep（`\b[Ww][Ss][0-9]{3}\b|\bq[0-9]{3,4}\b|BUG-[0-9]{3}|\bT[0-9]-[0-9]+|plan/`）は src/drivers/gpu で 0 件、gpu-op.h でも 0 件。
+- 消した物: ws101・ws075・ws031・ws035・ws113・ws141・ws214 の参照、BUG-144、amdrdna の「Procedure referenced: plan/ws039/design.md 11.x」（中身の説明の文は残した）、nvrtx の「design 2.6」「as the design's first step has it」。
+- 残した物: venus の「QEMU」は guest の相手の virtio-gpu の device（QEMU の振る舞い）の事実なので残した。
+- 確かめた事: `sh build/tmp/kbuild.sh ws251p002-g6` 3 組 rc=0 warning 0、objcmp の差は群 3 の memory.o・gpu.o（行番号）だけで vmunix は 3 組とも同じ。arm64 の build はこの群では作っていない（compiler の .inc は comment だけ）: 未確認。
+- 範囲の外で見つけた物（GPU の driver の header ではない）: `include/libc/vulkan/API-PROVENANCE.md`（q309・q310・WS014・ws083 ほか 9 件）、`include/kern/tty.h`（ws035-p097）。扱いは Q1 の判断。
+
 ### 残り・再開の手順
 
-- 残り 190 件（群 4 の後。i915 tests 167、venus 6、compiler 15、amdrdna 2、`include/uapi/gpu-op.h` 3）。
-  i915 の render の image.c「design N3」・video.c「(N4)」、tests/execution/README.md の LCD-G・P7-IPC の類も対象。
-  bcm2711 は `bcm2711_stage_mark` の log が N0・P0・R0 の段の符号を持つ（readout.c ほか）。照合する試験の grep が要る。
-- 手順: 群ごとに `git grep` で文脈を読み、comment を直す → `sh build/tmp/kbuild.sh ws251p002-gN` → `sh build/tmp/ws251-objcmp.sh ws251p002-base ws251p002-gN`
-  （log を変えた file 以外の object が同じ）→ 群の host 試験 → WIP commit。基準の build `build/ws251p002-base2`（0a59b8a8a）を使う（古い `ws251p002-base` は消してよい）。
-- 段の符号の検査（機械の検査の外）: `git grep -nE '\bN[0-9]\b|\bP[0-9]\b|\bR[0-9]\b|\bLCD-[A-Z]|\bF[0-9]+\b|[Ss]tage [0-9]|test build|QEMU|5330'` を群ごとに目視。
-- 掃除（Q1 に依頼）: `build/ws251p002-base`（再開に要るので残すなら後で）・`build/ws251p002-g1`・`build/ws251p002-xd`・`build/ws251p002-h2` と各 .log。
+- 機械の検査は src/drivers/gpu と include/uapi/gpu-op.h で 0 件（2026-10-18、835732198）。
+- 残り: (1) bcm2711 の段の名前（P0〜P5・N0・R0・V0〜V7、boot parameter の値）の扱いはユーザーの判断待ち（群 4）。(2) 完了の条件の「file ごとの目視の記録」: 今回は群ごとの grep（段の符号・design・QEMU・5330・test build）の目視までで、file ごとの記録は無い。(3) WS237 の gen9 の host 試験・WS229 の bootfb の host 試験は未実施（comment だけなので vmunix の比べで代えた）。(4) arm64 の build は群 4 の後で作っていない（群 6 の compiler の .inc）。(5) 範囲の外の include/libc/vulkan/API-PROVENANCE.md・include/kern/tty.h は Q1 の判断。
+- 基準の build: `build/ws251p002-base2`（0a59b8a8a）。手順: 直す → `sh build/tmp/kbuild.sh <名>` → `sh build/tmp/ws251-objcmp.sh ws251p002-base2 <名>`。
+- 掃除（Q1 に依頼）: `build/ws251p002-g5`・`-g5-host`・`-g6` と各 .log。

@@ -6,7 +6,7 @@
  */
 
 /*
- * The generality test's interpolation step (ws075-p004), fragment stage of
+ * The generality test's interpolation step, fragment stage of
  * the NOPERSP draw: the corners' x interpolated without perspective is the
  * pixel centre's own x in normalized device coordinates, (x + 0.5) / 32 - 1,
  * so 512 (x + 1) is 16 x + 8, a whole number.  Every pixel writes it in the

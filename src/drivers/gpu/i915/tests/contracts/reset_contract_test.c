@@ -6,7 +6,7 @@
  */
 
 /*
- * The engine reset and quarantine release contract (ws083-p007), checked on
+ * The engine reset and quarantine release contract, checked on
  * the host.
  *
  * Runs reset.c's reset of one engine against the mock register file with a
@@ -139,7 +139,7 @@ main(void)
 	int status;
 
 	/* Names the program in the report. */
-	contract_begin("engine reset contract tests (mock, GPU-free, ws083-p007)");
+	contract_begin("engine reset contract tests (mock, GPU-free)");
 
 	/* Binds the register access to the mock register file and its model. */
 	drv_i915_trace_init(&trace);

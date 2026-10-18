@@ -6,14 +6,14 @@
  */
 
 /*
- * The host test of the Gen9 external outputs (display/gen9-outputs.c,
- * WS237 stage 3) on the model of the hardware (gen9-fake-hw.c): the
+ * The host test of the Gen9 external outputs (display/gen9-outputs.c)
+ * on the model of the hardware (gen9-fake-hw.c): the
  * memory latencies, the probe of DP and HDMI sinks and their generations,
  * lighting two outputs beside the panel with the DDB moved in ascending
  * order, a flip, darkening one with the DDB moved back in descending
  * order, a sink that goes, and no pipe left.
  *
- *   sh plan/ws237/tests/run-gen9-outputs-host-test.sh
+ *   sh run-gen9-outputs-host-test.sh
  */
 
 #include "host-test.h"

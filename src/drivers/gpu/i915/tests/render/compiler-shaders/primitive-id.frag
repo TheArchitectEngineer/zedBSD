@@ -7,7 +7,7 @@
 
 /*
  * Writes the primitive's number as the colour's red: gl_PrimitiveID, a Flat
- * input at its own location (ws075-p007a).
+ * input at its own location.
  */
 #version 450
 

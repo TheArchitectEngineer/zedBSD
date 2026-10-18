@@ -6,7 +6,7 @@
  */
 
 /*
- * The feature test's texture kinds step (ws075-p005): every texture 4x4
+ * The feature test's texture kinds step: every texture 4x4
  * texels (the 1D one 4x1), sampled nearest and clamped to the edge, so the
  * 16-pixel column `region` of a band of 8 rows reads texel column
  * `region` and every 2 rows of the band the next texel row.  The bands:

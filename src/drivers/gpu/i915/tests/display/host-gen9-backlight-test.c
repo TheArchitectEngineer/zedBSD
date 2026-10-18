@@ -6,11 +6,10 @@
  */
 
 /*
- * The host test of the Gen9 backlight's arithmetic (display/gen9-backlight.c,
- * WS237 stage 2): the decode of the PCH's PWM registers in both layouts,
+ * The host test of the Gen9 backlight's arithmetic (display/gen9-backlight.c): the decode of the PCH's PWM registers in both layouts,
  * and the mapping between a brightness and a duty both ways.
  *
- *   sh plan/ws237/tests/run-gen9-backlight-host-test.sh
+ *   sh run-gen9-backlight-host-test.sh
  *
  * The node operations need the GPU and are not reached; the link drops
  * them.

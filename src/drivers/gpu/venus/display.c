@@ -102,7 +102,7 @@ struct venus_display_engine {
 	volatile unsigned console_stopping;
 
 	/*
-	 * The primary output's last picture, kept after its lease ended (ws035-p126).
+	 * The primary output's last picture, kept after its lease ended.
 	 *
 	 * On a quiet console the primary output's released blob stays scanned out, with
 	 * its share hold in outputs[0].shared_front and no owner, until the next lease's
@@ -153,10 +153,10 @@ static int display_status(struct venus_controller *controller, const void *comma
 
 /*
  * Hardware callbacks share the controller mutex; event snapshots use only the IRQ-safe queue lock.
- * Power and refresh (ws113-p012) are the guest's virtual display's: the refresh boundaries are the
+ * Power and refresh are the guest's virtual display's: the refresh boundaries are the
  * virtual clock's, not the host monitor's.  The virtual display has no
- * cursor plane (ws141-p014), so the cursor operations are absent.  Presents
- * wait under the open's admission (no DRV_GPU_DISPLAY_UNGATED, ws214-p003a).
+ * cursor plane, so the cursor operations are absent.  Presents
+ * wait under the open's admission (no DRV_GPU_DISPLAY_UNGATED).
  */
 const struct drv_gpu_display_ops drv_venus_display_operations = {
 	display_query, display_mode, display_claim,

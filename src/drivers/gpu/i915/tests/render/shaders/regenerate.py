@@ -5,7 +5,7 @@
 # usage: python3 src/drivers/gpu/i915/tests/render/shaders/regenerate.py
 #
 # Writes <name>.spv next to each GLSL source (read by the host fixture
-# plan/ws031/tests/i915-vk-pipe-test.c) and tests/fixtures/executor-shaders-gen.inc
+# i915-vk-pipe-test.c) and tests/fixtures/executor-shaders-gen.inc
 # (included by tests/render/executor.c).
 
 import hashlib

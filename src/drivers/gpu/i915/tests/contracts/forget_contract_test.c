@@ -6,7 +6,7 @@
  */
 
 /*
- * The executor's object lifetime contract, checked on the host (BUG-260).
+ * The executor's object lifetime contract, checked on the host.
  *
  * Runs render/forget.c, render/object.c and render/descriptor.c's pool
  * free with objects that name each other, destroyed against the Vulkan
@@ -73,7 +73,7 @@ main(void)
 	int error;
 
 	/* The checks' executor and session (no GPU node: nothing here reaches it). */
-	contract_begin("i915 render object lifetime contract (BUG-260)");
+	contract_begin("i915 render object lifetime contract");
 	memset(&vk, 0, sizeof(vk));
 	memset(&session, 0, sizeof(session));
 	error = drv_i915_object_table_create(&vk.objects);

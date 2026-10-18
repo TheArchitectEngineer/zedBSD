@@ -6,7 +6,7 @@
  */
 
 /*
- * Emits under selections (ws075-p007a): an odd primitive emits its first
+ * Emits under selections: an odd primitive emits its first
  * vertex, every primitive its second, a primitive whose number is below 4
  * its third, and the strip ends only for the even ones -- each channel
  * counts its own vertices.

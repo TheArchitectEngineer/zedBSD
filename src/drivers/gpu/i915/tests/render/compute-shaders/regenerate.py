@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compile the compute test's shaders (ws101-p005, the scenario "vkcs") and write the SPIR-V the kernel test embeds."""
+"""Compile the compute test's shaders (the scenario "vkcs") and write the SPIR-V the kernel test embeds."""
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 #
 # usage: python3 src/drivers/gpu/i915/tests/render/compute-shaders/regenerate.py
@@ -26,7 +26,7 @@ SHADERS = (
     ('mixed.frag', 'fragment', 'i915_vkcs_mixed_frag', '-O0'),
     ('inc.comp', 'compute', 'i915_vkcs_inc_comp', '-O0'),
     ('spill.comp', 'compute', 'i915_vkcs_spill_comp', '-O'),
-    # ws101-p006: shared memory and barriers, and three modules the compiler must refuse.
+    # Shared memory and barriers, and three modules the compiler must refuse.
     ('shared.comp', 'compute', 'i915_vkcs_shared_comp', '-O0'),
     ('reduce.comp', 'compute', 'i915_vkcs_reduce_comp', '-O0'),
     ('scan.comp', 'compute', 'i915_vkcs_scan_comp', '-O0'),
@@ -35,7 +35,7 @@ SHADERS = (
     ('refuse/big.comp', 'compute', 'i915_vkcs_refuse_big_comp', '-O0'),
     ('refuse/retbar.comp', 'compute', 'i915_vkcs_refuse_retbar_comp', '-O0'),
     ('refuse/loopbar.comp', 'compute', 'i915_vkcs_refuse_loopbar_comp', '-O0'),
-    # ws101-p007: the counts of an indirect dispatch written by the GPU, and the lengths of run-time arrays.
+    # The counts of an indirect dispatch written by the GPU, and the lengths of run-time arrays.
     ('grid.comp', 'compute', 'i915_vkcs_grid_comp', '-O0'),
     ('length.comp', 'compute', 'i915_vkcs_length_comp', '-O0'),
 )
@@ -113,7 +113,7 @@ def main():
     version = run(['glslc', '--version']).splitlines()[0]
     lines = [HEADER]
     lines.append('/*')
-    lines.append(' * GENERATED FILE - the SPIR-V of the compute test (ws101-p005, the scenario "vkcs").')
+    lines.append(' * GENERATED FILE - the SPIR-V of the compute test (the scenario "vkcs").')
     lines.append(' * Do not edit by hand.')
     lines.append(' *')
     lines.append(' * Generator : src/drivers/gpu/i915/tests/render/compute-shaders/regenerate.py')

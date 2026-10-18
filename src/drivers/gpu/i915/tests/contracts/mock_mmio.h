@@ -68,7 +68,7 @@ struct mock_mmio {
 	int read_calls;
 	int write_calls;
 
-	/* The test's model of the hardware's answer to a write, and its context; NULL only stores (ws083-p007). */
+	/* The test's model of the hardware's answer to a write, and its context; NULL only stores. */
 	mock_mmio_write_hook_fn write_hook;
 	void *write_hook_context;
 };

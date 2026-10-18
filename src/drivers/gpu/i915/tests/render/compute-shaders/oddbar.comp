@@ -6,7 +6,7 @@
  */
 
 /*
- * ODD-BARRIER (ws101-p006): a 5 x 3 group (15 invocations in two threads,
+ * ODD-BARRIER: a 5 x 3 group (15 invocations in two threads,
  * the second's last channel off) writes its words to shared memory and,
  * after the barrier, reads the one mirrored in the group.
  */

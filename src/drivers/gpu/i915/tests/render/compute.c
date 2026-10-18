@@ -6,7 +6,7 @@
  */
 
 /*
- * The compute scenario "vkcs" (ws101-p005): compute pipelines made through
+ * The compute scenario "vkcs": compute pipelines made through
  * the wire (vkCreateComputePipelines), their sets updated and bound at the
  * compute bind point and dispatched (vkCmdDispatch), run on the GPU and
  * checked against words computed here in integers.
@@ -36,7 +36,7 @@
  *  - SPILL: a kernel that spills to scratch memory over enough groups to
  *    fill every thread of the GPU;
  *
- * and the steps of shared memory and the workgroup barrier (ws101-p006):
+ * and the steps of shared memory and the workgroup barrier:
  *
  *  - SHARED: a 64 x 64 matrix transposed through 8 x 8 tiles of shared
  *    memory (two dynamic indices), a barrier between the write and the read;
@@ -49,8 +49,7 @@
  *  - REFUSE: shared memory past 16 KiB, a barrier after a return and one in
  *    a loop some invocations skip are refused at vkCreateComputePipelines;
  *
- * and the steps of indirect dispatches, run-time arrays and a large grid
- * (ws101-p007):
+ * and the steps of indirect dispatches, run-time arrays and a large grid:
  *
  *  - INDIRECT: ADD's grid of 16 groups read from a buffer at an offset
  *    (vkCmdDispatchIndirect);
@@ -584,7 +583,7 @@ i915_vkcs_thread(
 	i915_vkcs_step_scan(x);
 	i915_vkcs_step_refuse(x);
 
-	/* The indirect dispatches, the run-time arrays and the large grid (ws101-p007). */
+	/* The indirect dispatches, the run-time arrays and the large grid. */
 	i915_vkcs_step_indirect(x);
 	i915_vkcs_step_ids(x, "INDIRECT-ID", I915_VKCS_KERNEL_IDS, ids_local, 1);
 	i915_vkcs_step_indirect_gpu(x);
@@ -1520,7 +1519,7 @@ i915_vkcs_dispatch(
 	i915_vkcs_put32(x, gz);
 }
 
-/* Appends vkCmdDispatchIndirect of the counts in one buffer at a byte offset: [buffer][offset] (ws101-p007). */
+/* Appends vkCmdDispatchIndirect of the counts in one buffer at a byte offset: [buffer][offset]. */
 static void
 i915_vkcs_dispatch_indirect(
 	struct i915_vkcs *x,
@@ -1905,8 +1904,8 @@ i915_vkcs_step_add(
  * each invocation writes its local ID, local index, group ID, group
  * counts and global ID at 13 * its global linear index, and counts itself.
  * The words past the last record keep their sentinel, so a channel past
- * the group's invocations that ran would show.  INDIRECT-ID (indirect set,
- * ws101-p007) reads the groups from G, and gl_NumWorkGroups with them.
+ * the group's invocations that ran would show.  INDIRECT-ID (indirect set)
+ * reads the groups from G, and gl_NumWorkGroups with them.
  */
 static void
 i915_vkcs_step_ids(
@@ -2421,7 +2420,7 @@ i915_vkcs_spill_word(
 
 /*
  * Records the binds of a step's pipeline and set and a dispatch of `groups`
- * along x, and runs it (ws101-p006).  Returns 0, or the error with the
+ * along x, and runs it.  Returns 0, or the error with the
  * step's verdict already logged; a step without its pipeline fails here.
  */
 static int
@@ -2454,7 +2453,7 @@ i915_vkcs_run(
 
 /*
  * SHARED: shared.comp over 8 x 8 groups of 8 x 8; C must be A transposed,
- * every word (ws101-p006).
+ * every word.
  */
 static void
 i915_vkcs_step_shared(
@@ -2499,7 +2498,7 @@ i915_vkcs_step_shared(
 	i915_vkcs_verdict(x, "SHARED", i915_vkcs_checked(x, "SHARED"));
 }
 
-/* REDUCE: reduce.comp over 64 groups of 128; C's word g must be the sum of group g's words (ws101-p006). */
+/* REDUCE: reduce.comp over 64 groups of 128; C's word g must be the sum of group g's words. */
 static void
 i915_vkcs_step_reduce(
 	struct i915_vkcs *x)
@@ -2535,7 +2534,7 @@ i915_vkcs_step_reduce(
 	i915_vkcs_verdict(x, "REDUCE", i915_vkcs_checked(x, "REDUCE"));
 }
 
-/* ODD-BARRIER: oddbar.comp over 10 groups of 5 x 3; o[g * 15 + l] = 3 v[g * 15 + 14 - l] + l (ws101-p006). */
+/* ODD-BARRIER: oddbar.comp over 10 groups of 5 x 3; o[g * 15 + l] = 3 v[g * 15 + 14 - l] + l. */
 static void
 i915_vkcs_step_oddbar(
 	struct i915_vkcs *x)
@@ -2572,7 +2571,7 @@ i915_vkcs_step_oddbar(
  * ATOMIC-SHARED: atomsh.comp over 16 groups of 64.  Each group's 20 words:
  * its histogram of v % 16, its sum, its maximum, the compare-exchange's
  * winner (some invocation's index plus one, whichever came first), the
- * counter (64); and each group's old counter values once each (ws101-p006).
+ * counter (64); and each group's old counter values once each.
  */
 static void
 i915_vkcs_step_atomsh(
@@ -2635,7 +2634,7 @@ i915_vkcs_step_atomsh(
 	i915_vkcs_verdict(x, "ATOMIC-SHARED", i915_vkcs_checked(x, "ATOMIC-SHARED"));
 }
 
-/* LOOP: scan.comp over 32 groups of 64; each group's inclusive prefix sums (ws101-p006). */
+/* LOOP: scan.comp over 32 groups of 64; each group's inclusive prefix sums. */
 static void
 i915_vkcs_step_scan(
 	struct i915_vkcs *x)
@@ -2675,7 +2674,7 @@ i915_vkcs_step_scan(
  * REFUSE: the three modules the compiler must refuse -- shared memory past
  * 16 KiB, a barrier after a return, a barrier in a loop some invocations
  * skip -- made no pipeline at vkCreateComputePipelines (the setup tried;
- * the executor logged each reason) (ws101-p006).
+ * the executor logged each reason).
  */
 static void
 i915_vkcs_step_refuse(
@@ -2760,7 +2759,7 @@ i915_vkcs_grid(
 }
 
 /*
- * INDIRECT (ws101-p007): ADD over n = 1000 with its 16 x 1 x 1 groups read
+ * INDIRECT: ADD over n = 1000 with its 16 x 1 x 1 groups read
  * from G at byte 16 by vkCmdDispatchIndirect; the words before and after
  * the counts are other grids' (zeros), so a read at the wrong place runs
  * nothing.
@@ -2800,7 +2799,7 @@ i915_vkcs_step_indirect(
 }
 
 /*
- * INDIRECT-GPU (ws101-p007): in one command buffer, GRID writes 16, 1, 1
+ * INDIRECT-GPU: in one command buffer, GRID writes 16, 1, 1
  * into G at word 8 on the GPU, and ADD's indirect dispatch reads its counts
  * there; G starts at zero, so counts read before the GPU wrote them run
  * nothing and the step fails.
@@ -2856,7 +2855,7 @@ i915_vkcs_step_indirect_gpu(
 }
 
 /*
- * INDIRECT-ZERO (ws101-p007): three indirect dispatches of ADD whose grids
+ * INDIRECT-ZERO: three indirect dispatches of ADD whose grids
  * have a zero along x, y and z; C keeps its sentinel, and the command
  * buffer (and the steps after it) run on.
  */
@@ -2899,7 +2898,7 @@ i915_vkcs_step_indirect_zero(
 }
 
 /*
- * LENGTH (ws101-p007): length.comp writes the lengths of W's words over a
+ * LENGTH: length.comp writes the lengths of W's words over a
  * range of 400 bytes (100) and of T's 12-byte structures after its 8-byte
  * head over 457 bytes (37: the last 5 bytes are no structure), and a sum of
  * words read from T (head.x + items[1].b).
@@ -2948,7 +2947,7 @@ i915_vkcs_step_length(
 }
 
 /*
- * MANY (ws101-p007): ADD over n = 4,000,000 in 62,500 groups of 64 (the
+ * MANY: ADD over n = 4,000,000 in 62,500 groups of 64 (the
  * size of Noct's demonstration, design section 4.2), over three buffers
  * of 16 MB in objects of their own; every word is checked, and the time of
  * the submission (the recording, the run on the GPU and the wait) is

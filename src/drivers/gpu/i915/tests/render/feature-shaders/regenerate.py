@@ -248,7 +248,7 @@ def tex3_expected():
     return image
 
 
-# ws075-p004: the texture operand step's texture, 8 x 8 texels on level 0 and 4 x 4 on level 1, every texel its own.
+# The texture operand step's texture, 8 x 8 texels on level 0 and 4 x 4 on level 1, every texel its own.
 MIP_SIDE = 8
 
 
@@ -364,7 +364,7 @@ def main():
     c_words(lines, 'i915_vke1_texture_linear', [linear for _, linear in TEXTURES], per_line=3, fmt='{}U')
     lines.extend(['', '/* Every pixel of the texture step. */'])
     c_words(lines, 'i915_vke1_tex3_expected', tex3_expected(), per_line=8)
-    lines.extend(['', '/* The texture operand step\'s texels: level 0 row after row, then level 1 (ws075-p004). */'])
+    lines.extend(['', '/* The texture operand step\'s texels: level 0 row after row, then level 1. */'])
     c_words(lines, 'i915_vke1_mip_level0', [pixel(mip_texel(0, i, j)) for j in range(MIP_SIDE) for i in range(MIP_SIDE)],
             per_line=8)
     c_words(lines, 'i915_vke1_mip_level1',

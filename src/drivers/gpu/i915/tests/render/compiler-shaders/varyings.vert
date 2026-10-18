@@ -6,7 +6,7 @@
  */
 
 /*
- * The vertex shader before varyings.geom (ws075-p007b): it writes the
+ * The vertex shader before varyings.geom: it writes the
  * locations the geometry shader reads -- a colour at 0, the block's uv at 1
  * and its flat id at 2 -- so a three-stage pipeline links.
  */

@@ -6,7 +6,7 @@
  */
 
 /*
- * The generality test's vertex format step (ws075-p004), vertex stage:
+ * The generality test's vertex format step, vertex stage:
  * attributes of the 8-, 16- and 10-bit formats libGLESv2 hands the
  * executor (normalized, scaled, integer, half float), the same at every
  * corner, turned back into the integers they were made of and passed on

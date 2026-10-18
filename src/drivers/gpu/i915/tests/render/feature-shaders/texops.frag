@@ -6,7 +6,7 @@
  */
 
 /*
- * The feature test's texture operand step (ws075-p004): an 8x8 texture of
+ * The feature test's texture operand step: an 8x8 texture of
  * two levels (4x4 the second), sampled nearest and clamped to the edge over
  * the whole target, so a pixel is an eighth of a level-0 texel and
  * texture() picks level 0.  Bands of 16 rows: texture(); texture() with a

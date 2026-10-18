@@ -6,7 +6,7 @@
  */
 
 /*
- * ATOMIC-SHARED (ws101-p006): shared-memory atomics of a group of 64 -- a
+ * ATOMIC-SHARED: shared-memory atomics of a group of 64 -- a
  * histogram, a sum, a maximum, a compare-exchange whoever wins, and a
  * counter whose old values each invocation keeps -- between barriers;
  * then the group's results go to memory.

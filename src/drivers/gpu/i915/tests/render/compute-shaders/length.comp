@@ -6,7 +6,7 @@
  */
 
 /*
- * LENGTH (ws101-p007): the lengths of two run-time arrays as their bound
+ * LENGTH: the lengths of two run-time arrays as their bound
  * ranges make them: words of W, and 12-byte structures after an 8-byte
  * head in T (a range that ends inside a structure does not count it).
  */

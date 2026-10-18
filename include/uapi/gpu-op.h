@@ -6,7 +6,7 @@
  */
 
 /*
- * The Kei GPU command protocol, version 1 (ws167-p002): the numbers of
+ * The Kei GPU command protocol, version 1: the numbers of
  * the Vulkan commands in the stream libvulkan submits to a GPU node
  * (GPU_COMMAND, GPU_COMMAND_SUBMIT in uapi/gpu.h), which the i915 Vulkan
  * executor and the bcm2711 (V3D) Vulkan executor read and a virtual
@@ -127,7 +127,7 @@
 
 /*
  * The protocol's version, and the first number of zedBSD's own commands.
- * Version 2 adds the video commands (ws083); version 1's numbers are
+ * Version 2 adds the video commands; version 1's numbers are
  * unchanged, and only a backend whose capset declares video is sent the
  * new ones.  The version records the protocol's revision; no code
  * compares it.  i915/dispatch.c routes GPU_OP_OWN_FIRST upward to the
@@ -1846,7 +1846,7 @@ enum gpu_op {
 	GPU_OP_EXECUTE_STREAMS = 180,
 
 	/*
-	 * zedBSD's own commands (ws083): Vulkan Video, H.264 decode.  Only a
+	 * zedBSD's own commands: Vulkan Video, H.264 decode.  Only a
 	 * backend whose capset declares video takes them (the native i915);
 	 * they are never sent to a Venus host.  The promise is bit 0 of the
 	 * word at byte 172 of the 176-byte native capset (magic 0x5a4e4154 at

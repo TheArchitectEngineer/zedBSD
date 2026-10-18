@@ -6,7 +6,7 @@
  */
 
 /*
- * The generality test's interpolation step (ws075-p004), vertex stage: the
+ * The generality test's interpolation step, vertex stage: the
  * quad's corners at (x, y) with a w of their own (position.w), sent as
  * (x w, y w, 0, w) so they land where (x, y) says; the corner's x passed on
  * interpolated without perspective, x + 3 with it, and the corner's number,

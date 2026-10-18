@@ -7,13 +7,13 @@
 
 /*
  * The host test of the Gen9 mode set's register sequences
- * (display/gen9-ddc.c, gen9-link.c, gen9-modeset.c, WS237 stage 3) on a
+ * (display/gen9-ddc.c, gen9-link.c, gen9-modeset.c) on a
  * model of the hardware (gen9-fake-hw.c): the AUX channel with a DP sink (DPCD, deferrals,
  * I2C-over-AUX EDID, link training), the GMBUS with an HDMI sink, the
  * power wells, the DPLLs, the transcoders, the DDI buffers and the frame
  * counters.
  *
- *   sh plan/ws237/tests/run-gen9-modeset-host-test.sh
+ *   sh run-gen9-modeset-host-test.sh
  *
  * The model answers as the PRM describes the registers; it checks what
  * the code writes and in which order, not the hardware's timing.

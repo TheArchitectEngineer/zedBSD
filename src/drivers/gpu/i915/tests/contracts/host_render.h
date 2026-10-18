@@ -7,8 +7,8 @@
 
 /*
  * The host's stand-ins for the kernel's heap, mutexes, log and direct map
- * that the render executor's contract tests (memory, forget; BUG-244,
- * BUG-260) link instead of host_unreached.c: the host's heap, mutexes that
+ * that the render executor's contract tests (memory, forget)
+ * link instead of host_unreached.c: the host's heap, mutexes that
  * only count how deeply they are held (one thread), a log that counts and
  * shows its lines, and the state.c format table no check uses.
  */

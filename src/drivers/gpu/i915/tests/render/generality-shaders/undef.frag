@@ -6,7 +6,7 @@
  */
 
 /*
- * The generality test's undefined-result step (ws031-p024).  Even rows
+ * The generality test's undefined-result step.  Even rows
  * write a defined word, the guard; odd rows run, by (y >> 1) & 7, an
  * operation whose result SPIR-V leaves undefined: signed and unsigned
  * division and remainder by a zero made at run time, INT_MIN / -1 and

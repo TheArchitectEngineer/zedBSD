@@ -743,8 +743,7 @@ amdrdna_space_fault(
  * its time is up (the queue is reset).  An error of the kernel's context
  * or of no known space is left to the log.
  *
- * Procedure referenced: plan/ws039/design.md 11.2 (the CP's exceptions
- * lose the session at once, the queue's reset follows).
+ * The CP's exceptions lose the session at once; the queue's reset follows.
  */
 void
 amdrdna_space_command_error(

@@ -12,7 +12,7 @@
  * renderer calls after each of its first draws.  It logs how many pixels
  * differ from the corner pixel, dumps the first draw's target as hex RGB
  * rows the host rebuilds into an image for the independent oracle
- * (plan/ws014/tests/vkdemo_oracle.py, read by vkdump_verify.py), and draws
+ * (vkdemo_oracle.py, read by vkdump_verify.py), and draws
  * the first target as a small brightness map.
  */
 

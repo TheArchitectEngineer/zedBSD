@@ -9,8 +9,7 @@
  * The display of the nvrtx GPU device (the gpu-device stage).
  *
  * One display: the head the firmware lit and the driver took over (takeover),
- * in the mode takeover set on it (the only mode, as the design's first step has
- * it); the console, when smaller, is enlarged to it by the head.  One lease at
+ * in the mode takeover set on it (the only mode); the console, when smaller, is enlarged to it by the head.  One lease at
  * a time, FIFO presentation of storage frames (copied by the CPU into one of
  * the node's two surfaces, then flipped to) and of blobs (flipped to as they
  * are).  A presentation returns once the window's flip has begun, so a wait

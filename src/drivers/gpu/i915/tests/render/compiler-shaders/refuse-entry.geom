@@ -6,7 +6,7 @@
  */
 
 /*
- * Refused by the code generator (ws075-p007a): 256 vertices of fifteen
+ * Refused by the code generator: 256 vertices of fifteen
  * varyings need an output URB entry of 72 KiB, past the 32 KiB the URB
  * takes.
  */

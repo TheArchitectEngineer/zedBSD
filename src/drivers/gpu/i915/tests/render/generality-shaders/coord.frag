@@ -6,7 +6,7 @@
  */
 
 /*
- * The generality test's pixel position step (ws075-p004): gl_FragCoord.
+ * The generality test's pixel position step: gl_FragCoord.
  * Every pixel writes its x and y as bytes, then one bit each for x and y
  * being the pixel's centre (a fraction of one half), z being the quad's
  * depth 0, w being 1 / w of the quad's vertices (1), and the position

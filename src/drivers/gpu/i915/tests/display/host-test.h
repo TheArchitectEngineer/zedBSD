@@ -10,7 +10,7 @@
  * checks, the reference files taken on the target laptop, and the log
  * switch the host stand-ins of the kernel services (host-kernel.c) read.
  *
- * Host only: these files are built by the plan/ws031/tests/run-*-host-test.sh
+ * Host only: these files are built by run-*-host-test.sh
  * scripts with the host compiler and never by the kernel build.
  */
 

@@ -1193,7 +1193,7 @@ static const uint32_t i915_vke1_tex3_expected[4096] = {
 	0xff000000U, 0xff000000U, 0xff000000U, 0xff000000U, 0xff000000U, 0xff000000U, 0xff000000U, 0xff000000U,
 };
 
-/* The texture operand step's texels: level 0 row after row, then level 1 (ws075-p004). */
+/* The texture operand step's texels: level 0 row after row, then level 1. */
 static const uint32_t i915_vke1_mip_level0[64] = {
 	0xff400808U, 0xff400828U, 0xff400848U, 0xff400868U, 0xff400888U, 0xff4008a8U, 0xff4008c8U, 0xff4008e8U,
 	0xff402808U, 0xff402828U, 0xff402848U, 0xff402868U, 0xff402888U, 0xff4028a8U, 0xff4028c8U, 0xff4028e8U,

@@ -6,7 +6,7 @@
  */
 
 /*
- * Writes two colours for a dual-source blend (ws031-p032): the input as the
+ * Writes two colours for a dual-source blend: the input as the
  * first (Location 0 Index 0) and its reverse with one minus its first
  * component as the second (Location 0 Index 1).
  */

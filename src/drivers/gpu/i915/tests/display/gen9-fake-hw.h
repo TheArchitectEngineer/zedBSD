@@ -7,14 +7,14 @@
 
 /*
  * The model of the display 9 hardware the Gen9 host tests drive
- * (gen9-fake-hw.c, WS237): a register file that answers the status
+ * (gen9-fake-hw.c): a register file that answers the status
  * registers as the PRM describes them, the AUX channel with a DP sink
  * (DPCD, deferrals, I2C-over-AUX EDID, link training), the GMBUS with an
  * HDMI sink, the power wells, the DPLLs, the transcoders, the DDI
  * buffers, the frame counters and the planes' live surfaces.
  *
  * The model checks what the code writes and in which order, not the
- * hardware's timing.  Host only: built by the plan/ws237/tests/run-*.sh
+ * hardware's timing.  Host only: built by run-*.sh
  * scripts.
  */
 
