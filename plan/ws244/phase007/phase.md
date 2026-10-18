@@ -2,7 +2,7 @@
 
 # ws244-p007 compiler・render の Mesa・Linux の言及
 
-Status: in-progress（2026-10-19 q1260-i02 P1、範囲は済み。cleared は Q1）
+Status: cleared（2026-10-19 Q1 判定: intel/ の header 6 file と compiler・render の Mesa の言及を直した。code の行は全 file で前と差 0（Q1 も差分が comment だけと確かめた）、既定の vmunix の hash 同じ、build 3 組 warning 0（P1）。a501d77a5・05d88e8e0・e0b196607、merge c790ae9d7）（旧: in-progress（2026-10-19 q1260-i02 P1、範囲は済み。cleared は Q1））
 
 - 親: [WS244](../ws.md)。判断 1（2026-10-18 ユーザー）: PRM に載る command・opcode・field の名前（3DSTATE_VS、MI_*、EU の opcode）は使ってよい。Mesa・Linux にだけある独自の名前は zedBSD の名前に変える。動作は変えない。
 
