@@ -185,6 +185,10 @@ i915_xd9_test_shape(void)
 			bad++;
 		if (platform->tc_flow != I915_XD_TC_FLOW_NONE || platform->pll_map != I915_XD_PLL_MAP_DPLL_CTRL2)
 			bad++;
+		if (platform->nwells != 7U || platform->nplls != 4U)
+			bad++;
+		if (platform->ddi_buffers == NULL)
+			bad++;
 
 		/* DDIs A to D on their own buffers with their AUX channel; DDI E not driven. */
 		for (ddi = 0U; ddi < 5U; ddi++) {

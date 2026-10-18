@@ -14,6 +14,7 @@
 #include "xd-power.h"
 
 #include "../intel/display-regs-xd.h"
+#include "../intel/display-regs-xd9.h"
 #include "../intel/display-regs-xd-south.h"
 
 #include <uapi/errno.h>
@@ -1199,6 +1200,99 @@ drv_i915_xd_power_dc9_leave(
 	(void)i915_xd_power_dc_store(power, io, I915_XD_DC_STATE_OFF, report);
 
 	/* Succeeded: the display left DC9. */
+	return 0;
+}
+
+/*
+ * Turns display 9's power well 2 on: the DMC is first kept out of DC5 and
+ * DC6 (it may not take the display down while the well is in use), then
+ * a well not yet up is requested and waited for, with power gate 2's
+ * fuses.  Returns 0, EINVAL for a platform without the well, or the
+ * error of the wait.
+ */
+int
+drv_i915_xd9_power_pw2_on(
+	struct i915_xd_io *io,
+	const struct i915_xd_platform *platform)
+{
+	struct i915_xd_well_report report;
+	uint32_t dc_state;
+	uint32_t power;
+	int well;
+	int error;
+
+	/* No DC5 or DC6 while the well is used. */
+	dc_state = drv_i915_xd_io_read(io, I915_XD_DC_STATE_EN);
+	if ((dc_state & (I915_XD_DC_STATE_DC5 | I915_XD_DC_STATE_DC6)) != 0U) {
+		drv_i915_xd_io_write(io, I915_XD_DC_STATE_EN, dc_state & ~(I915_XD_DC_STATE_DC5 | I915_XD_DC_STATE_DC6));
+		drv_i915_xd_io_posting_read(io, I915_XD_DC_STATE_EN);
+	}
+
+	/* The well of the platform. */
+	well = drv_i915_xd_power_find(platform, I915_XD_WELL_CONTROL_MAIN, I915_XD9_WELL_PW_2);
+	if (well < 0)
+		return EINVAL;
+
+	/* A well already up needs nothing. */
+	power = drv_i915_xd_io_read(io, I915_XD_PWR_WELL_CTL);
+	if ((power & I915_XD_PWR_WELL_STATE(I915_XD9_WELL_PW_2)) != 0U)
+		return 0;
+
+	/* The request, its state and the fuses. */
+	error = drv_i915_xd_power_well_enable(io, platform, (unsigned)well, NULL, &report);
+	if (error != 0)
+		return error;
+
+	/* A state or fuses that never came. */
+	if (report.state_late != 0 || report.fuses_late != 0U)
+		return ETIMEDOUT;
+
+	/* Succeeded: pipes B and C and the AUX channels B to D have power. */
+	return 0;
+}
+
+/*
+ * Turns a display 9 DDI's IO well on (the request and its state) or off
+ * (the driver's request withdrawn; the state may stay for another
+ * requester).  Returns 0, EINVAL for a DDI without a well, or ETIMEDOUT.
+ */
+int
+drv_i915_xd9_power_ddi_io(
+	struct i915_xd_io *io,
+	const struct i915_xd_platform *platform,
+	unsigned ddi,
+	int on)
+{
+	struct i915_xd_well_report report;
+	int well;
+	int error;
+
+	/* The DDI's IO well: DDI A's for A and E, the DDI's own for B to D. */
+	well = -1;
+	if (ddi == 0U || ddi == 4U) {
+		well = drv_i915_xd_power_find(platform, I915_XD_WELL_CONTROL_MAIN, I915_XD9_WELL_DDI_IO(0U));
+	} else if (ddi <= 3U) {
+		well = drv_i915_xd_power_find(platform, I915_XD_WELL_CONTROL_MAIN, I915_XD9_WELL_DDI_IO(ddi));
+	}
+	if (well < 0)
+		return EINVAL;
+
+	/* Off: the request withdrawn. */
+	if (!on) {
+		error = drv_i915_xd_power_well_disable(io, platform, (unsigned)well, NULL, &report);
+		if (error != 0)
+			return error;
+		return 0;
+	}
+
+	/* On: the request and its state. */
+	error = drv_i915_xd_power_well_enable(io, platform, (unsigned)well, NULL, &report);
+	if (error != 0)
+		return error;
+	if (report.state_late != 0)
+		return ETIMEDOUT;
+
+	/* Succeeded: the DDI's lanes have power. */
 	return 0;
 }
 
