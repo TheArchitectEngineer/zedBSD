@@ -213,6 +213,7 @@ static int proxy_make(struct vm_realm *realm, vm_value receiver, const vm_value 
 static int proxy_revoke(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int proxy_get_receiver(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int proxy_collect(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int proxy_parse_pressure(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int proxy_script(struct vm_realm *realm, const char *source, vm_value *answer);
 static int proxy_lifetime(struct page *page);
 static int proxy_gc_edges(struct page *page);
@@ -261,6 +262,11 @@ main(
 	if (status != 0)
 		goto cleanup;
 	status = js_builtin_method(page->realm, page->realm->global, "collectReadProxy", 0, proxy_collect);
+	if (status != 0)
+		goto cleanup;
+
+	/* The parser probe reaches the unchanged production allocation threshold without editing heap policy. */
+	status = js_builtin_method(page->realm, page->realm->global, "pressureReadProxy", 0, proxy_parse_pressure);
 	if (status != 0)
 		goto cleanup;
 
@@ -342,6 +348,20 @@ main(
 		status = 1;
 		goto cleanup;
 	}
+
+	/* Fresh coercion text must survive a later parser allocation after the toString call frame has retired. */
+	status = proxy_script(page->realm,
+			      "(function(){var before,r=JSON.parse({toString:function(){var text=['{','\"a\":[1,{\"b\":2}]}'].join('');before=pressureReadProxy();return text;}});return r.a[1].b===2&&pressureReadProxy(true)>before;})()",
+			      &answer);
+	if (status != 0)
+		goto cleanup;
+	if (answer != VM_VALUE_TRUE) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* Publish only the actual threshold-counter and parsed-value gate after both have passed. */
+	puts("native JSON parser threshold collection: passed");
 
 	/* Fixed-buffer TypedArray Set now accepts its actual numeric element operation. */
 	status = proxy_script(page->realm, "new Uint8Array(1)", &answer);
@@ -532,6 +552,40 @@ proxy_collect(
 	*result = VM_VALUE_UNDEFINED;
 
 	/* Succeeded: real user code resumes after the actual collection. */
+	return 0;
+}
+
+/* Accumulate inert cells for the next real parser allocation, or report the actual collection counter. */
+static int
+proxy_parse_pressure(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct vm_heap_stats stats;
+	struct vm_cell *pressure;
+
+	UNUSED_PARAMETER(receiver);
+	UNUSED_PARAMETER(args);
+
+	/* Queries allocate nothing and report actual collections rather than a simulated callback count. */
+	if (count > 0U) {
+		vm_heap_stats(realm->heap, &stats);
+		*result = vm_value_number((double)stats.collections);
+		return 0;
+	}
+
+	/* Drop old pressure before filling the unchanged minimum threshold with one inert, unrooted cell. */
+	vm_heap_collect(realm->heap);
+	pressure = vm_heap_alloc(realm->heap, &proxy_pressure_type, 8U * 1024U * 1024U);
+	if (pressure == NULL)
+		return ENOMEM;
+
+	/* The next production allocation performs collection after this native call returns. */
+	vm_heap_stats(realm->heap, &stats);
+	*result = vm_value_number((double)stats.collections);
 	return 0;
 }
 

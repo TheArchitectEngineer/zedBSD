@@ -34,6 +34,30 @@ struct json_parser {
 	const struct vm_string *text;
 	uint32_t position;
 	unsigned depth;
+	vm_value root_value;
+	vm_value holder;
+	vm_value root_key;
+	vm_value reviver;
+};
+
+/* One recursive parser container retains names and children before they are installed in its object. */
+struct json_parse_roots {
+ struct json_parser *parser;
+ vm_value container;
+ vm_value name;
+ vm_value key;
+ vm_value member;
+};
+
+/* One reviver operation retains its saved value independently of callback mutations to the holder. */
+struct json_reviver_roots {
+ struct vm_realm *realm;
+ vm_value reviver;
+ vm_value holder;
+ vm_value key;
+ vm_value value;
+ vm_value name;
+ vm_value key_value;
 };
 
 /*
@@ -94,6 +118,16 @@ static void json_trace_writer(struct vm_heap *heap, void *context);
 static void json_trace_property(struct vm_heap *heap, void *context);
 static int json_property_inner(struct json_property_roots *roots, int *written);
 static int json_property_list_inner(struct json_property_roots *roots);
+
+static void json_trace_parser(struct vm_heap *heap, void *context);
+static void json_trace_parse_frame(struct vm_heap *heap, void *context);
+static void json_trace_reviver(struct vm_heap *heap, void *context);
+static int json_parse_inner(struct json_parser *parser, const vm_value *args, unsigned count, vm_value *result);
+static int json_parse_container(struct json_parser *parser, vm_value *value, int is_array);
+static int json_object_inner(struct json_parse_roots *roots, vm_value *value);
+static int json_array_inner(struct json_parse_roots *roots, vm_value *value);
+static int json_internalize_inner(struct json_reviver_roots *roots, vm_value *result, unsigned depth);
+static int json_enumerable_keys(struct vm_realm *realm, vm_value object, struct wb_vector *keys);
 
 /*
  * Installs JSON.
@@ -184,7 +218,63 @@ json_trace_property(
 	vm_heap_mark_value(heap, roots->method_key);
 }
 
-/* JSON.parse(text, reviver). */
+/* Retain the coerced parse text and top-level outputs through allocation and reviver callbacks. */
+static void
+json_trace_parser(
+	struct vm_heap *heap,
+	void *context)
+{
+	struct json_parser *parser;
+
+	/* Managed realm ownership starts before coercion; text becomes live only after conversion returns. */
+	parser = context;
+	if (parser->realm->managed)
+		vm_heap_mark(heap, &parser->realm->cell);
+	if (parser->text != NULL)
+		vm_heap_mark(heap, (struct vm_cell *)parser->text);
+	vm_heap_mark_value(heap, parser->root_value);
+	vm_heap_mark_value(heap, parser->holder);
+	vm_heap_mark_value(heap, parser->root_key);
+	vm_heap_mark_value(heap, parser->reviver);
+}
+
+/* Retain unpublished parser containers, property names and completed children while later allocations collect. */
+static void
+json_trace_parse_frame(
+	struct vm_heap *heap,
+	void *context)
+{
+	struct json_parse_roots *roots;
+
+	/* The surrounding parser frame retains the text and managed realm. */
+	roots = context;
+	vm_heap_mark_value(heap, roots->container);
+	vm_heap_mark_value(heap, roots->name);
+	vm_heap_mark_value(heap, roots->key);
+	vm_heap_mark_value(heap, roots->member);
+}
+
+/* Retain the original saved value and fresh callback outputs during recursive reviver operations. */
+static void
+json_trace_reviver(
+	struct vm_heap *heap,
+	void *context)
+{
+	struct json_reviver_roots *roots;
+
+	/* Native key-vector callbacks and direct recursion need independent ownership of every saved value. */
+	roots = context;
+	if (roots->realm->managed)
+		vm_heap_mark(heap, &roots->realm->cell);
+	vm_heap_mark_value(heap, roots->reviver);
+	vm_heap_mark_value(heap, roots->holder);
+	vm_heap_mark_value(heap, roots->key);
+	vm_heap_mark_value(heap, roots->value);
+	vm_heap_mark_value(heap, roots->name);
+	vm_heap_mark_value(heap, roots->key_value);
+}
+
+/* Retain the input conversion, parsed root and temporary reviver holder through every parser exit. */
 static int
 json_parse(
 	struct vm_realm *realm,
@@ -194,15 +284,48 @@ json_parse(
 	vm_value *result)
 {
 	struct json_parser parser;
+	int status;
+
+	UNUSED_PARAMETER(this_value);
+
+	/* Only initialized native slots are visible to the collector during coercion and recursion. */
+	memset(&parser, 0, sizeof(parser));
+	parser.realm = realm;
+	parser.root_value = VM_VALUE_UNDEFINED;
+	parser.holder = VM_VALUE_UNDEFINED;
+	parser.root_key = VM_VALUE_UNDEFINED;
+	parser.reviver = js_argument(args, count, 1);
+	status = vm_heap_add_tracer(realm->heap, json_trace_parser, &parser);
+	if (status != 0)
+		return status;
+
+	/* Syntax errors and callback exceptions retire exactly the same top-level ownership. */
+	status = json_parse_inner(&parser, args, count, result);
+	vm_heap_remove_tracer(realm->heap, json_trace_parser, &parser);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the caller owns the final parsed or revived value. */
+	return 0;
+}
+
+/* JSON.parse(text, reviver). */
+static int
+json_parse_inner(
+	struct json_parser *parser,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct vm_realm *realm;
 	struct vm_string *text;
 	struct vm_object *root;
-	vm_value reviver;
-	vm_value key;
 	vm_value argument;
 	int callable;
 	int status;
 
-	UNUSED_PARAMETER(this_value);
+	/* The top-level traced frame is already registered before input coercion. */
+	realm = parser->realm;
 
 	/* The text, then one value and nothing after it but blanks. */
 	argument = js_argument(args, count, 0);
@@ -210,19 +333,17 @@ json_parse(
 	if (status != 0)
 		return status;
 
-	/* Initializes the parser after text coercion succeeds. */
-	memset(&parser, 0, sizeof(parser));
-	parser.realm = realm;
-	parser.text = text;
-	json_skip_space(&parser);
-	status = json_value(&parser, result);
+	/* Retain the coerced text before the first container or string allocation. */
+	parser->text = text;
+	json_skip_space(parser);
+	status = json_value(parser, &parser->root_value);
 	if (status != 0)
 		return status;
 
 	/* Checks for text following the complete parsed value. */
-	json_skip_space(&parser);
-	if (parser.position < text->length) {
-		status = json_fail(&parser, "Unexpected text after JSON");
+	json_skip_space(parser);
+	if (parser->position < text->length) {
+		status = json_fail(parser, "Unexpected text after JSON");
 		if (status != 0)
 			return status;
 
@@ -230,32 +351,37 @@ json_parse(
 		return 0;
 	}
 
+	/* Publish the parsed root before checking the optional callback. */
+	*result = parser->root_value;
+
 	/* A reviver walks the result from a holder { "": result }. */
-	reviver = js_argument(args, count, 1);
-	callable = vm_value_is_callable(reviver);
+	callable = vm_value_is_callable(parser->reviver);
 	if (!callable)
 		return 0;
 	root = vm_object_create(realm->heap, realm->object_prototype);
 	if (root == NULL)
 		return ENOMEM;
 
+	/* Retain the unpublished holder before allocating its root property key. */
+	parser->holder = vm_value_cell(root);
+
 	/* Allocates the empty root key before interning it. */
-	status = js_builtin_string(realm, "", &key);
+	status = js_builtin_string(realm, "", &parser->root_key);
 	if (status != 0)
 		return status;
 
 	/* Interns the root holder key before defining the parsed result. */
-	status = vm_key_from_string(realm->heap, (struct vm_string *)vm_value_as_cell(key), &key);
+	status = vm_key_from_string(realm->heap, (struct vm_string *)vm_value_as_cell(parser->root_key), &parser->root_key);
 	if (status != 0)
 		return status;
 
 	/* The temporary holder supplies the reviver's root receiver. */
-	status = vm_object_define(realm->heap, root, key, *result, VM_PROPERTY_DEFAULT);
+	status = vm_object_define(realm->heap, root, parser->root_key, *result, VM_PROPERTY_DEFAULT);
 	if (status != 0)
 		return status;
 
 	/* Revives the already parsed root through the actual callback. */
-	status = json_internalize(realm, reviver, vm_value_cell(root), key, result, 0);
+	status = json_internalize(realm, parser->reviver, parser->holder, parser->root_key, result, 0);
 	if (status != 0)
 		return status;
 
@@ -514,18 +640,72 @@ json_value(
 	return 0;
 }
 
+/* Own recursive parser temporaries before allocating an unpublished object or array. */
+static int
+json_parse_container(
+	struct json_parser *parser,
+	vm_value *value,
+	int is_array)
+{
+	struct json_parse_roots roots;
+	int status;
+
+	/* Register initialized slots even when the first container allocation fails. */
+	roots.parser = parser;
+	roots.container = VM_VALUE_UNDEFINED;
+	roots.name = VM_VALUE_UNDEFINED;
+	roots.key = VM_VALUE_UNDEFINED;
+	roots.member = VM_VALUE_UNDEFINED;
+	status = vm_heap_add_tracer(parser->realm->heap, json_trace_parse_frame, &roots);
+	if (status != 0)
+		return status;
+
+	/* Every syntax failure and depth-limit exit passes through the same wrapper. */
+	if (is_array) {
+		status = json_array_inner(&roots, value);
+	} else {
+		status = json_object_inner(&roots, value);
+	}
+
+	/* The enclosing frame now owns successful output; abrupt output has no remaining native owner. */
+	vm_heap_remove_tracer(parser->realm->heap, json_trace_parse_frame, &roots);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the completed container has transferred to its caller's traced slot. */
+	return 0;
+}
+
 /* Reads an object. */
 static int
 json_object(
 	struct json_parser *parser,
 	vm_value *value)
 {
+	int status;
+
+	/* Keep the container and unfinished property values alive until this recursive parse returns. */
+	status = json_parse_container(parser, value, 0);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the enclosing frame now owns the completed container. */
+	return 0;
+}
+
+/* Parse the container while its wrapper retains unpublished children and property names. */
+static int
+json_object_inner(
+	struct json_parse_roots *roots,
+	vm_value *value)
+{
+	struct json_parser *parser;
 	struct vm_object *object;
-	vm_value name;
-	vm_value key;
-	vm_value member;
 	uint16_t unit;
 	int status;
+
+	/* The active container frame owns every recursive temporary. */
+	parser = roots->parser;
 
 	/* Too deep. */
 	if (parser->depth >= JSON_DEPTH_MAX) {
@@ -543,7 +723,8 @@ json_object(
 		return ENOMEM;
 
 	/* Publishes the container before reading its recursive children. */
-	*value = vm_value_cell(object);
+	roots->container = vm_value_cell(object);
+	*value = roots->container;
 	parser->position++;
 	parser->depth++;
 	json_skip_space(parser);
@@ -559,7 +740,7 @@ json_object(
 		json_skip_space(parser);
 		unit = json_peek(parser);
 		if (unit != '"') {
-			status = json_fail(parser, "Expected a property name in JSON");
+			status = json_fail(parser, "Expected a property roots->name in JSON");
 			if (status != 0)
 				return status;
 
@@ -568,7 +749,7 @@ json_object(
 		}
 
 		/* Reads the checked quoted property name. */
-		status = json_string(parser, &name);
+		status = json_string(parser, &roots->name);
 		if (status != 0)
 			return status;
 		json_skip_space(parser);
@@ -585,17 +766,17 @@ json_object(
 		/* Advances beyond the checked syntax token. */
 		parser->position++;
 		json_skip_space(parser);
-		status = json_value(parser, &member);
+		status = json_value(parser, &roots->member);
 		if (status != 0)
 			return status;
 
 		/* Interns the parsed name as an object property key. */
-		status = vm_key_from_string(parser->realm->heap, (struct vm_string *)vm_value_as_cell(name), &key);
+		status = vm_key_from_string(parser->realm->heap, (struct vm_string *)vm_value_as_cell(roots->name), &roots->key);
 		if (status != 0)
 			return status;
 
 		/* Defines the completed value using its resolved key. */
-		status = vm_object_define(parser->realm->heap, object, key, member, VM_PROPERTY_DEFAULT);
+		status = vm_object_define(parser->realm->heap, object, roots->key, roots->member, VM_PROPERTY_DEFAULT);
 		if (status != 0)
 			return status;
 		json_skip_space(parser);
@@ -629,10 +810,30 @@ json_array(
 	struct json_parser *parser,
 	vm_value *value)
 {
+	int status;
+
+	/* Keep the container and unfinished property values alive until this recursive parse returns. */
+	status = json_parse_container(parser, value, 1);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the enclosing frame now owns the completed container. */
+	return 0;
+}
+
+/* Parse the container while its wrapper retains unpublished children and property names. */
+static int
+json_array_inner(
+	struct json_parse_roots *roots,
+	vm_value *value)
+{
+	struct json_parser *parser;
 	struct vm_object *array;
-	vm_value member;
 	uint16_t unit;
 	int status;
+
+	/* The active container frame owns every recursive temporary. */
+	parser = roots->parser;
 
 	/* Too deep. */
 	if (parser->depth >= JSON_DEPTH_MAX) {
@@ -650,7 +851,8 @@ json_array(
 		return ENOMEM;
 
 	/* Publishes the container before reading its recursive children. */
-	*value = vm_value_cell(array);
+	roots->container = vm_value_cell(array);
+	*value = roots->container;
 	parser->position++;
 	parser->depth++;
 	json_skip_space(parser);
@@ -664,12 +866,12 @@ json_array(
 	/* Each value, separated by commas. */
 	for (;;) {
 		json_skip_space(parser);
-		status = json_value(parser, &member);
+		status = json_value(parser, &roots->member);
 		if (status != 0)
 			return status;
 
 		/* Defines the completed value using its resolved key. */
-		status = vm_object_define(parser->realm->heap, array, vm_value_int32((int32_t)array->length), member, VM_PROPERTY_DEFAULT);
+		status = vm_object_define(parser->realm->heap, array, vm_value_int32((int32_t)array->length), roots->member, VM_PROPERTY_DEFAULT);
 		if (status != 0)
 			return status;
 		json_skip_space(parser);
@@ -982,7 +1184,56 @@ json_word(
 	return 0;
 }
 
-/* Walks a parsed value with a reviver (InternalizeJSONProperty). */
+/* Snapshot enumerable string names completely before the first child reviver can alter later descriptors. */
+static int
+json_enumerable_keys(
+	struct vm_realm *realm,
+	vm_value object,
+	struct wb_vector *keys)
+{
+	struct vm_descriptor descriptor;
+	vm_value key;
+	size_t item;
+	size_t selected;
+	int is_index;
+	int is_string;
+	int found;
+	int status;
+
+	/* The caller's vector tracer retains original and selected names through all descriptor callbacks. */
+	status = vm_own_property_keys(realm, (struct vm_object *)vm_value_as_cell(object), keys);
+	if (status != 0)
+		return status;
+
+	/* Symbols are omitted before GetOwnProperty, including Symbols invented by a Proxy trap. */
+	selected = 0;
+	for (item = 0; item < keys->count; item++) {
+		key = *(vm_value *)wb_vector_at(keys, item);
+		is_index = vm_value_is_int32(key);
+		is_string = vm_value_is_string(key);
+		if (!is_index && !is_string)
+			continue;
+
+		/* A missing or nonenumerable own property contributes no name to this snapshot. */
+		status = vm_get_own_property(realm, (struct vm_object *)vm_value_as_cell(object), key, &descriptor, &found);
+		if (status != 0)
+			return status;
+		if (!found)
+			continue;
+		if ((descriptor.attributes & VM_PROPERTY_ENUMERABLE) == 0U)
+			continue;
+
+		/* Compaction replaces only entries whose descriptor has already been inspected. */
+		*(vm_value *)wb_vector_at(keys, selected) = key;
+		selected++;
+	}
+
+	/* Publish the immutable name sequence before any child value is read. */
+	keys->count = selected;
+	return 0;
+}
+
+/* Keep one saved holder value alive even if a child callback deletes or replaces the original property. */
 static int
 json_internalize(
 	struct vm_realm *realm,
@@ -992,23 +1243,56 @@ json_internalize(
 	vm_value *result,
 	unsigned depth)
 {
+	struct json_reviver_roots roots;
+	int status;
+
+	/* Every callback temporary has a valid tagged value before registration. */
+	roots.realm = realm;
+	roots.reviver = reviver;
+	roots.holder = holder;
+	roots.key = key;
+	roots.value = VM_VALUE_UNDEFINED;
+	roots.name = VM_VALUE_UNDEFINED;
+	roots.key_value = VM_VALUE_UNDEFINED;
+	status = vm_heap_add_tracer(realm->heap, json_trace_reviver, &roots);
+	if (status != 0)
+		return status;
+
+	/* All recursive, property-policy and callback failures retire their native frame here. */
+	status = json_internalize_inner(&roots, result, depth);
+	vm_heap_remove_tracer(realm->heap, json_trace_reviver, &roots);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the parent owns the returned reviver value. */
+	return 0;
+}
+
+/* Walks a parsed value with a reviver (InternalizeJSONProperty). */
+static int
+json_internalize_inner(
+	struct json_reviver_roots *roots,
+	vm_value *result,
+	unsigned depth)
+{
+	struct vm_realm *realm;
 	struct wb_vector keys;
 	struct vm_descriptor descriptor;
 	struct vm_object *object;
-	vm_value value;
 	vm_value element;
-	vm_value name;
 	vm_value call_args[2];
 	vm_value ignored;
 	uint32_t length;
 	uint32_t index;
 	size_t item;
+	int traced;
+	int is_array;
 	int is_object;
-	int is_index;
-	int is_string;
-	int found;
 	int done;
 	int status;
+
+	/* The active reviver frame retains saved values before any callback or depth error. */
+	realm = roots->realm;
 
 	/* The value at the key. */
 	if (depth > JSON_DEPTH_MAX) {
@@ -1021,20 +1305,30 @@ json_internalize(
 	}
 
 	/* The value at the key. */
-	status = vm_get(realm, holder, key, &value);
+	status = vm_get(realm, roots->holder, roots->key, &roots->value);
 	if (status != 0)
 		return status;
 
 	/* Prepares the one owned key list before any recursive member work. */
 	wb_vector_init(&keys, sizeof(vm_value));
+	traced = 0;
+	status = vm_heap_add_tracer(realm->heap, json_trace_values, &keys);
+	if (status != 0)
+		goto cleanup;
+	traced = 1;
 
 	/* An object's (or an array's) members first, each revived, removed when the reviver answers undefined. */
-	is_object = vm_value_is_object(value);
+	is_object = vm_value_is_object(roots->value);
 	if (is_object) {
-		object = (struct vm_object *)vm_value_as_cell(value);
+		object = (struct vm_object *)vm_value_as_cell(roots->value);
 		status = 0;
-		if ((object->flags & VM_OBJECT_ARRAY) != 0U) {
-			status = js_builtin_length(realm, value, &length);
+
+		/* Classification observes actual Proxy targets without consulting an ordinary brand field. */
+		status = vm_is_array(realm, roots->value, &is_array);
+		if (status != 0)
+			goto cleanup;
+		if (is_array) {
+			status = js_builtin_length(realm, roots->value, &length);
 			if (status != 0)
 				goto cleanup;
 
@@ -1046,7 +1340,7 @@ json_internalize(
 					goto cleanup;
 			}
 		} else {
-			status = vm_object_own_keys(realm->heap, object, &keys);
+			status = json_enumerable_keys(realm, roots->value, &keys);
 			if (status != 0)
 				goto cleanup;
 		}
@@ -1054,35 +1348,20 @@ json_internalize(
 		/* Each member revived. */
 		for (item = 0; item < keys.count; item++) {
 			element = *(vm_value *)wb_vector_at(&keys, item);
-			is_index = vm_value_is_int32(element);
-			is_string = vm_value_is_string(element);
-			if (!is_index && !is_string)
-				continue;
-			if ((object->flags & VM_OBJECT_ARRAY) == 0U) {
-				found = vm_get_own_descriptor(object, element, &descriptor);
-				if (found < 0) {
-					status = -found;
-					goto cleanup;
-				}
-
-				/* A missing descriptor follows the absence path after errors have been excluded. */
-				if (!found || (descriptor.attributes & VM_PROPERTY_ENUMERABLE) == 0U)
-					continue;
-			}
 
 			/* The member revived. */
-			status = json_internalize(realm, reviver, value, element, &name, depth + 1U);
+			status = json_internalize(realm, roots->reviver, roots->value, element, &roots->name, depth + 1U);
 			if (status != 0)
 				goto cleanup;
-			if (name == VM_VALUE_UNDEFINED) {
-				status = vm_delete(realm, value, element, 0, &ignored);
+			if (roots->name == VM_VALUE_UNDEFINED) {
+				status = vm_delete(realm, roots->value, element, 0, &ignored);
 				if (status != 0)
 					goto cleanup;
 			} else {
 				memset(&descriptor, 0, sizeof(descriptor));
 				descriptor.has = VM_HAS_VALUE | VM_HAS_WRITABLE | VM_HAS_ENUMERABLE | VM_HAS_CONFIGURABLE;
 				descriptor.attributes = VM_PROPERTY_DEFAULT;
-				descriptor.value = name;
+				descriptor.value = roots->name;
 				status = vm_define_own_property(realm, object, element, &descriptor, &done);
 				if (status != 0)
 					goto cleanup;
@@ -1092,16 +1371,20 @@ json_internalize(
 
 	/* The snapshot is released before the enclosing value callback. */
 cleanup:
+	if (traced)
+		vm_heap_remove_tracer(realm->heap, json_trace_values, &keys);
 	wb_vector_release(&keys);
 	if (status != 0)
 		return status;
 
 	/* The reviver on the value, with the key as a string. */
-	status = json_key_value(realm, key, &call_args[0]);
+	status = json_key_value(realm, roots->key, &roots->key_value);
 	if (status != 0)
 		return status;
-	call_args[1] = value;
-	status = vm_call(realm, reviver, holder, call_args, 2, result);
+	/* Keep the callback key independently rooted until vm_call has acquired its arguments. */
+	call_args[0] = roots->key_value;
+	call_args[1] = roots->value;
+	status = vm_call(realm, roots->reviver, roots->holder, call_args, 2, result);
 	if (status != 0)
 		return status;
 
