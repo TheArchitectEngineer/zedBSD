@@ -1,0 +1,166 @@
+{
+  "official_count": 13,
+  "whole_pass_gain": 0,
+  "transitions": [
+    {
+      "id": "/css/css-anchor-position/anchor-invalid-fallback.html",
+      "before": "harness_error",
+      "after": "fail",
+      "before_callbacks": {
+        "1": 1
+      },
+      "after_callbacks": {
+        "1": 6,
+        "0": 33
+      }
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scope-basic.html",
+      "before": "harness_error",
+      "after": "fail",
+      "before_callbacks": {
+        "1": 1
+      },
+      "after_callbacks": {
+        "1": 12
+      }
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-scope-dynamic.html",
+      "before": "harness_error",
+      "after": "fail",
+      "before_callbacks": {
+        "1": 1
+      },
+      "after_callbacks": {
+        "1": 4
+      }
+    },
+    {
+      "id": "/css/css-cascade/at-scope-parsing.html",
+      "before": "harness_error",
+      "after": "fail",
+      "before_callbacks": {
+        "1": 1
+      },
+      "after_callbacks": {
+        "1": 43
+      }
+    },
+    {
+      "id": "/css/css-cascade/at-scope-relative-syntax.html",
+      "before": "harness_error",
+      "after": "fail",
+      "before_callbacks": {
+        "1": 1
+      },
+      "after_callbacks": {
+        "1": 8
+      }
+    },
+    {
+      "id": "/css/css-cascade/scope-declarations.html",
+      "before": "harness_error",
+      "after": "fail",
+      "before_callbacks": {
+        "1": 1
+      },
+      "after_callbacks": {
+        "1": 5
+      }
+    },
+    {
+      "id": "/css/css-cascade/scope-evaluation.html",
+      "before": "harness_error",
+      "after": "fail",
+      "before_callbacks": {
+        "1": 1
+      },
+      "after_callbacks": {
+        "1": 17,
+        "0": 9
+      }
+    },
+    {
+      "id": "/css/css-cascade/scope-implicit-external.html",
+      "before": "harness_error",
+      "after": "no_completion",
+      "before_callbacks": {
+        "1": 1
+      },
+      "after_callbacks": {
+        "1": 1
+      }
+    },
+    {
+      "id": "/css/css-cascade/scope-implicit.html",
+      "before": "harness_error",
+      "after": "fail",
+      "before_callbacks": {
+        "1": 1
+      },
+      "after_callbacks": {
+        "1": 9,
+        "0": 2
+      }
+    },
+    {
+      "id": "/css/css-cascade/scope-name-defining-rules.html",
+      "before": "harness_error",
+      "after": "fail",
+      "before_callbacks": {
+        "1": 1
+      },
+      "after_callbacks": {
+        "1": 4
+      }
+    },
+    {
+      "id": "/css/css-cascade/scope-nesting.html",
+      "before": "harness_error",
+      "after": "fail",
+      "before_callbacks": {
+        "1": 1
+      },
+      "after_callbacks": {
+        "1": 24
+      }
+    },
+    {
+      "id": "/css/css-cascade/scope-style-sharing-001.html",
+      "before": "harness_error",
+      "after": "fail",
+      "before_callbacks": {
+        "1": 1
+      },
+      "after_callbacks": {
+        "1": 13
+      }
+    },
+    {
+      "id": "/css/css-cascade/scope-style-sharing-002.html",
+      "before": "harness_error",
+      "after": "fail",
+      "before_callbacks": {
+        "1": 1
+      },
+      "after_callbacks": {
+        "1": 13
+      }
+    }
+  ],
+  "dom_suites": "24/24; new 39 assertions",
+  "supplemental_before_pass": 0,
+  "supplemental_basic_pass": 16,
+  "supplemental_basic_received": 29,
+  "supplemental_outcome": "no_completion",
+  "acid2_diff": 873,
+  "acid3_diff": 0,
+  "target_sources": 5,
+  "production_link": "pending shared toolchain/sysroot regeneration",
+  "unmet": [
+    "MutationObserver batch/source removal",
+    "supplemental createHTMLDocument and HTMLCollection iteration prerequisites",
+    "target runtime"
+  ]
+}

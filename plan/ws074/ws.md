@@ -9,7 +9,11 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [ws074-q20261018-03](queue.md) finished（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+Queue: [ws074-q20261018-04](queue.md) finished（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+
+Event ws074-p242-q04-partial-clear-20261018: [p242証拠](phase242/evidence/20261018-q04/README.md)。基本交換39項目・DOM24/24、official cleanup13件は後続検査へ進んだがwhole PASS増分0。observer等whole未達。次はbatch/source removal。共有投影pending。
+
+Event ws074-p242-q04-start-20261018: q03診断後、[p242](phase242/phase.md)のbasic partialを90分で開始。ParentNode交換とvalidation、GC/native通知を実装、observer完全batchingは後続となる場合whole未達を残す。
 
 Event ws074-p189-q03-partial-clear-20261018: [p189証拠](phase189/evidence/20261018-q03/README.md)。全適格1,455 IDで485 PASS、旧481 PASSの後退0。未対応328保持。p189 whole uncleared。次はp242 DOM cleanup。共有投影pending。
 
@@ -626,7 +630,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p235](phase235/phase.md) | position: sticky（ページのスクロール）と、子を持つ箱の transform: scale | cleared（host、2026-10-15 B1。sticky・子つき scale。固定 WPT 483→485、css-position 51→54、css-transforms 221→226（偶然 pass 4 件が後退）。QEMU・実機は未実施。flex の aspect-ratio は未着手） | p234 |
 | [ws074-p240](phase240/phase.md) | flex item の aspect-ratio、自動最小サイズと flex basis | uncleared / ws074-q20261018-01 host partial cleared（WPT142→149、後退0） | p172 engine・p234 ratio の実装 |
 | [ws074-p241](phase241/phase.md) | definiteなstretch cross sizeをflex ratioのbase/minimumへ渡す | uncleared / ws074-q20261018-02 host partial cleared、target pending | p234 ratio・p240 minimum |
-| [ws074-p242](phase242/phase.md) | ParentNode.replaceChildren、cleanupのDOM一般操作 | planned / Queue未選定 | p189 q03のcleanup失敗の実測 |
+| [ws074-p242](phase242/phase.md) | ParentNode.replaceChildren、cleanupのDOM一般操作 | uncleared / Queue未選定 | p189 q03のcleanup失敗の実測 |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 

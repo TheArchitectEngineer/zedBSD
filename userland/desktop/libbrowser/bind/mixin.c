@@ -16,6 +16,7 @@
 
 #include <errno.h>
 #include <string.h>
+#include <stdlib.h>
 
 static int mixin_insert_values(struct vm_realm *realm, struct dom_node *parent, const vm_value *args, unsigned count, struct dom_node *reference);
 static int mixin_element_link(struct vm_realm *realm, struct dom_node *node, vm_value *result);
@@ -184,6 +185,182 @@ bind_prepend(
 		return status;
 
 	/* Succeeded: the nodes are prepended. */
+	return 0;
+}
+
+/*
+ * Replaces every child after converting and validating the complete argument list.
+ * Temporary native roots preserve converted text and detached nodes across allocations.
+ */
+int
+bind_replace_children(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct bind_window *window;
+	struct vm_heap *heap;
+	struct dom_node *parent;
+	struct dom_node *node;
+	struct dom_node *replacement;
+	struct vm_string *string;
+	struct vm_cell **converted;
+	struct vm_cell *roots[3];
+	struct wb_units units;
+	unsigned index;
+	unsigned registered;
+	unsigned fixed_registered;
+	int status;
+
+	/* Only ParentNode receivers can provide the destination Document and heap. */
+	*result = VM_VALUE_UNDEFINED;
+	status = bind_this_node(realm, this_value, &parent);
+	if (status != 0)
+		return status;
+
+	/* Borrowing this method does not add ParentNode to CharacterData or DocumentType. */
+	if (parent->type != DOM_ELEMENT &&
+	    parent->type != DOM_DOCUMENT &&
+	    parent->type != DOM_DOCUMENT_FRAGMENT) {
+		status = bind_throw_illegal(realm);
+		return status;
+	}
+
+	/* Stable slots must not move after registration with the owning heap. */
+	heap = parent->document->heap;
+	converted = NULL;
+	if (count != 0) {
+		converted = calloc(count, sizeof(*converted));
+		if (converted == NULL)
+			return ENOMEM;
+	}
+
+	/* The parent, temporary fragment and detached outgoing node have independent owners. */
+	memset(roots, 0, sizeof(roots));
+	roots[0] = &parent->cell;
+	registered = 0;
+	fixed_registered = 0;
+	for (index = 0; index < 3U; index++) {
+		status = vm_heap_add_root(heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+
+		/* Cleanup releases only slots successfully published to the heap. */
+		fixed_registered++;
+	}
+
+	/* All string conversions finish before fragment assembly can move an argument. */
+	for (index = 0; index < count; index++) {
+		/* Native Node arguments retain identity, while every other value uses ToString. */
+		node = bind_node_of(args[index]);
+		if (node == NULL) {
+			status = bind_to_string(realm, args[index], &string);
+			if (status != 0)
+				goto cleanup;
+
+			/* Copy UTF-16 units before allocating the new collectible Text node. */
+			wb_units_init(&units);
+			status = vm_string_append_units(string, &units);
+			if (status != 0) {
+				wb_units_release(&units);
+				goto cleanup;
+			}
+
+			/* The new Text owns its copy, and the native character buffer can leave. */
+			node = dom_text_create(parent->document, units.data, units.length);
+			wb_units_release(&units);
+			if (node == NULL) {
+				status = ENOMEM;
+				goto cleanup;
+			}
+		}
+
+		/* The existing adoption implementation cannot transfer cells between independent heaps. */
+		if (node->document->heap != heap) {
+			status = EINVAL;
+			goto cleanup;
+		}
+
+		/* Earlier converted nodes survive later user conversion and fragment allocation. */
+		converted[index] = &node->cell;
+		status = vm_heap_add_root(heap, &converted[index]);
+		if (status != 0)
+			goto cleanup;
+
+		/* Each registered argument owns one cleanup obligation, including duplicate nodes. */
+		registered++;
+	}
+
+	/* A single argument is used directly; every other arity is converted through a fragment. */
+	if (count == 1U) {
+		replacement = (struct dom_node *)converted[0];
+	} else {
+		replacement = dom_fragment_create(parent->document);
+		if (replacement == NULL) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* The fragment retains assembled children without replacing per-argument roots. */
+		roots[1] = &replacement->cell;
+
+		/* Appending through the checked insertion path preserves duplicate-node move order. */
+		for (index = 0; index < count; index++) {
+			node = (struct dom_node *)converted[index];
+			status = bind_insert(realm, replacement, node, NULL);
+			if (status != 0)
+				goto cleanup;
+		}
+	}
+
+	/* Invalid replacement leaves every still-existing destination child in place. */
+	status = bind_validate_replace_all(realm, parent, replacement);
+	if (status != 0)
+		goto cleanup;
+
+	/* Resolve notifications against the actual destination rather than the borrowed method realm. */
+	window = bind_window_of(realm);
+	if (parent->document->view != NULL)
+		window = parent->document->view;
+
+	/* Native removal repairs ranges, iterators, embedded views and style generations. */
+	while (parent->first_child != NULL) {
+		node = parent->first_child;
+		roots[2] = &node->cell;
+		dom_remove(node);
+		status = bind_environment_child_mutation(window, parent, NULL, node);
+		if (status != 0)
+			goto cleanup;
+	}
+
+	/* The validated replacement now enters the empty destination through ordinary insertion. */
+	status = bind_insert(realm, parent, replacement, NULL);
+	if (status != 0)
+		goto cleanup;
+
+cleanup:
+	/* Detached argument ownership lasts through all native and observer notifications. */
+	while (registered != 0) {
+		registered--;
+		vm_heap_remove_root(heap, &converted[registered]);
+	}
+
+	/* Release each acquired fixed slot before its stack storage disappears. */
+	while (fixed_registered != 0) {
+		fixed_registered--;
+		vm_heap_remove_root(heap, &roots[fixed_registered]);
+	}
+
+	/* The stable slot array is native storage and has no remaining heap registrations. */
+	free(converted);
+
+	/* Failed conversion, validation or notification propagates after ownership cleanup. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the destination contains the converted replacement children. */
 	return 0;
 }
 

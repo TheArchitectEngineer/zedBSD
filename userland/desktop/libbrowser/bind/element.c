@@ -114,6 +114,7 @@ static const struct bind_operation element_operations[] = {
 	{ "getElementsByClassName", 1, bind_get_elements_by_class_name },
 	{ "append", 0, bind_append },
 	{ "prepend", 0, bind_prepend },
+	{ "replaceChildren", 0, bind_replace_children },
 	{ "remove", 0, bind_remove },
 	{ "querySelector", 1, bind_query_selector },
 	{ "querySelectorAll", 1, bind_query_selector_all },

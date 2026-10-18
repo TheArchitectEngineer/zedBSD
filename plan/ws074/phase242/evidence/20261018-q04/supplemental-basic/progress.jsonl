@@ -1,0 +1,2 @@
+{"eligible": 1, "eligible_sha256": "9c8c2953140b412d87923fe6118e4d5e8c6f14a8c6b8800923082d64d2400059", "font_dir": "userland/desktop/fonts", "kind": "header", "limit": 128, "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a", "offset": 0, "reason_counts": {"candidate": 1}, "selected": ["/dom/nodes/ParentNode-replaceChildren.html"], "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586"}
+{"kind": "result", "outcome": "no_completion", "report": "test-001.json.gz", "test_id": "/dom/nodes/ParentNode-replaceChildren.html"}

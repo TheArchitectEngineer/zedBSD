@@ -1,6 +1,10 @@
 # WS074 lane の Past Log
 
-## 最新: ws074-q20261018-03（2026-10-18）
+## 最新: ws074-q20261018-04（2026-10-18）
+
+[履歴](ws074-q20261018-04.md)。replaceChildren基本部分cleared。独立39項目・DOM24/24、cleanup13件の後続検査が進むがwhole PASS増分0。補助16 callback PASS。observer batchingとsource removalを次へ。Acid3差0/Acid2差873、host/target compile warning0、production link/target runtime保留。共有投影pending。
+
+## ws074-q20261018-03（2026-10-18）
 
 [履歴](ws074-q20261018-03.md)。全適格1,455 ID測定、485 PASS、910 FAIL、16 harness_error、20 no_completion、24 no_output。q1202旧481 PASSから後退0。未対応328とreftest/crashは100%の分母に保持。次はp242 DOM cleanup。共有投影pending。
 

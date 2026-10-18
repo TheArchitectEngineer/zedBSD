@@ -1,5 +1,25 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
+# ws074-q20261018-04 / ParentNode.replaceChildren 基本交換
+
+Status: finished（2026-10-18、basic partial cleared）
+Owner: このCodex chat単独。
+Approval: ユーザーの[自走指示](autonomy.md)を以下の有限範囲へ適用。
+Timebox: 最大90分（12:52 JSTまで）。
+
+| Attempt | Phase | Exact scope | State | Dependencies |
+| --- | --- | --- | --- | --- |
+| ws074-q20261018-04-i01 | [p242](phase242/phase.md) basic partial | Element/DocumentFragment/DocumentのreplaceChildrenを登録。全引数のnode/string変換とGC保持、fragment化と順序/重複、replace-all用validation、native削除/挿入通知を実装。独立例・補助WPT・公式cleanup群を前後比較、host warning0・C全文review・Acid差非増加。既存observerが単node通知ならbatchingは後続に残しwhole未達とする。公開ABI/通常append/prepend/WPT/Master変更なし | cleared | q03全ID/rawと9b94ebe38固定binary、既存DOM insert/remove/adopt |
+
+Dependency graph: q03診断出力 → p242 basic partial。p189 whole clearanceは前提ではない。
+Upcoming Work Outlook: observer batching、公式cleanup群のCSS本体、静的reftest census、runner328未対応。
+
+Outcome: DOM39項目・全24/24、公式cleanup13の12件がFAILまで進み1件no_completion、whole PASS増分0。補助16 callback PASS、observer等は未達。[証拠](phase242/evidence/20261018-q04/README.md)。
+
+---
+
+<!-- awesome-plan project=zedbsd record=queue -->
+
 # ws074-q20261018-03 / Interop2025 testharness全候補の最新census
 
 Status: finished（2026-10-18、測定部分cleared）

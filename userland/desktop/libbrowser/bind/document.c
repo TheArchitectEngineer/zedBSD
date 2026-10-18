@@ -124,6 +124,7 @@ static const struct bind_operation document_operations[] = {
 	{ "elementsFromPoint", 2, document_elements_from_point },
 	{ "append", 0, bind_append },
 	{ "prepend", 0, bind_prepend },
+	{ "replaceChildren", 0, bind_replace_children },
 	{ "querySelector", 1, bind_query_selector },
 	{ "querySelectorAll", 1, bind_query_selector_all },
 	{ "open", 0, document_open },

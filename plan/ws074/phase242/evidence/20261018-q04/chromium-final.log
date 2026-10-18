@@ -1,0 +1,6 @@
+[511865:511865:1018/112511.781232:WARNING:sandbox/policy/linux/sandbox_linux.cc:405] InitializeSandbox() called with multiple threads in process gpu-process.
+[511823:511823:1018/112512.065190:WARNING:ui/base/idle/idle_linux.cc:111] None of the known D-Bus ScreenSaver services could be used.
+[511823:511823:1018/112512.389885:INFO:CONSOLE:48] "replaceChildren common 24 passed", source: file:///home/awe/zedBSD-claude1/plan/ws074/tests/dom/replace-children.html (48)
+[511823:511823:1018/112512.389936:INFO:CONSOLE:52] "Uncaught HierarchyRequestError: Failed to execute 'replaceChildren' on 'Document': Only one element on document allowed.", source: file:///home/awe/zedBSD-claude1/plan/ws074/tests/dom/replace-children.html (52)
+[511868:511900:1018/112512.834113:WARNING:net/extras/sqlite/sqlite_persistent_store_backend_base.cc:181] Failed to post task from LoadReportingClientsAndNotifyInBackground@net/extras/sqlite/sqlite_persistent_reporting_and_nel_store.cc:1452 to client_task_runner_.
+[511868:511900:1018/112512.834256:WARNING:net/extras/sqlite/sqlite_persistent_store_backend_base.cc:181] Failed to post task from LoadNelPoliciesAndNotifyInBackground@net/extras/sqlite/sqlite_persistent_reporting_and_nel_store.cc:1332 to client_task_runner_.

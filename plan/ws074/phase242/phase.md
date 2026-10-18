@@ -2,11 +2,11 @@
 
 # ws074-p242: ParentNode.replaceChildren と WPT cleanup のDOM操作
 
-Status: planned
+Status: uncleared（q04 basic partial cleared、observer等whole未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
-Queue: 未選定（q03のcensus完了後の候補）
+Queue: ws074-q20261018-04-i01（basic partial）
 
 ## 調査の根拠と目的
 
@@ -32,3 +32,11 @@ q03で得た固定binaryと実際のcleanup失敗を依存出力とする（p189
 [DOM Standard](https://dom.spec.whatwg.org/#dom-parentnode-replacechildren)を確認。pre-insert validityは削除予定の既存childrenをexclusion listとして受ける。既存bind_validate_insertはexclusionなしのordinary insertionであり、その契約を維持してreplace-all専用のvalidationを追加する。固定WPTの補助`dom/nodes/ParentNode-replaceChildren.html`もDocumentの既存doctype/rootを無視する条件を明示している。
 
 MutationObserverは既存environment.cにあるが、privateのrecord生成はadded/removed各1nodeのみ。replace-allの集約recordにはsequence対応が要る。既存dom_remove/dom_insert_beforeはlive Range/Iterator・iframe・select・style generationを更新するため、それらを飛ばす直接link操作は使わない。DOM変換・一時root・validation・native通知の基本を最初の有限部分、observerの完全なbatchingを必要なら次の有限部分に分け、wholeの未達を残す。
+
+## q04 実行開始
+
+2026-10-18 11:22 JST、ユーザーの自走指示を上記basic partial最大90分へ適用。q03はe876e0378に全証拠を保存済み。observer batchは未達なら後続へ残す。
+
+## q04 結果
+
+Event ws074-p242-q04-partial-clear-20261018: [証拠](evidence/20261018-q04/README.md)。基本交換39項目・DOM24/24、official cleanup13件のharness_errorは解消、12 FAIL/1 no_completion、whole PASS増分0。補助16 callback PASS。Acid3差0/Acid2差873、hostとamd64 5source compile warning0。basic partial cleared、whole uncleared。observer batch/source removal、補助factory/iterator依存、target runtimeが残る。共有投影pending。

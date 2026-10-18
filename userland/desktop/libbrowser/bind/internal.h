@@ -591,6 +591,7 @@ struct dom_node *bind_node_of(vm_value value);
 int bind_this_node(struct vm_realm *realm, vm_value this_value, struct dom_node **node);
 int bind_argument_node(struct vm_realm *realm, vm_value value, struct dom_node **node);
 int bind_text_content(const struct dom_node *node, struct wb_units *units);
+int bind_validate_replace_all(struct vm_realm *realm, struct dom_node *parent, struct dom_node *node);
 int bind_validate_insert(struct vm_realm *realm, struct dom_node *parent, struct dom_node *node, struct dom_node *reference);
 int bind_split_text(struct vm_realm *realm, struct dom_node *node, uint32_t offset, struct dom_node **created);
 int bind_clone_node(struct vm_realm *realm, struct dom_node *source, int deep, struct dom_node **created);
@@ -607,6 +608,7 @@ int bind_first_element_child_get(struct vm_realm *realm, vm_value this_value, co
 int bind_last_element_child_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 int bind_child_element_count(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 int bind_append(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+int bind_replace_children(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 int bind_prepend(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 int bind_remove(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 int bind_previous_element_sibling(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);

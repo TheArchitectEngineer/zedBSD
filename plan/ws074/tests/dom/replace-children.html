@@ -1,0 +1,89 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>ParentNode replacement conversion and hierarchy</title>
+<script>
+var checks = 0;
+function check(value, name) {
+    if (!value) throw new Error(name);
+    checks++;
+}
+function hierarchy(action, name) {
+    var caught = "";
+    try { action(); } catch (error) { caught = error.name; }
+    check(caught === "HierarchyRequestError", name);
+}
+function basic(parent) {
+    check(parent.replaceChildren() === undefined, "empty return");
+    check(parent.childNodes.length === 0, "empty children");
+    parent.replaceChildren(null, undefined, 42);
+    check(parent.textContent === "nullundefined42", "string conversion");
+    check(parent.childNodes.length === 3, "separate text nodes");
+    var a = document.createElement("a");
+    var b = document.createElement("b");
+    parent.replaceChildren(a, b, a);
+    check(parent.childNodes.length === 2, "duplicate count");
+    check(parent.firstChild === b && parent.lastChild === a, "duplicate order");
+    parent.replaceChildren(a);
+    check(parent.childNodes.length === 1 && parent.firstChild === a, "retain child");
+    var fragment = document.createDocumentFragment();
+    fragment.appendChild(b);
+    parent.replaceChildren(fragment, "tail");
+    check(fragment.childNodes.length === 0, "fragment emptied");
+    check(parent.firstChild === b && parent.lastChild.textContent === "tail", "fragment order");
+    var marker = {};
+    var caught;
+    try { parent.replaceChildren(a, {toString: function () {throw marker;}}); }
+    catch (error) {caught = error;}
+    check(caught === marker && parent.firstChild === b && a.parentNode === null, "conversion atomicity");
+    parent.replaceChildren();
+    check(parent.childNodes.length === 0 && b.parentNode === null, "clear children");
+}
+basic(document.createElement("div"));
+basic(document.createDocumentFragment());
+var parent = document.createElement("div");
+var child = document.createElement("span");
+parent.appendChild(child);
+hierarchy(function () { child.replaceChildren(parent); }, "cycle");
+check(child.parentNode === parent, "cycle preserves destination");
+console.log("replaceChildren common", checks, "passed");
+var doc = document.implementation.createDocument(null, "old", document.implementation.createDocumentType("old", "", ""));
+var original = doc.documentElement;
+var root = doc.createElement("root");
+doc.replaceChildren(root);
+check(doc.documentElement === root && doc.childNodes.length === 1, "document root replacement");
+check(original.parentNode === null, "old root detached");
+hierarchy(function () {doc.replaceChildren("text");}, "document rejects text");
+check(doc.documentElement === root, "text failure preserves root");
+hierarchy(function () {doc.replaceChildren(doc.createElement("a"), doc.createElement("b"));}, "document rejects two elements");
+check(doc.documentElement === root, "two elements preserve root");
+doc.replaceChildren(root);
+check(doc.documentElement === root, "document reuses root");
+var foreign = document.implementation.createDocument(null, "foreign", null);
+var adopted = foreign.createElement("adopted");
+foreign.documentElement.appendChild(adopted);
+parent.replaceChildren(adopted);
+check(adopted.ownerDocument === document && parent.firstChild === adopted, "adoption");
+var doctype = document.doctype.cloneNode();
+doc.replaceChildren(doctype);
+check(doc.doctype === doctype && doc.documentElement === null, "doctype replacement");
+hierarchy(function () { parent.replaceChildren(doctype); }, "element rejects doctype");
+check(doctype.parentNode === doc, "doctype failure leaves source");
+check(typeof document.createTextNode("").replaceChildren === "undefined", "Text has no ParentNode method");
+check(typeof doctype.replaceChildren === "undefined", "DocumentType has no ParentNode method");
+var gcParent = document.createElement("section");
+gcParent.replaceChildren("kept", {toString: function () {
+    for (var round = 0; round < 100; round++) {
+        var garbage = [];
+        for (var index = 0; index < 200; index++) {
+            garbage.push(document.createElement("div"));
+        }
+    }
+    return "after";
+}});
+check(gcParent.firstChild.data === "kept" && gcParent.lastChild.data === "after", "converted text survives later GC");
+var borrowed = Element.prototype.replaceChildren;
+var illegal = false;
+try {borrowed.call(document.createTextNode(""));} catch (error) {illegal = error.name === "TypeError";}
+check(illegal, "ParentNode receiver brand");
+console.log("replaceChildren", checks, "passed");
+</script>

@@ -13,13 +13,11 @@
 
 #include <errno.h>
 
-static int insertion_document(struct vm_realm *realm, const struct dom_node *parent, const struct dom_node *node, const struct dom_node *reference);
+static int insertion_document(struct vm_realm *realm, const struct dom_node *parent, const struct dom_node *node, const struct dom_node *reference, int replace_all);
+static int insertion_validate(struct vm_realm *realm, struct dom_node *parent, struct dom_node *node, struct dom_node *reference, int replace_all);
 
 /*
- * Checks whether an ordinary pre-insertion is permitted without changing its participants.
- *
- * The caller retains the nodes through possible DOM-exception allocation.
- * Existing Document children are not excluded, even when node is already a child.
+ * Validates ordinary insertion while retaining all current Document children.
  */
 int
 bind_validate_insert(
@@ -27,6 +25,46 @@ bind_validate_insert(
 	struct dom_node *parent,
 	struct dom_node *node,
 	struct dom_node *reference)
+{
+	int error;
+
+	/* Ordinary insertion excludes no existing child from Document constraints. */
+	error = insertion_validate(realm, parent, node, reference, 0);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the existing tree admits this insertion. */
+	return 0;
+}
+
+/*
+ * Validates replacement while excluding every child that replace-all removes.
+ */
+int
+bind_validate_replace_all(
+	struct vm_realm *realm,
+	struct dom_node *parent,
+	struct dom_node *node)
+{
+	int error;
+
+	/* Only existing Document children are excluded; incoming fragment constraints remain. */
+	error = insertion_validate(realm, parent, node, NULL, 1);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: replacing every existing child preserves the hierarchy. */
+	return 0;
+}
+
+/* Checks common hierarchy constraints without changing any participating node. */
+static int
+insertion_validate(
+	struct vm_realm *realm,
+	struct dom_node *parent,
+	struct dom_node *node,
+	struct dom_node *reference,
+	int replace_all)
 {
 	int ancestor;
 	int error;
@@ -78,7 +116,7 @@ bind_validate_insert(
 
 	/* Document child order and counts require validation of the whole incoming fragment. */
 	if (parent->type == DOM_DOCUMENT) {
-		error = insertion_document(realm, parent, node, reference);
+		error = insertion_document(realm, parent, node, reference, replace_all);
 		if (error != 0)
 			return error;
 	}
@@ -87,13 +125,14 @@ bind_validate_insert(
 	return 0;
 }
 
-/* Checks actual Document child types and order with an empty exclusion list. */
+/* Checks incoming Document structure and optionally excludes all outgoing children. */
 static int
 insertion_document(
 	struct vm_realm *realm,
 	const struct dom_node *parent,
 	const struct dom_node *node,
-	const struct dom_node *reference)
+	const struct dom_node *reference,
+	int replace_all)
 {
 	const struct dom_node *child;
 	unsigned elements;
@@ -137,6 +176,10 @@ insertion_document(
 		if (elements == 0)
 			return 0;
 	}
+
+	/* Replacement removes every current child, so none constrain the incoming node. */
+	if (replace_all)
+		return 0;
 
 	/* An element must be unique and must not precede an existing doctype. */
 	if (node->type == DOM_ELEMENT || node->type == DOM_DOCUMENT_FRAGMENT) {
