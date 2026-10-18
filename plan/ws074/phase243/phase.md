@@ -2,7 +2,7 @@
 
 # ws074-p243: Grid trackのresolved CSSOMを実レイアウトから取得
 
-Status: uncleared（q07の旧PASS callback1件が未達）
+Status: in-progress（q08-i02 primary再検証、q07 history uncleared）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
@@ -40,3 +40,7 @@ Event ws074-p243-q07-start-20261018: q06を2e3680e6bへ保存。全FAIL725の開
 Event ws074-p243-q07-uncleared-20261018: [証拠](evidence/20261018-q07/README.md)、WIP a46bfd5ac。Grid245→247 whole PASS・433 callback改善だが、fixed minmax rows spanの1旧PASS callbackがFAIL。実solverの末尾固定行が30pxへ増える不備をgetterが露出した。q07 scopeは別solver欠陥を除外していたためattempt uncleared。
 
 Event ws074-p243-p244-redesign-20261018: [p244](../phase244/phase.md)を追加し、固定行のみをまたぐitemが末尾trackを伸ばさない修正と検証を独立させる。そのverified output後、新しいp243 partial attemptで全502/全callbackと独立14条件を再検証する。宣言値を返すfallbackへ戻して既存不備を隠さない。q07のuncleared歴史とp243 wholeのchild/vertical等の条件は維持。共有投影pending。
+
+Event ws074-p243-q08-revalidation-selected-20261018: p244 q08-i01出力の後、q08-i02がprimaryの全502/全callbackを再検証する。q07 attempt unclearedは保持。p243 wholeは現在unclearedのまま。
+
+Event ws074-p243-q08-i02-start-20261018: p244 q08-i01の独立7条件/静的529確認を受け、final binaryで公式Grid502/全callbackと独立14条件を再検証する。q07の旧PASS1件を再度確認し、wholeのchild/vertical等は保持する。

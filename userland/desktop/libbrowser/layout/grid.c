@@ -78,6 +78,7 @@ struct grid_sizes {
 	struct css_length margin[4];
 };
 
+static int grid_span_has_fixed_rows(const struct css_style *style, const struct grid_item *item, int row_count, layout_unit available);
 static int grid_save_used_tracks(struct layout_tree *tree, struct layout_box *box, const struct grid_state *grid);
 static int grid_copy_used_axis(struct layout_tree *tree, const layout_unit *sizes, int count, double **copy);
 static int grid_collect(struct layout_box *box, struct grid_state *grid);
@@ -2699,6 +2700,59 @@ grid_lay_item(
 	return 0;
 }
 
+/* Tests whether every row crossed by this item has a definite fixed maximum. */
+static int
+grid_span_has_fixed_rows(
+	const struct css_style *style,
+	const struct grid_item *item,
+	int row_count,
+	layout_unit available)
+{
+	const struct css_track *track;
+	int span;
+	int end;
+	int row;
+
+	/* The separate vertical sizing paths retain their existing behavior in this partial scope. */
+	if (style->writing_mode != CSS_WRITING_HORIZONTAL_TB)
+		return 0;
+
+	/* Only placed items with an existing row range can constrain this span. */
+	if (item->row < 0 || item->row >= row_count)
+		return 0;
+
+	/* Bound the endpoint before adding indices, even for a very large authored span. */
+	span = item->row_span;
+	if (span <= 0)
+		return 0;
+
+	/* No row past the actual grid can participate in sizing this item. */
+	if (span > row_count - item->row)
+		span = row_count - item->row;
+
+	/* Every crossed row must be definite; intrinsic or flexible tracks preserve their existing sizing. */
+	end = item->row + span;
+	for (row = item->row; row < end; row++) {
+		track = grid_row_track(style, row);
+		if (track->kind != CSS_TRACK_LENGTH)
+			return 0;
+
+		/* Resolved absolute lengths impose fixed track maxima. */
+		if (track->size.unit == CSS_UNIT_PX)
+			continue;
+
+		/* Percentage maxima are fixed only when the content height supplying their basis is definite. */
+		if (track->size.unit == CSS_UNIT_PERCENT && available >= 0)
+			continue;
+
+		/* An unresolved length cannot provide the fixed-only overflow rule. */
+		return 0;
+	}
+
+	/* Succeeded: excess item content must overflow rather than grow these fixed tracks. */
+	return 1;
+}
+
 /*
  * Sizes the rows: a fixed track at its length, the others as tall as
  * their one-row items' margin boxes; an item spanning rows makes the last
@@ -2720,6 +2774,7 @@ grid_size_rows(
 	float fr_total;
 	size_t index;
 	int row;
+	int fixed_rows;
 
 	/* The column of heights (none when the grid has no rows). */
 	grid->rows = calloc((size_t)grid->row_count + 1U, sizeof(*grid->rows));
@@ -2776,6 +2831,13 @@ grid_size_rows(
 		item = &grid->items[index];
 		if (item->row_span < 2)
 			continue;
+
+		/* Definite fixed tracks retain their maxima even when a spanning item's content is taller. */
+		fixed_rows = grid_span_has_fixed_rows(&box->style, item, grid->row_count, available);
+		if (fixed_rows)
+			continue;
+
+		/* Sum occupied rows and internal gaps to find this span's current capacity. */
 		spanned = gap * (layout_unit)(item->row_span - 1);
 		for (row = item->row; row < item->row + item->row_span && row < grid->row_count; row++)
 			spanned += grid->rows[row];

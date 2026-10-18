@@ -1,0 +1,23 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Fixed Grid rows retain their maxima under spanning content</title>
+<body>
+<script>
+function testCase(name, rows, height, gap, childHeight, minimum, frame) {
+    var grid = document.createElement("div");
+    grid.style.cssText = "display:grid;width:120px;align-content:start;grid-template-columns:30px;grid-template-rows:" + rows + ";row-gap:" + gap + ";height:" + height + ";" + frame;
+    var item = document.createElement("div");
+    item.style.cssText = "grid-column:1;grid-row:1 / span 2;width:20px;height:" + childHeight + ";min-height:" + minimum;
+    var marker = document.createElement("div");
+    marker.style.cssText = "grid-column:1;grid-row:3;height:0;width:0";
+    grid.appendChild(item);
+    grid.appendChild(marker);
+    document.body.appendChild(grid);
+    var style = getComputedStyle(grid);
+    var origin = grid.getBoundingClientRect().top + parseFloat(style.borderTopWidth) + parseFloat(style.paddingTop);
+    console.log(name, style.gridTemplateRows, "/", marker.getBoundingClientRect().top - origin, "/", item.getBoundingClientRect().height);
+}
+testCase("auto-auto", "auto auto", "120px", "0", "40px", "0", "");
+testCase("indef-percent", "10% 20%", "auto", "0", "40px", "0", "");
+testCase("minmax-large", "minmax(auto,10px) minmax(auto,10px)", "120px", "0", "40px", "12px", "");
+</script>

@@ -1,0 +1,34 @@
+{
+  "state": "i01 host partial cleared; i02 revalidation begins",
+  "static_before": {
+    "pass": 225,
+    "fail": 304
+  },
+  "static_after": {
+    "fail": 302,
+    "pass": 227
+  },
+  "static_new_pass": [
+    "css/css-grid/grid-items/grid-minimum-size-grid-items-016.html",
+    "css/css-grid/grid-items/grid-minimum-size-grid-items-020.html"
+  ],
+  "static_regressions": [],
+  "geometry_before": 1,
+  "geometry_after": 7,
+  "geometry_total": 7,
+  "dom": "27/27",
+  "regression_callback": "target/test-001.json.gz status0 for minmax(auto,10px) two-track case",
+  "acid3_diff": 0,
+  "acid2_diff": 873,
+  "source_sha256": "e37b946ca13c89ed25be465d7d0f194af181a93a125123acb03ae58adaf804d8",
+  "binary_sha256": {
+    "browser": "25a66385edb7811c04e5e04fddd6bf3060ef2883f26d2781adbecf9d87debc02",
+    "libbrowser.so": "088a6caca201d9bf8093008ebfd9639fb397547a52f34acdcd4121041ff729a4"
+  },
+  "residuals": [
+    "auto row distribution",
+    "indefinite percentage cycles",
+    "large automatic minmax minimum floor",
+    "target production link/runtime"
+  ]
+}

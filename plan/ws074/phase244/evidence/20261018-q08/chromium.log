@@ -1,0 +1,9 @@
+[552233:552233:1018/115451.461150:WARNING:sandbox/policy/linux/sandbox_linux.cc:405] InitializeSandbox() called with multiple threads in process gpu-process.
+[552190:552190:1018/115451.783847:WARNING:ui/base/idle/idle_linux.cc:111] None of the known D-Bus ScreenSaver services could be used.
+[552190:552190:1018/115452.147873:INFO:CONSOLE:23] "fixed 10px 10px 0px / 20 / 40", source: file:///home/awe/zedBSD-claude1/plan/ws074/tests/dom/grid-fixed-row-span.html (23)
+[552190:552190:1018/115452.147920:INFO:CONSOLE:23] "fixed-gap 10px 10px 0px / 30 / 40", source: file:///home/awe/zedBSD-claude1/plan/ws074/tests/dom/grid-fixed-row-span.html (23)
+[552190:552190:1018/115452.147938:INFO:CONSOLE:23] "percent 10px 20px 0px / 30 / 60", source: file:///home/awe/zedBSD-claude1/plan/ws074/tests/dom/grid-fixed-row-span.html (23)
+[552190:552190:1018/115452.147972:INFO:CONSOLE:23] "border-percent 10px 20px 0px / 30 / 60", source: file:///home/awe/zedBSD-claude1/plan/ws074/tests/dom/grid-fixed-row-span.html (23)
+[552190:552190:1018/115452.148129:INFO:CONSOLE:23] "minmax-auto 10px 10px 0px / 20 / 20", source: file:///home/awe/zedBSD-claude1/plan/ws074/tests/dom/grid-fixed-row-span.html (23)
+[552190:552190:1018/115452.148588:INFO:CONSOLE:23] "minmax-floor 20px 20px 0px / 40 / 100", source: file:///home/awe/zedBSD-claude1/plan/ws074/tests/dom/grid-fixed-row-span.html (23)
+[552190:552190:1018/115452.148616:INFO:CONSOLE:23] "mixed-small 0px 20px 0px / 20 / 10", source: file:///home/awe/zedBSD-claude1/plan/ws074/tests/dom/grid-fixed-row-span.html (23)

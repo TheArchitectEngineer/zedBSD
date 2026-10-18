@@ -1,0 +1,2 @@
+userland/desktop/libbrowser/layout/grid.c blank-after-brace=69 call-in-condition=6 conditional=29 forward-declaration=5 multi-line-body=13 nested-declaration=3 paragraph-comment=13
+total 138

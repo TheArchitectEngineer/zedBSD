@@ -1,0 +1,7 @@
+fixed 10px 10px 0px / 20 / 40
+fixed-gap 10px 10px 0px / 30 / 40
+percent 10px 20px 0px / 30 / 60
+border-percent 10px 20px 0px / 30 / 60
+minmax-auto 10px 10px 0px / 20 / 20
+minmax-floor 20px 20px 0px / 40 / 100
+mixed-small 0px 20px 0px / 20 / 10

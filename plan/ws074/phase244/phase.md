@@ -2,11 +2,11 @@
 
 # ws074-p244: 固定Grid行だけをまたぐitemのoverflow
 
-Status: planned
+Status: uncleared（q08-i01 host部分cleared、general minimum等whole未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
-Queue: 未選定
+Queue: ws074-q20261018-08-i01
 Origin: [p243 q07の未達](../phase243/phase.md)
 
 ## Objective・criteria
@@ -22,3 +22,9 @@ grid_size_rowsがspan不足を末尾行へ無条件加算しているため、�
 Guardrail、C全文、browser-component全文を適用。full WS conformanceはp100。公開ABI/WPT/Masterは不変。p243の既存copy queryを前提として実際のsolver値を検証し、p244 output後のp243新attemptがq07の未達を再確認する。
 
 Event ws074-p244-created-from-q07-20261018: p243 q07のknown failureを処理するPhaseとして追加。q07 historyのunclearedは維持する。source mutationの新しいQueueを選定するまで実行しない。共有投影pending。
+
+Event ws074-p244-q08-start-20261018: ユーザー自走指示をfixed-only span部分へ適用。q07の1 callbackを回復し、mixed/auto等を全面改修しない。static Grid529とhost/target/Acidで修正出力を検証し、その後p243 q08-i02へ渡す。
+
+## q08-i01 結果
+
+Event ws074-p244-q08-i01-partial-clear-20261018: [証拠](evidence/20261018-q08/README.md)。独立1→7/7 Chromium一致、DOM27/27、静的Grid225→227/529・旧PASS後退0、q07対象callback status0。host/target compile warning0、Acid3差0/Acid2差873。fixed-only host部分cleared、general minimum/auto等whole未達。verified final binaryをp243 q08-i02へ渡す。共有投影pending。

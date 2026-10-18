@@ -1,0 +1,26 @@
+{
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "eligible": 1,
+  "reason_counts": {
+    "candidate": 1
+  },
+  "eligible_sha256": "238f9953f59f1f196609affde09774692a7ea16dc89264aabc4462792dfda218",
+  "offset": 0,
+  "limit": 128,
+  "font_dir": "userland/desktop/fonts",
+  "selected": [
+    "/css/css-grid/layout-algorithm/grid-intrinsic-track-sizes-001.html"
+  ],
+  "results": [
+    {
+      "kind": "result",
+      "test_id": "/css/css-grid/layout-algorithm/grid-intrinsic-track-sizes-001.html",
+      "outcome": "fail",
+      "report": "test-001.json.gz"
+    }
+  ],
+  "outcome_counts": {
+    "fail": 1
+  }
+}
