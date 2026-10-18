@@ -21,8 +21,8 @@
  *
  * The single-colour draw is built for Gen12 or for Gen9 (the _gen
  * functions; graphics version 9 selects Gen9, any other Gen12).  The
- * textured draws carry pixel shaders and surface states Mesa generated for
- * Gen12 only, so a Gen9 GT cannot run them (drv_i915_tex_fixture_supported).
+ * textured draws carry pixel shaders and surface states made for Gen12
+ * only, so a Gen9 GT cannot run them (drv_i915_tex_fixture_supported).
  */
 
 #ifndef DRIVERS_GPU_I915_TESTS_FIXTURES_DRAW_FIXTURE_H

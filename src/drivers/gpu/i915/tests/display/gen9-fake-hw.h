@@ -8,7 +8,7 @@
 /*
  * The model of the display 9 hardware the Gen9 host tests drive
  * (gen9-fake-hw.c): a register file that answers the status
- * registers as the PRM describes them, the AUX channel with a DP sink
+ * registers as the hardware does, the AUX channel with a DP sink
  * (DPCD, deferrals, I2C-over-AUX EDID, link training), the GMBUS with an
  * HDMI sink, the power wells, the DPLLs, the transcoders, the DDI
  * buffers, the frame counters and the planes' live surfaces.
