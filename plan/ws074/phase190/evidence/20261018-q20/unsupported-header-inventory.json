@@ -1,0 +1,8 @@
+{
+  "fonts/ahem.css.headers": "Content-Type: text/css;charset=utf-8\nCache-Control: max-age=3600\n",
+  "fonts/Ahem.ttf.headers": "Access-Control-Allow-Origin: *\nCache-Control: max-age=3600\nTiming-Allow-Origin: *\n",
+  "common/reftest-wait.js.headers": "Content-Type: text/javascript; charset=utf-8\n",
+  "resources/testdriver-actions.js.headers": "Content-Type: text/javascript; charset=utf-8\nCache-Control: max-age=3600\n",
+  "resources/testdriver.js.headers": "Content-Type: text/javascript; charset=utf-8\nCache-Control: max-age=3600\n",
+  "resources/testdriver-vendor.js.headers": "Content-Type: text/javascript; charset=utf-8\nCache-Control: max-age=3600\n"
+}

@@ -2,7 +2,7 @@
 
 # ws074-p190: Interop 2025 reftest・crashtest runner coverage
 
-Status: uncleared（q19 scoped partial cleared、whole scripting/環境/API等未達）
+Status: in-progress（q20 static headers→scripted413 scoped attempts）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -241,3 +241,11 @@ Event ws074-p190-q19-consumer-start-20261018: p196 preflightは独立XMLでinlin
 Event ws074-p190-q19-i02-cleared-i03-started-20261018: q19 final pairで元10 controls全件とcapture acknowledgement不一致/遅延色の非PASS・native pixel graphを含む計22対照が通過。i02 scoped consumer revalidation cleared、i03 pixel/fuzzy/graph runnerの実装・actual413へ進む。code着手時はi02 verified11 outputが既に成立していたがQueue i03 stateの投影が遅れたためこのcheckpointでin-progressへ補正（承認scopeと依存outputは不変）。response headers/生成server/.sub/HTTPS/testdriver等は未対応を検出した場合非PASS、native capture acknowledgement=1/正しい画面寸法も判定に必須とする。i01 full global tailは進行中。q18結果は書換えない。
 
 Event ws074-p190-q19-partial-cleared-20261018: [q19 evidence](evidence/20261018-q19-i03/README.md)。全1491 harnessは491 PASS・callback11531 PASS/20226 FAIL/14 NOTRUNを維持、whole/callback後退・追加・欠損・順序変更0。全static1561は839 PASS/722 FAIL・全reference pixel metrics unchanged。strict48は39 PASS/9 readiness_missingを全ID対応で維持。scripted413は全native attempt/568 capturesで82 PASS・73 pixel FAIL・242 unsupported_environment・16 readiness_missing。確認済み1451/3805（38.134034%）、新規計測PASS82増。harness未attempt292、環境/API/worker等の未達は分母に保持。 producer/consumer/measurementの各partialはcleared、whole Phaseは未達を維持。独立Chrome XML5行・native snapshot安全性・22controls・target warning0/C新logic0/DOM35/XML249+54/Acid非増加を確認。source/tool1c6991441、全raw/checkpoint/ID/pair/input hash read-back済み。q18未達は履歴保持、shared projection/target full/p100はpending。
+
+## q20 response header provider / exact scope
+
+q19で環境未対応242を調べるとheader理由332 occurrenceは6普通staticファイル（fonts/ahem.css、Ahem.ttf、common/reftest-wait.js、resources/testdriver/actions/vendor）だけだった。pinned handlers.py load_headersは祖先全階層でなく**隣接__dir__→file**を連結し、.sub.headers優先を適用する。response.Headers.updateは重複をappend、Content-Typeはmetadataに無い場合のみ推測を追加する。query pipeは別pipeline、未実装なら非PASSとする。
+
+[Queue](../queue.md) i01でこのgeneric static providerをHTTP wire roundtrip/元22 controls/追加header controlsにより確認し、適用ackのあるheaderだけを未対応理由から外す。file/body bytes・query・Content-Type/charset・重複/順序を保ち、templateや未対応を黙って無視しない。i02で同一native source/pairの413を再実行してold82維持・全edgeのpinned pixel比較とraw/hash/PNGを検証する。native engine/API/既存他runner/WPT/期待値は変更しない。最大60分/16:32 JST bound、共有projection pending。
+
+Event ws074-p190-q20-selected-20261018: q19 real env recordsとpinned HTTP contractに基づき計測環境を忠実化する2 partialを選定。harness未attempt292も分類済みだが、現に242ケースを止めるheader providerを先に直す。源source/条件は固定し、testdriver actionsやsubstitution/HTTPS等を偽装しない。前q19全result・1451 verifiedを保持する。

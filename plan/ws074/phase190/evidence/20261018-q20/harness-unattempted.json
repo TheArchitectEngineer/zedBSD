@@ -1,0 +1,2338 @@
+[
+  {
+    "id": "/content-security-policy/worker-src/dedicated-child.sub.html",
+    "focus": [
+      "webcompat"
+    ],
+    "type": "testharness",
+    "source": "content-security-policy/worker-src/dedicated-child.sub.html"
+  },
+  {
+    "id": "/content-security-policy/worker-src/dedicated-fallback.sub.html",
+    "focus": [
+      "webcompat"
+    ],
+    "type": "testharness",
+    "source": "content-security-policy/worker-src/dedicated-fallback.sub.html"
+  },
+  {
+    "id": "/content-security-policy/worker-src/dedicated-list.sub.html",
+    "focus": [
+      "webcompat"
+    ],
+    "type": "testharness",
+    "source": "content-security-policy/worker-src/dedicated-list.sub.html"
+  },
+  {
+    "id": "/content-security-policy/worker-src/dedicated-none.sub.html",
+    "focus": [
+      "webcompat"
+    ],
+    "type": "testharness",
+    "source": "content-security-policy/worker-src/dedicated-none.sub.html"
+  },
+  {
+    "id": "/content-security-policy/worker-src/dedicated-self.sub.html",
+    "focus": [
+      "webcompat"
+    ],
+    "type": "testharness",
+    "source": "content-security-policy/worker-src/dedicated-self.sub.html"
+  },
+  {
+    "id": "/content-security-policy/worker-src/dedicated-worker-src-child-fallback-blocked.sub.html",
+    "focus": [
+      "webcompat"
+    ],
+    "type": "testharness",
+    "source": "content-security-policy/worker-src/dedicated-worker-src-child-fallback-blocked.sub.html"
+  },
+  {
+    "id": "/content-security-policy/worker-src/dedicated-worker-src-child-fallback.sub.html",
+    "focus": [
+      "webcompat"
+    ],
+    "type": "testharness",
+    "source": "content-security-policy/worker-src/dedicated-worker-src-child-fallback.sub.html"
+  },
+  {
+    "id": "/content-security-policy/worker-src/dedicated-worker-src-default-fallback.sub.html",
+    "focus": [
+      "webcompat"
+    ],
+    "type": "testharness",
+    "source": "content-security-policy/worker-src/dedicated-worker-src-default-fallback.sub.html"
+  },
+  {
+    "id": "/content-security-policy/worker-src/dedicated-worker-src-script-fallback.sub.html",
+    "focus": [
+      "webcompat"
+    ],
+    "type": "testharness",
+    "source": "content-security-policy/worker-src/dedicated-worker-src-script-fallback.sub.html"
+  },
+  {
+    "id": "/content-security-policy/worker-src/dedicated-worker-src-self-fallback.sub.html",
+    "focus": [
+      "webcompat"
+    ],
+    "type": "testharness",
+    "source": "content-security-policy/worker-src/dedicated-worker-src-self-fallback.sub.html"
+  },
+  {
+    "id": "/content-security-policy/worker-src/service-child.https.sub.html",
+    "focus": [
+      "webcompat"
+    ],
+    "type": "testharness",
+    "source": "content-security-policy/worker-src/service-child.https.sub.html"
+  },
+  {
+    "id": "/content-security-policy/worker-src/service-fallback.https.sub.html",
+    "focus": [
+      "webcompat"
+    ],
+    "type": "testharness",
+    "source": "content-security-policy/worker-src/service-fallback.https.sub.html"
+  },
+  {
+    "id": "/content-security-policy/worker-src/service-list.https.sub.html",
+    "focus": [
+      "webcompat"
+    ],
+    "type": "testharness",
+    "source": "content-security-policy/worker-src/service-list.https.sub.html"
+  },
+  {
+    "id": "/content-security-policy/worker-src/service-none.https.sub.html",
+    "focus": [
+      "webcompat"
+    ],
+    "type": "testharness",
+    "source": "content-security-policy/worker-src/service-none.https.sub.html"
+  },
+  {
+    "id": "/content-security-policy/worker-src/service-self.https.sub.html",
+    "focus": [
+      "webcompat"
+    ],
+    "type": "testharness",
+    "source": "content-security-policy/worker-src/service-self.https.sub.html"
+  },
+  {
+    "id": "/content-security-policy/worker-src/service-worker-src-child-fallback-blocked.https.sub.html",
+    "focus": [
+      "webcompat"
+    ],
+    "type": "testharness",
+    "source": "content-security-policy/worker-src/service-worker-src-child-fallback-blocked.https.sub.html"
+  },
+  {
+    "id": "/content-security-policy/worker-src/service-worker-src-child-fallback.https.sub.html",
+    "focus": [
+      "webcompat"
+    ],
+    "type": "testharness",
+    "source": "content-security-policy/worker-src/service-worker-src-child-fallback.https.sub.html"
+  },
+  {
+    "id": "/content-security-policy/worker-src/service-worker-src-default-fallback.https.sub.html",
+    "focus": [
+      "webcompat"
+    ],
+    "type": "testharness",
+    "source": "content-security-policy/worker-src/service-worker-src-default-fallback.https.sub.html"
+  },
+  {
+    "id": "/content-security-policy/worker-src/service-worker-src-script-fallback.https.sub.html",
+    "focus": [
+      "webcompat"
+    ],
+    "type": "testharness",
+    "source": "content-security-policy/worker-src/service-worker-src-script-fallback.https.sub.html"
+  },
+  {
+    "id": "/content-security-policy/worker-src/service-worker-src-self-fallback.https.sub.html",
+    "focus": [
+      "webcompat"
+    ],
+    "type": "testharness",
+    "source": "content-security-policy/worker-src/service-worker-src-self-fallback.https.sub.html"
+  },
+  {
+    "id": "/content-security-policy/worker-src/shared-child.sub.html",
+    "focus": [
+      "webcompat"
+    ],
+    "type": "testharness",
+    "source": "content-security-policy/worker-src/shared-child.sub.html"
+  },
+  {
+    "id": "/content-security-policy/worker-src/shared-fallback.sub.html",
+    "focus": [
+      "webcompat"
+    ],
+    "type": "testharness",
+    "source": "content-security-policy/worker-src/shared-fallback.sub.html"
+  },
+  {
+    "id": "/content-security-policy/worker-src/shared-list.sub.html",
+    "focus": [
+      "webcompat"
+    ],
+    "type": "testharness",
+    "source": "content-security-policy/worker-src/shared-list.sub.html"
+  },
+  {
+    "id": "/content-security-policy/worker-src/shared-none.sub.html",
+    "focus": [
+      "webcompat"
+    ],
+    "type": "testharness",
+    "source": "content-security-policy/worker-src/shared-none.sub.html"
+  },
+  {
+    "id": "/content-security-policy/worker-src/shared-self.sub.html",
+    "focus": [
+      "webcompat"
+    ],
+    "type": "testharness",
+    "source": "content-security-policy/worker-src/shared-self.sub.html"
+  },
+  {
+    "id": "/content-security-policy/worker-src/shared-worker-src-child-fallback-blocked.sub.html",
+    "focus": [
+      "webcompat"
+    ],
+    "type": "testharness",
+    "source": "content-security-policy/worker-src/shared-worker-src-child-fallback-blocked.sub.html"
+  },
+  {
+    "id": "/content-security-policy/worker-src/shared-worker-src-child-fallback.sub.html",
+    "focus": [
+      "webcompat"
+    ],
+    "type": "testharness",
+    "source": "content-security-policy/worker-src/shared-worker-src-child-fallback.sub.html"
+  },
+  {
+    "id": "/content-security-policy/worker-src/shared-worker-src-default-fallback.sub.html",
+    "focus": [
+      "webcompat"
+    ],
+    "type": "testharness",
+    "source": "content-security-policy/worker-src/shared-worker-src-default-fallback.sub.html"
+  },
+  {
+    "id": "/content-security-policy/worker-src/shared-worker-src-script-fallback.sub.html",
+    "focus": [
+      "webcompat"
+    ],
+    "type": "testharness",
+    "source": "content-security-policy/worker-src/shared-worker-src-script-fallback.sub.html"
+  },
+  {
+    "id": "/content-security-policy/worker-src/shared-worker-src-self-fallback.sub.html",
+    "focus": [
+      "webcompat"
+    ],
+    "type": "testharness",
+    "source": "content-security-policy/worker-src/shared-worker-src-self-fallback.sub.html"
+  },
+  {
+    "id": "/css/css-anchor-position/popover-implicit-anchor.html",
+    "focus": [
+      "anchor-positioning"
+    ],
+    "type": "testharness",
+    "source": "css/css-anchor-position/popover-implicit-anchor.html"
+  },
+  {
+    "id": "/css/css-cascade/scope-focus.html",
+    "focus": [
+      "scope"
+    ],
+    "type": "testharness",
+    "source": "css/css-cascade/scope-focus.html"
+  },
+  {
+    "id": "/css/css-cascade/scope-hover.html",
+    "focus": [
+      "scope"
+    ],
+    "type": "testharness",
+    "source": "css/css-cascade/scope-hover.html"
+  },
+  {
+    "id": "/css/css-overscroll-behavior/overscroll-behavior-root.html",
+    "focus": [
+      "webcompat"
+    ],
+    "type": "testharness",
+    "source": "css/css-overscroll-behavior/overscroll-behavior-root.html"
+  },
+  {
+    "id": "/css/css-view-transitions/input-targets-root-while-render-blocked.html",
+    "focus": [
+      "view-transitions"
+    ],
+    "type": "testharness",
+    "source": "css/css-view-transitions/input-targets-root-while-render-blocked.html"
+  },
+  {
+    "id": "/css/css-view-transitions/transition-in-hidden-page.html",
+    "focus": [
+      "view-transitions"
+    ],
+    "type": "testharness",
+    "source": "css/css-view-transitions/transition-in-hidden-page.html"
+  },
+  {
+    "id": "/css/css-view-transitions/window-resize-aborts-transition-before-ready.html",
+    "focus": [
+      "view-transitions"
+    ],
+    "type": "testharness",
+    "source": "css/css-view-transitions/window-resize-aborts-transition-before-ready.html"
+  },
+  {
+    "id": "/css/css-view-transitions/window-resize-aborts-transition.html",
+    "focus": [
+      "view-transitions"
+    ],
+    "type": "testharness",
+    "source": "css/css-view-transitions/window-resize-aborts-transition.html"
+  },
+  {
+    "id": "/css/css-writing-modes/forms/select-multiple-options-visual-order.html",
+    "focus": [
+      "writingmodes"
+    ],
+    "type": "testharness",
+    "source": "css/css-writing-modes/forms/select-multiple-options-visual-order.html"
+  },
+  {
+    "id": "/css/css-writing-modes/forms/text-input-vertical-overflow-no-scroll.html",
+    "focus": [
+      "writingmodes"
+    ],
+    "type": "testharness",
+    "source": "css/css-writing-modes/forms/text-input-vertical-overflow-no-scroll.html"
+  },
+  {
+    "id": "/dom/events/scrolling/scrollend-event-fired-for-mandatory-snap-point-after-load.html",
+    "focus": [
+      "scrollend"
+    ],
+    "type": "testharness",
+    "source": "dom/events/scrolling/scrollend-event-fired-for-mandatory-snap-point-after-load.html"
+  },
+  {
+    "id": "/dom/events/scrolling/scrollend-event-fired-for-programmatic-scroll.html?include=root-scrollBy-auto",
+    "focus": [
+      "scrollend"
+    ],
+    "type": "testharness",
+    "source": "dom/events/scrolling/scrollend-event-fired-for-programmatic-scroll.html"
+  },
+  {
+    "id": "/dom/events/scrolling/scrollend-event-fired-for-programmatic-scroll.html?include=root-scrollBy-smooth",
+    "focus": [
+      "scrollend"
+    ],
+    "type": "testharness",
+    "source": "dom/events/scrolling/scrollend-event-fired-for-programmatic-scroll.html"
+  },
+  {
+    "id": "/dom/events/scrolling/scrollend-event-fired-for-programmatic-scroll.html?include=root-scrollTo-auto",
+    "focus": [
+      "scrollend"
+    ],
+    "type": "testharness",
+    "source": "dom/events/scrolling/scrollend-event-fired-for-programmatic-scroll.html"
+  },
+  {
+    "id": "/dom/events/scrolling/scrollend-event-fired-for-programmatic-scroll.html?include=root-scrollTo-smooth",
+    "focus": [
+      "scrollend"
+    ],
+    "type": "testharness",
+    "source": "dom/events/scrolling/scrollend-event-fired-for-programmatic-scroll.html"
+  },
+  {
+    "id": "/dom/events/scrolling/scrollend-event-fired-for-programmatic-scroll.html?include=subframe-scrollBy-auto",
+    "focus": [
+      "scrollend"
+    ],
+    "type": "testharness",
+    "source": "dom/events/scrolling/scrollend-event-fired-for-programmatic-scroll.html"
+  },
+  {
+    "id": "/dom/events/scrolling/scrollend-event-fired-for-programmatic-scroll.html?include=subframe-scrollBy-smooth",
+    "focus": [
+      "scrollend"
+    ],
+    "type": "testharness",
+    "source": "dom/events/scrolling/scrollend-event-fired-for-programmatic-scroll.html"
+  },
+  {
+    "id": "/dom/events/scrolling/scrollend-event-fired-for-programmatic-scroll.html?include=subframe-scrollTo-auto",
+    "focus": [
+      "scrollend"
+    ],
+    "type": "testharness",
+    "source": "dom/events/scrolling/scrollend-event-fired-for-programmatic-scroll.html"
+  },
+  {
+    "id": "/dom/events/scrolling/scrollend-event-fired-for-programmatic-scroll.html?include=subframe-scrollTo-smooth",
+    "focus": [
+      "scrollend"
+    ],
+    "type": "testharness",
+    "source": "dom/events/scrolling/scrollend-event-fired-for-programmatic-scroll.html"
+  },
+  {
+    "id": "/dom/events/scrolling/scrollend-event-fired-for-scroll-attr-change.html?include=root-scrollLeft-auto",
+    "focus": [
+      "scrollend"
+    ],
+    "type": "testharness",
+    "source": "dom/events/scrolling/scrollend-event-fired-for-scroll-attr-change.html"
+  },
+  {
+    "id": "/dom/events/scrolling/scrollend-event-fired-for-scroll-attr-change.html?include=root-scrollLeft-smooth",
+    "focus": [
+      "scrollend"
+    ],
+    "type": "testharness",
+    "source": "dom/events/scrolling/scrollend-event-fired-for-scroll-attr-change.html"
+  },
+  {
+    "id": "/dom/events/scrolling/scrollend-event-fired-for-scroll-attr-change.html?include=root-scrollTop-auto",
+    "focus": [
+      "scrollend"
+    ],
+    "type": "testharness",
+    "source": "dom/events/scrolling/scrollend-event-fired-for-scroll-attr-change.html"
+  },
+  {
+    "id": "/dom/events/scrolling/scrollend-event-fired-for-scroll-attr-change.html?include=root-scrollTop-smooth",
+    "focus": [
+      "scrollend"
+    ],
+    "type": "testharness",
+    "source": "dom/events/scrolling/scrollend-event-fired-for-scroll-attr-change.html"
+  },
+  {
+    "id": "/dom/events/scrolling/scrollend-event-fired-for-scroll-attr-change.html?include=subframe-scrollLeft-auto",
+    "focus": [
+      "scrollend"
+    ],
+    "type": "testharness",
+    "source": "dom/events/scrolling/scrollend-event-fired-for-scroll-attr-change.html"
+  },
+  {
+    "id": "/dom/events/scrolling/scrollend-event-fired-for-scroll-attr-change.html?include=subframe-scrollLeft-smooth",
+    "focus": [
+      "scrollend"
+    ],
+    "type": "testharness",
+    "source": "dom/events/scrolling/scrollend-event-fired-for-scroll-attr-change.html"
+  },
+  {
+    "id": "/dom/events/scrolling/scrollend-event-fired-for-scroll-attr-change.html?include=subframe-scrollTop-auto",
+    "focus": [
+      "scrollend"
+    ],
+    "type": "testharness",
+    "source": "dom/events/scrolling/scrollend-event-fired-for-scroll-attr-change.html"
+  },
+  {
+    "id": "/dom/events/scrolling/scrollend-event-fired-for-scroll-attr-change.html?include=subframe-scrollTop-smooth",
+    "focus": [
+      "scrollend"
+    ],
+    "type": "testharness",
+    "source": "dom/events/scrolling/scrollend-event-fired-for-scroll-attr-change.html"
+  },
+  {
+    "id": "/dom/events/scrolling/scrollend-event-fired-for-scrollIntoView.html?include=nested-scrollIntoView",
+    "focus": [
+      "scrollend"
+    ],
+    "type": "testharness",
+    "source": "dom/events/scrolling/scrollend-event-fired-for-scrollIntoView.html"
+  },
+  {
+    "id": "/dom/events/scrolling/scrollend-event-fired-for-scrollIntoView.html?include=root-inline-end-block-end-behavior-auto",
+    "focus": [
+      "scrollend"
+    ],
+    "type": "testharness",
+    "source": "dom/events/scrolling/scrollend-event-fired-for-scrollIntoView.html"
+  },
+  {
+    "id": "/dom/events/scrolling/scrollend-event-fired-for-scrollIntoView.html?include=root-inline-start-block-start-behavior-smooth",
+    "focus": [
+      "scrollend"
+    ],
+    "type": "testharness",
+    "source": "dom/events/scrolling/scrollend-event-fired-for-scrollIntoView.html"
+  },
+  {
+    "id": "/dom/events/scrolling/scrollend-event-fired-for-scrollIntoView.html?include=subframe-inline-end-block-end-behavior-auto",
+    "focus": [
+      "scrollend"
+    ],
+    "type": "testharness",
+    "source": "dom/events/scrolling/scrollend-event-fired-for-scrollIntoView.html"
+  },
+  {
+    "id": "/dom/events/scrolling/scrollend-event-fired-for-scrollIntoView.html?include=subframe-inline-start-block-start-behavior-smooth",
+    "focus": [
+      "scrollend"
+    ],
+    "type": "testharness",
+    "source": "dom/events/scrolling/scrollend-event-fired-for-scrollIntoView.html"
+  },
+  {
+    "id": "/dom/events/scrolling/scrollend-event-fired-to-document.html",
+    "focus": [
+      "scrollend"
+    ],
+    "type": "testharness",
+    "source": "dom/events/scrolling/scrollend-event-fired-to-document.html"
+  },
+  {
+    "id": "/dom/events/scrolling/scrollend-event-fired-to-window.html",
+    "focus": [
+      "scrollend"
+    ],
+    "type": "testharness",
+    "source": "dom/events/scrolling/scrollend-event-fired-to-window.html"
+  },
+  {
+    "id": "/dom/events/scrolling/scrollend-event-handler-content-attributes.html",
+    "focus": [
+      "scrollend"
+    ],
+    "type": "testharness",
+    "source": "dom/events/scrolling/scrollend-event-handler-content-attributes.html"
+  },
+  {
+    "id": "/dom/events/scrolling/scrollend-event-not-fired-on-no-scroll.html",
+    "focus": [
+      "scrollend"
+    ],
+    "type": "testharness",
+    "source": "dom/events/scrolling/scrollend-event-not-fired-on-no-scroll.html"
+  },
+  {
+    "id": "/event-timing/auxclick.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/auxclick.html"
+  },
+  {
+    "id": "/event-timing/buffered-and-duration-threshold.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/buffered-and-duration-threshold.html"
+  },
+  {
+    "id": "/event-timing/buffered-flag.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/buffered-flag.html"
+  },
+  {
+    "id": "/event-timing/click-timing.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/click-timing.html"
+  },
+  {
+    "id": "/event-timing/click.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/click.html"
+  },
+  {
+    "id": "/event-timing/contextmenu.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/contextmenu.html"
+  },
+  {
+    "id": "/event-timing/crossiframe.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/crossiframe.html"
+  },
+  {
+    "id": "/event-timing/dblclick.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/dblclick.html"
+  },
+  {
+    "id": "/event-timing/disconnect-target.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/disconnect-target.html"
+  },
+  {
+    "id": "/event-timing/duration-with-target-low.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/duration-with-target-low.html"
+  },
+  {
+    "id": "/event-timing/event-click-counts.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/event-click-counts.html"
+  },
+  {
+    "id": "/event-timing/event-click-visibilitychange.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/event-click-visibilitychange.html"
+  },
+  {
+    "id": "/event-timing/event-counts-zero.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/event-counts-zero.html"
+  },
+  {
+    "id": "/event-timing/event-retarget.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/event-retarget.html"
+  },
+  {
+    "id": "/event-timing/first-input-interactionid-click.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/first-input-interactionid-click.html"
+  },
+  {
+    "id": "/event-timing/first-input-interactionid-key.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/first-input-interactionid-key.html"
+  },
+  {
+    "id": "/event-timing/first-input-interactionid-tap.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/first-input-interactionid-tap.html"
+  },
+  {
+    "id": "/event-timing/first-input-shadow-dom.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/first-input-shadow-dom.html"
+  },
+  {
+    "id": "/event-timing/idlharness.any.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/idlharness.any.js"
+  },
+  {
+    "id": "/event-timing/idlharness.any.serviceworker.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/idlharness.any.js"
+  },
+  {
+    "id": "/event-timing/idlharness.any.sharedworker.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/idlharness.any.js"
+  },
+  {
+    "id": "/event-timing/idlharness.any.worker.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/idlharness.any.js"
+  },
+  {
+    "id": "/event-timing/interaction-count-click.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/interaction-count-click.html"
+  },
+  {
+    "id": "/event-timing/interaction-count-press-key.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/interaction-count-press-key.html"
+  },
+  {
+    "id": "/event-timing/interaction-count-tap.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/interaction-count-tap.html"
+  },
+  {
+    "id": "/event-timing/interactionid-aux-pointerdown-and-pointerdown.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/interactionid-aux-pointerdown-and-pointerdown.html"
+  },
+  {
+    "id": "/event-timing/interactionid-aux-pointerdown.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/interactionid-aux-pointerdown.html"
+  },
+  {
+    "id": "/event-timing/interactionid-auxclick.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/interactionid-auxclick.html"
+  },
+  {
+    "id": "/event-timing/interactionid-click.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/interactionid-click.html"
+  },
+  {
+    "id": "/event-timing/interactionid-keyboard-event-simulated-click-button-space.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/interactionid-keyboard-event-simulated-click-button-space.html"
+  },
+  {
+    "id": "/event-timing/interactionid-keyboard-event-simulated-click-checkbox-space.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/interactionid-keyboard-event-simulated-click-checkbox-space.html"
+  },
+  {
+    "id": "/event-timing/interactionid-keyboard-event-simulated-click-link-enter.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/interactionid-keyboard-event-simulated-click-link-enter.html"
+  },
+  {
+    "id": "/event-timing/interactionid-keypress.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/interactionid-keypress.html"
+  },
+  {
+    "id": "/event-timing/interactionid-orphan-pointerup.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/interactionid-orphan-pointerup.html"
+  },
+  {
+    "id": "/event-timing/interactionid-press-key-as-input.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/interactionid-press-key-as-input.html"
+  },
+  {
+    "id": "/event-timing/interactionid-press-key-no-effect.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/interactionid-press-key-no-effect.html"
+  },
+  {
+    "id": "/event-timing/interactionid-tap.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/interactionid-tap.html"
+  },
+  {
+    "id": "/event-timing/keydown.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/keydown.html"
+  },
+  {
+    "id": "/event-timing/keyup.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/keyup.html"
+  },
+  {
+    "id": "/event-timing/large-duration-threshold.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/large-duration-threshold.html"
+  },
+  {
+    "id": "/event-timing/medium-duration-threshold.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/medium-duration-threshold.html"
+  },
+  {
+    "id": "/event-timing/min-duration-threshold.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/min-duration-threshold.html"
+  },
+  {
+    "id": "/event-timing/mousedown.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/mousedown.html"
+  },
+  {
+    "id": "/event-timing/mouseenter.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/mouseenter.html"
+  },
+  {
+    "id": "/event-timing/mouseleave.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/mouseleave.html"
+  },
+  {
+    "id": "/event-timing/mouseout.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/mouseout.html"
+  },
+  {
+    "id": "/event-timing/mouseover.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/mouseover.html"
+  },
+  {
+    "id": "/event-timing/mouseup.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/mouseup.html"
+  },
+  {
+    "id": "/event-timing/only-observe-firstInput.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/only-observe-firstInput.html"
+  },
+  {
+    "id": "/event-timing/pointerdown.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/pointerdown.html"
+  },
+  {
+    "id": "/event-timing/pointerenter.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/pointerenter.html"
+  },
+  {
+    "id": "/event-timing/pointerleave.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/pointerleave.html"
+  },
+  {
+    "id": "/event-timing/pointerout.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/pointerout.html"
+  },
+  {
+    "id": "/event-timing/pointerover.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/pointerover.html"
+  },
+  {
+    "id": "/event-timing/pointerup.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/pointerup.html"
+  },
+  {
+    "id": "/event-timing/programmatic-click-not-observed.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/programmatic-click-not-observed.html"
+  },
+  {
+    "id": "/event-timing/retrievability.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/retrievability.html"
+  },
+  {
+    "id": "/event-timing/retrieve-firstInput.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/retrieve-firstInput.html"
+  },
+  {
+    "id": "/event-timing/shadow-dom-null-target.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/shadow-dom-null-target.html"
+  },
+  {
+    "id": "/event-timing/supported-types.window.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/supported-types.window.js"
+  },
+  {
+    "id": "/event-timing/timingconditions.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/timingconditions.html"
+  },
+  {
+    "id": "/event-timing/toJSON.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "event-timing/toJSON.html"
+  },
+  {
+    "id": "/html/editing/the-hidden-attribute/beforematch-scroll-to-text-fragment.html",
+    "focus": [
+      "details"
+    ],
+    "type": "testharness",
+    "source": "html/editing/the-hidden-attribute/beforematch-scroll-to-text-fragment.html"
+  },
+  {
+    "id": "/html/editing/the-hidden-attribute/hidden-until-found-002.html",
+    "focus": [
+      "details"
+    ],
+    "type": "testharness",
+    "source": "html/editing/the-hidden-attribute/hidden-until-found-002.html"
+  },
+  {
+    "id": "/html/editing/the-hidden-attribute/hidden-until-found-text-fragment.html",
+    "focus": [
+      "details"
+    ],
+    "type": "testharness",
+    "source": "html/editing/the-hidden-attribute/hidden-until-found-text-fragment.html"
+  },
+  {
+    "id": "/html/rendering/the-details-element/auto-expand-details-text-fragment.html",
+    "focus": [
+      "details"
+    ],
+    "type": "testharness",
+    "source": "html/rendering/the-details-element/auto-expand-details-text-fragment.html"
+  },
+  {
+    "id": "/html/rendering/the-details-element/details-pseudo-elements-006.html",
+    "focus": [
+      "details"
+    ],
+    "type": "testharness",
+    "source": "html/rendering/the-details-element/details-pseudo-elements-006.html"
+  },
+  {
+    "id": "/html/semantics/disabled-elements/disabled-event-dispatch.tentative.html",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "html/semantics/disabled-elements/disabled-event-dispatch.tentative.html"
+  },
+  {
+    "id": "/html/semantics/disabled-elements/event-propagate-disabled.tentative.html",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "html/semantics/disabled-elements/event-propagate-disabled.tentative.html"
+  },
+  {
+    "id": "/html/semantics/scripting-1/the-script-element/import-attributes/dynamic-import-with-attributes-argument.any.html",
+    "focus": [
+      "modules"
+    ],
+    "type": "testharness",
+    "source": "html/semantics/scripting-1/the-script-element/import-attributes/dynamic-import-with-attributes-argument.any.js"
+  },
+  {
+    "id": "/html/semantics/scripting-1/the-script-element/import-attributes/dynamic-import-with-attributes-argument.any.sharedworker.html",
+    "focus": [
+      "modules"
+    ],
+    "type": "testharness",
+    "source": "html/semantics/scripting-1/the-script-element/import-attributes/dynamic-import-with-attributes-argument.any.js"
+  },
+  {
+    "id": "/html/semantics/scripting-1/the-script-element/import-attributes/dynamic-import-with-attributes-argument.any.worker.html",
+    "focus": [
+      "modules"
+    ],
+    "type": "testharness",
+    "source": "html/semantics/scripting-1/the-script-element/import-attributes/dynamic-import-with-attributes-argument.any.js"
+  },
+  {
+    "id": "/html/semantics/scripting-1/the-script-element/json-module/charset-bom.any.html",
+    "focus": [
+      "modules"
+    ],
+    "type": "testharness",
+    "source": "html/semantics/scripting-1/the-script-element/json-module/charset-bom.any.js"
+  },
+  {
+    "id": "/html/semantics/scripting-1/the-script-element/json-module/charset-bom.any.sharedworker.html",
+    "focus": [
+      "modules"
+    ],
+    "type": "testharness",
+    "source": "html/semantics/scripting-1/the-script-element/json-module/charset-bom.any.js"
+  },
+  {
+    "id": "/html/semantics/scripting-1/the-script-element/json-module/charset-bom.any.worker.html",
+    "focus": [
+      "modules"
+    ],
+    "type": "testharness",
+    "source": "html/semantics/scripting-1/the-script-element/json-module/charset-bom.any.js"
+  },
+  {
+    "id": "/html/semantics/scripting-1/the-script-element/json-module/credentials.sub.html",
+    "focus": [
+      "modules"
+    ],
+    "type": "testharness",
+    "source": "html/semantics/scripting-1/the-script-element/json-module/credentials.sub.html"
+  },
+  {
+    "id": "/html/semantics/scripting-1/the-script-element/json-module/invalid-content-type.any.html",
+    "focus": [
+      "modules"
+    ],
+    "type": "testharness",
+    "source": "html/semantics/scripting-1/the-script-element/json-module/invalid-content-type.any.js"
+  },
+  {
+    "id": "/html/semantics/scripting-1/the-script-element/json-module/invalid-content-type.any.sharedworker.html",
+    "focus": [
+      "modules"
+    ],
+    "type": "testharness",
+    "source": "html/semantics/scripting-1/the-script-element/json-module/invalid-content-type.any.js"
+  },
+  {
+    "id": "/html/semantics/scripting-1/the-script-element/json-module/invalid-content-type.any.worker.html",
+    "focus": [
+      "modules"
+    ],
+    "type": "testharness",
+    "source": "html/semantics/scripting-1/the-script-element/json-module/invalid-content-type.any.js"
+  },
+  {
+    "id": "/html/semantics/scripting-1/the-script-element/json-module/non-object.any.html",
+    "focus": [
+      "modules"
+    ],
+    "type": "testharness",
+    "source": "html/semantics/scripting-1/the-script-element/json-module/non-object.any.js"
+  },
+  {
+    "id": "/html/semantics/scripting-1/the-script-element/json-module/non-object.any.sharedworker.html",
+    "focus": [
+      "modules"
+    ],
+    "type": "testharness",
+    "source": "html/semantics/scripting-1/the-script-element/json-module/non-object.any.js"
+  },
+  {
+    "id": "/html/semantics/scripting-1/the-script-element/json-module/non-object.any.worker.html",
+    "focus": [
+      "modules"
+    ],
+    "type": "testharness",
+    "source": "html/semantics/scripting-1/the-script-element/json-module/non-object.any.js"
+  },
+  {
+    "id": "/html/semantics/scripting-1/the-script-element/json-module/referrer-policies.sub.html",
+    "focus": [
+      "modules"
+    ],
+    "type": "testharness",
+    "source": "html/semantics/scripting-1/the-script-element/json-module/referrer-policies.sub.html"
+  },
+  {
+    "id": "/html/semantics/scripting-1/the-script-element/json-module/repeated-imports.any.html",
+    "focus": [
+      "modules"
+    ],
+    "type": "testharness",
+    "source": "html/semantics/scripting-1/the-script-element/json-module/repeated-imports.any.js"
+  },
+  {
+    "id": "/html/semantics/scripting-1/the-script-element/json-module/repeated-imports.any.sharedworker.html",
+    "focus": [
+      "modules"
+    ],
+    "type": "testharness",
+    "source": "html/semantics/scripting-1/the-script-element/json-module/repeated-imports.any.js"
+  },
+  {
+    "id": "/html/semantics/scripting-1/the-script-element/json-module/repeated-imports.any.worker.html",
+    "focus": [
+      "modules"
+    ],
+    "type": "testharness",
+    "source": "html/semantics/scripting-1/the-script-element/json-module/repeated-imports.any.js"
+  },
+  {
+    "id": "/html/user-activation/activation-trigger-pointerevent.html?mouse",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "html/user-activation/activation-trigger-pointerevent.html"
+  },
+  {
+    "id": "/largest-contentful-paint/cross-origin-image.sub.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "largest-contentful-paint/cross-origin-image.sub.html"
+  },
+  {
+    "id": "/largest-contentful-paint/image-TAO.sub.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "largest-contentful-paint/image-TAO.sub.html"
+  },
+  {
+    "id": "/largest-contentful-paint/image-sw-same-origin.https.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "largest-contentful-paint/image-sw-same-origin.https.html"
+  },
+  {
+    "id": "/largest-contentful-paint/image-upscaling.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "largest-contentful-paint/image-upscaling.html"
+  },
+  {
+    "id": "/largest-contentful-paint/multiple-redirects-TAO.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "largest-contentful-paint/multiple-redirects-TAO.html"
+  },
+  {
+    "id": "/largest-contentful-paint/redirects-tao-star.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "largest-contentful-paint/redirects-tao-star.html"
+  },
+  {
+    "id": "/largest-contentful-paint/web-font-styled-text-resize-swap-after-interaction.html",
+    "focus": [
+      "core-web-vitals"
+    ],
+    "type": "testharness",
+    "source": "largest-contentful-paint/web-font-styled-text-resize-swap-after-interaction.html"
+  },
+  {
+    "id": "/navigation-api/focus-reset/basic.html",
+    "focus": [
+      "navigation"
+    ],
+    "type": "testharness",
+    "source": "navigation-api/focus-reset/basic.html"
+  },
+  {
+    "id": "/navigation-api/focus-reset/multiple-intercept.html",
+    "focus": [
+      "navigation"
+    ],
+    "type": "testharness",
+    "source": "navigation-api/focus-reset/multiple-intercept.html"
+  },
+  {
+    "id": "/navigation-api/navigate-event/cross-origin-traversal-does-not-fire-navigate.html",
+    "focus": [
+      "navigation"
+    ],
+    "type": "testharness",
+    "source": "navigation-api/navigate-event/cross-origin-traversal-does-not-fire-navigate.html"
+  },
+  {
+    "id": "/navigation-api/navigate-event/cross-origin-traversal-redirect.html",
+    "focus": [
+      "navigation"
+    ],
+    "type": "testharness",
+    "source": "navigation-api/navigate-event/cross-origin-traversal-redirect.html"
+  },
+  {
+    "id": "/navigation-api/navigate-event/cross-window/click-crossdocument-crossorigin-sameorigindomain.sub.html",
+    "focus": [
+      "navigation"
+    ],
+    "type": "testharness",
+    "source": "navigation-api/navigate-event/cross-window/click-crossdocument-crossorigin-sameorigindomain.sub.html"
+  },
+  {
+    "id": "/navigation-api/navigate-event/cross-window/click-crossdocument-crossorigin.html",
+    "focus": [
+      "navigation"
+    ],
+    "type": "testharness",
+    "source": "navigation-api/navigate-event/cross-window/click-crossdocument-crossorigin.html"
+  },
+  {
+    "id": "/navigation-api/navigate-event/cross-window/click-samedocument-crossorigin-sameorigindomain.sub.html",
+    "focus": [
+      "navigation"
+    ],
+    "type": "testharness",
+    "source": "navigation-api/navigate-event/cross-window/click-samedocument-crossorigin-sameorigindomain.sub.html"
+  },
+  {
+    "id": "/navigation-api/navigate-event/cross-window/click-samedocument-crossorigin.html",
+    "focus": [
+      "navigation"
+    ],
+    "type": "testharness",
+    "source": "navigation-api/navigate-event/cross-window/click-samedocument-crossorigin.html"
+  },
+  {
+    "id": "/navigation-api/navigate-event/cross-window/location-crossdocument-crossorigin-sameorigindomain.sub.html",
+    "focus": [
+      "navigation"
+    ],
+    "type": "testharness",
+    "source": "navigation-api/navigate-event/cross-window/location-crossdocument-crossorigin-sameorigindomain.sub.html"
+  },
+  {
+    "id": "/navigation-api/navigate-event/cross-window/location-crossdocument-crossorigin.html",
+    "focus": [
+      "navigation"
+    ],
+    "type": "testharness",
+    "source": "navigation-api/navigate-event/cross-window/location-crossdocument-crossorigin.html"
+  },
+  {
+    "id": "/navigation-api/navigate-event/cross-window/location-samedocument-crossorigin-sameorigindomain.sub.html",
+    "focus": [
+      "navigation"
+    ],
+    "type": "testharness",
+    "source": "navigation-api/navigate-event/cross-window/location-samedocument-crossorigin-sameorigindomain.sub.html"
+  },
+  {
+    "id": "/navigation-api/navigate-event/cross-window/location-samedocument-crossorigin.html",
+    "focus": [
+      "navigation"
+    ],
+    "type": "testharness",
+    "source": "navigation-api/navigate-event/cross-window/location-samedocument-crossorigin.html"
+  },
+  {
+    "id": "/navigation-api/navigate-event/cross-window/open-crossdocument-crossorigin-sameorigindomain.sub.html",
+    "focus": [
+      "navigation"
+    ],
+    "type": "testharness",
+    "source": "navigation-api/navigate-event/cross-window/open-crossdocument-crossorigin-sameorigindomain.sub.html"
+  },
+  {
+    "id": "/navigation-api/navigate-event/cross-window/open-crossdocument-crossorigin.html",
+    "focus": [
+      "navigation"
+    ],
+    "type": "testharness",
+    "source": "navigation-api/navigate-event/cross-window/open-crossdocument-crossorigin.html"
+  },
+  {
+    "id": "/navigation-api/navigate-event/cross-window/open-samedocument-crossorigin-sameorigindomain.sub.html",
+    "focus": [
+      "navigation"
+    ],
+    "type": "testharness",
+    "source": "navigation-api/navigate-event/cross-window/open-samedocument-crossorigin-sameorigindomain.sub.html"
+  },
+  {
+    "id": "/navigation-api/navigate-event/cross-window/open-samedocument-crossorigin.html",
+    "focus": [
+      "navigation"
+    ],
+    "type": "testharness",
+    "source": "navigation-api/navigate-event/cross-window/open-samedocument-crossorigin.html"
+  },
+  {
+    "id": "/navigation-api/navigate-event/cross-window/submit-crossdocument-crossorigin-sameorigindomain.sub.html",
+    "focus": [
+      "navigation"
+    ],
+    "type": "testharness",
+    "source": "navigation-api/navigate-event/cross-window/submit-crossdocument-crossorigin-sameorigindomain.sub.html"
+  },
+  {
+    "id": "/navigation-api/navigate-event/cross-window/submit-crossdocument-crossorigin.html",
+    "focus": [
+      "navigation"
+    ],
+    "type": "testharness",
+    "source": "navigation-api/navigate-event/cross-window/submit-crossdocument-crossorigin.html"
+  },
+  {
+    "id": "/navigation-api/navigate-event/cross-window/submit-samedocument-crossorigin-sameorigindomain.sub.html",
+    "focus": [
+      "navigation"
+    ],
+    "type": "testharness",
+    "source": "navigation-api/navigate-event/cross-window/submit-samedocument-crossorigin-sameorigindomain.sub.html"
+  },
+  {
+    "id": "/navigation-api/navigate-event/cross-window/submit-samedocument-crossorigin.html",
+    "focus": [
+      "navigation"
+    ],
+    "type": "testharness",
+    "source": "navigation-api/navigate-event/cross-window/submit-samedocument-crossorigin.html"
+  },
+  {
+    "id": "/navigation-api/navigate-event/intercept-cross-origin.html",
+    "focus": [
+      "navigation"
+    ],
+    "type": "testharness",
+    "source": "navigation-api/navigate-event/intercept-cross-origin.html"
+  },
+  {
+    "id": "/navigation-api/navigate-event/navigate-anchor-cross-origin.html",
+    "focus": [
+      "navigation"
+    ],
+    "type": "testharness",
+    "source": "navigation-api/navigate-event/navigate-anchor-cross-origin.html"
+  },
+  {
+    "id": "/navigation-api/navigate-event/navigate-anchor-download-userInitiated.html",
+    "focus": [
+      "navigation"
+    ],
+    "type": "testharness",
+    "source": "navigation-api/navigate-event/navigate-anchor-download-userInitiated.html"
+  },
+  {
+    "id": "/navigation-api/navigate-event/navigate-anchor-userInitiated.html",
+    "focus": [
+      "navigation"
+    ],
+    "type": "testharness",
+    "source": "navigation-api/navigate-event/navigate-anchor-userInitiated.html"
+  },
+  {
+    "id": "/navigation-api/navigate-event/navigate-form-userInitiated.html",
+    "focus": [
+      "navigation"
+    ],
+    "type": "testharness",
+    "source": "navigation-api/navigate-event/navigate-form-userInitiated.html"
+  },
+  {
+    "id": "/navigation-api/navigation-activation/activation-push-cross-origin.html",
+    "focus": [
+      "navigation"
+    ],
+    "type": "testharness",
+    "source": "navigation-api/navigation-activation/activation-push-cross-origin.html"
+  },
+  {
+    "id": "/navigation-api/navigation-activation/activation-replace-cross-origin.html",
+    "focus": [
+      "navigation"
+    ],
+    "type": "testharness",
+    "source": "navigation-api/navigation-activation/activation-replace-cross-origin.html"
+  },
+  {
+    "id": "/navigation-api/navigation-activation/activation-traverse-not-in-entries.html",
+    "focus": [
+      "navigation"
+    ],
+    "type": "testharness",
+    "source": "navigation-api/navigation-activation/activation-traverse-not-in-entries.html"
+  },
+  {
+    "id": "/navigation-api/navigation-history-entry/entries-across-origins.html",
+    "focus": [
+      "navigation"
+    ],
+    "type": "testharness",
+    "source": "navigation-api/navigation-history-entry/entries-across-origins.html"
+  },
+  {
+    "id": "/navigation-api/navigation-history-entry/entries-after-blank-navigation-from-cross-origin.html",
+    "focus": [
+      "navigation"
+    ],
+    "type": "testharness",
+    "source": "navigation-api/navigation-history-entry/entries-after-blank-navigation-from-cross-origin.html"
+  },
+  {
+    "id": "/navigation-api/navigation-history-entry/key-id-location-replace-cross-origin.html",
+    "focus": [
+      "navigation"
+    ],
+    "type": "testharness",
+    "source": "navigation-api/navigation-history-entry/key-id-location-replace-cross-origin.html"
+  },
+  {
+    "id": "/navigation-api/navigation-methods/navigate-relative-url-utf8.html?encoding=utf8",
+    "focus": [
+      "navigation"
+    ],
+    "type": "testharness",
+    "source": "navigation-api/navigation-methods/navigate-relative-url-utf8.html"
+  },
+  {
+    "id": "/navigation-api/navigation-methods/navigate-relative-url-utf8.html?encoding=windows-1252",
+    "focus": [
+      "navigation"
+    ],
+    "type": "testharness",
+    "source": "navigation-api/navigation-methods/navigate-relative-url-utf8.html"
+  },
+  {
+    "id": "/navigation-api/navigation-methods/navigate-relative-url-utf8.html?encoding=x-cp1251",
+    "focus": [
+      "navigation"
+    ],
+    "type": "testharness",
+    "source": "navigation-api/navigation-methods/navigate-relative-url-utf8.html"
+  },
+  {
+    "id": "/navigation-api/navigation-methods/traverseTo-with-cross-origin-in-history.html",
+    "focus": [
+      "navigation"
+    ],
+    "type": "testharness",
+    "source": "navigation-api/navigation-methods/traverseTo-with-cross-origin-in-history.html"
+  },
+  {
+    "id": "/performance-timeline/buffered-flag-with-entryTypes-observer.tentative.any.html",
+    "focus": [
+      "webcompat"
+    ],
+    "type": "testharness",
+    "source": "performance-timeline/buffered-flag-with-entryTypes-observer.tentative.any.js"
+  },
+  {
+    "id": "/performance-timeline/buffered-flag-with-entryTypes-observer.tentative.any.worker.html",
+    "focus": [
+      "webcompat"
+    ],
+    "type": "testharness",
+    "source": "performance-timeline/buffered-flag-with-entryTypes-observer.tentative.any.js"
+  },
+  {
+    "id": "/pointerevents/capturing_boundary_event_handler_at_ua_shadowdom.html?mouse",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "pointerevents/capturing_boundary_event_handler_at_ua_shadowdom.html"
+  },
+  {
+    "id": "/pointerevents/coalesced_events_attributes.https.html?mouse",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "pointerevents/coalesced_events_attributes.https.html"
+  },
+  {
+    "id": "/pointerevents/idlharness.https.window.html",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "pointerevents/idlharness.https.window.js"
+  },
+  {
+    "id": "/pointerevents/mouse-pointer-boundary-events-for-shadowdom.html",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "pointerevents/mouse-pointer-boundary-events-for-shadowdom.html"
+  },
+  {
+    "id": "/pointerevents/pointerevent_after_target_appended.html?mouse",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "pointerevents/pointerevent_after_target_appended.html"
+  },
+  {
+    "id": "/pointerevents/pointerevent_after_target_removed.html?mouse",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "pointerevents/pointerevent_after_target_removed.html"
+  },
+  {
+    "id": "/pointerevents/pointerevent_attributes.html?mouse",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "pointerevents/pointerevent_attributes.html"
+  },
+  {
+    "id": "/pointerevents/pointerevent_auxclick_is_a_pointerevent.html?mouse",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "pointerevents/pointerevent_auxclick_is_a_pointerevent.html"
+  },
+  {
+    "id": "/pointerevents/pointerevent_boundary_events_at_implicit_release_hoverable_pointers.html",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "pointerevents/pointerevent_boundary_events_at_implicit_release_hoverable_pointers.html"
+  },
+  {
+    "id": "/pointerevents/pointerevent_capture_suppressing_mouse.html",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "pointerevents/pointerevent_capture_suppressing_mouse.html"
+  },
+  {
+    "id": "/pointerevents/pointerevent_click_during_capture.html?mouse-auxclick",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "pointerevents/pointerevent_click_during_capture.html"
+  },
+  {
+    "id": "/pointerevents/pointerevent_click_during_capture.html?mouse-click",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "pointerevents/pointerevent_click_during_capture.html"
+  },
+  {
+    "id": "/pointerevents/pointerevent_click_is_a_pointerevent.html?mouse",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "pointerevents/pointerevent_click_is_a_pointerevent.html"
+  },
+  {
+    "id": "/pointerevents/pointerevent_click_is_a_pointerevent_multiple_clicks.html?mouse",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "pointerevents/pointerevent_click_is_a_pointerevent_multiple_clicks.html"
+  },
+  {
+    "id": "/pointerevents/pointerevent_contextmenu_is_a_pointerevent.html?mouse",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "pointerevents/pointerevent_contextmenu_is_a_pointerevent.html"
+  },
+  {
+    "id": "/pointerevents/pointerevent_disabled_form_control.html?mouse",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "pointerevents/pointerevent_disabled_form_control.html"
+  },
+  {
+    "id": "/pointerevents/pointerevent_fractional_coordinates.html?mouse",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "pointerevents/pointerevent_fractional_coordinates.html"
+  },
+  {
+    "id": "/pointerevents/pointerevent_hit_test_scroll_visible_descendant.html",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "pointerevents/pointerevent_hit_test_scroll_visible_descendant.html"
+  },
+  {
+    "id": "/pointerevents/pointerevent_lostpointercapture_for_disconnected_node.html",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "pointerevents/pointerevent_lostpointercapture_for_disconnected_node.html"
+  },
+  {
+    "id": "/pointerevents/pointerevent_lostpointercapture_remove_setcapture_node.html",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "pointerevents/pointerevent_lostpointercapture_remove_setcapture_node.html"
+  },
+  {
+    "id": "/pointerevents/pointerevent_mouse_capture_change_hover.html",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "pointerevents/pointerevent_mouse_capture_change_hover.html"
+  },
+  {
+    "id": "/pointerevents/pointerevent_mouse_pointercapture_inactivate_pointer.html",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "pointerevents/pointerevent_mouse_pointercapture_inactivate_pointer.html"
+  },
+  {
+    "id": "/pointerevents/pointerevent_movementxy.html?mouse",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "pointerevents/pointerevent_movementxy.html"
+  },
+  {
+    "id": "/pointerevents/pointerevent_pointer_boundary_events_after_removing_last_over_element.html",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "pointerevents/pointerevent_pointer_boundary_events_after_removing_last_over_element.html"
+  },
+  {
+    "id": "/pointerevents/pointerevent_pointercapture_in_frame.html?mouse",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "pointerevents/pointerevent_pointercapture_in_frame.html"
+  },
+  {
+    "id": "/pointerevents/pointerevent_pointermove_on_chorded_mouse_button.html",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "pointerevents/pointerevent_pointermove_on_chorded_mouse_button.html"
+  },
+  {
+    "id": "/pointerevents/pointerevent_pointerout_no_pointer_movement.html",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "pointerevents/pointerevent_pointerout_no_pointer_movement.html"
+  },
+  {
+    "id": "/pointerevents/pointerevent_pointerrawupdate.html",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "pointerevents/pointerevent_pointerrawupdate.html"
+  },
+  {
+    "id": "/pointerevents/pointerevent_releasepointercapture_events_to_original_target.html?mouse",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "pointerevents/pointerevent_releasepointercapture_events_to_original_target.html"
+  },
+  {
+    "id": "/pointerevents/pointerevent_sequence_at_implicit_release_on_click.html?mouse",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "pointerevents/pointerevent_sequence_at_implicit_release_on_click.html"
+  },
+  {
+    "id": "/pointerevents/pointerevent_setpointercapture_inactive_button_mouse.html",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "pointerevents/pointerevent_setpointercapture_inactive_button_mouse.html"
+  },
+  {
+    "id": "/pointerevents/pointerevent_touch-action-keyboard.html",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "pointerevents/pointerevent_touch-action-keyboard.html"
+  },
+  {
+    "id": "/pointerevents/pointerup_after_pointerdown_target_removed.html?mouse",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "pointerevents/pointerup_after_pointerdown_target_removed.html"
+  },
+  {
+    "id": "/pointerevents/predicted_events_attributes.html?mouse",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "pointerevents/predicted_events_attributes.html"
+  },
+  {
+    "id": "/storage-access-api/hasStorageAccess-ABA.sub.https.window.html",
+    "focus": [
+      "storageaccess"
+    ],
+    "type": "testharness",
+    "source": "storage-access-api/hasStorageAccess-ABA.sub.https.window.js"
+  },
+  {
+    "id": "/storage-access-api/hasStorageAccess-insecure.sub.window.html",
+    "focus": [
+      "storageaccess"
+    ],
+    "type": "testharness",
+    "source": "storage-access-api/hasStorageAccess-insecure.sub.window.js"
+  },
+  {
+    "id": "/storage-access-api/hasStorageAccess.sub.https.window.html",
+    "focus": [
+      "storageaccess"
+    ],
+    "type": "testharness",
+    "source": "storage-access-api/hasStorageAccess.sub.https.window.js"
+  },
+  {
+    "id": "/storage-access-api/idlharness.window.html",
+    "focus": [
+      "storageaccess"
+    ],
+    "type": "testharness",
+    "source": "storage-access-api/idlharness.window.js"
+  },
+  {
+    "id": "/storage-access-api/requestStorageAccess-ABA.sub.https.window.html",
+    "focus": [
+      "storageaccess"
+    ],
+    "type": "testharness",
+    "source": "storage-access-api/requestStorageAccess-ABA.sub.https.window.js"
+  },
+  {
+    "id": "/storage-access-api/requestStorageAccess-cross-origin-iframe-navigation-relax.sub.https.window.html",
+    "focus": [
+      "storageaccess"
+    ],
+    "type": "testharness",
+    "source": "storage-access-api/requestStorageAccess-cross-origin-iframe-navigation-relax.sub.https.window.js"
+  },
+  {
+    "id": "/storage-access-api/requestStorageAccess-cross-origin-iframe-navigation.sub.https.window.html",
+    "focus": [
+      "storageaccess"
+    ],
+    "type": "testharness",
+    "source": "storage-access-api/requestStorageAccess-cross-origin-iframe-navigation.sub.https.window.js"
+  },
+  {
+    "id": "/storage-access-api/requestStorageAccess-cross-site-iframe.sub.https.window.html",
+    "focus": [
+      "storageaccess"
+    ],
+    "type": "testharness",
+    "source": "storage-access-api/requestStorageAccess-cross-site-iframe.sub.https.window.js"
+  },
+  {
+    "id": "/storage-access-api/requestStorageAccess-cross-site-sibling-iframes.sub.https.window.html",
+    "focus": [
+      "storageaccess"
+    ],
+    "type": "testharness",
+    "source": "storage-access-api/requestStorageAccess-cross-site-sibling-iframes.sub.https.window.js"
+  },
+  {
+    "id": "/storage-access-api/requestStorageAccess-dedicated-worker.sub.https.window.html",
+    "focus": [
+      "storageaccess"
+    ],
+    "type": "testharness",
+    "source": "storage-access-api/requestStorageAccess-dedicated-worker.sub.https.window.js"
+  },
+  {
+    "id": "/storage-access-api/requestStorageAccess-insecure.sub.window.html",
+    "focus": [
+      "storageaccess"
+    ],
+    "type": "testharness",
+    "source": "storage-access-api/requestStorageAccess-insecure.sub.window.js"
+  },
+  {
+    "id": "/storage-access-api/requestStorageAccess-nested-cross-origin-iframe.sub.https.window.html",
+    "focus": [
+      "storageaccess"
+    ],
+    "type": "testharness",
+    "source": "storage-access-api/requestStorageAccess-nested-cross-origin-iframe.sub.https.window.js"
+  },
+  {
+    "id": "/storage-access-api/requestStorageAccess-nested-cross-site-iframe.sub.https.window.html",
+    "focus": [
+      "storageaccess"
+    ],
+    "type": "testharness",
+    "source": "storage-access-api/requestStorageAccess-nested-cross-site-iframe.sub.https.window.js"
+  },
+  {
+    "id": "/storage-access-api/requestStorageAccess-nested-same-origin-iframe.sub.https.window.html",
+    "focus": [
+      "storageaccess"
+    ],
+    "type": "testharness",
+    "source": "storage-access-api/requestStorageAccess-nested-same-origin-iframe.sub.https.window.js"
+  },
+  {
+    "id": "/storage-access-api/requestStorageAccess-non-fully-active.sub.https.window.html",
+    "focus": [
+      "storageaccess"
+    ],
+    "type": "testharness",
+    "source": "storage-access-api/requestStorageAccess-non-fully-active.sub.https.window.js"
+  },
+  {
+    "id": "/storage-access-api/requestStorageAccess-same-site-iframe.sub.https.window.html",
+    "focus": [
+      "storageaccess"
+    ],
+    "type": "testharness",
+    "source": "storage-access-api/requestStorageAccess-same-site-iframe.sub.https.window.js"
+  },
+  {
+    "id": "/storage-access-api/requestStorageAccess-sandboxed-iframe-allow-storage-access.sub.https.window.html",
+    "focus": [
+      "storageaccess"
+    ],
+    "type": "testharness",
+    "source": "storage-access-api/requestStorageAccess-sandboxed-iframe-allow-storage-access.sub.https.window.js"
+  },
+  {
+    "id": "/storage-access-api/requestStorageAccess-sandboxed-iframe-no-storage-access.sub.https.window.html",
+    "focus": [
+      "storageaccess"
+    ],
+    "type": "testharness",
+    "source": "storage-access-api/requestStorageAccess-sandboxed-iframe-no-storage-access.sub.https.window.js"
+  },
+  {
+    "id": "/storage-access-api/requestStorageAccess-web-socket.sub.https.window.html",
+    "focus": [
+      "storageaccess"
+    ],
+    "type": "testharness",
+    "source": "storage-access-api/requestStorageAccess-web-socket.sub.https.window.js"
+  },
+  {
+    "id": "/storage-access-api/requestStorageAccess.sub.https.window.html",
+    "focus": [
+      "storageaccess"
+    ],
+    "type": "testharness",
+    "source": "storage-access-api/requestStorageAccess.sub.https.window.js"
+  },
+  {
+    "id": "/storage-access-api/storage-access-permission.sub.https.window.html",
+    "focus": [
+      "storageaccess"
+    ],
+    "type": "testharness",
+    "source": "storage-access-api/storage-access-permission.sub.https.window.js"
+  },
+  {
+    "id": "/storage-access-api/storageAccess.testdriver.sub.html",
+    "focus": [
+      "storageaccess"
+    ],
+    "type": "testharness",
+    "source": "storage-access-api/storageAccess.testdriver.sub.html"
+  },
+  {
+    "id": "/uievents/mouse/attributes.html",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "uievents/mouse/attributes.html"
+  },
+  {
+    "id": "/uievents/mouse/cancel-mousedown-in-subframe.html",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "uievents/mouse/cancel-mousedown-in-subframe.html"
+  },
+  {
+    "id": "/uievents/mouse/mousemove_after_mouseover_target_removed.html",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "uievents/mouse/mousemove_after_mouseover_target_removed.html"
+  },
+  {
+    "id": "/uievents/mouse/mousemove_prevent_default_action.html",
+    "focus": [
+      "pointer-and-mouse-events"
+    ],
+    "type": "testharness",
+    "source": "uievents/mouse/mousemove_prevent_default_action.html"
+  },
+  {
+    "id": "/urlpattern/urlpattern-hasregexpgroups.any.html",
+    "focus": [
+      "urlpattern"
+    ],
+    "type": "testharness",
+    "source": "urlpattern/urlpattern-hasregexpgroups.any.js"
+  },
+  {
+    "id": "/urlpattern/urlpattern-hasregexpgroups.any.serviceworker.html",
+    "focus": [
+      "urlpattern"
+    ],
+    "type": "testharness",
+    "source": "urlpattern/urlpattern-hasregexpgroups.any.js"
+  },
+  {
+    "id": "/urlpattern/urlpattern-hasregexpgroups.any.sharedworker.html",
+    "focus": [
+      "urlpattern"
+    ],
+    "type": "testharness",
+    "source": "urlpattern/urlpattern-hasregexpgroups.any.js"
+  },
+  {
+    "id": "/urlpattern/urlpattern-hasregexpgroups.any.worker.html",
+    "focus": [
+      "urlpattern"
+    ],
+    "type": "testharness",
+    "source": "urlpattern/urlpattern-hasregexpgroups.any.js"
+  },
+  {
+    "id": "/urlpattern/urlpattern.any.html",
+    "focus": [
+      "urlpattern"
+    ],
+    "type": "testharness",
+    "source": "urlpattern/urlpattern.any.js"
+  },
+  {
+    "id": "/urlpattern/urlpattern.any.serviceworker.html",
+    "focus": [
+      "urlpattern"
+    ],
+    "type": "testharness",
+    "source": "urlpattern/urlpattern.any.js"
+  },
+  {
+    "id": "/urlpattern/urlpattern.any.sharedworker.html",
+    "focus": [
+      "urlpattern"
+    ],
+    "type": "testharness",
+    "source": "urlpattern/urlpattern.any.js"
+  },
+  {
+    "id": "/urlpattern/urlpattern.any.worker.html",
+    "focus": [
+      "urlpattern"
+    ],
+    "type": "testharness",
+    "source": "urlpattern/urlpattern.any.js"
+  },
+  {
+    "id": "/urlpattern/urlpattern.https.any.html",
+    "focus": [
+      "urlpattern"
+    ],
+    "type": "testharness",
+    "source": "urlpattern/urlpattern.https.any.js"
+  },
+  {
+    "id": "/urlpattern/urlpattern.https.any.serviceworker.html",
+    "focus": [
+      "urlpattern"
+    ],
+    "type": "testharness",
+    "source": "urlpattern/urlpattern.https.any.js"
+  },
+  {
+    "id": "/urlpattern/urlpattern.https.any.sharedworker.html",
+    "focus": [
+      "urlpattern"
+    ],
+    "type": "testharness",
+    "source": "urlpattern/urlpattern.https.any.js"
+  },
+  {
+    "id": "/urlpattern/urlpattern.https.any.worker.html",
+    "focus": [
+      "urlpattern"
+    ],
+    "type": "testharness",
+    "source": "urlpattern/urlpattern.https.any.js"
+  },
+  {
+    "id": "/wasm/jsapi/js-string/basic.any.html",
+    "focus": [
+      "webassembly"
+    ],
+    "type": "testharness",
+    "source": "wasm/jsapi/js-string/basic.any.js"
+  },
+  {
+    "id": "/wasm/jsapi/js-string/basic.any.worker.html",
+    "focus": [
+      "webassembly"
+    ],
+    "type": "testharness",
+    "source": "wasm/jsapi/js-string/basic.any.js"
+  },
+  {
+    "id": "/wasm/jsapi/js-string/constants.any.html",
+    "focus": [
+      "webassembly"
+    ],
+    "type": "testharness",
+    "source": "wasm/jsapi/js-string/constants.any.js"
+  },
+  {
+    "id": "/wasm/jsapi/js-string/constants.any.worker.html",
+    "focus": [
+      "webassembly"
+    ],
+    "type": "testharness",
+    "source": "wasm/jsapi/js-string/constants.any.js"
+  },
+  {
+    "id": "/wasm/jsapi/js-string/imports.any.html",
+    "focus": [
+      "webassembly"
+    ],
+    "type": "testharness",
+    "source": "wasm/jsapi/js-string/imports.any.js"
+  },
+  {
+    "id": "/wasm/jsapi/js-string/imports.any.worker.html",
+    "focus": [
+      "webassembly"
+    ],
+    "type": "testharness",
+    "source": "wasm/jsapi/js-string/imports.any.js"
+  },
+  {
+    "id": "/wasm/jsapi/memory/to-fixed-length-buffer.any.html",
+    "focus": [
+      "webassembly"
+    ],
+    "type": "testharness",
+    "source": "wasm/jsapi/memory/to-fixed-length-buffer.any.js"
+  },
+  {
+    "id": "/wasm/jsapi/memory/to-fixed-length-buffer.any.worker.html",
+    "focus": [
+      "webassembly"
+    ],
+    "type": "testharness",
+    "source": "wasm/jsapi/memory/to-fixed-length-buffer.any.js"
+  },
+  {
+    "id": "/wasm/jsapi/memory/to-resizable-buffer-shared.any.html",
+    "focus": [
+      "webassembly"
+    ],
+    "type": "testharness",
+    "source": "wasm/jsapi/memory/to-resizable-buffer-shared.any.js"
+  },
+  {
+    "id": "/wasm/jsapi/memory/to-resizable-buffer-shared.any.worker.html",
+    "focus": [
+      "webassembly"
+    ],
+    "type": "testharness",
+    "source": "wasm/jsapi/memory/to-resizable-buffer-shared.any.js"
+  },
+  {
+    "id": "/wasm/jsapi/memory/to-resizable-buffer.any.html",
+    "focus": [
+      "webassembly"
+    ],
+    "type": "testharness",
+    "source": "wasm/jsapi/memory/to-resizable-buffer.any.js"
+  },
+  {
+    "id": "/wasm/jsapi/memory/to-resizable-buffer.any.worker.html",
+    "focus": [
+      "webassembly"
+    ],
+    "type": "testharness",
+    "source": "wasm/jsapi/memory/to-resizable-buffer.any.js"
+  },
+  {
+    "id": "/webrtc-encoded-transform/RTCRtpScriptTransform-bad-chunk.https.html",
+    "focus": [
+      "webrtc"
+    ],
+    "type": "testharness",
+    "source": "webrtc-encoded-transform/RTCRtpScriptTransform-bad-chunk.https.html"
+  },
+  {
+    "id": "/webrtc-encoded-transform/RTCRtpScriptTransform-encoded-transform.https.html",
+    "focus": [
+      "webrtc"
+    ],
+    "type": "testharness",
+    "source": "webrtc-encoded-transform/RTCRtpScriptTransform-encoded-transform.https.html"
+  },
+  {
+    "id": "/webrtc-encoded-transform/RTCRtpScriptTransform-sender-worker-single-frame.https.html",
+    "focus": [
+      "webrtc"
+    ],
+    "type": "testharness",
+    "source": "webrtc-encoded-transform/RTCRtpScriptTransform-sender-worker-single-frame.https.html"
+  },
+  {
+    "id": "/webrtc-encoded-transform/script-audio-transform.https.html",
+    "focus": [
+      "webrtc"
+    ],
+    "type": "testharness",
+    "source": "webrtc-encoded-transform/script-audio-transform.https.html"
+  },
+  {
+    "id": "/webrtc-encoded-transform/script-change-transform.https.html",
+    "focus": [
+      "webrtc"
+    ],
+    "type": "testharness",
+    "source": "webrtc-encoded-transform/script-change-transform.https.html"
+  },
+  {
+    "id": "/webrtc-encoded-transform/script-metadata-transform.https.html",
+    "focus": [
+      "webrtc"
+    ],
+    "type": "testharness",
+    "source": "webrtc-encoded-transform/script-metadata-transform.https.html"
+  },
+  {
+    "id": "/webrtc-encoded-transform/script-transform-generateKeyFrame.https.html",
+    "focus": [
+      "webrtc"
+    ],
+    "type": "testharness",
+    "source": "webrtc-encoded-transform/script-transform-generateKeyFrame.https.html"
+  },
+  {
+    "id": "/webrtc-encoded-transform/script-transform-sendKeyFrameRequest.https.html",
+    "focus": [
+      "webrtc"
+    ],
+    "type": "testharness",
+    "source": "webrtc-encoded-transform/script-transform-sendKeyFrameRequest.https.html"
+  },
+  {
+    "id": "/webrtc-encoded-transform/script-transform.https.html",
+    "focus": [
+      "webrtc"
+    ],
+    "type": "testharness",
+    "source": "webrtc-encoded-transform/script-transform.https.html"
+  },
+  {
+    "id": "/webrtc-encoded-transform/script-write-twice-transform.https.html",
+    "focus": [
+      "webrtc"
+    ],
+    "type": "testharness",
+    "source": "webrtc-encoded-transform/script-write-twice-transform.https.html"
+  },
+  {
+    "id": "/webrtc/transfer-datachannel.html",
+    "focus": [
+      "webrtc"
+    ],
+    "type": "testharness",
+    "source": "webrtc/transfer-datachannel.html"
+  }
+]
