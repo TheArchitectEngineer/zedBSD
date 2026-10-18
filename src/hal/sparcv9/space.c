@@ -1157,7 +1157,9 @@ write_entry(
 		}
 
 		/* Takes a valid, unlocked slot of the same page and context. */
-		if ((old & SPARCV9_TTE_VALID) != 0 && (old & SPARCV9_TTE_LOCKED) == 0 && old_tag == tag) {
+		if ((old & SPARCV9_TTE_VALID) != 0 &&
+		    (old & SPARCV9_TTE_LOCKED) == 0 &&
+		    old_tag == tag) {
 			found = 1;
 			break;
 		}

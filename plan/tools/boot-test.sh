@@ -18,7 +18,7 @@
 #   BOOT_TIMEOUT   seconds to wait for the login prompt (default 180)
 #   QEMU           emulator to run (default depends on BOOT_MODE)
 #   BOOT_MODE      uefi-nvme (default), uefi-usb, bios-ide, raspi4b,
-#                  riscv64-virt, riscv64-uboot or riscv32-virt
+#                  riscv64-virt, riscv64-uboot, riscv32-virt or sun4u
 #   BOOT_PATTERN   what the screen must show, one regular expression per line;
 #                  every one must be seen on some screen (default the login
 #                  prompt, ^(?:\S+ )?login: ?)
@@ -64,6 +64,12 @@
 # a 32-bit kernel (default build/riscv32-virt/vmunix) on qemu-system-riscv32,
 # with BOOT_MEMORY defaulting to 512M.
 #
+# BOOT_MODE=sun4u boots a SPARC V9 disk image (default build/sun4u/hdd-image.img)
+# in QEMU's sun4u machine from its IDE disk through OpenBIOS, with 256 MiB
+# (BOOT_MEMORY) on TCG; BOOT_TIMEOUT defaults to 360.  The kernel draws its console on the machine's
+# standard VGA, which the screen reader reads; the serial line is a socket
+# only typed into by BOOT_THEN.
+#
 # It writes OUTPUT/login.png and prints its path.  The exit status is 0 only
 # when the login prompt was seen.
 set -euo pipefail
@@ -87,6 +93,11 @@ riscv64-uboot)
 riscv32-virt)
 	image=${1:-${IMAGE:-${KERNEL:-$root/build/riscv32-virt/vmunix}}}
 	boot_interval=${BOOT_INTERVAL:-0.5}
+	;;
+sun4u)
+	image=${1:-${IMAGE:-$root/build/sun4u/hdd-image.img}}
+	# OpenBIOS and the emulated UltraSPARC take a few minutes to the prompt.
+	boot_timeout=${BOOT_TIMEOUT:-360}
 	;;
 *)
 	image=${1:-${IMAGE:-$root/build/amd64/hdd-image.img}}
@@ -142,6 +153,10 @@ riscv64-uboot)
 	qemu=${QEMU:-qemu-system-riscv64}
 	uboot=${UBOOT:-/usr/lib/u-boot/qemu-riscv64_smode/u-boot.bin}
 	required=("$image" "$uboot")
+	;;
+sun4u)
+	qemu=${QEMU:-qemu-system-sparc64}
+	required=("$image")
 	;;
 *)
 	echo "boot-test: unknown BOOT_MODE: $boot_mode" >&2
@@ -248,6 +263,13 @@ elif [[ $boot_mode == riscv64-virt || $boot_mode == riscv64-uboot || $boot_mode 
 	read -r -a riscv_extra <<<"${QEMU_EXTRA:-}"
 	"$qemu" "${riscv_machine[@]}" "${riscv_boot[@]}" "${riscv_extra[@]}" \
 		>"$output/qemu.log" 2>&1 &
+elif [[ $boot_mode == sun4u ]]; then
+	# OpenBIOS boots the IDE disk; the standard VGA is the machine's own.
+	"$qemu" -machine sun4u -m "${BOOT_MEMORY:-256}" \
+		-drive "if=ide,format=qcow2,file=$disk" -boot c \
+		-display none -no-reboot \
+		-serial "unix:$serial,server,nowait" \
+		-qmp "unix:$monitor,server,nowait" >"$output/qemu.log" 2>&1 &
 elif [[ $boot_mode == raspi4b ]]; then
 	"$qemu" -machine raspi4b -m 2G -kernel "$kernel" -dtb "$dtb" \
 		-drive "if=sd,format=qcow2,file=$disk" \
