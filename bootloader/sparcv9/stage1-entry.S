@@ -1,8 +1,13 @@
 /*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
  * OpenBoot disk bootstrap entry.  OpenFirmware passes the client interface
  * pointer in %o4 and loads this image at virtual address 0x4000.
- * Copyright (C) 2026 Awe Morris
- * SPDX-License-Identifier: Zlib
  */
 
 	.section ".text.entry", #alloc, #execinstr
