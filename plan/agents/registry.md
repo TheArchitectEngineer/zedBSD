@@ -120,3 +120,4 @@
 | P3-merge BUG-258 | — | 1859f13f2..207dff477（base cc283689c） | usb-storage.c・usb-storage-media.h・kern/disk.c・plan/bugs/BUG-258・plan/ws132/tests | integrated（2026-10-08、T1-381 待ち） |
 | P1 / 2026-10-18 | phase-runner（Opus 5.5、low、レビューの子なし） | WS245（q1241）→ WS251 p002（q1242） | `/home/awe/zedBSD-worktrees/p1` / `agent/p1-q1241` | q1241 | q1242 | returned（2026-10-18） | 最後 23135a254 → main db594efb5 |
 | P2 / 2026-10-18 | kernel-and-driver-designer | WS256 p001（q1243） | `/home/awe/zedBSD-worktrees/p2` / `agent/p2-ws256` | q1243 | — | returned（2026-10-18） | 最後 f1acb25c9 → main fc8e21f8c |
+| P1 / 2026-10-18 (2) | phase-runner（Opus 5.5、low、レビューの子なし） | WS245（q1244）→ WS251（q1245） | `/home/awe/zedBSD-worktrees/p1` / `agent/p1-q1244` | q1244 | q1245 | running | 基点 main 5c4bef7fc |

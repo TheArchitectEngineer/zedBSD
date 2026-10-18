@@ -569,3 +569,12 @@ WS074 の記録の q590・q594〜q598（Codex の browser3）は main の同じ�
 | --- | --- | --- | --- | --- |
 | q1243 / q1243-i01 | P2（kernel-and-driver-designer） | [ws256-p001](ws256/phase001/phase.md) | 設計: riscv64 の HAL（QEMU の virt → VisionFive 2）、HAL の API の差分の案（承認の前は plan に置くだけ）、loader の riscv64 版、build、Phase の表の確定、未決の点の案。code は書かない | 返却（2026-10-18）: design.md の初版・proposed/hal-riscv64.md（f1acb25c9、merge fc8e21f8c）。design-reviewer の結果は Q1 が受け取り design-review-1.md に（blocker 1・major 13・minor 24、未反映）。p001 は in-progress |
 | q1243 / q1243-i02 | P2（kernel-and-driver-designer、新しい起動） | ws256-p001 | design.md の改訂 2: design-review-1.md の全件の反映、ユーザーの決定 5・6（virt に画面、WS245 と同じ参照）、ws.md の Phase の表の更新。code は書かない | 返却（2026-10-18）: 改訂 2（2085b833c、merge bd4f58eb7）。レビュー 1 の全件を §11 に、決定 5 は ramfb を HAL が fw_cfg で設定、Phase 表 p003〜p010（76〜106 LW）、残る判断 16 点（§7.2）。p001 は in-progress（Q1 の合格とレビュー 2 の後） |
+
+## 2026-10-18: P1 の WS245・WS251 の残り（q1244〜）
+
+承認: 2026-10-18 ユーザー（クリック）「続ける、範囲外の 2 file も」。P1 は Opus 5.5 low、レビューの子なし（同日の決定）。worktree p1・branch agent/p1-q1244（基点 main 5c4bef7fc）。
+
+| Queue | 担当 | Phase | 範囲 | 結果 |
+| --- | --- | --- | --- | --- |
+| q1244 / q1244-i01 | P1 | ws245-p046・p044・p045 | p046 の目視の残り（tests/display と xd 以外の file、comment・関数名）、p044・p045 の host の受け入れの残り（各 phase.md の再開の手順）。動作は変えない | in-progress |
+| q1245 / q1245-i01 | P1（q1244 の後） | ws251-p002 | 残り: Pi 4 の build 1 回、WS237 gen9・WS229 bootfb の host 試験、file ごとの目視の記録、範囲外の include/libc/vulkan/API-PROVENANCE.md・include/kern/tty.h。bcm2711 の段の名前は残す（ユーザーの決定 (a)） | pending |
