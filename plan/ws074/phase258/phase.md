@@ -2,11 +2,11 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: uncleared（q40 extensibility partial cleared、whole Proxy未達）
+Status: in-progress（q41 DeleteProperty partial、whole Proxy未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
-Queue: ws074-q20261018-40-i01（q30〜q39 partial履歴保持）
+Queue: ws074-q20261018-41-i01（q30〜q40 partial履歴保持）
 Origin: p189/q29 original WebIDL2 parseがProxy未定義で停止。
 
 Objective / own criteria: native managed Proxyを実object internal methodsへ接続し、constructor/revocableと各internal operationのtrap/fallback/invariant/receiver/revocation/callability/GCを正しく実行する。original WebIDL2 actual parse/validatorに必要なget/set/array behaviorを通常APIで提供し、independent controls/原WPTを通す。部分read stageだけでwholeをclearしない。
@@ -162,3 +162,5 @@ focused gatesのみ、all1508 q37/static/scripted/crash q28再利用を明示。
 Final raw archive71 members全read-back、SHA256686b68a24cb0a90845e2c84621852b0fffbf29fb35f70c9301f68d7339311ea0。runtime binaryはhash付きbuildに保持しarchive未同梱。
 
 [証拠](evidence/20261018-q40/README.md)。次finite scope未選定。
+
+Event ws074-p258-q41-selected-20261018: q40 actual extent APIを前提にrealm DeletePropertyとstrict/sloppy operator dispatchを最大90分へ選定。ordinary/native/typed policy保存、global/nested/whole未達。exact scopeはQueue。
