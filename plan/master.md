@@ -587,7 +587,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS265](ws265/ws.md) | MG008 | ppc64 の QEMU の machine（「virt」相当）への移植、framebuffer の console・VFS の段まで（2026-10-18 ユーザー） | completed（2026-10-19） | — |
 | [WS266](ws266/ws.md) | MG008 | m68k（68030）の virt（QEMU）への移植、framebuffer の console・VFS の段まで（2026-10-18 ユーザー） | completed（2026-10-19） | — |
 | [WS267](ws267/ws.md) | MG008 | sun4u（sparcv9）を再び build できるようにし、QEMU で動かす（2026-10-18 ユーザー） | completed（2026-10-19） | — |
-| [WS268](ws268/ws.md) | MG008 | x68k（X68000）を再び build できるようにする（起動は任意、2026-10-18 ユーザー） | planning（担当は未定） | p001 |
+| [WS268](ws268/ws.md) | MG008 | x68k（X68000）を再び build できるようにする（起動は任意、2026-10-18 ユーザー） | incomplete（p001 cleared、p002 規約） | p002 |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 

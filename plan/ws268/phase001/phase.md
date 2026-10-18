@@ -2,7 +2,7 @@
 
 # ws268-p001 x68k の壊れの洗い出しと直し、build
 
-Status: in-progress（2026-10-19 q1258-i01、P2。build・検査は済み、Q1 の判定待ち。MAME の起動は未実施）
+Status: cleared（2026-10-19 Q1 判定: x68k の vmunix・stage1/2・disk image が warning 0、検査 PASS（P2）。Q1 が main afb0a09c0＋05075a7e4 で x68k の vmunix を build して warning 0・m68k kernel check PASS を確かめた。受け渡しは bootloader/x68k/handoff.h と名前ごとの値、boot.h の KERN_X68K_* を削除。MAME の起動は任意で、2 回試して画面が出ず未実施（ユーザーの指示「わからなければ、ビルドだけでいいです」））（旧: in-progress（2026-10-19 q1258-i01、P2。build・検査は済み、Q1 の判定待ち。MAME の起動は未実施））
 
 - 親: [WS268](../ws.md)。Queue: q1258-i01。
 - 起点: 2026-10-18 ユーザー「x68kはエミュレータのセットアップ、もうわからないですよね？わからなければ、ビルドだけでいいです。virt 68kが動けばいいです。」
