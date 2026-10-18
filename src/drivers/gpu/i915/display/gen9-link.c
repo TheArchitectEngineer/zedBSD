@@ -6,17 +6,9 @@
  */
 
 /*
- * The DP link of a Gen9 DDI port (see gen9-link.h).
- *
- * The order is the Linux kernel 6.8.12's for display 9 (MIT):
- * hsw_prepare_dp_ddi_buffers() and hsw_set_signal_levels() with
- * skl_ddi_set_iboost() for the buffers; intel_ddi_prepare_link_retrain()
- * for the transport; intel_dp_prepare_link_train() (LINK_BW_SET,
- * DOWNSPREAD_CTRL), intel_dp_link_training_clock_recovery() and
- * intel_dp_link_training_channel_equalization() for the training, with
- * TPS3 when the sink takes it; intel_ddi_set_idle_link_train() and
- * intel_dp_stop_link_train() after it.  LTTPRs are left in their
- * transparent mode.  The code is this file's own.
+ * The DP link of a Gen9 DDI port (see gen9-link.h): the DDI buffers and
+ * their levels, the transport, and the link training with TPS3 when the
+ * sink takes it.  LTTPRs are left in their transparent mode.
  */
 
 #include "gen9-link.h"
@@ -61,7 +53,13 @@ static int i915_skl_channel_eq(const struct i915_skl_io *io, struct i915_skl_dp_
 static int i915_skl_max_vswing_reached(uint8_t train_set);
 static int i915_skl_adjust_changed(const uint8_t *before, const uint8_t *after, unsigned lanes);
 
-/* Writes the buffer translations of a port's table (hsw_prepare_dp_ddi_buffers). */
+/*
+ * Writes the buffer translations of a port's table
+ * (hsw_prepare_dp_ddi_buffers).
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_ddi.c (hsw_prepare_dp_ddi_buffers).
+ */
 void
 drv_i915_skl_ddi_buffers(
 	const struct i915_skl_io *io,
@@ -84,6 +82,10 @@ drv_i915_skl_ddi_buffers(
  * Selects a table entry on the port (hsw_set_signal_levels): the entry's
  * current boost into DISPIO_CR_TX_BMU_CR0 (a balance leg, or the leg off),
  * and the swing select of the buffer control.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_ddi.c (hsw_set_signal_levels,
+ * skl_ddi_set_iboost).
  */
 void
 drv_i915_skl_ddi_levels(
@@ -122,6 +124,11 @@ drv_i915_skl_ddi_levels(
  * bits; the transport and the buffer are started here.  Returns 0, or EIO
  * when the training failed (the port is left training, for the caller to
  * stop or try again).
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_ddi.c (intel_ddi_prepare_link_retrain,
+ * intel_ddi_set_idle_link_train) and intel_dp_link_training.c
+ * (intel_dp_prepare_link_train, intel_dp_stop_link_train).
  */
 int
 drv_i915_skl_dp_train(
@@ -329,6 +336,10 @@ i915_skl_dpcd_lanes(
  * and pre-emphasis as the sink asks; gives up after five tries at one
  * request, at the highest swing, or after the try limit.  Returns 0, or
  * EIO.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_dp_link_training.c
+ * (intel_dp_link_training_clock_recovery).
  */
 static int
 i915_skl_clock_recovery(
@@ -410,6 +421,10 @@ i915_skl_clock_recovery(
  * Equalises the channel on pattern 3 (or 2 for a sink without TPS3) with
  * scrambling off, adjusting as the sink asks, at most five times.  Returns
  * 0, or EIO.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_dp_link_training.c
+ * (intel_dp_link_training_channel_equalization).
  */
 static int
 i915_skl_channel_eq(

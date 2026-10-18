@@ -7,11 +7,12 @@
 
 /*
  * The PC/AT host's assignment of the memory BARs the firmware left
- * unassigned (BUG-210).
+ * unassigned.
  *
  * The Latitude 5330's firmware leaves the 64-bit BAR0 of its LPSS I2C
- * controllers (00:15.0, 00:15.1) at 0, and Linux places them in the host
- * bridge's window.  The PCI core holds back the attach of such a function
+ * controllers (00:15.0, 00:15.1) at 0, for the operating system to place
+ * in the host bridge's window.  The PCI core holds back the attach of such a function
+
  * on the root bus (struct drv_pci_bus_ops's defer_unassigned) until the
  * ACPI namespace is loaded, which comes after the PCI scan.  Then the
  * windows of \_SB.PC00's _CRS are read, the ranges something already

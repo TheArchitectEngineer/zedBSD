@@ -7,7 +7,7 @@
 
 /*
  * Raspberry Pi 4 onboard Bluetooth: the BCM43455's HCI on the PL011 UART
- * (rpi4-bt.h, ws215-p003).
+ * (rpi4-bt.h).
  *
  * The probe reads the device tree and starts one thread.  The thread
  * routes GPIO 30 to 33 to UART0 (TXD, RXD, CTS, RTS), sets the PL011 up at
@@ -43,10 +43,8 @@
  * sender, that a transition happened while they did not hold the
  * spinlock.
  *
- * The values (ws215-p001, section 2a): the PL011's registers and bits are
- * ARM's PrimeCell UART Technical Reference Manual's; the mailbox tags and
- * clock IDs the Raspberry Pi firmware's property interface's; the pins and
- * the UART's interrupt the board's device tree's.  The times (the quiet
+ * The pins and the UART's interrupt are the board's device tree's.  The
+ * times (the quiet
  * 10 ms, the 100 ms gap within a packet, the CTS wait of 500 ms, the send's
  * 2 s) are this driver's own choices, to be measured on a board.
  */
@@ -77,7 +75,12 @@
 /* How much of memory at the device tree's address may be read, the same bound the platform uses. */
 #define BT_FDT_READ_LIMIT		(2U * 1024U * 1024U)
 
-/* The PL011's registers. */
+/*
+ * The PL011's registers.
+ *
+ * Values referenced: ARM PrimeCell UART (PL011) Technical Reference Manual
+ * (the registers and their bits).
+ */
 #define UART_DR				0x00U
 #define UART_ECR			0x04U
 #define UART_FR				0x18U
@@ -139,7 +142,12 @@
 #define UART_INT_RT			(1U << 6)
 #define UART_INT_ALL			0x07ffU
 
-/* The firmware's clock tags and the clocks this driver asks about. */
+/*
+ * The firmware's clock tags and the clocks this driver asks about.
+ *
+ * Values referenced: the Raspberry Pi firmware's mailbox property
+ * interface (the tags and the clock IDs).
+ */
 #define FIRMWARE_TAG_SET_CLOCK_STATE	0x00038001U
 #define FIRMWARE_TAG_GET_CLOCK_RATE	0x00030002U
 #define FIRMWARE_TAG_SET_CLOCK_RATE	0x00038002U

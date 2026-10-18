@@ -8,26 +8,20 @@
 /*
  * Scanout buffers and the panel buffers of the resident node.
  *
- * A scanout buffer is a framebuffer the display engine reads.  Its layout
- * and placement follow the reference's rules for the one layout supported
- * (XRGB8888, linear):
+ * A scanout buffer is a framebuffer the display engine reads, in the one
+ * layout supported (XRGB8888, linear):
  *
- *   pitch alignment 64        intel_fb_stride_alignment(): a linear surface
- *                             whose pitch is within the plane's maximum
- *                             stride uses 64 bytes (i915_gem_dumb_create()
- *                             rounds width * cpp up to 64 as well)
- *   stride units   pitch/64   skl_plane_stride(): a linear surface expresses
- *                             its stride in 64-byte chunks
- *   alignment      256 KiB    intel_surf_alignment() ->
- *                             intel_linear_alignment(), display version 9+
- *   guard          168 PTEs   i915_gem_object_pin_to_display_plane():
- *                             VTD_GUARD of scratch on both sides when VT-d is
- *                             active.  A guest cannot see whether the host
- *                             translates its DMA, so the guard is applied
- *                             always (a superset of the reference)
- *   cache          clflush    __i915_gem_object_flush_for_display(): dirty
- *                             CPU cache lines are flushed before the display
- *                             reads the pages
+ *   pitch alignment 64        a linear surface whose pitch is within the
+ *                             plane's maximum stride uses 64 bytes
+ *   stride units   pitch/64   a linear surface expresses its stride in
+ *                             64-byte chunks
+ *   alignment      256 KiB    display version 9+
+ *   guard          168 PTEs   scratch on both sides of the buffer.  A guest
+ *                             cannot see whether the host translates its
+ *                             DMA, so the guard is applied always, not only
+ *                             when VT-d is active
+ *   cache          clflush    dirty CPU cache lines are flushed before the
+ *                             display reads the pages
  *
  * The resident node keeps two full-panel buffers while the panel is up.
  * The present path maps both, page by page and uncached (the display does
@@ -52,6 +46,16 @@
 
 #include <uapi/errno.h>
 #include <stddef.h>
+
+/*
+ * The layout and placement of a scanout buffer.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_fb.c
+ * (intel_fb_stride_alignment, intel_surf_alignment,
+ * intel_linear_alignment) and skl_universal_plane.c (skl_plane_stride);
+ * drivers/gpu/drm/i915/gem (i915_gem_object_pin_to_display_plane's
+ * VTD_GUARD, i915_gem_dumb_create's 64-byte pitch).
+ */
 
 /* The stride alignment of a linear surface. */
 #define I915_SCANOUT_STRIDE_ALIGN	64U

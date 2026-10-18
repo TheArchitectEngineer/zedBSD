@@ -12,7 +12,7 @@
  * request path on a fresh context of the GT address space.  Its render
  * target is the caller's object, mapped page by page onto the same backing
  * pages the display binding shows, so what the GPU draws is what the panel
- * scans out.  The release follows the reference's order: every mapping back
+ * scans out.  The release order: every mapping back
  * to scratch, then the GT TLB, and only then the draw's own objects.
  */
 

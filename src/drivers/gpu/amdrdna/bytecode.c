@@ -21,19 +21,6 @@
  * Every byte of the image is read through bounds checks: a routine that
  * reads past the image, runs more instructions than the runner allows or
  * calls deeper than it allows stops, and the run fails with the reason.
- *
- * The order of the operand reads and writes follows the reference so that
- * a routine reads and writes the registers in the same order and with the
- * same values as there; quirks of the reference that change what is
- * written (an operand read of an unknown place gives 0xcdcdcdcd, a
- * read-modify-write of the bits outside a narrow destination) are kept.
- * Where the reference reads past its arrays the runner gives the
- * placeholder value instead.
- *
- * Procedure referenced: Linux v6.19 drivers/gpu/drm/amd/amdgpu/atom.c
- * (the operand reads and writes, each instruction's semantics, the
- * register programs, amdgpu_atom_execute_table and its _locked form, the
- * register program index) and atom.h.
  */
 
 #include <stdbool.h>
@@ -482,11 +469,21 @@ amdrdna_bytecode_open(
  * called a routine that failed (runner->failure says which); ENOMEM when
  * a workspace could not be had.
  *
+ * The order of the operand reads and writes is the firmware interpreter's,
+ * so that a routine reads and writes the registers in the same order and
+ * with the same values; its quirks that change what is written (an operand
+ * read of an unknown place gives 0xcdcdcdcd, a read-modify-write of the
+ * bits outside a narrow destination) are kept.  Where it reads past its
+ * arrays the runner gives the placeholder value instead.
+ *
  * Procedure referenced: Linux v6.19 drivers/gpu/drm/amd/amdgpu/atom.c
- * (amdgpu_atom_execute_table: the state reset before the run).
+ * (the operand reads and writes, each instruction's semantics, the
+ * register programs, amdgpu_atom_execute_table and its _locked form, the
+ * register program index) and atom.h.
  */
 int
 amdrdna_bytecode_run(
+
 	struct amdrdna_bytecode *runner,
 	unsigned routine,
 	uint32_t *parameters,

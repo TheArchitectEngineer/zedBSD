@@ -5,7 +5,10 @@
  * SPDX-License-Identifier: Zlib
  */
 
-/* Independent V3D 4.2 shader/fetch record serialization uses the audited packet XML, without MMIO or allocation. */
+/*
+ * The serialization of the V3D 4.2 shader and fetch records, without MMIO
+ * or allocation.
+ */
 #include <kern/kcrt.h>
 #include <uapi/errno.h>
 
@@ -25,9 +28,13 @@ static void write_program(uint8_t *bytes, const struct bcm2711_native_program *p
  * The owner must retain and clean every referenced GPU allocation before launch.
  * No scoreboard wait occurs on an early texture switch; the compiler acquires
  * the tile scoreboard at its final fragment switch before tile reads/writes.
+ *
+ * Values referenced: Mesa src/broadcom/cle/v3d_packet.xml (the V3D 4.2
+ * shader state and attribute records' fields).
  */
 int
 bcm2711_native_shader_encode(
+
 	const struct bcm2711_native_shader *shader,
 	uint8_t *bytes,
 	size_t capacity)

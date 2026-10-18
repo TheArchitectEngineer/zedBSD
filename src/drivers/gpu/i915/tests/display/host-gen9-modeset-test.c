@@ -15,7 +15,7 @@
  *
  *   sh run-gen9-modeset-host-test.sh
  *
- * The model answers as the PRM describes the registers; it checks what
+ * The model answers as the hardware's registers do; it checks what
  * the code writes and in which order, not the hardware's timing.
  */
 

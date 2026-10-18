@@ -8,8 +8,7 @@
 /*
  * The display half of the device interrupts.
  *
- * This is the display part of the reference's intel_display_irq.c for the
- * Gen11+ path: the reset and the postinstall of the display engine sources
+ * The Gen11+ path: the reset and the postinstall of the display engine sources
  * (pipes, ports, misc, the Type-C hotplug block and the south display
  * block), the handler that acknowledges every source it finds pending, the
  * pipe interrupt hooks the power wells call when a pipe's well comes up or
@@ -195,6 +194,10 @@ const struct i915_pw_irq_ops drv_i915_pw_irq_ops = {
  * delivery and the power-well hooks, and installs the display operations
  * table in place of whatever the interrupt device held.  Runs before
  * install.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display_irq.c (the Gen11+ reset,
+ * postinstall and handler of the display interrupts).
  */
 void
 drv_i915_display_irq_bind(

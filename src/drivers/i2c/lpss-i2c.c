@@ -7,14 +7,14 @@
 
 /*
  * The I2C controllers of the Intel PCH's low power subsystem (LPSS), which
- * are Synopsys DesignWare APB I2C cores behind a PCI function (ws159-p002).
+ * are Synopsys DesignWare APB I2C cores behind a PCI function.
  *
  * The function is brought to D0, its private reset register lets the core
  * out of reset, and the core is checked by its component type.  It is then
  * an I2C master in fast mode (400 kHz) or standard mode (100 kHz), whose
  * SCL counts come from the input clock, which the PCH generation sets
- * (the Alder Lake PCH's 133 MHz, the Tiger Lake-LP PCH's 120 MHz, as
- * Linux's intel-lpss-pci gives them).  A transfer runs without the
+ * (the Alder Lake PCH's 133 MHz, the Tiger Lake-LP PCH's 120 MHz).  A
+ * transfer runs without the
  * controller's interrupt: the commands go into the transmit FIFO, the
  * bytes read come out of the receive FIFO, and the thread sleeps a tick
  * whenever neither moved.  A 64-byte read at 400 kHz takes about 1.6 ms,
@@ -74,9 +74,12 @@
 
 /*
  * The input clocks of the I2C core, in kilohertz, which the identifier
- * tables carry as their driver data: Linux's bxt_i2c_info for the Alder
- * Lake PCH and its spt_i2c_info for the Tiger Lake-LP PCH.
+ * tables carry as their driver data.
+ *
+ * Values referenced: Linux drivers/mfd/intel-lpss-pci.c (bxt_i2c_info for
+ * the Alder Lake PCH, spt_i2c_info for the Tiger Lake-LP PCH).
  */
+
 #define LPSS_ADL_CLOCK_KHZ	133000U
 #define LPSS_TGL_LP_CLOCK_KHZ	120000U
 

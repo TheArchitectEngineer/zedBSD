@@ -16,9 +16,8 @@
  * +3072.  STATE_BASE_ADDRESS points every heap at the start of the page, so
  * every offset below is also the pointer a state packet carries.
  *
- * The command list follows the order of Mesa's BLORP, the smallest sequence
- * known to draw on this hardware: vertex state, then the pipeline, then the
- * primitive.  The batch and the state bytes are compared by hash with the
+ * The command list is the smallest sequence known to draw on this
+ * hardware: vertex state, then the pipeline, then the primitive.  The batch and the state bytes are compared by hash with the
  * ones earlier hardware runs used, so every dword here is kept exactly as it
  * was first programmed.
  *
@@ -441,6 +440,9 @@ drv_i915_draw_fixture_write_state(
  * setting of every state but the instruction heap.  A count above capacity
  * never happens: dwords past the capacity are dropped, so the caller
  * compares the count with what it expects.
+ *
+ * Procedure referenced: Mesa src/intel/blorp (the order of the commands of
+ * a draw: vertex state, then the pipeline, then the primitive).
  */
 unsigned
 drv_i915_draw_fixture_build_batch(

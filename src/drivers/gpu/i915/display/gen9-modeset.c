@@ -6,19 +6,10 @@
  */
 
 /*
- * The register sequences of the Gen9 mode set (see gen9-modeset.h).
- *
- * The order of the writes is the Linux kernel 6.8.12's for display 9
- * (MIT): hsw_power_well_enable() for power well 2 and the DDI IO wells;
- * skl_ddi_pll_enable() and skl_ddi_pll_disable(); hsw_crtc_enable() with
- * hsw_ddi_pre_enable_dp() or intel_ddi_pre_enable_hdmi(),
- * intel_set_pipe_src_size(), bdw_set_pipe_misc(),
- * hsw_configure_cpu_transcoder() (intel_set_m_n, the timings,
- * hsw_set_transconf), intel_enable_ddi() (the DDI function and the
- * transcoder) and intel_enable_ddi_hdmi() (Display WA #1143); and
- * intel_ddi_post_disable() for the way back.  skl_write_plane_wm() and
- * skl_plane_ctl() for the plane, spt_hpd_detection_setup() and the SDEISR
- * live state for the hotplug sense.  The code is this file's own.
+ * The register sequences of the Gen9 mode set (see gen9-modeset.h): power
+ * well 2 and the DDI IO wells, the DPLLs, the pipe, transcoder and DDI of
+ * an output and the way back, the plane and its watermarks, and the
+ * hotplug sense.
  *
  * Not done: the pipe's gamma and CSC (the plane bypasses them), audio and
  * infoframes on HDMI, HDMI 2.0 scrambling (the clock stays at most
@@ -72,6 +63,10 @@ static void i915_skl_iboost(const struct i915_skl_io *io, unsigned port, uint8_t
 /*
  * Turns power well 2 on: the request, its state, then power gate 2's
  * fuses.  A well already up is left alone.  Returns 0, or ETIMEDOUT.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display_power_well.c
+ * (hsw_power_well_enable).
  */
 int
 drv_i915_skl_pw2_on(
@@ -108,7 +103,13 @@ drv_i915_skl_pw2_on(
 	return 0;
 }
 
-/* Turns a DDI port's IO power well on or off: 0, or ETIMEDOUT. */
+/*
+ * Turns a DDI port's IO power well on or off: 0, or ETIMEDOUT.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display_power_well.c
+ * (hsw_power_well_enable).
+ */
 int
 drv_i915_skl_ddi_io_power(
 	const struct i915_skl_io *io,
@@ -142,6 +143,9 @@ drv_i915_skl_ddi_io_power(
  * bits, its configuration words, its enable, and the wait for its lock.
  * Returns 0, or ETIMEDOUT (the DPLL is left enabled for the caller to
  * stop).
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_dpll_mgr.c (skl_ddi_pll_enable).
  */
 int
 drv_i915_skl_dpll_on(
@@ -179,7 +183,12 @@ drv_i915_skl_dpll_on(
 	return 0;
 }
 
-/* Stops a DPLL (skl_ddi_pll_disable). */
+/*
+ * Stops a DPLL (skl_ddi_pll_disable).
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_dpll_mgr.c (skl_ddi_pll_disable).
+ */
 void
 drv_i915_skl_dpll_off(
 	const struct i915_skl_io *io,
@@ -197,6 +206,13 @@ drv_i915_skl_dpll_off(
 /*
  * Lights an external output on its pipe (hsw_crtc_enable for display 9).
  * Returns 0, or an errno with what was started stopped again.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display.c (hsw_crtc_enable,
+ * intel_set_pipe_src_size, bdw_set_pipe_misc, hsw_configure_cpu_transcoder,
+ * intel_set_m_n, hsw_set_transconf) and intel_ddi.c (hsw_ddi_pre_enable_dp,
+ * intel_ddi_pre_enable_hdmi, intel_enable_ddi, intel_enable_ddi_hdmi with
+ * Display WA #1143).
  */
 int
 drv_i915_skl_output_on(
@@ -297,6 +313,9 @@ drv_i915_skl_output_on(
  * Darkens an external output (intel_ddi_post_disable for display 9): the
  * plane, the transcoder, the DDI function, the sink's power, the clocks,
  * the buffer, the IO power and the DPLL.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_ddi.c (intel_ddi_post_disable).
  */
 void
 drv_i915_skl_output_off(
@@ -338,6 +357,9 @@ drv_i915_skl_output_off(
  * Writes a pipe's first plane's watermarks (eight levels and no
  * transition one), its DDB, the cursor's watermarks (off) and DDB, and the
  * line time.  The plane's surface write arms them.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/skl_watermark.c (skl_write_plane_wm).
  */
 void
 drv_i915_skl_write_pipe_wm(
@@ -375,6 +397,9 @@ drv_i915_skl_write_pipe_wm(
  * XRGB8888 surface, plane gamma off, no pipe gamma or CSC): the control,
  * the stride, the position, the size and the offset, then the surface,
  * whose write arms them for the next vertical blank.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/skl_universal_plane.c (skl_plane_ctl).
  */
 void
 drv_i915_skl_plane_on(
@@ -451,7 +476,14 @@ drv_i915_skl_wait_vblank(
 	return ETIMEDOUT;
 }
 
-/* Turns on the PCH's hotplug sense of ports B to D (spt_hpd_detection_setup). */
+/*
+ * Turns on the PCH's hotplug sense of ports B to D
+ * (spt_hpd_detection_setup).
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_hotplug_irq.c
+ * (spt_hpd_detection_setup).
+ */
 void
 drv_i915_skl_hotplug_enable(
 	const struct i915_skl_io *io)

@@ -5,7 +5,9 @@
  * SPDX-License-Identifier: Zlib
  */
 
-/* Independent 4.2 binning state serialization follows audited XML field facts, without upstream packing code or MMIO. */
+/*
+ * The serialization of the V3D 4.2 binning state, without MMIO.
+ */
 #include <kern/kcrt.h>
 #include <uapi/errno.h>
 
@@ -23,7 +25,11 @@ static void write_varyings(uint8_t *bytes, uint8_t opcode, uint32_t mask);
  * buffer.  Depth/stencil, multisampling, transform feedback and queries
  * remain disabled.  The caller owns every referenced native interval and
  * cleans the enclosing BCL.
+ *
+ * Values referenced: Mesa src/broadcom/cle/v3d_packet.xml (the V3D 4.2
+ * binning packets' fields).
  */
+
 int
 bcm2711_native_bin_encode(
 	const struct bcm2711_native_bin *state,

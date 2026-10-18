@@ -28,8 +28,7 @@
  * login or a logout (the greeter's lease, then the session's, then the
  * greeter's again) never goes dark.  A hold that no lease
  * ends within I915_PRESENT_HOLD_MS, or the shutdown, makes the worker
- * leave the window, and the panel is stopped through the reference's stop
- * path.
+ * leave the window, and the panel is stopped through its stop path.
  *
  * FIFO: a presentation returns once its flip is armed, so the
  * presenting thread draws its next frame while the flip waits for its

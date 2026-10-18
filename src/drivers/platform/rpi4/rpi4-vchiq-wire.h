@@ -9,9 +9,7 @@
  * The shared-memory layout of VCHIQ, the message queue between the ARM and
  * the VideoCore's VPU on the Raspberry Pi 4.
  *
- * The layout is the protocol's, as BSD-3-Clause sources describe it
- * (FreeBSD's sys/contrib/vchiq); the names and the code here are zedBSD's
- * own.  The ARM is the slave side: it owns the memory, writes the first
+ * The ARM is the slave side: it owns the memory, writes the first
  * slot (slot zero) and hands its bus address to the firmware, which then
  * acts as the master.  Each side writes messages into its own 4 KiB slots,
  * advances its tx_pos and signals the other side's trigger; the reader hands
@@ -29,8 +27,16 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+/*
+ * The shared memory's constants and message types.
+ *
+ * Values referenced: FreeBSD sys/contrib/vchiq (the VCHIQ shared-memory
+ * layout and message codes).
+ */
+
 /* "VCHI" read as a big-endian four-character code: the slot zero's magic. */
 #define DRV_RPI4_VCHIQ_MAGIC			0x56434849U
+
 
 /* The protocol version the ARM speaks, and the oldest it accepts. */
 #define DRV_RPI4_VCHIQ_VERSION			8U

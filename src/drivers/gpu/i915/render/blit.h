@@ -10,8 +10,8 @@
  *
  * Every transfer the executor performs -- attachment and image clears,
  * buffer and image copies, image copies and blits, and the display's scaled
- * copy into the scanout buffer -- is one RECTLIST drawn by the 3D pipeline,
- * the way Mesa's blorp does it on the render engine.  A rectangle names its
+ * copy into the scanout buffer -- is one RECTLIST drawn by the 3D pipeline
+ * on the render engine.  A rectangle names its
  * surfaces by GPU address, extent, pitch and format (struct i915_gfx_surface)
  * and holds no Vulkan object.
  *
@@ -33,6 +33,10 @@
 
 struct i915_render_session;
 
+/*
+ * Procedure referenced: Mesa src/intel/blorp (the RECTLIST copies and
+ * blits on the render engine).
+ */
 int drv_i915_gfx_rect_prepare(struct i915_render_session *session);
 int drv_i915_gfx_rect_build(struct i915_render_session *session, const struct i915_gfx_surface *dst, const struct i915_gfx_rect *dst_rect, const struct i915_gfx_surface *src, const struct i915_gfx_rect *src_rect, const uint32_t clear[4], int linear, uint64_t *batch_va);
 int drv_i915_gfx_rect(struct i915_render_session *session, const struct i915_gfx_surface *dst, const struct i915_gfx_rect *dst_rect, const struct i915_gfx_surface *src, const struct i915_gfx_rect *src_rect, const uint32_t clear[4], int linear);

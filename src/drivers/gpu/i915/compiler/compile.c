@@ -23,16 +23,11 @@
  * the value that lives longest past the point where the registers ran out.
  * A value in scratch memory has no register of its own; every definition
  * writes it out and every instruction that reads it reads it back into a
- * temporary first -- what Mesa's brw_spill_reg() does to a spilled virtual
- * register on Gen12.0 (brw_reg_allocate.cpp).  A vertex shader that runs out
- * first gathers its VUE at the end instead of staging it for its whole run.
+ * temporary first.  A vertex shader that runs out first gathers its VUE at
+ * the end instead of staging it for its whole run.
  *
- * The register and message conventions are the ones Mesa's compiler uses for
- * the same shaders (tools/refvk.c, disassembled with gentool) -- see the table
- * below -- and the emitted kernels are judged by Mesa's assembler and
- * disassembler before they meet a
- * GPU.  The encoded words are returned for the caller to place in a GPU
- * object.
+ * The register and message conventions are in the table below.  The
+ * encoded words are returned for the caller to place in a GPU object.
  */
 
 #include "compiler.h"
@@ -48,6 +43,10 @@
 
 /*
  * Register conventions of a SIMD8 dispatch on Gen12 (one register = one 32-bit value to a channel).
+ *
+ * Values referenced: the register and message conventions Mesa's Intel
+ * compiler (src/intel/compiler) uses for the same shaders, as named in each
+ * row.
  *
  * Vertex shader payload:   r0 header, r1 the URB handles of the eight vertices,
  *                          r2.. the push data (32 bytes to a register, scalar regions): the push constants,
@@ -1814,9 +1813,12 @@ i915_compile_scratch_header(
 /*
  * Writes out the spilled values the instruction just defined: an OWord
  * block write of each temporary under the execution mask, so the channels
- * the instruction did not run on keep what their slot held (Mesa's
- * emit_spill() of a per-channel destination).  A value nothing reads
- * afterwards is not written.
+ * the instruction did not run on keep what their slot held.  A value
+ * nothing reads afterwards is not written.
+ *
+ * Procedure referenced: Mesa src/intel/compiler/brw_reg_allocate.cpp
+ * (brw_spill_reg and emit_spill on Gen12.0: every definition of a spilled
+ * value written out, every read reloaded into a temporary).
  */
 static void
 i915_compile_spill_results(

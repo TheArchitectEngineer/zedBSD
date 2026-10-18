@@ -13,8 +13,6 @@
  * - Port 0x432 bit 0 selects the active bank.
  * - The command block lives at 0x640-0x64e with a 2-byte stride
  *   (16-bit data at 0x640), and the control block at 0x74c/0x74e.
- * - Reference model: qemu-pc98 hw/ide/pc98-ide.c
- * - Reference driver: linux-pc98 drivers/ata/pata_pc9800.c.
  * - Interrupts stay disabled (nIEN), everything is polled.
  */
 
@@ -26,7 +24,15 @@
 #include <hal/hal.h>
 #include "kern/klog.h"
 
+/*
+ * The register block.
+ *
+ * Values referenced: qemu-pc98 hw/ide/pc98-ide.c and linux-pc98
+ * drivers/ata/pata_pc9800.c (the bank select port and the register
+ * addresses).
+ */
 #define IDE_BANK_SELECT 0x432U
+
 #define IDE_DATA 0x640U
 #define IDE_ERROR 0x642U
 #define IDE_NSECT 0x644U

@@ -12,8 +12,7 @@
  * Register conventions of a SIMD8 compute thread on Gen12.0 (GPGPU_WALKER):
  *
  *   r0              the thread header: the workgroup's place in the dispatch
- *                   in dwords 1 (x), 6 (y) and 7 (z) (Mesa's
- *                   emit_work_group_id_setup()), the scratch space in
+ *                   in dwords 1 (x), 6 (y) and 7 (z), the scratch space in
  *                   dwords 3 and 5
  *   r1 ..           the cross-thread push data every thread of a group reads:
  *                   the push constants, then the uniform blocks and the
@@ -25,7 +24,7 @@
  *   after them      the values, as for any stage (r16 on, or right after the
  *                   payload)
  *   r127            the thread's end: a copy of r0 sent to the thread
- *                   spawner (Mesa's emit_cs_terminate() before Gfx12.5)
+ *                   spawner
  *
  * A storage buffer word changed atomically goes to the data port as an A64
  * untyped atomic of the channels that run it, with its address built as for
@@ -37,14 +36,20 @@
  * offsets as the address payload.  A fence is a SIMD1 memory fence message
  * of r0 whose reply the thread waits for; a workgroup barrier is the
  * gateway's barrier message with the group's barrier ID from r0.2, then
- * sync.bar (Mesa's emit_barrier() and generate_barrier()).
+ * sync.bar.
  *
  * The file is part of compile.c's translation unit: it uses that file's
  * state, constants and helpers, and its functions are declared with the
  * others at the top of compile.c.
  */
 
-/* The registers of r0 holding the workgroup's place along x, y and z, as byte offsets. */
+/*
+ * The registers of r0 holding the workgroup's place along x, y and z, as
+ * byte offsets.
+ *
+ * Values referenced: Mesa src/intel/compiler (emit_work_group_id_setup,
+ * the dwords 1, 6 and 7 of r0).
+ */
 #define COMPILE_CS_GROUP_X_BYTE		4U
 #define COMPILE_CS_GROUP_Y_BYTE		24U
 #define COMPILE_CS_GROUP_Z_BYTE		28U
@@ -364,6 +369,9 @@ i915_compile_atomic(
  * Ends a compute thread: a copy of the header, for all eight channels, sent
  * to the thread spawner with the end-of-thread bit (the form of the kernel
  * of tests/execution/eu-test.c).
+ *
+ * Procedure referenced: Mesa src/intel/compiler/brw_fs_visitor.cpp
+ * (emit_cs_terminate, before Gfx12.5).
  */
 static void
 i915_compile_terminate_compute(
@@ -724,6 +732,9 @@ i915_compile_fence(
  * for the whole thread, outside the execution mask: a thread whose channels
  * are all disabled still waits once.  A group of one thread runs in order
  * and needs no message (Mesa leaves it out too).
+ *
+ * Procedure referenced: Mesa src/intel/compiler (emit_barrier,
+ * generate_barrier).
  */
 static void
 i915_compile_barrier(

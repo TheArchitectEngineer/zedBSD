@@ -6,11 +6,11 @@
  */
 
 /*
- * The placement of a BAR the firmware left unassigned (BUG-210).
+ * The placement of a BAR the firmware left unassigned.
  *
  * The firmware of some machines (the Latitude 5330's, for its LPSS I2C
  * controllers) leaves a memory BAR at address 0 for the operating system
- * to place, as Linux's PCI core does.  A BAR is placed inside a window the
+ * to place.  A BAR is placed inside a window the
  * host bridge's _CRS gives its bus, at the lowest address aligned to its
  * size that no busy range touches: the other functions' BARs, the bridges'
  * windows, the motherboard's reserved ranges, the configuration space and
@@ -20,8 +20,9 @@
  * windows below 1 MiB (the legacy VGA and option ROM ranges) are never
  * used.
  *
- * Nothing here touches hardware, so the host test compiles this file as
- * it is (plan/ws159/tests/run-host-pci-window.sh).
+ * Nothing here touches hardware, so a host test compiles this file as
+ * it is.
+
  */
 
 #include <drivers/pci/pci-window.h>

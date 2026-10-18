@@ -6,20 +6,11 @@
  */
 
 /*
- * The arithmetic of the Gen9 mode set (see gen9-mode.h).
- *
- * The rules are the Linux kernel 6.8.12's for display 9 (MIT): the CD
- * clock readout of skl_get_cdclk(), the DP link choice of
- * intel_dp_compute_link_config_wide() (rates ascending, then lanes), the
- * M and N of intel_link_compute_m_n(), the DPLL words of
- * skl_ddi_dp_set_dpll_hw_state() and skl_ddi_calculate_wrpll(), the
- * buffer tables of intel_ddi_buf_trans.c and their choice by
- * intel_ddi_buf_trans_init(), the training adjustments of
- * intel_dp_link_training.c, and the watermarks and DDB of
- * skl_watermark.c (skl_compute_wm_params(), skl_compute_plane_wm(),
- * skl_cursor_allocation(), skl_crtc_allocate_plane_ddb(), the pipes'
- * split by width).  The code is this file's own; the table rows and the
- * register fields are in intel/display-regs-gen9-modeset.h.
+ * The arithmetic of the Gen9 mode set (see gen9-mode.h): the CD clock
+ * readout, the DP link choice (rates ascending, then lanes), the M and N,
+ * the DPLL words, the DDI buffer tables and their choice, the training
+ * adjustments, and the watermarks and the DDB.  The register fields are in
+ * intel/display-regs-gen9-modeset.h.
  *
  * The watermarks are those of a linear 32-bit plane without scaling or
  * rotation, the only plane the driver shows; IPC is taken as off and the
@@ -74,9 +65,12 @@
 #define I915_SKL_SAFE_CLOCK_KHZ		65000
 
 /*
- * The DDI buffer translation tables of display 9 (intel_ddi_buf_trans.c):
- * the DP ones of Skylake and Kaby Lake by power class, the eDP low swing
- * ones, and the HDMI ones.
+ * The DDI buffer translation tables of display 9: the DP ones of Skylake
+ * and Kaby Lake by power class, the eDP low swing ones, and the HDMI ones.
+ *
+ * Values referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_ddi_buf_trans.c (the Skylake and
+ * Kaby Lake DP, eDP and HDMI tables).
  */
 static const struct i915_skl_buf_trans i915_skl_trans_dp[] = {
 	{ 0x00002016U, 0x000000a0U, 0x0U },
@@ -271,6 +265,9 @@ static void i915_skl_m_n(uint32_t m, uint32_t n, uint32_t constant_n, uint32_t *
  * Reports the CD clock in kHz from LCPLL1_CTL, DPLL_CTRL1 and CDCLK_CTL
  * (skl_get_cdclk(), skl_dpll0_update()), or zero when DPLL0 is off or its
  * rate is not one the CD clock runs on.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_cdclk.c (skl_get_cdclk).
  */
 uint32_t
 drv_i915_skl_cdclk_khz(
@@ -381,6 +378,10 @@ drv_i915_skl_pick_mode(
  * the rates from RBR up to the sink's (HBR2 at most), and for each the
  * lane counts from 1 up to the sink's.  Fills the M and N too.  Returns
  * 0, or ENOSPC when no link the sink takes carries the mode.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_dp.c
+ * (intel_dp_compute_link_config_wide).
  */
 int
 drv_i915_skl_dp_link(
@@ -429,6 +430,9 @@ drv_i915_skl_dp_link(
  * Computes the M and N words of a link (intel_link_compute_m_n): data M
  * and N over a fixed N of 0x8000000, link M and N over 0x80000, each
  * halved until it fits 24 bits, and a transfer unit of 64.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display.c (intel_link_compute_m_n).
  */
 void
 drv_i915_skl_dp_m_n(
@@ -519,6 +523,10 @@ drv_i915_skl_dp_train_delay_us(
  * Computes the DPLL words of a DP port clock: the override and the link
  * rate code of half the port clock (skl_ddi_dp_set_dpll_hw_state).
  * Returns 0, or EINVAL for a rate the DPLL has no code for.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_dpll_mgr.c
+ * (skl_ddi_dp_set_dpll_hw_state).
  */
 int
 drv_i915_skl_dpll_dp(
@@ -568,6 +576,9 @@ drv_i915_skl_dpll_dp(
  * frequency deviates least from one of the three central frequencies
  * within +1 % and -6 % is taken, an even one before an odd one, and split
  * into P, Q and K.  Returns 0, or EINVAL when no divider fits.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_dpll_mgr.c (skl_ddi_calculate_wrpll).
  */
 int
 drv_i915_skl_dpll_hdmi(
@@ -788,6 +799,10 @@ drv_i915_skl_sku(
  * Reports the DDI buffer translation table of a part, a kind of output
  * and a port (intel_ddi_buf_trans_init() and the get_buf_trans functions):
  * the count is cut to 9 for DP and eDP on a port other than A.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_ddi_buf_trans.c
+ * (intel_ddi_buf_trans_init and the table choice).
  */
 const struct i915_skl_buf_trans *
 drv_i915_skl_buf_trans(
@@ -915,6 +930,10 @@ drv_i915_skl_hdmi_level(
  * highest swing and pre-emphasis any lane asks for, the pre-emphasis
  * capped at level 3 and the swing at what the pre-emphasis allows and the
  * table reaches, with the reached flags.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_dp_link_training.c (the training
+ * adjustments).
  */
 uint8_t
 drv_i915_skl_adjust_train(
@@ -1015,6 +1034,11 @@ drv_i915_skl_dp_eq_ok(
  * first plane, at the highest watermark level whose blocks fit; levels
  * that do not fit the plane's share are turned off.  Returns 0, or
  * ENOSPC when even level 0 does not fit a pipe's share.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/skl_watermark.c (skl_compute_wm_params,
+ * skl_compute_plane_wm, skl_cursor_allocation, skl_crtc_allocate_plane_ddb,
+ * the pipes' split by width).
  */
 int
 drv_i915_skl_wm_compute(

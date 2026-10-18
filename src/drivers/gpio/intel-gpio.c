@@ -7,7 +7,7 @@
 
 /*
  * The pads of the Intel PCH's GPIO controller that ACPI GpioInt resources
- * name (ws159-p006).
+ * name.
  *
  * A GpioInt resource names its controller (\_SB.GPI0) and a pin in the
  * controller's GPIO numbering, where each pad group starts at a multiple of
@@ -33,7 +33,7 @@
  * \_SB.GPI0: IRQ 14, level, active low; its MADT has no override for 14,
  * so the line is configured with hal_irq_set_mode through
  * kern_irq_set_mode).  The registers are those of the Tiger Lake LP family
- * (INTC1055, INT34C5; Linux's pinctrl-tigerlake): HOSTSW_OWN at 0xb0,
+ * (INTC1055, INT34C5): HOSTSW_OWN at 0xb0,
  * GPI_IS at 0x100 and GPI_IE at 0x120 in the community, one 32-bit
  * register a group, the group's index being where its HOSTSW_OWN register
  * is (\_SB.GPCL's fourth field: 0xb0 plus 4 a group).  Another family is
@@ -49,10 +49,9 @@
  *
  * When the line is taken, the GPI interrupts of every group of the
  * controller (the groups of \_SB.GPCL whose registers lie in the
- * controller's memory) are turned off and their status cleared, as Linux's
- * intel_gpio_irq_init() does: a pad the firmware left enabled would
- * otherwise assert the line with no pad of the driver's to explain it
- * (BUG-261).  A firing no pad of the driver's explains is looked into: a
+ * controller's memory) are turned off and their status cleared: a pad the
+ * firmware left enabled would otherwise assert the line with no pad of the
+ * driver's to explain it.  A firing no pad of the driver's explains is looked into: a
  * pad of another group, or another pad of a pad's group, whose bit is set
  * in GPI_IS and GPI_IE has its interrupt turned off and is logged.  A
  * firing nothing explains is counted; only IRQ_UNEXPLAINED_MAX of them in
@@ -102,7 +101,13 @@
 /* The page the driver maps around a pad's DW0, and around its community's interrupt registers. */
 #define PAD_PAGE_SIZE		4096U
 
-/* The Tiger Lake LP family's registers in a community: HOSTSW_OWN, GPI_IS and GPI_IE of the first group. */
+/*
+ * The Tiger Lake LP family's registers in a community: HOSTSW_OWN, GPI_IS
+ * and GPI_IE of the first group.
+ *
+ * Values referenced: Linux drivers/pinctrl/intel/pinctrl-tigerlake.c (the
+ * community register offsets).
+ */
 #define COMMUNITY_HOSTSW_OWN	0xb0U
 #define COMMUNITY_GPI_IS	0x100U
 #define COMMUNITY_GPI_IE	0x120U
@@ -970,9 +975,13 @@ irq_page_map(
 
 /*
  * Turns off the GPI interrupts of every group of the controller and clears
- * their status (intel_gpio_irq_init()), logging what the firmware left
- * there; the line is still masked (BUG-261).
+ * their status, logging what the firmware left there; the line is still
+ * masked.
+ *
+ * Procedure referenced: Linux drivers/pinctrl/intel/pinctrl-intel.c
+ * (intel_gpio_irq_init).
  */
+
 static void
 irq_groups_quiet(void)
 {

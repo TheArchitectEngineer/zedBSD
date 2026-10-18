@@ -7,9 +7,6 @@
 
 /*
  * Generic PCI bus and built-in driver interface
- *
- * This interface was designed with reference to the PCI driver APIs of
- * Linux, FreeBSD, NetBSD, and OpenBSD.
  */
 
 #ifndef KERN_DRIVERS_PCI_H
@@ -36,7 +33,14 @@
 #define DRV_PCI_DETACH_FORCE	(1U << 0)
 #define DRV_PCI_DETACH_QUIET	(1U << 1)
 
+/*
+ * The bus, device and driver objects of the interface.
+ *
+ * Procedure referenced: the PCI driver APIs of Linux, FreeBSD, NetBSD and
+ * OpenBSD (the shape of the driver interface).
+ */
 struct drv_pci_bus;
+
 struct drv_pci_device;
 struct drv_pci_driver;
 

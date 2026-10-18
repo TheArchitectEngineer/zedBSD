@@ -10,17 +10,14 @@
  *
  * Each instruction is four little-endian 32-bit words on both versions.
  * Field bit positions, hardware opcode values, register types and the
- * descriptor layout of SEND are transcribed into intel/eu-encoding-gen12.h
- * and intel/eu-encoding-gen9.h from Mesa (MIT); the placement logic here is
- * new.  A buffer is encoded in one layout (struct i915_eu_format) chosen
- * when it is prepared; the emitters ask the layout where each field goes.
- * Every emitter is checked bit for bit against Mesa's assembler and
- * disassembler (--gen=adl for
- * Gen12, --gen=skl for Gen9).
+ * descriptor layout of SEND are in intel/eu-encoding-gen12.h and
+ * intel/eu-encoding-gen9.h.  A buffer is encoded in one layout (struct
+ * i915_eu_format) chosen when it is prepared; the emitters ask the layout
+ * where each field goes.
  *
  * SOFTWARE SCOREBOARD.  Gen12 hardware does not track register dependencies
- * between instructions; the program says them in the SWSB byte
- * (brw_lower_scoreboard.cpp).  This encoder says the one thing that is always
+ * between instructions; the program says them in the SWSB byte.  This
+ * encoder says the one thing that is always
  * true of its output: every instruction depends on the one before it.
  *
  *   - an in-order instruction (MOV, ADD, MUL, SEL, CMP, AND, OR, XOR, NOT,
@@ -37,8 +34,8 @@
  *     needs nothing after it.
  *
  * XXX: this serialises the kernel.  It is correct for any program this
- * compiler emits and leaves the pipelining Mesa's dataflow analysis would
- * allow on the table.
+ * compiler emits and leaves on the table the pipelining a dataflow
+ * analysis would allow.
  *
  * Gen9 has no SWSB byte: its hardware scoreboard holds an instruction that
  * reads a register until the instruction writing it is done, so the Gen9
@@ -79,7 +76,13 @@
 #define I915_EU_IN_ORDER		1
 #define I915_EU_END_OF_THREAD		2
 
-/* The token-set SWSB byte of an out-of-order instruction with nothing to wait for. */
+/*
+ * The token-set SWSB byte of an out-of-order instruction with nothing to
+ * wait for.
+ *
+ * Procedure referenced: Mesa src/intel/compiler/brw_lower_scoreboard.cpp
+ * (the software scoreboard's dependency byte).
+ */
 #define I915_EU_SWSB_TOKEN_SET		0x40U
 
 /* The first buffer capacity, in words; the buffer doubles from there. */

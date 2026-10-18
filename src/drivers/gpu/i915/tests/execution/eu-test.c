@@ -11,7 +11,7 @@
  * The compute test dispatches one SIMD8 thread with GPGPU_WALKER whose kernel
  * does an unconditional A64 store of 0xc0ffee02 and ends the thread.  The
  * kernel, the interface descriptor, the VFE state and the command order are
- * those that completed on the reference driver on the same GPU.  The batch
+ * fixed.  The batch
  * also copies the descriptor and the kernel back through the context's
  * address space, so a wrong mapping shows as a wrong readback.  Identity with
  * earlier runs is established by hashing the submitted bytes.
@@ -280,6 +280,10 @@ static void i915_eu_cleanup(struct i915_device *device, struct i915_test_eu *t, 
  * The batch of drv_i915_test_eu_build_batch_gen for Gen12, kept under its
  * old name for the draw tests and the unit tests.  Returns the number of
  * dwords, or 0 when the buffer was too small.
+ *
+ * Procedure referenced: the Linux i915 driver on the same GPU (the kernel,
+ * the interface descriptor, the VFE state and the command order of a
+ * dispatch that completed there).
  */
 unsigned
 drv_i915_test_eu_build_batch(

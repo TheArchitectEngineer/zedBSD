@@ -13,16 +13,8 @@
  * manager (the PPM): the OPM writes a command to CONTROL, the PPM answers
  * in CCI and MESSAGE IN and notifies.  The core runs the commands, keeps
  * the acknowledgement rules and turns the answers into the Type-C layer's
- * connector records.  A transport (ACPI on a PC, ws050-p003) moves the
+ * connector records.  A transport (ACPI on a PC) moves the
  * mailbox's bytes and delivers the notifications.
- *
- * The values are from "USB Type-C Connector System Software Interface
- * (UCSI) Requirements Specification", Intel, Revision 1.2 (January 2020,
- * document 336205-002), and "USB Type-C Connector System Software
- * Interface (UCSI) Specification", USB Promoter Group, Revision 3.1 (June
- * 2026); the section of each is named where it is used.  The 2.0 and 2.1
- * documents were not at hand: where the 2.x arrangement is taken from the
- * 3.1 document, that is marked unconfirmed for 2.0.
  */
 
 #ifndef KERN_DRIVERS_TYPEC_UCSI_H
@@ -33,6 +25,16 @@
 #include <stdint.h>
 
 #include <drivers/typec/typec.h>
+
+/*
+ * Values referenced: "USB Type-C Connector System Software Interface
+ * (UCSI) Requirements Specification", Intel, Revision 1.2 (January 2020,
+ * document 336205-002), and "USB Type-C Connector System Software
+ * Interface (UCSI) Specification", USB Promoter Group, Revision 3.1 (June
+ * 2026); the section of each is named where it is used.  The 2.0 and 2.1
+ * documents were not at hand: where the 2.x arrangement is taken from the
+ * 3.1 document, that is marked unconfirmed for 2.0.
+ */
 
 /*
  * The largest MESSAGE IN or MESSAGE OUT of any arrangement (UCSI 3.1

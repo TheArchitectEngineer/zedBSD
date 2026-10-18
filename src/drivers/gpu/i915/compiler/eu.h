@@ -9,9 +9,9 @@
  * Gen9 and Gen12 EU instruction encoder: turns one instruction into its
  * 128-bit word.
  *
- * The values (opcodes, field positions, message descriptors) are transcribed
- * with attribution into intel/eu-encoding-gen12.h and
- * intel/eu-encoding-gen9.h; instruction selection is the code generator's
+ * The values (opcodes, field positions, message descriptors) are in
+ * intel/eu-encoding-gen12.h and intel/eu-encoding-gen9.h; instruction
+ * selection is the code generator's
  * job.  Operand types and register files are named in the Gen12 encoding
  * (EU_TYPE_*, EU_FILE_*), which the encoder translates for Gen9.  Only the
  * compiler and its host tests use this header.
