@@ -3,9 +3,9 @@
 # WS261 include/kern/boot.h から PC-98・Raspberry Pi の固有の構造体を除く
 
 - ID: ws261、Master: [master.md](../master.md)、Primary Milestone: MG008
-- Status: completed（2026-10-18 Q1: p001 cleared、T1-709 で Pi 4・PC-98・amd64 の起動 PASS）
+- Status: incomplete（2026-10-18 開き直し: ユーザー「WS261ですが、sparcv9も対象にしてほしいです。」→ p002。p001 は cleared、T1-709 で Pi 4・PC-98・amd64 の起動 PASS）
 - Phase の directory と WS だけの試験は完了の規則で削除した。洗い出し・名前の一覧・結果は git の 307f6e26b の plan/ws261/phase001/phase.md にある。
-- 残り（範囲外）: rpi4 の画面の format は firmware の pixel order のまま（汎用の値に揃えるなら bcm2711 の driver も）、PC-98 の payload32.elf の link の既存の失敗、boot.h の sun4u・x68k の物（ユーザーの作業の範囲）、Pi 4 の CI の image（312 MiB）は QEMU raspi4b が 2 の冪でないと拒む、amd64 の BIOS の起動の確かめは別の image が要る
+- 残り（範囲外）: rpi4 の画面の format は firmware の pixel order のまま（汎用の値に揃えるなら bcm2711 の driver も）、PC-98 の payload32.elf の link の既存の失敗、boot.h の x68k の物、Pi 4 の CI の image（312 MiB）は QEMU raspi4b が 2 の冪でないと拒む、amd64 の BIOS の起動の確かめは別の image が要る
 - 起点（2026-10-18 ユーザー）:「HALからカーネルへは、汎用の構造体しか渡せない規約です。固有の情報は、名前文字列で取得するAPIがありますので、それを使ってください。ブートローダからHALへは、固有の構造体を使えますが、それはHAL内に定義を置きます。また、boot.hのPC98やRPiの構造体は、削除します。この削除対応を、WSを作って別なサブエージェントで進めてください。」
 - 規約: [Guardrail](../guardrail.md)「HAL と kernel・boot loader と HAL の受け渡し」。
 
@@ -38,3 +38,4 @@
 | Phase | 目的 | 状態 |
 | --- | --- | --- |
 | p001 | 使っている所の洗い出し、名前付きの object の一覧と HAL 内の定義の置き場所の案、置き換え、build、T1 への依頼 | cleared（2026-10-18、T1-709） |
+| [p002](phase002/phase.md) | sparcv9（sun4u）: boot.h の `struct kern_sun4u_*`・`KERN_SUN4U_*` を除き、HAL → kernel は汎用の構造体と名前ごとの値、boot loader → HAL の定義は HAL か bootloader/ に（ユーザーの bootloader/sparcv9 の変更は 74e7441b0 で commit 済み） | in-progress（q1255、P3） |
