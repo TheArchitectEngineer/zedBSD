@@ -172,13 +172,17 @@ drv_i915_xd9_pick_mode(
 	unsigned index;
 	unsigned offset;
 	unsigned first;
+	int fits;
 	int error;
 
 	/* The base block's descriptors in order. */
 	if (edid != NULL && edid_bytes >= I915_XD_EDID_BLOCK_BYTES) {
 		for (index = 0U; index < I915_XD9_EDID_DTDS; index++) {
 			error = drv_i915_output_edid_timing(edid + I915_XD9_EDID_DTD_FIRST + index * I915_XD9_EDID_DTD_BYTES, &candidate);
-			if (error == 0 && i915_xd9_mode_fits(&candidate, max_pixel_khz)) {
+			if (error != 0)
+				continue;
+			fits = i915_xd9_mode_fits(&candidate, max_pixel_khz);
+			if (fits) {
 				*mode = candidate;
 				return 0;
 			}
@@ -193,7 +197,8 @@ drv_i915_xd9_pick_mode(
 			error = drv_i915_output_edid_timing(extension + offset, &candidate);
 			if (error != 0)
 				break;
-			if (i915_xd9_mode_fits(&candidate, max_pixel_khz)) {
+			fits = i915_xd9_mode_fits(&candidate, max_pixel_khz);
+			if (fits) {
 				*mode = candidate;
 				return 0;
 			}
@@ -202,7 +207,8 @@ drv_i915_xd9_pick_mode(
 
 	/* The safe mode, when the pipe drives it. */
 	i915_xd9_safe_mode(&candidate);
-	if (!i915_xd9_mode_fits(&candidate, max_pixel_khz))
+	fits = i915_xd9_mode_fits(&candidate, max_pixel_khz);
+	if (!fits)
 		return EINVAL;
 
 	/* Succeeded: the safe mode. */
@@ -422,8 +428,13 @@ drv_i915_xd9_outputs_live(
 	struct i915_xd9_outputs *outputs,
 	unsigned index)
 {
-	/* Succeeded: the live surface. */
-	return drv_i915_xd9_plane_surf_live(outputs->io, outputs->output[index].out.pipe);
+	uint32_t live;
+
+	/* The output's plane's live surface. */
+	live = drv_i915_xd9_plane_surf_live(outputs->io, outputs->output[index].out.pipe);
+
+	/* Succeeded: the surface. */
+	return live;
 }
 
 /* Reports an output's mode's refresh in millihertz, or 0 without a mode. */

@@ -1271,8 +1271,11 @@ drv_i915_xd9_plane_flip(
 	uint32_t surf,
 	uint32_t stride)
 {
+	uint32_t current;
+
 	/* The stride, only when it changes. */
-	if (drv_i915_xd_io_read(io, I915_XD9_PLANE_STRIDE(pipe)) != stride)
+	current = drv_i915_xd_io_read(io, I915_XD9_PLANE_STRIDE(pipe));
+	if (current != stride)
 		drv_i915_xd_io_write(io, I915_XD9_PLANE_STRIDE(pipe), stride);
 
 	/* Succeeded: the surface, which arms them. */
@@ -1286,8 +1289,13 @@ drv_i915_xd9_plane_surf_live(
 	struct i915_xd_io *io,
 	unsigned pipe)
 {
-	/* Succeeded: the live surface's address. */
-	return drv_i915_xd_io_read(io, I915_XD9_PLANE_SURFLIVE(pipe)) & I915_XD9_PLANE_SURF_ADDRESS;
+	uint32_t live;
+
+	/* The live surface's word. */
+	live = drv_i915_xd_io_read(io, I915_XD9_PLANE_SURFLIVE(pipe));
+
+	/* Succeeded: its address. */
+	return live & I915_XD9_PLANE_SURF_ADDRESS;
 }
 
 /* Reports a fault of a display 9 pipe's first plane that is pending in the pipe's interrupts (0 for none). */
@@ -1296,8 +1304,13 @@ drv_i915_xd9_plane_fault(
 	struct i915_xd_io *io,
 	unsigned pipe)
 {
-	/* Succeeded: the fault bit. */
-	return drv_i915_xd_io_read(io, I915_XD9_DE_PIPE_IIR(pipe)) & I915_XD9_DE_PIPE_FAULT;
+	uint32_t iir;
+
+	/* The pipe's interrupt identity. */
+	iir = drv_i915_xd_io_read(io, I915_XD9_DE_PIPE_IIR(pipe));
+
+	/* Succeeded: its fault bit. */
+	return iir & I915_XD9_DE_PIPE_FAULT;
 }
 
 /*

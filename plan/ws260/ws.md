@@ -33,7 +33,7 @@
 | [p012](phase012/phase.md) | WM・DDB の書き込みと順序、hotplug の sense を xd-dbuf・xd-hpd へ | in-progress（q1253、P1） |
 | [p013](phase013/phase.md) | firmware の点検と flip（firmware の panel の引き継ぎ、plane の flip、irq）を xd-takeover・xd-screen の display 9 の方針へ（gen9-firmware.c・gen9-flip.c） | in-progress（q1253、P1） |
 | [p014](phase014/phase.md) | 外の display（gen9-node・gen9-outputs・gen9-display）を xd-screen・xd-display の口へ。bootfb.c・i915.c・device.c・display.c の呼び先を xd に付け替え、殻を全部消す | in-progress（q1253、P1） |
-| p015 | 規約の全文の見直し、写しの点検（§1.2 の方法を新しい code に）、T1 に SV7 と 5330 の実機の回帰を 1 回 | planned（3 LW） |
+| [p015](phase015/phase.md) | 規約の全文の見直し、写しの点検（§1.2 の方法を新しい code に）、T1 に SV7 と 5330 の実機の回帰を 1 回 | in-progress（q1253、P1、T1 の結果待ち） |
 
 
 ## ユーザーの決定（2026-10-18、クリック）
