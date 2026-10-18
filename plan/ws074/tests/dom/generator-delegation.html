@@ -1,0 +1,47 @@
+<!doctype html><html><body><script>
+(function(){
+ function check(name,fn){try{console.log('delegation '+name+': '+(fn()?'PASS':'FAIL'));}catch(e){console.log('delegation '+name+': THREW '+e.name);}}
+ function iterable(iterator){var obj={};obj[Symbol.iterator]=function(){return iterator;};return obj;}
+ function outer(value){return (function*(){return yield* value;})();}
+ function same(r,value,done){return r.value===value&&r.done===done;}
+ function raises(fn,kind){try{fn();}catch(e){return e instanceof kind;}return false;}
+ check('array-and-completion',function(){var g=outer([1,2]);return same(g.next(),1,false)&&same(g.next(9),2,false)&&same(g.next(),undefined,true)&&same(g.next(),undefined,true);});
+ check('string-code-points',function(){var g=outer('A\ud83d\ude00B');return same(g.next(),'A',false)&&same(g.next(),'\ud83d\ude00',false)&&same(g.next(),'B',false)&&g.next().done;});
+ check('nested-return-value',function(){function* inner(){yield 3;return 11;}function* middle(){return (yield* inner())+2;}var g=outer(middle());return same(g.next(),3,false)&&same(g.next(),13,true);});
+ check('operand-once',function(){var n=0;function source(){n++;return [7];}var g=(function*(){return yield* source();})();return same(g.next(),7,false)&&g.next().done&&n===1;});
+ check('iterator-and-next-cache',function(){var gets=0,calls=0,ng=0,n=0,it={};Object.defineProperty(it,'next',{get:function(){ng++;return function(){n++;return {value:n,done:n>1};};},configurable:true});var x={};Object.defineProperty(x,Symbol.iterator,{get:function(){gets++;return function(){calls++;return it;};}});var g=outer(x);var a=g.next();Object.defineProperty(it,'next',{value:function(){throw 1;}});return same(a,1,false)&&same(g.next(),2,true)&&gets===1&&calls===1&&ng===1;});
+ check('receiver-arguments-and-sent',function(){var log=[],it={next:function(x){log.push(this===it,arguments.length,x);return {value:x,done:log.length>3};}};var g=outer(iterable(it));g.next(123);var r=g.next(42);return same(r,42,true)&&log[0]&&log[1]===1&&log[2]===undefined&&log[3]&&log[4]===1&&log[5]===42;});
+ check('result-identity-and-no-value-read',function(){var reads=0,r={get value(){reads++;throw 9;},done:false};var g=outer(iterable({next:function(){return r;}}));return g.next()===r&&reads===0;});
+ check('completion-getter-order',function(){var log=[],r={get done(){log.push('done');return true;},get value(){log.push('value');return 17;}};return same(outer(iterable({next:function(){return r;}})).next(),17,true)&&log.join(',')==='done,value';});
+ check('throw-handled-completes-normally',function(){var error={},it={next:function(){return {done:false};},throw:function(x){return {value:x===error?21:0,done:true};}};var g=(function*(){return (yield* iterable(it))+1;})();g.next();return same(g.throw(error),22,true);});
+ check('throw-yields-original-result',function(){var r={done:false,value:5},it={next:function(){return {done:false};},throw:function(){return r;}};var g=outer(iterable(it));g.next();return g.throw(1)===r;});
+ check('throw-method-dynamic',function(){var gets=0,it={next:function(){return {done:false};}};Object.defineProperty(it,'throw',{get:function(){gets++;return function(){return {value:gets,done:false};};}});var g=outer(iterable(it));g.next();return g.throw(1).value===1&&g.throw(2).value===2&&gets===2;});
+ check('missing-throw-closes-zero-args',function(){var n=-1,receiver=false,it={next:function(){return {done:false};},return:function(){n=arguments.length;receiver=this===it;return {get done(){throw 99;},get value(){throw 98;}};}};var g=outer(iterable(it));g.next();return raises(function(){g.throw(7);},TypeError)&&n===0&&receiver&&g.next().done;});
+ check('missing-throw-without-close',function(){var g=outer([1]);g.next();return raises(function(){g.throw(2);},TypeError)&&g.next().done;});
+ check('missing-throw-close-error-precedence',function(){var error={},it={next:function(){return {done:false};},return:function(){throw error;}};var g=outer(iterable(it));g.next();try{g.throw(1);}catch(e){return e===error;}return false;});
+ check('missing-throw-close-getter-error',function(){var error={},it={next:function(){return {done:false};},get return(){throw error;}};var g=outer(iterable(it));g.next();try{g.throw(1);}catch(e){return e===error;}return false;});
+ check('missing-throw-invalid-close-result',function(){var it={next:function(){return {done:false};},return:function(){return 3;}};var g=outer(iterable(it));g.next();return raises(function(){g.throw(1);},TypeError);});
+ check('noncallable-throw-does-not-close',function(){var closed=0,it={next:function(){return {done:false};},throw:7,return:function(){closed++;return {};}};var g=outer(iterable(it));g.next();return raises(function(){g.throw(1);},TypeError)&&closed===0;});
+ check('null-throw-closes',function(){var closed=0,it={next:function(){return {done:false};},throw:null,return:function(){closed++;return {};}};var g=outer(iterable(it));g.next();return raises(function(){g.throw(1);},TypeError)&&closed===1;});
+ check('missing-return-skips-following-finally-runs',function(){var log=[],it={next:function(){return {done:false};}};var g=(function*(){try{yield* iterable(it);log.push('after');}finally{log.push('finally');}})();g.next();return same(g.return(31),31,true)&&log.join(',')==='finally';});
+ check('return-forwarded-one-arg',function(){var receiver=false,n=0,arg,it={next:function(){return {done:false};},return:function(x){receiver=this===it;n=arguments.length;arg=x;return {done:true,value:44};}};var g=outer(iterable(it));g.next();return same(g.return(33),44,true)&&receiver&&n===1&&arg===33;});
+ check('return-false-yields-identity-then-next',function(){var r={value:4,done:false},it={next:function(x){return {value:x,done:x===55};},return:function(){return r;}};var g=(function*(){return (yield* iterable(it))+1;})();g.next();return g.return(9)===r&&same(g.next(55),56,true);});
+ check('return-true-finally-yield',function(){var g=(function*(){try{return yield* [1];}finally{yield 88;}})();g.next();return same(g.return(7),88,false)&&same(g.next(),7,true);});
+ check('throw-through-finally-catch',function(){var error={},log=[];function* a(){try{yield 1;}finally{log.push('inner');}}var g=(function*(){try{yield* a();}catch(e){return e===error?67:0;}finally{log.push('outer');}})();g.next();return same(g.throw(error),67,true)&&log.join(',')==='inner,outer';});
+ check('null-return-is-absent',function(){var it={next:function(){return {done:false};},return:null};var g=outer(iterable(it));g.next();return same(g.return(6),6,true);});
+ check('noncallable-return',function(){var it={next:function(){return {done:false};},return:0};var g=outer(iterable(it));g.next();return raises(function(){g.return(6);},TypeError);});
+ check('invalid-iterator-result',function(){return raises(function(){outer(iterable({next:function(){return 1;}})).next();},TypeError);});
+ check('invalid-iterator',function(){var x={};x[Symbol.iterator]=function(){return 1;};return raises(function(){outer(x).next();},TypeError);});
+ check('noniterable',function(){return raises(function(){outer({}).next();},TypeError)&&raises(function(){outer(null).next();},TypeError)&&raises(function(){outer(undefined).next();},TypeError);});
+ check('next-getter-throw',function(){var error={},it={get next(){throw error;}};try{outer(iterable(it)).next();}catch(e){return e===error;}return false;});
+ check('next-call-throw-no-close',function(){var error={},closed=0,it={next:function(){throw error;},return:function(){closed++;return {};}};try{outer(iterable(it)).next();}catch(e){return e===error&&closed===0;}return false;});
+ check('done-getter-throw-no-close',function(){var error={},closed=0,it={next:function(){return {get done(){throw error;}};},return:function(){closed++;return {};}};try{outer(iterable(it)).next();}catch(e){return e===error&&closed===0;}return false;});
+ check('done-value-getter-throw',function(){var error={},it={next:function(){return {done:true,get value(){throw error;}};}};try{outer(iterable(it)).next();}catch(e){return e===error;}return false;});
+ check('return-result-primitive',function(){var it={next:function(){return {};},return:function(){return false;}};var g=outer(iterable(it));g.next();return raises(function(){g.return(2);},TypeError);});
+ check('throw-result-primitive',function(){var it={next:function(){return {};},throw:function(){return null;}};var g=outer(iterable(it));g.next();return raises(function(){g.throw(2);},TypeError);});
+ check('ordinary-yield-wraps',function(){var r={value:3,done:false};var g=(function*(){yield r;})();var out=g.next();return out!==r&&out.value===r&&out.done===false;});
+ check('well-known-symbol-not-global',function(){var saved=Symbol,x=iterable({next:function(){return {value:73,done:true};}});try{window.Symbol=null;return same(outer(x).next(),73,true);}finally{window.Symbol=saved;}});
+ check('unstarted-return-no-operand',function(){var calls=0;var g=(function*(){calls++;yield* [1];})();return same(g.return(4),4,true)&&calls===0;});
+ check('reentrant-next-refused',function(){var refused=false,g,it={next:function(){refused=raises(function(){g.next();},TypeError);return {value:2,done:true};}};g=outer(iterable(it));return same(g.next(),2,true)&&refused;});
+})();
+</script></body></html>

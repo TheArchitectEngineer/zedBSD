@@ -151,6 +151,10 @@ enum vm_opcode {
 	VM_OP_ITER_CLOSE,	/* R iteration, I quiet: an iteration left early is closed (quiet when leaving by an exception) */
 	VM_OP_SUSPEND,		/* R value, R sent, R how: a generator yields (an async function awaits) the value; resumed, sent and how (VM_RESUME_*) hold what came (ws074-p086) */
 
+	VM_OP_DELEGATE_START,	/* R state, R iterable: native synchronous iterator record */
+	VM_OP_DELEGATE_STEP,	/* R result, R state, R sent, R how, R outcome: -1 yields the result, NEXT completes the expression, RETURN returns */
+	VM_OP_SUSPEND_RESULT,	/* R result, R sent, R how: yield the original iterator result without reading its value */
+
 	/* Wasm (raw values). */
 	VM_OP_I32_CONST,	/* R dst, I value */
 	VM_OP_I32_ADD,		/* R dst, R left, R right */

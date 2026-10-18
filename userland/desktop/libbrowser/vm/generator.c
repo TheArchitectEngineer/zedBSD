@@ -27,17 +27,31 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* A synchronous yield* owns the actual iterator and its cached next method independently of user properties. */
+struct generator_delegate {
+	struct vm_cell cell;
+	vm_value iterator;
+	vm_value next;
+};
+
+static void generator_delegate_trace(struct vm_heap *heap, struct vm_cell *cell);
 static void generator_trace(struct vm_heap *heap, struct vm_cell *cell);
 static void generator_finalize(struct vm_heap *heap, struct vm_cell *cell);
-static struct vm_generator *generator_create(struct vm_realm *realm, struct vm_function *function);
-static int generator_object(struct vm_realm *realm, struct vm_function *function, struct vm_generator *generator, vm_value *result);
-static int generator_settle(struct vm_realm *realm, struct vm_generator *generator, int status, vm_value value, int suspended);
-static void generator_end(struct vm_generator *generator);
 
 /* The cell type of a generator's run: it holds its function, its frame's values and its promise. */
 const struct vm_cell_type vm_generator_type = {
 	"generator", generator_trace, generator_finalize
 };
+
+/* The delegate record keeps protocol values alive across suspension and reentrant collection. */
+static const struct vm_cell_type generator_delegate_type = {
+	"generator delegate", generator_delegate_trace, NULL
+};
+
+static struct vm_generator *generator_create(struct vm_realm *realm, struct vm_function *function);
+static int generator_object(struct vm_realm *realm, struct vm_function *function, struct vm_generator *generator, vm_value *result);
+static int generator_settle(struct vm_realm *realm, struct vm_generator *generator, int status, vm_value value, int suspended);
+static void generator_end(struct vm_generator *generator);
 
 /*
  * Tells whether a function's code is a generator's or an async function's,
@@ -126,7 +140,8 @@ vm_generator_call(
  * Resumes a generator object (its next, throw or return, by how): the
  * value it yields next (*done 0), or its return value (*done 1).  A
  * generator done, or not started and told to throw or return, does not
- * run.  Returns 0, VM_THROWN or an errno value.
+ * run.  direct_result identifies a yielded iterator result whose identity
+ * the caller must preserve.  Returns 0, VM_THROWN or an errno value.
  */
 int
 vm_generator_resume(
@@ -135,7 +150,8 @@ vm_generator_resume(
 	vm_value value,
 	int how,
 	vm_value *result,
-	int *done)
+	int *done,
+	int *direct_result)
 {
 	struct vm_generator *generator;
 	struct vm_object *object;
@@ -147,6 +163,7 @@ vm_generator_resume(
 	/* Only a generator object can be resumed. */
 	*result = VM_VALUE_UNDEFINED;
 	*done = 1;
+	*direct_result = 0;
 	is_object = vm_value_is_object(generator_value);
 	if (!is_object) {
 		status = vm_throw_type_error(realm, "next method called on incompatible receiver");
@@ -197,6 +214,7 @@ vm_generator_resume(
 		generator->state = VM_GENERATOR_SUSPENDED;
 		*result = yielded;
 		*done = 0;
+		*direct_result = (int)generator->direct_result;
 		return 0;
 	}
 
@@ -233,6 +251,299 @@ vm_generator_continue(
 		return status;
 
 	/* Succeeded: the function waits again, or its promise is settled. */
+	return 0;
+}
+
+
+/*
+ * Captures the actual synchronous iterator and its next method for yield*.
+ * The private record is managed so a suspended generator owns both edges.
+ */
+int
+vm_delegate_start(
+	struct vm_realm *realm,
+	vm_value iterable,
+	vm_value *result)
+{
+	struct generator_delegate *state;
+	struct vm_cell *roots[4];
+	vm_value method;
+	vm_value made;
+	vm_value key;
+	unsigned index;
+	unsigned registered;
+	int is_cell;
+	int is_object;
+	int callable;
+	int status;
+
+	/* Retain the realm, operand, fetched method and unpublished record across user code. */
+	roots[0] = NULL;
+	if (realm->managed)
+		roots[0] = &realm->cell;
+	roots[1] = NULL;
+	is_cell = vm_value_is_cell(iterable);
+	if (is_cell)
+		roots[1] = vm_value_as_cell(iterable);
+	roots[2] = NULL;
+	roots[3] = NULL;
+	registered = 0;
+	for (index = 0; index < 4U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+
+		/* Only acquired registrations belong to cleanup. */
+		registered++;
+	}
+
+	/* Use the well-known symbol directly; the mutable global Symbol binding is irrelevant. */
+	key = vm_symbol_key(realm, VM_SYMBOL_ITERATOR);
+	status = vm_get(realm, iterable, key, &method);
+	if (status != 0)
+		goto cleanup;
+	callable = vm_value_is_callable(method);
+	if (!callable) {
+		status = vm_throw_type_error(realm, "yield* operand is not iterable");
+		goto cleanup;
+	}
+
+	/* A getter may have created the method without storing it anywhere else. */
+	roots[2] = vm_value_as_cell(method);
+	state = vm_heap_alloc(realm->heap, &generator_delegate_type, sizeof(*state));
+	if (state == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* Initialize every traced edge before the iterator method can collect. */
+	roots[3] = &state->cell;
+	state->iterator = VM_VALUE_UNDEFINED;
+	state->next = VM_VALUE_UNDEFINED;
+	status = vm_call(realm, method, iterable, NULL, 0, &made);
+	if (status != 0)
+		goto cleanup;
+	state->iterator = made;
+	is_object = vm_value_is_object(made);
+	if (!is_object) {
+		status = vm_throw_type_error(realm, "yield* iterator is not an object");
+		goto cleanup;
+	}
+
+	/* GetIterator caches next without checking callability until the first step. */
+	key = vm_key_from_ascii(realm->heap, "next");
+	if (key == VM_VALUE_EMPTY) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* Cache the iterator method before exposing the record to compiled code. */
+	status = vm_get(realm, made, key, &state->next);
+	if (status != 0)
+		goto cleanup;
+
+	/* Publish the complete record only after both protocol reads succeeded. */
+	*result = vm_value_cell(state);
+
+cleanup:
+	/* Release only registrations acquired before a possible failure. */
+	while (registered != 0) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* Any failed native operation preserves its original error status. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the generator can retain the record in its registers. */
+	return 0;
+}
+
+/*
+ * Forwards one synchronous yield* resumption and classifies its completion.
+ * Outcome -1 exposes the original iterator result; NEXT supplies the
+ * expression value, and RETURN carries a return through surrounding finally.
+ */
+int
+vm_delegate_step(
+	struct vm_realm *realm,
+	vm_value record,
+	vm_value sent,
+	int how,
+	vm_value *result,
+	int *outcome)
+{
+	struct generator_delegate *state;
+	struct vm_cell *roots[5];
+	vm_value method;
+	vm_value made;
+	vm_value key;
+	vm_value done_value;
+	unsigned index;
+	unsigned registered;
+	int is_cell;
+	int is_object;
+	int callable;
+	int missing_throw;
+	int done;
+	int status;
+
+	/* Retain all native-only values through getters, callbacks and forced collection. */
+	state = (struct generator_delegate *)vm_value_as_cell(record);
+	if (state->cell.type != &generator_delegate_type)
+		return EINVAL;
+	roots[0] = NULL;
+	if (realm->managed)
+		roots[0] = &realm->cell;
+	roots[1] = &state->cell;
+	roots[2] = NULL;
+	is_cell = vm_value_is_cell(sent);
+	if (is_cell)
+		roots[2] = vm_value_as_cell(sent);
+	roots[3] = NULL;
+	roots[4] = NULL;
+	registered = 0;
+	for (index = 0; index < 5U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+
+		/* Cleanup cannot unregister slots that registration never acquired. */
+		registered++;
+	}
+
+	/* next is cached, while return and throw are fetched afresh on each abrupt resumption. */
+	missing_throw = 0;
+	method = state->next;
+	if (how != VM_RESUME_NEXT) {
+		if (how == VM_RESUME_THROW) {
+			key = vm_key_from_ascii(realm->heap, "throw");
+		} else if (how == VM_RESUME_RETURN) {
+			key = vm_key_from_ascii(realm->heap, "return");
+		} else {
+			status = EINVAL;
+			goto cleanup;
+		}
+
+		/* A missing property key is allocation failure, not an absent protocol method. */
+		if (key == VM_VALUE_EMPTY) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* Observe the current abrupt-completion method rather than a cached property. */
+		status = vm_get(realm, state->iterator, key, &method);
+		if (status != 0)
+			goto cleanup;
+
+		/* A missing return preserves the caller's return value without running following statements. */
+		if (method == VM_VALUE_UNDEFINED || method == VM_VALUE_NULL) {
+			if (how == VM_RESUME_RETURN) {
+				*result = sent;
+				*outcome = VM_RESUME_RETURN;
+				status = 0;
+				goto cleanup;
+			}
+
+			/* Missing throw first closes normally, so a failing close supersedes the protocol TypeError. */
+			missing_throw = 1;
+			key = vm_key_from_ascii(realm->heap, "return");
+			if (key == VM_VALUE_EMPTY) {
+				status = ENOMEM;
+				goto cleanup;
+			}
+
+			/* Closing uses the iterator's current return method and preserves its failure. */
+			status = vm_get(realm, state->iterator, key, &method);
+			if (status != 0)
+				goto cleanup;
+			if (method == VM_VALUE_UNDEFINED || method == VM_VALUE_NULL) {
+				status = vm_throw_type_error(realm, "yield* iterator has no throw method");
+				goto cleanup;
+			}
+		}
+	}
+
+	/* A fetched method may exist only in this frame while its call runs. */
+	is_cell = vm_value_is_cell(method);
+	if (is_cell)
+		roots[3] = vm_value_as_cell(method);
+	callable = vm_value_is_callable(method);
+	if (!callable) {
+		status = vm_throw_type_error(realm, "yield* iterator method is not callable");
+		goto cleanup;
+	}
+
+	/* The initial next receives one undefined argument; closing after missing throw receives none. */
+	if (missing_throw) {
+		status = vm_call(realm, method, state->iterator, NULL, 0, &made);
+	} else {
+		status = vm_call(realm, method, state->iterator, &sent, 1, &made);
+	}
+
+	/* Any failed native operation preserves its original error status. */
+	if (status != 0)
+		goto cleanup;
+	is_object = vm_value_is_object(made);
+	if (!is_object) {
+		status = vm_throw_type_error(realm, "yield* iterator result is not an object");
+		goto cleanup;
+	}
+
+	/* IteratorClose checks the object alone; done and value are intentionally not observed. */
+	if (missing_throw) {
+		status = vm_throw_type_error(realm, "yield* iterator has no throw method");
+		goto cleanup;
+	}
+
+	/* IteratorComplete may run a getter; the original result must remain alive. */
+	roots[4] = vm_value_as_cell(made);
+	key = vm_key_from_ascii(realm->heap, "done");
+	if (key == VM_VALUE_EMPTY) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* The result object remains rooted while a done getter executes. */
+	status = vm_get(realm, made, key, &done_value);
+	if (status != 0)
+		goto cleanup;
+	done = vm_to_boolean(done_value);
+	if (!done) {
+		*result = made;
+		*outcome = -1;
+		status = 0;
+		goto cleanup;
+	}
+
+	/* A completed result alone reads value; throw-method completion becomes a normal expression value. */
+	key = vm_key_from_ascii(realm->heap, "value");
+	if (key == VM_VALUE_EMPTY) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* Transfer the completed value only after its getter succeeds. */
+	status = vm_get(realm, made, key, result);
+	if (status != 0)
+		goto cleanup;
+	*outcome = VM_RESUME_NEXT;
+	if (how == VM_RESUME_RETURN)
+		*outcome = VM_RESUME_RETURN;
+
+cleanup:
+	/* No native-only roots outlive their stack slots. */
+	while (registered != 0) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* Any failed native operation preserves its original error status. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the compiler can suspend or propagate the classified completion. */
 	return 0;
 }
 
@@ -296,6 +607,7 @@ generator_create(
 	generator->argument_count = 0;
 	generator->promise = VM_VALUE_UNDEFINED;
 	generator->state = VM_GENERATOR_RUNNING;
+	generator->direct_result = 0;
 
 	/* Succeeded: the cell. */
 	return generator;
@@ -428,4 +740,18 @@ generator_end(
 	free(generator->registers);
 	generator->registers = NULL;
 	generator->register_count = 0;
+}
+
+/* Marks both protocol edges while a delegating generator is suspended or executing native protocol work. */
+static void
+generator_delegate_trace(
+	struct vm_heap *heap,
+	struct vm_cell *cell)
+{
+	struct generator_delegate *state;
+
+	/* The actual iterator and the cached next method can be independently collectible. */
+	state = (struct generator_delegate *)cell;
+	vm_heap_mark_value(heap, state->iterator);
+	vm_heap_mark_value(heap, state->next);
 }

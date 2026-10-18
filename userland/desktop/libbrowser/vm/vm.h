@@ -748,7 +748,9 @@ int vm_promise_run_job(struct vm_realm *realm, vm_value job, vm_value argument);
 
 /* Generators and async functions (generator.c, ws074-p086). */
 int vm_generator_call(struct vm_realm *realm, struct vm_function *function, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
-int vm_generator_resume(struct vm_realm *realm, vm_value generator, vm_value value, int how, vm_value *result, int *done);
+int vm_generator_resume(struct vm_realm *realm, vm_value generator, vm_value value, int how, vm_value *result, int *done, int *direct_result);
+int vm_delegate_start(struct vm_realm *realm, vm_value iterable, vm_value *result);
+int vm_delegate_step(struct vm_realm *realm, vm_value state, vm_value sent, int how, vm_value *result, int *outcome);
 int vm_code_is_suspendable(const struct vm_function *function);
 
 /* Spreading and destructuring (spread.c). */

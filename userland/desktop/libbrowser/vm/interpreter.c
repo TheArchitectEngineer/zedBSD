@@ -640,6 +640,7 @@ interpreter_step(
 		status = vm_throw(run->realm, registers[words[1]]);
 		return status;
 	case VM_OP_SUSPEND:
+	case VM_OP_SUSPEND_RESULT:
 		status = interpreter_suspend(run, words, registers, next);
 		return status;
 	default:
@@ -732,6 +733,8 @@ interpreter_step_js(
 	case VM_OP_LOAD_EMPTY:
 		status = interpreter_property(run, words, registers);
 		return status;
+	case VM_OP_DELEGATE_START:
+	case VM_OP_DELEGATE_STEP:
 	case VM_OP_ITER_START:
 	case VM_OP_ITER_NEXT:
 	case VM_OP_ITER_REST:
@@ -1756,6 +1759,11 @@ interpreter_suspend(
 	generator->value_register = words[2];
 	generator->how_register = words[3];
 
+	/* Only delegated results bypass the built-in generator method's result wrapper. */
+	generator->direct_result = 0;
+	if (words[0] == VM_OP_SUSPEND_RESULT)
+		generator->direct_result = 1;
+
 	/* The frame is popped, and the run ends with the value. */
 	run->result = registers[words[1]];
 	run->suspended = 1;
@@ -1846,11 +1854,27 @@ interpreter_spread(
 	struct vm_realm *realm;
 	vm_value value;
 	int done;
+	int outcome;
+	int how;
 	int status;
 
 	/* Each instruction; one that computes a value writes it only when it succeeds. */
 	realm = run->realm;
 	switch (words[0]) {
+	case VM_OP_DELEGATE_START:
+		status = vm_delegate_start(realm, registers[words[2]], &value);
+		break;
+	case VM_OP_DELEGATE_STEP:
+		/* Decode the completion before invoking user iterator methods. */
+		how = vm_value_as_int32(registers[words[4]]);
+		status = vm_delegate_step(realm, registers[words[2]], registers[words[3]], how, &value, &outcome);
+		if (status != 0)
+			return status;
+
+		/* Publish both outputs only after callbacks and getters have finished. */
+		registers = &realm->stack[run->base + FRAME_HEADER];
+		registers[words[5]] = vm_value_int32(outcome);
+		break;
 	case VM_OP_ITER_START:
 		status = vm_iter_start(realm, registers[words[2]], &value);
 		break;

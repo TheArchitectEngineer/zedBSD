@@ -171,7 +171,7 @@ struct vm_generator {
 	uint32_t pc;
 	uint32_t value_register;
 	uint32_t how_register;
-	uint32_t reserved;
+	uint32_t direct_result; /* The suspension already supplied an iterator result, so the caller must preserve its identity. */
 };
 
 /*

@@ -62,6 +62,7 @@ static void expr_spread_list(struct js_function_compiler *fc, struct js_node *li
 static void expr_optional_chain(struct js_function_compiler *fc, struct js_node *node, uint32_t target);
 static void expr_optional_check(struct js_function_compiler *fc, const struct js_node *node, uint32_t value);
 static void expr_tagged_template(struct js_function_compiler *fc, struct js_node *node, uint32_t target);
+static void expr_delegate(struct js_function_compiler *fc, struct js_node *node, uint32_t target);
 static void expr_yield(struct js_function_compiler *fc, struct js_node *node, uint32_t target);
 static void expr_await(struct js_function_compiler *fc, struct js_node *node, uint32_t target);
 static void expr_template_strings(struct js_function_compiler *fc, struct js_node *template, uint32_t target);
@@ -2468,11 +2469,61 @@ expr_unwrap(
 	return node;
 }
 
+/* Lowers synchronous yield* using native iterator records and ordinary suspension/finally paths. */
+static void
+expr_delegate(
+	struct js_function_compiler *fc,
+	struct js_node *node,
+	uint32_t target)
+{
+	uint32_t value;
+	uint32_t state;
+	uint32_t sent;
+	uint32_t how;
+	uint32_t outcome;
+	uint32_t test;
+	uint32_t loop;
+	uint32_t complete;
+	uint32_t finished;
+
+	/* Evaluate the operand once and cache the actual iterator and its next method. */
+	value = js_temp(fc);
+	state = js_temp(fc);
+	sent = js_temp(fc);
+	how = js_temp(fc);
+	outcome = js_temp(fc);
+	test = js_temp(fc);
+	js_compile_expression(fc, node->first, value);
+	js_emit2(fc, VM_OP_DELEGATE_START, state, value);
+	js_load_value(fc, sent, VM_VALUE_UNDEFINED);
+	js_emit2(fc, VM_OP_LOAD_INT, how, VM_RESUME_NEXT);
+
+	/* Each resumption forwards its completion to the iterator before choosing a suspension or exit. */
+	loop = js_label_new(fc);
+	complete = js_label_new(fc);
+	finished = js_label_new(fc);
+	js_label_place(fc, loop);
+	js_emit5(fc, VM_OP_DELEGATE_STEP, target, state, sent, how, outcome);
+	js_emit2(fc, VM_OP_LOAD_INT, test, -1);
+	js_emit3(fc, VM_OP_STRICT_EQ, test, outcome, test);
+	js_emit_jump(fc, VM_OP_JUMP_IF_FALSE, test, complete);
+	js_emit3(fc, VM_OP_SUSPEND_RESULT, target, sent, how);
+	js_emit_jump(fc, VM_OP_JUMP, 0, loop);
+
+	/* A completed return crosses surrounding finally blocks; other completions become the expression value. */
+	js_label_place(fc, complete);
+	js_emit2(fc, VM_OP_LOAD_INT, test, VM_RESUME_RETURN);
+	js_emit3(fc, VM_OP_STRICT_EQ, test, outcome, test);
+	js_emit_jump(fc, VM_OP_JUMP_IF_FALSE, test, finished);
+	js_emit_return(fc, target);
+	js_label_place(fc, finished);
+}
+
 /*
  * Compiles yield in a generator (ws074-p086): the generator suspends with
  * the value; resumed, the expression's value is what next sent, a throw
  * throws what came, and a return returns it through the finally blocks
- * around.  yield* is not supported yet.
+ * around.  Delegating yield uses the synchronous iterator protocol below.
  */
 static void
 expr_yield(
@@ -2486,9 +2537,11 @@ expr_yield(
 	uint32_t goes_on;
 	uint32_t returns;
 
-	/* Delegating to another iterable needs the iterator protocol (Symbol.iterator). */
-	if ((node->flags & JS_FLAG_DELEGATE) != 0U)
-		js_compile_unsupported(fc->compiler, node, "yield*");
+	/* Delegation has its own completion loop and preserves iterator result identity. */
+	if ((node->flags & JS_FLAG_DELEGATE) != 0U) {
+		expr_delegate(fc, node, target);
+		return;
+	}
 
 	/* The value yielded (undefined without one). */
 	value = js_temp(fc);

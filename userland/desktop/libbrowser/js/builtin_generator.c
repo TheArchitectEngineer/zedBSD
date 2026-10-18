@@ -150,13 +150,20 @@ generator_step(
 	struct vm_object *object;
 	vm_value produced;
 	int done;
+	int direct_result;
 	int status;
 
 	/* The generator's step. */
 	*result = VM_VALUE_UNDEFINED;
-	status = vm_generator_resume(realm, generator, value, how, &produced, &done);
+	status = vm_generator_resume(realm, generator, value, how, &produced, &done, &direct_result);
 	if (status != 0)
 		return status;
+
+	/* Delegation exposes the original object without invoking its value getter. */
+	if (direct_result) {
+		*result = produced;
+		return 0;
+	}
 
 	/* The iterator result. */
 	object = vm_object_create(realm->heap, realm->object_prototype);
