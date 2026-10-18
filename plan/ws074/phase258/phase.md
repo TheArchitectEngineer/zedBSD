@@ -11,7 +11,7 @@ Origin: p189/q29 original WebIDL2 parseがProxy未定義で停止。
 
 Objective / own criteria: native managed Proxyを実object internal methodsへ接続し、constructor/revocableと各internal operationのtrap/fallback/invariant/receiver/revocation/callability/GCを正しく実行する。original WebIDL2 actual parse/validatorに必要なget/set/array behaviorを通常APIで提供し、independent controls/原WPTを通す。部分read stageだけでwholeをclearしない。
 Design: vm_native_operationsはscript-free heap interfaceのまま保持。Proxyにはmanaged target/handler recordを持たせ、scriptを実行可能なrealm-aware access/internal methodからtrapを呼ぶ。opaque JS constructor公開前に必要なoperationを段階的に整える。各段階は自走承認に基づく新finite Queueで正確に選定する。
-Current scope: [q30 exact Queue](../queue.md)のnoncallable/nonProxy target・read-only foundation/private VM factoryだけ。未選定write/descriptor/ownkeys/prototype/IsArray/function/call/constructとglobal公開を承認と混同しない。全Phase完了基準から消さない。
+Current scope: [q31 exact Queue](../queue.md)のHasPropertyと既存ToPropertyDescriptor検証順。q30のnoncallable/nonProxy target・managed read/private factoryはverified outputとして保持。未選定write/descriptor internal methods/ownkeys/prototype/IsArray/function/call/constructとglobal公開はwhole Phase受入に残す。
 Standards: Guardrail/C全文/browser component全文、簡約版無し。一次 https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-proxy-object-internal-methods-and-internal-slots-get-p-receiver 。既存p100がWS全source near-final conformanceを所有し、本partialはnew/changed scopeの全文適合を検証。
 Verification/bounds/affected components: q30 snapshotの通り。private object kind/cell/newborn/trace/revokeとactual receiver/trap/invariant/GCをnative/Chromeで確認し、ordinary whole/callback PASSを守る。target single-source compileのみとfull target runtimeを区別。未達はunclearedとresume。
 
@@ -29,3 +29,5 @@ i01 selected read foundation partialだけcleared、whole p258はwrite/descripto
 [Full evidence](evidence/20261018-q30/README.md)。次scopeの開始前に最新source/required methods/原WebIDL2とexact Queueを再確認する。global公開は後続readinessの別scope、whole acceptanceをread-only出力だけでclearしない。
 
 Event ws074-p258-q31-internal-design-selected-20261018: Setのfallbackにはdescriptor処理が必要で、さらにToPropertyDescriptorはHasPropertyを使うため、未選定の内部順をHas→descriptor→Setへ具体化した。これはこのPhase内の外部契約不変の設計具体化で、q30承認scope/historyを変更しない。既存Object.definePropertyではinvalid getterの後にsetter getterを読む差をprecode native/Chromeで実証（native get,set + setterのthrow、Chrome getだけ + TypeError）。[q31 Queue exact scope](../queue.md)でHasと即時getter検証だけをmax90分選定し、actual native/core pathから対処する。write/descriptor internal methods/global公開は後続scopeに残し、whole p258はまだ達成しない。共有投影pending。
+
+Event ws074-p258-q31-own-helper-declaration-review-20261018: final C全文§2 reviewで変更対象object_to_descriptorの既存forward宣言がconstant tablesより前にあることを確認。q31の同関数scope内で全file-scope tables後の通常blockへ移す。宣言と追加separator以外の全bytesと宣言multisetを保存し、host/target exact objectのdebug除去全bytes同一を証明して、immutable3f9 pairの測定を意味不変のfinal sourceへ対応付ける。approval criteria/timebox/API不変、whole p258/p100未達。

@@ -71,7 +71,6 @@ static int object_define_setter(struct vm_realm *realm, vm_value this_value, con
 static int object_lookup_getter(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int object_lookup_setter(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int object_require(struct vm_realm *realm, vm_value value, const char *message, struct vm_object **object);
-static int object_to_descriptor(struct vm_realm *realm, vm_value value, struct vm_descriptor *descriptor);
 static int object_descriptor_field(struct vm_realm *realm, vm_value object, const char *name, uint32_t flag, struct vm_descriptor *descriptor, vm_value *value);
 static int object_from_descriptor(struct vm_realm *realm, const struct vm_descriptor *descriptor, vm_value *result);
 static int object_define_or_throw(struct vm_realm *realm, struct vm_object *object, vm_value key, const struct vm_descriptor *descriptor);
@@ -137,6 +136,8 @@ static const struct object_entry object_methods[] = {
 #define OBJECT_LIST_KEYS	0
 #define OBJECT_LIST_VALUES	1
 #define OBJECT_LIST_ENTRIES	2
+
+static int object_to_descriptor(struct vm_realm *realm, vm_value value, struct vm_descriptor *descriptor);
 
 /*
  * Installs Object and Object.prototype's methods.
