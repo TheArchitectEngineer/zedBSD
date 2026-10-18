@@ -2,11 +2,11 @@
 
 # ws074-p254: User Timing markの実記録・取得・native entry lifecycle
 
-Status: planning
+Status: in-progress（q25 native producer host partial）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
-Queue: 未選定（q23後の候補）
+Queue: [ws074-q20261018-25-i01](../queue.md)
 Origin: [p189 q23 native prerequisite holdback](../phase189/evidence/20261018-q23/native-prerequisite-holdback.json)
 
 ## Objective / evidence
@@ -37,3 +37,9 @@ Event ws074-p254-added-from-q23-20261018: p189で確認した既存no-opによ�
 Event ws074-q23-clearance-invalidated-idl-20261018: [origin p189](../phase189/evidence/20261018-q23-followup/missing-idl-proof.json)で2 IDの入力欠落が判明。Native mark/observer no-op diagnosisと本Phase goalは不変。source生成の前にp189のmissing pinned IDL providerと正しい全1508 baselineのverified outputを待つ。q24-preflightのChrome mark入力は調査資料でありQueue/source実装ではない。shared projection pending。
 
 Event ws074-q24-provider-prerequisite-verified-20261018: [p189 corrected baseline](../phase189/evidence/20261018-q24/README.md)でIDL原資源/全1508/旧1491同値を実検証し、前回input不足の再開条件を満たした。mark producer goal/基準は不変、Native source実装は次のexact finite Queue選定後。
+
+## q25 selected design / bounds
+
+Event ws074-p254-q25-selected-20261018: exact scope/criteria/timeboxは[Queue](../queue.md)へ保存。private timelineはmanaged vm_value vectorをtrace/finalizeし、markは名前/detail/timestampを自己所有しWindow pointerを保持しない。receiverのnative_operationsとmanaged cell typeでbrand検証。name/detail/prototype/新state/新wrapperをallocation/辞書Getより前に必要なrootへ登録、成功後だけbufferへpublish。snapshot/clearは文字列変換再入後の最新bufferを参照。mark constructorは既存new_target prototype protocolを使いbufferに入れない。entry readonly IDL getterは関連prototypeへenumerableで追加、entry toJSONは共通4fieldをordinary own dataとして公開。
+
+今回detailはclone不要なprimitiveだけに限り、複雑object/function/symbolはDataCloneErrorとして未対応を明示。structuredClone globalやJS補完に依存せず、複雑detailのfull-standard algorithmはwhole残差として保持。p255の実observer後までheld caseは解除しない。原固定2025 WPT/一次User Timing/Chrome独立21条件を参照し、q24入力不具合訂正後baselineを使用。検証gate/正確な生成source/禁止事項はQueueの通り。

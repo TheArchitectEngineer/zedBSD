@@ -1,5 +1,24 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
+# ws074-q20261018-25 / native PerformanceMark producer
+
+Status: active（2026-10-18）
+Owner: このCodex chat単独。
+Approval: [ユーザー自走指示](autonomy.md)を以下の有限scopeへ適用。q24 terminal2b1051d12/history SHA25633e2c91878f4dfd2f969530eac57d35424001d5cac861b575ccb009870f62a55 read-back。p254 prerequisiteのcorrected IDL/1508実検証済み。
+Timebox: 最大90分（2026-10-18 18:30 JSTまで）。
+
+| Attempt | Phase | Exact scope / criteria | State | Dependencies |
+| --- | --- | --- | --- | --- |
+| ws074-q20261018-25-i01 | [p254](phase254/phase.md) native mark producer host partial | PerformanceEntry/PerformanceMark native registry/prototype/brand/readonly enumerable name/type/startTime/duration/detailとcommon4field toJSON、PerformanceMark constructor（nonbuffering/subclass prototype）とperformance.mark（buffering/返値）を実装。default/null/undefined options、明示finite非負startTimeとprimitive detail、required引数/名前ToString/legacy timing予約名/例外伝播を扱う。複雑detail structured cloneは今回はDataCloneErrorで明示未対応、APIをJS偽装しない。managed timeline/entryをtraceし、getEntries/ByName/ByType snapshot/filter/stable timestamp順、clearMarks、Window独立/変換時再入/GC/retired child entryの安全な寿命を検証。Chrome独立比較、native host lifetime・DOM、全1508 harness/1561static/413scripted/48strictの旧PASS後退解消、host warning0/target exact2source warning0/full changed functions style0/Acid非悪化、source/pair/fonts/raw/hashを保存 | in-progress | q24 corrected1508、q21 frozen static/scripted/crash/DOM/C/Acid、p254 design/native managed-cell patterns/primary User Timing |
+
+Dependency graph: q24 corrected baseline → native producer/private managed state → direct Chrome/native/GC/lifetime → frozen final pair → full fixed corpus/host/target/standards → archive/terminal。
+Generation bounds: engine既存bind/environment.c、window.cのregistry pointer追加、internal.hの末尾private enum/extern追加、tests/dom/performance-marks.html/.expected、tests/host-performance-marks.c、WS074記録/証拠だけ。C全文coding-style.md/Guardrail/browser-component全文を適用、簡約版無し。新engine source/module/共有SDK/sysroot/public browser ABI2/Wayland/shell/WPT/runner/manifest/期待値を変更しない。targetはq02 dry-runのwindow.c/environment.cのsingle compileで-oだけ変える。host buildは単独、測定pairをunique場所にfreeze。
+Bounds: p254 whole/複雑detail/measure/resource/event/worker/full target link/runtime/p100は未達を保持。p255 native Observerの実装・通知は含めず、known native held PASS1はproducerだけで解除しない。performance.now/timeOriginの既存clockは維持。legacy style残差と未実施checksを明記。期間内未達/既存PASS後退未解消はunclearedとresumeを保存。push/削除/make check/QEMU/共有board/cache編集無し。
+Upcoming Work Outlook: verified producer output→p255 real observer/held case再評価、VM yield*で正規WebIDL2実行、未attempt275、既存layout/VM残差、p249/target/p100。
+
+---
+<!-- awesome-plan project=zedbsd record=queue -->
+
 # ws074-q20261018-24 / missing pinned IDL provider correction
 
 Status: finished（2026-10-18、両scoped item cleared）

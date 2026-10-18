@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [ws074-q20261018-24](queue.md) finished（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+Queue: [ws074-q20261018-25](queue.md) active（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
 
 Latest verified（q24 finished）: 疎checkoutに無いinterfaces/*.idlをpinned Git原blobからgenerated専用GETで配信し、5種類/2 ID計6資源の原hash・query・MIME・header metadata不在と全rawを検証。独立wire/本物404/未配信Git資源nonPASS/metadata拒否を含む15 controls通過。全1508を235.8秒で再測定、全whole/status不変、IDL2以外1506の全callback/completion objectは完全同一（旧1491を含む）。IDL2のfetch errorは解消し、native JS compilerがyield*を未実装のため公式WebIDL2 parser実行に失敗する正しい残差へ到達。 raw harness494 PASS/958 FAIL/4 harness_error/26 no_completion/24 no_output/2 multiple、callback11540 PASS/20643 FAIL/14 NOTRUN。known native prerequisite holdback1は保持し確認済1481/3805（38.922470%）、未attempt275。native C/固定WPT/期待値/分母不変、static844/scripted105/crash39/DOM/C/Acidは同一q21 pairの証拠を再利用。 q24両scoped attempt cleared、q23元uncleared履歴は保持。whole p189/WS/p100/target fullは未達、shared projection/GitHub pending、push無し。次はp254 native mark producer、p255 observerでpositive通知を検証するまでheld PASSを確認済へ加算しない。yield*は次のVM候補としてp189に残す。
 
@@ -1258,3 +1258,5 @@ Event ws074-q23-clearance-invalidated-idl-20261018: q23 terminal17cd21137後のa
 Event ws074-q24-selected-20261018: q23 IDL input不足を訂正するp189新finite Queue q24（17:51 JSTまで）を開始。Git原IDL配信と独立wire検証→2 ID/全1508再確認。p254 native producerの着手はこの検証後。共有投影pending。
 
 Event ws074-q24-finished-20261018: [history](history/ws074-q20261018-24.md)・[evidence](phase189/evidence/20261018-q24/README.md)。疎checkoutに無いinterfaces/*.idlをpinned Git原blobからgenerated専用GETで配信し、5種類/2 ID計6資源の原hash・query・MIME・header metadata不在と全rawを検証。独立wire/本物404/未配信Git資源nonPASS/metadata拒否を含む15 controls通過。全1508を235.8秒で再測定、全whole/status不変、IDL2以外1506の全callback/completion objectは完全同一（旧1491を含む）。IDL2のfetch errorは解消し、native JS compilerがyield*を未実装のため公式WebIDL2 parser実行に失敗する正しい残差へ到達。 raw harness494 PASS/958 FAIL/4 harness_error/26 no_completion/24 no_output/2 multiple、callback11540 PASS/20643 FAIL/14 NOTRUN。known native prerequisite holdback1は保持し確認済1481/3805（38.922470%）、未attempt275。native C/固定WPT/期待値/分母不変、static844/scripted105/crash39/DOM/C/Acidは同一q21 pairの証拠を再利用。 q24両scoped attempt cleared、q23元uncleared履歴は保持。whole p189/WS/p100/target fullは未達、shared projection/GitHub pending、push無し。次はp254 native mark producer、p255 observerでpositive通知を検証するまでheld PASSを確認済へ加算しない。yield*は次のVM候補としてp189に残す。
+
+Event ws074-p254-q25-selected-20261018: p254 native mark producer host partialを[有限Queue q25](queue.md)へ選定（18:30 JSTまで）。q24 corrected1508を前提とし、managed記録/取得/clear/readonly/brand/GC lifetimeを通常APIで実装・検証。p255 consumer/held PASS解除は次のverified output後、whole WS/p100は未達。shared projection pending。
