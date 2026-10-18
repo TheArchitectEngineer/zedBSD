@@ -134,3 +134,5 @@ C/engine/source/既存controls/provider/WPT/expectations変更無し、host/targ
 Raw archive 35 membersを全member read-back、SHA25699bd5f62cb9cc343215251b79b17047310caad0114d1333cfab8ace94102ad3b。凍結runtime binaryはarchiveへ含めず元build path/hashをsummaryへ固定。
 
 [証拠](evidence/20261018-q38/README.md)。
+
+Event ws074-p258-q39-selected-20261018: q38のIsArray実差を元にProxy-aware VM/public Array.isArrayとGC/native/genuine対照を最大90分で選定。concat/flatten等別consumers/global公開は残件、exact範囲はQueue。whole p258/WS未達。

@@ -1,25 +1,19 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# ws074-q20261018-38 / private original WebIDL2 dependency probe
+# ws074-q20261018-39 / Proxy-aware IsArray
 
-Status: finished（i01 investigation partial cleared）
+Status: active
 Owner: このCodex chat単独。
-Approval: [自走指示](autonomy.md)を以下のfinite investigationへ適用。q37 finished/source0c8033f4b/terminalc2d099affとhistory hashを照合済み。
-Timebox: 最大90分、2026-10-18 21:10→22:40 JST。
+Approval: [自走指示](autonomy.md)をexact finite partialへ適用。q38 terminal82c2a3450/history SHA2568b91f52da39c0bc54aa3568ff52a003f0c48e01ce45a32e7fc6fbaca32741730 read-back。
+Timebox: 最大90分、2026-10-18 21:17→22:47 JST。
 
 | Attempt | Phase | Exact scope / criteria | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| ws074-q20261018-38-i01 | [p258](phase258/phase.md) private original WebIDL2 investigation partial | frozen q37 native helperへprivate JS constructor adapterを与え実VM Proxyを生成し、元pinned WebIDL2/testharness/q29 positive4条件・intentional negative1条件を無変更実行。adapter無しbaselineとgenuine Chromium対照、resource/source hash、原callbackとnegative到達位置を保存。最初の阻害要因を元source/実挙動に結び、次finite scopeを具体化。成功を要求する製品実装ではなく有界dependency調査の完了を判定する | cleared | q37 private native Proxy Get/Has/GetOwn/Define/Set、q29 yield*と元resource |
+| ws074-q20261018-39-i01 | [p258](phase258/phase.md) IsArray partial | vm_is_arrayを追加しpublic Array.isArrayを接続。primitive/ordinary/typedはno coercion/no trapで正規true/false、Proxyはtargetへ反復しrevokedはTypeError。managed realm/inputはerror allocationのactual GCまで保持し終了後実回収。既存323条件source prefix保持・追加native/genuine Chrome対照・private factory bounds不変・full changed C/host warning0/q02 exact access+builtin_array target warning0/focused gates/Acid。q38 unchanged originalWebIDL2 positive/negativeもfinal pairで再確認 | in-progress | q38 IsArray実差、q37 private Proxy ownership/operations |
 
-Generation bounds: WS074 private probe scripts/fixtures/records only。engine/product source、既存shared controls/native fixture、global product Proxy、WPT/provider/manifest/expectations、SDK/toolchain/sysroot、共有Boards/cacheは変更しない。constructor adapterはmakeReadProxyを呼ぶだけでtrap実装/Reflect shimを代替しない。callable/nested target boundsは保持。元testharnessがhost fixture環境に依存して動かなければ、その差を記録し必要最小限のprivate host environmentだけを明示しChromiumにも同じ入力を使う。
-Verification: source/hash固定、native callbackとprocess ownership gatesを区別。negativeは元assertionのmessageまで到達した時だけ認定。必要なら元bundleを改変しない診断入力で最初のblockを局所化。公式3805のPASSへ加算しない。host/target rebuild不要（engine無変更）。all1508はq37、static/scripted/crashはq28原証拠再利用。確認済1482/3805・held0・未attempt275を保持。
-Standards: Guardrail/C全文/browser component全文直接適用。C生成無し。no agents/push/削除/make check/QEMU。原記録/生rawを保持しarchive全member read-back。
-Dependency graph: q37 native private operations → unchanged original WebIDL2 positive/negative probe → evidence-based next finite product scope（未選定）。
-Upcoming Work Outlook: actual parser blockerに基づくProxy IsArray/remaining operations/global API条件 → original WPT/未attempt275/API/layout/p100/full target。whole p258/WS acceptanceは保持。
-
-## Outcome
-
-frozen q37 native helper/source0c8033f4bへprivate JS constructor adapterを接続し、変更していない元pinned WebIDL2/testharnessとq29 positive4・negative1を実行。adapterはmakeReadProxyで実VM recordを返すだけでtrap/Reflect代替無し。元WebIDL2 SHA256954444f6daf0f8068d2fce513eac8e6a5d53189a910b9a5675e8d8e8a2808070を照合。adapter無しbaselineは元と同じProxy undefined、adapter有りではparse/validate/不正IDL拒否のpositive4/4が通り、negativeは元assert_unreachedの意図的assertionまで到達してFAIL。genuine Chromiumへ同じsource bytesを与え全callbackのname/status/messageが完全一致。native4実行ともprocess exit0と独立ownership GC gatesが通過したが、process成功をparser PASSとは混同していない。
-追加private診断8条件で公開前の不足を確認：Array.isArrayのProxy配列/revoked、Object.keys、delete転送、GetPrototypeOf、IsExtensible、nested/callable targetにnative/Chrome差が残る。元parserの限定4条件成功は全WebIDL2/Proxy互換性や公開条件を満たす証拠ではない。次finite実装候補はIsArray/公開Array.isArrayを先行し、remaining internal methodsとglobal constructor/revocableを順次検証する。global product Proxyは依然未公開。
-C/engine/source/既存controls/provider/WPT/expectations変更無し、host/target再build無し。全1508はq37、static/scripted/crashはq28を明示再利用。公式PASS加算0、確認済1482/3805・held0・未attempt275維持。i01は有界dependency調査としてscoped cleared、whole p258/WS/full target/p100/100%未達。共有Master/Queue/cache/GitHub投影pending、push無し。
-Raw archive 35 membersを全member read-back、SHA25699bd5f62cb9cc343215251b79b17047310caad0114d1333cfab8ace94102ad3b。凍結runtime binaryはarchiveへ含めず元build path/hashをsummaryへ固定。
+Generation bounds: vm/access.c（public vm_is_arrayだけ、必要own declarations/trace共有）、vm/vm.h（宣言だけ）、js/builtin_array.c（public array_is_array wrapperだけ、他concat/flatten等internal array_is_array_value consumersは今回変更しない）、tests/proxy-read.js/host-proxy-read.c（追加対照/GC、既存条件は保持）、WS074 records。global product Proxy/Reflect/nested/callable policy/native_operations ABI/comment/public ABI2/Wayland/other array algorithms/runner/WPT/manifest/expectations/SDK/toolchain/sysroot/shared Boards/cache変更無し。
+Design: primitive/ordinary fast pathは無allocation、Proxy frameは既存read tracerでmanaged realmとoriginal graphを保持。immutable target chainをnative反復しscript/trap/prototype/propertyを呼ばない。targetは生成時既存objectのみで自己cycle形成不可。revokedはtarget/handler null確認後正規TypeError、errorからreturnまでroot保持。公開wrapperはstatusを保持しboolean出力。public/internal consumersの残件を明示。
+Standards: Guardrail/C全文/browser component全文直接適用。ANSI宣言first・meaningful paragraphs・fn header multiline・normal prototype aftertables、table initializer必要宣言だけ例外。clang-format19 ColumnLimit0後signature/3+clauseを確認。full changed fn manual＋checker raw許可forward cleanup/他0。host serialized終了確認、target q02 exact commandの-oだけ変更。native callback contract不変。
+Verification bounds: focused gatesだけ、all1508はq37、static/scripted/crashはq28を明示再利用。普通の公開IsArray挙動と既存323を保持しunexposed Proxy動作だけ是正。公式gain加算0、確認済1482/3805・held0・未attempt275維持。final source/pair/input hash固定・raw archive全member read-back。90分未達はuncleared/resume、追加試験は具体的riskだけ。push/削除/make check/QEMU/agents無し。
+Dependency graph: native Proxy immutable graph → IsArray/public wrapper → GC/controls/focused/originalWebIDL2 → remaining keys/delete/prototype/extent/call/construct/global/revocable（未選定）。
+Upcoming Work Outlook: remaining native internal methods → global publication/full original WPT → 未attempt275/API/layout/p100/full target。whole p258/WS100%は未達のまま。
