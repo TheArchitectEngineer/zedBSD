@@ -1,5 +1,26 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
+# ws074-q20261018-18 / native first-ready capture・scripted reftest413
+
+Status: active（2026-10-18 14:49 JST）
+Owner: このCodex chat単独。
+Approval: [ユーザー自走指示](autonomy.md)を次の有限scopeへ適用。q17 exact history/hash read-back・terminal WIP c59655415 を確認済み。
+Timebox: 最大90分（16:19 JSTまで）。
+
+| Attempt | Phase | Exact scope | State | Dependencies |
+| --- | --- | --- | --- | --- |
+| ws074-q20261018-18-i01 | [p190](phase190/phase.md) native ready capture client partial | 既存public <browser/browser.h>だけを使う試験client Cを追加し、q17 frozen libbrowser 4ac8b003…へlink。console callbackは状態保存/出力だけ、absolute settle budgetを1ms刻みで進め、正しい単一readyが観測された成功call直後にCPU draw_pixels/PPMを取得。5000ms/最大5001 call・process20sを上限とし、load/native失敗・missing/invalid/duplicate/timeoutは非PASS。元font3/800×600を保持。late timer後の色を先取りしない、load/fonts/2RAF/TestRendered/永久wait/child isolation/query/XHTML・DOM instrumentation除去・zero-loop/deadlineを独立native controlsで確認。C全文/format/style0・host/target single-source warning0・SDK/ELF境界を確認。engine/app/公開ABIは変更しない | in-progress | q17 controls15・budget6・全1491/static1561 verified output、public SDK契約 |
+| ws074-q20261018-18-i02 | [p190](phase190/phase.md) scripted/variant413 runner partial | i01のverified ready-time output後、別Python runnerでpinned official test-wait.js classname=reftest-waitをtest/reference両方に実行。元bytes/hash・同origin resource/query・nonce/URL/load/fonts/2RAF/単一complete/最初のready画面を保ち、probe nodeを原script前に除去してackを要求。native pixelをpinned executorのfuzzy上下限/zero例外・reference別条件・mixed match/mismatch成功leaf graphに従い比較。native wait、late画素、match/mismatch/fuzzy範囲/優先順位/chain失敗・cycle/depth、query/XHTML/child等の判定controlsを確認し、固定残413を全実行・all outcomes/raw/console/source/PPM/PNG/RGB/checkpointを保持。static1561とdisjoint union1974、source/pair/WPT/manifest hashをread-back。testdriver/remote actions・unsupported API等はmissing/unsupportedとして非PASSを保持。現static tool/engine/WPT/expectations/Masterは変更しない | pending | i01正しいfirst-ready capture output、q17 dynamic omitted inventory413・fixed manifest・pinned executor primary source |
+
+Dependency graph: q17 source/native/全体verified → i01 client controls → i02 runner controls → actual413。既存static1561/harness1491/crash48はq17 source/hashを再利用し、新nativeコード変更をしない限り不要な再測定をしない。各whole Phase/WS acceptanceは別。
+Upcoming Work Outlook: generated harness292、p252 flex-basis、module top-level await4、CSS animation/ViewTransition、native fit/Grid、p249 margin。候補であり実装権限ではない。
+Generation bounds: plan/ws074/tests/wpt-ready-render.c、新client build helper（必要なら）、run-interop2025-scripted-reftests.py、test-interop2025-scripted-reftests.pyとWS074記録/証拠。Python専用full standardは無いため既存tool style/Guardrail/権限・FS/テスト規則を直接適用。新CにはC全文/browser component全文を適用し、private engine headers/Waylandを使わない。別unique pairへq17 lib/browserをbyteコピーし凍結、元pairは書かない。shared toolchain/sysroot/他WS/shared board/cache、push、削除、make check/QEMUを行わない。
+
+Investigation bounds: 元90分/5000 virtual ms/20s processを守り、未検証gateや未実行分が残ればunclearedとresumeを記録。public APIでready時点取得を成立させられない場合はC engine/appへ拡張せずi01をuncleared、i02を依存不足として残す。条件を緩和しない。script-only/unsupportedを分母から除外して100%を作らない。
+
+---
+<!-- awesome-plan project=zedbsd record=queue -->
+
 # ws074-q20261018-17 / ordinary attribute observer・combined verification
 
 Status: finished（2026-10-18 14:47 JST、全3 scoped item cleared）

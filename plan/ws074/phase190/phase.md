@@ -2,7 +2,7 @@
 
 # ws074-p190: Interop 2025 reftest・crashtest runner coverage
 
-Status: uncleared（q17 strict48 coverage partial cleared、39 PASS/9 missing・whole未達）
+Status: in-progress（q18 first-ready client/scripted413 partial、q17 partial履歴保持）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -215,3 +215,13 @@ q17 sourceの公式font/2RAF/attributes待機が15対照で成立したため、
 Candidate refinement（q17 read-only source review）: 現CLIの--settle-ms=5000はcomplete通知の後も未来timerをdrainしてから描画する。crashのalive判定には保守的だが、scripted pixel比較では「ready時点は赤、未来timerで緑」の誤PASSリスクがある。次Queueでは既存public <browser.h>だけを使う試験clientを候補へ加え、同じfrozen libbrowserへlinkし、absolute budgetを1ms刻みでsettleして最初の有効readyを観測した外側call直後にdraw_pixelsする案を定義する。callback中は状態保存/console出力だけで同じviewへ再入しない。late timer対照で未来の画素を先取りしないこと、child network/zero-loop/deadline/duplicate/errorで非PASSを保つことを前提にする。新client C全文/format/host/target single-source/boundary検証を次Queueに含め、production engine/app/public ABIは変えない。
 
 同pinned executor base.pyのcheck_pass/get_fuzzy/DFSをread-onlyで確認。動的側はfuzzyの上下限・zero例外・参照ごとのoverrideとmatch/mismatchを含むleafへの成功pathを扱う必要がある。旧static helperのall-mismatch条件は保守的でfull official equivalenceは未達として保持。static1561の直接fuzzy下限>0は2件ともFAILで、今回839 PASSへ影響しないことをinventoryで確認。次Queueで原典に基づく対照と検証boundsを明示し、現Queue中のrunner実装は行わない。
+
+## q18 exact scope（2026-10-18 14:49–16:19 JST）
+
+[Queue](../queue.md)のi01 public SDK native first-ready capture client → i02 strict scripted413を選定。q17 source f1b83fa8f・terminal c59655415・libbrowser 4ac8b0037013c43b80f84703ca51deb803d8a509e2652ea1403a2141cb40502aを新unique pairへbyte-copyして使用。C生成は試験clientのみ、prod engine/app/public ABIや既存static/crash toolを変えない。phaseはwhole受け入れ未達を保持する。
+
+clientはabsolute budgetを1ms刻みで最大5000msまでsettleし、正しい単一replyを受けた成功call直後にCPU pixelsを保存する。callback中は同viewへ再入しない。ETIMEDOUTを同call成功にせず、pending child等の再試行も全体call/process bound内とし、missing/permanent zero-loopは非PASS。各test/reference原source bytesはpinned blob一致を確認、URL/queryを保持する。注入script nodeは原scriptより前に除去し、ready replyへprobe_removed=trueを要求して撮影時のDOMへ計測nodeを残さない。XML referenceは正しいMIME/CDATAを使い独立対照を前提にする。
+
+fixed omitted413（script402/script_reference5/variant6）を既存static1561とdisjointに全測定する候補。native ready-time/late timer・wait解除/永久wait・fonts/2RAF/TestRendered/child/query/XHTML/計測node除去のcontrols後、pixel/fuzzy上下限/zero例外・reference別条件・mixed match/mismatchの成功leaf・cycle/depth拒否をpinned primary contractと独立対照で確認する。testdriver/remote actionやAPI未対応は非PASSとして記録し、all raw/checkpoint/PPM・PNG/RGB/hashを保持する。C全文/style/format/host/target warning0/SDK境界を適用し、target link/runtime/p100・shared projectionは後段に保持。
+
+Event ws074-p190-q18-selected-20261018: first-ready撮影がscripted pixelsの必要outputであるためclientとrunnerを依存順の2 partialへ分離。q17 sourceの全体gateと39 strict crashは履歴保持、次Queueで413を測り未実行を削らない。元90分bound・new client source限定・pinned official wait/graph/fuzzy条件を固定。承認は自走契約、共有projection pending。

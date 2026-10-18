@@ -9,9 +9,9 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [ws074-q20261018-17](queue.md) finished（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+Queue: [ws074-q20261018-18](queue.md) active（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
 
-Current resume（q17 finished）: 全harness1491はwhole491・callback11531 PASS/20226 FAIL/14 NOTRUNを維持し、whole/callback後退・改善・欠損・追加・順序変更0。全static1561は839 PASS/722 FAIL、全reference pixel metrics unchanged。strict48は39 PASS/9 readiness_missing。最終source f1b83fa8f/pair hash read-back一致、固定WPT tracked clean。確認済み1369/3805（35.978975%）、q14から39増。未実行292 harness/413 reftest・native crash依存9は残す。 ordinary attributes/producer/strict48 coverageの全3 partial cleared。次候補はp190 scripted/variant reftest413のstrict計測、p252等もplanned。whole WS/各API・target full/p100・共有projectionはpending。
+Latest verified（q17 finished）: 全harness1491はwhole491・callback11531 PASS/20226 FAIL/14 NOTRUNを維持し、whole/callback後退・改善・欠損・追加・順序変更0。全static1561は839 PASS/722 FAIL、全reference pixel metrics unchanged。strict48は39 PASS/9 readiness_missing。最終source f1b83fa8f/pair hash read-back一致、固定WPT tracked clean。確認済み1369/3805（35.978975%）、q14から39増。未実行292 harness/413 reftest・native crash依存9は残す。 ordinary attributes/producer/strict48 coverageの全3 partial cleared。次候補はp190 scripted/variant reftest413のstrict計測、p252等もplanned。whole WS/各API・target full/p100・共有projectionはpending。
 
 Event ws074-q14-percentage-scope-reconciled-20261018: precode Chrome17条件でzero/cancelled %型の依存を確認。p251をi01、p250をi02へ改訂しglobal1491/static1561照合へ拡張、初期snapshot保存/60分deadline維持。
 
@@ -644,7 +644,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p187](phase187/phase.md) | 負の padding と第6色箱の幅を調べる | cleared（q1010-i01、Acid3差900減、negative padding fixture pass） | p172〜p186 cleared、q1009 実測出力 |
 | [ws074-p188](phase188/phase.md) | 同一ページで観測した訪問履歴と :visited の paint color | cleared（q1011-i01、Acid3差801減→0、privacy fixture pass） | p172〜p187 cleared、q1010 実測出力 |
 | [ws074-p189](phase189/phase.md) | Interop 2025 testharness 1,783件の結果取得 runner | uncleared / q17全1491 whole491・未対応292 | p173 q1012 固定manifest出力 |
-| [ws074-p190](phase190/phase.md) | Interop 2025 reftest 1,974件・crashtest48件のrunner coverage | uncleared / q17 strict48 coverage partial cleared・39 PASS/9 missing | p173 q1012 固定manifest出力 |
+| [ws074-p190](phase190/phase.md) | Interop 2025 reftest 1,974件・crashtest48件のrunner coverage | in-progress / q18 first-ready client→scripted413 partial | p173 q1012 固定manifest出力 |
 | [ws074-p191](phase191/phase.md) | Interop 2025 textdecoration全16 testharnessのCSSOM互換 | cleared / q1023、16件16 PASS/0 FAIL | p173固定manifest、p189 q1015全16件baseline |
 | [ws074-p192](phase192/phase.md) | Interop 2025 Window named properties互換 | uncleared / q1025 partial cleared、一意id live lookup | p173固定manifest、p189 q1024 shard |
 | [ws074-p193](phase193/phase.md) | Interop 2025 details/hidden until-found互換 | uncleared / q1032計測6 PASS/10 FAIL/2 no output、q1035/q1036で2件追加PASS、reftest25/crashtest3未実行 | p189 q1024 shard、p192 q1025一意id output |
@@ -1215,3 +1215,5 @@ Event ws074-p253-native-list-owner-design-20261018: p253新attribute recordで�
 Event ws074-p190-q17-strict48-partial-clear-20261018: [p190 evidence](phase190/evidence/20261018-q17/README.md)。controls15/15のverified output後、fixed48をstrict条件で全実行し39 PASS/9 readiness_missing、coverage partial cleared。9件はmodule top-level await4・CSS animationend1・ViewTransition API3・style/child transition event1へnative調査を残す。画像だけを成功扱いせず、current全体はq17 global1491待ち。静的1561は839維持/旧PASS後退0・全reference pixel unchanged。p190 whole/WS whole・共有projection pending。
 
 Event ws074-q17-finished-20261018: [exact history](history/ws074-q20261018-17.md)・[global evidence](phase253/evidence/20261018-q17/README.md)。全harness1491はwhole491・callback11531 PASS/20226 FAIL/14 NOTRUNを維持し、whole/callback後退・改善・欠損・追加・順序変更0。全static1561は839 PASS/722 FAIL、全reference pixel metrics unchanged。strict48は39 PASS/9 readiness_missing。最終source f1b83fa8f/pair hash read-back一致、固定WPT tracked clean。確認済み1369/3805（35.978975%）、q14から39増。未実行292 harness/413 reftest・native crash依存9は残す。 全3 scoped item cleared、p190/p209/p253各whole uncleared・WS incompleteを保持。origin/producer/coverageへ個別event配送済み。次Queueはnative first-ready captureとscripted413を候補へ（まだ未選定）、shared projection pending。
+
+Event ws074-p190-q18-selected-20261018: [Queue](queue.md)でpublic SDK試験clientのfirst-ready撮影→p190 scripted413 runnerを最大90分へ選定。q17 WIP c59655415/history hash read-back済み。必要output/controls/原source・DOM除去・query/fuzzy/graph/全raw保持をp190へ記録、prod engine/ABI不変。確認済み1369/3805を保持し、未検証分は加算しない。shared projection pending。

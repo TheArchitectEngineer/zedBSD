@@ -1,0 +1,8 @@
+{
+  "queue_sha256": "57e63866b65a786f0cea2f05d392120d26bffee0455e2679716da1cd519a7081",
+  "phase_sha256": "0a73edb04a8a81bd914a506c68018f5d8f47a445fd91ec150139c078fc62cf6b",
+  "source": "autonomy.md user instruction",
+  "previous_terminal": "c59655415de43576754747696d5863acaac30987",
+  "previous_history_sha256": "2cd12e8985c31fa3818153b3fda6b6acb3289d5df5ff153abc8f1a965f05f5d1",
+  "deadline": "2026-10-18 16:19 JST"
+}
