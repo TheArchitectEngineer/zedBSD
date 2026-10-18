@@ -35,7 +35,7 @@ Resume point: p001 の棚卸しは途中（plan/ws244/inventory.md、P7 5a352c47
 | ID | 内容 | 状態 |
 | --- | --- | --- |
 | p001 | 棚卸し（[inventory.md](inventory.md)）と方針・順序・試験の道 | cleared（2026-10-18 Q1） |
-| p002 | intel/ の Gen9 の display の header（display-regs-gen9*.h）と bits.h: 先頭の表示を外し block ごとの referenced、`I915_*` に改名、使う 24 file を追従 | planned |
+| [p002](phase002/phase.md) | intel/ の Gen9 の display の header（display-regs-gen9*.h）と bits.h: 先頭の表示を外し block ごとの referenced、`I915_*` に改名、使う 24 file を追従 | in-progress（2026-10-18 P1） |
 | p003 | intel/ の GT の header・表（gt-regs.h・commands.h・gt-power.h・lrc-offsets.h・mocs*・workarounds.h・mcr-ranges・engine-table*・forcewake-ranges*・pci-ids.h）: 同上、使う 70 file を追従 | planned（p002 の後） |
 | p004 | GT の core の小さい物の書き直し: power.c（PCODE）・reset・tlb・device-info・ggtt・ppgtt・memory・irq・dma.h ほかの言及 | planned（p003 の後） |
 | p005 | GT の submit: context・request・submit・engine の書き直し | planned（p004 の後） |
