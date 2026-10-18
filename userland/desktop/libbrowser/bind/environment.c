@@ -118,6 +118,10 @@ struct environment_timeline {
 	struct wb_vector entries;
 	struct vm_object *owner_global;
 	struct vm_object *mark_prototype;
+	struct vm_object *list_prototype;
+	struct wb_vector observers;
+	vm_value dispatch;
+	int queued;
 };
 
 /* A saved mark independently retains its immutable name, primitive detail and original timestamp. */
@@ -127,6 +131,49 @@ struct environment_mark {
 	vm_value detail;
 	double start;
 };
+
+/* A genuine observer owns callback and pending mark references through its independently collectible wrapper. */
+struct environment_performance_observer {
+	struct vm_cell cell;
+	struct environment_timeline *timeline;
+	struct vm_object *wrapper;
+	vm_value callback;
+	struct wb_vector records;
+	int mode;
+	int active;
+	int dropped_required;
+};
+
+/* A delivered EntryList owns detached actual mark identities independently of its former observer. */
+struct environment_performance_list {
+	struct vm_cell cell;
+	struct wb_vector entries;
+};
+
+static void environment_performance_observer_trace(struct vm_heap *heap, struct vm_cell *cell);
+static void environment_performance_observer_finalize(struct vm_heap *heap, struct vm_cell *cell);
+static void environment_performance_list_trace(struct vm_heap *heap, struct vm_cell *cell);
+static void environment_performance_list_finalize(struct vm_heap *heap, struct vm_cell *cell);
+static int environment_performance_observer_of(struct vm_realm *realm, vm_value receiver, struct environment_performance_observer **observer);
+static int environment_performance_list_of(struct vm_realm *realm, vm_value receiver, struct environment_performance_list **list);
+static int environment_performance_observer_construct(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int environment_performance_entry_types(struct vm_realm *realm, vm_value sequence, int *has_mark);
+static int environment_performance_observe(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int environment_performance_disconnect(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int environment_performance_schedule(struct environment_timeline *timeline);
+static int environment_performance_queue_mark(struct environment_timeline *timeline, vm_value mark);
+static void environment_performance_list_sort(struct wb_vector *buffer);
+static int environment_performance_list_create(struct vm_realm *realm, struct environment_timeline *timeline, struct wb_vector *records, vm_value *result);
+static int environment_performance_dispatch(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int environment_performance_take_records(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int environment_performance_list_snapshot(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, int mode, vm_value *result);
+static int environment_performance_list_entries(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int environment_performance_list_by_type(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int environment_performance_list_by_name(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int environment_performance_supported_types(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int environment_performance_enumerate(struct vm_realm *realm, struct vm_object *prototype, const struct bind_operation *operation);
+static int environment_install_performance_observer(struct bind_window *window, struct environment_timeline *timeline);
+static int environment_entries_snapshot(struct vm_realm *realm, const struct wb_vector *buffer, const vm_value *args, unsigned count, int mode, vm_value *result);
 
 static void environment_timeline_trace(struct vm_heap *heap, struct vm_cell *cell);
 static void environment_timeline_finalize(struct vm_heap *heap, struct vm_cell *cell);
@@ -328,6 +375,52 @@ const struct bind_interface bind_navigator_interface = {
  */
 const struct bind_interface bind_screen_interface = {
 	"Screen", BIND_NO_PARENT, 0, NULL, NULL, NULL, NULL
+};
+
+/* Observer payloads retain their actual callback, relevant timeline and pending records until collection. */
+static const struct vm_cell_type environment_performance_observer_type = {
+	"performance-observer", environment_performance_observer_trace, environment_performance_observer_finalize
+};
+
+/* Delivered snapshots retain and release their own detached native mark vector. */
+static const struct vm_cell_type environment_performance_list_type = {
+	"performance-entry-list", environment_performance_list_trace, environment_performance_list_finalize
+};
+
+/* Only genuine native observer wrappers carry this private operation identity. */
+static const struct vm_native_operations environment_performance_observer_native = {
+	NULL, NULL, NULL, NULL, NULL
+};
+
+/* EntryList identity is independent of mutable JS prototypes and constructor properties. */
+static const struct vm_native_operations environment_performance_list_native = {
+	NULL, NULL, NULL, NULL, NULL
+};
+
+/* Real native registrations consume genuine produced marks and dispatch asynchronously. */
+static const struct bind_operation environment_performance_observer_operations[] = {
+	{ "observe", 0, environment_performance_observe },
+	{ "disconnect", 0, environment_performance_disconnect },
+	{ "takeRecords", 0, environment_performance_take_records },
+	{ NULL, 0, NULL }
+};
+
+/* Every query returns a fresh array without exposing the delivered snapshot's native storage. */
+static const struct bind_operation environment_performance_list_operations[] = {
+	{ "getEntries", 0, environment_performance_list_entries },
+	{ "getEntriesByType", 1, environment_performance_list_by_type },
+	{ "getEntriesByName", 1, environment_performance_list_by_name },
+	{ NULL, 0, NULL }
+};
+
+/* Constructing alone retains a callback without registering or manufacturing pending entries. */
+const struct bind_interface bind_performance_observer_interface = {
+	"PerformanceObserver", BIND_NO_PARENT, 1, environment_performance_observer_construct, NULL, environment_performance_observer_operations, NULL
+};
+
+/* Only actual asynchronous delivery can create a genuine EntryList. */
+const struct bind_interface bind_performance_observer_entry_list_interface = {
+	"PerformanceObserverEntryList", BIND_NO_PARENT, 0, NULL, NULL, environment_performance_list_operations, NULL
 };
 
 /* The private timeline's type traces buffered wrappers and releases native vector storage. */
@@ -835,6 +928,10 @@ environment_install_performance(
 	wb_vector_init(&timeline->entries, sizeof(vm_value));
 	timeline->owner_global = realm->global;
 	timeline->mark_prototype = window->prototypes[BIND_PERFORMANCE_MARK];
+	timeline->list_prototype = window->prototypes[BIND_PERFORMANCE_OBSERVER_ENTRY_LIST];
+	wb_vector_init(&timeline->observers, sizeof(vm_value));
+	timeline->dispatch = VM_VALUE_UNDEFINED;
+	timeline->queued = 0;
 	performance->kind = VM_KIND_PLATFORM;
 	performance->internal = vm_value_cell(timeline);
 	performance->native_operations = &environment_timeline_native;
@@ -890,6 +987,11 @@ environment_install_performance(
 
 	/* No navigation entry producer or resource timing feature is implied. */
 	error = js_builtin_value(realm, navigation, "redirectCount", vm_value_int32(0), VM_PROPERTY_DEFAULT);
+	if (error != 0)
+		goto cleanup;
+
+	/* Bind real observer construction and delivery to this already owned native timeline. */
+	error = environment_install_performance_observer(window, timeline);
 	if (error != 0)
 		goto cleanup;
 
@@ -1660,8 +1762,16 @@ environment_timeline_trace(
 	timeline = (struct environment_timeline *)cell;
 	vm_heap_mark(heap, &timeline->owner_global->cell);
 	vm_heap_mark(heap, &timeline->mark_prototype->cell);
+	vm_heap_mark(heap, &timeline->list_prototype->cell);
+	vm_heap_mark_value(heap, timeline->dispatch);
 	entries = timeline->entries.items;
 	for (index = 0; index < timeline->entries.count; index++) {
+		vm_heap_mark_value(heap, entries[index]);
+	}
+
+	/* Active registrations retain their genuine callback-owning observer wrappers. */
+	entries = timeline->observers.items;
+	for (index = 0; index < timeline->observers.count; index++) {
 		vm_heap_mark_value(heap, entries[index]);
 	}
 
@@ -1682,6 +1792,7 @@ environment_timeline_finalize(
 	/* No Window or DOM ownership is borrowed by the buffer. */
 	timeline = (struct environment_timeline *)cell;
 	wb_vector_release(&timeline->entries);
+	wb_vector_release(&timeline->observers);
 
 	/* Succeeded: no native vector allocation survives the dead timeline. */
 	return;
@@ -2064,6 +2175,11 @@ environment_performance_mark(
 	/* Publish the entry after every older timestamp and every equal-time predecessor. */
 	entries[index] = value;
 
+	/* Queue this exact producer entry through the actual relevant timeline's observers. */
+	status = environment_performance_queue_mark(timeline, value);
+	if (status != 0)
+		return status;
+
 	/* Succeeded: the returned mark is the actual buffered object. */
 	return 0;
 }
@@ -2210,15 +2326,14 @@ cleanup:
 
 /* Selects a snapshot after all filter conversions have finished reentering script. */
 static int
-environment_performance_snapshot(
+environment_entries_snapshot(
 	struct vm_realm *realm,
-	vm_value receiver,
+	const struct wb_vector *buffer,
 	const vm_value *args,
 	unsigned count,
 	int mode,
 	vm_value *result)
 {
-	struct environment_timeline *timeline;
 	struct environment_mark *mark;
 	struct vm_object *object;
 	struct vm_object *entry;
@@ -2233,11 +2348,8 @@ environment_performance_snapshot(
 	int matches;
 	int status;
 
-	/* Validate the actual receiver before any filter invokes user conversions. */
+	/* The calling native method already validated and retains the real source receiver. */
 	*result = VM_VALUE_UNDEFINED;
-	status = environment_timeline_of(realm, receiver, &timeline);
-	if (status != 0)
-		return status;
 
 	/* Filtered variants require an argument even when it is explicitly undefined. */
 	if (mode != 0 && count == 0U) {
@@ -2304,9 +2416,9 @@ environment_performance_snapshot(
 
 	/* No later snapshot step calls script or keeps a pointer across user conversion. */
 	roots[2] = &object->cell;
-	entries = timeline->entries.items;
+	entries = buffer->items;
 	output = 0U;
-	for (index = 0; index < timeline->entries.count; index++) {
+	for (index = 0; index < buffer->count; index++) {
 		value = entries[index];
 		entry = (struct vm_object *)vm_value_as_cell(value);
 		mark = (struct environment_mark *)vm_value_as_cell(entry->internal);
@@ -2334,7 +2446,7 @@ environment_performance_snapshot(
 		output++;
 	}
 
-	/* The native vector is already stably sorted by start time. */
+	/* The source supplies chronological query storage or raw takeRecords order as appropriate. */
 	*result = vm_value_cell(object);
 	status = 0;
 
@@ -2350,6 +2462,33 @@ cleanup:
 		return status;
 
 	/* Succeeded: the caller owns an independent array of real entry identities. */
+	return 0;
+}
+
+/* Keeps performance methods branded separately from delivered EntryList query methods. */
+static int
+environment_performance_snapshot(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	int mode,
+	vm_value *result)
+{
+	struct environment_timeline *timeline;
+	int status;
+
+	/* Only an actual performance receiver can supply this native timeline. */
+	status = environment_timeline_of(realm, receiver, &timeline);
+	if (status != 0)
+		return status;
+
+	/* Common conversion and snapshot logic still observes the latest buffer after reentrant getters. */
+	status = environment_entries_snapshot(realm, &timeline->entries, args, count, mode, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the actual performance buffer supplied a fresh array of genuine entries. */
 	return 0;
 }
 
@@ -4591,5 +4730,1299 @@ environment_outer_size(
 		return error;
 
 	/* Succeeded: the size is reported. */
+	return 0;
+}
+
+/* Retains a registered observer's callback, real pending records and actual relevant timeline. */
+static void
+environment_performance_observer_trace(
+	struct vm_heap *heap,
+	struct vm_cell *cell)
+{
+	struct environment_performance_observer *observer;
+	vm_value *records;
+	size_t index;
+
+	/* A saved observer owns its callback and relevant global even after a frame retires. */
+	observer = (struct environment_performance_observer *)cell;
+	vm_heap_mark(heap, &observer->timeline->cell);
+	vm_heap_mark_value(heap, observer->callback);
+
+	/* The callback's receiver is the genuine wrapper, never a reconstructed lookalike. */
+	if (observer->wrapper != NULL)
+		vm_heap_mark(heap, &observer->wrapper->cell);
+
+	/* Pending marks retain their independently managed entry payloads. */
+	records = observer->records.items;
+	for (index = 0; index < observer->records.count; index++) {
+		vm_heap_mark_value(heap, records[index]);
+	}
+
+	/* Succeeded: the observer graph remains owned through real VM references. */
+	return;
+}
+
+/* Releases only native vector storage when an observer's managed state becomes unreachable. */
+static void
+environment_performance_observer_finalize(
+	struct vm_heap *heap,
+	struct vm_cell *cell)
+{
+	struct environment_performance_observer *observer;
+
+	UNUSED_PARAMETER(heap);
+
+	/* Finalization never dereferences another possibly finalized owner object. */
+	observer = (struct environment_performance_observer *)cell;
+	wb_vector_release(&observer->records);
+
+	/* Succeeded: no native pending-record allocation survives the dead observer. */
+	return;
+}
+
+/* Retains the immutable entry references owned by a delivered native EntryList. */
+static void
+environment_performance_list_trace(
+	struct vm_heap *heap,
+	struct vm_cell *cell)
+{
+	struct environment_performance_list *list;
+	vm_value *entries;
+	size_t index;
+
+	/* Saved lists remain readable after callbacks drain or disconnect their source observer. */
+	list = (struct environment_performance_list *)cell;
+	entries = list->entries.items;
+	for (index = 0; index < list->entries.count; index++) {
+		vm_heap_mark_value(heap, entries[index]);
+	}
+
+	/* Succeeded: every actual entry in this independent snapshot remains reachable. */
+	return;
+}
+
+/* Releases an EntryList's detached native vector without consulting its former observer. */
+static void
+environment_performance_list_finalize(
+	struct vm_heap *heap,
+	struct vm_cell *cell)
+{
+	struct environment_performance_list *list;
+
+	UNUSED_PARAMETER(heap);
+
+	/* Snapshot ownership ends independently of Window and observer finalization order. */
+	list = (struct environment_performance_list *)cell;
+	wb_vector_release(&list->entries);
+
+	/* Succeeded: the dead snapshot owns no native storage. */
+	return;
+}
+
+/* Validates the native observer brand before reading any private state. */
+static int
+environment_performance_observer_of(
+	struct vm_realm *realm,
+	vm_value receiver,
+	struct environment_performance_observer **observer)
+{
+	struct vm_object *object;
+	struct vm_cell *cell;
+	int is_object;
+	int is_cell;
+	int status;
+
+	/* A mutable prototype cannot turn an ordinary value into a native observer. */
+	is_object = vm_value_is_object(receiver);
+	if (!is_object) {
+		status = bind_throw_illegal(realm);
+		return status;
+	}
+
+	/* The wrapper brand is distinct from entries, timelines and delivered lists. */
+	object = (struct vm_object *)vm_value_as_cell(receiver);
+	if (object->native_operations != &environment_performance_observer_native) {
+		status = bind_throw_illegal(realm);
+		return status;
+	}
+
+	/* Only a managed payload can own pending records. */
+	is_cell = vm_value_is_cell(object->internal);
+	if (!is_cell) {
+		status = bind_throw_illegal(realm);
+		return status;
+	}
+
+	/* A foreign payload cannot be interpreted using the observer representation. */
+	cell = vm_value_as_cell(object->internal);
+	if (cell->type != &environment_performance_observer_type) {
+		status = bind_throw_illegal(realm);
+		return status;
+	}
+
+	/* Succeeded: the receiver owns the actual native observer state. */
+	*observer = (struct environment_performance_observer *)cell;
+	return 0;
+}
+
+/* Requires a genuine delivered EntryList before exposing its independent buffer. */
+static int
+environment_performance_list_of(
+	struct vm_realm *realm,
+	vm_value receiver,
+	struct environment_performance_list **list)
+{
+	struct vm_object *object;
+	struct vm_cell *cell;
+	int is_object;
+	int is_cell;
+	int status;
+
+	/* EntryList methods never accept an arbitrary array or prototype lookalike. */
+	is_object = vm_value_is_object(receiver);
+	if (!is_object) {
+		status = bind_throw_illegal(realm);
+		return status;
+	}
+
+	/* Native operations identify the real list wrapper. */
+	object = (struct vm_object *)vm_value_as_cell(receiver);
+	if (object->native_operations != &environment_performance_list_native) {
+		status = bind_throw_illegal(realm);
+		return status;
+	}
+
+	/* The snapshot's storage must be an independently managed cell. */
+	is_cell = vm_value_is_cell(object->internal);
+	if (!is_cell) {
+		status = bind_throw_illegal(realm);
+		return status;
+	}
+
+	/* Distinct managed types prevent accidental cross-interpretation of native payloads. */
+	cell = vm_value_as_cell(object->internal);
+	if (cell->type != &environment_performance_list_type) {
+		status = bind_throw_illegal(realm);
+		return status;
+	}
+
+	/* Succeeded: the caller borrows only this receiver's real snapshot. */
+	*list = (struct environment_performance_list *)cell;
+	return 0;
+}
+
+/* Constructs an observer bound to its constructor's private relevant timeline. */
+static int
+environment_performance_observer_construct(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct vm_function *callee;
+	struct environment_timeline *timeline;
+	struct environment_performance_observer *observer;
+	struct vm_object *prototype;
+	struct vm_object *object;
+	struct vm_cell *roots[4];
+	vm_value callback;
+	unsigned index;
+	unsigned registered;
+	int callable;
+	int status;
+
+	UNUSED_PARAMETER(receiver);
+
+	/* WebIDL callback conversion rejects both missing and non-callable arguments. */
+	*result = VM_VALUE_UNDEFINED;
+	callback = js_argument(args, count, 0);
+	callable = vm_value_is_callable(callback);
+	if (!callable) {
+		status = vm_throw_type_error(realm, "A callable PerformanceObserver callback is required");
+		return status;
+	}
+
+	/* A mutable global performance property never supplies the constructor's owner. */
+	callee = js_builtin_callee(realm);
+	timeline = (struct environment_timeline *)vm_value_as_cell(callee->data);
+	registered = 0U;
+	for (index = 0; index < 4U; index++) {
+		roots[index] = NULL;
+	}
+
+	/* Protect the custom prototype, managed payload and wrapper before allocations or getters. */
+	for (index = 0; index < 4U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+
+		/* Unwind only successfully registered native root slots. */
+		registered++;
+	}
+
+	/* The callback can be a newborn function passed directly to the constructor. */
+	roots[0] = vm_value_as_cell(callback);
+
+	/* Native constructors preserve an explicit subclass new.target prototype. */
+	prototype = bind_window_of(realm)->prototypes[BIND_PERFORMANCE_OBSERVER];
+	status = vm_construct_prototype(realm, realm->new_target, prototype, &prototype);
+	if (status != 0)
+		goto cleanup;
+
+	/* The prototype getter may have returned a newborn object. */
+	roots[1] = &prototype->cell;
+	observer = vm_heap_alloc(realm->heap, &environment_performance_observer_type, sizeof(*observer));
+	if (observer == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* Complete the traceable state before constructing another VM object. */
+	observer->timeline = timeline;
+	observer->callback = callback;
+	observer->wrapper = NULL;
+	observer->mode = 0;
+	observer->active = 0;
+	observer->dropped_required = 0;
+	wb_vector_init(&observer->records, sizeof(vm_value));
+	roots[2] = &observer->cell;
+
+	/* Construct a genuine extensible platform wrapper with no public substitute state. */
+	object = vm_object_create(realm->heap, prototype);
+	if (object == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* The callback receives this exact identity, including when constructed by a subclass. */
+	roots[3] = &object->cell;
+	object->kind = VM_KIND_PLATFORM;
+	object->internal = vm_value_cell(observer);
+	object->native_operations = &environment_performance_observer_native;
+	observer->wrapper = object;
+	*result = vm_value_cell(object);
+	status = 0;
+
+cleanup:
+	/* End temporary ownership only after a complete wrapper is published or construction fails. */
+	while (registered > 0U) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* A failed prototype or allocation step cannot masquerade as successful construction. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the observer exists independently of whether observe is ever called. */
+	return 0;
+}
+
+/* Converts the entire WebIDL sequence while retaining every collectible iterator input. */
+static int
+environment_performance_entry_types(
+	struct vm_realm *realm,
+	vm_value sequence,
+	int *has_mark)
+{
+	struct vm_cell *roots[3];
+	struct vm_string *name;
+	vm_value iterator;
+	vm_value value;
+	unsigned index;
+	unsigned registered;
+	int is_object;
+	int is_cell;
+	int done;
+	int equal;
+	int status;
+
+	/* WebIDL sequences require an object, even though primitive JS strings are iterable. */
+	*has_mark = 0;
+	is_object = vm_value_is_object(sequence);
+	if (!is_object) {
+		status = vm_throw_type_error(realm, "entryTypes must be an iterable object");
+		return status;
+	}
+
+	/* A getter may have produced a sequence with no other owning reference. */
+	roots[0] = vm_value_as_cell(sequence);
+	roots[1] = NULL;
+	roots[2] = NULL;
+	registered = 0U;
+	for (index = 0; index < 3U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+
+		/* Cleanup releases only slots that the heap actually registered. */
+		registered++;
+	}
+
+	/* Use the engine's real iterator protocol rather than treating arrays as the only sequence. */
+	status = vm_iter_start(realm, sequence, &iterator);
+	if (status != 0)
+		goto cleanup;
+
+	/* Iterator state survives next methods and each element's string conversion. */
+	roots[1] = vm_value_as_cell(iterator);
+	for (;;) {
+		status = vm_iter_next(realm, iterator, &value, &done);
+		if (status != 0)
+			goto cleanup;
+
+		/* Exhaustion ends conversion without invoking an iterator return method. */
+		if (done)
+			break;
+
+		/* Preserve a newborn element while ToString invokes arbitrary getters or calls. */
+		roots[2] = NULL;
+		is_cell = vm_value_is_cell(value);
+		if (is_cell)
+			roots[2] = vm_value_as_cell(value);
+
+		/* Every element is converted, even after the supported mark type was already found. */
+		status = vm_to_string(realm, value, &name);
+		if (status != 0) {
+			/* WebIDL sequence conversion propagates this abrupt completion without IteratorClose. */
+			goto cleanup;
+		}
+
+		/* Unsupported types are filtered without being advertised or silently manufactured. */
+		equal = vm_string_equal_ascii(name, "mark");
+		if (equal)
+			*has_mark = 1;
+	}
+
+	/* Every iterator element and side effect completed successfully. */
+	status = 0;
+
+cleanup:
+	/* Sequence, iterator and element temporary ownership ends on every path. */
+	while (registered > 0U) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* A partial conversion cannot register a partially observed type set. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the complete sequence determines whether real marks are supported. */
+	return 0;
+}
+
+/* Converts options, checks the sticky registration mode and registers actual mark production. */
+static int
+environment_performance_observe(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct environment_performance_observer *observer;
+	struct environment_timeline *timeline;
+	struct vm_cell *roots[2];
+	struct vm_string *type;
+	vm_value options;
+	vm_value value;
+	vm_value *entries;
+	unsigned registered;
+	unsigned index;
+	size_t position;
+	int present;
+	int types_present;
+	int type_present;
+	int is_object;
+	int is_cell;
+	int buffered;
+	int has_mark;
+	int supported;
+	int mode;
+	int status;
+
+	/* Receiver validation precedes any user option getters. */
+	*result = VM_VALUE_UNDEFINED;
+	observer = NULL;
+	status = environment_performance_observer_of(realm, receiver, &observer);
+	if (status != 0)
+		return status;
+
+	/* Null and undefined become empty dictionaries; other primitives are rejected. */
+	options = js_argument(args, count, 0);
+	if (options != VM_VALUE_UNDEFINED && options != VM_VALUE_NULL) {
+		is_object = vm_value_is_object(options);
+		if (!is_object) {
+			status = vm_throw_type_error(realm, "Observer options must be a dictionary");
+			return status;
+		}
+	}
+
+	/* Temporary sequence and type getter results survive later dictionary conversions. */
+	roots[0] = NULL;
+	roots[1] = NULL;
+	registered = 0U;
+	for (index = 0; index < 2U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+
+		/* Only registered slots belong to the final unwind. */
+		registered++;
+	}
+
+	/* WebIDL dictionary conversion reads buffered before entryTypes and type. */
+	status = bind_get_option(realm, options, "buffered", &present, &value);
+	if (status != 0)
+		goto cleanup;
+
+	/* Boolean conversion does not call user code. */
+	buffered = vm_to_boolean(value);
+	status = bind_get_option(realm, options, "entryTypes", &types_present, &value);
+	if (status != 0)
+		goto cleanup;
+
+	/* An iterable object's complete element conversion precedes reading the type member. */
+	has_mark = 0;
+	if (types_present) {
+		is_cell = vm_value_is_cell(value);
+		if (is_cell)
+			roots[0] = vm_value_as_cell(value);
+
+		/* Use the native sequence converter, including custom iterators and abrupt completion. */
+		status = environment_performance_entry_types(realm, value, &has_mark);
+		if (status != 0)
+			goto cleanup;
+	}
+
+	/* The optional single-type DOMString is converted after the entire sequence. */
+	status = bind_get_option(realm, options, "type", &type_present, &value);
+	if (status != 0)
+		goto cleanup;
+
+	/* Only a real mark producer can be selected by a single-type registration. */
+	supported = 0;
+	if (type_present) {
+		is_cell = vm_value_is_cell(value);
+		if (is_cell)
+			roots[1] = vm_value_as_cell(value);
+
+		/* Type getters may return a newborn object whose conversion runs script. */
+		status = vm_to_string(realm, value, &type);
+		if (status != 0)
+			goto cleanup;
+
+		/* No later user conversion borrows the returned string. */
+		supported = vm_string_equal_ascii(type, "mark");
+	}
+
+	/* One registration cannot combine the multiple and single-type forms. */
+	if (types_present && type_present) {
+		status = vm_throw_type_error(realm, "entryTypes and type cannot be combined");
+		goto cleanup;
+	}
+
+	/* A dictionary with neither form does not select an observer registration. */
+	if (!types_present && !type_present) {
+		status = vm_throw_type_error(realm, "entryTypes or type is required");
+		goto cleanup;
+	}
+
+	/* The mode persists across disconnect and unsupported-type attempts. */
+	mode = 2;
+	if (types_present)
+		mode = 1;
+
+	/* Reentrant option conversions are complete before checking the current mode. */
+	if (observer->mode != 0 && observer->mode != mode) {
+		status = bind_throw_dom(realm, "InvalidModificationError", "An observer cannot switch registration mode");
+		goto cleanup;
+	}
+
+	/* Refresh dropped-entry metadata even when unsupported types abort the new registration. */
+	observer->mode = mode;
+	observer->dropped_required = 1;
+	if (types_present)
+		supported = has_mark;
+
+	/* An empty supported set leaves an existing registration unchanged. */
+	if (!supported) {
+		status = 0;
+		goto cleanup;
+	}
+
+	/* Publish the actual observer identity only after all dictionary and mode checks succeeded. */
+	timeline = observer->timeline;
+	if (!observer->active) {
+		value = vm_value_cell(observer->wrapper);
+		status = wb_vector_push(&timeline->observers, &value);
+		if (status != 0)
+			goto cleanup;
+
+		/* The relevant timeline now retains this active observer and its callback. */
+		observer->active = 1;
+	}
+
+	/* Fixed-target and Chrome compatibility ignores buffered with entryTypes for every caller. */
+	if (mode == 2 && buffered) {
+		entries = timeline->entries.items;
+		for (position = 0; position < timeline->entries.count; position++) {
+			status = wb_vector_push(&observer->records, &entries[position]);
+			if (status != 0)
+				goto cleanup;
+		}
+
+		/* Existing mark records become asynchronous notifications through the same actual task source. */
+		status = environment_performance_schedule(timeline);
+		if (status != 0)
+			goto cleanup;
+	}
+
+	/* Registration with no buffered delivery still succeeds without a synchronous callback. */
+	status = 0;
+
+cleanup:
+	/* Converted dictionary temporaries never become permanent observer state. */
+	while (registered > 0U) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* Conversion, mode or allocation errors remain visible to the original caller. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: only genuine mark registrations and requested replay records were published. */
+	return 0;
+}
+
+/* Removes a registration and pending records without changing its sticky observation mode. */
+static int
+environment_performance_disconnect(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct environment_performance_observer *observer;
+	struct environment_timeline *timeline;
+	struct vm_object *object;
+	vm_value *items;
+	size_t input;
+	size_t output;
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* Disconnect accepts only an actual native observer receiver. */
+	*result = VM_VALUE_UNDEFINED;
+	observer = NULL;
+	status = environment_performance_observer_of(realm, receiver, &observer);
+	if (status != 0)
+		return status;
+
+	/* Compact registration order without allocating or calling script. */
+	timeline = observer->timeline;
+	items = timeline->observers.items;
+	output = 0U;
+	for (input = 0; input < timeline->observers.count; input++) {
+		object = (struct vm_object *)vm_value_as_cell(items[input]);
+
+		/* The exact native wrapper is unregistered rather than a prototype-related value. */
+		if (object == observer->wrapper)
+			continue;
+
+		/* Other observers retain their existing dispatch order. */
+		items[output] = items[input];
+		output++;
+	}
+
+	/* Pending task dispatch may remain queued, but it no longer retains this registration. */
+	timeline->observers.count = output;
+	observer->active = 0;
+	wb_vector_clear(&observer->records);
+
+	/* Succeeded: future marks no longer queue records for this observer. */
+	return 0;
+}
+
+/* Queues one private, uncancellable task in the actual owner's ordinary Window task backend. */
+static int
+environment_performance_schedule(
+	struct environment_timeline *timeline)
+{
+	struct vm_realm *realm;
+	struct bind_window *window;
+	struct bind_timer task;
+	int status;
+
+	/* The retained real global supplies the owner even when callers borrow another realm's methods. */
+	realm = (struct vm_realm *)vm_value_as_cell(timeline->owner_global->internal);
+	window = bind_window_of(realm);
+	if (window == NULL || window->detached)
+		return 0;
+
+	/* One queued task batches all current interested observers and mark records. */
+	if (timeline->queued)
+		return 0;
+
+	/* Private identifier zero cannot be canceled by the public positive-id timer API. */
+	memset(&task, 0, sizeof(task));
+	task.id = 0U;
+	task.due = window->now;
+	task.sequence = window->next_sequence;
+	task.callback = timeline->dispatch;
+	task.arguments = VM_VALUE_UNDEFINED;
+
+	/* The ordinary timer tracer and retirement path retain and cancel the actual callback. */
+	status = wb_vector_push(&window->timers, &task);
+	if (status != 0)
+		return status;
+
+	/* Successful publication consumes only the internal task generation, never a public timer id. */
+	window->next_sequence++;
+	timeline->queued = 1;
+
+	/* Succeeded: delivery waits for the next ordinary Window task round. */
+	return 0;
+}
+
+/* Appends a real mark to every active interested observer before scheduling asynchronous delivery. */
+static int
+environment_performance_queue_mark(
+	struct environment_timeline *timeline,
+	vm_value mark)
+{
+	struct environment_performance_observer *observer;
+	struct vm_object *object;
+	vm_value *items;
+	size_t index;
+	int status;
+
+	/* Registration retains only observers that actually selected the supported mark producer. */
+	items = timeline->observers.items;
+	for (index = 0; index < timeline->observers.count; index++) {
+		object = (struct vm_object *)vm_value_as_cell(items[index]);
+		observer = (struct environment_performance_observer *)vm_value_as_cell(object->internal);
+		status = wb_vector_push(&observer->records, &mark);
+		if (status != 0)
+			return status;
+	}
+
+	/* The shared flag batches consecutive marks, including marks created before registration. */
+	status = environment_performance_schedule(timeline);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: actual native entry identities wait in their observers' own queues. */
+	return 0;
+}
+
+/* Sorts a private EntryList snapshot stably without changing the observer's raw takeRecords order. */
+static void
+environment_performance_list_sort(
+	struct wb_vector *buffer)
+{
+	struct vm_object *object;
+	struct environment_mark *mark;
+	struct environment_mark *previous;
+	vm_value *entries;
+	vm_value entry;
+	size_t index;
+	size_t position;
+
+	/* Only detached, already rooted mark references participate in this allocation-free sort. */
+	entries = buffer->items;
+	for (index = 1U; index < buffer->count; index++) {
+		entry = entries[index];
+		object = (struct vm_object *)vm_value_as_cell(entry);
+		mark = (struct environment_mark *)vm_value_as_cell(object->internal);
+		position = index;
+
+		/* Equal timestamps preserve their original queued order. */
+		while (position > 0U) {
+			object = (struct vm_object *)vm_value_as_cell(entries[position - 1U]);
+			previous = (struct environment_mark *)vm_value_as_cell(object->internal);
+			if (previous->start <= mark->start)
+				break;
+
+			/* Moving references cannot collect or reconstruct the underlying entry objects. */
+			entries[position] = entries[position - 1U];
+			position--;
+		}
+
+		/* The genuine entry retains its identity at the stable sorted position. */
+		entries[position] = entry;
+	}
+
+	/* Succeeded: all EntryList query snapshots can reuse chronological native storage. */
+	return;
+}
+
+/* Detaches a pending queue into a genuine independently owned delivered EntryList. */
+static int
+environment_performance_list_create(
+	struct vm_realm *realm,
+	struct environment_timeline *timeline,
+	struct wb_vector *records,
+	vm_value *result)
+{
+	struct environment_performance_list *list;
+	struct vm_object *object;
+	struct vm_cell *roots[2];
+	unsigned index;
+	unsigned registered;
+	int status;
+
+	/* Register empty roots before allocating either the payload or wrapper. */
+	*result = VM_VALUE_UNDEFINED;
+	roots[0] = NULL;
+	roots[1] = NULL;
+	registered = 0U;
+	for (index = 0; index < 2U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+
+		/* Cleanup owns only acquired registry entries. */
+		registered++;
+	}
+
+	/* Allocation failure leaves the observer's original queue untouched. */
+	list = vm_heap_alloc(realm->heap, &environment_performance_list_type, sizeof(*list));
+	if (list == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* An empty initialized payload is safe to trace while its wrapper is allocated. */
+	wb_vector_init(&list->entries, sizeof(vm_value));
+	roots[0] = &list->cell;
+	object = vm_object_create(realm->heap, timeline->list_prototype);
+	if (object == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* Only the actual wrapper exposes the native EntryList brand and relevant prototype. */
+	roots[1] = &object->cell;
+	object->kind = VM_KIND_PLATFORM;
+	object->internal = vm_value_cell(list);
+	object->native_operations = &environment_performance_list_native;
+
+	/* Move ownership atomically before a callback can append a new observer batch. */
+	list->entries = *records;
+	wb_vector_init(records, sizeof(vm_value));
+	environment_performance_list_sort(&list->entries);
+	*result = vm_value_cell(object);
+	status = 0;
+
+cleanup:
+	/* Temporary roots end only after complete publication or a non-destructive allocation failure. */
+	while (registered > 0U) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* Preserve a failed snapshot construction for the ordinary task error path. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: later observer mutations cannot alter this delivered EntryList. */
+	return 0;
+}
+
+/* Delivers a registration-order task snapshot while allowing real callback and microtask reentry. */
+static int
+environment_performance_dispatch(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct environment_timeline *timeline;
+	struct environment_performance_observer *observer;
+	struct vm_function *callee;
+	struct bind_window *window;
+	struct vm_object *notify;
+	struct vm_object *options;
+	struct vm_cell *roots[3];
+	vm_value snapshot;
+	vm_value list;
+	vm_value wrapper;
+	vm_value callback_args[3];
+	vm_value returned;
+	unsigned index;
+	unsigned registered;
+	uint32_t position;
+	int status;
+
+	UNUSED_PARAMETER(receiver);
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* The private callback data retains the exact relevant timeline and Window graph. */
+	*result = VM_VALUE_UNDEFINED;
+	callee = js_builtin_callee(realm);
+	timeline = (struct environment_timeline *)vm_value_as_cell(callee->data);
+	window = bind_window_of(realm);
+
+	/* Clear the shared flag before callbacks can schedule a distinct next delivery task. */
+	timeline->queued = 0;
+
+	/* Retired contexts deliver no saved observer tasks. */
+	if (window == NULL || window->detached)
+		return 0;
+
+	/* Snapshot construction and callback dictionaries need explicit temporary roots. */
+	registered = 0U;
+	for (index = 0; index < 3U; index++) {
+		roots[index] = NULL;
+	}
+
+	/* No collector depends on this native task's conservative C stack. */
+	for (index = 0; index < 3U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+
+		/* Unwind only root slots acquired by this invocation. */
+		registered++;
+	}
+
+	/* Later callbacks can reallocate or replace the original registration vector. */
+	status = js_builtin_array(realm, timeline->observers.items, (unsigned)timeline->observers.count, &snapshot);
+	if (status != 0)
+		goto cleanup;
+
+	/* A genuine private array retains every original observer throughout dispatch. */
+	roots[0] = vm_value_as_cell(snapshot);
+	notify = (struct vm_object *)roots[0];
+	for (position = 0U; position < notify->length; position++) {
+		/* An earlier callback or microtask can retire the actual owning frame. */
+		if (window->detached)
+			break;
+
+		/* This snapshot contains only genuine wrappers published by native registration. */
+		wrapper = notify->elements[position];
+		observer = NULL;
+		status = environment_performance_observer_of(realm, wrapper, &observer);
+		if (status != 0)
+			goto cleanup;
+
+		/* Disconnected, drained or already delivered queues require no callback. */
+		if (observer->records.count == 0U)
+			continue;
+
+		/* Detach only this observer's current records before invoking its callback. */
+		status = environment_performance_list_create(realm, timeline, &observer->records, &list);
+		if (status != 0)
+			goto cleanup;
+
+		/* A callback or one of its microtasks may collect while this exact list remains in use. */
+		roots[1] = vm_value_as_cell(list);
+		options = vm_object_create(realm->heap, realm->object_prototype);
+		if (options == NULL) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* Only the first delivery after observe reports the real mark-only dropped count of zero. */
+		roots[2] = &options->cell;
+		if (observer->dropped_required) {
+			status = js_builtin_value(realm, options, "droppedEntriesCount", vm_value_int32(0), VM_PROPERTY_DEFAULT);
+			if (status != 0)
+				goto cleanup;
+
+			/* Reentrant observe during the callback can independently request future drop metadata. */
+			observer->dropped_required = 0;
+		}
+
+		/* The callback receives the actual list, observer identity and ordinary options dictionary. */
+		callback_args[0] = list;
+		callback_args[1] = wrapper;
+		callback_args[2] = vm_value_cell(options);
+		status = vm_call(realm, observer->callback, wrapper, callback_args, 3U, &returned);
+		if (status == VM_THROWN) {
+			bind_report_exception(window, realm->exception);
+			realm->exception = VM_VALUE_UNDEFINED;
+			status = 0;
+		}
+
+		/* Allocation or interpreter failures cannot silently discard the remaining native task work. */
+		if (status != 0)
+			goto cleanup;
+
+		/* WebIDL callback cleanup performs a microtask checkpoint before the next observer. */
+		status = bind_checkpoint(window);
+		if (status != 0)
+			goto cleanup;
+
+		/* Saved JS references retain any list or options that outlive this completed callback. */
+		roots[1] = NULL;
+		roots[2] = NULL;
+	}
+
+	/* Any reentrant mark already scheduled the next ordinary task using the cleared shared flag. */
+	status = 0;
+
+cleanup:
+	/* Release every temporary even when callback execution or allocation stops dispatch. */
+	while (registered > 0U) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* Preserve task failures for the existing Window timer reporting path. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: registered observers received genuine asynchronous mark snapshots. */
+	return 0;
+}
+
+/* Returns a copy of the observer's raw queue and drains it without changing entry identities or order. */
+static int
+environment_performance_take_records(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct environment_performance_observer *observer;
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* Only the actual observer may consume its pending records. */
+	observer = NULL;
+	status = environment_performance_observer_of(realm, receiver, &observer);
+	if (status != 0)
+		return status;
+
+	/* The common array builder preserves this unsorted native queue's insertion order. */
+	status = environment_entries_snapshot(realm, &observer->records, NULL, 0U, 0, result);
+	if (status != 0)
+		return status;
+
+	/* Clearing native references cannot collect the completed returned array. */
+	wb_vector_clear(&observer->records);
+
+	/* Succeeded: drained records no longer produce a later callback by themselves. */
+	return 0;
+}
+
+/* Validates the native EntryList receiver before sharing the real entry-array query implementation. */
+static int
+environment_performance_list_snapshot(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	int mode,
+	vm_value *result)
+{
+	struct environment_performance_list *list;
+	int status;
+
+	/* EntryList methods cannot accept a performance object or a prototype lookalike. */
+	list = NULL;
+	status = environment_performance_list_of(realm, receiver, &list);
+	if (status != 0)
+		return status;
+
+	/* Delivered storage is already stably sorted and independent of its former observer. */
+	status = environment_entries_snapshot(realm, &list->entries, args, count, mode, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the query returns a fresh real array of genuine native entries. */
+	return 0;
+}
+
+/* Returns all entries in a delivered native snapshot in stable timestamp order. */
+static int
+environment_performance_list_entries(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	int status;
+
+	/* The unfiltered list query shares the same native snapshot semantics as performance queries. */
+	status = environment_performance_list_snapshot(realm, receiver, args, count, 0, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: every actual entry in this delivered list was selected. */
+	return 0;
+}
+
+/* Returns delivered native entries matching one required DOMString type. */
+static int
+environment_performance_list_by_type(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	int status;
+
+	/* Type conversion and required-argument checks use the common real entry query. */
+	status = environment_performance_list_snapshot(realm, receiver, args, count, 1, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the delivered type-filtered snapshot is complete. */
+	return 0;
+}
+
+/* Returns delivered native entries matching a required name and optional type. */
+static int
+environment_performance_list_by_name(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	int status;
+
+	/* Name and optional type conversion retain the existing reentrant-GC guarantees. */
+	status = environment_performance_list_snapshot(realm, receiver, args, count, 2, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the caller receives an independent name-filtered array. */
+	return 0;
+}
+
+/* Returns the same genuinely frozen supported-type array retained by this relevant realm's native getter. */
+static int
+environment_performance_supported_types(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct vm_function *callee;
+
+	UNUSED_PARAMETER(receiver);
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* Native function data cannot be replaced by assigning a JS constructor property. */
+	callee = js_builtin_callee(realm);
+	*result = callee->data;
+
+	/* Succeeded: only the implemented real mark producer is advertised. */
+	return 0;
+}
+
+/* Applies the enumerable WebIDL descriptor to methods already installed from native interface tables. */
+static int
+environment_performance_enumerate(
+	struct vm_realm *realm,
+	struct vm_object *prototype,
+	const struct bind_operation *operation)
+{
+	struct vm_property property;
+	vm_value key;
+	int found;
+	int status;
+
+	/* Preserve actual native method identities and their writable/configurable flags. */
+	for (; operation->name != NULL; operation++) {
+		key = vm_key_from_ascii(realm->heap, operation->name);
+		if (key == VM_VALUE_EMPTY)
+			return ENOMEM;
+
+		/* The just-installed method must exist as an own prototype property. */
+		found = vm_object_get_own(prototype, key, &property);
+		if (found < 0)
+			return -found;
+
+		/* Missing native members make interface publication incomplete. */
+		if (found == 0)
+			return EINVAL;
+
+		/* Enumerability is the only refined flag. */
+		status = vm_object_define(realm->heap, prototype, key, *property.value, property.attributes | VM_PROPERTY_ENUMERABLE);
+		if (status != 0)
+			return status;
+	}
+
+	/* Succeeded: every native operation has its WebIDL prototype descriptor. */
+	return 0;
+}
+
+/* Publishes real constructor ownership, a frozen supported array and a private asynchronous dispatcher. */
+static int
+environment_install_performance_observer(
+	struct bind_window *window,
+	struct environment_timeline *timeline)
+{
+	struct vm_realm *realm;
+	struct vm_object *prototype;
+	struct vm_object *array;
+	struct vm_function *constructor;
+	struct vm_function *function;
+	struct vm_accessor *accessor;
+	struct vm_property property;
+	struct vm_cell *roots[3];
+	vm_value key;
+	vm_value value;
+	unsigned index;
+	unsigned registered;
+	int found;
+	int done;
+	int status;
+
+	/* Read the pristine native constructor through its private installed prototype, never a mutable global lookup. */
+	realm = window->realm;
+	prototype = window->prototypes[BIND_PERFORMANCE_OBSERVER];
+	key = vm_key_from_ascii(realm->heap, "constructor");
+	if (key == VM_VALUE_EMPTY)
+		return ENOMEM;
+
+	/* Window interface installation already published this exact real constructor. */
+	found = vm_object_get_own(prototype, key, &property);
+	if (found < 0)
+		return -found;
+
+	/* An absent native constructor cannot provide a working observer. */
+	if (found == 0)
+		return EINVAL;
+
+	/* Constructor-native data binds future instances to their relevant timeline even after global replacement. */
+	constructor = (struct vm_function *)vm_value_as_cell(*property.value);
+	constructor->data = vm_value_cell(timeline);
+	registered = 0U;
+	for (index = 0; index < 3U; index++) {
+		roots[index] = NULL;
+	}
+
+	/* Array, native getter and accessor construction retain every intermediate VM cell. */
+	for (index = 0; index < 3U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+
+		/* The unwind count tracks only roots accepted by the heap. */
+		registered++;
+	}
+
+	/* A real array contains only entry types backed by an actual native producer and delivery path. */
+	array = vm_array_create(realm->heap, realm->array_prototype);
+	if (array == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* Array ownership precedes allocating its sole supported-type string. */
+	roots[0] = &array->cell;
+	status = bind_string(realm, "mark", &value);
+	if (status != 0)
+		goto cleanup;
+
+	/* Define an immutable enumerable own index without invoking inherited setters. */
+	status = vm_object_define(realm->heap, array, vm_value_int32(0), value, VM_PROPERTY_ENUMERABLE);
+	if (status != 0)
+		goto cleanup;
+
+	/* FrozenArray length is also immutable and nonconfigurable. */
+	key = vm_key_from_ascii(realm->heap, "length");
+	if (key == VM_VALUE_EMPTY) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* Preserve the actual single-element array while making its native length readonly. */
+	status = vm_object_define(realm->heap, array, key, vm_value_int32(1), 0U);
+	if (status != 0)
+		goto cleanup;
+
+	/* Prevent all further own-property additions through the ordinary object implementation. */
+	status = vm_object_prevent_extensions(array, &done);
+	if (status != 0)
+		goto cleanup;
+
+	/* Refusal to freeze a native array is an installation failure, never a fake supported capability. */
+	if (!done) {
+		status = EINVAL;
+		goto cleanup;
+	}
+
+	/* The stable readonly getter retains this real array through private function data. */
+	status = js_builtin_function(realm, "get supportedEntryTypes", 0, environment_performance_supported_types, NULL, &function);
+	if (status != 0)
+		goto cleanup;
+
+	/* Getter construction is complete before its accessor allocates. */
+	roots[1] = &function->object.cell;
+	function->data = vm_value_cell(array);
+	accessor = vm_accessor_create(realm->heap, vm_value_cell(function), VM_VALUE_UNDEFINED);
+	if (accessor == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* WebIDL static attributes are enumerable/configurable accessors with no setter. */
+	roots[2] = &accessor->cell;
+	status = js_builtin_value(realm, &constructor->object, "supportedEntryTypes", vm_value_cell(accessor), VM_PROPERTY_ACCESSOR | VM_PROPERTY_ENUMERABLE | VM_PROPERTY_CONFIGURABLE);
+	if (status != 0)
+		goto cleanup;
+
+	/* The private task callback retains its actual timeline without becoming a user-visible timer handler. */
+	status = js_builtin_function(realm, "notify performance observers", 0, environment_performance_dispatch, NULL, &function);
+	if (status != 0)
+		goto cleanup;
+
+	/* Publish callback ownership before any subsequent prototype metadata allocation. */
+	function->data = vm_value_cell(timeline);
+	timeline->dispatch = vm_value_cell(function);
+	status = environment_performance_enumerate(realm, prototype, environment_performance_observer_operations);
+	if (status != 0)
+		goto cleanup;
+
+	/* Native list query methods expose the same standard enumerable operation descriptors. */
+	prototype = window->prototypes[BIND_PERFORMANCE_OBSERVER_ENTRY_LIST];
+	status = environment_performance_enumerate(realm, prototype, environment_performance_list_operations);
+	if (status != 0)
+		goto cleanup;
+
+	/* Standard tags describe real privately branded observer and snapshot instances. */
+	status = environment_install_entry_tag(realm, window->prototypes[BIND_PERFORMANCE_OBSERVER], "PerformanceObserver");
+	if (status != 0)
+		goto cleanup;
+
+	/* A delivered list identifies its actual native interface. */
+	status = environment_install_entry_tag(realm, prototype, "PerformanceObserverEntryList");
+	if (status != 0)
+		goto cleanup;
+
+cleanup:
+	/* Getter and array temporaries are now owned by the real constructor or discarded on failure. */
+	while (registered > 0U) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* Failed metadata publication leaves Window initialization incomplete. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: real native mark observers replace the unused Prelude fallback. */
 	return 0;
 }

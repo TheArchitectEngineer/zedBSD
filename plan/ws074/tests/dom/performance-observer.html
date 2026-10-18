@@ -1,0 +1,150 @@
+<!doctype html><meta charset="utf-8"><title>Native mark observer</title><body><script>
+function probe(name, action) {
+  try { console.log(name, JSON.stringify(action())); }
+  catch (error) { console.log(name, "throws:" + error.name); }
+}
+function fresh() { return new PerformanceObserver(function () {}); }
+probe("supported", function () {
+  var a = PerformanceObserver.supportedEntryTypes;
+  var index = a.indexOf("mark"), before = a[index], rejected = false;
+  a[index] = "changed";
+  try { a.push("changed"); } catch (error) { rejected = error.name === "TypeError"; }
+  return [Array.isArray(a), a === PerformanceObserver.supportedEntryTypes, Object.isFrozen(a),
+          index >= 0, a[index] === before, rejected];
+});
+probe("descriptors", function () {
+  var a = Object.getOwnPropertyDescriptor(PerformanceObserver, "supportedEntryTypes");
+  var b = Object.getOwnPropertyDescriptor(PerformanceObserver.prototype, "observe");
+  return [PerformanceObserver.length, a.enumerable, a.configurable, a.set === undefined,
+          a.get.length, b.enumerable, b.writable, b.configurable, b.value.length];
+});
+probe("construct-required", function () { return new PerformanceObserver(); });
+probe("construct-callback", function () { return new PerformanceObserver({}); });
+probe("construct-call", function () { return PerformanceObserver(function () {}); });
+probe("construct-list", function () { return new PerformanceObserverEntryList(); });
+probe("observe-empty", function () { return fresh().observe(); });
+probe("observe-primitive", function () { return fresh().observe(7); });
+probe("sequence-string", function () { return fresh().observe({entryTypes: "mark"}); });
+probe("sequence-null", function () { return fresh().observe({entryTypes: null}); });
+probe("sequence-set", function () { var o = fresh(); o.observe({entryTypes: new Set(["mark"])}); o.disconnect(); return true; });
+probe("mode-change", function () { var o = fresh(); o.observe({type: "mark"}); o.disconnect(); return o.observe({entryTypes: ["mark"]}); });
+probe("illegal-observe", function () { return PerformanceObserver.prototype.observe.call(Object.create(PerformanceObserver.prototype), {type: "mark"}); });
+probe("illegal-take", function () { return PerformanceObserver.prototype.takeRecords.call({}); });
+probe("illegal-disconnect", function () { return PerformanceObserver.prototype.disconnect.call({}); });
+probe("illegal-list", function () { return PerformanceObserverEntryList.prototype.getEntries.call([]); });
+probe("iterator-close", function () {
+  var closed = 0, caught = false, source = {};
+  source[Symbol.iterator] = function () { return {
+    next: function () { return {done: false, value: Symbol("invalid")}; },
+    return: function () { closed++; return {}; }
+  }; };
+  try { fresh().observe({entryTypes: source}); } catch (error) { caught = error.name === "TypeError"; }
+  return [caught, closed];
+});
+probe("dictionary-order", function () {
+  var order = [], options = {
+    get buffered() {order.push("buffered"); return false;},
+    get entryTypes() {order.push("entryTypes"); return undefined;},
+    get type() {order.push("type"); return {toString: function () {order.push("string"); return "mark";}};}
+  };
+  var o = fresh(); o.observe(options); o.disconnect(); return order;
+});
+probe("raw-order", function () {
+  var o = fresh(); o.observe({type: "mark"});
+  performance.mark("late", {startTime: 10}); performance.mark("early", {startTime: 1});
+  var a = o.takeRecords(); o.disconnect();
+  return [a.map(function (entry) {return entry.name;}), o.takeRecords().length];
+});
+probe("private-owner", function () {
+  var old = performance, o, result;
+  Object.defineProperty(window, "performance", {value: {}, configurable: true});
+  o = new PerformanceObserver(function () {}); o.observe({type: "mark"});
+  Object.defineProperty(window, "performance", {value: old, configurable: true});
+  var mark = performance.mark("private-owner"); result = o.takeRecords()[0] === mark;
+  o.disconnect(); return result;
+});
+var cases = [];
+function later(name, setup) { cases.push([name, setup]); }
+later("future", function () {
+  var state = [], o = new PerformanceObserver(function (list, observer, options) {
+    state.push([this === o, observer === o, list instanceof PerformanceObserverEntryList,
+                Object.prototype.toString.call(list), list.getEntries().map(function (e) {return e.name;}),
+                options.droppedEntriesCount]);
+  });
+  o.observe({type: "mark"}); performance.mark("future");
+  return function () {o.disconnect(); return state;};
+});
+later("buffered", function () {
+  performance.mark("past"); var names = [], o = new PerformanceObserver(function (list) {
+    names.push(list.getEntries().map(function (e) {return e.name;}));
+  });
+  o.observe({type: "mark", buffered: true});
+  return function () {o.disconnect(); return names;};
+});
+later("multiple-future", function () {
+  performance.mark("old"); var names = [], o = new PerformanceObserver(function (list) {
+    names.push(list.getEntries().map(function (e) {return e.name;}));
+  });
+  o.observe({entryTypes: ["mark"]}); performance.mark("new");
+  return function () {o.disconnect(); return names;};
+});
+later("drain", function () {
+  var calls = 0, o = new PerformanceObserver(function () {calls++;}); o.observe({type: "mark"});
+  var mark = performance.mark("drained"), records = o.takeRecords();
+  return function () {o.disconnect(); return [calls, records.length, records[0] === mark];};
+});
+later("disconnect", function () {
+  var calls = 0, o = new PerformanceObserver(function () {calls++;}); o.observe({type: "mark"});
+  performance.mark("before"); o.disconnect(); performance.mark("after");
+  return function () {return [calls, o.takeRecords().length, performance.getEntriesByType("mark").length];};
+});
+later("reobserve", function () {
+  var names = [], o = new PerformanceObserver(function (list) {names.push(list.getEntries().map(function (e) {return e.name;}));});
+  o.observe({type: "mark"}); performance.mark("discarded"); o.disconnect();
+  o.observe({type: "mark"}); performance.mark("kept");
+  return function () {o.disconnect(); return names;};
+});
+later("snapshot", function () {
+  var saved, calls = 0, o = new PerformanceObserver(function (list) {calls++; saved = list;});
+  o.observe({type: "mark"}); var late = performance.mark("late", {startTime: 10});
+  var early = performance.mark("early", {startTime: 1});
+  return function () {
+    o.disconnect(); performance.clearMarks();
+    var a = saved.getEntries(), b = saved.getEntries(); a.push("local");
+    return [calls, b.map(function (e) {return e.name;}), a !== b, b[0] === early, b[1] === late,
+            saved.getEntriesByName("late", undefined)[0] === late,
+            saved.getEntriesByType("resource").length, saved.getEntries().length];
+  };
+});
+later("reentrant-batches", function () {
+  var names = [], lists = [], drops = [], o = new PerformanceObserver(function (list, observer, options) {
+    names.push(list.getEntries().map(function (e) {return e.name;})); lists.push(list);
+    drops.push(Object.hasOwn(options, "droppedEntriesCount"));
+    if (names.length === 1) performance.mark("second");
+  });
+  o.observe({type: "mark"}); performance.mark("first");
+  return function () {o.disconnect(); return [names, drops, lists[0].getEntries().map(function (e) {return e.name;})];};
+});
+later("microtask-order", function () {
+  var order = [], a = new PerformanceObserver(function () {
+    order.push("first"); Promise.resolve().then(function () {order.push("micro");}); a.disconnect();
+  });
+  var b = new PerformanceObserver(function () {order.push("second"); b.disconnect();});
+  a.observe({type: "mark"}); b.observe({type: "mark"}); performance.mark("ordered");
+  return function () {a.disconnect(); b.disconnect(); return order;};
+});
+later("child-retirement", function () {
+  var calls = 0, frame = document.createElement("iframe"); document.body.appendChild(frame);
+  var child = frame.contentWindow, observer = new child.PerformanceObserver(function () {calls++;});
+  observer.observe({type: "mark"}); var mark = child.performance.mark("child"); frame.remove();
+  return function () {var records = observer.takeRecords(); observer.disconnect(); return [calls, records.length, records[0] === mark, mark.name];};
+});
+function nextCase() {
+  if (cases.length === 0) return;
+  var item = cases.shift(), read;
+  performance.clearMarks();
+  try {read = item[1]();} catch (error) {console.log(item[0], "throws:" + error.name); setTimeout(nextCase, 0); return;}
+  setTimeout(function () {probe(item[0], read); setTimeout(nextCase, 0);}, 100);
+}
+nextCase();
+</script>

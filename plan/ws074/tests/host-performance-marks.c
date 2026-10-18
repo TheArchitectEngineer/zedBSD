@@ -15,7 +15,7 @@
 #include <string.h>
 
 /* Inert allocation pressure reaches the production collector threshold without retaining other cells. */
-static const struct vm_cell_type marks_pressure_type = { "marks-fixture-pressure", NULL, NULL };
+static const struct vm_cell_type marks_pressure_type = {"marks-fixture-pressure", NULL, NULL};
 
 /* Accumulates independent ownership observations until the fixture completes. */
 static unsigned checks;
@@ -171,16 +171,20 @@ marks_case(
 	int status;
 
 	/* Only the timeline retains the two hundred created marks after this script ends. */
-	status = marks_script(page->realm,
-	    "performance.clearMarks();for(var i=0;i<200;i++)performance.mark('buffer-'+i,{detail:'payload-'+i,startTime:i});true", &answer);
+	status = marks_script(
+		page->realm,
+		"performance.clearMarks();for(var i=0;i<200;i++)performance.mark('buffer-'+i,{detail:'payload-'+i,startTime:i});true",
+		&answer);
 	if (status != 0)
 		return status;
 
 	/* Force collection after discarding the native completion value. */
 	answer = VM_VALUE_UNDEFINED;
 	vm_heap_collect(page->heap);
-	status = marks_script(page->realm,
-	    "var a=performance.getEntriesByType('mark');a.length===200&&a[199].name==='buffer-199'&&a[199].detail==='payload-199'", &answer);
+	status = marks_script(
+		page->realm,
+		"var a=performance.getEntriesByType('mark');a.length===200&&a[199].name==='buffer-199'&&a[199].detail==='payload-199'",
+		&answer);
 	if (status != 0)
 		return status;
 
@@ -188,8 +192,10 @@ marks_case(
 	marks_check(answer == VM_VALUE_TRUE, "buffer alone retains actual mark names and primitive details");
 
 	/* A separately saved entry must survive clearing the only timeline references. */
-	status = marks_script(page->realm,
-	    "var saved=a[99];a=null;performance.clearMarks();collectMarksFixture();saved.name==='buffer-99'&&saved.detail==='payload-99'&&performance.getEntriesByType('mark').length===0", &answer);
+	status = marks_script(
+		page->realm,
+		"var saved=a[99];a=null;performance.clearMarks();collectMarksFixture();saved.name==='buffer-99'&&saved.detail==='payload-99'&&performance.getEntriesByType('mark').length===0",
+		&answer);
 	if (status != 0)
 		return status;
 
@@ -197,10 +203,12 @@ marks_case(
 	marks_check(answer == VM_VALUE_TRUE, "saved entry remains readable after clearMarks and GC");
 
 	/* Name and detail conversion temporaries must survive collector reentry before publication. */
-	status = marks_script(page->realm,
-	    "var converted=performance.mark({toString:function(){return 'converted-'+Math.random();}},"
-	    "{get detail(){collectMarksFixture();return 'detail-'+Math.random();},get startTime(){collectMarksFixture();return 17;}});"
-	    "collectMarksFixture();converted.name.indexOf('converted-')===0&&converted.detail.indexOf('detail-')===0&&converted.startTime===17", &answer);
+	status = marks_script(
+		page->realm,
+		"var converted=performance.mark({toString:function(){return 'converted-'+Math.random();}},"
+		"{get detail(){collectMarksFixture();return 'detail-'+Math.random();},get startTime(){collectMarksFixture();return 17;}});"
+		"collectMarksFixture();converted.name.indexOf('converted-')===0&&converted.detail.indexOf('detail-')===0&&converted.startTime===17",
+		&answer);
 	if (status != 0)
 		return status;
 
@@ -208,9 +216,11 @@ marks_case(
 	marks_check(answer == VM_VALUE_TRUE, "name and detail roots survive allocating option getters and GC");
 
 	/* A second filter conversion may collect the string returned by the first one. */
-	status = marks_script(page->realm,
-	    "var selected=performance.getEntriesByName({toString:function(){return converted.name.slice(0);}},"
-	    "{toString:function(){collectMarksFixture();return 'mark';}});selected.length===1&&selected[0]===converted", &answer);
+	status = marks_script(
+		page->realm,
+		"var selected=performance.getEntriesByName({toString:function(){return converted.name.slice(0);}},"
+		"{toString:function(){collectMarksFixture();return 'mark';}});selected.length===1&&selected[0]===converted",
+		&answer);
 	if (status != 0)
 		return status;
 
@@ -218,14 +228,16 @@ marks_case(
 	marks_check(answer == VM_VALUE_TRUE, "filter conversion roots survive reentrant collection");
 
 	/* Real frame creation supplies an independent relevant realm and mark buffer. */
-	status = marks_script(page->realm,
-	    "var f=document.createElement('iframe');document.body.appendChild(f);"
-	    "var child=f.contentWindow;var childMark=child.performance.mark('child-kept',{detail:'child-payload',startTime:23});"
-	    "var borrowed=performance.mark.call(child.performance,'borrowed',{detail:'borrowed-payload',startTime:24});"
-	    "var independent=child.performance.getEntriesByType('mark').length===2&&performance.getEntriesByName('child-kept').length===0;"
-	    "independent=independent&&Object.getPrototypeOf(borrowed)===child.PerformanceMark.prototype;"
-	    "f.remove();f=null;child=null;collectMarksFixture();"
-	    "independent&&childMark.name==='child-kept'&&childMark.detail==='child-payload'&&childMark.startTime===23&&borrowed.name==='borrowed'", &answer);
+	status = marks_script(
+		page->realm,
+		"var f=document.createElement('iframe');document.body.appendChild(f);"
+		"var child=f.contentWindow;var childMark=child.performance.mark('child-kept',{detail:'child-payload',startTime:23});"
+		"var borrowed=performance.mark.call(child.performance,'borrowed',{detail:'borrowed-payload',startTime:24});"
+		"var independent=child.performance.getEntriesByType('mark').length===2&&performance.getEntriesByName('child-kept').length===0;"
+		"independent=independent&&Object.getPrototypeOf(borrowed)===child.PerformanceMark.prototype;"
+		"f.remove();f=null;child=null;collectMarksFixture();"
+		"independent&&childMark.name==='child-kept'&&childMark.detail==='child-payload'&&childMark.startTime===23&&borrowed.name==='borrowed'",
+		&answer);
 	if (status != 0)
 		return status;
 
@@ -239,11 +251,13 @@ marks_case(
 
 	/* Realm initialization and global publication must retain genuine performance state under pressure. */
 	vm_heap_stats(page->heap, &before);
-	status = marks_script(page->realm,
-	    "var pressureFrame=document.createElement('iframe');document.body.appendChild(pressureFrame);"
-	    "var pressureMark=pressureFrame.contentWindow.performance.mark('pressure',{detail:'kept'});"
-	    "collectMarksFixture();pressureFrame.remove();pressureFrame=null;collectMarksFixture();"
-	    "pressureMark.name==='pressure'&&pressureMark.detail==='kept'", &answer);
+	status = marks_script(
+		page->realm,
+		"var pressureFrame=document.createElement('iframe');document.body.appendChild(pressureFrame);"
+		"var pressureMark=pressureFrame.contentWindow.performance.mark('pressure',{detail:'kept'});"
+		"collectMarksFixture();pressureFrame.remove();pressureFrame=null;collectMarksFixture();"
+		"pressureMark.name==='pressure'&&pressureMark.detail==='kept'",
+		&answer);
 	if (status != 0)
 		return status;
 
@@ -252,8 +266,10 @@ marks_case(
 	marks_check(answer == VM_VALUE_TRUE && after.collections > before.collections, "performance initialization and publication survive real allocation pressure");
 
 	/* Release all script references after proving the retained graph was usable. */
-	status = marks_script(page->realm,
-	    "saved=null;converted=null;selected=null;childMark=null;borrowed=null;pressureMark=null;performance.clearMarks();true", &answer);
+	status = marks_script(
+		page->realm,
+		"saved=null;converted=null;selected=null;childMark=null;borrowed=null;pressureMark=null;performance.clearMarks();true",
+		&answer);
 	if (status != 0)
 		return status;
 

@@ -122,6 +122,8 @@ enum bind_interface_index {
 	BIND_HTML_TEXT_AREA_ELEMENT,
 	BIND_PERFORMANCE_ENTRY,
 	BIND_PERFORMANCE_MARK,
+	BIND_PERFORMANCE_OBSERVER,
+	BIND_PERFORMANCE_OBSERVER_ENTRY_LIST,
 	BIND_INTERFACES
 };
 
@@ -422,6 +424,8 @@ extern const struct bind_interface bind_screen_interface;
 extern const struct bind_interface bind_performance_interface;
 extern const struct bind_interface bind_performance_entry_interface;
 extern const struct bind_interface bind_performance_mark_interface;
+extern const struct bind_interface bind_performance_observer_interface;
+extern const struct bind_interface bind_performance_observer_entry_list_interface;
 extern const struct bind_interface bind_location_interface;
 extern const struct bind_interface bind_html_image_element_interface;
 extern const struct bind_interface bind_html_media_element_interface;

@@ -15,6 +15,8 @@ Dependency graph: p254 named verified host producer（whole Phase未clear）→ 
 Target profile: user指定の固定Interop2025 WPTとChrome153の実測互換を採用し、observe entryTypes+bufferedはbufferedを無視する一般挙動にする。published 2025-05-21 CRDの併用TypeErrorとの差を明記し、latest full-spec適合を主張しない。entryTypes+typeはTypeError、mode変更はInvalidModificationError、未対応entry typeは登録を偽装しない。native producerはmarkだけ、他entry types/worker/complex detail/ID fieldsは未実装を保持。
 Generation bounds: 既存engine bind/environment.c、window.cのregistry pointer追加、internal.hの末尾private enum/extern追加、tests/dom/performance-observer.html/.expected、tests/host-performance-observer.cとWS074記録・証拠だけ。必要なら同じengine API/GC検証に沿って既存host-performance-marks.cを追従。新module/ABI2/Wayland/shell/WPT/runner/manifest/期待値/共有SDK/sysroot/toolchain/共有Board/cacheを変更しない。C全文/Guardrail/browser component全文を直接使用、format19/機械検査+全文manual（許可されたforward cleanupのany-goto誤検出を明記）。targetはq02のenvironment/window exact single-source commandの-oのみ変更、host build単独、測定pairは別folderでfreeze。
 Bounds: timer backendの通常taskを使いmicrotaskで代用しない。active actual Windowでのみ配信し、retired state/保存list/entryの安全な寿命を保つ。未達/後退未解消/90分到達ならunclearedとresumeを保存。p255 whole/p100/target full link/runtime/WS100%はこのhost partialだけで認定しない。push/削除/make check/QEMU無し。
+Conformance follow-up: q25のstandards attemptはdated correctionでunclearedへ訂正したが、q26の必要なproducer機能/GC/corpus出力は実測verifiedのまま。元approval snapshotとscopeは保存しq26を継続、修正後history SHA2566cde8279b62271c28759ed3c23df79c59d8ff0029cd3ca768f54d2da027e542a。
+
 Upcoming Work Outlook: verified observer後のheld1集計、VM yield*で正規WebIDL2実行、未attempt275、既存layout/VM/API残差、target/p100。
 
 ---
@@ -22,14 +24,14 @@ Upcoming Work Outlook: verified observer後のheld1集計、VM yield*で正規We
 
 # ws074-q20261018-25 / native PerformanceMark producer
 
-Status: finished（2026-10-18、native producer host partial cleared）
+Status: finished（2026-10-18、conformance follow-upでi01 uncleared）
 Owner: このCodex chat単独。
 Approval: [ユーザー自走指示](autonomy.md)を以下の有限scopeへ適用。q24 terminal2b1051d12/history SHA25633e2c91878f4dfd2f969530eac57d35424001d5cac861b575ccb009870f62a55 read-back。p254 prerequisiteのcorrected IDL/1508実検証済み。
 Timebox: 最大90分（2026-10-18 18:30 JSTまで）。
 
 | Attempt | Phase | Exact scope / criteria | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| ws074-q20261018-25-i01 | [p254](phase254/phase.md) native mark producer host partial | PerformanceEntry/PerformanceMark native registry/prototype/brand/readonly enumerable name/type/startTime/duration/detailとcommon4field toJSON、PerformanceMark constructor（nonbuffering/subclass prototype）とperformance.mark（buffering/返値）を実装。default/null/undefined options、明示finite非負startTimeとprimitive detail、required引数/名前ToString/legacy timing予約名/例外伝播を扱う。複雑detail structured cloneは今回はDataCloneErrorで明示未対応、APIをJS偽装しない。managed timeline/entryをtraceし、getEntries/ByName/ByType snapshot/filter/stable timestamp順、clearMarks、Window独立/変換時再入/GC/retired child entryの安全な寿命を検証。Chrome独立比較、native host lifetime・DOM、全1508 harness/1561static/413scripted/48strictの旧PASS後退解消、host warning0/target exact2source warning0/full changed functions style0/Acid非悪化、source/pair/fonts/raw/hashを保存 | cleared（Chrome38/native7/全fixed corpus旧PASS維持） | q24 corrected1508、q21 frozen static/scripted/crash/DOM/C/Acid、p254 design/native managed-cell patterns/primary User Timing |
+| ws074-q20261018-25-i01 | [p254](phase254/phase.md) native mark producer host partial | PerformanceEntry/PerformanceMark native registry/prototype/brand/readonly enumerable name/type/startTime/duration/detailとcommon4field toJSON、PerformanceMark constructor（nonbuffering/subclass prototype）とperformance.mark（buffering/返値）を実装。default/null/undefined options、明示finite非負startTimeとprimitive detail、required引数/名前ToString/legacy timing予約名/例外伝播を扱う。複雑detail structured cloneは今回はDataCloneErrorで明示未対応、APIをJS偽装しない。managed timeline/entryをtraceし、getEntries/ByName/ByType snapshot/filter/stable timestamp順、clearMarks、Window独立/変換時再入/GC/retired child entryの安全な寿命を検証。Chrome独立比較、native host lifetime・DOM、全1508 harness/1561static/413scripted/48strictの旧PASS後退解消、host warning0/target exact2source warning0/full changed functions style0/Acid非悪化、source/pair/fonts/raw/hashを保存 | uncleared（fixture split-call規約違反を後日検出・機能出力は保持） | q24 corrected1508、q21 frozen static/scripted/crash/DOM/C/Acid、p254 design/native managed-cell patterns/primary User Timing |
 
 Dependency graph: q24 corrected baseline → native producer/private managed state → direct Chrome/native/GC/lifetime → frozen final pair → full fixed corpus/host/target/standards → archive/terminal。
 Generation bounds: engine既存bind/environment.c、window.cのregistry pointer追加、internal.hの末尾private enum/extern追加、tests/dom/performance-marks.html/.expected、tests/host-performance-marks.c、WS074記録/証拠だけ。C全文coding-style.md/Guardrail/browser-component全文を適用、簡約版無し。新engine source/module/共有SDK/sysroot/public browser ABI2/Wayland/shell/WPT/runner/manifest/期待値を変更しない。targetはq02 dry-runのwindow.c/environment.cのsingle compileで-oだけ変える。host buildは単独、測定pairをunique場所にfreeze。
@@ -41,6 +43,8 @@ Outcome: native PerformanceEntry/PerformanceMarkをprivate registryへ追加し�
 Conformance: C全文に従い変更関数/fixtureの未解消違反0。style-check raw33 goto flagsは、全文§14が認める単一shared cleanup labelへのforward jumpであることを全件manual/構造照合。raw checker0とは主張せず、旧sourceの未変更legacy findingsはp100残差として保持。
 
 History: [exact scope/outcome](history/ws074-q20261018-25.md)。
+
+Event ws074-q25-conformance-followup-20261018: q26全文監査でq25追加host-performance-marks.cのsplit callが最後のsource引数とanswer引数を同じ行に置く§8違反を検出。元q25のmanual conformance未解消0という判定を訂正し、i01のstandards clearanceをinvalidate/unclearedへ追記する。原API実装・独立Chrome38/native7・全fixed corpusの実測結果/原Outcome/commit/hashは保持、名前付きproducer機能出力は引き続きverifiedなのでq26のconsumer前提は満たす。q26が既に許可するhost fixture追従範囲でformatを修正し、C tokens/全string literal不変を実照合、native7と全q26最終gateで再確認する。whole p254は元からunclearedであり状態不変、goal1481も不変。shared projection pending。
 
 ---
 <!-- awesome-plan project=zedbsd record=queue -->
