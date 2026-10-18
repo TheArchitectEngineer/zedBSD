@@ -2,11 +2,11 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: uncleared（q35 receiver-aware Set partial cleared、whole Proxy未達）
+Status: in-progress（q36 canonical index/ToBigInt prerequisite、q30〜q35 verified）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
-Queue: ws074-q20261018-35-i01（q30〜q34 partial cleared履歴保持）
+Queue: ws074-q20261018-36-i01（q30〜q35 partial cleared履歴保持）
 Origin: p189/q29 original WebIDL2 parseがProxy未定義で停止。
 
 Objective / own criteria: native managed Proxyを実object internal methodsへ接続し、constructor/revocableと各internal operationのtrap/fallback/invariant/receiver/revocation/callability/GCを正しく実行する。original WebIDL2 actual parse/validatorに必要なget/set/array behaviorを通常APIで提供し、independent controls/原WPTを通す。部分read stageだけでwholeをclearしない。
@@ -93,3 +93,5 @@ source WIP07f4783e7、最終整形済みsourceを1回のserialized host buildか
 focused gatesのみ。全1508はq31、static/scripted/strictはq28原証拠再利用でq35全件同値/whole PASS増分は未測定。確認済1482/3805（38.948752%）・held0・未attempt275を維持。i01 ordinary/Proxy Set partialのみcleared。TypedArray Set/通常prototype routing/keys/delete/prototype/extent/IsArray/call/construct/global constructor/revocable/元WebIDL2、full target/p100/WS100%未達。共有Master/Queue/next/cache/GitHub投影pending、push無し。
 
 [全証拠](evidence/20261018-q35/README.md)。次finite QueueでTypedArray canonical keys/専用Set規則、通常prototype routingの不足を具体化する。
+
+Event ws074-p258-q36-selected-20261018: TypedArray Setの専用規則を調査しcanonical numeric indexとToBigIntのshared VM処理を先行具体化。既存typed_defineはOOB成功・conversion/属性拒否等の差を持ち、この新Queueではまだ修正しない。既存BigInt.asIntN/asUintNはconstructor経由でNumberを受け入れるため、ToBigInt共有と同時に公開APIの差を正規precodeで確認して修正する。constructor Number専用pathは保持しUnicode stringも共通VMへ。exact max90分/source/gates/all1508はq36 Queue、typedarray actual Set/global Proxy未達を保持。
