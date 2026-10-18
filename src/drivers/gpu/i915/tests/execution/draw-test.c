@@ -955,8 +955,8 @@ i915_draw_context_create(
 	}
 
 	/* Fills the register state and points the ring registers at the empty ring. */
-	drv_i915_lrc_init_state(ce);
-	(void)drv_i915_lrc_update_regs(ce, ce->ring.tail);
+	drv_i915_lrc_build_image(ce);
+	(void)drv_i915_lrc_set_ring(ce, ce->ring.tail);
 
 	/* Succeeded: the context can take requests. */
 	return 0;
@@ -979,7 +979,7 @@ i915_draw_walk_fixture(
 	unsigned i;
 
 	/* Checks that the context names the address space's top directory. */
-	pdp0 = ((uint64_t)t->ce.lrc_reg_state[I915_GT_CTX_PDP0_UDW] << 32) | t->ce.lrc_reg_state[I915_GT_CTX_PDP0_LDW];
+	pdp0 = ((uint64_t)t->ce.regs[I915_GT_CTX_PDP0_UDW] << 32) | t->ce.regs[I915_GT_CTX_PDP0_LDW];
 	t->pdp0_matches_top = 0;
 	if (pdp0 == vm->top_pd_dma)
 		t->pdp0_matches_top = 1;

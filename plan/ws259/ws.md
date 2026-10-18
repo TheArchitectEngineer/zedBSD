@@ -18,6 +18,6 @@
 
 | Phase | 目的 | 状態 |
 | --- | --- | --- |
-| [p001](phase001/phase.md) | 書き換えと表の値の比べ | in-progress（2026-10-19 P2、license の package の判断待ち・実機待ち） |
-| [p002](phase002/phase.md) | 規約の全文の見直し（tables.inc の comment と名前） | in-progress（P2 実施済み、2026-10-19） |
+| [p001](phase001/phase.md) | 書き換えと表の値の比べ | in-progress（2026-10-19 P2: 表の書き換えと値の比べ（13 配列とも同一、全配列の byte の SHA-256 一致）は済み、merge ee2de1f9d。残り: license の package の扱い（ユーザーの判断待ち）と実機の WiFi（実機待ち）。license の package の判断待ち・実機待ち） |
+| [p002](phase002/phase.md) | 規約の全文の見直し（tables.inc の comment と名前） | cleared（2026-10-19 Q1） |
 - 決定（2026-10-18 ユーザー、クリック）: 実機の WiFi の確かめは「実機は残して待つ」（host の表の比べと build まで済ませ、実機の Phase は in-progress（実機待ち））。

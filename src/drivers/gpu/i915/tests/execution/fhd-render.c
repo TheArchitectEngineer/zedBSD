@@ -914,8 +914,8 @@ i915_fhd_submit(
 	}
 
 	/* Lays out the context image and points it at the ring. */
-	drv_i915_lrc_init_state(&t->ce);
-	(void)drv_i915_lrc_update_regs(&t->ce, t->ce.ring.tail);
+	drv_i915_lrc_build_image(&t->ce);
+	(void)drv_i915_lrc_set_ring(&t->ce, t->ce.ring.tail);
 
 	/* Builds the request that starts the batch; the helper records its own failure. */
 	t->tl_seqno = 2U;

@@ -336,7 +336,6 @@ The following focused gates passed in ordinary, ASan/UBSan, and compiler-
 analyzer modes where supplied:
 
 ```sh
-plan/ws004/tests/run-rtl8822b-table-import-test.sh
 RTL8822B_FIRMWARE_TEST_BLOB=build/sources/firmware/rtl8822b/2f56219d20e4becccd718963fc3bcc671c543ce5/rtw8822b_fw.bin \
   plan/ws004/tests/run-rtl8822b-core-test.sh
 plan/ws004/tests/run-usb-rtl8822bu-driver-test.sh
