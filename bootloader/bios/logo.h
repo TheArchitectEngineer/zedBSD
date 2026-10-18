@@ -6,8 +6,8 @@
  */
 
 /*
- * The BIOS loader's boot logo (ws035-p096 follow-up): a binary PPM read one
- * sector at a time and turned into framebuffer writes.
+ * The BIOS loader's boot logo: a binary PPM read one sector at a time and
+ * turned into framebuffer writes.
  */
 
 #ifndef KERN_BOOTLOADER_BIOS_LOGO_H
@@ -65,9 +65,9 @@ struct zbl_bios_logo {
 	uint32_t pixels[ZBL_BIOS_LOGO_WRITES];
 
 	/*
-	 * A picture over black bars (the header comment fit=contain,
-	 * ws035-p112): whether it is, the comment being read, and the size
-	 * the picture is drawn at (origin_x and origin_y are its corner).
+	 * A picture over black bars (the header comment fit=contain):
+	 * whether it is, the comment being read, and the size the picture is
+	 * drawn at (origin_x and origin_y are its corner).
 	 * Only the loader's C reads these, after the fields bootzbsd.S
 	 * knows.
 	 */

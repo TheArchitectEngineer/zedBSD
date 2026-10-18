@@ -7,8 +7,8 @@
 
 /*
  * The boot logo's tokens among the boot parameters, for the UEFI and the
- * BIOS loaders (ws035-p096): logo=PATH, a path relative to the boot volume
- * like kernel=, and whole tokens such as kmsg=quiet.
+ * BIOS loaders: logo=PATH, a path relative to the boot volume like kernel=,
+ * and whole tokens such as kmsg=quiet.
  */
 
 #include "logo-path.h"
@@ -35,29 +35,40 @@ zbl_logo_path(
 	size_t used;
 	int allowed;
 
-	/* Each space-separated token. */
+	/* Walks the space-separated tokens and takes the first logo= one. */
 	start = 0;
 	while (start < length) {
+		/* Finds where the token ends. */
 		end = logo_token_end(text, length, start);
 
-		/* Anything that is not logo= is someone else's. */
+		/* Anything that is not logo= with a path is someone else's. */
 		if (end - start < 6U ||
-		    text[start] != 'l' || text[start + 1U] != 'o' || text[start + 2U] != 'g' ||
-		    text[start + 3U] != 'o' || text[start + 4U] != '=') {
+		    text[start] != 'l' ||
+		    text[start + 1U] != 'o' ||
+		    text[start + 2U] != 'g' ||
+		    text[start + 3U] != 'o' ||
+		    text[start + 4U] != '=') {
 			start = end + 1U;
 			continue;
 		}
 
-		/* The path: bounded, relative, of safe characters, with no parent step. */
+		/* Refuses an empty path and one too long for the loader or the caller. */
 		used = end - start - 5U;
-		if (used == 0U || used > ZBL_LOGO_PATH_MAX || used + 1U > capacity)
+		if (used == 0U ||
+		    used > ZBL_LOGO_PATH_MAX ||
+		    used + 1U > capacity)
 			return -1;
+
+		/* Refuses an absolute path: the logo is relative to the boot volume. */
 		if (text[start + 5U] == '/')
 			return -1;
+
+		/* Copies the path, refusing a character outside the safe set. */
 		for (index = 0; index < used; index++) {
 			allowed = logo_path_character(text[start + 5U + index]);
 			if (!allowed)
 				return -1;
+
 			path[index] = text[start + 5U + index];
 		}
 
@@ -74,7 +85,7 @@ zbl_logo_path(
 		return 1;
 	}
 
-	/* No logo. */
+	/* Reports that the parameters name no logo. */
 	return 0;
 }
 
@@ -93,10 +104,13 @@ zbl_parameter_present(
 	size_t index;
 	int same;
 
-	/* Each space-separated token, compared whole. */
+	/* Walks the space-separated tokens, comparing each whole with the given one. */
 	start = 0;
 	while (start < length) {
+		/* Finds where the token ends. */
 		end = logo_token_end(text, length, start);
+
+		/* Compares the token's characters with the given token's. */
 		same = 1;
 		for (index = 0; start + index < end; index++) {
 			if (token[index] != text[start + index]) {
@@ -108,10 +122,12 @@ zbl_parameter_present(
 		/* The same token only when the given one ends there too. */
 		if (same && token[end - start] == '\0')
 			return 1;
+
+		/* Moves past the token and its space. */
 		start = end + 1U;
 	}
 
-	/* Not there. */
+	/* Reports that the token is absent. */
 	return 0;
 }
 
@@ -124,12 +140,12 @@ logo_token_end(
 {
 	size_t end;
 
-	/* Up to the next space. */
+	/* Scans up to the next space or the end of the text. */
 	end = start;
 	while (end < length && text[end] != ' ')
 		end++;
 
-	/* Reports the end. */
+	/* Reports the index just past the token. */
 	return end;
 }
 
@@ -147,9 +163,12 @@ logo_path_character(
 		return 1;
 
 	/* The separators of names and directories. */
-	if (character == '.' || character == '-' || character == '_' || character == '/')
+	if (character == '.' ||
+	    character == '-' ||
+	    character == '_' ||
+	    character == '/')
 		return 1;
 
-	/* Anything else. */
+	/* Refuses any other character. */
 	return 0;
 }

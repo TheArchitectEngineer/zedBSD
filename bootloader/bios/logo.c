@@ -6,7 +6,7 @@
  */
 
 /*
- * The BIOS loader's boot logo (ws035-p096 follow-up).
+ * The BIOS loader's boot logo.
  *
  * The loader in real mode reads the logo file (logo=PATH, a binary PPM like
  * the UEFI loader's) one 512-byte sector at a time; each sector is fed here,
@@ -17,7 +17,7 @@
  * middle part when it is larger than the screen).
  *
  * A picture whose header has the comment "fit=contain" (the Kei boot
- * splash, 1920x1080, ws035-p112) is drawn whole in the middle of a black
+ * splash, 1920x1080) is drawn whole in the middle of a black
  * screen: at its own size when the screen holds it, else shrunk by nearest
  * pixels, its proportions kept, to the largest size the screen holds (a
  * pixel of the file then makes at most one pixel of the screen, so a
@@ -209,6 +209,7 @@ static void
 logo_comment_end(
 	struct zbl_bios_logo *logo)
 {
+	/* The comment that asks for black bars. */
 	static const char word[] = "fit=contain";
 	uint32_t start;
 	uint32_t end;
@@ -229,9 +230,11 @@ logo_comment_end(
 			break;
 	}
 
-	/* The word, whole. */
+	/* A comment of another length is not the word. */
 	if (end - start != sizeof(word) - 1U)
 		return;
+
+	/* Compares the comment with the word, character by character. */
 	for (index = 0; index + 1U < sizeof(word); index++) {
 		if (logo->comment[start + index] != (uint8_t)word[index])
 			return;
@@ -252,8 +255,11 @@ logo_header_done(
 	/* 255 is the only maximum value, and the sides are bounded. */
 	logo->width = logo->numbers[0];
 	logo->height = logo->numbers[1];
-	if (logo->numbers[2] != 255U || logo->width == 0U || logo->height == 0U ||
-	    logo->width > LOGO_SIDE_MAX || logo->height > LOGO_SIDE_MAX) {
+	if (logo->numbers[2] != 255U ||
+	    logo->width == 0U ||
+	    logo->height == 0U ||
+	    logo->width > LOGO_SIDE_MAX ||
+	    logo->height > LOGO_SIDE_MAX) {
 		logo->stage = LOGO_STAGE_BAD;
 		return;
 	}
@@ -332,6 +338,8 @@ logo_pixel_byte(
 	logo->channels++;
 	if (logo->channels < 3U)
 		return;
+
+	/* The next byte starts the next pixel. */
 	logo->channels = 0;
 
 	/* In the framebuffer's layout. */
@@ -359,8 +367,10 @@ logo_pixel_byte(
 
 	/* A pixel inside the part on the screen is written. */
 	if (logo->contain == 0U &&
-	    logo->x >= logo->skip_x && logo->x - logo->skip_x < logo->screen_width &&
-	    logo->y >= logo->skip_y && logo->y - logo->skip_y < logo->screen_height &&
+	    logo->x >= logo->skip_x &&
+	    logo->x - logo->skip_x < logo->screen_width &&
+	    logo->y >= logo->skip_y &&
+	    logo->y - logo->skip_y < logo->screen_height &&
 	    logo->count < (uint32_t)ZBL_BIOS_LOGO_WRITES) {
 		row = logo->origin_y + logo->y - logo->skip_y;
 		column = logo->origin_x + logo->x - logo->skip_x;
@@ -400,6 +410,8 @@ logo_contain_writes(
 	end_x = logo_contain_first(logo->x + 1U, logo->scaled_width, logo->width);
 	first_y = logo_contain_first(logo->y, logo->scaled_height, logo->height);
 	end_y = logo_contain_first(logo->y + 1U, logo->scaled_height, logo->height);
+
+	/* The last pixel of the file reaches no further than the picture's edge. */
 	if (end_x > logo->scaled_width)
 		end_x = logo->scaled_width;
 	if (end_y > logo->scaled_height)
@@ -410,6 +422,7 @@ logo_contain_writes(
 		for (column = first_x; column < end_x; column++) {
 			if (logo->count >= (uint32_t)ZBL_BIOS_LOGO_WRITES)
 				return;
+
 			logo->offsets[logo->count] = ((logo->origin_y + row) * logo->stride + logo->origin_x + column) * 4U;
 			logo->pixels[logo->count] = pixel;
 			logo->count++;
@@ -434,10 +447,12 @@ logo_contain_first(
 	if (source == 0U)
 		return 0U;
 
-	/* Succeeded: the smallest place, rounded up. */
+	/* A source column that the first screen column already reaches starts there. */
 	wanted = 2U * source * scaled;
 	if (wanted <= size)
 		return 0U;
+
+	/* Succeeded: the smallest place, rounded up. */
 	return (wanted - size + 2U * size - 1U) / (2U * size);
 }
 
@@ -447,9 +462,12 @@ logo_space(
 	uint8_t byte)
 {
 	/* The four blanks. */
-	if (byte == ' ' || byte == '\t' || byte == '\r' || byte == '\n')
+	if (byte == ' ' ||
+	    byte == '\t' ||
+	    byte == '\r' ||
+	    byte == '\n')
 		return 1;
 
-	/* Anything else. */
+	/* Refuses anything else as a blank. */
 	return 0;
 }

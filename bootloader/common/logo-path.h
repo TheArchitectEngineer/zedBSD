@@ -6,7 +6,7 @@
  */
 
 /*
- * The boot logo's tokens among the boot parameters (ws035-p096).
+ * The boot logo's tokens among the boot parameters.
  */
 
 #ifndef KERN_BOOTLOADER_LOGO_PATH_H
