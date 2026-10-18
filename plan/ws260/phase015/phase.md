@@ -18,7 +18,7 @@ Status: in-progress（2026-10-18 q1253-i02、P1。T1 の結果を Q1 が判定�
 - 道具: scratchpad の check.py（Linux 6.8.12 の drivers/gpu/drm/i915・drivers/gpu/drm/display を build/tmp/ws260-p015-linux/ に展開）。対象: xd9-*.c/h の全文と、WS260 の起点 b9fe9a6d6 から xd-*.c/h・display-regs-xd9.h・display-tables-xd9.h に足した行。
 - comment の 7 語の並び: 12,900 個のうち Linux と一致 0。
 - code の 5 token の並び（識別子 3 個以上を含む物）: Linux にもある物は file ごとに 0〜2 %（xd9-node.c 17/1227、xd9-outputs.c 10/773、xd9-flip.c 8/939 ほか。`for (index = 0U; index <` などの決まった形）。行の写しは無い。
-- 手順の出典: 新しい code の `Procedure referenced: Linux` は 2 つ（xd-ddi.c の HDMI の buffer の開始（Display WA #1143）、xd-dbuf.c 以前からの物）。値の出典の Linux の参照は GT の register の header 側（WS260 の外、main の取り込みで入った物を含む）。display 9 の手順は PRM と hardware の単位（xd の部品）で組み、gen9 の Linux の関数の分け方（hsw_crtc_enable の 1 対 1 など）は残っていない。
+- 手順の出典: 新しい code の `Procedure referenced: Linux` は 2 つ（xd-ddi.c の HDMI の buffer の開始（Display WA #1143）、xd-gmbus.c の GMBUS の clock gating（Display WA #0868））。どちらも workaround の手順で、PRM に載らない。値の出典の Linux の参照は GT の register の header 側（WS260 の外、main の取り込みで入った物を含む）。display 9 の手順は PRM と hardware の単位（xd の部品）で組み、gen9 の Linux の関数の分け方（hsw_crtc_enable の 1 対 1 など）は残っていない。
 
 ## T1 への依頼の文面（Q1 が T1 に渡す）
 
