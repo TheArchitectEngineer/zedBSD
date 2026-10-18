@@ -26,7 +26,7 @@
 
 | Phase | 目的 | 状態 |
 | --- | --- | --- |
-| p001 | 設計: JH7110・U74 の CPU（RV64GC、Sv39）・OpenSBI の SBI（timer・IPI・HSM・console）・PLIC・CLINT・UART（8250 の DW）・U-Boot の EFI の調べ、HAL の riscv64 の API の差分の案（承認の前は plan に置くだけ）、loader の riscv64 版、build（platform/riscv64・config）。code は書かない | planning |
+| [p001](phase001/phase.md) | 設計: JH7110・U74 の CPU（RV64GC、Sv39）・OpenSBI の SBI（timer・IPI・HSM・console）・PLIC・CLINT・UART（8250 の DW）・U-Boot の EFI の調べ、HAL の riscv64 の API の差分の案（承認の前は plan に置くだけ）、loader の riscv64 版、build（platform/riscv64・config）。code は書かない | in-progress（q1243、P2） |
 | p002 | toolchain: LLVM に RISCV の target を足す（Q1） | cleared（2026-10-18 Q1: toolchain/llvm/llvm.mk の LLVM_TARGETS_TO_BUILD と config の identity に RISCV。共有の build/llvm を source から作り直し（log build/tmp/llvm-riscv-20261018.log、FAILED・error 0）、`clang --print-targets` に riscv64、rv64gc の object を確認、config-amd64.mk の vmunix の build と check PASS。toolchain は lock し直した。残り: install の identity は version・patch だけで target を見ない、CI の binary cache（rev-0、zedbsd8）に RISCV が無い → CI で riscv64 を build する時に patch level を上げて新しい cache を公開） |
 | p003 | HAL の芯を QEMU の virt で: 起動・trap・Sv39 の MMU・SBI・timer・PLIC・UART の console・SMP | planning |
 | p004 | loader の riscv64 版（UEFI）と QEMU の UEFI の firmware での起動 | planning |

@@ -560,3 +560,11 @@ WS074 の記録の q590・q594〜q598（Codex の browser3）は main の同じ�
 | --- | --- | --- | --- | --- |
 | q1241 / q1241-i01 | P1（phase-runner、Opus 5.5 low） | ws245 の in-progress の 43 Phase、p046 | (1) 各 Phase の受け入れの基準と q1229-i20・i21（5330 の実機、証拠 t1 396cbfce4・24f2329ea）の証拠を突き合わせ、phase.md に「判定の材料」（満たした基準と証拠、残る物）を書く。cleared にするのは Q1 (2) p046 の全文の読み通し。source の動作は変えない | 返却（2026-10-18、P1 の作業は済み。p046 の残りは phase046）: (1) 済み（判定の材料 f6ae7d2f5、merge d58abd112）。Q1 が 32 Phase を cleared（p019〜p024・p027〜p038・p048・p049・p050a〜c・p050d1〜d4b・p039・p051・p040・p052）。保留: p025・p026・p043（p043b、DC6 の H6）、p042・p050d4c（reboot の止める道）、p050d4d（QEMU の boot-test 未実施）。cleared にしない: p041（suspend の実機）、p044・p045（host の受け入れ）、p046（読み通し中）。(2) の一部: 条件の書き方 16 個と xd-edid.c の return の分け（0a59b8a8a、merge eb107249d、build 3 組 warning 0・run-xd-host-tests PASS は P1 の報告）。p046 の残り（tests/display と xd 以外の file、comment・関数名の目視）は phase046 に |
 | q1242 / q1242-i01 | P1（同上、q1241 の後） | ws251-p002 | GPU ドライバの comment・log から開発の管理情報を消す残り（565 件、phase002 の再開の手順から） | 返却（2026-10-18）: grep の完了の条件は src/drivers/gpu・include/uapi/gpu-op.h で 0 件（群 5 i915 の tests 0f68d8f4b・群 6 compiler・venus・amdrdna・nvrtx 835732198・記録 23135a254、merge db594efb5）。残り: bcm2711 の段の名前（ユーザーの判断）・file ごとの目視の記録・群 6 の後の arm64 の build（未確認）・WS237 gen9 と WS229 bootfb の host 試験（未実施）・範囲外の API-PROVENANCE.md と kern/tty.h。経過: 群 2 i915 render の comment 34 file（f24800005、merge 87e6637e3、object・vmunix は基準と同じと P1 の報告）、群 3 i915 の top・intel・compiler・gpu.c（6dd25c283、merge 31d130233）、群 4 bcm2711（9431275c6、merge a0fe9a965、rpi4 の build で gpu の object・vmunix は同じと P1 の報告）、残り 190 件。段の名前（P0〜P5・N0・R0・V0〜V7、boot の rpi4gpu.stop・v3d.stop の値）はユーザーの判断待ちで残す。生成の道具の header の path は Q1 が直した（862191d60） |
+
+## 2026-10-18: P2 の WS256 VisionFive 2（q1243〜）
+
+承認: 2026-10-18 ユーザー「RISC-VのHALに着手できますか？」（Q1 の解釈: WS256 の開始の指示。最初は設計の p001、code は書かない）。worktree p2・branch agent/p2-ws256（基点 main 021d393ed）。
+
+| Queue | 担当 | Phase | 範囲 | 結果 |
+| --- | --- | --- | --- | --- |
+| q1243 / q1243-i01 | P2（kernel-and-driver-designer） | [ws256-p001](ws256/phase001/phase.md) | 設計: riscv64 の HAL（QEMU の virt → VisionFive 2）、HAL の API の差分の案（承認の前は plan に置くだけ）、loader の riscv64 版、build、Phase の表の確定、未決の点の案。code は書かない | in-progress |
