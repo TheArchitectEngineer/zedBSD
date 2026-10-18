@@ -16,6 +16,16 @@
 #include <stdio.h>
 #include <string.h>
 
+/* One public Object-consumer observation contains only weak addresses and collector/callback counters. */
+struct object_consumer_observation {
+	struct vm_heap *heap;
+	uintptr_t caller_address;
+	uintptr_t input_address;
+	uintptr_t key_address;
+	size_t callback_collections;
+	unsigned calls;
+};
+
 /* One own-key observation borrows a heap and stores only weak integer addresses plus native callback counts. */
 struct own_key_observation {
 	struct vm_heap *heap;
@@ -40,6 +50,9 @@ struct extent_observation {
 	unsigned collections;
 	unsigned mode;
 };
+
+/* Only object_consumers_pressure owns this synchronous observer; zero means no active consumer case. */
+static struct object_consumer_observation object_consumer_case;
 
 /* Only own_keys_pressure owns this synchronous context; zero means no observation is active. */
 static struct own_key_observation own_case;
@@ -80,6 +93,19 @@ static uintptr_t typed_case_realm_address;
 /* Counts forced typed validity collections that retained their original managed owner. */
 static unsigned typed_case_collections;
 
+static int consumer_error_keys(struct vm_heap *heap, struct vm_object *object, struct wb_vector *keys);
+static int consumer_error_descriptor(struct vm_object *object, vm_value key, struct vm_property *property);
+
+/* This pure native key policy collects and returns errno without running script. */
+static const struct vm_native_operations consumer_error_keys_operations = {
+	NULL, consumer_error_keys, NULL, NULL, NULL
+};
+
+/* This pure descriptor policy preserves negative errno while observing actual call ownership. */
+static const struct vm_native_operations consumer_error_descriptor_operations = {
+	consumer_error_descriptor, NULL, NULL, NULL, NULL
+};
+
 static int own_collect_keys(struct vm_heap *heap, struct vm_object *object, struct wb_vector *keys);
 
 /* The pure native own-key prefix only collects or reports a bounded partial-error result. */
@@ -117,6 +143,8 @@ static const struct vm_native_operations proxy_sole_operations = {
 	proxy_sole_get_own, NULL, NULL, NULL, NULL
 };
 
+static int consumer_key_primitive(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int object_consumers_pressure(struct page *page);
 static void proxy_key_values_trace(struct vm_heap *heap, void *context);
 static int proxy_own_keys(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int proxy_note_own_key(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
@@ -323,6 +351,11 @@ main(
 
 	/* Own-key lists and preserved prefixes survive later getters, native policy collection and error rollback. */
 	status = own_keys_pressure(page);
+	if (status != 0)
+		goto cleanup;
+
+	/* Public Object consumers retain fresh keys through boxing and preserve native errors through actual calls. */
+	status = object_consumers_pressure(page);
 
 cleanup:
 	/* Restore ordinary scanning before retiring the complete Page graph. */
@@ -3273,5 +3306,326 @@ cleanup:
 		return status;
 
 	/* Succeeded: complete lists, rollback, native errno and real participant/Symbol reclamation were all observed. */
+	return 0;
+}
+
+/* Returns a fresh unowned Symbol and leaves real allocation pressure for the caller's receiver boxing. */
+static int
+consumer_key_primitive(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct vm_symbol *symbol;
+	struct vm_cell *root;
+	struct vm_cell *pressure;
+	struct vm_heap_stats stats;
+	int status;
+
+	UNUSED_PARAMETER(receiver);
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* Only this callback temporarily owns the fresh Symbol before ToPropertyKey hands it to its caller. */
+	root = NULL;
+	status = vm_heap_add_root(realm->heap, &root);
+	if (status != 0)
+		return status;
+	symbol = vm_symbol_create(realm->heap, VM_VALUE_UNDEFINED);
+	if (symbol == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* Its integer address is an observation, never a registry or shape-cache edge. */
+	root = &symbol->cell;
+	object_consumer_case.key_address = (uintptr_t)symbol;
+	vm_heap_collect(realm->heap);
+	pressure = vm_heap_alloc(realm->heap, &proxy_pressure_type, 8U * 1024U * 1024U);
+	if (pressure == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* A strictly later collection must occur after this callback's local Symbol root retires. */
+	vm_heap_stats(realm->heap, &stats);
+	object_consumer_case.callback_collections = stats.collections;
+	object_consumer_case.calls++;
+	*result = vm_value_cell(symbol);
+	status = 0;
+
+cleanup:
+	/* The returned value has no callback-owned root while the prototype method boxes its receiver. */
+	vm_heap_remove_root(realm->heap, &root);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the caller must now retain the fresh Symbol across its next real allocation. */
+	return 0;
+}
+
+/* Collects in a native key policy before returning a real errno through the public integrity consumer. */
+static int
+consumer_error_keys(
+	struct vm_heap *heap,
+	struct vm_object *object,
+	struct wb_vector *keys)
+{
+	struct vm_cell *found;
+
+	UNUSED_PARAMETER(object);
+	UNUSED_PARAMETER(keys);
+
+	/* Native policy never invokes user script; VM call ownership must retain its managed caller and argument. */
+	vm_heap_collect(heap);
+	found = vm_heap_find_cell(heap, object_consumer_case.caller_address);
+	if (found == NULL)
+		return EFAULT;
+	found = vm_heap_find_cell(heap, object_consumer_case.input_address);
+	if (found == NULL)
+		return EFAULT;
+	object_consumer_case.calls++;
+
+	/* The explicit native errno is expected, without a Boolean result or synthetic language exception. */
+	return EACCES;
+}
+
+/* Preserves get-own's negative errno convention while independently collecting its public caller. */
+static int
+consumer_error_descriptor(
+	struct vm_object *object,
+	vm_value key,
+	struct vm_property *property)
+{
+	struct vm_cell *found;
+
+	UNUSED_PARAMETER(object);
+	UNUSED_PARAMETER(key);
+	UNUSED_PARAMETER(property);
+
+	/* Native descriptors may collect but cannot run script or retire their current execution owner. */
+	vm_heap_collect(object_consumer_case.heap);
+	found = vm_heap_find_cell(object_consumer_case.heap, object_consumer_case.caller_address);
+	if (found == NULL)
+		return -EFAULT;
+	found = vm_heap_find_cell(object_consumer_case.heap, object_consumer_case.input_address);
+	if (found == NULL)
+		return -EFAULT;
+	object_consumer_case.calls++;
+
+	/* The realm descriptor API must preserve this errno instead of negating a language throw status. */
+	return -EACCES;
+}
+
+/* Tests real public Object consumers through VM call ownership, fresh-key boxing and native errno propagation. */
+static int
+object_consumers_pressure(
+	struct page *page)
+{
+	struct vm_realm *caller;
+	struct vm_object *input;
+	struct vm_cell *roots[2];
+	struct vm_cell *found;
+	struct vm_heap_stats before;
+	struct vm_heap_stats after;
+	vm_value owner;
+	vm_value function;
+	vm_value key;
+	vm_value argument;
+	vm_value receiver;
+	vm_value answer;
+	const char *name;
+	unsigned registered;
+	unsigned index;
+	unsigned mode;
+	int done;
+	int status;
+
+	/* No static observation records a managed pointer or supplies a collector edge. */
+	memset(&object_consumer_case, 0, sizeof(object_consumer_case));
+	memset(roots, 0, sizeof(roots));
+	registered = 0;
+	for (index = 0; index < 2U; index++) {
+		status = vm_heap_add_root(page->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* Prototype key boxing, key-list errno and descriptor errno each use actual installed native methods. */
+	for (mode = 0; mode < 4U; mode++) {
+		memset(&object_consumer_case, 0, sizeof(object_consumer_case));
+		object_consumer_case.heap = page->heap;
+		status = vm_realm_create_managed(page->heap, &caller);
+		if (status != 0)
+			goto cleanup;
+		roots[0] = &caller->cell;
+		object_consumer_case.caller_address = (uintptr_t)caller;
+		input = vm_object_create(page->heap, page->realm->object_prototype);
+		if (input == NULL) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* The argument is rooted only until the production VM call accepts ownership. */
+		roots[1] = &input->cell;
+		object_consumer_case.input_address = (uintptr_t)input;
+		if (mode < 2U) {
+			status = js_builtin_method(page->realm, input, "toString", 0, consumer_key_primitive);
+			if (status != 0)
+				goto cleanup;
+			owner = vm_value_cell(page->realm->object_prototype);
+			name = "hasOwnProperty";
+			if (mode == 1U)
+				name = "propertyIsEnumerable";
+			receiver = vm_value_int32(1);
+			argument = vm_value_cell(input);
+		} else {
+			key = vm_key_from_ascii(page->heap, "x");
+			if (key == VM_VALUE_EMPTY) {
+				status = ENOMEM;
+				goto cleanup;
+			}
+
+			/* A real stored property is present before the target becomes nonextensible. */
+			status = vm_object_define(page->heap, input, key, VM_VALUE_TRUE, VM_PROPERTY_DEFAULT);
+			if (status != 0)
+				goto cleanup;
+			if (mode == 2U)
+				input->native_operations = &consumer_error_keys_operations;
+			else
+				input->native_operations = &consumer_error_descriptor_operations;
+			status = vm_prevent_extensions(page->realm, input, &done);
+			if (status != 0)
+				goto cleanup;
+			if (!done) {
+				status = 1;
+				goto cleanup;
+			}
+
+			/* Integrity functions are fetched from the real installed Object constructor. */
+			key = vm_key_from_ascii(page->heap, "Object");
+			if (key == VM_VALUE_EMPTY) {
+				status = ENOMEM;
+				goto cleanup;
+			}
+
+			/* The intrinsic constructor already owns these methods; lookup adds no fixture implementation. */
+			status = vm_get(page->realm, vm_value_cell(page->realm->global), key, &owner);
+			if (status != 0)
+				goto cleanup;
+			name = "isFrozen";
+			if (mode == 3U)
+				name = "isSealed";
+			receiver = owner;
+			argument = vm_value_cell(input);
+		}
+
+		/* Direct native invocation still uses vm_call, whose contract retains caller realm, callee and arguments. */
+		key = vm_key_from_ascii(page->heap, name);
+		if (key == VM_VALUE_EMPTY) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* The same production function is invoked after every temporary setup root is dropped. */
+		status = vm_get(page->realm, owner, key, &function);
+		if (status != 0)
+			goto cleanup;
+		roots[0] = NULL;
+		roots[1] = NULL;
+		vm_heap_stats(page->heap, &before);
+		status = vm_call(caller, function, receiver, &argument, 1, &answer);
+		vm_heap_stats(page->heap, &after);
+		if (mode >= 2U) {
+			if (status != EACCES) {
+				status = 1;
+				goto cleanup;
+			}
+
+			/* Native errors remain status values and never become successful integrity Booleans. */
+			status = 0;
+		}
+
+		/* Every mode must reach exactly its one genuine native callback and collect during the call. */
+		if (status != 0)
+			goto cleanup;
+		if (object_consumer_case.calls != 1U || after.collections <= before.collections) {
+			status = 1;
+			goto cleanup;
+		}
+
+		/* The two prototype methods report missing Symbol keys after boxing the primitive receiver. */
+		if (mode < 2U) {
+			if (answer != VM_VALUE_FALSE || after.collections <= object_consumer_case.callback_collections) {
+				status = 1;
+				goto cleanup;
+			}
+
+			/* This Symbol survived a strictly later boxing collection after the callback-local root had retired. */
+			found = vm_heap_find_cell(page->heap, object_consumer_case.key_address);
+			if (found == NULL) {
+				status = 1;
+				goto cleanup;
+			}
+		}
+
+		/* Managed caller and source argument remain present after their collection-bearing native call. */
+		found = vm_heap_find_cell(page->heap, object_consumer_case.caller_address);
+		if (found == NULL) {
+			status = 1;
+			goto cleanup;
+		}
+
+		/* No returned Boolean or errno may retain the former input object. */
+		found = vm_heap_find_cell(page->heap, object_consumer_case.input_address);
+		if (found == NULL) {
+			status = 1;
+			goto cleanup;
+		}
+
+		/* Completion retires both VM-call ownership and each consumer's native temporary roots. */
+		vm_heap_collect(page->heap);
+		found = vm_heap_find_cell(page->heap, object_consumer_case.caller_address);
+		if (found != NULL) {
+			status = 1;
+			goto cleanup;
+		}
+
+		/* The argument is actually reclaimed while only intrinsic methods remain globally owned. */
+		found = vm_heap_find_cell(page->heap, object_consumer_case.input_address);
+		if (found != NULL) {
+			status = 1;
+			goto cleanup;
+		}
+
+		/* Never-stored fresh Symbol keys also become actually reclaimable after the public operation ends. */
+		if (mode < 2U) {
+			found = vm_heap_find_cell(page->heap, object_consumer_case.key_address);
+			if (found != NULL) {
+				status = 1;
+				goto cleanup;
+			}
+		}
+	}
+
+	/* All native and language statuses preserved their proper outcome and ownership conventions. */
+	status = 0;
+
+cleanup:
+	/* Observation addresses never survive this synchronous native consumer case. */
+	memset(&object_consumer_case, 0, sizeof(object_consumer_case));
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(page->heap, &roots[registered]);
+	}
+
+	/* Preserve a failure only after retiring every setup registration. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: fresh-key boxing, native errors and all completed input/key reclamations were observed. */
 	return 0;
 }
