@@ -35,3 +35,5 @@ Event ws074-p254-added-from-q23-20261018: p189で確認した既存no-opによ�
 
 
 Event ws074-q23-clearance-invalidated-idl-20261018: [origin p189](../phase189/evidence/20261018-q23-followup/missing-idl-proof.json)で2 IDの入力欠落が判明。Native mark/observer no-op diagnosisと本Phase goalは不変。source生成の前にp189のmissing pinned IDL providerと正しい全1508 baselineのverified outputを待つ。q24-preflightのChrome mark入力は調査資料でありQueue/source実装ではない。shared projection pending。
+
+Event ws074-q24-provider-prerequisite-verified-20261018: [p189 corrected baseline](../phase189/evidence/20261018-q24/README.md)でIDL原資源/全1508/旧1491同値を実検証し、前回input不足の再開条件を満たした。mark producer goal/基準は不変、Native source実装は次のexact finite Queue選定後。

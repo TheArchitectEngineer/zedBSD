@@ -1,0 +1,8 @@
+{
+  "compared": 1508,
+  "entire_callback_and_completion_equal": 1506,
+  "changed": [
+    "/event-timing/idlharness.any.html",
+    "/storage-access-api/idlharness.window.html"
+  ]
+}

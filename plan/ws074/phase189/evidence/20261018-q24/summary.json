@@ -1,0 +1,131 @@
+{
+  "source_commit": "26980308b",
+  "eligible": 1508,
+  "old1491_exact": true,
+  "whole_or_status_changes": 0,
+  "callback_message_changes": [
+    "/event-timing/idlharness.any.html",
+    "/storage-access-api/idlharness.window.html"
+  ],
+  "git_idl_assets": [
+    {
+      "test_id": "/event-timing/idlharness.any.html",
+      "path": "interfaces/event-timing.idl",
+      "sha256": "be75f395a463b1d783b8a921519c72f76524cb4ca6288652c9646a77fc7089d5",
+      "provider": "pinned-git-blob",
+      "commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+      "absent_header_paths": [
+        "interfaces/__dir__.headers",
+        "interfaces/__dir__.sub.headers",
+        "interfaces/event-timing.idl.headers",
+        "interfaces/event-timing.idl.sub.headers"
+      ],
+      "mime": "application/octet-stream",
+      "request": "/interfaces/event-timing.idl"
+    },
+    {
+      "test_id": "/event-timing/idlharness.any.html",
+      "path": "interfaces/performance-timeline.idl",
+      "sha256": "d4f59f18dcf34af2d514c07b62691c13e783c6c1a3616869666eabf36641c8be",
+      "provider": "pinned-git-blob",
+      "commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+      "absent_header_paths": [
+        "interfaces/__dir__.headers",
+        "interfaces/__dir__.sub.headers",
+        "interfaces/performance-timeline.idl.headers",
+        "interfaces/performance-timeline.idl.sub.headers"
+      ],
+      "mime": "application/octet-stream",
+      "request": "/interfaces/performance-timeline.idl"
+    },
+    {
+      "test_id": "/event-timing/idlharness.any.html",
+      "path": "interfaces/hr-time.idl",
+      "sha256": "20c66ab62bd1122b0abcc5dd3387c810e482781b4088da4e45437b1678407830",
+      "provider": "pinned-git-blob",
+      "commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+      "absent_header_paths": [
+        "interfaces/__dir__.headers",
+        "interfaces/__dir__.sub.headers",
+        "interfaces/hr-time.idl.headers",
+        "interfaces/hr-time.idl.sub.headers"
+      ],
+      "mime": "application/octet-stream",
+      "request": "/interfaces/hr-time.idl"
+    },
+    {
+      "test_id": "/event-timing/idlharness.any.html",
+      "path": "interfaces/dom.idl",
+      "sha256": "129fac34c83e2f643ac4d0380c0b4b62bd8916dbfc80c1140c4724f43d7f8c91",
+      "provider": "pinned-git-blob",
+      "commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+      "absent_header_paths": [
+        "interfaces/__dir__.headers",
+        "interfaces/__dir__.sub.headers",
+        "interfaces/dom.idl.headers",
+        "interfaces/dom.idl.sub.headers"
+      ],
+      "mime": "application/octet-stream",
+      "request": "/interfaces/dom.idl"
+    },
+    {
+      "test_id": "/storage-access-api/idlharness.window.html",
+      "path": "interfaces/storage-access.idl",
+      "sha256": "375b83509cc2c8882f76195ba64f46f8888d13ab3be713ae38b5b269c05bb70e",
+      "provider": "pinned-git-blob",
+      "commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+      "absent_header_paths": [
+        "interfaces/__dir__.headers",
+        "interfaces/__dir__.sub.headers",
+        "interfaces/storage-access.idl.headers",
+        "interfaces/storage-access.idl.sub.headers"
+      ],
+      "mime": "application/octet-stream",
+      "request": "/interfaces/storage-access.idl"
+    },
+    {
+      "test_id": "/storage-access-api/idlharness.window.html",
+      "path": "interfaces/dom.idl",
+      "sha256": "129fac34c83e2f643ac4d0380c0b4b62bd8916dbfc80c1140c4724f43d7f8c91",
+      "provider": "pinned-git-blob",
+      "commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+      "absent_header_paths": [
+        "interfaces/__dir__.headers",
+        "interfaces/__dir__.sub.headers",
+        "interfaces/dom.idl.headers",
+        "interfaces/dom.idl.sub.headers"
+      ],
+      "mime": "application/octet-stream",
+      "request": "/interfaces/dom.idl"
+    }
+  ],
+  "counts": {
+    "fail": 958,
+    "no_completion": 26,
+    "pass": 494,
+    "harness_error": 4,
+    "no_output": 24,
+    "multiple_completions": 2
+  },
+  "callbacks": {
+    "1": 20643,
+    "0": 11540,
+    "3": 14
+  },
+  "raw_fixed_pass": 1482,
+  "verified_fixed_pass": 1481,
+  "denominator": 3805,
+  "held_native_false_positive": 1,
+  "unattempted_harness": 275,
+  "seconds": 235.8,
+  "archives": {
+    "all1508-raw": {
+      "sha256": "70a401de8f7b5edea409205c45804747c2aac9e93f7a5119866cdf469f493bc8",
+      "members": 1676
+    },
+    "controls-and-idl": {
+      "sha256": "01878cc3bc354b0e07381ccac1b0387bab4f1c03ca384fbcef63ca748249faf2",
+      "members": 115
+    }
+  }
+}

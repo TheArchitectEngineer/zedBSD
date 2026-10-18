@@ -2,7 +2,7 @@
 
 # ws074-p189: Interop 2025 testharness 結果取得
 
-Status: uncleared（q23 clearance invalidated、q24 IDL配信訂正中、適格1508/未attempt275・native holdback1）
+Status: uncleared（q24 corrected provider partial cleared、適格1508/未attempt275・yield*未実装/native holdback1）
 
 ## ws074-q20261018-03 結果
 
@@ -344,3 +344,5 @@ Event ws074-q23-clearance-invalidated-idl-20261018: q23 terminal17cd21137後のa
 ## q24 finite scope（2026-10-18）
 
 Event ws074-q24-selected-20261018: [Queue](../queue.md) q24 i01 missing pinned IDL GET原bytes/provenance/metadata fidelity controls→i02 IDL2/全1508、最大60分17:51 JST。native変更無し、旧1491とholdback保持。q23訂正後の新attempt、whole acceptanceは未達。
+
+Event ws074-q24-finished-20261018: [history](../history/ws074-q20261018-24.md)・[evidence](evidence/20261018-q24/README.md)。疎checkoutに無いinterfaces/*.idlをpinned Git原blobからgenerated専用GETで配信し、5種類/2 ID計6資源の原hash・query・MIME・header metadata不在と全rawを検証。独立wire/本物404/未配信Git資源nonPASS/metadata拒否を含む15 controls通過。全1508を235.8秒で再測定、全whole/status不変、IDL2以外1506の全callback/completion objectは完全同一（旧1491を含む）。IDL2のfetch errorは解消し、native JS compilerがyield*を未実装のため公式WebIDL2 parser実行に失敗する正しい残差へ到達。 raw harness494 PASS/958 FAIL/4 harness_error/26 no_completion/24 no_output/2 multiple、callback11540 PASS/20643 FAIL/14 NOTRUN。known native prerequisite holdback1は保持し確認済1481/3805（38.922470%）、未attempt275。native C/固定WPT/期待値/分母不変、static844/scripted105/crash39/DOM/C/Acidは同一q21 pairの証拠を再利用。 q24両scoped attempt cleared、q23元uncleared履歴は保持。whole p189/WS/p100/target fullは未達、shared projection/GitHub pending、push無し。次はp254 native mark producer、p255 observerでpositive通知を検証するまでheld PASSを確認済へ加算しない。yield*は次のVM候補としてp189に残す。
