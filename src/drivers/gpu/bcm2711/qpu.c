@@ -17,7 +17,7 @@
  * One ALU's native operation fields while a word is assembled; the defaults
  * leave the ALU idle.
  *
- * Values referenced: Mesa src/broadcom/qpu/qpu_pack.c (the V3D 4.2
+ * Values referenced: Mesa 25.0.7 src/broadcom/qpu/qpu_pack.c (the V3D 4.2
  * instruction word's fields and opcodes).
  */
 

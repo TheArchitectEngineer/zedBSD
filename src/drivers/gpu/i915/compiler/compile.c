@@ -1816,9 +1816,9 @@ i915_compile_scratch_header(
  * the instruction did not run on keep what their slot held.  A value
  * nothing reads afterwards is not written.
  *
- * Procedure referenced: Mesa src/intel/compiler/brw_reg_allocate.cpp
- * (brw_spill_reg and emit_spill on Gen12.0: every definition of a spilled
- * value written out, every read reloaded into a temporary).
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_reg_allocate.cpp
+ * (brw_reg_alloc::spill_reg and emit_spill on Gen12.0: every definition
+ * of a spilled value written out, every read reloaded into a temporary).
  */
 static void
 i915_compile_spill_results(

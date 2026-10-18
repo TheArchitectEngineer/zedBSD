@@ -24,10 +24,11 @@
 #include "../compiler/compiler.h"
 
 /*
- * Values referenced: Mesa src/intel/genxml/gen120.xml (the bit positions).
+ * Values referenced: Mesa 25.0.7 src/intel/genxml/gen120.xml (the bit
+ * positions).
  *
- * Procedure referenced: Mesa src/intel/vulkan (the packets anv programs for
- * an ordinary pipeline).
+ * Procedure referenced: Mesa 25.0.7 src/intel/vulkan (the packets anv
+ * programs for an ordinary pipeline).
  */
 struct i915_gfx_batch;
 

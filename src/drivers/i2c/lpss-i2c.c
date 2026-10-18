@@ -76,8 +76,9 @@
  * The input clocks of the I2C core, in kilohertz, which the identifier
  * tables carry as their driver data.
  *
- * Values referenced: Linux drivers/mfd/intel-lpss-pci.c (bxt_i2c_info for
- * the Alder Lake PCH, spt_i2c_info for the Tiger Lake-LP PCH).
+ * Values referenced: Linux v6.8.12 drivers/mfd/intel-lpss-pci.c
+ * (bxt_i2c_info for the Alder Lake PCH, spt_i2c_info for the Tiger Lake-LP
+ * PCH).
  */
 
 #define LPSS_ADL_CLOCK_KHZ	133000U

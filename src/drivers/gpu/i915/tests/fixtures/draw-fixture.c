@@ -441,8 +441,9 @@ drv_i915_draw_fixture_write_state(
  * never happens: dwords past the capacity are dropped, so the caller
  * compares the count with what it expects.
  *
- * Procedure referenced: Mesa src/intel/blorp (the order of the commands of
- * a draw: vertex state, then the pipeline, then the primitive).
+ * Procedure referenced: Mesa 25.0.7 src/intel/blorp (the order of the
+ * commands of a draw: vertex state, then the pipeline, then the
+ * primitive).
  */
 unsigned
 drv_i915_draw_fixture_build_batch(

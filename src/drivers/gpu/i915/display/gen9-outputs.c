@@ -384,8 +384,8 @@ drv_i915_skl_output_refresh(
  * Returns 0, or the power well's error.
  *
  * Procedure referenced: Linux v6.8.12
- * drivers/gpu/drm/i915/display/intel_dp.c (intel_dp_detect,
- * ibx_digital_port_connected) and intel_hdmi.c (intel_hdmi_detect).
+ * drivers/gpu/drm/i915/display/intel_dp.c (intel_dp_detect), g4x_dp.c
+ * (ibx_digital_port_connected) and intel_hdmi.c (intel_hdmi_detect).
  */
 static int
 i915_skl_outputs_probe(

@@ -29,7 +29,7 @@ static void write_program(uint8_t *bytes, const struct bcm2711_native_program *p
  * No scoreboard wait occurs on an early texture switch; the compiler acquires
  * the tile scoreboard at its final fragment switch before tile reads/writes.
  *
- * Values referenced: Mesa src/broadcom/cle/v3d_packet.xml (the V3D 4.2
+ * Values referenced: Mesa 25.0.7 src/broadcom/cle/v3d_packet.xml (the V3D 4.2
  * shader state and attribute records' fields).
  */
 int

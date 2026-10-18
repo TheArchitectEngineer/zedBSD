@@ -24,7 +24,7 @@
  * The packets' sizes, field positions and opcodes, and the offsets in the
  * fixed streams below.
  *
- * Values referenced: Mesa src/broadcom/cle/v3d_packet.xml (the V3D 4.2
+ * Values referenced: Mesa 25.0.7 src/broadcom/cle/v3d_packet.xml (the V3D 4.2
  * packets).
  */
 

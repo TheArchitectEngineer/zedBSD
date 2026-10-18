@@ -80,8 +80,9 @@
  * The token-set SWSB byte of an out-of-order instruction with nothing to
  * wait for.
  *
- * Procedure referenced: Mesa src/intel/compiler/brw_lower_scoreboard.cpp
- * (the software scoreboard's dependency byte).
+ * Procedure referenced: Mesa 25.0.7
+ * src/intel/compiler/brw_lower_scoreboard.cpp (the software scoreboard's
+ * dependency byte).
  */
 #define I915_EU_SWSB_TOKEN_SET		0x40U
 
