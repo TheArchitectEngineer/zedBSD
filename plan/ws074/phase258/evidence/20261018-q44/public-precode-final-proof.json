@@ -1,0 +1,13 @@
+{
+  "shared_source_sha256": "10155eb12b05a933f6cca4b7f66b1237cbe4bca9c8e2d5b69039ad5669ffc99d",
+  "precode_frozen_source": "d2acfd1d7",
+  "final_source": "19b9b9ed6",
+  "precode_native_pass": 510,
+  "final_native_pass": 552,
+  "conditions": 552,
+  "native_public_conditions_fixed": 42,
+  "old501_source_prefix_unchanged": true,
+  "new51_genuine_chrome_conditions_all_match": true,
+  "old_huge2_difference_qualification_retained": true,
+  "not_official_WPT_gain": true
+}

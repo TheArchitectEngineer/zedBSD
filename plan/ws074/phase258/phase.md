@@ -2,7 +2,7 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: in-progress（q44 Object callers partial、whole Proxy未達）
+Status: uncleared（q44 Object callers partial cleared、whole Proxy未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
@@ -11,7 +11,7 @@ Origin: p189/q29 original WebIDL2 parseがProxy未定義で停止。
 
 Objective / own criteria: native managed Proxyを実object internal methodsへ接続し、constructor/revocableと各internal operationのtrap/fallback/invariant/receiver/revocation/callability/GCを正しく実行する。original WebIDL2 actual parse/validatorに必要なget/set/array behaviorを通常APIで提供し、independent controls/原WPTを通す。部分read stageだけでwholeをclearしない。
 Design: vm_native_operationsはscript-free heap interfaceのまま保持。Proxyにはmanaged target/handler recordを持たせ、scriptを実行可能なrealm-aware access/internal methodからtrapを呼ぶ。opaque JS constructor公開前に必要なoperationを段階的に整える。各段階は自走承認に基づく新finite Queueで正確に選定する。
-Current state: q43 VM OwnPropertyKeys/private native501・Chrome499＋huge2 primary/diagnosticまでverified。public own-key callers/for-in、other invariant realm化/nested/call/construct/global、Object/array/typed/p100等未達。元parser private4/4/negative保持。
+Current state: q44 Object own-key/descriptor/integrity callers partial verified、native552/Chrome550＋既知huge2資格、全1508 q37全callback/completion同値。for-in/chain lookups/core Set prototype routing/other invariant realm化/nested/call/construct/global等未達。元parser4/4/negative/追加validator rule2保持。
 Standards: Guardrail/C全文/browser component全文、簡約版無し。一次 https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-proxy-object-internal-methods-and-internal-slots-get-p-receiver 。既存p100がWS全source near-final conformanceを所有し、本partialはnew/changed scopeの全文適合を検証。
 Verification/bounds/affected components: q30 snapshotの通り。private object kind/cell/newborn/trace/revokeとactual receiver/trap/invariant/GCをnative/Chromeで確認し、ordinary whole/callback PASSを守る。target single-source compileのみとfull target runtimeを区別。未達はunclearedとresume。
 
@@ -207,3 +207,18 @@ Final raw archive79 members全read-back、SHA2567b0b975906e8907c129f9bae85500dd8
 [証拠](evidence/20261018-q43/README.md)。次finite scope未選定。
 
 Event ws074-p258-q44-selected-20261018: verified VM ownKeys/GetOwn/Define/extentへObject own-key/descriptor/integrity callersを最大90分で接続し全1508を再測定するpartialを選定。sealed余分GetOwn除去、TestIntegrity status/holds分離、vectors/partial descriptor rootsを整合。for-in/core routing/global等残件保持、exact Queue参照。
+
+Event ws074-p258-q44-validator-progress-20261018: 元pinned bundle/testharness/private constructor adapterの追加controlでinterface/namespace missing Exposedの実require-exposed ruleをnative/Chromeが双方検出し、rule確認後のintentional assertionも同じFAIL messageへ到達。原q38 positive4/negative1も保持。q43にこの追加controlのbefore証拠は無く修正gainとは数えない。全1508測定中・terminal待ち、rawはq44/webidl-validator-proof.json（結果保存時にevidenceへ包含）。
+
+## q44 Object callers partial result / resume
+
+Event ws074-p258-q44-partial-cleared-20261018: Objectの共通own-key helperをvm_own_property_keysへ接続し、keys/values/entries・getOwnPropertyNames/Symbols/Descriptors・assign/defineProperties・hasOwn/hasOwnProperty/propertyIsEnumerableをrealm GetOwnへ接続。assignはdescriptor→Get→strict Set、definePropertiesは全ToDescriptor snapshot後にDefine、enumerable listsはstring filter→GetOwn→enumerable→Getの順を保持。getOwnPropertyDescriptorsはshared Fromのflagged payload rootsへ直結し、各callerのkey/item/descriptor vectorsとfresh valuesをcallback GCから保持する。prototype presence methodsはfresh Symbol keyをToObject receiver boxing前からrootし、Object.hasOwnはconverted objectをdescriptor完了まで保持する。descriptor vector tracerはpresent payload flagsだけを読み、nonenumerable sentinelのpayloadを読まない。
+seal/freeze/isSealed/isFrozenもactual PreventExtensions/extent/ownkeys/GetOwn/Defineへ統一。sealedは余分GetOwn無しのconfigurable:false Define、frozenはGetOwn後dataだけwritable:falseをpartial Define。TestIntegrityはstatus/holdsを分離しVM_THROWNをnegateせずerrno/言語例外をそのまま伝播、extent trueならkeysを呼ばずfalse、最初の違反でdescriptor照会を止める。assign/list/mapの旧複数cleanupはvectorsを登録前に初期化して単一forward cleanupへ統合。変更normal helper宣言5を全tables後へ移し、constant tableが直接参照するwrapper宣言は例外どおりtable前に保持。static Object nativesは実装確認済みvm_call/function_retain/function_run_nativeがcaller realm/callee realm/this/argsを保持する契約下で動く。
+旧501 source prefix全bytes同一、新51を含むnative552通過。凍結q43 helperへ同じsourceを与えたprecodeは510/552で42条件FAIL、finalは552/552、42差を修正・元source/期待値不変。新51 genuine Chromium条件は全件一致。全Chromeは550/552で、旧q43 huge2のgetter前RangeError差をそのまま保持、nativeはprimary ordered Getの元errorを保持するため全552一致とは認定しない。q36 classifier負ゼロprimitive filterも継承。native C stack保守保持無し。実installed hasOwnProperty/propertyIsEnumerableをvm_callし、native ToPrimitiveがfresh never-stored Symbolを返してcallback root解放、8MiB pressure後のreceiver boxingでcallback return時より厳密に後の実GCを確認、key生存/false結果を保持。installed isFrozen/isSealedではpure native own-key EACCES/get-own negative EACCESと実GCを通じmanaged caller/input保持を確認し、完了後caller/keyObject/Symbolを実回収。旧own-key accumulated Symbol/prefix/rollback stale-capacity・prototype/Delete/extent/IsArray/BigInt/typed GCも保持。
+source WIP19b9b9ed6、final source/pair/input317 hash照合。変更Object functions/declarations外tokens同一、VM全source/headerとnative_operations定義/comment/ABI全不変。host warning0・q02 exact builtin_object1 target warning0、全文/manual review・clang-format19・full changed Cは許可forward cleanup83/他checker0。現versions host GCC14.2.0/formatter19.1.7/Python3.13.5/target clang23.1.0 bbbb5aec/Chromium153.0.8010.52を実取得しq43と一致。
+DOM41、VM45/factory56、CSSOM12+12、marks7/observer10/ErrorEvent9/ErrorReporting19/delegation10通過。Acid3 score/inventory100・pixel0、Acid2既存873。元WebIDL2はq38同一source bytesのpositive4/intentional negative1を保持しbaseline Proxy undefined/private adapterで元assertion到達。追加元bundle controlではinterface/namespace missing Exposedの実require-exposed ruleをnative/Chrome双方が検出し、rule確認後のintentional assertionも同一FAIL messageへ到達、全3 callbackが一致。この追加negativeはq43 before未測定で新gainとは認定しない。
+固定1508 harnessをeligible digest82147e6edaec1b3b8d537e46eb71b64f2f03132cc12803e284c6ca72377779e7/settle5000/process20で239.5秒実測。q37 whole判定・全callback/completion object完全同一。494 PASS/955 FAIL/13 harness_error/20 no_completion/24 no_output/2 multiple、callbacks11540 PASS/20642 FAIL/14 NOTRUN、whole gain/loss/old PASS callback loss/差0。static844/scripted105/crash39はq28原証拠再利用でnewpair全capture/strict equality未測定。公式1482/3805（38.948752%）・held0・未attempt275保持。
+i01 Object callers partialだけcleared、whole p258/WS/p100/full target/100%未達。for-in/spread/JSON/AnnexB lookup/isPrototypeOf/instanceof、normal Set exotic prototype routing、other internal invariant realm化/nested/call/construct/global constructor/revocable、array IsArray consumers/immutable prototype/typed backing等残件を維持。assignのordinary target＋exotic prototype edgeを本partialでverifiedと主張しない。global Proxy非公開・factory bound維持。p189へこの測定をvalidation outputとしてだけ投影し、新attempt/whole clearanceは付与しない。共有Master/Queue/cache/GitHub投影pending、push無し。
+Archives: harness1676 members SHA2567ba8f2ca5aa17ef5235bed2ac29e49034a1b2bcf2e1b153e03e9b6bb85ffde94、native/oracle/build85 members SHA256a0ae34c5475efaf249b6296955c6e531313327b1c0c3e166774e3a93404998daを全member順次read-back。runtime binaryはhash付きbuild保持・archive未同梱。
+
+[証拠](evidence/20261018-q44/README.md)。次finite scope未選定。

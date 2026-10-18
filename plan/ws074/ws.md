@@ -9,9 +9,9 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [ws074-q20261018-44](queue.md) active（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+Queue: [ws074-q20261018-44](queue.md) finished（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
 
-Latest verified（q43）: VM OwnPropertyKeys/private partial clear。native501/Chrome499、huge2はChrome getter前RangeErrorとnative primary-spec ordered Getの差をraw/診断で保持、全501一致とは認定せず元source/期待値不変。4 GC modesでaccumulated fresh Symbol/prefix・partial error rollback/実回収。host/target1 warning0・focused/元parser維持。public callers未接続・global/whole未達。all1508 q37/images-crash q28再利用、1482/3805・held0・未attempt275。[証拠](phase258/evidence/20261018-q43/README.md)。共有投影pending。
+Latest verified（q44）: Object own-key/descriptor/integrity callers partial clear。旧501保持＋new51 native/Chrome一致、native552/Chrome550は既知huge2のみ差、precode42条件修正。4 actual public GC/error modes・focused/元WebIDL4+negative/追加rule2検出保持。全1508 q37の全whole/callback/completion完全同一、494 PASS・差/gain/loss0、公式1482/3805・held0・未attempt275。images/crash q28再利用。for-in/chain/core routing/nested/call/global/p100/full target未達。[証拠](phase258/evidence/20261018-q44/README.md)。共有投影pending。
 
 Event ws074-q14-percentage-scope-reconciled-20261018: precode Chrome17条件でzero/cancelled %型の依存を確認。p251をi01、p250をi02へ改訂しglobal1491/static1561照合へ拡張、初期snapshot保存/60分deadline維持。
 
@@ -128,7 +128,7 @@ Event ws074-p217-q1188-partial-clear-20261014: [p217](phase217/phase.md) q1188-i
 Event ws074-p217-q1187-partial-clear-20261014: [p217](phase217/phase.md) q1187-i01で固定縦rl Grid直接横RTL absolute子row2/col1 top insetにstatic areaを適用。[証拠](phase217/evidence/20261014-q1187/README.md)。独立矩形Chromium一致、固定non-static007縦rl callback whole PASS、水平2 callback PASS、縦lrは4番目子でfile whole FAIL継続。旧WPT/host/Acid3差0維持。次は縦lr4番目子、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
 
 Event ws074-p217-q1186-partial-clear-20261014: [p217](phase217/phase.md) q1186-i01で固定縦lr/rl Grid直接横LTR absolute子へrow1/col2 static areaとjustify-center Yを適用。[証拠](phase217/evidence/20261014-q1186/README.md)。独立2矩形Chromium一致、固定non-static007縦2 callback先頭2子全PASS、lrは4番目子・rlは3番目子でfile whole FAIL継続。旧WPT/host/Acid3差0維持。次は縦rl Gridの3番目RTL横子、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
-Resume point: q43 VM own keys partial cleared。次finite candidateはpublic Object own-key/list/GetOwn callers→for-in、other invariant realm化/nested/call/construct/global constructor/revocable。旧未attempt275/API/layout/Object integrity/array/typed/p100/full target等は保持。1482/3805の全1508最新実測q37、images/crash q28。
+Resume point: q44 Object callers partial cleared、全1508 q37完全同値・1482/3805。次finite candidateはchain lookup/isPrototypeOf/instanceof/for-inとVM ordinary Set exotic prototype routing、other invariant realm化/nested/call/construct/global constructor/revocable。既存未attempt275/API/layout/array/typed/immutable prototype/p100/full target等は保持。images/crash最新q28再利用。
 <!-- awesome-plan-current:end -->
 
 Event ws074-p217-q1185-partial-clear-20261014: [p217](phase217/phase.md) q1185-i01で固定縦lr/rl Grid直接横LTR absolute子へrow1/col1 static areaとjustify-right Yを適用。[証拠](phase217/evidence/20261014-q1185/README.md)。独立2矩形Chromium一致、固定non-static007縦2 callback先頭子全PASS、2番目子でfile whole FAIL継続。旧WPT/host/Acid3差0維持。次は縦Grid2番目横子、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
@@ -706,7 +706,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p255](phase255/phase.md) | PerformanceObserver native mark登録・queue・task配信 | uncleared / q28 Window consumer/failure/held partial cleared・whole残り | p254 verified native mark output |
 | [ws074-p256](phase256/phase.md) | Window ErrorEvent・uncaught harness fidelity | uncleared / q28 runtime/inline source partial cleared・external/syntax等残り | 既存Event/Window/VM→p255再評価 |
 | [ws074-p257](phase257/phase.md) | synchronous generator yield* delegation | cleared / q29 sync own criteria・Chrome38/native GC10 | q28 VM/GC・p189 pinned WebIDL2 |
-| [ws074-p258](phase258/phase.md) | native Proxy internal methods・GC/revocation | uncleared / q43 VM own keys partial cleared・native501/Chrome499＋huge2 primary、callers/global未達 | q29 VM/GC・p189 actual Proxy blocker |
+| [ws074-p258](phase258/phase.md) | native Proxy internal methods・GC/revocation | uncleared / q44 Object callers partial cleared・native552/Chrome550＋既知huge2、全1508同値 | q29 VM/GC・p189 actual Proxy blocker |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 
@@ -1349,3 +1349,7 @@ Event ws074-q43-selected-20261018: p258 OwnPropertyKeys VM foundation/private co
 Event ws074-q43-finished-20261018: p258 OwnPropertyKeys VM foundation partial clear。native501/Chrome499、huge2は外部RangeError差をprimary/診断で保持し全一致false。4 GC modesでprefix/list Symbols保持・rollback後未使用capacity Symbol実回収。focused/元parser保持、1482/3805。次public callers候補、global/whole未達。[history](history/ws074-q20261018-43.md)。共有投影pending。
 
 Event ws074-q44-selected-20261018: p258 Object own-key/descriptor/integrity callersの有限partial＋全1508検証を選定、for-in/core/global/whole残件保持。[Queue](queue.md)。
+
+Event ws074-q44-validation-progress-20261018: private sourceの旧501保持・新51中precode42差を修正、native552/Chrome550（既知huge2のみ）、4 public GC/error modes/focused/元parser保持。追加original validator negative2とintentional assertionの同一callbackを確認、これはq43 before未測定で新gainとは認定しない。全1508測定中、own Phase/tableのactive投影を整合。terminal判定は全callback/completion比較待ち。
+
+Event ws074-q44-finished-20261018: p258 Object callers partial clear、new51 genuine一致/precode42修正・native552/Chrome550既知huge2。4 public GC/error modesでfresh Symbol boxing保持と実回収、元parser/追加validator rule検出保持。全1508 q37全callback/completion同値・gain/loss0・1482/3805、p189へvalidation出力投影。for-in/core/global/whole未達。[history](history/ws074-q20261018-44.md)。共有投影pending。

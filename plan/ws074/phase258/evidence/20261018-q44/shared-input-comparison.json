@@ -1,0 +1,14 @@
+{
+  "userland/desktop/libbrowser/js/builtin_object.c": {
+    "old": "9c8d7f5e9d8d3e0e7fd4db3042ea78cf222b3dda661b5258c27c5774e0765e5e",
+    "new": "54bba3695578c5720308422aeaffaf9c52df2efb0ddf69c753bacd0aa2e6be33"
+  },
+  "plan/ws074/tests/host-proxy-read.c": {
+    "old": "f2b59e36ada8b0fd17a7293920d9a22c8f155ae103de1cc1c0b6f90472d04483",
+    "new": "50890efc8b31921787ea29bd36e3fd8c518447e96bcdbabe67d3eb8f51d5117d"
+  },
+  "plan/ws074/tests/proxy-read.js": {
+    "old": "1565bd4ca7bfd2a237578772c3b584cc798fb1d11fd1991bf0aea1ac486263d7",
+    "new": "10155eb12b05a933f6cca4b7f66b1237cbe4bca9c8e2d5b69039ad5669ffc99d"
+  }
+}
