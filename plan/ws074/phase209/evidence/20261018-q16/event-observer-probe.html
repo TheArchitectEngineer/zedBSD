@@ -1,0 +1,10 @@
+<!doctype html><html class="test-wait"><head><script>
+var root=document.documentElement;
+root.addEventListener('TestRendered',function(e){console.log('EVENT',e.type);root.classList.remove('test-wait');});
+document.fonts.ready.then(function(){requestAnimationFrame(function(){requestAnimationFrame(function(){
+  var observer=new MutationObserver(function(){console.log('OBSERVER',root.className);requestAnimationFrame(function(){console.log('OBSERVER_RAF');});});
+  observer.observe(root,{attributes:true});
+  var e=new Event('TestRendered',{bubbles:true}); console.log('TYPE',e.type);
+  console.log('DISPATCH',root.dispatchEvent(e));console.log('CLASS',root.className);
+});});});
+</script></head><body>probe</body></html>

@@ -1,0 +1,46 @@
+{
+  "test_id": "/exception.html",
+  "outcome": "pass",
+  "returncode": 0,
+  "timed_out": false,
+  "image": {
+    "file": "/home/awe/zedBSD-claude1/build/ws074-crash-controls/retained-y0id44jb/exception.ppm",
+    "size": [
+      64,
+      64
+    ],
+    "sha256": "d2f6d1ef302851a667adde508208fded2aea933d1c0b62941b9d0882a3461523"
+  },
+  "readiness": {
+    "status": "ready",
+    "complete": [
+      {
+        "nonce": "control-exception",
+        "reply": [
+          "http://127.0.0.1:34737/exception.html",
+          "complete",
+          []
+        ],
+        "ready_state": "complete"
+      }
+    ],
+    "errors": [],
+    "invalid": []
+  },
+  "nonce": "control-exception",
+  "stdout": "",
+  "stderr": "console: Uncaught Error: control expected exception (at http://127.0.0.1:34737/exception.html:1:1)\nconsole: WPT_CRASH_READY {\"nonce\":\"control-exception\",\"reply\":[\"http://127.0.0.1:34737/exception.html\",\"complete\",[]],\"ready_state\":\"complete\"}\n",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-20261018/q16/preflight/browser",
+    "--render",
+    "--async",
+    "--settle-ms=500",
+    "--output=/home/awe/zedBSD-claude1/build/ws074-crash-controls/retained-y0id44jb/exception.ppm",
+    "--width=64",
+    "--height=64",
+    "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+    "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+    "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+    "http://127.0.0.1:34737/exception.html"
+  ]
+}

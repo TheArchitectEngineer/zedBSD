@@ -2,7 +2,7 @@
 
 # ws074-p190: Interop 2025 reftest・crashtest runner coverage
 
-Status: uncleared（q15-i01 retention cleared、i02 native post-font RAF依存でuncleared）
+Status: uncleared（q16 required attributes control/global未達、p253前提待ち）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -193,3 +193,9 @@ Event ws074-p190-q15-i01-cleared-20261018: [証拠](evidence/20261018-q15-i01/RE
 Event ws074-p190-q15-i02-uncleared-20261018: [証拠](evidence/20261018-q15-i02/README.md)。strict official-wait toolを実装、parser8 pass/実native7は1 pass・6 positive FAIL、font ready後のRAFがheadless settleから残るとown probe/sourceで確認。固定48本実行はprerequisite不足のため未着手、正式crash増分0。C/engine/WPT/他runnerは不変。i02 uncleared、i01 clearedを保持。再開条件: p209 producerがpost-font tasksを元のbudget内で処理し、同じ全native controlsが適切に通ること。画像だけ/条件skipでclearしない。
 
 Event ws074-p209-post-font-tail-redesign-20261018: [p209](../phase209/phase.md)でinitial FontFaceSet.ready後のeligible RAF/timerをnative budget内で再pumpするoutputを設計。p190はofficial waitを変更せず、そのverified preflight outputと全controls成立後に新attemptで固定48へ進む。q15-i02 unclearedを後日成功で書換えない。native修復は新Queueが必要。
+
+Event ws074-p209-q16-selected-20261018: [q16](../queue.md)でp209 post-font native producerを選定。本Phaseのq16-i02はindependent native/strict controlsのverified output後に48全件へ進む。q15-i02 unclearedとfixed48未確認の歴史は保持し、元のstrict WPT待機/判定を変更しない。global gateとactual48は同じfinal frozen pairで実行、前提未達なら再びunclearedで停止する。
+
+Event ws074-p190-q16-uncleared-20261018: [q16証拠](../phase209/evidence/20261018-q16/README.md)。post-font native producerは独立7行/budget6・oldfont2/DOM34/host-target/C/Acidを確認したが、strict全15は14/15でattributes observerが未対応。q16-i01はrequired controls/global未達でuncleared、i02はunstarted scoped item uncleared・fixed48本実行無し。全1491/static1561 gateはknown prerequisiteを直すcombined final sourceへpendingとしてskipped。last verified1330はq14 sourceの結果で、current candidate全体は未判定。
+
+Event ws074-p253-attribute-redesign-from-q16-20261018: [p253](../phase253/phase.md)へordinary attributesのgeneric native notificationを分離。p209 q16 verified preflight → p253 attributes → 全15control/p209新attempt global gate → p190 actual48というscoped output順で再開する。origin/foreignの自身のscope/verification/resumeを記録、q15/q16uncleared履歴とinitial ready/childListの過去partialを保持。新Queue選定まで属性sourceを生成しない。

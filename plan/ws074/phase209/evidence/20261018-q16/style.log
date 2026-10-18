@@ -1,0 +1,2 @@
+userland/desktop/libbrowser/view/view.c:2330: blank-after-brace: response = net_request_response(request);
+userland/desktop/libbrowser/view/view.c:2691: call-in-condition: page_sticky_sync

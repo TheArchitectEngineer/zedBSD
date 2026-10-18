@@ -1,0 +1,13 @@
+{
+  "generated_function_candidates": [],
+  "before_file_candidates": 2,
+  "after_file_candidates": 2,
+  "source_sha256": "d4d78f1c30572772befbd5b88c47b2c9f04210ffc0bc6a21200f534c4849231b",
+  "before_source_sha256": "be837dd2efadc9a5dfed8517ff34a40faff40b7606a1a37d3b4aa88681cf1432",
+  "pair_sha256": {
+    "browser": "25a66385edb7811c04e5e04fddd6bf3060ef2883f26d2781adbecf9d87debc02",
+    "libbrowser.so": "1a2b35e5be512d359b2ffd8dc3d97cf4c9e9a0fdc6d799429021a1f1b50d82c4"
+  },
+  "full_global": "not run: required TestRendered attribute-notification control unmet; combine final verification with producer prerequisite",
+  "public_abi": "unchanged"
+}

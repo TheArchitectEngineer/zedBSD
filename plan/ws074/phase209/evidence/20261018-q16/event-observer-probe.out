@@ -1,0 +1,4 @@
+TYPE TestRendered
+EVENT TestRendered
+DISPATCH true
+CLASS 

@@ -1,0 +1,17 @@
+......F........
+======================================================================
+FAIL: test_test_rendered_event (__main__.BrowserWaitTest.test_test_rendered_event)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/awe/zedBSD-claude1/plan/ws074/tests/test-interop2025-crashtests.py", line 140, in test_test_rendered_event
+    self.assertEqual(record["outcome"], "pass", record["stderr"])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'readiness_missing' != 'pass'
+- readiness_missing
++ pass
+ : 
+
+----------------------------------------------------------------------
+Ran 15 tests in 3.601s
+
+FAILED (failures=1)

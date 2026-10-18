@@ -1,5 +1,28 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
+# ws074-q20261018-16 / post-font native settle・strict crash revalidation
+
+Status: finished（2026-10-18、両item uncleared・i02未着手）
+Owner: このCodex chat単独。
+Approval: [ユーザー自走指示](autonomy.md)を以下の有限scopeへ適用。q15 archive/hash・WIPd2cee8244 read-back済み。
+Timebox: 最大90分（15:25 JSTまで）。
+
+| Attempt | Phase | Exact scope | State | Dependencies |
+| --- | --- | --- | --- | --- |
+| ws074-q20261018-16-i01 | [p209](phase209/phase.md) post-font producer partial | view.c browser_view_settleで既存のfont/layout/checkpoint後に生まれたeligible RAF/timerを同じ絶対budgetで再pumpし再layout。初期font readyの解決は早めず、公開ABI/他C/WPT/strict runner条件不変。bounded outer rounds/zero budget/16・32ms境界/late timer/継続RAF・zero interval/detach等を確認。旧font ready SameObject/order・新DOM実例・strict native controls15、host/target warning0/C全文format・Acid非増加。q14 final全harness1491 whole491/全static1561 whole839を維持、全callback遷移を診断しown native contract後退を解決 | uncleared | q15 actual API/source proof、q14 final verified baseline、Guardrail/C全文/browser standard |
+| ws074-q20261018-16-i02 | [p190](phase190/phase.md) strict48 revalidation partial | i01 independent native/font/budget/strict controlsのverified scoped outputでq15のstrict protocolを再検証し、固定48全件を実行。元script・ID/nonce・単一complete/load/fonts/2RAF/test-wait/最終paintの条件を保持、欠落/duplicate/invalid/timeoutは非PASS、JS exception単独はcrash扱いしない。全raw/PPM/checkpoint/PNG RGB証拠とbrowser/library/source/WPT hashを保持。48のPASSを先取りせず全outcomeを記録。runnerの自分の実装バグだけは同じcontract内で修復可、WPT/製品API/Master不変 | uncleared（未着手） | i01 preflight scoped output、q15 retained strict runner |
+
+Dependency graph: q15証拠 → p209 native preflight → p190 strict controls → fixed48。i01 global1491/static1561のterminal gateは同じfinal frozen pairで両item測定中に実行可。whole p209/p190 clearanceは先取りしない。
+Upcoming Work Outlook: p252 flex-basis、p249 empty margin、native fit/animation、generated contexts。
+Selection reason: 正式crash gateで停止した実native依存を先に修復する。sourceはview/view.cの有限生成scopeとWS試験/記録。元の時間上限を反復ごとに延長せず、eligible workが調査boundを超えるならETIMEDOUT/unclearedを記録。共有target全体/WS最終p100は後段、byte-identical before rawを使い不要なbefore再測定はしない。
+
+Outcome: producer limited preflight14/15、独立7行/budget6/初期font2・DOM34・host/target warning0/C/Acidは通過。required attributes controlが未対応でi01 uncleared、i02 unstarted uncleared。fixed48無し/global1491/static1561 skipped（known prerequisiteを直したcombined final sourceで実施）。[証拠](phase209/evidence/20261018-q16/README.md)。last full verified1330はq14 sourceでcurrent candidate全体未判定。p253へ属性native outputを設計し、新Queueでp209再検証→p190へ進む。共有projection pending。
+
+History: [scopeとoutcome](history/ws074-q20261018-16.md)。
+
+---
+<!-- awesome-plan project=zedbsd record=queue -->
+
 # ws074-q20261018-15 / crashtest retained raw・official readiness
 
 Status: finished（2026-10-18、i01 cleared/i02 uncleared）

@@ -1,0 +1,94 @@
+[
+  {
+    "budget": 0,
+    "exit": 0,
+    "stdout": "ready\n",
+    "stderr": "",
+    "command": [
+      "build/ws074-20261018/q16/preflight/browser",
+      "--run",
+      "--settle-ms=0",
+      "--font=userland/desktop/fonts/Mahora-Regular.ttf",
+      "--mono-font=userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+      "--fallback-font=userland/desktop/fonts/DroidSansFallbackFull.ttf",
+      "build/ws074-20261018/q16/budget.html"
+    ]
+  },
+  {
+    "budget": 16,
+    "exit": 0,
+    "stdout": "ready\nframe-one\n",
+    "stderr": "",
+    "command": [
+      "build/ws074-20261018/q16/preflight/browser",
+      "--run",
+      "--settle-ms=16",
+      "--font=userland/desktop/fonts/Mahora-Regular.ttf",
+      "--mono-font=userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+      "--fallback-font=userland/desktop/fonts/DroidSansFallbackFull.ttf",
+      "build/ws074-20261018/q16/budget.html"
+    ]
+  },
+  {
+    "budget": 32,
+    "exit": 0,
+    "stdout": "ready\nframe-one\nframe-two\n",
+    "stderr": "",
+    "command": [
+      "build/ws074-20261018/q16/preflight/browser",
+      "--run",
+      "--settle-ms=32",
+      "--font=userland/desktop/fonts/Mahora-Regular.ttf",
+      "--mono-font=userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+      "--fallback-font=userland/desktop/fonts/DroidSansFallbackFull.ttf",
+      "build/ws074-20261018/q16/budget.html"
+    ]
+  },
+  {
+    "budget": 200,
+    "exit": 0,
+    "stdout": "ready\nframe-one\nframe-two\nlate\n",
+    "stderr": "",
+    "command": [
+      "build/ws074-20261018/q16/preflight/browser",
+      "--run",
+      "--settle-ms=200",
+      "--font=userland/desktop/fonts/Mahora-Regular.ttf",
+      "--mono-font=userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+      "--fallback-font=userland/desktop/fonts/DroidSansFallbackFull.ttf",
+      "build/ws074-20261018/q16/budget.html"
+    ]
+  },
+  {
+    "name": "repeat-frame",
+    "exit": 0,
+    "stdout": "tick 1\ntick 2\n",
+    "stderr": "",
+    "seconds": 0.03780042100697756,
+    "command": [
+      "build/ws074-20261018/q16/preflight/browser",
+      "--run",
+      "--settle-ms=32",
+      "--font=userland/desktop/fonts/Mahora-Regular.ttf",
+      "--mono-font=userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+      "--fallback-font=userland/desktop/fonts/DroidSansFallbackFull.ttf",
+      "build/ws074-20261018/q16/repeat-frame.html"
+    ]
+  },
+  {
+    "name": "zero-repeat",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "browser: cannot run build/ws074-20261018/q16/zero-repeat.html: Connection timed out\n",
+    "seconds": 0.058339708019047976,
+    "command": [
+      "build/ws074-20261018/q16/preflight/browser",
+      "--run",
+      "--settle-ms=32",
+      "--font=userland/desktop/fonts/Mahora-Regular.ttf",
+      "--mono-font=userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+      "--fallback-font=userland/desktop/fonts/DroidSansFallbackFull.ttf",
+      "build/ws074-20261018/q16/zero-repeat.html"
+    ]
+  }
+]

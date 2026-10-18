@@ -1,0 +1,46 @@
+{
+  "test_id": "/plain.html",
+  "outcome": "pass",
+  "returncode": 0,
+  "timed_out": false,
+  "image": {
+    "file": "/home/awe/zedBSD-claude1/build/ws074-crash-controls/retained-y0id44jb/plain.ppm",
+    "size": [
+      64,
+      64
+    ],
+    "sha256": "5fa7322d8c86268e377fefded0494a5e812ef7b42dacc70f552da777ed69b198"
+  },
+  "readiness": {
+    "status": "ready",
+    "complete": [
+      {
+        "nonce": "control-plain",
+        "reply": [
+          "http://127.0.0.1:34191/plain.html",
+          "complete",
+          []
+        ],
+        "ready_state": "complete"
+      }
+    ],
+    "errors": [],
+    "invalid": []
+  },
+  "nonce": "control-plain",
+  "stdout": "",
+  "stderr": "console: WPT_CRASH_READY {\"nonce\":\"control-plain\",\"reply\":[\"http://127.0.0.1:34191/plain.html\",\"complete\",[]],\"ready_state\":\"complete\"}\n",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-20261018/q16/preflight/browser",
+    "--render",
+    "--async",
+    "--settle-ms=500",
+    "--output=/home/awe/zedBSD-claude1/build/ws074-crash-controls/retained-y0id44jb/plain.ppm",
+    "--width=64",
+    "--height=64",
+    "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+    "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+    "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+    "http://127.0.0.1:34191/plain.html"
+  ]
+}

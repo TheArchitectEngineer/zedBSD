@@ -1,0 +1,19 @@
+<!doctype html><meta charset="utf-8">
+<style>@font-face { font-family: FrameReady; src: url(../../../../userland/desktop/fonts/Mahora-Regular.ttf) format('truetype'); } #target { font-family: FrameReady; width:20px; height:10px; }</style>
+<div id="target">font</div><script>
+addEventListener('load',function(){
+    var set=document.fonts, ready=set.ready;
+    console.log('same-set',set===document.fonts);
+    console.log('same-ready',ready===document.fonts.ready);
+    console.log('is-promise',ready instanceof Promise);
+    ready.then(function(value){
+        console.log('ready',value===set);
+        requestAnimationFrame(function(){
+            document.getElementById('target').style.width='30px';
+            console.log('frame-one');
+            requestAnimationFrame(function(){console.log('frame-two',document.getElementById('target').getBoundingClientRect().width);});
+        });
+    });
+    console.log('subscribed');
+});
+</script>

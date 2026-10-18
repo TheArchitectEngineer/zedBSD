@@ -661,7 +661,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p206](phase206/phase.md) | Interop 2025 Flex残3回帰 | cleared / q1059後続証拠で3 ID local PASS | p190 q1056旧8回帰・p205 gap5回復 |
 | [ws074-p207](phase207/phase.md) | Interop 2025 縦textarea小数差 | cleared / q1059固定1 ID差0 | p206 q1058残198差画素 |
 | [ws074-p208](phase208/phase.md) | Interop 2025 Flex base/hypothetical分離 | cleared / q1061固定回帰1 ID差0 | p190 q1060新規FAIL・p206 Flex分配 |
-| [ws074-p209](phase209/phase.md) | Interop 2025 Document FontFaceSet.ready 初期完了 | uncleared / q1065初期ready部分scope cleared | p189 q1064 CSS Grid 280 no_completion |
+| [ws074-p209](phase209/phase.md) | Interop 2025 Document FontFaceSet.ready 初期完了 | uncleared / q16 producer preflight14/15・p253待ち、q1065部分cleared | p189 q1064 CSS Grid 280 no_completion |
 | [ws074-p210](phase210/phase.md) | Interop 2025 CSS Grid WPT SIGSEGV | cleared / q1067通常・ASan completion | p189 q1066再現process_error |
 | [ws074-p211](phase211/phase.md) | Interop 2025 CSS Grid inline-axis self alignment | cleared / q1070 LTR基本配置・関連静的旧PASS維持 | p189 q1068・p190 q1062 fixed baseline |
 | [ws074-p212](phase212/phase.md) | Interop 2025 CSS Grid horizontal RTL alignment | cleared / q1071代表WPT18/18・静的旧PASS維持 | p211 q1070 LTR出力 |
@@ -699,6 +699,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p250](phase250/phase.md) | computed fit-content bound | cleared / q14 computed own criteria | p246 scalar output、q12 raw、q13 runner |
 | [ws074-p251](phase251/phase.md) | linear calc zero percentage type | cleared / q14 direct linear type | q12/q13 raw、precode Chrome |
 | [ws074-p252](phase252/phase.md) | flex-basis grammar/computed・non-replaced content base | planned / Queue未選定 | p240/p241残り、q14 final output待ち |
+| [ws074-p253](phase253/phase.md) | ordinary attribute mutation records | planned / Queue未選定 | p209 q16 preflight、p242 observer model |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 
@@ -1200,3 +1201,7 @@ Event ws074-q15-crash-readiness-selected-20261018: [p190](phase190/phase.md)をr
 Event ws074-p190-q15-i01-cleared-20261018: [p190 retention証拠](phase190/evidence/20261018-q15-i01/README.md)。i01部分cleared・正式crash増分0。artifact/hash/checkpointのverified outputでi02 strict waitを開始、Phase/WS whole未達と共有projection pendingを保持。
 
 Event ws074-q15-i02-uncleared-and-p209-redesign-20261018: [p190 q15](phase190/evidence/20261018-q15-i02/README.md)はparser8 pass/native positive6 FAILでi02 uncleared。fixed48未実行/正式PASS増分0、i01 retained artifactsはcleared。原因producerの[p209](phase209/phase.md)へpost-font eligible tasksを同じbudgetで処理する設計を追加し、p209 verified preflight → p190全controls → fixed48を明記。origin/foreign両Phaseへevent配送、q1065/q15履歴/1330固定PASSは保持。次Queue候補はnative producerとstrict48再試行、p252はその後。共有projection pending。
+
+Event ws074-q16-native-producer-selected-20261018: [p209](phase209/phase.md)のpost-font eligible tasksと[p190](phase190/phase.md) strict48再検証を最大90分Queueで選定。q15 archive/d2cee8244 read-back済み。native preflight → controls → actual48を守り、元budget/ABI/WPT protocolを維持。global1491/static1561のlatest verified rawでold whole491/839を比較。両Phaseへ自身のdesign/resume eventを配送、full APIs/WS100%と共有projectionはpending。
+
+Event ws074-q16-uncleared-p253-added-20261018: [q16証拠](phase209/evidence/20261018-q16/README.md)。producer独立7行/budget6/DOM34/C/Acidは通るが全15は14/15、attribute MutationObserver未対応で両item uncleared（i02 unstarted）。global1491/static1561はcombined final sourceへpendingとしてskipped、last verified1330/3805はq14でありcurrent candidate全体を未検証で維持としない。[p253](phase253/phase.md)を追加しp209/p190/p242へ自身の変更・再開条件を配送。q16 limited output → attributes → p209新attempt/control/global → actual48を新Queue候補とする。共有projection pending。

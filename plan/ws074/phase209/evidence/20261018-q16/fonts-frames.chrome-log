@@ -1,0 +1,8 @@
+[719189:719189:1018/135616.364807:WARNING:sandbox/policy/linux/sandbox_linux.cc:405] InitializeSandbox() called with multiple threads in process gpu-process.
+[719146:719146:1018/135616.678408:WARNING:ui/base/idle/idle_linux.cc:111] None of the known D-Bus ScreenSaver services could be used.
+[719146:719146:1018/135616.919082:INFO:CONSOLE:6] "same-set true", source: file:///home/awe/zedBSD-claude1/plan/ws074/tests/dom/fonts-ready-frames.html (6)
+[719146:719146:1018/135616.919211:INFO:CONSOLE:7] "same-ready true", source: file:///home/awe/zedBSD-claude1/plan/ws074/tests/dom/fonts-ready-frames.html (7)
+[719146:719146:1018/135616.919269:INFO:CONSOLE:8] "is-promise true", source: file:///home/awe/zedBSD-claude1/plan/ws074/tests/dom/fonts-ready-frames.html (8)
+[719146:719146:1018/135616.919313:INFO:CONSOLE:17] "subscribed", source: file:///home/awe/zedBSD-claude1/plan/ws074/tests/dom/fonts-ready-frames.html (17)
+[719146:719146:1018/135616.922144:INFO:CONSOLE:10] "ready true", source: file:///home/awe/zedBSD-claude1/plan/ws074/tests/dom/fonts-ready-frames.html (10)
+[719146:719146:1018/135616.926661:INFO:CONSOLE:13] "frame-one", source: file:///home/awe/zedBSD-claude1/plan/ws074/tests/dom/fonts-ready-frames.html (13)

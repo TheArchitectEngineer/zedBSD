@@ -6,10 +6,9 @@
  */
 
 /*
- * The view (the component's interface, <browser/browser.h>): the page shown and
- * its session history, the page
- * being fetched, the scroll, the page's clock and the network, moved out
- * of the window (ws074-p054).  A file or data: page is read at once; an
+ * The view owns the page shown, its session history, an in-flight load,
+ * the scroll, the page's clock and the network through <browser/browser.h>.
+ * A file or data: page is read at once; an
  * http or https page after the first is fetched without blocking, and the
  * page shown stays until it has arrived (BROWSER_FETCH_DEFAULT; the other
  * ways of fetching read every page at once, or fetch the first one too).
@@ -24,15 +23,15 @@
  * parser-blocking scripts (<script src>) on the web: they are fetched
  * through the loader first, and the page is made once they all ended, so
  * that the parser finds them instead of reading each at once and blocking
- * the caller's window while the network works (BUG-207).
+ * the caller's window while the network works.
  *
- * The caller's input (ws074-p056) goes to the page as DOM events
+ * The caller's input goes to the page as DOM events
  * (page/input.c); the view does the default actions the page's scripts
  * leave uncanceled: scrolling, following a link clicked or activated with
  * Enter, moving the focus with Tab, and the history's, reloading's and
  * stopping's keys and buttons.
  *
- * ws081-p006: the caller may also place the scroll itself (a touch
+ * The caller may also place the scroll itself (a touch
  * screen's scroller, which glides after a flick), learn how far the page
  * scrolls, and have the content drawn shifted past an end of the document
  * (the overscroll of a rubber band), the gap showing the page's canvas.
@@ -64,6 +63,9 @@
 
 /* How many of the loader's descriptors a headless settle polls at most. */
 #define VIEW_POLL_MAX		64U
+
+/* The most layout/checkpoint passes used to drain work released by initial font settlement. */
+#define VIEW_SETTLE_ROUNDS 32U
 
 /* How many of the caller's image views the view keeps a framebuffer for (a swapchain's images, and a few more). */
 #define VIEW_FRAMEBUFFERS_MAX	8U
@@ -139,7 +141,7 @@ struct browser_offscreen {
 
 /*
  * One parser-blocking script fetched before its document is parsed
- * (BUG-207): the view it is for, its location, its request (NULL once it
+ *: the view it is for, its location, its request (NULL once it
  * ended), how it ended (0, or an errno value) and the bytes it brought.
  */
 struct view_prefetch_script {
@@ -199,7 +201,7 @@ struct browser_view {
 	size_t pending_index;
 	/*
 	 * The document that arrived and waits for its parser-blocking scripts
-	 * (BUG-207): its bytes and final URL (NULL when none waits), the
+	 *: its bytes and final URL (NULL when none waits), the
 	 * scripts fetched ahead (struct view_prefetch_script *) and how many
 	 * of them have not ended.  pending_path and the history's step stay
 	 * the page's until it is shown.
@@ -1417,39 +1419,78 @@ browser_view_settle(
 	double budget,
 	unsigned flags)
 {
+	double due;
+	unsigned rounds;
+	int found;
+	int settled;
 	int error;
 
-	/* The page being fetched, if any, arrives or fails. */
-	view_settle_network(view);
-	if (view->page == NULL)
-		return ENOENT;
+	/* Drains each task batch before laying out and releasing its font-ready reactions. */
+	settled = 0;
+	for (rounds = 0; rounds < VIEW_SETTLE_ROUNDS; rounds++) {
+		/* The current page may change while queued native responses are delivered. */
+		view_settle_network(view);
+		if (view->page == NULL)
+			return ENOENT;
 
-	/* The page's timers, on the virtual clock. */
-	error = page_settle(view->page, budget);
-	if (error != 0)
-		return error;
+		/* Every pass uses the original absolute virtual deadline, never another budget. */
+		error = page_settle(view->page, budget);
+		if (error != 0)
+			return error;
 
-	/* A script waiting for fonts also needs the first completed layout. */
-	if ((flags & BROWSER_SETTLE_LAYOUT) == 0U && view->page->document->font_set == NULL)
-		return 0;
+		/* A task that removed the page leaves nothing to lay out or report as settled. */
+		if (view->page == NULL)
+			return ENOENT;
 
-	/* The layout, which asks for the page's images. */
-	error = view_update(view);
-	if (error != 0)
-		return error;
+		/* Ordinary script-only callers retain the existing path without forced layout. */
+		if ((flags & BROWSER_SETTLE_LAYOUT) == 0U && view->page->document->font_set == NULL) {
+			settled = 1;
+			break;
+		}
 
-	/* The images that arrive, and the layout again with them. */
-	view_settle_network(view);
-	error = view_update(view);
-	if (error != 0)
-		return error;
-	if (view->page->document->font_set != NULL) {
+		/* The first layout requests the images and fonts its boxes need. */
+		error = view_update(view);
+		if (error != 0)
+			return error;
+
+		/* Newly arrived resources are reflected before the initial font promise is observed. */
+		view_settle_network(view);
+		error = view_update(view);
+		if (error != 0)
+			return error;
+
+		/* Resource delivery can also replace or remove the page. */
+		if (view->page == NULL)
+			return ENOENT;
+
+		/* A page without a FontFaceSet has no font-ready reactions to release. */
+		if (view->page->document->font_set == NULL) {
+			settled = 1;
+			break;
+		}
+
+		/* Runs the ready promise's jobs without resolving that promise before layout. */
 		error = bind_checkpoint(view->page->window);
 		if (error != 0)
 			return error;
+
+		/* A reaction may have navigated away from the page just laid out. */
+		if (view->page == NULL)
+			return ENOENT;
+
+		/* Only work still inside the caller's original bound starts another layout pass. */
+		found = page_next_timer(view->page, &due);
+		if (!found || due > budget) {
+			settled = 1;
+			break;
+		}
 	}
 
-	/* Succeeded: the page is at rest. */
+	/* Eligible work surviving the pass bound is explicitly incomplete. */
+	if (!settled)
+		return ETIMEDOUT;
+
+	/* Succeeded: no released font-ready work remains within the original deadline. */
 	return 0;
 }
 
@@ -2254,7 +2295,7 @@ view_start_load(
 /*
  * The loader's callback for the page being fetched: a response becomes the
  * page shown (at its final URL, after redirects), once the parser-blocking
- * scripts it names were fetched (BUG-207); a failure is reported and the
+ * scripts it names were fetched; a failure is reported and the
  * page shown stays.
  */
 static void
@@ -2374,7 +2415,7 @@ view_commit_document(
 
 /*
  * Starts fetching the parser-blocking web scripts a document names
- * (BUG-207), keeping the document until they end.  prefetch_waiting says
+ *, keeping the document until they end.  prefetch_waiting says
  * how many were started (none: the document need not wait).  Returns 0,
  * or ENOMEM.
  */
@@ -2710,7 +2751,7 @@ view_clamp_scroll(
 	if (view->scroll_y < 0)
 		view->scroll_y = 0;
 
-	/* The page's scripts see where the view is (ws074-p031). */
+	/* The page's scripts see where the view is. */
 	page_set_scroll(view->page, 0.0, layout_to_px(view->scroll_y));
 }
 
@@ -3017,7 +3058,7 @@ view_changed(
 	if (view->page == NULL)
 		return;
 
-	/* A scroll the scripts asked for (ws074-p082) is the view's, drawn again. */
+	/* A scroll the scripts asked for is the view's, drawn again. */
 	if (view->page->scroll_requested) {
 		view->page->scroll_requested = 0;
 		view->scroll_y = layout_from_px((float)view->page->scroll_y);

@@ -2,7 +2,7 @@
 
 # ws074-p209: Document FontFaceSet readiness
 
-Status: uncleared（q1065有限部分scope cleared、whole API未達）
+Status: uncleared（q16 required attributes control/global未達、p253前提待ち）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -29,3 +29,15 @@ Event ws074-p209-q1065-outcome-20261014: 初期`document.fonts` SameObjectと`re
 既存初期readyの解決条件を早めず、native headless settleでlayout/font checkpoint後のeligible tasksを同じ絶対budget内で再処理するfinite producer修正を候補とする。public browser ABIとWPT/runner待機条件は不変、無限RAF/interval/zero budget/child/view lifetime/DOM mutationを明示検証しbounded exhaustionは成功にしない。sourceはlibbrowser/view/view.c中心、C全文/Guardrail/browser standard適用。独立fonts.ready→RAF2、q1065 initial SameObject/order、p190全controlsと固定harness1491/static1561のlatest verified baselineを照合する。新Queue選定までsource生成しない。
 
 Event ws074-p209-post-font-tail-redesign-20261018: p190の具体的prerequisite不足を本producerへ接続。old q1065初期readiness partial clearedとfull API未達は保持。p209 verified native tail output → p190 strict48 revalidationというscoped output dependencyを追加。native code修正/pumpの全体gateが実際に検証されるまで本Phase全体やp190をclearしない。
+
+## q16-i01 選定（2026-10-18 13:55 JST）
+
+90分/15:25 JSTまで。browser_view_settleを生成範囲としてC全文を適用し、root FontFaceSetのlayout/checkpointで追加されたeligible timersを同じpage_settle absolute budgetへ戻す。再layout/network/checkpointでdirty DOMを反映し、outer loopはbounded、pageの消失/置換にborrowed pointerを残さない。既存no-font branchのcall orderとfont ready解決条件、public API signature/flagsは維持する。管理ID commentをtouched sourceから除く。
+
+独立fonts.ready→2RAF/DOM mutation、budget0/16/32とlate timer、有限/infinite RAF・zero interval、q1065両initial fixture、strict15 controls、全DOM/CSSOM・host/target warning0/C全文format19/Acidを確認。q14 verified full1491/static1561をbeforeとし、old whole491/839 PASS維持・全callbackの名前/追加/欠落/遷移を診断、own timing contract未達ならunclearedで止める。p190は全controls成立というscoped output後にactual48を開始できるが、両terminal結果は同じfinal pairを使用。未達full FontFaceSet/dynamic API/target/WS/p100は保持。
+
+Event ws074-p209-q16-selected-20261018: q15 source/API証拠とqueue archive read-back後にuser autonomyを適用。q16 exact scope/criteria/deadlineをQueueへ保存、native producerだけを修復しrunnerの待機を省略しない。p190へneeded output/verification/resumeを配送。
+
+Event ws074-p209-q16-uncleared-20261018: [q16証拠](../phase209/evidence/20261018-q16/README.md)。post-font native producerは独立7行/budget6・oldfont2/DOM34/host-target/C/Acidを確認したが、strict全15は14/15でattributes observerが未対応。q16-i01はrequired controls/global未達でuncleared、i02はunstarted scoped item uncleared・fixed48本実行無し。全1491/static1561 gateはknown prerequisiteを直すcombined final sourceへpendingとしてskipped。last verified1330はq14 sourceの結果で、current candidate全体は未判定。
+
+Event ws074-p253-attribute-redesign-from-q16-20261018: [p253](../phase253/phase.md)へordinary attributesのgeneric native notificationを分離。p209 q16 verified preflight → p253 attributes → 全15control/p209新attempt global gate → p190 actual48というscoped output順で再開する。origin/foreignの自身のscope/verification/resumeを記録、q15/q16uncleared履歴とinitial ready/childListの過去partialを保持。新Queue選定まで属性sourceを生成しない。
