@@ -2,11 +2,11 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: uncleared（q34 DefineOwnProperty partial cleared、whole Proxy未達）
+Status: in-progress（q35 receiver-aware Set partial、q30〜q34 verified）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
-Queue: ws074-q20261018-34-i01（q30〜q33 partial cleared履歴保持）
+Queue: ws074-q20261018-35-i01（q30〜q34 partial cleared履歴保持）
 Origin: p189/q29 original WebIDL2 parseがProxy未定義で停止。
 
 Objective / own criteria: native managed Proxyを実object internal methodsへ接続し、constructor/revocableと各internal operationのtrap/fallback/invariant/receiver/revocation/callability/GCを正しく実行する。original WebIDL2 actual parse/validatorに必要なget/set/array behaviorを通常APIで提供し、independent controls/原WPTを通す。部分read stageだけでwholeをclearしない。
@@ -80,3 +80,5 @@ source WIPbbddda9c2、最終整形後に再buildしたimmutable pair/source hash
 focused gatesのみで全1508はq31、static/scripted/strictはq28原証拠再利用。q34全件同値/whole PASS増分は未測定。確認済1482/3805（38.948752%）・held0・未attempt275を維持。i01 Define partialだけcleared、whole p258はSet/keys/prototype/extent/IsArray/call/construct/global constructor/revocable/元WebIDL2未達でuncleared。private callable/Proxy target拒否とglobal Proxy非公開維持、full target/p100/WS100%未達。共有Master/Queue/next/cache/GitHub投影pending、push無し。
 
 [全証拠](evidence/20261018-q34/README.md)。次finite Queueでreceiver-aware Setとfallback/strict behaviorを具体化する。
+
+Event ws074-p258-q35-selected-20261018: GetOwn/Define verified後、original receiverを保つordinary/array fallbackとProxy Setをprivate partialとして具体化。TypedArray Setはnumeric same/different receiver/OOB/conversionの独立exotic規則があり、ordinaryと同一視せずnew APIではENOTSUP・global公開の残件へ明示。既存ordinary vm_set/primitive/prototype routingを先取り変更せずdirect Proxy baseだけ接続する。exact scope/max90分はq35 Queue、whole Set/p258未達。

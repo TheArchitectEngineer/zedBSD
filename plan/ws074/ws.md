@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [ws074-q20261018-34](queue.md) finished（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+Queue: [ws074-q20261018-35](queue.md) active（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
 
 Latest verified（q34）: 既存realm-aware vm_define_own_propertyへProxy分岐を追加。dynamic defineProperty GetMethod/null fallback、handler this・元target/string-or-symbol key/partial From objectの3引数、ToBoolean false時はtarget descriptorを読まずdone0。true時だけpost-trap target descriptor/extensibilityと元input descriptorを検証し、new/非拡張/fixed/explicit configurable:false・fixed writable:false・SameValue/accessor/data互換性を正規順で適用する。trapへ渡すrepresentationが変更されても、元input fieldsとpayloadを保持。元target/handlerはrevoke後も使用し、native property depthを全normal/abrupt終了で復帰する。 既存ordinary/array/native hook bodyは新Proxy分岐を除いて全C tokens同一を証明。engine変更はaccess.cだけ、VM header/native_operations/JS moduleは不変。fixture-only Boolean bridgeはReflect相当のtarget→key→ToDescriptor順で実VM Defineを呼び、fresh symbol keyをdescriptor getter GCから保持。通常Object.definePropertyの成功は元Proxy/falseはTypeErrorを独立対照した。 同じ182条件がnative/Chromium genuine Proxy/Reflectで全件一致、old135 source prefixはbyte同一。partial presence/属性/順、false/truthy、fixed NaN/符号付き0、trap後のtarget変更、representation変異/revoke/fresh key/accessor/value GC/有界再帰を確認。nativeでは保守的C stack保持を無効にし、Define trapがrepresentation.valueを削除してreturnした後のnative target hook内で実GC、元C descriptorだけが保持するsole fresh payloadの生存を確認。managed bare realmはGet/Has/GetOwn/Defineの4回のtarget hook GCで生存し、false Define時はhook未実行。最終root解放後にrealm/Define入力/GetOwn出力の各payloadが実回収される。q32 From pressure/absent slot実回収対照も維持。 source WIPbbddda9c2、最終整形後に再buildしたimmutable pair/source hash317件を照合。host warning0・q02 exact access1 source target compile warning0。full new/changed Cの許可forward shared cleanup74・他0、3+条件の分割を含めmanual review。DOM41、VM45/factory56、CSSOM12+12、marks7/observer10/ErrorEvent9/ErrorReporting19/delegation10通過。Acid3 score/inventory100・pixel0、Acid2既存差873。archive50 membersを全read-back、sha256a0a709b71a0ff80624507ab6b71c86eb5837fafc67805fbda04d33fe39999899。 focused gatesのみで全1508はq31、static/scripted/strictはq28原証拠再利用。q34全件同値/whole PASS増分は未測定。確認済1482/3805（38.948752%）・held0・未attempt275を維持。i01 Define partialだけcleared、whole p258はSet/keys/prototype/extent/IsArray/call/construct/global constructor/revocable/元WebIDL2未達でuncleared。private callable/Proxy target拒否とglobal Proxy非公開維持、full target/p100/WS100%未達。共有Master/Queue/next/cache/GitHub投影pending、push無し。
 
@@ -706,7 +706,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p255](phase255/phase.md) | PerformanceObserver native mark登録・queue・task配信 | uncleared / q28 Window consumer/failure/held partial cleared・whole残り | p254 verified native mark output |
 | [ws074-p256](phase256/phase.md) | Window ErrorEvent・uncaught harness fidelity | uncleared / q28 runtime/inline source partial cleared・external/syntax等残り | 既存Event/Window/VM→p255再評価 |
 | [ws074-p257](phase257/phase.md) | synchronous generator yield* delegation | cleared / q29 sync own criteria・Chrome38/native GC10 | q28 VM/GC・p189 pinned WebIDL2 |
-| [ws074-p258](phase258/phase.md) | native Proxy internal methods・GC/revocation | uncleared / q34 DefineOwnProperty partial cleared・native/Chrome182/GC | q29 VM/GC・p189 actual Proxy blocker |
+| [ws074-p258](phase258/phase.md) | native Proxy internal methods・GC/revocation | in-progress / q35 receiver-aware Set partial・q30〜q34 verified | q29 VM/GC・p189 actual Proxy blocker |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 
@@ -1311,3 +1311,5 @@ Event ws074-q33-finished-20261018: p258 GetOwnProperty partial clear、公開Obj
 Event ws074-q34-selected-20261018: p258 DefineOwnProperty partialをmax90分で選定、genuine Chrome/元descriptor保持/実GCを検証。shared boards pending、whole Proxy/global公開/WS100%未達維持。
 
 Event ws074-q34-finished-20261018: p258 DefineOwnProperty partial clear、元partial descriptor保持/invariant・native/Chrome182一致・実GC/回収・focused gates確認。1482/3805はq31/q28原証拠再利用、whole Proxy/global公開/WS100%未達。[history](history/ws074-q20261018-34.md)。共有投影pending。
+
+Event ws074-q35-selected-20261018: p258 Set ordinary/Proxy partialをmax90分選定。TypedArray専用Set/通常prototype assignment routingは別scope/global公開残件。whole p258/WS100%未達、shared projections pending。
