@@ -1,5 +1,9 @@
 # WS074 lane の Past Log
 
+## ws074-q20261018-41（2026-10-18）
+
+[履歴](ws074-q20261018-41.md)。Proxy DeleteProperty/operator partial clear、406対照・4 GC modes/sole never-stored Symbol含む全5実回収。false hook省略/ordinary委譲/errno保持。初回shape-cache保持のfixtureを修復、原raw保持。focused/元parser保持、1482/3805、global/whole未達・共有投影pending。
+
 ## ws074-q20261018-40（2026-10-18）
 
 [履歴](ws074-q20261018-40.md)。Proxy IsExtensible/PreventExtensionsとpublic2 wrappers partial clear、372対照/4 GC modesで元participants保持と実回収、pure native拒否/errno保持。focused gates/元parser維持、1482/3805。remaining/global/p100未達、共有投影pending。
@@ -119,9 +123,5 @@ Follow-up: q23 i01/i02 clearanceは疎checkoutのIDL未配信が判明しunclear
 ## ws074-q20261018-12（2026-10-18）
 
 [履歴](ws074-q20261018-12.md)。raw retention/zero glyph own criteria cleared。native56/56/text20/20/独立14/14・DOM30/30、zero ink15→0/positive差0。全harness1455 whole489/callback11534、全static1561 whole839維持/後退0、公式whole増分0。補助0→2/3、残りmarginはp249へ。host/target warning0、Acid3差0/Acid2差873。328/413/crash48とtarget/p100等未達。次はplain variant36候補。共有投影pending。
-
-## ws074-q20261018-11（2026-10-18）
-
-[履歴](ws074-q20261018-11.md)。intrinsic/minmax/implicit parser・horizontal min-content修正で独立22/22、Grid whole248維持、static227→228/後退0。callback74改善/24後退はlossy getterが隠したnative animation欠落の露出でq11 uncleared、p248へ計画。DOM29/29、host/target warning0、Acid3差0/Acid2差873。次は独立zero fontとrunner retention。共有投影pending。
 
 以前のindex: [early 2026-10-18](early-20261018.md)。過去standing Queue投影: [原文archive](../queue-archive-through-q30.md)。
