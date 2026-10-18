@@ -1,5 +1,28 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
+# ws074-q20261018-28 / production Window runtime errors・inline source provenance
+
+Status: active（2026-10-18 18:17 JST）
+Owner: このCodex chat単独。
+Approval: [ユーザー自走指示](autonomy.md)をこのfinite partial scopeへ適用。q27 terminal6888a1943/history SHA256d4bde9803389ad90d6efde2932d6b955b86732ca7846ac13cfd61c58181a1e48 read-back。q27 native Event/legacy IDL dispatch・独立28/native GC9・全fixed baselineを実検証済み。
+Timebox: 最大90分（2026-10-18 19:47 JSTまで）。
+
+| Attempt | Phase | Exact scope / criteria | State | Dependencies |
+| --- | --- | --- | --- | --- |
+| ws074-q20261018-28-i01 | [p255](phase255/phase.md) environment declaration conformance partial | environment.cのconstant initializersに必要なforward宣言だけをtable前へ残し、それ以外を全file-scope tables後の通常blockへ移す。宣言multiset/残りtoken/string/host debug除去object全bytes不変、q02 exact environment compile warning0を証明。API/bodyを変更せずq26 dated conformance findingのこの部分だけを解消 | in-progress | q26 helper宣言不備の実source・C全文§2、q27 frozen verified出力 |
+| ws074-q20261018-28-i02 | [p256](phase256/phase.md) runtime report・known inline source partial | VM functionにembedding-owned opaque managed source valueを保持し、通常nested closuresへ継承・trace、actual throw/catch/foreign transferでopaque metadataを保持/解放。explicit throwの同一primitive/undefined再throwでも最初のactual frame sourceを記録。Window binderは実Document URLを持つnative source cellをknown classic inline sourceへ割当て、callback保存後も定義元を保つ。通常production window_report_exceptionからgenuine trusted cancelable ErrorEventをactual Windowへdispatch、元error identity/message/filename/positions、preventDefault/legacy trueによるconsole抑止、後続listener/observer継続、bounded extraction/再入抑止、元pending/trace metadataのroot/save/restoreとreported metadata消費、retired child/GCの安全性を実装。unknown/muted sourceはScript error./empty filename/0/0/nullへredactし、Promise rejectionを通常errorに混同しない。independent Chrome/native known inline classic/timer/microtask/ordinary callback、fake global constructor/dispatchの非依存、再入/throw/GC/retired child lifetime、official harness timer-only negative非PASS・positive PASSを確認。final source/full C conformance/host warning0/target exact7source warning0、全1508/1561/413/48・DOM/CSSOM/producer/observer/ErrorEvent/Acidを検証し旧PASS後退を解消、全raw/hash保存 | pending | q27 genuine Event/Window/VM verified named outputs・primary HTML error algorithm。i01 wholeをruntime前提としない |
+| ws074-q20261018-28-i03 | [p255](phase255/phase.md) callback failure fidelity・held case revalidation partial | i02通常runtime error output後、q26と同じ原JS/official harness/reportによるObserver intentional assertion negativeが必ず非PASS、正常future-only positiveがPASS、independent prior/future各1・futureだけ実通知を確認。原held WPTを再測定し真に条件を満たす場合だけ既知held1を解除。新whole gainsはAPI/prerequisite実出力を個別監査し、未実装に依存する偽PASSはcertifyしない。q26元uncleared履歴を保持しnew attempt outcome/verified scoreを記録 | pending | i02 runtime error/harness negative、i01 declaration output、final pair/full gates |
+
+Dependency graph（attempt/output単位）: q27 native Event/Window → i02 runtime output → final frozen pair/full gates → i03 callback/held revalidation。i01 declaration-only output → final conformance gate/i03。p255 whole→p256 wholeという逆依存は作らず、i01はruntime outputに依存しない。全項目逐次・同一Phaseのconcurrent attempt無し。
+Generation bounds: engine既存bind/environment.c（i01宣言順だけ）、bind/window.c/internal.h/bind.h/document.c、page/script.c、vm/vm.h/function.c/realm.c/interpreter.c、tests/dom/error-reporting.html/.expected、tests/host-error-reporting.cとWS074記録のみ。新module/public browser ABI2/Wayland/SDK/sysroot/toolchain/runner/WPT/manifest/固定期待値/共有Board/cacheを変更しない。VMはHTML/origin規則を解釈せずopaque valueを継承/traceするだけ。HTML source cell/disclosure規則はbindingが所有。bytecode modelを生成後に書換えずJS compiler API/emitを変更しない。
+Source bounds: known inlineのparser/dynamic/child document streamをactual Document URLで識別。external/CORS/redirect/eval/Function/module/workerのverified provenanceは今回は未実装でunknownとして情報を伏せ、same-origin外部sourceやlatest full-spec適合を主張しない。syntax EINVAL/unsupported/internal failureの既存console経路、reportError API、legacy content attribute named parameter compiler、PromiseRejectionEventは今回実装しない。これらをwhole p256/p255/WS受入から消さない。
+Standards / verification: Guardrail/C全文/browser component全文を直接適用、簡約版無し。new/changed source scopeのfull manualとformat19/checker、許可されたsingle forward cleanupのraw flagsを別記し、未変更legacy全体はp100へ保持。targetはq02のenvironment/window/document/page-script/vm-function/vm-realm/vm-interpreter exact single-source commandの-oのみ変更。host buildは完了確認して単独実行し、final format/manual後にunique pairをfreeze。heavy full corpusはharness→static→scripted→strictの順に直列実行し、q27で見たCPU contention timeoutの再発リスクを抑える。同一budget20秒/settle5000を維持する。
+Bounds: metadataのprivacy/GC/原exception/negative controlのどれかが未達ならaffected attempt unclearedとresumeを保存。unknownを既知originと推測せず、consoleからrunner判定を書換えない。held1や新gainを先取り加算しない。未解消後退/90分到達なら終了、p100/full target/whole Phases/WS100%は別の未達を保持。push/削除/make check/QEMU無し。
+Upcoming Work Outlook: runtime errorの実出力→held再評価、外部source/CORS・syntax/handler残差、VM yield*、未attempt275、layout/API/target/p100。
+
+---
+<!-- awesome-plan project=zedbsd record=queue -->
+
 # ws074-q20261018-27 / genuine native ErrorEvent constructor・Window.onerror dispatch
 
 Status: finished（2026-10-18、i01 scoped partial cleared）
