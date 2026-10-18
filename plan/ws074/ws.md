@@ -1254,3 +1254,5 @@ Event ws074-q23-finished-20261018: [exact history](history/ws074-q20261018-23.md
 
 
 Event ws074-q23-clearance-invalidated-idl-20261018: q23 terminal17cd21137後のauditで、event-timing/storage-accessの2 IDが正規Gitにあるinterfaces/*.idlを疎checkout不在で404とし、idl_test setupで失敗していた。[proof](phase189/evidence/20261018-q23-followup/missing-idl-proof.json)。generated資源の忠実性基準未達のためq23 i01/i02のclearanceをinvalidateしcurrent attemptをunclearedへ訂正。old1491同値/他15入力/原report・原Outcome・全artifactを保持、Native bug修正やfalsePASS holdbackの解除とはしない。確認済み1481は不変。新finite QueueでGit原本のmissing IDL GETを提供・独立wire/expected404を検証→2 ID/全1508再確認して再開する。p254 native producerはそのverified baseline後へ延期、まだ未実装。shared projection pending。
+
+Event ws074-q24-selected-20261018: q23 IDL input不足を訂正するp189新finite Queue q24（17:51 JSTまで）を開始。Git原IDL配信と独立wire検証→2 ID/全1508再確認。p254 native producerの着手はこの検証後。共有投影pending。

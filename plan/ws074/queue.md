@@ -1,5 +1,25 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
+# ws074-q20261018-24 / missing pinned IDL provider correction
+
+Status: active
+Owner: このCodex chat単独。
+Approval: [ユーザー自走指示](autonomy.md)を以下の有限scopeへ適用。訂正WIP8b98b77ba、q23 dated history SHA25657b32c72d48f4d6045efbb77a7931196b233c1569eac823be26aacbe368362a2をread-back。
+Timebox: 最大60分（2026-10-18 17:51 JSTまで）。
+
+| Attempt | Phase | Exact scope / criteria | State | Dependencies |
+| --- | --- | --- | --- | --- |
+| ws074-q20261018-24-i01 | [p189](phase189/phase.md) missing IDL GET provider partial | generated専用HTTP providerでphysical不在のinterfaces/*.idlだけを固定WPT Git blobから原bytes/MIMEで配信。Git側隣接header/templateの不在を検証し未対応metadataは非PASS。query維持/原hash/provenanceを記録、Gitに存在する未配信資源をinput不足として識別。wireの原IDL/query/本物404と既存13+分類5 controlsを確認。WPT root/Git/native APIを変更しない | in-progress | q23訂正・原reports/pinned Git/headers contract |
+| ws074-q20261018-24-i02 | [p189](phase189/phase.md) corrected input census partial | IDL2件の全dependency取得とsetup fetcherror解消を確認後、同じq21 frozen pair/fonts/settle5000/process20で全1508を測定。旧1491全whole/callback/status/order/message同値、新17全入力とIDL原hash、全raw・source・count・eligible digestを照合/保存。holdback1を解除せず確認済1481から実証済みだけ集計 | pending | i01実wire/native controls |
+
+Dependency graph: q23 dated correction → i01 provider/controls → i02 actual IDL2/full1508 → archive/reconciliation。
+Generation bounds: run-interop2025-harness.py/test-interop2025-generated.pyとWS074記録・証拠のみ。Guardrail/既存Python tool規則を適用、専用Python full standard無し。共有Master/Queue/cache/native C/SDK/sysroot/他runner/manifest/期待値を変更しない。static/scripted/crash/DOM/C/Acidはbyte同一q21の証拠を再利用。push/削除/make check/QEMU無し。
+Bounds: prerequisites未達/未解消差異/期限到達時はaffected attempt unclearedと再開条件を保存。原q23結果とinvalidationを保持し過去を成功へ書換えない。whole p189/WS/p100は未達。
+Upcoming Work Outlook: corrected native baseline後p254 mark records→p255 observer、残275環境、layout/VM既知fail、p249/target/p100。
+
+---
+<!-- awesome-plan project=zedbsd record=queue -->
+
 # ws074-q20261018-23 / official plain Window generated17・1508 harness
 
 Status: finished（2026-10-18、IDL前提欠落で両clearance invalidate/uncleared）

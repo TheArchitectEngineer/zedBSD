@@ -2,7 +2,7 @@
 
 # ws074-p189: Interop 2025 testharness 結果取得
 
-Status: uncleared（q23 coverage partial cleared、適格1508/未attempt275・native holdback1）
+Status: uncleared（q23 clearance invalidated、q24 IDL配信訂正中、適格1508/未attempt275・native holdback1）
 
 ## ws074-q20261018-03 結果
 
@@ -340,3 +340,7 @@ Event ws074-q23-finished-20261018: [exact history](../history/ws074-q20261018-23
 
 
 Event ws074-q23-clearance-invalidated-idl-20261018: q23 terminal17cd21137後のauditで、event-timing/storage-accessの2 IDが正規Gitにあるinterfaces/*.idlを疎checkout不在で404とし、idl_test setupで失敗していた。[proof](evidence/20261018-q23-followup/missing-idl-proof.json)。generated資源の忠実性基準未達のためq23 i01/i02のclearanceをinvalidateしcurrent attemptをunclearedへ訂正。old1491同値/他15入力/原report・原Outcome・全artifactを保持、Native bug修正やfalsePASS holdbackの解除とはしない。確認済み1481は不変。新finite QueueでGit原本のmissing IDL GETを提供・独立wire/expected404を検証→2 ID/全1508再確認して再開する。p254 native producerはそのverified baseline後へ延期、まだ未実装。shared projection pending。
+
+## q24 finite scope（2026-10-18）
+
+Event ws074-q24-selected-20261018: [Queue](../queue.md) q24 i01 missing pinned IDL GET原bytes/provenance/metadata fidelity controls→i02 IDL2/全1508、最大60分17:51 JST。native変更無し、旧1491とholdback保持。q23訂正後の新attempt、whole acceptanceは未達。
