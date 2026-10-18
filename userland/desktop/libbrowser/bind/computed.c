@@ -146,6 +146,7 @@ struct computed_ref {
 
 static void computed_trace(struct vm_heap *heap, struct vm_cell *cell);
 static int computed_find(const struct vm_string *name, int *property);
+static int computed_write_grid(struct bind_window *window, struct dom_element *element, int property, struct wb_units *out, int *handled);
 static int computed_write(struct bind_window *window, struct dom_element *element, int property, struct wb_units *out);
 static int computed_write_used(const struct css_style *style, const struct bind_box *box, int found, int property, struct wb_units *out);
 static int computed_write_keyword(const struct css_style *style, int property, struct wb_units *out);
@@ -647,6 +648,7 @@ computed_write(
 	struct css_style *style;
 	struct bind_box box;
 	int found;
+	int handled;
 	int error;
 
 	/* Only active initial children can compute without a primary page host. */
@@ -685,17 +687,109 @@ computed_write(
 	if (property == COMPUTED_DISPLAY)
 		computed_blockify(window, element, style);
 
+	/* Grid template axes resolve from actual track sizing when the host can copy them. */
+	error = computed_write_grid(window, element, property, out, &handled);
+	if (error != 0) {
+		free(style);
+		return error;
+	}
+
+	/* A resolved Grid query already wrote the complete property value. */
+	if (handled) {
+		free(style);
+		return 0;
+	}
+
 	/* Its box, for the used values. */
 	memset(&box, 0, sizeof(box));
 	found = 0;
 	if (window->host.node_box != NULL)
 		found = window->host.node_box(window->host.context, &element->node, &box);
 
-	/* Succeeded: the value, and the style is freed. */
+	/* Serialize the ordinary resolved value before releasing its style copy. */
 	error = computed_write_used(style, &box, found, property, out);
 	free(style);
+	/* A failed property serialization cannot publish a complete value. */
 	if (error != 0)
 		return error;
+
+	/* Succeeded: the ordinary resolved property value is complete. */
+	return 0;
+}
+
+/* Writes a supported Grid template axis from copied actual layout values. */
+static int
+computed_write_grid(
+	struct bind_window *window,
+	struct dom_element *element,
+	int property,
+	struct wb_units *out,
+	int *handled)
+{
+	struct wb_vector sizes;
+	const double *tracks;
+	size_t index;
+	int columns;
+	int found;
+	int error;
+
+	/* Other properties, including grid-auto axes, retain their computed serialization. */
+	*handled = 0;
+	if (property != COMPUTED_GRID_TEMPLATE_COLUMNS && property != COMPUTED_GRID_TEMPLATE_ROWS)
+		return 0;
+
+	/* Hosts without this private query retain the established computed-value behavior. */
+	if (window->host.grid_tracks == NULL)
+		return 0;
+
+	/* The host appends doubles into caller-owned storage instead of returning arena pointers. */
+	wb_vector_init(&sizes, sizeof(double));
+	columns = 0;
+	if (property == COMPUTED_GRID_TEMPLATE_COLUMNS)
+		columns = 1;
+
+	/* Copy one axis from the current final layout. */
+	found = 0;
+	error = window->host.grid_tracks(window->host.context, &element->node, columns, &sizes, &found);
+	if (error != 0)
+		goto cleanup;
+
+	/* Unsupported axes and missing boxes request the ordinary computed fallback. */
+	if (!found)
+		goto cleanup;
+
+	/* Empty Grid axes have no actual tracks and resolve to none. */
+	*handled = 1;
+	if (sizes.count == 0) {
+		error = computed_ascii("none", out);
+		goto cleanup;
+	}
+
+	/* Every explicit and implicit track is serialized independently in logical order. */
+	tracks = sizes.items;
+	for (index = 0; index < sizes.count; index++) {
+		/* Separate adjacent tracks without inventing any extra gap track. */
+		if (index != 0) {
+			error = computed_ascii(" ", out);
+			if (error != 0)
+				goto cleanup;
+		}
+
+		/* Pixel serialization uses the actual solver output, including fractional lengths. */
+		error = computed_pixels(tracks[index], out);
+		if (error != 0)
+			goto cleanup;
+	}
+
+cleanup:
+	/* Copied numeric values require no VM roots and survive no longer than this query. */
+	wb_vector_release(&sizes);
+
+	/* Allocation, query and serialization failures propagate after native storage release. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: handled distinguishes a complete used value from computed fallback. */
 	return 0;
 }
 

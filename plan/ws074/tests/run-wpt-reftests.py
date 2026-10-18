@@ -429,7 +429,8 @@ def main():
         "viewport": [args.width, args.height],
         "render_timeout": args.render_timeout,
     })
-    with tempfile.TemporaryDirectory(prefix="wpt-render-", dir=args.out) as raw:
+    # Q1 owns cleanup: keep render scratch files in this run directory.
+    with contextlib.nullcontext(tempfile.mkdtemp(prefix="wpt-render-", dir=args.out)) as raw:
         temporary = Path(raw)
         data_home = temporary / "data"
         data_home.mkdir()

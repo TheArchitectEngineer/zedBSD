@@ -1,0 +1,79 @@
+{
+  "checkpoint": "build/ws074-20261018/q07/static/progress.jsonl",
+  "commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "counts": {
+    "fail": 1,
+    "pass": 2
+  },
+  "eligible": 3,
+  "eligible_not_sampled": 0,
+  "render_timeout": 20.0,
+  "results": [
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/reference/ref-filled-green-100px-square.xht",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/abspos/abspos-autopos-htb-ltr.html"
+    },
+    {
+      "image": "001-descendant-static-position-001.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 6929,
+          "equal": false,
+          "max_difference": 255,
+          "path": "css/css-grid/abspos/descendant-static-position-001-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "css/css-grid/abspos/descendant-static-position-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-grid/abspos/grid-abspos-staticpos-align-self-img-last-baseline-001-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-grid/abspos/grid-abspos-staticpos-align-self-img-last-baseline-001.html"
+    }
+  ],
+  "root": ".",
+  "schema": 1,
+  "selected": 3,
+  "selection": "focus round-robin, path-sorted",
+  "selection_manifest": "build/ws074-20261018/q07/static-selection.json",
+  "skipped": {},
+  "suite": "wpt",
+  "unrun": [],
+  "viewport": [
+    800,
+    600
+  ]
+}

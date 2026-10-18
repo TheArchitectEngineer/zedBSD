@@ -129,6 +129,66 @@ page_node_box(
 }
 
 /*
+ * Copies a primary Grid's final used tracks into caller-owned native storage.
+ * No borrowed arena pointer escapes the query or a later layout generation.
+ */
+int
+page_grid_tracks(
+	void *context,
+	struct dom_node *node,
+	int columns,
+	struct wb_vector *sizes,
+	int *found)
+{
+	struct page *page;
+	const struct layout_box *box;
+	const double *tracks;
+	int count;
+	int index;
+	int laid_out;
+	int error;
+
+	/* Child Documents use transient geometry trees and need a separate owned-copy path. */
+	page = context;
+	*found = 0;
+	if (node->document != page->document)
+		return 0;
+
+	/* Flush style and layout before reading the current generation's solver output. */
+	laid_out = geometry_layout(page);
+	if (!laid_out)
+		return 0;
+
+	/* Only a real supported Grid snapshot supplies used rather than computed tracks. */
+	box = geometry_first_box(page, node);
+	if (box == NULL)
+		return 0;
+
+	/* Unsupported axes and non-Grid boxes retain the existing computed-value fallback. */
+	if (!box->grid_used_valid)
+		return 0;
+
+	/* Columns and rows are independent logical track sequences. */
+	tracks = box->grid_used_rows;
+	count = box->grid_used_row_count;
+	if (columns) {
+		tracks = box->grid_used_columns;
+		count = box->grid_used_column_count;
+	}
+
+	/* Copy every value while the current arena is still alive and unchanged. */
+	for (index = 0; index < count; index++) {
+		error = wb_vector_push(sizes, &tracks[index]);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: even an empty sequence is a resolved Grid axis rather than a missing box. */
+	*found = 1;
+	return 0;
+}
+
+/*
  * Finds the laid-out document dimensions for bind_host.document_size.
  * Refreshes changed layout and reports zero when it cannot be laid out.
  */

@@ -78,6 +78,8 @@ struct grid_sizes {
 	struct css_length margin[4];
 };
 
+static int grid_save_used_tracks(struct layout_tree *tree, struct layout_box *box, const struct grid_state *grid);
+static int grid_copy_used_axis(struct layout_tree *tree, const layout_unit *sizes, int count, double **copy);
 static int grid_collect(struct layout_box *box, struct grid_state *grid);
 static int grid_vertical_fixed(struct layout_tree *tree, struct layout_box *box, int *handled);
 static int grid_vertical_auto(struct layout_tree *tree, struct layout_box *box, int *handled);
@@ -432,6 +434,15 @@ layout_grid(
 	int handled;
 	int error;
 
+	/* Only a final layout can replace a previously published used-track snapshot. */
+	if (tree->measuring == 0) {
+		box->grid_used_valid = 0;
+		box->grid_used_columns = NULL;
+		box->grid_used_rows = NULL;
+		box->grid_used_column_count = 0;
+		box->grid_used_row_count = 0;
+	}
+
 	/* The children out of the flow have their static place at the content box's corner. */
 	for (child = box->first_child; child != NULL; child = child->next) {
 		if (!child->out_of_flow)
@@ -771,10 +782,117 @@ layout_grid(
 	for (position = 0; position < grid.row_count; position++)
 		box->height += grid.rows[position];
 
+	/* Keep the actual resolved tracks before the transient sizing arrays leave. */
+	error = grid_save_used_tracks(tree, box, &grid);
+	if (error != 0) {
+		grid_release(&grid);
+		return error;
+	}
+
 	/* The state is no longer needed. */
 	grid_release(&grid);
 
 	/* Succeeded: the container's content is laid out. */
+	return 0;
+}
+
+/* Publishes final horizontal used tracks under the layout arena's lifetime. */
+static int
+grid_save_used_tracks(
+	struct layout_tree *tree,
+	struct layout_box *box,
+	const struct grid_state *grid)
+{
+	double *columns;
+	double *rows;
+	int column_count;
+	int row_count;
+	int error;
+
+	/* Intrinsic measurement and the separate vertical solvers do not publish this snapshot. */
+	if (tree->measuring != 0)
+		return 0;
+
+	/* Vertical resolved values require their own logical-axis snapshot in a later partial scope. */
+	if (box->style.writing_mode != CSS_WRITING_HORIZONTAL_TB)
+		return 0;
+
+	/* Empty-grid algorithm placeholders are not real implicit tracks. */
+	column_count = grid->column_count;
+	row_count = grid->row_count;
+	if (grid->item_count == 0) {
+		/* Explicit tracks remain real even when no item occupies them. */
+		if (box->style.column_count == 0)
+			column_count = 0;
+
+		/* The independent row axis can also have no explicit or implicit track. */
+		if (box->style.row_count == 0)
+			row_count = 0;
+	}
+
+	/* Both independent arrays must be complete before the box marks its snapshot valid. */
+	error = grid_copy_used_axis(tree, grid->columns, column_count, &columns);
+	if (error != 0)
+		return error;
+
+	/* A later failure leaves only arena-owned unpublished scratch storage. */
+	error = grid_copy_used_axis(tree, grid->rows, row_count, &rows);
+	if (error != 0)
+		return error;
+
+	/* These arrays survive sizing-state release and leave with the entire layout arena. */
+	box->grid_used_columns = columns;
+	box->grid_used_rows = rows;
+	box->grid_used_column_count = column_count;
+	box->grid_used_row_count = row_count;
+	box->grid_used_valid = 1;
+
+	/* Succeeded: the snapshot describes this final horizontal Grid layout. */
+	return 0;
+}
+
+/* Copies one resolved track axis to arena-owned CSS-pixel values. */
+static int
+grid_copy_used_axis(
+	struct layout_tree *tree,
+	const layout_unit *sizes,
+	int count,
+	double **copy)
+{
+	double *pixels;
+	layout_unit length;
+	int index;
+
+	/* Empty axes have no allocation and serialize as none. */
+	*copy = NULL;
+	if (count == 0)
+		return 0;
+
+	/* Reject an invalid native count before sizing the arena allocation. */
+	if (count < 0)
+		return EINVAL;
+
+	/* Preserve the multiplication bound on both 32-bit and 64-bit hosts. */
+	if ((size_t)count > SIZE_MAX / sizeof(*pixels))
+		return ENOMEM;
+
+	/* The layout arena retains these values until its complete generation is released. */
+	pixels = wb_arena_alloc(&tree->arena, (size_t)count * sizeof(*pixels));
+	if (pixels == NULL)
+		return ENOMEM;
+
+	/* Collapsed tracks use negative gap placeholders internally but resolve to zero CSS pixels. */
+	for (index = 0; index < count; index++) {
+		length = sizes[index];
+		if (length < 0)
+			length = 0;
+
+		/* Convert actual solver units without including distribution gaps in track sizes. */
+		pixels[index] = layout_to_px(length);
+	}
+
+	/* Succeeded: the caller receives the complete arena-owned axis. */
+	*copy = pixels;
 	return 0;
 }
 

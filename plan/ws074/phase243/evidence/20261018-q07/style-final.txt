@@ -1,0 +1,4 @@
+userland/desktop/libbrowser/layout/grid.c blank-after-brace=69 call-in-condition=6 conditional=29 forward-declaration=5 multi-line-body=13 nested-declaration=3 paragraph-comment=13
+userland/desktop/libbrowser/page/geometry.c goto=5
+userland/desktop/libbrowser/bind/computed.c blank-after-brace=8 call-in-condition=1 conditional=7 goto=12 paragraph-comment=4
+total 175

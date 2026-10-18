@@ -210,6 +210,8 @@ struct bind_host {
 	int (*cookie_set)(void *context, const char *text, size_t length);
 	struct css_engine *(*selector_engine)(void *context);
 	int (*node_box)(void *context, struct dom_node *node, struct bind_box *box);
+	/* Appends used CSS-pixel Grid tracks to a caller-owned double vector; found=0 requests computed fallback. */
+	int (*grid_tracks)(void *context, struct dom_node *node, int columns, struct wb_vector *sizes, int *found);
 	void (*document_size)(void *context, double *width, double *height);
 	void (*scroll)(void *context, double *x, double *y);
 	const struct bind_storage_calls *storage;

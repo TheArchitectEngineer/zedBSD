@@ -1,0 +1,52 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Grid resolved tracks use actual layout values</title>
+<script>
+function grid(css) {
+    var element = document.createElement("div");
+    element.style.cssText = "display:grid;width:300px;height:120px;" + css;
+    document.body.appendChild(element);
+    return element;
+}
+function report(name, element) {
+    var style = getComputedStyle(element);
+    console.log(name, style.gridTemplateColumns, "/", style.gridTemplateRows);
+}
+</script>
+<body>
+<script>
+var fixed = grid("grid-template-columns:100px 1fr;grid-template-rows:20px 1fr;gap:10px");
+report("fixed-fr", fixed);
+var percent = grid("grid-template-columns:25% 75%;grid-template-rows:25% 75%");
+report("percent", percent);
+var empty = grid("");
+report("empty", empty);
+var explicit = grid("grid-template-columns:1fr;grid-template-rows:1fr");
+report("empty-fr", explicit);
+var implicit = grid("grid-template-columns:40px;grid-auto-columns:20px;grid-template-rows:60px");
+var item = document.createElement("span");
+item.style.gridColumn = "3";
+implicit.appendChild(item);
+report("implicit", implicit);
+var repeatFill = grid("width:200px;grid-template-columns:repeat(auto-fill,50px);grid-template-rows:20px");
+report("fill", repeatFill);
+var repeatFit = grid("width:200px;grid-template-columns:repeat(auto-fit,50px);grid-template-rows:20px");
+report("fit-empty", repeatFit);
+repeatFit.appendChild(document.createElement("span"));
+report("fit-one", repeatFit);
+var framed = grid("width:300px;height:100px;box-sizing:border-box;border:2px solid;padding:3px;grid-template-columns:1fr 1fr;grid-template-rows:1fr");
+report("border-box", framed);
+var inline = grid("display:inline-grid;grid-template-columns:1fr 2fr;grid-template-rows:1fr");
+report("inline", inline);
+var live = getComputedStyle(fixed);
+fixed.style.width = "400px";
+console.log("live", live.gridTemplateColumns);
+fixed.style.display = "none";
+report("display-none", fixed);
+fixed.style.display = "block";
+report("non-grid", fixed);
+fixed.style.display = "grid";
+fixed.style.gridTemplateColumns = "1fr 1fr";
+fixed.style.gap = "0";
+report("restored", fixed);
+</script>

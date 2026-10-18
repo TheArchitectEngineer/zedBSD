@@ -1,0 +1,14 @@
+fixed-fr 100px 190px / 20px 90px
+percent 75px 225px / 30px 90px
+empty none / none
+empty-fr 300px / 120px
+implicit 40px 20px 20px / 60px
+fill 50px 50px 50px 50px / 20px
+fit-empty 0px 0px 0px 0px / 20px
+fit-one 50px 0px 0px 0px / 20px
+border-box 145px 145px / 90px
+inline 100px 200px / 120px
+live 100px 290px
+display-none 100px 1fr / 20px 1fr
+non-grid 100px 1fr / 20px 1fr
+restored 200px 200px / 20px 100px

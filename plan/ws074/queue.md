@@ -1,5 +1,23 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
+# ws074-q20261018-07 / Grid used track CSSOM
+
+Status: active（2026-10-18 11:42 JST）
+Owner: このCodex chat単独。
+Approval: [ユーザーの自走指示](autonomy.md)を次の有限範囲へ適用。
+Timebox: 最大90分（13:12 JSTまで）。
+
+| Attempt | Phase | Exact scope | State | Dependencies |
+| --- | --- | --- | --- | --- |
+| ws074-q20261018-07-i01 | [p243](phase243/phase.md) primary horizontal partial | 既存horizontal grid/inline-grid solverの最終used trackをarena snapshotに保持し、private host queryからcaller-owned vectorへcopy、template columns/rowsのresolved CSSOMへ渡す。固定/%/fr/auto/implicit/repeat/collapse/emptyとdynamic更新を独立Chromium比較。公式Grid502をq03とwhole/subtest比較し旧PASS後退0、host/target compile warning0、変更関数C全文review/format、Acid3差0/Acid2非増加。検証runnerのTemporaryDirectoryをretainへ直す。child/vertical/line-name/subgrid等は残しwhole未達、solverの別欠陥・public ABI/WPT/Masterは変更しない | in-progress | p221 existing solver、q03 Grid raw、q06全静的census/後退0、2e3680e6b |
+
+Dependency graph: q03/q06 verified baseline + p221 solver → p243 partial。
+Upcoming Work Outlook: child/verticalのowned copy、line names/subgrid、実track sizing、replaced ratio、runner待機/variant/worker coverage。
+
+---
+
+<!-- awesome-plan project=zedbsd record=queue -->
+
 # ws074-q20261018-06 / 固定reftest全静的候補census
 
 Status: finished（2026-10-18、census/診断部分cleared）

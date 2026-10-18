@@ -402,6 +402,7 @@ page_start_scripts(
 	host.cookie_set = script_cookie_set;
 	host.selector_engine = page_selector_engine;
 	host.node_box = page_node_box;
+	host.grid_tracks = page_grid_tracks;
 	host.document_size = page_document_size;
 	host.scroll = page_scroll;
 	host.storage = page_storage_calls();

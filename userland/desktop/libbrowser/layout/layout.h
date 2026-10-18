@@ -235,6 +235,13 @@ struct layout_box {
 	/* A grid container's (or a table's) columns and gaps at their content's sizes, which its content is as wide as (grid.c, table.c). */
 	layout_unit grid_content;
 
+	/* Final horizontal Grid tracks in CSS pixels, owned by this layout tree's arena. */
+	double *grid_used_columns;
+	double *grid_used_rows;
+	int grid_used_column_count;
+	int grid_used_row_count;
+	int grid_used_valid;
+
 	/*
 	 * The width the box's content takes laid out without a limit (its
 	 * max-content width), once it has been measured for shrinking to fit;

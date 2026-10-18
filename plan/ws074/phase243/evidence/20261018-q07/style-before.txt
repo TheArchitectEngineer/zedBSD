@@ -1,0 +1,4 @@
+/tmp/ws074-q07-layout-grid.c blank-after-brace=69 call-in-condition=6 conditional=29 forward-declaration=5 multi-line-body=13 nested-declaration=3 paragraph-comment=13
+/tmp/ws074-q07-page-geometry.c goto=5
+/tmp/ws074-q07-bind-computed.c blank-after-brace=8 call-in-condition=1 conditional=7 goto=7 paragraph-comment=4
+total 170

@@ -2,11 +2,11 @@
 
 # ws074-p243: Grid trackのresolved CSSOMを実レイアウトから取得
 
-Status: planned
+Status: in-progress
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
-Queue: 未選定（q06診断の後）
+Queue: ws074-q20261018-07-i01 primary horizontal partial
 
 ## 根拠・目的
 
@@ -30,3 +30,7 @@ p221の既存parse/auto track出力とq03の全ID/rawを前提とする。q06で
 snapshot lifetimeやsolverの実際の値を検証できなければfallbackを捏造せずattempt unclearedとして残す。現時点は計画のみ。Master/共有Queue/GitHubのprojectionはpending。
 
 Event ws074-p243-planning-20261018: q06静的census中のread-only調査から追加。bind_boxへarena pointerを載せる案は、child queryが一時treeを解放するため採用せず、caller-owned vectorへのcopy queryを計画した。p221の既存scope/acceptanceは変更しない。
+
+## q07 実行開始
+
+Event ws074-p243-q07-start-20261018: q06を2e3680e6bへ保存。全FAIL725の開始前比較で今回sessionの後退0を確認し、上記primary horizontalの部分範囲を最大90分で実行する。検証に再使用するreftest runnerはQ1 cleanup方針へ合わせ、TemporaryDirectoryをretainへ変更する（検証条件や画像判定は不変）。

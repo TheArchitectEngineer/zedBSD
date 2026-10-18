@@ -9,7 +9,9 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [ws074-q20261018-06](queue.md) finished（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+Queue: [ws074-q20261018-07](queue.md) active（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+
+Event ws074-p243-q07-start-20261018: q06の後退0確認後、[p243](phase243/phase.md)のprimary horizontal used-track CSSOMを最大90分で開始。owned vectorへcopyし、一時treeへのpointerを外へ渡さない。検証runnerのretainも範囲内。
 
 Event ws074-p190-q06-partial-clear-20261018: [証拠](phase190/evidence/20261018-q06/README.md)。静的1,561件836 PASS/725 FAIL、error/timeout0。全FAIL725はsession開始前にもFAILで後退0。未対応413/crash待機確認を残す。p243の前にrunner retainを修正。
 
@@ -641,7 +643,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p240](phase240/phase.md) | flex item の aspect-ratio、自動最小サイズと flex basis | uncleared / ws074-q20261018-01 host partial cleared（WPT142→149、後退0） | p172 engine・p234 ratio の実装 |
 | [ws074-p241](phase241/phase.md) | definiteなstretch cross sizeをflex ratioのbase/minimumへ渡す | uncleared / ws074-q20261018-02 host partial cleared、target pending | p234 ratio・p240 minimum |
 | [ws074-p242](phase242/phase.md) | ParentNode.replaceChildren、cleanupのDOM一般操作 | uncleared / q04・q05 host部分cleared、factory/iterator/target等残り | p189 q03のcleanup失敗の実測 |
-| [ws074-p243](phase243/phase.md) | Grid used trackのresolved CSSOM | planned / Queue未選定 | p221のsolver、p189 q03 raw・p190 q06診断 |
+| [ws074-p243](phase243/phase.md) | Grid used trackのresolved CSSOM | in-progress / q07 primary horizontal partial | p221のsolver、p189 q03 raw・p190 q06診断 |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 

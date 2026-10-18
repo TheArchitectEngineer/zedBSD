@@ -1,0 +1,27 @@
+{
+  "state": "Grid502 census running",
+  "exec_session": 97226,
+  "completed": 267,
+  "dom": "26/26",
+  "chromium": "14/14",
+  "before": "4/14",
+  "host_cssom": "12/12",
+  "host_cssom_mutation": "12/12",
+  "target_compile": "4 sources warning0",
+  "acid3_diff": 0,
+  "acid2_diff": 873,
+  "source_sha256": {
+    "layout/layout.h": "5f284042c49e770d843b8559f21b8362379d218c614e8db36995f703005421ae",
+    "layout/grid.c": "eaaa8ad1c5febc468bd7810f542bc5f743f4392b41cd9a4f7526407cad167279",
+    "bind/bind.h": "15d3eba479891e36faa0d300162297fe19578ed76ec46dcd11834a72b5462fd5",
+    "bind/computed.c": "1160e48328aed781e05f76667f9790c87701b99e08acdfb7d469a7de9d118c16",
+    "page/geometry.c": "20d4d5727ac852efc829ba8fd8f6eaca02cc2d120e7f3bad88cfd104e9e289d2",
+    "page/page.h": "9b6e1f4802dfbfdfb5be7519618ac606b9d2d466c90ef8e3a76cb99992b2eaed",
+    "page/script.c": "040e3b44b59061e05f358623cb15021c4517e2dc058c367a66b437e2b330b3ac"
+  },
+  "binary_sha256": {
+    "browser": "25a66385edb7811c04e5e04fddd6bf3060ef2883f26d2781adbecf9d87debc02",
+    "libbrowser.so": "c9dbea7da57456b06e73a12ebdf1553342873d42924807403a740d62543f9206"
+  },
+  "resume": "Inspect completed shard reports/checkpoints under build/ws074-20261018/q07 before rerunning. Final acceptance waits for all Grid502 and old PASS/subtest comparison."
+}
