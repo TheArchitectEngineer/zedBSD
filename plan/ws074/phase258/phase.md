@@ -2,11 +2,11 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: uncleared（q33 GetOwnProperty partial cleared、whole Proxy未達）
+Status: in-progress（q34 DefineOwnProperty partial、q30〜q33 verified）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
-Queue: ws074-q20261018-33-i01（q30/q31/q32 partial cleared履歴保持）
+Queue: ws074-q20261018-34-i01（q30〜q33 partial cleared履歴保持）
 Origin: p189/q29 original WebIDL2 parseがProxy未定義で停止。
 
 Objective / own criteria: native managed Proxyを実object internal methodsへ接続し、constructor/revocableと各internal operationのtrap/fallback/invariant/receiver/revocation/callability/GCを正しく実行する。original WebIDL2 actual parse/validatorに必要なget/set/array behaviorを通常APIで提供し、independent controls/原WPTを通す。部分read stageだけでwholeをclearしない。
@@ -68,3 +68,5 @@ source WIPe6b516827、最終sourceから再buildしたimmutable pair/source hash
 exact承認どおりfocused gatesだけ。全1508はq31、static/scripted/strict crashはq28原証拠を再利用し、q33 pair全件同値/whole PASS増分は主張しない。確認済1482/3805（38.948752%）・held0・未attempt275を保持。i01 GetOwn partialだけcleared、whole p258はDefine/Set/keys/prototype/extent/IsArray/call/construct/global constructor/revocable/元WebIDL2未達でuncleared。private callable/Proxy target拒否・global Proxy非公開維持、full target/p100/WS100%未達。共有Master/Queue/next/cache/GitHub投影pending、push無し。
 
 [全証拠](evidence/20261018-q33/README.md)。次finite QueueでDefineとpartial descriptor trap/invariantを具体化する。
+
+Event ws074-p258-q34-selected-20261018: q33 GetOwn/private descriptor出力を前提にDefineOwnPropertyのtrap/partial descriptor/元input invariant/実GCを具体化。ordinary/native hookは不変のまま既存realm-aware defineのProxy分岐だけを追加する。exact scope/max90分/focused gatesはq34 Queue、Set/global公開は先取りしない。
