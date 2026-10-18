@@ -1,0 +1,117 @@
+{
+  "outcome": "pass",
+  "result_callbacks": [
+    {
+      "name": "uncaught observer callback errors must not be PASS",
+      "status": 0,
+      "message": ""
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "uncaught observer callback errors must not be PASS",
+        "status": 0,
+        "message": ""
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "native_outcome": "pass",
+  "generated": {
+    "kind": "AnyHtmlHandler",
+    "metadata": [],
+    "source": "/observer-uncaught-negative.any.js",
+    "source_sha256": "5f02efbb2e08f73a264b0b8182e64d95b2dc990739f8968ac57b700c29c5032b",
+    "wrapper_sha256": "f30318a32ba6c76a9bb2be293f74ffd871f1b6da4a706e1643e64a7e0e953e00",
+    "contract_sources": {
+      "tools/serve/serve.py": "5e72b90871b0e94db9ccbb0c54d4d5d21b1db8f9b1575a0797f0292a6d101981",
+      "tools/manifest/sourcefile.py": "fe7f05ef495fa37a4afbee959cd9699bb3a0c612c3654ac7f5dbdd4c7b311cf9",
+      "tools/wptserve/wptserve/server.py": "5f8c2d15018bdc9d0600cc3f3dfaac9db5a715e7ed3686e611f251f1c71f1dee",
+      "tools/wptserve/wptserve/handlers.py": "ccaa4c7b487b21909d4f7c12199088b57e8fbc3cb68f3705f4ebc4612a091c8a",
+      "tools/wptserve/wptserve/constants.py": "364c675b995159ce6fb75e392f48da01f1c5faff29bdf6131706509affeade7c"
+    },
+    "top_request": "/observer-uncaught-negative.any.html",
+    "raw_directory": "/home/awe/zedBSD-claude1/build/ws074-20261018/q26/oracle-controls/retained-wvmmyfd0/observer-uncaught-negative/native-raw",
+    "report_original_sha256": "3777176fc736b0a78cf7617b9613b220f635daae7536ec7ebb99c61dbb525aae",
+    "report_instrumented_sha256": "2fd5db3ef4d7aa77c68aae2c42a49771a5c6dd6f83c6076fd9910f4e5a85a0ef",
+    "header_tool_sha256": "9412fbecb2103669b25791c344837bc44043146e5e3c5621364b89e519d6acdf",
+    "requests": [
+      "/observer-uncaught-negative.any.html",
+      "/resources/testharness.js",
+      "/resources/testharnessreport.js",
+      "/observer-uncaught-negative.any.js"
+    ],
+    "logical_requests": [
+      "/observer-uncaught-negative.any.html",
+      "/resources/testharness.js",
+      "/resources/testharnessreport.js",
+      "/observer-uncaught-negative.any.js"
+    ],
+    "rewrites": [],
+    "response_headers": [
+      {
+        "request": "/observer-uncaught-negative.any.html",
+        "method": "GET",
+        "applied": true,
+        "error": null,
+        "sources": [],
+        "values": []
+      },
+      {
+        "request": "/resources/testharness.js",
+        "method": "GET",
+        "applied": true,
+        "error": null,
+        "sources": [],
+        "values": []
+      },
+      {
+        "request": "/resources/testharnessreport.js",
+        "method": "GET",
+        "applied": true,
+        "error": null,
+        "sources": [],
+        "values": []
+      },
+      {
+        "request": "/observer-uncaught-negative.any.js",
+        "method": "GET",
+        "applied": true,
+        "error": null,
+        "sources": [],
+        "values": []
+      }
+    ],
+    "unsupported": [],
+    "assets": [
+      {
+        "request": "/resources/testharness.js",
+        "path": "resources/testharness.js",
+        "sha256": "d2399236c2a09c429804ff2299ad6629e17e2b53f17a74dd341e936adb11ae3e"
+      },
+      {
+        "request": "/resources/testharnessreport.js",
+        "path": "resources/testharnessreport.js",
+        "sha256": "3777176fc736b0a78cf7617b9613b220f635daae7536ec7ebb99c61dbb525aae"
+      },
+      {
+        "request": "/observer-uncaught-negative.any.js",
+        "path": "observer-uncaught-negative.any.js",
+        "sha256": "5f02efbb2e08f73a264b0b8182e64d95b2dc990739f8968ac57b700c29c5032b"
+      }
+    ]
+  },
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-20261018/q26/final/engine/browser",
+    "--run",
+    "--settle-ms=5000",
+    "--font=/home/awe/zedBSD-claude1/userland/desktop/fonts/Mahora-Regular.ttf",
+    "--mono-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+    "--fallback-font=/home/awe/zedBSD-claude1/userland/desktop/fonts/DroidSansFallbackFull.ttf",
+    "http://127.0.0.1:41365/observer-uncaught-negative.any.html"
+  ],
+  "returncode": 0
+}

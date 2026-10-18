@@ -1,6 +1,10 @@
 # WS074 lane の Past Log
 
-## 最新: ws074-q20261018-25（2026-10-18）
+## 最新: ws074-q20261018-26（2026-10-18、uncleared）
+
+[履歴](ws074-q20261018-26.md)。native PerformanceObserver/EntryListを追加し、real mark登録/queued records/private uncancellable Window task、buffered mark replay、entryTypes過去抑止、sticky mode/sequence/dictionary変換、takeRecords/disconnect/reobserve、actual frozen SameObject supportedEntryTypes=[mark]、callback identity/順序・microtask・例外後の継続とGCを実装。Chrome30条件が完全一致、非保守的stack GC/iterator/callback/再入/例外継続/公開timer cancel耐性/retired child list保持とDocument/realm回収のnative10条件、producer7条件を通過。独立probeはactual prior/future各1・futureだけ通知。 最終source12324ff1e・frozen final pairで全1508 harnessはq25比whole/callback/completionが完全同一、494 raw PASS。static1561は844 PASS/717 FAILで全pixel metrics不変、scripted413は105 PASS/283 FAIL/5 unsupported/20 missingで805 captures全RGB不変、strict48は39 PASS/9 missing不変。DOM38、CSSOM12+12、host/target exact2 source warning0、producer Chrome38/native7、Acid3得点/inventory100・pixel差0/Acid2既存差873維持。 ただしcallbackのassert_unreachedを意図的にthrowする同じJS＋公式harnessの失敗対照がnative raw PASS/completion0、Chrome harness_error/completion1となり、既存Window reporterがconsoleだけでErrorEventをdispatchしないことを実証。q26 callback exception/harness fidelity基準は未達なのでattempt uncleared、held1は加算せず確認済1481/3805（38.922470%）維持（raw1482）。旧raw PASS494にUncaught行は0で既存確認済みを根拠なく減算しない。 責務を新p256 Window ErrorEventへ分離し、既存Event/Window/timer→p256のstandalone error output→p255再評価の依存を追加（cycle無し）。次finite Queueで通常productionの例外通知を実装し、official harness negativeが真に非PASS/positiveがPASSとなることを確認後にheld caseとp255を再評価する。runnerでconsole文字列から結果を補正せずWPT/期待値/分母を保持。p254旧fixture split-call規約違反はq26でtoken/string literal不変formatとnative7/全文規約で訂正、q25 historical unclearedは保存。whole p255/p189/p100/target full/WS100%は未達、shared projection/GitHub pending、push無し。
+
+## ws074-q20261018-25（2026-10-18）
 
 Conformance follow-up: q25 i01のstandards判定をfixture split-call違反によりunclearedへ訂正。API/全実測結果/goal1481を保持しq26でtoken不変format修正を再検証する。[原履歴と追記](ws074-q20261018-25.md)。
 

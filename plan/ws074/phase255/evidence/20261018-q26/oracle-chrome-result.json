@@ -1,0 +1,35 @@
+{
+  "outcome": "harness_error",
+  "result_callbacks": [
+    {
+      "name": "uncaught observer callback errors must not be PASS",
+      "status": 0,
+      "message": ""
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "uncaught observer callback errors must not be PASS",
+        "status": 0,
+        "message": ""
+      }
+    ],
+    "status": 1,
+    "message": "Uncaught Error: assert_unreached: intentional observer callback error must fail harness Reached unreachable code"
+  },
+  "json_errors": [],
+  "command": [
+    "chromium",
+    "--headless",
+    "--no-sandbox",
+    "--disable-gpu",
+    "--enable-logging=stderr",
+    "--log-level=0",
+    "--user-data-dir=/tmp/ws074-q26-oracle-chrome-1792313000",
+    "--virtual-time-budget=5000",
+    "--dump-dom",
+    "http://127.0.0.1:39759/observer-uncaught-chrome.any.html"
+  ],
+  "source_identical": true
+}

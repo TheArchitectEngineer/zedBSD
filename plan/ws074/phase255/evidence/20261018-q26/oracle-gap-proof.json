@@ -1,0 +1,31 @@
+{
+  "native": "pass",
+  "chrome": "harness_error",
+  "native_completion": {
+    "tests": [
+      {
+        "name": "uncaught observer callback errors must not be PASS",
+        "status": 0,
+        "message": ""
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "chrome_completion": {
+    "tests": [
+      {
+        "name": "uncaught observer callback errors must not be PASS",
+        "status": 0,
+        "message": ""
+      }
+    ],
+    "status": 1,
+    "message": "Uncaught Error: assert_unreached: intentional observer callback error must fail harness Reached unreachable code"
+  },
+  "source_identical": true,
+  "actual_native_uncaught_console": "Uncaught Error: assert_unreached: intentional observer callback error must fail harness Reached unreachable code (at 1508:13)\nWS074_WPT_RESULT {\"name\":\"uncaught observer callback errors must not be PASS\",\"status\":0,\"message\":\"\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"uncaught observer callback errors must not be PASS\",\"status\":0,\"message\":\"\"}],\"status\":0,\"message\":\"\"}\n",
+  "prior_raw_pass_with_uncaught": [],
+  "cause": "bind_report_exception/window_report_exception emits console only and dispatches no Window ErrorEvent; official testharness error listener never receives the callback failure",
+  "held_case_still_excluded": true
+}

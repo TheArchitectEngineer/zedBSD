@@ -1,0 +1,9 @@
+{
+  "path": "plan/ws074/tests/host-performance-marks.c",
+  "original_commit": "fd2746478",
+  "before_sha256": "60eec5193306241b7b9b93874811bdaf116d7dee8f62444c6ff300b2106238b0",
+  "after_sha256": "18b9ad74738d6fea3b9ddfb02cab5006442d25c4ba98ecfafdc5342b093c829c",
+  "c_tokens_and_all_string_literals_equal": true,
+  "correction": "full standard section8: one argument per physical line in split calls; old manual conformance assessment missed fixture formatting",
+  "original_functional_output_unchanged": true
+}

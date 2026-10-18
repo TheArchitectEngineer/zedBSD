@@ -1,0 +1,6 @@
+{
+  "host": "cc (Debian 14.2.0-19) 14.2.0",
+  "target": "clang version 23.1.0 (git@github.com:awemorris/zedBSD.git 77a02e22ce6e9ff4b472c0cd7a0ea895aea1736f)",
+  "format": "Debian clang-format version 19.1.7 (3+b1)",
+  "reference": "Chromium 153.0.8010.52 built on Debian GNU/Linux 13 (trixie)"
+}

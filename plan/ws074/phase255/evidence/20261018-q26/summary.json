@@ -1,0 +1,250 @@
+{
+  "source_commit": "12324ff1e5303ed25d24aaf6bc84e7f418aa6389",
+  "harness": {
+    "eligible": 1508,
+    "eligible_sha256": "82147e6edaec1b3b8d537e46eb71b64f2f03132cc12803e284c6ca72377779e7",
+    "whole_changes": [],
+    "whole_regressions": [],
+    "whole_gains": [],
+    "callback_or_completion_changes": [],
+    "counts": {
+      "fail": 958,
+      "no_completion": 26,
+      "pass": 494,
+      "harness_error": 4,
+      "no_output": 24,
+      "multiple_completions": 2
+    },
+    "callbacks": {
+      "1": 20643,
+      "0": 11540,
+      "3": 14
+    }
+  },
+  "static": {
+    "eligible": 1561,
+    "eligible_sha256": "0f90e8fac9af5a97e11cce8ac0dfc16fc9360b1903031d742cf8bf1361f48d93",
+    "counts": {
+      "fail": 717,
+      "pass": 844
+    },
+    "whole_gains": [],
+    "whole_regressions": [],
+    "pixel_metric_changes": []
+  },
+  "scripted": {
+    "counts": {
+      "fail": 283,
+      "readiness_missing": 20,
+      "pass": 105,
+      "unsupported_environment": 5
+    },
+    "whole_regressions": [],
+    "whole_changes": [],
+    "captures": 805,
+    "rgb_changes": []
+  },
+  "crash": {
+    "counts": {
+      "pass": 39,
+      "readiness_missing": 9
+    },
+    "changes": {}
+  },
+  "raw_fixed_pass": 1482,
+  "verified_fixed_pass": 1481,
+  "denominator": 3805,
+  "held_error_report_fidelity": 1,
+  "unattempted_harness": 275,
+  "archives": {
+    "harness-all-raw": {
+      "sha256": "e372a35aae89826767e3f66712aa837cc27bd612033bbef8d3484f4642add000",
+      "members": 1676
+    },
+    "scripted-all-native-captures": {
+      "sha256": "d13274c45c5323b0d407b507d38d80ca565c0d012275be9f6b1367c4f2e2a50e",
+      "members": 6442
+    },
+    "crash-all-raw": {
+      "sha256": "4049c31e01ae0ee22478ab4f6c99f4769f863298563f0b803cb83f872c027597",
+      "members": 193
+    },
+    "native-controls": {
+      "sha256": "6929f7683dbb07b09d35f132392ece151e371d6b944ebebbfc16c6a26878a99d",
+      "members": 168
+    }
+  },
+  "dom_cases": 38,
+  "chrome_mark_conditions": 38,
+  "chrome_observer_conditions": 30,
+  "native_mark_gc_cases": 7,
+  "native_observer_gc_cases": 10,
+  "target_sources": 2,
+  "target_warnings": 0,
+  "scoped_clearance_only": false,
+  "whole_phase_uncleared": true,
+  "known_uncleared_reason": {
+    "native": "pass",
+    "chrome": "harness_error",
+    "native_completion": {
+      "tests": [
+        {
+          "name": "uncaught observer callback errors must not be PASS",
+          "status": 0,
+          "message": ""
+        }
+      ],
+      "status": 0,
+      "message": ""
+    },
+    "chrome_completion": {
+      "tests": [
+        {
+          "name": "uncaught observer callback errors must not be PASS",
+          "status": 0,
+          "message": ""
+        }
+      ],
+      "status": 1,
+      "message": "Uncaught Error: assert_unreached: intentional observer callback error must fail harness Reached unreachable code"
+    },
+    "source_identical": true,
+    "actual_native_uncaught_console": "Uncaught Error: assert_unreached: intentional observer callback error must fail harness Reached unreachable code (at 1508:13)\nWS074_WPT_RESULT {\"name\":\"uncaught observer callback errors must not be PASS\",\"status\":0,\"message\":\"\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"uncaught observer callback errors must not be PASS\",\"status\":0,\"message\":\"\"}],\"status\":0,\"message\":\"\"}\n",
+    "prior_raw_pass_with_uncaught": [],
+    "cause": "bind_report_exception/window_report_exception emits console only and dispatches no Window ErrorEvent; official testharness error listener never receives the callback failure",
+    "held_case_still_excluded": true
+  },
+  "acid_archive": {
+    "sha256": "c39eceb60d4246e469afa3bb98d67151d96c8b624fcf905d1ea3169a4e345cd4",
+    "members": 27,
+    "acid_comparison": {
+      "acid2_different_pixels": 873,
+      "acid3_score": "100",
+      "acid3_pixels": 0,
+      "inventory": 100,
+      "same_baseline": true
+    }
+  },
+  "oracle_archive": {
+    "sha256": "5841516fbe03ca365231c45b065c3616726c4e440cd9cb72783c0fe7a93287bc",
+    "members": 18
+  },
+  "conformance": {
+    "full_standard": "plan/coding-style.md section14 permits forward jumps to one shared cleanup label",
+    "checker_limitation": "style-check.py flags every goto without recognizing the permitted forward cleanup pattern",
+    "raw_goto_flags": 65,
+    "other_generated_or_fixture_flags": 0,
+    "manual_forward_cleanup_review": [
+      {
+        "function": "environment_performance_observer_construct",
+        "forward_cleanup_jumps": 4,
+        "labels": [
+          "cleanup"
+        ],
+        "backward_jumps": 0
+      },
+      {
+        "function": "environment_performance_entry_types",
+        "forward_cleanup_jumps": 4,
+        "labels": [
+          "cleanup"
+        ],
+        "backward_jumps": 0
+      },
+      {
+        "function": "environment_performance_observe",
+        "forward_cleanup_jumps": 13,
+        "labels": [
+          "cleanup"
+        ],
+        "backward_jumps": 0
+      },
+      {
+        "function": "environment_performance_list_create",
+        "forward_cleanup_jumps": 3,
+        "labels": [
+          "cleanup"
+        ],
+        "backward_jumps": 0
+      },
+      {
+        "function": "environment_performance_dispatch",
+        "forward_cleanup_jumps": 8,
+        "labels": [
+          "cleanup"
+        ],
+        "backward_jumps": 0
+      },
+      {
+        "function": "environment_install_performance_observer",
+        "forward_cleanup_jumps": 16,
+        "labels": [
+          "cleanup"
+        ],
+        "backward_jumps": 0
+      },
+      {
+        "function": "environment_entries_snapshot",
+        "forward_cleanup_jumps": 6,
+        "labels": [
+          "cleanup"
+        ],
+        "backward_jumps": 0
+      },
+      {
+        "function": "environment_install_performance",
+        "forward_cleanup_jumps": 8,
+        "labels": [
+          "cleanup"
+        ],
+        "backward_jumps": 0
+      },
+      {
+        "function": "observer_retired_list",
+        "forward_cleanup_jumps": 3,
+        "labels": [
+          "cleanup"
+        ],
+        "backward_jumps": 0
+      }
+    ],
+    "unresolved_generated_conformance_findings": 0,
+    "functions": [
+      "environment_performance_observer_trace",
+      "environment_performance_observer_finalize",
+      "environment_performance_list_trace",
+      "environment_performance_list_finalize",
+      "environment_performance_observer_of",
+      "environment_performance_list_of",
+      "environment_performance_observer_construct",
+      "environment_performance_entry_types",
+      "environment_performance_observe",
+      "environment_performance_disconnect",
+      "environment_performance_schedule",
+      "environment_performance_queue_mark",
+      "environment_performance_list_sort",
+      "environment_performance_list_create",
+      "environment_performance_dispatch",
+      "environment_performance_take_records",
+      "environment_performance_list_snapshot",
+      "environment_performance_list_entries",
+      "environment_performance_list_by_type",
+      "environment_performance_list_by_name",
+      "environment_performance_supported_types",
+      "environment_performance_enumerate",
+      "environment_install_performance_observer",
+      "environment_entries_snapshot",
+      "environment_performance_snapshot",
+      "environment_timeline_trace",
+      "environment_timeline_finalize",
+      "environment_install_performance",
+      "environment_performance_mark",
+      "observer_collect",
+      "observer_script",
+      "observer_check",
+      "observer_cases",
+      "observer_retired_list"
+    ]
+  },
+  "attempt_outcome": "uncleared"
+}

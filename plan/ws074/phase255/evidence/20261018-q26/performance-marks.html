@@ -1,0 +1,140 @@
+<!doctype html><meta charset="utf-8"><title>Native mark entries</title><body><script>
+function probe(name, call) {
+  try { console.log(name, JSON.stringify(call())); }
+  catch (error) { console.log(name, "throws:" + error.name); }
+}
+probe("default", function () {
+  performance.clearMarks();
+  var mark = performance.mark("basic");
+  return [mark.name, mark.entryType, mark.duration, mark.detail, mark.startTime >= 0,
+          performance.getEntriesByName("basic", "mark")[0] === mark];
+});
+probe("constructor", function () {
+  performance.clearMarks();
+  var mark = new PerformanceMark("constructor");
+  return [mark.name, mark.entryType, mark.duration, mark.detail,
+          performance.getEntriesByType("mark").length,
+          Object.prototype.toString.call(mark), mark instanceof PerformanceEntry];
+});
+probe("required-mark", function () { return performance.mark(); });
+probe("required-constructor", function () { return new PerformanceMark(); });
+probe("undefined-name", function () { return performance.mark(undefined).name; });
+probe("reserved-mark", function () { return performance.mark("navigationStart"); });
+probe("reserved-constructor", function () { return new PerformanceMark("fetchStart"); });
+probe("explicit-time", function () {
+  var mark = performance.mark("explicit", {startTime: 2.5, detail: 42});
+  return [mark.startTime, mark.detail];
+});
+probe("primitive-detail", function () {
+  return [new PerformanceMark("a", {detail: "hello"}).detail,
+          new PerformanceMark("b", {detail: false}).detail,
+          new PerformanceMark("c", {detail: undefined}).detail,
+          new PerformanceMark("d", null).detail];
+});
+probe("negative-time", function () { return performance.mark("bad", {startTime: -1}); });
+probe("nan-time", function () { return performance.mark("bad", {startTime: NaN}); });
+probe("infinite-time", function () { return performance.mark("bad", {startTime: Infinity}); });
+probe("primitive-options", function () { return performance.mark("bad", 7); });
+probe("symbol-detail", function () { return performance.mark("bad", {detail: Symbol("x")}); });
+probe("function-detail", function () { return performance.mark("bad", {detail: function () {}}); });
+probe("clear-undefined", function () {
+  performance.clearMarks(); performance.mark("undefined"); performance.mark("keep");
+  performance.clearMarks(undefined);
+  return performance.getEntriesByType("mark").length;
+});
+probe("snapshot", function () {
+  performance.clearMarks(); var mark = performance.mark("keep");
+  var snapshot = performance.getEntriesByName("keep", undefined);
+  snapshot.push("local"); performance.clearMarks("keep");
+  return [snapshot[0] === mark, snapshot.length, mark.name, performance.getEntriesByType("mark").length];
+});
+probe("required-filter", function () { return performance.getEntriesByName(); });
+probe("required-type", function () { return performance.getEntriesByType(); });
+probe("stable-order", function () {
+  performance.clearMarks();
+  performance.mark("late", {startTime: 10}); performance.mark("early", {startTime: 5});
+  performance.mark("equal", {startTime: 10});
+  return performance.getEntriesByType("mark").map(function (mark) {return mark.name;});
+});
+probe("filters", function () {
+  performance.mark("late", {startTime: 1});
+  return [performance.getEntriesByName("late").length, performance.getEntriesByName("late", "resource").length,
+          performance.getEntriesByType(undefined).length, performance.getEntriesByType("resource").length];
+});
+probe("clear-name", function () {
+  performance.clearMarks("late");
+  return performance.getEntriesByType("mark").map(function (mark) {return mark.name;});
+});
+probe("readonly", function () {
+  var mark = performance.mark("readonly"); mark.name = "changed"; mark.detail = 3;
+  var entry = Object.getOwnPropertyDescriptor(PerformanceEntry.prototype, "name");
+  var detail = Object.getOwnPropertyDescriptor(PerformanceMark.prototype, "detail");
+  return [mark.name, mark.detail, Object.hasOwn(mark, "name"), entry.enumerable,
+          entry.configurable, entry.set === undefined, entry.get.length,
+          detail.enumerable, detail.set === undefined];
+});
+probe("illegal-getter", function () { return Object.getOwnPropertyDescriptor(PerformanceEntry.prototype, "name").get.call({}); });
+probe("illegal-detail", function () { return Object.getOwnPropertyDescriptor(PerformanceMark.prototype, "detail").get.call(Object.create(PerformanceMark.prototype)); });
+probe("illegal-buffer", function () { return performance.getEntries.call({}); });
+probe("illegal-mark", function () { return performance.mark.call({}, "fake"); });
+probe("illegal-entry-constructor", function () { return new PerformanceEntry(); });
+probe("call-mark-constructor", function () { return PerformanceMark("fake"); });
+probe("json", function () {
+  var object = performance.mark("json", {startTime: 3, detail: false}).toJSON();
+  return [object.name, object.entryType, object.startTime, object.duration, "detail" in object,
+          Object.getOwnPropertyDescriptor(PerformanceEntry.prototype, "toJSON").enumerable];
+});
+probe("reentrant-name", function () {
+  performance.clearMarks();
+  var name = {toString: function () {performance.mark("inner", {startTime: 1}); return "outer";}};
+  performance.mark(name, {startTime: 2});
+  return performance.getEntriesByType("mark").map(function (mark) {return mark.name;});
+});
+probe("dictionary-order", function () {
+  var log = [];
+  var options = {get detail() {log.push("detail"); return "payload";},
+                 get startTime() {log.push("time"); return 4;}};
+  var name = {toString: function () {log.push("name"); return "ordered";}};
+  var mark = performance.mark(name, options);
+  return [log, mark.startTime, mark.detail];
+});
+probe("throw-no-publish", function () {
+  performance.clearMarks();
+  try {performance.mark("bad", {get detail() {throw new Error("stop");}});} catch (error) {}
+  return performance.getEntriesByType("mark").length;
+});
+probe("reentrant-filter", function () {
+  performance.clearMarks(); performance.mark("old");
+  return performance.getEntriesByName({toString: function () {
+    performance.clearMarks(); performance.mark("new"); return "new";
+  }}).map(function (mark) {return mark.name;});
+});
+probe("reentrant-clear", function () {
+  performance.clearMarks(); performance.mark("old");
+  performance.clearMarks({toString: function () {performance.mark("during"); return "old";}});
+  return performance.getEntriesByType("mark").map(function (mark) {return mark.name;});
+});
+probe("subclass", function () {
+  class Derived extends PerformanceMark {}
+  var mark = new Derived("derived", {startTime: 7, detail: "own"});
+  return [mark instanceof Derived, mark instanceof PerformanceMark, mark.name, mark.startTime, mark.detail];
+});
+probe("borrowed-realm", function () {
+  var frame = document.createElement("iframe"); document.body.appendChild(frame);
+  var other = frame.contentWindow; performance.clearMarks();
+  var mark = performance.mark.call(other.performance, "borrowed", {startTime: 1});
+  var values = [mark instanceof PerformanceMark, mark instanceof other.PerformanceMark,
+                performance.getEntriesByName("borrowed").length,
+                other.performance.getEntriesByName("borrowed").length];
+  frame.remove(); return values;
+});
+probe("window-independent", function () {
+  var frame = document.createElement("iframe"); document.body.appendChild(frame);
+  var other = frame.contentWindow;
+  other.performance.clearMarks(); other.performance.mark("child");
+  performance.clearMarks(); performance.mark("parent");
+  var saved = other.performance.getEntriesByType("mark")[0];
+  frame.remove();
+  return [performance.getEntriesByType("mark").map(function (mark) {return mark.name;}), saved.name, saved.entryType];
+});
+</script>

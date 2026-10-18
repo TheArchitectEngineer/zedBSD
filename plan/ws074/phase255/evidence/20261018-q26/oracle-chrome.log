@@ -1,0 +1,6 @@
+[1004764:1004764:1018/174046.550088:WARNING:sandbox/policy/linux/sandbox_linux.cc:405] InitializeSandbox() called with multiple threads in process gpu-process.
+[1004702:1004702:1018/174046.876722:WARNING:ui/base/idle/idle_linux.cc:111] None of the known D-Bus ScreenSaver services could be used.
+[1004702:1004702:1018/174112.028995:INFO:CONSOLE:1524] "Uncaught Error: assert_unreached: intentional observer callback error must fail harness Reached unreachable code", source: http://127.0.0.1:39759/resources/testharness.js (1524)
+[1004702:1004702:1018/174112.043267:INFO:CONSOLE:41] "WS074_WPT_RESULT {"name":"uncaught observer callback errors must not be PASS","status":0,"message":""}", source: http://127.0.0.1:39759/resources/testharnessreport.js (41)
+[1004702:1004702:1018/174112.050407:INFO:CONSOLE:48] "WS074_WPT_COMPLETE {"tests":[{"name":"uncaught observer callback errors must not be PASS","status":0,"message":""}],"status":1,"message":"Uncaught Error: assert_unreached: intentional observer callback error must fail harness Reached unreachable code"}", source: http://127.0.0.1:39759/resources/testharnessreport.js (48)
+[1004702:1004752:1018/174112.125423:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: QUOTA_EXCEEDED
