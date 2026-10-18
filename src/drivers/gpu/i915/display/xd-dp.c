@@ -1005,7 +1005,7 @@ drv_i915_xd_dp_probe_detect(
 	/* Starts from a sink that is not there. */
 	drv_i915_xd_dp_probe_forget(sink);
 
-	/* Reads the repeaters and the receiver (intel_dp_init_lttpr_and_dprx_caps()). */
+	/* Reads the repeaters and the receiver. */
 	error = i915_xd_dp_probe_read_caps(env, sink);
 	if (error != 0) {
 		sink->step = I915_XD_DP_PROBE_STEP_CAPS;
@@ -1017,7 +1017,7 @@ drv_i915_xd_dp_probe_detect(
 	if ((sink->dpcd[I915_XD_DP_PROBE_DOWNSTREAMPORT_PRESENT] & I915_XD_DP_PROBE_DWN_STRM_PORT_PRESENT) != 0u)
 		sink->branch = 1;
 
-	/* Reads who the sink or branch is, then what both sides offer (intel_dp_get_dpcd()). */
+	/* Reads who the sink or branch is, then what both sides offer. */
 	i915_xd_dp_probe_read_desc(env, sink);
 	i915_xd_dp_probe_set_rates(env, source, sink);
 	i915_xd_dp_probe_set_lanes(env, source, sink);
@@ -1038,19 +1038,19 @@ drv_i915_xd_dp_probe_detect(
 		return;
 	}
 
-	/* Judges whether a display is there (intel_dp_detect_dpcd()). */
+	/* Judges whether a display is there. */
 	status = i915_xd_dp_probe_classify(env, sink);
 	if (status == I915_XD_DP_PROBE_DISCONNECTED) {
 		sink->step = I915_XD_DP_PROBE_STEP_BRANCH;
 		return;
 	}
 
-	/* Reads the EDID (intel_dp_set_edid()); a display with an EDID is connected whatever the branch said. */
+	/* Reads the EDID; a display with an EDID is connected whatever the branch said. */
 	i915_xd_dp_probe_read_edid(env, sink);
 	if (sink->edid_blocks != 0u)
 		status = I915_XD_DP_PROBE_CONNECTED;
 
-	/* Takes the branch's limits and whether the display is HDMI (intel_dp_update_dfp()). */
+	/* Takes the branch's limits and whether the display is HDMI. */
 	i915_xd_dp_probe_set_downstream_limits(sink);
 	sink->has_hdmi_sink = i915_xd_dp_probe_edid_has_hdmi(sink);
 
