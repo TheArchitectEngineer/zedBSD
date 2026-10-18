@@ -82,6 +82,6 @@ Parent: [WS251](../ws.md)
 ### 残り・再開の手順
 
 - 機械の検査は src/drivers/gpu と include/uapi/gpu-op.h で 0 件（2026-10-18、835732198）。
-- 残り: (1) bcm2711 の段の名前（P0〜P5・N0・R0・V0〜V7、boot parameter の値）の扱いはユーザーの判断待ち（群 4）。(2) 完了の条件の「file ごとの目視の記録」: 今回は群ごとの grep（段の符号・design・QEMU・5330・test build）の目視までで、file ごとの記録は無い。(3) WS237 の gen9 の host 試験・WS229 の bootfb の host 試験は未実施（comment だけなので vmunix の比べで代えた）。(4) arm64 の build は群 4 の後で作っていない（群 6 の compiler の .inc）。(5) 範囲の外の include/libc/vulkan/API-PROVENANCE.md・include/kern/tty.h は Q1 の判断。
+- 残り: (1) bcm2711 の段の名前（P0〜P5・N0・R0・V0〜V7、boot parameter の値）の扱いは 2026-10-18 ユーザーの決定「(a) interface として残す」（名前は変えず comment の言い方だけ直す。群 4 で comment は済み）。(2) 完了の条件の「file ごとの目視の記録」: 今回は群ごとの grep（段の符号・design・QEMU・5330・test build）の目視までで、file ごとの記録は無い。(3) WS237 の gen9 の host 試験・WS229 の bootfb の host 試験は未実施（comment だけなので vmunix の比べで代えた）。(4) arm64 の build は群 4 の後で作っていない（群 6 の compiler の .inc）。(5) 範囲の外の include/libc/vulkan/API-PROVENANCE.md・include/kern/tty.h は Q1 の判断。
 - 基準の build: `build/ws251p002-base2`（0a59b8a8a）。手順: 直す → `sh build/tmp/kbuild.sh <名>` → `sh build/tmp/ws251-objcmp.sh ws251p002-base2 <名>`。
 - 掃除（Q1 に依頼）: `build/ws251p002-g5`・`-g5-host`・`-g6` と各 .log。
