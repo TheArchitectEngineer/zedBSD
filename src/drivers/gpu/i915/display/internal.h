@@ -380,7 +380,7 @@ struct i915_vbt_state {
 	struct i915_vbt parsed;
 	int parsed_live;
 
-	/* explicit blob bookkeeping (no build fills it since the test VBT was removed; always zero) */
+	/* explicit blob bookkeeping (no build fills it; always zero) */
 	const char *blob_name;
 	unsigned blob_size;
 	uint8_t blob_sha256[32];

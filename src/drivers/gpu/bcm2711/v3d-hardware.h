@@ -110,7 +110,7 @@ struct bcm2711_v3d_perf {
 	 */
 	uint64_t decode_hold_max;
 	uint32_t decode_hold_opcode;
-	/* That request's command count; and the window's longest single command, its opcode and ticks (review-b2 M3). */
+	/* That request's command count; and the window's longest single command, its opcode and ticks. */
 	uint32_t decode_hold_commands;
 	uint32_t decode_command_opcode;
 	uint64_t decode_command_max;
