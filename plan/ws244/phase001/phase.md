@@ -2,7 +2,7 @@
 
 # ws244-p001: 棚卸しと書き直しの方針
 
-Status: in-progress（2026-10-15 P7、使用量の残りが少ないための通常のラップアップで中断）
+Status: in-progress（2026-10-15 P7 が中断、2026-10-18 P1 が再開し棚卸しと方針を書いた。Q1 の判定待ち）
 Parent: [WS244](../ws.md)
 
 ## 範囲
@@ -17,6 +17,28 @@ i915 の tree（src/drivers/gpu/i915/）と userland/base/licenses/i915-driver/ 
   - Gen9 の display（gen9-*.c）は「code は自前、順序と表は Linux から」と宣言。順序・表を PRM か引用元つきのデータにすれば残せる見込み。
   - compiler（eu.c・compile.c）は自前の配置の logic に Mesa の規約を引用する形。encode の field は intel/eu-encoding-*.h のデータ。
   - GT の gt-power.c・workarounds.c・verify-workarounds.c は「Follows Linux X()」の関数が多い。
+
+## 2026-10-18 P1（q1250）
+- [inventory.md](../inventory.md) を最新の tree（WS245 の xd-*、WS258 の gen9-* の後）で書き直した。対象は 4 群: intel/ の上流の抜粋 23 file（D+N）、GT の core（C）、compiler・render（Mesa の手順の言及）、display の残り（O）。
+- 判断が要る点 2 つ（inventory.md の末尾）: (1) PRM に載る command・opcode の名前を使ってよいか、(2) license の package を外すか。
+
+### 書き直しの方針
+- 値（register の offset・bit・表・WA の番号）は残し、block ごとに複数行の comment で `Value(s) referenced: <版> <path> (<名前>)`。参考にした手順は `Procedure referenced:`。file の先頭には出典・派生の宣言・SHA-256 を書かない。データだけになった file から外部の MIT の表示を外す。
+- 名前は zedBSD の名前（WS245 の `I915_XD_*` に合わせ、GT は `I915_GT_*`、command は判断 1 次第）。改名は意味の単位で、旧名の互換の alias を残さない。
+- 写した code（GT の core）は PRM（Gen9・Gen12 の Vol. 2・Vol. 7 など）と hardware の振る舞いから、関数の分け方・名前・comment を自前で書く。Linux の行ごとの言い換えをしない。**動作は変えない**: register に書く値と順序を保つ。確かめの道は、書き直しの前後で同じ host 試験の register の書き込みの列（mmio-record）を比べる事。
+- comment の中の開発の管理情報・試験の進め方の話は、触った file から消す。
+
+### 順序と Phase
+依存の少ない header から、使う側へ。p002 → p003 → p004〜p006 → p007 → p008 → p009。各 Phase は 1 つの群で、群ごとに commit と merge の依頼。
+
+### 試験の道（各 Phase 共通）
+- build 3 組の warning 0: `BUILD=build/ws244-<p> vmunix`（既定）、`I915_TESTS=y`、Gen9 の config（Phase ごとに config.mk を tests/ に置く）。
+- host 試験: 触った file を使う i915 の host 試験（tests/ の host-*-test、eu-test など）と、GT の書き直しは mmio-record の列の前後比較。
+- 実機（5330 Gen12・SV7/7th・8th gen Gen9 の起動・desktop・render）は WS の最後に T1 へ 1 回の依頼（Q1 の一覧）。i915 の「全部を実装してから試験、だめなら二分探索」の規則に従い、main への merge は Q1 の判断（名前と comment だけの Phase は build と host 試験で merge 可、GT の code の書き直しは実機の後）。
+
+### 危険と見積もり
+- p003・p004〜p006 は 70 file が使う gt-regs.h の改名と GT の流れの書き直し。退行の危険は GT の init・reset・RC6。mmio-record の比較で値と順序の不変を見る。
+- 見積もり: p002 2 LW、p003 4 LW、p004 4 LW、p005 4 LW、p006 5 LW、p007 4 LW（判断 1 が「改名」なら +4）、p008 1 LW、p009 2 LW。
 
 ## 残り（次の世代の再開点）
 1. inventory: derived の file の「O」の関数を手で確かめる（file の宣言から派生と見るべき物が多い）。データの block（define・表）ごとの出典の表を作る。intel/ の struct の配置（vbt-defs.h の VBT の block、ref.h・connector.h・wm.h）が「構造」に当たるかを決める。
