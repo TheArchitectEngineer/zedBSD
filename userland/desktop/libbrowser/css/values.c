@@ -3739,13 +3739,18 @@ values_calc_value(
 		term->is_number = 1;
 		term->number = (float)token->number;
 		(*index)++;
+
+		/* Succeeded: the atomic calculation term is read. */
 		return 0;
 	}
 
 	/* A percentage. */
 	if (token->type == CSS_TOKEN_PERCENTAGE) {
 		term->sum.percent = (float)token->number;
+		term->sum.has_percent = 1;
 		(*index)++;
+
+		/* Succeeded: the atomic calculation term is read. */
 		return 0;
 	}
 
@@ -3755,6 +3760,8 @@ values_calc_value(
 		if (error != 0)
 			return error;
 		(*index)++;
+
+		/* Succeeded: the atomic calculation term is read. */
 		return 0;
 	}
 
@@ -3764,9 +3771,13 @@ values_calc_value(
 		is_calc = css_ident_equal(token, "min");
 		if (is_calc)
 			operation = CSS_CALC_MIN;
+
+		/* Recognizes a maximum expression independently of the preceding name. */
 		is_calc = css_ident_equal(token, "max");
 		if (is_calc)
 			operation = CSS_CALC_MAX;
+
+		/* Recognizes a three-argument range expression. */
 		is_calc = css_ident_equal(token, "clamp");
 		if (is_calc)
 			operation = CSS_CALC_CLAMP;
@@ -3777,17 +3788,27 @@ values_calc_value(
 		used = values_function_length(tokens + *index, count - *index);
 		if (used < 2U || tokens[*index + used - 1U].type != CSS_TOKEN_CLOSE_PAREN)
 			return EINVAL;
+
+		/* Allocates the nonlinear child in the same parse lifetime. */
 		nested = wb_arena_zalloc(arena, sizeof(*nested));
 		if (nested == NULL)
 			return ENOMEM;
+
+		/* Parses the complete child before publishing its arena pointer. */
 		error = values_calc_arguments(arena, tokens + *index + 1U, used - 2U, operation, nested);
 		if (error != 0)
 			return error;
+
+		/* A nested child must carry a dimensional expression. */
 		if (nested->count == 0)
 			return EINVAL;
+
+		/* Retains the validated child with its initial multiplication factor. */
 		term->sum.nested = nested;
 		term->sum.nested_factor = 1.0f;
 		*index += used;
+
+		/* Succeeded: the nonlinear calculation term is retained. */
 		return 0;
 	}
 
@@ -3805,6 +3826,8 @@ values_calc_value(
 	error = values_calc_sum(arena, tokens, count, index, term);
 	if (error != 0)
 		return error;
+
+	/* Consumes the closing delimiter after a complete parenthesized sum. */
 	*index = values_skip_space(tokens, count, *index);
 	if (*index >= count || tokens[*index].type != CSS_TOKEN_CLOSE_PAREN)
 		return EINVAL;
@@ -3921,8 +3944,11 @@ values_calc_add(
 {
 	/* The other's function, when it has one, becomes the sum's. */
 	if (other->nested != NULL) {
+		/* This representation owns at most one nested nonlinear expression. */
 		if (sum->nested != NULL)
 			return EINVAL;
+
+		/* Retains the single arena child and applies the addition sign to its factor. */
 		sum->nested = other->nested;
 		sum->nested_factor = sign * other->nested_factor;
 	}
@@ -3939,6 +3965,10 @@ values_calc_add(
 	sum->vmax += sign * other->vmax;
 	sum->cqw += sign * other->cqw;
 	sum->cqh += sign * other->cqh;
+
+	/* Zero coefficients do not erase a percentage's contribution to the linear type. */
+	if (other->has_percent)
+		sum->has_percent = 1;
 
 	/* Succeeded: the sums are added. */
 	return 0;
@@ -5108,10 +5138,21 @@ values_one_track(
 				used = values_function_length(tokens + start, end - start);
 				if (used != end - start)
 					return EINVAL;
+
+				/* Validates and retains the calculation through the ordinary length parser. */
+				error = values_calc(parse, CSS_PROP_GRID_TEMPLATE_COLUMNS, tokens + start, end - start, &limit);
+				if (error != 0)
+					return error;
+
+				/* A fit limit is a length-percentage rather than another value kind. */
+				if (limit.kind != CSS_VALUE_LENGTH)
+					return EINVAL;
 			}
 
-			/* Succeeded: the fit limit remains on its existing layout path. */
+			/* Succeeded: the fit limit remains on its existing layout path with its computed bound. */
 			track->kind = CSS_TRACK_AUTO;
+			track->maximum_rule = CSS_TRACK_MAXIMUM_FIT_CONTENT;
+			track->size = limit;
 			return 0;
 		}
 

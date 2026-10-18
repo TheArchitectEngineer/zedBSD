@@ -35,3 +35,7 @@ Event ws074-p246-q11-scope-reconciled-20261018: 独立例でgrid-autoだけがin
 Event ws074-p246-computed-floor-design-correction-20261018: repeat/verticalの既存consumerもclamped sizeを読むため、先のfloor移動案をsource生成中に見直した。既存cascade floorを維持し、private css_track.computed_maximumへunfloored upper lengthをcopyしてcomputed writerがexplicit length minimumのときだけ読む。pointer/公開ABIは不変、repeatやverticalの未選定算法は変更しない。先の移動設計はsuperseded、証拠/旧historyは残す。
 
 Event ws074-p246-q11-uncleared-20261018: [証拠](evidence/20261018-q11/README.md)。独立22/22、Grid whole248維持、74 callback改善/24後退でattempt uncleared。static227→228/後退0、DOM29/29、host/target warning0、Acid非増加。24は以前のlossy serializationが隠したanimation欠落。p248にnative timing/track interpolation計画を追加し、その実装verified output後に新attemptで再開する。一般intrinsic/fit/name等whole残りとq11 exact criterion/historyは維持。共有投影pending。
+
+Event ws074-p250-computed-fit-design-20261018: [p250](../phase250/phase.md)がmaximum_rule FIT_CONTENTと既存sizeにcomputed fit limitを保持する。calcを実際に解析し、computed fallbackで関数をserialize。native autoのfit capは未実装のまま維持するようstretch判定はknown min/maxのみへ明示化。新pointer/公開ABIなし。Grid502/静的529/独立computedとnative不変を確認し、known animation lossを全記録する。既存whole条件/historyは不変。
+
+Event ws074-p251-linear-type-design-20261018: [p251](../phase251/phase.md)がdirect linear calcのpercentage存在を保持する。0係数でもCSS_UNIT_PERCENTとなるためdependent computed/used pathsを全1491/static1561と独立値で検証。nonlinear min/max/clampの既存近似は未変更。p250はこのoutput後にcomputed fitを検証し、p246/q11等history/whole残りは維持。

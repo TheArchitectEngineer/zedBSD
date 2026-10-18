@@ -403,6 +403,8 @@ struct css_selector {
 struct css_calc_sum {
 	float px;
 	float percent;
+	/* A direct percentage keeps its type even after its coefficient becomes zero. */
+	int has_percent;
 	float em;
 	float ex;
 	float rem;

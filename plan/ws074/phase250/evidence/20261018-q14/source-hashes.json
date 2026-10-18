@@ -1,0 +1,8 @@
+{
+  "userland/desktop/libbrowser/css/values.c": "9e425033f6785f8fa4d7c3065046bffc91869b771fa187290b46f0f3e62cbed9",
+  "userland/desktop/libbrowser/css/cascade.c": "6b7f550b5f38dc67fa3e80d9cf1a81b21df5f0e17e568af8d6b8edfabce1c390",
+  "userland/desktop/libbrowser/bind/computed.c": "d7947615511c780d0ccdf9b7db7fd6361d568cd6f2b5c360d1e5015c9b7c2c0c",
+  "userland/desktop/libbrowser/layout/grid.c": "cb3746fc7b05213bd12059a936c7a1a468fa04bc8c25bf5f59661389f28eae8c",
+  "userland/desktop/libbrowser/css/css.h": "d8f65f807d666e3874c5de26db03fa8f1139488a208ecb0ebd69e61543f2a6d2",
+  "userland/desktop/libbrowser/css/internal.h": "9bf8d24aab602267eefc7dc7a6b0f44a208dbee2322d9b8cfdec1803a4a4cf15"
+}

@@ -1,0 +1,6 @@
+[673326:673326:1018/131945.725594:WARNING:sandbox/policy/linux/sandbox_linux.cc:405] InitializeSandbox() called with multiple threads in process gpu-process.
+[673282:673282:1018/131946.022058:WARNING:ui/base/idle/idle_linux.cc:111] None of the known D-Bus ScreenSaver services could be used.
+[673282:673282:1018/131946.292936:INFO:CONSOLE:2] "10px 10", source: file:///home/awe/zedBSD-claude1/build/ws074-20261018/q14/linear-layout.html (2)
+[673282:673282:1018/131946.293037:INFO:CONSOLE:2] "calc(0% + 10px) 40", source: file:///home/awe/zedBSD-claude1/build/ws074-20261018/q14/linear-layout.html (2)
+[673282:673282:1018/131946.293078:INFO:CONSOLE:2] "calc(5% - 5% + 10px) 40", source: file:///home/awe/zedBSD-claude1/build/ws074-20261018/q14/linear-layout.html (2)
+[673282:673282:1018/131946.293109:INFO:CONSOLE:2] "calc(0 * 5px) 0", source: file:///home/awe/zedBSD-claude1/build/ws074-20261018/q14/linear-layout.html (2)

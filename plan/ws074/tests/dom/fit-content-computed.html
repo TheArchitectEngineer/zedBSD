@@ -1,0 +1,35 @@
+<!doctype html><meta charset="utf-8"><body style="font-size:40px"><script>
+function check(name, value) {
+    var element = document.createElement("div");
+    element.style.cssText = "grid-auto-columns:" + value + ";grid-template-rows:" + value;
+    document.body.appendChild(element);
+    var style = getComputedStyle(element);
+    console.log(name, style.gridAutoColumns, "/", style.gridTemplateRows);
+    return element;
+}
+check("px", "fit-content(10px)");
+check("percent", "fit-content(25%)");
+check("em", "fit-content(1em)");
+check("calc-em", "fit-content(calc(10px + 0.5em))");
+check("calc-negative-px", "fit-content(calc(10px - 0.5em))");
+check("calc-negative-percent", "fit-content(calc(-5%))");
+check("calc-mixed", "fit-content(calc(10% + 5px))");
+check("zero-px", "fit-content(0px)");
+check("zero-percent", "fit-content(calc(0% + 10px))");
+check("cancelled-percent", "fit-content(calc(5% - 5% + 10px))");
+var live = check("live-before", "fit-content(calc(10px + 0.5em))");
+live.style.fontSize = "20px";
+console.log("live-after", getComputedStyle(live).gridAutoColumns);
+var grid = check("grid-auto", "fit-content(50px)");
+grid.style.display = "grid";
+console.log("grid-computed-auto", getComputedStyle(grid).gridAutoColumns);
+var frame = document.createElement("iframe");
+frame.style.cssText = "display:block;width:120px;height:80px";
+document.body.appendChild(frame);
+var child = frame.contentDocument;
+child.open();child.write('<body style="font-size:20px"><div id="target" style="grid-auto-columns:fit-content(calc(10px + 0.5em))"></div>');child.close();
+console.log("child", getComputedStyle(child.getElementById("target")).gridAutoColumns);
+var invalid = check("invalid-initial", "fit-content(2px)");
+invalid.style.gridAutoColumns = "fit-content(calc(1fr))";
+console.log("invalid-fr", getComputedStyle(invalid).gridAutoColumns);
+</script>

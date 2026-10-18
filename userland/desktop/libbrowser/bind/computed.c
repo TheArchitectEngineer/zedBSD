@@ -1412,6 +1412,26 @@ computed_track_breadth(
 	const char *keyword;
 	int error;
 
+	/* Fit-content retains its resolved limit without substituting a native used track size. */
+	if (track->maximum_rule == CSS_TRACK_MAXIMUM_FIT_CONTENT) {
+		error = computed_ascii("fit-content(", out);
+		if (error != 0)
+			return error;
+
+		/* Appends the computed length-percentage inside the function. */
+		error = computed_length(&track->size, out);
+		if (error != 0)
+			return error;
+
+		/* Completes the fit-content function after its bound. */
+		error = computed_ascii(")", out);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the complete computed fit bound is written. */
+		return 0;
+	}
+
 	/* Flexible breadths retain their original factor and fr unit. */
 	if (track->kind == CSS_TRACK_FR) {
 		error = computed_number(track->fr, out);

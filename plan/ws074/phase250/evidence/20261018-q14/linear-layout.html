@@ -1,0 +1,4 @@
+<!doctype html><body><script>
+function check(basis) {var p=document.createElement('div'),e=document.createElement('div'),inner=document.createElement('div');p.style.cssText='display:inline-flex;flex-direction:column';e.style.cssText='flex:0 0 '+basis+';min-height:0';inner.style.height='40px';e.appendChild(inner);p.appendChild(e);document.body.appendChild(p);console.log(basis+' '+e.getBoundingClientRect().height);}
+check('10px');check('calc(0% + 10px)');check('calc(5% - 5% + 10px)');check('calc(0 * 5px)');
+</script>

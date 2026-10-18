@@ -1,0 +1,10 @@
+0 10px / 10px
+1 calc(0% + 10px) / calc(0% + 10px)
+2 calc(0% + 10px) / calc(0% + 10px)
+3 0% / 0%
+4 calc(0% + 10px) / calc(0% + 10px)
+5 calc(25% + 10px) / calc(25% + 10px)
+6 0px / 0px
+7 calc(0% + 20px) / calc(0% + 20px)
+8 calc(0% + 10px) / calc(0% + 10px)
+9 0% / 0%

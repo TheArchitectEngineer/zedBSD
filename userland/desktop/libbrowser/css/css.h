@@ -156,11 +156,12 @@ enum css_track_minimum_rule {
 	CSS_TRACK_MINIMUM_MAX_CONTENT
 };
 
-/* Distinguishes intrinsic maximum breadths while ordinary kinds retain their sizing path. */
+/* Retains intrinsic maxima and computed fit bounds without replacing the coarse native sizing kind. */
 enum css_track_maximum_rule {
 	CSS_TRACK_MAXIMUM_DEFAULT,
 	CSS_TRACK_MAXIMUM_MIN_CONTENT,
-	CSS_TRACK_MAXIMUM_MAX_CONTENT
+	CSS_TRACK_MAXIMUM_MAX_CONTENT,
+	CSS_TRACK_MAXIMUM_FIT_CONTENT
 };
 
 /* The values of container-type: not a container, a container of its width, or of both sizes. */

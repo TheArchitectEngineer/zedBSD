@@ -9,7 +9,11 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [ws074-q20261018-13](queue.md) finished（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+Queue: [ws074-q20261018-14](queue.md) active（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+
+Event ws074-q14-percentage-scope-reconciled-20261018: precode Chrome17条件でzero/cancelled %型の依存を確認。p251をi01、p250をi02へ改訂しglobal1491/static1561照合へ拡張、初期snapshot保存/60分deadline維持。
+
+Event ws074-p250-q14-selected-20261018: [p250](phase250/phase.md)でcomputed fit boundを60分scopeへ選定。新metadataでnative geometryを変えず、既存whole PASSと独立computed基準を確認。callback全遷移は記録しknown animation未達を維持する。
 
 Event ws074-p189-q13-cleared-20261018: [証拠](phase189/evidence/20261018-q13/README.md)。追加36全実行/34 FAIL・2 multiple completions、候補1491/未対応292、PASS増分0。native query/旧plain5対照同値でrunner部分cleared、whole/Native autofocus等未達。次はcomputed fit-content bound候補。
 
@@ -692,6 +696,8 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p247](phase247/phase.md) | zero font glyph advance/ink | cleared / q12 zero glyph own criteria | q11診断、p185 strut |
 | [ws074-p248](phase248/phase.md) | native Grid animation/transition | planning / Queue未選定 | p246 scalar output、native timing設計 |
 | [ws074-p249](phase249/phase.md) | zero line/empty margin eligibility | planned / Queue未選定 | p247 zero ink output、p198 BFC基礎 |
+| [ws074-p250](phase250/phase.md) | computed fit-content bound | in-progress / q14 | p246 scalar output、q12 raw、q13 runner |
+| [ws074-p251](phase251/phase.md) | linear calc zero percentage type | in-progress / q14-i01 | q12/q13 raw、precode Chrome |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 

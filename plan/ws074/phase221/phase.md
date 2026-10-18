@@ -135,3 +135,5 @@ Event ws074-p246-q11-auto-parser-20261018: [p246](../phase246/phase.md)のq11は
 Event ws074-p246-computed-floor-design-correction-20261018: repeat/verticalの既存consumerもclamped sizeを読むため、先のfloor移動案をsource生成中に見直した。既存cascade floorを維持し、private css_track.computed_maximumへunfloored upper lengthをcopyしてcomputed writerがexplicit length minimumのときだけ読む。pointer/公開ABIは不変、repeatやverticalの未選定算法は変更しない。先の移動設計はsuperseded、証拠/旧historyは残す。
 
 Event ws074-p246-q11-uncleared-20261018: [証拠](../phase246/evidence/20261018-q11/README.md)。新scalar/computed outputでGrid whole248維持、74 callback改善/24後退。static227→228/後退0。animation欠落をserializerが露出したためq11 uncleared、p248 native設計へ。値の区別を捨ててfalse PASSへ戻さず、general/child/vertical/names等の既存whole残りは保持。
+
+Event ws074-p250-computed-fit-design-20261018: [p250](../phase250/phase.md)がmaximum_rule FIT_CONTENTと既存sizeにcomputed fit limitを保持する。calcを実際に解析し、computed fallbackで関数をserialize。native autoのfit capは未実装のまま維持するようstretch判定はknown min/maxのみへ明示化。新pointer/公開ABIなし。Grid502/静的529/独立computedとnative不変を確認し、known animation lossを全記録する。既存whole条件/historyは不変。

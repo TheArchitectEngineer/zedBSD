@@ -2625,7 +2625,8 @@ grid_column_stretches(
 
 	/* Horizontal intrinsic maxima have their own growth limit instead of auto stretch. */
 	if (box->style.writing_mode == CSS_WRITING_HORIZONTAL_TB &&
-	    track->maximum_rule != CSS_TRACK_MAXIMUM_DEFAULT)
+	    (track->maximum_rule == CSS_TRACK_MAXIMUM_MIN_CONTENT ||
+	     track->maximum_rule == CSS_TRACK_MAXIMUM_MAX_CONTENT))
 		return 0;
 
 	/* Succeeded: this column retains the ordinary automatic stretch path. */

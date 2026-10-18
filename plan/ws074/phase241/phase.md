@@ -29,3 +29,5 @@ Checkpoint: 40/40 geometry（Chromium39一致/既存仕様差1）。共有toolch
 Event ws074-p241-host-partial-clear-20261018: [証拠](evidence/20261018/README.md)。固定補助WPT149→152/257 PASS（009/045/046）、後退0。独立40/40、Chromium39一致/既存仕様差1、host build warning0、amd64 object compile warning0、Acid3差0/Acid2差873。探索中のshared-library上書きによるrunner errorは固定binaryで全件再実行して解消。host部分cleared、wholeはproduction link/target未実施によりuncleared。補助試験を全Interop2025の達成率に加算しない。次の有限Queueはp189/p190の最新censusとrunner coverageに進む。p240の未達をclearとせず、残るbasis/replacedも保持する。
 
 Commit receipt: `9b94ebe38` WIP。git logのread-backで実装・試験・自走承認・結果の11file保存を確認。
+
+Event ws074-p251-linear-type-design-20261018: [p251](../phase251/phase.md)がdirect linear calcのpercentage存在を保持する。0係数でもCSS_UNIT_PERCENTとなるためdependent computed/used pathsを全1491/static1561と独立値で検証。nonlinear min/max/clampの既存近似は未変更。p250はこのoutput後にcomputed fitを検証し、p246/q11等history/whole残りは維持。

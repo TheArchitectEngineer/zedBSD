@@ -2041,6 +2041,7 @@ cascade_calc(
 	float container_width;
 	float container_height;
 	float least;
+	float nested_pixels;
 	float vmin;
 	float vmax;
 	size_t index;
@@ -2049,30 +2050,42 @@ cascade_calc(
 	/* Each argument's pixels and percentage (a calculation has one argument at least). */
 	memset(values, 0, sizeof(values));
 	memset(percents, 0, sizeof(percents));
+
+	/* Chooses viewport axes for the relative length components. */
 	vmin = engine->viewport_width;
 	if (engine->viewport_height < vmin)
 		vmin = engine->viewport_height;
+
+	/* Chooses the larger viewport axis independently. */
 	vmax = engine->viewport_width;
 	if (engine->viewport_height > vmax)
 		vmax = engine->viewport_height;
+
+	/* Computes each argument before choosing the outer operation. */
 	any_percent = 0;
 	for (index = 0; index < calc->count; index++) {
 		values[index] = calc->sums[index].px +
-		    calc->sums[index].em * font_size +
-		    calc->sums[index].ex * font_size * 0.5f +
-		    calc->sums[index].rem * engine->root_font_size +
-		    calc->sums[index].vw * engine->viewport_width / 100.0f +
-		    calc->sums[index].vh * engine->viewport_height / 100.0f +
-		    calc->sums[index].vmin * vmin / 100.0f +
-		    calc->sums[index].vmax * vmax / 100.0f;
+				calc->sums[index].em * font_size +
+				calc->sums[index].ex * font_size * 0.5f +
+				calc->sums[index].rem * engine->root_font_size +
+				calc->sums[index].vw * engine->viewport_width / 100.0f +
+				calc->sums[index].vh * engine->viewport_height / 100.0f +
+				calc->sums[index].vmin * vmin / 100.0f +
+				calc->sums[index].vmax * vmax / 100.0f;
+
+		/* Resolves container-relative terms only when the expression needs them. */
 		if (calc->sums[index].cqw != 0 || calc->sums[index].cqh != 0) {
 			cascade_container(engine, &container_width, &container_height);
 			values[index] += calc->sums[index].cqw * container_width / 100.0f + calc->sums[index].cqh * container_height / 100.0f;
 		}
 
 		/* A min(), max() or clamp() inside the sum. */
-		if (calc->sums[index].nested != NULL)
-			values[index] += calc->sums[index].nested_factor * cascade_calc_pixels(engine, calc->sums[index].nested, font_size);
+		if (calc->sums[index].nested != NULL) {
+			nested_pixels = cascade_calc_pixels(engine, calc->sums[index].nested, font_size);
+			values[index] += calc->sums[index].nested_factor * nested_pixels;
+		}
+
+		/* Records the percentage coefficient for deferred or nonlinear resolution. */
 		percents[index] = calc->sums[index].percent;
 		if (percents[index] != 0)
 			any_percent = 1;
@@ -2082,19 +2095,24 @@ cascade_calc(
 	length.value = values[0];
 	length.unit = CSS_UNIT_PX;
 	length.offset = 0;
+
+	/* A linear sum can retain its containing-block dependency. */
 	if (calc->operation == CSS_CALC_SUM) {
-		if (percents[0] != 0) {
+		/* Direct linear sums preserve percentage type even when arithmetic cancels its coefficient. */
+		if (percents[0] != 0 ||
+		    (calc->sums[0].has_percent && calc->sums[0].nested == NULL)) {
 			length.unit = CSS_UNIT_PERCENT;
 			length.value = percents[0];
 			length.offset = values[0];
 		}
 
-		/* The sum's length. */
+		/* Succeeded: the linear length retains its computed type. */
 		return length;
 	}
 
 	/* The others compare pixels: a percentage is measured against the viewport's width. */
 	if (any_percent) {
+		/* Resolves each nonlinear argument using the existing viewport approximation. */
 		for (index = 0; index < calc->count; index++)
 			values[index] += percents[index] * engine->viewport_width / 100.0f;
 	}
@@ -2102,8 +2120,11 @@ cascade_calc(
 	/* min() takes the least, max() the greatest. */
 	least = values[0];
 	for (index = 1; index < calc->count; index++) {
+		/* A minimum selects the lowest resolved argument. */
 		if (calc->operation == CSS_CALC_MIN && values[index] < least)
 			least = values[index];
+
+		/* The other nonlinear operations first select the greatest argument. */
 		if (calc->operation != CSS_CALC_MIN && values[index] > least)
 			least = values[index];
 	}
@@ -2111,13 +2132,17 @@ cascade_calc(
 	/* clamp(low, preferred, high) is the preferred one held between the two. */
 	if (calc->operation == CSS_CALC_CLAMP) {
 		least = values[1];
+
+		/* The upper bound limits the preferred length first. */
 		if (least > values[2])
 			least = values[2];
+
+		/* The lower bound wins when the range is reversed. */
 		if (least < values[0])
 			least = values[0];
 	}
 
-	/* Reports the length in pixels. */
+	/* Succeeded: the nonlinear expression resolves to its existing pixel approximation. */
 	length.value = least;
 	return length;
 }
@@ -4350,11 +4375,17 @@ cascade_tracks(
 			tracks[index].fr = declared->size.number;
 
 		/* Resolves the independent maximum without applying its used lower floor. */
-		if (declared->kind == CSS_TRACK_LENGTH) {
+		if (declared->kind == CSS_TRACK_LENGTH || declared->maximum_rule == CSS_TRACK_MAXIMUM_FIT_CONTENT) {
 			tracks[index].size = cascade_length(engine, &declared->size, style->font_size);
 
 			/* Negative computed lengths are range-clamped while intrinsic rules stay separate. */
 			if (tracks[index].size.unit == CSS_UNIT_PX && tracks[index].size.value < 0)
+				tracks[index].size.value = 0;
+
+			/* Pure negative percentage fit limits have an immediately known nonnegative range. */
+			if (declared->maximum_rule == CSS_TRACK_MAXIMUM_FIT_CONTENT &&
+			    tracks[index].size.unit == CSS_UNIT_PERCENT &&
+			    tracks[index].size.offset == 0 && tracks[index].size.value < 0)
 				tracks[index].size.value = 0;
 
 			/* Computed serialization retains the upper bound before native lower-floor normalization. */
