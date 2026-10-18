@@ -10,6 +10,13 @@ the console font the kernel itself uses (src/drivers/platform/pcat/graphics/
 vgafont.c).  That is exact: a cell either is a glyph of that font or it is not.
 The picture is saved as a PNG whether or not the prompt appears, so a failure
 can be looked at.
+
+Several patterns may be asked for; each must be seen on some screen, not all
+on one, because a boot that writes more than a screenful scrolls the first of
+them away.  The first screen showing each one is kept beside the screenshot.
+Steps given after them type on the guest's serial line and wait for the screen
+again; only the screen decides, and what the guest writes to the serial line
+is read away and dropped.
 """
 from __future__ import annotations
 
@@ -20,6 +27,7 @@ import socket
 import struct
 import subprocess
 import sys
+import threading
 import time
 import zlib
 from pathlib import Path
@@ -223,6 +231,104 @@ def write_png(source: Path, destination: Path) -> None:
         + chunk(b"IEND", b""))
 
 
+DEFAULT_PATTERN = r"^(?:\S+ )?login: ?"
+
+
+class SerialLine:
+    """The guest's serial line, used only to type on.
+
+    The emulator holds a guest whose output nobody reads once a client is
+    connected, so a thread reads the line and drops what arrives.
+    """
+
+    def __init__(self, path: str, timeout: float) -> None:
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                self.socket = socket.socket(socket.AF_UNIX,
+                                            socket.SOCK_STREAM)
+                self.socket.connect(path)
+                break
+            except OSError:
+                # Waits for the emulator to create its socket.
+                if time.monotonic() >= deadline:
+                    raise SystemExit("boot-test: no serial socket")
+                time.sleep(0.2)
+        drain = threading.Thread(target=self.drain, daemon=True)
+        drain.start()
+
+    def drain(self) -> None:
+        """Reads the guest's output away until the line closes."""
+        while True:
+            try:
+                chunk = self.socket.recv(65536)
+            except OSError:
+                return
+
+            # Stops when the emulator closes the line.
+            if not chunk:
+                return
+
+    def type_line(self, text: str) -> None:
+        """Types one line and the return key."""
+        self.socket.sendall(text.encode() + b"\r")
+
+
+def save_screen(frame: Path, destination: Path, rows: list[str]) -> None:
+    """Keeps one screen as a PNG and the text read from it."""
+    write_png(frame, destination)
+    destination.with_suffix(".txt").write_text(
+        "\n".join(rows) + "\n", encoding="utf-8")
+
+
+def watch_patterns(monitor: Monitor, frame: Path, font: dict[bytes, str],
+                   patterns: list[re.Pattern], deadline: float,
+                   interval: float, keep: Path | None) -> tuple[bool,
+                                                               list[str]]:
+    """Looks at the screen until every pattern has been seen on one.
+
+    A pattern is matched against each line; it is anchored by itself, so a
+    path inside a message -- "getty: /bin/login: Connection timed out" --
+    is not read as the prompt, and the rest of the line is free: a daemon
+    writing while the prompt is up lands on the same line.  When `keep` is
+    given, the first screen showing pattern N is kept as keep-N.png.
+    """
+    seen = [False] * len(patterns)
+    last: list[str] = []
+    while time.monotonic() < deadline:
+        monitor.screendump(frame)
+        last = read_text(frame, font)
+        for index, pattern in enumerate(patterns):
+            # Records a pattern seen for the first time.
+            if not seen[index] and any(pattern.search(line)
+                                       for line in last):
+                seen[index] = True
+                if keep is not None:
+                    save_screen(frame, keep.with_name(
+                        f"{keep.stem}-{index + 1}.png"), last)
+
+        # Stops as soon as every pattern has been seen.
+        if all(seen):
+            return True, last
+        time.sleep(interval)
+    for index, pattern in enumerate(patterns):
+        # Says which pattern never came.
+        if not seen[index]:
+            print(f"boot-test: never saw {pattern.pattern!r}",
+                  file=sys.stderr)
+    return False, last
+
+
+class StepAction(argparse.Action):
+    """Collects --then-type and --then-expect in the order given."""
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        steps = getattr(namespace, "steps", None) or []
+        kind = "type" if option_string == "--then-type" else "expect"
+        steps.append((kind, values))
+        namespace.steps = steps
+
+
 def main() -> int:
     """Runs the boot watch."""
     parser = argparse.ArgumentParser()
@@ -232,47 +338,79 @@ def main() -> int:
                         help="scratch file for each screen frame "
                              "(default: beside the screenshot)")
     parser.add_argument("--timeout", type=float, default=180.0)
-    parser.add_argument("--pattern", default=r"^(?:\S+ )?login: ?")
+    parser.add_argument("--interval", type=float, default=2.0,
+                        help="seconds between two looks at the screen")
+    parser.add_argument("--pattern", action="append", default=None,
+                        help="a line the screen must show; repeat for "
+                             "several (default: the login prompt)")
+    parser.add_argument("--serial", default=None,
+                        help="the guest's serial socket, typed on by the "
+                             "steps")
+    parser.add_argument("--then-type", action=StepAction, dest="steps",
+                        help="after the patterns, types a line on the "
+                             "serial socket")
+    parser.add_argument("--then-expect", action=StepAction, dest="steps",
+                        help="after the patterns, waits for a line on the "
+                             "screen")
+    parser.add_argument("--then-timeout", type=float, default=120.0)
     arguments = parser.parse_args()
 
     root = Path(__file__).resolve().parents[2]
     font = load_font(
         root / "src/drivers/platform/pcat/graphics/vgafont.c")
-    prompt = re.compile(arguments.pattern)
+    texts = arguments.pattern or [DEFAULT_PATTERN]
+    patterns = [re.compile(text) for text in texts]
+    steps = arguments.steps or []
     screenshot = Path(arguments.screenshot)
     frame = screenshot.with_suffix(".ppm")
     if arguments.frame is not None:
         frame = Path(arguments.frame)
+
+    # Refuses steps that have nowhere to type.
+    if steps and arguments.serial is None:
+        raise SystemExit("boot-test: --then-* needs --serial")
     monitor = Monitor(arguments.monitor, timeout=30.0)
 
+    # Watches the boot; several patterns keep the screen each first showed on.
+    keep = screenshot if len(patterns) > 1 else None
     deadline = time.monotonic() + arguments.timeout
-    last: list[str] = []
-    while time.monotonic() < deadline:
-        monitor.screendump(frame)
-        last = read_text(frame, font)
-
-        # Stops as soon as the prompt is on the screen.  The pattern is
-        # anchored at the start of a line, so a path inside a message --
-        # "getty: /bin/login: Connection timed out" -- is not read as the
-        # prompt.  The rest of the line is free: a daemon writing while the
-        # prompt is up lands on the same line.
-        if any(prompt.search(line) for line in last):
-            write_png(frame, screenshot)
-            frame.unlink(missing_ok=True)
-            screenshot.with_suffix(".txt").write_text(
-                "\n".join(last) + "\n", encoding="utf-8")
-            print(f"boot-test: saw {arguments.pattern!r}")
-            return 0
-        time.sleep(2.0)
-
-    # Keeps the last screen so a failure can be looked at.
+    found, last = watch_patterns(monitor, frame, font, patterns, deadline,
+                                 arguments.interval, keep)
     if frame.exists():
-        write_png(frame, screenshot)
+        save_screen(frame, screenshot, last)
         frame.unlink(missing_ok=True)
-        screenshot.with_suffix(".txt").write_text(
-            "\n".join(last) + "\n", encoding="utf-8")
-    print(f"boot-test: never saw {arguments.pattern!r}", file=sys.stderr)
-    return 1
+
+    # Reports a boot that never showed what was asked for.
+    if not found:
+        return 1
+    print("boot-test: saw " + ", ".join(repr(text) for text in texts))
+
+    # Succeeds at once when nothing is to be typed.
+    if not steps:
+        return 0
+
+    # Types each step's line and waits for each step's screen.
+    line = SerialLine(arguments.serial, timeout=30.0)
+    after = screenshot.with_name(f"{screenshot.stem}-after.png")
+    for kind, text in steps:
+        if kind == "type":
+            line.type_line(text)
+            continue
+        deadline = time.monotonic() + arguments.then_timeout
+        found, last = watch_patterns(monitor, frame, font,
+                                     [re.compile(text)], deadline,
+                                     arguments.interval, None)
+        if frame.exists():
+            save_screen(frame, after, last)
+            frame.unlink(missing_ok=True)
+
+        # Stops at the first screen that never came.
+        if not found:
+            return 1
+        print(f"boot-test: then saw {text!r}")
+
+    # Succeeded: every pattern and every step's screen was seen.
+    return 0
 
 
 if __name__ == "__main__":
