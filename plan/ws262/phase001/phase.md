@@ -97,8 +97,11 @@ Status: in-progress（2026-10-18 q1256-i01、P2）
   host の同値の試験 `diff-run.sh ed2f1b265 build/p2-ws262/diff4`（common・bios・uefi の純粋な helper の 17 種、20000 回）: 375058 行の出力が一致（PASS）。
   bootx64.c は firmware の呼び出しが主で host の試験は無い。分けた関数と条件は元の評価の順・出力の順と 1 つずつ照らした。
 - 条件の中に残した呼び出しの形は `EFI_ERROR()`（macro、関数の呼び出しではない）と `sizeof` だけ（grep で数えた）。
-- 規約の外で見つけた既存の欠け（直さない、報告のみ）: `console_ascii` の UTF-16 の buffer（128）は、125 文字目に改行があると `\r` を足した後に 127 になり、
-  `used == 126U` の書き出しを飛び越えて buffer を超えうる（基準の source でも同じ）。
+- **動作の直し**（規約の直しとは別の commit、2026-10-19 Q1 の指示「Bug にせず、今あなたが直して」）: `console_ascii` の UTF-16 の buffer（128）は、
+  125 文字目に改行があると `\r` を足した後に 127 になり、`used == 126U` の書き出しを飛び越えて buffer を超えていた（基準の source でも同じ）。
+  判定を `used >= 126U` にした（書き出しの時の終端は最大で index 127）。確かめ: [tests/console-ascii-run.sh](../tests/console-ascii-run.sh) BOOTX64_C OUT
+  （bootx64.c を host で ASan 付きで build し、debug port の OUT は SIGSEGV の handler で飛ばす。125 文字＋改行＋7 文字を書く）。
+  直す前の source: ASan の stack-buffer-overflow（`console_ascii` の WRITE of size 2）で exit 1。直した後: 報告なし、134 文字が届いて exit 0。
 
 ## x68k の比べ
 
