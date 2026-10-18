@@ -55,7 +55,7 @@ host-xd-icl-test の中身: 行（D0・ICP・port C は MG PHY C の TC1・port 
 - **enable/disable の列**（eDP = transcoder EDP、HDMI = combo B、DP-TC = MG）を Linux の手順と比べる事。display 11 の順の差（DP は訓練の後に TRANS_CLK_SEL（hsw の形）、HDMI の disable は TRANS_CLK_SEL none を DDI_BUF_CTL off の前に、TC の DP_MODE と swing は MG の関数、PLL は MG PLL、transcoder EDP は `_11` の関数）は列を組む xd-output（P1 の p050b・p050c で入った物）に分岐を足す所。部品と部品ごとの書き込みの順は host-xd-icl-test で固定した。p044 の「9 行 × 列」と同じ時に、ICL の 2 行も cover の列に足す。
 - **ICL の takeover の readout**: GOP が eDP を灯すのは transcoder EDP（`TRANS_DDI_FUNC_CTL(EDP)` を読む）で、DDI select の field も display 11 は違う（bits 30..28）。xd-takeover の readout は display 12 の field と transcoder A〜D だけを読む。ICL の attach は §7 #30 の別の判断なので、attach の前に直す（takeover の持ち主に）。
 - **WM の read latency +2 µs**: 記述の `wm_read_latency_us` = 2 は入れたが、xd に latency を読む部品はまだ無い（今は旧 `watermark.c` が読む）。
-- `drv_i915_xd_pipe_stop` の FEC stall の bit（Linux は display 12 以降だけ）は platform を受けないので display 11 でも 0 にする rmw が残る（0 の bit を 0 にするだけの見込み。関数の引数を変える時に直す）。
+- ~~`drv_i915_xd_pipe_stop` の FEC stall の bit（Linux は display 12 以降だけ）は platform を受けないので display 11 でも 0 にする rmw が残る~~ → 2026-10-19 P2 が直した（下の「q1259 の続き」）。
 
 ## 確かめた事
 
@@ -109,3 +109,9 @@ P1 の見立て（Status は変えない。判定は Q1）: cleared にしない
 - 満たした: 全部の行で eDP の light・dark が xd の部品で通る（host）。5330 の steady 差 0（q1229-i20・i21、前の節）。
 - 満たしていない: 上の「まだ無い物」（Linux の列との比べと 3 種の kind）。
 - P1 の見立て: cleared にしない。
+
+## q1259 の続き（2026-10-19 P2）
+
+- FEC stall の bit: `drv_i915_xd_pipe_stop(io, platform, trans, &was_running)` に platform を足し、chicken の FEC stall の rmw を `platform->display_ver >= 12U` の時だけにした（display 11 には bit が無い。Linux の pipe の止め方と同じ）。呼ぶ側の `xd-output.c`・`xd-takeover.c` を合わせた。
+- host の試験 `tests/display/host-xd-pipe-test.c`: 呼び出しを新しい引数に合わせ、ICL（0x8a52、revid 0x07）で chicken の 0x00800000 が止めた後もそのまま残る事を 1 つ足した（pipe 36 checks）。
+- 確かめた事: `sh plan/ws245/tests/run-xd-host-tests.sh build/p2-ws245-host` が all passed（各 host 試験 0 failures、check-display-steps・check-sources も通る）。`make ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/p2-ws245/k-default build/p2-ws245/k-default/vmunix` が rc=0、warning 0、amd64 vmunix check PASS。QEMU・実機は未実施。

@@ -850,7 +850,7 @@ drv_i915_xd_output_port_off(
 		env->vblank_off(env->context);
 
 	/* The transcoder, then its function. */
-	late = drv_i915_xd_pipe_stop(env->io, out->trans, &was_running);
+	late = drv_i915_xd_pipe_stop(env->io, env->platform, out->trans, &was_running);
 	if ((late & I915_XD_PIPE_LATE_OFF) != 0U) {
 		i915_xd_output_error(env, "xd-output: the transcoder did not stop\n");
 		error = EIO;

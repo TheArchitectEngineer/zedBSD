@@ -36,6 +36,8 @@
 #define I915_XD_PIPE_TEST_ADLP_REVID	0x0cU
 #define I915_XD_PIPE_TEST_TGL		0x9a49U
 #define I915_XD_PIPE_TEST_TGL_REVID	0x01U
+#define I915_XD_PIPE_TEST_ICL		0x8a52U
+#define I915_XD_PIPE_TEST_ICL_REVID	0x07U
 
 /* The window the checks write through. */
 static struct i915_xd_io i915_xd_pipe_test_io;
@@ -341,21 +343,30 @@ i915_xd_pipe_test_start_stop(void)
 	/* The stop: the enable cleared, the FEC stall released, the state followed at once. */
 	i915_xd_fake_rule_mirror(0x70008U, 0x80000000U, 0x70008U, -1, 0U);
 	i915_xd_fake_set(0x420c0U, 0x00800000U);
-	late = drv_i915_xd_pipe_stop(&i915_xd_pipe_test_io, 0U, &was_running);
+	late = drv_i915_xd_pipe_stop(&i915_xd_pipe_test_io, platform, 0U, &was_running);
 	i915_host_check(late == 0U && was_running == 1 && i915_xd_fake_get(0x70008U) == 0U && i915_xd_fake_get(0x420c0U) == 0U,
 			"pipe: the stop clears the enable and the FEC stall, the transcoder goes off");
 
 	/* A stopped transcoder is left as it is. */
-	late = drv_i915_xd_pipe_stop(&i915_xd_pipe_test_io, 0U, &was_running);
+	late = drv_i915_xd_pipe_stop(&i915_xd_pipe_test_io, platform, 0U, &was_running);
 	i915_host_check(late == 0U && was_running == 0, "pipe: a stopped transcoder is not stopped again");
 
 	/* A transcoder that stays on: the wait runs out after 100 ms. */
-	i915_xd_pipe_test_setup(I915_XD_PIPE_TEST_ADLP, I915_XD_PIPE_TEST_ADLP_REVID);
+	platform = i915_xd_pipe_test_setup(I915_XD_PIPE_TEST_ADLP, I915_XD_PIPE_TEST_ADLP_REVID);
 	i915_xd_fake_set(0x70008U, 0xc0000000U);
 	before = i915_xd_fake_now();
-	late = drv_i915_xd_pipe_stop(&i915_xd_pipe_test_io, 0U, &was_running);
+	late = drv_i915_xd_pipe_stop(&i915_xd_pipe_test_io, platform, 0U, &was_running);
 	i915_host_check(late == I915_XD_PIPE_LATE_OFF && i915_xd_fake_now() - before >= 100000U,
 			"pipe: a transcoder that stays on is reported after 100 ms");
+
+	/* Display 11 has no FEC stall bit: the stop leaves the chicken register alone. */
+	platform = i915_xd_pipe_test_setup(I915_XD_PIPE_TEST_ICL, I915_XD_PIPE_TEST_ICL_REVID);
+	i915_xd_fake_rule_mirror(0x70008U, 0x80000000U, 0x70008U, -1, 0U);
+	i915_xd_fake_set(0x70008U, 0xc0000000U);
+	i915_xd_fake_set(0x420c0U, 0x00800000U);
+	late = drv_i915_xd_pipe_stop(&i915_xd_pipe_test_io, platform, 0U, &was_running);
+	i915_host_check(late == 0U && was_running == 1 && i915_xd_fake_get(0x420c0U) == 0x00800000U,
+			"pipe: the display 11 stop leaves the chicken register as it was");
 
 	/* The frame counter. */
 	i915_xd_fake_set(0x71040U, 1234U);
