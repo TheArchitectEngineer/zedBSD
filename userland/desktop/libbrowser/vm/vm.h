@@ -722,6 +722,7 @@ int vm_get_receiver(struct vm_realm *realm, vm_value base, vm_value key, vm_valu
 int vm_put(struct vm_realm *realm, vm_value base, vm_value key, vm_value value);
 int vm_set(struct vm_realm *realm, vm_value base, vm_value key, vm_value value, int strict);
 int vm_set_receiver(struct vm_realm *realm, struct vm_object *object, vm_value key, vm_value value, vm_value receiver, int *done);
+int vm_delete_property(struct vm_realm *realm, struct vm_object *object, vm_value key, int *deleted);
 int vm_delete(struct vm_realm *realm, vm_value base, vm_value key, int strict, vm_value *result);
 
 /* Realm-aware extensibility operations preserve Proxy traps and pure native policy. */

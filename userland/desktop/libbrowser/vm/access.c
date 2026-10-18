@@ -86,6 +86,7 @@ static const struct vm_cell_type access_for_in_type = {
 	"for-in", access_for_in_trace, access_for_in_finalize
 };
 
+static int access_proxy_delete(struct vm_realm *realm, struct vm_proxy *proxy, vm_value key, int *deleted);
 static int access_extensibility(struct vm_realm *realm, struct vm_object *object, int prevent, int *result);
 static int access_proxy_extensibility(struct vm_realm *realm, struct vm_proxy *proxy, int prevent, int *result);
 static int access_set_typed(struct vm_realm *realm, struct vm_object *object, vm_value key, vm_value value, vm_value receiver, int *done);
@@ -531,6 +532,49 @@ vm_set_receiver(
 }
 
 /*
+ * Deletes an own property through realm-aware Proxy handling or the existing pure native policy.
+ */
+int
+vm_delete_property(
+	struct vm_realm *realm,
+	struct vm_object *object,
+	vm_value key,
+	int *deleted)
+{
+	struct access_read_roots roots;
+	int status;
+
+	/* The input and managed owner must survive even a recursion-limit error allocation. */
+	*deleted = 0;
+	roots.realm = realm;
+	roots.base = vm_value_cell(object);
+	roots.key = key;
+	roots.receiver = VM_VALUE_UNDEFINED;
+	status = vm_heap_add_tracer(realm->heap, access_read_trace, &roots);
+	if (status != 0)
+		return status;
+	if (realm->property_depth >= ACCESS_RECURSION_MAX) {
+		status = vm_throw_range_error(realm, "Maximum property recursion exceeded");
+		vm_heap_remove_tracer(realm->heap, access_read_trace, &roots);
+		return status;
+	}
+
+	/* The ordinary path retains its exact native policy and deletion semantics. */
+	realm->property_depth++;
+	if (object->kind == VM_KIND_PROXY)
+		status = access_proxy_delete(realm, (struct vm_proxy *)object, key, deleted);
+	else
+		status = vm_object_delete(realm->heap, object, key, deleted);
+	realm->property_depth--;
+	vm_heap_remove_tracer(realm->heap, access_read_trace, &roots);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: refusal remains a Boolean for the caller's strict-mode policy to interpret. */
+	return 0;
+}
+
+/*
  * Deletes a property of any value (the delete operator) and stores whether
  * it is gone; a property that stays is a TypeError in strict code.
  */
@@ -583,7 +627,7 @@ vm_delete(
 
 	/* An object's own property, unless it is not configurable. */
 	object = (struct vm_object *)vm_value_as_cell(base);
-	status = vm_object_delete(realm->heap, object, key, &deleted);
+	status = vm_delete_property(realm, object, key, &deleted);
 	if (status != 0)
 		return status;
 	if (!deleted) {
@@ -4161,5 +4205,146 @@ cleanup:
 		return status;
 
 	/* Succeeded: the result belongs to the completed extensibility operation. */
+	return 0;
+}
+
+/* Executes a deletion trap without allowing it to conceal fixed or nonextensible target properties. */
+static int
+access_proxy_delete(
+	struct vm_realm *realm,
+	struct vm_proxy *proxy,
+	vm_value key,
+	int *deleted)
+{
+	struct vm_cell *roots[5];
+	struct vm_descriptor current;
+	struct vm_object *target_object;
+	struct vm_string *string;
+	vm_value target;
+	vm_value handler;
+	vm_value method;
+	vm_value method_key;
+	vm_value trap_key;
+	vm_value args[2];
+	vm_value produced;
+	unsigned registered;
+	unsigned index;
+	int is_cell;
+	int is_symbol;
+	int truth;
+	int present;
+	int extensible;
+	int status;
+
+	/* The outer operation owns realm and original input; these snapshots survive reentrant revocation. */
+	target = proxy->target;
+	handler = proxy->handler;
+	memset(roots, 0, sizeof(roots));
+	is_cell = vm_value_is_cell(target);
+	if (is_cell)
+		roots[0] = vm_value_as_cell(target);
+	is_cell = vm_value_is_cell(handler);
+	if (is_cell)
+		roots[1] = vm_value_as_cell(handler);
+	is_cell = vm_value_is_cell(key);
+	if (is_cell)
+		roots[2] = vm_value_as_cell(key);
+	registered = 0;
+	for (index = 0; index < 5U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* Revocation fails before any handler lookup or target observation. */
+	if (target == VM_VALUE_NULL) {
+		status = vm_throw_type_error(realm, "Cannot delete a property of a revoked Proxy");
+		goto cleanup;
+	}
+
+	/* GetMethod preserves getter exceptions, null fallback and noncallable rejection. */
+	method_key = vm_key_from_ascii(realm->heap, "deleteProperty");
+	if (method_key == VM_VALUE_EMPTY) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* A missing current method forwards to the original target's actual internal deletion. */
+	status = vm_get_method(realm, handler, method_key, &method);
+	if (status != 0)
+		goto cleanup;
+	if (method == VM_VALUE_UNDEFINED) {
+		status = vm_delete_property(realm, (struct vm_object *)vm_value_as_cell(target), key, deleted);
+		goto cleanup;
+	}
+
+	/* Retain a fresh method before converting the internal numeric representation of a property key. */
+	roots[3] = vm_value_as_cell(method);
+	trap_key = key;
+	is_symbol = access_is_symbol(key);
+	if (!is_symbol) {
+		status = vm_to_string(realm, key, &string);
+		if (status != 0)
+			goto cleanup;
+		trap_key = vm_value_cell(string);
+		roots[4] = &string->cell;
+	}
+
+	/* The handler receives exactly its original target and string-or-symbol key. */
+	args[0] = target;
+	args[1] = trap_key;
+	status = vm_call(realm, method, handler, args, 2, &produced);
+	if (status != 0)
+		goto cleanup;
+	truth = vm_to_boolean(produced);
+	if (!truth) {
+		/* Refusal never observes the target after the trap. */
+		status = 0;
+		goto cleanup;
+	}
+
+	/* A trap may actually delete or reconfigure its target before this post-trap observation. */
+	target_object = (struct vm_object *)vm_value_as_cell(target);
+	status = vm_get_own_property(realm, target_object, key, &current, &present);
+	if (status != 0)
+		goto cleanup;
+	if (!present) {
+		*deleted = 1;
+		status = 0;
+		goto cleanup;
+	}
+
+	/* Only the descriptor's scalar attributes are needed after this point, never any unrooted payload. */
+	if ((current.attributes & VM_PROPERTY_CONFIGURABLE) == 0U) {
+		status = vm_throw_type_error(realm, "Proxy deleteProperty trap concealed a fixed own property");
+		goto cleanup;
+	}
+
+	/* Existing configurable properties of a nonextensible target cannot be concealed either. */
+	status = vm_is_extensible(realm, target_object, &extensible);
+	if (status != 0)
+		goto cleanup;
+	if (!extensible) {
+		status = vm_throw_type_error(realm, "Proxy deleteProperty trap concealed a nonextensible target's own property");
+		goto cleanup;
+	}
+
+	/* A configurable own property on an extensible target may legally remain despite a true trap result. */
+	*deleted = 1;
+	status = 0;
+
+cleanup:
+	/* Retire only acquired snapshots and transient key/method roots on all completion paths. */
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* Preserve the original error after releasing the helper's ownership. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: deleted reports the actual internal operation's Boolean. */
 	return 0;
 }

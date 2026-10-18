@@ -16,6 +16,15 @@
 #include <stdio.h>
 #include <string.h>
 
+/* One synchronous deletion observation keeps only integer addresses and callback counts, never managed edges. */
+struct delete_observation {
+	struct vm_heap *heap;
+	uintptr_t addresses[5];
+	unsigned get_collections;
+	unsigned delete_collections;
+	unsigned mode;
+};
+
 /* Integer addresses observe a single synchronous extensibility operation without retaining any managed cells. */
 struct extent_observation {
 	struct vm_heap *heap;
@@ -23,6 +32,9 @@ struct extent_observation {
 	unsigned collections;
 	unsigned mode;
 };
+
+/* Only delete_pressure owns this context; zero means no deletion policy observation is active. */
+static struct delete_observation delete_case;
 
 /* Only extent_pressure owns this context; zero means no native policy observation is active. */
 static struct extent_observation extent_case;
@@ -57,6 +69,14 @@ static uintptr_t typed_case_realm_address;
 /* Counts forced typed validity collections that retained their original managed owner. */
 static unsigned typed_case_collections;
 
+static int delete_collect_get_own(struct vm_object *object, vm_value key, struct vm_property *property);
+static int delete_collect_native(struct vm_heap *heap, struct vm_object *object, vm_value key, int *handled, int *deleted);
+
+/* These hooks only collect and delegate actual descriptor/deletion policy to ordinary storage. */
+static const struct vm_native_operations delete_collect_operations = {
+	delete_collect_get_own, NULL, NULL, delete_collect_native, NULL
+};
+
 static int extent_collect_prevent(struct vm_object *object, int *allowed);
 
 /* This pure policy supplies only collection and native acceptance/refusal/errno, never user script. */
@@ -79,6 +99,9 @@ static const struct vm_native_operations proxy_sole_operations = {
 	proxy_sole_get_own, NULL, NULL, NULL, NULL
 };
 
+static int delete_collect_participants(void);
+static int delete_pressure(struct page *page);
+static int proxy_delete_property(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int extent_pressure(struct page *page);
 static int array_identity_pressure(struct page *page);
 static int typed_storage_pressure(struct page *page);
@@ -168,6 +191,11 @@ main(
 	if (status != 0)
 		goto cleanup;
 
+	/* A private Boolean bridge exposes actual deletion without strict-mode result conversion. */
+	status = js_builtin_method(page->realm, page->realm->global, "deleteReadProperty", 2, proxy_delete_property);
+	if (status != 0)
+		goto cleanup;
+
 	/* The same source reaches native Proxy or Chromium's genuine Proxy without API substitution inside the tests. */
 	wb_buffer_init(&source);
 	status = wb_file_read(source_path, &source);
@@ -249,6 +277,11 @@ main(
 
 	/* Extensibility retains original participants after reentrant revocation and pure native policy collection. */
 	status = extent_pressure(page);
+	if (status != 0)
+		goto cleanup;
+
+	/* Deletion keeps original participants and a sole fresh Symbol across post-trap and native fallback collections. */
+	status = delete_pressure(page);
 
 cleanup:
 	/* Restore ordinary scanning before retiring the complete Page graph. */
@@ -2166,5 +2199,347 @@ cleanup:
 		return status;
 
 	/* Succeeded: both native and scripted extensibility operations retained and then released their full graph. */
+	return 0;
+}
+
+/* Compares the real realm deletion operation with genuine reflection without replacing its semantics. */
+static int
+proxy_delete_property(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	vm_value object;
+	vm_value key;
+	int is_object;
+	int deleted;
+	int status;
+
+	UNUSED_PARAMETER(receiver);
+
+	/* Reflection rejects a primitive target before coercing its property key. */
+	object = js_argument(args, count, 0);
+	is_object = vm_value_is_object(object);
+	if (!is_object) {
+		status = vm_throw_type_error(realm, "Delete target must be an object");
+		return status;
+	}
+
+	/* The production API owns the completed key before any subsequent allocation or trap. */
+	status = vm_to_key(realm, js_argument(args, count, 1), &key);
+	if (status != 0)
+		return status;
+	status = vm_delete_property(realm, (struct vm_object *)vm_value_as_cell(object), key, &deleted);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: report internal refusal directly, without the delete operator's strict policy. */
+	*result = vm_value_boolean(deleted);
+	return 0;
+}
+
+/* Collects while observing operation participants through integer addresses alone. */
+static int
+delete_collect_participants(
+	void)
+{
+	struct vm_cell *found;
+	unsigned index;
+
+	/* Pure native policy may collect but never runs user script. */
+	vm_heap_collect(delete_case.heap);
+	for (index = 0; index < 5U; index++) {
+		found = vm_heap_find_cell(delete_case.heap, delete_case.addresses[index]);
+		if (found == NULL)
+			return EFAULT;
+	}
+
+	/* Succeeded: owner, target, handler, original Proxy and fresh Symbol all survived this collection. */
+	return 0;
+}
+
+/* Observes the real post-trap target descriptor read without supplying a replacement object model. */
+static int
+delete_collect_get_own(
+	struct vm_object *object,
+	vm_value key,
+	struct vm_property *property)
+{
+	int status;
+	int found;
+
+	/* Negative errno remains the get-own callback's distinct failure convention. */
+	status = delete_collect_participants();
+	if (status != 0)
+		return -status;
+	delete_case.get_collections++;
+	found = vm_object_get_own_ordinary(object, key, property);
+	if (found < 0)
+		return found;
+
+	/* Succeeded: ordinary descriptor policy reports absence or presence unchanged. */
+	return found;
+}
+
+/* Collects in pure native deletion policy and then delegates actual storage removal to ordinary fallback. */
+static int
+delete_collect_native(
+	struct vm_heap *heap,
+	struct vm_object *object,
+	vm_value key,
+	int *handled,
+	int *deleted)
+{
+	int status;
+
+	UNUSED_PARAMETER(heap);
+	UNUSED_PARAMETER(object);
+	UNUSED_PARAMETER(key);
+
+	/* The caller must retain its whole operation frame through a native callback collection. */
+	*handled = 0;
+	*deleted = 0;
+	status = delete_collect_participants();
+	if (status != 0)
+		return status;
+	delete_case.delete_collections++;
+	if (delete_case.mode == 3U)
+		return EACCES;
+
+	/* Succeeded: the unchanged ordinary deletion path now performs the actual mutation. */
+	return 0;
+}
+
+/* Checks post-trap sole-key lifetime, native fallback collection, refusal and errno without conservative roots. */
+static int
+delete_pressure(
+	struct page *page)
+{
+	struct vm_realm *realm;
+	struct vm_object *target;
+	struct vm_object *handler;
+	struct vm_symbol *symbol;
+	struct vm_cell *roots[6];
+	struct vm_cell *found;
+	struct vm_property property;
+	struct vm_heap_stats before;
+	struct vm_heap_stats after;
+	vm_value proxy;
+	vm_value method;
+	vm_value key;
+	vm_value method_key;
+	vm_value owner_key;
+	vm_value stored_key;
+	unsigned registered;
+	unsigned index;
+	unsigned mode;
+	int deleted;
+	int present;
+	int status;
+
+	/* This synchronous observer borrows a heap and stores no managed pointer edges. */
+	memset(&delete_case, 0, sizeof(delete_case));
+	memset(roots, 0, sizeof(roots));
+	registered = 0;
+	for (index = 0; index < 6U; index++) {
+		status = vm_heap_add_root(page->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* Actual trap deletion, false trap, native fallback and native errno need independent input graphs. */
+	for (mode = 0; mode < 4U; mode++) {
+		status = vm_realm_create_managed(page->heap, &realm);
+		if (status != 0)
+			goto cleanup;
+		roots[0] = &realm->cell;
+		delete_case.heap = page->heap;
+		delete_case.mode = mode;
+		delete_case.get_collections = 0;
+		delete_case.delete_collections = 0;
+		delete_case.addresses[0] = (uintptr_t)realm;
+		target = vm_object_create(page->heap, NULL);
+		if (target == NULL) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* The native table only observes collection and forwards real ordinary storage policy. */
+		roots[1] = &target->cell;
+		delete_case.addresses[1] = (uintptr_t)target;
+		target->native_operations = &delete_collect_operations;
+		handler = vm_object_create(page->heap, NULL);
+		if (handler == NULL) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* A never-stored fresh Symbol has no registry or shape-cache owner outside the operation frame. */
+		roots[2] = &handler->cell;
+		delete_case.addresses[2] = (uintptr_t)handler;
+		symbol = vm_symbol_create(page->heap, VM_VALUE_UNDEFINED);
+		if (symbol == NULL) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* Temporary setup ownership ends before the tested production operation begins. */
+		roots[5] = &symbol->cell;
+		delete_case.addresses[4] = (uintptr_t)symbol;
+		key = vm_value_cell(symbol);
+		stored_key = vm_key_from_ascii(page->heap, "owned");
+		if (stored_key == VM_VALUE_EMPTY) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* Actual deletion uses an independent ordinary key so the observed Symbol never enters a heap-owned shape. */
+		status = vm_object_define(page->heap, target, stored_key, VM_VALUE_TRUE, VM_PROPERTY_DEFAULT);
+		if (status != 0)
+			goto cleanup;
+		method_key = vm_key_from_ascii(page->heap, "deleteProperty");
+		owner_key = vm_key_from_ascii(page->heap, "owner");
+		if (method_key == VM_VALUE_EMPTY || owner_key == VM_VALUE_EMPTY) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* Reentrant revocation makes the helper snapshots responsible for the original target and handler. */
+		if (mode == 0U) {
+			status = proxy_script(page->realm, "(function(t,k){delete t.owned;revokeReadProxy(this.owner);collectReadProxy();return true;})", &method);
+		} else if (mode == 1U) {
+			status = proxy_script(page->realm, "(function(){revokeReadProxy(this.owner);collectReadProxy();return false;})", &method);
+		} else {
+			status = proxy_script(page->realm, "(function(){revokeReadProxy(this.owner);collectReadProxy();return undefined;})", &method);
+		}
+
+		/* Trap methods and accessor getters use the same real script evaluator and normal handler storage. */
+		if (status != 0)
+			goto cleanup;
+		roots[3] = vm_value_as_cell(method);
+		if (mode < 2U)
+			status = vm_object_define(page->heap, handler, method_key, method, VM_PROPERTY_DEFAULT);
+		else
+			status = vm_define_accessor(realm, vm_value_cell(handler), method_key, method, 0);
+		if (status != 0)
+			goto cleanup;
+		roots[3] = NULL;
+		status = vm_proxy_create(realm, vm_value_cell(target), vm_value_cell(handler), &proxy);
+		if (status != 0)
+			goto cleanup;
+		roots[4] = vm_value_as_cell(proxy);
+		delete_case.addresses[3] = (uintptr_t)roots[4];
+		status = vm_object_define(page->heap, handler, owner_key, proxy, VM_PROPERTY_DEFAULT);
+		if (status != 0)
+			goto cleanup;
+
+		/* Neither embedding roots nor C stack scanning may retain any operation participant. */
+		vm_heap_stats(page->heap, &before);
+		for (index = 0; index < 6U; index++)
+			roots[index] = NULL;
+		status = vm_delete_property(realm, (struct vm_object *)vm_value_as_cell(proxy), key, &deleted);
+		vm_heap_stats(page->heap, &after);
+		if (mode == 3U) {
+			if (status != EACCES) {
+				status = 1;
+				goto cleanup;
+			}
+
+			/* Preserve the native errno without inventing a language exception or successful deletion. */
+			status = 0;
+		}
+
+		/* Every path must collect while active and restore its native recursion counter. */
+		if (status != 0)
+			goto cleanup;
+		if (after.collections <= before.collections || realm->property_depth != 0U) {
+			status = 1;
+			goto cleanup;
+		}
+
+		/* Successful actual removal is distinct from false trap refusal and native errno. */
+		if (mode == 0U || mode == 2U) {
+			if (!deleted) {
+				status = 1;
+				goto cleanup;
+			}
+		} else if (deleted) {
+			status = 1;
+			goto cleanup;
+		}
+
+		/* Only the true trap reads a target descriptor after returning; the false trap skips it entirely. */
+		if (mode == 0U) {
+			if (delete_case.get_collections != 1U) {
+				status = 1;
+				goto cleanup;
+			}
+		} else if (delete_case.get_collections != 0U) {
+			status = 1;
+			goto cleanup;
+		}
+
+		/* Ordinary native storage policy runs once for actual trap deletion or fallback, never for a false trap. */
+		if (mode == 1U) {
+			if (delete_case.delete_collections != 0U) {
+				status = 1;
+				goto cleanup;
+			}
+		} else if (delete_case.delete_collections != 1U) {
+			status = 1;
+			goto cleanup;
+		}
+
+		/* Observe all five live participants before checking actual ordinary storage without calling policy hooks. */
+		for (index = 0; index < 5U; index++) {
+			found = vm_heap_find_cell(page->heap, delete_case.addresses[index]);
+			if (found == NULL) {
+				status = 1;
+				goto cleanup;
+			}
+		}
+
+		/* Actual trap mutation removes its independent property; native fallback on the missing Symbol preserves it. */
+		present = vm_object_get_own_ordinary(target, stored_key, &property);
+		if (mode == 0U) {
+			if (present != 0) {
+				status = 1;
+				goto cleanup;
+			}
+		} else if (present != 1) {
+			status = 1;
+			goto cleanup;
+		}
+
+		/* Completed operation frames must actually release every participant, including the sole fresh Symbol. */
+		vm_heap_collect(page->heap);
+		for (index = 0; index < 5U; index++) {
+			found = vm_heap_find_cell(page->heap, delete_case.addresses[index]);
+			if (found != NULL) {
+				status = 1;
+				goto cleanup;
+			}
+		}
+	}
+
+	/* All independent paths preserved policy, post-trap ordering and complete ownership retirement. */
+	status = 0;
+
+cleanup:
+	/* The observation context is borrowed only for this synchronous fixture call. */
+	memset(&delete_case, 0, sizeof(delete_case));
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(page->heap, &roots[registered]);
+	}
+
+	/* Preserve failures after releasing every temporary setup registration. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: post-trap sole-key and native fallback collections retained and then released all participants. */
 	return 0;
 }
