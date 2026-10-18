@@ -985,7 +985,7 @@ i915_irq_handler_body(
 	/*
 	 * A Gen9 GT serves its banks and reopens the master control.  Its
 	 * display sources stay disabled except the flip display's flip done
-	 * (display/gen9-flip.c), which the display table acknowledges
+	 * (display/xd9-flip.c), which the display table acknowledges
 	 * (gen8_irq_handler()).
 	 */
 	if (gen9 != 0) {

@@ -27,7 +27,7 @@
 #include "display.h"
 #include "dmc.h"
 #include "edp-device.h"
-#include "gen9-firmware.h"
+#include "xd9-firmware.h"
 #include "head.h"
 #include "hpd.h"
 #include "interrupts.h"
@@ -1197,8 +1197,8 @@ i915_display_gen9_check(
 		driver_ggtt_first = gt->ggtt_entries - reserved;
 
 	/* Checks what the firmware scans out before the GT start writes its GGTT pages. */
-	device->stage = "gen9_firmware_check";
-	error = drv_i915_gen9_firmware_check(device->display, &gt->mmio, driver_ggtt_first);
+	device->stage = "xd9_firmware_check";
+	error = drv_i915_xd9_firmware_check(device->display, &gt->mmio, driver_ggtt_first);
 	if (error != 0)
 		return error;
 

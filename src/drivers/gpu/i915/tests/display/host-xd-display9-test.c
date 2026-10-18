@@ -18,7 +18,6 @@
 #include "host-test.h"
 
 #include "../../display/display-internal.h"
-#include "../../display/gen9-mode.h"
 #include "../../display/xd-platform.h"
 #include "../../device-info.h"
 #include "../../intel/pci-ids.h"
@@ -38,7 +37,12 @@ static const uint16_t i915_xd9_test_kbl[] = { I915_PCI_KBL_IDS(I915_XD9_TEST_ID)
 static const uint16_t i915_xd9_test_cfl[] = { I915_PCI_CFL_IDS(I915_XD9_TEST_ID) };
 static const uint16_t i915_xd9_test_cml[] = { I915_PCI_CML_IDS(I915_XD9_TEST_ID) };
 
-static void i915_xd9_test_ids(const uint16_t *ids, unsigned count, int platform, unsigned kind, const char *name);
+/* The power classes a row's name and its class field name: H and S, U, and Y. */
+#define I915_XD9_TEST_CLASS_H		0
+#define I915_XD9_TEST_CLASS_U		1
+#define I915_XD9_TEST_CLASS_Y		2
+
+static void i915_xd9_test_ids(const uint16_t *ids, unsigned count, unsigned kind, const char *name);
 static void i915_xd9_test_pch(void);
 static void i915_xd9_test_shape(void);
 static unsigned i915_xd9_test_rows_listing(uint16_t id);
@@ -54,10 +58,10 @@ main(void)
 	int status;
 
 	/* The ids of each platform, the south display, the rows' shape. */
-	i915_xd9_test_ids(i915_xd9_test_skl, sizeof(i915_xd9_test_skl) / sizeof(i915_xd9_test_skl[0]), I915_PLATFORM_SKYLAKE, I915_XD_KIND_SKL, "skl");
-	i915_xd9_test_ids(i915_xd9_test_kbl, sizeof(i915_xd9_test_kbl) / sizeof(i915_xd9_test_kbl[0]), I915_PLATFORM_KABYLAKE, I915_XD_KIND_KBL, "kbl");
-	i915_xd9_test_ids(i915_xd9_test_cfl, sizeof(i915_xd9_test_cfl) / sizeof(i915_xd9_test_cfl[0]), I915_PLATFORM_COFFEELAKE, I915_XD_KIND_CFL, "cfl");
-	i915_xd9_test_ids(i915_xd9_test_cml, sizeof(i915_xd9_test_cml) / sizeof(i915_xd9_test_cml[0]), I915_PLATFORM_COMETLAKE, I915_XD_KIND_CML, "cml");
+	i915_xd9_test_ids(i915_xd9_test_skl, sizeof(i915_xd9_test_skl) / sizeof(i915_xd9_test_skl[0]), I915_XD_KIND_SKL, "skl");
+	i915_xd9_test_ids(i915_xd9_test_kbl, sizeof(i915_xd9_test_kbl) / sizeof(i915_xd9_test_kbl[0]), I915_XD_KIND_KBL, "kbl");
+	i915_xd9_test_ids(i915_xd9_test_cfl, sizeof(i915_xd9_test_cfl) / sizeof(i915_xd9_test_cfl[0]), I915_XD_KIND_CFL, "cfl");
+	i915_xd9_test_ids(i915_xd9_test_cml, sizeof(i915_xd9_test_cml) / sizeof(i915_xd9_test_cml[0]), I915_XD_KIND_CML, "cml");
 	i915_xd9_test_pch();
 	i915_xd9_test_shape();
 
@@ -75,7 +79,6 @@ static void
 i915_xd9_test_ids(
 	const uint16_t *ids,
 	unsigned count,
-	int platform,
 	unsigned kind,
 	const char *name)
 {
@@ -87,7 +90,6 @@ i915_xd9_test_ids(
 	unsigned wrong_class;
 	unsigned newer;
 	int error;
-	int sku;
 	int by_name;
 	int by_class;
 
@@ -115,11 +117,10 @@ i915_xd9_test_ids(
 		}
 		if (choice.platform->kind != kind)
 			wrong_kind++;
-		sku = drv_i915_skl_sku(ids[index], platform);
 		by_name = i915_xd9_test_sku_of(choice.platform->name);
 		by_class = i915_xd9_test_class_sku(choice.platform->power_class);
-		if (by_name != sku || by_class != sku) {
-			fprintf(stderr, "%s: 0x%04x is in \"%s\", the mode set's class is %d\n", name, ids[index], choice.platform->name, sku);
+		if (by_name != by_class) {
+			fprintf(stderr, "%s: 0x%04x is in \"%s\", whose class is %d\n", name, ids[index], choice.platform->name, by_class);
 			wrong_class++;
 		}
 	}
@@ -242,12 +243,12 @@ i915_xd9_test_sku_of(
 	/* The class is the name's last word. */
 	length = strlen(row_name);
 	if (length > 2U && strcmp(row_name + length - 2U, " U") == 0)
-		return I915_SKL_SKU_ULT;
+		return I915_XD9_TEST_CLASS_U;
 	if (length > 2U && strcmp(row_name + length - 2U, " Y") == 0)
-		return I915_SKL_SKU_ULX;
+		return I915_XD9_TEST_CLASS_Y;
 
 	/* Succeeded: the H and S parts. */
-	return I915_SKL_SKU_H;
+	return I915_XD9_TEST_CLASS_H;
 }
 
 /* Reports the mode set's power class of a row's power class. */
@@ -257,10 +258,10 @@ i915_xd9_test_class_sku(
 {
 	/* The U parts and the Y parts. */
 	if (power_class == I915_XD_POWER_CLASS_U)
-		return I915_SKL_SKU_ULT;
+		return I915_XD9_TEST_CLASS_U;
 	if (power_class == I915_XD_POWER_CLASS_Y)
-		return I915_SKL_SKU_ULX;
+		return I915_XD9_TEST_CLASS_Y;
 
 	/* Succeeded: the H and S parts. */
-	return I915_SKL_SKU_H;
+	return I915_XD9_TEST_CLASS_H;
 }

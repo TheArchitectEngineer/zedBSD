@@ -6,7 +6,7 @@
  */
 
 /*
- * The host test of the Gen9 flip display's arithmetic (display/gen9-flip.c):
+ * The host test of the Gen9 flip display's arithmetic (display/xd9-flip.c):
  * the readout of the firmware's display registers (a Let's Note
  * SV7 as its firmware leaves it, the variants the flips accept and every
  * refusal), the port and pixel clocks and the refresh, and the display
@@ -20,10 +20,10 @@
 
 #include "host-test.h"
 
-#include "../../display/gen9-flip.h"
+#include "../../display/xd9-flip.h"
 #include "../../display/xd-clock.h"
 #include "../../display/xd-takeover.h"
-#include "../../intel/display-regs-gen9.h"
+#include "gen9-fake-regs.h"
 
 #include <uapi/errno.h>
 
@@ -60,7 +60,7 @@ main(void)
 	if (status != 0)
 		return status;
 
-	/* Succeeded: the arithmetic is the one gen9-flip.c describes. */
+	/* Succeeded: the arithmetic is the one xd9-flip.c describes. */
 	return 0;
 }
 
@@ -368,11 +368,11 @@ i915_host_skl_window(void)
 	unsigned pages;
 
 	/* 1920x1200 at 7680 bytes a row: 2250 pages, guards and slack, twice, in 32-page units. */
-	pages = drv_i915_skl_flip_window_pages(7680U * 1200U);
+	pages = drv_i915_xd9_flip_window_pages(7680U * 1200U);
 	i915_host_check(pages == 5312U, "window for 1920x1200: 5312 pages");
 	i915_host_check((pages % 32U) == 0U, "window in 32-page units");
 
 	/* A buffer of a page and a bit: two pages each, 804 pages in all, rounded up to 832. */
-	pages = drv_i915_skl_flip_window_pages(4097U);
+	pages = drv_i915_xd9_flip_window_pages(4097U);
 	i915_host_check(pages == 832U, "window rounds pages and units up");
 }

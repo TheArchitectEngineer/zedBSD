@@ -55,7 +55,6 @@ static const struct parameter_name parameter_names[KERN_BOOT_PARAMETER_COUNT] = 
 	PARAMETER_NAME("i915.start"),
 	PARAMETER_NAME("i915.debug"),
 	PARAMETER_NAME("i915.gen9"),
-	PARAMETER_NAME("i915.gen9.display"),
 };
 
 static char firmware_source[KERN_BOOT_SOURCE_SELECTOR_SIZE];
@@ -292,17 +291,16 @@ kern_boot_parameters_parse(
 		}
 
 		/*
-		 * kmsg=, login=, display=, i915.start=, i915.debug=, i915.gen9=
-		 * and i915.gen9.display= take one of their words (ws035-p097,
-		 * ws075-p012, ws118-p005, ws229-p002, ws237-p002).
+		 * kmsg=, login=, display=, i915.start=, i915.debug= and
+		 * i915.gen9= take one of their words (ws035-p097, ws075-p012,
+		 * ws118-p005, ws229-p002).
 		 */
 		if (key == KERN_BOOT_PARAMETER_KMSG ||
 		    key == KERN_BOOT_PARAMETER_LOGIN ||
 		    key == KERN_BOOT_PARAMETER_DISPLAY ||
 		    key == KERN_BOOT_PARAMETER_I915_START ||
 		    key == KERN_BOOT_PARAMETER_I915_DEBUG ||
-		    key == KERN_BOOT_PARAMETER_I915_GEN9 ||
-		    key == KERN_BOOT_PARAMETER_I915_GEN9_DISPLAY) {
+		    key == KERN_BOOT_PARAMETER_I915_GEN9) {
 			error = parameter_word(key, parameters->storage + value_start, value_length);
 			if (error != 0) {
 				error = parse_error(parameters, error);
@@ -337,8 +335,7 @@ kern_boot_parameters_parse(
 /*
  * Checks the word of kmsg= (quiet or console), login= (graphical or console),
  * display= (auto, hdmi, edp or panel), i915.start= (auto or manual),
- * i915.debug= (off or display), i915.gen9= (on or off) or
- * i915.gen9.display= (copy, flip, backlight, modeset or full).
+ * i915.debug= (off or display) or i915.gen9= (on or off).
  */
 static int
 parameter_word(
@@ -415,31 +412,6 @@ parameter_word(
 			return EINVAL;
 
 		/* Succeeded: one of i915.gen9='s words. */
-		return 0;
-	}
-
-	/*
-	 * i915.gen9.display= tells how far the i915 drives a Gen9 GPU's
-	 * display, each word taking the steps of the words before it: copy
-	 * every frame into the firmware's framebuffer (copy), flip the
-	 * firmware's plane (flip), offer the panel's brightness (backlight),
-	 * set modes and drive external displays (modeset), and keep the
-	 * display across suspend (full).
-	 */
-	if (key == KERN_BOOT_PARAMETER_I915_GEN9_DISPLAY) {
-		other = parameter_text_is(value, length, "copy");
-		if (!other)
-			other = parameter_text_is(value, length, "flip");
-		if (!other)
-			other = parameter_text_is(value, length, "backlight");
-		if (!other)
-			other = parameter_text_is(value, length, "modeset");
-		if (!other)
-			other = parameter_text_is(value, length, "full");
-		if (!other)
-			return EINVAL;
-
-		/* Succeeded: one of i915.gen9.display='s words. */
 		return 0;
 	}
 

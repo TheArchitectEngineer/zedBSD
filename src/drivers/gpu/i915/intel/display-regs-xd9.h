@@ -358,4 +358,14 @@
 #define I915_XD9_MASTER_DE_PIPE(pipe)		(1U << (16U + (pipe)))
 #define I915_XD9_FLIP_IRQS			(I915_XD9_DE_PIPE_FLIP_DONE | I915_XD9_DE_PIPE_FAULT)
 
+/*
+ * The display arbiter's control 2, with IPC's enable (Kaby Lake and
+ * later), which lengthens the watermark latencies.
+ *
+ * Values referenced: Intel Kaby Lake PRM Volume 2c, Command Reference:
+ * Registers (DISP_ARB_CTL2).
+ */
+#define I915_XD9_DISP_ARB_CTL2			0x45004U
+#define I915_XD9_IPC_ENABLE			(1U << 3)
+
 #endif /* DRIVERS_GPU_I915_INTEL_DISPLAY_REGS_XD9_H */

@@ -7,7 +7,7 @@
 
 /*
  * The golden scenes of the Gen9 panel's backlight that reach the
- * registers through the MMIO BAR (display/gen9-backlight.c): the start
+ * registers through the MMIO BAR (display/xd9-backlight.c): the start
  * on a lit panel of either PCH layout, the brightness read and set, and
  * the sleep's light off and back on.
  *
@@ -19,11 +19,11 @@
 #include "host-test.h"
 #include "gen9-fake-hw.h"
 
-#include "../../display/gen9-backlight.h"
+#include "../../display/xd9-backlight.h"
 #include "../../display/internal.h"
 #include "../../i915.h"
 #include "../../device-info.h"
-#include "../../intel/display-regs-gen9.h"
+#include "gen9-fake-regs.h"
 
 #include <kern/backlight.h>
 
@@ -96,7 +96,7 @@ i915_golden_backlight(
 
 	/* The start on a lit panel publishes the device. */
 	i915_golden_panel(cnp);
-	drv_i915_gen9_backlight_start(&i915_golden_device);
+	drv_i915_xd9_backlight_start(&i915_golden_device);
 	ops = i915_host_backlight_ops;
 	context = i915_host_backlight_context;
 	i915_host_check(ops != NULL, "backlight: published on a lit panel");
@@ -116,12 +116,12 @@ i915_golden_backlight(
 
 	/* The sleep turns the light off and the resume back on. */
 	i915_golden_panel(cnp);
-	drv_i915_gen9_backlight_suspend(&i915_golden_device);
-	drv_i915_gen9_backlight_resume(&i915_golden_device);
+	drv_i915_xd9_backlight_suspend(&i915_golden_device);
+	drv_i915_xd9_backlight_resume(&i915_golden_device);
 	i915_host_check(i915_gen9_fake.log_count == 2U, "backlight: the sleep's two writes");
 
 	/* The stop withdraws the device. */
-	drv_i915_gen9_backlight_stop(&i915_golden_device);
+	drv_i915_xd9_backlight_stop(&i915_golden_device);
 	i915_host_check(i915_host_backlight_ops == NULL, "backlight: withdrawn");
 }
 

@@ -33,8 +33,7 @@
 #include "../../display/xd-pipe.h"
 #include "../../display/xd-power.h"
 #include "../../display/xd9-outputs.h"
-#include "../../intel/display-regs-gen9.h"
-#include "../../intel/display-regs-gen9-modeset.h"
+#include "gen9-fake-regs.h"
 
 #include <uapi/errno.h>
 

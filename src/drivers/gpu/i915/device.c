@@ -28,7 +28,7 @@
 #include "irq.h"
 #include "display/display.h"
 #include "display/run-log.h"
-#include "display/gen9-flip.h"
+#include "display/xd9-flip.h"
 #include "render/render.h"
 #include <kern/kcrt.h>
 #include <kern/sysctl.h>
@@ -2482,7 +2482,7 @@ i915_interim_display_irq_nothing(
 
 /*
  * Hands a Gen9 display interrupt to the flip display, the one display
- * source a Gen9 node enables (display/gen9-flip.c); ignores any other,
+ * source a Gen9 node enables (display/xd9-flip.c); ignores any other,
  * since the summary is off and none is expected.
  */
 static void
@@ -2498,5 +2498,5 @@ i915_interim_display_irq_handle(
 		return;
 
 	/* The flip display acknowledges its pipe's flip done. */
-	drv_i915_gen9_flip_irq(master_ctl);
+	drv_i915_xd9_flip_irq(master_ctl);
 }
