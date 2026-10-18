@@ -1,0 +1,44 @@
+[
+  {
+    "source": "userland/desktop/libbrowser/dom/node.c",
+    "before": {
+      "goto": 2
+    },
+    "after": {
+      "goto": 2
+    }
+  },
+  {
+    "source": "userland/desktop/libbrowser/bind/environment.c",
+    "before": {
+      "conditional": 1,
+      "forward-declaration": 4,
+      "blank-after-brace": 14,
+      "paragraph-comment": 4,
+      "goto": 6,
+      "call-in-condition": 6
+    },
+    "after": {
+      "conditional": 1,
+      "forward-declaration": 4,
+      "blank-after-brace": 14,
+      "paragraph-comment": 4,
+      "goto": 6,
+      "call-in-condition": 6
+    }
+  },
+  {
+    "source": "userland/desktop/libbrowser/bind/collection.c",
+    "before": {
+      "goto": 15
+    },
+    "after": {
+      "goto": 15
+    }
+  },
+  {
+    "source": "userland/desktop/libbrowser/bind/frame.c",
+    "before": {},
+    "after": {}
+  }
+]

@@ -2,7 +2,8 @@ count 6
 payload attributes:true:data-a:null:null|attributes:true:data-a:null:one|attributes:true:data-a:null:two|attributes:true:data-a:null:two|attributes:true:class:null:null|attributes:true:class:null:a
 list 0:null:undefined:true:true:false:true
 brand true
-immutable 0:null
+radio-brand true
+immutable 0:null:undefined
 own-only 1
 style 2:style:null:width: 10px;
 implicit 1

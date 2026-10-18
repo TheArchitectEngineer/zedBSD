@@ -1,0 +1,7 @@
+<!doctype html><meta charset="utf-8"><script>
+var element=document.createElement('i'),order=[];
+var observer=new MutationObserver(function(){order.push('observer')});
+observer.observe(element,{attributes:true});element.setAttribute('x','one');
+Promise.resolve().then(function(){order.push('promise')});
+setTimeout(function(){console.log('order',order.join(','));observer.disconnect()},0);
+</script>

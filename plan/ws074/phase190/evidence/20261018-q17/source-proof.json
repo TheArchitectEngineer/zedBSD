@@ -1,0 +1,16 @@
+{
+  "commit": "f1b83fa8fab651853bbdf39e4b3ea1dfdf614e2b",
+  "hashes": {
+    "build/ws074-20261018/q17/final/after/browser": "25a66385edb7811c04e5e04fddd6bf3060ef2883f26d2781adbecf9d87debc02",
+    "build/ws074-20261018/q17/final/after/libbrowser.so": "4ac8b0037013c43b80f84703ca51deb803d8a509e2652ea1403a2141cb40502a",
+    "userland/desktop/libbrowser/dom/node.c": "c7994a2d32e31899f4bf6dba6f9447441226f3f816a43abae760e26e5eb8550f",
+    "userland/desktop/libbrowser/dom/dom.h": "aeb8a2b88cfe4edda6bc8e6fcf0ea88f4b850f7376d7800a9f796af1cfbf60c9",
+    "userland/desktop/libbrowser/bind/internal.h": "55aa6019baa459f48e071a3644c601e85bfb160b7fe503c4eeb5b9bb7cdbe662",
+    "userland/desktop/libbrowser/bind/frame.c": "99c876b4e4a984965797c71b766f9781b13592dc50d2164c14c1b1c1889e8a5f",
+    "userland/desktop/libbrowser/bind/environment.c": "3e82ba5bf1ce38d64570273361b0b778479eb089a220d99584ff3723dbdd0959",
+    "userland/desktop/libbrowser/bind/collection.c": "49eb9e23c6b030a197e9e0de76cd2ba125b88cb55e3d831d8e18b5e16b412d5b",
+    "userland/desktop/libbrowser/view/view.c": "d4d78f1c30572772befbd5b88c47b2c9f04210ffc0bc6a21200f534c4849231b",
+    "plan/ws074/tests/dom/mutation-attributes.html": "e596f5455641cf25d42f78bbf4754ac60b27b3cd019b61a05c33014b231a83a6",
+    "plan/ws074/tests/dom/mutation-attributes.expected": "642b96a45022fb2d568443100fdf1e30499a03665bc46568db01719ae5fc38ca"
+  }
+}

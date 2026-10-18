@@ -1,0 +1,35 @@
+userland/desktop/libbrowser/bind/environment.c:796: conditional: part->part == BIND_LOCATION_HASH ? environment_location_hash_set : NULL, part->part);
+userland/desktop/libbrowser/bind/environment.c:893: forward-declaration: environment_get_random_values
+userland/desktop/libbrowser/bind/environment.c:914: forward-declaration: environment_random_uuid
+userland/desktop/libbrowser/bind/environment.c:949: blank-after-brace: string = vm_string_from_utf8(realm->heap, text, at);
+userland/desktop/libbrowser/bind/environment.c:958: forward-declaration: environment_install_crypto
+userland/desktop/libbrowser/bind/environment.c:964: paragraph-comment: crypto = vm_object_create(realm->heap, realm->object_prototype);
+userland/desktop/libbrowser/bind/environment.c:977: forward-declaration: environment_install_structured_clone
+userland/desktop/libbrowser/bind/environment.c:994: blank-after-brace: status = js_builtin_value(realm, realm->global, "structuredClone", function, VM_PROPERTY_DEFAULT);
+userland/desktop/libbrowser/bind/environment.c:1211: goto: goto cleanup;
+userland/desktop/libbrowser/bind/environment.c:1215: goto: goto cleanup;
+userland/desktop/libbrowser/bind/environment.c:1224: goto: goto cleanup;
+userland/desktop/libbrowser/bind/environment.c:1226: blank-after-brace: roots[registered] = &accessor->cell;
+userland/desktop/libbrowser/bind/environment.c:1229: goto: goto cleanup;
+userland/desktop/libbrowser/bind/environment.c:1591: paragraph-comment: if (value == NULL || value->length != sizeof(keyword) - 1U)
+userland/desktop/libbrowser/bind/environment.c:1600: blank-after-brace: return 1;
+userland/desktop/libbrowser/bind/environment.c:1614: paragraph-comment: name = vm_atom_from_ascii(realm->heap, "open");
+userland/desktop/libbrowser/bind/environment.c:1629: blank-after-brace: vm_heap_remove_root(realm->heap, &root);
+userland/desktop/libbrowser/bind/environment.c:1649: paragraph-comment: *target = NULL;
+userland/desktop/libbrowser/bind/environment.c:1658: blank-after-brace: if (length == 0U)
+userland/desktop/libbrowser/bind/environment.c:1666: blank-after-brace: for (walk = bind_following(&window->document->node, &window->document->node);
+userland/desktop/libbrowser/bind/environment.c:1677: call-in-condition: memcmp
+userland/desktop/libbrowser/bind/environment.c:1684: blank-after-brace: wb_buffer_release(&decoded);
+userland/desktop/libbrowser/bind/environment.c:1711: blank-after-brace: if (count == 0U)
+userland/desktop/libbrowser/bind/environment.c:1738: blank-after-brace: for (index = 0U; error == 0 && index < count; index++) {
+userland/desktop/libbrowser/bind/environment.c:1742: call-in-condition: dom_is_inclusive_ancestor
+userland/desktop/libbrowser/bind/environment.c:1745: call-in-condition: dom_attribute_ascii
+userland/desktop/libbrowser/bind/environment.c:1750: blank-after-brace: if (!entries[index].hidden)
+userland/desktop/libbrowser/bind/environment.c:1752: call-in-condition: environment_hidden_until_found, dom_attribute_ascii
+userland/desktop/libbrowser/bind/environment.c:1758: call-in-condition: dom_is_inclusive_ancestor, environment_hidden_until_found, dom_attribute_ascii
+userland/desktop/libbrowser/bind/environment.c:1766: blank-after-brace: error = dom_element_remove_attribute(element, name);
+userland/desktop/libbrowser/bind/environment.c:1770: blank-after-brace: for (index = rooted; index != 0U; index--)
+userland/desktop/libbrowser/bind/environment.c:1812: call-in-condition: dom_is_inclusive_ancestor, node_box
+userland/desktop/libbrowser/bind/environment.c:1820: blank-after-brace: wb_buffer_release(&hash);
+userland/desktop/libbrowser/bind/environment.c:2992: goto: goto cleanup;
+userland/desktop/libbrowser/bind/environment.c:3021: goto: goto cleanup;
