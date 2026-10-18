@@ -2,7 +2,7 @@
 
 # ws263-p003 規約の全文の見直し（書き方だけ）
 
-Status: in-progress（2026-10-19 P1、q1257。cleared は Q1 の判定）
+Status: cleared（2026-10-19 Q1 判定: 書き方だけの見直し（a17f1ffad、merge 3131d06db）、5 つの port の build warning 0、T1-716 で 5 つの port の起動の回帰が PASS（ac5098f19、merge dcb5a0e43））（旧: in-progress（2026-10-19 P1、q1257。cleared は Q1 の判定））
 
 - 親: [WS263](../ws.md)。
 - 範囲: この WS の新しい C（src/hal/riscv32/、platform/riscv32/、include/hal/arch/riscv32.h）を plan/coding-style.md の全文と照らし、書き方だけを直した（動作は変えない）。q1257 の 4 WS（WS263・WS264・WS265・WS266）でまとめて行った。
