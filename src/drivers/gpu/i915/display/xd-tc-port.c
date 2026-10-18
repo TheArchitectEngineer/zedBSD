@@ -48,9 +48,9 @@ static unsigned i915_xd_tc_port_current_mode(struct i915_xd_tc_ports *ports, con
 static int i915_xd_tc_port_take(struct i915_xd_tc_ports *ports, struct i915_xd_tc_port *p, unsigned mode, unsigned lanes);
 static void i915_xd_tc_port_connect(struct i915_xd_tc_ports *ports, struct i915_xd_tc_port *p, unsigned lanes);
 static void i915_xd_tc_port_disconnect(struct i915_xd_tc_ports *ports, struct i915_xd_tc_port *p);
-static void i915_xd_tc_port_update_mode(struct i915_xd_tc_ports *ports, struct i915_xd_tc_port *p, unsigned lanes);
+static void i915_xd_tc_port_follow_live(struct i915_xd_tc_ports *ports, struct i915_xd_tc_port *p, unsigned lanes);
 static void i915_xd_tc_port_readout(struct i915_xd_tc_ports *ports, struct i915_xd_tc_port *p);
-static int i915_xd_tc_port_connected(struct i915_xd_tc_ports *ports, const struct i915_xd_tc_port *p);
+static int i915_xd_tc_port_live_matches(struct i915_xd_tc_ports *ports, const struct i915_xd_tc_port *p);
 static unsigned i915_xd_tc_port_fia_number(const struct i915_xd_tc_fia *fia);
 static void i915_xd_tc_port_settle_all(struct i915_xd_tc_ports *ports, const char *why);
 
@@ -375,7 +375,7 @@ drv_i915_xd_tc_ports_connected(
 	/* Reads the live state and the mode together under the port's lock. */
 	ports->env.lock(ports->env.ctx, tc);
 
-	connected = i915_xd_tc_port_connected(ports, p);
+	connected = i915_xd_tc_port_live_matches(ports, p);
 
 	ports->env.unlock(ports->env.ctx, tc);
 
@@ -407,7 +407,7 @@ drv_i915_xd_tc_ports_connected_locked(
 		return 0;
 
 	/* Compares the live state with the mode the lock holds the port in. */
-	connected = i915_xd_tc_port_connected(ports, p);
+	connected = i915_xd_tc_port_live_matches(ports, p);
 
 	/* Succeeded: reports whether the port is connected. */
 	return connected;
@@ -487,7 +487,7 @@ drv_i915_xd_tc_ports_lock(
 
 	/* A declared port without links follows what is plugged in now. */
 	if (p->present && p->links == 0U)
-		i915_xd_tc_port_update_mode(ports, p, lanes);
+		i915_xd_tc_port_follow_live(ports, p, lanes);
 
 	/* Succeeded: the mode the port is held in. */
 	return p->connection.mode;
@@ -1301,7 +1301,7 @@ i915_xd_tc_port_disconnect(
  * (tc_port_update_mode, tc_port_needs_reset).
  */
 static void
-i915_xd_tc_port_update_mode(
+i915_xd_tc_port_follow_live(
 	struct i915_xd_tc_ports *ports,
 	struct i915_xd_tc_port *p,
 	unsigned lanes)
@@ -1412,7 +1412,7 @@ i915_xd_tc_port_readout(
 
 /* Compares a port's live state with what its mode accepts; the caller holds the port's lock. */
 static int
-i915_xd_tc_port_connected(
+i915_xd_tc_port_live_matches(
 	struct i915_xd_tc_ports *ports,
 	const struct i915_xd_tc_port *p)
 {

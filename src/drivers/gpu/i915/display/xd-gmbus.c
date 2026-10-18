@@ -49,7 +49,7 @@ static unsigned i915_xd_gmbus_offset_and_data(struct i915_xd_io *io, const struc
 static unsigned i915_xd_gmbus_read(struct i915_xd_io *io, const struct i915_xd_gmbus_request *request, const struct i915_xd_gmbus_message *message, uint32_t command, uint32_t *status);
 static unsigned i915_xd_gmbus_write(struct i915_xd_io *io, const struct i915_xd_gmbus_request *request, const struct i915_xd_gmbus_message *message, uint32_t command, uint32_t *status);
 static uint32_t i915_xd_gmbus_command(const struct i915_xd_gmbus_message *message, uint32_t command, unsigned count);
-static unsigned i915_xd_gmbus_wait(struct i915_xd_io *io, const struct i915_xd_gmbus_request *request, uint32_t ready, uint32_t interrupt, uint32_t *status);
+static unsigned i915_xd_gmbus_await_state(struct i915_xd_io *io, const struct i915_xd_gmbus_request *request, uint32_t ready, uint32_t interrupt, uint32_t *status);
 static int i915_xd_gmbus_wait_idle(struct i915_xd_io *io, const struct i915_xd_gmbus_request *request);
 static void i915_xd_gmbus_note(const struct i915_xd_gmbus_request *request, unsigned note, unsigned message);
 
@@ -370,7 +370,7 @@ i915_xd_gmbus_run(
 
 		/* The message is over when the controller reaches its wait phase. */
 		if (outcome == I915_XD_GMBUS_DONE)
-			outcome = i915_xd_gmbus_wait(io, request, I915_XD_GMBUS2_WAIT_PHASE, I915_XD_GMBUS4_WAIT_PHASE, status);
+			outcome = i915_xd_gmbus_await_state(io, request, I915_XD_GMBUS2_WAIT_PHASE, I915_XD_GMBUS4_WAIT_PHASE, status);
 
 		/* Stops at the message that failed. */
 		if (outcome != I915_XD_GMBUS_DONE) {
@@ -524,7 +524,7 @@ i915_xd_gmbus_read(
 		/* Takes the bytes four at a time once the controller has them. */
 		left = cycle;
 		while (left != 0U) {
-			outcome = i915_xd_gmbus_wait(io, request, I915_XD_GMBUS2_HW_READY, I915_XD_GMBUS4_HW_READY, status);
+			outcome = i915_xd_gmbus_await_state(io, request, I915_XD_GMBUS2_HW_READY, I915_XD_GMBUS4_HW_READY, status);
 			if (outcome != I915_XD_GMBUS_DONE)
 				return outcome;
 
@@ -604,7 +604,7 @@ i915_xd_gmbus_write(
 
 			/* Writes the word once the controller is ready. */
 			drv_i915_xd_io_write(io, I915_XD_GMBUS3, word);
-			outcome = i915_xd_gmbus_wait(io, request, I915_XD_GMBUS2_HW_READY, I915_XD_GMBUS4_HW_READY, status);
+			outcome = i915_xd_gmbus_await_state(io, request, I915_XD_GMBUS2_HW_READY, I915_XD_GMBUS4_HW_READY, status);
 			if (outcome != I915_XD_GMBUS_DONE)
 				return outcome;
 		}
@@ -657,7 +657,7 @@ i915_xd_gmbus_command(
  * drivers/gpu/drm/i915/display/intel_gmbus.c (gmbus_wait).
  */
 static unsigned
-i915_xd_gmbus_wait(
+i915_xd_gmbus_await_state(
 	struct i915_xd_io *io,
 	const struct i915_xd_gmbus_request *request,
 	uint32_t ready,
