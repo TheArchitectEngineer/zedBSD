@@ -1,0 +1,18 @@
+userland/desktop/libbrowser/page/page.c:159: blank-after-brace: wb_vector_release(&page->visited_urls);
+userland/desktop/libbrowser/page/page.c:296: call-in-condition: page_file_xhtml
+userland/desktop/libbrowser/page/page.c:353: multi-line-body: error = page_load_document(page, response.body.data, response.body.length,
+userland/desktop/libbrowser/page/page.c:500: goto: goto cleanup;
+userland/desktop/libbrowser/page/page.c:513: goto: goto cleanup;
+userland/desktop/libbrowser/page/page.c:518: goto: goto cleanup;
+userland/desktop/libbrowser/page/page.c:526: goto: goto cleanup;
+userland/desktop/libbrowser/page/page.c:549: goto: goto cleanup;
+userland/desktop/libbrowser/page/page.c:553: call-in-condition: page_sheets_pending, page_fonts_pending
+userland/desktop/libbrowser/page/page.c:556: goto: goto cleanup;
+userland/desktop/libbrowser/page/page.c:892: call-in-condition: strcmp, wb_buffer_string
+userland/desktop/libbrowser/page/page.c:908: blank-after-brace: page->visits_generation++;
+userland/desktop/libbrowser/page/page.c:1175: paragraph-comment: if (mime != NULL) {
+userland/desktop/libbrowser/page/page.c:1180: blank-after-brace: return page_load_html(page, bytes, length);
+userland/desktop/libbrowser/page/page.c:1191: paragraph-comment: dot = strrchr(path, '.');
+userland/desktop/libbrowser/page/page.c:1197: call-in-condition: strcmp, strcmp
+userland/desktop/libbrowser/page/page.c:1269: call-in-condition: strcmp, wb_buffer_string
+userland/desktop/libbrowser/page/page.c:1275: blank-after-brace: wb_buffer_release(&href);

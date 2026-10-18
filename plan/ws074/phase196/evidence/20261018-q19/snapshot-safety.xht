@@ -1,0 +1,5 @@
+<html xmlns="http://www.w3.org/1999/xhtml"><head><title>Snapshot safety</title></head><body><script id="first"><![CDATA[
+var later=document.getElementById('next');later.remove();document.currentScript.remove();
+for(var i=0;i<4000;i++){var pressure={a:new Array(30),b:String(i)}}
+console.log('first-safe');
+]]></script><script id="next">console.log('BAD-removed-next')</script><script>console.log('last-safe')</script></body></html>

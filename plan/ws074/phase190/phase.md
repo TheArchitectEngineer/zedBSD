@@ -2,7 +2,7 @@
 
 # ws074-p190: Interop 2025 reftest・crashtest runner coverage
 
-Status: in-progress（q19 producer独立3行を得て同10controls再検証）
+Status: uncleared（q19 scoped partial cleared、whole scripting/環境/API等未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -239,3 +239,5 @@ Event ws074-p190-q19-selected-redesign-20261018: q18 XML脚本不足をscopeの�
 Event ws074-p190-q19-consumer-start-20261018: p196 preflightは独立XMLでinline→DOMContentLoaded→loadのChrome同一3行をnativeから出力。同じclient/10controlsを新pairで再検証する。i01のroot/GC/global gatesはなお進行中でwhole clearanceを先取りしない。test controlsのretained出力rootは環境変数でcase分離し、native判定条件は不変。
 
 Event ws074-p190-q19-i02-cleared-i03-started-20261018: q19 final pairで元10 controls全件とcapture acknowledgement不一致/遅延色の非PASS・native pixel graphを含む計22対照が通過。i02 scoped consumer revalidation cleared、i03 pixel/fuzzy/graph runnerの実装・actual413へ進む。code着手時はi02 verified11 outputが既に成立していたがQueue i03 stateの投影が遅れたためこのcheckpointでin-progressへ補正（承認scopeと依存outputは不変）。response headers/生成server/.sub/HTTPS/testdriver等は未対応を検出した場合非PASS、native capture acknowledgement=1/正しい画面寸法も判定に必須とする。i01 full global tailは進行中。q18結果は書換えない。
+
+Event ws074-p190-q19-partial-cleared-20261018: [q19 evidence](evidence/20261018-q19-i03/README.md)。全1491 harnessは491 PASS・callback11531 PASS/20226 FAIL/14 NOTRUNを維持、whole/callback後退・追加・欠損・順序変更0。全static1561は839 PASS/722 FAIL・全reference pixel metrics unchanged。strict48は39 PASS/9 readiness_missingを全ID対応で維持。scripted413は全native attempt/568 capturesで82 PASS・73 pixel FAIL・242 unsupported_environment・16 readiness_missing。確認済み1451/3805（38.134034%）、新規計測PASS82増。harness未attempt292、環境/API/worker等の未達は分母に保持。 producer/consumer/measurementの各partialはcleared、whole Phaseは未達を維持。独立Chrome XML5行・native snapshot安全性・22controls・target warning0/C新logic0/DOM35/XML249+54/Acid非増加を確認。source/tool1c6991441、全raw/checkpoint/ID/pair/input hash read-back済み。q18未達は履歴保持、shared projection/target full/p100はpending。

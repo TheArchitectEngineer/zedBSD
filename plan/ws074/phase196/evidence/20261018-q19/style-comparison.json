@@ -1,0 +1,22 @@
+[
+  {
+    "label": "before",
+    "counts": {
+      "blank-after-brace": 5,
+      "call-in-condition": 5,
+      "multi-line-body": 1,
+      "goto": 6,
+      "paragraph-comment": 2
+    }
+  },
+  {
+    "label": "after",
+    "counts": {
+      "blank-after-brace": 4,
+      "call-in-condition": 5,
+      "multi-line-body": 1,
+      "goto": 6,
+      "paragraph-comment": 2
+    }
+  }
+]

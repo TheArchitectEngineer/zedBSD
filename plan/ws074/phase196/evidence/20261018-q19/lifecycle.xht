@@ -1,0 +1,15 @@
+<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>XML lifecycle</title></head><body>
+<script id="classic"><![CDATA[
+console.log('classic',document.readyState,document.currentScript.id);
+document.addEventListener('DOMContentLoaded',function(){console.log('domready',document.readyState,document.currentScript===null)});
+addEventListener('load',function(){console.log('load',document.readyState,document.currentScript===null)});
+document.currentScript.remove();
+for(var i=0;i<4000;i++){var pressure={a:new Array(30),b:String(i)}}
+console.log('selfremoved',document.getElementById('classic')===null,document.currentScript.id);
+]]></script>
+<script xmlns="urn:inert">console.log('BAD-foreign')</script>
+<SCRIPT>console.log('BAD-case')</SCRIPT>
+<script type="application/json">{"not":"code"}</script>
+<template><script>console.log('BAD-template')</script></template>
+<script id="last">console.log('last',document.currentScript.id)</script>
+</body></html>

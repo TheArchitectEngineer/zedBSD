@@ -2,7 +2,7 @@
 
 # ws074-p196: top-level XML/XHTML document loading
 
-Status: in-progress（q19 scoped native/consumer attempt、以前uncleared履歴保持）
+Status: uncleared（q19 scoped partial cleared、whole scripting/環境/API等未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -35,3 +35,5 @@ Event ws074-p196-q18-xhtml-blocker-and-redesign-20261018: [p190 q18 evidence](..
 p190のq18 clientと同じ10 positive/negative対照はXMLをskipせず再実行する。必要outputが成立してからfirst-ready/fuzzy/graph/pixel controls→actual413へ進む。新engine final pairの全1491/static1561/strict48でold whole491/839/39維持・全callbacksを照合し、未対応APIやtestdriverは非PASSとして保存。C全文/browser component全文/format/new logic style0/host/target/DOM/XML/Acidを適用。上限を延ばさず未達ならunclearedとresumeを残す。shared projection pending。
 
 Event ws074-p196-q19-selected-redesign-20261018: q18 XML脚本不足をscopeのあるnative producerへ分離し、必要outputのverified preflight→p190同controls→413へ実行順を確定。origin p190/foreign p196の各自身の依存・検証・resumeを同時更新。q18 mandatory criterionは弱めず、新attemptで再検証する。承認は自走契約、旧1369 PASSは新final source測定が終わるまでlast verifiedとして保持。
+
+Event ws074-p196-q19-partial-cleared-20261018: [q19 evidence](evidence/20261018-q19/README.md)。全1491 harnessは491 PASS・callback11531 PASS/20226 FAIL/14 NOTRUNを維持、whole/callback後退・追加・欠損・順序変更0。全static1561は839 PASS/722 FAIL・全reference pixel metrics unchanged。strict48は39 PASS/9 readiness_missingを全ID対応で維持。scripted413は全native attempt/568 capturesで82 PASS・73 pixel FAIL・242 unsupported_environment・16 readiness_missing。確認済み1451/3805（38.134034%）、新規計測PASS82増。harness未attempt292、環境/API/worker等の未達は分母に保持。 producer/consumer/measurementの各partialはcleared、whole Phaseは未達を維持。独立Chrome XML5行・native snapshot安全性・22controls・target warning0/C新logic0/DOM35/XML249+54/Acid非増加を確認。source/tool1c6991441、全raw/checkpoint/ID/pair/input hash read-back済み。q18未達は履歴保持、shared projection/target full/p100はpending。

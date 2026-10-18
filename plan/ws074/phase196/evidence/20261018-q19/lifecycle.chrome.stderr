@@ -1,0 +1,12 @@
+[775505:775505:1018/150302.275605:WARNING:sandbox/policy/linux/sandbox_linux.cc:405] InitializeSandbox() called with multiple threads in process gpu-process.
+[775462:775462:1018/150302.589073:WARNING:ui/base/idle/idle_linux.cc:111] None of the known D-Bus ScreenSaver services could be used.
+[775462:775462:1018/150302.808901:INFO:CONSOLE:3] "classic loading classic", source: file:///home/awe/zedBSD-claude1/build/ws074-20261018/q19/lifecycle.xht (3)
+[775462:775462:1018/150302.809365:INFO:CONSOLE:8] "selfremoved true classic", source: file:///home/awe/zedBSD-claude1/build/ws074-20261018/q19/lifecycle.xht (8)
+[775462:775462:1018/150302.809390:INFO:CONSOLE:14] "last last", source: file:///home/awe/zedBSD-claude1/build/ws074-20261018/q19/lifecycle.xht (14)
+[775462:775462:1018/150302.823679:INFO:CONSOLE:4] "domready interactive true", source: file:///home/awe/zedBSD-claude1/build/ws074-20261018/q19/lifecycle.xht (4)
+[775462:775462:1018/150302.825085:INFO:CONSOLE:5] "load complete true", source: file:///home/awe/zedBSD-claude1/build/ws074-20261018/q19/lifecycle.xht (5)
+[775508:775537:1018/150303.105370:WARNING:net/extras/sqlite/sqlite_persistent_store_backend_base.cc:181] Failed to post task from operator()@net/extras/sqlite/sqlite_persistent_shared_dictionary_store.cc:259 to client_task_runner_.
+[775508:775537:1018/150303.105863:WARNING:net/extras/sqlite/sqlite_persistent_store_backend_base.cc:181] Failed to post task from operator()@net/extras/sqlite/sqlite_persistent_shared_dictionary_store.cc:252 to client_task_runner_.
+[775508:775537:1018/150303.106022:WARNING:net/extras/sqlite/sqlite_persistent_store_backend_base.cc:181] Failed to post task from operator()@net/extras/sqlite/sqlite_persistent_shared_dictionary_store.cc:252 to client_task_runner_.
+[775508:775540:1018/150303.415399:WARNING:net/extras/sqlite/sqlite_persistent_store_backend_base.cc:181] Failed to post task from LoadReportingClientsAndNotifyInBackground@net/extras/sqlite/sqlite_persistent_reporting_and_nel_store.cc:1452 to client_task_runner_.
+[775508:775540:1018/150303.415473:WARNING:net/extras/sqlite/sqlite_persistent_store_backend_base.cc:181] Failed to post task from LoadNelPoliciesAndNotifyInBackground@net/extras/sqlite/sqlite_persistent_reporting_and_nel_store.cc:1332 to client_task_runner_.

@@ -1,0 +1,24 @@
+{
+  "selected": 413,
+  "attempted": 413,
+  "native_cases": 413,
+  "counts": {
+    "fail": 73,
+    "unsupported_environment": 242,
+    "readiness_missing": 16,
+    "pass": 82
+  },
+  "captures": 568,
+  "partition": {
+    "scripted": 413,
+    "static": 1561,
+    "union": 1974
+  },
+  "unexecuted": [],
+  "manifest_sha256": "c12052922881eff3141aa56ba5e45ddd939c415200eb09e46cc70a5a17177234",
+  "runner_sha256": "fdfaf3e0840d2aba343e5063e46a9e81a75e01819071a79ea848b6a231618a13",
+  "selected_sha256": "f8480c7c5659992121b6e569c04ace0aaf17236c4f338243e14af21106b1bc45",
+  "archive_sha256": "54f547ffd2c6a456689d28592c802ccbe5944c22506dd8d9224ba3c9f95c05d9",
+  "program_sha256": "bcfcf31fb7f6244f83129ecaf0b133e63308bcfe81d82c8da8f61fa41505ed3c",
+  "engine_library_sha256": "aa030e4033e6268bf9b63474be127e598507c84c3152a27a1f8ba97946530813"
+}

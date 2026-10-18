@@ -1,0 +1,19 @@
+build/ws074-20261018/q19/before-page.c:156: blank-after-brace: wb_vector_release(&page->visited_urls);
+build/ws074-20261018/q19/before-page.c:293: call-in-condition: page_file_xhtml
+build/ws074-20261018/q19/before-page.c:350: multi-line-body: error = page_load_document(page, response.body.data, response.body.length,
+build/ws074-20261018/q19/before-page.c:497: goto: goto cleanup;
+build/ws074-20261018/q19/before-page.c:510: goto: goto cleanup;
+build/ws074-20261018/q19/before-page.c:515: goto: goto cleanup;
+build/ws074-20261018/q19/before-page.c:523: goto: goto cleanup;
+build/ws074-20261018/q19/before-page.c:546: goto: goto cleanup;
+build/ws074-20261018/q19/before-page.c:550: call-in-condition: page_sheets_pending, page_fonts_pending
+build/ws074-20261018/q19/before-page.c:553: goto: goto cleanup;
+build/ws074-20261018/q19/before-page.c:889: call-in-condition: strcmp, wb_buffer_string
+build/ws074-20261018/q19/before-page.c:905: blank-after-brace: page->visits_generation++;
+build/ws074-20261018/q19/before-page.c:953: blank-after-brace: vm_heap_remove_root(page->heap, &root);
+build/ws074-20261018/q19/before-page.c:976: paragraph-comment: if (mime != NULL) {
+build/ws074-20261018/q19/before-page.c:981: blank-after-brace: return page_load_html(page, bytes, length);
+build/ws074-20261018/q19/before-page.c:992: paragraph-comment: dot = strrchr(path, '.');
+build/ws074-20261018/q19/before-page.c:998: call-in-condition: strcmp, strcmp
+build/ws074-20261018/q19/before-page.c:1070: call-in-condition: strcmp, wb_buffer_string
+build/ws074-20261018/q19/before-page.c:1076: blank-after-brace: wb_buffer_release(&href);
