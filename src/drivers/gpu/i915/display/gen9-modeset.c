@@ -19,8 +19,12 @@
 
 #include "gen9-modeset.h"
 #include "gen9-ddc.h"
+#include "xd-aux.h"
 #include "xd-clock.h"
+#include "xd-ddi.h"
 #include "xd-io.h"
+#include "xd-output.h"
+#include "xd-pipe.h"
 #include "xd-platform.h"
 #include "xd-power.h"
 #include <kern/kcrt.h>
@@ -30,30 +34,8 @@
 
 #include <uapi/errno.h>
 
-/* How long a transcoder may take to start or stop, in microseconds. */
-#define I915_SKL_TRANSCONF_WAIT_US	100000U
-
-/* How long a vertical blank may take to come, in milliseconds (a 24 Hz mode with room). */
-#define I915_SKL_VBLANK_WAIT_MS		100U
-
-/* The time the DDI buffer takes to leave idle on display 9, in microseconds (> 518 us). */
-#define I915_SKL_BUF_ACTIVE_US		600U
-
-/* The DDI function's port field and the payload allocation bit cleared on the way back. */
-#define I915_SKL_TRANS_DDI_PORT_FIELD	(7U << 28)
-
-/* The PLANE_CTL bit that leaves the plane's gamma off (pre-GLK). */
-#define I915_SKL_PLANE_CTL_PLANE_GAMMA_DISABLE	(1U << 13)
-
-/* The DDI buffer translation entry HDMI uses (entry 9). */
-#define I915_SKL_HDMI_TRANS_ENTRY	9U
-
-static void i915_skl_ddi_clock(const struct i915_skl_io *io, unsigned port, unsigned dpll, int on);
-static void i915_skl_transcoder_timings(const struct i915_skl_io *io, unsigned transcoder, const struct i915_display_mode *mode);
-static void i915_skl_transcoder_m_n(const struct i915_skl_io *io, unsigned transcoder, const struct i915_skl_link *link);
-static uint32_t i915_skl_ddi_function(const struct i915_skl_output_config *config);
-static void i915_skl_hdmi_buffer_on(const struct i915_skl_io *io, const struct i915_skl_output_config *config);
-static void i915_skl_iboost(const struct i915_skl_io *io, unsigned port, uint8_t boost);
+static const struct i915_xd_platform *i915_skl_modeset_platform(void);
+static int i915_skl_xd_output(const struct i915_skl_io *io, const struct i915_skl_output_config *config, const struct i915_skl_dp_port *dp, struct i915_xd9_output *out, struct i915_xd9_dp_port *port);
 
 /*
  * Turns power well 2 on; a well already up is left alone.  Returns 0, or
@@ -144,15 +126,8 @@ drv_i915_skl_dpll_off(
 }
 
 /*
- * Lights an external output on its pipe (hsw_crtc_enable for display 9).
- * Returns 0, or an errno with what was started stopped again.
- *
- * Procedure referenced: Linux v6.8.12
- * drivers/gpu/drm/i915/display/intel_display.c (hsw_crtc_enable,
- * intel_set_pipe_src_size, bdw_set_pipe_misc, hsw_configure_cpu_transcoder,
- * intel_set_m_n, hsw_set_transconf) and intel_ddi.c (hsw_ddi_pre_enable_dp,
- * intel_ddi_pre_enable_hdmi, intel_enable_ddi, intel_enable_ddi_hdmi with
- * Display WA #1143).
+ * Lights an external output on its pipe through the xd code's display 9
+ * output.  Returns 0, or an errno with what was started stopped again.
  */
 int
 drv_i915_skl_output_on(
@@ -160,102 +135,31 @@ drv_i915_skl_output_on(
 	const struct i915_skl_output_config *config,
 	struct i915_skl_dp_port *dp)
 {
-	uint32_t transcoder_offset;
-	uint32_t pipe_offset;
-	uint32_t value;
+	struct i915_xd9_output out;
+	struct i915_xd9_dp_port port;
 	int error;
 
-	/* The transcoder's and the pipe's registers. */
-	transcoder_offset = config->pipe * I915_SKL_TRANSCODER_STRIDE;
-	pipe_offset = config->pipe * I915_SKL_PIPE_STRIDE;
-
-	/* The DPLL. */
-	error = drv_i915_skl_dpll_on(io, config->dpll, &config->dpll_words);
-	if (error != 0) {
-		drv_i915_skl_dpll_off(io, config->dpll);
+	/* The output and its port in the xd code's form. */
+	error = i915_skl_xd_output(io, config, dp, &out, &port);
+	if (error != 0)
 		return error;
+
+	/* The xd code's display 9 output; a DisplayPort port keeps what the training ended with. */
+	error = drv_i915_xd9_output_on(drv_i915_skl_xd_io(io), i915_skl_modeset_platform(), &out, &port);
+	if (!out.hdmi) {
+		dp->buf_ctl = port.buf_word;
+		dp->train_set = port.set;
+		kern_memcpy(dp->dpcd, port.caps, sizeof(dp->dpcd));
 	}
-
-	/* DP before the transcoder: the buffer control word, the clock, the IO power, the buffers, the sink's power and the training. */
-	if (config->type == I915_SKL_OUTPUT_DP) {
-		value = drv_i915_skl_read(io, I915_SKL_DDI_BUF_CTL_A + config->port * I915_SKL_PORT_STRIDE);
-		dp->buf_ctl = (value & I915_SKL_DDI_BUF_PORT_REVERSAL) | ((config->link.lanes - 1U) << I915_SKL_DDI_PORT_WIDTH_SHIFT);
-		i915_skl_ddi_clock(io, config->port, config->dpll, 1);
-		error = drv_i915_skl_ddi_io_power(io, config->port, 1);
-		if (error == 0) {
-			drv_i915_skl_ddi_buffers(io, dp);
-			drv_i915_skl_ddi_levels(io, dp, 0U);
-			(void)drv_i915_skl_dp_sink_power(io, dp, I915_DPCD_SET_POWER_D0);
-			error = drv_i915_skl_dp_train(io, dp, &config->link);
-		}
-
-		/* A training that failed stops what was started. */
-		if (error != 0) {
-			drv_i915_skl_ddi_buffer_off(io, config->port);
-			(void)drv_i915_skl_ddi_io_power(io, config->port, 0);
-			i915_skl_ddi_clock(io, config->port, config->dpll, 0);
-			drv_i915_skl_dpll_off(io, config->dpll);
-			return error;
-		}
-
-		/* The transcoder's clock from the port, and its MSA. */
-		drv_i915_skl_write(io, I915_SKL_TRANS_CLK_SEL_A + config->pipe * I915_SKL_TRANS_CLK_SEL_STRIDE, (config->port + 1U) << I915_SKL_TRANS_CLK_SEL_PORT_SHIFT);
-		drv_i915_skl_write(io, I915_SKL_TRANS_MSA_MISC_A + transcoder_offset, I915_SKL_MSA_MISC_SYNC_CLOCK | I915_SKL_MSA_MISC_8_BPC);
-	} else {
-		/* HDMI before the transcoder: the clock, the IO power and the transcoder's clock. */
-		i915_skl_ddi_clock(io, config->port, config->dpll, 1);
-		error = drv_i915_skl_ddi_io_power(io, config->port, 1);
-		if (error != 0) {
-			i915_skl_ddi_clock(io, config->port, config->dpll, 0);
-			drv_i915_skl_dpll_off(io, config->dpll);
-			return error;
-		}
-
-		/* The transcoder's clock from the port. */
-		drv_i915_skl_write(io, I915_SKL_TRANS_CLK_SEL_A + config->pipe * I915_SKL_TRANS_CLK_SEL_STRIDE, (config->port + 1U) << I915_SKL_TRANS_CLK_SEL_PORT_SHIFT);
-	}
-
-	/* The pipe's source size and colour depth. */
-	drv_i915_skl_write(io, I915_SKL_PIPESRC_A + config->pipe * I915_SKL_TRANSCODER_STRIDE,
-	    (((uint32_t)config->mode.hdisplay - 1U) << 16) | ((uint32_t)config->mode.vdisplay - 1U));
-	drv_i915_skl_write(io, I915_SKL_PIPE_MISC_A + pipe_offset, I915_SKL_PIPE_MISC_BPC_8);
-
-	/* The transcoder: M and N for DP, the timings, no pixel multiplier, progressive and off. */
-	if (config->type == I915_SKL_OUTPUT_DP)
-		i915_skl_transcoder_m_n(io, config->pipe, &config->link);
-	i915_skl_transcoder_timings(io, config->pipe, &config->mode);
-	drv_i915_skl_write(io, I915_SKL_TRANS_MULT_A + transcoder_offset, 0U);
-	drv_i915_skl_write(io, I915_SKL_TRANSCONF_A + pipe_offset, 0U);
-	(void)drv_i915_skl_read(io, I915_SKL_TRANSCONF_A + pipe_offset);
-
-	/* The DDI function, then the transcoder on, running. */
-	drv_i915_skl_write(io, I915_SKL_TRANS_DDI_FUNC_CTL_A + transcoder_offset, i915_skl_ddi_function(config));
-	(void)drv_i915_skl_rmw(io, I915_SKL_TRANSCONF_A + pipe_offset, 0U, I915_SKL_TRANSCONF_ENABLE);
-	(void)drv_i915_skl_read(io, I915_SKL_TRANSCONF_A + pipe_offset);
-	error = drv_i915_skl_wait(io, I915_SKL_TRANSCONF_A + pipe_offset, I915_SKL_TRANSCONF_STATE, I915_SKL_TRANSCONF_STATE, I915_SKL_TRANSCONF_WAIT_US, NULL);
-	if (error != 0) {
-		drv_i915_skl_output_off(io, config, dp);
+	if (error != 0)
 		return error;
-	}
-
-	/* HDMI after the transcoder: its buffer. */
-	if (config->type == I915_SKL_OUTPUT_HDMI)
-		i915_skl_hdmi_buffer_on(io, config);
-
-	/* The plane on the first surface. */
-	drv_i915_skl_plane_on(io, config->pipe, config->surf, config->stride_units, config->mode.hdisplay, config->mode.vdisplay, config->rgbx);
 
 	/* Succeeded: the output shows the surface. */
 	return 0;
 }
 
 /*
- * Darkens an external output (intel_ddi_post_disable for display 9): the
- * plane, the transcoder, the DDI function, the sink's power, the clocks,
- * the buffer, the IO power and the DPLL.
- *
- * Procedure referenced: Linux v6.8.12
- * drivers/gpu/drm/i915/display/intel_ddi.c (intel_ddi_post_disable).
+ * Darkens an external output through the xd code's display 9 output.
  */
 void
 drv_i915_skl_output_off(
@@ -263,34 +167,19 @@ drv_i915_skl_output_off(
 	const struct i915_skl_output_config *config,
 	struct i915_skl_dp_port *dp)
 {
-	uint32_t transcoder_offset;
-	uint32_t pipe_offset;
+	struct i915_xd9_output out;
+	struct i915_xd9_dp_port port;
+	int error;
 
-	/* The transcoder's and the pipe's registers. */
-	transcoder_offset = config->pipe * I915_SKL_TRANSCODER_STRIDE;
-	pipe_offset = config->pipe * I915_SKL_PIPE_STRIDE;
+	/* The output in the xd code's form; a DisplayPort port without its AUX channel is darkened without the sink. */
+	error = i915_skl_xd_output(io, config, dp, &out, &port);
+	if (out.hdmi || dp == NULL || error != 0) {
+		drv_i915_xd9_output_off(drv_i915_skl_xd_io(io), i915_skl_modeset_platform(), &out, NULL);
+		return;
+	}
 
-	/* The plane off at a vertical blank. */
-	drv_i915_skl_plane_off(io, config->pipe);
-	(void)drv_i915_skl_wait_vblank(io, config->pipe);
-
-	/* The transcoder off, and stopped. */
-	(void)drv_i915_skl_rmw(io, I915_SKL_TRANSCONF_A + pipe_offset, I915_SKL_TRANSCONF_ENABLE, 0U);
-	(void)drv_i915_skl_wait(io, I915_SKL_TRANSCONF_A + pipe_offset, I915_SKL_TRANSCONF_STATE, 0U, I915_SKL_TRANSCONF_WAIT_US, NULL);
-
-	/* The DDI function off (its port too). */
-	(void)drv_i915_skl_rmw(io, I915_SKL_TRANS_DDI_FUNC_CTL_A + transcoder_offset, I915_SKL_TRANS_DDI_FUNC_ENABLE | I915_SKL_TRANS_DDI_PORT_FIELD, 0U);
-
-	/* A DP sink goes to D3 before its port stops. */
-	if (config->type == I915_SKL_OUTPUT_DP && dp != NULL)
-		(void)drv_i915_skl_dp_sink_power(io, dp, I915_DPCD_SET_POWER_D3);
-
-	/* The transcoder's clock, the buffer, the IO power, the port's clock and the DPLL. */
-	drv_i915_skl_write(io, I915_SKL_TRANS_CLK_SEL_A + config->pipe * I915_SKL_TRANS_CLK_SEL_STRIDE, 0U);
-	drv_i915_skl_ddi_buffer_off(io, config->port);
-	(void)drv_i915_skl_ddi_io_power(io, config->port, 0);
-	i915_skl_ddi_clock(io, config->port, config->dpll, 0);
-	drv_i915_skl_dpll_off(io, config->dpll);
+	/* Succeeded: the xd code's display 9 output with its sink. */
+	drv_i915_xd9_output_off(drv_i915_skl_xd_io(io), i915_skl_modeset_platform(), &out, &port);
 }
 
 /*
@@ -332,15 +221,7 @@ drv_i915_skl_write_pipe_wm(
 	drv_i915_skl_write(io, I915_SKL_WM_LINETIME_A + pipe * I915_SKL_WM_LINETIME_STRIDE, wm->linetime & I915_SKL_LINETIME_MASK);
 }
 
-/*
- * Shows a surface on a pipe's first plane (skl_plane_ctl for a linear
- * XRGB8888 surface, plane gamma off, no pipe gamma or CSC): the control,
- * the stride, the position, the size and the offset, then the surface,
- * whose write arms them for the next vertical blank.
- *
- * Procedure referenced: Linux v6.8.12
- * drivers/gpu/drm/i915/display/skl_universal_plane.c (skl_plane_ctl).
- */
+/* Shows a surface on a pipe's first plane through the xd code's display 9 plane. */
 void
 drv_i915_skl_plane_on(
 	const struct i915_skl_io *io,
@@ -351,69 +232,35 @@ drv_i915_skl_plane_on(
 	uint32_t height,
 	int rgbx)
 {
-	uint32_t offset;
-	uint32_t control;
-
-	/* The pipe's registers. */
-	offset = pipe * I915_SKL_PIPE_STRIDE;
-
-	/* The control: on, XRGB8888 in either order, linear, upright. */
-	control = I915_SKL_PLANE_CTL_ENABLE | I915_SKL_PLANE_CTL_PLANE_GAMMA_DISABLE | (I915_SKL_PLANE_CTL_FORMAT_XRGB_8888 << I915_SKL_PLANE_CTL_FORMAT_SHIFT);
-	if (rgbx)
-		control |= I915_SKL_PLANE_CTL_ORDER_RGBX;
-
-	/* The layout, then the control and the surface last. */
-	drv_i915_skl_write(io, I915_SKL_PLANE_STRIDE_1_A + offset, stride_units);
-	drv_i915_skl_write(io, I915_SKL_PLANE_POS_1_A + offset, 0U);
-	drv_i915_skl_write(io, I915_SKL_PLANE_SIZE_1_A + offset, ((height - 1U) << I915_SKL_PLANE_SIZE_HEIGHT_SHIFT) | (width - 1U));
-	drv_i915_skl_write(io, I915_SKL_PLANE_OFFSET_1_A + offset, 0U);
-	drv_i915_skl_write(io, I915_SKL_PLANE_CTL_1_A + offset, control);
-	drv_i915_skl_write(io, I915_SKL_PLANE_SURF_1_A + offset, surf);
-	(void)drv_i915_skl_read(io, I915_SKL_PLANE_SURF_1_A + offset);
+	/* The xd code's display 9 plane. */
+	drv_i915_xd9_plane_on(drv_i915_skl_xd_io(io), pipe, surf, stride_units, width, height, rgbx);
 }
 
-/* Turns a pipe's first plane off (skl_plane_disable_arm): the control and the surface 0. */
+/* Turns a pipe's first plane off through the xd code's display 9 plane. */
 void
 drv_i915_skl_plane_off(
 	const struct i915_skl_io *io,
 	unsigned pipe)
 {
-	uint32_t offset;
-
-	/* The pipe's registers. */
-	offset = pipe * I915_SKL_PIPE_STRIDE;
-
-	/* The control, then the surface which arms it. */
-	drv_i915_skl_write(io, I915_SKL_PLANE_CTL_1_A + offset, 0U);
-	drv_i915_skl_write(io, I915_SKL_PLANE_SURF_1_A + offset, 0U);
-	(void)drv_i915_skl_read(io, I915_SKL_PLANE_SURF_1_A + offset);
+	/* The xd code's display 9 plane. */
+	drv_i915_xd9_plane_off(drv_i915_skl_xd_io(io), pipe);
 }
 
-/* Waits for the next vertical blank of a running pipe: its frame counter moves.  0, or ETIMEDOUT. */
+/* Waits for the next vertical blank of a running pipe: 0, or ETIMEDOUT. */
 int
 drv_i915_skl_wait_vblank(
 	const struct i915_skl_io *io,
 	unsigned pipe)
 {
-	uint32_t counter;
-	uint32_t first;
-	uint32_t now;
-	unsigned waited;
+	int error;
 
-	/* The pipe's frame counter. */
-	counter = I915_SKL_PIPE_FRMCOUNT_A + pipe * I915_SKL_PIPE_STRIDE;
+	/* The xd code's display 9 pipe. */
+	error = drv_i915_xd9_pipe_wait_vblank(drv_i915_skl_xd_io(io), pipe);
+	if (error != 0)
+		return error;
 
-	/* The counter now, then again every millisecond. */
-	first = drv_i915_skl_read(io, counter);
-	for (waited = 0U; waited < I915_SKL_VBLANK_WAIT_MS; waited++) {
-		io->msleep(io->context, 1U);
-		now = drv_i915_skl_read(io, counter);
-		if (now != first)
-			return 0;
-	}
-
-	/* Succeeded in learning that the pipe does not run. */
-	return ETIMEDOUT;
+	/* Succeeded: a vertical blank came. */
+	return 0;
 }
 
 /*
@@ -476,150 +323,81 @@ drv_i915_skl_ports_connected(
 	return ports;
 }
 
-/* Clocks a DDI port from a DPLL, or turns its clock off. */
-static void
-i915_skl_ddi_clock(
-	const struct i915_skl_io *io,
-	unsigned port,
-	unsigned dpll,
-	int on)
+/* Reports the display 9 platform the mode set's registers follow. */
+static const struct i915_xd_platform *
+i915_skl_modeset_platform(void)
 {
-	/* The xd code's display 9 DDI clock. */
-	drv_i915_xd9_ddi_clock(drv_i915_skl_xd_io(io), port, dpll, on);
-}
-
-/* Writes a transcoder's timings (intel_set_transcoder_timings, progressive). */
-static void
-i915_skl_transcoder_timings(
-	const struct i915_skl_io *io,
-	unsigned transcoder,
-	const struct i915_display_mode *mode)
-{
-	uint32_t offset;
-
-	/* The transcoder's registers. */
-	offset = transcoder * I915_SKL_TRANSCODER_STRIDE;
-
-	/* No vertical sync shift for a progressive mode. */
-	drv_i915_skl_write(io, I915_SKL_TRANS_VSYNCSHIFT_A + offset, 0U);
-
-	/* Horizontal: total and active, blank (from the active end to the total), sync. */
-	drv_i915_skl_write(io, I915_SKL_TRANS_HTOTAL_A + offset, (((uint32_t)mode->htotal - 1U) << 16) | ((uint32_t)mode->hdisplay - 1U));
-	drv_i915_skl_write(io, I915_SKL_TRANS_HBLANK_A + offset, (((uint32_t)mode->htotal - 1U) << 16) | ((uint32_t)mode->hdisplay - 1U));
-	drv_i915_skl_write(io, I915_SKL_TRANS_HSYNC_A + offset, (((uint32_t)mode->hsync_end - 1U) << 16) | ((uint32_t)mode->hsync_start - 1U));
-
-	/* Vertical: total and active, blank, sync. */
-	drv_i915_skl_write(io, I915_SKL_TRANS_VTOTAL_A + offset, (((uint32_t)mode->vtotal - 1U) << 16) | ((uint32_t)mode->vdisplay - 1U));
-	drv_i915_skl_write(io, I915_SKL_TRANS_VBLANK_A + offset, (((uint32_t)mode->vtotal - 1U) << 16) | ((uint32_t)mode->vdisplay - 1U));
-	drv_i915_skl_write(io, I915_SKL_TRANS_VSYNC_A + offset, (((uint32_t)mode->vsync_end - 1U) << 16) | ((uint32_t)mode->vsync_start - 1U));
-}
-
-/* Writes a transcoder's data and link M and N, link N last since it arms them (intel_set_m_n). */
-static void
-i915_skl_transcoder_m_n(
-	const struct i915_skl_io *io,
-	unsigned transcoder,
-	const struct i915_skl_link *link)
-{
-	uint32_t offset;
-
-	/* The transcoder's registers. */
-	offset = transcoder * I915_SKL_TRANSCODER_STRIDE;
-
-	/* Data M with the transfer unit, data N, link M, then link N. */
-	drv_i915_skl_write(io, I915_SKL_DATA_M1_A + offset, ((link->tu - 1U) << I915_SKL_TU_SIZE_SHIFT) | link->data_m);
-	drv_i915_skl_write(io, I915_SKL_DATA_N1_A + offset, link->data_n);
-	drv_i915_skl_write(io, I915_SKL_LINK_M1_A + offset, link->link_m);
-	drv_i915_skl_write(io, I915_SKL_LINK_N1_A + offset, link->link_n);
-}
-
-/* Builds the DDI function word (intel_ddi_transcoder_func_reg_val_get for display 9, transcoders A to C). */
-static uint32_t
-i915_skl_ddi_function(
-	const struct i915_skl_output_config *config)
-{
-	uint32_t value;
-
-	/* On, the port, 8 bits a channel, the sync polarities. */
-	value = I915_SKL_TRANS_DDI_FUNC_ENABLE | (config->port << I915_SKL_TRANS_DDI_PORT_SHIFT) | I915_SKL_TRANS_DDI_BPC_8;
-	if (config->mode.vsync_positive)
-		value |= I915_SKL_TRANS_DDI_PVSYNC;
-	if (config->mode.hsync_positive)
-		value |= I915_SKL_TRANS_DDI_PHSYNC;
-
-	/* The mode: HDMI, or DP single-stream with the lanes. */
-	if (config->type == I915_SKL_OUTPUT_HDMI) {
-		value |= I915_SKL_TRANS_DDI_MODE_HDMI << I915_SKL_TRANS_DDI_MODE_SHIFT;
-	} else {
-		value |= I915_SKL_TRANS_DDI_MODE_DP_SST << I915_SKL_TRANS_DDI_MODE_SHIFT;
-		value |= (config->link.lanes - 1U) << I915_SKL_DDI_PORT_WIDTH_SHIFT;
-	}
-
-	/* Succeeded: the word. */
-	return value;
+	/* Succeeded: the rows every display 9 part shares here. */
+	return drv_i915_xd_platform_display9_class(I915_XD_KIND_KBL, I915_XD_POWER_CLASS_H);
 }
 
 /*
- * Starts an HDMI port's buffer (intel_enable_ddi_hdmi for display 9): the
- * HDMI level's translation into entry 9, its boost, the training override
- * toggle of Display WA #1143, and the buffer on.
+ * Fills the xd code's display 9 output from the node's, and for
+ * DisplayPort its port (dp NULL leaves it empty).  Returns 0, or the error
+ * of the port's AUX channel (the output is filled even then).
  */
-static void
-i915_skl_hdmi_buffer_on(
+static int
+i915_skl_xd_output(
 	const struct i915_skl_io *io,
-	const struct i915_skl_output_config *config)
+	const struct i915_skl_output_config *config,
+	const struct i915_skl_dp_port *dp,
+	struct i915_xd9_output *out,
+	struct i915_xd9_dp_port *port)
 {
 	const struct i915_xd9_buf_trans *table;
-	uint32_t trans;
-	uint32_t chicken;
-	uint32_t buf_ctl;
-	uint32_t value;
 	unsigned count;
 	unsigned level;
+	int error;
 
-	/* The HDMI table's level, written as entry 9 (hsw_prepare_hdmi_ddi_buffers). */
-	table = drv_i915_skl_buf_trans(config->sku, config->platform, I915_SKL_OUTPUT_HDMI, config->port, &count);
-	level = drv_i915_skl_hdmi_level(config->sku, config->platform);
-	if (level >= count)
-		level = count - 1U;
-	trans = I915_SKL_DDI_BUF_TRANS_A + config->port * I915_SKL_DDI_BUF_TRANS_STRIDE + I915_SKL_HDMI_TRANS_ENTRY * 8U;
-	drv_i915_skl_write(io, trans, table[level].trans1);
-	drv_i915_skl_write(io, trans + 4U, table[level].trans2);
+	/* The output: its kind, DDI, pipe, DPLL, mode, link and first surface. */
+	kern_memset(out, 0, sizeof(*out));
+	out->hdmi = config->type == I915_SKL_OUTPUT_HDMI;
+	out->ddi = config->port;
+	out->pipe = config->pipe;
+	out->dpll = config->dpll;
+	out->dpll_words.ctrl1 = config->dpll_words.ctrl1;
+	out->dpll_words.cfgcr1 = config->dpll_words.cfgcr1;
+	out->dpll_words.cfgcr2 = config->dpll_words.cfgcr2;
+	out->dpll_words.port_khz = config->dpll_words.port_khz;
+	out->mode = config->mode;
+	out->rate_khz = config->link.port_khz;
+	out->lanes = config->link.lanes;
+	out->m_n.tu = config->link.tu;
+	out->m_n.data_m = config->link.data_m;
+	out->m_n.data_n = config->link.data_n;
+	out->m_n.link_m = config->link.link_m;
+	out->m_n.link_n = config->link.link_n;
+	out->surf = config->surf;
+	out->stride_units = config->stride_units;
+	out->rgbx = config->rgbx;
 
-	/* The entry's boost. */
-	i915_skl_iboost(io, config->port, table[level].iboost);
-
-	/* Display WA #1143: the training override of the port's transcoder chicken register, on for a microsecond. */
-	chicken = I915_SKL_CHICKEN_TRANS_A + (config->port - 1U) * 4U;
-	value = drv_i915_skl_rmw(io, chicken, 0U, I915_SKL_DDI_TRAINING_OVERRIDE_ENABLE | I915_SKL_DDI_TRAINING_OVERRIDE_VALUE);
-	(void)drv_i915_skl_read(io, chicken);
-	io->udelay(io->context, 1U);
-	drv_i915_skl_write(io, chicken, value & ~(I915_SKL_DDI_TRAINING_OVERRIDE_ENABLE | I915_SKL_DDI_TRAINING_OVERRIDE_VALUE));
-
-	/* The buffer on, keeping the lane reversal, and the time it takes to leave idle. */
-	buf_ctl = I915_SKL_DDI_BUF_CTL_A + config->port * I915_SKL_PORT_STRIDE;
-	value = drv_i915_skl_read(io, buf_ctl);
-	drv_i915_skl_write(io, buf_ctl, (value & I915_SKL_DDI_BUF_PORT_REVERSAL) | I915_SKL_DDI_BUF_ENABLE);
-	io->udelay(io->context, I915_SKL_BUF_ACTIVE_US);
-}
-
-/* Sets a port's current boost: 1, 3 or 7 into its balance leg, 0 turns the leg off. */
-static void
-i915_skl_iboost(
-	const struct i915_skl_io *io,
-	unsigned port,
-	uint8_t boost)
-{
-	/* No boost: the leg off. */
-	if (boost == 0U) {
-		(void)drv_i915_skl_rmw(io, I915_SKL_DISPIO_CR_TX_BMU_CR0, I915_SKL_BALANCE_LEG_MASK(port), I915_SKL_BALANCE_LEG_DISABLE(port));
-		return;
+	/* HDMI: the row of the part's table its level names. */
+	kern_memset(port, 0, sizeof(*port));
+	if (out->hdmi) {
+		table = drv_i915_skl_buf_trans(config->sku, config->platform, I915_SKL_OUTPUT_HDMI, config->port, &count);
+		level = drv_i915_skl_hdmi_level(config->sku, config->platform);
+		if (level >= count)
+			level = count - 1U;
+		out->hdmi_row = &table[level];
+		return 0;
 	}
 
-	/* A valid boost into the leg. */
-	if (boost == 1U || boost == 3U || boost == 7U) {
-		(void)drv_i915_skl_rmw(io, I915_SKL_DISPIO_CR_TX_BMU_CR0,
-		    I915_SKL_BALANCE_LEG_MASK(port) | I915_SKL_BALANCE_LEG_DISABLE(port),
-		    (uint32_t)boost << I915_SKL_BALANCE_LEG_SHIFT(port));
-	}
+	/* No DisplayPort port to fill. */
+	if (dp == NULL)
+		return 0;
+
+	/* The DDI's AUX channel. */
+	error = drv_i915_xd_aux_init(&port->aux, dp->port);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the registers, the DDI, its table, the training set and the sink's capabilities. */
+	port->io = drv_i915_skl_xd_io(io);
+	port->ddi = dp->port;
+	port->table = dp->trans;
+	port->rows = dp->trans_count;
+	port->buf_word = dp->buf_ctl;
+	port->set = dp->train_set;
+	kern_memcpy(port->caps, dp->dpcd, sizeof(port->caps));
+	return 0;
 }

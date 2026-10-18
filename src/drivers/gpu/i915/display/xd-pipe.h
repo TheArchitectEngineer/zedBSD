@@ -205,6 +205,13 @@ struct i915_xd_evade {
 #define I915_XD_SCANLINE_OFFSET		1U
 #define I915_XD_SCANLINE_OFFSET_HDMI	2U
 
+void drv_i915_xd9_pipe_configure(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned pipe, const struct i915_display_mode *mode, const struct i915_xd_dp_m_n *m_n);
+void drv_i915_xd9_pipe_func(struct i915_xd_io *io, unsigned trans, unsigned ddi, int hdmi, unsigned lanes, const struct i915_display_mode *mode);
+int drv_i915_xd9_pipe_start(struct i915_xd_io *io, unsigned trans);
+void drv_i915_xd9_pipe_stop(struct i915_xd_io *io, unsigned trans);
+void drv_i915_xd9_plane_on(struct i915_xd_io *io, unsigned pipe, uint32_t surf, uint32_t stride_units, uint32_t width, uint32_t height, int rgbx);
+void drv_i915_xd9_plane_off(struct i915_xd_io *io, unsigned pipe);
+int drv_i915_xd9_pipe_wait_vblank(struct i915_xd_io *io, unsigned pipe);
 void drv_i915_xd_pipe_m_n(struct i915_xd_io *io, unsigned trans, const struct i915_xd_dp_m_n *m_n);
 void drv_i915_xd_pipe_timing(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned trans, const struct i915_xd_timing *timing);
 void drv_i915_xd_pipe_configure(struct i915_xd_io *io, const struct i915_xd_platform *platform, const struct i915_xd_trans_setup *setup);
