@@ -34,7 +34,7 @@
 struct i915_render_session;
 
 /*
- * Procedure referenced: Mesa src/intel/blorp (the RECTLIST copies and
+ * Procedure referenced: Mesa 25.0.7 src/intel/blorp (the RECTLIST copies and
  * blits on the render engine).
  */
 int drv_i915_gfx_rect_prepare(struct i915_render_session *session);

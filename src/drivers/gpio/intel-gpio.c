@@ -105,8 +105,9 @@
  * The Tiger Lake LP family's registers in a community: HOSTSW_OWN, GPI_IS
  * and GPI_IE of the first group.
  *
- * Values referenced: Linux drivers/pinctrl/intel/pinctrl-tigerlake.c (the
- * community register offsets).
+ * Values referenced: Linux v6.8.12
+ * drivers/pinctrl/intel/pinctrl-tigerlake.c (the community register
+ * offsets).
  */
 #define COMMUNITY_HOSTSW_OWN	0xb0U
 #define COMMUNITY_GPI_IS	0x100U
@@ -978,7 +979,7 @@ irq_page_map(
  * their status, logging what the firmware left there; the line is still
  * masked.
  *
- * Procedure referenced: Linux drivers/pinctrl/intel/pinctrl-intel.c
+ * Procedure referenced: Linux v6.8.12 drivers/pinctrl/intel/pinctrl-intel.c
  * (intel_gpio_irq_init).
  */
 

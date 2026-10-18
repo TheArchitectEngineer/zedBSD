@@ -47,8 +47,8 @@
  * The registers of r0 holding the workgroup's place along x, y and z, as
  * byte offsets.
  *
- * Values referenced: Mesa src/intel/compiler (emit_work_group_id_setup,
- * the dwords 1, 6 and 7 of r0).
+ * Values referenced: Mesa 25.0.7 src/intel/compiler/brw_fs_nir.cpp
+ * (emit_work_group_id_setup, the dwords 1, 6 and 7 of r0).
  */
 #define COMPILE_CS_GROUP_X_BYTE		4U
 #define COMPILE_CS_GROUP_Y_BYTE		24U
@@ -370,7 +370,7 @@ i915_compile_atomic(
  * to the thread spawner with the end-of-thread bit (the form of the kernel
  * of tests/execution/eu-test.c).
  *
- * Procedure referenced: Mesa src/intel/compiler/brw_fs_visitor.cpp
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_fs_visitor.cpp
  * (emit_cs_terminate, before Gfx12.5).
  */
 static void
@@ -733,8 +733,8 @@ i915_compile_fence(
  * are all disabled still waits once.  A group of one thread runs in order
  * and needs no message (Mesa leaves it out too).
  *
- * Procedure referenced: Mesa src/intel/compiler (emit_barrier,
- * generate_barrier).
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_fs_nir.cpp
+ * (emit_barrier) and brw_generator.cpp (generate_barrier).
  */
 static void
 i915_compile_barrier(

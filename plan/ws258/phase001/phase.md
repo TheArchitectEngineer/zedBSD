@@ -48,3 +48,33 @@ Status: in-progress（2026-10-18 q1248-i01、P1）
 ### 残り
 
 - 上の報告 1・2 の扱い（ユーザーの判断）。その判断で i915 の GT の core を直すなら別の Phase。
+
+## 出典の照合（2026-10-18 q1251-i01、P1）
+
+ユーザー:「照合させる」。q1248 で新しく書いた `Procedure referenced:`・`Values referenced:`（44 file、`git diff 9d995be42 411c13214 -- src include`）の path・関数名・表の名前を、Linux 6.8.12（build/ws229-p001/linux/linux-6.8.12.tar.xz）と Mesa 25.0.7（build/mesa-tools/mesa-25.0.7.tar.xz）の実物（必要な directory だけを build/tmp/ws258-verify-1792321227/ に展開）に grep で照らした。
+
+### 直した物（comment だけ）
+
+- gen9-outputs.c: `ibx_digital_port_connected` は intel_dp.c に無く g4x_dp.c にある → `g4x_dp.c (ibx_digital_port_connected)` に直した。
+- compile.c: `brw_spill_reg` は Mesa 25.0.7 に無い → `brw_reg_alloc::spill_reg`（brw_reg_allocate.cpp）に直した。
+- compile-compute.inc: directory だけの `src/intel/compiler` を file に直した（emit_work_group_id_setup・emit_barrier は brw_fs_nir.cpp、generate_barrier は brw_generator.cpp。r0 の dword 1・6・7 は emit_work_group_id_setup で一致）。
+- 版の無かった Linux・Mesa の参照に版を足した: intel-gpio.c（2 箇所）・lpss-i2c.c に `v6.8.12`、cl.c・native-bin.c・native-shader.c・qpu.c・eu.c・compile-compute.inc・compile.c・compute.c・blit.h・state.h・draw-fixture.c に `25.0.7`。80 桁を超えた行は折り返した。
+
+### file ごとの結果
+
+| 結果 | file |
+| --- | --- |
+| 一致（Linux 6.8.12） | gen9-backlight.c（lpt/cnp_setup・lpt/bxt_get・lpt/bxt_set_backlight、soc/intel_pch.c intel_virt_detect_pch）、gen9-link.c（hsw_prepare_dp_ddi_buffers、hsw_set_signal_levels、skl_ddi_set_iboost、intel_ddi_prepare_link_retrain、intel_ddi_set_idle_link_train、intel_dp_prepare/stop_link_train、clock_recovery、channel_equalization）、gen9-mode.c（intel_ddi_buf_trans.c の skl/kbl の DP・eDP・HDMI 表と intel_ddi_buf_trans_init、skl_get_cdclk、intel_dp_compute_link_config_wide、intel_link_compute_m_n、skl_ddi_dp_set_dpll_hw_state、skl_ddi_calculate_wrpll、skl_watermark.c の 4 関数）、gen9-modeset.c（hsw_power_well_enable、skl_ddi_pll_enable/disable、hsw_crtc_enable ほか 5 関数、intel_ddi.c の 4 関数と Display WA #1143、intel_ddi_post_disable、skl_write_plane_wm、skl_plane_ctl、spt_hpd_detection_setup）、interrupts.c（intel_display_irq.c の gen11_display_irq_reset・gen11_de_irq_postinstall・gen11_display_irq_handler）、scanout.c（intel_fb.c の 3 関数、skl_plane_stride、i915_gem_domain.c の VTD_GUARD と pin_to_display_plane、i915_gem_create.c の dumb_create の 64 byte）、intel-gpio.c（TGL_LP_HOSTSW_OWN 0x0b0・GPI_IS 0x100・GPI_IE 0x120、intel_gpio_irq_init）、lpss-i2c.c（ADL の 0x51e8 ほかが bxt_i2c_info、TGL-LP の 0xa0e8 ほかが spt_i2c_info）、present.c（出典の参照を外しただけ） |
+| 直して一致 | gen9-outputs.c、compile.c、compile-compute.inc |
+| 一致（Mesa 25.0.7、版を足した） | cl.c・native-bin.c・native-shader.c（broadcom/cle/v3d_packet.xml、min_ver 42）、qpu.c（broadcom/qpu/qpu_pack.c）、eu.c（brw_lower_scoreboard.cpp）、compute.c（genX_cmd_compute.c の compute_load_indirect_params、genX_pipeline.c）、state.h（genxml/gen120.xml、src/intel/vulkan）、blit.h・draw-fixture.c（src/intel/blorp、RECTLIST は blorp_genX_exec_brw.h）、bytecode.c（参照は Mesa でなく自前の説明のみ） |
+| 未確認（出典が手元に無い） | transport.h（venus-protocol の commit ca19b635…）、products.c（pci.ids 2026-10-15）、pc98-ide.c（qemu-pc98・linux-pc98。Linux 6.8.12 に pata_pc9800.c は無い）、rpi4-board.c（QEMU hw/arm/raspi4b.c）、rpi4-bt-link.c・rpi4-bt.c（Bluetooth Core 5.4、PL011 TRM、Raspberry Pi の mailbox）、rpi4-h264.h（ITU-T H.264）、rpi4-mmal.c・rpi4-vchiq.c・rpi4-vchiq-wire.h（Raspberry Pi userland・FreeBSD sys/contrib/vchiq）、ucsi.h（UCSI 1.2・3.1） |
+| 未確認（特定の file・関数を名指さない一般の参照） | pci.h（Linux・FreeBSD・NetBSD・OpenBSD の driver API の形）、usb.h（Linux の USB の driver model）、eu-test.c（同じ GPU の Linux i915 の観察） |
+| 参照の追加が無い（comment の整理だけ） | usb.c、pci-pcat-assign.c、pci-window.c、gen9-fake-hw.h、host-gen9-modeset-test.c、fhd-render.c、draw-fixture.h、eu.h、nvrtx 以外の残り |
+
+### build（照合の直しの後）
+
+- `make -j16 ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/ws258 build/ws258/vmunix`: rc=0、warning 0、PASS。
+- 同 `BUILD=build/ws258-i915t I915_TESTS=y`: rc=0、warning 0、PASS。
+- `config-rpi4.mk BUILD=build/ws258-rpi4`: rc=0、warning 0、`arm64 vmunix check: PASS`。
+- `git diff --check` 空、追加行に 80 桁超え無し。
+- 消してよい展開物（Q1 へ）: build/tmp/ws258-verify-1792321227/。

@@ -26,7 +26,7 @@ static void write_varyings(uint8_t *bytes, uint8_t opcode, uint32_t mask);
  * remain disabled.  The caller owns every referenced native interval and
  * cleans the enclosing BCL.
  *
- * Values referenced: Mesa src/broadcom/cle/v3d_packet.xml (the V3D 4.2
+ * Values referenced: Mesa 25.0.7 src/broadcom/cle/v3d_packet.xml (the V3D 4.2
  * binning packets' fields).
  */
 

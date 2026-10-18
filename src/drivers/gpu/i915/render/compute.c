@@ -341,7 +341,7 @@ drv_i915_gfx_dispatch_write_gen(
  * fields (56 threads a subslice, the gateway timer reset), and the VFE
  * state again before the switch back to 3D.
  *
- * Procedure referenced: Mesa src/intel/vulkan/genX_cmd_compute.c and
+ * Procedure referenced: Mesa 25.0.7 src/intel/vulkan/genX_cmd_compute.c and
  * genX_pipeline.c (the Gen12.0 compute dispatch,
  * compute_load_indirect_params).
  */
