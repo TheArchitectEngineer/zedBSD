@@ -706,6 +706,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p255](phase255/phase.md) | PerformanceObserver native mark登録・queue・task配信 | uncleared / q28 Window consumer/failure/held partial cleared・whole残り | p254 verified native mark output |
 | [ws074-p256](phase256/phase.md) | Window ErrorEvent・uncaught harness fidelity | uncleared / q28 runtime/inline source partial cleared・external/syntax等残り | 既存Event/Window/VM→p255再評価 |
 | [ws074-p257](phase257/phase.md) | synchronous generator yield* delegation | cleared / q29 sync own criteria・Chrome38/native GC10 | q28 VM/GC・p189 pinned WebIDL2 |
+| [ws074-p258](phase258/phase.md) | native Proxy internal methods・GC/revocation | in-progress / q30 managed read foundation partial | q29 VM/GC・p189 actual Proxy blocker |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 
@@ -1290,3 +1291,5 @@ Event ws074-q28-terminal-20261018: VM functionのopaque managed sourceをactual 
 Event ws074-q29-selected-20261018: q28 verified1482/3805・held0の証拠を保存後、[p257](phase257/phase.md) sync yield*を新規選定。p189のoriginal WebIDL2 compiler停止に対処し、runner/WPT/native API補完は変更しない。max90分、exact scopeは局所Queue。Master/共有Queue/next投影pending、whole WS incomplete。
 
 Event ws074-q29-finished-20261018: [p257](phase257/phase.md) own同期delegationをcleared、Queue i01 scoped partial cleared。original WebIDL2の次のProxy残差を[p189](phase189/phase.md)へ保存し、そのPhaseのwholeはunclearedを維持。確認済1482/3805・held0、正規parser native1/4を隠さず記録。full source/conformance/hashes/rawと次再開条件は[history](history/ws074-q20261018-29.md)。Master/共有Queue/next/GitHub projection pending。
+
+Event ws074-q30-selected-20261018: [p258](phase258/phase.md)を追加しmanaged read foundationを選定。script-free heap hooksを保ちrealm-aware receiver/Getへ分離、global公開は後続internal methods readiness後の別scope。q29 history/read-back完了、1482/3805・held0維持、whole WS incomplete/共有投影pending。
