@@ -2,7 +2,7 @@
 
 # ws244-p008 display の残りの言及の掃除
 
-Status: in-progress（2026-10-19 q1260-i02 P1、範囲は済み。cleared は Q1）
+Status: cleared（2026-10-19 Q1 判定: display の 7 file の comment の Linux の言及を直した（Q1 も差分が comment だけと確かめた）、build 3 組 warning 0（P1）。f5652e937・81660a5aa、merge e5da0bb04・c8cc73bdf）（旧: in-progress（2026-10-19 q1260-i02 P1、範囲は済み。cleared は Q1））
 
 - 親: [WS244](../ws.md)。範囲: display/ の comment に残る Linux・drm の関数・型の名前と、無くなった file への参照。log の文字列（"intel_bios_init:…" ほか）は p009。
 
