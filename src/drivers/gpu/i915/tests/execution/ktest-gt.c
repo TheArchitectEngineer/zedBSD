@@ -1200,7 +1200,7 @@ i915_ktest_gt_wa_context_lists(
 		    copy_ctx->list[0].reg == 0x22204U &&
 		    copy_ctx->list[0].clr == 0x7f7fU &&
 		    copy_ctx->list[0].set == 0x0606U,
-		"p6a: P6A-CTXWA gen12_ctx_gt_mocs_init programs BLIT_CCTL on the copy engine only");
+		"p6a: P6A-CTXWA the Gen12 context MOCS programs BLIT_CCTL on the copy engine only");
 }
 
 /* Checks the render engine's register whitelist and how it is applied. */
@@ -1568,7 +1568,7 @@ i915_ktest_gt_forcewake_map(
 	mismatches = i915_ktest_gt_domain_mismatches(&t->mmio,
 						    i915_ktest_fw_render_window,
 						    sizeof(i915_ktest_fw_render_window) / sizeof(i915_ktest_fw_render_window[0]));
-	drv_i915_ktest_check(ktest, mismatches == 0U, "p6c1: P6C1-FWMAP the RCS window is split RENDER/GT as __gen12_fw_ranges has it");
+	drv_i915_ktest_check(ktest, mismatches == 0U, "p6c1: P6C1-FWMAP the RCS window is split RENDER/GT as the Gen12 forcewake table has it");
 
 	/* Each media engine has its own domain. */
 	mismatches = i915_ktest_gt_domain_mismatches(&t->mmio,
@@ -1840,7 +1840,7 @@ i915_ktest_gt_objects(
 		"p6c0: P6C0-BIND unbind points the run back at scratch and frees it");
 }
 
-/* Checks the kernel PPGTT's scratch tower and top directory (gen8_init_scratch(), gen8_alloc_top_pd()). */
+/* Checks the kernel PPGTT's scratch tower and top directory. */
 static void
 i915_ktest_gt_kernel_ppgtt(
 	struct i915_ktest *ktest,
@@ -2154,7 +2154,7 @@ i915_ktest_gt_context_state(
 		(rs[I915_KTEST_LRC_MI_MODE_INDEX + 1] & 0x100U) == 0U &&
 		    (rs[I915_KTEST_LRC_MI_MODE_INDEX + 1] & (0x100U << 16)) != 0U &&
 		    rs[I915_KTEST_LRC_BB_OFFSET_INDEX + 1] == 0U,
-		"p6c2: P6C2-STATE __reset_stop_ring clears STOP_RING and masks it in");
+		"p6c2: P6C2-STATE the ring stop reset clears STOP_RING and masks it in");
 
 	/*
 	 * The decoded LRI headers and register offsets: a NOP skip first, a
@@ -2943,7 +2943,7 @@ i915_ktest_gt_defaults(
 	i915_fake_open(&t->mmio, &t->fake);
 	error = drv_i915_engines_init(&t->engines, &t->defaults_gt, &t->gm, &t->pp);
 	if (error != 0) {
-		drv_i915_ktest_check(ktest, 0, "p6c4: P6C4B-INIT intel_engines_init failed on the simulated engine");
+		drv_i915_ktest_check(ktest, 0, "p6c4: P6C4B-INIT engine init failed on the simulated engine");
 		return;
 	}
 
@@ -2954,7 +2954,7 @@ i915_ktest_gt_defaults(
 		t->engines.n == 1U &&
 		    t->engines.kernel_ce[0].allocated == 1 &&
 		    t->engines.kernel_ce[0].ring.size == 4096U,
-		"p6c4: P6C4B-INIT intel_engines_init pins a 4 KiB kernel context per engine");
+		"p6c4: P6C4B-INIT engine init pins a 4 KiB kernel context per engine");
 
 	/* A later context starts from the engine's default state. */
 	i915_ktest_gt_defaults_inherit(ktest, t);
@@ -3069,7 +3069,7 @@ i915_ktest_gt_verify_wa(
 	/* Sets the simulated engines up on a clean model. */
 	i915_fake_open(&t->mmio, &t->fake);
 	error = drv_i915_engines_init(&t->engines, &t->defaults_gt, &t->gm, &t->pp);
-	drv_i915_ktest_check(ktest, error == 0, "p6c5: P6C5-INIT intel_engines_init for the verify run");
+	drv_i915_ktest_check(ktest, error == 0, "p6c5: P6C5-INIT engine init for the verify run");
 	if (error != 0)
 		return;
 
@@ -3319,7 +3319,7 @@ i915_ktest_gt_migrate(
 
 	/* Sets the simulated engines up. */
 	error = drv_i915_engines_init(&t->engines, &t->defaults_gt, &t->gm, &t->pp);
-	drv_i915_ktest_check(ktest, error == 0, "p6c6: P6C6-INIT intel_engines_init for the migrate run");
+	drv_i915_ktest_check(ktest, error == 0, "p6c6: P6C6-INIT engine init for the migrate run");
 	if (error != 0)
 		return;
 
@@ -3543,7 +3543,7 @@ i915_ktest_gt_pxp(
 	i915_fake_open(&t->mmio, &t->fake);
 	error = drv_i915_engines_init(&t->engines, &t->defaults_gt, &t->gm, &t->pp);
 	if (error != 0) {
-		drv_i915_ktest_check(ktest, 0, "PXP intel_engines_init with a VCS failed");
+		drv_i915_ktest_check(ktest, 0, "PXP engine init with a VCS failed");
 		t->defaults_gt.num_engines = 1U;
 		return;
 	}
@@ -4364,7 +4364,7 @@ i915_ktest_gt_eu_pt_unmapped(
 	kern_memset(&walk, 0, sizeof(walk));
 	error = drv_i915_test_ppgtt_walk(pp, 0x0000008000000000ULL, &walk);
 
-	/* It reads the scratch PDP encoding at the first level (PPAT_UNCACHED, gen8_init_scratch()). */
+	/* It reads the scratch PDP encoding at the first level (PPAT_UNCACHED). */
 	drv_i915_ktest_check(
 		ktest,
 		error == 0 &&
@@ -4373,5 +4373,5 @@ i915_ktest_gt_eu_pt_unmapped(
 		    walk.child_known[0] == 0 &&
 		    walk.raw[0] == pp->scratch_encode[3] &&
 		    (walk.raw[0] & ~addr_mask) == (I915_PPGTT_BIT_PRESENT | I915_PPGTT_BIT_RW | I915_PPGTT_DIR_UNCACHED),
-		"eu: EU-PT an unallocated region reads the scratch PDP encode (PPAT_UNCACHED, reference gen8_init_scratch)");
+		"eu: EU-PT an unallocated region reads the scratch PDP encode (PPAT_UNCACHED)");
 }

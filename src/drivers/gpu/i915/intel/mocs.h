@@ -67,7 +67,7 @@
 	(((((uint32_t)(write) << 1) << 7) & 0x3f80U) | (((uint32_t)(read) << 1) & 0x7fU))
 
 /*
- * gen12_ctx_gt_mocs_init: the copy engine's source and destination MOCS.
+ * The Gen12 context MOCS: the copy engine's source and destination MOCS.
  *
  * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_engine_regs.h
  * (BLIT_CCTL_MASK, BLIT_CCTL_MOCS).

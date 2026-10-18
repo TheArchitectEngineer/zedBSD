@@ -958,7 +958,7 @@ i915_trace_read_dpcd_caps(
 		/* Records the capability bytes asked for and what the read answered. */
 		entry->c = 15u;
 		entry->rc = result;
-		entry->name = "drm_dp_read_dpcd_caps";
+		entry->name = "dpcd caps read";
 	}
 
 	/* Succeeded: the read's own result. */

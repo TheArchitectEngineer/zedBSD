@@ -895,21 +895,21 @@ i915_fhd_submit(
 	/* Creates a fresh context of the GT address space on the render engine. */
 	rc = drv_i915_lrc_alloc(&t->ce, ge, vm, gm, 4096U, 0U);
 	if (rc != 0) {
-		(void)drv_i915_test_eu_fail(t, rc, "intel_context_create");
+		(void)drv_i915_test_eu_fail(t, rc, "context create");
 		return rc;
 	}
 
 	/* Allocates the timeline page the request's breadcrumbs land in. */
 	t->tl_page = drv_i915_gt_object_create(gm, 4096U);
 	if (t->tl_page == NULL) {
-		(void)drv_i915_test_eu_fail(t, ENOMEM, "intel_timeline_create");
+		(void)drv_i915_test_eu_fail(t, ENOMEM, "timeline create");
 		return ENOMEM;
 	}
 
 	/* Binds the timeline page into the GGTT, where the breadcrumbs address it. */
 	rc = drv_i915_gt_ggtt_bind(gm, t->tl_page);
 	if (rc != 0) {
-		(void)drv_i915_test_eu_fail(t, rc, "intel_timeline_pin");
+		(void)drv_i915_test_eu_fail(t, rc, "timeline pin");
 		return rc;
 	}
 

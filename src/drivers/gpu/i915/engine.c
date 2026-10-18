@@ -430,7 +430,7 @@ drv_i915_engines_init(
 
 	/* A failed engine is released with every engine before it. */
 	if (error != 0) {
-		kern_logf("i915: intel_engines_init: engine %u failed rc=%d\n", index, error);
+		kern_logf("i915: engine init: engine %u failed rc=%d\n", index, error);
 		es->n = index + 1U;
 		drv_i915_engines_release(es, gm);
 		return error;

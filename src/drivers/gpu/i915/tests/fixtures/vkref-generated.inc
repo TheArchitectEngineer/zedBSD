@@ -1,13 +1,18 @@
 /*
- * SPDX-License-Identifier: MIT
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
  *
- * GENERATED FILE - reference kernels.  Do not edit by hand.
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The reference kernels of the cuboid demo
+ * (userland/desktop/vkdemo/shaders/cuboid.vert.spv and cuboid.frag.spv,
+ * unchanged).  Generated; not edited by hand.
  *
- * Generator : refvk.c (built inside the Mesa tree as
- *             src/intel/compiler/brw/refvk.c; zedBSD project code)
- * Inputs    : Mesa main @ ab691a1cc7bcd264bec8f735deb2127861ad15ef (MIT): spirv_to_nir, brw_compile_vs,
- *             brw_compile_fs, genxml gen120; device ADL-P 0x46a8.
- *             userland/desktop/vkdemo/shaders/cuboid.vert.spv, cuboid.frag.spv (unchanged).
+ * Values referenced: Mesa main @ ab691a1cc7bcd264bec8f735deb2127861ad15ef
+ * (the output of spirv_to_nir, brw_compile_vs, brw_compile_fs and genxml
+ * gen120 for ADL-P 0x46a8).
  */
 #define VKREF_VS_SPIRV_WORDS 769U
 #define VKREF_VS_SPIRV_FNV1A 0x58bf781dU

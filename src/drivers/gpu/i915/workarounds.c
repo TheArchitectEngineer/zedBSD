@@ -474,7 +474,7 @@ drv_i915_wa_build_context(
 			I915_GT_BLIT_CCTL_MASK,
 			I915_GT_BLIT_CCTL_MOCS(mocs_uc_index, mocs_uc_index),
 			0,
-			"gen12_ctx_gt_mocs_init: BLIT_CCTL");
+			"Gen12 context MOCS: BLIT_CCTL");
 	}
 
 	/* The render engine's rules. */
@@ -1426,7 +1426,7 @@ i915_wa_steer_gen9(
 		I915_GT_GEN8_MCR_SLICE_MASK | I915_GT_GEN8_MCR_SUBSLICE_MASK,
 		I915_GT_GEN8_MCR_SLICE(slice) | I915_GT_GEN8_MCR_SUBSLICE(subslice),
 		0,
-		"MCR steering (gen9_wa_init_mcr)");
+		"MCR steering (Gen9)");
 }
 
 /* Builds the workaround list of one Gen9 engine; Gen9 has no default MOCS in RING_CMD_CCTL. */

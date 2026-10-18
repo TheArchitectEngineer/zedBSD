@@ -897,7 +897,7 @@ i915_display_irq_uninstall_check(
 		if (d->vbl->refs[pipe] == 0U)
 			continue;
 
-		kern_logf("i915: WARN intel_irq_uninstall: pipe %u still holds %u vblank reference(s)\n", pipe, d->vbl->refs[pipe]);
+		kern_logf("i915: WARN irq uninstall: pipe %u still holds %u vblank reference(s)\n", pipe, d->vbl->refs[pipe]);
 	}
 }
 

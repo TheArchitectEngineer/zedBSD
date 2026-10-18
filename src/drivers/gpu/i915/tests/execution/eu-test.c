@@ -712,7 +712,7 @@ drv_i915_test_eu_build_request(
 	/* Creates the request on the context's timeline; it has an initial breadcrumb. */
 	error = drv_i915_request_open(rq, ce, seqno, (uint32_t)tl_page->ggtt_offset, (volatile uint32_t *)tl_page->cpu);
 	if (error != 0) {
-		error = drv_i915_test_eu_fail(t, error, "i915_request_create");
+		error = drv_i915_test_eu_fail(t, error, "request create");
 		return error;
 	}
 
@@ -800,7 +800,7 @@ drv_i915_test_eu_park(
 	if (error == 0)
 		error = drv_i915_test_eu_wait_retired(t, ge, el, &t->krq, m, timeout_ms);
 	if (error != 0) {
-		(void)drv_i915_test_eu_fail(t, error, "switch_to_kernel_context");
+		(void)drv_i915_test_eu_fail(t, error, "kernel context switch");
 		return 0;
 	}
 
@@ -1878,8 +1878,8 @@ i915_eu_new_context(
 	unsigned repeat)
 {
 	static const char *const steps[2][3] = {
-		{ "intel_context_create", "intel_timeline_create", "intel_timeline_pin" },
-		{ "repeat: intel_context_create", "repeat: intel_timeline_create", "repeat: intel_timeline_pin" }
+		{ "context create", "timeline create", "timeline pin" },
+		{ "repeat: context create", "repeat: timeline create", "repeat: timeline pin" }
 	};
 	int error;
 

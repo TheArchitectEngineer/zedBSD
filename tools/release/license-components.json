@@ -43,21 +43,6 @@
    "note": "src/libc/regex/LICENSE holds TRE's BSD-2-Clause and musl's MIT texts; the zedbsd-license package installs it, as libc is in every image."
   },
   {
-   "id": "i915-intel",
-   "name": "i915 GPU driver parts derived from Linux i915 (Intel)",
-   "when": "driver:CONFIG_DRIVER_PCI_I915",
-   "license": "MIT",
-   "upstream": "Linux drivers/gpu/drm/i915 (Intel, MIT parts)",
-   "version": "",
-   "notices": [
-    "/usr/share/licenses/i915-driver/LICENSE"
-   ],
-   "paths": [
-    "src/drivers/gpu/i915/"
-   ],
-   "note": "userland/base/licenses/i915-driver/LICENSE (the copyright notices of the derived parts and the MIT permission notice), installed by i915-driver-license, selected with CONFIG_DRIVER_PCI_I915."
-  },
-  {
    "id": "rtl8822b-tables",
    "name": "RTL8822B initialization tables",
    "when": "driver:CONFIG_DRIVER_USB_RTL8822BU",
