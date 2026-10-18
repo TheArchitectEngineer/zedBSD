@@ -10,8 +10,7 @@
  * compile.c.
  *
  * Register conventions of a SIMD8 geometry thread on Gen12.0, one channel
- * to an input primitive (Mesa 25.0.7 brw_fs_thread_payload.cpp,
- * gs_thread_payload; brw_compile_gs.cpp):
+ * to an input primitive:
  *
  *   r0              the thread header (the scratch space in dwords 3 and 5)
  *   r1              the output URB handles, a dword to a channel; bits 31:27
@@ -39,34 +38,39 @@
  * vertex's number with each vertex in turn.  The reply is a register to a
  * component, up to the one read.
  *
- * The output URB entry (brw_compile_gs.cpp, with the vertex count dynamic):
+ * The output URB entry, with the vertex count dynamic:
  * the vertex count in its first 32 bytes, then the control data header (the
  * cut bits), then the vertices, each a whole number of 32-byte units.
  *
- * An emit writes the staged VUE two slots at a time with per-slot offsets
- * -- the vertex's place, the vertex count times the vertex's size -- for the
+ * An emit writes the staged VUE two slots at a time with per-slot offsets --
+ * the vertex's place, the vertex count times the vertex's size -- for the
  * channels of its block that have room for one more vertex (a shader that
- * emits past its OutputVertices loses the extra vertices, as Mesa's
- * nir_lower_gs_intrinsics guard does, instead of writing past its entry);
- * then the count and the offset move on.  The payload is split after the
- * header (the handles and the offsets) as Mesa's brw_opt_split_sends()
- * splits it.  An end sets the cut bit of the last vertex emitted.  The cut
- * bits are gathered a dword at a time: written once at the thread's end
- * when they are 32 or fewer, otherwise each time 32 more vertices start
- * (with a channel mask, and per-slot offsets past 128 bits) and once more
- * at the end (Mesa's emit_gs_control_data_bits()).  The thread ends with
- * the write of the vertex count.
+ * emits past its OutputVertices loses the extra vertices instead of writing
+ * past its entry); then the count and the offset move on.  The payload is
+ * split after the header (the handles and the offsets).  An end sets the cut
+ * bit of the last vertex emitted.  The cut bits are gathered a dword at a
+ * time: written once at the thread's end when they are 32 or fewer, otherwise
+ * each time 32 more vertices start (with a channel mask, and per-slot offsets
+ * past 128 bits) and once more at the end.  The thread ends with the write of
+ * the vertex count.
  *
  * The file is part of compile.c's translation unit: it uses that file's
  * state, constants and helpers, and its functions are declared with the
  * others at the top of compile.c.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/compiler/brw_fs_thread_payload.cpp
+ * (gs_thread_payload), brw_compile_gs.cpp (the output URB entry layout).
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_nir.c
+ * (nir_lower_gs_intrinsics), brw_opt.cpp (brw_opt_split_sends), brw_fs_nir.cpp
+ * (emit_gs_control_data_bits).
  */
 
 /* Geometry: the output URB handles, and the input primitive's number when the kernel reads it. */
 #define COMPILE_GS_OUTPUT_HANDLES_GRF	1U
 #define COMPILE_GS_PRIMITIVE_ID_GRF	2U
 
-/* Geometry: the bits of an output handle; bits 31:27 are the instance (Mesa: the AND with 0xFFFF on Gen12). */
+/* Geometry: the bits of an output handle; bits 31:27 are the instance. */
 #define COMPILE_GS_HANDLE_MASK		0xFFFFU
 
 /* Geometry: the most vertices an input primitive has, a triangle with adjacency. */
@@ -75,8 +79,10 @@
 /*
  * Geometry: the 32-byte unit the vertex count, the control data header and
  * each output vertex take in the output URB entry, the 64-byte unit the
- * entry's size is given in, and the largest entry (Mesa 25.0.7
- * brw_eu_defines.h, GFX7_MAX_GS_URB_ENTRY_SIZE_BYTES).
+ * entry's size is given in, and the largest entry.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/compiler/brw_eu_defines.h
+ * (GFX7_MAX_GS_URB_ENTRY_SIZE_BYTES).
  */
 #define COMPILE_GS_HWORD_BYTES		32U
 #define COMPILE_GS_URB_UNIT_BYTES	64U
@@ -110,16 +116,21 @@
 /*
  * Geometry: the control data formats of 3DSTATE_GS -- cut bits (a strip
  * ends after the vertex whose bit is set) and stream IDs, which a shader
- * emitting points has (Mesa 25.0.7 brw_eu_defines.h,
- * GFX7_GS_CONTROL_DATA_FORMAT_GSCTL_CUT and _SID).
+ * emitting points has.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/compiler/brw_eu_defines.h
+ * (GFX7_GS_CONTROL_DATA_FORMAT_GSCTL_CUT,
+ * GFX7_GS_CONTROL_DATA_FORMAT_GSCTL_SID).
  */
 #define COMPILE_GS_CONTROL_CUT		0U
 #define COMPILE_GS_CONTROL_SID		1U
 
 /*
- * The URB's SIMD8 write message (Mesa 25.0.7 brw_eu_defines.h,
- * GFX8_URB_OPCODE_SIMD8_WRITE; brw_eu.h brw_urb_desc()): bit 17 says
- * per-slot offsets follow the handles, bit 15 a channel mask after them.
+ * The URB's SIMD8 write message: bit 17 says per-slot offsets follow the
+ * handles, bit 15 a channel mask after them.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/compiler/brw_eu_defines.h
+ * (GFX8_URB_OPCODE_SIMD8_WRITE), brw_eu.h (brw_urb_desc).
  */
 #define COMPILE_URB_OPCODE_SIMD8_WRITE	7U
 #define COMPILE_URB_PER_SLOT_PRESENT	(1U << 17)
@@ -127,10 +138,12 @@
 #define COMPILE_URB_GLOBAL_OFFSET_SHIFT	4U
 
 /*
- * The URB's SIMD8 read message (Mesa 25.0.7 brw_eu_defines.h,
- * GFX8_URB_OPCODE_SIMD8_READ; brw_eu.h brw_urb_desc()): the handle as the
- * one-register header, `length` registers of reply -- component c of the
- * slot in register c -- and the slot in the global offset (OWords).
+ * The URB's SIMD8 read message: the handle as the one-register header,
+ * `length` registers of reply -- component c of the slot in register c --
+ * and the slot in the global offset (OWords).
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/compiler/brw_eu_defines.h
+ * (GFX8_URB_OPCODE_SIMD8_READ), brw_eu.h (brw_urb_desc).
  */
 #define COMPILE_URB_OPCODE_SIMD8_READ	8U
 #define COMPILE_DESC_URB_READ(slot, length)	((1U << EU_DESC_MLEN_SHIFT) | \
@@ -203,7 +216,7 @@ i915_compile_geometry_interface(
 	entry_bytes += state->gs_control_hwords * COMPILE_GS_HWORD_BYTES;
 	entry_bytes += state->ir->max_vertices * state->gs_vertex_hwords * COMPILE_GS_HWORD_BYTES;
 
-	/* An entry larger than the URB takes is refused, as Mesa refuses it. */
+	/* An entry larger than the URB takes is refused. */
 	if (entry_bytes > COMPILE_GS_MAX_URB_ENTRY_BYTES) {
 		state->unsupported = 1;
 		return;
@@ -425,9 +438,11 @@ i915_compile_geometry_system(
 /*
  * Ends a geometry thread: writes the cut bits gathered last, then how many
  * vertices it emitted into the first dword of its output URB entry, and
- * retires (Mesa's thread end with a dynamic vertex count).  The handles and
- * the count are the payload in r112..r127, as a message that ends the
- * thread needs.
+ * retires.  The handles and the count are the payload in r112..r127, as a
+ * message that ends the thread needs.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_compile_gs.cpp
+ * (emit_gs_thread_end, the dynamic vertex count).
  */
 static void
 i915_compile_terminate_geometry(
@@ -630,8 +645,8 @@ i915_compile_flush_cut_bits(
 
 	/*
 	 * Starts gathering again on every channel that starts a new dword
-	 * (under f0.0, which the emit sets again after: Mesa's brw_asm reads a
-	 * predicated AND with an immediate back as f0.0 whatever its flag).
+	 * (under f0.0, which the emit sets again after: a predicated AND with an
+	 * immediate assembles as f0.0 whatever its flag).
 	 */
 	drv_i915_eu_cmp(code, I915_EU_COND_NE, I915_EU_FLAG_F0_0, 0, null, drv_i915_eu_grf_d(start_grf), drv_i915_eu_imm_d(0U));
 	drv_i915_eu_alu2_masked(code,
@@ -651,7 +666,10 @@ i915_compile_flush_cut_bits(
  * channels of f0.1 when `predicated`, all of them otherwise.  With 32 bits
  * or fewer the dword is the header's only one, written whole; past that a
  * channel mask picks the dword in its OWord and, past 128 bits, a per-slot
- * offset picks the OWord (Mesa's emit_gs_control_data_bits()).
+ * offset picks the OWord.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_fs_nir.cpp
+ * (emit_gs_control_data_bits).
  */
 static void
 i915_compile_control_write(
@@ -764,8 +782,10 @@ i915_compile_control_write(
 /*
  * Lowers END_PRIMITIVE: sets the cut bit of the last vertex emitted, bit
  * (count - 1) % 32 of the gathered dword (the SHL reads the low five bits
- * of its count; Mesa's emit_gs_end_primitive()), for the channels of the
- * end's block.
+ * of its count), for the channels of the end's block.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_fs_nir.cpp
+ * (emit_gs_end_primitive).
  */
 static void
 i915_compile_end_primitive(

@@ -138,12 +138,12 @@
 #define I915_GFX_MAX_GS_THREADS		336U
 
 /*
- * The thread ids the scratch memory of a stage has to cover (Mesa 25.0.7
- * src/intel/dev/intel_device_info.c, sha256
- * 1a3c7c6d87c4a60af5d1003096b4add0a34c4a02afc12b40a378cc060540afd8,
- * init_max_scratch_ids()): the vertex stage's max_vs_threads, the pixel
- * stage's max_wm_threads, which on Gen12 is 128 threads per PSD on each of
- * the 8 subslices of every slice present.
+ * The thread ids the scratch memory of a stage has to cover: the vertex
+ * stage's thread limit, and the pixel stage's, which on Gen12 is 128
+ * threads per PSD on each of the 8 subslices of every slice present.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/dev/intel_device_info.c
+ * (init_max_scratch_ids, max_vs_threads, max_wm_threads).
  */
 #define I915_GFX_VS_SCRATCH_IDS			I915_GFX_MAX_VS_THREADS
 #define I915_GFX_PS_SCRATCH_IDS_PER_SLICE	(128U * 8U)
@@ -160,16 +160,21 @@
 #define I915_GFX_GENERAL_STATE_BYTES		0xfffff000ULL
 
 /*
- * The thread ids the scratch memory of the compute stage has to cover
- * (Mesa 25.0.7 intel_device_info.c, init_max_scratch_ids() on Gen12:
- * 16 * 8 ids a subslice, and 6 subslices for a GT2 whatever the fuses left).
+ * The thread ids the scratch memory of the compute stage has to cover on
+ * Gen12: 16 * 8 ids a subslice, and 6 subslices for a GT2 whatever the
+ * fuses left.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/dev/intel_device_info.c
+ * (init_max_scratch_ids).
  */
 #define I915_GFX_CS_SCRATCH_IDS			(16U * 8U * 6U)
 
 /*
  * The thread ids the scratch memory of the geometry stage has to cover:
- * its max_gs_threads (Mesa 25.0.7 intel_device_info.c,
- * init_max_scratch_ids(), as for the vertex stage).
+ * its thread limit, as for the vertex stage.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/dev/intel_device_info.c
+ * (init_max_scratch_ids, max_gs_threads).
  */
 #define I915_GFX_GS_SCRATCH_IDS			I915_GFX_MAX_GS_THREADS
 

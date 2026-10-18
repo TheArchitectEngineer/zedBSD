@@ -44,10 +44,6 @@
 /*
  * Register conventions of a SIMD8 dispatch on Gen12 (one register = one 32-bit value to a channel).
  *
- * Values referenced: the register and message conventions Mesa's Intel
- * compiler (src/intel/compiler) uses for the same shaders, as named in each
- * row.
- *
  * Vertex shader payload:   r0 header, r1 the URB handles of the eight vertices,
  *                          r2.. the push data (32 bytes to a register, scalar regions): the push constants,
  *                          then the uniform blocks, then four registers (x y z w) to an attribute, attributes
@@ -56,11 +52,11 @@
  *                          registers to a slot, staged at r(127 - 4 * slots) .. r126 so that its last two
  *                          slots are the payload of the write that ends the thread, which has to sit in
  *                          r112..r127: the handles copied to r127, the slots right below.  The slots go out
- *                          two at a time from the end (Mesa's emit_urb_writes() writes eight registers of a
+ *                          two at a time from the end (a URB write carries eight registers of a
  *                          SIMD8 VUE at most); every write but the last takes the handles from r1.
  * Fragment shader payload: r0 header, r1 pixel positions, r2 / r3 the two perspective barycentrics of
  *                          each pixel, then only when the kernel reads them the two linear barycentrics,
- *                          the source depth and the source w, a register each (brw_fs_thread_payload.cpp),
+ *                          the source depth and the source w, a register each,
  *                          the push data, then two registers to an input (ascending
  *                          location): component c keeps its plane in floats 4 * (c & 1) .. + 3 of
  *                          register c / 2 as [d/d bary1, d/d bary2, -, value at the origin].
@@ -69,7 +65,7 @@
  * Fragment shader output:  location n (0 to 3) in r(124 - 4 n)..r(127 - 4 n); one render-target write for
  *                          each location the shader stores, in ascending order, to binding table entry
  *                          I915_SHADER_RT_BTI(n) with render target index n in the extended descriptor
- *                          (Mesa's lower_fb_write_logical_send() on Gen11+); the last one ends the thread.
+ *                          (Gen11+); the last one ends the thread.
  * Texture:                 one SIMD8 "sample" message, u and v each its own payload run, the reply
  *                          four registers; binding table entry 1 + n, sampler n for the n-th
  *                          sampled image of the shader (entry 0 is the render target).
@@ -85,7 +81,7 @@
  * Scratch memory:          a shader that spills gives the highest value register to the header of its
  *                          scratch messages, built once at the start outside the channel mask (dword 3
  *                          the per-thread scratch space from r0.3, dword 5 the thread's scratch base
- *                          from r0.5; Mesa's generate_scratch_header()).  Spilled value n lives at byte
+ *                          from r0.5).  Spilled value n lives at byte
  *                          32 n of the thread's scratch space: dword 2 of the header takes the offset in
  *                          OWords, then an OWord block write of the register under the execution mask
  *                          (so a channel a loop has stopped keeps what it wrote), or an OWord block read
@@ -95,12 +91,17 @@
  * Flags:                   f0.0 is written by every comparison and read by the SEL of a SELECT or by the
  *                          WHILE that ends a loop, each right after its own comparison; a fragment shader
  *                          that discards keeps its live pixels in f1.0, loaded from the dispatch mask
- *                          (dword 7 of r1) at the start, and predicates its render-target write on it
- *                          (Mesa: brw_compile_fs.cpp, sample_mask_flag_subreg() is f1.0).
+ *                          (dword 7 of r1) at the start, and predicates its render-target write on it.
  * Loops:                   the body runs between the loop's first instruction and a WHILE predicated on
- *                          the channels that go round again (brw_WHILE); a channel that stops waits after
+ *                          the channels that go round again; a channel that stops waits after
  *                          the WHILE until the others stop too, so it no longer writes a register.
  * Geometry shader:         compile-geometry.inc.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/compiler/brw_fs_visitor.cpp
+ * (emit_urb_writes), brw_fs_thread_payload.cpp (setup_fs_payload_gfx9),
+ * brw_lower_logical_sends.cpp (lower_fb_write_logical_send), brw_generator.cpp
+ * (generate_scratch_header), brw_fs_nir.cpp (sample_mask_flag_subreg),
+ * brw_eu_emit.c (brw_WHILE).
  */
 
 /* Vertex: the push data starts here. */
@@ -123,8 +124,10 @@
 /*
  * Fragment: the subspan coordinates of r1 (words 4 .. 7: x and y of
  * subspan 0, then of subspan 1), and the offsets of the four pixels of a
- * subspan (x 0 1 0 1, y 0 0 1 1) as an immediate of eight nibbles
- * (brw_compile_fs.cpp, Gen12.0).
+ * subspan (x 0 1 0 1, y 0 0 1 1) as an immediate of eight nibbles.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/compiler/brw_compile_fs.cpp (the
+ * Gen12.0 pixel centres).
  */
 #define COMPILE_FS_SUBSPAN_BYTE		8U
 #define COMPILE_FS_PIXEL_OFFSETS	0x11001010U
@@ -137,7 +140,7 @@
 
 /*
  * Fragment: the dispatched pixels, the low 16 bits of dword 7 of r1 (byte
- * 28), which Mesa reads as brw_vec1_grf(1, 7) retyped to UW: g1.14<0,1,0>UW.
+ * 28), read as a scalar UW region: g1.14<0,1,0>UW.
  */
 #define COMPILE_FS_DISPATCH_GRF		1U
 #define COMPILE_FS_DISPATCH_BYTE	28U
@@ -254,12 +257,15 @@
 #define COMPILE_SFID_DATA_CACHE_1	12U
 
 /*
- * Message descriptors (gentool's reading of Mesa's kernels for the same shaders).
+ * Message descriptors.
  *
  * URB write: mlen 1 (handles), header, SIMD8 write, the first slot in the
  * global offset.  Sample: mlen 1, rlen 4, SIMD8 sample.  Render-target write:
  * mlen 4, SIMD8 single source, last target, entry 0.  The extended descriptor
  * carries the second run's length.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/compiler/brw_eu.h
+ * (brw_message_desc, brw_urb_desc, brw_sampler_desc, brw_fb_write_desc).
  */
 #define COMPILE_DESC_URB_WRITE(slot)	(0x02080007U | ((uint32_t)(slot) << 4))
 #define COMPILE_DESC_SAMPLE(bti, smp)	(0x02420000U | ((uint32_t)(smp) << 8) | (uint32_t)(bti))
@@ -268,10 +274,12 @@
 
 /*
  * The SIMD8 dual-source render-target write: message control 2,
- * "SIMD8 dual source subspan01" (Mesa 25.0.7 brw_eu_defines.h
- * BRW_DATAPORT_RENDER_TARGET_WRITE_SIMD8_DUAL_SOURCE_SUBSPAN01) in place of
- * the single source's 4; src0 the first colour (mlen 4), src1 the second
- * (the extended descriptor's mlen 4), as Mesa's split send of it.
+ * "SIMD8 dual source subspan01", in place of the single source's 4; src0
+ * the first colour (mlen 4), src1 the second (the extended descriptor's
+ * mlen 4), a split send.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/compiler/brw_eu_defines.h
+ * (BRW_DATAPORT_RENDER_TARGET_WRITE_SIMD8_DUAL_SOURCE_SUBSPAN01).
  */
 #define COMPILE_DESC_RT_WRITE_DUAL	0x08031200U
 #define COMPILE_EX_MLEN(n)		((uint32_t)(n) << 6)
@@ -281,8 +289,7 @@
 #define COMPILE_DESC_MLEN_MASK		(0xfU << EU_DESC_MLEN_SHIFT)
 
 /*
- * Gen9's render-target write header (lower_fb_write_logical_send(),
- * brw_lower_logical_sends.cpp, before Gfx11): two registers, copies of r0
+ * Gen9's render-target write header: two registers, copies of r0
  * and r1, with the render target's index in dword 2 and a discarding
  * shader's live pixels in word 15.  Gen9 needs it where Gen12 says the
  * index in the extended descriptor: for a write to any target but 0 alone,
@@ -295,6 +302,10 @@
  * written.  A dual-source write puts it right before the first colour
  * (r122, r123) after copying the second colour out to r116..r119, location
  * 2's registers, which a dual-source shader never writes.
+ *
+ * Values referenced: Mesa 25.0.7
+ * src/intel/compiler/brw_lower_logical_sends.cpp (lower_fb_write_logical_send,
+ * before Gen11).
  */
 #define COMPILE_GEN9_RT_HEADER_GRF	96U
 #define COMPILE_GEN9_RT_LAST_HEADER_GRF	124U
@@ -306,19 +317,23 @@
 
 /*
  * A64 untyped surface read and write of one channel, SIMD8, stateless
- * (Mesa's brw_dp_a64_untyped_surface_rw_desc(): message type 0x11 / 0x19,
- * channel mask 0xe, SIMD mode 2, binding table entry 253): the 64-bit
- * addresses in two registers, the read's word in one reply register, the
- * write's in one register of the second run.
+ * (message type 0x11 / 0x19, channel mask 0xe, SIMD mode 2, binding table
+ * entry 253): the 64-bit addresses in two registers, the read's word in one
+ * reply register, the write's in one register of the second run.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/compiler/brw_eu.h
+ * (brw_dp_a64_untyped_surface_rw_desc).
  */
 #define COMPILE_DESC_A64_READ		((2U << 25) | (1U << 20) | (0x11U << 14) | (0x2eU << 8) | 253U)
 #define COMPILE_DESC_A64_WRITE		((2U << 25) | (0x19U << 14) | (0x2eU << 8) | 253U)
 
 /*
- * The scratch messages (Mesa's emit_spill() and emit_unspill() before LSC):
- * the header as the one-register payload, a stateless non-coherent OWord
- * block write of one register -- the data the second payload run -- or an
- * OWord block read of one register.
+ * The scratch messages before LSC: the header as the one-register payload,
+ * a stateless non-coherent OWord block write of one register -- the data
+ * the second payload run -- or an OWord block read of one register.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/compiler/brw_reg_allocate.cpp
+ * (emit_spill, emit_unspill).
  */
 #define COMPILE_DESC_SCRATCH_WRITE	((1U << EU_DESC_MLEN_SHIFT) | \
 					 EU_DESC_HEADER_PRESENT | \
@@ -1621,8 +1636,8 @@ i915_compile_exhausted(
 /*
  * Chooses the value to move to scratch memory where the registers ran out:
  * of the values holding a register past this instruction and not read or
- * defined by it, the one whose life ends last (Mesa's allocator weighs its
- * spill costs; the furthest end is the simple heuristic).  Returns
+ * defined by it, the one whose life ends last (the furthest end is the
+ * simple heuristic; spill costs are not weighed).  Returns
  * COMPILE_NO_VALUE when no value qualifies.
  */
 static uint32_t
@@ -1704,7 +1719,10 @@ i915_compile_involves(
  * Reads a spilled value back from scratch memory into a temporary of the
  * instruction being lowered and returns the temporary; a value the
  * instruction reads twice is read once.  All eight channels are read,
- * outside the channel mask, as Mesa's emit_unspill() does.
+ * outside the channel mask.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_reg_allocate.cpp
+ * (emit_unspill).
  */
 static uint32_t
 i915_compile_fill(
@@ -1752,8 +1770,10 @@ i915_compile_fill(
 
 /*
  * Writes the offset of a spilled value's slot, in OWords, into dword 2 of
- * the scratch header: a SIMD1 move outside the channel mask (Mesa's
- * build_legacy_scratch_header()).
+ * the scratch header: a SIMD1 move outside the channel mask.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_reg_allocate.cpp
+ * (build_legacy_scratch_header).
  */
 static void
 i915_compile_scratch_offset(
@@ -1780,10 +1800,12 @@ i915_compile_scratch_offset(
 
 /*
  * Builds the scratch header once, at the start and outside the channel
- * mask, as Mesa's generate_scratch_header() does before each message: the
- * register cleared, then dword 3 the per-thread scratch space (r0.3 bits
- * 3:0) and dword 5 the thread's scratch base (r0.5 bits 31:10).  Only dword
- * 2 changes afterwards.
+ * mask: the register cleared, then dword 3 the per-thread scratch space
+ * (r0.3 bits 3:0) and dword 5 the thread's scratch base (r0.5 bits 31:10).
+ * Only dword 2 changes afterwards.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_generator.cpp
+ * (generate_scratch_header, which builds it before each message).
  */
 static void
 i915_compile_scratch_header(
@@ -1817,8 +1839,7 @@ i915_compile_scratch_header(
  * nothing reads afterwards is not written.
  *
  * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_reg_allocate.cpp
- * (brw_reg_alloc::spill_reg and emit_spill on Gen12.0: every definition
- * of a spilled value written out, every read reloaded into a temporary).
+ * (brw_reg_alloc::spill_reg, emit_spill).
  */
 static void
 i915_compile_spill_results(
@@ -2270,13 +2291,16 @@ i915_compile_load_input(
 }
 
 /*
- * Lowers a component of gl_FragCoord as Mesa does on Gen12.0
- * (brw_compile_fs.cpp, with anv's nir_lower_wpos_center): x and y are the
+ * Lowers a component of gl_FragCoord on Gen12.0: x and y are the
  * pixel's integer position plus 0.5 -- the x and y of each subspan (words
  * 4 .. 7 of r1) replicated to its four pixels and the offsets of the pixels
  * in the subspan added, sixteen words at once, then the x or the y of each
  * pixel converted to a float; z is the payload's source depth; w is the
  * reciprocal of the payload's source w.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_compile_fs.cpp (the
+ * Gen12.0 pixel position), src/intel/vulkan/anv_pipeline.c
+ * (nir_lower_wpos_center).
  */
 static void
 i915_compile_frag_coord(
@@ -2426,7 +2450,7 @@ i915_compile_load_block(
  * high word plus the carry (a CMP writes -1 where the sum is below the
  * offset, which the ADD subtracts: Tiger Lake has no 64-bit integer
  * arithmetic), the two interleaved into the two registers of the address
- * payload (Mesa's A64 payload).  A store under a predicate writes only the
+ * payload.  A store under a predicate writes only the
  * channels whose predicate holds (f0.0).
  */
 static void
@@ -2751,8 +2775,10 @@ i915_compile_negate(
 
 /*
  * Lowers a one-operand math function to one math instruction: sine, cosine,
- * inverse square root, reciprocal, square root, 2^x and log2 (Mesa's RCP,
- * SQRT, EXP2 and LOG2 of frcp, fsqrt, fexp2 and flog2, brw_fs_nir.cpp).
+ * inverse square root, reciprocal, square root, 2^x and log2.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_fs_nir.cpp
+ * (fs_nir_emit_alu: frcp, fsqrt, fexp2, flog2).
  */
 static void
 i915_compile_math(
@@ -2794,8 +2820,10 @@ i915_compile_math(
 
 /*
  * Lowers an absolute value (a move with the abs modifier), a floor (RNDD),
- * a truncation (RNDZ), a rounding to even (RNDE) or a fraction (FRC), as
- * Mesa lowers fabs, ffloor, ftrunc, fround_even and ffract.
+ * a truncation (RNDZ), a rounding to even (RNDE) or a fraction (FRC).
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_fs_nir.cpp
+ * (fs_nir_emit_alu: fabs, ffloor, ftrunc, fround_even, ffract).
  */
 static void
 i915_compile_unary(
@@ -2827,7 +2855,12 @@ i915_compile_unary(
 	}
 }
 
-/* Lowers a minimum (sel.l) or a maximum (sel.ge), as Mesa's emit_minmax() does. */
+/*
+ * Lowers a minimum (sel.l) or a maximum (sel.ge).
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_fs_nir.cpp
+ * (emit_minmax).
+ */
 static void
 i915_compile_minmax(
 	struct i915_compile_state *state,
@@ -2862,8 +2895,11 @@ i915_compile_minmax(
 
 /*
  * Lowers a float comparison to CMP with a register destination, which
- * receives all ones or zero (Mesa: flt, fge, feq and fneu, brw_fs_nir.cpp,
- * with brw_cmod_for_nir_comparison()); the flag it also writes is f0.0.
+ * receives all ones or zero; the flag it also writes is f0.0.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_fs_nir.cpp
+ * (fs_nir_emit_alu: flt, fge, feq, fneu), brw_nir.c
+ * (brw_cmod_for_nir_comparison).
  */
 static void
 i915_compile_compare(
@@ -2937,9 +2973,12 @@ i915_compile_logic(
 }
 
 /*
- * Lowers a per-channel selection as Mesa lowers b32csel: the condition
- * compared with zero into f0.0, then a SEL predicated on it.  The selection
- * is typed as integers so a float or a Boolean passes bit for bit.
+ * Lowers a per-channel selection: the condition compared with zero into
+ * f0.0, then a SEL predicated on it.  The selection is typed as integers so
+ * a float or a Boolean passes bit for bit.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_fs_nir.cpp
+ * (fs_nir_emit_alu: b32csel).
  */
 static void
 i915_compile_select(
@@ -2985,12 +3024,13 @@ i915_compile_select(
 /*
  * Lowers a discard of the pixels where the condition is true: a CMP that
  * clears their bits of f1.0, predicated on f1.0 so a pixel discarded before
- * stays discarded (Mesa's terminate_if fallback, brw_fs_nir.cpp).  The pixels
- * keep executing; the render-target write at the end goes to the pixels f1.0
- * still holds, and ends the thread even when it holds none.
+ * stays discarded.  The pixels keep executing; the render-target write at
+ * the end goes to the pixels f1.0 still holds, and ends the thread even
+ * when it holds none.  Jumping to the end (HALT) once a whole quad is
+ * discarded is an optimization left out.
  *
- * XXX: Mesa also jumps to the end (HALT) once a whole quad is discarded;
- * that is an optimization this compiler leaves out.
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_fs_nir.cpp
+ * (nir_intrinsic_terminate_if).
  */
 static void
 i915_compile_kill(
@@ -3109,12 +3149,14 @@ i915_compile_sampler_index(
 }
 
 /*
- * Lowers a sample whose message carries more than the coordinate, as Mesa
- * builds it on Gen12.0 (lower_sampler_logical_send(),
- * brw_lower_logical_sends.cpp): a header when there is a texel offset
- * (i915_compile_sampler_header()), then the bias (sample_b) or the level of detail (sample_l), then u
- * and v, one register each, copied into consecutive temporaries and sent
- * as one run.
+ * Lowers a sample whose message carries more than the coordinate, on
+ * Gen12.0: a header when there is a texel offset
+ * (i915_compile_sampler_header()), then the bias (sample_b) or the level of
+ * detail (sample_l), then u and v, one register each, copied into
+ * consecutive temporaries and sent as one run.
+ *
+ * Procedure referenced: Mesa 25.0.7
+ * src/intel/compiler/brw_lower_logical_sends.cpp (lower_sampler_logical_send).
  */
 static void
 i915_compile_sample_message(
@@ -3210,13 +3252,15 @@ i915_compile_sample_message(
 }
 
 /*
- * Lowers a texture message (DRV_GPU_IR_TEXTURE), as Mesa builds it on Gen12.0
- * (lower_sampler_logical_send(), brw_lower_logical_sends.cpp): a header
+ * Lowers a texture message (DRV_GPU_IR_TEXTURE) on Gen12.0: a header
  * when there is a texel offset (as i915_compile_sample_message() writes
  * it), then the parameters in the order the IR gives them, each copied
  * bit for bit into consecutive temporaries, sent as one run with a
  * four-register reply.  The n-th sampled image of the shader's uniforms
  * is binding table entry 1 + n and sampler n.
+ *
+ * Procedure referenced: Mesa 25.0.7
+ * src/intel/compiler/brw_lower_logical_sends.cpp (lower_sampler_logical_send).
  */
 static void
 i915_compile_texture(
@@ -3315,13 +3359,15 @@ i915_compile_texture(
 
 /*
  * Writes the header of a sampler message with texel offsets `offsets` into
- * register `header_grf` (lower_sampler_logical_send(),
- * brw_lower_logical_sends.cpp).
+ * register `header_grf`.
  *
- * From Gfx11 on (Gen12) the header is cleared, takes the offsets in dword 2
+ * From Gen11 on (Gen12) the header is cleared, takes the offsets in dword 2
  * and r0.3's sampler state pointer without its low five bits in dword 3.
- * Before Gfx11 (Gen9) it is a copy of r0, whose dword 3 is already the
+ * Before Gen11 (Gen9) it is a copy of r0, whose dword 3 is already the
  * sampler state pointer as the header wants it, with the offsets in dword 2.
+ *
+ * Procedure referenced: Mesa 25.0.7
+ * src/intel/compiler/brw_lower_logical_sends.cpp (lower_sampler_logical_send).
  */
 static void
 i915_compile_sampler_header(
@@ -3356,8 +3402,10 @@ i915_compile_sampler_header(
  * Lowers integer add, subtract, negate, the bitwise operations and the
  * shifts, each one instruction on signed (or, for a logical right shift,
  * unsigned) words: a subtraction adds the negated second source, a
- * negation moves the negated source (Mesa: iadd, ineg, iand, ior, ixor,
- * inot, ishl, ushr, ishr, brw_fs_nir.cpp).
+ * negation moves the negated source.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_fs_nir.cpp
+ * (fs_nir_emit_alu: iadd, ineg, iand, ior, ixor, inot, ishl, ushr, ishr).
  */
 static void
 i915_compile_integer(
@@ -3437,11 +3485,13 @@ i915_compile_integer(
 }
 
 /*
- * Lowers a 32-bit integer multiply as Mesa does on a part without a 32 x
- * 32-bit multiply (brw_lower_integer_multiplication.cpp): the first source
- * times the low 16 bits of the second, plus, shifted up by 16, the first
- * source times the high 16 bits of the second -- the low 32 bits of the
- * product.
+ * Lowers a 32-bit integer multiply on a part without a 32 x 32-bit
+ * multiply: the first source times the low 16 bits of the second, plus,
+ * shifted up by 16, the first source times the high 16 bits of the second
+ * -- the low 32 bits of the product.
+ *
+ * Procedure referenced: Mesa 25.0.7
+ * src/intel/compiler/brw_lower_integer_multiplication.cpp.
  */
 static void
 i915_compile_multiply(
@@ -3482,13 +3532,15 @@ i915_compile_multiply(
 }
 
 /*
- * Lowers an integer division or remainder to one math instruction, as Mesa
- * does on Gen12.0 (brw_fs_nir.cpp: idiv and udiv to INT_QUOTIENT, umod and
- * irem to INT_REMAINDER; brw_nir.c divides in NIR only from Xe-HP on).  The
- * operands are read as unsigned words for UDIV and UMOD and as signed ones
- * for IDIV and IREM: the hardware rounds a signed quotient toward zero and
- * gives a signed remainder the dividend's sign.  A zero divisor is left to
- * the hardware, as SPIR-V leaves it undefined.
+ * Lowers an integer division or remainder to one math instruction on Gen12.0
+ * (the division is not broken up before Xe-HP).  The operands are read as
+ * unsigned words for UDIV and UMOD and as signed ones for IDIV and IREM: the
+ * hardware rounds a signed quotient toward zero and gives a signed remainder
+ * the dividend's sign.  A zero divisor is left to the hardware, as SPIR-V
+ * leaves it undefined.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_fs_nir.cpp
+ * (fs_nir_emit_alu: idiv, udiv, umod, irem), brw_nir.c (nir_lower_idiv).
  */
 static void
 i915_compile_divide(
@@ -3534,8 +3586,10 @@ i915_compile_divide(
 
 /*
  * Lowers a conversion between floats and integers: a MOV from one type to
- * the other, which rounds a float toward zero when it becomes an integer
- * (Mesa: i2f, u2f, f2i, f2u, brw_fs_nir.cpp).
+ * the other, which rounds a float toward zero when it becomes an integer.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_fs_nir.cpp
+ * (fs_nir_emit_alu: i2f, u2f, f2i, f2u).
  */
 static void
 i915_compile_convert(
@@ -3563,8 +3617,10 @@ i915_compile_convert(
 
 /*
  * Lowers an integer comparison to CMP with a register destination, the
- * sources read as signed or as unsigned words (Mesa: ilt, ige, ult, uge,
- * ieq, ine, brw_fs_nir.cpp).
+ * sources read as signed or as unsigned words.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_fs_nir.cpp
+ * (fs_nir_emit_alu: ilt, ige, ult, uge, ieq, ine).
  */
 static void
 i915_compile_integer_compare(
@@ -3634,11 +3690,13 @@ i915_compile_move(
 }
 
 /*
- * Lowers a derivative as Mesa does (generate_ddx() and generate_ddy(),
- * brw_generator.cpp): one ADD of two regions of the source that pick, in
+ * Lowers a derivative: one ADD of two regions of the source that pick, in
  * each 2x2 quad of pixels, the right and the left pixel (x) or the bottom
  * and the top one (y) -- the quad's top row for all four pixels (coarse),
  * or each row its own (fine x).  A vertex shader has no quads.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_generator.cpp
+ * (generate_ddx, generate_ddy).
  */
 static void
 i915_compile_derivative(
@@ -3663,8 +3721,8 @@ i915_compile_derivative(
 	dst = i915_compile_define(state, inst->dst, 1U);
 
 	/*
-	 * The fine y derivative takes each column's own difference, as Mesa
-	 * does on Gen11+ (generate_ddy(), brw_generator.cpp): per quad, a
+	 * The fine y derivative takes each column's own difference on Gen11+:
+	 * per quad, a
 	 * four-channel add of the bottom row less the top row, both read
 	 * <0;2,1> so each row serves its two pixels; outside the channel mask,
 	 * the destination being the value's own.
@@ -3702,11 +3760,12 @@ i915_compile_derivative(
 }
 
 /*
- * Lowers the half-float packing as Mesa does (brw_lower_pack.cpp,
- * brw_fs_nir.cpp): a pack moves each float into its 16-bit half of the
- * destination's channels (an HF destination of stride two, the conversion
- * the move makes), an unpack moves the half the instruction names (an HF
- * source of stride two) into a float.
+ * Lowers the half-float packing: a pack moves each float into its 16-bit
+ * half of the destination's channels (an HF destination of stride two, the
+ * conversion the move makes), an unpack moves the half the instruction
+ * names (an HF source of stride two) into a float.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_lower_pack.cpp.
  */
 static void
 i915_compile_half(
@@ -3800,8 +3859,8 @@ i915_compile_loop_end(
 	drv_i915_eu_while(&state->code, I915_EU_FLAG_F0_0, state->loop_tops[state->loop_depth]);
 
 	/*
-	 * Points the JIP of the loop body's guarded-texture ENDIFs at the WHILE
-	 * (Mesa's brw_set_uip_jip()), and drops them from the list.
+	 * Points the JIP of the loop body's guarded-texture ENDIFs at the WHILE,
+	 * and drops them from the list.
 	 */
 	kept = 0U;
 	for (index = 0U; index < state->endif_count; index++) {
@@ -4616,7 +4675,7 @@ i915_compile_interface(
 	if (state->uses_kill != 0 && state->ir->stage != DRV_GPU_STAGE_FRAGMENT)
 		state->unsupported = 1;
 
-	/* A second colour goes with location 0's alone (Vulkan: dual source writes attachment 0; Mesa needs both). */
+	/* A second colour goes with location 0's alone (Vulkan: dual source writes attachment 0). */
 	if (state->uses_second_color != 0 && (state->ir->stage != DRV_GPU_STAGE_FRAGMENT || state->fs_outputs != 1U))
 		state->unsupported = 1;
 
@@ -4717,8 +4776,11 @@ i915_compile_interface(
 /*
  * Lays out the fragment payload after the perspective barycentrics: the
  * linear barycentrics, the source depth and the source w, each only when
- * the kernel reads it, in that order (brw_fs_thread_payload.cpp,
- * setup_fs_payload_gfx9()), then the push data and the input planes.
+ * the kernel reads it, in that order, then the push data and the input
+ * planes.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/compiler/brw_fs_thread_payload.cpp
+ * (setup_fs_payload_gfx9).
  */
 static void
 i915_compile_fragment_payload(
@@ -4963,9 +5025,12 @@ i915_compile_terminate(
  * Writes a dual-source fragment shader's two colours with one SIMD8
  * dual-source render-target write to render target 0, which ends the
  * thread: the first colour (location 0, r124..r127) as src0, the second
- * (r120..r123) as src1 of a split send, as Mesa's lower_fb_write_logical_send()
- * and its split of the payload do on Gen12 (no header).  A shader that
- * discards writes only the pixels f1.0 still holds.
+ * (r120..r123) as src1 of a split send, with no header on Gen12.  A shader
+ * that discards writes only the pixels f1.0 still holds.
+ *
+ * Procedure referenced: Mesa 25.0.7
+ * src/intel/compiler/brw_lower_logical_sends.cpp
+ * (lower_fb_write_logical_send).
  */
 static void
 i915_compile_terminate_dual(

@@ -264,14 +264,14 @@ drv_i915_gfx_dispatch_write_gen(
 	kern_memset(slot, 0, I915_GFX_SLOT_BYTES);
 	dynamic = slot + I915_GFX_DYNAMIC_HEAP;
 
-	/* Turns mid-thread preemption off as anv does; Gen9 has no such bit. */
+	/* Turns mid-thread preemption off; Gen9 has no such bit. */
 	preemption = GEN12_IDD_PREEMPTION_DISABLE;
 	if (graphics_ver == GEN9_GRAPHICS_VER)
 		preemption = 0U;
 
 	/*
 	 * The interface descriptor: the kernel at the start of its window, no
-	 * mid-thread preemption (anv), the per-thread registers, the threads of
+	 * mid-thread preemption, the per-thread registers, the threads of
 	 * a group with their shared local memory and barrier, and
 	 * the cross-thread registers.
 	 */
@@ -334,8 +334,8 @@ drv_i915_gfx_dispatch_write_gen(
  * counts, the walker over the groups, and the switch back to 3D behind the
  * flushes.
  *
- * A Gen9 batch adds what anv does for Gen9 and its shared
- * local memory, which lives in the L3: an L3 partition with shared local
+ * A Gen9 batch adds what Gen9 and its shared local memory, which lives in
+ * the L3, need: an L3 partition with shared local
  * memory around a kernel that uses it, the colour calc pointer cleared and
  * the read caches invalidated before the switch to GPGPU, the Gen9 VFE
  * fields (56 threads a subslice, the gateway timer reset), and the VFE
@@ -400,8 +400,10 @@ drv_i915_gfx_dispatch_build(
 	/*
 	 * Switches 3D to GPGPU behind a stalling flush of the render target,
 	 * depth and HDC caches (TGL PRM); Gen9 also invalidates the read-only
-	 * caches with a second PIPE_CONTROL (anv, flush_pipeline_select()) and
-	 * masks in only the selection.
+	 * caches with a second PIPE_CONTROL and masks in only the selection.
+	 *
+	 * Procedure referenced: Mesa 25.0.7 src/intel/vulkan/genX_cmd_buffer.c
+	 * (genX(flush_pipeline_select)).
 	 */
 	drv_i915_batch_pipe_control(batch,
 				    I915_CMD_PIPE_CONTROL_CS_STALL |
@@ -426,7 +428,7 @@ drv_i915_gfx_dispatch_build(
 	/*
 	 * The VFE's thread limit and URB entries: 112 threads a dual-subslice,
 	 * less one, and two URB entries; on Gen9, where dss_count counts
-	 * subslices, 56 threads a subslice and the gateway timer reset anv sets
+	 * subslices, 56 threads a subslice and the gateway timer reset, set
 	 * below Gen11.
 	 */
 	max_threads = GEN12_VFE_THREADS_PER_DSS * dss_count - 1U;
@@ -518,7 +520,7 @@ drv_i915_gfx_dispatch_build(
 	 * Switches GPGPU back to 3D behind a stalling flush of the HDC and the
 	 * data cache, which makes the kernel's writes visible to the CPU and to
 	 * the next operation (TGL PRM; the Generic Media State Clear the PRM
-	 * also lists is left out, as anv leaves it out for the hangs it causes).
+	 * also lists is left out, for the hangs it causes).
 	 */
 	drv_i915_batch_pipe_control_hdc(batch,
 					I915_CMD_PIPE_CONTROL_CS_STALL |
@@ -536,10 +538,13 @@ drv_i915_gfx_dispatch_build(
 		i915_compute_l3(batch, GEN9_L3CNTLREG_DEFAULT);
 
 	/*
-	 * Gen9 emits MEDIA_VFE_STATE again before switching back to 3D, as anv
-	 * does against geometry flickering and the mid-object preemption
-	 * workaround (the stalling flush above is the one VFE wants), with no
-	 * scratch and no CURBE; then selects 3D with its own mask.
+	 * Gen9 emits MEDIA_VFE_STATE again before switching back to 3D, against
+	 * geometry flickering and for the mid-object preemption workaround (the
+	 * stalling flush above is the one VFE wants), with no scratch and no
+	 * CURBE; then selects 3D with its own mask.
+	 *
+	 * Procedure referenced: Mesa 25.0.7 src/intel/vulkan/genX_cmd_buffer.c
+	 * (genX(flush_pipeline_select)).
 	 */
 	drv_i915_batch_emit(batch, GEN12_MEDIA_VFE_STATE_HEADER);
 	drv_i915_batch_emit(batch, 0U);
@@ -643,11 +648,12 @@ i915_compute_scratch(
 /*
  * Encodes the Shared Local Memory Size of the interface descriptor:
  * 0 for none, else n with 1 KiB << (n - 1) the group's bytes
- * rounded up to a power of two of at least 1 KiB (Mesa 25.0.7
- * src/intel/common/intel_compute_slm.c, sha256
- * 2c5ccd8fdef7e070fd8c14ffa7fa172e29d77c65bee81e3ca3fa2e1a4dfc5ebc,
- * intel_compute_slm_calculate_size() and intel_compute_slm_encode_size() on
- * Gen9 to Gen12.0).  The parser refuses more than 16 KiB.
+ * rounded up to a power of two of at least 1 KiB.  The parser refuses more
+ * than 16 KiB.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/common/intel_compute_slm.c
+ * (intel_compute_slm_calculate_size, intel_compute_slm_encode_size, Gen9 to
+ * Gen12.0).
  */
 static uint32_t
 i915_compute_slm_size(
@@ -674,9 +680,12 @@ i915_compute_slm_size(
 
 /*
  * Changes the Gen9 L3 partition (L3CNTLREG) between the default one and the
- * one with shared local memory, as anv does: a stalling flush
- * of the data cache, an invalidation of the read-only caches, a second
- * stalling flush so the invalidation is complete, then the register.
+ * one with shared local memory: a stalling flush of the data cache, an
+ * invalidation of the read-only caches, a second stalling flush so the
+ * invalidation is complete, then the register.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/vulkan/genX_cmd_buffer.c
+ * (genX(cmd_buffer_config_l3)).
  */
 static void
 i915_compute_l3(

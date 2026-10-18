@@ -183,14 +183,21 @@ i915_compile_storage_size(
 }
 
 /*
- * Lowers ATOMIC: one A64 untyped atomic message of the channels that run it
- * (Mesa's brw_dp_a64_untyped_atomic_desc(), SIMD8), to the buffer's address
- * plus each channel's byte offset, built as a load builds it.
+ * Lowers ATOMIC: one SIMD8 A64 untyped atomic message of the channels that
+ * run it, to the buffer's address plus each channel's byte offset, built as
+ * a load builds it.
  *
  * The data run is the value, or for a compare and exchange the comparator
- * then the new value (Mesa's MEMORY_LOGICAL_DATA0 and DATA1).  The old value
- * comes back only when an instruction reads it: the reply bit of the message
- * control and the reply length are set together.
+ * then the new value.  The old value comes back only when an instruction
+ * reads it: the reply bit of the message control and the reply length are
+ * set together.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/compiler/brw_eu.h
+ * (brw_dp_a64_untyped_atomic_desc).
+ * 
+ * Procedure referenced: Mesa 25.0.7
+ * src/intel/compiler/brw_lower_logical_sends.cpp (MEMORY_LOGICAL_DATA0,
+ * MEMORY_LOGICAL_DATA1).
  */
 static void
 i915_compile_atomic(
@@ -371,7 +378,7 @@ i915_compile_atomic(
  * of tests/execution/eu-test.c).
  *
  * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_fs_visitor.cpp
- * (emit_cs_terminate, before Gfx12.5).
+ * (emit_cs_terminate, before Gen12.5).
  */
 static void
 i915_compile_terminate_compute(
@@ -380,9 +387,9 @@ i915_compile_terminate_compute(
 	uint32_t descriptor;
 
 	/*
-	 * The message: one register, the thread's end.  Before Gfx11 (Gen9) it
+	 * The message: one register, the thread's end.  Before Gen11 (Gen9) it
 	 * also says not to dereference the URB handle, which the fixed function
-	 * frees itself (emit_cs_terminate(), brw_fs_visitor.cpp).
+	 * frees itself.
 	 */
 	descriptor = EU_DESC_TERMINATE;
 	if (state->graphics_ver == 9U)
@@ -450,11 +457,13 @@ i915_compile_group_threads(
 
 /*
  * Lowers LOAD_SHARED and STORE_SHARED: an untyped surface read
- * or write of one channel's dword at binding table entry 254 (Mesa's
- * brw_dp_untyped_surface_rw_desc(), SIMD8), the byte offsets as the one
- * address register.  A predicated access runs for the channels whose
- * predicate is not zero; a load's other channels keep what the register
- * held.
+ * or write of one channel's dword at binding table entry 254, SIMD8, the
+ * byte offsets as the one address register.  A predicated access runs for
+ * the channels whose predicate is not zero; a load's other channels keep
+ * what the register held.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/compiler/brw_eu.h
+ * (brw_dp_untyped_surface_rw_desc).
  */
 static void
 i915_compile_shared(
@@ -542,10 +551,13 @@ i915_compile_shared(
 
 /*
  * Lowers ATOMIC on a word of shared memory: one untyped atomic
- * message at binding table entry 254 of the channels that run it (Mesa's
- * brw_dp_untyped_atomic_desc(), SIMD8), the byte offsets as the one address
- * register and the value -- or the comparator then the new value -- as the
- * data run.  The old value comes back only when an instruction reads it.
+ * message at binding table entry 254 of the channels that run it, SIMD8,
+ * the byte offsets as the one address register and the value -- or the
+ * comparator then the new value -- as the data run.  The old value comes
+ * back only when an instruction reads it.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/compiler/brw_eu.h
+ * (brw_dp_untyped_atomic_desc).
  */
 static void
 i915_compile_atomic_shared(
@@ -698,8 +710,11 @@ i915_compile_fence(
 	 * Gen9: one fence at the data cache's entry orders shared memory too,
 	 * and the hardware waits for a reply only when something reads it, so a
 	 * move of the reply to the null register holds the thread until the
-	 * fence is done (the memory fence before Gfx11, brw_fs_nir.cpp, and
-	 * FS_OPCODE_SCHEDULING_FENCE before Gfx12, brw_generator.cpp).
+	 * fence is done.
+	 *
+	 * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_fs_nir.cpp
+	 * (the memory fence before Gen11), brw_generator.cpp
+	 * (FS_OPCODE_SCHEDULING_FENCE before Gen12).
 	 */
 	if (state->graphics_ver == 9U) {
 		drv_i915_eu_send_scalar(&state->code, drv_i915_eu_grf(reply), drv_i915_eu_grf(0U), EU_SFID_DATA_CACHE, descriptor | EU_BTI_DATA_CACHE);
@@ -731,7 +746,7 @@ i915_compile_fence(
  * until every thread of the group has sent its message.  The message goes
  * for the whole thread, outside the execution mask: a thread whose channels
  * are all disabled still waits once.  A group of one thread runs in order
- * and needs no message (Mesa leaves it out too).
+ * and needs no message.
  *
  * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_fs_nir.cpp
  * (emit_barrier) and brw_generator.cpp (generate_barrier).
@@ -755,7 +770,12 @@ i915_compile_barrier(
 	if (threads <= 1)
 		return;
 
-	/* The bits of r0.2 that hold the barrier ID: Gen9 has its own (emit_barrier(), brw_fs_nir.cpp). */
+	/*
+	 * The bits of r0.2 that hold the barrier ID: Gen9 has its own.
+	 *
+	 * Values referenced: Mesa 25.0.7 src/intel/compiler/brw_fs_nir.cpp
+	 * (emit_barrier).
+	 */
 	identity_mask = EU_BARRIER_ID_MASK;
 	if (state->graphics_ver == 9U)
 		identity_mask = GEN9_EU_BARRIER_ID_MASK;

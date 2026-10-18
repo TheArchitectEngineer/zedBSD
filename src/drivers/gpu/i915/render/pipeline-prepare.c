@@ -353,7 +353,7 @@ drv_i915_gfx_pipeline_kernels(
 			slot = 0U;
 		kernels->ps_input_slots[index] = slot;
 
-		/* gl_PrimitiveID that no stage writes is the setup's (anv's slot -1). */
+		/* gl_PrimitiveID that no stage writes is the setup's (slot -1). */
 		if (found != 0 && fragment->input_locations[index] == DRV_GPU_SHADER_LOCATION_PRIMITIVE_ID)
 			kernels->ps_primitive_id_mask |= 1U << index;
 	}

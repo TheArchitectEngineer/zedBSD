@@ -1030,12 +1030,15 @@ i915_draw_build_batch(
 	}
 
 	/*
-	 * Sizes a VUE entry, in 64-byte units of four 16-byte slots: the vertex
-	 * fetcher writes the attributes into the entry the vertex shader then
-	 * overwrites with the header, the position and the varyings, so it holds
-	 * the larger of the two (brw_compile_vs.cpp, urb_entry_size).  With a
-	 * geometry kernel the varyings are the vertex kernel's own, not the
-	 * geometry kernel's the setup reads.
+	 * Sizes a VUE entry, in 64-byte units of four 16-byte slots: the
+	 * vertex fetcher writes the attributes into the entry the vertex
+	 * shader then overwrites with the header, the position and the
+	 * varyings, so it holds the larger of the two.  With a geometry kernel
+	 * the varyings are the vertex kernel's own, not the geometry kernel's
+	 * the setup reads.
+	 *
+	 * Procedure referenced: Mesa 25.0.7
+	 * src/intel/compiler/brw_compile_vs.cpp (urb_entry_size).
 	 */
 	slots = 2U + kernels->varyings;
 	if (kernels->gs_code != NULL)
@@ -1073,7 +1076,13 @@ i915_draw_build_batch(
 	if (batch->graphics_ver != GEN9_GRAPHICS_VER)
 		drv_i915_batch_pointer(batch, GEN12_CMD_3DSTATE_CPS_POINTERS, I915_GFX_DYN_CPS);
 
-	/* Disables the binding table pool, as anv does against state leaking from other contexts. */
+	/*
+	 * Disables the binding table pool, so no state of another context
+	 * leaks in.
+	 *
+	 * Procedure referenced: Mesa 25.0.7 src/intel/vulkan/genX_init_state.c
+	 * (init_render_queue_state).
+	 */
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_BINDING_TABLE_POOL_ALLOC, GEN12_3DSTATE_BINDING_TABLE_POOL_ALLOC_DWORDS));
 	drv_i915_batch_emit(batch, mocs);
 	drv_i915_batch_emit(batch, 0U);

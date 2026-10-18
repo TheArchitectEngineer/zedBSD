@@ -60,8 +60,9 @@
 #define I915_GFX_SURFACE_R32G32B32A32_FLOAT	0x000U
 
 /*
- * The 32-bit integer ones, for integer vertex attributes (Mesa 25.0.7
- * src/intel/isl/isl.h, enum isl_format, which is genxml's SURFACE_FORMAT).
+ * The 32-bit integer ones, for integer vertex attributes.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/isl/isl.h (enum isl_format).
  */
 #define I915_GFX_SURFACE_R32_SINT		0x0d6U
 #define I915_GFX_SURFACE_R32_UINT		0x0d7U
@@ -144,9 +145,11 @@ static const uint32_t i915_gfx_address_modes[5] = {
 };
 
 /*
- * The Shadow Function of each VkCompareOp, as anv takes it
- * (genX_init_state.c, vk_to_intel_shadow_compare_op): the hardware's
- * prefilter operation is the opposite of the comparison.
+ * The Shadow Function of each VkCompareOp: the hardware's prefilter
+ * operation is the opposite of the comparison.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/vulkan/genX_init_state.c
+ * (vk_to_intel_shadow_compare_op).
  */
 static const uint32_t i915_gfx_shadow_functions[8] = {
 	GEN12_PREFILTEROP_ALWAYS,
@@ -184,13 +187,15 @@ static const uint32_t i915_gfx_constant_opcodes[5] = {
 };
 
 /*
- * The BLENDFACTOR of each VkBlendFactor, as anv maps them
- * (genX_gfx_state.c vk_to_intel_blend): ZERO, ONE, SRC_COLOR,
+ * The BLENDFACTOR of each VkBlendFactor: ZERO, ONE, SRC_COLOR,
  * ONE_MINUS_SRC_COLOR, DST_COLOR, ONE_MINUS_DST_COLOR, SRC_ALPHA,
  * ONE_MINUS_SRC_ALPHA, DST_ALPHA, ONE_MINUS_DST_ALPHA, CONSTANT_COLOR,
  * ONE_MINUS_CONSTANT_COLOR, CONSTANT_ALPHA, ONE_MINUS_CONSTANT_ALPHA,
  * SRC_ALPHA_SATURATE, SRC1_COLOR, ONE_MINUS_SRC1_COLOR, SRC1_ALPHA and
  * ONE_MINUS_SRC1_ALPHA.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/vulkan/genX_gfx_state.c
+ * (vk_to_intel_blend).
  */
 static const uint32_t i915_gfx_blend_factors[19] = {
 	GEN12_BLENDFACTOR_ZERO,
@@ -226,11 +231,12 @@ static const uint32_t i915_gfx_blend_functions[5] = {
 /*
  * The vertex formats the draw takes: the 32-bit floats and integers, and the
  * 8-, 16- and 10-bit ones libGLESv2 hands the executor (normalized, scaled
- * and integer; 16-bit floats).  The SURFACE_FORMAT values are Mesa 25.0.7's
- * enum isl_format (src/intel/isl/isl.h, sha256
- * 71099bdc5b8657541525bdab4824d43f20ad169f8d7570b60ba6b251fdb6431a); Vulkan's
- * A2B10G10R10 packs red in the low bits, isl's R10G10B10A2 (anv's mapping).
- * The table is constant and lives for the kernel's lifetime.
+ * and integer; 16-bit floats).  Vulkan's A2B10G10R10 packs red in the low
+ * bits, the surface format R10G10B10A2.  The table is constant and lives
+ * for the kernel's lifetime.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/isl/isl.h (enum isl_format),
+ * vulkan/anv_formats.c (the Vulkan to surface format table).
  */
 static const struct i915_gfx_vertex_format i915_gfx_vertex_formats[] = {
 	{ VK_FORMAT_R32_SFLOAT, 0x0d8U, 1U, 0U },
@@ -668,10 +674,12 @@ drv_i915_gfx_surface_write_gen(
 		return EINVAL;
 
 	/*
-	 * Fills the surface state as isl fills it for a 2D one-level surface:
-	 * 2D, horizontal and vertical alignment 4, the tiling; the unorm path
+	 * Fills the surface state of a 2D one-level surface: 2D, horizontal and vertical alignment 4, the tiling; the unorm path
 	 * bit, MOCS and QPitch; width and height; pitch; mip tail start 1;
 	 * identity channel select; the address.
+	 *
+	 * Procedure referenced: Mesa 25.0.7 src/intel/isl/isl_surface_state.c
+	 * (isl_genX(surf_fill_state_s)).
 	 */
 	kern_memset(rss, 0, GEN12_RENDER_SURFACE_STATE_DWORDS * 4U);
 	rss[0] = (GEN12_SURFTYPE_2D << 29) |
@@ -694,16 +702,18 @@ drv_i915_gfx_surface_write_gen(
 /*
  * Writes the SAMPLER_STATE of a sampler.
  *
- * The fields are the ones anv fills (genX_init_state.c): the OpenGL LOD
- * pre-clamp, the mip filter of the mipmap mode, the two filters (both
+ * The fields: the OpenGL LOD pre-clamp, the mip filter of the mipmap mode, the two filters (both
  * anisotropic with anisotropy, the EWA algorithm) and the LOD bias; the LOD
  * range, the cube override (seamless cube maps) and the shadow function of
  * a depth comparison; address rounding for a linear filter, the maximum
  * anisotropy, unnormalized coordinates and the three address modes.  The
- * bias is clamped to [-16, 15.996] and both LOD limits to [0, 14], as anv
- * clamps them; the surface state then limits the levels to the ones the
- * view has.  An address mode past the table clamps.  The border colour
- * pointer is drv_i915_gfx_sampler_border_write()'s.
+ * bias is clamped to [-16, 15.996] and both LOD limits to [0, 14]; the
+ * surface state then limits the levels to the ones the view has.  An
+ * address mode past the table clamps.  The border colour pointer is
+ * drv_i915_gfx_sampler_border_write()'s.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/vulkan/genX_init_state.c
+ * (genX(CreateSampler)).
  */
 void
 drv_i915_gfx_sampler_write(
@@ -745,7 +755,7 @@ drv_i915_gfx_sampler_write(
 	if (sampler->compare_enable != 0U && sampler->compare_op < 8U)
 		shadow = i915_gfx_shadow_functions[sampler->compare_op];
 
-	/* The maximum anisotropy as anv rounds it: (ratio - 2) / 2, 0 .. 7, from a ratio of 2 .. 16. */
+	/* The maximum anisotropy, rounded: (ratio - 2) / 2, 0 .. 7, from a ratio of 2 .. 16. */
 	anisotropy = 0U;
 	if (sampler->anisotropy_enable != 0U) {
 		ratio = (uint32_t)drv_i915_float_to_fixed(sampler->max_anisotropy, 0U, 2, 16);
@@ -775,7 +785,7 @@ drv_i915_gfx_sampler_write(
 	/* Chooses how levels are picked and blended. */
 	mip_filter = i915_sampler_mip_filter(sampler->mipmap_mode);
 
-	/* Converts the bias and the LOD range to the sampler's fixed point, clamped as anv clamps them. */
+	/* Converts the bias and the LOD range to the sampler's fixed point, clamped. */
 	lod_bias = drv_i915_float_to_fixed(sampler->lod_bias,
 					   GEN12_SAMPLER_LOD_FRACTION_BITS,
 					   GEN12_SAMPLER_LOD_BIAS_MIN,
@@ -819,8 +829,10 @@ drv_i915_gfx_sampler_write(
  * Writes a sampler's SAMPLER_BORDER_COLOR_STATE at `border`, `offset`
  * bytes into the dynamic state heap (64-byte aligned), and points the
  * SAMPLER_STATE at it: the four channels of the VkBorderColor, floats for
- * a FLOAT colour and integers for an INT one, as anv fills its border
- * colours (anv_device.c, the border colour pool).
+ * a FLOAT colour and integers for an INT one.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/vulkan/anv_device.c
+ * (anv_device_init_border_colors).
  */
 void
 drv_i915_gfx_sampler_border_write(
@@ -916,7 +928,7 @@ drv_i915_gfx_mocs_uncached(
 
 /*
  * Emits the start of one operation of a 3D batch: the pipeline switch, the
- * state bases and the state anv programs once per context before its first
+ * state bases and the state programmed once per context before its first
  * draw.
  *
  * The surface and dynamic heaps are the operation's slot at state_va, the
@@ -928,10 +940,13 @@ drv_i915_gfx_mocs_uncached(
  * earlier operation of the batch wrote is flushed first, and the caches
  * that hold state or read textures are invalidated after them.
  *
- * A Gen9 batch selects the pipeline with anv's Gen9 mask,
- * programs I915_GT_CACHE_MODE_1 as anv does once a context, has a 19-dword
- * STATE_BASE_ADDRESS, invalidates the vertex fetch cache the way the SKL
- * PRM asks (see i915_state_vf_invalidate()) and has no depth bounds.
+ * A Gen9 batch selects the pipeline with the Gen9 mask, programs
+ * CACHE_MODE_1 once a context, has a 19-dword STATE_BASE_ADDRESS,
+ * invalidates the vertex fetch cache the way the SKL PRM asks (see
+ * i915_state_vf_invalidate()) and has no depth bounds.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/vulkan/genX_init_state.c
+ * (init_render_queue_state).
  */
 void
 drv_i915_gfx_emit_context_setup(
@@ -981,7 +996,7 @@ drv_i915_gfx_emit_context_setup(
 				    I915_CMD_PIPE_CONTROL_FLUSH_ENABLE);
 	drv_i915_batch_emit(batch, select);
 
-	/* Programs I915_GT_CACHE_MODE_1 on Gen9, as anv does after its first switch to 3D. */
+	/* Programs CACHE_MODE_1 on Gen9, after the first switch to 3D. */
 	if (gen9 != 0) {
 		drv_i915_batch_emit(batch, I915_CMD_MI_LOAD_REGISTER_IMM(1));
 		drv_i915_batch_emit(batch, GEN9_REG_CACHE_MODE_1);
@@ -1038,7 +1053,7 @@ drv_i915_gfx_emit_context_setup(
 				 I915_CMD_PIPE_CONTROL_VF_CACHE_INVALIDATE,
 				 state_va + I915_GFX_SCRATCH);
 
-	/* Clears the state anv clears once per context. */
+	/* Clears the state cleared once per context. */
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_WM_HZ_OP, GEN12_3DSTATE_WM_HZ_OP_DWORDS);
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_AA_LINE_PARAMETERS, GEN12_3DSTATE_AA_LINE_PARAMETERS_DWORDS);
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_WM_CHROMAKEY, GEN12_3DSTATE_WM_CHROMAKEY_DWORDS);
@@ -1079,7 +1094,7 @@ uint32_t
 drv_i915_gfx_topology(
 	const struct i915_gfx_pipeline *pipeline)
 {
-	/* The topologies with adjacency, which only a geometry kernel reads (anv passes them on as they are). */
+	/* The topologies with adjacency, which only a geometry kernel reads, pass on as they are. */
 	if (pipeline->gs_binary != NULL) {
 		/* Vulkan's topology with adjacency, as GEN names it. */
 		switch (pipeline->topology) {
@@ -1329,8 +1344,8 @@ drv_i915_gfx_emit_vertex_input(
 
 	/*
 	 * Steps an element once an instance when its binding's input rate is
-	 * VK_VERTEX_INPUT_RATE_INSTANCE (instancing enable, step rate 1, as anv
-	 * programs it); every other element steps per vertex.
+	 * VK_VERTEX_INPUT_RATE_INSTANCE (instancing enable, step rate 1); every
+	 * other element steps per vertex.
 	 */
 	for (index = 0U; index < count; index++) {
 		instanced = 0U;
@@ -1445,13 +1460,15 @@ drv_i915_gfx_emit_index_buffer(
  * geometry stage and 16 KiB to the pixel stage on every draw.  Without a
  * geometry stage (gs_entry_size 0) the vertex stage owns the URB past the
  * push constants: entries of vs_entry_size 64-byte units, as many as fit,
- * at most 3576 (a multiple of eight, as Mesa's intel_get_urb_config() keeps
- * the vertex stage's count).  With one the vertex stage keeps
+ * at most 3576 (a multiple of eight).  With one the vertex stage keeps
  * 21 of those chunks and the geometry stage the next 6: entries of
  * gs_entry_size units, at most 1548, a multiple of eight when an entry is
  * smaller than nine units.  The hull and domain stages get none.  Returns
  * 0, or ENOTSUP when fewer than two geometry entries fit; nothing is
  * emitted then.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/common/intel_urb_config.c
+ * (intel_get_urb_config).
  */
 int
 drv_i915_gfx_emit_urb(
@@ -1533,9 +1550,12 @@ drv_i915_gfx_emit_urb(
  * Emits the 3DSTATE_CONSTANT_* packets of all five stages.
  *
  * The vertex, the geometry and the pixel stage each read
- * their own push data, as many registers as its kernel uses.  Like anv, the
- * buffer goes in the highest slot, so that slot 0 is never the only one in
- * use; a stage that reads nothing is given an empty packet.
+ * their own push data, as many registers as its kernel uses.  The buffer
+ * goes in the highest slot, so that slot 0 is never the only one in use; a
+ * stage that reads nothing is given an empty packet.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/vulkan/genX_cmd_draw.c
+ * (cmd_buffer_emit_push_constant).
  */
 void
 drv_i915_gfx_emit_constants(
@@ -1590,11 +1610,12 @@ drv_i915_gfx_emit_constants(
 	/*
 	 * Commits the vertex and the geometry stage's push data on Gen9: there
 	 * a 3DSTATE_CONSTANT_* packet takes effect only at the stage's next
-	 * 3DSTATE_BINDING_TABLE_POINTERS_* (anv's cmd_buffer_emit_descriptor_pointers(),
-	 * "on SKL this is what flushes push constants").
-	 * The context setup cleared those stages' pointers before these packets,
+	 * 3DSTATE_BINDING_TABLE_POINTERS_*.  The context setup cleared those stages' pointers before these packets,
 	 * and the pixel stage's pointer comes later with the draw.  Gen12 is
 	 * left as it is.
+	 *
+	 * Procedure referenced: Mesa 25.0.7 src/intel/vulkan/genX_cmd_draw.c
+	 * (cmd_buffer_emit_descriptor_pointers).
 	 */
 	if (batch->graphics_ver == GEN9_GRAPHICS_VER) {
 		drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_BINDING_TABLE_POINTERS_VS, GEN12_3DSTATE_POINTERS_DWORDS);
@@ -1623,14 +1644,16 @@ drv_i915_gfx_samples_log2(
 }
 
 /*
- * Emits 3DSTATE_CLIP, SF and RASTER of an ordinary Vulkan pipeline, as anv
- * programs them.
+ * Emits 3DSTATE_CLIP, SF and RASTER of an ordinary Vulkan pipeline.
  *
  * A last stage that writes the point size has the setup take the point
  * width from each vertex; any other draws its points one pixel wide.  The
  * clipper takes each primitive's layer from the VUE only when the last
  * stage writes it (a geometry kernel), else layer 0; with a
  * geometry kernel the setup dereferences the URB a primitive at a time.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/vulkan/genX_pipeline.c
+ * (emit_3dstate_clip), genX_gfx_state.c (3DSTATE_SF, 3DSTATE_RASTER).
  */
 void
 drv_i915_gfx_emit_raster(
@@ -1654,8 +1677,7 @@ drv_i915_gfx_emit_raster(
 
 	/*
 	 * Forces render target array index 0 unless the last stage writes the
-	 * layer (Vulkan: a layer not written is layer 0; anv's
-	 * ForceZeroRTAIndexEnable).
+	 * layer (Vulkan: a layer not written is layer 0).
 	 */
 	zero_layer = GEN12_CLIP_FORCE_ZERO_RTA_INDEX;
 	if (kernels->gs_writes_layer != 0U)
@@ -1720,7 +1742,7 @@ drv_i915_gfx_emit_raster(
 	if (pipeline->front_face == VK_FRONT_FACE_COUNTER_CLOCKWISE)
 		counter_clockwise = 1U;
 
-	/* A pipeline of several samples rasterizes on the sample pattern (anv's DXMultisampleRasterizationEnable). */
+	/* A pipeline of several samples rasterizes on the sample pattern. */
 	multisample = 0U;
 	if (pipeline->samples > 1U)
 		multisample = GEN12_RASTER_DX_MULTISAMPLE_ENABLE;
@@ -1740,8 +1762,8 @@ drv_i915_gfx_emit_raster(
 }
 
 /*
- * Emits the depth test, the depth buffer and the post-sync write anv makes
- * after the depth state.
+ * Emits the depth test, the depth buffer and the post-sync write after the
+ * depth state.
  *
  * With no depth attachment the depth buffer is a null D32_FLOAT surface and
  * the test is off.  Returns EINVAL for a depth attachment with no storage or
@@ -1841,15 +1863,18 @@ drv_i915_gfx_emit_depth(
 			rows = (depth->height + 3U) & ~3U;
 
 		/*
-		 * Writes what isl_emit_depth_stencil_hiz_s() writes: 2D, the
-		 * format, write enable and the pitch (Y-tiled: Gen9+ depth always
+		 * Writes 2D, the format, write enable and the pitch (Y-tiled: Gen9+ depth always
 		 * is); the address; the extent; MOCS, the first array element (the
 		 * view's first layer) and the depth (the view's layers less one);
 		 * the QPitch and the render target view extent, which is the depth
-		 * again (isl_emit_depth_stencil.c of Mesa 25.0.7, sha256
-		 * d0a71883586e838971621169f7439a9d1ebddb919241cf5937620e5742a56778,
-		 * 147-163; gen120.xml 3DSTATE_DEPTH_BUFFER, Render Target View
-		 * Extent bits 245-255, dword 7 bits 31:21).
+		 * again (Render Target View Extent, dword 7 bits 31:21).
+		 *
+		 * Values referenced: Mesa 25.0.7 src/intel/genxml/gen120.xml
+		 * (3DSTATE_DEPTH_BUFFER).
+		 *
+		 * Procedure referenced: Mesa 25.0.7
+		 * src/intel/isl/isl_emit_depth_stencil.c
+		 * (isl_genX(emit_depth_stencil_hiz_s)).
 		 */
 		drv_i915_batch_emit(batch, (GEN12_SURFTYPE_2D << 29) | (1U << 28) | (format << 24) | (depth->pitch - 1U));
 		drv_i915_batch_emit(batch, (uint32_t)va);
@@ -1918,8 +1943,8 @@ drv_i915_gfx_emit_vertex_shader(
 }
 
 /*
- * Emits 3DSTATE_GS: the geometry kernel when the draw has one,
- * as anv programs it, else an empty packet (the stage off).
+ * Emits 3DSTATE_GS: the geometry kernel when the draw has one, else an
+ * empty packet (the stage off).
  *
  * The kernel starts at the geometry kernel offset and runs SIMD8 with
  * statistics, one input primitive to a channel, with no samplers and no
@@ -1927,6 +1952,9 @@ drv_i915_gfx_emit_vertex_shader(
  * the primitive's number when it reads it) and no vertex data: every input
  * is pulled from the URB.  The vertex count of each thread's output is
  * dynamic, written by the kernel at the start of its URB entry.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/vulkan/genX_pipeline.c
+ * (emit_3dstate_gs).
  */
 void
 drv_i915_gfx_emit_geometry_shader(
@@ -2117,9 +2145,10 @@ drv_i915_gfx_emit_pixel_shader(
  * Packs dwords 4-5 of 3DSTATE_VS or PS: the Scratch Space Base Pointer of
  * the stage's part of the scratch buffer (an offset from the general state
  * base, which the draw sets to the buffer) and the Per-Thread Scratch Space
- * of the kernel
- * (1 KiB << n, the n Mesa's get_scratch_space() computes); zero for a
- * kernel that spills nothing.
+ * of the kernel (1 KiB << n); zero for a kernel that spills nothing.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/vulkan/genX_pipeline.c
+ * (get_scratch_space).
  */
 static uint64_t
 i915_state_scratch(
@@ -2148,8 +2177,11 @@ i915_state_scratch(
 /*
  * Emits 3DSTATE_PS_BLEND for the pipeline's colour blend.
  *
- * It repeats what BLEND_STATE says of attachment 0, as anv keeps the two
- * consistent (genX_gfx_state.c): the one colour attachment is writeable.
+ * It repeats what BLEND_STATE says of attachment 0, so the two stay
+ * consistent: the one colour attachment is writeable.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/vulkan/genX_gfx_state.c
+ * (3DSTATE_PS_BLEND).
  */
 void
 drv_i915_gfx_emit_ps_blend(
@@ -2380,7 +2412,13 @@ i915_vertex_format(
 	return ENOTSUP;
 }
 
-/* Translates a VkSamplerMipmapMode to the SAMPLER_STATE mip filter, as anv does; any other mode takes the nearest level. */
+/*
+ * Translates a VkSamplerMipmapMode to the SAMPLER_STATE mip filter; any other
+ * mode takes the nearest level.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/vulkan/genX_init_state.c
+ * (vk_to_intel_mipmap_mode).
+ */
 static uint32_t
 i915_sampler_mip_filter(
 	uint32_t mipmap_mode)
@@ -2394,8 +2432,8 @@ i915_sampler_mip_filter(
 }
 
 /*
- * Writes the RENDER_SURFACE_STATE of a linear image, as isl fills it
- * (isl_surface_state.c) for the view a range names: the levels
+ * Writes the RENDER_SURFACE_STATE of a linear image for the view a range
+ * names: the levels
  * [base_level, base_level + level_count) and the layers [base_layer,
  * base_layer + layer_count) of a sampled image, or the one level and layer
  * (a 3D image's depth) a render target writes.
@@ -2407,10 +2445,13 @@ i915_sampler_mip_filter(
  * Surface Array), 3D, or a cube for a cube view (all six faces enabled,
  * Depth the cubes less one); a render target is 2D, or 3D for a 3D image,
  * and writes level MIP Count at Minimum Array Element.  Mip Tail Start is
- * the image's level count (no mip tail, isl_choose_miptail_start_level()
- * for a linear surface).  Returns EINVAL for an image with no storage, a
+ * the image's level count (no mip tail for a linear surface).  Returns
+ * EINVAL for an image with no storage, a
  * format the surface state cannot name, or levels or layers the image does
  * not have.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/isl/isl_surface_state.c
+ * (isl_genX(surf_fill_state_s)), isl/isl.c (isl_choose_miptail_start_level).
  */
 static int
 i915_image_surface_write(
@@ -2442,7 +2483,7 @@ i915_image_surface_write(
 	/*
 	 * Refuses a format the surface state cannot name.  A depth image is
 	 * sampled as the R32 float it holds, in the Y tiles it is laid out in
-	 * (isl samples a D32 surface as R32_FLOAT).
+	 * (a D32 surface is sampled as R32_FLOAT).
 	 */
 	tile = GEN12_TILEMODE_LINEAR;
 	if (image->format == VK_FORMAT_D32_SFLOAT || image->format == VK_FORMAT_D32_SFLOAT_S8_UINT) {
@@ -2509,8 +2550,8 @@ i915_image_surface_write(
 
 	/*
 	 * A multisampled image is Y-tiled with its samples as slices, QPitch
-	 * apart (MSFMT_MSS), which the surface reaches as an array (isl sets
-	 * Surface Array for every 2D surface); a render target writes it as
+	 * apart (MSFMT_MSS), which the surface reaches as an array (Surface
+	 * Array is set for every 2D surface); a render target writes it as
 	 * multisampled.
 	 */
 	samples = 0U;
@@ -2790,7 +2831,7 @@ i915_state_target_view(
  * Writes the render targets: slot n's view at binding table entry
  * I915_SHADER_RT_BTI(n), and a null surface of the draw's extent for a slot
  * the subpass does not draw into (a fragment shader may still write that
- * location; the write goes nowhere, as isl's null surface state makes it).
+ * location; the write goes nowhere, as a null surface state makes it).
  * A draw without a framebuffer (a test's) writes `target` as slot 0.
  */
 static int
@@ -2838,8 +2879,10 @@ i915_state_write_targets(
 
 /*
  * Writes the RENDER_SURFACE_STATE of a null surface: SURFTYPE_NULL,
- * B8G8R8A8_UNORM, Y-tiled, of the given extent (isl_null_fill_state() for
- * Gen9+).  Writes to it are dropped.
+ * B8G8R8A8_UNORM, Y-tiled, of the given extent.  Writes to it are dropped.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/isl/isl_surface_state.c
+ * (isl_genX(null_fill_state_s), Gen9 and later).
  */
 static void
 i915_state_null_surface_write(
@@ -3027,11 +3070,13 @@ i915_state_viewport_source(
  *
  * The viewport is x, y, width, height, minDepth and maxDepth as float bits.
  * A negative height (VK_KHR_maintenance1) flips y: the transform takes it
- * as it is, and the viewport's rectangle runs from y + height to y, as anv
- * writes it (genX_cmd_buffer.c, the viewport's y_min and y_max).
+ * as it is, and the viewport's rectangle runs from y + height to y.
  * XXX: the guardband is the viewport itself ([-1, 1] in NDC): correct, and
  * every primitive that leaves the viewport is clipped rather than trivially
  * accepted.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/vulkan/genX_gfx_state.c
+ * (YMinViewPort, YMaxViewPort).
  */
 static void
 i915_state_write_viewport(
@@ -3108,11 +3153,14 @@ i915_state_write_viewport(
  * of COLOR_CALC_STATE.
  *
  * Every entry clamps before and after blending to the render target's
- * format, as anv programs it; the entry blends as the pipeline says and
+ * format; the entry blends as the pipeline says and
  * leaves the components the pipeline masks unwritten.  The blend constants
  * are the pipeline's, or the ones the command buffer set when the pipeline
  * declares them dynamic (zero until one is set, which Vulkan leaves
  * undefined).
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/vulkan/genX_gfx_state.c
+ * (BLEND_STATE).
  */
 static void
 i915_state_write_blend(
@@ -3181,7 +3229,7 @@ i915_state_write_blend(
 		/*
 		 * The logic operation, on every target that takes one whether it
 		 * blends or not, an integer one too; a float or an sRGB target
-		 * passes the colour through (Vulkan, VkLogicOp; anv).
+		 * passes the colour through (Vulkan, VkLogicOp).
 		 */
 		if (pipeline->logic_op_enable != 0U) {
 			/* Resolves this attachment's format before selecting its logic operation. */
@@ -3210,12 +3258,14 @@ i915_state_write_blend(
 }
 
 /*
- * Works out the hardware blend of attachment 0, as anv does
- * (genX_gfx_state.c): MIN and MAX use no factors, so theirs are ONE (the
+ * Works out the hardware blend of attachment 0: MIN and MAX use no factors, so theirs are ONE (the
  * hardware applies the factors whatever the function), and the alpha
  * blends independently when its factors or its function differ from the
  * colour's.  An equation that reads a second colour source is not blended
- * unless the fragment kernel writes one, as anv does.
+ * unless the fragment kernel writes one.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/vulkan/genX_gfx_state.c
+ * (BLEND_STATE).
  */
 static void
 i915_blend_equation(
@@ -3327,9 +3377,11 @@ i915_blend_uses_second_source(
 }
 
 /*
- * Translates a VkLogicOp to its 3D_Logic_Op_Function (Mesa 25.0.7 anv
- * vk_to_intel_logic_op, values of genxml gen40.xml); a value past the
- * table copies.
+ * Translates a VkLogicOp to its 3D_Logic_Op_Function; a value past the table
+ * copies.
+ *
+ * Values referenced: Mesa 25.0.7 src/intel/vulkan/genX_gfx_state.c
+ * (vk_to_intel_logic_op), genxml/gen40.xml (3D_Logic_Op_Function).
  */
 static uint32_t
 i915_blend_logic_op(
@@ -3445,9 +3497,11 @@ i915_state_input_slot(
 /*
  * Returns the Primitive ID Override bits of 3DSTATE_SBE dword 1 for the
  * fragment input that is gl_PrimitiveID no stage writes: its attribute
- * number and all four components, as anv sets them with the constant
- * source of SBE_SWIZ (genX_pipeline.c, emit_3dstate_sbe()); 0 when there
- * is none.
+ * number and all four components, set together with the constant source of
+ * SBE_SWIZ; 0 when there is none.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/vulkan/genX_pipeline.c
+ * (emit_3dstate_sbe).
  */
 static uint32_t
 i915_state_primitive_id_override(
@@ -3663,13 +3717,15 @@ i915_state_stencil_buffer(
 }
 
 /*
- * Writes the RENDER_SURFACE_STATE of a uniform texel buffer, as isl fills
- * it for a buffer (isl_buffer_fill_state_s): SURFTYPE_BUFFER of the view's
+ * Writes the RENDER_SURFACE_STATE of a uniform texel buffer: SURFTYPE_BUFFER of the view's
  * format, linear, the element count less one spread over width (7 bits),
  * height (14) and depth (11), the texel size less one as the pitch, the
  * identity channel select and the first byte's address.  Refuses a view
  * whose buffer is not bound, whose range runs past the buffer, or that
  * holds no whole texel.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/isl/isl_surface_state.c
+ * (isl_genX(buffer_fill_state_s)).
  */
 static int
 i915_buffer_surface_write(
@@ -3844,8 +3900,11 @@ i915_state_emit_urb_gen9(
 /*
  * Appends the PIPE_CONTROL that invalidates the vertex fetch cache (with the
  * other flags).  On Gen9 the SKL PRM wants a null PIPE_CONTROL
- * before it and a post-sync write on it, which goes to post_sync_va (anv
- * writes its workaround address); Gen12 needs neither.
+ * before it and a post-sync write on it, which goes to post_sync_va; Gen12
+ * needs neither.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/vulkan/genX_cmd_buffer.c (the VF
+ * cache invalidation workaround).
  */
 static void
 i915_state_vf_invalidate(
@@ -3873,9 +3932,12 @@ i915_state_vf_invalidate(
 
 /*
  * Appends what follows the depth and stencil buffers on both versions: no
- * hierarchical depth, no clear values, and the post-sync write anv makes
- * after the depth state (Wa_1408224581, Wa_14014097488, Wa_14016712196) to
- * the slot's scratch at scratch_va.
+ * hierarchical depth, no clear values, and the post-sync write after the
+ * depth state (Wa_1408224581, Wa_14014097488, Wa_14016712196) to the
+ * slot's scratch at scratch_va.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/vulkan/genX_cmd_buffer.c
+ * (Wa_1408224581).
  */
 static void
 i915_state_depth_tail(
@@ -3886,7 +3948,7 @@ i915_state_depth_tail(
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_HIER_DEPTH_BUFFER, GEN12_3DSTATE_HIER_DEPTH_BUFFER_DWORDS);
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_CLEAR_PARAMS, GEN12_3DSTATE_CLEAR_PARAMS_DWORDS);
 
-	/* Makes the post-sync write anv makes after the depth state (Wa_1408224581, Wa_14014097488, Wa_14016712196). */
+	/* Makes the post-sync write after the depth state (Wa_1408224581, Wa_14014097488, Wa_14016712196). */
 	drv_i915_batch_emit(batch, I915_CMD_GFX_OP_PIPE_CONTROL(6));
 	drv_i915_batch_emit(batch, I915_CMD_PIPE_CONTROL_QW_WRITE);
 	drv_i915_batch_emit(batch, (uint32_t)scratch_va);
@@ -3922,14 +3984,16 @@ i915_state_depth_layers(
 }
 
 /*
- * Emits the Gen9 3DSTATE_DEPTH_BUFFER and 3DSTATE_STENCIL_BUFFER,
- * as isl writes them below Gen12 (isl_emit_depth_stencil.c):
- * the depth buffer as on Gen12 with its fields where Gen9 has them, the
+ * Emits the Gen9 3DSTATE_DEPTH_BUFFER and 3DSTATE_STENCIL_BUFFER: the depth
+ * buffer as on Gen12 with its fields where Gen9 has them, the
  * stencil write enable in the depth buffer, a depth buffer of an attachment
  * with stencil and no depth typed 2D D32_FLOAT with the stencil's extent,
  * and a five-dword stencil buffer (enable, MOCS and pitch; the address; the
  * QPitch).  Returns EINVAL for a depth image with no storage or in another
  * format than D32_SFLOAT and D16_UNORM, or a stencil plane with no storage.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/isl/isl_emit_depth_stencil.c
+ * (isl_genX(emit_depth_stencil_hiz_s), below Gen12).
  */
 static int
 i915_state_depth_buffer_gen9(
@@ -4002,7 +4066,7 @@ i915_state_depth_buffer_gen9(
 		pitch = depth->pitch - 1U;
 		qpitch = (rows / 4U) | (((layers - 1U) & GEN12_RSS_DEPTH_MASK) << GEN9_DEPTH_DEPTH_SHIFT);
 	} else if (has_stencil != 0) {
-		/* A stencil-only attachment: a 2D D32_FLOAT buffer with no address (isl, GFX_VER < 12). */
+		/* A stencil-only attachment: a 2D D32_FLOAT buffer with no address (below Gen12). */
 		type = GEN12_SURFTYPE_2D;
 	}
 

@@ -34,8 +34,11 @@
 struct i915_render_session;
 
 /*
- * Procedure referenced: Mesa 25.0.7 src/intel/blorp (the RECTLIST copies and
- * blits on the render engine).
+ * Copies, blits and clears of rectangles on the render engine, drawn as a
+ * RECTLIST.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/intel/blorp/blorp_blit.c and
+ * blorp_genX_exec_brw.h (blorp_exec).
  */
 int drv_i915_gfx_rect_prepare(struct i915_render_session *session);
 int drv_i915_gfx_rect_build(struct i915_render_session *session, const struct i915_gfx_surface *dst, const struct i915_gfx_rect *dst_rect, const struct i915_gfx_surface *src, const struct i915_gfx_rect *src_rect, const uint32_t clear[4], int linear, uint64_t *batch_va);
