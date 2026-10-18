@@ -579,7 +579,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS256](ws256/ws.md) | MG008 | StarFive VisionFive 2（JH7110、RISC-V）への移植（2026-10-18 ユーザー） | incomplete（p002 toolchain の RISCV は cleared、他は詳細を Q1 とユーザーで決めてから P2） | 最初の到達目標は UART の login、QEMU の virt から |
 | [WS257](ws257/ws.md) | MG006 | i915 を Haswell・Broadwell（Gen7.5・Gen8）に対応（2026-10-18 ユーザー） | planning（今は取り組まない） | — |
 | [WS258](ws258/ws.md) | MG001 | 全ドライバの出典の表記を guardrail に（file の先頭から block へ）（2026-10-18 ユーザー） | completed（2026-10-18、残りは WS244・WS259） | — |
-| [WS259](ws259/ws.md) | MG005 | RTL8822B の表（rtl8822b-tables.inc）を値の引用に書き換える（2026-10-18 ユーザー） | planning（WS244 の後） | p001 |
+| [WS259](ws259/ws.md) | MG005 | RTL8822B の表（rtl8822b-tables.inc）を値の引用に書き換える（2026-10-18 ユーザー） | incomplete（p002 cleared、p001 は license の判断と実機の WiFi 待ち） | p001 |
 | [WS260](ws260/ws.md) | MG006 | i915 の Gen9 の display（gen9-*.c）を xd と同じく自前で書き直す（2026-10-18 ユーザー） | incomplete（p001 を P1、q1252） | p001 設計 |
 | [WS261](ws261/ws.md) | MG008 | include/kern/boot.h から PC-98・Raspberry Pi の固有の構造体を除く（2026-10-18 ユーザー） | completed（2026-10-18） | — |
 | [WS262](ws262/ws.md) | MG001 | boot loader（bootloader/）をコーディング規約の全文に合わせる（2026-10-18 ユーザー） | completed（2026-10-19） | — |
