@@ -1,5 +1,25 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
+# ws074-q20261018-26 / native mark PerformanceObserver consumer
+
+Status: active（2026-10-18）
+Owner: このCodex chat単独。
+Approval: [ユーザー自走指示](autonomy.md)をこのfinite scopeへ適用。q25 terminalfd2746478/history SHA256cbb49c4d1faf53a8b768f42e843b5c74c9b9e8ce40e0a8b8220b39a3c0cee0d9をread-back。
+Timebox: 最大90分（2026-10-18 18:49 JSTまで）。
+
+| Attempt | Phase | Exact scope / criteria | State | Dependencies |
+| --- | --- | --- | --- | --- |
+| ws074-q20261018-26-i01 | [p255](phase255/phase.md) native mark observer Window/host partial | native PerformanceObserver constructor/callback brand、observe dictionary/iterable entryTypes/type conversionとmode InvalidModificationError、実mark登録/queued record/Window task配信、buffered mark replay、entryTypes過去抑止、takeRecords/disconnect/reobserve、native EntryList queries/snapshot、SameObject frozen supportedEntryTypes=['mark']を実装。callback this/list/observer/optional dropped count、複数observer/再入・例外後の継続、GC/retired child停止を通常APIで独立Chrome/native/host fixture検証。p254 real producerを使いJS fake/API testURL分岐無し。held WPT原本とindependent prior/future positiveが真に成立した場合だけheld1を解除。final frozen pairで全1508 harness/1561 static/413 scripted/48 strict、DOM/CSSOM/producer native7、host/target exact2source warning0、full changed C conformance/Acid非悪化、全raw/hashを保存し旧whole/callback PASS後退を解消 | in-progress | q25 verified mark creation/retrieval/clear/Window/GC scoped output・corrected1508 baseline・pinned CRD/IDL/WPTとChrome |
+
+Dependency graph: p254 named verified host producer（whole Phase未clear）→ native consumer/independent positive → held WPT再評価 → final pair/full gates/archive。
+Target profile: user指定の固定Interop2025 WPTとChrome153の実測互換を採用し、observe entryTypes+bufferedはbufferedを無視する一般挙動にする。published 2025-05-21 CRDの併用TypeErrorとの差を明記し、latest full-spec適合を主張しない。entryTypes+typeはTypeError、mode変更はInvalidModificationError、未対応entry typeは登録を偽装しない。native producerはmarkだけ、他entry types/worker/complex detail/ID fieldsは未実装を保持。
+Generation bounds: 既存engine bind/environment.c、window.cのregistry pointer追加、internal.hの末尾private enum/extern追加、tests/dom/performance-observer.html/.expected、tests/host-performance-observer.cとWS074記録・証拠だけ。必要なら同じengine API/GC検証に沿って既存host-performance-marks.cを追従。新module/ABI2/Wayland/shell/WPT/runner/manifest/期待値/共有SDK/sysroot/toolchain/共有Board/cacheを変更しない。C全文/Guardrail/browser component全文を直接使用、format19/機械検査+全文manual（許可されたforward cleanupのany-goto誤検出を明記）。targetはq02のenvironment/window exact single-source commandの-oのみ変更、host build単独、測定pairは別folderでfreeze。
+Bounds: timer backendの通常taskを使いmicrotaskで代用しない。active actual Windowでのみ配信し、retired state/保存list/entryの安全な寿命を保つ。未達/後退未解消/90分到達ならunclearedとresumeを保存。p255 whole/p100/target full link/runtime/WS100%はこのhost partialだけで認定しない。push/削除/make check/QEMU無し。
+Upcoming Work Outlook: verified observer後のheld1集計、VM yield*で正規WebIDL2実行、未attempt275、既存layout/VM/API残差、target/p100。
+
+---
+<!-- awesome-plan project=zedbsd record=queue -->
+
 # ws074-q20261018-25 / native PerformanceMark producer
 
 Status: finished（2026-10-18、native producer host partial cleared）

@@ -2,11 +2,11 @@
 
 # ws074-p255: PerformanceObserverのnative mark登録・queue・task配信
 
-Status: planning
+Status: in-progress（q26 native mark consumer host partial）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
-Queue: 未選定（p254 producer後の候補）
+Queue: [ws074-q20261018-26-i01](../queue.md)
 Origin: [p189 q23 holdback](../phase189/evidence/20261018-q23/native-prerequisite-holdback.json)
 Prerequisite: [p254](../phase254/phase.md)の実mark記録/取得とmanaged lifecycleのverified output。
 
@@ -31,3 +31,13 @@ Event ws074-p255-added-from-q23-20261018: p189のknown input/observer no-opを�
 Event ws074-p255-primary-version-correction-20261018: 一次文書の再読で、上記の「2026 Performance Timeline draft」という日付の記述を訂正する。現在のTRが示す固定版は[2025-05-21 CRD](https://www.w3.org/TR/2025/CRD-performance-timeline-20250521/)で、この版にもentryTypesと他memberの併用TypeErrorがある。相違は単純な2025対2026の世代差とは断定せず、固定tentative WPT/Chrome153の実測挙動とpublished algorithmの差として保持。将来の選定scopeでfixed-target互換profileを明記しURL別例外にはしない。observer modeの変更は一次algorithmではInvalidModificationError、未対応typeだけのobserveは既存registrationを破壊せずabortする。現時点のp255実装は未選定、q25 native producer gate待ち。
 
 Event ws074-q25-producer-prerequisite-verified-20261018: [p254 q25 verified output](../phase254/evidence/20261018-q25/README.md)は通常mark記録/取得/clear/managed lifecycleとWindow/GCの実producerを提供し、全fixed corpus旧PASSを維持。whole p254 clearanceを前提にせず、このnamed host outputを本Phaseのconsumer入力として使用可能。原held caseは実entryを持つが通知0のため保持。observer-designの技術調査は証拠へ保存、まだ本Phaseのsource Queueは未選定。
+
+## q26 exact design / acceptance
+
+Event ws074-p255-q26-selected-20261018: [Queue](../queue.md)へ18:49 JSTまでのnative mark consumer host partialを保存。p254 whole clearanceではなくq25の実producer/取得/clear/Window/GCのnamed verified outputを前提にする。timelineはactive observer wrappersとone queued-task callback/flagをmanaged trace、observerはcallback/timeline/実record vectorをtrace、EntryListは切離したmark referencesを自己所有する。既存Preludeはnative globalがあればno-op fallbackを実行しないためsource変更不要。
+
+Native timer-task backendによりnotify登録順のsnapshotと各pending buffer切離しを行い、callback前にqueued flagを解除して再入markを次taskへ送る。例外はbind_report_exceptionで通常報告し他observerを続ける。takeRecordsはraw queue順を保持してdrain、EntryList queriesはstartTime順snapshotを返す。observeは辞書のlexical member順/iterable protocol/throwを実装し、登録modeはdisconnect後も維持。frozen ['mark']だけを正しく公開し未実装typeを宣伝しない。
+
+Target profileはexact Queueの通り、固定tentative WPT/ChromeのentryTypes+buffered ignoreを一般APIとして適用し、published 2025 CRDとの相違/partial scopeを明記する。callback droppedEntriesCountはmark-onlyで実drop0、observe後初回に0/以後は未設定のoptionとして扱う。既存producer snapshot helperを必要な範囲で共用しても通常API/Window/GC契約を維持し、p254 native7と38条件を再検証する。
+
+独立Chrome/nativeでfuture通知、buffered replay、過去entryTypes抑止、takeRecords/disconnect/reobserve/mode/error/readonly supported types、複数observer/再入/例外/GC/child退役を確認。全fixed corpusとhost/target/style/Acidのgate、scope/禁止事項/未達の扱いはQueueの通り。held PASSはreal positive/原WPTがそろうまで加算しない。
