@@ -11,9 +11,10 @@
 -->
 
 <!-- master:agents:start -->
-- **2026-10-18（ユーザー「N=2で、P1はWS245, WS251の続きを実施します。…」）**: N=2。P1（phase-runner、Opus 5.5 low、レビューの子なし）が q1241（WS245 の 43 Phase の判定の材料と p046）→ q1242（WS251 p002 の残り）。worktree p1・agent/p1-q1241。
-  - P2 は VisionFive 2 への移植の WS（Q1 とユーザーで詳細を決めた後に開始）。
-  - 2026-10-18 Q1 が記録の点検を 0 件に（fc9ff462d）。agent/p2-bug333・agent/p4-bug330 は tag saved/20261018-* に保存してキャンセル。
+- **2026-10-18**: N=2（ユーザー「N=2で、P1はWS245, WS251の続きを実施します。…」）。P1（Opus 5.5 low、レビューの子なし）は q1241・q1242 を済ませて返却、全部 main に merge（最後 db594efb5）。動いている担当は無い。
+  - WS245: 32 Phase を cleared（ca6df3d9f）。残る 10 Phase は p025・p026・p043（DC6 の H6）、p042・p050d4c（reboot の止める道）、p050d4d（QEMU の boot-test）、p041（suspend）、p044・p045（host の受け入れ）、p046（目視の残り）。
+  - WS251 p002: GPU ドライバの grep は 0 件。残りは bcm2711 の段の名前（ユーザーの判断待ち、Q1 の勧めは (a) 残す）、arm64 の build 1 回、gen9・bootfb の host 試験。
+  - WS256 VisionFive 2: 4 点は決定、5 点の質問がユーザーの答え待ち（ws256/ws.md）。P2 は未起動。
   - push はしていない（最後の push より後の commit は全部 local）。
 <!-- master:agents:end -->
 
