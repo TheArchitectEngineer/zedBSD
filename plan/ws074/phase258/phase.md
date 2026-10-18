@@ -2,11 +2,11 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: uncleared（q51 spread/rest partial cleared、whole Proxy未達）
+Status: in-progress（q52 for-in partial、whole Proxy未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
-Queue: ws074-q20261018-51-i01（q30〜q50 partial履歴保持）
+Queue: ws074-q20261018-52-i01（q30〜q51 partial履歴保持）
 Origin: p189/q29 original WebIDL2 parseがProxy未定義で停止。
 
 Objective / own criteria: native managed Proxyを実object internal methodsへ接続し、constructor/revocableと各internal operationのtrap/fallback/invariant/receiver/revocation/callability/GCを正しく実行する。original WebIDL2 actual parse/validatorに必要なget/set/array behaviorを通常APIで提供し、independent controls/原WPTを通す。部分read stageだけでwholeをclearしない。
@@ -337,3 +337,5 @@ for-in lazy own-key/prototype/visited state、private excluded-arrayの既存ToK
 Raw archive106 members SHA2560a8156b8c909f5104fe24903a77c5fccb48dc11cd0a241dd1ce4740a4986e2eaを全member順次read-back。runtime binaryはhash付きbuild保持・archive非同梱。q49 harness原archive1676 members SHA2565127febd2683798dd849e067f4999f96d78e1b36c1ea152f84b35bf52e6535c5を参照しq51実測とは混同しない。
 
 [証拠](evidence/20261018-q51/README.md)。次finite scope未選定。
+
+Event ws074-p258-q52-selection: for-in eager heap/prototype snapshotをtraced per-level own/visited stateとactual OwnKeys/GetOwn/GetPrototypeOfへ置換する内部設計を選定。primaryはProxy等の順序差を許すためnative algorithm順とgenuine common要件を分ける。全1508q49比較を含む。[exact Queue](../queue.md)。whole/p100/global未達、main統合・master編集無し。
