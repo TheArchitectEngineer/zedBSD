@@ -1,0 +1,88 @@
+{
+  "total": 36,
+  "outcomes": {
+    "fail": 34,
+    "multiple_completions": 2
+  },
+  "callbacks": {
+    "3": 14,
+    "1": 34
+  },
+  "eligible_sha256": "907329cfc8248151f4cda7718b6d3ce8d0503fa416b48034aa9b30f939e912fd",
+  "missing": 0,
+  "duplicate_ids": 0,
+  "whole_pass_increment": 0,
+  "new_global_eligible": 1491,
+  "remaining_harness_unrun": 292,
+  "controls": [
+    {
+      "id": "/css/css-anchor-position/anchor-name-multicol-001.html",
+      "outcome": "pass",
+      "callbacks": 1,
+      "old_report": "build/ws074-20261018/q12/after-harness/shard-0000/test-022.json.gz",
+      "report": "control-0.json"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-center-001.html",
+      "outcome": "fail",
+      "callbacks": 4,
+      "old_report": "build/ws074-20261018/q12/after-harness/shard-0000/test-001.json.gz",
+      "report": "control-1.json"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-position-writing-modes-002.html",
+      "outcome": "harness_error",
+      "callbacks": 48,
+      "old_report": "build/ws074-20261018/q12/after-harness/shard-0000/test-047.json.gz",
+      "report": "control-2.json"
+    },
+    {
+      "id": "/css/css-anchor-position/anchor-name-in-shadow-002.html",
+      "outcome": "no_completion",
+      "callbacks": 0,
+      "old_report": "build/ws074-20261018/q12/after-harness/shard-0000/test-019.json.gz",
+      "report": "control-3.json"
+    },
+    {
+      "id": "/css/css-flexbox/relayout-image-load.html",
+      "outcome": "no_output",
+      "callbacks": 0,
+      "old_report": "build/ws074-20261018/q12/after-harness/shard-0384/test-458.json.gz",
+      "report": "control-4.json"
+    }
+  ],
+  "multiple_completion_details": [
+    {
+      "id": "/navigation-api/focus-reset/autofocus.html?delayed-checkpoint",
+      "completions": 2,
+      "statuses": [
+        1,
+        1
+      ],
+      "messages": [
+        "Error: assert_equals: Non-navigation API autofocus was processed expected Element node <button autofocus=\"\" id=\"initialAutofocusTarget\">Initial ... but got Element node <body><button autofocus=\"\" id=\"initialAutofocusTarget\">In...",
+        "Error: assert_equals: Non-navigation API autofocus was processed expected Element node <button autofocus=\"\" id=\"initialAutofocusTarget\">Initial ... but got Element node <body><button autofocus=\"\" id=\"initialAutofocusTarget\">In..."
+      ],
+      "declared_tests": [
+        7,
+        7
+      ]
+    },
+    {
+      "id": "/navigation-api/focus-reset/autofocus.html?same-checkpoint",
+      "completions": 2,
+      "statuses": [
+        1,
+        1
+      ],
+      "messages": [
+        "Error: assert_equals: Non-navigation API autofocus was processed expected Element node <button autofocus=\"\" id=\"initialAutofocusTarget\">Initial ... but got Element node <body><button autofocus=\"\" id=\"initialAutofocusTarget\">In...",
+        "Error: assert_equals: Non-navigation API autofocus was processed expected Element node <button autofocus=\"\" id=\"initialAutofocusTarget\">Initial ... but got Element node <body><button autofocus=\"\" id=\"initialAutofocusTarget\">In..."
+      ],
+      "declared_tests": [
+        7,
+        7
+      ]
+    }
+  ]
+}

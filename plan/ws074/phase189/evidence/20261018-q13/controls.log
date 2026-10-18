@@ -1,0 +1,5 @@
+/css/css-anchor-position/anchor-name-multicol-001.html: pass (build/ws074-20261018/q13/control-0.json)
+/css/css-anchor-position/anchor-center-001.html: fail (build/ws074-20261018/q13/control-1.json)
+/css/css-anchor-position/anchor-position-writing-modes-002.html: harness_error (build/ws074-20261018/q13/control-2.json)
+/css/css-anchor-position/anchor-name-in-shadow-002.html: no_completion (build/ws074-20261018/q13/control-3.json)
+/css/css-flexbox/relayout-image-load.html: no_output (build/ws074-20261018/q13/control-4.json)

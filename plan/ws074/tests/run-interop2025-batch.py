@@ -12,6 +12,7 @@ from pathlib import Path
 import subprocess
 import sys
 from types import SimpleNamespace
+from urllib.parse import urlsplit
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -33,15 +34,17 @@ def candidate_reason(row, wpt):
     if row["type"] != "testharness":
         return "other_type"
     identifier = row["id"]
-    if "?" in identifier:
-        return "variant_url"
-    if ".https." in identifier:
+    address = urlsplit(identifier)
+    test_path = address.path
+    if address.scheme or address.netloc or not test_path.startswith("/"):
+        return "unsupported_origin"
+    if ".https." in test_path:
         return "https"
-    if not identifier.endswith(".html"):
+    if not test_path.endswith(".html"):
         return "not_html"
-    if row["source"] != identifier.lstrip("/"):
+    if row["source"] != test_path.lstrip("/"):
         return "generated_context"
-    if any(marker in identifier for marker in PATH_MARKERS):
+    if any(marker in test_path for marker in PATH_MARKERS):
         return "worker_or_substitution_path"
     source = wpt / row["source"]
     if not source.is_file():

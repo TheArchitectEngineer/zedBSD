@@ -2,7 +2,7 @@
 
 # ws074-p189: Interop 2025 testharness 結果取得
 
-Status: uncleared（2026-10-18 q03測定部分cleared、whole1,783件は未達）
+Status: uncleared（q13 variants partial cleared、適格1491/未対応292、whole1,783未達）
 
 ## ws074-q20261018-03 結果
 
@@ -277,3 +277,7 @@ Event ws074-p189-q12-i01-cleared-20261018: [証拠](evidence/20261018-q12-i01/RE
 Event ws074-p189-variant-readiness-20261018: q12中のreadonly分類で、variant80のunderlying sourceはplain candidate36/driver等43/HTTPS1。generated45のordinary window19中、source marker無し17/特殊2、残り26はworker等。次はまずplain variant36を有限Queueへ選定し、URL query保持・full selected ID照合・既存plain対照を検証する候補。window wrapperはpinned WPTのmetadata/realm/HTTP header semanticsを整えてから扱い、worker/HTTPS/driverを勝手に対象へ混ぜない。q12の1455分類は実行中のため変更しない。
 
 Event ws074-p189-q12-full-census-checkpoint-20261018: [全1455 raw](../phase247/evidence/20261018-q12/README.md)。新retained runnerでbefore/after全件489 whole/11534 callback PASS、918 FAIL/3 harness_error/21 no_completion/24 no_outputを維持。328未対応は分母内に保持。q03よりwhole485→489だがq12 font由来増分0、既存q07/q10の4件。次のplain variant36候補まで分類は不変。
+
+Event ws074-p189-q13-start-20261018: q12 verified output後、plain variant36のrunner対応を最大45分へ選定。pathでsource条件を評価しfull selected IDを保つ。旧1455維持/追加36のみ、global candidate1491/unrun292。43 driver+1 HTTPS variantは各理由へ、generated45は未対応。全36と5対照/actual query roundtripを検証。専用Python全文標準は未登録、既存tool形式を保ちproject-wide policyを導入しない。
+
+Event ws074-p189-q13-partial-cleared-20261018: [証拠](evidence/20261018-q13/README.md)。追加36を全実行、34 FAIL/2 multiple_completions（initial autofocus error/14 NOTRUN）でPASS増分0。旧1455集合維持・候補1491/未対応292、actual query roundtrip/旧plain5対照同値、raw/hash/checkpoint欠損0。native engine/WPT/result classifier不変、Python syntax/diff通過。variant runner部分cleared、wholeは未達。generated/window・HTTPS/driver/workerとnative autofocus/navigation等が残る。共有投影pending。

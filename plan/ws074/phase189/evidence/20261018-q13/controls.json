@@ -1,0 +1,37 @@
+[
+  {
+    "id": "/css/css-anchor-position/anchor-name-multicol-001.html",
+    "outcome": "pass",
+    "callbacks": 1,
+    "old_report": "build/ws074-20261018/q12/after-harness/shard-0000/test-022.json.gz",
+    "report": "control-0.json"
+  },
+  {
+    "id": "/css/css-anchor-position/anchor-center-001.html",
+    "outcome": "fail",
+    "callbacks": 4,
+    "old_report": "build/ws074-20261018/q12/after-harness/shard-0000/test-001.json.gz",
+    "report": "control-1.json"
+  },
+  {
+    "id": "/css/css-anchor-position/anchor-position-writing-modes-002.html",
+    "outcome": "harness_error",
+    "callbacks": 48,
+    "old_report": "build/ws074-20261018/q12/after-harness/shard-0000/test-047.json.gz",
+    "report": "control-2.json"
+  },
+  {
+    "id": "/css/css-anchor-position/anchor-name-in-shadow-002.html",
+    "outcome": "no_completion",
+    "callbacks": 0,
+    "old_report": "build/ws074-20261018/q12/after-harness/shard-0000/test-019.json.gz",
+    "report": "control-3.json"
+  },
+  {
+    "id": "/css/css-flexbox/relayout-image-load.html",
+    "outcome": "no_output",
+    "callbacks": 0,
+    "old_report": "build/ws074-20261018/q12/after-harness/shard-0384/test-458.json.gz",
+    "report": "control-4.json"
+  }
+]

@@ -1,0 +1,5 @@
+{
+  "href": "http://127.0.0.1:46085/roundtrip.html?include=a%26b&second=c#hash",
+  "search": "?include=a%26b&second=c",
+  "hash": "#hash"
+}

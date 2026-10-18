@@ -1,5 +1,25 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
+# ws074-q20261018-13 / plain HTTP URL variants
+
+Status: finished（2026-10-18 13:08 JST、variant partial cleared）
+Owner: このCodex chat単独。
+Approval: [ユーザー自走指示](autonomy.md)を次の有限scopeへ適用。
+Timebox: 最大45分（13:48 JSTまで）。
+
+| Attempt | Phase | Exact scope | State | Dependencies |
+| --- | --- | --- | --- | --- |
+| ws074-q20261018-13-i01 | [p189](phase189/phase.md) variant partial | URLのpathでsource/HTML/HTTPS/worker/driver条件を判定し、固定variant36 ID（hash907329cfc8248151f4cda7718b6d3ce8d0503fa416b48034aa9b30f939e912fd）を実行。capture URL/selected identityはquery/fragment保持。actual query roundtrip、全分類で旧1455維持/追加36のみ・未対応292保持、全36raw/checkpoint/report、旧plain PASS/FAIL/harness_error/no_completion/no_output各1対照のstatus/callback同値、Python syntax/diffを確認。WPT/engine/public ABI/結果判定は不変、generated/HTTPS/driverは後続。rawはbuild保持/repo gzip | cleared（[証拠](phase189/evidence/20261018-q13/README.md)） | q12 frozen output/全eligible raw、retained runner |
+
+Dependency graph: q12 verified output/retention → p189 variant partial。
+Upcoming Work Outlook: p249 empty margin、p246 fit/line metadata、p248 native animation、generated window context。
+
+Outcome: query保持/旧plain5対照同値、追加36全実行/34 FAIL・2 multiple_completions。candidate1491/未対応292、PASS増分0。instrumentation partial cleared、native/全件の未達は保持。次はcomputed fit-content bound候補。
+
+---
+
+<!-- awesome-plan project=zedbsd record=queue -->
+
 # ws074-q20261018-12 / retained rawとzero font glyph
 
 Status: finished（2026-10-18 13:01 JST、両item cleared）

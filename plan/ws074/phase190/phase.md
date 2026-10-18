@@ -171,3 +171,5 @@ q06の全静的測定は836 PASS/725 FAIL、error/timeout0。q1062より悪化�
 ## q06 結果
 
 Event ws074-p190-q06-partial-clear-20261018: [証拠](evidence/20261018-q06/README.md)。静的1,561 ID全件836 PASS/725 FAIL、error/timeout0。全FAIL725を開始前binaryで照合しsession内後退0。q1062より18悪化は開始前にも存在。未対応413とcrash最新確認が残る。部分cleared、whole uncleared。既存runner cleanupとcrash test-wait保証を後続へ。共有投影pending。
+
+Event ws074-p190-q12-static-checkpoint-20261018: [全1561の証拠](../phase247/evidence/20261018-q12/README.md)。q11 frozen/new zero glyph両pair839 PASS/722 FAIL、old PASS後退0。q06の836から3改善/後退0（q08 Grid2/q11 Grid1）、q12 font由来whole増分0。static未対応413/crash48を分母へ保持し、wholeは未達。共有投影pending。

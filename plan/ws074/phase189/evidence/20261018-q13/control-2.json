@@ -1,0 +1,513 @@
+{
+  "outcome": "harness_error",
+  "result_callbacks": [
+    {
+      "name": "relpos htb-ltr/target/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos htb-ltr/target/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos htb-ltr/target/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos htb-ltr/target/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos htb-ltr/target htb-ltr/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos htb-ltr/target htb-ltr/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos htb-ltr/target htb-ltr/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos htb-ltr/target htb-ltr/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos htb-rtl/target/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos htb-rtl/target/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos htb-rtl/target/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos htb-rtl/target/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos htb-rtl/target htb-rtl/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos htb-rtl/target htb-rtl/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos htb-rtl/target htb-rtl/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos htb-rtl/target htb-rtl/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos vrl-ltr/target/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos vrl-ltr/target/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos vrl-ltr/target/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos vrl-ltr/target/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos vrl-ltr/target vrl-ltr/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos vrl-ltr/target vrl-ltr/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos vrl-ltr/target vrl-ltr/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos vrl-ltr/target vrl-ltr/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos vrl-rtl/target/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos vrl-rtl/target/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos vrl-rtl/target/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos vrl-rtl/target/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos vrl-rtl/target vrl-rtl/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos vrl-rtl/target vrl-rtl/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos vrl-rtl/target vrl-rtl/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos vrl-rtl/target vrl-rtl/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos vlr-ltr/target/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos vlr-ltr/target/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos vlr-ltr/target/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos vlr-ltr/target/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos vlr-ltr/target vlr-ltr/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos vlr-ltr/target vlr-ltr/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos vlr-ltr/target vlr-ltr/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos vlr-ltr/target vlr-ltr/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos vlr-rtl/target/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos vlr-rtl/target/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos vlr-rtl/target/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos vlr-rtl/target/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos vlr-rtl/target vlr-rtl/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos vlr-rtl/target vlr-rtl/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos vlr-rtl/target vlr-rtl/undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "relpos vlr-rtl/target vlr-rtl/undefined",
+      "status": 0,
+      "message": ""
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "relpos htb-ltr/target/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos htb-ltr/target/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos htb-ltr/target/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos htb-ltr/target/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos htb-ltr/target htb-ltr/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos htb-ltr/target htb-ltr/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos htb-ltr/target htb-ltr/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos htb-ltr/target htb-ltr/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos htb-rtl/target/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos htb-rtl/target/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos htb-rtl/target/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos htb-rtl/target/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos htb-rtl/target htb-rtl/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos htb-rtl/target htb-rtl/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos htb-rtl/target htb-rtl/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos htb-rtl/target htb-rtl/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos vrl-ltr/target/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos vrl-ltr/target/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos vrl-ltr/target/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos vrl-ltr/target/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos vrl-ltr/target vrl-ltr/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos vrl-ltr/target vrl-ltr/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos vrl-ltr/target vrl-ltr/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos vrl-ltr/target vrl-ltr/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos vrl-rtl/target/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos vrl-rtl/target/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos vrl-rtl/target/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos vrl-rtl/target/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos vrl-rtl/target vrl-rtl/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos vrl-rtl/target vrl-rtl/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos vrl-rtl/target vrl-rtl/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos vrl-rtl/target vrl-rtl/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos vlr-ltr/target/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos vlr-ltr/target/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos vlr-ltr/target/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos vlr-ltr/target/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos vlr-ltr/target vlr-ltr/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos vlr-ltr/target vlr-ltr/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos vlr-ltr/target vlr-ltr/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos vlr-ltr/target vlr-ltr/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos vlr-rtl/target/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos vlr-rtl/target/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos vlr-rtl/target/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos vlr-rtl/target/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos vlr-rtl/target vlr-rtl/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos vlr-rtl/target vlr-rtl/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos vlr-rtl/target vlr-rtl/undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "relpos vlr-rtl/target vlr-rtl/undefined",
+        "status": 0,
+        "message": ""
+      }
+    ],
+    "status": 1,
+    "message": "12 duplicate test names: \"relpos htb-ltr/target/undefined\", \"relpos htb-ltr/target htb-ltr/undefined\", \"relpos htb-rtl/target/undefined\", \"relpos htb-rtl/target htb-rtl/undefined\", \"relpos vrl-ltr/target/undefined\", \"relpos vrl-ltr/target vrl-ltr/undefined\", \"relpos vrl-rtl/target/undefined\", \"relpos vrl-rtl/target vrl-rtl/undefined\", \"relpos vlr-ltr/target/undefined\", \"relpos vlr-ltr/target vlr-ltr/undefined\", \"relpos vlr-rtl/target/undefined\", \"relpos vlr-rtl/target vlr-rtl/undefined\""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-anchor-position/anchor-position-writing-modes-002.html",
+  "focus": [
+    "anchor-positioning"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "25a66385edb7811c04e5e04fddd6bf3060ef2883f26d2781adbecf9d87debc02",
+  "command": [
+    "build/ws074-20261018/q12/after/browser",
+    "--run",
+    "--settle-ms=5000",
+    "--font=userland/desktop/fonts/Mahora-Regular.ttf",
+    "--mono-font=userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+    "--fallback-font=userland/desktop/fonts/DroidSansFallbackFull.ttf",
+    "http://127.0.0.1:41931/css/css-anchor-position/anchor-position-writing-modes-002.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"relpos htb-ltr/target/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos htb-ltr/target/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos htb-ltr/target/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos htb-ltr/target/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos htb-ltr/target htb-ltr/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos htb-ltr/target htb-ltr/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos htb-ltr/target htb-ltr/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos htb-ltr/target htb-ltr/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos htb-rtl/target/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos htb-rtl/target/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos htb-rtl/target/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos htb-rtl/target/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos htb-rtl/target htb-rtl/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos htb-rtl/target htb-rtl/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos htb-rtl/target htb-rtl/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos htb-rtl/target htb-rtl/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos vrl-ltr/target/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos vrl-ltr/target/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos vrl-ltr/target/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos vrl-ltr/target/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos vrl-ltr/target vrl-ltr/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos vrl-ltr/target vrl-ltr/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos vrl-ltr/target vrl-ltr/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos vrl-ltr/target vrl-ltr/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos vrl-rtl/target/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos vrl-rtl/target/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos vrl-rtl/target/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos vrl-rtl/target/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos vrl-rtl/target vrl-rtl/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos vrl-rtl/target vrl-rtl/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos vrl-rtl/target vrl-rtl/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos vrl-rtl/target vrl-rtl/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos vlr-ltr/target/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos vlr-ltr/target/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos vlr-ltr/target/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos vlr-ltr/target/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos vlr-ltr/target vlr-ltr/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos vlr-ltr/target vlr-ltr/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos vlr-ltr/target vlr-ltr/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos vlr-ltr/target vlr-ltr/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos vlr-rtl/target/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos vlr-rtl/target/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos vlr-rtl/target/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos vlr-rtl/target/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos vlr-rtl/target vlr-rtl/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos vlr-rtl/target vlr-rtl/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos vlr-rtl/target vlr-rtl/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"relpos vlr-rtl/target vlr-rtl/undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"relpos htb-ltr/target/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos htb-ltr/target/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos htb-ltr/target/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos htb-ltr/target/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos htb-ltr/target htb-ltr/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos htb-ltr/target htb-ltr/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos htb-ltr/target htb-ltr/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos htb-ltr/target htb-ltr/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos htb-rtl/target/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos htb-rtl/target/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos htb-rtl/target/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos htb-rtl/target/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos htb-rtl/target htb-rtl/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos htb-rtl/target htb-rtl/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos htb-rtl/target htb-rtl/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos htb-rtl/target htb-rtl/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos vrl-ltr/target/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos vrl-ltr/target/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos vrl-ltr/target/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos vrl-ltr/target/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos vrl-ltr/target vrl-ltr/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos vrl-ltr/target vrl-ltr/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos vrl-ltr/target vrl-ltr/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos vrl-ltr/target vrl-ltr/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos vrl-rtl/target/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos vrl-rtl/target/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos vrl-rtl/target/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos vrl-rtl/target/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos vrl-rtl/target vrl-rtl/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos vrl-rtl/target vrl-rtl/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos vrl-rtl/target vrl-rtl/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos vrl-rtl/target vrl-rtl/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos vlr-ltr/target/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos vlr-ltr/target/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos vlr-ltr/target/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos vlr-ltr/target/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos vlr-ltr/target vlr-ltr/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos vlr-ltr/target vlr-ltr/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos vlr-ltr/target vlr-ltr/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos vlr-ltr/target vlr-ltr/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos vlr-rtl/target/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos vlr-rtl/target/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos vlr-rtl/target/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos vlr-rtl/target/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos vlr-rtl/target vlr-rtl/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos vlr-rtl/target vlr-rtl/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos vlr-rtl/target vlr-rtl/undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"relpos vlr-rtl/target vlr-rtl/undefined\",\"status\":0,\"message\":\"\"}],\"status\":1,\"message\":\"12 duplicate test names: \\\"relpos htb-ltr/target/undefined\\\", \\\"relpos htb-ltr/target htb-ltr/undefined\\\", \\\"relpos htb-rtl/target/undefined\\\", \\\"relpos htb-rtl/target htb-rtl/undefined\\\", \\\"relpos vrl-ltr/target/undefined\\\", \\\"relpos vrl-ltr/target vrl-ltr/undefined\\\", \\\"relpos vrl-rtl/target/undefined\\\", \\\"relpos vrl-rtl/target vrl-rtl/undefined\\\", \\\"relpos vlr-ltr/target/undefined\\\", \\\"relpos vlr-ltr/target vlr-ltr/undefined\\\", \\\"relpos vlr-rtl/target/undefined\\\", \\\"relpos vlr-rtl/target vlr-rtl/undefined\\\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

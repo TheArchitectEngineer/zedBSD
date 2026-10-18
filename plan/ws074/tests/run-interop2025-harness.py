@@ -18,6 +18,7 @@ from pathlib import Path
 import subprocess
 import sys
 import threading
+from urllib.parse import urlsplit
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -147,9 +148,14 @@ def run(args):
     matches = [row for row in selected["selected"] if row["id"] == args.test_id]
     if len(matches) != 1 or matches[0]["type"] != "testharness":
         raise ValueError("test ID is not a single selected testharness case")
-    if ("?" in args.test_id or ".https." in args.test_id or
-            not args.test_id.endswith(".html")):
-        raise ValueError("this first-stage runner supports only plain HTTP HTML IDs")
+    # Context belongs to the path; selected identity and the capture URL retain the variant.
+    address = urlsplit(args.test_id)
+    if address.scheme or address.netloc or not address.path.startswith("/"):
+        raise ValueError("test ID must be an origin-relative selected path")
+    if ".https." in address.path or not address.path.endswith(".html"):
+        raise ValueError("this runner supports only plain HTTP HTML paths")
+    if matches[0]["source"] != address.path.lstrip("/"):
+        raise ValueError("generated test contexts require their own wrapper support")
     if not (wpt / matches[0]["source"]).is_file():
         raise ValueError("selected WPT source is absent")
     if not args.program.is_file():

@@ -1,0 +1,13 @@
+{
+  "source_sha256": {
+    "run-interop2025-batch.py": "faee5c2c87b1760e8c9bc07a7c1063c29fa5c3ffea21a82295fb8abe8cf15146",
+    "run-interop2025-harness.py": "f30e71a46349846e15038bffecded1b61d7b0b8f8192146bbfe221f2d25431d6"
+  },
+  "engine_binary_sha256": {
+    "browser": "25a66385edb7811c04e5e04fddd6bf3060ef2883f26d2781adbecf9d87debc02",
+    "libbrowser.so": "ae381e800c0b760d10105456ebfb2186ae0f164fd6a3d178f808bdf8afba127c"
+  },
+  "syntax": "python3 -m py_compile both changed files: pass",
+  "scope": "two Python tools only; result classifier/reporter script/WPT/engine/public ABI unchanged",
+  "limits": "single HTTP origin; driver/HTTPS/worker/generated contexts remain; native autofocus/navigation still missing"
+}
