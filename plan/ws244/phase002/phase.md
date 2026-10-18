@@ -2,7 +2,7 @@
 
 # ws244-p002 intel/ の Gen9 の display の header と bits.h
 
-Status: in-progress（2026-10-18 q1251-i01、P1。cleared は Q1）
+Status: cleared（2026-10-18 Q1 判定: 先頭の表示・SHA-256 の一覧を外し block ごとの Values referenced、名前は既に I915_SKL_*、#define の行は不変（差分は comment だけと Q1 が確かめた）、b7cb226be merge f6b4952b0、build 2 組 warning 0 は P1 の報告）（旧: in-progress（2026-10-18 q1251-i01、P1。cleared は Q1））
 
 - 親: [WS244](../ws.md)。範囲: `src/drivers/gpu/i915/intel/display-regs-gen9.h`・`display-regs-gen9-modeset.h`・`bits.h`。
 - 受け入れ: 先頭の外部の著作権表示・許諾・SHA-256 の出典の一覧を外す。値は block ごとに `Values referenced:`（版・path・macro・関数の名前）。名前は zedBSD の名前。動作は変えない。
