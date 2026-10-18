@@ -271,3 +271,5 @@ whole p258/WS/p100/full target/100%未達。for-in/spread/JSON/Object.prototype.
 Raw archive86 members SHA256c2f637f90eefaca9a1834fb91463db41acf087e7ae0b1659ea0ac8bfe2f7726e全member read-back。runtime binaryはhash付きbuild保持・archive非同梱。q46 harness1676 member原archive SHA2564247433ec00c0cb9f7d6fcae320b1c9dd8f346ce90517456351ec87d79b60589を参照しq47実測と混同しない。
 
 [証拠](evidence/20261018-q47/README.md)。次finite scope未選定。
+
+Event ws074-p258-integration-direction-20261018（2026-10-18T22:35:53.785505+09:00）: q47 source0fb5a4c85/terminal53563fb51を含むq44〜q47全sourceのmain包含と競合無しを実確認。ユーザー「マージしながら」「ws.md/Phase可・master.md不可」を[自走指示](../autonomy.md)に記録。今後もverified WIP＋main包含/統合確認を継続、master.mdは編集しない。whole p258/WS acceptance未変更。[実出力](evidence/20261018-integration-direction.json)。

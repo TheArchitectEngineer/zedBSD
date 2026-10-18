@@ -1367,3 +1367,9 @@ Event ws074-q46-finished-20261018: p258 object assignment/array shrink partial c
 Event ws074-q47-selection: p258 Get/Has/GetOwn/Define target invariant realm化とprivate nested非callable factoryを選定、最新全1508 q46証拠維持・whole/global未達。[Queue](queue.md)。共有投影pending。
 
 Event ws074-q47-finished-20261018: p258 nested非callable target partial clear、native658/Chrome656既知huge2、新36 genuine一致。sole current snapshot payloadが元actualtarget実回収後GCを越えSameValue適合、output-only後graph実回収と最終payload実回収。元WebIDL/validator/gates保持、最新全1508 q46再利用・q47未測定・1482/3805保持。[history](history/ws074-q20261018-47.md)。共有投影pending。
+
+Event ws074-integration-direction-20261018（2026-10-18T22:35:53.785505+09:00）: ユーザー追加指示（原文）:「マージしながら作業をお願いします。ws.mdには書いていいですが、master.mdには書かないでください。phaseドキュメントには書いていいです。」
+このchatのWS074継続作業へ適用: 各有限Queueの検証済みsource/recordsをWIP commitへ保存しmain包含・競合を確認しながら統合を続ける。現在のcheckoutはmainでq44〜q47のsource/terminal commitは全てmain ancestor。既存codex/ws074-acid3はmainとの差がmain側2568/branch側0、未統合commit無し、競合無し。重複/空mergeは作らず、以後別branch成果を統合する場合は対象SHA/差分/checkを固定してWIP統合する。他担当branchの一括mergeやpushは含めない。
+ws.mdとPhaseに進捗/統合/指示根拠を記録してよい。master.mdはこのchatから編集しない。共有Master/Queue/cache/GitHub投影は従来どおりQ1所有/pendingで、必要な記録はWS074局所に残す。今回の追加指示は実装範囲/whole acceptance/scoreを変更しない。
+
+[実読戻し](phase258/evidence/20261018-integration-direction.json)。
