@@ -184,7 +184,7 @@ struct i915_pch_bridge_ops {
  * and the mapping for ever and records that, rather than a clean-looking teardown.
  */
 struct i915_scanout {
-	/* layout */
+	/* The buffer's size and how its rows are laid out. */
 	uint32_t width, height;
 	uint32_t format;                /* I915_FOURCC_XRGB8888 */
 	uint64_t modifier;              /* I915_MOD_LINEAR */
@@ -192,15 +192,15 @@ struct i915_scanout {
 	uint32_t pitch;                 /* bytes per row: width * cpp rounded up to the stride alignment */
 	uint32_t stride_units;          /* pitch / 64: the PLANE_STRIDE encoding for a linear surface */
 	uint32_t size;                  /* pitch * height */
-	/* placement requirements */
+	/* What the plane requires of where the buffer sits in the GGTT. */
 	uint32_t alignment;             /* bytes: the surface alignment the plane requires */
 	unsigned guard_pages;           /* scratch PTEs on each side: VTD_GUARD */
-	/* backing, mapping, GGTT */
+	/* The memory behind the buffer, its CPU mapping and its GGTT offset. */
 	struct i915_gt_mem *gm;
 	struct i915_gt_object *obj;
 	uint32_t *cpu;
 	uint64_t surf;                  /* GGTT offset for PLANE_SURF (fits 32 bits, 4 KiB aligned) */
-	/* users */
+	/* Where the buffer is in its life, who pinned it and who reads it. */
 	int state;
 	const char *pin_owner;
 	unsigned users;                 /* how many displays read it now (begin / end); IN_USE while > 0 */

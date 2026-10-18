@@ -352,12 +352,7 @@ drv_i915_opregion_locate_vbt(
 	const uint8_t *asle;
 	unsigned i;
 
-	/*
-	 * Refuses a missing or short copy.
-	 *
-	 * XXX: the old function returned -1 for every refusal, which is no
-	 * errno; EINVAL is its positive errno now.
-	 */
+	/* Refuses a missing or short copy with EINVAL. */
 	if (op == NULL)
 		return EINVAL;
 	if (out == NULL)

@@ -2273,7 +2273,7 @@ i915_xd_ot_order_step(
 	if (*at >= 0)
 		found = i915_xd_ot_find_masked(event, a, mask, value, (unsigned)*at);
 
-	/* Checks it. */
+	/* Checks the step came after the one before. */
 	(void)snprintf(what, sizeof(what), "order: %s: %s: %s", platform->name, kind, step);
 	i915_host_check(found >= 0, what);
 	*at = found;
@@ -2302,7 +2302,7 @@ i915_xd_ot_order_absent(
 	if (found >= 0 && to >= 0 && found >= to)
 		absent = 1;
 
-	/* Checks it. */
+	/* Checks the step was not in the range. */
 	(void)snprintf(what, sizeof(what), "order: %s: %s: %s", platform->name, kind, step);
 	i915_host_check(absent, what);
 }

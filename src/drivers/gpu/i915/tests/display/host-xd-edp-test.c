@@ -401,7 +401,7 @@ i915_xd_edp_test_vdd_cancel(
 {
 	struct i915_xd_edp_test_env *env;
 
-	/* Disarmed. */
+	/* Disarms the work and counts the cancel, and a cancel that waited. */
 	env = context;
 	env->armed = 0;
 	env->cancels++;
@@ -745,7 +745,7 @@ i915_xd_edp_test_dpcd_faults(void)
 	uint8_t bytes[2];
 	int error;
 
-	/* Taken. */
+	/* A panel's sink taken from a fresh model. */
 	i915_xd_edp_test_setup();
 	edp = &i915_xd_edp_test_edp;
 	i915_xd_edp_test_config(&config);

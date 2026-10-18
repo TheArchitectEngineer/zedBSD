@@ -222,7 +222,7 @@ i915_xd_dmc_test_parse(
 	store.room = sizeof(i915_xd_dmc_test_store);
 	store.used = 0U;
 
-	/* Parses. */
+	/* Parses the made-up file into the storage. */
 	error = drv_i915_xd_dmc_parse(dmc, platform, step, i915_xd_dmc_test_file, size, &store);
 
 	/* Succeeded: reports what the parse said. */

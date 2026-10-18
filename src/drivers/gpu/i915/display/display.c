@@ -1420,7 +1420,7 @@ i915_display_check_firmware(
 	if (gt->ggtt_entries > reserved)
 		driver_first = gt->ggtt_entries - reserved;
 
-	/* Reads and decides. */
+	/* Reads what the firmware left on the display and decides whether the driver may use it. */
 	asls = drv_i915_pci_read32(&gt->pci, I915_PCI_ASLS);
 	(void)drv_i915_xd_check_firmware(&display->xd, gt->gmadr_base, gt->gmadr_size, gt->ggtt_entries, driver_first, asls);
 	kern_logf("i915: firmware: PCI COMMAND firmware=0x%04x now=0x%04x (memory and bus master set by the start, restored on teardown); no display register, GGTT entry or D-state written yet\n",
