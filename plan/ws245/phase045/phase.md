@@ -97,3 +97,15 @@ host-xd-icl-test の中身: 行（D0・ICP・port C は MG PHY C の TC1・port 
 - host の受け入れの残り（ICL の enable/disable の列、ICL の takeover の readout、WM の read latency、FEC stall の bit）は phase.md の「残り」のとおり未実施。実機は無い
 
 P1 の見立て（Status は変えない。判定は Q1）: cleared にしない（host の受け入れが残る）。
+
+## host の受け入れの続き（2026-10-18 P1、q1244）
+
+- 足した物（be2e6c243）: `host-xd-output-test` の `i915_xd_ot_test_cover`。表の全部の行（display 12・13 の 9 行と ICL の 2 行）で、同じ panel（DDI A、DPLL 0）の light と dark を xd-output の step で流す（display 11 は transcoder EDP、1 slice、pipe の DMC 無し）。各行で: light が通る（error・lock 0、lit）、DDI A の buffer と transcoder の function が on、dark でどちらも off、power の get と put（遅らせた put を含む）の数が同じで held 0。22 check（67 → 89）。最初の版で ICL の 2 行が transcoder A の panel で落ちた（transcoder EDP が要る: 期待どおり）ので display 11 の分岐を入れた。
+- 確かめた事: `run-xd-host-tests.sh build/p244c-host` all passed（host_xd_output_test 89 checks 0 failures）。build は cebac0006 で 3 組 warning 0（試験だけの変更なので kernel は同じ）。
+- まだ無い物: 列を Linux の手順・表の値（ADL-P 系は m3 の dump）と書き込みの 1 つずつで比べる事（足したのは各行で通る事と on/off と参照の釣り合いまで）、HDMI・DP-TC・TBT の 3 種を各行で、RKL・ADL-S の takeover の列、TGL の流れ B の配線（p052）、ICL の takeover の readout、WM の read latency、FEC stall の bit。期待の列を行ごとに Linux から組むのは 1 attempt では収まらない大きさ。
+
+## 判定の材料（2026-10-18 P1、q1244）
+
+- 満たした: 全部の行で eDP の light・dark が xd の部品で通る（host）。5330 の steady 差 0（q1229-i20・i21、前の節）。
+- 満たしていない: 上の「まだ無い物」（Linux の列との比べと 3 種の kind）。
+- P1 の見立て: cleared にしない。
