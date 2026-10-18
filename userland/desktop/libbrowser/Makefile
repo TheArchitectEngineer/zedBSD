@@ -51,6 +51,7 @@ LIBBROWSER_SOURCES := $(LIBBROWSER_DIR)/base/arena.c \
 	$(LIBBROWSER_DIR)/js/builtin_error.c \
 	$(LIBBROWSER_DIR)/js/builtin_object.c \
 	$(LIBBROWSER_DIR)/js/builtin_function.c \
+	$(LIBBROWSER_DIR)/js/builtin_proxy.c \
 	$(LIBBROWSER_DIR)/js/builtin_array.c \
 	$(LIBBROWSER_DIR)/js/builtin_string.c \
 	$(LIBBROWSER_DIR)/js/builtin_regexp.c \
