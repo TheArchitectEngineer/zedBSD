@@ -61,6 +61,15 @@
 /* The bytes of COMP_DW1 that hold the process and voltage reference. */
 #define I915_XD_COMP_DW1_PROCMON	0x00ff00ffU
 
+/*
+ * The rows of a display 9 DisplayPort or eDP table a DDI other than A
+ * drives: the tenth row is DDI A's alone.
+ *
+ * Values referenced: Intel Kaby Lake PRM Volume 12, Display Engine (the
+ * DDI buffer translations of DDI A and of the other DDIs).
+ */
+#define I915_XD9_DDI_ROWS_NOT_A		9U
+
 static uint32_t i915_xd_combo_base(unsigned phy);
 static int i915_xd_combo_has(uint8_t mask, unsigned phy);
 static int i915_xd_combo_check(struct i915_xd_io *io, uint32_t offset, uint32_t mask, uint32_t value);
@@ -420,6 +429,67 @@ drv_i915_xd_combo_signal_levels(
 	/* The training enable set, which latches the swing. */
 	value = drv_i915_xd_io_read(io, I915_XD_PORT_TX_DW_LN(base, 0U, 5U));
 	drv_i915_xd_io_write(io, I915_XD_PORT_TX_DW_GRP(base, 5U), value | I915_XD_TX_DW5_TRAINING);
+}
+
+/*
+ * Reports the DDI buffer translation table a display 9 output uses: the
+ * part's DisplayPort, eDP or HDMI table, cut to nine rows for DisplayPort
+ * and eDP on a DDI other than A.  The rows it may use are in *count.
+ * Returns NULL for a platform without display 9 tables or another kind of
+ * output.
+ */
+const struct i915_xd9_buf_trans *
+drv_i915_xd9_ddi_buf_table(
+	const struct i915_xd_platform *platform,
+	unsigned output,
+	unsigned ddi,
+	unsigned *count)
+{
+	const struct i915_xd9_buf_table *table;
+
+	/* Nothing until the table is known. */
+	*count = 0U;
+	if (platform->ddi_buffers == NULL)
+		return NULL;
+
+	/* The table of the output's kind. */
+	if (output == I915_XD9_OUTPUT_DP) {
+		table = &platform->ddi_buffers->dp;
+	} else if (output == I915_XD9_OUTPUT_EDP) {
+		table = &platform->ddi_buffers->edp;
+	} else if (output == I915_XD9_OUTPUT_HDMI) {
+		table = &platform->ddi_buffers->hdmi;
+	} else {
+		return NULL;
+	}
+
+	/* Every row of an HDMI table, or a DDI A table. */
+	*count = table->count;
+
+	/* DisplayPort and eDP on another DDI stop at the ninth row. */
+	if (output != I915_XD9_OUTPUT_HDMI &&
+	    ddi != 0U &&
+	    *count > I915_XD9_DDI_ROWS_NOT_A)
+		*count = I915_XD9_DDI_ROWS_NOT_A;
+
+	/* Succeeded: the table and the rows the output may use. */
+	return table->rows;
+}
+
+/*
+ * Reports the HDMI row a display 9 part's ports use when the VBT names
+ * none.
+ */
+unsigned
+drv_i915_xd9_ddi_hdmi_row(
+	const struct i915_xd_platform *platform)
+{
+	/* A platform without display 9 tables has no HDMI row but the first. */
+	if (platform->ddi_buffers == NULL)
+		return 0U;
+
+	/* Succeeded: the table's default row. */
+	return platform->ddi_buffers->hdmi_default;
 }
 
 /*

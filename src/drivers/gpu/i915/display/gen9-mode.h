@@ -20,6 +20,7 @@
 #define DRIVERS_GPU_I915_DISPLAY_GEN9_MODE_H
 
 #include "display-internal.h"
+#include "xd-platform.h"
 
 #include <stdint.h>
 
@@ -49,16 +50,6 @@
 
 /* The most entries a DDI buffer translation table has (DP on port A has 10). */
 #define I915_SKL_BUF_TRANS_MAX		10U
-
-/*
- * One DDI buffer translation entry: the two words written to
- * DDI_BUF_TRANS_LO and _HI, and the current boost the entry asks for.
- */
-struct i915_skl_buf_trans {
-	uint32_t trans1;
-	uint32_t trans2;
-	uint8_t iboost;
-};
 
 /*
  * The DP link of one output: the port clock and the lanes, and the M and
@@ -170,7 +161,7 @@ int drv_i915_skl_dpll_hdmi(uint32_t pixel_khz, uint32_t ref_khz, struct i915_skl
 int drv_i915_skl_sku(uint16_t device_id, int platform);
 
 /* Reports the DDI buffer translation table of a part, a kind of output and a port; the entries' count in *count. */
-const struct i915_skl_buf_trans *drv_i915_skl_buf_trans(int sku, int platform, int output, unsigned port, unsigned *count);
+const struct i915_xd9_buf_trans *drv_i915_skl_buf_trans(int sku, int platform, int output, unsigned port, unsigned *count);
 
 /* Reports the table entry for a DP lane's training set (voltage swing and pre-emphasis), or 0. */
 unsigned drv_i915_skl_signal_level(uint8_t train_set);

@@ -112,6 +112,28 @@ struct i915_xd_ddb {
 	uint16_t end;
 };
 
+/*
+ * One display 9 pipe in a plan of the display buffer: what the plan takes
+ * (whether the pipe is lit, its mode's width, total and pixel clock, and
+ * its plane's width), and what it gives (whether the plan reached the
+ * pipe, its share of the slice, the plane's and the cursor's parts, the
+ * plane's levels and the line time in eighths of a microsecond).
+ */
+struct i915_xd9_pipe_plan {
+	int active;
+	uint32_t hdisplay;
+	uint32_t htotal;
+	uint32_t pixel_khz;
+	uint32_t plane_width;
+	int computed;
+	struct i915_xd_ddb pipe_ddb;
+	struct i915_xd_ddb plane_ddb;
+	struct i915_xd_ddb cursor_ddb;
+	struct i915_xd_plane_wm wm;
+	uint32_t linetime;
+};
+
+int drv_i915_xd9_dbuf_plan(const struct i915_xd_platform *platform, const uint16_t *latency, struct i915_xd9_pipe_plan *pipes, unsigned count);
 uint8_t drv_i915_xd_dbuf_joined(const struct i915_xd_platform *platform, uint8_t pipes);
 uint8_t drv_i915_xd_dbuf_slices(const struct i915_xd_platform *platform, unsigned pipe, uint8_t pipes, int joined);
 uint8_t drv_i915_xd_dbuf_enabled(const uint8_t *pipe_slices, unsigned pipes);

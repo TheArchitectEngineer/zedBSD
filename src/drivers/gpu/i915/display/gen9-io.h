@@ -47,4 +47,13 @@ uint32_t drv_i915_skl_rmw(const struct i915_skl_io *io, uint32_t offset, uint32_
 /* Waits until (register & mask) == value, polling every 10 us up to timeout_us: 0, or ETIMEDOUT with the last value. */
 int drv_i915_skl_wait(const struct i915_skl_io *io, uint32_t offset, uint32_t mask, uint32_t value, unsigned timeout_us, uint32_t *last);
 
+struct i915_xd_io;
+
+/*
+ * Points the one xd register window of the Gen9 mode set at a table and
+ * reports it.  The window stays the table's until the next call; the
+ * node's mutex serializes every user.
+ */
+struct i915_xd_io *drv_i915_skl_xd_io(const struct i915_skl_io *io);
+
 #endif /* DRIVERS_GPU_I915_DISPLAY_GEN9_IO_H */

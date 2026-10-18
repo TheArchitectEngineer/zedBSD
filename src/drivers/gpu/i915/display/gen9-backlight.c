@@ -8,17 +8,11 @@
 /*
  * The panel's backlight of a Gen9 node (see gen9-backlight.h).
  *
- * The PWM is the PCH's.  A Sunrise Point or Kaby Point PCH (Skylake, Kaby
- * Lake) keeps the period and the duty in one register; a Cannon Point or
- * Comet Point PCH (Coffee Lake, Comet Lake) has a register for each (the
- * register values are in intel/display-regs-gen9.h).  The PCH is told
- * from the ISA bridge, or from the platform in a virtual machine that
- * hides it.
- *
- * The firmware's period, enable and polarity are kept; the backlight
- * device reads and writes the duty only, and refuses (EBUSY) while the
- * PWM does not run.  A brightness of 0 % is the lowest duty
- * (I915_GEN9_BACKLIGHT_MIN_255 of 255ths of the period), not darkness.
+ * The PWM is the south display's; the xd code reads and drives it in
+ * either of its layouts (xd-panel.c).  The firmware's period, enable and
+ * polarity are kept; the backlight device reads and writes the duty only,
+ * and refuses (EBUSY) while the PWM does not run.  A brightness of 0 % is
+ * the PWM's floor, not darkness.
  *
  * XXX: one device; a panel whose backlight the VBT puts on the DPCD (eDP
  * AUX backlight) or on the utility pin is not driven.
@@ -28,12 +22,12 @@
 #include "display.h"
 #include "gen9-backlight.h"
 #include "gen9-display.h"
+#include "xd-io.h"
+#include "xd-panel.h"
+#include "xd-platform.h"
 #include <kern/kcrt.h>
 
 #include "../i915.h"
-#include "../device-info.h"
-#include "../mmio.h"
-#include "../intel/display-regs-gen9.h"
 
 #include <kern/backlight.h>
 #include <kern/klog.h>
@@ -41,12 +35,6 @@
 #include <uapi/backlight.h>
 #include <uapi/errno.h>
 #include <stddef.h>
-
-/* The most a brightness may be (a percentage). */
-#define I915_GEN9_BACKLIGHT_PERCENT_MAX	100U
-
-/* The scale of the minimum's coefficient. */
-#define I915_GEN9_BACKLIGHT_SCALE_255	255U
 
 /*
  * The panel's backlight of the node.
@@ -56,9 +44,9 @@
  * time in between, and they only read the fields.
  */
 struct i915_gen9_backlight {
-	/* The device's registers, and whether the PCH is a Cannon Point one. */
-	struct i915_mmio *mmio;
-	int cnp;
+	/* The device's display registers, and whether the PWM has the packed layout of the Sunrise Point family. */
+	struct i915_xd_io io;
+	int packed;
 
 	/* The published device; NULL while none is. */
 	struct kern_backlight *published;
@@ -73,10 +61,12 @@ struct i915_gen9_backlight {
 static struct i915_gen9_backlight i915_gen9_backlight_state;
 
 /*
- * The PWM control a sleep turned off, and whether one did.
- * Written by the suspend and the resume, which the one thread of S0 idle
- * runs one after the other.
+ * The register window the sleep's light off and back on use, the PWM
+ * control a sleep turned off, and whether one did.  Written by the suspend
+ * and the resume, which the one thread of S0 idle runs one after the
+ * other.
  */
+static struct i915_xd_io i915_gen9_backlight_sleep_io;
 static uint32_t i915_gen9_backlight_slept_control;
 static int i915_gen9_backlight_slept;
 
@@ -89,9 +79,10 @@ static const struct kern_backlight_ops i915_gen9_backlight_ops = {
 	.set = i915_gen9_backlight_set
 };
 
-static int i915_gen9_backlight_pch_cnp(struct i915_device *device, int *cnp);
-static void i915_gen9_backlight_read(const struct i915_gen9_backlight *backlight, struct i915_skl_pwm_registers *registers);
-static int i915_gen9_backlight_panel_lit(struct i915_mmio *mmio);
+static int i915_gen9_backlight_layout(struct i915_device *device, int *packed);
+static void i915_gen9_backlight_read(struct i915_gen9_backlight *backlight, struct i915_skl_pwm_registers *registers);
+static void i915_gen9_backlight_from_xd(const struct i915_xd9_pwm *xd, struct i915_skl_pwm *pwm);
+static void i915_gen9_backlight_to_xd(const struct i915_skl_pwm *pwm, struct i915_xd9_pwm *xd);
 
 /*
  * Decodes the PWM's registers.
@@ -104,83 +95,55 @@ drv_i915_skl_pwm_decode(
 	const struct i915_skl_pwm_registers *registers,
 	struct i915_skl_pwm *pwm)
 {
-	kern_memset(pwm, 0, sizeof(*pwm));
+	struct i915_xd9_pwm xd;
+	int error;
 
-	/* The enable and the polarity have the same bits on both PCHs. */
-	if ((registers->control & I915_SKL_BLM_PCH_PWM_ENABLE) != 0U)
-		pwm->enabled = 1;
-	if ((registers->control & I915_SKL_BLM_PCH_POLARITY) != 0U)
-		pwm->active_low = 1;
-
-	/* The period and the duty: one register each, or the two halves of CTL2. */
-	if (registers->cnp) {
-		pwm->max = registers->period;
-		pwm->duty = registers->duty;
-	} else {
-		pwm->max = registers->period >> I915_SKL_BLC_PWM_PERIOD_SHIFT;
-		pwm->duty = registers->period & I915_SKL_BLC_PWM_DUTY_MASK;
-	}
-
-	/* A period of zero is a PWM nobody set up. */
-	if (pwm->max == 0U)
-		return EINVAL;
-
-	/* The lowest duty a brightness maps to. */
-	pwm->min = (uint32_t)(((uint64_t)pwm->max * I915_GEN9_BACKLIGHT_MIN_255 + I915_GEN9_BACKLIGHT_SCALE_255 - 1U) / I915_GEN9_BACKLIGHT_SCALE_255);
+	/* The xd code's decode in the layout. */
+	error = drv_i915_xd9_pwm_decode(registers->control, registers->period, registers->duty, !registers->cnp, &xd);
+	i915_gen9_backlight_from_xd(&xd, pwm);
+	if (error != 0)
+		return error;
 
 	/* Succeeded: the PWM can be read and changed. */
 	return 0;
 }
 
 /*
- * Reports the duty a brightness maps to: the lowest duty at 0 %, the
- * period at 100 %, in a straight line between, rounded to the nearest.
+ * Reports the duty a brightness maps to.
  */
 uint32_t
 drv_i915_skl_pwm_duty(
 	const struct i915_skl_pwm *pwm,
 	uint32_t percent)
 {
-	uint64_t span;
-	uint64_t step;
+	struct i915_xd9_pwm xd;
+	uint32_t duty;
 
-	/* A brightness above full is full. */
-	if (percent > I915_GEN9_BACKLIGHT_PERCENT_MAX)
-		percent = I915_GEN9_BACKLIGHT_PERCENT_MAX;
-
-	/* The part of the span above the lowest duty. */
-	span = (uint64_t)(pwm->max - pwm->min);
-	step = (span * percent + I915_GEN9_BACKLIGHT_PERCENT_MAX / 2U) / I915_GEN9_BACKLIGHT_PERCENT_MAX;
+	/* The xd code's mapping. */
+	i915_gen9_backlight_to_xd(pwm, &xd);
+	duty = drv_i915_xd9_pwm_duty(&xd, percent);
 
 	/* Succeeded: the duty. */
-	return pwm->min + (uint32_t)step;
+	return duty;
 }
 
 /*
- * Reports the brightness a duty maps to, the inverse of
- * drv_i915_skl_pwm_duty(): 0 % at or below the lowest duty, 100 % at or
- * above the period, rounded to the nearest.
+ * Reports the brightness a duty maps to.
  */
 uint32_t
 drv_i915_skl_pwm_percent(
 	const struct i915_skl_pwm *pwm,
 	uint32_t duty)
 {
-	uint64_t span;
-	uint64_t above;
+	struct i915_xd9_pwm xd;
+	uint32_t percent;
 
-	/* At or below the lowest duty is 0 %; at or above the period is 100 %. */
-	if (duty <= pwm->min)
-		return 0U;
-	if (duty >= pwm->max)
-		return I915_GEN9_BACKLIGHT_PERCENT_MAX;
-
-	/* The part of the span above the lowest duty, as a percentage. */
-	span = (uint64_t)(pwm->max - pwm->min);
-	above = (uint64_t)(duty - pwm->min);
+	/* The xd code's mapping. */
+	i915_gen9_backlight_to_xd(pwm, &xd);
+	percent = drv_i915_xd9_pwm_percent(&xd, duty);
 
 	/* Succeeded: the brightness. */
-	return (uint32_t)((above * I915_GEN9_BACKLIGHT_PERCENT_MAX + span / 2U) / span);
+	return percent;
 }
 
 /*
@@ -188,10 +151,6 @@ drv_i915_skl_pwm_percent(
  * for it, the firmware lit the eDP panel and its PWM runs.
  *
  * Every outcome is logged; the node works without the device.
- *
- * Procedure referenced: Linux v6.8.12
- * drivers/gpu/drm/i915/display/intel_backlight.c (lpt_setup_backlight,
- * cnp_setup_backlight).
  */
 void
 drv_i915_gen9_backlight_start(
@@ -219,17 +178,17 @@ drv_i915_gen9_backlight_start(
 		return;
 
 	/* The panel must be lit for its PWM to mean anything. */
-	lit = i915_gen9_backlight_panel_lit(&device->gt.mmio);
+	drv_i915_xd_io_init(&backlight->io, &device->gt.mmio, NULL);
+	lit = drv_i915_xd9_panel_lit(&backlight->io);
 	if (!lit) {
-		kern_logf("i915: gen9 backlight: the eDP panel is not lit; no backlight device\n");
+		kern_logf("i915: backlight: the eDP panel is not lit; no backlight device\n");
 		return;
 	}
 
-	/* Which register layout the PCH has. */
-	backlight->mmio = &device->gt.mmio;
-	error = i915_gen9_backlight_pch_cnp(device, &backlight->cnp);
+	/* Which layout the south display's PWM has. */
+	error = i915_gen9_backlight_layout(device, &backlight->packed);
 	if (error != 0) {
-		kern_logf("i915: gen9 backlight: the PCH is not one this driver knows the PWM of; no backlight device\n");
+		kern_logf("i915: backlight: the south display is not one whose PWM is known; no backlight device\n");
 		kern_memset(backlight, 0, sizeof(*backlight));
 		return;
 	}
@@ -237,8 +196,8 @@ drv_i915_gen9_backlight_start(
 	/* What the firmware set the PWM to. */
 	i915_gen9_backlight_read(backlight, &registers);
 	error = drv_i915_skl_pwm_decode(&registers, &pwm);
-	kern_logf("i915: gen9 backlight: %s PWM control 0x%08x period 0x%08x duty 0x%08x: %s, max %u min %u duty %u (%u %%)%s\n",
-	    backlight->cnp ? "CNP" : "SPT",
+	kern_logf("i915: backlight: %s PWM control 0x%08x period 0x%08x duty 0x%08x: %s, max %u min %u duty %u (%u %%)%s\n",
+	    backlight->packed ? "SPT" : "CNP",
 	    registers.control,
 	    registers.period,
 	    registers.duty,
@@ -251,7 +210,7 @@ drv_i915_gen9_backlight_start(
 
 	/* A PWM without a period, or one that does not run, does not drive this panel's light. */
 	if (error != 0 || !pwm.enabled) {
-		kern_logf("i915: gen9 backlight: the PWM does not drive the panel (the light may be the DPCD's or the EC's); no backlight device\n");
+		kern_logf("i915: backlight: the PWM does not drive the panel (the light may be the DPCD's or the EC's); no backlight device\n");
 		kern_memset(backlight, 0, sizeof(*backlight));
 		return;
 	}
@@ -259,13 +218,13 @@ drv_i915_gen9_backlight_start(
 	/* Publishes the device the Settings app's brightness reaches. */
 	error = kern_backlight_register("i915", BACKLIGHT_TYPE_PANEL, &i915_gen9_backlight_ops, backlight, &backlight->published);
 	if (error != 0) {
-		kern_logf("i915: gen9 backlight: the backlight device could not be registered: %d\n", error);
+		kern_logf("i915: backlight: the device could not be registered rc=%d\n", error);
 		kern_memset(backlight, 0, sizeof(*backlight));
 		return;
 	}
 
 	/* Succeeded: says the device is there. */
-	kern_logf("i915: gen9 backlight: the panel's brightness is offered as a backlight device\n");
+	kern_logf("i915: backlight: the panel's light is a backlight device\n");
 }
 
 /*
@@ -292,11 +251,54 @@ drv_i915_gen9_backlight_stop(
 }
 
 /*
+ * Turns the panel's light off for a sleep when the eDP panel is lit and
+ * the PWM runs; the control word is kept for the resume.  Works whatever
+ * the step of i915.gen9.display, without the backlight device.
+ */
+void
+drv_i915_gen9_backlight_suspend(
+	struct i915_device *device)
+{
+	int lit;
+	int paused;
+
+	/* Nothing to give back unless this turns the light off. */
+	i915_gen9_backlight_slept = 0;
+	drv_i915_xd_io_init(&i915_gen9_backlight_sleep_io, &device->gt.mmio, NULL);
+
+	/* A lit panel. */
+	lit = drv_i915_xd9_panel_lit(&i915_gen9_backlight_sleep_io);
+	if (!lit)
+		return;
+
+	/* Its PWM stopped, when it runs. */
+	paused = drv_i915_xd9_pwm_pause(&i915_gen9_backlight_sleep_io, &i915_gen9_backlight_slept_control);
+	if (!paused)
+		return;
+
+	/* Succeeded: the light is off and its control kept. */
+	i915_gen9_backlight_slept = 1;
+	kern_logf("i915: backlight: the panel's light is off for the sleep\n");
+}
+
+/* Turns the panel's light back on after a sleep that turned it off. */
+void
+drv_i915_gen9_backlight_resume(
+	struct i915_device *device)
+{
+	/* Nothing was turned off. */
+	if (!i915_gen9_backlight_slept)
+		return;
+
+	/* Succeeded: the control as it was. */
+	i915_gen9_backlight_slept = 0;
+	drv_i915_xd_io_init(&i915_gen9_backlight_sleep_io, &device->gt.mmio, NULL);
+	drv_i915_xd9_pwm_resume(&i915_gen9_backlight_sleep_io, i915_gen9_backlight_slept_control);
+	kern_logf("i915: backlight: the panel's light is on again\n");
+}
+
+/*
  * Reads the panel's brightness (the backlight's get operation).
- *
- * Procedure referenced: Linux v6.8.12
- * drivers/gpu/drm/i915/display/intel_backlight.c (lpt_get_backlight,
- * bxt_get_backlight).
  */
 static int
 i915_gen9_backlight_get(
@@ -328,10 +330,6 @@ i915_gen9_backlight_get(
 
 /*
  * Sets the panel's brightness (the backlight's set operation).
- *
- * Procedure referenced: Linux v6.8.12
- * drivers/gpu/drm/i915/display/intel_backlight.c (lpt_set_backlight,
- * bxt_set_backlight).
  */
 static int
 i915_gen9_backlight_set(
@@ -357,159 +355,92 @@ i915_gen9_backlight_set(
 	if (!pwm.enabled)
 		return EBUSY;
 
-	/* Writes the duty: its own register, or CTL2's low half with the period kept. */
+	/* Writes the duty in the PWM's layout. */
 	duty = drv_i915_skl_pwm_duty(&pwm, percent);
-	if (backlight->cnp) {
-		drv_i915_raw_write32(backlight->mmio, I915_CNP_BLC_PWM_DUTY1, duty);
-	} else {
-		drv_i915_raw_write32(backlight->mmio, I915_SKL_BLC_PWM_PCH_CTL2, (registers.period & ~I915_SKL_BLC_PWM_DUTY_MASK) | duty);
-	}
+	drv_i915_xd9_pwm_set(&backlight->io, backlight->packed, registers.period, duty);
 
 	/* Succeeded: the panel shows the new brightness. */
 	return 0;
 }
 
 /*
- * Turns the panel's light off for a sleep: the PCH PWM's enable cleared
- * when the eDP panel is lit and the PWM runs (both layouts keep the enable
- * in CTL1).  The control word is kept for the resume.  Works whatever the
- * step of i915.gen9.display, without the backlight device.
- */
-void
-drv_i915_gen9_backlight_suspend(
-	struct i915_device *device)
-{
-	struct i915_mmio *mmio;
-	uint32_t control;
-	int lit;
-
-	/* Nothing to give back unless this turns the light off. */
-	mmio = &device->gt.mmio;
-	i915_gen9_backlight_slept = 0;
-
-	/* A lit panel whose PWM runs. */
-	lit = i915_gen9_backlight_panel_lit(mmio);
-	if (!lit)
-		return;
-	control = drv_i915_raw_read32(mmio, I915_SKL_BLC_PWM_PCH_CTL1);
-	if ((control & I915_SKL_BLM_PCH_PWM_ENABLE) == 0U)
-		return;
-
-	/* Succeeded: the light off, its control kept. */
-	i915_gen9_backlight_slept_control = control;
-	i915_gen9_backlight_slept = 1;
-	drv_i915_raw_write32(mmio, I915_SKL_BLC_PWM_PCH_CTL1, control & ~I915_SKL_BLM_PCH_PWM_ENABLE);
-	drv_i915_posting_read32(mmio, I915_SKL_BLC_PWM_PCH_CTL1);
-	kern_logf("i915: gen9 backlight: the panel's light is off for the sleep\n");
-}
-
-/* Turns the panel's light back on after a sleep that turned it off. */
-void
-drv_i915_gen9_backlight_resume(
-	struct i915_device *device)
-{
-	struct i915_mmio *mmio;
-
-	/* Nothing was turned off. */
-	if (!i915_gen9_backlight_slept)
-		return;
-
-	/* Succeeded: the control as it was. */
-	mmio = &device->gt.mmio;
-	i915_gen9_backlight_slept = 0;
-	drv_i915_raw_write32(mmio, I915_SKL_BLC_PWM_PCH_CTL1, i915_gen9_backlight_slept_control);
-	drv_i915_posting_read32(mmio, I915_SKL_BLC_PWM_PCH_CTL1);
-	kern_logf("i915: gen9 backlight: the panel's light is on again\n");
-}
-
-/*
- * Tells the PWM's register layout from the PCH: Cannon Point and Comet
- * Point have the Broxton one, Sunrise Point and Kaby Point the LPT one.
- * Without a PCH the bridge names (a virtual machine), the platform
- * decides.  Returns 0, or ENODEV for another PCH.
- *
- * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/soc/intel_pch.c
- * (intel_virt_detect_pch).
+ * Tells the PWM's layout from the south display: the xd code's choice of
+ * the part (the PCH the bridges name, or the platform's own when none is
+ * found).  Returns 0, or ENODEV for a south display of neither family.
  */
 static int
-i915_gen9_backlight_pch_cnp(
+i915_gen9_backlight_layout(
 	struct i915_device *device,
-	int *cnp)
+	int *packed)
 {
+	struct i915_xd_choice choice;
 	struct i915_pch_state pch;
-	int platform;
+	int present;
+	int error;
 
 	/* Finds the PCH from the ISA bridges. */
 	kern_memset(&pch, 0, sizeof(pch));
 	drv_i915_detect_pch(device->display, &pch, 9, 0, 1, 1);
-
-	/* A PCH the bridges name decides. */
-	if (pch.type == I915_PCH_SPT) {
-		*cnp = 0;
-		return 0;
-	}
-
-	/* Cannon Point's: the second layout. */
-	if (pch.type == I915_PCH_CNP) {
-		*cnp = 1;
-		return 0;
-	}
-
-	/* Another PCH has neither layout. */
+	present = 0;
 	if (pch.type != I915_PCH_NONE)
+		present = 1;
+
+	/* The display 9 part and its south display. */
+	error = drv_i915_xd_platform_choose_display9(device->product, device->revision, present, pch.bridge_device, &choice);
+	if (error != 0)
 		return ENODEV;
 
-	/* Without one, Coffee Lake and Comet Lake pair with Cannon Point, Skylake and Kaby Lake with Sunrise Point. */
-	platform = device->gt.info.platform;
-	kern_logf("i915: gen9 backlight: no PCH found; assuming the platform's (%d)\n", platform);
-	if (platform == I915_PLATFORM_COFFEELAKE || platform == I915_PLATFORM_COMETLAKE) {
-		*cnp = 1;
-	} else {
-		*cnp = 0;
-	}
+	/* An assumed PCH is said so. */
+	if (choice.pch_assumed)
+		kern_logf("i915: backlight: no PCH found; assuming the platform's\n");
+
+	/* The Sunrise Point family packs the period and the duty. */
+	*packed = 0;
+	if (choice.pch_kind == I915_PCH_SPT)
+		*packed = 1;
 
 	/* Succeeded: the layout is known. */
 	return 0;
 }
 
-/* Reads the PWM's registers in the PCH's layout. */
+/* Reads the PWM's registers in the layout. */
 static void
 i915_gen9_backlight_read(
-	const struct i915_gen9_backlight *backlight,
+	struct i915_gen9_backlight *backlight,
 	struct i915_skl_pwm_registers *registers)
 {
+	/* The layout. */
 	kern_memset(registers, 0, sizeof(*registers));
-	registers->cnp = backlight->cnp;
+	registers->cnp = !backlight->packed;
 
-	/* The control, the period, and on Cannon Point the duty. */
-	if (backlight->cnp) {
-		registers->control = drv_i915_raw_read32(backlight->mmio, I915_CNP_BLC_PWM_CTL1);
-		registers->period = drv_i915_raw_read32(backlight->mmio, I915_CNP_BLC_PWM_FREQ1);
-		registers->duty = drv_i915_raw_read32(backlight->mmio, I915_CNP_BLC_PWM_DUTY1);
-	} else {
-		registers->control = drv_i915_raw_read32(backlight->mmio, I915_SKL_BLC_PWM_PCH_CTL1);
-		registers->period = drv_i915_raw_read32(backlight->mmio, I915_SKL_BLC_PWM_PCH_CTL2);
-	}
+	/* Succeeded: the xd code's read. */
+	drv_i915_xd9_pwm_read(&backlight->io, backlight->packed, &registers->control, &registers->period, &registers->duty);
 }
 
-/* Reports nonzero when the eDP transcoder runs: the panel is lit. */
-static int
-i915_gen9_backlight_panel_lit(
-	struct i915_mmio *mmio)
+/* Copies the xd code's PWM into the node's form. */
+static void
+i915_gen9_backlight_from_xd(
+	const struct i915_xd9_pwm *xd,
+	struct i915_skl_pwm *pwm)
 {
-	uint32_t power;
-	uint32_t ddi_func;
+	/* Succeeded: field by field. */
+	pwm->enabled = xd->running;
+	pwm->active_low = xd->active_low;
+	pwm->max = xd->period;
+	pwm->min = xd->floor;
+	pwm->duty = xd->duty;
+}
 
-	/* The eDP transcoder lives in power well 1. */
-	power = drv_i915_raw_read32(mmio, I915_SKL_PWR_WELL_CTL2);
-	if ((power & I915_SKL_PW_1_STATE) == 0U)
-		return 0;
-
-	/* Its DDI function is on while it drives the panel. */
-	ddi_func = drv_i915_raw_read32(mmio, I915_SKL_TRANS_DDI_FUNC_CTL_EDP);
-	if ((ddi_func & I915_SKL_TRANS_DDI_FUNC_ENABLE) == 0U)
-		return 0;
-
-	/* Succeeded: the panel is lit. */
-	return 1;
+/* Copies the node's PWM into the xd code's form. */
+static void
+i915_gen9_backlight_to_xd(
+	const struct i915_skl_pwm *pwm,
+	struct i915_xd9_pwm *xd)
+{
+	/* Succeeded: field by field. */
+	xd->running = pwm->enabled;
+	xd->active_low = pwm->active_low;
+	xd->period = pwm->max;
+	xd->floor = pwm->min;
+	xd->duty = pwm->duty;
 }

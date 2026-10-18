@@ -200,7 +200,7 @@ i915_host_dpll(void)
 static void
 i915_host_buf_trans(void)
 {
-	const struct i915_skl_buf_trans *table;
+	const struct i915_xd9_buf_trans *table;
 	unsigned count;
 
 	/* The power classes. */

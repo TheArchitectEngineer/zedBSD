@@ -40,13 +40,28 @@ static const uint16_t i915_host_latencies[8] = { 2U, 4U, 10U, 18U, 28U, 40U, 60U
  * Checks the external outputs.
  */
 int
-main(void)
+main(
+	int argc,
+	char **argv)
 {
 	int status;
+	int error;
+
+	/* A path on the command line receives the golden record of the writes. */
+	if (argc > 1) {
+		error = i915_gen9_fake_golden_open(argv[1]);
+		if (error != 0) {
+			fprintf(stderr, "gen9_outputs_host_test: cannot write %s: %d\n", argv[1], error);
+			return 2;
+		}
+	}
 
 	/* Each part. */
 	i915_host_latency();
 	i915_host_outputs();
+
+	/* The last scene goes to the record. */
+	i915_gen9_fake_golden_close();
 
 	/* The tally. */
 	status = i915_host_report("gen9_outputs_host_test");

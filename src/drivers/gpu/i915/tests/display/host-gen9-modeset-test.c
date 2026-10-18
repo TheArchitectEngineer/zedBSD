@@ -48,9 +48,21 @@ static void i915_host_check_hotplug(void);
  * Checks the Gen9 mode set's register sequences on the model.
  */
 int
-main(void)
+main(
+	int argc,
+	char **argv)
 {
 	int status;
+	int error;
+
+	/* A path on the command line receives the golden record of the writes. */
+	if (argc > 1) {
+		error = i915_gen9_fake_golden_open(argv[1]);
+		if (error != 0) {
+			fprintf(stderr, "gen9_modeset_host_test: cannot write %s: %d\n", argv[1], error);
+			return 2;
+		}
+	}
 
 	/* Each part. */
 	i915_host_check_ddc();
@@ -60,6 +72,9 @@ main(void)
 	i915_host_check_hdmi_output();
 	i915_host_check_watermarks();
 	i915_host_check_hotplug();
+
+	/* The last scene goes to the record. */
+	i915_gen9_fake_golden_close();
 
 	/* The tally. */
 	status = i915_host_report("gen9_modeset_host_test");
@@ -93,22 +108,22 @@ i915_host_check_ddc(void)
 	drv_i915_skl_aux_unpack(0xa1b2c3d4U, bytes, 2U);
 	i915_host_check(bytes[0] == 0xa1U && bytes[1] == 0xb2U, "aux unpack two bytes");
 
-	/* The receiver capabilities, after two deferrals. */
+	/* The receiver capabilities, after two deferrals of the wake-up read. */
 	i915_gen9_fake.sinks[I915_SKL_PORT_B].defer_left = 2U;
 	memset(bytes, 0, sizeof(bytes));
 	error = drv_i915_skl_dpcd_read(&i915_gen9_fake_io, I915_SKL_PORT_B, 0U, bytes, I915_DPCD_RECEIVER_CAP_SIZE);
 	i915_host_check(error == 0 && bytes[0] == 0x12U && bytes[1] == 0x14U && bytes[2] == 0xc4U, "dpcd read after deferrals");
-	i915_host_check(i915_gen9_fake.aux_transfers == 3U, "dpcd read took three transfers");
+	i915_host_check(i915_gen9_fake.aux_transfers == 4U, "dpcd read took the wake-up read's three transfers and its own");
 
 	/* A write. */
 	bytes[0] = 0x02U;
 	error = drv_i915_skl_dpcd_write(&i915_gen9_fake_io, I915_SKL_PORT_B, I915_DPCD_SET_POWER, bytes, 1U);
 	i915_host_check(error == 0 && i915_gen9_fake.sinks[I915_SKL_PORT_B].dpcd[I915_DPCD_SET_POWER] == 0x02U, "dpcd write");
 
-	/* No sink on port D: five timeouts. */
+	/* No sink on port D: the wake-up read's 32 messages of five timeouts each. */
 	i915_gen9_fake.aux_transfers = 0U;
 	error = drv_i915_skl_dpcd_read(&i915_gen9_fake_io, I915_SKL_PORT_D, 0U, bytes, 1U);
-	i915_host_check(error == ETIMEDOUT && i915_gen9_fake.aux_transfers == 5U, "dpcd read times out five times on an empty port");
+	i915_host_check(error == ETIMEDOUT && i915_gen9_fake.aux_transfers == 160U, "dpcd read times out 32 messages of five transfers on an empty port");
 
 	/* The EDID over AUX, both blocks. */
 	memset(edid, 0, sizeof(edid));

@@ -19,6 +19,7 @@
 #include <uapi/errno.h>
 #include <stddef.h>
 #include <stdint.h>
+#include "../intel/display-regs-xd9.h"
 
 /*
  * How long the CD clock PLL may take to lose its lock, to lock, and to
@@ -160,6 +161,137 @@
 /* The fields of the MG PLL's clock top words the words set; the rest of each register is kept. */
 #define I915_XD_MG_PLL_HSCLK_FIELDS	I915_XD_TC_PLL_HSCLK_FIELDS
 
+/*
+ * The CD clock of display 9 for each frequency select of CDCLK_CTL, with
+ * DPLL 0's VCO at 8100 MHz (the first row) and at 8640 MHz (the second).
+ *
+ * Values referenced: Intel Kaby Lake PRM Volume 2c, Command Reference:
+ * Registers (CDCLK_CTL, CD Frequency Select), Intel Kaby Lake PRM
+ * Volume 12, Display Engine (the CD clock frequencies of each VCO).
+ */
+static const uint32_t i915_xd9_cdclk_khz[2][4] = {
+	{ 450000U, 540000U, 337500U, 675000U },
+	{ 432000U, 540000U, 308571U, 617143U }
+};
+
+/*
+ * The DisplayPort port clocks DPLL_CTRL1's rate field gives, each with its
+ * code (the link clock is half the port clock).
+ *
+ * Values referenced: Intel Kaby Lake PRM Volume 2c, Command Reference:
+ * Registers (DPLL_CTRL1, Link Rate).
+ */
+static const struct i915_xd9_link_rate {
+	uint32_t port_khz;
+	uint32_t code;
+} i915_xd9_link_rates[] = {
+	{ 540000U, I915_XD9_LINK_RATE_2700 },
+	{ 270000U, I915_XD9_LINK_RATE_1350 },
+	{ 162000U, I915_XD9_LINK_RATE_810 },
+	{ 324000U, I915_XD9_LINK_RATE_1620 },
+	{ 216000U, I915_XD9_LINK_RATE_1080 },
+	{ 432000U, I915_XD9_LINK_RATE_2160 }
+};
+
+/*
+ * The DPLL's three central DCO frequencies in HDMI mode, in the order
+ * the divider search tries them, with their CFGCR2 codes.
+ *
+ * Values referenced: Intel Kaby Lake PRM Volume 12, Display Engine (the
+ * DPLL frequency calculation's central frequencies), Intel Kaby Lake PRM
+ * Volume 2c, Command Reference: Registers (DPLL_CFGCR2, Central
+ * Frequency).
+ */
+static const struct i915_xd9_wrpll_central {
+	uint64_t hz;
+	uint32_t code;
+} i915_xd9_wrpll_centrals[3] = {
+	{ 8400000000ULL, I915_XD9_CFGCR2_CENTRAL_8400 },
+	{ 9000000000ULL, I915_XD9_CFGCR2_CENTRAL_9000 },
+	{ 9600000000ULL, I915_XD9_CFGCR2_CENTRAL_9600 }
+};
+
+/*
+ * The dividers between the DCO and the AFE clock the HDMI search tries,
+ * the even ones first (an even divider is taken whenever one fits), each
+ * split into the P, Q and K dividers that make it up, as their CFGCR2
+ * codes.  A divider of 5 needs a P divider of 5, which has no code: the
+ * search may pick it, and the clock is then refused.
+ *
+ * Values referenced: Intel Kaby Lake PRM Volume 12, Display Engine (the
+ * DPLL frequency calculation's divider lists and their split into P0, P1
+ * and P2), Intel Kaby Lake PRM Volume 2c, Command Reference: Registers
+ * (DPLL_CFGCR2, Pdiv, Qdiv Ratio, Kdiv).
+ */
+static const struct i915_xd9_wrpll_divider {
+	uint8_t divider;
+	uint8_t even;
+	uint8_t usable;
+	uint8_t pdiv;
+	uint8_t qdiv;
+	uint8_t kdiv;
+} i915_xd9_wrpll_dividers[] = {
+	{ 4U, 1U, 1U, 1U, 1U, 1U },
+	{ 6U, 1U, 1U, 1U, 1U, 2U },
+	{ 8U, 1U, 1U, 1U, 2U, 1U },
+	{ 10U, 1U, 1U, 1U, 1U, 0U },
+	{ 12U, 1U, 1U, 1U, 3U, 1U },
+	{ 14U, 1U, 1U, 4U, 1U, 1U },
+	{ 16U, 1U, 1U, 1U, 4U, 1U },
+	{ 18U, 1U, 1U, 2U, 3U, 1U },
+	{ 20U, 1U, 1U, 1U, 5U, 1U },
+	{ 24U, 1U, 1U, 1U, 6U, 1U },
+	{ 28U, 1U, 1U, 1U, 7U, 1U },
+	{ 30U, 1U, 1U, 2U, 5U, 1U },
+	{ 32U, 1U, 1U, 1U, 8U, 1U },
+	{ 36U, 1U, 1U, 1U, 9U, 1U },
+	{ 40U, 1U, 1U, 1U, 10U, 1U },
+	{ 42U, 1U, 1U, 2U, 7U, 1U },
+	{ 44U, 1U, 1U, 1U, 11U, 1U },
+	{ 48U, 1U, 1U, 1U, 12U, 1U },
+	{ 52U, 1U, 1U, 1U, 13U, 1U },
+	{ 54U, 1U, 1U, 2U, 9U, 1U },
+	{ 56U, 1U, 1U, 1U, 14U, 1U },
+	{ 60U, 1U, 1U, 1U, 15U, 1U },
+	{ 64U, 1U, 1U, 1U, 16U, 1U },
+	{ 66U, 1U, 1U, 2U, 11U, 1U },
+	{ 68U, 1U, 1U, 1U, 17U, 1U },
+	{ 70U, 1U, 1U, 4U, 5U, 1U },
+	{ 72U, 1U, 1U, 1U, 18U, 1U },
+	{ 76U, 1U, 1U, 1U, 19U, 1U },
+	{ 78U, 1U, 1U, 2U, 13U, 1U },
+	{ 80U, 1U, 1U, 1U, 20U, 1U },
+	{ 84U, 1U, 1U, 1U, 21U, 1U },
+	{ 88U, 1U, 1U, 1U, 22U, 1U },
+	{ 90U, 1U, 1U, 2U, 15U, 1U },
+	{ 92U, 1U, 1U, 1U, 23U, 1U },
+	{ 96U, 1U, 1U, 1U, 24U, 1U },
+	{ 98U, 1U, 1U, 4U, 7U, 1U },
+	{ 3U, 0U, 1U, 2U, 1U, 3U },
+	{ 5U, 0U, 0U, 0U, 1U, 3U },
+	{ 7U, 0U, 1U, 4U, 1U, 3U },
+	{ 9U, 0U, 1U, 2U, 1U, 2U },
+	{ 15U, 0U, 1U, 2U, 1U, 0U },
+	{ 21U, 0U, 1U, 4U, 1U, 2U },
+	{ 35U, 0U, 1U, 4U, 1U, 0U }
+};
+
+/* The reference clock of display 9's DPLLs, in Hz. */
+#define I915_XD9_DPLL_REF_HZ		24000000ULL
+
+/*
+ * How far the DCO may run from its central frequency, in ten-thousandths:
+ * 1 % above it, 6 % below it.
+ *
+ * Values referenced: Intel Kaby Lake PRM Volume 12, Display Engine (the
+ * DPLL frequency calculation's allowed deviations).
+ */
+#define I915_XD9_DCO_ABOVE		100U
+#define I915_XD9_DCO_BELOW		600U
+
+/* The AFE clock of an HDMI port is five times its pixel clock. */
+#define I915_XD9_AFE_PER_PIXEL		5U
+
 static uint32_t i915_xd_clock_div_round(uint32_t a, uint32_t b);
 static uint32_t i915_xd_cdclk_divider(uint32_t cdclk_khz, uint32_t vco_khz);
 static uint32_t i915_xd_cdclk_decimal(uint32_t cdclk_khz);
@@ -182,6 +314,7 @@ static void i915_xd_tc_pll_clock_tops(int hdmi, uint32_t div1, uint32_t div2, ui
 static uint32_t i915_xd_tc_pll_hsdiv_code(uint32_t divider);
 static uint32_t i915_xd_tc_pll_hsdiv_value(uint32_t code);
 static void i915_xd_tc_pll_put(struct i915_xd_dkl *dkl, unsigned tc, uint32_t phy_offset, uint32_t fields, uint32_t value);
+static int i915_xd9_wrpll_deviation(uint64_t dco_hz, uint64_t central_hz, uint64_t *deviation);
 
 /*
  * Reads the CD clock the hardware runs: the reference from DSSM, the
@@ -526,6 +659,212 @@ drv_i915_xd_cdclk_max(
 
 	/* Succeeded: the 19.2 and 38.4 MHz references' highest. */
 	return I915_XD_CDCLK_MAX;
+}
+
+/*
+ * Reports the CD clock of a display 9 part in kHz from LCPLL1_CTL,
+ * DPLL_CTRL1 and CDCLK_CTL, or 0 when DPLL 0 does not run locked.
+ *
+ * DPLL 0 makes the CD clock.  Its VCO is 8640 MHz while it runs a link
+ * at 1080 or 2160 MHz and 8100 MHz at every other rate, and CDCLK_CTL's
+ * frequency select picks one of four clocks of that VCO.
+ *
+ * Procedure referenced: Intel Kaby Lake PRM Volume 12, Display Engine
+ * (the CD clock and DPLL 0's VCO).
+ */
+uint32_t
+drv_i915_xd9_cdclk_khz(
+	uint32_t lcpll1_ctl,
+	uint32_t dpll_ctrl1,
+	uint32_t cdclk_ctl)
+{
+	uint32_t rate;
+	uint32_t select;
+	unsigned vco;
+
+	/* DPLL 0 off makes no CD clock. */
+	if ((lcpll1_ctl & I915_XD9_LCPLL_ENABLE) == 0U)
+		return 0U;
+
+	/* Nor does DPLL 0 before it locks. */
+	if ((lcpll1_ctl & I915_XD9_LCPLL_LOCK) == 0U)
+		return 0U;
+
+	/* The VCO DPLL 0's link rate implies: the second row for 1080 and 2160 MHz. */
+	rate = (dpll_ctrl1 >> I915_XD9_DPLL_CTRL1_RATE_SHIFT) & I915_XD9_DPLL_CTRL1_RATE_MASK;
+	vco = 0U;
+	if (rate == I915_XD9_LINK_RATE_1080) {
+		vco = 1U;
+	} else if (rate == I915_XD9_LINK_RATE_2160) {
+		vco = 1U;
+	}
+
+	/* The frequency select. */
+	select = (cdclk_ctl >> I915_XD9_CDCLK_SELECT_SHIFT) & I915_XD9_CDCLK_SELECT_MASK;
+
+	/* Succeeded: the clock of the select on the VCO. */
+	return i915_xd9_cdclk_khz[vco][select];
+}
+
+/*
+ * Computes the DPLL words of a DisplayPort port clock on display 9: the
+ * override and the link rate in the DPLL's field of DPLL_CTRL1, and no
+ * configuration words.  Returns 0, or EINVAL for a port clock DPLL_CTRL1
+ * has no rate for.
+ */
+int
+drv_i915_xd9_dpll_dp_words(
+	uint32_t port_khz,
+	struct i915_xd9_dpll_words *words)
+{
+	unsigned index;
+
+	/* No words until the clock is found. */
+	words->ctrl1 = 0U;
+	words->cfgcr1 = 0U;
+	words->cfgcr2 = 0U;
+	words->port_khz = 0U;
+
+	/* Looks the port clock up among the rates. */
+	for (index = 0U; index < sizeof(i915_xd9_link_rates) / sizeof(i915_xd9_link_rates[0]); index++) {
+		if (i915_xd9_link_rates[index].port_khz != port_khz)
+			continue;
+
+		/* Succeeded: the override and the rate rule the DPLL. */
+		words->ctrl1 = I915_XD9_DPLL_CTRL1_OVERRIDE | (i915_xd9_link_rates[index].code << I915_XD9_DPLL_CTRL1_RATE_SHIFT);
+		words->port_khz = port_khz;
+		return 0;
+	}
+
+	/* No rate gives the clock. */
+	return EINVAL;
+}
+
+/*
+ * Computes the DPLL words of an HDMI pixel clock on display 9.
+ *
+ * In HDMI mode the DPLL's DCO runs at a multiple of the AFE clock (five
+ * times the pixel clock), and a divider made of the P, Q and K dividers
+ * brings it down.  The divider chosen keeps the DCO nearest to one of the
+ * three central frequencies, within 1 % above and 6 % below it; an even
+ * divider is taken before an odd one, and among equal deviations the one
+ * found first (by central frequency, then by divider).  The words are the
+ * HDMI mode and the override in DPLL_CTRL1, the DCO as a multiple of the
+ * 24 MHz reference in CFGCR1, and the dividers and the central frequency
+ * in CFGCR2.  Returns 0, or EINVAL when no divider fits or the one chosen
+ * cannot be made.
+ *
+ * Procedure referenced: Intel Kaby Lake PRM Volume 12, Display Engine
+ * (the DPLL frequency calculation for HDMI).
+ */
+int
+drv_i915_xd9_dpll_hdmi_words(
+	uint32_t pixel_khz,
+	struct i915_xd9_dpll_words *words)
+{
+	const struct i915_xd9_wrpll_divider *divider;
+	const struct i915_xd9_wrpll_divider *best;
+	const struct i915_xd9_wrpll_central *best_central;
+	uint64_t afe_hz;
+	uint64_t dco_hz;
+	uint64_t deviation;
+	uint64_t best_deviation;
+	uint64_t dco_integer;
+	uint64_t dco_millionths;
+	uint64_t dco_fraction;
+	unsigned pass;
+	unsigned want_even;
+	unsigned central;
+	unsigned index;
+	int fits;
+	int exact;
+
+	/* No words until a divider is chosen. */
+	words->ctrl1 = 0U;
+	words->cfgcr1 = 0U;
+	words->cfgcr2 = 0U;
+	words->port_khz = 0U;
+
+	/* The AFE clock the DCO divides down to. */
+	afe_hz = (uint64_t)pixel_khz * 1000U * I915_XD9_AFE_PER_PIXEL;
+
+	/* The even dividers in a first pass, the odd ones in a second only when no even one fits. */
+	best = NULL;
+	best_central = NULL;
+	best_deviation = 0U;
+	exact = 0;
+	for (pass = 0U; pass < 2U && best == NULL; pass++) {
+		/* The pass's dividers: the even ones first. */
+		want_even = 0U;
+		if (pass == 0U)
+			want_even = 1U;
+
+		/* Each central frequency in turn, until a divider meets one exactly. */
+		for (central = 0U; central < 3U && !exact; central++) {
+			/* Each divider of the pass against the central frequency. */
+			for (index = 0U; index < sizeof(i915_xd9_wrpll_dividers) / sizeof(i915_xd9_wrpll_dividers[0]); index++) {
+				divider = &i915_xd9_wrpll_dividers[index];
+				if (divider->even != want_even)
+					continue;
+
+				/* The DCO this divider needs, and how far it is from the centre. */
+				dco_hz = (uint64_t)divider->divider * afe_hz;
+				fits = i915_xd9_wrpll_deviation(dco_hz, i915_xd9_wrpll_centrals[central].hz, &deviation);
+				if (!fits)
+					continue;
+
+				/* Only a smaller deviation than the best one replaces it. */
+				if (best != NULL && deviation >= best_deviation)
+					continue;
+				best = divider;
+				best_central = &i915_xd9_wrpll_centrals[central];
+				best_deviation = deviation;
+
+				/* A DCO on the centre cannot be bettered. */
+				if (deviation == 0U) {
+					exact = 1;
+					break;
+				}
+			}
+		}
+	}
+
+	/* No divider keeps the DCO in range. */
+	if (best == NULL)
+		return EINVAL;
+
+	/* A divider whose P divider has no code cannot be made. */
+	if (!best->usable)
+		return EINVAL;
+
+	/*
+	 * The DCO as a multiple of the reference: its integer part, and its
+	 * fraction in 1/0x8000, taken from the multiple in millionths.
+	 */
+	dco_hz = (uint64_t)best->divider * afe_hz;
+	dco_integer = dco_hz / I915_XD9_DPLL_REF_HZ;
+	dco_millionths = dco_hz / (I915_XD9_DPLL_REF_HZ / 1000000U) - dco_integer * 1000000U;
+	dco_fraction = (dco_millionths * 0x8000U) / 1000000U;
+
+	/* DPLL_CTRL1: the HDMI mode under the override. */
+	words->ctrl1 = I915_XD9_DPLL_CTRL1_OVERRIDE | I915_XD9_DPLL_CTRL1_HDMI;
+
+	/* CFGCR1: the frequency enable, the DCO's fraction and integer. */
+	words->cfgcr1 = I915_XD9_CFGCR1_FREQ_ENABLE;
+	words->cfgcr1 |= (uint32_t)dco_fraction << I915_XD9_CFGCR1_FRACTION_SHIFT;
+	words->cfgcr1 |= (uint32_t)dco_integer;
+
+	/* CFGCR2: the Q divider (its mode only when it divides), the K and P dividers, the central frequency. */
+	words->cfgcr2 = (uint32_t)best->qdiv << I915_XD9_CFGCR2_QDIV_RATIO_SHIFT;
+	if (best->qdiv != 1U)
+		words->cfgcr2 |= I915_XD9_CFGCR2_QDIV_MODE;
+	words->cfgcr2 |= (uint32_t)best->kdiv << I915_XD9_CFGCR2_KDIV_SHIFT;
+	words->cfgcr2 |= (uint32_t)best->pdiv << I915_XD9_CFGCR2_PDIV_SHIFT;
+	words->cfgcr2 |= best_central->code;
+
+	/* Succeeded: the DPLL makes the pixel clock's TMDS clock. */
+	words->port_khz = pixel_khz;
+	return 0;
 }
 
 /* Divides, rounding to the closest. */
@@ -2352,4 +2691,33 @@ i915_xd_tc_pll_put(
 	word &= ~fields;
 	word |= value;
 	drv_i915_xd_dkl_write(dkl, tc, phy_offset, word);
+}
+
+/*
+ * Tells whether a DCO frequency is within the allowed deviation of a
+ * central frequency, and how far from it it is in ten-thousandths of it.
+ */
+static int
+i915_xd9_wrpll_deviation(
+	uint64_t dco_hz,
+	uint64_t central_hz,
+	uint64_t *deviation)
+{
+	/* Above the centre: up to 1 %. */
+	if (dco_hz >= central_hz) {
+		*deviation = (10000U * (dco_hz - central_hz)) / central_hz;
+		if (*deviation >= I915_XD9_DCO_ABOVE)
+			return 0;
+
+		/* Succeeded: close enough above. */
+		return 1;
+	}
+
+	/* Below the centre: up to 6 %. */
+	*deviation = (10000U * (central_hz - dco_hz)) / central_hz;
+	if (*deviation >= I915_XD9_DCO_BELOW)
+		return 0;
+
+	/* Succeeded: close enough below. */
+	return 1;
 }

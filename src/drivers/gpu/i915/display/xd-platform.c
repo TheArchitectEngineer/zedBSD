@@ -15,6 +15,7 @@
 #include "xd-platform.h"
 
 #include "../intel/display-tables-xd.h"
+#include "../intel/display-tables-xd9.h"
 
 #include <uapi/errno.h>
 #include <stddef.h>
@@ -26,7 +27,8 @@
 /* The reference clock (kHz) whose DPLL tables differ from the 19.2 MHz ones. */
 #define I915_XD_REF_24MHZ		24000U
 
-static const struct i915_xd_platform *i915_xd_platform_by_device(uint16_t device);
+static int i915_xd_platform_choose_in(const struct i915_xd_platform *rows, unsigned count, uint16_t device, uint8_t revid, int pch_present, uint16_t pch_device, struct i915_xd_choice *choice);
+static const struct i915_xd_platform *i915_xd_platform_by_device(const struct i915_xd_platform *rows, unsigned count, uint16_t device);
 static int i915_xd_platform_has_id(const struct i915_xd_platform *platform, uint16_t device);
 
 /*
@@ -48,41 +50,55 @@ drv_i915_xd_platform_choose(
 	uint16_t pch_device,
 	struct i915_xd_choice *choice)
 {
-	const struct i915_xd_platform *platform;
-	int kind;
+	int error;
 
-	/* Starts from no choice. */
-	choice->platform = NULL;
-	choice->step = I915_XD_STEP_FUTURE;
-	choice->pch_kind = I915_PCH_NONE;
-	choice->pch_assumed = 0;
-
-	/* Finds the row of the device. */
-	platform = i915_xd_platform_by_device(device);
-	if (platform == NULL)
-		return ENODEV;
-
-	/* Reads the kind of the PCH, when there is one. */
-	kind = I915_PCH_NONE;
-	if (pch_present != 0)
-		kind = drv_i915_xd_pch_kind(pch_device);
-
-	/* A known PCH of another kind than the platform's is refused. */
-	if (kind != I915_PCH_NONE && kind != (int)platform->pch_kind)
-		return EOPNOTSUPP;
-
-	/* No PCH, or one the tables do not know: the platform's own is assumed. */
-	if (kind == I915_PCH_NONE) {
-		kind = (int)platform->pch_kind;
-		choice->pch_assumed = 1;
-	}
-
-	/* Records the choice. */
-	choice->platform = platform;
-	choice->step = drv_i915_xd_platform_step(platform, revid);
-	choice->pch_kind = kind;
+	/* Looks among the rows of display 11 to 13. */
+	error = i915_xd_platform_choose_in(
+		i915_xd_platforms,
+		sizeof(i915_xd_platforms) / sizeof(i915_xd_platforms[0]),
+		device,
+		revid,
+		pch_present,
+		pch_device,
+		choice);
+	if (error != 0)
+		return error;
 
 	/* Succeeded: the description, its stepping and its south display are chosen. */
+	return 0;
+}
+
+/*
+ * Chooses the description of a display 9 device (Skylake to Comet Lake)
+ * in the same way, from the display 9 rows alone.
+ *
+ * Returns 0, ENODEV for a device that is not a display 9 GPU, or
+ * EOPNOTSUPP for a display 9 GPU beside a south display of another
+ * family than its platform's.
+ */
+int
+drv_i915_xd_platform_choose_display9(
+	uint16_t device,
+	uint8_t revid,
+	int pch_present,
+	uint16_t pch_device,
+	struct i915_xd_choice *choice)
+{
+	int error;
+
+	/* Looks among the display 9 rows. */
+	error = i915_xd_platform_choose_in(
+		i915_xd9_platforms,
+		sizeof(i915_xd9_platforms) / sizeof(i915_xd9_platforms[0]),
+		device,
+		revid,
+		pch_present,
+		pch_device,
+		choice);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the description and its south display are chosen. */
 	return 0;
 }
 
@@ -160,6 +176,32 @@ drv_i915_xd_platform_row(
 
 	/* Succeeded: reports the description. */
 	return &i915_xd_platforms[index];
+}
+
+/*
+ * Reports how many display 9 descriptions there are.
+ */
+unsigned
+drv_i915_xd_platform_display9_count(void)
+{
+	/* Reports the size of the table. */
+	return sizeof(i915_xd9_platforms) / sizeof(i915_xd9_platforms[0]);
+}
+
+/*
+ * Reports a display 9 description by its place in the table, or NULL
+ * past its end.
+ */
+const struct i915_xd_platform *
+drv_i915_xd_platform_display9_row(
+	unsigned index)
+{
+	/* A place past the table has no description. */
+	if (index >= sizeof(i915_xd9_platforms) / sizeof(i915_xd9_platforms[0]))
+		return NULL;
+
+	/* Succeeded: reports the description. */
+	return &i915_xd9_platforms[index];
 }
 
 /*
@@ -304,19 +346,96 @@ drv_i915_xd_buddy_mask(
 	return NULL;
 }
 
-/* Finds the platform row that lists a PCI device id. */
+/*
+ * Reports the first display 9 description of a platform kind and power
+ * class, or NULL when the kind has no part of that class.
+ */
+const struct i915_xd_platform *
+drv_i915_xd_platform_display9_class(
+	unsigned kind,
+	unsigned power_class)
+{
+	unsigned index;
+
+	/* Looks for the kind and the class among the rows. */
+	for (index = 0U; index < sizeof(i915_xd9_platforms) / sizeof(i915_xd9_platforms[0]); index++) {
+		if (i915_xd9_platforms[index].kind != kind)
+			continue;
+		if (i915_xd9_platforms[index].power_class != power_class)
+			continue;
+
+		/* Succeeded: the row of the class. */
+		return &i915_xd9_platforms[index];
+	}
+
+	/* Succeeded: no part of the kind has the class. */
+	return NULL;
+}
+
+/* Chooses a description among the rows of one table (see drv_i915_xd_platform_choose). */
+static int
+i915_xd_platform_choose_in(
+	const struct i915_xd_platform *rows,
+	unsigned count,
+	uint16_t device,
+	uint8_t revid,
+	int pch_present,
+	uint16_t pch_device,
+	struct i915_xd_choice *choice)
+{
+	const struct i915_xd_platform *platform;
+	int kind;
+
+	/* Starts from no choice. */
+	choice->platform = NULL;
+	choice->step = I915_XD_STEP_FUTURE;
+	choice->pch_kind = I915_PCH_NONE;
+	choice->pch_assumed = 0;
+
+	/* Finds the row of the device. */
+	platform = i915_xd_platform_by_device(rows, count, device);
+	if (platform == NULL)
+		return ENODEV;
+
+	/* Reads the kind of the PCH, when there is one. */
+	kind = I915_PCH_NONE;
+	if (pch_present != 0)
+		kind = drv_i915_xd_pch_kind(pch_device);
+
+	/* A known PCH of another kind than the platform's is refused. */
+	if (kind != I915_PCH_NONE && kind != (int)platform->pch_kind)
+		return EOPNOTSUPP;
+
+	/* No PCH, or one the tables do not know: the platform's own is assumed. */
+	if (kind == I915_PCH_NONE) {
+		kind = (int)platform->pch_kind;
+		choice->pch_assumed = 1;
+	}
+
+	/* Records the choice. */
+	choice->platform = platform;
+	choice->step = drv_i915_xd_platform_step(platform, revid);
+	choice->pch_kind = kind;
+
+	/* Succeeded: the description, its stepping and its south display are chosen. */
+	return 0;
+}
+
+/* Finds the row of a table that lists a PCI device id. */
 static const struct i915_xd_platform *
 i915_xd_platform_by_device(
+	const struct i915_xd_platform *rows,
+	unsigned count,
 	uint16_t device)
 {
 	unsigned index;
 	int listed;
 
 	/* Looks through every row's ids. */
-	for (index = 0U; index < sizeof(i915_xd_platforms) / sizeof(i915_xd_platforms[0]); index++) {
-		listed = i915_xd_platform_has_id(&i915_xd_platforms[index], device);
+	for (index = 0U; index < count; index++) {
+		listed = i915_xd_platform_has_id(&rows[index], device);
 		if (listed != 0)
-			return &i915_xd_platforms[index];
+			return &rows[index];
 	}
 
 	/* Succeeded: no row lists the device. */

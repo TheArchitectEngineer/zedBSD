@@ -2827,6 +2827,8 @@ static const struct i915_xd_platform i915_xd_platforms[] = {
 		&i915_xd_vbt_maps_tgl,
 		I915_XD_FIA_READ_MODULAR,
 		NULL,
+		NULL,
+		I915_XD_POWER_CLASS_H,
 		NULL
 	},
 	{
@@ -2877,6 +2879,8 @@ static const struct i915_xd_platform i915_xd_platforms[] = {
 		&i915_xd_vbt_maps_tgl,
 		I915_XD_FIA_READ_MODULAR,
 		NULL,
+		NULL,
+		I915_XD_POWER_CLASS_H,
 		NULL
 	},
 	{
@@ -2927,6 +2931,8 @@ static const struct i915_xd_platform i915_xd_platforms[] = {
 		&i915_xd_vbt_maps_rkl,
 		I915_XD_FIA_READ_MODULAR,
 		NULL,
+		NULL,
+		I915_XD_POWER_CLASS_H,
 		NULL
 	},
 	{
@@ -2977,6 +2983,8 @@ static const struct i915_xd_platform i915_xd_platforms[] = {
 		&i915_xd_vbt_maps_adls,
 		I915_XD_FIA_READ_MODULAR,
 		NULL,
+		NULL,
+		I915_XD_POWER_CLASS_H,
 		NULL
 	},
 	{
@@ -3027,6 +3035,8 @@ static const struct i915_xd_platform i915_xd_platforms[] = {
 		&i915_xd_vbt_maps_adls,
 		I915_XD_FIA_READ_MODULAR,
 		NULL,
+		NULL,
+		I915_XD_POWER_CLASS_H,
 		NULL
 	},
 	{
@@ -3078,6 +3088,8 @@ static const struct i915_xd_platform i915_xd_platforms[] = {
 		&i915_xd_vbt_maps_adlp,
 		I915_XD_FIA_READ_MODULAR,
 		NULL,
+		NULL,
+		I915_XD_POWER_CLASS_H,
 		NULL
 	},
 	{
@@ -3129,6 +3141,8 @@ static const struct i915_xd_platform i915_xd_platforms[] = {
 		&i915_xd_vbt_maps_adlp,
 		I915_XD_FIA_READ_MODULAR,
 		NULL,
+		NULL,
+		I915_XD_POWER_CLASS_H,
 		NULL
 	},
 	{
@@ -3180,6 +3194,8 @@ static const struct i915_xd_platform i915_xd_platforms[] = {
 		&i915_xd_vbt_maps_adlp,
 		I915_XD_FIA_READ_MODULAR,
 		NULL,
+		NULL,
+		I915_XD_POWER_CLASS_H,
 		NULL
 	},
 	{
@@ -3231,6 +3247,8 @@ static const struct i915_xd_platform i915_xd_platforms[] = {
 		&i915_xd_vbt_maps_adlp,
 		I915_XD_FIA_READ_MODULAR,
 		NULL,
+		NULL,
+		I915_XD_POWER_CLASS_H,
 		NULL
 	},
 	{
@@ -3281,7 +3299,9 @@ static const struct i915_xd_platform i915_xd_platforms[] = {
 		&i915_xd_vbt_maps_tgl,
 		I915_XD_FIA_SINGLE,
 		&i915_xd_tbt_pll_icl_19p2,
-		&i915_xd_tbt_pll_icl_24
+		&i915_xd_tbt_pll_icl_24,
+		I915_XD_POWER_CLASS_H,
+		NULL
 	},
 	{
 		"Ice Lake without port F",
@@ -3331,7 +3351,9 @@ static const struct i915_xd_platform i915_xd_platforms[] = {
 		&i915_xd_vbt_maps_tgl,
 		I915_XD_FIA_SINGLE,
 		&i915_xd_tbt_pll_icl_19p2,
-		&i915_xd_tbt_pll_icl_24
+		&i915_xd_tbt_pll_icl_24,
+		I915_XD_POWER_CLASS_H,
+		NULL
 	}
 };
 

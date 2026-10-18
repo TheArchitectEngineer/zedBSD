@@ -16,6 +16,7 @@
 #include "../../intel/display-regs-gen9.h"
 #include "../../intel/display-regs-gen9-modeset.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -34,6 +35,8 @@ static unsigned i915_fake_aux_i2c(struct i915_gen9_fake_sink *sink, unsigned req
 static void i915_fake_link_status(const struct i915_gen9_fake_sink *sink, uint8_t *status);
 static void i915_fake_gmbus1(struct i915_gen9_fake_hw *hw, uint32_t value);
 static int i915_fake_gmbus_port(unsigned pin);
+static void i915_fake_xd_wait(void *context, unsigned microseconds);
+static void i915_fake_golden_scene(void);
 
 /*
  * The model the tests drive.
@@ -51,6 +54,31 @@ const struct i915_skl_io i915_gen9_fake_io = {
 	i915_fake_msleep,
 	&i915_gen9_fake
 };
+
+/* The xd register window's hooks, reaching the model.  It never changes. */
+const struct i915_xd_io_hooks i915_gen9_fake_xd_hooks = {
+	i915_fake_read,
+	i915_fake_write,
+	i915_fake_xd_wait,
+	NULL,
+	&i915_gen9_fake
+};
+
+/* The MMIO BAR's stand-ins' hooks, reaching the model.  It never changes. */
+const struct i915_host_mmio_hooks i915_gen9_fake_mmio = {
+	i915_fake_read,
+	i915_fake_write,
+	&i915_gen9_fake
+};
+
+/*
+ * The file of the golden record, and the number of the scene written next.
+ *
+ * NULL until a test opens the record; the close empties both.  The test
+ * runs on one thread.
+ */
+static FILE *i915_fake_golden;
+static unsigned i915_fake_golden_scenes;
 
 /* Reports a register's stored value, 0 when never written. */
 uint32_t
@@ -80,6 +108,9 @@ i915_gen9_fake_set(
 void
 i915_gen9_fake_reset(void)
 {
+	/* The check that ends goes to the golden record first. */
+	i915_fake_golden_scene();
+
 	/* Everything off. */
 	memset(&i915_gen9_fake, 0, sizeof(i915_gen9_fake));
 
@@ -152,6 +183,42 @@ i915_gen9_fake_written_at(
 
 	/* Succeeded: never written so. */
 	return -1;
+}
+
+/*
+ * Starts the golden record of the scenes.
+ */
+int
+i915_gen9_fake_golden_open(
+	const char *path)
+{
+	/* The file the scenes go to. */
+	i915_fake_golden = fopen(path, "w");
+	if (i915_fake_golden == NULL)
+		return errno;
+
+	/* Succeeded: the first scene is the check before the next reset. */
+	i915_fake_golden_scenes = 0U;
+	return 0;
+}
+
+/*
+ * Writes the last scene and ends the golden record.
+ */
+void
+i915_gen9_fake_golden_close(void)
+{
+	/* Nothing was opened. */
+	if (i915_fake_golden == NULL)
+		return;
+
+	/* The check that ends, then the file. */
+	i915_fake_golden_scene();
+	fclose(i915_fake_golden);
+
+	/* Succeeded: no record. */
+	i915_fake_golden = NULL;
+	i915_fake_golden_scenes = 0U;
 }
 
 /* Reports a register's value, 0 when never written. */
@@ -271,11 +338,13 @@ i915_fake_write(
 	/* The model the table reaches. */
 	hw = context;
 
-	/* The log. */
+	/* The log, or the count of what it had no room for. */
 	if (hw->log_count < I915_GEN9_FAKE_LOG) {
 		hw->log_offset[hw->log_count] = offset;
 		hw->log_value[hw->log_count] = value;
 		hw->log_count++;
+	} else {
+		hw->log_dropped++;
 	}
 
 	/* The power wells follow their requests (each state bit is below its request). */
@@ -590,3 +659,34 @@ i915_fake_gmbus_port(
 	return -1;
 }
 
+
+/* Counts a wait of the xd register window. */
+static void
+i915_fake_xd_wait(
+	void *context,
+	unsigned microseconds)
+{
+	/* Succeeded: the same count as a spin. */
+	i915_fake_udelay(context, microseconds);
+}
+
+/* Writes the writes of the check that ends to the golden record, as the next scene. */
+static void
+i915_fake_golden_scene(void)
+{
+	unsigned index;
+
+	/* No record is kept. */
+	if (i915_fake_golden == NULL)
+		return;
+
+	/* The scene's number, its count of writes and of the writes the log dropped. */
+	fprintf(i915_fake_golden, "scene %u writes %u dropped %u\n", i915_fake_golden_scenes, i915_gen9_fake.log_count, i915_gen9_fake.log_dropped);
+
+	/* Each write in order: the register and the value. */
+	for (index = 0U; index < i915_gen9_fake.log_count; index++)
+		fprintf(i915_fake_golden, "%08x %08x\n", i915_gen9_fake.log_offset[index], i915_gen9_fake.log_value[index]);
+
+	/* Succeeded: the next check is the next scene. */
+	i915_fake_golden_scenes++;
+}

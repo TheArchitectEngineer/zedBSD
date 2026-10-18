@@ -13,7 +13,9 @@
 #include "xd-io.h"
 
 #include "../intel/display-regs-xd-south.h"
+#include "../intel/display-regs-xd9.h"
 
+#include <uapi/errno.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -51,6 +53,22 @@
 #define I915_XD_PPS_SPEC_BACKLIGHT_OFF	500U
 #define I915_XD_PPS_SPEC_POWER_DOWN	5000U
 #define I915_XD_PPS_SPEC_POWER_CYCLE	6100U
+
+/*
+ * The Sunrise Point family's PWM keeps its period in the upper half of its
+ * second register (CTL2, where the Cannon Point family has FREQ) and its
+ * duty in the lower half.
+ *
+ * Values referenced: Intel Kaby Lake PRM Volume 2c, Command Reference:
+ * Registers (BLC_PWM_PCH_CTL2).
+ */
+#define I915_XD9_PWM_PERIOD_SHIFT	16U
+#define I915_XD9_PWM_DUTY_MASK		0xffffU
+
+/* Display 9's lowest duty for a brightness of 0 %: 4/255 of the period, rounded up, so the panel never goes dark. */
+#define I915_XD9_PWM_FLOOR_255		4U
+#define I915_XD9_PWM_SCALE_255		255U
+#define I915_XD9_PWM_PERCENT_MAX	100U
 
 static uint32_t i915_xd_pps_pick(uint32_t firmware, uint32_t vbt, uint32_t spec);
 static unsigned i915_xd_pps_ms(uint32_t units);
@@ -785,6 +803,196 @@ drv_i915_xd_pps_backlight(
 	/* Writes the control. */
 	drv_i915_xd_io_write(io, I915_XD_PP_CONTROL(pps), control);
 	drv_i915_xd_io_posting_read(io, I915_XD_PP_CONTROL(pps));
+}
+
+/*
+ * Reads a display 9 south display's backlight PWM in its layout: the
+ * control, then the period and duty word (the Sunrise Point family's,
+ * packed is nonzero) or the period and the duty registers (the Cannon
+ * Point family's).  The duty is 0 for the packed layout.
+ */
+void
+drv_i915_xd9_pwm_read(
+	struct i915_xd_io *io,
+	int packed,
+	uint32_t *control,
+	uint32_t *period,
+	uint32_t *duty)
+{
+	/* The control: the enable and the polarity, at the same place in both layouts. */
+	*control = drv_i915_xd_io_read(io, I915_XD_SBLC_PWM_CTL(0U));
+
+	/* The packed layout's one word. */
+	*duty = 0U;
+	*period = drv_i915_xd_io_read(io, I915_XD_SBLC_PWM_FREQ(0U));
+	if (packed)
+		return;
+
+	/* Succeeded: the duty register of the other layout. */
+	*duty = drv_i915_xd_io_read(io, I915_XD_SBLC_PWM_DUTY(0U));
+}
+
+/*
+ * Decodes a display 9 PWM from its registers (as drv_i915_xd9_pwm_read()
+ * reads them): whether it runs, its polarity, its period, its duty, and
+ * the floor a brightness of 0 % maps to.  Returns 0, or EINVAL for a
+ * period of 0 (the firmware never set the PWM up).
+ */
+int
+drv_i915_xd9_pwm_decode(
+	uint32_t control,
+	uint32_t period,
+	uint32_t duty,
+	int packed,
+	struct i915_xd9_pwm *pwm)
+{
+	/* The enable and the polarity. */
+	pwm->running = 0;
+	if ((control & I915_XD_SBLC_PWM_ENABLE) != 0U)
+		pwm->running = 1;
+	pwm->active_low = 0;
+	if ((control & I915_XD_SBLC_PWM_POLARITY) != 0U)
+		pwm->active_low = 1;
+
+	/* The period and the duty, from the halves of the packed word or from their registers. */
+	pwm->period = period;
+	pwm->duty = duty;
+	if (packed) {
+		pwm->period = period >> I915_XD9_PWM_PERIOD_SHIFT;
+		pwm->duty = period & I915_XD9_PWM_DUTY_MASK;
+	}
+
+	/* A PWM without a period. */
+	pwm->floor = 0U;
+	if (pwm->period == 0U)
+		return EINVAL;
+
+	/* Succeeded: the floor is the period's 4/255, rounded up. */
+	pwm->floor = (uint32_t)(((uint64_t)pwm->period * I915_XD9_PWM_FLOOR_255 + I915_XD9_PWM_SCALE_255 - 1U) / I915_XD9_PWM_SCALE_255);
+	return 0;
+}
+
+/*
+ * Reports the duty of a brightness (a percentage, above 100 taken as
+ * 100): from the floor at 0 % to the period at 100 %, rounded to the
+ * closest.
+ */
+uint32_t
+drv_i915_xd9_pwm_duty(
+	const struct i915_xd9_pwm *pwm,
+	uint32_t percent)
+{
+	uint32_t duty;
+
+	/* The brightness moved onto the duties. */
+	duty = drv_i915_xd_backlight_scale(percent, 0U, I915_XD9_PWM_PERCENT_MAX, pwm->floor, pwm->period);
+
+	/* Succeeded: the duty. */
+	return duty;
+}
+
+/*
+ * Reports the brightness of a duty, the inverse of drv_i915_xd9_pwm_duty():
+ * 0 % at or below the floor, 100 % at or above the period.
+ */
+uint32_t
+drv_i915_xd9_pwm_percent(
+	const struct i915_xd9_pwm *pwm,
+	uint32_t duty)
+{
+	uint32_t percent;
+
+	/* At or below the floor is dark's brightness; at or above the period is full. */
+	if (duty <= pwm->floor)
+		return 0U;
+	if (duty >= pwm->period)
+		return I915_XD9_PWM_PERCENT_MAX;
+
+	/* The duty moved onto the brightnesses. */
+	percent = drv_i915_xd_backlight_scale(duty, pwm->floor, pwm->period, 0U, I915_XD9_PWM_PERCENT_MAX);
+
+	/* Succeeded: the brightness. */
+	return percent;
+}
+
+/*
+ * Sets a display 9 PWM's duty: in its own register, or in the lower half
+ * of the packed word with the period read before kept.
+ */
+void
+drv_i915_xd9_pwm_set(
+	struct i915_xd_io *io,
+	int packed,
+	uint32_t period_word,
+	uint32_t duty)
+{
+	/* The Cannon Point family's duty register. */
+	if (!packed) {
+		drv_i915_xd_io_write(io, I915_XD_SBLC_PWM_DUTY(0U), duty);
+		return;
+	}
+
+	/* Succeeded: the packed word with its period kept. */
+	drv_i915_xd_io_write(io, I915_XD_SBLC_PWM_FREQ(0U), (period_word & ~I915_XD9_PWM_DUTY_MASK) | duty);
+}
+
+/*
+ * Stops a running display 9 PWM for a sleep and keeps its control word in
+ * *control.  Returns 1 when it stopped one, 0 when the PWM did not run.
+ */
+int
+drv_i915_xd9_pwm_pause(
+	struct i915_xd_io *io,
+	uint32_t *control)
+{
+	/* A PWM that does not run is left alone. */
+	*control = drv_i915_xd_io_read(io, I915_XD_SBLC_PWM_CTL(0U));
+	if ((*control & I915_XD_SBLC_PWM_ENABLE) == 0U)
+		return 0;
+
+	/* Succeeded: the enable cleared and pushed out. */
+	drv_i915_xd_io_write(io, I915_XD_SBLC_PWM_CTL(0U), *control & ~I915_XD_SBLC_PWM_ENABLE);
+	drv_i915_xd_io_posting_read(io, I915_XD_SBLC_PWM_CTL(0U));
+	return 1;
+}
+
+/*
+ * Starts a display 9 PWM again with the control word a pause kept.
+ */
+void
+drv_i915_xd9_pwm_resume(
+	struct i915_xd_io *io,
+	uint32_t control)
+{
+	/* Succeeded: the control as it was, pushed out. */
+	drv_i915_xd_io_write(io, I915_XD_SBLC_PWM_CTL(0U), control);
+	drv_i915_xd_io_posting_read(io, I915_XD_SBLC_PWM_CTL(0U));
+}
+
+/*
+ * Tells whether the firmware left display 9's eDP panel lit: power well 1,
+ * where the eDP transcoder lives, is up and the transcoder's DDI function
+ * drives it.  Returns 1 or 0.
+ */
+int
+drv_i915_xd9_panel_lit(
+	struct i915_xd_io *io)
+{
+	uint32_t power;
+	uint32_t function;
+
+	/* Power well 1 must be up for the transcoder to run. */
+	power = drv_i915_xd_io_read(io, I915_XD9_PWR_WELL_CTL2);
+	if ((power & I915_XD9_PW1_STATE) == 0U)
+		return 0;
+
+	/* The transcoder's DDI function drives the panel while it is on. */
+	function = drv_i915_xd_io_read(io, I915_XD9_TRANS_DDI_FUNC_CTL_EDP);
+	if ((function & I915_XD9_TRANS_DDI_FUNC_ENABLE) == 0U)
+		return 0;
+
+	/* Succeeded: the panel is lit. */
+	return 1;
 }
 
 /* Picks one delay: the larger given, or the specification's when none is. */

@@ -1,0 +1,17 @@
+scene 0 writes 0 dropped 0
+scene 1 writes 0 dropped 0
+scene 2 writes 3 dropped 0
+000c8254 1d4c0076
+000c8254 1d4c0ee1
+000c8254 1d4c1d4c
+scene 3 writes 2 dropped 0
+000c8250 00000000
+000c8250 80000000
+scene 4 writes 0 dropped 0
+scene 5 writes 3 dropped 0
+000c8258 00000274
+000c8258 00004f5a
+000c8258 00009c40
+scene 6 writes 2 dropped 0
+000c8250 00000000
+000c8250 80000000
