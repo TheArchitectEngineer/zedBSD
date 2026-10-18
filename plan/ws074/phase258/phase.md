@@ -123,3 +123,5 @@ source WIP0c8033f4b、final source/pair/input hash317件照合。host warning0�
 harness archive1676 members SHA25651fc5fa098a8a20d13a1d188840fa97a9ca4102e7814618e96d5878eb4495d5e、native/oracle/build archive66 members SHA256a51bc2dceb07013b1b31d87ed7637b34f84478129a1f6d11e611b371d9db99ffを全member順次read-back。i01 existing fixed-buffer Set/Define partialだけcleared。RAB/grow/detach/SAB backing、新typed Get/Has/Delete invalid-key prototype semantics、通常nonProxy assignmentのexotic prototype routing、Proxy delete/keys/prototype/extent/IsArray/call/construct/global/revocable/原WebIDL2、full target/p100/WS100%未達。constructor callerのelement Get中の新配列ownerなど本partial外のGC面も全体verifiedとは主張しない。共有Master/Queue/next/cache/GitHub投影pending、push無し。
 
 [全証拠](evidence/20261018-q37/README.md)。次は原WebIDL2 blockerの正確な依存をprivate native probeで確認し、必要なIsArray/Reflect等を新finite scopeで優先具体化する候補。全操作完成/global公開/公式PASS増分を先取りしない。
+
+Event ws074-p258-q38-selected-20261018: q37の実native Proxyを元WebIDL2へprivate adapterで接続し、positive/negativeとgenuine Chromiumを対照する最大90分の有界dependency調査を選定。product/source/global Proxyは変更せず、公式PASSへ加算しない。exact範囲は[Queue](../queue.md)。whole p258/WS未達を保持。

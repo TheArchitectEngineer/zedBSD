@@ -1323,3 +1323,5 @@ Event ws074-q36-finished-20261018: p258 shared conversionsと公開BigInt partia
 Event ws074-q37-selected-20261018: q35 ENOTSUPのfixed-buffer TypedArray Set/Defineをmax90分で具体化。sourceのscript-free native hook契約を守って変換をrealm層へ移し、内部content flag/factory rootsを整える。全1508/独立対照/GCを範囲へ、global/wholeWS未達、shared projections pending。
 
 Event ws074-q37-finished-20261018: p258 fixed-buffer TypedArray Set/Define partial clear、native callback内user conversionをrealmへ移しpure native契約を回復。323対照/実GC graph回収・公開9差修正、Chrome153負ゼロ例外を保持。全1508 q36全whole/callback/completion同値・1482/3805維持、p189へ検証投影。次候補は原WebIDL2 private依存probe/IsArray等、全体/global/WS100%未達。[history](history/ws074-q20261018-37.md)。共有投影pending。
+
+Event ws074-p258-q38-selected-20261018: q37の実native Proxyを元WebIDL2へprivate adapterで接続し、positive/negativeとgenuine Chromiumを対照する最大90分の有界dependency調査を選定。product/source/global Proxyは変更せず、公式PASSへ加算しない。exact範囲は[Queue](queue.md)。whole p258/WS未達を保持。
