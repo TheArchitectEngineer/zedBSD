@@ -1,0 +1,11 @@
+{
+  "sha256": "879aa3460a32f134157d8a8282b670a7badcef65de63b3aaebcc099f055d5edf",
+  "members": 27,
+  "acid_comparison": {
+    "acid2_different_pixels": 873,
+    "acid3_score": "100",
+    "acid3_pixels": 0,
+    "inventory": 100,
+    "same_baseline": true
+  }
+}

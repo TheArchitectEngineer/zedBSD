@@ -1,0 +1,21 @@
+{
+  "eligible": 1508,
+  "eligible_sha256": "82147e6edaec1b3b8d537e46eb71b64f2f03132cc12803e284c6ca72377779e7",
+  "whole_changes": [],
+  "whole_regressions": [],
+  "whole_gains": [],
+  "callback_or_completion_changes": [],
+  "counts": {
+    "fail": 958,
+    "no_completion": 26,
+    "pass": 494,
+    "harness_error": 4,
+    "no_output": 24,
+    "multiple_completions": 2
+  },
+  "callbacks": {
+    "1": 20643,
+    "0": 11540,
+    "3": 14
+  }
+}

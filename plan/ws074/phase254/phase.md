@@ -2,7 +2,7 @@
 
 # ws074-p254: User Timing markの実記録・取得・native entry lifecycle
 
-Status: in-progress（q25 native producer host partial）
+Status: uncleared（q25 native producer host partial cleared、複雑detail/ID fields/whole未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
@@ -49,3 +49,5 @@ Event ws074-p254-q25-owner-refinement-20261018: 独立Chrome/nativeでborrowed p
 q25 full-scope residual audit: pinned interfaces/performance-timeline.idlにはid/navigationIdも存在するが、今回exact scopeはcommon4 fields/toJSONであり、追加ID fieldsとその生成policyは未実装としてwhole残差へ保持する。ChromeにもnavigationIdの追加fieldがあり、common4比較だけでfullIDL適合とは主張しない。複雑detail、measure/resource/event/worker、native Observer/p100/target full link/runtimeも今回のpartial clearanceとは別の未達。
 
 Event ws074-p254-q25-publication-root-review-20261018: native生成の全文GC監査で、既存environment_instanceがVM object作成からglobal property key割当までnewborn rootを保持しない経路を確認。p254のWindow初期化/生成lifetime条件内でhelperをroot登録→割当→global公開→root解除へ修正し、production thresholdの8MiB pressure下で実child/performance/mark作成とretire/GCを行う7つ目のhost条件を追加。元6条件/38Chromeは保持。実装機能を拡大せず、superseded frozen pairの検証を残したうえで新final pairで影響する全gateを再検証する。
+
+Event ws074-q25-finished-20261018: [history](../history/ws074-q20261018-25.md)・[evidence](evidence/20261018-q25/README.md)。native PerformanceEntry/PerformanceMarkをprivate registryへ追加し、markの実記録/返値、constructor非buffering、readonly enumerable common fields/primitive detail/common4 toJSON、finite非負timestamp、required引数/予約名/例外、stable timestamp順のgetEntries/ByName/ByTypeとclearMarksを実装。native brandとmanaged payloadでprototype偽装を拒否し、receiverのactual relevant global/clock/prototypeを使用。38条件が独立Chromeと完全一致、buffer-only/saved entry/辞書Get・filter再入GC/retired child/cross-realm/allocation pressureのnative7条件通過。global公開前の既存helperのnewborn rootも補強。 最終source2d5db3785・frozen verified pairで全1508 harnessはq24比全whole/callback/completion/returncode完全同一、494 raw PASS維持。static1561は844 PASS/717 FAIL、全pixel metrics不変。scripted413は105 PASS/283 FAIL/5 unsupported/20 missing、805 captures全RGB不変。strict48は39 PASS/9 missing不変。DOM37/37・CSSOM12+12、host/target exact2 source warning0、Acid3得点/全inventory100・pixel差0、Acid2既存差873不変。 確認済1481/3805（38.922470%）維持、raw fixed1482。独立probeはprior/future entry各1に改善したがObserverはまだno-opで通知0、known held PASS1は解除しない。複雑detail clone/id/navigationId/measure/resource/event/workerは未実装、p254 wholeはuncleared、q25 host producer scoped itemだけcleared。p255はverified producer outputを前提に次のfinite Queueへ選定可能。p189未attempt275/p100/target full link/runtime/WS全件100%は未達、shared projection/GitHub pending、push無し。

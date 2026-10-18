@@ -1,0 +1,61 @@
+{
+  "full_standard": "plan/coding-style.md section14 permits forward jumps to one shared cleanup label",
+  "checker_limitation": "style-check.py flags every goto without recognizing the permitted forward cleanup pattern",
+  "raw_goto_flags": 33,
+  "other_generated_or_fixture_flags": 0,
+  "manual_forward_cleanup_review": [
+    {
+      "function": "environment_mark_create",
+      "forward_cleanup_jumps": 13,
+      "labels": [
+        "cleanup"
+      ],
+      "backward_jumps": 0
+    },
+    {
+      "function": "environment_mark_json",
+      "forward_cleanup_jumps": 7,
+      "labels": [
+        "cleanup"
+      ],
+      "backward_jumps": 0
+    },
+    {
+      "function": "environment_performance_snapshot",
+      "forward_cleanup_jumps": 6,
+      "labels": [
+        "cleanup"
+      ],
+      "backward_jumps": 0
+    },
+    {
+      "function": "environment_install_performance",
+      "forward_cleanup_jumps": 7,
+      "labels": [
+        "cleanup"
+      ],
+      "backward_jumps": 0
+    }
+  ],
+  "unresolved_generated_conformance_findings": 0,
+  "functions": [
+    "environment_timeline_trace",
+    "environment_timeline_finalize",
+    "environment_mark_trace",
+    "environment_timeline_of",
+    "environment_mark_of",
+    "environment_mark_create",
+    "environment_mark_construct",
+    "environment_mark_part",
+    "environment_mark_json",
+    "environment_performance_snapshot",
+    "environment_performance_by_type",
+    "environment_performance_by_name",
+    "environment_performance_clear_marks",
+    "environment_install_entry_tag",
+    "environment_install_mark_fields",
+    "environment_install_performance",
+    "environment_performance_entries",
+    "environment_instance"
+  ]
+}

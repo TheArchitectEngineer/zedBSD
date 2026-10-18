@@ -1,0 +1,71 @@
+[
+  {
+    "label": "dom",
+    "command": [
+      "python3",
+      "plan/ws074/tests/run-dom-tests.py",
+      "--program",
+      "/home/awe/zedBSD-claude1/build/ws074-20261018/q25/verified/engine/browser"
+    ],
+    "returncode": 0,
+    "seconds": 2.0
+  },
+  {
+    "label": "cssom",
+    "command": [
+      "/home/awe/zedBSD-claude1/build/ws074-20261018/q25/verified/engine/host-cssom"
+    ],
+    "returncode": 0,
+    "seconds": 2.1
+  },
+  {
+    "label": "cssom-mutation",
+    "command": [
+      "/home/awe/zedBSD-claude1/build/ws074-20261018/q25/verified/engine/host-cssom-mutation"
+    ],
+    "returncode": 0,
+    "seconds": 2.3
+  },
+  {
+    "label": "marks",
+    "command": [
+      "/home/awe/zedBSD-claude1/build/ws074-20261018/q25/verified/engine/host-performance-marks"
+    ],
+    "returncode": 0,
+    "seconds": 2.4
+  },
+  {
+    "label": "crash",
+    "command": [
+      "python3",
+      "plan/ws074/tests/run-interop2025-crashtests.py",
+      "--manifest",
+      "plan/ws074/phase173/evidence/20261013-q1012/manifest.json",
+      "--program",
+      "/home/awe/zedBSD-claude1/build/ws074-20261018/q25/verified/engine/browser",
+      "--focus",
+      "all",
+      "--settle-ms",
+      "5000",
+      "--process-timeout",
+      "20",
+      "--out",
+      "build/ws074-20261018/q25/verified/crash-report.json"
+    ],
+    "returncode": 0,
+    "seconds": 6.6
+  },
+  {
+    "label": "acid",
+    "command": [
+      "python3",
+      "plan/ws074/tests/run-acid-tests.py",
+      "--program",
+      "/home/awe/zedBSD-claude1/build/ws074-20261018/q25/verified/engine/browser",
+      "--out",
+      "build/ws074-20261018/q25/verified/acid"
+    ],
+    "returncode": 0,
+    "seconds": 11.6
+  }
+]

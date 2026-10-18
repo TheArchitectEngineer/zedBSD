@@ -1,0 +1,14 @@
+{
+  "tests": 1508,
+  "whole_changes": [],
+  "entire_callback_and_completion_changes": [],
+  "returncode_changes": [],
+  "counts": {
+    "fail": 958,
+    "no_completion": 26,
+    "pass": 494,
+    "harness_error": 4,
+    "no_output": 24,
+    "multiple_completions": 2
+  }
+}

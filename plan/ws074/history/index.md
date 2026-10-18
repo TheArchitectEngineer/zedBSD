@@ -1,6 +1,10 @@
 # WS074 lane の Past Log
 
-## 最新: ws074-q20261018-24（2026-10-18）
+## 最新: ws074-q20261018-25（2026-10-18）
+
+[履歴](ws074-q20261018-25.md)。native PerformanceEntry/PerformanceMarkをprivate registryへ追加し、markの実記録/返値、constructor非buffering、readonly enumerable common fields/primitive detail/common4 toJSON、finite非負timestamp、required引数/予約名/例外、stable timestamp順のgetEntries/ByName/ByTypeとclearMarksを実装。native brandとmanaged payloadでprototype偽装を拒否し、receiverのactual relevant global/clock/prototypeを使用。38条件が独立Chromeと完全一致、buffer-only/saved entry/辞書Get・filter再入GC/retired child/cross-realm/allocation pressureのnative7条件通過。global公開前の既存helperのnewborn rootも補強。 最終source2d5db3785・frozen verified pairで全1508 harnessはq24比全whole/callback/completion/returncode完全同一、494 raw PASS維持。static1561は844 PASS/717 FAIL、全pixel metrics不変。scripted413は105 PASS/283 FAIL/5 unsupported/20 missing、805 captures全RGB不変。strict48は39 PASS/9 missing不変。DOM37/37・CSSOM12+12、host/target exact2 source warning0、Acid3得点/全inventory100・pixel差0、Acid2既存差873不変。 確認済1481/3805（38.922470%）維持、raw fixed1482。独立probeはprior/future entry各1に改善したがObserverはまだno-opで通知0、known held PASS1は解除しない。複雑detail clone/id/navigationId/measure/resource/event/workerは未実装、p254 wholeはuncleared、q25 host producer scoped itemだけcleared。p255はverified producer outputを前提に次のfinite Queueへ選定可能。p189未attempt275/p100/target full link/runtime/WS全件100%は未達、shared projection/GitHub pending、push無し。
+
+## ws074-q20261018-24（2026-10-18）
 
 [履歴](ws074-q20261018-24.md)。疎checkoutに無いinterfaces/*.idlをpinned Git原blobからgenerated専用GETで配信し、5種類/2 ID計6資源の原hash・query・MIME・header metadata不在と全rawを検証。独立wire/本物404/未配信Git資源nonPASS/metadata拒否を含む15 controls通過。全1508を235.8秒で再測定、全whole/status不変、IDL2以外1506の全callback/completion objectは完全同一（旧1491を含む）。IDL2のfetch errorは解消し、native JS compilerがyield*を未実装のため公式WebIDL2 parser実行に失敗する正しい残差へ到達。 raw harness494 PASS/958 FAIL/4 harness_error/26 no_completion/24 no_output/2 multiple、callback11540 PASS/20643 FAIL/14 NOTRUN。known native prerequisite holdback1は保持し確認済1481/3805（38.922470%）、未attempt275。native C/固定WPT/期待値/分母不変、static844/scripted105/crash39/DOM/C/Acidは同一q21 pairの証拠を再利用。 q24両scoped attempt cleared、q23元uncleared履歴は保持。whole p189/WS/p100/target fullは未達、shared projection/GitHub pending、push無し。次はp254 native mark producer、p255 observerでpositive通知を検証するまでheld PASSを確認済へ加算しない。yield*は次のVM候補としてp189に残す。
 
