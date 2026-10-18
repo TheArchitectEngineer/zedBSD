@@ -1180,6 +1180,7 @@ i915_xd_hpd_edid_block(
 	request.messages = &messages[first];
 	request.count = 3U - first;
 	request.interrupts = 0;
+	request.display9 = 0;
 	request.noted = NULL;
 	request.context = NULL;
 	drv_i915_xd_gmbus_transfer(&ddc->hpd->gmbus, ddc->io, &request, &result);

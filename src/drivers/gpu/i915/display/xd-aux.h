@@ -148,6 +148,7 @@ struct i915_xd_aux_i2c_message {
  * a reply the specification does not allow, ETIMEDOUT when the sink never
  * answered, or EPROTO for an acknowledgement that moved no byte.
  */
+int drv_i915_xd_aux_edid_blocks(struct i915_xd_aux *aux, struct i915_xd_io *io, uint8_t *edid, unsigned blocks);
 int drv_i915_xd_aux_i2c(struct i915_xd_aux *aux, struct i915_xd_io *io, const struct i915_xd_aux_i2c_message *messages, unsigned count);
 
 #endif /* DRIVERS_GPU_I915_DISPLAY_XD_AUX_H */

@@ -85,4 +85,18 @@
 #define I915_XD9_CFGCR2_CENTRAL_9000		1U
 #define I915_XD9_CFGCR2_CENTRAL_8400		3U
 
+/*
+ * The GMBUS pins of the DDIs B, C and D on the Sunrise Point and Cannon
+ * Point families, and the PCH's clock gating bit of the GMBUS unit (in
+ * SOUTH_DSPCLK_GATE_D), which display 9 holds off while the GMBUS runs.
+ *
+ * Values referenced: Intel Kaby Lake PRM Volume 2c, Command Reference:
+ * Registers (GMBUS0 Pin Pair Select, SOUTH_DSPCLK_GATE_D); Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_gmbus.c (Display WA #0868).
+ */
+#define I915_XD9_GMBUS_PIN_DDI_C		4U
+#define I915_XD9_GMBUS_PIN_DDI_B		5U
+#define I915_XD9_GMBUS_PIN_DDI_D		6U
+#define I915_XD9_GMBUS_UNIT_UNGATE		(1U << 31)
+
 #endif /* DRIVERS_GPU_I915_INTEL_DISPLAY_REGS_XD9_H */

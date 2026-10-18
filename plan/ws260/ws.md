@@ -24,7 +24,7 @@
 | [p003](phase003/phase.md) | xd-platform に display 9 の記述（SKL・KBL・CFL・CML、PCH の SPT・KBP・CNP・CMP、port A〜E）。選ぶだけで呼ばない | in-progress（q1253、P1） |
 | [p004](phase004/phase.md) | 数の計算: CDCLK の読み、DP の link と M/N、DPLL の語（DP と HDMI の WRPLL）、buf trans の表を xd-clock・xd-dp・xd-ddi へ。gen9-mode.c の該当は殻 | in-progress（q1253、P1） |
 | [p005](phase005/phase.md) | WM・DDB の計算を xd-dbuf へ（display 9 の 1 slice・8 level・IPC） | in-progress（q1253、P1） |
-| p006 | AUX・GMBUS・EDID を xd-aux・xd-gmbus・xd-edid へ（gen9-ddc.c を殻に） | planned（3 LW） |
+| [p006](phase006/phase.md) | AUX・GMBUS・EDID を xd-aux・xd-gmbus・xd-edid へ（gen9-ddc.c を殻に） | in-progress（q1253、P1） |
 | p007 | backlight: SPT/KBP の LPT の形と CNP/CMP の形を xd-panel へ（gen9-backlight.c を殻に） | planned（3 LW） |
 | p008 | power well（PW2・DDI IO・AUX）を xd-power へ | planned（4 LW） |
 | p009 | DPLL の enable/disable と DDI clock の選択を xd-clock へ | planned（3 LW） |

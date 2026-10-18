@@ -73,9 +73,10 @@ struct i915_xd_gmbus_message {
 };
 
 /*
- * One transfer: the pin, the messages in order, and whether the
+ * One transfer: the pin, the messages in order, whether the
  * controller's interrupts are to be raised while it waits (the
- * device's interrupts are on).
+ * device's interrupts are on), and whether the pin is one of display
+ * 9's south display (whose pins are numbered otherwise).
  *
  * noted, when not NULL, is told of the events of the transfer with
  * context, the event (I915_XD_GMBUS_NOTE_*) and the index of the
@@ -86,6 +87,7 @@ struct i915_xd_gmbus_request {
 	struct i915_xd_gmbus_message *messages;
 	unsigned count;
 	int interrupts;
+	int display9;
 	void (*noted)(void *context, unsigned note, unsigned message);
 	void *context;
 };
@@ -121,6 +123,9 @@ struct i915_xd_gmbus {
 void drv_i915_xd_gmbus_init(struct i915_xd_gmbus *gmbus);
 void drv_i915_xd_gmbus_reset(struct i915_xd_io *io);
 int drv_i915_xd_gmbus_pin_valid(unsigned pin);
+int drv_i915_xd9_gmbus_edid_blocks(struct i915_xd_gmbus *gmbus, struct i915_xd_io *io, unsigned pin, uint8_t *edid, unsigned blocks);
+unsigned drv_i915_xd9_gmbus_pin(unsigned ddi);
+int drv_i915_xd9_gmbus_pin_valid(unsigned pin);
 void drv_i915_xd_gmbus_transfer(struct i915_xd_gmbus *gmbus, struct i915_xd_io *io, const struct i915_xd_gmbus_request *request, struct i915_xd_gmbus_result *result);
 
 #endif /* DRIVERS_GPU_I915_DISPLAY_XD_GMBUS_H */

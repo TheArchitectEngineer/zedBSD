@@ -13,6 +13,7 @@
 #include "xd-io.h"
 
 #include "../intel/display-regs-xd-south.h"
+#include "../intel/display-regs-xd9.h"
 
 #include <uapi/errno.h>
 #include <stddef.h>
@@ -32,6 +33,15 @@
  */
 #define I915_XD_GMBUS_READY_WAIT_US	50000U
 #define I915_XD_GMBUS_IDLE_WAIT_US	10000U
+
+/*
+ * The DDC address an EDID is read from, and the bytes of one EDID block.
+ *
+ * Values referenced: VESA Enhanced Display Data Channel Standard (the
+ * EDID's DDC address 0x50, the 128-byte block).
+ */
+#define I915_XD_GMBUS_DDC_EDID		0x50U
+#define I915_XD_GMBUS_EDID_BLOCK	128U
 
 static unsigned i915_xd_gmbus_run(struct i915_xd_io *io, const struct i915_xd_gmbus_request *request, unsigned *failed, uint32_t *status);
 static int i915_xd_gmbus_is_offset(const struct i915_xd_gmbus_request *request, unsigned index);
@@ -126,7 +136,11 @@ drv_i915_xd_gmbus_transfer(
 	gmbus->transfers++;
 
 	/* Refuses a pin without wires, before touching the controller. */
-	valid = drv_i915_xd_gmbus_pin_valid(request->pin);
+	if (request->display9) {
+		valid = drv_i915_xd9_gmbus_pin_valid(request->pin);
+	} else {
+		valid = drv_i915_xd_gmbus_pin_valid(request->pin);
+	}
 	if (valid == 0) {
 		result->outcome = I915_XD_GMBUS_BAD_PIN;
 		return;
@@ -202,6 +216,116 @@ drv_i915_xd_gmbus_transfer(
 		gmbus->restarts++;
 		i915_xd_gmbus_note(request, I915_XD_GMBUS_NOTE_RETRY, failed);
 	}
+}
+
+/*
+ * Reads whole EDID blocks of the first segment over a display 9 GMBUS pin:
+ * the offset and the 128 bytes of each block, in one transfer.  The PCH's
+ * GMBUS unit is kept clocked while the transfer runs, which display 9's
+ * GMBUS needs to read reliably.  Returns 0, ENXIO when nothing answers,
+ * ETIMEDOUT when the controller does not, or EINVAL for a pin without
+ * wires.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_gmbus.c (Display WA #0868).
+ */
+int
+drv_i915_xd9_gmbus_edid_blocks(
+	struct i915_xd_gmbus *gmbus,
+	struct i915_xd_io *io,
+	unsigned pin,
+	uint8_t *edid,
+	unsigned blocks)
+{
+	struct i915_xd_gmbus_message messages[4];
+	struct i915_xd_gmbus_request request;
+	struct i915_xd_gmbus_result result;
+	uint8_t offsets[2];
+	unsigned block;
+
+	/* The first segment holds two blocks. */
+	if (blocks > 2U)
+		blocks = 2U;
+
+	/* Each block: its offset, then its bytes. */
+	for (block = 0U; block < blocks; block++) {
+		offsets[block] = (uint8_t)(block * I915_XD_GMBUS_EDID_BLOCK);
+		messages[2U * block].address = I915_XD_GMBUS_DDC_EDID;
+		messages[2U * block].read = 0;
+		messages[2U * block].data = &offsets[block];
+		messages[2U * block].length = 1U;
+		messages[2U * block + 1U].address = I915_XD_GMBUS_DDC_EDID;
+		messages[2U * block + 1U].read = 1;
+		messages[2U * block + 1U].data = edid + block * I915_XD_GMBUS_EDID_BLOCK;
+		messages[2U * block + 1U].length = I915_XD_GMBUS_EDID_BLOCK;
+	}
+
+	/* The transfer on the pin, without the controller's interrupts. */
+	request.pin = pin;
+	request.messages = messages;
+	request.count = 2U * blocks;
+	request.interrupts = 0;
+	request.display9 = 1;
+	request.noted = NULL;
+	request.context = NULL;
+
+	/* The unit clocked for the transfer only. */
+	(void)drv_i915_xd_io_rmw(io, I915_XD_SOUTH_DSPCLK_GATE_D, 0U, I915_XD9_GMBUS_UNIT_UNGATE);
+	drv_i915_xd_gmbus_transfer(gmbus, io, &request, &result);
+	(void)drv_i915_xd_io_rmw(io, I915_XD_SOUTH_DSPCLK_GATE_D, I915_XD9_GMBUS_UNIT_UNGATE, 0U);
+
+	/* No monitor answered, or the pin has none. */
+	if (result.outcome == I915_XD_GMBUS_NO_ACK)
+		return ENXIO;
+	if (result.outcome == I915_XD_GMBUS_BAD_PIN)
+		return EINVAL;
+
+	/* The controller failed. */
+	if (result.outcome != I915_XD_GMBUS_DONE)
+		return ETIMEDOUT;
+
+	/* Succeeded: the blocks are read. */
+	return 0;
+}
+
+/*
+ * Tells whether a pin is one of display 9's controller's: the pins of
+ * DDIs B to D on the Sunrise Point and Cannon Point families.
+ */
+int
+drv_i915_xd9_gmbus_pin_valid(
+	unsigned pin)
+{
+	/* The three pins. */
+	if (pin >= I915_XD9_GMBUS_PIN_DDI_C && pin <= I915_XD9_GMBUS_PIN_DDI_D)
+		return 1;
+
+	/* Anything else has no wires behind it. */
+	return 0;
+}
+
+/*
+ * Reports the GMBUS pin of a display 9 DDI (B, C or D), or 0 for a DDI
+ * without one.
+ */
+unsigned
+drv_i915_xd9_gmbus_pin(
+	unsigned ddi)
+{
+	/* DDI B. */
+	if (ddi == 1U)
+		return I915_XD9_GMBUS_PIN_DDI_B;
+
+	/* DDI C. */
+	if (ddi == 2U)
+		return I915_XD9_GMBUS_PIN_DDI_C;
+
+	/* DDI D. */
+	if (ddi == 3U)
+		return I915_XD9_GMBUS_PIN_DDI_D;
+
+	/* Succeeded: the DDI has no pin. */
+	return 0U;
 }
 
 /*

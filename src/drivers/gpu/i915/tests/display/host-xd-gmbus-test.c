@@ -161,6 +161,7 @@ i915_xd_gmbus_test_transfer(
 	request.messages = messages;
 	request.count = count;
 	request.interrupts = interrupts;
+	request.display9 = 0;
 	request.noted = i915_xd_gmbus_test_noted;
 	request.context = &i915_xd_gmbus_test_run;
 
@@ -276,6 +277,7 @@ i915_xd_gmbus_test_pins(void)
 	request.messages = &message;
 	request.count = 1U;
 	request.interrupts = 1;
+	request.display9 = 0;
 	request.noted = NULL;
 	request.context = NULL;
 	drv_i915_xd_gmbus_transfer(&i915_xd_gmbus_test_run.gmbus, &i915_xd_gmbus_test_run.io, &request, &result);

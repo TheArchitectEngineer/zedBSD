@@ -95,6 +95,15 @@
 #define I915_XD_AUX_REPLY_BITS		42U
 #define I915_XD_I2C_SPEED_KHZ		10U
 
+/*
+ * The DDC address an EDID is read from, and the bytes of one EDID block.
+ *
+ * Values referenced: VESA Enhanced Display Data Channel Standard (the
+ * EDID's DDC address 0x50, the 128-byte block).
+ */
+#define I915_XD_AUX_DDC_EDID		0x50U
+#define I915_XD_AUX_EDID_BLOCK		128U
+
 static int i915_xd_dpcd_message(struct i915_xd_aux *aux, struct i915_xd_io *io, unsigned request, uint32_t address, uint8_t *data, unsigned size);
 static int i915_xd_aux_wait_idle(struct i915_xd_io *io, uint32_t control, uint32_t *status);
 static uint32_t i915_xd_aux_send(struct i915_xd_aux *aux, struct i915_xd_io *io, const struct i915_xd_aux_message *message, uint32_t control);
@@ -448,6 +457,52 @@ drv_i915_xd_aux_i2c(
 		return error;
 
 	/* Succeeded: every message moved its bytes. */
+	return 0;
+}
+
+/*
+ * Reads whole EDID blocks of the first segment over the AUX channel's I2C:
+ * for each block its offset is written to the DDC address and its 128
+ * bytes read back, all in one I2C transaction.  At most the two blocks of
+ * the first segment.  Returns 0, or the error of the transaction.
+ */
+int
+drv_i915_xd_aux_edid_blocks(
+	struct i915_xd_aux *aux,
+	struct i915_xd_io *io,
+	uint8_t *edid,
+	unsigned blocks)
+{
+	struct i915_xd_aux_i2c_message messages[4];
+	uint8_t offsets[2];
+	unsigned block;
+	int error;
+
+	/* The first segment holds two blocks. */
+	if (blocks > 2U)
+		blocks = 2U;
+	if (blocks == 0U)
+		return 0;
+
+	/* Each block: its offset, then its bytes. */
+	for (block = 0U; block < blocks; block++) {
+		offsets[block] = (uint8_t)(block * I915_XD_AUX_EDID_BLOCK);
+		messages[2U * block].address = I915_XD_AUX_DDC_EDID;
+		messages[2U * block].read = 0;
+		messages[2U * block].bytes = &offsets[block];
+		messages[2U * block].length = 1U;
+		messages[2U * block + 1U].address = I915_XD_AUX_DDC_EDID;
+		messages[2U * block + 1U].read = 1;
+		messages[2U * block + 1U].bytes = edid + block * I915_XD_AUX_EDID_BLOCK;
+		messages[2U * block + 1U].length = I915_XD_AUX_EDID_BLOCK;
+	}
+
+	/* The transaction. */
+	error = drv_i915_xd_aux_i2c(aux, io, messages, 2U * blocks);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the blocks are read. */
 	return 0;
 }
 
