@@ -2,7 +2,7 @@
 
 # ws256-p003 HAL の芯（QEMU virt、SBI からの直の起動）
 
-Status: in-progress、test-wait（2026-10-18 20:39、q1249、P2。実装と build（warning 0）と host 試験は済み。T1 の依頼は Q1 に送った（番号は Q1）。T1 の結果を Q1 が判定するまで cleared にしない）
+Status: in-progress（2026-10-18 Q1: T1-707 で A・B・C・F が FAIL。画面には SMP 4 ONLINE・HAL initialized cpu 4・VFS の行まで出る。A は PAGING PASS・SBI v が上へ流れて消えた、B・C は TIMER TICK が他の行に割り込み `^` に合わない・B は boot に `cpus=` が unknown parameter、F の sifive_u は hart0 が pc=0x80010e32 で halted のまま kernel の仮想 address が読めない。直しは q1249-i02。旧: in-progress、test-wait（2026-10-18 20:39、q1249、P2。実装と build（warning 0）と host 試験は済み。T1 の依頼は Q1 に送った（番号は Q1）。T1 の結果を Q1 が判定するまで cleared にしない））
 
 - 親: [WS256](../ws.md)。Queue: q1249（承認: 2026-10-18 ユーザー（クリック）「p009 → p003 を今始める」）。
 - 範囲: [design.md](../design.md) §6 の p003。HAL の芯と最小の kernel 側、vmunix の build。loader（p004）・kernel の console と ramdisk（p008）・userland（p007）は範囲の外。
