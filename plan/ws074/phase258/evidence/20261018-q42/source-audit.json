@@ -1,0 +1,39 @@
+{
+  "vm/access.c": "all tokens outside selected functions/declarations unchanged",
+  "js/builtin_object.c": "all tokens outside selected functions/declarations unchanged",
+  "ordinary_set_tokens_identical_except_nonordinary_proxy_cycle_stop": true,
+  "header_tokens_except_two_declarations_unchanged": true,
+  "native_operations_definition_comment_unchanged": true,
+  "old406_prefix_unchanged": true,
+  "added_conditions": 46,
+  "full_changed_functions": {
+    "userland/desktop/libbrowser/vm/access.c": [
+      "vm_get_prototype",
+      "vm_set_prototype",
+      "access_set_prototype",
+      "access_proxy_get_prototype",
+      "access_proxy_set_prototype"
+    ],
+    "userland/desktop/libbrowser/js/builtin_object.c": [
+      "object_get_prototype_of",
+      "object_set_prototype_of",
+      "object_proto_get",
+      "object_proto_set"
+    ],
+    "plan/ws074/tests/host-proxy-read.c": [
+      "main",
+      "prototype_pressure"
+    ]
+  },
+  "raw_allowed_cleanup": 70,
+  "other_checker_findings": 0,
+  "manual_review": [
+    "ANSI declaration-first, public/static order, ordinary helper prototypes after tables and initializer exception retained",
+    "realm/input/requested prototype rooted before depth error; original target/handler/fresh method/Get result explicit roots",
+    "Get output type checked before target extent; nonextensible target identity checked after target changes",
+    "Set false skips target query; true on nonextensible target compares actual prototype; ordinary policy moved to VM without VM-to-JS dependency",
+    "Object and AnnexB validation/coercion/result ordering retained; immutable-prototype exotic baseline remains a separate limitation",
+    "private factory/global/API2/Wayland/native callback contract unchanged",
+    "later nested-target script collection through target extent/Get will revalidate Get fresh-result root; not claimed exercised now"
+  ]
+}

@@ -2,7 +2,7 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: in-progress（q42 prototype partial、whole Proxy未達）
+Status: uncleared（q42 prototype partial cleared、whole Proxy未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
@@ -11,7 +11,7 @@ Origin: p189/q29 original WebIDL2 parseがProxy未定義で停止。
 
 Objective / own criteria: native managed Proxyを実object internal methodsへ接続し、constructor/revocableと各internal operationのtrap/fallback/invariant/receiver/revocation/callability/GCを正しく実行する。original WebIDL2 actual parse/validatorに必要なget/set/array behaviorを通常APIで提供し、independent controls/原WPTを通す。部分read stageだけでwholeをclearしない。
 Design: vm_native_operationsはscript-free heap interfaceのまま保持。Proxyにはmanaged target/handler recordを持たせ、scriptを実行可能なrealm-aware access/internal methodからtrapを呼ぶ。opaque JS constructor公開前に必要なoperationを段階的に整える。各段階は自走承認に基づく新finite Queueで正確に選定する。
-Current state: q41 realm DeleteProperty/operator dispatchまでverified、q38元parser private4/4/negative到達保持。prototype/keys/other invariant realm化/nested/call/construct/global、array/typed別consumers/backing/p100等未達。
+Current state: q42 Get/SetPrototypeOf/public/AnnexBまでverified、q38元parser private4/4/negative保持。keys/other invariant realm化/nested/call/construct/global、Object integrity/array/typed/p100等未達。
 Standards: Guardrail/C全文/browser component全文、簡約版無し。一次 https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-proxy-object-internal-methods-and-internal-slots-get-p-receiver 。既存p100がWS全source near-final conformanceを所有し、本partialはnew/changed scopeの全文適合を検証。
 Verification/bounds/affected components: q30 snapshotの通り。private object kind/cell/newborn/trace/revokeとactual receiver/trap/invariant/GCをnative/Chromeで確認し、ordinary whole/callback PASSを守る。target single-source compileのみとfull target runtimeを区別。未達はunclearedとresume。
 
@@ -177,3 +177,15 @@ Final raw archive78 members全read-back、SHA256035170a9e89664b3d2943439c402a310
 [証拠](evidence/20261018-q41/README.md)。次finite scope未選定。
 
 Event ws074-p258-q42-selected-20261018: VM Get/SetPrototypeOfと公開Object/AnnexB4 wrappers・既存ordinary Set helperのVM移管を最大90分で選定。native contract/global/nested boundは保持、exact範囲Queue。whole未達。
+
+## q42 prototype partial result / resume
+
+Event ws074-p258-q42-partial-cleared-20261018: vm_get_prototype/vm_set_prototypeとProxy GetPrototypeOf/SetPrototypeOfを追加し、公開Object.getPrototypeOf/setPrototypeOfとAnnexB __proto__ get/setの4 wrappersを接続。realm frameはowner/input/requested protoをdepth error前にroot、helperはoriginal target/handler/fresh method/Get fresh resultを明示保持。dynamic GetMethod/null fallback、handler this/元target/要求proto、Getのobject-or-null型、post-trap actual target extentとnonextensible actual prototypeのSameValueを検証する。Set falseは即拒否、trueはtarget nonextensibleならactual prototype同一を要求。lookup/trap中revoke後も元participantsを使用し、全normal/abruptでroot/depthを解放する。
+既存pure ordinary Set helperをJSからVMへ移管、VM→JS依存無し。same/nonextensible/cycle拒否の全tokensを保ち、cyclewalkはProxyのnonordinary GetPrototypeOfを呼ばず止める1条件だけ追加した。Object GetのToObject、SetのRequireObjectCoercible/prototype validation/primitive return、AnnexB無効proto無視/resultの既存順を保持。他functions/declarations外全tokens同一、headerは追加2宣言以外tokens同一・native_operations定義/コメント/ABI不変。immutable-prototype exotic等の元ordinary未達は別残件。
+旧406 source prefix全bytes同一、追加46を含むnative/Chromium対照452通過。旧canonical分類のq36 negative-zero primitive filterを継承し全452をpure genuine exotic一致とは主張しない。native C stack保守保持無し。4独立GC modeはGet fresh object result、Set sole requested input、Set null fallback actual transition、Get fallback actual prototype。全setup rootsを落とし、getter内revoke/real GC・fresh trap内GCを越えてbare managed owner/元target/handler/Proxyと要求protoを保持。fresh output/要求protoだけをrootして元4participantsの実回収を確認、最後のprototype root解放でそのobjectも実回収。Set fallbackの実target変更とextensible true trapが変更を省く許容を実storageで区別した。Get result helper rootはnested targetが後で実行するscriptにも備えるが、post-target script collectionは現factoryのnonProxy boundにより未実測でnested scopeへ残す。旧Delete sole Symbol/extent/IsArray/descriptor/BigInt/typed GCも保持。
+source WIP7a943134d、final source/pair/input317 hash照合、host warning0/q02 exact access+builtin_object2 target warning0。全文/manual review・clang-format19・full changed Cは許可forward cleanup70/他checker0。現tool versionsを取得しq35 baselineと完全一致：host GCC14.2.0、formatter19.1.7、Python3.13.5、target clang23.1.0 bbbb5aec、Chromium153.0.8010.52。q39〜q41は同じcommand/configとq35環境を継承したがstandalone version取得を省略していたことをdated followupへ記録し、過去toolの新規実測とは主張しない。
+DOM41、VM45/factory56、CSSOM12+12、marks7/observer10/ErrorEvent9/ErrorReporting19/delegation10通過。Acid3 score/inventory100・pixel0、Acid2既存873。元WebIDL2はq38同一source bytesと全callbackを保持しbaseline Proxy undefined/private adapter positive4/4・negative元assertion到達。focused gatesのみ、all1508 q37/static/scripted/crash q28再利用、新pair全census/capture同値は未測定。公式gain0・1482/3805（38.948752%）・held0・未attempt275保持。
+i01 prototype2 partialだけcleared、whole p258/WS/p100/full target/100%未達。次candidate own keys/other invariant realm化/nested/call/construct/global/revocable、Object integrity/array/typed別consumers等未達。global Proxy未公開・factory bound維持。共有Master/Queue/cache/GitHub投影pending、push無し。
+Final raw archive73 members全read-back、SHA2561a1bf589d055203a6b6ca2f3a2c4cb60cb89cdc53bba1df2d319b65e8a4a982e。versions追加前のcomplete archive70 membersもbuildに別保存・hash/readback記録。runtime binaryはhash付きbuild保持・archive未同梱。
+
+[証拠](evidence/20261018-q42/README.md)。次finite scope未選定。
