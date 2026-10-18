@@ -35,9 +35,8 @@
 
 /*
  * The periodic tick, in hertz.  As on the other 64-bit ports the kernel
- * keeps a millisecond tick; the counter runs at the device tree's
- * timebase (10 MHz on the QEMU virt machine, 4 MHz on the JH7110), and
- * the HAL derives the interval from this value.
+ * keeps a millisecond tick; the counter runs at the timebase the device
+ * tree reports, and the HAL derives the interval from this value.
  */
 #define HAL_TIMER_FREQUENCY	(1000U)
 
@@ -98,8 +97,9 @@ hal_atomic_uint_try_acquire(
 
 /*
  * Lets the hart rest in a spin.  The pause hint is encoded as a fence
- * with no predecessor or successor and is legal on a hart without the
- * hint extension, where it is an ordinary fence.
+ * whose predecessor set is writes only and whose successor set is empty,
+ * so a hart without the hint extension executes it as that ordinary
+ * fence.
  */
 static inline void
 hal_atomic_relax(void)
@@ -200,9 +200,23 @@ _Static_assert(
 - `HAL_DEBUG_HAS_SINGLE_STEP 0` と `HAL_DEBUG_KIND_*_OK 0` を kernel（`src/kern/ptrace.c`）がどう扱うかは p003 で確かめる（`hal_task_set_single_step` の失敗は `ENOTSUP` になる事は確かめた。`HAL_DEBUG_POINT_MAX` は配列の大きさに使われるので 1 を下限にした）。
 - `struct hal_gpregs` に `sstatus` を入れない: user が変えられる処理器の状態は無い（FS は HAL が持つ）。debugger は pc と x だけ。
 
-## 差分 3（HAL の API ではないが記録）: `include/kern/boot.h`
+## 差分 3: `hal_get_arch_handoff` の名前付き object（HAL の責務の追加、hal.h は不変）
 
-kernel の公開の boot の ledger（「記録された決定の後にだけ変える」）。design.md §7 #9 の既定: `KERN_RISCV64_HANDOFF_MAGIC` と `struct riscv64_boot_handoff`（`common` = `kern_boot_handoff` の MULTIBOOT、`parameters`、ZBL6 v6 の memory、`boot_hart`、`fdt_phys`/`fdt_size`、`initrd_phys`/`initrd_size`）。rpi4 の `struct rpi4_boot_handoff` と同じ置き方。具体の field の並びは p008 で書き、この file に追記してから適用する。
+design.md §3.3・§7 #9 の既定 (a)。hal.h の `hal_get_arch_handoff(const char *name)` の契約（「architecture-specific boot handoff object by name、HAL が所有、無ければ NULL」）の中で、riscv64 の HAL が次の名前を返す。宣言は変えないが、amd64 の `"acpi.rsdp"`（WS049 p006）と同じく HAL の責務の追加として承認を求める。
+
+| 名前 | 返す物 | 寿命 |
+| --- | --- | --- |
+| `"boot.command-line"` | NUL 終端の文字列（他の arch と同じ） | kernel と同じ |
+| `"riscv64.fdt"` | `struct { uint64_t phys; uint64_t size; }`（DTB の物理 address と大きさ。direct map で読める） | 同 |
+| `"riscv64.initrd"` | 同じ形（無ければ NULL） | 同 |
+| `"riscv64.boot-hart"` | `uint64_t`（firmware の hart id） | 同 |
+
+kernel の platform（`src/kern/platform/riscv-virt.c`・`visionfive2.c`）は `kern_boot_handoff(name)` を通してこれらを読む。`include/kern/boot.h` は変えない。boot.h を変える案 (b) は [boot-h-riscv64.md](boot-h-riscv64.md)。
+
+## 注（2026-10-18 改訂 2）
+
+- 初版の「差分 3: `include/kern/boot.h`」（rpi4 と同じ `struct riscv64_boot_handoff`）は [boot-h-riscv64.md](boot-h-riscv64.md) に移し、案 (b) にした。
+- comment から QEMU の machine の名前を外した（guardrail 2026-10-17: 試験の環境の話を source に書かない）。`pause` の comment の fence の説明を直した（pred = W、succ = 無し）。
 
 ## SHA-256
 
