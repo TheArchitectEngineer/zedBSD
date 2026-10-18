@@ -820,8 +820,8 @@ output_claim(
 
 	/*
 	 * Each lease's start is logged, so the order of a display's leases
-	 * against other drivers' lines (the firmware's video decoder,
-	 * ws236-p011) can be read from the kernel log; leases change rarely.
+	 * against other drivers' lines (the firmware's video decoder)
+	 * can be read from the kernel log; leases change rarely.
 	 */
 	kern_logf("bcm2711: display lease %llu claimed\n", (unsigned long long)request->lease);
 

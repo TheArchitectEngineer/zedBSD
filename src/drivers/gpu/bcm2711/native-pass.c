@@ -97,7 +97,7 @@ bcm2711_native_pass_measure(
 	    state->last_y >= rows)
 		return EINVAL;
 
-	/* The tile boxes, when the pass is narrowed to them, lie inside the rectangle (ws211-p009). */
+	/* The tile boxes, when the pass is narrowed to them, lie inside the rectangle. */
 	error = validate_boxes(state);
 	if (error != 0)
 		return error;
@@ -127,7 +127,7 @@ bcm2711_native_pass_measure(
 	/*
 	 * Selected groups may include neighbouring tiles, whose samples the
 	 * owner must preserve with a load when necessary.  A pass narrowed to
-	 * tile boxes selects only the groups that meet one (ws211-p009).
+	 * tile boxes selects only the groups that meet one.
 	 */
 	measured.supertile_width = group;
 	measured.supertile_height = group;
@@ -208,7 +208,7 @@ bcm2711_native_pass_encode(
 
 /*
  * Counts the tiles of a pass's rectangle that it renders: all of them, or
- * those in a supertile one of its tile boxes meets (ws211-p009).
+ * those in a supertile one of its tile boxes meets.
  *
  * The count is the cost report's.
  */
@@ -489,7 +489,7 @@ encode_render(
 	cursor = 102;
 	for (y = state->first_y / sizes->supertile_height; y <= state->last_y / sizes->supertile_height; y++) {
 		for (x = state->first_x / sizes->supertile_width; x <= state->last_x / sizes->supertile_width; x++) {
-			/* A group no tile box meets keeps its bytes without being rendered (ws211-p009). */
+			/* A group no tile box meets keeps its bytes without being rendered. */
 			selected = supertile_selected(state, sizes->supertile_width, x, y);
 			if (!selected)
 				continue;
@@ -559,7 +559,7 @@ encode_tile(
 /*
  * Tells whether a supertile (a group of group by group tiles at x, y in
  * supertiles) is rendered: always without tile boxes, else when it meets
- * one of them (ws211-p009).
+ * one of them.
  */
 static bool
 supertile_selected(

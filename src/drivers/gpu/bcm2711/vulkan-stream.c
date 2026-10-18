@@ -167,7 +167,7 @@ execute_command(
 		break;
 	}
 
-	/* The request's longest command (ws141-p016 (b): which command holds the controller mutex); a wrapper's time is its commands'. */
+	/* The request's longest command (which command holds the controller mutex); a wrapper's time is its commands'. */
 	held = clock_ticks() - started;
 	if (opcode != GPU_OP_EXECUTE_STREAMS)
 		stream->session->command_count++;

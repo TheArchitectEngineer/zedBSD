@@ -239,7 +239,7 @@ check_admission(
 
 	spin_unlock_irqrestore(&hardware->guard, enabled);
 
-	/* A closed or uncertain controller supplies no new native execution or completion proof; the refusal says why (BUG-314). */
+	/* A closed or uncertain controller supplies no new native execution or completion proof; the refusal says why. */
 	if (reason != NULL) {
 		bcm2711_render_refusal_line("queue submit", reason);
 		return EIO;
@@ -813,7 +813,7 @@ execution_step(
 	 * An execution with a fence ends only when the frames of its decodes are
 	 * in their images: the host may read them once the fence signals.  It
 	 * leaves the queue now and settles meanwhile, so the session's next
-	 * decodes are sent behind it (ws236 p010).
+	 * decodes are sent behind it.
 	 */
 	if (execution->owner.fence != NULL)
 		execution_mark(execution);

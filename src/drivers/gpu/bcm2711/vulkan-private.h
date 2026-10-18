@@ -20,7 +20,7 @@ struct bcm2711_render_session;
 struct bcm2711_vulkan_object;
 
 /*
- * The buckets of a session's identity index (ws211-p010).  Every vkCmd a
+ * The buckets of a session's identity index.  Every vkCmd a
  * client records looks up its command buffer and inputs by wire identity;
  * a power of two makes the bucket a shift of the hashed identity, and with
  * the session's limit of 4096 live objects a bucket holds four on average.
@@ -42,13 +42,13 @@ struct bcm2711_vulkan_session {
 	/* The opcodes of the last command the decoder refused and the last it decoded, for diagnostics. */
 	uint32_t failed_opcode;
 	uint32_t last_opcode;
-	/* The request's command count, and its longest command and that command's ticks, for the perf report (ws141-p016 (b)). */
+	/* The request's command count, and its longest command and that command's ticks, for the perf report. */
 	uint32_t command_count;
 	uint32_t longest_opcode;
 	uint64_t longest_ticks;
 	struct i915_wire_arena arena;
 #if CONFIG_DRIVER_BCM2711_VIDEO
-	/* The capset promised H.264 video decode; latched for the session's life (ws236, M2). */
+	/* The capset promised H.264 video decode; latched for the session's life. */
 	bool video;
 #endif
 };

@@ -102,7 +102,7 @@ bcm2711_vulkan_native_bin_prepare(
 		return error;
 	draw->bin_bytes = BCM2711_NATIVE_BIN_BYTES;
 
-	/* The window the draw is kept to, for the pass's choice of tiles (ws211-p009). */
+	/* The window the draw is kept to, for the pass's choice of tiles. */
 	kern_memcpy(draw->window, state.window, sizeof(draw->window));
 
 	/* Succeeded: the enclosing pass can copy this whole self-contained sequence into its owned bin stream. */

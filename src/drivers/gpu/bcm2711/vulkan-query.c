@@ -57,7 +57,7 @@ bcm2711_vulkan_query_dispatch(
 	if (requested != 1)
 		return EINVAL;
 
-	/* The device's identity, which an exported allocation carries to its importer (ws236-p011). */
+	/* The device's identity, which an exported allocation carries to its importer. */
 	if (opcode == GPU_OP_GET_PHYSICAL_DEVICE_PROPERTIES2) {
 		error = identity_query(session, reader, reply);
 		if (error != 0)
@@ -167,7 +167,7 @@ fixed_query(
  * Answers the properties query whose chain asks for the device's identity
  * (VkPhysicalDeviceIDProperties) and nothing else: libvulkan stamps the
  * identity into every allocation it exports as an opaque fd, and an
- * importer checks it against its own (ws236-p011).  The identities are
+ * importer checks it against its own.  The identities are
  * fixed: the device's names this one V3D, the driver's this driver.
  */
 static int
@@ -269,7 +269,7 @@ queue_properties(
 	kern_memset(&properties, 0, sizeof(properties));
 	properties.queueFlags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_TRANSFER_BIT;
 #if CONFIG_DRIVER_BCM2711_VIDEO
-	/* A session promised video decode also decodes on the one family (ws236). */
+	/* A session promised video decode also decodes on the one family. */
 	if (bcm2711_vulkan_video_session(session))
 		properties.queueFlags |= BCM2711_VIDEO_QUEUE_DECODE;
 #endif
@@ -486,13 +486,13 @@ format_properties(
 	}
 
 #if CONFIG_DRIVER_BCM2711_VIDEO
-	/* The planes of a sampled NV12 picture are viewed as R8 (luma) and RG8 (chroma) textures (ws236 p011). */
+	/* The planes of a sampled NV12 picture are viewed as R8 (luma) and RG8 (chroma) textures. */
 	if (format == VK_FORMAT_R8_UNORM || format == VK_FORMAT_R8G8_UNORM) {
 		properties->optimalTilingFeatures = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
 		properties->linearTilingFeatures = properties->optimalTilingFeatures;
 	}
 
-	/* NV12 pictures are decoded into and read back by the CPU copy (ws236). */
+	/* NV12 pictures are decoded into and read back by the CPU copy. */
 	if (format == (VkFormat)BCM2711_VIDEO_FORMAT_NV12) {
 		properties->optimalTilingFeatures = BCM2711_VIDEO_FORMAT_FEATURES | VK_FORMAT_FEATURE_TRANSFER_SRC_BIT;
 		properties->linearTilingFeatures = properties->optimalTilingFeatures;

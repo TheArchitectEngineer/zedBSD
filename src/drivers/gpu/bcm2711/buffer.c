@@ -33,7 +33,7 @@ static uint64_t reuse_count;
 static uint64_t reuse_bytes;
 static uint64_t reuse_zero_ticks;
 
-/* The reused runs given again without zeroing (their users write every byte the device reads, ws141-p016 (b)). */
+/* The reused runs given again without zeroing (their users write every byte the device reads). */
 static uint64_t kept_count;
 static uint64_t kept_bytes;
 

@@ -32,7 +32,7 @@ struct native_fetch {
 
 /*
  * One sampled texture's raster source: a whole RGBA8 or BGRA8 image, or one
- * plane of a two-plane NV12 picture (ws236 p011).
+ * plane of a two-plane NV12 picture.
  *
  * offset and bytes bound the source inside the image's binding; width,
  * height and pitch describe its raster rows of texel texels; swap selects
@@ -1140,7 +1140,7 @@ conversion_supported(
 {
 	/*
 	 * The unit copies texels unchanged: RGBA8 (which also keeps BGRA bytes
-	 * in place), and the R8 and RG8 planes of a picture (T1-674: the
+	 * in place), and the R8 and RG8 planes of a picture (the
 	 * unit's one- and two-byte UIF matched the CPU's on the Pi).
 	 */
 	if (source->texel_bytes != 1U && source->texel_bytes != 2U && source->texel_bytes != 4U)
@@ -1393,7 +1393,7 @@ upload_take(
 		chunk = kern_calloc(1, sizeof(*chunk));
 		if (chunk == NULL)
 			return ENOMEM;
-		/* Each carved upload writes all of its bytes the device reads; a reused chunk is not zeroed (ws141-p016 (b)). */
+		/* Each carved upload writes all of its bytes the device reads; a reused chunk is not zeroed. */
 		error = bcm2711_native_storage_create_as(draw->space, NATIVE_UPLOAD_CHUNK_BYTES, BCM2711_NATIVE_STORAGE_WRITTEN, &chunk->storage);
 		if (error != 0) {
 			kern_free(chunk);

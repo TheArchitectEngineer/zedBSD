@@ -382,7 +382,7 @@ bcm2711_v3d_memory_changes(
 
 /*
  * Reports the writes of the image at offset after generation since as a
- * list of at most capacity boxes (ws211-p009): a box another holds is
+ * list of at most capacity boxes: a box another holds is
  * left out, and writes needing more boxes are given as their union.
  *
  * Every generation after since must still be in the ring and belong to the

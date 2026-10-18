@@ -187,11 +187,11 @@ validate_image(
 		break;
 #if CONFIG_DRIVER_BCM2711_VIDEO
 	case (VkImageLayout)BCM2711_VIDEO_LAYOUT_DECODE_DST:
-		/* A decode output (ws236). */
+		/* A decode output. */
 		required = BCM2711_VIDEO_USAGE_DECODE_DST;
 		break;
 	case (VkImageLayout)BCM2711_VIDEO_LAYOUT_DECODE_DPB:
-		/* A decode reference (ws236). */
+		/* A decode reference. */
 		required = BCM2711_VIDEO_USAGE_DECODE_DPB;
 		break;
 #endif
@@ -232,7 +232,7 @@ colour_layout(
 #if CONFIG_DRIVER_BCM2711_VIDEO
 	case (VkImageLayout)BCM2711_VIDEO_LAYOUT_DECODE_DST:
 	case (VkImageLayout)BCM2711_VIDEO_LAYOUT_DECODE_DPB:
-		/* The layouts of decoded pictures (ws236). */
+		/* The layouts of decoded pictures. */
 		break;
 #endif
 	default:

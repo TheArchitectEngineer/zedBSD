@@ -58,9 +58,15 @@ Parent: [WS251](../ws.md)
 - 残した物: 「test build」は I915_TESTS の checkpoint の説明（code の振る舞い）。dma.h の「Under QEMU with VFIO」は DMA の address の hardware・仮想化の事実。
 - 確かめた事: \`sh build/tmp/kbuild.sh ws251p002-g3\` 3 組 rc=0 warning 0。\`ws251-objcmp.sh ws251p002-base2 ws251p002-g3\` で違う object は memory.o・gpu.o（それぞれ数 byte、comment の行が減って行番号の情報がずれた分）だけで、vmunix は 3 組とも同じ。
 
+### 群 4: bcm2711（`src/drivers/gpu/bcm2711/`）— comment は済み（2026-10-18 q1242、P1）
+
+- comment だけ（37 file）。src/drivers/gpu の数は 269 → 190 件、bcm2711 は 79 → 0 件。消した物: ws141・ws208・ws211・ws213・ws236 の参照、BUG-314、T1-631・T1-637・T1-674、review-b2 H1・M2、「recorded by WS141」と「recorded with their sources in WS141 p013」。
+- **残した物（Q1 の判断が要る）**: `bcm2711_stage_mark`・`bcm2711_stage_allowed`・`bcm2711_stage_pause` の段の名前（P0〜P5・N0・R0・V0〜V7）。これは boot の行の `rpi4gpu.stop=<stage>`・`v3d.stop=<stage>`（stage.c）が受ける名前で、log の文字列であると同時に boot parameter の値になっている。名前を変えると parameter の振る舞いが変わり、この Phase の「振る舞いは変えない」の外になる。案: (a) 段の名前は code の interface として残し、comment の中の「stage P0 found it」などだけ意味の言い方に直す、(b) 段の名前を意味の名前（discovery・readout・scanout…）に替え、parameter と照合の試験を一緒に直す（別の Phase）。
+- 確かめた事: x86 の build 3 組は bcm2711 を含まないので、Pi 4 の arm64 の build（`config/ci/config-rpi4.mk`）を前後で作った: `build/ws251p002-arm-base`（tree 31d130233 相当、変更の前を stash で）と `build/ws251p002-arm-g4` とも rc=0 warning 0。gpu の object 88 個に差なし、vmunix も同じ。
+
 ### 残り・再開の手順
 
-- 残り 269 件（群 3 の後。i915 tests 167、bcm2711 79、venus 6、compiler 15、amdrdna 2、`include/uapi/gpu-op.h` 3）。
+- 残り 190 件（群 4 の後。i915 tests 167、venus 6、compiler 15、amdrdna 2、`include/uapi/gpu-op.h` 3）。
   i915 の render の image.c「design N3」・video.c「(N4)」、tests/execution/README.md の LCD-G・P7-IPC の類も対象。
   bcm2711 は `bcm2711_stage_mark` の log が N0・P0・R0 の段の符号を持つ（readout.c ほか）。照合する試験の grep が要る。
 - 手順: 群ごとに `git grep` で文脈を読み、comment を直す → `sh build/tmp/kbuild.sh ws251p002-gN` → `sh build/tmp/ws251-objcmp.sh ws251p002-base ws251p002-gN`

@@ -24,11 +24,10 @@
  *                         texture formatting unit, even when its self-test
  *                         passed
  *   v3d.perf=1            the engine logs its cost report every two seconds
- *                         of work (none by default, ws141-p016)
+ *                         of work (none by default)
  *   v3d.tfu_probe=1       the boot diagnostic also tries the texture
  *                         formatting unit's one- and two-byte texels and
  *                         its YUV inputs, and logs what each wrote
- *                         (ws236-p011)
  */
 
 #include <stdarg.h>

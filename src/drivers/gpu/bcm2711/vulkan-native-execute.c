@@ -16,7 +16,7 @@
 #include "drivers/gpu/bcm2711/native-colour.h"
 #include "drivers/gpu/bcm2711/vulkan-native-pass.h"
 
-/* The most tile boxes a pass records as writes of their own; more, and its area is recorded (ws211-p009). */
+/* The most tile boxes a pass records as writes of their own; more, and its area is recorded. */
 #define NATIVE_EXECUTE_WRITTEN_BOXES 4U
 
 static int validate_pass(struct bcm2711_vulkan_native_pass *pass);
@@ -191,8 +191,8 @@ bcm2711_vulkan_native_pass_finish(
 	box[3] = box[1] + pass->area.extent.height;
 
 	/*
-	 * A completed pass narrowed to a few tile boxes changed only them
-	 * (ws211-p009): each is recorded alone, so that a later copy takes the
+	 * A completed pass narrowed to a few tile boxes changed only them:
+	 * each is recorded alone, so that a later copy takes the
 	 * boxes and not the area around them.  A failed one, a copy, or one of
 	 * more boxes records its area.
 	 */
