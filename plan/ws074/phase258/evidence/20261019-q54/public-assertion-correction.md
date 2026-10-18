@@ -1,0 +1,3 @@
+# Public assertion correction before native result review
+
+The initial genuine Chrome run was41/42: revoked-proxy-can-be-wrapped expected a get trap to bypass a revoked inner target. Proxy creation accepts the revoked target, but the outer Get trap must subsequently ask the inner target for its own descriptor to enforce invariants; that operation throws on the revoked inner target. The corrected assertion preserves successful wrapping and expects TypeError on .x. It matches primary Proxy Get/invariant ordering. Initial source/output/proof are retained; no engine behavior was changed for this assertion. All other41 source assertions remain unchanged. The q53 precode global-undefined baseline is diagnostic and is rerun against the final source hash.

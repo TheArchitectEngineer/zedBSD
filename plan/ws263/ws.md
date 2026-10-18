@@ -3,7 +3,8 @@
 # WS263 riscv32 の virt（QEMU）への移植（framebuffer の console・VFS の段まで）
 
 - ID: ws263、Master: [master.md](../master.md)、Primary Milestone: MG008
-- Status: incomplete（2026-10-19: p001・p002 cleared、到達点は T1-711 で確かめた。残りは p003 の規約の見直し）
+- Status: completed（2026-10-19 Q1: p001〜p003 cleared。到達点は T1-711、規約の見直しの後の回帰は T1-716）
+- Phase の directory は完了の規則で削除した（記録は git の 7e7b1e0a8 の plan/ws263/phase001〜003/phase.md）。試験の config は回帰に使うので plan/tools/ports/config-riscv32-virt.mk に移し、Master の Tools に登録した。設計は [design.md](design.md) に残す。
 - 起点（2026-10-18 ユーザー）:「さらに、virt riscv32, virt ppc32, virt ppc64, virt m68k (68030)も追加してほしいです。それぞれWSを作ってほしいです。フレームバッファでコンソールが出てVFSがマウントできないところまででいいです。」
 - 前提（Q1 の調べ）: QEMU の `qemu-system-riscv32 -M virt` がある。共有の LLVM は RISCV の target（riscv32 を含む）を持つ（WS256 p002・p010）。WS256 の riscv64 の HAL（`src/hal/riscv64/`、bsp-virt の ramfb の console、fw_cfg）と QEMU の道具（boot-test.sh の riscv64-virt の mode）を手本・共有の候補にする。Sv32 の MMU、32 bit の SBI の呼び方、`include/hal/arch/riscv32.h` の新規が要る見込み。
 
@@ -18,7 +19,7 @@
 
 | Phase | 目的 | 状態 |
 | --- | --- | --- |
-| [p001](phase001/phase.md) | 設計（[design.md](design.md)）: QEMU の machine と画面の device、firmware・起動の道、toolchain、HAL の構成、HAL の API の差分、試験の道具、Phase の表 | cleared（2026-10-19 Q1） |
-| [p002](phase002/phase.md) | HAL の芯と vmunix（riscv32 の HAL・platform・build・boot-test の mode）、T1 の画面で到達点 | cleared（2026-10-19 Q1、T1-711） |
-| p003 | 規約の全文の見直し（WS263 で足した code を plan/coding-style.md の全文と照らす、書き方だけ） | planned（P1 の q1257 の最後） |
+| p001 | 設計（[design.md](design.md)）: QEMU の machine と画面の device、firmware・起動の道、toolchain、HAL の構成、HAL の API の差分、試験の道具、Phase の表 | cleared（2026-10-19 Q1） |
+| p002 | HAL の芯と vmunix（riscv32 の HAL・platform・build・boot-test の mode）、T1 の画面で到達点 | cleared（2026-10-19 Q1、T1-711） |
+| p003 | 規約の全文の見直し（書き方だけ）、kernel の platform の binding を `hal-console.c` に | cleared（2026-10-19 Q1、T1-716） |
 - 決定（2026-10-18 ユーザー、クリック）: HAL の API は形を限った事前の承認（Guardrail の表）。

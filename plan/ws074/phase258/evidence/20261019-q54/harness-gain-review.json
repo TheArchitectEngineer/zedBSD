@@ -1,0 +1,74 @@
+[
+  {
+    "id": "/event-timing/idlharness.any.html",
+    "old_count": 1,
+    "new_count": 32,
+    "repaired": [
+      "idl_test setup"
+    ],
+    "added_pass": [
+      "idl_test validation",
+      "Partial interface Performance: original interface defined",
+      "Partial interface Performance: valid exposure set",
+      "Partial interface Performance: member names are unique",
+      "Partial dictionary PerformanceObserverInit: original dictionary defined",
+      "Partial dictionary PerformanceObserverInit: member names are unique",
+      "Partial interface Performance[2]: member names are unique"
+    ],
+    "added_fail": [
+      "PerformanceEventTiming interface: existence and properties of interface object",
+      "PerformanceEventTiming interface object length",
+      "PerformanceEventTiming interface object name",
+      "PerformanceEventTiming interface: existence and properties of interface prototype object",
+      "PerformanceEventTiming interface: existence and properties of interface prototype object's \"constructor\" property",
+      "PerformanceEventTiming interface: existence and properties of interface prototype object's @@unscopables property",
+      "PerformanceEventTiming interface: attribute processingStart",
+      "PerformanceEventTiming interface: attribute processingEnd",
+      "PerformanceEventTiming interface: attribute cancelable",
+      "PerformanceEventTiming interface: attribute target",
+      "PerformanceEventTiming interface: attribute targetSelector",
+      "PerformanceEventTiming interface: attribute interactionId",
+      "PerformanceEventTiming interface: operation toJSON()",
+      "EventCounts interface: existence and properties of interface object",
+      "EventCounts interface object length",
+      "EventCounts interface object name",
+      "EventCounts interface: existence and properties of interface prototype object",
+      "EventCounts interface: existence and properties of interface prototype object's \"constructor\" property",
+      "EventCounts interface: existence and properties of interface prototype object's @@unscopables property",
+      "EventCounts interface: maplike<DOMString, unsigned long long>",
+      "Performance interface: attribute eventCounts",
+      "Performance interface: attribute interactionCount",
+      "Performance interface: performance must inherit property \"eventCounts\" with the proper type",
+      "Performance interface: performance must inherit property \"interactionCount\" with the proper type"
+    ],
+    "prior_validation_message": [
+      "promise_test: Unhandled rejection with value: object \"ReferenceError: Proxy is not defined\""
+    ]
+  },
+  {
+    "id": "/storage-access-api/idlharness.window.html",
+    "old_count": 1,
+    "new_count": 12,
+    "repaired": [
+      "idl_test setup"
+    ],
+    "added_pass": [
+      "idl_test validation",
+      "Partial interface Document: original interface defined",
+      "Partial interface Document: member names are unique",
+      "Document includes NonElementParentNode: member names are unique",
+      "Document includes DocumentOrShadowRoot: member names are unique",
+      "Document includes ParentNode: member names are unique",
+      "Document includes XPathEvaluatorBase: member names are unique"
+    ],
+    "added_fail": [
+      "Document interface: operation hasStorageAccess()",
+      "Document interface: operation requestStorageAccess()",
+      "Document interface: document must inherit property \"hasStorageAccess()\" with the proper type",
+      "Document interface: document must inherit property \"requestStorageAccess()\" with the proper type"
+    ],
+    "prior_validation_message": [
+      "promise_test: Unhandled rejection with value: object \"ReferenceError: Proxy is not defined\""
+    ]
+  }
+]

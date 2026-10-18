@@ -262,6 +262,8 @@ static int proxy_foreign_construct(struct vm_realm *realm, vm_value receiver, co
 static int invoke_get_method(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int invoke_trap(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int invoke_pressure(struct page *page);
+static int public_installer_pressure(struct page *page);
+static int public_revoker_pressure(struct page *page);
 static int proxy_make(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int proxy_revoke(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int proxy_get_receiver(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
@@ -401,8 +403,8 @@ main(
 		goto cleanup;
 	}
 
-	/* No partial product constructor may appear during the private foundation stage. */
-	status = proxy_script(page->realm, "typeof Proxy==='undefined'&&"
+	/* The product now publishes its actual constructor while private bridges retain independent core controls. */
+	status = proxy_script(page->realm, "typeof Proxy==='function'&&Proxy.length===2&&!Object.prototype.hasOwnProperty.call(Proxy,'prototype')&&"
 					   "(function(){var p=makeReadProxy(function(){return 7;},{});return typeof p==='function'&&p()===7;})()&&"
 					   "(function(){var p=makeReadProxy({x:1},{});return makeReadProxy(p,{}).x===1;})()",
 			      &answer);
@@ -449,6 +451,15 @@ main(
 	if (status != 0)
 		goto cleanup;
 	puts("native for-in collection and reclamation: passed");
+
+	/* Public installation and detached revocation exercise actual builtin graph ownership. */
+	status = public_installer_pressure(page);
+	if (status != 0)
+		goto cleanup;
+	status = public_revoker_pressure(page);
+	if (status != 0)
+		goto cleanup;
+	puts("native public Proxy installation and revoker reclamation: passed");
 
 	/* Observe actual native graph retention after the shared protocol controls. */
 	status = proxy_lifetime(page);
@@ -5705,5 +5716,305 @@ cleanup:
 		return status;
 
 	/* Succeeded: Call and Construct retain their graph only for the duration of the direct operation. */
+	return 0;
+}
+
+/* Hold a bare managed installer input across threshold collection, then release its entire published realm graph. */
+static int
+public_installer_pressure(
+	struct page *page)
+{
+	struct vm_realm *realm;
+	struct vm_cell *root;
+	struct vm_cell *pressure;
+	struct vm_cell *cell;
+	struct vm_property property;
+	struct vm_heap_stats before;
+	struct vm_heap_stats after;
+	uintptr_t addresses[3];
+	vm_value constructor;
+	vm_value global_key;
+	vm_value method_key;
+	unsigned index;
+	int found;
+	int status;
+
+	/* Root setup only until the direct installer accepts its otherwise unowned managed realm. */
+	root = NULL;
+	status = vm_heap_add_root(page->heap, &root);
+	if (status != 0)
+		return status;
+	status = vm_realm_create_managed(page->heap, &realm);
+	if (status != 0)
+		goto cleanup;
+	root = &realm->cell;
+	global_key = vm_key_from_ascii(page->heap, "Proxy");
+	if (global_key == VM_VALUE_EMPTY) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* Preintern both observation keys so post-call liveness checks cannot allocate or reuse a dead cell. */
+	method_key = vm_key_from_ascii(page->heap, "revocable");
+	if (method_key == VM_VALUE_EMPTY) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* Force the first real function allocation past the unchanged production collection threshold. */
+	vm_heap_collect(page->heap);
+	pressure = vm_heap_alloc(page->heap, &proxy_pressure_type, 8U * 1024U * 1024U);
+	if (pressure == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* The production installer must supply every ownership edge during its own allocations. */
+	addresses[0] = (uintptr_t)realm;
+	root = NULL;
+	vm_heap_stats(page->heap, &before);
+	status = js_builtin_install_proxy(realm);
+	vm_heap_stats(page->heap, &after);
+	if (status != 0)
+		goto cleanup;
+	if (after.collections <= before.collections) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* Both public functions must be present in the newly installed real realm. */
+	found = vm_object_get_own(realm->global, global_key, &property);
+	if (found != 1) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* Read the installed constructor without another heap allocation. */
+	constructor = *property.value;
+	addresses[1] = (uintptr_t)vm_value_as_cell(constructor);
+	found = vm_object_get_own((struct vm_object *)vm_value_as_cell(constructor), method_key, &property);
+	if (found != 1) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* The constructor and method only own this unrooted managed realm through their actual function edges. */
+	addresses[2] = (uintptr_t)vm_value_as_cell(*property.value);
+	vm_heap_collect(page->heap);
+	for (index = 0; index < 3U; index++) {
+		cell = vm_heap_find_cell(page->heap, addresses[index]);
+		if (cell != NULL) {
+			status = 1;
+			goto cleanup;
+		}
+	}
+
+	/* Installation did not leave any hidden permanent root for its independently collectible realm. */
+	status = 0;
+
+cleanup:
+	/* The one acquired placeholder never outlives this direct native frame. */
+	vm_heap_remove_root(page->heap, &root);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the installer owns its realm during allocation and releases that ownership on return. */
+	return 0;
+}
+
+/* Retain only the detached public revoker, observe its captured graph, then revoke and reclaim each participant. */
+static int
+public_revoker_pressure(
+	struct page *page)
+{
+	struct vm_realm *caller;
+	struct vm_object *target;
+	struct vm_object *handler;
+	struct vm_function *revoker;
+	struct vm_cell *roots[5];
+	struct vm_cell *pressure;
+	struct vm_cell *cell;
+	struct vm_heap_stats before;
+	struct vm_heap_stats after;
+	uintptr_t addresses[6];
+	vm_value method;
+	vm_value args[2];
+	vm_value pair;
+	vm_value proxy;
+	vm_value revoke;
+	vm_value answer;
+	vm_value proxy_key;
+	vm_value revoke_key;
+	unsigned index;
+	unsigned registered;
+	int status;
+
+	/* The method is the real installed public builtin, permanently owned by the Page global. */
+	status = proxy_script(page->realm, "Proxy.revocable", &method);
+	if (status != 0)
+		return status;
+	memset(roots, 0, sizeof(roots));
+	registered = 0;
+	for (index = 0; index < 5U; index++) {
+		status = vm_heap_add_root(page->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+
+		/* Only acquired setup placeholders belong to cleanup. */
+		registered++;
+	}
+
+	/* The direct caller has no realm backedge from the Page-owned builtin or its ordinary input objects. */
+	status = vm_realm_create_managed(page->heap, &caller);
+	if (status != 0)
+		goto cleanup;
+	roots[0] = &caller->cell;
+	target = vm_object_create(page->heap, NULL);
+	if (target == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* The input handler also has no managed-caller prototype or function owner. */
+	roots[1] = &target->cell;
+	handler = vm_object_create(page->heap, NULL);
+	if (handler == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* Preintern observation keys before all setup ownership retires. */
+	roots[2] = &handler->cell;
+	proxy_key = vm_key_from_ascii(page->heap, "proxy");
+	if (proxy_key == VM_VALUE_EMPTY) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* The second observation key is also acquired before direct input ownership ends. */
+	revoke_key = vm_key_from_ascii(page->heap, "revoke");
+	if (revoke_key == VM_VALUE_EMPTY) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* The first production proxy allocation must collect with only direct API ownership. */
+	addresses[0] = (uintptr_t)caller;
+	addresses[1] = (uintptr_t)target;
+	addresses[2] = (uintptr_t)handler;
+	args[0] = vm_value_cell(target);
+	args[1] = vm_value_cell(handler);
+	vm_heap_collect(page->heap);
+	pressure = vm_heap_alloc(page->heap, &proxy_pressure_type, 8U * 1024U * 1024U);
+	if (pressure == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* No embedding setup slot or conservative stack root retains the direct caller or inputs. */
+	memset(roots, 0, sizeof(roots));
+	vm_heap_stats(page->heap, &before);
+	status = vm_call(caller, method, VM_VALUE_UNDEFINED, args, 2, &pair);
+	vm_heap_stats(page->heap, &after);
+	if (status != 0)
+		goto cleanup;
+	if (after.collections <= before.collections) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* Protect the returned pair only while extracting its actual public properties. */
+	roots[3] = vm_value_as_cell(pair);
+	addresses[5] = (uintptr_t)roots[3];
+	status = vm_get(page->realm, pair, proxy_key, &proxy);
+	if (status != 0)
+		goto cleanup;
+	status = vm_get(page->realm, pair, revoke_key, &revoke);
+	if (status != 0)
+		goto cleanup;
+	roots[4] = vm_value_as_cell(revoke);
+	revoker = (struct vm_function *)roots[4];
+	addresses[3] = (uintptr_t)vm_value_as_cell(proxy);
+	addresses[4] = (uintptr_t)revoker;
+	roots[3] = NULL;
+	vm_heap_collect(page->heap);
+
+	/* With only the revoker rooted, the caller and result container must be collectible independently. */
+	cell = vm_heap_find_cell(page->heap, addresses[0]);
+	if (cell != NULL) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* The ordinary result pair has no owner after its temporary slot retires. */
+	cell = vm_heap_find_cell(page->heap, addresses[5]);
+	if (cell != NULL) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* The revoker's real traced data edge alone keeps target, handler and native record alive. */
+	for (index = 1; index < 5U; index++) {
+		cell = vm_heap_find_cell(page->heap, addresses[index]);
+		if (cell == NULL) {
+			status = 1;
+			goto cleanup;
+		}
+	}
+
+	/* Invoke the actual public revoker with an irrelevant receiver and confirm its result and captured-slot release. */
+	status = vm_call(page->realm, revoke, VM_VALUE_TRUE, NULL, 0, &answer);
+	if (status != 0)
+		goto cleanup;
+	if (answer != VM_VALUE_UNDEFINED ||
+	    revoker->data != VM_VALUE_UNDEFINED) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* Idempotent invocation must remain harmless after both the revoker and Proxy edges have been cleared. */
+	status = vm_call(page->realm, revoke, VM_VALUE_NULL, NULL, 0, &answer);
+	if (status != 0)
+		goto cleanup;
+	vm_heap_collect(page->heap);
+	for (index = 1; index < 4U; index++) {
+		cell = vm_heap_find_cell(page->heap, addresses[index]);
+		if (cell != NULL) {
+			status = 1;
+			goto cleanup;
+		}
+	}
+
+	/* The revoker remains live solely because its embedding result root has not yet retired. */
+	cell = vm_heap_find_cell(page->heap, addresses[4]);
+	if (cell == NULL) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* Retire the final revoker owner before observing its own reclamation. */
+	roots[4] = NULL;
+	vm_heap_collect(page->heap);
+	cell = vm_heap_find_cell(page->heap, addresses[4]);
+	if (cell != NULL) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* All direct-call, captured-graph and detached-result reclamation observations succeeded. */
+	status = 0;
+
+cleanup:
+	/* No registry slot remains after this synchronous fixture returns. */
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(page->heap, &roots[registered]);
+	}
+
+	/* Preserve the actual API failure or independent lifetime failure. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the captured graph lives until revocation, and the detached revoker lives until its last owner retires. */
 	return 0;
 }

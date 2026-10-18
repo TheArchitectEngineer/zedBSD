@@ -1,0 +1,43 @@
+(function () {
+  var total = 0, passed = 0;
+  function check(name, actual, expected) {
+    total++;
+    var ok = actual === expected;
+    if (ok) passed++;
+    console.log('css-clone ' + name + ': ' + (ok ? 'PASS' : 'FAIL actual=' + actual + ' expected=' + expected));
+  }
+  var parent = document.createElement('div');
+  var e = document.createElement('div');
+  document.body.appendChild(parent);
+  parent.appendChild(e);
+  e.style.flexGrow = '1.234565';
+  var c = e.cloneNode(false);
+  document.body.appendChild(c);
+  var deep = parent.cloneNode(true);
+  document.body.appendChild(deep);
+  var child = deep.firstChild;
+  check('original-specified', e.style.flexGrow, '1.23456');
+  check('original-computed', getComputedStyle(e).flexGrow, '1.23457');
+  check('shallow-specified', c.style.flexGrow, '1.23456');
+  check('shallow-computed', getComputedStyle(c).flexGrow, '1.23457');
+  check('deep-computed', getComputedStyle(child).flexGrow, '1.23457');
+  check('attribute', c.getAttribute('style'), 'flex-grow: 1.23456;');
+  c.style.color = 'red';
+  check('clone-unrelated-write', getComputedStyle(c).flexGrow, '1.23457');
+  e.setAttribute('style', e.getAttribute('style') + ' ');
+  check('original-external-reparse', getComputedStyle(e).flexGrow, '1.23456');
+  check('clone-independent-after-source-reset', getComputedStyle(c).flexGrow, '1.23457');
+  check('deep-independent-after-source-reset', getComputedStyle(child).flexGrow, '1.23457');
+  c.setAttribute('style', c.getAttribute('style') + ' ');
+  check('clone-external-reparse', getComputedStyle(c).flexGrow, '1.23456');
+  check('deep-independent-after-clone-reset', getComputedStyle(child).flexGrow, '1.23457');
+  child.style.flexGrow = '2.3456789';
+  check('deep-mutation', child.style.flexGrow, '2.34568');
+  check('source-after-deep-mutation', getComputedStyle(e).flexGrow, '1.23456');
+  check('clone-after-deep-mutation', getComputedStyle(c).flexGrow, '1.23456');
+  e = null; c = null; parent = null;
+  collectReadProxy();
+  check('deep-after-collection', child.style.flexGrow, '2.34568');
+  console.log('css-clone controls: ' + passed + '/' + total);
+  return passed === total;
+})();

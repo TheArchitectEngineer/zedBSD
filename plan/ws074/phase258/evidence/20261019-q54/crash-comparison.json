@@ -1,0 +1,10 @@
+{
+  "eligible": 48,
+  "counts": {
+    "pass": 39,
+    "readiness_missing": 9
+  },
+  "whole_gains": [],
+  "whole_regressions": [],
+  "changes": {}
+}

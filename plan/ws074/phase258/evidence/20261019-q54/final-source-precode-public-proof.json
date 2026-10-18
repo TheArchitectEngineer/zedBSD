@@ -1,0 +1,7 @@
+{
+  "returncode": 1,
+  "conditions": 42,
+  "passed": 0,
+  "final_source_sha256": "c50d40a7b9346229753799fff6bc126ef8fcd0c54eccafe48efdc4099f709e8c",
+  "qualification": "q53 Proxy undefined baseline, not42 independent bugs"
+}

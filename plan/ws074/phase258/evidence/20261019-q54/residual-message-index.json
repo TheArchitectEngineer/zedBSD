@@ -1,0 +1,164 @@
+{
+  "top": [
+    {
+      "kind": "assert_not_equals",
+      "count": 7556,
+      "sample": {
+        "id": "/css/css-anchor-position/anchor-center-001.html",
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      }
+    },
+    {
+      "kind": "assert_equals",
+      "count": 6176,
+      "sample": {
+        "id": "/css/css-anchor-position/anchor-center-htb-htb.html",
+        "message": "assert_equals: \n<div class=\"container\">\n  <div class=\"anchor\"></div>\n  <div class=\"target\" style=\"max-width: 60px;\" data-expected-width=\"60\" data-offset-x=\"35\"></div>\n</div>\nwidth expected 60 but got 47"
+      }
+    },
+    {
+      "kind": "assert_true",
+      "count": 2834,
+      "sample": {
+        "id": "/css/css-anchor-position/anchor-center-001.html",
+        "message": "assert_true: 'anchor-center' is a supported value for align-self. expected true got false"
+      }
+    },
+    {
+      "kind": "assert_array_equals",
+      "count": 1305,
+      "sample": {
+        "id": "/css/css-anchor-position/anchor-position-borders-002.html",
+        "message": "assert_array_equals: expected property 0 to be 8 but got 935 (expected array [8, 57, 8, 57] got [935, 26, 966, 57])"
+      }
+    },
+    {
+      "kind": "assert_throws_dom",
+      "count": 700,
+      "sample": {
+        "id": "/css/css-view-transitions/parsing/pseudo-elements-invalid-with-classes.html",
+        "message": "assert_throws_dom: \"::view-transition-group(*.*)\" should throw in querySelector function \"function () { [native code] }\" did not throw"
+      }
+    },
+    {
+      "kind": "assert_in_array",
+      "count": 369,
+      "sample": {
+        "id": "/css/css-flexbox/parsing/flex-grow-valid.html",
+        "message": "assert_in_array: serialization should be sound value \"23.4e5\" not in array [\"2.34e+06\", \"2.34e+006\", \"2340000\"]"
+      }
+    },
+    {
+      "kind": "Cannot read properties of undefined (reading 'selectorText')",
+      "count": 361,
+      "sample": {
+        "id": "/css/css-cascade/scope-nesting.html",
+        "message": "Cannot read properties of undefined (reading 'selectorText')"
+      }
+    },
+    {
+      "kind": "URLPattern is not defined",
+      "count": 326,
+      "sample": {
+        "id": "/urlpattern/urlpattern-hasregexpgroups.any.html",
+        "message": "URLPattern is not defined"
+      }
+    },
+    {
+      "kind": "Cannot read properties of undefined (reading 'style')",
+      "count": 262,
+      "sample": {
+        "id": "/css/css-anchor-position/at-position-try-cssom.html",
+        "message": "Cannot read properties of undefined (reading 'style')"
+      }
+    },
+    {
+      "kind": "promise_test",
+      "count": 222,
+      "sample": {
+        "id": "/css/css-anchor-position/anchor-scroll-004.html",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: value is not a function\""
+      }
+    },
+    {
+      "kind": "assert_implements",
+      "count": 86,
+      "sample": {
+        "id": "/css/css-view-transitions/duplicate-tag-rejects-capture.html",
+        "message": "assert_implements: Missing document.startViewTransition undefined"
+      }
+    },
+    {
+      "kind": "navigation is not defined",
+      "count": 80,
+      "sample": {
+        "id": "/navigation-api/currententrychange-event/anchor-click.html",
+        "message": "navigation is not defined"
+      }
+    },
+    {
+      "kind": "The input is not one supported CSS rule.",
+      "count": 67,
+      "sample": {
+        "id": "/css/css-anchor-position/at-position-try-allowed-declarations.html",
+        "message": "The input is not one supported CSS rule."
+      }
+    },
+    {
+      "kind": "WebAssembly is not defined",
+      "count": 52,
+      "sample": {
+        "id": "/navigation-api/updateCurrentEntry-method/unserializable.html",
+        "message": "WebAssembly is not defined"
+      }
+    },
+    {
+      "kind": "assert_throws_js",
+      "count": 49,
+      "sample": {
+        "id": "/navigation-api/currententrychange-event/constructor.html",
+        "message": "assert_throws_js: function \"function () { [native code] }\" threw object \"ReferenceError: NavigationCurrentEntryChangeEvent is not defined\" (\"ReferenceError\") expected instance of function \"function TypeError() { [native code] }\" (\"TypeError\")"
+      }
+    },
+    {
+      "kind": "Cannot read properties of undefined (reading 'length')",
+      "count": 43,
+      "sample": {
+        "id": "/css/css-cascade/at-scope-parsing.html",
+        "message": "Cannot read properties of undefined (reading 'length')"
+      }
+    },
+    {
+      "kind": "assert_approx_equals",
+      "count": 42,
+      "sample": {
+        "id": "/css/css-viewport/zoom/relative-units.html",
+        "message": "assert_approx_equals: em in outside expected 20 +/- 1 but got 10"
+      }
+    },
+    {
+      "kind": "value is not a function",
+      "count": 30,
+      "sample": {
+        "id": "/css/css-anchor-position/anchor-name-cross-shadow.html",
+        "message": "value is not a function"
+      }
+    },
+    {
+      "kind": "assert_own_property",
+      "count": 22,
+      "sample": {
+        "id": "/event-timing/idlharness.any.html",
+        "message": "assert_own_property: self does not have own property \"PerformanceEventTiming\" expected property \"PerformanceEventTiming\" missing"
+      }
+    },
+    {
+      "kind": "Cannot read properties of undefined (reading 'navigate')",
+      "count": 15,
+      "sample": {
+        "id": "/navigation-api/navigation-methods/navigate-base-url.html",
+        "message": "Cannot read properties of undefined (reading 'navigate')"
+      }
+    }
+  ]
+}

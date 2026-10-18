@@ -2440,7 +2440,7 @@ i915_interim_display_irq_reset(
 	i915_interim_irq_silence(&gt->mmio, I915_GEN9_SDEIMR, I915_GEN9_SDEIIR, I915_GEN9_SDEIER);
 }
 
-/* Masks, disables and clears one display interrupt register set (gen3_irq_reset()). */
+/* Masks, disables and clears one display interrupt register set. */
 static void
 i915_interim_irq_silence(
 	struct i915_mmio *mmio,

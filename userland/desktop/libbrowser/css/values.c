@@ -13,6 +13,8 @@
 #include "css/internal.h"
 
 #include <errno.h>
+#include <float.h>
+#include <stdio.h>
 #include <math.h>
 #include <string.h>
 
@@ -104,73 +106,6 @@ struct values_color {
 	const char *name;
 	uint32_t rgb;
 };
-
-static int values_keyword(const struct values_keyword *table, const struct css_token *token, int *value);
-static int values_unit(const struct css_token *token, int *unit);
-static int values_length(const struct css_token *token, int allow_keywords, struct css_value *value);
-static int values_flex_basis(const struct css_token *token, struct css_value *value);
-static int values_single(struct css_parse *parse, int property, const struct css_token *tokens, size_t count, struct css_value *value);
-static int values_families(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
-static size_t values_components(const struct css_token *tokens, size_t count, size_t *starts, size_t *lengths, size_t max);
-static int values_transform(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
-static int values_aspect_ratio(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
-static int values_transform_origin(const struct css_token *tokens, size_t count, int first_property, struct css_declaration *out, size_t *made);
-static int values_four(struct css_parse *parse, int first, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
-static int values_border(struct css_parse *parse, int side, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
-static void values_add(struct css_declaration *out, size_t *made, int property, const struct css_value *value);
-static int values_hex_digit(uint16_t unit);
-static int values_rgb_function(const struct css_token *tokens, size_t count, uint32_t *color);
-static int values_hsl_function(const struct css_token *tokens, size_t count, uint32_t *color);
-static void values_wide_keyword(int property, const struct css_value *value, struct css_declaration *out, size_t *made);
-static int values_background(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
-static size_t values_function_length(const struct css_token *tokens, size_t count);
-static int values_url(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
-static int values_repeat_parts(const struct css_token *const *parts, size_t count, struct css_value *value);
-static int values_position_parts(const struct css_token *const *parts, size_t count, struct css_value *x, struct css_value *y);
-static int values_position_part(const struct css_token *token, struct css_value *value);
-static int values_position_axis(const struct css_token *token);
-static int values_size_parts(const struct css_token *const *parts, size_t count, struct css_value *width, struct css_value *height);
-static int values_background_position(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
-static int values_background_size(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
-static int values_takes_length(int property);
-static int values_flex(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
-static int values_flex_flow(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
-static int values_content(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
-static int values_pair(struct css_parse *parse, int first, int second, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
-static int values_calc(struct css_parse *parse, int property, const struct css_token *tokens, size_t count, struct css_value *value);
-static int values_calc_arguments(struct wb_arena *arena, const struct css_token *tokens, size_t count, int operation, struct css_calc *calc);
-static int values_calc_sum(struct wb_arena *arena, const struct css_token *tokens, size_t count, size_t *index, struct values_term *term);
-static int values_calc_product(struct wb_arena *arena, const struct css_token *tokens, size_t count, size_t *index, struct values_term *term);
-static int values_calc_value(struct wb_arena *arena, const struct css_token *tokens, size_t count, size_t *index, struct values_term *term);
-static int values_calc_unit(const struct css_token *token, struct css_calc_sum *sum);
-static void values_calc_scale(struct css_calc_sum *sum, float factor);
-static int values_calc_add(struct css_calc_sum *sum, const struct css_calc_sum *other, float sign);
-static size_t values_skip_space(const struct css_token *tokens, size_t count, size_t index);
-static int values_border_radius(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
-static int values_corner_radius(struct css_parse *parse, int corner, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
-static int values_radii(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *radii);
-static int values_box_shadow(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
-static int values_text_shadow(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
-static int values_one_shadow(const struct css_token *tokens, size_t count, struct css_declared_shadow *shadow);
-static int values_outline(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
-static int values_clip_path(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
-static int values_clip(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
-static int values_tracks(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
-static int values_auto_tracks(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
-static int values_grid_auto_flow(const struct css_token *tokens, size_t count, struct css_value *value);
-static int values_track_list(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_track_list *list, int depth);
-static int values_track_minimum_rule(const struct css_token *token, int kind);
-static int values_track_maximum_rule(const struct css_token *token, int kind);
-static int values_one_track(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declared_track *track);
-static int values_track_size(struct css_parse *parse, const struct css_token *tokens, size_t count, int *kind, struct css_value *size);
-static size_t values_split_at(const struct css_token *tokens, size_t count, int type, uint32_t delim);
-static int values_grid_line(const struct css_token *tokens, size_t count, struct css_value *value);
-static int values_grid_pair(int start, int end, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
-static int values_grid_area(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
-static int values_grid_explicit(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
-static int values_grid_template(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
-static int values_decoration_line(const struct css_token *tokens, size_t count, struct css_value *value);
-static int values_text_decoration(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 
 /* The property names this pass knows. */
 static const struct values_name values_names[] = {
@@ -993,6 +928,74 @@ static const struct values_color values_colors[] = {
 	{ NULL, 0 }
 };
 
+static int values_keyword(const struct values_keyword *table, const struct css_token *token, int *value);
+static int values_unit(const struct css_token *token, int *unit);
+static int values_length(const struct css_token *token, int allow_keywords, struct css_value *value);
+static int values_flex_basis(const struct css_token *token, struct css_value *value);
+static int values_single(struct css_parse *parse, int property, const struct css_token *tokens, size_t count, struct css_value *value);
+static int values_families(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
+static size_t values_components(const struct css_token *tokens, size_t count, size_t *starts, size_t *lengths, size_t max);
+static int values_transform(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static int values_aspect_ratio(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static int values_transform_origin(const struct css_token *tokens, size_t count, int first_property, struct css_declaration *out, size_t *made);
+static int values_four(struct css_parse *parse, int first, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static int values_border(struct css_parse *parse, int side, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static void values_add(struct css_declaration *out, size_t *made, int property, const struct css_value *value);
+static int values_hex_digit(uint16_t unit);
+static int values_rgb_function(const struct css_token *tokens, size_t count, uint32_t *color);
+static int values_hsl_function(const struct css_token *tokens, size_t count, uint32_t *color);
+static void values_wide_keyword(int property, const struct css_value *value, struct css_declaration *out, size_t *made);
+static int values_background(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static size_t values_function_length(const struct css_token *tokens, size_t count);
+static int values_url(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
+static int values_repeat_parts(const struct css_token *const *parts, size_t count, struct css_value *value);
+static int values_position_parts(const struct css_token *const *parts, size_t count, struct css_value *x, struct css_value *y);
+static int values_position_part(const struct css_token *token, struct css_value *value);
+static int values_position_axis(const struct css_token *token);
+static int values_size_parts(const struct css_token *const *parts, size_t count, struct css_value *width, struct css_value *height);
+static int values_background_position(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static int values_background_size(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static int values_takes_length(int property);
+static int values_flex(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static int values_flex_flow(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static int values_content(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
+static int values_pair(struct css_parse *parse, int first, int second, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static int values_calc(struct css_parse *parse, int property, const struct css_token *tokens, size_t count, struct css_value *value);
+static int values_calc_arguments(struct wb_arena *arena, const struct css_token *tokens, size_t count, int operation, struct css_calc *calc);
+static int values_calc_sum(struct wb_arena *arena, const struct css_token *tokens, size_t count, size_t *index, struct values_term *term);
+static int values_calc_product(struct wb_arena *arena, const struct css_token *tokens, size_t count, size_t *index, struct values_term *term);
+static int values_calc_value(struct wb_arena *arena, const struct css_token *tokens, size_t count, size_t *index, struct values_term *term);
+static int values_calc_unit(const struct css_token *token, struct css_calc_sum *sum);
+static void values_calc_scale(struct css_calc_sum *sum, float factor);
+static int values_calc_add(struct css_calc_sum *sum, const struct css_calc_sum *other, float sign);
+static size_t values_skip_space(const struct css_token *tokens, size_t count, size_t index);
+static int values_border_radius(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static int values_corner_radius(struct css_parse *parse, int corner, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static int values_radii(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *radii);
+static int values_box_shadow(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
+static int values_text_shadow(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
+static int values_one_shadow(const struct css_token *tokens, size_t count, struct css_declared_shadow *shadow);
+static int values_outline(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static int values_clip_path(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
+static int values_clip(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
+static int values_tracks(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
+static int values_auto_tracks(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
+static int values_grid_auto_flow(const struct css_token *tokens, size_t count, struct css_value *value);
+static int values_track_list(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_track_list *list, int depth);
+static int values_track_minimum_rule(const struct css_token *token, int kind);
+static int values_track_maximum_rule(const struct css_token *token, int kind);
+static int values_one_track(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declared_track *track);
+static int values_track_size(struct css_parse *parse, const struct css_token *tokens, size_t count, int *kind, struct css_value *size);
+static size_t values_split_at(const struct css_token *tokens, size_t count, int type, uint32_t delim);
+static int values_grid_line(const struct css_token *tokens, size_t count, struct css_value *value);
+static int values_grid_pair(int start, int end, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static int values_grid_area(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static int values_grid_explicit(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static int values_grid_template(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static int values_decoration_line(const struct css_token *tokens, size_t count, struct css_value *value);
+static int values_text_decoration(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+
+
 /*
  * Reports the name of the index-th property this pass knows (a longhand
  * or a shorthand), or NULL past the last one: the names the inline style
@@ -1489,6 +1492,114 @@ css_parse_color(
 	return EINVAL;
 }
 
+/*
+ * Serializes one declared numeric component using the native legacy scalar representation.
+ * Nonnumeric components remain unhandled, and the caller retains their original grammar and spelling.
+ */
+int
+css_number_serialize(
+	const uint16_t *units,
+	size_t length,
+	struct wb_units *out,
+	int *handled)
+{
+	struct wb_arena arena;
+	struct css_token *tokens;
+	char text[64];
+	double number;
+	size_t count;
+	size_t start;
+	size_t end;
+	size_t index;
+	unsigned char unit;
+	int decimal;
+	int numeric;
+	int written;
+	int status;
+
+	/* The production tokenizer supplies exact declared doubles and skips CSS comments. */
+	*handled = 0;
+	wb_arena_init(&arena, 0);
+	status = css_tokenize(&arena, units, length, &tokens, &count);
+	if (status != 0)
+		goto cleanup;
+	start = 0;
+	end = count;
+	if (end != 0U &&
+	    tokens[end - 1U].type == CSS_TOKEN_EOF)
+		end--;
+
+	/* Only one numeric token surrounded by whitespace belongs to this scalar component path. */
+	while (start < end &&
+	       tokens[start].type == CSS_TOKEN_WHITESPACE)
+		start++;
+	while (end > start &&
+	       tokens[end - 1U].type == CSS_TOKEN_WHITESPACE)
+		end--;
+	if (end - start != 1U)
+		goto cleanup;
+	if (tokens[start].type != CSS_TOKEN_NUMBER)
+		goto cleanup;
+
+	/* Declared precision remains double, while the native supported numeric range is bounded by float magnitude. */
+	number = tokens[start].number;
+	if (number > FLT_MAX)
+		number = FLT_MAX;
+	if (number < -FLT_MAX)
+		number = -FLT_MAX;
+	if (number == 0.0)
+		number = 0.0;
+	written = snprintf(text, sizeof(text), "%.6g", number);
+	if (written < 0) {
+		status = EIO;
+		goto cleanup;
+	}
+
+	/* The fixed buffer must contain the complete finite scalar representation. */
+	if ((size_t)written >= sizeof(text)) {
+		status = EOVERFLOW;
+		goto cleanup;
+	}
+
+	/* CSS uses a dot regardless of the process locale; a printf decimal separator is its only nondigit punctuation. */
+	decimal = 0;
+	for (index = 0; index < (size_t)written; index++) {
+		unit = (unsigned char)text[index];
+		numeric = 0;
+		if (unit >= '0' &&
+		    unit <= '9')
+			numeric = 1;
+		if (unit == 'e' ||
+		    unit == 'E' ||
+		    unit == '+' ||
+		    unit == '-')
+			numeric = 1;
+		if (!numeric) {
+			if (decimal)
+				continue;
+			unit = '.';
+			decimal = 1;
+		}
+
+		/* Append ASCII digits, signs, exponent marker and the normalized decimal point. */
+		status = wb_units_append_code_point(out, unit);
+		if (status != 0)
+			goto cleanup;
+	}
+
+	/* A complete numeric serialization is now available to the caller. */
+	*handled = 1;
+
+cleanup:
+	/* No tokenizer source slice survives its arena. */
+	wb_arena_release(&arena);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: handled distinguishes a scalar result from an untouched nonnumeric component. */
+	return 0;
+}
+
 /* Parses one text-decoration-line value with the production CSS tokenizer. */
 int
 css_decoration_line_parse(
@@ -1726,49 +1837,86 @@ values_single(
 	const struct values_keyword *table;
 	const struct css_token *parts[2];
 	size_t used;
+	size_t words;
+	size_t word;
 	int keyword;
 	int is_auto;
 	int found;
 	int takes_length;
 	int error;
+	int is_baseline;
+	int is_first;
+	int is_last;
+	int is_safe;
+	int is_unsafe;
 
 	/* Skips surrounding whitespace. */
-	while (count > 0 && tokens[0].type == CSS_TOKEN_WHITESPACE) {
+	while (count > 0 &&
+	       tokens[0].type == CSS_TOKEN_WHITESPACE) {
 		tokens++;
 		count--;
 	}
-	while (count > 0 && tokens[count - 1U].type == CSS_TOKEN_WHITESPACE)
+
+	/* Discard trailing whitespace before validating the component count. */
+	while (count > 0 &&
+	       tokens[count - 1U].type == CSS_TOKEN_WHITESPACE)
 		count--;
 	if (count == 0)
 		return EINVAL;
 	memset(value, 0, sizeof(*value));
 
 	/* Decoration lines form an unordered list of distinct keywords. */
-	if (property == CSS_PROP_TEXT_DECORATION_LINE)
-		return values_decoration_line(tokens, count, value);
+	if (property == CSS_PROP_TEXT_DECORATION_LINE) {
+		/* Parse the selected component with its established native grammar. */
+		error = values_decoration_line(tokens, count, value);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the selected native scalar component was parsed. */
+		return 0;
+	}
+
+	/* Thickness accepts one automatic, font-derived or nonnegative length component. */
 	if (property == CSS_PROP_TEXT_DECORATION_THICKNESS) {
 		if (count != 1U)
 			return EINVAL;
-		if (css_ident_equal(&tokens[0], "auto")) {
+		is_auto = css_ident_equal(&tokens[0], "auto");
+		if (is_auto) {
 			value->kind = CSS_VALUE_KEYWORD;
 			value->keyword = 0;
 			return 0;
 		}
-		if (css_ident_equal(&tokens[0], "from-font")) {
+
+		/* The font may provide the thickness instead of a numeric length. */
+		found = css_ident_equal(&tokens[0], "from-font");
+		if (found) {
 			value->kind = CSS_VALUE_KEYWORD;
 			value->keyword = 1;
 			return 0;
 		}
+
+		/* A remaining thickness component must be a supported nonnegative length. */
 		error = values_length(&tokens[0], 0, value);
-		if (error != 0 || value->number < 0)
+		if (error != 0 ||
+		    value->number < 0)
 			return EINVAL;
 		return 0;
 	}
 
 	/* Families take a list; colors may be a function of several tokens. */
-	if (property == CSS_PROP_FONT_FAMILY)
-		return values_families(parse, tokens, count, value);
-	if (property == CSS_PROP_COLOR || property == CSS_PROP_BACKGROUND_COLOR ||
+	if (property == CSS_PROP_FONT_FAMILY) {
+		/* Parse the selected component with its established native grammar. */
+		error = values_families(parse, tokens, count, value);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the selected native scalar component was parsed. */
+		return 0;
+	}
+
+	/* Color properties share the native color parser. */
+	if (property == CSS_PROP_COLOR ||
+	    property == CSS_PROP_BACKGROUND_COLOR ||
 	    property == CSS_PROP_TEXT_DECORATION_COLOR ||
 	    (property >= CSS_PROP_BORDER_TOP_COLOR && property <= CSS_PROP_BORDER_LEFT_COLOR)) {
 		error = css_parse_color(tokens, count, &value->color);
@@ -1779,8 +1927,15 @@ values_single(
 	}
 
 	/* An image: url(...) or none. */
-	if (property == CSS_PROP_BACKGROUND_IMAGE)
-		return values_url(parse, tokens, count, value);
+	if (property == CSS_PROP_BACKGROUND_IMAGE) {
+		/* Parse the selected component with its established native grammar. */
+		error = values_url(parse, tokens, count, value);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the selected native scalar component was parsed. */
+		return 0;
+	}
 
 	/* background-repeat takes one keyword or one for each axis. */
 	if (property == CSS_PROP_BACKGROUND_REPEAT) {
@@ -1790,123 +1945,258 @@ values_single(
 		if (count == 1)
 			used = 1;
 		error = values_repeat_parts(parts, used, value);
-		return error;
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the repeat component is available on both axes. */
+		return 0;
 	}
 
 	/* background-attachment takes one scrolling keyword. */
 	if (property == CSS_PROP_BACKGROUND_ATTACHMENT) {
 		found = values_keyword(values_attachment, &tokens[0], &keyword);
-		if (!found || count != 1)
+		if (!found ||
+		    count != 1)
 			return EINVAL;
+
+		/* Publish the validated native keyword after its property-specific restrictions. */
 		value->kind = CSS_VALUE_KEYWORD;
 		value->keyword = keyword;
 		return 0;
 	}
 
 	/* content takes a list of strings and functions. */
-	if (property == CSS_PROP_CONTENT)
-		return values_content(parse, tokens, count, value);
+	if (property == CSS_PROP_CONTENT) {
+		/* Parse the selected component with its established native grammar. */
+		error = values_content(parse, tokens, count, value);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the selected native scalar component was parsed. */
+		return 0;
+	}
 
 	/* box-shadow takes a list of shadows. */
-	if (property == CSS_PROP_BOX_SHADOW)
-		return values_box_shadow(parse, tokens, count, value);
-	if (property == CSS_PROP_TEXT_SHADOW)
-		return values_text_shadow(parse, tokens, count, value);
+	if (property == CSS_PROP_BOX_SHADOW) {
+		/* Parse the selected component with its established native grammar. */
+		error = values_box_shadow(parse, tokens, count, value);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the selected native scalar component was parsed. */
+		return 0;
+	}
+
+	/* Text shadows retain the established multi-component grammar. */
+	if (property == CSS_PROP_TEXT_SHADOW) {
+		/* Parse the selected component with its established native grammar. */
+		error = values_text_shadow(parse, tokens, count, value);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the selected native scalar component was parsed. */
+		return 0;
+	}
 
 	/* clip-path takes a shape. */
-	if (property == CSS_PROP_CLIP_PATH)
-		return values_clip_path(parse, tokens, count, value);
+	if (property == CSS_PROP_CLIP_PATH) {
+		/* Parse the selected component with its established native grammar. */
+		error = values_clip_path(parse, tokens, count, value);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the selected native scalar component was parsed. */
+		return 0;
+	}
 
 	/* clip takes auto or rect(). */
-	if (property == CSS_PROP_CLIP)
-		return values_clip(parse, tokens, count, value);
+	if (property == CSS_PROP_CLIP) {
+		/* Parse the selected component with its established native grammar. */
+		error = values_clip(parse, tokens, count, value);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the selected native scalar component was parsed. */
+		return 0;
+	}
 
 	/* A grid template takes a list of tracks. */
-	if (property == CSS_PROP_GRID_TEMPLATE_COLUMNS || property == CSS_PROP_GRID_TEMPLATE_ROWS)
-		return values_tracks(parse, tokens, count, value);
-	if (property == CSS_PROP_GRID_AUTO_FLOW)
-		return values_grid_auto_flow(tokens, count, value);
-	if (property == CSS_PROP_GRID_AUTO_COLUMNS || property == CSS_PROP_GRID_AUTO_ROWS)
-		return values_auto_tracks(parse, tokens, count, value);
+	if (property == CSS_PROP_GRID_TEMPLATE_COLUMNS ||
+	    property == CSS_PROP_GRID_TEMPLATE_ROWS) {
+		/* Parse the selected component with its established native grammar. */
+		error = values_tracks(parse, tokens, count, value);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the selected native scalar component was parsed. */
+		return 0;
+	}
+
+	/* Automatic grid placement has its own keyword grammar. */
+	if (property == CSS_PROP_GRID_AUTO_FLOW) {
+		/* Parse the selected component with its established native grammar. */
+		error = values_grid_auto_flow(tokens, count, value);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the selected native scalar component was parsed. */
+		return 0;
+	}
+
+	/* Implicit track sizes retain their existing list grammar. */
+	if (property == CSS_PROP_GRID_AUTO_COLUMNS ||
+	    property == CSS_PROP_GRID_AUTO_ROWS) {
+		/* Parse the selected component with its established native grammar. */
+		error = values_auto_tracks(parse, tokens, count, value);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the selected native scalar component was parsed. */
+		return 0;
+	}
 
 	/* A grid line: auto, a number, or span and a number. */
-	if (property >= CSS_PROP_GRID_COLUMN_START && property <= CSS_PROP_GRID_ROW_END)
-		return values_grid_line(tokens, count, value);
+	if (property >= CSS_PROP_GRID_COLUMN_START &&
+	    property <= CSS_PROP_GRID_ROW_END) {
+		/* Parse the selected component with its established native grammar. */
+		error = values_grid_line(tokens, count, value);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the selected native scalar component was parsed. */
+		return 0;
+	}
 
 	/* The outline's width is a border's. */
-	if (property == CSS_PROP_OUTLINE_WIDTH)
-		return values_single(parse, CSS_PROP_BORDER_TOP_WIDTH, tokens, count, value);
+	if (property == CSS_PROP_OUTLINE_WIDTH) {
+		/* Parse the selected component with its established native grammar. */
+		error = values_single(parse, CSS_PROP_BORDER_TOP_WIDTH, tokens, count, value);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the selected native scalar component was parsed. */
+		return 0;
+	}
 
 	/* Its style is a border's, and auto a solid one. */
 	if (property == CSS_PROP_OUTLINE_STYLE) {
 		is_auto = css_ident_equal(&tokens[0], "auto");
-		if (count == 1 && is_auto) {
+		if (count == 1 &&
+		    is_auto) {
 			value->kind = CSS_VALUE_KEYWORD;
 			value->keyword = CSS_BORDER_SOLID;
 			return 0;
 		}
 
-		/* Any other style. */
-		return values_single(parse, CSS_PROP_BORDER_TOP_STYLE, tokens, count, value);
+		/* Any other style uses the existing border-style grammar. */
+		error = values_single(parse, CSS_PROP_BORDER_TOP_STYLE, tokens, count, value);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the selected native scalar component was parsed. */
+		return 0;
 	}
 
 	/* Its color is a border's, and invert the current color. */
 	if (property == CSS_PROP_OUTLINE_COLOR) {
 		is_auto = css_ident_equal(&tokens[0], "invert");
-		if (count == 1 && is_auto) {
+		if (count == 1 &&
+		    is_auto) {
 			value->kind = CSS_VALUE_COLOR;
 			value->color = CSS_CURRENT_COLOR;
 			return 0;
 		}
 
-		/* Any other color. */
-		return values_single(parse, CSS_PROP_BORDER_TOP_COLOR, tokens, count, value);
+		/* Any other color uses the existing border-color grammar. */
+		error = values_single(parse, CSS_PROP_BORDER_TOP_COLOR, tokens, count, value);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the selected native scalar component was parsed. */
+		return 0;
 	}
 
 	/* A length may be a calculation, which is a function of several tokens. */
 	takes_length = values_takes_length(property);
-	if (takes_length && tokens[0].type == CSS_TOKEN_FUNCTION) {
+	if (takes_length &&
+	    tokens[0].type == CSS_TOKEN_FUNCTION) {
 		used = values_function_length(tokens, count);
 		if (used == count) {
 			error = values_calc(parse, property, tokens, count, value);
-			return error;
+			if (error != 0)
+				return error;
+
+			/* Succeeded: the existing calculation grammar parsed the whole component. */
+			return 0;
 		}
 	}
 
 	/* Alignment properties also take "first baseline", "last baseline" and an overflow position. */
-	if (count > 1U && (property == CSS_PROP_JUSTIFY_CONTENT || property == CSS_PROP_JUSTIFY_ITEMS ||
-	    property == CSS_PROP_ALIGN_ITEMS || property == CSS_PROP_ALIGN_CONTENT ||
-	    property == CSS_PROP_ALIGN_SELF || property == CSS_PROP_JUSTIFY_SELF)) {
-		size_t word;
-		size_t words;
-
+	if (count > 1U &&
+	    (property == CSS_PROP_JUSTIFY_CONTENT ||
+	     property == CSS_PROP_JUSTIFY_ITEMS ||
+	     property == CSS_PROP_ALIGN_ITEMS || property == CSS_PROP_ALIGN_CONTENT ||
+	     property == CSS_PROP_ALIGN_SELF || property == CSS_PROP_JUSTIFY_SELF)) {
+		/* Read exactly two alignment identifiers, ignoring whitespace tokens. */
 		words = 0;
 		parts[0] = NULL;
 		parts[1] = NULL;
 		for (word = 0; word < count; word++) {
 			if (tokens[word].type == CSS_TOKEN_WHITESPACE)
 				continue;
-			if (tokens[word].type != CSS_TOKEN_IDENT || words >= 2U)
+			if (tokens[word].type != CSS_TOKEN_IDENT ||
+			    words >= 2U)
 				return EINVAL;
 			parts[words] = &tokens[word];
 			words++;
 		}
+
+		/* A two-word alignment may now be classified without consuming other tokens. */
 		if (words != 2U)
 			return EINVAL;
-		if (css_ident_equal(parts[1], "baseline") &&
-		    (css_ident_equal(parts[0], "first") || css_ident_equal(parts[0], "last"))) {
-			/* The last baseline falls back to the end edge; the first one is the baseline. */
+
+		/* Baseline positions retain the original short-circuit order of keyword classification. */
+		is_baseline = css_ident_equal(parts[1], "baseline");
+		is_first = 0;
+		is_last = 0;
+		if (is_baseline) {
+			is_first = css_ident_equal(parts[0], "first");
+			if (!is_first)
+				is_last = css_ident_equal(parts[0], "last");
+		}
+
+		/* The last baseline falls back to the end edge; the first one remains a baseline. */
+		if (is_baseline &&
+		    (is_first ||
+		     is_last)) {
 			value->kind = CSS_VALUE_KEYWORD;
-			value->keyword = css_ident_equal(parts[0], "last") ? CSS_ALIGN_END : CSS_ALIGN_BASELINE;
+			is_last = css_ident_equal(parts[0], "last");
+			value->keyword = CSS_ALIGN_BASELINE;
+			if (is_last)
+				value->keyword = CSS_ALIGN_END;
+
+			/* Succeeded: the two-word baseline position is represented. */
 			return 0;
 		}
-		if (!css_ident_equal(parts[0], "safe") && !css_ident_equal(parts[0], "unsafe"))
-			return EINVAL;
-		/* The position after safe or unsafe is parsed alone; safe is marked in the keyword. */
+
+		/* Only safe or unsafe can prefix the remaining single-position parser. */
+		is_safe = css_ident_equal(parts[0], "safe");
+		if (!is_safe) {
+			is_unsafe = css_ident_equal(parts[0], "unsafe");
+			if (!is_unsafe)
+				return EINVAL;
+		}
+
+		/* A failed position parse cannot inspect or modify its result keyword. */
 		error = values_single(parse, property, parts[1], 1U, value);
-		if (error == 0 && css_ident_equal(parts[0], "safe"))
+		if (error != 0)
+			return error;
+		is_safe = css_ident_equal(parts[0], "safe");
+		if (is_safe)
 			value->keyword |= 0x1000;
-		return error;
+
+		/* Succeeded: the original safe-position flag is retained. */
+		return 0;
 	}
 
 	/* The other properties take one token. */
@@ -1914,8 +2204,16 @@ values_single(
 		return EINVAL;
 
 	/* One axis of background-position: a keyword or a length. */
-	if (property == CSS_PROP_BACKGROUND_POSITION_X || property == CSS_PROP_BACKGROUND_POSITION_Y)
-		return values_position_part(&tokens[0], value);
+	if (property == CSS_PROP_BACKGROUND_POSITION_X ||
+	    property == CSS_PROP_BACKGROUND_POSITION_Y) {
+		/* Parse the selected component with its established native grammar. */
+		error = values_position_part(&tokens[0], value);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the selected native scalar component was parsed. */
+		return 0;
+	}
 
 	/* The keyword properties. */
 	table = NULL;
@@ -2019,11 +2317,12 @@ values_single(
 			return EINVAL;
 		/* Physical left and right belong to justify-content, never align-* properties. */
 		if ((property == CSS_PROP_ALIGN_ITEMS ||
-		    property == CSS_PROP_ALIGN_CONTENT ||
-		    property == CSS_PROP_ALIGN_SELF) &&
+		     property == CSS_PROP_ALIGN_CONTENT ||
+		     property == CSS_PROP_ALIGN_SELF) &&
 		    (keyword == CSS_ALIGN_LEFT || keyword == CSS_ALIGN_RIGHT))
 			return EINVAL;
-		if (property == CSS_PROP_JUSTIFY_ITEMS && keyword == CSS_ALIGN_AUTO)
+		if (property == CSS_PROP_JUSTIFY_ITEMS &&
+		    keyword == CSS_ALIGN_AUTO)
 			return EINVAL;
 		if (property == CSS_PROP_JUSTIFY_CONTENT ||
 		    property == CSS_PROP_ALIGN_ITEMS ||
@@ -2033,6 +2332,8 @@ values_single(
 			if (keyword == CSS_ALIGN_SELF_END)
 				keyword = CSS_ALIGN_END;
 		}
+
+		/* Publish the validated native keyword after its property-specific restrictions. */
 		value->kind = CSS_VALUE_KEYWORD;
 		value->keyword = keyword;
 		return 0;
@@ -2072,7 +2373,8 @@ values_single(
 	}
 
 	/* A corner's radius on one axis: a length or a percentage that is not negative. */
-	if (property >= CSS_PROP_RADIUS_TOP_LEFT_X && property <= CSS_PROP_RADIUS_BOTTOM_LEFT_Y) {
+	if (property >= CSS_PROP_RADIUS_TOP_LEFT_X &&
+	    property <= CSS_PROP_RADIUS_BOTTOM_LEFT_Y) {
 		error = values_length(&tokens[0], 0, value);
 		if (error != 0)
 			return error;
@@ -2082,22 +2384,39 @@ values_single(
 	}
 
 	/* text-indent, outline-offset and border-spacing: a length. */
-	if (property == CSS_PROP_TEXT_INDENT || property == CSS_PROP_OUTLINE_OFFSET ||
-	    property == CSS_PROP_BORDER_SPACING_X || property == CSS_PROP_BORDER_SPACING_Y)
-		return values_length(&tokens[0], 0, value);
+	if (property == CSS_PROP_TEXT_INDENT ||
+	    property == CSS_PROP_OUTLINE_OFFSET ||
+	    property == CSS_PROP_BORDER_SPACING_X || property == CSS_PROP_BORDER_SPACING_Y) {
+		/* Parse the selected component with its established native grammar. */
+		error = values_length(&tokens[0], 0, value);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the selected native scalar component was parsed. */
+		return 0;
+	}
 
 	/* flex-grow and flex-shrink: a number that is not negative. */
-	if (property == CSS_PROP_FLEX_GROW || property == CSS_PROP_FLEX_SHRINK) {
-		if (tokens[0].type != CSS_TOKEN_NUMBER || tokens[0].number < 0)
+	if (property == CSS_PROP_FLEX_GROW ||
+	    property == CSS_PROP_FLEX_SHRINK) {
+		if (tokens[0].type != CSS_TOKEN_NUMBER ||
+		    tokens[0].number < 0)
 			return EINVAL;
 		value->kind = CSS_VALUE_NUMBER;
-		value->number = (float)tokens[0].number;
+		if (tokens[0].number > FLT_MAX) {
+			value->number = FLT_MAX;
+		} else {
+			value->number = (float)tokens[0].number;
+		}
+
+		/* Succeeded: the supported factor is finite without rounding its declared source. */
 		return 0;
 	}
 
 	/* order: an integer. */
 	if (property == CSS_PROP_ORDER) {
-		if (tokens[0].type != CSS_TOKEN_NUMBER || !tokens[0].integer)
+		if (tokens[0].type != CSS_TOKEN_NUMBER ||
+		    !tokens[0].integer)
 			return EINVAL;
 		value->kind = CSS_VALUE_NUMBER;
 		value->number = (float)tokens[0].number;
@@ -2105,7 +2424,8 @@ values_single(
 	}
 
 	/* The gaps: normal (none) or a length. */
-	if (property == CSS_PROP_ROW_GAP || property == CSS_PROP_COLUMN_GAP) {
+	if (property == CSS_PROP_ROW_GAP ||
+	    property == CSS_PROP_COLUMN_GAP) {
 		is_auto = css_ident_equal(&tokens[0], "normal");
 		if (is_auto) {
 			value->kind = CSS_VALUE_LENGTH;
@@ -2115,7 +2435,13 @@ values_single(
 		}
 
 		/* A length. */
-		return values_length(&tokens[0], 0, value);
+		/* Parse the selected component with its established native grammar. */
+		error = values_length(&tokens[0], 0, value);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the selected native scalar component was parsed. */
+		return 0;
 	}
 
 	/* Separates the content basis from the width-like keywords and lengths. */
@@ -2134,7 +2460,8 @@ values_single(
 		}
 
 		/* An integer (a number token without a fraction). */
-		if (tokens[0].type != CSS_TOKEN_NUMBER || !tokens[0].integer)
+		if (tokens[0].type != CSS_TOKEN_NUMBER ||
+		    !tokens[0].integer)
 			return EINVAL;
 		value->kind = CSS_VALUE_NUMBER;
 		value->number = (float)tokens[0].number;
@@ -2144,7 +2471,10 @@ values_single(
 	/* font-weight: a keyword or a number from 1 to 1000. */
 	if (property == CSS_PROP_FONT_WEIGHT) {
 		found = values_keyword(values_font_weight, &tokens[0], &keyword);
-		if (!found && tokens[0].type == CSS_TOKEN_NUMBER && tokens[0].number >= 1 && tokens[0].number <= 1000) {
+		if (!found &&
+		    tokens[0].type == CSS_TOKEN_NUMBER &&
+		    tokens[0].number >= 1 &&
+		    tokens[0].number <= 1000) {
 			found = 1;
 			keyword = (int)tokens[0].number;
 		}
@@ -2152,6 +2482,8 @@ values_single(
 		/* Anything else is not a weight. */
 		if (!found)
 			return EINVAL;
+
+		/* Publish the validated native keyword after its property-specific restrictions. */
 		value->kind = CSS_VALUE_KEYWORD;
 		value->keyword = keyword;
 		return 0;
@@ -2178,7 +2510,13 @@ values_single(
 		}
 
 		/* Otherwise a length (no keywords). */
-		return values_length(&tokens[0], 0, value);
+		/* Parse the selected component with its established native grammar. */
+		error = values_length(&tokens[0], 0, value);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the selected native scalar component was parsed. */
+		return 0;
 	}
 
 	/* line-height: normal, a number or a length. */
@@ -2190,11 +2528,18 @@ values_single(
 		}
 
 		/* Or a length, or normal. */
-		return values_length(&tokens[0], 1, value);
+		/* Parse the selected component with its established native grammar. */
+		error = values_length(&tokens[0], 1, value);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the selected native scalar component was parsed. */
+		return 0;
 	}
 
 	/* Border widths: a keyword or a length. */
-	if (property >= CSS_PROP_BORDER_TOP_WIDTH && property <= CSS_PROP_BORDER_LEFT_WIDTH) {
+	if (property >= CSS_PROP_BORDER_TOP_WIDTH &&
+	    property <= CSS_PROP_BORDER_LEFT_WIDTH) {
 		found = values_keyword(values_border_width, &tokens[0], &keyword);
 		if (found) {
 			value->kind = CSS_VALUE_LENGTH;
@@ -2204,16 +2549,24 @@ values_single(
 		}
 
 		/* Or a length. */
-		return values_length(&tokens[0], 0, value);
+		/* Parse the selected component with its established native grammar. */
+		error = values_length(&tokens[0], 0, value);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the selected native scalar component was parsed. */
+		return 0;
 	}
 
 	/* Padding cannot be negative; reject the declaration before it replaces an earlier value. */
 	error = values_length(&tokens[0], 1, value);
 	if (error != 0)
 		return error;
-	if (property >= CSS_PROP_PADDING_TOP && property <= CSS_PROP_PADDING_LEFT &&
+	if (property >= CSS_PROP_PADDING_TOP &&
+	    property <= CSS_PROP_PADDING_LEFT &&
 	    value->kind == CSS_VALUE_LENGTH && value->number < 0)
 		return EINVAL;
+	/* Succeeded: the property accepted its final native length component. */
 	return 0;
 }
 

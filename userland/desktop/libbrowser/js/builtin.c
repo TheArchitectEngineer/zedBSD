@@ -133,6 +133,11 @@ js_install_builtins(
 	if (error != 0)
 		return error;
 
+	/* Installs native Proxy after its callable, Array and property-protocol foundations are complete. */
+	error = js_builtin_install_proxy(realm);
+	if (error != 0)
+		return error;
+
 	/* Publishes builtin type tags only after all referenced objects exist. */
 	error = js_builtin_install_tags(realm);
 	if (error != 0)

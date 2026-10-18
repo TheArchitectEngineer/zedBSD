@@ -3,7 +3,8 @@
 # WS266 m68k（68030）の virt（QEMU）への移植（framebuffer の console・VFS の段まで）
 
 - ID: ws266、Master: [master.md](../master.md)、Primary Milestone: MG008
-- Status: planning（2026-10-18 Q1 作成。担当は未定）
+- Status: completed（2026-10-19 Q1: p001〜p003 cleared。到達点は T1-713、規約の見直しの後の回帰は T1-716）
+- Phase の directory は完了の規則で削除した（記録は git の 7e7b1e0a8 の plan/ws266/phase001〜003/phase.md）。試験の config は回帰に使うので plan/tools/ports/config-m68k-virt.mk に移し、Master の Tools に登録した。設計は [design.md](design.md) に残す。
 - 起点（2026-10-18 ユーザー）:「さらに、virt riscv32, virt ppc32, virt ppc64, virt m68k (68030)も追加してほしいです。それぞれWSを作ってほしいです。フレームバッファでコンソールが出てVFSがマウントできないところまででいいです。」
 - 前提（Q1 の調べ）: QEMU の `qemu-system-m68k -M virt` がある（Goldfish の TTY・RTC・PIC、virtio-mmio）。virt の既定の CPU は 68040 で、**QEMU の MMU の emulation が 68030 の PMMU をどこまで支えるかは未確認**（p001 で QEMU の source で確かめ、68030 で起動できない場合の案をユーザーに出す）。画面の device（virt に ramfb・virtio-gpu を付けられるか）も p001 で確かめる。既存の m68k の HAL は X68000（`src/hal/m68k/`、`bsp-x68k`、`include/hal/arch/m68030.h`、`mmu030`・`cache030` など）で、toolchain は GCC（`m68k-linux-gnu-gcc`、platform/x68k）。BSP は virt の 1 つ、CPU は 68030 の部品を共有する（2026-10-18 Q1 の説明）。
 
@@ -18,6 +19,8 @@
 
 | Phase | 目的 | 状態 |
 | --- | --- | --- |
-| p001 | 設計: QEMU の machine と画面の device、firmware・起動の道、toolchain、HAL の構成（既存の HAL との共有）、HAL の API の差分の案、試験の道具、Phase の表。code は書かない | planning |
+| p001 | 設計（[design.md](design.md)）: 68030 は QEMU で動かない → 68040、画面は virtio-gpu | cleared（2026-10-19 Q1） |
+| p002 | 68040 の HAL・virt の BSP・vmunix・boot-test の mode、T1 の画面で到達点 | cleared（2026-10-19 Q1、T1-713） |
+| p003 | 規約の全文の見直し（書き方だけ）、kernel の platform の binding を `hal-console.c` に | cleared（2026-10-19 Q1、T1-716） |
 - 既知の欠け（2026-10-18 P2 の報告、Q1 の確かめ）: `bootloader/x68k/stage2.c` と `src/hal/m68k/bsp-x68k/boot.c` が使う `struct x68k_boot_handoff` の定義が、2026-10-03 のリポジトリの作り直しの時から tree のどこにも無く、x68k は build できない。p001 で扱いを決める（boot loader → HAL の構造体として HAL か bootloader/ に定義し直すか）。
 - 決定（2026-10-18 ユーザー、クリック）: QEMU の virt で 68030 の MMU が動かなければ「68040 で virt を動かす」（CPU 側に 68040 の MMU・cache・例外の frame・FPU の部品を足す。68030 の道は build だけ）。HAL の API は形を限った事前の承認（Guardrail の表）。

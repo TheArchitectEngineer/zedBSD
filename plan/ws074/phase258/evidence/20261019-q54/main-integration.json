@@ -1,0 +1,27 @@
+{
+  "branch": "main",
+  "commits": {
+    "7b524047e": {
+      "main_ancestor": true,
+      "paths": [
+        "plan/ws074/phase258/phase.md",
+        "plan/ws074/queue.md",
+        "plan/ws074/ws.md"
+      ]
+    },
+    "6b6be56e0": {
+      "main_ancestor": true,
+      "paths": [
+        "plan/ws074/tests/host-proxy-read.c",
+        "plan/ws074/tests/public-proxy.js",
+        "userland/desktop/libbrowser/Makefile",
+        "userland/desktop/libbrowser/js/builtin.c",
+        "userland/desktop/libbrowser/js/builtin.h",
+        "userland/desktop/libbrowser/js/builtin_proxy.c"
+      ]
+    }
+  },
+  "conflict_entries": 0,
+  "master_in_owned_commits": false,
+  "push": false
+}

@@ -6,7 +6,7 @@
  */
 
 /*
- * The inline style of elements for scripts (ws074-p031): the style
+ * The inline style of elements for scripts: the style
  * attribute as a CSSStyleDeclaration.
  *
  * The declaration reads and writes the element's style attribute each
@@ -47,34 +47,6 @@ struct style_list {
 	unsigned rooted;
 };
 
-static int style_element(struct vm_realm *realm, vm_value this_value, struct dom_element **element);
-static int style_read(struct vm_realm *realm, struct dom_element *element, struct style_list *list);
-static int style_parse(struct vm_realm *realm, const uint16_t *units, size_t length, struct style_list *list);
-static int style_parse_one(struct vm_realm *realm, const uint16_t *units, size_t start, size_t end, struct style_list *list);
-static void style_trim(const uint16_t *units, size_t *start, size_t *end);
-static int style_strip_important(const uint16_t *units, size_t start, size_t *end);
-static int style_write(struct vm_realm *realm, struct dom_element *element, const struct style_list *list);
-static int style_serialize(const struct style_list *list, struct wb_units *units);
-static int style_find(const struct style_list *list, const struct vm_string *name, uint32_t *index);
-static int style_set(struct vm_realm *realm, struct dom_element *element, struct vm_string *name, struct vm_string *value, int important);
-static int style_remove(struct vm_realm *realm, struct dom_element *element, struct vm_string *name, vm_value *old_value);
-static int style_list_create(struct vm_realm *realm, struct style_list *list);
-static void style_list_release(struct vm_realm *realm, struct style_list *list);
-static int style_list_append(struct vm_realm *realm, struct style_list *list, struct vm_string *name, struct vm_string *value, int important);
-static int style_list_remove_at(struct vm_realm *realm, struct style_list *list, uint32_t index);
-static int style_remove_from_list(struct vm_realm *realm, struct style_list *list, const struct vm_string *name);
-static int style_valid(struct vm_realm *realm, const struct vm_string *name, const struct vm_string *value, int *valid);
-static int style_canonical_decoration_line(struct vm_realm *realm, const struct vm_string *name, struct vm_string *value, struct vm_string **out);
-static int style_canonical_grid_empty_lines(struct vm_realm *realm, const struct vm_string *name, struct vm_string *value, struct vm_string **out);
-static int style_canonical_grid_auto_flow(struct vm_realm *realm, const struct vm_string *name, struct vm_string *value, struct vm_string **out);
-static int style_decoration_parts(const struct vm_string *value, struct wb_units parts[5]);
-static int style_decoration_longhand(const struct vm_string *name);
-static int style_decoration_get(struct vm_realm *realm, const struct style_list *list, const struct vm_string *name, vm_value *result, int *present);
-static int style_decoration_expand(struct vm_realm *realm, struct style_list *list);
-static int style_property_name(struct vm_realm *realm, vm_value value, struct vm_string **name);
-static int style_accessor(struct bind_window *window, const char *name, struct vm_string *property);
-static void style_camel_case(const char *name, int capital, char out[STYLE_NAME_MAX]);
-static int style_is_space(uint16_t unit);
 static int style_css_text_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int style_css_text_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int style_length(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
@@ -83,9 +55,6 @@ static int style_get_property_value(struct vm_realm *realm, vm_value this_value,
 static int style_get_property_priority(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int style_set_property(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int style_remove_property(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
-static int style_member_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
-static int style_member_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
-static int style_css_supports(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 
 /*
  * The attributes of CSSStyleDeclaration; the properties' accessors are
@@ -117,6 +86,40 @@ static const struct bind_operation style_operations[] = {
 const struct bind_interface bind_css_style_declaration_interface = {
 	"CSSStyleDeclaration", BIND_NO_PARENT, 0, NULL, style_attributes, style_operations, NULL
 };
+
+static int style_element(struct vm_realm *realm, vm_value this_value, struct dom_element **element);
+static int style_read(struct vm_realm *realm, struct dom_element *element, struct style_list *list);
+static int style_parse(struct vm_realm *realm, const uint16_t *units, size_t length, struct style_list *list);
+static int style_parse_one(struct vm_realm *realm, const uint16_t *units, size_t start, size_t end, struct style_list *list);
+static void style_trim(const uint16_t *units, size_t *start, size_t *end);
+static int style_strip_important(const uint16_t *units, size_t start, size_t *end);
+static int style_write(struct vm_realm *realm, struct dom_element *element, const struct style_list *list);
+static int style_serialize(struct vm_realm *realm, const struct style_list *list, int canonical, struct wb_units *units);
+static int style_find(const struct style_list *list, const struct vm_string *name, uint32_t *index);
+static int style_set(struct vm_realm *realm, struct dom_element *element, struct vm_string *name, struct vm_string *value, int important);
+static int style_remove(struct vm_realm *realm, struct dom_element *element, struct vm_string *name, vm_value *old_value);
+static int style_list_create(struct vm_realm *realm, struct style_list *list);
+static void style_list_release(struct vm_realm *realm, struct style_list *list);
+static int style_list_append(struct vm_realm *realm, struct style_list *list, struct vm_string *name, struct vm_string *value, int important);
+static int style_list_remove_at(struct vm_realm *realm, struct style_list *list, uint32_t index);
+static int style_remove_from_list(struct vm_realm *realm, struct style_list *list, const struct vm_string *name);
+static int style_valid(struct vm_realm *realm, const struct vm_string *name, const struct vm_string *value, int *valid);
+static int style_canonical_decoration_line(struct vm_realm *realm, const struct vm_string *name, struct vm_string *value, struct vm_string **out);
+static int style_canonical_grid_empty_lines(struct vm_realm *realm, const struct vm_string *name, struct vm_string *value, struct vm_string **out);
+static int style_canonical_grid_auto_flow(struct vm_realm *realm, const struct vm_string *name, struct vm_string *value, struct vm_string **out);
+static int style_decoration_parts(const struct vm_string *value, struct wb_units parts[5]);
+static int style_decoration_longhand(const struct vm_string *name);
+static int style_decoration_get(struct vm_realm *realm, const struct style_list *list, const struct vm_string *name, vm_value *result, int *present);
+static int style_decoration_expand(struct vm_realm *realm, struct style_list *list);
+static int style_property_name(struct vm_realm *realm, vm_value value, struct vm_string **name);
+static int style_accessor(struct bind_window *window, const char *name, struct vm_string *property);
+static void style_camel_case(const char *name, int capital, char out[STYLE_NAME_MAX]);
+static int style_is_space(uint16_t unit);
+static int style_member_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int style_member_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int style_css_supports(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int style_factor_name(const struct vm_string *name);
+static int style_canonical_factor(struct vm_realm *realm, const struct vm_string *name, struct vm_string *value, struct vm_string **out);
 
 /*
  * Adds an accessor to CSSStyleDeclaration's prototype for each property
@@ -383,6 +386,7 @@ style_read(
 {
 	struct dom_attribute *attribute;
 	struct vm_string *style_atom;
+	struct vm_string *source;
 	struct wb_units units;
 	int status;
 
@@ -391,21 +395,25 @@ style_read(
 	if (status != 0)
 		return status;
 
-	/* The attribute. */
-	style_atom = vm_atom_from_ascii(realm->heap, "style");
-	if (style_atom == NULL) {
-		style_list_release(realm, list);
-		return ENOMEM;
-	}
+	/* CSSOM's exact source is authoritative until an external attribute change reparses it. */
+	source = element->inline_style_source;
+	if (source == NULL) {
+		style_atom = vm_atom_from_ascii(realm->heap, "style");
+		if (style_atom == NULL) {
+			style_list_release(realm, list);
+			return ENOMEM;
+		}
 
-	/* Finds the current style attribute after its name is available. */
-	attribute = dom_element_find_attribute(element, DOM_NS_NONE, style_atom);
-	if (attribute == NULL)
-		return 0;
+		/* A declaration block without a current style attribute is empty. */
+		attribute = dom_element_find_attribute(element, DOM_NS_NONE, style_atom);
+		if (attribute == NULL)
+			return 0;
+		source = attribute->value;
+	}
 
 	/* Its characters, cut into declarations. */
 	wb_units_init(&units);
-	status = vm_string_append_units(attribute->value, &units);
+	status = vm_string_append_units(source, &units);
 	if (status == 0)
 		status = style_parse(realm, units.data, units.length, list);
 	wb_units_release(&units);
@@ -492,6 +500,9 @@ style_parse_one(
 	struct vm_string *name;
 	struct vm_string *value;
 	struct vm_cell *name_root;
+	struct vm_cell *value_root;
+	int valid;
+	int factor;
 	struct wb_units lower;
 	size_t colon;
 	size_t name_start;
@@ -504,7 +515,8 @@ style_parse_one(
 
 	/* The colon between the name and the value. */
 	colon = start;
-	while (colon < end && units[colon] != ':')
+	while (colon < end &&
+	       units[colon] != ':')
 		colon++;
 	if (colon >= end)
 		return 0;
@@ -518,7 +530,8 @@ style_parse_one(
 	important = style_strip_important(units, value_start, &end);
 
 	/* Nothing on either side is no declaration. */
-	if (name_end == name_start || end == value_start)
+	if (name_end == name_start ||
+	    end == value_start)
 		return 0;
 
 	/* The name's characters. */
@@ -531,10 +544,13 @@ style_parse_one(
 
 	/* In lower case, but a custom property's as it is. */
 	custom = 0;
-	if (lower.length >= 2U && lower.data[0] == '-' && lower.data[1] == '-')
+	if (lower.length >= 2U &&
+	    lower.data[0] == '-' &&
+	    lower.data[1] == '-')
 		custom = 1;
 	for (index = 0; !custom && index < lower.length; index++) {
-		if (lower.data[index] >= 'A' && lower.data[index] <= 'Z')
+		if (lower.data[index] >= 'A' &&
+		    lower.data[index] <= 'Z')
 			lower.data[index] = (uint16_t)(lower.data[index] + 0x20U);
 	}
 
@@ -555,11 +571,28 @@ style_parse_one(
 		return ENOMEM;
 	}
 
-	/* Succeeded: the declaration is in the list. */
-	status = style_list_append(realm, list, name, value, important);
+	/* Validation may allocate, so a fresh value has its own placeholder before native parsing. */
+	value_root = &value->cell;
+	status = vm_heap_add_root(realm->heap, &value_root);
+	if (status != 0) {
+		vm_heap_remove_root(realm->heap, &name_root);
+		return status;
+	}
+
+	/* Raw style attributes obey the selected factor grammar as well as CSSOM assignments. */
+	valid = 1;
+	factor = style_factor_name(name);
+	if (factor)
+		status = style_valid(realm, name, value, &valid);
+	if (status == 0 &&
+	    valid)
+		status = style_list_append(realm, list, name, value, important);
+	vm_heap_remove_root(realm->heap, &value_root);
 	vm_heap_remove_root(realm->heap, &name_root);
 	if (status != 0)
 		return status;
+
+	/* Succeeded: the valid declaration was kept, or the invalid selected factor was ignored. */
 	return 0;
 }
 
@@ -640,74 +673,86 @@ style_write(
 	struct dom_element *element,
 	const struct style_list *list)
 {
-	struct vm_string *style_atom;
+	struct vm_string *source;
 	struct vm_string *text;
 	struct vm_cell *roots[2];
-	struct wb_units units;
+	struct wb_units raw;
+	struct wb_units visible;
+	unsigned index;
 	unsigned registered;
 	int status;
 
-	/* The text. */
-	wb_units_init(&units);
-	status = style_serialize(list, &units);
-	if (status != 0) {
-		wb_units_release(&units);
-		return status;
-	}
-
-	/* As a string. */
-	text = vm_string_from_units(realm->heap, units.data, units.length);
-	wb_units_release(&units);
-	if (text == NULL)
-		return ENOMEM;
-	roots[0] = &text->cell;
+	/* Separate exact declaration source from its public canonical string before touching the DOM. */
+	wb_units_init(&raw);
+	wb_units_init(&visible);
+	roots[0] = NULL;
 	roots[1] = NULL;
 	registered = 0;
-	while (registered < 2U) {
-		status = vm_heap_add_root(realm->heap, &roots[registered]);
+	for (index = 0; index < 2U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
 		if (status != 0)
 			goto cleanup;
+
+		/* Cleanup owns only successfully acquired string placeholders. */
 		registered++;
 	}
 
-	/* The attribute takes it. */
-	style_atom = vm_atom_from_ascii(realm->heap, "style");
-	if (style_atom == NULL) {
+	/* Raw list values retain precision, while public number components use the canonical display representation. */
+	status = style_serialize(realm, list, 0, &raw);
+	if (status != 0)
+		goto cleanup;
+	status = style_serialize(realm, list, 1, &visible);
+	if (status != 0)
+		goto cleanup;
+	source = vm_string_from_units(realm->heap, raw.data, raw.length);
+	if (source == NULL) {
 		status = ENOMEM;
 		goto cleanup;
 	}
 
-	/* The name and value stay live until the attribute stores both. */
-	roots[1] = &style_atom->cell;
-	status = dom_element_set_attribute(element, style_atom, text);
+	/* The exact source survives the following serialized-string allocation. */
+	roots[0] = &source->cell;
+	text = vm_string_from_units(realm->heap, visible.data, visible.length);
+	if (text == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* The DOM owns updating-flag, commit-versus-notification and reentrant restoration semantics. */
+	roots[1] = &text->cell;
+	status = dom_element_set_style_attribute(element, source, text);
 
 cleanup:
-	/* The attribute owns the strings only after successful publication. */
+	/* Native buffers and acquired roots never outlive this synchronous publication frame. */
+	wb_units_release(&visible);
+	wb_units_release(&raw);
 	while (registered != 0U) {
 		registered--;
 		vm_heap_remove_root(realm->heap, &roots[registered]);
 	}
 
-	/* Reports failed serialization or publication to the caller. */
+	/* Preserve conversion, allocation and committed notification errors. */
 	if (status != 0)
 		return status;
 
-	/* Succeeded: the attribute holds the declarations. */
+	/* Succeeded: exact specified declarations and public attribute serialization are synchronized. */
 	return 0;
 }
 
 /* Writes declarations as "name: value;" (with " !important" when they are), separated by spaces. */
 static int
 style_serialize(
+	struct vm_realm *realm,
 	const struct style_list *list,
+	int canonical,
 	struct wb_units *units)
 {
-	static const uint16_t colon[] = { ':', ' ' };
-	static const uint16_t important[] = { ' ', '!', 'i', 'm', 'p', 'o', 'r', 't', 'a', 'n', 't' };
+	static const uint16_t colon[] = {':', ' '};
+	static const uint16_t important[] = {' ', '!', 'i', 'm', 'p', 'o', 'r', 't', 'a', 'n', 't'};
 	static const uint16_t semicolon = ';';
 	static const uint16_t space = ' ';
 	const struct vm_string *name;
-	const struct vm_string *value;
+	struct vm_string *value;
 	uint32_t index;
 	int priority;
 	int status;
@@ -716,8 +761,15 @@ style_serialize(
 	status = 0;
 	for (index = 0; index < list->names->length && status == 0; index++) {
 		name = (const struct vm_string *)vm_value_as_cell(list->names->elements[index]);
-		value = (const struct vm_string *)vm_value_as_cell(list->values->elements[index]);
+		value = (struct vm_string *)vm_value_as_cell(list->values->elements[index]);
 		priority = vm_to_boolean(list->priorities->elements[index]);
+
+		/* A public view canonicalizes a component without rewriting the underlying declaration value. */
+		if (canonical) {
+			status = style_canonical_factor(realm, name, value, &value);
+			if (status != 0)
+				break;
+		}
 
 		/* A space before every declaration but the first. */
 		if (index > 0)
@@ -730,7 +782,8 @@ style_serialize(
 			status = wb_units_append(units, colon, 2);
 		if (status == 0)
 			status = vm_string_append_units(value, units);
-		if (status == 0 && priority)
+		if (status == 0 &&
+		    priority)
 			status = wb_units_append(units, important, sizeof(important) / sizeof(important[0]));
 		if (status == 0)
 			status = wb_units_append(units, &semicolon, 1);
@@ -905,10 +958,12 @@ style_remove(
 {
 	struct style_list list;
 	struct vm_cell *old_root;
+	struct vm_string *value;
 	struct vm_cell *name_root;
 	uint32_t index;
 	int present;
 	int removed;
+	int decoration;
 	int old_registered;
 	int status;
 
@@ -936,7 +991,8 @@ style_remove(
 	if (status != 0)
 		goto cleanup;
 	old_root = vm_value_as_cell(*old_value);
-	if (style_decoration_longhand(name)) {
+	decoration = style_decoration_longhand(name);
+	if (decoration) {
 		status = style_decoration_expand(realm, &list);
 		if (status != 0)
 			goto cleanup;
@@ -948,8 +1004,13 @@ style_remove(
 		present = style_find(&list, name, &index);
 		if (!present)
 			break;
-		*old_value = list.values->elements[index];
-		old_root = vm_value_as_cell(*old_value);
+		/* The returned old value uses the same canonical view as its getter. */
+		value = (struct vm_string *)vm_value_as_cell(list.values->elements[index]);
+		status = style_canonical_factor(realm, name, value, &value);
+		if (status != 0)
+			goto cleanup;
+		*old_value = vm_value_cell(value);
+		old_root = &value->cell;
 		status = style_list_remove_at(realm, &list, index);
 		if (status != 0)
 			goto cleanup;
@@ -1184,6 +1245,73 @@ style_valid(
 		return status;
 
 	/* Succeeded: the answer is in *valid. */
+	return 0;
+}
+
+/* Identify the selected native longhand factor components without widening other property grammars. */
+static int
+style_factor_name(
+	const struct vm_string *name)
+{
+	int same;
+
+	/* The grow factor has one nonnegative numeric component. */
+	same = vm_string_equal_ascii(name, "flex-grow");
+	if (same)
+		return 1;
+
+	/* The shrink factor uses the same declared-number serialization. */
+	same = vm_string_equal_ascii(name, "flex-shrink");
+	if (!same)
+		return 0;
+
+	/* Succeeded: this is a selected factor longhand. */
+	return 1;
+}
+
+/* Build a canonical declared-number view while leaving exact native source values untouched. */
+static int
+style_canonical_factor(
+	struct vm_realm *realm,
+	const struct vm_string *name,
+	struct vm_string *value,
+	struct vm_string **out)
+{
+	struct wb_units source;
+	struct wb_units canonical;
+	int factor;
+	int handled;
+	int status;
+
+	/* Other properties, custom properties and nonnumeric grammar keep their existing representation. */
+	*out = value;
+	factor = style_factor_name(name);
+	if (!factor)
+		return 0;
+	wb_units_init(&source);
+	wb_units_init(&canonical);
+	status = vm_string_append_units(value, &source);
+	if (status != 0)
+		goto cleanup;
+	status = css_number_serialize(source.data, source.length, &canonical, &handled);
+	if (status != 0)
+		goto cleanup;
+	if (handled) {
+		*out = vm_string_from_units(realm->heap, canonical.data, canonical.length);
+		if (*out == NULL) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+	}
+
+cleanup:
+	/* No tokenizer or formatting buffer borrows VM string storage after returning. */
+	wb_units_release(&canonical);
+	wb_units_release(&source);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the caller receives a new view or the original untouched component. */
 	return 0;
 }
 
@@ -1726,7 +1854,11 @@ style_css_text_get(
 	computed = bind_computed_element(this_value, &element);
 	if (computed) {
 		status = bind_string(realm, "", result);
-		return status;
+		if (status != 0)
+			return status;
+
+		/* Succeeded: the requested declaration view is available. */
+		return 0;
 	}
 
 	/* The element's declarations. */
@@ -1739,7 +1871,7 @@ style_css_text_get(
 
 	/* Their text. */
 	wb_units_init(&units);
-	status = style_serialize(&list, &units);
+	status = style_serialize(realm, &list, 1, &units);
 	style_list_release(realm, &list);
 	if (status != 0) {
 		wb_units_release(&units);
@@ -1954,6 +2086,7 @@ style_get_property_value(
 	struct dom_element *element;
 	struct style_list list;
 	struct vm_string *name;
+	struct vm_string *value;
 	struct vm_cell *name_root;
 	uint32_t index;
 	int present;
@@ -1972,7 +2105,11 @@ style_get_property_value(
 			return status;
 		status = bind_computed_value(realm, element, name, result);
 		vm_heap_remove_root(realm->heap, &name_root);
-		return status;
+		if (status != 0)
+			return status;
+
+		/* Succeeded: the requested declaration view is available. */
+		return 0;
 	}
 
 	/* The element, the name and the declarations. */
@@ -2001,22 +2138,41 @@ style_get_property_value(
 			vm_heap_remove_root(realm->heap, &name_root);
 			return status;
 		}
+
+		/* A synthesized shorthand already supplied the public value. */
 		if (present) {
 			style_list_release(realm, &list);
 			vm_heap_remove_root(realm->heap, &name_root);
 			return 0;
 		}
 	}
+
+	/* Name classification is complete before an absent-value result is allocated. */
 	vm_heap_remove_root(realm->heap, &name_root);
+	/* An absent declaration yields the ordinary empty string. */
 	if (!present) {
 		status = bind_string(realm, "", result);
+		style_list_release(realm, &list);
+		if (status != 0)
+			return status;
+
+		/* Succeeded: the requested declaration view is available. */
+		return 0;
+	}
+
+	/* A canonical number view does not round the declaration used by later layout or CSSOM writes. */
+	value = (struct vm_string *)vm_value_as_cell(list.values->elements[index]);
+	status = style_canonical_factor(realm, name, value, &value);
+	if (status != 0) {
 		style_list_release(realm, &list);
 		return status;
 	}
 
-	/* Succeeded: its value. */
-	*result = list.values->elements[index];
+	/* Publish the selected string before releasing its transient declaration list. */
+	*result = vm_value_cell(value);
 	style_list_release(realm, &list);
+
+	/* Succeeded: the native declaration's public value is available. */
 	return 0;
 }
 
@@ -2214,6 +2370,7 @@ style_member_get(
 	struct style_list list;
 	struct vm_function *callee;
 	struct vm_string *name;
+	struct vm_string *value;
 	uint32_t index;
 	int present;
 	int computed;
@@ -2228,7 +2385,11 @@ style_member_get(
 	computed = bind_computed_element(this_value, &element);
 	if (computed) {
 		status = bind_computed_value(realm, element, name, result);
-		return status;
+		if (status != 0)
+			return status;
+
+		/* Succeeded: the requested declaration view is available. */
+		return 0;
 	}
 
 	/* The element and the declarations. */
@@ -2247,20 +2408,38 @@ style_member_get(
 			style_list_release(realm, &list);
 			return status;
 		}
+
+		/* A synthesized shorthand already supplied the public value. */
 		if (present) {
 			style_list_release(realm, &list);
 			return 0;
 		}
 	}
+
+	/* An absent declaration yields the ordinary empty string. */
 	if (!present) {
 		status = bind_string(realm, "", result);
+		style_list_release(realm, &list);
+		if (status != 0)
+			return status;
+
+		/* Succeeded: the requested declaration view is available. */
+		return 0;
+	}
+
+	/* A canonical number view does not round the declaration used by later layout or CSSOM writes. */
+	value = (struct vm_string *)vm_value_as_cell(list.values->elements[index]);
+	status = style_canonical_factor(realm, name, value, &value);
+	if (status != 0) {
 		style_list_release(realm, &list);
 		return status;
 	}
 
-	/* Succeeded: its value. */
-	*result = list.values->elements[index];
+	/* Publish the selected string before releasing its transient declaration list. */
+	*result = vm_value_cell(value);
 	style_list_release(realm, &list);
+
+	/* Succeeded: the native declaration's public value is available. */
 	return 0;
 }
 

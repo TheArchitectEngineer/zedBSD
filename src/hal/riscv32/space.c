@@ -391,6 +391,8 @@ hal_space_destroy(
 		kernel_free(page);
 		(void)__atomic_fetch_sub(&page_table_count, 1U, __ATOMIC_RELAXED);
 	}
+
+	/* Frees the root and the record. */
 	space->magic = 0;
 	(void)hal_pmem_free(&space->root_memory, RISCV32_PAGE_SIZE);
 	kernel_free(space);
@@ -522,6 +524,8 @@ hal_space_map(
 				if (leaf != NULL)
 					*leaf = 0;
 			}
+
+			/* Unlinks the tables left empty, then drops the stale translations and frees them. */
 			detached = detach_empty_tables(space);
 			hal_wmb();
 			flush_space(handle);
@@ -529,6 +533,8 @@ hal_space_map(
 			space_unlock(space, enabled);
 			return HAL_ERR_NOMEM;
 		}
+
+		/* Writes the page's leaf. */
 		*leaf = leaf_entry((uint64_t)paddr + offset, user_leaf_flags(attr));
 	}
 
@@ -583,6 +589,8 @@ hal_space_unmap(
 		if (leaf != NULL)
 			*leaf = 0;
 	}
+
+	/* Unlinks the tables left empty, then drops the stale translations and frees them. */
 	detached = detach_empty_tables(space);
 
 	/* Drops the stale translations before the tables are reused. */
@@ -664,6 +672,8 @@ hal_space_prot_query(
 			observed |= HAL_SPACE_PAGE_DIRTY;
 		*leaf = old & ~(uint32_t)RISCV32_PTE_V;
 	}
+
+	/* Publishes the entries before the translations are dropped. */
 	hal_wmb();
 	flush_space(handle);
 
@@ -679,6 +689,8 @@ hal_space_prot_query(
 		old = *leaf;
 		*leaf = (old & PTE_PPN_MASK) | user_leaf_flags(attr) | (old & RISCV32_PTE_SW_DIRTY);
 	}
+
+	/* Publishes the entries before the translations are dropped. */
 	hal_wmb();
 	flush_space(handle);
 
@@ -964,6 +976,8 @@ hal_space_unmap_device(
 			return HAL_ERR_INVALID;
 		return HAL_OK;
 	}
+
+	/* An address in the direct map was handed out as RAM. */
 	if (address >= RISCV32_DIRECT_BASE && address < RISCV32_DIRECT_LIMIT)
 		return HAL_OK;
 
@@ -1181,6 +1195,8 @@ build_direct_megapage(
 		if (mappable)
 			pages[page_index] = leaf_entry(page, KERNEL_LEAF | RISCV32_PTE_R | RISCV32_PTE_W);
 	}
+
+	/* Links the table of pages into the root. */
 	kernel_root[root_index] = pointer_entry(pages_physical);
 }
 
@@ -1253,6 +1269,8 @@ build_kernel_window(
 		} else if (address >= (uintptr_t)__kernel_rodata_start && address < (uintptr_t)__kernel_rodata_end) {
 			flags = KERNEL_LEAF | RISCV32_PTE_R;
 		}
+
+		/* Writes the page's leaf. */
 		pages[page] = leaf_entry(address, flags);
 	}
 }
@@ -1337,6 +1355,8 @@ harts_selecting(
 			*self = true;
 			continue;
 		}
+
+		/* Reads whether the hart is up. */
 		ready = __atomic_load_n(&record->ready, __ATOMIC_ACQUIRE);
 		if (ready != 0)
 			mask |= 1UL << record->hart_id;
@@ -1418,6 +1438,8 @@ space_lock_handle(
 			break;
 		hal_atomic_relax();
 	}
+
+	/* Records the holder, so that a nested operation is caught. */
 	space->lock_owner = me;
 
 	/* Leaves the registry with interrupts still off for the space's operation. */
@@ -1609,6 +1631,7 @@ detach_empty_tables(
 	uint32_t parent_entry;
 	int again;
 	int empty;
+	uint32_t expected_entry;
 
 	/* Passes over the tables until a pass detaches nothing. */
 	detached = NULL;
@@ -1627,8 +1650,9 @@ detach_empty_tables(
 
 			/* The parent entry must point at this very table. */
 			parent_entry = page->parent[page->parent_index];
+			expected_entry = pointer_entry(page->memory);
 			if ((parent_entry & RISCV32_PTE_V) == 0 ||
-			    pointer_entry(page->memory) != parent_entry)
+			    expected_entry != parent_entry)
 				HAL_FATAL("detaching an unlinked riscv32 page table");
 
 			/* Unlinks the table from its parent and from the space's list. */

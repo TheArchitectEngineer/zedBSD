@@ -25,6 +25,9 @@ PLATFORMS = [
     ("riscv32-virt", "riscv32", "virt", "QEMU virt RISC-V 32"),
     ("sun4u", "sparcv9", "sun4u", "SPARC V9 sun4u"),
     ("x68k", "m68k", "x68k", "Sharp X68000 MC68030"),
+    ("m68k-virt", "m68k", "virt", "QEMU virt MC68040"),
+    ("ppc32-mac99", "ppc32", "mac99", "QEMU mac99 PowerPC 32"),
+    ("ppc64-pseries", "ppc64", "pseries", "QEMU pseries PowerPC 64"),
 ]
 
 BOARD_LABELS = {
@@ -34,6 +37,8 @@ BOARD_LABELS = {
     "virt": "QEMU virt",
     "sun4u": "sun4u",
     "x68k": "Sharp X68000",
+    "mac99": "QEMU mac99",
+    "pseries": "QEMU pseries",
 }
 
 # Variant is a board-owned image-layout choice.  It deliberately does not
@@ -53,6 +58,9 @@ BOARD_VARIANTS = {
     ("riscv32", "virt"): [("default", "Default")],
     ("sparcv9", "sun4u"): [("default", "Default")],
     ("m68k", "x68k"): [("default", "Default")],
+    ("m68k", "virt"): [("default", "Default")],
+    ("ppc32", "mac99"): [("default", "Default")],
+    ("ppc64", "pseries"): [("default", "Default")],
 }
 
 # The names the Packages menu gives the directories of userland/packages

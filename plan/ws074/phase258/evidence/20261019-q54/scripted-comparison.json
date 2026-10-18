@@ -1,0 +1,14 @@
+{
+  "eligible": 413,
+  "counts": {
+    "fail": 283,
+    "readiness_missing": 20,
+    "pass": 105,
+    "unsupported_environment": 5
+  },
+  "whole_gains": [],
+  "whole_regressions": [],
+  "whole_changes": [],
+  "captures": 805,
+  "rgb_changes": []
+}

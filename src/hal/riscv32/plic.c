@@ -177,6 +177,8 @@ riscv32_plic_enable(
 	} else {
 		bits &= ~(1U << (source % 32U));
 	}
+
+	/* Writes the context's enable word back. */
 	hal_mmio_write32(word, bits);
 
 	riscv32_spin_unlock(&plic_enable_lock, enabled);
