@@ -131,7 +131,7 @@ drv_i915_engines_record_defaults(
 		/* An engine still busy after the budget is a timeout (-ETIME). */
 		if (busy != 0U && d->err == 0) {
 			d->timed_out = 1;
-			i915_defaults_fail(d, EIO, "intel_gt_wait_for_idle -ETIME");
+			i915_defaults_fail(d, EIO, "idle wait -ETIME");
 		}
 	}
 
@@ -272,7 +272,7 @@ i915_defaults_submit_engine(
 	/* Creates the record context with a 4 KiB ring. */
 	error = drv_i915_lrc_alloc(ce, ge, pp, gm, I915_DEFAULTS_RING_BYTES, 0U);
 	if (error != 0) {
-		i915_defaults_fail(d, error, "intel_context_create");
+		i915_defaults_fail(d, error, "context create");
 		return error;
 	}
 
@@ -282,14 +282,14 @@ i915_defaults_submit_engine(
 	/* Allocates the timeline's own status page. */
 	d->tl_page[index] = drv_i915_gt_object_create(gm, I915_DEFAULTS_TIMELINE_BYTES);
 	if (d->tl_page[index] == NULL) {
-		i915_defaults_fail(d, ENOMEM, "intel_timeline_create");
+		i915_defaults_fail(d, ENOMEM, "timeline create");
 		return ENOMEM;
 	}
 
 	/* Pins the timeline page into the GGTT. */
 	error = drv_i915_gt_ggtt_bind(gm, d->tl_page[index]);
 	if (error != 0) {
-		i915_defaults_fail(d, error, "intel_timeline_pin");
+		i915_defaults_fail(d, error, "timeline pin");
 		return error;
 	}
 
@@ -311,14 +311,14 @@ i915_defaults_submit_engine(
 					(uint32_t)d->tl_page[index]->ggtt_offset,
 					(volatile uint32_t *)d->tl_page[index]->cpu);
 	if (error != 0) {
-		i915_defaults_fail(d, error, "i915_request_create");
+		i915_defaults_fail(d, error, "request create");
 		return error;
 	}
 
 	/* Writes the engine's context workarounds. */
 	error = drv_i915_emit_context_wa(rq, &gi->ctx_wa[index], mmio);
 	if (error != 0) {
-		i915_defaults_fail(d, error, "intel_engine_emit_ctx_wa");
+		i915_defaults_fail(d, error, "context workarounds");
 		return error;
 	}
 
@@ -326,7 +326,7 @@ i915_defaults_submit_engine(
 	if (ge->info->graphics_ver == 9 && ge->info->class == I915_RENDER_CLASS) {
 		error = i915_defaults_emit_null_state(d, gm, rq, index);
 		if (error != 0) {
-			i915_defaults_fail(d, error, "intel_renderstate_emit");
+			i915_defaults_fail(d, error, "null render state");
 			return error;
 		}
 	}
@@ -454,10 +454,10 @@ i915_defaults_advance_record(
 		return;
 	}
 
-	/* Switches to the kernel context (switch_to_kernel_context()). */
+	/* Switches to the kernel context. */
 	error = i915_defaults_switch_to_kernel(es, d, mmio, index);
 	if (error != 0) {
-		i915_defaults_fail(d, error, "switch_to_kernel_context");
+		i915_defaults_fail(d, error, "kernel context switch");
 		return;
 	}
 

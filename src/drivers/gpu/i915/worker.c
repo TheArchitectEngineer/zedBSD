@@ -2025,7 +2025,7 @@ i915_worker_context_fill(
 		I915_WORKER_RING_BYTES,
 		sw_id);
 	if (error != 0) {
-		kern_logf("i915: resident shim: intel_context_create failed rc=%d\n", error);
+		kern_logf("i915: resident shim: context create failed rc=%d\n", error);
 		return error;
 	}
 

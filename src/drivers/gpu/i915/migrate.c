@@ -82,9 +82,8 @@ drv_i915_migrate_init(
 	}
 
 	/*
-	 * The pinned timeline lives in the engine's status page
-	 * (intel_timeline_create_from_engine(engine, I915_GT_HWS_MIGRATE)) and
-	 * has no initial breadcrumb.
+	 * The pinned timeline lives in the engine's status page at
+	 * I915_GT_HWS_MIGRATE and has no initial breadcrumb.
 	 */
 	m->hwsp_ggtt = (uint32_t)ge->hwsp_ggtt + I915_GT_HWS_MIGRATE;
 	m->hwsp_cpu = &ge->hwsp[I915_GT_HWS_MIGRATE / 4U];
@@ -218,12 +217,12 @@ i915_migrate_populate(
 		return error;
 
 	/*
-	 * Creates the pinned context (intel_engine_create_pinned_context(engine,
-	 * vm, SZ_512K, I915_GT_HWS_MIGRATE, "migrate")).
+	 * Creates the pinned context: the migration address space and a
+	 * 512 KiB ring.
 	 */
 	error = drv_i915_lrc_alloc(&m->ce, ge, &m->vm, gm, I915_MIGRATE_RING_BYTES, 0U);
 	if (error != 0) {
-		i915_migrate_fail(m, error, "intel_engine_create_pinned_context");
+		i915_migrate_fail(m, error, "pinned context create");
 		return error;
 	}
 

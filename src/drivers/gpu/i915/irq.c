@@ -313,7 +313,7 @@ drv_i915_irq_install(
 		irq->irq_enabled = 0;
 		if (irq->display_ops != NULL)
 			irq->display_ops->set_irqs_enabled(irq->display_context, 0);
-		kern_logf("i915: intel_irq_install: hal_irq_attach_msi(irq=%d) failed rc=%d\n",
+		kern_logf("i915: irq install: hal_irq_attach_msi(irq=%d) failed rc=%d\n",
 		    irq->msi_irq,
 		    status);
 
@@ -370,7 +370,7 @@ drv_i915_irq_uninstall(
 	/* Detaches the handler and waits for any invocation still running. */
 	status = hal_irq_detach_msi_sync(irq->msi_irq, i915_irq_handler, irq);
 	if (status != HAL_OK) {
-		kern_logf("i915: intel_irq_uninstall: detach_msi_sync (irq=%d) rc=%d\n",
+		kern_logf("i915: irq uninstall: detach_msi_sync (irq=%d) rc=%d\n",
 		    irq->msi_irq,
 		    status);
 	}
@@ -414,7 +414,7 @@ drv_i915_synchronize_irq(
 		delay_error = drv_i915_udelay(I915_IRQ_SYNC_STEP_US);
 		if (delay_error != 0) {
 			irq->sync_time_faults++;
-			kern_logf("i915: intel_synchronize_irq: the time base failed while waiting (not a timeout)\n");
+			kern_logf("i915: irq sync: the time base failed while waiting (not a timeout)\n");
 
 			return EIO;
 		}
@@ -422,7 +422,7 @@ drv_i915_synchronize_irq(
 
 	/* An invocation did not finish within the bound. */
 	irq->sync_timeouts++;
-	kern_logf("i915: intel_synchronize_irq: a handler invocation did not finish (entries=%u exits=%u)\n",
+	kern_logf("i915: irq sync: a handler invocation did not finish (entries=%u exits=%u)\n",
 	    seen,
 	    irq->handler_exits);
 

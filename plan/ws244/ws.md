@@ -42,7 +42,7 @@ Resume point: p001 の棚卸しは途中（plan/ws244/inventory.md、P7 5a352c47
 | [p006](phase006/phase.md) | GT の電源と WA: gt-power.c・workarounds.c・verify-workarounds.c の書き直し | cleared（2026-10-19 Q1） |
 | [p007](phase007/phase.md) | compiler・render: genxml*・eu-encoding-*・null-state-gen9 の header（判断 1 に従う）と eu.c・compile.c・*.inc・render の Mesa の言及を Procedure/Values referenced に | cleared（2026-10-19 Q1） |
 | [p008](phase008/phase.md) | display の残り: internal.h の古い comment、xd-dp.h ほかの言及の掃除 | cleared（2026-10-19 Q1） |
-| p009 | license の package（userland/base/licenses/i915-driver/）の整理（判断 2）、規約の全文の見直し、T1 への実機の試験の依頼 | planned（p002〜p008 の後） |
+| [p009](phase009/phase.md) | license の package（userland/base/licenses/i915-driver/）の整理（判断 2）、規約の全文の見直し、T1 への実機の試験の依頼 | in-progress（2026-10-19 P1 code は済み、directory の削除は Q1、実機は T1 待ち） |
 
 ## ユーザーの決定（2026-10-18、クリック）
 

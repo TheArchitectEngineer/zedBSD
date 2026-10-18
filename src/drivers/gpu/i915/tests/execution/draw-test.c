@@ -1325,9 +1325,9 @@ i915_test_draw_run(
 		&t->ce,
 		&t->tl_page,
 		env,
-		"intel_context_create",
-		"intel_timeline_create",
-		"intel_timeline_pin");
+		"context create",
+		"timeline create",
+		"timeline pin");
 	if (error != 0)
 		return error;
 
@@ -1482,9 +1482,9 @@ i915_test_tex_run(
 		&t->ce,
 		&t->tl_page,
 		env,
-		"intel_context_create",
-		"intel_timeline_create",
-		"intel_timeline_pin");
+		"context create",
+		"timeline create",
+		"timeline pin");
 	if (error != 0)
 		return error;
 
@@ -1809,9 +1809,9 @@ i915_test_r1_step_prepare(
 			&cx->ce,
 			&cx->tl_page,
 			env,
-			"r1: intel_context_create",
-			"r1: intel_context_create",
-			"r1: intel_context_create");
+			"r1: context create",
+			"r1: context create",
+			"r1: context create");
 		if (cx->ce.allocated)
 			cx->created = 1;
 
@@ -2246,9 +2246,9 @@ i915_test_t3_step_prepare(
 			&cx->ce,
 			&cx->tl_page,
 			env,
-			"t3: intel_context_create",
-			"t3: intel_context_create",
-			"t3: intel_context_create");
+			"t3: context create",
+			"t3: context create",
+			"t3: context create");
 		if (cx->ce.allocated)
 			cx->created = 1;
 

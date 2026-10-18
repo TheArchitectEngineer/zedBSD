@@ -315,19 +315,18 @@ drv_i915_engine_verify_wa_submit(
 	/* Allocates the scratch page the registers are stored into. */
 	verify->scratch[index] = drv_i915_gt_object_create(gt_mem, I915_VWA_SCRATCH_BYTES);
 	if (verify->scratch[index] == NULL)
-		return i915_verify_wa_fail(verify, ENOMEM, "__vm_create_scratch_for_read");
+		return i915_verify_wa_fail(verify, ENOMEM, "scratch create");
 
 	kern_memset(verify->scratch[index]->cpu, 0, I915_VWA_SCRATCH_BYTES);
 
 	/* Binds the scratch page into the GGTT, where the stores address it. */
 	error = drv_i915_gt_ggtt_bind(gt_mem, verify->scratch[index]);
 	if (error != 0)
-		return i915_verify_wa_fail(verify, error, "i915_vma_pin_ww");
+		return i915_verify_wa_fail(verify, error, "scratch pin");
 
 	/*
 	 * Creates a request on the kernel context, whose timeline is the next
-	 * seqno of the engine's pinned kernel timeline (intel_engine_pm_get,
-	 * i915_request_create).
+	 * seqno of the engine's pinned kernel timeline.
 	 */
 	engines->kernel_tl_seqno[index]++;
 	kernel_seqno = engines->kernel_tl_seqno[index];
@@ -338,7 +337,7 @@ drv_i915_engine_verify_wa_submit(
 		(uint32_t)engine->hwsp_ggtt + I915_GT_HWS_SEQNO_ADDR,
 		&engine->hwsp[I915_GT_HWS_SEQNO_ADDR / 4U]);
 	if (error != 0)
-		return i915_verify_wa_fail(verify, error, "i915_request_create");
+		return i915_verify_wa_fail(verify, error, "request create");
 
 	/*
 	 * Emits the stores.  i915_vma_move_to_active() is fence bookkeeping
@@ -347,7 +346,7 @@ drv_i915_engine_verify_wa_submit(
 	verify->graphics_ver[index] = engine->info->graphics_ver;
 	error = drv_i915_wa_list_store_regs(rq, wal, (uint32_t)verify->scratch[index]->ggtt_offset, &verify->emitted[index], &verify->mcr_skipped[index]);
 	if (error != 0)
-		return i915_verify_wa_fail(verify, error, "wa_list_srm");
+		return i915_verify_wa_fail(verify, error, "workaround store");
 
 	/* Closes the request with its breadcrumb. */
 	error = drv_i915_request_close(rq);
@@ -496,7 +495,7 @@ drv_i915_engine_verify_wa_park(
 
 	/* Reports a switch that could not be built or submitted. */
 	if (error != 0)
-		return i915_verify_wa_fail(verify, error, "switch_to_kernel_context");
+		return i915_verify_wa_fail(verify, error, "kernel context switch");
 
 	/* Succeeded: the switch is in flight. */
 	verify->state[index] = I915_VWA_SWITCH;
@@ -583,7 +582,7 @@ drv_i915_engines_verify_workarounds(
 		error = drv_i915_engine_verify_wa_park(verify, index, engines, mmio);
 		if (error != 0) {
 			verify->engine_err[index] = error;
-			(void)i915_verify_wa_fail(verify, EIO, "switch_to_kernel_context");
+			(void)i915_verify_wa_fail(verify, EIO, "kernel context switch");
 		}
 	}
 
@@ -601,10 +600,10 @@ drv_i915_engines_verify_workarounds(
 				verify->engine_err[index] = error;
 
 			/* Records the wait failure, naming a timeout as such. */
-			where = "intel_gt_wait_for_idle";
+			where = "idle wait";
 			if (error == ETIMEDOUT) {
 				verify->timed_out = 1;
-				where = "intel_gt_wait_for_idle -ETIME";
+				where = "idle wait -ETIME";
 			}
 
 			(void)i915_verify_wa_fail(verify, EIO, where);

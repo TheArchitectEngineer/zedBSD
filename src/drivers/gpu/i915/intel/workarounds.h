@@ -141,7 +141,7 @@
  */
 
 /*
- * gen9_wa_init_mcr: the Gen8 layout of the steering selector.
+ * The Gen9 MCR steering: the Gen8 layout of the steering selector.
  *
  * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_gt_regs.h
  * (GEN8_MCR_SLICE, GEN8_MCR_SLICE_MASK, GEN8_MCR_SUBSLICE,

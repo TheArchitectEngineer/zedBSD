@@ -684,7 +684,7 @@ drv_i915_device_resume_hw(
 			first_error = error;
 	}
 
-	/* Clears the fence registers, as the start did (intel_ggtt_init_fences). */
+	/* Clears the fence registers, as the start did. */
 	for (fence = 0U; fence < I915_START_FENCES; fence++) {
 		drv_i915_raw_write32(&gt->mmio, 0x100000U + fence * 8U, 0U);
 		drv_i915_raw_write32(&gt->mmio, 0x100000U + fence * 8U + 4U, 0U);
@@ -1340,13 +1340,13 @@ i915_start_registers(
 	    i915_popcount32(dss));
 
 	/*
-	 * Points the replicated-register selector at multicast (intel_gt_init_mmio).
+	 * Points the replicated-register selector at multicast.
 	 * Gen9 has no multicast bit: its GT workaround list steers the selector
 	 * at the first enabled slice and subslice instead.
 	 */
 	if (gt->graphics_ver != 9U) {
 		drv_i915_write32(&gt->mmio, I915_MCR_SELECTOR, I915_MCR_MULTICAST);
-		drv_i915_trace_record(&gt->trace, 0U, I915_TRACE_NOTE, "intel_gt_init_mmio:mcr_multicast", 0U, 0U);
+		drv_i915_trace_record(&gt->trace, 0U, I915_TRACE_NOTE, "gt mmio:mcr_multicast", 0U, 0U);
 	}
 
 	/* Reads the clock, the SSEU, the steering mask and the engine set, which need GT and render awake. */
@@ -1360,8 +1360,8 @@ i915_start_registers(
 	if (error != 0)
 		return error;
 
-	drv_i915_trace_record(&gt->trace, 0U, I915_TRACE_ACQUIRE, "sanitize_gpu:__intel_gt_reset", 1U, 0U);
-	kern_logf("i915: sanitize_gpu __intel_gt_reset(ALL_ENGINES) ok\n");
+	drv_i915_trace_record(&gt->trace, 0U, I915_TRACE_ACQUIRE, "sanitize:gt reset", 1U, 0U);
+	kern_logf("i915: sanitize: gt reset (all engines) ok\n");
 
 	/* Succeeded: registers answer and the GT is reset. */
 	return 0;
@@ -1662,7 +1662,7 @@ i915_start_aperture(
 		    view);
 	}
 
-	/* Clears the 32 fence registers with the GT domain awake (intel_ggtt_init_fences). */
+	/* Clears the 32 fence registers with the GT domain awake. */
 	device->stage = "forcewake_fences";
 	error = drv_i915_forcewake_get(&gt->mmio, I915_FORCEWAKE_GT);
 	if (error != 0)
@@ -1674,7 +1674,7 @@ i915_start_aperture(
 	}
 
 	(void)drv_i915_forcewake_put(&gt->mmio, I915_FORCEWAKE_GT);
-	drv_i915_trace_record(&gt->trace, 0U, I915_TRACE_NOTE, "intel_ggtt_init_fences", I915_START_FENCES, 0U);
+	drv_i915_trace_record(&gt->trace, 0U, I915_TRACE_NOTE, "ggtt fences", I915_START_FENCES, 0U);
 	kern_logf("i915: ggtt_init_hw: %u fence registers initialized\n", I915_START_FENCES);
 
 	/* Succeeded: the aperture view exists and the fences are clear. */
@@ -1694,9 +1694,9 @@ i915_start_interrupts(
 
 	/* The handler needs the vector programmed with the memory setup. */
 	enabled = drv_i915_pci_msi_enabled(&gt->pci);
-	device->stage = "intel_irq_install";
+	device->stage = "irq install";
 	if (gt->msi_kept == 0U || enabled == 0) {
-		kern_logf("i915: intel_irq_install: no MSI vector retained (msi_kept=%u) -- cannot attach a handler\n", gt->msi_kept);
+		kern_logf("i915: irq install: no MSI vector retained (msi_kept=%u) -- cannot attach a handler\n", gt->msi_kept);
 		return ENODEV;
 	}
 
@@ -1718,7 +1718,7 @@ i915_start_interrupts(
 
 	/* Resets every source, attaches the handler and enables the GT sources. */
 	error = drv_i915_irq_install(&gt->irq);
-	kern_logf("i915: intel_irq_install: rc=%d msi_irq=%d attached=%d gt_irqs=0x%x dmask=0x%x smask=0x%x reset_writes=%u post_writes=%u\n",
+	kern_logf("i915: irq install: rc=%d msi_irq=%d attached=%d gt_irqs=0x%x dmask=0x%x smask=0x%x reset_writes=%u post_writes=%u\n",
 	    error,
 	    gt->irq.msi_irq,
 	    gt->irq.handler_attached,
@@ -1783,7 +1783,7 @@ i915_start_gt(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the GT is initialized (intel_gt_init). */
+	/* Succeeded: the GT is initialized. */
 	return 0;
 }
 
@@ -1833,8 +1833,8 @@ i915_start_gt_awake(
 	if (error != 0)
 		return error;
 
-	/* Creates the status pages, execlists state and kernel contexts (intel_engines_init). */
-	device->stage = "intel_engines_init";
+	/* Creates the status pages, execlists state and kernel contexts. */
+	device->stage = "engine init";
 	error = drv_i915_engines_init(&gt->engines, &gt->info, &gt->mem, &gt->ppgtt);
 	if (error != 0)
 		return error;
@@ -1842,7 +1842,7 @@ i915_start_gt_awake(
 	gt->engines_inited = 1U;
 
 	/* Programs the hardware. */
-	device->stage = "intel_gt_resume";
+	device->stage = "gt resume";
 	error = drv_i915_gt_resume(&gt->engines, &gt->init, &gt->info, &gt->mmio, &gt->uncore_lock);
 	kern_logf("i915: gt resume: rc=%d reset_engines=%d stop_cs_timeouts=%u engines_resumed=%u l3cc(rcs)=%u\n",
 	    error,
@@ -1871,8 +1871,8 @@ i915_start_gt_awake(
 
 	gt->engines_resumed = 1U;
 
-	/* Records the default context images from the GPU (__engines_record_defaults). */
-	device->stage = "__engines_record_defaults";
+	/* Records the default context images from the GPU. */
+	device->stage = "record default contexts";
 	error = drv_i915_engines_record_defaults(&gt->defaults, &gt->engines, &gt->init, &gt->mem, &gt->ppgtt, &gt->mmio, &gt->uncore_lock, 200U);
 	gt->defaults_inited = 1U;
 	kern_logf("i915: record_defaults: rc=%d where=%s polls=%u timed_out=%d wedged=%d\n",
@@ -1888,8 +1888,8 @@ i915_start_gt_awake(
 	for (index = 0U; index < gt->engines.n; index++)
 		gt->engines.ge[index].default_state = gt->defaults.default_state[index];
 
-	/* Checks the engine workarounds from the GPU's own stores (__engines_verify_workarounds). */
-	device->stage = "__engines_verify_workarounds";
+	/* Checks the engine workarounds from the GPU's own stores. */
+	device->stage = "verify workarounds";
 	error = drv_i915_engines_verify_workarounds(&gt->verify, &gt->engines, &gt->init, &gt->mem, &gt->mmio, 200U);
 	gt->verify_inited = 1U;
 	kern_logf("i915: verify_workarounds: rc=%d where=%s polls=%u timed_out=%d\n",
@@ -1921,8 +1921,8 @@ i915_start_gt_memory(
 
 	gt = &device->gt;
 
-	/* Opens the window at the top of the GGTT (intel_gt_init_scratch, kernel_vm). */
-	device->stage = "intel_gt_init_scratch/kernel_vm";
+	/* Opens the window at the top of the GGTT. */
+	device->stage = "gt scratch/kernel vm";
 	error = drv_i915_gt_mem_init(&gt->mem, gt->dma_device, I915_START_DMA_MASK, gt->gtt.address, gt->ggtt_entries, gt->scratch_pte, &gt->mmio);
 	if (error != 0)
 		return error;
@@ -1967,7 +1967,7 @@ i915_start_pxp(
 		return;
 	}
 
-	/* Creates the context on the video engine (intel_pxp_init). */
+	/* Creates the context on the video engine. */
 	error = drv_i915_pxp_init(&gt->pxp, &gt->engines, &gt->ppgtt, &gt->mem, 1);
 	gt->pxp_inited = 1U;
 	kern_logf("i915: pxp_init: rc=%d where=%s full=%d\n",
@@ -2062,12 +2062,12 @@ i915_stop_gt(
 	if (gt->pxp_inited != 0U) {
 		drv_i915_pxp_fini(&gt->pxp, &gt->mem);
 		gt->pxp_inited = 0U;
-		kern_logf("i915: stop: intel_pxp_fini (VCS context + stream page released)\n");
+		kern_logf("i915: stop: pxp fini (VCS context + stream page released)\n");
 	}
 
 	/*
 	 * Stops the command streamers and resets the engines before the objects
-	 * they point at are released (intel_gt_driver_remove -> gt_sanitize).
+	 * they point at are released.
 	 */
 	if (gt->engines_resumed != 0U) {
 		error = i915_forcewake_get_all(gt, &held);
@@ -2149,14 +2149,14 @@ i915_stop_hardware(
 	 */
 	sync_failed = drv_i915_display_irq_sync_failed(device);
 	if (gt->irq_installed != 0U && sync_failed) {
-		kern_logf("i915: stop: intel_irq_uninstall NOT run: a pipe interrupt drain failed earlier (irq_attached=1 resources_retained=1; irq_count=%u handled=%u none=%u)\n",
+		kern_logf("i915: stop: irq uninstall NOT run: a pipe interrupt drain failed earlier (irq_attached=1 resources_retained=1; irq_count=%u handled=%u none=%u)\n",
 		    gt->irq.irq_count,
 		    gt->irq.irq_handled_count,
 		    gt->irq.irq_none_count);
 	} else if (gt->irq_installed != 0U) {
 		drv_i915_irq_uninstall(&gt->irq);
 		gt->irq_installed = 0U;
-		kern_logf("i915: stop: intel_irq_uninstall (sources reset, handler detached; irq_count=%u handled=%u none=%u)\n",
+		kern_logf("i915: stop: irq uninstall (sources reset, handler detached; irq_count=%u handled=%u none=%u)\n",
 		    gt->irq.irq_count,
 		    gt->irq.irq_handled_count,
 		    gt->irq.irq_none_count);

@@ -765,9 +765,9 @@ i915_bios_report(
 
 	/* Records whether a VBT was parsed or is absent. */
 	if (!vbt->vbt_found) {
-		drv_i915_trace_record(trace, I915_VBT_TRACE_STAGE, I915_TRACE_NOTE, "intel_bios_init:vbt_absent", (uint64_t)(unsigned)vbt->source, 0U);
+		drv_i915_trace_record(trace, I915_VBT_TRACE_STAGE, I915_TRACE_NOTE, "vbt:vbt_absent", (uint64_t)(unsigned)vbt->source, 0U);
 	} else {
-		drv_i915_trace_record(trace, I915_VBT_TRACE_STAGE, I915_TRACE_ACQUIRE, "intel_bios_init:vbt_parsed", (uint64_t)vbt->version, 0U);
+		drv_i915_trace_record(trace, I915_VBT_TRACE_STAGE, I915_TRACE_ACQUIRE, "vbt:vbt_parsed", (uint64_t)vbt->version, 0U);
 	}
 
 	/* Logs the source and the parse. */
