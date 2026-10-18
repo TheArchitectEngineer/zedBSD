@@ -158,6 +158,8 @@ static int computed_write_url_quoted(const struct vm_string *text, struct wb_uni
 static int computed_write_offset(const struct css_style *style, int side, struct wb_units *out);
 static int computed_write_font_family(const struct css_style *style, struct wb_units *out);
 static int computed_write_tracks(const struct css_track *tracks, int count, struct wb_units *out);
+static int computed_track_minimum(const struct css_track *track, struct wb_units *out);
+static int computed_track_breadth(const struct css_track *track, struct wb_units *out);
 static int computed_name(const char *const *names, size_t count, int value, struct wb_units *out);
 static int computed_align(int value, int flex, struct wb_units *out);
 static void computed_blockify(struct bind_window *window, struct dom_element *element, struct css_style *style);
@@ -1289,10 +1291,7 @@ computed_write_font_family(
 	return 0;
 }
 
-/*
- * Writes one grid-template axis as the style has the tracks (none, or each
- * track's length, fraction or auto; the used sizes are not kept).
- */
+/* Writes computed track breadths when actual used tracks are not requested or available. */
 static int
 computed_write_tracks(
 	const struct css_track *tracks,
@@ -1301,42 +1300,163 @@ computed_write_tracks(
 {
 	const struct css_track *track;
 	int index;
+	int bounded;
 	int error;
 
-	/* No tracks is none. */
+	/* An absent explicit track list has the computed value none. */
 	if (count == 0) {
 		error = computed_ascii("none", out);
-		return error;
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the empty template is serialized. */
+		return 0;
 	}
 
-	/* Each track, separated by spaces. */
+	/* Separates every computed track without dropping its intrinsic bounds. */
 	for (index = 0; index < count; index++) {
+		/* Resolves the current scalar track before appending its separator. */
 		track = &tracks[index];
-
-		/* A space before all but the first. */
 		if (index > 0) {
 			error = computed_ascii(" ", out);
 			if (error != 0)
 				return error;
 		}
 
-		/* By its kind. */
-		if (track->kind == CSS_TRACK_FR) {
-			error = computed_number(track->fr, out);
-			if (error == 0)
-				error = computed_ascii("fr", out);
-		} else if (track->kind == CSS_TRACK_AUTO) {
-			error = computed_ascii("auto", out);
-		} else {
-			error = computed_length(&track->size, out);
+		/* Explicit bounds retain minmax except for the canonical auto-minimum flex breadth. */
+		bounded = 0;
+		if (track->minimum_rule != CSS_TRACK_MINIMUM_NONE)
+			bounded = 1;
+
+		/* An ordinary flexible breadth already implies the same automatic minimum. */
+		if (track->minimum_rule == CSS_TRACK_MINIMUM_AUTO && track->kind == CSS_TRACK_FR)
+			bounded = 0;
+
+		/* Opens the explicit function only when its lower breadth must be serialized. */
+		if (bounded) {
+			error = computed_ascii("minmax(", out);
+			if (error != 0)
+				return error;
+
+			/* Writes the accepted minimum independently of its maximum. */
+			error = computed_track_minimum(track, out);
+			if (error != 0)
+				return error;
+
+			/* Separates the complete lower breadth from the upper breadth. */
+			error = computed_ascii(", ", out);
+			if (error != 0)
+				return error;
 		}
 
-		/* A failed track. */
+		/* Writes either the plain breadth or the maximum of minmax. */
+		error = computed_track_breadth(track, out);
 		if (error != 0)
 			return error;
+
+		/* Closes only the explicit function that this track opened. */
+		if (bounded) {
+			error = computed_ascii(")", out);
+			if (error != 0)
+				return error;
+		}
 	}
 
-	/* Succeeded: the tracks are written. */
+	/* Succeeded: all computed track functions and keywords are complete. */
+	return 0;
+}
+
+/* Writes the lower bound whose explicit minmax rule survived the cascade. */
+static int
+computed_track_minimum(
+	const struct css_track *track,
+	struct wb_units *out)
+{
+	const char *keyword;
+	int error;
+
+	/* Length minima retain percentages and calculated offsets in their computed form. */
+	if (track->minimum_rule == CSS_TRACK_MINIMUM_LENGTH) {
+		error = computed_length(&track->minimum, out);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the computed lower length is complete. */
+		return 0;
+	}
+
+	/* Selects the distinct accepted intrinsic minimum without consulting layout. */
+	keyword = "auto";
+	if (track->minimum_rule == CSS_TRACK_MINIMUM_MIN_CONTENT) {
+		keyword = "min-content";
+	} else if (track->minimum_rule == CSS_TRACK_MINIMUM_MAX_CONTENT) {
+		keyword = "max-content";
+	}
+
+	/* Appends the complete minimum keyword. */
+	error = computed_ascii(keyword, out);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the intrinsic lower breadth is complete. */
+	return 0;
+}
+
+/* Writes a plain track size or the independent upper breadth of minmax. */
+static int
+computed_track_breadth(
+	const struct css_track *track,
+	struct wb_units *out)
+{
+	const struct css_length *length;
+	const char *keyword;
+	int error;
+
+	/* Flexible breadths retain their original factor and fr unit. */
+	if (track->kind == CSS_TRACK_FR) {
+		error = computed_number(track->fr, out);
+		if (error != 0)
+			return error;
+
+		/* Completes the flexible dimension after its number. */
+		error = computed_ascii("fr", out);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the flexible breadth is complete. */
+		return 0;
+	}
+
+	/* Fixed breadths retain the cascade's ordinary length serialization. */
+	if (track->kind == CSS_TRACK_LENGTH) {
+		/* Explicit length minima preserve the independent computed maximum. */
+		length = &track->size;
+		if (track->minimum_rule == CSS_TRACK_MINIMUM_LENGTH)
+			length = &track->computed_maximum;
+
+		/* Serializes the computed upper bound without substituting its used floor. */
+		error = computed_length(length, out);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the computed fixed breadth is complete. */
+		return 0;
+	}
+
+	/* Selects the retained intrinsic maximum instead of collapsing it to auto. */
+	keyword = "auto";
+	if (track->maximum_rule == CSS_TRACK_MAXIMUM_MIN_CONTENT) {
+		keyword = "min-content";
+	} else if (track->maximum_rule == CSS_TRACK_MAXIMUM_MAX_CONTENT) {
+		keyword = "max-content";
+	}
+
+	/* Appends the complete intrinsic maximum keyword. */
+	error = computed_ascii(keyword, out);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the intrinsic upper breadth is complete. */
 	return 0;
 }
 

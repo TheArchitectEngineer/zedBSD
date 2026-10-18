@@ -159,6 +159,7 @@ static int values_auto_tracks(struct css_parse *parse, const struct css_token *t
 static int values_grid_auto_flow(const struct css_token *tokens, size_t count, struct css_value *value);
 static int values_track_list(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_track_list *list, int depth);
 static int values_track_minimum_rule(const struct css_token *token, int kind);
+static int values_track_maximum_rule(const struct css_token *token, int kind);
 static int values_one_track(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declared_track *track);
 static int values_track_size(struct css_parse *parse, const struct css_token *tokens, size_t count, int *kind, struct css_value *size);
 static size_t values_split_at(const struct css_token *tokens, size_t count, int type, uint32_t delim);
@@ -418,14 +419,14 @@ static const struct values_keyword values_display[] = {
 	{ NULL, 0 }
 };
 
-/* The keywords of border-collapse (ws074-p037). */
+/* The keywords of border-collapse. */
 static const struct values_keyword values_border_collapse[] = {
 	{ "separate", 0 },
 	{ "collapse", 1 },
 	{ NULL, 0 }
 };
 
-/* The keywords of container-type (ws074-p075). */
+/* The keywords of container-type. */
 static const struct values_keyword values_container_type[] = {
 	{ "normal", CSS_CONTAINER_NORMAL },
 	{ "inline-size", CSS_CONTAINER_INLINE_SIZE },
@@ -433,7 +434,7 @@ static const struct values_keyword values_container_type[] = {
 	{ NULL, 0 }
 };
 
-/* The keywords of direction (ws074-p073). */
+/* The keywords of direction. */
 static const struct values_keyword values_direction[] = {
 	{ "ltr", CSS_DIRECTION_LTR },
 	{ "rtl", CSS_DIRECTION_RTL },
@@ -994,7 +995,7 @@ static const struct values_color values_colors[] = {
 /*
  * Reports the name of the index-th property this pass knows (a longhand
  * or a shorthand), or NULL past the last one: the names the inline style
- * of scripts has members for (ws074-p031).
+ * of scripts has members for.
  */
 const char *
 css_property_name(
@@ -1782,7 +1783,7 @@ values_single(
 	if (property == CSS_PROP_CLIP)
 		return values_clip(parse, tokens, count, value);
 
-	/* A grid template takes a list of tracks (ws074-p072). */
+	/* A grid template takes a list of tracks. */
 	if (property == CSS_PROP_GRID_TEMPLATE_COLUMNS || property == CSS_PROP_GRID_TEMPLATE_ROWS)
 		return values_tracks(parse, tokens, count, value);
 	if (property == CSS_PROP_GRID_AUTO_FLOW)
@@ -2738,7 +2739,7 @@ values_wide_keyword(
 		values_add(out, made, CSS_PROP_TEXT_DECORATION_COLOR, value);
 		return;
 	case SHORT_BORDER_RADIUS:
-		/* The eight radii (ws074-p062). */
+		/* The eight radii. */
 		for (first = CSS_PROP_RADIUS_TOP_LEFT_X; first <= CSS_PROP_RADIUS_BOTTOM_LEFT_Y; first++)
 			values_add(out, made, first, value);
 		return;
@@ -3757,7 +3758,7 @@ values_calc_value(
 		return 0;
 	}
 
-	/* A min(), max() or clamp() inside the sum (ws074-p074): its arguments, kept in the arena, times one. */
+	/* A min(), max() or clamp() inside the sum: its arguments, kept in the arena, times one. */
 	operation = -1;
 	if (token->type == CSS_TOKEN_FUNCTION) {
 		is_calc = css_ident_equal(token, "min");
@@ -4243,7 +4244,7 @@ values_flex_flow(
 }
 
 /*
- * Parses border-radius (ws074-p062): one to four horizontal radii (top
+ * Parses border-radius: one to four horizontal radii (top
  * left, top right, bottom right, bottom left, the missing ones copied as
  * the four-sided shorthands copy them), then optionally a slash and one to
  * four vertical radii (otherwise the same as the horizontal ones).
@@ -4346,7 +4347,7 @@ values_corner_radius(
 }
 
 /*
- * Parses box-shadow (ws074-p062): none, or a comma-separated list of
+ * Parses box-shadow: none, or a comma-separated list of
  * shadows (the first CSS_SHADOWS of them are kept), in the parse's arena.
  */
 static int
@@ -4569,7 +4570,7 @@ values_outline(
 }
 
 /*
- * Parses clip-path (ws074-p062): inset() with one to four lengths (the
+ * Parses clip-path: inset() with one to four lengths (the
  * missing ones copied as margin copies its sides; a "round" and its radii
  * after them are not kept) as an inset in the parse's arena; none, and the
  * shapes this pass does not clip by, as the keyword 0.
@@ -4742,8 +4743,8 @@ values_grid_auto_flow(
 }
 
 /*
- * Parses a grid template (ws074-p072): none, or a list of track sizes
- * (lengths, percentages, fr, auto, min-content and max-content as auto,
+ * Parses a grid template: none, or a list of track sizes
+ * (lengths, percentages, fr, auto, min-content and max-content,
  * minmax(), fit-content() as auto, and repeat() with a count), the line
  * names in brackets validated and passed by; kept in the parse's arena.
  */
@@ -4785,7 +4786,7 @@ values_tracks(
 	return 0;
 }
 
-/* Parses the supported implicit-track cycle: auto and nonnegative fixed sizes. */
+/* Parses an implicit track cycle through the same single-breadth grammar as explicit tracks. */
 static int
 values_auto_tracks(
 	struct css_parse *parse,
@@ -4799,44 +4800,48 @@ values_auto_tracks(
 	size_t end;
 	int error;
 
-	/* Keeps the cycle in the arena so cascade and layout share the same sequence. */
+	/* Keeps the scalar cycle in the parse arena for ordinary cascade ownership. */
 	list = wb_arena_zalloc(parse->arena, sizeof(*list));
 	if (list == NULL)
 		return ENOMEM;
 
-	/* Each supported track is one size token or a complete calc() function. */
+	/* Consumes each single breadth while excluding repeated or named template syntax. */
 	index = 0;
 	while (index < count) {
+		/* Whitespace alone cannot introduce another track. */
 		index = values_skip_space(tokens, count, index);
 		if (index == count)
 			break;
+
+		/* Bounded cycles use the same storage limit as explicit track lists. */
 		if (list->count >= CSS_TRACKS)
 			return EINVAL;
-		if (tokens[index].type == CSS_TOKEN_IDENT &&
-		    !css_ident_equal(&tokens[index], "auto"))
-			return EINVAL;
+
+		/* A function forms one breadth; ordinary dimensions and keywords are one token. */
 		end = index + 1U;
-		if (tokens[index].type == CSS_TOKEN_FUNCTION) {
-			if (!css_ident_equal(&tokens[index], "calc"))
-				return EINVAL;
+		if (tokens[index].type == CSS_TOKEN_FUNCTION)
 			end = index + values_function_length(tokens + index, count - index);
-		}
+
+		/* Incomplete functions cannot consume tokens beyond this declaration. */
 		if (end <= index || end > count)
 			return EINVAL;
+
+		/* The common grammar retains intrinsic/minmax rules and rejects repeat or names. */
 		error = values_one_track(parse, tokens + index, end - index, &track);
 		if (error != 0)
 			return error;
-		if (track.kind != CSS_TRACK_AUTO && track.kind != CSS_TRACK_LENGTH &&
-		    track.kind != CSS_TRACK_FR)
-			return EINVAL;
+
+		/* Publishes one completely parsed breadth before consuming the next. */
 		list->tracks[list->count] = track;
 		list->count++;
 		index = end;
 	}
+
+	/* An implicit cycle must contain at least one breadth. */
 	if (list->count == 0U)
 		return EINVAL;
 
-	/* Succeeded: cascade receives the repeating implicit-track pattern. */
+	/* Succeeded: cascade receives the repeating scalar implicit-track pattern. */
 	value->kind = CSS_VALUE_TRACKS;
 	value->tracks = list;
 	return 0;
@@ -5006,7 +5011,33 @@ values_track_minimum_rule(
 	return CSS_TRACK_MINIMUM_AUTO;
 }
 
-/* Parses one track: a size, minmax(minimum, size), or fit-content() (as auto). */
+/* Classifies an accepted intrinsic maximum without changing the track grammar. */
+static int
+values_track_maximum_rule(
+	const struct css_token *token,
+	int kind)
+{
+	int same;
+
+	/* Lengths and flexible breadths retain their existing coarse kind. */
+	if (kind != CSS_TRACK_AUTO)
+		return CSS_TRACK_MAXIMUM_DEFAULT;
+
+	/* A min-content maximum must not measure or stretch as an automatic breadth. */
+	same = css_ident_equal(token, "min-content");
+	if (same)
+		return CSS_TRACK_MAXIMUM_MIN_CONTENT;
+
+	/* A max-content maximum has the unbroken contribution but no auto stretch. */
+	same = css_ident_equal(token, "max-content");
+	if (same)
+		return CSS_TRACK_MAXIMUM_MAX_CONTENT;
+
+	/* Succeeded: the accepted ordinary intrinsic maximum is automatic. */
+	return CSS_TRACK_MAXIMUM_DEFAULT;
+}
+
+/* Parses one track while preserving the minimum and maximum breadth rules. */
 static int
 values_one_track(
 	struct css_parse *parse,
@@ -5018,70 +5049,112 @@ values_one_track(
 	size_t comma;
 	size_t end;
 	size_t start;
+	size_t used;
 	int is_minmax;
 	int is_fit;
+	int is_calc;
 	int error;
 
-	/* No minimum unless minmax() gives one. */
+	/* An ordinary track has no explicit minimum or intrinsic maximum keyword. */
 	memset(track, 0, sizeof(*track));
 	track->minimum_kind = CSS_TRACK_AUTO;
 
-	/* A function: minmax() or fit-content(). */
+	/* Functional breadths use their existing grammar before keyword classification. */
 	if (tokens[0].type == CSS_TOKEN_FUNCTION) {
-		if (css_ident_equal(&tokens[0], "calc"))
-			return values_track_size(parse, tokens, count, &track->kind, &track->size);
+		/* A calculated length is an ordinary breadth without an explicit lower bound. */
+		is_calc = css_ident_equal(&tokens[0], "calc");
+		if (is_calc) {
+			error = values_track_size(parse, tokens, count, &track->kind, &track->size);
+			if (error != 0)
+				return error;
+
+			/* Succeeded: the calculated breadth is parsed. */
+			return 0;
+		}
+
+		/* Fit-content keeps its accepted grammar and existing automatic sizing path. */
 		is_fit = css_ident_equal(&tokens[0], "fit-content");
 		if (is_fit) {
-			/* Its one length or percentage is nonnegative, even though this pass sizes it as auto. */
+			/* Its single length or percentage remains nonnegative. */
 			if (count < 3U)
 				return EINVAL;
+
+			/* Excludes surrounding whitespace from the existing function argument. */
 			start = values_skip_space(tokens, count - 1U, 1U);
 			end = count - 1U;
 			while (end > start && tokens[end - 1U].type == CSS_TOKEN_WHITESPACE)
 				end--;
+
+			/* Simple arguments use the ordinary nonnegative length grammar. */
 			if (end - start == 1U) {
 				error = values_length(&tokens[start], 0, &limit);
-				if (error != 0 || limit.number < 0)
+				if (error != 0)
+					return EINVAL;
+
+				/* Negative fit limits are not track breadths. */
+				if (limit.number < 0)
 					return EINVAL;
 			} else {
-				/* Keep accepted calc() lengths for later computed-value range checking. */
-				if (tokens[start].type != CSS_TOKEN_FUNCTION || !css_ident_equal(&tokens[start], "calc"))
+				/* Longer accepted arguments must be a single complete calc function. */
+				if (tokens[start].type != CSS_TOKEN_FUNCTION)
 					return EINVAL;
-				if (values_function_length(tokens + start, end - start) != end - start)
+
+				/* Keeps the existing calc acceptance without adding another function grammar. */
+				is_calc = css_ident_equal(&tokens[start], "calc");
+				if (!is_calc)
+					return EINVAL;
+
+				/* Rejects trailing tokens outside the accepted calculation. */
+				used = values_function_length(tokens + start, end - start);
+				if (used != end - start)
 					return EINVAL;
 			}
 
-			/* The supported layout still treats a valid fit-content track as auto. */
+			/* Succeeded: the fit limit remains on its existing layout path. */
 			track->kind = CSS_TRACK_AUTO;
 			return 0;
 		}
 
-		/* Any other function is not a track size. */
+		/* Every remaining accepted track function is minmax. */
 		is_minmax = css_ident_equal(&tokens[0], "minmax");
 		if (!is_minmax || count < 3U)
 			return EINVAL;
 
-		/* The minimum before the comma, the size after it (without the closing parenthesis). */
+		/* Finds the lower breadth before the comma and excludes its leading spaces. */
 		comma = 1U + values_split_at(tokens + 1, count - 2U, CSS_TOKEN_COMMA, 0);
 		if (comma >= count - 1U)
 			return EINVAL;
+
+		/* Parses the existing lower-bound grammar before retaining its keyword. */
 		start = values_skip_space(tokens, comma, 1U);
 		error = values_track_size(parse, tokens + start, comma - start, &track->minimum_kind, &track->minimum);
 		if (error != 0)
 			return error;
+
+		/* Flexible factors are never valid lower bounds. */
 		if (track->minimum_kind == CSS_TRACK_FR)
 			return EINVAL;
 
-		/* Keep the lower-bound rule while the existing coarse kind continues to size tracks. */
+		/* Copies the semantic minimum before moving to the maximum argument. */
 		track->minimum_rule = values_track_minimum_rule(&tokens[start], track->minimum_kind);
 		start = values_skip_space(tokens, count - 1U, comma + 1U);
 		error = values_track_size(parse, tokens + start, count - 1U - start, &track->kind, &track->size);
-		return error;
+		if (error != 0)
+			return error;
+
+		/* Succeeded: both accepted bounds retain their distinct intrinsic meaning. */
+		track->maximum_rule = values_track_maximum_rule(&tokens[start], track->kind);
+		return 0;
 	}
 
-	/* A plain size. */
+	/* Parses a plain breadth before interpreting its accepted intrinsic keyword. */
 	error = values_track_size(parse, tokens, count, &track->kind, &track->size);
-	return error;
+	if (error != 0)
+		return error;
+
+	/* Succeeded: a plain min-content or max-content breadth stays distinct from auto. */
+	track->maximum_rule = values_track_maximum_rule(tokens, track->kind);
+	return 0;
 }
 
 /* Parses a track size: fr, auto (min-content, max-content), or a length or percentage. */
@@ -5185,7 +5258,7 @@ values_split_at(
 }
 
 /*
- * Parses a grid line (ws074-p072): auto, a line number (negative from the
+ * Parses a grid line: auto, a line number (negative from the
  * end), or span with a count; a named line is taken as auto.
  */
 static int

@@ -9,7 +9,13 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [ws074-q20261018-10](queue.md) finished（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+Queue: [ws074-q20261018-11](queue.md) active（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+
+Event ws074-p246-computed-floor-design-correction-20261018: existing repeat/vertical consumerのfloorを保つため、computed_maximumのscalar copyでunfloored upperを保持する設計へ確定。cascade floor移動案は撤回しp221/p243/p244/p246に反映。
+
+Event ws074-p246-q11-scope-reconciled-20261018: grid-autoがintrinsic/minmaxを早期拒否するため、自走契約でq11範囲を共通track-size parserへの統一へ改訂。初期snapshotを保存しp221/p243へ反映。timebox/非悪化criteriaは維持、repeat/line-name/fit sizing残りあり。
+
+Event ws074-p246-q11-selected-20261018: [p246](phase246/phase.md)を追加し、intrinsic maximum metadata/computed fallbackとhorizontal single-span min-content contributionを有限Queueへ選定。p221/p243 interfaceと検証へ反映、general/row/vertical等whole残りは維持。
 
 Event ws074-p245-q10-cleared-20261018: [証拠](phase245/evidence/20261018-q10/README.md)。no-box Phase cleared、固定174 whole107→109・callback989→993・後退0、独立19/19・unknown維持、DOM28/28、host/target warning0、Acid3差0/Acid2差873。次はintrinsic track keyword/sizing候補。WS全体/target/p100未達。
 
@@ -666,6 +672,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p243](phase243/phase.md) | Grid used trackのresolved CSSOM | uncleared / q09-i02 primary partial cleared | p221のsolver、p189 q03 raw・p190 q06診断 |
 | [ws074-p244](phase244/phase.md) | 固定Grid行spanのoverflow | uncleared / q09-i01 partial cleared、general minimum等残り | p243 q07で露出したsolver不備 |
 | [ws074-p245](phase245/phase.md) | no-boxのauto minimum resolved value | cleared / q10 no-box own acceptance | p243/q08のGrid raw、actual box proof |
+| [ws074-p246](phase246/phase.md) | intrinsic track breadth/contribution | in-progress / q11 first horizontal partial | q09 minimum rule、q10 output |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 

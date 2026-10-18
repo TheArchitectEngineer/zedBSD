@@ -40,3 +40,7 @@ Event ws074-p244-q09-start-20261018: User autonomyをmetadata/guard repair最大
 Event ws074-p244-q09-i01-partial-clear-20261018: [証拠](evidence/20261018-q09/README.md)。minimum ruleを保持し、target10後退回復/q07元case維持、target全callback9改善/後退0、DOM27/27、static529の227 PASS維持。host/target3source warning0、Acid3差0/Acid2差873。targeted/static部分cleared、p244 whole未達。verified outputをp243 q09-i02へ渡す。
 
 Event ws074-q09-i02-partial-clear-20261018: [全502の証拠](../phase243/evidence/20261018-q09-i02/README.md)。whole247維持、callback6,410→6,419・後退0、q08の10後退回復。i02 primary再検証部分cleared。q07/q08 historyとp243/p244 whole残りを維持。共有投影pending。
+
+Event ws074-p246-floor-location-20261018: [p246](../phase246/phase.md)のcomputed minmax上下限保持のため、既存px floorをcascadeからlayout shared helperへ移す。p244 guardは実row capacityを読む設計を維持し、minmax(20px,10px)を含む独立7/全502/static529でused output非悪化を確認する。p244自身のgeneral minimum等残りは不変。
+
+Event ws074-p246-computed-floor-design-correction-20261018: repeat/verticalの既存consumerもclamped sizeを読むため、先のfloor移動案をsource生成中に見直した。既存cascade floorを維持し、private css_track.computed_maximumへunfloored upper lengthをcopyしてcomputed writerがexplicit length minimumのときだけ読む。pointer/公開ABIは不変、repeatやverticalの未選定算法は変更しない。先の移動設計はsuperseded、証拠/旧historyは残す。

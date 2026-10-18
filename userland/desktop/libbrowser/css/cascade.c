@@ -106,8 +106,8 @@ struct css_engine {
 };
 
 /*
- * One query container whose size the engine's styles were computed with
- * (ws074-p075): the page checks it against each new layout.
+ * One query container whose size the engine's styles were computed with;
+ * the page checks it against each new layout.
  */
 struct cascade_container_use {
 	const struct dom_element *element;
@@ -116,7 +116,7 @@ struct cascade_container_use {
 };
 
 /*
- * One element's computed style, kept by the engine (ws074-p071) so that a
+ * One element's computed style, kept by the engine so that a
  * layout again (an image or a font arrived) does not run the cascade for
  * every element again.  The engine is made anew when the document or its
  * sheets change, and forgets the styles when the viewport changes; an
@@ -129,7 +129,7 @@ struct cascade_cached {
 };
 
 /*
- * One class attribute's words as atoms (ws074-p071), which the engine
+ * One class attribute's words as atoms, which the engine
  * keeps for as long as it lives so that a class selector compares
  * pointers instead of characters: the attribute's string (with its length
  * and hash, so that a string freed and another made at its address is
@@ -485,7 +485,7 @@ css_engine_set_viewport(
 
 /*
  * Sets how the engine finds a query container's size for the
- * container-relative units (ws074-p075); without one they are the
+ * container-relative units; without one they are the
  * viewport's.
  */
 void
@@ -517,7 +517,7 @@ css_engine_container_missed(
 }
 
 /*
- * Forgets the computed styles the engine kept (ws074-p075: they are
+ * Forgets the computed styles the engine kept (they are
  * computed again with the query containers' sizes the page knows now).
  */
 void
@@ -532,7 +532,7 @@ css_engine_forget_styles(
 
 /*
  * Tells how many query containers' sizes the engine's styles were
- * computed with since the styles were last forgotten (ws074-p075).
+ * computed with since the styles were last forgotten.
  */
 size_t
 css_engine_container_uses(
@@ -712,7 +712,7 @@ cascade_compute(
 	int error;
 	int side;
 
-	/* The element whose container-relative units are resolved (ws074-p075). */
+	/* The element whose container-relative units are resolved. */
 	engine->current = element;
 
 	/* Starts from the initial values, with the inherited ones from the parent. */
@@ -841,7 +841,7 @@ cascade_compute(
 	if (style->background_color == CSS_CURRENT_COLOR)
 		style->background_color = style->color;
 
-	/* And in the outline's color; an outline of no style has no width (ws074-p062). */
+	/* And in the outline's color; an outline of no style has no width. */
 	if (style->outline_color == CSS_CURRENT_COLOR)
 		style->outline_color = style->color;
 	if (style->outline_style == CSS_BORDER_NONE)
@@ -867,8 +867,7 @@ cascade_compute(
 }
 
 /*
- * Starts matching a script's selector lists (querySelector and the like;
- * ws074-p031) with an engine that outlives one styling.  The class
+ * Starts matching a script's selector lists (querySelector and the like) with an engine that outlives one styling.  The class
  * attributes split before are forgotten: a class a list names became an
  * atom only when the list was parsed, and a split made before would not
  * have it.
@@ -996,7 +995,7 @@ css_initial_style(
 	style->auto_row_count = 1;
 	style->auto_rows[0].kind = CSS_TRACK_AUTO;
 
-	/* The decoration's initial values that are not zero (ws074-p062): opaque, a medium outline of no style in currentcolor. */
+	/* The decoration's initial values that are not zero: opaque, a medium outline of no style in currentcolor. */
 	style->opacity = 1;
 	style->outline_width = 3;
 	style->outline_style = CSS_BORDER_NONE;
@@ -2125,7 +2124,7 @@ cascade_calc(
 
 /*
  * Finds the size the container-relative units of the element being styled
- * are measured against (ws074-p075): the content box of its nearest
+ * are measured against: the content box of its nearest
  * ancestor whose style (kept by the engine) makes it a query container, as
  * the page's lookup knows it; the height only for a container of both
  * sizes.  Without a container, or its size, the viewport's (a container
@@ -2191,7 +2190,7 @@ cascade_container(
 }
 
 /*
- * Computes a min(), max() or clamp() inside a sum in pixels (ws074-p074):
+ * Computes a min(), max() or clamp() inside a sum in pixels:
  * a percentage it leaves is measured against the viewport's width, as the
  * comparisons of cascade_calc are.
  */
@@ -4302,7 +4301,7 @@ cascade_align(
 }
 
 /*
- * Converts a declared grid template into computed tracks (ws074-p072):
+ * Converts a declared grid template into computed tracks:
  * lengths in pixels or percentages, fr shares, auto; none is no tracks.
  */
 static void
@@ -4321,8 +4320,12 @@ cascade_tracks(
 	*count = 0;
 	if (repeat != NULL)
 		memset(repeat, 0, sizeof(*repeat));
+
+	/* Only parsed track lists can supply computed tracks. */
 	if (value->kind != CSS_VALUE_TRACKS || value->tracks == NULL)
 		return;
+
+	/* Copies the bounded auto-repeat descriptor before converting its pattern. */
 	if (repeat != NULL && value->tracks->repeat_length > 0 &&
 	    value->tracks->repeat_at + value->tracks->repeat_length <= CSS_TRACKS) {
 		repeat->length = value->tracks->repeat_length;
@@ -4332,31 +4335,43 @@ cascade_tracks(
 
 	/* Each track. */
 	for (index = 0; index < value->tracks->count && index < CSS_TRACKS; index++) {
+		/* Initializes one complete computed scalar track before resolving its breadths. */
 		declared = &value->tracks->tracks[index];
 		memset(&tracks[index], 0, sizeof(tracks[index]));
 		tracks[index].kind = declared->kind;
 
 		/* Preserve the explicit lower-bound rule as its individual lengths resolve below. */
 		tracks[index].minimum_rule = declared->minimum_rule;
+		tracks[index].maximum_rule = declared->maximum_rule;
 		tracks[index].minimum.unit = CSS_UNIT_AUTO;
 
 		/* Its size: an fr share, or a nonnegative resolved length. */
 		if (declared->kind == CSS_TRACK_FR)
 			tracks[index].fr = declared->size.number;
+
+		/* Resolves the independent maximum without applying its used lower floor. */
 		if (declared->kind == CSS_TRACK_LENGTH) {
 			tracks[index].size = cascade_length(engine, &declared->size, style->font_size);
+
+			/* Negative computed lengths are range-clamped while intrinsic rules stay separate. */
 			if (tracks[index].size.unit == CSS_UNIT_PX && tracks[index].size.value < 0)
 				tracks[index].size.value = 0;
+
+			/* Computed serialization retains the upper bound before native lower-floor normalization. */
+			tracks[index].computed_maximum = tracks[index].size;
 		}
 
 		/* Its minimum, when minmax() gave a length, has the same range. */
 		if (declared->minimum_kind == CSS_TRACK_LENGTH) {
 			tracks[index].minimum = cascade_length(engine, &declared->minimum, style->font_size);
+
+			/* The explicit lower length has the same nonnegative computed range. */
 			if (tracks[index].minimum.unit == CSS_UNIT_PX && tracks[index].minimum.value < 0)
 				tracks[index].minimum.value = 0;
 
-			/* A maximum below the minimum is the minimum. */
-			if (declared->kind == CSS_TRACK_LENGTH && tracks[index].size.unit == CSS_UNIT_PX &&
+			/* Existing native consumers retain their absolute lower-floor normalization. */
+			if (declared->kind == CSS_TRACK_LENGTH &&
+			    tracks[index].size.unit == CSS_UNIT_PX &&
 			    tracks[index].minimum.unit == CSS_UNIT_PX &&
 			    tracks[index].size.value < tracks[index].minimum.value)
 				tracks[index].size = tracks[index].minimum;
@@ -4368,8 +4383,8 @@ cascade_tracks(
 }
 
 /*
- * Converts a declared box-shadow list into the style's shadows in pixels
- * (ws074-p062); a percentage, which a shadow's length cannot be, is zero.
+ * Converts a declared box-shadow list into the style's shadows in pixels;
+ * a percentage, which a shadow's length cannot be, is zero.
  */
 static void
 cascade_shadows(

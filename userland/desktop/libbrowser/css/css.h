@@ -6,7 +6,7 @@
  */
 
 /*
- * CSS (plan/ws074/design.md §5): style sheets parsed into rules, selectors
+ * CSS: style sheets parsed into rules, selectors
  * matched against elements, and the cascade that gives every element its
  * computed style.
  *
@@ -34,10 +34,10 @@
 /* The most media lists a sheet of the cascade is under (a <link>'s and its imports'). */
 #define CSS_MEDIA_CHAIN_MAX 10
 
-/* The most sources an @font-face rule keeps (ws074-p070; the ones after are dropped). */
+/* The most sources an @font-face rule keeps (the ones after are dropped). */
 #define CSS_FONT_SOURCES 4
 
-/* The most box shadows a style keeps (ws074-p062; the ones after are dropped). */
+/* The most box shadows a style keeps (the ones after are dropped). */
 #define CSS_SHADOWS 4
 
 /* The corners of border-radius, in the order its shorthand lists them. */
@@ -46,11 +46,11 @@
 #define CSS_BOTTOM_RIGHT 2
 #define CSS_BOTTOM_LEFT 3
 
-/* The most tracks a grid template keeps (ws074-p072; the ones after are dropped). */
+/* The most tracks a grid template keeps (the ones after are dropped). */
 #define CSS_TRACKS 24
 
 /*
- * The pseudo-elements that make boxes (ws074-p069), as numbers of the
+ * The pseudo-elements that make boxes, as numbers of the
  * cascade and as bits of a style's pseudo_elements.
  */
 #define CSS_PSEUDO_ELEMENT_NONE 0
@@ -113,7 +113,7 @@ enum css_float {
 };
 
 /*
- * The values of vertical-align (ws074-p060): the baseline, the line box's
+ * The values of vertical-align: the baseline, the line box's
  * top or bottom, the middle (the parent's baseline plus half its
  * x-height), the parent's text top or bottom, the parent's subscript or
  * superscript position, or a length (vertical_offset: pixels or a
@@ -156,14 +156,21 @@ enum css_track_minimum_rule {
 	CSS_TRACK_MINIMUM_MAX_CONTENT
 };
 
-/* The values of container-type (ws074-p075): not a container, a container of its width, or of both sizes. */
+/* Distinguishes intrinsic maximum breadths while ordinary kinds retain their sizing path. */
+enum css_track_maximum_rule {
+	CSS_TRACK_MAXIMUM_DEFAULT,
+	CSS_TRACK_MAXIMUM_MIN_CONTENT,
+	CSS_TRACK_MAXIMUM_MAX_CONTENT
+};
+
+/* The values of container-type: not a container, a container of its width, or of both sizes. */
 enum css_container_type {
 	CSS_CONTAINER_NORMAL,
 	CSS_CONTAINER_INLINE_SIZE,
 	CSS_CONTAINER_SIZE
 };
 
-/* The values of direction (ws074-p073): the inline base direction. */
+/* The values of direction: the inline base direction. */
 enum css_direction {
 	CSS_DIRECTION_LTR,
 	CSS_DIRECTION_RTL
@@ -354,7 +361,7 @@ enum css_content_kind {
 	CSS_CONTENT_LIST
 };
 
-/* The values of flex-direction (ws074-p035). */
+/* The values of flex-direction. */
 enum css_flex_direction {
 	CSS_FLEX_ROW,
 	CSS_FLEX_ROW_REVERSE,
@@ -402,7 +409,7 @@ enum css_generic_family {
 
 /*
  * A computed length: a value and its unit.  A percentage may carry pixels
- * added to it (offset, from a calc() that mixes the two, ws074-p061);
+ * added to it (offset, from a calc() that mixes the two);
  * the layout resolves the percentage and adds them.
  */
 struct css_length {
@@ -418,7 +425,7 @@ struct css_custom;
 struct css_media;
 
 /*
- * One @font-face rule (ws074-p070): the family it names (an atom), the
+ * One @font-face rule: the family it names (an atom), the
  * range of weights it covers, whether it is italic (or oblique), and its
  * sources in order of preference (URLs as atoms, resolved against the
  * sheet once the page resolves the sheet's URLs, each with its format;
@@ -435,7 +442,7 @@ struct css_font_face {
 };
 
 /*
- * One box shadow (ws074-p062): its offset, blur radius and spread in
+ * One box shadow: its offset, blur radius and spread in
  * pixels, its color, and whether it is drawn inside the box.
  */
 struct css_shadow {
@@ -448,7 +455,7 @@ struct css_shadow {
 };
 
 /*
- * One track of a grid template (ws074-p072): its kind, its size (a
+ * One track of a grid template: its kind, its size (a
  * length or percentage of the grid's content box, or its fr share) and
  * the smallest it may be (minmax(); a length, or auto for none given).
  */
@@ -459,6 +466,10 @@ struct css_track {
 	struct css_length minimum;
 	/* NONE identifies an ordinary track; other rules preserve the explicit minmax lower bound. */
 	int minimum_rule;
+	/* Intrinsic keywords remain distinct from an automatic maximum. */
+	int maximum_rule;
+	/* Explicit length minima keep this unfloored computed maximum while size retains legacy normalization. */
+	struct css_length computed_maximum;
 };
 
 /*
@@ -481,7 +492,7 @@ enum css_grid_auto_flow {
 };
 
 /*
- * Where a grid item goes on one axis (ws074-p072): its start and end,
+ * Where a grid item goes on one axis: its start and end,
  * each a line (0 for auto; a negative line counts from the end) or a span
  * (0 for none).
  */
@@ -536,7 +547,7 @@ struct css_style {
 	int box_sizing;
 
 	/*
-	 * The box's decoration (ws074-p062): each corner's radius, horizontal
+	 * The box's decoration: each corner's radius, horizontal
 	 * then vertical (pixels or a percentage of the border box), the opacity
 	 * of the box and its content (0 to 1), its shadows, and its outline
 	 * (width and offset in pixels, a border style, a color).
@@ -554,7 +565,7 @@ struct css_style {
 	float outline_offset;
 
 	/*
-	 * clip-path: inset() (ws074-p062): whether the box's painting is clipped,
+	 * clip-path: inset(): whether the box's painting is clipped,
 	 * and how far in from each side of its border box (top, right, bottom,
 	 * left; pixels or a percentage of the box's height or width; negative
 	 * reaches outside).  The other shapes are not clipped in this pass.
@@ -635,7 +646,7 @@ struct css_style {
 	int text_orientation;
 	int container_type;
 
-	/* Tables (ws074-p037): the spacing between the cells (across, then down, in pixels), and whether the borders collapse. */
+	/* Tables: the spacing between the cells (across, then down, in pixels), and whether the borders collapse. */
 	float border_spacing[2];
 	int border_collapse;
 	int white_space;
@@ -652,7 +663,7 @@ struct css_style {
 	int list_style;
 
 	/*
-	 * Generated content (ws074-p069): what content gives a ::before or
+	 * Generated content: what content gives a ::before or
 	 * ::after (content_kind, and the list of its items, in the declaring
 	 * sheet's arena), and for an element, which of its pseudo-elements some rule
 	 * matches (1 << CSS_PSEUDO_ELEMENT_*), so the layout asks for their
@@ -662,7 +673,7 @@ struct css_style {
 	const struct css_content *content;
 	int pseudo_elements;
 
-	/* Flexible boxes (ws074-p035): the container's, then the item's. */
+	/* Flexible boxes: the container's, then the item's. */
 	int flex_direction;
 	int flex_wrap;
 	int justify_content;
@@ -672,7 +683,7 @@ struct css_style {
 	struct css_length row_gap;
 	struct css_length column_gap;
 
-	/* Grids (ws074-p072): the container's templates, then the item's places. */
+	/* Grids: the container's templates, then the item's places. */
 	struct css_track columns[CSS_TRACKS];
 	int column_count;
 	struct css_track rows[CSS_TRACKS];
@@ -725,7 +736,7 @@ struct css_sheet;
 typedef int (*css_url_resolver)(void *context, const struct vm_string *url, struct vm_string **resolved);
 
 /*
- * Finds a query container's content box size in pixels (ws074-p075): the
+ * Finds a query container's content box size in pixels: the
  * page answers from its last layout; 0 when the container was not laid
  * out there, which the engine counts (css_engine_container_missed).
  */
@@ -761,11 +772,11 @@ size_t css_sheet_rule_count(const struct css_sheet *sheet);
 const struct css_media *css_sheet_import_media(const struct css_sheet *sheet, size_t index);
 int css_sheet_resolve_urls(struct css_sheet *sheet, css_url_resolver resolve, void *context);
 
-/* The selector lists of scripts (parser.c, cascade.c; ws074-p031). */
+/* The selector lists of scripts (parser.c, cascade.c). */
 int css_query_parse(struct vm_heap *heap, const uint16_t *units, size_t length, struct css_query **query);
 void css_query_destroy(struct css_query *query);
 
-/* The inline style of scripts (parser.c, values.c; ws074-p031). */
+/* The inline style of scripts (parser.c, values.c). */
 int css_declaration_valid(struct vm_heap *heap, const uint16_t *units, size_t length, int *valid);
 const char *css_property_name(size_t index);
 int css_decoration_line_parse(const uint16_t *units, size_t length, int *lines);

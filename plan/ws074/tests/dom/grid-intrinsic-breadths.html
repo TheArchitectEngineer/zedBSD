@@ -1,0 +1,51 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Intrinsic Grid breadths and computed minmax bounds</title>
+<body>
+<script>
+var pieces = '<span style="display:inline-block;width:40px;height:10px"></span><span style="display:inline-block;width:30px;height:10px"></span>';
+function trackCase(name, columns, itemStyle, extra) {
+    var grid = document.createElement("div");
+    grid.style.cssText = "display:grid;width:200px;font-size:0;line-height:10px;grid-template-columns:" + columns + ";" + extra;
+    var item = document.createElement("div");
+    item.style.cssText = itemStyle;
+    item.innerHTML = pieces;
+    grid.appendChild(item);
+    document.body.appendChild(grid);
+    console.log(name, getComputedStyle(grid).gridTemplateColumns, "/", item.getBoundingClientRect().width);
+    return item;
+}
+trackCase("min-fr", "min-content 1fr", "", "");
+trackCase("max-fr", "max-content 1fr", "", "");
+trackCase("auto-fr", "auto 1fr", "", "");
+trackCase("min-no-stretch", "min-content", "", "");
+trackCase("max-no-stretch", "max-content", "", "");
+trackCase("auto-stretch", "auto", "", "");
+trackCase("bounded-max-no-stretch", "minmax(auto,max-content)", "", "");
+trackCase("preferred", "min-content 1fr", "width:55px", "");
+trackCase("minimum", "min-content 1fr", "min-width:60px", "");
+trackCase("maximum", "min-content 1fr", "max-width:25px", "");
+trackCase("minimum-wins", "min-content 1fr", "min-width:60px;max-width:25px", "");
+trackCase("border-box", "min-content 1fr", "box-sizing:border-box;width:55px;padding:5px;border:2px solid;margin:3px", "");
+trackCase("frame", "min-content 1fr", "padding:5px;border:2px solid;margin:3px", "");
+var repeated = trackCase("repeat-one", "repeat(2,min-content) 1fr", "", "");
+var second = document.createElement("div");
+second.innerHTML = '<span style="display:inline-block;width:20px;height:10px"></span><span style="display:inline-block;width:10px;height:10px"></span>';
+repeated.parentNode.appendChild(second);
+console.log("repeat-two", getComputedStyle(repeated.parentNode).gridTemplateColumns);
+trackCase("implicit", "none", "", "grid-auto-columns:min-content;justify-content:start");
+var live = trackCase("live-before", "min-content 1fr", "", "");
+live.innerHTML = '<span style="display:inline-block;width:80px;height:10px"></span>';
+console.log("live-after", getComputedStyle(live.parentNode).gridTemplateColumns);
+function computedCase(name, display, value) {
+    var element = document.createElement("div");
+    element.style.cssText = "display:" + display + ";grid-template-columns:" + value + ";grid-template-rows:" + value + ";grid-auto-columns:" + value;
+    document.body.appendChild(element);
+    var style = getComputedStyle(element);
+    console.log(name, style.gridTemplateColumns, "/", style.gridTemplateRows, "/", style.gridAutoColumns);
+}
+computedCase("computed-keywords", "block", "min-content max-content auto");
+computedCase("computed-minmax", "block", "minmax(auto, 1fr) minmax(min-content, max-content) minmax(max-content, min-content)");
+computedCase("computed-floor", "none", "minmax(20px, 10px) minmax(10px, 2fr)");
+computedCase("computed-percent", "none", "minmax(10%, 50%) minmax(0px, max-content)");
+</script>

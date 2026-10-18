@@ -54,3 +54,9 @@ Event ws074-p243-q09-revalidation-selected-20261018: p244 q09-i01のmetadata/eli
 Event ws074-p243-q09-i02-start-20261018: p244 q09-i01のtargeted/static proofを受け、固定binaryで全502/全callbackをq07 baselineと比較する。q08で増えた8 callbackも維持できるか確認する。
 
 Event ws074-q09-i02-partial-clear-20261018: [全502の証拠](../phase243/evidence/20261018-q09-i02/README.md)。whole247維持、callback6,410→6,419・後退0、q08の10後退回復。i02 primary再検証部分cleared。q07/q08 historyとp243/p244 whole残りを維持。共有投影pending。
+
+Event ws074-p246-interface-redesign-20261018: [p246](../phase246/phase.md)がprivate track maximum ruleをparse/cascadeへ追加し、min-content/max-contentの区別とminmaxのcomputed fallbackを保持する。horizontal plain min-content single-span contributionとintrinsic非stretchを修正する部分scope。新outputは全Grid502/全callbackとstatic529/独立例で検証し、一般span/row/vertical/line-name等の既存whole残りを保持。q09/q10歴史は不変。共有投影pending。
+
+Event ws074-p246-q11-auto-parser-20261018: [p246](../phase246/phase.md)のq11はgrid-auto intrinsic/minmaxの早期拒否を除き既存共通track-size parserへ統一する範囲に改訂。新metadataとcomputed fallbackをimplicit cycleにも伝え、全502/static529/独立例で検証する。repeat/line-nameとfit-content sizing等whole残りは維持。
+
+Event ws074-p246-computed-floor-design-correction-20261018: repeat/verticalの既存consumerもclamped sizeを読むため、先のfloor移動案をsource生成中に見直した。既存cascade floorを維持し、private css_track.computed_maximumへunfloored upper lengthをcopyしてcomputed writerがexplicit length minimumのときだけ読む。pointer/公開ABIは不変、repeatやverticalの未選定算法は変更しない。先の移動設計はsuperseded、証拠/旧historyは残す。

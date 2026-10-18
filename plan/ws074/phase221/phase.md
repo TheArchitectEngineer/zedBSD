@@ -127,3 +127,9 @@ Event ws074-p221-q1132-i01-partial-clear-20261014: [証拠](evidence/20261014-q1
 Event ws074-p221-p244-minimum-rule-interface-20261018: [p244](../phase244/phase.md)のrow guardで、plain fixed lengthとminmaxのautomatic/intrinsic lower boundの区別が必要と判明。次の有限Queueでcss_declared_track/css_trackへminimum ruleを保持し、parse→cascadeで渡す設計とする。新grammarやp221のwhole受け入れを縮めず、既存valid/invalid/serializationを維持する検証を行う。p243はこの出力後に全Grid502を再検証する。[WS summary](../ws.md)。設計の記録であり、このPhaseの実行Queueを増やさない。共有投影pending。
 
 Event ws074-p221-p244-minimum-rule-output-20261018: p244 q09-i01でminimum rule scalarをCSS trackへ実装し、既存grammar/serializerを維持。targeted/static proofは[p244 evidence](../phase244/evidence/20261018-q09/README.md)。p243の全502に既存valid/invalid/computed caseも含めて再検証する。p221のwhole status/acceptanceは変更しない。
+
+Event ws074-p246-interface-redesign-20261018: [p246](../phase246/phase.md)がprivate track maximum ruleをparse/cascadeへ追加し、min-content/max-contentの区別とminmaxのcomputed fallbackを保持する。horizontal plain min-content single-span contributionとintrinsic非stretchを修正する部分scope。新outputは全Grid502/全callbackとstatic529/独立例で検証し、一般span/row/vertical/line-name等の既存whole残りを保持。q09/q10歴史は不変。共有投影pending。
+
+Event ws074-p246-q11-auto-parser-20261018: [p246](../phase246/phase.md)のq11はgrid-auto intrinsic/minmaxの早期拒否を除き既存共通track-size parserへ統一する範囲に改訂。新metadataとcomputed fallbackをimplicit cycleにも伝え、全502/static529/独立例で検証する。repeat/line-nameとfit-content sizing等whole残りは維持。
+
+Event ws074-p246-computed-floor-design-correction-20261018: repeat/verticalの既存consumerもclamped sizeを読むため、先のfloor移動案をsource生成中に見直した。既存cascade floorを維持し、private css_track.computed_maximumへunfloored upper lengthをcopyしてcomputed writerがexplicit length minimumのときだけ読む。pointer/公開ABIは不変、repeatやverticalの未選定算法は変更しない。先の移動設計はsuperseded、証拠/旧historyは残す。

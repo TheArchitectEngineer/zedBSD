@@ -27,7 +27,7 @@
 
 /*
  * The property of a custom property's declaration (--name: tokens): its
- * name is custom_name and its value the tokens raw (ws074-p061).
+ * name is custom_name and its value the tokens raw.
  */
 #define CSS_PROP_CUSTOM (-1)
 
@@ -397,7 +397,7 @@ struct css_selector {
  * A sum of lengths of the kinds calc() mixes, each the number of its unit:
  * pixels (the absolute units converted), percentages, font-relative and
  * viewport-relative lengths, and at most one min(), max() or clamp()
- * inside it times a factor (nested, in the parse's arena; ws074-p074).
+ * inside it times a factor (nested, in the parse's arena).
  * The cascade turns it into pixels and a percentage the layout resolves.
  */
 struct css_calc_sum {
@@ -417,7 +417,7 @@ struct css_calc_sum {
 };
 
 /*
- * A calc(), min(), max() or clamp() length (ws074-p061): one sum, or the
+ * A calc(), min(), max() or clamp() length: one sum, or the
  * least or greatest of several, or the middle one of three.
  */
 struct css_calc {
@@ -447,7 +447,7 @@ struct css_value {
 	const struct css_track_list *tracks;
 };
 
-/* One declared grid track (ws074-p072): its kind, its size (a length, or the fr share) and minmax()'s minimum. */
+/* One declared grid track: its kind, its size (a length, or the fr share) and minmax()'s minimum. */
 struct css_declared_track {
 	int kind;
 	struct css_value size;
@@ -455,6 +455,8 @@ struct css_declared_track {
 	struct css_value minimum;
 	/* The semantic minimum survives the legacy coarse track kind until cascade. */
 	int minimum_rule;
+	/* The maximum keyword survives parsing before computed lengths are resolved. */
+	int maximum_rule;
 };
 
 /* A declared grid template, kept in the parse's arena (none is an empty list). */
@@ -467,13 +469,13 @@ struct css_track_list {
 	int repeat_fit;
 };
 
-/* A declared clip-path: inset(): its four declared lengths, top, right, bottom, left (ws074-p062). */
+/* A declared clip-path: inset(): its four declared lengths, top, right, bottom, left. */
 struct css_declared_inset {
 	struct css_value lengths[4];
 };
 
 /*
- * One declared box shadow (ws074-p062): its offset, blur and spread as
+ * One declared box shadow: its offset, blur and spread as
  * declared lengths (the missing ones zero pixels), its color and whether
  * it is inset.
  */
@@ -503,7 +505,7 @@ struct css_declaration {
 };
 
 /*
- * One custom property an element has (ws074-p061): its name, its value's
+ * One custom property an element has: its name, its value's
  * tokens with every var() replaced (none: the property is invalid), and
  * the next one of the element's list, which ends in its parent's list.
  */
@@ -627,8 +629,7 @@ struct css_sheet {
 };
 
 /*
- * A selector list a script gave (querySelector, matches and closest;
- * ws074-p031): its selectors and the arena they live in.  The names in it
+ * A selector list a script gave (querySelector, matches and closest): its selectors and the arena they live in.  The names in it
  * are atoms, which live as long as the heap, so the list needs no tracing.
  */
 struct css_query {

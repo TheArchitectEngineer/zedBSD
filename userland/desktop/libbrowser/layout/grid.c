@@ -6,7 +6,7 @@
  */
 
 /*
- * Grid layout (ws074-p072), the common part of CSS Grid Layout 1: the
+ * Grid layout, the common part of CSS Grid Layout 1: the
  * explicit column and row templates (lengths, percentages, fr, auto,
  * minmax()'s minimum), items placed by line numbers (negative from the
  * end) and spans or else row after row in the first cells that are free
@@ -27,6 +27,7 @@
 #include "layout/layout.h"
 
 #include <errno.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -99,6 +100,8 @@ static const struct css_track *grid_column_track(const struct css_style *style, 
 static const struct css_track *grid_row_track(const struct css_style *style, int row);
 static int grid_size_columns(struct layout_tree *tree, struct layout_box *box, struct grid_state *grid, layout_unit gap);
 static int grid_item_width(struct layout_tree *tree, struct layout_box *item, layout_unit *width);
+static int grid_item_minimum_width(struct layout_tree *tree, struct layout_box *item, layout_unit *width);
+static int grid_column_stretches(const struct layout_box *box, const struct css_track *track);
 static int grid_lay_item(struct layout_tree *tree, struct layout_box *item, layout_unit width, int justify);
 static void grid_size_rows(struct layout_box *box, struct grid_state *grid, layout_unit gap);
 static int grid_relay_item(struct layout_tree *tree, struct layout_box *item, layout_unit width, layout_unit height, int align);
@@ -2392,6 +2395,8 @@ grid_size_columns(
 	int column;
 	int autos;
 	int last_auto;
+	int stretches;
+	int intrinsic_minimum;
 	int error;
 
 	/* The row of widths. */
@@ -2406,11 +2411,16 @@ grid_size_columns(
 	/* The fixed tracks, and the least of the fr tracks. */
 	fr_total = 0;
 	for (column = 0; column < grid->column_count; column++) {
+		/* Resolves the current track before excluding collapsed repeat slots. */
 		track = grid_column_track(&box->style, column);
 		if (grid->column_collapsed != NULL && grid->column_collapsed[column])
 			continue;
+
+		/* Fixed tracks resolve their existing absolute lower floor here. */
 		if (track->kind == CSS_TRACK_LENGTH)
 			grid->columns[column] = grid_track_length(&track->size, box->width, tree->measuring);
+
+		/* Definite flexible tracks start from their lower breadth. */
 		if (track->kind == CSS_TRACK_FR && tree->measuring == 0) {
 			fr_total += track->fr;
 			grid->columns[column] = grid_track_length(&track->minimum, box->width, tree->measuring);
@@ -2419,26 +2429,48 @@ grid_size_columns(
 
 	/* The auto tracks (and the fr ones while measuring): their one-column items' widths. */
 	for (index = 0; index < grid->item_count; index++) {
+		/* Only one-column items set this first contribution bound. */
 		item = &grid->items[index];
 		if (item->column_span != 1)
 			continue;
+
+		/* Fixed tracks do not collect intrinsic contributions. */
 		column = item->column;
 		track = grid_column_track(&box->style, column);
 		if (track->kind == CSS_TRACK_LENGTH)
 			continue;
+
+		/* Definite flexible tracks receive their free-space share later. */
 		if (track->kind == CSS_TRACK_FR && tree->measuring == 0)
 			continue;
 
-		/* The item's margin box at its content's width. */
-		error = grid_item_width(tree, item->box, &width);
-		if (error != 0)
-			return error;
+		/* Plain min-content columns use the breakable non-replaced contribution. */
+		intrinsic_minimum = 0;
+		if (box->style.writing_mode == CSS_WRITING_HORIZONTAL_TB &&
+		    track->maximum_rule == CSS_TRACK_MAXIMUM_MIN_CONTENT &&
+		    track->minimum_rule == CSS_TRACK_MINIMUM_NONE &&
+		    !item->box->replaced)
+			intrinsic_minimum = 1;
+
+		/* Other breadths retain their existing maximum-content contribution. */
+		if (intrinsic_minimum) {
+			error = grid_item_minimum_width(tree, item->box, &width);
+			if (error != 0)
+				return error;
+		} else {
+			error = grid_item_width(tree, item->box, &width);
+			if (error != 0)
+				return error;
+		}
+
+		/* Keeps the largest contribution occupying this column. */
 		if (width > grid->columns[column])
 			grid->columns[column] = width;
 	}
 
 	/* An item spanning auto tracks widens them, equally, to hold it. */
 	for (index = 0; index < grid->item_count; index++) {
+		/* Single-track contributions were already collected above. */
 		item = &grid->items[index];
 		if (item->column_span < 2)
 			continue;
@@ -2447,8 +2479,11 @@ grid_size_columns(
 		spanned = gap * (layout_unit)(item->column_span - 1);
 		autos = 0;
 		for (column = item->column; column < item->column + item->column_span; column++) {
+			/* Accumulates the current capacity of every crossed track. */
 			spanned += grid->columns[column];
 			track = grid_column_track(&box->style, column);
+
+			/* The existing span distributor includes coarse intrinsic tracks. */
 			if (track->kind == CSS_TRACK_AUTO)
 				autos++;
 		}
@@ -2461,10 +2496,15 @@ grid_size_columns(
 		error = grid_item_width(tree, item->box, &width);
 		if (error != 0)
 			return error;
+
+		/* Spans that already fit need no extra capacity. */
 		if (width <= spanned)
 			continue;
+
+		/* Distributes the remaining contribution through the existing span algorithm. */
 		share = (width - spanned) / autos;
 		for (column = item->column; column < item->column + item->column_span; column++) {
+			/* Fixed and flexible crossed tracks retain their previous breadths. */
 			track = grid_column_track(&box->style, column);
 			if (track->kind == CSS_TRACK_AUTO)
 				grid->columns[column] += share;
@@ -2475,26 +2515,39 @@ grid_size_columns(
 	available = box->width - gap * (layout_unit)(grid->column_count - 1);
 	used = 0;
 	for (column = 0; column < grid->column_count; column++) {
+		/* Resolves the current track before excluding collapsed repeat slots. */
 		track = grid_column_track(&box->style, column);
 		if (grid->column_collapsed != NULL && grid->column_collapsed[column]) {
 			available += gap;
 			continue;
 		}
+
+		/* Definite flexible tracks receive their free-space share later. */
 		if (track->kind == CSS_TRACK_FR && tree->measuring == 0)
 			continue;
+
+		/* Non-flexible columns occupy this part of the available axis. */
 		used += grid->columns[column];
 	}
 
 	/* The fr tracks share it by their factors (a sum under one shares only that much of it), each at least its minimum. */
 	if (fr_total > 0) {
+		/* Retains the original factor sum before normalizing the denominator. */
 		fr_sum = fr_total;
+
+		/* Fractional totals below one intentionally leave some space undistributed. */
 		if (fr_total < 1.0f)
 			fr_total = 1.0f;
+
+		/* Assigns each non-collapsed flexible track its factor-weighted share. */
 		for (column = 0; column < grid->column_count; column++) {
+			/* Resolves the factor only for an actual flexible track. */
 			track = grid_column_track(&box->style, column);
 			if (track->kind != CSS_TRACK_FR ||
 			    (grid->column_collapsed != NULL && grid->column_collapsed[column]))
 				continue;
+
+			/* Flexible growth never reduces the track below its initial minimum. */
 			width = (layout_unit)((float)(available - used) * track->fr / fr_total);
 			if (width > grid->columns[column])
 				grid->columns[column] = width;
@@ -2503,23 +2556,34 @@ grid_size_columns(
 		/* A sum of factors below one leaves room for the auto tracks. */
 		used = 0;
 		for (column = 0; column < grid->column_count; column++) {
+			/* Collapsed slots occupy none of the grown axis. */
 			if (grid->column_collapsed != NULL && grid->column_collapsed[column])
 				continue;
+
+			/* Recounts actual breadths after flexible growth. */
 			used += grid->columns[column];
 		}
+
+		/* A complete flexible factor sum consumed the distributable space. */
 		if (fr_sum >= 1.0f)
 			return 0;
 	}
 
 	/* Without fr tracks, the auto tracks share the room left (not while the container is measured). */
-	if (tree->measuring != 0 || available <= used ||
-	    !grid_content_stretches(box->style.justify_content))
+	stretches = grid_content_stretches(box->style.justify_content);
+	if (tree->measuring != 0 ||
+	    available <= used ||
+	    !stretches)
 		return 0;
+
+	/* Counts only automatic maxima eligible for alignment stretch. */
 	autos = 0;
 	last_auto = -1;
 	for (column = 0; column < grid->column_count; column++) {
+		/* Intrinsic maximum keywords are not automatic stretch targets. */
 		track = grid_column_track(&box->style, column);
-		if (track->kind == CSS_TRACK_AUTO &&
+		stretches = grid_column_stretches(box, track);
+		if (stretches &&
 		    !(grid->column_collapsed != NULL && grid->column_collapsed[column])) {
 			autos++;
 			last_auto = column;
@@ -2529,18 +2593,124 @@ grid_size_columns(
 	/* Without auto tracks the room stays empty. */
 	if (autos == 0)
 		return 0;
+
+	/* Shares free space while reserving the subpixel remainder for the last auto track. */
 	share = (available - used) / autos;
-	/* Give the last auto track the subpixel remainder so the grid fills its box exactly. */
 	remainder = available - used - share * autos;
 	for (column = 0; column < grid->column_count; column++) {
+		/* Intrinsic maximum keywords are not automatic stretch targets. */
 		track = grid_column_track(&box->style, column);
-		if (track->kind == CSS_TRACK_AUTO &&
+		stretches = grid_column_stretches(box, track);
+		if (stretches &&
 		    !(grid->column_collapsed != NULL && grid->column_collapsed[column]))
 			grid->columns[column] += share;
 	}
+
+	/* Publishes the reserved remainder without stretching an intrinsic maximum. */
 	grid->columns[last_auto] += remainder;
 
 	/* Succeeded: the columns are sized. */
+	return 0;
+}
+
+/* Keeps intrinsic maximum breadths out of the automatic column stretch step. */
+static int
+grid_column_stretches(
+	const struct layout_box *box,
+	const struct css_track *track)
+{
+	/* Only the coarse automatic kind ever participated in this stretch step. */
+	if (track->kind != CSS_TRACK_AUTO)
+		return 0;
+
+	/* Horizontal intrinsic maxima have their own growth limit instead of auto stretch. */
+	if (box->style.writing_mode == CSS_WRITING_HORIZONTAL_TB &&
+	    track->maximum_rule != CSS_TRACK_MAXIMUM_DEFAULT)
+		return 0;
+
+	/* Succeeded: this column retains the ordinary automatic stretch path. */
+	return 1;
+}
+
+/* Measures a non-replaced single-column item's constrained min-content margin box. */
+static int
+grid_item_minimum_width(
+	struct layout_tree *tree,
+	struct layout_box *item,
+	layout_unit *width)
+{
+	layout_unit measured;
+	int64_t content;
+	int64_t frame;
+	int64_t outside;
+	int64_t bound;
+	int error;
+
+	/* Definite preferred widths contribute their own size before min/max constraints. */
+	if (item->style.width.unit == CSS_UNIT_PX) {
+		content = layout_from_px(item->style.width.value);
+	} else {
+		/* Takes every available line break using the existing intrinsic layout path. */
+		error = layout_min_content(tree, item, &measured);
+		if (error != 0)
+			return error;
+
+		/* Keeps the measured content width separate from the box's frame. */
+		content = measured;
+	}
+
+	/* Restores the ordinary margin/frame calculation after intrinsic child layout. */
+	layout_box_model(item, 0);
+	frame = (int64_t)item->border[CSS_LEFT] + item->padding[CSS_LEFT] +
+		item->padding[CSS_RIGHT] + item->border[CSS_RIGHT];
+	outside = frame + item->margin[CSS_LEFT] + item->margin[CSS_RIGHT];
+
+	/* A definite border-box preferred width includes the frame already counted outside. */
+	if (item->style.width.unit == CSS_UNIT_PX &&
+	    item->style.box_sizing == CSS_BOX_SIZING_BORDER)
+		content -= frame;
+
+	/* Definite maximum constraints cap the contribution before a stronger minimum is applied. */
+	if (item->style.max_width.unit == CSS_UNIT_PX) {
+		bound = layout_from_px(item->style.max_width.value);
+
+		/* Border-box bounds constrain the same content width as the preferred size. */
+		if (item->style.box_sizing == CSS_BOX_SIZING_BORDER)
+			bound -= frame;
+
+		/* Keeps content within the explicit maximum. */
+		if (content > bound)
+			content = bound;
+	}
+
+	/* Definite minima take precedence when the maximum is smaller. */
+	if (item->style.min_width.unit == CSS_UNIT_PX) {
+		bound = layout_from_px(item->style.min_width.value);
+
+		/* Converts border-box minima into the content coordinate system. */
+		if (item->style.box_sizing == CSS_BOX_SIZING_BORDER)
+			bound -= frame;
+
+		/* Preserves the explicit minimum contribution. */
+		if (content < bound)
+			content = bound;
+	}
+
+	/* A content box never has negative width even when its frame exceeds a bound. */
+	if (content < 0)
+		content = 0;
+
+	/* Accumulates the margin box widely before publishing the signed layout unit. */
+	content += outside;
+	if (content < 0)
+		content = 0;
+
+	/* Oversized contributions cannot overflow the native track accumulator here. */
+	if (content > INT_MAX)
+		content = INT_MAX;
+
+	/* Succeeded: the constrained min-content margin box is copied to the caller. */
+	*width = (layout_unit)content;
 	return 0;
 }
 

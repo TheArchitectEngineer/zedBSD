@@ -1,0 +1,22 @@
+min-fr 40px 160px / 40
+max-fr 70px 130px / 70
+auto-fr 70px 130px / 70
+min-no-stretch 40px / 40
+max-no-stretch 70px / 70
+auto-stretch 200px / 200
+bounded-max-no-stretch 70px / 70
+preferred 55px 145px / 55
+minimum 60px 140px / 60
+maximum 25px 175px / 25
+minimum-wins 60px 140px / 60
+border-box 61px 139px / 55
+frame 60px 140px / 54
+repeat-one 40px 0px 160px / 40
+repeat-two 40px 20px 140px
+implicit 40px / 40
+live-before 40px 160px / 40
+live-after 80px 120px
+computed-keywords min-content max-content auto / min-content max-content auto / min-content max-content auto
+computed-minmax 1fr minmax(min-content, max-content) minmax(max-content, min-content) / 1fr minmax(min-content, max-content) minmax(max-content, min-content) / 1fr minmax(min-content, max-content) minmax(max-content, min-content)
+computed-floor minmax(20px, 10px) minmax(10px, 2fr) / minmax(20px, 10px) minmax(10px, 2fr) / minmax(20px, 10px) minmax(10px, 2fr)
+computed-percent minmax(10%, 50%) minmax(0px, max-content) / minmax(10%, 50%) minmax(0px, max-content) / minmax(10%, 50%) minmax(0px, max-content)
