@@ -527,7 +527,7 @@ prepare_texture_image(
 
 	/* A private conversion serves a source that may change behind the device's back. */
 	if (pixels == NULL) {
-		/* The conversion writes the image; its padding may keep only this session's earlier bytes (review-b2 H1 (a)). */
+		/* The conversion writes the image; its padding may keep only this session's earlier bytes. */
 		error = allocate_storage(draw, bytes, available, NULL, BCM2711_NATIVE_STORAGE_OWNED, &pixels);
 		if (error != 0)
 			return error;
@@ -705,7 +705,7 @@ prepare_programs(
 			return error;
 		}
 
-		/* Scalar words are copied before their temporary CPU owner is retired; an empty stream's placeholder is a written zero (review-b2 L3). */
+		/* Scalar words are copied before their temporary CPU owner is retired; an empty stream's placeholder is a written zero. */
 		for (index = 0; index < words->count; index++)
 			write_word(destination + (size_t)index * 4U, words->words[index]);
 		if (words->count == 0)

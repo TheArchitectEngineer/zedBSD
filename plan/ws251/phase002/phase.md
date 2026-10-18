@@ -93,3 +93,11 @@ Parent: [WS251](../ws.md)
 - host 試験: WS237 gen9 backlight 21/0・flip 48/0・mode 71/0・modeset 80/0、WS229 bootfb 20/0（全部 0 failures）。
 - file ごとの記録: p002 が変えた 202 file（0a59b8a8a..835732198 の src/drivers/gpu と include/uapi/gpu-op.h: i915 155・bcm2711 37・amdrdna 2・compiler 2・nvrtx 2・venus 2・gpu.c 1・gpu-op.h 1）の各 file で、`\b(ws|WS)[0-9]{3}\b|\bq[0-9]{3,4}\b|BUG-[0-9]+|plan/` の grep が 0 件である事を file ごとに確かめた（202 file 全部 0）。目視は群ごとの grep の結果の前後まで（file の通読ではない）。bcm2711 の段の名前はユーザーの決定 (a) のとおり残した。
 - 判定の材料: 残り (2)〜(5) は上で済み（(2) は grep の file ごとの記録まで、通読は無し）。P1 の見立て: (2) を file ごとの grep の記録で足りるとするなら cleared にできる。判定は Q1。
+
+### q1260-i02（2026-10-19 P1）: file ごとの点検
+
+- 方法: src/drivers/gpu の全 file（.c・.h・.inc・.md）に、番号の grep に加えて開発・試験の運用の語の grep（`5330|latitude|sv7|qemu|test build|review|was removed|used to|previous attempt|milestone|for now|the user|todo|fixme|decided by|per the`）を当て、当たった行を全部目で見た（i915/tests/display の外 44 行、tests/display は試験の対象の機種の名の行を抜き取り）。file の通読ではない。
+- 直した物（comment だけ）: bcm2711 の review の符号 8 か所（vulkan-native-draw.c 2・v3d-hardware.h 1・buffer.c 1・native-storage.c 4 の「review-b2 H1/M1/M2/M3/L3」「review M1」）、i915/display/internal.h の経緯「since the test VBT was removed」。
+- 残した物と理由: venus の「QEMU」（guest の相手の virtio-gpu の振る舞い）、i915 の display.c の QEMU の bridge の ID・bcm2711 の readout.c・attach.c の QEMU raspi4b（emulator の振る舞い、hardware の事実）、dma.h の「Under QEMU with VFIO」、「test build」（I915_TESTS の build の weak checkpoint の説明、code の振る舞い）、i915/tests/display の「5330」「Latitude 5330」「SV7」（試験の fixture が写す機種の register の値の名、hardware の事実）、「the user」は全部 user interrupt・user SGPR・power の利用者の意味、「until the」「no longer」「temporary」は一般の語。bcm2711 の段の名前（P0〜P5・N0・R0・V0〜V7）はユーザーの決定 (a) のとおり残す。
+- 確かめ: 完了の条件の grep（`review-b2` を足して）が src/drivers/gpu と include/uapi/gpu-op.h で 0 件。build: Pi 4 arm64（config/ci/config-rpi4.mk、build/ws251p002-arm-p1b）rc=0 warning 0、amd64 既定（build/ws251p002-x-p1b）rc=0 warning 0。
+- P1 の見立て: 残りは無し。判定は Q1。

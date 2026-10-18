@@ -108,7 +108,7 @@ bcm2711_native_storage_create_as(
 	 * An idle cached view of the same size is reused with its mapping:
 	 * zeroed again, or as it is for a caller that writes every byte the
 	 * device may read, or for an owned use when the same session left it
-	 * (counted apart, review-b2 M2).
+	 * (counted apart).
 	 */
 	started = clock_ticks();
 	view = cache_take(space, bytes, created->owner);
@@ -481,7 +481,7 @@ bcm2711_native_snapshot_get_texel(
 	 * A known snapshot is converted again only when its source changed and
 	 * no draw samples it.  One whose pixels may hold another session's
 	 * earlier bytes is zeroed and converted whole before this session
-	 * samples it (review-b2 H1 (a)).
+	 * samples it.
 	 */
 	if (snapshot != NULL) {
 		foreign = snapshot->owner != 0 && snapshot->owner != space->builder;
@@ -703,7 +703,7 @@ cache_put(
 		return false;
 
 	/*
-	 * The cache keeps no dirty line (review-b2 M1): a view given again
+	 * The cache keeps no dirty line: a view given again
 	 * without zeroing must not later write back the bytes of a user that
 	 * failed before cleaning over what the device wrote since.
 	 */
@@ -976,7 +976,7 @@ snapshot_release(
 	/*
 	 * Every pass that sampled the pixels has retired, so they can join the
 	 * idle views, unmarked: other sessions may have converted or updated
-	 * them since the session that made them (review M1).
+	 * them since the session that made them.
 	 */
 	space->snapshot_bytes -= snapshot->pixels->view->bytes;
 	snapshot->pixels->owner = 0;

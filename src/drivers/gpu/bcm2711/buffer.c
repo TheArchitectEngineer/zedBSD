@@ -278,7 +278,7 @@ bcm2711_buffer_zeroed(
 	__atomic_add_fetch(&reuse_zero_ticks, ticks, __ATOMIC_RELAXED);
 }
 
-/* Counts a reused run given again without zeroing, apart from the zeroed ones (review-b2 M2). */
+/* Counts a reused run given again without zeroing, apart from the zeroed ones. */
 void
 bcm2711_buffer_kept(
 	uint64_t bytes)
