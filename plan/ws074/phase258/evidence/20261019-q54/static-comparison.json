@@ -1,0 +1,11 @@
+{
+  "eligible": 1561,
+  "eligible_sha256": "0f90e8fac9af5a97e11cce8ac0dfc16fc9360b1903031d742cf8bf1361f48d93",
+  "counts": {
+    "fail": 717,
+    "pass": 844
+  },
+  "whole_gains": [],
+  "whole_regressions": [],
+  "pixel_metric_changes": []
+}

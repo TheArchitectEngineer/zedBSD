@@ -1,0 +1,41 @@
+{
+  "full_changed_functions": {
+    "userland/desktop/libbrowser/js/builtin_proxy.c": [
+      "js_builtin_install_proxy",
+      "proxy_construct",
+      "proxy_revocable",
+      "proxy_revoke"
+    ],
+    "userland/desktop/libbrowser/js/builtin.c": [
+      "js_install_builtins"
+    ],
+    "plan/ws074/tests/host-proxy-read.c": [
+      "main",
+      "public_installer_pressure",
+      "public_revoker_pressure"
+    ]
+  },
+  "full_C_functions": 8,
+  "raw_allowed_cleanup": 87,
+  "only_single_forward_cleanup": true,
+  "other_checker_findings": 0,
+  "old866_source_exact_bytes_unchanged": true,
+  "VM_core_and_native_operations_exact_source_headers_unchanged": true,
+  "other_engine_source_unchanged": true,
+  "new_builtin_module_registered_once": true,
+  "private_installer_declaration_only": true,
+  "public_ABI2_and_Wayland_boundary_unchanged": true,
+  "manual_review": [
+    "C full standard/browser component full rules: selected function declarations/definitions/paragraphs/ANSI/error and forward cleanup protocol; no initializer-only exception needed in new module with no tables",
+    "native Proxy publishes only name/length/revocable and inherits Function prototype, no reciprocal constructor/prototype helper; call/new share new.target guard then actual vm_proxy_create",
+    "installer owns realm plus both unpublished functions before key allocations; explicit fresh revocable function root avoids depending on unrooted js_builtin_method temporary lifetime",
+    "revocable owns realm/proxy/revoker/result pair throughout all VM allocation; revoker data traced by existing function tracer; ordinary own properties proxy then revoke default attrs",
+    "revoker actual callee data is independent of user receiver/args/own .data properties; private undefined sentinel denotes cleared RevocableProxy slot, edge cleared before actual proxy target/handler revoke",
+    "direct installer bare managed realm crosses actual production threshold; no post-return allocation before plain installed property observations; later GC releases realm/constructor/method graph",
+    "direct installed revocable called with bare managed caller and target/handler NULL-prototype inputs at actual threshold; only revoker retained -> caller/resultpair collect, captured target/handler/proxy retained -> actual revoke twice ->3 captured cells reclaim ->revoker root release/reclaim",
+    "native weak checks follow collection with no intervening heap allocation; no filesystem deletion; independent old C fixture counterpart unmeasured",
+    "new public42 shared conditions have genuine Chrome oracle; initial revoked-inner Get expectation corrected from primary invariant order before native result review, raw initial41/42 retained, no product change to force it",
+    "all old866 private input bytes unchanged; q36 classifier filter/q43 huge2 and separate native-only for-in legal timing remain qualified; WPT/runner/manifest/SDK/toolchain/sysroot unchanged",
+    "new renderer run uses existing unchanged public ABI2 helper with current frozen libbrowser.so through $ORIGIN, no stale static engine reuse"
+  ]
+}

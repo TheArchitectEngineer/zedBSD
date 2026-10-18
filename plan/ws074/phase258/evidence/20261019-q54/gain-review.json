@@ -1,0 +1,18 @@
+{
+  "review_complete": true,
+  "whole_gains": [],
+  "whole_pass_regressions": 0,
+  "old_pass_callback_losses": 0,
+  "whole_score": 1482,
+  "denominator": 3805,
+  "held": 0,
+  "measured_unique": 3530,
+  "unattempted": 275,
+  "original_IDL_callback_review": "harness-gain-review.json",
+  "repairs": 2,
+  "added_pass_callbacks": 14,
+  "added_fail_callbacks": 28,
+  "net_pass_callbacks": 16,
+  "net_fail_callbacks": 26,
+  "qualification": "actual original idl_test setup2 repaired from Proxy ReferenceError, followed by42 newly executed assertions; no new whole gain or skipped/unattempted exclusion; all new interface FAIL obligations retained"
+}

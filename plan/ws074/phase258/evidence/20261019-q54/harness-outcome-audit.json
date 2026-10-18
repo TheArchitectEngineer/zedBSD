@@ -1,0 +1,301 @@
+{
+  "completed": 1508,
+  "counts": {
+    "fail": 955,
+    "harness_error": 13,
+    "pass": 494,
+    "no_completion": 20,
+    "no_output": 24,
+    "multiple_completions": 2
+  },
+  "callbacks": {
+    "1": 20668,
+    "0": 11556,
+    "3": 14
+  },
+  "whole_pass_losses": [],
+  "whole_pass_gains": [],
+  "old_pass_callback_losses": [],
+  "changes": [
+    {
+      "id": "/event-timing/idlharness.any.html",
+      "old_outcome": "fail",
+      "new_outcome": "fail",
+      "old_callback_counts": {
+        "1": 1
+      },
+      "new_callback_counts": {
+        "0": 8,
+        "1": 24
+      },
+      "old_completion": {
+        "tests": [
+          {
+            "name": "idl_test setup",
+            "status": 1,
+            "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: Proxy is not defined\""
+          }
+        ],
+        "status": 0,
+        "message": ""
+      },
+      "new_completion": {
+        "tests": [
+          {
+            "name": "idl_test setup",
+            "status": 0,
+            "message": ""
+          },
+          {
+            "name": "idl_test validation",
+            "status": 0,
+            "message": ""
+          },
+          {
+            "name": "Partial interface Performance: original interface defined",
+            "status": 0,
+            "message": ""
+          },
+          {
+            "name": "Partial interface Performance: valid exposure set",
+            "status": 0,
+            "message": ""
+          },
+          {
+            "name": "Partial interface Performance: member names are unique",
+            "status": 0,
+            "message": ""
+          },
+          {
+            "name": "Partial dictionary PerformanceObserverInit: original dictionary defined",
+            "status": 0,
+            "message": ""
+          },
+          {
+            "name": "Partial dictionary PerformanceObserverInit: member names are unique",
+            "status": 0,
+            "message": ""
+          },
+          {
+            "name": "Partial interface Performance[2]: member names are unique",
+            "status": 0,
+            "message": ""
+          },
+          {
+            "name": "PerformanceEventTiming interface: existence and properties of interface object",
+            "status": 1,
+            "message": "assert_own_property: self does not have own property \"PerformanceEventTiming\" expected property \"PerformanceEventTiming\" missing"
+          },
+          {
+            "name": "PerformanceEventTiming interface object length",
+            "status": 1,
+            "message": "assert_own_property: self does not have own property \"PerformanceEventTiming\" expected property \"PerformanceEventTiming\" missing"
+          },
+          {
+            "name": "PerformanceEventTiming interface object name",
+            "status": 1,
+            "message": "assert_own_property: self does not have own property \"PerformanceEventTiming\" expected property \"PerformanceEventTiming\" missing"
+          },
+          {
+            "name": "PerformanceEventTiming interface: existence and properties of interface prototype object",
+            "status": 1,
+            "message": "assert_own_property: self does not have own property \"PerformanceEventTiming\" expected property \"PerformanceEventTiming\" missing"
+          },
+          {
+            "name": "PerformanceEventTiming interface: existence and properties of interface prototype object's \"constructor\" property",
+            "status": 1,
+            "message": "assert_own_property: self does not have own property \"PerformanceEventTiming\" expected property \"PerformanceEventTiming\" missing"
+          },
+          {
+            "name": "PerformanceEventTiming interface: existence and properties of interface prototype object's @@unscopables property",
+            "status": 1,
+            "message": "assert_own_property: self does not have own property \"PerformanceEventTiming\" expected property \"PerformanceEventTiming\" missing"
+          },
+          {
+            "name": "PerformanceEventTiming interface: attribute processingStart",
+            "status": 1,
+            "message": "assert_own_property: self does not have own property \"PerformanceEventTiming\" expected property \"PerformanceEventTiming\" missing"
+          },
+          {
+            "name": "PerformanceEventTiming interface: attribute processingEnd",
+            "status": 1,
+            "message": "assert_own_property: self does not have own property \"PerformanceEventTiming\" expected property \"PerformanceEventTiming\" missing"
+          },
+          {
+            "name": "PerformanceEventTiming interface: attribute cancelable",
+            "status": 1,
+            "message": "assert_own_property: self does not have own property \"PerformanceEventTiming\" expected property \"PerformanceEventTiming\" missing"
+          },
+          {
+            "name": "PerformanceEventTiming interface: attribute target",
+            "status": 1,
+            "message": "assert_own_property: self does not have own property \"PerformanceEventTiming\" expected property \"PerformanceEventTiming\" missing"
+          },
+          {
+            "name": "PerformanceEventTiming interface: attribute targetSelector",
+            "status": 1,
+            "message": "assert_own_property: self does not have own property \"PerformanceEventTiming\" expected property \"PerformanceEventTiming\" missing"
+          },
+          {
+            "name": "PerformanceEventTiming interface: attribute interactionId",
+            "status": 1,
+            "message": "assert_own_property: self does not have own property \"PerformanceEventTiming\" expected property \"PerformanceEventTiming\" missing"
+          },
+          {
+            "name": "PerformanceEventTiming interface: operation toJSON()",
+            "status": 1,
+            "message": "assert_own_property: self does not have own property \"PerformanceEventTiming\" expected property \"PerformanceEventTiming\" missing"
+          },
+          {
+            "name": "EventCounts interface: existence and properties of interface object",
+            "status": 1,
+            "message": "assert_own_property: self does not have own property \"EventCounts\" expected property \"EventCounts\" missing"
+          },
+          {
+            "name": "EventCounts interface object length",
+            "status": 1,
+            "message": "assert_own_property: self does not have own property \"EventCounts\" expected property \"EventCounts\" missing"
+          },
+          {
+            "name": "EventCounts interface object name",
+            "status": 1,
+            "message": "assert_own_property: self does not have own property \"EventCounts\" expected property \"EventCounts\" missing"
+          },
+          {
+            "name": "EventCounts interface: existence and properties of interface prototype object",
+            "status": 1,
+            "message": "assert_own_property: self does not have own property \"EventCounts\" expected property \"EventCounts\" missing"
+          },
+          {
+            "name": "EventCounts interface: existence and properties of interface prototype object's \"constructor\" property",
+            "status": 1,
+            "message": "assert_own_property: self does not have own property \"EventCounts\" expected property \"EventCounts\" missing"
+          },
+          {
+            "name": "EventCounts interface: existence and properties of interface prototype object's @@unscopables property",
+            "status": 1,
+            "message": "assert_own_property: self does not have own property \"EventCounts\" expected property \"EventCounts\" missing"
+          },
+          {
+            "name": "EventCounts interface: maplike<DOMString, unsigned long long>",
+            "status": 1,
+            "message": "Cannot read properties of undefined (reading 'prototype')"
+          },
+          {
+            "name": "Performance interface: attribute eventCounts",
+            "status": 1,
+            "message": "assert_true: The prototype object must have a property \"eventCounts\" expected true got false"
+          },
+          {
+            "name": "Performance interface: attribute interactionCount",
+            "status": 1,
+            "message": "assert_true: The prototype object must have a property \"interactionCount\" expected true got false"
+          },
+          {
+            "name": "Performance interface: performance must inherit property \"eventCounts\" with the proper type",
+            "status": 1,
+            "message": "assert_inherits: property \"eventCounts\" not found in prototype chain"
+          },
+          {
+            "name": "Performance interface: performance must inherit property \"interactionCount\" with the proper type",
+            "status": 1,
+            "message": "assert_inherits: property \"interactionCount\" not found in prototype chain"
+          }
+        ],
+        "status": 0,
+        "message": ""
+      },
+      "stdout_tail": "sert_own_property: self does not have own property \\\"PerformanceEventTiming\\\" expected property \\\"PerformanceEventTiming\\\" missing\"},{\"name\":\"PerformanceEventTiming interface: existence and properties of interface prototype object's \\\"constructor\\\" property\",\"status\":1,\"message\":\"assert_own_property: self does not have own property \\\"PerformanceEventTiming\\\" expected property \\\"PerformanceEventTiming\\\" missing\"},{\"name\":\"PerformanceEventTiming interface: existence and properties of interface prototype object's @@unscopables property\",\"status\":1,\"message\":\"assert_own_property: self does not have own property \\\"PerformanceEventTiming\\\" expected property \\\"PerformanceEventTiming\\\" missing\"},{\"name\":\"PerformanceEventTiming interface: attribute processingStart\",\"status\":1,\"message\":\"assert_own_property: self does not have own property \\\"PerformanceEventTiming\\\" expected property \\\"PerformanceEventTiming\\\" missing\"},{\"name\":\"PerformanceEventTiming interface: attribute processingEnd\",\"status\":1,\"message\":\"assert_own_property: self does not have own property \\\"PerformanceEventTiming\\\" expected property \\\"PerformanceEventTiming\\\" missing\"},{\"name\":\"PerformanceEventTiming interface: attribute cancelable\",\"status\":1,\"message\":\"assert_own_property: self does not have own property \\\"PerformanceEventTiming\\\" expected property \\\"PerformanceEventTiming\\\" missing\"},{\"name\":\"PerformanceEventTiming interface: attribute target\",\"status\":1,\"message\":\"assert_own_property: self does not have own property \\\"PerformanceEventTiming\\\" expected property \\\"PerformanceEventTiming\\\" missing\"},{\"name\":\"PerformanceEventTiming interface: attribute targetSelector\",\"status\":1,\"message\":\"assert_own_property: self does not have own property \\\"PerformanceEventTiming\\\" expected property \\\"PerformanceEventTiming\\\" missing\"},{\"name\":\"PerformanceEventTiming interface: attribute interactionId\",\"status\":1,\"message\":\"assert_own_property: self does not have own property \\\"PerformanceEventTiming\\\" expected property \\\"PerformanceEventTiming\\\" missing\"},{\"name\":\"PerformanceEventTiming interface: operation toJSON()\",\"status\":1,\"message\":\"assert_own_property: self does not have own property \\\"PerformanceEventTiming\\\" expected property \\\"PerformanceEventTiming\\\" missing\"},{\"name\":\"EventCounts interface: existence and properties of interface object\",\"status\":1,\"message\":\"assert_own_property: self does not have own property \\\"EventCounts\\\" expected property \\\"EventCounts\\\" missing\"},{\"name\":\"EventCounts interface object length\",\"status\":1,\"message\":\"assert_own_property: self does not have own property \\\"EventCounts\\\" expected property \\\"EventCounts\\\" missing\"},{\"name\":\"EventCounts interface object name\",\"status\":1,\"message\":\"assert_own_property: self does not have own property \\\"EventCounts\\\" expected property \\\"EventCounts\\\" missing\"},{\"name\":\"EventCounts interface: existence and properties of interface prototype object\",\"status\":1,\"message\":\"assert_own_property: self does not have own property \\\"EventCounts\\\" expected property \\\"EventCounts\\\" missing\"},{\"name\":\"EventCounts interface: existence and properties of interface prototype object's \\\"constructor\\\" property\",\"status\":1,\"message\":\"assert_own_property: self does not have own property \\\"EventCounts\\\" expected property \\\"EventCounts\\\" missing\"},{\"name\":\"EventCounts interface: existence and properties of interface prototype object's @@unscopables property\",\"status\":1,\"message\":\"assert_own_property: self does not have own property \\\"EventCounts\\\" expected property \\\"EventCounts\\\" missing\"},{\"name\":\"EventCounts interface: maplike<DOMString, unsigned long long>\",\"status\":1,\"message\":\"Cannot read properties of undefined (reading 'prototype')\"},{\"name\":\"Performance interface: attribute eventCounts\",\"status\":1,\"message\":\"assert_true: The prototype object must have a property \\\"eventCounts\\\" expected true got false\"},{\"name\":\"Performance interface: attribute interactionCount\",\"status\":1,\"message\":\"assert_true: The prototype object must have a property \\\"interactionCount\\\" expected true got false\"},{\"name\":\"Performance interface: performance must inherit property \\\"eventCounts\\\" with the proper type\",\"status\":1,\"message\":\"assert_inherits: property \\\"eventCounts\\\" not found in prototype chain\"},{\"name\":\"Performance interface: performance must inherit property \\\"interactionCount\\\" with the proper type\",\"status\":1,\"message\":\"assert_inherits: property \\\"interactionCount\\\" not found in prototype chain\"}],\"status\":0,\"message\":\"\"}\n"
+    },
+    {
+      "id": "/storage-access-api/idlharness.window.html",
+      "old_outcome": "fail",
+      "new_outcome": "fail",
+      "old_callback_counts": {
+        "1": 1
+      },
+      "new_callback_counts": {
+        "0": 8,
+        "1": 4
+      },
+      "old_completion": {
+        "tests": [
+          {
+            "name": "idl_test setup",
+            "status": 1,
+            "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: Proxy is not defined\""
+          }
+        ],
+        "status": 0,
+        "message": ""
+      },
+      "new_completion": {
+        "tests": [
+          {
+            "name": "idl_test setup",
+            "status": 0,
+            "message": ""
+          },
+          {
+            "name": "idl_test validation",
+            "status": 0,
+            "message": ""
+          },
+          {
+            "name": "Partial interface Document: original interface defined",
+            "status": 0,
+            "message": ""
+          },
+          {
+            "name": "Partial interface Document: member names are unique",
+            "status": 0,
+            "message": ""
+          },
+          {
+            "name": "Document includes NonElementParentNode: member names are unique",
+            "status": 0,
+            "message": ""
+          },
+          {
+            "name": "Document includes DocumentOrShadowRoot: member names are unique",
+            "status": 0,
+            "message": ""
+          },
+          {
+            "name": "Document includes ParentNode: member names are unique",
+            "status": 0,
+            "message": ""
+          },
+          {
+            "name": "Document includes XPathEvaluatorBase: member names are unique",
+            "status": 0,
+            "message": ""
+          },
+          {
+            "name": "Document interface: operation hasStorageAccess()",
+            "status": 1,
+            "message": "assert_own_property: interface prototype object missing non-static operation expected property \"hasStorageAccess\" missing"
+          },
+          {
+            "name": "Document interface: operation requestStorageAccess()",
+            "status": 1,
+            "message": "assert_own_property: interface prototype object missing non-static operation expected property \"requestStorageAccess\" missing"
+          },
+          {
+            "name": "Document interface: document must inherit property \"hasStorageAccess()\" with the proper type",
+            "status": 1,
+            "message": "assert_inherits: property \"hasStorageAccess\" not found in prototype chain"
+          },
+          {
+            "name": "Document interface: document must inherit property \"requestStorageAccess()\" with the proper type",
+            "status": 1,
+            "message": "assert_inherits: property \"requestStorageAccess\" not found in prototype chain"
+          }
+        ],
+        "status": 0,
+        "message": ""
+      },
+      "stdout_tail": "WS074_WPT_RESULT {\"name\":\"idl_test validation\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"Partial interface Document: original interface defined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"Partial interface Document: member names are unique\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"Document includes NonElementParentNode: member names are unique\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"Document includes DocumentOrShadowRoot: member names are unique\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"Document includes ParentNode: member names are unique\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"Document includes XPathEvaluatorBase: member names are unique\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"Document interface: operation hasStorageAccess()\",\"status\":1,\"message\":\"assert_own_property: interface prototype object missing non-static operation expected property \\\"hasStorageAccess\\\" missing\"}\nWS074_WPT_RESULT {\"name\":\"Document interface: operation requestStorageAccess()\",\"status\":1,\"message\":\"assert_own_property: interface prototype object missing non-static operation expected property \\\"requestStorageAccess\\\" missing\"}\nWS074_WPT_RESULT {\"name\":\"Document interface: document must inherit property \\\"hasStorageAccess()\\\" with the proper type\",\"status\":1,\"message\":\"assert_inherits: property \\\"hasStorageAccess\\\" not found in prototype chain\"}\nWS074_WPT_RESULT {\"name\":\"Document interface: document must inherit property \\\"requestStorageAccess()\\\" with the proper type\",\"status\":1,\"message\":\"assert_inherits: property \\\"requestStorageAccess\\\" not found in prototype chain\"}\nWS074_WPT_RESULT {\"name\":\"idl_test setup\",\"status\":0,\"message\":\"\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"idl_test setup\",\"status\":0,\"message\":\"\"},{\"name\":\"idl_test validation\",\"status\":0,\"message\":\"\"},{\"name\":\"Partial interface Document: original interface defined\",\"status\":0,\"message\":\"\"},{\"name\":\"Partial interface Document: member names are unique\",\"status\":0,\"message\":\"\"},{\"name\":\"Document includes NonElementParentNode: member names are unique\",\"status\":0,\"message\":\"\"},{\"name\":\"Document includes DocumentOrShadowRoot: member names are unique\",\"status\":0,\"message\":\"\"},{\"name\":\"Document includes ParentNode: member names are unique\",\"status\":0,\"message\":\"\"},{\"name\":\"Document includes XPathEvaluatorBase: member names are unique\",\"status\":0,\"message\":\"\"},{\"name\":\"Document interface: operation hasStorageAccess()\",\"status\":1,\"message\":\"assert_own_property: interface prototype object missing non-static operation expected property \\\"hasStorageAccess\\\" missing\"},{\"name\":\"Document interface: operation requestStorageAccess()\",\"status\":1,\"message\":\"assert_own_property: interface prototype object missing non-static operation expected property \\\"requestStorageAccess\\\" missing\"},{\"name\":\"Document interface: document must inherit property \\\"hasStorageAccess()\\\" with the proper type\",\"status\":1,\"message\":\"assert_inherits: property \\\"hasStorageAccess\\\" not found in prototype chain\"},{\"name\":\"Document interface: document must inherit property \\\"requestStorageAccess()\\\" with the proper type\",\"status\":1,\"message\":\"assert_inherits: property \\\"requestStorageAccess\\\" not found in prototype chain\"}],\"status\":0,\"message\":\"\"}\n"
+    }
+  ]
+}
