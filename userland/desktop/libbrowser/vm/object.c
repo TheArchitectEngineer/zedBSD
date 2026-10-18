@@ -383,8 +383,8 @@ vm_array_create(
 }
 
 /*
- * Creates private managed noncallable Proxy records without publishing a JS constructor.
- * Callable targets require callable internal dispatch and are rejected.
+ * Creates private managed Proxy records with immutable internal call/construct slots.
+ * Public constructor installation is independent of this native factory.
  */
 int
 vm_proxy_create(
@@ -401,6 +401,7 @@ vm_proxy_create(
 	int is_cell;
 	int is_object;
 	int callable;
+	int constructor;
 	int status;
 
 	/* Protect incoming ownership before either validation errors or allocation can collect. */
@@ -441,12 +442,9 @@ vm_proxy_create(
 		goto cleanup;
 	}
 
-	/* Callable targets require separate call and construct dispatch; object targets may themselves be Proxies. */
+	/* Capture immutable internal call and construct slots before allocation can collect. */
 	callable = vm_value_is_callable(target);
-	if (callable) {
-		status = vm_throw_type_error(realm, "Callable Proxy targets require callable internal dispatch");
-		goto cleanup;
-	}
+	constructor = vm_value_is_constructor(target);
 
 	/* Retain the newborn before ordinary shape initialization can allocate. */
 	proxy = vm_heap_alloc(realm->heap, &object_proxy_type, sizeof(*proxy));
@@ -459,6 +457,8 @@ vm_proxy_create(
 	roots[3] = &proxy->object.cell;
 	proxy->target = target;
 	proxy->handler = handler;
+	proxy->callable = callable;
+	proxy->constructor = constructor;
 	proxy->object.kind = VM_KIND_PROXY;
 	proxy->object.internal = VM_VALUE_UNDEFINED;
 	status = vm_object_init(realm->heap, &proxy->object, NULL);

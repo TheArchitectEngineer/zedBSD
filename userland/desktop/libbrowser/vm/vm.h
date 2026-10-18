@@ -462,6 +462,8 @@ struct vm_function {
 	vm_value data;
 	/* Embedding-owned immutable source metadata is inherited by nested closures. */
 	vm_value source;
+	/* VM-owned BoundTargetFunction is undefined for ordinary functions and traced for bound functions. */
+	vm_value bound_target;
 };
 
 /*

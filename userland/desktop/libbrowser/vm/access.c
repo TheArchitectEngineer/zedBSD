@@ -90,6 +90,7 @@ static const struct vm_cell_type access_for_in_type = {
 
 static int access_key_listed(const struct wb_vector *keys, size_t count, vm_value key);
 static int access_is_symbol(vm_value value);
+static int access_instanceof(struct vm_realm *realm, vm_value value, vm_value constructor, vm_value *result);
 static void access_keys_trace(struct vm_heap *heap, void *context);
 static int access_property_key_list(struct vm_realm *realm, vm_value source, struct wb_vector *keys);
 static int access_proxy_own_keys(struct vm_realm *realm, struct vm_proxy *proxy, struct wb_vector *keys);
@@ -845,53 +846,26 @@ vm_instanceof(
 	vm_value constructor,
 	vm_value *result)
 {
-	vm_value method;
-	vm_value answer;
-	vm_value builtin;
-	int ordinary;
-	int truth;
-	int callable;
-	int is_object;
+	struct access_read_roots roots;
 	int status;
 
-	/* An object's Symbol.hasInstance answers for it, unless it is Function.prototype's own. */
+	/* Direct native calls retain both operands and the managed realm before any custom method lookup. */
 	*result = VM_VALUE_FALSE;
-	is_object = vm_value_is_object(constructor);
-	if (is_object) {
-		status = vm_get_method(realm, constructor, vm_symbol_key(realm, VM_SYMBOL_HAS_INSTANCE), &method);
-		if (status != 0)
-			return status;
-		ordinary = 0;
-		if (realm->intrinsics[VM_INTRINSIC_HAS_INSTANCE] != NULL) {
-			builtin = vm_value_cell(realm->intrinsics[VM_INTRINSIC_HAS_INSTANCE]);
-			if (method == builtin)
-				ordinary = 1;
-		}
-
-		/* A method of its own is called, its answer made a boolean. */
-		if (method != VM_VALUE_UNDEFINED && !ordinary) {
-			status = vm_call(realm, method, constructor, &value, 1, &answer);
-			if (status != 0)
-				return status;
-			truth = vm_to_boolean(answer);
-			*result = vm_value_boolean(truth);
-			return 0;
-		}
-	}
-
-	/* Otherwise only a callable right side answers instanceof. */
-	callable = vm_value_is_callable(constructor);
-	if (!callable) {
-		status = vm_throw_type_error(realm, "Right-hand side of 'instanceof' is not callable");
-		return status;
-	}
-
-	/* The prototype chain answers. */
-	status = vm_ordinary_has_instance(realm, constructor, value, result);
+	roots.realm = realm;
+	roots.base = constructor;
+	roots.key = VM_VALUE_UNDEFINED;
+	roots.receiver = value;
+	status = vm_heap_add_tracer(realm->heap, access_read_trace, &roots);
 	if (status != 0)
 		return status;
 
-	/* Succeeded: the answer is stored. */
+	/* Every constructor getter and custom hasInstance callback remains within this native ownership boundary. */
+	status = access_instanceof(realm, value, constructor, result);
+	vm_heap_remove_tracer(realm->heap, access_read_trace, &roots);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the caller receives the complete instance classification. */
 	return 0;
 }
 
@@ -908,6 +882,8 @@ vm_ordinary_has_instance(
 	vm_value *result)
 {
 	struct access_read_roots roots;
+	struct vm_cell *constructor_cell;
+	struct vm_function *function;
 	struct vm_cell *prototype_root;
 	vm_value key;
 	vm_value prototype;
@@ -916,13 +892,10 @@ vm_ordinary_has_instance(
 	int is_object;
 	int status;
 
-	/* Only callable constructors and object values require a prototype lookup. */
+	/* A non-callable has no instances; bound callables can delegate even for primitive values. */
 	*result = VM_VALUE_FALSE;
 	callable = vm_value_is_callable(constructor);
 	if (!callable)
-		return 0;
-	is_object = vm_value_is_object(value);
-	if (!is_object)
 		return 0;
 
 	/* A managed caller, constructor and original value survive key allocation and constructor getters. */
@@ -938,6 +911,23 @@ vm_ordinary_has_instance(
 	if (status != 0) {
 		vm_heap_remove_tracer(realm->heap, access_read_trace, &roots);
 		return status;
+	}
+
+	/* BoundTargetFunction delegation precedes the primitive-value refusal and may use a custom hasInstance. */
+	constructor_cell = vm_value_as_cell(constructor);
+	if (constructor_cell->type == &vm_function_type) {
+		function = (struct vm_function *)constructor_cell;
+		if (function->bound_target != VM_VALUE_UNDEFINED) {
+			status = vm_instanceof(realm, value, function->bound_target, result);
+			goto cleanup;
+		}
+	}
+
+	/* Only a non-bound callable with an object operand needs a prototype-chain walk. */
+	is_object = vm_value_is_object(value);
+	if (!is_object) {
+		status = 0;
+		goto cleanup;
 	}
 
 	/* The constructor's prototype is retrieved before any value-side prototype method is called. */
@@ -2318,6 +2308,65 @@ access_refuse(
 	/* Strict code throws. */
 	status = vm_throw_type_error(realm, message);
 	return status;
+}
+
+/* Evaluate instanceof while the public wrapper owns both operands across all property methods. */
+static int
+access_instanceof(
+	struct vm_realm *realm,
+	vm_value value,
+	vm_value constructor,
+	vm_value *result)
+{
+	vm_value method;
+	vm_value answer;
+	vm_value builtin;
+	int ordinary;
+	int truth;
+	int callable;
+	int is_object;
+	int status;
+
+	/* An object's Symbol.hasInstance answers for it, unless it is Function.prototype's own. */
+	*result = VM_VALUE_FALSE;
+	is_object = vm_value_is_object(constructor);
+	if (is_object) {
+		status = vm_get_method(realm, constructor, vm_symbol_key(realm, VM_SYMBOL_HAS_INSTANCE), &method);
+		if (status != 0)
+			return status;
+		ordinary = 0;
+		if (realm->intrinsics[VM_INTRINSIC_HAS_INSTANCE] != NULL) {
+			builtin = vm_value_cell(realm->intrinsics[VM_INTRINSIC_HAS_INSTANCE]);
+			if (method == builtin)
+				ordinary = 1;
+		}
+
+		/* A method of its own is called, its answer made a boolean. */
+		if (method != VM_VALUE_UNDEFINED &&
+		    !ordinary) {
+			status = vm_call(realm, method, constructor, &value, 1, &answer);
+			if (status != 0)
+				return status;
+			truth = vm_to_boolean(answer);
+			*result = vm_value_boolean(truth);
+			return 0;
+		}
+	}
+
+	/* Otherwise only a callable right side answers instanceof. */
+	callable = vm_value_is_callable(constructor);
+	if (!callable) {
+		status = vm_throw_type_error(realm, "Right-hand side of 'instanceof' is not callable");
+		return status;
+	}
+
+	/* The prototype chain answers. */
+	status = vm_ordinary_has_instance(realm, constructor, value, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the answer is stored. */
+	return 0;
 }
 
 /* Tells whether a key is among the first count keys of a list. */

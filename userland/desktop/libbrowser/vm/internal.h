@@ -149,6 +149,9 @@ struct vm_proxy {
 	struct vm_object object;
 	vm_value target;
 	vm_value handler;
+	/* Creation captures internal call/construct slots even after revocation clears object edges. */
+	int callable;
+	int constructor;
 };
 
 /*
