@@ -1,5 +1,14 @@
-/* zedBSD configured x64 UEFI loader. */
-/* Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib */
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * x64 UEFI loader.
+ */
+
 #include "include/uefi.h"
 #include "elf64.h"
 #include "framebuffer.h"
@@ -14,80 +23,60 @@
 #include "bootloader/include/amd64-kernel-image.h"
 #include "bootloader/include/boot-parameter-handoff.h"
 
-#define PAGE_SIZE 4096ULL
-#define LOW_BLOCK_PAGES 16U
-#define LOW_BLOCK_MAX 0x001fffffULL
-#define MAX_MEMORY_RANGES 256U
-#define MAX_KERNEL_FILE 0x04000000ULL
-#define BOOT_SECTOR_BUFFER 4096U
-#define CONFIG_READ_BUFFER (ZBL_KERN_CONFIG_FILE_MAX + 1U)
-#define FILE_INFO_BUFFER 1024U
-/* The GOP mode a boot with a logo asks for: the Kei splash's size (ws035-p112). */
-#define SPLASH_MODE_WIDTH 1920U
-#define SPLASH_MODE_HEIGHT 1080U
-/* The GOP mode a boot with Ctrl held asks for: the early console's 80x30 fills it (ws174). */
-#define TEXT_MODE_WIDTH 640U
-#define TEXT_MODE_HEIGHT 480U
-#define KERNEL_PATH_CHAR16_STORAGE \
-	(ZBL_KERN_CONFIG_KERNEL_PATH_STORAGE_SIZE + 1U)
+#define PAGE_SIZE			4096ULL
+#define LOW_BLOCK_PAGES			16U
+#define LOW_BLOCK_MAX			0x001fffffULL
+#define MAX_MEMORY_RANGES		256U
+#define MAX_KERNEL_FILE			0x04000000ULL
+#define BOOT_SECTOR_BUFFER		4096U
+#define CONFIG_READ_BUFFER		(ZBL_KERN_CONFIG_FILE_MAX + 1U)
+#define FILE_INFO_BUFFER		1024U
 
-#define LOW_TRAMPOLINE_OFFSET 0x0000U
-#define LOW_PML4_OFFSET 0x1000U
-#define LOW_PDPT_OFFSET 0x2000U
-#define LOW_PD_OFFSET 0x3000U
-#define HIGH_PDPT_OFFSET 0x4000U
-#define HIGH_PD_OFFSET 0x5000U
-#define HANDOFF_OFFSET 0x6000U
-#define MEMORY_RANGES_OFFSET 0x7000U
-#define BOOT_ALLOCATIONS_OFFSET 0xa000U
-#define FRAMEBUFFER_PD_OFFSET 0x9000U
-#define TRANSITION_STACK_TOP 0x10000U
+/* The GOP mode a boot with a logo asks for: the Kei splash's size (ws035-p112). */
+#define SPLASH_MODE_WIDTH		1920U
+#define SPLASH_MODE_HEIGHT		1080U
+
+/* The GOP mode a boot with Ctrl held asks for: the early console's 80x30 fills it (ws174). */
+#define TEXT_MODE_WIDTH			640U
+#define TEXT_MODE_HEIGHT		480U
+
+#define KERNEL_PATH_CHAR16_STORAGE	(ZBL_KERN_CONFIG_KERNEL_PATH_STORAGE_SIZE + 1U)
+#define LOW_TRAMPOLINE_OFFSET		0x0000U
+#define LOW_PML4_OFFSET			0x1000U
+#define LOW_PDPT_OFFSET			0x2000U
+#define LOW_PD_OFFSET			0x3000U
+#define HIGH_PDPT_OFFSET		0x4000U
+#define HIGH_PD_OFFSET			0x5000U
+#define HANDOFF_OFFSET			0x6000U
+#define MEMORY_RANGES_OFFSET		0x7000U
+#define BOOT_ALLOCATIONS_OFFSET		0xa000U
+#define FRAMEBUFFER_PD_OFFSET		0x9000U
+#define TRANSITION_STACK_TOP		0x10000U
 
 /* Kernel placement: candidates retried and map lines printed on failure. */
-#define KERNEL_PLACE_ATTEMPTS 8U
-#define KERNEL_MAP_DUMP_LIMIT 48U
+#define KERNEL_PLACE_ATTEMPTS		8U
+#define KERNEL_MAP_DUMP_LIMIT		48U
 
-#define PTE_PRESENT 0x001ULL
-#define PTE_WRITE 0x002ULL
-#define PTE_LARGE 0x080ULL
+#define PTE_PRESENT			0x001ULL
+#define PTE_WRITE			0x002ULL
+#define PTE_LARGE			0x080ULL
 
-#define DIAGNOSTIC_BLOCK_WIDTH 24U
-#define DIAGNOSTIC_BLOCK_HEIGHT 16U
-#define DIAGNOSTIC_BLOCK_GAP 8U
-#define DIAGNOSTIC_MARGIN 8U
-#define DIAGNOSTIC_PANEL_WIDTH 136U
-#define DIAGNOSTIC_PANEL_HEIGHT 40U
-#define DIAGNOSTIC_PIXEL 0x00ffffffU
-
-extern uint8_t zbl_transition_start[];
-extern uint8_t zbl_transition_quiet[];
-extern uint8_t zbl_transition_end[];
-
-_Static_assert(ZBL6_HANDOFF_V7_UEFI_SIZE <=
-	       MEMORY_RANGES_OFFSET - HANDOFF_OFFSET,
-	       "UEFI parameter handoff must fit its low-memory slot");
-
-_Static_assert(ZBL_UEFI_PARTITION_MBR == ZBL6_PARTITION_SCHEME_MBR,
-	       "MBR discovery and handoff values must match");
-_Static_assert(ZBL_UEFI_PARTITION_GPT == ZBL6_PARTITION_SCHEME_GPT,
-	       "GPT discovery and handoff values must match");
-
-static uint8_t boot_sector[BOOT_SECTOR_BUFFER]
-    __attribute__((aligned(BOOT_SECTOR_BUFFER)));
-static uint8_t config_buffer[CONFIG_READ_BUFFER];
-static uint8_t file_info_buffer[FILE_INFO_BUFFER]
-    __attribute__((aligned(8)));
-
-static const CHAR16 kern_config_path[] = {
-	'\\', 'Z', 'E', 'D', 'B', 'S', 'D', '.', 'C', 'F', 'G', 0
-};
+#define DIAGNOSTIC_BLOCK_WIDTH		24U
+#define DIAGNOSTIC_BLOCK_HEIGHT		16U
+#define DIAGNOSTIC_BLOCK_GAP		8U
+#define DIAGNOSTIC_MARGIN		8U
+#define DIAGNOSTIC_PANEL_WIDTH		136U
+#define DIAGNOSTIC_PANEL_HEIGHT		40U
+#define DIAGNOSTIC_PIXEL		0x00ffffffU
 
 struct loader_context {
 	EFI_HANDLE image;
 	EFI_SYSTEM_TABLE *system;
 	EFI_BOOT_SERVICES *boot;
+
 	/* The boot logo is on the screen: progress text stays off it (errors still show). */
 	int quiet_console;
+
 	/* The boot keys (Ctrl, Shift) read from the firmware while the loader runs (ws174). */
 	struct zbl_uefi_boot_keys keys;
 };
@@ -104,13 +93,43 @@ struct discovered_volume {
 	size_t match_count;
 };
 
-typedef void(EFIAPI *transition_fn)(uint64_t, uint64_t, uint64_t, uint64_t)
-    __attribute__((noreturn));
+
+/*
+ * Where the kernel image goes.  The default ("auto") is the linked address
+ * when the firmware still has it free, otherwise the lowest 2 MiB-aligned run
+ * of conventional memory below one GiB that holds the whole image.  The
+ * kernel_phys= boot parameter overrides it: "link" insists on the linked
+ * address (the historical behaviour), "auto" is the default, and a
+ * hexadecimal address places the image there or fails.
+ */
+struct kernel_placement_policy {
+	int link_only;
+	uint64_t fixed;
+};
+
+typedef void(EFIAPI *transition_fn)(uint64_t, uint64_t, uint64_t, uint64_t) __attribute__((noreturn));
+
+extern uint8_t zbl_transition_start[];
+extern uint8_t zbl_transition_quiet[];
+extern uint8_t zbl_transition_end[];
+
+static uint8_t boot_sector[BOOT_SECTOR_BUFFER] __attribute__((aligned(BOOT_SECTOR_BUFFER)));
+static uint8_t config_buffer[CONFIG_READ_BUFFER];
+static uint8_t file_info_buffer[FILE_INFO_BUFFER] __attribute__((aligned(8)));
+
+static const CHAR16 kern_config_path[] = {
+	'\\', 'Z', 'E', 'D', 'B', 'S', 'D', '.', 'C', 'F', 'G', 0
+};
 
 static void __attribute__((noreturn)) halt(void);
+static int show_logo(struct loader_context *context, struct discovered_volume *discovered, const struct zbl_uefi_kern_config *configuration, const struct zbl6_framebuffer *framebuffer);
+static EFI_STATUS apply_boot_keys(struct loader_context *context, struct zbl_uefi_kern_config *configuration, unsigned held);
+static void notice_boot_keys(struct loader_context *context, const struct zbl_uefi_kern_config *configuration, unsigned held);
 
 static void
-byte_zero(void *pointer, UINTN size)
+byte_zero(
+	void *pointer,
+	UINTN size)
 {
 	uint8_t *bytes = pointer;
 	while (size-- != 0)
@@ -118,7 +137,10 @@ byte_zero(void *pointer, UINTN size)
 }
 
 static void
-byte_copy(void *destination, const void *source, UINTN size)
+byte_copy(
+	void *destination,
+	const void *source,
+	UINTN size)
 {
 	uint8_t *out = destination;
 	const uint8_t *in = source;
@@ -127,7 +149,9 @@ byte_copy(void *destination, const void *source, UINTN size)
 }
 
 static int
-guid_equal(const EFI_GUID *left, const EFI_GUID *right)
+guid_equal(
+	const EFI_GUID *left,
+	const EFI_GUID *right)
 {
 	const uint8_t *a = (const void *)left;
 	const uint8_t *b = (const void *)right;
@@ -140,7 +164,8 @@ guid_equal(const EFI_GUID *left, const EFI_GUID *right)
 }
 
 static uint64_t
-find_acpi_rsdp(const EFI_SYSTEM_TABLE *system)
+find_acpi_rsdp(
+	const EFI_SYSTEM_TABLE *system)
 {
 	UINTN index;
 	void *acpi10 = 0;
@@ -148,45 +173,56 @@ find_acpi_rsdp(const EFI_SYSTEM_TABLE *system)
 	if (system->ConfigurationTable == 0 ||
 	    system->NumberOfTableEntries > 1024U)
 		return 0;
+
 	for (index = 0; index < system->NumberOfTableEntries; index++) {
-		const EFI_CONFIGURATION_TABLE *entry =
-		    &system->ConfigurationTable[index];
+		const EFI_CONFIGURATION_TABLE *entry = &system->ConfigurationTable[index];
+
 		if (guid_equal(&entry->VendorGuid, &EFI_ACPI_20_TABLE_GUID))
 			return (uint64_t)(uintptr_t)entry->VendorTable;
+
 		if (guid_equal(&entry->VendorGuid, &EFI_ACPI_TABLE_GUID))
 			acpi10 = entry->VendorTable;
 	}
+
 	return (uint64_t)(uintptr_t)acpi10;
 }
 
 static void
-debug_byte(uint8_t byte)
+debug_byte(
+	uint8_t byte)
 {
 	__asm__ volatile("outb %0,%1" : : "a"(byte), "Nd"((uint16_t)0xe9));
 }
 
 static void
-debug_port(const char *string)
+debug_port(
+	const char *string)
 {
 	while (*string != 0)
 		debug_byte((uint8_t)*string++);
 }
 
 static void
-console_ascii(struct loader_context *context, const char *string)
+console_ascii(
+	struct loader_context *context,
+	const char *string)
 {
 	CHAR16 buffer[128];
 	UINTN used = 0;
 
 	debug_port(string);
+
 	if (context->quiet_console)
 		return;
+
 	if (context->system->ConOut == 0 ||
 	    context->system->ConOut->OutputString == 0)
 		return;
+
 	while (*string != 0) {
 		if (*string == '\n' && used + 2U < 128U)
 			buffer[used++] = '\r';
+
 		buffer[used++] = (uint8_t)*string++;
 		if (used == 126U) {
 			buffer[used] = 0;
@@ -195,12 +231,17 @@ console_ascii(struct loader_context *context, const char *string)
 			used = 0;
 		}
 	}
+
 	buffer[used] = 0;
+
 	context->system->ConOut->OutputString(context->system->ConOut, buffer);
 }
 
 static void
-console_hex64(struct loader_context *context, const char *label, uint64_t value)
+console_hex64(
+	struct loader_context *context,
+	const char *label,
+	uint64_t value)
 {
 	static const char digits[] = "0123456789abcdef";
 	char message[64];
@@ -209,14 +250,17 @@ console_hex64(struct loader_context *context, const char *label, uint64_t value)
 
 	while (*label != 0 && used + 1U < sizeof(message))
 		message[used++] = *label++;
+
 	if (used + 20U >= sizeof(message))
 		halt();
+
 	message[used++] = '0';
 	message[used++] = 'x';
 	for (shift = 60; shift >= 0; shift -= 4)
 		message[used++] = digits[(value >> shift) & 15U];
 	message[used++] = '\n';
 	message[used] = 0;
+
 	console_ascii(context, message);
 }
 
@@ -227,57 +271,69 @@ console_hex64(struct loader_context *context, const char *label, uint64_t value)
  * at the first kernel instruction.
  */
 static void
-framebuffer_stage(const struct zbl6_framebuffer *framebuffer, unsigned stage)
+framebuffer_stage(
+	const struct zbl6_framebuffer *framebuffer,
+	unsigned stage)
 {
-	volatile uint32_t *pixels =
-	    (volatile uint32_t *)(uintptr_t)framebuffer->physical_base;
+	volatile uint32_t *pixels = (volatile uint32_t *)(uintptr_t)framebuffer->physical_base;
 	unsigned block, origin_x, x, y;
 
 	if (stage == 0 || stage > 4U ||
 	    framebuffer->width < DIAGNOSTIC_PANEL_WIDTH ||
 	    framebuffer->height < DIAGNOSTIC_PANEL_HEIGHT)
 		halt();
+
 	origin_x = framebuffer->width - DIAGNOSTIC_PANEL_WIDTH;
-	if (stage == 1U)
-		for (y = 0; y < DIAGNOSTIC_PANEL_HEIGHT; y++)
-			for (x = 0; x < DIAGNOSTIC_PANEL_WIDTH; x++)
-				pixels[(uint64_t)y * framebuffer->stride +
-				       origin_x + x] = 0;
+	if (stage == 1U) {
+		for (y = 0; y < DIAGNOSTIC_PANEL_HEIGHT; y++) {
+			for (x = 0; x < DIAGNOSTIC_PANEL_WIDTH; x++) {
+				pixels[(uint64_t)y * framebuffer->stride + origin_x + x] = 0;
+			}
+		}
+	}
+
 	block = stage - 1U;
-	for (y = 0; y < DIAGNOSTIC_BLOCK_HEIGHT; y++)
-		for (x = 0; x < DIAGNOSTIC_BLOCK_WIDTH; x++)
-			pixels[(uint64_t)(y + DIAGNOSTIC_MARGIN) *
-				   framebuffer->stride +
-			       origin_x + DIAGNOSTIC_MARGIN +
-			       block * (DIAGNOSTIC_BLOCK_WIDTH +
-					DIAGNOSTIC_BLOCK_GAP) +
+	for (y = 0; y < DIAGNOSTIC_BLOCK_HEIGHT; y++) {
+		for (x = 0; x < DIAGNOSTIC_BLOCK_WIDTH; x++) {
+			pixels[(uint64_t)(y + DIAGNOSTIC_MARGIN) * framebuffer->stride +
+			       origin_x +
+			       DIAGNOSTIC_MARGIN +
+			       block * (DIAGNOSTIC_BLOCK_WIDTH + DIAGNOSTIC_BLOCK_GAP) +
 			       x] = DIAGNOSTIC_PIXEL;
+		}
+	}
+
 	__asm__ volatile("sfence" : : : "memory");
 }
 
 static void
-framebuffer_map_error(const struct zbl6_framebuffer *framebuffer,
-		      enum zbl_memory_result result)
+framebuffer_map_error(
+	const struct zbl6_framebuffer *framebuffer,
+	enum zbl_memory_result result)
 {
-	volatile uint32_t *pixels =
-	    (volatile uint32_t *)(uintptr_t)framebuffer->physical_base;
+	volatile uint32_t *pixels = (volatile uint32_t *)(uintptr_t)framebuffer->physical_base;
 	unsigned block, origin_x, x, y;
 
 	if (result <= ZBL_MEMORY_OK || result > ZBL_MEMORY_OVERLAP)
 		result = ZBL_MEMORY_INVALID;
+
 	origin_x = framebuffer->width - DIAGNOSTIC_PANEL_WIDTH;
-	for (block = 0; block < (unsigned)result; block++)
-		for (y = 0; y < 6U; y++)
-			for (x = 0; x < 8U; x++)
+	for (block = 0; block < (unsigned)result; block++) {
+		for (y = 0; y < 6U; y++) {
+			for (x = 0; x < 8U; x++) {
 				pixels[(uint64_t)(y + 30U) * framebuffer->stride +
 				       origin_x + DIAGNOSTIC_MARGIN +
-				       block * 12U + x] =
-				    DIAGNOSTIC_PIXEL;
+				       block * 12U + x] = DIAGNOSTIC_PIXEL;
+			}
+		}
+	}
+
 	__asm__ volatile("sfence" : : : "memory");
 }
 
 static void __attribute__((noreturn))
-halt(void)
+halt(
+	void)
 {
 	for (;;) {
 		__asm__ volatile("cli; hlt");
@@ -285,7 +341,9 @@ halt(void)
 }
 
 static void
-console_status(struct loader_context *context, const char *operation,
+console_status(
+	struct loader_context *context,
+	const char *operation,
 	EFI_STATUS status)
 {
 	char message[96];
@@ -295,6 +353,7 @@ console_status(struct loader_context *context, const char *operation,
 
 	while (*operation != 0 && index + 1U < sizeof(message))
 		message[index++] = *operation++;
+
 	if (index + 20U < sizeof(message)) {
 		message[index++] = ':';
 		message[index++] = ' ';
@@ -305,12 +364,15 @@ console_status(struct loader_context *context, const char *operation,
 		message[index++] = '\n';
 	}
 	message[index] = 0;
+
 	console_ascii(context, message);
 }
 
 static void __attribute__((noreturn))
-fail_status(struct loader_context *context, const char *operation,
-	    EFI_STATUS status)
+fail_status(
+	struct loader_context *context,
+	const char *operation,
+	EFI_STATUS status)
 {
 	/* The error that stops the boot is shown even over the boot logo. */
 	context->quiet_console = 0;
@@ -319,7 +381,11 @@ fail_status(struct loader_context *context, const char *operation,
 }
 
 static EFI_STATUS
-read_exact(EFI_FILE_PROTOCOL *file, UINT64 position, void *buffer, UINTN size)
+read_exact(
+	EFI_FILE_PROTOCOL *file,
+	UINT64 position,
+	void *buffer,
+	UINTN size)
 {
 	EFI_STATUS status;
 	uint8_t *cursor = buffer;
@@ -327,6 +393,7 @@ read_exact(EFI_FILE_PROTOCOL *file, UINT64 position, void *buffer, UINTN size)
 	status = file->SetPosition(file, position);
 	if (EFI_ERROR(status))
 		return status;
+
 	while (size != 0) {
 		UINTN amount = size;
 		status = file->Read(file, &amount, cursor);
@@ -337,11 +404,14 @@ read_exact(EFI_FILE_PROTOCOL *file, UINT64 position, void *buffer, UINTN size)
 		cursor += amount;
 		size -= amount;
 	}
+
 	return EFI_SUCCESS;
 }
 
 static EFI_STATUS
-close_file_pair(EFI_FILE_PROTOCOL *file, EFI_FILE_PROTOCOL *root)
+close_file_pair(
+	EFI_FILE_PROTOCOL *file,
+	EFI_FILE_PROTOCOL *root)
 {
 	EFI_STATUS first = EFI_SUCCESS;
 	EFI_STATUS status;
@@ -352,28 +422,33 @@ close_file_pair(EFI_FILE_PROTOCOL *file, EFI_FILE_PROTOCOL *root)
 		if (EFI_ERROR(status))
 			first = status;
 	}
+
 	if (root != 0) {
 		status = root->Close == 0 ? EFI_INVALID_PARAMETER :
 		    root->Close(root);
 		if (!EFI_ERROR(first) && EFI_ERROR(status))
 			first = status;
 	}
+
 	return first;
 }
 
 static EFI_STATUS
-release_selection(struct zbl_uefi_volume_selection *selection)
+release_selection(
+	struct zbl_uefi_volume_selection *selection)
 {
 	struct zbl_uefi_volume_match match;
 
 	if (!zbl_uefi_volume_selection_take(selection, &match))
 		return EFI_SUCCESS;
+
 	return close_file_pair((EFI_FILE_PROTOCOL *)match.config,
-	    (EFI_FILE_PROTOCOL *)match.root);
+			       (EFI_FILE_PROTOCOL *)match.root);
 }
 
 static EFI_STATUS
-discovery_abort(struct zbl_uefi_volume_selection *selection,
+discovery_abort(
+	struct zbl_uefi_volume_selection *selection,
 	EFI_STATUS status)
 {
 	EFI_STATUS cleanup = release_selection(selection);
@@ -382,63 +457,84 @@ discovery_abort(struct zbl_uefi_volume_selection *selection,
 }
 
 static EFI_STATUS
-regular_file_size(EFI_FILE_PROTOCOL *file, UINT64 *file_size)
+regular_file_size(
+	EFI_FILE_PROTOCOL *file,
+	UINT64 *file_size)
 {
 	EFI_FILE_INFO *info = (EFI_FILE_INFO *)(void *)file_info_buffer;
-	const UINTN minimum = __builtin_offsetof(EFI_FILE_INFO, FileName) +
-	    sizeof(CHAR16);
+	const UINTN minimum = __builtin_offsetof(EFI_FILE_INFO, FileName) + sizeof(CHAR16);
 	EFI_STATUS status;
 	UINTN required = 0U;
 
 	if (file == 0 || file->GetInfo == 0 || file_size == 0)
 		return EFI_INVALID_PARAMETER;
+
 	status = file->GetInfo(file, &EFI_FILE_INFO_ID, &required, 0);
 	if (status != EFI_BUFFER_TOO_SMALL || required < minimum)
 		return EFI_ERROR(status) ? status : EFI_DEVICE_ERROR;
+
 	if (required > sizeof(file_info_buffer))
 		return EFI_BAD_BUFFER_SIZE;
+
 	byte_zero(file_info_buffer, required);
-	status = file->GetInfo(file, &EFI_FILE_INFO_ID, &required,
-	    file_info_buffer);
+
+	status = file->GetInfo(file, &EFI_FILE_INFO_ID, &required, file_info_buffer);
 	if (EFI_ERROR(status))
 		return status;
-	if (required < minimum || info->Size < minimum ||
+
+	if (required < minimum ||
+	    info->Size < minimum ||
 	    info->Size > required)
 		return EFI_DEVICE_ERROR;
+
 	if ((info->Attribute & EFI_FILE_DIRECTORY) != 0U)
 		return EFI_UNSUPPORTED;
+
 	*file_size = info->FileSize;
+
 	return EFI_SUCCESS;
 }
 
 static EFI_STATUS
-probe_readable_file(EFI_FILE_PROTOCOL *file)
+probe_readable_file(
+	EFI_FILE_PROTOCOL *file)
 {
 	EFI_STATUS status;
 	UINTN amount = 1U;
 	UINT64 file_size;
 	uint8_t byte;
 
-	if (file == 0 || file->Read == 0 || file->SetPosition == 0 ||
+	if (file == 0 ||
+	    file->Read == 0 ||
+	    file->SetPosition == 0 ||
 	    file->Close == 0)
 		return EFI_INVALID_PARAMETER;
+
 	status = regular_file_size(file, &file_size);
 	if (EFI_ERROR(status))
 		return status;
+
 	(void)file_size;
+
 	status = file->SetPosition(file, 0U);
 	if (EFI_ERROR(status))
 		return status;
+
 	status = file->Read(file, &amount, &byte);
 	if (EFI_ERROR(status))
 		return status;
+
 	if (amount > 1U)
 		return EFI_DEVICE_ERROR;
+
 	return file->SetPosition(file, 0U);
 }
 
 static EFI_STATUS
-read_bounded_file(EFI_FILE_PROTOCOL *file, void *buffer, UINTN capacity,
+read_bounded_file(
+	EFI_FILE_PROTOCOL *file,
+	void *buffer,
+	UINTN capacity,
 	UINTN *size)
 {
 	EFI_STATUS status;
@@ -448,10 +544,12 @@ read_bounded_file(EFI_FILE_PROTOCOL *file, void *buffer, UINTN capacity,
 	if (file == 0 || file->Read == 0 || file->SetPosition == 0 ||
 	    buffer == 0 || capacity == 0U || size == 0)
 		return EFI_INVALID_PARAMETER;
+
 	*size = 0U;
 	status = file->SetPosition(file, 0U);
 	if (EFI_ERROR(status))
 		return status;
+
 	while (used < capacity) {
 		UINTN amount = capacity - used;
 
@@ -464,16 +562,15 @@ read_bounded_file(EFI_FILE_PROTOCOL *file, void *buffer, UINTN capacity,
 			break;
 		used += amount;
 	}
+
 	*size = used;
+
 	return EFI_SUCCESS;
 }
 
-static int show_logo(struct loader_context *context, struct discovered_volume *discovered, const struct zbl_uefi_kern_config *configuration, const struct zbl6_framebuffer *framebuffer);
-static EFI_STATUS apply_boot_keys(struct loader_context *context, struct zbl_uefi_kern_config *configuration, unsigned held);
-static void notice_boot_keys(struct loader_context *context, const struct zbl_uefi_kern_config *configuration, unsigned held);
-
 static int
-kernel_path_utf16(const char *source,
+kernel_path_utf16(
+	const char *source,
 	CHAR16 output[KERNEL_PATH_CHAR16_STORAGE])
 {
 	UINTN length = 0U;
@@ -495,8 +592,11 @@ kernel_path_utf16(const char *source,
 }
 
 static void
-console_candidate_result(struct loader_context *context, const char *label,
-	UINTN order, const char *result)
+console_candidate_result(
+	struct loader_context *context,
+	const char *label,
+	UINTN order,
+	const char *result)
 {
 	console_hex64(context, label, order);
 	console_ascii(context, "A64 CFG DETAIL ");
@@ -505,7 +605,8 @@ console_candidate_result(struct loader_context *context, const char *label,
 }
 
 static EFI_STATUS
-discover_config_volume(struct loader_context *context,
+discover_config_volume(
+	struct loader_context *context,
 	const EFI_LOADED_IMAGE_PROTOCOL *loaded,
 	struct discovered_volume *discovered)
 {
@@ -529,15 +630,20 @@ discover_config_volume(struct loader_context *context,
 	    boot->HandleProtocol == 0 || boot->LocateHandleBuffer == 0 ||
 	    boot->FreePool == 0)
 		return EFI_INVALID_PARAMETER;
+
 	byte_zero(discovered, sizeof(*discovered));
 	byte_zero(&selected_path, sizeof(selected_path));
+
 	zbl_uefi_volume_selection_init(&selection);
+
 	status = boot->HandleProtocol(loaded->DeviceHandle,
-	    &EFI_DEVICE_PATH_PROTOCOL_GUID, (void **)&loaded_device_path);
+				      &EFI_DEVICE_PATH_PROTOCOL_GUID, (void **)&loaded_device_path);
 	if (EFI_ERROR(status))
 		return status;
+
 	path_result = zbl_uefi_partition_path_parse(loaded_device_path,
-	    ZBL_UEFI_DEVICE_PATH_MAX_BYTES, &loaded_path);
+						    ZBL_UEFI_DEVICE_PATH_MAX_BYTES,
+						    &loaded_path);
 	if (path_result != ZBL_UEFI_DEVICE_PATH_OK) {
 		console_ascii(context, "A64 loaded device path rejected: ");
 		console_ascii(context,
@@ -547,8 +653,10 @@ discover_config_volume(struct loader_context *context,
 	}
 
 	status = boot->LocateHandleBuffer(ByProtocol,
-	    &EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID, 0,
-	    &firmware_handle_count, &firmware_handles);
+					  &EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID,
+					  0,
+					  &firmware_handle_count,
+					  &firmware_handles);
 	if (status == EFI_NOT_FOUND) {
 		if (firmware_handles != 0) {
 			close_status = boot->FreePool(firmware_handles);
@@ -559,6 +667,7 @@ discover_config_volume(struct loader_context *context,
 		firmware_handle_count = 0U;
 		status = EFI_SUCCESS;
 	}
+
 	if (EFI_ERROR(status)) {
 		if (firmware_handles != 0) {
 			close_status = boot->FreePool(firmware_handles);
@@ -568,17 +677,23 @@ discover_config_volume(struct loader_context *context,
 		}
 		return status;
 	}
+
 	if (firmware_handle_count != 0U && firmware_handles == 0)
 		return EFI_DEVICE_ERROR;
+
 	order_result = zbl_uefi_volume_order_handles(loaded->DeviceHandle,
-	    (void *const *)firmware_handles, firmware_handle_count,
-	    ordered_handles, ZBL_UEFI_VOLUME_MAX_HANDLES, &ordered_count);
+						     (void *const *)firmware_handles,
+						     firmware_handle_count,
+						     ordered_handles,
+						     ZBL_UEFI_VOLUME_MAX_HANDLES,
+						     &ordered_count);
 	if (firmware_handles != 0) {
 		status = boot->FreePool(firmware_handles);
 		firmware_handles = 0;
 		if (EFI_ERROR(status))
 			return status;
 	}
+
 	if (order_result != ZBL_UEFI_HANDLE_ORDER_OK)
 		return order_result == ZBL_UEFI_HANDLE_ORDER_INVALID_ARGUMENT ?
 		    EFI_DEVICE_ERROR : EFI_BAD_BUFFER_SIZE;
@@ -596,41 +711,51 @@ discover_config_volume(struct loader_context *context,
 		enum zbl_uefi_volume_match_action action;
 
 		status = boot->HandleProtocol(ordered_handles[order],
-		    &EFI_DEVICE_PATH_PROTOCOL_GUID, (void **)&device_path);
+					      &EFI_DEVICE_PATH_PROTOCOL_GUID,
+					      (void **)&device_path);
 		if (EFI_ERROR(status)) {
 			console_status(context, "A64 CFG DevicePath", status);
 			continue;
 		}
+
 		path_result = zbl_uefi_partition_path_parse(device_path,
-		    ZBL_UEFI_DEVICE_PATH_MAX_BYTES, &path);
+							    ZBL_UEFI_DEVICE_PATH_MAX_BYTES,
+							    &path);
 		if (path_result != ZBL_UEFI_DEVICE_PATH_OK) {
 			console_candidate_result(context, "A64 CFG PATH ", order,
 			    zbl_uefi_device_path_result_name(path_result));
 			continue;
 		}
+
 		if (!zbl_uefi_partition_paths_same_disk(&loaded_path, &path)) {
 			console_hex64(context, "A64 CFG OTHER DISK ", order);
 			continue;
 		}
+
 		status = boot->HandleProtocol(ordered_handles[order],
-		    &EFI_BLOCK_IO_PROTOCOL_GUID, (void **)&block);
+					      &EFI_BLOCK_IO_PROTOCOL_GUID,
+					      (void **)&block);
 		if (EFI_ERROR(status)) {
 			console_status(context, "A64 CFG BlockIO", status);
 			continue;
 		}
+
 		if (block == 0 || block->Media == 0 || block->ReadBlocks == 0) {
 			console_hex64(context, "A64 CFG INVALID BLOCK ", order);
 			continue;
 		}
+
 		media = block->Media;
 		if (!media->MediaPresent) {
 			console_hex64(context, "A64 CFG NO MEDIA ", order);
 			continue;
 		}
+
 		if (!media->LogicalPartition) {
 			console_hex64(context, "A64 CFG NOT PARTITION ", order);
 			continue;
 		}
+
 		if (media->BlockSize == 0U ||
 		    media->BlockSize > sizeof(boot_sector) ||
 		    media->LastBlock == UINT64_MAX ||
@@ -641,8 +766,12 @@ discover_config_volume(struct loader_context *context,
 			console_hex64(context, "A64 CFG BLOCK BOUNDS ", order);
 			continue;
 		}
-		status = block->ReadBlocks(block, media->MediaId, 0U,
-		    media->BlockSize, boot_sector);
+
+		status = block->ReadBlocks(block,
+					   media->MediaId,
+					   0U,
+					   media->BlockSize,
+					   boot_sector);
 		if (EFI_ERROR(status)) {
 			console_status(context,
 			    status == EFI_MEDIA_CHANGED ?
@@ -650,39 +779,49 @@ discover_config_volume(struct loader_context *context,
 			    status);
 			continue;
 		}
+
 		fat_result = zbl_uefi_fat_bpb_parse(boot_sector,
-		    media->BlockSize, media->BlockSize, media->LastBlock + 1U,
-		    &fat);
+						    media->BlockSize,
+						    media->BlockSize,
+						    media->LastBlock + 1U,
+						    &fat);
 		if (fat_result != ZBL_UEFI_FAT_OK) {
 			console_candidate_result(context, "A64 CFG FAT ", order,
 			    zbl_uefi_fat_result_name(fat_result));
 			continue;
 		}
+
 		status = boot->HandleProtocol(ordered_handles[order],
-		    &EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID,
-		    (void **)&filesystem);
+					      &EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID,
+					      (void **)&filesystem);
 		if (EFI_ERROR(status) || filesystem == 0 ||
 		    filesystem->OpenVolume == 0) {
 			console_status(context, "A64 CFG SimpleFS",
 			    EFI_ERROR(status) ? status : EFI_INVALID_PARAMETER);
 			continue;
 		}
+
 		status = filesystem->OpenVolume(filesystem, &root);
-		if (EFI_ERROR(status) || root == 0 || root->Open == 0 ||
+		if (EFI_ERROR(status) ||
+		    root == 0 ||
+		    root->Open == 0 ||
 		    root->Close == 0) {
 			close_status = close_file_pair(0, root);
 			if (EFI_ERROR(close_status))
 				return discovery_abort(&selection, close_status);
-			console_status(context, "A64 CFG OpenVolume",
-			    EFI_ERROR(status) ? status : EFI_INVALID_PARAMETER);
+
+			console_status(context,
+				       "A64 CFG OpenVolume",
+				       EFI_ERROR(status) ? status : EFI_INVALID_PARAMETER);
 			continue;
 		}
-		status = root->Open(root, &config, kern_config_path,
-		    EFI_FILE_MODE_READ, 0U);
+
+		status = root->Open(root, &config, kern_config_path, EFI_FILE_MODE_READ, 0U);
 		if (EFI_ERROR(status) || config == 0) {
 			close_status = close_file_pair(config, root);
 			if (EFI_ERROR(close_status))
 				return discovery_abort(&selection, close_status);
+
 			if (status == EFI_NOT_FOUND)
 				console_hex64(context, "A64 CFG MISSING ", order);
 			else
@@ -691,6 +830,7 @@ discover_config_volume(struct loader_context *context,
 				    EFI_INVALID_PARAMETER);
 			continue;
 		}
+
 		status = probe_readable_file(config);
 		if (EFI_ERROR(status)) {
 			close_status = close_file_pair(config, root);
@@ -699,13 +839,19 @@ discover_config_volume(struct loader_context *context,
 			console_status(context, "A64 CFG unreadable", status);
 			continue;
 		}
+
 		action = zbl_uefi_volume_selection_record_match(&selection,
-		    ordered_handles[order], order, &fat, root, config);
+								ordered_handles[order],
+								order,
+								&fat,
+								root,
+								config);
 		if (action == ZBL_UEFI_VOLUME_MATCH_INVALID) {
 			close_status = close_file_pair(config, root);
 			return discovery_abort(&selection,
 			    EFI_ERROR(close_status) ? close_status : EFI_LOAD_ERROR);
 		}
+
 		console_hex64(context, "A64 CFG MATCH ", order);
 		if (action == ZBL_UEFI_VOLUME_MATCH_KEEP) {
 			selected_path = path;
@@ -722,8 +868,10 @@ discover_config_volume(struct loader_context *context,
 		    "zedbsd.cfg was not found on the boot disk\n");
 		return EFI_NOT_FOUND;
 	}
+
 	if (selection_result == ZBL_UEFI_VOLUME_SELECTION_INVALID_ARGUMENT)
 		return discovery_abort(&selection, EFI_LOAD_ERROR);
+
 	if (selection_result == ZBL_UEFI_VOLUME_SELECTION_MULTIPLE) {
 		console_ascii(context,
 		    "WARNING: multiple zedbsd.cfg files on the boot disk; "
@@ -731,58 +879,71 @@ discover_config_volume(struct loader_context *context,
 		console_hex64(context, "A64 CFG MATCHES ",
 		    selection.match_count);
 	}
+
 	discovered->provenance.version = KERN_BOOT_PROVENANCE_VERSION;
 	discovered->provenance.config_matches = (uint32_t)selection.match_count;
 	if (!zbl_uefi_partition_identity_copy(&loaded_path,
-	    &discovered->provenance.firmware) ||
+					      &discovered->provenance.firmware) ||
 	    !zbl_uefi_partition_identity_copy(&selected_path,
-	    &discovered->provenance.configuration))
+					      &discovered->provenance.configuration))
 		return discovery_abort(&selection, EFI_LOAD_ERROR);
+
 	discovered->match_count = selection.match_count;
 	if (!zbl_uefi_volume_selection_take(&selection, &selected))
 		return discovery_abort(&selection, EFI_LOAD_ERROR);
+
 	discovered->handle = selected.handle;
 	discovered->root = selected.root;
 	discovered->config = selected.config;
 	discovered->fat = selected.fat;
 	discovered->path = selected_path;
 	discovered->order = selected.order;
+
 	for (size_t index = 0U; index < sizeof(discovered->uuid); index++)
 		discovered->uuid[index] = selected.uuid[index];
+
 	console_hex64(context, "A64 CFG SELECTED ", discovered->order);
 	console_ascii(context, "A64 CFG UUID ");
 	console_ascii(context, discovered->uuid);
 	console_ascii(context, "\n");
+
 	return EFI_SUCCESS;
 }
 
 static EFI_STATUS
-close_discovered_volume(struct discovered_volume *discovered)
+close_discovered_volume(
+	struct discovered_volume *discovered)
 {
 	EFI_STATUS status;
 
 	if (discovered == 0)
 		return EFI_INVALID_PARAMETER;
+
 	status = close_file_pair(discovered->config, discovered->root);
 	discovered->config = 0;
 	discovered->root = 0;
+
 	return status;
 }
 
 static void __attribute__((noreturn))
-fail_discovered(struct loader_context *context,
-	struct discovered_volume *discovered, const char *operation,
+fail_discovered(
+	struct loader_context *context,
+	struct discovered_volume *discovered,
+	const char *operation,
 	EFI_STATUS status)
 {
 	EFI_STATUS cleanup = close_discovered_volume(discovered);
 
 	if (EFI_ERROR(cleanup))
 		console_status(context, "Close selected volume", cleanup);
+
 	fail_status(context, operation, status);
 }
 
 static EFI_STATUS
-load_selected_configuration(struct loader_context *context,
+load_selected_configuration(
+	struct loader_context *context,
 	struct discovered_volume *discovered,
 	struct zbl_uefi_kern_config *configuration)
 {
@@ -793,8 +954,10 @@ load_selected_configuration(struct loader_context *context,
 
 	if (discovered == 0 || discovered->config == 0 || configuration == 0)
 		return EFI_INVALID_PARAMETER;
-	read_status = read_bounded_file(discovered->config, config_buffer,
-	    sizeof(config_buffer), &config_size);
+
+	read_status = read_bounded_file(discovered->config,
+					config_buffer,
+					sizeof(config_buffer), &config_size);
 	close_status = close_file_pair(discovered->config, 0);
 	discovered->config = 0;
 	if (EFI_ERROR(read_status)) {
@@ -802,11 +965,15 @@ load_selected_configuration(struct loader_context *context,
 			console_status(context, "Close zedbsd.cfg", close_status);
 		return read_status;
 	}
+
 	if (EFI_ERROR(close_status))
 		return close_status;
+
 	config_result = zbl_uefi_kern_config_parse(configuration,
-	    config_buffer, config_size, discovered->uuid,
-	    sizeof(discovered->uuid));
+						   config_buffer,
+						   config_size,
+						   discovered->uuid,
+						   sizeof(discovered->uuid));
 	if (config_result != ZBL_UEFI_KERN_CONFIG_OK) {
 		console_ascii(context, "zedbsd.cfg rejected: ");
 		console_ascii(context,
@@ -814,20 +981,26 @@ load_selected_configuration(struct loader_context *context,
 		console_ascii(context, "\n");
 		return EFI_LOAD_ERROR;
 	}
+
 	console_ascii(context, "A64 KERNEL ");
 	console_ascii(context, configuration->kernel_path);
 	console_ascii(context, "\n");
 	console_ascii(context, "A64 PARAMS ");
 	console_ascii(context, configuration->parameter_record.text);
 	console_ascii(context, "\n");
+
 	return EFI_SUCCESS;
 }
 
 static void __attribute__((noreturn))
-fail_kernel_load(struct loader_context *context,
-	struct discovered_volume *discovered, EFI_FILE_PROTOCOL *kernel,
-	const char *operation, EFI_STATUS status,
-	EFI_PHYSICAL_ADDRESS kernel_address, UINTN kernel_pages,
+fail_kernel_load(
+	struct loader_context *context,
+	struct discovered_volume *discovered,
+	EFI_FILE_PROTOCOL *kernel,
+	const char *operation,
+	EFI_STATUS status,
+	EFI_PHYSICAL_ADDRESS kernel_address,
+	UINTN kernel_pages,
 	int pages_allocated)
 {
 	EFI_STATUS cleanup;
@@ -837,20 +1010,28 @@ fail_kernel_load(struct loader_context *context,
 	discovered->config = 0;
 	if (EFI_ERROR(cleanup))
 		console_status(context, "Close kernel volume", cleanup);
+
 	if (pages_allocated) {
 		cleanup = context->boot->FreePages == 0 ? EFI_INVALID_PARAMETER :
 		    context->boot->FreePages(kernel_address, kernel_pages);
 		if (EFI_ERROR(cleanup))
 			console_status(context, "Free kernel pages", cleanup);
 	}
+
 	fail_status(context, operation, status);
 }
 
 static void __attribute__((noreturn))
-fail_boot_allocations(struct loader_context *context, const char *operation,
-	EFI_STATUS status, void *pool, int pool_allocated,
-	EFI_PHYSICAL_ADDRESS low_address, UINTN low_pages,
-	int low_pages_allocated, EFI_PHYSICAL_ADDRESS kernel_address,
+fail_boot_allocations(
+	struct loader_context *context,
+	const char *operation,
+	EFI_STATUS status,
+	void *pool,
+	int pool_allocated,
+	EFI_PHYSICAL_ADDRESS low_address,
+	UINTN low_pages,
+	int low_pages_allocated,
+	EFI_PHYSICAL_ADDRESS kernel_address,
 	UINTN kernel_pages)
 {
 	EFI_STATUS cleanup;
@@ -861,70 +1042,66 @@ fail_boot_allocations(struct loader_context *context, const char *operation,
 		if (EFI_ERROR(cleanup))
 			console_status(context, "Free loader pool", cleanup);
 	}
+
 	if (low_pages_allocated) {
 		cleanup = context->boot->FreePages == 0 ? EFI_INVALID_PARAMETER :
 		    context->boot->FreePages(low_address, low_pages);
 		if (EFI_ERROR(cleanup))
 			console_status(context, "Free bootstrap pages", cleanup);
 	}
+
 	cleanup = context->boot->FreePages == 0 ? EFI_INVALID_PARAMETER :
-	    context->boot->FreePages(kernel_address, kernel_pages);
+		context->boot->FreePages(kernel_address, kernel_pages);
 	if (EFI_ERROR(cleanup))
 		console_status(context, "Free kernel pages", cleanup);
+
 	fail_status(context, operation, status);
 }
 
 static int
-framebuffer_from_gop(EFI_GRAPHICS_OUTPUT_PROTOCOL *gop,
-		     struct zbl6_framebuffer *framebuffer,
-		     struct zbl_uefi_framebuffer_mapping *mapping)
+framebuffer_from_gop(
+	EFI_GRAPHICS_OUTPUT_PROTOCOL *gop,
+	struct zbl6_framebuffer *framebuffer,
+	struct zbl_uefi_framebuffer_mapping *mapping)
 {
 	EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE *mode;
 	EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *info;
 
-	if (gop == 0 || gop->Mode == 0 || gop->Mode->Info == 0 ||
-	    mapping == 0)
+	if (gop == 0 || gop->Mode == 0 || gop->Mode->Info == 0 || mapping == 0)
 		return 0;
+
 	mode = gop->Mode;
 	if (mode->SizeOfInfo < sizeof(*info))
 		return 0;
+
 	info = mode->Info;
 	if (info->HorizontalResolution == 0 || info->VerticalResolution == 0 ||
 	    info->PixelsPerScanLine < info->HorizontalResolution ||
 	    (info->PixelFormat != PixelRedGreenBlueReserved8BitPerColor &&
 	     info->PixelFormat != PixelBlueGreenRedReserved8BitPerColor))
 		return 0;
+
 	if (!zbl_uefi_framebuffer_mapping_plan(mode->FrameBufferBase,
 	    mode->FrameBufferSize, info->HorizontalResolution,
 	    info->VerticalResolution, info->PixelsPerScanLine, 4U, mapping))
 		return 0;
+
 	framebuffer->physical_base = mode->FrameBufferBase;
 	framebuffer->size = mode->FrameBufferSize;
 	framebuffer->width = info->HorizontalResolution;
 	framebuffer->height = info->VerticalResolution;
 	framebuffer->stride = info->PixelsPerScanLine;
-	framebuffer->format =
-	    info->PixelFormat == PixelRedGreenBlueReserved8BitPerColor
-		? ZBL6_FRAMEBUFFER_RGBX8888
-		: ZBL6_FRAMEBUFFER_BGRX8888;
+	framebuffer->format = info->PixelFormat == PixelRedGreenBlueReserved8BitPerColor ?
+		ZBL6_FRAMEBUFFER_RGBX8888 : ZBL6_FRAMEBUFFER_BGRX8888;
+
 	return 1;
 }
 
-/*
- * Where the kernel image goes.  The default ("auto") is the linked address
- * when the firmware still has it free, otherwise the lowest 2 MiB-aligned run
- * of conventional memory below one GiB that holds the whole image.  The
- * kernel_phys= boot parameter overrides it: "link" insists on the linked
- * address (the historical behaviour), "auto" is the default, and a
- * hexadecimal address places the image there or fails.
- */
-struct kernel_placement_policy {
-	int link_only;
-	uint64_t fixed;
-};
-
 static int
-token_is(const char *text, size_t length, const char *literal)
+token_is(
+	const char *text,
+	size_t length,
+	const char *literal)
 {
 	size_t index;
 
@@ -936,8 +1113,10 @@ token_is(const char *text, size_t length, const char *literal)
 
 /* Parses at most one optional kernel_phys token from bounded parameter text. */
 static int
-kernel_placement_parse(const char *text, size_t length,
-    struct kernel_placement_policy *policy)
+kernel_placement_parse(
+	const char *text,
+	size_t length,
+	struct kernel_placement_policy *policy)
 {
 	static const char prefix[] = "kernel_phys=";
 	size_t prefix_length = sizeof(prefix) - 1U;
@@ -1802,3 +1981,11 @@ efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system)
 	    handoff_common->bootstrap_cr3, low_address + TRANSITION_STACK_TOP,
 	    low_address + HANDOFF_OFFSET, plan.entry);
 }
+
+_Static_assert(ZBL6_HANDOFF_V7_UEFI_SIZE <= MEMORY_RANGES_OFFSET - HANDOFF_OFFSET,
+	       "UEFI parameter handoff must fit its low-memory slot");
+
+_Static_assert(ZBL_UEFI_PARTITION_MBR == ZBL6_PARTITION_SCHEME_MBR,
+	       "MBR discovery and handoff values must match");
+_Static_assert(ZBL_UEFI_PARTITION_GPT == ZBL6_PARTITION_SCHEME_GPT,
+	       "GPT discovery and handoff values must match");

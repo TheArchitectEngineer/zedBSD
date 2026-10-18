@@ -10,8 +10,8 @@
  * firmware's extended console input.
  */
 
-#ifndef KERN_BOOTLOADER_UEFI_BOOT_KEYS_H
-#define KERN_BOOTLOADER_UEFI_BOOT_KEYS_H
+#ifndef BOOTLOADER_BOOTLOADER_UEFI_BOOT_KEYS_H
+#define BOOTLOADER_BOOTLOADER_UEFI_BOOT_KEYS_H
 
 #include "include/uefi.h"
 
@@ -34,8 +34,17 @@ struct zbl_uefi_boot_keys {
 	unsigned held;
 };
 
-void zbl_uefi_boot_keys_open(struct zbl_uefi_boot_keys *keys, EFI_SYSTEM_TABLE *system);
-unsigned zbl_uefi_boot_keys_sample(struct zbl_uefi_boot_keys *keys);
-unsigned zbl_uefi_boot_keys_from_state(const EFI_KEY_DATA *data);
+void
+zbl_uefi_boot_keys_open(
+	struct zbl_uefi_boot_keys *keys,
+	EFI_SYSTEM_TABLE *system);
+
+unsigned
+zbl_uefi_boot_keys_sample(
+	struct zbl_uefi_boot_keys *keys);
+
+unsigned
+zbl_uefi_boot_keys_from_state(
+	const EFI_KEY_DATA *data);
 
 #endif
