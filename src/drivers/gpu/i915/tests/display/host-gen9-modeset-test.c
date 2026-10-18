@@ -48,9 +48,21 @@ static void i915_host_check_hotplug(void);
  * Checks the Gen9 mode set's register sequences on the model.
  */
 int
-main(void)
+main(
+	int argc,
+	char **argv)
 {
 	int status;
+	int error;
+
+	/* A path on the command line receives the golden record of the writes. */
+	if (argc > 1) {
+		error = i915_gen9_fake_golden_open(argv[1]);
+		if (error != 0) {
+			fprintf(stderr, "gen9_modeset_host_test: cannot write %s: %d\n", argv[1], error);
+			return 2;
+		}
+	}
 
 	/* Each part. */
 	i915_host_check_ddc();
@@ -60,6 +72,9 @@ main(void)
 	i915_host_check_hdmi_output();
 	i915_host_check_watermarks();
 	i915_host_check_hotplug();
+
+	/* The last scene goes to the record. */
+	i915_gen9_fake_golden_close();
 
 	/* The tally. */
 	status = i915_host_report("gen9_modeset_host_test");

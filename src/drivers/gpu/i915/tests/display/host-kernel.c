@@ -43,6 +43,7 @@
 
 #include <drivers/pci/pci.h>
 #include <hal/hal.h>
+#include <kern/backlight.h>
 #include <kern/clock.h>
 #include <kern/device-io.h>
 #include <kern/irq.h>
@@ -83,6 +84,21 @@ static unsigned i915_host_preempt_depth;
  * always ends.
  */
 static uint64_t i915_host_ticks;
+
+/*
+ * The register access a test gives the MMIO BAR's stand-ins.
+ *
+ * NULL until a test that models the registers sets it; the test clears it
+ * when its model goes away.
+ */
+const struct i915_host_mmio_hooks *i915_host_mmio;
+
+/*
+ * The backlight device a tested path registered, which the test calls the
+ * operations of.  NULL while none is registered.
+ */
+const struct kern_backlight_ops *i915_host_backlight_ops;
+void *i915_host_backlight_context;
 
 static void i915_host_unreachable(const char *service) __attribute__((noreturn));
 static void i915_host_lock_error(const char *what, const char *name) __attribute__((noreturn));
@@ -964,7 +980,7 @@ drv_i915_pcode_read(
 }
 
 /*
- * Stands in for drv_i915_posting_read32(): the MMIO BAR is not modelled on the host.
+ * Stands in for drv_i915_posting_read32(): reads the test's register model, if any.
  */
 void
 drv_i915_posting_read32(
@@ -972,10 +988,13 @@ drv_i915_posting_read32(
 	uint32_t offset)
 {
 	UNUSED_PARAMETER(mmio);
-	UNUSED_PARAMETER(offset);
 
-	/* Ends the test: the tested path reached a service the host does not have. */
-	i915_host_unreachable("drv_i915_posting_read32");
+	/* Without a register model the tested path must not reach the BAR. */
+	if (i915_host_mmio == NULL)
+		i915_host_unreachable("drv_i915_posting_read32");
+
+	/* Succeeded: the model sees the read, whose value nobody uses. */
+	(void)i915_host_mmio->read(i915_host_mmio->context, offset);
 }
 
 /*
@@ -1056,25 +1075,30 @@ drv_i915_queue_work(
 }
 
 /*
- * Stands in for drv_i915_raw_read32(): the MMIO BAR is not modelled on the host.
+ * Stands in for drv_i915_raw_read32(): reads the test's register model, if any.
  */
 uint32_t
 drv_i915_raw_read32(
 	struct i915_mmio *mmio,
 	uint32_t offset)
 {
+	uint32_t value;
+
 	UNUSED_PARAMETER(mmio);
-	UNUSED_PARAMETER(offset);
 
-	/* Ends the test: the tested path reached a service the host does not have. */
-	i915_host_unreachable("drv_i915_raw_read32");
+	/* Without a register model the tested path must not reach the BAR. */
+	if (i915_host_mmio == NULL)
+		i915_host_unreachable("drv_i915_raw_read32");
 
-	/* Not reached: i915_host_unreachable() does not return. */
-	return 0;
+	/* Reads the register from the model. */
+	value = i915_host_mmio->read(i915_host_mmio->context, offset);
+
+	/* Succeeded: the model's value. */
+	return value;
 }
 
 /*
- * Stands in for drv_i915_raw_write32(): the MMIO BAR is not modelled on the host.
+ * Stands in for drv_i915_raw_write32(): writes the test's register model, if any.
  */
 void
 drv_i915_raw_write32(
@@ -1083,29 +1107,36 @@ drv_i915_raw_write32(
 	uint32_t value)
 {
 	UNUSED_PARAMETER(mmio);
-	UNUSED_PARAMETER(offset);
-	UNUSED_PARAMETER(value);
 
-	/* Ends the test: the tested path reached a service the host does not have. */
-	i915_host_unreachable("drv_i915_raw_write32");
+	/* Without a register model the tested path must not reach the BAR. */
+	if (i915_host_mmio == NULL)
+		i915_host_unreachable("drv_i915_raw_write32");
+
+	/* Succeeded: the model takes the write. */
+	i915_host_mmio->write(i915_host_mmio->context, offset, value);
 }
 
 /*
- * Stands in for drv_i915_read32(): the MMIO BAR is not modelled on the host.
+ * Stands in for drv_i915_read32(): reads the test's register model, if any.
  */
 uint32_t
 drv_i915_read32(
 	struct i915_mmio *mmio,
 	uint32_t offset)
 {
+	uint32_t value;
+
 	UNUSED_PARAMETER(mmio);
-	UNUSED_PARAMETER(offset);
 
-	/* Ends the test: the tested path reached a service the host does not have. */
-	i915_host_unreachable("drv_i915_read32");
+	/* Without a register model the tested path must not reach the BAR. */
+	if (i915_host_mmio == NULL)
+		i915_host_unreachable("drv_i915_read32");
 
-	/* Not reached: i915_host_unreachable() does not return. */
-	return 0;
+	/* Reads the register from the model. */
+	value = i915_host_mmio->read(i915_host_mmio->context, offset);
+
+	/* Succeeded: the model's value. */
+	return value;
 }
 
 /*
@@ -1431,7 +1462,7 @@ drv_i915_workqueue_destroy(
 }
 
 /*
- * Stands in for drv_i915_write32(): the MMIO BAR is not modelled on the host.
+ * Stands in for drv_i915_write32(): writes the test's register model, if any.
  */
 void
 drv_i915_write32(
@@ -1440,11 +1471,13 @@ drv_i915_write32(
 	uint32_t value)
 {
 	UNUSED_PARAMETER(mmio);
-	UNUSED_PARAMETER(offset);
-	UNUSED_PARAMETER(value);
 
-	/* Ends the test: the tested path reached a service the host does not have. */
-	i915_host_unreachable("drv_i915_write32");
+	/* Without a register model the tested path must not reach the BAR. */
+	if (i915_host_mmio == NULL)
+		i915_host_unreachable("drv_i915_write32");
+
+	/* Succeeded: the model takes the write. */
+	i915_host_mmio->write(i915_host_mmio->context, offset, value);
 }
 
 /*
@@ -1659,7 +1692,8 @@ drv_pci_device_vendor(
 }
 
 /*
- * Stands in for drv_pci_find_class(): the PCI bus is not modelled on the host.
+ * Stands in for drv_pci_find_class(): the PCI bus is not modelled on the host;
+ * beside a register model it has no other device.
  */
 struct drv_pci_device *
 drv_pci_find_class(
@@ -1670,6 +1704,10 @@ drv_pci_find_class(
 	UNUSED_PARAMETER(c);
 	UNUSED_PARAMETER(m);
 	UNUSED_PARAMETER(after);
+
+	/* A register model stands for a device alone on its bus: no bridge of any class. */
+	if (i915_host_mmio != NULL)
+		return NULL;
 
 	/* Ends the test: the tested path reached a service the host does not have. */
 	i915_host_unreachable("drv_pci_find_class");
@@ -1820,4 +1858,41 @@ i915_host_lock_error(
 	fprintf(stderr, "host-kernel: %s: %s\n", what, name);
 	fflush(stdout);
 	abort();
+}
+
+/*
+ * Stands in for kern_backlight_register(): keeps the device for the test to call.
+ */
+int
+kern_backlight_register(
+	const char *name,
+	uint32_t type,
+	const struct kern_backlight_ops *ops,
+	void *context,
+	struct kern_backlight **result)
+{
+	UNUSED_PARAMETER(name);
+	UNUSED_PARAMETER(type);
+
+	/* The one device the test reaches. */
+	i915_host_backlight_ops = ops;
+	i915_host_backlight_context = context;
+
+	/* Succeeded: a handle that is only compared with NULL. */
+	*result = (struct kern_backlight *)&i915_host_backlight_ops;
+	return 0;
+}
+
+/*
+ * Stands in for kern_backlight_unregister(): forgets the device.
+ */
+void
+kern_backlight_unregister(
+	struct kern_backlight *backlight)
+{
+	UNUSED_PARAMETER(backlight);
+
+	/* Succeeded: no device. */
+	i915_host_backlight_ops = NULL;
+	i915_host_backlight_context = NULL;
 }

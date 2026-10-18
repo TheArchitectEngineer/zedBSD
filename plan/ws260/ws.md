@@ -3,7 +3,7 @@
 # WS260 i915 の Gen9 の display（gen9-*.c）を xd と同じく自前で書き直す
 
 - ID: ws260、Master: [master.md](../master.md)、Primary Milestone: MG006
-- Status: incomplete（2026-10-18 Q1 作成。p001 を P1、q1252）
+- Status: incomplete（2026-10-18 Q1 作成。p001 を P1、q1252。p002〜 を P1、q1253）
 - 起点（2026-10-18 ユーザー）:「i915由来のdisplayのソースコードをすべて書き直す件は、どうなったんですか？」→ Q1 の報告（display 12・13 は WS245 で書き直し済み、Gen9 は 2026-10-15 の決定で「ガードレールにそって修正」とし、出典の表記だけを WS258 で直し、写しの点検は未実施）→ ユーザー（クリック）「xd と同じく書き直す」。
 - 対象: `src/drivers/gpu/i915/display/gen9-*.c`・`*.h`（22 file、display 9: Skylake・Kaby Lake・Coffee Lake・Comet Lake）と、それだけが使う intel/ の header。
 - 手本: [WS245](../ws245/ws.md) の xd（Intel の PRM と hardware の振る舞いから自前で書き、Linux の行ごとの言い換えをしない。値は block ごとに `Values referenced:`、手順は `Procedure referenced:`。PRM に載る名前は使ってよい（2026-10-18 WS244 の決定））。
@@ -20,7 +20,7 @@
 | Phase | 目的 | 状態 |
 | --- | --- | --- |
 | [p001](phase001/phase.md) | 設計: 今の gen9-*.c の棚卸し（写しの点検）、xd の部品をどこまで共有するか（xd に display 9 を足すか、別の層か）、段の分け方と回帰の方法 | cleared（2026-10-18 Q1: design.md、判断 5 点はユーザーが回答） |
-| p002 | 試験の土台: golden の書き込みの列と数の計算の表を今の code で取る。gen9-fake-hw を xd-io の backend に繋ぐ口 | planned（4 LW） |
+| [p002](phase002/phase.md) | 試験の土台: golden の書き込みの列と数の計算の表を今の code で取る。gen9-fake-hw を xd-io の backend に繋ぐ口 | in-progress（q1253、P1） |
 | p003 | xd-platform に display 9 の記述（SKL・KBL・CFL・CML、PCH の SPT・KBP・CNP・CMP、port A〜E）。選ぶだけで呼ばない | planned（3 LW） |
 | p004 | 数の計算: CDCLK の読み、DP の link と M/N、DPLL の語（DP と HDMI の WRPLL）、buf trans の表を xd-clock・xd-dp・xd-ddi へ。gen9-mode.c の該当は殻 | planned（6 LW） |
 | p005 | WM・DDB の計算を xd-dbuf へ（display 9 の 1 slice・8 level・IPC） | planned（5 LW） |

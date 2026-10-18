@@ -21,7 +21,10 @@
 #ifndef DRIVERS_GPU_I915_TESTS_DISPLAY_GEN9_FAKE_HW_H
 #define DRIVERS_GPU_I915_TESTS_DISPLAY_GEN9_FAKE_HW_H
 
+#include "host-test.h"
+
 #include "../../display/gen9-io.h"
+#include "../../display/xd-io.h"
 #include "../../intel/display-regs-gen9-modeset.h"
 
 #include <stdint.h>
@@ -63,6 +66,9 @@ struct i915_gen9_fake_hw {
 	uint32_t log_value[I915_GEN9_FAKE_LOG];
 	unsigned log_count;
 
+	/* The writes the log had no room for. */
+	unsigned log_dropped;
+
 	/* The sinks of ports A to D, and the AUX transfers started. */
 	struct i915_gen9_fake_sink sinks[I915_SKL_PORTS];
 	unsigned aux_transfers;
@@ -83,6 +89,14 @@ struct i915_gen9_fake_hw {
 extern struct i915_gen9_fake_hw i915_gen9_fake;
 extern const struct i915_skl_io i915_gen9_fake_io;
 
+/*
+ * The same model behind the xd register window's hooks and behind the
+ * MMIO BAR's stand-ins, so code that reaches the registers either way
+ * writes into the one log.
+ */
+extern const struct i915_xd_io_hooks i915_gen9_fake_xd_hooks;
+extern const struct i915_host_mmio_hooks i915_gen9_fake_mmio;
+
 /* Reports a register's stored value, 0 when never written. */
 uint32_t i915_gen9_fake_get(uint32_t offset);
 
@@ -100,5 +114,15 @@ void i915_gen9_fake_add_hdmi_sink(unsigned port);
 
 /* Reports the first write to a register whose masked value matches, as its position in the log, or -1. */
 int i915_gen9_fake_written_at(uint32_t offset, uint32_t mask, uint32_t value);
+
+/*
+ * Starts the golden record: every reset from now on, and the close, write
+ * the writes of the check that ends to the file, as one numbered scene.
+ * Reports 0, or the error of the file's creation.
+ */
+int i915_gen9_fake_golden_open(const char *path);
+
+/* Writes the last scene and ends the golden record. */
+void i915_gen9_fake_golden_close(void);
 
 #endif /* DRIVERS_GPU_I915_TESTS_DISPLAY_GEN9_FAKE_HW_H */
