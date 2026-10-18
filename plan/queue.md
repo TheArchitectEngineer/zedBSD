@@ -587,4 +587,12 @@ WS074 の記録の q590・q594〜q598（Codex の browser3）は main の同じ�
 | --- | --- | --- | --- | --- |
 | q1246 / q1246-i01 | P1 | ws245-p044・p045・p046 | p044・p045 の host の受け入れの残り（各 phase.md の「判定の材料」の残り）、p046 の comment の 1 行ずつと関数名の写しの目視。動作は変えない | in-progress |
 | q1247 / q1247-i01 | P1（q1246 の後） | ws251-p002 | 完了の条件 2: p002 が変えた file ごとの目視の点検（開発の段・試験の運用の話）と記録 | pending |
-| q1248 / q1248-i01 | P1（q1246 より先） | [ws258-p001](ws258/phase001/phase.md) | 全ドライバ（src/drivers・include/drivers）の先頭の comment の出典の監査と、block 単位への移し（2026-10-18 ユーザー「この修正も全ドライバに対してP1で監査してほしいです」） | in-progress |
+| q1248 / q1248-i01 | P1（q1246 より先） | [ws258-p001](ws258/phase001/phase.md) | 全ドライバ（src/drivers・include/drivers）の先頭の comment の出典の監査と、block 単位への移し（2026-10-18 ユーザー「この修正も全ドライバに対してP1で監査してほしいです」） | 返却（2026-10-18）: 1,031 file を点検、44 file の comment を直した（cd5eccda3〜411c13214、merge 181f43b52、build 3 組 warning 0 は P1 の報告）。直さずに残した 2 群（i915/intel の著作権表示のある抜粋 21＋rtl8822b-tables.inc、i915 の GT の core の写しの疑い）はユーザーの判断待ち。新しく書いた出典の path と関数名は記憶で書いた所があり未照合 |
+
+## 2026-10-18 夜: P2 の WS256 の実装（q1249〜）
+
+承認: 2026-10-18 ユーザー（クリック）「p009 → p003 を今始める」。HAL の差分 3 件は同日「3 件とも承認」（Guardrail の表）。worktree p2・branch agent/p2-q1249（基点 main）。
+
+| Queue | 担当 | Phase | 範囲 | 結果 |
+| --- | --- | --- | --- | --- |
+| q1249 / q1249-i01 | P2（phase-runner） | ws256-p009 → ws256-p003 | p009: 試験の道具（plan/tools の boot-test.sh・boot-test.py など 3 file に riscv64 の mode、BOOT_PATTERN、tests の config。既存の mode は変えない）。p003: HAL の芯（design.md §6 の範囲、承認済みの HAL の差分の適用を含む）。QEMU は T1 に依頼 | in-progress |
