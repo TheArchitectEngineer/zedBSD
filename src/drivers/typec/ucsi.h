@@ -36,7 +36,6 @@
  * 3.1 document, that is marked unconfirmed for 2.0.
  */
 
-
 /*
  * The largest MESSAGE IN or MESSAGE OUT of any arrangement (UCSI 3.1
  * Table 4-1: 2040 bits, 255 bytes; MAX_DATA_LENGTH 0xFF, Table A-2).

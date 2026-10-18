@@ -7,24 +7,26 @@
 
 /*
  * The pure part of the Raspberry Pi 4 onboard Bluetooth's UART transport
- * (rpi4-bt-link.h, ws215-p003): the PL011's divisor, the hunt for an event
+ * (rpi4-bt-link.h): the PL011's divisor, the hunt for an event
  * to fall in step with, the history of the transport's own resets, and the
  * line's mode and generation.
  *
- * The values: the divisor's form is the ARM PrimeCell UART (PL011)
- * Technical Reference Manual's (a 16-bit integer part and a 6-bit fraction
- * of the clock over sixteen times the baud rate); the event codes and the
- * parameters of Command Complete (0x0E) and Command Status (0x0F) are the
- * Bluetooth Core specification's (5.4, Vol 4 Part E 7.7.14 and 7.7.15).
  * The 1.5 % tolerance, the three resets a minute and the hunt's rules are
- * this driver's own choices (ws215-p001, the third revision).
+ * this driver's own choices.
  */
 
 #include "drivers/platform/rpi4/rpi4-bt-link.h"
 
 #include <uapi/errno.h>
 
-/* The H4 type of an event, and the two events an answer to a command comes in. */
+/*
+ * The H4 type of an event, and the two events an answer to a command
+ * comes in.
+ *
+ * Values referenced: Bluetooth Core Specification 5.4, Vol 4 Part E
+ * 7.7.14 and 7.7.15 (the codes and parameters of Command Complete and
+ * Command Status).
+ */
 #define HUNT_TYPE_EVENT			0x04U
 #define HUNT_COMMAND_COMPLETE		0x0eU
 #define HUNT_COMMAND_STATUS		0x0fU
@@ -59,6 +61,10 @@ static void hunt_drop_first(struct drv_rpi4_bt_hunt *hunt);
  * Returns 0 with the integer and fractional parts, or EINVAL for a rate of
  * nothing, one past a sixteenth of the clock, or one the divisor cannot
  * come within DRV_RPI4_BT_BAUD_ERROR_PERMILLE of.
+ *
+ * Values referenced: ARM PrimeCell UART (PL011) Technical Reference Manual
+ * (the divisor: a 16-bit integer part and a 6-bit fraction of the clock
+ * over sixteen times the baud rate).
  */
 int
 drv_rpi4_bt_divisor(

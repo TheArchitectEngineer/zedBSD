@@ -11,7 +11,6 @@
  * USB host core
  */
 
-
 #include <drivers/usb/usb.h>
 #include <uapi/errno.h>
 #include <uapi/system.h>
