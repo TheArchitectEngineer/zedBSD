@@ -1,0 +1,36 @@
+{
+  "vm/access.c": "all tokens outside selected functions/declarations unchanged",
+  "js/builtin_object.c": "all tokens outside selected functions/declarations unchanged",
+  "header_tokens_except_two_declarations_unchanged": true,
+  "native_operations_definition_comment_bytes_unchanged": true,
+  "old336_source_prefix_unchanged": true,
+  "added_conditions": 36,
+  "full_changed_functions": {
+    "userland/desktop/libbrowser/vm/access.c": [
+      "vm_is_extensible",
+      "vm_prevent_extensions",
+      "access_extensibility",
+      "access_proxy_extensibility"
+    ],
+    "userland/desktop/libbrowser/js/builtin_object.c": [
+      "object_is_extensible",
+      "object_prevent_extensions"
+    ],
+    "plan/ws074/tests/host-proxy-read.c": [
+      "main",
+      "extent_collect_prevent",
+      "extent_pressure"
+    ]
+  },
+  "raw_allowed_cleanup": 52,
+  "other_checker_flags": 0,
+  "manual_review": [
+    "ANSI declaration order, meaningful paragraphs, public-before-static, table-required prototypes retained",
+    "realm/input traced before depth errors; target/handler/fresh method explicit roots; all exits retire roots/depth",
+    "Prevent false skips post-trap target observation; target extensibility uses realm-aware API after trap",
+    "ordinary pure native callback retained, no script inside callbacks; refusal and errno kept",
+    "private factory bounds/global/public ABI2/Wayland unchanged",
+    "other Proxy invariant sampling and Object integrity methods left pending",
+    "source management references removed, technical ownership comments retained"
+  ]
+}

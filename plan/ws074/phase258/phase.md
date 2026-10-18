@@ -2,7 +2,7 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: in-progress（q40 extensibility partial、whole Proxy未達）
+Status: uncleared（q40 extensibility partial cleared、whole Proxy未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
@@ -11,7 +11,7 @@ Origin: p189/q29 original WebIDL2 parseがProxy未定義で停止。
 
 Objective / own criteria: native managed Proxyを実object internal methodsへ接続し、constructor/revocableと各internal operationのtrap/fallback/invariant/receiver/revocation/callability/GCを正しく実行する。original WebIDL2 actual parse/validatorに必要なget/set/array behaviorを通常APIで提供し、independent controls/原WPTを通す。部分read stageだけでwholeをclearしない。
 Design: vm_native_operationsはscript-free heap interfaceのまま保持。Proxyにはmanaged target/handler recordを持たせ、scriptを実行可能なrealm-aware access/internal methodからtrapを呼ぶ。opaque JS constructor公開前に必要なoperationを段階的に整える。各段階は自走承認に基づく新finite Queueで正確に選定する。
-Current state: q39 public/native IsArrayまでverified、q38原parser private4/4・negative元assertion到達。global Proxyとkeys/delete/prototype/extent/call/construct等・通常prototype routing/TypedArray残りは未達。
+Current state: q40 public/native IsExtensible/PreventExtensionsまでverified、q38元parser private4/4/negative到達維持。delete/keys/prototype/other internal invariant realm化/nested/call/construct/global、array/typed別consumers/backing等未達。
 Standards: Guardrail/C全文/browser component全文、簡約版無し。一次 https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-proxy-object-internal-methods-and-internal-slots-get-p-receiver 。既存p100がWS全source near-final conformanceを所有し、本partialはnew/changed scopeの全文適合を検証。
 Verification/bounds/affected components: q30 snapshotの通り。private object kind/cell/newborn/trace/revokeとactual receiver/trap/invariant/GCをnative/Chromeで確認し、ordinary whole/callback PASSを守る。target single-source compileのみとfull target runtimeを区別。未達はunclearedとresume。
 
@@ -151,3 +151,14 @@ Raw archive68 membersを全member read-back、SHA25656690aa90d83af6200e77c119bdf
 [証拠](evidence/20261018-q39/README.md)。次finite Queueはremaining internal methodsを具体化して選定する。
 
 Event ws074-p258-q40-selected-20261018: q38 actual差を元にIsExtensible/PreventExtensionsと公開2 wrappersを最大90分で選定。native no-script policy保持、other invariants/nested/global/seal/freezeは未選定。exact scopeはQueue、whole未達。
+
+## q40 extensibility partial result / resume
+
+Event ws074-p258-q40-partial-cleared-20261018: vm_is_extensible/vm_prevent_extensionsと共有realm frame/private Proxy helperを追加し、公開Object.isExtensible/preventExtensionsを接続。元target/handlerをsnapshot-rootしdynamic GetMethod/null fallback、handler this/元target1引数、fresh method保持、ToBoolean、lookup/trap中revoke・bounded depthを正規処理する。IsExtensibleはpost-trap actual target IsExtensibleとの一致を要求し、Prevent falseは即done0でtarget確認を省き、trueはactual target nonextensibleを要求。ordinaryは旧flag/既存pure native prevent policyを共有し、native拒否とerrnoを変換せず保持。native_operations定義/コメント/契約は全bytes不変。existing Get/Has/GetOwn/Define/Setのextensibility samplingはまだdirect flags、nested/callable factory bound/global非公開とObject seal/freeze/isSealed/isFrozenの残件を保持。
+旧336 source prefix全bytes同一、追加36条件を含むnative/Chromium対照372通過。旧canonical分類のq36 negative-zero primitive filterを継承するので全372をpure genuine exotic一致とは主張しない。native C stack保守保持無し。4独立modeでbare managed ownerと元target/handler/Proxyの全setup rootsを落とし、handler getterのrevoke後script GC、さらに元getterがreturnした後のpure native prevention callback内GCを観察。native成功・拒否・EACCES、fresh IsExtensible script trapの各outcome/depth0を保持し、4 participantの生存を個別確認、frame終了後の全4実回収を確認。native callbackはcollectorとnative allowed/errnoだけでscriptを実行しない。旧IsArray error pressure/Proxy/descriptor/BigInt/typed graph GC対照も保持。
+source WIP5eb0f6f11、final source/pair/input317 hash照合、host warning0・q02 exact access/builtin_object2 target warning0。全文/manual review・clang-format19・full changed Cの許可forward cleanup52/他checker0。選定functions/declarations以外のC tokens完全同一、管理WS/Phase/plan commentは触れたsourceから技術説明を保持して除去。DOM41、VM45/factory56、CSSOM12+12、marks7/observer10/ErrorEvent9/ErrorReporting19/delegation10通過。Acid3 score/inventory100・pixel0、Acid2既存873。元WebIDL2はq38同一source bytesと全callbackを保持し、baseline Proxy undefined/private adapter positive4/4・negative元assertion到達。
+focused gatesのみ、all1508 q37/static/scripted/crash q28再利用を明示。q40全census/capture同値は未測定、公式gain0・1482/3805（38.948752%）・held0・未attempt275保持。i01 extent2 partialだけcleared、whole p258/WS/p100/full target/100%未達。次候補delete/keys/prototype/other invariant realm化/nested/call/construct/global/revocable、別array/typed残件を維持。共有Master/Queue/cache/GitHub投影pending、push無し。
+調査中のsource boundary checkerはexisting prototypesをnew側だけ除去して初回false mismatchになったため、対称除去へ訂正し成功（product source変更無し）。archive初回はfull member read-back後に未作成prefix-proofのcopyで停止。初回archiveをbuildへ保存し不足proofを作成、再archive/read-back/copy完了。失敗と修復をrawに保持。
+Final raw archive71 members全read-back、SHA256686b68a24cb0a90845e2c84621852b0fffbf29fb35f70c9301f68d7339311ea0。runtime binaryはhash付きbuildに保持しarchive未同梱。
+
+[証拠](evidence/20261018-q40/README.md)。次finite scope未選定。

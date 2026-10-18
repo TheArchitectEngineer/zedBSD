@@ -1,5 +1,9 @@
 # WS074 lane の Past Log
 
+## ws074-q20261018-40（2026-10-18）
+
+[履歴](ws074-q20261018-40.md)。Proxy IsExtensible/PreventExtensionsとpublic2 wrappers partial clear、372対照/4 GC modesで元participants保持と実回収、pure native拒否/errno保持。focused gates/元parser維持、1482/3805。remaining/global/p100未達、共有投影pending。
+
 ## ws074-q20261018-39（2026-10-18）
 
 [履歴](ws074-q20261018-39.md)。Proxy-aware IsArray/public wrapper partial cleared、336対照・revoked errorの実GC/後にowner/input実回収。原WebIDL2 private4/4/negative保持、focused gates通過、1482/3805維持。残る内部method/global/p100未達、共有投影pending。
@@ -119,9 +123,5 @@ Follow-up: q23 i01/i02 clearanceは疎checkoutのIDL未配信が判明しunclear
 ## ws074-q20261018-11（2026-10-18）
 
 [履歴](ws074-q20261018-11.md)。intrinsic/minmax/implicit parser・horizontal min-content修正で独立22/22、Grid whole248維持、static227→228/後退0。callback74改善/24後退はlossy getterが隠したnative animation欠落の露出でq11 uncleared、p248へ計画。DOM29/29、host/target warning0、Acid3差0/Acid2差873。次は独立zero fontとrunner retention。共有投影pending。
-
-## ws074-q20261018-10（2026-10-18）
-
-[履歴](ws074-q20261018-10.md)。no-box auto minimum Phase cleared。固定174 ID whole107→109/callback989→993・後退0、独立19/19 Chromium一致・unknown維持、DOM28/28、host/target warning0、Acid3差0/Acid2差873。WS全体/target/p100は残る。次はintrinsic Grid trackの区別/sizing候補。共有投影pending。
 
 以前のindex: [early 2026-10-18](early-20261018.md)。過去standing Queue投影: [原文archive](../queue-archive-through-q30.md)。
