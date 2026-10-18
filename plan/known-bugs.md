@@ -197,7 +197,7 @@ remain as traceable history and are not new implementation work.
 | [BUG-327](bugs/BUG-327.md) | 5330 で zedBSD の USB の stick の小さな読み込みが 1 回 30〜54 ms 待ち、起動が遅い（同じ stick を Linux から 0.4 ms、stick の劣化ではない） | reproduced（実機の記録 1 回）/ tracking | P2 2026-10-16 | P2（WS253、q1221-i04） |
 | [BUG-328](bugs/BUG-328.md) | 静的な設定の default route と DNS が起動の後に入らない（net startup が address だけを送る） | reproduced（QEMU）/ tracking | P4 2026-10-16 | 未割当 |
 | [BUG-329](bugs/BUG-329.md) | RX 5600 XT で Notes が起動しない（executor に depth/stencil の format が無い） | reproduced（実機 1 回）/ tracking | P3 2026-10-16 | 未割当（WS039 の executor） |
-| [BUG-330](bugs/BUG-330.md) | framebuffer の console のスクロールが遅い（1920x1080 で 1 秒に約 4 行、毎行で全部の cell を描き直す） | reproduced（ユーザー）/ tracking（2026-10-16 夜 ユーザーの指示で修正を止めた） | ユーザー 2026-10-16 | 未割当 |
+| [BUG-330](bugs/BUG-330.md) | framebuffer の console のスクロールが遅い（1920x1080 で 1 秒に約 4 行、毎行で全部の cell を描き直す） | reproduced（ユーザー）/ tracking（2026-10-16 夜 ユーザーの指示で修正を止めた。途中の変更は tag saved/20261018-bug330-console） | ユーザー 2026-10-16 | 未割当 |
 | [BUG-331](bugs/BUG-331.md) | RDNA 機の desktop が App Home を閉じる animation 中に固まり（mouse も止まる）、reset して Debian に戻る（p017 の 2 段目の試験の kernel） | reproduced 0 回（ユーザー 1 回）/ tracking | ユーザー 2026-10-16 | P3（p017 の中） |
 | [BUG-332](bugs/BUG-332.md) | app の起動の fork の直後に compositor が GPU の memory を解放すると EBUSY で device lost（子が exec まで親の GPU の mmap を持つ） | reproduced（実機 1 回）/ tracking | P3・P5 2026-10-16 | 未割当（共通の code） |
 | [BUG-333](bugs/BUG-333.md) | Pi 4 の USB の touchscreen で 1 本指のスワイプが 2 本指として扱われる（dmesg「2 fingers down at once」） | resolved（2026-10-17、USB の数え上げの最初の要求を 64 byte に 93bb1db8c、Pi 4 でユーザーが確認） | ユーザー 2026-10-17 | P2（q1238） |
