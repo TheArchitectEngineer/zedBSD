@@ -41,3 +41,5 @@ Event ws074-p256-q27-selected-20261018: VMはthrow line/columnのみ保持しscr
 Event ws074-p256-q27-primary-chrome-usv-20261018: pinned html.idlとHTML本文はfilenameをUSVStringと規定するが、Chrome153実測はlone surrogateを保存する（DOMString挙動）。本partialの選定済みUSVStringは一次IDL通り維持し、独立28対照中この1条件のChrome差を明示する。未対応Proxy constructorで独立fixture全体が停止する初回native出力を保存し、brand対照はgenuine別Event/偽prototype/plain/nullの実対応receiverで継続する（Proxy対応を達成と主張しない）。原WPT/期待値/score不変。
 
 Event ws074-p256-q27-build-sequencing-20261018: initial host build呼出しの完了をsession statusで確認せず後続host buildを開始し、一時的な重複を発生させた。中間pairは正式測定に使わず、全buildの終了確認後に一度だけhost buildを直列実行してからfinal pairをfreezeする。source/期待値は以後固定し、final pairのsource/object/hashを確認する。
+
+Event ws074-p256-q27-final-format-proof-20261018: final corpus開始直後の全文監査で既存bind_event_create内5-clause条件のformatterによる一行化を見つけ、規約通り改行だけを復元。全非空白token/string不変、同一host flagsによる再compileとdebug除去後のobject全bytes一致をformat-equivalence.jsonへ保存。frozen pairは変更せずruntime同値のfinal sourceを検証対象とし、target exact event/windowを再compile warning0、checker19の許可済みforward cleanup以外0を再確認する。追加の意味変更や期待値緩和は無い。
