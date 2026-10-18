@@ -2,11 +2,11 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: uncleared（q32 shared descriptor conversion partial cleared、whole Proxy未達）
+Status: in-progress（q33 GetOwnProperty partial、q30/q31/q32 verified）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
-Queue: ws074-q20261018-32-i01（q30/q31-i01 cleared履歴保持）
+Queue: ws074-q20261018-33-i01（q30/q31/q32 partial cleared履歴保持）
 Origin: p189/q29 original WebIDL2 parseがProxy未定義で停止。
 
 Objective / own criteria: native managed Proxyを実object internal methodsへ接続し、constructor/revocableと各internal operationのtrap/fallback/invariant/receiver/revocation/callability/GCを正しく実行する。original WebIDL2 actual parse/validatorに必要なget/set/array behaviorを通常APIで提供し、independent controls/原WPTを通す。部分read stageだけでwholeをclearしない。
@@ -54,3 +54,5 @@ source WIP786856b04、最終sourceを再buildしたimmutable pair/source hash317
 i01 shared descriptor conversion partialのみcleared、whole p258はrealm-aware Proxy getOwn/Define/Set/keys/prototype/extent/IsArray/call/construct/global constructor/revocable/原WebIDL2未達でuncleared。full target/whole-source p100/WS100%未達、共有Master/Queue/next/cache/GitHub投影pending、push無し。
 
 [証拠](evidence/20261018-q32/README.md)。次finite Queueでrealm-aware getOwn/Defineとordinary no-script outputを検証してからSetへ接続する。global Proxyは非公開を維持。
+
+Event ws074-p258-q33-selected-20261018: shared To/From/Complete verified後、realm-aware GetOwnと公開単一descriptor APIを具体化。To getter前のtarget descriptor/extensibility snapshotをpure compatibilityへ渡し、noscript hooksと境界を守る。exact max90分/source bounds/focused gatesはq33 Queue。Define/Set/global公開は後続、whole p258未達。

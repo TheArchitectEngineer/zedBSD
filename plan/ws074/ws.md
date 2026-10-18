@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [ws074-q20261018-32](queue.md) finished（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+Queue: [ws074-q20261018-33](queue.md) active（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
 
 Latest verified（q32）: VM-owned ToPropertyDescriptor/FromPropertyDescriptor/CompletePropertyDescriptorを既存access層へ追加し、JS Objectの既存to/fromを薄いwrapperで共有した。ToのHas/Get6順とget即時callability/元errorを保持。Fromはpresent fieldsだけをvalue/writable/get/set/enumerable/configurable順にordinary data propertiesへ出し、NULL→undefined。Completeはvalid partialのdata/accessor/defaultsを無script/無allocationで補う。VMからJS moduleへの依存無し、native_operationsは全bytes不変。 同じ93条件がnativeとChromium genuine Proxy define trap/通常Object APIで全件一致。old68 source prefixはbyte同一。partial snapshotとcomplete snapshotを独立対照し、native Cでは保守的C stack保持を無効にしてfresh value/getterの両modeにreal threshold GCを発生させ、caller setup roots無しでmanaged realmとpayloadの生存を確認。flags無しpayload2 cellはそのGCで実回収され、出力が元payloadとdefault data属性の1 fieldだけを持つこと、output root解放後にrealm/payload/outputが全て実回収されることを確認。q30/q31のGet/Has/revoke/sole result/実realm回収対照も維持した。 source WIP786856b04、最終sourceを再buildしたimmutable pair/source hash317件を照合。host warning0、q02 exact access/builtin_object2 source target compile warning0。full new/changed Cのraw checker許可forward shared cleanup50・他0、通常helper宣言は全tables後、public fn headerはmultiline。DOM41、interpreter45/factory56、CSSOM12+12、marks7/observer10/ErrorEvent9/ErrorReporting19/delegation10を通過し、公開Object.definePropertyのinvalid getter順は元Chromeのgetだけ/TypeErrorと一致。Acid3 score/inventory100・pixel0、Acid2既存差873。初回Acidはsandbox localhost socket不足でPermissionError、原logを保存して同じcommandを通常network権限で再実行exit0、意味上の失敗と区別。 今回はexact承認どおりfocused gatesだけ。全1508はq31、static/scripted/strict crashはq28の原証拠を再利用し、q32 pair全件同値/新whole PASS増分を主張しない。確認済1482/3805（38.948752%）・held0・未attempt275を保持。archive55 membersを順次全read-back、sha2563eda8931e35dce0f676f860cc7d6b1bfaefdb37731e7620ccb38a2f970fa7e4c。 i01 shared descriptor conversion partialのみcleared、whole p258はrealm-aware Proxy getOwn/Define/Set/keys/prototype/extent/IsArray/call/construct/global constructor/revocable/原WebIDL2未達でuncleared。full target/whole-source p100/WS100%未達、共有Master/Queue/next/cache/GitHub投影pending、push無し。
 
@@ -706,7 +706,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p255](phase255/phase.md) | PerformanceObserver native mark登録・queue・task配信 | uncleared / q28 Window consumer/failure/held partial cleared・whole残り | p254 verified native mark output |
 | [ws074-p256](phase256/phase.md) | Window ErrorEvent・uncaught harness fidelity | uncleared / q28 runtime/inline source partial cleared・external/syntax等残り | 既存Event/Window/VM→p255再評価 |
 | [ws074-p257](phase257/phase.md) | synchronous generator yield* delegation | cleared / q29 sync own criteria・Chrome38/native GC10 | q28 VM/GC・p189 pinned WebIDL2 |
-| [ws074-p258](phase258/phase.md) | native Proxy internal methods・GC/revocation | uncleared / q32 descriptor conversion partial cleared・native/Chrome93/GC | q29 VM/GC・p189 actual Proxy blocker |
+| [ws074-p258](phase258/phase.md) | native Proxy internal methods・GC/revocation | in-progress / q33 GetOwnProperty・q30/q31/q32 verified | q29 VM/GC・p189 actual Proxy blocker |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 
@@ -1303,3 +1303,5 @@ Event ws074-q31-finished-20261018: p258 Has/descriptor prerequisiteだけclear�
 Event ws074-q32-selected-20261018: [p258](phase258/phase.md)のVM共有descriptor helpersをfinite選定。q31 private Has/Get/GC出力を使い、To/From/CompleteをVM層へ集約、partial field presenceを独立native/Chromeで確認し既存Objectを追従する。focused gatesを適用、q31全1508 evidence再利用と未再実行を明記。standing Queueを再利用し全履歴を保持、whole/global公開/共有投影未達。
 
 Event ws074-q32-finished-20261018: p258共有To/From/Complete変換partialをclear。native/Chrome93一致・GC/actual reclamation・focused gates/Acid確認。全1508 q31/画像crash q28を再利用し1482/3805を保持、whole p258/global公開/WS100%未達。[history](history/ws074-q20261018-32.md)。共有投影pending。
+
+Event ws074-q33-selected-20261018: p258内のrealm-aware GetOwnProperty partialをmax90分で選定、q32 partial outputsを前提に公開単一descriptor APIまで接続。global公開/whole Proxy/WS100%は未達維持。共有投影pending。
