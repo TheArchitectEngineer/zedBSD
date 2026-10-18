@@ -818,7 +818,7 @@ i915_lrc_batches_gen12(
 	cs = i915_lrc_emit_load_gpr0(ce, cs, i915_lrc_saved_value(ce, I915_LRC_GEN12_SLOT_GPR0 + 1U));
 
 	/* Invalidates the AUX table and waits; the ring flush uses the same emitter. */
-	cs = drv_i915_gen12_emit_aux_table_inv(ce->ge->info->id, cs);
+	cs = drv_i915_emit_aux_inv(ce->ge->info->id, cs);
 
 	/* The render engine invalidates its instruction state cache. */
 	if (render != 0) {

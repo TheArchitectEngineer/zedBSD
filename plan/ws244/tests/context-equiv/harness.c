@@ -63,7 +63,7 @@ int drv_i915_gt_ggtt_bind(struct i915_gt_mem *gm, struct i915_gt_object *o)
 	next_ggtt += o->bytes;
 	return 0;
 }
-uint32_t *drv_i915_gen12_emit_aux_table_inv(int id, uint32_t *cs) { *cs++ = 0xa0000000U | (uint32_t)id; *cs++ = 0xa1; *cs++ = 0xa2; return cs; }
+uint32_t *drv_i915_emit_aux_inv(int id, uint32_t *cs) { *cs++ = 0xa0000000U | (uint32_t)id; *cs++ = 0xa1; *cs++ = 0xa2; return cs; }
 
 static uint64_t
 fnv(const void *p, size_t n)

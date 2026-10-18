@@ -2073,7 +2073,7 @@ i915_stop_gt(
 		error = i915_forcewake_get_all(gt, &held);
 		if (error == 0) {
 			for (index = 0U; index < gt->engines.n; index++)
-				drv_i915_execlists_reset_prepare(&gt->engines.ge[index], &gt->mmio);
+				drv_i915_execlists_quiesce(&gt->engines.ge[index], &gt->mmio);
 
 			error = drv_i915_gt_reset_all(&gt->uncore_lock, &gt->mmio, I915_GT_RESET_ACK_US);
 			kern_logf("i915: stop: engines stopped and reset (rc=%d) before release\n", error);

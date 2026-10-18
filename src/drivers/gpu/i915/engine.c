@@ -50,10 +50,8 @@ static void i915_execlists_sanitize(struct i915_gt_engines *es, unsigned index, 
 /*
  * Sets up an engine's status page and software execlists state.
  *
- * This is init_status_page() and the software part of engine_setup_common():
- * one page, pinned in the GGTT and zeroed.  The reference maps the page
- * write-back and relies on LLC coherency; the DMA memory behind a GT object is
- * coherent for the same reason.  Returns 0, EINVAL, ENOMEM or the GGTT bind
+ * The status page is one page, pinned in the GGTT and zeroed; the DMA
+ * memory behind a GT object is coherent with the GPU through the LLC.  Returns 0, EINVAL, ENOMEM or the GGTT bind
  * error.
  */
 int
@@ -92,7 +90,7 @@ drv_i915_engine_setup_common(
 	ge->hwsp = (volatile uint32_t *)ge->status_page->cpu;
 	ge->hwsp_ggtt = ge->status_page->ggtt_offset;
 
-	/* One port pair and nothing in flight (intel_engine_init_execlists()). */
+	/* One port pair and nothing in flight. */
 	ge->port_mask = 1U;
 
 	/* Uses the whole device by default. */
@@ -137,7 +135,7 @@ drv_i915_engine_release(
 }
 
 /*
- * Stops an engine's command streamer (intel_engine_stop_cs()).
+ * Stops an engine's command streamer.
  *
  * Sets I915_GT_STOP_RING, stops the prefetcher as well (Wa_22011802037, Gen11 to
  * before 12.70), and waits for I915_GT_MODE_IDLE.  I915_GT_MODE_IDLE sometimes stays clear on
@@ -170,7 +168,7 @@ drv_i915_engine_stop_cs(
 	if (ge->info->graphics_ver != 9)
 		drv_i915_write32(mmio, I915_GT_RING_MODE_GEN7(base), I915_MASKED_ENABLE(I915_GT_GEN12_GFX_PREFETCH_DISABLE));
 
-	/* Waits for I915_GT_MODE_IDLE (__intel_wait_for_register_fw(mode, I915_GT_MODE_IDLE, 1000 us, stop timeout)). */
+	/* Waits for I915_GT_MODE_IDLE: busy for 1000 us, then sleeping up to the stop timeout. */
 	error = drv_i915_wait_reg(mmio, mode, I915_GT_MODE_IDLE, I915_GT_MODE_IDLE, I915_STOP_CS_FAST_US, I915_STOP_CS_TIMEOUT_MS, NULL);
 	drv_i915_posting_read32(mmio, mode);
 
@@ -195,8 +193,7 @@ drv_i915_engine_stop_cs(
 }
 
 /*
- * Waits for the MI_FORCE_WAKEs an engine left pending (Wa_22011802037,
- * intel_engine_wait_for_pending_mi_fw()).
+ * Waits for the MI_FORCE_WAKEs an engine left pending (Wa_22011802037).
  *
  * The pending forcewakes are the bits set in both halves of the engine's
  * MSG_IDLE register.  GPM is given 1 us to see the stop, then up to 5 ms to
@@ -225,7 +222,7 @@ drv_i915_engine_wait_for_pending_mi_fw(
 	if (reg == 0U)
 		return;
 
-	/* Reads which forcewakes are pending (__cs_pending_mi_force_wakes()). */
+	/* Reads which forcewakes are pending. */
 	value = drv_i915_read32(mmio, reg);
 	pending = (value & (value >> 16) & I915_GT_MSG_IDLE_FW_MASK) >> I915_GT_MSG_IDLE_FW_SHIFT;
 	ge->mi_fw_pending = pending;
@@ -235,7 +232,7 @@ drv_i915_engine_wait_for_pending_mi_fw(
 	/* Lets GPM see the stop. */
 	(void)drv_i915_udelay(1U);
 
-	/* Waits for GPM to complete the pending forcewakes (__gpm_wait_for_fw_complete()). */
+	/* Waits for GPM to complete the pending forcewakes. */
 	error = drv_i915_wait_reg(mmio, I915_GT_GEN9_PWRGT_DOMAIN_STATUS, pending, pending, I915_MI_FW_COMPLETE_US, 0U, NULL);
 	if (error != 0) {
 		kern_logf("i915: %s: pending forcewake 0x%x did not complete\n",
@@ -374,11 +371,10 @@ drv_i915_engine_dump(
 
 /*
  * Sets up every engine of the GT with its execlists state and pinned kernel
- * context (intel_engines_init()).
+ * context.
  *
- * The kernel context is what create_kernel_context() pins: a 4 KiB ring, and
- * pinning a never-initialised context runs lrc_init_state() and then
- * lrc_update_regs() on the empty ring.  Returns 0, EINVAL, or the first
+ * The kernel context has a 4 KiB ring; its image is built and pointed at the
+ * empty ring.  Returns 0, EINVAL, or the first
  * engine's failure; on failure every engine is released.
  */
 int
@@ -415,7 +411,7 @@ drv_i915_engines_init(
 			break;
 
 		/* Points the execlists state at the engine's registers and status page. */
-		drv_i915_execlists_submission_setup(ge);
+		drv_i915_execlists_bind(ge);
 		drv_i915_execlists_init(&es->el[index]);
 
 		/* Creates the pinned kernel context with its 4 KiB ring. */
@@ -476,26 +472,25 @@ drv_i915_engines_release(
 }
 
 /*
- * Resumes the GT in the reference order of intel_gt_resume().
+ * Resumes the GT, in this order:
  *
- *   gt_sanitize(gt, force):   per engine the reset preparation (pause,
- *                             stop the streamer, drain MI_FORCE_WAKEs) and the
- *                             sanitize (CSB pointers, status page, the pinned
- *                             kernel context); then a full GT reset, which
- *                             always happens because the reference evaluates
- *                             reset_engines(gt) before `|| force'; nothing is
- *                             in flight to rewind; then the RPS sanitize
- *   intel_rc6_sanitize
- *   intel_gt_init_hw          GT workarounds with their check, MOCS
- *   intel_rps_enable          (intel_llc_enable is not done)
- *   per engine                serial++, the engine workarounds and
- *                             whitelist, then execlists_resume: the render
- *                             engine's L3CC table again, the breadcrumbs
- *                             reset (software only), enable_execlists
- *   intel_rc6_enable
+ *   sanitize      per engine the quiesce (pause, stop the streamer, drain
+ *                 MI_FORCE_WAKEs) and the CSB restart, status page and
+ *                 kernel context scrub; then a full GT reset, every time;
+ *                 nothing is in flight to abandon; then the RPS sanitize
+ *   RC6 off       RC6 and power gating
+ *   GT hardware   GT workarounds with their check, MOCS
+ *   RPS on        at the minimum
+ *   per engine    serial++, the engine workarounds and whitelist, the
+ *                 engine's MOCS and the render engine's L3CC table again,
+ *                 and execlists enabled
+ *   RC6 on
  *
- * A failed GT reset is logged and the resume continues, as the reference
- * does.  The caller holds every forcewake domain.  Returns 0 or EINVAL.
+ * A failed GT reset is logged and the resume continues.  The caller holds
+ * every forcewake domain.  Returns 0 or EINVAL.
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/i915/gt/intel_gt_pm.c
+ * (intel_gt_resume: the order of the steps).
  */
 int
 drv_i915_gt_resume(
@@ -516,15 +511,15 @@ drv_i915_gt_resume(
 	    mmio == NULL)
 		return EINVAL;
 
-	/* Stops and sanitizes every engine (gt_sanitize()). */
+	/* Stops and sanitizes every engine. */
 	for (index = 0U; index < es->n; index++) {
-		drv_i915_execlists_reset_prepare(&es->ge[index], mmio);
+		drv_i915_execlists_quiesce(&es->ge[index], mmio);
 		if (es->ge[index].stop_cs_rc != 0)
 			es->stop_cs_timeouts++;
 		i915_execlists_sanitize(es, index, mmio);
 	}
 
-	/* Resets every engine (reset_engines(gt): __intel_gt_reset(gt, ALL_ENGINES)). */
+	/* Resets the whole GT. */
 	es->reset_rc = drv_i915_gt_reset_all(uncore_lock, mmio, I915_GT_RESET_ACK_US);
 	if (es->reset_rc != 0) {
 		kern_logf("i915: gt_sanitize: reset_engines rc=%d (continuing, as the reference does)\n",
@@ -532,22 +527,21 @@ drv_i915_gt_resume(
 	}
 
 	/*
-	 * Nothing was ever submitted, so the rewind has nothing to unwind, and
-	 * the reset finish re-enables a tasklet this driver does not have.
-	 * Quiets the RPS interrupts.
+	 * Nothing was ever submitted, so nothing is abandoned.  Quiets the RPS
+	 * interrupts.
 	 */
 	drv_i915_rps_sanitize(&gi->rps, mmio);
 
-	/* Turns RC6 and power gating off (intel_rc6_sanitize()). */
+	/* Turns RC6 and power gating off. */
 	drv_i915_rc6_sanitize(&gi->rc6, mmio);
 
-	/* Programs the GT workarounds and MOCS (intel_gt_init_hw()). */
+	/* Programs the GT workarounds and MOCS. */
 	drv_i915_gt_init_hw_core(gi, gt, mmio);
 
 	/* Enables RPS at the minimum, its thresholds counted in the GT's clock (the node's start raises it). */
 	drv_i915_rps_enable(&gi->rps, mmio, gt->clock_frequency);
 
-	/* Resumes every engine (intel_engine_resume()). */
+	/* Resumes every engine. */
 	for (index = 0U; index < es->n; index++) {
 		ge = &es->ge[index];
 
@@ -558,9 +552,8 @@ drv_i915_gt_resume(
 		drv_i915_engine_apply_resume_wa(gi, gt, index, mmio);
 
 		/*
-		 * execlists_resume() starts with intel_mocs_init_engine(): Gen9
-		 * programs the engine's own MOCS table, global MOCS has none, and
-		 * the render engine's L3CC table is programmed again.
+		 * Gen9 programs the engine's own MOCS table, global MOCS has none,
+		 * and the render engine's L3CC table is programmed again.
 		 */
 		drv_i915_mocs_init_engine(&gi->mocs, ge->info, mmio, NULL);
 		if (ge->info->class == I915_RENDER_CLASS)
@@ -579,8 +572,7 @@ drv_i915_gt_resume(
 }
 
 /*
- * Resets one engine after a hang and makes it take work again
- * (__intel_engine_reset_bh()).
+ * Resets one engine after a hang and makes it take work again.
  *
  * The engine is paused and its command streamer stopped, the engine alone
  * is reset through GDRST, the request it was running is dropped with its
@@ -611,14 +603,14 @@ drv_i915_engine_reset(
 	    index >= es->n)
 		return EINVAL;
 
-	/* Stops the engine: pauses it, stops its streamer, drains its forcewakes (reset_prepare_engine()). */
+	/* Stops the engine: pauses it, stops its streamer, drains its forcewakes. */
 	ge = &es->ge[index];
 	base = ge->info->mmio_base;
-	drv_i915_execlists_reset_prepare(ge, mmio);
+	drv_i915_execlists_quiesce(ge, mmio);
 	if (ge->stop_cs_rc != 0)
 		es->stop_cs_timeouts++;
 
-	/* Resets the engine alone (intel_gt_reset_engine()). */
+	/* Resets the engine alone. */
 	es->engine_resets++;
 	error = drv_i915_gt_reset_engine(uncore_lock, mmio, gt, ge->info, I915_GT_RESET_ACK_US);
 	if (error != 0) {
@@ -630,16 +622,16 @@ drv_i915_engine_reset(
 		return error;
 	}
 
-	/* Drops the request the engine was running and starts the CSB over (execlists_reset_rewind()). */
-	drv_i915_execlists_reset_rewind(ge, &es->el[index], mmio);
+	/* Drops the request the engine was running and starts the CSB over. */
+	drv_i915_execlists_abandon(ge, &es->el[index], mmio);
 
 	/* The engine's current context was lost, so the next park must switch to the kernel context again. */
 	es->el[index].serial++;
 
-	/* Applies the engine workarounds and the whitelist the reset cleared (intel_engine_resume()). */
+	/* Applies the engine workarounds and the whitelist the reset cleared. */
 	drv_i915_engine_apply_resume_wa(gi, gt, index, mmio);
 
-	/* The engine's MOCS (Gen9) and the render engine's L3CC table are programmed again, as execlists_resume() does. */
+	/* The engine's MOCS (Gen9) and the render engine's L3CC table are programmed again. */
 	drv_i915_mocs_init_engine(&gi->mocs, ge->info, mmio, NULL);
 	if (ge->info->class == I915_RENDER_CLASS)
 		drv_i915_init_l3cc_table(&gi->mocs, mmio, &es->l3cc_writes_rcs);
@@ -647,7 +639,7 @@ drv_i915_engine_reset(
 	/* Enables execlists with the status page again. */
 	drv_i915_execlists_enable(ge, mmio);
 
-	/* Lets the streamer run again (intel_engine_cancel_stop_cs()). */
+	/* Lets the streamer run again. */
 	drv_i915_write32(mmio, I915_GT_RING_MI_MODE(base), I915_MASKED_DISABLE(I915_GT_STOP_RING));
 	kern_logf("i915: %s: engine reset; the engine takes work again\n", ge->info->name);
 
@@ -680,7 +672,7 @@ i915_msg_idle_reg(
 	return 0U;
 }
 
-/* Sanitizes one engine after its reset preparation (execlists_sanitize()). */
+/* Sanitizes one engine after its quiesce. */
 static void
 i915_execlists_sanitize(
 	struct i915_gt_engines *es,
@@ -691,14 +683,14 @@ i915_execlists_sanitize(
 
 	/* Resets the CSB pointers; the debug poisoning of the page is off. */
 	ge = &es->ge[index];
-	drv_i915_execlists_reset_csb_pointers(ge, mmio);
+	drv_i915_execlists_csb_restart(ge, mmio);
 
 	/*
 	 * The kernel context's timeline lives in the status page, which may
-	 * have been lost, so its seqno is written back (sanitize_hwsp()).
+	 * have been lost, so its seqno is written back.
 	 */
 	ge->hwsp[I915_GT_HWS_SEQNO_ADDR / 4U] = es->kernel_tl_seqno[index];
 
-	/* Resets the pinned kernel context (intel_engine_reset_pinned_contexts()). */
+	/* Scrubs the pinned kernel context. */
 	drv_i915_lrc_scrub(&es->kernel_ce[index]);
 }

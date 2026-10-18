@@ -8,10 +8,7 @@
 /*
  * Requests.
  *
- * The execution side writes a request into a context's ring: the command
- * stream is re-derived from the reference (gen8_engine_cs.c,
- * intel_workarounds.c, intel_execlists_submission.c) for Alder Lake-P, in the
- * order the reference emits it:
+ * A request is written into a context's ring in this order:
  *
  *   request creation         the invalidate flush (a 4-level address space,
  *                            so no page-directory reload)
@@ -21,10 +18,9 @@
  *   render state             nothing: Gen12 has no null render state
  *   request add              the final breadcrumb and its tail
  *
- * There is no initial breadcrumb: the reference emits it only from the
- * selftests, execbuf and the GSC path.
+ * The kernel's own requests have no initial breadcrumb.
  *
- * The Alder Lake-P specifics that shape the stream:
+ * The Gen12 specifics that shape the stream:
  *
  *   - every engine needs the AUX table invalidate, so the render flush runs
  *     its flush block even for a pure invalidate, and every invalidate
@@ -37,12 +33,12 @@
  *   - a video engine's invalidate also invalidates BSD, a copy engine's also
  *     flushes CCS.
  *
- * The reference wraps the ring by filling its end with NOOPs.  A request here
- * is about 0.2 KiB on a fresh ring, so it never wraps, and a request that
- * would is refused instead of carrying a wrap path nothing exercises.
+ * A request is about 0.2 KiB on a fresh ring, so it never wraps, and a
+ * request that would is refused instead of carrying a wrap path nothing
+ * exercises.
  *
- * The software request queue of the device (the jobs sessions submit) is a
- * separate part of this file and header.
+ * The software request queue of the device (the jobs sessions submit) is
+ * request-queue.h.
  */
 
 #ifndef DRIVERS_GPU_I915_REQUEST_H
@@ -57,7 +53,7 @@ struct i915_wa_list;
 /*
  * One request written into a context's ring.
  *
- * The owner embeds it; it is valid from drv_i915_request_create() until the
+ * The owner embeds it; it is valid from drv_i915_request_open() until the
  * owner reuses it.  The breadcrumb is the seqno written to the timeline's
  * status-page slot once the request's commands have run.
  */
@@ -91,12 +87,12 @@ struct i915_gt_request {
 	int added;
 };
 
-uint32_t *drv_i915_ring_begin(struct i915_gt_request *rq, unsigned num_dwords);
-void drv_i915_ring_advance(struct i915_gt_request *rq, uint32_t *cs);
-uint32_t *drv_i915_gen12_emit_aux_table_inv(int engine_id, uint32_t *cs);
-int drv_i915_emit_ctx_wa(struct i915_gt_request *rq, const struct i915_wa_list *wal, struct i915_mmio *mmio);
-int drv_i915_request_create(struct i915_gt_request *rq, struct i915_gt_context *ce, uint32_t seqno, uint32_t hwsp_ggtt, volatile uint32_t *hwsp_cpu);
-int drv_i915_request_add(struct i915_gt_request *rq);
+uint32_t *drv_i915_ring_reserve(struct i915_gt_request *rq, unsigned num_dwords);
+void drv_i915_ring_commit(struct i915_gt_request *rq, uint32_t *cs);
+uint32_t *drv_i915_emit_aux_inv(int engine_id, uint32_t *cs);
+int drv_i915_emit_context_wa(struct i915_gt_request *rq, const struct i915_wa_list *wal, struct i915_mmio *mmio);
+int drv_i915_request_open(struct i915_gt_request *rq, struct i915_gt_context *ce, uint32_t seqno, uint32_t hwsp_ggtt, volatile uint32_t *hwsp_cpu);
+int drv_i915_request_close(struct i915_gt_request *rq);
 int drv_i915_request_completed(const struct i915_gt_request *rq);
 
 #endif

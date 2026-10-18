@@ -669,7 +669,7 @@ drv_i915_test_eu_wait_retired(
 	for (k = 0U; k < budget; k++) {
 		/* Takes in what the engine reported since the last poll. */
 		t->polls++;
-		(void)drv_i915_execlists_process_csb(ge, el, m);
+		(void)drv_i915_execlists_drain_csb(ge, el, m);
 		if (el->csb_errors != 0U)
 			return EIO;
 
@@ -710,14 +710,14 @@ drv_i915_test_eu_build_request(
 	int error;
 
 	/* Creates the request on the context's timeline; it has an initial breadcrumb. */
-	error = drv_i915_request_create(rq, ce, seqno, (uint32_t)tl_page->ggtt_offset, (volatile uint32_t *)tl_page->cpu);
+	error = drv_i915_request_open(rq, ce, seqno, (uint32_t)tl_page->ggtt_offset, (volatile uint32_t *)tl_page->cpu);
 	if (error != 0) {
 		error = drv_i915_test_eu_fail(t, error, "i915_request_create");
 		return error;
 	}
 
 	/* Stores seqno - 1, which says the request has started (gen8_emit_init_breadcrumb). */
-	cs = drv_i915_ring_begin(rq, 6U);
+	cs = drv_i915_ring_reserve(rq, 6U);
 	if (cs == NULL) {
 		error = drv_i915_test_eu_fail(t, rq->error, "emit_init_breadcrumb");
 		return error;
@@ -729,10 +729,10 @@ drv_i915_test_eu_build_request(
 	*cs++ = rq->seqno - 1U;
 	*cs++ = I915_CMD_MI_NOOP;
 	*cs++ = I915_CMD_MI_ARB_CHECK;
-	drv_i915_ring_advance(rq, cs);
+	drv_i915_ring_commit(rq, cs);
 
 	/* Starts the batch in the context's address space with arbitration on (gen8_emit_bb_start). */
-	cs = drv_i915_ring_begin(rq, 6U);
+	cs = drv_i915_ring_reserve(rq, 6U);
 	if (cs == NULL) {
 		error = drv_i915_test_eu_fail(t, rq->error, "emit_bb_start");
 		return error;
@@ -744,10 +744,10 @@ drv_i915_test_eu_build_request(
 	*cs++ = (uint32_t)(batch_va >> 32);
 	*cs++ = I915_CMD_MI_ARB_ON_OFF;
 	*cs++ = I915_CMD_MI_NOOP;
-	drv_i915_ring_advance(rq, cs);
+	drv_i915_ring_commit(rq, cs);
 
 	/* Closes the request with its breadcrumb. */
-	error = drv_i915_request_add(rq);
+	error = drv_i915_request_close(rq);
 	if (error != 0) {
 		error = drv_i915_test_eu_fail(t, error, "i915_request_add");
 		return error;
@@ -783,13 +783,13 @@ drv_i915_test_eu_park(
 	/* Creates and closes a request on the kernel context's timeline in the status page. */
 	es->kernel_tl_seqno[t->engine_idx]++;
 	kernel_seqno = es->kernel_tl_seqno[t->engine_idx];
-	error = drv_i915_request_create(&t->krq,
+	error = drv_i915_request_open(&t->krq,
 	    &es->kernel_ce[t->engine_idx],
 	    kernel_seqno,
 	    (uint32_t)ge->hwsp_ggtt + I915_GT_HWS_SEQNO_ADDR,
 	    &ge->hwsp[I915_GT_HWS_SEQNO_ADDR / 4U]);
 	if (error == 0)
-		error = drv_i915_request_add(&t->krq);
+		error = drv_i915_request_close(&t->krq);
 
 	/* The switch accounts for the serial even when it fails, as the engine park does. */
 	el->wakeref_serial = el->serial + 1U;
@@ -910,7 +910,7 @@ drv_i915_test_eu_hang_dump_reset(
 
 	/* Prepares every engine for the reset, then resets the GT. */
 	for (i = 0U; i < es->n; i++)
-		drv_i915_execlists_reset_prepare(&es->ge[i], m);
+		drv_i915_execlists_quiesce(&es->ge[i], m);
 	(void)drv_i915_gt_reset_all(uncore_lock, m, 2000U);
 
 	/* Nothing may be submitted after the reset. */

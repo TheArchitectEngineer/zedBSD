@@ -1941,7 +1941,7 @@ i915_ktest_gt_execlists_setup(
 
 	/* Sets the engine up. */
 	error = drv_i915_engine_setup_common(rcs, &t->rcs_info, &t->gm, &t->sseu);
-	drv_i915_execlists_submission_setup(rcs);
+	drv_i915_execlists_bind(rcs);
 
 	/* Gen11+ puts the CSB at HWSP dword 0x10 and its write pointer at 0x2f. */
 	drv_i915_ktest_check(
@@ -1994,7 +1994,7 @@ i915_ktest_gt_engine_descriptor(
 		return;
 	}
 
-	drv_i915_execlists_submission_setup(&t->vcs2);
+	drv_i915_execlists_bind(&t->vcs2);
 
 	/*
 	 * The class and instance travel in the upper dword of the context
@@ -2056,7 +2056,7 @@ i915_ktest_gt_execlists_enable(
 
 	/* Resets the CSB pointers. */
 	t->fake.wt_n = 0U;
-	drv_i915_execlists_reset_csb_pointers(rcs, &t->mmio);
+	drv_i915_execlists_csb_restart(rcs, &t->mmio);
 
 	/* The head parks one entry behind and every entry is poisoned. */
 	csb_pointer = i915_fake_wt_find(&t->fake, 0x23a0U, (0xffffU << 16) | (11U << 8) | 11U, 0xffffffffU);
@@ -2342,7 +2342,7 @@ i915_ktest_gt_context_xcs(
 	}
 
 	/* Builds the image and its batches. */
-	drv_i915_execlists_submission_setup(&t->vcs0);
+	drv_i915_execlists_bind(&t->vcs0);
 	drv_i915_lrc_build_image(&t->vcs0_ce);
 	(void)drv_i915_lrc_set_ring(&t->vcs0_ce, 0U);
 
@@ -2436,7 +2436,7 @@ i915_ktest_gt_render_request(
 	fl_inv_bg1 = 0x103070a1U;
 
 	/* Creates the request: request_alloc's I915_CMD_EMIT_INVALIDATE on render. */
-	error = drv_i915_request_create(rq, ce, 5U, hw, &t->rcs.hwsp[0x40U]);
+	error = drv_i915_request_open(rq, ce, 5U, hw, &t->rcs.hwsp[0x40U]);
 
 	/* Render runs the flush block too (AUX invalidate), then the invalidate and the AUX poll. */
 	drv_i915_ktest_check(
@@ -2460,7 +2460,7 @@ i915_ktest_gt_render_request(
 
 	/* Emits the render context workarounds: a barrier flush, LRI(5) with its pairs and a NOOP, a flush. */
 	drv_i915_engine_init_ctx_wa(&t->ctx_wa, &t->rcs_info, 12, 3U);
-	error = drv_i915_emit_ctx_wa(rq, &t->ctx_wa, &t->mmio);
+	error = drv_i915_emit_context_wa(rq, &t->ctx_wa, &t->mmio);
 
 	/* A barrier flush adds FLUSH_L3; masked and ~0-clear entries are not read. */
 	drv_i915_ktest_check(
@@ -2477,7 +2477,7 @@ i915_ktest_gt_render_request(
 		"p6c3: P6C3-CTXWA a BARRIER flush adds FLUSH_L3; masked and ~0-clear entries are not read");
 
 	/* Closes the request with the render fini breadcrumb. */
-	error = drv_i915_request_add(rq);
+	error = drv_i915_request_close(rq);
 
 	/* Render flushes L3 with DEPTH_STALL, writes the seqno, then waits on PREEMPT. */
 	drv_i915_ktest_check(
@@ -2541,7 +2541,7 @@ i915_ktest_gt_copy_engine(
 	}
 
 	/* Builds the image. */
-	drv_i915_execlists_submission_setup(&t->bcs);
+	drv_i915_execlists_bind(&t->bcs);
 	drv_i915_lrc_build_image(&t->bcs_ce);
 	(void)drv_i915_lrc_set_ring(&t->bcs_ce, 0U);
 
@@ -2574,7 +2574,7 @@ i915_ktest_gt_copy_request(
 	r = ce->ring.vaddr;
 
 	/* Creates the request. */
-	error = drv_i915_request_create(rq, ce, 7U, hw, &t->bcs.hwsp[0x40U]);
+	error = drv_i915_request_open(rq, ce, 7U, hw, &t->bcs.hwsp[0x40U]);
 
 	/* The copy invalidate carries I915_CMD_MI_FLUSH_DW_CCS, not INVALIDATE_BSD. */
 	drv_i915_ktest_check(
@@ -2592,7 +2592,7 @@ i915_ktest_gt_copy_request(
 	drv_i915_engine_init_ctx_wa(&t->ctx_wa, &t->bcs_info, 12, 3U);
 	drv_i915_raw_write32(&t->mmio, t->ctx_wa.list[0].reg, 0xffffffffU);
 	want = (0xffffffffU & ~t->ctx_wa.list[0].clr) | t->ctx_wa.list[0].set;
-	error = drv_i915_emit_ctx_wa(rq, &t->ctx_wa, &t->mmio);
+	error = drv_i915_emit_context_wa(rq, &t->ctx_wa, &t->mmio);
 
 	/* The entry is read, cleared and set before the LRI. */
 	drv_i915_ktest_check(
@@ -2606,7 +2606,7 @@ i915_ktest_gt_copy_request(
 		"p6c3: P6C3-BCS the plain BLIT_CCTL entry is read, cleared and set before the LRI");
 
 	/* Closes the request. */
-	error = drv_i915_request_add(rq);
+	error = drv_i915_request_close(rq);
 
 	/* The copy breadcrumb is 18 dwords: a flush, a USE_GTT store and the tail. */
 	drv_i915_ktest_check(
@@ -2649,7 +2649,7 @@ i915_ktest_gt_copy_submit(
 
 	/* Resets the CSB pointers with PREEMPT set, as the reset preparation leaves it. */
 	t->bcs.hwsp[I915_KTEST_HWSP_PREEMPT] = 1U;
-	drv_i915_execlists_reset_csb_pointers(&t->bcs, &t->mmio);
+	drv_i915_execlists_csb_restart(&t->bcs, &t->mmio);
 	preempt = t->bcs.hwsp[I915_KTEST_HWSP_PREEMPT];
 	drv_i915_ktest_check(ktest, preempt == 0U, "p6c4: P6C4-PAUSE reset_csb_pointers clears PREEMPT first (else every breadcrumb spins)");
 
@@ -2725,7 +2725,7 @@ i915_ktest_gt_copy_csb(
 	bcs->csb_status[0] = I915_KTEST_CSB_PROMOTE;
 	bcs->csb_status[1] = I915_KTEST_CSB_COMPLETE;
 	*bcs->csb_write = 1U;
-	done = drv_i915_execlists_process_csb(bcs, el, &t->mmio);
+	done = drv_i915_execlists_drain_csb(bcs, el, &t->mmio);
 
 	/* The pair promotes then completes, returns the tag and poisons both slots. */
 	drv_i915_ktest_check(
@@ -2756,7 +2756,7 @@ i915_ktest_gt_copy_csb(
 	drv_i915_raw_write32(&t->mmio, 0x22000U + 0x370U + 8U * 2U, 0x7ffU << 15);
 	drv_i915_raw_write32(&t->mmio, 0x22000U + 0x370U + 8U * 2U + 4U, 1U << 15);
 	*bcs->csb_write = 2U;
-	(void)drv_i915_execlists_process_csb(bcs, el, &t->mmio);
+	(void)drv_i915_execlists_drain_csb(bcs, el, &t->mmio);
 
 	/* A completion with nothing active is an error. */
 	drv_i915_ktest_check(
@@ -2768,10 +2768,10 @@ i915_ktest_gt_copy_csb(
 		"p6c3b: P6C3B-FALLBACK an all-ones entry falls back to the MMIO status buffer; a completion with nothing active is an error");
 
 	/* A breadcrumb address with bit 5 set is refused; an unaligned one is tried only after that. */
-	bit5 = drv_i915_request_create(rq, &t->bcs_ce, 8U, hw | 0x20U, NULL);
+	bit5 = drv_i915_request_open(rq, &t->bcs_ce, 8U, hw | 0x20U, NULL);
 	unaligned = 0;
 	if (bit5 == EINVAL)
-		unaligned = drv_i915_request_create(rq, &t->bcs_ce, 8U, hw | 4U, NULL);
+		unaligned = drv_i915_request_open(rq, &t->bcs_ce, 8U, hw | 4U, NULL);
 
 	drv_i915_ktest_check(
 		ktest,
@@ -2781,7 +2781,7 @@ i915_ktest_gt_copy_csb(
 	/* An odd dword count would leave I915_GT_RING_TAIL unaligned. */
 	rq->ce = &t->bcs_ce;
 	rq->error = 0;
-	begun = drv_i915_ring_begin(rq, 3U);
+	begun = drv_i915_ring_reserve(rq, 3U);
 	drv_i915_ktest_check(
 		ktest,
 		begun == NULL && rq->error == EINVAL,
@@ -2948,7 +2948,7 @@ i915_ktest_gt_defaults(
 	}
 
 	/* intel_engines_init() pins a 4 KiB kernel context per engine. */
-	drv_i915_execlists_reset_csb_pointers(&t->engines.ge[0], &t->mmio);
+	drv_i915_execlists_csb_restart(&t->engines.ge[0], &t->mmio);
 	drv_i915_ktest_check(
 		ktest,
 		t->engines.n == 1U &&
@@ -3101,7 +3101,7 @@ i915_ktest_gt_verify_wa_steps(
 	wl = &t->defaults_init.engine_wa[0];
 
 	/* Submits the stores. */
-	drv_i915_execlists_reset_csb_pointers(e0, &t->mmio);
+	drv_i915_execlists_csb_restart(e0, &t->mmio);
 	t->fake.wt_n = 0U;
 	kern_memset(vw, 0, sizeof(*vw));
 	error = drv_i915_engine_verify_wa_submit(vw, 0U, &t->engines, wl, &t->gm, &t->mmio);

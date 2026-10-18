@@ -15,7 +15,8 @@ build() {
 	cc -std=gnu11 -Wall -Wextra -Werror $4 -I"$out/$1" -I"$i915" $headers -o "$out/$1/t" "$out/$1/context.c" "$here/harness.c"
 	"$out/$1/t" > "$out/$1.trace"
 }
-build old "$1" "$2" -DCONTEXT_EQUIV_OLD
+# The old version called the AUX emitter by its old name.
+build old "$1" "$2" "-DCONTEXT_EQUIV_OLD -Ddrv_i915_gen12_emit_aux_table_inv=drv_i915_emit_aux_inv"
 build new "$3" "$4" ""
 if diff -u "$out/old.trace" "$out/new.trace"; then
 	echo "context-equiv: PASS ($(wc -l < "$out/new.trace") lines)"

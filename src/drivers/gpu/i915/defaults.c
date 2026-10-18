@@ -45,18 +45,23 @@
 #define I915_GEN9_NULL_STATE_RELOCS	4U
 
 /*
- * The Gen9 null render state batch (gen9_renderstate.c), which the render
- * engine's record request runs on Gen9 as intel_renderstate_emit() does.
- * The table never changes.
+ * The Gen9 null render state batch, which the render engine's record
+ * request runs on Gen9.  The table never changes.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/i915/gt/gen9_renderstate.c
+ * (gen9_null_state_batch).
  */
 static const uint32_t i915_gen9_null_state[] = {
 #include "intel/null-state-gen9.inc"
 };
 
 /*
- * The byte offsets of the four relocated addresses in the Gen9 null state
- * (gen9_null_state_relocs[] of the same file, values unchanged).  Each is
- * a 64-bit address whose upper dword follows it.  The table never changes.
+ * The byte offsets of the four relocated addresses in the Gen9 null state.
+ * Each is a 64-bit address whose upper dword follows it.  The table never
+ * changes.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/i915/gt/gen9_renderstate.c
+ * (gen9_null_state_relocs).
  */
 static const uint32_t i915_gen9_null_state_relocs[I915_GEN9_NULL_STATE_RELOCS] = {
 	0x000007a8U,
@@ -78,12 +83,11 @@ static void i915_defaults_release_contexts(struct i915_gt_defaults *d, struct i9
 static int i915_defaults_emit_null_state(struct i915_gt_defaults *d, struct i915_gt_mem *gm, struct i915_gt_request *rq, unsigned index);
 
 /*
- * Records every engine's default context image (__engines_record_defaults()).
+ * Records every engine's default context image.
  *
  * Submits a record request per engine, waits at least timeout_ms for every
  * engine to park, and copies the saved images into d->default_state.  On any
- * failure the engines are dumped, stopped and reset (the reference wedges the
- * GT).  The record contexts are released either way.  Returns 0 or the first
+ * failure the engines are dumped, stopped and reset.  The record contexts are released either way.  Returns 0 or the first
  * failure, whose step is in d->err_where.
  */
 int
@@ -106,7 +110,7 @@ drv_i915_engines_record_defaults(
 	/* Submits the record request of every engine; a failure is kept in d->err. */
 	(void)i915_defaults_submit(d, es, gi, gm, pp, mmio);
 
-	/* Waits for every engine to park (intel_gt_wait_for_idle(gt, I915_GEM_IDLE_TIMEOUT)). */
+	/* Waits for every engine to park. */
 	if (d->err == 0) {
 		budget = timeout_ms * I915_DEFAULTS_POLLS_PER_MS;
 		busy = 1U;
@@ -147,7 +151,7 @@ drv_i915_engines_record_defaults(
 
 		/* Stops every engine. */
 		for (index = 0U; index < es->n; index++)
-			drv_i915_execlists_reset_prepare(&es->ge[index], mmio);
+			drv_i915_execlists_quiesce(&es->ge[index], mmio);
 
 		/* Resets the GT. */
 		(void)drv_i915_gt_reset_all(uncore_lock, mmio, I915_GT_RESET_ACK_US);
@@ -265,7 +269,7 @@ i915_defaults_submit_engine(
 	ce = &d->ce[index];
 	rq = &d->rq[index];
 
-	/* Creates the record context with a 4 KiB ring (intel_context_create(engine)). */
+	/* Creates the record context with a 4 KiB ring. */
 	error = drv_i915_lrc_alloc(ce, ge, pp, gm, I915_DEFAULTS_RING_BYTES, 0U);
 	if (error != 0) {
 		i915_defaults_fail(d, error, "intel_context_create");
@@ -275,7 +279,7 @@ i915_defaults_submit_engine(
 	/* The engine now has a record context to release. */
 	d->n = index + 1U;
 
-	/* Allocates the timeline's own status page (intel_timeline_create(): hwsp_alloc()). */
+	/* Allocates the timeline's own status page. */
 	d->tl_page[index] = drv_i915_gt_object_create(gm, I915_DEFAULTS_TIMELINE_BYTES);
 	if (d->tl_page[index] == NULL) {
 		i915_defaults_fail(d, ENOMEM, "intel_timeline_create");
@@ -293,8 +297,7 @@ i915_defaults_submit_engine(
 	d->tl_seqno[index] = 0U;
 
 	/*
-	 * Pins the context (intel_renderstate_init()): never initialised, so the
-	 * image is built with the restore inhibited and no default state yet,
+	 * Pins the context: never initialised, so the image is built with the restore inhibited and no default state yet,
 	 * and the empty ring is written into it.
 	 */
 	drv_i915_lrc_build_image(ce);
@@ -302,7 +305,7 @@ i915_defaults_submit_engine(
 
 	/* Opens the request; the timeline's initial breadcrumb moves the seqno by 2. */
 	d->tl_seqno[index] += I915_DEFAULTS_SEQNO_STEP;
-	error = drv_i915_request_create(rq,
+	error = drv_i915_request_open(rq,
 					ce,
 					d->tl_seqno[index],
 					(uint32_t)d->tl_page[index]->ggtt_offset,
@@ -313,16 +316,13 @@ i915_defaults_submit_engine(
 	}
 
 	/* Writes the engine's context workarounds. */
-	error = drv_i915_emit_ctx_wa(rq, &gi->ctx_wa[index], mmio);
+	error = drv_i915_emit_context_wa(rq, &gi->ctx_wa[index], mmio);
 	if (error != 0) {
 		i915_defaults_fail(d, error, "intel_engine_emit_ctx_wa");
 		return error;
 	}
 
-	/*
-	 * intel_renderstate_emit(): the Gen9 render engine runs the null render
-	 * state; Gen12 writes nothing.
-	 */
+	/* The Gen9 render engine runs the null render state; Gen12 writes nothing. */
 	if (ge->info->graphics_ver == 9 && ge->info->class == I915_RENDER_CLASS) {
 		error = i915_defaults_emit_null_state(d, gm, rq, index);
 		if (error != 0) {
@@ -332,7 +332,7 @@ i915_defaults_submit_engine(
 	}
 
 	/* Closes the request. */
-	error = drv_i915_request_add(rq);
+	error = drv_i915_request_close(rq);
 	if (error != 0) {
 		i915_defaults_fail(d, error, "i915_request_add");
 		return error;
@@ -401,7 +401,7 @@ i915_defaults_poll(
 		el = &es->el[index];
 
 		/* Applies what the engine reported; any CSB error fails the recording. */
-		(void)drv_i915_execlists_process_csb(ge, el, mmio);
+		(void)drv_i915_execlists_drain_csb(ge, el, mmio);
 		if (el->csb_errors != 0U)
 			i915_defaults_fail(d, EIO, "execlists CSB error");
 
@@ -513,13 +513,13 @@ i915_defaults_switch_to_kernel(
 	seqno = es->kernel_tl_seqno[index];
 
 	/* Writes the request; there are no active barriers pending to add. */
-	error = drv_i915_request_create(krq,
+	error = drv_i915_request_open(krq,
 					&es->kernel_ce[index],
 					seqno,
 					(uint32_t)ge->hwsp_ggtt + I915_GT_HWS_SEQNO_ADDR,
 					&ge->hwsp[I915_GT_HWS_SEQNO_ADDR / 4U]);
 	if (error == 0)
-		error = drv_i915_request_add(krq);
+		error = drv_i915_request_close(krq);
 
 	/*
 	 * "Check again on the next retirement": the engine counts as parked
@@ -611,11 +611,11 @@ i915_defaults_release_contexts(
 
 /*
  * Writes the Gen9 null render state into a page and starts it from the
- * record request (render_state_setup() and intel_renderstate_emit()).
+ * record request.
  *
  * The four relocated dwords get the page's GGTT address added; their upper
  * dwords stay zero because the GGTT is below 4 GiB.  The batch is started
- * secure, in the GGTT, with arbitration on around it (gen8_emit_bb_start()).
+ * secure, in the GGTT, with arbitration on around it.
  * Without the pooled EUs of the LP parts there is no auxiliary batch.
  * Returns 0, ENOMEM, EINVAL for a table that does not fit, or the ring's
  * refusal.
@@ -676,7 +676,7 @@ i915_defaults_emit_null_state(
 	drv_i915_gt_clflush(batch, I915_DEFAULTS_NULL_STATE_BYTES);
 
 	/* Reserves the batch start. */
-	cs = drv_i915_ring_begin(rq, 6U);
+	cs = drv_i915_ring_reserve(rq, 6U);
 	if (cs == NULL)
 		return rq->error;
 
@@ -687,7 +687,7 @@ i915_defaults_emit_null_state(
 	*cs++ = 0U;
 	*cs++ = I915_CMD_MI_ARB_ON_OFF;
 	*cs++ = I915_CMD_MI_NOOP;
-	drv_i915_ring_advance(rq, cs);
+	drv_i915_ring_commit(rq, cs);
 
 	/* Succeeded: the null state runs before the record request's breadcrumb. */
 	return 0;

@@ -10,13 +10,12 @@
  *
  * An engine is given work by writing context descriptors into its ELSQ and
  * loading the queue; the engine reports what it did with them in the context
- * status buffer (CSB), a ring of entries in the engine's status page.  This
- * follows the reference's intel_execlists_submission.c for Gen12:
+ * status buffer (CSB), a ring of entries in the engine's status page:
  *
- *   - schedule-in gives the context a software context id (its tag) and puts
+ *   - a submission gives the context a software context id (its tag) and puts
  *     it with the engine's class and instance into the descriptor's upper
  *     dword;
- *   - updating the context writes the request's tail into the image and
+ *   - preparing the context writes the request's tail into the image and
  *     forces a full restore when the tail did not advance;
  *   - both ELSQ ports are written, the highest first, each as lower then
  *     upper dword, and then the queue is loaded;
@@ -26,16 +25,13 @@
  *   - an entry that still reads all-ones may not be globally visible yet: it
  *     is polled for 10 us and then read from the MMIO copy of the buffer.
  *
- * The reference runs the CSB processing from the CS interrupt with a
- * priority queue behind it.  Here one request is in flight per engine and
- * the processing runs synchronously -- which is what the reference does on
- * its wait path, where intel_engine_flush_submission() runs the tasklet body
- * inline.  The interrupt still arrives and is still acknowledged; it is not
- * what drives the processing.
+ * One request is in flight per engine and the CSB is walked synchronously
+ * by the thread that waits for it.  The interrupt still arrives and is
+ * still acknowledged; it wakes the waiter but does not walk the CSB.
  *
  * This file also holds the execlists side of the engine lifecycle: the
- * submission registers and CSB pointers, enable_execlists() at resume, the
- * CSB pointer reset, and the reset preparation.
+ * submission registers and CSB pointers, the enable at resume, the CSB
+ * restart, and the quiesce before a reset.
  */
 
 #ifndef DRIVERS_GPU_I915_SUBMIT_H
@@ -104,12 +100,12 @@ struct i915_execlists {
 };
 
 void drv_i915_execlists_init(struct i915_execlists *el);
-void drv_i915_execlists_submission_setup(struct i915_gt_engine *ge);
+void drv_i915_execlists_bind(struct i915_gt_engine *ge);
 void drv_i915_execlists_enable(struct i915_gt_engine *ge, struct i915_mmio *mmio);
-void drv_i915_execlists_reset_csb_pointers(struct i915_gt_engine *ge, struct i915_mmio *mmio);
-void drv_i915_execlists_reset_prepare(struct i915_gt_engine *ge, struct i915_mmio *mmio);
-void drv_i915_execlists_reset_rewind(struct i915_gt_engine *ge, struct i915_execlists *el, struct i915_mmio *mmio);
+void drv_i915_execlists_csb_restart(struct i915_gt_engine *ge, struct i915_mmio *mmio);
+void drv_i915_execlists_quiesce(struct i915_gt_engine *ge, struct i915_mmio *mmio);
+void drv_i915_execlists_abandon(struct i915_gt_engine *ge, struct i915_execlists *el, struct i915_mmio *mmio);
 int drv_i915_execlists_submit(struct i915_gt_engine *ge, struct i915_execlists *el, struct i915_mmio *mmio, struct i915_gt_request *rq);
-struct i915_gt_request *drv_i915_execlists_process_csb(struct i915_gt_engine *ge, struct i915_execlists *el, struct i915_mmio *mmio);
+struct i915_gt_request *drv_i915_execlists_drain_csb(struct i915_gt_engine *ge, struct i915_execlists *el, struct i915_mmio *mmio);
 
 #endif
