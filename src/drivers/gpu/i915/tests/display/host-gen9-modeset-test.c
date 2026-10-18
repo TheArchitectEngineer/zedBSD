@@ -22,11 +22,17 @@
 #include "host-test.h"
 #include "gen9-fake-hw.h"
 
-#include "../../display/gen9-ddc.h"
-#include "../../display/gen9-link.h"
-#include "../../display/gen9-mode.h"
-#include "../../display/gen9-modeset.h"
-#include "../../device-info.h"
+#include "../../display/xd-aux.h"
+#include "../../display/xd-clock.h"
+#include "../../display/xd-dbuf.h"
+#include "../../display/xd-ddi.h"
+#include "../../display/xd-dp.h"
+#include "../../display/xd-gmbus.h"
+#include "../../display/xd-hpd.h"
+#include "../../display/xd-output.h"
+#include "../../display/xd-pipe.h"
+#include "../../display/xd-power.h"
+#include "../../display/xd9-outputs.h"
 #include "../../intel/display-regs-gen9.h"
 #include "../../intel/display-regs-gen9-modeset.h"
 
@@ -35,7 +41,8 @@
 #include <stdio.h>
 #include <string.h>
 
-static void i915_host_dp_port(struct i915_skl_dp_port *dp, unsigned port);
+static const struct i915_xd_platform *i915_host_platform(unsigned kind, unsigned power_class);
+static void i915_host_dp_port(struct i915_xd9_dp_port *dp, unsigned port);
 static void i915_host_check_ddc(void);
 static void i915_host_check_power(void);
 static void i915_host_check_dp_output(void);
@@ -85,13 +92,14 @@ main(
 	return 0;
 }
 
-/* Checks the AUX packing, DPCD reads and writes with deferrals, a missing sink, and both EDID paths. */
+/* Checks DPCD reads and writes with deferrals, a missing sink, and both EDID paths. */
 static void
 i915_host_check_ddc(void)
 {
+	struct i915_xd_gmbus gmbus;
+	struct i915_xd_aux aux;
 	uint8_t bytes[16];
 	uint8_t edid[256];
-	uint32_t word;
 	int error;
 
 	/* A DP sink on B and an HDMI sink on C. */
@@ -99,90 +107,88 @@ i915_host_check_ddc(void)
 	i915_gen9_fake_add_dp_sink(I915_SKL_PORT_B, 1U);
 	i915_gen9_fake_add_hdmi_sink(I915_SKL_PORT_C);
 
-	/* The packing, the first byte highest. */
-	bytes[0] = 0x12U;
-	bytes[1] = 0x34U;
-	bytes[2] = 0x56U;
-	word = drv_i915_skl_aux_pack(bytes, 3U);
-	i915_host_check(word == 0x12345600U, "aux pack three bytes");
-	drv_i915_skl_aux_unpack(0xa1b2c3d4U, bytes, 2U);
-	i915_host_check(bytes[0] == 0xa1U && bytes[1] == 0xb2U, "aux unpack two bytes");
-
 	/* The receiver capabilities, after two deferrals of the wake-up read. */
 	i915_gen9_fake.sinks[I915_SKL_PORT_B].defer_left = 2U;
 	memset(bytes, 0, sizeof(bytes));
-	error = drv_i915_skl_dpcd_read(&i915_gen9_fake_io, I915_SKL_PORT_B, 0U, bytes, I915_DPCD_RECEIVER_CAP_SIZE);
+	(void)drv_i915_xd_aux_init(&aux, I915_SKL_PORT_B);
+	error = drv_i915_xd_dpcd_read(&aux, i915_gen9_fake_xd(), 0U, bytes, I915_DPCD_RECEIVER_CAP_SIZE);
 	i915_host_check(error == 0 && bytes[0] == 0x12U && bytes[1] == 0x14U && bytes[2] == 0xc4U, "dpcd read after deferrals");
 	i915_host_check(i915_gen9_fake.aux_transfers == 4U, "dpcd read took the wake-up read's three transfers and its own");
 
 	/* A write. */
 	bytes[0] = 0x02U;
-	error = drv_i915_skl_dpcd_write(&i915_gen9_fake_io, I915_SKL_PORT_B, I915_DPCD_SET_POWER, bytes, 1U);
+	error = drv_i915_xd_dpcd_write(&aux, i915_gen9_fake_xd(), I915_DPCD_SET_POWER, bytes, 1U);
 	i915_host_check(error == 0 && i915_gen9_fake.sinks[I915_SKL_PORT_B].dpcd[I915_DPCD_SET_POWER] == 0x02U, "dpcd write");
 
 	/* No sink on port D: the wake-up read's 32 messages of five timeouts each. */
 	i915_gen9_fake.aux_transfers = 0U;
-	error = drv_i915_skl_dpcd_read(&i915_gen9_fake_io, I915_SKL_PORT_D, 0U, bytes, 1U);
+	(void)drv_i915_xd_aux_init(&aux, I915_SKL_PORT_D);
+	error = drv_i915_xd_dpcd_read(&aux, i915_gen9_fake_xd(), 0U, bytes, 1U);
 	i915_host_check(error == ETIMEDOUT && i915_gen9_fake.aux_transfers == 160U, "dpcd read times out 32 messages of five transfers on an empty port");
 
 	/* The EDID over AUX, both blocks. */
 	memset(edid, 0, sizeof(edid));
-	error = drv_i915_skl_aux_edid(&i915_gen9_fake_io, I915_SKL_PORT_B, edid, 2U);
+	(void)drv_i915_xd_aux_init(&aux, I915_SKL_PORT_B);
+	error = drv_i915_xd_aux_edid_blocks(&aux, i915_gen9_fake_xd(), edid, 2U);
 	i915_host_check(error == 0 && memcmp(edid, i915_gen9_fake.sinks[I915_SKL_PORT_B].edid, sizeof(edid)) == 0, "aux edid two blocks");
 
 	/* The EDID over the GMBUS of port C, both blocks, the clock gating back. */
 	memset(edid, 0, sizeof(edid));
-	error = drv_i915_skl_gmbus_edid(&i915_gen9_fake_io, drv_i915_skl_gmbus_pin(I915_SKL_PORT_C), edid, 2U);
+	drv_i915_xd_gmbus_init(&gmbus);
+	error = drv_i915_xd9_gmbus_edid_blocks(&gmbus, i915_gen9_fake_xd(), drv_i915_xd9_gmbus_pin(I915_SKL_PORT_C), edid, 2U);
 	i915_host_check(error == 0 && memcmp(edid, i915_gen9_fake.sinks[I915_SKL_PORT_C].edid, sizeof(edid)) == 0, "gmbus edid two blocks");
 	i915_host_check((i915_gen9_fake_get(I915_SKL_SOUTH_DSPCLK_GATE_D) & I915_SKL_PCH_GMBUSUNIT_CLOCK_GATE_DISABLE) == 0U, "gmbus clock gating restored");
 	i915_host_check(i915_gen9_fake_written_at(I915_SKL_GMBUS1, I915_SKL_GMBUS_CYCLE_STOP, I915_SKL_GMBUS_CYCLE_STOP) >= 0, "gmbus ends with a stop");
 
 	/* Nothing on port D's pin: a NAK, cleared. */
 	i915_gen9_fake.log_count = 0U;
-	error = drv_i915_skl_gmbus_edid(&i915_gen9_fake_io, drv_i915_skl_gmbus_pin(I915_SKL_PORT_D), edid, 1U);
+	drv_i915_xd_gmbus_init(&gmbus);
+	error = drv_i915_xd9_gmbus_edid_blocks(&gmbus, i915_gen9_fake_xd(), drv_i915_xd9_gmbus_pin(I915_SKL_PORT_D), edid, 1U);
 	i915_host_check(error == ENXIO, "gmbus NAK on an empty pin");
 	i915_host_check(i915_gen9_fake_written_at(I915_SKL_GMBUS1, I915_SKL_GMBUS_SW_CLR_INT, I915_SKL_GMBUS_SW_CLR_INT) >= 0, "gmbus NAK cleared");
-	i915_host_check(drv_i915_skl_gmbus_pin(I915_SKL_PORT_B) == 5U && drv_i915_skl_gmbus_pin(I915_SKL_PORT_A) == 0U, "gmbus pins");
+	i915_host_check(drv_i915_xd9_gmbus_pin(I915_SKL_PORT_B) == 5U && drv_i915_xd9_gmbus_pin(I915_SKL_PORT_A) == 0U, "gmbus pins");
 }
 
 /* Checks power well 2, a DDI IO well, and a DPLL's start and stop. */
 static void
 i915_host_check_power(void)
 {
-	struct i915_skl_dpll_words words;
+	const struct i915_xd_platform *platform;
+	struct i915_xd9_dpll_words words;
 	uint32_t ctrl1;
 	unsigned writes;
 	int error;
 
 	/* Nothing attached. */
 	i915_gen9_fake_reset();
+	platform = i915_host_platform(I915_XD_KIND_KBL, I915_XD_POWER_CLASS_H);
 
 	/* Power well 2, then again with nothing written. */
-	error = drv_i915_skl_pw2_on(&i915_gen9_fake_io);
+	error = drv_i915_xd9_power_pw2_on(i915_gen9_fake_xd(), platform);
 	i915_host_check(error == 0 && (i915_gen9_fake_get(I915_SKL_PWR_WELL_CTL2) & I915_SKL_PW_2_STATE) != 0U, "pw2 on");
 	writes = i915_gen9_fake.log_count;
-	error = drv_i915_skl_pw2_on(&i915_gen9_fake_io);
+	error = drv_i915_xd9_power_pw2_on(i915_gen9_fake_xd(), platform);
 	i915_host_check(error == 0 && i915_gen9_fake.log_count == writes, "pw2 already on writes nothing");
 
 	/* A DDI IO well. */
-	error = drv_i915_skl_ddi_io_power(&i915_gen9_fake_io, I915_SKL_PORT_C, 1);
+	error = drv_i915_xd9_power_ddi_io(i915_gen9_fake_xd(), platform, I915_SKL_PORT_C, 1);
 	i915_host_check(error == 0 && (i915_gen9_fake_get(I915_SKL_PWR_WELL_CTL2) & I915_SKL_PW_DDI_STATE(I915_SKL_PORT_C)) != 0U, "ddi io well on");
-	(void)drv_i915_skl_ddi_io_power(&i915_gen9_fake_io, I915_SKL_PORT_C, 0);
+	(void)drv_i915_xd9_power_ddi_io(i915_gen9_fake_xd(), platform, I915_SKL_PORT_C, 0);
 	i915_host_check((i915_gen9_fake_get(I915_SKL_PWR_WELL_CTL2) & I915_SKL_PW_DDI_REQUEST(I915_SKL_PORT_C)) == 0U, "ddi io well request dropped");
 
 	/* DPLL2 at 148.5 MHz HDMI, DPLL0's field kept. */
 	i915_gen9_fake_set(I915_SKL_DPLL_CTRL1, 0x0bU);
-	(void)drv_i915_skl_dpll_hdmi(148500U, I915_SKL_REF_KHZ, &words);
-	error = drv_i915_skl_dpll_on(&i915_gen9_fake_io, 2U, &words);
+	(void)drv_i915_xd9_dpll_hdmi_words(148500U, &words);
+	error = drv_i915_xd9_dpll_enable(i915_gen9_fake_xd(), platform, 2U, &words);
 	ctrl1 = i915_gen9_fake_get(I915_SKL_DPLL_CTRL1);
 	i915_host_check(error == 0 && ctrl1 == (0x0bU | (0x21U << 12)), "dpll2 CTRL1 field");
 	i915_host_check(i915_gen9_fake_get(0x6c048U) == 0x80400173U && i915_gen9_fake_get(0x6c04cU) == 0x3a5U, "dpll2 CFGCR words");
 	i915_host_check((i915_gen9_fake_get(I915_SKL_DPLL2_CTL) & I915_SKL_DPLL_ENABLE) != 0U, "dpll2 enabled");
-	drv_i915_skl_dpll_off(&i915_gen9_fake_io, 2U);
+	drv_i915_xd9_dpll_disable(i915_gen9_fake_xd(), platform, 2U);
 	i915_host_check((i915_gen9_fake_get(I915_SKL_DPLL2_CTL) & I915_SKL_DPLL_ENABLE) == 0U, "dpll2 stopped");
 
 	/* DPLL0 is refused. */
-	error = drv_i915_skl_dpll_on(&i915_gen9_fake_io, 0U, &words);
+	error = drv_i915_xd9_dpll_enable(i915_gen9_fake_xd(), platform, 0U, &words);
 	i915_host_check(error == EINVAL, "dpll0 refused");
 }
 
@@ -190,8 +196,10 @@ i915_host_check_power(void)
 static void
 i915_host_check_dp_output(void)
 {
-	struct i915_skl_output_config config;
-	struct i915_skl_dp_port dp;
+	const struct i915_xd_platform *platform;
+	struct i915_xd_dp_choice choice;
+	struct i915_xd9_output config;
+	struct i915_xd9_dp_port dp;
 	const struct i915_gen9_fake_sink *sink;
 	uint32_t value;
 	int ctrl1_at;
@@ -210,29 +218,29 @@ i915_host_check_dp_output(void)
 	sink = &i915_gen9_fake.sinks[I915_SKL_PORT_B];
 
 	/* The configuration of 1080p on RBR x4. */
+	platform = i915_host_platform(I915_XD_KIND_KBL, I915_XD_POWER_CLASS_U);
 	memset(&config, 0, sizeof(config));
-	config.type = I915_SKL_OUTPUT_DP;
-	config.port = I915_SKL_PORT_B;
+	config.ddi = I915_SKL_PORT_B;
 	config.pipe = 1U;
 	config.dpll = 1U;
-	(void)drv_i915_skl_pick_mode(sink->edid, 128U, 540000U, &config.mode);
-	(void)drv_i915_skl_dp_link(I915_SKL_DP_HBR2_KHZ, 4U, (uint32_t)config.mode.clock_khz, &config.link);
-	(void)drv_i915_skl_dpll_dp(config.link.port_khz, &config.dpll_words);
-	config.sku = I915_SKL_SKU_ULT;
-	config.platform = I915_PLATFORM_KABYLAKE;
+	(void)drv_i915_xd9_pick_mode(sink->edid, 128U, 540000U, &config.mode);
+	(void)drv_i915_xd9_dp_link(540000U, 4U, (uint32_t)config.mode.clock_khz, &choice, &config.m_n);
+	config.rate_khz = choice.rate_khz;
+	config.lanes = choice.lanes;
+	(void)drv_i915_xd9_dpll_dp_words(config.rate_khz, &config.dpll_words);
 	config.surf = 0x01000000U;
 	config.stride_units = 1920U * 4U / 64U;
 	i915_host_dp_port(&dp, I915_SKL_PORT_B);
 
 	/* The output on. */
-	error = drv_i915_skl_output_on(&i915_gen9_fake_io, &config, &dp);
+	error = drv_i915_xd9_output_on(i915_gen9_fake_xd(), platform, &config, &dp);
 	i915_host_check(error == 0, "dp output on");
 
 	/* The sink: RBR, four lanes with enhanced framing, training off, D0, 8b/10b. */
 	i915_host_check(sink->dpcd[I915_DPCD_LINK_BW_SET] == I915_DPCD_LINK_BW_1_62 && sink->dpcd[I915_DPCD_LANE_COUNT_SET] == 0x84U, "dp sink link set");
 	i915_host_check(sink->dpcd[I915_DPCD_TRAINING_PATTERN_SET] == 0U && sink->dpcd[I915_DPCD_SET_POWER] == I915_DPCD_SET_POWER_D0, "dp sink trained and on");
 	i915_host_check(sink->dpcd[I915_DPCD_MAIN_LINK_CHANNEL_CODING_SET] == I915_DPCD_SET_ANSI_8B10B && sink->dpcd[I915_DPCD_TRAINING_LANE0_SET + 3U] == 0x01U, "dp sink coding and lane 3 swing 1");
-	i915_host_check((dp.train_set & 0x3U) == 1U, "dp trained at the swing the sink asked for");
+	i915_host_check((dp.set & 0x3U) == 1U, "dp trained at the swing the sink asked for");
 
 	/* The port: entry 4 (swing 1), on, four lanes; the transport sending pixels with enhanced framing. */
 	value = i915_gen9_fake_get(I915_SKL_DDI_BUF_CTL_A + 0x100U);
@@ -274,7 +282,7 @@ i915_host_check_dp_output(void)
 	i915_host_check(function_at < enable_at && enable_at < control_at && control_at < surface_at, "dp order up to the surface");
 
 	/* The way back. */
-	drv_i915_skl_output_off(&i915_gen9_fake_io, &config, &dp);
+	drv_i915_xd9_output_off(i915_gen9_fake_xd(), platform, &config, &dp);
 	i915_host_check(i915_gen9_fake_get(I915_SKL_PLANE_CTL_1_A + 0x1000U) == 0U && i915_gen9_fake_get(I915_SKL_TRANSCONF_A + 0x1000U) == 0U, "dp off plane and transcoder");
 	i915_host_check((i915_gen9_fake_get(I915_SKL_TRANS_DDI_FUNC_CTL_A + 0x1000U) & (I915_SKL_TRANS_DDI_FUNC_ENABLE | (7U << 28))) == 0U, "dp off DDI function");
 	i915_host_check(sink->dpcd[I915_DPCD_SET_POWER] == I915_DPCD_SET_POWER_D3 && i915_gen9_fake_get(I915_SKL_TRANS_CLK_SEL_A + 4U) == 0U, "dp off sink D3 and clock");
@@ -288,8 +296,10 @@ i915_host_check_dp_output(void)
 static void
 i915_host_check_dp_failure(void)
 {
-	struct i915_skl_output_config config;
-	struct i915_skl_dp_port dp;
+	const struct i915_xd_platform *platform;
+	struct i915_xd_dp_choice choice;
+	struct i915_xd9_output config;
+	struct i915_xd9_dp_port dp;
 	int error;
 
 	/* A DP sink on D that recovers its clock only at swing 4. */
@@ -297,20 +307,20 @@ i915_host_check_dp_failure(void)
 	i915_gen9_fake_add_dp_sink(I915_SKL_PORT_D, 4U);
 
 	/* 1024x768 on RBR x1, which cannot train. */
+	platform = i915_host_platform(I915_XD_KIND_SKL, I915_XD_POWER_CLASS_H);
 	memset(&config, 0, sizeof(config));
-	config.type = I915_SKL_OUTPUT_DP;
-	config.port = I915_SKL_PORT_D;
+	config.ddi = I915_SKL_PORT_D;
 	config.pipe = 2U;
 	config.dpll = 3U;
-	(void)drv_i915_skl_pick_mode(NULL, 0U, 540000U, &config.mode);
-	(void)drv_i915_skl_dp_link(I915_SKL_DP_RBR_KHZ, 4U, (uint32_t)config.mode.clock_khz, &config.link);
-	(void)drv_i915_skl_dpll_dp(config.link.port_khz, &config.dpll_words);
-	config.sku = I915_SKL_SKU_H;
-	config.platform = I915_PLATFORM_SKYLAKE;
+	(void)drv_i915_xd9_pick_mode(NULL, 0U, 540000U, &config.mode);
+	(void)drv_i915_xd9_dp_link(162000U, 4U, (uint32_t)config.mode.clock_khz, &choice, &config.m_n);
+	config.rate_khz = choice.rate_khz;
+	config.lanes = choice.lanes;
+	(void)drv_i915_xd9_dpll_dp_words(config.rate_khz, &config.dpll_words);
 	i915_host_dp_port(&dp, I915_SKL_PORT_D);
 
 	/* The training fails and everything is stopped again. */
-	error = drv_i915_skl_output_on(&i915_gen9_fake_io, &config, &dp);
+	error = drv_i915_xd9_output_on(i915_gen9_fake_xd(), platform, &config, &dp);
 	i915_host_check(error == EIO, "dp failed training reports EIO");
 	i915_host_check((i915_gen9_fake_get(I915_SKL_DDI_BUF_CTL_A + 0x300U) & I915_SKL_DDI_BUF_ENABLE) == 0U, "dp failed buffer off");
 	i915_host_check((i915_gen9_fake_get(I915_SKL_DPLL3_CTL) & I915_SKL_DPLL_ENABLE) == 0U, "dp failed dpll3 off");
@@ -322,7 +332,10 @@ i915_host_check_dp_failure(void)
 static void
 i915_host_check_hdmi_output(void)
 {
-	struct i915_skl_output_config config;
+	const struct i915_xd_platform *platform;
+	const struct i915_xd9_buf_trans *table;
+	struct i915_xd9_output config;
+	unsigned count;
 	uint32_t trans;
 	uint32_t value;
 	int error;
@@ -332,21 +345,22 @@ i915_host_check_hdmi_output(void)
 	i915_gen9_fake_add_hdmi_sink(I915_SKL_PORT_C);
 
 	/* The configuration. */
+	platform = i915_host_platform(I915_XD_KIND_KBL, I915_XD_POWER_CLASS_U);
 	memset(&config, 0, sizeof(config));
-	config.type = I915_SKL_OUTPUT_HDMI;
-	config.port = I915_SKL_PORT_C;
+	config.hdmi = 1;
+	config.ddi = I915_SKL_PORT_C;
 	config.pipe = 2U;
 	config.dpll = 2U;
-	(void)drv_i915_skl_pick_mode(i915_gen9_fake.sinks[I915_SKL_PORT_C].edid, 128U, 300000U, &config.mode);
-	(void)drv_i915_skl_dpll_hdmi((uint32_t)config.mode.clock_khz, I915_SKL_REF_KHZ, &config.dpll_words);
-	config.sku = I915_SKL_SKU_ULT;
-	config.platform = I915_PLATFORM_KABYLAKE;
+	(void)drv_i915_xd9_pick_mode(i915_gen9_fake.sinks[I915_SKL_PORT_C].edid, 128U, 300000U, &config.mode);
+	(void)drv_i915_xd9_dpll_hdmi_words((uint32_t)config.mode.clock_khz, &config.dpll_words);
+	table = drv_i915_xd9_ddi_buf_table(platform, I915_XD9_OUTPUT_HDMI, I915_SKL_PORT_C, &count);
+	config.hdmi_row = &table[drv_i915_xd9_ddi_hdmi_row(platform)];
 	config.surf = 0x02000000U;
 	config.stride_units = 120U;
 	config.rgbx = 1;
 
 	/* The output on. */
-	error = drv_i915_skl_output_on(&i915_gen9_fake_io, &config, NULL);
+	error = drv_i915_xd9_output_on(i915_gen9_fake_xd(), platform, &config, NULL);
 	i915_host_check(error == 0, "hdmi output on");
 
 	/* The buffer: entry 9 holds the table's entry 8, its boost, on. */
@@ -374,7 +388,7 @@ static void
 i915_host_check_watermarks(void)
 {
 	static const uint16_t latency[8] = { 2U, 4U, 10U, 18U, 28U, 40U, 60U, 90U };
-	struct i915_skl_pipe_wm pipes[3];
+	struct i915_xd9_pipe_plan pipes[3];
 
 	/* Nothing attached. */
 	i915_gen9_fake_reset();
@@ -386,8 +400,8 @@ i915_host_check_watermarks(void)
 	pipes[1].htotal = 2200U;
 	pipes[1].pixel_khz = 148500U;
 	pipes[1].plane_width = 1920U;
-	(void)drv_i915_skl_wm_compute(pipes, latency);
-	drv_i915_skl_write_pipe_wm(&i915_gen9_fake_io, 1U, &pipes[1]);
+	(void)drv_i915_xd9_dbuf_plan(i915_host_platform(I915_XD_KIND_KBL, I915_XD_POWER_CLASS_H), latency, pipes, 3U);
+	drv_i915_xd9_wm_write_pipe(i915_gen9_fake_xd(), 1U, &pipes[1]);
 
 	/* The plane's levels 0 and 7, the DDB, the cursor's DDB, the line time. */
 	i915_host_check(i915_gen9_fake_get(I915_SKL_PLANE_WM_1_A_0 + 0x1000U) == (0x80000000U | 4U), "wm level 0 word");
@@ -408,37 +422,49 @@ i915_host_check_hotplug(void)
 	i915_gen9_fake_reset();
 
 	/* The enables. */
-	drv_i915_skl_hotplug_enable(&i915_gen9_fake_io);
+	drv_i915_xd9_hpd_enable(i915_gen9_fake_xd());
 	i915_host_check(i915_gen9_fake_get(I915_SKL_PCH_PORT_HOTPLUG) == ((1U << 4) | (1U << 12) | (1U << 20)), "hotplug enables");
 
 	/* Ports B and D on the board, a sink on C. */
 	i915_gen9_fake_set(I915_SKL_SFUSE_STRAP, I915_SKL_SFUSE_STRAP_DDIB_DETECTED | I915_SKL_SFUSE_STRAP_DDID_DETECTED);
 	i915_gen9_fake_set(I915_SKL_SDEISR, I915_SKL_SDE_PORTC_HOTPLUG);
-	i915_host_check(drv_i915_skl_ports_present(&i915_gen9_fake_io) == ((1U << 1) | (1U << 3)), "ports present");
-	i915_host_check(drv_i915_skl_ports_connected(&i915_gen9_fake_io) == (1U << 2), "ports connected");
+	i915_host_check(drv_i915_xd9_hpd_present(i915_gen9_fake_xd()) == ((1U << 1) | (1U << 3)), "ports present");
+	i915_host_check(drv_i915_xd9_hpd_connected(i915_gen9_fake_xd()) == (1U << 2), "ports connected");
 
 	/* A running pipe's blank comes; a stopped one's does not. */
 	i915_gen9_fake.frames_run = 1;
-	error = drv_i915_skl_wait_vblank(&i915_gen9_fake_io, 1U);
+	error = drv_i915_xd9_pipe_wait_vblank(i915_gen9_fake_xd(), 1U);
 	i915_host_check(error == 0, "vblank of a running pipe");
 	i915_gen9_fake.frames_run = 0;
-	error = drv_i915_skl_wait_vblank(&i915_gen9_fake_io, 1U);
+	error = drv_i915_xd9_pipe_wait_vblank(i915_gen9_fake_xd(), 1U);
 	i915_host_check(error == ETIMEDOUT, "vblank of a stopped pipe times out");
 }
 
 
-/* Fills a DP port from its sink's receiver capabilities and the part's DP table. */
+/* Reports the display 9 row of a kind and a power class. */
+static const struct i915_xd_platform *
+i915_host_platform(
+	unsigned kind,
+	unsigned power_class)
+{
+	/* Succeeded: the row. */
+	return drv_i915_xd_platform_display9_class(kind, power_class);
+}
+
+/* Fills a DisplayPort port from its sink's capabilities and the Kaby Lake U table. */
 static void
 i915_host_dp_port(
-	struct i915_skl_dp_port *dp,
+	struct i915_xd9_dp_port *dp,
 	unsigned port)
 {
 	memset(dp, 0, sizeof(*dp));
-	dp->port = port;
+	(void)drv_i915_xd_aux_init(&dp->aux, port);
+	dp->io = i915_gen9_fake_xd();
+	dp->ddi = port;
 
 	/* The capabilities, as the node reads them. */
-	(void)drv_i915_skl_dpcd_read(&i915_gen9_fake_io, port, 0U, dp->dpcd, sizeof(dp->dpcd));
+	(void)drv_i915_xd_dpcd_read(&dp->aux, dp->io, 0U, dp->caps, sizeof(dp->caps));
 
 	/* Succeeded: the table. */
-	dp->trans = drv_i915_skl_buf_trans(I915_SKL_SKU_ULT, I915_PLATFORM_KABYLAKE, I915_SKL_OUTPUT_DP, port, &dp->trans_count);
+	dp->table = drv_i915_xd9_ddi_buf_table(i915_host_platform(I915_XD_KIND_KBL, I915_XD_POWER_CLASS_U), I915_XD9_OUTPUT_DP, port, &dp->rows);
 }
