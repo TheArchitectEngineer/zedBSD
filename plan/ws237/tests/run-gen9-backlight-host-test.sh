@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws237-p003: host test of the Gen9 backlight's arithmetic (src/drivers/gpu/i915/display/gen9-backlight.c): the decode
+# ws237-p003: host test of the Gen9 backlight's arithmetic (src/drivers/gpu/i915/display/xd-panel.c): the decode
 # of the PCH PWM in both layouts and the brightness to duty mapping both ways, ASan/UBSan.
 #   sh plan/ws237/tests/run-gen9-backlight-host-test.sh [OUT]   (default build/ws237-host/backlight)
 # Built with the display host library (every display source as production, host-kernel.c's stand-ins); the node

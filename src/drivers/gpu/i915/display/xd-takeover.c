@@ -1560,7 +1560,7 @@ i915_xd9_fw_decode_refresh(
 	if (port_khz == 0U)
 		return;
 
-	/* The port and the DPLL, for the external outputs (gen9-outputs.c). */
+	/* The port and the DPLL, for the external outputs (xd9-outputs.c). */
 	readout->port = port;
 	readout->dpll = dpll;
 

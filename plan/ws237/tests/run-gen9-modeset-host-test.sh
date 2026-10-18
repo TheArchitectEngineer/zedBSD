@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws237-p004: host test of the Gen9 mode set register sequences (display/gen9-ddc.c, gen9-link.c, gen9-modeset.c) on a
+# ws237-p004: host test of the Gen9 mode set register sequences (display/xd-aux.c, xd-gmbus.c, xd-ddi.c, xd-output.c, xd-pipe.c, xd-dbuf.c, xd-hpd.c) on a
 # hardware model: AUX/DPCD/EDID, GMBUS, power wells, DPLLs, DP training, DP and HDMI output on/off, watermarks, ASan/UBSan.
 #   sh plan/ws237/tests/run-gen9-modeset-host-test.sh [OUT]   (default build/ws237-host/modeset)
 # Built with the display host library (every display source as production, host-kernel.c's stand-ins); the node

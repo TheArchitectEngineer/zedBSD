@@ -25,4 +25,4 @@ Status: in-progress（2026-10-18 q1253-i02、P1。cleared は Q1）
 - golden: modeset 357・outputs 1323・backlight 17 行は前と同じ。table は 95,619 → 80,571 行: 消えた関数の行だけが減った（train_delay 2,048・train 12,000・wm_word 500・ddb_word 500。訓練の判定と WM/DDB の語は xd の内部で、それぞれ xd の host 試験と modeset の書き込みの golden が受ける）。他の 80,571 行は一致（乱数の消費は残して後の行を比べられるようにした）。table を記録し直した。
 - gen9 host: modeset 77（AUX の pack の 2 check を外した。xd-aux の試験が受ける）・outputs 29・golden 14・flip 48・backlight 21・mode 61（train_delay・adjust_train・WM の語の 10 check を外した）、0 failures。xd9 host 24 checks 0 failures。
 - `kbuild.sh p014`: 3 組 rc 0、warning 0。
-- 未: gen9-*.c/h 22 個と display-regs-gen9*.h 2 個の削除は Q1 に依頼（host の lib が display/*.c を glob するので、削除まで gen9-display.c が host build を止める）。削除の後に host 試験を流し直す。
+- Q1 が削除（main 0360c46b6: gen9-*.c/h 22 個、display-regs-gen9*.h 2 個、ws237 の語の試験 4 個と config-amd64-gen9-flip.mk）。main を取り込んだ c651ca263 の上で流し直し（2026-10-18）: golden 4 つ same（table 80,571）、gen9 host 5 本（flip 48・backlight 21・mode 61・modeset 77・outputs 29）0 failures、xd9 host・xd host all passed、`kbuild.sh p014e` 3 組 warning 0。古い file 名の comment（xd-takeover.c、試験 2 本、plan/ws237/tests/run-gen9-*-host-test.sh の注記）を直した。
