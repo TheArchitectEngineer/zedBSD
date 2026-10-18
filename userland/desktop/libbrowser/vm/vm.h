@@ -776,6 +776,7 @@ int vm_to_object(struct vm_realm *realm, vm_value value, vm_value *object);
 int vm_to_property_descriptor(struct vm_realm *realm, vm_value value, struct vm_descriptor *descriptor);
 int vm_from_property_descriptor(struct vm_realm *realm, const struct vm_descriptor *descriptor, vm_value *result);
 void vm_complete_property_descriptor(struct vm_descriptor *descriptor);
+int vm_get_own_property(struct vm_realm *realm, struct vm_object *object, vm_value key, struct vm_descriptor *descriptor, int *found);
 int vm_get_own_descriptor(struct vm_object *object, vm_value key, struct vm_descriptor *descriptor);
 int vm_define_own_property(struct vm_realm *realm, struct vm_object *object, vm_value key, const struct vm_descriptor *descriptor, int *done);
 int vm_same_value(vm_value left, vm_value right);

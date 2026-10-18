@@ -1,0 +1,53 @@
+{
+  "source_commit": "e6b516827210c6ce34acd7c17a30c1ee6ea90f6e",
+  "protocol_conditions": 135,
+  "native_chrome_exact": true,
+  "old93_source_prefix_identical": true,
+  "ordinary_compatibility_exact_body_mapping": true,
+  "native_pressure": [
+    "original Get and Has managed realm collection retained",
+    "GetOwn trap fresh descriptor/payload retained through post-trap no-script native descriptor GC",
+    "managed bare realm alive in all three independent operations, property depth returns to zero",
+    "fresh descriptor payload and realm actually reclaimed after releasing final roots",
+    "q32 data/getter From pressure and absent slot reclamation retained"
+  ],
+  "focused_gate_returncodes": {
+    "proxy-read": 0,
+    "delegation": 0,
+    "interpreter": 0,
+    "vm-factory": 0,
+    "dom": 0,
+    "cssom": 0,
+    "cssom-mutation": 0,
+    "marks": 0,
+    "observer": 0,
+    "error-events": 0,
+    "error-reporting": 0,
+    "acid": 0
+  },
+  "acid3_score": 100,
+  "acid3_pixel_diff": 0,
+  "acid2_existing_pixel_diff": 873,
+  "raw_allowed_cleanup": 45,
+  "other_style_flags": 0,
+  "host_target_warnings": 0,
+  "archive": {
+    "path": "focused-native-oracle-build-raw.tar.gz",
+    "sha256": "ab53448323f99a5a9259c69441971065dba4e456c410dcd8e8e10aab88eef347",
+    "members": 51,
+    "readback_all_members": true
+  },
+  "current_certified_pass": 1482,
+  "denominator": 3805,
+  "held": 0,
+  "unattempted_harness": 275,
+  "harness_reused": "q31 all1508:494PASS/955FAIL/13harness_error/20no_completion/24no_output/2multiple; callbacks11540PASS/20642FAIL/14NOTRUN",
+  "static_scripted_crash_reused": "q28:844/105/39",
+  "whole_pass_gain": 0,
+  "limitations": [
+    "focused gates only; no q33 all1508 or all-image/strict crash measurement",
+    "frozen runtime binaries retained in build with source-proof hashes, not embedded in evidence archive",
+    "global Proxy unexposed; whole p258/WS074 remains incomplete",
+    "single-source target2 only; no full target link/runtime or whole-source p100 conformance"
+  ]
+}

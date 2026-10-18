@@ -2,16 +2,16 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: uncleared（q32 shared descriptor conversion partial cleared、whole Proxy未達）
+Status: in-progress（q34 DefineOwnProperty partial、q30〜q33 verified）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
-Queue: ws074-q20261018-32-i01（q30/q31-i01 cleared履歴保持）
+Queue: ws074-q20261018-34-i01（q30〜q33 partial cleared履歴保持）
 Origin: p189/q29 original WebIDL2 parseがProxy未定義で停止。
 
 Objective / own criteria: native managed Proxyを実object internal methodsへ接続し、constructor/revocableと各internal operationのtrap/fallback/invariant/receiver/revocation/callability/GCを正しく実行する。original WebIDL2 actual parse/validatorに必要なget/set/array behaviorを通常APIで提供し、independent controls/原WPTを通す。部分read stageだけでwholeをclearしない。
 Design: vm_native_operationsはscript-free heap interfaceのまま保持。Proxyにはmanaged target/handler recordを持たせ、scriptを実行可能なrealm-aware access/internal methodからtrapを呼ぶ。opaque JS constructor公開前に必要なoperationを段階的に整える。各段階は自走承認に基づく新finite Queueで正確に選定する。
-Current scope: [q32 exact Queue](../queue.md)のVM共有To/From/CompletePropertyDescriptorと既存Object helper接続。q30/q31のread/Has/native lifetimeをverified outputとして保持し、未選定Proxy descriptor internal methods/write/keys/prototype/extent/IsArray/call/construct/global公開をwhole受入へ残す。
+Current state: q33 GetOwnPropertyまでprivateでverified、公開single Object descriptor APIは接続済み。Define/Set/keys/prototype/extent/IsArray/call/construct/global constructorとoriginal WebIDL2は未達。
 Standards: Guardrail/C全文/browser component全文、簡約版無し。一次 https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-proxy-object-internal-methods-and-internal-slots-get-p-receiver 。既存p100がWS全source near-final conformanceを所有し、本partialはnew/changed scopeの全文適合を検証。
 Verification/bounds/affected components: q30 snapshotの通り。private object kind/cell/newborn/trace/revokeとactual receiver/trap/invariant/GCをnative/Chromeで確認し、ordinary whole/callback PASSを守る。target single-source compileのみとfull target runtimeを区別。未達はunclearedとresume。
 
@@ -54,3 +54,19 @@ source WIP786856b04、最終sourceを再buildしたimmutable pair/source hash317
 i01 shared descriptor conversion partialのみcleared、whole p258はrealm-aware Proxy getOwn/Define/Set/keys/prototype/extent/IsArray/call/construct/global constructor/revocable/原WebIDL2未達でuncleared。full target/whole-source p100/WS100%未達、共有Master/Queue/next/cache/GitHub投影pending、push無し。
 
 [証拠](evidence/20261018-q32/README.md)。次finite Queueでrealm-aware getOwn/Defineとordinary no-script outputを検証してからSetへ接続する。global Proxyは非公開を維持。
+
+Event ws074-p258-q33-selected-20261018: shared To/From/Complete verified後、realm-aware GetOwnと公開単一descriptor APIを具体化。To getter前のtarget descriptor/extensibility snapshotをpure compatibilityへ渡し、noscript hooksと境界を守る。exact max90分/source bounds/focused gatesはq33 Queue。Define/Set/global公開は後続、whole p258未達。
+
+Event ws074-p258-q33-declaration-clarification-20261018: object_get_own_property_descriptorのforward宣言はObject constant method tableが実参照するためC全文§2のinitializer必須例外に従ってtable前の元位置を保持する。通常helper宣言だけをtable後へ置く。動作/scope/criteriaは不変。
+
+## q33 partial result / resume
+
+Event ws074-p258-q33-partial-cleared-20261018: realm-aware vm_get_own_property(statusとfoundを分離)を追加し、公開Object.getOwnPropertyDescriptorを接続。ordinaryは旧heap-only vm_get_own_descriptorへ委譲しnative_operationsは全bytes不変。Proxyではdynamic GetMethod/null fallback、handler this・元target・string/symbol keyの2引数、object/undefined返却型、post-trap target descriptorとextensibility snapshot→To/Complete→互換性/invariantを正規順で処理。descriptor getterがtargetを変更しても取得済みsnapshotを用いる。非configurable/非拡張のownを隠す、new fixed/非拡張new/固定writableをreadonlyと報告、accessor/data/enum/SameValue不整合を拒否し、元target/handlerをrevoke後も保持する。
+既存ordinary互換性判定はsignatureとextensibility条件だけを明示snapshotへ置換し、残りbody全bytes同一を証明。ordinary wrapperは元と同じ時点で無script/無allocationでflagを取り、既存define/array動作を保つ。Object helper forward宣言はconstant method tableのinitializerが参照するためC全文§2の例外に従い元のtable前位置を保持（初期Queueの通常helper移動という文言を同Phase設計補足で具体化）。
+同じ135条件がnative/Chromium genuine Proxyで全件一致、old93 source prefixはbyte同一。snapshot前後のtarget変異、NaN/符号付き0、getter順/revoke/GC/有界再帰を確認。C stack保守保持を無効にしたnativeでGet・Has・GetOwnそれぞれのscript-free descriptor hook内に実GCし、managed bare realm生存3回を確認。GetOwnのfresh trap descriptorとsole object payloadはpost-trap target collectionを越えて保持され、最後のroot解放後にrealm/payloadが実回収。q32 Fromの2 mode pressure/absent payload回収も維持。
+source WIPe6b516827、最終sourceから再buildしたimmutable pair/source hash317件を照合。host warning0・q02 exact access/builtin_object2 source target compile warning0。full new/changed Cの許可forward shared cleanup45・その他0。DOM41、VM45/factory56、CSSOM12+12、marks7/observer10/ErrorEvent9/ErrorReporting19/delegation10を通過。Acid3 score/inventory100・pixel0、Acid2既存差873。archive51 membersを順次全read-back、sha256ab53448323f99a5a9259c69441971065dba4e456c410dcd8e8e10aab88eef347。
+exact承認どおりfocused gatesだけ。全1508はq31、static/scripted/strict crashはq28原証拠を再利用し、q33 pair全件同値/whole PASS増分は主張しない。確認済1482/3805（38.948752%）・held0・未attempt275を保持。i01 GetOwn partialだけcleared、whole p258はDefine/Set/keys/prototype/extent/IsArray/call/construct/global constructor/revocable/元WebIDL2未達でuncleared。private callable/Proxy target拒否・global Proxy非公開維持、full target/p100/WS100%未達。共有Master/Queue/next/cache/GitHub投影pending、push無し。
+
+[全証拠](evidence/20261018-q33/README.md)。次finite QueueでDefineとpartial descriptor trap/invariantを具体化する。
+
+Event ws074-p258-q34-selected-20261018: q33 GetOwn/private descriptor出力を前提にDefineOwnPropertyのtrap/partial descriptor/元input invariant/実GCを具体化。ordinary/native hookは不変のまま既存realm-aware defineのProxy分岐だけを追加する。exact scope/max90分/focused gatesはq34 Queue、Set/global公開は先取りしない。
