@@ -425,7 +425,8 @@ i915_vkx_thread(
 
 	/*
 	 * The scenario's state, from the heap rather than the kernel image
-	 * (about 240 KiB; the test kernel has to fit AMD64_KERNEL_MAX_BYTES).
+	 * (about 240 KiB; the test kernel has to fit the 16 MiB the loaders
+	 * accept for an image).
 	 */
 	x = kern_calloc(1U, sizeof(*x));
 	if (x == NULL) {

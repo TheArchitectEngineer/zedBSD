@@ -19,6 +19,10 @@
 - 画面の情報は値ごとの名前で渡す（例 `rpi4.framebuffer.phys`・`.size`・`.width`・`.height`・`.pitch`・`.format`）。構造体の型を HAL と kernel で共有しない。
 - amd64 の `pcat.framebuffer` も同じ形に直し、読む側（`src/drivers/platform/pcat/graphics/backend.c`、`src/drivers/gpu/amdrdna/readout.c`、`src/drivers/gpu/nvrtx/discover.c`、`src/hal/amd64/page.c` など）を追従させる。
 
+## kernel の置き場所の約束（2026-10-18 ユーザー）
+
+- `bootloader/include/amd64-kernel-image.h`（UEFI の loader と amd64 の HAL と link script の約束）を i915 の試験（`src/drivers/gpu/i915/tests/render/executor.c`・README）が include している。ユーザー（クリック）「i915 の試験を外し、名前は riscv64 の時に揃える」→ この試験の include を WS261 で外す。header の命名と置き場所は WS256 p004 で揃える。
+
 ## 完了の条件
 
 1. `include/kern/boot.h` に PC-98・Raspberry Pi の固有の構造体と定数が無い。

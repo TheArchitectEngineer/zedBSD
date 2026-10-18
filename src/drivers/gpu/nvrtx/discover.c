@@ -25,10 +25,9 @@
 #include <kern/platform.h>
 #include <uapi/errno.h>
 
-#include "bootloader/include/amd64-handoff.h"
 #include "drivers/gpu/nvrtx/nvrtx-private.h"
 
-/* The handoff object that describes the firmware's framebuffer. */
+/* The name prefix of the boot handoff values that describe the firmware's framebuffer. */
 #define DISCOVER_FRAMEBUFFER_HANDOFF	"pcat.framebuffer"
 
 static void discover_windows(struct nvrtx_device *device);
@@ -183,13 +182,16 @@ void
 nvrtx_n1_readout(
 	struct nvrtx_device *device)
 {
-	const struct zbl6_framebuffer *framebuffer;
+	struct kern_boot_framebuffer boot_framebuffer;
+	const struct kern_boot_framebuffer *framebuffer;
 	const struct nvrtx_window *vram;
 	uint64_t offset;
+	int error;
 
 	/* A boot without a framebuffer has no picture to keep. */
-	framebuffer = kern_boot_handoff(DISCOVER_FRAMEBUFFER_HANDOFF);
-	if (framebuffer == NULL) {
+	framebuffer = &boot_framebuffer;
+	error = kern_boot_framebuffer(DISCOVER_FRAMEBUFFER_HANDOFF, &boot_framebuffer);
+	if (error != 0) {
 		nvrtx_stage_mark("console no firmware framebuffer");
 		return;
 	}
@@ -206,12 +208,12 @@ nvrtx_n1_readout(
 		device->gop_offset = offset;
 		device->gop_width = framebuffer->width;
 		device->gop_height = framebuffer->height;
-		device->gop_stride = framebuffer->stride;
+		device->gop_stride = framebuffer->pitch;
 		device->gop_format = framebuffer->format;
 		nvrtx_stage_mark("console gop %ux%u stride %u in bar%u at +%llx",
 		    (unsigned)framebuffer->width,
 		    (unsigned)framebuffer->height,
-		    (unsigned)framebuffer->stride,
+		    (unsigned)framebuffer->pitch,
 		    vram->bar,
 		    (unsigned long long)offset);
 		return;

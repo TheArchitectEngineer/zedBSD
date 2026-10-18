@@ -22,6 +22,7 @@
 #include <kern/kcrt.h>
 
 #include "../asm.h"
+#include "../bsp.h"
 #include "../defs.h"
 #include "../irq.h"
 #include "bootloader/include/amd64-handoff.h"
@@ -345,7 +346,7 @@ prekern_pcat_cons_init(
 
 	/* Acquires output ownership before selecting the rendering backend. */
 	token = console_output_lock();
-	framebuffer = hal_get_arch_handoff("pcat.framebuffer");
+	framebuffer = bsp_boot_framebuffer();
 	framebuffer_pixels = NULL;
 	framebuffer_cursor_drawn = 0;
 

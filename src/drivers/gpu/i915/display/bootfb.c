@@ -61,8 +61,6 @@
 #include "../session.h"
 #include "../render/blit.h"
 
-#include "bootloader/include/amd64-handoff.h"
-
 #include <drivers/gpu/gpu.h>
 #include <drivers/gpu/gpu-display.h>
 #include <hal/hal.h>
@@ -207,8 +205,9 @@ drv_i915_bootfb_bind_ops(
 	struct i915_device *device,
 	struct drv_gpu_ops *ops)
 {
+	struct kern_boot_framebuffer boot_framebuffer;
+	const struct kern_boot_framebuffer *fb;
 	struct i915_bootfb *bootfb;
-	const struct zbl6_framebuffer *fb;
 	int error;
 
 	bootfb = &i915_bootfb_display;
@@ -222,8 +221,9 @@ drv_i915_bootfb_bind_ops(
 		return;
 
 	/* Looks up the framebuffer the loader handed over, which the firmware's plane still scans out. */
-	fb = kern_boot_handoff("pcat.framebuffer");
-	if (fb == NULL) {
+	fb = &boot_framebuffer;
+	error = kern_boot_framebuffer("pcat.framebuffer", &boot_framebuffer);
+	if (error != 0) {
 		kern_logf("i915: bootfb: the loader handed over no framebuffer; the node has no display\n");
 		return;
 	}
@@ -234,7 +234,7 @@ drv_i915_bootfb_bind_ops(
 		kern_logf("i915: bootfb: the framebuffer (%ux%u stride %u format %u) cannot be used: %d; the node has no display\n",
 		    fb->width,
 		    fb->height,
-		    fb->stride,
+		    fb->pitch,
 		    fb->format,
 		    error);
 		return;
@@ -405,7 +405,7 @@ drv_i915_bootfb_fini(
  */
 int
 drv_i915_bootfb_layout(
-	const struct zbl6_framebuffer *fb,
+	const struct kern_boot_framebuffer *fb,
 	struct i915_bootfb_layout *layout)
 {
 	uint64_t fb_bytes;
@@ -421,16 +421,16 @@ drv_i915_bootfb_layout(
 	if (fb->width > I915_BOOTFB_MAX_SIDE || fb->height > I915_BOOTFB_MAX_SIDE)
 		return EINVAL;
 
-	/* The stride counts pixels and covers at least a row. */
-	if (fb->stride < fb->width)
+	/* The pitch counts pixels and covers at least a row. */
+	if (fb->pitch < fb->width)
 		return EINVAL;
 
 	/* Only the two 32-bit orders the loader reports are drawn. */
-	if (fb->format != ZBL6_FRAMEBUFFER_RGBX8888 && fb->format != ZBL6_FRAMEBUFFER_BGRX8888)
+	if (fb->format != KERN_BOOT_FRAMEBUFFER_RGBX8888 && fb->format != KERN_BOOT_FRAMEBUFFER_BGRX8888)
 		return EINVAL;
 
 	/* The visible rows lie inside what the loader says the framebuffer spans. */
-	fb_bytes = (uint64_t)fb->stride * 4U * (uint64_t)fb->height;
+	fb_bytes = (uint64_t)fb->pitch * 4U * (uint64_t)fb->height;
 	if (fb_bytes > fb->size)
 		return EINVAL;
 
@@ -440,9 +440,9 @@ drv_i915_bootfb_layout(
 	/* The framebuffer as the display uses it. */
 	layout->width = fb->width;
 	layout->height = fb->height;
-	layout->fb_stride_bytes = fb->stride * 4U;
+	layout->fb_stride_bytes = fb->pitch * 4U;
 	layout->rgbx = 0;
-	if (fb->format == ZBL6_FRAMEBUFFER_RGBX8888)
+	if (fb->format == KERN_BOOT_FRAMEBUFFER_RGBX8888)
 		layout->rgbx = 1;
 	layout->fb_physical = fb->physical_base;
 	layout->fb_bytes = fb_bytes;

@@ -24,6 +24,12 @@ const void *
 prekern_bsp_kernel_handoff(
 	const void *raw_boot_info);
 
+/* The loader's framebuffer record; only pointers are used here. */
+struct zbl6_framebuffer;
+
+const struct zbl6_framebuffer *
+bsp_boot_framebuffer(void);
+
 uint64_t
 bsp_mem_probe(void);
 

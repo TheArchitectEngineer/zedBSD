@@ -1,0 +1,261 @@
+{
+  "source_commit": "5995082096f67b9495b89957bce649b69a20ea93",
+  "selection": "75d0bed66",
+  "source_hash_count": 317,
+  "conditions": 690,
+  "native_pass": 690,
+  "chrome_pass": 688,
+  "new_conditions": 32,
+  "precode_fixed_conditions": 23,
+  "new32_genuine_chrome_match": true,
+  "old658_prefix_unchanged": true,
+  "all_chrome_equality": false,
+  "oracle": "q36 classifier filter inherited and q43 huge2 native primary versus Chrome pre-index RangeError retained; all new32 genuine rows match",
+  "full_changed_C": {
+    "tokens_outside_selected_product_and_fixture_functions_identical": true,
+    "other_engine_source_and_headers_unchanged": true,
+    "all_VM_source_and_headers_unchanged": true,
+    "native_operations_definition_comment_unchanged": true,
+    "old658_prefix_unchanged": true,
+    "added_conditions": 32,
+    "precode_failed_conditions": 23,
+    "full_changed_functions": {
+      "userland/desktop/libbrowser/js/builtin_object.c": [
+        "object_to_string"
+      ],
+      "userland/desktop/libbrowser/js/builtin_array.c": [
+        "array_concat",
+        "array_flat",
+        "array_flat_map",
+        "array_flatten",
+        "array_is_concat_spreadable"
+      ],
+      "plan/ws074/tests/host-proxy-read.c": [
+        "main",
+        "flat_source_length",
+        "flat_source_depth",
+        "flat_source_pressure"
+      ]
+    },
+    "removed_old_kind_helper": "array_is_array_value",
+    "normal_helpers_after_tables": [
+      "array_flatten",
+      "array_is_concat_spreadable"
+    ],
+    "raw_allowed_cleanup": 77,
+    "only_single_forward_cleanup_proved": true,
+    "other_checker_findings": 0,
+    "manual_review": [
+      "ANSI declarations first/multiline/public-static order/semantic paragraphs and compound clauses",
+      "ObjectToString roots converted receiver then actual IsArray before custom tag Get; revoked errors propagate; saved builtin tag unaffected by later revocation",
+      "IsConcatSpreadable only objects Get symbol override, ToBoolean without object coercion; undefined only fallback IsArray",
+      "concat converted receiver/current item/fresh output element/result separate roots, own default data definitions bypass inherited setters and preserve holes",
+      "concat registration initializes placeholders before acquisition and uses one forward cleanup for partial registration/abrupt source/length operations",
+      "flat and flatMap root freshly boxed source after array_this until depth conversion/mapper/flatten completes; result placeholder rooted before allocation",
+      "flatten retains mapped fresh values, tests depth before actual IsArray, zero/negative depth never inspects revoked item identity; recursion source held by parent temporary root",
+      "new native weak observer sees actual Number wrapper during inherited length getter, later actual depth valueOf GC proves source box alive after array_this/length frames retire; output-only then source/depth reclaim then output reclaim, temporary Number intrinsic getter restored",
+      "Species/custom result/upper-index storage/wide lengths/general recursion resource policy/JSON/for-in/call/global/p100 remain pending",
+      "main source/terminal containment and conflicts verified separately; master.md never in owned staged paths"
+    ]
+  },
+  "native_gates": [
+    {
+      "label": "proxy-read",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q48/final/engine/host-proxy-read",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q48/final/engine/proxy-read.js"
+      ],
+      "returncode": 0,
+      "seconds": 0.4
+    },
+    {
+      "label": "delegation",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q48/final/engine/host-generator-delegation"
+      ],
+      "returncode": 0,
+      "seconds": 0.4
+    },
+    {
+      "label": "interpreter",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q48/final/engine/host-interp"
+      ],
+      "returncode": 0,
+      "seconds": 0.6
+    },
+    {
+      "label": "vm-factory",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q48/final/engine/host-vm-factory"
+      ],
+      "returncode": 0,
+      "seconds": 0.7
+    },
+    {
+      "label": "dom",
+      "command": [
+        "python3",
+        "plan/ws074/tests/run-dom-tests.py",
+        "--program",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q48/final/engine/browser"
+      ],
+      "returncode": 0,
+      "seconds": 2.8
+    },
+    {
+      "label": "cssom",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q48/final/engine/host-cssom"
+      ],
+      "returncode": 0,
+      "seconds": 2.9
+    },
+    {
+      "label": "cssom-mutation",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q48/final/engine/host-cssom-mutation"
+      ],
+      "returncode": 0,
+      "seconds": 3.0
+    },
+    {
+      "label": "marks",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q48/final/engine/host-performance-marks"
+      ],
+      "returncode": 0,
+      "seconds": 3.1
+    },
+    {
+      "label": "observer",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q48/final/engine/host-performance-observer"
+      ],
+      "returncode": 0,
+      "seconds": 3.2
+    },
+    {
+      "label": "error-events",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q48/final/engine/host-error-events"
+      ],
+      "returncode": 0,
+      "seconds": 3.3
+    },
+    {
+      "label": "error-reporting",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q48/final/engine/host-error-reporting"
+      ],
+      "returncode": 0,
+      "seconds": 3.4
+    },
+    {
+      "label": "acid",
+      "command": [
+        "python3",
+        "plan/ws074/tests/run-acid-tests.py",
+        "--program",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q48/final/engine/browser",
+        "--out",
+        "build/ws074-20261018/q48/final/acid"
+      ],
+      "returncode": 0,
+      "seconds": 8.1
+    }
+  ],
+  "native_box_GC": [
+    "actual primitive Number receiver boxed only inside flat; inherited length getter weakly observes box",
+    "later depth valueOf actualGC after array_this/length frames retire proves sole box alive",
+    "output-only root then source box/depth actual reclaim; output root removed then output actual reclaim; temporary Number intrinsic length getter restored"
+  ],
+  "boxed_String_precode_actual_GC_functional_failure_reproduced": true,
+  "old_weak_Number_box_fixture_not_measured": true,
+  "initial_fixture_compile_wrong_number_prototype_field_corrected": true,
+  "acid3_score": 100,
+  "acid3_inventory": 100,
+  "acid3_pixels": 0,
+  "acid2_existing_pixels": 873,
+  "original_webidl_q38_same_callbacks": true,
+  "additional_validator_negative_rule_callbacks": [
+    {
+      "name": "original interface validator yields missing Exposed rule",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "original namespace validator yields missing Exposed rule",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "validator rule detection does not mask intentional failure",
+      "status": 1,
+      "message": "assert_equals: intentional failure after original validator rule expected 0 but got 1"
+    }
+  ],
+  "harness": {
+    "completed": 1508,
+    "counts": {
+      "fail": 955,
+      "harness_error": 13,
+      "pass": 494,
+      "no_completion": 20,
+      "no_output": 24,
+      "multiple_completions": 2
+    },
+    "callbacks": {
+      "1": 20642,
+      "0": 11540,
+      "3": 14
+    },
+    "whole_pass_losses": [],
+    "whole_pass_gains": [],
+    "old_pass_callback_losses": [],
+    "changes": []
+  },
+  "harness_seconds": 528.4,
+  "harness_comparison": "q46 whole and every callback/completion",
+  "official_score": 1482,
+  "denominator": 3805,
+  "held": 0,
+  "unattempted": 275,
+  "static_scripted_crash_reused": "q28",
+  "current_pair_images_crash_not_measured": true,
+  "archives": {
+    "harness-all-raw": {
+      "sha256": "5bcd28a197329a988eeba2aa5384441abbb360b77471e7316953ee8b0a724e33",
+      "members": 1676,
+      "all_members_readback": true
+    },
+    "native-oracle-and-build-raw": {
+      "sha256": "b5084aeaf6a9a39a6f028cf54906c7c8c2d10fac0ca60cc66754474094fe1483",
+      "members": 104,
+      "all_members_readback": true
+    }
+  },
+  "main_integration": {
+    "source": "5995082096f67b9495b89957bce649b69a20ea93",
+    "branch": "main",
+    "readback_head": "7e07253e8045d491e3c51f4b070c6f9e9b68ea64",
+    "source_contained_in_main": true,
+    "q47_contained_in_main": true,
+    "source_paths": [
+      "plan/ws074/tests/host-proxy-read.c",
+      "plan/ws074/tests/proxy-read.js",
+      "userland/desktop/libbrowser/js/builtin_array.c",
+      "userland/desktop/libbrowser/js/builtin_object.c"
+    ],
+    "master_in_source_commit": false,
+    "unmerged_paths": [],
+    "method": "direct owned WIP integration on main; no duplicate or unrelated branch merge"
+  },
+  "remaining": [
+    "Species/custom result/constructor/newtarget/callable Proxy",
+    "general array upper-index storage/wide lengths/flatten recursion resource policy",
+    "for-in/spread/JSON/primitive Set/outer instanceof/BoundFunction/call/construct/global Proxy/revocable/Reflect",
+    "immutable prototype/typed backing/p100/full target/WS acceptance",
+    "master.md not edited; shared projections pending Q1"
+  ]
+}

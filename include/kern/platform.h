@@ -78,4 +78,36 @@ kern_platform_shutdown_prepare(void) __attribute__((weak));
  */
 void *kern_boot_handoff(const char *name);
 
+/*
+ * The screen the firmware or the boot loader left on, as the kernel reads it.
+ *
+ * One instance is a copy the caller owns, filled by kern_boot_framebuffer()
+ * from the platform's named values; nothing in it points into the platform.
+ * The pitch is the distance from one row to the next and the format the
+ * pixel format, each in the unit and the code that the platform's
+ * documentation of the name gives.
+ */
+struct kern_boot_framebuffer {
+	uint64_t physical_base;
+	uint64_t size;
+	uint32_t width;
+	uint32_t height;
+	uint32_t pitch;
+	uint32_t format;
+};
+
+/*
+ * Read the boot framebuffer handed over under a name prefix such as
+ * "pcat.framebuffer".
+ *
+ * Returns 0 with the framebuffer filled in, ENOENT when the platform
+ * handed over none, or EINVAL for a missing argument, a prefix too long
+ * for a name, or a value the record cannot hold.  A given record is
+ * left cleared on error.
+ */
+int
+kern_boot_framebuffer(
+	const char *prefix,
+	struct kern_boot_framebuffer *framebuffer);
+
 #endif

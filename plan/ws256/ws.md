@@ -69,3 +69,4 @@
 10. #18 試験の道具の変更は「P2 に許可」（p009 で plan/tools の 3 file だけ。既存の mode は変えない。Q1 が merge の前に読む）。
 
 11. #9 は (a): HAL → kernel は汎用の構造体と `hal_get_arch_handoff` の名前付きの object だけ（2026-10-18 ユーザーの規約、[Guardrail](../guardrail.md)「HAL と kernel・boot loader と HAL の受け渡し」）。[proposed/boot-h-riscv64.md](proposed/boot-h-riscv64.md) の案 (b) は採らない。
+12. `bootloader/include/amd64-kernel-image.h` と同じ種類の riscv64 の約束（kernel の置き場所）を p004 で足す時に、arch ごとの命名と置き場所を揃える（2026-10-18 ユーザー「名前は riscv64 の時に揃える」）。

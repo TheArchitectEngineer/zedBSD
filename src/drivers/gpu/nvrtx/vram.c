@@ -52,12 +52,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <kern/boot.h>
 #include <kern/clock.h>
 #include <kern/kcrt.h>
 #include <kern/kmem.h>
 #include <uapi/errno.h>
 
-#include "bootloader/include/amd64-handoff.h"
 #include "drivers/gpu/nvrtx/nvrtx-gpu.h"
 
 /*
@@ -524,7 +524,7 @@ nvrtx_console_check(
 	}
 
 	/* Refuses a format the display's window is not given and a picture of no size. */
-	if (identity->gop_format != ZBL6_FRAMEBUFFER_BGRX8888 ||
+	if (identity->gop_format != KERN_BOOT_FRAMEBUFFER_BGRX8888 ||
 	    identity->gop_width == 0U ||
 	    identity->gop_height == 0U ||
 	    identity->gop_stride < identity->gop_width) {

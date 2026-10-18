@@ -1,0 +1,16 @@
+{
+  "source": "5995082096f67b9495b89957bce649b69a20ea93",
+  "branch": "main",
+  "readback_head": "7e07253e8045d491e3c51f4b070c6f9e9b68ea64",
+  "source_contained_in_main": true,
+  "q47_contained_in_main": true,
+  "source_paths": [
+    "plan/ws074/tests/host-proxy-read.c",
+    "plan/ws074/tests/proxy-read.js",
+    "userland/desktop/libbrowser/js/builtin_array.c",
+    "userland/desktop/libbrowser/js/builtin_object.c"
+  ],
+  "master_in_source_commit": false,
+  "unmerged_paths": [],
+  "method": "direct owned WIP integration on main; no duplicate or unrelated branch merge"
+}

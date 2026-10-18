@@ -1,0 +1,29 @@
+{
+  "returncode": 1,
+  "conditions": 690,
+  "failed": [
+    "console: read-proxy consumer-object-tostring-proxy-array: FAIL",
+    "console: read-proxy consumer-object-tostring-nested-array: FAIL",
+    "console: read-proxy consumer-object-tostring-array-nonstring-tag: FAIL",
+    "console: read-proxy consumer-concat-proxy-array-spreads: FAIL",
+    "console: read-proxy consumer-concat-nested-array-spreads: FAIL",
+    "console: read-proxy consumer-concat-ordinary-explicit-spread: FAIL",
+    "console: read-proxy consumer-concat-spread-object-truth-without-coercion: FAIL",
+    "console: read-proxy consumer-concat-spread-get-before-length-has-get: FAIL",
+    "console: read-proxy consumer-concat-spread-get-error-identity: FAIL",
+    "console: read-proxy consumer-concat-spread-get-revoke-undefined-checks-isarray: FAIL",
+    "console: read-proxy consumer-concat-holes-and-synthetic-has: FAIL",
+    "console: read-proxy consumer-concat-fresh-elements-across-later-gc: FAIL",
+    "console: read-proxy consumer-concat-creates-own-data-without-prototype-setter: FAIL",
+    "console: read-proxy consumer-flat-proxy-nested-array: FAIL",
+    "console: read-proxy consumer-flat-deep-nested-proxy: FAIL",
+    "console: read-proxy consumer-flat-ignores-isconcatspreadable: FAIL",
+    "console: read-proxy consumer-flat-positive-depth-revoked-item-throws: FAIL",
+    "console: read-proxy consumer-flat-depth-bound-stops-before-revoked-child: FAIL",
+    "console: read-proxy consumer-flat-proxy-holes-skipped: FAIL",
+    "console: read-proxy consumer-flatmap-mapped-revoked-proxy-throws: FAIL",
+    "console: read-proxy consumer-flat-proxy-length-error-identity: FAIL",
+    "console: read-proxy consumer-flat-does-not-read-spreadable: FAIL",
+    "console: read-proxy consumer-flat-boxed-string-source-through-depth-gc: FAIL"
+  ]
+}

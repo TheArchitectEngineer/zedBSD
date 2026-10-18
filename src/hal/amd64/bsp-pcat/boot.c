@@ -26,6 +26,9 @@
 #define PCAT_BOOT_FONT_GLYPHS  128U
 #define PCAT_BOOT_FONT_HEIGHT  16U
 
+/* How many values of the boot framebuffer the kernel reads by name. */
+#define PCAT_FRAMEBUFFER_VALUE_COUNT 6U
+
 struct vga_font_handoff {
 	uint32_t magic;
 	uint16_t version;
@@ -39,6 +42,10 @@ typedef char zbl6_kernel_mbr_partition_scheme_must_match[
 	ZBL6_PARTITION_SCHEME_MBR == KERN_PARTITION_SCHEME_MBR ? 1 : -1];
 typedef char zbl6_kernel_gpt_partition_scheme_must_match[
 	ZBL6_PARTITION_SCHEME_GPT == KERN_PARTITION_SCHEME_GPT ? 1 : -1];
+typedef char zbl6_kernel_rgbx_framebuffer_must_match[
+	ZBL6_FRAMEBUFFER_RGBX8888 == KERN_BOOT_FRAMEBUFFER_RGBX8888 ? 1 : -1];
+typedef char zbl6_kernel_bgrx_framebuffer_must_match[
+	ZBL6_FRAMEBUFFER_BGRX8888 == KERN_BOOT_FRAMEBUFFER_BGRX8888 ? 1 : -1];
 typedef char zbl6_kernel_unknown_partition_index_must_match[
 	ZBL6_PARTITION_INDEX_UNKNOWN == KERN_PARTITION_INDEX_UNKNOWN ? 1 : -1];
 
@@ -60,6 +67,31 @@ static uint8_t boot_font[PCAT_BOOT_FONT_GLYPHS][PCAT_BOOT_FONT_HEIGHT];
 static int boot_font_valid;
 static char boot_selector[15];
 static char boot_parameters[KERN_BOOT_PARAMETERS_STORAGE_SIZE];
+
+/*
+ * The names under which the kernel reads the boot framebuffer, one per
+ * value, in the order of framebuffer_values[].
+ */
+static const char *const framebuffer_value_names[PCAT_FRAMEBUFFER_VALUE_COUNT] = {
+	"pcat.framebuffer.phys",
+	"pcat.framebuffer.size",
+	"pcat.framebuffer.width",
+	"pcat.framebuffer.height",
+	"pcat.framebuffer.pitch",
+	"pcat.framebuffer.format",
+};
+
+/*
+ * The boot framebuffer's values handed to the kernel by name, each a
+ * 64-bit word: the physical base, the size of the mapping window in
+ * bytes, the width and the height in pixels, the pitch in pixels (the
+ * loader's stride) and the pixel format, a KERN_BOOT_FRAMEBUFFER_* code
+ * (the loader's codes are the same, checked above).  Filled with
+ * boot_framebuffer when the loader's framebuffer is accepted and not
+ * changed afterwards; the names report no object while
+ * boot_framebuffer.size is zero.
+ */
+static uint64_t framebuffer_values[PCAT_FRAMEBUFFER_VALUE_COUNT];
 
 static void accept_memory(const struct zbl6_memory_handoff *memory, uint32_t source);
 static int handoff_name_is(const char *name, const char *expected);
@@ -116,6 +148,7 @@ prekern_bsp_boot_init(
 	hal_memset(&boot_info, 0, sizeof(boot_info));
 	hal_memset(&boot_info_v2, 0, sizeof(boot_info_v2));
 	hal_memset(&boot_framebuffer, 0, sizeof(boot_framebuffer));
+	hal_memset(framebuffer_values, 0, sizeof(framebuffer_values));
 	hal_memset(boot_selector, 0, sizeof(boot_selector));
 	(void)kern_boot_provenance_set(NULL);
 	form = zbl6_handoff_classify_raw(raw_boot_info);
@@ -380,6 +413,7 @@ hal_get_arch_handoff(
 	const char *name)
 {
 	uint64_t *rsdp;
+	unsigned index;
 	int match;
 
 	/* Exposes the canonical boot command-line buffer. */
@@ -405,10 +439,12 @@ hal_get_arch_handoff(
 
 	/* Exposes the framebuffer only when a nonempty extent was accepted. */
 	if (boot_framebuffer.size != 0) {
-		/* Returns the framebuffer only for its stable handoff name. */
-		match = handoff_name_is(name, "pcat.framebuffer");
-		if (match)
-			return &boot_framebuffer;
+		/* Returns one of the framebuffer's values under its own name. */
+		for (index = 0; index < PCAT_FRAMEBUFFER_VALUE_COUNT; index++) {
+			match = handoff_name_is(name, framebuffer_value_names[index]);
+			if (match)
+				return &framebuffer_values[index];
+		}
 	}
 
 	/* Exposes the RSDP address that ACPI discovery accepted. */
@@ -425,6 +461,24 @@ hal_get_arch_handoff(
 
 	/* Reports an unavailable or unknown architecture handoff. */
 	return NULL;
+}
+
+/*
+ * Reports the boot framebuffer the loader handed over.
+ *
+ * The HAL reads the loader's record itself; the kernel reads the same
+ * values by name.  NULL when the loader handed over no framebuffer.
+ */
+const struct zbl6_framebuffer *
+bsp_boot_framebuffer(
+	void)
+{
+	/* Reports no framebuffer when the loader's extent was empty or absent. */
+	if (boot_framebuffer.size == 0)
+		return NULL;
+
+	/* Succeeded: the framebuffer kept from the loader's handoff. */
+	return &boot_framebuffer;
 }
 
 /*
@@ -673,6 +727,14 @@ accept_framebuffer(
 	boot_framebuffer.height = height;
 	boot_framebuffer.stride = stride;
 	boot_framebuffer.format = format;
+
+	/* Publishes the same values under the kernel's names. */
+	framebuffer_values[0] = base;
+	framebuffer_values[1] = size;
+	framebuffer_values[2] = width;
+	framebuffer_values[3] = height;
+	framebuffer_values[4] = stride;
+	framebuffer_values[5] = format;
 }
 
 /* Copies the complete map and ownership records before reclaim can begin. */
