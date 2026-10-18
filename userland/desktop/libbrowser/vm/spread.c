@@ -6,12 +6,12 @@
  */
 
 /*
- * Spreading and destructuring (ws074-p079): iterating a value for an
+ * Spreading and destructuring: iterating a value for an
  * array pattern or a spread, copying an object's own enumerable properties
  * for an object spread and an object pattern's rest, and calling with the
  * elements of an array as the arguments.
  *
- * Iteration follows the iterator protocol (ws074-p087): the value's
+ * Iteration follows the iterator protocol: the value's
  * Symbol.iterator method makes an iterator whose next is called for each
  * value, and a loop left early calls its return.  An array, an arguments
  * object and a string whose Symbol.iterator is still the built-in one are
@@ -59,13 +59,15 @@ static int spread_length(struct vm_realm *realm, vm_value source, uint32_t *leng
 static int spread_iterable(vm_value value);
 static int spread_is_builtin(struct vm_realm *realm, vm_value value, vm_value method);
 static int spread_protocol_next(struct vm_realm *realm, struct spread_iterator *state, vm_value *value, int *done);
-static int spread_copy(struct vm_realm *realm, struct vm_object *target, vm_value source, vm_value excluded);
 static int spread_is_excluded(struct vm_realm *realm, vm_value excluded, vm_value key, int *found);
 
 /* The cell type of an iteration's state: it keeps the value it iterates. */
 static const struct vm_cell_type spread_iterator_type = {
 	"iterator", spread_iterator_trace, NULL
 };
+
+static int spread_copy(struct vm_realm *realm, struct vm_object *target, vm_value source, vm_value excluded);
+static void spread_trace_keys(struct vm_heap *heap, void *context);
 
 /*
  * Starts iterating a value (an array pattern's or a spread's): the state
@@ -627,20 +629,60 @@ vm_object_rest(
 	vm_value *result)
 {
 	struct vm_object *rest;
+	struct vm_cell *roots[4];
+	unsigned index;
+	unsigned registered;
+	int is_cell;
 	int status;
 
-	/* The new object, reachable from the C stack while properties are read. */
-	rest = vm_object_create(realm->heap, realm->object_prototype);
-	if (rest == NULL)
-		return ENOMEM;
+	/* A direct native caller need not retain the realm or input cells before the first allocation. */
+	memset(roots, 0, sizeof(roots));
+	if (realm->managed)
+		roots[0] = &realm->cell;
+	is_cell = vm_value_is_cell(source);
+	if (is_cell)
+		roots[1] = vm_value_as_cell(source);
+	is_cell = vm_value_is_cell(excluded);
+	if (is_cell)
+		roots[2] = vm_value_as_cell(excluded);
+	registered = 0;
+	for (index = 0; index < 4U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
 
-	/* The properties that are not excluded. */
+		/* Cleanup owns this registry slot only after acquisition succeeds. */
+		registered++;
+	}
+
+	/* The unpublished result acquires its registered slot before any source trap can run. */
+	rest = vm_object_create(realm->heap, realm->object_prototype);
+	if (rest == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* Keep the unpublished result alive while exclusions and source accessors run. */
+	roots[3] = &rest->cell;
+
+	/* Exclusions and source properties follow the shared CopyDataProperties order. */
 	status = spread_copy(realm, rest, source, excluded);
+	if (status != 0)
+		goto cleanup;
+	*result = vm_value_cell(rest);
+
+	/* Both partial registration and abrupt source operations retire exactly their acquired roots. */
+cleanup:
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* Preserve abrupt property or root-registration errors after releasing native ownership. */
 	if (status != 0)
 		return status;
 
-	/* Succeeded: the rest. */
-	*result = vm_value_cell(rest);
+	/* Succeeded: the caller owns the completed object rest value. */
 	return 0;
 }
 
@@ -876,141 +918,146 @@ spread_copy(
 {
 	struct vm_descriptor descriptor;
 	struct vm_object *object;
-	struct vm_object *keys;
-	struct vm_cell *roots[6];
-	struct wb_vector list;
+	struct vm_cell *roots[5];
+	struct wb_vector keys;
 	vm_value key;
 	vm_value value;
-	uint32_t index;
+	size_t index;
 	unsigned slot;
 	unsigned registered;
 	int is_cell;
-	int list_ready;
+	int traced;
 	int present;
 	int found;
+	int accepted;
 	int status;
 
-	/* Nothing to copy from undefined and null. */
+	/* Nullish sources have no keys and perform no allocation or target operation. */
 	if (source == VM_VALUE_UNDEFINED || source == VM_VALUE_NULL)
 		return 0;
 
-	/* Retain direct inputs, the private key array and each getter result. */
-	roots[0] = NULL;
+	/* Empty vector storage and initialized slots make every partial acquisition share one cleanup. */
+	wb_vector_init(&keys, sizeof(vm_value));
+	memset(roots, 0, sizeof(roots));
 	if (realm->managed)
 		roots[0] = &realm->cell;
 	roots[1] = &target->cell;
-	roots[2] = NULL;
 	is_cell = vm_value_is_cell(source);
 	if (is_cell)
 		roots[2] = vm_value_as_cell(source);
-	roots[3] = NULL;
 	is_cell = vm_value_is_cell(excluded);
 	if (is_cell)
 		roots[3] = vm_value_as_cell(excluded);
-	roots[4] = NULL;
-	roots[5] = NULL;
 	registered = 0;
-	list_ready = 0;
-	for (slot = 0; slot < 6U; slot++) {
+	traced = 0;
+	for (slot = 0; slot < 5U; slot++) {
 		status = vm_heap_add_root(realm->heap, &roots[slot]);
 		if (status != 0)
 			goto cleanup;
 
-		/* Cleanup owns only acquired registry entries. */
+		/* Cleanup owns this registry slot only after acquisition succeeds. */
 		registered++;
 	}
 
-	/* The source's object. */
+	/* The source's converted box remains live through native key collection and later getter calls. */
 	status = vm_to_object(realm, source, &source);
 	if (status != 0)
 		goto cleanup;
 	object = (struct vm_object *)vm_value_as_cell(source);
 	roots[2] = &object->cell;
 
-	/* Its own keys, kept in an array of the heap while getters run. */
-	wb_vector_init(&list, sizeof(vm_value));
-	list_ready = 1;
-	status = vm_object_own_keys(realm->heap, object, &list);
+	/* Trace even unvisited fresh Symbols before the actual OwnPropertyKeys method returns its list. */
+	status = vm_heap_add_tracer(realm->heap, spread_trace_keys, &keys);
 	if (status != 0)
 		goto cleanup;
 
-	/* The private key array stays explicitly live through user getters. */
-	keys = vm_array_create(realm->heap, realm->array_prototype);
-	if (keys == NULL) {
-		status = ENOMEM;
+	/* Cleanup must retire the acquired vector tracer before releasing its storage. */
+	traced = 1;
+	status = vm_own_property_keys(realm, object, &keys);
+	if (status != 0)
 		goto cleanup;
-	}
 
-	/* The private array owns keys while getters can run. */
-	roots[4] = &keys->cell;
+	/* Descriptor and value reads interleave per key; earlier getters may change later enumerability. */
+	for (index = 0; index < keys.count; index++) {
+		key = *(vm_value *)wb_vector_at(&keys, index);
 
-	/* Copies each key into the heap array. */
-	for (index = 0; index < list.count; index++) {
-		key = *(vm_value *)wb_vector_at(&list, index);
-		status = vm_object_define(realm->heap, keys, vm_value_int32((int32_t)index), key, VM_PROPERTY_DEFAULT);
-		if (status != 0)
-			goto cleanup;
-	}
-
-	/* The keys are in the heap array now. */
-	wb_vector_release(&list);
-	list_ready = 0;
-
-	/* Each key that is still an enumerable own property and not excluded. */
-	for (index = 0; index < keys->length; index++) {
-		status = vm_get(realm, vm_value_cell(keys), vm_value_int32((int32_t)index), &key);
-		if (status != 0)
-			goto cleanup;
-		present = vm_get_own_descriptor(object, key, &descriptor);
-		if (present < 0) {
-			status = -present;
-			goto cleanup;
-		}
-
-		/* A missing descriptor follows the absence path after errors have been excluded. */
-		if (!present)
-			continue;
-		if ((descriptor.attributes & VM_PROPERTY_ENUMERABLE) == 0U)
-			continue;
-
-		/* A key the pattern took stays out. */
+		/* A rest key already consumed by the pattern causes no descriptor or value read. */
 		status = spread_is_excluded(realm, excluded, key, &found);
 		if (status != 0)
 			goto cleanup;
 		if (found)
 			continue;
 
-		/* The value (through a getter), as a data property of the target. */
+		/* Only an actual enumerable own property contributes a value at this step. */
+		status = vm_get_own_property(realm, object, key, &descriptor, &present);
+		if (status != 0)
+			goto cleanup;
+		if (!present)
+			continue;
+		if ((descriptor.attributes & VM_PROPERTY_ENUMERABLE) == 0U)
+			continue;
+
+		/* Retain a fresh getter result independently while target definition can call or collect. */
 		status = vm_get(realm, source, key, &value);
 		if (status != 0)
 			goto cleanup;
-		roots[5] = NULL;
+		roots[4] = NULL;
 		is_cell = vm_value_is_cell(value);
 		if (is_cell)
-			roots[5] = vm_value_as_cell(value);
-		status = vm_object_define(realm->heap, target, key, value, VM_PROPERTY_DEFAULT);
+			roots[4] = vm_value_as_cell(value);
+
+		/* CreateDataProperty defines an own default data property without invoking inherited setters. */
+		memset(&descriptor, 0, sizeof(descriptor));
+		descriptor.has = VM_HAS_VALUE | VM_HAS_WRITABLE | VM_HAS_ENUMERABLE | VM_HAS_CONFIGURABLE;
+		descriptor.attributes = VM_PROPERTY_DEFAULT;
+		descriptor.value = value;
+		status = vm_define_own_property(realm, target, key, &descriptor, &accepted);
 		if (status != 0)
 			goto cleanup;
+		if (!accepted) {
+			/* Fresh payload, source and key stay owned through refusal-error allocation. */
+			status = vm_throw_type_error(realm, "Cannot create copied data property");
+			goto cleanup;
+		}
 	}
 
-	/* All keys were copied without leaving native-only cell references. */
+	/* All selected properties were defined without publishing a partial success after an error. */
 	status = 0;
 
+	/* Keys and every acquired direct-call root are retired on normal and abrupt paths. */
 cleanup:
-	/* Release temporary native keys and every acquired collector registration. */
-	if (list_ready)
-		wb_vector_release(&list);
-	while (registered != 0) {
+	if (traced)
+		vm_heap_remove_tracer(realm->heap, spread_trace_keys, &keys);
+	wb_vector_release(&keys);
+	while (registered != 0U) {
 		registered--;
 		vm_heap_remove_root(realm->heap, &roots[registered]);
 	}
 
-	/* A failed copy never reports complete property transfer. */
+	/* Preserve abrupt property or root-registration errors after releasing native ownership. */
 	if (status != 0)
 		return status;
 
-	/* Succeeded: the properties are copied. */
+	/* Succeeded: each selected own enumerable property has been copied. */
 	return 0;
+}
+
+/* Keep every initialized native key entry live across later descriptor, exclusion and value callbacks. */
+static void
+spread_trace_keys(
+	struct vm_heap *heap,
+	void *context)
+{
+	struct wb_vector *keys;
+	vm_value key;
+	size_t index;
+
+	/* The caller owns vector storage; only its published count contains valid values. */
+	keys = context;
+	for (index = 0; index < keys->count; index++) {
+		key = *(vm_value *)wb_vector_at(keys, index);
+		vm_heap_mark_value(heap, key);
+	}
 }
 
 /* Tells whether the array of excluded keys (undefined for none) lists a key. */

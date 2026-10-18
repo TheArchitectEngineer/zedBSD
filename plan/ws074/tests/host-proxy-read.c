@@ -16,6 +16,14 @@
 #include <stdio.h>
 #include <string.h>
 
+/* One direct copying probe observes live cells through integer addresses without creating collector edges. */
+struct spread_copy_observation {
+	struct vm_heap *heap;
+	uintptr_t addresses[4];
+	unsigned mode;
+	unsigned calls;
+};
+
 /* A boxed-source lifetime observation contains only an integer address and actual collection counters. */
 struct flat_source_observation {
 	uintptr_t box_address;
@@ -64,6 +72,16 @@ struct extent_observation {
 	uintptr_t addresses[4];
 	unsigned collections;
 	unsigned mode;
+};
+
+/* Only spread_copy_pressure activates this synchronous observation, which never retains managed input cells. */
+static struct spread_copy_observation spread_copy_case;
+
+static int spread_copy_define(struct vm_realm *realm, struct vm_object *object, vm_value key, const struct vm_descriptor *descriptor, int *handled, int *done);
+
+/* The target policy collects and returns native refusal or errno; it never runs user script. */
+static const struct vm_native_operations spread_copy_operations = {
+	NULL, NULL, spread_copy_define, NULL, NULL
 };
 
 /* Only flat_source_pressure owns this synchronous weak observer, which never marks a managed value. */
@@ -213,6 +231,8 @@ static int proxy_make(struct vm_realm *realm, vm_value receiver, const vm_value 
 static int proxy_revoke(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int proxy_get_receiver(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int proxy_collect(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int spread_copy_value(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int spread_copy_pressure(struct page *page);
 static int proxy_parse_pressure(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int proxy_script(struct vm_realm *realm, const char *source, vm_value *answer);
 static int proxy_lifetime(struct page *page);
@@ -372,6 +392,12 @@ main(
 		status = 1;
 		goto cleanup;
 	}
+
+	/* A direct CopyDataProperties call must own its bare native inputs and a fresh getter result through target policy. */
+	status = spread_copy_pressure(page);
+	if (status != 0)
+		goto cleanup;
+	puts("native object copy collection and reclamation: passed");
 
 	/* Observe actual native graph retention after the shared protocol controls. */
 	status = proxy_lifetime(page);
@@ -4713,5 +4739,261 @@ cleanup:
 		return status;
 
 	/* Succeeded: the actual temporary source, depth argument and final result were independently reclaimed. */
+	return 0;
+}
+
+/* Return an object owned only by the actual getter call result, without caching it in the source. */
+static int
+spread_copy_value(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct vm_object *value;
+
+	UNUSED_PARAMETER(receiver);
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* A foreign page-realm native function supplies no edge to the independent managed caller realm. */
+	value = vm_object_create(realm->heap, NULL);
+	if (value == NULL)
+		return ENOMEM;
+	value->internal = vm_value_int32(713);
+	spread_copy_case.addresses[3] = (uintptr_t)value;
+	*result = vm_value_cell(value);
+
+	/* Succeeded: only the pending Get result owns this fresh payload. */
+	return 0;
+}
+
+/* Collect while the direct target definition owns bare inputs, then preserve errno or refuse the write. */
+static int
+spread_copy_define(
+	struct vm_realm *realm,
+	struct vm_object *object,
+	vm_value key,
+	const struct vm_descriptor *descriptor,
+	int *handled,
+	int *done)
+{
+	struct vm_cell *cell;
+	struct vm_cell *pressure;
+	unsigned index;
+	int is_cell;
+
+	UNUSED_PARAMETER(object);
+	UNUSED_PARAMETER(key);
+
+	/* Heap-only calls are not the realm-aware CopyDataProperties path under test. */
+	*handled = 1;
+	*done = 0;
+	if (realm == NULL)
+		return EINVAL;
+	if ((uintptr_t)realm != spread_copy_case.addresses[0])
+		return EINVAL;
+	if ((descriptor->has & VM_HAS_VALUE) == 0U)
+		return EINVAL;
+	is_cell = vm_value_is_cell(descriptor->value);
+	if (!is_cell)
+		return EINVAL;
+	cell = vm_value_as_cell(descriptor->value);
+	if ((uintptr_t)cell != spread_copy_case.addresses[3])
+		return EINVAL;
+
+	/* The caller realm, source, target and fresh getter result must all have production owners now. */
+	vm_heap_collect(spread_copy_case.heap);
+	for (index = 0; index < 4U; index++) {
+		cell = vm_heap_find_cell(spread_copy_case.heap, spread_copy_case.addresses[index]);
+		if (cell == NULL)
+			return EFAULT;
+	}
+
+	/* Count only policies that actually observed every participant during collection. */
+	spread_copy_case.calls++;
+	if (spread_copy_case.mode == 0U)
+		return EACCES;
+
+	/* Refusal leaves pressure for a strictly later collection in the outer TypeError allocation. */
+	pressure = vm_heap_alloc(spread_copy_case.heap, &proxy_pressure_type, 8U * 1024U * 1024U);
+	if (pressure == NULL)
+		return ENOMEM;
+
+	/* Succeeded: the policy refused the property and the caller must report that refusal as an exception. */
+	return 0;
+}
+
+/* Check both native error paths with no embedding setup roots or conservative C stack retention. */
+static int
+spread_copy_pressure(
+	struct page *page)
+{
+	struct vm_realm *caller;
+	struct vm_object *target;
+	struct vm_object *source;
+	struct vm_function *getter;
+	struct vm_cell *roots[4];
+	struct vm_cell *cell;
+	struct vm_heap_stats before;
+	struct vm_heap_stats after;
+	vm_value marker;
+	vm_value key;
+	unsigned index;
+	unsigned mode;
+	unsigned registered;
+	int outcome;
+	int status;
+
+	/* The marker distinguishes the original payload from any object reusing its weak address. */
+	marker = vm_value_int32(713);
+
+	/* Setup roots are registered empty and cleared before the direct production call. */
+	memset(roots, 0, sizeof(roots));
+	registered = 0;
+	for (index = 0; index < 4U; index++) {
+		status = vm_heap_add_root(page->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+
+		/* Cleanup owns this registry slot only after acquisition succeeds. */
+		registered++;
+	}
+
+	/* Separate cases distinguish native errno from the later allocation after a Boolean refusal. */
+	for (mode = 0; mode < 2U; mode++) {
+		memset(&spread_copy_case, 0, sizeof(spread_copy_case));
+		spread_copy_case.heap = page->heap;
+		spread_copy_case.mode = mode;
+		status = vm_realm_create_managed(page->heap, &caller);
+		if (status != 0)
+			goto cleanup;
+		roots[0] = &caller->cell;
+		target = vm_object_create(page->heap, NULL);
+		if (target == NULL) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* Neither ordinary object points back to the managed caller realm. */
+		roots[1] = &target->cell;
+		source = vm_object_create(page->heap, NULL);
+		if (source == NULL) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* Keep the source alive until its accessor and production target policy are installed. */
+		roots[2] = &source->cell;
+
+		/* The getter belongs to the page realm, not the managed direct caller being observed. */
+		getter = vm_function_create_native(page->realm, "copy-fresh-value", 0, spread_copy_value);
+		if (getter == NULL) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* Key creation may allocate before source installation takes over getter ownership. */
+		roots[3] = &getter->object.cell;
+		key = vm_key_from_ascii(page->heap, "x");
+		if (key == VM_VALUE_EMPTY) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* Installing the accessor transfers getter ownership to the source, never to the weak observer. */
+		status = vm_define_accessor(page->realm, vm_value_cell(source), key, vm_value_cell(getter), 0);
+		if (status != 0)
+			goto cleanup;
+		target->native_operations = &spread_copy_operations;
+		spread_copy_case.addresses[0] = (uintptr_t)caller;
+		spread_copy_case.addresses[1] = (uintptr_t)target;
+		spread_copy_case.addresses[2] = (uintptr_t)source;
+
+		/* Only production CopyDataProperties retains the managed caller, source and target after setup. */
+		for (index = 0; index < 4U; index++)
+			roots[index] = NULL;
+		vm_heap_stats(page->heap, &before);
+		outcome = vm_copy_data_properties(caller, vm_value_cell(target), vm_value_cell(source));
+		vm_heap_stats(page->heap, &after);
+		if (spread_copy_case.calls != 1U) {
+			status = 1;
+			goto cleanup;
+		}
+
+		/* The policy must perform an actual collection rather than merely refuse a write. */
+		if (after.collections <= before.collections) {
+			status = 1;
+			goto cleanup;
+		}
+
+		/* Distinguish a native errno from the exception created after Boolean refusal. */
+		if (mode == 0U) {
+			if (outcome != EACCES) {
+				status = 1;
+				goto cleanup;
+			}
+		} else {
+			if (outcome != VM_THROWN) {
+				status = 1;
+				goto cleanup;
+			}
+
+			/* The outer error allocation must collect strictly after the inner target policy retires. */
+			if (after.collections < before.collections + 2U) {
+				status = 1;
+				goto cleanup;
+			}
+		}
+
+		/* Even the collection after the inner Define frame retires must preserve the outer saved payload. */
+		for (index = 0; index < 4U; index++) {
+			cell = vm_heap_find_cell(page->heap, spread_copy_case.addresses[index]);
+			if (cell == NULL) {
+				status = 1;
+				goto cleanup;
+			}
+		}
+
+		/* A live cell at the weak address must still be the original fresh ordinary payload. */
+		cell = vm_heap_find_cell(page->heap, spread_copy_case.addresses[3]);
+		if (cell->type != &vm_object_type) {
+			status = 1;
+			goto cleanup;
+		}
+
+		/* An object of the right type must retain the fresh payload sentinel as well. */
+		if (((struct vm_object *)cell)->internal != marker) {
+			status = 1;
+			goto cleanup;
+		}
+
+		/* No source shape contains a Symbol; all four weakly observed participants must actually retire. */
+		vm_heap_collect(page->heap);
+		for (index = 0; index < 4U; index++) {
+			cell = vm_heap_find_cell(page->heap, spread_copy_case.addresses[index]);
+			if (cell != NULL) {
+				status = 1;
+				goto cleanup;
+			}
+		}
+	}
+
+	/* Both cases completed real collection and subsequent participant reclamation. */
+	status = 0;
+
+cleanup:
+	memset(&spread_copy_case, 0, sizeof(spread_copy_case));
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(page->heap, &roots[registered]);
+	}
+
+	/* Preserve abrupt property or root-registration errors after releasing native ownership. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: errno and refusal retained all participants only as long as the API needed them. */
 	return 0;
 }
