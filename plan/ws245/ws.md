@@ -168,44 +168,44 @@ Resume point: 2026-10-16 の方針（ユーザー「i915は、実装だけ先に
 | [p017](phase017/phase.md) | VBT の解析（xd-vbt を真に、旧 parser と影の比較を 1 段） | cleared（2026-10-16 5330 の回帰に合格、main 45c83da79） |
 | [p018](phase018/phase.md) | 旧 VBT parser の本体の削除（本番の呼び手 10 関数を殻 `vbt-shell.c` に、ktest-display の 2 file を削除）。2026-10-16 に p018 と p053 の 2 段に分けた | cleared（2026-10-16 5330 の回帰に合格、merge 8fea53a1d、旧 4 file は Q1 が削除） |
 | [p053](phase053/phase.md) | EDID の decode を xd-edid に（`edid.c` の decode を消し、`state.c` の mode を xd-edid の first timing に。drm_modes の helper は edid.c に殻として残る）。p018 から分けた | cleared（2026-10-16 T1-702 で 5330 の回帰 PASS、全部の列の差 0、merge 7e3bf81cf） |
-| [p019](phase019/phase.md) | AUX の transaction（xd-aux。well・DC off・VDD は呼ぶ側） | in-progress（4 LW。2026-10-16 q1225-i02 で実装・host 試験・build 済み（343c8516a）、5330 の回帰を T1 に依頼（Q1 経由）） |
-| [p020](phase020/phase.md) | GMBUS と DDC の EDID の読み（xd-gmbus） | in-progress（3 LW。2026-10-16 q1228-i02 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回。HDMI の plug はユーザーの一覧） |
-| [p021](phase021/phase.md) | backlight の PWM（xd-panel） | in-progress（2 LW。2026-10-16 実装・host 試験・build 済み、5330 は全部の段の後に 1 回） |
-| [p022](phase022/phase.md) | panel power（PPS、xd-panel） | in-progress（3 LW。2026-10-16 q1229-i01 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回） |
-| [p023](phase023/phase.md) | power well の操作（W1、xd-power。p006 の差分を当て直す） | in-progress（5 LW。2026-10-16 q1229-i01 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回） |
-| [p024](phase024/phase.md) | well の所属（W3）と refcount（xd-power） | in-progress（4 LW。2026-10-16 q1229-i02 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回。節目: HDMI・USB-C DP の 2 画面、5320 はユーザーの一覧） |
+| [p019](phase019/phase.md) | AUX の transaction（xd-aux。well・DC off・VDD は呼ぶ側） | cleared（2026-10-18 Q1、5330 の i20・i21） |
+| [p020](phase020/phase.md) | GMBUS と DDC の EDID の読み（xd-gmbus） | cleared（2026-10-18 Q1、5330 の i20・i21） |
+| [p021](phase021/phase.md) | backlight の PWM（xd-panel） | cleared（2026-10-18 Q1、5330 の i20・i21） |
+| [p022](phase022/phase.md) | panel power（PPS、xd-panel） | cleared（2026-10-18 Q1、5330 の i20・i21） |
+| [p023](phase023/phase.md) | power well の操作（W1、xd-power。p006 の差分を当て直す） | cleared（2026-10-18 Q1、5330 の i20・i21） |
+| [p024](phase024/phase.md) | well の所属（W3）と refcount（xd-power） | cleared（2026-10-18 Q1、5330 の i20・i21） |
 | [p025](phase025/phase.md) | DC state と DC9（xd-power、dc9.c を消す） | in-progress（3 LW。2026-10-16 q1229-i02 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回。dc9.c・dc9.h と WS052 の host-i915-dc9 の削除は Q1 に依頼） |
 | [p026](phase026/phase.md) | DMC（xd-dmc） | in-progress（4 LW。2026-10-16 q1229-i02 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回。dmc.c の削除は merge の時に Q1） |
-| [p027](phase027/phase.md) | CDCLK（xd-clock） | in-progress（3 LW。2026-10-16 q1229-i02 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回。節目: suspend → resume、5320 の起動はユーザーの一覧） |
-| [p028](phase028/phase.md) | combo DPLL（xd-clock） | in-progress（5 LW。2026-10-16 q1229-i03 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回。節目: 5320 の起動。`host-vbt-pll.sh` の PLL の check は host-xd-dpll-test に移した: Tools の行は Q1） |
-| [p029](phase029/phase.md) | combo PHY（xd-ddi: init・lane・swing） | in-progress（4 LW。2026-10-16 q1229-i03 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回。phy.c・phy.h の削除は merge の時に Q1） |
-| [p030](phase030/phase.md) | DDI の buffer（xd-ddi: BUF_CTL・DP_TP・idle） | in-progress（4 LW。2026-10-16 q1229-i03 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回） |
-| [p031](phase031/phase.md) | DP の訓練（xd-dp） | in-progress（6 LW。2026-10-16 q1229-i04 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回。節目: USB-C DP と HDMI の 2 画面はユーザーの一覧） |
-| [p032](phase032/phase.md) | transcoder と pipe（xd-pipe） | in-progress（5 LW。2026-10-16 q1229-i04 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回） |
-| [p033](phase033/phase.md) | plane と flip（xd-pipe） | in-progress（3 LW。2026-10-16 q1229-i04 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回） |
-| [p034](phase034/phase.md) | DBUF と watermark（xd-dbuf） | in-progress（7 LW。2026-10-16 q1229-i04 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回。HDMI の 2 画面はユーザーの一覧） |
-| [p035](phase035/phase.md) | display の init/uninit の列（xd-core、司令） | in-progress（4 LW。2026-10-16 q1229-i04 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回。5320 の節目。takeover の WA・HTI・GMBUS reset は p036・p037 へ） |
-| [p036](phase036/phase.md) | GOP の読み出しと判断（N0、xd-takeover。旧 N0 と影の比較） | in-progress（4 LW。2026-10-16 q1229-i05 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回） |
-| [p037](phase037/phase.md) | 引き継ぎ（N1）の判断と GOP の出力の止め方（xd-takeover。readout・setup_outputs・n1 の helper は p050 まで旧） | in-progress（5 LW。2026-10-16 q1229-i05 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回） |
-| [p038](phase038/phase.md) | screen の plan（純関数。eDP・HDMI・DP-ext の 3 種を同じ段で） | in-progress（5 LW。2026-10-16 q1229-i05 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回。拒む 3 条件の判断は旧の check、plan は影） |
-| [p048](phase048/phase.md) | screen の enable/disable の列（3 種を同じ段で。retained） | in-progress（7 LW。2026-10-16 q1229-i05 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回。step の中身は殻、順と失敗の扱いが xd-screen） |
-| [p049](phase049/phase.md) | flip と resident run の契約（EAGAIN・UNPLUGGED・RELIGHT・acquired） | in-progress（4 LW。2026-10-16 q1229-i05 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回） |
-| [p050a](phase050a/phase.md) | takeover の readout と sanitize を xd-takeover の record と stop に（takeover.c の registry を消す）。2026-10-16 Q1 の判断で p050 を 4 段に分けた（design の 4 LW を大きく超えるため） | in-progress（2026-10-16 q1229-i06 で実装・host 試験・build 済み、5330 は全部の段の後に 1 回） |
-| [p050b](phase050b/phase.md) | eDP の step の本体を xd の部品（PPS・backlight・AUX・DDI の IO power・訓練の DPCD・WM/DBUF の書き込み・vblank の event）を直に呼ぶ形に | in-progress（2026-10-17 q1229-i07 で実装・host 試験・build 済み（aa4374975、新しい xd-output.c と殻 output-shell.c）、5330 は全部の段の後に 1 回） |
-| [p050c](phase050c/phase.md) | HDMI と DP-TC の step の本体 | in-progress（2026-10-17 q1229-i07 で実装・host 試験・build 済み（81332cf8e）、5330 は全部の段の後に 1 回。hdmi-mode.c/.h の削除は merge の時に Q1） |
+| [p027](phase027/phase.md) | CDCLK（xd-clock） | cleared（2026-10-18 Q1、5330 の i20・i21） |
+| [p028](phase028/phase.md) | combo DPLL（xd-clock） | cleared（2026-10-18 Q1、5330 の i20・i21） |
+| [p029](phase029/phase.md) | combo PHY（xd-ddi: init・lane・swing） | cleared（2026-10-18 Q1、5330 の i20・i21） |
+| [p030](phase030/phase.md) | DDI の buffer（xd-ddi: BUF_CTL・DP_TP・idle） | cleared（2026-10-18 Q1、5330 の i20・i21） |
+| [p031](phase031/phase.md) | DP の訓練（xd-dp） | cleared（2026-10-18 Q1、5330 の i20・i21） |
+| [p032](phase032/phase.md) | transcoder と pipe（xd-pipe） | cleared（2026-10-18 Q1、5330 の i20・i21） |
+| [p033](phase033/phase.md) | plane と flip（xd-pipe） | cleared（2026-10-18 Q1、5330 の i20・i21） |
+| [p034](phase034/phase.md) | DBUF と watermark（xd-dbuf） | cleared（2026-10-18 Q1、5330 の i20・i21） |
+| [p035](phase035/phase.md) | display の init/uninit の列（xd-core、司令） | cleared（2026-10-18 Q1、5330 の i20・i21） |
+| [p036](phase036/phase.md) | GOP の読み出しと判断（N0、xd-takeover。旧 N0 と影の比較） | cleared（2026-10-18 Q1、5330 の i20・i21） |
+| [p037](phase037/phase.md) | 引き継ぎ（N1）の判断と GOP の出力の止め方（xd-takeover。readout・setup_outputs・n1 の helper は p050 まで旧） | cleared（2026-10-18 Q1、5330 の i20・i21） |
+| [p038](phase038/phase.md) | screen の plan（純関数。eDP・HDMI・DP-ext の 3 種を同じ段で） | cleared（2026-10-18 Q1、5330 の i20・i21） |
+| [p048](phase048/phase.md) | screen の enable/disable の列（3 種を同じ段で。retained） | cleared（2026-10-18 Q1、5330 の i20・i21） |
+| [p049](phase049/phase.md) | flip と resident run の契約（EAGAIN・UNPLUGGED・RELIGHT・acquired） | cleared（2026-10-18 Q1、5330 の i20・i21） |
+| [p050a](phase050a/phase.md) | takeover の readout と sanitize を xd-takeover の record と stop に（takeover.c の registry を消す）。2026-10-16 Q1 の判断で p050 を 4 段に分けた（design の 4 LW を大きく超えるため） | cleared（2026-10-18 Q1、5330 の i20・i21） |
+| [p050b](phase050b/phase.md) | eDP の step の本体を xd の部品（PPS・backlight・AUX・DDI の IO power・訓練の DPCD・WM/DBUF の書き込み・vblank の event）を直に呼ぶ形に | cleared（2026-10-18 Q1、5330 の i20・i21） |
+| [p050c](phase050c/phase.md) | HDMI と DP-TC の step の本体 | cleared（2026-10-18 Q1、5330 の i20・i21） |
 | [p050d](phase050d/phase.md) | 口 `xd.h` と own の file の付け替え（backlight.c を含む）、旧 file（modeset・state・ddi・dp-sink・pipe・plane・aux・panel・panel-backlight・vblank・takeover の残り・internal.h の Linux の型）と旧 host 試験（host-dp-test・host-lcd-modeset-test）の削除、oracle の check を xd の試験へ | 4 段に分けた（2026-10-17 Q1、q1229-i08）: 下の p050d1〜d4 |
-| [p050d1](phase050d1/phase.md) | 内蔵 panel の sink の取得（PPS の用意・VDD・DPCD・EDID）と kernel の panel・DPCD の hook を xd の部品に（旧の Linux の eDP の world は旧 host 試験の間残す） | in-progress（2026-10-17 q1229-i08 で実装・host 試験・build 済み（3604ddfa1、新しい xd-edp.c、I2C over AUX、EDID の読み）、5330 は全部の段の後に 1 回） |
-| [p050d2](phase050d2/phase.md) | prepare の check（state.c の compute・CDCLK）と WM/DBUF を xd-screen の plan・xd-dbuf に | in-progress（2026-10-17 q1229-i10 で実装・host 試験・build 済み（38eef56d3）、5330 は全部の段の後に 1 回） |
-| [p050d3](phase050d3/phase.md) | plane・flip・vblank を xd-pipe・xd-screen に | in-progress（2026-10-17 q1229-i10 で実装・host 試験・build 済み（c93202cf5）、5330 は全部の段の後に 1 回） |
+| [p050d1](phase050d1/phase.md) | 内蔵 panel の sink の取得（PPS の用意・VDD・DPCD・EDID）と kernel の panel・DPCD の hook を xd の部品に（旧の Linux の eDP の world は旧 host 試験の間残す） | cleared（2026-10-18 Q1、5330 の i20・i21） |
+| [p050d2](phase050d2/phase.md) | prepare の check（state.c の compute・CDCLK）と WM/DBUF を xd-screen の plan・xd-dbuf に | cleared（2026-10-18 Q1、5330 の i20・i21） |
+| [p050d3](phase050d3/phase.md) | plane・flip・vblank を xd-pipe・xd-screen に | cleared（2026-10-18 Q1、5330 の i20・i21） |
 | [p050d4](phase050d4/phase.md) | 口 xd.h と own の file の付け替え、旧 file と旧 host 試験・ktest の削除（oracle を xd の試験へ） | 4 段に分けた（2026-10-17 Q1、q1229-i11）: 下の p050d4a〜d4d |
-| [p050d4a](phase050d4a/phase.md) | 画面の口: 新しい xd-picture.c に画面の object と prepare・light・dark・plane・flip・status・retained・backlight を own の型で、head.c・present.c・backlight.c を付け替え | in-progress（2026-10-17 q1229-i11 で実装・host 試験・build 済み（86041583b、新しい xd-backend.h・xd-picture.c と host-xd-picture-test、display の ktest の組を外した）、5330 は全部の段の後に 1 回） |
-| [p050d4b](phase050d4b/phase.md) | 走らせ方の口: resident run・show run・kernel の binding を own の resident.c へ（fill が picture の config を直に）、output.c の link を xd-screen の plan_link に | in-progress（2026-10-17 q1229-i12 で実装・host 試験・build 済み（9915b53dc、新しい resident.c/h と host-output-link-test、modeset.c は world だけ）、5330 は全部の段の後に 1 回） |
+| [p050d4a](phase050d4a/phase.md) | 画面の口: 新しい xd-picture.c に画面の object と prepare・light・dark・plane・flip・status・retained・backlight を own の型で、head.c・present.c・backlight.c を付け替え | cleared（2026-10-18 Q1、5330 の i20・i21） |
+| [p050d4b](phase050d4b/phase.md) | 走らせ方の口: resident run・show run・kernel の binding を own の resident.c へ（fill が picture の config を直に）、output.c の link を xd-screen の plan_link に | cleared（2026-10-18 Q1、5330 の i20・i21） |
 | [p050d4c](phase050d4c/phase.md) | 始まりと終わり: port の表（xd）、eDP の device を own の edp-device.c へ、始まりの前半を xd の部品で、VGA を own の vga.c へ、takeover.c を空に | in-progress（2026-10-17 q1229-i12 で実装・host 試験・build 済み（43c3ed47c・f491cfcad）、5330 は全部の段の後に 1 回。world の削除は d4d へ） |
 | [p050d4d](phase050d4d/phase.md) | 旧 file の削除と旧 host 試験・fake の終わり（size、`I915_XD_STRICT`、5320・SV7・QEMU の節目） | in-progress（2026-10-17 q1229-i12 で一部（854bd85fb）、q1229-i13 で残りを実装・host 試験・build 済み（f25557317: modeset・state・ddi・dp・pipe・plane・panel・edid を空に、旧 host 試験と fake を空に、internal.h の Linux 型を削減、display-host-lib.sh に mmio-record.c）、5330 は全部の段の後に 1 回） |
-| [p039](phase039/phase.md) | hotplug（xd-hpd。hotplug.c を消す） | in-progress（6 LW。2026-10-17 q1229-i13 で実装・host 試験・build 済み（02dc4b5c8: 新しい xd-hpd.c と own の hpd.c、hotplug.c・hdmi.c・gmbus.c を空に、host-xd-hpd-test）、5330 は全部の段の後に 1 回。節目: HDMI の plug で 2 画面はユーザーの一覧） |
-| [p051](phase051/phase.md) | own の output.c の port の規則と head-rules の pipe の規則を platform の記述に（hdmi.c・hdmi-mode.c・head-rules.c を消す） | in-progress（3 LW。2026-10-17 q1229-i13 で実装・host 試験・build 済み（1388dbae8: GOP の分類と HDMI の port を platform の記述で、output の pipe、head-rules を head.c に）、5330 は全部の段の後に 1 回） |
-| [p040](phase040/phase.md) | Dekel の窓と TC PHY、TC PLL（xd-tc の窓を dkl-phy.c と一緒に入れ替える、clock.c の残りを消す） | in-progress（5 LW。2026-10-17 P6 が q1236-i01 で並行に実装・host 試験・build 済み（806e0b063）。P1 の branch に merge（bd91827a5）し、xd-output の Type-C の DP mode・levels・PHY の WA・自前の TC PLL・swing の上限を xd-tc・xd-clock の直の呼びにした（6cbff0b73）。5330 は全部の段の後に 1 回。WS051 の host-tc.sh の DKL の行の直しは Q1） |
-| [p052](phase052/phase.md) | Type-C の状態機械（流れ A）と USB-C の DP（UCSI、DP-ext の probe。tc.c・tc-kern.c・dp-ext*.c を消す） | in-progress（6 LW。2026-10-17 q1229-i13 で 1 つ目（200128cc0: 外部 DP の AUX を xd-aux に、aux.c・dp-sink.c・edid-read.c・dp-internal.h・vbt.h を空に）、q1229-i14 で残り（e92b2bee0: xd-tc-port.c の状態機械・own の tc-port.c・host-xd-tc-port-test、e466cb254: probe を xd-dp.c に）、5330・5320 は全部の段の後に 1 回。intel/ の header は p043。節目: USB-C の plug はユーザーの一覧） |
+| [p039](phase039/phase.md) | hotplug（xd-hpd。hotplug.c を消す） | cleared（2026-10-18 Q1、5330 の i20・i21） |
+| [p051](phase051/phase.md) | own の output.c の port の規則と head-rules の pipe の規則を platform の記述に（hdmi.c・hdmi-mode.c・head-rules.c を消す） | cleared（2026-10-18 Q1、5330 の i20・i21） |
+| [p040](phase040/phase.md) | Dekel の窓と TC PHY、TC PLL（xd-tc の窓を dkl-phy.c と一緒に入れ替える、clock.c の残りを消す） | cleared（2026-10-18 Q1、5330 の i20・i21） |
+| [p052](phase052/phase.md) | Type-C の状態機械（流れ A）と USB-C の DP（UCSI、DP-ext の probe。tc.c・tc-kern.c・dp-ext*.c を消す） | cleared（2026-10-18 Q1、5330 の i20・i21） |
 | [p041](phase041/phase.md) | suspend の戻り（xd-display） | in-progress（4 LW。2026-10-17 q1229-i14 で実装・host 試験・build 済み（4045c6b0b）、5330 は全部の段の後に 1 回。suspend はユーザーの一覧） |
 | [p042](phase042/phase.md) | display.c の段の縮約（§7 #12）・log の文言・xd-diag | in-progress（4 LW。2026-10-17 q1229-i15 で実装・host 試験・build 済み（93ec4f94a: 段の縮約は Q1 の判断 (a)、DRM・PM demand・modeset/flip の workqueue を消した、diagnostics.c を xd-diag.c と own の run-log.c に、log の一覧は design §6.4.1）、5330・SV7 は全部の段の後に 1 回） |
 | [p043](phase043/phase.md) | 旧 code の残りの削除・試験の整理・出典の監査 | 2 段に分けた（2026-10-17 Q1、q1229-i15）: 下の p043a・p043b |

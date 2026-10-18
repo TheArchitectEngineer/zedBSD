@@ -2,7 +2,7 @@
 
 # ws245-p050d4b: 走らせ方の口（resident run・show run・kernel の binding）
 
-Status: in-progress（2026-10-17 q1229-i12 で実装・host 試験・build 済み（9915b53dc）、5330 は全部の段の後に 1 回）
+Status: cleared（2026-10-18 Q1 判定: q1229-i20・i21（5330 の実機）でこの段の「実機で確かめる事」の 5330 の項目を満たした（「判定の材料」の節、P1 q1241）。外部出力・suspend などの残りは beta2.md の U19〜U23 で追う）（旧: in-progress（2026-10-17 q1229-i12 で実装・host 試験・build 済み（9915b53dc）、5330 は全部の段の後に 1 回））
 Parent: [WS245](../ws.md)
 Queue: q1229-i11（P1）→ q1229-i12（P1、実行）
 設計: [design.md](../design.md) §6.2 の p050 の行、§3.6、§4.2。分け方は [phase050d4](../phase050d4/phase.md)

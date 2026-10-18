@@ -558,5 +558,5 @@ WS074 の記録の q590・q594〜q598（Codex の browser3）は main の同じ�
 
 | Queue | 担当 | Phase | 範囲 | 結果 |
 | --- | --- | --- | --- | --- |
-| q1241 / q1241-i01 | P1（phase-runner、Opus 5.5 low） | ws245 の in-progress の 43 Phase、p046 | (1) 各 Phase の受け入れの基準と q1229-i20・i21（5330 の実機、証拠 t1 396cbfce4・24f2329ea）の証拠を突き合わせ、phase.md に「判定の材料」（満たした基準と証拠、残る物）を書く。cleared にするのは Q1 (2) p046 の全文の読み通し。source の動作は変えない | in-progress |
+| q1241 / q1241-i01 | P1（phase-runner、Opus 5.5 low） | ws245 の in-progress の 43 Phase、p046 | (1) 各 Phase の受け入れの基準と q1229-i20・i21（5330 の実機、証拠 t1 396cbfce4・24f2329ea）の証拠を突き合わせ、phase.md に「判定の材料」（満たした基準と証拠、残る物）を書く。cleared にするのは Q1 (2) p046 の全文の読み通し。source の動作は変えない | in-progress: (1) 済み（判定の材料 f6ae7d2f5、merge d58abd112）。Q1 が 32 Phase を cleared（p019〜p024・p027〜p038・p048・p049・p050a〜c・p050d1〜d4b・p039・p051・p040・p052）。保留: p025・p026・p043（p043b、DC6 の H6）、p042・p050d4c（reboot の止める道）、p050d4d（QEMU の boot-test 未実施）。cleared にしない: p041（suspend の実機）、p044・p045（host の受け入れ）、p046（読み通し中）|
 | q1242 / q1242-i01 | P1（同上、q1241 の後） | ws251-p002 | GPU ドライバの comment・log から開発の管理情報を消す残り（565 件、phase002 の再開の手順から） | pending |

@@ -2,7 +2,7 @@
 
 # ws245-p052: Type-C の状態機械（流れ A）と USB-C の DP
 
-Status: in-progress（2026-10-17 q1229-i14 で残りの 1〜4 を実装・host 試験・build 済み（e92b2bee0・e466cb254）。5 は p043。5330・SV7・5320 は全部の段の後に 1 回（T1）。節目: USB-C DP の plug はユーザーの一覧）
+Status: cleared（2026-10-18 Q1 判定: q1229-i20・i21（5330 の実機）でこの段の「実機で確かめる事」の 5330 の項目を満たした（「判定の材料」の節、P1 q1241）。外部出力・suspend などの残りは beta2.md の U19〜U23 で追う）（旧: in-progress（2026-10-17 q1229-i14 で残りの 1〜4 を実装・host 試験・build 済み（e92b2bee0・e466cb254）。5 は p043。5330・SV7・5320 は全部の段の後に 1 回（T1）。節目: USB-C DP の plug はユーザーの一覧））
 Parent: [WS245](../ws.md)
 Queue: q1229-i13（P1、1 つ目）、q1229-i14（P1、残り）
 設計: [design.md](../design.md) §6.2 の p052 の行、§3.4（DDI_BUF_CTL の所有 bit）、§3.5（TC port の遷移）

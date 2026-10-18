@@ -2,7 +2,7 @@
 
 # ws245-p050d2: prepare の check と WM/DBUF を xd に
 
-Status: in-progress（2026-10-17 q1229-i10 で実装・host 試験・build 済み（38eef56d3）、5330 は全部の段の後に 1 回。q1229-i09 は source を変える前にユーザーの指示「いったんi915の作業をラップアップします。」でラップアップした attempt）
+Status: cleared（2026-10-18 Q1 判定: q1229-i20・i21（5330 の実機）でこの段の「実機で確かめる事」の 5330 の項目を満たした（「判定の材料」の節、P1 q1241）。外部出力・suspend などの残りは beta2.md の U19〜U23 で追う）（旧: in-progress（2026-10-17 q1229-i10 で実装・host 試験・build 済み（38eef56d3）、5330 は全部の段の後に 1 回。q1229-i09 は source を変える前にユーザーの指示「いったんi915の作業をラップアップします。」でラップアップした attempt））
 Parent: [WS245](../ws.md)
 Queue: q1229-i08・q1229-i09（P1、ラップアップ）・q1229-i10（P1）
 設計: [design.md](../design.md) §6.2 の p038・p050 の行、§2.6、§2.10、§3.3。着手の手がかりは [phase050d](../phase050d/phase.md) の 4

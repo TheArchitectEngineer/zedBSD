@@ -2,7 +2,7 @@
 
 # ws245-p051: port の規則と head の pipe の規則を platform の記述に
 
-Status: in-progress（2026-10-17 q1229-i13 で実装・host 試験・build 済み（1388dbae8）、5330 は全部の段の後に 1 回。外部出力: 未確認（p052 の節目で））
+Status: cleared（2026-10-18 Q1 判定: q1229-i20・i21（5330 の実機）でこの段の「実機で確かめる事」の 5330 の項目を満たした（「判定の材料」の節、P1 q1241）。外部出力・suspend などの残りは beta2.md の U19〜U23 で追う）（旧: in-progress（2026-10-17 q1229-i13 で実装・host 試験・build 済み（1388dbae8）、5330 は全部の段の後に 1 回。外部出力: 未確認（p052 の節目で）））
 Parent: [WS245](../ws.md)
 Queue: q1229-i13（P1）
 設計: [design.md](../design.md) §6.2 の p051 の行、§3.3（pipe の割り当て）
