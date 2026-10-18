@@ -54,6 +54,13 @@
 
 #define KERN_IMAGE_BOOT_PARAMETERS_TEXT 		"overlay-root=boot0:rootfs.img overlay-data=boot0:data.img swap0=boot0:swapfile"
 
+/*
+ * Pixel formats a platform's boot framebuffer format value may name: four
+ * bytes per pixel, red first or blue first, the fourth byte unused.
+ */
+#define KERN_BOOT_FRAMEBUFFER_RGBX8888			1U
+#define KERN_BOOT_FRAMEBUFFER_BGRX8888			2U
+
 #define KERN_MEMORY_AVAILABLE				1U
 #define KERN_MEMORY_RESERVED				2U
 
@@ -65,9 +72,6 @@
 #define KERN_X68K_HANDOFF_MAGIC				0x58363848U /* "X68H" */
 #define KERN_X68K_HANDOFF_VERSION			1U
 #define KERN_X68K_MAX_MEMORY_REGIONS			4U
-
-/* XXX: To be removed. Use the common one. */
-#define KERN_RPI4_HANDOFF_MAGIC	0x34495052U
 
 /* XXX: To be removed. Use the common one. */
 #define KERN_SUN4U_HANDOFF_MAGIC	0x53345548U /* "S4UH" */
@@ -248,24 +252,6 @@ struct kern_boot_provenance {
 	struct kern_boot_partition_identity firmware;
 	struct kern_boot_partition_identity configuration;
 };
-
-/* XXX: To be removed. Use the common one. */
-struct rpi4_boot_handoff {
-	struct kern_boot_handoff common;
-	uint32_t extension_magic;
-	uint16_t extension_version;
-	uint16_t extension_size;
-	uint64_t fdt_phys;
-	uint64_t framebuffer_phys;
-	uint64_t framebuffer_size;
-	uint64_t sdhci_phys;
-	uint32_t framebuffer_width;
-	uint32_t framebuffer_height;
-	uint32_t framebuffer_pitch;
-	uint32_t framebuffer_format;
-	uint32_t sdhci_irq;
-	uint32_t reserved[3];
-} __attribute__((packed));
 
 /* XXX: To be removed. Use the common one. */
 struct kern_sun4u_memory_range {

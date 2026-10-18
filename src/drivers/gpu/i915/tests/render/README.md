@@ -15,7 +15,7 @@ own, runs its steps, logs `<SUITE>-<STEP> PASS` or `FAIL` per step and a
     flock /tmp/i915-hw.lock env BUILD=build/<dir> vkloop-hw.sh test vkcs
 
 No test kernel holds every scenario (the kernel without tests is within about 450 KiB of
-`AMD64_KERNEL_MAX_BYTES`), so each scenario's image links the runner and the scenarios of one test set
+the 16 MiB the loaders accept for an image), so each scenario's image links the runner and the scenarios of one test set
 (`I915_TEST_SET`, `platform/amd64/vmunix.mk`): `vkx`, `vkc`, `vke1` and `vke2` one each, `compute` for `vkcs`,
 `execution` for ktest eu draw r1 tex t3 bl, `display` for the LCD/HDMI scenarios, `display_ktest` and
 `display_ktest2` for the two halves of display_ktest.  `vkloop-hw.sh` picks the set from the scenario (and the

@@ -504,7 +504,7 @@ prekern_amd64_space_init(
 	 * follow the linked extent (the virtual layout is fixed); the pages they
 	 * map follow the placement, `delta` bytes away.
 	 */
-	framebuffer = hal_get_arch_handoff("pcat.framebuffer");
+	framebuffer = bsp_boot_framebuffer();
 	img = amd64_kernel_image();
 	kernel_start = (uintptr_t)img->link_phys_start;
 	kernel_end = (uintptr_t)img->link_phys_end;

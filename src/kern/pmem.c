@@ -22,6 +22,11 @@
 #include "kern/platform.h"
 #include "kern/pmem.h"
 
+/* The longest name of one boot framebuffer value, terminator included. */
+#define BOOT_FRAMEBUFFER_NAME_MAX	64U
+
+static int boot_framebuffer_value(const char *prefix, const char *value_name, uint64_t *value);
+
 /*
  * Reports an errno for one HAL status.
  */
@@ -217,6 +222,86 @@ kern_boot_handoff(
 }
 
 /*
+ * Reads the boot framebuffer the platform hands over under a name prefix.
+ *
+ * The platform names each value <prefix>.phys, .size, .width, .height,
+ * .pitch and .format; all of them are there or none is.
+ */
+int
+kern_boot_framebuffer(
+	const char *prefix,
+	struct kern_boot_framebuffer *framebuffer)
+{
+	uint64_t physical_base;
+	uint64_t size;
+	uint64_t width;
+	uint64_t height;
+	uint64_t pitch;
+	uint64_t format;
+	int error;
+
+	/* Refuses a missing prefix or destination. */
+	if (prefix == NULL || framebuffer == NULL)
+		return EINVAL;
+
+	/* Starts from no framebuffer, which is what a failure leaves. */
+	framebuffer->physical_base = 0;
+	framebuffer->size = 0;
+	framebuffer->width = 0;
+	framebuffer->height = 0;
+	framebuffer->pitch = 0;
+	framebuffer->format = 0;
+
+	/* Finds the framebuffer's physical base; without it there is no screen. */
+	error = boot_framebuffer_value(prefix, "phys", &physical_base);
+	if (error != 0)
+		return error;
+
+	/* Reads the size of the framebuffer's window. */
+	error = boot_framebuffer_value(prefix, "size", &size);
+	if (error != 0)
+		return error;
+
+	/* Reads the width in pixels. */
+	error = boot_framebuffer_value(prefix, "width", &width);
+	if (error != 0)
+		return error;
+
+	/* Reads the height in pixels. */
+	error = boot_framebuffer_value(prefix, "height", &height);
+	if (error != 0)
+		return error;
+
+	/* Reads the distance from one row to the next. */
+	error = boot_framebuffer_value(prefix, "pitch", &pitch);
+	if (error != 0)
+		return error;
+
+	/* Reads the pixel format. */
+	error = boot_framebuffer_value(prefix, "format", &format);
+	if (error != 0)
+		return error;
+
+	/* Refuses a value the kernel's record cannot hold. */
+	if (width > UINT32_MAX ||
+	    height > UINT32_MAX ||
+	    pitch > UINT32_MAX ||
+	    format > UINT32_MAX)
+		return EINVAL;
+
+	/* Fills the kernel's record. */
+	framebuffer->physical_base = physical_base;
+	framebuffer->size = size;
+	framebuffer->width = (uint32_t)width;
+	framebuffer->height = (uint32_t)height;
+	framebuffer->pitch = (uint32_t)pitch;
+	framebuffer->format = (uint32_t)format;
+
+	/* Succeeded: the platform handed over a framebuffer. */
+	return 0;
+}
+
+/*
  * Reads the monotonic counter and its frequency.
  */
 bool
@@ -226,4 +311,50 @@ kern_rtc_read_counter(
 {
 	/* Only differences between samples are meaningful. */
 	return hal_rtc_read_counter(counter, frequency_hz);
+}
+
+/*
+ * Reads one boot framebuffer value by its name, <prefix>.<value_name>.
+ */
+static int
+boot_framebuffer_value(
+	const char *prefix,
+	const char *value_name,
+	uint64_t *value)
+{
+	char name[BOOT_FRAMEBUFFER_NAME_MAX];
+	const uint64_t *object;
+	size_t length;
+	size_t index;
+
+	/* Copies the prefix, leaving room for the separator. */
+	length = 0;
+	while (prefix[length] != '\0') {
+		/* Refuses a prefix that leaves no room for a value's name. */
+		if (length + 2U >= sizeof(name))
+			return EINVAL;
+
+		name[length] = prefix[length];
+		length++;
+	}
+	name[length++] = '.';
+
+	/* Appends the value's own name and the terminator. */
+	for (index = 0; value_name[index] != '\0'; index++) {
+		/* Refuses a name too long for the buffer. */
+		if (length + 1U >= sizeof(name))
+			return EINVAL;
+
+		name[length++] = value_name[index];
+	}
+	name[length] = '\0';
+
+	/* Asks the platform for the value; a missing one means no framebuffer. */
+	object = hal_get_arch_handoff(name);
+	if (object == NULL)
+		return ENOENT;
+
+	/* Succeeded: the value the platform keeps under the name. */
+	*value = *object;
+	return 0;
 }

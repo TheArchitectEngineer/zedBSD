@@ -184,7 +184,7 @@ prekern_amd64_page_init(
 	for (index = 0; bsp_boot_allocation(index, &base, &size); index++)
 		reserve_range((uintptr_t)base, (size_t)size);
 
-	framebuffer = hal_get_arch_handoff("pcat.framebuffer");
+	framebuffer = bsp_boot_framebuffer();
 	if (framebuffer != NULL)
 		reserve_range((uintptr_t)framebuffer->physical_base, (size_t)framebuffer->size);
 
@@ -828,7 +828,7 @@ prekern_amd64_range_page_init(void)
 		reserve_managed(base, size);
 	for (index = 0; amd64_early_reservation(index, &base, &size); index++)
 		reserve_managed(base, size);
-	framebuffer = hal_get_arch_handoff("pcat.framebuffer");
+	framebuffer = bsp_boot_framebuffer();
 	if (framebuffer != NULL)
 		reserve_managed(framebuffer->physical_base, framebuffer->size);
 	free_pages = 0;
@@ -863,7 +863,7 @@ early_metadata(uint64_t size)
 	if (size == 0 || size > UINT64_MAX - (PAGE_SIZE - 1U))
 		return NULL;
 	size = (size + PAGE_SIZE - 1U) & ~(uint64_t)(PAGE_SIZE - 1U);
-	framebuffer = hal_get_arch_handoff("pcat.framebuffer");
+	framebuffer = bsp_boot_framebuffer();
 	/* Metadata prefers high RAM so it does not consume low DMA capacity. */
 	for (pass = 0; pass < 2; pass++) {
 		for (index = 0; index < bsp_mem_range_count(); index++) {
@@ -1083,7 +1083,7 @@ boot_page_retained(uint64_t physical)
 	if (physical < 0x100000U || amd64_kernel_image_owns(physical) ||
 	    amd64_acpi_page_reserved(physical))
 		return 1;
-	framebuffer = hal_get_arch_handoff("pcat.framebuffer");
+	framebuffer = bsp_boot_framebuffer();
 	if (framebuffer != NULL && physical < framebuffer->physical_base + framebuffer->size &&
 	    physical + PAGE_SIZE > framebuffer->physical_base)
 		return 1;

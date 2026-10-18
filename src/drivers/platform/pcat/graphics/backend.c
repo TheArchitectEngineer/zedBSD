@@ -17,7 +17,6 @@
 #include <drivers/pci/pci.h>
 #include <hal/hal.h>
 #include <kern/kcrt.h>
-#include "bootloader/include/amd64-handoff.h"
 #include "kern/klog.h"
 #include "kern/text-display.h"
 #include "kern/pmem.h"
@@ -47,7 +46,14 @@ static struct drv_pci_device *cirrus_device;
 static struct drv_pci_mapping cirrus_mapping;
 static int vga_color_cache = -1;
 static volatile uint8_t *vga_aperture, *cirrus_aperture;
-static const struct zbl6_framebuffer *linear_framebuffer;
+
+/*
+ * The boot framebuffer the platform handed over, read once when the
+ * hardware is prepared.  linear_framebuffer points at boot_framebuffer when
+ * there is one and is NULL otherwise.
+ */
+static struct kern_boot_framebuffer boot_framebuffer;
+static const struct kern_boot_framebuffer *linear_framebuffer;
 static volatile uint32_t *linear_pixels;
 
 /*
@@ -120,7 +126,7 @@ drv_pcat_graphics_backend_enter(
 		mode->width = linear_framebuffer->width;
 		mode->height = linear_framebuffer->height;
 		mode->bits_per_pixel = 32U;
-		mode->stride = linear_framebuffer->stride * 4U;
+		mode->stride = linear_framebuffer->pitch * 4U;
 		(void)pcat_graphics_clear();
 		kern_logf("graphics: boot framebuffer %ux%ux32 stride=%u\n",
 			   mode->width, mode->height, mode->stride);
@@ -183,7 +189,7 @@ drv_pcat_graphics_backend_get_modes(
 			modes[0].width = linear_framebuffer->width;
 			modes[0].height = linear_framebuffer->height;
 			modes[0].bits_per_pixel = 32U;
-			modes[0].stride = linear_framebuffer->stride * 4U;
+			modes[0].stride = linear_framebuffer->pitch * 4U;
 		}
 
 		/* Reports operation failure. */
@@ -266,7 +272,7 @@ drv_pcat_graphics_backend_fill(
 		/* Process each element required by the operation. */
 		for (y = rect->y; y < rect->y + rect->height; y++) {
 			row_local = linear_pixels +
-				    (size_t)y * linear_framebuffer->stride +
+				    (size_t)y * linear_framebuffer->pitch +
 				    rect->x;
 			/* Process each element required by the operation. */
 			for (x = 0; x < rect->width; x++)
@@ -543,10 +549,10 @@ drv_pcat_graphics_backend_get_framebuffer(
 	if (height != NULL)
 		*height = linear_framebuffer->height;
 	if (stride != NULL)
-		*stride = linear_framebuffer->stride;
+		*stride = linear_framebuffer->pitch;
 	if (rgbx != NULL) {
 		*rgbx = linear_framebuffer->format ==
-			ZBL6_FRAMEBUFFER_RGBX8888;
+			KERN_BOOT_FRAMEBUFFER_RGBX8888;
 	}
 
 	/* Reports an available framebuffer. */
@@ -912,7 +918,7 @@ linear_color(
 	uint32_t color)
 {
 	/* Handles the linear framebuffer condition. */
-	if (linear_framebuffer->format == ZBL6_FRAMEBUFFER_RGBX8888) {
+	if (linear_framebuffer->format == KERN_BOOT_FRAMEBUFFER_RGBX8888) {
 		return ((color & 0xff0000U) >> 16) | (color & 0x00ff00U) |
 		       ((color & 0x0000ffU) << 16);
 	}
@@ -942,7 +948,7 @@ write_pixel(
 
 	/* Handles the active backend condition. */
 	if (active_backend == DISPLAY_LINEAR) {
-		linear_pixels[(size_t)y * linear_framebuffer->stride + x] =
+		linear_pixels[(size_t)y * linear_framebuffer->pitch + x] =
 			linear_color(color);
 	} else if (active_backend == DISPLAY_VGA) {
 		vga_write_pixel(x, y, rgb_to_vga(color));
@@ -1037,7 +1043,12 @@ pcat_graphics_prepare_hardware(
 	int error;
 
 	drv_pcat_font_init();
-	linear_framebuffer = kern_boot_handoff("pcat.framebuffer");
+
+	/* Reads the boot framebuffer the platform handed over, if any. */
+	linear_framebuffer = NULL;
+	error = kern_boot_framebuffer("pcat.framebuffer", &boot_framebuffer);
+	if (error == 0)
+		linear_framebuffer = &boot_framebuffer;
 
 	/*
 	 * The boot framebuffer is the kernel's once handed over: it maps the
