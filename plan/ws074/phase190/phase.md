@@ -249,3 +249,5 @@ q19で環境未対応242を調べるとheader理由332 occurrenceは6普通stati
 [Queue](../queue.md) i01でこのgeneric static providerをHTTP wire roundtrip/元22 controls/追加header controlsにより確認し、適用ackのあるheaderだけを未対応理由から外す。file/body bytes・query・Content-Type/charset・重複/順序を保ち、templateや未対応を黙って無視しない。i02で同一native source/pairの413を再実行してold82維持・全edgeのpinned pixel比較とraw/hash/PNGを検証する。native engine/API/既存他runner/WPT/期待値は変更しない。最大60分/16:32 JST bound、共有projection pending。
 
 Event ws074-p190-q20-selected-20261018: q19 real env recordsとpinned HTTP contractに基づき計測環境を忠実化する2 partialを選定。harness未attempt292も分類済みだが、現に242ケースを止めるheader providerを先に直す。源source/条件は固定し、testdriver actionsやsubstitution/HTTPS等を偽装しない。前q19全result・1451 verifiedを保持する。
+
+Event ws074-p190-q20-provider-cleared-consumer-start-20261018: generic静的headers providerを実装、独立HTTP roundtrip/無改変pinned load_headersとの一致とnative negative fallbackを含め29 controls pass。隣接dir/file順・CT既定抑制・重複・本文/HEAD/queryを確認し、.sub/malformed/pipe/表現依存headerの未対応は非PASS。i01 partial cleared、i02で同source/pairの413とold82を再測定する。producer全体/WSを完了としない。

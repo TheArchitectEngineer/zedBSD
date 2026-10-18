@@ -12,6 +12,9 @@ from pathlib import Path
 import tempfile
 import threading
 import unittest
+import urllib.request
+import ast
+import subprocess
 from unittest import mock
 
 from PIL import Image
@@ -39,7 +42,7 @@ class NativeCaptureTest(unittest.TestCase):
         cls.program = Path(os.environ["WPT_READY_RENDERER"]).resolve()
         cls.wait, cls.wait_metadata = RUNNER.wait_script(RUNNER.ROOT / "build/ws074-suites/wpt")
 
-    def render(self, name, source, query="", xml=False, timeout=10, child=False):
+    def render(self, name, source, query="", xml=False, timeout=10, child=False, headers=None, header_template=None):
         extension = ".xht" if xml else ".html"
         test_id = "/" + name + extension + query
         server = RUNNER.Server(("127.0.0.1", 0), functools.partial(
@@ -51,6 +54,10 @@ class NativeCaptureTest(unittest.TestCase):
         adapter = RUNNER.probe(self.wait, nonce, url, xml=xml)
         body, offset = RUNNER.inject(original, adapter)
         (self.directory / (name + extension)).write_bytes(original)
+        if headers is not None:
+            (self.directory / (name + extension + ".headers")).write_bytes(headers)
+        if header_template is not None:
+            (self.directory / (name + extension + ".sub.headers")).write_bytes(header_template)
         (self.directory / (name + ".instrumented")).write_bytes(body)
         server.probes = {test_id: (body, "application/xhtml+xml" if xml else "text/html; charset=utf-8")}
         if child:
@@ -58,6 +65,7 @@ class NativeCaptureTest(unittest.TestCase):
             child_adapter = RUNNER.probe(self.wait, "child-" + nonce, base + "/child.html")
             child_body, _ = RUNNER.inject(original_child, child_adapter)
             server.probes["/child.html"] = (child_body, "text/html; charset=utf-8")
+        server.requests, server.header_records = [], []
         worker = threading.Thread(target=server.serve_forever, daemon=True)
         worker.start()
         try:
@@ -67,6 +75,7 @@ class NativeCaptureTest(unittest.TestCase):
             server.shutdown()
             server.server_close()
             worker.join()
+        RUNNER.apply_environment(record, self.directory, server.requests, server.header_records, test_id)
         record.update(source=source, insertion_offset=offset)
         RUNNER.retain_capture(self.directory, name, record)
         return record
@@ -74,6 +83,23 @@ class NativeCaptureTest(unittest.TestCase):
     def pixel(self, record):
         with Image.open(record["image"]["file"]) as image:
             return image.convert("RGB").getpixel((10, 10))
+
+    def test_static_header_acknowledges_original_input(self):
+        record = self.render("headers-valid", html(), headers=b"Content-Type: text/html; charset=utf-8\nCache-Control: max-age=3600\n")
+        self.assertEqual(record["outcome"], "pass", record)
+        self.assertTrue(record["response_headers"][0]["applied"])
+        self.assertEqual(record["unsupported"], [])
+
+    def test_header_substitution_fallback_cannot_pass(self):
+        record = self.render("headers-sub", html(), headers=b"X-Good: ignored\n", header_template=b"X-Host: {{host}}\n")
+        self.assertEqual(record["readiness"]["status"], "ready", record)
+        self.assertEqual(record["outcome"], "unsupported_environment", record)
+        self.assertFalse(record["response_headers"][0]["applied"])
+
+    def test_malformed_header_fallback_cannot_pass(self):
+        record = self.render("headers-malformed", html(), headers=b"missing-colon\n")
+        self.assertEqual(record["readiness"]["status"], "ready", record)
+        self.assertEqual(record["outcome"], "unsupported_environment", record)
 
     def test_plain_original_dom(self):
         record = self.render("plain", html("console.log('script-count',document.getElementsByTagName('script').length)"))
@@ -233,6 +259,70 @@ class PixelGraphTest(unittest.TestCase):
         self.assertEqual(RUNNER.resolve_id("/a/test.html", "../ref.html#target"), "/ref.html#target")
         with self.assertRaises(RUNNER.Unsupported):
             RUNNER.resolve_id("/a/test.html", "https://elsewhere.invalid/ref.html")
+
+
+class StaticHeadersTest(unittest.TestCase):
+    def setUp(self):
+        root = RUNNER.ROOT / "build/ws074-20261018/q20/header-controls"
+        root.mkdir(parents=True, exist_ok=True)
+        self.directory = Path(tempfile.mkdtemp(prefix="retained-", dir=root))
+        (self.directory / "nested").mkdir()
+        self.path = self.directory / "nested" / "source.js"
+        self.body = b"console.log('original-body');\n"
+        self.path.write_bytes(self.body)
+        (self.directory / "__dir__.headers").write_bytes(b"X-Parent: not-inherited\n")
+        (self.path.parent / "__dir__.headers").write_bytes(b"X-Order: directory\n")
+        self.path.with_name(self.path.name + ".headers").write_bytes(
+            b"X-Order: file\nContent-Type: text/javascript; charset=utf-8\nCache-Control: max-age=3600\n")
+        self.server = RUNNER.Server(("127.0.0.1", 0), functools.partial(RUNNER.Handler, directory=str(self.directory)))
+        self.server.probes, self.server.requests, self.server.header_records = {}, [], []
+        self.worker = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.worker.start()
+        self.url = "http://127.0.0.1:%d/nested/source.js?value=two%%20words" % self.server.server_port
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.worker.join()
+        (self.directory / "wire-records.json").write_text(json.dumps(self.server.header_records, indent=2) + "\n")
+
+    def test_get_original_body_mime_duplicate_and_order(self):
+        with urllib.request.urlopen(self.url) as response:
+            self.assertEqual(response.read(), self.body)
+            self.assertEqual(response.headers.get_all("Content-Type"), ["text/javascript; charset=utf-8"])
+            self.assertEqual(response.headers.get_all("X-Order"), ["directory", "file"])
+            self.assertEqual(response.headers.get("Cache-Control"), "max-age=3600")
+            self.assertIsNone(response.headers.get("X-Parent"))
+        record = self.server.header_records[0]
+        self.assertTrue(record["applied"])
+        self.assertEqual(record["request"], "/nested/source.js?value=two%20words")
+        self.assertEqual(len(record["sources"]), 2)
+
+    def test_head_has_same_metadata_and_no_body(self):
+        request = urllib.request.Request(self.url, method="HEAD")
+        with urllib.request.urlopen(request) as response:
+            self.assertEqual(response.read(), b"")
+            self.assertEqual(response.headers.get_all("Content-Type"), ["text/javascript; charset=utf-8"])
+            self.assertEqual(response.headers.get_all("X-Order"), ["directory", "file"])
+            self.assertEqual(int(response.headers.get("Content-Length")), len(self.body))
+
+    def test_unmodified_pinned_header_loader_agrees(self):
+        source = subprocess.check_output(["git", "-C", str(RUNNER.ROOT / "build/ws074-suites/wpt"), "show",
+            RUNNER.WPT_COMMIT + ":tools/wptserve/wptserve/handlers.py"])
+        functions = [node for node in ast.walk(ast.parse(source)) if isinstance(node, ast.FunctionDef) and node.name == "load_headers"]
+        self.assertEqual(len(functions), 1)
+        scope = dict(os=os)
+        exec(compile(ast.Module(body=functions, type_ignores=[]), "<pinned-header-loader>", "exec"), scope)
+        expected = scope["load_headers"](None, str(self.path))
+        actual, _sources = RUNNER.static_response_headers(self.directory, "/nested/source.js")
+        self.assertEqual([(a.encode("ascii"), b.encode("latin-1")) for a, b in actual], expected)
+
+    def test_substitution_priority_and_malformed_are_not_relaxed(self):
+        self.path.with_name(self.path.name + ".sub.headers").write_bytes(b"X-Host: {{host}}\n")
+        with self.assertRaises(RUNNER.Unsupported):
+            RUNNER.static_response_headers(self.directory, "/nested/source.js")
+        limits = RUNNER.request_limits(self.directory, ["/nested/source.js?pipe=status(404)"])
+        self.assertTrue(any(reason == "response_pipeline" for _url, reason in limits))
 
 
 if __name__ == "__main__":

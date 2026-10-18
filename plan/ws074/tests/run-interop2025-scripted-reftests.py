@@ -36,17 +36,77 @@ CRASH = load_tool("scripted_wait_protocol", "run-interop2025-crashtests.py")
 STATIC = load_tool("scripted_reftest_metadata", "run-wpt-reftests.py")
 
 
+def static_response_headers(root, resource):
+    path = resource_path(root, resource)
+    if not path.is_file():
+        return [], []
+    values, sources = [], []
+    for base in (path.parent / "__dir__", path):
+        template = base.with_name(base.name + ".sub.headers")
+        if template.is_file():
+            raise Unsupported("response header substitution is unimplemented")
+        header = base.with_name(base.name + ".headers")
+        if not header.is_file():
+            continue
+        data = header.read_bytes()
+        for line in data.splitlines():
+            if not line:
+                continue
+            if b":" not in line:
+                raise Unsupported("malformed static response header")
+            key, value = [part.strip() for part in line.split(b":", 1)]
+            if not re.fullmatch(br"[!#$%&'*+.^_`|~0-9A-Za-z-]+", key):
+                raise Unsupported("invalid response header name")
+            if any(byte < 32 and byte != 9 for byte in value) or b"\x7f" in value:
+                raise Unsupported("invalid response header value")
+            values.append((key.decode("ascii"), value.decode("latin-1")))
+        sources.append(dict(path=str(header.relative_to(root)), sha256=hashlib.sha256(data).hexdigest()))
+    return values, sources
+
+
 class Handler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, _format, *_args):
         pass
 
+    def prepare_headers(self):
+        self.extra_headers, self.header_sources, self.header_error = [], [], None
+        try:
+            self.extra_headers, self.header_sources = static_response_headers(Path(self.directory).resolve(), self.path)
+        except Unsupported as error:
+            self.header_error = str(error)
+
+    def send_header(self, keyword, value):
+        # Metadata is the complete source for an explicitly provided field.
+        if keyword.lower() in {key.lower() for key, _value in getattr(self, "extra_headers", [])}:
+            return
+        return super().send_header(keyword, value)
+
+    def end_headers(self):
+        for key, value in getattr(self, "extra_headers", []):
+            super().send_header(key, value)
+        super().end_headers()
+        if hasattr(self.server, "header_records"):
+            self.server.header_records.append(dict(request=self.path, method=self.command,
+                applied=getattr(self, "header_error", None) is None,
+                error=getattr(self, "header_error", None),
+                sources=getattr(self, "header_sources", []), values=getattr(self, "extra_headers", [])))
+
+    def send_head(self):
+        self.prepare_headers()
+        return super().send_head()
+
+    def do_HEAD(self):
+        if hasattr(self.server, "requests"):
+            self.server.requests.append(self.path)
+        return super().do_HEAD()
+
     def do_GET(self):
         if hasattr(self.server, "requests"):
             self.server.requests.append(self.path)
-        # A full encoded query identifies its own adapter and nonce.
         entry = self.server.probes.get(self.path)
         if entry is None:
             return super().do_GET()
+        self.prepare_headers()
         body, mime = entry
         self.send_response(200)
         self.send_header("Content-Type", mime)
@@ -349,23 +409,48 @@ def resource_path(wpt, resource):
     return path
 
 
-def request_limits(wpt, resources):
+def request_limits(wpt, resources, header_records=None, instrumented=None):
+    from urllib.parse import parse_qs
     limits = []
+    acknowledgements = {}
+    for record in header_records or []:
+        acknowledgements.setdefault(record["request"], []).append(record)
     for resource in resources:
-        path = resource_path(wpt, resource)
+        try:
+            path = resource_path(wpt, resource)
+        except Unsupported:
+            limits.append([resource, "resource_outside_root"])
+            continue
         if path.name in ("testdriver.js", "testdriver-vendor.js"):
             limits.append([resource, "testdriver_remote_actions"])
         if ".sub." in path.name or path.suffix in (".py", ".asis"):
             limits.append([resource, "generated_server_resource"])
-        ancestors = [path.with_name(path.name + ".headers")]
-        parent = path.parent
-        while parent == wpt or wpt in parent.parents:
-            ancestors.append(parent / "__dir__.headers")
-            if parent == wpt:
-                break
-            parent = parent.parent
-        if any(item.is_file() for item in ancestors):
-            limits.append([resource, "unimplemented_response_headers"])
+        if "pipe" in parse_qs(urlsplit(resource).query):
+            limits.append([resource, "response_pipeline"])
+        records = acknowledgements.get(resource, [])
+        acknowledgement = records.pop(0) if records else None
+        try:
+            values, sources = static_response_headers(wpt, resource)
+        except Unsupported as error:
+            limits.append([resource, "unsupported_response_headers:" + str(error)])
+            continue
+        if sources and (acknowledgement is None or not acknowledgement["applied"] or
+                        acknowledgement["sources"] != sources or
+                        [list(item) for item in acknowledgement["values"]] != [list(item) for item in values]):
+            limits.append([resource, "response_headers_not_acknowledged"])
+        if resource == instrumented and any(key.lower() in ("content-length", "content-encoding", "transfer-encoding") for key, _value in values):
+            limits.append([resource, "instrumented_representation_header"])
+    return limits
+
+
+def apply_environment(record, root, resources, header_records, instrumented):
+    limits = request_limits(root, resources, header_records, instrumented)
+    if ".https." in Path(urlsplit(instrumented).path).name:
+        limits.append([instrumented, "https_environment"])
+    if limits and record["outcome"] == "pass":
+        record["outcome"] = "unsupported_environment"
+    record["unsupported"] = limits
+    record["response_headers"] = header_records
     return limits
 
 
@@ -393,7 +478,7 @@ def run(args):
     (raw / "runner-source.py").write_bytes(runner_source)
     script, wait_metadata = wait_script(wpt)
     server = Server(("127.0.0.1", 0), functools.partial(Handler, directory=str(wpt)))
-    server.probes, server.requests = {}, []
+    server.probes, server.requests, server.header_records = {}, [], []
     base = "http://127.0.0.1:%d" % server.server_port
     worker = threading.Thread(target=server.serve_forever, daemon=True)
     worker.start()
@@ -451,15 +536,13 @@ def run(args):
                 (raw / (stem + ".instrumented")).write_bytes(body)
                 server.probes = {request: (body, "application/xhtml+xml" if node["path"].suffix.lower() in (".xht", ".xhtml") else "text/html")}
                 first_request = len(server.requests)
+                first_header = len(server.header_records)
                 record = capture(args.program, url, raw / (stem + ".ppm"), nonce,
                                  deadline=args.deadline_ms, timeout=args.process_timeout)
                 requests = server.requests[first_request:]
-                limits = request_limits(wpt, requests)
-                if ".https." in node["path"].name:
-                    limits.append([resource, "https_environment"])
-                if limits and record["outcome"] == "pass":
-                    record["outcome"] = "unsupported_environment"
-                record.update(resource=resource, record=stem + ".json", requests=requests, unsupported=limits,
+                header_records = server.header_records[first_header:]
+                limits = apply_environment(record, wpt, requests, header_records, request)
+                record.update(resource=resource, record=stem + ".json", requests=requests, response_headers=header_records, unsupported=limits,
                               source_sha256=hashlib.sha256(node["original"]).hexdigest(),
                               instrumented_sha256=hashlib.sha256(body).hexdigest(), insertion_offset=position)
                 retain_capture(raw, stem, record)
