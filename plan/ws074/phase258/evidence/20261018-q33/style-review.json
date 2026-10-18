@@ -1,0 +1,49 @@
+{
+  "scope": {
+    "userland/desktop/libbrowser/vm/access.c": [
+      "vm_get_own_property",
+      "access_proxy_get_own",
+      "access_descriptor_allowed",
+      "access_descriptor_compatible"
+    ],
+    "userland/desktop/libbrowser/js/builtin_object.c": [
+      "object_get_own_property_descriptor"
+    ],
+    "plan/ws074/tests/host-proxy-read.c": [
+      "proxy_gc_edges"
+    ]
+  },
+  "raw_checker_flags": 45,
+  "allowed_forward_cleanup": [
+    {
+      "function": "access_proxy_get_own",
+      "count": 17
+    },
+    {
+      "function": "proxy_gc_edges",
+      "count": 28
+    }
+  ],
+  "other_checker_flags": 0,
+  "old93_prefix_equal": true,
+  "script_free_native_operations_byte_identical": true,
+  "host_target_warnings": 0,
+  "ordinary_compatibility_exact_body_mapping": true,
+  "manual_review": [
+    "VM realm-aware GetOwnProperty separates positive status from found; ordinary negative-errno hook remains no-script and unchanged",
+    "native recursion counter balanced on all exits; frame retains managed owner/object/key before callbacks",
+    "original target/handler snapshotted before dynamic GetMethod; original and normalized keys, fresh method and result explicitly rooted",
+    "target descriptor and extensibility snapshot precede To/Complete; snapshot payload and output tracers inspect only flagged slots",
+    "undefined cannot hide fixed or nonextensible own; invented fixed/nonextensible/newly readonly fixed and incompatible accessor/data/SameValue cases reject; extensibility passed explicitly so descriptor getters cannot change captured decision",
+    "pure compatibility shares exactly prior ordinary body except explicit extensibility/signature; ordinary wrapper samples same object flag immediately with no script/allocation",
+    "Object single descriptor API enters realm-aware VM path; forward declaration is required by constant method initializer and stays in authorized pre-table exception",
+    "native managed Get/Has/GetOwn each run actual no-script descriptor GC; new descriptor/payload have no persistent owner before post-trap collection and payload/realm are reclaimed after roots end",
+    "full changed C bodies/prototypes/manual paragraph/format/style review; new helpers after tables, public header multiline; all raw flags allowed forward cleanup",
+    "no global Proxy/Define/Set/other descriptor consumer/runner/WPT/public ABI2/toolchain changes"
+  ],
+  "limitations": [
+    "private target noncallable/nonProxy; whole p258/WS100% unfinished",
+    "focused only; harness q31/image-crash q28 reused; no current-pair full-corpus equality claim",
+    "legacy unchanged full-source conformance belongs to p100; exact target2 compile only"
+  ]
+}

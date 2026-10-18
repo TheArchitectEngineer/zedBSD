@@ -1,0 +1,6 @@
+{
+  "prior": "786856b04",
+  "original_body_exact_except_explicit_extensibility_and_function_signature": true,
+  "ordinary_wrapper": "reads object flag immediately with same meaning; no script or allocation",
+  "proxy_use": "explicit pre-ToPropertyDescriptor snapshot"
+}

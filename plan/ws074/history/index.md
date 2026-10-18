@@ -1,5 +1,9 @@
 # WS074 lane の Past Log
 
+## ws074-q20261018-33（2026-10-18）
+
+[履歴](ws074-q20261018-33.md)。Proxy GetOwnProperty partial cleared、公開single descriptor接続・native/Chrome135一致・実GC/回収・focused gates。全1508 q31/画像crash q28再利用、1482/3805・held0維持。Define/Set/global公開等未達、共有投影pending。
+
 ## ws074-q20261018-32（2026-10-18）
 
 [履歴](ws074-q20261018-32.md)。VM共有descriptor変換partial cleared、native/Chrome93一致・実GCと回収・focused gates通過。全1508 q31/画像crash q28証拠を再利用し1482/3805・held0維持。whole Proxy/WS100%未達、共有投影pending。
@@ -119,9 +123,5 @@ Follow-up: q23 i01/i02 clearanceは疎checkoutのIDL未配信が判明しunclear
 ## ws074-q20261018-04（2026-10-18）
 
 [履歴](ws074-q20261018-04.md)。replaceChildren基本部分cleared。独立39項目・DOM24/24、cleanup13件の後続検査が進むがwhole PASS増分0。補助16 callback PASS。observer batchingとsource removalを次へ。Acid3差0/Acid2差873、host/target compile warning0、production link/target runtime保留。共有投影pending。
-
-## ws074-q20261018-03（2026-10-18）
-
-[履歴](ws074-q20261018-03.md)。全適格1,455 ID測定、485 PASS、910 FAIL、16 harness_error、20 no_completion、24 no_output。q1202旧481 PASSから後退0。未対応328とreftest/crashは100%の分母に保持。次はp242 DOM cleanup。共有投影pending。
 
 以前のindex: [early 2026-10-18](early-20261018.md)。過去standing Queue投影: [原文archive](../queue-archive-through-q30.md)。
