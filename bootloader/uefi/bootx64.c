@@ -850,8 +850,12 @@ console_ascii(
 		used++;
 		string++;
 
-		/* Writes out a full buffer. */
-		if (used == 126U) {
+		/*
+		 * Writes out a full buffer.  A carriage return can carry the count
+		 * past 126 to 127, so the test is not for equality; the terminator
+		 * then still fits at index 127.
+		 */
+		if (used >= 126U) {
 			buffer[used] = 0;
 			context->system->ConOut->OutputString(context->system->ConOut, buffer);
 			used = 0;
