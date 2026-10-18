@@ -74,6 +74,13 @@ static uint64_t kernel_root[RISCV64_TABLE_ENTRIES] __attribute__((aligned(RISCV6
 static int kernel_root_sealed;
 
 /*
+ * Set once riscv64_space_init() has switched the boot hart to the kernel's
+ * root and found the image's sections with the permissions they need; the
+ * boot log's closing line reports it.  Written once by the boot hart.
+ */
+static int kernel_mapping_checked;
+
+/*
  * The second-level tables of the device window, one per root entry.
  *
  * Allocated at boot and linked into the kernel's root; a device mapping
@@ -250,7 +257,25 @@ riscv64_space_init(
 		HAL_FATAL("riscv64 kernel rodata mapping is not read-only");
 	if ((data_page & RISCV64_PTE_X) != 0)
 		HAL_FATAL("riscv64 kernel data mapping is executable");
+
+	/* Records the passed checks for the closing line and reports them now. */
+	kernel_mapping_checked = 1;
 	hal_puts("RISCV64 PAGING PASS\nRISCV64 W^X PASS\n");
+}
+
+/*
+ * Reports whether the kernel's tables were switched to and found right.
+ */
+bool
+riscv64_space_checked(
+	void)
+{
+	/* The tables were not built, or a check stopped the boot first. */
+	if (!kernel_mapping_checked)
+		return false;
+
+	/* Succeeded: the kernel runs on its own tables with W^X in force. */
+	return true;
 }
 
 /*

@@ -2,7 +2,7 @@
 
 # ws256-p003 HAL の芯（QEMU virt、SBI からの直の起動）
 
-Status: in-progress（2026-10-18 Q1: T1-707 で A・B・C・F が FAIL。画面には SMP 4 ONLINE・HAL initialized cpu 4・VFS の行まで出る。A は PAGING PASS・SBI v が上へ流れて消えた、B・C は TIMER TICK が他の行に割り込み `^` に合わない・B は boot に `cpus=` が unknown parameter、F の sifive_u は hart0 が pc=0x80010e32 で halted のまま kernel の仮想 address が読めない。直しは q1249-i02。旧: in-progress、test-wait（2026-10-18 20:39、q1249、P2。実装と build（warning 0）と host 試験は済み。T1 の依頼は Q1 に送った（番号は Q1）。T1 の結果を Q1 が判定するまで cleared にしない））
+Status: in-progress（2026-10-18 21:23 q1249-i02、P2: T1-707 の A・B・C・F の FAIL を解析して直した。A〜C は HAL の最後に要約の行、F は QEMU の sifive_uart の制約で判定の手順を直した。T1 の再試験の依頼の文面は Q1 に送った。T1 の結果を Q1 が判定するまで cleared にしない。旧: in-progress（2026-10-18 Q1: T1-707 で A・B・C・F が FAIL。画面には SMP 4 ONLINE・HAL initialized cpu 4・VFS の行まで出る。A は PAGING PASS・SBI v が上へ流れて消えた、B・C は TIMER TICK が他の行に割り込み `^` に合わない・B は boot に `cpus=` が unknown parameter、F の sifive_u は hart0 が pc=0x80010e32 で halted のまま kernel の仮想 address が読めない。直しは q1249-i02。旧: in-progress、test-wait（2026-10-18 20:39、q1249、P2。実装と build（warning 0）と host 試験は済み。T1 の依頼は Q1 に送った（番号は Q1）。T1 の結果を Q1 が判定するまで cleared にしない）））
 
 - 親: [WS256](../ws.md)。Queue: q1249（承認: 2026-10-18 ユーザー（クリック）「p009 → p003 を今始める」）。
 - 範囲: [design.md](../design.md) §6 の p003。HAL の芯と最小の kernel 側、vmunix の build。loader（p004）・kernel の console と ramdisk（p008）・userland（p007）は範囲の外。
@@ -43,6 +43,16 @@ Status: in-progress（2026-10-18 Q1: T1-707 で A・B・C・F が FAIL。画面�
 - 走り B（`BOOT_APPEND=cpus=1`）: `RISCV64 SMP 1 ONLINE`。
 - 走り C（`QEMU_EXTRA="-cpu rv64,sstc=off,svpbmt=off"`）: A と同じ行。
 - sifive_u（#17、gdbstub）: `cpu_count` が 4、`percpu_records[i]`（112 byte ずつ。`hart_id` +32、`ready` +40、`timer_ticks` +88）の i=0〜3 で ready 1、ticks > 0。`percpu_records[0].hart_id` は記録（≠0 なら hart id ≠ logical id の道を通った）。
+
+## q1249-i02: T1-707 の FAIL の解析と直し（2026-10-18、P2）
+
+- **A（`PAGING PASS`・`SBI v` が画面から消えた）**: 画面は 80x25 で、HAL の後に kernel が 17 行（`cpus=1` では 19 行）を出すので、HAL の前半の行は上へ流れる。boot-test.py は 0.5 秒ごとに見るが、その間に流れ切る。→ HAL の最後の段（`hal_cpu_start_others` の終わり、`SMP N ONLINE` の直前）に要約の 1 行 `RISCV64 HAL READY SBI v<major>.<minor> PAGING PASS|FAIL TIMER TICK|NO TICK` を出す（`smp.c` の `describe_bringup`）。PAGING は `space.c` が W^X の検査を通った時に立てる印（`riscv64_space_checked`）、SBI の版は `sbi.c` の `riscv64_sbi_version`（`riscv64_sbi_describe` も同じ関数を使う）、TIMER は `clock.c` の `riscv64_clock_ticked`（boot hart の tick の数が 0 でなければ真、0 で割り込みが開いていれば 0.1 秒待つ）。要約と ONLINE の 2 行＋kernel の 17〜19 行で 25 行に収まる。前半の各段の行（`RISCV64 PAGING PASS` など）はそのまま残す。
+- **B・C（`boot:RISCV64 TIMER TICK`）**: `RISCV64 TIMER TICK` を timer の割り込みの中で出していたので、kernel の `boot:` と本文の 2 回の書き込みの間に割り込んだ。→ 割り込みの中では出さず、要約の行の `TIMER TICK` に移した（thread の文脈で書く）。
+- **B（`ignored 1 unknown parameter; first=cpus`）**: `cpus=N` は design の語で arm64（`src/hal/arm64/smp.c`）と同じ。HAL が command line から読み、`RISCV64 SMP 1 ONLINE` は出ている（T1-707 の B の画面）。kernel の `boot.c` の parameter の表は HAL の語を知らないので、知らない語として 1 行数える（arm64 の `cpus=1` でも同じ）。判定の失敗ではないので変えない。
+- **F（sifive_u、#17）**: gdbstub と `-d int,cpu_reset,guest_errors` の例外の記録で解析（serial は使っていない）。T1-707 で見えた thread は inferior 1 の E51（hart 0、MMU 無し、OpenSBI の HSM の待ちの `wfi`、pc 0x80010e32）だけだった。sifive_u は 2 つの cluster で、U54 の 4 hart は inferior 2 にあり `add-inferior`・`attach 2` で見える。U54 を見ると、lottery で選ばれた boot hart が OpenSBI の SiFive UART の putc（pc 0x80012200、`lw`・`bltz` の送信 FIFO の満杯待ち）で回り続け、kernel に入っていなかった（S-mode の trap は記録に無い）。QEMU 10.0.11 の sifive_uart は `-serial null`・`-serial none` で送信が流れない。`-serial file:/dev/null`（出力は捨てる）なら kernel に入り、解析の走りで `cpu_count`=4、cpu0〜3 の ready=1、ticks が 3 回の読みで増え続け、cpu0 の hart_id=2（hart id ≠ logical id の道）。→ kernel は変えず、判定の手順を直す: `plan/ws256/tests/sifive-u/read.gdb`（inferior 2 を attach し、`Qqemu.PhyMemMode:1` で物理 memory を読む。M-mode の firmware の中に居る hart では kernel の仮想 address を読めないため）。
+- build: `make ZEDBSD_CONFIG=plan/ws256/tests/config-riscv64-virt.mk -j16 build/riscv64-virt/vmunix` exit 0、`warning:`・`error:` 0（log `build/tmp/rv-build5.log`、worktree p2）、`git diff --check` 0。amd64 は変えた file が riscv64 の HAL だけなので未実施。host 試験は変えた関数が riscv の CSR・SBI を使うので無し（fdt・plic の試験の対象の file は変えていない）。
+- commit: source と read.gdb は 11e1b8822。
+- 未実施: A〜C の画面の判定と F の判定（T1 に再依頼）。
 
 ## 残り
 

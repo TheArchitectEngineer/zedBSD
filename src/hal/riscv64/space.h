@@ -64,6 +64,7 @@ uint64_t riscv64_virt_to_phys(const void *address);
 void *riscv64_phys_to_direct(uint64_t physical);
 uint64_t riscv64_boot_satp(void);
 void riscv64_space_init(void);
+bool riscv64_space_checked(void);
 void riscv64_space_select_system(void);
 void riscv64_space_memory_stats(uint32_t *spaces, uint32_t *tables);
 void riscv64_tlb_flush_everywhere(void);
