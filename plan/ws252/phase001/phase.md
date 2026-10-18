@@ -26,5 +26,5 @@
 
 ## 未実施・残り
 
-- design-reviewer（子のエージェントを起動しない指示のため）。通るまで cleared にしない。
+- design-reviewer は Q1 が流した（2026-10-19、[design-review-1.md](../design-review-1.md): Blocker 1・Major 6・Minor 8）。P1 が q1263 で改訂 2 を書く。通るまで cleared にしない。
 - `build/tmp/ws252-linux/` の展開物の削除は Q1 に依頼。
