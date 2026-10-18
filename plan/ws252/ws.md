@@ -25,3 +25,4 @@ WS245 design.md §7 #20「RKL・ADL-S・ICL の GT（描画の engine）は起�
 | Phase | 内容 | 状態 |
 | --- | --- | --- |
 | p001 | 調べと設計: 今の Gen12 の GT（TGL・ADL-P）の code との差（RKL の GT は Gen12 系、ADL-S は Gen12、ICL は Gen11）、engine・firmware・WA、実機の有無、Phase の分割。design-reviewer を通す | planned |
+- 決定（2026-10-19 ユーザー、クリック）: 「設計まで」（実機が無いので p001 の設計で止める。実装は実機ができてから）。
