@@ -9,8 +9,9 @@
  * The riscv64 task switch, the first entries of new tasks, and the
  * floating-point save and restore.
  *
- * The kernel's C code is built without floating point, so the save and
- * restore state here that the assembler may use the F and D extensions.
+ * The kernel's C code is built without floating point; the save and
+ * restore below tell the assembler that they may use the F and D
+ * extensions.
  * The thread pointer is not switched: in the kernel it names the hart, and
  * a task resumed on another hart finds that hart's record in it.
  */

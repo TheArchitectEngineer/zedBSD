@@ -280,6 +280,7 @@ riscv64_fdt_parse(
 {
 	struct fdt_walk walk;
 	const uint8_t *bytes;
+	uint32_t magic;
 	uint32_t totalsize;
 	uint32_t version;
 	uint32_t struct_size;
@@ -296,7 +297,8 @@ riscv64_fdt_parse(
 		return RISCV64_FDT_BAD_SIZE;
 
 	/* Refuses memory that is not a tree. */
-	if (read_be32(bytes) != FDT_MAGIC)
+	magic = read_be32(bytes);
+	if (magic != FDT_MAGIC)
 		return RISCV64_FDT_BAD_MAGIC;
 
 	/* Refuses a tree larger than the caller allows. */

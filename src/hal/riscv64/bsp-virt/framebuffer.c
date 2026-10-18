@@ -31,8 +31,8 @@
  * The pixel format: 32 bits, the top byte unused, then red, green and
  * blue, as the DRM fourcc code XR24 names it.
  *
- * Values referenced: Linux include/uapi/drm/drm_fourcc.h (the XRGB8888
- * fourcc code, the characters "XR24").
+ * Values referenced: Linux 6.8.12 include/uapi/drm/drm_fourcc.h (the
+ * XRGB8888 fourcc code, the characters "XR24").
  */
 #define FRAMEBUFFER_FOURCC_XRGB8888	0x34325258U
 
