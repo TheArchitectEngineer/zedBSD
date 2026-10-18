@@ -595,5 +595,5 @@ WS074 の記録の q590・q594〜q598（Codex の browser3）は main の同じ�
 
 | Queue | 担当 | Phase | 範囲 | 結果 |
 | --- | --- | --- | --- | --- |
-| q1249 / q1249-i01 | P2（phase-runner） | ws256-p009 → ws256-p003 | p009: 試験の道具（plan/tools の boot-test.sh・boot-test.py など 3 file に riscv64 の mode、BOOT_PATTERN、tests の config。既存の mode は変えない）。p003: HAL の芯（design.md §6 の範囲、承認済みの HAL の差分の適用を含む）。QEMU は T1 に依頼 | in-progress |
+| q1249 / q1249-i01 | P2（phase-runner） | ws256-p009 → ws256-p003 | p009: 試験の道具（plan/tools の boot-test.sh・boot-test.py など 3 file に riscv64 の mode、BOOT_PATTERN、tests の config。既存の mode は変えない）。p003: HAL の芯（design.md §6 の範囲、承認済みの HAL の差分の適用を含む）。QEMU は T1 に依頼 | in-progress: p009 の道具（24a1d0409、merge c01387c90。Q1 が差分を読んだ: 既定の mode の振る舞いは同じ、旧の 2 秒の間隔も既定のまま。host 試験 8 件 PASS は P2 の報告、実際の QEMU は未実施で p003 の T1 依頼と一緒に）。p003 に着手 |
 | q1250 / q1250-i01 | P1（q1246 より先） | [ws244-p001](ws244/phase001/phase.md) → 書き直しの群 | WS244 の再開（2026-10-18 ユーザー「P1 で今再開」）: p001 の棚卸しを終え（inventory.md の残り、WS258 の監査の結果を入れる）、書き直しの群を Phase に分けて順に実施。i915/intel の抜粋 21 file・GT の core の写しの疑いを含む。動作は変えない | in-progress |
