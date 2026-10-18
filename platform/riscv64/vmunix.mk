@@ -1,0 +1,128 @@
+# zedBSD riscv64 kernel.
+# Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+
+RISCV64_PLATFORM := platform/riscv64
+AWK ?= awk
+
+# The board the HAL is built for.
+RISCV64_BOARD_DEFINE_virt := -DHAL_BOARD_VIRT
+RISCV64_BSP_DIR_virt := bsp-virt
+
+# The kernel and the HAL read the compiler's freestanding headers and the
+# tree's include/ and src/, never the C library (as on the other ports).
+RISCV64_CPPFLAGS := -nostdlibinc -Iinclude -Isrc -I. \
+	-Isrc/hal/riscv64 -DHAL_ARCH_RISCV64 $(RISCV64_BOARD_DEFINE_$(ZEDBSD_BOARD)) \
+	-DKERN_USER_ABI_RISCV64 -DKERN_USER_ABI_LP64
+RISCV64_CPPFLAGS += $(ZEDBSD_CONFIG_CPPFLAGS)
+
+# The kernel's C uses no floating point: the integer ABI, and code that may
+# be linked anywhere in the address space (medany), without linker
+# relaxation, which would need the global pointer.
+RISCV64_CFLAGS := -march=rv64imac_zicsr_zifencei -mabi=lp64 -mcmodel=medany -mno-relax \
+	-ffreestanding -fno-pic -fno-pie -fno-stack-protector \
+	-fno-asynchronous-unwind-tables -fno-unwind-tables -fno-common \
+	-ffunction-sections -fdata-sections -Os -Wall -Wextra -Werror
+
+# Link-time optimization of vmunix: ZEDBSD_KERNEL_LTO_CFLAGS (from the top
+# Makefile) goes to every C object of the kernel, its drivers and the HAL;
+# the assembly stays native.
+RISCV64_KERNEL_LTO_CFLAGS := $(ZEDBSD_KERNEL_LTO_CFLAGS)
+
+RISCV64_BSP := src/hal/riscv64/$(RISCV64_BSP_DIR_$(ZEDBSD_BOARD))
+RISCV64_BSP_C_virt := $(RISCV64_BSP)/board.c $(RISCV64_BSP)/cons.c \
+	$(RISCV64_BSP)/fwcfg.c $(RISCV64_BSP)/framebuffer.c $(RISCV64_BSP)/font.c
+
+RISCV64_BOOT_C := src/hal/riscv64/cmain.c src/hal/riscv64/bootinfo.c \
+	src/hal/riscv64/fdt.c src/hal/riscv64/sbi.c src/hal/riscv64/percpu.c \
+	src/hal/riscv64/smp.c src/hal/riscv64/int.c src/hal/riscv64/irq.c \
+	src/hal/riscv64/plic.c src/hal/riscv64/clock.c src/hal/riscv64/page.c \
+	src/hal/riscv64/space.c src/hal/riscv64/task.c src/hal/riscv64/debug.c \
+	src/hal/riscv64/asm.c src/hal/riscv64/lib.c \
+	src/hal/idle-suspend-unsupported.c \
+	$(RISCV64_BSP_C_$(ZEDBSD_BOARD))
+RISCV64_BOOT_S := src/hal/riscv64/locore.S src/hal/riscv64/trap.S \
+	src/hal/riscv64/dispatch.S
+RISCV64_BOOT_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(RISCV64_BOOT_C)) \
+	$(patsubst %.S,$(BUILD)/%.o,$(RISCV64_BOOT_S))
+
+# The platform binding of the board.
+RISCV64_PLATFORM_SOURCES_virt := src/kern/platform/riscv-virt.c
+
+RISCV64_KERNEL_SOURCES := \
+	src/kern/main.c \
+	$(KERN_FAT_SOURCES) \
+	src/kern/inode.c src/kern/file.c src/kern/namecache.c src/kern/namei.c \
+	src/kern/mount.c src/kern/tmpfs.c src/kern/tmpfs-pages.c src/drivers/fs/overlayfs.c \
+	src/kern/vfs.c src/kern/swap.c src/kern/backing-claim.c \
+	src/kern/buf.c src/kern/cache.c src/kern/readahead.c src/kern/writeback.c src/kern/io.c \
+	src/kern/sysctl.c src/kern/resource.c src/kern/poll.c src/kern/usync.c src/kern/disk.c \
+	src/kern/device-io.c src/kern/irq.c src/kern/pmem.c \
+	src/kern/test-checkpoint.c src/kern/text-display.c \
+	src/drivers/generic/loop.c \
+	src/kern/partition.c src/drivers/disklabel/mbr.c \
+	$(RISCV64_PLATFORM_SOURCES_$(ZEDBSD_BOARD)) \
+	src/kern/dcache.c src/kern/uncached.c \
+	src/drivers/generic/fdt.c src/drivers/generic/dma.c \
+	src/kern/panic.c src/kern/entry.c src/kern/clock.c \
+	src/kern/timer.c src/kern/klog.c \
+	src/kern/lock.c src/kern/waitq.c \
+	src/kern/process.c src/kern/thread.c src/kern/sched.c src/kern/sleep.c src/kern/freeze.c \
+	src/kern/vmspace.c src/kern/vm-device.c \
+	src/kern/vm.c src/kern/filedesc.c src/kern/handle.c src/kern/fd-object.c \
+	src/kern/record-lock.c \
+	src/kern/pipe.c src/kern/cred.c \
+	src/kern/signal.c \
+	src/kern/cwdinfo.c \
+	src/kern/elf.c src/kern/exec.c src/kern/sandbox.c src/kern/user-probe.c src/kern/syscall.c \
+	src/kern/uaccess.c src/kern/cdev.c src/kern/devfs.c \
+	src/drivers/generic/console.c src/drivers/generic/input.c \
+	$(KERN_GPU_SOURCES) \
+	$(KERN_AUDIO_SOURCES) \
+	src/kern/kcrt.c src/kern/heap.c \
+	src/kern/random.c src/kern/random-crypto.c \
+	src/kern/tty.c src/kern/tty-csi.c \
+	src/drivers/generic/system-device.c src/kern/system-event.c src/drivers/generic/memory-device.c \
+	src/kern/shutdown.c \
+	src/kern/init.c
+RISCV64_KERNEL_SOURCES += $(KERN_NET_SOURCES) $(KERN_BLOCK_IDENTITY_SOURCES) \
+	$(KERN_UFS_SOURCES)
+RISCV64_KERNEL_SOURCES += $(KERN_BOOT_SOURCES)
+RISCV64_KERNEL_SOURCES += $(KERN_ACL_SOURCES)
+RISCV64_KERNEL_SOURCES += $(KERN_QUOTA_SOURCES)
+RISCV64_KERNEL_OBJS := $(patsubst %.c,$(BUILD)/kernel/%.o,$(RISCV64_KERNEL_SOURCES))
+
+# The kernel links no C library object: kcrt and the kernel heap supply
+# what it used from libc.
+RISCV64_VMUNIX_OBJS := $(RISCV64_BOOT_OBJS) $(RISCV64_KERNEL_OBJS)
+$(RISCV64_VMUNIX_OBJS): $(ZEDBSD_PLATFORM_CONFIG_STAMP)
+$(RISCV64_VMUNIX_OBJS): $(ZEDBSD_KERNEL_LTO_STAMP)
+
+vmunix: $(BUILD)/vmunix
+
+# The kernel is an ELF the firmware's loader places by its physical
+# addresses; the emulator takes it as it is.
+$(BUILD)/vmunix: $(RISCV64_VMUNIX_OBJS) $(RISCV64_PLATFORM)/vmunix.ld
+	$(RISCV64_LD) -m elf64lriscv --gc-sections --no-relax -z max-page-size=4096 \
+ -T $(RISCV64_PLATFORM)/vmunix.ld -nostdlib $(RISCV64_VMUNIX_OBJS) -o $@
+	@# A weak undefined symbol is an optional hook, not a link error.
+	@test -z "$$($(RISCV64_NM) -u $@ | $(AWK) '$$1 == "U"')" || \
+		{ $(RISCV64_NM) -u $@; exit 1; }
+
+$(BUILD)/src/hal/idle-suspend-unsupported.o: src/hal/idle-suspend-unsupported.c
+	@mkdir -p $(dir $@)
+	$(RISCV64_CC) $(RISCV64_CPPFLAGS) $(RISCV64_CFLAGS) $(RISCV64_KERNEL_LTO_CFLAGS) -MMD -MP -c $< -o $@
+
+$(BUILD)/src/hal/riscv64/%.o: src/hal/riscv64/%.c
+	@mkdir -p $(dir $@)
+	$(RISCV64_CC) $(RISCV64_CPPFLAGS) $(RISCV64_CFLAGS) $(RISCV64_KERNEL_LTO_CFLAGS) -MMD -MP -c $< -o $@
+
+$(BUILD)/src/hal/riscv64/%.o: src/hal/riscv64/%.S
+	@mkdir -p $(dir $@)
+	$(RISCV64_CC) $(RISCV64_CPPFLAGS) $(RISCV64_CFLAGS) -D_ASM_SRC_ -c $< -o $@
+
+$(BUILD)/kernel/%.o: %.c
+	@mkdir -p $(dir $@)
+	$(RISCV64_CC) $(RISCV64_CPPFLAGS) $(RISCV64_CFLAGS) -fno-builtin \
+ -fno-strict-aliasing $(RISCV64_KERNEL_LTO_CFLAGS) -MMD -MP -c $< -o $@
+
+-include $(RISCV64_BOOT_OBJS:.o=.d) $(RISCV64_KERNEL_OBJS:.o=.d)

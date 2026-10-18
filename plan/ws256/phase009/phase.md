@@ -2,7 +2,7 @@
 
 # ws256-p009 試験の道具: boot-test の riscv64 の mode
 
-Status: in-progress（2026-10-18 q1249、P2。道具の変更と host の試験は済み。QEMU での実際の起動は p003 の T1 の試験で一緒に確かめる）
+Status: in-progress、test-wait（2026-10-18 q1249、P2。道具の変更と host の試験は済み、main c01387c90。QEMU での実際の起動（既存の amd64 の mode の 1 回と riscv64-virt）は p003 の T1 の依頼に入れた）
 
 - 親: [WS256](../ws.md)。Queue: q1249（承認: 2026-10-18 ユーザー（クリック）「p009 → p003 を今始める」）。
 - 範囲: [design.md](../design.md) §5・§6 の p009。`plan/tools/boot-test.sh`・`boot-test.py` に riscv64 の 2 つの mode、画面の pattern の指定、login の後に serial で打って 2 枚目の画面を読む段。`plan/ws256/tests/` の config と image の手順、QEMU の DTB（`tests/virt.dts`）。
