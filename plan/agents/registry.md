@@ -124,4 +124,5 @@
 | P1 / 2026-10-18 (3) | phase-runner（Opus 5.5、low、子なし） | WS245（q1246）→ WS251（q1247） | `/home/awe/zedBSD-worktrees/p1` / `agent/p1-q1246` | q1246 | q1247 | returned（2026-10-18、q1248 を済ませた） | 最後 411c13214 → main 181f43b52 |
 | P2 / 2026-10-18 (3) | phase-runner | WS256 p009 → p003（q1249） | `/home/awe/zedBSD-worktrees/p2` / `agent/p2-q1249` | q1249 | — | returned（2026-10-18、T1-707 待ち） | 最後 00ea11bb0 → main 85528c12c |
 | P1 / 2026-10-18 (4) | phase-runner（Opus 5.5、low、子なし） | WS244（q1250）→ WS245（q1246） | `/home/awe/zedBSD-worktrees/p1` / `agent/p1-q1250` | q1250 | q1246 | returned（2026-10-18） | 最後 91cf4e129 → main 14e861c90 |
-| P1 / 2026-10-18 (5) | phase-runner（Opus 5.5、low、子なし） | WS260 p002〜（q1253）→ WS244 の残り | `/home/awe/zedBSD-worktrees/p1` / `agent/p1-q1253` | q1253 | WS244 p004〜、q1246 | running | 基点 main f7295cc33 |
+| P1 / 2026-10-18 (5) | phase-runner（Opus 5.5、low、子なし） | WS260 p002〜（q1253）→ WS244 の残り | `/home/awe/zedBSD-worktrees/p1` / `agent/p1-q1253` | q1253 | WS244 p004〜、q1246 | stopped（2026-10-18 夜 ユーザーが停止） | 最後 05e938df9 → main b776ce31e |
+| P3 / 2026-10-18 | phase-runner | WS261 p001（q1254） | `/home/awe/zedBSD-worktrees/p3` / `agent/p3-q1254` | q1254 | — | running | 基点 main cd6392422 |
