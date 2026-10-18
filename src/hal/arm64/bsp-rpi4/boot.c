@@ -15,6 +15,15 @@ static struct rpi4_boot_handoff kernel_handoff;
  */
 static char boot_command_line[KERN_BOOT_PARAMETERS_STORAGE_SIZE];
 
+/*
+ * The named objects of hal_get_arch_handoff(): the device tree's physical
+ * address ("rpi4.fdt") and the SD controller's ("rpi4.sdhci"), each a
+ * 64-bit word.  Filled once at boot and not changed afterwards; zero means
+ * the firmware named none, and the name then reports no object.
+ */
+static uint64_t handoff_fdt_phys;
+static uint64_t handoff_sdhci_phys;
+
 static void copy_command_line(const struct rpi4_fdt_info *info, uintptr_t fdt_phys);
 static int handoff_name_is(const char *name, const char *wanted);
 
@@ -39,6 +48,10 @@ rpi4_boot_set_info(const struct rpi4_fdt_info *info, uintptr_t fdt_phys)
 	kernel_handoff.sdhci_phys=info->sdhci_base;
 	kernel_handoff.sdhci_irq=info->sdhci_irq;
 	copy_command_line(info, fdt_phys);
+
+	/* Keeps the tree's and the SD controller's addresses for their names. */
+	handoff_fdt_phys = fdt_phys;
+	handoff_sdhci_phys = info->sdhci_base;
 }
 
 void
@@ -64,6 +77,10 @@ const void *rpi4_kernel_handoff(void){return &kernel_handoff;}
 
 /*
  * Returns one named architecture handoff object.
+ *
+ * "boot.command-line" is the firmware's command line; "rpi4.fdt" and
+ * "rpi4.sdhci" are the physical addresses of the device tree and of the
+ * SD controller it names, each a 64-bit word.
  */
 void *
 hal_get_arch_handoff(
@@ -76,6 +93,20 @@ hal_get_arch_handoff(
 		match = handoff_name_is(name, "boot.command-line");
 		if (match)
 			return boot_command_line;
+	}
+
+	/* Exposes the device tree when the firmware passed one. */
+	if (handoff_fdt_phys != 0) {
+		match = handoff_name_is(name, "rpi4.fdt");
+		if (match)
+			return &handoff_fdt_phys;
+	}
+
+	/* Exposes the SD controller when the device tree names one. */
+	if (handoff_sdhci_phys != 0) {
+		match = handoff_name_is(name, "rpi4.sdhci");
+		if (match)
+			return &handoff_sdhci_phys;
 	}
 
 	/* Reports an unavailable or unknown architecture handoff. */
