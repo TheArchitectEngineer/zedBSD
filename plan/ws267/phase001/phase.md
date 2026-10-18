@@ -2,7 +2,7 @@
 
 # ws267-p001 sun4u を再び build し、QEMU の画面で login まで
 
-Status: in-progress（2026-10-19 q1258-i01、P2。実装・build・解析の起動まで済み。test-wait（T1 への依頼は下の文面、Q1 経由））
+Status: cleared（2026-10-19 Q1 判定: sun4u の vmunix・boot loader・image が warning 0 で build、QEMU sun4u の VGA の画面の console、T1-717 で画面に login:、T1-718 で root で login して uname -m が sparcv9（b9fac7058、merge 9dcfcb368）、amd64 と新しい 4 つの port の回帰も T1-717 で PASS）（旧: in-progress（2026-10-19 q1258-i01、P2。実装・build・解析の起動まで済み。test-wait（T1 への依頼は下の文面、Q1 経由）））
 
 - 親: [WS267](../ws.md)。Queue: q1258-i01。
 - 起点: 2026-10-18 ユーザー「sun4uはqemuで動けばOKです。」、決定（クリック）「画面の console を作る」、sparcv9 は「直してよい」。

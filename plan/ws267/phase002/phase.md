@@ -2,7 +2,7 @@
 
 # ws267-p002 規約の全文の見直し
 
-Status: in-progress（2026-10-19 P2 実施済み、Q1 の判定待ち）
+Status: cleared（2026-10-19 Q1 判定: WS267 が変えた C と HAL・受け渡しの規約の見直しを P2 が済ませた（p001 と同じ commit の範囲、build warning 0））（旧: in-progress（2026-10-19 P2 実施済み、Q1 の判定待ち））
 
 - 親: [WS267](../ws.md)。範囲: p001 が書いた・書き換えた C と assembly（`src/hal/sparcv9/` の全 file、`src/hal/sparcv9/bsp-sun4u/`、`src/drivers/platform/sun4u/`、`src/kern/platform/sun4u.c`、`bootloader/sparcv9/handoff.c` の追加分、`src/libc/format.c`・`userland/base/libc/posix.c`・`include/libc/stdint.h` の変更の行）。
 
