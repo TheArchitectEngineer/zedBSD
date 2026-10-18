@@ -146,8 +146,8 @@ static struct environment_mutation_observer *environment_mutation_find(struct bi
 static void environment_mutation_clear(struct bind_window *window, struct environment_mutation_observer *observer);
 static int environment_root(struct bind_window *window, struct vm_cell **slot);
 static int environment_mutation_options(struct vm_realm *realm, vm_value options, int *child_list, int *subtree);
-static int environment_mutation_record(struct bind_window *window, struct environment_mutation_observer *observer, struct dom_node *parent, struct dom_node *added, struct dom_node *removed);
-static int environment_node_list(struct bind_window *window, struct dom_node *node, vm_value *result);
+static int environment_mutation_record(struct bind_window *window, struct environment_mutation_observer *observer, struct dom_node *parent, struct dom_node *const *added, size_t added_count, struct dom_node *const *removed, size_t removed_count, struct dom_node *previous, struct dom_node *next);
+static int environment_node_list(struct bind_window *window, struct dom_node *const *nodes, size_t count, vm_value *result);
 static int environment_base64_value(uint16_t unit);
 
 /*
@@ -2298,7 +2298,9 @@ environment_mutation_options(
 	return 0;
 }
 
-/* Records one child-list change for every observer whose target contains the parent. */
+/*
+ * Records an existing single-node notification through the sequence implementation.
+ */
 int
 bind_environment_child_mutation(
 	struct bind_window *window,
@@ -2306,27 +2308,146 @@ bind_environment_child_mutation(
 	struct dom_node *added,
 	struct dom_node *removed)
 {
+	size_t added_count;
+	size_t removed_count;
+	int status;
+
+	/* Preserve the old zero-or-one collection shape and sibling fields for existing callers. */
+	added_count = 0;
+	if (added != NULL)
+		added_count = 1;
+
+	/* Removal is independently optional for the existing single-node interface. */
+	removed_count = 0;
+	if (removed != NULL)
+		removed_count = 1;
+
+	/* The sequence API owns every native participant during record construction. */
+	status = bind_environment_children_mutation(window, parent, &added, added_count, &removed, removed_count, NULL, NULL);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: matching observers retain this single-node change. */
+	return 0;
+}
+
+/*
+ * Records one complete child-list mutation with independent lists for each observer.
+ * Input arrays are borrowed for this call; native roots retain all detached participants.
+ */
+int
+bind_environment_children_mutation(
+	struct bind_window *window,
+	struct dom_node *parent,
+	struct dom_node *const *added,
+	size_t added_count,
+	struct dom_node *const *removed,
+	size_t removed_count,
+	struct dom_node *previous,
+	struct dom_node *next)
+{
 	struct environment_mutation_observer *observer;
 	struct dom_node *target;
+	struct vm_cell **roots;
+	struct vm_heap *heap;
+	size_t total;
+	size_t index;
+	size_t registered;
 	int matches;
 	int status;
 
-	/* Each observer gets a separate record for the parent in its scope. */
-	for (observer = window->mutation_observers; observer != NULL; observer = observer->next) {
-		if (!observer->child_list || observer->target == NULL)
-			continue;
-		target = bind_node_of(vm_value_cell(observer->target));
-		matches = target == parent;
-		if (!matches && observer->subtree)
-			matches = dom_is_inclusive_ancestor(target, parent);
-		if (!matches)
-			continue;
-		status = environment_mutation_record(window, observer, parent, added, removed);
+	/* No observer can retain a record, so no allocation is needed in the common case. */
+	if (window->mutation_observers == NULL)
+		return 0;
+
+	/* Reject native slot-count overflow before computing the allocation size. */
+	if (added_count > SIZE_MAX - 3U)
+		return ENOMEM;
+
+	/* Parent and both sibling boundaries receive fixed slots before the two sequences. */
+	total = added_count + 3U;
+	if (removed_count > SIZE_MAX - total)
+		return ENOMEM;
+
+	/* calloc checks multiplication overflow and keeps unused sibling slots empty. */
+	total += removed_count;
+	roots = calloc(total, sizeof(*roots));
+	if (roots == NULL)
+		return ENOMEM;
+
+	/* All arrays have stable storage until the last matching observer finishes. */
+	heap = window->realm->heap;
+	roots[0] = &parent->cell;
+	if (previous != NULL)
+		roots[1] = &previous->cell;
+
+	/* The next boundary can be absent independently of the previous one. */
+	if (next != NULL)
+		roots[2] = &next->cell;
+
+	/* Retain every addition even when the source fragment has already been emptied. */
+	for (index = 0; index < added_count; index++)
+		roots[index + 3U] = &added[index]->cell;
+
+	/* Removed nodes no longer have a destination parent edge. */
+	for (index = 0; index < removed_count; index++)
+		roots[index + 3U + added_count] = &removed[index]->cell;
+
+	/* Publish all ownership slots before any VM object or property key allocation. */
+	registered = 0;
+	for (index = 0; index < total; index++) {
+		status = vm_heap_add_root(heap, &roots[index]);
 		if (status != 0)
-			return status;
+			goto cleanup;
+
+		/* The cleanup count tracks successful registrations rather than input nodes. */
+		registered++;
 	}
 
-	/* Every matching observer now owns its record. */
+	/* Each observer receives exactly one record for this complete mutation in its scope. */
+	for (observer = window->mutation_observers; observer != NULL; observer = observer->next) {
+		/* Disconnected and non-child-list observers do not match this mutation kind. */
+		if (!observer->child_list || observer->target == NULL)
+			continue;
+
+		/* Match the registered target or its requested subtree without invoking script. */
+		target = bind_node_of(vm_value_cell(observer->target));
+		matches = 0;
+		if (target == parent)
+			matches = 1;
+
+		/* A subtree registration also observes descendant parents. */
+		if (!matches && observer->subtree)
+			matches = dom_is_inclusive_ancestor(target, parent);
+
+		/* Unrelated targets have no record for this operation. */
+		if (!matches)
+			continue;
+
+		/* Build independent complete snapshots before publishing to this observer. */
+		status = environment_mutation_record(window, observer, parent, added, added_count, removed, removed_count, previous, next);
+		if (status != 0)
+			goto cleanup;
+	}
+
+	/* Every matching observer has accepted the record, including the no-match case. */
+	status = 0;
+
+cleanup:
+	/* Native node ownership lasts through the final record-publication attempt. */
+	while (registered != 0) {
+		registered--;
+		vm_heap_remove_root(heap, &roots[registered]);
+	}
+
+	/* Stable native storage leaves only after every heap slot has been unregistered. */
+	free(roots);
+
+	/* Allocation or publication failure retains the precise error for the caller. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: every interested observer owns an independent complete record. */
 	return 0;
 }
 
@@ -2364,8 +2485,12 @@ environment_mutation_record(
 	struct bind_window *window,
 	struct environment_mutation_observer *observer,
 	struct dom_node *parent,
-	struct dom_node *added,
-	struct dom_node *removed)
+	struct dom_node *const *added,
+	size_t added_count,
+	struct dom_node *const *removed,
+	size_t removed_count,
+	struct dom_node *previous,
+	struct dom_node *next)
 {
 	struct vm_realm *realm;
 	struct vm_object *array;
@@ -2376,6 +2501,7 @@ environment_mutation_record(
 	vm_value target;
 	vm_value type;
 	vm_value records;
+	vm_value sibling;
 	unsigned index;
 	unsigned registered;
 	int status;
@@ -2384,13 +2510,6 @@ environment_mutation_record(
 	realm = window->realm;
 	memset(roots, 0, sizeof(roots));
 	roots[0] = &parent->cell;
-	if (added != NULL)
-		roots[1] = &added->cell;
-
-	/* A removed node has no parent edge and needs its own construction owner. */
-	if (removed != NULL)
-		roots[2] = &removed->cell;
-
 	/* Empty newborn slots acquire objects immediately after each successful allocation. */
 	registered = 0;
 	status = 0;
@@ -2423,13 +2542,13 @@ environment_mutation_record(
 				break;
 
 			/* Retain the added list before construction of the independent removed list. */
-			status = environment_node_list(window, added, &added_nodes);
+			status = environment_node_list(window, added, added_count, &added_nodes);
 			if (status != 0)
 				break;
 			roots[3] = vm_value_as_cell(added_nodes);
 
 			/* Retain the removed list before the type string and record allocations. */
-			status = environment_node_list(window, removed, &removed_nodes);
+			status = environment_node_list(window, removed, removed_count, &removed_nodes);
 			if (status != 0)
 				break;
 			roots[4] = vm_value_as_cell(removed_nodes);
@@ -2470,13 +2589,23 @@ environment_mutation_record(
 			if (status != 0)
 				break;
 
-			/* Preserve the existing minimal previous-sibling field. */
-			status = js_builtin_value(realm, record, "previousSibling", VM_VALUE_NULL, VM_PROPERTY_DEFAULT);
+			/* Preserve the actual boundary captured before source removal. */
+			status = bind_wrap_or_null(window, previous, &sibling);
 			if (status != 0)
 				break;
 
-			/* Preserve the existing minimal next-sibling field. */
-			status = js_builtin_value(realm, record, "nextSibling", VM_VALUE_NULL, VM_PROPERTY_DEFAULT);
+			/* The source boundary node retains its wrapper through property publication. */
+			status = js_builtin_value(realm, record, "previousSibling", sibling, VM_PROPERTY_DEFAULT);
+			if (status != 0)
+				break;
+
+			/* The following boundary is independent of the previous sibling. */
+			status = bind_wrap_or_null(window, next, &sibling);
+			if (status != 0)
+				break;
+
+			/* Publish the complete following boundary on the record. */
+			status = js_builtin_value(realm, record, "nextSibling", sibling, VM_PROPERTY_DEFAULT);
 			if (status != 0)
 				break;
 
@@ -2498,11 +2627,11 @@ environment_mutation_record(
 			/* Only the complete record is appended to the observer-owned array. */
 			array = (struct vm_object *)observer->records;
 			status = vm_object_define(
-				realm->heap,
-				array,
-				vm_value_int32((int32_t)array->length),
-				vm_value_cell(record),
-				VM_PROPERTY_DEFAULT);
+			    realm->heap,
+			    array,
+			    vm_value_int32((int32_t)array->length),
+			    vm_value_cell(record),
+			    VM_PROPERTY_DEFAULT);
 		} while (0);
 	}
 
@@ -2520,11 +2649,12 @@ environment_mutation_record(
 	return 0;
 }
 
-/* Makes a complete zero- or one-item NodeList-shaped array under explicit temporary ownership. */
+/* Makes a complete static NodeList-shaped sequence under explicit temporary ownership. */
 static int
 environment_node_list(
 	struct bind_window *window,
-	struct dom_node *node,
+	struct dom_node *const *nodes,
+	size_t count,
 	vm_value *result)
 {
 	struct vm_realm *realm;
@@ -2532,8 +2662,8 @@ environment_node_list(
 	struct vm_object *list;
 	struct vm_cell *roots[4];
 	vm_value sequence;
-	vm_value item;
 	vm_value name;
+	size_t position;
 	unsigned index;
 	unsigned registered;
 	int status;
@@ -2541,8 +2671,6 @@ environment_node_list(
 	/* Native ownership retains a newly wrapped node without relying on caller stack scanning. */
 	realm = window->realm;
 	memset(roots, 0, sizeof(roots));
-	if (node != NULL)
-		roots[0] = &node->cell;
 
 	/* Empty slots retain every newborn before the next VM allocation. */
 	registered = 0;
@@ -2557,21 +2685,25 @@ environment_node_list(
 	/* List publication is delayed until every constructor decoration succeeds. */
 	if (status == 0) {
 		do {
-			/* Empty and single-node sequences preserve the existing array-shaped collection model. */
-			if (node == NULL) {
-				status = js_builtin_array(realm, NULL, 0, &sequence);
-			} else {
-				status = bind_wrap(window, node, &item);
-				if (status != 0)
-					break;
-				status = js_builtin_array(realm, &item, 1, &sequence);
-			}
-
-			/* No partial sequence may escape an allocation failure. */
+			/* Start with an empty sequence while the caller retains all input native nodes. */
+			status = js_builtin_array(realm, NULL, 0, &sequence);
 			if (status != 0)
 				break;
+
+			/* Retain the sequence before constructing any node wrapper. */
 			list = (struct vm_object *)vm_value_as_cell(sequence);
 			roots[1] = &list->cell;
+
+			/* Snapshot every native node in order without exposing a partially constructed list. */
+			for (position = 0; position < count; position++) {
+				status = bind_array_push_node(window, list, nodes[position]);
+				if (status != 0)
+					break;
+			}
+
+			/* A failed wrapper or array property leaves the collection unpublished. */
+			if (status != 0)
+				break;
 
 			/* The constructor object is protected before its name is allocated. */
 			constructor = vm_object_create(realm->heap, realm->object_prototype);

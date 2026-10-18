@@ -1,0 +1,26 @@
+{
+  "dom_suites": "25/25",
+  "observer_assertions": 24,
+  "chromium_assertions": 24,
+  "basic_assertions": 39,
+  "supplemental_received": 31,
+  "supplemental_pass": 18,
+  "supplemental_fail": 13,
+  "supplemental_outcome": "fail",
+  "official_counts": {
+    "fail": 12,
+    "no_completion": 1
+  },
+  "official_whole_pass_gain": 0,
+  "acid3_diff": 0,
+  "acid2_diff": 873,
+  "host_build": "warning0",
+  "target_compile": "2 source warning0",
+  "production_link": "pending shared sysroot regeneration",
+  "remaining": [
+    "createHTMLDocument factory prerequisite",
+    "HTMLCollection iterable prerequisite",
+    "target runtime",
+    "full MutationObserver API beyond childList remains existing partial implementation"
+  ]
+}

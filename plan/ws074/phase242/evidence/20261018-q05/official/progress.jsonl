@@ -1,0 +1,14 @@
+{"eligible": 13, "eligible_sha256": "473591b1dcd47ceddba76977a8513118b9546a12744abc18f236749fb2259f4f", "font_dir": "userland/desktop/fonts", "kind": "header", "limit": 128, "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a", "offset": 0, "reason_counts": {"candidate": 13}, "selected": ["/css/css-anchor-position/anchor-invalid-fallback.html", "/css/css-anchor-position/anchor-scope-basic.html", "/css/css-anchor-position/anchor-scope-dynamic.html", "/css/css-cascade/at-scope-parsing.html", "/css/css-cascade/at-scope-relative-syntax.html", "/css/css-cascade/scope-declarations.html", "/css/css-cascade/scope-evaluation.html", "/css/css-cascade/scope-implicit-external.html", "/css/css-cascade/scope-implicit.html", "/css/css-cascade/scope-name-defining-rules.html", "/css/css-cascade/scope-nesting.html", "/css/css-cascade/scope-style-sharing-001.html", "/css/css-cascade/scope-style-sharing-002.html"], "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586"}
+{"kind": "result", "outcome": "fail", "report": "test-001.json.gz", "test_id": "/css/css-anchor-position/anchor-invalid-fallback.html"}
+{"kind": "result", "outcome": "fail", "report": "test-002.json.gz", "test_id": "/css/css-anchor-position/anchor-scope-basic.html"}
+{"kind": "result", "outcome": "fail", "report": "test-003.json.gz", "test_id": "/css/css-anchor-position/anchor-scope-dynamic.html"}
+{"kind": "result", "outcome": "fail", "report": "test-004.json.gz", "test_id": "/css/css-cascade/at-scope-parsing.html"}
+{"kind": "result", "outcome": "fail", "report": "test-005.json.gz", "test_id": "/css/css-cascade/at-scope-relative-syntax.html"}
+{"kind": "result", "outcome": "fail", "report": "test-006.json.gz", "test_id": "/css/css-cascade/scope-declarations.html"}
+{"kind": "result", "outcome": "fail", "report": "test-007.json.gz", "test_id": "/css/css-cascade/scope-evaluation.html"}
+{"kind": "result", "outcome": "no_completion", "report": "test-008.json.gz", "test_id": "/css/css-cascade/scope-implicit-external.html"}
+{"kind": "result", "outcome": "fail", "report": "test-009.json.gz", "test_id": "/css/css-cascade/scope-implicit.html"}
+{"kind": "result", "outcome": "fail", "report": "test-010.json.gz", "test_id": "/css/css-cascade/scope-name-defining-rules.html"}
+{"kind": "result", "outcome": "fail", "report": "test-011.json.gz", "test_id": "/css/css-cascade/scope-nesting.html"}
+{"kind": "result", "outcome": "fail", "report": "test-012.json.gz", "test_id": "/css/css-cascade/scope-style-sharing-001.html"}
+{"kind": "result", "outcome": "fail", "report": "test-013.json.gz", "test_id": "/css/css-cascade/scope-style-sharing-002.html"}

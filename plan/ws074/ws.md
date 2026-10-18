@@ -9,7 +9,11 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [ws074-q20261018-04](queue.md) finished（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+Queue: [ws074-q20261018-05](queue.md) finished（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+
+Event ws074-p242-q05-partial-clear-20261018: [証拠](phase242/evidence/20261018-q05/README.md)。observer24項目Chromium一致・DOM25/25、補助18/31 callback PASS、公式whole増分0。observer部分cleared、whole未達。次は公式reftest全静的census。
+
+Event ws074-p242-q05-start-20261018: p242のsource removal/observer batchを次の最大90分で開始。通常insertの契約は維持しprivate sequenceと明示rootを追加する。
 
 Event ws074-p242-q04-partial-clear-20261018: [p242証拠](phase242/evidence/20261018-q04/README.md)。基本交換39項目・DOM24/24、official cleanup13件は後続検査へ進んだがwhole PASS増分0。observer等whole未達。次はbatch/source removal。共有投影pending。
 
@@ -68,7 +72,7 @@ Event ws074-p217-q1188-partial-clear-20261014: [p217](phase217/phase.md) q1188-i
 Event ws074-p217-q1187-partial-clear-20261014: [p217](phase217/phase.md) q1187-i01で固定縦rl Grid直接横RTL absolute子row2/col1 top insetにstatic areaを適用。[証拠](phase217/evidence/20261014-q1187/README.md)。独立矩形Chromium一致、固定non-static007縦rl callback whole PASS、水平2 callback PASS、縦lrは4番目子でfile whole FAIL継続。旧WPT/host/Acid3差0維持。次は縦lr4番目子、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
 
 Event ws074-p217-q1186-partial-clear-20261014: [p217](phase217/phase.md) q1186-i01で固定縦lr/rl Grid直接横LTR absolute子へrow1/col2 static areaとjustify-center Yを適用。[証拠](phase217/evidence/20261014-q1186/README.md)。独立2矩形Chromium一致、固定non-static007縦2 callback先頭2子全PASS、lrは4番目子・rlは3番目子でfile whole FAIL継続。旧WPT/host/Acid3差0維持。次は縦rl Gridの3番目RTL横子、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
-Resume point: ws074-q20261018-03で公式Interop2025 testharness1,783件を再分類し、適格1,455 IDを最新固定binaryで測定中。未対応328を分母に保持。直近p241の補助aspect-ratio試験は152/257 PASS・後退0、独立40/40、Acid3 score100/差0、Acid2差873。補助257件は公式3,805 IDに含まれない。次はp242 replaceChildren（cleanup不足）の候補。production link/QEMU/実機とp100 wholeの残る関門も維持。
+Resume point: q03のtestharness全適格1,455 IDは485 PASS・旧481 PASS後退0。未対応328保持。q04/q05のreplaceChildren基本/observer部分はDOM25/25・Acid3差0でcleared、wholeはfactory/iterator/target等が残る。次は公式reftest1,974件の静的全候補census。production link/QEMU/実機とp100 wholeの残る関門を維持。
 <!-- awesome-plan-current:end -->
 
 Event ws074-p217-q1185-partial-clear-20261014: [p217](phase217/phase.md) q1185-i01で固定縦lr/rl Grid直接横LTR absolute子へrow1/col1 static areaとjustify-right Yを適用。[証拠](phase217/evidence/20261014-q1185/README.md)。独立2矩形Chromium一致、固定non-static007縦2 callback先頭子全PASS、2番目子でfile whole FAIL継続。旧WPT/host/Acid3差0維持。次は縦Grid2番目横子、p217/p189/p173 whole未達、共有投影/GitHub publication保留。

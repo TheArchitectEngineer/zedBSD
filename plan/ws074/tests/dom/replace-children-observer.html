@@ -1,0 +1,89 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Replacement observer snapshots and source removals</title>
+<script>
+var checks = 0;
+function check(value, name) { if (!value) throw new Error(name); checks++; }
+var source = document.createElement("div");
+var target = document.createElement("div");
+var a = document.createElement("a");
+var b = document.createElement("b");
+var old1 = document.createElement("i");
+var old2 = document.createElement("em");
+source.appendChild(a); source.appendChild(b);
+target.appendChild(old1); target.appendChild(old2);
+var callbackOrder = [];
+var targetObserver = new MutationObserver(function () {callbackOrder.push("target");});
+var sourceObserver = new MutationObserver(function () {callbackOrder.push("source");});
+targetObserver.observe(target, {childList:true});
+sourceObserver.observe(source, {childList:true});
+target.replaceChildren(a, b);
+var removed = sourceObserver.takeRecords();
+var added = targetObserver.takeRecords();
+check(removed.length === 2, "two independent source removals");
+check(removed[0].removedNodes[0] === a && removed[1].removedNodes[0] === b, "source removal order");
+check(removed[0].previousSibling === null && removed[0].nextSibling === b, "first source boundaries");
+check(removed[1].previousSibling === null && removed[1].nextSibling === null, "second source boundaries");
+check(added.length === 1, "one replacement record");
+check(added[0].addedNodes.length === 2 && added[0].addedNodes[0] === a && added[0].addedNodes[1] === b, "added snapshot");
+check(added[0].removedNodes.length === 2 && added[0].removedNodes[0] === old1 && added[0].removedNodes[1] === old2, "removed snapshot");
+check(added[0].previousSibling === null && added[0].nextSibling === null, "replacement boundaries");
+check(added[0].target === target && added[0].type === "childList", "record target");
+check(added[0].addedNodes.constructor.name === "NodeList", "NodeList identity");
+target.replaceChildren(a);
+var reused = targetObserver.takeRecords();
+check(reused.length === 1, "existing child participates in one replacement");
+check(reused[0].removedNodes.length === 2 && reused[0].removedNodes[0] === a && reused[0].removedNodes[1] === b, "existing child remains in outgoing snapshot");
+check(reused[0].addedNodes.length === 1 && reused[0].addedNodes[0] === a, "existing child reinserted in batch");
+check(added[0].addedNodes.length === 2 && added[0].removedNodes[0] === old1, "old snapshot survives mutations");
+var fragment = document.createDocumentFragment();
+fragment.appendChild(old1); fragment.appendChild(old2);
+var fragmentObserver = new MutationObserver(function () {});
+fragmentObserver.observe(fragment, {childList:true});
+target.replaceChildren(fragment);
+var fragmentRecords = fragmentObserver.takeRecords();
+var fragmentTarget = targetObserver.takeRecords();
+check(fragmentRecords.length === 1 && fragmentRecords[0].removedNodes.length === 2, "one fragment emptying record");
+check(fragmentRecords[0].removedNodes[0] === old1 && fragmentRecords[0].removedNodes[1] === old2, "fragment removal order");
+check(fragmentTarget.length === 1 && fragmentTarget[0].addedNodes.length === 2 && fragmentTarget[0].removedNodes[0] === a, "fragment replacement batch");
+target.replaceChildren();
+var cleared = targetObserver.takeRecords();
+check(cleared.length === 1 && cleared[0].addedNodes.length === 0 && cleared[0].removedNodes.length === 2, "clear batch");
+target.replaceChildren();
+check(targetObserver.takeRecords().length === 0, "empty replacement has no mutation");
+var another = new MutationObserver(function () {});
+another.observe(target, {childList:true});
+target.replaceChildren(a,b);
+var one = targetObserver.takeRecords();
+var two = another.takeRecords();
+check(one[0].addedNodes.length === 2 && two[0].addedNodes.length === 2 && one[0].addedNodes[0] === two[0].addedNodes[0], "both observers receive the complete snapshot");
+var caught;
+try {target.replaceChildren(old1, {toString:function () {throw 42;}});} catch (error) {caught = error;}
+check(caught === 42 && targetObserver.takeRecords().length === 0 && old1.parentNode === null, "conversion failure has no records");
+var bulk = document.createElement("div");
+var markup = "";
+for (var item = 0; item < 1000; item++) markup += "<i>" + item + "</i>";
+bulk.innerHTML = markup;
+var bulkFirst = bulk.firstChild;
+var bulkLast = bulk.lastChild;
+var bulkObserver = new MutationObserver(function () {});
+bulkObserver.observe(bulk, {childList:true});
+bulk.replaceChildren();
+var bulkRecords = bulkObserver.takeRecords();
+check(bulkRecords.length === 1 && bulkRecords[0].removedNodes.length === 1000, "large detached snapshot");
+check(bulkRecords[0].removedNodes[0] === bulkFirst && bulkRecords[0].removedNodes[999] === bulkLast && bulkRecords[0].removedNodes[500].textContent === "500", "snapshot roots survive wrapper allocations");
+// Drain the checkpoint after takeRecords before the independent callback-order check.
+setTimeout(function () {
+    callbackOrder = [];
+    source.appendChild(old1); source.appendChild(old2);
+    sourceObserver.takeRecords();
+    setTimeout(function () {
+        callbackOrder = [];
+        target.replaceChildren(old1,old2);
+        setTimeout(function () {
+            check(callbackOrder.join(",") === "target,source", "notification order follows observer creation");
+            console.log("replaceChildren observers", checks, "passed");
+        }, 0);
+    }, 0);
+},0);
+</script>

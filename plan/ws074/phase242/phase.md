@@ -2,7 +2,7 @@
 
 # ws074-p242: ParentNode.replaceChildren と WPT cleanup のDOM操作
 
-Status: uncleared（q04 basic partial cleared、observer等whole未達）
+Status: uncleared（q04/q05 host partial cleared、prerequisite/target等whole未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
@@ -40,3 +40,13 @@ MutationObserverは既存environment.cにあるが、privateのrecord生成はad
 ## q04 結果
 
 Event ws074-p242-q04-partial-clear-20261018: [証拠](evidence/20261018-q04/README.md)。基本交換39項目・DOM24/24、official cleanup13件のharness_errorは解消、12 FAIL/1 no_completion、whole PASS増分0。補助16 callback PASS。Acid3差0/Acid2差873、hostとamd64 5source compile warning0。basic partial cleared、whole uncleared。observer batch/source removal、補助factory/iterator依存、target runtimeが残る。共有投影pending。
+
+## q05 observer partial
+
+Event ws074-p242-q05-start-20261018: 5008906bdの基本交換後、observerのsource removalとreplace-all batchを最大90分で実装・検証する。private APIのsequence化、node snapshotの明示root、source sibling fieldsを範囲に含む。通常insert/append/prependの仕様上の別課題は変更しない。createHTMLDocument/collection iterableは別の依存として残す。
+
+設計確認: DOM Standard replace-allは先にoutgoing childrenをsnapshot/removeし、その後insertがadoptを行う。単一の既存子の再利用は1 target recordでremovedにも含める。observer callbackはcreation index順であり、record生成順を優先する追加queueは不要。https://dom.spec.whatwg.org/#concept-node-replace-all と #mutation-observers を確認（2026-10-18）。
+
+## q05 結果
+
+Event ws074-p242-q05-partial-clear-20261018: [証拠](evidence/20261018-q05/README.md)。observer24項目Chromium一致・DOM25/25、補助16→18 PASS/31 callback、13 FAILはfactory/iterator不足。公式13は12 FAIL/1 no_completionでwhole増分0。host/target compile warning0、Acid3差0/Acid2差873。observer部分cleared、whole uncleared。共有投影pending。

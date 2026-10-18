@@ -18,6 +18,22 @@
 #include <string.h>
 #include <stdlib.h>
 
+/*
+ * One stable replacement snapshot retains native nodes after their original tree edges leave.
+ * Every registered root belongs to heap until release, including partially acquired snapshots.
+ */
+struct mixin_node_snapshot {
+	struct vm_heap *heap;
+	struct dom_node **nodes;
+	struct vm_cell **roots;
+	size_t count;
+	size_t registered;
+};
+
+static int mixin_snapshot_capture(struct dom_node *node, int children, struct mixin_node_snapshot *snapshot);
+static void mixin_snapshot_release(struct mixin_node_snapshot *snapshot);
+static int mixin_adopt_replacement(struct vm_realm *realm, struct dom_node *parent, struct dom_node *node);
+static int mixin_move_replacement(struct vm_realm *realm, struct dom_node *parent, struct dom_node *node);
 static int mixin_insert_values(struct vm_realm *realm, struct dom_node *parent, const vm_value *args, unsigned count, struct dom_node *reference);
 static int mixin_element_link(struct vm_realm *realm, struct dom_node *node, vm_value *result);
 static int mixin_name_matches(const struct dom_element *element, const struct vm_string *name, const struct vm_string *lower);
@@ -209,6 +225,8 @@ bind_replace_children(
 	struct vm_cell **converted;
 	struct vm_cell *roots[3];
 	struct wb_units units;
+	struct mixin_node_snapshot added = {0};
+	struct mixin_node_snapshot removed = {0};
 	unsigned index;
 	unsigned registered;
 	unsigned fixed_registered;
@@ -309,7 +327,7 @@ bind_replace_children(
 		/* Appending through the checked insertion path preserves duplicate-node move order. */
 		for (index = 0; index < count; index++) {
 			node = (struct dom_node *)converted[index];
-			status = bind_insert(realm, replacement, node, NULL);
+			status = mixin_move_replacement(realm, replacement, node);
 			if (status != 0)
 				goto cleanup;
 		}
@@ -325,22 +343,46 @@ bind_replace_children(
 	if (parent->document->view != NULL)
 		window = parent->document->view;
 
+	/* Detached outgoing children remain alive until the complete replacement record owns them. */
+	status = mixin_snapshot_capture(parent, 1, &removed);
+	if (status != 0)
+		goto cleanup;
+
+	/* Capture the incoming sequence before insertion empties any argument fragment. */
+	if (replacement->type == DOM_DOCUMENT_FRAGMENT) {
+		status = mixin_snapshot_capture(replacement, 1, &added);
+	} else {
+		status = mixin_snapshot_capture(replacement, 0, &added);
+	}
+
+	/* No child can leave the destination until both independent snapshots exist. */
+	if (status != 0)
+		goto cleanup;
+
 	/* Native removal repairs ranges, iterators, embedded views and style generations. */
 	while (parent->first_child != NULL) {
 		node = parent->first_child;
 		roots[2] = &node->cell;
 		dom_remove(node);
-		status = bind_environment_child_mutation(window, parent, NULL, node);
+	}
+
+	/* The validated replacement now enters the empty destination through ordinary insertion. */
+	status = mixin_move_replacement(realm, parent, replacement);
+	if (status != 0)
+		goto cleanup;
+
+	/* Replace-all contributes one target record, and empty-to-empty replacement contributes none. */
+	if (added.count != 0 || removed.count != 0) {
+		status = bind_environment_children_mutation(window, parent, added.nodes, added.count, removed.nodes, removed.count, NULL, NULL);
 		if (status != 0)
 			goto cleanup;
 	}
 
-	/* The validated replacement now enters the empty destination through ordinary insertion. */
-	status = bind_insert(realm, parent, replacement, NULL);
-	if (status != 0)
-		goto cleanup;
-
 cleanup:
+	/* Complete and partially acquired snapshots release every registered node before native storage. */
+	mixin_snapshot_release(&added);
+	mixin_snapshot_release(&removed);
+
 	/* Detached argument ownership lasts through all native and observer notifications. */
 	while (registered != 0) {
 		registered--;
@@ -784,6 +826,273 @@ cleanup:
 		return status;
 
 	/* Succeeded: the names are in the array. */
+	return 0;
+}
+
+/* Captures one node or its current children with stable independent native roots. */
+static int
+mixin_snapshot_capture(
+	struct dom_node *node,
+	int children,
+	struct mixin_node_snapshot *snapshot)
+{
+	struct dom_node *child;
+	size_t count;
+	size_t index;
+	int status;
+
+	/* A single node is the default replacement sequence. */
+	count = 1;
+	if (children) {
+		/* Count the existing child edges before allocating or registering any stable slot. */
+		count = 0;
+		for (child = node->first_child;
+		     child != NULL;
+		     child = child->next)
+			count++;
+	}
+
+	/* An empty sequence has no native allocation or registration obligations. */
+	snapshot->heap = node->document->heap;
+	if (count == 0)
+		return 0;
+
+	/* The node-pointer view is borrowed by mutation-record construction. */
+	snapshot->nodes = calloc(count, sizeof(*snapshot->nodes));
+	if (snapshot->nodes == NULL)
+		return ENOMEM;
+
+	/* Root slots remain separate objects instead of aliasing differently typed node pointers. */
+	snapshot->roots = calloc(count, sizeof(*snapshot->roots));
+	if (snapshot->roots == NULL) {
+		mixin_snapshot_release(snapshot);
+		return ENOMEM;
+	}
+
+	/* A children snapshot preserves tree order; a node snapshot has exactly one entry. */
+	if (children) {
+		/* Copy the still-connected children before removal can destroy their sibling chain. */
+		index = 0;
+		for (child = node->first_child;
+		     child != NULL;
+		     child = child->next) {
+			snapshot->nodes[index] = child;
+			snapshot->roots[index] = &child->cell;
+			index++;
+		}
+	} else {
+		snapshot->nodes[0] = node;
+		snapshot->roots[0] = &node->cell;
+	}
+
+	/* Register every stable slot before the caller can detach even the first node. */
+	snapshot->count = count;
+	for (index = 0; index < count; index++) {
+		status = vm_heap_add_root(snapshot->heap, &snapshot->roots[index]);
+		if (status != 0) {
+			mixin_snapshot_release(snapshot);
+			return status;
+		}
+
+		/* A failed later registration must release exactly this successful prefix. */
+		snapshot->registered++;
+	}
+
+	/* Succeeded: every node remains independently owned until snapshot release. */
+	return 0;
+}
+
+/* Releases a replacement snapshot, including partially initialized allocation failures. */
+static void
+mixin_snapshot_release(
+	struct mixin_node_snapshot *snapshot)
+{
+	/* Every registered slot leaves the heap before either native array can disappear. */
+	while (snapshot->registered != 0) {
+		snapshot->registered--;
+		vm_heap_remove_root(snapshot->heap, &snapshot->roots[snapshot->registered]);
+	}
+
+	/* Both native arrays have independent allocation lifetimes. */
+	free(snapshot->roots);
+	free(snapshot->nodes);
+
+	/* A released snapshot is safe to release again along the caller's common unwind path. */
+	snapshot->roots = NULL;
+	snapshot->nodes = NULL;
+	snapshot->count = 0;
+
+	/* Succeeded: no snapshot storage or registered ownership remains. */
+	return;
+}
+
+/* Adopts a replacement node and records its original parent removal before target replacement. */
+static int
+mixin_adopt_replacement(
+	struct vm_realm *realm,
+	struct dom_node *parent,
+	struct dom_node *node)
+{
+	struct bind_window *source_window;
+	struct dom_node *source;
+	struct dom_node *previous;
+	struct dom_node *next;
+	struct vm_heap *heap;
+	struct vm_cell *roots[4];
+	unsigned registered;
+	unsigned index;
+	int status;
+
+	/* Capture source ownership and boundaries before checked adoption changes any Document. */
+	source = node->parent;
+	previous = node->previous;
+	next = node->next;
+	source_window = bind_window_of(realm);
+	if (node->document->view != NULL)
+		source_window = node->document->view;
+
+	/* Detached nodes need no source record, but their Document ownership still changes. */
+	if (source == NULL) {
+		status = dom_adopt(parent->document, node);
+		if (status != 0)
+			return status;
+
+		/* Succeeded: the detached replacement belongs to the destination Document. */
+		return 0;
+	}
+
+	/* Root the old parent, moved node and both boundaries through record construction. */
+	heap = node->document->heap;
+	memset(roots, 0, sizeof(roots));
+	roots[0] = &source->cell;
+	roots[1] = &node->cell;
+	if (previous != NULL)
+		roots[2] = &previous->cell;
+
+	/* The following boundary can exist even when the moved node was the first child. */
+	if (next != NULL)
+		roots[3] = &next->cell;
+
+	/* Publish the complete source ownership before adoption can detach its participants. */
+	registered = 0;
+	for (index = 0; index < 4U; index++) {
+		status = vm_heap_add_root(heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+
+		/* Each successful registration has one matching unwind obligation. */
+		registered++;
+	}
+
+	/* Native adoption preserves removal hooks, ranges and iterators before changing Documents. */
+	status = dom_adopt(parent->document, node);
+	if (status != 0)
+		goto cleanup;
+
+	/* Source observers receive this removal before the later target replacement record. */
+	status = bind_environment_children_mutation(source_window, source, NULL, 0, &node, 1, previous, next);
+	if (status != 0)
+		goto cleanup;
+
+cleanup:
+	/* Source ownership ends only after the record owns every boundary and removed node. */
+	while (registered != 0) {
+		registered--;
+		vm_heap_remove_root(heap, &roots[registered]);
+	}
+
+	/* Preserve adoption or record-publication failure after releasing native roots. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: adoption and any original-parent removal record are complete. */
+	return 0;
+}
+
+/* Moves a validated replacement without emitting individual destination insertion records. */
+static int
+mixin_move_replacement(
+	struct vm_realm *realm,
+	struct dom_node *parent,
+	struct dom_node *node)
+{
+	struct bind_window *window;
+	struct bind_window *source_window;
+	struct dom_node *child;
+	struct mixin_node_snapshot children = {0};
+	size_t index;
+	int status;
+
+	/* Conversion fragments use ordinary insertion constraints before any source mutation. */
+	status = bind_validate_insert(realm, parent, node, NULL);
+	if (status != 0)
+		return status;
+
+	/* Source fragment observers stay associated with their original hosting window. */
+	source_window = bind_window_of(realm);
+	if (node->document->view != NULL)
+		source_window = node->document->view;
+
+	/* A borrowed method resolves insertion callbacks through the actual destination Document. */
+	window = bind_window_of(realm);
+	if (parent->document->view != NULL)
+		window = parent->document->view;
+
+	/* Adoption records the node's own source-parent removal before insertion. */
+	status = mixin_adopt_replacement(realm, parent, node);
+	if (status != 0)
+		return status;
+
+	/* A fragment contributes its children, while any other argument contributes itself. */
+	if (node->type == DOM_DOCUMENT_FRAGMENT) {
+		status = mixin_snapshot_capture(node, 1, &children);
+	} else {
+		status = mixin_snapshot_capture(node, 0, &children);
+	}
+
+	/* Snapshot failure cannot discard children from an argument fragment. */
+	if (status != 0)
+		return status;
+
+	/* Empty a fragment under suppressed per-child observer records. */
+	if (node->type == DOM_DOCUMENT_FRAGMENT) {
+		/* Preserve native removal hooks while the snapshot retains all detached children. */
+		for (index = 0; index < children.count; index++)
+			dom_remove(children.nodes[index]);
+
+		/* The fragment's complete child removal is one observable record. */
+		if (children.count != 0) {
+			status = bind_environment_children_mutation(source_window, node, NULL, 0, children.nodes, children.count, NULL, NULL);
+			if (status != 0)
+				goto cleanup;
+		}
+	}
+
+	/* Insert each already-adopted child with the existing host notification contract. */
+	for (index = 0; index < children.count; index++) {
+		child = children.nodes[index];
+		dom_insert_before(parent, child, NULL);
+
+		/* Host-side style, script and embedded-content processing still sees every insertion. */
+		if (window->host.node_inserted != NULL) {
+			status = window->host.node_inserted(window->host.context, child);
+			if (status != 0)
+				goto cleanup;
+		}
+	}
+
+	/* The caller owns the eventual single target record for the complete replacement. */
+	status = 0;
+
+cleanup:
+	/* Inserted nodes have tree edges, and failed partial insertion retains no native snapshots. */
+	mixin_snapshot_release(&children);
+
+	/* Propagate the first host or source-record failure. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: all incoming nodes entered the target without per-node target records. */
 	return 0;
 }
 

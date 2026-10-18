@@ -491,6 +491,7 @@ void bind_environment_release(struct bind_window *window);
 void bind_environment_trace(struct vm_heap *heap, struct bind_window *window);
 void bind_environment_disconnect(struct bind_window *window);
 int bind_environment_checkpoint(struct bind_window *window, int *queued);
+int bind_environment_children_mutation(struct bind_window *window, struct dom_node *parent, struct dom_node *const *added, size_t added_count, struct dom_node *const *removed, size_t removed_count, struct dom_node *previous, struct dom_node *next);
 int bind_environment_child_mutation(struct bind_window *window, struct dom_node *parent, struct dom_node *added, struct dom_node *removed);
 
 /* Markup (markup.c, ws074-p081). */

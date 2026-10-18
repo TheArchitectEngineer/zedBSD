@@ -1,5 +1,25 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
+# ws074-q20261018-05 / replaceChildren observer通知
+
+Status: finished（2026-10-18、observer partial cleared）
+Owner: このCodex chat単独。
+Approval: [ユーザーの自走指示](autonomy.md)を適用。
+Timebox: 最大90分（12:58 JSTまで）。
+
+| Attempt | Phase | Exact scope | State | Dependencies |
+| --- | --- | --- | --- | --- |
+| ws074-q20261018-05-i01 | [p242](phase242/phase.md) observer partial | replaceChildrenでsource parentからの移動を先に通知し、targetの交換はadded/removed全nodeを1recordへ集約する。private sequence API・GC root snapshot・sibling fieldを追加。普通のinsert/append/prependの契約は維持。独立observer例をChromium比較、既存DOM/GC、公式13件、build warning0/full C review。公開ABI/WPT/Masterは不変 | cleared | 5008906bd基本交換、q04 observer残課題 |
+
+Dependency graph: p242 q04基本交換 → p242 q05 observer partial。
+Upcoming Work Outlook: createHTMLDocument/HTMLCollection iterable依存、静的reftest census、runner未対応328。
+
+Outcome: observer24項目Chromium一致、DOM25/25、補助16→18 callback PASS、全31 callback取得。公式whole PASS増分0。p242 whole uncleared。[証拠](phase242/evidence/20261018-q05/README.md)。
+
+---
+
+<!-- awesome-plan project=zedbsd record=queue -->
+
 # ws074-q20261018-04 / ParentNode.replaceChildren 基本交換
 
 Status: finished（2026-10-18、basic partial cleared）

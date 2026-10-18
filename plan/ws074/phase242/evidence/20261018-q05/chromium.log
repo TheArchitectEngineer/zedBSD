@@ -1,0 +1,3 @@
+[518638:518638:1018/113129.368864:WARNING:sandbox/policy/linux/sandbox_linux.cc:405] InitializeSandbox() called with multiple threads in process gpu-process.
+[518595:518595:1018/113129.659220:WARNING:ui/base/idle/idle_linux.cc:111] None of the known D-Bus ScreenSaver services could be used.
+[518595:518595:1018/113129.999244:INFO:CONSOLE:85] "replaceChildren observers 24 passed", source: file:///home/awe/zedBSD-claude1/plan/ws074/tests/dom/replace-children-observer.html (85)
