@@ -19,6 +19,14 @@ struct format_output {
 	size_t length;
 };
 
+/*
+ * What %ls prints for a null pointer, as wide characters.
+ *
+ * It is spelled out rather than written as a wide literal, so its elements
+ * are wchar_t wherever the compiler's own wide literals are narrower.
+ */
+static const wchar_t format_null_wide[] = { '(', 'n', 'u', 'l', 'l', ')', 0 };
+
 #ifndef KERN_NO_PRINTF_FLOAT
 /* The 32-bit words of the big integers that hold a double exactly. */
 #define FLOAT_WORDS 36
@@ -57,14 +65,6 @@ struct float_sink {
 	struct format_output *output;
 	size_t length;
 };
-
-/*
- * What %ls prints for a null pointer, as wide characters.
- *
- * It is spelled out rather than written as a wide literal, so its elements
- * are wchar_t wherever the compiler's own wide literals are narrower.
- */
-static const wchar_t format_null_wide[] = { '(', 'n', 'u', 'l', 'l', ')', 0 };
 
 static void sink_character(struct float_sink *sink, char character);
 static char decimal_character(const struct float_decimal *decimal, int index);

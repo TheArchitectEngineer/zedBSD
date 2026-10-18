@@ -58,23 +58,76 @@ hal_irq_send_eoi(hal_irq_ack_t acknowledge)
 	slots[vector].in_flight = 0;
 }
 
+/*
+ * Registers the handler of a numbered IRQ, an exception vector.
+ */
 int
-hal_irq_set_handler(int irq, hal_irq_handler_t handler, void *argument)
+hal_irq_register(
+	int irq_num,
+	hal_irq_handler_t func,
+	void *arg)
 {
 	bool enabled;
-	if (irq < 0 || irq >= X68K_IRQ_COUNT ||
-	    (handler == NULL && argument != NULL))
+
+	/* Refuses an IRQ that does not exist, or no handler. */
+	if (irq_num < 0 || irq_num >= X68K_IRQ_COUNT)
 		return HAL_ERR_INVALID;
+	if (func == NULL)
+		return HAL_ERR_INVALID;
+
+	/* Installs the handler unless the vector has one or is being handled. */
 	enabled = hal_irq_disable();
-	if (slots[irq].in_flight) {
+
+	if (slots[irq_num].handler != NULL || slots[irq_num].in_flight) {
 		if (enabled)
 			hal_irq_enable();
 		return HAL_ERR_BUSY;
 	}
-	slots[irq].handler = handler;
-	slots[irq].argument = argument;
+	slots[irq_num].handler = func;
+	slots[irq_num].argument = arg;
+
 	if (enabled)
 		hal_irq_enable();
+
+	/* Succeeded: the vector reaches the handler. */
+	return HAL_OK;
+}
+
+/*
+ * Removes the handler of a numbered IRQ.
+ */
+int
+hal_irq_unregister(
+	int irq_num,
+	hal_irq_handler_t func,
+	void *arg)
+{
+	bool enabled;
+
+	/* Refuses an IRQ that does not exist. */
+	if (irq_num < 0 || irq_num >= X68K_IRQ_COUNT)
+		return HAL_ERR_INVALID;
+
+	/* Removes the handler when it is the one named and not being handled. */
+	enabled = hal_irq_disable();
+
+	if (slots[irq_num].handler != func || slots[irq_num].argument != arg) {
+		if (enabled)
+			hal_irq_enable();
+		return HAL_ERR_INVALID;
+	}
+	if (slots[irq_num].in_flight) {
+		if (enabled)
+			hal_irq_enable();
+		return HAL_ERR_BUSY;
+	}
+	slots[irq_num].handler = NULL;
+	slots[irq_num].argument = NULL;
+
+	if (enabled)
+		hal_irq_enable();
+
+	/* Succeeded: the vector reaches no handler. */
 	return HAL_OK;
 }
 
@@ -89,14 +142,6 @@ x68k_irq_dispatch(unsigned vector)
 	slots[vector].handler((int)vector, (hal_irq_ack_t)vector + 1U,
 	    slots[vector].argument);
 	return 1;
-}
-
-int
-hal_irq_service_wait(int irq, hal_irq_ack_t *acknowledge)
-{
-	(void)irq;
-	(void)acknowledge;
-	return HAL_ERR_UNSUPPORTED;
 }
 
 int
@@ -130,14 +175,31 @@ hal_irq_set_mode(
 	return HAL_ERR_UNSUPPORTED;
 }
 
+/*
+ * Reports the affinity of a numbered IRQ: the only processor, asked for
+ * and in effect.
+ */
 int
-hal_irq_get_affinity(int irq, struct hal_irq_affinity *result)
+hal_irq_get_affinity(
+	int irq,
+	struct hal_cpu_mask *requested,
+	struct hal_cpu_mask *effective)
 {
-	if (irq < 0 || irq >= X68K_IRQ_COUNT || result == NULL)
+	/* Refuses an IRQ that does not exist. */
+	if (irq < 0 || irq >= X68K_IRQ_COUNT)
 		return HAL_ERR_INVALID;
-	hal_cpu_mask_zero(&result->requested);
-	hal_cpu_mask_set(&result->requested, 0);
-	result->effective = result->requested;
+
+	/* Reports the only processor for what the caller asked for. */
+	if (requested != NULL) {
+		hal_cpu_mask_zero(requested);
+		hal_cpu_mask_set(requested, 0);
+	}
+	if (effective != NULL) {
+		hal_cpu_mask_zero(effective);
+		hal_cpu_mask_set(effective, 0);
+	}
+
+	/* Succeeded. */
 	return HAL_OK;
 }
 

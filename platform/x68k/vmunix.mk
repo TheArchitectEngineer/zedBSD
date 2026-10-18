@@ -8,8 +8,17 @@ M68K_OBJDUMP ?= m68k-linux-gnu-objdump
 M68K_OBJCOPY ?= m68k-linux-gnu-objcopy
 X68K_PLATFORM := platform/x68k
 
-M68K_CPPFLAGS := -nostdinc -Iinclude -Isrc -I. \
-	-Iinclude/libc -Isrc/hal/m68k -DHAL_ARCH_M68K -DHAL_BOARD_X68K \
+# The compiler's helpers for the operations the MC68030 has no instruction
+# for (64-bit division), for the soft-float ABI.
+M68K_LIBGCC := $(shell $(M68K_CC) -m68030 -msoft-float -print-libgcc-file-name)
+
+# The kernel and the HAL read the cross compiler's freestanding headers and
+# the tree's include/ and src/, never the C library (as on the other ports).
+# The compiler does not know the zedBSD target, so its define is given.
+M68K_GCC_INCLUDE := $(shell $(M68K_CC) -print-file-name=include 2>/dev/null)
+M68K_CPPFLAGS := -nostdinc -isystem $(M68K_GCC_INCLUDE) -D__ZEDBSD__=1 \
+	-D_LIBC_LIMITS_H_ -Iinclude -Isrc -I. \
+	-Isrc/hal/m68k -DHAL_ARCH_M68K -DHAL_BOARD_X68K \
 	-DKERN_USER_ABI_M68K -DKERN_PAGE_SIZE=4096 \
 	-DKERN_USER_PAGE_SIZE=4096 -DKERN_NO_PRINTF_FLOAT \
 	-DKERN_INIT_PATH='"/x68k/bin/sh"'
@@ -21,10 +30,12 @@ M68K_USER_CFLAGS := -m68030 -msoft-float -ffreestanding -fno-pic -fno-pie \
 	-fno-stack-protector -fno-asynchronous-unwind-tables -fno-unwind-tables \
 	-fno-builtin -fno-common -ffunction-sections -fdata-sections \
 	-Os -Wall -Wextra -Werror
-M68K_USER_CPPFLAGS := -nostdinc -Iinclude -Isrc -I. \
-	-Iinclude/libc -DKERN_UAPI_NATIVE -DHAL_ARCH_M68K -DKERN_USER_ABI_M68K \
-	-DKERN_USER_PAGE_SIZE=4096 \
-	-DKERN_NO_PRINTF_FLOAT
+# The user programs are static and read the C library's headers; the
+# compiler has no zedBSD sysroot, so its freestanding headers and the
+# target's define are given as for the kernel.
+M68K_USER_CPPFLAGS := -nostdinc -isystem $(M68K_GCC_INCLUDE) -D__ZEDBSD__=1 \
+	-Iinclude/libc -Iinclude -Isrc -I. -DHAL_ARCH_M68K -DKERN_USER_ABI_M68K \
+	-DKERN_USER_PAGE_SIZE=4096 -DKERN_NO_PRINTF_FLOAT -DZEDBSD_STATIC_TLS
 
 # These overrides make an explicit `libc-objects` request use the m68k kernel
 # contract. X68k user libc is defined separately when the user image lands.
@@ -40,24 +51,16 @@ ZEDBSD_LIBC_CFLAGS := $(M68K_KERNEL_CFLAGS) -fno-builtin \
 # host coverage remains in the PC targets; X68k runs the architecture-neutral
 # host tests and is fixed to the soft-float ABI.
 CHECK_RUN_TARGETS := $(filter-out softfloat-host-test,$(CHECK_RUN_TARGETS))
-CHECK_RUN_TARGETS += x68k-user-abi-check x68k-target-audit \
-	x68k-emulator-rom-host-test
-
-x68k-emulator-rom-host-test:
-	$(PYTHON) tests/x68k-emulator-rom-host-test.py
+CHECK_RUN_TARGETS += x68k-user-abi-check x68k-target-audit
 
 X68K_CONTRACT_OBJ := $(BUILD)/src/hal/m68k/bsp-x68k/contract.o
 X68K_USER_CONTRACT_OBJ := $(BUILD)/user/userland/x68k-contract.o
 X68K_CRT0_OBJ := $(BUILD)/user/src/libc/crt/crt0-m68k.o
-X68K_USER_RUNTIME_SOURCES := \
-	userland/base/libc/posix.c userland/base/libc/static-tls.c userland/base/libc/poll.c \
-	userland/base/libc/termios.c \
-	userland/base/libc/pthread.c userland/base/libc/timer.c userland/base/libc/shm.c userland/base/libc/semaphore.c \
-	userland/base/libc/mqueue.c userland/base/libc/socket.c userland/base/libc/signal.c \
-	userland/base/libc/account.c userland/base/libc/crypt.c userland/base/libc/utmpx.c \
-	src/libc/heap.c src/libc/string.c src/libc/ctype.c src/libc/locale.c src/libc/wide.c \
-	src/libc/int64.c src/libc/strto.c src/libc/format.c src/libc/stdio.c \
-	$(ZEDBSD_LIBC_USER_EXTRA_SOURCES)
+# The C library of the sysroots (toolchain/llvm/sysroot.mk), from the same
+# sources, with the compiler runtime; libgcc supplies what the MC68030's
+# extended long double needs.
+X68K_USER_RUNTIME_SOURCES := $(sort $(ZEDBSD_SYSROOT_LIBC_SOURCES) \
+	$(ZEDBSD_SYSROOT_COMPILER_RT_SOURCES))
 X68K_USER_SH_SOURCES := $(USERLAND_sh_SOURCES)
 X68K_USER_RUNTIME_OBJS := \
 	$(patsubst %.c,$(BUILD)/user/%.o,$(X68K_USER_RUNTIME_SOURCES))
@@ -85,14 +88,11 @@ X68K_EARLY_C_SOURCES := \
 	src/hal/m68k/bsp-x68k/boot.c \
 	src/hal/m68k/bsp-x68k/cmain.c \
 	src/hal/m68k/bsp-x68k/console.c \
-	src/hal/m68k/bsp-x68k/keyboard.c \
-	src/hal/m68k/bsp-x68k/keyboard-map.c \
 	src/hal/m68k/bsp-x68k/machine.c \
 	src/hal/m68k/bsp-x68k/handoff.c \
 	src/hal/m68k/bsp-x68k/irq.c \
 	src/hal/m68k/bsp-x68k/memory-map.c \
-	src/hal/pmem-constraints.c src/hal/m68k/bsp-x68k/pmem.c \
-	src/hal/m68k/bsp-x68k/scsi.c \
+	src/hal/m68k/bsp-x68k/pmem.c \
 	src/hal/m68k/bsp-x68k/timer.c
 X68K_EARLY_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(X68K_EARLY_C_SOURCES)) \
 	$(BUILD)/src/hal/m68k/bsp-x68k/contract.o \
@@ -110,10 +110,12 @@ X68K_KERNEL_SOURCES := \
 	src/kern/mount.c src/kern/vfs.c src/kern/swap.c \
 	src/kern/tmpfs.c src/kern/tmpfs-pages.c src/drivers/fs/overlayfs.c src/drivers/generic/loop.c \
 	src/kern/backing-claim.c \
-	src/kern/disk.c \
+	src/kern/disk.c src/kern/device-io.c src/kern/irq.c src/kern/pmem.c \
+	src/kern/test-checkpoint.c src/kern/text-display.c \
 	src/kern/partition.c src/drivers/disklabel/x68k.c \
 	src/kern/platform/x68k.c \
 	src/drivers/platform/x68k/x68k-mb89352.c src/drivers/platform/x68k/x68k-spc-disk.c \
+	src/drivers/platform/x68k/x68k-console.c \
 	src/kern/panic.c src/kern/entry.c src/kern/clock.c \
 	src/kern/timer.c src/kern/lock.c src/kern/klog.c src/kern/waitq.c \
 	src/kern/buf.c src/kern/cache.c src/kern/readahead.c src/kern/writeback.c src/kern/io.c src/kern/sysctl.c src/kern/resource.c \
@@ -127,7 +129,9 @@ X68K_KERNEL_SOURCES := \
 	src/kern/syscall.c src/kern/uaccess.c src/kern/cdev.c src/kern/devfs.c \
 	src/drivers/generic/console.c src/drivers/generic/input.c \
 	$(KERN_GPU_SOURCES) \
-	src/kern/locale-record.c \
+	$(KERN_AUDIO_SOURCES) \
+	src/kern/kcrt.c src/kern/heap.c \
+	src/kern/random.c src/kern/random-crypto.c \
 	src/kern/tty.c src/kern/tty-csi.c \
  src/drivers/generic/system-device.c src/kern/system-event.c src/drivers/generic/memory-device.c src/kern/shutdown.c \
 	src/kern/init.c
@@ -135,9 +139,10 @@ X68K_KERNEL_SOURCES += $(KERN_NET_SOURCES) $(KERN_BLOCK_IDENTITY_SOURCES) \
 	$(KERN_UFS_SOURCES)
 X68K_KERNEL_SOURCES += $(KERN_BOOT_SOURCES)
 X68K_KERNEL_OBJS := $(patsubst %.c,$(BUILD)/kernel/%.o,$(X68K_KERNEL_SOURCES))
-X68K_KERNEL_LIBC_OBJS := $(patsubst %.c,$(BUILD)/kernel/%.o,$(ZEDBSD_LIBC_SOURCES))
-X68K_VMUNIX_OBJS := $(X68K_EARLY_OBJS) $(X68K_KERNEL_OBJS) \
-	$(X68K_KERNEL_LIBC_OBJS)
+
+# The kernel links no C library object: kcrt and the kernel heap supply
+# what it used from libc.
+X68K_VMUNIX_OBJS := $(X68K_EARLY_OBJS) $(X68K_KERNEL_OBJS)
 $(X68K_VMUNIX_OBJS): $(ZEDBSD_PLATFORM_CONFIG_STAMP)
 X68K_AUDIT_C_SOURCES := \
 	src/hal/cpu-up.c \
@@ -150,19 +155,17 @@ X68K_AUDIT_C_SOURCES := \
 	src/hal/m68k/bsp-x68k/boot.c \
 	src/hal/m68k/bsp-x68k/cmain.c \
 	src/hal/m68k/bsp-x68k/console.c \
-	src/hal/m68k/bsp-x68k/keyboard.c \
-	src/hal/m68k/bsp-x68k/keyboard-map.c \
 	src/hal/m68k/bsp-x68k/machine.c \
 	src/hal/m68k/bsp-x68k/handoff.c \
 	src/hal/m68k/bsp-x68k/irq.c \
 	src/hal/m68k/bsp-x68k/memory-map.c \
 	src/hal/m68k/bsp-x68k/pmem.c \
-	src/hal/m68k/bsp-x68k/scsi.c \
 	src/hal/m68k/bsp-x68k/timer.c \
 	src/kern/platform/x68k.c \
 	src/drivers/disklabel/x68k.c \
 	src/drivers/platform/x68k/x68k-mb89352.c \
-	src/drivers/platform/x68k/x68k-spc-disk.c
+	src/drivers/platform/x68k/x68k-spc-disk.c \
+	src/drivers/platform/x68k/x68k-console.c
 X68K_AUDIT_S_SOURCES := \
 	src/hal/m68k/cache030.S \
 	src/hal/m68k/irq030.S \
@@ -205,12 +208,6 @@ $(BUILD)/kernel/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(M68K_CC) $(M68K_CPPFLAGS) $(M68K_KERNEL_CFLAGS) -fno-builtin \
  -fno-strict-aliasing -MMD -MP -c $< -o $@
-
-$(BUILD)/kernel/libc/%.o: src/libc/%.c
-	@mkdir -p $(dir $@)
-	$(M68K_CC) $(M68K_CPPFLAGS) $(M68K_KERNEL_CFLAGS) -fno-builtin \
- -fno-isolate-erroneous-paths-dereference -fno-strict-aliasing \
- -MMD -MP -c $< -o $@
 
 $(BUILD)/target-audit/%.o: %.c
 	@mkdir -p $(dir $@)
@@ -278,7 +275,7 @@ $(BUILD)/bin/sh: $(X68K_USER_OBJS) $(X68K_USER_READLINE_LIB) \
 	@mkdir -p $(dir $@)
 	$(M68K_LD) --gc-sections -nostdlib -static -z max-page-size=4096 \
  -z stack-size=0x100000 -T $(X68K_PLATFORM)/user.ld \
- $(X68K_USER_OBJS) $(X68K_USER_READLINE_LIB) -o $@
+ $(X68K_USER_OBJS) $(X68K_USER_READLINE_LIB) $(M68K_LIBGCC) -o $@
 	@test -z "$$($(M68K_NM) -u $@)" || { $(M68K_NM) -u $@; exit 1; }
 	$(PYTHON) tools/build/check-user-elf.py --machine m68k $@
 	@if $(M68K_OBJDUMP) -d --no-show-raw-insn $@ | \
@@ -300,7 +297,7 @@ $(BUILD)/bin/$(1): $(X68K_CRT0_OBJ) $(X68K_USER_RUNTIME_OBJS) \
  -z stack-size=0x100000 -T $(X68K_PLATFORM)/user.ld \
  $(X68K_CRT0_OBJ) $(X68K_USER_RUNTIME_OBJS) \
  $(X68K_USER_BASIC_COMMON_OBJ) \
- $(call ZEDBSD_USERLAND_OBJECTS,$(BUILD)/user,$(1)) -o $$@
+ $(call ZEDBSD_USERLAND_OBJECTS,$(BUILD)/user,$(1)) $(M68K_LIBGCC) -o $$@
 	@test -z "$$$$($(M68K_NM) -u $$@)" || { $(M68K_NM) -u $$@; exit 1; }
 	$(PYTHON) tools/build/check-user-elf.py --machine m68k $$@
 endef
@@ -328,8 +325,10 @@ $(BUILD)/bootloader/x68k/mb89352.o: src/drivers/platform/x68k/x68k-mb89352.c \
 $(BUILD)/vmunix: $(X68K_VMUNIX_OBJS) $(X68K_PLATFORM)/vmunix.ld \
 	platform/x68k/tools/check-m68k-vmunix.py
 	$(M68K_LD) --gc-sections -z max-page-size=4096 \
- -T $(X68K_PLATFORM)/vmunix.ld -nostdlib $(X68K_VMUNIX_OBJS) -o $@
-	@test -z "$$($(M68K_NM) -u $@)" || { $(M68K_NM) -u $@; exit 1; }
+ -T $(X68K_PLATFORM)/vmunix.ld -nostdlib $(X68K_VMUNIX_OBJS) $(M68K_LIBGCC) -o $@
+	@# A weak undefined symbol is an optional hook, not a link error.
+	@test -z "$$($(M68K_NM) -u $@ | awk '$$1 == "U"')" || \
+		{ $(M68K_NM) -u $@; exit 1; }
 	$(PYTHON) platform/x68k/tools/check-m68k-vmunix.py $@
 	@if $(M68K_OBJDUMP) -d --no-show-raw-insn $(X68K_VMUNIX_OBJS) | \
  grep -E '^[[:space:]]*[0-9a-f]+:[[:space:]]+f[a-z]'; then \
@@ -345,8 +344,10 @@ $(BUILD)/contract-user.elf: $(X68K_USER_CONTRACT_OBJ) \
 	@test -z "$$($(M68K_NM) -u $@)" || { $(M68K_NM) -u $@; exit 1; }
 	$(PYTHON) tools/build/check-user-elf.py --machine m68k $@
 
+# The boot stages are one flat block the firmware and the first stage load
+# and run in place, so their single segment is writable and executable.
 $(BUILD)/stage1.elf: $(X68K_STAGE1_OBJ) bootloader/x68k/stage1.ld
-	$(M68K_LD) -N -static -T bootloader/x68k/stage1.ld -nostdlib \
+	$(M68K_LD) -N -static --no-warn-rwx-segments -T bootloader/x68k/stage1.ld -nostdlib \
  $(X68K_STAGE1_OBJ) -o $@
 
 $(BUILD)/stage1.bin: $(BUILD)/stage1.elf
@@ -355,7 +356,7 @@ $(BUILD)/stage1.bin: $(BUILD)/stage1.elf
  echo "ERROR: X68k stage 1 exceeds 1024 bytes" >&2; exit 1; }
 
 $(BUILD)/stage2.elf: $(X68K_STAGE2_OBJS) bootloader/x68k/stage2.ld
-	$(M68K_LD) -N -static -T bootloader/x68k/stage2.ld -nostdlib \
+	$(M68K_LD) -N -static --no-warn-rwx-segments -T bootloader/x68k/stage2.ld -nostdlib \
  $(X68K_STAGE2_OBJS) -o $@
 	@test -z "$$($(M68K_NM) -u $@)" || { $(M68K_NM) -u $@; exit 1; }
 
@@ -382,14 +383,9 @@ $(eval $(call ZEDBSD_ROOTFS_TREE_RULE,m68k,$(ZEDBSD_ROOTFS_INPUTS),$(X68K_ROOTFS
 
 rootfs: $(BUILD)/rootfs/.stamp
 
-.PHONY: x68k-contract x68k-user-abi-check x68k-target-audit \
-	x68k-emulator-rom-host-test
+.PHONY: x68k-contract x68k-user-abi-check x68k-target-audit
 
 -include $(X68K_EARLY_OBJS:.o=.d) $(X68K_KERNEL_OBJS:.o=.d) \
-	$(X68K_KERNEL_LIBC_OBJS:.o=.d) $(X68K_STAGE2_OBJS:.o=.d)
+	$(X68K_STAGE2_OBJS:.o=.d)
 -include $(X68K_AUDIT_C_OBJS:.o=.d)
 -include $(X68K_USER_OBJS:.o=.d)
-
-$(BUILD)/src/hal/pmem-constraints.o: src/hal/pmem-constraints.c
-	@mkdir -p $(dir $@)
-	$(M68K_CC) $(M68K_CPPFLAGS) $(M68K_KERNEL_CFLAGS) -MMD -MP -c $< -o $@

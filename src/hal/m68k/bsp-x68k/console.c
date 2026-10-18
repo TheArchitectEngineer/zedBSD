@@ -1,259 +1,245 @@
-/* Early X68000 text console using TVRAM and the licensed CGROM image. */
-/* Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib. */
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The X68000's text console, drawn on the text screen with the machine's
+ * own 8x16 character ROM.
+ *
+ * The HAL and the kernel print through hal_putc(), which draws each
+ * character here; once the kernel publishes its own console, hal_putc()
+ * goes there instead.  The text screen is four bit planes of 1024 by 1024
+ * pixels, of which 768 by 512 show; the first three planes carry the
+ * glyph, so it shows in palette colour 7, and the fourth stays clear.
+ */
 
 #include <hal/hal.h>
+#include "bsp.h"
 #include "mmio.h"
 
-#include <kern/kcrt.h>
+/* The grid the visible text screen holds: 768 by 512 pixels in 8x16 cells. */
+#define CONSOLE_COLUMNS		96U
+#define CONSOLE_ROWS		32U
 
-#define X68K_TVRAM_PLANE_BYTES 0x00020000U
-#define X68K_TEXT_ROW_BYTES    128U
-#define X68K_FONT_HEIGHT       16U
-#define X68K_CGROM_8X16        X68K_DEVICE_ADDRESS(0x00f3a800U)
-#define X68K_TEXT_PALETTE      X68K_DEVICE_ADDRESS(0x00e82200U)
+/* A glyph's rows, and the bytes of one row of a text plane. */
+#define CONSOLE_FONT_HEIGHT	16U
+#define CONSOLE_ROW_BYTES	128U
 
-struct x68k_console_cell {
-	uint8_t character;
-	uint8_t attribute;
-};
+/* The distance from one text plane to the next, and the planes the glyph is drawn in. */
+#define CONSOLE_PLANE_BYTES	0x00020000U
+#define CONSOLE_PLANES		4U
+#define CONSOLE_GLYPH_PLANES	3U
 
-static struct x68k_console_cell shadow[HAL_CONS_ROWS][HAL_CONS_COLUMNS];
-static struct hal_cons_state state = { HAL_CONS_TERMINAL, 0, 0, 1 };
-static uint8_t current_attribute = HAL_CONS_ATTRIB_NORMAL;
+/*
+ * The character ROM's 8x16 font and the text palette, in the physical
+ * space.
+ *
+ * Values referenced: the X68000's memory map (the character generator
+ * ROM's 8x16 font and the text palette registers).
+ */
+#define CONSOLE_CGROM_8X16	0x00f3a800U
+#define CONSOLE_TEXT_PALETTE	0x00e82200U
 
-static void
-draw_cell(unsigned row, unsigned column)
+/* The palette entries the console sets: 0 black, 7 the three-plane white. */
+#define CONSOLE_PALETTE_BLACK	0U
+#define CONSOLE_PALETTE_WHITE	14U
+
+/*
+ * The characters on the screen and the cursor.  Changed with interrupts
+ * off, which is enough on the machine's one processor.
+ */
+static uint8_t cons_grid[CONSOLE_ROWS][CONSOLE_COLUMNS];
+static unsigned cons_row;
+static unsigned cons_column;
+
+static void draw_cell(unsigned row, unsigned column);
+static void clear_screen(void);
+static void newline_locked(void);
+static void scroll_locked(void);
+static void putc_locked(int character);
+
+/*
+ * Sets the text screen's palette and clears the console.
+ *
+ * The firmware's display timings are kept; only the two colours the
+ * console uses are set.
+ */
+void
+x68k_cons_init(
+	void)
 {
-	const struct x68k_console_cell *cell = &shadow[row][column];
-	const volatile uint8_t *font = (const volatile uint8_t *)X68K_CGROM_8X16;
-	unsigned character = cell->character;
-	unsigned scanline;
+	/* Makes palette entry 0 black and entry 7 white. */
+	hal_mmio_write16((volatile void *)(X68K_DEVICE_ADDRESS(CONSOLE_TEXT_PALETTE) + CONSOLE_PALETTE_BLACK), 0x0000U);
+	hal_mmio_write16((volatile void *)(X68K_DEVICE_ADDRESS(CONSOLE_TEXT_PALETTE) + CONSOLE_PALETTE_WHITE), 0xffffU);
 
-	for (scanline = 0; scanline < X68K_FONT_HEIGHT; scanline++) {
-		uintptr_t offset = row * X68K_FONT_HEIGHT * X68K_TEXT_ROW_BYTES +
-		    scanline * X68K_TEXT_ROW_BYTES + column;
-		uint8_t pattern = font[character * X68K_FONT_HEIGHT + scanline];
-		unsigned plane;
-		for (plane = 0; plane < 4U; plane++) {
-			volatile uint8_t *vram = (volatile uint8_t *)
-			    X68K_DEVICE_ADDRESS(X68K_TVRAM_PHYSICAL +
-			    plane * X68K_TVRAM_PLANE_BYTES);
-			vram[offset] = plane < 3U ? pattern : 0;
+	/* Starts with a blank screen and the cursor at the top left. */
+	clear_screen();
+}
+
+/*
+ * Writes one character to the console, or to the kernel's console once the
+ * kernel has published one.
+ */
+void
+hal_putc(
+	int c)
+{
+	void (*kernel_output)(int character);
+	bool enabled;
+
+	/* Delegates to the kernel console after the handover. */
+	kernel_output = __atomic_load_n(&kernel_putc, __ATOMIC_ACQUIRE);
+	if (kernel_output != NULL) {
+		kernel_output(c);
+		return;
+	}
+
+	/* Changes the grid and draws it as one step against interrupt handlers. */
+	enabled = hal_irq_disable();
+
+	putc_locked(c);
+
+	if (enabled)
+		hal_irq_enable();
+}
+
+/* Draws one cell of the grid from the character ROM. */
+static void
+draw_cell(
+	unsigned row,
+	unsigned column)
+{
+	const volatile uint8_t *font;
+	volatile uint8_t *plane_base;
+	uintptr_t offset;
+	unsigned character;
+	unsigned scanline;
+	unsigned plane;
+	uint8_t pattern;
+
+	/* The glyph of the character; a cell never written is a blank. */
+	font = (const volatile uint8_t *)X68K_DEVICE_ADDRESS(CONSOLE_CGROM_8X16);
+	character = cons_grid[row][column];
+	if (character == 0)
+		character = ' ';
+
+	/* Each scanline of the glyph, in each plane: the glyph in the first three, nothing in the fourth. */
+	for (scanline = 0; scanline < CONSOLE_FONT_HEIGHT; scanline++) {
+		offset = (uintptr_t)row * CONSOLE_FONT_HEIGHT * CONSOLE_ROW_BYTES +
+			 (uintptr_t)scanline * CONSOLE_ROW_BYTES + column;
+		pattern = font[character * CONSOLE_FONT_HEIGHT + scanline];
+		for (plane = 0; plane < CONSOLE_PLANES; plane++) {
+			plane_base = (volatile uint8_t *)X68K_DEVICE_ADDRESS(X68K_TVRAM_PHYSICAL + plane * CONSOLE_PLANE_BYTES);
+			plane_base[offset] = 0;
+			if (plane < CONSOLE_GLYPH_PLANES)
+				plane_base[offset] = pattern;
 		}
 	}
 }
 
-void hal_cons_update_cursor(void) {}
-
-void
-hal_cons_clear_row(unsigned row)
-{
-	unsigned column;
-	if (row >= HAL_CONS_ROWS)
-		return;
-	for (column = 0; column < HAL_CONS_COLUMNS; column++) {
-		shadow[row][column].character = ' ';
-		shadow[row][column].attribute = current_attribute;
-		draw_cell(row, column);
-	}
-}
-
-void
-hal_cons_clear(void)
+/* Blanks every cell and puts the cursor at the top left. */
+static void
+clear_screen(
+	void)
 {
 	unsigned row;
-	for (row = 0; row < HAL_CONS_ROWS; row++)
-		hal_cons_clear_row(row);
-	state.row = state.column = 0;
-}
+	unsigned column;
 
-void
-hal_cons_reset(void)
-{
-	current_attribute = HAL_CONS_ATTRIB_NORMAL;
-	state.mode = HAL_CONS_TERMINAL;
-	state.cursor_visible = 1;
-	hal_cons_clear();
-}
-
-static void
-scroll(void)
-{
-	unsigned row, column;
-	for (row = 1; row < HAL_CONS_ROWS; row++)
-		for (column = 0; column < HAL_CONS_COLUMNS; column++)
-			shadow[row - 1][column] = shadow[row][column];
-	for (row = 0; row < HAL_CONS_ROWS - 1; row++)
-		for (column = 0; column < HAL_CONS_COLUMNS; column++)
+	/* Blanks and draws each cell. */
+	for (row = 0; row < CONSOLE_ROWS; row++) {
+		for (column = 0; column < CONSOLE_COLUMNS; column++) {
+			cons_grid[row][column] = ' ';
 			draw_cell(row, column);
-	hal_cons_clear_row(HAL_CONS_ROWS - 1);
+		}
+	}
+
+	/* Homes the cursor. */
+	cons_row = 0;
+	cons_column = 0;
 }
 
+/* Moves the cursor to the start of the next line, scrolling at the bottom. */
 static void
-newline(void)
+newline_locked(
+	void)
 {
-	state.column = 0;
-	if (++state.row >= HAL_CONS_ROWS) {
-		scroll();
-		state.row = HAL_CONS_ROWS - 1;
+	/* Moves down a row, or scrolls instead of leaving the last one. */
+	cons_column = 0;
+	cons_row++;
+	if (cons_row >= CONSOLE_ROWS) {
+		cons_row = CONSOLE_ROWS - 1U;
+		scroll_locked();
 	}
 }
 
-void
-x68k_cons_init(void)
+/* Moves every row up by one and blanks the bottom row. */
+static void
+scroll_locked(
+	void)
 {
-	/* Preserve the firmware CRTC timings.  Palette entry 0 remains black and
-	 * entry 7 supplies the three-plane white used by this bootstrap console. */
-	hal_mmio_write16((volatile void *)(X68K_TEXT_PALETTE + 0U), 0x0000U);
-	hal_mmio_write16((volatile void *)(X68K_TEXT_PALETTE + 14U), 0xffffU);
-	hal_cons_reset();
+	unsigned row;
+	unsigned column;
+
+	/* Shifts the rows up and redraws them. */
+	for (row = 1; row < CONSOLE_ROWS; row++) {
+		for (column = 0; column < CONSOLE_COLUMNS; column++) {
+			cons_grid[row - 1U][column] = cons_grid[row][column];
+			draw_cell(row - 1U, column);
+		}
+	}
+
+	/* Blanks the row exposed at the bottom. */
+	for (column = 0; column < CONSOLE_COLUMNS; column++) {
+		cons_grid[CONSOLE_ROWS - 1U][column] = ' ';
+		draw_cell(CONSOLE_ROWS - 1U, column);
+	}
 }
 
-void cons_cls(void) { hal_cons_clear(); }
-
-void
-cons_putc(int character)
+/* Puts one character at the cursor. */
+static void
+putc_locked(
+	int character)
 {
+	/* A newline moves to the next line. */
 	if (character == '\n') {
-		newline();
+		newline_locked();
 		return;
 	}
+
+	/* A carriage return moves to the line's start. */
 	if (character == '\r') {
-		state.column = 0;
+		cons_column = 0;
 		return;
 	}
+
+	/* A backspace steps back and erases within the line. */
 	if (character == '\b') {
-		if (state.column != 0)
-			state.column--;
-		shadow[state.row][state.column].character = ' ';
-		draw_cell(state.row, state.column);
+		if (cons_column > 0)
+			cons_column--;
+		cons_grid[cons_row][cons_column] = ' ';
+		draw_cell(cons_row, cons_column);
 		return;
 	}
+
+	/* A tab moves to the next eight-column stop. */
 	if (character == '\t') {
-		do {
-			cons_putc(' ');
-		} while ((state.column & 7U) != 0);
+		cons_column = (cons_column + 8U) & ~7U;
+		if (cons_column >= CONSOLE_COLUMNS)
+			newline_locked();
 		return;
 	}
-	if (state.column >= HAL_CONS_COLUMNS)
-		newline();
-	shadow[state.row][state.column].character =
-	    (uint8_t)(character >= 0x20 && character < 0x7f ? character : '?');
-	shadow[state.row][state.column].attribute = current_attribute;
-	draw_cell(state.row, state.column++);
-	if (state.column >= HAL_CONS_COLUMNS)
-		newline();
-}
 
-void cons_puts(const char *string) { if (string != NULL) while (*string != '\0') cons_putc(*string++); }
-int cons_getc(void)
-{
-	static const struct {
-		const char *symbol;
-		unsigned char character;
-	} legacy_jis[] = {
-	    {"jis-1", '1'}, {"jis-2", '2'}, {"jis-3", '3'},
-	    {"jis-4", '4'}, {"jis-5", '5'}, {"jis-6", '6'},
-	    {"jis-7", '7'}, {"jis-8", '8'}, {"jis-9", '9'},
-	    {"jis-0", '0'}, {"jis-minus", '-'}, {"jis-caret", '^'},
-	    {"jis-yen", '\\'}, {"jis-at", '@'}, {"jis-lbrace", '['},
-	    {"jis-semi", ';'}, {"jis-colon", ':'}, {"jis-rbrace", ']'},
-	    {"jis-comma", ','}, {"jis-dot", '.'}, {"jis-slash", '/'},
-	    {"jis-ro", '_'}, {"jis-kp-slash", '/'}, {"jis-kp-star", '*'},
-	    {"jis-kp-minus", '-'}, {"jis-kp-7", '7'}, {"jis-kp-8", '8'},
-	    {"jis-kp-9", '9'}, {"jis-kp-plus", '+'}, {"jis-kp-4", '4'},
-	    {"jis-kp-5", '5'}, {"jis-kp-6", '6'}, {"jis-kp-equal", '='},
-	    {"jis-kp-1", '1'}, {"jis-kp-2", '2'}, {"jis-kp-3", '3'},
-	    {"jis-kp-enter", '\n'}, {"jis-kp-0", '0'},
-	    {"jis-kp-comma", ','}, {"jis-kp-dot", '.'},
-	};
-	struct hal_key_event event;
-	for (;;) {
-		unsigned index;
+	/* Wraps before writing past the end of the row. */
+	if (cons_column >= CONSOLE_COLUMNS)
+		newline_locked();
 
-		(void)hal_cons_read_event(&event);
-		if ((event.flags & HAL_KEY_EVENT_SNAPSHOT) != 0)
-			continue;
-		if ((event.flags & (HAL_KEY_EVENT_PRESS | HAL_KEY_EVENT_REPEAT)) == 0)
-			continue;
-		if (event.symbol[0] != '\0' && event.symbol[1] == '\0')
-			return (unsigned char)event.symbol[0];
-		if (event.symbol[0] == 'e' && event.symbol[1] == 'n' &&
-		    event.symbol[2] == 't' && event.symbol[3] == 'e' &&
-		    event.symbol[4] == 'r' && event.symbol[5] == '\0')
-			return '\n';
-		for (index = 0; index < sizeof(legacy_jis) / sizeof(legacy_jis[0]);
-		    index++)
-			if (strcmp(event.symbol, legacy_jis[index].symbol) == 0)
-				return legacy_jis[index].character;
-	}
+	/* Stores a printable character, or a question mark for anything else, and moves on. */
+	cons_grid[cons_row][cons_column] = '?';
+	if (character >= 0x20 && character < 0x7f)
+		cons_grid[cons_row][cons_column] = (uint8_t)character;
+	draw_cell(cons_row, cons_column);
+	cons_column++;
 }
-void cons_set_attr(int foreground, int background)
-{ current_attribute = (uint8_t)(((background & 15) << 4) | (foreground & 15)); }
-void hal_putc(int character) { cons_putc(character); }
-void hal_cons_move_cursor(int row, int column)
-{ (void)hal_cons_set_cursor((unsigned)row, (unsigned)column); }
-int hal_cons_getc(void) { return cons_getc(); }
-void hal_cons_write(const char *string) { cons_puts(string); }
-void hal_cons_write_n(const char *string, unsigned length)
-{ if (string != NULL) while (length-- != 0) cons_putc(*string++); }
-
-int
-hal_cons_write_n_at(unsigned row, unsigned column, const char *string,
-	unsigned length, uint8_t attribute)
-{
-	unsigned changed = 0;
-	if (string == NULL || row >= HAL_CONS_ROWS || column >= HAL_CONS_COLUMNS)
-		return -1;
-	while (length-- != 0 && row < HAL_CONS_ROWS) {
-		uint8_t character = (uint8_t)*string++;
-		if (character == '\n') { row++; column = 0; continue; }
-		if (character == '\r') { column = 0; continue; }
-		if (column >= HAL_CONS_COLUMNS)
-			break;
-		shadow[row][column].character = character < 0x80 ? character : '?';
-		shadow[row][column].attribute = attribute != 0 ? attribute :
-		    current_attribute;
-		draw_cell(row, column++);
-		changed++;
-	}
-	state.row = row < HAL_CONS_ROWS ? row : HAL_CONS_ROWS - 1;
-	state.column = column < HAL_CONS_COLUMNS ? column : HAL_CONS_COLUMNS - 1;
-	return (int)changed;
-}
-
-int hal_cons_write_at_attr(unsigned row, unsigned column, const char *string,
-	uint8_t attribute)
-{ return string == NULL ? -1 : hal_cons_write_n_at(row, column, string,
-	(unsigned)hal_strlen(string), attribute); }
-void hal_cons_write_at(unsigned row, unsigned column, const char *string)
-{ (void)hal_cons_write_at_attr(row, column, string, current_attribute); }
-int hal_cons_clear_to_eol_at(unsigned row, unsigned column)
-{
-	unsigned index;
-	if (row >= HAL_CONS_ROWS || column >= HAL_CONS_COLUMNS)
-		return 0;
-	for (index = column; index < HAL_CONS_COLUMNS; index++) {
-		shadow[row][index].character = ' ';
-		shadow[row][index].attribute = current_attribute;
-		draw_cell(row, index);
-	}
-	state.row = row;
-	state.column = column;
-	return 1;
-}
-void hal_cons_clear_to_eol(void)
-{ (void)hal_cons_clear_to_eol_at(state.row, state.column); }
-int hal_cons_set_cursor(unsigned row, unsigned column)
-{
-	if (row >= HAL_CONS_ROWS || column >= HAL_CONS_COLUMNS)
-		return 0;
-	state.row = row;
-	state.column = column;
-	return 1;
-}
-void hal_cons_show_cursor(int visible) { state.cursor_visible = visible != 0; }
-void hal_cons_save_state(struct hal_cons_state *output)
-{ if (output != NULL) *output = state; }
-void hal_cons_suspend(void) {}
-void hal_cons_resume(void) {}

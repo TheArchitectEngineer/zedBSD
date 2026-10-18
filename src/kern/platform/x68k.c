@@ -8,9 +8,10 @@
 /*
  * The X68000 native platform binding.
  *
- * The boot handoff identifies the SCSI bus; every attached SPC disk is
- * published as a boot device, with the unit the IPL booted from marked as
- * the boot origin.
+ * The HAL names the internal SCSI controller's registers and the host
+ * adapter's ID; every attached SPC disk is published as a boot device, with
+ * the unit the IPL booted from marked as the boot origin.  The console is
+ * the HAL's text screen.
  */
 
 #include <uapi/errno.h>
@@ -19,10 +20,26 @@
 #include <kern/disk.h>
 #include <kern/platform.h>
 #include <kern/partition.h>
+#include "drivers/platform/x68k/x68k-console.h"
+#include "drivers/platform/x68k/x68k-mb89352.h"
 #include "drivers/platform/x68k/x68k-spc-disk.h"
-#include "hal/m68k/bsp-x68k/bsp.h"
-#include "hal/m68k/bsp-x68k/scsi.h"
 #include <kern/kcrt.h>
+
+/* The controller's registers lie every second byte, on the odd byte lane. */
+#define X68K_SPC_REGISTER_STRIDE	2U
+
+/* How long a controller wait polls before it gives up. */
+#define X68K_SPC_POLL_LIMIT		10000000U
+
+/*
+ * The kernel address of the internal SCSI controller's first register,
+ * from the HAL's "x68k.spc.registers"; set once by kern_platform_init().
+ */
+static uintptr_t spc_registers;
+
+static uint8_t spc_read_register(void *cookie, unsigned reg);
+static void spc_write_register(void *cookie, unsigned reg, uint8_t value);
+static void spc_relax(void *cookie);
 
 /*
  * Publishes the SCSI disks found on the X68000 bus as boot devices.
@@ -36,28 +53,49 @@ kern_platform_init(
 	struct kern_boot_device *devices,
 	size_t capacity)
 {
-	const struct x68k_boot_handoff *handoff;
+	const uint64_t *registers_object;
+	const uint64_t *initiator_object;
 	struct x68k_spc_bus bus;
 	struct kern_boot_device *device;
 	unsigned initiator;
 	unsigned target;
 	size_t count;
+	int found;
 
-	handoff = (const void *)common;
+	/* Publishes the console before anything can fail, so the failure is seen. */
+	drv_x68k_console_init();
+
+	/* Rejects a missing device table or a handoff that is not the X68000 loader's. */
 	count = 0;
-
-	/* Rejects a missing device table or an invalid handoff. */
-	if (devices == NULL ||
-	    capacity == 0 ||
-	    !x68k_boot_handoff_valid(handoff))
+	if (devices == NULL || capacity == 0 || common == NULL)
 		return 0;
+	if (common->magic != KERN_HANDOFF_MAGIC || common->version != KERN_HANDOFF_VERSION_X68K)
+		return 0;
+	if (common->size < sizeof(*common) || common->boot_bios_id > 6U)
+		return 0;
+
+	/* Finds the SCSI controller's registers and the host adapter's ID from the HAL. */
+	registers_object = hal_get_arch_handoff("x68k.spc.registers");
+	if (registers_object == NULL)
+		return 0;
+	initiator_object = hal_get_arch_handoff("x68k.scsi.initiator");
+	if (initiator_object == NULL || *initiator_object > 7U)
+		return 0;
+	spc_registers = (uintptr_t)*registers_object;
+	initiator = (unsigned)*initiator_object;
+
+	/* Describes the controller to the disk driver. */
+	bus.cookie = NULL;
+	bus.read = spc_read_register;
+	bus.write = spc_write_register;
+	bus.relax = spc_relax;
+	bus.poll_limit = X68K_SPC_POLL_LIMIT;
 
 	/* Selects the X68000 partition scheme and probes the SCSI bus. */
 	partition_set_scheme(&drv_partition_scheme_x68k);
 	disk_registry_reset();
-	x68k_bsp_spc_bus(&bus);
-	initiator = x68k_bsp_scsi_initiator_id();
-	if (drv_x68k_spc_disk_init(&bus, initiator, handoff->common.boot_bios_id) == 0)
+	found = drv_x68k_spc_disk_init(&bus, initiator, common->boot_bios_id);
+	if (found == 0)
 		return 0;
 
 	/* Publishes every attached target that fits the table. */
@@ -72,7 +110,7 @@ kern_platform_init(
 		device->display_index = (uint8_t)count;
 		device->bios_id = (uint8_t)target;
 		device->flags = KERN_DEV_PRESENT;
-		if (target == handoff->common.boot_bios_id)
+		if (target == common->boot_bios_id)
 			device->flags |= KERN_DEV_BOOT_ORIGIN;
 		device->sector_size = X68K_SCSI_BLOCK_SIZE;
 		device->controller_location = (uint8_t)target;
@@ -134,8 +172,14 @@ kern_platform_debug_write(
 	const char *text)
 {
 	/* Ignores a missing string. */
-	if (text != NULL)
-		hal_cons_write(text);
+	if (text == NULL)
+		return;
+
+	/* Emits every byte through the HAL. */
+	while (*text != '\0') {
+		hal_putc((unsigned char)*text);
+		text++;
+	}
 }
 
 /*
@@ -175,4 +219,45 @@ kern_platform_reboot(
 	hal_reset();
 	for (;;)
 		hal_halt();
+}
+
+/* Reads one register of the SCSI controller. */
+static uint8_t
+spc_read_register(
+	void *cookie,
+	unsigned reg)
+{
+	uint8_t value;
+
+	(void)cookie;
+
+	/* Loads the register on its byte lane. */
+	value = hal_mmio_read8((const volatile void *)(spc_registers + (uintptr_t)reg * X68K_SPC_REGISTER_STRIDE));
+
+	/* Succeeded: the register. */
+	return value;
+}
+
+/* Writes one register of the SCSI controller. */
+static void
+spc_write_register(
+	void *cookie,
+	unsigned reg,
+	uint8_t value)
+{
+	(void)cookie;
+
+	/* Stores the register on its byte lane. */
+	hal_mmio_write8((volatile void *)(spc_registers + (uintptr_t)reg * X68K_SPC_REGISTER_STRIDE), value);
+}
+
+/* Spends a moment between two polls of the controller. */
+static void
+spc_relax(
+	void *cookie)
+{
+	(void)cookie;
+
+	/* One instruction is enough: the poll limit bounds the wait. */
+	__asm__ volatile("nop");
 }

@@ -67,11 +67,6 @@
 #define KERN_BOOT_PROVENANCE_SIZE			88U
 #define KERN_BOOT_SOURCE_SELECTOR_SIZE			46U
 
-/* XXX: To be removed. */
-#define KERN_X68K_HANDOFF_MAGIC				0x58363848U /* "X68H" */
-#define KERN_X68K_HANDOFF_VERSION			1U
-#define KERN_X68K_MAX_MEMORY_REGIONS			4U
-
 #ifndef __ASSEMBLER__
 
 #include <stddef.h>
