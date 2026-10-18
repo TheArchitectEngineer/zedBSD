@@ -4,7 +4,7 @@ ENTRY(_start)
 
 KERNEL_DIRECT_BASE = 0xfffff80000000000;
 KERNEL_PHYS_LOAD = 0x00400000;
-KERNEL_WINDOW_END = 0x00800000;
+KERNEL_WINDOW_END = 0x01000000;
 SPARCV9_PAGE_SIZE = 8192;
 SPARCV9_TRAP_ALIGN = 32768;
 SPARCV9_TRAP_SIZE = 32768;
@@ -25,6 +25,7 @@ SECTIONS
 	{
 		__kernel_text_start = .;
 		KEEP(*(.text.boot))
+		*(.hightext)
 		*(.text .text.*)
 		__kernel_text_end = .;
 	} :text
@@ -58,6 +59,7 @@ SECTIONS
 	{
 		__bss_start = .;
 		*(.bss.boot)
+		*(.vfs_bss*) *(.net_bss*)
 		*(.bss .bss.* COMMON)
 		__bss_end = .;
 	} :data

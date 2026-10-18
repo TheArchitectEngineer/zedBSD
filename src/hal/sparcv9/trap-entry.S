@@ -1,5 +1,20 @@
-/* SPARC V9 trap and software-MMU assembly paths. */
-/* Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib */
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The trap paths of the SPARC V9 HAL.
+ *
+ * The fast miss handlers fill the kernel's direct map of physical memory
+ * in 4 MiB pages, which the C code never sees.  Every other trap enters
+ * sparcv9_trap_entry: a trap from user mode saves the user's windows into
+ * the running task, switches to the task's kernel stack and calls
+ * sparcv9_user_trap_dispatch(); a trap in privileged mode calls
+ * sparcv9_trap_dispatch() on the interrupted stack.
+ */
 
 	.section ".text", #alloc, #execinstr
 	.register %g2, #ignore
@@ -111,7 +126,7 @@ sparcv9_trap_entry_from_hw:
 	cmp %g3, %g6
 	blu,pn %xcc, sparcv9_kernel_trap_entry
 	 nop
-	setx sparcv9_window_selftest, %g5, %g6
+	setx sparcv9_window_handlers_end, %g5, %g6
 	cmp %g3, %g6
 	bgeu,pn %xcc, sparcv9_kernel_trap_entry
 	 nop

@@ -9,7 +9,8 @@
  * The sun4u (UltraSPARC) platform binding.
  *
  * The HAL names one CMD646 IDE controller; the platform publishes its disk
- * as the single boot device.
+ * as the single boot device.  The console is the HAL's screen and serial
+ * port, read by the sun4u console driver.
  */
 
 #include <uapi/errno.h>
@@ -19,6 +20,7 @@
 #include <kern/platform.h>
 #include <kern/boot.h>
 #include "drivers/platform/sun4u/sun4u-cmd646.h"
+#include "drivers/platform/sun4u/sun4u-console.h"
 #include <kern/kcrt.h>
 
 /*
@@ -38,6 +40,9 @@ kern_platform_init(
 	const uint64_t *command_object;
 	const uint64_t *control_object;
 	int error;
+
+	/* Publishes the console before anything can fail, so the failure is seen. */
+	drv_sun4u_console_init();
 
 	/* Rejects a handoff that is missing, foreign or truncated. */
 	if (!h ||
@@ -92,13 +97,20 @@ kern_platform_refresh_devices(
 }
 
 /*
- * Initializes platform input devices; sun4u has none.
+ * Starts the platform input: the serial port read into the console.
  */
 int
 kern_platform_input_init(
 	void)
 {
-	/* Reports success without any input device. */
+	int error;
+
+	/* Starts the console's reader. */
+	error = drv_sun4u_console_start_input();
+	if (error != 0)
+		return error;
+
+	/* Succeeded: typed characters reach the console. */
 	return 0;
 }
 
@@ -130,8 +142,14 @@ kern_platform_debug_write(
 	const char *s)
 {
 	/* Ignores a missing string. */
-	if (s)
-		hal_cons_write(s);
+	if (s == NULL)
+		return;
+
+	/* Emits every byte through the HAL. */
+	while (*s != '\0') {
+		hal_putc((unsigned char)*s);
+		s++;
+	}
 }
 
 /*
@@ -154,7 +172,7 @@ int
 kern_platform_poweroff(
 	void)
 {
-	/* The HAL's hal_poweroff() is a fatal stub on sparcv9, so it is not called. */
+	/* The board's power controller is not driven, so the caller halts instead. */
 	return EOPNOTSUPP;
 }
 

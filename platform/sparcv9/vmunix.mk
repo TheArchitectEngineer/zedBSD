@@ -10,14 +10,22 @@ SPARCV9_OBJCOPY ?= $(SPARCV9_PREFIX)/bin/$(SPARCV9_TARGET)-objcopy
 SPARCV9_OBJDUMP ?= $(SPARCV9_PREFIX)/bin/$(SPARCV9_TARGET)-objdump
 SPARCV9_READELF ?= $(SPARCV9_PREFIX)/bin/$(SPARCV9_TARGET)-readelf
 SPARCV9_PLATFORM := platform/sparcv9
+AWK ?= awk
 
-SPARCV9_CPPFLAGS := -nostdinc -Iinclude -Isrc -I. \
-	-Iinclude/libc -Isrc/hal/sparcv9 -DHAL_ARCH_SPARCV9 \
+# The cross compiler is a generic ELF GCC: it does not know the zedBSD target,
+# so the build defines __ZEDBSD__ for it, as the zedBSD compilers do.  Its
+# freestanding headers (stddef.h, stdint.h, stdarg.h) stay on the path.
+SPARCV9_GCC_INCLUDE := $(shell $(SPARCV9_CC) -print-file-name=include 2>/dev/null)
+SPARCV9_TARGET_CPPFLAGS := -nostdinc -isystem $(SPARCV9_GCC_INCLUDE) -D__ZEDBSD__=1
+
+# The kernel and the HAL read the compiler's freestanding headers and the
+# tree's include/ and src/, never the C library (as on the other ports).
+SPARCV9_CPPFLAGS := $(SPARCV9_TARGET_CPPFLAGS) -Iinclude -Isrc -I. \
+	-Isrc/hal/sparcv9 -DHAL_ARCH_SPARCV9 \
 	-DHAL_BOARD_SUN4U -DKERN_USER_ABI_SPARCV9 -DKERN_USER_ABI_LP64 \
 	-DKERN_PAGE_SIZE=8192 \
 	-DKERN_USER_PAGE_SIZE=8192 \
-	-DKERN_NO_PRINTF_FLOAT \
-	-DKERN_INIT_PATH='"/bin/sh"'
+	-DKERN_NO_PRINTF_FLOAT
 SPARCV9_CPPFLAGS += $(ZEDBSD_CONFIG_CPPFLAGS)
 SPARCV9_CFLAGS := -m64 -mcpu=ultrasparc -mstack-bias -mcmodel=medany \
 	-msoft-float -mno-app-regs -ffreestanding -fno-pic -fno-pie \
@@ -31,11 +39,13 @@ SPARCV9_EARLY_SOURCES := src/hal/sparcv9/locore.S \
 SPARCV9_EARLY_C_SOURCES := src/hal/cpu-up.c src/hal/idle-suspend-unsupported.c src/hal/sparcv9/cmain.c \
 	src/hal/sparcv9/runtime.c src/hal/sparcv9/io.c \
 	src/hal/sparcv9/trap.c src/hal/sparcv9/irq.c \
-	src/hal/sparcv9/timer.c src/hal/pmem-constraints.c src/hal/sparcv9/page.c \
+	src/hal/sparcv9/timer.c src/hal/sparcv9/page.c \
 	src/hal/sparcv9/space.c src/hal/sparcv9/task.c \
 	src/hal/sparcv9/bsp-sun4u/boot.c \
 	src/hal/sparcv9/bsp-sun4u/uart.c \
-	src/hal/sparcv9/bsp-sun4u/console.c
+	src/hal/sparcv9/bsp-sun4u/console.c \
+	src/hal/sparcv9/bsp-sun4u/framebuffer.c \
+	src/hal/sparcv9/bsp-sun4u/font.c
 SPARCV9_EARLY_OBJS := $(patsubst %.S,$(BUILD)/%.o,$(SPARCV9_EARLY_SOURCES)) \
 	$(patsubst %.c,$(BUILD)/%.o,$(SPARCV9_EARLY_C_SOURCES))
 
@@ -47,10 +57,13 @@ SPARCV9_KERNEL_SOURCES := \
 	src/kern/vfs.c src/kern/swap.c src/kern/backing-claim.c \
  src/kern/buf.c src/kern/cache.c src/kern/readahead.c src/kern/writeback.c src/kern/io.c \
 	src/kern/sysctl.c src/kern/resource.c src/kern/poll.c src/kern/usync.c src/kern/disk.c \
+	src/kern/device-io.c src/kern/irq.c src/kern/pmem.c \
+	src/kern/test-checkpoint.c src/kern/text-display.c \
 	src/drivers/generic/loop.c \
 	src/kern/partition.c src/drivers/disklabel/sun.c \
 	src/kern/platform/sun4u.c \
-	src/drivers/platform/sun4u/sun4u-cmd646.c src/kern/panic.c \
+	src/drivers/platform/sun4u/sun4u-cmd646.c \
+	src/drivers/platform/sun4u/sun4u-console.c src/kern/panic.c \
 	src/kern/entry.c src/kern/clock.c src/kern/timer.c src/kern/klog.c \
 	src/kern/lock.c src/kern/waitq.c \
 	src/kern/process.c src/kern/thread.c \
@@ -63,7 +76,9 @@ SPARCV9_KERNEL_SOURCES := \
 	src/kern/cdev.c src/kern/devfs.c src/drivers/generic/console.c \
 	src/drivers/generic/input.c \
 	$(KERN_GPU_SOURCES) \
-	src/kern/locale-record.c \
+	$(KERN_AUDIO_SOURCES) \
+	src/kern/kcrt.c src/kern/heap.c \
+	src/kern/random.c src/kern/random-crypto.c \
 	src/kern/tty.c src/kern/tty-csi.c \
 	src/drivers/generic/system-device.c src/kern/system-event.c src/drivers/generic/memory-device.c src/kern/shutdown.c src/kern/init.c
 SPARCV9_KERNEL_SOURCES += $(KERN_NET_SOURCES) \
@@ -72,9 +87,10 @@ SPARCV9_KERNEL_SOURCES += $(KERN_BOOT_SOURCES)
 SPARCV9_KERNEL_SOURCES += $(KERN_ACL_SOURCES)
 SPARCV9_KERNEL_SOURCES += $(KERN_QUOTA_SOURCES)
 SPARCV9_KERNEL_OBJS := $(patsubst %.c,$(BUILD)/kernel/%.o,$(SPARCV9_KERNEL_SOURCES))
-SPARCV9_KERNEL_LIBC_OBJS := $(patsubst %.c,$(BUILD)/kernel/%.o,$(ZEDBSD_LIBC_SOURCES))
-SPARCV9_VMUNIX_OBJS := $(SPARCV9_EARLY_OBJS) $(SPARCV9_KERNEL_OBJS) \
-	$(SPARCV9_KERNEL_LIBC_OBJS)
+
+# The kernel links no C library object: kcrt and the kernel heap supply
+# what it used from libc.
+SPARCV9_VMUNIX_OBJS := $(SPARCV9_EARLY_OBJS) $(SPARCV9_KERNEL_OBJS)
 $(SPARCV9_VMUNIX_OBJS): $(ZEDBSD_PLATFORM_CONFIG_STAMP)
 
 SPARCV9_BOOT_CFLAGS := $(SPARCV9_CFLAGS) -fno-builtin \
@@ -139,11 +155,6 @@ $(BUILD)/kernel/%.o: %.c
 	$(SPARCV9_CC) $(SPARCV9_CPPFLAGS) $(SPARCV9_CFLAGS) -fno-builtin \
  -fno-strict-aliasing -MMD -MP -c $< -o $@
 
-$(BUILD)/kernel/libc/%.o: src/libc/%.c
-	@mkdir -p $(dir $@)
-	$(SPARCV9_CC) $(SPARCV9_CPPFLAGS) $(SPARCV9_CFLAGS) -fno-builtin \
- -fno-strict-aliasing -MMD -MP -c $< -o $@
-
 $(BUILD)/boot/stage1/%.o: bootloader/sparcv9/%.S
 	@mkdir -p $(dir $@)
 	$(SPARCV9_CC) $(SPARCV9_CPPFLAGS) $(SPARCV9_BOOT_CFLAGS) \
@@ -192,7 +203,9 @@ $(BUILD)/vmunix: $(SPARCV9_VMUNIX_OBJS) $(SPARCV9_PLATFORM)/vmunix.ld \
 	$(SPARCV9_LD) -m elf64_sparc --gc-sections \
  -z max-page-size=8192 -T $(SPARCV9_PLATFORM)/vmunix.ld \
  -nostdlib $(SPARCV9_VMUNIX_OBJS) -o $@
-	@test -z "$$($(SPARCV9_NM) -u $@)" || { $(SPARCV9_NM) -u $@; exit 1; }
+	@# A weak undefined symbol is an optional hook, not a link error.
+	@test -z "$$($(SPARCV9_NM) -u $@ | $(AWK) '$$1 == "U"')" || \
+		{ $(SPARCV9_NM) -u $@; exit 1; }
 	$(PYTHON) platform/sparcv9/tools/check-sparcv9-vmunix.py $@
 
 $(BUILD)/bin/sh: $(SPARCV9_USER_OBJS) $(SPARCV9_USER_READLINE_LIB) \
@@ -561,11 +574,7 @@ $(BUILD)/ufs-root-hdd-image.img: $(BUILD)/vmunix $(BUILD)/bin/sh \
 
 -include $(SPARCV9_EARLY_OBJS:.o=.d) \
 	$(SPARCV9_STAGE1_OBJS:.o=.d) $(SPARCV9_STAGE2_OBJS:.o=.d)
--include $(SPARCV9_KERNEL_OBJS:.o=.d) $(SPARCV9_KERNEL_LIBC_OBJS:.o=.d)
+-include $(SPARCV9_KERNEL_OBJS:.o=.d)
 -include $(SPARCV9_USER_OBJS:.o=.d)
-
-$(BUILD)/src/hal/pmem-constraints.o: src/hal/pmem-constraints.c
-	@mkdir -p $(dir $@)
-	$(SPARCV9_CC) $(SPARCV9_CPPFLAGS) $(SPARCV9_CFLAGS) -MMD -MP -c $< -o $@
 
 $(eval $(call ZEDBSD_LIBUTIL_RULE,$(SPARCV9_DYNAMIC_DIR),$(SPARCV9_LD),-m elf64_sparc -T $(SPARCV9_PLATFORM)/dynamic-plt.ld -z max-page-size=8192,sparcv9))

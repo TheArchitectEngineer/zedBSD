@@ -11,7 +11,7 @@ PT_LOAD = 1
 PF_X = 1
 KERNEL_DIRECT_BASE = 0xFFFFF80000000000
 KERNEL_PHYS_LOAD = 0x00400000
-KERNEL_WINDOW_END = 0x00800000
+KERNEL_WINDOW_END = 0x01000000
 HANDOFF_SIZE = 8192
 PAGE_SIZE = 8192
 TRAP_ALIGN = 32768
@@ -100,7 +100,7 @@ def check(path: Path) -> None:
         if vaddr < KERNEL_DIRECT_BASE or vaddr - KERNEL_DIRECT_BASE != paddr:
             fail(path, f"PT_LOAD {index} has inconsistent VA/PA")
         if paddr < KERNEL_PHYS_LOAD or memsz > KERNEL_WINDOW_END - paddr:
-            fail(path, f"PT_LOAD {index} escapes the 4 MiB window")
+            fail(path, f"PT_LOAD {index} escapes the 12 MiB window")
         if flags & PF_X and vaddr <= entry < vaddr + memsz:
             executable_entry = True
     if not loads:

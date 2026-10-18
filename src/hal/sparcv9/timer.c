@@ -1,75 +1,139 @@
-/* UltraSPARC tick/tick_cmpr scheduler timer. */
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The SPARC V9 HAL's periodic tick, from the processor's cycle counter and
+ * its compare register.
+ *
+ * The compare register raises interrupt level 14 when the counter reaches
+ * it.  Each tick moves the deadline on by one interval, skipping intervals
+ * already past, so a late tick does not bring a burst of others.
+ */
+
 #include <hal/hal.h>
 #include "asi.h"
+#include "defs.h"
 #include "irq.h"
+#include "timer.h"
 
+/*
+ * The counter's rate, the counts in one tick, and the count of the next
+ * tick.  The first two are set once by sparcv9_timer_init(); the deadline
+ * moves on with every tick, which interrupts are off for.
+ */
 static uint64_t tick_frequency;
 static uint64_t tick_interval;
 static uint64_t tick_deadline;
-static uint64_t timer_ticks;
+
+/*
+ * The ticks taken at trap level 2, not yet handed to the kernel.
+ *
+ * A tick may interrupt a user system call while its trap is being taken.
+ * The scheduler can switch only the outer context, so such a tick is
+ * acknowledged at once and handed over at the next tick taken at trap
+ * level 1.  It saturates rather than wraps.
+ */
 static unsigned deferred_ticks;
 
+/*
+ * Starts the periodic tick from the processor's cycle counter.
+ */
 void
-sparcv9_timer_init(uint64_t frequency)
+sparcv9_timer_init(
+	uint64_t frequency)
 {
+	/* A counter that does not count cannot make a tick. */
 	if (frequency == 0)
 		HAL_FATAL("invalid SPARC V9 timer frequency");
+
+	/* Divides the counter's rate into ticks, never fewer than one count. */
 	tick_frequency = frequency;
 	tick_interval = tick_frequency / HAL_TIMER_FREQUENCY;
 	if (tick_interval == 0)
 		tick_interval = 1;
-	tick_deadline = sparcv9_tick() + tick_interval;
+
+	/* Arms the first tick one interval from now. */
+	tick_deadline = sparcv9_read_tick() + tick_interval;
 	sparcv9_clear_tick_interrupt();
-	sparcv9_tick_compare(tick_deadline);
+	sparcv9_write_tick_compare(tick_deadline);
 }
 
+/*
+ * Handles one tick interrupt.
+ */
 void
-sun4u_timer_interrupt(hal_irq_ack_t acknowledge)
+sparcv9_timer_interrupt(
+	void)
 {
-	uint64_t now = sparcv9_tick();
+	hal_irq_ack_t acknowledge;
+	uint64_t now;
 	uint64_t trap_level;
 
+	/* Starts the handling of the tick. */
+	acknowledge = sparcv9_irq_begin(0);
+
+	/* Clears the interrupt and arms the next tick past the current count. */
+	now = sparcv9_read_tick();
 	sparcv9_clear_tick_interrupt();
-	timer_ticks++;
-	do
+	do {
 		tick_deadline += tick_interval;
-	while (tick_deadline <= now);
-	sparcv9_tick_compare(tick_deadline);
-	if (timer_ticks == 1)
-		hal_puts("SPARCV9 TIMER TICK\n");
-	/*
-	 * A timer may interrupt a user syscall trap at TL2.  The scheduler may
-	 * only switch the saved outer TL1 context, so acknowledge and account the
-	 * nested tick here, then replay it through the kernel contract at the next
-	 * TL1 timer boundary.
-	 */
-	__asm__ volatile("rdpr %%tl,%0" : "=r"(trap_level));
+	} while (tick_deadline <= now);
+	sparcv9_write_tick_compare(tick_deadline);
+
+	/* Keeps a tick taken at trap level 2 for the next one at level 1. */
+	trap_level = sparcv9_read_trap_level();
 	if (trap_level > 1) {
 		hal_irq_send_eoi(acknowledge);
 		if (deferred_ticks != ~0U)
 			deferred_ticks++;
 		return;
 	}
+
+	/* Hands the tick to the kernel, which acknowledges it. */
 	kernel_timer_handler(0, acknowledge);
+
+	/* Hands over the ticks kept from trap level 2, each acknowledged on its own. */
 	while (deferred_ticks != 0) {
 		deferred_ticks--;
-		kernel_timer_handler(0, sparcv9_irq_begin(0));
+		acknowledge = sparcv9_irq_begin(0);
+		kernel_timer_handler(0, acknowledge);
 	}
 }
 
+/*
+ * Reads the processor's cycle counter and its rate.
+ */
 bool
-hal_rtc_read_counter(uint64_t *counter, uint64_t *freq_hz)
+hal_rtc_read_counter(
+	uint64_t *counter,
+	uint64_t *freq_hz)
 {
-	if (counter == NULL || freq_hz == NULL || tick_frequency == 0U)
+	/* Refuses missing destinations, or a counter not yet started. */
+	if (counter == NULL || freq_hz == NULL)
 		return false;
-	*counter = sparcv9_tick();
+	if (tick_frequency == 0U)
+		return false;
+
+	/* Succeeded: the count and the rate. */
+	*counter = sparcv9_read_tick();
 	*freq_hz = tick_frequency;
 	return true;
 }
 
+/*
+ * Reports that the wall-clock time cannot be read: the board's clock chip
+ * is not driven.
+ */
 bool
-hal_rtc_read_epoch_time(uint64_t *unix_seconds)
+hal_rtc_read_epoch_time(
+	uint64_t *unix_seconds)
 {
-	(void)unix_seconds;
+	UNUSED_PARAMETER(unix_seconds);
+
+	/* Failed: no clock is read. */
 	return false;
 }

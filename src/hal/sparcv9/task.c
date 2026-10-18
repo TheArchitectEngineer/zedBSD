@@ -1,43 +1,859 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The SPARC V9 HAL's tasks.
+ *
+ * A task is a saved set of register windows, a kernel stack and, for a
+ * user task, the user context its last trap saved.  A switch saves every
+ * window of the running task and loads every window of the next, along
+ * with the trap registers of a task switched out while it handled a trap
+ * from user mode.  The port runs on one processor; the task list and the
+ * running task change with interrupts off.
+ */
+
 #include <hal/hal.h>
+#include "asi.h"
 #include "defs.h"
+#include "runtime.h"
 #include "task.h"
 
+/* The window registers of a fresh context: all windows free but the current one. */
+#define TASK_INITIAL_CANSAVE	6U
+#define TASK_INITIAL_CLEANWIN	7U
 
-static struct sparcv9_task*tasks,*running;static uint32_t task_count;static size_t stack_bytes;
+/* The thread pointer is %g7. */
+#define TASK_GLOBAL_THREAD_POINTER	7U
+
+/* A window's in registers, by their index after its eight locals. */
+#define TASK_WINDOW_IN0		8U
+#define TASK_WINDOW_IN1		9U
+#define TASK_WINDOW_IN2		10U
+#define TASK_WINDOW_IN6		14U
+#define TASK_WINDOW_IN7		15U
+
+/* A window's first two locals, which a new task's entry reads. */
+#define TASK_WINDOW_LOCAL0	0U
+#define TASK_WINDOW_LOCAL1	1U
+
+/* The condition codes and the window pointer of a trap state, kept apart from what exec clears. */
+#define TASK_TSTATE_CWP_MASK	0x1fULL
+
+/*
+ * Every task, in creation order, and the one running.  Changed with
+ * interrupts off; running is NULL only before the boot task is made.
+ */
+static struct sparcv9_task *task_list;
+static struct sparcv9_task *running;
+
+/*
+ * The number of tasks and the bytes of their kernel stacks, for the
+ * memory statistics.  Changed with the task list.
+ */
+static uint32_t task_count;
+static size_t task_stack_bytes;
+
+/*
+ * The running task's kernel stack top and user window save area, which
+ * the trap entry reads; changed with the running task.
+ */
 uintptr_t sparcv9_current_trap_sp;
 struct sparcv9_window_context *sparcv9_current_user_windows;
-static void add(struct sparcv9_task*t){struct sparcv9_task**p=&tasks;while(*p)p=&(*p)->next;*p=t;t->next=NULL;task_count++;}
-static void remove_task(struct sparcv9_task*t){struct sparcv9_task**p=&tasks;while(*p&&*p!=t)p=&(*p)->next;if(*p){*p=t->next;if(task_count)task_count--;}}
-void hal_task_init(void){struct sparcv9_task*t;if(running)HAL_FATAL("hal_task_init twice");t=hal_malloc(sizeof(*t));if(!t)HAL_FATAL("initial SPARC V9 task allocation failed");hal_memset(t,0,sizeof(*t));t->space=HAL_SPACE_SYS;t->run_cpu=0;add(t);running=t;}
-static void build(struct sparcv9_task*t,void(*start)(void*),void*arg,void*user_sp){uintptr_t top=((uintptr_t)t->stack+SPARCV9_SYS_STACK_SIZE)&~15UL;uintptr_t sp=top-SPARCV9_STACK_BIAS-SPARCV9_STACK_FRAME_SIZE;struct sparcv9_window_context*c=&t->windows;hal_memset(c,0,sizeof(*c));c->cwp=0;c->cansave=6;c->cleanwin=7;c->window[0][0]=(uintptr_t)start;c->window[0][1]=t->space==HAL_SPACE_SYS?(uintptr_t)arg:(uintptr_t)user_sp;/* CWP+1 inputs overlap the initial window's outputs. */c->window[1][14]=sp;c->window[1][15]=(uintptr_t)(t->space==HAL_SPACE_SYS?sparcv9_kernel_task_entry:sparcv9_user_task_entry)-8U;t->trap_sp=top-SPARCV9_STACK_BIAS;}
-hal_task_t hal_task_create(hal_space_t s,void(*start)(void*),void*arg,void*usp){struct sparcv9_task*t;if(!start||((s==HAL_SPACE_SYS)!=(usp==NULL)))return NULL;t=hal_malloc(sizeof(*t));if(!t)return NULL;hal_memset(t,0,sizeof(*t));t->stack_allocation=hal_malloc(SPARCV9_SYS_STACK_SIZE+15U);if(!t->stack_allocation){hal_free(t);return NULL;}t->stack=(void*)(((uintptr_t)t->stack_allocation+15U)&~15UL);t->space=s;t->run_cpu=-1;build(t,start,arg,usp);stack_bytes+=SPARCV9_SYS_STACK_SIZE;add(t);return t;}
-void hal_task_destroy(hal_task_t h){struct sparcv9_task*t=h;if(!t)return;if(t==running)HAL_FATAL("destroy current SPARC V9 task");remove_task(t);if(t->stack){stack_bytes-=SPARCV9_SYS_STACK_SIZE;hal_free(t->stack_allocation);}hal_free(t);}
-static void save_trap_state(struct sparcv9_task*t){__asm__ volatile("rdpr %%tl,%0":"=r"(t->trap_level));if(t->trap_level>1)HAL_FATAL("SPARC V9 task switch above TL1");if(t->trap_level){__asm__ volatile("rdpr %%tpc,%0":"=r"(t->trap_pc));__asm__ volatile("rdpr %%tnpc,%0":"=r"(t->trap_next_pc));__asm__ volatile("rdpr %%tstate,%0":"=r"(t->trap_state));__asm__ volatile("rdpr %%tt,%0":"=r"(t->trap_type));}}
-static void restore_trap_state(const struct sparcv9_task*t){__asm__ volatile("wrpr %0,0,%%tl"::"r"(t->trap_level):"memory");if(t->trap_level){__asm__ volatile("wrpr %0,0,%%tpc"::"r"(t->trap_pc));__asm__ volatile("wrpr %0,0,%%tnpc"::"r"(t->trap_next_pc));__asm__ volatile("wrpr %0,0,%%tstate"::"r"(t->trap_state));__asm__ volatile("wrpr %0,0,%%tt"::"r"(t->trap_type));}}
-void hal_task_context_switch(hal_task_t h){struct sparcv9_task*to=h,*from=running;if(!to||!from)HAL_FATAL("invalid SPARC V9 task switch");if(to==from)return;if(to->run_cpu>=0)HAL_FATAL("SPARC V9 HAL task already running");from->run_cpu=-1;to->run_cpu=0;save_trap_state(from);running=to;sparcv9_current_trap_sp=to->trap_sp;sparcv9_current_user_windows=&to->trap_windows;hal_space_switch(to->space);restore_trap_state(to);sparcv9_task_dispatch(&from->windows,&to->windows);}
-void sparcv9_task_returned(void){HAL_FATAL("SPARC V9 task returned");for(;;)__asm__ volatile("nop");}
-hal_task_t hal_task_get_current(void){return running;}
-void hal_task_set_tls(hal_task_t h,uintptr_t v){struct sparcv9_task*t=h;if(t){t->tls=v;t->windows.global[7]=v;t->trap_windows.global[7]=v;if(t==running)sparcv9_tls_write(v);}}
-uintptr_t hal_task_get_tls(hal_task_t h){return h?((struct sparcv9_task*)h)->tls:0;}
-void hal_task_set_private(hal_task_t h,void*p){if(h)((struct sparcv9_task*)h)->private_data=p;}
-void *hal_task_get_private(hal_task_t h){return h?((struct sparcv9_task*)h)->private_data:NULL;}
-hal_space_t hal_task_get_space(hal_task_t h){return h?((struct sparcv9_task*)h)->space:HAL_SPACE_SYS;}
-int hal_task_transfer(hal_task_t h,hal_cpu_id_t cpu){struct sparcv9_task*t=h;if(!t||cpu!=0)return HAL_ERR_INVALID;if(t->run_cpu>=0)return HAL_ERR_BUSY;return HAL_OK;}
 
-void sparcv9_task_enter_user_frame(struct sparcv9_user_trap_frame*f,
-	uintptr_t pc,uintptr_t npc,uint64_t tstate,uint64_t type){if(running){running->active_user_frame=f;running->active_pc=pc;running->active_next_pc=npc;running->active_tstate=tstate;running->active_trap_type=type;}}
-void sparcv9_task_leave_user_frame(void){if(running)running->active_user_frame=NULL;}
-static void set_user_trap(uintptr_t pc,uintptr_t npc,uint64_t state){__asm__ volatile("wrpr %0,0,%%tpc\n\twrpr %1,0,%%tnpc\n\twrpr %2,0,%%tstate"::"r"(pc),"r"(npc),"r"(state):"memory");}
-static unsigned user_output_window(const struct sparcv9_window_context*c){return(unsigned)((c->cwp+1U)&(SPARCV9_NWINDOWS-1U));}
-hal_task_t hal_task_fork_current(hal_space_t s,intptr_t r){struct sparcv9_task*t;unsigned w;if(!running||s==HAL_SPACE_SYS||!running->active_user_frame)return NULL;t=hal_task_create(s,(void(*)(void*))(uintptr_t)running->active_next_pc,NULL,(void*)(running->active_user_frame->old_sp+SPARCV9_STACK_BIAS));if(!t)return NULL;t->trap_windows=running->trap_windows;w=user_output_window(&t->trap_windows);t->trap_windows.window[w][8]=(uint64_t)r;t->tls=sparcv9_tls_read();t->trap_windows.global[7]=t->tls;t->trap_level=1;t->trap_pc=running->active_pc;t->trap_next_pc=running->active_next_pc;t->trap_state=running->active_tstate;t->trap_type=running->active_trap_type;t->windows.window[1][15]=(uintptr_t)sparcv9_user_fork_entry-8U;return t;}
-int hal_task_exec_validate(hal_space_t s,uintptr_t e,uintptr_t sp){return running&&s!=HAL_SPACE_SYS&&running->active_user_frame&&e&&sp>=SPARCV9_STACK_BIAS?0:-1;}
-int hal_task_exec_current(hal_space_t s,uintptr_t e,uintptr_t sp){struct sparcv9_user_trap_frame*f;uint64_t state;if(hal_task_exec_validate(s,e,sp)!=0)return-1;f=running->active_user_frame;state=running->active_tstate&~0x1fULL;hal_memset(&running->trap_windows,0,sizeof(running->trap_windows));running->trap_windows.cansave=6;running->trap_windows.cleanwin=7;running->trap_windows.window[1][14]=sp-SPARCV9_STACK_BIAS;hal_memset(f,0,sizeof(*f));f->old_sp=sp-SPARCV9_STACK_BIAS;running->space=s;running->tls=0;running->signal_depth=0;running->active_pc=e-4U;running->active_next_pc=e;running->active_tstate=state;hal_space_switch(s);set_user_trap(e-4U,e,state);return 0;}
-uintptr_t hal_task_user_stack(void){return running&&running->active_user_frame?running->active_user_frame->old_sp+SPARCV9_STACK_BIAS:0;}
-int hal_task_user_context(struct hal_user_context*c){struct sparcv9_user_trap_frame*f=running?running->active_user_frame:NULL;if(!running||f==NULL||c==NULL)return-1;c->pc=(uintptr_t)running->active_next_pc;c->stack_pointer=f->old_sp+SPARCV9_STACK_BIAS;c->return_value=(intptr_t)f->out[0];return 0;}
-int hal_task_signal_enter(uintptr_t h,uintptr_t sp,int n,uintptr_t info,uintptr_t context,uintptr_t r,uint32_t t){struct sparcv9_user_trap_frame*f;unsigned w,d;if(!running||(f=running->active_user_frame)==NULL||running->signal_depth>=HAL_SIGNAL_NEST_MAX||!h||!sp||sp<SPARCV9_STACK_BIAS||!r||!t)return-1;d=running->signal_depth;running->signal_windows[d]=running->trap_windows;running->signal_frame[d]=*f;running->signal_pc[d]=running->active_pc;running->signal_next_pc[d]=running->active_next_pc;running->signal_tstate[d]=running->active_tstate;running->signal_token[d]=t;running->signal_depth=d+1U;w=user_output_window(&running->trap_windows);running->trap_windows.window[w][8]=(uint64_t)n;running->trap_windows.window[w][9]=info;running->trap_windows.window[w][10]=context;running->trap_windows.window[w][14]=sp-SPARCV9_STACK_BIAS;running->trap_windows.window[w][15]=r-8U;f->old_sp=sp-SPARCV9_STACK_BIAS;f->out[0]=(uint64_t)n;f->out[1]=info;f->out[2]=context;running->active_pc=h-4U;running->active_next_pc=h;set_user_trap(h-4U,h,running->active_tstate);return 0;}
-int hal_task_signal_return(uint32_t t,intptr_t*v){struct sparcv9_user_trap_frame*f;unsigned d;if(!running||(f=running->active_user_frame)==NULL||!v||running->signal_depth==0||!t)return-1;d=running->signal_depth-1U;if(t!=running->signal_token[d])return-1;running->trap_windows=running->signal_windows[d];*f=running->signal_frame[d];*v=(intptr_t)f->out[0];running->active_pc=running->signal_pc[d];running->active_next_pc=running->signal_next_pc[d];running->active_tstate=running->signal_tstate[d];set_user_trap(running->active_pc,running->active_next_pc,running->active_tstate);running->signal_token[d]=0;running->signal_depth=d;return 0;}
-void hal_sparcv9_task_memory_stats(uint32_t*c,size_t*b){if(c)*c=task_count;if(b)*b=stack_bytes;}
+static void list_add(struct sparcv9_task *task);
+static void list_remove(struct sparcv9_task *task);
+static void build_context(struct sparcv9_task *task, void (*start)(void *), void *argument, void *user_stack);
+static void save_trap_state(struct sparcv9_task *task);
+static void restore_trap_state(const struct sparcv9_task *task);
+static void set_user_trap(uintptr_t pc, uintptr_t next_pc, uint64_t state);
+static unsigned user_output_window(const struct sparcv9_window_context *context);
 
-static uint8_t self_stack[4096]__attribute__((aligned(16)));static struct sparcv9_window_context main_context,test_context;static unsigned count;
-static void self_task(void){count=1;sparcv9_task_dispatch(&test_context,&main_context);count=2;sparcv9_task_dispatch(&test_context,&main_context);for(;;)__asm__ volatile("nop");}
-void sparcv9_context_selftest(void){uintptr_t top=(uintptr_t)(self_stack+sizeof(self_stack))&~15UL;hal_memset(&test_context,0,sizeof(test_context));test_context.cansave=6;test_context.cleanwin=7;test_context.window[1][14]=top-SPARCV9_STACK_BIAS-SPARCV9_STACK_FRAME_SIZE;test_context.window[1][15]=(uintptr_t)self_task-8U;sparcv9_task_dispatch(&main_context,&test_context);if(count!=1)HAL_FATAL("SPARC V9 context selftest first switch");sparcv9_task_dispatch(&main_context,&test_context);if(count!=2)HAL_FATAL("SPARC V9 context selftest second switch");hal_puts("SPARCV9 CONTEXT PASS\n");}
+/*
+ * Wraps the processor's current context as its initial task.
+ */
+hal_task_t
+hal_task_create_for_init_context(
+	void)
+{
+	struct sparcv9_task *task;
+	bool enabled;
+
+	/* The processor has one initial context. */
+	if (running != NULL)
+		HAL_FATAL("SPARC V9 initial task made twice");
+
+	/* Allocates the task's record. */
+	task = kernel_alloc(sizeof(*task));
+	if (task == NULL)
+		return NULL;
+
+	/* The current context needs no stack of its own: it runs on the boot stack. */
+	hal_memset(task, 0, sizeof(*task));
+	task->space = HAL_SPACE_SYS;
+	task->run_cpu = 0;
+
+	/* Publishes the task as the one running. */
+	enabled = hal_irq_disable();
+
+	list_add(task);
+	running = task;
+
+	if (enabled)
+		hal_irq_enable();
+
+	/* Succeeded: the boot context is now a task. */
+	return task;
+}
+
+/*
+ * Creates a kernel task, or a user task that starts in a user space.
+ */
+hal_task_t
+hal_task_create(
+	hal_space_t space,
+	void (*start)(void *p),
+	void *arg,
+	void *user_stack_pointer)
+{
+	struct sparcv9_task *task;
+	bool enabled;
+
+	/* A kernel task has no user stack, and a user task needs one. */
+	if (start == NULL)
+		return NULL;
+	if (space == HAL_SPACE_SYS && user_stack_pointer != NULL)
+		return NULL;
+	if (space != HAL_SPACE_SYS && user_stack_pointer == NULL)
+		return NULL;
+
+	/* Allocates the task's record. */
+	task = kernel_alloc(sizeof(*task));
+	if (task == NULL)
+		return NULL;
+	hal_memset(task, 0, sizeof(*task));
+
+	/* Allocates the kernel stack, 16-byte aligned. */
+	task->stack_allocation = kernel_alloc(SPARCV9_SYS_STACK_SIZE + 15U);
+	if (task->stack_allocation == NULL) {
+		kernel_free(task);
+		return NULL;
+	}
+	task->stack = (void *)(((uintptr_t)task->stack_allocation + 15U) & ~(uintptr_t)15U);
+
+	/* Builds the context the first switch to the task loads. */
+	task->space = space;
+	task->run_cpu = -1;
+	build_context(task, start, arg, user_stack_pointer);
+
+	/* Publishes the task. */
+	enabled = hal_irq_disable();
+
+	task_stack_bytes += SPARCV9_SYS_STACK_SIZE;
+	list_add(task);
+
+	if (enabled)
+		hal_irq_enable();
+
+	/* Succeeded: the task runs at its first switch. */
+	return task;
+}
+
+/*
+ * Destroys a task that is not running.
+ */
+void
+hal_task_destroy(
+	hal_task_t handle)
+{
+	struct sparcv9_task *task;
+	bool enabled;
+
+	/* Destroying nothing does nothing. */
+	task = handle;
+	if (task == NULL)
+		return;
+
+	/* A running task cannot free the stack it runs on. */
+	if (task == running)
+		HAL_FATAL("destroy current SPARC V9 task");
+
+	/* Takes the task off the list. */
+	enabled = hal_irq_disable();
+
+	list_remove(task);
+	if (task->stack != NULL)
+		task_stack_bytes -= SPARCV9_SYS_STACK_SIZE;
+
+	if (enabled)
+		hal_irq_enable();
+
+	/* Frees the stack and the record. */
+	if (task->stack_allocation != NULL)
+		kernel_free(task->stack_allocation);
+	kernel_free(task);
+}
+
+/*
+ * Switches the processor to another task.
+ */
+void
+hal_task_context_switch(
+	hal_task_t handle)
+{
+	struct sparcv9_task *to;
+	struct sparcv9_task *from;
+
+	/* Refuses a missing task, or a switch before the boot task exists. */
+	to = handle;
+	from = running;
+	if (to == NULL || from == NULL)
+		HAL_FATAL("invalid SPARC V9 task switch");
+
+	/* Switching to the running task changes nothing. */
+	if (to == from)
+		return;
+
+	/* A task runs on one processor at a time. */
+	if (to->run_cpu >= 0)
+		HAL_FATAL("SPARC V9 HAL task already running");
+
+	/* Hands the processor over and keeps the outgoing task's trap registers. */
+	from->run_cpu = -1;
+	to->run_cpu = 0;
+	save_trap_state(from);
+
+	/* Points the trap entry at the incoming task and selects its space. */
+	running = to;
+	sparcv9_current_trap_sp = to->trap_sp;
+	sparcv9_current_user_windows = &to->trap_windows;
+	hal_space_switch(to->space);
+	restore_trap_state(to);
+
+	/* Saves the outgoing windows and loads the incoming ones; returns when switched back. */
+	sparcv9_task_dispatch(&from->windows, &to->windows);
+}
+
+/*
+ * Stops a kernel task whose function returned.
+ */
+void
+sparcv9_task_returned(
+	void)
+{
+	/* A task function must not return. */
+	HAL_FATAL("SPARC V9 task returned");
+	sparcv9_halt_forever();
+}
+
+/*
+ * Reports the running task.
+ */
+hal_task_t
+hal_task_get_current(
+	void)
+{
+	/* Succeeded: the task the processor runs. */
+	return running;
+}
+
+/*
+ * Sets the thread pointer of a task.
+ */
+void
+hal_task_set_tls(
+	hal_task_t handle,
+	uintptr_t value)
+{
+	struct sparcv9_task *task;
+
+	/* Ignores a missing task. */
+	task = handle;
+	if (task == NULL)
+		return;
+
+	/* Keeps the value in both saved contexts, and in %g7 when the task runs. */
+	task->tls = value;
+	task->windows.global[TASK_GLOBAL_THREAD_POINTER] = value;
+	task->trap_windows.global[TASK_GLOBAL_THREAD_POINTER] = value;
+	if (task == running)
+		sparcv9_tls_write(value);
+}
+
+/*
+ * Reports the thread pointer of a task.
+ */
+uintptr_t
+hal_task_get_tls(
+	hal_task_t handle)
+{
+	struct sparcv9_task *task;
+
+	/* A missing task has none. */
+	task = handle;
+	if (task == NULL)
+		return 0;
+
+	/* Succeeded: the value last set. */
+	return task->tls;
+}
+
+/*
+ * Stores the kernel's link from a task to its own record.
+ */
+void
+hal_task_set_private(
+	hal_task_t handle,
+	void *private_data)
+{
+	struct sparcv9_task *task;
+
+	/* Ignores a missing task. */
+	task = handle;
+	if (task == NULL)
+		return;
+
+	/* The HAL keeps the link and never follows it. */
+	task->private_data = private_data;
+}
+
+/*
+ * Reports the kernel's link from a task to its own record.
+ */
+void *
+hal_task_get_private(
+	hal_task_t handle)
+{
+	struct sparcv9_task *task;
+
+	/* A missing task has none. */
+	task = handle;
+	if (task == NULL)
+		return NULL;
+
+	/* Succeeded: the link last stored. */
+	return task->private_data;
+}
+
+/*
+ * Reports the address space a task runs in.
+ */
+hal_space_t
+hal_task_get_space(
+	hal_task_t handle)
+{
+	struct sparcv9_task *task;
+
+	/* A missing task is taken as the kernel's. */
+	task = handle;
+	if (task == NULL)
+		return HAL_SPACE_SYS;
+
+	/* Succeeded: the task's space. */
+	return task->space;
+}
+
+/*
+ * Moves a task to a processor; there is only one.
+ */
+int
+hal_task_transfer(
+	hal_task_t handle,
+	hal_cpu_id_t target_cpu)
+{
+	struct sparcv9_task *task;
+
+	/* Refuses a missing task or a processor that does not exist. */
+	task = handle;
+	if (task == NULL || target_cpu != 0)
+		return HAL_ERR_INVALID;
+
+	/* Refuses a task that is running. */
+	if (task->run_cpu >= 0)
+		return HAL_ERR_BUSY;
+
+	/* Succeeded: the task already belongs to the only processor. */
+	return HAL_OK;
+}
+
+/*
+ * Records the user trap being handled, so fork, exec and signals can
+ * replace the context it returns to.
+ */
+void
+sparcv9_task_enter_user_frame(
+	struct sparcv9_user_trap_frame *frame,
+	uintptr_t pc,
+	uintptr_t next_pc,
+	uint64_t tstate,
+	uint64_t trap_type)
+{
+	/* Nothing runs a user trap before the boot task exists. */
+	if (running == NULL)
+		return;
+
+	/* Keeps where the trap came from and the registers it saved. */
+	running->active_user_frame = frame;
+	running->active_pc = pc;
+	running->active_next_pc = next_pc;
+	running->active_tstate = tstate;
+	running->active_trap_type = trap_type;
+}
+
+/*
+ * Ends the user trap being handled.
+ */
+void
+sparcv9_task_leave_user_frame(
+	void)
+{
+	/* Nothing runs a user trap before the boot task exists. */
+	if (running == NULL)
+		return;
+
+	/* No user trap is being handled any more. */
+	running->active_user_frame = NULL;
+}
+
+/*
+ * Creates a child task that returns from the current system call into a
+ * copy of the caller's user context.
+ */
+hal_task_t
+hal_task_fork_current(
+	hal_space_t child_space,
+	intptr_t child_syscall_result)
+{
+	struct sparcv9_task *child;
+	struct sparcv9_user_trap_frame *frame;
+	unsigned window;
+
+	/* Only a user task handling a system call can be forked. */
+	if (running == NULL || child_space == HAL_SPACE_SYS)
+		return NULL;
+	frame = running->active_user_frame;
+	if (frame == NULL)
+		return NULL;
+
+	/* Creates the child on the caller's user stack. */
+	child = hal_task_create(child_space,
+				(void (*)(void *))(uintptr_t)running->active_next_pc,
+				NULL,
+				(void *)(frame->old_sp + SPARCV9_STACK_BIAS));
+	if (child == NULL)
+		return NULL;
+
+	/* Copies the caller's user windows and gives the child its own result. */
+	child->trap_windows = running->trap_windows;
+	window = user_output_window(&child->trap_windows);
+	child->trap_windows.window[window][TASK_WINDOW_IN0] = (uint64_t)child_syscall_result;
+
+	/* Keeps the caller's thread pointer. */
+	child->tls = sparcv9_tls_read();
+	child->trap_windows.global[TASK_GLOBAL_THREAD_POINTER] = child->tls;
+
+	/* Returns from the same trap the caller is in. */
+	child->trap_level = 1;
+	child->trap_pc = running->active_pc;
+	child->trap_next_pc = running->active_next_pc;
+	child->trap_state = running->active_tstate;
+	child->trap_type = running->active_trap_type;
+
+	/* Starts the child at the entry that reloads the user windows. */
+	child->windows.window[1][TASK_WINDOW_IN7] = (uintptr_t)sparcv9_user_fork_entry - 8U;
+
+	/* Succeeded: the child runs at its first switch. */
+	return child;
+}
+
+/*
+ * Checks that the current user trap can be replaced by a new program.
+ */
+int
+hal_task_exec_validate(
+	hal_space_t new_space,
+	uintptr_t entry,
+	uintptr_t user_stack_pointer)
+{
+	/* Only a user task handling a system call can exec. */
+	if (running == NULL || new_space == HAL_SPACE_SYS)
+		return -1;
+	if (running->active_user_frame == NULL)
+		return -1;
+
+	/* Refuses a missing entry or a stack below the bias. */
+	if (entry == 0 || user_stack_pointer < SPARCV9_STACK_BIAS)
+		return -1;
+
+	/* Succeeded: the trap can be replaced. */
+	return 0;
+}
+
+/*
+ * Replaces the current user trap's return with the entry of a new program
+ * in a new space.
+ */
+int
+hal_task_exec_current(
+	hal_space_t new_space,
+	uintptr_t entry,
+	uintptr_t user_stack_pointer)
+{
+	struct sparcv9_user_trap_frame *frame;
+	uint64_t state;
+	int valid;
+
+	/* Refuses a trap that cannot be replaced. */
+	valid = hal_task_exec_validate(new_space, entry, user_stack_pointer);
+	if (valid != 0)
+		return -1;
+
+	/* Keeps the trap state but its window pointer, which starts at zero. */
+	frame = running->active_user_frame;
+	state = running->active_tstate & ~TASK_TSTATE_CWP_MASK;
+
+	/* Starts the user windows empty with the new stack. */
+	hal_memset(&running->trap_windows, 0, sizeof(running->trap_windows));
+	running->trap_windows.cansave = TASK_INITIAL_CANSAVE;
+	running->trap_windows.cleanwin = TASK_INITIAL_CLEANWIN;
+	running->trap_windows.window[1][TASK_WINDOW_IN6] = user_stack_pointer - SPARCV9_STACK_BIAS;
+
+	/* Clears the saved user registers but the stack. */
+	hal_memset(frame, 0, sizeof(*frame));
+	frame->old_sp = user_stack_pointer - SPARCV9_STACK_BIAS;
+
+	/* Gives the task the new space, no thread pointer and no signal in progress. */
+	running->space = new_space;
+	running->tls = 0;
+	running->signal_depth = 0;
+
+	/* Returns from the trap to the entry: done goes to the next pc. */
+	running->active_pc = entry - 4U;
+	running->active_next_pc = entry;
+	running->active_tstate = state;
+	hal_space_switch(new_space);
+	set_user_trap(entry - 4U, entry, state);
+
+	/* Succeeded: the trap returns into the new program. */
+	return 0;
+}
+
+/*
+ * Reports the stack pointer the current user trap returns to.
+ */
+uintptr_t
+hal_task_get_user_stack(
+	void)
+{
+	/* Outside a user trap there is none. */
+	if (running == NULL || running->active_user_frame == NULL)
+		return 0;
+
+	/* Succeeded: the user's stack, without the bias. */
+	return running->active_user_frame->old_sp + SPARCV9_STACK_BIAS;
+}
+
+/*
+ * Reports the program counter, the stack pointer and the return value the
+ * current user trap returns with.
+ */
+int
+hal_task_get_user_context(
+	uintptr_t *pc,
+	uintptr_t *stack_pointer,
+	intptr_t *return_value)
+{
+	struct sparcv9_user_trap_frame *frame;
+
+	/* Outside a user trap there is none. */
+	if (running == NULL || running->active_user_frame == NULL)
+		return -1;
+	frame = running->active_user_frame;
+
+	/* Reports what the caller asked for. */
+	if (pc != NULL)
+		*pc = (uintptr_t)running->active_next_pc;
+	if (stack_pointer != NULL)
+		*stack_pointer = frame->old_sp + SPARCV9_STACK_BIAS;
+	if (return_value != NULL)
+		*return_value = (intptr_t)frame->out[0];
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Makes the current user trap return into a signal handler.
+ */
+int
+hal_task_signal_enter(
+	uintptr_t handler,
+	uintptr_t stack,
+	int signo,
+	uintptr_t siginfo,
+	uintptr_t ucontext,
+	uintptr_t restorer,
+	uint32_t token)
+{
+	struct sparcv9_user_trap_frame *frame;
+	unsigned window;
+	unsigned depth;
+
+	/* Only a user trap with room for one more handler can enter one. */
+	if (running == NULL || running->active_user_frame == NULL)
+		return -1;
+	if (running->signal_depth >= HAL_SIGNAL_NEST_MAX)
+		return -1;
+
+	/* Refuses a missing handler, stack, return path or token. */
+	if (handler == 0 || stack < SPARCV9_STACK_BIAS)
+		return -1;
+	if (restorer == 0 || token == 0)
+		return -1;
+	frame = running->active_user_frame;
+
+	/* Keeps the interrupted context for the handler's return. */
+	depth = running->signal_depth;
+	running->signal_windows[depth] = running->trap_windows;
+	running->signal_frame[depth] = *frame;
+	running->signal_pc[depth] = running->active_pc;
+	running->signal_next_pc[depth] = running->active_next_pc;
+	running->signal_tstate[depth] = running->active_tstate;
+	running->signal_token[depth] = token;
+	running->signal_depth = depth + 1U;
+
+	/* Passes the handler its arguments, its stack and its return address. */
+	window = user_output_window(&running->trap_windows);
+	running->trap_windows.window[window][TASK_WINDOW_IN0] = (uint64_t)signo;
+	running->trap_windows.window[window][TASK_WINDOW_IN1] = siginfo;
+	running->trap_windows.window[window][TASK_WINDOW_IN2] = ucontext;
+	running->trap_windows.window[window][TASK_WINDOW_IN6] = stack - SPARCV9_STACK_BIAS;
+	running->trap_windows.window[window][TASK_WINDOW_IN7] = restorer - 8U;
+	frame->old_sp = stack - SPARCV9_STACK_BIAS;
+	frame->out[0] = (uint64_t)signo;
+	frame->out[1] = siginfo;
+	frame->out[2] = ucontext;
+
+	/* Returns from the trap into the handler. */
+	running->active_pc = handler - 4U;
+	running->active_next_pc = handler;
+	set_user_trap(handler - 4U, handler, running->active_tstate);
+
+	/* Succeeded: the trap returns into the handler. */
+	return 0;
+}
+
+/*
+ * Returns from a signal handler into the context it interrupted.
+ */
+int
+hal_task_signal_return(
+	uint32_t token,
+	intptr_t *return_value)
+{
+	struct sparcv9_user_trap_frame *frame;
+	unsigned depth;
+
+	/* Only a user trap inside a handler can return from it. */
+	if (running == NULL || running->active_user_frame == NULL)
+		return -1;
+	if (return_value == NULL || running->signal_depth == 0)
+		return -1;
+	if (token == 0)
+		return -1;
+
+	/* Refuses a token that is not the innermost handler's. */
+	depth = running->signal_depth - 1U;
+	if (token != running->signal_token[depth])
+		return -1;
+	frame = running->active_user_frame;
+
+	/* Puts the interrupted context back. */
+	running->trap_windows = running->signal_windows[depth];
+	*frame = running->signal_frame[depth];
+	*return_value = (intptr_t)frame->out[0];
+	running->active_pc = running->signal_pc[depth];
+	running->active_next_pc = running->signal_next_pc[depth];
+	running->active_tstate = running->signal_tstate[depth];
+	set_user_trap(running->active_pc, running->active_next_pc, running->active_tstate);
+
+	/* Closes the handler's level. */
+	running->signal_token[depth] = 0;
+	running->signal_depth = depth;
+
+	/* Succeeded: the trap returns into the interrupted context. */
+	return 0;
+}
+
+/*
+ * Reports the number of tasks and the bytes of their kernel stacks.
+ */
+void
+sparcv9_task_memory_stats(
+	uint32_t *count,
+	size_t *stack_bytes)
+{
+	bool enabled;
+
+	/* Samples both counters together. */
+	enabled = hal_irq_disable();
+
+	if (count != NULL)
+		*count = task_count;
+	if (stack_bytes != NULL)
+		*stack_bytes = task_stack_bytes;
+
+	if (enabled)
+		hal_irq_enable();
+}
+
+/* Appends a task to the list; interrupts are off. */
+static void
+list_add(
+	struct sparcv9_task *task)
+{
+	struct sparcv9_task **link;
+
+	/* Finds the list's end. */
+	link = &task_list;
+	while (*link != NULL)
+		link = &(*link)->next;
+
+	/* Links the task there. */
+	*link = task;
+	task->next = NULL;
+	task_count++;
+}
+
+/* Takes a task off the list; interrupts are off. */
+static void
+list_remove(
+	struct sparcv9_task *task)
+{
+	struct sparcv9_task **link;
+
+	/* Finds the link that points at the task. */
+	link = &task_list;
+	while (*link != NULL && *link != task)
+		link = &(*link)->next;
+
+	/* A task not on the list is left alone. */
+	if (*link == NULL)
+		return;
+
+	/* Unlinks the task. */
+	*link = task->next;
+	if (task_count != 0)
+		task_count--;
+}
+
+/*
+ * Builds the context the first switch to a new task loads.
+ *
+ * The switch returns into the entry through the out registers of window
+ * zero, which are the ins of window one: the stack pointer and the return
+ * address.  The entry reads the start function and its argument, or the
+ * user stack, from window zero's first two locals.
+ */
+static void
+build_context(
+	struct sparcv9_task *task,
+	void (*start)(void *),
+	void *argument,
+	void *user_stack)
+{
+	struct sparcv9_window_context *context;
+	uintptr_t top;
+	uintptr_t stack_pointer;
+
+	/* The kernel stack's top and the biased stack pointer of the first frame. */
+	top = ((uintptr_t)task->stack + SPARCV9_SYS_STACK_SIZE) & ~(uintptr_t)15U;
+	stack_pointer = top - SPARCV9_STACK_BIAS - SPARCV9_STACK_FRAME_SIZE;
+
+	/* Starts in window zero with every other window free. */
+	context = &task->windows;
+	hal_memset(context, 0, sizeof(*context));
+	context->cwp = 0;
+	context->cansave = TASK_INITIAL_CANSAVE;
+	context->cleanwin = TASK_INITIAL_CLEANWIN;
+
+	/* Gives the entry the start function and its argument, or the user stack. */
+	context->window[0][TASK_WINDOW_LOCAL0] = (uintptr_t)start;
+	context->window[0][TASK_WINDOW_LOCAL1] = (uintptr_t)user_stack;
+	if (task->space == HAL_SPACE_SYS)
+		context->window[0][TASK_WINDOW_LOCAL1] = (uintptr_t)argument;
+
+	/* Returns into the kernel or the user entry with the first frame's stack. */
+	context->window[1][TASK_WINDOW_IN6] = stack_pointer;
+	context->window[1][TASK_WINDOW_IN7] = (uintptr_t)sparcv9_user_task_entry - 8U;
+	if (task->space == HAL_SPACE_SYS)
+		context->window[1][TASK_WINDOW_IN7] = (uintptr_t)sparcv9_kernel_task_entry - 8U;
+
+	/* A trap from user mode switches to the stack's top. */
+	task->trap_sp = top - SPARCV9_STACK_BIAS;
+}
+
+/*
+ * Keeps the trap registers of a task switched out while it handles a trap
+ * from user mode.
+ */
+static void
+save_trap_state(
+	struct sparcv9_task *task)
+{
+	/* Reads the trap level; a switch happens at level 0 or 1 only. */
+	task->trap_level = sparcv9_read_trap_level();
+	if (task->trap_level > 1)
+		HAL_FATAL("SPARC V9 task switch above TL1");
+
+	/* At level 1, keeps where the trap returns to. */
+	if (task->trap_level != 0) {
+		__asm__ volatile("rdpr %%tpc, %0" : "=r"(task->trap_pc));
+		__asm__ volatile("rdpr %%tnpc, %0" : "=r"(task->trap_next_pc));
+		__asm__ volatile("rdpr %%tstate, %0" : "=r"(task->trap_state));
+		__asm__ volatile("rdpr %%tt, %0" : "=r"(task->trap_type));
+	}
+}
+
+/* Puts back the trap registers a task was switched out with. */
+static void
+restore_trap_state(
+	const struct sparcv9_task *task)
+{
+	/* Sets the trap level the task ran at. */
+	__asm__ volatile("wrpr %0, 0, %%tl" : : "r"(task->trap_level) : "memory");
+
+	/* At level 1, puts back where the trap returns to. */
+	if (task->trap_level != 0) {
+		__asm__ volatile("wrpr %0, 0, %%tpc" : : "r"(task->trap_pc));
+		__asm__ volatile("wrpr %0, 0, %%tnpc" : : "r"(task->trap_next_pc));
+		__asm__ volatile("wrpr %0, 0, %%tstate" : : "r"(task->trap_state));
+		__asm__ volatile("wrpr %0, 0, %%tt" : : "r"(task->trap_type));
+	}
+}
+
+/* Sets where the current trap returns to. */
+static void
+set_user_trap(
+	uintptr_t pc,
+	uintptr_t next_pc,
+	uint64_t state)
+{
+	/* Writes the trap's pc, next pc and state together. */
+	__asm__ volatile("wrpr %0, 0, %%tpc\n\twrpr %1, 0, %%tnpc\n\twrpr %2, 0, %%tstate" : : "r"(pc), "r"(next_pc), "r"(state) : "memory");
+}
+
+/*
+ * Reports the saved window whose ins are the user's out registers at the
+ * trap: the one after the window the trap was taken in.
+ */
+static unsigned
+user_output_window(
+	const struct sparcv9_window_context *context)
+{
+	/* Succeeded: the next window, wrapping. */
+	return (unsigned)((context->cwp + 1U) & (SPARCV9_NWINDOWS - 1U));
+}

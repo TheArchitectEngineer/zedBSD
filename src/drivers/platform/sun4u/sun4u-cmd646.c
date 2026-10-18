@@ -6,7 +6,10 @@
  */
 
 /*
- * CMD646 primary-channel ATA PIO driver for QEMU sun4u.
+ * The CMD646 IDE controller's primary channel, driven by programmed I/O.
+ *
+ * The first drive of the channel is the disk: one 512-byte sector per
+ * command, polled to completion, addressed by 28-bit LBA.
  */
 
 #include "drivers/platform/sun4u/sun4u-cmd646.h"
@@ -18,303 +21,408 @@
 #include "kern/klog.h"
 #include "kern/device-io.h"
 
-#define ATA_DATA 0U
-#define ATA_ERROR 1U
-#define ATA_COUNT 2U
-#define ATA_LBA0 3U
-#define ATA_LBA1 4U
-#define ATA_LBA2 5U
-#define ATA_DRIVE 6U
-#define ATA_STATUS 7U
-#define ATA_COMMAND 7U
-#define ATA_BSY 0x80U
-#define ATA_DRDY 0x40U
-#define ATA_DRQ 0x08U
-#define ATA_ERR 0x01U
-static uint16_t cmd, ctl;
-static struct disk *ata_disk;
-static uint64_t sectors;
+/*
+ * The ATA command block registers, by their offset, and the control
+ * block's device control register.
+ *
+ * Values referenced: ATA/ATAPI-6 (INCITS 361-2002), the command and
+ * control block registers, the status bits, the device control bits and
+ * the commands IDENTIFY DEVICE, READ SECTORS, WRITE SECTORS and FLUSH
+ * CACHE.
+ */
+#define ATA_DATA		0U
+#define ATA_ERROR		1U
+#define ATA_COUNT		2U
+#define ATA_LBA0		3U
+#define ATA_LBA1		4U
+#define ATA_LBA2		5U
+#define ATA_DRIVE		6U
+#define ATA_STATUS		7U
+#define ATA_COMMAND		7U
+#define ATA_DEVICE_CONTROL	2U
 
-static int wait_status(uint8_t set, uint8_t clear);
-static int identify(void);
-static void select_lba(uint32_t lba);
-static int block(int write, uint32_t lba, uint8_t *data);
-static int submit(struct disk *d, struct bio *b);
-static int ioctl(struct disk *d, unsigned long r, void *a);
+/* The status bits. */
+#define ATA_BSY			0x80U
+#define ATA_DRDY		0x40U
+#define ATA_DRQ			0x08U
+#define ATA_ERR			0x01U
 
-static const struct disk_ops ops = {.submit = submit, .ioctl = ioctl};
+/* The device control bits: software reset, and interrupts off. */
+#define ATA_CONTROL_RESET	0x04U
+#define ATA_CONTROL_NIEN	0x02U
+
+/* The drive register: the first drive, and the first drive by LBA. */
+#define ATA_DRIVE_MASTER	0xa0U
+#define ATA_DRIVE_MASTER_LBA	0xe0U
+
+/* The commands. */
+#define ATA_CMD_IDENTIFY	0xecU
+#define ATA_CMD_READ_SECTORS	0x20U
+#define ATA_CMD_WRITE_SECTORS	0x30U
+#define ATA_CMD_FLUSH_CACHE	0xe7U
+
+/* The identify data's words 60 and 61: the sectors addressable by 28-bit LBA. */
+#define ATA_IDENTIFY_LBA_LOW	60U
+#define ATA_IDENTIFY_LBA_HIGH	61U
+
+/* A sector, and the highest LBA a 28-bit command reaches. */
+#define ATA_SECTOR_SIZE		512U
+#define ATA_LBA28_LIMIT		0x10000000ULL
+
+/* How long a status wait polls, and how long the reset pulse lasts. */
+#define ATA_STATUS_SPINS	10000000UL
+#define ATA_RESET_SPINS		100000U
 
 /*
- * Implements the drv sun4u cmd646 init operation.
+ * The channel's command and control block ports.
+ *
+ * Set once by drv_sun4u_cmd646_init() and constant afterwards; the disk
+ * layer issues one request at a time, so the ports are never shared.
+ */
+static uint16_t command_block;
+static uint16_t control_block;
+
+/*
+ * The published disk, or NULL until the drive was found; and the number
+ * of sectors its identify data reported.
+ */
+static struct disk *ata_disk;
+static uint64_t ata_sectors;
+
+static int wait_status(uint8_t set, uint8_t clear);
+static void log_failure(const char *step, int error);
+static int identify(void);
+static void select_lba(uint32_t lba);
+static int transfer_sector(int write, uint32_t lba, uint8_t *data);
+static int flush_cache(void);
+static int submit(struct disk *disk, struct bio *request);
+static int ioctl(struct disk *disk, unsigned long request, void *argument);
+
+/*
+ * The disk layer's entry points for the drive.
+ */
+static const struct disk_ops ops = {
+	.submit = submit,
+	.ioctl = ioctl
+};
+
+/*
+ * Resets the channel, identifies its first drive and publishes it as a
+ * disk.
  */
 int
 drv_sun4u_cmd646_init(
 	uint16_t command_port,
 	uint16_t control_port)
 {
-	volatile unsigned i_index_for;
+	volatile unsigned spin;
 	int error;
 
-	cmd = command_port;
-	ctl = control_port;
+	/* Keeps the channel's ports; no disk is published yet. */
+	command_block = command_port;
+	control_block = control_port;
 	ata_disk = NULL;
-	kern_io_out8(ctl + 2U, 0x04);
-	/* Process each remaining element. */
-	for (i_index_for = 0; i_index_for < 100000U; i_index_for++)
-		;
-	kern_io_out8(ctl + 2U, 0x02);
-	kern_io_out8(cmd + ATA_DRIVE, 0xa0);
 
-	/* Checks the operation status. */
+	/* Pulses the software reset, then leaves interrupts off for polling. */
+	kern_io_out8(control_block + ATA_DEVICE_CONTROL, ATA_CONTROL_RESET);
+	for (spin = 0; spin < ATA_RESET_SPINS; spin++)
+		continue;
+	kern_io_out8(control_block + ATA_DEVICE_CONTROL, ATA_CONTROL_NIEN);
+
+	/* Selects the first drive and waits for it to be ready. */
+	kern_io_out8(command_block + ATA_DRIVE, ATA_DRIVE_MASTER);
 	error = wait_status(ATA_DRDY, ATA_BSY);
-	if (error) {
-		kern_logf("cmd646: reset error=%d status=%x ata=%x\n", error,
-			   kern_io_in8(cmd + ATA_STATUS),
-			   kern_io_in8(cmd + ATA_ERROR));
-
-		/* Failed. */
+	if (error != 0) {
+		log_failure("reset", error);
 		return error;
 	}
 
-	/* Checks the operation status. */
+	/* Reads the drive's size. */
 	error = identify();
-	if (error) {
-		kern_logf("cmd646: identify error=%d status=%x ata=%x\n",
-			   error, kern_io_in8(cmd + ATA_STATUS),
-			   kern_io_in8(cmd + ATA_ERROR));
-
-		/* Failed. */
+	if (error != 0) {
+		log_failure("identify", error);
 		return error;
 	}
 
-	/* Handles the ata disk condition. */
+	/* Allocates the disk's record. */
 	ata_disk = disk_alloc();
-	if (!ata_disk)
+	if (ata_disk == NULL)
 		return ENOMEM;
 
-	/* Checks the operation status. */
+	/* Names the disk as an sd disk. */
 	error = disk_alloc_sd_name(ata_disk);
-	if (error) {
+	if (error != 0) {
 		(void)disk_destroy(ata_disk);
 		ata_disk = NULL;
-
-		/* Failed. */
 		return error;
 	}
 
-	ata_disk->d_block_size = 512;
-	ata_disk->d_block_count = sectors;
+	/* Describes the disk: 512-byte sectors, one per request, listed as IDE. */
+	ata_disk->d_block_size = ATA_SECTOR_SIZE;
+	ata_disk->d_block_count = ata_sectors;
 	ata_disk->d_max_transfer_blocks = 1;
 	ata_disk->d_ops = &ops;
-
-	/* hw.diskstats lists it as an IDE disk (ws134-p006). */
 	disk_set_stats_kind(ata_disk, DISK_STATS_KIND_IDE);
 
-	/* Checks the operation status. */
+	/* Publishes the disk. */
 	error = disk_create(ata_disk);
-	if (error) {
+	if (error != 0) {
 		ata_disk = NULL;
-
-		/* Failed. */
 		return error;
 	}
+	kern_logf("cmd646: sectors=%lu\n", (unsigned long)ata_sectors);
 
-	kern_logf("SPARCV9 IDE PASS sectors=%llu\n", sectors);
-
-	/* Succeeded. */
+	/* Succeeded: the disk is published. */
 	return 0;
 }
 
 /*
- * Implements the drv sun4u cmd646 disk operation.
+ * Reports the published disk, or NULL when none was found.
  */
 struct disk *
 drv_sun4u_cmd646_disk(
 	void)
 {
-	/* Returns the computed result. */
+	/* Succeeded: the disk drv_sun4u_cmd646_init() published. */
 	return ata_disk;
 }
 
-/* Supports the wait status operation. */
+/* Waits until the status shows every bit of set and none of clear. */
 static int
 wait_status(
 	uint8_t set,
 	uint8_t clear)
 {
-	uint8_t s;
-	unsigned long n = 10000000UL;
+	unsigned long spins;
+	uint8_t status;
 
-	/* Continue while the operation condition remains true. */
-	while (n--) {
-		/* Checks the current string state. */
-		s = kern_io_in8(cmd + ATA_STATUS);
-		if (s & ATA_ERR)
+	/* Polls the status until it matches, the drive reports an error, or the time runs out. */
+	for (spins = 0; spins < ATA_STATUS_SPINS; spins++) {
+		/* A drive that reports an error has failed the command. */
+		status = kern_io_in8(command_block + ATA_STATUS);
+		if ((status & ATA_ERR) != 0)
 			return EIO;
 
-		/* Checks the current string state. */
-		if ((s & set) == set && !(s & clear))
-			return 0;
+		/* The wait ends when the wanted bits are set and the unwanted ones clear. */
+		if ((status & set) != set)
+			continue;
+		if ((status & clear) != 0)
+			continue;
+		return 0;
 	}
 
-	/* Failed. */
+	/* Failed: the drive never reached the state. */
 	return ETIMEDOUT;
 }
 
-/* Supports the identify operation. */
+/* Logs a failed step with the drive's status and error registers. */
+static void
+log_failure(
+	const char *step,
+	int error)
+{
+	uint8_t status;
+	uint8_t ata_error;
+
+	/* Reads the registers that say why. */
+	status = kern_io_in8(command_block + ATA_STATUS);
+	ata_error = kern_io_in8(command_block + ATA_ERROR);
+
+	/* Logs the step and the registers. */
+	kern_logf("cmd646: %s error=%d status=%x ata=%x\n", step, error, status, ata_error);
+}
+
+/* Reads the first drive's identify data and keeps its size. */
 static int
 identify(
 	void)
 {
-	unsigned i_index_for;
 	uint16_t words[256];
+	uint8_t status;
+	unsigned index;
 	int error;
 
 	/* Selects the drive and issues the identify command. */
-	kern_io_out8(cmd + ATA_DRIVE, 0xa0);
-	kern_io_out8(cmd + ATA_COUNT, 0);
-	kern_io_out8(cmd + ATA_LBA0, 0);
-	kern_io_out8(cmd + ATA_LBA1, 0);
-	kern_io_out8(cmd + ATA_LBA2, 0);
-	kern_io_out8(cmd + ATA_COMMAND, 0xec);
+	kern_io_out8(command_block + ATA_DRIVE, ATA_DRIVE_MASTER);
+	kern_io_out8(command_block + ATA_COUNT, 0);
+	kern_io_out8(command_block + ATA_LBA0, 0);
+	kern_io_out8(command_block + ATA_LBA1, 0);
+	kern_io_out8(command_block + ATA_LBA2, 0);
+	kern_io_out8(command_block + ATA_COMMAND, ATA_CMD_IDENTIFY);
 
-	/* Checks the hal io inp8 result. */
-	if (kern_io_in8(cmd + ATA_STATUS) == 0)
+	/* A status of zero means no drive is attached. */
+	status = kern_io_in8(command_block + ATA_STATUS);
+	if (status == 0)
 		return ENODEV;
 
-	/* Checks the operation status. */
+	/* Waits for the data. */
 	error = wait_status(ATA_DRQ, ATA_BSY);
-	if (error)
+	if (error != 0)
 		return error;
-	/* Process each remaining element. */
-	for (i_index_for = 0; i_index_for < 256U; i_index_for++)
-		words[i_index_for] = kern_io_in16(cmd + ATA_DATA);
-	sectors = (uint32_t)words[60] | (uint64_t)words[61] << 16;
 
-	/* Returns the computed result. */
-	return sectors ? 0 : EIO;
+	/* Reads the 256 words of identify data. */
+	for (index = 0; index < 256U; index++)
+		words[index] = kern_io_in16(command_block + ATA_DATA);
+
+	/* The drive's size in sectors, from the two words of the 28-bit count. */
+	ata_sectors = (uint64_t)words[ATA_IDENTIFY_LBA_LOW] | (uint64_t)words[ATA_IDENTIFY_LBA_HIGH] << 16;
+	if (ata_sectors == 0)
+		return EIO;
+
+	/* Succeeded: the size is known. */
+	return 0;
 }
 
-/* Supports the select lba operation. */
+/* Selects one sector by its 28-bit LBA on the first drive. */
 static void
 select_lba(
 	uint32_t lba)
 {
-	kern_io_out8(cmd + ATA_COUNT, 1);
-	kern_io_out8(cmd + ATA_LBA0, (uint8_t)lba);
-	kern_io_out8(cmd + ATA_LBA1, (uint8_t)(lba >> 8));
-	kern_io_out8(cmd + ATA_LBA2, (uint8_t)(lba >> 16));
-	kern_io_out8(cmd + ATA_DRIVE, (uint8_t)(0xe0U | (lba >> 24 & 15U)));
+	/* One sector, its LBA in three bytes, and the top four bits with the drive. */
+	kern_io_out8(command_block + ATA_COUNT, 1);
+	kern_io_out8(command_block + ATA_LBA0, (uint8_t)lba);
+	kern_io_out8(command_block + ATA_LBA1, (uint8_t)(lba >> 8));
+	kern_io_out8(command_block + ATA_LBA2, (uint8_t)(lba >> 16));
+	kern_io_out8(command_block + ATA_DRIVE, (uint8_t)(ATA_DRIVE_MASTER_LBA | (lba >> 24 & 15U)));
 }
 
-/* Supports the block operation. */
+/* Reads or writes one sector. */
 static int
-block(
+transfer_sector(
 	int write,
 	uint32_t lba,
 	uint8_t *data)
 {
-	int function_result;
-	uint16_t word_local;
-	uint16_t word_local1;
-	unsigned i_index_for;
+	uint16_t word;
+	unsigned index;
 	int error;
 
+	/* Issues the read or the write of the sector. */
 	select_lba(lba);
-	kern_io_out8(cmd + ATA_COMMAND, write ? 0x30U : 0x20U);
+	if (write) {
+		kern_io_out8(command_block + ATA_COMMAND, ATA_CMD_WRITE_SECTORS);
+	} else {
+		kern_io_out8(command_block + ATA_COMMAND, ATA_CMD_READ_SECTORS);
+	}
 
-	/* Checks the operation status. */
+	/* Waits for the drive to take or give the data. */
 	error = wait_status(ATA_DRQ, ATA_BSY);
-	if (error)
+	if (error != 0)
 		return error;
-	/* Process each remaining element. */
-	for (i_index_for = 0; i_index_for < 256U; i_index_for++) {
-		/* Handles the write condition. */
+
+	/* Moves the sector a little-endian word at a time. */
+	for (index = 0; index < ATA_SECTOR_SIZE / 2U; index++) {
 		if (write) {
-			word_local = (uint16_t)data[i_index_for * 2U] |
-				     (uint16_t)data[i_index_for * 2U + 1U] << 8;
-			kern_io_out16(cmd + ATA_DATA, word_local);
+			word = (uint16_t)data[index * 2U] | (uint16_t)data[index * 2U + 1U] << 8;
+			kern_io_out16(command_block + ATA_DATA, word);
 		} else {
-			word_local1 = kern_io_in16(cmd + ATA_DATA);
-			data[i_index_for * 2U] = (uint8_t)word_local1;
-			data[i_index_for * 2U + 1U] =
-				(uint8_t)(word_local1 >> 8);
+			word = kern_io_in16(command_block + ATA_DATA);
+			data[index * 2U] = (uint8_t)word;
+			data[index * 2U + 1U] = (uint8_t)(word >> 8);
 		}
 	}
 
-	/* Handles the write condition. */
-	if (write) {
-		kern_io_out8(cmd + ATA_COMMAND, 0xe7);
+	/* A read is done once the data is taken. */
+	if (!write)
+		return 0;
 
-		/* Obtains the wait status result. */
-		function_result = wait_status(ATA_DRDY, ATA_BSY);
+	/* A write is done once the drive's cache has written it. */
+	error = flush_cache();
+	if (error != 0)
+		return error;
 
-		/* Returns the computed result. */
-		return function_result;
-	}
-
-	/* Succeeded. */
+	/* Succeeded: the sector is on the disk. */
 	return 0;
 }
 
-/* Supports the submit operation. */
+/* Writes the drive's cache to the medium. */
+static int
+flush_cache(
+	void)
+{
+	int error;
+
+	/* Issues the flush and waits for the drive to be ready again. */
+	kern_io_out8(command_block + ATA_COMMAND, ATA_CMD_FLUSH_CACHE);
+	error = wait_status(ATA_DRDY, ATA_BSY);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the cache is written. */
+	return 0;
+}
+
+/* Carries out one request of the disk layer, sector by sector. */
 static int
 submit(
-	struct disk *d,
-	struct bio *b)
+	struct disk *disk,
+	struct bio *request)
 {
-	uint32_t i_index_for;
-	int error = 0;
-	uint8_t *p = b->b_data;
+	uint8_t *data;
+	uint32_t index;
+	size_t transferred;
+	int write;
+	int error;
 
-	(void)d;
+	(void)disk;
 
-	/* Handles the b condition. */
-	if (b->b_op == BIO_FLUSH) {
-		kern_io_out8(cmd + ATA_COMMAND, 0xe7);
-		error = wait_status(ATA_DRDY, ATA_BSY);
-	} else if (b->b_op != BIO_READ && b->b_op != BIO_WRITE)
+	/* Carries out the request, or names why it cannot be. */
+	error = 0;
+	data = request->b_data;
+	if (request->b_op == BIO_FLUSH) {
+		/* A flush writes the drive's cache. */
+		error = flush_cache();
+	} else if (request->b_op != BIO_READ && request->b_op != BIO_WRITE) {
+		/* No other operation is supported. */
 		error = EOPNOTSUPP;
-	else if (b->b_mapped_block > 0x0fffffffULL ||
-		 b->b_block_count > 0x10000000ULL - b->b_mapped_block)
+	} else if (request->b_mapped_block >= ATA_LBA28_LIMIT ||
+		   request->b_block_count > ATA_LBA28_LIMIT - request->b_mapped_block) {
+		/* A range past what a 28-bit LBA reaches. */
 		error = EINVAL;
-	else {
-		/* Process each remaining element. */
-		for (i_index_for = 0; i_index_for < b->b_block_count && !error;
-	}
-		     i_index_for++) {
-			error = block(b->b_op == BIO_WRITE,
-				      (uint32_t)b->b_mapped_block + i_index_for,
-				      p + (size_t)i_index_for * 512U);
+	} else {
+		/* Moves each sector in order, stopping at the first failure. */
+		write = 0;
+		if (request->b_op == BIO_WRITE)
+			write = 1;
+		for (index = 0; index < request->b_block_count; index++) {
+			error = transfer_sector(write,
+						(uint32_t)request->b_mapped_block + index,
+						data + (size_t)index * ATA_SECTOR_SIZE);
+			if (error != 0)
+				break;
 		}
-
-	/* Checks the operation status. */
-	if (error) {
-		kern_logf("cmd646: op=%u lba=%llu count=%u error=%d status=%x "
-			   "ata=%x\n",
-			   (unsigned)b->b_op, b->b_mapped_block,
-			   b->b_block_count, error,
-			   kern_io_in8(cmd + ATA_STATUS),
-			   kern_io_in8(cmd + ATA_ERROR));
 	}
 
-	bio_complete(b, error, error ? 0 : (size_t)b->b_block_count * 512U);
+	/* Logs a failed request with the drive's registers. */
+	if (error != 0) {
+		kern_logf("cmd646: op=%u lba=%lu count=%u\n",
+			  (unsigned)request->b_op,
+			  (unsigned long)request->b_mapped_block,
+			  (unsigned)request->b_block_count);
+		log_failure("request", error);
+	}
 
-	/* Succeeded. */
+	/* Completes the request with what was moved. */
+	transferred = 0;
+	if (error == 0)
+		transferred = (size_t)request->b_block_count * ATA_SECTOR_SIZE;
+	bio_complete(request, error, transferred);
+
+	/* Succeeded: the request is completed, with its own status. */
 	return 0;
 }
 
-/* Supports the ioctl operation. */
+/* Refuses every control request: the drive has none. */
 static int
 ioctl(
-	struct disk *d,
-	unsigned long r,
-	void *a)
+	struct disk *disk,
+	unsigned long request,
+	void *argument)
 {
-	(void)d;
-	(void)r;
-	(void)a;
+	(void)disk;
+	(void)request;
+	(void)argument;
 
-	/* Failed. */
+	/* Failed: no request is supported. */
 	return EOPNOTSUPP;
 }

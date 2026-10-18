@@ -26,8 +26,10 @@ struct discovery {
 	int have_cpu;
 	int have_memory;
 	int have_pci_io;
+	int have_pci_memory;
 	int have_serial;
 	int have_ide;
+	int have_display;
 };
 
 static unsigned long be32(const unsigned char *bytes);
@@ -41,6 +43,7 @@ static int memory_ranges(ofw_cell_t node, const char *name, struct sun4u_memory_
 static void discover_pci_ranges(ofw_cell_t node, struct discovery *state);
 static void discover_serial(ofw_cell_t node, struct discovery *state);
 static void discover_ide(ofw_cell_t node, struct discovery *state, unsigned long vendor, unsigned long device);
+static void discover_display(ofw_cell_t node, struct discovery *state, unsigned long vendor, unsigned long device);
 static void discover_cpu(ofw_cell_t node, struct discovery *state);
 static void discover_memory(ofw_cell_t node, struct discovery *state);
 static int walk_node(ofw_cell_t node, struct discovery *state, unsigned int depth);
@@ -82,8 +85,10 @@ sparcv9_handoff_build(
 	state.have_cpu = 0;
 	state.have_memory = 0;
 	state.have_pci_io = 0;
+	state.have_pci_memory = 0;
 	state.have_serial = 0;
 	state.have_ide = 0;
+	state.have_display = 0;
 
 	/* Refuses a firmware without a root node. */
 	root = ofw_finddevice("/");
@@ -95,13 +100,17 @@ sparcv9_handoff_build(
 	if (walked != 0)
 		return -1;
 
-	/* Refuses a tree that lacks a device the HAL needs. */
+	/* Refuses a tree that lacks a device the HAL needs; the display is optional. */
 	if (!state.have_cpu ||
 	    !state.have_memory ||
 	    !state.have_pci_io ||
 	    !state.have_serial ||
 	    !state.have_ide)
 		return -1;
+
+	/* A display is usable only where the PCI memory space is known. */
+	if (!state.have_pci_memory)
+		handoff->display_vendor = 0;
 
 	/* Succeeded: the handoff describes the machine. */
 	return 0;
@@ -294,7 +303,10 @@ memory_ranges(
 	return 0;
 }
 
-/* Finds the PCI I/O space's physical base from a PCI node's "ranges". */
+/*
+ * Finds the physical bases of the PCI I/O space and of the 32-bit memory
+ * space from the first PCI node's "ranges".
+ */
 static void
 discover_pci_ranges(
 	ofw_cell_t node,
@@ -313,7 +325,7 @@ discover_pci_ranges(
 	unsigned long long physical;
 	int length;
 
-	/* The first PCI node found gives the base; the parent's cells are needed to read it. */
+	/* The first PCI node found gives the bases; the parent's cells are needed to read them. */
 	parent = ofw_parent(node);
 	if (parent <= 0 || state->have_pci_io)
 		return;
@@ -327,12 +339,12 @@ discover_pci_ranges(
 	if (length <= 0 || stride == 0 || (unsigned int)length % stride != 0)
 		return;
 
-	/* Takes the first I/O space range. */
+	/* Takes the first I/O space range and the first 32-bit memory space range. */
 	for (offset = 0; offset < (unsigned int)length; offset += stride) {
-		/* Only an I/O space range of the expected cell layout gives the base. */
+		/* Only a range of the expected cell layout gives a base. */
 		entry = bytes + offset;
 		space = be32(entry) >> 24 & 3U;
-		if (space != 1 || child_address < 3 || parent_address > 2)
+		if (child_address < 3 || parent_address > 2)
 			continue;
 
 		/* A range mapped below its own bus address gives no base. */
@@ -341,10 +353,14 @@ discover_pci_ranges(
 		if (physical < child)
 			continue;
 
-		/* The base is where bus address zero lies. */
-		state->handoff->pci_io_base = physical - child;
-		state->have_pci_io = 1;
-		return;
+		/* The base is where bus address zero of the space lies. */
+		if (space == 1 && !state->have_pci_io) {
+			state->handoff->pci_io_base = physical - child;
+			state->have_pci_io = 1;
+		} else if (space == 2 && !state->have_pci_memory) {
+			state->handoff->pci_memory_base = physical - child;
+			state->have_pci_memory = 1;
+		}
 	}
 }
 
@@ -427,6 +443,83 @@ discover_ide(
 	state->handoff->ide_secondary_command = ports[2];
 	state->handoff->ide_secondary_control = ports[3];
 	state->have_ide = 1;
+}
+
+/*
+ * Finds the emulator's standard VGA: its linear framebuffer (BAR 0) and
+ * its register window (BAR 2), as PCI memory addresses.
+ *
+ * Values referenced: QEMU v10.0.0 hw/display/vga-pci.c (the standard VGA's
+ * PCI vendor 0x1234 and device 0x1111, the framebuffer in BAR 0 and the
+ * register window in BAR 2).
+ */
+static void
+discover_display(
+	ofw_cell_t node,
+	struct discovery *state,
+	unsigned long vendor,
+	unsigned long device)
+{
+	unsigned char bytes[PROPERTY_BUFFER_SIZE];
+	unsigned long framebuffer;
+	unsigned long framebuffer_size;
+	unsigned long registers;
+	unsigned long high;
+	unsigned long space;
+	unsigned long bar;
+	unsigned int offset;
+	int found_framebuffer;
+	int found_registers;
+	int length;
+
+	/* Only the first standard VGA is taken. */
+	if (state->have_display || vendor != 0x1234 || device != 0x1111)
+		return;
+
+	/* Refuses assigned addresses that are not whole PCI address entries. */
+	length = ofw_getprop(node, "assigned-addresses", bytes, sizeof(bytes));
+	if (length <= 0 || (unsigned int)length % 20U != 0)
+		return;
+
+	/* Takes the 32-bit memory ranges of BAR 0 and BAR 2. */
+	found_framebuffer = 0;
+	found_registers = 0;
+	framebuffer = 0;
+	framebuffer_size = 0;
+	registers = 0;
+	for (offset = 0; offset < (unsigned int)length; offset += 20U) {
+		/* The first cell names the space and the configuration register of the BAR. */
+		high = be32(bytes + offset);
+		space = high >> 24 & 3U;
+		bar = high & 0xffU;
+		if (space != 2)
+			continue;
+
+		/* BAR 0, at configuration offset 0x10, is the framebuffer. */
+		if (bar == 0x10) {
+			framebuffer = be32(bytes + offset + 8U);
+			framebuffer_size = be32(bytes + offset + 16U);
+			found_framebuffer = 1;
+		}
+
+		/* BAR 2, at configuration offset 0x18, is the register window. */
+		if (bar == 0x18) {
+			registers = be32(bytes + offset + 8U);
+			found_registers = 1;
+		}
+	}
+
+	/* A display without both ranges is not used. */
+	if (!found_framebuffer || !found_registers)
+		return;
+
+	/* Records the display. */
+	state->handoff->display_vendor = (uint16_t)vendor;
+	state->handoff->display_device = (uint16_t)device;
+	state->handoff->display_framebuffer = (uint32_t)framebuffer;
+	state->handoff->display_framebuffer_size = (uint32_t)framebuffer_size;
+	state->handoff->display_registers = (uint32_t)registers;
+	state->have_display = 1;
 }
 
 /* Takes the tick frequency from the first CPU node with a clock. */
@@ -524,8 +617,9 @@ walk_node(
 	if (is_serial)
 		discover_serial(node, state);
 
-	/* Any node may be the IDE controller. */
+	/* Any node may be the IDE controller or the display. */
 	discover_ide(node, state, vendor, device);
+	discover_display(node, state, vendor, device);
 
 	/* Walks the children one sibling after another. */
 	child = ofw_child(node);

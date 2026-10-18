@@ -5813,7 +5813,8 @@ fat_raw_advance_cluster(
 	if (result != 0)
 		return result;
 
-	/* The end-of-chain marker is where the file stops. */
+	/* The end-of-chain marker is where the file stops; it needs no range check. */
+	valid = 1;
 	last = fat_raw_is_end(file->mount, *next);
 	if (last) {
 		/* A read stops there; only a write goes past it. */
