@@ -85,7 +85,7 @@ drv_i915_command_bind_ops(
  *
  * Only version 1 streams for the render or copy engine with no flags are
  * accepted; the byte count must match the header exactly, the batch must end
- * in MI_BATCH_BUFFER_END, and every relocation must patch a 64-bit address
+ * in I915_CMD_MI_BATCH_BUFFER_END, and every relocation must patch a 64-bit address
  * inside the batch.  Returns EINVAL for any other shape; nothing of a
  * rejected stream is reported.
  */
@@ -155,7 +155,7 @@ drv_i915_stream_parse(
 	stream->batch = (const uint32_t *)(header + I915_STREAM_HEADER_BYTES + stream->relocation_count * I915_STREAM_RELOCATION_BYTES);
 
 	/* A batch must end, so the engine returns to the ring. */
-	if (stream->batch[stream->batch_dwords - 1U] != MI_BATCH_BUFFER_END)
+	if (stream->batch[stream->batch_dwords - 1U] != I915_CMD_MI_BATCH_BUFFER_END)
 		return EINVAL;
 
 	/* Checks that every relocation patches a 64-bit address inside the batch. */

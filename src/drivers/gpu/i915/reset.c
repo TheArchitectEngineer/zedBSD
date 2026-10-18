@@ -45,7 +45,7 @@
 
 #include "intel/gt-regs.h"
 
-/* GEN6_GDRST: the graphics domain reset register. */
+/* I915_GT_GEN6_GDRST: the graphics domain reset register. */
 #define I915_GDRST			0x941cU
 
 /* GEN11_GRDOM_FULL: a full soft reset of every engine. */
@@ -432,20 +432,20 @@ i915_engine_reset_ready(
 	int error;
 
 	/* Reads where the engine's reset handshake stands. */
-	reg = RING_RESET_CTL(engine->mmio_base);
+	reg = I915_GT_RING_RESET_CTL(engine->mmio_base);
 	status = drv_i915_raw_read32(mmio, reg);
 
 	/* Chooses what to ask the engine for. */
-	if ((status & RESET_CTL_CAT_ERROR) != 0U) {
+	if ((status & I915_GT_RESET_CTL_CAT_ERROR) != 0U) {
 		/* A catastrophic error is cleared rather than waited out. */
-		request = RESET_CTL_CAT_ERROR;
-		mask = RESET_CTL_CAT_ERROR;
+		request = I915_GT_RESET_CTL_CAT_ERROR;
+		mask = I915_GT_RESET_CTL_CAT_ERROR;
 		ack = 0U;
-	} else if ((status & RESET_CTL_READY_TO_RESET) == 0U) {
+	} else if ((status & I915_GT_RESET_CTL_READY_TO_RESET) == 0U) {
 		/* An engine not yet ready is asked to become ready. */
-		request = RESET_CTL_REQUEST_RESET;
-		mask = RESET_CTL_READY_TO_RESET;
-		ack = RESET_CTL_READY_TO_RESET;
+		request = I915_GT_RESET_CTL_REQUEST_RESET;
+		mask = I915_GT_RESET_CTL_READY_TO_RESET;
+		ack = I915_GT_RESET_CTL_READY_TO_RESET;
 	} else {
 		/* An engine already ready needs nothing. */
 		return 0;
@@ -474,7 +474,7 @@ i915_engine_reset_unready(
 	const struct i915_engine_info *engine)
 {
 	/* Clears the request bit through the register's mask half. */
-	drv_i915_raw_write32(mmio, RING_RESET_CTL(engine->mmio_base), I915_RESET_MASKED_DISABLE(RESET_CTL_REQUEST_RESET));
+	drv_i915_raw_write32(mmio, I915_GT_RING_RESET_CTL(engine->mmio_base), I915_RESET_MASKED_DISABLE(I915_GT_RESET_CTL_REQUEST_RESET));
 }
 
 /* Names the converter lock registers of a video decode or video enhancement engine (get_sfc_forced_lock_data()). */

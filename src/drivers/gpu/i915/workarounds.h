@@ -31,7 +31,7 @@ struct mutex;
 /* How many entries one workaround list holds. */
 #define I915_WA_MAX		48
 
-/* How many MOCS entries the table has (GEN9_NUM_MOCS_ENTRIES). */
+/* How many MOCS entries the table has (I915_GT_GEN9_NUM_MOCS_ENTRIES). */
 #define I915_MOCS_ENTRIES	64
 
 /* How many engines the per-engine lists are kept for. */

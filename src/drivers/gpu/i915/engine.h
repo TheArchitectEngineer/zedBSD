@@ -11,7 +11,7 @@
  * This follows the reference for Gen12 (Alder Lake-P):
  *
  *   engine setup       init_status_page() -- one 4 KiB object pinned in the
- *                      GGTT and zeroed, whose GGTT address RING_HWS_PGA
+ *                      GGTT and zeroed, whose GGTT address I915_GT_RING_HWS_PGA
  *                      takes -- and the software execlists state;
  *   engine set init    intel_engines_init(): per engine the setup, the
  *                      execlists registers (submit.h) and the pinned kernel
@@ -24,8 +24,8 @@
  *                      preparation.
  *
  * Facts this rests on: on Gen11+ the CSB write pointer is status-page dword
- * 0x2f and the CSB holds 12 entries; RING_MODE_GEN7 gets
- * GEN11_GFX_DISABLE_LEGACY_MODE, not GFX_RUN_LIST_ENABLE; only
+ * 0x2f and the CSB holds 12 entries; I915_GT_RING_MODE_GEN7 gets
+ * I915_GT_GEN11_GFX_DISABLE_LEGACY_MODE, not I915_GT_GFX_RUN_LIST_ENABLE; only
  * I915_ERROR_INSTRUCTION is unmasked, because the hardware already suppresses
  * the privilege error; and with global MOCS the per-engine MOCS table is
  * skipped but the render engine's L3CC table is programmed again on every
@@ -65,7 +65,7 @@ struct i915_gt_engine {
 	 */
 	struct i915_gt_object *default_state;
 
-	/* The status page, its CPU view, and the address RING_HWS_PGA is given. */
+	/* The status page, its CPU view, and the address I915_GT_RING_HWS_PGA is given. */
 	struct i915_gt_object *status_page;
 	volatile uint32_t *hwsp;
 	uint64_t hwsp_ggtt;
@@ -73,7 +73,7 @@ struct i915_gt_engine {
 	/* The execlists ports in use: one port pair. */
 	unsigned port_mask;
 
-	/* RING_EXECLIST_SQ_CONTENTS and RING_EXECLIST_CONTROL of the engine. */
+	/* I915_GT_RING_EXECLIST_SQ_CONTENTS and I915_GT_RING_EXECLIST_CONTROL of the engine. */
 	uint32_t submit_reg;
 	uint32_t ctrl_reg;
 
@@ -112,7 +112,7 @@ struct i915_gt_engine {
 	/* The pending MI_FORCE_WAKEs the last reset preparation saw. */
 	uint32_t mi_fw_pending;
 
-	/* RING_ESR as read while execlists were enabled. */
+	/* I915_GT_RING_ESR as read while execlists were enabled. */
 	uint32_t esr_at_resume;
 
 	/* How many register writes the enable and the CSB pointer reset made. */

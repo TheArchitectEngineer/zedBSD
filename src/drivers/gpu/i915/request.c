@@ -152,12 +152,12 @@ drv_i915_gen12_emit_aux_table_inv(
 		return cs;
 
 	/* Requests the invalidate; the GSI offset is 0 on the primary GT. */
-	*cs++ = MI_LOAD_REGISTER_IMM(1) | MI_LRI_MMIO_REMAP_EN;
+	*cs++ = I915_CMD_MI_LOAD_REGISTER_IMM(1) | I915_CMD_MI_LRI_MMIO_REMAP_EN;
 	*cs++ = inv_reg;
-	*cs++ = AUX_INV;
+	*cs++ = I915_GT_AUX_INV;
 
 	/* Polls the register until it reads back zero. */
-	*cs++ = MI_SEMAPHORE_WAIT_TOKEN | MI_SEMAPHORE_REGISTER_POLL | MI_SEMAPHORE_POLL | MI_SEMAPHORE_SAD_EQ_SDD;
+	*cs++ = I915_CMD_MI_SEMAPHORE_WAIT_TOKEN | I915_CMD_MI_SEMAPHORE_REGISTER_POLL | I915_CMD_MI_SEMAPHORE_POLL | I915_CMD_MI_SEMAPHORE_SAD_EQ_SDD;
 	*cs++ = 0U;
 	*cs++ = inv_reg;
 	*cs++ = 0U;
@@ -197,7 +197,7 @@ drv_i915_emit_ctx_wa(
 		return 0;
 
 	/* Flushes and invalidates before the register writes. */
-	error = i915_emit_flush(rq, EMIT_BARRIER);
+	error = i915_emit_flush(rq, I915_CMD_EMIT_BARRIER);
 	if (error != 0)
 		return error;
 
@@ -207,7 +207,7 @@ drv_i915_emit_ctx_wa(
 		return rq->error;
 
 	/* Writes one LRI with every entry. */
-	*cs++ = MI_LOAD_REGISTER_IMM(wal->count);
+	*cs++ = I915_CMD_MI_LOAD_REGISTER_IMM(wal->count);
 	for (index = 0U; index < wal->count; index++) {
 		wa = &wal->list[index];
 
@@ -232,11 +232,11 @@ drv_i915_emit_ctx_wa(
 	}
 
 	/* Pads the LRI to an even count and moves the write position past it. */
-	*cs++ = MI_NOOP;
+	*cs++ = I915_CMD_MI_NOOP;
 	drv_i915_ring_advance(rq, cs);
 
 	/* Flushes and invalidates after the register writes. */
-	error = i915_emit_flush(rq, EMIT_BARRIER);
+	error = i915_emit_flush(rq, I915_CMD_EMIT_BARRIER);
 	if (error != 0)
 		return error;
 
@@ -251,7 +251,7 @@ drv_i915_emit_ctx_wa(
  * Records where the request starts and where its breadcrumb lands, then
  * writes the invalidate flush of execlists_request_alloc(); the address space
  * has four levels, so no page directories are reloaded.  The breadcrumb is a
- * qword write and MI_FLUSH_DW needs bit 5 of its address clear, so a slot
+ * qword write and I915_CMD_MI_FLUSH_DW needs bit 5 of its address clear, so a slot
  * that breaks either is refused.  Returns 0, EINVAL, or the ring refusal.
  */
 int
@@ -284,7 +284,7 @@ drv_i915_request_create(
 		return EINVAL;
 
 	/* Invalidates the caches before the request's commands. */
-	error = i915_emit_flush(rq, EMIT_INVALIDATE);
+	error = i915_emit_flush(rq, I915_CMD_EMIT_INVALIDATE);
 	if (error != 0)
 		return error;
 
@@ -298,7 +298,7 @@ drv_i915_request_create(
  * __i915_request_commit() reserves exactly the breadcrumb's size and the
  * breadcrumb fills it: 22 dwords on the render engine (a flushing
  * PIPE_CONTROL 6, the seqno write 6, the tail 10) and 18 on the others
- * (MI_FLUSH_DW 4, the seqno write 4, the tail 10).  Sets rq->tail and
+ * (I915_CMD_MI_FLUSH_DW 4, the seqno write 4, the tail 10).  Sets rq->tail and
  * rq->wa_tail.  Returns 0, EINVAL, or the request's earlier failure.
  */
 int
@@ -342,23 +342,23 @@ drv_i915_request_add(
 			 * (12.70 to 12.74, DG2) is not taken, and Wa_1409600907 adds
 			 * the depth stall.
 			 */
-			flags = PIPE_CONTROL_CS_STALL |
-				PIPE_CONTROL_TLB_INVALIDATE |
-				PIPE_CONTROL_TILE_CACHE_FLUSH |
-				PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
-				PIPE_CONTROL_DEPTH_CACHE_FLUSH |
-				PIPE_CONTROL_DC_FLUSH_ENABLE |
-				PIPE_CONTROL_FLUSH_ENABLE;
-			flags |= PIPE_CONTROL_FLUSH_L3;
-			flags |= PIPE_CONTROL_DEPTH_STALL;
-			cs = i915_emit_pipe_control(cs, PIPE_CONTROL0_HDC_PIPELINE_FLUSH, flags, 0U);
+			flags = I915_CMD_PIPE_CONTROL_CS_STALL |
+				I915_CMD_PIPE_CONTROL_TLB_INVALIDATE |
+				I915_CMD_PIPE_CONTROL_TILE_CACHE_FLUSH |
+				I915_CMD_PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
+				I915_CMD_PIPE_CONTROL_DEPTH_CACHE_FLUSH |
+				I915_CMD_PIPE_CONTROL_DC_FLUSH_ENABLE |
+				I915_CMD_PIPE_CONTROL_FLUSH_ENABLE;
+			flags |= I915_CMD_PIPE_CONTROL_FLUSH_L3;
+			flags |= I915_CMD_PIPE_CONTROL_DEPTH_STALL;
+			cs = i915_emit_pipe_control(cs, I915_CMD_PIPE_CONTROL0_HDC_PIPELINE_FLUSH, flags, 0U);
 
 			/* Writes the seqno (gen12_emit_ggtt_write_rcs(seqno, hwsp, 0, FLUSH_ENABLE | CS_STALL)). */
-			*cs++ = GFX_OP_PIPE_CONTROL(6);
-			*cs++ = PIPE_CONTROL_FLUSH_ENABLE |
-				PIPE_CONTROL_CS_STALL |
-				PIPE_CONTROL_GLOBAL_GTT_IVB |
-				PIPE_CONTROL_QW_WRITE;
+			*cs++ = I915_CMD_GFX_OP_PIPE_CONTROL(6);
+			*cs++ = I915_CMD_PIPE_CONTROL_FLUSH_ENABLE |
+				I915_CMD_PIPE_CONTROL_CS_STALL |
+				I915_CMD_PIPE_CONTROL_GLOBAL_GTT_IVB |
+				I915_CMD_PIPE_CONTROL_QW_WRITE;
 			*cs++ = rq->hwsp_ggtt;
 			*cs++ = 0U;
 			*cs++ = rq->seqno;
@@ -367,14 +367,14 @@ drv_i915_request_add(
 			*cs++ = 0U;
 		} else {
 			/* A stalling flush before the seqno write; the post-sync write is not. */
-			*cs++ = MI_FLUSH_DW + 1U;
+			*cs++ = I915_CMD_MI_FLUSH_DW + 1U;
 			*cs++ = 0U;
 			*cs++ = 0U;
 			*cs++ = 0U;
 
 			/* Writes the seqno (gen8_emit_ggtt_write(seqno, hwsp, 0)). */
-			*cs++ = (MI_FLUSH_DW + 1U) | MI_FLUSH_DW_OP_STOREDW;
-			*cs++ = rq->hwsp_ggtt | MI_FLUSH_DW_USE_GTT;
+			*cs++ = (I915_CMD_MI_FLUSH_DW + 1U) | I915_CMD_MI_FLUSH_DW_OP_STOREDW;
+			*cs++ = rq->hwsp_ggtt | I915_CMD_MI_FLUSH_DW_USE_GTT;
 			*cs++ = 0U;
 			*cs++ = rq->seqno;
 		}
@@ -418,7 +418,7 @@ drv_i915_request_completed(
 	return 0;
 }
 
-/* Builds the MI_ARB_CHECK that turns the pre-parser off (1) or on (0). */
+/* Builds the I915_CMD_MI_ARB_CHECK that turns the pre-parser off (1) or on (0). */
 static uint32_t
 i915_preparser_disable(
 	int state)
@@ -426,7 +426,7 @@ i915_preparser_disable(
 	uint32_t command;
 
 	/* Bit 8 selects the pre-parser control; bit 0 disables it. */
-	command = MI_ARB_CHECK | (1U << 8);
+	command = I915_CMD_MI_ARB_CHECK | (1U << 8);
 	if (state != 0)
 		command |= 1U;
 
@@ -443,7 +443,7 @@ i915_emit_pipe_control(
 	uint32_t offset)
 {
 	/* Writes the header, both flag groups and the post-sync address. */
-	cs[0] = GFX_OP_PIPE_CONTROL(6) | bit_group_0;
+	cs[0] = I915_CMD_GFX_OP_PIPE_CONTROL(6) | bit_group_0;
 	cs[1] = bit_group_1;
 	cs[2] = offset;
 	cs[3] = 0U;
@@ -503,46 +503,46 @@ i915_emit_flush_rcs(
 	engine_id = rq->ce->ge->info->id;
 
 	/*
-	 * The flush block runs when EMIT_FLUSH is asked for or the engine needs
+	 * The flush block runs when I915_CMD_EMIT_FLUSH is asked for or the engine needs
 	 * the AUX invalidate; the second is true on Alder Lake-P, so it runs
 	 * even for a pure invalidate.  The 12.70+ CCS flush and the dummy
 	 * PIPE_CONTROL of Wa_14016712196 do not apply, and nothing is masked off
 	 * because the engine has the 3D pipeline.
 	 */
-	bit_group_0 = PIPE_CONTROL0_HDC_PIPELINE_FLUSH;
+	bit_group_0 = I915_CMD_PIPE_CONTROL0_HDC_PIPELINE_FLUSH;
 	bit_group_1 = 0U;
-	if ((mode & EMIT_FLUSH) != 0U)
-		bit_group_1 |= PIPE_CONTROL_FLUSH_L3;
-	bit_group_1 |= PIPE_CONTROL_TILE_CACHE_FLUSH;
-	bit_group_1 |= PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH;
-	bit_group_1 |= PIPE_CONTROL_DEPTH_CACHE_FLUSH;
-	bit_group_1 |= PIPE_CONTROL_DEPTH_STALL;
-	bit_group_1 |= PIPE_CONTROL_DC_FLUSH_ENABLE;
-	bit_group_1 |= PIPE_CONTROL_FLUSH_ENABLE;
-	bit_group_1 |= PIPE_CONTROL_STORE_DATA_INDEX;
-	bit_group_1 |= PIPE_CONTROL_QW_WRITE;
-	bit_group_1 |= PIPE_CONTROL_CS_STALL;
+	if ((mode & I915_CMD_EMIT_FLUSH) != 0U)
+		bit_group_1 |= I915_CMD_PIPE_CONTROL_FLUSH_L3;
+	bit_group_1 |= I915_CMD_PIPE_CONTROL_TILE_CACHE_FLUSH;
+	bit_group_1 |= I915_CMD_PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH;
+	bit_group_1 |= I915_CMD_PIPE_CONTROL_DEPTH_CACHE_FLUSH;
+	bit_group_1 |= I915_CMD_PIPE_CONTROL_DEPTH_STALL;
+	bit_group_1 |= I915_CMD_PIPE_CONTROL_DC_FLUSH_ENABLE;
+	bit_group_1 |= I915_CMD_PIPE_CONTROL_FLUSH_ENABLE;
+	bit_group_1 |= I915_CMD_PIPE_CONTROL_STORE_DATA_INDEX;
+	bit_group_1 |= I915_CMD_PIPE_CONTROL_QW_WRITE;
+	bit_group_1 |= I915_CMD_PIPE_CONTROL_CS_STALL;
 
 	/* Writes the flush block. */
 	cs = drv_i915_ring_begin(rq, I915_FLUSH_RCS_FLUSH_DWORDS);
 	if (cs == NULL)
 		return rq->error;
-	cs = i915_emit_pipe_control(cs, bit_group_0, bit_group_1, LRC_PPHWSP_SCRATCH_ADDR);
+	cs = i915_emit_pipe_control(cs, bit_group_0, bit_group_1, I915_GT_LRC_PPHWSP_SCRATCH_ADDR);
 	drv_i915_ring_advance(rq, cs);
 
 	/* An invalidate follows with the caches and the TLB. */
-	if ((mode & EMIT_INVALIDATE) != 0U) {
+	if ((mode & I915_CMD_EMIT_INVALIDATE) != 0U) {
 		flags = 0U;
-		flags |= PIPE_CONTROL_COMMAND_CACHE_INVALIDATE;
-		flags |= PIPE_CONTROL_TLB_INVALIDATE;
-		flags |= PIPE_CONTROL_INSTRUCTION_CACHE_INVALIDATE;
-		flags |= PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE;
-		flags |= PIPE_CONTROL_VF_CACHE_INVALIDATE;
-		flags |= PIPE_CONTROL_CONST_CACHE_INVALIDATE;
-		flags |= PIPE_CONTROL_STATE_CACHE_INVALIDATE;
-		flags |= PIPE_CONTROL_STORE_DATA_INDEX;
-		flags |= PIPE_CONTROL_QW_WRITE;
-		flags |= PIPE_CONTROL_CS_STALL;
+		flags |= I915_CMD_PIPE_CONTROL_COMMAND_CACHE_INVALIDATE;
+		flags |= I915_CMD_PIPE_CONTROL_TLB_INVALIDATE;
+		flags |= I915_CMD_PIPE_CONTROL_INSTRUCTION_CACHE_INVALIDATE;
+		flags |= I915_CMD_PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE;
+		flags |= I915_CMD_PIPE_CONTROL_VF_CACHE_INVALIDATE;
+		flags |= I915_CMD_PIPE_CONTROL_CONST_CACHE_INVALIDATE;
+		flags |= I915_CMD_PIPE_CONTROL_STATE_CACHE_INVALIDATE;
+		flags |= I915_CMD_PIPE_CONTROL_STORE_DATA_INDEX;
+		flags |= I915_CMD_PIPE_CONTROL_QW_WRITE;
+		flags |= I915_CMD_PIPE_CONTROL_CS_STALL;
 
 		/* Reserves 8 dwords and 8 more for the AUX invalidate. */
 		cs = drv_i915_ring_begin(rq, I915_FLUSH_RCS_INVALIDATE_DWORDS);
@@ -554,7 +554,7 @@ i915_emit_flush_rcs(
 		 * fetching a stale page for the request payload.
 		 */
 		*cs++ = i915_preparser_disable(1);
-		cs = i915_emit_pipe_control(cs, 0U, flags, LRC_PPHWSP_SCRATCH_ADDR);
+		cs = i915_emit_pipe_control(cs, 0U, flags, I915_GT_LRC_PPHWSP_SCRATCH_ADDR);
 		cs = drv_i915_gen12_emit_aux_table_inv(engine_id, cs);
 		*cs++ = i915_preparser_disable(0);
 		drv_i915_ring_advance(rq, cs);
@@ -583,7 +583,7 @@ i915_emit_flush_xcs(
 
 	/* An invalidate adds the pre-parser pair and the AUX invalidate. */
 	count = I915_FLUSH_XCS_DWORDS;
-	if ((mode & EMIT_INVALIDATE) != 0U)
+	if ((mode & I915_CMD_EMIT_INVALIDATE) != 0U)
 		count += I915_FLUSH_XCS_INVALIDATE_DWORDS;
 
 	/* Reserves the flush. */
@@ -592,36 +592,36 @@ i915_emit_flush_xcs(
 		return rq->error;
 
 	/* Keeps the pre-parser behind the invalidate. */
-	if ((mode & EMIT_INVALIDATE) != 0U)
+	if ((mode & I915_CMD_EMIT_INVALIDATE) != 0U)
 		*cs++ = i915_preparser_disable(1);
 
 	/*
 	 * A command barrier is always required, so the commands after it (the
 	 * breadcrumb interrupt) are ordered after the write-cache flush.
 	 */
-	command = (MI_FLUSH_DW + 1U) | MI_FLUSH_DW_STORE_INDEX | MI_FLUSH_DW_OP_STOREDW;
-	if ((mode & EMIT_INVALIDATE) != 0U) {
+	command = (I915_CMD_MI_FLUSH_DW + 1U) | I915_CMD_MI_FLUSH_DW_STORE_INDEX | I915_CMD_MI_FLUSH_DW_OP_STOREDW;
+	if ((mode & I915_CMD_EMIT_INVALIDATE) != 0U) {
 		/* Invalidates the TLB, the BSD cache of a video engine, and the CCS of a copy engine. */
-		command |= MI_INVALIDATE_TLB;
+		command |= I915_CMD_MI_INVALIDATE_TLB;
 		if (engine_class == I915_VIDEO_DECODE_CLASS)
-			command |= MI_INVALIDATE_BSD;
+			command |= I915_CMD_MI_INVALIDATE_BSD;
 		if (engine_class == I915_COPY_ENGINE_CLASS)
-			command |= MI_FLUSH_DW_CCS;
+			command |= I915_CMD_MI_FLUSH_DW_CCS;
 	}
 
 	/* Writes the flush with its post-sync write to the scratch slot: upper address and value zero. */
 	*cs++ = command;
-	*cs++ = LRC_PPHWSP_SCRATCH_ADDR;
+	*cs++ = I915_GT_LRC_PPHWSP_SCRATCH_ADDR;
 	*cs++ = 0U;
 	*cs++ = 0U;
 
 	/*
 	 * The reference writes the AUX invalidate unconditionally but reserves
-	 * room for it only with EMIT_INVALIDATE; it relies on its callers never
-	 * asking only for EMIT_FLUSH on an engine that needs the invalidate.  A
+	 * room for it only with I915_CMD_EMIT_INVALIDATE; it relies on its callers never
+	 * asking only for I915_CMD_EMIT_FLUSH on an engine that needs the invalidate.  A
 	 * flush-only call on such an engine is refused instead of overrunning.
 	 */
-	if ((mode & EMIT_INVALIDATE) != 0U) {
+	if ((mode & I915_CMD_EMIT_INVALIDATE) != 0U) {
 		cs = drv_i915_gen12_emit_aux_table_inv(engine_id, cs);
 		*cs++ = i915_preparser_disable(0);
 	} else {
@@ -657,12 +657,12 @@ i915_emit_fini_breadcrumb_tail(
 	ring = &rq->ce->ring;
 
 	/* Raises the interrupt and allows arbitration. */
-	*cs++ = MI_USER_INTERRUPT;
-	*cs++ = MI_ARB_ON_OFF | MI_ARB_ENABLE;
+	*cs++ = I915_CMD_MI_USER_INTERRUPT;
+	*cs++ = I915_CMD_MI_ARB_ON_OFF | I915_CMD_MI_ARB_ENABLE;
 
 	/* Triggers IDLE to ACTIVE first, then waits for PREEMPT to be zero. */
-	*cs++ = MI_ARB_CHECK;
-	*cs++ = MI_SEMAPHORE_WAIT_TOKEN | MI_SEMAPHORE_GLOBAL_GTT | MI_SEMAPHORE_POLL | MI_SEMAPHORE_SAD_EQ_SDD;
+	*cs++ = I915_CMD_MI_ARB_CHECK;
+	*cs++ = I915_CMD_MI_SEMAPHORE_WAIT_TOKEN | I915_CMD_MI_SEMAPHORE_GLOBAL_GTT | I915_CMD_MI_SEMAPHORE_POLL | I915_CMD_MI_SEMAPHORE_SAD_EQ_SDD;
 	*cs++ = 0U;
 	*cs++ = rq->preempt_ggtt;
 	*cs++ = 0U;
@@ -672,8 +672,8 @@ i915_emit_fini_breadcrumb_tail(
 	rq->tail = (uint32_t)((char *)cs - (char *)ring->vaddr);
 
 	/* Leaves at least one preemption point per request (gen8_emit_wa_tail()). */
-	*cs++ = MI_ARB_CHECK;
-	*cs++ = MI_NOOP;
+	*cs++ = I915_CMD_MI_ARB_CHECK;
+	*cs++ = I915_CMD_MI_NOOP;
 	rq->wa_tail = (uint32_t)((char *)cs - (char *)ring->vaddr);
 
 	/* Reports where the next command goes. */
@@ -698,27 +698,27 @@ i915_gen9_emit_flush_rcs(
 	unsigned dwords;
 
 	/* Every flush stalls the command streamer. */
-	flags = PIPE_CONTROL_CS_STALL;
+	flags = I915_CMD_PIPE_CONTROL_CS_STALL;
 
 	/* A flush writes back the render target, depth and data caches. */
-	if ((mode & EMIT_FLUSH) != 0U) {
-		flags |= PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH;
-		flags |= PIPE_CONTROL_DEPTH_CACHE_FLUSH;
-		flags |= PIPE_CONTROL_DC_FLUSH_ENABLE;
-		flags |= PIPE_CONTROL_FLUSH_ENABLE;
+	if ((mode & I915_CMD_EMIT_FLUSH) != 0U) {
+		flags |= I915_CMD_PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH;
+		flags |= I915_CMD_PIPE_CONTROL_DEPTH_CACHE_FLUSH;
+		flags |= I915_CMD_PIPE_CONTROL_DC_FLUSH_ENABLE;
+		flags |= I915_CMD_PIPE_CONTROL_FLUSH_ENABLE;
 	}
 
 	/* An invalidate drops the TLB and the read caches, with a post-sync write to the scratch slot. */
 	dwords = I915_GEN9_FLUSH_RCS_DWORDS;
-	if ((mode & EMIT_INVALIDATE) != 0U) {
-		flags |= PIPE_CONTROL_TLB_INVALIDATE;
-		flags |= PIPE_CONTROL_INSTRUCTION_CACHE_INVALIDATE;
-		flags |= PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE;
-		flags |= PIPE_CONTROL_VF_CACHE_INVALIDATE;
-		flags |= PIPE_CONTROL_CONST_CACHE_INVALIDATE;
-		flags |= PIPE_CONTROL_STATE_CACHE_INVALIDATE;
-		flags |= PIPE_CONTROL_QW_WRITE;
-		flags |= PIPE_CONTROL_STORE_DATA_INDEX;
+	if ((mode & I915_CMD_EMIT_INVALIDATE) != 0U) {
+		flags |= I915_CMD_PIPE_CONTROL_TLB_INVALIDATE;
+		flags |= I915_CMD_PIPE_CONTROL_INSTRUCTION_CACHE_INVALIDATE;
+		flags |= I915_CMD_PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE;
+		flags |= I915_CMD_PIPE_CONTROL_VF_CACHE_INVALIDATE;
+		flags |= I915_CMD_PIPE_CONTROL_CONST_CACHE_INVALIDATE;
+		flags |= I915_CMD_PIPE_CONTROL_STATE_CACHE_INVALIDATE;
+		flags |= I915_CMD_PIPE_CONTROL_QW_WRITE;
+		flags |= I915_CMD_PIPE_CONTROL_STORE_DATA_INDEX;
 		dwords += I915_GEN9_FLUSH_RCS_VF_WA_DWORDS;
 	}
 
@@ -728,11 +728,11 @@ i915_gen9_emit_flush_rcs(
 		return rq->error;
 
 	/* A VF cache invalidate is preceded by a null PIPE_CONTROL on Gen9. */
-	if ((mode & EMIT_INVALIDATE) != 0U)
+	if ((mode & I915_CMD_EMIT_INVALIDATE) != 0U)
 		cs = i915_emit_pipe_control(cs, 0U, 0U, 0U);
 
 	/* Writes the flush and the invalidate. */
-	cs = i915_emit_pipe_control(cs, 0U, flags, LRC_PPHWSP_SCRATCH_ADDR);
+	cs = i915_emit_pipe_control(cs, 0U, flags, I915_GT_LRC_PPHWSP_SCRATCH_ADDR);
 	drv_i915_ring_advance(rq, cs);
 
 	/* Succeeded: the flush is in the ring. */
@@ -741,7 +741,7 @@ i915_gen9_emit_flush_rcs(
 
 /*
  * Writes the Gen9 flush of a copy, video or enhancement engine
- * (gen8_emit_flush_xcs()): one MI_FLUSH_DW with a post-sync write, which is
+ * (gen8_emit_flush_xcs()): one I915_CMD_MI_FLUSH_DW with a post-sync write, which is
  * always a command barrier, and the TLB (and video BSD) invalidate on
  * request.
  */
@@ -759,16 +759,16 @@ i915_gen9_emit_flush_xcs(
 		return rq->error;
 
 	/* A command barrier always; an invalidate adds the TLB and the video BSD cache. */
-	command = (MI_FLUSH_DW + 1U) | MI_FLUSH_DW_STORE_INDEX | MI_FLUSH_DW_OP_STOREDW;
-	if ((mode & EMIT_INVALIDATE) != 0U) {
-		command |= MI_INVALIDATE_TLB;
+	command = (I915_CMD_MI_FLUSH_DW + 1U) | I915_CMD_MI_FLUSH_DW_STORE_INDEX | I915_CMD_MI_FLUSH_DW_OP_STOREDW;
+	if ((mode & I915_CMD_EMIT_INVALIDATE) != 0U) {
+		command |= I915_CMD_MI_INVALIDATE_TLB;
 		if (rq->ce->ge->info->class == I915_VIDEO_DECODE_CLASS)
-			command |= MI_INVALIDATE_BSD;
+			command |= I915_CMD_MI_INVALIDATE_BSD;
 	}
 
 	/* Writes the flush with its post-sync write to the scratch slot: upper address and value zero. */
 	*cs++ = command;
-	*cs++ = LRC_PPHWSP_SCRATCH_ADDR;
+	*cs++ = I915_GT_LRC_PPHWSP_SCRATCH_ADDR;
 	*cs++ = 0U;
 	*cs++ = 0U;
 	drv_i915_ring_advance(rq, cs);
@@ -782,7 +782,7 @@ i915_gen9_emit_flush_xcs(
  * (gen8_emit_fini_breadcrumb_rcs(), _xcs() and gen8_emit_fini_breadcrumb_tail()).
  *
  * The render engine flushes its caches first and writes the seqno with a
- * stalling PIPE_CONTROL; the others write it with MI_FLUSH_DW.  The tail is
+ * stalling PIPE_CONTROL; the others write it with I915_CMD_MI_FLUSH_DW.  The tail is
  * the user interrupt, the preemption busywait in the four-dword Gen8
  * semaphore form, and the workaround tail.
  */
@@ -796,54 +796,54 @@ i915_gen9_emit_fini_breadcrumb(
 	/* The tail offsets are measured from the start of the ring. */
 	ring = &rq->ce->ring;
 
-	/* Writes the seqno: after a cache flush on the render engine, by MI_FLUSH_DW on the others. */
+	/* Writes the seqno: after a cache flush on the render engine, by I915_CMD_MI_FLUSH_DW on the others. */
 	if (rq->ce->ge->info->class == I915_RENDER_CLASS) {
 		cs = i915_emit_pipe_control(
 			cs,
 			0U,
-			PIPE_CONTROL_CS_STALL |
-			PIPE_CONTROL_TLB_INVALIDATE |
-			PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
-			PIPE_CONTROL_DEPTH_CACHE_FLUSH |
-			PIPE_CONTROL_DC_FLUSH_ENABLE,
+			I915_CMD_PIPE_CONTROL_CS_STALL |
+			I915_CMD_PIPE_CONTROL_TLB_INVALIDATE |
+			I915_CMD_PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
+			I915_CMD_PIPE_CONTROL_DEPTH_CACHE_FLUSH |
+			I915_CMD_PIPE_CONTROL_DC_FLUSH_ENABLE,
 			0U);
 
 		/* gen8_emit_ggtt_write_rcs(seqno, hwsp, FLUSH_ENABLE | CS_STALL) */
-		*cs++ = GFX_OP_PIPE_CONTROL(6);
-		*cs++ = PIPE_CONTROL_FLUSH_ENABLE |
-			PIPE_CONTROL_CS_STALL |
-			PIPE_CONTROL_GLOBAL_GTT_IVB |
-			PIPE_CONTROL_QW_WRITE;
+		*cs++ = I915_CMD_GFX_OP_PIPE_CONTROL(6);
+		*cs++ = I915_CMD_PIPE_CONTROL_FLUSH_ENABLE |
+			I915_CMD_PIPE_CONTROL_CS_STALL |
+			I915_CMD_PIPE_CONTROL_GLOBAL_GTT_IVB |
+			I915_CMD_PIPE_CONTROL_QW_WRITE;
 		*cs++ = rq->hwsp_ggtt;
 		*cs++ = 0U;
 		*cs++ = rq->seqno;
 		*cs++ = 0U;
 	} else {
 		/* gen8_emit_ggtt_write(seqno, hwsp) */
-		*cs++ = (MI_FLUSH_DW + 1U) | MI_FLUSH_DW_OP_STOREDW;
-		*cs++ = rq->hwsp_ggtt | MI_FLUSH_DW_USE_GTT;
+		*cs++ = (I915_CMD_MI_FLUSH_DW + 1U) | I915_CMD_MI_FLUSH_DW_OP_STOREDW;
+		*cs++ = rq->hwsp_ggtt | I915_CMD_MI_FLUSH_DW_USE_GTT;
 		*cs++ = 0U;
 		*cs++ = rq->seqno;
 	}
 
 	/* Raises the interrupt and allows arbitration. */
-	*cs++ = MI_USER_INTERRUPT;
-	*cs++ = MI_ARB_ON_OFF | MI_ARB_ENABLE;
+	*cs++ = I915_CMD_MI_USER_INTERRUPT;
+	*cs++ = I915_CMD_MI_ARB_ON_OFF | I915_CMD_MI_ARB_ENABLE;
 
 	/* Triggers IDLE to ACTIVE first, then waits for PREEMPT to be zero (the four-dword Gen8 semaphore). */
-	*cs++ = MI_ARB_CHECK;
-	*cs++ = MI_SEMAPHORE_WAIT | MI_SEMAPHORE_GLOBAL_GTT | MI_SEMAPHORE_POLL | MI_SEMAPHORE_SAD_EQ_SDD;
+	*cs++ = I915_CMD_MI_ARB_CHECK;
+	*cs++ = I915_CMD_MI_SEMAPHORE_WAIT | I915_CMD_MI_SEMAPHORE_GLOBAL_GTT | I915_CMD_MI_SEMAPHORE_POLL | I915_CMD_MI_SEMAPHORE_SAD_EQ_SDD;
 	*cs++ = 0U;
 	*cs++ = rq->preempt_ggtt;
 	*cs++ = 0U;
-	*cs++ = MI_NOOP;
+	*cs++ = I915_CMD_MI_NOOP;
 
 	/* The request ends here. */
 	rq->tail = (uint32_t)((char *)cs - (char *)ring->vaddr);
 
 	/* Leaves at least one preemption point per request (gen8_emit_wa_tail()). */
-	*cs++ = MI_ARB_CHECK;
-	*cs++ = MI_NOOP;
+	*cs++ = I915_CMD_MI_ARB_CHECK;
+	*cs++ = I915_CMD_MI_NOOP;
 	rq->wa_tail = (uint32_t)((char *)cs - (char *)ring->vaddr);
 
 	/* Reports where the next command goes. */

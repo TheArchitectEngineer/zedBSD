@@ -1222,7 +1222,7 @@ i915_draw_emit_marker(
 	uint32_t value)
 {
 	/* The store, the address in two halves, then the value. */
-	i915_draw_emit(batch, MI_STORE_DWORD_IMM_GEN4);
+	i915_draw_emit(batch, I915_CMD_MI_STORE_DWORD_IMM_GEN4);
 	i915_draw_emit(batch, (uint32_t)address);
 	i915_draw_emit(batch, (uint32_t)(address >> 32));
 	i915_draw_emit(batch, value);
@@ -1241,12 +1241,12 @@ i915_draw_emit_pipe_control(
 	 * Gen9 has no such bit and flushes the data cache in its place, as
 	 * render/batch.c does.
 	 */
-	header = GFX_OP_PIPE_CONTROL(6);
-	if ((flags & PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH) != 0U) {
+	header = I915_CMD_GFX_OP_PIPE_CONTROL(6);
+	if ((flags & I915_CMD_PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH) != 0U) {
 		if (batch->graphics_ver == GEN9_GRAPHICS_VER) {
-			flags |= PIPE_CONTROL_DC_FLUSH_ENABLE;
+			flags |= I915_CMD_PIPE_CONTROL_DC_FLUSH_ENABLE;
 		} else {
-			header |= PIPE_CONTROL0_HDC_PIPELINE_FLUSH;
+			header |= I915_CMD_PIPE_CONTROL0_HDC_PIPELINE_FLUSH;
 		}
 	}
 
@@ -1795,11 +1795,11 @@ i915_draw_build_batch(
 	 * stall or write something (SKL PRM; iris adds the scoreboard stall).
 	 */
 	select = GEN12_PIPELINE_SELECT_DWORD(GEN12_PIPELINE_SELECT_3D);
-	invalidate = PIPE_CONTROL_CS_STALL |
-		PIPE_CONTROL_STATE_CACHE_INVALIDATE |
-		PIPE_CONTROL_CONST_CACHE_INVALIDATE |
-		PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE |
-		PIPE_CONTROL_INSTRUCTION_CACHE_INVALIDATE;
+	invalidate = I915_CMD_PIPE_CONTROL_CS_STALL |
+		I915_CMD_PIPE_CONTROL_STATE_CACHE_INVALIDATE |
+		I915_CMD_PIPE_CONTROL_CONST_CACHE_INVALIDATE |
+		I915_CMD_PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE |
+		I915_CMD_PIPE_CONTROL_INSTRUCTION_CACHE_INVALIDATE;
 	if (graphics_ver == GEN9_GRAPHICS_VER) {
 		select = (GEN12_CMD_PIPELINE_SELECT << 16) | GEN9_PIPELINE_SELECT_MASK | GEN12_PIPELINE_SELECT_3D;
 		invalidate |= PIPE_CONTROL_STALL_AT_SCOREBOARD;
@@ -1807,11 +1807,11 @@ i915_draw_build_batch(
 
 	/* A stalling flush precedes the pipeline select and the base addresses. */
 	i915_draw_emit_pipe_control(&batch,
-				    PIPE_CONTROL_CS_STALL |
-				    PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
-				    PIPE_CONTROL_DEPTH_CACHE_FLUSH |
-				    PIPE_CONTROL_DC_FLUSH_ENABLE |
-				    PIPE_CONTROL_FLUSH_ENABLE);
+				    I915_CMD_PIPE_CONTROL_CS_STALL |
+				    I915_CMD_PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
+				    I915_CMD_PIPE_CONTROL_DEPTH_CACHE_FLUSH |
+				    I915_CMD_PIPE_CONTROL_DC_FLUSH_ENABLE |
+				    I915_CMD_PIPE_CONTROL_FLUSH_ENABLE);
 	i915_draw_emit(&batch, select);
 
 	/* Anchors the three heaps this draw reads from at the state page. */
@@ -1865,7 +1865,7 @@ i915_draw_build_batch(
 	 * and pixel shader setup state a fresh context leaves undefined.
 	 */
 	i915_draw_emit_pipe_control(&batch,
-				    PIPE_CONTROL_CS_STALL |
+				    I915_CMD_PIPE_CONTROL_CS_STALL |
 				    PIPE_CONTROL_STALL_AT_SCOREBOARD |
 				    PIPE_CONTROL_DEPTH_STALL_ENABLE);
 
@@ -1877,15 +1877,15 @@ i915_draw_build_batch(
 
 	/* The draw's writes are flushed before the marker reports completion. */
 	i915_draw_emit_pipe_control(&batch,
-				    PIPE_CONTROL_CS_STALL |
-				    PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
-				    PIPE_CONTROL_DC_FLUSH_ENABLE |
-				    PIPE_CONTROL_FLUSH_ENABLE);
+				    I915_CMD_PIPE_CONTROL_CS_STALL |
+				    I915_CMD_PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
+				    I915_CMD_PIPE_CONTROL_DC_FLUSH_ENABLE |
+				    I915_CMD_PIPE_CONTROL_FLUSH_ENABLE);
 	i915_draw_emit_marker(&batch, marker_va + I915_DRAW_MARKER_AFTER_SLOT, I915_DRAW_FIXTURE_MARKER_AFTER);
 
 	/* Ends the batch, padded to an even dword count. */
-	i915_draw_emit(&batch, MI_BATCH_BUFFER_END);
-	i915_draw_emit(&batch, MI_NOOP);
+	i915_draw_emit(&batch, I915_CMD_MI_BATCH_BUFFER_END);
+	i915_draw_emit(&batch, I915_CMD_MI_NOOP);
 
 	/* Succeeded: reports how many dwords were written. */
 	return batch.count;

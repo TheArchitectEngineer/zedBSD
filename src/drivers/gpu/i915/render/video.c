@@ -3267,8 +3267,8 @@ i915_video_test_hang(
 	 * context's address space, so the engine never reaches the batch's end.
 	 */
 	loop_va = batch_va + (uint64_t)batch->count * 4U;
-	drv_i915_batch_emit(batch, MI_ARB_CHECK);
-	drv_i915_batch_emit(batch, MI_BATCH_BUFFER_START_GEN8 | MI_BATCH_NON_SECURE_I965);
+	drv_i915_batch_emit(batch, I915_CMD_MI_ARB_CHECK);
+	drv_i915_batch_emit(batch, I915_CMD_MI_BATCH_BUFFER_START_GEN8 | I915_CMD_MI_BATCH_NON_SECURE_I965);
 	drv_i915_batch_emit(batch, (uint32_t)loop_va);
 	drv_i915_batch_emit(batch, (uint32_t)(loop_va >> 32));
 

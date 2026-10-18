@@ -116,12 +116,12 @@ drv_i915_batch_pipe_control(
 	 * to it on Gen12, and on Gen9, which has none, the data cache flush
 	 * anv puts in its place (genX_cmd_buffer.c, GFX_VER < 12).
 	 */
-	header = GFX_OP_PIPE_CONTROL(6);
-	if ((flags & PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH) != 0U) {
+	header = I915_CMD_GFX_OP_PIPE_CONTROL(6);
+	if ((flags & I915_CMD_PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH) != 0U) {
 		if (batch->graphics_ver == GEN9_GRAPHICS_VER) {
-			flags |= PIPE_CONTROL_DC_FLUSH_ENABLE;
+			flags |= I915_CMD_PIPE_CONTROL_DC_FLUSH_ENABLE;
 		} else {
-			header |= PIPE_CONTROL0_HDC_PIPELINE_FLUSH;
+			header |= I915_CMD_PIPE_CONTROL0_HDC_PIPELINE_FLUSH;
 		}
 	}
 
@@ -152,11 +152,11 @@ drv_i915_batch_pipe_control_hdc(
 	unsigned index;
 
 	/* Builds the header with the HDC pipeline flush on Gen12, and the data cache flush in its place on Gen9. */
-	header = GFX_OP_PIPE_CONTROL(6);
+	header = I915_CMD_GFX_OP_PIPE_CONTROL(6);
 	if (batch->graphics_ver == GEN9_GRAPHICS_VER) {
-		flags |= PIPE_CONTROL_DC_FLUSH_ENABLE;
+		flags |= I915_CMD_PIPE_CONTROL_DC_FLUSH_ENABLE;
 	} else {
-		header |= PIPE_CONTROL0_HDC_PIPELINE_FLUSH;
+		header |= I915_CMD_PIPE_CONTROL0_HDC_PIPELINE_FLUSH;
 	}
 
 	/* Writes the header and the flags. */

@@ -11,10 +11,10 @@
  * One Linux behaviour here is easy to get backwards: on graphics version 11
  * and later the GGTT page-table window is mapped uncached, so
  * gen8_ggtt_invalidate() writes no register at all -- needs_wc_ggtt_mapping()
- * is false there, and the flush register GFX_FLSH_CNTL_GEN6 belongs to the
+ * is false there, and the flush register I915_GT_GFX_FLSH_CNTL_GEN6 belongs to the
  * gen6 path only.  Writing it here would be a deviation, not a safety net.
  * Gen9 is before graphics version 11: the reference writes
- * GFX_FLSH_CNTL_GEN6 after every update there, and so does this driver,
+ * I915_GT_GFX_FLSH_CNTL_GEN6 after every update there, and so does this driver,
  * although its window is uncached.
  */
 
@@ -29,7 +29,7 @@
 #include <uapi/errno.h>
 #include <stddef.h>
 
-/* GFX_FLSH_CNTL_GEN6 and its enable (Linux 6.8.12 i915_reg.h): the GGTT flush before graphics version 11. */
+/* I915_GT_GFX_FLSH_CNTL_GEN6 and its enable (Linux 6.8.12 i915_reg.h): the GGTT flush before graphics version 11. */
 #define I915_GFX_FLSH_CNTL_GEN6		0x101008U
 #define I915_GFX_FLSH_CNTL_EN		(1U << 0)
 
@@ -76,7 +76,7 @@ drv_i915_dma_in_range(
 /*
  * Encodes a system-memory GGTT entry.
  *
- * The entry is the DMA address with only PRESENT set; GEN12_GGTT_PTE_LM
+ * The entry is the DMA address with only PRESENT set; I915_GT_GEN12_GGTT_PTE_LM
  * stays clear.  Reports 1 and writes *pte_out, or reports 0 without writing
  * when the address is not page aligned or out of range, in which case the
  * caller must leave the table as it is.
@@ -249,7 +249,7 @@ drv_i915_gt_ggtt_flush(
 	kern_io_write_barrier();
 	gm->flushes++;
 
-	/* A Gen9 GT also flushes the GGTT through GFX_FLSH_CNTL_GEN6 (gen8_ggtt_invalidate()). */
+	/* A Gen9 GT also flushes the GGTT through I915_GT_GFX_FLSH_CNTL_GEN6 (gen8_ggtt_invalidate()). */
 	if (gm->m != NULL && gm->m->graphics_ver == 9)
 		drv_i915_raw_write32(gm->m, I915_GFX_FLSH_CNTL_GEN6, I915_GFX_FLSH_CNTL_EN);
 }

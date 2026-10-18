@@ -68,7 +68,7 @@
 #define GEN12_VIDEO_HEADER(opcode, dwords)	(((uint32_t)(opcode) << 16) | ((dwords) - 2U))
 
 /*
- * MI_FLUSH_DW (gen110.xml): MI Command Opcode 38, five dwords, DWord Length
+ * I915_CMD_MI_FLUSH_DW (gen110.xml): MI Command Opcode 38, five dwords, DWord Length
  * 3.  Dword 0 bit 7 is Video Pipeline Cache Invalidate.  The other four
  * dwords (the post-sync address and data) stay zero: no post-sync write.
  */

@@ -58,7 +58,7 @@
  * (skl_mocs_table, MIT)
  *     49f2b6a2a47bcf26bf57eef51d5a125458378298602462b8ff9986a54a15ffe7
  * and the default of L3CNTLREG is the Skylake PRM (IHD-OS-SKL-Vol 7-05.16,
- * "L3CNTLREG - L3 Control Register"); CACHE_MODE_1 is anv's
+ * "L3CNTLREG - L3 Control Register"); I915_GT_CACHE_MODE_1 is anv's
  * (src/intel/vulkan/genX_init_state.c
  *     716543ab781499a3079174681a90943e9a28b2c1658c2f12dbe4f15df2bead4b).  The end-of-thread instructions were
  * assembled by Mesa 25.0.7's brw_asm for Skylake.  The assembly logic is new.
@@ -168,7 +168,7 @@
 #define GEN9_L3CNTLREG_SLM			0x60000021U
 
 /*
- * CACHE_MODE_1 (0x7004, masked: bit n + 16 enables writing bit n), which anv
+ * I915_GT_CACHE_MODE_1 (0x7004, masked: bit n + 16 enables writing bit n), which anv
  * programs once on Gen9 (genX_init_state.c): Partial Resolve Disable In VC
  * (1), Float Blend Optimization Enable (4) and MSC RAW Hazard Avoidance (9).
  */

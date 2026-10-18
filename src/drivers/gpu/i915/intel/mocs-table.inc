@@ -41,68 +41,68 @@
  * value macros come from mocs.h.  Entries 0 and 1 are
  * "defined per-platform" and Gen12 does not define them.
  *
- * XXX: GEN11_MOCS_ENTRIES in Linux also defines entry 63 (LE_3_WB |
- * LE_TC_1_LLC | LE_LRUM(3), L3_1_UC).  This table has no row 63, so entry 63
- * takes the unused-entry values (L3_3_WB instead of L3_1_UC in the upper half
+ * XXX: GEN11_MOCS_ENTRIES in Linux also defines entry 63 (I915_GT_LE_3_WB |
+ * I915_GT_LE_TC_1_LLC | I915_GT_LE_LRUM(3), I915_GT_L3_1_UC).  This table has no row 63, so entry 63
+ * takes the unused-entry values (I915_GT_L3_3_WB instead of I915_GT_L3_1_UC in the upper half
  * of LNCFCMOCS31).  The row is left out exactly as the hardware-checked table
  * had it.
  */
 
 	/* Base - L3 + LLC */
-	{  2, LE_3_WB | LE_TC_1_LLC | LE_LRUM(3), L3_3_WB },
+	{  2, I915_GT_LE_3_WB | I915_GT_LE_TC_1_LLC | I915_GT_LE_LRUM(3), I915_GT_L3_3_WB },
 	/* Base - Uncached */
-	{  3, LE_1_UC | LE_TC_1_LLC, L3_1_UC },
+	{  3, I915_GT_LE_1_UC | I915_GT_LE_TC_1_LLC, I915_GT_L3_1_UC },
 	/* Base - L3 */
-	{  4, LE_1_UC | LE_TC_1_LLC, L3_3_WB },
+	{  4, I915_GT_LE_1_UC | I915_GT_LE_TC_1_LLC, I915_GT_L3_3_WB },
 	/* Base - LLC */
-	{  5, LE_3_WB | LE_TC_1_LLC | LE_LRUM(3), L3_1_UC },
+	{  5, I915_GT_LE_3_WB | I915_GT_LE_TC_1_LLC | I915_GT_LE_LRUM(3), I915_GT_L3_1_UC },
 	/* Age 0 - LLC */
-	{  6, LE_3_WB | LE_TC_1_LLC | LE_LRUM(1), L3_1_UC },
+	{  6, I915_GT_LE_3_WB | I915_GT_LE_TC_1_LLC | I915_GT_LE_LRUM(1), I915_GT_L3_1_UC },
 	/* Age 0 - L3 + LLC */
-	{  7, LE_3_WB | LE_TC_1_LLC | LE_LRUM(1), L3_3_WB },
+	{  7, I915_GT_LE_3_WB | I915_GT_LE_TC_1_LLC | I915_GT_LE_LRUM(1), I915_GT_L3_3_WB },
 	/* Age: Don't Chg. - LLC */
-	{  8, LE_3_WB | LE_TC_1_LLC | LE_LRUM(2), L3_1_UC },
+	{  8, I915_GT_LE_3_WB | I915_GT_LE_TC_1_LLC | I915_GT_LE_LRUM(2), I915_GT_L3_1_UC },
 	/* Age: Don't Chg. - L3 + LLC */
-	{  9, LE_3_WB | LE_TC_1_LLC | LE_LRUM(2), L3_3_WB },
+	{  9, I915_GT_LE_3_WB | I915_GT_LE_TC_1_LLC | I915_GT_LE_LRUM(2), I915_GT_L3_3_WB },
 	/* No AOM - LLC */
-	{ 10, LE_3_WB | LE_TC_1_LLC | LE_LRUM(3) | LE_AOM(1), L3_1_UC },
+	{ 10, I915_GT_LE_3_WB | I915_GT_LE_TC_1_LLC | I915_GT_LE_LRUM(3) | I915_GT_LE_AOM(1), I915_GT_L3_1_UC },
 	/* No AOM - L3 + LLC */
-	{ 11, LE_3_WB | LE_TC_1_LLC | LE_LRUM(3) | LE_AOM(1), L3_3_WB },
+	{ 11, I915_GT_LE_3_WB | I915_GT_LE_TC_1_LLC | I915_GT_LE_LRUM(3) | I915_GT_LE_AOM(1), I915_GT_L3_3_WB },
 	/* No AOM; Age 0 - LLC */
-	{ 12, LE_3_WB | LE_TC_1_LLC | LE_LRUM(1) | LE_AOM(1), L3_1_UC },
+	{ 12, I915_GT_LE_3_WB | I915_GT_LE_TC_1_LLC | I915_GT_LE_LRUM(1) | I915_GT_LE_AOM(1), I915_GT_L3_1_UC },
 	/* No AOM; Age 0 - L3 + LLC */
-	{ 13, LE_3_WB | LE_TC_1_LLC | LE_LRUM(1) | LE_AOM(1), L3_3_WB },
+	{ 13, I915_GT_LE_3_WB | I915_GT_LE_TC_1_LLC | I915_GT_LE_LRUM(1) | I915_GT_LE_AOM(1), I915_GT_L3_3_WB },
 	/* No AOM; Age:DC - LLC */
-	{ 14, LE_3_WB | LE_TC_1_LLC | LE_LRUM(2) | LE_AOM(1), L3_1_UC },
+	{ 14, I915_GT_LE_3_WB | I915_GT_LE_TC_1_LLC | I915_GT_LE_LRUM(2) | I915_GT_LE_AOM(1), I915_GT_L3_1_UC },
 	/* No AOM; Age:DC - L3 + LLC */
-	{ 15, LE_3_WB | LE_TC_1_LLC | LE_LRUM(2) | LE_AOM(1), L3_3_WB },
+	{ 15, I915_GT_LE_3_WB | I915_GT_LE_TC_1_LLC | I915_GT_LE_LRUM(2) | I915_GT_LE_AOM(1), I915_GT_L3_3_WB },
 	/* Bypass LLC - Uncached (EHL+) */
-	{ 16, LE_1_UC | LE_TC_1_LLC | LE_SCF(1), L3_1_UC },
+	{ 16, I915_GT_LE_1_UC | I915_GT_LE_TC_1_LLC | I915_GT_LE_SCF(1), I915_GT_L3_1_UC },
 	/* Bypass LLC - L3 (Read-Only) (EHL+) */
-	{ 17, LE_1_UC | LE_TC_1_LLC | LE_SCF(1), L3_3_WB },
+	{ 17, I915_GT_LE_1_UC | I915_GT_LE_TC_1_LLC | I915_GT_LE_SCF(1), I915_GT_L3_3_WB },
 	/* Self-Snoop - L3 + LLC */
-	{ 18, LE_3_WB | LE_TC_1_LLC | LE_LRUM(3) | LE_SSE(3), L3_3_WB },
+	{ 18, I915_GT_LE_3_WB | I915_GT_LE_TC_1_LLC | I915_GT_LE_LRUM(3) | I915_GT_LE_SSE(3), I915_GT_L3_3_WB },
 	/* Skip Caching - L3 + LLC(12.5%) */
-	{ 19, LE_3_WB | LE_TC_1_LLC | LE_LRUM(3) | LE_SCC(7), L3_3_WB },
+	{ 19, I915_GT_LE_3_WB | I915_GT_LE_TC_1_LLC | I915_GT_LE_LRUM(3) | I915_GT_LE_SCC(7), I915_GT_L3_3_WB },
 	/* Skip Caching - L3 + LLC(25%) */
-	{ 20, LE_3_WB | LE_TC_1_LLC | LE_LRUM(3) | LE_SCC(3), L3_3_WB },
+	{ 20, I915_GT_LE_3_WB | I915_GT_LE_TC_1_LLC | I915_GT_LE_LRUM(3) | I915_GT_LE_SCC(3), I915_GT_L3_3_WB },
 	/* Skip Caching - L3 + LLC(50%) */
-	{ 21, LE_3_WB | LE_TC_1_LLC | LE_LRUM(3) | LE_SCC(1), L3_3_WB },
+	{ 21, I915_GT_LE_3_WB | I915_GT_LE_TC_1_LLC | I915_GT_LE_LRUM(3) | I915_GT_LE_SCC(1), I915_GT_L3_3_WB },
 	/* Skip Caching - L3 + LLC(75%) */
-	{ 22, LE_3_WB | LE_TC_1_LLC | LE_LRUM(3) | LE_RSC(1) | LE_SCC(3), L3_3_WB },
+	{ 22, I915_GT_LE_3_WB | I915_GT_LE_TC_1_LLC | I915_GT_LE_LRUM(3) | I915_GT_LE_RSC(1) | I915_GT_LE_SCC(3), I915_GT_L3_3_WB },
 	/* Skip Caching - L3 + LLC(87.5%) */
-	{ 23, LE_3_WB | LE_TC_1_LLC | LE_LRUM(3) | LE_RSC(1) | LE_SCC(7), L3_3_WB },
+	{ 23, I915_GT_LE_3_WB | I915_GT_LE_TC_1_LLC | I915_GT_LE_LRUM(3) | I915_GT_LE_RSC(1) | I915_GT_LE_SCC(7), I915_GT_L3_3_WB },
 	/* HW Reserved - SW program but never use */
-	{ 62, LE_3_WB | LE_TC_1_LLC | LE_LRUM(3), L3_1_UC },
+	{ 62, I915_GT_LE_3_WB | I915_GT_LE_TC_1_LLC | I915_GT_LE_LRUM(3), I915_GT_L3_1_UC },
 	/* Implicitly enable L1 - HDC:L1 + L3 + LLC */
-	{ 48, LE_3_WB | LE_TC_1_LLC | LE_LRUM(3), L3_3_WB },
+	{ 48, I915_GT_LE_3_WB | I915_GT_LE_TC_1_LLC | I915_GT_LE_LRUM(3), I915_GT_L3_3_WB },
 	/* Implicitly enable L1 - HDC:L1 + L3 */
-	{ 49, LE_1_UC | LE_TC_1_LLC, L3_3_WB },
+	{ 49, I915_GT_LE_1_UC | I915_GT_LE_TC_1_LLC, I915_GT_L3_3_WB },
 	/* Implicitly enable L1 - HDC:L1 + LLC */
-	{ 50, LE_3_WB | LE_TC_1_LLC | LE_LRUM(3), L3_1_UC },
+	{ 50, I915_GT_LE_3_WB | I915_GT_LE_TC_1_LLC | I915_GT_LE_LRUM(3), I915_GT_L3_1_UC },
 	/* Implicitly enable L1 - HDC:L1 */
-	{ 51, LE_1_UC | LE_TC_1_LLC, L3_1_UC },
+	{ 51, I915_GT_LE_1_UC | I915_GT_LE_TC_1_LLC, I915_GT_L3_1_UC },
 	/* HW Special Case (CCS) */
-	{ 60, LE_3_WB | LE_TC_1_LLC | LE_LRUM(3), L3_1_UC },
+	{ 60, I915_GT_LE_3_WB | I915_GT_LE_TC_1_LLC | I915_GT_LE_LRUM(3), I915_GT_L3_1_UC },
 	/* HW Special Case (Displayable) */
-	{ 61, LE_1_UC | LE_TC_1_LLC, L3_3_WB },
+	{ 61, I915_GT_LE_1_UC | I915_GT_LE_TC_1_LLC, I915_GT_L3_3_WB },

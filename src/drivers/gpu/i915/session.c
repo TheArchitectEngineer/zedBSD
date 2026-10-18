@@ -37,7 +37,7 @@
 #include "intel/gt-regs.h"
 
 /* Software context ids stay below the idle marker the context status buffer uses. */
-#define I915_CONTEXT_ID_MODULUS		(GEN12_IDLE_CTX_ID - 1U)
+#define I915_CONTEXT_ID_MODULUS		(I915_GT_GEN12_IDLE_CTX_ID - 1U)
 
 static int i915_open(void *opaque, void **result);
 static void i915_close(void *opaque, void *private_session);

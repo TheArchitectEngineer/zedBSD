@@ -49,7 +49,7 @@
 /* The pattern mixed into each generation's payload. */
 #define I915_KTEST_XCPU_MAGIC		0xA5A5A5A5U
 
-/* The registers the model answers: GEN6_GDRST and the PCODE mailbox. */
+/* The registers the model answers: I915_GT_GEN6_GDRST and the PCODE mailbox. */
 #define I915_KTEST_REG_GDRST		0x941cU
 #define I915_KTEST_REG_PCODE_MAILBOX	0x138124U
 #define I915_KTEST_REG_PCODE_DATA	0x138128U

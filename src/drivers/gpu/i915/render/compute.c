@@ -404,16 +404,16 @@ drv_i915_gfx_dispatch_build(
 	 * masks in only the selection.
 	 */
 	drv_i915_batch_pipe_control(batch,
-				    PIPE_CONTROL_CS_STALL |
-				    PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
-				    PIPE_CONTROL_DEPTH_CACHE_FLUSH);
+				    I915_CMD_PIPE_CONTROL_CS_STALL |
+				    I915_CMD_PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
+				    I915_CMD_PIPE_CONTROL_DEPTH_CACHE_FLUSH);
 	select = GEN12_PIPELINE_SELECT_DWORD(GEN12_PIPELINE_SELECT_GPGPU);
 	if (gen9 != 0) {
 		drv_i915_batch_pipe_control(batch,
-					    PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE |
-					    PIPE_CONTROL_CONST_CACHE_INVALIDATE |
-					    PIPE_CONTROL_STATE_CACHE_INVALIDATE |
-					    PIPE_CONTROL_INSTRUCTION_CACHE_INVALIDATE);
+					    I915_CMD_PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE |
+					    I915_CMD_PIPE_CONTROL_CONST_CACHE_INVALIDATE |
+					    I915_CMD_PIPE_CONTROL_STATE_CACHE_INVALIDATE |
+					    I915_CMD_PIPE_CONTROL_INSTRUCTION_CACHE_INVALIDATE);
 		select = (GEN12_CMD_PIPELINE_SELECT << 16) | GEN9_PIPELINE_SELECT_MASK | GEN12_PIPELINE_SELECT_GPGPU;
 	}
 
@@ -421,7 +421,7 @@ drv_i915_gfx_dispatch_build(
 	drv_i915_batch_emit(batch, select);
 
 	/* The stalling flush MEDIA_VFE_STATE wants before it. */
-	drv_i915_batch_pipe_control(batch, PIPE_CONTROL_CS_STALL | I915_COMPUTE_STALL_AT_SCOREBOARD);
+	drv_i915_batch_pipe_control(batch, I915_CMD_PIPE_CONTROL_CS_STALL | I915_COMPUTE_STALL_AT_SCOREBOARD);
 
 	/*
 	 * The VFE's thread limit and URB entries: 112 threads a dual-subslice,
@@ -478,7 +478,7 @@ drv_i915_gfx_dispatch_build(
 	if (grid->indirect_va != 0U) {
 		for (index = 0U; index < 3U; index++) {
 			address = grid->indirect_va + (uint64_t)index * 4U;
-			drv_i915_batch_emit(batch, MI_LOAD_REGISTER_MEM_GEN8);
+			drv_i915_batch_emit(batch, I915_CMD_MI_LOAD_REGISTER_MEM_GEN8);
 			drv_i915_batch_emit(batch, dimensions[index]);
 			drv_i915_batch_emit(batch, (uint32_t)address);
 			drv_i915_batch_emit(batch, (uint32_t)(address >> 32));
@@ -521,9 +521,9 @@ drv_i915_gfx_dispatch_build(
 	 * also lists is left out, as anv leaves it out for the hangs it causes).
 	 */
 	drv_i915_batch_pipe_control_hdc(batch,
-					PIPE_CONTROL_CS_STALL |
-					PIPE_CONTROL_DC_FLUSH_ENABLE |
-					PIPE_CONTROL_FLUSH_ENABLE);
+					I915_CMD_PIPE_CONTROL_CS_STALL |
+					I915_CMD_PIPE_CONTROL_DC_FLUSH_ENABLE |
+					I915_CMD_PIPE_CONTROL_FLUSH_ENABLE);
 
 	/* Gen12 switches back to 3D at once. */
 	if (gen9 == 0) {
@@ -684,20 +684,20 @@ i915_compute_l3(
 	uint32_t value)
 {
 	/* Drains the pipeline and flushes the data cache. */
-	drv_i915_batch_pipe_control(batch, PIPE_CONTROL_CS_STALL | PIPE_CONTROL_DC_FLUSH_ENABLE);
+	drv_i915_batch_pipe_control(batch, I915_CMD_PIPE_CONTROL_CS_STALL | I915_CMD_PIPE_CONTROL_DC_FLUSH_ENABLE);
 
 	/* Invalidates the read-only caches. */
 	drv_i915_batch_pipe_control(batch,
-				    PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE |
-				    PIPE_CONTROL_CONST_CACHE_INVALIDATE |
-				    PIPE_CONTROL_INSTRUCTION_CACHE_INVALIDATE |
-				    PIPE_CONTROL_STATE_CACHE_INVALIDATE);
+				    I915_CMD_PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE |
+				    I915_CMD_PIPE_CONTROL_CONST_CACHE_INVALIDATE |
+				    I915_CMD_PIPE_CONTROL_INSTRUCTION_CACHE_INVALIDATE |
+				    I915_CMD_PIPE_CONTROL_STATE_CACHE_INVALIDATE);
 
 	/* Waits for the invalidation with a second stalling flush. */
-	drv_i915_batch_pipe_control(batch, PIPE_CONTROL_CS_STALL | PIPE_CONTROL_DC_FLUSH_ENABLE);
+	drv_i915_batch_pipe_control(batch, I915_CMD_PIPE_CONTROL_CS_STALL | I915_CMD_PIPE_CONTROL_DC_FLUSH_ENABLE);
 
 	/* Writes the partition. */
-	drv_i915_batch_emit(batch, MI_LOAD_REGISTER_IMM(1));
+	drv_i915_batch_emit(batch, I915_CMD_MI_LOAD_REGISTER_IMM(1));
 	drv_i915_batch_emit(batch, GEN9_REG_L3CNTLREG);
 	drv_i915_batch_emit(batch, value);
 }

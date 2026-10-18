@@ -265,7 +265,7 @@
 #define I915_SKL_PS_SCALER_EN			(1U << 31)
 
 /*
- * The display engine pipe interrupt bit of GEN8_MASTER_IRQ (GEN8_DE_PIPE_A_IRQ
+ * The display engine pipe interrupt bit of I915_GT_GEN8_MASTER_IRQ (GEN8_DE_PIPE_A_IRQ
  * << pipe).
  *
  * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h

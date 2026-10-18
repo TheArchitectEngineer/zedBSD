@@ -84,7 +84,7 @@ drv_i915_pxp_init(
 	 * Sets the KCR base (pxp_init_full()); the session management is only
 	 * its lock and an idle work item.
 	 */
-	x->kcr_base = GEN12_KCR_BASE;
+	x->kcr_base = I915_GT_GEN12_KCR_BASE;
 
 	/* Creates the pinned context on the GT address space (create_vcs_context()). */
 	ge = &es->ge[x->engine_idx];

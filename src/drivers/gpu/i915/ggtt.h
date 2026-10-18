@@ -20,7 +20,7 @@
  *
  * Every entry outside an allocation holds the scratch encoding.  A GGTT
  * entry and a PPGTT leaf encode a page differently and must never share an
- * encoder: bit 1 is GEN12_GGTT_PTE_LM in the GGTT but GEN8_PAGE_RW in a
+ * encoder: bit 1 is I915_GT_GEN12_GGTT_PTE_LM in the GGTT but I915_GT_GEN8_PAGE_RW in a
  * PPGTT.  For system memory:
  *
  *   GGTT entry   = DMA address | PRESENT      (LM clear)

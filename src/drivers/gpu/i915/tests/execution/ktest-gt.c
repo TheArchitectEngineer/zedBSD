@@ -65,7 +65,7 @@
 /* The engines Alder Lake-P can have: RCS0, BCS0, VCS0, VCS2 and VECS0. */
 #define I915_KTEST_ADLP_ENGINES		((1U << I915_RCS0) | (1U << I915_BCS0) | (1U << I915_VCS0) | (1U << I915_VCS2) | (1U << I915_VECS0))
 
-/* The registers the model gives a meaning to: GEN6_GDRST and the PCODE mailbox. */
+/* The registers the model gives a meaning to: I915_GT_GEN6_GDRST and the PCODE mailbox. */
 #define I915_KTEST_REG_GDRST		0x941cU
 #define I915_KTEST_REG_PCODE_MAILBOX	0x138124U
 #define I915_KTEST_REG_PCODE_DATA	0x138128U
@@ -824,7 +824,7 @@ i915_ktest_gt_irq(
 	t->irq.gt = &t->info;
 
 	/*
-	 * Asserts bank 0 bit 0 (GEN11_GT_INTR_DW(0)) with an identity of RCS0
+	 * Asserts bank 0 bit 0 (I915_GT_GEN11_GT_INTR_DW(0)) with an identity of RCS0
 	 * (class 0, instance 0) that reports USER and CONTEXT_SWITCH.
 	 */
 	drv_i915_raw_write32(&t->mmio, 0x190018U, 0x1U);
@@ -860,7 +860,7 @@ i915_ktest_gt_irq(
 	i915_ktest_gt_irq_classes(ktest, t);
 }
 
-/* Checks an identity that never validates and one of OTHER_CLASS. */
+/* Checks an identity that never validates and one of I915_GT_OTHER_CLASS. */
 static void
 i915_ktest_gt_irq_classes(
 	struct i915_ktest *ktest,
@@ -879,14 +879,14 @@ i915_ktest_gt_irq_classes(
 		t->irq.gt_identity_invalid == 1U && t->irq.gt_engine_intrs == 0U,
 		"p60: P60-GTIRQ an identity that never reports DATA_VALID is counted, not decoded");
 
-	/* Asserts bit 1 with an identity of OTHER_CLASS instance 1 (GTPM). */
+	/* Asserts bit 1 with an identity of I915_GT_OTHER_CLASS instance 1 (GTPM). */
 	drv_i915_raw_write32(&t->mmio, 0x190018U, 0x2U);
 	drv_i915_raw_write32(&t->mmio, 0x190060U, (1U << 31) | (4U << 16) | (1U << 20) | 0x4U);
 	t->irq.gt_other_intrs = 0U;
 	t->irq.gt_unknown_class = 0U;
 	drv_i915_gen11_gt_irq_handler(&t->irq, 0x1U);
 
-	/* OTHER_CLASS (GuC/GTPM) is counted on its own, not as an unknown class. */
+	/* I915_GT_OTHER_CLASS (GuC/GTPM) is counted on its own, not as an unknown class. */
 	drv_i915_ktest_check(
 		ktest,
 		t->irq.gt_other_intrs == 1U && t->irq.gt_unknown_class == 0U,
@@ -1060,11 +1060,11 @@ i915_ktest_gt_wa_render_list(
 	for (index = 0U; index < t->wa_init.engine_wa[0].count; index++) {
 		w = &t->wa_init.engine_wa[0].list[index];
 
-		/* RING_CMD_CCTL's MOCS override for uncached index 3 is 0x306. */
+		/* I915_GT_RING_CMD_CCTL's MOCS override for uncached index 3 is 0x306. */
 		if (w->reg == 0x20c4U && w->set == ((0x3fffU << 16) | 0x306U))
 			cctl = 1;
 
-		/* GEN8_ROW_CHICKEN's DOP clock gating. */
+		/* I915_GT_GEN8_ROW_CHICKEN's DOP clock gating. */
 		if (w->reg == 0x20ecU && w->set == 0x00020002U)
 			dop = 1;
 
@@ -1191,7 +1191,7 @@ i915_ktest_gt_wa_context_lists(
 		    t->wa_init.ctx_wa[0].count == 5U,
 		"p6a: P6A-CTXWA five gen12 context WAs; FF_MODE2 is write-only");
 
-	/* The copy engine's context list is BLIT_CCTL, and only that. */
+	/* The copy engine's context list is I915_GT_BLIT_CCTL, and only that. */
 	drv_i915_engine_init_ctx_wa(&t->wa_init.ctx_wa[1], &t->wa_gt.engines[bcs], 12, 3U);
 	copy_ctx = &t->wa_init.ctx_wa[1];
 	drv_i915_ktest_check(
@@ -1222,7 +1222,7 @@ i915_ktest_gt_wa_whitelist(
 	/* Builds the whitelist. */
 	drv_i915_engine_init_whitelist(&t->wa_init.whitelist[0], &t->wa_gt.engines[rcs], 12);
 
-	/* PS_INVOCATION_COUNT (read-only, range of 4) and three read-write registers. */
+	/* I915_GT_PS_INVOCATION_COUNT (read-only, range of 4) and three read-write registers. */
 	drv_i915_ktest_check(
 		ktest,
 		whitelist->count == 4U &&
@@ -1236,7 +1236,7 @@ i915_ktest_gt_wa_whitelist(
 	t->fake.wt_n = 0U;
 	drv_i915_engine_apply_whitelist(&t->wa_init.whitelist[0], &t->wa_gt.engines[rcs], &t->mmio);
 
-	/* The slots carry address and flags; the remaining eight take RING_NOPID. */
+	/* The slots carry address and flags; the remaining eight take I915_GT_RING_NOPID. */
 	slot0 = i915_fake_wt_find(&t->fake, 0x24d0U, 0x10002349U, 0xffffffffU);
 	slot1 = i915_fake_wt_find(&t->fake, 0x24d4U, 0x7010U, 0xffffffffU);
 	slot3 = i915_fake_wt_find(&t->fake, 0x24dcU, 0x7304U, 0xffffffffU);
@@ -2032,7 +2032,7 @@ i915_ktest_gt_execlists_enable(
 	t->fake.wt_n = 0U;
 	drv_i915_execlists_enable(rcs, &t->mmio);
 
-	/* Legacy mode off, STOP_RING cleared, HWS_PGA programmed. */
+	/* Legacy mode off, I915_GT_STOP_RING cleared, HWS_PGA programmed. */
 	imr = i915_fake_wt_find(&t->fake, 0x2098U, 0xffffffffU, 0xffffffffU);
 	mode = i915_fake_wt_find(&t->fake, 0x229cU, (8U << 16) | 8U, 0xffffffffU);
 	mi_mode = i915_fake_wt_find(&t->fake, 0x209cU, 0x100U << 16, 0xffffffffU);
@@ -2143,12 +2143,12 @@ i915_ktest_gt_context_state(
 	/* Restore is inhibited and PDP0 names the four-level top directory. */
 	drv_i915_ktest_check(
 		ktest,
-		rs[CTX_CONTEXT_CONTROL] == (((8U << 16) | 8U) | (1U << 16) | 1U) &&
-		    rs[CTX_PDP0_LDW] == (uint32_t)t->pp.top_pd_dma &&
-		    rs[CTX_PDP0_UDW] == (uint32_t)(t->pp.top_pd_dma >> 32),
+		rs[I915_GT_CTX_CONTEXT_CONTROL] == (((8U << 16) | 8U) | (1U << 16) | 1U) &&
+		    rs[I915_GT_CTX_PDP0_LDW] == (uint32_t)t->pp.top_pd_dma &&
+		    rs[I915_GT_CTX_PDP0_UDW] == (uint32_t)(t->pp.top_pd_dma >> 32),
 		"p6c2: P6C2-STATE restore is inhibited and PDP0 names the 4-level top directory");
 
-	/* __reset_stop_ring() clears STOP_RING and masks it in. */
+	/* __reset_stop_ring() clears I915_GT_STOP_RING and masks it in. */
 	drv_i915_ktest_check(
 		ktest,
 		(rs[I915_KTEST_LRC_MI_MODE_INDEX + 1] & 0x100U) == 0U &&
@@ -2191,14 +2191,14 @@ i915_ktest_gt_context_ring(
 	/* Writes the ring registers for an empty ring. */
 	desc = drv_i915_lrc_update_regs(ce, 0U);
 
-	/* A 4 KiB ring has RING_CTL size 0, and the render engine asks for its slice. */
+	/* A 4 KiB ring has I915_GT_RING_CTL size 0, and the render engine asks for its slice. */
 	drv_i915_ktest_check(
 		ktest,
-		rs[CTX_RING_START] == (uint32_t)ce->ring.ggtt_offset &&
-		    rs[CTX_RING_HEAD] == 0U &&
-		    rs[CTX_RING_TAIL] == 0U &&
-		    rs[CTX_RING_CTL] == 1U &&
-		    rs[CTX_R_PWR_CLK_STATE] == (0x80000000U | (1U << 18) | (1U << 12)),
+		rs[I915_GT_CTX_RING_START] == (uint32_t)ce->ring.ggtt_offset &&
+		    rs[I915_GT_CTX_RING_HEAD] == 0U &&
+		    rs[I915_GT_CTX_RING_TAIL] == 0U &&
+		    rs[I915_GT_CTX_RING_CTL] == 1U &&
+		    rs[I915_GT_CTX_R_PWR_CLK_STATE] == (0x80000000U | (1U << 18) | (1U << 12)),
 		"p6c2: P6C2-RING a 4 KiB ring programs RING_CTL size 0 and render asks for its slice");
 
 	/* The descriptor is 64-bit, VALID and PRIVILEGE, and the update forces a restore. */
@@ -2233,7 +2233,7 @@ i915_ktest_gt_context_wa_batch(
 	ce = &t->rcs_ce;
 	rs = ce->lrc_reg_state;
 
-	/* Every ADL-P engine has its own AUX_INV register (gen12_get_aux_inv_reg()). */
+	/* Every ADL-P engine has its own I915_GT_AUX_INV register (gen12_get_aux_inv_reg()). */
 	aux_rcs = drv_i915_lrc_aux_inv_reg(I915_RCS0);
 	aux_bcs = drv_i915_lrc_aux_inv_reg(I915_BCS0);
 	aux_vcs0 = drv_i915_lrc_aux_inv_reg(I915_VCS0);
@@ -2268,15 +2268,15 @@ i915_ktest_gt_context_wa_batch(
 	saw_dbg = 0;
 	saw_sem = 0;
 	for (index = 0U; index < ce->indirect_bb_dwords; index++) {
-		/* RING_CMD_BUF_CCTL. */
+		/* I915_GT_RING_CMD_BUF_CCTL. */
 		if (bb[index] == 0x2084U)
 			saw_cctl = 1;
 
-		/* GEN12_CS_DEBUG_MODE2. */
+		/* I915_GT_GEN12_CS_DEBUG_MODE2. */
 		if (bb[index] == 0x20d8U)
 			saw_dbg = 1;
 
-		/* MI_SEMAPHORE_WAIT_TOKEN polling the AUX invalidate. */
+		/* I915_CMD_MI_SEMAPHORE_WAIT_TOKEN polling the AUX invalidate. */
 		if (bb[index] == (0x0e000003U | (1U << 16) | (1U << 15) | (4U << 12)))
 			saw_sem = 1;
 	}
@@ -2361,15 +2361,15 @@ i915_ktest_gt_context_xcs(
 	saw_dbg = 0;
 	saw_inv = 0;
 	for (index = 0U; index < t->vcs0_ce.indirect_bb_dwords; index++) {
-		/* The engine's RING_CMD_BUF_CCTL. */
+		/* The engine's I915_GT_RING_CMD_BUF_CCTL. */
 		if (vbb[index] == 0x1c0084U)
 			saw_cctl = 1;
 
-		/* GEN12_CS_DEBUG_MODE2. */
+		/* I915_GT_GEN12_CS_DEBUG_MODE2. */
 		if (vbb[index] == 0x20d8U)
 			saw_dbg = 1;
 
-		/* GEN12_VD0_AUX_INV. */
+		/* I915_GT_GEN12_VD0_AUX_INV. */
 		if (vbb[index] == 0x4218U)
 			saw_inv = 1;
 	}
@@ -2400,12 +2400,12 @@ i915_ktest_gt_context_rpcs(
 	/* Rewrites the registers as if the engine could not power-gate a slice. */
 	t->rcs.sseu_has_slice_pg = 0;
 	(void)drv_i915_lrc_update_regs(&t->rcs_ce, 0U);
-	without_pg = t->rcs_ce.lrc_reg_state[CTX_R_PWR_CLK_STATE];
+	without_pg = t->rcs_ce.lrc_reg_state[I915_GT_CTX_R_PWR_CLK_STATE];
 
 	/* Rewrites them again with slice power gating, as the engine was set up. */
 	t->rcs.sseu_has_slice_pg = 1;
 	(void)drv_i915_lrc_update_regs(&t->rcs_ce, 0U);
-	with_pg = t->rcs_ce.lrc_reg_state[CTX_R_PWR_CLK_STATE];
+	with_pg = t->rcs_ce.lrc_reg_state[I915_GT_CTX_R_PWR_CLK_STATE];
 
 	/* Gen12 requests slices only; without slice power gating nothing is requested. */
 	drv_i915_ktest_check(
@@ -2435,7 +2435,7 @@ i915_ktest_gt_render_request(
 	/* The flush block without FLUSH_L3. */
 	fl_inv_bg1 = 0x103070a1U;
 
-	/* Creates the request: request_alloc's EMIT_INVALIDATE on render. */
+	/* Creates the request: request_alloc's I915_CMD_EMIT_INVALIDATE on render. */
 	error = drv_i915_request_create(rq, ce, 5U, hw, &t->rcs.hwsp[0x40U]);
 
 	/* Render runs the flush block too (AUX invalidate), then the invalidate and the AUX poll. */
@@ -2576,7 +2576,7 @@ i915_ktest_gt_copy_request(
 	/* Creates the request. */
 	error = drv_i915_request_create(rq, ce, 7U, hw, &t->bcs.hwsp[0x40U]);
 
-	/* The copy invalidate carries MI_FLUSH_DW_CCS, not INVALIDATE_BSD. */
+	/* The copy invalidate carries I915_CMD_MI_FLUSH_DW_CCS, not INVALIDATE_BSD. */
 	drv_i915_ktest_check(
 		ktest,
 		error == 0 &&
@@ -2588,7 +2588,7 @@ i915_ktest_gt_copy_request(
 		    r[13] == 0x02800100U,
 		"p6c3: P6C3-BCS the copy invalidate carries MI_FLUSH_DW_CCS, not INVALIDATE_BSD");
 
-	/* BLIT_CCTL is a plain read-modify-write entry: it is read from the register, which holds all-ones. */
+	/* I915_GT_BLIT_CCTL is a plain read-modify-write entry: it is read from the register, which holds all-ones. */
 	drv_i915_engine_init_ctx_wa(&t->ctx_wa, &t->bcs_info, 12, 3U);
 	drv_i915_raw_write32(&t->mmio, t->ctx_wa.list[0].reg, 0xffffffffU);
 	want = (0xffffffffU & ~t->ctx_wa.list[0].clr) | t->ctx_wa.list[0].set;
@@ -2661,7 +2661,7 @@ i915_ktest_gt_copy_submit(
 	pre_tail = rq->tail;
 	error = drv_i915_execlists_submit(&t->bcs, &t->bcs_el, &t->mmio, rq);
 
-	/* Port 1 (empty) first, then port 0 low and high with FORCE_RESTORE on the first submission, then EL_CTRL_LOAD. */
+	/* Port 1 (empty) first, then port 0 low and high with FORCE_RESTORE on the first submission, then I915_GT_EL_CTRL_LOAD. */
 	port1_lo = i915_fake_wt_find(&t->fake, 0x22518U, 0U, 0xffffffffU);
 	port1_hi = i915_fake_wt_find(&t->fake, 0x2251cU, 0U, 0xffffffffU);
 	port0_lo = i915_fake_wt_find(&t->fake, 0x22510U, lo, 0xffffffffU);
@@ -2679,9 +2679,9 @@ i915_ktest_gt_copy_submit(
 		    port0_hi < load,
 		"p6c3b: P6C3B-SUBMIT port 1 (empty) then port 0 lo/hi, FORCE_RESTORE on first submit, then EL_CTRL_LOAD");
 
-	/* The submission left RING_TAIL at the request tail, moved the tail to wa_tail and took tag 0. */
+	/* The submission left I915_GT_RING_TAIL at the request tail, moved the tail to wa_tail and took tag 0. */
 	submitted = 0;
-	if (ce->lrc_reg_state[CTX_RING_TAIL] == pre_tail &&
+	if (ce->lrc_reg_state[I915_GT_CTX_RING_TAIL] == pre_tail &&
 	    rq->tail == rq->wa_tail &&
 	    (ce->lrc_desc & 4U) == 0U &&
 	    ce->tag == 0 &&
@@ -2778,7 +2778,7 @@ i915_ktest_gt_copy_csb(
 		bit5 == EINVAL && unaligned == EINVAL,
 		"p6c3: P6C3-REFUSE a breadcrumb address with bit 5 set or not qword aligned is refused");
 
-	/* An odd dword count would leave RING_TAIL unaligned. */
+	/* An odd dword count would leave I915_GT_RING_TAIL unaligned. */
 	rq->ce = &t->bcs_ce;
 	rq->error = 0;
 	begun = drv_i915_ring_begin(rq, 3U);
@@ -2807,7 +2807,7 @@ i915_ktest_gt_resume_pieces(
 	drv_i915_raw_write32(&t->mmio, 0x22030U, 0U);
 	error = drv_i915_engine_stop_cs(&t->bcs, &t->mmio);
 
-	/* STOP_RING and (Wa_22011802037) PREFETCH_DISABLE; an empty ring is not a timeout. */
+	/* I915_GT_STOP_RING and (Wa_22011802037) PREFETCH_DISABLE; an empty ring is not a timeout. */
 	stop_ring = i915_fake_wt_find(&t->fake, 0x2209cU, (0x100U << 16) | 0x100U, 0xffffffffU);
 	prefetch = i915_fake_wt_find(&t->fake, 0x2229cU, (0x400U << 16) | 0x400U, 0xffffffffU);
 	drv_i915_ktest_check(
@@ -2838,7 +2838,7 @@ i915_ktest_gt_resume_pieces(
 	i915_ktest_gt_power_sanitize(ktest, t);
 
 	/* lrc_reset() on a used context whose context control was lost. */
-	ce->lrc_reg_state[CTX_CONTEXT_CONTROL] = 0U;
+	ce->lrc_reg_state[I915_GT_CTX_CONTEXT_CONTROL] = 0U;
 	drv_i915_lrc_reset(ce);
 
 	/* The ring restarts at emit, the registers are scrubbed, and a restore is forced. */
@@ -2846,8 +2846,8 @@ i915_ktest_gt_resume_pieces(
 		ktest,
 		ce->ring.head == ce->ring.emit &&
 		    ce->ring.tail == ce->ring.emit &&
-		    ce->lrc_reg_state[CTX_CONTEXT_CONTROL] == (((8U << 16) | 8U) | (1U << 16) | 1U) &&
-		    ce->lrc_reg_state[CTX_RING_HEAD] == ce->ring.emit &&
+		    ce->lrc_reg_state[I915_GT_CTX_CONTEXT_CONTROL] == (((8U << 16) | 8U) | (1U << 16) | 1U) &&
+		    ce->lrc_reg_state[I915_GT_CTX_RING_HEAD] == ce->ring.emit &&
 		    (ce->lrc_desc & 4U) != 0U,
 		"p6c4: P6C4-LRCRESET the ring restarts at emit, the registers are scrubbed, restore is forced");
 }
@@ -3023,9 +3023,9 @@ i915_ktest_gt_defaults_inherit(
 		drv_i915_lrc_init_state(ce);
 		(void)drv_i915_lrc_update_regs(ce, 0U);
 		mark = ce->lrc_reg_state[0x40U];
-		control = ce->lrc_reg_state[CTX_CONTEXT_CONTROL];
+		control = ce->lrc_reg_state[I915_GT_CTX_CONTEXT_CONTROL];
 		pphwsp = ((uint32_t *)ce->state->cpu)[0];
-		ring_start = ce->lrc_reg_state[CTX_RING_START];
+		ring_start = ce->lrc_reg_state[I915_GT_CTX_RING_START];
 	}
 
 	/* The mark arrives, the per-process status page is cleared, and the restore is not inhibited. */
@@ -3285,7 +3285,7 @@ i915_ktest_gt_srm_find(
 	/* Walks every four-dword window of the ring. */
 	for (index = 0U; index + 3U < ring_dwords; index++) {
 		/* Only a global-GTT MI_STORE_REGISTER_MEM with a zero upper address is a store. */
-		if (ring[index] != (MI_STORE_REGISTER_MEM_GEN8 | MI_SRM_LRM_GLOBAL_GTT))
+		if (ring[index] != (I915_CMD_MI_STORE_REGISTER_MEM_GEN8 | I915_CMD_MI_SRM_LRM_GLOBAL_GTT))
 			continue;
 		if (ring[index + 3U] != 0U)
 			continue;
@@ -3403,9 +3403,9 @@ i915_ktest_gt_migrate_context(
 		    mg->ce.state != NULL &&
 		    mg->ce.state->bound != 0 &&
 		    mg->ce.vm == &mg->vm &&
-		    regs[CTX_PDP0_LDW] == (uint32_t)mg->vm.top_pd_dma &&
-		    regs[CTX_PDP0_UDW] == (uint32_t)(mg->vm.top_pd_dma >> 32) &&
-		    regs[CTX_RING_CTL] == ((I915_MIGRATE_RING_BYTES - 4096U) | 1U) &&
+		    regs[I915_GT_CTX_PDP0_LDW] == (uint32_t)mg->vm.top_pd_dma &&
+		    regs[I915_GT_CTX_PDP0_UDW] == (uint32_t)(mg->vm.top_pd_dma >> 32) &&
+		    regs[I915_GT_CTX_RING_CTL] == ((I915_MIGRATE_RING_BYTES - 4096U) | 1U) &&
 		    mg->hwsp_ggtt == (uint32_t)t->engines.ge[0].hwsp_ggtt + 0x108U &&
 		    mg->hwsp_cpu == &t->engines.ge[0].hwsp[0x42U] &&
 		    mg->tl_seqno == 0U,
@@ -3663,7 +3663,7 @@ i915_ktest_gt_eu_batch(
 		    selgpgpu < vfe &&
 		    vfe < midl &&
 		    midl < walker &&
-		    cmds[count - 2U] == MI_BATCH_BUFFER_END,
+		    cmds[count - 2U] == I915_CMD_MI_BATCH_BUFFER_END,
 		"eu: EU-BATCH 3D select, SBA (stateless MOCS 6, instruction base @0x100400000), GPGPU select, VFE(559), MIDL(896), walker(1x1x1 SIMD8), BB_END");
 
 	/* The PIPELINE_SELECT words against fixed reference words. */
@@ -3790,7 +3790,7 @@ i915_ktest_gt_draw_batch(
 		    check.n_bad == 0U &&
 		    nprim == 1U &&
 		    prim > check.idx_3d &&
-		    cmds[count - 2U] == MI_BATCH_BUFFER_END,
+		    cmds[count - 2U] == I915_CMD_MI_BATCH_BUFFER_END,
 		"draw: DRAW-BATCH PIPE_CONTROL, PIPELINE_SELECT(3D)=0x69041310 at dword 6, SBA, one 3DPRIMITIVE RECTLIST(3 vertices, 1 instance), BB_END");
 
 	/* Turns the select word back into the old, mis-encoded one. */

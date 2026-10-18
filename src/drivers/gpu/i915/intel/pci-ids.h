@@ -48,11 +48,11 @@
 #define DRIVERS_GPU_I915_INTEL_PCI_IDS_H
 
 /* include/drm/intel/pciids.h:621 */
-#define INTEL_TGL_GT1_IDS(MACRO__)	MACRO__(0x9A60), \
+#define I915_PCI_TGL_GT1_IDS(MACRO__)	MACRO__(0x9A60), \
 	MACRO__(0x9A68), \
 	MACRO__(0x9A70)
 /* include/drm/intel/pciids.h:626 */
-#define INTEL_TGL_GT2_IDS(MACRO__)	MACRO__(0x9A40), \
+#define I915_PCI_TGL_GT2_IDS(MACRO__)	MACRO__(0x9A40), \
 	MACRO__(0x9A49), \
 	MACRO__(0x9A59), \
 	MACRO__(0x9A78), \
@@ -61,10 +61,10 @@
 	MACRO__(0x9AD9), \
 	MACRO__(0x9AF8)
 /* include/drm/intel/pciids.h:636 */
-#define INTEL_TGL_IDS(MACRO__)	INTEL_TGL_GT1_IDS(MACRO__), \
-	INTEL_TGL_GT2_IDS(MACRO__)
+#define I915_PCI_TGL_IDS(MACRO__)	I915_PCI_TGL_GT1_IDS(MACRO__), \
+	I915_PCI_TGL_GT2_IDS(MACRO__)
 /* include/drm/intel/pciids.h:669 */
-#define INTEL_ADLP_IDS(MACRO__)	MACRO__(0x46A0), \
+#define I915_PCI_ADLP_IDS(MACRO__)	MACRO__(0x46A0), \
 	MACRO__(0x46A1), \
 	MACRO__(0x46A2), \
 	MACRO__(0x46A3), \
@@ -83,19 +83,19 @@
 	MACRO__(0x46C2), \
 	MACRO__(0x46C3)
 /* include/drm/intel/pciids.h:690 */
-#define INTEL_ADLN_IDS(MACRO__)	MACRO__(0x46D0), \
+#define I915_PCI_ADLN_IDS(MACRO__)	MACRO__(0x46D0), \
 	MACRO__(0x46D1), \
 	MACRO__(0x46D2), \
 	MACRO__(0x46D3), \
 	MACRO__(0x46D4)
 /* include/drm/intel/pciids.h:709 */
-#define INTEL_RPLU_IDS(MACRO__)	MACRO__(0xA721), \
+#define I915_PCI_RPLU_IDS(MACRO__)	MACRO__(0xA721), \
 	MACRO__(0xA7A1), \
 	MACRO__(0xA7A9), \
 	MACRO__(0xA7AC), \
 	MACRO__(0xA7AD)
 /* include/drm/intel/pciids.h:717 */
-#define INTEL_RPLP_IDS(MACRO__)	MACRO__(0xA720), \
+#define I915_PCI_RPLP_IDS(MACRO__)	MACRO__(0xA720), \
 	MACRO__(0xA7A0), \
 	MACRO__(0xA7A8), \
 	MACRO__(0xA7AA), \
@@ -109,15 +109,15 @@
  *
  * Modified for zedBSD: excerpted and reformatted by hand from the Linux
  * 6.8.12 reference.  Values are unchanged.  Source (SHA-256 of the file):
- *   include/drm/i915_pciids.h, INTEL_SKL_IDS, INTEL_KBL_IDS, INTEL_CFL_IDS
+ *   include/drm/i915_pciids.h, I915_PCI_SKL_IDS, I915_PCI_KBL_IDS, I915_PCI_CFL_IDS
  *     ef2ef3613dccba0d205f86b9283f870b48871d3f82ea3aba62084711f9ac2fb2
- * The reference lists Comet Lake inside INTEL_CFL_IDS; it is a list of its
+ * The reference lists Comet Lake inside I915_PCI_CFL_IDS; it is a list of its
  * own here because its workarounds differ.  The GT3 and GT4 parts have a
  * second video decode engine the driver does not use.
  */
 
 /* include/drm/i915_pciids.h:331-381 */
-#define INTEL_SKL_IDS(MACRO__)	MACRO__(0x1906), \
+#define I915_PCI_SKL_IDS(MACRO__)	MACRO__(0x1906), \
 	MACRO__(0x1913), \
 	MACRO__(0x190E), \
 	MACRO__(0x1915), \
@@ -144,7 +144,7 @@
 	MACRO__(0x193D)
 
 /* include/drm/i915_pciids.h:394-447, 475-480 */
-#define INTEL_KBL_IDS(MACRO__)	MACRO__(0x5906), \
+#define I915_PCI_KBL_IDS(MACRO__)	MACRO__(0x5906), \
 	MACRO__(0x5913), \
 	MACRO__(0x590E), \
 	MACRO__(0x5915), \
@@ -168,7 +168,7 @@
 	MACRO__(0x87C0)
 
 /* include/drm/i915_pciids.h:451-453, 482-525: Coffee Lake, Whiskey Lake and Amber Lake-Y */
-#define INTEL_CFL_IDS(MACRO__)	MACRO__(0x3E90), \
+#define I915_PCI_CFL_IDS(MACRO__)	MACRO__(0x3E90), \
 	MACRO__(0x3E93), \
 	MACRO__(0x3E99), \
 	MACRO__(0x3E91), \
@@ -192,7 +192,7 @@
 	MACRO__(0x87CA)
 
 /* include/drm/i915_pciids.h:455-473: Comet Lake */
-#define INTEL_CML_IDS(MACRO__)	MACRO__(0x9BA2), \
+#define I915_PCI_CML_IDS(MACRO__)	MACRO__(0x9BA2), \
 	MACRO__(0x9BA4), \
 	MACRO__(0x9BA5), \
 	MACRO__(0x9BA8), \

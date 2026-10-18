@@ -34,12 +34,12 @@
  * The ids the driver accepts today as a display 12 GPU (Tiger Lake) and
  * as a display 13 GPU (the Alder Lake-P class), as device.c lists them.
  */
-static const uint16_t i915_xd_test_accepted_12[] = { INTEL_TGL_IDS(I915_XD_TEST_ID) };
+static const uint16_t i915_xd_test_accepted_12[] = { I915_PCI_TGL_IDS(I915_XD_TEST_ID) };
 static const uint16_t i915_xd_test_accepted_13[] = {
-	INTEL_ADLP_IDS(I915_XD_TEST_ID),
-	INTEL_ADLN_IDS(I915_XD_TEST_ID),
-	INTEL_RPLU_IDS(I915_XD_TEST_ID),
-	INTEL_RPLP_IDS(I915_XD_TEST_ID)
+	I915_PCI_ADLP_IDS(I915_XD_TEST_ID),
+	I915_PCI_ADLN_IDS(I915_XD_TEST_ID),
+	I915_PCI_RPLU_IDS(I915_XD_TEST_ID),
+	I915_PCI_RPLP_IDS(I915_XD_TEST_ID)
 };
 
 static int i915_xd_test_listed(const uint16_t *list, unsigned count, uint16_t id);

@@ -99,7 +99,7 @@ drv_i915_rc6_init(
 	rc6->wa_disabled = 0;
 
 	/* Sanitizes RC6: it is disabled before the driver is ready for it. */
-	drv_i915_write32(mmio, GEN6_RC_CONTROL, 0U);
+	drv_i915_write32(mmio, I915_GT_GEN6_RC_CONTROL, 0U);
 }
 
 /*
@@ -131,29 +131,29 @@ drv_i915_gen11_rc6_enable(
 		return;
 
 	/* Programs the RC6 wake, evaluation and idle thresholds. */
-	drv_i915_write32(mmio, GEN6_RC6_WAKE_RATE_LIMIT, (54U << 16) | 85U);
-	drv_i915_write32(mmio, GEN10_MEDIA_WAKE_RATE_LIMIT, 150U);
-	drv_i915_write32(mmio, GEN6_RC_EVALUATION_INTERVAL, 125000U);
-	drv_i915_write32(mmio, GEN6_RC_IDLE_HYSTERSIS, 25U);
+	drv_i915_write32(mmio, I915_GT_GEN6_RC6_WAKE_RATE_LIMIT, (54U << 16) | 85U);
+	drv_i915_write32(mmio, I915_GT_GEN10_MEDIA_WAKE_RATE_LIMIT, 150U);
+	drv_i915_write32(mmio, I915_GT_GEN6_RC_EVALUATION_INTERVAL, 125000U);
+	drv_i915_write32(mmio, I915_GT_GEN6_RC_IDLE_HYSTERSIS, 25U);
 
 	/* Gives every engine the same idle time before it may power down. */
 	for (engine_index = 0U; engine_index < gt->num_engines; engine_index++)
-		drv_i915_write32(mmio, RING_MAX_IDLE(gt->engines[engine_index].mmio_base), 10U);
+		drv_i915_write32(mmio, I915_GT_RING_MAX_IDLE(gt->engines[engine_index].mmio_base), 10U);
 
 	/* Programs the GuC idle count, the RC sleep and the RC6 threshold. */
-	drv_i915_write32(mmio, GUC_MAX_IDLE_COUNT, 0xaU);
-	drv_i915_write32(mmio, GEN6_RC_SLEEP, 0U);
-	drv_i915_write32(mmio, GEN6_RC6_THRESHOLD, 50000U);
+	drv_i915_write32(mmio, I915_GT_GUC_MAX_IDLE_COUNT, 0xaU);
+	drv_i915_write32(mmio, I915_GT_GEN6_RC_SLEEP, 0U);
+	drv_i915_write32(mmio, I915_GT_GEN6_RC6_THRESHOLD, 50000U);
 
 	/* Programs the coarse power gating hysteresis of render and media. */
-	drv_i915_write32(mmio, GEN9_MEDIA_PG_IDLE_HYSTERESIS, 60U);
-	drv_i915_write32(mmio, GEN9_RENDER_PG_IDLE_HYSTERESIS, 60U);
+	drv_i915_write32(mmio, I915_GT_GEN9_MEDIA_PG_IDLE_HYSTERESIS, 60U);
+	drv_i915_write32(mmio, I915_GT_GEN9_RENDER_PG_IDLE_HYSTERESIS, 60U);
 
 	/* Without the GuC's RC6 the driver itself enables RC6. */
-	rc6->ctl_enable = GEN6_RC_CTL_RC6_ENABLE;
+	rc6->ctl_enable = I915_GT_GEN6_RC_CTL_RC6_ENABLE;
 
 	/* Render, media and media sampler power gating are always enabled. */
-	pg_enable = GEN9_RENDER_PG_ENABLE | GEN9_MEDIA_PG_ENABLE | GEN11_MEDIA_SAMPLER_PG_ENABLE;
+	pg_enable = I915_GT_GEN9_RENDER_PG_ENABLE | I915_GT_GEN9_MEDIA_PG_ENABLE | I915_GT_GEN11_MEDIA_SAMPLER_PG_ENABLE;
 
 	/*
 	 * Graphics version 12 other than DG1 also gates the HCP and MFX units
@@ -171,7 +171,7 @@ drv_i915_gen11_rc6_enable(
 				continue;
 
 			/* Gates this instance's HCP and MFX units. */
-			pg_enable |= VDN_HCP_POWERGATE_ENABLE(vcs) | VDN_MFX_POWERGATE_ENABLE(vcs);
+			pg_enable |= I915_GT_VDN_HCP_POWERGATE_ENABLE(vcs) | I915_GT_VDN_MFX_POWERGATE_ENABLE(vcs);
 			break;
 		}
 	}
@@ -180,8 +180,8 @@ drv_i915_gen11_rc6_enable(
 	rc6->pg_enable = pg_enable;
 
 	/* Turns on power gating, then RC6. */
-	drv_i915_write32(mmio, GEN9_PG_ENABLE, pg_enable);
-	drv_i915_write32(mmio, GEN6_RC_CONTROL, rc6->ctl_enable);
+	drv_i915_write32(mmio, I915_GT_GEN9_PG_ENABLE, pg_enable);
+	drv_i915_write32(mmio, I915_GT_GEN6_RC_CONTROL, rc6->ctl_enable);
 
 	/* The GT now enters RC6 on its own whenever it idles. */
 	rc6->enabled = 1;
@@ -206,9 +206,9 @@ drv_i915_rc6_sanitize(
 		return;
 
 	/* Turns off power gating and RC6, and clears the RC state. */
-	drv_i915_write32(mmio, GEN9_PG_ENABLE, 0U);
-	drv_i915_write32(mmio, GEN6_RC_CONTROL, 0U);
-	drv_i915_write32(mmio, GEN6_RC_STATE, 0U);
+	drv_i915_write32(mmio, I915_GT_GEN9_PG_ENABLE, 0U);
+	drv_i915_write32(mmio, I915_GT_GEN6_RC_CONTROL, 0U);
+	drv_i915_write32(mmio, I915_GT_GEN6_RC_STATE, 0U);
 }
 
 /*
@@ -234,30 +234,30 @@ drv_i915_rps_init(
 	ddcc_high = 0U;
 
 	/* Reads RP0 and the minimum from the capabilities, RP1 from the frequency info. */
-	capabilities = drv_i915_read32(mmio, GEN6_RP_STATE_CAP);
+	capabilities = drv_i915_read32(mmio, I915_GT_GEN6_RP_STATE_CAP);
 	rps->rp0_freq = (capabilities >> 0) & 0xffU;
-	frequency_info = drv_i915_read32(mmio, GEN10_FREQ_INFO_REC);
-	rps->rp1_freq = (frequency_info & RPE_MASK) >> 8;
+	frequency_info = drv_i915_read32(mmio, I915_GT_GEN10_FREQ_INFO_REC);
+	rps->rp1_freq = (frequency_info & I915_GT_RPE_MASK) >> 8;
 	rps->min_freq = (capabilities >> 16) & 0xffU;
 
 	/* The capabilities are in 50 MHz units; the driver counts in 16.67 MHz. */
-	rps->rp0_freq *= GEN9_FREQ_SCALER;
-	rps->rp1_freq *= GEN9_FREQ_SCALER;
-	rps->min_freq *= GEN9_FREQ_SCALER;
+	rps->rp0_freq *= I915_GT_GEN9_FREQ_SCALER;
+	rps->rp1_freq *= I915_GT_GEN9_FREQ_SCALER;
+	rps->min_freq *= I915_GT_GEN9_FREQ_SCALER;
 
 	/* Requests may use the whole fused range; RP1 is efficient until PCODE says otherwise. */
 	rps->max_freq = rps->rp0_freq;
 	rps->efficient_freq = rps->rp1_freq;
 
 	/* Asks the PCODE for the efficient frequency. */
-	pcode_error = drv_i915_pcode_read(sb_lock, mmio, HSW_PCODE_DYNAMIC_DUTY_CYCLE_CONTROL, &ddcc, &ddcc_high);
+	pcode_error = drv_i915_pcode_read(sb_lock, mmio, I915_GT_HSW_PCODE_DYNAMIC_DUTY_CYCLE_CONTROL, &ddcc, &ddcc_high);
 	rps->pcode_ok = 0;
 	if (pcode_error == 0)
 		rps->pcode_ok = 1;
 
 	/* Takes the PCODE's efficient frequency, clamped into the fused range. */
 	if (rps->pcode_ok != 0) {
-		efficient = ((ddcc >> 8) & 0xffU) * GEN9_FREQ_SCALER;
+		efficient = ((ddcc >> 8) & 0xffU) * I915_GT_GEN9_FREQ_SCALER;
 
 		/* The efficient frequency is never below the minimum. */
 		if (efficient < rps->min_freq)
@@ -316,8 +316,8 @@ drv_i915_rps_init(
  * Corrects the RPS state of a Gen9 GT after drv_i915_rps_init() and fixes
  * its frequency.
  *
- * Gen9 has RP1 in GEN6_RP_STATE_CAP bits 15:8 (it has no
- * GEN10_FREQ_INFO_REC), and the efficient frequency falls back to it when
+ * Gen9 has RP1 in I915_GT_GEN6_RP_STATE_CAP bits 15:8 (it has no
+ * I915_GT_GEN10_FREQ_INFO_REC), and the efficient frequency falls back to it when
  * the PCODE did not answer.  The first Gen9 version keeps the frequency
  * at that request (drv_i915_rps_start()).
  */
@@ -329,8 +329,8 @@ drv_i915_rps_init_gen9(
 	uint32_t capabilities;
 
 	/* Reads RP1 from the capabilities, in 50 MHz units. */
-	capabilities = drv_i915_read32(mmio, GEN6_RP_STATE_CAP);
-	rps->rp1_freq = ((capabilities >> GEN9_RP1_CAP_SHIFT) & 0xffU) * GEN9_FREQ_SCALER;
+	capabilities = drv_i915_read32(mmio, I915_GT_GEN6_RP_STATE_CAP);
+	rps->rp1_freq = ((capabilities >> I915_GT_GEN9_RP1_CAP_SHIFT) & 0xffU) * I915_GT_GEN9_FREQ_SCALER;
 
 	/* Without the PCODE's answer RP1 is the efficient frequency. */
 	if (rps->pcode_ok == 0)
@@ -365,8 +365,8 @@ drv_i915_rps_enable(
 
 	/* Programs the idle hysteresis; Gen9 also gives RP1 to the video frequency. */
 	if (rps->fixed != 0)
-		drv_i915_write32(mmio, GEN6_RC_VIDEO_FREQ, GEN9_FREQUENCY(rps->rp1_freq));
-	drv_i915_write32(mmio, GEN6_RP_IDLE_HYSTERSIS, 0xaU);
+		drv_i915_write32(mmio, I915_GT_GEN6_RC_VIDEO_FREQ, I915_GT_GEN9_FREQUENCY(rps->rp1_freq));
+	drv_i915_write32(mmio, I915_GT_GEN6_RP_IDLE_HYSTERSIS, 0xaU);
 
 	/* RPS follows the up and down threshold events. */
 	rps->pm_events = I915_RPS_UP_THRESHOLD | I915_RPS_DOWN_THRESHOLD;
@@ -400,7 +400,7 @@ drv_i915_rps_sanitize(
 	 * the interrupt setup programmed (IER 0, IMR ~0) unchanged, so they
 	 * write nothing.
 	 */
-	drv_i915_write32(mmio, GEN6_PMINTRMSK, 0xffffffffU);
+	drv_i915_write32(mmio, I915_GT_GEN6_PMINTRMSK, 0xffffffffU);
 }
 
 /*
@@ -490,7 +490,7 @@ drv_i915_rps_start(
 	    rps->rp0_freq,
 	    rps->cur_freq,
 	    rps->clock_frequency,
-	    drv_i915_read32(mmio, GEN6_RP_CONTROL));
+	    drv_i915_read32(mmio, I915_GT_GEN6_RP_CONTROL));
 
 	/* Succeeded: the frequency follows the load. */
 	return 0;
@@ -516,7 +516,7 @@ drv_i915_rps_stop(
 		return;
 
 	/* Masks every RPS event at the PM mask. */
-	drv_i915_write32(rps->mmio, GEN6_PMINTRMSK, 0xffffffffU);
+	drv_i915_write32(rps->mmio, I915_GT_GEN6_PMINTRMSK, 0xffffffffU);
 
 	/* Disables and masks the RPS events (gen6_gt_pm_disable_irq()). */
 	flags = spin_lock_irqsave(&rps->lock);
@@ -767,14 +767,14 @@ drv_i915_rps_telemetry_read(
 
 	/* The frequency last written, in MHz (the driver counts in 50/3 MHz). */
 	if (enabled && written != I915_RPS_FREQ_NONE) {
-		entry->req_mhz = written * 50U / GEN9_FREQ_SCALER;
+		entry->req_mhz = written * 50U / I915_GT_GEN9_FREQ_SCALER;
 		entry->valid |= GPU_TELEMETRY_REQ_MHZ;
 	}
 
 	/* The range the work moves in, once it is known. */
 	if (highest != 0U) {
-		entry->min_mhz = lowest * 50U / GEN9_FREQ_SCALER;
-		entry->max_mhz = highest * 50U / GEN9_FREQ_SCALER;
+		entry->min_mhz = lowest * 50U / I915_GT_GEN9_FREQ_SCALER;
+		entry->max_mhz = highest * 50U / I915_GT_GEN9_FREQ_SCALER;
 		entry->valid |= GPU_TELEMETRY_RANGE_MHZ;
 	}
 
@@ -946,7 +946,7 @@ i915_rps_write_imr(
 	struct i915_rps *rps)
 {
 	/* The raw accessor, as the interrupt handler that also calls this uses. */
-	drv_i915_raw_write32(rps->mmio, GEN11_GPM_WGBOXPERF_INTR_MASK, rps->pm_imr << 16);
+	drv_i915_raw_write32(rps->mmio, I915_GT_GEN11_GPM_WGBOXPERF_INTR_MASK, rps->pm_imr << 16);
 }
 
 /* Writes the PM interrupt enable as last computed, in the upper half of GPM_WGBOXPERF. */
@@ -955,7 +955,7 @@ i915_rps_write_ier(
 	struct i915_rps *rps)
 {
 	/* The raw accessor, as for the mask. */
-	drv_i915_raw_write32(rps->mmio, GEN11_GPM_WGBOXPERF_INTR_ENABLE, rps->pm_ier << 16);
+	drv_i915_raw_write32(rps->mmio, I915_GT_GEN11_GPM_WGBOXPERF_INTR_ENABLE, rps->pm_ier << 16);
 }
 
 /*
@@ -1007,20 +1007,20 @@ i915_rps_set_power(
 	ei_down = I915_RPS_DOWN_EI_US;
 
 	/* The up interval and the busy time in it that goes up. */
-	drv_i915_write32(mmio, GEN6_RP_UP_EI, drv_i915_rps_pm_interval(rps->clock_frequency, ei_up * 1000U));
-	drv_i915_write32(mmio, GEN6_RP_UP_THRESHOLD, drv_i915_rps_pm_interval(rps->clock_frequency, ei_up * rps->up_threshold * 10U));
+	drv_i915_write32(mmio, I915_GT_GEN6_RP_UP_EI, drv_i915_rps_pm_interval(rps->clock_frequency, ei_up * 1000U));
+	drv_i915_write32(mmio, I915_GT_GEN6_RP_UP_THRESHOLD, drv_i915_rps_pm_interval(rps->clock_frequency, ei_up * rps->up_threshold * 10U));
 
 	/* The down interval and the busy time in it below which it goes down. */
-	drv_i915_write32(mmio, GEN6_RP_DOWN_EI, drv_i915_rps_pm_interval(rps->clock_frequency, ei_down * 1000U));
-	drv_i915_write32(mmio, GEN6_RP_DOWN_THRESHOLD, drv_i915_rps_pm_interval(rps->clock_frequency, ei_down * rps->down_threshold * 10U));
+	drv_i915_write32(mmio, I915_GT_GEN6_RP_DOWN_EI, drv_i915_rps_pm_interval(rps->clock_frequency, ei_down * 1000U));
+	drv_i915_write32(mmio, I915_GT_GEN6_RP_DOWN_THRESHOLD, drv_i915_rps_pm_interval(rps->clock_frequency, ei_down * rps->down_threshold * 10U));
 
 	/* RP control on, averaging busy time up and idle time down; no media turbo past graphics version 9. */
-	drv_i915_write32(mmio, GEN6_RP_CONTROL,
-	    GEN6_RP_MEDIA_HW_NORMAL_MODE |
-	    GEN6_RP_MEDIA_IS_GFX |
-	    GEN6_RP_ENABLE |
-	    GEN6_RP_UP_BUSY_AVG |
-	    GEN6_RP_DOWN_IDLE_AVG);
+	drv_i915_write32(mmio, I915_GT_GEN6_RP_CONTROL,
+	    I915_GT_GEN6_RP_MEDIA_HW_NORMAL_MODE |
+	    I915_GT_GEN6_RP_MEDIA_IS_GFX |
+	    I915_GT_GEN6_RP_ENABLE |
+	    I915_GT_GEN6_RP_UP_BUSY_AVG |
+	    I915_GT_GEN6_RP_DOWN_IDLE_AVG);
 
 	/* The mode now in force. */
 	rps->power_mode = new_power;
@@ -1093,7 +1093,7 @@ i915_rps_set(
 		return;
 
 	/* The request. */
-	drv_i915_write32(mmio, GEN6_RPNSWREQ, GEN9_FREQUENCY(freq));
+	drv_i915_write32(mmio, I915_GT_GEN6_RPNSWREQ, I915_GT_GEN9_FREQUENCY(freq));
 
 	/* The thresholds for it. */
 	if (update)
@@ -1128,8 +1128,8 @@ i915_rps_set_freq(
 
 	/* With the interrupts, their limits and mask follow the new frequency (intel_rps_has_interrupts()). */
 	if (rps->use_timer == 0) {
-		drv_i915_write32(mmio, GEN6_RP_INTERRUPT_LIMITS, drv_i915_rps_limits(rps, freq));
-		drv_i915_write32(mmio, GEN6_PMINTRMSK, drv_i915_rps_pm_mask(rps, freq));
+		drv_i915_write32(mmio, I915_GT_GEN6_RP_INTERRUPT_LIMITS, drv_i915_rps_limits(rps, freq));
+		drv_i915_write32(mmio, I915_GT_GEN6_PMINTRMSK, drv_i915_rps_pm_mask(rps, freq));
 	}
 
 	/* The frequency the next decision starts from. */
@@ -1222,7 +1222,7 @@ i915_rps_enable_interrupts(
 	spin_unlock_irqrestore(&rps->lock, flags);
 
 	/* Lets the events through the mask that follows the frequency. */
-	drv_i915_write32(mmio, GEN6_PMINTRMSK, drv_i915_rps_pm_mask(rps, rps->last_freq));
+	drv_i915_write32(mmio, I915_GT_GEN6_PMINTRMSK, drv_i915_rps_pm_mask(rps, rps->last_freq));
 }
 
 /* Starts the busy-time evaluations from the busy time and the clock of now. */

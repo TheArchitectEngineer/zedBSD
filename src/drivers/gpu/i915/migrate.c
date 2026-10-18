@@ -163,7 +163,7 @@ i915_migrate_insert_pte(
 
 /*
  * Finds the first copy engine: every copy engine supports migration
- * (MI_ARB_ON_OFF, MI_STORE_DATA and the blits).
+ * (I915_CMD_MI_ARB_ON_OFF, MI_STORE_DATA and the blits).
  */
 static int
 i915_migrate_first_copy_engine(

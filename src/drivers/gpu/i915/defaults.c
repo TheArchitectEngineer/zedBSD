@@ -659,7 +659,7 @@ i915_defaults_emit_null_state(
 	ggtt = (uint32_t)object->ggtt_offset;
 	for (dword = 0U; dword < count; dword++)
 		batch[dword] = i915_gen9_null_state[dword];
-	batch[count] = MI_BATCH_BUFFER_END;
+	batch[count] = I915_CMD_MI_BATCH_BUFFER_END;
 
 	/* Adds the page's address to each relocated dword. */
 	for (reloc = 0U; reloc < I915_GEN9_NULL_STATE_RELOCS; reloc++) {
@@ -681,12 +681,12 @@ i915_defaults_emit_null_state(
 		return rq->error;
 
 	/* Starts the batch secure, in the GGTT, with arbitration on around it. */
-	*cs++ = MI_ARB_ON_OFF | MI_ARB_ENABLE;
-	*cs++ = MI_BATCH_BUFFER_START_GEN8;
+	*cs++ = I915_CMD_MI_ARB_ON_OFF | I915_CMD_MI_ARB_ENABLE;
+	*cs++ = I915_CMD_MI_BATCH_BUFFER_START_GEN8;
 	*cs++ = ggtt;
 	*cs++ = 0U;
-	*cs++ = MI_ARB_ON_OFF;
-	*cs++ = MI_NOOP;
+	*cs++ = I915_CMD_MI_ARB_ON_OFF;
+	*cs++ = I915_CMD_MI_NOOP;
 	drv_i915_ring_advance(rq, cs);
 
 	/* Succeeded: the null state runs before the record request's breadcrumb. */
