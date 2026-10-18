@@ -6,20 +6,14 @@
  */
 
 /*
- * The bit helpers the transcribed Intel definitions of this directory are
- * written with.
- *
- * The Linux register headers build their fields with REG_BIT, BIT, BIT_ULL,
- * REG_GENMASK, GENMASK, GENMASK_ULL and PAGE_SIZE.  The transcriptions here
- * were rewritten to use the helpers below instead (the "Rewrites" line of each
- * header names the mapping).  The helpers are this driver's own definitions,
- * not copies of the Linux ones.
+ * The bit helpers the register headers of this directory are written
+ * with: a bit, a field mask from its high and low bit, and the page size.
  */
 
 #ifndef DRIVERS_GPU_I915_INTEL_BITS_H
 #define DRIVERS_GPU_I915_INTEL_BITS_H
 
-/* Bit helpers replacing the Linux register helper macros. */
+/* A 32-bit and a 64-bit bit, a 32-bit and a 64-bit field mask, the page size. */
 #define I915_INC_BIT(n)			(1U << (n))
 #define I915_INC_BIT64(n)		(1ULL << (n))
 #define I915_INC_GENMASK(h, l)		(((0xffffffffU) >> (31U - (h))) & ((0xffffffffU) << (l)))
