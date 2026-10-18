@@ -13,7 +13,7 @@
 
 - `include/kern/boot.h` の `struct kern_pc98_parameter_handoff`、`KERN_PC98_*`・`KERN_HANDOFF_VERSION_PC98`、`struct rpi4_boot_handoff`、`KERN_RPI4_HANDOFF_MAGIC` など（「XXX: To be removed」の印）。
 - 使っている所: `src/hal/arm64/`（cmain・bsp・page・smp・space、bsp-rpi4 の boot・fdt・gic・cons）、`src/kern/platform/rpi4.c`、`src/drivers/platform/rpi4/`（bt・audio・ethernet・sdhci）、`src/drivers/platform/pc98/`、PC-98 の HAL（`src/hal/i386/` の pc98 の部分）と boot loader（`bootloader/pc98/`）。
-- 範囲外（ユーザーの指示に無い）: 同じ印の `struct kern_sun4u_*`（sparcv9）。扱いはユーザーに聞く。
+- sparcv9（sun4u）の `struct kern_sun4u_*`・`KERN_SUN4U_*`・`KERN_HANDOFF_VERSION_SUN4U`: 2026-10-18 ユーザー「WS261ですが、sparcv9も対象にしてほしいです。」で範囲に入れた（p002）。x68k の物は範囲外のまま。
 
 ## 画面の情報（2026-10-18 ユーザー）
 
