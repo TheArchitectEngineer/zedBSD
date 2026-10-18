@@ -6,20 +6,8 @@
  */
 
 /*
- * The side channels of the Gen9 outputs (see gen9-ddc.h).
- *
- * The AUX transfer follows the Linux kernel 6.8.12's
- * intel_dp_aux_xfer() and skl_get_aux_send_ctl() (MIT): wait for a
- * previous transfer, load the data registers, start with the send control
- * word, wait for the busy bit, clear the status, and retry up to five
- * times on a timeout or a receive error.  The DPCD and I2C-over-AUX
- * messages are DisplayPort's (drm_dp.h's request codes): a native read or
- * write of up to 16 bytes, and for the EDID an I2C write of the offset and
- * I2C reads of 16 bytes with the middle-of-transaction bit, ended by an
- * address-only read.  The GMBUS read follows do_gmbus_xfer() and
- * gmbus_xfer_read_chunk() with an index cycle for the EDID offset, and the
- * PCH GMBUS clock gating workaround (Display WA #0868).  The code is this
- * file's own.
+ * The side channels of the Gen9 outputs (see gen9-ddc.h): the AUX channel
+ * with its DPCD and I2C-over-AUX messages, and the GMBUS.
  */
 
 #include "gen9-ddc.h"
@@ -98,7 +86,14 @@ drv_i915_skl_aux_unpack(
 }
 
 /*
- * Sends one AUX message on a port's channel and receives the reply.
+ * Sends one AUX message on a port's channel and receives the reply: waits
+ * for a previous transfer, loads the data registers, starts with the send
+ * control word, waits for the busy bit, clears the status, and tries again
+ * up to five times on a timeout or a receive error.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_dp_aux.c (intel_dp_aux_xfer,
+ * skl_get_aux_send_ctl).
  *
  * Returns the reply's bytes (1 to 20, the first being the reply code), or
  * -EBUSY (the channel stayed busy, or no valid reply), -ETIMEDOUT (no sink
@@ -267,8 +262,12 @@ drv_i915_skl_dpcd_write(
 
 /*
  * Reads EDID blocks through I2C-over-AUX: the offset written to the DDC
- * address, 16 bytes read at a time, and an address-only read that ends
- * the I2C transaction.  At most two blocks (one segment).
+ * address, 16 bytes read at a time with the middle-of-transaction bit, and
+ * an address-only read that ends the I2C transaction.  At most two blocks
+ * (one segment).
+ *
+ * Values referenced: Linux v6.8.12 include/drm/display/drm_dp.h
+ * (DP_AUX_NATIVE_*, DP_AUX_I2C_* request codes).
  */
 int
 drv_i915_skl_aux_edid(
@@ -332,7 +331,13 @@ drv_i915_skl_aux_edid(
 /*
  * Reads EDID blocks through the GMBUS on a pin: for each block an index
  * cycle with the offset and a 128-byte read, then a stop; a NAK clears the
- * GMBUS.  Returns 0, ENXIO when nothing answers, ETIMEDOUT, or EINVAL.
+ * GMBUS.  The PCH's GMBUS clock gating is held off during the transfer
+ * (Display WA #0868).  Returns 0, ENXIO when nothing answers, ETIMEDOUT, or
+ * EINVAL.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_gmbus.c (do_gmbus_xfer,
+ * gmbus_xfer_read_chunk).
  */
 int
 drv_i915_skl_gmbus_edid(
@@ -392,7 +397,13 @@ drv_i915_skl_gmbus_pin(
 	return 0U;
 }
 
-/* Builds an AUX request header (intel_dp_aux_header). */
+/*
+ * Builds an AUX request header: the request and the 20-bit address, then
+ * the length less one.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_dp_aux.c (intel_dp_aux_header).
+ */
 static void
 i915_skl_aux_header(
 	uint8_t *header,
