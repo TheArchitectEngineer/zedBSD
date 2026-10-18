@@ -1,5 +1,24 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
+# ws074-q20261018-12 / retained rawとzero font glyph
+
+Status: active（2026-10-18 12:41 JST）
+Owner: このCodex chat単独。
+Approval: [ユーザー自走指示](autonomy.md)を以下の有限scopeへ適用。
+Timebox: 最大90分（14:11 JSTまで）。
+
+| Attempt | Phase | Exact scope | State | Dependencies |
+| --- | --- | --- | --- | --- |
+| ws074-q20261018-12-i01 | [p189](phase189/phase.md) runner retention partial | censusのgzip後unlinkを外しraw JSONも保持。one actual IDでraw/gzip/checkpoint/report同値を確認してから再利用。harness/WPT結果判定は変更しない | cleared（[証拠](phase189/evidence/20261018-q12-i01/README.md)） | q11 audit/圧縮raw復元 |
+| ws074-q20261018-12-i02 | [p247](phase247/phase.md) zero glyph | logical font size0とpositive rasterizer pixel sizeを分け、zero glyphのadvance/inkを消す。positive/fractional fontと公開ABIは維持。実font native/独立DOM・paint/Chromium、p185strut、DOM/CSSOM、host/target warning0、C全文/format、Acid非増加。固定harness既存適格1,455 IDとstatic1,561 IDをq11 frozen before/afterで照合し旧whole/callback PASS後退0、未対応328/413/crash48保持。補助font-size-zero3 IDは公式へ加算しない | in-progress | i01 retained runner、q11 verified frozen output（p246 whole clearance不要） |
+
+Dependency graph: q11 frozen output + p189 i01 retained runner → p247 i02。
+Upcoming Work Outlook: p246 general intrinsic、p248 native animation設計、runner未対応。
+
+---
+
+<!-- awesome-plan project=zedbsd record=queue -->
+
 # ws074-q20261018-11 / intrinsic Grid track breadth
 
 Status: finished（2026-10-18、uncleared）

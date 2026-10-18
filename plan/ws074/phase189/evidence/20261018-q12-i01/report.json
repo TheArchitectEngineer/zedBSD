@@ -1,0 +1,26 @@
+{
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "eligible": 502,
+  "reason_counts": {
+    "candidate": 502
+  },
+  "eligible_sha256": "5fa65ed37998a0958da75da5dc9a69f85bd26a05c2f64a118072c7527f56af23",
+  "offset": 0,
+  "limit": 1,
+  "font_dir": "userland/desktop/fonts",
+  "selected": [
+    "/css/css-grid/abspos/absolute-positioning-definite-sizes-001.html"
+  ],
+  "results": [
+    {
+      "kind": "result",
+      "test_id": "/css/css-grid/abspos/absolute-positioning-definite-sizes-001.html",
+      "outcome": "pass",
+      "report": "test-001.json.gz"
+    }
+  ],
+  "outcome_counts": {
+    "pass": 1
+  }
+}

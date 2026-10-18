@@ -113,7 +113,7 @@ def main():
             with path.open("rb") as source, gzip.open(compressed, "wb") as output:
                 for block in iter(lambda: source.read(65536), b""):
                     output.write(block)
-            path.unlink()
+            # Retain the original raw JSON as well as its reversible compressed copy.
             path = compressed
         row = {"kind": "result", "test_id": identifier,
                "outcome": result["outcome"], "report": path.name}

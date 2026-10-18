@@ -2,11 +2,11 @@
 
 # ws074-p247: zero font glyph advanceとink
 
-Status: planned
+Status: in-progress（q12-i02）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
-Queue: 未選定（q11後の候補）
+Queue: ws074-q20261018-12-i02（i01後に開始）
 
 ## Observation / goal
 
@@ -25,3 +25,9 @@ text_fontのlogical size0とrasterizer用positive pixel sizeを分ける。zero�
 Guardrail/C全文/browser-component全文を適用。user-visible font minimum preferenceを新設しない。負font入力/positive subpixel rasterizerの全面変更、full text shaping/ligatures/decorationはこの最初の範囲外。全WS conformance/production link/runtimeはp100/後段。共有projection pending。
 
 Event ws074-p247-planned-from-q11-20261018: bug index/Phaseを検索し、p185 strutの既知結果と別のadvance残りを確認。q11のsnapshot/acceptanceは変更せず後続候補として追加。
+
+Event ws074-p247-q12-selected-20261018: 最大90分のzero glyph scopeを選定、i01 verified retention後に実装する。global font changeなのでfixed eligible1455/static1561をq11 frozen pairと新pairで比較し、既知q11 animation24 lossをfont修正へ誤帰属しない。未対応分とwholeの全3,805/p100関門は維持。
+
+Event ws074-p247-q12-i02-start-20261018: i01のactual retained raw proofを確認しzero glyph実装を開始。beforeはfa4ac8002のq11 fixed pair、24既知animation lossを含む現状から直接比較する。
+
+Event ws074-p247-q12-native-checkpoint-20261018: native zero56/56・既存text20/20、独立DOM14/14 Chromium一致、DOM30/30、CSSOM/mutation各12/12、p185 strut PASS。zero glyph paintは黒15pixel→0、positive paintは305pixel維持/画素差0。host/target compile warning0、変更関数自動規約候補0、Acid3差0/Acid2差873。全eligible前後比較は継続中なのでclearしない。補助font-size-zero 3件は0→2 PASS、残るzero-1は次段落が16px上（test y51.20/ref67.20）になるmargin-collapseの既存残りとして別に診断し、zero inkの修復と混同しない。native fixture/DOM fixtureはactive p247/p100から参照し、再利用のTools/AAT登録・移設はQ1のshared投影へpending。

@@ -1,0 +1,39 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Zero font glyphs retain zero advance without removing child boxes</title>
+<body>
+<script>
+function sample(name, css, content) {
+    var box = document.createElement("div");
+    box.style.cssText = "display:inline-block;font-size:0;" + css;
+    box.innerHTML = content;
+    document.body.appendChild(box);
+    var rect = box.getBoundingClientRect();
+    console.log(name, rect.width, rect.height);
+    return box;
+}
+sample("regular", "", "MMMM");
+sample("bold", "font-weight:bold", "MMMM");
+sample("monospace", "font-family:monospace", "MMMM");
+sample("fallback", "", "漢字");
+sample("explicit-line-height", "line-height:20px", "MMMM");
+sample("normal-line-height", "line-height:normal", "MMMM");
+sample("nested-percent", "", '<span style="font-size:50%">MMMM</span>');
+sample("child-box", "", '<span style="display:inline-block;width:20px;height:10px"></span>');
+var grid = document.createElement("div");
+grid.style.cssText = "display:grid;width:200px;font-size:0;line-height:10px;grid-template-columns:max-content 1fr";
+var item = document.createElement("div");
+item.innerHTML = '<span style="display:inline-block;width:40px;height:10px"></span> <span style="display:inline-block;width:30px;height:10px"></span>';
+grid.appendChild(item);
+document.body.appendChild(grid);
+console.log("grid-space", getComputedStyle(grid).gridTemplateColumns);
+sample("float-intrinsic", "float:left;height:20px", "MMMM MMMM");
+var live = sample("live-zero", "", "MMMM");
+live.style.fontSize = "16px";
+var positive = live.getBoundingClientRect().width;
+console.log("live-positive", positive > 0);
+live.style.fontSize = "0px";
+console.log("live-hidden", live.getBoundingClientRect().width);
+live.style.fontSize = "16px";
+console.log("live-restored", live.getBoundingClientRect().width === positive);
+</script>

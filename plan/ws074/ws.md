@@ -9,7 +9,11 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [ws074-q20261018-11](queue.md) finished（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+Queue: [ws074-q20261018-12](queue.md) active（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+
+Event ws074-q12-retention-clear-font-start-20261018: [retention証拠](phase189/evidence/20261018-q12-i01/README.md)。actual1 ID raw/gzip一致、i01部分cleared。i02 zero fontを開始。p189 whole/q11未達は保持。
+
+Event ws074-q12-selected-20261018: runner retentionをp189で先に直し、verified output後に独立p247 zero glyphを進める最大90分scope。全eligible harness/staticをq11 before/afterで比較し、q11 animation未達は保持。
 
 Event ws074-p246-q11-uncleared-p248-added-20261018: [証拠](phase246/evidence/20261018-q11/README.md)。Grid whole248維持、74 callback改善/24後退でq11 uncleared。static227→228/後退0、独立22/22、DOM29/29、host/target warning0、Acid非増加。24はnative animation欠落、p248計画を追加。次は独立zero font/runner retention。
 
@@ -677,7 +681,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p244](phase244/phase.md) | 固定Grid行spanのoverflow | uncleared / q09-i01 partial cleared、general minimum等残り | p243 q07で露出したsolver不備 |
 | [ws074-p245](phase245/phase.md) | no-boxのauto minimum resolved value | cleared / q10 no-box own acceptance | p243/q08のGrid raw、actual box proof |
 | [ws074-p246](phase246/phase.md) | intrinsic track breadth/contribution | uncleared / q11 24 animation callback loss | q09 minimum rule、q10 output |
-| [ws074-p247](phase247/phase.md) | zero font glyph advance/ink | planned / Queue未選定 | q11診断、p185 strut |
+| [ws074-p247](phase247/phase.md) | zero font glyph advance/ink | in-progress / q12-i02 | q11診断、p185 strut |
 | [ws074-p248](phase248/phase.md) | native Grid animation/transition | planning / Queue未選定 | p246 scalar output、native timing設計 |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。

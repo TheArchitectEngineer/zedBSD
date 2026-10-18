@@ -32,7 +32,7 @@
 /*
  * One cached glyph: its key (face, bold, size and code point), what the
  * layout needs, the bitmap once it is drawn, and whether a bold glyph is
- * its face's bold companion's (ws090-p020; drawn without the widening).
+ * its face's bold companion's (drawn without the widening).
  */
 struct text_glyph_entry {
 	uint64_t key;
@@ -70,7 +70,7 @@ text_system_open(
 	if (error != 0)
 		return error;
 
-	/* Its companions: Mahora Bold for its bold glyphs, the monospaced fallback for the signs it lacks (ws090-p020). */
+	/* Its companions: Mahora Bold for its bold glyphs, the monospaced fallback for the signs it lacks. */
 	(void)truetype_open_companions(system->faces[TEXT_FACE_SANS].face, KEILAND_FONT_BOLD, KEILAND_FONT_FALLBACK_MONO);
 
 	/* The others are optional; the monospace font has the same fallback. */
@@ -121,8 +121,8 @@ text_system_close(
 }
 
 /*
- * Picks the font for a style: the face of its family, its size rounded to
- * whole pixels and whether it is bold.
+ * Selects a style's face, logical size and positive rasterizer size.
+ * A zero logical size stays distinct from the rasterizer's minimum pixel size.
  */
 void
 text_select_font(
@@ -133,33 +133,54 @@ text_select_font(
 	struct text_font *font)
 {
 	float rounded;
+	int empty;
 
-	/* Monospace text uses the monospace face when it opened. */
+	/* Monospace text uses its actual open face before later family selection. */
 	font->face = TEXT_FACE_SANS;
 	if (monospace && system->faces[TEXT_FACE_MONO].open)
 		font->face = TEXT_FACE_MONO;
 
-	/* The size in whole pixels, within what the rasterizer takes; the layout keeps the fraction. */
+	/* Logical zero must not become a one-pixel advance when rasterization is clamped. */
+	empty = 0;
+	if (size == 0.0f)
+		empty = 1;
+
+	/* Positive and fractional inputs retain their existing minimum-size behavior. */
 	if (size < (float)FONT_PIXELS_MIN)
 		size = (float)FONT_PIXELS_MIN;
+
+	/* The rasterizer's existing upper bound also remains the positive logical bound. */
 	if (size > (float)FONT_PIXELS_MAX)
 		size = (float)FONT_PIXELS_MAX;
+
+	/* Layout and metrics observe true zero independently of the safe rasterizer size. */
 	font->size = size;
+	if (empty)
+		font->size = 0.0f;
+
+	/* Rounds the rasterizer's request while keeping its minimum strictly positive. */
 	rounded = size + 0.5f;
 	if (rounded < (float)FONT_PIXELS_MIN)
 		rounded = (float)FONT_PIXELS_MIN;
+
+	/* Rounded upper bounds cannot exceed the supported raster size. */
 	if (rounded > (float)FONT_PIXELS_MAX)
 		rounded = (float)FONT_PIXELS_MAX;
+
+	/* Publishes the positive draw size separately from logical zero. */
 	font->pixels = (unsigned)rounded;
 
-	/* Heavy weights are drawn bold. */
+	/* Synthetic bold remains a style choice even when the selected font has no ink. */
 	font->bold = 0;
 	if (weight >= FONT_BOLD_WEIGHT)
 		font->bold = 1;
+
+	/* Succeeded: the selected face and independent logical/raster sizes are ready. */
+	return;
 }
 
 /*
- * Adds a web font's face (ws074-p070) under its family, weights and style;
+ * Adds a web font's face under its family, weights and style;
  * the face takes the font file's bytes from data (which is left empty).
  * Returns ENOSPC when the system holds as many web faces as it can.
  */
@@ -209,7 +230,7 @@ text_add_face(
 }
 
 /*
- * Picks a web font's face for a family, a weight and a style (ws074-p070),
+ * Picks a web font's face for a family, a weight and a style,
  * as CSS font matching does in short: the faces of the style asked for (or
  * of the other style when the family has none), the weight nearest the one
  * asked for (a face covering it, else a heavier one for bold weights and a
@@ -406,21 +427,35 @@ text_glyph(
 	uint64_t key;
 	int error;
 
-	/* Grows the cache when adding would fill more than half of it. */
+	/* Zero logical size has neither advance nor coverage, including bold and fallback glyphs. */
+	if (font->size == 0.0f) {
+		memset(glyph, 0, sizeof(*glyph));
+		glyph->face = font->face;
+
+		/* Succeeded: callers receive the ordinary empty-ink glyph contract. */
+		return 0;
+	}
+
+	/* Grows the cache before publishing an entry that would exceed its load bound. */
 	if ((system->cache_count + 1U) * 2U > system->cache_capacity) {
 		error = font_grow(system);
 		if (error != 0)
 			return error;
 	}
 
-	/* Finds the entry, or measures the glyph into a new one. */
+	/* Looks up the exact selected face, size, weight and code point. */
 	key = font_key(font, code_point);
 	slot = font_slot(system, key);
 	entry = *slot;
+
+	/* A missing key must be fully measured before the cache can own it. */
 	if (entry == NULL) {
+		/* Allocates one unpublished glyph record. */
 		entry = calloc(1, sizeof(*entry));
 		if (entry == NULL)
 			return ENOMEM;
+
+		/* Measures the complete record before any shared cache slot points to it. */
 		entry->key = key;
 		error = font_measure(system, font, code_point, entry);
 		if (error != 0) {
@@ -428,19 +463,19 @@ text_glyph(
 			return error;
 		}
 
-		/* Keeps the entry. */
+		/* The cache owns this glyph until system close; its count preserves the load bound. */
 		*slot = entry;
 		system->cache_count++;
 	}
 
-	/* Draws the bitmap the first time it is asked for. */
+	/* Draws requested coverage once; empty logical glyphs already returned above. */
 	if (with_bitmap && !entry->drawn) {
 		error = font_draw(system, font, entry);
 		if (error != 0)
 			return error;
 	}
 
-	/* Succeeded: the glyph is the cache's. */
+	/* Succeeded: the ordinary positive-size glyph borrows the cache's stable storage. */
 	*glyph = entry->glyph;
 	return 0;
 }
@@ -582,7 +617,7 @@ font_measure(
 	}
 
 	/*
-	 * A bold glyph its face's bold companion has (Mahora Bold, ws090-p020)
+	 * A bold glyph its face's bold companion has (Mahora Bold)
 	 * is drawn from it as it is; any other is widened by a pixel here.
 	 */
 	face = &system->faces[face_index];

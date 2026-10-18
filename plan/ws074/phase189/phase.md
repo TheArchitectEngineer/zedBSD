@@ -269,3 +269,7 @@ Event ws074-p189-q1105-partial-clear-20261014: [証拠](evidence/20261014-q1105/
 Design note ws074-p242-proposed-20261018: q03の途中で、anchor/@scopeのcleanupが`replaceChildren`未定義で後続subtestをNOTRUNにしている事実を確認。[p242](../phase242/phase.md)を後続のDOM一般機能の候補として追加。q03の測定とp189の受け入れは変更せず、baselineには現行binaryのharness_errorをそのまま記録する。
 
 Event ws074-census-retention-find-20261018: q11 auditでcensus gzip後にraw JSONをunlinkする既存処理を確認。q11分はgzipから同じbytesへ復元して保持。次の有限Queueでunlinkを外し、actual one-ID report/raw/gzip equalityを確認してから再利用する。現在の測定値/圧縮raw/historyは変更しない。
+
+Event ws074-p189-q12-i01-start-20261018: q11のauditを受けてcensus raw retentionを選定。gzip後に元JSONを削除せず両方を保持し、actual1 IDで同値を確認する。出力のcleanupはQ1管理。判定/固定ID/denominatorは変更しない。
+
+Event ws074-p189-q12-i01-cleared-20261018: [証拠](evidence/20261018-q12-i01/README.md)。actual1 ID PASSでraw JSON/gzip/checkpoint/report同値、new delete無し。retention部分cleared、p189 whole未達。次のi02検証がこのrunnerを使う。共有投影pending。
