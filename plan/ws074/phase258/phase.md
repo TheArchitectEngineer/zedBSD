@@ -2,11 +2,11 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: uncleared（q49 JSON.stringify partial cleared、whole Proxy未達）
+Status: in-progress（q50 JSON.parse/reviver partial、whole Proxy未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
-Queue: ws074-q20261018-49-i01（q30〜q48 partial履歴保持）
+Queue: ws074-q20261018-50-i01（q30〜q49 partial履歴保持）
 Origin: p189/q29 original WebIDL2 parseがProxy未定義で停止。
 
 Objective / own criteria: native managed Proxyを実object internal methodsへ接続し、constructor/revocableと各internal operationのtrap/fallback/invariant/receiver/revocation/callability/GCを正しく実行する。original WebIDL2 actual parse/validatorに必要なget/set/array behaviorを通常APIで提供し、independent controls/原WPTを通す。部分read stageだけでwholeをclearしない。
@@ -304,3 +304,5 @@ JSON.parse/reviverの所有/Proxy routing、uint32/int32幅・JSON_DEPTH_MAX/res
 Archives: harness-all-raw 1676 members SHA2565127febd2683798dd849e067f4999f96d78e1b36c1ea152f84b35bf52e6535c5, native-oracle-and-build-raw 119 members SHA256869a70bf94cb76206c273a3de4f588a8475ded0213ec9b7229f4b728293c7e72を全member順次read-back。runtime binaryはhash付きbuild保持・archive非同梱。
 
 [証拠](evidence/20261018-q49/README.md)。次finite scope未選定。
+
+Event ws074-p258-q50-selection: JSON.parse text/recursive frames/reviver所有とactual IsArray/OwNKeys/GetOwn snapshotを選定。new source-context/幅/global等whole未達。[exact Queue](../queue.md)。main統合・master編集無し。
