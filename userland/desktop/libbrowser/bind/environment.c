@@ -1208,20 +1208,33 @@ environment_instance(
 	struct vm_object **object)
 {
 	struct vm_realm *realm;
+	struct vm_cell *root;
 	int error;
 
-	/* The object. */
+	/* The wrapper must survive allocating its first global property key. */
 	realm = window->realm;
-	*object = vm_object_create(realm->heap, window->prototypes[interface]);
-	if (*object == NULL)
-		return ENOMEM;
-
-	/* The global property, enumerable and fixed as the window's own objects are. */
-	error = js_builtin_value(realm, realm->global, global, vm_value_cell(*object), VM_PROPERTY_ENUMERABLE | VM_PROPERTY_CONFIGURABLE);
+	root = NULL;
+	error = vm_heap_add_root(realm->heap, &root);
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the object is on the global object. */
+	/* Register temporary ownership before constructing the ordinary native instance. */
+	*object = vm_object_create(realm->heap, window->prototypes[interface]);
+	if (*object == NULL) {
+		vm_heap_remove_root(realm->heap, &root);
+		return ENOMEM;
+	}
+
+	/* A reentrant collection during global publication cannot orphan the newborn wrapper. */
+	root = &(*object)->cell;
+	error = js_builtin_value(realm, realm->global, global, vm_value_cell(*object), VM_PROPERTY_ENUMERABLE | VM_PROPERTY_CONFIGURABLE);
+	vm_heap_remove_root(realm->heap, &root);
+
+	/* Failed publication leaves environment installation incomplete. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the actual global object owns the wrapper before temporary roots end. */
 	return 0;
 }
 

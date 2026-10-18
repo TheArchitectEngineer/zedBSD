@@ -14,6 +14,9 @@
 #include <stdio.h>
 #include <string.h>
 
+/* Inert allocation pressure reaches the production collector threshold without retaining other cells. */
+static const struct vm_cell_type marks_pressure_type = { "marks-fixture-pressure", NULL, NULL };
+
 /* Accumulates independent ownership observations until the fixture completes. */
 static unsigned checks;
 
@@ -164,6 +167,7 @@ marks_case(
 	vm_value answer;
 	struct vm_heap_stats before;
 	struct vm_heap_stats after;
+	struct vm_cell *pressure;
 	int status;
 
 	/* Only the timeline retains the two hundred created marks after this script ends. */
@@ -228,9 +232,28 @@ marks_case(
 	/* A saved entry never dereferences retired frame or document storage. */
 	marks_check(answer == VM_VALUE_TRUE, "independent child mark survives iframe retirement and source-root-only GC");
 
+	/* Push the unchanged production allocation threshold before creating another independent child. */
+	pressure = vm_heap_alloc(page->heap, &marks_pressure_type, 8U * 1024U * 1024U);
+	if (pressure == NULL)
+		return 2;
+
+	/* Realm initialization and global publication must retain genuine performance state under pressure. */
+	vm_heap_stats(page->heap, &before);
+	status = marks_script(page->realm,
+	    "var pressureFrame=document.createElement('iframe');document.body.appendChild(pressureFrame);"
+	    "var pressureMark=pressureFrame.contentWindow.performance.mark('pressure',{detail:'kept'});"
+	    "collectMarksFixture();pressureFrame.remove();pressureFrame=null;collectMarksFixture();"
+	    "pressureMark.name==='pressure'&&pressureMark.detail==='kept'", &answer);
+	if (status != 0)
+		return status;
+
+	/* The collector ran while the new managed context and its native API remained usable. */
+	vm_heap_stats(page->heap, &after);
+	marks_check(answer == VM_VALUE_TRUE && after.collections > before.collections, "performance initialization and publication survive real allocation pressure");
+
 	/* Release all script references after proving the retained graph was usable. */
 	status = marks_script(page->realm,
-	    "saved=null;converted=null;selected=null;childMark=null;borrowed=null;performance.clearMarks();true", &answer);
+	    "saved=null;converted=null;selected=null;childMark=null;borrowed=null;pressureMark=null;performance.clearMarks();true", &answer);
 	if (status != 0)
 		return status;
 

@@ -45,3 +45,7 @@ Event ws074-p254-q25-selected-20261018: exact scope/criteria/timeboxは[Queue](.
 今回detailはclone不要なprimitiveだけに限り、複雑object/function/symbolはDataCloneErrorとして未対応を明示。structuredClone globalやJS補完に依存せず、複雑detailのfull-standard algorithmはwhole残差として保持。p255の実observer後までheld caseは解除しない。原固定2025 WPT/一次User Timing/Chrome独立21条件を参照し、q24入力不具合訂正後baselineを使用。検証gate/正確な生成source/禁止事項はQueueの通り。
 
 Event ws074-p254-q25-owner-refinement-20261018: 独立Chrome/nativeでborrowed parent mark.call(child.performance)の生成prototypeが相違と判明し、timelineが実owner globalとmark prototypeをmanaged traceする内部設計へ精密化。mark生成はreceiverの保持するrelevant global/clock/prototypeを使い、entry自体はraw Window pointerを持たない。root-only GC/retired childとborrowed methodを同じ38条件/host fixtureで再検証する。Phase外のscope/interface/順序は不変、p255はverified producer待ちを維持。
+
+q25 full-scope residual audit: pinned interfaces/performance-timeline.idlにはid/navigationIdも存在するが、今回exact scopeはcommon4 fields/toJSONであり、追加ID fieldsとその生成policyは未実装としてwhole残差へ保持する。ChromeにもnavigationIdの追加fieldがあり、common4比較だけでfullIDL適合とは主張しない。複雑detail、measure/resource/event/worker、native Observer/p100/target full link/runtimeも今回のpartial clearanceとは別の未達。
+
+Event ws074-p254-q25-publication-root-review-20261018: native生成の全文GC監査で、既存environment_instanceがVM object作成からglobal property key割当までnewborn rootを保持しない経路を確認。p254のWindow初期化/生成lifetime条件内でhelperをroot登録→割当→global公開→root解除へ修正し、production thresholdの8MiB pressure下で実child/performance/mark作成とretire/GCを行う7つ目のhost条件を追加。元6条件/38Chromeは保持。実装機能を拡大せず、superseded frozen pairの検証を残したうえで新final pairで影響する全gateを再検証する。
