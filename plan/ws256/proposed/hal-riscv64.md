@@ -104,7 +104,7 @@ hal_atomic_uint_try_acquire(
 static inline void
 hal_atomic_relax(void)
 {
-	__asm__ volatile(".4byte 0x0100000f" ::: "memory");
+	__asm__ volatile("pause" ::: "memory");
 }
 
 #endif
@@ -196,7 +196,7 @@ _Static_assert(
 ```
 
 注:
-- `hal_atomic_relax` の `.4byte 0x0100000f` は `pause`（Zihintpause）の encoding（`fence w, 0`）。assembler が `pause` の mnemonic を `-march` に Zihintpause 無しで拒むかもしれないので encoding で書く案。p003 で assembler の振る舞いを確かめ、受けるなら `pause` の mnemonic にする。
+- `hal_atomic_relax` の `pause`（Zihintpause の hint、encoding 0x0100000f = `fence w, 0`）は、共有の clang 23 の assembler が `-march=rv64imac_zicsr_zifencei`（Zihintpause 無し）でも受ける事を 2026-10-18 に確かめた。Zihintpause の無い U74 では普通の fence として実行される（合法）。
 - `HAL_DEBUG_HAS_SINGLE_STEP 0` と `HAL_DEBUG_KIND_*_OK 0` を kernel（`src/kern/ptrace.c`）がどう扱うかは p003 で確かめる（`hal_task_set_single_step` の失敗は `ENOTSUP` になる事は確かめた。`HAL_DEBUG_POINT_MAX` は配列の大きさに使われるので 1 を下限にした）。
 - `struct hal_gpregs` に `sstatus` を入れない: user が変えられる処理器の状態は無い（FS は HAL が持つ）。debugger は pc と x だけ。
 

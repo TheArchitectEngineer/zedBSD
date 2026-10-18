@@ -151,6 +151,7 @@ HAL の API（`include/hal/`）の差分は [proposed/hal-riscv64.md](proposed/h
 - 同 patch の `clang/lib/Driver/ToolChains/ZedBSD.cpp` の linker は `-m` の emulation を x86_64 → `elf_x86_64`、aarch64 → `aarch64elf`、**それ以外 → `elf_i386`** とするので、riscv64 の userland の link は壊れる（kernel は `ld.lld -m elf64lriscv` を直に呼ぶので影響しない）。
 - `--target=riscv64-unknown-windows -c` は COFF でなく **ELF を出す**（`llvm-objdump -f` で `elf64-littleriscv`）。`lld-link /machine:riscv64` は「unknown /machine argument」。→ amd64 の BOOTX64.EFI の作り方（COFF＋lld-link）は使えない。
 - `ld.lld -m elf64lriscv -shared -Bsymbolic -z notext --no-relax` は PIC の object から `.rela.dyn` に `R_RISCV_RELATIVE` を持つ shared object を作り、`llvm-objcopy -O binary` は flat にできる（確かめた）。
+- `-march=rv64imac_zicsr_zifencei -mabi=lp64` の C の object と `-march=rv64gc -mabi=lp64` の .S（`fsd` を含む）の object は `e_flags` が同じ（RVC、soft の float ABI）で `ld.lld` が link する（確かめた）。`pause` の mnemonic は `-march` に Zihintpause が無くても assembler が受け、encoding は 0x0100000f（確かめた）。`__builtin_setjmp` は riscv64 では使えない（確かめた、§4.3）。
 - `include/uapi/hosted.h`・`include/kern/kcrt.h` は `__ZEDBSD__` の無い compiler のために `KERN_UAPI_NATIVE`・`KERN_KCRT_NATIVE` の define を持つ（sparcv9 の GCC の道）。→ kernel と HAL の Phase（p003・p008）は toolchain の patch を待たずに `--target=riscv64-unknown-elf` ＋ これらの define で build できる。**userland（p007）には `riscv64-unknown-zedbsd` が `__ZEDBSD__` を定義し linker の emulation が正しいことが要る** → §4.5 の toolchain の依頼。
 
 ## 2. HAL の riscv64 の構成
@@ -246,7 +247,7 @@ kernel から来た例外（`sstatus.SPP` = 1）は `kernel_sys_fault_handler`�
 
 - `src/kern/platform/riscv-virt.c`・`src/kern/platform/visionfive2.c`（README の「platform ごとに 1 つの TU」）: `kern_platform_init`（console の driver の登録、ramdisk の root の公開、FDT の `drv_fdt_open`）、`kern_platform_block_device`、`kern_platform_halt/reboot/poweroff`（SBI SRST）、debug の write（SBI console）。
 - **UART の console の driver** `src/drivers/serial/ns16550.c`（新。MMIO の 16550、間隔と access 幅を引数で持ち、DW の busy detect の癖を flag で持つ。pcat の `serial-mirror.c` は port I/O の別物で再利用しない）＋ teletype の console の glue（rpi4-console.c と同じ役の `src/drivers/generic/serial-console.c`: `kern_text_register` の teletype、RX は PLIC の割り込みで tty に入れる。**RX の割り込みが「PLIC の割り込みが動く」の証拠**）。
-- **root の媒体**: initrd（§7 の判断 4 の既定）。loader が `rootfs.img`（UFS の image）を同じ FAT から memory に読んで handoff に範囲を渡し、kernel は memory を背にした block device（新 `src/drivers/generic/ramdisk.c`。tree には initrd/ramdisk が無いことを grep で確かめた）を `kern_platform_block_device` で出し、`KERN_PARTITION_SCHEME_LBA`（partition の無い device）で root に mount する。QEMU の直の起動では `-initrd` の `/chosen/linux,initrd-start/end` から同じ物を作る。SD（JH7110 の DW MSHC）・GbE・USB・display は別の WS（§7）。
+- **root の媒体**: initrd（§7 の判断 4 の既定）。loader が `root.img` を同じ FAT から memory に読んで handoff に範囲を渡し、kernel は memory を背にした block device（新 `src/drivers/generic/ramdisk.c`。tree には initrd/ramdisk が無いことを grep で確かめた）を `kern_platform_block_device` で出す。**`root.img` は partition table（GPT）と 1 つの UFS の partition を持つ小さな disk の image**で、`zedbsd.cfg` の `rootpart=UUID=…` がその partition を選ぶ（`src/kern/vfs.c` の `vfs_resolve_native_root` は `DISK_PARTITION` の device しか受けないので、partition の無い image は使えない。`KERN_PARTITION_SCHEME_LBA` は pc98 の raw の形で root の選択には使われていない: 確かめた）。image は amd64 の `native` layout の root の作り方（`tools/build` の UFS と GPT の道具）で作る。QEMU の直の起動では `-initrd root.img` の `/chosen/linux,initrd-start/end` から同じ ramdisk を作る。SD（JH7110 の DW MSHC）・GbE・USB・display は別の WS（§7）。
 - build: `platform/riscv64/`（§4）。
 
 ## 3. 起動の道
@@ -260,7 +261,7 @@ kernel から来た例外（`sstatus.SPP` = 1）は `kernel_sys_fault_handler`�
 ### 3.2 VisionFive 2
 
 1. firmware: 板の QSPI に入っている vendor の firmware の U-Boot の版は未確認（古い物は `RISCV_EFI_BOOT_PROTOCOL` を持たない可能性: U-Boot への追加は 2022 年）。**既定の案: Debian の `u-boot-starfive`（2025.01）の `u-boot-spl.bin.normal.out` と `u-boot.itb` を SD の partition 1・2（GUID §1.6）に置き、MSEL を SD にして試す**（flash を書き換えない。動けば後で `sf update` で flash へ）。
-2. SD の GPT: 1 spl、2 uboot、3 **ESP**（FAT32: `EFI/BOOT/BOOTRISCV64.EFI`、`zedbsd.cfg`、`vmunix`、`rootfs.img`、`logo.ppm` は不要）、4 UFS の root（SD の driver が来るまで未使用。initrd の間は 3 だけで足りる）。amd64 の `native` layout に 1・2 を足した形を `platform/riscv64/disk-image.mk` で作る（`tools/build` の image の道具は GPT を作れる: amd64 の hybrid/native の道）。
+2. SD の GPT: 1 spl、2 uboot、3 **ESP**（FAT32: `EFI/BOOT/BOOTRISCV64.EFI`、`zedbsd.cfg`、`vmunix`、`root.img`、`logo.ppm` は不要）、4 UFS の root（SD の driver が来るまで未使用。initrd の間は 3 だけで足りる）。amd64 の `native` layout に 1・2 を足した形を `platform/riscv64/disk-image.mk` で作る（`tools/build` の image の道具は GPT を作れる: amd64 の hybrid/native の道）。
 3. U-Boot（S-mode、boot hart は OpenSBI の lottery の 1〜4 のどれか）の bootstd が mmc の ESP を見つけ `BOOTRISCV64.EFI` を実行。DTB は `${fdtfile}` を ESP の `/dtb/` 等に置けば（例 `dtb/starfive/jh7110-starfive-visionfive-2-v1.3b.dtb`、Linux の DTS から dtc で作る物を tree に置くかは判断 8）、無ければ U-Boot の control DT（u-boot.itb の中の DTB、2025.01 は upstream の DTS）が渡る。**既定: control DT を使う**（file を置かない）。
 4. loader → kernel（§3.3・3.4）→ UART0 で login。電源の入れ直しは Pi と同じ SwitchBot の plug（§5）。
 
@@ -300,7 +301,7 @@ kernel から来た例外（`sstatus.SPP` = 1）は `kernel_sys_fault_handler`�
 
 ### 4.3 userland（libc・rtld・crt・Noct）
 
-- `userland/base/libc/syscall-riscv64.S`（`__syscall6`、`__signal_restorer`）、`src/libc/crt/crt0-riscv64.S`・`crt1-riscv64.S`（`_start`: argc/argv/envp を `sp` から、`gp` の設定（`__global_pointer$`）、`__libc_init`、`main`、`_exit`）、`src/libc/setjmp-riscv64.S` と `include/libc/setjmp.h` の `__riscv` の枝（clang の riscv に `__builtin_setjmp` が無いか確かめてから。aarch64 と同じく自前なら s0〜s11・ra・sp・fs0〜fs11 の 26 word）、`static-tls.c`（`tp` の読み）、`pthread.c`（relax: `pause` は Zihintpause が無い U74 でも `fence w,0` の encoding で合法な hint）、`posix.c`（`machine` = "riscv64"）、`include/uapi/reg.h`（`struct reg { uint64_t r_x[32]; uint64_t r_pc; }`、`struct fpreg { uint64_t fp_f[32]; uint32_t fp_fcsr; }`）、`include/libc/elf.h` の `R_RISCV_*`。
+- `userland/base/libc/syscall-riscv64.S`（`__syscall6`、`__signal_restorer`）、`src/libc/crt/crt0-riscv64.S`・`crt1-riscv64.S`（`_start`: argc/argv/envp を `sp` から、`gp` の設定（`__global_pointer$`）、`__libc_init`、`main`、`_exit`）、`src/libc/setjmp-riscv64.S` と `include/libc/setjmp.h` の `__riscv` の枝（clang 23 の riscv64 は `__builtin_setjmp` を「not supported for the current target」と拒む: 2026-10-18 に確かめた。aarch64 と同じく自前で、s0〜s11・ra・sp・fs0〜fs11 の 26 word）、`static-tls.c`（`tp` の読み）、`pthread.c`（relax: `pause` は Zihintpause が無い U74 でも `fence w,0` の encoding で合法な hint）、`posix.c`（`machine` = "riscv64"）、`include/uapi/reg.h`（`struct reg { uint64_t r_x[32]; uint64_t r_pc; }`、`struct fpreg { uint64_t fp_f[32]; uint32_t fp_fcsr; }`）、`include/libc/elf.h` の `R_RISCV_*`。
 - `src/rtld/rtld.c`: `HAL_ARCH_RISCV64` の `RTLD_MACHINE EM_RISCV`・`RTLD_RELATIVE R_RISCV_RELATIVE`、relocation の switch（64、RELATIVE、JUMP_SLOT、GLOB_DAT は無い（64 を使う）、TLS_DTPMOD64・DTPREL64・TPREL64、IRELATIVE、COPY。TLSDESC は `-mtls-dialect=trad` で出さない）。
 - `userland/base/noct/zedbsd-riscv64.cmake`（`CMAKE_SYSTEM_PROCESSOR riscv64`、triple、flags `-march=rv64gc -mabi=lp64d -mno-relax ...`）。`tools/build/check-dynamic-elf.py` の `MACHINES` に `riscv64`（243、ELF64、LE、許す relocation の集合）。`platform/common/userland-*.mk` は platform から flags を受ける形なのでそのまま。
 - userland の flags: `-march=rv64gc -mabi=lp64d -mno-relax -fno-plt`（PLT は使ってよいが rtld の実装が簡単な方を p007 で選ぶ）。`-z max-page-size=4096` は lld の riscv の既定が 4096 なので不要。
@@ -363,7 +364,7 @@ kernel から来た例外（`sstatus.SPP` = 1）は `kernel_sys_fault_handler`�
 | 1 | 外部の code の参照の方針 | WS245 と同じ: 手順と値は Linux（GPL）・OpenSBI（BSD-2）・U-Boot（GPL）・QEMU（GPL）から block ごとに「Value(s)/Procedure referenced:」を付けて使い、code・comment・構造・symbol の名前は写さない（§0.2）。DTS は GPL-2.0 OR MIT で node・property の名前は規格の語 | 参照を禁じる案は、PLIC の context の並びや DW の癖など文書の無い事実を失う |
 | 2 | 板の版と memory | 未決のまま設計は影響を受けない（v1.2A/1.3B の差は GbE だけ、memory は DT/UEFI から読む）。**接続した時に `cat /proc/device-tree/model` 相当（U-Boot の `fdt print /` か板の刻印）で記録** | — |
 | 3 | SD・eMMC・GbE・USB・display | **別の WS**（WS256 は UART の login まで。dcache の操作だけ p005 で用意） | 同じ WS に入れると到達目標が二つになる（WS は一つの到達目標） |
-| 4 | root の媒体 | **initrd**（loader が `rootfs.img` を memory に読み、kernel の ramdisk を `KERN_PARTITION_SCHEME_LBA` で root に）。QEMU の直の起動は `-initrd`。SD は別 WS | SD を root にすると JH7110 の DW MSHC の driver が WS256 の中に要る（4〜8 LW、実機でしか確かめられない） |
+| 4 | root の媒体 | **initrd**（loader が GPT＋UFS の `root.img` を memory に読み、kernel の ramdisk の partition を `rootpart=UUID=` で root に。§2.7）。QEMU の直の起動は `-initrd`。SD は別 WS | SD を root にすると JH7110 の DW MSHC の driver が WS256 の中に要る（4〜8 LW、実機でしか確かめられない） |
 | 5 | Sv39 か Sv48 | **Sv39**（U74 は Sv39 だけ。user 256 GiB、direct map 128 GiB で VF2 の 8 GB と virt に足りる）。定数は `RISCV64_VA_BITS` で持ち Sv48 は Future Work | Sv48 を今やると U74 で動かない物を QEMU で作ることになる |
 | 6 | 試験の判定（virt に画面が無い） | **(B) serial.py の対話で判定**（`expect 'login: '`、`login`、`run 'uname -m'`）。AGENTS.md の「serial の log を読んで判定しない」は log の読み取りの禁止で、serial.py の対話は guest の操作として許されている形だが、**判定に使うのは新しい用法なので例外として明示の判断が要る**。(A) `-device VGA`＋GOP＋framebuffer console で `boot-test.sh` の画面（p009、3〜5 LW）。実機は UART しか無いので (B) が要る | (A) だけだと実機の判定ができない。(B) だけだと boot-test.sh の形から外れる。両方（(B) を今、(A) を後）が P2 の推し |
 | 7 | QEMU の UEFI の firmware | **U-Boot `qemu-riscv64_smode`（Debian の package、apt で入れる）** | edk2 RiscVVirt は Debian に無く build が要る。U-Boot に GOP が無い（`-device VGA` で bochs の driver がある。要確認）時だけ再考 |
@@ -393,7 +394,7 @@ kernel から来た例外（`sstatus.SPP` = 1）は `kernel_sys_fault_handler`�
 ## 9. 失敗と回復・並行性・資源（設計の要点の確認）
 
 - 失敗: 秒の timeout で来ない hart は FATAL と `cpus=1` の助言（arm64 D6）。SBI の拡張が無い（probe 失敗）なら: TIME/IPI/HSM/RFENCE は必須で FATAL（OpenSBI 1.6 は全部ある）、DBCN が無ければ legacy の putchar、SRST が無ければ legacy の shutdown か `wfi` の loop。PLIC・UART が DT に無ければ FATAL（message は SBI console に出る）。loader: boot hart の protocol が無ければ `/chosen/boot-hartid`、それも無ければ止める（間違った hart id で HSM を呼ぶと他 hart が起きない）。
-- 並行性と lock: arm64 と同じ所に同じ lock（IRQ の slot の spin、pmem、space、task list、PLIC の enable の読み書き）。lock の順も arm64 に合わせる。`hal_atomic_uint_try_acquire` は `amoswap.w.aq`、`hal_atomic_relax` は `pause`（`fence w,0` の encoding。U74 でも合法）。
+- 並行性と lock: arm64 と同じ所に同じ lock（IRQ の slot の spin、pmem、space、task list、PLIC の enable の読み書き）。lock の順も arm64 に合わせる。`hal_atomic_uint_try_acquire` は `amoswap.w.aq`、`hal_atomic_relax` は `pause`（encoding 0x0100000f = `fence w,0`。Zihintpause の無い U74 でも合法、assembler も `-march` に無くても受ける: 確かめた）。
 - 割り込みと DMA: 装置の割り込みは boot hart の context だけで受ける（分散は Future Work）。DMA の coherency は VF2 の ccache で（§1.6）。
 - 資源の所有と寿命: HAL の静的な表（percpu ×8、IRQ の slot ×ndev、boot block ×8）は kernel と同じ寿命。task・space・table の page は arm64 と同じ所有（kernel_alloc と hal_pmem_alloc）。DTB と initrd と handoff の物理は page.c が予約し、kernel の platform が使い終わっても解放しない（単純さ優先。initrd の解放は Future Work）。
 
