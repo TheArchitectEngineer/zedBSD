@@ -137,6 +137,23 @@ Status: in-progress（2026-10-18 q1256-i01、P2）
 - `bootloader/tests/payload*.ld` は今の ld.lld で link できない（`/DISCARD/ : { *(*) }` に「discarding .shstrtab section is not allowed」、基準でも同じ）。
   platform/pcat・pc98 の vmunix.mk の `payload32.elf`・`payload64.elf` の規則からしか参照されず、試験の一覧から参照されていなければ削除の候補（Q1 に報告）。
 
+## T1 への依頼（2026-10-19 に Q1 へ送った文面）
+
+- image: P2 の最後の commit を含む main の tree（72ddbf242 以降）で T1 が作る。boot loader の変更だけで kernel・userland は変えていない。
+- 流す試験（`plan/tools/boot-test.sh`、login prompt の PNG）:
+  1. amd64 UEFI（`config/ci/config-amd64.mk` の hdd-image、`BOOT_MODE=uefi-nvme`）: BOOTX64.EFI → login。logo の表示（logo= があれば）と login prompt。
+  2. amd64 の hybrid image を BIOS で（`BOOT_MODE=bios-ide`）: BOOTZBSD.EXE（ELF64）→ login。
+  3. i386 PC/AT（`config/ci/config-pcat.mk`、`BOOT_MODE=bios-ide`）: BOOTZBSD.EXE（ELF32）→ login。
+  4. PC-98（`config/ci/config-pc98.mk`）: T1 に PC-98 の起動の道具があれば login まで。無ければ未実施と返す。
+- 合否: 各 image で login prompt が PNG に出れば PASS。boot loader の段で止まる（UEFI の `A64 ...` の失敗の表示、BIOS の 1 文字の fatal）なら FAIL。
+- 対象外: x68k（stage2 が既知の欠けで build できない）、sparcv9（vmunix が build できない、WS267）、Pi 4（boot loader を持たない）。
+
+## 再開の手順
+
+- 規約の直しは bootloader/ の全部で済み（common・bios・include・pcat・pc98・tests・x68k・uefi・sparcv9）。残りは T1 の結果の判定（Q1）だけ。
+- FAIL が返ったら: 該当の loader の前後の比べ（`compare-build.sh`）と、host の同値の試験（`diff-run.sh`・`sparc-handoff-run.sh`）を見直し、
+  host の試験で覆っていない bootx64.c・stage1.c・stage2.c・x68k/stage2.c の分けた関数を先に疑う。
+
 ## 未実施
 
-- QEMU・実機の起動の確かめ（最後に T1 への依頼の文面を Q1 に送る）。
+- QEMU・実機の起動の確かめ（上の T1 への依頼）。x68k・sparcv9 の起動の確かめ（build できないため）。

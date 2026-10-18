@@ -17,4 +17,4 @@
 
 | Phase | 目的 | 状態 |
 | --- | --- | --- |
-| [p001](phase001/phase.md) | 点検と直し（loader ごとに commit）、binary の比べ、T1 への依頼の文面 | in-progress（q1256、P2） |
+| [p001](phase001/phase.md) | 点検と直し（loader ごとに commit）、binary の比べ、T1 への依頼の文面 | in-progress（q1256、P2。直しは全部済み、2026-10-19 T1 への依頼の文面を Q1 に。判定は Q1） |
