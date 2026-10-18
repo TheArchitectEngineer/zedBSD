@@ -8,8 +8,8 @@
 /*
  * The sun4u (UltraSPARC) platform binding.
  *
- * The boot handoff describes one CMD646 IDE controller; the platform
- * publishes its disk as the single boot device.
+ * The HAL names one CMD646 IDE controller; the platform publishes its disk
+ * as the single boot device.
  */
 
 #include <uapi/errno.h>
@@ -24,6 +24,8 @@
 /*
  * Publishes the boot devices described by the sun4u boot handoff.
  *
+ * The HAL hands over the common record and names the CMD646 IDE
+ * controller's primary channel; it names the channel only for a CMD646.
  * Returns the number of devices published, which is zero for a handoff the
  * platform does not understand.
  */
@@ -33,27 +35,36 @@ kern_platform_init(
 	struct kern_boot_device *d,
 	size_t capacity)
 {
-	const struct kern_sun4u_boot_handoff *s;
+	const uint64_t *command_object;
+	const uint64_t *control_object;
+	int error;
 
-	s = (const void *)h;
-
-	/* Rejects a handoff that is not an exact sun4u CMD646 description. */
+	/* Rejects a handoff that is missing, foreign or truncated. */
 	if (!h ||
 	    !d ||
 	    !capacity ||
 	    h->magic != KERN_HANDOFF_MAGIC ||
-	    h->version != KERN_HANDOFF_VERSION_SUN4U ||
-	    h->size < sizeof(*s) ||
-	    s->extension_magic != KERN_SUN4U_HANDOFF_MAGIC ||
-	    s->extension_version != KERN_SUN4U_HANDOFF_VERSION ||
-	    s->ide_vendor != 0x1095 ||
-	    s->ide_device != 0x0646)
+	    h->version != KERN_HANDOFF_VERSION_MULTIBOOT ||
+	    h->size < sizeof(*h))
+		return 0;
+
+	/* Finds the IDE controller's primary command block; without it nothing boots. */
+	command_object = hal_get_arch_handoff("sun4u.cmd646.primary.command");
+	if (command_object == NULL || *command_object > UINT16_MAX)
+		return 0;
+
+	/* Finds the IDE controller's primary control block. */
+	control_object = hal_get_arch_handoff("sun4u.cmd646.primary.control");
+	if (control_object == NULL || *control_object > UINT16_MAX)
 		return 0;
 
 	/* Selects the Sun partition scheme and starts the IDE controller. */
 	partition_set_scheme(&drv_partition_scheme_sun);
 	disk_registry_reset();
-	if (drv_sun4u_cmd646_init(s->ide_primary_command, s->ide_primary_control) != 0)
+	error = drv_sun4u_cmd646_init(
+		(uint16_t)*command_object,
+		(uint16_t)*control_object);
+	if (error != 0)
 		return 0;
 
 	/* Publishes the IDE disk as the boot device. */

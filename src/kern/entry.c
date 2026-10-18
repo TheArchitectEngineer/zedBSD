@@ -319,7 +319,6 @@ kernel_entry(
 	if (h == NULL ||
 	    h->magic != KERN_HANDOFF_MAGIC ||
 	    (h->version != KERN_HANDOFF_VERSION_MULTIBOOT &&
-	     h->version != KERN_HANDOFF_VERSION_SUN4U &&
 	     h->version != KERN_HANDOFF_VERSION_X68K) ||
 	    h->size < sizeof(*h))
 		hal_fatal(__FILE__, __LINE__, "invalid zedBSD handoff");
