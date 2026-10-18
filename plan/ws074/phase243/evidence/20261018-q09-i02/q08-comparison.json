@@ -1,0 +1,55 @@
+{
+  "improvements": [
+    [
+      "/css/css-grid/grid-items/grid-minimum-size-grid-items-025.html",
+      5,
+      ".grid 6"
+    ],
+    [
+      "/css/css-grid/grid-items/grid-minimum-size-grid-items-025.html",
+      7,
+      ".grid 8"
+    ],
+    [
+      "/css/css-grid/grid-items/grid-minimum-size-grid-items-025.html",
+      9,
+      ".grid 10"
+    ],
+    [
+      "/css/css-grid/grid-items/grid-minimum-size-grid-items-025.html",
+      11,
+      ".grid 12"
+    ],
+    [
+      "/css/css-grid/grid-items/grid-minimum-size-grid-items-025.html",
+      13,
+      ".grid 14"
+    ],
+    [
+      "/css/css-grid/grid-items/grid-minimum-size-grid-items-025.html",
+      20,
+      ".grid 21"
+    ],
+    [
+      "/css/css-grid/grid-items/grid-minimum-size-grid-items-025.html",
+      22,
+      ".grid 23"
+    ],
+    [
+      "/css/css-grid/grid-items/grid-minimum-size-grid-items-025.html",
+      24,
+      ".grid 25"
+    ],
+    [
+      "/css/css-grid/grid-items/grid-minimum-size-grid-items-025.html",
+      26,
+      ".grid 27"
+    ],
+    [
+      "/css/css-grid/grid-items/grid-minimum-size-grid-items-025.html",
+      28,
+      ".grid 29"
+    ]
+  ],
+  "regressions": []
+}

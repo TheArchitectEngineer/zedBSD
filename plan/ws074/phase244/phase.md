@@ -38,3 +38,5 @@ Event ws074-p244-minimum-rule-redesign-20261018: plain fixed lengthとminmaxのa
 Event ws074-p244-q09-start-20261018: User autonomyをmetadata/guard repair最大90分へ適用。minimum ruleをNONE/length/auto/min-content/max-contentとして保持。minmax-autoでknown preferred/minimum heightとframe/marginのcontributionがcapacityを超える場合、またはratio/replaced/percentage等でproofできない場合は新guardを適用せず従来経路へ戻す。一般minimum分配を修復したとはしない。verified output後、p243新attemptで全502を再照合する。
 
 Event ws074-p244-q09-i01-partial-clear-20261018: [証拠](evidence/20261018-q09/README.md)。minimum ruleを保持し、target10後退回復/q07元case維持、target全callback9改善/後退0、DOM27/27、static529の227 PASS維持。host/target3source warning0、Acid3差0/Acid2差873。targeted/static部分cleared、p244 whole未達。verified outputをp243 q09-i02へ渡す。
+
+Event ws074-q09-i02-partial-clear-20261018: [全502の証拠](../phase243/evidence/20261018-q09-i02/README.md)。whole247維持、callback6,410→6,419・後退0、q08の10後退回復。i02 primary再検証部分cleared。q07/q08 historyとp243/p244 whole残りを維持。共有投影pending。
