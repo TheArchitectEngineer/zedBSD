@@ -4,6 +4,7 @@
 
 <!-- awesome-plan-current:start -->
 Status: completed（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」。p001〜p010 は 2026-10-08 までに全部 cleared、残っていた 5330 の触った感じと閾値の UAT は上の原文で確認済みの扱い。旧: incomplete）
+<!-- retained-after-completion --> Phase の directory・試験は他の WS・plan/tools から参照されているので残す（2026-10-18 Q1、ユーザーの承認の案 (a)）。参照する試験を変える時に 2026-10-06 の基準で plan/tools へ移すか消す。
 Primary Milestone: MG006
 Related Milestones: —
 Parent: [Master](../master.md)

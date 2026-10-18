@@ -44,8 +44,9 @@ for d in sorted(glob.glob('plan/ws[0-9]*')):
         ps=first_kw(pl) if pl else None
         pst[p]=ps
         if not pl: out.append(f"PNOSTATUS {p}")
-    if wsst=='completed' and phases: out.append(f"COMPLETED_WITH_PHASES {d} n={len(phases)} {[os.path.basename(os.path.dirname(p))+':'+str(pst[p]) for p in phases][:6]}")
-    if wsst=='completed' and os.path.isdir(d+'/tests'): out.append(f"COMPLETED_WITH_TESTS {d} {len(os.listdir(d+'/tests'))}")
+    retained='<!-- retained-after-completion -->' in open(ws,encoding='utf-8',errors='replace').read()
+    if wsst=='completed' and phases and not retained: out.append(f"COMPLETED_WITH_PHASES {d} n={len(phases)} {[os.path.basename(os.path.dirname(p))+':'+str(pst[p]) for p in phases][:6]}")
+    if wsst=='completed' and os.path.isdir(d+'/tests') and not retained: out.append(f"COMPLETED_WITH_TESTS {d} {len(os.listdir(d+'/tests'))}")
     exec_=[p for p in phases if pst[p] in ('in-progress','cleared','uncleared')]
     if wsst in ('planning','planned') and exec_: out.append(f"WS_NOT_STARTED_BUT_EXEC {d} {wsst} {[os.path.basename(os.path.dirname(p))+':'+pst[p] for p in exec_]}")
     # table in ws.md

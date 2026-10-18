@@ -4,6 +4,7 @@
 
 <!-- awesome-plan-current:start -->
 Status: completed（2026-10-15 ユーザー「Gen9は残りの安全策の作業をマージしたら終了です。UATは不要です。」、安全化 P3 06dbfa855 → main 63d0532b0）
+<!-- retained-after-completion --> Phase の directory・試験は他の WS・plan/tools から参照されているので残す（2026-10-18 Q1、ユーザーの承認の案 (a)）。参照する試験を変える時に 2026-10-06 の基準で plan/tools へ移すか消す。
 Primary Milestone: MG006
 Parent: [Master](../master.md)
 Related: [WS229](../ws229/ws.md)（Gen9 の GT と Vulkan、display は GOP のまま）、[BUG-310](../bugs/BUG-310.md)（bootfb: GPU で描いて GOP の framebuffer へ CPU で写す、resolved）

@@ -4,6 +4,7 @@
 
 <!-- awesome-plan-current:start -->
 Status: completed（2026-09-25）
+Phase の directory と WS だけの試験は 2026-10-18 に Q1 が削除した（completed の WS の規則、記録の点検、ユーザーの承認）。中身は git の 1d7364095 にある。
 Primary Milestone: MG004
 Related Milestones: MG002
 Objectives: O1, O2

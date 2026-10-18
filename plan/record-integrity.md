@@ -49,6 +49,7 @@
   - `python3 -I plan/tools/record-audit/status.py | awk '{print $1}' | sort | uniq -c`
   - 前回より増えた種類は、その場で直すか、引き継ぎの文書に残す。
   - 2026-10-15 15:55 の基準値: REGDIFF 54・TABLEDIFF 47・WS_NOT_STARTED_BUT_EXEC 19・NOREG 12・PNOSTATUS 35・COMPLETED_WITH_PHASES 12・COMPLETED_WITH_TESTS 17。
+  - 2026-10-18 Q1: 全種類 0 に直した。completed の WS で他から参照される Phase・試験を残す時は ws.md の Status の次の行に `<!-- retained-after-completion -->` と理由を書く（点検の道具はこの印の WS を数えない）。
 - **ラップアップの順**:
   1. 動いている担当の成果を、確かめてから merge する。
   2. 点検の script を流す。

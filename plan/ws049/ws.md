@@ -4,6 +4,7 @@
 
 <!-- awesome-plan-current:start -->
 Status: completed（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」。全 Phase が cleared（p007・p008・p016 は 2026-10-13 ユーザーの実機の確かめ「OKでした」、電源ボタン・蓋）。旧: incomplete）
+<!-- retained-after-completion --> Phase の directory・試験は他の WS・plan/tools から参照されているので残す（2026-10-18 Q1、ユーザーの承認の案 (a)）。参照する試験を変える時に 2026-10-06 の基準で plan/tools へ移すか消す。
 Primary Milestone: MG003
 Related Milestones: MG006, MG008
 Objectives: O2, O4

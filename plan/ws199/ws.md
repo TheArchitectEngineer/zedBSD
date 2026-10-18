@@ -4,6 +4,7 @@
 
 <!-- awesome-plan-current:start -->
 Status: completed
+Phase の directory と WS だけの試験は 2026-10-18 に Q1 が削除した（completed の WS の規則、記録の点検、ユーザーの承認）。中身は git の 1d7364095 にある。
 Primary Milestone: MG006
 Related Milestones: —
 Objectives: O2
@@ -70,11 +71,11 @@ NFC の reader に載せたままの鍵も、そのまま「タッチ」と見�
 
 | Phase | 目的 | Status |
 | --- | --- | --- |
-| [p001](phase001/phase.md) | 調べ・設計（第 4.1 版、review-1〜3）と実装 i01 頁と popup・i02 NFC（BUG-286）・i03 鍵の情報・Set/Change PIN・Reset。i01（cfa5351a1）・i02（0b44c7008・5515a4dab）・i03（d8cb16814、KL_VERSION 77）を main に merge | cleared（実装 main、p004 の最終検証） |
-| [p002](phase002/phase.md) | PIN 不要・タッチ不要の設定（options の行、set-options・auth-fido2、radio と警告）＝ i04 | cleared（77a40b51f） |
-| [p003](phase003/phase.md) | greeter・lock の鍵のモード、user の自動の選択、0.5 秒、keypad、sleep で card を閉じる ＝ i05 | cleared（2f414c00e、T1-525・528） |
-| [p004](phase004/phase.md) | host 試験の残り・style・T1 の AAT を 1 回で ＝ i06 | cleared（T1-523・525・528） |
-| [p005](phase005/phase.md) | 5330 の UAT | cleared（ユーザー受け入れ） |
+| p001 | 調べ・設計（第 4.1 版、review-1〜3）と実装 i01 頁と popup・i02 NFC（BUG-286）・i03 鍵の情報・Set/Change PIN・Reset。i01（cfa5351a1）・i02（0b44c7008・5515a4dab）・i03（d8cb16814、KL_VERSION 77）を main に merge | cleared（実装 main、p004 の最終検証） |
+| p002 | PIN 不要・タッチ不要の設定（options の行、set-options・auth-fido2、radio と警告）＝ i04 | cleared（77a40b51f） |
+| p003 | greeter・lock の鍵のモード、user の自動の選択、0.5 秒、keypad、sleep で card を閉じる ＝ i05 | cleared（2f414c00e、T1-525・528） |
+| p004 | host 試験の残り・style・T1 の AAT を 1 回で ＝ i06 | cleared（T1-523・525・528） |
+| p005 | 5330 の UAT | cleared（ユーザー受け入れ） |
 
 ## 5330 の UAT の一覧（p005、ws199-p004 で 2026-10-10 P1）
 

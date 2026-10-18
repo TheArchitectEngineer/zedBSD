@@ -4,6 +4,7 @@
 
 <!-- awesome-plan-current:start -->
 Status: completed（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2.3）で閉じた。残りの uncleared の p025・p033・p040・p045 と p032 の実機の確認は Bug Board の各 ticket に任せる。旧: incomplete）
+<!-- retained-after-completion --> Phase の directory・試験は他の WS・plan/tools から参照されているので残す（2026-10-18 Q1、ユーザーの承認の案 (a)）。参照する試験を変える時に 2026-10-06 の基準で plan/tools へ移すか消す。
 Primary Milestone: MG002
 Related Milestones: MG004, MG006
 Objectives: O1

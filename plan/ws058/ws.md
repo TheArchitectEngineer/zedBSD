@@ -4,6 +4,7 @@
 
 <!-- awesome-plan-current:start -->
 Status: completed
+Phase の directory と WS だけの試験は 2026-10-18 に Q1 が削除した（completed の WS の規則、記録の点検、ユーザーの承認）。中身は git の 1d7364095 にある。
 Primary Milestone: MG004
 Related Milestones: MG002
 Objectives: O1, O2
@@ -25,5 +26,5 @@ ws046-p012（VM object の寿命と cache の入れ替え）は設計で cap 32 
 
 | Phase | 内容 | Status | 依存 |
 | --- | --- | --- | --- |
-| [ws058-p001](phase001/phase.md) | cache の上限の定数と根拠の調査、新しい上限の設計 | cleared（q427-i01。buffer cache 物理/16、page cache 物理/4 は比例。固定で小さいのは VM object 32、file 表 192、inode 512、I/O pool 4 MiB） | — |
-| [ws058-p002](phase002/phase.md) | cache の上限を現代の機械向けに変える | cleared（q428-i01。buffer 物理/8、page cache 物理/2、object cache 32 → 256、I/O pool 64 MiB、file 192 → 2048、inode 512 → 2048、overlay 256 → 4096。2 つの退行を bisect で解いた: overlay の表は inode cache 以上、object cache は file の表を消費する。8 GiB と 512 MiB で回帰、configure 96 → 89 秒） | p001 |
+| ws058-p001 | cache の上限の定数と根拠の調査、新しい上限の設計 | cleared（q427-i01。buffer cache 物理/16、page cache 物理/4 は比例。固定で小さいのは VM object 32、file 表 192、inode 512、I/O pool 4 MiB） | — |
+| ws058-p002 | cache の上限を現代の機械向けに変える | cleared（q428-i01。buffer 物理/8、page cache 物理/2、object cache 32 → 256、I/O pool 64 MiB、file 192 → 2048、inode 512 → 2048、overlay 256 → 4096。2 つの退行を bisect で解いた: overlay の表は inode cache 以上、object cache は file の表を消費する。8 GiB と 512 MiB で回帰、configure 96 → 89 秒） | p001 |

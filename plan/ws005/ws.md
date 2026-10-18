@@ -4,6 +4,7 @@
 
 <!-- awesome-plan-current:start -->
 Status: completed（2026-10-08 ユーザーの判断「WS005は記録のミスだと思います、とっくに完了してます。」）
+<!-- retained-after-completion --> Phase の directory・試験は他の WS・plan/tools から参照されているので残す（2026-10-18 Q1、ユーザーの承認の案 (a)）。参照する試験を変える時に 2026-10-06 の基準で plan/tools へ移すか消す。
 Primary Milestone: MG005
 Related Milestones: MG006
 Objectives: O1, O2, O3
