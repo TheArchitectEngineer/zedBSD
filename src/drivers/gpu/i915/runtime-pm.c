@@ -11,8 +11,8 @@
  * Two sets of operations are provided.  The device operations back the
  * driver's own runtime-PM structure; during probe runtime PM is never
  * enabled, so they never have to resume or suspend anything.  The PCI-probe
- * operations back the reference the PCI core takes around probe
- * (local_pci_probe()); their resume is a real D0 transition.
+ * operations back the usage reference the PCI core takes around probe;
+ * their resume is a real D0 transition.
  */
 
 #include "i915.h"
@@ -30,7 +30,7 @@ static int i915_rpm_pci_probe_resume(void *context);
 static void i915_rpm_pci_probe_suspend(void *context);
 
 /*
- * Initializes the runtime-PM structure, as intel_runtime_pm_init_early() does.
+ * Initializes the runtime-PM structure; autosuspend stays off.
  *
  * Autosuspend stays off until drv_i915_rpm_enable(); the device is taken to
  * be resumed, because the PCI enable has already brought it to D0.
@@ -63,7 +63,7 @@ drv_i915_rpm_init_early(
 }
 
 /*
- * Turns autosuspend on, as intel_runtime_pm_enable() does at the end of driver load.
+ * Turns autosuspend on, at the end of driver load.
  */
 void
 drv_i915_rpm_enable(

@@ -56,7 +56,7 @@
 /* The engines a Gen9 device runs: RCS0, BCS0, VCS0 and VECS0 (the second video engine is unused). */
 #define I915_START_ENGINE_MASK_GEN9	((1U << 0) | (1U << 1) | (1U << 8) | (1U << 16))
 
-/* The GPU addresses 39 bits of DMA space (the reference's dma_mask_size). */
+/* The GPU addresses 39 bits of DMA space. */
 #define I915_START_DMA_MASK	((((uint64_t)1) << 39) - 1U)
 
 /* Gen12 has 32 fence registers. */
@@ -88,8 +88,12 @@
 #define I915_GEN9_PIPES		3U
 
 /*
- * The Gen9 eDP PSR and south display (PCH) interrupt registers that
- * gen8_irq_reset() also silences (Linux 6.8.12 intel_psr_regs.h, i915_reg.h).
+ * The Gen9 eDP PSR and south display (PCH) interrupt registers the
+ * interrupt reset also silences.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/i915/display/intel_psr_regs.h
+ * (EDP_PSR_IMR, EDP_PSR_IIR) and drivers/gpu/drm/i915/i915_reg.h (SDEIMR,
+ * SDEIIR, SDEIER).
  */
 #define I915_GEN9_EDP_PSR_IMR	0x64834U
 #define I915_GEN9_EDP_PSR_IIR	0x64838U
@@ -384,12 +388,12 @@ drv_i915_device_schedule_start(
 /*
  * Brings the hardware up and publishes the GPU node.
  *
- * Runs on the device's start worker.  The steps follow the order of the
- * reference's i915_driver_probe(): PCI and runtime PM, the register block and
- * the GT fuses with a full GT reset, DMA, the GGTT and the display's data
- * sources, the display noirq probe, interrupts, the display nogem probe, the
- * GT (workarounds, memory, engines, default contexts), the protected-content
- * context, then the display probe and the driver registration.  A step that
+ * Runs on the device's start worker.  The steps, in order: PCI and runtime
+ * PM, the register block and the GT fuses with a full GT reset, DMA, the
+ * GGTT and the display's data sources, the display noirq probe, interrupts,
+ * the display nogem probe, the GT (workarounds, memory, engines, default
+ * contexts), the protected-content context, then the display probe and the
+ * driver registration.  A step that
  * fails names itself in device->stage; what the steps before it acquired is
  * given back by the device stop.
  */
@@ -1745,9 +1749,9 @@ i915_start_interrupts(
 }
 
 /*
- * Builds and programs the GT (i915_gem_init -> intel_gt_init).
+ * Builds and programs the GT.
  *
- * The reference holds every forcewake domain across the whole of it; on
+ * Every forcewake domain is held across the whole of it; on
  * Gen12 that includes the media domains, because the workaround list writes
  * video engine registers.
  */
@@ -1837,7 +1841,7 @@ i915_start_gt_awake(
 
 	gt->engines_inited = 1U;
 
-	/* Programs the hardware in the reference order (intel_gt_resume). */
+	/* Programs the hardware. */
 	device->stage = "intel_gt_resume";
 	error = drv_i915_gt_resume(&gt->engines, &gt->init, &gt->info, &gt->mmio, &gt->uncore_lock);
 	kern_logf("i915: gt resume: rc=%d reset_engines=%d stop_cs_timeouts=%u engines_resumed=%u l3cc(rcs)=%u\n",
@@ -1896,7 +1900,7 @@ i915_start_gt_awake(
 	if (error != 0)
 		return error;
 
-	/* Creates the migration context; like the reference, a failure is only logged. */
+	/* Creates the migration context; a failure is only logged. */
 	error = drv_i915_migrate_init(&gt->migrate, &gt->engines, &gt->mem);
 	gt->migrate_inited = 1U;
 	kern_logf("i915: migrate_init: rc=%d where=%s\n",
@@ -1947,7 +1951,7 @@ i915_start_gt_memory(
 	return 0;
 }
 
-/* Creates the protected-content context; a failure is only logged, as in the reference. */
+/* Creates the protected-content context; a failure is only logged. */
 static void
 i915_start_pxp(
 	struct i915_device *device)
@@ -2194,7 +2198,7 @@ i915_stop_hardware(
 		return;
 	}
 
-	/* Frees the display and its Linux environments. */
+	/* Frees the display. */
 	drv_i915_display_destroy(device);
 
 	/* Frees the scratch page and the DMA device. */
@@ -2392,8 +2396,7 @@ i915_cpu_physical_bits(void)
  *
  * Gen12 has a display summary control to turn off.  Gen9 has none: its
  * display sources report straight into I915_GT_GEN8_MASTER_IRQ, so each one is
- * masked, disabled and cleared instead (the display half of
- * gen8_irq_reset() and ibx_irq_reset()): the eDP PSR, the pipes, the
+ * masked, disabled and cleared instead: the eDP PSR, the pipes, the
  * ports, the miscellaneous sources and the south display.  A pipe whose
  * power well is down is not touched, and I915_GT_GEN8_MASTER_IRQ is not written.
  */

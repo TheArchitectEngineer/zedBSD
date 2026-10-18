@@ -1719,10 +1719,10 @@ i915_ktest_gt_encode(
 	 * bits by another name).  Index 4 must reach PAT2 (bit 7), not wrap
 	 * into PAT0.
 	 */
-	pat3 = drv_i915_gen12_ppgtt_pte_encode(0x1000U, 3U);
-	pat0 = drv_i915_gen12_ppgtt_pte_encode(0x1000U, 0U);
-	pat4 = drv_i915_gen12_ppgtt_pte_encode(0x1000U, 4U);
-	pde = drv_i915_gen8_pde_encode(0x2000U);
+	pat3 = drv_i915_ppgtt_leaf_encode(0x1000U, 3U);
+	pat0 = drv_i915_ppgtt_leaf_encode(0x1000U, 0U);
+	pat4 = drv_i915_ppgtt_leaf_encode(0x1000U, 4U);
+	pde = drv_i915_ppgtt_dir_encode_uncached(0x2000U);
 	drv_i915_ktest_check(
 		ktest,
 		pat3 == (0x1000U | 0x1bU) &&
@@ -3485,8 +3485,8 @@ i915_ktest_gt_migrate_tables(
 	win = tables[10].obj->cpu;
 
 	/* PML4[0] and PDP[0] name the PDP and the PD cached; everything past them is scratch. */
-	pdp_entry = drv_i915_gen8_pde_encode_cached(tables[0].dma);
-	pd_entry = drv_i915_gen8_pde_encode_cached(tables[1].dma);
+	pdp_entry = drv_i915_ppgtt_dir_encode(tables[0].dma);
+	pd_entry = drv_i915_ppgtt_dir_encode(tables[1].dma);
 	*tree_ok = 0;
 	if (pml4[0] == pdp_entry &&
 	    pml4[1] == scratch[3] &&
@@ -3499,14 +3499,14 @@ i915_ktest_gt_migrate_tables(
 
 	/* PD entries 0 to 8 name the nine PTs cached. */
 	for (index = 0U; index < 9U; index++) {
-		pt_entry = drv_i915_gen8_pde_encode_cached(tables[2U + index].dma);
+		pt_entry = drv_i915_ppgtt_dir_encode(tables[2U + index].dma);
 		if (pd[index] != pt_entry)
 			*tree_ok = 0;
 	}
 
 	/* insert_pte(): PT k of the windows sits at 16M + 4K * k, uncached. */
 	for (index = 0U; index < 8U; index++) {
-		window_entry = drv_i915_gen12_ppgtt_pte_encode(tables[2U + index].dma, I915_PAT_INDEX_CACHE_NONE);
+		window_entry = drv_i915_ppgtt_leaf_encode(tables[2U + index].dma, I915_PAT_INDEX_CACHE_NONE);
 		if (win[index] != window_entry)
 			*window_ok = 0;
 	}
@@ -4279,7 +4279,7 @@ i915_ktest_gt_eu_pt(
 	/* A DMA address with bits above 32, so a truncation shows. */
 	dma_fake = 0x0000001234560000ULL;
 	addr_mask = 0x0000fffffffff000ULL;
-	link_flags = I915_GEN8_PAGE_PRESENT_B | I915_GEN8_PAGE_RW_B;
+	link_flags = I915_PPGTT_BIT_PRESENT | I915_PPGTT_BIT_RW;
 
 	/* Builds an address space with two pages at the shared address and one page inserted. */
 	kern_memset(&walk, 0, sizeof(walk));
@@ -4372,6 +4372,6 @@ i915_ktest_gt_eu_pt_unmapped(
 		    walk.scratch[0] != 0 &&
 		    walk.child_known[0] == 0 &&
 		    walk.raw[0] == pp->scratch_encode[3] &&
-		    (walk.raw[0] & ~addr_mask) == (I915_GEN8_PAGE_PRESENT_B | I915_GEN8_PAGE_RW_B | I915_PPAT_UNCACHED),
+		    (walk.raw[0] & ~addr_mask) == (I915_PPGTT_BIT_PRESENT | I915_PPGTT_BIT_RW | I915_PPGTT_DIR_UNCACHED),
 		"eu: EU-PT an unallocated region reads the scratch PDP encode (PPAT_UNCACHED, reference gen8_init_scratch)");
 }

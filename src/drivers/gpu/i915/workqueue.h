@@ -9,12 +9,12 @@
  * Deferred work and delayed work.
  *
  * A work queue owns one worker thread that runs queued callbacks in order
- * with no lock held, following the reference's work_struct: a work is
+ * with no lock held: a work is
  * PENDING while it sits in the queue and RUNNING while its callback
  * executes.  The pending state is cleared before the callback runs, so a
  * callback may queue its own work again and it runs once more.
  *
- * A timer queue adds the reference's delayed_work on top of one work queue.
+ * A timer queue adds delayed work on top of one work queue.
  * Its timer thread sleeps on an ordinary wait queue until the earliest
  * deadline, so the scheduler tick wakes it and nothing runs in the timer
  * interrupt, then hands the due work to the work queue:

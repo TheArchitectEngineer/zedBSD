@@ -153,19 +153,19 @@ i915_walk_read_leaf(
 
 	/* Whether the entry is present and writable. */
 	walk->leaf_present = 0;
-	if ((raw & I915_GEN8_PAGE_PRESENT_B) != 0U)
+	if ((raw & I915_PPGTT_BIT_PRESENT) != 0U)
 		walk->leaf_present = 1;
 	walk->leaf_rw = 0;
-	if ((raw & I915_GEN8_PAGE_RW_B) != 0U)
+	if ((raw & I915_PPGTT_BIT_RW) != 0U)
 		walk->leaf_rw = 1;
 
 	/* The PAT index from its three scattered bits. */
 	pat = 0U;
-	if ((raw & I915_GEN12_PTE_PAT0) != 0U)
+	if ((raw & I915_PPGTT_BIT_PAT0) != 0U)
 		pat |= 1U;
-	if ((raw & I915_GEN12_PTE_PAT1) != 0U)
+	if ((raw & I915_PPGTT_BIT_PAT1) != 0U)
 		pat |= 2U;
-	if ((raw & I915_GEN12_PTE_PAT2) != 0U)
+	if ((raw & I915_PPGTT_BIT_PAT2) != 0U)
 		pat |= 4U;
 	walk->leaf_pat = pat;
 }

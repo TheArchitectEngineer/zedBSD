@@ -8,11 +8,10 @@
 /*
  * Time base, delays, register waits and completions.
  *
- * The delays and register waits follow the reference's
- * __intel_wait_for_register_fw() and udelay(): a busy stage that never
- * sleeps, so it is safe with a spinlock held or interrupts off, and an
- * optional slow stage that sleeps between reads and may only be used from a
- * context that can sleep.  Both measure time against the kernel's monotonic
+ * The delays and register waits have a busy stage that never sleeps, so
+ * it is safe with a spinlock held or interrupts off, and an optional slow
+ * stage that sleeps between reads and may only be used from a context that
+ * can sleep.  Both measure time against the kernel's monotonic
  * counter, which neither depends on interrupts nor jumps when the thread
  * moves to another CPU.
  *
@@ -21,8 +20,7 @@
  * never mistakes a broken clock for an elapsed delay or an unresponsive
  * register.
  *
- * A completion counts its signals the way the reference's struct completion
- * does: each complete adds one permit and each successful wait consumes one.
+ * A completion counts its signals: each complete adds one permit and each successful wait consumes one.
  */
 
 #ifndef DRIVERS_GPU_I915_SYNC_H

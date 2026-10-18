@@ -12,14 +12,10 @@
  * merged yet:
  *
  *   kernel PPGTT   (struct i915_gt_ppgtt, drv_i915_gt_ppgtt_*)
- *       The address space of the GT's kernel contexts.  On Alder Lake-P
- *       INTEL_PPGTT is FULL, so the kernel context gets its own PPGTT
- *       (i915_ppgtt_create) rather than a reference to the GGTT.  Its
- *       tables are GT objects; every entry write is clflushed, because the
- *       GPU's table walker does not snoop the CPU caches.  It stands for
- *       gen8_init_scratch(), gen8_alloc_top_pd(), gen8_ppgtt_alloc(),
- *       gen8_ppgtt_foreach(), gen8_ppgtt_insert_entry() and
- *       gen8_ppgtt_clear().
+ *       The address space of the GT's kernel contexts, which get a PPGTT of
+ *       their own rather than the GGTT.  Its tables are GT objects; every
+ *       entry write is clflushed, because the GPU's table walker does not
+ *       snoop the CPU caches.
  *
  *   session PPGTT  (struct i915_ppgtt, drv_i915_ppgtt_*)
  *       The private address space of one GPU session.  Its tables are
@@ -27,17 +23,14 @@
  *       and the LLC keeps the table walks coherent with those stores.
  *       Ranges come from a bump allocator and are never reused.
  *
- * Facts both are built on (Linux 6.8 gen8_ppgtt.c and intel_gtt.h):
- *   - four levels: ppgtt_size is 48, so vm->top is 3 and the top table has
- *     512 entries
- *   - vm->has_read_only is false on graphics versions 11 and 12, so the
- *     PTE_READ_ONLY branch of gen12_pte_encode never fires
- *   - I915_CACHE_NONE maps to PAT index 3, which is UC in the PAT this
- *     driver programs (WB, WC, WT, UC, WB, WB, WB, WB); index 3 sets PAT0
- *     (bit 3) and PAT1 (bit 4)
- *   - gen8_pde_encode(address, I915_CACHE_NONE) is address | PRESENT | RW |
- *     PPAT_UNCACHED, where PPAT_UNCACHED is _PAGE_PWT | _PAGE_PCD (bits 3
- *     and 4)
+ * Facts both are built on:
+ *   - four levels for 48 bits, so the top level is 3 and the top table
+ *     has 512 entries
+ *   - no page is mapped read-only
+ *   - PAT index 3 is UC in the PAT this driver programs (WB, WC, WT, UC,
+ *     WB, WB, WB, WB); index 3 sets PAT0 (bit 3) and PAT1 (bit 4)
+ *   - an uncached directory entry is address | PRESENT | RW | PWT | PCD
+ *     (bits 3 and 4)
  */
 
 #ifndef DRIVERS_GPU_I915_PPGTT_H
@@ -49,17 +42,21 @@
 struct i915_gt_mem;
 struct i915_gt_object;
 
-/* The Gen12 PPGTT entry bits of the kernel PPGTT (intel_gtt.h). */
-#define I915_GEN8_PAGE_PRESENT_B	(((uint64_t)1) << 0)
-#define I915_GEN8_PAGE_RW_B		(((uint64_t)1) << 1)
-#define I915_GEN12_PTE_PAT0		(((uint64_t)1) << 3)
-#define I915_GEN12_PTE_PAT1		(((uint64_t)1) << 4)
-#define I915_GEN12_PTE_PAT2		(((uint64_t)1) << 7)
+/*
+ * The Gen12 PPGTT entry bits of the kernel PPGTT.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/i915/gt/intel_gtt.h
+ * (GEN8_PAGE_PRESENT, GEN8_PAGE_RW, GEN12_PPGTT_PTE_PAT0,
+ * GEN12_PPGTT_PTE_PAT1, GEN12_PPGTT_PTE_PAT2, PPAT_UNCACHED).
+ */
+#define I915_PPGTT_BIT_PRESENT		(((uint64_t)1) << 0)
+#define I915_PPGTT_BIT_RW		(((uint64_t)1) << 1)
+#define I915_PPGTT_BIT_PAT0		(((uint64_t)1) << 3)
+#define I915_PPGTT_BIT_PAT1		(((uint64_t)1) << 4)
+#define I915_PPGTT_BIT_PAT2		(((uint64_t)1) << 7)
+#define I915_PPGTT_DIR_UNCACHED		((((uint64_t)1) << 3) | (((uint64_t)1) << 4))
 
-/* PPAT_UNCACHED: _PAGE_PWT | _PAGE_PCD. */
-#define I915_PPAT_UNCACHED		((((uint64_t)1) << 3) | (((uint64_t)1) << 4))
-
-/* The PAT index of I915_CACHE_NONE in the Tiger Lake cache-level table. */
+/* The uncached PAT index of the PAT this driver programs. */
 #define I915_PAT_INDEX_CACHE_NONE	3U
 
 /* The top level of the four-level tree and how many entries its table has. */
@@ -69,7 +66,7 @@ struct i915_gt_object;
 /* How many tables below the top the kernel PPGTT can allocate. */
 #define I915_PPGTT_MAX_TABLES		16U
 
-/* The session PPGTT: 48-bit canonical, four levels of 512 entries (I915_GT_PDES). */
+/* The session PPGTT: 48-bit canonical, four levels of 512 entries. */
 #define I915_PPGTT_LEVELS		4U
 #define I915_PPGTT_ENTRIES		512U
 #define I915_PPGTT_ADDRESS_BITS		48U
@@ -103,7 +100,7 @@ struct i915_gt_ppgtt_table {
 };
 
 /*
- * The kernel PPGTT (i915_ppgtt): the scratch tower, the top directory and
+ * The kernel PPGTT: the scratch tower, the top directory and
  * every table allocated below it.
  *
  * Its tables are reached by the GPU through a context's PDP0 pair, by DMA
@@ -173,9 +170,9 @@ struct i915_ppgtt {
 	struct i915_ppgtt *next;
 };
 
-uint64_t drv_i915_gen12_ppgtt_pte_encode(uint64_t dma, unsigned pat_index);
-uint64_t drv_i915_gen8_pde_encode(uint64_t dma);
-uint64_t drv_i915_gen8_pde_encode_cached(uint64_t dma);
+uint64_t drv_i915_ppgtt_leaf_encode(uint64_t dma, unsigned pat_index);
+uint64_t drv_i915_ppgtt_dir_encode_uncached(uint64_t dma);
+uint64_t drv_i915_ppgtt_dir_encode(uint64_t dma);
 
 int drv_i915_gt_ppgtt_create(struct i915_gt_mem *gm, struct i915_gt_ppgtt *pp);
 void drv_i915_gt_ppgtt_destroy(struct i915_gt_mem *gm, struct i915_gt_ppgtt *pp);

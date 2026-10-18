@@ -30,7 +30,7 @@ static int i915_migrate_populate(struct i915_gt_migrate *m, struct i915_gt_engin
 
 /*
  * Builds the migrate address space and its pinned context on the first copy
- * engine (intel_migrate_init()).
+ * engine.
  *
  * Returns 0, EINVAL, ENODEV when the GT has no copy engine, or the failure of
  * the address space or the context, whose step is in m->err_where; on failure
@@ -98,8 +98,7 @@ drv_i915_migrate_init(
 }
 
 /*
- * Gives back the migrate context and its address space
- * (intel_engine_destroy_pinned_context(), then the address space).
+ * Gives back the migrate context, then its address space.
  */
 void
 drv_i915_migrate_fini(
@@ -157,7 +156,7 @@ i915_migrate_insert_pte(
 	if (error != 0)
 		i915_migrate_fail(m, error, "insert_pte");
 
-	/* The window moves on even after a failure, as the reference's d.offset does. */
+	/* The window moves on even after a failure. */
 	m->exposed_pts++;
 }
 

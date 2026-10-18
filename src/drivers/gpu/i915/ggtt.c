@@ -8,14 +8,13 @@
 /*
  * The global GTT windows and the GGTT entry encoding (see ggtt.h).
  *
- * One Linux behaviour here is easy to get backwards: on graphics version 11
- * and later the GGTT page-table window is mapped uncached, so
- * gen8_ggtt_invalidate() writes no register at all -- needs_wc_ggtt_mapping()
- * is false there, and the flush register I915_GT_GFX_FLSH_CNTL_GEN6 belongs to the
- * gen6 path only.  Writing it here would be a deviation, not a safety net.
- * Gen9 is before graphics version 11: the reference writes
- * I915_GT_GFX_FLSH_CNTL_GEN6 after every update there, and so does this driver,
- * although its window is uncached.
+ * On graphics version 11 and later the GGTT page-table window is mapped
+ * uncached and an update needs no register write after it: the entries
+ * have landed once the writes are ordered.  Gen9 also writes the GFX flush
+ * control after every update, although its window is uncached too.
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/i915/gt/intel_ggtt.c
+ * (gen8_ggtt_invalidate: no flush write on graphics version 11 and later).
  */
 
 #include "i915.h"
@@ -29,7 +28,12 @@
 #include <uapi/errno.h>
 #include <stddef.h>
 
-/* I915_GT_GFX_FLSH_CNTL_GEN6 and its enable (Linux 6.8.12 i915_reg.h): the GGTT flush before graphics version 11. */
+/*
+ * The GGTT flush control and its enable, written before graphics version 11.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/i915/gt/intel_gt_regs.h
+ * (GFX_FLSH_CNTL_GEN6, GFX_FLSH_CNTL_EN).
+ */
 #define I915_GFX_FLSH_CNTL_GEN6		0x101008U
 #define I915_GFX_FLSH_CNTL_EN		(1U << 0)
 
@@ -233,9 +237,9 @@ drv_i915_gt_ggtt_unbind(
 /*
  * Makes the GGTT entries written so far visible to the GPU.
  *
- * gen8_ggtt_invalidate() writes no register on graphics version 11 and
- * later: the table window is uncached and the writes have already landed.
- * The barrier orders them, and the call is counted.
+ * No register is written on graphics version 11 and later: the table
+ * window is uncached and the writes have already landed.  The barrier
+ * orders them, and the call is counted.
  */
 void
 drv_i915_gt_ggtt_flush(
@@ -249,7 +253,7 @@ drv_i915_gt_ggtt_flush(
 	kern_io_write_barrier();
 	gm->flushes++;
 
-	/* A Gen9 GT also flushes the GGTT through I915_GT_GFX_FLSH_CNTL_GEN6 (gen8_ggtt_invalidate()). */
+	/* A Gen9 GT also writes the GGTT flush control. */
 	if (gm->m != NULL && gm->m->graphics_ver == 9)
 		drv_i915_raw_write32(gm->m, I915_GFX_FLSH_CNTL_GEN6, I915_GFX_FLSH_CNTL_EN);
 }
@@ -748,9 +752,8 @@ drv_i915_gt_ggtt_restore(
 /*
  * Creates the GT scratch page and pins it into the GT window.
  *
- * This is intel_gt_init_scratch(): a 4 KiB internal object (graphics
- * version is not 2) bound with PIN_HIGH, which the fixed window at the top
- * of the GGTT already provides.  Returns 0, EINVAL, ENOMEM, or the bind's
+ * The page is a 4 KiB object bound in the fixed GT window at the top of
+ * the GGTT.  Returns 0, EINVAL, ENOMEM, or the bind's
  * error.
  */
 int
@@ -773,7 +776,7 @@ drv_i915_gt_init_scratch(
 	if (object == NULL)
 		return ENOMEM;
 
-	/* Pins the page into the GT window: i915_ggtt_pin(vma, NULL, 0, PIN_HIGH). */
+	/* Pins the page into the GT window. */
 	error = drv_i915_gt_ggtt_bind(gm, object);
 	if (error != 0) {
 		drv_i915_gt_object_destroy(gm, object);

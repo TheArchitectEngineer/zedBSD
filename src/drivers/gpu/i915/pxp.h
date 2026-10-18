@@ -6,27 +6,18 @@
  */
 
 /*
- * Protected content (intel_pxp_init()).
+ * Protected content.
  *
- * On Alder Lake-P (PXP supported, no media GT, a video decode engine, and the
- * MEI PXP path) the reference sets up the full feature on the root GT:
+ * On a device with PXP, no media GT and a video decode engine, the state
+ * is set up on the root GT: the KCR base, the session management state
+ * (idle), a pinned context on the first video decode engine with a 4 KiB
+ * ring and its timeline at I915_GT_HWS_PXP_ADDR, and the TEE component
+ * with its streaming command page.
  *
- *   find_gt_for_required_protected_content()   the root GT
- *   pxp_init_full()                            the KCR base, the session
- *                                              management state (idle), a
- *                                              pinned context on the first
- *                                              video decode engine with a
- *                                              4 KiB ring and its timeline at
- *                                              I915_GT_HWS_PXP_ADDR, and the
- *                                              TEE component with its
- *                                              streaming command page
- *
- * The KCR and interrupt initialisation and the arbitration session start
- * only when the MEI PXP component binds, which has no counterpart here:
- * nothing is written to KCR.  The component framework does not exist here
- * either, so the component is recorded as added and never binds, and the
- * streaming command page is a driver object without the CPU map and DMA pin
- * pair.
+ * The KCR and interrupt setup and the arbitration session start only once
+ * a management engine component binds, and none exists here: nothing is
+ * written to KCR, the component is recorded as added and never binds, and
+ * the streaming command page is a driver object with no CPU map or DMA pin.
  */
 
 #ifndef DRIVERS_GPU_I915_PXP_H

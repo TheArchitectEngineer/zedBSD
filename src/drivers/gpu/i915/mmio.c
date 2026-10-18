@@ -51,8 +51,8 @@
 /*
  * The Gen12 register-to-domain map.
  *
- * It is the reference's table for Alder Lake-P and Tiger Lake and never
- * changes, so every device shares it.
+ * It covers Tiger Lake and Alder Lake-P and never changes, so every
+ * device shares it.
  */
 static const struct i915_mmio_range i915_gen12_ranges[] = {
 #include "intel/forcewake-ranges.inc"
@@ -61,8 +61,8 @@ static const struct i915_mmio_range i915_gen12_ranges[] = {
 /*
  * The Gen9 register-to-domain map.
  *
- * It is the reference's table for Skylake, Kaby Lake, Coffee Lake and Comet
- * Lake and never changes, so every Gen9 device shares it.
+ * It covers Skylake, Kaby Lake, Coffee Lake and Comet Lake and never
+ * changes, so every Gen9 device shares it.
  */
 static const struct i915_mmio_range i915_gen9_ranges[] = {
 #include "intel/forcewake-ranges-gen9.inc"

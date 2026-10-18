@@ -9,7 +9,7 @@
  * The park of the request worker for a suspend.
  *
  * A suspend asks the worker to park: the worker leaves the display window
- * (the output is stopped through the reference's stop path, the lease is
+ * (the output is stopped through the display's stop path, the lease is
  * kept), finishes the request it runs, lets the GT go idle (RPS stopped,
  * forcewake given back) and sleeps until the resume ends the park; the
  * requests that come meanwhile wait in their queues.  This file is the
