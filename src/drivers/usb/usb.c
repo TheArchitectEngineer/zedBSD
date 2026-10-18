@@ -9,11 +9,8 @@
 
 /*
  * USB host core
-
- * The driver model and URB terminology follow the Linux USB API.
- * This is an independent implementation and contains no Linux
- * implementation code.
  */
+
 
 #include <drivers/usb/usb.h>
 #include <uapi/errno.h>

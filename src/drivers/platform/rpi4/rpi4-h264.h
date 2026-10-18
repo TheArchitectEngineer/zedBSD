@@ -10,8 +10,6 @@
  * driver needs: finding access units in an Annex B stream, and rewriting a
  * sequence parameter set with VUI that asks for no output reordering (so a
  * decoder that honours it outputs each picture as soon as it is decoded).
- *
- * Written from the H.264 specification (ITU-T H.264, 7.3.2.1.1 and E.1.1).
  */
 
 #ifndef KERN_DRIVERS_RPI4_H264_H
@@ -73,7 +71,14 @@ struct drv_rpi4_h264_scaling {
 	uint8_t list8[6][64];
 };
 
-/* A sequence parameter set, as StdVideoH264SequenceParameterSet gives it (level as its enum). */
+/*
+ * A sequence parameter set, as StdVideoH264SequenceParameterSet gives it
+ * (level as its enum).
+ *
+ * Procedure referenced: ITU-T H.264 7.3.2.1.1 (the sequence parameter set
+ * syntax) and E.1.1 (the VUI syntax).
+ */
+
 struct drv_rpi4_h264_sps {
 	uint32_t flags;
 	uint32_t profile_idc;

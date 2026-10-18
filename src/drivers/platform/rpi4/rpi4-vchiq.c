@@ -8,9 +8,7 @@
 /*
  * VCHIQ on the Raspberry Pi 4 (see rpi4-vchiq.h).
  *
- * The protocol is the one BSD-3-Clause sources describe (FreeBSD's
- * sys/contrib/vchiq, and the Raspberry Pi userland); the code is zedBSD's
- * own.  The ARM is the slave: it allocates the shared memory below the
+ * The ARM is the slave: it allocates the shared memory below the
  * VPU's 1 GiB window, lays out slot zero (rpi4-vchiq-wire.c), posts its bus
  * address on mailbox channel 3 and sends CONNECT.  One receive thread reads
  * the VPU's messages, completes bulk transfers and hands the VPU's slots
@@ -774,9 +772,13 @@ describe(
 /*
  * Maps the doorbell, lays out the shared memory, starts the receive thread,
  * hands the memory to the firmware and sends CONNECT.
+ *
+ * Procedure referenced: FreeBSD sys/contrib/vchiq and the Raspberry Pi
+ * userland (the VCHIQ connection and slot protocol).
  */
 static int
 start(
+
 	struct rpi4_vchiq *vchiq,
 	uint64_t registers)
 {

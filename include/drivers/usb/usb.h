@@ -8,11 +8,8 @@
 /*
  * Generic USB host bus and built-in driver interface
  *
- * This interface references and uses API concepts, terminology,
- * object hierarchy, and host-side driver conventions from the Linux
- * USB subsystem, including its URB model.  Host-controller-specific
- * objects such as UHCI TD/QH, EHCI qTD/QH, and xHCI TRB/rings must
- * remain private to their respective HCDs.
+ * Host-controller-specific objects such as UHCI TD/QH, EHCI qTD/QH, and
+ * xHCI TRB/rings must remain private to their respective HCDs.
  */
 
 #ifndef KERN_DRIVERS_USB_H
@@ -91,7 +88,15 @@
 #define DRV_USB_DETACH_QUIET			(1U << 1)
 #define DRV_USB_DETACH_ATTACH_FAILED		(1U << 2)
 
+/*
+ * The bus, device, interface, endpoint and URB objects and the host-side
+ * driver conventions.
+ *
+ * Procedure referenced: the Linux USB subsystem's driver model (the object
+ * hierarchy, the URB model and its terminology); the code is independent.
+ */
 struct drv_usb_bus;
+
 struct drv_usb_device;
 struct drv_usb_configuration;
 struct drv_usb_interface;

@@ -8,8 +8,7 @@
 /*
  * The firmware's H.264 decoder over MMAL (see rpi4-mmal.h).
  *
- * The protocol follows the Raspberry Pi userland's BSD-3-Clause MMAL
- * client (interface/mmal/vc/), written anew: requests carry a waiter number
+ * The protocol: requests carry a waiter number
  * the reply echoes; buffers travel as messages whose payload follows as a
  * bulk transfer; a received buffer's bulk is requested in the order the
  * firmware's messages came, its length rounded up to four bytes (eight
@@ -1260,7 +1259,11 @@ locks_init(void)
 
 /*
  * Sends one request and waits for its reply.
+ *
+ * Procedure referenced: the Raspberry Pi userland interface/mmal/vc/ (the
+ * MMAL client's messages, waiters, bulk transfers and port flush).
  */
+
 static int
 request(
 	struct drv_rpi4_mmal_decoder *decoder,
