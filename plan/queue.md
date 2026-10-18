@@ -618,7 +618,7 @@ WS074 の記録の q590・q594〜q598（Codex の browser3）は main の同じ�
 | Queue | 担当 | Phase | 範囲 | 結果 |
 | --- | --- | --- | --- | --- |
 | q1255 / q1255-i01 | P3（phase-runner） | [ws261-p002](ws261/phase002/phase.md) | boot.h の sun4u の構造体・定数を除き、HAL → kernel は汎用の構造体と名前ごとの値、boot loader → HAL の定義は HAL か bootloader/ に。振る舞いは変えない | 返却（2026-10-18）: cbae237f7・9b32b9ec6・c7c0f5c6a、merge 49f7fc9a5。p002 cleared、WS261 completed（QEMU の起動は WS267） |
-| q1256 / q1256-i01 | P2（phase-runner） | [ws262-p001](ws262/phase001/phase.md) | bootloader/ の全部を plan/coding-style.md の全文に。書き方だけ、binary の比べで動作が同じ事を確かめる。sparcv9 は P3 の q1255 と重なるので、P3 の merge の後に | in-progress: common・bios（68fab7ee9、merge cacff93ea。code の差は common-memory-map.o・bios-fat-directory.o だけで host の同値の試験 20000 回一致、cc6aa1256 の uefi の差分は BOOTX64.EFI が基準と byte で同じ、P2 の報告）。include・pcat・pc98・tests・x68k（101050cea、merge a28d87bb7。.S・.inc・.ld は code の差なし、x68k の作れる object は byte で同じ）。uefi（1c891deff、merge 723a0be66。BOOTX64.EFI は 29696 byte のまま、helper 17 種は host の同値の試験で一致）。bootx64.c の console_ascii の buffer の超えを P2 が別の commit で直す |
+| q1256 / q1256-i01 | P2（phase-runner） | [ws262-p001](ws262/phase001/phase.md) | bootloader/ の全部を plan/coding-style.md の全文に。書き方だけ、binary の比べで動作が同じ事を確かめる。sparcv9 は P3 の q1255 と重なるので、P3 の merge の後に | in-progress: common・bios（68fab7ee9、merge cacff93ea。code の差は common-memory-map.o・bios-fat-directory.o だけで host の同値の試験 20000 回一致、cc6aa1256 の uefi の差分は BOOTX64.EFI が基準と byte で同じ、P2 の報告）。include・pcat・pc98・tests・x68k（101050cea、merge a28d87bb7。.S・.inc・.ld は code の差なし、x68k の作れる object は byte で同じ）。uefi（1c891deff、merge 723a0be66。BOOTX64.EFI は 29696 byte のまま、helper 17 種は host の同値の試験で一致）。bootx64.c の console_ascii の buffer の超えを直した（713d2da76、merge fdf2f3f55、ASan の host の確かめで直す前は超え・後は超えない） |
 
 ## 2026-10-18 夜〜: 自走（q1257〜）
 
@@ -626,6 +626,6 @@ WS074 の記録の q590・q594〜q598（Codex の browser3）は main の同じ�
 
 | Queue | 担当 | Phase | 範囲 | 結果 |
 | --- | --- | --- | --- | --- |
-| q1257 / q1257-i01 | P1（phase-runner、Opus 5.5 low） | WS263 → WS266 → WS264 → WS265 | 各 WS の p001 設計から framebuffer の console・VFS の段まで。HAL の API は形を限った事前の承認の範囲だけ | in-progress |
+| q1257 / q1257-i01 | P1（phase-runner、Opus 5.5 low） | WS263 → WS266 → WS264 → WS265 | 各 WS の p001 設計から framebuffer の console・VFS の段まで。HAL の API は形を限った事前の承認の範囲だけ | in-progress: WS263 p001・p002（f001f03b8、merge 9b8d7bb94、riscv32 の vmunix warning 0、HAL の差分は事前の承認の範囲: arch.h の節・riscv32.h・名前 riscv32.fdt/initrd/boot-hart。範囲の外: include/uapi/stat.h の riscv32 の ABI の枝）。T1-711。WS266 へ |
 | q1258 / q1258-i01 | P2（q1256 の後） | WS267 → WS268 → WS259 | sun4u の build と QEMU（画面の console を作る）、x68k の build（MAME は任意）、RTL8822B の表（実機は待つ） | pending |
 | q1259 / q1259-i01 | P2（q1258 の後） | WS244 の残り → WS245 の残り → WS248 → WS249 → WS251 p002 → WS252 | 2026-10-19 ユーザー「…ws244,ws245,ws248,ws249,ws251 p002, ws252も追加で、完了させて。」。実機の Phase は実機待ちで残す（2026-10-18 の決定） | pending |
