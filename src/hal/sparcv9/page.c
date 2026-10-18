@@ -574,11 +574,15 @@ alloc_ram(
 	need = (uint32_t)((size + SPARCV9_PAGE_SIZE - 1) / SPARCV9_PAGE_SIZE);
 	align_pages = (uint32_t)(alignment / SPARCV9_PAGE_SIZE);
 
-	/* Limits the search to the pages the caller can address. */
+	/*
+	 * Limits the search to the pages the caller can address.  The span
+	 * starts at zero, so the highest address is compared before one is
+	 * added to it.
+	 */
 	end = ram_pages;
 	if ((uint64_t)max_paddr < ram_base)
 		return HAL_ERR_NOMEM;
-	if ((uint64_t)max_paddr - ram_base + 1U < (uint64_t)ram_pages * SPARCV9_PAGE_SIZE)
+	if ((uint64_t)max_paddr - ram_base < (uint64_t)ram_pages * SPARCV9_PAGE_SIZE - 1U)
 		end = (uint32_t)(((uint64_t)max_paddr - ram_base + 1U) / SPARCV9_PAGE_SIZE);
 	if (need > end)
 		return HAL_ERR_NOMEM;

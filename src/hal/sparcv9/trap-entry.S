@@ -118,10 +118,18 @@ sparcv9_trap_entry_from_hw:
 	andcc %g2, 0x400, %g0
 	be,pn %xcc, sparcv9_user_trap_entry
 	 nop
-	/* A miss raised by a user register-window spill is nested at TL=2. */
+	/*
+	 * A miss or a write to a copy-on-write page raised by a user
+	 * register-window spill is nested at TL=2, and belongs to the user.
+	 */
+	rdpr %tpc, %g3
 	cmp %g1, 0x68
+	be,pt %xcc, 6f
+	 nop
+	cmp %g1, 0x6c
 	bne,pn %xcc, sparcv9_kernel_trap_entry
-	 rdpr %tpc, %g3
+	 nop
+6:
 	setx sparcv9_window_spill, %g5, %g6
 	cmp %g3, %g6
 	blu,pn %xcc, sparcv9_kernel_trap_entry
@@ -159,7 +167,6 @@ sparcv9_user_trap_entry:
 	stx %g4, [%g3 + 56]
 	setx sparcv9_current_user_windows, %g3, %g5
 	ldx [%g5], %g5
-	stx %g7, [%g5 + 1128]
 	rdpr %cwp, %g1
 	stx %g1, [%g5 + 1024]
 	rdpr %cansave, %g1
@@ -227,6 +234,23 @@ sparcv9_user_trap_entry:
 	wrpr %g0, 0, %otherwin
 	wrpr %g0, 7, %cleanwin
 	wrpr %g0, 0, %wstate
+	/*
+	 * Selects the normal globals, which hold the user's values, and keeps
+	 * them in the task's user context; the kernel's C code runs on the
+	 * normal globals, which a task switch saves and restores.
+	 */
+	setx sparcv9_current_user_windows, %g3, %l0
+	ldx [%l0], %l0
+	rdpr %pstate, %l1
+	andn %l1, 0xc01, %l1
+	wrpr %l1, 0, %pstate
+	stx %g1, [%l0 + 1080]
+	stx %g2, [%l0 + 1088]
+	stx %g3, [%l0 + 1096]
+	stx %g4, [%l0 + 1104]
+	stx %g5, [%l0 + 1112]
+	stx %g6, [%l0 + 1120]
+	stx %g7, [%l0 + 1128]
 	setx sparcv9_current_trap_sp, %g3, %g6
 	ldx [%g6], %sp
 	sub %sp, 256, %sp
@@ -240,14 +264,33 @@ sparcv9_user_trap_entry:
 	sub %g3, 64, %o4
 	call sparcv9_user_trap_dispatch
 	 nop
-	mov %o0, %g4
+	/*
+	 * Keeps whether the trap is done and the result for the user's %o0,
+	 * puts the user's normal globals back, then selects the alternate
+	 * globals as scratch for reloading the windows.  The trap's return
+	 * selects the normal globals again.
+	 */
+	mov %o0, %l2
 	setx sparcv9_current_trap_sp, %g3, %g6
 	ldx [%g6], %g6
 	add %g6, 2047, %g3
 	sub %g3, 64, %g3
-	ldx [%g3 + 16], %g1
-	setx sparcv9_current_user_windows, %g3, %g5
-	ldx [%g5], %g5
+	ldx [%g3 + 16], %l3
+	setx sparcv9_current_user_windows, %g3, %l0
+	ldx [%l0], %l0
+	ldx [%l0 + 1080], %g1
+	ldx [%l0 + 1088], %g2
+	ldx [%l0 + 1096], %g3
+	ldx [%l0 + 1104], %g4
+	ldx [%l0 + 1112], %g5
+	ldx [%l0 + 1120], %g6
+	ldx [%l0 + 1128], %g7
+	rdpr %pstate, %l1
+	or %l1, 0x1, %l1
+	wrpr %l1, 0, %pstate
+	mov %l2, %g4
+	mov %l3, %g1
+	mov %l0, %g5
 	ldx [%g5 + 1024], %g2
 	inc %g2
 	and %g2, 7, %g2
@@ -291,7 +334,6 @@ sparcv9_user_trap_entry:
 	wrpr %g1, 0, %wstate
 	ldx [%g5 + 1024], %g1
 	wrpr %g1, 0, %cwp
-	ldx [%g5 + 1128], %g7
 	cmp %g4, 1
 	be,pn %xcc, 2f
 	 nop
@@ -302,14 +344,37 @@ sparcv9_user_trap_entry:
 	 nop
 
 sparcv9_kernel_trap_entry:
-	/* Generic kernel traps run on the interrupted biased stack. */
+	/*
+	 * Generic kernel traps run on the interrupted biased stack.  The
+	 * trap's arguments come from the trap globals; then the normal
+	 * globals, which hold the interrupted code's values, are selected and
+	 * kept in the frame, because the C code and any task it switches to
+	 * use them.
+	 */
 	save %sp, -256, %sp
 	mov %g1, %o0
 	rdpr %tpc, %o1
 	rdpr %tnpc, %o2
 	mov %g2, %o3
+	rdpr %pstate, %l1
+	andn %l1, 0xc01, %l1
+	wrpr %l1, 0, %pstate
+	stx %g1, [%sp + 2047 + 176]
+	stx %g2, [%sp + 2047 + 184]
+	stx %g3, [%sp + 2047 + 192]
+	stx %g4, [%sp + 2047 + 200]
+	stx %g5, [%sp + 2047 + 208]
+	stx %g6, [%sp + 2047 + 216]
+	stx %g7, [%sp + 2047 + 224]
 	call sparcv9_trap_dispatch
 	 nop
+	ldx [%sp + 2047 + 176], %g1
+	ldx [%sp + 2047 + 184], %g2
+	ldx [%sp + 2047 + 192], %g3
+	ldx [%sp + 2047 + 200], %g4
+	ldx [%sp + 2047 + 208], %g5
+	ldx [%sp + 2047 + 216], %g6
+	ldx [%sp + 2047 + 224], %g7
 	cmp %o0, 1
 	be,pn %xcc, 1f
 	 nop

@@ -105,6 +105,22 @@ typedef __UINT_FAST64_TYPE__ uint_fast64_t;
 #define __ZED_INT_C_PASTE(value, suffix) value ## suffix
 #define __ZED_INT_C(value, suffix) __ZED_INT_C_PASTE(value, suffix)
 
+/*
+ * GCC names no suffixes, only the function-like forms, which it always
+ * provides; a compiler without the suffixes takes those.
+ */
+#if !defined(__UINT64_C_SUFFIX__) && defined(__UINT64_C)
+#define INT8_C(value) __INT8_C(value)
+#define UINT8_C(value) __UINT8_C(value)
+#define INT16_C(value) __INT16_C(value)
+#define UINT16_C(value) __UINT16_C(value)
+#define INT32_C(value) __INT32_C(value)
+#define UINT32_C(value) __UINT32_C(value)
+#define INT64_C(value) __INT64_C(value)
+#define UINT64_C(value) __UINT64_C(value)
+#define INTMAX_C(value) __INTMAX_C(value)
+#define UINTMAX_C(value) __UINTMAX_C(value)
+#else
 #define INT8_C(value) __ZED_INT_C(value, __INT8_C_SUFFIX__)
 #define UINT8_C(value) __ZED_INT_C(value, __UINT8_C_SUFFIX__)
 #define INT16_C(value) __ZED_INT_C(value, __INT16_C_SUFFIX__)
@@ -115,5 +131,6 @@ typedef __UINT_FAST64_TYPE__ uint_fast64_t;
 #define UINT64_C(value) __ZED_INT_C(value, __UINT64_C_SUFFIX__)
 #define INTMAX_C(value) __ZED_INT_C(value, __INTMAX_C_SUFFIX__)
 #define UINTMAX_C(value) __ZED_INT_C(value, __UINTMAX_C_SUFFIX__)
+#endif
 
 #endif

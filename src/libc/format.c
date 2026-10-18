@@ -58,6 +58,14 @@ struct float_sink {
 	size_t length;
 };
 
+/*
+ * What %ls prints for a null pointer, as wide characters.
+ *
+ * It is spelled out rather than written as a wide literal, so its elements
+ * are wchar_t wherever the compiler's own wide literals are narrower.
+ */
+static const wchar_t format_null_wide[] = { '(', 'n', 'u', 'l', 'l', ')', 0 };
+
 static void sink_character(struct float_sink *sink, char character);
 static char decimal_character(const struct float_decimal *decimal, int index);
 static void sink_exponent(struct float_sink *sink, int exponent, int upper);
@@ -919,7 +927,7 @@ vsnprintf(char *buffer, size_t size, const char *format, va_list arguments)
 				const wchar_t *text = va_arg(arguments, const wchar_t *);
 				size_t text_length;
 				if (text == NULL)
-					text = L"(null)";
+					text = format_null_wide;
 				text_length = wide_text_length(text, precision);
 				if (text_length == (size_t)-1)
 					return -1;

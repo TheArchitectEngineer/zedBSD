@@ -13,8 +13,7 @@
  * Values referenced: UltraSPARC-IIi User's Manual (Sun Microsystems,
  * 805-0087), the ASI assignments (physical bypass, the IMMU and DMMU
  * registers, the TLB data access and tag read ASIs) and the MMU register
- * offsets (tag target, primary context, synchronous fault status, fault
- * address, tag access).
+ * offsets (tag target, primary context, fault address, tag access).
  */
 
 #ifndef KERN_HAL_SPARCV9_ASI_H
@@ -39,12 +38,8 @@
 /* The MMU registers, by their offset in the IMMU and DMMU ASIs. */
 #define SPARCV9_MMU_TAG_TARGET		0x00UL
 #define SPARCV9_MMU_PRIMARY_CONTEXT	0x08UL
-#define SPARCV9_MMU_FAULT_STATUS	0x18UL
 #define SPARCV9_MMU_FAULT_ADDRESS	0x20UL
 #define SPARCV9_MMU_TAG_ACCESS		0x30UL
-
-/* The fault status bit that marks a write. */
-#define SPARCV9_MMU_FAULT_STATUS_WRITE	0x04UL
 
 /* The number of entries in each fully associative TLB. */
 #define SPARCV9_TLB_ENTRIES		64U

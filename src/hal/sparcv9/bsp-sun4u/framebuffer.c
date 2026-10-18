@@ -13,7 +13,8 @@
  * set to 640 by 400 pixels of 32 bits, so that 80 by 25 cells of the 8x16
  * font fill it exactly and a text console needs no margin.  The pixels and
  * the registers are PCI memory, little-endian, reached through the
- * physical bypass.
+ * physical bypass; on a big-endian machine the emulator reads the pixels
+ * big-endian unless told otherwise, so the byte order is set first.
  */
 
 #include <hal/hal.h>
@@ -29,14 +30,18 @@
 
 /*
  * The register window of the standard VGA: the VGA ports from 0x3c0 at
- * offset 0x400, and the Bochs display interface's registers, 16 bits each,
- * at offset 0x500.
+ * offset 0x400, the Bochs display interface's registers, 16 bits each, at
+ * offset 0x500, and the emulator's own registers at offset 0x600, of which
+ * the second sets the byte order of the framebuffer's pixels.
  *
  * Values referenced: QEMU v10.0.0 hw/display/vga-pci.c
- * (PCI_VGA_IOPORT_OFFSET, PCI_VGA_BOCHS_OFFSET).
+ * (PCI_VGA_IOPORT_OFFSET, PCI_VGA_BOCHS_OFFSET, PCI_VGA_QEXT_OFFSET,
+ * PCI_VGA_QEXT_REG_BYTEORDER, PCI_VGA_QEXT_LITTLE_ENDIAN).
  */
 #define FRAMEBUFFER_VGA_PORTS		0x400U
 #define FRAMEBUFFER_BOCHS_REGISTERS	0x500U
+#define FRAMEBUFFER_QEXT_BYTEORDER	0x604U
+#define FRAMEBUFFER_QEXT_LITTLE_ENDIAN	0x1e1e1e1eU
 
 /* The VGA attribute controller's port, relative to port 0x3c0. */
 #define FRAMEBUFFER_VGA_ATTRIBUTE	0x00U
@@ -122,8 +127,9 @@ sun4u_framebuffer_init(
 	framebuffer_pixels = pci_memory_base + framebuffer;
 	framebuffer_registers = pci_memory_base + registers;
 
-	/* Turns the display off while its mode is set. */
+	/* Turns the display off while its mode is set, and reads the pixels little-endian. */
 	bochs_write(FRAMEBUFFER_BOCHS_ENABLE, 0);
+	sparcv9_phys_write32_le(framebuffer_registers + FRAMEBUFFER_QEXT_BYTEORDER, FRAMEBUFFER_QEXT_LITTLE_ENDIAN);
 
 	/* Sets the resolution, the depth and an unscrolled view of the whole framebuffer. */
 	bochs_write(FRAMEBUFFER_BOCHS_XRES, (uint16_t)FRAMEBUFFER_WIDTH);

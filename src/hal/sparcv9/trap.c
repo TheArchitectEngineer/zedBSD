@@ -309,25 +309,24 @@ miss_tag(
 	return tag;
 }
 
-/* Reports whether a data MMU trap was taken by a store. */
+/*
+ * Reports whether an MMU trap is known to come from a store.
+ *
+ * A fast miss does not record whether it was a load or a store: the MMU
+ * updates its fault status only for the other faults.  A miss is taken as
+ * a load, and the entry written for it is writable when the mapping is; a
+ * store to a page mapped read-only then takes the protection trap, which
+ * is a store by definition.
+ */
 static int
 miss_is_write(
 	uint64_t trap_type)
 {
-	uint64_t status;
-
-	/* A protection fault is only ever taken by a store. */
+	/* Only the protection trap is known to be a store. */
 	if (trap_type == TRAP_DATA_PROTECTION)
 		return 1;
 
-	/* An instruction fetch is not a store. */
-	if (trap_type == TRAP_INSTRUCTION_MISS)
-		return 0;
-
-	/* The data MMU's fault status says whether the miss was a store. */
-	status = sparcv9_dmmu_read(SPARCV9_MMU_FAULT_STATUS);
-	if ((status & SPARCV9_MMU_FAULT_STATUS_WRITE) != 0)
-		return 1;
+	/* A miss is taken as a load. */
 	return 0;
 }
 

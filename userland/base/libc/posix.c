@@ -8157,9 +8157,8 @@ exit(
 	__rtld_exports.process_fini();
 #else
 
-	/* Handles the rtld process fini availability. */
-	if (__rtld_process_fini != NULL)
-		__rtld_process_fini();
+	/* Runs the loader's process teardown, a no-op in a static program. */
+	__rtld_process_fini();
 #endif
 	(void)fflush(NULL);
 	_exit(status);
@@ -8314,9 +8313,8 @@ __libc_init(
 	__rtld_exports.startup_init();
 #else
 
-	/* Handles the rtld startup init availability. */
-	if (__rtld_startup_init != NULL)
-		__rtld_startup_init();
+	/* Runs the loader's start-up hook, a no-op in a static program. */
+	__rtld_startup_init();
 #endif
 }
 
