@@ -289,3 +289,6 @@ Event ws074-p189-q14-census-checkpoint-20261018: [p250 final gate](../phase250/e
 実環境Python3.13 socketserver.BaseServer.serve_foreverのdefault poll_interval=0.5はselector/shutdown確認周期であり、現在のharnessはtestごとにbrowser subprocess終了→server.shutdown→joinを行う。このpost-browser待機が全1491の反復コストになる。候補はWptServer workerのkwargsでpoll_interval=0.01へ限定し、localhost HTTP/response bytes/variant/結果分類/settle5000/process20/fonts/eligible IDを一切変えず、before=完了したq21全1491と同一frozen pairで全ID/whole/callback/order/欠損/追加を照合する最大45分の新Queue。native C/他runner/WPT/分母/未attempt292は不変。1行tool変更に専用mirror testは追加せず、実測before/after全1491と既存対照を使う。q21終了とexact Queue記録前には実装しない。native源不変なのでstatic/scripted/crashを再計測する必要はない。elapsedの改善は測定前に確定せず、差異があればscope内で診断し未解消ならuncleared。
 
 Event ws074-p189-shutdown-candidate-20261018: q21 native全件gateの進行中にstdlib実sourceから停止待機を確認。次の有限candidateとして残し、現q21/global/native source/承認基準は変更しない。whole p189 coverage1783とnative/API未達を先取りclearしない。shared projection pending。
+
+
+Event ws074-p189-q21-regression-evidence-20261018: [p252 global](../phase252/evidence/20261018-q21/README.md)で全1491は491→493 PASS、7 callback改善/旧whole・callback後退0/欠損・追加・順序差0。全1783中292未attemptは保持しp189 whole uncleared。次候補shutdown待機の短縮を同じfrozen pair/1491で選定するまでtool変更しない。shared projection pending。

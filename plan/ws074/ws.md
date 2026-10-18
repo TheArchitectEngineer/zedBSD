@@ -9,9 +9,9 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [ws074-q20261018-21](queue.md) active（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+Queue: [ws074-q20261018-21](queue.md) finished（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
 
-Latest verified（q20 finished）: 普通のstatic response headersをpinned契約どおり配信し、独立HTTP/native 29 controlsを通過。同一native source/pairで固定scripted413全native attempt/805 captures、105 PASS・283 pixel FAIL・5 unsupported_environment・20 readiness_missing。旧82 PASS後退0、未対応242から23 PASS/210 FAIL/4 missingを新たに正しく判定。全388 edgeは無改変pinned comparatorと一致、共通594回のRGB照合は変化0。6 header sourcesはpinned git blob/hash・実配信ack/順序/値を検証。既存harness1491=491 PASS/static1561=839 PASS/strict48=39 PASSはq19のbyte同一source/pair証拠を再利用。確認済み1474/3805（38.738502%）、新規計測PASS23増。未attempt harness292・環境5・native未達は固定分母へ保持。 両partial cleared、whole Phase/WS・target/p100/shared projection pending。
+Latest verified（q21 finished）: flex-basis grammar/computed/content baseをnative修正。固定3 IDは27/27 callback PASS、2 whole/7 callback改善（parsing3は5、shorthandは2）。全1491 harnessは493 PASS（+2）・11538 PASS/20219 FAIL/14 NOTRUN、old whole/callback後退・欠損・追加・順序変更0。全static1561は844 PASS/717 FAIL（+5）・old839後退0、画素変更は改善5 IDだけ。5件の旧/新16 capturesを無改変pinned comparatorでも全FAIL→PASS確認。scripted413は105 PASS/283 FAIL/5 unsupported/20 missing・805 captures全RGB不変/388 edge primary一致、strict48は39 PASS/9 missing維持。確認済み1481/3805（38.922470%）、genuine native whole改善7。未attempt harness292と環境/API/native残差は分母保持。 host scoped partial cleared、p252 wholeの受け入れは今回のhost partialだけで認定せずuncleared。replaced/一般intrinsic/縦書き・negative inner base等の既存別未実装面とtarget full link/runtimeも保持。p240/p241/p189/p190/WS全体やp100を先取りclearしない。指定calc canonical順序の既存差は未修正。shared projection/GitHub pending、push無し。
 
 Event ws074-q14-percentage-scope-reconciled-20261018: precode Chrome17条件でzero/cancelled %型の依存を確認。p251をi01、p250をi02へ改訂しglobal1491/static1561照合へ拡張、初期snapshot保存/60分deadline維持。
 
@@ -643,7 +643,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p186](phase186/phase.md) | sharp text-shadow と見出し影を調べる | cleared（q1009-i01、sharp 単一 scope、Acid3差2451減） | p172〜p185 cleared、q1008 実測出力 |
 | [ws074-p187](phase187/phase.md) | 負の padding と第6色箱の幅を調べる | cleared（q1010-i01、Acid3差900減、negative padding fixture pass） | p172〜p186 cleared、q1009 実測出力 |
 | [ws074-p188](phase188/phase.md) | 同一ページで観測した訪問履歴と :visited の paint color | cleared（q1011-i01、Acid3差801減→0、privacy fixture pass） | p172〜p187 cleared、q1010 実測出力 |
-| [ws074-p189](phase189/phase.md) | Interop 2025 testharness 1,783件の結果取得 runner | uncleared / q19全1491 whole491・未attempt292 | p173 q1012 固定manifest出力 |
+| [ws074-p189](phase189/phase.md) | Interop 2025 testharness 1,783件の結果取得 runner | uncleared / q21全1491 whole493・未attempt292 | p173 q1012 固定manifest出力 |
 | [ws074-p190](phase190/phase.md) | Interop 2025 reftest 1,974件・crashtest48件のrunner coverage | uncleared / q20 partial cleared・105 scripted PASS・環境5 | p173 q1012 固定manifest出力 |
 | [ws074-p191](phase191/phase.md) | Interop 2025 textdecoration全16 testharnessのCSSOM互換 | cleared / q1023、16件16 PASS/0 FAIL | p173固定manifest、p189 q1015全16件baseline |
 | [ws074-p192](phase192/phase.md) | Interop 2025 Window named properties互換 | uncleared / q1025 partial cleared、一意id live lookup | p173固定manifest、p189 q1024 shard |
@@ -700,7 +700,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p249](phase249/phase.md) | zero line/empty margin eligibility | planned / Queue未選定 | p247 zero ink output、p198 BFC基礎 |
 | [ws074-p250](phase250/phase.md) | computed fit-content bound | cleared / q14 computed own criteria | p246 scalar output、q12 raw、q13 runner |
 | [ws074-p251](phase251/phase.md) | linear calc zero percentage type | cleared / q14 direct linear type | q12/q13 raw、precode Chrome |
-| [ws074-p252](phase252/phase.md) | flex-basis grammar/computed・non-replaced content base | in-progress / Queue未選定 | p240/p241残り、q14 final output待ち |
+| [ws074-p252](phase252/phase.md) | flex-basis grammar/computed・non-replaced content base | uncleared / Queue未選定 | p240/p241残り、q14 final output待ち |
 | [ws074-p253](phase253/phase.md) | ordinary attribute mutation records | uncleared / q17 scoped partial cleared・controls15/35DOM/global旧PASS維持 | p209 q16 preflight、p242 observer model |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
@@ -1234,3 +1234,5 @@ Event ws074-p190-q20-header-output-20261018: 29 controlsでpinned普通headers�
 Event ws074-q20-finished-20261018: [exact history](history/ws074-q20261018-20.md)・[証拠](phase190/evidence/20261018-q20/README.md)。普通のstatic response headersをpinned契約どおり配信し、独立HTTP/native 29 controlsを通過。同一native source/pairで固定scripted413全native attempt/805 captures、105 PASS・283 pixel FAIL・5 unsupported_environment・20 readiness_missing。旧82 PASS後退0、未対応242から23 PASS/210 FAIL/4 missingを新たに正しく判定。全388 edgeは無改変pinned comparatorと一致、共通594回のRGB照合は変化0。6 header sourcesはpinned git blob/hash・実配信ack/順序/値を検証。既存harness1491=491 PASS/static1561=839 PASS/strict48=39 PASSはq19のbyte同一source/pair証拠を再利用。確認済み1474/3805（38.738502%）、新規計測PASS23増。未attempt harness292・環境5・native未達は固定分母へ保持。 両partial cleared、p190 whole/API/environment/WS・target/p100未達とshared projection pendingを保持。次候補p252、user自走指示を有限scopeへ適用して継続。
 
 Event ws074-p252-q21-selected-20261018: [Queue](queue.md)でp252 grammar/computed/content baseを最大90分に選定。q20verified1474を保持、native source変更後は全1491/static1561/strict48/scripted413を同final pairで再検証。p240/p241へ自身の依存event配送済み、whole/target/p100/shared projection pending。
+
+Event ws074-q21-finished-20261018: [exact history](history/ws074-q20261018-21.md)・[証拠](phase252/evidence/20261018-q21/README.md)。flex-basis grammar/computed/content baseをnative修正。固定3 IDは27/27 callback PASS、2 whole/7 callback改善（parsing3は5、shorthandは2）。全1491 harnessは493 PASS（+2）・11538 PASS/20219 FAIL/14 NOTRUN、old whole/callback後退・欠損・追加・順序変更0。全static1561は844 PASS/717 FAIL（+5）・old839後退0、画素変更は改善5 IDだけ。5件の旧/新16 capturesを無改変pinned comparatorでも全FAIL→PASS確認。scripted413は105 PASS/283 FAIL/5 unsupported/20 missing・805 captures全RGB不変/388 edge primary一致、strict48は39 PASS/9 missing維持。確認済み1481/3805（38.922470%）、genuine native whole改善7。未attempt harness292と環境/API/native残差は分母保持。 host scoped partial cleared、p252 wholeの受け入れは今回のhost partialだけで認定せずuncleared。replaced/一般intrinsic/縦書き・negative inner base等の既存別未実装面とtarget full link/runtimeも保持。p240/p241/p189/p190/WS全体やp100を先取りclearしない。指定calc canonical順序の既存差は未修正。shared projection/GitHub pending、push無し。

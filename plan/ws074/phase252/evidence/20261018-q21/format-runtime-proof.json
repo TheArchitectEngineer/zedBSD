@@ -1,0 +1,376 @@
+{
+  "source_format_commit": "70e40cb7a0f1b30fb5fc52555e2fef91621883d7",
+  "only_excluded_allocated_section": ".note.gnu.build-id (diagnostic identifier)",
+  "pairs": [
+    {
+      "name": "browser",
+      "allocated_sections_except_gnu_build_id_equal": true,
+      "sections": {
+        ".note.gnu.property": {
+          "type": 7,
+          "flags": 2,
+          "address": 848,
+          "size": 32,
+          "sha256": "5978480398fc48bfa6c56246117c5bc1a40145463a2faca541e5e91d5067ff79"
+        },
+        ".interp": {
+          "type": 1,
+          "flags": 2,
+          "address": 916,
+          "size": 28,
+          "sha256": "9097c98ea70f6f3b01d50145eb72bf55ad1f4e9713bccf27bd6405d6254eed00"
+        },
+        ".gnu.hash": {
+          "type": 1879048182,
+          "flags": 2,
+          "address": 944,
+          "size": 36,
+          "sha256": "d498c63911a85b8d0afecd27f53d47560aaf5a1c510c46847503f77de90f490f"
+        },
+        ".dynsym": {
+          "type": 11,
+          "flags": 2,
+          "address": 984,
+          "size": 936,
+          "sha256": "10799eff07147a91067b4078b7acca26257eb2265a5cafa269187ec34df17523"
+        },
+        ".dynstr": {
+          "type": 3,
+          "flags": 2,
+          "address": 1920,
+          "size": 633,
+          "sha256": "3fceca652a7d1436eec50803ac11cee054d409c79f2637cfb2c4a322fbb3b65d"
+        },
+        ".gnu.version": {
+          "type": 1879048191,
+          "flags": 2,
+          "address": 2554,
+          "size": 78,
+          "sha256": "4455e106968b1f4a3e9998be620223ff38ebaf5984a579af6d1364324a039f55"
+        },
+        ".gnu.version_r": {
+          "type": 1879048190,
+          "flags": 2,
+          "address": 2632,
+          "size": 64,
+          "sha256": "e45a623bd71934824a2d4081d9313df469eef9490b2f8c78cc7ba53adf6cae37"
+        },
+        ".rela.dyn": {
+          "type": 4,
+          "flags": 2,
+          "address": 2696,
+          "size": 384,
+          "sha256": "eee84d315faa1d37d518868f70b399c401ea8f23eca216c992a8a3561b0b238b"
+        },
+        ".rela.plt": {
+          "type": 4,
+          "flags": 66,
+          "address": 3080,
+          "size": 744,
+          "sha256": "4e59c8016aaee231d3ed94ed3579d2552b4985eb5c8cc02b138653ba5211c3f8"
+        },
+        ".init": {
+          "type": 1,
+          "flags": 6,
+          "address": 4096,
+          "size": 23,
+          "sha256": "8314cf338b0700ee3f739650e5a82514961be492a856829f3eb29bb9bb6c7a2e"
+        },
+        ".plt": {
+          "type": 1,
+          "flags": 6,
+          "address": 4128,
+          "size": 512,
+          "sha256": "f6f623672ed0394086e1990666d717e98e6aea70a49247a5f94b0b9001fa2ffe"
+        },
+        ".plt.got": {
+          "type": 1,
+          "flags": 6,
+          "address": 4640,
+          "size": 8,
+          "sha256": "a922326eb5a0b2f4c73582762e63f4a06f5913bb727a39f84c0fdbe5e4ea2e14"
+        },
+        ".text": {
+          "type": 1,
+          "flags": 6,
+          "address": 4672,
+          "size": 4414,
+          "sha256": "9755f8b8c4e648ebde530dbd486d40da5c47f04cf458269e95be9d79ac3d3518"
+        },
+        ".fini": {
+          "type": 1,
+          "flags": 6,
+          "address": 9088,
+          "size": 9,
+          "sha256": "66e6f54550612182b4ad78f30b140dd08318b968db3878de2db65fef87dc04d7"
+        },
+        ".rodata": {
+          "type": 1,
+          "flags": 2,
+          "address": 12288,
+          "size": 1768,
+          "sha256": "ad77ae16d4b25168f075e71aae4c4d607c57df27e81eba7374af5362bae520e4"
+        },
+        ".eh_frame_hdr": {
+          "type": 1,
+          "flags": 2,
+          "address": 14056,
+          "size": 100,
+          "sha256": "ee77ff4d9c05d704d2ce36d9e567490c7146c7d759c5f35c8214d6ab9913b984"
+        },
+        ".eh_frame": {
+          "type": 1,
+          "flags": 2,
+          "address": 14160,
+          "size": 492,
+          "sha256": "d53d965e65b11221a9f10df6a2f07fb5125ca6905fc2492bdb4076429f69adad"
+        },
+        ".note.ABI-tag": {
+          "type": 7,
+          "flags": 2,
+          "address": 14652,
+          "size": 32,
+          "sha256": "6e48317ad93a8ac2dc04321465ede06d1274543fc8ab172e68171a9d684bb313"
+        },
+        ".init_array": {
+          "type": 14,
+          "flags": 3,
+          "address": 19760,
+          "size": 8,
+          "sha256": "39f3cb65fa054dea99bc85d8005103d08482622cf559ef2049144616803297f6"
+        },
+        ".fini_array": {
+          "type": 15,
+          "flags": 3,
+          "address": 19768,
+          "size": 8,
+          "sha256": "36acf0cc1d06b9f286ff8d651663d7dd69cc7814ebd12be5d4f4f3c1e5d6ae8c"
+        },
+        ".data.rel.ro": {
+          "type": 1,
+          "flags": 3,
+          "address": 19776,
+          "size": 112,
+          "sha256": "7dd3a83b29d63b9bc057f33a1b3cace0c728a5d45909b111fff6606bbb1e1807"
+        },
+        ".dynamic": {
+          "type": 6,
+          "flags": 3,
+          "address": 19888,
+          "size": 512,
+          "sha256": "03a0d1e62dd0292e3a4d4abf7e84190e13e1c97396a03865d1afa164e6292cda"
+        },
+        ".got": {
+          "type": 1,
+          "flags": 3,
+          "address": 20400,
+          "size": 56,
+          "sha256": "d4817aa5497628e7c77e6b606107042bbba3130888c5f47a375e6179be789fbb"
+        },
+        ".got.plt": {
+          "type": 1,
+          "flags": 3,
+          "address": 20456,
+          "size": 272,
+          "sha256": "88a36083a15c328459a2f25cb84bccf7f5539353195a31814c2f8d68f88fef9b"
+        },
+        ".data": {
+          "type": 1,
+          "flags": 3,
+          "address": 20728,
+          "size": 16,
+          "sha256": "2c5518c71889a325f710a5aeec626e441c230bad80829e3ae58697b712bbc1d2"
+        },
+        ".bss": {
+          "type": 8,
+          "flags": 3,
+          "address": 20744,
+          "size": 8,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "before_sha256": "25a66385edb7811c04e5e04fddd6bf3060ef2883f26d2781adbecf9d87debc02",
+      "post_format_sha256": "25a66385edb7811c04e5e04fddd6bf3060ef2883f26d2781adbecf9d87debc02"
+    },
+    {
+      "name": "libbrowser.so",
+      "allocated_sections_except_gnu_build_id_equal": true,
+      "sections": {
+        ".gnu.hash": {
+          "type": 1879048182,
+          "flags": 2,
+          "address": 608,
+          "size": 384,
+          "sha256": "ee587721fdab4b4a06479e5f0b4c5624c8c0e8b9d9868ebc708a87771cd5b778"
+        },
+        ".dynsym": {
+          "type": 11,
+          "flags": 2,
+          "address": 992,
+          "size": 5880,
+          "sha256": "b2e9c4574b52e976ff8aa20589205e20c681a41400b60519e58a89f1e64a56d4"
+        },
+        ".dynstr": {
+          "type": 3,
+          "flags": 2,
+          "address": 6872,
+          "size": 3595,
+          "sha256": "eda3ceaae40cf5c51ef6c517ee5daca31547e65b073efc68f77b9996b2468bb6"
+        },
+        ".gnu.version": {
+          "type": 1879048191,
+          "flags": 2,
+          "address": 10468,
+          "size": 490,
+          "sha256": "132dc82ff4ff410cb5360178246783ceb0c42e1a5376ad8bf8bd8c32e7b2857a"
+        },
+        ".gnu.version_r": {
+          "type": 1879048190,
+          "flags": 2,
+          "address": 10960,
+          "size": 240,
+          "sha256": "c278a77a76baf12bfdd0a296ee2be90317959a2ece6d15e05aa0716b366a0824"
+        },
+        ".rela.dyn": {
+          "type": 4,
+          "flags": 2,
+          "address": 11200,
+          "size": 162384,
+          "sha256": "1563fd782c2ca59962c9e9f75b5b7481e25de71da80df8f2528a7b7448dbb36b"
+        },
+        ".rela.plt": {
+          "type": 4,
+          "flags": 66,
+          "address": 173584,
+          "size": 4248,
+          "sha256": "926792d842602694d3177291e192290eaa338326f25944700c8612609ddd8f12"
+        },
+        ".init": {
+          "type": 1,
+          "flags": 6,
+          "address": 180224,
+          "size": 23,
+          "sha256": "56fb5132d10eb9862f4979bb4403593ff3844f164a24f1dfc27f4bc7dd7769d2"
+        },
+        ".plt": {
+          "type": 1,
+          "flags": 6,
+          "address": 180256,
+          "size": 2848,
+          "sha256": "95f6fae9c416db7e000a4bcaf827003d0c1c5486d9347d643bf7dcae1ec158ea"
+        },
+        ".plt.got": {
+          "type": 1,
+          "flags": 6,
+          "address": 183104,
+          "size": 8,
+          "sha256": "b896589f7c9cf740f1f3a60bf19efb12e1ab928033db0705780c899487b12da1"
+        },
+        ".text": {
+          "type": 1,
+          "flags": 6,
+          "address": 183168,
+          "size": 1092843,
+          "sha256": "9c7167989249db0ff77f8713df37d1aa9265f63ffd5adaf0287ce6e5503c6f37"
+        },
+        ".fini": {
+          "type": 1,
+          "flags": 6,
+          "address": 1276012,
+          "size": 9,
+          "sha256": "66e6f54550612182b4ad78f30b140dd08318b968db3878de2db65fef87dc04d7"
+        },
+        ".rodata": {
+          "type": 1,
+          "flags": 2,
+          "address": 1277952,
+          "size": 219220,
+          "sha256": "694c9987d505f97267cbc57cce961a42eb8d477da0634bbaf1ac10dde117bfc2"
+        },
+        ".eh_frame_hdr": {
+          "type": 1,
+          "flags": 2,
+          "address": 1497172,
+          "size": 28364,
+          "sha256": "451d9904604e7ffa8b9813fa8ffac259768fa3f9b3055599b34125db51987b5c"
+        },
+        ".eh_frame": {
+          "type": 1,
+          "flags": 2,
+          "address": 1525536,
+          "size": 173120,
+          "sha256": "818e4ac58e719ebf01a9aac48b95e3b14afffb386b81aa398fbfde97c755a728"
+        },
+        ".init_array": {
+          "type": 14,
+          "flags": 3,
+          "address": 1700592,
+          "size": 8,
+          "sha256": "78ef42ab470454de41376064852c8c97e1bee6f678efd41af468b57e039cd990"
+        },
+        ".fini_array": {
+          "type": 15,
+          "flags": 3,
+          "address": 1700600,
+          "size": 8,
+          "sha256": "893c9559857c332d8db2ad0742ee88bed674effd4d827cb793a535df838339c1"
+        },
+        ".data.rel.ro": {
+          "type": 1,
+          "flags": 3,
+          "address": 1700608,
+          "size": 100960,
+          "sha256": "2d3832347b8eb08ac04bc74519ab414b86a65d673e2df1d6905c0eef1e95deb1"
+        },
+        ".dynamic": {
+          "type": 6,
+          "flags": 3,
+          "address": 1801568,
+          "size": 496,
+          "sha256": "ffd7478e10bdfa01635b8ef3183da83c1ab2e4ac48dc312785f0bc8e1e542f5b"
+        },
+        ".got": {
+          "type": 1,
+          "flags": 3,
+          "address": 1802064,
+          "size": 128,
+          "sha256": "0f6b7d8fe68abfc41bbf4d7faa23b265384e818ac0089a29b3d5971be4ebf63f"
+        },
+        ".got.plt": {
+          "type": 1,
+          "flags": 3,
+          "address": 1802216,
+          "size": 1440,
+          "sha256": "615d0b1dcacad3374b7e5d0e4507197211289c7f4d52a47c390ebc3c79e82002"
+        },
+        ".data": {
+          "type": 1,
+          "flags": 3,
+          "address": 1803656,
+          "size": 16,
+          "sha256": "188ce824e953749d2880ce1f9bb1ce0919b31ab58ab112e1f2996a75c6548a1e"
+        },
+        ".bss": {
+          "type": 8,
+          "flags": 3,
+          "address": 1803680,
+          "size": 189600,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "before_sha256": "9a9dec10c574d5904af49efa6f176647c514a19acdbcc7d5cc5dc8af22450615",
+      "post_format_sha256": "d41fcce30bae5fea05d46330b05c6fef7c1bf4f77db1d74d3fc841fc42408288"
+    }
+  ],
+  "independent39_equal": true,
+  "command": [
+    "build/ws074-20261018/q21/post-format-engine/browser",
+    "--run",
+    "--settle-ms=5000",
+    "--font=userland/desktop/fonts/Mahora-Regular.ttf",
+    "--mono-font=userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+    "--fallback-font=userland/desktop/fonts/DroidSansFallbackFull.ttf",
+    "file:///home/awe/zedBSD-claude1/plan/ws074/tests/dom/flex-basis-content.html"
+  ],
+  "build_warning_count": 0
+}

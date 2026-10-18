@@ -36,3 +36,6 @@ Event ws074-p252-basis-plan-20261018: [p252](../phase252/phase.md)へ既存conte
 
 
 Event ws074-p252-q21-selected-20261018: [p252](../phase252/phase.md)でcontentとautoの区別/非置換content baseを選定。本Phaseのverified ratio cross/auto minimum outputを保持し、preferred main/minmaxを測定だけ除去する。replaced/target等本Phaseの未達/historyは不変、dependent final全1491/static1561/strict48/scripted413で後退を検証。shared projection pending。
+
+
+Event ws074-p252-q21-output-20261018: [p252 host partial](../phase252/evidence/20261018-q21/README.md)でnon-replaced content vs auto outputをverified。既存ratio40/40を保持、whole fixed改善7/全旧PASS後退0。本Phaseの以前のattempt/target/replaced等残件は不変、p252 whole/本Phaseをこの転記だけでclearしない。shared projection pending。

@@ -2,7 +2,7 @@
 
 # ws074-p252: flex-basisのgrammar/computedとnon-replaced content base
 
-Status: in-progress（q21 scoped host attempt）
+Status: uncleared（q21 host partial cleared、whole残り/target未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
@@ -56,3 +56,8 @@ Event ws074-p252-q21-preflight-20261018: geometry24とcomputed13はChromium一�
 Event ws074-p252-q21-native-checkpoint-20261018: source WIP063d87c95/frozen final pair。独立Chrome39行= native、DOM36/36・CSSOM12/12・mutation12/12・既存ratio40/40、変更5 functions全文/format19/style0、full-file legacy count不増、host/target4 source warning0。全error pathでstyle/cache/measuring/context復元をmanual確認。最初のHTTP試験はsandbox socket EPERMで無効、rawを残し既存escalated環境の別verified出力へ再実行中。Acid3 score/inventory100/pixel0維持、固定1491/static1561/strict48/scripted413のterminal gate完了までpartial clearanceは判定しない。既存指定calcのcanonical順序差を修正済みとしない。shared projection pending。
 
 Event ws074-p252-q21-final-format-20261018: repository .clang-format（ColumnLimit0で全文定義/宣言形式を優先）と全5変更関数が一致することを追加確認。全文規約の3条件改行を2か所だけ最終補正し、非空白bytes不変・同じtarget compiler/flagsのflex.o全bytes一致を[proof](evidence/20261018-q21/format-only-proof.json)へ保存。実行中のfrozen native pairは保持し、同じCの意味で測定したglobalを再利用する。target最終compile warning0/実行code不変、source hashは補正後へ更新しpre/final sourceも保存。無関係な全件再測定を増やさず、final generation style0を再確認。whole/target runtime/p100/shared projection未達は不変。
+
+Event ws074-p252-q21-final-host-equivalence-20261018: 最終sourceのhost buildもwarning0で完了し、別post-format-engineへ保存。計測pairとのELF全SHF_ALLOC sections（診断GNU build-idだけ除く）はbrowser/libbrowser両方でaddress/flags/size/全bytes hash一致、post-format native39も一致。[format-runtime-proof](evidence/20261018-q21/format-runtime-proof.json)に全section/hash/commandを保持。globalは同一runtime codeの元frozen pairで継続しsource意味を偽らない。target flex.oも全bytes一致、final source/両artifactの関係を追跡可能とした。partial/whole clearanceは全1491 terminal gate待ち。
+
+
+Event ws074-q21-finished-20261018: [exact history](../history/ws074-q20261018-21.md)・[証拠](evidence/20261018-q21/README.md)。flex-basis grammar/computed/content baseをnative修正。固定3 IDは27/27 callback PASS、2 whole/7 callback改善（parsing3は5、shorthandは2）。全1491 harnessは493 PASS（+2）・11538 PASS/20219 FAIL/14 NOTRUN、old whole/callback後退・欠損・追加・順序変更0。全static1561は844 PASS/717 FAIL（+5）・old839後退0、画素変更は改善5 IDだけ。5件の旧/新16 capturesを無改変pinned comparatorでも全FAIL→PASS確認。scripted413は105 PASS/283 FAIL/5 unsupported/20 missing・805 captures全RGB不変/388 edge primary一致、strict48は39 PASS/9 missing維持。確認済み1481/3805（38.922470%）、genuine native whole改善7。未attempt harness292と環境/API/native残差は分母保持。 host scoped partial cleared、p252 wholeの受け入れは今回のhost partialだけで認定せずuncleared。replaced/一般intrinsic/縦書き・negative inner base等の既存別未実装面とtarget full link/runtimeも保持。p240/p241/p189/p190/WS全体やp100を先取りclearしない。指定calc canonical順序の既存差は未修正。shared projection/GitHub pending、push無し。

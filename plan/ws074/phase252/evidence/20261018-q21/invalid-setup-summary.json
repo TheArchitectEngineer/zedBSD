@@ -1,0 +1,8 @@
+{
+  "reason": "sandbox EPERM socket.socket before browser invocation",
+  "native_results_valid": false,
+  "failed_harness_reports": 12,
+  "invalid_counts": {
+    "runner_error": 1491
+  }
+}

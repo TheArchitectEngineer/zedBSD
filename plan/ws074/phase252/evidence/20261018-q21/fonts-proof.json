@@ -1,0 +1,14 @@
+{
+  "userland/desktop/fonts/Mahora-Regular.ttf": {
+    "sha256": "9d2e9933058fa465f78572e423ac0926fde255b7d46df343043ca0e6e335ebd9",
+    "same_as_q19_source": true
+  },
+  "userland/desktop/fonts/JetBrainsMono-Regular.ttf": {
+    "sha256": "e6fd0d7e91550b3ed2b735d4312474362c4716edc4fc0577a0f61ed782d5aed1",
+    "same_as_q19_source": true
+  },
+  "userland/desktop/fonts/DroidSansFallbackFull.ttf": {
+    "sha256": "acb6440a713d880a13a21b468ba7cd43f5a2b2934972e51be791c880730777b8",
+    "same_as_q19_source": true
+  }
+}

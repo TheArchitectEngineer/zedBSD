@@ -1,0 +1,28 @@
+{
+  "eligible": 1561,
+  "eligible_sha256": "0f90e8fac9af5a97e11cce8ac0dfc16fc9360b1903031d742cf8bf1361f48d93",
+  "before_counts": {
+    "fail": 722,
+    "pass": 839
+  },
+  "after_counts": {
+    "fail": 717,
+    "pass": 844
+  },
+  "whole_improvements": [
+    "css/css-flexbox/flex-basis-004.html",
+    "css/css-flexbox/flexbox-flex-basis-content-001a.html",
+    "css/css-flexbox/flexbox-flex-basis-content-001b.html",
+    "css/css-flexbox/flexbox-flex-basis-content-002a.html",
+    "css/css-flexbox/flexbox-flex-basis-content-002b.html"
+  ],
+  "whole_regressions": [],
+  "reference_pixel_changes": [
+    "css/css-flexbox/flex-basis-004.html",
+    "css/css-flexbox/flexbox-flex-basis-content-001a.html",
+    "css/css-flexbox/flexbox-flex-basis-content-001b.html",
+    "css/css-flexbox/flexbox-flex-basis-content-002a.html",
+    "css/css-flexbox/flexbox-flex-basis-content-002b.html"
+  ],
+  "baseline": "build/ws074-20261018/q19/final/after-static/report.json"
+}

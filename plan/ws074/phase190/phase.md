@@ -254,3 +254,6 @@ Event ws074-p190-q20-provider-cleared-consumer-start-20261018: generic静的head
 
 
 Event ws074-q20-finished-20261018: [exact history](../history/ws074-q20261018-20.md)・[証拠](evidence/20261018-q20/README.md)。普通のstatic response headersをpinned契約どおり配信し、独立HTTP/native 29 controlsを通過。同一native source/pairで固定scripted413全native attempt/805 captures、105 PASS・283 pixel FAIL・5 unsupported_environment・20 readiness_missing。旧82 PASS後退0、未対応242から23 PASS/210 FAIL/4 missingを新たに正しく判定。全388 edgeは無改変pinned comparatorと一致、共通594回のRGB照合は変化0。6 header sourcesはpinned git blob/hash・実配信ack/順序/値を検証。既存harness1491=491 PASS/static1561=839 PASS/strict48=39 PASSはq19のbyte同一source/pair証拠を再利用。確認済み1474/3805（38.738502%）、新規計測PASS23増。未attempt harness292・環境5・native未達は固定分母へ保持。 両partial cleared、p190 whole/API/environment/WS・target/p100未達とshared projection pendingを保持。次候補p252、user自走指示を有限scopeへ適用して継続。
+
+
+Event ws074-p190-q21-regression-evidence-20261018: [p252 global](../phase252/evidence/20261018-q21/README.md)でstatic全1561は839→844 PASS/後退0、scripted413=105 PASS・805 RGB全不変/388 edge primary一致、strict48=39 PASSを新native sourceでも保持。新5 staticの旧新16 capturesをprimary判定で全FAIL→PASS確認。env5/ready20・crash9やstatic mixed/fuzzy等whole残りは未達、q20/以前の履歴を書換えずp190 whole uncleared保持。shared projection pending。

@@ -1,0 +1,71 @@
+{
+  "source_commit": "063d87c951ce940f59b61750f1ef046ef9dfe8ff",
+  "source_format_commit": "70e40cb7a0f1b30fb5fc52555e2fef91621883d7",
+  "native_runtime_equivalence_proof": "format-runtime-proof.json",
+  "harness": {
+    "before": {
+      "outcomes": {
+        "fail": 950,
+        "no_completion": 21,
+        "pass": 491,
+        "harness_error": 3,
+        "no_output": 24,
+        "multiple_completions": 2
+      },
+      "callbacks": {
+        "1": 20226,
+        "0": 11531,
+        "3": 14
+      }
+    },
+    "after": {
+      "outcomes": {
+        "fail": 948,
+        "no_completion": 21,
+        "pass": 493,
+        "harness_error": 3,
+        "no_output": 24,
+        "multiple_completions": 2
+      },
+      "callbacks": {
+        "1": 20219,
+        "0": 11538,
+        "3": 14
+      }
+    }
+  },
+  "static": {
+    "before": {
+      "fail": 722,
+      "pass": 839
+    },
+    "after": {
+      "fail": 717,
+      "pass": 844
+    }
+  },
+  "crash": {
+    "pass": 39,
+    "readiness_missing": 9
+  },
+  "scripted": {
+    "fail": 283,
+    "readiness_missing": 20,
+    "pass": 105,
+    "unsupported_environment": 5
+  },
+  "verified_pass": 1481,
+  "denominator": 3805,
+  "percentage": 38.92247043363995,
+  "unexecuted": {
+    "harness": 292,
+    "reftest": 0
+  },
+  "hashes": {
+    "harness-all-raw.tar.gz": "790fc21fee96b895a8047fd8e280d7cc5ec63fdeb75558662f6cc55589e0dc8c",
+    "scripted-all-native-captures.tar.gz": "dddf029702743b0ef13ee6a4dd5e4c30c65e63ee108ce3349c03a952f3af8707",
+    "crash-all-raw.tar.gz": "8b8cc1ac6fb7ba284467d02696b499649808015baf09fe4573842062f6c62aef",
+    "harness-comparison.json": "5957d9ae3ffc45aded41e8ee2f70a5e220709c48d79cf270b9f4ca53331c43ef",
+    "static-comparison.json": "8330b39b843ffd5e8ed39c6b854a2c860adae09eb93ad1e823e0c10e70a80fd5"
+  }
+}
