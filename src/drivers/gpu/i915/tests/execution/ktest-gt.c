@@ -967,7 +967,7 @@ i915_ktest_gt_wa_gt_list(
 	int vd2;
 
 	/* Builds the list. */
-	drv_i915_gt_init_workarounds_adlp(&t->wa_init.gt_wa, &t->wa_gt);
+	drv_i915_wa_build_gt_gen12(&t->wa_init.gt_wa, &t->wa_gt);
 
 	/* Looks for each expected entry. */
 	found = 0U;
@@ -1046,7 +1046,7 @@ i915_ktest_gt_wa_render_list(
 	int perctx;
 
 	/* Builds the render list with MOCS uncached index 3. */
-	drv_i915_engine_init_workarounds(&t->wa_init.engine_wa[0], &t->wa_gt.engines[rcs], 12, 3U);
+	drv_i915_wa_build_engine(&t->wa_init.engine_wa[0], &t->wa_gt.engines[rcs], 12, 3U);
 
 	/* Looks for each expected entry. */
 	cctl = 0;
@@ -1138,14 +1138,14 @@ i915_ktest_gt_wa_context_lists(
 	int tdc;
 
 	/* A non-render engine only gets the fake CMD_CCTL entry. */
-	drv_i915_engine_init_workarounds(&t->wa_init.engine_wa[1], &t->wa_gt.engines[bcs], 12, 3U);
+	drv_i915_wa_build_engine(&t->wa_init.engine_wa[1], &t->wa_gt.engines[bcs], 12, 3U);
 	drv_i915_ktest_check(
 		ktest,
 		t->wa_init.engine_wa[1].count == 1U && t->wa_init.engine_wa[1].list[0].reg == 0x220c4U,
 		"p6a: P6A-RCSWA a non-render engine only gets the CMD_CCTL fake WA");
 
 	/* Builds the render engine's context list. */
-	drv_i915_engine_init_ctx_wa(&t->wa_init.ctx_wa[0], &t->wa_gt.engines[rcs], 12, 3U);
+	drv_i915_wa_build_context(&t->wa_init.ctx_wa[0], &t->wa_gt.engines[rcs], 12, 3U);
 
 	/* Looks for each expected entry. */
 	cps = 0;
@@ -1192,7 +1192,7 @@ i915_ktest_gt_wa_context_lists(
 		"p6a: P6A-CTXWA five gen12 context WAs; FF_MODE2 is write-only");
 
 	/* The copy engine's context list is I915_GT_BLIT_CCTL, and only that. */
-	drv_i915_engine_init_ctx_wa(&t->wa_init.ctx_wa[1], &t->wa_gt.engines[bcs], 12, 3U);
+	drv_i915_wa_build_context(&t->wa_init.ctx_wa[1], &t->wa_gt.engines[bcs], 12, 3U);
 	copy_ctx = &t->wa_init.ctx_wa[1];
 	drv_i915_ktest_check(
 		ktest,
@@ -1220,7 +1220,7 @@ i915_ktest_gt_wa_whitelist(
 	whitelist = &t->wa_init.whitelist[0];
 
 	/* Builds the whitelist. */
-	drv_i915_engine_init_whitelist(&t->wa_init.whitelist[0], &t->wa_gt.engines[rcs], 12);
+	drv_i915_wa_build_whitelist(&t->wa_init.whitelist[0], &t->wa_gt.engines[rcs], 12);
 
 	/* I915_GT_PS_INVOCATION_COUNT (read-only, range of 4) and three read-write registers. */
 	drv_i915_ktest_check(
@@ -1267,7 +1267,7 @@ i915_ktest_gt_mocs(
 	mocs = &t->wa_init.mocs;
 
 	/* Builds the gen12 table (not tgl_mocs_table). */
-	drv_i915_get_mocs_settings(&t->wa_init.mocs, 12);
+	drv_i915_mocs_build(&t->wa_init.mocs, 12);
 
 	/* Uncached index 3; gaps take the unused entry. */
 	drv_i915_ktest_check(
@@ -1288,7 +1288,7 @@ i915_ktest_gt_mocs(
 	t->fake.wt_n = 0U;
 	global_writes = 0U;
 	l3cc_writes = 0U;
-	drv_i915_mocs_init(&t->wa_init.mocs, &t->mmio, &global_writes, &l3cc_writes);
+	drv_i915_mocs_program(&t->wa_init.mocs, &t->mmio, &global_writes, &l3cc_writes);
 
 	/* 64 global entries and 32 packed L3CC pairs. */
 	entry3 = i915_fake_wt_find(&t->fake, 0x4000U + 3U * 4U, 1U | (1U << 2), 0xffffffffU);
@@ -1318,7 +1318,7 @@ i915_ktest_gt_pat(
 	/* Programs the PAT. */
 	t->fake.wt_n = 0U;
 	writes = 0U;
-	drv_i915_tgl_setup_private_ppat(&t->mmio, &writes);
+	drv_i915_pat_program_gen12(&t->mmio, &writes);
 
 	/* WB, WC, WT, UC, then WB to the end, in that order. */
 	pat0 = i915_fake_wt_find(&t->fake, 0x4800U, 3U, 0xffffffffU);
@@ -1362,8 +1362,8 @@ i915_ktest_gt_wa_apply(
 	list->count = 0U;
 	list->overflow = 0U;
 	list->name = "t";
-	drv_i915_wa_masked_en(list, 0x1000U, 0x4U, 0, "masked");
-	drv_i915_wa_write_or(list, 0x1004U, 0x8U, 0, "plain");
+	drv_i915_wa_add_masked_bits(list, 0x1000U, 0x4U, 0, "masked");
+	drv_i915_wa_add_or(list, 0x1004U, 0x8U, 0, "plain");
 	drv_i915_wa_add_no_verify(list, 0x1008U, 0xffffffffU, 0x55U, 0, "nv");
 	drv_i915_raw_write32(&t->mmio, 0x1000U, 0U);
 	drv_i915_raw_write32(&t->mmio, 0x1004U, 0U);
@@ -1405,7 +1405,7 @@ i915_ktest_gt_wa_apply(
 
 	/* A register that refuses the write: the store is emptied so it reads back 0 whatever is written. */
 	list->count = 0U;
-	drv_i915_wa_write_or(list, 0x100cU, 0x2U, 0, "locked");
+	drv_i915_wa_add_or(list, 0x100cU, 0x2U, 0, "locked");
 	drv_i915_raw_write32(&t->mmio, 0x100cU, 0U);
 	t->fake.gen_n = 0U;
 	kern_memset(&result, 0, sizeof(result));
@@ -2459,7 +2459,7 @@ i915_ktest_gt_render_request(
 		"p6c3: P6C3-CREATE render runs the flush block too (AUX inv), then invalidate + AUX poll");
 
 	/* Emits the render context workarounds: a barrier flush, LRI(5) with its pairs and a NOOP, a flush. */
-	drv_i915_engine_init_ctx_wa(&t->ctx_wa, &t->rcs_info, 12, 3U);
+	drv_i915_wa_build_context(&t->ctx_wa, &t->rcs_info, 12, 3U);
 	error = drv_i915_emit_context_wa(rq, &t->ctx_wa, &t->mmio);
 
 	/* A barrier flush adds FLUSH_L3; masked and ~0-clear entries are not read. */
@@ -2589,7 +2589,7 @@ i915_ktest_gt_copy_request(
 		"p6c3: P6C3-BCS the copy invalidate carries MI_FLUSH_DW_CCS, not INVALIDATE_BSD");
 
 	/* I915_GT_BLIT_CCTL is a plain read-modify-write entry: it is read from the register, which holds all-ones. */
-	drv_i915_engine_init_ctx_wa(&t->ctx_wa, &t->bcs_info, 12, 3U);
+	drv_i915_wa_build_context(&t->ctx_wa, &t->bcs_info, 12, 3U);
 	drv_i915_raw_write32(&t->mmio, t->ctx_wa.list[0].reg, 0xffffffffU);
 	want = (0xffffffffU & ~t->ctx_wa.list[0].clr) | t->ctx_wa.list[0].set;
 	error = drv_i915_emit_context_wa(rq, &t->ctx_wa, &t->mmio);
@@ -2922,7 +2922,7 @@ i915_ktest_gt_defaults_gt(
 	t->defaults_gt.sseu.has_slice_pg = 1;
 
 	/* The copy engine's context workarounds. */
-	drv_i915_engine_init_ctx_wa(&t->defaults_init.ctx_wa[0], &t->defaults_gt.engines[0], 12, 3U);
+	drv_i915_wa_build_context(&t->defaults_init.ctx_wa[0], &t->defaults_gt.engines[0], 12, 3U);
 }
 
 /* Checks intel_engines_init(), the default-state inheritance and the wedge of a recording nobody answers. */
@@ -3061,9 +3061,9 @@ i915_ktest_gt_verify_wa(
 	wl->count = 0U;
 	wl->overflow = 0U;
 	wl->name = "bcs0";
-	drv_i915_wa_masked_en(wl, 0x2209cU, 0x8U, 0, "t: masked");
-	drv_i915_wa_write_or(wl, 0x22050U, 0x100U, 0, "t: plain");
-	drv_i915_wa_write_or(wl, 0xb134U, 0x1U, 1, "t: in an MCR range");
+	drv_i915_wa_add_masked_bits(wl, 0x2209cU, 0x8U, 0, "t: masked");
+	drv_i915_wa_add_or(wl, 0x22050U, 0x100U, 0, "t: plain");
+	drv_i915_wa_add_or(wl, 0xb134U, 0x1U, 1, "t: in an MCR range");
 	drv_i915_wa_add_no_verify(wl, 0x22060U, 0U, 0x5U, 0, "t: no verify");
 
 	/* Sets the simulated engines up on a clean model. */
