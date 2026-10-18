@@ -10,13 +10,10 @@
  *
  * The PWM is the PCH's.  A Sunrise Point or Kaby Point PCH (Skylake, Kaby
  * Lake) keeps the period and the duty in one register; a Cannon Point or
- * Comet Point PCH (Coffee Lake, Comet Lake) has a register for each
- * (Linux 6.8.12 intel_backlight.c: lpt_get_backlight, lpt_set_backlight,
- * lpt_setup_backlight, cnp_setup_backlight, bxt_get_backlight,
- * bxt_set_backlight; the register values are in
- * intel/display-regs-gen9.h).  The PCH is told from the ISA bridge, or
- * from the platform in a virtual machine that hides it (Linux's
- * intel_virt_detect_pch()).
+ * Comet Point PCH (Coffee Lake, Comet Lake) has a register for each (the
+ * register values are in intel/display-regs-gen9.h).  The PCH is told
+ * from the ISA bridge, or from the platform in a virtual machine that
+ * hides it.
  *
  * The firmware's period, enable and polarity are kept; the backlight
  * device reads and writes the duty only, and refuses (EBUSY) while the
@@ -191,6 +188,10 @@ drv_i915_skl_pwm_percent(
  * for it, the firmware lit the eDP panel and its PWM runs.
  *
  * Every outcome is logged; the node works without the device.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_backlight.c (lpt_setup_backlight,
+ * cnp_setup_backlight).
  */
 void
 drv_i915_gen9_backlight_start(
@@ -290,7 +291,13 @@ drv_i915_gen9_backlight_stop(
 	kern_memset(backlight, 0, sizeof(*backlight));
 }
 
-/* Reads the panel's brightness (the backlight's get operation). */
+/*
+ * Reads the panel's brightness (the backlight's get operation).
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_backlight.c (lpt_get_backlight,
+ * bxt_get_backlight).
+ */
 static int
 i915_gen9_backlight_get(
 	void *context,
@@ -319,7 +326,13 @@ i915_gen9_backlight_get(
 	return 0;
 }
 
-/* Sets the panel's brightness (the backlight's set operation). */
+/*
+ * Sets the panel's brightness (the backlight's set operation).
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_backlight.c (lpt_set_backlight,
+ * bxt_set_backlight).
+ */
 static int
 i915_gen9_backlight_set(
 	void *context,
@@ -414,6 +427,9 @@ drv_i915_gen9_backlight_resume(
  * Point have the Broxton one, Sunrise Point and Kaby Point the LPT one.
  * Without a PCH the bridge names (a virtual machine), the platform
  * decides.  Returns 0, or ENODEV for another PCH.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/soc/intel_pch.c
+ * (intel_virt_detect_pch).
  */
 static int
 i915_gen9_backlight_pch_cnp(

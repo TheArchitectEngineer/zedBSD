@@ -8,9 +8,7 @@
 /*
  * Recorded dispatches on the GPU (see compute.h).
  *
- * A dispatch is laid out as the compute test of tests/execution/eu-test.c
- * and as anv programs Gen12.0
- * (genX_cmd_compute.c, genX_pipeline.c): in 3D the context setup programs
+ * A dispatch on Gen12.0: in 3D the context setup programs
  * the state bases at the dispatch's slot and the kernel's instruction
  * window (Wa_1607854226 wants them programmed in 3D); a stalling flush of
  * the render target, depth and HDC caches switches to GPGPU; MEDIA_VFE_STATE
@@ -27,11 +25,9 @@
  * point's sets), then the pipeline's table of each thread's IDs.
  *
  * An indirect dispatch loads the walker's three counts from the
- * application's buffer with MI_LOAD_REGISTER_MEM when it runs (as anv's
- * compute_load_indirect_params), and gl_NumWorkGroups reads that buffer's
- * three words in place of the slot's.  Counts of zero need nothing of their
- * own on Gen8 and later (Mesa's i965 predicated the walker off on Gen7
- * only).
+ * application's buffer with MI_LOAD_REGISTER_MEM when it runs, and
+ * gl_NumWorkGroups reads that buffer's three words in place of the slot's.
+ * Counts of zero need nothing of their own on Gen8 and later.
  */
 
 #include "compute.h"
@@ -344,6 +340,10 @@ drv_i915_gfx_dispatch_write_gen(
  * the read caches invalidated before the switch to GPGPU, the Gen9 VFE
  * fields (56 threads a subslice, the gateway timer reset), and the VFE
  * state again before the switch back to 3D.
+ *
+ * Procedure referenced: Mesa src/intel/vulkan/genX_cmd_compute.c and
+ * genX_pipeline.c (the Gen12.0 compute dispatch,
+ * compute_load_indirect_params).
  */
 void
 drv_i915_gfx_dispatch_build(

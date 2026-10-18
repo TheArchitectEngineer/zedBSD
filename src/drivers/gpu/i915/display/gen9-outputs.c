@@ -8,18 +8,15 @@
 /*
  * The external outputs of a Gen9 display (see gen9-outputs.h).
  *
- * A port's sink is found as the Linux kernel 6.8.12 finds it on display 9
- * (MIT): the south display's live hotplug state (ibx_digital_port_connected
- * on SDEISR), then the DPCD over AUX for a DP sink (intel_dp_detect), else
- * the EDID over the GMBUS for an HDMI one (intel_hdmi_detect).  Lighting an
- * output moves the DDB as skl_commit_modeset_enables() does: the pipes
+ * A port's sink is found by the south display's live hotplug state
+ * (SDEISR), then the DPCD over AUX for a DP sink, else the EDID over the
+ * GMBUS for an HDMI one.  Lighting an output moves the DDB: the pipes
  * already lit are given their new, smaller allocations first, each taking
  * effect at its vertical blank, and only then is the new pipe's allocation
  * written; darkening frees the pipe's allocation first and grows the others
  * after it, in the opposite order.  A plane's double-buffered watermark and
- * DDB registers are armed by writing its surface register, as
- * skl_write_plane_wm() does before the plane's update.  The code is this
- * file's own.
+ * DDB registers are armed by writing its surface register before the
+ * plane's update.
  *
  * Not done: the CD clock is never changed (a mode above it is not chosen),
  * MST, and a panel on an external port.
@@ -223,6 +220,10 @@ drv_i915_skl_outputs_poll(
  * sink, EBUSY for one lit already, ENOSPC when no pipe, DPLL or buffer
  * space is left, or the mode set's error (with the allocations given
  * back).
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display.c (skl_commit_modeset_enables)
+ * and skl_watermark.c (skl_write_plane_wm).
  */
 int
 drv_i915_skl_outputs_light(
@@ -381,6 +382,10 @@ drv_i915_skl_output_refresh(
  * an HDMI one, whose EDID comes over the GMBUS.  Power well 2 (the AUX
  * channels and the GMBUS of ports B to D) goes up first and stays up.
  * Returns 0, or the power well's error.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_dp.c (intel_dp_detect,
+ * ibx_digital_port_connected) and intel_hdmi.c (intel_hdmi_detect).
  */
 static int
 i915_skl_outputs_probe(

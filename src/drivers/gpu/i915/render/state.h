@@ -11,9 +11,7 @@
  *
  * The draw path and the rectangle path share these writers.  The state is
  * written into the session's state object at the offsets of heap.h and the
- * packets into a batch of batch.h.  Bit positions are those of Mesa's genxml
- * (gen120); the packets follow what anv programs for an ordinary Vulkan
- * pipeline.
+ * packets into a batch of batch.h, as for an ordinary Vulkan pipeline.
  */
 
 #ifndef DRIVERS_GPU_I915_RENDER_STATE_H
@@ -25,6 +23,12 @@
 
 #include "../compiler/compiler.h"
 
+/*
+ * Values referenced: Mesa src/intel/genxml/gen120.xml (the bit positions).
+ *
+ * Procedure referenced: Mesa src/intel/vulkan (the packets anv programs for
+ * an ordinary pipeline).
+ */
 struct i915_gfx_batch;
 
 /*
