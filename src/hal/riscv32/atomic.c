@@ -27,13 +27,22 @@ hal_atomic_enter(
 	void)
 {
 	hal_atomic_cookie_t cookie;
+	bool enabled;
+	bool acquired;
 
 	/* Keeps the caller's interrupt state while the guard is taken. */
-	cookie = hal_irq_disable() ? 1U : 0U;
+	enabled = hal_irq_disable();
+	cookie = 0U;
+	if (enabled)
+		cookie = 1U;
 
 	/* Waits until this hart holds the guard. */
-	while (!hal_atomic_uint_try_acquire(&atomic_guard))
+	for (;;) {
+		acquired = hal_atomic_uint_try_acquire(&atomic_guard);
+		if (acquired)
+			break;
 		hal_atomic_relax();
+	}
 
 	/* Succeeded: the saved interrupt state. */
 	return cookie;

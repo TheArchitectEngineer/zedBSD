@@ -5,26 +5,43 @@
  * SPDX-License-Identifier: Zlib
  */
 
+/*
+ * The 64-bit PowerPC atomic-operation guard.
+ */
+
 #include <hal/hal.h>
 
 /*
- * The 64-bit PowerPC HAL is uniprocessor.  Excluding interrupts therefore
- * serializes atomic fallback regions against every execution context.
+ * Takes the guard of the read-modify-write and 64-bit operations.  The
+ * port is uniprocessor, so turning interrupts off excludes every other
+ * context.
  */
 hal_atomic_cookie_t
-hal_atomic_enter(void)
+hal_atomic_enter(
+	void)
 {
 	hal_atomic_cookie_t cookie;
+	bool enabled;
 
-	cookie = hal_irq_disable() ? 1U : 0U;
+	/* Keeps the caller's interrupt state as the cookie. */
+	enabled = hal_irq_disable();
+	cookie = 0U;
+	if (enabled)
+		cookie = 1U;
 	__asm__ volatile("" ::: "memory");
+
+	/* Succeeded: the saved interrupt state. */
 	return cookie;
 }
 
+/*
+ * Releases the guard and turns interrupts back on when they were on.
+ */
 void
 hal_atomic_leave(
 	hal_atomic_cookie_t cookie)
 {
+	/* Orders the guarded accesses before interrupts can come in. */
 	__asm__ volatile("" ::: "memory");
 	if (cookie != 0U)
 		hal_irq_enable();

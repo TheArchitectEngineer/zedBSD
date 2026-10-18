@@ -140,11 +140,15 @@ ppc64_space_init(
 		__asm__ volatile("slbmte %0,%1" : : "r"(((VSID_RAM + esid) << 12) | SLB_KEY_USER | SLB_LARGE),
 				 "r"((esid << PPC64_SEGMENT_SHIFT) | SLB_VALID | (SLB_RAM_FIRST + esid)) : "memory");
 	}
+
+	/* The framebuffer's segment, when there is a framebuffer. */
 	if (framebuffer_base != 0) {
 		esid = framebuffer_base >> PPC64_SEGMENT_SHIFT;
 		__asm__ volatile("slbmte %0,%1" : : "r"((VSID_FRAMEBUFFER << 12) | SLB_KEY_USER | SLB_LARGE),
 				 "r"((esid << PPC64_SEGMENT_SHIFT) | SLB_VALID | SLB_FRAMEBUFFER) : "memory");
 	}
+
+	/* The user segments with ids that map nothing. */
 	load_user_segments(VSID_SYSTEM_USER);
 
 	/* RAM, then the framebuffer, supervisor only. */
@@ -156,6 +160,8 @@ ppc64_space_init(
 		if (error != HAL_OK)
 			HAL_FATAL("ppc64 RAM window does not fit the hashed table");
 	}
+
+	/* Then the framebuffer, supervisor only. */
 	for (address = framebuffer_base & ~(uint64_t)(PPC64_LARGE_PAGE_SIZE - 1U);
 	     framebuffer_base != 0 && address < framebuffer_base + framebuffer_size;
 	     address += PPC64_LARGE_PAGE_SIZE) {
@@ -187,9 +193,12 @@ ppc64_space_reload(
 	uint64_t second;
 	uint64_t first;
 	uint64_t vsid;
+	int error;
 
 	/* Only the user range of a user space has pages. */
-	if (address < PPC64_USER_MINIMUM || address >= PPC64_USER_LIMIT || current_space == HAL_SPACE_SYS)
+	if (address < PPC64_USER_MINIMUM ||
+	    address >= PPC64_USER_LIMIT ||
+	    current_space == HAL_SPACE_SYS)
 		return 0;
 	space = current_space;
 
@@ -197,7 +206,9 @@ ppc64_space_reload(
 	leaf = walk_leaf(space, address, 0);
 	if (leaf == NULL || (*leaf & LEAF_VALID) == 0)
 		return 0;
-	if ((store && (*leaf & LEAF_WRITE) == 0) || (execute && (*leaf & LEAF_EXEC) == 0))
+	if (store && (*leaf & LEAF_WRITE) == 0)
+		return 0;
+	if (execute && (*leaf & LEAF_EXEC) == 0)
 		return 0;
 
 	/* Records the use; a page enters writable only once it was written. */
@@ -207,9 +218,12 @@ ppc64_space_reload(
 	second = (*leaf & LEAF_PAGE_MASK) | HPTE_REFERENCED | HPTE_CHANGED | HPTE_COHERENT | HPTE_READ_ONLY;
 	if ((*leaf & LEAF_WRITE) != 0 && (*leaf & LEAF_MODIFIED) != 0)
 		second = (*leaf & LEAF_PAGE_MASK) | HPTE_REFERENCED | HPTE_CHANGED | HPTE_COHERENT | HPTE_READ_WRITE;
+
+	/* Replaces whatever entry the page had with the new one. */
 	vsid = user_vsid(space, address);
 	drop_entry(vsid, address);
-	if (enter(vsid, address & ~(uintptr_t)(PPC64_PAGE_SIZE - 1U), PPC64_PAGE_SHIFT, second, &first) != HAL_OK)
+	error = enter(vsid, address & ~(uintptr_t)(PPC64_PAGE_SIZE - 1U), PPC64_PAGE_SHIFT, second, &first);
+	if (error != HAL_OK)
 		return 0;
 
 	/* Succeeded: the access is retried. */
@@ -237,6 +251,8 @@ hal_space_create(
 		kernel_free(space);
 		return NULL;
 	}
+
+	/* Clears the root through the kernel's view of it. */
 	space->root = hal_pmem_to_kernel(space->root_memory);
 	hal_memset(space->root, 0, ROOT_BYTES);
 	space->magic = PPC64_SPACE_MAGIC;
@@ -298,6 +314,8 @@ hal_space_destroy(
 			drop_entry(user_vsid(space, address), address);
 		}
 	}
+
+	/* Turns interrupts back on as the caller had them. */
 	ppc64_irq_restore(enabled);
 
 	/* Frees the tables, then the root and the record. */
@@ -316,6 +334,7 @@ hal_space_switch(
 {
 	struct ppc64_space *space;
 	bool enabled;
+	int locked;
 
 	/* The space already selected needs nothing. */
 	if (handle == current_space)
@@ -331,7 +350,8 @@ hal_space_switch(
 	}
 
 	/* A user space: its own ids. */
-	if (!space_lock_handle(handle, &space, &enabled))
+	locked = space_lock_handle(handle, &space, &enabled);
+	if (!locked)
 		HAL_FATAL("invalid ppc64 space switch");
 	load_user_segments(VSID_USER + ((uint64_t)space->space_id << 8));
 	current_space = handle;
@@ -357,17 +377,26 @@ hal_space_map(
 	uintptr_t rollback;
 	bool enabled;
 	int valid;
+	int locked;
+	bool ram;
 
 	/* Requires a user range, a page-aligned range of RAM and attributes the tables can hold. */
 	address = (uintptr_t)vaddr;
-	if (handle == HAL_SPACE_SYS || !valid_user(address, size))
+	if (handle == HAL_SPACE_SYS)
 		return HAL_ERR_INVALID;
-	if ((paddr & (PPC64_PAGE_SIZE - 1U)) != 0 || !ppc64_range_is_ram(paddr, size))
+	valid = valid_user(address, size);
+	if (!valid)
+		return HAL_ERR_INVALID;
+	if ((paddr & (PPC64_PAGE_SIZE - 1U)) != 0)
+		return HAL_ERR_INVALID;
+	ram = ppc64_range_is_ram(paddr, size);
+	if (!ram)
 		return HAL_ERR_INVALID;
 	valid = valid_attributes(attr);
 	if (valid != HAL_OK)
 		return valid;
-	if (!space_lock_handle(handle, &space, &enabled))
+	locked = space_lock_handle(handle, &space, &enabled);
+	if (!locked)
 		return HAL_ERR_STATE;
 
 	/* Refuses a range of which any page is mapped already. */
@@ -393,9 +422,13 @@ hal_space_map(
 				if (leaf != NULL)
 					*leaf = 0;
 			}
+
+			/* Turns interrupts back on as the caller had them. */
 			ppc64_irq_restore(enabled);
 			return HAL_ERR_NOMEM;
 		}
+
+		/* Writes the page's leaf. */
 		*leaf = ((uint64_t)(paddr + offset) & LEAF_PAGE_MASK) | flags;
 	}
 
@@ -422,14 +455,20 @@ hal_space_unmap(
 	uintptr_t address;
 	uintptr_t offset;
 	bool enabled;
+	int locked;
+	int valid;
 
 	/* An empty range is nothing to remove. */
 	if (size == 0)
 		return HAL_OK;
 	address = (uintptr_t)vaddr;
-	if (handle == HAL_SPACE_SYS || !valid_user(address, size))
+	if (handle == HAL_SPACE_SYS)
 		return HAL_ERR_INVALID;
-	if (!space_lock_handle(handle, &space, &enabled))
+	valid = valid_user(address, size);
+	if (!valid)
+		return HAL_ERR_INVALID;
+	locked = space_lock_handle(handle, &space, &enabled);
+	if (!locked)
 		return HAL_ERR_STATE;
 
 	/* Clears each leaf and removes its entry. */
@@ -440,6 +479,8 @@ hal_space_unmap(
 		*leaf = 0;
 		drop_entry(user_vsid(space, address + offset), address + offset);
 	}
+
+	/* Turns interrupts back on as the caller had them. */
 	ppc64_irq_restore(enabled);
 
 	/* Succeeded: the range is unmapped; empty leaf tables stay until the space goes. */
@@ -466,15 +507,20 @@ hal_space_prot_query(
 	uintptr_t offset;
 	bool enabled;
 	int valid;
+	int locked;
 
 	/* Requires a user range and attributes the tables can hold. */
 	address = (uintptr_t)vaddr;
-	if (handle == HAL_SPACE_SYS || !valid_user(address, size))
+	if (handle == HAL_SPACE_SYS)
+		return HAL_ERR_INVALID;
+	valid = valid_user(address, size);
+	if (!valid)
 		return HAL_ERR_INVALID;
 	valid = valid_attributes(attr);
 	if (valid != HAL_OK)
 		return valid;
-	if (!space_lock_handle(handle, &space, &enabled))
+	locked = space_lock_handle(handle, &space, &enabled);
+	if (!locked)
 		return HAL_ERR_STATE;
 
 	/* Refuses a range with any page unmapped. */
@@ -503,6 +549,8 @@ hal_space_prot_query(
 		*leaf = kept;
 		drop_entry(user_vsid(space, address + offset), address + offset);
 	}
+
+	/* Turns interrupts back on as the caller had them. */
 	ppc64_irq_restore(enabled);
 
 	/* Succeeded: reports what was recorded, when asked. */
@@ -521,8 +569,15 @@ hal_space_prot(
 	size_t size,
 	uint32_t attr)
 {
+	int error;
+
 	/* The same change without the report. */
-	return hal_space_prot_query(handle, vaddr, size, attr, NULL);
+	error = hal_space_prot_query(handle, vaddr, size, attr, NULL);
+	if (error != HAL_OK)
+		return error;
+
+	/* Succeeded: the range has the new protection. */
+	return HAL_OK;
 }
 
 /*
@@ -538,11 +593,17 @@ hal_space_query(
 	uint64_t *leaf;
 	uint32_t observed;
 	bool enabled;
+	int locked;
+	int valid;
 
 	/* Requires a user page and somewhere to report. */
-	if (handle == HAL_SPACE_SYS || flags == NULL || !valid_user((uintptr_t)vaddr, PPC64_PAGE_SIZE))
+	if (handle == HAL_SPACE_SYS || flags == NULL)
 		return HAL_ERR_INVALID;
-	if (!space_lock_handle(handle, &space, &enabled))
+	valid = valid_user((uintptr_t)vaddr, PPC64_PAGE_SIZE);
+	if (!valid)
+		return HAL_ERR_INVALID;
+	locked = space_lock_handle(handle, &space, &enabled);
+	if (!locked)
 		return HAL_ERR_STATE;
 
 	/* Reads the page's leaf. */
@@ -555,6 +616,8 @@ hal_space_query(
 		if ((*leaf & LEAF_MODIFIED) != 0)
 			observed |= HAL_SPACE_PAGE_DIRTY;
 	}
+
+	/* Turns interrupts back on as the caller had them. */
 	ppc64_irq_restore(enabled);
 
 	/* Succeeded: the page's state. */
@@ -575,13 +638,19 @@ hal_space_clear_flags(
 	struct ppc64_space *space;
 	uint64_t *leaf;
 	bool enabled;
+	int locked;
+	int valid;
 
 	/* Requires a user page and flags the table records. */
-	if (handle == HAL_SPACE_SYS || !valid_user((uintptr_t)vaddr, PPC64_PAGE_SIZE))
+	if (handle == HAL_SPACE_SYS)
+		return HAL_ERR_INVALID;
+	valid = valid_user((uintptr_t)vaddr, PPC64_PAGE_SIZE);
+	if (!valid)
 		return HAL_ERR_INVALID;
 	if ((flags & ~(uint32_t)(HAL_SPACE_PAGE_ACCESSED | HAL_SPACE_PAGE_DIRTY)) != 0)
 		return HAL_ERR_INVALID;
-	if (!space_lock_handle(handle, &space, &enabled))
+	locked = space_lock_handle(handle, &space, &enabled);
+	if (!locked)
 		return HAL_ERR_STATE;
 
 	/* Refuses a page that is not mapped. */
@@ -667,15 +736,22 @@ hal_space_map_device(
 	uint32_t attr,
 	void **vaddr)
 {
+	bool ram;
+
 	/* Requires a destination, a non-empty range and no execution. */
-	if (vaddr == NULL || size == 0 || (attr & HAL_SPACE_EXEC) != 0)
+	if (vaddr == NULL || size == 0)
+		return HAL_ERR_INVALID;
+	if ((attr & HAL_SPACE_EXEC) != 0)
 		return HAL_ERR_INVALID;
 
 	/* RAM, as it is. */
-	if (ppc64_range_is_ram(paddr, size)) {
+	ram = ppc64_range_is_ram(paddr, size);
+	if (ram) {
 		*vaddr = (void *)(uintptr_t)paddr;
 		return HAL_OK;
 	}
+
+	/* Failed: notifying itself is not offered. */
 	return HAL_ERR_UNSUPPORTED;
 }
 
@@ -766,6 +842,8 @@ space_lock_handle(
 		if ((hal_space_t)space == handle)
 			break;
 	}
+
+	/* A handle that names no live space is refused. */
 	if (space == NULL || space->destroying) {
 		ppc64_irq_restore(enabled);
 		return 0;
@@ -846,6 +924,8 @@ walk_leaf(
 			kernel_free(page);
 			return NULL;
 		}
+
+		/* Clears the table and links it into the space. */
 		hal_memset(hal_pmem_to_kernel(page->memory), 0, PPC64_PAGE_SIZE);
 		page->next = space->tables;
 		space->tables = page;
@@ -876,6 +956,8 @@ load_user_segments(
 		__asm__ volatile("slbmte %0,%1" : : "r"(((first_vsid + esid) << 12) | SLB_KEY_USER),
 				 "r"((esid << PPC64_SEGMENT_SHIFT) | SLB_VALID | (SLB_USER_FIRST + index)) : "memory");
 	}
+
+	/* Makes the new segments take effect. */
 	__asm__ volatile("isync" : : : "memory");
 }
 

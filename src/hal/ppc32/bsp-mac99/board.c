@@ -171,13 +171,15 @@ describe_bringup(
 {
 	const char *display;
 	const char *timer;
+	bool ticked;
 
 	/* Words the display's state and whether the tick has arrived. */
 	display = "FIRMWARE";
 	if (board_display_error != HAL_OK)
 		display = "NONE";
 	timer = "NO TICK";
-	if (mac99_clock_ticked())
+	ticked = mac99_clock_ticked();
+	if (ticked)
 		timer = "TICK";
 
 	/* Writes the line. */

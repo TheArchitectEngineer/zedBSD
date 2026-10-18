@@ -43,7 +43,7 @@ static struct mac99_board_info board;
 static struct kern_boot_handoff kernel_handoff;
 static char boot_command_line[KERN_BOOT_PARAMETERS_STORAGE_SIZE];
 
-static uint32_t firmware(const char *service, unsigned arguments, unsigned returns, const uint32_t *in, uint32_t *out);
+static void firmware(const char *service, unsigned arguments, unsigned returns, const uint32_t *in, uint32_t *out);
 static uint32_t finddevice(const char *path);
 static uint32_t getprop(uint32_t node, const char *name, void *buffer, uint32_t length);
 static uint32_t getprop_word(uint32_t node, const char *name);
@@ -61,17 +61,21 @@ mac99_firmware_read(
 	uint32_t cells[2];
 	uint32_t length;
 
-	/* The first RAM bank of the memory node. */
+	/* The first RAM bank of the memory node: one cell of address, one of size. */
 	node = finddevice("/memory");
-	if (node != FIRMWARE_FAILED && getprop(node, "reg", cells, sizeof(cells)) >= sizeof(cells)) {
-		board.memory_base = cells[0];
-		board.memory_size = cells[1];
+	if (node != FIRMWARE_FAILED) {
+		length = getprop(node, "reg", cells, sizeof(cells));
+		if (length != FIRMWARE_FAILED && length >= sizeof(cells)) {
+			board.memory_base = cells[0];
+			board.memory_size = cells[1];
+		}
 	}
 
 	/* The time base's rate, from the first processor. */
 	node = finddevice("/cpus");
 	if (node != FIRMWARE_FAILED) {
-		node = firmware("child", 1, 1, &node, cells) == 0 ? cells[0] : FIRMWARE_FAILED;
+		firmware("child", 1, 1, &node, cells);
+		node = cells[0];
 		if (node != FIRMWARE_FAILED && node != 0)
 			board.timebase_frequency = getprop_word(node, "timebase-frequency");
 	}
@@ -130,20 +134,23 @@ void *
 hal_get_arch_handoff(
 	const char *name)
 {
+	int match;
+
 	/* A missing name names nothing. */
 	if (name == NULL)
 		return NULL;
 
 	/* The command line, when the firmware passed one. */
-	if (name_is(name, "boot.command-line") && boot_command_line[0] != '\0')
+	match = name_is(name, "boot.command-line");
+	if (match && boot_command_line[0] != '\0')
 		return boot_command_line;
 
 	/* An unknown handoff. */
 	return NULL;
 }
 
-/* Calls a client interface service; reports zero when the firmware answered. */
-static uint32_t
+/* Calls a client interface service. */
+static void
 firmware(
 	const char *service,
 	unsigned arguments,
@@ -166,7 +173,6 @@ firmware(
 	ppc32_firmware_call(&call);
 	for (index = 0; index < returns; index++)
 		out[index] = call.cells[arguments + index];
-	return 0;
 }
 
 /* Finds a node by its path or alias. */
@@ -179,7 +185,7 @@ finddevice(
 
 	/* The node's handle, or the failure value. */
 	in = (uint32_t)(uintptr_t)path;
-	(void)firmware("finddevice", 1, 1, &in, &out);
+	firmware("finddevice", 1, 1, &in, &out);
 	return out;
 }
 
@@ -199,7 +205,7 @@ getprop(
 	in[1] = (uint32_t)(uintptr_t)name;
 	in[2] = (uint32_t)(uintptr_t)buffer;
 	in[3] = length;
-	(void)firmware("getprop", 4, 1, in, &out);
+	firmware("getprop", 4, 1, in, &out);
 	return out;
 }
 
@@ -210,11 +216,15 @@ getprop_word(
 	const char *name)
 {
 	uint32_t value;
+	uint32_t length;
 
 	/* A property shorter than a cell counts as missing. */
 	value = 0;
-	if (getprop(node, name, &value, sizeof(value)) != sizeof(value))
+	length = getprop(node, name, &value, sizeof(value));
+	if (length != sizeof(value))
 		return 0;
+
+	/* Succeeded: the cell. */
 	return value;
 }
 
@@ -239,7 +249,7 @@ read_display(
 		instance = getprop_word(chosen, "stdout");
 		if (instance == 0)
 			return;
-		(void)firmware("instance-to-package", 1, 1, &instance, &node);
+		firmware("instance-to-package", 1, 1, &instance, &node);
 		if (node == FIRMWARE_FAILED || node == 0)
 			return;
 	}
@@ -265,6 +275,8 @@ name_is(
 		if (name[index] != wanted[index])
 			return 0;
 	}
+
+	/* The names are the same only when the name ends there too. */
 	if (name[index] != '\0')
 		return 0;
 	return 1;

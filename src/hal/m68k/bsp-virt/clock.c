@@ -53,8 +53,11 @@ void
 virt_clock_init(
 	void)
 {
+	const struct virt_board_info *board;
+
 	/* The board must have the clock. */
-	if (virt_board()->rtc_base == 0)
+	board = virt_board();
+	if (board->rtc_base == 0)
 		HAL_FATAL("m68k virt board has no clock");
 
 	/* Arms the first tick one interval from now and lets its interrupt in. */
@@ -108,6 +111,9 @@ virt_clock_ticked(
 	struct m68040_percpu *cpu;
 	uint64_t deadline;
 	bool masked;
+	unsigned long ticks;
+	uint64_t now;
+	bool raised;
 
 	/* A clock not started has nothing to wait for. */
 	cpu = m68040_percpu_current();
@@ -118,11 +124,18 @@ virt_clock_ticked(
 	masked = m68040_irq_masked();
 	deadline = read_time() + RTC_FREQUENCY / 10U;
 	do {
-		if (__atomic_load_n(&cpu->timer_ticks, __ATOMIC_RELAXED) != 0)
+		ticks = __atomic_load_n(&cpu->timer_ticks, __ATOMIC_RELAXED);
+		if (ticks != 0)
 			return true;
-		if (masked && virt_pic_pending(RTC_IRQ))
-			return true;
-	} while (read_time() < deadline);
+		if (masked) {
+			raised = virt_pic_pending(RTC_IRQ);
+			if (raised)
+				return true;
+		}
+
+		/* Samples the clock for the next turn. */
+		now = read_time();
+	} while (now < deadline);
 
 	/* Failed: no tick in the time allowed. */
 	return false;
@@ -137,7 +150,9 @@ hal_rtc_read_counter(
 	uint64_t *freq_hz)
 {
 	/* Refuses a caller with nowhere to put the answer, or a clock not started. */
-	if (value == NULL || freq_hz == NULL || next_deadline == 0)
+	if (value == NULL || freq_hz == NULL)
+		return false;
+	if (next_deadline == 0)
 		return false;
 
 	/* Succeeded: the count now and its frequency. */
@@ -153,8 +168,11 @@ bool
 hal_rtc_read_epoch_time(
 	uint64_t *unix_seconds)
 {
+	const struct virt_board_info *board;
+
 	/* Refuses a caller with nowhere to put the answer, or no clock. */
-	if (unix_seconds == NULL || virt_board()->rtc_base == 0)
+	board = virt_board();
+	if (unix_seconds == NULL || board->rtc_base == 0)
 		return false;
 
 	/* Succeeded: whole seconds. */

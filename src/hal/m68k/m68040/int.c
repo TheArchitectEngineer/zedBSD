@@ -37,6 +37,8 @@ struct int_fault {
 
 static unsigned frame_vector(const struct m68040_trap_frame *frame);
 static const uint8_t *frame_extra(const struct m68040_trap_frame *frame);
+static uint32_t frame_long(const struct m68040_trap_frame *frame, unsigned offset);
+static uint16_t frame_word(const struct m68040_trap_frame *frame, unsigned offset);
 static void classify(const struct m68040_trap_frame *frame, struct int_fault *fault);
 static void take_interrupt(struct m68040_trap_frame *frame, unsigned level, int from_user);
 static void take_syscall(struct m68040_trap_frame *frame);
@@ -77,6 +79,8 @@ m68040_trap(
 		take_interrupt(frame, vector - M68040_VECTOR_AUTOVECTOR_1 + 1U, from_user);
 		return;
 	}
+
+	/* A spurious interrupt has nothing to serve. */
 	if (vector == M68040_VECTOR_SPURIOUS)
 		return;
 
@@ -91,6 +95,8 @@ m68040_trap(
 		take_user_fault(frame);
 		return;
 	}
+
+	/* Anything else is the kernel's own fault. */
 	take_kernel_fault(frame);
 }
 
@@ -167,6 +173,7 @@ classify(
 		} else {
 			fault->mode = HAL_TRAP_MODE_WRITE;
 		}
+
 		break;
 	case M68040_VECTOR_ADDRESS:
 		fault->cause = HAL_TRAP_CAUSE_ALIGNMENT;
@@ -263,6 +270,8 @@ take_user_fault(
 		describe_frame(frame);
 		HAL_FATAL("m68040 user fault handler failed");
 	}
+
+	/* The kernel's return path, then the frame is no longer the task's context. */
 	kernel_user_return_handler();
 	m68040_task_leave_user_frame();
 }
@@ -317,6 +326,8 @@ describe_frame(
 			   index, frame->d[index], index + 1U, frame->d[index + 1U],
 			   index + 2U, frame->d[index + 2U], index + 3U, frame->d[index + 3U]);
 	}
+
+	/* Then the address registers. */
 	hal_printf("a0=%x a1=%x a2=%x a3=%x\n", frame->a[0], frame->a[1], frame->a[2], frame->a[3]);
 	hal_printf("a4=%x a5=%x a6=%x\n", frame->a[4], frame->a[5], frame->a[6]);
 }

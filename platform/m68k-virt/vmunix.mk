@@ -34,8 +34,8 @@ M68KV_HAL_S := src/hal/m68k/bsp-virt/start.S src/hal/m68k/m68040/entry.S
 M68KV_HAL_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(M68KV_HAL_C)) \
 	$(patsubst %.S,$(BUILD)/%.o,$(M68KV_HAL_S))
 
-# The platform binding: the board has no boot device, as the RISC-V virt
-# board, whose binding is not specific to its architecture.
+# The platform binding: the board publishes no boot device and its console
+# is the HAL's.
 M68KV_KERNEL_SOURCES := \
 	src/kern/main.c \
 	$(KERN_FAT_SOURCES) \
@@ -48,7 +48,7 @@ M68KV_KERNEL_SOURCES := \
 	src/kern/test-checkpoint.c src/kern/text-display.c \
 	src/drivers/generic/loop.c \
 	src/kern/partition.c src/drivers/disklabel/mbr.c \
-	src/kern/platform/riscv-virt.c \
+	src/kern/platform/hal-console.c \
 	src/kern/dcache.c src/kern/uncached.c \
 	src/drivers/generic/fdt.c src/drivers/generic/dma.c \
 	src/kern/panic.c src/kern/entry.c src/kern/clock.c \

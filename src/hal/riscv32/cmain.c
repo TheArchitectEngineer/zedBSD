@@ -79,6 +79,8 @@ riscv32_cmain(
 		hal_printf("riscv32 device tree: %s\n", riscv32_fdt_error(error));
 		HAL_FATAL("invalid riscv32 device tree");
 	}
+
+	/* Keeps the boot record and prepares the kernel's handoff. */
 	riscv32_boot_record(hart_id, boot_argument, &cmain_fdt);
 
 	/* Shows the display, which then holds what the console printed. */

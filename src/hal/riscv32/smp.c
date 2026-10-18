@@ -479,6 +479,8 @@ hal_cpu_panic_all(
 		if (ready)
 			(void)send_reason(cpu, RISCV32_IPI_STOP);
 	}
+
+	/* Stops this hart too. */
 	hal_cpu_park();
 }
 
@@ -588,8 +590,12 @@ start_one(
 				   cpu_hart_id[cpu]);
 			HAL_FATAL("riscv32 secondary hart did not come up");
 		}
+
+		/* Waits a moment before the next attempt. */
 		hal_atomic_relax();
 	}
+
+	/* Reports the hart that came up. */
 	hal_printf("RISCV32 SMP cpu %u online (hart %lu)\n", (uint32_t)cpu, cpu_hart_id[cpu]);
 
 	/* Succeeded: the hart runs its initial task. */

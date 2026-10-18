@@ -34,8 +34,13 @@ bool
 hal_irq_disable(
 	void)
 {
+	bool enabled;
+
 	/* The machine state's enable bit. */
-	return ppc64_irq_save();
+	enabled = ppc64_irq_save();
+
+	/* Succeeded: whether interrupts were on. */
+	return enabled;
 }
 
 /*

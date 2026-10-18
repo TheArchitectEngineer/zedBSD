@@ -46,7 +46,7 @@ RISCV32_BOOT_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(RISCV32_BOOT_C)) \
 	$(patsubst %.S,$(BUILD)/%.o,$(RISCV32_BOOT_S))
 
 # The platform binding of the board.
-RISCV32_PLATFORM_SOURCES_virt := src/kern/platform/riscv-virt.c
+RISCV32_PLATFORM_SOURCES_virt := src/kern/platform/hal-console.c
 
 RISCV32_KERNEL_SOURCES := \
 	src/kern/main.c \

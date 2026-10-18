@@ -80,6 +80,8 @@ riscv32_boot_record(
 		handoff_initrd.phys = info->initrd_start;
 		handoff_initrd.size = info->initrd_end - info->initrd_start;
 	}
+
+	/* The boot hart's id. */
 	handoff_boot_hart = hart_id;
 
 	/* The common handoff: one boot device, the first MBR partition, its id 0x80. */
@@ -176,6 +178,8 @@ riscv32_boot_parameter_number(
 			if (line[position + matched] != key[matched])
 				break;
 		}
+
+		/* The key must end where the name does. */
 		if (key[matched] != '\0')
 			continue;
 

@@ -422,6 +422,7 @@ find_gpu(
 {
 	uintptr_t base;
 	unsigned slot;
+	uint32_t value;
 
 	/* The board must name its slots. */
 	base = virt_board()->virtio_base;
@@ -431,11 +432,14 @@ find_gpu(
 	/* Looks at each slot in turn. */
 	for (slot = 0; slot < VIRTIO_SLOTS; slot++) {
 		gpu_slot = base + slot * VIRTIO_SLOT_SIZE;
-		if (slot_read(VIRTIO_MAGIC) != VIRTIO_MAGIC_VALUE)
+		value = slot_read(VIRTIO_MAGIC);
+		if (value != VIRTIO_MAGIC_VALUE)
 			continue;
-		if (slot_read(VIRTIO_VERSION) != VIRTIO_VERSION_MODERN)
+		value = slot_read(VIRTIO_VERSION);
+		if (value != VIRTIO_VERSION_MODERN)
 			continue;
-		if (slot_read(VIRTIO_DEVICE_ID) == VIRTIO_ID_GPU)
+		value = slot_read(VIRTIO_DEVICE_ID);
+		if (value == VIRTIO_ID_GPU)
 			return HAL_OK;
 	}
 
@@ -471,12 +475,14 @@ start_queue(
 	slot_write(VIRTIO_DRIVER_FEATURES, VIRTIO_F_VERSION_1_HIGH);
 	status |= VIRTIO_STATUS_FEATURES_OK;
 	slot_write(VIRTIO_STATUS, status);
-	if ((slot_read(VIRTIO_STATUS) & VIRTIO_STATUS_FEATURES_OK) == 0)
+	features = slot_read(VIRTIO_STATUS);
+	if ((features & VIRTIO_STATUS_FEATURES_OK) == 0)
 		return HAL_ERR_UNSUPPORTED;
 
 	/* The control queue: its size and the three structures. */
 	slot_write(VIRTIO_QUEUE_SEL, 0);
-	if (slot_read(VIRTIO_QUEUE_NUM_MAX) < QUEUE_SIZE)
+	features = slot_read(VIRTIO_QUEUE_NUM_MAX);
+	if (features < QUEUE_SIZE)
 		return HAL_ERR_UNSUPPORTED;
 	hal_memset(queue_desc, 0, sizeof(queue_desc));
 	hal_memset(&queue_avail, 0, sizeof(queue_avail));
@@ -544,6 +550,8 @@ gpu_submit(
 		if (used == queue_next)
 			break;
 	}
+
+	/* A device that never answered is reported. */
 	if (polls == GPU_POLLS)
 		return HAL_ERR_TIMEOUT;
 
@@ -566,6 +574,8 @@ mark_dirty(
 		dirty_end = end;
 		return;
 	}
+
+	/* Otherwise the range grows to take the rows in. */
 	if (first < dirty_first)
 		dirty_first = first;
 	if (end > dirty_end)

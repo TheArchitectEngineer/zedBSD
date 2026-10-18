@@ -107,6 +107,8 @@ riscv32_trap(
 		take_user_fault(frame);
 		return;
 	}
+
+	/* Anything else is the kernel's own fault. */
 	take_kernel_fault(frame);
 }
 
@@ -262,6 +264,8 @@ take_user_fault(
 		describe_frame(frame);
 		HAL_FATAL("riscv32 user fault handler failed");
 	}
+
+	/* The kernel's return path, then the frame is no longer the task's context. */
 	kernel_user_return_handler();
 	riscv32_task_leave_user_frame();
 }

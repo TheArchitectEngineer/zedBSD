@@ -46,7 +46,10 @@ struct irq_slot {
 	void *argument;
 };
 
+/* Each source's handler, by interrupt number; slot 0 is unused. */
 static struct irq_slot slots[IRQ_MAX];
+
+/* Guards the slots against a change while an interrupt reads them; zero when free. */
 static volatile unsigned slots_lock;
 
 /* The tick's interrupt number, which the clock serves. */
@@ -64,9 +67,11 @@ virt_pic_init(
 	void)
 {
 	unsigned controller;
+	const struct virt_board_info *board;
 
 	/* Nothing raises an interrupt until a source is enabled. */
-	if (virt_board()->pic_base == 0)
+	board = virt_board();
+	if (board->pic_base == 0)
 		HAL_FATAL("m68k virt board has no interrupt controller");
 	for (controller = 0; controller < PIC_COUNT; controller++)
 		*pic_register(controller, PIC_DISABLE_ALL) = 1U;
@@ -92,11 +97,15 @@ virt_pic_pending(
 	unsigned irq)
 {
 	unsigned number;
+	uint32_t pending;
 
 	/* The controller's mask of raised, enabled sources. */
 	number = irq - 1U;
-	if ((*pic_register(number / PIC_SOURCES, PIC_PENDING_MASK) & (1U << (number % PIC_SOURCES))) != 0)
+	pending = *pic_register(number / PIC_SOURCES, PIC_PENDING_MASK);
+	if ((pending & (1U << (number % PIC_SOURCES))) != 0)
 		return true;
+
+	/* The source is quiet. */
 	return false;
 }
 
@@ -116,6 +125,8 @@ virt_take_interrupt(
 		hal_printf("unexpected m68040 interrupt level %u\n", level);
 		return;
 	}
+
+	/* Level n is controller n - 1. */
 	controller = level - 1U;
 
 	/* Each pending and enabled source, lowest first, until none is left. */
@@ -127,6 +138,8 @@ virt_take_interrupt(
 			if ((pending & (1U << source)) != 0)
 				break;
 		}
+
+		/* Hands the source to its handler. */
 		dispatch(1U + controller * PIC_SOURCES + source);
 	}
 }
@@ -138,8 +151,13 @@ bool
 hal_irq_disable(
 	void)
 {
+	bool enabled;
+
 	/* The status register's mask. */
-	return m68040_irq_save();
+	enabled = m68040_irq_save();
+
+	/* Succeeded: whether the mask was open. */
+	return enabled;
 }
 
 /*
@@ -161,9 +179,11 @@ hal_irq_mask(
 	int irq)
 {
 	unsigned number;
+	int valid;
 
 	/* Refuses a source the controllers do not have. */
-	if (!valid_source(irq))
+	valid = valid_source(irq);
+	if (!valid)
 		HAL_FATAL("bad m68k virt IRQ mask");
 	number = (unsigned)irq - 1U;
 	*pic_register(number / PIC_SOURCES, PIC_DISABLE) = 1U << (number % PIC_SOURCES);
@@ -177,9 +197,11 @@ hal_irq_unmask(
 	int irq)
 {
 	unsigned number;
+	int valid;
 
 	/* Refuses a source the controllers do not have. */
-	if (!valid_source(irq))
+	valid = valid_source(irq);
+	if (!valid)
 		HAL_FATAL("bad m68k virt IRQ unmask");
 	number = (unsigned)irq - 1U;
 	*pic_register(number / PIC_SOURCES, PIC_ENABLE) = 1U << (number % PIC_SOURCES);
@@ -196,9 +218,15 @@ hal_irq_register(
 	void *argument)
 {
 	bool enabled;
+	int valid;
 
 	/* Requires a handler and a source that is not the tick's. */
-	if (handler == NULL || !valid_source(irq) || (unsigned)irq == clock_irq)
+	if (handler == NULL)
+		return HAL_ERR_INVALID;
+	valid = valid_source(irq);
+	if (!valid)
+		return HAL_ERR_INVALID;
+	if ((unsigned)irq == clock_irq)
 		return HAL_ERR_INVALID;
 
 	/* Records the handler. */
@@ -221,9 +249,13 @@ hal_irq_unregister(
 	void *argument)
 {
 	bool enabled;
+	int valid;
 
 	/* Requires the registered handler of a source. */
-	if (handler == NULL || !valid_source(irq))
+	if (handler == NULL)
+		return HAL_ERR_INVALID;
+	valid = valid_source(irq);
+	if (!valid)
 		return HAL_ERR_INVALID;
 	hal_irq_mask(irq);
 	enabled = m68040_spin_lock(&slots_lock);
@@ -231,6 +263,8 @@ hal_irq_unregister(
 		m68040_spin_unlock(&slots_lock, enabled);
 		return HAL_ERR_INVALID;
 	}
+
+	/* Forgets the handler. */
 	slots[irq].handler = NULL;
 	slots[irq].argument = NULL;
 	m68040_spin_unlock(&slots_lock, enabled);
@@ -264,9 +298,18 @@ hal_irq_set_affinity(
 	int irq,
 	const struct hal_cpu_mask *requested)
 {
+	int valid;
+	bool member;
+
 	/* Every source is taken by processor 0. */
-	if (!valid_source(irq) || requested == NULL || !hal_cpu_mask_test(requested, 0))
+	valid = valid_source(irq);
+	if (!valid || requested == NULL)
 		return HAL_ERR_INVALID;
+	member = hal_cpu_mask_test(requested, 0);
+	if (!member)
+		return HAL_ERR_INVALID;
+
+	/* Succeeded: the source stays on processor 0. */
 	return HAL_OK;
 }
 
@@ -279,17 +322,24 @@ hal_irq_get_affinity(
 	struct hal_cpu_mask *requested,
 	struct hal_cpu_mask *effective)
 {
+	int valid;
+
 	/* Requires a source the controllers have. */
-	if (!valid_source(irq))
+	valid = valid_source(irq);
+	if (!valid)
 		return HAL_ERR_INVALID;
 	if (requested != NULL) {
 		hal_cpu_mask_zero(requested);
 		hal_cpu_mask_set(requested, 0);
 	}
+
+	/* The effective affinity is the same. */
 	if (effective != NULL) {
 		hal_cpu_mask_zero(effective);
 		hal_cpu_mask_set(effective, 0);
 	}
+
+	/* Succeeded: the affinity is processor 0. */
 	return HAL_OK;
 }
 
@@ -302,8 +352,11 @@ hal_irq_set_mode(
 	int trigger,
 	int polarity)
 {
+	int valid;
+
 	/* Requires a source and a known trigger and polarity. */
-	if (!valid_source(irq))
+	valid = valid_source(irq);
+	if (!valid)
 		return HAL_ERR_INVALID;
 	if (trigger != HAL_IRQ_TRIGGER_EDGE && trigger != HAL_IRQ_TRIGGER_LEVEL)
 		return HAL_ERR_INVALID;

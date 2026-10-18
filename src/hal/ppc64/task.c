@@ -527,6 +527,8 @@ hal_task_destroy(
 		task_stack_record_depth(task);
 		kernel_free(task->sys_stack_allocation);
 	}
+
+	/* Frees the record last. */
 	kernel_free(task);
 }
 

@@ -223,6 +223,8 @@ putc_locked(
 			newline_locked();
 			return;
 		}
+
+		/* Draws the cell the character went into. */
 		draw_cell_locked(cons_row, cons_column);
 		return;
 	}

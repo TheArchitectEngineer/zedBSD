@@ -54,9 +54,14 @@ virt_framebuffer_init(
 	uint32_t column;
 
 	/* The grid must fit, at a depth the drawing knows. */
-	if (address == 0 || width < VIRT_CONSOLE_COLUMNS * 8U || height < VIRT_CONSOLE_ROWS * VIRT_FONT_HEIGHT)
+	if (address == 0)
 		return HAL_ERR_UNSUPPORTED;
-	if (depth != 32U && depth != 16U && depth != 15U && depth != 8U)
+	if (width < VIRT_CONSOLE_COLUMNS * 8U || height < VIRT_CONSOLE_ROWS * VIRT_FONT_HEIGHT)
+		return HAL_ERR_UNSUPPORTED;
+	if (depth != 32U &&
+	    depth != 16U &&
+	    depth != 15U &&
+	    depth != 8U)
 		return HAL_ERR_UNSUPPORTED;
 	framebuffer_base = (uint8_t *)(uintptr_t)address;
 	framebuffer_width = width;
@@ -101,7 +106,9 @@ virt_framebuffer_cell(
 	uint8_t bits;
 
 	/* Nothing to draw before the screen is shown, or off the grid. */
-	if (framebuffer_base == NULL || row >= VIRT_CONSOLE_ROWS || column >= VIRT_CONSOLE_COLUMNS)
+	if (framebuffer_base == NULL)
+		return;
+	if (row >= VIRT_CONSOLE_ROWS || column >= VIRT_CONSOLE_COLUMNS)
 		return;
 
 	/* Each row of the glyph, from its leftmost pixel in the high bit. */
@@ -130,7 +137,9 @@ virt_framebuffer_cursor(
 	unsigned bit;
 
 	/* Nothing to draw before the screen is shown, or off the grid. */
-	if (framebuffer_base == NULL || row >= VIRT_CONSOLE_ROWS || column >= VIRT_CONSOLE_COLUMNS)
+	if (framebuffer_base == NULL)
+		return;
+	if (row >= VIRT_CONSOLE_ROWS || column >= VIRT_CONSOLE_COLUMNS)
 		return;
 
 	/* Whitens rows 14 and 15 of the cell. */

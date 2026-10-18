@@ -96,6 +96,8 @@ hal_space_create(
 		kernel_free(space);
 		return NULL;
 	}
+
+	/* Clears the root through the kernel's view of it. */
 	space->root = hal_pmem_to_kernel(space->root_memory);
 	hal_memset(space->root, 0, M68040_ROOT_BYTES);
 	space->magic = M68040_SPACE_MAGIC;
@@ -152,6 +154,8 @@ hal_space_destroy(
 		kernel_free(page);
 		page_table_count--;
 	}
+
+	/* Frees the root and the record. */
 	space->magic = 0;
 	(void)hal_pmem_free(&space->root_memory, M68040_PAGE_SIZE);
 	kernel_free(space);
@@ -209,6 +213,8 @@ hal_space_map(
 	uintptr_t rollback;
 	bool enabled;
 	int valid;
+	int locked;
+	bool ram;
 
 	/* Requires a user range, a page-aligned range of RAM and attributes the tables can hold. */
 	address = (uintptr_t)vaddr;
@@ -219,14 +225,16 @@ hal_space_map(
 		return HAL_ERR_INVALID;
 	if ((paddr & (M68040_PAGE_SIZE - 1U)) != 0)
 		return HAL_ERR_INVALID;
-	if (!m68040_range_is_ram(paddr, size))
+	ram = m68040_range_is_ram(paddr, size);
+	if (!ram)
 		return HAL_ERR_INVALID;
 	valid = valid_attributes(attr);
 	if (valid != HAL_OK)
 		return valid;
 
 	/* Holds the space for the whole change. */
-	if (!space_lock_handle(handle, &space, &enabled))
+	locked = space_lock_handle(handle, &space, &enabled);
+	if (!locked)
 		return HAL_ERR_STATE;
 
 	/* Refuses a range of which any page is mapped already. */
@@ -247,12 +255,16 @@ hal_space_map(
 				if (leaf != NULL)
 					*leaf = 0;
 			}
+
+			/* Unlinks the tables left empty, then drops the stale translations and frees them. */
 			detached = detach_empty_tables(space);
 			flush_space(handle);
 			free_detached_tables(detached);
 			m68040_irq_restore(enabled);
 			return HAL_ERR_NOMEM;
 		}
+
+		/* Writes the page's leaf. */
 		*leaf = user_leaf(paddr + offset, attr);
 	}
 
@@ -281,14 +293,20 @@ hal_space_unmap(
 	uintptr_t address;
 	uintptr_t offset;
 	bool enabled;
+	int locked;
+	int valid;
 
 	/* An empty range is nothing to remove. */
 	if (size == 0)
 		return HAL_OK;
 	address = (uintptr_t)vaddr;
-	if (handle == HAL_SPACE_SYS || !valid_user(address, size))
+	if (handle == HAL_SPACE_SYS)
 		return HAL_ERR_INVALID;
-	if (!space_lock_handle(handle, &space, &enabled))
+	valid = valid_user(address, size);
+	if (!valid)
+		return HAL_ERR_INVALID;
+	locked = space_lock_handle(handle, &space, &enabled);
+	if (!locked)
 		return HAL_ERR_STATE;
 
 	/* Clears each leaf, then unlinks the tables that became empty. */
@@ -297,6 +315,8 @@ hal_space_unmap(
 		if (leaf != NULL)
 			*leaf = 0;
 	}
+
+	/* Unlinks the tables left empty, then drops the stale translations and frees them. */
 	detached = detach_empty_tables(space);
 	flush_space(handle);
 	free_detached_tables(detached);
@@ -327,15 +347,20 @@ hal_space_prot_query(
 	uintptr_t offset;
 	bool enabled;
 	int valid;
+	int locked;
 
 	/* Requires a user range and attributes the tables can hold. */
 	address = (uintptr_t)vaddr;
-	if (handle == HAL_SPACE_SYS || !valid_user(address, size))
+	if (handle == HAL_SPACE_SYS)
+		return HAL_ERR_INVALID;
+	valid = valid_user(address, size);
+	if (!valid)
 		return HAL_ERR_INVALID;
 	valid = valid_attributes(attr);
 	if (valid != HAL_OK)
 		return valid;
-	if (!space_lock_handle(handle, &space, &enabled))
+	locked = space_lock_handle(handle, &space, &enabled);
+	if (!locked)
 		return HAL_ERR_STATE;
 
 	/* Refuses a range with any page unmapped. */
@@ -359,6 +384,8 @@ hal_space_prot_query(
 			observed |= HAL_SPACE_PAGE_DIRTY;
 		*leaf = user_leaf(old & M68040_PAGE_ADDRESS_MASK, attr) | (old & (M68040_DESC_USED | M68040_DESC_MODIFIED));
 	}
+
+	/* Code in the pages is fetched from memory, not from stale cache lines. */
 	if ((attr & HAL_SPACE_EXEC) != 0)
 		m68040_cache_push_all();
 	flush_space(handle);
@@ -380,8 +407,15 @@ hal_space_prot(
 	size_t size,
 	uint32_t attr)
 {
+	int error;
+
 	/* The same change without the report. */
-	return hal_space_prot_query(handle, vaddr, size, attr, NULL);
+	error = hal_space_prot_query(handle, vaddr, size, attr, NULL);
+	if (error != HAL_OK)
+		return error;
+
+	/* Succeeded: the range has the new protection. */
+	return HAL_OK;
 }
 
 /*
@@ -397,11 +431,17 @@ hal_space_query(
 	uint32_t *leaf;
 	uint32_t observed;
 	bool enabled;
+	int locked;
+	int valid;
 
 	/* Requires a user page and somewhere to report. */
-	if (handle == HAL_SPACE_SYS || flags == NULL || !valid_user((uintptr_t)vaddr, M68040_PAGE_SIZE))
+	if (handle == HAL_SPACE_SYS || flags == NULL)
 		return HAL_ERR_INVALID;
-	if (!space_lock_handle(handle, &space, &enabled))
+	valid = valid_user((uintptr_t)vaddr, M68040_PAGE_SIZE);
+	if (!valid)
+		return HAL_ERR_INVALID;
+	locked = space_lock_handle(handle, &space, &enabled);
+	if (!locked)
 		return HAL_ERR_STATE;
 
 	/* Reads the page's leaf. */
@@ -414,6 +454,8 @@ hal_space_query(
 		if ((*leaf & M68040_DESC_MODIFIED) != 0)
 			observed |= HAL_SPACE_PAGE_DIRTY;
 	}
+
+	/* Opens the interrupt mask again as the caller had it. */
 	m68040_irq_restore(enabled);
 
 	/* Succeeded: the page's state. */
@@ -434,13 +476,19 @@ hal_space_clear_flags(
 	uint32_t *leaf;
 	uint32_t mask;
 	bool enabled;
+	int locked;
+	int valid;
 
 	/* Requires a user page and flags the tables record. */
-	if (handle == HAL_SPACE_SYS || !valid_user((uintptr_t)vaddr, M68040_PAGE_SIZE))
+	if (handle == HAL_SPACE_SYS)
+		return HAL_ERR_INVALID;
+	valid = valid_user((uintptr_t)vaddr, M68040_PAGE_SIZE);
+	if (!valid)
 		return HAL_ERR_INVALID;
 	if ((flags & ~(uint32_t)(HAL_SPACE_PAGE_ACCESSED | HAL_SPACE_PAGE_DIRTY)) != 0)
 		return HAL_ERR_INVALID;
-	if (!space_lock_handle(handle, &space, &enabled))
+	locked = space_lock_handle(handle, &space, &enabled);
+	if (!locked)
 		return HAL_ERR_STATE;
 
 	/* Refuses a page that is not mapped. */
@@ -534,6 +582,8 @@ hal_space_map_device(
 	uint32_t attr,
 	void **vaddr)
 {
+	bool ram;
+
 	/* Requires a destination and a non-empty range. */
 	if (vaddr == NULL || size == 0)
 		return HAL_ERR_INVALID;
@@ -547,7 +597,8 @@ hal_space_map_device(
 	}
 
 	/* RAM, as it is. */
-	if (m68040_range_is_ram(paddr, size)) {
+	ram = m68040_range_is_ram(paddr, size);
+	if (ram) {
 		*vaddr = (void *)(uintptr_t)paddr;
 		return HAL_OK;
 	}
@@ -637,6 +688,8 @@ space_lock_handle(
 		if ((hal_space_t)space == handle)
 			break;
 	}
+
+	/* A handle that names no live space is refused. */
 	if (space == NULL || space->destroying) {
 		m68040_irq_restore(enabled);
 		return 0;
@@ -786,6 +839,8 @@ table_empty(
 		if ((table[index] & M68040_DESC_TYPE_MASK) != 0)
 			return 0;
 	}
+
+	/* The table is empty. */
 	return 1;
 }
 
@@ -801,6 +856,7 @@ detach_empty_tables(
 	struct m68040_table_page **link;
 	struct m68040_table_page *page;
 	int again;
+	int empty;
 
 	/* Passes over the tables until nothing more is detached. */
 	detached = NULL;
@@ -811,7 +867,8 @@ detach_empty_tables(
 			page = *link;
 
 			/* A table that still maps something stays; 128 entries cover both kinds. */
-			if (!table_empty(hal_pmem_to_kernel(page->memory), M68040_POINTER_ENTRIES)) {
+			empty = table_empty(hal_pmem_to_kernel(page->memory), M68040_POINTER_ENTRIES);
+			if (!empty) {
 				link = &page->next;
 				continue;
 			}
