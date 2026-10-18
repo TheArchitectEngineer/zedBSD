@@ -6,7 +6,7 @@
  */
 
 /*
- * The compute part of the code generator (ws101-p002), included by
+ * The compute part of the code generator, included by
  * compile.c.
  *
  * Register conventions of a SIMD8 compute thread on Gen12.0 (GPGPU_WALKER):
@@ -32,7 +32,7 @@
  * a load (i915_compile_storage()); the old value is asked for only when an
  * instruction reads it.
  *
- * Shared memory (ws101-p006) is the data port's untyped surface messages
+ * Shared memory is the data port's untyped surface messages
  * and untyped atomics at binding table entry 254, one register of byte
  * offsets as the address payload.  A fence is a SIMD1 memory fence message
  * of r0 whose reply the thread waits for; a workgroup barrier is the
@@ -216,7 +216,7 @@ i915_compile_atomic(
 	int returns;
 	int found;
 
-	/* A word of shared memory is changed by its own message (ws101-p006). */
+	/* A word of shared memory is changed by its own message. */
 	if (inst->location == DRV_GPU_IR_LOCATION_SHARED) {
 		i915_compile_atomic_shared(state, inst);
 		return;
@@ -411,7 +411,7 @@ i915_compile_describe_compute(
 	binary->cross_thread_regs = state->push_regs;
 	binary->per_thread_regs = I915_SHADER_PER_THREAD_REGS;
 
-	/* The group's shared memory (ws101-p006). */
+	/* The group's shared memory. */
 	binary->shared_bytes = state->ir->shared_bytes;
 
 	/* How many threads a group takes, which decides whether a barrier sends its message. */
@@ -441,7 +441,7 @@ i915_compile_group_threads(
 }
 
 /*
- * Lowers LOAD_SHARED and STORE_SHARED (ws101-p006): an untyped surface read
+ * Lowers LOAD_SHARED and STORE_SHARED: an untyped surface read
  * or write of one channel's dword at binding table entry 254 (Mesa's
  * brw_dp_untyped_surface_rw_desc(), SIMD8), the byte offsets as the one
  * address register.  A predicated access runs for the channels whose
@@ -533,7 +533,7 @@ i915_compile_shared(
 }
 
 /*
- * Lowers ATOMIC on a word of shared memory (ws101-p006): one untyped atomic
+ * Lowers ATOMIC on a word of shared memory: one untyped atomic
  * message at binding table entry 254 of the channels that run it (Mesa's
  * brw_dp_untyped_atomic_desc(), SIMD8), the byte offsets as the one address
  * register and the value -- or the comparator then the new value -- as the
@@ -652,7 +652,7 @@ i915_compile_atomic_shared(
 }
 
 /*
- * Lowers the fences `fences` names (DRV_GPU_IR_FENCE_*, ws101-p006): a memory
+ * Lowers the fences `fences` names (DRV_GPU_IR_FENCE_*): a memory
  * fence message of the data cache (binding table entry 0) for buffers and
  * one of shared memory (254) for shared memory, each SIMD1 of r0 with the
  * commit bit; the encoder waits for each reply before going on, so the
@@ -717,7 +717,7 @@ i915_compile_fence(
 }
 
 /*
- * Lowers BARRIER (ws101-p006): its fences, then -- for a group of more than
+ * Lowers BARRIER: its fences, then -- for a group of more than
  * one thread -- the gateway's barrier message, whose payload is zero but
  * for dword 2, the group's barrier ID from r0.2, and sync.bar, which waits
  * until every thread of the group has sent its message.  The message goes

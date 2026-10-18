@@ -47,13 +47,12 @@
 /* Builds one exact-match identity row for an Intel graphics product. */
 #define I915_ID(product)	{ 0x8086U, (product), DRV_PCI_ANY_ID, DRV_PCI_ANY_ID, 0U, 0U, 0U }
 
-/* How long a suspend waits for the request worker to park, in milliseconds (ws052-p009). */
+/* How long a suspend waits for the request worker to park, in milliseconds. */
 #define I915_SUSPEND_PARK_MS	2000U
 
 /*
  * Whether a Gen9 device (Skylake to Comet Lake) is driven when the boot line
- * does not say: on since the hardware tests passed (2026-10-14 user decision
- * U1, ws229-p005).  i915.gen9=off on the boot line leaves the device to the
+ * does not say: on.  i915.gen9=off on the boot line leaves the device to the
  * firmware; i915.gen9=on is accepted and changes nothing.
  */
 #define I915_GEN9_DEFAULT_ON	1
@@ -377,7 +376,7 @@ i915_shutdown(
 }
 
 /*
- * Suspends the device for S0 idle (ws052-p009): the request worker parks
+ * Suspends the device for S0 idle: the request worker parks
  * (the output is stopped, the lease kept, the GT left idle), then the
  * hardware goes down into DC9.  A worker that does not park, or hardware
  * that does not go down, refuses the suspend with the worker serving
@@ -401,9 +400,8 @@ i915_suspend(
 
 	/*
 	 * A Gen9 device's display is the firmware's, which D3hot would lose
-	 * for good: it sleeps in D0 (2026-10-15 user decision, WS237 p005),
-	 * and refuses the suspend (the 2026-10-14 decision U2) only when the
-	 * PCI core cannot keep it there.
+	 * for good: it sleeps in D0, and refuses the suspend only when the PCI
+	 * core cannot keep it there.
 	 */
 	product_error = drv_i915_product_kind(device->product, &kind);
 	gen9 = product_error == 0 && kind.graphics_ver == 9U;

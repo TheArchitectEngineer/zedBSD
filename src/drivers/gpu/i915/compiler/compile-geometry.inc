@@ -6,7 +6,7 @@
  */
 
 /*
- * The geometry part of the code generator (ws075-p007a), included by
+ * The geometry part of the code generator, included by
  * compile.c.
  *
  * Register conventions of a SIMD8 geometry thread on Gen12.0, one channel

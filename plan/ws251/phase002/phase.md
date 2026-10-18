@@ -51,9 +51,16 @@ Parent: [WS251](../ws.md)
 - **Q1 への依頼**: vulkan-codec.inc は plan/ws031/handover/tools/gen_vk_server_codec.py の出力。道具の書く header の行を同じに直さないと、作り直した時に path が戻る（道具は範囲の外）。
 - 確かめた事: 新しい基準 `build/ws251p002-base2`（tree 0a59b8a8a、前の基準 e9157f2c2 からは WS245 の merge で source が変わったので作り直した）。`sh build/tmp/kbuild.sh ws251p002-g2` default・vke2・execution とも rc=0 warning 0、`ws251-objcmp.sh ws251p002-base2 ws251p002-g2` で object 270/273/280 の差なし、vmunix 3 組とも同じ（comment だけ）。
 
+### 群 3: i915 の top の file・intel・compiler と gpu.c — 済み（2026-10-18 q1242、P1）
+
+- comment だけ。src/drivers/gpu の数は 412 → 269 件、i915 の top・intel・compiler・gpu.c は 0 件。
+- 消した物: Phase の参照（ws035・ws083・ws101・ws075・ws031 ほか）、BUG-077 ほか、WS031 E-127、\`plan/\` の path（試験の script・設計・退役した生成の道具・Linux の reference の置き場）、日付つきの決定（i915.c の 2026-10-14 U1・U2、2026-10-15）、memory.h の経緯（「it was 32 MiB … before ws035-p066」）、試験機の名前（eu-encoding-gen12.h・genxml.h の「ran on the Latitude 5330」）、session.c の「ws083 §4.3」。engine-table.inc の出典は \`(drivers/gpu/drm/i915)\` に（Linux の tree の中の path。版と SHA-256 の行は残した）。
+- 残した物: 「test build」は I915_TESTS の checkpoint の説明（code の振る舞い）。dma.h の「Under QEMU with VFIO」は DMA の address の hardware・仮想化の事実。
+- 確かめた事: \`sh build/tmp/kbuild.sh ws251p002-g3\` 3 組 rc=0 warning 0。\`ws251-objcmp.sh ws251p002-base2 ws251p002-g3\` で違う object は memory.o・gpu.o（それぞれ数 byte、comment の行が減って行番号の情報がずれた分）だけで、vmunix は 3 組とも同じ。
+
 ### 残り・再開の手順
 
-- 残り 412 件（群 2 の後。tests 167・compiler 40・intel 25・top の GT の file 群、bcm2711 79、venus 6、compiler 15、amdrdna 2、`include/uapi/gpu-op.h` 3）。
+- 残り 269 件（群 3 の後。i915 tests 167、bcm2711 79、venus 6、compiler 15、amdrdna 2、`include/uapi/gpu-op.h` 3）。
   i915 の render の image.c「design N3」・video.c「(N4)」、tests/execution/README.md の LCD-G・P7-IPC の類も対象。
   bcm2711 は `bcm2711_stage_mark` の log が N0・P0・R0 の段の符号を持つ（readout.c ほか）。照合する試験の grep が要る。
 - 手順: 群ごとに `git grep` で文脈を読み、comment を直す → `sh build/tmp/kbuild.sh ws251p002-gN` → `sh build/tmp/ws251-objcmp.sh ws251p002-base ws251p002-gN`

@@ -33,7 +33,7 @@
  * inside the table's initializer.
  *
  * Modified for zedBSD: excerpted and reformatted by hand from the Linux
- * 6.8.12 reference (plan/ws031/linux-parity/linux-reference/i915-src).
+ * 6.8.12 reference (drivers/gpu/drm/i915).
  * Values are unchanged.  Source (SHA-256 of the reference file):
  *   drivers/gpu/drm/i915/gt/intel_engine_cs.c, intel_engines[]
  *     da0063e3ff12448e17585c301a442bf2fb90ee9ca5f787af30b640747ade369e

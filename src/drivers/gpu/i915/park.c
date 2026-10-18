@@ -9,8 +9,7 @@
  * The park of the request worker for a suspend (see park.h).
  *
  * Every function runs with the device's IRQ lock held by the caller, and
- * none sleeps, so the protocol is tested on the host
- * (plan/ws052/tests/host-i915-park.c).
+ * none sleeps, so the protocol is tested on the host.
  */
 
 #include <uapi/errno.h>

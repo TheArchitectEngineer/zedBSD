@@ -93,7 +93,7 @@ struct i915_execlists {
 
 	/*
 	 * The last I915_CSB_HISTORY entries, oldest overwritten first, and the
-	 * next place to write (BUG-077: what came before an event with nothing
+	 * next place to write (what came before an event with nothing
 	 * to apply to).
 	 */
 	uint64_t csb_history[8];

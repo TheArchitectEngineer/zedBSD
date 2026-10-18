@@ -30,7 +30,7 @@
  * The register and message conventions are the ones Mesa's compiler uses for
  * the same shaders (tools/refvk.c, disassembled with gentool) -- see the table
  * below -- and the emitted kernels are judged by Mesa's assembler and
- * disassembler (plan/ws031/tests/run-vk-gentool-test.sh) before they meet a
+ * disassembler before they meet a
  * GPU.  The encoded words are returned for the caller to place in a GPU
  * object.
  */
@@ -101,7 +101,7 @@
  * Loops:                   the body runs between the loop's first instruction and a WHILE predicated on
  *                          the channels that go round again (brw_WHILE); a channel that stops waits after
  *                          the WHILE until the others stop too, so it no longer writes a register.
- * Geometry shader:         compile-geometry.inc (ws075-p007a).
+ * Geometry shader:         compile-geometry.inc.
  */
 
 /* Vertex: the push data starts here. */
@@ -170,13 +170,13 @@
 /* Vertex: the point size is dword 3 of the VUE header (component 3 of slot 0). */
 #define COMPILE_VUE_POINT_SIZE	3U
 
-/* Geometry: the layer is dword 1 of the VUE header, the render target array index (ws075-p007a). */
+/* Geometry: the layer is dword 1 of the VUE header, the render target array index. */
 #define COMPILE_VUE_LAYER	1U
 
 /*
  * Geometry: the registers right below the staged VUE that head each vertex
  * write -- the output handles, then the per-slot offsets of the vertex
- * (ws075-p007a, compile-geometry.inc).
+ * (compile-geometry.inc).
  */
 #define COMPILE_GS_WRITE_HEADER_REGS	2U
 
@@ -206,13 +206,13 @@
 
 /*
  * The most texture messages of one shader that run under an IF on their
- * guard (ws075-p021); the ones past it run unguarded, as before.
+ * guard; the ones past it run unguarded, as before.
  */
 #define COMPILE_MAX_GUARDS	256U
 
 /*
  * The most IR instructions a shader may have for its skippable regions to be
- * checked (ws075-p023); a longer one runs every region.  The check walks the
+ * checked; a longer one runs every region.  The check walks the
  * rest of the shader once per region.
  */
 #define COMPILE_MAX_SKIP_CHECK	16384U
@@ -232,7 +232,7 @@
  * instructions (clearing the flag, two comparisons, the flag's store, IF and
  * ENDIF) and a jump, more than a shorter region saves (the compositor's
  * panel.frag: the next comparison of an else-if chain, two instructions, and
- * the selects of a merge, four; ws075-p023).
+ * the selects of a merge, four).
  */
 #define COMPILE_SKIP_MIN_INSTRUCTIONS	6U
 
@@ -268,7 +268,7 @@
 #define COMPILE_DESC_RT_LAST		0x00001000U
 
 /*
- * The SIMD8 dual-source render-target write (ws031-p032): message control 2,
+ * The SIMD8 dual-source render-target write: message control 2,
  * "SIMD8 dual source subspan01" (Mesa 25.0.7 brw_eu_defines.h
  * BRW_DATAPORT_RENDER_TARGET_WRITE_SIMD8_DUAL_SOURCE_SUBSPAN01) in place of
  * the single source's 4; src0 the first colour (mlen 4), src1 the second
@@ -513,12 +513,12 @@ struct i915_compile_state {
 	/*
 	 * The condition value plus one whose "not zero" f0.0 holds for the
 	 * SELECT just lowered, zero for none: a SELECT right after one on the
-	 * same condition reuses the flag (ws075-p024).
+	 * same condition reuses the flag.
 	 */
 	uint32_t select_flag;
 
 	/*
-	 * Geometry (ws075-p007a): the vertex kernel before it, whose VUE layout
+	 * Geometry: the vertex kernel before it, whose VUE layout
 	 * places the per-vertex inputs (NULL when the caller gave none); it
 	 * lasts over the attempts.
 	 */
@@ -1089,11 +1089,11 @@ i915_compile_operands(
 
 	case DRV_GPU_IR_LOAD_STORAGE:
 	case DRV_GPU_IR_LOAD_SHARED:
-		/* The offset, and the predicate of a predicated load (ws101-p002, ws101-p006). */
+		/* The offset, and the predicate of a predicated load. */
 		return 1U + inst->component;
 
 	case DRV_GPU_IR_ATOMIC:
-		/* The offset and the value, the comparator of a compare and exchange, then a predicate (ws101-p002). */
+		/* The offset and the value, the comparator of a compare and exchange, then a predicate. */
 		if (inst->immediate == DRV_GPU_IR_ATOMIC_CMPXCHG)
 			return 3U + inst->component;
 		return 2U + inst->component;
@@ -1147,14 +1147,14 @@ i915_compile_operands(
 		return 2U + inst->component;
 
 	case DRV_GPU_IR_LOAD_VERTEX_INPUT:
-		/* The vertex's number when it is chosen at run time (ws075-p007a). */
+		/* The vertex's number when it is chosen at run time. */
 		if (inst->immediate == DRV_GPU_IR_VERTEX_DYNAMIC)
 			return 1U;
 		return 0U;
 
 	case DRV_GPU_IR_EMIT_VERTEX:
 	case DRV_GPU_IR_END_PRIMITIVE:
-		/* The predicate of an emit or an end under one (ws075-p007a). */
+		/* The predicate of an emit or an end under one. */
 		return inst->component;
 
 	default:
@@ -2508,7 +2508,7 @@ i915_compile_storage(
 	interleaved.subnr = 4U;
 	drv_i915_eu_mov(&state->code, interleaved, drv_i915_eu_grf_ud(carry));
 
-	/* A predicated load reads where the predicate is not zero; the other channels keep what the register held (ws101-p002). */
+	/* A predicated load reads where the predicate is not zero; the other channels keep what the register held. */
 	if (inst->op == DRV_GPU_IR_LOAD_STORAGE && inst->component != 0U) {
 		null = drv_i915_eu_null();
 		null.type = COMPILE_TYPE_D;
@@ -3819,7 +3819,7 @@ i915_compile_loop_end(
 }
 
 /*
- * Lowers a texture message under an IF on its guard (ws075-p021): an IF that
+ * Lowers a texture message under an IF on its guard: an IF that
  * every channel takes when any channel is in the guard (i915_compile_if_any(),
  * so the derivatives of the message's coordinates see every pixel of the
  * quad), the message, the ENDIF.  A thread none of whose channels is in the
@@ -3872,7 +3872,7 @@ i915_compile_guarded_texture(
 
 /*
  * Decides which skippable regions (SKIP_BEGIN .. SKIP_END, one block of the
- * parser each) are really skipped (ws075-p023): each is checked by
+ * parser each) are really skipped: each is checked by
  * i915_compile_skip_region().  A shader longer than COMPILE_MAX_SKIP_CHECK
  * skips none.
  */
@@ -3961,7 +3961,7 @@ i915_compile_skips(
  * store, an atomic, a discard, a loop move, a loop end or another region's
  * predicate, or when its body has an effect that is not under P or a
  * workgroup barrier or a fence (every thread of the group must reach a
- * barrier, ws101-p006).  Returns 1 when it may be skipped.
+ * barrier).  Returns 1 when it may be skipped.
  */
 static int
 i915_compile_skip_region(
@@ -4002,7 +4002,7 @@ i915_compile_skip_region(
 		/*
 		 * A loop, a loop move, an output write or a geometry shader's emit
 		 * or end inside is not skipped over; nor a workgroup barrier, which
-		 * every thread of the group must reach, nor a fence (ws101-p006).
+		 * every thread of the group must reach, nor a fence.
 		 */
 		if (inst->op == DRV_GPU_IR_LOOP_BEGIN ||
 		    inst->op == DRV_GPU_IR_LOOP_END ||
@@ -4036,7 +4036,7 @@ i915_compile_skip_region(
 				return 0;
 		}
 
-		/* So must an atomic, whose predicate is its last source (ws101-p002). */
+		/* So must an atomic, whose predicate is its last source. */
 		if (inst->op == DRV_GPU_IR_ATOMIC) {
 			if (inst->component == 0U)
 				return 0;
@@ -5468,8 +5468,8 @@ i915_compile_describe(
 		binary->uses_source_w = 1U;
 }
 
-/* The compute part of the code generator (ws101-p002). */
+/* The compute part of the code generator. */
 #include "compile-compute.inc"
 
-/* The geometry part of the code generator (ws075-p007a). */
+/* The geometry part of the code generator. */
 #include "compile-geometry.inc"

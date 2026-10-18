@@ -10,7 +10,7 @@
  * (see workarounds.h).
  *
  * The lists hold only the arms Alder Lake-P takes in the Linux 6.8.12
- * reference, and (ws229-p002) the arms of the Gen9 parts: Skylake, Kaby
+ * reference, and the arms of the Gen9 parts: Skylake, Kaby
  * Lake, Coffee Lake and Comet Lake.  The other platforms' arms are absent
  * rather than built and skipped.  Every register access goes through the held accessors: the
  * device start holds every GT forcewake domain across the GT initialization

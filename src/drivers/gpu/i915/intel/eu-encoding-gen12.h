@@ -72,7 +72,7 @@
  *                                          generate_scratch_header(): the header cleared, then r0.3[3:0] (the
  *                                          per-thread scratch space) and r0.5[31:10] (the thread's scratch
  *                                          base) copied into its dwords 3 and 5
- * and, for the pixel position, the derivatives, the half floats and the sampler messages of ws075-p004,
+ * and, for the pixel position, the derivatives, the half floats and the sampler messages,
  * the same release:
  *   - src/intel/compiler/brw_reg_type.c    (sha256 acb63f401add3384b15e7d6bb4d148b7b60325c2e618abf2a727856a3138731b)
  *                                          brw_type_encode(): the Gen12 encoding of the V immediate and of HF
@@ -90,7 +90,7 @@
  * on Tiger Lake (has_integer_dword_mul false, brw_lower_integer_multiplication.cpp).
  * These are Intel hardware facts.  Only positions and values are transcribed; the encoder logic is
  * new.  Every emitter of compiler/eu.c is checked bit for bit against Mesa's assembler (gentool asm)
- * and disassembler by plan/ws031/tests/run-vk-gentool-test.sh; the earlier table (from the 23.1
+ * and disassembler; the earlier table (from the 23.1
  * brw_inst.h) had the float type, the region widths and the math selectors wrong and no SEND layout.
  *
  * Transcribed by hand from the files above; no generator produces this file.
@@ -361,7 +361,7 @@
 #define EU_SWSB_SYNC_SRC(id)		(0x30U | (uint32_t)(id))
 
 /*
- * The messages of compute shaders (ws101-p002), transcribed from Mesa 25.0.7
+ * The messages of compute shaders, transcribed from Mesa 25.0.7
  * (MIT; the release tarball, the same files as above):
  *   - brw_eu_defines.h (sha256 12a919edc56a75efe68afffa55ca42278a0cd489efddc8a0915919be756d7abc)
  *                      BRW_SFID_THREAD_SPAWNER (7), HSW_SFID_DATAPORT_DATA_CACHE_1 (12),
@@ -374,7 +374,7 @@
  *                      emit_cs_terminate(): before Gfx12.5 a compute thread ends with a one-register
  *                      message of r0 to the thread spawner, descriptor 0, from g112 .. g127
  * The descriptors were checked with Mesa's brw_disasm / brw_asm (--gen=adl) and against the end of
- * the compute test's kernel, which ran on the Latitude 5330 (tests/execution/eu-test.c).
+ * the compute test's kernel (tests/execution/eu-test.c).
  */
 #define EU_SFID_THREAD_SPAWNER		7U
 #define EU_SFID_DATA_CACHE_1		12U
@@ -383,8 +383,8 @@
 #define EU_DESC_TERMINATE		(1U << EU_DESC_MLEN_SHIFT)
 
 /*
- * Shared memory, fences and the workgroup barrier of compute shaders
- * (ws101-p006), transcribed from Mesa 25.0.7 (MIT; the release tarball, the
+ * Shared memory, fences and the workgroup barrier of compute shaders,
+ * transcribed from Mesa 25.0.7 (MIT; the release tarball, the
  * same files as above):
  *   - brw_eu_defines.h (sha256 12a919edc56a75efe68afffa55ca42278a0cd489efddc8a0915919be756d7abc)
  *                      BRW_SFID_MESSAGE_GATEWAY (3), BRW_MESSAGE_GATEWAY_SFID_BARRIER_MSG (4),
@@ -406,7 +406,7 @@
  *                      dword 2; the fences of nir_intrinsic_barrier before Gfx12.5 with commit on
  *   - brw_generator.cpp (sha256 0c3f99afe06ae7b651d48ff4966d0f8dabcb744fa3513a7018ee51a1bea90d3b)
  *                      generate_barrier(): on Gfx12 the gateway message, then sync.bar
- * The descriptors were checked with Mesa's brw_disasm / brw_asm (--gen=adl) (plan/ws101/design.md section 1.6).
+ * The descriptors were checked with Mesa's brw_disasm / brw_asm (--gen=adl).
  */
 #define EU_SFID_GATEWAY			3U
 #define EU_GATEWAY_BARRIER		4U

@@ -74,12 +74,12 @@ struct i915_device {
 	unsigned start_launched;
 
 	/*
-	 * Nonzero from a suspend that took the hardware down until its resume
-	 * (ws052-p009); only the PCI power code's one thread reads and writes it.
+	 * Nonzero from a suspend that took the hardware down until its resume;
+	 * only the PCI power code's one thread reads and writes it.
 	 */
 	unsigned suspended;
 
-	/* Nonzero while a Gen9 device sleeps in D0 (WS237 p005): its resume only lights the display again. */
+	/* Nonzero while a Gen9 device sleeps in D0: its resume only lights the display again. */
 	unsigned suspended_d0;
 
 	/* The name of the start step in progress, for the failure log. */

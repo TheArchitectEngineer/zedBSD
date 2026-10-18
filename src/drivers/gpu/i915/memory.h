@@ -48,7 +48,7 @@ struct i915_ppgtt;
  * The GT window: GGTT pages at the top of the GGTT for the GT's own
  * objects (64 MiB), and the bitmap words that track it.  A render context
  * takes about 30 pages (image, ring, timeline); 1 MiB ran out with a
- * compositor, its display swapchain and three clients (ws035-p066).  The
+ * compositor, its display swapchain and three clients.  The
  * GGTT is 4 GiB on Gen12 and zedBSD is a client OS: the windows are sized
  * for many windows and displays, not to save table space.
  */
@@ -58,8 +58,7 @@ struct i915_ppgtt;
 /*
  * The display window: GGTT pages for scanout buffers directly below the GT
  * window (1 GiB: the compositor's swapchain and the clients' fullscreen
- * buffers, full HD or 4K, with 256 KiB alignment and guards; it was 32 MiB,
- * two full-HD buffers, before ws035-p066), and the bitmap words that track it.
+ * buffers, full HD or 4K, with 256 KiB alignment and guards), and the bitmap words that track it.
  */
 #define I915_GT_DISPLAY_PAGES		262144U
 #define I915_GT_DISPLAY_WORDS		(I915_GT_DISPLAY_PAGES / 32U)
@@ -68,8 +67,8 @@ struct i915_ppgtt;
  * How many GT objects the pool holds: a status page, a ring and a context
  * image per engine, the scratch page, the page-table pages, and the
  * objects of the draw paths.  64 ran out once three contexts and four user
- * objects were live together, and 128 once about thirty windows were open
- * (BUG-120): the pool now grows a block of I915_GT_OBJECT_BLOCK slots at a
+ * objects were live together, and 128 once about thirty windows were open:
+ * the pool now grows a block of I915_GT_OBJECT_BLOCK slots at a
  * time, up to I915_GT_OBJECT_BLOCKS blocks.  A block is never moved or
  * freed while the device runs, so an object's address stays valid.
  */
@@ -77,7 +76,7 @@ struct i915_ppgtt;
 #define I915_GT_OBJECT_BLOCKS		16U
 #define I915_GT_MAX_OBJECTS		(I915_GT_OBJECT_BLOCK * I915_GT_OBJECT_BLOCKS)
 
-/* How many borrowed (firmware) display ranges the memory remembers for a resume (ws052-p009). */
+/* How many borrowed (firmware) display ranges the memory remembers for a resume. */
 #define I915_GT_FOREIGN_MAX		4U
 
 /* The page every session object and session page-table page is made of. */
@@ -185,8 +184,8 @@ struct i915_gt_mem {
 
 	/*
 	 * The borrowed display ranges bound now: their backing's first page and
-	 * their place, so that a resume can write their entries again
-	 * (ws052-p009).  A slot is free while pages is zero.
+	 * their place, so that a resume can write their entries again.
+	 * A slot is free while pages is zero.
 	 */
 	struct {
 		uint64_t phys;

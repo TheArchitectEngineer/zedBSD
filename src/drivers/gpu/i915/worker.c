@@ -63,15 +63,15 @@
  * Every open of the node is a session with one render context: the
  * compositor, each Vulkan, EGL or GLX application, and the X server of an
  * X application.  The demonstration's desktop with every application of App
- * Home open needs more than eight (ws075-p009: Gears and Browser could not
+ * Home open needs more than eight (Gears and Browser could not
  * start); a live record costs its context image, a 16 KiB ring and a
  * timeline page, and a free one only its entry in this table.
  */
 #define I915_WORKER_CONTEXTS		32U
 
 /*
- * The hardware contexts the video decode engine (VCS0) may have at once
- * (ws083-p003a).  A session gets one only when it makes its first video
+ * The hardware contexts the video decode engine (VCS0) may have at once.
+ * A session gets one only when it makes its first video
  * session, so few are live; each costs a context image, a ring and a
  * timeline page like a render one.
  */
@@ -82,7 +82,7 @@
 
 /*
  * How long a request may run before it is failed as a hang: a render
- * request, and a video request (ws083 R-S5: one decode takes tens of
+ * request, and a video request (one decode takes tens of
  * milliseconds even at level 5.1, and the one worker holds the desktop's
  * drawing while it waits, so a hung decode is given up sooner).
  */
@@ -110,7 +110,7 @@
 
 /*
  * How many hangs of the video decode engine are recovered by an engine
- * reset; the next one stops video until the device goes (ws083-p007).
+ * reset; the next one stops video until the device goes.
  *
  * Each hang holds the one worker, and with it the render engine's work, for
  * the whole request timeout, so a stream that hangs the engine again and
@@ -129,7 +129,7 @@
 #define I915_WORKER_SERVE_ENTER_DISPLAY	1
 #define I915_WORKER_SERVE_LEAVE_DISPLAY	2
 
-/* A pass also returns when a park is asked for outside the window (ws052-p009). */
+/* A pass also returns when a park is asked for outside the window. */
 #define I915_WORKER_SERVE_PARK		3
 
 /*
@@ -142,7 +142,7 @@
  * only while running a request of that context.  A video record whose
  * request hung is retained: cut from its owner and not freed or reused
  * while the stopped engine may still read its image and ring, that is,
- * until an engine reset recovered its hang (ws083-p007).
+ * until an engine reset recovered its hang.
  */
 struct i915_worker_context {
 	/* The session context this record stands behind; NULL for a free record. */
@@ -151,7 +151,7 @@ struct i915_worker_context {
 	/*
 	 * How long the engine ran this context's requests, in nanoseconds, and
 	 * how many ran.  Only the worker adds to them; they are read with a
-	 * debugger to see which session keeps the engine busy (ws075-p018).
+	 * debugger to see which session keeps the engine busy.
 	 */
 	uint64_t engine_ns;
 	uint32_t engine_runs;
@@ -159,8 +159,8 @@ struct i915_worker_context {
 	/*
 	 * Of the synchronous batches (the executor's submits, whose caller
 	 * sleeps): how long they waited in the queue before the worker took
-	 * them, and how long from the queue to their end, in nanoseconds
-	 * (ws075-p026).  Read the same way.
+	 * them, and how long from the queue to their end, in nanoseconds.
+	 * Read the same way.
 	 */
 	uint64_t queue_ns;
 	uint64_t round_ns;
@@ -252,7 +252,7 @@ struct i915_worker {
 	/*
 	 * How many times a request on the video engine hung or failed, and up
 	 * to which of those hangs an engine reset has ended the engine's access
-	 * to the retained records (ws083-p007).  Both only grow, are written by
+	 * to the retained records.  Both only grow, are written by
 	 * the worker under the IRQ lock, and a retained record whose number is
 	 * at most video_recovered may be freed.
 	 */
@@ -499,7 +499,7 @@ drv_i915_worker_stop(
 }
 
 /*
- * Parks the request worker for a suspend (ws052-p009).
+ * Parks the request worker for a suspend.
  *
  * The worker leaves the display window (the output is stopped, the lease
  * is kept), finishes the request it runs, lets the GT go idle and sleeps
@@ -681,7 +681,7 @@ drv_i915_worker_context_create(
 	 * open.  The copy engine's context is a record only (XXX: nothing runs
 	 * on the copy engine), and so is the video engine's until the session's
 	 * first video session attaches its hardware context
-	 * (drv_i915_worker_context_attach, ws083-p003a).
+	 * (drv_i915_worker_context_attach).
 	 */
 	if (engine->index != I915_ENGINE_RCS0) {
 		context->created = 1U;
@@ -753,7 +753,7 @@ drv_i915_worker_video_state(
  * Attaches a hardware context to a session's video engine context.
  *
  * Open makes the session's VCS0 context a record only; the first video
- * session of the session attaches the hardware context here (ws083-p003a).
+ * session of the session attaches the hardware context here.
  * The caller holds the device mutex, so two attaches of one session make
  * one.  Returns 0 when the context has one already or got one, EINVAL for
  * a context of another engine, ENODEV when the worker is not serving or
@@ -855,7 +855,7 @@ drv_i915_worker_context_destroy(
 
 /*
  * Frees the video records a hang retained once an engine reset has ended the
- * engine's access to them (ws083-p007).
+ * engine's access to them.
  *
  * The caller holds the device mutex, under which the tables are filled and
  * emptied.  A record retained by a hang that no reset has recovered yet
@@ -1091,7 +1091,7 @@ drv_i915_worker_run_batch(
  *
  * The video record's engine VCS0 is reset and resumed, which ends the
  * engine's access to every record a hang retained and lifts a stop for
- * good (ws083-p007).  The checked reset of the device calls it with no
+ * good.  The checked reset of the device calls it with no
  * request running and the forcewake domains held.  Returns 0, ENODEV when
  * there is no worker or no VCS0, or the engine reset's error.
  *
@@ -1140,7 +1140,7 @@ drv_i915_worker_engine_reset(
 }
 
 /*
- * Ends a session's work on one engine record (BUG-077).
+ * Ends a session's work on one engine record.
  *
  * The session's requests that never reached the engine -- reserved,
  * queued, or handed to the worker but not yet taken -- fail with `error`
@@ -1316,7 +1316,7 @@ i915_worker_loop(
 			return I915_WORKER_SERVE_PARK;
 		}
 
-		/* The output the window lights was unplugged (BUG-268): the window is left before more work; the work waits. */
+		/* The output the window lights was unplugged: the window is left before more work; the work waits. */
 		if (in_display) {
 			unplugged = drv_i915_present_unplug_pending(device);
 			if (unplugged) {
@@ -1363,7 +1363,7 @@ i915_worker_loop(
 			/*
 			 * A frame of the second output while the resident output was lit
 			 * for one pipe leaves the window: the resident output is lit
-			 * again for two pipes first (ws113-p011), and the frame stays at
+			 * again for two pipes first, and the frame stays at
 			 * the head of the queue for the new window.
 			 */
 			relight = 0;
@@ -1378,7 +1378,7 @@ i915_worker_loop(
 
 			/*
 			 * A release inside the window holds the last picture for the
-			 * next lease (ws075-p016) and stays in the window.  When a stop
+			 * next lease and stays in the window.  When a stop
 			 * is asked for or the shutdown refuses the hold, it leaves the
 			 * window instead and stays at the head: it is completed after
 			 * the output is stopped.
@@ -1562,7 +1562,7 @@ i915_worker_run_sync_item(
 		error = i915_worker_run(worker, item->context, item->batch_va, 1, 0U);
 		drv_i915_perf_add(&device->perf, I915_PERF_GPU, start);
 
-		/* The context's time in the queue and to the end (ws075-p026). */
+		/* The context's time in the queue and to the end. */
 		record = i915_worker_find(worker, item->context);
 		if (record != NULL && item->queued_at != 0U) {
 			record->queue_ns += start - item->queued_at;
@@ -1580,8 +1580,8 @@ i915_worker_run_sync_item(
 	case I915_WORKER_SYNC_PRESENT_BLOB:
 		/*
 		 * Inside the window; outside it only when the panel could not be
-		 * brought up.  The second output's frame lights it first
-		 * (ws113-p011); without the window it cannot be lit.
+		 * brought up.  The second output's frame lights it first;
+		 * without the window it cannot be lit.
 		 */
 		if (item->present->head) {
 			error = ENXIO;
@@ -1591,7 +1591,7 @@ i915_worker_run_sync_item(
 			/*
 			 * The output of a move that failed is gone for the rest of
 			 * its lease (ENXIO: the session's Vulkan sees its surface
-			 * lost and moves its output back, BUG-266); a panel that
+			 * lost and moves its output back); a panel that
 			 * could not come up is a failure (EIO).
 			 */
 			error = EIO;
@@ -1655,7 +1655,7 @@ i915_worker_run(
 
 	/*
 	 * Picks the GT engine the record's requests run on: the render engine,
-	 * or VCS0 for the video record (ws083-p003a).  XXX: nothing runs on the
+	 * or VCS0 for the video record.  XXX: nothing runs on the
 	 * copy engine.
 	 */
 	if (context->engine->index == I915_ENGINE_RCS0) {
@@ -1670,7 +1670,7 @@ i915_worker_run(
 	/*
 	 * The video engine runs nothing once it is stopped for good, nor on a
 	 * GT without it.  The stop is ECANCELED, not EIO: nothing ran, so the
-	 * caller must not take it for a hang of its own request (ws083 R-S2).
+	 * caller must not take it for a hang of its own request.
 	 */
 	if (context->engine->index == I915_ENGINE_VCS0) {
 		if (gt_index < 0)
@@ -1731,7 +1731,7 @@ i915_worker_run(
 		return error;
 	}
 
-	/* The engine is busy with the request from here: RPS follows the busy time (ws075-p020). */
+	/* The engine is busy with the request from here: RPS follows the busy time. */
 	drv_i915_rps_busy_begin(&device->gt.init.rps);
 
 	/* Waits for the request to end, counting the engine's time to its context. */
@@ -1743,7 +1743,7 @@ i915_worker_run(
 	/* The engine is done with it, whichever way it ended. */
 	drv_i915_rps_busy_end(&device->gt.init.rps);
 
-	/* A video request that hung or failed retains its context and has the video engine reset (ws083-p007). */
+	/* A video request that hung or failed retains its context and has the video engine reset. */
 	if (error != 0 && context->engine->index == I915_ENGINE_VCS0)
 		i915_worker_video_hung(worker, record, error);
 
@@ -1829,7 +1829,7 @@ i915_worker_wait(
 	ge = &device->gt.engines.ge[gt_index];
 	el = &device->gt.engines.el[gt_index];
 
-	/* The engine's timeout: the video engine's shorter one (ws083 R-S5). */
+	/* The engine's timeout: the video engine's shorter one. */
 	timeout_ms = I915_WORKER_TIMEOUT_MS;
 	if (gt_index == worker->video_index)
 		timeout_ms = I915_WORKER_VIDEO_TIMEOUT_MS;
@@ -1843,7 +1843,7 @@ i915_worker_wait(
 		/* Applies what the engine reported. */
 		(void)drv_i915_execlists_process_csb(ge, el, &device->gt.mmio);
 
-		/* An event with nothing to apply to fails the request; the first few failures say so (BUG-077). */
+		/* An event with nothing to apply to fails the request; the first few failures say so. */
 		if (el->csb_errors != 0U) {
 			if (worker->failed < 4U) {
 				kern_logf("i915: resident shim: request seqno=%u batch_va=0x%llx fails: %u CSB errors (hwsp=%u)\n",
@@ -1923,7 +1923,7 @@ i915_worker_queue_sync(
 	/* Queues the item and wakes the worker under the IRQ lock. */
 	irq = spin_lock_irqsave(&device->irq_lock);
 
-	/* A batch queued behind other work will not start at once (ws075-p020). */
+	/* A batch queued behind other work will not start at once. */
 	behind = 0;
 	if (item->kind == I915_WORKER_SYNC_BATCH &&
 	    (worker->sync_head != NULL ||
@@ -2069,8 +2069,7 @@ i915_worker_context_fill(
 }
 
 /*
- * Recovers the video engine after a request on it hung or failed
- * (ws083-p007).
+ * Recovers the video engine after a request on it hung or failed.
  *
  * The record is cut from its session context and retained, as the engine
  * may still read its image, ring and batch.  The engine is then reset and

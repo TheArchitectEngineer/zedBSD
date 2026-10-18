@@ -43,7 +43,7 @@
 /*
  * Compute: the registers of per-thread push data after the cross-thread
  * data, in this order -- LocalInvocationID x, y, z and LocalInvocationIndex
- * of the thread's eight channels, a dword each (ws101-p002).
+ * of the thread's eight channels, a dword each.
  */
 #define I915_SHADER_PER_THREAD_REGS	4U
 
@@ -131,7 +131,7 @@ struct i915_shader_binary {
 
 	/*
 	 * Fragment: nonzero when the kernel writes a second colour (Location 0
-	 * Index 1) with one dual-source render-target write (ws031-p032).
+	 * Index 1) with one dual-source render-target write.
 	 */
 	uint32_t dual_source;
 
@@ -161,7 +161,7 @@ struct i915_shader_binary {
 	uint32_t scratch_bytes;
 
 	/*
-	 * Compute (ws101-p002): the workgroup's size along x, y and z, and the
+	 * Compute: the workgroup's size along x, y and z, and the
 	 * payload the dispatch delivers after r0 -- `cross_thread_regs`
 	 * registers of push data every thread of a group reads (the push
 	 * constants and the blocks above, from r1), then `per_thread_regs`
@@ -176,7 +176,7 @@ struct i915_shader_binary {
 	uint32_t per_thread_regs;
 
 	/*
-	 * Compute (ws101-p006): the bytes of shared memory the workgroup needs
+	 * Compute: the bytes of shared memory the workgroup needs
 	 * (0 for none), and nonzero when the kernel waits at a workgroup
 	 * barrier; the dispatch programs both in the interface descriptor.
 	 */
@@ -184,7 +184,7 @@ struct i915_shader_binary {
 	uint32_t uses_barrier;
 
 	/*
-	 * Geometry (ws075-p007a): what the draw programs in 3DSTATE_GS and the
+	 * Geometry: what the draw programs in 3DSTATE_GS and the
 	 * URB -- the vertices of one input primitive, the primitive emitted
 	 * (3D_Prim_Topo_Type, DRV_GPU_IR_OUTPUT_*), one output vertex and the
 	 * control data header in 32-byte units, the header's format (0 cut

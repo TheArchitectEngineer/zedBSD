@@ -21,7 +21,7 @@
  * space, with a timeline page in the GGTT for its breadcrumbs.
  *
  * A request on the video decode engine that hangs or fails has that engine
- * reset and resumed by the worker, up to a bound of hangs (ws083-p007).
+ * reset and resumed by the worker, up to a bound of hangs.
  *
  * XXX: the copy engine is a record only, requests on it fail; the ring never
  * wraps and is rewound when an idle context's ring is nearly full; a request
@@ -48,7 +48,7 @@ struct i915_session;
  * which the worker enters for the first presentation and leaves for the
  * release.  A backlight item reads or sets the panel's brightness or
  * switches its light (I915_BACKLIGHT_*, display/backlight.h), inside the
- * window only (ws113-p013, ws113-p012); it neither enters nor leaves it.
+ * window only; it neither enters nor leaves it.
  */
 enum i915_worker_sync_kind {
 	I915_WORKER_SYNC_BATCH = 0,
@@ -84,7 +84,7 @@ struct i915_worker_present {
 	void *build_ctx;
 	struct i915_context *context;
 
-	/* Nonzero: a frame or the release of the second output, the head, not of the resident output (ws113-p011). */
+	/* Nonzero: a frame or the release of the second output, the head, not of the resident output. */
 	int head;
 };
 

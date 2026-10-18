@@ -19,7 +19,7 @@
  * reference makes for an engine mask: the engine is asked to be ready
  * (gen8_engine_reset_prepare()), its scaler and format converter is locked
  * when it uses one (gen11_lock_sfc()), its GDRST domain is reset, and the
- * lock and the ready request are given back (ws083-p007).
+ * lock and the ready request are given back.
  */
 
 #include "reset.h"
@@ -656,7 +656,7 @@ i915_sfc_unlock(
  * request and refuses new work; the checked reset frees what quarantine
  * retained once the hardware has been reset; isolate quarantines one
  * session.  Of the engine and GT resets they need, only the video engine's
- * is connected to a published node (worker.h, ws083-p007): the others log
+ * is connected to a published node (worker.h): the others log
  * and fail, and the operation fails with them.
  * ------------------------------------------------------------------------
  */
@@ -914,6 +914,6 @@ i915_quarantine_release(
 		kern_free(vm);
 	}
 
-	/* Frees the video engine's records a hang retained, which the engine reset has recovered (ws083-p007). */
+	/* Frees the video engine's records a hang retained, which the engine reset has recovered. */
 	drv_i915_worker_video_reclaim(device);
 }
