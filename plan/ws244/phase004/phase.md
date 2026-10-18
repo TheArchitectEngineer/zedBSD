@@ -37,7 +37,11 @@ Status: in-progress（2026-10-18 q1251-i01、P1。cleared は Q1）
 - 動作の確かめ: host 試験 `plan/ws244/tests/device-info-equiv/run.sh <前の device-info.c> <今の device-info.c> <新しい出力の dir>`。Gen12 の 18 と Gen9 の 7 の場面（crystal の 0〜7 と shift、divide logic、slice・DSS・EU の fuse、media の fuse で vcs0・vcs2・vecs0 が消える、fault の GGTT/PPGTT、EIR の stuck、版 11・13、Gen9 の slice の組と subslice の fuse、platform の mask の余り）で、register の読み書き・log と、できた GT の情報（clock・SSEU・engine の一覧・reset の bit・context の大きさ・capability）が前の版と一致（`device-info-equiv: PASS (522 lines)`）。
 - build: 2 組とも rc=0、warning 0。
 
-### 残り
+### 残り（再開の手順）
+
+1. irq.c・irq.h（1,234 行、「follow the reference's gen11_irq_reset(), gen11_irq_postinstall() and gen11_irq_handler() in order」、Gen9 は gen8_* に沿う）: 次の対象。hal の handler の型が要るので、host の比べ合わせは reset-equiv の形（stub の kern・hal の header と、記録する mmio）で作る。
+2. ggtt.c（「This is intel_gt_init_scratch()」ほか）・ppgtt.c・ppgtt.h・memory.c・memory.h・dma.h・defaults.h ほか（inventory §3 の表の最後の行）: 多くは 1〜3 行の言及。手で読み、手順の写しがあれば書き直し、無ければ言及を外す。
+3. 前の版との比べ合わせ: 書き直す前に file を scratchpad に写して取っておき、`plan/ws244/tests/*-equiv/run.sh <前> <今> <新しい出力の dir>` の形で比べる。Linux 6.8.12 は build/ws229-p001/linux/linux-6.8.12.tar.xz から build/tmp の新しい dir に要る分だけ展開する。
 
 - ggtt・ppgtt・memory・irq・dma.h ほか（inventory §3 の表）。
 - pcode-equiv・reset-equiv・device-info-equiv の試験は開発の確かめ用（前の版を入力に取る）。p004 が cleared になったら消してよい（path を Q1 へ）。
