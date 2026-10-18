@@ -7,7 +7,7 @@
 
 /*
  * The host test of the Gen9 mode set's register sequences
- * (display/gen9-ddc.c, gen9-link.c, gen9-modeset.c) on a
+ * (display/xd-aux.c, xd-gmbus.c, xd-ddi.c, xd-output.c, xd-pipe.c, xd-dbuf.c, xd-hpd.c) on a
  * model of the hardware (gen9-fake-hw.c): the AUX channel with a DP sink (DPCD, deferrals,
  * I2C-over-AUX EDID, link training), the GMBUS with an HDMI sink, the
  * power wells, the DPLLs, the transcoders, the DDI buffers and the frame
@@ -87,7 +87,7 @@ main(
 	if (status != 0)
 		return status;
 
-	/* Succeeded: the sequences are the ones gen9-modeset.c describes. */
+	/* Succeeded: the sequences are the ones the xd code describes. */
 	return 0;
 }
 

@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws237-p004: host test of the Gen9 mode set arithmetic (src/drivers/gpu/i915/display/gen9-mode.c): CD clock, mode,
+# ws237-p004: host test of the Gen9 mode set arithmetic (src/drivers/gpu/i915/display/xd-clock.c, xd-dp.c, xd-ddi.c, xd-dbuf.c, xd9-outputs.c): CD clock, mode,
 # DP link and M/N, DPLL words, DDI buffer tables, training adjustments, watermarks and DDB, ASan/UBSan.
 #   sh plan/ws237/tests/run-gen9-mode-host-test.sh [OUT]   (default build/ws237-host/mode)
 # Built with the display host library (every display source as production, host-kernel.c's stand-ins); the node

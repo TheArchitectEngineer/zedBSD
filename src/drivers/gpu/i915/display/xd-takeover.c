@@ -738,6 +738,345 @@ drv_i915_xd_vga_off(
 	return 0;
 }
 
+/*
+ * Reads the firmware's display registers, each only while its power well
+ * is up.  Nothing is written.
+ */
+void
+drv_i915_xd9_fw_read(
+	struct i915_xd_io *io,
+	struct i915_xd9_fw_registers *registers)
+{
+	unsigned transcoder;
+	unsigned pipe;
+
+	/* The power wells decide what else can be read. */
+	registers->power = drv_i915_xd_io_read(io, I915_XD9_PWR_WELL_CTL2);
+	if ((registers->power & I915_XD9_PW1_STATE) == 0U)
+		return;
+
+	/* The DC states, the CD clock, the DPLL controls and the compressor, which power well 1 keeps. */
+	registers->dc_state = drv_i915_xd_io_read(io, I915_XD9_DC_STATE_EN);
+	registers->cdclk = drv_i915_xd_io_read(io, I915_XD9_CDCLK_CTL);
+	registers->dpll_ctrl1 = drv_i915_xd_io_read(io, I915_XD9_DPLL_CTRL1);
+	registers->dpll_ctrl2 = drv_i915_xd_io_read(io, I915_XD9_DPLL_CTRL2);
+	registers->fbc_ctl = drv_i915_xd_io_read(io, I915_XD9_FBC_CTL);
+
+	/* The eDP transcoder and pipe A live in power well 1. */
+	i915_xd9_fw_read_transcoder(io, registers, I915_XD9_TRANS_EDP);
+	registers->psr_ctl = drv_i915_xd_io_read(io, I915_XD9_PSR_CTL_EDP);
+	i915_xd9_fw_read_pipe(io, registers, 0U);
+
+	/* Transcoders A to C and pipes B and C live in power well 2. */
+	if ((registers->power & I915_XD9_PW2_STATE) == 0U)
+		return;
+
+	/* The transcoders A to C, behind power well 2. */
+	for (transcoder = 0U; transcoder < I915_XD9_TRANS_EDP; transcoder++)
+		i915_xd9_fw_read_transcoder(io, registers, transcoder);
+
+	/* The pipes B and C, behind power well 2 too. */
+	for (pipe = 1U; pipe < I915_XD9_FW_PIPES; pipe++)
+		i915_xd9_fw_read_pipe(io, registers, pipe);
+}
+
+/*
+ * Decodes the firmware's display registers and decides whether the flips
+ * can be used.
+ *
+ * Returns 0 when they can, with every field of the readout filled; else
+ * EINVAL with readout->reason naming the first condition that failed and
+ * the fields found so far.
+ */
+int
+drv_i915_xd9_fw_decode(
+	const struct i915_xd9_fw_registers *registers,
+	struct i915_xd9_fw_readout *readout)
+{
+	unsigned transcoder;
+	unsigned pipe;
+	unsigned lit_transcoder;
+	int error;
+
+	/* Nothing found yet; the refresh assumed until the timing gives it. */
+	kern_memset(readout, 0, sizeof(*readout));
+	readout->refresh_millihz = I915_XD9_FW_REFRESH_ASSUMED;
+
+	/* Pipe A, the eDP transcoder and the first DDI live in power well 1; without it nothing is lit. */
+	if ((registers->power & I915_XD9_PW1_STATE) == 0U) {
+		readout->reason = "pw1-off";
+		return EINVAL;
+	}
+
+	/* A DC state lets the DMC power the display down between frames, which this driver does not manage. */
+	if ((registers->dc_state & I915_XD9_DC_STATE_MASK) != 0U) {
+		readout->reason = "dc-state";
+		return EINVAL;
+	}
+
+	/* Counts the pipes a running transcoder feeds and whose first plane is on, keeping the last one. */
+	lit_transcoder = 0U;
+	for (transcoder = 0U; transcoder < I915_XD9_FW_TRANSCODERS; transcoder++) {
+		error = i915_xd9_fw_transcoder_pipe(registers, transcoder, &pipe);
+		if (error != 0)
+			continue;
+
+		/* A pipe whose registers were not read, or whose first plane is off, shows nothing of the firmware's. */
+		if (!registers->pipe_read[pipe])
+			continue;
+		if ((registers->plane_ctl[pipe] & I915_XD9_PLANE_CTL_ENABLE) == 0U)
+			continue;
+
+		/* A lit pipe: counted, and remembered with its transcoder. */
+		readout->lit_pipes++;
+		readout->pipe = pipe;
+		lit_transcoder = transcoder;
+	}
+
+	/* The flips take over exactly the one output the firmware shows. */
+	if (readout->lit_pipes == 0U) {
+		readout->reason = "no-lit-pipe";
+		return EINVAL;
+	}
+
+	/* Several lit pipes: which one is the panel is not known. */
+	if (readout->lit_pipes > 1U) {
+		readout->reason = "several-lit-pipes";
+		return EINVAL;
+	}
+
+	/* The one lit pipe's transcoder. */
+	readout->transcoder = lit_transcoder;
+
+	/* The plane must scan out a surface the driver's buffers can stand in for. */
+	error = i915_xd9_fw_decode_plane(registers, readout);
+	if (error != 0)
+		return error;
+
+	/* A compressor caching the firmware's surface would need the invalidations this driver does not make. */
+	if ((registers->fbc_ctl & I915_XD9_FBC_ENABLE) != 0U) {
+		readout->reason = "fbc";
+		return EINVAL;
+	}
+
+	/* A self-refreshing eDP panel would not see the flips without the PSR exits this driver does not make. */
+	if (lit_transcoder == I915_XD9_TRANS_EDP && (registers->psr_ctl & I915_XD9_PSR_ENABLE) != 0U) {
+		readout->reason = "psr";
+		return EINVAL;
+	}
+
+	/* The refresh the display reports, measured from the timing when it can be. */
+	i915_xd9_fw_decode_refresh(registers, readout);
+
+	/* Succeeded: the flips can stand in for the firmware's surface. */
+	return 0;
+}
+
+/* Logs the registers read and what the readout made of them. */
+void
+drv_i915_xd9_fw_log(
+	const struct i915_xd9_fw_registers *registers,
+	const struct i915_xd9_fw_readout *readout,
+	const char *fb_match)
+{
+	unsigned pipe;
+	unsigned transcoder;
+
+	/* The raw registers, for the photograph of a failure. */
+	kern_logf("i915: xd9-firmware: PWR_WELL_CTL2=0x%08x DC_STATE_EN=0x%08x CDCLK_CTL=0x%08x DPLL_CTRL1=0x%08x DPLL_CTRL2=0x%08x PSR_CTL_EDP=0x%08x DPFC_CONTROL=0x%08x\n",
+	    registers->power,
+	    registers->dc_state,
+	    registers->cdclk,
+	    registers->dpll_ctrl1,
+	    registers->dpll_ctrl2,
+	    registers->psr_ctl,
+	    registers->fbc_ctl);
+
+	/* Every transcoder that was read. */
+	for (transcoder = 0U; transcoder < I915_XD9_FW_TRANSCODERS; transcoder++) {
+		if (!registers->transcoder_read[transcoder])
+			continue;
+
+		/* The transcoder's registers. */
+		kern_logf("i915: xd9-firmware: transcoder %s DDI_FUNC_CTL=0x%08x TRANSCONF=0x%08x HTOTAL=0x%08x VTOTAL=0x%08x LINK_M1=0x%08x LINK_N1=0x%08x\n",
+		    i915_xd9_fw_transcoder_name(transcoder),
+		    registers->ddi_func[transcoder],
+		    registers->transconf[transcoder],
+		    registers->htotal[transcoder],
+		    registers->vtotal[transcoder],
+		    registers->link_m[transcoder],
+		    registers->link_n[transcoder]);
+	}
+
+	/* Every pipe that was read. */
+	for (pipe = 0U; pipe < I915_XD9_FW_PIPES; pipe++) {
+		if (!registers->pipe_read[pipe])
+			continue;
+
+		/* The pipe's registers. */
+		kern_logf("i915: xd9-firmware: pipe %c PIPESRC=0x%08x PLANE_CTL=0x%08x STRIDE=0x%08x POS=0x%08x SIZE=0x%08x SURF=0x%08x OFFSET=0x%08x SURFLIVE=0x%08x PS=0x%08x/0x%08x\n",
+		    'A' + (int)pipe,
+		    registers->pipe_src[pipe],
+		    registers->plane_ctl[pipe],
+		    registers->plane_stride[pipe],
+		    registers->plane_pos[pipe],
+		    registers->plane_size[pipe],
+		    registers->plane_surf[pipe],
+		    registers->plane_offset[pipe],
+		    registers->plane_surflive[pipe],
+		    registers->scaler[pipe][0],
+		    registers->scaler[pipe][1]);
+	}
+
+	/* What the readout found: a pipe lit by the firmware, or none. */
+	if (readout->lit_pipes == 0U) {
+		kern_logf("i915: xd9-firmware: readout: no pipe lit by the firmware\n");
+		return;
+	}
+
+	/* What the decode made of them. */
+	kern_logf("i915: xd9-firmware: readout pipe %c transcoder %s %ux%u stride %u %s surf 0x%08x refresh %u mHz (%s, pixel %u kHz) scaler %s fb=%s\n",
+	    'A' + (int)readout->pipe,
+	    i915_xd9_fw_transcoder_name(readout->transcoder),
+	    readout->width,
+	    readout->height,
+	    readout->stride_bytes,
+	    readout->rgbx ? "XBGR8888" : "XRGB8888",
+	    readout->surf,
+	    readout->refresh_millihz,
+	    readout->refresh_measured ? "measured" : "assumed",
+	    readout->pixel_khz,
+	    readout->scaled ? "on" : "off",
+	    fb_match);
+}
+
+/*
+ * Reports the pixel clock in kHz of a DP link: link M times the port
+ * clock over link N, rounded up, or zero when N is zero.
+ */
+uint32_t
+drv_i915_xd9_dp_pixel_khz(
+	uint32_t link_m,
+	uint32_t link_n,
+	uint32_t port_khz)
+{
+	uint64_t product;
+	uint64_t pixel;
+
+	/* A link without an N carries no pixels the driver can count. */
+	if (link_n == 0U)
+		return 0U;
+
+	/* The data rate scaled by M over N, rounded up as the reference does. */
+	product = (uint64_t)link_m * (uint64_t)port_khz;
+	pixel = (product + (uint64_t)link_n - 1U) / (uint64_t)link_n;
+
+	/* A clock beyond 32 bits is not a timing the plane runs. */
+	if (pixel > 0xffffffffULL)
+		return 0U;
+
+	/* Succeeded: the pixel clock. */
+	return (uint32_t)pixel;
+}
+
+/*
+ * Reads whether a display 9 output the readout found still runs (after a
+ * sleep): power well 1, its transcoder's state and its first plane's
+ * enable, each reported as read.  Nothing is written.  Returns nonzero
+ * when all three are on.
+ */
+int
+drv_i915_xd9_fw_runs(
+	struct i915_xd_io *io,
+	const struct i915_xd9_fw_readout *readout,
+	uint32_t *well_control,
+	uint32_t *transconf,
+	uint32_t *plane_ctl)
+{
+	/* The three words. */
+	*well_control = drv_i915_xd_io_read(io, I915_XD9_PWR_WELL_CTL2);
+	*transconf = drv_i915_xd_io_read(io, I915_XD9_TRANSCONF(readout->transcoder));
+	*plane_ctl = drv_i915_xd_io_read(io, I915_XD9_PLANE_CTL(readout->pipe));
+
+	/* Something the sleep turned off. */
+	if ((*well_control & I915_XD9_PW1_STATE) == 0U || (*transconf & I915_XD9_TRANSCONF_STATE) == 0U)
+		return 0;
+	if ((*plane_ctl & I915_XD9_PLANE_CTL_ENABLE) == 0U)
+		return 0;
+
+	/* Succeeded: the output runs. */
+	return 1;
+}
+
+/*
+ * Checks what the firmware scans out on a display 9 device before the GT
+ * starts, and reads its GPU's VT-d unit: every powered pipe's first plane
+ * is read and logged, and a picture that reaches into the GGTT pages the
+ * driver writes is recorded.  Nothing is written.  Returns 0, EIO when a
+ * VT-d unit the machine owns would translate or block the GT's DMA (or
+ * cannot be read), or EBUSY when a picture reaches the driver's pages.
+ */
+int
+drv_i915_xd9_fw_check(
+	struct i915_xd_io *io,
+	const struct i915_xd_fw_env *env,
+	struct i915_xd9_fw_check *check)
+{
+	uint64_t driver_start;
+	uint32_t wanted;
+	unsigned pipe;
+
+	/* The power wells, and where the driver's GGTT pages begin. */
+	kern_memset(check, 0, sizeof(*check));
+	check->well_control = drv_i915_xd_io_read(io, I915_XD9_PWR_WELL_CTL2);
+	driver_start = (uint64_t)env->driver_first_page << I915_XD_FW_PAGE_SHIFT;
+	kern_logf("i915: xd9-firmware: PWR_WELL_CTL2=0x%08x driver GGTT from 0x%llx\n", check->well_control, (unsigned long long)driver_start);
+
+	/* The eDP transcoder a laptop's firmware drives its panel with, in power well 1. */
+	if ((check->well_control & I915_XD9_PW1_STATE) != 0U) {
+		check->edp_transconf = drv_i915_xd_io_read(io, I915_XD9_TRANSCONF(I915_XD9_TRANS_EDP));
+		kern_logf("i915: xd9-firmware: TRANSCONF_EDP=0x%08x\n", check->edp_transconf);
+	}
+
+	/* The VT-d unit and its walls. */
+	check->vtd.hypervisor = env->hypervisor;
+	i915_xd_fw_read_vtd(io, env, &check->vtd);
+	i915_xd_fw_vtd_walls(&check->vtd);
+	kern_logf("i915: xd9-firmware: GFXVTBAR=0x%llx enabled=%d %s readable=%d GSTS=0x%08x PMEN=0x%08x\n",
+	    (unsigned long long)check->vtd.vtd_bar,
+	    check->vtd.vtd_enabled,
+	    check->vtd.hypervisor ? "guest" : "native",
+	    check->vtd.vtd_readable,
+	    check->vtd.vtd_status,
+	    check->vtd.vtd_protect);
+
+	/* Every pipe whose wells are up: A needs power well 1, B and C power well 2 as well. */
+	for (pipe = 0U; pipe < I915_XD9_FW_PIPES; pipe++) {
+		wanted = I915_XD9_PW1_STATE;
+		if (pipe != 0U)
+			wanted |= I915_XD9_PW2_STATE;
+		if ((check->well_control & wanted) != wanted)
+			continue;
+		i915_xd9_fw_check_plane(io, pipe, driver_start, check);
+	}
+
+	/* The firmware's picture stays on either way. */
+	kern_logf("i915: xd9-firmware: the firmware's picture is kept; the GPU node has no display\n");
+
+	/* A VT-d unit that would translate or block the GT's DMA. */
+	if ((check->vtd.walls & (I915_XD_FW_WALL_VTD_HIDDEN | I915_XD_FW_WALL_VTD_TRANSLATES | I915_XD_FW_WALL_VTD_PROTECTS)) != 0U) {
+		kern_logf("i915: xd9-firmware: the GPU's VT-d unit translates or protects memory and zedBSD has no IOMMU driver: the GT is not started\n");
+		return EIO;
+	}
+
+	/* A picture the GT would overwrite. */
+	if (check->overlap_pipes != 0U)
+		return EBUSY;
+
+	/* Succeeded: the pictures are clear of the driver's pages and nothing translates the GT's DMA. */
+	return 0;
+}
+
 /* Tells whether every well of a pipe and its transcoder is on. */
 static int
 i915_xd_fw_pipe_powered(
@@ -1126,169 +1465,6 @@ i915_xd_fw_hook(
 	hook(context, pipe);
 }
 
-/*
- * Decodes the firmware's display registers and decides whether the flips
- * can be used.
- *
- * Returns 0 when they can, with every field of the readout filled; else
- * EINVAL with readout->reason naming the first condition that failed and
- * the fields found so far.
- */
-int
-drv_i915_xd9_fw_decode(
-	const struct i915_xd9_fw_registers *registers,
-	struct i915_xd9_fw_readout *readout)
-{
-	unsigned transcoder;
-	unsigned pipe;
-	unsigned lit_transcoder;
-	int error;
-
-	/* Nothing found yet; the refresh assumed until the timing gives it. */
-	kern_memset(readout, 0, sizeof(*readout));
-	readout->refresh_millihz = I915_XD9_FW_REFRESH_ASSUMED;
-
-	/* Pipe A, the eDP transcoder and the first DDI live in power well 1; without it nothing is lit. */
-	if ((registers->power & I915_XD9_PW1_STATE) == 0U) {
-		readout->reason = "pw1-off";
-		return EINVAL;
-	}
-
-	/* A DC state lets the DMC power the display down between frames, which this driver does not manage. */
-	if ((registers->dc_state & I915_XD9_DC_STATE_MASK) != 0U) {
-		readout->reason = "dc-state";
-		return EINVAL;
-	}
-
-	/* Counts the pipes a running transcoder feeds and whose first plane is on, keeping the last one. */
-	lit_transcoder = 0U;
-	for (transcoder = 0U; transcoder < I915_XD9_FW_TRANSCODERS; transcoder++) {
-		error = i915_xd9_fw_transcoder_pipe(registers, transcoder, &pipe);
-		if (error != 0)
-			continue;
-
-		/* A pipe whose registers were not read, or whose first plane is off, shows nothing of the firmware's. */
-		if (!registers->pipe_read[pipe])
-			continue;
-		if ((registers->plane_ctl[pipe] & I915_XD9_PLANE_CTL_ENABLE) == 0U)
-			continue;
-
-		/* A lit pipe: counted, and remembered with its transcoder. */
-		readout->lit_pipes++;
-		readout->pipe = pipe;
-		lit_transcoder = transcoder;
-	}
-
-	/* The flips take over exactly the one output the firmware shows. */
-	if (readout->lit_pipes == 0U) {
-		readout->reason = "no-lit-pipe";
-		return EINVAL;
-	}
-
-	/* Several lit pipes: which one is the panel is not known. */
-	if (readout->lit_pipes > 1U) {
-		readout->reason = "several-lit-pipes";
-		return EINVAL;
-	}
-
-	/* The one lit pipe's transcoder. */
-	readout->transcoder = lit_transcoder;
-
-	/* The plane must scan out a surface the driver's buffers can stand in for. */
-	error = i915_xd9_fw_decode_plane(registers, readout);
-	if (error != 0)
-		return error;
-
-	/* A compressor caching the firmware's surface would need the invalidations this driver does not make. */
-	if ((registers->fbc_ctl & I915_XD9_FBC_ENABLE) != 0U) {
-		readout->reason = "fbc";
-		return EINVAL;
-	}
-
-	/* A self-refreshing eDP panel would not see the flips without the PSR exits this driver does not make. */
-	if (lit_transcoder == I915_XD9_TRANS_EDP && (registers->psr_ctl & I915_XD9_PSR_ENABLE) != 0U) {
-		readout->reason = "psr";
-		return EINVAL;
-	}
-
-	/* The refresh the display reports, measured from the timing when it can be. */
-	i915_xd9_fw_decode_refresh(registers, readout);
-
-	/* Succeeded: the flips can stand in for the firmware's surface. */
-	return 0;
-}
-
-/*
- * Reports the pixel clock in kHz of a DP link: link M times the port
- * clock over link N, rounded up, or zero when N is zero.
- */
-uint32_t
-drv_i915_xd9_dp_pixel_khz(
-	uint32_t link_m,
-	uint32_t link_n,
-	uint32_t port_khz)
-{
-	uint64_t product;
-	uint64_t pixel;
-
-	/* A link without an N carries no pixels the driver can count. */
-	if (link_n == 0U)
-		return 0U;
-
-	/* The data rate scaled by M over N, rounded up as the reference does. */
-	product = (uint64_t)link_m * (uint64_t)port_khz;
-	pixel = (product + (uint64_t)link_n - 1U) / (uint64_t)link_n;
-
-	/* A clock beyond 32 bits is not a timing the plane runs. */
-	if (pixel > 0xffffffffULL)
-		return 0U;
-
-	/* Succeeded: the pixel clock. */
-	return (uint32_t)pixel;
-}
-
-/*
- * Reads the firmware's display registers, each only while its power well
- * is up.  Nothing is written.
- */
-void
-drv_i915_xd9_fw_read(
-	struct i915_xd_io *io,
-	struct i915_xd9_fw_registers *registers)
-{
-	unsigned transcoder;
-	unsigned pipe;
-
-	/* The power wells decide what else can be read. */
-	registers->power = drv_i915_xd_io_read(io, I915_XD9_PWR_WELL_CTL2);
-	if ((registers->power & I915_XD9_PW1_STATE) == 0U)
-		return;
-
-	/* The DC states, the CD clock, the DPLL controls and the compressor, which power well 1 keeps. */
-	registers->dc_state = drv_i915_xd_io_read(io, I915_XD9_DC_STATE_EN);
-	registers->cdclk = drv_i915_xd_io_read(io, I915_XD9_CDCLK_CTL);
-	registers->dpll_ctrl1 = drv_i915_xd_io_read(io, I915_XD9_DPLL_CTRL1);
-	registers->dpll_ctrl2 = drv_i915_xd_io_read(io, I915_XD9_DPLL_CTRL2);
-	registers->fbc_ctl = drv_i915_xd_io_read(io, I915_XD9_FBC_CTL);
-
-	/* The eDP transcoder and pipe A live in power well 1. */
-	i915_xd9_fw_read_transcoder(io, registers, I915_XD9_TRANS_EDP);
-	registers->psr_ctl = drv_i915_xd_io_read(io, I915_XD9_PSR_CTL_EDP);
-	i915_xd9_fw_read_pipe(io, registers, 0U);
-
-	/* Transcoders A to C and pipes B and C live in power well 2. */
-	if ((registers->power & I915_XD9_PW2_STATE) == 0U)
-		return;
-
-	/* The transcoders A to C, behind power well 2. */
-	for (transcoder = 0U; transcoder < I915_XD9_TRANS_EDP; transcoder++)
-		i915_xd9_fw_read_transcoder(io, registers, transcoder);
-
-	/* The pipes B and C, behind power well 2 too. */
-	for (pipe = 1U; pipe < I915_XD9_FW_PIPES; pipe++)
-		i915_xd9_fw_read_pipe(io, registers, pipe);
-}
-
 /* Reads one transcoder's DDI function, configuration, totals and DisplayPort link M and N. */
 static void
 i915_xd9_fw_read_transcoder(
@@ -1333,84 +1509,6 @@ i915_xd9_fw_read_pipe(
 
 	/* Succeeded: the pipe was read. */
 	registers->pipe_read[pipe] = 1;
-}
-
-/* Logs the registers read and what the readout made of them. */
-void
-drv_i915_xd9_fw_log(
-	const struct i915_xd9_fw_registers *registers,
-	const struct i915_xd9_fw_readout *readout,
-	const char *fb_match)
-{
-	unsigned pipe;
-	unsigned transcoder;
-
-	/* The raw registers, for the photograph of a failure. */
-	kern_logf("i915: xd9-firmware: PWR_WELL_CTL2=0x%08x DC_STATE_EN=0x%08x CDCLK_CTL=0x%08x DPLL_CTRL1=0x%08x DPLL_CTRL2=0x%08x PSR_CTL_EDP=0x%08x DPFC_CONTROL=0x%08x\n",
-	    registers->power,
-	    registers->dc_state,
-	    registers->cdclk,
-	    registers->dpll_ctrl1,
-	    registers->dpll_ctrl2,
-	    registers->psr_ctl,
-	    registers->fbc_ctl);
-
-	/* Every transcoder that was read. */
-	for (transcoder = 0U; transcoder < I915_XD9_FW_TRANSCODERS; transcoder++) {
-		if (!registers->transcoder_read[transcoder])
-			continue;
-
-		/* The transcoder's registers. */
-		kern_logf("i915: xd9-firmware: transcoder %s DDI_FUNC_CTL=0x%08x TRANSCONF=0x%08x HTOTAL=0x%08x VTOTAL=0x%08x LINK_M1=0x%08x LINK_N1=0x%08x\n",
-		    i915_xd9_fw_transcoder_name(transcoder),
-		    registers->ddi_func[transcoder],
-		    registers->transconf[transcoder],
-		    registers->htotal[transcoder],
-		    registers->vtotal[transcoder],
-		    registers->link_m[transcoder],
-		    registers->link_n[transcoder]);
-	}
-
-	/* Every pipe that was read. */
-	for (pipe = 0U; pipe < I915_XD9_FW_PIPES; pipe++) {
-		if (!registers->pipe_read[pipe])
-			continue;
-
-		/* The pipe's registers. */
-		kern_logf("i915: xd9-firmware: pipe %c PIPESRC=0x%08x PLANE_CTL=0x%08x STRIDE=0x%08x POS=0x%08x SIZE=0x%08x SURF=0x%08x OFFSET=0x%08x SURFLIVE=0x%08x PS=0x%08x/0x%08x\n",
-		    'A' + (int)pipe,
-		    registers->pipe_src[pipe],
-		    registers->plane_ctl[pipe],
-		    registers->plane_stride[pipe],
-		    registers->plane_pos[pipe],
-		    registers->plane_size[pipe],
-		    registers->plane_surf[pipe],
-		    registers->plane_offset[pipe],
-		    registers->plane_surflive[pipe],
-		    registers->scaler[pipe][0],
-		    registers->scaler[pipe][1]);
-	}
-
-	/* What the readout found: a pipe lit by the firmware, or none. */
-	if (readout->lit_pipes == 0U) {
-		kern_logf("i915: xd9-firmware: readout: no pipe lit by the firmware\n");
-		return;
-	}
-
-	/* What the decode made of them. */
-	kern_logf("i915: xd9-firmware: readout pipe %c transcoder %s %ux%u stride %u %s surf 0x%08x refresh %u mHz (%s, pixel %u kHz) scaler %s fb=%s\n",
-	    'A' + (int)readout->pipe,
-	    i915_xd9_fw_transcoder_name(readout->transcoder),
-	    readout->width,
-	    readout->height,
-	    readout->stride_bytes,
-	    readout->rgbx ? "XBGR8888" : "XRGB8888",
-	    readout->surf,
-	    readout->refresh_millihz,
-	    readout->refresh_measured ? "measured" : "assumed",
-	    readout->pixel_khz,
-	    readout->scaled ? "on" : "off",
-	    fb_match);
 }
 
 /*
@@ -1560,7 +1658,7 @@ i915_xd9_fw_decode_refresh(
 	if (port_khz == 0U)
 		return;
 
-	/* The port and the DPLL, for the external outputs (gen9-outputs.c). */
+	/* The port and the DPLL, for the external outputs (xd9-outputs.c). */
 	readout->port = port;
 	readout->dpll = dpll;
 
@@ -1647,104 +1745,6 @@ i915_xd9_fw_transcoder_name(
 
 	/* Succeeded: the last one. */
 	return "C";
-}
-
-/*
- * Reads whether a display 9 output the readout found still runs (after a
- * sleep): power well 1, its transcoder's state and its first plane's
- * enable, each reported as read.  Nothing is written.  Returns nonzero
- * when all three are on.
- */
-int
-drv_i915_xd9_fw_runs(
-	struct i915_xd_io *io,
-	const struct i915_xd9_fw_readout *readout,
-	uint32_t *well_control,
-	uint32_t *transconf,
-	uint32_t *plane_ctl)
-{
-	/* The three words. */
-	*well_control = drv_i915_xd_io_read(io, I915_XD9_PWR_WELL_CTL2);
-	*transconf = drv_i915_xd_io_read(io, I915_XD9_TRANSCONF(readout->transcoder));
-	*plane_ctl = drv_i915_xd_io_read(io, I915_XD9_PLANE_CTL(readout->pipe));
-
-	/* Something the sleep turned off. */
-	if ((*well_control & I915_XD9_PW1_STATE) == 0U || (*transconf & I915_XD9_TRANSCONF_STATE) == 0U)
-		return 0;
-	if ((*plane_ctl & I915_XD9_PLANE_CTL_ENABLE) == 0U)
-		return 0;
-
-	/* Succeeded: the output runs. */
-	return 1;
-}
-
-/*
- * Checks what the firmware scans out on a display 9 device before the GT
- * starts, and reads its GPU's VT-d unit: every powered pipe's first plane
- * is read and logged, and a picture that reaches into the GGTT pages the
- * driver writes is recorded.  Nothing is written.  Returns 0, EIO when a
- * VT-d unit the machine owns would translate or block the GT's DMA (or
- * cannot be read), or EBUSY when a picture reaches the driver's pages.
- */
-int
-drv_i915_xd9_fw_check(
-	struct i915_xd_io *io,
-	const struct i915_xd_fw_env *env,
-	struct i915_xd9_fw_check *check)
-{
-	uint64_t driver_start;
-	uint32_t wanted;
-	unsigned pipe;
-
-	/* The power wells, and where the driver's GGTT pages begin. */
-	kern_memset(check, 0, sizeof(*check));
-	check->well_control = drv_i915_xd_io_read(io, I915_XD9_PWR_WELL_CTL2);
-	driver_start = (uint64_t)env->driver_first_page << I915_XD_FW_PAGE_SHIFT;
-	kern_logf("i915: xd9-firmware: PWR_WELL_CTL2=0x%08x driver GGTT from 0x%llx\n", check->well_control, (unsigned long long)driver_start);
-
-	/* The eDP transcoder a laptop's firmware drives its panel with, in power well 1. */
-	if ((check->well_control & I915_XD9_PW1_STATE) != 0U) {
-		check->edp_transconf = drv_i915_xd_io_read(io, I915_XD9_TRANSCONF(I915_XD9_TRANS_EDP));
-		kern_logf("i915: xd9-firmware: TRANSCONF_EDP=0x%08x\n", check->edp_transconf);
-	}
-
-	/* The VT-d unit and its walls. */
-	check->vtd.hypervisor = env->hypervisor;
-	i915_xd_fw_read_vtd(io, env, &check->vtd);
-	i915_xd_fw_vtd_walls(&check->vtd);
-	kern_logf("i915: xd9-firmware: GFXVTBAR=0x%llx enabled=%d %s readable=%d GSTS=0x%08x PMEN=0x%08x\n",
-	    (unsigned long long)check->vtd.vtd_bar,
-	    check->vtd.vtd_enabled,
-	    check->vtd.hypervisor ? "guest" : "native",
-	    check->vtd.vtd_readable,
-	    check->vtd.vtd_status,
-	    check->vtd.vtd_protect);
-
-	/* Every pipe whose wells are up: A needs power well 1, B and C power well 2 as well. */
-	for (pipe = 0U; pipe < I915_XD9_FW_PIPES; pipe++) {
-		wanted = I915_XD9_PW1_STATE;
-		if (pipe != 0U)
-			wanted |= I915_XD9_PW2_STATE;
-		if ((check->well_control & wanted) != wanted)
-			continue;
-		i915_xd9_fw_check_plane(io, pipe, driver_start, check);
-	}
-
-	/* The firmware's picture stays on either way. */
-	kern_logf("i915: xd9-firmware: the firmware's picture is kept; the GPU node has no display\n");
-
-	/* A VT-d unit that would translate or block the GT's DMA. */
-	if ((check->vtd.walls & (I915_XD_FW_WALL_VTD_HIDDEN | I915_XD_FW_WALL_VTD_TRANSLATES | I915_XD_FW_WALL_VTD_PROTECTS)) != 0U) {
-		kern_logf("i915: xd9-firmware: the GPU's VT-d unit translates or protects memory and zedBSD has no IOMMU driver: the GT is not started\n");
-		return EIO;
-	}
-
-	/* A picture the GT would overwrite. */
-	if (check->overlap_pipes != 0U)
-		return EBUSY;
-
-	/* Succeeded: the pictures are clear of the driver's pages and nothing translates the GT's DMA. */
-	return 0;
 }
 
 /* Reads and logs a powered display 9 pipe's first plane, and records a picture that reaches the driver's pages. */

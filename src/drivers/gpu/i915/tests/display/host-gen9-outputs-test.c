@@ -67,7 +67,7 @@ main(
 	if (status != 0)
 		return status;
 
-	/* Succeeded: the outputs behave as gen9-outputs.c describes. */
+	/* Succeeded: the outputs behave as xd9-outputs.c describes. */
 	return 0;
 }
 
