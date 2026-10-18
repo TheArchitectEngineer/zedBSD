@@ -619,3 +619,12 @@ WS074 の記録の q590・q594〜q598（Codex の browser3）は main の同じ�
 | --- | --- | --- | --- | --- |
 | q1255 / q1255-i01 | P3（phase-runner） | [ws261-p002](ws261/phase002/phase.md) | boot.h の sun4u の構造体・定数を除き、HAL → kernel は汎用の構造体と名前ごとの値、boot loader → HAL の定義は HAL か bootloader/ に。振る舞いは変えない | 返却（2026-10-18）: cbae237f7・9b32b9ec6・c7c0f5c6a、merge 49f7fc9a5。p002 cleared、WS261 completed（QEMU の起動は WS267） |
 | q1256 / q1256-i01 | P2（phase-runner） | [ws262-p001](ws262/phase001/phase.md) | bootloader/ の全部を plan/coding-style.md の全文に。書き方だけ、binary の比べで動作が同じ事を確かめる。sparcv9 は P3 の q1255 と重なるので、P3 の merge の後に | in-progress: common・bios（68fab7ee9、merge cacff93ea。code の差は common-memory-map.o・bios-fat-directory.o だけで host の同値の試験 20000 回一致、cc6aa1256 の uefi の差分は BOOTX64.EFI が基準と byte で同じ、P2 の報告）。include・pcat・pc98・tests・x68k（101050cea、merge a28d87bb7。.S・.inc・.ld は code の差なし、x68k の作れる object は byte で同じ） |
+
+## 2026-10-18 夜〜: 自走（q1257〜）
+
+承認: 2026-10-18 ユーザー「WS260, ws259, WS261, ws262, ws263, ws264, ws265, ws266, ws267, ws268 これらを完了させるまで自走してほしいです。」（N=2、判断は Master の decisions-log の同日の項目）。子のエージェントは使わない。QEMU の試験は T1。
+
+| Queue | 担当 | Phase | 範囲 | 結果 |
+| --- | --- | --- | --- | --- |
+| q1257 / q1257-i01 | P1（phase-runner、Opus 5.5 low） | WS263 → WS266 → WS264 → WS265 | 各 WS の p001 設計から framebuffer の console・VFS の段まで。HAL の API は形を限った事前の承認の範囲だけ | in-progress |
+| q1258 / q1258-i01 | P2（q1256 の後） | WS267 → WS268 → WS259 | sun4u の build と QEMU（画面の console を作る）、x68k の build（MAME は任意）、RTL8822B の表（実機は待つ） | pending |
