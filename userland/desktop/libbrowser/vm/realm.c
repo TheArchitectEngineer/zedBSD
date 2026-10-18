@@ -311,6 +311,11 @@ realm_create(
 	made->throw_source = VM_VALUE_UNDEFINED;
 	made->callee = VM_VALUE_UNDEFINED;
 	made->new_target = VM_VALUE_UNDEFINED;
+
+	/* No realm-aware property operation is active before the realm is published. */
+	made->property_depth = 0;
+
+	/* Initialize ordinary job ownership before the realm can execute script. */
 	wb_vector_init(&made->jobs, sizeof(struct vm_job));
 	wb_vector_init(&made->rejections, sizeof(vm_value));
 

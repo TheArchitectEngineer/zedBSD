@@ -24,6 +24,9 @@
 #include <stdio.h>
 #include <string.h>
 
+/* Native fallback chains and script getters share a finite property-operation budget per realm. */
+#define ACCESS_RECURSION_MAX 256U
+
 /*
  * The state of one for-in loop: the keys it will visit, found when it
  * started, and how far it has come.
@@ -39,6 +42,14 @@ struct access_for_in {
 	vm_value *keys;
 	uint32_t count;
 	uint32_t index;
+};
+
+/* One native Get frame keeps its realm and input values alive without conservative stack scanning. */
+struct access_read_roots {
+	struct vm_realm *realm;
+	vm_value base;
+	vm_value key;
+	vm_value receiver;
 };
 
 static void access_for_in_trace(struct vm_heap *heap, struct vm_cell *cell);
@@ -62,6 +73,10 @@ static const struct vm_cell_type access_for_in_type = {
 	"for-in", access_for_in_trace, access_for_in_finalize
 };
 
+static void access_read_trace(struct vm_heap *heap, void *context);
+static int access_get_receiver(struct vm_realm *realm, vm_value base, vm_value key, vm_value receiver, vm_value *result);
+static int access_proxy_get(struct vm_realm *realm, struct vm_proxy *proxy, vm_value key, vm_value receiver, vm_value *result);
+
 /*
  * Gets a property of any value: an object's through its chain (calling an
  * accessor's getter), a string's length and characters; reading from
@@ -74,68 +89,64 @@ vm_get(
 	vm_value key,
 	vm_value *result)
 {
-	struct vm_property property;
-	struct vm_accessor *accessor;
-	struct vm_object *holder;
-	int is_object;
-	int is_string;
-	int found;
 	int status;
 
-	/* undefined and null have no properties. */
-	*result = VM_VALUE_UNDEFINED;
-	if (base == VM_VALUE_UNDEFINED || base == VM_VALUE_NULL) {
-		status = access_base_error(realm, base, key, "read", "reading");
-		return status;
-	}
-
-	/* A string's own length and characters. */
-	is_string = vm_value_is_string(base);
-	if (is_string) {
-		status = access_string_property(realm, (struct vm_string *)vm_value_as_cell(base), key, result, &found);
-		if (status != 0)
-			return status;
-		if (found)
-			return 0;
-	}
-
-	/* An object's chain, or a primitive's prototype's (the realm has none before its built-ins). */
-	is_object = vm_value_is_object(base);
-	holder = NULL;
-	if (is_object) {
-		holder = (struct vm_object *)vm_value_as_cell(base);
-	} else {
-		holder = access_primitive_prototype(realm, base);
-	}
-
-	/* Nothing to look in. */
-	if (holder == NULL)
-		return 0;
-
-	/* The property, wherever on the chain. */
-	found = vm_object_find(holder, key, &property);
-	if (found < 0)
-		return -found;
-
-	/* A missing descriptor follows the absence path after errors have been excluded. */
-	if (!found)
-		return 0;
-
-	/* A data property's value. */
-	if ((property.attributes & VM_PROPERTY_ACCESSOR) == 0U) {
-		*result = *property.value;
-		return 0;
-	}
-
-	/* An accessor's getter, called with the base as this (no getter reads undefined). */
-	accessor = (struct vm_accessor *)vm_value_as_cell(*property.value);
-	if (accessor->getter == VM_VALUE_UNDEFINED)
-		return 0;
-	status = vm_call(realm, accessor->getter, base, NULL, 0, result);
+	/* Ordinary property access uses its base as the initial receiver. */
+	status = vm_get_receiver(realm, base, key, base, result);
 	if (status != 0)
 		return status;
 
-	/* Succeeded: the getter's result. */
+	/* Succeeded: the ordinary receiver convention is preserved. */
+	return 0;
+}
+
+/*
+ * Gets a property while retaining the receiver through prototypes and Proxy fallback.
+ * Explicit roots support direct native callers and getter-driven collection.
+ */
+int
+vm_get_receiver(
+	struct vm_realm *realm,
+	vm_value base,
+	vm_value key,
+	vm_value receiver,
+	vm_value *result)
+{
+	struct access_read_roots roots;
+	int status;
+
+	/* Count native property recursion independently of interpreter call frames. */
+	*result = VM_VALUE_UNDEFINED;
+	if (realm->property_depth >= ACCESS_RECURSION_MAX) {
+		status = vm_throw_range_error(realm, "Maximum property recursion exceeded");
+		return status;
+	}
+
+	/* This native frame owns one property-operation depth until it returns. */
+	realm->property_depth++;
+
+	/* One native tracer retains the complete input graph before a getter can collect. */
+	roots.realm = realm;
+	roots.base = base;
+	roots.key = key;
+	roots.receiver = receiver;
+	status = vm_heap_add_tracer(realm->heap, access_read_trace, &roots);
+	if (status != 0) {
+		/* No tracer was acquired, but this attempted property operation still owns one depth count. */
+		realm->property_depth--;
+		return status;
+	}
+
+	/* The original receiver remains rooted through every getter and nested fallback. */
+	status = access_get_receiver(realm, base, key, receiver, result);
+	vm_heap_remove_tracer(realm->heap, access_read_trace, &roots);
+
+	/* Retire the operation count on both normal and abrupt completion. */
+	realm->property_depth--;
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the result belongs to the completed property access. */
 	return 0;
 }
 
@@ -1874,4 +1885,261 @@ access_base_error(
 	wb_buffer_release(&name);
 	status = vm_throw_type_error(realm, text);
 	return status;
+}
+
+/* Looks up a value using the receiver established by the original access operation. */
+static int
+access_get_receiver(
+	struct vm_realm *realm,
+	vm_value base,
+	vm_value key,
+	vm_value receiver,
+	vm_value *result)
+{
+	struct vm_property property;
+	struct vm_accessor *accessor;
+	struct vm_object *holder;
+	int is_object;
+	int is_string;
+	int found;
+	int status;
+
+	/* undefined and null have no properties. */
+	*result = VM_VALUE_UNDEFINED;
+	if (base == VM_VALUE_UNDEFINED || base == VM_VALUE_NULL) {
+		status = access_base_error(realm, base, key, "read", "reading");
+		return status;
+	}
+
+	/* A string's own length and characters. */
+	is_string = vm_value_is_string(base);
+	if (is_string) {
+		status = access_string_property(realm, (struct vm_string *)vm_value_as_cell(base), key, result, &found);
+		if (status != 0)
+			return status;
+		if (found)
+			return 0;
+	}
+
+	/* An object's chain, or a primitive's prototype's (the realm has none before its built-ins). */
+	is_object = vm_value_is_object(base);
+	holder = NULL;
+	if (is_object) {
+		holder = (struct vm_object *)vm_value_as_cell(base);
+	} else {
+		holder = access_primitive_prototype(realm, base);
+	}
+
+	/* Nothing to look in. */
+	if (holder == NULL)
+		return 0;
+
+	/* Walk ordinary descriptors until a realm-aware Proxy needs its actual Get operation. */
+	found = 0;
+	while (holder != NULL) {
+		if (holder->kind == VM_KIND_PROXY) {
+			status = access_proxy_get(realm, (struct vm_proxy *)holder, key, receiver, result);
+			if (status != 0)
+				return status;
+
+			/* Succeeded: a Proxy owns the rest of the property lookup. */
+			return 0;
+		}
+
+		/* Native ordinary descriptors cannot execute user script. */
+		found = vm_object_get_own(holder, key, &property);
+		if (found < 0)
+			return -found;
+		if (found)
+			break;
+		holder = holder->prototype;
+	}
+
+	/* A missing descriptor follows the absence path after errors have been excluded. */
+	if (!found)
+		return 0;
+
+	/* A data property's value. */
+	if ((property.attributes & VM_PROPERTY_ACCESSOR) == 0U) {
+		*result = *property.value;
+		return 0;
+	}
+
+	/* An accessor's getter, called with the original receiver as this (no getter reads undefined). */
+	accessor = (struct vm_accessor *)vm_value_as_cell(*property.value);
+	if (accessor->getter == VM_VALUE_UNDEFINED)
+		return 0;
+	status = vm_call(realm, accessor->getter, receiver, NULL, 0, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the getter's result. */
+	return 0;
+}
+
+/* Executes Proxy [[Get]] while preserving original protocol values through trap-driven revocation and collection. */
+static int
+access_proxy_get(
+	struct vm_realm *realm,
+	struct vm_proxy *proxy,
+	vm_value key,
+	vm_value receiver,
+	vm_value *result)
+{
+	struct vm_cell *roots[8];
+	struct vm_descriptor descriptor;
+	struct vm_string *string;
+	vm_value target;
+	vm_value handler;
+	vm_value method;
+	vm_value trap_key;
+	vm_value args[3];
+	vm_value produced;
+	vm_value method_key;
+	unsigned index;
+	unsigned registered;
+	int is_cell;
+	int is_symbol;
+	int found;
+	int equal;
+	int status;
+
+	/* Snapshot target and handler before any script can revoke the Proxy. */
+	target = proxy->target;
+	handler = proxy->handler;
+	roots[0] = NULL;
+	if (realm->managed)
+		roots[0] = &realm->cell;
+	roots[1] = &proxy->object.cell;
+	roots[2] = NULL;
+	is_cell = vm_value_is_cell(target);
+	if (is_cell)
+		roots[2] = vm_value_as_cell(target);
+	roots[3] = NULL;
+	is_cell = vm_value_is_cell(handler);
+	if (is_cell)
+		roots[3] = vm_value_as_cell(handler);
+	roots[4] = NULL;
+	is_cell = vm_value_is_cell(receiver);
+	if (is_cell)
+		roots[4] = vm_value_as_cell(receiver);
+	roots[5] = NULL;
+	is_cell = vm_value_is_cell(key);
+	if (is_cell)
+		roots[5] = vm_value_as_cell(key);
+	roots[6] = NULL;
+	roots[7] = NULL;
+	registered = 0;
+	for (index = 0; index < 8U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* A revoked Proxy fails before consulting the handler. */
+	if (target == VM_VALUE_NULL) {
+		status = vm_throw_type_error(realm, "Cannot get a property of a revoked Proxy");
+		goto cleanup;
+	}
+
+	/* GetMethod accepts null as absence and rejects other noncallable traps. */
+	method_key = vm_key_from_ascii(realm->heap, "get");
+	if (method_key == VM_VALUE_EMPTY) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* Resolve the current get trap through ordinary method lookup. */
+	status = vm_get_method(realm, handler, method_key, &method);
+	if (status != 0)
+		goto cleanup;
+	if (method == VM_VALUE_UNDEFINED) {
+		status = vm_get_receiver(realm, target, key, receiver, result);
+		goto cleanup;
+	}
+
+	/* A trap getter may have returned a function retained only by this native frame. */
+	roots[6] = vm_value_as_cell(method);
+	trap_key = key;
+	is_symbol = access_is_symbol(key);
+	if (!is_symbol) {
+		status = vm_to_string(realm, key, &string);
+		if (status != 0)
+			goto cleanup;
+		trap_key = vm_value_cell(string);
+		roots[5] = &string->cell;
+	}
+
+	/* A property trap receives the actual target, a string or symbol key, and the original receiver. */
+	args[0] = target;
+	args[1] = trap_key;
+	args[2] = receiver;
+	status = vm_call(realm, method, handler, args, 3, &produced);
+	if (status != 0)
+		goto cleanup;
+	is_cell = vm_value_is_cell(produced);
+	if (is_cell)
+		roots[7] = vm_value_as_cell(produced);
+
+	/* Invariants use the original target even if the trap revoked its Proxy. */
+	found = vm_get_own_descriptor((struct vm_object *)vm_value_as_cell(target), key, &descriptor);
+	if (found < 0) {
+		status = -found;
+		goto cleanup;
+	}
+
+	/* Nonconfigurable own descriptors constrain the value a trap may report. */
+	if (found && (descriptor.attributes & VM_PROPERTY_CONFIGURABLE) == 0U) {
+		if ((descriptor.has & VM_HAS_VALUE) != 0U && (descriptor.attributes & VM_PROPERTY_WRITABLE) == 0U) {
+			equal = vm_same_value(produced, descriptor.value);
+			if (!equal) {
+				status = vm_throw_type_error(realm, "Proxy get trap changed a fixed data property");
+				goto cleanup;
+			}
+		}
+
+		/* A fixed accessor without a getter can expose only undefined. */
+		if ((descriptor.has & VM_HAS_GET) != 0U &&
+		    descriptor.getter == VM_VALUE_UNDEFINED &&
+		    produced != VM_VALUE_UNDEFINED) {
+			status = vm_throw_type_error(realm, "Proxy get trap supplied a value for a fixed getterless property");
+			goto cleanup;
+		}
+	}
+
+	/* Publish the trap result only after every fixed-property invariant succeeds. */
+	*result = produced;
+	status = 0;
+
+cleanup:
+	/* Keep no registrations referring to expired C stack slots. */
+	while (registered != 0) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* Preserve an abrupt outcome after releasing this frame's ownership. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the original receiver's read produced the validated value. */
+	return 0;
+}
+
+/* Marks one active native property frame while a getter or Proxy trap runs the collector. */
+static void
+access_read_trace(
+	struct vm_heap *heap,
+	void *context)
+{
+	struct access_read_roots *roots;
+
+	/* Managed realms need the same explicit ownership as the input and receiver values. */
+	roots = context;
+	if (roots->realm->managed)
+		vm_heap_mark(heap, &roots->realm->cell);
+	vm_heap_mark_value(heap, roots->base);
+	vm_heap_mark_value(heap, roots->key);
+	vm_heap_mark_value(heap, roots->receiver);
 }

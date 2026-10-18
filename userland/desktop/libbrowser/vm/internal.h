@@ -144,6 +144,13 @@ struct vm_heap {
 #define VM_GENERATOR_RUNNING		2U
 #define VM_GENERATOR_DONE		3U
 
+/* A managed Proxy keeps its target and handler alive until revocation clears both edges. */
+struct vm_proxy {
+	struct vm_object object;
+	vm_value target;
+	vm_value handler;
+};
+
 /*
  * The run of a generator or an async function between its steps: the
  * function, the this value, new.target and the argument count of its

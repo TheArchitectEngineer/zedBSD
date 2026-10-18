@@ -242,7 +242,8 @@ enum vm_object_kind {
 	VM_KIND_MAP,
 	VM_KIND_SET,
 	VM_KIND_WEAK_MAP,
-	VM_KIND_WEAK_SET
+	VM_KIND_WEAK_SET,
+	VM_KIND_PROXY
 };
 
 /* Heap and cell identity precede the callbacks that refer to them. */
@@ -518,6 +519,8 @@ struct vm_realm {
 	uint32_t stack_capacity;
 	uint32_t stack_top;
 	unsigned depth;
+	/* Counts realm-aware property calls so native fallback chains cannot recurse without a bound. */
+	unsigned property_depth;
 	void *host;
 	struct wb_vector jobs;
 	struct wb_vector rejections;
@@ -607,6 +610,8 @@ vm_value vm_key_from_ascii(struct vm_heap *heap, const char *ascii);
 /* Objects (object.c). */
 struct vm_object *vm_object_create(struct vm_heap *heap, struct vm_object *prototype);
 struct vm_object *vm_array_create(struct vm_heap *heap, struct vm_object *prototype);
+int vm_proxy_create(struct vm_realm *realm, vm_value target, vm_value handler, vm_value *result);
+int vm_proxy_revoke(struct vm_realm *realm, vm_value proxy);
 int vm_object_init(struct vm_heap *heap, struct vm_object *object, struct vm_object *prototype);
 struct vm_symbol *vm_symbol_create(struct vm_heap *heap, vm_value description);
 struct vm_accessor *vm_accessor_create(struct vm_heap *heap, vm_value getter, vm_value setter);
@@ -710,6 +715,7 @@ int vm_is_space(uint16_t unit);
 
 /* Properties of any value, globals and enumeration (access.c). */
 int vm_get(struct vm_realm *realm, vm_value base, vm_value key, vm_value *result);
+int vm_get_receiver(struct vm_realm *realm, vm_value base, vm_value key, vm_value receiver, vm_value *result);
 int vm_put(struct vm_realm *realm, vm_value base, vm_value key, vm_value value);
 int vm_set(struct vm_realm *realm, vm_value base, vm_value key, vm_value value, int strict);
 int vm_delete(struct vm_realm *realm, vm_value base, vm_value key, int strict, vm_value *result);

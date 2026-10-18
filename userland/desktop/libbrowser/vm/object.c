@@ -37,6 +37,7 @@
 /* The largest index kept as an int32 key. */
 #define OBJECT_INDEX_MAX	0x7FFFFFFFU
 
+static void object_proxy_trace(struct vm_heap *heap, struct vm_cell *cell);
 static void object_symbol_trace(struct vm_heap *heap, struct vm_cell *cell);
 static void object_accessor_trace(struct vm_heap *heap, struct vm_cell *cell);
 
@@ -58,6 +59,11 @@ const struct vm_cell_type vm_symbol_type = {
 /* The cell type of accessor pairs: they hold their getter and setter. */
 const struct vm_cell_type vm_accessor_type = {
 	"accessor", object_accessor_trace, NULL
+};
+
+/* Proxy payloads share ordinary object storage and retain two additional managed edges. */
+static const struct vm_cell_type object_proxy_type = {
+	"proxy", object_proxy_trace, vm_object_finalize
 };
 
 static int object_grow_slots(struct vm_object *object, uint32_t count);
@@ -112,6 +118,8 @@ vm_value_is_object(
 	if (cell->type == &vm_function_type)
 		return 1;
 	if (cell->type == &vm_promise_type)
+		return 1;
+	if (cell->type == &object_proxy_type)
 		return 1;
 
 	/* Strings and symbols are primitives. */
@@ -369,6 +377,145 @@ vm_array_create(
 
 	/* Succeeded: callers receive an initialized Array with zero length. */
 	return array;
+}
+
+/*
+ * Creates the private noncallable Proxy read primitive without publishing a JS constructor.
+ * Callable and Proxy targets remain excluded until their internal methods are implemented.
+ */
+int
+vm_proxy_create(
+	struct vm_realm *realm,
+	vm_value target,
+	vm_value handler,
+	vm_value *result)
+{
+	struct vm_proxy *proxy;
+	struct vm_object *object;
+	struct vm_cell *roots[4];
+	vm_value values[2];
+	unsigned index;
+	unsigned registered;
+	int is_cell;
+	int is_object;
+	int callable;
+	int status;
+
+	/* Protect incoming ownership before either validation errors or allocation can collect. */
+	*result = VM_VALUE_UNDEFINED;
+	roots[0] = NULL;
+	if (realm->managed)
+		roots[0] = &realm->cell;
+	values[0] = target;
+	values[1] = handler;
+	for (index = 0; index < 2U; index++) {
+		roots[index + 1U] = NULL;
+		is_cell = vm_value_is_cell(values[index]);
+		if (is_cell)
+			roots[index + 1U] = vm_value_as_cell(values[index]);
+	}
+
+	/* Reserve the unpublished-record root slot before acquiring registrations. */
+	roots[3] = NULL;
+	registered = 0;
+	for (index = 0; index < 4U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* Both Proxy protocol participants must be objects. */
+	is_object = vm_value_is_object(target);
+	if (!is_object) {
+		status = vm_throw_type_error(realm, "Proxy target must be an object");
+		goto cleanup;
+	}
+
+	/* Validate the handler independently before allocating the record. */
+	is_object = vm_value_is_object(handler);
+	if (!is_object) {
+		status = vm_throw_type_error(realm, "Proxy handler must be an object");
+		goto cleanup;
+	}
+
+	/* This internal stage deliberately excludes operations requiring callable or nested-target semantics. */
+	object = (struct vm_object *)vm_value_as_cell(target);
+	callable = vm_value_is_callable(target);
+	if (callable || object->kind == VM_KIND_PROXY) {
+		status = vm_throw_type_error(realm, "Callable and Proxy targets require later Proxy internal methods");
+		goto cleanup;
+	}
+
+	/* Retain the newborn before ordinary shape initialization can allocate. */
+	proxy = vm_heap_alloc(realm->heap, &object_proxy_type, sizeof(*proxy));
+	if (proxy == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* Initialize every traced payload field before shape initialization can collect. */
+	roots[3] = &proxy->object.cell;
+	proxy->target = target;
+	proxy->handler = handler;
+	proxy->object.kind = VM_KIND_PROXY;
+	proxy->object.internal = VM_VALUE_UNDEFINED;
+	status = vm_object_init(realm->heap, &proxy->object, NULL);
+	if (status != 0)
+		goto cleanup;
+
+	/* Only a complete native record becomes visible to the caller. */
+	*result = vm_value_cell(proxy);
+
+cleanup:
+	/* Release only registrations actually acquired before a possible failure. */
+	while (registered != 0) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* Preserve an abrupt outcome after releasing this frame's ownership. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the caller owns the managed read primitive. */
+	return 0;
+}
+
+/*
+ * Revokes a private managed Proxy and releases both protocol ownership edges.
+ */
+int
+vm_proxy_revoke(
+	struct vm_realm *realm,
+	vm_value value)
+{
+	struct vm_object *object;
+	struct vm_proxy *proxy;
+	int is_object;
+	int status;
+
+	/* Script values cannot forge a native Proxy record through their prototype. */
+	is_object = vm_value_is_object(value);
+	if (!is_object) {
+		status = vm_throw_type_error(realm, "Proxy revocation requires a native Proxy");
+		return status;
+	}
+
+	/* Inspect the native kind only after establishing object identity. */
+	object = (struct vm_object *)vm_value_as_cell(value);
+	if (object->kind != VM_KIND_PROXY) {
+		status = vm_throw_type_error(realm, "Proxy revocation requires a native Proxy");
+		return status;
+	}
+
+	/* Clearing both slots is idempotent and prevents later Get operations from entering the handler. */
+	proxy = (struct vm_proxy *)object;
+	proxy->target = VM_VALUE_NULL;
+	proxy->handler = VM_VALUE_NULL;
+
+	/* Succeeded: no future read can use the retired protocol participants. */
+	return 0;
 }
 
 /*
@@ -1485,4 +1632,19 @@ object_key_compare(
 
 	/* Equal keys. */
 	return 0;
+}
+
+/* Marks ordinary object storage and the two Proxy protocol ownership edges. */
+static void
+object_proxy_trace(
+	struct vm_heap *heap,
+	struct vm_cell *cell)
+{
+	struct vm_proxy *proxy;
+
+	/* Revocation clears both protocol fields, allowing their former graphs to be reclaimed. */
+	proxy = (struct vm_proxy *)cell;
+	vm_object_trace(heap, cell);
+	vm_heap_mark_value(heap, proxy->target);
+	vm_heap_mark_value(heap, proxy->handler);
 }
