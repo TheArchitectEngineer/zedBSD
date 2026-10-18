@@ -1359,3 +1359,5 @@ Event ws074-q45-selection: p258のisPrototypeOf/AnnexB lookup/OrdinaryHasInstanc
 Event ws074-q45-finished-20261018: p258 chain consumers partial clear、native585/Chrome583既知huge2、新33 genuine一致/precode21修正。actual public lookup errno/GCとdirect ordinary-instance bare managed owner実保持/回収、元WebIDL/validator negative保持。q44全1508証拠再利用・q45未測定、公式確認済1482/3805保持。[history](history/ws074-q20261018-45.md)。共有投影pending。
 
 Event ws074-q46-selection: p258のordinary assignment realm dispatch partial開始、q45既存証拠を保持し全1508を再測定する。whole/global未達。[Queue](queue.md)。共有投影pending。
+
+Event ws074-q46-arraylength-revision: i01 current613/615、元low-level shrinkが削除拒否を無視する原因を確認。criteriaを維持し、同一Queue/deadlineへarray shrink low-level/realm helperと必要私有helpers・既存API commentを追加、全1508検証維持。[Phase設計改訂](phase258/phase.md)。他Phase構造変更無し・whole未達。

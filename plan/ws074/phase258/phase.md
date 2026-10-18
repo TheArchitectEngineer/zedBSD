@@ -238,3 +238,10 @@ Raw archive87 members SHA2568313f6c311a137fd6c4bcf5d2072d4d7f048a5f37e8e8134f89d
 [証拠](evidence/20261018-q45/README.md)。次finite scope未選定。
 
 Event ws074-p258-q46-selection: ordinary object assignmentをexisting receiver-aware Setへ接続するpartialだけ選定、dead length helper除去・全1508実測を含む。[exact Queue](../queue.md)。whole acceptance未変更。
+
+## q46 array length investigation / revision
+
+Event ws074-p258-q46-arraylength-design-revision-20261018: 最初の統合版を実測しnative613/615、残るsloppy/strict fixed-index shrink2条件を失敗。既存vm_array_set_lengthがdense値を先に全消去し、ascending deletionのdeleted=falseを無視してrequested lengthを確定していた。access_define_lengthもその結果をacceptedとしていた。criteriaは縮小しない。
+自走承認内の技術的reconciliationとして、同一deadline/単一i01にvm/object.c vm_array_set_length＋数値key comparator/key-vector tracer必要helper、vm/access.c access_define_lengthを追加、vm.hの既存length API commentだけEPERM partial-shrink契約を追記。新module/API signature/architecture変更無し。対象object.c管理コメントを除去。新current-source凍結前に改訂WIPを保存。
+Design: 既存own key snapshotをtraceし数値indexだけfilter/sort、new length metadataを先に設定→descending actual Delete→falseならfailed index+1へ復元してEPERM、higher deletions保持。fresh keyvector/arrayをnative callback GC中保持。length realm helperはvalue二回conversionの後actual old length descriptor再取得（conversion中のreadonly等変更を反映）、EPERMをBoolean refusalへ戻しrequested writable:falseを失敗時も適用。稀なENOMEM/native errnoは成功化しない。genuine additional sparse/uint32-index/descending/partial writability/conversion reentry controls、直接native length API actual GC/deletion order/EPERM対照を追加。target3 files access/object/header dependent compile exact q02、全1508比較等当初gate維持。
+Primary: https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-arraysetlength 。現行algorithmは二回conversion後にoldLengthDescを取得し、存在するown numeric indexを降順Delete、最初の拒否でindex+1とrequested writableを復元する。foreign Phase変更無し、whole p258/WS acceptance未変更。
