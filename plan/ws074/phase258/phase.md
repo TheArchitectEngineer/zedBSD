@@ -2,7 +2,7 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: in-progress（q45 chain consumers partial、whole Proxy未達）
+Status: uncleared（q45 chain consumers partial cleared、whole Proxy未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
@@ -11,7 +11,7 @@ Origin: p189/q29 original WebIDL2 parseがProxy未定義で停止。
 
 Objective / own criteria: native managed Proxyを実object internal methodsへ接続し、constructor/revocableと各internal operationのtrap/fallback/invariant/receiver/revocation/callability/GCを正しく実行する。original WebIDL2 actual parse/validatorに必要なget/set/array behaviorを通常APIで提供し、independent controls/原WPTを通す。部分read stageだけでwholeをclearしない。
 Design: vm_native_operationsはscript-free heap interfaceのまま保持。Proxyにはmanaged target/handler recordを持たせ、scriptを実行可能なrealm-aware access/internal methodからtrapを呼ぶ。opaque JS constructor公開前に必要なoperationを段階的に整える。各段階は自走承認に基づく新finite Queueで正確に選定する。
-Current state: q44 Object own-key/descriptor/integrity callers partial verified、native552/Chrome550＋既知huge2資格、全1508 q37全callback/completion同値。for-in/chain lookups/core Set prototype routing/other invariant realm化/nested/call/construct/global等未達。元parser4/4/negative/追加validator rule2保持。
+Current state: q45 chain consumers partial clear、native585/Chrome583は既知huge2のみ差。q44最新1508証拠維持、q45全census未測定。ordinary Set exotic prototype/for-in/nested/call/construct/globalとwhole未達。
 Standards: Guardrail/C全文/browser component全文、簡約版無し。一次 https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-proxy-object-internal-methods-and-internal-slots-get-p-receiver 。既存p100がWS全source near-final conformanceを所有し、本partialはnew/changed scopeの全文適合を検証。
 Verification/bounds/affected components: q30 snapshotの通り。private object kind/cell/newborn/trace/revokeとactual receiver/trap/invariant/GCをnative/Chromeで確認し、ordinary whole/callback PASSを守る。target single-source compileのみとfull target runtimeを区別。未達はunclearedとresume。
 
@@ -224,3 +224,15 @@ Archives: harness1676 members SHA2567ba8f2ca5aa17ef5235bed2ac29e49034a1b2bcf2e1b
 [証拠](evidence/20261018-q44/README.md)。次finite scope未選定。
 
 Event ws074-p258-q45-selection: q44 partial verified後、上記3functionのrealm chain traversal/GC/errorだけ選定。[exact scope](../queue.md)。wholeは未達、外部dispatch/bound/for-in等を残す。
+
+## q45 chain consumers result / resume
+
+Event ws074-p258-q45-partial-cleared-20261018: q45 chain consumers scoped partial cleared。selection WIP827443d9a/source WIPdbcb42104。object_is_prototype_of/object_lookup_half/vm_ordinary_has_instanceの3関数だけをactual GetPrototypeOf/lookup GetOwnへ接続。nearest data shadowing/アクセサ未実行/ToObject→ToKey順/primitive-before-receiver/null/SameValue/例外identityを保持。fresh current link/boxed target/key/constructor prototype/managed direct callerをcallback中にroot、単一forward cleanupで退役。normal lookup helper宣言は全table後、initializer必要wrapper例外維持。native_operations定義/comment/ABI2/Wayland/global Proxy/Reflect/factory callable・nested拒否/WPT・runner・期待値/共有Boards/cache/SDK/toolchain/sysroot不変。
+old552 prefix同一、new33 conditions native/genuine Chrome全一致。frozen q44 precodeは564/585で新21条件FAIL（21別bug/公式gainとは主張しない）。最終native585/Chrome583、差はq43既知huge2のみ、q36 negative-zero classifier filter継承で全pure genuine equalityではない。finite repeated identity→後続prototypeを検証し任意cycle shortcut/chain長limitを導入しない。general native nontermination/resource policyは別未達。
+既存4 consumer GC/error modesにactual __lookupGetter__/__lookupSetter__のnative GetOwn negative EACCES+GC 2 modes追加、vm_call経由managed caller/input保持と実回収。direct OrdinaryHasInstanceはembedding rootsも外側VMcallも無し、bare managed caller/native callable constructor/valueをconstructor-side pure GetOwn callback実GC中保持し、EACCES伝播後3participant全実回収。新JS controlsでfresh intermediate Proxy/Symbol/keyと後続trap collectも検証。旧forced-GC版とのdifferentialは未測定でold GC failure修復とは主張しない。
+full changed6 C functions manual＋clang-format19/checked styleは許可forward cleanup77・other0。host warning0、q02 literal builtin_object/access2 source -oだけ変更target warning0、versions実取得。focused proxy/delegation10/interp45/factory56/DOM41/CSSOM12+12/marks7/observer10/ErrorEvent9/ErrorReporting19全0。Acid初回sandbox socket PermissionError保持、same frozen binaryでAcidだけescalated再実行exit0・Acid3 score/inventory100/pixel0、Acid2既存873。元WebIDL4positive＋intentionalnegative source/callback q38同一、original validator require-exposed2と意図的FAIL callback native/Chrome同一。グローバルProxy非公開。
+固定1508最新全実測はq44（q37全whole/callback/completion同一、494 PASS/955 FAIL/13 harness_error/20 no_completion/24 no_output/2 multiple、callbacks11540 PASS/20642 FAIL/14 NOTRUN）。q45pair全census未測定、new公式gainを主張しない。static844/scripted105/crash39最新q28証拠再利用、newpair全image/crash capture未測定。確認済公式1482/3805（38.948752%）、held0・未attempt275維持。
+whole p258/WS/p100/full target/100%未達。outer vm_instanceof/BoundFunction/callableProxy、for-in/spread/JSON、ordinary Set exotic prototype、other invariant realm化/nested/call/construct/global constructor/revocable、array IsArray callers/immutable prototype/typed backing等残件維持。共有Master/Queue/cache/GitHub投影pending Q1、push無し。
+Raw archive87 members SHA2568313f6c311a137fd6c4bcf5d2072d4d7f048a5f37e8e8134f89dd1c8e002a4e5全member read-back。runtime binaryはhash付きbuild保持・archive非同梱。q44 harness1676 member原archive SHA2567ba8f2ca5aa17ef5235bed2ac29e49034a1b2bcf2e1b153e03e9b6bb85ffde94を参照、q45実測と混同しない。
+
+[証拠](evidence/20261018-q45/README.md)。次finite scope未選定。

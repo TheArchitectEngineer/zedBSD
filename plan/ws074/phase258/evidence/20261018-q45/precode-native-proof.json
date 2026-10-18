@@ -1,0 +1,27 @@
+{
+  "returncode": 1,
+  "failed": [
+    "console: read-proxy chain-isprototypeof-trap-this-and-target: FAIL",
+    "console: read-proxy chain-isprototypeof-proxy-in-middle: FAIL",
+    "console: read-proxy chain-isprototypeof-revoked-throws: FAIL",
+    "console: read-proxy chain-isprototypeof-error-identity: FAIL",
+    "console: read-proxy chain-isprototypeof-finite-repeated-identity: FAIL",
+    "console: read-proxy chain-isprototypeof-fresh-intermediate-after-gc: FAIL",
+    "console: read-proxy chain-lookup-own-accessor-no-value-get: FAIL",
+    "console: read-proxy chain-lookup-inherited-accessor-order: FAIL",
+    "console: read-proxy chain-lookup-proxy-in-middle: FAIL",
+    "console: read-proxy chain-lookup-symbol-key: FAIL",
+    "console: read-proxy chain-lookup-own-error-before-prototype: FAIL",
+    "console: read-proxy chain-lookup-prototype-error-identity: FAIL",
+    "console: read-proxy chain-lookup-revoked-throws: FAIL",
+    "console: read-proxy chain-lookup-finite-repeated-identity: FAIL",
+    "console: read-proxy chain-lookup-fresh-intermediate-descriptor-gc: FAIL",
+    "console: read-proxy chain-instanceof-proxy-value: FAIL",
+    "console: read-proxy chain-instanceof-proxy-in-middle: FAIL",
+    "console: read-proxy chain-instanceof-error-identity: FAIL",
+    "console: read-proxy chain-instanceof-revoked-throws: FAIL",
+    "console: read-proxy chain-instanceof-finite-repeated-identity: FAIL",
+    "console: read-proxy chain-instanceof-fresh-intermediate-gc: FAIL"
+  ],
+  "conditions": 585
+}

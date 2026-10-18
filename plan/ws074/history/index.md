@@ -1,5 +1,9 @@
 # WS074 lane の Past Log
 
+## ws074-q20261018-45 / chain consumers
+
+q45 chain consumers scoped partial cleared。selection WIP827443d9a/source WIPdbcb42104。object_is_prototype_of/object_lookup_half/vm_ordinary_has_instanceの3関数だけをactual GetPrototypeOf/lookup GetOwnへ接続。nearest data shadowing/アクセサ未実行/ToObject→ToKey順/primitive-before-receiver/null/SameValue/例外identityを保持。fresh current link/boxed target/key/constructor prototype/managed direct callerをcallback中にroot、単一forward cleanupで退役。normal lookup helper宣言は全table後、initializer必要wrapper例外維持。native_operations定義/comment/ABI2/Wayland/global Proxy/Reflect/factory callable・nested拒否/WPT・runner・期待値/共有Boards/cache/SDK/toolchain/sysroot不変。確認済1482/3805保持、q45全census未測定。[exact history](ws074-q20261018-45.md)。
+
 ## ws074-q20261018-44（2026-10-18）
 
 [履歴](ws074-q20261018-44.md)。Object own-key/descriptor/integrity callers partial clear、new51 genuine一致/precode42修正・native552/Chrome550既知huge2。4 public GC/error modes、元parser/追加validator negative保持。全1508 q37全callback/completion同値・gain/loss0、1482/3805。次chain/for-in/core候補・global/whole未達、共有投影pending。
@@ -119,9 +123,5 @@ Follow-up: q23 i01/i02 clearanceは疎checkoutのIDL未配信が判明しunclear
 ## ws074-q20261018-16（2026-10-18）
 
 [履歴](ws074-q20261018-16.md)。post-font native pumpを実装し独立7行/budget6/旧font2・DOM34・host/target/C/Acid通過。strict14/15でattribute observerの別未対応が判明、i01 uncleared/i02 unstarted uncleared。固定48は未実行、global1491/static1561はcombined final sourceへpendingとしてskipped。last full verified1330はq14 source、current candidate全体未判定。p253 attributes→p209新attempt再検証→p190を次Queue候補へ。全raw/candidate保持、共有projection pending。
-
-## ws074-q20261018-15（2026-10-18）
-
-[履歴](ws074-q20261018-15.md)。crash retained raw i01 cleared、strict wait i02 uncleared。official waitのnative6 positive controlsでfonts.ready後のRAFが未処理と確認（parser8 pass/negative1 pass）。fixed48は前提未達で本実行せず、正式crash増分0・1330/3805を維持。全raw/PPM/control保持、engine不変。p209 producerの次finite修復→p190再検証を設計し、p252は後続候補。共有projection pending。
 
 以前のindex: [early 2026-10-18](early-20261018.md)。過去standing Queue投影: [原文archive](../queue-archive-through-q30.md)。
