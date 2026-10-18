@@ -41,7 +41,5 @@ i915 の tree（src/drivers/gpu/i915/）と userland/base/licenses/i915-driver/ 
 - 見積もり: p002 2 LW、p003 4 LW、p004 4 LW、p005 4 LW、p006 5 LW、p007 4 LW（判断 1 が「改名」なら +4）、p008 1 LW、p009 2 LW。
 
 ## 残り（次の世代の再開点）
-1. inventory: derived の file の「O」の関数を手で確かめる（file の宣言から派生と見るべき物が多い）。データの block（define・表）ごとの出典の表を作る。intel/ の struct の配置（vbt-defs.h の VBT の block、ref.h・connector.h・wm.h）が「構造」に当たるかを決める。
-2. design.md: 書き直しの方針（PRM Gen9・Gen12 と hardware の振る舞いから設計、外向きの口は保つ、データは独自の名前で block ごとに引用元）、順序（edid → vbt → aux・gmbus → backlight・panel → power・dmc → clock・PLL → watermark → pipe・plane・ddi・dp → takeover・hotplug → GT → license の整理）、Phase の分け方（p002〜）、各 Phase の試験（host 試験、warning 0、実機: 5330 Gen12・SV7・7th/8th gen Gen9 の起動・mode set・hotplug・backlight）。
-3. 危険と見積もり（LW）: Gen12 の display の約 6 万行が書き直しの本体。動作の退行（5330・Gen9 は実機で動作中）。
-4. WIP commit して Q1 に SHA を送る（Q1 が design-reviewer を回す）。
+- Q1 の判定と判断 1・2 の回答を待つ。旧版の残り（旧 display の関数の手の確認、vbt-defs.h など）は WS245 で対象の file が無くなったので不要。
+- 判定が出たら p001 を cleared にし、p002 から群ごとに書き直す。
