@@ -17,6 +17,7 @@
   - T1: QEMU の試験を都度。実機（WS260 の T1-710、WS259 の WiFi）は機械の準備待ち（beta2.md の U24・U25）。
   - WS261 は completed。朝の報告: 事前の承認で入れた HAL の差分の一覧、bootloader/tests/payload*.ld の削除の可否、Pi 4 の CI の image の大きさ（2 の冪）。
   - 朝の判断（追加）: WS259 の license の package（userland/base/licenses/rtl8822b-tables/ と tools/release/license-components.json の項目）を WS244 の i915-driver と同じく外すか（ユーザーの明示の決定が RTL8822B には無い）。
+  - 朝の判断（追加）: WS245 p044・p045 の受け入れの読み替え（Linux との書き込み単位の完全一致は oracle が無い。値は表の比べ＋ADL-P の終わりの状態、順は版ごとの anchor に）。
   - push はしていない。
 <!-- master:agents:end -->
 
@@ -634,6 +635,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-19 02:32（Q1 の技術判断、自走の範囲）: WS245 p046 で Linux と核が一致した関数名 26 のうち、Linux 特有の言い回しに近い 5 つ（cdclk_pll_crawl・cdclk_decimal・tc_port_update_mode・tc_port_connected・gmbus_wait、全部 static）だけ改名する。他の 21 は hardware の部品名＋動詞の自然な重なりで写しと見ない。p044・p045 の受け入れの「Linux の手順と表の値に一致」を「値は表の比べ＋ADL-P の終わりの状態、順は版ごとの anchor」に読み替える案は受け入れの変更なので朝にユーザーへ聞く。それまで P2 は案の 1・2 を追加の証拠として作ってよい（受け入れは変えない）。
 - 2026-10-19 00:09（ユーザー、クリック）: WS244 の Linux v6.19 の source は「取ってよい」（kernel.org の tarball を署名・SHA で確かめ build/ の中に置き読むだけ）。WS252 は「設計まで」（実機が無いので p001 で止める）。
 - 2026-10-19 00:07（ユーザー）:「P2はブートローダのスタイルをやってる？終わったら、ws244,ws245,ws248,ws249,ws251 p002, ws252も追加で、完了させて。」→ P2 の予定（q1258）の後に足す（q1259）。WS245 の DC6（H6）は（クリック）「Bug に移して cleared」→ BUG-334、p025・p026 cleared、p043 は他の残りで in-progress。
 - 2026-10-18 23:57（ユーザー）:「WS260, ws259, WS261, ws262, ws263, ws264, ws265, ws266, ws267, ws268 これらを完了させるまで自走してほしいです。そろそろ寝るので、先に質問を探して、今質問してほしいです。」→（クリック）N=2。新しい port の HAL の API は「形を限って事前に承認」（hal.h は変えない、include/hal/arch.h の 1 節と新しい include/hal/arch/<arch>.h（aarch64.h・riscv64.h と同じ節の並び）、hal_get_arch_handoff の名前付きの値だけ。それ以外は待つ。入れた差分は朝に一覧で報告）。実機の試験は「実機は残して待つ」（WS260・WS259 の実機の Phase は in-progress（実機待ち））。sparcv9 は「直してよい」（main の未 commit の変更は Q1 が先に commit）。WS264 ppc32 は「mac99にします。」、WS265 ppc64 は「pseries、big endian」、WS266 は 68030 が QEMU で動かなければ「68040 で virt を動かす」（68030 の道は build だけ）、WS267 sun4u の判定は「画面の console を作る」（QEMU sun4u の VGA の framebuffer の console、boot-test.sh で判定）。
