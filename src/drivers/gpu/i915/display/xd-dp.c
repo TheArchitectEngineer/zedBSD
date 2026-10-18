@@ -1226,7 +1226,7 @@ drv_i915_xd_dp_probe_configure_converter(
 		first_error = i915_xd_dp_probe_first_error(first_error, written);
 	}
 
-	/* Turns the RGB to YCbCr conversion off, keeping the control's other bits (drm_dp_pcon_convert_rgb_to_ycbcr()). */
+	/* Turns the RGB to YCbCr conversion off, keeping the control's other bits. */
 	read = env->dpcd_read(env->ctx, I915_XD_DP_PROBE_CONVERTER_CONTROL_2, &control, 1u);
 	written = -I915_XD_DP_PROBE_EIO;
 	if (read == 1) {
@@ -2922,7 +2922,7 @@ i915_xd_dp_probe_classify(
 }
 
 /*
- * Reads the display's EDID over the port's DDC (drm_edid_read_ddc()).
+ * Reads the display's EDID over the port's DDC.
  *
  * The valid blocks and the extensions the base block announces are kept;
  * a read without a valid block leaves no EDID.
@@ -2987,8 +2987,7 @@ i915_xd_dp_probe_edid_is_digital_dp(
 
 /*
  * Tells whether the EDID announces an HDMI sink: a CTA extension with an
- * HDMI vendor-specific data block (what drm_parse_cea_ext() records as
- * is_hdmi).
+ * HDMI vendor-specific data block.
  *
  * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/drm_edid.c
  * (drm_parse_cea_ext).

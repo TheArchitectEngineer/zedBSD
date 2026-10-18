@@ -38,9 +38,12 @@ int drv_i915_dp_ext_link_limits(struct i915_display *display, int port, int *max
 
 /*
  * Lowers an external DP port's link limits after a link training failed
- * at a rate and lane count (the Linux
- * intel_dp_get_link_train_fallback_values()): 0, ENOSPC when no lower
- * link is left, or ENXIO for a port that is not one.
+ * at a rate and lane count: 0, ENOSPC when no lower link is left, or ENXIO
+ * for a port that is not one.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/i915/display/intel_dp_link_training.c
+ * (intel_dp_get_link_train_fallback_values).
  */
 int drv_i915_dp_ext_link_fallback(struct i915_display *display, int port, int rate, int lanes);
 

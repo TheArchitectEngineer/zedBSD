@@ -188,8 +188,8 @@ const struct i915_pw_irq_ops drv_i915_pw_irq_ops = {
 /*
  * Binds the display half to the interrupt device.
  *
- * Fills the display interrupt state as the reference's intel_irq_install()
- * finds it (the display version, the pipe and transcoder masks of the
+ * Fills the display interrupt state as the interrupt install finds it (the
+ * display version, the pipe and transcoder masks of the
  * platform, the PCH the display detected, no DSI port), binds the vblank
  * delivery and the power-well hooks, and installs the display operations
  * table in place of whatever the interrupt device held.  Runs before
@@ -553,11 +553,9 @@ drv_i915_gen8_irq_power_well_post_enable(
 }
 
 /*
- * Stops the interrupts of pipes whose power well is about to go off
- * (gen8_irq_power_well_pre_disable()).
+ * Stops the interrupts of pipes whose power well is about to go off.
  *
- * The reference resets the pipe's interrupt registers and then completes
- * intel_synchronize_irq() before the well goes off.  Here the pipe's
+ * The pipe's
  * admission is closed (no new handler work enters its registers), its
  * source is reset, and what had already entered is drained.  The pipe stays
  * closed until the next post-enable.  Returns 0, or the drain's ETIMEDOUT
@@ -1258,8 +1256,8 @@ i915_gen8_de_pipe_irq_handler(
 	d->last_de_pipe_iir[pipe] = iir;
 
 	/*
-	 * intel_handle_vblank() -> drm_handle_vblank(): the vblank is counted
-	 * and the waiter woken only while the pipe's delivery is enabled.
+	 * The vblank is counted and the waiter woken only while the pipe's
+	 * delivery is enabled.
 	 */
 	if ((iir & GEN8_PIPE_VBLANK) != 0U) {
 		d->de_vblank_count[pipe]++;
