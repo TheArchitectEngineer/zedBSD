@@ -2,11 +2,11 @@
 
 # ws074-p256: Window ErrorEventによる未処理例外通知・harness failure fidelity
 
-Status: planning
+Status: in-progress
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
-Queue: 未選定（q26後の最優先候補）
+Queue: ws074-q20261018-27-i01（native event prerequisite partial）
 Origin: [p255 q26 callback failure control](../phase255/phase.md)
 Prerequisites: 既存native EventTarget/Event/window timer/VM例外の実出力（p077/p083/p086/p209等）、Guardrail/C全文/browser component全文。p255 wholeまたはconsumer source出力を実装前提にしない。
 
@@ -35,3 +35,5 @@ Primary reference: [HTML report an exception](https://html.spec.whatwg.org/multi
 Event ws074-p256-added-from-q26-oracle-gap-20261018: p255のintentional callback failureがnative PASS/Chrome harness_errorとなる実証を受け、通常Window ErrorEventの責務を本Phaseへ分離。p256→p255のnamed-output依存を追加しcycle無し。全3,805分母/既存score/原reportは保持、次finite Queue選定までsource未実装。shared projection pending。
 
 Event ws074-q26-error-prerequisite-resume-20261018: [origin evidence](../phase255/evidence/20261018-q26/oracle-gap-proof.json)でnative PASS対Chrome harness_errorを実証し、q26 attempt unclearedとして終了。通常Window error eventのnamed outputがp255再開条件。本PhaseはまだQueue未選定、次のfinite source scope前に実code/一次error algorithmを詳細化する。
+
+Event ws074-p256-q27-selected-20261018: VMはthrow line/columnのみ保持しscript source/muted metadataをcallbackへ伝播していないため、まずnative ErrorEventと実Windowのlegacy onerror dispatchを独立partialとして選定。reporter接続を次finite scopeへ残す内部手順の詳細化で、whole目的/受入/依存は維持。q27のexact scope/criteriaは[Queue](../queue.md)先頭を参照。原q26 negative/確認済1481/held1を保持。
