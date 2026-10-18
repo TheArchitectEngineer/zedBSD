@@ -1,5 +1,7 @@
 # WS031 p002 計画: top + cmd — 入口・wire decoder・object table・dispatch routing
 
+Status: cleared（2026-10-18 Q1: Status の行が無かったので写した。元: cleared）
+
 native 実行器の入口と、wire を読んで op を各モジュールへ振り分ける routing、object/handle table を実装する。全モジュールの dispatch 規約をここで確定する（後段はこれを参照）。おおまかな設計。精度は実装・差し戻しで上げる。
 
 ## Module と所有ファイル

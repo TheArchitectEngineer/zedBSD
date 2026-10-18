@@ -2,6 +2,8 @@
 
 # ws074-p225: Vertical Grid logical axes
 
+Status: in-progress（2026-10-18 Q1: Status の行が無かったので写した。元: in-progress / q1142固定vertical-lr部分実装）
+
 ## q1159-i01 有限部分範囲（2026-10-14 12:17 JST）
 
 このchatの全3,805件100%までの有限Queue事前承認を最大90分（13:47 JSTまで）に適用。q1150–q1153の2×2 implicit auto vertical-lr/LTR・definite content-box・gap0・単一ASCII文字子・start/stretch・非負px margin/border/padding経路をvertical-rlへ一般化。親物理行を右→左、子単純縦文字を解決済み列高/右端行で配置。固定vertical-rl stretch009–016 whole PASS、独立auto frameページChromium比較、旧rl001–008/lr001–016/縦横WPT、host CSS/JS/Grid、warning0 build、Acid3差0/Acid2非増加を確認。他Grid/WPT/runner/公開ABI/`plan/master.md`変更なし。未達ならuncleared。p225/p189/p173 wholeは基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。

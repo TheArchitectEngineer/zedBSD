@@ -1,5 +1,7 @@
 # WS031 p010 計画: wsi — KMS/modeset・scanout・swapchain present
 
+Status: cleared（2026-10-18 Q1: Status の行が無かったので写した。元: cleared）
+
 i915 に modeset を新設し、swapchain image を実 scanout する。native WSI（`VK_KHR_display`/`swapchain`）を実表示へ接続。WS029 f003（framebuffer 保持）の延長。おおまかな設計。
 
 ## Module と所有ファイル

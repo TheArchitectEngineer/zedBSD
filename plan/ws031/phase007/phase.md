@@ -1,5 +1,7 @@
 # WS031 p007 計画: pipe — Gen12 3D パイプライン state emission
 
+Status: cleared（2026-10-18 Q1: Status の行が無かったので写した。元: cleared）
+
 compile の shader binary と固定機能状態から、draw 時に発行する `3DSTATE_*` を構築・発行する。おおまかな設計。
 
 ## Module と所有ファイル

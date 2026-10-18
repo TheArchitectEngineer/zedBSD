@@ -1,5 +1,7 @@
 # WS031 p003 計画: res — memory/buffer/image/sampler/descriptor → i915 資源・state
 
+Status: cleared（2026-10-18 Q1: Status の行が無かったので写した。元: cleared）
+
 Vulkan の資源系オブジェクトを i915 の GEM/GGTT/PPGTT と surface/sampler/binding state へ対応付ける。おおまかな設計。
 
 ## Module と所有ファイル

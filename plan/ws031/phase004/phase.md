@@ -1,5 +1,7 @@
 # WS031 p004 計画: spirv — SPIR-V パーサ → baseline IR
 
+Status: cleared（2026-10-18 Q1: Status の行が無かったので写した。元: cleared）
+
 SPIR-V を、compile が消費する baseline IR へ変換する。最適化なし。おおまかな設計。
 
 ## Module と所有ファイル

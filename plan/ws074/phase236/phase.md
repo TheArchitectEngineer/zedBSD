@@ -2,6 +2,8 @@
 
 # ws074-p236: `<button>` の中身を縦に中央に置く（google.com の「AI モード」）
 
+Status: in-progress（2026-10-18 Q1: Status の行が無かった。本文の「host の確認まで cleared 相当（QEMU・実機は未実施）」から、QEMU・実機が済むまで cleared にしない）
+
 B1 (2026-10-15)。ベータ2の目標「実 site を Chrome に近づける」。Status: host の確認まで cleared 相当（QEMU・実機は未実施）。p235 の続き。
 
 ## 観測

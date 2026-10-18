@@ -2,6 +2,8 @@
 
 # ws074-p235: position: sticky（ページのスクロール）と、子を持つ箱の transform: scale
 
+Status: cleared（2026-10-18 Q1: Status の行が無かったので写した。元: cleared（host、2026-10-15 B1。sticky・子つき scale。固定 WPT 483→485、css-position 51→54、css-transforms 221→226（偶然 pass 4 件が後退）。QEMU・実機は未実施。flex の aspect-ratio は未着手））
+
 B1 (2026-10-15)。ユーザーの指示「Interop 2024, 2023 の、よく使われるレイアウトの部分を選んで改善」の続き。Status: host の確認まで cleared 相当（QEMU・実機は未実施）。p234 の続き。
 
 ## 実装

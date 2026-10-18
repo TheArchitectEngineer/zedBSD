@@ -2,6 +2,8 @@
 
 # ws074-p189: Interop 2025 testharness 結果取得
 
+Status: uncleared（2026-10-18 Q1: Status の行が無かったので写した。元: uncleared / q1013・q1014・q1015・q1024 partial cleared、shard100件実測）
+
 ## q1189-i01 結果（2026-10-14 13:56 JST）
 
 Event ws074-p189-q1189-partial-clear-20261014: [証拠](evidence/20261014-q1189/README.md)。固定Grid502同条件再測定は189→192 whole PASS、313→310 FAIL、16 callback改善、後退0、未出力0。同一ID/order/hash/checkpoint/rawを確認。改善はnon-static007/008とmargin/border/padding005。残る上位はstretch12件、margin/border/padding11件。q1189有限部分範囲cleared、p189/p173全3,805件100%未達、共有投影/GitHub publication保留。

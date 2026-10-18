@@ -1,5 +1,7 @@
 # WS031 p009 計画: sync — fence/semaphore/query/timeline → completion 接続
 
+Status: cleared（2026-10-18 Q1: Status の行が無かったので写した。元: cleared）
+
 Vulkan の同期プリミティブを WS029 の seqno/HWSP breadcrumb と `drv_gpu_complete`/`retire_waitq` に結線する。おおまかな設計。
 
 ## Module と所有ファイル

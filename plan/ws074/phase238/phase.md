@@ -2,6 +2,8 @@
 
 # ws074-p238: GPU の paint を Pi 4（V3D）の driver が受ける形にする（BUG-320 の (3)）
 
+Status: in-progress（2026-10-18 Q1: Status の行が無かった。本文の「host の確認まで cleared 相当（QEMU・実機は未実施）」から、QEMU・実機が済むまで cleared にしない）
+
 B1 (2026-10-15)。Q1 の割り込み（ユーザーの判断「A: browser の描き方を合わせる」）。Status: host の確認まで cleared 相当（Pi 実機・QEMU は未実施、T2 に依頼）。
 
 ## 変更（`userland/desktop/libbrowser/paint/`）

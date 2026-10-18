@@ -2,6 +2,8 @@
 
 # ws074-p232: yahoo.co.jp のニュース feed（fetch・非同期 XHR ほか）
 
+Status: cleared（2026-10-18 Q1: Status の行が無かったので写した。元: cleared（host、2026-10-14 B1。QEMU・実機は未実施。広告の viewability と Proxy は残り））
+
 B1 (2026-10-14)。ユーザーの指摘（原文「yahooはニュース記事がJSで取得できていなように見えますね」）。Status: host の確認まで cleared 相当（QEMU・実機は未実施）。p230・p231 の続き。
 
 ## 原因（観測した順）

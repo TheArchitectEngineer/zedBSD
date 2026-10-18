@@ -1,5 +1,7 @@
 # ws254-p001 DHCP の 1 分おきの取り直し
 
+Status: in-progress（2026-10-18 Q1: Status の行が無かったので写した。元: in-progress（q1226、QEMU PASS、Q1 の判定待ち））
+
 - 親: [WS254](../ws.md)、Queue: q1226-i01（P4）、状態: in-progress（実装・host 試験・QEMU の確認は済み。cleared は Q1 の判定）
 - 範囲: WS254 の完了の条件 1〜3。userland/base/networkd（managed-lan.c・managed-lan.h・main.c）。
 - ユーザー（2026-10-16）:「また、networkdは、DHCPが失敗したあと、1分おきにDHCPを試みる修正を入れるのがいいと思います。」

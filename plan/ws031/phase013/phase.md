@@ -1,5 +1,7 @@
 # WS031 p013 計画: Wayland モデルビューア（Venus 版）
 
+Status: cleared（2026-10-18 Q1: Status の行が無かったので写した。元: cleared（Venus））
+
 ユーザー決定（2026-09-22）: WS031 に Phase を追加し、Wayland クライアントのデモを、ユーザーが著作権を持つ FBX モデル
 （`QS-40-49244 r4.fbx`）をマウスで回転・移動・拡大縮小して閲覧できるモデルビューアにする。まず Venus（virtio-gpu）で動くアプリを作り、
 その後 i915（QEMU＋passthrough）で動かす（p014）。i915 版を通して i915 のシェーダーを一通り動かせるようにする。

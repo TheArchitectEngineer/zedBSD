@@ -1,5 +1,7 @@
 # WS031 p006 計画: compile — baseline IR → GEN codegen
 
+Status: cleared（2026-10-18 Q1: Status の行が無かったので写した。元: cleared）
+
 spirv の IR を、eu の emit を使って GEN バイナリへ 1 対 1・最適化なしで lower する。おおまかな設計。
 
 ## Module と所有ファイル

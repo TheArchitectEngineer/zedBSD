@@ -1,5 +1,7 @@
 # WS031 p011 計画: 統合 — 増分A→B→C、実機 vkdemo 描画
 
+Status: in-progress（2026-10-18 Q1: Status の行が無かった。ws.md の表は「big-bang待ち」、実機のビッグバンで EU のハングが残った（ws.md の本文））
+
 全モジュールを結線し、増分A（三角形）→B（texture+depth）→C（vkdemo 実 shader）の順に実機ネイティブで描画・scanout する。おおまかな設計。
 
 ## Module と所有ファイル

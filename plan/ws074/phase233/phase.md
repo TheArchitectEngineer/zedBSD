@@ -2,6 +2,8 @@
 
 # ws074-p233: yahoo.co.jp の feed の画像まわりの枠（transform: scale の hairline）
 
+Status: cleared（2026-10-18 Q1: Status の行が無かったので写した。元: cleared（host、2026-10-14 B1。QEMU・実機は未実施））
+
 B1 (2026-10-14)。ユーザーの指摘（原文「画像のブロック要素でしょうか、なにか画像が表示されなかったときみたいなaltの表示がある枠が、ニュースフィードに出ています」）。Status: host の確認まで cleared 相当（QEMU・実機は未実施）。p232 の続き。
 
 ## 原因（観測した順）

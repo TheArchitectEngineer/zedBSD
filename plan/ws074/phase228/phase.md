@@ -2,6 +2,8 @@
 
 # ws074-p228: UAT の指摘（google.com の表示、既定の URL、アドレスバー）
 
+Status: cleared（2026-10-18 Q1: Status の行が無かったので写した。元: cleared（host、2026-10-14 B1。QEMU・実機は未実施））
+
 B1 (2026-10-14)。ユーザーの UAT（原文「google.co.jp のロゴ画像が表示されない。既定の URL を google.com に。google.com が表示できることをゴールに」「アドレス入力の箱が小さい。キーボードリピートが効かない」）への手短な対処。Status: uncleared 相当（host の確認まで。QEMU・実機は未実施、アドレスバー 2 件は compositor 側で範囲外）。
 
 ## 原因と直し

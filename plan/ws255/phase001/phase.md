@@ -1,5 +1,7 @@
 # ws255-p001 試験の image の静的な IP
 
+Status: in-progress（2026-10-18 Q1: Status の行が無かったので写した。元: in-progress（q1227、QEMU PASS、gateway・DNS の依存で Q1 の判定待ち））
+
 - 親: [WS255](../ws.md)、Queue: q1227-i01（P4）、状態: in-progress（条件 2・3 は済み。条件 1 の gateway・DNS が起動で入らない。計画に無い依存として Q1 に報告、判定待ち）
 - 範囲: WS255 の完了の条件 1〜3。
 - ユーザー（2026-10-16）:「さらに、テスト機ではstatic IPにすることで、自律ループを維持しやすくできると考えます。」

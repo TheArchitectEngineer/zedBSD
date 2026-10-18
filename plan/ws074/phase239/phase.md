@@ -2,6 +2,8 @@
 
 # ws074-p239: `clip: rect()`、abspos で伸びた button の中身の縦中央
 
+Status: in-progress（2026-10-18 Q1: Status の行が無かった。本文の「host の確認まで cleared 相当（QEMU・実機は未実施）」から、QEMU・実機が済むまで cleared にしない）
+
 B1 (2026-10-15)。Status: host の確認まで cleared 相当（QEMU・実機は未実施）。p236〜p238 の続き。
 
 ## 変更

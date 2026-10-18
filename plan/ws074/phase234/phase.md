@@ -2,6 +2,8 @@
 
 # ws074-p234: aspect-ratio と object-fit / object-position（WPT Interop 2023・2024 の layout）
 
+Status: cleared（2026-10-18 Q1: Status の行が無かったので写した。元: cleared（host、2026-10-15 B1。aspect-ratio・object-fit・object-position、aspect-ratio の reftest 73→138。QEMU・実機は未実施））
+
 B1 (2026-10-14/15)。ユーザーの指示「そのあとで、Interop 2024, 2023の、よく使われるレイアウトの部分を選んで改善しましょう。」Status: host の確認まで cleared 相当（QEMU・実機は未実施）。p233 の続き。
 
 ## 選んだ領域と理由

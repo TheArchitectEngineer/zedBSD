@@ -1,5 +1,7 @@
 # WS031 p008 計画: cmdbuf — command buffer → GEN バッチ変換・draw・投入
 
+Status: cleared（2026-10-18 Q1: Status の行が無かったので写した。元: cleared）
+
 `vkCmd*` の記録を GEN 3D バッチへ変換し、`vkQueueSubmit` で WS029 の RCS0 request 経路へ投入する。おおまかな設計。
 
 ## Module と所有ファイル

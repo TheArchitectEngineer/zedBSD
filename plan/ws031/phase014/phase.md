@@ -1,5 +1,7 @@
 # WS031 p014 計画: モデルビューア（mview）を i915 で動かし、i915 のシェーダーを一通り動かす
 
+Status: cleared（2026-10-18 Q1: Status の行が無かったので写した。元: cleared（A0・A・B・C・D・E1・E2・E3・性能第 2 回。残りは p015〜p018 へ））
+
 p013 の mview（Venus で PASS）を QEMU＋passthrough（Latitude 5330）の i915 で動かす。ビューアが要る機能から順に i915 の
 Vulkan executor（`src/drivers/gpu/i915/render/`）と SPIR-V compiler（`src/drivers/gpu/i915/compiler/`）を拡張し、各段で
 小さな試験 shader を実機で確かめてから先へ進む。その後、ビューア以外の shader も一通り通るよう compiler を広げる。

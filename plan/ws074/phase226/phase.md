@@ -2,6 +2,8 @@
 
 # ws074-p226: Grid content distribution and absolute-child containing block
 
+Status: in-progress（2026-10-18 Q1: Status の行が無かった。q1199-i01・q1200-i01 は partial clear、whole の criteria は未達）
+
 B1 (2026-10-14, handed over from the Codex session). 範囲: horizontal-tb の grid container の (1) align-content / justify-content の分配（stretch・start・end・center・space-*）と auto track の stretch、(2) position 付き grid の absolute 子の containing block を grid line から決める（auto line は padding edge）と、absolute 子の百分率 height/width の基準、(3) row-gap/column-gap の calc(%+px)。vertical grid と orthogonal 子は範囲外。
 
 ## q1199-i01 結果（2026-10-14）

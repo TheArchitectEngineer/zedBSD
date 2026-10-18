@@ -2,6 +2,8 @@
 
 # ws074-p227: Flex absolute-child static position and alignment keywords
 
+Status: in-progress（2026-10-18 Q1: Status の行が無かった。q1201-i01・q1202-i01 は partial clear、whole の criteria は未達）
+
 B1 (2026-10-14). 範囲: flex container の absolute 子の static position を「唯一の flex item」として求める（justify-content は主軸、align-self / align-items は交差軸、row・column・reverse・wrap-reverse・direction・縦書き）、`first baseline`・`last baseline`・`safe`/`unsafe` の構文（last baseline は end に退避、safe/unsafe は無視）、flex-start/flex-end を start/end と区別する style の bit。
 
 ## q1201-i01 結果（2026-10-14）

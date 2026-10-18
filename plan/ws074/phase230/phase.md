@@ -2,6 +2,8 @@
 
 # ws074-p230: yahoo.co.jp の top（gzip の script、SVG の画像、transform、dynamic link ほか）
 
+Status: cleared（2026-10-18 Q1: Status の行が無かったので写した。元: cleared（host、2026-10-14 B1））
+
 B1 (2026-10-14)。ユーザーの指示（原文「ブラウザでyahoo.co.jpも表示できるようにしてください。」、続けて「Yahooは未対応のCSSがあれば追加して修正してください。webpはaaceptしないようにしてると思いますが、もししてなければPNG,JPEGのみacceptにします。それでもYahooが送ってくるなら、今回はとりあえずはYahooはunclearにします。」）。Status: host の確認まで cleared 相当（QEMU・実機は未実施）。google.com の続き（[p231](../phase231/phase.md)）。
 
 ## 取得物（再現できる形）

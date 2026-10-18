@@ -2,6 +2,8 @@
 
 # ws074-p231: google.com の script と Grid の高さ（BigInt、型付き配列ほか、Grid の max-height と auto margin、dynamic link）
 
+Status: cleared（2026-10-18 Q1: Status の行が無かったので写した。元: cleared（host、2026-10-14 B1））
+
 B1 (2026-10-14)。Q1 の追加指示（原文「Googleでロゴと検索の箱が、Chromium より約 75px 上に寄っていますので、Grid の高さの扱いの差を修正してください。」「Googleで右上の「Gmail」「画像」と、下の「English」の行が出ませんので、ページの script が `BigInt` の未対応を修正してください。」）。Status: host の確認まで cleared 相当（QEMU・実機は未実施）。p228 の続き。
 
 ## 原因と直し

@@ -2,6 +2,8 @@
 
 # ws074-p220: vertical inline text geometry
 
+Status: in-progress（2026-10-18 Q1: Status の行が無かったので写した。元: in-progress / q1121–q1122部分cleared）
+
 ## q1184-i01 結果（2026-10-14 13:44 JST）
 
 Event ws074-p220-q1184-partial-clear-20261014: [証拠](evidence/20261014-q1184/README.md)。水平RTL固定Grid直接vertical-rl/RTL absolute子のrow2/col2左上insetに2番目row trackの縦inline roomとstatic areaを適用。独立最小矩形は5,10,36,40→5,160,40,36でChromium一致。固定non-static007水平LTR/RTL両callback whole PASS、縦2 callback FAILでfile whole未達。旧WPT、host CSS51/JS14/Grid48、warning0 build、Acid3差0/Acid2差1865維持。q1184有限部分範囲cleared、p220/p217/p189/p173 whole未達、共有投影/GitHub publication保留。

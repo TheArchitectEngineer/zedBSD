@@ -1,5 +1,7 @@
 # WS031 p005 計画: eu — Gen12 EU 命令・message エンコーダ
 
+Status: cleared（2026-10-18 Q1: Status の行が無かったので写した。元: cleared）
+
 Gen12（Xe-LP）の EU 命令を byte 列へ encode する low-level emitter。値（bit layout・opcode・message descriptor）は出典付き `.inc`、ロジックは新規。おおまかな設計。
 
 ## Module と所有ファイル
