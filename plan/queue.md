@@ -551,3 +551,12 @@ WS074 の記録の q590・q594〜q598（Codex の browser3）は main の同じ�
 | q1229 / q1229-i20 | T1（test-runner） | ws245 の 5330 の再試験（tip 92f134d99） | phase046 の「q1229-i19」の節の再試験の項目 1〜4 | 済み（2026-10-17 19:20〜19:27、実機）: debug の比べ PASS（AUX A の D3 1 回、差は意図・無害の行だけ）、log PASS、素の起動 PASS（steady 差 0）、reboot の止める道は未確認（log が届かない）。証拠 t1 396cbfce4。Q1 が main に merge（89ff347f3） |
 | q1229 / q1229-i21 | T1（test-runner） | merge 後の main の 5330 の素の起動 1 回 | main の tip の kernel で起動の基準と survey（基準は i18 の main） | PASS（2026-10-17 19:33〜19:35、実機、kernel 61dde9d6b の build sha256 c407a679…）: 起動の基準すべて PASS、survey の steady 差 0、`the sink did not go to sleep` 0。証拠 24f2329ea。USB の vmunix は merge 後の main の kernel のまま、5330 は Linux |
 | q1240 / q1240-i01 | P1（phase-runner、新しい起動） | ws251-p002 GPU ドライバの開発の管理情報の削除（i915 から） | 2026-10-17 ユーザーの指示（原文は ws251-p002） | ラップアップで返却（2026-10-17）: i915 の display の群だけ済み（309d142e3、main に merge d600f983b）。comment 34 file、log は gen9-firmware.c の 7 行（`N0-lite (gen9)` → `gen9 firmware display`）。build 3 組 warning 0、object の比べで差は gen9-firmware.o だけ、run-xd-host-tests・WS075 80/0、merge 後に Q1 が WS237 gen9 flip 48/0・mode 71/0・backlight 21/0・WS229 20/0。残り 565 件（i915 の render・tests・GT、bcm2711 の stage の log、venus・compiler・amdrdna、include/uapi/gpu-op.h）。基準の build は p1 の build/ws251p002-base に残す。再開は phase002 の手順 |
+
+## 2026-10-18: P1 の WS245・WS251（q1241〜）
+
+承認: 2026-10-18 ユーザー「N=2で、P1はWS245, WS251の続きを実施します。P1はOpus 5.5 Lowで実行し、レビュー用のサブエージェントを用いません。」。P1 は model Opus 5.5・effort low、レビューの子なし。worktree p1・branch agent/p1-q1241（基点 main fc9ff462d）。
+
+| Queue | 担当 | Phase | 範囲 | 結果 |
+| --- | --- | --- | --- | --- |
+| q1241 / q1241-i01 | P1（phase-runner、Opus 5.5 low） | ws245 の in-progress の 43 Phase、p046 | (1) 各 Phase の受け入れの基準と q1229-i20・i21（5330 の実機、証拠 t1 396cbfce4・24f2329ea）の証拠を突き合わせ、phase.md に「判定の材料」（満たした基準と証拠、残る物）を書く。cleared にするのは Q1 (2) p046 の全文の読み通し。source の動作は変えない | in-progress |
+| q1242 / q1242-i01 | P1（同上、q1241 の後） | ws251-p002 | GPU ドライバの comment・log から開発の管理情報を消す残り（565 件、phase002 の再開の手順から） | pending |
