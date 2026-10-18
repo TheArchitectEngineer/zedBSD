@@ -17,7 +17,17 @@
 #                  frames (default a new directory under TMPDIR, else /tmp)
 #   BOOT_TIMEOUT   seconds to wait for the login prompt (default 180)
 #   QEMU           emulator to run (default depends on BOOT_MODE)
-#   BOOT_MODE      uefi-nvme (default), uefi-usb, bios-ide or raspi4b
+#   BOOT_MODE      uefi-nvme (default), uefi-usb, bios-ide, raspi4b,
+#                  riscv64-virt or riscv64-uboot
+#   BOOT_PATTERN   what the screen must show, one regular expression per line;
+#                  every one must be seen on some screen (default the login
+#                  prompt, ^(?:\S+ )?login: ?)
+#   BOOT_THEN      steps after the patterns were seen, one per line:
+#                  "type:TEXT" types TEXT and a return on the guest's serial
+#                  line, "expect:REGEX" waits for the screen to show REGEX;
+#                  the last screen is OUTPUT/login-after.png
+#   BOOT_INTERVAL  seconds between two looks at the screen (default 2, 0.5 in
+#                  the riscv64 modes)
 #   QEMU_NO_KVM    1 runs the amd64 guest on TCG (-cpu max) even when /dev/kvm
 #                  is usable; otherwise it runs under KVM (-cpu host) when the
 #                  host offers it (plan/tools/guest/qemu-accel.sh)
@@ -39,16 +49,43 @@
 # SD card.  The console centres its 80x25 grid on the framebuffer, which the
 # screen reader also tries.
 #
+# BOOT_MODE=riscv64-virt boots a RISC-V kernel directly in QEMU's virt machine:
+# the operand (or KERNEL, default build/riscv64-virt/vmunix) is the kernel ELF,
+# which the default firmware (OpenSBI) enters in supervisor mode.  The machine
+# has a ramfb display, which the kernel's console draws to, so the screen is
+# read the same way.  INITRD (an initial ramdisk), BOOT_APPEND (the kernel
+# command line), BOOT_SMP (default 4), BOOT_MEMORY (default 2G) and QEMU_EXTRA
+# (more emulator options, split on spaces, such as -cpu rv64,sstc=off) shape
+# the machine.  BOOT_MODE=riscv64-uboot boots the operand as a disk image on
+# virtio-blk through U-Boot (UBOOT, default the Debian u-boot-qemu
+# qemu-riscv64_smode build), with the same display.  Both run on TCG.  The
+# serial line is a socket only typed into by BOOT_THEN; what the guest writes
+# there is drained and not kept.
+#
 # It writes OUTPUT/login.png and prints its path.  The exit status is 0 only
 # when the login prompt was seen.
 set -euo pipefail
 
 root=$(cd -- "$(dirname -- "$0")/../.." && pwd)
 . "$root/plan/tools/guest/qemu-accel.sh"
-image=${1:-${IMAGE:-$root/build/amd64/hdd-image.img}}
 output=${OUTPUT:-$root/build/boot-test}
 boot_timeout=${BOOT_TIMEOUT:-180}
 boot_mode=${BOOT_MODE:-uefi-nvme}
+boot_interval=${BOOT_INTERVAL:-2}
+# The riscv64 modes take a kernel or their own disk as the default operand.
+case $boot_mode in
+riscv64-virt)
+	image=${1:-${IMAGE:-${KERNEL:-$root/build/riscv64-virt/vmunix}}}
+	boot_interval=${BOOT_INTERVAL:-0.5}
+	;;
+riscv64-uboot)
+	image=${1:-${IMAGE:-$root/build/riscv64-virt/hdd-image.img}}
+	boot_interval=${BOOT_INTERVAL:-0.5}
+	;;
+*)
+	image=${1:-${IMAGE:-$root/build/amd64/hdd-image.img}}
+	;;
+esac
 code=${OVMF_CODE:-/usr/share/OVMF/OVMF_CODE_4M.fd}
 vars=${OVMF_VARS:-/usr/share/OVMF/OVMF_VARS_4M.fd}
 
@@ -81,6 +118,18 @@ raspi4b)
 	fi
 	required=("$image" "$kernel" "$dtb")
 	;;
+riscv64-virt)
+	qemu=${QEMU:-qemu-system-riscv64}
+	required=("$image")
+	if [[ -n ${INITRD:-} ]]; then
+		required+=("$INITRD")
+	fi
+	;;
+riscv64-uboot)
+	qemu=${QEMU:-qemu-system-riscv64}
+	uboot=${UBOOT:-/usr/lib/u-boot/qemu-riscv64_smode/u-boot.bin}
+	required=("$image" "$uboot")
+	;;
 *)
 	echo "boot-test: unknown BOOT_MODE: $boot_mode" >&2
 	exit 1
@@ -112,13 +161,17 @@ work=$(mktemp -d "$work_parent/boot-test.XXXXXX")
 disk=$work/stick.qcow2
 nvram=$work/uefi-vars.fd
 monitor=$work/qmp.sock
+serial=$work/serial.sock
 frame=$work/screen.ppm
 screenshot=$output/login.png
 
 # The guest writes to the stick it booted from, so it is given a copy-on-write
 # overlay of the image (small, so that a work directory left for Q1's cleanup
-# costs little), and the firmware gets its own variable store.
-qemu-img create -q -f qcow2 -F raw -b "$(readlink -f -- "$image")" "$disk"
+# costs little), and the firmware gets its own variable store.  A riscv64-virt
+# kernel is booted directly and has no disk.
+if [[ $boot_mode != riscv64-virt ]]; then
+	qemu-img create -q -f qcow2 -F raw -b "$(readlink -f -- "$image")" "$disk"
+fi
 if [[ $boot_mode == uefi-usb || $boot_mode == uefi-nvme ]]; then
 	cp -- "$vars" "$nvram"
 fi
@@ -155,6 +208,29 @@ if [[ $boot_mode == uefi-usb || $boot_mode == uefi-nvme ]]; then
 		-device usb-kbd,bus=xhci.0,port=2 \
 		-vga std -display none -no-reboot \
 		-qmp "unix:$monitor,server,nowait" >"$output/qemu.log" 2>&1 &
+elif [[ $boot_mode == riscv64-virt || $boot_mode == riscv64-uboot ]]; then
+	# The virt machine with a ramfb display, the console the kernel draws,
+	# and its first serial line on a socket for typing into.
+	riscv_machine=(-machine virt -smp "${BOOT_SMP:-4}" -m "${BOOT_MEMORY:-2G}"
+		-device ramfb -display none -no-reboot
+		-serial "unix:$serial,server,nowait"
+		-qmp "unix:$monitor,server,nowait")
+	if [[ $boot_mode == riscv64-virt ]]; then
+		riscv_boot=(-kernel "$image")
+		if [[ -n ${INITRD:-} ]]; then
+			riscv_boot+=(-initrd "$INITRD")
+		fi
+		if [[ -n ${BOOT_APPEND:-} ]]; then
+			riscv_boot+=(-append "$BOOT_APPEND")
+		fi
+	else
+		riscv_boot=(-kernel "$uboot"
+			-drive "if=none,id=boot,file=$disk,format=qcow2"
+			-device virtio-blk-device,drive=boot)
+	fi
+	read -r -a riscv_extra <<<"${QEMU_EXTRA:-}"
+	"$qemu" "${riscv_machine[@]}" "${riscv_boot[@]}" "${riscv_extra[@]}" \
+		>"$output/qemu.log" 2>&1 &
 elif [[ $boot_mode == raspi4b ]]; then
 	"$qemu" -machine raspi4b -m 2G -kernel "$kernel" -dtb "$dtb" \
 		-drive "if=sd,format=qcow2,file=$disk" \
@@ -173,10 +249,31 @@ pid=$!
 # read.  Instead of reading pixels, this waits for the guest to stop writing to
 # the stick and then photographs the screen; the login prompt is the first
 # quiet point after the boot, and the picture shows whether that is what it is.
-python3 "$root/plan/tools/boot-test.py" \
-	--monitor "$monitor" --screenshot "$screenshot" --frame "$frame" \
-	--timeout "$boot_timeout"
-status=$?
+watch=(--monitor "$monitor" --screenshot "$screenshot" --frame "$frame"
+	--timeout "$boot_timeout" --interval "$boot_interval")
+if [[ -n ${BOOT_PATTERN:-} ]]; then
+	while IFS= read -r line; do
+		if [[ -n $line ]]; then
+			watch+=(--pattern "$line")
+		fi
+	done <<<"$BOOT_PATTERN"
+fi
+if [[ -n ${BOOT_THEN:-} ]]; then
+	watch+=(--serial "$serial")
+	while IFS= read -r line; do
+		case $line in
+		type:*) watch+=(--then-type "${line#type:}") ;;
+		expect:*) watch+=(--then-expect "${line#expect:}") ;;
+		'') ;;
+		*)
+			echo "boot-test: unknown BOOT_THEN step: $line" >&2
+			exit 1
+			;;
+		esac
+	done <<<"$BOOT_THEN"
+fi
+status=0
+python3 "$root/plan/tools/boot-test.py" "${watch[@]}" || status=$?
 
 if [[ $status -eq 0 ]]; then
 	echo "boot-test: PASS $screenshot"
