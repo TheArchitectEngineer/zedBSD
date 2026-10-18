@@ -2,6 +2,8 @@
 
 ## 最新: ws074-q20261018-23（2026-10-18）
 
+Follow-up: q23 i01/i02 clearanceは疎checkoutのIDL未配信が判明しunclearedへ訂正。2 IDのsetup failureをnative API failureとみなさず、[追記と原履歴](ws074-q20261018-23.md)・[proof](../phase189/evidence/20261018-q23-followup/missing-idl-proof.json)を保持。元測定とold1491同値・goal1481は不変、次はIDL providerを正す。
+
 [履歴](ws074-q20261018-23.md)。pinned Window/Any wrapper・META・WebIDL内部GET rewrite・generated専用ordinary headersを提供し、primary/native13＋既存分類5対照通過。全1508=old1491+new17を同じfrozen pairで実測、old1491は全ID/whole/returncode/callback・completion status/order/messages完全同値。追加17は全native attempt、raw1 PASS/10 FAIL/5 no_completion/1 harness_error、426 callbacks（2 PASS/424 FAIL）。全1783の未attempt292→275、native C/WPT/期待値/分母は不変。 新1 raw PASSは既存performance.markの記録なし・getEntries空・PerformanceObserver.observe no-opで入力が欠落しており、native/Chrome独立probeでprior/future 0/0対1/1とfuture通知の差を確認。元WPT結果は改変せずknown native prerequisite holdback1として確認済みに加算しない。raw fixed1482/3805、確認済み1481/3805（38.922470%）維持。 両coverage partial cleared、known noop input/observerはp254/p255へ具体化し確認済みへ先取り加算しない。whole/target/p100/shared projectionは未達、全原本/生成物/stdio/primary/source hashesとnative/Chrome probeを保持。
 
 ## ws074-q20261018-22（2026-10-18）

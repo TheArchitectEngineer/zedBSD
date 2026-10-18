@@ -1,0 +1,58 @@
+[
+  {
+    "test_id": "/event-timing/idlharness.any.html",
+    "original_outcome": "fail",
+    "callbacks": [
+      {
+        "name": "idl_test setup",
+        "status": 1,
+        "message": "promise_test: Unhandled rejection with value: object \"Error fetching /interfaces/event-timing.idl.\""
+      }
+    ],
+    "missing_pinned_resources": [
+      {
+        "path": "interfaces/event-timing.idl",
+        "pinned_sha256": "be75f395a463b1d783b8a921519c72f76524cb4ca6288652c9646a77fc7089d5",
+        "present_in_checkout": false
+      },
+      {
+        "path": "interfaces/performance-timeline.idl",
+        "pinned_sha256": "d4f59f18dcf34af2d514c07b62691c13e783c6c1a3616869666eabf36641c8be",
+        "present_in_checkout": false
+      },
+      {
+        "path": "interfaces/hr-time.idl",
+        "pinned_sha256": "20c66ab62bd1122b0abcc5dd3387c810e482781b4088da4e45437b1678407830",
+        "present_in_checkout": false
+      },
+      {
+        "path": "interfaces/dom.idl",
+        "pinned_sha256": "129fac34c83e2f643ac4d0380c0b4b62bd8916dbfc80c1140c4724f43d7f8c91",
+        "present_in_checkout": false
+      }
+    ]
+  },
+  {
+    "test_id": "/storage-access-api/idlharness.window.html",
+    "original_outcome": "fail",
+    "callbacks": [
+      {
+        "name": "idl_test setup",
+        "status": 1,
+        "message": "promise_test: Unhandled rejection with value: object \"Error fetching /interfaces/storage-access.idl.\""
+      }
+    ],
+    "missing_pinned_resources": [
+      {
+        "path": "interfaces/storage-access.idl",
+        "pinned_sha256": "375b83509cc2c8882f76195ba64f46f8888d13ab3be713ae38b5b269c05bb70e",
+        "present_in_checkout": false
+      },
+      {
+        "path": "interfaces/dom.idl",
+        "pinned_sha256": "129fac34c83e2f643ac4d0380c0b4b62bd8916dbfc80c1140c4724f43d7f8c91",
+        "present_in_checkout": false
+      }
+    ]
+  }
+]

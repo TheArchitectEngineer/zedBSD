@@ -32,3 +32,6 @@ p255はこのPhaseのwhole clearanceではなく、実際にverifiedになった
 [User Timing mark algorithm](https://www.w3.org/TR/user-timing/#mark-method)はmark objectの作成・queue・buffer追加・返却を要求する。2026-03-11 draftと固定2025 WPT/Chrome2026の共通なproducer条件を使用する。observer mixed entryTypes/bufferedの世代差はp255へ記録し、このproducer設計とは分離する。
 
 Event ws074-p254-added-from-q23-20261018: p189で確認した既存no-opによる入力欠落をownerとして受け取る。mark/entryのNative producerを定義、p255 consumer→p189 holdback再評価の依存を追加。まだQueue未選定でありsource permission/clearedを先取りしない。p077 readonly受け入れは維持、shared projection pending。
+
+
+Event ws074-q23-clearance-invalidated-idl-20261018: [origin p189](../phase189/evidence/20261018-q23-followup/missing-idl-proof.json)で2 IDの入力欠落が判明。Native mark/observer no-op diagnosisと本Phase goalは不変。source生成の前にp189のmissing pinned IDL providerと正しい全1508 baselineのverified outputを待つ。q24-preflightのChrome mark入力は調査資料でありQueue/source実装ではない。shared projection pending。
