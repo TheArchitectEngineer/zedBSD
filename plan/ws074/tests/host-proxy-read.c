@@ -145,6 +145,7 @@ static const struct vm_native_operations proxy_sole_operations = {
 
 static int consumer_key_primitive(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int object_consumers_pressure(struct page *page);
+static int ordinary_instance_pressure(struct page *page);
 static void proxy_key_values_trace(struct vm_heap *heap, void *context);
 static int proxy_own_keys(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int proxy_note_own_key(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
@@ -356,6 +357,13 @@ main(
 
 	/* Public Object consumers retain fresh keys through boxing and preserve native errors through actual calls. */
 	status = object_consumers_pressure(page);
+	if (status != 0)
+		goto cleanup;
+
+	/* The direct ordinary-instance API must own its managed caller and inputs before any collecting descriptor policy. */
+	status = ordinary_instance_pressure(page);
+	if (status != 0)
+		goto cleanup;
 
 cleanup:
 	/* Restore ordinary scanning before retiring the complete Page graph. */
@@ -3455,7 +3463,7 @@ object_consumers_pressure(
 	}
 
 	/* Prototype key boxing, key-list errno and descriptor errno each use actual installed native methods. */
-	for (mode = 0; mode < 4U; mode++) {
+	for (mode = 0; mode < 6U; mode++) {
 		memset(&object_consumer_case, 0, sizeof(object_consumer_case));
 		object_consumer_case.heap = page->heap;
 		status = vm_realm_create_managed(page->heap, &caller);
@@ -3521,6 +3529,20 @@ object_consumers_pressure(
 				name = "isSealed";
 			receiver = owner;
 			argument = vm_value_cell(input);
+		}
+
+		/* The legacy accessor consumers must also propagate pure native descriptor errors through real GetOwn. */
+		if (mode >= 4U) {
+			owner = vm_value_cell(page->realm->object_prototype);
+			name = "__lookupGetter__";
+			if (mode == 5U)
+				name = "__lookupSetter__";
+			receiver = vm_value_cell(input);
+			argument = vm_key_from_ascii(page->heap, "x");
+			if (argument == VM_VALUE_EMPTY) {
+				status = ENOMEM;
+				goto cleanup;
+			}
 		}
 
 		/* Direct native invocation still uses vm_call, whose contract retains caller realm, callee and arguments. */
@@ -3627,5 +3649,125 @@ cleanup:
 		return status;
 
 	/* Succeeded: fresh-key boxing, native errors and all completed input/key reclamations were observed. */
+	return 0;
+}
+
+/* Verifies direct OrdinaryHasInstance ownership without an enclosing VM call or embedding roots. */
+static int
+ordinary_instance_pressure(
+	struct page *page)
+{
+	struct vm_realm *caller;
+	struct vm_function *constructor;
+	struct vm_object *value;
+	struct vm_cell *roots[3];
+	struct vm_cell *found;
+	struct vm_heap_stats before;
+	struct vm_heap_stats after;
+	vm_value answer;
+	uintptr_t value_address;
+	unsigned registered;
+	unsigned index;
+	int status;
+
+	/* Setup roots own only construction; the tested API must acquire all lifetime responsibility at entry. */
+	memset(roots, 0, sizeof(roots));
+	memset(&object_consumer_case, 0, sizeof(object_consumer_case));
+	registered = 0;
+	for (index = 0; index < 3U; index++) {
+		status = vm_heap_add_root(page->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* A bare managed realm has no intrinsic or global registry edge that could hide missing API ownership. */
+	status = vm_realm_create_managed(page->heap, &caller);
+	if (status != 0)
+		goto cleanup;
+	roots[0] = &caller->cell;
+	object_consumer_case.heap = page->heap;
+	object_consumer_case.caller_address = (uintptr_t)caller;
+	constructor = vm_function_create_native(page->realm, "instance-pressure", 0, proxy_collect);
+	if (constructor == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* The callable constructor's native descriptor policy collects and returns a genuine negative errno. */
+	roots[1] = &constructor->object.cell;
+	object_consumer_case.input_address = (uintptr_t)constructor;
+	constructor->object.native_operations = &consumer_error_descriptor_operations;
+	value = vm_object_create(page->heap, NULL);
+	if (value == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* No fixture-owned managed edge remains when the direct native operation begins. */
+	roots[2] = &value->cell;
+	value_address = (uintptr_t)value;
+	roots[0] = NULL;
+	roots[1] = NULL;
+	roots[2] = NULL;
+	vm_heap_stats(page->heap, &before);
+	status = vm_ordinary_has_instance(caller, vm_value_cell(constructor), vm_value_cell(value), &answer);
+	vm_heap_stats(page->heap, &after);
+	if (status != EACCES) {
+		status = EFAULT;
+		goto cleanup;
+	}
+
+	/* Collection must actually run inside the one constructor-side descriptor observation. */
+	if (object_consumer_case.calls != 1U || after.collections <= before.collections) {
+		status = EFAULT;
+		goto cleanup;
+	}
+
+	/* The value was not an argument of any enclosing VM call, yet survived constructor-side collection. */
+	found = vm_heap_find_cell(page->heap, value_address);
+	if (found == NULL) {
+		status = EFAULT;
+		goto cleanup;
+	}
+
+	/* Completion releases every direct-API owner, allowing all three original participants to be reclaimed. */
+	vm_heap_collect(page->heap);
+	found = vm_heap_find_cell(page->heap, value_address);
+	if (found != NULL) {
+		status = EFAULT;
+		goto cleanup;
+	}
+
+	/* The managed caller has no hidden intrinsic or test registry ownership. */
+	found = vm_heap_find_cell(page->heap, object_consumer_case.caller_address);
+	if (found != NULL) {
+		status = EFAULT;
+		goto cleanup;
+	}
+
+	/* The discarded callable constructor is independently reclaimed after native error propagation. */
+	found = vm_heap_find_cell(page->heap, object_consumer_case.input_address);
+	if (found != NULL) {
+		status = EFAULT;
+		goto cleanup;
+	}
+
+	/* All direct-call ownership and errno observations held under actual collection. */
+	status = 0;
+
+cleanup:
+	/* Retire partial setup registrations and weak observations on every result path. */
+	memset(&object_consumer_case, 0, sizeof(object_consumer_case));
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(page->heap, &roots[registered]);
+	}
+
+	/* Preserve a failed lifetime or native-error observation. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the direct API retained and then released its managed participants. */
 	return 0;
 }

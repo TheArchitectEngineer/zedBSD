@@ -983,7 +983,8 @@ vm_ordinary_has_instance(
 	vm_value value,
 	vm_value *result)
 {
-	struct vm_object *object;
+	struct access_read_roots roots;
+	struct vm_cell *prototype_root;
 	vm_value key;
 	vm_value prototype;
 	vm_value link;
@@ -991,44 +992,72 @@ vm_ordinary_has_instance(
 	int is_object;
 	int status;
 
-	/* Only a function has instances. */
+	/* Only callable constructors and object values require a prototype lookup. */
 	*result = VM_VALUE_FALSE;
 	callable = vm_value_is_callable(constructor);
 	if (!callable)
 		return 0;
-
-	/* A primitive is an instance of nothing. */
 	is_object = vm_value_is_object(value);
 	if (!is_object)
 		return 0;
 
-	/* The constructor's prototype, which must be an object. */
-	key = vm_key_from_ascii(realm->heap, "prototype");
-	if (key == VM_VALUE_EMPTY)
-		return ENOMEM;
-	status = vm_get(realm, constructor, key, &prototype);
+	/* A managed caller, constructor and original value survive key allocation and constructor getters. */
+	roots.realm = realm;
+	roots.base = constructor;
+	roots.key = VM_VALUE_UNDEFINED;
+	roots.receiver = value;
+	status = vm_heap_add_tracer(realm->heap, access_read_trace, &roots);
 	if (status != 0)
 		return status;
+	prototype_root = NULL;
+	status = vm_heap_add_root(realm->heap, &prototype_root);
+	if (status != 0) {
+		vm_heap_remove_tracer(realm->heap, access_read_trace, &roots);
+		return status;
+	}
+
+	/* The constructor's prototype is retrieved before any value-side prototype method is called. */
+	key = vm_key_from_ascii(realm->heap, "prototype");
+	if (key == VM_VALUE_EMPTY) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* Preserve the property key through a getter that may allocate or collect. */
+	roots.key = key;
+	status = vm_get(realm, constructor, key, &prototype);
+	if (status != 0)
+		goto cleanup;
 	is_object = vm_value_is_object(prototype);
 	if (!is_object) {
 		status = vm_throw_type_error(realm, "Function has non-object prototype in instanceof check");
-		return status;
+		goto cleanup;
 	}
 
-	/* Walks the value's chain looking for it. */
-	object = ((struct vm_object *)vm_value_as_cell(value))->prototype;
-	while (object != NULL) {
-		link = vm_value_cell(object);
+	/* The target prototype and the latest returned link remain independently owned through later traps. */
+	prototype_root = vm_value_as_cell(prototype);
+	while (roots.receiver != VM_VALUE_NULL) {
+		status = vm_get_prototype(realm, (struct vm_object *)vm_value_as_cell(roots.receiver), &link);
+		if (status != 0)
+			goto cleanup;
+		roots.receiver = link;
 		if (link == prototype) {
 			*result = VM_VALUE_TRUE;
-			return 0;
+			break;
 		}
-
-		/* The next object of the chain. */
-		object = object->prototype;
 	}
 
-	/* Succeeded: not an instance. */
+	/* Reaching null without matching the prototype is a successful false result. */
+	status = 0;
+
+cleanup:
+	/* Neither abrupt chain traversal nor invalid constructor output may leak native ownership. */
+	vm_heap_remove_root(realm->heap, &prototype_root);
+	vm_heap_remove_tracer(realm->heap, access_read_trace, &roots);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the actual internal prototype methods supplied the instance result. */
 	return 0;
 }
 
