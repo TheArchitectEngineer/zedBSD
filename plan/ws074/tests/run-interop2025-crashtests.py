@@ -56,7 +56,18 @@ def image_details(path):
             return None
     except (OSError, ValueError):
         return None
-    return {"size": size, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+    return {"file": str(path), "size": size, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+
+
+def retain_case(directory, checkpoint, index, record):
+    """Retain one complete record before publishing its progress checkpoint."""
+    stem = "case-%03d" % (index + 1)
+    for name in ("stdout", "stderr"):
+        (directory / (stem + "." + name)).write_text(record.get(name, ""), encoding="utf-8")
+    path = directory / (stem + ".json")
+    path.write_text(json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    with checkpoint.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
 def selected_cases(manifest, focus):
@@ -90,46 +101,48 @@ def run(args):
     worker.start()
     results = []
     try:
-        with tempfile.TemporaryDirectory(prefix="wpt-crash-", dir=args.out.parent) as raw:
-            output = Path(raw) / "result.ppm"
-            base = "http://127.0.0.1:%d" % server.server_port
-            for row in cases:
-                test_id = row["id"]
-                record = {"test_id": test_id}
-                if ("?" in test_id or ".https." in test_id or
-                        not test_id.endswith(".html") or
-                        not (args.wpt / row["source"]).is_file()):
-                    record["outcome"] = "unsupported"
-                    results.append(record)
-                    continue
-                output.unlink(missing_ok=True)
-                command = [str(args.program), "--render", "--async",
-                           "--settle-ms=%d" % args.settle_ms,
-                           "--output=" + str(output), "--width=%d" % args.width,
-                           "--height=%d" % args.height,
-                           "--font=" + str(FONTS / "Mahora-Regular.ttf"),
-                           "--mono-font=" + str(FONTS / "JetBrainsMono-Regular.ttf"),
-                           "--fallback-font=" + str(FONTS / "DroidSansFallbackFull.ttf"),
-                           base + test_id]
-                try:
-                    process = subprocess.run(command, capture_output=True,
-                                             timeout=args.process_timeout)
-                    stdout = process.stdout.decode("utf-8", errors="replace")
-                    stderr = process.stderr.decode("utf-8", errors="replace")
-                    returncode = process.returncode
-                    timed_out = False
-                except subprocess.TimeoutExpired as error:
-                    stdout = (error.stdout or b"").decode("utf-8", errors="replace")
-                    stderr = (error.stderr or b"").decode("utf-8", errors="replace")
-                    returncode = None
-                    timed_out = True
-                image = image_details(output)
-                record.update({"outcome": classify(returncode, timed_out, image is not None),
-                               "returncode": returncode, "timed_out": timed_out,
-                               "image": image, "stdout": stdout, "stderr": stderr,
-                               "command": command})
+        raw = Path(tempfile.mkdtemp(prefix="wpt-crash-", dir=args.out.parent)).resolve()
+        base = "http://127.0.0.1:%d" % server.server_port
+        checkpoint = raw / "progress.jsonl"
+        for index, row in enumerate(cases):
+            test_id = row["id"]
+            record = {"test_id": test_id}
+            if ("?" in test_id or ".https." in test_id or
+                    not test_id.endswith(".html") or
+                    not (args.wpt / row["source"]).is_file()):
+                record["outcome"] = "unsupported"
                 results.append(record)
-                print("%s: %s" % (test_id, record["outcome"]))
+                retain_case(raw, checkpoint, index, record)
+                continue
+            output = raw / ("case-%03d.ppm" % (index + 1))
+            command = [str(args.program), "--render", "--async",
+                       "--settle-ms=%d" % args.settle_ms,
+                       "--output=" + str(output), "--width=%d" % args.width,
+                       "--height=%d" % args.height,
+                       "--font=" + str(FONTS / "Mahora-Regular.ttf"),
+                       "--mono-font=" + str(FONTS / "JetBrainsMono-Regular.ttf"),
+                       "--fallback-font=" + str(FONTS / "DroidSansFallbackFull.ttf"),
+                       base + test_id]
+            try:
+                process = subprocess.run(command, capture_output=True,
+                                         timeout=args.process_timeout)
+                stdout = process.stdout.decode("utf-8", errors="replace")
+                stderr = process.stderr.decode("utf-8", errors="replace")
+                returncode = process.returncode
+                timed_out = False
+            except subprocess.TimeoutExpired as error:
+                stdout = (error.stdout or b"").decode("utf-8", errors="replace")
+                stderr = (error.stderr or b"").decode("utf-8", errors="replace")
+                returncode = None
+                timed_out = True
+            image = image_details(output)
+            record.update({"outcome": classify(returncode, timed_out, image is not None),
+                           "returncode": returncode, "timed_out": timed_out,
+                           "image": image, "stdout": stdout, "stderr": stderr,
+                           "command": command})
+            results.append(record)
+            retain_case(raw, checkpoint, index, record)
+            print("%s: %s" % (test_id, record["outcome"]))
     finally:
         server.shutdown()
         server.server_close()
@@ -137,7 +150,12 @@ def run(args):
     counts = {}
     for record in results:
         counts[record["outcome"]] = counts.get(record["outcome"], 0) + 1
-    report = {"schema": 1, "wpt_commit": revision,
+    library = args.program.resolve().parent / "libbrowser.so"
+    library_hash = hashlib.sha256(library.read_bytes()).hexdigest() if library.is_file() else None
+    report = {"schema": 1, "pass_semantics": "local_image_only",
+              "raw_directory": str(raw), "checkpoint": str(checkpoint),
+              "engine_library_sha256": library_hash,
+              "wpt_commit": revision,
               "metadata_commit": manifest["metadata_commit"],
               "focus": args.focus, "viewport": [args.width, args.height],
               "program_sha256": hashlib.sha256(args.program.read_bytes()).hexdigest(),

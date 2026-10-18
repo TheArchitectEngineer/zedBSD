@@ -642,7 +642,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p187](phase187/phase.md) | 負の padding と第6色箱の幅を調べる | cleared（q1010-i01、Acid3差900減、negative padding fixture pass） | p172〜p186 cleared、q1009 実測出力 |
 | [ws074-p188](phase188/phase.md) | 同一ページで観測した訪問履歴と :visited の paint color | cleared（q1011-i01、Acid3差801減→0、privacy fixture pass） | p172〜p187 cleared、q1010 実測出力 |
 | [ws074-p189](phase189/phase.md) | Interop 2025 testharness 1,783件の結果取得 runner | uncleared / q14全1491 whole491・未対応292 | p173 q1012 固定manifest出力 |
-| [ws074-p190](phase190/phase.md) | Interop 2025 reftest 1,974件・crashtest48件のrunner coverage | uncleared / q14静的1,561件839 PASS/722 FAIL、未対応413。q1040 crash48 local画像PASSの待機条件は未検証 | p173 q1012 固定manifest出力 |
+| [ws074-p190](phase190/phase.md) | Interop 2025 reftest 1,974件・crashtest48件のrunner coverage | in-progress / q15 crash partial、q14静的839 PASS/722 FAIL・未対応413、crash正式待機を検証 | p173 q1012 固定manifest出力 |
 | [ws074-p191](phase191/phase.md) | Interop 2025 textdecoration全16 testharnessのCSSOM互換 | cleared / q1023、16件16 PASS/0 FAIL | p173固定manifest、p189 q1015全16件baseline |
 | [ws074-p192](phase192/phase.md) | Interop 2025 Window named properties互換 | uncleared / q1025 partial cleared、一意id live lookup | p173固定manifest、p189 q1024 shard |
 | [ws074-p193](phase193/phase.md) | Interop 2025 details/hidden until-found互換 | uncleared / q1032計測6 PASS/10 FAIL/2 no output、q1035/q1036で2件追加PASS、reftest25/crashtest3未実行 | p189 q1024 shard、p192 q1025一意id output |
@@ -1194,3 +1194,7 @@ Event ws074-p224-state-reconciled-20261018: [p224](phase224/phase.md)のactive i
 Event ws074-q14-animation-fit-collapse-diagnosis-20261018: q14途中でGrid animation4 IDの16 callback偽陽性を追加可視化。[p250の独立before/after証拠](phase250/evidence/20261018-q14/animation-collapse-probe.html)でserializer collapseを直接確認し、p224/p248/p246へ自身の未達・resumeを記録。q14既定computed-only criteriaを変更せず、全件terminal gateまでclearance未判定。q11履歴は保持、共有投影pending。
 
 Event ws074-q14-both-cleared-20261018: [p251](phase251/phase.md) linear percentage type/[p250](phase250/phase.md) computed fit bound own criteria cleared。source88713badd・[全件証拠](phase250/evidence/20261018-q14/README.md)。harness1491 whole489→491、old whole後退0、callback13改善/16 native animation偽陽性露出。static1561 whole839/pixel count維持、DOM33/33、host/target warning0、Acid非増加。確認済み1330/3805、未対応292/413/crash48正式条件を保持。p224/p248/p246やWS/target/p100未達はclearしない。次候補はp190 crash正式待機/raw retentionを優先しp252へ続く。両Phase/runner所有Phaseへevent配送、共有projection/remote close pending。
+
+Event ws074-q15-crash-readiness-selected-20261018: [p190](phase190/phase.md)をretention→official wait protocolの最大60分Queueで実行。q14 archive/hash/98acae7a6 read-back後に選定、既知未確認48の正しい計測を[p252](phase252/phase.md)より優先。p252はq14 output verified/planned、両Phaseへ自身のresumeを記録。native C/WPT/public ABI/他runnerは変更せず、正式PASS数はactual確認まで加算しない。共有projection pending。
+
+Event ws074-p190-q15-i01-cleared-20261018: [p190 retention証拠](phase190/evidence/20261018-q15-i01/README.md)。i01部分cleared・正式crash増分0。artifact/hash/checkpointのverified outputでi02 strict waitを開始、Phase/WS whole未達と共有projection pendingを保持。

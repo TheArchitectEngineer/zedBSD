@@ -2,7 +2,7 @@
 
 # ws074-p190: Interop 2025 reftest・crashtest runner coverage
 
-Status: uncleared（2026-10-18 q06静的census部分cleared、whole未達）
+Status: in-progress（q15 crash retention/readiness partial、whole未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -175,3 +175,17 @@ Event ws074-p190-q06-partial-clear-20261018: [証拠](evidence/20261018-q06/READ
 Event ws074-p190-q12-static-checkpoint-20261018: [全1561の証拠](../phase247/evidence/20261018-q12/README.md)。q11 frozen/new zero glyph両pair839 PASS/722 FAIL、old PASS後退0。q06の836から3改善/後退0（q08 Grid2/q11 Grid1）、q12 font由来whole増分0。static未対応413/crash48を分母へ保持し、wholeは未達。共有投影pending。
 
 Event ws074-p190-q14-static-checkpoint-20261018: [p250 final gate](../phase250/evidence/20261018-q14/README.md)で同じ固定static1561は839 PASS/722 FAIL・error/timeout0、全old PASS維持・reference pixel count変化0。未対応413/crash48正式wait/load/paint未確認を維持。read-only sourceでcrash48中15ページにtest-wait/RAF/load等を確認し、既存q1040画像PASSを正式達成へ加算しない。次の有限Queueでretentionとpinned wptrunner wait protocolを検証する候補。
+
+## q15 crash48の正式readiness / design revision（2026-10-18）
+
+q1040 local image successだけでは全crash正式待機を満たすと証明できないため、q15をretention→strict waitの2 scoped itemで選定。現旧runnerはTemporaryDirectoryとoutput.unlinkで証拠を消し、exit0+画像だけでPASSにしていた。i01は保存だけ、i02は結果protocolを変更し、その違いをschema/記録で明示する。
+
+[固定WPT test-wait.js](https://github.com/web-platform-tests/wpt/blob/2d66b9b7998bb58c336138c178323ddee857b586/tools/wptrunner/wptrunner/executors/test-wait.js)と同commit executorwebdriver.py do_crashtestをread-onlyで確認。official executorはtest-wait classで待機しcompleteを受けてaliveを判定する。第三者scriptはgit blobからruntime fixtureとして読み、製品sourceへ転載せずWPT FSも変更しない。early head bootstrapでload後のtimerへ実行を予約し、load handlersによるroot removal等を先に処理。native font/2RAF/MutationObserver/TestRenderedが必要な場合はactual controlsで検証し、成立しなければ判定を緩和しない。
+
+固定48全HTMLの原本bytes/ID/hash/metadataを照合、responseにmain-only protocol bootstrapを加える。child/top取り違えはcontrolとcomplete URL/nonce照合で拒否。単一completionとprocess成功/valid最終paintが揃う場合だけ正式PASS、未完/duplicate/invalidは非PASS。JS exception単独ではcrash FAILにしない。native engine/API/WPT expectation/他runnerは不変。raw/PPM/log/checkpointはunique pathsで保持し、repoにはreportと必要なlossless PNG等の証拠を置く。cleanupはQ1所有。
+
+Python専用full standardは無いため既存tool styleとGuardrail/権限/FS/テスト規則を直接適用し、この制限を開示。2 toolのsyntax/適用controlsとactual48だけを検証し、byte-identical engineのq14全1491/static1561を再実行しない。60分/settle5000ms/process20sを上限とし、未対応/独立prerequisiteが出れば対象attemptをunclearedで止める。whole p190（残reftest413等）/WS100%は別受け入れ。
+
+Event ws074-p190-q15-design-selected-20261018: ユーザーautonomyを正確なQueueへ適用。q14 completed evidenceを検証後、既知未確認の正式crash coverageをp252より優先。p190自身のrunner設計/verification/resumeを更新し、WS/Queueへ投影。旧q1040画像成功の履歴を保持し、現時点で正式PASSへ加算しない。共有投影pending。
+
+Event ws074-p190-q15-i01-cleared-20261018: [証拠](evidence/20261018-q15-i01/README.md)。retention部分cleared、固定1 IDのPPM/raw/console/checkpoint全保持・hash/PNG RGB同値、unit6/syntax pass。q14と同じbrowser/library bytes、C/WPT不変。schema1 pass_semantics=local_image_onlyを明示、正式crash加算0。i02のverified prerequisite outputとしてstrict waitへ進む。whole p190未達/active i02を保持。

@@ -1,0 +1,12 @@
+{
+  "local_only": true,
+  "official_crash_increment": 0,
+  "retained_raw_directory": "/home/awe/zedBSD-claude1/build/ws074-20261018/q15/wpt-crash-m7ib92uy",
+  "record_checkpoint_equal": true,
+  "image_sha256": "85097db14cb06328593111dfb8ded3208044e656c7d8c8201d620fb5a072e44e",
+  "archived_png_rgb_sha256": "680a1c22a8e114ea0c637847e8cc506794073a55f4350364c8a0421e7dbcc8f0",
+  "source_sha256": "c3ff4a0f1eff1332d2b0654ba121c72548d9629b09d36a863755b3a5dcc64b42",
+  "engine_byte_identical_to_q14": true,
+  "unit_controls": "6/6",
+  "syntax": "pass"
+}

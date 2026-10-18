@@ -29,3 +29,5 @@ Event ws074-p252-plan-from-existing-basis-residual-20261018: q14全件比較待�
 ## Standards evidence（2026-10-18 read-only）
 
 [Flexbox §9.2](https://drafts.csswg.org/css-flexbox-1/#algo-main-item)（Editor’s Draft 2026-05-08）で、content basisとdefinite cross/ratioの順序、contentをmax-contentとして測る経路、base測定時にmain min/maxを適用しない点を確認。[CSS Values §10.12](https://drafts.csswg.org/css-values-4/#calc-range)でmath rangeを参照する。固定2025 WPT revision/期待値は維持し、新しいwidth grammarをこの候補へ無断追加しない。box-sizingのnegative inner baseや一般intrinsic sizingの既存未達を修正済みとはしない。
+
+Event ws074-p252-q14-output-ready-20261018: q14 final88713badd/WIP98acae7a6でzero% callbackが改善し、固定flex-basis-computedにはcontent/negative calcの2 FAILが残る。q14 prerequisite outputはverified。次の選定は未確認crash48の正式条件をp190で優先するため本Phaseはplanned/未選定を保持し、その後候補へ。scope/criteriaは不変。
