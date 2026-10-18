@@ -124,6 +124,7 @@ enum bind_interface_index {
 	BIND_PERFORMANCE_MARK,
 	BIND_PERFORMANCE_OBSERVER,
 	BIND_PERFORMANCE_OBSERVER_ENTRY_LIST,
+	BIND_ERROR_EVENT,
 	BIND_INTERFACES
 };
 
@@ -319,6 +320,11 @@ struct bind_event {
 	vm_value target_override;
 	struct vm_string *origin;
 	struct vm_string *last_event_id;
+	/* ErrorEvent owns its message/source strings and retains its error in detail. */
+	struct vm_string *error_message;
+	struct vm_string *error_filename;
+	uint32_t error_line;
+	uint32_t error_column;
 	int phase;
 	int bubbles;
 	int cancelable;
@@ -416,6 +422,7 @@ extern const struct bind_interface bind_ui_event_interface;
 extern const struct bind_interface bind_mouse_event_interface;
 extern const struct bind_interface bind_custom_event_interface;
 extern const struct bind_interface bind_message_event_interface;
+extern const struct bind_interface bind_error_event_interface;
 extern const struct bind_interface bind_keyboard_event_interface;
 extern const struct bind_interface bind_focus_event_interface;
 extern const struct bind_interface bind_wheel_event_interface;

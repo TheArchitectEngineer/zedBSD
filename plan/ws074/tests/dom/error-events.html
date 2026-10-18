@@ -1,0 +1,62 @@
+<!doctype html><html><body><script>
+(function () {
+ function check(name, value) { console.log(name + ' ' + (value ? 'PASS' : 'FAIL')); }
+ function thrown(f) { try { f(); } catch (e) { return e.name; } return 'none'; }
+ var e = new ErrorEvent('error');
+ check('defaults', e.message === '' && e.filename === '' && e.lineno === 0 && e.colno === 0 && e.error === undefined);
+ check('inheritance', e instanceof ErrorEvent && e instanceof Event && Object.getPrototypeOf(ErrorEvent) === Event);
+ check('tag', Object.prototype.toString.call(e) === '[object ErrorEvent]');
+ check('flags', !e.bubbles && !e.cancelable && !e.composed && !e.isTrusted);
+ check('required-type', thrown(function(){ new ErrorEvent(); }) === 'TypeError');
+ check('call-rejected', thrown(function(){ ErrorEvent('error'); }) === 'TypeError');
+ check('dictionary-primitives', [0, true, 'x', Symbol('x')].every(function(x){return thrown(function(){new ErrorEvent('error',x);}) === 'TypeError';}));
+ check('dictionary-empty', new ErrorEvent('x',null).error === undefined && new ErrorEvent('x',undefined).message === '');
+ var order = [], init = {};
+ ['bubbles','cancelable','composed','colno','error','filename','lineno','message'].forEach(function(k){Object.defineProperty(init,k,{get:function(){order.push(k);return undefined;}});});
+ e = new ErrorEvent({toString:function(){order.push('type');return 'error';}},init);
+ check('dictionary-order', order.join(',') === 'type,bubbles,cancelable,composed,colno,error,filename,lineno,message');
+ var error = {kept:'identity'};
+ e = new ErrorEvent('error',{message:'m\uD800',filename:'f\uD800\uDC00\uDC00',lineno:-1.5,colno:4294967298.9,error:error,bubbles:true,cancelable:true,composed:true});
+ check('conversions', e.message.charCodeAt(1) === 0xD800 && e.filename === 'f\uD800\uDC00\uFFFD' && e.lineno === 4294967295 && e.colno === 2);
+ check('identity-flags', e.error === error && e.bubbles && e.cancelable && e.composed);
+ var u = new ErrorEvent('x',{message:null,filename:null,lineno:NaN,colno:Infinity,error:null});
+ check('null-nonfinite', u.message === 'null' && u.filename === 'null' && u.lineno === 0 && u.colno === 0 && u.error === null);
+ check('symbol-string', thrown(function(){new ErrorEvent('x',{message:Symbol()});}) === 'TypeError');
+ check('bigint-number', thrown(function(){new ErrorEvent('x',{lineno:1n});}) === 'TypeError');
+ var sentinel = {};
+ try { new ErrorEvent('x',{get filename(){throw sentinel;}}); } catch (x) { check('getter-throw', x === sentinel); }
+ var fields=['message','filename','lineno','colno','error'];
+ check('readonly-enumerable',fields.every(function(k){var d=Object.getOwnPropertyDescriptor(ErrorEvent.prototype,k);return typeof d.get==='function'&&d.set===undefined&&d.enumerable&&d.configurable&&!Object.prototype.hasOwnProperty.call(e,k);}));
+ check('strict-readonly', fields.every(function(k){return thrown(function(){'use strict';e[k]='mutated';})==='TypeError';}));
+ check('brand', fields.every(function(k){var g=Object.getOwnPropertyDescriptor(ErrorEvent.prototype,k).get;return [new Event('error'),Object.create(ErrorEvent.prototype),{},null].every(function(x){return thrown(function(){g.call(x);})==='TypeError';});}));
+ class Derived extends ErrorEvent {}
+ check('subclass', new Derived('error',{message:'child'}) instanceof Derived && new Derived('error').error === undefined);
+ check('prototype-independent', (function(){var x=new ErrorEvent('x',{message:'native'});Object.setPrototypeOf(x,null);return Object.getOwnPropertyDescriptor(ErrorEvent.prototype,'message').get.call(x)==='native';})());
+ var observations=[], sawEvent=false;
+ function listener(x){sawEvent=x===e && arguments.length===1;return false;}
+ window.addEventListener('error',listener);
+ window.onerror=function(m,f,l,c,x){observations.push(this===window&&arguments.length===5&&m===e.message&&f===e.filename&&l===e.lineno&&c===e.colno&&x===error);return false;};
+ check('handler-false', window.dispatchEvent(e) === true && !e.defaultPrevented && observations[0] && sawEvent);
+ window.onerror=function(){return true;};
+ var second=new ErrorEvent('error',{cancelable:true});
+ check('handler-true', window.dispatchEvent(second)===false && second.defaultPrevented);
+ window.onerror=function(){return 1;};
+ check('handler-truthy', window.dispatchEvent(new ErrorEvent('error',{cancelable:true}))===true);
+ window.onerror=function(){return true;};
+ check('noncancelable', window.dispatchEvent(new ErrorEvent('error'))===true);
+ window.onerror=function(x){observations.push(arguments.length===1&&x instanceof Event);return false;};
+ check('ordinary-event', window.dispatchEvent(new Event('error',{cancelable:true}))===false && observations[1]);
+ window.onerror=null;window.removeEventListener('error',listener);
+ var target=document.createElement('div'), local=[];
+ target.onerror=function(x){local.push(arguments.length===1&&x instanceof ErrorEvent);return false;};
+ check('element-handler', target.dispatchEvent(new ErrorEvent('error',{cancelable:true}))===false && local[0]);
+ var called=[];
+ window.onerror=function(){called.push('handler');window.onerror=null;window.addEventListener('error',late);return true;};
+ function late(){called.push('late');}
+ var another=new ErrorEvent('error',{cancelable:true});window.dispatchEvent(another);
+ check('listener-snapshot', called.join(',')==='handler');
+ window.dispatchEvent(new ErrorEvent('error'));window.removeEventListener('error',late);
+ check('listener-next-dispatch', called.join(',')==='handler,late');
+ window.onerror=null;
+})();
+</script></body></html>

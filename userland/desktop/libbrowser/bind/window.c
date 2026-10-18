@@ -174,9 +174,11 @@ static const struct bind_interface *const window_interfaces[BIND_INTERFACES] = {
 	&bind_performance_entry_interface,
 	&bind_performance_mark_interface,
 	&bind_performance_observer_interface,
-	&bind_performance_observer_entry_list_interface
+	&bind_performance_observer_entry_list_interface,
+	&bind_error_event_interface
 };
 
+static int window_error_event_tag(struct vm_realm *realm, struct vm_object *prototype);
 static int window_make_interface(struct bind_window *window, int index, struct vm_function **constructors);
 static int window_enumerate_dom_member(struct vm_realm *realm, struct vm_object *prototype, const char *name);
 static int window_define_globals(struct bind_window *window);
@@ -896,6 +898,40 @@ window_enumerate_dom_member(
 	return 0;
 }
 
+/* Publishes the native ErrorEvent brand label while retaining the newborn string through allocation. */
+static int
+window_error_event_tag(
+	struct vm_realm *realm,
+	struct vm_object *prototype)
+{
+	struct vm_cell *root;
+	vm_value label;
+	vm_value key;
+	int status;
+
+	/* Register an empty root before creating the tag text. */
+	root = NULL;
+	status = vm_heap_add_root(realm->heap, &root);
+	if (status != 0)
+		return status;
+
+	/* The native interface label is descriptive and supplies no receiver branding. */
+	status = bind_string(realm, "ErrorEvent", &label);
+	if (status == 0) {
+		root = vm_value_as_cell(label);
+		key = vm_symbol_key(realm, VM_SYMBOL_TO_STRING_TAG);
+		status = vm_object_define(realm->heap, prototype, key, label, VM_PROPERTY_CONFIGURABLE);
+	}
+
+	/* Both publication and failure release the same temporary root. */
+	vm_heap_remove_root(realm->heap, &root);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: Object.prototype.toString observes the native interface label. */
+	return 0;
+}
+
 /* Makes one interface's object and prototype from its table. */
 static int
 window_make_interface(
@@ -924,6 +960,8 @@ window_make_interface(
 	/* DOMException's inherits from Error.prototype (ws074-p083), when the realm has it. */
 	if (index == BIND_DOM_EXCEPTION && realm->intrinsics[VM_INTRINSIC_ERROR_PROTOTYPE] != NULL)
 		parent = realm->intrinsics[VM_INTRINSIC_ERROR_PROTOTYPE];
+
+	/* The Window retains each newly allocated interface prototype immediately. */
 	prototype = vm_object_create(realm->heap, parent);
 	if (prototype == NULL)
 		return ENOMEM;
@@ -935,13 +973,21 @@ window_make_interface(
 		if (error != 0)
 			return error;
 
-		/* Range's native readonly IDL attributes enumerate on their relevant prototype. */
-		if (index == BIND_ABSTRACT_RANGE || index == BIND_RANGE) {
+		/* Scoped native readonly IDL attributes enumerate on their relevant prototype. */
+		if (index == BIND_ABSTRACT_RANGE ||
+		    index == BIND_RANGE ||
+		    index == BIND_ERROR_EVENT) {
 			error = window_enumerate_dom_member(realm, prototype, attribute->name);
 			if (error != 0)
 				return error;
 		}
+	}
 
+	/* ErrorEvent supplies its WebIDL class label on the actual native prototype. */
+	if (index == BIND_ERROR_EVENT) {
+		error = window_error_event_tag(realm, prototype);
+		if (error != 0)
+			return error;
 	}
 
 	/* The operations, methods on the prototype. */
@@ -959,7 +1005,9 @@ window_make_interface(
 	}
 
 	/* HTML elements, the document and the window have the event handler attributes. */
-	if (index == BIND_HTML_ELEMENT || index == BIND_DOCUMENT || index == BIND_WINDOW) {
+	if (index == BIND_HTML_ELEMENT ||
+	    index == BIND_DOCUMENT ||
+	    index == BIND_WINDOW) {
 		error = bind_define_handlers(window, prototype);
 		if (error != 0)
 			return error;

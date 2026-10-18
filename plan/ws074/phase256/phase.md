@@ -37,3 +37,7 @@ Event ws074-p256-added-from-q26-oracle-gap-20261018: p255のintentional callback
 Event ws074-q26-error-prerequisite-resume-20261018: [origin evidence](../phase255/evidence/20261018-q26/oracle-gap-proof.json)でnative PASS対Chrome harness_errorを実証し、q26 attempt unclearedとして終了。通常Window error eventのnamed outputがp255再開条件。本PhaseはまだQueue未選定、次のfinite source scope前に実code/一次error algorithmを詳細化する。
 
 Event ws074-p256-q27-selected-20261018: VMはthrow line/columnのみ保持しscript source/muted metadataをcallbackへ伝播していないため、まずnative ErrorEventと実Windowのlegacy onerror dispatchを独立partialとして選定。reporter接続を次finite scopeへ残す内部手順の詳細化で、whole目的/受入/依存は維持。q27のexact scope/criteriaは[Queue](../queue.md)先頭を参照。原q26 negative/確認済1481/held1を保持。
+
+Event ws074-p256-q27-primary-chrome-usv-20261018: pinned html.idlとHTML本文はfilenameをUSVStringと規定するが、Chrome153実測はlone surrogateを保存する（DOMString挙動）。本partialの選定済みUSVStringは一次IDL通り維持し、独立28対照中この1条件のChrome差を明示する。未対応Proxy constructorで独立fixture全体が停止する初回native出力を保存し、brand対照はgenuine別Event/偽prototype/plain/nullの実対応receiverで継続する（Proxy対応を達成と主張しない）。原WPT/期待値/score不変。
+
+Event ws074-p256-q27-build-sequencing-20261018: initial host build呼出しの完了をsession statusで確認せず後続host buildを開始し、一時的な重複を発生させた。中間pairは正式測定に使わず、全buildの終了確認後に一度だけhost buildを直列実行してからfinal pairをfreezeする。source/期待値は以後固定し、final pairのsource/object/hashを確認する。

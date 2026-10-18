@@ -46,6 +46,14 @@ static void event_forget_listener(struct bind_listeners *listeners, size_t index
 static int event_construct(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_construct_mouse(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_construct_custom(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int event_construct_error(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int event_error_this(struct vm_realm *realm, vm_value receiver, struct bind_event **event);
+static int event_error_scalar(struct vm_realm *realm, vm_value given, struct vm_string **text);
+static int event_error_message(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int event_error_filename(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int event_error_line(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int event_error_column(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int event_error_value(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_construct_message(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_type(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_target(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
@@ -80,7 +88,8 @@ static int event_message_source(struct vm_realm *realm, vm_value this_value, con
 static int event_message_ports(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int event_build_path(struct bind_window *window, vm_value target, const struct bind_event *event, struct vm_object *path);
 static int event_invoke(struct bind_window *window, vm_value current, vm_value event_value, int phase, unsigned kinds);
-static int event_call_listener(struct bind_window *window, vm_value callback, vm_value current, vm_value event_value, vm_value *returned);
+static int event_call_listener(struct bind_window *window, vm_value callback, vm_value current, vm_value event_value, int legacy_error, vm_value *returned);
+static int event_is_window_error(struct bind_window *window, vm_value current, const struct bind_event *event, int handler);
 static int event_fire(struct bind_window *window, struct dom_node *target, int interface, const char *type, unsigned flags, const struct bind_mouse *mouse, int *canceled);
 
 /* The state of an event, which refers to its type, targets and detail. */
@@ -237,6 +246,21 @@ const struct bind_interface bind_message_event_interface = {
 	"MessageEvent", BIND_EVENT, 1, event_construct_message, message_event_attributes, NULL, NULL
 };
 
+/* ErrorEvent exposes immutable native state rather than script-owned expandos. */
+static const struct bind_attribute error_event_attributes[] = {
+	{ "message", event_error_message, NULL },
+	{ "filename", event_error_filename, NULL },
+	{ "lineno", event_error_line, NULL },
+	{ "colno", event_error_column, NULL },
+	{ "error", event_error_value, NULL },
+	{ NULL, NULL, NULL }
+};
+
+/* The native ErrorEvent prototype inherits the ordinary Event interface. */
+const struct bind_interface bind_error_event_interface = {
+	"ErrorEvent", BIND_EVENT, 1, event_construct_error, error_event_attributes, NULL, NULL
+};
+
 /*
  * Reports the state of the event an Event object stands for, or NULL
  * when the value is not an Event.
@@ -295,6 +319,12 @@ bind_event_create(
 	state->target = VM_VALUE_NULL;
 	state->current_target = VM_VALUE_NULL;
 	state->detail = VM_VALUE_NULL;
+
+	/* A missing ErrorEventInit.error is undefined, including factory-created state. */
+	if (interface == BIND_ERROR_EVENT)
+		state->detail = VM_VALUE_UNDEFINED;
+
+	/* Initialize the remaining native references before publishing the wrapper. */
 	state->view = VM_VALUE_NULL;
 	state->submitter = VM_VALUE_NULL;
 	state->interface = interface;
@@ -964,6 +994,14 @@ event_trace(
 	if (event->last_event_id != NULL)
 		vm_heap_mark(heap, &event->last_event_id->cell);
 
+	/* ErrorEvent strings remain reachable through every retained event wrapper. */
+	if (event->error_message != NULL)
+		vm_heap_mark(heap, &event->error_message->cell);
+
+	/* Filename is independently converted to Unicode scalar text. */
+	if (event->error_filename != NULL)
+		vm_heap_mark(heap, &event->error_filename->cell);
+
 	/* A key event's key and code. */
 	if (event->key != NULL)
 		vm_heap_mark(heap, &event->key->cell);
@@ -1478,6 +1516,344 @@ cleanup:
 		return status;
 
 	/* Succeeded: the event is made. */
+	return 0;
+}
+
+/* Constructs a genuine ErrorEvent after converting its complete inherited dictionary. */
+static int
+event_construct_error(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct bind_event *event;
+	struct vm_string *type;
+	struct vm_cell *event_root;
+	struct vm_object *wrapper;
+	struct vm_object *prototype;
+	vm_value init;
+	vm_value member;
+	int object;
+	int present;
+	int status;
+
+	UNUSED_PARAMETER(this_value);
+
+	/* A required type is converted before the optional dictionary is examined. */
+	if (count < 1U) {
+		status = vm_throw_type_error(realm, "ErrorEvent requires an event type.");
+		return status;
+	}
+
+	/* Intern the converted type before allocating its traced native state. */
+	status = bind_to_atom(realm, args[0], 0, &type);
+	if (status != 0)
+		return status;
+
+	/* WebIDL dictionaries accept null and undefined, but reject other primitives. */
+	init = js_argument(args, count, 1);
+	object = vm_value_is_object(init);
+	if (!object &&
+	    init != VM_VALUE_NULL &&
+	    init != VM_VALUE_UNDEFINED) {
+		status = vm_throw_type_error(realm, "ErrorEventInit must be a dictionary.");
+		return status;
+	}
+
+	/* Retain the wrapper and its entire partially converted state through reentrant getters. */
+	status = bind_event_create(bind_window_of(realm), BIND_ERROR_EVENT, type, result, &event);
+	if (status != 0)
+		return status;
+	event_root = vm_value_as_cell(*result);
+	status = vm_heap_add_root(realm->heap, &event_root);
+	if (status != 0)
+		return status;
+
+	/* Convert inherited EventInit members in lexical order before derived members. */
+	status = bind_get_option(realm, init, "bubbles", &present, &member);
+	if (status != 0)
+		goto cleanup;
+	event->bubbles = vm_to_boolean(member);
+	status = bind_get_option(realm, init, "cancelable", &present, &member);
+	if (status != 0)
+		goto cleanup;
+	event->cancelable = vm_to_boolean(member);
+	status = bind_get_option(realm, init, "composed", &present, &member);
+	if (status != 0)
+		goto cleanup;
+	event->composed = vm_to_boolean(member);
+
+	/* Derived members follow colno, error, filename, lineno, message. */
+	status = bind_get_option(realm, init, "colno", &present, &member);
+	if (status != 0)
+		goto cleanup;
+
+	/* Convert an explicitly supplied column number. */
+	if (present) {
+		status = vm_to_uint32(realm, member, &event->error_column);
+		if (status != 0)
+			goto cleanup;
+	}
+
+	/* Store the exact arbitrary error value before any later getter can collect. */
+	status = bind_get_option(realm, init, "error", &present, &member);
+	if (status != 0)
+		goto cleanup;
+	event->detail = member;
+
+	/* Filename is a USVString rather than an unmodified DOMString. */
+	status = bind_get_option(realm, init, "filename", &present, &member);
+	if (status != 0)
+		goto cleanup;
+
+	/* Convert an explicitly supplied source filename. */
+	if (present) {
+		status = event_error_scalar(realm, member, &event->error_filename);
+		if (status != 0)
+			goto cleanup;
+	}
+
+	/* Line numbers use ordinary WebIDL unsigned-long modulo conversion. */
+	status = bind_get_option(realm, init, "lineno", &present, &member);
+	if (status != 0)
+		goto cleanup;
+
+	/* Convert an explicitly supplied line number. */
+	if (present) {
+		status = vm_to_uint32(realm, member, &event->error_line);
+		if (status != 0)
+			goto cleanup;
+	}
+
+	/* Message preserves DOMString code units, including unmatched surrogates. */
+	status = bind_get_option(realm, init, "message", &present, &member);
+	if (status != 0)
+		goto cleanup;
+
+	/* Convert an explicitly supplied message. */
+	if (present) {
+		status = bind_to_string(realm, member, &event->error_message);
+		if (status != 0)
+			goto cleanup;
+	}
+
+	/* Only after argument conversion does subclass construction consult new.target.prototype. */
+	wrapper = (struct vm_object *)vm_value_as_cell(*result);
+	status = vm_construct_prototype(realm, realm->new_target, wrapper->prototype, &prototype);
+	if (status != 0)
+		goto cleanup;
+	wrapper->prototype = prototype;
+
+cleanup:
+	/* The returned wrapper owns its state; failure releases the same temporary root. */
+	vm_heap_remove_root(realm->heap, &event_root);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the native immutable payload is ready for normal EventTarget dispatch. */
+	return 0;
+}
+
+/* Repairs unmatched surrogate code units for ErrorEventInit.filename. */
+static int
+event_error_scalar(
+	struct vm_realm *realm,
+	vm_value given,
+	struct vm_string **text)
+{
+	struct vm_string *converted;
+	struct wb_buffer bytes;
+	int status;
+
+	/* Complete script conversion before extracting stable scalar bytes. */
+	status = bind_to_string(realm, given, &converted);
+	if (status != 0)
+		return status;
+	wb_buffer_init(&bytes);
+	status = vm_string_to_utf8(converted, &bytes);
+	if (status != 0) {
+		wb_buffer_release(&bytes);
+		return status;
+	}
+
+	/* The native state takes ownership before any later script getter runs. */
+	*text = vm_string_from_utf8(realm->heap, wb_buffer_string(&bytes), bytes.length);
+	wb_buffer_release(&bytes);
+	if (*text == NULL)
+		return ENOMEM;
+
+	/* Succeeded: valid surrogate pairs survive and lone surrogates become U+FFFD. */
+	return 0;
+}
+
+/* Requires the actual native ErrorEvent interface rather than a mutable prototype chain. */
+static int
+event_error_this(
+	struct vm_realm *realm,
+	vm_value receiver,
+	struct bind_event **event)
+{
+	int status;
+
+	/* Event identity is recovered only from the platform wrapper's native cell. */
+	*event = bind_event_of(receiver);
+	if (*event == NULL) {
+		status = bind_throw_illegal(realm);
+		return status;
+	}
+
+	/* Other genuine Event subclasses cannot borrow ErrorEvent getters. */
+	if ((*event)->interface != BIND_ERROR_EVENT) {
+		status = bind_throw_illegal(realm);
+		return status;
+	}
+
+	/* Succeeded: the payload belongs to this interface. */
+	return 0;
+}
+
+/* Reads the native ErrorEvent message without consulting script-owned properties. */
+static int
+event_error_message(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct bind_event *event;
+	struct vm_string *text;
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* Reject forged receivers before reading any native payload. */
+	status = event_error_this(realm, this_value, &event);
+	if (status != 0)
+		return status;
+
+	/* An omitted string member has the empty-string default. */
+	text = event->error_message;
+	if (text == NULL) {
+		text = vm_atom_from_ascii(realm->heap, "");
+		if (text == NULL)
+			return ENOMEM;
+	}
+
+	/* Succeeded: the event retains the published string. */
+	*result = vm_value_cell(text);
+	return 0;
+}
+
+/* Reads the native ErrorEvent filename without consulting script-owned properties. */
+static int
+event_error_filename(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct bind_event *event;
+	struct vm_string *text;
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* Reject forged receivers before reading any native payload. */
+	status = event_error_this(realm, this_value, &event);
+	if (status != 0)
+		return status;
+
+	/* An omitted string member has the empty-string default. */
+	text = event->error_filename;
+	if (text == NULL) {
+		text = vm_atom_from_ascii(realm->heap, "");
+		if (text == NULL)
+			return ENOMEM;
+	}
+
+	/* Succeeded: the event retains the published string. */
+	*result = vm_value_cell(text);
+	return 0;
+}
+
+/* Reads the native ErrorEvent line without consulting script-owned properties. */
+static int
+event_error_line(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct bind_event *event;
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* Reject forged receivers before reading any native payload. */
+	status = event_error_this(realm, this_value, &event);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the full unsigned range is represented exactly as a Number. */
+	*result = vm_value_number((double)event->error_line);
+	return 0;
+}
+
+/* Reads the native ErrorEvent column without consulting script-owned properties. */
+static int
+event_error_column(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct bind_event *event;
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* Reject forged receivers before reading any native payload. */
+	status = event_error_this(realm, this_value, &event);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the full unsigned range is represented exactly as a Number. */
+	*result = vm_value_number((double)event->error_column);
+	return 0;
+}
+
+/* Reads the native ErrorEvent value without consulting script-owned properties. */
+static int
+event_error_value(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct bind_event *event;
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* Reject forged receivers before reading any native payload. */
+	status = event_error_this(realm, this_value, &event);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: arbitrary values preserve their original identity. */
+	*result = event->detail;
 	return 0;
 }
 
@@ -2408,6 +2784,33 @@ event_build_path(
 	return 0;
 }
 
+/* Recognizes the HTML legacy error handler using actual event and current Window identity. */
+static int
+event_is_window_error(
+	struct bind_window *window,
+	vm_value current,
+	const struct bind_event *event,
+	int handler)
+{
+	vm_value global;
+	int error_type;
+
+	/* Ordinary listeners, element handlers and other event interfaces keep normal semantics. */
+	global = vm_value_cell(window->realm->global);
+	if (!handler ||
+	    current != global ||
+	    event->interface != BIND_ERROR_EVENT)
+		return 0;
+
+	/* Only the exact error event type invokes Window.onerror's legacy signature. */
+	error_type = vm_string_equal_ascii(event->type, "error");
+	if (!error_type)
+		return 0;
+
+	/* Succeeded: dispatch supplies five arguments and true cancellation. */
+	return 1;
+}
+
 /* Runs the listeners of one target of the path, of the kinds a phase invokes (handlers are of the bubble kind). */
 static int
 event_invoke(
@@ -2429,6 +2832,7 @@ event_invoke(
 	uint32_t item;
 	int capture;
 	int handler;
+	int legacy_error;
 	int present;
 	int status;
 
@@ -2500,12 +2904,23 @@ event_invoke(
 		if (listeners->items[found].once)
 			event_forget_listener(listeners, found);
 
-		/* The call; a handler that returns false cancels the event. */
-		status = event_call_listener(window, callback, current, event_value, &returned);
+		/* Window's ErrorEvent handler uses its legacy five arguments and true cancellation. */
+		legacy_error = event_is_window_error(window, current, event, handler);
+		status = event_call_listener(window, callback, current, event_value, legacy_error, &returned);
 		if (status != 0)
 			goto cleanup;
-		if (handler && returned == VM_VALUE_FALSE && event->cancelable)
-			event->canceled = 1;
+
+		/* Ordinary handlers retain false cancellation; addEventListener return values never cancel. */
+		if (handler && event->cancelable) {
+			/* Select the legacy inversion only for this actual Window ErrorEvent handler. */
+			if (legacy_error) {
+				/* Only the Boolean true suppresses the legacy default report. */
+				if (returned == VM_VALUE_TRUE)
+					event->canceled = 1;
+			} else if (returned == VM_VALUE_FALSE) {
+				event->canceled = 1;
+			}
+		}
 	}
 
 	/* The detached callback snapshot no longer spans user code. */
@@ -2525,12 +2940,17 @@ event_call_listener(
 	vm_value callback,
 	vm_value current,
 	vm_value event_value,
+	int legacy_error,
 	vm_value *returned)
 {
 	struct vm_realm *realm;
 	vm_value method;
 	vm_value key;
 	vm_value this_value;
+	vm_value arguments[5];
+	struct bind_event *event;
+	struct vm_string *empty;
+	unsigned argument_count;
 	int callable;
 	int status;
 
@@ -2556,9 +2976,35 @@ event_call_listener(
 		}
 	}
 
-	/* The call. */
+	/* A normal listener receives the event; only a Window error handler receives payload values. */
+	arguments[0] = event_value;
+	argument_count = 1;
+	if (status == 0 && legacy_error) {
+		event = bind_event_of(event_value);
+		empty = vm_atom_from_ascii(realm->heap, "");
+		if (empty == NULL)
+			return ENOMEM;
+		arguments[0] = vm_value_cell(empty);
+		arguments[1] = vm_value_cell(empty);
+
+		/* Native payloads override the empty defaults without consulting event expandos. */
+		if (event->error_message != NULL)
+			arguments[0] = vm_value_cell(event->error_message);
+
+		/* The source string is separately retained by the event. */
+		if (event->error_filename != NULL)
+			arguments[1] = vm_value_cell(event->error_filename);
+
+		/* Numeric positions and the arbitrary error retain their native payload values. */
+		arguments[2] = vm_value_number((double)event->error_line);
+		arguments[3] = vm_value_number((double)event->error_column);
+		arguments[4] = event->detail;
+		argument_count = 5;
+	}
+
+	/* Call with the exact native argument list after all defaults are ready. */
 	if (status == 0)
-		status = vm_call(realm, method, this_value, &event_value, 1, returned);
+		status = vm_call(realm, method, this_value, arguments, argument_count, returned);
 
 	/* An exception is reported, and the dispatch goes on. */
 	if (status == VM_THROWN) {
