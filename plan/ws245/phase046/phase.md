@@ -2,7 +2,7 @@
 
 # ws245-p046: 規約の全文の見直しと p045 の出典の監査
 
-Status: in-progress（2026-10-17 q1229-i16: 機械で確かめられる規則の全部と、直した所の読み直しを実装・host 試験・build 済み（0e85d1ff1・a5e461698・a3849a76f・16de8c315）。全文の目視の読み通しは未実施（下の「制限」）。q1229-i18（T1、5330 の素の起動）は起動・survey は PASS、`i915.debug=display` の書き込みの列の比べが FAIL → q1229-i19 で差を分類し、不具合 1 件（takeover の AUX・DDI IO の well と VDD）を直した（26b307bd9）。5330 の再試験は T1 に（下の「q1229-i19 の後に T1 に流す項目」））
+Status: cleared（2026-10-19 Q1 判定: 機械で見られる規則は WS245 の行で残り 0、comment と関数名の Linux との突き合わせ（写し無し、Linux 特有の名前 5 つを改名）、comment の 1 行ずつの読み通し（display 34 file・tests/display 47 file、意味を言っていない comment を 17 file で直した）、check-sources は v6.19 の出典を受けるよう Q1 が直して PASS、build warning 0・host 試験 0 failures（P2）。db8e759f2・ca74a7953・617bd0614、merge 2dde1f106）（旧: in-progress（2026-10-17 q1229-i16: 機械で確かめられる規則の全部と、直した所の読み直しを実装・host 試験・build 済み（0e85d1ff1・a5e461698・a3849a76f・16de8c315）。全文の目視の読み通しは未実施（下の「制限」）。q1229-i18（T1、5330 の素の起動）は起動・survey は PASS、`i915.debug=display` の書き込みの列の比べが FAIL → q1229-i19 で差を分類し、不具合 1 件（takeover の AUX・DDI IO の well と VDD）を直した（26b307bd9）。5330 の再試験は T1 に（下の「q1229-i19 の後に T1 に流す項目」）））
 Parent: [WS245](../ws.md)
 Queue: q1229-i16（P1）、q1229-i19（P1、5330 の差の解析と直し）
 設計: [design.md](../design.md) §6.2 の p046 の行（`plan/coding-style.md` の全文の checklist、`git diff --check`、build、§5.4 の監査）、§5.4、guardrail「MIT・GPL の出典のデータの引用」「source の中の開発の管理情報」

@@ -213,7 +213,7 @@ Resume point: 2026-10-16 の方針（ユーザー「i915は、実装だけ先に
 | [p043b](phase043/phase.md) | watermark.c の帯域を xd に（段の境 1）、power.c の domain 層を xd-power に（段の境 2）、Derived の表示の削除 | in-progress（2026-10-17 q1229-i15 で帯域を実装・host 試験・build 済み（d16688474）、q1229-i16 で power を実装・host 試験・build 済み（57967dfb0: own の display-power.c）、5330・SV7 は全部の段の後に 1 回） |
 | [p044](phase044/phase.md) | platform の網羅（display 12 の行）と TGL の TC（流れ B、host だけ）。#21 で全部 xd | in-progress（4 LW。2026-10-17 P6 が q1236-i01 で一部（流れ A・B の部品と connect、TGL の TC_cold_off、kind の分岐の除去、9 行の plan の試験）を実装（aa14ff623）、P1 の branch に merge（bd91827a5）。残り: 9 行 × 出力の enable/disable の列の比べ、RKL・ADL-S の takeover の列、流れ B の配線（p052）。5320 はユーザーの一覧） |
 | [p045](phase045/phase.md) | display 11（Ice Lake） | in-progress（8 LW。実機は無い。2026-10-17 P6 が q1236-i02 で部品を実装（c85e8569e）、P1 が q1229-i10 で merge（c3d27ec57）し xd-output に display 11 の分岐（88e99dbe2）。残りは phase045 の「P1 の branch との合わせ」） |
-| [p046](phase046/phase.md) | 規約の全文の見直しと p045 の出典の監査 | in-progress（3 LW。2026-10-17 q1229-i16 で機械の規則の全部と出典の監査を実装・host 試験・build 済み（16de8c315）。全文の目視の通読は未実施（Q1 の判断）。5330 の q1229-i18 の差を q1229-i19 で分類し takeover の不具合を直した（26b307bd9）、T1 の再試験待ち） |
+| [p046](phase046/phase.md) | 規約の全文の見直しと p045 の出典の監査 | cleared（2026-10-19 Q1） |
 合計 38 段、161 LW（±40 %。改訂 6 の 159 に、p018 を p018・p053 に分けた +2: 2026-10-16 q1223）。5330 の素の起動は段の kernel で最少 37 回、基準の起動と `i915.debug=display` の起動を含めて見込み約 50 回（最大 70〜85 回、design.md §6.6）。
 
 ### 段の境の SHA（二分探索用、2026-10-16 から。branch agent/p1-ws245）
