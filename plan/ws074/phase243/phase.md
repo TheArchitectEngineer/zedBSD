@@ -2,7 +2,7 @@
 
 # ws074-p243: Grid trackのresolved CSSOMを実レイアウトから取得
 
-Status: in-progress
+Status: uncleared（q07の旧PASS callback1件が未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
@@ -34,3 +34,9 @@ Event ws074-p243-planning-20261018: q06静的census中のread-only調査から�
 ## q07 実行開始
 
 Event ws074-p243-q07-start-20261018: q06を2e3680e6bへ保存。全FAIL725の開始前比較で今回sessionの後退0を確認し、上記primary horizontalの部分範囲を最大90分で実行する。検証に再使用するreftest runnerはQ1 cleanup方針へ合わせ、TemporaryDirectoryをretainへ変更する（検証条件や画像判定は不変）。
+
+## q07 結果・後続設計
+
+Event ws074-p243-q07-uncleared-20261018: [証拠](evidence/20261018-q07/README.md)、WIP a46bfd5ac。Grid245→247 whole PASS・433 callback改善だが、fixed minmax rows spanの1旧PASS callbackがFAIL。実solverの末尾固定行が30pxへ増える不備をgetterが露出した。q07 scopeは別solver欠陥を除外していたためattempt uncleared。
+
+Event ws074-p243-p244-redesign-20261018: [p244](../phase244/phase.md)を追加し、固定行のみをまたぐitemが末尾trackを伸ばさない修正と検証を独立させる。そのverified output後、新しいp243 partial attemptで全502/全callbackと独立14条件を再検証する。宣言値を返すfallbackへ戻して既存不備を隠さない。q07のuncleared歴史とp243 wholeのchild/vertical等の条件は維持。共有投影pending。

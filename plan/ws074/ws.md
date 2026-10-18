@@ -9,7 +9,9 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [ws074-q20261018-07](queue.md) active（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+Queue: [ws074-q20261018-07](queue.md) finished（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+
+Event ws074-p243-q07-uncleared-p244-added-20261018: [p243証拠](phase243/evidence/20261018-q07/README.md)。Grid whole245→247、433 callback改善/1後退。実track queryが固定行spanの既存solver不備を露出しq07 uncleared。新[p244](phase244/phase.md)で修正し、新p243 partial attemptで全502を再検証する。scope/whole/歴史を縮めない。
 
 Event ws074-p243-q07-start-20261018: q06の後退0確認後、[p243](phase243/phase.md)のprimary horizontal used-track CSSOMを最大90分で開始。owned vectorへcopyし、一時treeへのpointerを外へ渡さない。検証runnerのretainも範囲内。
 
@@ -80,7 +82,7 @@ Event ws074-p217-q1188-partial-clear-20261014: [p217](phase217/phase.md) q1188-i
 Event ws074-p217-q1187-partial-clear-20261014: [p217](phase217/phase.md) q1187-i01で固定縦rl Grid直接横RTL absolute子row2/col1 top insetにstatic areaを適用。[証拠](phase217/evidence/20261014-q1187/README.md)。独立矩形Chromium一致、固定non-static007縦rl callback whole PASS、水平2 callback PASS、縦lrは4番目子でfile whole FAIL継続。旧WPT/host/Acid3差0維持。次は縦lr4番目子、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
 
 Event ws074-p217-q1186-partial-clear-20261014: [p217](phase217/phase.md) q1186-i01で固定縦lr/rl Grid直接横LTR absolute子へrow1/col2 static areaとjustify-center Yを適用。[証拠](phase217/evidence/20261014-q1186/README.md)。独立2矩形Chromium一致、固定non-static007縦2 callback先頭2子全PASS、lrは4番目子・rlは3番目子でfile whole FAIL継続。旧WPT/host/Acid3差0維持。次は縦rl Gridの3番目RTL横子、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
-Resume point: q03 testharness全適格1,455 IDは485 PASS・旧481 PASS後退0、未対応328。q04/q05 DOM25/25・Acid3差0。q06静的1,561 IDは836 PASS/725 FAIL、全FAILの開始前比較でsession内後退0、未対応413。次はrunner retainとp243 Grid resolved track CSSOM。crash待機条件、production link/QEMU/実機/p100最終全文規約等も残る。
+Resume point: q03 harness485 PASS、q06静的836 PASS。q07 Grid used CSSOMはwhole245→247、433 callback改善/1後退でuncleared。次はp244の固定行span修正と新p243 attemptで後退ゼロを検証。全3,805、runner未対応、p243 child/vertical、target/p100関門は残る。
 <!-- awesome-plan-current:end -->
 
 Event ws074-p217-q1185-partial-clear-20261014: [p217](phase217/phase.md) q1185-i01で固定縦lr/rl Grid直接横LTR absolute子へrow1/col1 static areaとjustify-right Yを適用。[証拠](phase217/evidence/20261014-q1185/README.md)。独立2矩形Chromium一致、固定non-static007縦2 callback先頭子全PASS、2番目子でfile whole FAIL継続。旧WPT/host/Acid3差0維持。次は縦Grid2番目横子、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
@@ -643,7 +645,8 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p240](phase240/phase.md) | flex item の aspect-ratio、自動最小サイズと flex basis | uncleared / ws074-q20261018-01 host partial cleared（WPT142→149、後退0） | p172 engine・p234 ratio の実装 |
 | [ws074-p241](phase241/phase.md) | definiteなstretch cross sizeをflex ratioのbase/minimumへ渡す | uncleared / ws074-q20261018-02 host partial cleared、target pending | p234 ratio・p240 minimum |
 | [ws074-p242](phase242/phase.md) | ParentNode.replaceChildren、cleanupのDOM一般操作 | uncleared / q04・q05 host部分cleared、factory/iterator/target等残り | p189 q03のcleanup失敗の実測 |
-| [ws074-p243](phase243/phase.md) | Grid used trackのresolved CSSOM | in-progress / q07 primary horizontal partial | p221のsolver、p189 q03 raw・p190 q06診断 |
+| [ws074-p243](phase243/phase.md) | Grid used trackのresolved CSSOM | uncleared / q07 callback1件未達、p244修正→再検証 | p221のsolver、p189 q03 raw・p190 q06診断 |
+| [ws074-p244](phase244/phase.md) | 固定Grid行spanのoverflow | planned / Queue未選定 | p243 q07で露出したsolver不備 |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 

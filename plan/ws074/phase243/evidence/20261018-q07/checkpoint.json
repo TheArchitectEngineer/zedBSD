@@ -1,7 +1,7 @@
 {
-  "state": "Grid502 census running",
-  "exec_session": 97226,
-  "completed": 267,
+  "state": "finished uncleared: one previously passing subtest exposes fixed-row spanning growth",
+  "exec_session": null,
+  "completed": 502,
   "dom": "26/26",
   "chromium": "14/14",
   "before": "4/14",
@@ -23,5 +23,5 @@
     "browser": "25a66385edb7811c04e5e04fddd6bf3060ef2883f26d2781adbecf9d87debc02",
     "libbrowser.so": "c9dbea7da57456b06e73a12ebdf1553342873d42924807403a740d62543f9206"
   },
-  "resume": "Inspect completed shard reports/checkpoints under build/ws074-20261018/q07 before rerunning. Final acceptance waits for all Grid502 and old PASS/subtest comparison."
+  "resume": "p244 will fix fixed-only row spanning growth; a new p243 partial attempt must revalidate all Grid502 without rewriting q07 outcome."
 }
