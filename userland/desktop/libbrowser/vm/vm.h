@@ -725,6 +725,10 @@ int vm_set_receiver(struct vm_realm *realm, struct vm_object *object, vm_value k
 int vm_delete_property(struct vm_realm *realm, struct vm_object *object, vm_value key, int *deleted);
 int vm_delete(struct vm_realm *realm, vm_value base, vm_value key, int strict, vm_value *result);
 
+/* Prototype operations preserve Proxy internal methods and original requested-prototype ownership. */
+int vm_get_prototype(struct vm_realm *realm, struct vm_object *object, vm_value *prototype);
+int vm_set_prototype(struct vm_realm *realm, struct vm_object *object, struct vm_object *prototype, int *done);
+
 /* Realm-aware extensibility operations preserve Proxy traps and pure native policy. */
 int vm_is_extensible(struct vm_realm *realm, struct vm_object *object, int *extensible);
 int vm_prevent_extensions(struct vm_realm *realm, struct vm_object *object, int *done);

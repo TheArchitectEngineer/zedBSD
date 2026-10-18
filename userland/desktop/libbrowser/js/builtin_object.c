@@ -74,7 +74,6 @@ static int object_key_value(struct vm_realm *realm, vm_value key, vm_value *valu
 static int object_list(struct vm_realm *realm, vm_value value, int what, vm_value *result);
 static int object_set_integrity(struct vm_realm *realm, struct vm_object *object, int level);
 static int object_test_integrity(struct vm_realm *realm, struct vm_object *object, int level);
-static int object_set_prototype(struct vm_object *object, struct vm_object *prototype);
 static int object_accessor_half(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, int setter, vm_value *result);
 static int object_lookup_half(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, int setter, vm_value *result);
 static const char *object_tag(vm_value value, const struct vm_object *object);
@@ -996,9 +995,9 @@ object_get_prototype_of(
 	if (status != 0)
 		return status;
 	object = (struct vm_object *)vm_value_as_cell(value);
-	*result = VM_VALUE_NULL;
-	if (object->prototype != NULL)
-		*result = vm_value_cell(object->prototype);
+	status = vm_get_prototype(realm, object, result);
+	if (status != 0)
+		return status;
 
 	/* Succeeded: the prototype. */
 	return 0;
@@ -1300,7 +1299,9 @@ object_set_prototype_of(
 	prototype = NULL;
 	if (proto != VM_VALUE_NULL)
 		prototype = (struct vm_object *)vm_value_as_cell(proto);
-	done = object_set_prototype((struct vm_object *)vm_value_as_cell(value), prototype);
+	status = vm_set_prototype(realm, (struct vm_object *)vm_value_as_cell(value), prototype, &done);
+	if (status != 0)
+		return status;
 	if (!done) {
 		status = vm_throw_type_error(realm, "Cannot set the prototype");
 		return status;
@@ -1621,11 +1622,13 @@ object_proto_get(
 	if (status != 0)
 		return status;
 
-	/* Succeeded: its prototype, or null. */
+	/* Query the actual internal prototype, including native Proxy traps. */
 	object = (struct vm_object *)vm_value_as_cell(value);
-	*result = VM_VALUE_NULL;
-	if (object->prototype != NULL)
-		*result = vm_value_cell(object->prototype);
+	status = vm_get_prototype(realm, object, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the object or null is its completed internal prototype. */
 	return 0;
 }
 
@@ -1664,7 +1667,9 @@ object_proto_set(
 	prototype = NULL;
 	if (proto != VM_VALUE_NULL)
 		prototype = (struct vm_object *)vm_value_as_cell(proto);
-	done = object_set_prototype((struct vm_object *)vm_value_as_cell(this_value), prototype);
+	status = vm_set_prototype(realm, (struct vm_object *)vm_value_as_cell(this_value), prototype, &done);
+	if (status != 0)
+		return status;
 	if (!done) {
 		status = vm_throw_type_error(realm, "Cannot set the prototype");
 		return status;
@@ -2150,32 +2155,6 @@ object_test_integrity(
 	return holds;
 }
 
-/* Sets an object's prototype when allowed (OrdinarySetPrototypeOf): not for a non-extensible object, and never into a cycle. */
-static int
-object_set_prototype(
-	struct vm_object *object,
-	struct vm_object *prototype)
-{
-	struct vm_object *walk;
-
-	/* The same prototype is no change. */
-	if (object->prototype == prototype)
-		return 1;
-
-	/* A non-extensible object keeps its prototype. */
-	if ((object->flags & VM_OBJECT_NOT_EXTENSIBLE) != 0U)
-		return 0;
-
-	/* The object must not be on the new prototype's chain. */
-	for (walk = prototype; walk != NULL; walk = walk->prototype) {
-		if (walk == object)
-			return 0;
-	}
-
-	/* Allowed: the new prototype. */
-	object->prototype = prototype;
-	return 1;
-}
 
 /* Defines one half of an accessor (Annex B's __defineGetter__ and __defineSetter__). */
 static int

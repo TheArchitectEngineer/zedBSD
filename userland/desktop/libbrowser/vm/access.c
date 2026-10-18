@@ -86,6 +86,9 @@ static const struct vm_cell_type access_for_in_type = {
 	"for-in", access_for_in_trace, access_for_in_finalize
 };
 
+static int access_set_prototype(struct vm_object *object, struct vm_object *prototype);
+static int access_proxy_get_prototype(struct vm_realm *realm, struct vm_proxy *proxy, vm_value *prototype);
+static int access_proxy_set_prototype(struct vm_realm *realm, struct vm_proxy *proxy, vm_value prototype, int *done);
 static int access_proxy_delete(struct vm_realm *realm, struct vm_proxy *proxy, vm_value key, int *deleted);
 static int access_extensibility(struct vm_realm *realm, struct vm_object *object, int prevent, int *result);
 static int access_proxy_extensibility(struct vm_realm *realm, struct vm_proxy *proxy, int prevent, int *result);
@@ -106,6 +109,102 @@ static int access_get_receiver(struct vm_realm *realm, vm_value base, vm_value k
 static int access_has_property(struct vm_realm *realm, struct vm_object *object, vm_value key, int *found);
 static int access_proxy_has(struct vm_realm *realm, struct vm_proxy *proxy, vm_value key, int *found);
 static int access_proxy_get(struct vm_realm *realm, struct vm_proxy *proxy, vm_value key, vm_value receiver, vm_value *result);
+
+/*
+ * Gets an object's actual prototype through ordinary storage or native Proxy internal methods.
+ */
+int
+vm_get_prototype(
+	struct vm_realm *realm,
+	struct vm_object *object,
+	vm_value *prototype)
+{
+	struct access_read_roots roots;
+	int status;
+
+	/* The managed owner and original input must survive all trap and depth-error allocations. */
+	*prototype = VM_VALUE_NULL;
+	roots.realm = realm;
+	roots.base = vm_value_cell(object);
+	roots.key = VM_VALUE_UNDEFINED;
+	roots.receiver = VM_VALUE_UNDEFINED;
+	status = vm_heap_add_tracer(realm->heap, access_read_trace, &roots);
+	if (status != 0)
+		return status;
+	if (realm->property_depth >= ACCESS_RECURSION_MAX) {
+		status = vm_throw_range_error(realm, "Maximum property recursion exceeded");
+		vm_heap_remove_tracer(realm->heap, access_read_trace, &roots);
+		return status;
+	}
+
+	/* Ordinary prototype storage never invokes a native property callback or user script. */
+	realm->property_depth++;
+	if (object->kind == VM_KIND_PROXY) {
+		status = access_proxy_get_prototype(realm, (struct vm_proxy *)object, prototype);
+	} else {
+		status = 0;
+		if (object->prototype != NULL)
+			*prototype = vm_value_cell(object->prototype);
+	}
+
+	/* Retire both native recursion depth and collector ownership on every completion path. */
+	realm->property_depth--;
+	vm_heap_remove_tracer(realm->heap, access_read_trace, &roots);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the returned object or null belongs to the completed prototype operation. */
+	return 0;
+}
+
+/*
+ * Sets an object's actual prototype while preserving original input ownership and Boolean refusal.
+ */
+int
+vm_set_prototype(
+	struct vm_realm *realm,
+	struct vm_object *object,
+	struct vm_object *prototype,
+	int *done)
+{
+	struct access_read_roots roots;
+	int status;
+
+	/* A requested prototype may otherwise be owned only by the embedding call, even during method lookup. */
+	*done = 0;
+	roots.realm = realm;
+	roots.base = vm_value_cell(object);
+	roots.key = VM_VALUE_UNDEFINED;
+	roots.receiver = VM_VALUE_NULL;
+	if (prototype != NULL)
+		roots.receiver = vm_value_cell(prototype);
+	status = vm_heap_add_tracer(realm->heap, access_read_trace, &roots);
+	if (status != 0)
+		return status;
+	if (realm->property_depth >= ACCESS_RECURSION_MAX) {
+		status = vm_throw_range_error(realm, "Maximum property recursion exceeded");
+		vm_heap_remove_tracer(realm->heap, access_read_trace, &roots);
+		return status;
+	}
+
+	/* Proxy handling is realm-aware, while ordinary prototype policy remains a pure storage operation. */
+	realm->property_depth++;
+	if (object->kind == VM_KIND_PROXY) {
+		status = access_proxy_set_prototype(realm, (struct vm_proxy *)object, roots.receiver, done);
+	} else {
+		status = 0;
+		*done = access_set_prototype(object, prototype);
+	}
+
+	/* An abrupt trap cannot leak requested-prototype ownership or native recursion depth. */
+	realm->property_depth--;
+	vm_heap_remove_tracer(realm->heap, access_read_trace, &roots);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: done reports actual acceptance without applying a caller's throwing policy. */
+	return 0;
+}
 
 /*
  * Reports actual extensibility through ordinary policy or native Proxy internal methods.
@@ -4346,5 +4445,260 @@ cleanup:
 		return status;
 
 	/* Succeeded: deleted reports the actual internal operation's Boolean. */
+	return 0;
+}
+
+/* Sets an object's prototype when allowed (OrdinarySetPrototypeOf): not for a non-extensible object, and never into a cycle. */
+static int
+access_set_prototype(
+	struct vm_object *object,
+	struct vm_object *prototype)
+{
+	struct vm_object *walk;
+
+	/* The same prototype is no change. */
+	if (object->prototype == prototype)
+		return 1;
+
+	/* A non-extensible object keeps its prototype. */
+	if ((object->flags & VM_OBJECT_NOT_EXTENSIBLE) != 0U)
+		return 0;
+
+	/* The object must not be on the new prototype's chain. */
+	for (walk = prototype; walk != NULL; walk = walk->prototype) {
+		if (walk == object)
+			return 0;
+
+		/* Ordinary cycle detection stops before any nonordinary GetPrototypeOf implementation. */
+		if (walk->kind == VM_KIND_PROXY)
+			break;
+	}
+
+	/* Succeeded: the ordinary object now uses its accepted prototype. */
+	object->prototype = prototype;
+	return 1;
+}
+
+/* Runs Proxy GetPrototypeOf while retaining fresh results through post-trap target observations. */
+static int
+access_proxy_get_prototype(
+	struct vm_realm *realm,
+	struct vm_proxy *proxy,
+	vm_value *prototype)
+{
+	struct vm_cell *roots[4];
+	vm_value target;
+	vm_value handler;
+	vm_value method;
+	vm_value method_key;
+	vm_value produced;
+	vm_value actual;
+	unsigned registered;
+	unsigned index;
+	int is_cell;
+	int is_object;
+	int extensible;
+	int same;
+	int status;
+
+	/* Original participants remain snapshots even if method lookup revokes their Proxy. */
+	target = proxy->target;
+	handler = proxy->handler;
+	memset(roots, 0, sizeof(roots));
+	is_cell = vm_value_is_cell(target);
+	if (is_cell)
+		roots[0] = vm_value_as_cell(target);
+	is_cell = vm_value_is_cell(handler);
+	if (is_cell)
+		roots[1] = vm_value_as_cell(handler);
+	registered = 0;
+	for (index = 0; index < 4U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* Reject revoked input before reading its handler. */
+	if (target == VM_VALUE_NULL) {
+		status = vm_throw_type_error(realm, "Cannot get the prototype of a revoked Proxy");
+		goto cleanup;
+	}
+
+	/* Lookup follows the normal GetMethod rules, including null fallback and noncallable rejection. */
+	method_key = vm_key_from_ascii(realm->heap, "getPrototypeOf");
+	if (method_key == VM_VALUE_EMPTY) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* An absent trap forwards to the original target's actual internal method. */
+	status = vm_get_method(realm, handler, method_key, &method);
+	if (status != 0)
+		goto cleanup;
+	if (method == VM_VALUE_UNDEFINED) {
+		status = vm_get_prototype(realm, (struct vm_object *)vm_value_as_cell(target), prototype);
+		goto cleanup;
+	}
+
+	/* Both fresh methods and their sole returned object need native frame ownership. */
+	roots[2] = vm_value_as_cell(method);
+	status = vm_call(realm, method, handler, &target, 1, &produced);
+	if (status != 0)
+		goto cleanup;
+	is_object = vm_value_is_object(produced);
+	if (!is_object && produced != VM_VALUE_NULL) {
+		status = vm_throw_type_error(realm, "Proxy getPrototypeOf trap must return an object or null");
+		goto cleanup;
+	}
+
+	/* A target's own extensibility operation may execute script, so retain the sole returned object. */
+	if (is_object)
+		roots[3] = vm_value_as_cell(produced);
+	status = vm_is_extensible(realm, (struct vm_object *)vm_value_as_cell(target), &extensible);
+	if (status != 0)
+		goto cleanup;
+	if (!extensible) {
+		status = vm_get_prototype(realm, (struct vm_object *)vm_value_as_cell(target), &actual);
+		if (status != 0)
+			goto cleanup;
+		same = vm_same_value(produced, actual);
+		if (!same) {
+			status = vm_throw_type_error(realm, "Proxy getPrototypeOf trap disagreed with its nonextensible target");
+			goto cleanup;
+		}
+	}
+
+	/* An extensible target permits any object or null; fixed targets require the identity already checked. */
+	*prototype = produced;
+	status = 0;
+
+cleanup:
+	/* Release only snapshots and results whose root registrations were acquired. */
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* Preserve a failed trap or invariant after retiring native ownership. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the caller now owns the returned prototype value. */
+	return 0;
+}
+
+/* Runs Proxy SetPrototypeOf with the requested prototype rooted by its outer native operation frame. */
+static int
+access_proxy_set_prototype(
+	struct vm_realm *realm,
+	struct vm_proxy *proxy,
+	vm_value prototype,
+	int *done)
+{
+	struct vm_cell *roots[3];
+	vm_value target;
+	vm_value handler;
+	vm_value method;
+	vm_value method_key;
+	vm_value args[2];
+	vm_value produced;
+	vm_value actual;
+	unsigned registered;
+	unsigned index;
+	int is_cell;
+	int truth;
+	int extensible;
+	int same;
+	int status;
+
+	/* Reentrant lookup or trap revocation cannot replace the original target or handler. */
+	target = proxy->target;
+	handler = proxy->handler;
+	memset(roots, 0, sizeof(roots));
+	is_cell = vm_value_is_cell(target);
+	if (is_cell)
+		roots[0] = vm_value_as_cell(target);
+	is_cell = vm_value_is_cell(handler);
+	if (is_cell)
+		roots[1] = vm_value_as_cell(handler);
+	registered = 0;
+	for (index = 0; index < 3U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* A revoked input fails before handler lookup. */
+	if (target == VM_VALUE_NULL) {
+		status = vm_throw_type_error(realm, "Cannot set the prototype of a revoked Proxy");
+		goto cleanup;
+	}
+
+	/* GetMethod observes the current handler and handles null fallback. */
+	method_key = vm_key_from_ascii(realm->heap, "setPrototypeOf");
+	if (method_key == VM_VALUE_EMPTY) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* Missing traps delegate the actual transition to the original target. */
+	status = vm_get_method(realm, handler, method_key, &method);
+	if (status != 0)
+		goto cleanup;
+	if (method == VM_VALUE_UNDEFINED) {
+		if (prototype == VM_VALUE_NULL)
+			status = vm_set_prototype(realm, (struct vm_object *)vm_value_as_cell(target), NULL, done);
+		else
+			status = vm_set_prototype(realm, (struct vm_object *)vm_value_as_cell(target), (struct vm_object *)vm_value_as_cell(prototype), done);
+		goto cleanup;
+	}
+
+	/* The trap receives exactly the original target and requested object-or-null prototype. */
+	roots[2] = vm_value_as_cell(method);
+	args[0] = target;
+	args[1] = prototype;
+	status = vm_call(realm, method, handler, args, 2, &produced);
+	if (status != 0)
+		goto cleanup;
+	truth = vm_to_boolean(produced);
+	if (!truth) {
+		/* A refused transition never queries its target after the trap. */
+		status = 0;
+		goto cleanup;
+	}
+
+	/* Only nonextensible targets constrain a true trap result to the actual target prototype. */
+	status = vm_is_extensible(realm, (struct vm_object *)vm_value_as_cell(target), &extensible);
+	if (status != 0)
+		goto cleanup;
+	if (!extensible) {
+		status = vm_get_prototype(realm, (struct vm_object *)vm_value_as_cell(target), &actual);
+		if (status != 0)
+			goto cleanup;
+		same = vm_same_value(prototype, actual);
+		if (!same) {
+			status = vm_throw_type_error(realm, "Proxy setPrototypeOf trap disagreed with its nonextensible target");
+			goto cleanup;
+		}
+	}
+
+	/* A true result has passed the actual target's post-trap constraints. */
+	*done = 1;
+	status = 0;
+
+cleanup:
+	/* Retire every acquired snapshot and fresh method root regardless of outcome. */
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* Preserve failures after releasing all helper ownership. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: done reports the accepted or refused transition. */
 	return 0;
 }

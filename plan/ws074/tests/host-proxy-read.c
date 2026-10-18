@@ -99,6 +99,7 @@ static const struct vm_native_operations proxy_sole_operations = {
 	proxy_sole_get_own, NULL, NULL, NULL, NULL
 };
 
+static int prototype_pressure(struct page *page);
 static int delete_collect_participants(void);
 static int delete_pressure(struct page *page);
 static int proxy_delete_property(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
@@ -282,6 +283,11 @@ main(
 
 	/* Deletion keeps original participants and a sole fresh Symbol across post-trap and native fallback collections. */
 	status = delete_pressure(page);
+	if (status != 0)
+		goto cleanup;
+
+	/* Prototype operations retain requested inputs and independently release original protocol graphs. */
+	status = prototype_pressure(page);
 
 cleanup:
 	/* Restore ordinary scanning before retiring the complete Page graph. */
@@ -2541,5 +2547,234 @@ cleanup:
 		return status;
 
 	/* Succeeded: post-trap sole-key and native fallback collections retained and then released all participants. */
+	return 0;
+}
+
+/* Observes original prototype-operation participants and independently owned fresh prototype inputs or outputs. */
+static int
+prototype_pressure(
+	struct page *page)
+{
+	struct vm_realm *realm;
+	struct vm_object *target;
+	struct vm_object *handler;
+	struct vm_object *requested;
+	struct vm_cell *roots[6];
+	struct vm_cell *found;
+	struct vm_heap_stats before;
+	struct vm_heap_stats after;
+	uintptr_t addresses[5];
+	vm_value proxy;
+	vm_value getter;
+	vm_value key;
+	vm_value owner_key;
+	vm_value prototype;
+	unsigned registered;
+	unsigned index;
+	unsigned mode;
+	int is_object;
+	int done;
+	int status;
+
+	/* Only temporary setup roots precede the production frame's ownership. */
+	memset(roots, 0, sizeof(roots));
+	registered = 0;
+	for (index = 0; index < 6U; index++) {
+		status = vm_heap_add_root(page->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* Fresh Get output, Set input, Set fallback and Get fallback exercise distinct ownership transfers. */
+	for (mode = 0; mode < 4U; mode++) {
+		status = vm_realm_create_managed(page->heap, &realm);
+		if (status != 0)
+			goto cleanup;
+		roots[0] = &realm->cell;
+		addresses[0] = (uintptr_t)realm;
+		target = vm_object_create(page->heap, NULL);
+		if (target == NULL) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* Original targets and handlers lose their Proxy owner during reentrant method lookup. */
+		roots[1] = &target->cell;
+		addresses[1] = (uintptr_t)target;
+		handler = vm_object_create(page->heap, NULL);
+		if (handler == NULL) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* Requested prototypes have no shape, registry or other external owner. */
+		roots[2] = &handler->cell;
+		addresses[2] = (uintptr_t)handler;
+		requested = NULL;
+		if (mode != 0U) {
+			requested = vm_object_create(page->heap, NULL);
+			if (requested == NULL) {
+				status = ENOMEM;
+				goto cleanup;
+			}
+
+			/* Set's requested object must remain alive during the later getter before it reaches a script argument. */
+			roots[5] = &requested->cell;
+		}
+
+		/* Get fallback starts from a real target prototype configured through the production ordinary API. */
+		if (mode == 3U) {
+			status = vm_set_prototype(realm, target, requested, &done);
+			if (status != 0)
+				goto cleanup;
+			if (!done) {
+				status = 1;
+				goto cleanup;
+			}
+		}
+
+		/* The getter revokes its own original Proxy and returns either a fresh trap or actual fallback. */
+		if (mode == 0U) {
+			status = proxy_script(page->realm, "(function(){revokeReadProxy(this.owner);collectReadProxy();return function(){collectReadProxy();return {};};})", &getter);
+		} else if (mode == 1U) {
+			status = proxy_script(page->realm, "(function(){revokeReadProxy(this.owner);collectReadProxy();return function(target,proto){collectReadProxy();return proto!==null;};})", &getter);
+		} else {
+			status = proxy_script(page->realm, "(function(){revokeReadProxy(this.owner);collectReadProxy();return undefined;})", &getter);
+		}
+
+		/* Accessor storage must own the fresh getter before the setup frame retires it. */
+		if (status != 0)
+			goto cleanup;
+		roots[3] = vm_value_as_cell(getter);
+		if (mode == 0U || mode == 3U)
+			key = vm_key_from_ascii(page->heap, "getPrototypeOf");
+		else
+			key = vm_key_from_ascii(page->heap, "setPrototypeOf");
+		owner_key = vm_key_from_ascii(page->heap, "owner");
+		if (key == VM_VALUE_EMPTY || owner_key == VM_VALUE_EMPTY) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* Both the accessor and original managed Proxy use the normal language and factory implementations. */
+		status = vm_define_accessor(realm, vm_value_cell(handler), key, getter, 0);
+		if (status != 0)
+			goto cleanup;
+		roots[3] = NULL;
+		status = vm_proxy_create(realm, vm_value_cell(target), vm_value_cell(handler), &proxy);
+		if (status != 0)
+			goto cleanup;
+		roots[4] = vm_value_as_cell(proxy);
+		addresses[3] = (uintptr_t)roots[4];
+		status = vm_object_define(page->heap, handler, owner_key, proxy, VM_PROPERTY_DEFAULT);
+		if (status != 0)
+			goto cleanup;
+
+		/* No conservative scan or embedding root may supply the participants or requested prototype. */
+		vm_heap_stats(page->heap, &before);
+		for (index = 0; index < 6U; index++)
+			roots[index] = NULL;
+		if (mode == 0U || mode == 3U) {
+			status = vm_get_prototype(realm, (struct vm_object *)vm_value_as_cell(proxy), &prototype);
+		} else {
+			status = vm_set_prototype(realm, (struct vm_object *)vm_value_as_cell(proxy), requested, &done);
+			prototype = vm_value_cell(requested);
+		}
+
+		/* Production frames must preserve normal completion and retire their native recursion count. */
+		if (status != 0)
+			goto cleanup;
+		vm_heap_stats(page->heap, &after);
+		if (after.collections <= before.collections || realm->property_depth != 0U) {
+			status = 1;
+			goto cleanup;
+		}
+
+		/* This independent root now owns only the final output or original requested prototype. */
+		is_object = vm_value_is_object(prototype);
+		if (!is_object) {
+			status = 1;
+			goto cleanup;
+		}
+
+		/* Fresh Get results and requested Set inputs must be genuine plain objects, never reused freed cells. */
+		roots[5] = vm_value_as_cell(prototype);
+		addresses[4] = (uintptr_t)roots[5];
+		if (roots[5]->type != &vm_object_type) {
+			status = 1;
+			goto cleanup;
+		}
+
+		/* All otherwise unowned operation participants survived the getter and trap collections. */
+		for (index = 0; index < 4U; index++) {
+			found = vm_heap_find_cell(page->heap, addresses[index]);
+			if (found == NULL) {
+				status = 1;
+				goto cleanup;
+			}
+		}
+
+		/* Set fallback really changes target storage; a true extensible trap may legally leave it unchanged. */
+		if (mode == 1U || mode == 2U) {
+			if (!done) {
+				status = 1;
+				goto cleanup;
+			}
+
+			/* The two Set paths are distinguished by actual target prototype storage. */
+			if (mode == 2U) {
+				if (target->prototype != requested) {
+					status = 1;
+					goto cleanup;
+				}
+			} else if (target->prototype != NULL) {
+				status = 1;
+				goto cleanup;
+			}
+		}
+
+		/* Keeping only the returned/requested prototype must not keep its former owner or Proxy participants. */
+		vm_heap_collect(page->heap);
+		for (index = 0; index < 4U; index++) {
+			found = vm_heap_find_cell(page->heap, addresses[index]);
+			if (found != NULL) {
+				status = 1;
+				goto cleanup;
+			}
+		}
+
+		/* The independent prototype must remain alive after its former protocol graph has actually disappeared. */
+		found = vm_heap_find_cell(page->heap, addresses[4]);
+		if (found == NULL) {
+			status = 1;
+			goto cleanup;
+		}
+
+		/* Dropping the last output/input root must actually reclaim that prototype too. */
+		roots[5] = NULL;
+		vm_heap_collect(page->heap);
+		found = vm_heap_find_cell(page->heap, addresses[4]);
+		if (found != NULL) {
+			status = 1;
+			goto cleanup;
+		}
+	}
+
+	/* All independent Get and Set ownership transfers were observed through actual collections. */
+	status = 0;
+
+cleanup:
+	/* Retire only the setup registrations acquired by this synchronous fixture frame. */
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(page->heap, &roots[registered]);
+	}
+
+	/* Preserve failures after releasing every setup or output root. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: prototypes and original protocol graphs were independently retained and then reclaimed. */
 	return 0;
 }
