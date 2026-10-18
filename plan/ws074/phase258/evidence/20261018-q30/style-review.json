@@ -1,0 +1,86 @@
+{
+  "scope": {
+    "userland/desktop/libbrowser/vm/object.c": [
+      "vm_value_is_object",
+      "vm_proxy_create",
+      "vm_proxy_revoke",
+      "object_proxy_trace"
+    ],
+    "userland/desktop/libbrowser/vm/access.c": [
+      "vm_get",
+      "vm_get_receiver",
+      "access_get_receiver",
+      "access_proxy_get",
+      "access_read_trace"
+    ],
+    "userland/desktop/libbrowser/vm/realm.c": [
+      "realm_create"
+    ],
+    "plan/ws074/tests/host-proxy-read.c": [
+      "main",
+      "proxy_make",
+      "proxy_revoke",
+      "proxy_get_receiver",
+      "proxy_collect",
+      "proxy_script",
+      "proxy_lifetime",
+      "proxy_sole_get_own",
+      "proxy_gc_edges"
+    ]
+  },
+  "raw_checker_flags": 45,
+  "allowed_forward_cleanup": [
+    {
+      "function": "vm_proxy_create",
+      "forward_shared_cleanup_jumps": 6,
+      "labels": [
+        "cleanup"
+      ]
+    },
+    {
+      "function": "access_proxy_get",
+      "forward_shared_cleanup_jumps": 10,
+      "labels": [
+        "cleanup"
+      ]
+    },
+    {
+      "function": "main",
+      "forward_shared_cleanup_jumps": 12,
+      "labels": [
+        "cleanup"
+      ]
+    },
+    {
+      "function": "proxy_gc_edges",
+      "forward_shared_cleanup_jumps": 17,
+      "labels": [
+        "cleanup"
+      ]
+    }
+  ],
+  "other_checker_flags": 0,
+  "unresolved_changed_scope": 0,
+  "script_free_native_operations_byte_identical": true,
+  "target_sources": 3,
+  "final_host_target_warnings": 0,
+  "retained_initial_fixture_errors": [
+    "controls-build.log: missing vm/internal.h fixture include",
+    "controls-build-verified.log: fixture used descriptive nonexistent vm_to_property_key instead of actual vm_to_key"
+  ],
+  "manual_review": [
+    "new Proxy kind appended; managed Proxy object cell recognized without public browser ABI change; payload initializes before shape acquisition and traces object storage/target/handler; default finalizer owns only object storage",
+    "all product functions/callbacks/prototypes/constant tables/new structs and macro/counter comments follow full C standard in changed generation scope; required trace callback declarations precede tables only, new ordinary helpers follow tables",
+    "vm_get delegates with initial receiver==base, existing primitive/string/native ordinary behavior preserved; own descriptor walk detects Proxy at any prototype level; accessors retain original receiver",
+    "one frame tracer retains managed realm/base/key/receiver before user code and is removed on every exit; per-realm property depth is separate from VM frame depth and balanced on all statuses; RangeError construction does not call vm_get",
+    "Proxy get snapshots and roots original target/handler before GetMethod, so revocation inside a getter/trap does not retire them until the operation ends; method/original receiver/converted string-or-symbol key/sole returned cell retained through native descriptor collection",
+    "get trap uses original handler as this and exactly target/propertyKey/receiver; null trap fallback retains receiver; get invariant observes post-trap original-target descriptor and SameValue including NaN and signed zero; fixed getterless accessor requires undefined",
+    "private factory rejects primitive participants/callable or Proxy targets per explicit stage bound; revoke is idempotent; no global JS Proxy/constructor/revocable exposed by product",
+    "target/header/public ABI/layer changes confined to VM internals, fixture bridges only, no production test switch/Wayland/module/toolchain/WPT/runner change"
+  ],
+  "limitations": [
+    "write/descriptor/keys/prototype/IsArray/call/construct/JS exposure remain whole p258 work",
+    "legacy unchanged file-wide declaration/style scopes remain p100, no whole WS conformance claim",
+    "target3 compile only, no full target link/runtime"
+  ]
+}

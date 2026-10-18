@@ -1,0 +1,22 @@
+{
+  "userland/desktop/libbrowser/vm/internal.h": {
+    "old": "5a608bbb5f0f645faca8ea5f74d4bdc9d5ea6f928b0bf09cfd031ab975bb3600",
+    "new": "d8aea4b6d6381ed349f6a63535d527979a20696580eb0a44c2717f1e68633cd0"
+  },
+  "userland/desktop/libbrowser/vm/vm.h": {
+    "old": "dba3d945a25e51422cba20af22a095428ff46f035cb585fe18555c1e801938a6",
+    "new": "aaa2b8e0dbdbeead7fe373ea55e1e2bb1c7009614d6ac60318d09e953712d96c"
+  },
+  "userland/desktop/libbrowser/vm/access.c": {
+    "old": "2fa4846540a0c66eebaed7ed829d2bec9529f4b92d23b6e3fb45ba0994154776",
+    "new": "5b6c91457fe6ad77003dd43bcb2aa8cb734076b5dd724d5d9455d7f4166ad7e1"
+  },
+  "userland/desktop/libbrowser/vm/object.c": {
+    "old": "fa6c5b74df165f05721eb4b36ea3d28dcf61a877c03badcc76cd0bcc76014b67",
+    "new": "2733c7e8d7b900b28d12afe0b909b5b60dcb43f20fee56270ac025d0b6a03152"
+  },
+  "userland/desktop/libbrowser/vm/realm.c": {
+    "old": "6f7ad6026f1f0fed4462c37cf342833db5a117d9e977c11be8699768143b31e9",
+    "new": "f79e1d69393be1dd9a3a7b5110f4b990d0ec004e03895b1cd8af197d65b8f2ef"
+  }
+}

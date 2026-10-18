@@ -2,7 +2,7 @@
 
 # ws074-p189: Interop 2025 testharness 結果取得
 
-Status: uncleared（q29 held0・適格1508/未attempt275・Proxy/IDL/native残り）
+Status: uncleared（q30 held0・適格1508/未attempt275・global Proxy/IDL/native残り）
 
 ## ws074-q20261018-03 結果
 
@@ -358,3 +358,5 @@ Event ws074-q26-ended-uncleared-20261018: [history](../history/ws074-q20261018-2
 Event ws074-p189-q28-held-revalidated-20261018: 公式harnessのtimer/Observer intentional failureは同じ原JSでnative/Chrome双方harness_error/completion1、正常timerとactual future-only Observerは双方PASS。prior/future実entry各1・futureだけ通知を再確認し、原held WPTをindex1496で再実行、full censusと全callback/completionが同一PASS、原JSはpinned Git blob SHA256427af82a2e3231c62432a40ff8ba7af4b7fed05b01472ca76a0e672d82447855とbyte同一。この1 IDの既知no-op/未通知/失敗通知前提がすべて解消したためheld1を解除。raw PASS1482は維持し確認済1481→1482/3805（38.948752%）、未attempt275は分母へ保持。新whole gainは0。 full harness1508は236.5秒、494 PASS/955 FAIL/13 harness_error/20 no_completion/24 no_output/2 multiple、callbacks11540 PASS/20642 FAIL/14 NOTRUN。旧whole PASSとPASS callbackの名前/数を全件保持。元console Uncaught由来の9件がFAIL/no_completionからharness_errorへ、wasm1件はharness_error内messageが変化。fatal completion後に旧FAIL callback1が実行されなくなったことを原source/console/auditへ保存し、API改善と誤認しない。static1561は844 PASS/717 FAIL・全pixel metrics不変、scripted413は105 PASS/283 FAIL/5 unsupported/20 missing・805全RGB不変、strict48は39 PASS/9 missing不変。heavy suitesを直列実行し計652.6秒、budget20秒/settle5000は維持。 [evidence](../phase256/evidence/20261018-q28/README.md)。本Phaseのunattempted275/入力環境/native API/yield*残りは保持しwholeはuncleared。
 
 Event ws074-p189-q29-delegation-output-20261018: [p257](../phase257/phase.md)のnative sync yield* verified output後に同じ全1508を237.1秒で再測定。whole/callback countsと全旧PASS不変、差2 IDのIDL setupはProxy未定義へ進んだ。original WebIDL2 load/parse APIは実在し、actual parser/validatorはまだProxyを必要とする。Chrome actual4/4に対しnative1/4、negative after-parseもnativeは未到達と保存、正規IDL conformanceを先取り認定しない。q28 held0/確認済1482は維持。次のProxy native design/実装は新finite Queueで選定する。runner/WPT/期待値不変、whole p189 uncleared。 [q29 full evidence](../phase257/evidence/20261018-q29/README.md)。
+
+Event ws074-p189-q30-native-read-output-20261018: [p258](../phase258/phase.md) private Proxy read foundationのnative/Chrome32・実GC出力を検証後、固定全1508を同条件238.2秒で実測。q29全whole/callback/completion完全同値、確認済1482/3805・held0/未attempt275維持。global Proxyはまだ公開せず、original IDL parseのProxy blocker解消やAPI full適合を先取りしない。次internal methods/global readinessはp258の新finite Queueへ。 [q30 full evidence](../phase258/evidence/20261018-q30/README.md)。whole p189 uncleared/共有投影pending。

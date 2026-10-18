@@ -1,0 +1,7 @@
+[
+  "userland/desktop/libbrowser/vm/access.c",
+  "userland/desktop/libbrowser/vm/internal.h",
+  "userland/desktop/libbrowser/vm/object.c",
+  "userland/desktop/libbrowser/vm/realm.c",
+  "userland/desktop/libbrowser/vm/vm.h"
+]
