@@ -66,3 +66,5 @@ Event ws074-dedicated-interop2025-20261002: ユーザーがAcid3のpixel単位10
 2026-10-18 q14 terminal follow-up: [証拠](../phase250/evidence/20261018-q14/README.md)。source88713baddの全1491/1561 gate完走、whole491/839、old PASS後退0。callback13改善/16 native animation偽陽性露出を明記。p251/p250 own criteria cleared、p100全source/target/WSの未達を維持。
 
 Event ws074-q26-declaration-conformance-followup-20261018: q27全文監査でq26導入のenvironment_entries_snapshotのforward宣言がconstant tables前にあり、initializer参照が無いことを確認。C全文§2の限定例外を満たさず、q26の「変更scope未解消conformance0」はこの点でも無効。元functional/corpus/GC/target出力は保持、q26 attemptは既にoracle未達でunclearedでありその結果を維持する。q27生成範囲にenvironment.cは含めないためsourceは変更せず、p100と次の該当source Queueへ規約整理を残す。q27 Event側は同じ問題を14 helper宣言の正規block移動で是正し、宣言multiset/残りtoken/host runtime object不変を証明。baseline producer/consumerの機能出力への依存とwhole/conformance受入を区別する。
+
+Event ws074-q28-declaration-residual-corrected-20261018: q26由来environment_entries_snapshot等のtable前helper宣言をq28-i01で正規blockへ移動し、34 required/59 helper・全token/runtime object同値・host/target warning0を確認。[p255 scoped evidence](../phase255/evidence/20261018-q28-declarations/README.md)。この§2残差だけを解消、全WS sourceの本Phase受入/target fullは未達を維持。
