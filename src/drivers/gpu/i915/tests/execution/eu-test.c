@@ -828,8 +828,8 @@ drv_i915_test_eu_log_record(
 
 	/* Samples the status page and the context descriptor. */
 	t->hwsp_seqno_observed = *rq->hwsp_cpu;
-	t->ctx_ccid_hi = (uint32_t)(ce->lrc_desc >> 32);
-	t->ctx_ccid_lo = (uint32_t)ce->lrc_desc;
+	t->ctx_ccid_hi = (uint32_t)(ce->desc >> 32);
+	t->ctx_ccid_lo = (uint32_t)ce->desc;
 
 	/* A time-base fault is the error the wait records as "time base". */
 	t->time_base_fault = 0;
@@ -1905,8 +1905,8 @@ i915_eu_new_context(
 	}
 
 	/* Writes the context image and its ring registers. */
-	drv_i915_lrc_init_state(ce);
-	(void)drv_i915_lrc_update_regs(ce, ce->ring.tail);
+	drv_i915_lrc_build_image(ce);
+	(void)drv_i915_lrc_set_ring(ce, ce->ring.tail);
 
 	/* Succeeded: the context takes its first request. */
 	return 0;
@@ -2011,7 +2011,7 @@ i915_eu_walk_fixture(
 	unsigned i;
 
 	/* Compares PDP0 of the context with the top directory of the space. */
-	pdp0 = ((uint64_t)t->ce.lrc_reg_state[I915_GT_CTX_PDP0_UDW] << 32) | t->ce.lrc_reg_state[I915_GT_CTX_PDP0_LDW];
+	pdp0 = ((uint64_t)t->ce.regs[I915_GT_CTX_PDP0_UDW] << 32) | t->ce.regs[I915_GT_CTX_PDP0_LDW];
 	t->pdp0_matches_top = 0;
 	if (pdp0 == vm->top_pd_dma)
 		t->pdp0_matches_top = 1;
@@ -2428,11 +2428,11 @@ i915_eu_log_context(
 	ring_control = 0U;
 	pdp0_high = 0U;
 	pdp0_low = 0U;
-	if (t->ce.lrc_reg_state != NULL) {
-		context_control = t->ce.lrc_reg_state[I915_GT_CTX_CONTEXT_CONTROL];
-		ring_control = t->ce.lrc_reg_state[I915_GT_CTX_RING_CTL];
-		pdp0_high = t->ce.lrc_reg_state[I915_GT_CTX_PDP0_UDW];
-		pdp0_low = t->ce.lrc_reg_state[I915_GT_CTX_PDP0_LDW];
+	if (t->ce.regs != NULL) {
+		context_control = t->ce.regs[I915_GT_CTX_CONTEXT_CONTROL];
+		ring_control = t->ce.regs[I915_GT_CTX_RING_CTL];
+		pdp0_high = t->ce.regs[I915_GT_CTX_PDP0_UDW];
+		pdp0_low = t->ce.regs[I915_GT_CTX_PDP0_LDW];
 	}
 
 	state_ggtt = 0ULL;

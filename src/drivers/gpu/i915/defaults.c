@@ -297,8 +297,8 @@ i915_defaults_submit_engine(
 	 * image is built with the restore inhibited and no default state yet,
 	 * and the empty ring is written into it.
 	 */
-	drv_i915_lrc_init_state(ce);
-	(void)drv_i915_lrc_update_regs(ce, ce->ring.tail);
+	drv_i915_lrc_build_image(ce);
+	(void)drv_i915_lrc_set_ring(ce, ce->ring.tail);
 
 	/* Opens the request; the timeline's initial breadcrumb moves the seqno by 2. */
 	d->tl_seqno[index] += I915_DEFAULTS_SEQNO_STEP;

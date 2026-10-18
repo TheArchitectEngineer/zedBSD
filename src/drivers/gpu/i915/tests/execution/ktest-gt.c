@@ -2090,7 +2090,7 @@ i915_ktest_gt_contexts(
 	}
 
 	/* Builds the image a never-run context starts from. */
-	drv_i915_lrc_init_state(ce);
+	drv_i915_lrc_build_image(ce);
 
 	/* The image, its ring registers and its workaround batches. */
 	i915_ktest_gt_context_state(ktest, t);
@@ -2128,7 +2128,7 @@ i915_ktest_gt_context_state(
 	unsigned dwords;
 
 	ce = &t->rcs_ce;
-	rs = ce->lrc_reg_state;
+	rs = ce->regs;
 
 	/* The image is the per-process status page, then the register state one page in. */
 	drv_i915_ktest_check(
@@ -2137,7 +2137,7 @@ i915_ktest_gt_context_state(
 		    ce->wa_bb_page == 14U &&
 		    ce->state->bound == 1 &&
 		    ce->ring.obj->bound == 1 &&
-		    ce->lrc_reg_state == (uint32_t *)((char *)ce->state->cpu + 4096U),
+		    ce->regs == (uint32_t *)((char *)ce->state->cpu + 4096U),
 		"p6c2: P6C2-STATE the image is ppHWSP then the register state one page in");
 
 	/* Restore is inhibited and PDP0 names the four-level top directory. */
@@ -2186,10 +2186,10 @@ i915_ktest_gt_context_ring(
 	uint32_t state_ggtt;
 
 	ce = &t->rcs_ce;
-	rs = ce->lrc_reg_state;
+	rs = ce->regs;
 
 	/* Writes the ring registers for an empty ring. */
-	desc = drv_i915_lrc_update_regs(ce, 0U);
+	desc = drv_i915_lrc_set_ring(ce, 0U);
 
 	/* A 4 KiB ring has I915_GT_RING_CTL size 0, and the render engine asks for its slice. */
 	drv_i915_ktest_check(
@@ -2231,7 +2231,7 @@ i915_ktest_gt_context_wa_batch(
 	int saw_sem;
 
 	ce = &t->rcs_ce;
-	rs = ce->lrc_reg_state;
+	rs = ce->regs;
 
 	/* Every ADL-P engine has its own I915_GT_AUX_INV register (gen12_get_aux_inv_reg()). */
 	aux_rcs = drv_i915_lrc_aux_inv_reg(I915_RCS0);
@@ -2343,8 +2343,8 @@ i915_ktest_gt_context_xcs(
 
 	/* Builds the image and its batches. */
 	drv_i915_execlists_submission_setup(&t->vcs0);
-	drv_i915_lrc_init_state(&t->vcs0_ce);
-	(void)drv_i915_lrc_update_regs(&t->vcs0_ce, 0U);
+	drv_i915_lrc_build_image(&t->vcs0_ce);
+	(void)drv_i915_lrc_set_ring(&t->vcs0_ce, 0U);
 
 	/* INDIRECT_CTX and PER_CTX_BB add two pages; wa_bb_page names the first. */
 	drv_i915_ktest_check(
@@ -2399,13 +2399,13 @@ i915_ktest_gt_context_rpcs(
 
 	/* Rewrites the registers as if the engine could not power-gate a slice. */
 	t->rcs.sseu_has_slice_pg = 0;
-	(void)drv_i915_lrc_update_regs(&t->rcs_ce, 0U);
-	without_pg = t->rcs_ce.lrc_reg_state[I915_GT_CTX_R_PWR_CLK_STATE];
+	(void)drv_i915_lrc_set_ring(&t->rcs_ce, 0U);
+	without_pg = t->rcs_ce.regs[I915_GT_CTX_R_PWR_CLK_STATE];
 
 	/* Rewrites them again with slice power gating, as the engine was set up. */
 	t->rcs.sseu_has_slice_pg = 1;
-	(void)drv_i915_lrc_update_regs(&t->rcs_ce, 0U);
-	with_pg = t->rcs_ce.lrc_reg_state[I915_GT_CTX_R_PWR_CLK_STATE];
+	(void)drv_i915_lrc_set_ring(&t->rcs_ce, 0U);
+	with_pg = t->rcs_ce.regs[I915_GT_CTX_R_PWR_CLK_STATE];
 
 	/* Gen12 requests slices only; without slice power gating nothing is requested. */
 	drv_i915_ktest_check(
@@ -2542,8 +2542,8 @@ i915_ktest_gt_copy_engine(
 
 	/* Builds the image. */
 	drv_i915_execlists_submission_setup(&t->bcs);
-	drv_i915_lrc_init_state(&t->bcs_ce);
-	(void)drv_i915_lrc_update_regs(&t->bcs_ce, 0U);
+	drv_i915_lrc_build_image(&t->bcs_ce);
+	(void)drv_i915_lrc_set_ring(&t->bcs_ce, 0U);
 
 	/* The copy request, its submission, the CSB and the resume pieces. */
 	hw = (uint32_t)t->bcs.hwsp_ggtt + 0x100U;
@@ -2681,9 +2681,9 @@ i915_ktest_gt_copy_submit(
 
 	/* The submission left I915_GT_RING_TAIL at the request tail, moved the tail to wa_tail and took tag 0. */
 	submitted = 0;
-	if (ce->lrc_reg_state[I915_GT_CTX_RING_TAIL] == pre_tail &&
+	if (ce->regs[I915_GT_CTX_RING_TAIL] == pre_tail &&
 	    rq->tail == rq->wa_tail &&
-	    (ce->lrc_desc & 4U) == 0U &&
+	    (ce->desc & 4U) == 0U &&
 	    ce->tag == 0 &&
 	    (t->bcs_el.context_tag & 1U) == 0U &&
 	    t->bcs_el.serial == 1U)
@@ -2838,17 +2838,17 @@ i915_ktest_gt_resume_pieces(
 	i915_ktest_gt_power_sanitize(ktest, t);
 
 	/* lrc_reset() on a used context whose context control was lost. */
-	ce->lrc_reg_state[I915_GT_CTX_CONTEXT_CONTROL] = 0U;
-	drv_i915_lrc_reset(ce);
+	ce->regs[I915_GT_CTX_CONTEXT_CONTROL] = 0U;
+	drv_i915_lrc_scrub(ce);
 
 	/* The ring restarts at emit, the registers are scrubbed, and a restore is forced. */
 	drv_i915_ktest_check(
 		ktest,
 		ce->ring.head == ce->ring.emit &&
 		    ce->ring.tail == ce->ring.emit &&
-		    ce->lrc_reg_state[I915_GT_CTX_CONTEXT_CONTROL] == (((8U << 16) | 8U) | (1U << 16) | 1U) &&
-		    ce->lrc_reg_state[I915_GT_CTX_RING_HEAD] == ce->ring.emit &&
-		    (ce->lrc_desc & 4U) != 0U,
+		    ce->regs[I915_GT_CTX_CONTEXT_CONTROL] == (((8U << 16) | 8U) | (1U << 16) | 1U) &&
+		    ce->regs[I915_GT_CTX_RING_HEAD] == ce->ring.emit &&
+		    (ce->desc & 4U) != 0U,
 		"p6c4: P6C4-LRCRESET the ring restarts at emit, the registers are scrubbed, restore is forced");
 }
 
@@ -3020,12 +3020,12 @@ i915_ktest_gt_defaults_inherit(
 	pphwsp = 0U;
 	ring_start = 0U;
 	if (error == 0) {
-		drv_i915_lrc_init_state(ce);
-		(void)drv_i915_lrc_update_regs(ce, 0U);
-		mark = ce->lrc_reg_state[0x40U];
-		control = ce->lrc_reg_state[I915_GT_CTX_CONTEXT_CONTROL];
+		drv_i915_lrc_build_image(ce);
+		(void)drv_i915_lrc_set_ring(ce, 0U);
+		mark = ce->regs[0x40U];
+		control = ce->regs[I915_GT_CTX_CONTEXT_CONTROL];
 		pphwsp = ((uint32_t *)ce->state->cpu)[0];
-		ring_start = ce->lrc_reg_state[I915_GT_CTX_RING_START];
+		ring_start = ce->regs[I915_GT_CTX_RING_START];
 	}
 
 	/* The mark arrives, the per-process status page is cleared, and the restore is not inhibited. */
@@ -3392,7 +3392,7 @@ i915_ktest_gt_migrate_context(
 		"p6c6: P6C6-PTE the PTE window maps the eight window page tables themselves");
 
 	/* A pinned context with a 512 KiB ring on the migrate VM, its timeline at HWS_MIGRATE. */
-	regs = mg->ce.lrc_reg_state;
+	regs = mg->ce.regs;
 	drv_i915_ktest_check(
 		ktest,
 		mg->ce.allocated != 0 &&

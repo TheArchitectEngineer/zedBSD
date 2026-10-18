@@ -10,23 +10,22 @@
  *
  * A context is the image the engine loads when it switches to the context
  * and saves when it switches away, together with the ring the context's
- * commands are written to.  This follows the reference's intel_lrc.c for
- * Gen12 (Alder Lake-P):
+ * commands are written to:
  *
  *   - the image is page 0 = the per-process status page, then the register
- *     state from I915_GT_LRC_STATE_OFFSET on, then two extra pages: the INDIRECT_CTX
- *     batch the engine runs as part of a context restore, and the PER_CTX_BB
- *     batch it runs after it;
- *   - the register state is laid out by the reference's offset tables and
- *     then filled with the ring, page directory and power clock values;
- *   - the indirect batch is not empty on Alder Lake-P: it reloads the context
+ *     state from I915_GT_LRC_STATE_OFFSET on, then two extra pages: the
+ *     INDIRECT_CTX batch the engine runs as part of a context restore, and
+ *     the PER_CTX_BB batch it runs after it;
+ *   - the register state is laid out from the encoded register tables
+ *     (intel/lrc-offsets.h) and then filled with the ring, page directory
+ *     and power clock values;
+ *   - the Gen12 indirect batch is not empty: it reloads the context
  *     timestamp, restores a scratch register and invalidates the AUX table,
  *     and the AUX invalidate ends in a semaphore poll, so a wrong register
  *     there hangs the context restore rather than the batch.
  *
- * The Linux register-state indices (I915_GT_CTX_RING_TAIL and the rest) and the MI
- * commands come from intel/gt-regs.h and intel/commands.h, which context.c
- * includes.
+ * The register-state indices (I915_GT_CTX_RING_TAIL and the rest) and the
+ * MI commands come from intel/gt-regs.h and intel/commands.h.
  */
 
 #ifndef DRIVERS_GPU_I915_CONTEXT_H
@@ -87,7 +86,7 @@ struct i915_gt_context {
 
 	/* The context image and the CPU view of its register state. */
 	struct i915_gt_object *state;
-	uint32_t *lrc_reg_state;
+	uint32_t *regs;
 	uint32_t state_bytes;
 
 	/* The page index of the INDIRECT_CTX page, the first of the two extra pages. */
@@ -106,7 +105,7 @@ struct i915_gt_context {
 	 * I915_GT_CTX_DESC_FORCE_RESTORE until the first submission, and the context id
 	 * fields in the high dword, filled when the context is scheduled in.
 	 */
-	uint64_t lrc_desc;
+	uint64_t desc;
 
 	/* The software context id while scheduled in, else -1. */
 	int tag;
@@ -126,9 +125,9 @@ struct i915_gt_context {
 };
 
 int drv_i915_lrc_alloc(struct i915_gt_context *ce, struct i915_gt_engine *ge, struct i915_gt_ppgtt *vm, struct i915_gt_mem *gm, uint32_t ring_size, uint32_t sw_id);
-void drv_i915_lrc_init_state(struct i915_gt_context *ce);
-void drv_i915_lrc_reset(struct i915_gt_context *ce);
-uint32_t drv_i915_lrc_update_regs(struct i915_gt_context *ce, uint32_t head);
+void drv_i915_lrc_build_image(struct i915_gt_context *ce);
+void drv_i915_lrc_scrub(struct i915_gt_context *ce);
+uint32_t drv_i915_lrc_set_ring(struct i915_gt_context *ce, uint32_t head);
 uint32_t drv_i915_lrc_aux_inv_reg(int engine_id);
 void drv_i915_lrc_release(struct i915_gt_context *ce, struct i915_gt_mem *gm);
 

@@ -1693,7 +1693,7 @@ i915_worker_run(
 		record->ce.ring.head = 0U;
 		record->ce.ring.tail = 0U;
 		record->ce.ring.emit = 0U;
-		(void)drv_i915_lrc_update_regs(&record->ce, 0U);
+		(void)drv_i915_lrc_set_ring(&record->ce, 0U);
 		kern_logf("i915: resident shim: ring rewound (idle context)\n");
 	}
 
@@ -2048,8 +2048,8 @@ i915_worker_context_fill(
 	}
 
 	/* Lays out the register state and points the image at the empty ring. */
-	drv_i915_lrc_init_state(&record->ce);
-	(void)drv_i915_lrc_update_regs(&record->ce, record->ce.ring.tail);
+	drv_i915_lrc_build_image(&record->ce);
+	(void)drv_i915_lrc_set_ring(&record->ce, record->ce.ring.tail);
 
 	/* The owner makes the record the session context's; the counts keep the worker alive. */
 	record->tl_seqno = 0U;

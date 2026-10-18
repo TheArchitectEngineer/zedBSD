@@ -95,8 +95,8 @@ drv_i915_pxp_init(
 	}
 
 	/* Pins it: builds the image and writes the empty ring into it. */
-	drv_i915_lrc_init_state(&x->ce);
-	(void)drv_i915_lrc_update_regs(&x->ce, x->ce.ring.tail);
+	drv_i915_lrc_build_image(&x->ce);
+	(void)drv_i915_lrc_set_ring(&x->ce, x->ce.ring.tail);
 
 	/* The context's timeline lives in the engine's status page. */
 	x->hwsp_ggtt = (uint32_t)ge->hwsp_ggtt + I915_GT_HWS_PXP_ADDR;

@@ -228,8 +228,8 @@ i915_migrate_populate(
 	}
 
 	/* Pins it: builds the image and writes the empty ring into it. */
-	drv_i915_lrc_init_state(&m->ce);
-	(void)drv_i915_lrc_update_regs(&m->ce, m->ce.ring.tail);
+	drv_i915_lrc_build_image(&m->ce);
+	(void)drv_i915_lrc_set_ring(&m->ce, m->ce.ring.tail);
 
 	/* Succeeded: the windows are mapped and the context is pinned. */
 	return 0;

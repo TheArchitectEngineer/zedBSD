@@ -424,8 +424,8 @@ drv_i915_engines_init(
 			break;
 
 		/* Pins it: builds the image and writes the empty ring into it. */
-		drv_i915_lrc_init_state(ce);
-		(void)drv_i915_lrc_update_regs(ce, ce->ring.tail);
+		drv_i915_lrc_build_image(ce);
+		(void)drv_i915_lrc_set_ring(ce, ce->ring.tail);
 
 		/* The kernel timeline starts at zero; the engine now counts as set up. */
 		es->kernel_tl_seqno[index] = 0U;
@@ -700,5 +700,5 @@ i915_execlists_sanitize(
 	ge->hwsp[I915_GT_HWS_SEQNO_ADDR / 4U] = es->kernel_tl_seqno[index];
 
 	/* Resets the pinned kernel context (intel_engine_reset_pinned_contexts()). */
-	drv_i915_lrc_reset(&es->kernel_ce[index]);
+	drv_i915_lrc_scrub(&es->kernel_ce[index]);
 }

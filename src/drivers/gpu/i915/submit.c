@@ -742,7 +742,7 @@ i915_schedule_in(
 
 	/* Puts the fields into the descriptor's upper dword and records the id. */
 	ce = rq->ce;
-	ce->lrc_desc = (((uint64_t)ccid) << 32) | (uint32_t)ce->lrc_desc;
+	ce->desc = (((uint64_t)ccid) << 32) | (uint32_t)ce->desc;
 	ce->tag = tag;
 
 	/* Succeeded: the context is scheduled in. */
@@ -783,7 +783,7 @@ i915_update_context(
 
 	/* Starts from the context's descriptor and the ring's previous tail. */
 	ce = rq->ce;
-	desc = ce->lrc_desc;
+	desc = ce->desc;
 	previous = ce->ring.tail;
 	tail = rq->tail;
 
@@ -807,14 +807,14 @@ i915_update_context(
 		desc |= I915_GT_CTX_DESC_FORCE_RESTORE;
 
 	/* Writes the tail into the image; the ring tail moves on past the workaround tail. */
-	ce->lrc_reg_state[I915_GT_CTX_RING_TAIL] = tail;
+	ce->regs[I915_GT_CTX_RING_TAIL] = tail;
 	rq->tail = rq->wa_tail;
 
 	/* The context image must be complete before the uncached ELSQ write. */
 	kern_io_write_barrier();
 
 	/* The forced restore applies to this submission only. */
-	ce->lrc_desc &= ~(uint64_t)I915_GT_CTX_DESC_FORCE_RESTORE;
+	ce->desc &= ~(uint64_t)I915_GT_CTX_DESC_FORCE_RESTORE;
 
 	/* Reports the descriptor to write. */
 	return desc;
