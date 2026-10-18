@@ -1,0 +1,39 @@
+row-auto 200 40 auto
+row-content 80 40 content
+row-percent-preferred 80 40 content
+row-max 60 40 content
+row-min 100 40 content
+row-frame 104 64 content
+row-border 104 64 content
+row-ratio 200 100 content
+row-ratio-auto 50 100 auto
+column-auto 180 150 auto
+column-content 180 40 content
+column-percent-preferred 180 40 content
+column-max 180 25 content
+column-min 180 65 content
+column-frame 204 64 content
+column-border 180 64 content
+column-ratio 180 90 content
+column-ratio-auto 180 20 auto
+negative-percent 0 40 calc(5% - 40px)
+negative-absolute 0 40 0px
+mutate-before 80 40 content
+mutate-after 120 120px 200px
+mutate-auto 200 200px
+mutate-content 120 200px
+lines nowrap 80 80 80 0
+lines wrap 80 80 80 0
+value none accepted=false computed=auto
+value normal accepted=false computed=auto
+value -1px accepted=false computed=auto
+value -2% accepted=false computed=auto
+value content accepted=true computed=content
+value auto accepted=true computed=auto
+value fit-content accepted=true computed=fit-content
+value min-content accepted=true computed=min-content
+value max-content accepted=true computed=max-content
+value calc(10px - 0.5em) accepted=true computed=0px
+value calc(0% + 10px) accepted=true computed=calc(0% + 10px)
+value calc(-5%) accepted=true computed=0%
+value calc(10% - 20px) accepted=true computed=calc(10% - 20px)

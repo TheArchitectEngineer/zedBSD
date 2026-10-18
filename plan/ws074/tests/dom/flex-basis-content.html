@@ -1,0 +1,72 @@
+<!doctype html><meta charset="utf-8"><body><script>
+function basis(name, direction, value, extra, contentWidth, contentHeight) {
+    var parent = document.createElement("div");
+    var item = document.createElement("div");
+    var inner = document.createElement("div");
+    parent.style.cssText = "display:flex;width:500px;height:300px;align-items:flex-start;flex-direction:" + direction;
+    item.style.cssText = "flex:0 0 " + value + ";min-width:0;min-height:0;" + extra;
+    inner.style.cssText = "width:" + contentWidth + "px;height:" + contentHeight + "px";
+    item.appendChild(inner);
+    parent.appendChild(item);
+    document.body.appendChild(parent);
+    var rect = item.getBoundingClientRect();
+    var style = getComputedStyle(item);
+    console.log(name, rect.width, rect.height, style.flexBasis);
+    return [item, inner];
+}
+basis("row-auto", "row", "auto", "width:200px", 80, 40);
+basis("row-content", "row", "content", "width:200px", 80, 40);
+basis("row-percent-preferred", "row", "content", "width:70%", 80, 40);
+basis("row-max", "row", "content", "width:200px;max-width:60px", 80, 40);
+basis("row-min", "row", "content", "width:200px;min-width:100px", 80, 40);
+basis("row-frame", "row", "content", "width:200px;padding:10px;border:2px solid", 80, 40);
+basis("row-border", "row", "content", "width:200px;padding:10px;border:2px solid;box-sizing:border-box", 80, 40);
+basis("row-ratio", "row", "content", "width:50px;height:100px;aspect-ratio:2", 80, 40);
+basis("row-ratio-auto", "row", "auto", "width:50px;height:100px;aspect-ratio:2", 80, 40);
+basis("column-auto", "column", "auto", "height:150px;width:180px", 80, 40);
+basis("column-content", "column", "content", "height:150px;width:180px", 80, 40);
+basis("column-percent-preferred", "column", "content", "height:70%;width:180px", 80, 40);
+basis("column-max", "column", "content", "height:150px;width:180px;max-height:25px", 80, 40);
+basis("column-min", "column", "content", "height:150px;width:180px;min-height:65px", 80, 40);
+basis("column-frame", "column", "content", "height:150px;width:180px;padding:10px;border:2px solid", 80, 40);
+basis("column-border", "column", "content", "height:150px;width:180px;padding:10px;border:2px solid;box-sizing:border-box", 80, 40);
+basis("column-ratio", "column", "content", "height:20px;width:180px;aspect-ratio:2", 80, 40);
+basis("column-ratio-auto", "column", "auto", "height:20px;width:180px;aspect-ratio:2", 80, 40);
+basis("negative-percent", "row", "calc(5% - 40px)", "width:200px", 80, 40);
+basis("negative-absolute", "row", "calc(10px - 40px)", "width:200px", 80, 40);
+var changing = basis("mutate-before", "row", "content", "width:200px", 80, 40);
+changing[1].style.width = "120px";
+console.log("mutate-after", changing[0].getBoundingClientRect().width, getComputedStyle(changing[0]).width, changing[0].style.width);
+changing[0].style.flexBasis = "auto";
+console.log("mutate-auto", changing[0].getBoundingClientRect().width, changing[0].style.width);
+changing[0].style.flexBasis = "content";
+console.log("mutate-content", changing[0].getBoundingClientRect().width, changing[0].style.width);
+function wrapping(mode) {
+    var parent = document.createElement("div");
+    parent.style.cssText = "display:flex;width:200px;flex-wrap:" + mode;
+    var children = [];
+    for (var j = 0; j < 2; j++) {
+        var item = document.createElement("div");
+        var inner = document.createElement("div");
+        item.style.cssText = "flex:0 0 content;width:120px;min-width:0";
+        inner.style.cssText = "width:80px;height:40px";
+        item.appendChild(inner);
+        parent.appendChild(item);
+        children.push(item);
+    }
+    document.body.appendChild(parent);
+    var first = children[0].getBoundingClientRect();
+    var second = children[1].getBoundingClientRect();
+    console.log("lines", mode, first.width, second.width, second.x - first.x, second.y - first.y);
+}
+wrapping("nowrap");
+wrapping("wrap");
+var values = ["none", "normal", "-1px", "-2%", "content", "auto", "fit-content", "min-content", "max-content", "calc(10px - 0.5em)", "calc(0% + 10px)", "calc(-5%)", "calc(10% - 20px)"];
+for (var i = 0; i < values.length; i++) {
+    var target = document.createElement("div");
+    target.style.fontSize = "40px";
+    target.style.flexBasis = values[i];
+    document.body.appendChild(target);
+    console.log("value", values[i], "accepted=" + (target.style.flexBasis !== ""), "computed=" + getComputedStyle(target).flexBasis);
+}
+</script>

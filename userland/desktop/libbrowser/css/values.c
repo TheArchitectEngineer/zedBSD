@@ -108,6 +108,7 @@ struct values_color {
 static int values_keyword(const struct values_keyword *table, const struct css_token *token, int *value);
 static int values_unit(const struct css_token *token, int *unit);
 static int values_length(const struct css_token *token, int allow_keywords, struct css_value *value);
+static int values_flex_basis(const struct css_token *token, struct css_value *value);
 static int values_single(struct css_parse *parse, int property, const struct css_token *tokens, size_t count, struct css_value *value);
 static int values_families(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
 static size_t values_components(const struct css_token *tokens, size_t count, size_t *starts, size_t *lengths, size_t max);
@@ -1676,6 +1677,43 @@ values_length(
 	return 0;
 }
 
+/* Parses the nonnegative width grammar and the separate content basis. */
+static int
+values_flex_basis(
+	const struct css_token *token,
+	struct css_value *value)
+{
+	int content;
+	int error;
+
+	/* Preserves content rather than borrowing the preferred main size. */
+	content = css_ident_equal(token, "content");
+	if (content) {
+		value->kind = CSS_VALUE_KEYWORD;
+		value->keyword = CSS_UNIT_CONTENT;
+		return 0;
+	}
+
+	/* Parses the existing width-like keywords and literal lengths. */
+	error = values_length(token, 1, value);
+	if (error != 0)
+		return error;
+
+	/* The generic length keywords none and normal are not flex bases. */
+	if (value->kind == CSS_VALUE_KEYWORD) {
+		/* These generic keywords do not belong to the width grammar. */
+		if (value->keyword == CSS_UNIT_NONE || value->keyword == CSS_UNIT_NORMAL)
+			return EINVAL;
+	} else {
+		/* Literal negatives are invalid; math functions use a separate parser. */
+		if (value->number < 0)
+			return EINVAL;
+	}
+
+	/* Succeeded: the token is one accepted flex basis. */
+	return 0;
+}
+
 /* Parses a longhand's value. */
 static int
 values_single(
@@ -2080,17 +2118,10 @@ values_single(
 		return values_length(&tokens[0], 0, value);
 	}
 
-	/* flex-basis: auto, content (as auto) or a length. */
+	/* Separates the content basis from the width-like keywords and lengths. */
 	if (property == CSS_PROP_FLEX_BASIS) {
-		is_auto = css_ident_equal(&tokens[0], "content");
-		if (is_auto) {
-			value->kind = CSS_VALUE_KEYWORD;
-			value->keyword = CSS_UNIT_AUTO;
-			return 0;
-		}
-
-		/* auto or a length. */
-		return values_length(&tokens[0], 1, value);
+		error = values_flex_basis(&tokens[0], value);
+		return error;
 	}
 
 	/* z-index: auto or an integer. */

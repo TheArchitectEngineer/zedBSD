@@ -1657,40 +1657,46 @@ computed_length(
 {
 	int error;
 
-	/* Chooses by the unit. */
+	/* Serializes the computed unit without resolving percentage dependence. */
 	switch (length->unit) {
 	case CSS_UNIT_PX:
 		error = computed_pixels(length->value, out);
-		return error;
+		break;
 	case CSS_UNIT_PERCENT:
-		/* A percentage, in calc() when pixels are added to it. */
 		error = computed_write_percent(length, out);
-		return error;
+		break;
 	case CSS_UNIT_AUTO:
 		error = computed_ascii("auto", out);
-		return error;
+		break;
 	case CSS_UNIT_NONE:
 		error = computed_ascii("none", out);
-		return error;
+		break;
 	case CSS_UNIT_NORMAL:
 		error = computed_ascii("normal", out);
-		return error;
+		break;
 	case CSS_UNIT_NUMBER:
 		error = computed_number(length->value, out);
-		return error;
+		break;
 	case CSS_UNIT_MAX_CONTENT:
 		error = computed_ascii("max-content", out);
-		return error;
+		break;
 	case CSS_UNIT_MIN_CONTENT:
 		error = computed_ascii("min-content", out);
-		return error;
+		break;
+	case CSS_UNIT_CONTENT:
+		error = computed_ascii("content", out);
+		break;
 	default:
+		error = computed_ascii("fit-content", out);
 		break;
 	}
 
-	/* The last keyword. */
-	error = computed_ascii("fit-content", out);
-	return error;
+	/* Propagates a failed append to the computed string. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the complete length or keyword is appended. */
+	return 0;
 }
 
 /* Appends one noninitial computed shorthand component. */

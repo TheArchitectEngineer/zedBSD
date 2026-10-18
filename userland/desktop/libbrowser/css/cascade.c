@@ -239,6 +239,7 @@ static struct dom_element *cascade_next_element(struct dom_element *element);
 static void cascade_apply(struct css_engine *engine, struct css_style *style, const struct css_style *parent, const struct css_declaration *declaration);
 static int cascade_margin_property(int property, int writing_mode, int direction);
 static void cascade_inherit(struct css_style *style, const struct css_style *parent, int property);
+static struct css_length cascade_flex_basis(struct css_engine *engine, const struct css_value *value, float font_size);
 static struct css_length cascade_length(struct css_engine *engine, const struct css_value *value, float font_size);
 static void cascade_shadows(struct css_engine *engine, struct css_style *style, const struct css_value *value);
 static void cascade_text_shadow(struct css_engine *engine, struct css_style *style, const struct css_value *value);
@@ -3864,7 +3865,7 @@ cascade_apply(
 		style->flex_shrink = value->number;
 		break;
 	case CSS_PROP_FLEX_BASIS:
-		style->flex_basis = cascade_length(engine, value, style->font_size);
+		style->flex_basis = cascade_flex_basis(engine, value, style->font_size);
 		break;
 	case CSS_PROP_ORDER:
 		style->order = (int)value->number;
@@ -4477,6 +4478,36 @@ cascade_text_shadow(
 	style->text_shadow.y = length.unit == CSS_UNIT_PX ? length.value : 0.0f;
 	style->text_shadow.color = declared->color;
 	style->text_shadow_set = 1;
+}
+
+/* Clamps an absolute computed flex basis without losing percentage dependence. */
+static struct css_length
+cascade_flex_basis(
+	struct css_engine *engine,
+	const struct css_value *value,
+	float font_size)
+{
+	struct css_length basis;
+
+	/* Resolves absolute units while retaining the calc percentage type. */
+	basis = cascade_length(engine, value, font_size);
+
+	/* Absolute math results obey the nonnegative computed range. */
+	if (basis.unit == CSS_UNIT_PX) {
+		/* An absolute negative cannot be represented by this property. */
+		if (basis.value < 0)
+			basis.value = 0;
+	}
+
+	/* A pure percentage can be range-clamped without resolving its basis. */
+	if (basis.unit == CSS_UNIT_PERCENT && basis.offset == 0) {
+		/* No pixel term remains that could offset the negative percentage. */
+		if (basis.value < 0)
+			basis.value = 0;
+	}
+
+	/* Succeeded: mixed expressions defer their range check until use. */
+	return basis;
 }
 
 /* Converts a declared length to a computed one: pixels, a percentage or a keyword. */

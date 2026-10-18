@@ -49,3 +49,6 @@ Upcoming Work Outlook: harness generated window・HTTPS/worker/origin未attempt2
 Primary standards: Flexbox §9.2とValues §10.12を2026-10-18に再確認。content measurementはmain preferred/minmaxを一時auto/noneにして自分のmax-content cacheを退避・復元し、ratioのdefinite cross shortcutを先に保持。percent calcのnonnegative rangeはused解決後に既存base floorを適用、computed coefficientは壊さない。autoが参照するmain sizeとexplicit contentの区別を独立対照する。巨大dispatcher全部の既存legacyを修正済みとはしない。
 
 Event ws074-p252-q21-selected-20261018: q20 archive/history read-back後に既存planned outcomeを選定。p240/p241のratio outputとp251 percentage metadataを消費し、各Phaseへ自身の依存/再開を記録。
+
+
+Event ws074-p252-q21-preflight-20261018: geometry24とcomputed13はChromium一致。指定値calc(10px - 0.5em)はnativeが元順、Chromeはcalc(-0.5em + 10px)へcanonicalizeする既存差をraw保存。本scopeのgrammar acceptance/computed/layoutと既存fixed3全callbackは維持、独立fixtureの指定値欄は全値をaccepted Booleanで検証しcanonical serializerの既存未達を別記する。pure negative percentageはChromeとValues §10.13でcomputed0%を確認し、offset0時だけcoefficient clampする内部設計に訂正。mixed percentage/offsetの保持・used非負チェックは不変。旧raw/q21 acceptanceを改竄しない。

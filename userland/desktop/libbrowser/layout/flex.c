@@ -67,6 +67,7 @@ struct flex_sizes {
 };
 
 static int flex_collect(struct layout_box *box, struct flex_item **items, size_t *count);
+static int flex_content_basis(struct layout_tree *tree, struct layout_box *container, struct layout_box *child, int row, layout_unit *basis);
 static int flex_base_size(struct layout_tree *tree, struct layout_box *box, struct flex_item *item, int row, layout_unit available);
 static layout_unit flex_ratio_definite_length(const struct css_length *length, layout_unit basis);
 static layout_unit flex_ratio_cross_size(struct layout_tree *tree, const struct layout_box *container, const struct layout_box *child, int row);
@@ -682,6 +683,84 @@ flex_collect(
 	return 0;
 }
 
+/* Measures a content basis without borrowing or caching the preferred main size. */
+static int
+flex_content_basis(
+	struct layout_tree *tree,
+	struct layout_box *container,
+	struct layout_box *child,
+	int row,
+	layout_unit *basis)
+{
+	struct css_length preferred;
+	struct css_length minimum;
+	struct css_length maximum;
+	struct layout_context context;
+	struct wb_vector floats;
+	layout_unit cached_width;
+	int cached_known;
+	int error;
+
+	/* Saves the preferred size, main limits, and cache owned by ordinary layout. */
+	cached_width = child->max_content;
+	cached_known = child->max_content_known;
+	preferred = child->style.width;
+	minimum = child->style.min_width;
+	maximum = child->style.max_width;
+	if (!row) {
+		preferred = child->style.height;
+		minimum = child->style.min_height;
+		maximum = child->style.max_height;
+	}
+
+	/* Content is measured before main-axis limits or preferred sizes apply. */
+	child->max_content_known = 0;
+	if (row) {
+		child->style.width.unit = CSS_UNIT_AUTO;
+		child->style.min_width.unit = CSS_UNIT_AUTO;
+		child->style.max_width.unit = CSS_UNIT_NONE;
+	} else {
+		child->style.height.unit = CSS_UNIT_AUTO;
+		child->style.min_height.unit = CSS_UNIT_AUTO;
+		child->style.max_height.unit = CSS_UNIT_NONE;
+	}
+
+	/* Isolates intrinsic width or natural height from the surrounding float context. */
+	if (row) {
+		error = layout_max_content(tree, child, basis);
+	} else {
+		tree->measuring++;
+		layout_context_begin(tree, &context, &floats);
+		error = layout_block(tree, child, container->width);
+		layout_context_end(tree, &context);
+		tree->measuring--;
+
+		/* Reads the measured height only after the complete layout succeeded. */
+		if (error == 0)
+			*basis = child->height;
+	}
+
+	/* Restores ordinary layout state even when the measurement failed. */
+	child->max_content = cached_width;
+	child->max_content_known = cached_known;
+	if (row) {
+		child->style.width = preferred;
+		child->style.min_width = minimum;
+		child->style.max_width = maximum;
+	} else {
+		child->style.height = preferred;
+		child->style.min_height = minimum;
+		child->style.max_height = maximum;
+	}
+
+	/* Propagates a failed intrinsic measurement after restoring borrowed state. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the base contains only the unconstrained content measurement. */
+	return 0;
+}
+
 /*
  * Finds an item's frame and margins along the main axis and its
  * hypothetical main size: its flex basis (or its width or height), or its
@@ -699,6 +778,7 @@ flex_base_size(
 	const struct css_length *basis;
 	layout_unit sizing;
 	layout_unit cross;
+	layout_unit resolved;
 	int start_side;
 	int end_side;
 	int error;
@@ -739,6 +819,8 @@ flex_base_size(
 	basis = &child->style.flex_basis;
 	if (basis->unit == CSS_UNIT_AUTO) {
 		basis = &child->style.width;
+
+		/* A column borrows its preferred height instead of its width. */
 		if (!row)
 			basis = &child->style.height;
 	}
@@ -751,12 +833,24 @@ flex_base_size(
 	item->base = -1;
 	if (basis->unit == CSS_UNIT_PX)
 		item->base = layout_from_px(basis->value) - sizing;
-	if (basis->unit == CSS_UNIT_PERCENT && available >= 0 && tree->measuring == 0)
-		item->base = flex_length(basis, available) - sizing;
+
+	/* A percentage math result is clamped only after its basis becomes definite. */
+	if (basis->unit == CSS_UNIT_PERCENT && available >= 0 && tree->measuring == 0) {
+		resolved = flex_length(basis, available);
+
+		/* A negative used length is zero before the box frame is removed. */
+		if (resolved < 0)
+			resolved = 0;
+
+		/* The base is measured inside the frame for border-box sizing. */
+		item->base = resolved - sizing;
+	}
 
 	/* A definite cross size supplies the content basis through the ratio. */
 	if (item->base < 0) {
+		/* Replaced content keeps its separate intrinsic sizing path. */
 		if (!child->replaced) {
+			/* A preferred ratio can transfer a definite cross size. */
 			if (child->style.aspect_ratio > 0.0f) {
 				/* Include single-line stretch before any flexing takes place. */
 				cross = flex_ratio_cross_size(tree, box, child, row);
@@ -766,12 +860,22 @@ flex_base_size(
 		}
 	}
 
+	/* An explicit content basis ignores the non-replaced preferred main size. */
+	if (item->base < 0 && basis->unit == CSS_UNIT_CONTENT && !child->replaced) {
+		error = flex_content_basis(tree, box, child, row, &item->base);
+		if (error != 0)
+			return error;
+	}
+
 	/* Otherwise the content's size: its widest line, or its height at the container's width. */
 	if (item->base < 0 && row) {
+		/* Replaced items obtain their width from ordinary replaced layout. */
 		if (child->replaced) {
 			error = layout_block(tree, child, box->width);
 			if (error != 0)
 				return error;
+
+			/* Uses the replaced content width as its initial base. */
 			item->base = child->width;
 		} else {
 			/* The content's width without a limit (measured once, its percentages indefinite). */
@@ -783,6 +887,8 @@ flex_base_size(
 		error = layout_block(tree, child, box->width);
 		if (error != 0)
 			return error;
+
+		/* Uses the natural block height as the column content size. */
 		item->base = child->height;
 	}
 
@@ -798,14 +904,22 @@ flex_base_size(
 	    child->style.min_width.unit == CSS_UNIT_AUTO &&
 	    (child->style.overflow_x == CSS_OVERFLOW_VISIBLE || child->style.overflow_x == CSS_OVERFLOW_CLIP))
 		item->auto_minimum = 1;
+
+	/* Resolves the main-axis limits after the unconstrained base is measured. */
 	if (row) {
+		/* An explicit width minimum limits the eventual hypothetical size. */
 		if (child->style.min_width.unit == CSS_UNIT_PX || child->style.min_width.unit == CSS_UNIT_PERCENT)
 			item->minimum = flex_length(&child->style.min_width, box->width) - sizing;
+
+		/* A finite width maximum limits the eventual hypothetical size. */
 		if (child->style.max_width.unit == CSS_UNIT_PX || child->style.max_width.unit == CSS_UNIT_PERCENT)
 			item->maximum = flex_length(&child->style.max_width, box->width) - sizing;
 	} else {
+		/* Explicit height limits apply on a column main axis. */
 		if (child->style.min_height.unit == CSS_UNIT_PX)
 			item->minimum = layout_from_px(child->style.min_height.value) - sizing;
+
+		/* A finite height maximum is independent of the measured base. */
 		if (child->style.max_height.unit == CSS_UNIT_PX)
 			item->maximum = layout_from_px(child->style.max_height.value) - sizing;
 	}
@@ -823,6 +937,8 @@ flex_base_size(
 	item->size = item->base;
 	if (item->maximum >= 0 && item->size > item->maximum)
 		item->size = item->maximum;
+
+	/* The minimum overrides a conflicting maximum in the hypothetical size. */
 	if (item->size < item->minimum)
 		item->size = item->minimum;
 
