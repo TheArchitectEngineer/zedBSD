@@ -1183,10 +1183,10 @@ drv_i915_rpm_usage(
 }
 
 /*
- * Stands in for drv_i915_skl_pcode_request(): the PCODE mailbox is not modelled on the host.
+ * Stands in for drv_i915_pcode_request(): the PCODE mailbox is not modelled on the host.
  */
 int
-drv_i915_skl_pcode_request(
+drv_i915_pcode_request(
 	struct mutex *sb_lock,
 	struct i915_mmio *mmio,
 	uint32_t mbox,
@@ -1204,17 +1204,17 @@ drv_i915_skl_pcode_request(
 	UNUSED_PARAMETER(timeout_base_ms);
 
 	/* Ends the test: the tested path reached a service the host does not have. */
-	i915_host_unreachable("drv_i915_skl_pcode_request");
+	i915_host_unreachable("drv_i915_pcode_request");
 
 	/* Not reached: i915_host_unreachable() does not return. */
 	return 0;
 }
 
 /*
- * Stands in for drv_i915_snb_pcode_write(): the PCODE mailbox is not modelled on the host.
+ * Stands in for drv_i915_pcode_write(): the PCODE mailbox is not modelled on the host.
  */
 int
-drv_i915_snb_pcode_write(
+drv_i915_pcode_write(
 	struct mutex *sb_lock,
 	struct i915_mmio *mmio,
 	uint32_t mbox,
@@ -1226,7 +1226,7 @@ drv_i915_snb_pcode_write(
 	UNUSED_PARAMETER(val);
 
 	/* Ends the test: the tested path reached a service the host does not have. */
-	i915_host_unreachable("drv_i915_snb_pcode_write");
+	i915_host_unreachable("drv_i915_pcode_write");
 
 	/* Not reached: i915_host_unreachable() does not return. */
 	return 0;

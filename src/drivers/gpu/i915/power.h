@@ -22,17 +22,17 @@ struct i915_mmio;
 struct mutex;
 
 /*
- * PCODE mailbox.
+ * The GT driver mailbox (PCODE).
  *
- * Linux's intel_pcode.c transaction core.  The device-owned sideband lock, a
- * mutex, serializes every transaction: a transaction first polls atomically
- * and then, if the firmware has not answered, polls in a sleepable way.
- * Every function returns 0 or a positive errno: the mailbox status the
- * firmware reported, ETIMEDOUT, EAGAIN for a mailbox already busy, or EIO
- * when the time base failed.
+ * The device-owned sideband lock, a mutex, serializes every exchange: an
+ * exchange first busy-polls for the answer and then, for a read, polls in a
+ * way that may sleep.  drv_i915_pcode_request() asks until the masked reply
+ * is the one wanted.  Every function returns 0 or a positive errno: the
+ * status code the firmware reported, ETIMEDOUT, EAGAIN for a mailbox the
+ * firmware still owns, or EIO when the time base failed.
  */
 int drv_i915_pcode_read(struct mutex *sb_lock, struct i915_mmio *mmio, uint32_t mbox, uint32_t *val, uint32_t *val1);
-int drv_i915_snb_pcode_write(struct mutex *sb_lock, struct i915_mmio *mmio, uint32_t mbox, uint32_t val);
-int drv_i915_skl_pcode_request(struct mutex *sb_lock, struct i915_mmio *mmio, uint32_t mbox, uint32_t request, uint32_t reply_mask, uint32_t reply, int timeout_base_ms);
+int drv_i915_pcode_write(struct mutex *sb_lock, struct i915_mmio *mmio, uint32_t mbox, uint32_t val);
+int drv_i915_pcode_request(struct mutex *sb_lock, struct i915_mmio *mmio, uint32_t mbox, uint32_t request, uint32_t reply_mask, uint32_t reply, int timeout_base_ms);
 
 #endif

@@ -892,7 +892,7 @@ i915_ktest_pcode_request(
 	i915_fake_open(&i915_ktest_mmio, &i915_ktest_fake);
 	i915_ktest_fake.script = sc1;
 	i915_ktest_fake.script_len = 1U;
-	error = drv_i915_skl_pcode_request(&sb_lock, &i915_ktest_mmio, 0x7U, 0U, 0x1U, 0x1U, 100);
+	error = drv_i915_pcode_request(&sb_lock, &i915_ktest_mmio, 0x7U, 0U, 0x1U, 0x1U, 100);
 	drv_i915_ktest_check(ktest,
 			     error == 0 && i915_ktest_fake.txn == 1U,
 			     "pcode: skl_pcode_request first request satisfies reply (no re-request)");
@@ -901,7 +901,7 @@ i915_ktest_pcode_request(
 	i915_fake_open(&i915_ktest_mmio, &i915_ktest_fake);
 	i915_ktest_fake.script = sc2;
 	i915_ktest_fake.script_len = 3U;
-	error = drv_i915_skl_pcode_request(&sb_lock, &i915_ktest_mmio, 0x7U, 0U, 0x1U, 0x1U, 100);
+	error = drv_i915_pcode_request(&sb_lock, &i915_ktest_mmio, 0x7U, 0U, 0x1U, 0x1U, 100);
 	drv_i915_ktest_check(ktest,
 			     error == 0 && i915_ktest_fake.txn == 3U,
 			     "pcode: skl_pcode_request re-requests until the reply matches");
@@ -909,7 +909,7 @@ i915_ktest_pcode_request(
 	/* A persistent illegal-command status is reported as such, not as a timeout. */
 	i915_fake_open(&i915_ktest_mmio, &i915_ktest_fake);
 	i915_ktest_fake.pcode_sticky_status = 0x1;
-	error = drv_i915_skl_pcode_request(&sb_lock, &i915_ktest_mmio, 0x7U, 0U, 0x1U, 0x1U, 1);
+	error = drv_i915_pcode_request(&sb_lock, &i915_ktest_mmio, 0x7U, 0U, 0x1U, 0x1U, 1);
 	drv_i915_ktest_check(ktest,
 			     error != 0 &&
 			     error != EIO &&
@@ -1003,7 +1003,7 @@ i915_ktest_pcode_preempt_region(
 	(void)mutex_init(&sb_lock, LOCK_RANK_DEVICE, "pcode-add-a");
 	i915_fake_open(&i915_ktest_mmio, &i915_ktest_fake);
 	i915_ktest_fake.pcode_approve_when_preempt = 1;
-	error = drv_i915_skl_pcode_request(&sb_lock, &i915_ktest_mmio, 0x7U, 0x3U, 0x1U, 0x1U, 1);
+	error = drv_i915_pcode_request(&sb_lock, &i915_ktest_mmio, 0x7U, 0x3U, 0x1U, 0x1U, 1);
 
 	/* Samples the preemption depth and whether the lock was given back. */
 	preempt_count = sched_test_preempt_count();
