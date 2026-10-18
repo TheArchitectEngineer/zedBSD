@@ -568,3 +568,4 @@ WS074 の記録の q590・q594〜q598（Codex の browser3）は main の同じ�
 | Queue | 担当 | Phase | 範囲 | 結果 |
 | --- | --- | --- | --- | --- |
 | q1243 / q1243-i01 | P2（kernel-and-driver-designer） | [ws256-p001](ws256/phase001/phase.md) | 設計: riscv64 の HAL（QEMU の virt → VisionFive 2）、HAL の API の差分の案（承認の前は plan に置くだけ）、loader の riscv64 版、build、Phase の表の確定、未決の点の案。code は書かない | 返却（2026-10-18）: design.md の初版・proposed/hal-riscv64.md（f1acb25c9、merge fc8e21f8c）。design-reviewer の結果は Q1 が受け取り design-review-1.md に（blocker 1・major 13・minor 24、未反映）。p001 は in-progress |
+| q1243 / q1243-i02 | P2（kernel-and-driver-designer、新しい起動） | ws256-p001 | design.md の改訂 2: design-review-1.md の全件の反映、ユーザーの決定 5・6（virt に画面、WS245 と同じ参照）、ws.md の Phase の表の更新。code は書かない | in-progress |
