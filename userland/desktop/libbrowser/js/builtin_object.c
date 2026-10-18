@@ -722,9 +722,9 @@ object_get_own_property_descriptor(
 
 	/* The descriptor as an object, or undefined. */
 	*result = VM_VALUE_UNDEFINED;
-	found = vm_get_own_descriptor((struct vm_object *)vm_value_as_cell(object), key, &descriptor);
-	if (found < 0)
-		return -found;
+	status = vm_get_own_property(realm, (struct vm_object *)vm_value_as_cell(object), key, &descriptor, &found);
+	if (status != 0)
+		return status;
 
 	/* A missing descriptor follows the absence path after errors have been excluded. */
 	if (!found)

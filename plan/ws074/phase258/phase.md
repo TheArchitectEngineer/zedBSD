@@ -56,3 +56,5 @@ i01 shared descriptor conversion partialのみcleared、whole p258はrealm-aware
 [証拠](evidence/20261018-q32/README.md)。次finite Queueでrealm-aware getOwn/Defineとordinary no-script outputを検証してからSetへ接続する。global Proxyは非公開を維持。
 
 Event ws074-p258-q33-selected-20261018: shared To/From/Complete verified後、realm-aware GetOwnと公開単一descriptor APIを具体化。To getter前のtarget descriptor/extensibility snapshotをpure compatibilityへ渡し、noscript hooksと境界を守る。exact max90分/source bounds/focused gatesはq33 Queue。Define/Set/global公開は後続、whole p258未達。
+
+Event ws074-p258-q33-declaration-clarification-20261018: object_get_own_property_descriptorのforward宣言はObject constant method tableが実参照するためC全文§2のinitializer必須例外に従ってtable前の元位置を保持する。通常helper宣言だけをtable後へ置く。動作/scope/criteriaは不変。

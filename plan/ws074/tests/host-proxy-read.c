@@ -393,13 +393,17 @@ proxy_gc_edges(
 	struct vm_cell *roots[5];
 	struct vm_cell *pressure;
 	struct vm_cell *found;
+	struct vm_descriptor own;
 	struct vm_heap_stats before;
 	struct vm_heap_stats after;
 	vm_value answer;
 	vm_value made;
 	vm_value key;
 	vm_value get_key;
+	vm_value descriptor_key;
+	vm_value payload;
 	uintptr_t realm_address;
+	uintptr_t descriptor_address;
 	unsigned index;
 	unsigned registered;
 	int status;
@@ -466,6 +470,23 @@ proxy_gc_edges(
 		goto cleanup;
 	roots[4] = NULL;
 
+	/* A separate fresh descriptor result must cross the same native post-trap collector. */
+	descriptor_key = vm_key_from_ascii(page->heap, "getOwnPropertyDescriptor");
+	if (descriptor_key == VM_VALUE_EMPTY) {
+		status = 2;
+		goto cleanup;
+	}
+
+	/* The fixture trap returns a descriptor and object payload with no persistent script owner. */
+	status = proxy_script(page->realm, "(function(){return {value:{sole:75},writable:true,enumerable:true,configurable:true};})", &answer);
+	if (status != 0)
+		goto cleanup;
+	roots[4] = vm_value_as_cell(answer);
+	status = vm_object_define(page->heap, handler, descriptor_key, answer, VM_PROPERTY_DEFAULT);
+	if (status != 0)
+		goto cleanup;
+	roots[4] = NULL;
+
 	/* Genuine allocation pressure makes the private factory retain all otherwise unrooted inputs. */
 	vm_heap_collect(page->heap);
 	pressure = vm_heap_alloc(page->heap, &proxy_pressure_type, 8U * 1024U * 1024U);
@@ -508,6 +529,34 @@ proxy_gc_edges(
 		goto cleanup;
 	}
 
+	/* GetOwn retains its managed realm and otherwise unowned trap descriptor during target collection. */
+	status = vm_get_own_property(realm, (struct vm_object *)vm_value_as_cell(made), key, &own, &present);
+	if (status != 0)
+		goto cleanup;
+	if (!present || own.has != (VM_HAS_VALUE | VM_HAS_WRITABLE | VM_HAS_ENUMERABLE | VM_HAS_CONFIGURABLE)) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* The complete descriptor owns the original fresh object until the embedding takes it. */
+	roots[0] = vm_value_as_cell(own.value);
+	descriptor_address = (uintptr_t)roots[0];
+	descriptor_key = vm_key_from_ascii(page->heap, "sole");
+	if (descriptor_key == VM_VALUE_EMPTY) {
+		status = 2;
+		goto cleanup;
+	}
+
+	/* Read a real field from the payload that had no owner during the target policy collection. */
+	status = vm_get(page->realm, own.value, descriptor_key, &payload);
+	if (status != 0)
+		goto cleanup;
+	same = vm_same_value(payload, vm_value_int32(75));
+	if (!same) {
+		status = 1;
+		goto cleanup;
+	}
+
 	/* The sole result from Get must also survive the subsequent Has collection. */
 	key = vm_key_from_ascii(page->heap, "sole");
 	if (key == VM_VALUE_EMPTY) {
@@ -521,17 +570,25 @@ proxy_gc_edges(
 		goto cleanup;
 	same = vm_same_value(answer, vm_value_int32(74));
 	if (!same ||
-	    sole_realm_alive != 2U ||
+	    sole_realm_alive != 3U ||
 	    realm->property_depth != 0U) {
 		status = 1;
 		goto cleanup;
 	}
 
 	/* No surviving protocol participant references the temporary realm once the native Get frame ends. */
+	roots[0] = NULL;
 	roots[3] = NULL;
 	roots[4] = NULL;
 	vm_heap_collect(page->heap);
 	found = vm_heap_find_cell(page->heap, realm_address);
+	if (found != NULL) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* The fresh descriptor payload must also be actually reclaimed after its last embedding root ends. */
+	found = vm_heap_find_cell(page->heap, descriptor_address);
 	if (found != NULL) {
 		status = 1;
 		goto cleanup;
