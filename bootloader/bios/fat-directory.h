@@ -12,6 +12,7 @@
 #ifndef KERN_BOOTLOADER_BIOS_FAT_DIRECTORY_H
 #define KERN_BOOTLOADER_BIOS_FAT_DIRECTORY_H
 
+/* The size of the search state, which the assembly loaders reserve by number. */
 #define ZBL_BIOS_FAT_DIRECTORY_STATE_SIZE 264U
 
 #ifndef __ASSEMBLER__
@@ -19,6 +20,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/*
+ * The long-file-name run a directory search is assembling.
+ *
+ * The caller owns one for each directory it searches and keeps it across the
+ * directory's sectors, so a run split between two sectors is still matched.
+ */
 struct zbl_bios_fat_directory_state {
 	unsigned char long_name[256];
 	uint16_t long_name_length;
@@ -31,7 +38,7 @@ struct zbl_bios_fat_directory_state {
 };
 
 /*
- * Search one complete directory sector.  State is retained across
+ * Searches one complete directory sector.  State is retained across
  * sector boundaries so an LFN run split between sectors remains
  * valid.
  *
