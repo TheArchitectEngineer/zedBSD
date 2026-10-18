@@ -192,6 +192,13 @@ struct i915_xd_hpd {
 	unsigned gmbus_irqs;
 };
 
+/* The display 9 DDIs whose sense the south display has: B to D. */
+#define I915_XD9_HPD_FIRST_DDI		1U
+#define I915_XD9_HPD_LAST_DDI		3U
+
+void drv_i915_xd9_hpd_enable(struct i915_xd_io *io);
+unsigned drv_i915_xd9_hpd_present(struct i915_xd_io *io);
+unsigned drv_i915_xd9_hpd_connected(struct i915_xd_io *io);
 void drv_i915_xd_hpd_init(struct i915_xd_hpd *hpd, const struct i915_xd_platform *platform, int south);
 unsigned drv_i915_xd_hpd_pin_of(const struct i915_xd_platform *platform, unsigned ddi);
 int drv_i915_xd_hpd_add(struct i915_xd_hpd *hpd, unsigned kind, unsigned ddi);

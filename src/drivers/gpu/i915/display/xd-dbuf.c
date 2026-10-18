@@ -12,9 +12,11 @@
 
 #include "xd-dbuf.h"
 #include "xd-io.h"
+#include "xd-pipe.h"
 #include "xd-platform.h"
 
 #include "../intel/display-regs-xd.h"
+#include "../intel/display-regs-xd9.h"
 
 #include <kern/kcrt.h>
 
@@ -664,6 +666,104 @@ drv_i915_xd_wm_write_plane(
 
 	/* The buffer range. */
 	i915_xd_ddb_write(io, I915_XD_PLANE_BUF_CFG(pipe), ddb);
+}
+
+/*
+ * Writes a display 9 pipe's first plane's eight levels, its transition
+ * (unused, 0) and its ranges, the cursor's levels (it stays off) and its
+ * range, and the line time.  A plan of zeroes frees the pipe.  The
+ * planes' surface writes arm them.
+ */
+void
+drv_i915_xd9_wm_write_pipe(
+	struct i915_xd_io *io,
+	unsigned pipe,
+	const struct i915_xd9_pipe_plan *plan)
+{
+	struct i915_xd_wm_level off;
+	unsigned index;
+
+	/* The plane's levels, its transition, its range and no NV12 range. */
+	kern_memset(&off, 0, sizeof(off));
+	for (index = 0U; index < I915_XD_WM_LEVELS; index++)
+		i915_xd_wm_write_level(io, I915_XD_PLANE_WM(pipe, index), &plan->wm.level[index]);
+	i915_xd_wm_write_level(io, I915_XD_PLANE_WM_TRANS(pipe), &off);
+	i915_xd_ddb_write(io, I915_XD_PLANE_BUF_CFG(pipe), &plan->plane_ddb);
+	drv_i915_xd_io_write(io, I915_XD9_PLANE_NV12_BUF_CFG(pipe), 0U);
+
+	/* The cursor's levels, off, and its range. */
+	for (index = 0U; index < I915_XD_WM_LEVELS; index++)
+		i915_xd_wm_write_level(io, I915_XD_CUR_WM(pipe, index), &off);
+	i915_xd_wm_write_level(io, I915_XD9_CUR_WM_TRANS(pipe), &off);
+	i915_xd_ddb_write(io, I915_XD_CUR_BUF_CFG(pipe), &plan->cursor_ddb);
+
+	/* Succeeded: the line time. */
+	drv_i915_xd_io_write(io, I915_XD_WM_LINETIME(pipe), plan->linetime & I915_XD9_WM_LINETIME_MASK);
+}
+
+/*
+ * Moves a lit display 9 pipe to its plan and waits for the vertical
+ * blank that takes it: the first plane's and the cursor's watermarks and
+ * ranges, planes 2 and 3 (an off one gives its range up), and every
+ * plane's and the cursor's surface written again with its own value.
+ */
+void
+drv_i915_xd9_wm_arm_pipe(
+	struct i915_xd_io *io,
+	unsigned pipe,
+	const struct i915_xd9_pipe_plan *plan)
+{
+	uint32_t word;
+	unsigned plane;
+
+	/* The first plane's and the cursor's part. */
+	drv_i915_xd9_wm_write_pipe(io, pipe, plan);
+
+	/* Planes 2 and 3. */
+	for (plane = 1U; plane <= 2U; plane++) {
+		word = drv_i915_xd_io_read(io, I915_XD9_PLANE_N_CTL(pipe, plane));
+		if ((word & I915_XD9_PLANE_CTL_ENABLE) == 0U)
+			drv_i915_xd_io_write(io, I915_XD9_PLANE_N_BUF_CFG(pipe, plane), 0U);
+		word = drv_i915_xd_io_read(io, I915_XD9_PLANE_N_SURF(pipe, plane));
+		drv_i915_xd_io_write(io, I915_XD9_PLANE_N_SURF(pipe, plane), word);
+	}
+
+	/* The cursor, then the first plane. */
+	word = drv_i915_xd_io_read(io, I915_XD9_CURBASE(pipe));
+	drv_i915_xd_io_write(io, I915_XD9_CURBASE(pipe), word);
+	word = drv_i915_xd_io_read(io, I915_XD9_PLANE_SURF(pipe));
+	drv_i915_xd_io_write(io, I915_XD9_PLANE_SURF(pipe), word);
+
+	/* Succeeded once the vertical blank has taken them. */
+	(void)drv_i915_xd9_pipe_wait_vblank(io, pipe);
+}
+
+/*
+ * Moves every lit display 9 pipe but one (except) to its plan, one
+ * vertical blank each, in ascending order of pipes when the ranges
+ * shrink and descending when they grow, so that no two lit pipes' ranges
+ * overlap between the steps.
+ */
+void
+drv_i915_xd9_wm_arm_pipes(
+	struct i915_xd_io *io,
+	const struct i915_xd9_pipe_plan *plans,
+	unsigned count,
+	int ascending,
+	unsigned except)
+{
+	unsigned step;
+	unsigned pipe;
+
+	/* Each pipe in the order. */
+	for (step = 0U; step < count; step++) {
+		pipe = step;
+		if (!ascending)
+			pipe = count - 1U - step;
+		if (pipe == except || !plans[pipe].active)
+			continue;
+		drv_i915_xd9_wm_arm_pipe(io, pipe, &plans[pipe]);
+	}
 }
 
 /*
