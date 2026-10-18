@@ -703,8 +703,8 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p252](phase252/phase.md) | flex-basis grammar/computed・non-replaced content base | uncleared / Queue未選定 | p240/p241残り、q14 final output待ち |
 | [ws074-p253](phase253/phase.md) | ordinary attribute mutation records | uncleared / q17 scoped partial cleared・controls15/35DOM/global旧PASS維持 | p209 q16 preflight、p242 observer model |
 | [ws074-p254](phase254/phase.md) | User Timing markの実記録・取得・native entry lifecycle | uncleared / q25機能出力verified・fixture conformance訂正をq26で修正 | p077既存clock、p189 q23 source/probe |
-| [ws074-p255](phase255/phase.md) | PerformanceObserver native mark登録・queue・task配信 | uncleared / q26 positive verified・p256 ErrorEvent待ち | p254 verified native mark output |
-| [ws074-p256](phase256/phase.md) | Window ErrorEvent・uncaught harness fidelity | in-progress / q28 runtime/source partial | 既存Event/Window/VM→p255再評価 |
+| [ws074-p255](phase255/phase.md) | PerformanceObserver native mark登録・queue・task配信 | in-progress / q28-i03 actual failure/held再評価 | p254 verified native mark output |
+| [ws074-p256](phase256/phase.md) | Window ErrorEvent・uncaught harness fidelity | uncleared / q28 runtime partial cleared・external/syntax等残り | 既存Event/Window/VM→p255再評価 |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 
@@ -1281,3 +1281,5 @@ Event ws074-q28-selected-20261018: q27のnative Event outputを前提にq28を�
 Event ws074-q28-i01-cleared-i02-started-20261018: p255 declaration-only i01をhost/target/token/object同値でclearし、p256 runtime/source i02へ進む。whole p255/p100/held1と確認済1481は保持、q28 final gatesへ接続。
 
 Event ws074-q27-main-header-conformance-followup-20261018: q28全文監査で、q27新host-error-events.cのpublic main定義前がone-line commentだったと確認（C全文§3はmulti-lineを要求）。q27 scoped i01のconformance0/clearanceをこの限定点によりunclearedへ訂正。元native28/GC9/全corpus/host/target/API出力とscore1481は保持し、原cleared記述を履歴へ残す。q28-i02の実装前scope supplementに基づきheader commentだけをmulti-line化し、全code tokens/string不変をpublic-main-header-proofへ保存。q28 final build/native9で修正版を再確認する。元q27を後日の修正に合わせて成功へ書換えず、follow-upとして扱う。
+
+Event ws074-q28-i02-cleared-i03-started-20261018: runtime/inline source partialの独立16/native GC19/公式harness negative/positive4と全fixed gatesを検証しp256 scoped i02をclear。source/privacy/record semanticsのwhole残りは保持、p255 i03で原heldとprior/futureを再評価する。全old whole/callback PASS後退0、まだscore1481/3805。

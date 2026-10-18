@@ -21,3 +21,13 @@ Window report modeはWindowごとの再入抑止。native ErrorEventを実global
 独立timer-only意図的throw＋公式harness negativeを必ず非PASSにし、正常timer positiveをPASSにする。次にq26のObserver negativeとprior/future positive、held原WPTを再評価。console文字列のrunner補正、WPT改変、heldの先取り加算はしない。最終pairでfixed全corpusと全文規約/host/target/GCを検証する。
 
 Primary: [HTML report an exception](https://html.spec.whatwg.org/multipage/webappapis.html#report-an-exception)。実コードはe2111e1b2周辺の読み取りに基づく。未解決の詳細をこの候補で完了扱いしない。
+
+## q28実装への詳細化（2026-10-18）
+
+最終的にはbytecode modelやJS compilerを変更せず、vm_function.sourceというembedding-owned opaque managed valueを採用した。Window bindingのprivate window_script_source cellが実Document URLの文字列だけを所有し、actual known inline loaderから初回実行前にfunctionへ付与する。VM_OP_NEW_CLOSUREは定義元functionのopaque valueを継承し、function/realm tracerとthrow/catch/foreign transferで保持する。source cell単独rootがfilenameを保ちながらretired Document/realmを保持しないことをnative GCで検証した。
+
+explicit VM_OP_THROWでは同じprimitive/undefinedでもfresh locationを記録する。reporterは元exception/pending/trace/sourceをroot/saveし、native ErrorEventの完了後に対応するreported traceを消費する。unknownはnull/Script error./empty URL/0へredactする。VMはHTML/origin policyを解釈しない。
+
+Window error dispatch modeとconversionの深さを抑止し、nested consoleはscript-freeの固定説明にする。reporting modeをmessage conversion前から保持して再入を有界にする実装で、rare extraction/reentryの全HTML動作との同一性を主張しない。HTML checkpoint guardに従い同じWindow queueの再入drainを防ぎ、managed ownerをcheckpoint中rootする。既存の複数Realm別job queueという構成を維持し、shared agent/workerの全順序を本partialで認定しない。
+
+positionsはVMの最初のactual throw frameにあるscript-relative line/columnを使う。HTML全体のline offset/source map/Error作成時stackとの厳密互換は未検証で、known filename/正の位置/primitiveの再throw更新を独立対照した範囲に限定する。external/CORS/redirect、eval/Function/module/worker、syntax EINVAL/global event、content attribute named parameters、reportError/PromiseRejectionEventは未達のまま。既存CLI consoleのlocation形式は維持する。

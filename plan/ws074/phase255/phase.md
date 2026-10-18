@@ -2,7 +2,7 @@
 
 # ws074-p255: PerformanceObserverのnative mark登録・queue・task配信
 
-Status: uncleared（q26 native consumer positive verified、Window ErrorEvent/harness negative未達）
+Status: in-progress（q28-i03 actual failure fidelity/held再評価）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
@@ -55,3 +55,5 @@ Event ws074-q26-declaration-conformance-followup-20261018: q27全文監査でq26
 Event ws074-p255-q28-selected-20261018: q26 declaration findingをq28-i01の宣言順だけの独立partialへ選定。i01のnamed conformance outputと、p256 q28-i02の実runtime failure outputを前提にi03でconsumer/heldを再評価する。原q26 unclearedを保持し、whole Phaseのruntime prerequisiteをi01へ逆流させない（attempt-level graph acyclic）。source/API acceptanceの縮小は無し、shared projection pending。
 
 Event ws074-p255-q28-i01-cleared-20261018: q28-i01宣言順partialを実行しcleared。34 required declarations/59 normal helpersへ整理、全宣言multiset/他token不変・host debug除去object全bytes一致、exact environment target warning0。API/body不変でq27 verified functional outputと同値。q26旧unclearedを保持し、このdeclaration findingだけを解消。whole Phaseはruntime prerequisite/consumer fidelityが未達でunclearedを維持。combined q28 runtime/header変更後のgateはi02/i03へ残す。[evidence](evidence/20261018-q28-declarations/README.md)。
+
+Event ws074-p255-q28-i03-started-20261018: active q28/28491bf89（routine main header supplement fa65e0524）を確認し、i01 declaration output・i02 actual native ErrorEvent/harness negativeとfinal frozen pair/full gatesを実検証。原q26 assertion JSは現在native/Chrome双方harness_error/completion1で、正常timer/actual future-only Observerは双方PASS。ここからprior/future entry実数と原held IDを再測定する。原q26/q27 historical unclearedは保持し、真に基準を満たす場合のみheld1を解除する。

@@ -2,7 +2,7 @@
 
 # ws074-p256: Window ErrorEventによる未処理例外通知・harness failure fidelity
 
-Status: in-progress（q28-i02 runtime/source partial）
+Status: uncleared（q28 runtime/inline-source partial cleared、external/syntax等は未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
@@ -59,3 +59,7 @@ Event ws074-p256-q28-checkpoint-refinement-20261018: 初回runtime16対照はChr
 Event ws074-p256-q28-public-main-header-supplement-20261018: C全文§3のpublic定義用multi-line commentに対し、q27新fixture mainのheaderがone-lineのままだったことを確認。q27のconformance0/attempt clearanceをdated follow-upでunclearedへ訂正し、機能/API/全corpus出力は保持。q28-i02 full-standard検証の付随修正として既存host-error-events.cのheader commentだけを生成境界に明記し、q28新fixtureも同じ規則へ修正する。user自走指示と元の規約gateによるroutine comment-only修正で新feature/受入を追加しない。コードtoken/string不変を確認し、q28 final build/native9で修正版を再検証する。
 
 Event ws074-p256-q28-pre-final-controls-20261018: actual runtime DOM16はtextContentによる実sourceとcheckpoint再入防止後、native全PASSでChrome期待16と一致。非保守的stackの初回GC15も通過、source-only cellがfilenameを保持しながらretired child Document/realmを保持しない実出力を確認。checkpoint ownerのforeign successful job retirement4条件を追加しfinal native19で検証する。公式harness timer/Observer intentional failureはnative/Chromeともcompletion.status1のharness_error、正常timerはPASS。Observer positive初回fixtureはt.step_funcがcallback thisをTestへ変更するのにObserverを期待したため両engineで同じFAIL。nativeを誤ったfixtureに合わせず、外側のactual receiverをcaptureしてt.step内で検証する修正版をfinal pairへ適用する。原FAIL/source/Chrome/native consoleは保持し、原WPTは不変。
+
+Event ws074-p256-q28-final-native-harness-20261018: frozen final source27726847eでDOM40/40、source/例外/再入/retired Windowとsuccessful foreign checkpointの非保守的GC19/19、旧Event9/producer7/observer10/CSSOM12+12、Acid score/inventory100・pixel0/旧Acid2差873を維持。公式harness timer/Observer negativeはnative/Chromeともharness_error/completion1、正常timerとactual captured receiver/future-only Observerは双方PASS。full harness1508は236.5秒、whole PASS494と全PASS callback11540を保持。既存console Uncaught由来の9件はFAIL/no_completion→harness_error、wasm1件はharness_error内message変更。oldFAIL callback1がfatal completion後に実行されなくなったがoldPASS callbackの名前/数は全件同じ。raw/旧console/source別auditを保存し画像suiteを継続。original held1はfull gatesとi03再評価まで除外。
+
+Event ws074-p256-q28-i02-cleared-partial-20261018: q28 final source27726847eの7source target warning0/host warning0/full changed C scope（raw35許可forward cleanup以外0）とfrozen pairを照合。DOM40、runtime Chrome/native16一致、GC19、旧Event9/producer7/observer10/CSSOM12+12/Acid維持、公式harness4 negative/positive controlsはnative/Chrome一致。全harness1508 rawPASS494/全PASS callbacks11540維持、9 old uncaughtのharness_error化とwasm completion1差を原console/Source別auditしoldPASS後退0。static1561の全pixel metrics・844PASS、scripted413の805全RGB・105PASS、strict48の39PASSは全件不変。i02 exact runtime/inline-source partialをcleared、wholeはunknown external/eval等のprovenance/syntax/content handler/full target/p100でunclearedを維持。i03の原held WPTとprior/future probe再評価へ実出力を渡す。artifact read-back/Queue archiveはcycle終端で行い、scoreはまだheld1除外1481。
