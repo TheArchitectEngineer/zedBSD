@@ -2,7 +2,7 @@
 
 # ws262-p001 boot loader を規約の全文に
 
-Status: in-progress（2026-10-18 q1256-i01、P2）
+Status: cleared（2026-10-19 Q1 判定: bootloader/ の全部を規約の全文に（走査で違反 0）、前後の比べで code の差は C の分解・分割の所だけで host の同値の試験が一致、動作の直しは console_ascii の 1 件（ASan で確かめた）、T1-712 で amd64 UEFI・amd64 hybrid の BIOS・PC/AT・PC-98 の起動が PASS（c0c84eefd、merge 452e53f99）。x68k・sparcv9 の起動は対象外（WS268・WS267））（旧: in-progress（2026-10-18 q1256-i01、P2））
 
 - 親: [WS262](../ws.md)。Queue: q1256-i01。
 - 範囲: `bootloader/` の全部（uefi・pcat・pc98・bios・x68k・common・include・tests、最後に sparcv9）を
