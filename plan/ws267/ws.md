@@ -8,6 +8,8 @@
 - 今の壊れ（2026-10-18 P3 の調べ、WS261 p002）: sun4u の vmunix が build できない。`src/hal/pmem-constraints.c` が無い（No rule）、HAL の page.c に `struct hal_pmem` の未定義、kernel の .c（entry・vfs・platform/sun4u）が `KERN_UAPI_NATIVE` 無しで #error。boot loader の stage1・stage2 と HAL の一部の object は作れる。
 - 注意: sparcv9 はユーザーも main の checkout で作業している（memory）。担当が触る前にユーザーに確かめる。
 
+- WS261 p002（2026-10-18）で sun4u の受け渡しを規約に合わせた。build が直った後の QEMU の起動の確かめの文面（image の作り方、`qemu-system-sparc64 -machine sun4u -m 256 -drive file=<image>,format=raw,if=ide -boot c`、gdbstub で見る所）は git の 987eb3e70 の plan/ws261/phase002/phase.md の「T1 への依頼の文面」。判定は画面にする（serial の log は使わない、AGENTS.md）。
+
 ## 完了の条件
 
 1. config の sun4u の vmunix と boot loader・image が warning 0 で build できる。

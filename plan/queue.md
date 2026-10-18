@@ -617,5 +617,5 @@ WS074 の記録の q590・q594〜q598（Codex の browser3）は main の同じ�
 
 | Queue | 担当 | Phase | 範囲 | 結果 |
 | --- | --- | --- | --- | --- |
-| q1255 / q1255-i01 | P3（phase-runner） | [ws261-p002](ws261/phase002/phase.md) | boot.h の sun4u の構造体・定数を除き、HAL → kernel は汎用の構造体と名前ごとの値、boot loader → HAL の定義は HAL か bootloader/ に。振る舞いは変えない | in-progress |
+| q1255 / q1255-i01 | P3（phase-runner） | [ws261-p002](ws261/phase002/phase.md) | boot.h の sun4u の構造体・定数を除き、HAL → kernel は汎用の構造体と名前ごとの値、boot loader → HAL の定義は HAL か bootloader/ に。振る舞いは変えない | 返却（2026-10-18）: cbae237f7・9b32b9ec6・c7c0f5c6a、merge 49f7fc9a5。p002 cleared、WS261 completed（QEMU の起動は WS267） |
 | q1256 / q1256-i01 | P2（phase-runner） | [ws262-p001](ws262/phase001/phase.md) | bootloader/ の全部を plan/coding-style.md の全文に。書き方だけ、binary の比べで動作が同じ事を確かめる。sparcv9 は P3 の q1255 と重なるので、P3 の merge の後に | in-progress |
