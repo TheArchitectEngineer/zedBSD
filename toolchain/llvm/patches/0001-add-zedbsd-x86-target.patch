@@ -44,7 +44,17 @@
      case llvm::Triple::Hurd:
        return std::make_unique<HurdTargetInfo<AArch64leTargetInfo>>(Triple,
                                                                     Opts);
-@@ -594,6 +597,8 @@
+@@ -468,6 +471,9 @@
+     case llvm::Triple::OpenBSD:
+       return std::make_unique<OpenBSDTargetInfo<RISCV64TargetInfo>>(Triple,
+                                                                     Opts);
++    case llvm::Triple::ZedBSD:
++      return std::make_unique<ZedBSDTargetInfo<RISCV64TargetInfo>>(Triple,
++                                                                   Opts);
+     case llvm::Triple::Fuchsia:
+       return std::make_unique<FuchsiaTargetInfo<RISCV64TargetInfo>>(Triple,
+                                                                     Opts);
+@@ -594,6 +600,8 @@
        return std::make_unique<NetBSDI386TargetInfo>(Triple, Opts);
      case llvm::Triple::OpenBSD:
        return std::make_unique<OpenBSDI386TargetInfo>(Triple, Opts);
@@ -53,7 +63,7 @@
      case llvm::Triple::FreeBSD:
        return std::make_unique<FreeBSDTargetInfo<X86_32TargetInfo>>(Triple,
                                                                     Opts);
-@@ -653,6 +658,8 @@
+@@ -653,6 +661,8 @@
        return std::make_unique<NetBSDTargetInfo<X86_64TargetInfo>>(Triple, Opts);
      case llvm::Triple::OpenBSD:
        return std::make_unique<OpenBSDX86_64TargetInfo>(Triple, Opts);
@@ -229,7 +239,7 @@
 +#endif // LLVM_CLANG_LIB_DRIVER_TOOLCHAINS_ZEDBSD_H
 --- /dev/null
 +++ b/clang/lib/Driver/ToolChains/ZedBSD.cpp
-@@ -0,0 +1,152 @@
+@@ -0,0 +1,154 @@
 +//===---- ZedBSD.cpp - zedBSD ToolChain Implementation -------------------===//
 +//
 +// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -306,6 +316,8 @@
 +    CmdArgs.push_back("elf_x86_64");
 +  else if (Arch == llvm::Triple::aarch64)
 +    CmdArgs.push_back("aarch64elf");
++  else if (Arch == llvm::Triple::riscv64)
++    CmdArgs.push_back("elf64lriscv");
 +  else
 +    CmdArgs.push_back("elf_i386");
 +
@@ -384,10 +396,11 @@
 +}
 --- /dev/null
 +++ b/clang/test/Preprocessor/zedbsd.c
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,20 @@
 +// RUN: %clang_cc1 -E -dM -ffreestanding -triple x86_64-unknown-zedbsd < /dev/null | FileCheck %s --check-prefix=COMMON --check-prefix=X64
 +// RUN: %clang_cc1 -E -dM -ffreestanding -triple i386-unknown-zedbsd < /dev/null | FileCheck %s --check-prefix=COMMON --check-prefix=X86
 +// RUN: %clang_cc1 -E -dM -ffreestanding -triple aarch64-unknown-zedbsd < /dev/null | FileCheck %s --check-prefix=COMMON --check-prefix=A64
++// RUN: %clang_cc1 -E -dM -ffreestanding -triple riscv64-unknown-zedbsd < /dev/null | FileCheck %s --check-prefix=COMMON --check-prefix=RV64
 +
 +// COMMON-DAG: #define __ELF__ 1
 +// COMMON-DAG: #define __ZEDBSD__ 1
@@ -399,6 +412,8 @@
 +// X86-DAG: #define __SIZEOF_LONG_DOUBLE__ 8
 +// A64-DAG: #define __aarch64__ 1
 +// A64-DAG: #define __SIZEOF_LONG_DOUBLE__ 16
++// RV64-DAG: #define __riscv 1
++// RV64-DAG: #define __SIZEOF_LONG_DOUBLE__ 16
 +// COMMON-NOT: __FreeBSD__
 +// COMMON-NOT: __NetBSD__
 +// COMMON-NOT: __linux__
