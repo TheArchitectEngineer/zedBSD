@@ -21,5 +21,5 @@
 | Phase | 目的 | 状態 |
 | --- | --- | --- |
 | [p001](phase001/phase.md) | 壊れの洗い出しと直し、画面の console、build と QEMU の login（T1 の判定） | in-progress（test-wait、2026-10-19 P2） |
-| p002 | 規約の全文の見直し（WS が変えた C と HAL・受け渡しの規約） | planned |
+| [p002](phase002/phase.md) | 規約の全文の見直し（WS が変えた C と HAL・受け渡しの規約） | in-progress（P2 実施済み、2026-10-19） |
 - 決定（2026-10-18 ユーザー、クリック）: 判定は「画面の console を作る」（QEMU sun4u の VGA（PCI）の framebuffer の console を足し、boot-test.sh で判定）。sparcv9 は担当が直してよい（main の未 commit の変更は Q1 が先に commit）。
