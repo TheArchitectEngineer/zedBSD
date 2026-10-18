@@ -1,0 +1,73 @@
+{
+  "returncode": 1,
+  "conditions": 720,
+  "passed": 698,
+  "failed": [
+    "json-proxy-array",
+    "json-nested-proxy-array",
+    "json-array-only-get-order",
+    "json-tojson-revokes-before-isarray",
+    "json-ownkeys-order-and-symbol-filter",
+    "json-all-descriptors-before-values",
+    "json-ordinary-enumeration-snapshot",
+    "json-ownkeys-error-identity",
+    "json-descriptor-error-before-value",
+    "json-replacer-proxy-array-order-dedup",
+    "json-replacer-nested-array",
+    "json-replacer-revoked-rejected-before-space",
+    "json-replacer-empty-list-revokes-in-length",
+    "json-replacer-list-string-number-boxes",
+    "json-replacer-array-length-before-element",
+    "json-bigint-primitive-tojson-this-and-key",
+    "json-bigint-tojson-before-replacer",
+    "json-bigint-tojson-error-identity",
+    "json-array-replacer-gets-string-index-and-holder",
+    "json-proxy-array-hole-get-not-has",
+    "json-cycle-proxy-identity-detected",
+    "json-pretty-proxy-ordinary-output"
+  ],
+  "gc_isolated": [
+    {
+      "case": "json-gc-detached-ancestor-and-fresh-tojson",
+      "returncode": -11,
+      "control": []
+    },
+    {
+      "case": "json-gc-fresh-replacer-result-recursive",
+      "returncode": -11,
+      "control": []
+    },
+    {
+      "case": "json-gc-propertylist-normalized-through-space",
+      "returncode": 1,
+      "control": [
+        "console: read-proxy json-gc-propertylist-normalized-through-space: FAIL",
+        "console: read-proxy controls: 0/1"
+      ]
+    },
+    {
+      "case": "json-gc-fresh-list-element-coercion",
+      "returncode": 1,
+      "control": [
+        "console: read-proxy json-gc-fresh-list-element-coercion: FAIL",
+        "console: read-proxy controls: 0/1"
+      ]
+    },
+    {
+      "case": "json-gc-ownkeys-descriptor-and-values",
+      "returncode": 1,
+      "control": [
+        "console: read-proxy json-gc-ownkeys-descriptor-and-values: FAIL",
+        "console: read-proxy controls: 0/1"
+      ]
+    },
+    {
+      "case": "json-gc-fresh-array-from-getter",
+      "returncode": 1,
+      "control": [
+        "console: read-proxy json-gc-fresh-array-from-getter: FAIL",
+        "console: read-proxy controls: 0/1"
+      ]
+    }
+  ]
+}

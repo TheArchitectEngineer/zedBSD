@@ -1,0 +1,457 @@
+{
+  "source_commit": "2419e264c4dc7dff9fa427feade31b22af21a519",
+  "selection": "1a215fd22",
+  "source_hash_count": 317,
+  "conditions": 726,
+  "native_pass": 726,
+  "chrome_pass": 724,
+  "new_conditions": 36,
+  "precode_functional_conditions_failed": 22,
+  "precode_gc_isolated_returncodes": [
+    -11,
+    -11,
+    1,
+    1,
+    1,
+    1
+  ],
+  "final_all36_genuine_chrome_match": true,
+  "old690_prefix_unchanged": true,
+  "all_chrome_equality": false,
+  "oracle": "q36 classifier filter inherited; q43 huge2 native primary versus Chrome pre-index RangeError retained; all new36 genuine rows match",
+  "full_changed_C": {
+    "product_bound_to_selected_functions_and_private_state": true,
+    "all_other_engine_VM_headers_unchanged": true,
+    "native_operations_definition_comment_unchanged": true,
+    "old690_prefix_identical": true,
+    "conditions": 726,
+    "added_conditions": 36,
+    "full_changed_functions": {
+      "userland/desktop/libbrowser/js/builtin_json.c": [
+        "json_stringify",
+        "json_property",
+        "json_property_inner",
+        "json_property_list",
+        "json_property_list_inner",
+        "json_serialize_object",
+        "json_trace_values",
+        "json_trace_writer",
+        "json_trace_property"
+      ]
+    },
+    "raw_allowed_cleanup": 26,
+    "only_single_forward_cleanup": true,
+    "other_checker_findings": 0,
+    "manual_review": [
+      "C full standard ANSI declaration groups/multiline functions/normal prototypes/public static order/semantic paragraphs/no calls in conditions/no Boolean expression assignments",
+      "writer tracer registered after all slots and buffers initialized, before list/space script; managed realm/replacer/list/root holder/key and cycle ancestors retained until cleanup",
+      "property and list wrapper tracer always retired after inner early return; newly returned method/value/key independent of retired VM frames",
+      "array and replacer classification actual IsArray; revoked errors before later stage; toJSON Get allowed object or primitive BigInt; actual boxed brands only",
+      "all string-key descriptors snapshot before any value Get; symbol keys skipped before descriptor lookup, explicit property list bypasses enumeration",
+      "key-vector tracer holds all unvisited keys during descriptor script; in-place compaction overwrites only visited slots; descriptor payload not read after any later callback",
+      "parse/reviver/space/serialize_array/enter and all other functions tokens unchanged; width/RawJSON/global/full acceptance explicitly pending",
+      "old GC isolated6: 2 SIGSEGV,4 functional failures; final shared36 new pass; no new weak-address reclamation gate claimed"
+    ]
+  },
+  "native_gates": [
+    {
+      "label": "proxy-read",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q49/final/engine/host-proxy-read",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q49/final/engine/proxy-read.js"
+      ],
+      "returncode": 0,
+      "seconds": 0.4
+    },
+    {
+      "label": "delegation",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q49/final/engine/host-generator-delegation"
+      ],
+      "returncode": 0,
+      "seconds": 0.5
+    },
+    {
+      "label": "interpreter",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q49/final/engine/host-interp"
+      ],
+      "returncode": 0,
+      "seconds": 0.9
+    },
+    {
+      "label": "vm-factory",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q49/final/engine/host-vm-factory"
+      ],
+      "returncode": 0,
+      "seconds": 3.4
+    },
+    {
+      "label": "dom",
+      "command": [
+        "python3",
+        "plan/ws074/tests/run-dom-tests.py",
+        "--program",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q49/final/engine/browser"
+      ],
+      "returncode": 0,
+      "seconds": 12.5
+    },
+    {
+      "label": "cssom",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q49/final/engine/host-cssom"
+      ],
+      "returncode": 0,
+      "seconds": 13.0
+    },
+    {
+      "label": "cssom-mutation",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q49/final/engine/host-cssom-mutation"
+      ],
+      "returncode": 0,
+      "seconds": 16.2
+    },
+    {
+      "label": "marks",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q49/final/engine/host-performance-marks"
+      ],
+      "returncode": 0,
+      "seconds": 17.8
+    },
+    {
+      "label": "observer",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q49/final/engine/host-performance-observer"
+      ],
+      "returncode": 0,
+      "seconds": 20.4
+    },
+    {
+      "label": "error-events",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q49/final/engine/host-error-events"
+      ],
+      "returncode": 0,
+      "seconds": 21.2
+    },
+    {
+      "label": "error-reporting",
+      "command": [
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q49/final/engine/host-error-reporting"
+      ],
+      "returncode": 0,
+      "seconds": 23.1
+    },
+    {
+      "label": "acid",
+      "command": [
+        "python3",
+        "plan/ws074/tests/run-acid-tests.py",
+        "--program",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q49/final/engine/browser",
+        "--out",
+        "build/ws074-20261018/q49/final/acid"
+      ],
+      "returncode": 0,
+      "seconds": 31.5
+    }
+  ],
+  "GC": "actual bridge collect with conservative stack disabled; precode two detached ancestors SIGSEGV and four functional failures; final six input results pass. No new weak-address reclamation fixture measured.",
+  "acid3_score": 100,
+  "acid3_inventory": 100,
+  "acid3_pixels": 0,
+  "acid2_existing_pixels": 873,
+  "original_webidl_q38_same_callbacks": true,
+  "additional_validator_negative_rule_callbacks": [
+    {
+      "name": "original interface validator yields missing Exposed rule",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "original namespace validator yields missing Exposed rule",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "validator rule detection does not mask intentional failure",
+      "status": 1,
+      "message": "assert_equals: intentional failure after original validator rule expected 0 but got 1"
+    }
+  ],
+  "harness": {
+    "completed": 1508,
+    "counts": {
+      "fail": 955,
+      "harness_error": 13,
+      "pass": 494,
+      "no_completion": 20,
+      "no_output": 24,
+      "multiple_completions": 2
+    },
+    "callbacks": {
+      "1": 20642,
+      "0": 11540,
+      "3": 14
+    },
+    "whole_pass_losses": [],
+    "whole_pass_gains": [],
+    "old_pass_callback_losses": [],
+    "changes": []
+  },
+  "harness_seconds": 356.7,
+  "harness_comparison": "q48 whole and every callback/completion",
+  "timing_investigation": [
+    {
+      "cycle": "q48",
+      "command": [
+        "python3",
+        "plan/ws074/tests/run-interop2025-harness.py",
+        "--manifest",
+        "plan/ws074/phase173/evidence/20261013-q1012/manifest.json",
+        "--program",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q48/final/engine/browser",
+        "--test-id",
+        "/css/css-flexbox/parsing/flex-flow-valid.html",
+        "--out",
+        "build/ws074-20261018/q49/timing-investigation/q48.json",
+        "--settle-ms",
+        "5000",
+        "--process-timeout",
+        "20",
+        "--font-dir",
+        "userland/desktop/fonts"
+      ],
+      "seconds": 0.216,
+      "returncode": 1,
+      "outcome": "fail",
+      "callbacks": [
+        {
+          "name": "e.style['flex-flow'] = \"column nowrap\" should set the property value",
+          "status": 1,
+          "message": "assert_equals: serialization should be canonical expected \"column\" but got \"column nowrap\""
+        },
+        {
+          "name": "e.style['flex-flow'] = \"nowrap column\" should set the property value",
+          "status": 1,
+          "message": "assert_equals: serialization should be canonical expected \"column\" but got \"nowrap column\""
+        },
+        {
+          "name": "e.style['flex-flow'] = \"wrap row-reverse\" should set the property value",
+          "status": 1,
+          "message": "assert_equals: serialization should be canonical expected \"row-reverse wrap\" but got \"wrap row-reverse\""
+        },
+        {
+          "name": "e.style['flex-flow'] = \"nowrap\" should set the property value",
+          "status": 1,
+          "message": "assert_equals: serialization should be canonical expected \"row\" but got \"nowrap\""
+        },
+        {
+          "name": "e.style['flex-flow'] = \"row nowrap\" should set the property value",
+          "status": 1,
+          "message": "assert_equals: serialization should be canonical expected \"row\" but got \"row nowrap\""
+        },
+        {
+          "name": "e.style['flex-flow'] = \"wrap\" should set the property value",
+          "status": 0,
+          "message": ""
+        },
+        {
+          "name": "e.style['flex-flow'] = \"row wrap\" should set the property value",
+          "status": 1,
+          "message": "assert_equals: serialization should be canonical expected \"wrap\" but got \"row wrap\""
+        }
+      ],
+      "completion": {
+        "tests": [
+          {
+            "name": "e.style['flex-flow'] = \"column nowrap\" should set the property value",
+            "status": 1,
+            "message": "assert_equals: serialization should be canonical expected \"column\" but got \"column nowrap\""
+          },
+          {
+            "name": "e.style['flex-flow'] = \"nowrap column\" should set the property value",
+            "status": 1,
+            "message": "assert_equals: serialization should be canonical expected \"column\" but got \"nowrap column\""
+          },
+          {
+            "name": "e.style['flex-flow'] = \"wrap row-reverse\" should set the property value",
+            "status": 1,
+            "message": "assert_equals: serialization should be canonical expected \"row-reverse wrap\" but got \"wrap row-reverse\""
+          },
+          {
+            "name": "e.style['flex-flow'] = \"nowrap\" should set the property value",
+            "status": 1,
+            "message": "assert_equals: serialization should be canonical expected \"row\" but got \"nowrap\""
+          },
+          {
+            "name": "e.style['flex-flow'] = \"row nowrap\" should set the property value",
+            "status": 1,
+            "message": "assert_equals: serialization should be canonical expected \"row\" but got \"row nowrap\""
+          },
+          {
+            "name": "e.style['flex-flow'] = \"wrap\" should set the property value",
+            "status": 0,
+            "message": ""
+          },
+          {
+            "name": "e.style['flex-flow'] = \"row wrap\" should set the property value",
+            "status": 1,
+            "message": "assert_equals: serialization should be canonical expected \"wrap\" but got \"row wrap\""
+          }
+        ],
+        "status": 0,
+        "message": ""
+      }
+    },
+    {
+      "cycle": "q49",
+      "command": [
+        "python3",
+        "plan/ws074/tests/run-interop2025-harness.py",
+        "--manifest",
+        "plan/ws074/phase173/evidence/20261013-q1012/manifest.json",
+        "--program",
+        "/home/awe/zedBSD-claude1/build/ws074-20261018/q49/final/engine/browser",
+        "--test-id",
+        "/css/css-flexbox/parsing/flex-flow-valid.html",
+        "--out",
+        "build/ws074-20261018/q49/timing-investigation/q49.json",
+        "--settle-ms",
+        "5000",
+        "--process-timeout",
+        "20",
+        "--font-dir",
+        "userland/desktop/fonts"
+      ],
+      "seconds": 0.216,
+      "returncode": 1,
+      "outcome": "fail",
+      "callbacks": [
+        {
+          "name": "e.style['flex-flow'] = \"column nowrap\" should set the property value",
+          "status": 1,
+          "message": "assert_equals: serialization should be canonical expected \"column\" but got \"column nowrap\""
+        },
+        {
+          "name": "e.style['flex-flow'] = \"nowrap column\" should set the property value",
+          "status": 1,
+          "message": "assert_equals: serialization should be canonical expected \"column\" but got \"nowrap column\""
+        },
+        {
+          "name": "e.style['flex-flow'] = \"wrap row-reverse\" should set the property value",
+          "status": 1,
+          "message": "assert_equals: serialization should be canonical expected \"row-reverse wrap\" but got \"wrap row-reverse\""
+        },
+        {
+          "name": "e.style['flex-flow'] = \"nowrap\" should set the property value",
+          "status": 1,
+          "message": "assert_equals: serialization should be canonical expected \"row\" but got \"nowrap\""
+        },
+        {
+          "name": "e.style['flex-flow'] = \"row nowrap\" should set the property value",
+          "status": 1,
+          "message": "assert_equals: serialization should be canonical expected \"row\" but got \"row nowrap\""
+        },
+        {
+          "name": "e.style['flex-flow'] = \"wrap\" should set the property value",
+          "status": 0,
+          "message": ""
+        },
+        {
+          "name": "e.style['flex-flow'] = \"row wrap\" should set the property value",
+          "status": 1,
+          "message": "assert_equals: serialization should be canonical expected \"wrap\" but got \"row wrap\""
+        }
+      ],
+      "completion": {
+        "tests": [
+          {
+            "name": "e.style['flex-flow'] = \"column nowrap\" should set the property value",
+            "status": 1,
+            "message": "assert_equals: serialization should be canonical expected \"column\" but got \"column nowrap\""
+          },
+          {
+            "name": "e.style['flex-flow'] = \"nowrap column\" should set the property value",
+            "status": 1,
+            "message": "assert_equals: serialization should be canonical expected \"column\" but got \"nowrap column\""
+          },
+          {
+            "name": "e.style['flex-flow'] = \"wrap row-reverse\" should set the property value",
+            "status": 1,
+            "message": "assert_equals: serialization should be canonical expected \"row-reverse wrap\" but got \"wrap row-reverse\""
+          },
+          {
+            "name": "e.style['flex-flow'] = \"nowrap\" should set the property value",
+            "status": 1,
+            "message": "assert_equals: serialization should be canonical expected \"row\" but got \"nowrap\""
+          },
+          {
+            "name": "e.style['flex-flow'] = \"row nowrap\" should set the property value",
+            "status": 1,
+            "message": "assert_equals: serialization should be canonical expected \"row\" but got \"row nowrap\""
+          },
+          {
+            "name": "e.style['flex-flow'] = \"wrap\" should set the property value",
+            "status": 0,
+            "message": ""
+          },
+          {
+            "name": "e.style['flex-flow'] = \"row wrap\" should set the property value",
+            "status": 1,
+            "message": "assert_equals: serialization should be canonical expected \"wrap\" but got \"row wrap\""
+          }
+        ],
+        "status": 0,
+        "message": ""
+      }
+    }
+  ],
+  "first128_seconds": {
+    "q48": 44.0,
+    "q49": 140.1
+  },
+  "performance_equivalence_not_claimed": true,
+  "official_score": 1482,
+  "denominator": 3805,
+  "held": 0,
+  "unattempted": 275,
+  "static_scripted_crash_reused": "q28",
+  "current_pair_images_crash_not_measured": true,
+  "archives": {
+    "harness-all-raw": {
+      "sha256": "5127febd2683798dd849e067f4999f96d78e1b36c1ea152f84b35bf52e6535c5",
+      "members": 1676,
+      "all_members_readback": true
+    },
+    "native-oracle-and-build-raw": {
+      "sha256": "869a70bf94cb76206c273a3de4f588a8475ded0213ec9b7229f4b728293c7e72",
+      "members": 119,
+      "all_members_readback": true
+    }
+  },
+  "main_integration": {
+    "source": "2419e264c",
+    "main_contains_source": true,
+    "source_paths": [
+      "plan/ws074/tests/proxy-read.js",
+      "plan/ws074/ws.md",
+      "userland/desktop/libbrowser/js/builtin_json.c"
+    ],
+    "no_master_in_source": true,
+    "no_conflicts": true,
+    "branch": "main",
+    "source_parents": "2419e264c cacf122e2"
+  },
+  "remaining": [
+    "JSON parse/reviver ownership and Proxy routing",
+    "uint32/int32 length/storage width, JSON_DEPTH_MAX resource policy, RawJSON",
+    "Species/newtarget/callable Proxy/for-in/spread/primitive Set/outer instanceof/BoundFunction/call/construct/global Proxy/revocable/Reflect",
+    "immutable prototype/typed backing/p100/full target/WS acceptance",
+    "master.md not edited; shared projections pending Q1"
+  ]
+}

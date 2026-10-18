@@ -1,0 +1,44 @@
+[
+  {
+    "case": "json-gc-detached-ancestor-and-fresh-tojson",
+    "returncode": -11,
+    "control": []
+  },
+  {
+    "case": "json-gc-fresh-replacer-result-recursive",
+    "returncode": -11,
+    "control": []
+  },
+  {
+    "case": "json-gc-propertylist-normalized-through-space",
+    "returncode": 1,
+    "control": [
+      "console: read-proxy json-gc-propertylist-normalized-through-space: FAIL",
+      "console: read-proxy controls: 0/1"
+    ]
+  },
+  {
+    "case": "json-gc-fresh-list-element-coercion",
+    "returncode": 1,
+    "control": [
+      "console: read-proxy json-gc-fresh-list-element-coercion: FAIL",
+      "console: read-proxy controls: 0/1"
+    ]
+  },
+  {
+    "case": "json-gc-ownkeys-descriptor-and-values",
+    "returncode": 1,
+    "control": [
+      "console: read-proxy json-gc-ownkeys-descriptor-and-values: FAIL",
+      "console: read-proxy controls: 0/1"
+    ]
+  },
+  {
+    "case": "json-gc-fresh-array-from-getter",
+    "returncode": 1,
+    "control": [
+      "console: read-proxy json-gc-fresh-array-from-getter: FAIL",
+      "console: read-proxy controls: 0/1"
+    ]
+  }
+]

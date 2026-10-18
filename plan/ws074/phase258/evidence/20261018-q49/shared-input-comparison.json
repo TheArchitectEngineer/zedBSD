@@ -1,0 +1,10 @@
+{
+  "userland/desktop/libbrowser/js/builtin_json.c": {
+    "old": "db01728350f67f53476331522dfe6bd984fd90e7ef00616b5e1fdce107939e65",
+    "new": "4a3f69d2e06f2b1c2def58f8a024a2fb1460c3f3a5ba03b00742970d90b94975"
+  },
+  "plan/ws074/tests/proxy-read.js": {
+    "old": "7a60cbe2feb89b5465ba55f66fea2060decad1e162f7f6a4a3c447bca7d5d7ff",
+    "new": "2945d5171df19107ccdffcca0c3c37462fff0dbb6e19d9729bc96e77af357269"
+  }
+}
