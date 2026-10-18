@@ -201,7 +201,7 @@ Resume point: 2026-10-16 の方針（ユーザー「i915は、実装だけ先に
 | [p050d4a](phase050d4a/phase.md) | 画面の口: 新しい xd-picture.c に画面の object と prepare・light・dark・plane・flip・status・retained・backlight を own の型で、head.c・present.c・backlight.c を付け替え | cleared（2026-10-18 Q1、5330 の i20・i21） |
 | [p050d4b](phase050d4b/phase.md) | 走らせ方の口: resident run・show run・kernel の binding を own の resident.c へ（fill が picture の config を直に）、output.c の link を xd-screen の plan_link に | cleared（2026-10-18 Q1、5330 の i20・i21） |
 | [p050d4c](phase050d4c/phase.md) | 始まりと終わり: port の表（xd）、eDP の device を own の edp-device.c へ、始まりの前半を xd の部品で、VGA を own の vga.c へ、takeover.c を空に | in-progress（2026-10-17 q1229-i12 で実装・host 試験・build 済み（43c3ed47c・f491cfcad）、5330 は全部の段の後に 1 回。world の削除は d4d へ） |
-| [p050d4d](phase050d4d/phase.md) | 旧 file の削除と旧 host 試験・fake の終わり（size、`I915_XD_STRICT`、5320・SV7・QEMU の節目） | in-progress（2026-10-17 q1229-i12 で一部（854bd85fb）、q1229-i13 で残りを実装・host 試験・build 済み（f25557317: modeset・state・ddi・dp・pipe・plane・panel・edid を空に、旧 host 試験と fake を空に、internal.h の Linux 型を削減、display-host-lib.sh に mmio-record.c）、5330 は全部の段の後に 1 回） |
+| [p050d4d](phase050d4d/phase.md) | 旧 file の削除と旧 host 試験・fake の終わり（size、`I915_XD_STRICT`、5320・SV7・QEMU の節目） | cleared（2026-10-19 Q1、T1-719） |
 | [p039](phase039/phase.md) | hotplug（xd-hpd。hotplug.c を消す） | cleared（2026-10-18 Q1、5330 の i20・i21） |
 | [p051](phase051/phase.md) | own の output.c の port の規則と head-rules の pipe の規則を platform の記述に（hdmi.c・hdmi-mode.c・head-rules.c を消す） | cleared（2026-10-18 Q1、5330 の i20・i21） |
 | [p040](phase040/phase.md) | Dekel の窓と TC PHY、TC PLL（xd-tc の窓を dkl-phy.c と一緒に入れ替える、clock.c の残りを消す） | cleared（2026-10-18 Q1、5330 の i20・i21） |

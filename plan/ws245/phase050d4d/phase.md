@@ -2,7 +2,7 @@
 
 # ws245-p050d4d: 旧 file の削除
 
-Status: in-progress（2026-10-17 q1229-i13 で実装・host 試験・build 済み（a702fb741・8f2d1f564・f25557317）、5330 は全部の段の後に 1 回。QEMU の boot-test と 5320・SV7 の節目は T1・ユーザーの一覧）
+Status: cleared（2026-10-19 Q1 判定: 5330 の i20・i21 で基準どおり（判定の材料の節）、T1-719 で i915 の無い QEMU の amd64 の image が画面に login: まで起動（7b84940d5、merge a9a7bbf27））（旧: in-progress（2026-10-17 q1229-i13 で実装・host 試験・build 済み（a702fb741・8f2d1f564・f25557317）、5330 は全部の段の後に 1 回。QEMU の boot-test と 5320・SV7 の節目は T1・ユーザーの一覧））
 Parent: [WS245](../ws.md)
 Queue: q1229-i11・q1229-i12・q1229-i13（P1）
 設計: [design.md](../design.md) §6.2 の p050 の行。分け方は [phase050d4](../phase050d4/phase.md)
