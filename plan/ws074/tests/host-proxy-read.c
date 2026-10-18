@@ -12,6 +12,7 @@
 #include "page/page.h"
 #include "vm/internal.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -34,6 +35,7 @@ static const struct vm_native_operations proxy_sole_operations = {
 	proxy_sole_get_own, NULL, NULL, NULL, NULL
 };
 
+static int proxy_set_receiver(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int proxy_define_descriptor(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int descriptor_roundtrip(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int descriptor_pressure(struct page *page);
@@ -63,6 +65,7 @@ main(
 	int status;
 	int passed;
 	int printed;
+	int done;
 
 	/* Keep the shared control input reproducible for historical frozen fixture binaries. */
 	source_path = "plan/ws074/tests/proxy-read.js";
@@ -98,6 +101,11 @@ main(
 
 	/* A private Boolean bridge compares actual VM definition with genuine Chromium reflection. */
 	status = js_builtin_method(page->realm, page->realm->global, "defineReadProperty", 3, proxy_define_descriptor);
+	if (status != 0)
+		goto cleanup;
+
+	/* A private Boolean bridge compares receiver-preserving VM Set with genuine Chromium reflection. */
+	status = js_builtin_method(page->realm, page->realm->global, "setReadReceiver", 4, proxy_set_receiver);
 	if (status != 0)
 		goto cleanup;
 
@@ -140,6 +148,16 @@ main(
 	if (status != 0)
 		goto cleanup;
 	if (answer != VM_VALUE_TRUE) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* TypedArray's separate Set contract remains explicitly unsupported in this private receiver-aware stage. */
+	status = proxy_script(page->realm, "new Uint8Array(1)", &answer);
+	if (status != 0)
+		goto cleanup;
+	status = vm_set_receiver(page->realm, (struct vm_object *)vm_value_as_cell(answer), vm_value_int32(0), vm_value_int32(1), answer, &done);
+	if (status != ENOTSUP || done) {
 		status = 1;
 		goto cleanup;
 	}
@@ -409,9 +427,12 @@ proxy_gc_edges(
 	vm_value get_key;
 	vm_value descriptor_key;
 	vm_value payload;
+	vm_value write_value;
+	vm_value write_receiver;
 	uintptr_t realm_address;
 	uintptr_t descriptor_address;
 	uintptr_t define_address;
+	uintptr_t receiver_address;
 	unsigned index;
 	unsigned registered;
 	int status;
@@ -505,6 +526,23 @@ proxy_gc_edges(
 
 	/* Script collection precedes the separate post-trap native descriptor collection. */
 	status = proxy_script(page->realm, "(function(t,k,d){var v=d.value;delete d.value;collectReadProxy();return v!==77;})", &answer);
+	if (status != 0)
+		goto cleanup;
+	roots[4] = vm_value_as_cell(answer);
+	status = vm_object_define(page->heap, handler, descriptor_key, answer, VM_PROPERTY_DEFAULT);
+	if (status != 0)
+		goto cleanup;
+	roots[4] = NULL;
+
+	/* Set's fresh value has no trap or target owner after the call frame returns. */
+	descriptor_key = vm_key_from_ascii(page->heap, "set");
+	if (descriptor_key == VM_VALUE_EMPTY) {
+		status = 2;
+		goto cleanup;
+	}
+
+	/* The subsequent native descriptor collection must rely on the production write-frame tracer. */
+	status = proxy_script(page->realm, "(function(t,k,v,r){collectReadProxy();return v!==78;})", &answer);
 	if (status != 0)
 		goto cleanup;
 	roots[4] = vm_value_as_cell(answer);
@@ -639,6 +677,57 @@ proxy_gc_edges(
 		goto cleanup;
 	}
 
+	/* A separate otherwise unowned receiver must survive the same post-trap native collector. */
+	roots[1] = &realm->cell;
+	found = (struct vm_cell *)vm_object_create(page->heap, NULL);
+	if (found == NULL) {
+		status = 2;
+		goto cleanup;
+	}
+
+	/* Retire all receiver and realm setup ownership before the write frame becomes responsible. */
+	roots[2] = found;
+	receiver_address = (uintptr_t)found;
+	write_receiver = vm_value_cell(found);
+	roots[1] = NULL;
+	roots[2] = NULL;
+
+	/* Retire the embedding owner before Set must preserve this otherwise unowned original write value. */
+	write_value = vm_value_cell(roots[5]);
+	roots[5] = NULL;
+	status = vm_set_receiver(realm, (struct vm_object *)vm_value_as_cell(made), key, write_value, write_receiver, &done);
+	if (status != 0)
+		goto cleanup;
+	if (!done) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* The post-trap target hook collected after the script argument frame stopped owning this value. */
+	found = vm_heap_find_cell(page->heap, define_address);
+	if (found == NULL) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* Restore value ownership before checking the independent receiver address. */
+	roots[5] = found;
+	found = vm_heap_find_cell(page->heap, receiver_address);
+	if (found == NULL) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* Restore embedding receiver ownership only after the actual native retention observation. */
+	roots[2] = found;
+	status = vm_set_receiver(realm, (struct vm_object *)vm_value_as_cell(made), key, vm_value_int32(78), VM_VALUE_NULL, &done);
+	if (status != 0)
+		goto cleanup;
+	if (done || sole_realm_alive != 5U) {
+		status = 1;
+		goto cleanup;
+	}
+
 	/* The sole result from Get must also survive the subsequent Has collection. */
 	key = vm_key_from_ascii(page->heap, "sole");
 	if (key == VM_VALUE_EMPTY) {
@@ -652,7 +741,7 @@ proxy_gc_edges(
 		goto cleanup;
 	same = vm_same_value(answer, vm_value_int32(74));
 	if (!same ||
-	    sole_realm_alive != 4U ||
+	    sole_realm_alive != 5U ||
 	    realm->property_depth != 0U) {
 		status = 1;
 		goto cleanup;
@@ -660,6 +749,7 @@ proxy_gc_edges(
 
 	/* No surviving protocol participant references the temporary realm once the native Get frame ends. */
 	roots[0] = NULL;
+	roots[2] = NULL;
 	roots[3] = NULL;
 	roots[4] = NULL;
 	roots[5] = NULL;
@@ -679,6 +769,13 @@ proxy_gc_edges(
 
 	/* The original Define input payload has no owner once the completed embedding root ends. */
 	found = vm_heap_find_cell(page->heap, define_address);
+	if (found != NULL) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* No trap, snapshot or write-frame root may retain the completed receiver. */
+	found = vm_heap_find_cell(page->heap, receiver_address);
 	if (found != NULL) {
 		status = 1;
 		goto cleanup;
@@ -1018,5 +1115,47 @@ cleanup:
 		return status;
 
 	/* Succeeded: the actual internal definition produced the Boolean result. */
+	return 0;
+}
+
+/* Calls the real receiver-aware VM operation with Reflect-style Boolean outcomes for fixture comparisons. */
+static int
+proxy_set_receiver(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	vm_value object;
+	vm_value key;
+	vm_value actual_receiver;
+	int is_object;
+	int done;
+	int status;
+
+	UNUSED_PARAMETER(receiver);
+
+	/* Reflection validates its target before coercing the property key. */
+	object = js_argument(args, count, 0);
+	is_object = vm_value_is_object(object);
+	if (!is_object) {
+		status = vm_throw_type_error(realm, "Set target must be an object");
+		return status;
+	}
+
+	/* A missing receiver defaults to the original target while explicit undefined remains unchanged. */
+	actual_receiver = object;
+	if (count > 3U)
+		actual_receiver = args[3];
+	status = vm_to_key(realm, js_argument(args, count, 1), &key);
+	if (status != 0)
+		return status;
+	status = vm_set_receiver(realm, (struct vm_object *)vm_value_as_cell(object), key, js_argument(args, count, 2), actual_receiver, &done);
+	if (status != 0)
+		return status;
+	*result = vm_value_boolean(done);
+
+	/* Succeeded: reflection exposes the actual internal operation's Boolean outcome. */
 	return 0;
 }

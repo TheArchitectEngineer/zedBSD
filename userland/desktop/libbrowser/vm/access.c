@@ -52,6 +52,12 @@ struct access_read_roots {
 	vm_value receiver;
 };
 
+/* One native Set frame owns the original write value as well as all receiver-aware read inputs. */
+struct access_write_roots {
+	struct access_read_roots read;
+	vm_value value;
+};
+
 /* One active descriptor operation owns its realm, source, flagged payloads and unpublished output object. */
 struct access_descriptor_roots {
 	struct vm_realm *realm;
@@ -80,6 +86,9 @@ static const struct vm_cell_type access_for_in_type = {
 	"for-in", access_for_in_trace, access_for_in_finalize
 };
 
+static void access_write_trace(struct vm_heap *heap, void *context);
+static int access_set_receiver(struct vm_realm *realm, struct vm_object *object, vm_value key, vm_value value, vm_value receiver, int *done);
+static int access_proxy_set(struct vm_realm *realm, struct vm_proxy *proxy, vm_value key, vm_value value, vm_value receiver, int *done);
 static int access_proxy_define(struct vm_realm *realm, struct vm_proxy *proxy, vm_value key, const struct vm_descriptor *descriptor, int *done);
 static int access_proxy_get_own(struct vm_realm *realm, struct vm_proxy *proxy, vm_value key, struct vm_descriptor *descriptor, int *found);
 static int access_descriptor_compatible(int extensible, int found, const struct vm_descriptor *current, const struct vm_descriptor *descriptor);
@@ -266,6 +275,21 @@ vm_set(
 		return status;
 	}
 
+	/* Direct Proxy assignment uses receiver-aware traps and preserves strict versus sloppy refusal. */
+	object = (struct vm_object *)vm_value_as_cell(base);
+	if (object->kind == VM_KIND_PROXY) {
+		status = vm_set_receiver(realm, object, key, value, base, &done);
+		if (status != 0)
+			return status;
+		if (!done) {
+			status = access_refuse(realm, strict, "Proxy set trap returned false");
+			return status;
+		}
+
+		/* Succeeded: the direct Proxy accepted this assignment. */
+		return 0;
+	}
+
 	/* An accessor on the chain: its setter is called with the value. */
 	object = (struct vm_object *)vm_value_as_cell(base);
 	found = vm_object_find(object, key, &property);
@@ -297,7 +321,10 @@ vm_set(
 	length_key = vm_key_from_ascii(realm->heap, "length");
 	if (length_key == VM_VALUE_EMPTY)
 		return ENOMEM;
-	if (found && property.holder == object && key == length_key && (object->flags & VM_OBJECT_ARRAY) != 0U) {
+	if (found &&
+	    property.holder == object &&
+	    key == length_key &&
+	    (object->flags & VM_OBJECT_ARRAY) != 0U) {
 		status = access_set_length(realm, object, value, strict);
 		if (status != 0)
 			return status;
@@ -305,7 +332,9 @@ vm_set(
 	}
 
 	/* A typed array converts the value in the realm (a valueOf may run, a wrong BigInt type throws). */
-	if (object->kind == VM_KIND_TYPED_ARRAY && object->native_operations != NULL && object->native_operations->define != NULL) {
+	if (object->kind == VM_KIND_TYPED_ARRAY &&
+	    object->native_operations != NULL &&
+	    object->native_operations->define != NULL) {
 		memset(&descriptor, 0, sizeof(descriptor));
 		descriptor.has = VM_HAS_VALUE | VM_HAS_WRITABLE | VM_HAS_ENUMERABLE | VM_HAS_CONFIGURABLE;
 		descriptor.value = value;
@@ -329,6 +358,62 @@ vm_set(
 	}
 
 	/* Succeeded: the value is put. */
+	return 0;
+}
+
+/*
+ * Sets an object's property while preserving the original receiver and Boolean refusal.
+ * This private stage supports ordinary, array and Proxy dispatch; TypedArray Set remains separate.
+ */
+int
+vm_set_receiver(
+	struct vm_realm *realm,
+	struct vm_object *object,
+	vm_value key,
+	vm_value value,
+	vm_value receiver,
+	int *done)
+{
+	struct access_write_roots roots;
+	int status;
+
+	/* Retain every input before either an exotic trap or ordinary descriptor callback can collect. */
+	*done = 0;
+	roots.read.realm = realm;
+	roots.read.base = vm_value_cell(object);
+	roots.read.key = key;
+	roots.read.receiver = receiver;
+	roots.value = value;
+	status = vm_heap_add_tracer(realm->heap, access_write_trace, &roots);
+	if (status != 0)
+		return status;
+	if (realm->property_depth >= ACCESS_RECURSION_MAX) {
+		status = vm_throw_range_error(realm, "Maximum property recursion exceeded");
+		vm_heap_remove_tracer(realm->heap, access_write_trace, &roots);
+		return status;
+	}
+
+	/* TypedArray Set must never be silently certified with ordinary fallback rules. */
+	if (object->kind == VM_KIND_TYPED_ARRAY) {
+		vm_heap_remove_tracer(realm->heap, access_write_trace, &roots);
+		return ENOTSUP;
+	}
+
+	/* One native operation depth covers both Proxy and ordinary dispatch. */
+	realm->property_depth++;
+	if (object->kind == VM_KIND_PROXY) {
+		status = access_proxy_set(realm, (struct vm_proxy *)object, key, value, receiver, done);
+	} else {
+		status = access_set_receiver(realm, object, key, value, receiver, done);
+	}
+
+	/* Neither a thrown trap nor a refused ordinary definition may leak depth or input ownership. */
+	realm->property_depth--;
+	vm_heap_remove_tracer(realm->heap, access_write_trace, &roots);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: done says whether the receiver accepted the property assignment. */
 	return 0;
 }
 
@@ -3257,5 +3342,269 @@ cleanup:
 		return status;
 
 	/* Succeeded: done distinguishes a valid truthy trap result from ordinary refusal. */
+	return 0;
+}
+
+/* Applies ordinary receiver-aware Set without invoking a getter or losing the target descriptor snapshot. */
+static int
+access_set_receiver(
+	struct vm_realm *realm,
+	struct vm_object *object,
+	vm_value key,
+	vm_value value,
+	vm_value receiver,
+	int *done)
+{
+	struct access_descriptor_roots roots;
+	struct vm_descriptor current;
+	struct vm_descriptor existing;
+	struct vm_descriptor change;
+	struct vm_object *receiver_object;
+	vm_value ignored;
+	int present;
+	int is_object;
+	int status;
+
+	/* A native descriptor may expose a transient accessor that no ordinary heap property owns. */
+	memset(&current, 0, sizeof(current));
+	roots.realm = realm;
+	roots.source = VM_VALUE_UNDEFINED;
+	roots.descriptor = &current;
+	roots.made = VM_VALUE_UNDEFINED;
+	status = vm_heap_add_tracer(realm->heap, access_descriptor_trace, &roots);
+	if (status != 0)
+		return status;
+	status = vm_get_own_property(realm, object, key, &current, &present);
+	if (status != 0)
+		goto cleanup;
+	if (!present) {
+		if (object->prototype != NULL) {
+			status = vm_set_receiver(realm, object->prototype, key, value, receiver, done);
+			goto cleanup;
+		}
+
+		/* At the chain's end, an absent property acts as a writable data property. */
+		current.has = VM_HAS_VALUE | VM_HAS_WRITABLE;
+		current.attributes = VM_PROPERTY_WRITABLE;
+		current.value = VM_VALUE_UNDEFINED;
+	}
+
+	/* Data descriptors first decide writability, then whether the actual receiver can have properties. */
+	if ((current.has & VM_HAS_VALUE) != 0U) {
+		if ((current.attributes & VM_PROPERTY_WRITABLE) == 0U) {
+			status = 0;
+			goto cleanup;
+		}
+
+		/* A primitive receiver cannot accept an ordinary data property. */
+		is_object = vm_value_is_object(receiver);
+		if (!is_object) {
+			status = 0;
+			goto cleanup;
+		}
+
+		/* Receiver reflection is a real internal operation and can run its own Proxy trap. */
+		receiver_object = (struct vm_object *)vm_value_as_cell(receiver);
+		status = vm_get_own_property(realm, receiver_object, key, &existing, &present);
+		if (status != 0)
+			goto cleanup;
+		if (present) {
+			if ((existing.has & VM_HAS_GET) != 0U || (existing.attributes & VM_PROPERTY_WRITABLE) == 0U) {
+				status = 0;
+				goto cleanup;
+			}
+		}
+
+		/* Existing writable data changes only its value; new receiver properties receive all default attributes. */
+		memset(&change, 0, sizeof(change));
+		change.has = VM_HAS_VALUE;
+		change.value = value;
+		if (!present) {
+			change.has |= VM_HAS_WRITABLE | VM_HAS_ENUMERABLE | VM_HAS_CONFIGURABLE;
+			change.attributes = VM_PROPERTY_DEFAULT;
+		}
+
+		/* Array receivers and Proxy receivers apply their actual DefineOwnProperty rules. */
+		status = vm_define_own_property(realm, receiver_object, key, &change, done);
+		goto cleanup;
+	}
+
+	/* Getter-only accessors refuse assignment without observing the receiver's descriptor. */
+	if (current.setter == VM_VALUE_UNDEFINED) {
+		status = 0;
+		goto cleanup;
+	}
+
+	/* A setter receives exactly one original value and the original receiver; its return value is ignored. */
+	status = vm_call(realm, current.setter, receiver, &value, 1, &ignored);
+	if (status != 0)
+		goto cleanup;
+	*done = 1;
+
+cleanup:
+	/* Retire the snapshot tracer before its descriptor storage leaves this native frame. */
+	vm_heap_remove_tracer(realm->heap, access_descriptor_trace, &roots);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: done preserves accepted assignment versus Boolean refusal. */
+	return 0;
+}
+
+/* Marks the original write value together with the realm, base, key and receiver of its native frame. */
+static void
+access_write_trace(
+	struct vm_heap *heap,
+	void *context)
+{
+	struct access_write_roots *roots;
+
+	/* Reuse the read-frame protocol for the shared input graph. */
+	roots = context;
+	access_read_trace(heap, &roots->read);
+	vm_heap_mark_value(heap, roots->value);
+
+	/* Succeeded: a sole write value remains live even after the script trap has returned. */
+	return;
+}
+
+/* Executes Proxy Set while keeping original target, handler, value and receiver through revocation and collection. */
+static int
+access_proxy_set(
+	struct vm_realm *realm,
+	struct vm_proxy *proxy,
+	vm_value key,
+	vm_value value,
+	vm_value receiver,
+	int *done)
+{
+	struct vm_cell *roots[6];
+	struct vm_descriptor current;
+	struct vm_string *string;
+	vm_value target;
+	vm_value handler;
+	vm_value method;
+	vm_value method_key;
+	vm_value trap_key;
+	vm_value produced;
+	vm_value args[4];
+	unsigned index;
+	unsigned registered;
+	int is_cell;
+	int is_symbol;
+	int truth;
+	int present;
+	int same;
+	int status;
+
+	/* The surrounding write frame retains key, value and receiver while this frame snapshots protocol participants. */
+	target = proxy->target;
+	handler = proxy->handler;
+	roots[0] = NULL;
+	if (realm->managed)
+		roots[0] = &realm->cell;
+	roots[1] = &proxy->object.cell;
+	roots[2] = NULL;
+	is_cell = vm_value_is_cell(target);
+	if (is_cell)
+		roots[2] = vm_value_as_cell(target);
+	roots[3] = NULL;
+	is_cell = vm_value_is_cell(handler);
+	if (is_cell)
+		roots[3] = vm_value_as_cell(handler);
+	roots[4] = NULL;
+	roots[5] = NULL;
+	registered = 0;
+	for (index = 0; index < 6U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* Revocation fails before consulting the handler. */
+	if (target == VM_VALUE_NULL) {
+		status = vm_throw_type_error(realm, "Cannot set a property of a revoked Proxy");
+		goto cleanup;
+	}
+
+	/* GetMethod retrieves the current set trap and rejects noncallable values other than null or undefined. */
+	method_key = vm_key_from_ascii(realm->heap, "set");
+	if (method_key == VM_VALUE_EMPTY) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* Fallback delegates with the original receiver rather than substituting the target. */
+	status = vm_get_method(realm, handler, method_key, &method);
+	if (status != 0)
+		goto cleanup;
+	if (method == VM_VALUE_UNDEFINED) {
+		status = vm_set_receiver(realm, (struct vm_object *)vm_value_as_cell(target), key, value, receiver, done);
+		goto cleanup;
+	}
+
+	/* Retain a fresh trap and preserve symbol identity while exposing internal integer keys as strings. */
+	roots[4] = vm_value_as_cell(method);
+	trap_key = key;
+	is_symbol = access_is_symbol(key);
+	if (!is_symbol) {
+		status = vm_to_string(realm, key, &string);
+		if (status != 0)
+			goto cleanup;
+		trap_key = vm_value_cell(string);
+		roots[5] = &string->cell;
+	}
+
+	/* The handler receives the target, normalized key, original value and original receiver as four arguments. */
+	args[0] = target;
+	args[1] = trap_key;
+	args[2] = value;
+	args[3] = receiver;
+	status = vm_call(realm, method, handler, args, 4, &produced);
+	if (status != 0)
+		goto cleanup;
+	truth = vm_to_boolean(produced);
+	if (!truth) {
+		status = 0;
+		goto cleanup;
+	}
+
+	/* Truthy traps must respect the original target's own descriptor as observed after the trap. */
+	status = vm_get_own_property(realm, (struct vm_object *)vm_value_as_cell(target), key, &current, &present);
+	if (status != 0)
+		goto cleanup;
+	if (present && (current.attributes & VM_PROPERTY_CONFIGURABLE) == 0U) {
+		if ((current.has & VM_HAS_VALUE) != 0U && (current.attributes & VM_PROPERTY_WRITABLE) == 0U) {
+			same = vm_same_value(value, current.value);
+			if (!same) {
+				status = vm_throw_type_error(realm, "Proxy set trap changed a fixed data property");
+				goto cleanup;
+			}
+		}
+
+		/* A fixed accessor without a setter cannot claim successful assignment. */
+		if ((current.has & VM_HAS_SET) != 0U && current.setter == VM_VALUE_UNDEFINED) {
+			status = vm_throw_type_error(realm, "Proxy set trap accepted a fixed setter-less property");
+			goto cleanup;
+		}
+	}
+
+	/* A truthy result passing the fixed-property invariants accepts the assignment. */
+	*done = 1;
+	status = 0;
+
+cleanup:
+	/* The surrounding write frame remains active until every original protocol snapshot has been retired. */
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* Preserve abrupt completion instead of reporting Boolean success. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: done distinguishes accepted assignment from a false trap result. */
 	return 0;
 }
