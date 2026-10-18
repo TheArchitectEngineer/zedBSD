@@ -2,11 +2,11 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: uncleared（q47 nested noncallable target partial cleared、whole Proxy未達）
+Status: in-progress（q48 IsArray consumer partial、whole Proxy未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
-Queue: ws074-q20261018-47-i01（q30〜q46 partial履歴保持）
+Queue: ws074-q20261018-48-i01（q30〜q47 partial履歴保持）
 Origin: p189/q29 original WebIDL2 parseがProxy未定義で停止。
 
 Objective / own criteria: native managed Proxyを実object internal methodsへ接続し、constructor/revocableと各internal operationのtrap/fallback/invariant/receiver/revocation/callability/GCを正しく実行する。original WebIDL2 actual parse/validatorに必要なget/set/array behaviorを通常APIで提供し、independent controls/原WPTを通す。部分read stageだけでwholeをclearしない。
@@ -273,3 +273,5 @@ Raw archive86 members SHA256c2f637f90eefaca9a1834fb91463db41acf087e7ae0b1659ea0a
 [証拠](evidence/20261018-q47/README.md)。次finite scope未選定。
 
 Event ws074-p258-integration-direction-20261018（2026-10-18T22:35:53.785505+09:00）: q47 source0fb5a4c85/terminal53563fb51を含むq44〜q47全sourceのmain包含と競合無しを実確認。ユーザー「マージしながら」「ws.md/Phase可・master.md不可」を[自走指示](../autonomy.md)に記録。今後もverified WIP＋main包含/統合確認を継続、master.mdは編集しない。whole p258/WS acceptance未変更。[実出力](evidence/20261018-integration-direction.json)。
+
+Event ws074-p258-q48-selection: ObjectToString/concat/flatten IsArray consumerとboxed-source/fresh output保持partial選定。Species/幅/resource等whole残件を明記。[exact Queue](../queue.md)。main包含確認、master.md編集無しでWS/Phaseに記録。
