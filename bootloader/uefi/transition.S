@@ -1,5 +1,15 @@
-/* Microsoft x64 UEFI call frame -> System V amd64 kernel transition. */
-/* Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib */
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The transition from the Microsoft x64 UEFI call frame to the System V
+ * amd64 kernel entry.
+ */
+
 #include "../include/amd64-handoff.h"
 
 	.text
@@ -12,7 +22,7 @@ zbl_transition_start:
 	andq $-16, %rsp
 	xorq %rbp, %rbp
 	movq %rcx, %cr3
-	/* Stage 3: the bootstrap CR3 can access the GOP mapping. */
+	/* Draws the third progress block, which shows the bootstrap CR3 maps the framebuffer. */
 	movq ZBL6_HANDOFF_V3_FRAMEBUFFER_BASE_OFFSET(%r8), %r10
 	andq $0x1fffff, %r10
 	movabsq $ZBL6_FRAMEBUFFER_VIRTUAL_BASE, %rax
@@ -42,8 +52,8 @@ zbl_transition_start:
 	movq %r8, %rdi
 	jmp *%r9
 	/*
-	 * A quiet boot (kmsg=quiet, ws035-p096) enters here: the same switch
-	 * without the stage-3 block, so the boot logo stays on the screen.
+	 * A quiet boot (kmsg=quiet) enters here: the same switch without the
+	 * third progress block, so the boot logo stays on the screen.
 	 */
 zbl_transition_quiet:
 	cli

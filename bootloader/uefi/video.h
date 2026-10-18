@@ -1,5 +1,14 @@
-/* Optional firmware graphics mode selection before the kernel handoff. */
-/* Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib */
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The optional firmware graphics mode selection before the kernel handoff.
+ */
+
 #ifndef KERN_UEFI_VIDEO_H
 #define KERN_UEFI_VIDEO_H
 
@@ -11,8 +20,6 @@
  * for none) and otherwise preserves the current mode; malformed or
  * unavailable video= requests fail.
  */
-EFI_STATUS zbl_uefi_video_select(EFI_BOOT_SERVICES *boot,
-	EFI_GRAPHICS_OUTPUT_PROTOCOL *gop, const char *text, size_t length,
-	UINT32 preferred_width, UINT32 preferred_height);
+EFI_STATUS zbl_uefi_video_select(EFI_BOOT_SERVICES *boot, EFI_GRAPHICS_OUTPUT_PROTOCOL *gop, const char *text, size_t length, UINT32 preferred_width, UINT32 preferred_height);
 
 #endif

@@ -69,6 +69,18 @@ Status: in-progress（2026-10-18 q1256-i01、P2）
 | tests/payload32-pcat.S・payload64-pcat.S・payload32-pc98.S | 著作権の header を規約の形に、file の説明 | object は code の差なし（旧の source の object と比べた） |
 | tests/*.ld | 著作権の header と説明 | — |
 | README.md | `q032`・「compatibility Phase」・`WS013 p006` を消した | — |
+| uefi/boot-keys.h・boot-keys.c | 点検のみ（Q1 の commit cc6aa1256 の形のまま、規約に合う） | code の差なし |
+| uefi/bootx64.c | file の説明、macro の群・struct・typedef・extern・file-scope 変数の役の comment、`ws035-p112`・`ws174`・`ws035-p096` を消した。全部の static 関数の前方宣言、`efi_main` を先に。block の中・`for` の初期化の宣言と scope だけの block（CR4）を関数の先頭へ。条件の中の関数の呼び出し（`framebuffer_from_gop`・`guid_equal`・`zbl_uefi_partition_paths_same_disk`・`zbl_uefi_volume_selection_take`・`zbl_uefi_partition_identity_copy`・`zbl_uefi_framebuffer_mapping_plan`・`token_is`・`kernel_path_utf16`・`zbl_elf64_plan`・`zbl_elf64_place`・`kernel_placement_parse`）を外へ。`?:` で呼び出しを選ぶ所（`Close`・`FreePages`・`FreePool`）を `close_file`・`free_pages`・`free_pool` に、文字列・状態の `?:` を if に。関数の呼び出しの結果の直の return を失敗と成功に分けた（`probe_readable_file` の最後の `SetPosition` の警告の値は EFI_SUCCESS になる。呼び出し側は `EFI_ERROR` だけを見るので動作は同じ）。`x[i++] = …`・`*p++` を文に分けた。`discover_config_volume` の候補の 1 つを調べる loop の本体を `examine_candidate`（`continue` は `EFI_SUCCESS` の return、`return discovery_abort(…)` は誤りの return）に、媒体の検査を `block_media_usable` に、kernel の読み込みを `load_kernel` に、置き場の確定を `place_kernel_at` に分けた（評価の順と出力の順は同じ）。最後の transition の呼び出しを、入口の offset を選んでから 1 回呼ぶ形に。各段落・if・loop・return の comment、分けた呼び出しは 1 行 1 引数 | DIFF-CODE（関数の分割と命令の並び）。BOOTX64.EFI は 29696 byte のまま |
+| uefi/elf64.h・elf64.c | 著作権の header、macro・struct の役の comment。大きな条件を `header_acceptable`・`segment_acceptable` の guard に（評価の順は同じ）。`plan->segment[count++]`・Boolean の式の return を文と if に | DIFF-CODE。host の同値の試験で一致 |
+| uefi/framebuffer.h・framebuffer.c | 著作権の header、comment、条件を 1 行 1 節に | code の差なし |
+| uefi/memory-map.h・memory-map.c・memory-map-v6.c | 著作権の header（v6 の editor の mode 行を消した）、macro・enum・struct の comment、宣言の位置、関数の定義の形、呼び出しの結果の直の return を分けた、各段落の comment | memory-map.o は DIFF-CODE、memory-map-v6.o は差なし。host の同値の試験で一致 |
+| uefi/zedbsd-config.h・zedbsd-config.c | 著作権の header、macro・struct・enum の comment。全部の static 関数の前方宣言、公開の関数を先に。`for` の初期化の宣言を先頭へ。条件の中の呼び出し（`selected_uuid_valid`・`line_name_is`・`unsupported_syntax`・`component_is_dot`・`text_starts_with`・`kernel_selector_prefix`・`boot_reference`・`raw_swap_selector`・`fat_capacity_ok`）を外へ。Boolean の式の return を if に、`?:` を if に、呼び出しの直の return を分けた | DIFF-CODE（UEFI と BIOS の 16 bit の両方）。host の同値の試験で一致。PC/AT の BOOTZBSD.EXE の `stage2_end` は 0xb596→0xb622（file は 1 sector 増えて 47168 byte、stack 0x1f000 まで余裕あり）、PC-98 は 24128 byte のまま |
+| uefi/volume-discovery.h・volume-discovery.c | 著作権の header、全部の型・macro の群の comment、「p003」を消した。公開の関数を先に、前方宣言。宣言の位置、`?:` の連鎖（sector の倍率・FAT の大きさ）を if に、条件の中の呼び出し（`supported_fat_block_size`・`byte_equal`・`fat_media_byte`・`fat_capacity_ok`・`read_le16`）を外へ、`*p++`・`x[i++]` を文に、for の中の if の括弧 | DIFF-CODE。host の同値の試験で一致 |
+| uefi/logo.h・logo.c | `ws035-p096`・`ws035-p112` を消した。条件を 1 行 1 節に、`logo_pixel` の直の return を分けた、閉じた if の後の段落、各 if の comment | DIFF-CODE。host の同値の試験（framebuffer を host の buffer にして描いた画素の hash）で一致 |
+| uefi/video.h・video.c | 著作権の header（editor の mode 行を消した）、`ws035-p112` を消した、`video_set` の結果の直の return を分けた、条件を 1 行 1 節に、各 if の comment | code の差なし |
+| uefi/include/uefi.h | 著作権の header、全部の型・関数の型の群・GUID の定数の役の comment | — |
+| uefi/transition.S | 著作権の header、「Stage 3」を「the third progress block」に、`ws035-p096` を消した | code の差なし |
+| uefi/README.md | `ws035-p096`・`ws174` を消した | — |
 
 ## 結果
 
@@ -78,6 +90,15 @@ Status: in-progress（2026-10-18 q1256-i01、P2）
 
 - 2026-10-18 include・pcat・pc98・tests・README: amd64・pcat・pc98 の build は warning 0、比べの `DIFF-CODE` は上の common・bios の 3 つ
   （とそれを含む image）のままで、include・.S・.ld の直しによる code の差は無い。tests の payload の object は旧の source の object と code が同じ。
+
+- 2026-10-19 uefi: amd64・pcat・pc98 の build は warning 0。比べ（[tests/compare-build.sh](../tests/compare-build.sh)）の `DIFF-CODE` は uefi の
+  bootx64.o・elf64.o・logo.o・memory-map.o・volume-discovery.o・zedbsd-config.o・common-memory-map.o と BIOS の bios-fat-directory・bios-zedbsd-config・common-memory-map。
+  boot-keys.o・framebuffer.o・memory-map-v6.o・video.o・transition.o・common-boot-override.o・common-logo-path.o は code の差なし。
+  host の同値の試験 `diff-run.sh ed2f1b265 build/p2-ws262/diff4`（common・bios・uefi の純粋な helper の 17 種、20000 回）: 375058 行の出力が一致（PASS）。
+  bootx64.c は firmware の呼び出しが主で host の試験は無い。分けた関数と条件は元の評価の順・出力の順と 1 つずつ照らした。
+- 条件の中に残した呼び出しの形は `EFI_ERROR()`（macro、関数の呼び出しではない）と `sizeof` だけ（grep で数えた）。
+- 規約の外で見つけた既存の欠け（直さない、報告のみ）: `console_ascii` の UTF-16 の buffer（128）は、125 文字目に改行があると `\r` を足した後に 127 になり、
+  `used == 126U` の書き出しを飛び越えて buffer を超えうる（基準の source でも同じ）。
 
 ## x68k の比べ
 

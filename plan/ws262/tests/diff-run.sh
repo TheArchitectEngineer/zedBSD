@@ -13,7 +13,7 @@ base=$1
 out=$2
 top=$(cd "$(dirname "$0")/../../.." && pwd)
 cc=${HOSTCC:-cc}
-sources="bootloader/common/memory-map.c bootloader/common/logo-path.c bootloader/common/boot-override.c bootloader/bios/memory-map.c bootloader/bios/fat-directory.c bootloader/bios/logo.c"
+sources="bootloader/common/memory-map.c bootloader/common/logo-path.c bootloader/common/boot-override.c bootloader/bios/memory-map.c bootloader/bios/fat-directory.c bootloader/bios/logo.c bootloader/uefi/zedbsd-config.c bootloader/uefi/elf64.c bootloader/uefi/framebuffer.c bootloader/uefi/memory-map.c bootloader/uefi/memory-map-v6.c bootloader/uefi/logo.c bootloader/uefi/volume-discovery.c"
 
 mkdir -p "$out/old" "$out/new"
 git -C "$top" archive "$base" bootloader include | tar -x -C "$out/old"

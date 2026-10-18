@@ -1,13 +1,27 @@
-/* Minimal UEFI x64 declarations used by the zedBSD loader. */
-/* Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib */
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The minimal UEFI x64 declarations used by the zedBSD loader.
+ *
+ * Only the services and fields the loader uses are typed; every other table
+ * slot keeps its place as an untyped pointer.
+ */
+
 #ifndef KERN_BOOTLOADER_UEFI_H
 #define KERN_BOOTLOADER_UEFI_H
 
 #include <stddef.h>
 #include <stdint.h>
 
+/* The firmware's calling convention. */
 #define EFIAPI __attribute__((ms_abi))
 
+/* The UEFI specification's scalar types. */
 typedef uint8_t BOOLEAN;
 typedef uint16_t CHAR16;
 typedef int16_t INT16;
@@ -20,6 +34,7 @@ typedef uintptr_t UINTN;
 typedef uint32_t UINT32;
 typedef uint64_t UINT64;
 
+/* The status codes the loader tells apart; an error has the top bit set. */
 #define EFI_SUCCESS ((EFI_STATUS)0)
 #define EFI_LOAD_ERROR (0x8000000000000001ULL)
 #define EFI_INVALID_PARAMETER (0x8000000000000002ULL)
@@ -35,9 +50,11 @@ typedef uint64_t UINT64;
 #define EFI_ACCESS_DENIED (0x800000000000000fULL)
 #define EFI_ERROR(status) (((status) & 0x8000000000000000ULL) != 0)
 
+/* The file open mode and attribute the loader uses. */
 #define EFI_FILE_MODE_READ 0x0000000000000001ULL
 #define EFI_FILE_DIRECTORY 0x0000000000000010ULL
 
+/* How AllocatePages chooses the pages. */
 enum efi_allocate_type {
 	AllocateAnyPages,
 	AllocateMaxAddress,
@@ -45,6 +62,7 @@ enum efi_allocate_type {
 	MaxAllocateType
 };
 
+/* The memory types of the firmware's memory map and allocations. */
 enum efi_memory_type {
 	EfiReservedMemoryType,
 	EfiLoaderCode,
@@ -65,12 +83,14 @@ enum efi_memory_type {
 	EfiMaxMemoryType
 };
 
+/* How LocateHandleBuffer chooses the handles. */
 enum efi_locate_search_type {
 	AllHandles,
 	ByRegisterNotify,
 	ByProtocol
 };
 
+/* A protocol or table identifier. */
 typedef struct {
 	uint32_t Data1;
 	uint16_t Data2;
@@ -78,6 +98,7 @@ typedef struct {
 	uint8_t Data4[8];
 } EFI_GUID;
 
+/* The header every UEFI table starts with. */
 typedef struct {
 	UINT64 Signature;
 	UINT32 Revision;
@@ -86,11 +107,13 @@ typedef struct {
 	UINT32 Reserved;
 } EFI_TABLE_HEADER;
 
+/* One entry of the system table's configuration tables, such as ACPI's. */
 typedef struct {
 	EFI_GUID VendorGuid;
 	void *VendorTable;
 } EFI_CONFIGURATION_TABLE;
 
+/* One range of the firmware's memory map. */
 typedef struct {
 	UINT32 Type;
 	UINT32 Pad;
@@ -100,6 +123,7 @@ typedef struct {
 	UINT64 Attribute;
 } EFI_MEMORY_DESCRIPTOR;
 
+/* A time stamp of a file. */
 typedef struct {
 	uint16_t Year;
 	uint8_t Month;
@@ -114,6 +138,7 @@ typedef struct {
 	uint8_t Pad2;
 } EFI_TIME;
 
+/* The information GetInfo reports for a file. */
 typedef struct {
 	UINT64 Size;
 	UINT64 FileSize;
@@ -125,6 +150,7 @@ typedef struct {
 	CHAR16 FileName[1];
 } EFI_FILE_INFO;
 
+/* The protocol structures the function types below refer to. */
 struct efi_simple_text_output_protocol;
 struct efi_boot_services;
 struct efi_system_table;
@@ -132,15 +158,18 @@ struct efi_file_protocol;
 struct efi_graphics_output_protocol;
 struct efi_block_io_protocol;
 
+/* The header of one device path node. */
 typedef struct {
 	uint8_t Type;
 	uint8_t SubType;
 	uint8_t Length[2];
 } EFI_DEVICE_PATH_PROTOCOL;
 
+/* Writes a string to a text console. */
 typedef EFI_STATUS(EFIAPI *EFI_TEXT_STRING)(
     struct efi_simple_text_output_protocol *, const CHAR16 *);
 
+/* The text console the loader writes its messages to. */
 typedef struct efi_simple_text_output_protocol {
 	void *Reset;
 	EFI_TEXT_STRING OutputString;
@@ -183,6 +212,7 @@ typedef struct {
 #define EFI_TOGGLE_STATE_VALID 0x80U
 #define EFI_KEY_STATE_EXPOSED 0x40U
 
+/* The extended console input, which its own function pointers refer to. */
 struct efi_simple_text_input_ex_protocol;
 
 /* The extended console input: key events with the modifier keys' state. */
@@ -198,6 +228,7 @@ typedef struct efi_simple_text_input_ex_protocol {
 	void *UnregisterKeyNotify;
 } EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL;
 
+/* The boot services the loader calls. */
 typedef EFI_STATUS(EFIAPI *EFI_ALLOCATE_PAGES)(int, int, UINTN,
 					       EFI_PHYSICAL_ADDRESS *);
 typedef EFI_STATUS(EFIAPI *EFI_FREE_PAGES)(EFI_PHYSICAL_ADDRESS, UINTN);
@@ -213,6 +244,7 @@ typedef EFI_STATUS(EFIAPI *EFI_LOCATE_PROTOCOL)(const EFI_GUID *, void *,
 typedef EFI_STATUS(EFIAPI *EFI_LOCATE_HANDLE_BUFFER)(
 	int, const EFI_GUID *, void *, UINTN *, EFI_HANDLE **);
 
+/* The boot services table, valid until ExitBootServices. */
 typedef struct efi_boot_services {
 	EFI_TABLE_HEADER Hdr;
 	void *RaiseTPL;
@@ -261,6 +293,7 @@ typedef struct efi_boot_services {
 	void *CreateEventEx;
 } EFI_BOOT_SERVICES;
 
+/* The system table the firmware passes to the loader. */
 typedef struct efi_system_table {
 	EFI_TABLE_HEADER Hdr;
 	CHAR16 *FirmwareVendor;
@@ -277,6 +310,7 @@ typedef struct efi_system_table {
 	EFI_CONFIGURATION_TABLE *ConfigurationTable;
 } EFI_SYSTEM_TABLE;
 
+/* The loader's own image: where it was loaded from. */
 typedef struct {
 	UINT32 Revision;
 	EFI_HANDLE ParentHandle;
@@ -293,6 +327,7 @@ typedef struct {
 	void *Unload;
 } EFI_LOADED_IMAGE_PROTOCOL;
 
+/* The file services the loader calls. */
 typedef EFI_STATUS(EFIAPI *EFI_FILE_OPEN)(struct efi_file_protocol *,
 					  struct efi_file_protocol **,
 					  const CHAR16 *, UINT64, UINT64);
@@ -304,6 +339,7 @@ typedef EFI_STATUS(EFIAPI *EFI_FILE_SET_POSITION)(struct efi_file_protocol *,
 typedef EFI_STATUS(EFIAPI *EFI_FILE_GET_INFO)(struct efi_file_protocol *,
 					      const EFI_GUID *, UINTN *, void *);
 
+/* An open file or directory of a volume. */
 typedef struct efi_file_protocol {
 	UINT64 Revision;
 	EFI_FILE_OPEN Open;
@@ -322,12 +358,16 @@ typedef struct efi_file_protocol {
 	void *FlushEx;
 } EFI_FILE_PROTOCOL;
 
+/* Opens a volume's root directory. */
 typedef EFI_STATUS(EFIAPI *EFI_OPEN_VOLUME)(void *, EFI_FILE_PROTOCOL **);
+
+/* A volume with a file system the firmware reads. */
 typedef struct {
 	UINT64 Revision;
 	EFI_OPEN_VOLUME OpenVolume;
 } EFI_SIMPLE_FILE_SYSTEM_PROTOCOL;
 
+/* The medium behind a block device. */
 typedef struct {
 	UINT32 MediaId;
 	BOOLEAN RemovableMedia;
@@ -340,9 +380,11 @@ typedef struct {
 	UINT64 LastBlock;
 } EFI_BLOCK_IO_MEDIA;
 
+/* Reads blocks of a block device. */
 typedef EFI_STATUS(EFIAPI *EFI_BLOCK_READ)(struct efi_block_io_protocol *,
 					   UINT32, UINT64, UINTN, void *);
 
+/* A block device the loader reads a volume's boot sector from. */
 typedef struct efi_block_io_protocol {
 	UINT64 Revision;
 	EFI_BLOCK_IO_MEDIA *Media;
@@ -352,6 +394,7 @@ typedef struct efi_block_io_protocol {
 	void *FlushBlocks;
 } EFI_BLOCK_IO_PROTOCOL;
 
+/* The layout of a graphics mode's pixels. */
 enum efi_graphics_pixel_format {
 	PixelRedGreenBlueReserved8BitPerColor,
 	PixelBlueGreenRedReserved8BitPerColor,
@@ -360,6 +403,7 @@ enum efi_graphics_pixel_format {
 	PixelFormatMax
 };
 
+/* The channel masks of a PixelBitMask mode. */
 typedef struct {
 	UINT32 RedMask;
 	UINT32 GreenMask;
@@ -367,6 +411,7 @@ typedef struct {
 	UINT32 ReservedMask;
 } EFI_PIXEL_BITMASK;
 
+/* The description of one graphics mode. */
 typedef struct {
 	UINT32 Version;
 	UINT32 HorizontalResolution;
@@ -376,6 +421,7 @@ typedef struct {
 	UINT32 PixelsPerScanLine;
 } EFI_GRAPHICS_OUTPUT_MODE_INFORMATION;
 
+/* The active graphics mode and its framebuffer. */
 typedef struct {
 	UINT32 MaxMode;
 	UINT32 Mode;
@@ -385,6 +431,7 @@ typedef struct {
 	UINTN FrameBufferSize;
 } EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE;
 
+/* The graphics output the loader picks a mode and a framebuffer from. */
 typedef struct efi_graphics_output_protocol {
 	EFI_STATUS (EFIAPI *QueryMode)(struct efi_graphics_output_protocol *,
 	    UINT32, UINTN *, EFI_GRAPHICS_OUTPUT_MODE_INFORMATION **);
@@ -393,6 +440,11 @@ typedef struct efi_graphics_output_protocol {
 	EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE *Mode;
 } EFI_GRAPHICS_OUTPUT_PROTOCOL;
 
+/*
+ * The identifiers of the protocols and tables the loader asks the firmware
+ * for.  Each translation unit that includes this header has its own copy;
+ * they are constants and never change.
+ */
 static const EFI_GUID EFI_LOADED_IMAGE_PROTOCOL_GUID = {
     0x5b1b31a1,
     0x9562,

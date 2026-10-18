@@ -13,7 +13,7 @@ the selected FAT UUID and normalizes relative overlay/data/swap files.  It
 does not consume UEFI LoadOptions and has no fixed-kernel or embedded-parameter
 fallback.
 
-Two tokens of the parameter lines are also the loader's (ws035-p096).
+Two tokens of the parameter lines are also the loader's.
 `logo=PATH` names a binary PPM (P6, maximum value 255, at most 4096 pixels a
 side, at most 16 MiB) on the same FAT; the loader fills the screen with the
 colour of its top-left pixel, draws it in the middle, and from then on writes
@@ -24,7 +24,7 @@ stays until the kernel takes the screen.  Both stay in the parameter record;
 the kernel ignores `logo=` and reads `kmsg=`.  The images put
 `tools/build/make-boot-logo.py`'s logo on the ESP as `/logo.ppm`.
 
-Two keys change one boot without editing the file (ws174).  The loader reads
+Two keys change one boot without editing the file.  The loader reads
 the firmware's extended console input (`EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL`)
 when it starts, asking for exposed modifier keys, and again right after it
 parses the configuration: each time it drains the key queue and takes the
