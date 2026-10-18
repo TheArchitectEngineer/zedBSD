@@ -2,11 +2,11 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: uncleared（q46 object assignment/array shrink partial cleared、whole Proxy未達）
+Status: in-progress（q47 nested noncallable target partial、whole Proxy未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
-Queue: ws074-q20261018-46-i01（q30〜q45 partial履歴保持、current projection修正）
+Queue: ws074-q20261018-47-i01（q30〜q46 partial履歴保持）
 Origin: p189/q29 original WebIDL2 parseがProxy未定義で停止。
 
 Objective / own criteria: native managed Proxyを実object internal methodsへ接続し、constructor/revocableと各internal operationのtrap/fallback/invariant/receiver/revocation/callability/GCを正しく実行する。original WebIDL2 actual parse/validatorに必要なget/set/array behaviorを通常APIで提供し、independent controls/原WPTを通す。部分read stageだけでwholeをclearしない。
@@ -257,3 +257,5 @@ whole p258/WS/p100/full target/100%未達。primitive Set exotic prototype/outer
 Archives: harness-all-raw 1676 members SHA2564247433ec00c0cb9f7d6fcae320b1c9dd8f346ce90517456351ec87d79b60589, native-oracle-and-build-raw 105 members SHA2566d9d8c2eb89140b18348d19735c5ed805d463faa4100e59f83b6a748a96d976eを全member read-back。runtime binaryはhash付きbuild保持・archive非同梱。
 
 [証拠](evidence/20261018-q46/README.md)。次finite scope未選定。
+
+Event ws074-p258-q47-selection: remaining target invariant照会realm化/current snapshot extent前tracingとprivate factory nested bound解除だけ選定。callable/global拒否を保持。[exact Queue](../queue.md)。native sole snapshot payload actualGC/回収と全internal nested実対照、wholeは未達。
