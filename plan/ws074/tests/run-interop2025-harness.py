@@ -161,7 +161,7 @@ def run(args):
     if not args.program.is_file():
         raise ValueError("browser program is absent")
     server = WptServer(("127.0.0.1", 0), functools.partial(WptHandler, directory=str(wpt)))
-    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     worker.start()
     url = "http://127.0.0.1:%d%s" % (server.server_port, args.test_id)
     command = ([str(args.program), "--run", "--settle-ms=%d" % args.settle_ms] +
