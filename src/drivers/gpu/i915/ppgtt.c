@@ -35,16 +35,15 @@
 /* Session tables the driver fills: present, writable, PAT index 0. */
 #define I915_PPGTT_TABLE_BITS		(I915_GT_GEN8_PAGE_PRESENT | I915_GT_GEN8_PAGE_RW)
 
-/* Session scratch tables mirror Linux's uncached page-directory encoding (PAT index 3). */
+/* Session scratch tables are encoded uncached, PAT index 3, like the kernel PPGTT's scratch directories. */
 #define I915_PPGTT_SCRATCH_TABLE_BITS	(I915_GT_GEN8_PAGE_PRESENT | I915_GT_GEN8_PAGE_RW | I915_GT_GEN12_PPGTT_PTE_PAT0 | I915_GT_GEN12_PPGTT_PTE_PAT1)
 
 static void i915_gt_fill_px(struct i915_gt_object *object, uint64_t value, unsigned count);
-static unsigned i915_gt_ppgtt_pd_range(uint64_t start, uint64_t end, int lvl, unsigned *idx);
-static unsigned i915_gt_ppgtt_pt_count(uint64_t start, uint64_t end);
 static struct i915_gt_ppgtt_table *i915_gt_ppgtt_child_of(struct i915_gt_ppgtt *pp, const struct i915_gt_object *parent, unsigned idx);
 static int i915_gt_ppgtt_new_table(struct i915_gt_mem *gm, struct i915_gt_ppgtt *pp, struct i915_gt_object *pd, unsigned idx, int lvl, struct i915_gt_ppgtt_table **result);
-static int i915_gt_ppgtt_alloc_level(struct i915_gt_mem *gm, struct i915_gt_ppgtt *pp, struct i915_gt_object *pd, uint64_t *start, uint64_t end, int lvl);
-static int i915_gt_ppgtt_foreach_level(struct i915_gt_ppgtt *pp, struct i915_gt_object *pd, uint64_t *start, uint64_t end, int lvl, i915_gt_ppgtt_pt_fn fn, void *data);
+static unsigned i915_gt_ppgtt_slot(uint64_t page, int level);
+static int i915_gt_ppgtt_descend(struct i915_gt_mem *gm, struct i915_gt_ppgtt *pp, uint64_t page, int allocate, struct i915_gt_ppgtt_table **result);
+static uint64_t i915_gt_ppgtt_next_leaf(uint64_t page);
 static int i915_gt_ppgtt_leaf_table(struct i915_gt_ppgtt *pp, uint64_t idx, struct i915_gt_object **result);
 static int i915_ppgtt_insert_bits(struct i915_ppgtt *vm, uint64_t va, uint64_t physical, unsigned pages, uint64_t bits);
 static int i915_ppgtt_page_alloc(struct i915_ppgtt *vm, struct kern_pmem *run, uint64_t fill);
@@ -54,69 +53,64 @@ static void i915_ppgtt_fill(void *table, uint64_t value);
 static unsigned i915_ppgtt_index(uint64_t va, unsigned level);
 
 /*
- * Encodes a Gen12 PPGTT leaf entry (gen12_pte_encode).
+ * Encodes a Gen12 PPGTT leaf entry for a system-memory page.
  *
- * Alder Lake-P never passes PTE_READ_ONLY (vm->has_read_only is false on
- * graphics versions 11 and 12) and never PTE_LM (system memory), so only
- * PRESENT, RW and the PAT index bits appear.  MTL_PPGTT_PTE_PAT3 (bit 62)
- * is Meteor Lake only; Alder Lake-P has no index of 8 or more.
+ * The driver maps no read-only and no local-memory page, so only PRESENT,
+ * RW and the three PAT index bits appear; no index of 8 or more is used.
  */
 uint64_t
-drv_i915_gen12_ppgtt_pte_encode(
+drv_i915_ppgtt_leaf_encode(
 	uint64_t dma,
 	unsigned pat_index)
 {
 	uint64_t pte;
 
 	/* A system-memory page the GPU may read and write. */
-	pte = dma | I915_GEN8_PAGE_PRESENT_B | I915_GEN8_PAGE_RW_B;
+	pte = dma | I915_PPGTT_BIT_PRESENT | I915_PPGTT_BIT_RW;
 
 	/* Spreads the PAT index over its three bits. */
 	if ((pat_index & 1U) != 0U)
-		pte |= I915_GEN12_PTE_PAT0;
+		pte |= I915_PPGTT_BIT_PAT0;
 	if ((pat_index & 2U) != 0U)
-		pte |= I915_GEN12_PTE_PAT1;
+		pte |= I915_PPGTT_BIT_PAT1;
 	if ((pat_index & 4U) != 0U)
-		pte |= I915_GEN12_PTE_PAT2;
+		pte |= I915_PPGTT_BIT_PAT2;
 
 	/* Succeeded: the leaf entry. */
 	return pte;
 }
 
 /*
- * Encodes an uncached directory entry (gen8_pde_encode with I915_CACHE_NONE).
+ * Encodes an uncached directory entry: PWT and PCD set.
  *
  * Every scratch directory level uses it.
  */
 uint64_t
-drv_i915_gen8_pde_encode(
+drv_i915_ppgtt_dir_encode_uncached(
 	uint64_t dma)
 {
 	/* Succeeded: present, writable, uncached. */
-	return dma | I915_GEN8_PAGE_PRESENT_B | I915_GEN8_PAGE_RW_B | I915_PPAT_UNCACHED;
+	return dma | I915_PPGTT_BIT_PRESENT | I915_PPGTT_BIT_RW | I915_PPGTT_DIR_UNCACHED;
 }
 
 /*
- * Encodes a cached directory entry (gen8_pde_encode with I915_CACHE_LLC).
- *
- * PPAT_CACHED_PDE is 0, write-back through the LLC; set_pd_entry() uses it
- * for every table the range allocation adds.
+ * Encodes a cached directory entry: no PAT bits, write-back through the
+ * LLC.  Every table the range allocation adds is linked with it.
  */
 uint64_t
-drv_i915_gen8_pde_encode_cached(
+drv_i915_ppgtt_dir_encode(
 	uint64_t dma)
 {
 	/* Succeeded: present and writable, with no PAT bits. */
-	return dma | I915_GEN8_PAGE_PRESENT_B | I915_GEN8_PAGE_RW_B;
+	return dma | I915_PPGTT_BIT_PRESENT | I915_PPGTT_BIT_RW;
 }
 
 /*
  * Creates the kernel PPGTT: the scratch tower and the top directory.
  *
- * This is gen8_init_scratch() followed by gen8_alloc_top_pd().  The clone
- * branch of gen8_init_scratch() is not taken: gt->vm does not exist yet when
- * the kernel address space is created, and has_read_only is false on Gen12
- * anyway.  A failure destroys whatever was built.  Returns 0, EINVAL,
+ * The scratch tower is a data page and one table per level, each filled
+ * with the level below's encoding; the top directory names the top scratch
+ * level everywhere.  A failure destroys whatever was built.  Returns 0, EINVAL,
  * ENOMEM, EIO, or ERANGE when a table page is out of the DMA mask.
  */
 int
@@ -160,8 +154,8 @@ drv_i915_gt_ppgtt_create(
 		goto fail;
 	}
 
-	/* Encodes the data page uncached: cachelevel_to_pat[I915_CACHE_NONE] is 3. */
-	pp->scratch_encode[0] = drv_i915_gen12_ppgtt_pte_encode(dma, I915_PAT_INDEX_CACHE_NONE);
+	/* Encodes the data page uncached, PAT index 3. */
+	pp->scratch_encode[0] = drv_i915_ppgtt_leaf_encode(dma, I915_PAT_INDEX_CACHE_NONE);
 
 	/* Builds each scratch level as a full page of the level below's encoding. */
 	for (level = 1U; level <= (unsigned)I915_PPGTT_TOP; level++) {
@@ -187,7 +181,7 @@ drv_i915_gt_ppgtt_create(
 			goto fail;
 		}
 
-		pp->scratch_encode[level] = drv_i915_gen8_pde_encode(dma);
+		pp->scratch_encode[level] = drv_i915_ppgtt_dir_encode_uncached(dma);
 	}
 
 	/* Creates the top directory. */
@@ -283,8 +277,8 @@ drv_i915_gt_ppgtt_destroy(
 /*
  * Allocates the page tables of a GPU range in the kernel PPGTT.
  *
- * This is gen8_ppgtt_alloc(): every missing table is a page of the level
- * below's scratch, and its parent entry is written and flushed.  The range
+ * Every missing table is a page of the level below's scratch, and its
+ * parent entry is written and flushed.  The range
  * is page aligned and inside the 48-bit space.  Returns 0, EINVAL, ENOSPC
  * when the table list is full, ENOMEM, EIO, or ERANGE.
  */
@@ -295,8 +289,10 @@ drv_i915_gt_ppgtt_alloc_range(
 	uint64_t start,
 	uint64_t length)
 {
+	struct i915_gt_ppgtt_table *leaf;
 	uint64_t first;
 	uint64_t end;
+	uint64_t page;
 	int error;
 
 	/* Refuses a missing or unbuilt space and an empty range. */
@@ -321,10 +317,12 @@ drv_i915_gt_ppgtt_alloc_range(
 	first = start >> 12;
 	end = first + (length >> 12);
 
-	/* Allocates from the top directory down. */
-	error = i915_gt_ppgtt_alloc_level(gm, pp, pp->top_pd, &first, end, pp->top);
-	if (error != 0)
-		return error;
+	/* Gives each leaf table the range touches its directories, in ascending order. */
+	for (page = first; page < end; page = i915_gt_ppgtt_next_leaf(page)) {
+		error = i915_gt_ppgtt_descend(gm, pp, page, 1, &leaf);
+		if (error != 0)
+			return error;
+	}
 
 	/* Succeeded: every page of the range has a leaf entry. */
 	return 0;
@@ -333,8 +331,8 @@ drv_i915_gt_ppgtt_alloc_range(
 /*
  * Calls a function for every leaf table of a range, in ascending order.
  *
- * This is gen8_ppgtt_foreach(), which walks only allocated ranges: a
- * missing table ends the walk with ENOENT.  Returns 0, EINVAL, or ENOENT.
+ * Only allocated ranges are walked: a missing table ends the walk with
+ * ENOENT.  Returns 0, EINVAL, or ENOENT.
  */
 int
 drv_i915_gt_ppgtt_foreach_pt(
@@ -344,8 +342,10 @@ drv_i915_gt_ppgtt_foreach_pt(
 	i915_gt_ppgtt_pt_fn fn,
 	void *data)
 {
+	struct i915_gt_ppgtt_table *leaf;
 	uint64_t first;
 	uint64_t end;
+	uint64_t page;
 	int error;
 
 	/* Refuses a missing or unbuilt space, a missing function and an empty or unaligned range. */
@@ -364,20 +364,23 @@ drv_i915_gt_ppgtt_foreach_pt(
 	first = start >> 12;
 	end = first + (length >> 12);
 
-	/* Walks from the top directory down. */
-	error = i915_gt_ppgtt_foreach_level(pp, pp->top_pd, &first, end, pp->top, fn, data);
-	if (error != 0)
-		return error;
+	/* Hands each leaf table the range touches to the function, in ascending order. */
+	for (page = first; page < end; page = i915_gt_ppgtt_next_leaf(page)) {
+		error = i915_gt_ppgtt_descend(NULL, pp, page, 0, &leaf);
+		if (error != 0)
+			return error;
+		fn(pp, leaf->obj, leaf->dma, data);
+	}
 
 	/* Succeeded: every leaf table of the range was visited. */
 	return 0;
 }
 
 /*
- * Writes one leaf entry of the kernel PPGTT (gen8_ppgtt_insert_entry).
+ * Writes one leaf entry of the kernel PPGTT.
  *
  * The tables above the entry must already exist.  The entry is flushed
- * after it is written (drm_clflush_virt_range(&vaddr[idx], 8)).  Returns 0,
+ * after it is written.  Returns 0,
  * EINVAL, or ENOENT when a table is missing.
  */
 int
@@ -406,7 +409,7 @@ drv_i915_gt_ppgtt_insert_page(
 
 	/* Writes the entry and flushes it for the table walker. */
 	entry = &((uint64_t *)table->cpu)[(offset >> 12) & 511U];
-	*entry = drv_i915_gen12_ppgtt_pte_encode(dma, pat_index);
+	*entry = drv_i915_ppgtt_leaf_encode(dma, pat_index);
 	drv_i915_gt_clflush(entry, sizeof(uint64_t));
 
 	/* Succeeded: the GPU translates the page to dma. */
@@ -416,8 +419,8 @@ drv_i915_gt_ppgtt_insert_page(
 /*
  * Points one leaf entry of the kernel PPGTT back at the scratch page.
  *
- * This is gen8_ppgtt_clear() for one page: the entry takes the space's
- * scratch encoding and is flushed; the tables stay.  Returns 0, EINVAL, or
+ * The entry takes the space's scratch encoding and is flushed; the tables
+ * stay.  Returns 0, EINVAL, or
  * ENOENT when a table is missing.
  */
 int
@@ -606,7 +609,7 @@ drv_i915_ppgtt_insert(
 /*
  * Maps physically contiguous pages into a session address space, uncached.
  *
- * PAT index 3 is Linux's I915_CACHE_NONE: pages the display engine reads,
+ * PAT index 3 is uncached: pages the display engine reads,
  * which does not snoop the LLC, so a GPU write must reach memory rather
  * than stay in the cache.  Returns 0, EINVAL, or ENOMEM.
  */
@@ -662,7 +665,7 @@ drv_i915_ppgtt_clear(
 	kern_io_write_barrier();
 }
 
-/* Fills every given entry of a kernel table page with one value, then flushes the page (fill_page_dma). */
+/* Fills every given entry of a kernel table page with one value, then flushes the page. */
 static void
 i915_gt_fill_px(
 	struct i915_gt_object *object,
@@ -679,47 +682,6 @@ i915_gt_fill_px(
 
 	/* Writes the whole page back for the table walker. */
 	drv_i915_gt_clflush(object->cpu, I915_GT_PAGE_BYTES);
-}
-
-/* Reports how many entries of one directory level a page-index range covers, and the first one. */
-static unsigned
-i915_gt_ppgtt_pd_range(
-	uint64_t start,
-	uint64_t end,
-	int lvl,
-	unsigned *idx)
-{
-	unsigned shift;
-	uint64_t mask;
-
-	/* Each level indexes with 9 bits, level 0 being the PT. */
-	shift = (unsigned)lvl * 9U;
-	mask = ~(uint64_t)0 << ((unsigned)(lvl + 1) * 9U);
-
-	/* Rounds the end up to the entry that holds it. */
-	end += (~mask) >> 9;
-	*idx = (unsigned)((start >> shift) & 511U);
-
-	/* A range that leaves this directory covers every entry to its end. */
-	if (((start ^ end) & mask) != 0U)
-		return 512U - *idx;
-
-	/* Succeeded: the range ends inside this directory. */
-	return (unsigned)((end >> shift) & 511U) - *idx;
-}
-
-/* Reports how many pages of a page-index range one leaf table covers. */
-static unsigned
-i915_gt_ppgtt_pt_count(
-	uint64_t start,
-	uint64_t end)
-{
-	/* A range that leaves the table covers it to its end. */
-	if (((start ^ end) >> 9) != 0U)
-		return 512U - (unsigned)(start & 511U);
-
-	/* Succeeded: the range ends inside the table. */
-	return (unsigned)(end - start);
 }
 
 /* Finds the table a directory entry names among the tables the kernel PPGTT allocated. */
@@ -799,9 +761,9 @@ i915_gt_ppgtt_new_table(
 	table->dma = dma;
 	pp->n_tables++;
 
-	/* Writes the parent entry and flushes it (set_pd_entry, write_dma_entry). */
+	/* Writes the parent entry and flushes it. */
 	entry = &((uint64_t *)pd->cpu)[idx];
-	*entry = drv_i915_gen8_pde_encode_cached(dma);
+	*entry = drv_i915_ppgtt_dir_encode(dma);
 	drv_i915_gt_clflush(entry, sizeof(uint64_t));
 
 	*result = table;
@@ -810,101 +772,67 @@ i915_gt_ppgtt_new_table(
 	return 0;
 }
 
-/* Allocates the missing tables below one directory for a page-index range (__gen8_ppgtt_alloc). */
+/* Returns the entry index of a page index in a table of one level; level 0 is the leaf table. */
+static unsigned
+i915_gt_ppgtt_slot(
+	uint64_t page,
+	int level)
+{
+	/* Each level indexes with 9 bits of the page index. */
+	return (unsigned)((page >> ((unsigned)level * 9U)) & 511U);
+}
+
+/*
+ * Finds the leaf table that holds a page index, descending from the top
+ * directory.  With allocate set, a directory entry that still names scratch
+ * gets a new table; without it, such an entry ends the descent with ENOENT.
+ */
 static int
-i915_gt_ppgtt_alloc_level(
+i915_gt_ppgtt_descend(
 	struct i915_gt_mem *gm,
 	struct i915_gt_ppgtt *pp,
-	struct i915_gt_object *pd,
-	uint64_t *start,
-	uint64_t end,
-	int lvl)
+	uint64_t page,
+	int allocate,
+	struct i915_gt_ppgtt_table **result)
 {
-	struct i915_gt_ppgtt_table *table;
-	unsigned idx;
-	unsigned len;
+	struct i915_gt_ppgtt_table *child;
+	struct i915_gt_object *table;
+	unsigned slot;
+	int level;
 	int error;
 
-	/* Finds the entries of this directory the range covers; their tables are one level down. */
-	len = i915_gt_ppgtt_pd_range(*start, end, lvl, &idx);
-	lvl--;
+	/* Descends one directory per level. */
+	child = NULL;
+	table = pp->top_pd;
+	for (level = pp->top; level > 0; level--) {
+		slot = i915_gt_ppgtt_slot(page, level);
+		child = i915_gt_ppgtt_child_of(pp, table, slot);
+		if (child == NULL) {
+			/* The entry still names scratch. */
+			if (allocate == 0)
+				return ENOENT;
 
-	/* Visits every covered entry. */
-	for (;;) {
-		/* Allocates the entry's table when it still names scratch. */
-		table = i915_gt_ppgtt_child_of(pp, pd, idx);
-		if (table == NULL) {
-			error = i915_gt_ppgtt_new_table(gm, pp, pd, idx, lvl, &table);
+			/* Creates the table one level down and links it in. */
+			error = i915_gt_ppgtt_new_table(gm, pp, table, slot, level - 1, &child);
 			if (error != 0)
 				return error;
 		}
-
-		/* Descends into a directory, or moves past the pages a leaf table covers. */
-		if (lvl != 0) {
-			error = i915_gt_ppgtt_alloc_level(gm, pp, table->obj, start, end, lvl);
-			if (error != 0)
-				return error;
-		} else {
-			*start += i915_gt_ppgtt_pt_count(*start, end);
-		}
-
-		/* Moves to the next entry until every covered one is done. */
-		idx++;
-		len--;
-		if (len == 0U)
-			break;
+		table = child->obj;
 	}
 
-	/* Succeeded: every covered entry names a table. */
+	*result = child;
+
+	/* Succeeded: the leaf table of the page. */
 	return 0;
 }
 
-/* Calls the function for every leaf table below one directory for a page-index range (__gen8_ppgtt_foreach). */
-static int
-i915_gt_ppgtt_foreach_level(
-	struct i915_gt_ppgtt *pp,
-	struct i915_gt_object *pd,
-	uint64_t *start,
-	uint64_t end,
-	int lvl,
-	i915_gt_ppgtt_pt_fn fn,
-	void *data)
+/* Returns the first page index of the leaf table after the one holding a page index. */
+static uint64_t
+i915_gt_ppgtt_next_leaf(
+	uint64_t page)
 {
-	struct i915_gt_ppgtt_table *table;
-	unsigned idx;
-	unsigned len;
-	int error;
-
-	/* Finds the entries of this directory the range covers; their tables are one level down. */
-	len = i915_gt_ppgtt_pd_range(*start, end, lvl, &idx);
-	lvl--;
-
-	/* Visits every covered entry. */
-	for (;;) {
-		/* Linux walks only allocated ranges; a missing table ends the walk. */
-		table = i915_gt_ppgtt_child_of(pp, pd, idx);
-		if (table == NULL)
-			return ENOENT;
-
-		/* Descends into a directory, or hands a leaf table to the function. */
-		if (lvl != 0) {
-			error = i915_gt_ppgtt_foreach_level(pp, table->obj, start, end, lvl, fn, data);
-			if (error != 0)
-				return error;
-		} else {
-			fn(pp, table->obj, table->dma, data);
-			*start += i915_gt_ppgtt_pt_count(*start, end);
-		}
-
-		/* Moves to the next entry until every covered one is done. */
-		idx++;
-		len--;
-		if (len == 0U)
-			break;
-	}
-
-	/* Succeeded: every leaf table below this directory was visited. */
-	return 0;
+	/* A leaf table covers 512 pages. */
+	return (page | 511U) + 1U;
 }
 
 /* Finds the kernel leaf table that holds a page index. */
@@ -914,21 +842,15 @@ i915_gt_ppgtt_leaf_table(
 	uint64_t idx,
 	struct i915_gt_object **result)
 {
-	struct i915_gt_ppgtt_table *child;
-	struct i915_gt_object *table;
-	int lvl;
+	struct i915_gt_ppgtt_table *leaf;
+	int error;
 
-	/* Descends from the top directory through the allocated tables. */
-	table = pp->top_pd;
-	for (lvl = pp->top; lvl > 0; lvl--) {
-		/* A directory entry that still names scratch has no table below it. */
-		child = i915_gt_ppgtt_child_of(pp, table, (unsigned)((idx >> ((unsigned)lvl * 9U)) & 511U));
-		if (child == NULL)
-			return ENOENT;
-		table = child->obj;
-	}
+	/* Descends through the allocated tables only. */
+	error = i915_gt_ppgtt_descend(NULL, pp, idx, 0, &leaf);
+	if (error != 0)
+		return error;
 
-	*result = table;
+	*result = leaf->obj;
 
 	/* Succeeded: the leaf table holds the page's entry. */
 	return 0;

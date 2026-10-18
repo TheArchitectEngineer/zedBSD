@@ -28,7 +28,7 @@
 static void i915_pxp_fail(struct i915_pxp *x, int error, const char *where);
 
 /*
- * Sets up protected content on the GT (intel_pxp_init()).
+ * Sets up protected content on the GT.
  *
  * Returns 0, EINVAL, ENODEV when the device has no PXP or the GT has no video
  * decode engine, or the failure of the pinned context or the streaming
@@ -119,7 +119,7 @@ drv_i915_pxp_init(
 }
 
 /*
- * Tears protected content down (intel_pxp_fini()).
+ * Tears protected content down.
  */
 void
 drv_i915_pxp_fini(

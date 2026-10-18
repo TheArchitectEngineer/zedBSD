@@ -2,7 +2,7 @@
 
 # ws244-p004 GT の core の小さい物の書き直し
 
-Status: in-progress（2026-10-18 q1251-i01、P1。cleared は Q1）
+Status: in-progress（2026-10-18 q1251-i01、2026-10-19 q1260 P1 で範囲の残りを済ませた。cleared は Q1）
 
 - 親: [WS244](../ws.md)。範囲: power.c（PCODE）・reset・tlb・device-info・ggtt・ppgtt・memory・irq・dma.h ほかの言及。動作は変えない。
 
@@ -45,9 +45,23 @@ Status: in-progress（2026-10-18 q1251-i01、P1。cleared は Q1）
 - 動作の確かめ: host 試験 `plan/ws244/tests/irq-equiv/run.sh <前の irq.c> <前の irq.h> <今の irq.c> <今の irq.h> <新しい出力の dir>`。Gen12・Gen9・GT 情報なしの 3 つで、install（display 表あり/なし、execlists/GuC、attach の失敗、stale な IIR）、uninstall（detach の失敗、2 回目）、handler（無効、spurious、Gen11 の bank 0/1 の identity・invalid・未知の class・未知の instance・bit なし・GTPM・display・GU_MISC の GSE あり/なし、Gen9 の master の各 bit と全部・PM の handler なし）、bank の serve、PM の IIR の reset（2 回で止む・16 回）、engine の wait・sequence、synchronize（均衡・timeout・time base の失敗）、register の helper で、register の読み書き・posting read・log・lock・wake・EOI・counter の全部が前の版と一致（`irq-equiv: PASS (33782 lines)`）。
 - build: amd64 の既定・I915_TESTS=y とも rc=0、warning 0、`amd64 vmunix check: PASS`。xd の host 試験 `sh plan/ws245/tests/run-xd-host-tests.sh build/ws244-xdhost` rc=0（host-kernel.c の改名の確かめ）。
 
-### 残り（再開の手順）
+### 6. ppgtt.c・ppgtt.h（kernel PPGTT の範囲の walk）— 済み（2026-10-19 q1260）
 
-1. ggtt.c（「This is intel_gt_init_scratch()」ほか）・ppgtt.c・ppgtt.h・memory.c・memory.h・dma.h・defaults.h ほか（inventory §3 の表の最後の行）: 多くは 1〜3 行の言及。手で読み、手順の写しがあれば書き直し、無ければ言及を外す。
-2. 前の版との比べ合わせ: 書き直す前に file を scratchpad に写して取っておき、`plan/ws244/tests/*-equiv/run.sh <前> <今> <新しい出力の dir>` の形で比べる。Linux 6.8.12 は build/ws229-p001/linux/linux-6.8.12.tar.xz から build/tmp の新しい dir に要る分だけ展開する。
+- 前の版は「This is gen8_ppgtt_alloc()」「gen8_ppgtt_foreach()」で、範囲の再帰の walk（`i915_gt_ppgtt_pd_range`・`pt_count`・`alloc_level`・`foreach_level`）が Linux の gen8_pd_range・gen8_pt_count・__gen8_ppgtt_alloc・__gen8_ppgtt_foreach と同じ形だった。
+- 書き直し: 再帰を外し、範囲が触る leaf table ごとに top から 1 本降りる（`i915_gt_ppgtt_descend`: 無い table は allocate なら作る、無ければ ENOENT、`i915_gt_ppgtt_next_leaf` で次の leaf へ）。alloc・foreach・insert・scratch がこの 1 つの降り方を使う。table の作られる順と親の entry の書き込みの順は前と同じ。
+- 公開の名前: `drv_i915_gen12_ppgtt_pte_encode` → `drv_i915_ppgtt_leaf_encode`、`drv_i915_gen8_pde_encode` → `drv_i915_ppgtt_dir_encode_uncached`、`drv_i915_gen8_pde_encode_cached` → `drv_i915_ppgtt_dir_encode`、bit の macro `I915_GEN8_PAGE_PRESENT_B`・`RW_B`・`I915_GEN12_PTE_PAT0..2`・`I915_PPAT_UNCACHED` → `I915_PPGTT_BIT_PRESENT`・`RW`・`PAT0..2`・`I915_PPGTT_DIR_UNCACHED`（block に `Values referenced: Linux v6.19 …/intel_gtt.h`）。呼び手 tests/execution/ktest-gt.c・ppgtt-walk.c・tests/contracts/pte_contract_test.c を追従。header と comment の Linux の名前（has_read_only、gen8_init_scratch など）を外した。
+- 動作の確かめ: host 試験 `plan/ws244/tests/ppgtt-equiv/run.sh <前の ppgtt.c> <前の ppgtt.h> <今の ppgtt.c> <今の ppgtt.h> <新しい出力の dir>`。encode 3 つ、create の失敗 6 つと DMA の範囲外 2 つ、8 つの範囲（1 page、PT 跨ぎ、PD 跨ぎ 4 MiB、PDP 跨ぎ、512 GiB 跨ぎ、2 MiB ちょうど、10 MiB、48 bit の最後）での alloc 前の foreach・insert、alloc、2 回目の alloc、foreach、広い foreach（ENOENT）、insert、scratch、不正な引数、destroy、table の一覧の満杯（ENOSPC）、作成の失敗と DMA の範囲外、session の PPGTT の create・va・insert・uncached・clear・destroy・失敗で、作成・flush と書いた値・table の一覧・結果が前の版と一致（`ppgtt-equiv: PASS (774 lines)`）。pte の contract 試験は run.sh が host の rm を使うので、同じ compile の手順を build/ws244-pte で手で流した: `== 21 checks, 0 failures ==`。
 
-- pcode-equiv・reset-equiv・device-info-equiv・irq-equiv の試験は開発の確かめ用（前の版を入力に取る）。p004 が cleared になったら消してよい（path を Q1 へ）。
+### 7. ほかの言及の掃除 — 済み（2026-10-19 q1260）
+
+- ggtt.c（gen8_ggtt_invalidate・intel_gt_init_scratch・PIN_HIGH の説明 → 自前の説明と `Procedure referenced:`、GFX_FLSH_CNTL の値に `Values referenced: Linux v6.19 …/intel_gt_regs.h`）、memory.c・memory.h（drm_i915_gem_object・write_dma_entry ほかの言及）、dma.h（「the Linux call it stands for」）、migrate.h・migrate.c（intel_migrate_init・migrate_vm の手順の説明を自前の説明に）、pxp.h・pxp.c（intel_pxp_init・pxp_init_full の表を自前の説明に）、park.h、runtime-pm.c・.h（intel_runtime_pm_*・local_pci_probe）、sync.h（__intel_wait_for_register_fw・struct completion）、workqueue.h（work_struct・delayed_work）、mmio.c（forcewake の表の「the reference's table」）、device.c（i915_driver_probe の順・intel_gt_init・gen8_irq_reset の言及、PSR・PCH の register に `Values referenced: Linux v6.19`）。comment だけで code は変えていない。device->stage の文字列と log の文言は変えていない。
+- defaults.h・defaults.c（__engines_record_defaults の流れ）と worker.c（gen8_emit_*・execbuf の言及）は submit の流れの一部なので p005 に回した（下の残り）。
+
+### build（2026-10-19、6・7 の後）
+
+- amd64 の既定・I915_TESTS=y（既定の組）・I915_TEST_SET=vke2・I915_TEST_SET=execution の 4 つとも rc=0、warning 0、`amd64 vmunix check: PASS`（BUILD=build/ws244・ws244-i915t・ws244-vke2・ws244-execution）。
+
+### 残り
+
+- p004 の範囲は済み。defaults.h・defaults.c・worker.c の言及は p005 で扱う。
+- pcode-equiv・reset-equiv・device-info-equiv・irq-equiv・ppgtt-equiv の試験は開発の確かめ用（前の版を入力に取る）。p004 が cleared になったら消してよい（path を Q1 へ）。

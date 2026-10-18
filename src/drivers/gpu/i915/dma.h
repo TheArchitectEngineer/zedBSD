@@ -16,11 +16,11 @@
  *      before it can reach a GPU page table.  Under QEMU with VFIO the two
  *      happen to be numerically equal, so feeding one where the other
  *      belongs goes unnoticed; the types make the compiler refuse it.
- *   2. Each entry point keeps the return contract of the Linux call it
- *      stands for; there is no generic "nonzero means failure":
+ *   2. Each entry point has its own return contract; there is no generic
+ *      "nonzero means failure":
  *        drv_i915_dma_set_info       0, or a positive errno
- *        drv_i915_dma_map_sg         the mapped segment count, or 0 (dma_map_sg)
- *        drv_i915_dma_map_sgtable    0, or a positive errno (dma_map_sgtable)
+ *        drv_i915_dma_map_sg         the mapped segment count, or 0
+ *        drv_i915_dma_map_sgtable    0, or a positive errno
  *        drv_i915_dma_map_page       an address tested with
  *                                    drv_i915_dma_mapping_failed()
  *   3. A mapping is an owned resource with a pin count.  While it is pinned
@@ -58,8 +58,7 @@ struct i915_trace;
 /*
  * How many mappings one device can hold at once.
  *
- * The Linux DMA API has no such bound; it exists because the mapping table
- * is embedded in the device.  Each slot carries I915_DMA_MAX_SEGMENTS
+ * The bound exists because the mapping table is embedded in the device.  Each slot carries I915_DMA_MAX_SEGMENTS
  * segments, about 1 KiB, so 256 slots cost 268 KiB of .bss while the device
  * start maps nothing through the table; 32 keeps room for real use without
  * pushing the kernel image past the physical end the UEFI memory map leaves

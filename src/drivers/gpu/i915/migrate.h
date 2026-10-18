@@ -6,25 +6,23 @@
  */
 
 /*
- * The migrate context (intel_migrate_init()).
+ * The migrate context: an address space and a pinned context on the first
+ * copy engine, for copies the GPU does.
  *
- * The reference builds, on the first copy engine, an address space of its own
- * and a pinned context for copies:
+ *   address space     a kernel PPGTT; per copy engine instance i at
+ *                     base = i << 32, two 8 MiB windows (source and
+ *                     destination), then a PTE window right after them with
+ *                     one PTE per page of the windows; page tables for the
+ *                     whole range; and every page table of the windows
+ *                     mapped itself, uncached, into the PTE window, so a
+ *                     blit can rewrite the windows' PTEs
+ *   pinned context    a 512 KiB ring, the timeline in the engine's own
+ *                     status page at I915_GT_HWS_MIGRATE, built and pinned
+ *                     as any context
  *
- *   migrate_vm()            a new ppgtt; per copy engine instance i at
- *                           base = i << 32, two 8 MiB windows (source and
- *                           destination), then a PTE window right after them
- *                           with one PTE per page of the windows; page tables
- *                           for the whole range; and every page table of the
- *                           windows mapped itself, uncached, into the PTE
- *                           window, so a blit can rewrite the windows' PTEs
- *   the pinned context      a 512 KiB ring, the timeline in the engine's own
- *                           status page at I915_GT_HWS_MIGRATE, built and
- *                           pinned as any context
- *
- * intel_gt_init() does not check the result: without a migrate context the
- * move path falls back to a CPU copy.  Alder Lake-P has one copy engine and
- * no 64K pages, so the layout is [0, 8M) source, [8M, 16M) destination and
+ * The GT start does not check the result: without a migrate context the
+ * move path falls back to a CPU copy.  With one copy engine and no 64K
+ * pages the layout is [0, 8M) source, [8M, 16M) destination and
  * [16M, 16M + 32K) PTEs.  Nothing is submitted here.
  *
  * The 512 KiB ring is larger than a DMA vector allows, so the memory layer

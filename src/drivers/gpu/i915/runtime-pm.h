@@ -11,15 +11,13 @@
  * This is the device runtime-PM layer only, and only the part the device
  * start needs: the early initialization, the usage count taken and dropped
  * during probe, and the cleanup.  It is kept apart from the two other power
- * concerns the reference also keeps apart -- forcewake (mmio.h) and the
- * display power domains and GT wakerefs -- so they are never merged into one
- * "power get".
+ * concerns -- forcewake (mmio.h) and the display power domains and GT
+ * wakerefs -- so they are never merged into one "power get".
  *
- * Two distinctions from the reference are kept:
+ * Two distinctions are kept:
  *
- *   - the early initialization (intel_runtime_pm_init_early()) only fills
- *     the structure; it is not the enable (intel_runtime_pm_enable()), which
- *     turns autosuspend on at the end of driver load.  During probe runtime PM
+ *   - the early initialization only fills the structure; it is not the
+ *     enable, which turns autosuspend on at the end of driver load.  During probe runtime PM
  *     is not enabled, so the device stays resumed and a put never suspends it.
  *   - get_sync and resume_and_get differ on failure: get_sync leaves the
  *     usage count raised, so the caller must still put; resume_and_get drops

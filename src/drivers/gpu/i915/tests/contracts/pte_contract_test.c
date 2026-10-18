@@ -118,8 +118,8 @@ pte_check_ppgtt(void)
 	contract_section("ppgtt: leaf PTE = dma | PRESENT | RW (bit1 = RW, not LM)");
 
 	/* The leaf is the address with PRESENT and RW set and no PAT bit. */
-	pte = drv_i915_gen12_ppgtt_pte_encode(0x12345000U, PTE_TEST_PAT_WB);
-	contract_check(pte == (0x12345000U | I915_GEN8_PAGE_PRESENT_B | I915_GEN8_PAGE_RW_B), "PTE = addr | PRESENT | RW");
+	pte = drv_i915_ppgtt_leaf_encode(0x12345000U, PTE_TEST_PAT_WB);
+	contract_check(pte == (0x12345000U | I915_PPGTT_BIT_PRESENT | I915_PPGTT_BIT_RW), "PTE = addr | PRESENT | RW");
 }
 
 /* Checks that the two encoders give one address different entries. */
@@ -138,7 +138,7 @@ pte_check_distinct(void)
 	address = drv_i915_dma_addr(0x40000000U);
 	encoded = drv_i915_ggtt_pte_encode(address, 0x1000U, PTE_TEST_MASK39, &ggtt_pte);
 	contract_check(encoded == 1, "GGTT encode ok");
-	ppgtt_pte = drv_i915_gen12_ppgtt_pte_encode(0x40000000U, PTE_TEST_PAT_WB);
+	ppgtt_pte = drv_i915_ppgtt_leaf_encode(0x40000000U, PTE_TEST_PAT_WB);
 
 	/* Bit 1 is the local-memory bit in one and the writable bit in the other. */
 	contract_check(ggtt_pte != ppgtt_pte, "GGTT != PPGTT for the same DMA address");
@@ -167,8 +167,8 @@ pte_check_wide(void)
 	contract_check((pte >> 32) != 0U, "PTE really carries bits above 32");
 
 	/* So does the PPGTT leaf. */
-	pte = drv_i915_gen12_ppgtt_pte_encode(high, PTE_TEST_PAT_WB);
-	contract_check(pte == (high | I915_GEN8_PAGE_PRESENT_B | I915_GEN8_PAGE_RW_B), "PPGTT leaf keeps the high bits");
+	pte = drv_i915_ppgtt_leaf_encode(high, PTE_TEST_PAT_WB);
+	contract_check(pte == (high | I915_PPGTT_BIT_PRESENT | I915_PPGTT_BIT_RW), "PPGTT leaf keeps the high bits");
 }
 
 /* Checks that the GGTT encoder refuses instead of correcting. */

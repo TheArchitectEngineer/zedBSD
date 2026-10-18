@@ -35,11 +35,8 @@ static struct i915_gt_object *gt_object_grow(struct i915_gt_mem *gm);
 /*
  * Prepares the GT memory over the mapped GGTT page table.
  *
- * The GT window is taken at the top of the GGTT, the end
- * intel_gt_init_scratch() asks for with PIN_HIGH and the end the firmware
- * framebuffer at the bottom does not occupy.  Linux hands out GGTT space
- * from a range allocator over the whole GGTT; this driver uses a fixed
- * window instead.  Returns 0, EINVAL, or ENOSPC when the table is too small
+ * The GT window is a fixed window at the top of the GGTT, the end the
+ * firmware framebuffer at the bottom does not occupy.  Returns 0, EINVAL, or ENOSPC when the table is too small
  * for the window.
  */
 int
@@ -402,8 +399,7 @@ drv_i915_gt_object_page_dma(
  * Writes the CPU cache lines of a range back to memory.
  *
  * The GPU's table walker does not snoop the CPU caches, so every page-table
- * entry is flushed after it is written (write_dma_entry, fill_page_dma and
- * gen8_ppgtt_insert_entry in Linux), and a range the display reads is
+ * entry is flushed after it is written, and a range the display reads is
  * flushed before the display reads it.
  */
 void

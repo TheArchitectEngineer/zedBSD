@@ -21,9 +21,8 @@
  *                    through the kernel direct map, and is bound into a
  *                    session's private address space (ppgtt.h).
  *
- * The first stands for Linux's drm_i915_gem_object plus i915_vma for the
- * objects intel_gt_init() creates; the second is the software VM of the
- * sessions.  They are unified later; until then neither borrows the other's
+ * The first holds the objects the GT start creates, with their GGTT
+ * binding; the second is the software VM of the sessions.  They are unified later; until then neither borrows the other's
  * allocator.
  */
 
