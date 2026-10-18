@@ -2,19 +2,23 @@
 
 # ws074-q20261018-22 / harness HTTP停止待機の短縮・全1491同値確認
 
-Status: active（2026-10-18）
+Status: finished（2026-10-18、i01 scoped partial cleared）
 Owner: このCodex chat単独。
 Approval: [ユーザー自走指示](autonomy.md)をこの有限scopeへ適用。q21 cc65dc3f6/history hash read-back済み。
 Timebox: 最大45分（16:50 JSTまで）。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| ws074-q20261018-22-i01 | [p189](phase189/phase.md) harness shutdown partial | WptServer workerのserve_forever poll_intervalをPython既定0.5秒から0.01秒へ明示する1行変更のみ。browser終了後shutdown/select待機を短くし、HTTP内容・report callback追加・URL/query・分類・eligible1491/未attempt292・fonts・settle5000/process20を変えない。既存分類5対照、同じq21 frozen browser/libで全1491を実測し、q21全ID/whole/callback全status/順序/欠損/追加・membership hash一致とelapsedを確認、raw/gzip/checkpoint/commands/hashを全保存。意味のある差異が残ればuncleared。native C/SDK/WPT/batch/census/static/scripted/crash/基準/分母は変更しない | in-progress | q21 final全1491 493 PASS/11538 callback PASSとfrozen pair/1491 raw、stdlib3.13 serve_forever/shutdown実source |
+| ws074-q20261018-22-i01 | [p189](phase189/phase.md) harness shutdown partial | WptServer workerのserve_forever poll_intervalをPython既定0.5秒から0.01秒へ明示する1行変更のみ。browser終了後shutdown/select待機を短くし、HTTP内容・report callback追加・URL/query・分類・eligible1491/未attempt292・fonts・settle5000/process20を変えない。既存分類5対照、同じq21 frozen browser/libで全1491を実測し、q21全ID/whole/callback全status/順序/欠損/追加・membership hash一致とelapsedを確認、raw/gzip/checkpoint/commands/hashを全保存。意味のある差異が残ればuncleared。native C/SDK/WPT/batch/census/static/scripted/crash/基準/分母は変更しない | cleared（全1491/全callback同値） | q21 final全1491 493 PASS/11538 callback PASSとfrozen pair/1491 raw、stdlib3.13 serve_forever/shutdown実source |
 
 Dependency graph: q21 history/baseline/pair → 1行poll設定 → 既存分類5 → 全1491実測/同値照合/elapsed → archive/清算。
 Generation bounds: plan/ws074/tests/run-interop2025-harness.pyのThread kwargs1行とWS074記録/証拠だけ。Python専用full standard無し、Guardrail/既存tool・FS規則を直接適用。mirror testは追加せず、既存font fixtureのTemporaryDirectory cleanup試験は未選択、5つのpure分類対照を使う。新native source不変なのでstatic1561/scripted413/crash48/DOM/C/Acidはq21のbyte同一pair証拠を再利用し再実行しない。push/削除/make check/QEMU/共有board・cache/toolchain/sysrootを行わない。
 Bounds: 全1491既存40分上限/Queue45分を守り、実測前に速度改善を主張しない。HTTPが使える既存escalated環境で実行し、未完/差異はraw/resumeとunclearedを残す。whole p189/p100/WS100%は先取りclearしない。
 Upcoming Work Outlook: generatedWindow等の未attempt292と環境5、native animation/module/ViewTransition/anchor、p249/target/p100。
+
+Outcome: harness HTTP serve_foreverの停止確認pollだけを0.5→0.01秒へ変更。既存分類5対照通過、同じq21 frozen pairで全1491を実測し全ID/whole/returncode/全callback・completion status/項目順/メッセージが完全同値。493 PASS・11538 PASS/20219 FAIL/14 NOTRUN維持、後退/改善/欠損/追加/順序差/メッセージ差0。実測920.9→226.8秒（4.0604倍、694.1秒短縮）。raw/gzip/checkpoint/全tar member/read-back、fixed corpus/font/source/pair hash一致。 i01 scoped partial cleared、p189 wholeの未attempt292/環境/API/全1783は未達。browser C/WPT/他runner/判定基準/分母は不変。確認済み1481/3805（38.922470%）、PASS増分0。static/scripted/crash/DOM/C/Acidはbyte同一pairのq21証拠を再利用し不要な再測定を省略。shared projection/GitHub/target full/p100/WS未達、push無し。
+
+History: [exact scope/outcome](history/ws074-q20261018-22.md)。
 
 ---
 <!-- awesome-plan project=zedbsd record=queue -->

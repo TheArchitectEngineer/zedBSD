@@ -1,0 +1,30 @@
+{
+  "source_commit": "7f66a68c1260673963b738c0065fd05995df6202",
+  "selected": 1491,
+  "eligible_sha256": "8eb1a5cacf64d34ab0b36d026b6f1335725ce9f9f886ba69b9c286bac8319727",
+  "outcomes": {
+    "fail": 948,
+    "no_completion": 21,
+    "pass": 493,
+    "harness_error": 3,
+    "no_output": 24,
+    "multiple_completions": 2
+  },
+  "callbacks": {
+    "1": 20219,
+    "0": 11538,
+    "3": 14
+  },
+  "all_per_id_outcomes_returncodes_callback_and_completion_statuses_equal": true,
+  "callback_messages_changed": 0,
+  "before_seconds": 920.9,
+  "after_seconds": 226.8,
+  "speedup": 4.060405643738977,
+  "seconds_saved": 694.0999999999999,
+  "native_sources_pair_fonts_unchanged": true,
+  "fixed_pass": 1481,
+  "denominator": 3805,
+  "unattempted_harness": 292,
+  "classification_controls": 5,
+  "archive_sha256": "b6eda3553515fd03f8e2126ad5b695c708b197b7f309d4d36dc3aa33ac7bf7ac"
+}

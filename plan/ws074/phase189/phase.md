@@ -2,7 +2,7 @@
 
 # ws074-p189: Interop 2025 testharness 結果取得
 
-Status: in-progress（q22 shutdown partial、適格1491/未対応292・whole未達）
+Status: uncleared（q22 shutdown partial cleared、適格1491/未対応292・whole未達）
 
 ## ws074-q20261018-03 結果
 
@@ -308,3 +308,6 @@ Bounds: 全1491既存40分上限/Queue45分を守り、実測前に速度改善�
 Upcoming Work Outlook: generatedWindow等の未attempt292と環境5、native animation/module/ViewTransition/anchor、p249/target/p100。
 
 Event ws074-p189-q22-selected-20261018: q21のnative改善7/全旧PASS維持と全1491 rawをread-back後、調査済みshutdown待機の1行を選定。固定source/pair/URL・分類・virtual budgetは不変、実測全callback同値とwall elapsedを確認する。新たなproduct/APIの実装やrunner coverageを達成したとはしない。shared projection pending。
+
+
+Event ws074-q22-finished-20261018: [exact history](../history/ws074-q20261018-22.md)・[証拠](evidence/20261018-q22/README.md)。harness HTTP serve_foreverの停止確認pollだけを0.5→0.01秒へ変更。既存分類5対照通過、同じq21 frozen pairで全1491を実測し全ID/whole/returncode/全callback・completion status/項目順/メッセージが完全同値。493 PASS・11538 PASS/20219 FAIL/14 NOTRUN維持、後退/改善/欠損/追加/順序差/メッセージ差0。実測920.9→226.8秒（4.0604倍、694.1秒短縮）。raw/gzip/checkpoint/全tar member/read-back、fixed corpus/font/source/pair hash一致。 i01 scoped partial cleared、p189 wholeの未attempt292/環境/API/全1783は未達。browser C/WPT/他runner/判定基準/分母は不変。確認済み1481/3805（38.922470%）、PASS増分0。static/scripted/crash/DOM/C/Acidはbyte同一pairのq21証拠を再利用し不要な再測定を省略。shared projection/GitHub/target full/p100/WS未達、push無し。
