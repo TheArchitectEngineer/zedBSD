@@ -2,7 +2,11 @@
 
 # ws074-p189: Interop 2025 testharness 結果取得
 
-Status: uncleared（2026-10-18 Q1: Status の行が無かったので写した。元: uncleared / q1013・q1014・q1015・q1024 partial cleared、shard100件実測）
+Status: uncleared（2026-10-18 q03測定部分cleared、whole1,783件は未達）
+
+## ws074-q20261018-03 結果
+
+Event ws074-p189-q03-partial-clear-20261018: [証拠](evidence/20261018-q03/README.md)。1,455 unique ID/raw/checkpoint/hash照合、485 PASS、910 FAIL、16 harness_error、20 no_completion、24 no_output。q1202比481→485、旧PASS後退0。未対応328保持。部分cleared、whole uncleared。cleanup不足をp242へ渡す。共有投影pending。
 
 ## ws074-q20261018-03 有限範囲（2026-10-18）
 
@@ -104,7 +108,7 @@ Event ws074-p189-q1140-outcome-20261014: [証拠](evidence/20261014-q1140/README
 
 Event ws074-p189-q1134-outcome-20261014: [証拠](evidence/20261014-q1134/README.md)。固定Grid502件は110→124 whole PASS、392→378 FAIL、no_output0。16 FAIL→PASSと2旧PASS→FAIL。subtestは5,225→5,118 PASS、5,780→5,887 FAIL（398改善/505後退）。後退505中416件はGrid行track animation2ファイル。empty-gridはmin-content幅0期待が200となる6件。全502 ID/hash/checkpoint/gzip rawを照合、4 shard正常終了。q1134-i01測定部分cleared、p189 wholeとp173全3,805件100%は未達。旧PASS後退の実装修正は次の有限Queueへ渡す。共有投影/GitHub publication保留。
 
-Status: uncleared（2026-10-14 q1013/q1014/q1015 partial cleared、whole 1,783件は未達）
+Historical status（2026-10-14）: uncleared（q1013/q1014/q1015 partial cleared、whole1,783件は未達）。2026-10-18 Q1が先頭へ投影した旧状態を履歴として保持。
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）

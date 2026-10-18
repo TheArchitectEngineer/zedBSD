@@ -1,0 +1,60 @@
+{
+  "measured": 1455,
+  "counts": {
+    "fail": 910,
+    "harness_error": 16,
+    "no_completion": 20,
+    "pass": 485,
+    "no_output": 24
+  },
+  "subtest_status": {
+    "1": 20538,
+    "0": 10995
+  },
+  "baseline": "phase227/evidence/20261014-q1202/summary-after.txt",
+  "baseline_pass": 481,
+  "new_pass": [
+    "/css/css-flexbox/svg-root-as-flex-item-006.html",
+    "/css/css-grid/alignment/grid-column-axis-alignment-sticky-positioned-items-002.html",
+    "/css/css-grid/alignment/grid-row-axis-alignment-sticky-positioned-items-002.html",
+    "/event-timing/supported-types-consistent-with-self.html"
+  ],
+  "regressions": [],
+  "unrun": 328,
+  "total_testharness": 1783,
+  "total_interop": 3805,
+  "eligible_sha256": "d9b36bd0c947a35529eeb11e46b4d2038053cc0b8786a2354be87536e563dae2",
+  "seconds": 895.6,
+  "source": "9b94ebe38",
+  "first_failure_prefixes": {
+    "assert_not_equals": 20,
+    "assert_equals": 461,
+    "value is not a function": 13,
+    "assert_array_equals": 5,
+    "Cannot read properties of undefined (reading 'querySelector')": 3,
+    "promise_test": 181,
+    "The input is not one supported CSS rule.": 2,
+    "CSSPositionTryRule is not defined": 1,
+    "assert_true": 23,
+    "Cannot read properties of undefined (reading 'length')": 1,
+    "Cannot read properties of undefined or null": 1,
+    "assert_in_array": 20,
+    "assert_implements": 69,
+    "assert_throws_dom": 7,
+    "Cannot read properties of undefined (reading 'selectorText')": 2,
+    "assert_approx_equals": 5,
+    "step_wait_func": 1,
+    "assert_greater_than": 1,
+    "assert_own_property": 1,
+    "navigation is not defined": 72,
+    "assert_throws_js": 3,
+    "Cannot set properties of undefined (setting 'onnavigate')": 10,
+    "Cannot read properties of undefined (reading 'currentEntry')": 5,
+    "Cannot read properties of undefined (reading 'entries')": 3,
+    "Cannot read properties of undefined (reading 'navigate')": 10,
+    "Cannot read properties of undefined (reading 'reload')": 1,
+    "Cannot read properties of null (reading 'navigateParent')": 1,
+    "Cannot read properties of null (reading 'navigateSibling')": 1,
+    "Cannot read properties of undefined (reading 'updateCurrentEntry')": 1
+  }
+}

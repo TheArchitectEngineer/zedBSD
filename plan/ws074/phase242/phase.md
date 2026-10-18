@@ -26,3 +26,9 @@ q03の固定Interop2025 testharnessで、anchor-invalid-fallback・anchor-scope�
 q03で得た固定binaryと実際のcleanup失敗を依存出力とする（p189 wholeは前提にしない）。独立DOM例で0/1/複数引数、node移動/重複、fragment、文字列化例外、循環拒否、Documentの既存root置換を検証する。Chromium比較、固定WPTの`dom/nodes/ParentNode-replaceChildren.html`を補助に、公式2025のcleanup失敗群を同条件で再測定し、harness_error→実際のFAILの進行とPASSを区別する。host build warning0、変更関数のC全文review、format/diff check。意味の区切りでAcidとtarget compile。Guardrail/C全文/browser-component全文を適用。
 
 本Phaseの計画追加は実行開始ではない。q03完了後にexact scopeと承認の適用をQueueへ記録してから実装する。Master/共有Queue/GitHubのprojectionはpending。
+
+## 実装前の確認（2026-10-18）
+
+[DOM Standard](https://dom.spec.whatwg.org/#dom-parentnode-replacechildren)を確認。pre-insert validityは削除予定の既存childrenをexclusion listとして受ける。既存bind_validate_insertはexclusionなしのordinary insertionであり、その契約を維持してreplace-all専用のvalidationを追加する。固定WPTの補助`dom/nodes/ParentNode-replaceChildren.html`もDocumentの既存doctype/rootを無視する条件を明示している。
+
+MutationObserverは既存environment.cにあるが、privateのrecord生成はadded/removed各1nodeのみ。replace-allの集約recordにはsequence対応が要る。既存dom_remove/dom_insert_beforeはlive Range/Iterator・iframe・select・style generationを更新するため、それらを飛ばす直接link操作は使わない。DOM変換・一時root・validation・native通知の基本を最初の有限部分、observerの完全なbatchingを必要なら次の有限部分に分け、wholeの未達を残す。

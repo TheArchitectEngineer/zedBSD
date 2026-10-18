@@ -9,7 +9,9 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [ws074-q20261018-03](queue.md) active（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+Queue: [ws074-q20261018-03](queue.md) finished（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+
+Event ws074-p189-q03-partial-clear-20261018: [p189証拠](phase189/evidence/20261018-q03/README.md)。全適格1,455 IDで485 PASS、旧481 PASSの後退0。未対応328保持。p189 whole uncleared。次はp242 DOM cleanup。共有投影pending。
 
 Event ws074-p242-planning-20261018: q03のanchor/@scope群でcleanupのreplaceChildren未定義を確認し、[p242](phase242/phase.md)を後続候補として追加。テストを改変せず一般DOM操作を補う案。q03の現行測定・p189/p173の受け入れは変更しない。
 
@@ -62,7 +64,7 @@ Event ws074-p217-q1188-partial-clear-20261014: [p217](phase217/phase.md) q1188-i
 Event ws074-p217-q1187-partial-clear-20261014: [p217](phase217/phase.md) q1187-i01で固定縦rl Grid直接横RTL absolute子row2/col1 top insetにstatic areaを適用。[証拠](phase217/evidence/20261014-q1187/README.md)。独立矩形Chromium一致、固定non-static007縦rl callback whole PASS、水平2 callback PASS、縦lrは4番目子でfile whole FAIL継続。旧WPT/host/Acid3差0維持。次は縦lr4番目子、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
 
 Event ws074-p217-q1186-partial-clear-20261014: [p217](phase217/phase.md) q1186-i01で固定縦lr/rl Grid直接横LTR absolute子へrow1/col2 static areaとjustify-center Yを適用。[証拠](phase217/evidence/20261014-q1186/README.md)。独立2矩形Chromium一致、固定non-static007縦2 callback先頭2子全PASS、lrは4番目子・rlは3番目子でfile whole FAIL継続。旧WPT/host/Acid3差0維持。次は縦rl Gridの3番目RTL横子、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
-Resume point: 2026-10-18 [p240](phase240/phase.md)のhost部分cleared。固定aspect-ratio257 IDは142→149 PASS、後退0。独立29/29、Acid3 score100/差0、Acid2差873。次の候補はstretchのcross size（009/045/046）とbasis:content（021/022）。全Interop2025は固定3,805 unique ID・19領域、runner未対応と全件100%は未達。今回の257件は局所再測定であり全体の最新集計ではない。QEMU/実機は未実施、p100 wholeの残る関門も維持。
+Resume point: ws074-q20261018-03で公式Interop2025 testharness1,783件を再分類し、適格1,455 IDを最新固定binaryで測定中。未対応328を分母に保持。直近p241の補助aspect-ratio試験は152/257 PASS・後退0、独立40/40、Acid3 score100/差0、Acid2差873。補助257件は公式3,805 IDに含まれない。次はp242 replaceChildren（cleanup不足）の候補。production link/QEMU/実機とp100 wholeの残る関門も維持。
 <!-- awesome-plan-current:end -->
 
 Event ws074-p217-q1185-partial-clear-20261014: [p217](phase217/phase.md) q1185-i01で固定縦lr/rl Grid直接横LTR absolute子へrow1/col1 static areaとjustify-right Yを適用。[証拠](phase217/evidence/20261014-q1185/README.md)。独立2矩形Chromium一致、固定non-static007縦2 callback先頭子全PASS、2番目子でfile whole FAIL継続。旧WPT/host/Acid3差0維持。次は縦Grid2番目横子、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
@@ -577,7 +579,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p186](phase186/phase.md) | sharp text-shadow と見出し影を調べる | cleared（q1009-i01、sharp 単一 scope、Acid3差2451減） | p172〜p185 cleared、q1008 実測出力 |
 | [ws074-p187](phase187/phase.md) | 負の padding と第6色箱の幅を調べる | cleared（q1010-i01、Acid3差900減、negative padding fixture pass） | p172〜p186 cleared、q1009 実測出力 |
 | [ws074-p188](phase188/phase.md) | 同一ページで観測した訪問履歴と :visited の paint color | cleared（q1011-i01、Acid3差801減→0、privacy fixture pass） | p172〜p187 cleared、q1010 実測出力 |
-| [ws074-p189](phase189/phase.md) | Interop 2025 testharness 1,783件の結果取得 runner | uncleared / q1013・q1014・q1015・q1024 partial cleared、shard100件実測 | p173 q1012 固定manifest出力 |
+| [ws074-p189](phase189/phase.md) | Interop 2025 testharness 1,783件の結果取得 runner | uncleared / ws074-q20261018-03の1,455 ID census、whole未達 | p173 q1012 固定manifest出力 |
 | [ws074-p190](phase190/phase.md) | Interop 2025 reftest 1,974件・crashtest48件のrunner coverage | uncleared / q1053静的1,561件518 local PASS/684 FAIL/359 error/0 timeout、script関連407/variant6未対応、crashtest全48 local PASS | p173 q1012 固定manifest出力 |
 | [ws074-p191](phase191/phase.md) | Interop 2025 textdecoration全16 testharnessのCSSOM互換 | cleared / q1023、16件16 PASS/0 FAIL | p173固定manifest、p189 q1015全16件baseline |
 | [ws074-p192](phase192/phase.md) | Interop 2025 Window named properties互換 | uncleared / q1025 partial cleared、一意id live lookup | p173固定manifest、p189 q1024 shard |
