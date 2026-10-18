@@ -2882,11 +2882,9 @@ access_proxy_get(
 		roots[7] = vm_value_as_cell(produced);
 
 	/* Invariants use the original target even if the trap revoked its Proxy. */
-	found = vm_get_own_descriptor((struct vm_object *)vm_value_as_cell(target), key, &descriptor);
-	if (found < 0) {
-		status = -found;
+	status = vm_get_own_property(realm, (struct vm_object *)vm_value_as_cell(target), key, &descriptor, &found);
+	if (status != 0)
 		goto cleanup;
-	}
 
 	/* Nonconfigurable own descriptors constrain the value a trap may report. */
 	if (found && (descriptor.attributes & VM_PROPERTY_CONFIGURABLE) == 0U) {
@@ -3008,6 +3006,7 @@ access_proxy_has(
 	int is_cell;
 	int is_symbol;
 	int present;
+	int extensible;
 	int truth;
 	int status;
 
@@ -3089,11 +3088,9 @@ access_proxy_has(
 
 	/* A false result inspects the original target after the trap's changes. */
 	object = (struct vm_object *)vm_value_as_cell(target);
-	present = vm_get_own_descriptor(object, key, &descriptor);
-	if (present < 0) {
-		status = -present;
+	status = vm_get_own_property(realm, object, key, &descriptor, &present);
+	if (status != 0)
 		goto cleanup;
-	}
 
 	/* Only an existing own property constrains a false has result. */
 	if (present) {
@@ -3103,7 +3100,10 @@ access_proxy_has(
 		}
 
 		/* A nonextensible target also keeps its configurable own properties visible. */
-		if ((object->flags & VM_OBJECT_NOT_EXTENSIBLE) != 0U) {
+		status = vm_is_extensible(realm, object, &extensible);
+		if (status != 0)
+			goto cleanup;
+		if (!extensible) {
 			status = vm_throw_type_error(realm, "Proxy has trap hid a nonextensible target's own property");
 			goto cleanup;
 		}
@@ -3249,6 +3249,9 @@ access_proxy_get_own(
 	int allowed;
 	int status;
 
+	/* Absent target descriptors have no payload slots for the snapshot tracer to inspect. */
+	memset(&current, 0, sizeof(current));
+
 	/* Preserve the original target and handler even if a getter or trap revokes the record. */
 	target = proxy->target;
 	handler = proxy->handler;
@@ -3335,23 +3338,7 @@ access_proxy_get_own(
 	status = vm_get_own_property(realm, target_object, key, &current, &present);
 	if (status != 0)
 		goto cleanup;
-	extensible = 1;
-	if ((target_object->flags & VM_OBJECT_NOT_EXTENSIBLE) != 0U)
-		extensible = 0;
-	if (produced == VM_VALUE_UNDEFINED) {
-		if (present) {
-			if ((current.attributes & VM_PROPERTY_CONFIGURABLE) == 0U || !extensible) {
-				status = vm_throw_type_error(realm, "Proxy descriptor trap cannot hide this own property");
-				goto cleanup;
-			}
-		}
-
-		/* Absence is valid only after the target's fixed-property constraints have passed. */
-		status = 0;
-		goto cleanup;
-	}
-
-	/* Descriptor conversion may delete the target property, so retain its complete snapshot payloads. */
+	/* Target extent callbacks may revoke or mutate its graph, so retain all flagged snapshot payloads first. */
 	current_roots.realm = realm;
 	current_roots.source = VM_VALUE_UNDEFINED;
 	current_roots.descriptor = &current;
@@ -3360,6 +3347,39 @@ access_proxy_get_own(
 	if (status != 0)
 		goto cleanup;
 	current_registered = 1;
+	/* Undefined output skips extent observation when the target property is absent or already fixed. */
+	if (produced == VM_VALUE_UNDEFINED) {
+		if (!present) {
+			status = 0;
+			goto cleanup;
+		}
+
+		/* A fixed own property cannot be hidden, regardless of the target's extensibility. */
+		if ((current.attributes & VM_PROPERTY_CONFIGURABLE) == 0U) {
+			status = vm_throw_type_error(realm, "Proxy descriptor trap cannot hide this own property");
+			goto cleanup;
+		}
+
+		/* Only a configurable present property requires actual target extensibility on the absence path. */
+		status = vm_is_extensible(realm, target_object, &extensible);
+		if (status != 0)
+			goto cleanup;
+		if (!extensible) {
+			status = vm_throw_type_error(realm, "Proxy descriptor trap cannot hide this own property");
+			goto cleanup;
+		}
+
+		/* The observed configurable property may be hidden on an extensible target. */
+		status = 0;
+		goto cleanup;
+	}
+
+	/* Nonundefined output observes target extensibility before any returned descriptor getter executes. */
+	status = vm_is_extensible(realm, target_object, &extensible);
+	if (status != 0)
+		goto cleanup;
+
+	/* The original trap output and every converted field survive descriptor getters independently. */
 	result_roots.realm = realm;
 	result_roots.source = produced;
 	result_roots.descriptor = descriptor;
@@ -3430,6 +3450,7 @@ access_proxy_define(
 {
 	struct vm_cell *roots[8];
 	struct access_descriptor_roots input_roots;
+	struct access_descriptor_roots current_roots;
 	struct vm_descriptor current;
 	struct vm_object *target_object;
 	struct vm_string *string;
@@ -3444,6 +3465,7 @@ access_proxy_define(
 	unsigned index;
 	unsigned registered;
 	int input_registered;
+	int current_registered;
 	int depth_owned;
 	int is_cell;
 	int is_symbol;
@@ -3453,6 +3475,9 @@ access_proxy_define(
 	int setting_fixed;
 	int allowed;
 	int status;
+
+	/* No absent target descriptor exposes uninitialized payloads to its eventual snapshot tracer. */
+	memset(&current, 0, sizeof(current));
 
 	/* Snapshot protocol participants and clear the Boolean output before any observable method read. */
 	*done = 0;
@@ -3479,6 +3504,7 @@ access_proxy_define(
 	roots[7] = NULL;
 	registered = 0;
 	input_registered = 0;
+	current_registered = 0;
 	depth_owned = 0;
 	for (index = 0; index < 8U; index++) {
 		status = vm_heap_add_root(realm->heap, &roots[index]);
@@ -3559,9 +3585,19 @@ access_proxy_define(
 	status = vm_get_own_property(realm, target_object, key, &current, &present);
 	if (status != 0)
 		goto cleanup;
-	extensible = 1;
-	if ((target_object->flags & VM_OBJECT_NOT_EXTENSIBLE) != 0U)
-		extensible = 0;
+
+	/* Extent traps may sever the target's last payload owner while compatibility still needs the original descriptor. */
+	current_roots.realm = realm;
+	current_roots.source = VM_VALUE_UNDEFINED;
+	current_roots.descriptor = &current;
+	current_roots.made = VM_VALUE_UNDEFINED;
+	status = vm_heap_add_tracer(realm->heap, access_descriptor_trace, &current_roots);
+	if (status != 0)
+		goto cleanup;
+	current_registered = 1;
+	status = vm_is_extensible(realm, target_object, &extensible);
+	if (status != 0)
+		goto cleanup;
 	setting_fixed = 0;
 	if ((descriptor->has & VM_HAS_CONFIGURABLE) != 0U && (descriptor->attributes & VM_PROPERTY_CONFIGURABLE) == 0U)
 		setting_fixed = 1;
@@ -3603,6 +3639,8 @@ cleanup:
 	/* The original descriptor pointer and depth ownership end with this native frame. */
 	if (depth_owned)
 		realm->property_depth--;
+	if (current_registered)
+		vm_heap_remove_tracer(realm->heap, access_descriptor_trace, &current_roots);
 	if (input_registered)
 		vm_heap_remove_tracer(realm->heap, access_descriptor_trace, &input_roots);
 	while (registered != 0U) {

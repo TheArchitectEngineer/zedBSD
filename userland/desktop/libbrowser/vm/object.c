@@ -383,8 +383,8 @@ vm_array_create(
 }
 
 /*
- * Creates the private noncallable Proxy read primitive without publishing a JS constructor.
- * Callable and Proxy targets remain excluded until their internal methods are implemented.
+ * Creates private managed noncallable Proxy records without publishing a JS constructor.
+ * Callable targets require callable internal dispatch and are rejected.
  */
 int
 vm_proxy_create(
@@ -394,7 +394,6 @@ vm_proxy_create(
 	vm_value *result)
 {
 	struct vm_proxy *proxy;
-	struct vm_object *object;
 	struct vm_cell *roots[4];
 	vm_value values[2];
 	unsigned index;
@@ -442,11 +441,10 @@ vm_proxy_create(
 		goto cleanup;
 	}
 
-	/* This internal stage deliberately excludes operations requiring callable or nested-target semantics. */
-	object = (struct vm_object *)vm_value_as_cell(target);
+	/* Callable targets require separate call and construct dispatch; object targets may themselves be Proxies. */
 	callable = vm_value_is_callable(target);
-	if (callable || object->kind == VM_KIND_PROXY) {
-		status = vm_throw_type_error(realm, "Callable and Proxy targets require later Proxy internal methods");
+	if (callable) {
+		status = vm_throw_type_error(realm, "Callable Proxy targets require callable internal dispatch");
 		goto cleanup;
 	}
 

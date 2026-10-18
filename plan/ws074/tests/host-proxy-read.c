@@ -16,6 +16,14 @@
 #include <stdio.h>
 #include <string.h>
 
+/* Weak addresses observe one synchronous nested descriptor snapshot without retaining any managed participant. */
+struct nested_snapshot_observation {
+	uintptr_t target_address;
+	uintptr_t payload_address;
+	uintptr_t inner_address;
+	unsigned getter_collections;
+};
+
 /* One public Object-consumer observation contains only weak addresses and collector/callback counters. */
 struct object_consumer_observation {
 	struct vm_heap *heap;
@@ -50,6 +58,9 @@ struct extent_observation {
 	unsigned collections;
 	unsigned mode;
 };
+
+/* Only nested_snapshot_pressure activates this weak observer; zero means no native snapshot case is active. */
+static struct nested_snapshot_observation nested_snapshot_case;
 
 /* Only object_consumers_pressure owns this synchronous observer; zero means no active consumer case. */
 static struct object_consumer_observation object_consumer_case;
@@ -157,6 +168,10 @@ static const struct vm_native_operations proxy_sole_operations = {
 	proxy_sole_get_own, NULL, NULL, NULL, NULL
 };
 
+static int nested_snapshot_extent(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int nested_snapshot_descriptor(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int nested_snapshot_value(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int nested_snapshot_pressure(struct page *page);
 static int consumer_key_primitive(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int object_consumers_pressure(struct page *page);
 static int ordinary_instance_pressure(struct page *page);
@@ -306,7 +321,7 @@ main(
 	/* No partial product constructor may appear during the private foundation stage. */
 	status = proxy_script(page->realm, "typeof Proxy==='undefined'&&"
 					   "(function(){try{makeReadProxy(function(){},{});}catch(e){return e instanceof TypeError;}return false;})()&&"
-					   "(function(){var p=makeReadProxy({},{});try{makeReadProxy(p,{});}catch(e){return e instanceof TypeError;}return false;})()",
+					   "(function(){var p=makeReadProxy({x:1},{});return makeReadProxy(p,{}).x===1;})()",
 			      &answer);
 	if (status != 0)
 		goto cleanup;
@@ -388,6 +403,11 @@ main(
 
 	/* Native array shrink must publish its shorter length, collect safely and stop at the first fixed descriptor. */
 	status = array_length_pressure(page);
+	if (status != 0)
+		goto cleanup;
+
+	/* A nested target may revoke its last payload owner before the outer descriptor conversion collects. */
+	status = nested_snapshot_pressure(page);
 	if (status != 0)
 		goto cleanup;
 
@@ -4129,5 +4149,284 @@ cleanup:
 		return status;
 
 	/* Succeeded: descending shrink preserves its failed boundary and releases both managed participants. */
+	return 0;
+}
+
+/* Revokes the inner Proxy during its actual IsExtensible trap while preserving the original target answer. */
+static int
+nested_snapshot_extent(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct vm_cell *inner;
+	vm_value target;
+	int extensible;
+	int status;
+
+	UNUSED_PARAMETER(receiver);
+
+	/* The integer observer supplies no root; the outer operation must still own the inner target Proxy. */
+	inner = vm_heap_find_cell(realm->heap, nested_snapshot_case.inner_address);
+	if (inner == NULL)
+		return EFAULT;
+	status = vm_proxy_revoke(realm, vm_value_cell(inner));
+	if (status != 0)
+		return status;
+	target = js_argument(args, count, 0);
+	status = vm_is_extensible(realm, (struct vm_object *)vm_value_as_cell(target), &extensible);
+	if (status != 0)
+		return status;
+	*result = vm_value_boolean(extensible);
+
+	/* Succeeded: this trap returns while retiring the inner Proxy's original target and handler edges. */
+	return 0;
+}
+
+/* Returns an actual descriptor representation whose value accessor will run only after target extent observation. */
+static int
+nested_snapshot_descriptor(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	vm_value key;
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* The descriptor representation belongs only to the original outer handler graph. */
+	key = vm_key_from_ascii(realm->heap, "resultDescriptor");
+	if (key == VM_VALUE_EMPTY)
+		return ENOMEM;
+	status = vm_get(realm, receiver, key, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: descriptor conversion must wait until the actual nested target checks finish. */
+	return 0;
+}
+
+/* Collects after the original target frame has retired, then recovers only the still-owned snapshot payload. */
+static int
+nested_snapshot_value(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct vm_cell *found;
+	struct vm_heap_stats before;
+	struct vm_heap_stats after;
+
+	UNUSED_PARAMETER(receiver);
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* No conservative stack or original target edge may hide missing native descriptor ownership. */
+	vm_heap_stats(realm->heap, &before);
+	vm_heap_collect(realm->heap);
+	vm_heap_stats(realm->heap, &after);
+	if (after.collections <= before.collections)
+		return EFAULT;
+	found = vm_heap_find_cell(realm->heap, nested_snapshot_case.target_address);
+	if (found != NULL)
+		return EFAULT;
+	found = vm_heap_find_cell(realm->heap, nested_snapshot_case.payload_address);
+	if (found == NULL)
+		return EFAULT;
+	nested_snapshot_case.getter_collections++;
+	*result = vm_value_cell(found);
+
+	/* Succeeded: only the native current-descriptor snapshot retained the fixed data payload across collection. */
+	return 0;
+}
+
+/* Tests a sole fixed descriptor payload across nested-target revocation, later conversion GC and independent reclamation. */
+static int
+nested_snapshot_pressure(
+	struct page *page)
+{
+	struct vm_object *target;
+	struct vm_object *payload;
+	struct vm_object *inner_handler;
+	struct vm_object *outer_handler;
+	struct vm_object *representation;
+	struct vm_cell *roots[8];
+	struct vm_cell *found;
+	struct vm_descriptor descriptor;
+	uintptr_t addresses[7];
+	vm_value key;
+	vm_value inner;
+	vm_value outer;
+	unsigned registered;
+	unsigned index;
+	int present;
+	int status;
+
+	/* Temporary setup roots retire before the real operation, leaving only its production ownership. */
+	memset(roots, 0, sizeof(roots));
+	memset(&nested_snapshot_case, 0, sizeof(nested_snapshot_case));
+	registered = 0;
+	for (index = 0; index < 8U; index++) {
+		status = vm_heap_add_root(page->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* The fixed target property initially supplies the only graph edge to a fresh ordinary payload. */
+	target = vm_object_create(page->heap, NULL);
+	if (target == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* A fresh payload has no global, atom, shape transition or native registry owner. */
+	roots[0] = &target->cell;
+	payload = vm_object_create(page->heap, NULL);
+	if (payload == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* Nonconfigurable nonwritable data forces later SameValue comparison against the retained snapshot. */
+	roots[1] = &payload->cell;
+	key = vm_key_from_ascii(page->heap, "x");
+	if (key == VM_VALUE_EMPTY) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* Actual ordinary storage, rather than a synthetic native descriptor, owns the original fixed value. */
+	status = vm_object_define(page->heap, target, key, vm_value_cell(payload), 0U);
+	if (status != 0)
+		goto cleanup;
+	inner_handler = vm_object_create(page->heap, NULL);
+	if (inner_handler == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* Its native IsExtensible trap runs through vm_call and revokes the inner record without capturing the target. */
+	roots[2] = &inner_handler->cell;
+	status = js_builtin_method(page->realm, inner_handler, "isExtensible", 1, nested_snapshot_extent);
+	if (status != 0)
+		goto cleanup;
+	status = vm_proxy_create(page->realm, vm_value_cell(target), vm_value_cell(inner_handler), &inner);
+	if (status != 0)
+		goto cleanup;
+	roots[3] = vm_value_as_cell(inner);
+	representation = vm_object_create(page->heap, NULL);
+	if (representation == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* This representation owns no payload until its later value accessor retrieves the live native snapshot. */
+	roots[4] = &representation->cell;
+	status = js_builtin_accessor(page->realm, representation, "value", nested_snapshot_value, NULL);
+	if (status != 0)
+		goto cleanup;
+	status = js_builtin_value(page->realm, representation, "configurable", VM_VALUE_FALSE, VM_PROPERTY_DEFAULT);
+	if (status != 0)
+		goto cleanup;
+	status = js_builtin_value(page->realm, representation, "writable", VM_VALUE_FALSE, VM_PROPERTY_DEFAULT);
+	if (status != 0)
+		goto cleanup;
+	outer_handler = vm_object_create(page->heap, NULL);
+	if (outer_handler == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* The outer trap returns its real representation while the target remains the actual inner Proxy. */
+	roots[5] = &outer_handler->cell;
+	status = js_builtin_value(page->realm, outer_handler, "resultDescriptor", vm_value_cell(representation), VM_PROPERTY_DEFAULT);
+	if (status != 0)
+		goto cleanup;
+	status = js_builtin_method(page->realm, outer_handler, "getOwnPropertyDescriptor", 2, nested_snapshot_descriptor);
+	if (status != 0)
+		goto cleanup;
+	status = vm_proxy_create(page->realm, inner, vm_value_cell(outer_handler), &outer);
+	if (status != 0)
+		goto cleanup;
+	roots[6] = vm_value_as_cell(outer);
+
+	/* Weak integer observations never keep the old target, payload or either Proxy alive. */
+	nested_snapshot_case.target_address = (uintptr_t)target;
+	nested_snapshot_case.payload_address = (uintptr_t)payload;
+	nested_snapshot_case.inner_address = (uintptr_t)vm_value_as_cell(inner);
+	for (index = 0; index < 7U; index++) {
+		addresses[index] = (uintptr_t)roots[index];
+		roots[index] = NULL;
+	}
+
+	/* Actual target GetOwn precedes inner revoke, then descriptor value conversion collects the discarded target. */
+	status = vm_get_own_property(page->realm, (struct vm_object *)vm_value_as_cell(outer), key, &descriptor, &present);
+	if (status != 0)
+		goto cleanup;
+	if (!present || nested_snapshot_case.getter_collections != 1U) {
+		status = EFAULT;
+		goto cleanup;
+	}
+
+	/* The resulting descriptor contains exactly the live fixed payload after the original target was reclaimed. */
+	roots[7] = vm_value_as_cell(descriptor.value);
+	if ((uintptr_t)roots[7] != nested_snapshot_case.payload_address) {
+		status = EFAULT;
+		goto cleanup;
+	}
+
+	/* Output-only ownership now allows the complete original target, handlers, representation and Proxy graph to go. */
+	vm_heap_collect(page->heap);
+	for (index = 0; index < 7U; index++) {
+		if (index == 1U)
+			continue;
+		found = vm_heap_find_cell(page->heap, addresses[index]);
+		if (found != NULL) {
+			status = EFAULT;
+			goto cleanup;
+		}
+	}
+
+	/* The payload remains independently rooted after every participant that produced its descriptor has gone. */
+	found = vm_heap_find_cell(page->heap, nested_snapshot_case.payload_address);
+	if (found == NULL) {
+		status = EFAULT;
+		goto cleanup;
+	}
+
+	/* Dropping the final output root makes the actual fresh payload reclaimable as well. */
+	roots[7] = NULL;
+	vm_heap_collect(page->heap);
+	found = vm_heap_find_cell(page->heap, nested_snapshot_case.payload_address);
+	if (found != NULL) {
+		status = EFAULT;
+		goto cleanup;
+	}
+
+	/* Native snapshot ownership survived later collection and left no permanently retained graph. */
+	status = 0;
+
+cleanup:
+	/* Partial construction and every abrupt native operation retire all setup roots and weak observations. */
+	memset(&nested_snapshot_case, 0, sizeof(nested_snapshot_case));
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(page->heap, &roots[registered]);
+	}
+
+	/* Preserve any lifetime, order or reclamation failure after releasing native registrations. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the sole fixed snapshot payload outlived its original target and was finally reclaimed. */
 	return 0;
 }
