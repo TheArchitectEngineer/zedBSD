@@ -1,0 +1,34 @@
+{
+  "eligible": 1508,
+  "eligible_sha256": "82147e6edaec1b3b8d537e46eb71b64f2f03132cc12803e284c6ca72377779e7",
+  "old_subset": 1491,
+  "new_generated": 17,
+  "new_ids": [
+    "/event-timing/idlharness.any.html",
+    "/event-timing/supported-types.window.html",
+    "/html/semantics/scripting-1/the-script-element/import-attributes/dynamic-import-with-attributes-argument.any.html",
+    "/html/semantics/scripting-1/the-script-element/json-module/charset-bom.any.html",
+    "/html/semantics/scripting-1/the-script-element/json-module/invalid-content-type.any.html",
+    "/html/semantics/scripting-1/the-script-element/json-module/non-object.any.html",
+    "/html/semantics/scripting-1/the-script-element/json-module/repeated-imports.any.html",
+    "/performance-timeline/buffered-flag-with-entryTypes-observer.tentative.any.html",
+    "/storage-access-api/idlharness.window.html",
+    "/urlpattern/urlpattern-hasregexpgroups.any.html",
+    "/urlpattern/urlpattern.any.html",
+    "/wasm/jsapi/js-string/basic.any.html",
+    "/wasm/jsapi/js-string/constants.any.html",
+    "/wasm/jsapi/js-string/imports.any.html",
+    "/wasm/jsapi/memory/to-fixed-length-buffer.any.html",
+    "/wasm/jsapi/memory/to-resizable-buffer-shared.any.html",
+    "/wasm/jsapi/memory/to-resizable-buffer.any.html"
+  ],
+  "remaining_unattempted": 275,
+  "reasons": {
+    "candidate": 1508,
+    "generated_context": 28,
+    "https": 45,
+    "other_type": 2022,
+    "requires_driver_origin_or_worker": 169,
+    "worker_or_substitution_path": 33
+  }
+}

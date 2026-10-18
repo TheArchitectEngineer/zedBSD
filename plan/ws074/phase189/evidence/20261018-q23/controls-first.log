@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/home/awe/zedBSD-claude1/plan/ws074/tests/test-interop2025-generated.py", line 58, in <module>
+    PRIMARY = primary_functions()
+  File "/home/awe/zedBSD-claude1/plan/ws074/tests/test-interop2025-generated.py", line 43, in primary_functions
+    exec(compile(ast.Module(body=selected, type_ignores=[]), "<pinned-metadata-reader>", "exec"), namespace)
+    ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<pinned-metadata-reader>", line 59, in <module>
+NameError: name 'Pattern' is not defined

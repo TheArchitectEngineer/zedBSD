@@ -328,3 +328,6 @@ Verification bounds: positive tool prerequisiteが欠ける/old subset後退が�
 Upcoming Work Outlook: 残るHTTPS/worker/sub/origin等275、native module/URLPattern/Wasm/performance/animation/ViewTransition/anchor、p249/target/p100。
 
 Event ws074-p189-q23-selected-20261018: 固定未attempt292のactual plain Window17を具体化。pinned META parserは最初の非META行で終了し、Any window exposureの既定/first global、script/title/timeoutを原手順へ合わせる。WebIDLParserは原Gitに無いaliasで、同じpinned serve.py rewriteが既存125228-byte webidl2へ内部GET転送することを確認。Wrapper literalsは原sourceをruntime参照して原本をvendoringしない。既存q20 header実装をgeneratedだけ再利用し、physical1491は従来providerを保つ。whole p189/p173と未達/native APIは先取りclearしない。shared projection pending。
+
+
+Event ws074-p189-q23-wrapper-output-20261018: primary/native13/13と既存pure分類5/5を確認。Window/Any/global/script順/query/currentScript/log、実HTTP headers/原body/WebIDL内部rewrite、native failure/unsupported static fallback・duplicate/zero境界を検証。fixture準備の型注釈/CSS参照/duplicate入力時点を訂正して再実行、元のnegative期待は保持。eligible1508=old1491+new17、残275未attemptをinventory/hashで確認。i01 scoped partial cleared→i02全1508実測開始、whole p189/WSは未達。shared projection pending。

@@ -1,0 +1,125 @@
+.E.....EEE.EE
+======================================================================
+ERROR: test_http_wrapper_report_headers_alias_and_original_body (__main__.ContractTests.test_http_wrapper_report_headers_alias_and_original_body)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/awe/zedBSD-claude1/plan/ws074/tests/test-interop2025-generated.py", line 163, in test_http_wrapper_report_headers_alias_and_original_body
+    root, row, server, context, tool, worker = fixture("wire", script=data, helper=b'var imported=1;', helper_headers=b'Content-Type: text/javascript; charset=utf-8\nX-Fixture: retained\n', query="?q=wire")
+                                               ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/awe/zedBSD-claude1/plan/ws074/tests/test-interop2025-generated.py", line 69, in fixture
+    shutil.copy2(WPT / relative, target)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.13/shutil.py", line 468, in copy2
+    copyfile(src, dst, follow_symlinks=follow_symlinks)
+    ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.13/shutil.py", line 260, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/awe/zedBSD-claude1/build/ws074-suites/wpt/resources/testharness.css'
+
+======================================================================
+ERROR: test_any_metadata_order_global_query_current_script_and_log (__main__.NativeTests.test_any_metadata_order_global_query_current_script_and_log)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/awe/zedBSD-claude1/plan/ws074/tests/test-interop2025-generated.py", line 205, in test_any_metadata_order_global_query_current_script_and_log
+    result = native("any-positive", "any", script, helper=b'var order="helper";', helper_headers=b'Content-Type: text/javascript; charset=utf-8\n', query="?q=any")
+  File "/home/awe/zedBSD-claude1/plan/ws074/tests/test-interop2025-generated.py", line 92, in native
+    root, row, server, context, tool, worker = fixture(label, kind, script, helper, helper_headers, query)
+                                               ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/awe/zedBSD-claude1/plan/ws074/tests/test-interop2025-generated.py", line 69, in fixture
+    shutil.copy2(WPT / relative, target)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.13/shutil.py", line 468, in copy2
+    copyfile(src, dst, follow_symlinks=follow_symlinks)
+    ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.13/shutil.py", line 260, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/awe/zedBSD-claude1/build/ws074-suites/wpt/resources/testharness.css'
+
+======================================================================
+ERROR: test_duplicate_completion_cannot_be_pass (__main__.NativeTests.test_duplicate_completion_cannot_be_pass)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/awe/zedBSD-claude1/plan/ws074/tests/test-interop2025-generated.py", line 248, in test_duplicate_completion_cannot_be_pass
+    result = native("duplicate", "any", b'test(function(){assert_true(true);}, "duplicate");', duplicate=True)
+  File "/home/awe/zedBSD-claude1/plan/ws074/tests/test-interop2025-generated.py", line 92, in native
+    root, row, server, context, tool, worker = fixture(label, kind, script, helper, helper_headers, query)
+                                               ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/awe/zedBSD-claude1/plan/ws074/tests/test-interop2025-generated.py", line 69, in fixture
+    shutil.copy2(WPT / relative, target)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.13/shutil.py", line 468, in copy2
+    copyfile(src, dst, follow_symlinks=follow_symlinks)
+    ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.13/shutil.py", line 260, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/awe/zedBSD-claude1/build/ws074-suites/wpt/resources/testharness.css'
+
+======================================================================
+ERROR: test_native_failure_stays_failure (__main__.NativeTests.test_native_failure_stays_failure)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/awe/zedBSD-claude1/plan/ws074/tests/test-interop2025-generated.py", line 218, in test_native_failure_stays_failure
+    self.assertEqual(native("assertion-negative", "any", b'test(function(){assert_true(false);}, "negative");')["outcome"], "fail")
+                     ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/awe/zedBSD-claude1/plan/ws074/tests/test-interop2025-generated.py", line 92, in native
+    root, row, server, context, tool, worker = fixture(label, kind, script, helper, helper_headers, query)
+                                               ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/awe/zedBSD-claude1/plan/ws074/tests/test-interop2025-generated.py", line 69, in fixture
+    shutil.copy2(WPT / relative, target)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.13/shutil.py", line 468, in copy2
+    copyfile(src, dst, follow_symlinks=follow_symlinks)
+    ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.13/shutil.py", line 260, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/awe/zedBSD-claude1/build/ws074-suites/wpt/resources/testharness.css'
+
+======================================================================
+ERROR: test_window_has_official_window_environment (__main__.NativeTests.test_window_has_official_window_environment)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/awe/zedBSD-claude1/plan/ws074/tests/test-interop2025-generated.py", line 215, in test_window_has_official_window_environment
+    self.assertEqual(native("window-positive", "window", script)["outcome"], "pass")
+                     ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/awe/zedBSD-claude1/plan/ws074/tests/test-interop2025-generated.py", line 92, in native
+    root, row, server, context, tool, worker = fixture(label, kind, script, helper, helper_headers, query)
+                                               ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/awe/zedBSD-claude1/plan/ws074/tests/test-interop2025-generated.py", line 69, in fixture
+    shutil.copy2(WPT / relative, target)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.13/shutil.py", line 468, in copy2
+    copyfile(src, dst, follow_symlinks=follow_symlinks)
+    ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.13/shutil.py", line 260, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/awe/zedBSD-claude1/build/ws074-suites/wpt/resources/testharness.css'
+
+======================================================================
+ERROR: test_zero_tests_cannot_be_pass (__main__.NativeTests.test_zero_tests_cannot_be_pass)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/awe/zedBSD-claude1/plan/ws074/tests/test-interop2025-generated.py", line 252, in test_zero_tests_cannot_be_pass
+    result = native("zero", "any", b'var no_tests_registered=1;')
+  File "/home/awe/zedBSD-claude1/plan/ws074/tests/test-interop2025-generated.py", line 92, in native
+    root, row, server, context, tool, worker = fixture(label, kind, script, helper, helper_headers, query)
+                                               ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/awe/zedBSD-claude1/plan/ws074/tests/test-interop2025-generated.py", line 69, in fixture
+    shutil.copy2(WPT / relative, target)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.13/shutil.py", line 468, in copy2
+    copyfile(src, dst, follow_symlinks=follow_symlinks)
+    ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.13/shutil.py", line 260, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/awe/zedBSD-claude1/build/ws074-suites/wpt/resources/testharness.css'
+
+----------------------------------------------------------------------
+Ran 13 tests in 0.129s
+
+FAILED (errors=6)

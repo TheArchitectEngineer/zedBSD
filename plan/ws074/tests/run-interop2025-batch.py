@@ -43,6 +43,11 @@ def candidate_reason(row, wpt):
     if not test_path.endswith(".html"):
         return "not_html"
     if row["source"] != test_path.lstrip("/"):
+        runner = load_runner()
+        if runner.generated_source(row) is not None:
+            if (wpt / row["source"]).is_file():
+                return "candidate"
+            return "source_absent"
         return "generated_context"
     if any(marker in test_path for marker in PATH_MARKERS):
         return "worker_or_substitution_path"
