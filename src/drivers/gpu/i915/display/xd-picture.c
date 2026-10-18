@@ -316,7 +316,9 @@ drv_i915_xd_picture_prepare(
 	/* A screen that is lit, shows a buffer or keeps the DC states off is stopped first. */
 	held = i915_xd_picture_dc_held(pic);
 	if (pic->prepared) {
-		if (pic->out.lit || pic->plane_armed || held)
+		if (pic->out.lit ||
+		    pic->plane_armed ||
+		    held)
 			return EBUSY;
 	}
 
@@ -712,7 +714,9 @@ drv_i915_xd_picture_discard_model(
 		holder = pic->backend;
 
 	/* Only the model that holds it may discard it. */
-	if (backend == NULL || backend != holder || !backend->model)
+	if (backend == NULL ||
+	    backend != holder ||
+	    !backend->model)
 		return EPERM;
 
 	/* Forgets the screen and its mark. */
@@ -1593,7 +1597,9 @@ i915_xd_picture_check_config(
 	/* A DisplayPort link rate, on 1, 2 or 4 lanes. */
 	if (config->rate_khz > I915_XD_PICTURE_DP_MAX_KHZ)
 		return EINVAL;
-	if (config->lanes != 1U && config->lanes != 2U && config->lanes != 4U)
+	if (config->lanes != 1U &&
+	    config->lanes != 2U &&
+	    config->lanes != 4U)
 		return EINVAL;
 
 	/* Succeeded: the configuration is lit by this path. */
@@ -2288,7 +2294,9 @@ i915_xd_picture_flip_arm(
 	/* Refuses what the screen's flip refuses, and a backend without the vertical blank hooks. */
 	retained = i915_xd_picture_is_retained(pic->pictures, screen);
 	lit = 0;
-	if (pic->prepared && pic->out.lit && pic->plane_armed)
+	if (pic->prepared &&
+	    pic->out.lit &&
+	    pic->plane_armed)
 		lit = 1;
 	refused = drv_i915_xd_flip_refused(&pic->flip, lit, retained, surface);
 	if (refused != I915_XD_FLIP_OK)
@@ -2870,7 +2878,9 @@ i915_xd_picture_step_check(
 	} else {
 		kern_memset(&status, 0, sizeof(status));
 		i915_xd_picture_read_link(pic, &status);
-		if (!pic->out.lit || !status.cr_ok || !status.eq_ok)
+		if (!pic->out.lit ||
+		    !status.cr_ok ||
+		    !status.eq_ok)
 			result = I915_XD_PICTURE_LINK_NOT_TRAINED;
 	}
 
@@ -3823,7 +3833,9 @@ i915_xd_picture_tc_tbt_pll(
 		pll->pipes |= pipe_bit;
 	} else {
 		pll->pipes &= (uint8_t)~pipe_bit;
-		if (pll->pipes == 0U && pll->on && desc != NULL) {
+		if (pll->pipes == 0U &&
+		    pll->on &&
+		    desc != NULL) {
 			late = drv_i915_xd_dpll_disable(&pic->window, desc);
 			pll->on = 0;
 		}

@@ -521,7 +521,9 @@ drv_i915_xd_screen_update(
 	hooks->irq_on(hooks->context);
 
 	/* Reports writes that may have landed in two frames. */
-	if (waited && report->start_frame != 0U && report->start_frame != report->end_frame) {
+	if (waited &&
+	    report->start_frame != 0U &&
+	    report->start_frame != report->end_frame) {
 		report->crossed = 1;
 		hooks->error(hooks->context, "the update crossed a vertical blank\n");
 	}
@@ -793,7 +795,9 @@ drv_i915_xd_screen_run_verdict(
 	clean = outcome->released && outcome->held == 0;
 
 	/* A link lowered after a clean failure: run again. */
-	if (!outcome->passed && clean && outcome->lowered)
+	if (!outcome->passed &&
+	    clean &&
+	    outcome->lowered)
 		return EAGAIN;
 
 	/* A run that did not pass, did not give everything back or still holds power. */
@@ -831,7 +835,9 @@ i915_xd_screen_panel_link(
 	}
 
 	/* Refuses a lane count the link cannot use. */
-	if (plan->lanes != 1U && plan->lanes != 2U && plan->lanes != 4U)
+	if (plan->lanes != 1U &&
+	    plan->lanes != 2U &&
+	    plan->lanes != 4U)
 		return I915_XD_PLAN_SINK;
 
 	/* An eDP 1.4 panel lists its own rates, which the plan does not take. */

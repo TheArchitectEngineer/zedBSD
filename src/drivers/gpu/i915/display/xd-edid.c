@@ -496,12 +496,20 @@ i915_xd_edid_transfer(
 	error = EIO;
 	for (try = 0U; try < I915_XD_EDID_TRANSFER_TRIES; try++) {
 		error = ddc->read_block(ddc->context, segment, offset, block, I915_XD_EDID_BLOCK_BYTES);
+
+		/* A transfer that worked ends the tries. */
 		if (error == 0)
-			return 0;
+			break;
+
+		/* A bus with nothing on it is not tried again. */
 		if (error == ENXIO)
-			return error;
+			break;
 	}
 
 	/* Reports the last transfer's failure. */
-	return error;
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the block is read. */
+	return 0;
 }

@@ -701,7 +701,9 @@ drv_i915_xd_tc_ports_set_lanes(
 	}
 
 	/* One, two or four lanes are what the FIA has. */
-	if (lanes == 1U || lanes == 2U || lanes == 4U) {
+	if (lanes == 1U ||
+	    lanes == 2U ||
+	    lanes == 4U) {
 		drv_i915_xd_tc_set_lanes(ports->io, &fia, lanes, reversed);
 		return;
 	}

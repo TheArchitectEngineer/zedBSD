@@ -563,7 +563,9 @@ drv_i915_xd_output_port(
 	/* The DDI buffer's word; its enable is set when the link starts.  A Type-C PHY of display 13 the display owns says so in it. */
 	i915_xd_output_ddi_link(out, env, &ddi);
 	out->buf_word = drv_i915_xd_ddi_dp_word(env->platform, &ddi);
-	if (out->tc && env->platform->display_ver >= 13U && out->tc_mode != I915_XD_OUTPUT_TC_TBT)
+	if (out->tc &&
+	    env->platform->display_ver >= 13U &&
+	    out->tc_mode != I915_XD_OUTPUT_TC_TBT)
 		out->buf_word |= I915_XD_DDI_BUF_TC_OWNED;
 
 	/* The panel's power. */
@@ -1951,7 +1953,9 @@ i915_xd_output_prepare(
 	owned = 0;
 	if (run->out->tc_mode == I915_XD_OUTPUT_TC_DP_ALT || run->out->tc_mode == I915_XD_OUTPUT_TC_LEGACY)
 		owned = 1;
-	if (run->out->tc && owned && (run->env->platform->wa & I915_XD_WA_TC_RESET_AFTER_TBT) != 0U)
+	if (run->out->tc &&
+	    owned &&
+	    (run->env->platform->wa & I915_XD_WA_TC_RESET_AFTER_TBT) != 0U)
 		before_buffer = i915_xd_output_phy_wa;
 
 	/* The buffer's word with its enable. */

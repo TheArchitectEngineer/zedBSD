@@ -955,7 +955,10 @@ drv_i915_xd_dpll_hdmi_words(
 	 */
 	q = 1U;
 	k = 1U;
-	if (best_divider == 2U || best_divider == 3U || best_divider == 5U || best_divider == 7U) {
+	if (best_divider == 2U ||
+	    best_divider == 3U ||
+	    best_divider == 5U ||
+	    best_divider == 7U) {
 		p = best_divider;
 	} else if ((best_divider & 1U) != 0U) {
 		p = best_divider / 3U;
@@ -1054,7 +1057,9 @@ drv_i915_xd_dpll_port_khz(
 	q = 1U;
 	if ((words->cfgcr1 & I915_XD_CFGCR1_QDIV_MODE) != 0U)
 		q = i915_xd_field_get(I915_XD_CFGCR1_QDIV_RATIO, words->cfgcr1);
-	if (p == 0U || q == 0U || k == 0U)
+	if (p == 0U ||
+	    q == 0U ||
+	    k == 0U)
 		return 0U;
 
 	/* The DCO: the integer and the fraction (written halved where the platform needs it). */
