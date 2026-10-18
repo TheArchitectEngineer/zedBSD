@@ -2,11 +2,11 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: uncleared（q53 callable/Call/Construct partial cleared、whole Proxy未達）
+Status: in-progress（q54 global Proxy/revocable partial、whole未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
-Queue: ws074-q20261018-53-i01（q30〜q52 partial履歴保持）
+Queue: ws074-q20261019-54-i01（q30〜q53 partial履歴保持）
 Origin: p189/q29 original WebIDL2 parseがProxy未定義で停止。
 
 Objective / own criteria: native managed Proxyを実object internal methodsへ接続し、constructor/revocableと各internal operationのtrap/fallback/invariant/receiver/revocation/callability/GCを正しく実行する。original WebIDL2 actual parse/validatorに必要なget/set/array behaviorを通常APIで提供し、independent controls/原WPTを通す。部分read stageだけでwholeをclearしない。
@@ -376,3 +376,5 @@ global Proxy constructor/revocable/Reflect公開は次readiness、ordinary Funct
 Archives: harness-all-raw 1676 members SHA25621cf46533c4ed0f08a59a2106825265b06e632a5844d532fcc20eb85c3c588aa, native-oracle-and-build-raw 169 members SHA2567d63a9a9c1893410b6be82a4adb45e4ec30eb97a763faf52b63d3674b0f875b1を全member順次read-back。runtime binariesはhash付きbuild保持・archive非同梱。
 
 [証拠](evidence/20261019-q53/README.md)。次finite Queueでglobal constructor/revocable/Reflectの公開readinessと元WebIDL/WPT改善を選定候補へ。
+
+Event ws074-p258-q54-selected-20261019: q53 private Call/Constructを前提にglobal Proxy/revocable actual builtinを上記Queueの90分partialへ選定。new js/builtin_proxy.c owner/source登録/actual data-edge revokerとdirect GC、原WebIDL baseline・全eligible3530原corpusを検証する。Reflect/public extra/core semanticsは未選定、whole/p100/full target/100%未達・master編集無し。

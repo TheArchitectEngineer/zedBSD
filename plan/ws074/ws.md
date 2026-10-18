@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [ws074-q20261018-53](queue.md) finished（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+Queue: [ws074-q20261019-54](queue.md) active（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
 
 Latest verified（q53）: callable Proxy/Call/Construct/bind/instanceof partial clear。old809＋new57 native866/Chrome864既知huge2、新57 genuine一致。ordinary caller realm1/bound caller realm2を実対照で修正、direct native Call/Construct実GC保持→入力8/結果回収。全1508 q52全callback/completion同一・1482/3805・held0・未attempt275、images/crash q28再利用。source c602718f7＋483b5b7ad main統合・master編集無し。global Proxy/revocable/Reflect/p100/full target未達。[証拠](phase258/evidence/20261019-q53/README.md)。共有投影pending。
 
@@ -706,7 +706,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p255](phase255/phase.md) | PerformanceObserver native mark登録・queue・task配信 | uncleared / q28 Window consumer/failure/held partial cleared・whole残り | p254 verified native mark output |
 | [ws074-p256](phase256/phase.md) | Window ErrorEvent・uncaught harness fidelity | uncleared / q28 runtime/inline source partial cleared・external/syntax等残り | 既存Event/Window/VM→p255再評価 |
 | [ws074-p257](phase257/phase.md) | synchronous generator yield* delegation | cleared / q29 sync own criteria・Chrome38/native GC10 | q28 VM/GC・p189 pinned WebIDL2 |
-| [ws074-p258](phase258/phase.md) | native Proxy internal methods・GC/revocation | uncleared / q53 callable/Call/Construct partial cleared・global/whole残り | q29 VM/GC・p189 actual Proxy blocker |
+| [ws074-p258](phase258/phase.md) | native Proxy internal methods・GC/revocation | in-progress / q54 global Proxy/revocable partial | q29 VM/GC・p189 actual Proxy blocker |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 
@@ -1397,3 +1397,5 @@ Event ws074-q52-finished-20261018: p258 for-in partial clear、native809/Chrome8
 Event ws074-q53-selection: p258 callable/Call/Construct＋VM-owned bound target/generic consumer安全性を選定。global constructor/Reflect公開は後続、whole未達。main統合・master.md編集無し。[Queue](queue.md)。
 
 Event ws074-q53-finished-20261019: p258 callable/Call/Construct partial clear、native866/Chrome864既知huge2・新57 genuine一致、ordinary realm1/bound realm2 counterfactual改善、direct Call/Construct実GC/回収。全1508 q52全callback/completion同一・1482/3805、p189 validation output投影。source c602718f7＋483b5b7ad main統合・master.md編集無し。[history](history/ws074-q20261018-53.md)。共有投影pending。
+
+Event ws074-q54-selected-20261019: p258 global Proxy/revocable actual builtinとpublic GC/原WebIDL/全eligible3530測定をfinite Queueへ選定。source additionはJS builtin層、q53 verified outputsを利用。whole/p100/100%未達、共有投影pending・master.md編集無し。
