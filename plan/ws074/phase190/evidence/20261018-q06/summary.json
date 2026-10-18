@@ -1,0 +1,110 @@
+{
+  "source_commit": "d328827f5",
+  "counts": {
+    "fail": 725,
+    "pass": 836
+  },
+  "selected": 1561,
+  "unrun": 413,
+  "crash_not_refreshed": 48,
+  "q1062_counts": {
+    "fail": 899,
+    "pass": 662
+  },
+  "q1062_transitions": {
+    "fail->fail": 707,
+    "pass->pass": 644,
+    "fail->pass": 192,
+    "pass->fail": 18
+  },
+  "historical_regressions": [
+    "css/css-flexbox/align-items-007.html",
+    "css/css-flexbox/aspect-ratio-intrinsic-size-007.html",
+    "css/css-grid/alignment/grid-justify-baseline-001.html",
+    "css/css-grid/grid-items/grid-intrinsic-maximums.html",
+    "css/css-grid/grid-items/grid-minimum-size-grid-items-018.html",
+    "css/css-grid/subgrid/grid-gap-005.html",
+    "css/css-grid/subgrid/grid-gap-006.html",
+    "css/css-grid/subgrid/grid-gap-larger-001.html",
+    "css/css-grid/subgrid/placement-implicit-001.html",
+    "css/css-grid/subgrid/repeat-auto-fill-002.html",
+    "css/css-grid/subgrid/repeat-auto-fill-003.html",
+    "css/css-grid/subgrid/repeat-auto-fill-004.html",
+    "css/css-viewport/zoom/background-image.html",
+    "css/css-viewport/zoom/image-intrinsic-size.html",
+    "css/css-viewport/zoom/svg-path-simple.html",
+    "css/css-viewport/zoom/svg-path.html",
+    "css/css-viewport/zoom/svg-transform.html",
+    "css/css-viewport/zoom/svg-viewBox.html"
+  ],
+  "session_before_comparison": {
+    "measured": 725,
+    "counts": {
+      "fail": 725
+    },
+    "pass_to_nonpass": []
+  },
+  "groups": {
+    "css/css-anchor-position": {
+      "fail": 21
+    },
+    "css/css-cascade": {
+      "pass": 1,
+      "fail": 1
+    },
+    "css/css-flexbox": {
+      "pass": 546,
+      "fail": 242
+    },
+    "css/css-grid": {
+      "fail": 304,
+      "pass": 225
+    },
+    "css/css-lists": {
+      "fail": 1
+    },
+    "css/css-multicol": {
+      "fail": 1
+    },
+    "css/css-shapes": {
+      "fail": 16
+    },
+    "css/css-text-decor": {
+      "fail": 2,
+      "pass": 5
+    },
+    "css/css-view-transitions": {
+      "pass": 2
+    },
+    "css/css-viewport": {
+      "fail": 21,
+      "pass": 3
+    },
+    "css/css-writing-modes": {
+      "fail": 85,
+      "pass": 11
+    },
+    "css/filter-effects": {
+      "pass": 31,
+      "fail": 20
+    },
+    "html/editing": {
+      "fail": 2
+    },
+    "html/rendering": {
+      "pass": 12,
+      "fail": 9
+    }
+  },
+  "binary_sha256": {
+    "build/ws074-20261018/before/browser": "25a66385edb7811c04e5e04fddd6bf3060ef2883f26d2781adbecf9d87debc02",
+    "build/ws074-20261018/before/libbrowser.so": "309dc47b67b9696b70324d4128e81033eafe2ee3a5dd575686da3d72636a67a3",
+    "build/ws074-20261018/q05/after/browser": "25a66385edb7811c04e5e04fddd6bf3060ef2883f26d2781adbecf9d87debc02",
+    "build/ws074-20261018/q05/after/libbrowser.so": "6deac3895951bb032f2d4b2d909a87a53d807844d63083904978a95d50680b2c"
+  },
+  "fonts_sha256": {
+    "Mahora-Regular.ttf": "9d2e9933058fa465f78572e423ac0926fde255b7d46df343043ca0e6e335ebd9",
+    "JetBrainsMono-Regular.ttf": "e6fd0d7e91550b3ed2b735d4312474362c4716edc4fc0577a0f61ed782d5aed1",
+    "DroidSansFallbackFull.ttf": "acb6440a713d880a13a21b468ba7cd43f5a2b2934972e51be791c880730777b8"
+  }
+}

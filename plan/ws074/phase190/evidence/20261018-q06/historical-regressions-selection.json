@@ -1,0 +1,232 @@
+{
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "wpt_manifest_sha256": "951619bb1a7c1f25ff0abc6e5ae4f15116a4e8874b053bd93cf0aca681098ac0",
+  "focus_counts": {
+    "anchor-positioning": {
+      "selected": 234,
+      "unresolved": 0
+    },
+    "backdrop-filter": {
+      "selected": 69,
+      "unresolved": 0
+    },
+    "core-web-vitals": {
+      "selected": 117,
+      "unresolved": 0
+    },
+    "details": {
+      "selected": 46,
+      "unresolved": 0
+    },
+    "layout": {
+      "selected": 2252,
+      "unresolved": 0
+    },
+    "modules": {
+      "selected": 30,
+      "unresolved": 0
+    },
+    "navigation": {
+      "selected": 378,
+      "unresolved": 0
+    },
+    "pointer-and-mouse-events": {
+      "selected": 42,
+      "unresolved": 0
+    },
+    "remove-mutation-events": {
+      "selected": 1,
+      "unresolved": 0
+    },
+    "scope": {
+      "selected": 29,
+      "unresolved": 0
+    },
+    "scrollend": {
+      "selected": 28,
+      "unresolved": 0
+    },
+    "storageaccess": {
+      "selected": 22,
+      "unresolved": 0
+    },
+    "textdecoration": {
+      "selected": 16,
+      "unresolved": 0
+    },
+    "urlpattern": {
+      "selected": 12,
+      "unresolved": 0
+    },
+    "view-transitions": {
+      "selected": 263,
+      "unresolved": 0
+    },
+    "webassembly": {
+      "selected": 12,
+      "unresolved": 0
+    },
+    "webcompat": {
+      "selected": 82,
+      "unresolved": 0
+    },
+    "webrtc": {
+      "selected": 11,
+      "unresolved": 0
+    },
+    "writingmodes": {
+      "selected": 167,
+      "unresolved": 0
+    }
+  },
+  "selected_count": 3805,
+  "unresolved_count": 0,
+  "selected": [
+    {
+      "id": "/css/css-flexbox/align-items-007.html",
+      "focus": [
+        "layout"
+      ],
+      "type": "reftest",
+      "source": "css/css-flexbox/align-items-007.html"
+    },
+    {
+      "id": "/css/css-flexbox/aspect-ratio-intrinsic-size-007.html",
+      "focus": [
+        "layout"
+      ],
+      "type": "reftest",
+      "source": "css/css-flexbox/aspect-ratio-intrinsic-size-007.html"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-justify-baseline-001.html",
+      "focus": [
+        "layout"
+      ],
+      "type": "reftest",
+      "source": "css/css-grid/alignment/grid-justify-baseline-001.html"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-intrinsic-maximums.html",
+      "focus": [
+        "layout"
+      ],
+      "type": "reftest",
+      "source": "css/css-grid/grid-items/grid-intrinsic-maximums.html"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-minimum-size-grid-items-018.html",
+      "focus": [
+        "layout"
+      ],
+      "type": "reftest",
+      "source": "css/css-grid/grid-items/grid-minimum-size-grid-items-018.html"
+    },
+    {
+      "id": "/css/css-grid/subgrid/grid-gap-005.html",
+      "focus": [
+        "layout"
+      ],
+      "type": "reftest",
+      "source": "css/css-grid/subgrid/grid-gap-005.html"
+    },
+    {
+      "id": "/css/css-grid/subgrid/grid-gap-006.html",
+      "focus": [
+        "layout"
+      ],
+      "type": "reftest",
+      "source": "css/css-grid/subgrid/grid-gap-006.html"
+    },
+    {
+      "id": "/css/css-grid/subgrid/grid-gap-larger-001.html",
+      "focus": [
+        "layout"
+      ],
+      "type": "reftest",
+      "source": "css/css-grid/subgrid/grid-gap-larger-001.html"
+    },
+    {
+      "id": "/css/css-grid/subgrid/placement-implicit-001.html",
+      "focus": [
+        "layout"
+      ],
+      "type": "reftest",
+      "source": "css/css-grid/subgrid/placement-implicit-001.html"
+    },
+    {
+      "id": "/css/css-grid/subgrid/repeat-auto-fill-002.html",
+      "focus": [
+        "layout"
+      ],
+      "type": "reftest",
+      "source": "css/css-grid/subgrid/repeat-auto-fill-002.html"
+    },
+    {
+      "id": "/css/css-grid/subgrid/repeat-auto-fill-003.html",
+      "focus": [
+        "layout"
+      ],
+      "type": "reftest",
+      "source": "css/css-grid/subgrid/repeat-auto-fill-003.html"
+    },
+    {
+      "id": "/css/css-grid/subgrid/repeat-auto-fill-004.html",
+      "focus": [
+        "layout"
+      ],
+      "type": "reftest",
+      "source": "css/css-grid/subgrid/repeat-auto-fill-004.html"
+    },
+    {
+      "id": "/css/css-viewport/zoom/background-image.html",
+      "focus": [
+        "webcompat"
+      ],
+      "type": "reftest",
+      "source": "css/css-viewport/zoom/background-image.html"
+    },
+    {
+      "id": "/css/css-viewport/zoom/image-intrinsic-size.html",
+      "focus": [
+        "webcompat"
+      ],
+      "type": "reftest",
+      "source": "css/css-viewport/zoom/image-intrinsic-size.html"
+    },
+    {
+      "id": "/css/css-viewport/zoom/svg-path-simple.html",
+      "focus": [
+        "webcompat"
+      ],
+      "type": "reftest",
+      "source": "css/css-viewport/zoom/svg-path-simple.html"
+    },
+    {
+      "id": "/css/css-viewport/zoom/svg-path.html",
+      "focus": [
+        "webcompat"
+      ],
+      "type": "reftest",
+      "source": "css/css-viewport/zoom/svg-path.html"
+    },
+    {
+      "id": "/css/css-viewport/zoom/svg-transform.html",
+      "focus": [
+        "webcompat"
+      ],
+      "type": "reftest",
+      "source": "css/css-viewport/zoom/svg-transform.html"
+    },
+    {
+      "id": "/css/css-viewport/zoom/svg-viewBox.html",
+      "focus": [
+        "webcompat"
+      ],
+      "type": "reftest",
+      "source": "css/css-viewport/zoom/svg-viewBox.html"
+    }
+  ],
+  "unresolved": []
+}

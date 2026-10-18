@@ -2,7 +2,7 @@
 
 # ws074-p190: Interop 2025 reftest・crashtest runner coverage
 
-Status: in-progress（2026-10-18 q06静的census部分、whole未達）
+Status: uncleared（2026-10-18 q06静的census部分cleared、whole未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -163,3 +163,11 @@ Event ws074-p190-q1060-outcome-20261014: 固定静的1,561 IDをq1056同条件�
 ## q1062-i01 結果（2026-10-14 03:35 JST）
 
 Event ws074-p190-q1062-outcome-20261014: 固定静的1,561 IDをq1060同条件で全再測定。[証拠](evidence/20261014-q1062/README.md)。662 local PASS/899 pixel FAIL/0 error/0 timeout、q1060比2 FAIL→PASS/0 PASS→FAIL。旧8回帰は全PASS。固定ID・checkpoint1,561行/report・遷移を照合済み。q1062-i01 partial cleared、p190 whole uncleared。runner未対応413 IDと899画素不一致、p173全3,805件100%が残る。browser/WPT/runner/Master未変更、共有投影/GitHub publication保留。
+
+q06診断の補い: 古いq1062 PASSからの差分8件（途中集計）を、このsessionのp240開始前に保存したbrowser/libraryでも同条件で測り、今回の変更由来か既存差分かを分ける。新しい製品変更は行わない。q1040のcrash48 local PASSのraw stderrには7件のUncaughtがあり、全3,805の達成へ無条件加算しない。既存のlocal測定の歴史は保持し、WPT条件の未確認を残す。
+
+q06の全静的測定は836 PASS/725 FAIL、error/timeout0。q1062より悪化した18件は開始前binaryでも全FAILと確認。q1062以降に一度PASSになったcaseの後退が漏れないよう、current nonPASS残707件を同じ開始前binaryで追加比較する（既測18は再実行せず）。初回90分枠内、追加実行は最大60分・render20秒、製品/runner変更なし。この同session比較で新規後退があれば次の実装修正へ優先して渡す。
+
+## q06 結果
+
+Event ws074-p190-q06-partial-clear-20261018: [証拠](evidence/20261018-q06/README.md)。静的1,561 ID全件836 PASS/725 FAIL、error/timeout0。全FAIL725を開始前binaryで照合しsession内後退0。q1062より18悪化は開始前にも存在。未対応413とcrash最新確認が残る。部分cleared、whole uncleared。既存runner cleanupとcrash test-wait保証を後続へ。共有投影pending。

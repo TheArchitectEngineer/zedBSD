@@ -50,3 +50,5 @@ Event ws074-p242-q05-start-20261018: 5008906bdの基本交換後、observerのso
 ## q05 結果
 
 Event ws074-p242-q05-partial-clear-20261018: [証拠](evidence/20261018-q05/README.md)。observer24項目Chromium一致・DOM25/25、補助16→18 PASS/31 callback、13 FAILはfactory/iterator不足。公式13は12 FAIL/1 no_completionでwhole増分0。host/target compile warning0、Acid3差0/Acid2差873。observer部分cleared、whole uncleared。共有投影pending。
+
+q05 source/証拠のWIP commit: d328827f5。q06はこの固定browser/libraryを再利用し、hashをp190 q06 summaryへ保存した。

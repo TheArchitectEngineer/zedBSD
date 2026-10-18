@@ -2,17 +2,19 @@
 
 # ws074-q20261018-06 / 固定reftest全静的候補census
 
-Status: active（2026-10-18 11:33 JST）
+Status: finished（2026-10-18、census/診断部分cleared）
 Owner: このCodex chat単独。
 Approval: [ユーザーの自走指示](autonomy.md)を本有限範囲へ適用。
 Timebox: 最大90分（13:03 JSTまで）。runner全体を5,300秒・個別render20秒で制限する。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| ws074-q20261018-06-i01 | [p190](phase190/phase.md) static census partial | 固定reftest1,974 ID中、既存runnerの静的候補全1,561 IDを800×600・固定font・参照連鎖/fuzzyの既存判定で測定。未対応413 IDとcrash48を未達として保持。全ID/whole/画素差/checkpointを保存し、比較可能なq1062全ID snapshotとq1202既知4後退を照合。browser/runner/WPT/ABI/Masterは変更せず、次の一般修正候補を示す | in-progress | p173固定manifest、d328827f5の固定browser/libbrowser、q1034 reference-chain runner |
+| ws074-q20261018-06-i01 | [p190](phase190/phase.md) static census partial | 固定reftest1,974 ID中、既存runnerの静的候補全1,561 IDを800×600・固定font・参照連鎖/fuzzyの既存判定で測定。未対応413 IDとcrash48を未達として保持。全ID/whole/画素差/checkpointを保存し、比較可能なq1062全ID snapshotとq1202既知4後退を照合。browser/runner/WPT/ABI/Masterは変更せず、次の一般修正候補を示す | cleared | p173固定manifest、d328827f5の固定browser/libbrowser、q1034 reference-chain runner |
 
 Dependency graph: 固定manifest + p242 q05 output → p190 static census partial。p189/p242 whole clearanceは前提ではない。
 Upcoming Work Outlook: Grid/Flexの共通原因、scripted402/reference5/variant6、testharness未対応328、crash48。
+
+Outcome: 静的1,561件836 PASS/725 FAIL、error/timeout0。全FAIL725を開始前binaryでも照合し今回sessionの後退0。未対応413保持、crash48は未更新。[証拠](phase190/evidence/20261018-q06/README.md)。p190 whole uncleared。
 
 ---
 

@@ -1,6 +1,10 @@
 # WS074 lane の Past Log
 
-## 最新: ws074-q20261018-05（2026-10-18）
+## 最新: ws074-q20261018-06（2026-10-18）
+
+[履歴](ws074-q20261018-06.md)。全静的1,561件836 PASS/725 FAIL、error/timeout0。q1062比192改善/18悪化だが、18を含む全FAIL725はこのsession開始前にもFAIL、今回sessionの後退0。未対応413/crash48の最新確認が残る。既存runner cleanupをretainへ直してからp243 Grid CSSOM等を進める。共有投影pending。
+
+## ws074-q20261018-05（2026-10-18）
 
 [履歴](ws074-q20261018-05.md)。replaceChildren observer部分cleared、Chromium24項目一致・DOM25/25、補助18/31 callback PASSで全結果取得。公式PASS増分0。source removalとbatch/rootを実装、Acid3差0/Acid2差873、host/amd64 compile warning0。factory/iterator/target等は残る。次は公式reftest census。共有投影pending。
 
