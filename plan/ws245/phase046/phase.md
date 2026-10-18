@@ -159,3 +159,16 @@ P1 の見立て（Status は変えない。判定は Q1）: cleared にしない
 - 満たした: 機械で見られる規則は WS245 の行で残り 0（道具の限界と短い対称の選びを除く）、上の読み通し 2 の直し、build warning 0、host 試験 all passed。
 - 満たしていない: comment の 1 行ずつの目視と関数名の写しの目視（117,100 行の通読）。試験の check の述語の式の扱い（Q1 の判断）。
 - P1 の見立て: cleared にしない（通読が残る）。通読を範囲から外すか、conformance-reviewer に file を分けるかは Q1 の判断。
+
+## 読み通しの続き 3（2026-10-19 P2、q1259）: 名前と comment の Linux との突き合わせ
+
+範囲: `src/drivers/gpu/i915` の display・intel・tests/display の全部の file（機械の突き合わせ）と、当たった所の目視。Linux の tree は P1 の worktree の `build/ws229-p001/linux/linux-6.8.12/drivers/gpu/drm/i915` を読むだけ。道具は scratch（commit しない）。
+
+1. **comment の写し**: 両方の comment を単語の列にして 7 語の連なりで突き合わせた（`referenced:` の block は除く）。当たり 10 のうち WS245 の file は `xd-dp.c` の 1（段落の comment の中の Linux の関数名）だけ。残りは GT の workarounds（WA の番号と platform の列）、genxml・null-state の許諾文（WS245 の外）。→ comment の文の写しは無い。
+2. **段落の comment の中の Linux の関数名**（出典は block の `Procedure referenced:` に書く規則）: `xd-dp.c` の probe の 5 つの段落の comment の括弧書き（`intel_dp_init_lttpr_and_dprx_caps()` など）を消した（関数の直前の block が同じ関数を引いている）。WS245 が足した行の他の当たりは試験の data の出所の説明（debugfs の `i915_shared_dplls_info`・`i915_power_domain_info`、host で動かした `icl_calc_mg_pll_state`）で、値の出所なので残した。`intel/display-tables-xd9.h` の表ごとの 1 行の comment（`skl_ddi_translations_dp` など）は直前の複数行の `Values referenced:` の block が「the tables named with each below」と指す形で残した（Q1 に報告）。
+3. **関数名**: zedBSD の関数名（2118）から `drv_i915_xd_`・`i915_xd_` などの接頭を外した核を、Linux の関数名（8849）から `intel_`・`icl_`・`tgl_` などを外した核と突き合わせた。WS245 が足した関数（基点 0c25c87a7 に無い物）で当たったのは 26:
+   - 3 語以上の核が一致: `drv_i915_xd_power_well_enable/_disable`（Linux `intel_power_well_enable` など）、`drv_i915_xd_pps_vdd_on`（`intel_pps_vdd_on`）、`i915_xd_cdclk_pll_crawl`（`adlp_cdclk_pll_crawl`）、`i915_xd_tc_port_connected`・`_update_mode`（`intel_tc_port_*`）、`tc-port.c` の `tc_port_lock/_unlock`・`drv_i915_tc_port_suspend`（`intel_tc_port_*`）。
+   - 2 語の核が一致: `aux_init`、`backlight_enable/_disable`、`cdclk_init`、`combo_phy_init/_uninit`（`intel_combo_phy_init` と同じ）、`combo_signal_levels`、`dmc_init`、`hpd_init`、`mg_pll_enable`（Linux の static `mg_pll_enable` と同じ）、`plane_check`、`cdclk_decimal`（`skl_cdclk_decimal`）、`gmbus_wait`（Linux の static と同じ）、`pcode_request`、xd9 の `hpd_enable`・`step_name`・`wm_latency`。
+   - 見立て: hardware の部品の名前（power well・PPS の VDD・CDCLK・combo PHY・MG PLL・GMBUS）と動詞の組で、自然な英語の名前が重なった物が大半。Linux に特有の言い回しの写しに近いのは `cdclk_pll_crawl`・`cdclk_decimal`・`tc_port_update_mode`・`tc_port_connected`・`gmbus_wait`。関数の中身（1 対 1 の構造の写し）は名前の当たった所を目視した範囲で、引数・段落の分け方が Linux と違う（xd の io・platform の記述を受ける形）。**改名は適用していない**: P1 が WS251 p002 で src/drivers/gpu を広く触っていて衝突しやすいのと、「自然な名前の一致を写しと見るか」の線引きが要るので Q1 に案を送った。
+- 確かめた事: `xd-dp.c` の変更は comment だけ（`git diff` で確かめた）。
+- 残り: comment の 1 行ずつの目視（意味を言っているか）の全行の通読は、機械の突き合わせで写しが無い事を確かめた所まで。改名（上の案の Q1 の判断の後）。
