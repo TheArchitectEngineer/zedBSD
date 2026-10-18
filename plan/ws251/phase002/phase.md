@@ -43,12 +43,20 @@ Parent: [WS251](../ws.md)
   `sh plan/ws245/tests/run-xd-host-tests.sh build/ws251p002-xd` all passed、`sh plan/ws075/tests/hdmi/host-output-test.sh build/ws251p002-h2` 80 checks, 0 failures。
 - 未確認: WS237 の gen9 の host 試験（`plan/ws237/tests/run-gen9-*-host-test.sh`）と WS229 の `run-bootfb-host-test.sh`（ラップアップで未実施）。
 
+### 群 2: i915 render（`src/drivers/gpu/i915/render/`）— 済み（2026-10-18 q1242、P1）
+
+- 34 file の comment だけ。機械の検査の数は src/drivers/gpu で 565 → 412 件、render は 153 → 0 件。
+- 消した物: ws229・ws101・ws075・ws031・ws083・ws035・WS068 の Phase の参照、BUG-117・BUG-244・BUG-260、T1-608、ws083 の R-S1〜3、設計の番号（design §N・D17・D18・D21〜D23・B2・N3・N4・items N）、試験機の名前（compute.c の「which ran on the Latitude 5330」）、codec.h と vulkan-codec.inc の生成の道具の `plan/ws031/handover/tools/` の path（道具の名 gen_vk_server_codec.py は残した）。
+- 残した物: 「test build」は I915_TESTS の build にある weak の checkpoint と video の hang の試験の code の説明（code の振る舞い）なので残した。
+- **Q1 への依頼**: vulkan-codec.inc は plan/ws031/handover/tools/gen_vk_server_codec.py の出力。道具の書く header の行を同じに直さないと、作り直した時に path が戻る（道具は範囲の外）。
+- 確かめた事: 新しい基準 `build/ws251p002-base2`（tree 0a59b8a8a、前の基準 e9157f2c2 からは WS245 の merge で source が変わったので作り直した）。`sh build/tmp/kbuild.sh ws251p002-g2` default・vke2・execution とも rc=0 warning 0、`ws251-objcmp.sh ws251p002-base2 ws251p002-g2` で object 270/273/280 の差なし、vmunix 3 組とも同じ（comment だけ）。
+
 ### 残り・再開の手順
 
-- 残り 565 件（i915 render 153・tests 167・compiler 40・intel 25・top の GT の file 群、bcm2711 79、venus 6、compiler 15、amdrdna 2、`include/uapi/gpu-op.h` 3）。
+- 残り 412 件（群 2 の後。tests 167・compiler 40・intel 25・top の GT の file 群、bcm2711 79、venus 6、compiler 15、amdrdna 2、`include/uapi/gpu-op.h` 3）。
   i915 の render の image.c「design N3」・video.c「(N4)」、tests/execution/README.md の LCD-G・P7-IPC の類も対象。
   bcm2711 は `bcm2711_stage_mark` の log が N0・P0・R0 の段の符号を持つ（readout.c ほか）。照合する試験の grep が要る。
 - 手順: 群ごとに `git grep` で文脈を読み、comment を直す → `sh build/tmp/kbuild.sh ws251p002-gN` → `sh build/tmp/ws251-objcmp.sh ws251p002-base ws251p002-gN`
-  （log を変えた file 以外の object が同じ）→ 群の host 試験 → WIP commit。基準の build `build/ws251p002-base` は残してある。
+  （log を変えた file 以外の object が同じ）→ 群の host 試験 → WIP commit。基準の build `build/ws251p002-base2`（0a59b8a8a）を使う（古い `ws251p002-base` は消してよい）。
 - 段の符号の検査（機械の検査の外）: `git grep -nE '\bN[0-9]\b|\bP[0-9]\b|\bR[0-9]\b|\bLCD-[A-Z]|\bF[0-9]+\b|[Ss]tage [0-9]|test build|QEMU|5330'` を群ごとに目視。
 - 掃除（Q1 に依頼）: `build/ws251p002-base`（再開に要るので残すなら後で）・`build/ws251p002-g1`・`build/ws251p002-xd`・`build/ws251p002-h2` と各 .log。

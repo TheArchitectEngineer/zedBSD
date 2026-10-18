@@ -81,7 +81,7 @@ struct i915_gfx_kernels {
 	uint32_t vs_varyings;
 
 	/*
-	 * The geometry kernel (ws075-p007b); NULL and zeros for a draw without
+	 * The geometry kernel; NULL and zeros for a draw without
 	 * one.  Its code and size, first payload register and push data, then
 	 * what 3DSTATE_GS and the URB take from it: the vertices of an input
 	 * primitive, the 3D_Prim_Topo_Type it emits, one output vertex and the
@@ -128,7 +128,7 @@ struct i915_gfx_kernels {
 
 	/*
 	 * Bit n: fragment input n is gl_PrimitiveID, which no stage before
-	 * writes, so the setup gives it (ws075-p007b b4; 0 for a rectangle).
+	 * writes, so the setup gives it (0 for a rectangle).
 	 */
 	uint32_t ps_primitive_id_mask;
 
@@ -169,7 +169,7 @@ struct i915_gfx_kernels {
 	uint64_t gs_scratch_offset;
 	uint64_t ps_scratch_offset;
 
-	/* A compute kernel's scratch space and where its part starts (ws101-p004); zero for a draw. */
+	/* A compute kernel's scratch space and where its part starts; zero for a draw. */
 	uint32_t cs_scratch_bytes;
 	uint64_t cs_scratch_offset;
 };

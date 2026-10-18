@@ -6,14 +6,14 @@
  */
 
 /*
- * The MFX command builder of an H.264 decode (ws083-p004).
+ * The MFX command builder of an H.264 decode.
  *
  * video.c resolves a decode -- its parameter sets, its picture, its
  * references and the GPU addresses of everything the decoder reads and
  * writes -- into a struct i915_video_mfx_decode, and the builder writes the
  * Gen12 MFX commands of that one picture into a batch.  The builder reads
- * nothing else: it checks nothing the checks before it decided (design
- * §6.6) and touches no object, so it can be run and compared on the host.
+ * nothing else: it checks nothing the checks before it decided and
+ * touches no object, so it can be run and compared on the host.
  *
  * The H.264 parameter sets are kept here as the executor holds them: the
  * fields of StdVideoH264SequenceParameterSet and StdVideoH264PictureParameter
@@ -85,7 +85,7 @@ struct i915_video_scaling {
 
 /*
  * One H.264 sequence parameter set a parameters object holds.  It is one
- * allocation (D22), made when the set is added and freed with the object or
+ * allocation, made when the set is added and freed with the object or
  * when a later set of the same key replaces it.
  */
 struct i915_video_sps {

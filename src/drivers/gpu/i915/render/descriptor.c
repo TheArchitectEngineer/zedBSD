@@ -201,8 +201,7 @@ drv_i915_gfx_allocate_dsets(
 
 		/*
 		 * Records a copy of the layout the set was allocated with (the
-		 * application may destroy the layout while the set is used,
-		 * BUG-260).
+		 * application may destroy the layout while the set is used).
 		 */
 		layout_id = (uint64_t)(uintptr_t)info.pSetLayouts[index];
 		layout = drv_i915_object_lookup(session, I915_VK_OBJ_DESCRIPTOR_SET_LAYOUT, layout_id);
@@ -299,7 +298,7 @@ drv_i915_gfx_update_dsets(
 }
 
 
-/* Counts the diagnostics below: only the first 16 are logged (BUG-117). */
+/* Counts the diagnostics below: only the first 16 are logged. */
 static unsigned i915_gfx_update_said;
 
 /* Logs a descriptor write to an identity that names no descriptor set of the session. */
@@ -380,7 +379,7 @@ i915_gfx_update_write(
 	dset = drv_i915_object_lookup(session, I915_VK_OBJ_DESCRIPTOR_SET, dset_id);
 	binding = drv_i915_wire_read_u32(reader);
 
-	/* Says so when the set is not one of the session's (BUG-117): the write is not applied. */
+	/* Says so when the set is not one of the session's: the write is not applied. */
 	if (dset == NULL)
 		i915_gfx_update_unknown_set(binding, dset_id);
 
@@ -413,7 +412,7 @@ i915_gfx_update_write(
 		dset->slots[binding].view = drv_i915_gfx_view_lookup(session, view);
 		dset->slots[binding].texel = NULL;
 
-		/* Says so when a handle names no object of the session (BUG-117): the draws that sample the binding are refused. */
+		/* Says so when a handle names no object of the session: the draws that sample the binding are refused. */
 		if ((dset->slots[binding].sampler == NULL && sampler != 0U) ||
 		    (dset->slots[binding].view == NULL && view != 0U))
 			i915_gfx_update_unknown_image(binding,
@@ -525,7 +524,7 @@ i915_dpool_sets_free(
 		if (dset == NULL)
 			break;
 
-		/* Command buffers that bound it let go of it (BUG-260), then it is freed. */
+		/* Command buffers that bound it let go of it, then it is freed. */
 		drv_i915_gfx_forget(session, I915_VK_OBJ_DESCRIPTOR_SET, dset);
 		kern_free(dset);
 	}

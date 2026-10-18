@@ -7,7 +7,7 @@
 
 /*
  * What a session's objects let go of when one of them is destroyed (see
- * forget.h, BUG-260).
+ * forget.h).
  *
  * Each holder is found by a walk of the session's objects of its kind
  * (drv_i915_object_each, under the table's lock); a walk only clears the

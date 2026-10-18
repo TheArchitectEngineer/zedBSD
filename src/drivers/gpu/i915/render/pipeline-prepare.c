@@ -50,7 +50,7 @@ static int i915_pipeline_thread_ids(struct i915_gfx_pipeline *pipeline);
  * Compiles a pipeline's vertex, geometry and fragment kernels.
  *
  * The pipeline needs the vertex and the fragment stage; the geometry stage
- * is optional (ws075-p007b) and is compiled after the vertex stage, whose
+ * is optional and is compiled after the vertex stage, whose
  * VUE it reads.  Returns the parser's or the compiler's error, or ENOTSUP
  * for kernels the draw path cannot place or connect; the pipeline is then
  * left without kernels.
@@ -66,7 +66,7 @@ drv_i915_gfx_pipeline_prepare(
 	int error;
 	unsigned graphics_ver;
 
-	/* The kernels are compiled for the session's GT (ws229-p004). */
+	/* The kernels are compiled for the session's GT. */
 	graphics_ver = i915_pipeline_graphics_ver(session);
 
 	/* Refuses a pipeline without both the vertex and the fragment stage. */
@@ -163,8 +163,7 @@ drv_i915_gfx_pipeline_prepare(
 }
 
 /*
- * Compiles a compute pipeline's kernel and makes its threads' ID table
- * (ws101-p003).
+ * Compiles a compute pipeline's kernel and makes its threads' ID table.
  *
  * The kernel must fit an instruction window, its push data the room a
  * dispatch gives it, and its workgroup the threads one group may have.
@@ -181,7 +180,7 @@ drv_i915_gfx_compute_prepare(
 	int error;
 	unsigned graphics_ver;
 
-	/* The kernels are compiled for the session's GT (ws229-p004). */
+	/* The kernels are compiled for the session's GT. */
 	graphics_ver = i915_pipeline_graphics_ver(session);
 
 	/* Refuses a pipeline without its compute stage. */
@@ -264,7 +263,7 @@ drv_i915_gfx_pipeline_release(
  *
  * The varyings, the point size and the fragment inputs' slots come from the
  * last stage before the fragment stage: the geometry kernel when there is
- * one (ws075-p007b), else the vertex kernel.  The code pointers borrow the
+ * one, else the vertex kernel.  The code pointers borrow the
  * pipeline's binaries, which live until the pipeline is released.
  */
 void
@@ -425,7 +424,7 @@ i915_pipeline_compile_stage(
 	/*
 	 * Refuses a module whose entry point is of another stage than the one it
 	 * is used for: a compute shader named as a vertex stage, or the reverse,
-	 * would be compiled as what it is and run as what it is not (ws101-p003).
+	 * would be compiled as what it is and run as what it is not.
 	 */
 	if (ir->stage != stage) {
 		kern_logf("i915: vk: %s stage given a %s shader\n",
@@ -519,8 +518,7 @@ i915_pipeline_kernels_fit(
 	 * The stages' interfaces must agree: every location the fragment kernel
 	 * reads is one the last stage before it writes (it may read only some of
 	 * them, in any order), but for gl_PointCoord, which the setup makes, and
-	 * gl_PrimitiveID, which the setup makes when no stage writes it
-	 * (ws075-p007b b4).
+	 * gl_PrimitiveID, which the setup makes when no stage writes it.
 	 */
 	last = i915_pipeline_last_stage(pipeline);
 	for (index = 0U; index < pipeline->fs_binary->input_count; index++) {

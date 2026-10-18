@@ -349,7 +349,7 @@ i915_fence_status(
  * CPU.  XXX: only occlusion pools; timestamp and pipeline statistics pools
  * are refused.
  *
- * A video decode's result status pool (ws083-p008, a video device only)
+ * A video decode's result status pool (a video device only)
  * has the same layout: query q's status (a VkQueryResultStatusKHR, as a
  * 64-bit two's complement word) at byte 16 q + 8, zero at 16 q, so the
  * results' end less begin is the status.  The CPU writes it, not a batch:
@@ -487,7 +487,7 @@ i915_query_pool_destroy(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* Unpublishes a pool the session knows, lets the command buffers that recorded it go of it (BUG-260) and frees it; an unknown one is ignored. */
+	/* Unpublishes a pool the session knows, lets the command buffers that recorded it go of it and frees it; an unknown one is ignored. */
 	pool = drv_i915_object_lookup(session, I915_VK_OBJ_QUERY_POOL, handle);
 	if (pool != NULL) {
 		drv_i915_object_remove(session, I915_VK_OBJ_QUERY_POOL, handle);
@@ -645,7 +645,7 @@ drv_i915_gfx_query_execute(
 
 	/*
 	 * A result status pool is reset on the CPU, in the order of the
-	 * operations (ws083-p008); its begin and end belong to a video coding
+	 * operations; its begin and end belong to a video coding
 	 * scope, and outside one they break the API's rules (the submission is
 	 * lost, as a video command on the graphics family).
 	 */
@@ -700,14 +700,14 @@ drv_i915_gfx_query_execute(
 
 /*
  * Tells whether a recorded query names a result status pool and a query
- * within it (ws083-p008): the video walk takes only such a query.
+ * within it: the video walk takes only such a query.
  */
 int
 drv_i915_gfx_query_status_pool(
 	const struct i915_gfx_query_pool *pool,
 	uint32_t query)
 {
-	/* A pool that went (BUG-260) or another type is not one. */
+	/* A pool that went or another type is not one. */
 	if (pool == NULL || pool->type != I915_QUERY_TYPE_RESULT_STATUS)
 		return 0;
 
@@ -722,7 +722,7 @@ drv_i915_gfx_query_status_pool(
 /*
  * Tells whether a recorded query command names a pool that is still there
  * and a range within it (a begin or an end is a range of one), so the video
- * walk refuses a range past the pool before anything runs (ws083-p008).
+ * walk refuses a range past the pool before anything runs.
  */
 int
 drv_i915_gfx_query_in_range(
@@ -730,7 +730,7 @@ drv_i915_gfx_query_in_range(
 	uint32_t first,
 	uint32_t count)
 {
-	/* A pool that went (BUG-260) has no range. */
+	/* A pool that went has no range. */
 	if (pool == NULL)
 		return 0;
 

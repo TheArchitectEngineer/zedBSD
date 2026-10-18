@@ -266,7 +266,7 @@ drv_i915_gfx_create_pipelines(
 }
 
 /*
- * Creates compute pipelines: vkCreateComputePipelines (ws101-p003).
+ * Creates compute pipelines: vkCreateComputePipelines.
  *
  * The command is framed as vkCreateGraphicsPipelines is: [device][cache]
  * [count][count]{create info}[pAllocator][count][identities], and the reply
@@ -403,7 +403,7 @@ drv_i915_gfx_destroy_pipeline(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* Unpublishes a known pipeline, lets the command buffers that bound it go of it (BUG-260), releases its kernels and frees it. */
+	/* Unpublishes a known pipeline, lets the command buffers that bound it go of it, releases its kernels and frees it. */
 	pipeline = drv_i915_object_lookup(session, I915_VK_OBJ_PIPELINE, identity);
 	if (pipeline != NULL) {
 		drv_i915_object_remove(session, I915_VK_OBJ_PIPELINE, identity);
@@ -590,7 +590,7 @@ i915_gfx_decode_stages(
 		module_id = (uint64_t)(uintptr_t)stage.module;
 		shader = drv_i915_object_lookup(session, I915_VK_OBJ_SHADER_MODULE, module_id);
 
-		/* Only the vertex, the geometry (ws075-p007b) and the fragment stages are run. */
+		/* Only the vertex, the geometry and the fragment stages are run. */
 		if (stage.stage == VK_SHADER_STAGE_VERTEX_BIT) {
 			pipeline->vertex = shader;
 		} else if (stage.stage == VK_SHADER_STAGE_GEOMETRY_BIT) {
@@ -701,7 +701,7 @@ i915_gfx_decode_viewport(
  * attachment 0: the enable, the factors and operations of the colour and
  * of the alpha, the write mask and the blend constants.
  *
- * The logic operation is kept (ws031-p032).  XXX: the factors and the
+ * The logic operation is kept.  XXX: the factors and the
  * operations are attachment 0's for every attachment.
  */
 static void
@@ -857,7 +857,7 @@ i915_gfx_free_pipelines(
 }
 
 /*
- * Undoes a create that failed after its pipelines were decoded (ws031-p026):
+ * Undoes a create that failed after its pipelines were decoded:
  * the first `published` of them were published by it and are unpublished;
  * every one releases what its preparation compiled and is freed.  Nothing
  * else has seen them: the create runs as one command.

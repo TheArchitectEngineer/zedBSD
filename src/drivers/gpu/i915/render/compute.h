@@ -6,7 +6,7 @@
  */
 
 /*
- * Recorded dispatches on the GPU (ws101-p004): a compute pipeline's kernel
+ * Recorded dispatches on the GPU: a compute pipeline's kernel
  * over a grid of workgroups, through the GPGPU pipeline.
  *
  * A dispatch is an operation of the submission's batch like a draw: it
@@ -15,7 +15,7 @@
  * back to 3D.  drv_i915_gfx_dispatch() does both for the executor;
  * drv_i915_gfx_dispatch_write() and drv_i915_gfx_dispatch_build() are the
  * two halves, which the host tests drive on their own.  An indirect
- * dispatch (ws101-p007) reads its group counts from a buffer when it runs.
+ * dispatch reads its group counts from a buffer when it runs.
  */
 
 #ifndef DRIVERS_GPU_I915_RENDER_COMPUTE_H
@@ -33,7 +33,7 @@ struct i915_render_session;
 /*
  * The grid of one dispatch: its three group counts (vkCmdDispatch), or,
  * when indirect_va is not zero, the GPU address of the three counts a
- * vkCmdDispatchIndirect reads when it runs (ws101-p007; groups unused).
+ * vkCmdDispatchIndirect reads when it runs (groups unused).
  */
 struct i915_gfx_grid {
 	uint32_t groups[3];

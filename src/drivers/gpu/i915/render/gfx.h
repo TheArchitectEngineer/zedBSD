@@ -223,7 +223,7 @@ struct i915_gfx_image {
 	uint32_t stencil_slice_rows;
 
 	/*
-	 * A two-plane NV12 picture of the video decoder (ws083): nonzero, laid
+	 * A two-plane NV12 picture of the video decoder: nonzero, laid
 	 * out in Y tiles, the interleaved CbCr plane chroma_offset bytes in,
 	 * below chroma_rows rows of the Y plane, both at the image's pitch.
 	 * The decoder writes it; a standard plane readback copies its R8 or
@@ -259,7 +259,7 @@ struct i915_gfx_view {
 	/*
 	 * The component swizzle as the surface state's shader channel select
 	 * word (RENDER_SURFACE_STATE dword 7), taken when swizzle_set says
-	 * vkCreateImageView made it (ws031-p033); a view made otherwise (a
+	 * vkCreateImageView made it; a view made otherwise (a
 	 * test's, zeroed) reads as the identity.
 	 */
 	uint32_t channel_select;
@@ -339,7 +339,7 @@ struct i915_gfx_dset {
 	/*
 	 * The layout the set was allocated with: a copy the set keeps
 	 * (layout_copy), since the application may destroy the layout while
-	 * the set is used (BUG-260); NULL for an unknown layout.
+	 * the set is used; NULL for an unknown layout.
 	 */
 	struct i915_gfx_dsl *layout;
 	struct i915_gfx_dsl layout_copy;
@@ -421,7 +421,7 @@ struct i915_gfx_shader {
  *
  * The pipeline owns its kernels; they are made when the pipeline is created
  * and released when it is destroyed.  A compute pipeline (bind_point
- * VK_PIPELINE_BIND_POINT_COMPUTE, ws101-p003) has only its compute stage,
+ * VK_PIPELINE_BIND_POINT_COMPUTE) has only its compute stage,
  * its kernel and the table of its threads' IDs; the graphics fields stay
  * zero.
  */
@@ -431,7 +431,7 @@ struct i915_gfx_pipeline {
 
 	/*
 	 * The vertex, geometry and fragment shader modules; NULL when a stage
-	 * is absent (the geometry stage is optional, ws075-p007b).
+	 * is absent (the geometry stage is optional).
 	 */
 	struct i915_gfx_shader *vertex;
 	struct i915_gfx_shader *geometry;
@@ -528,7 +528,7 @@ struct i915_gfx_pipeline {
 	uint32_t blend_constants[4];
 
 	/*
-	 * The logic operation (ws031-p032): nonzero logic_op_enable applies the
+	 * The logic operation: nonzero logic_op_enable applies the
 	 * VkLogicOp logic_op to every target that takes one (not a float or an
 	 * sRGB one), and blends none.
 	 */
@@ -536,8 +536,8 @@ struct i915_gfx_pipeline {
 	uint32_t logic_op;
 
 	/*
-	 * Nonzero when the fragment kernel writes a second colour (dual source,
-	 * ws031-p032), so that an equation of SRC1 factors blends; the
+	 * Nonzero when the fragment kernel writes a second colour (dual source),
+	 * so that an equation of SRC1 factors blends; the
 	 * compiled kernel's, copied when the kernels are prepared.
 	 */
 	uint32_t dual_source;
@@ -579,7 +579,7 @@ struct i915_gfx_pipeline {
 	struct i915_shader_binary *fs_binary;
 
 	/*
-	 * Compute (ws101-p003): the compute stage's module and kernel, and the
+	 * Compute: the compute stage's module and kernel, and the
 	 * per-thread push data of one workgroup -- for each of its `threads`
 	 * SIMD8 threads, I915_SHADER_PER_THREAD_REGS registers of eight dwords
 	 * (the local IDs x, y, z and the linear index of each channel) -- which
@@ -766,12 +766,12 @@ struct i915_gfx_op {
 			uint32_t value;
 		} stencil;
 
-		/* A dispatch of groups x by y by z workgroups (ws101-p003). */
+		/* A dispatch of groups x by y by z workgroups. */
 		struct {
 			uint32_t groups[3];
 		} dispatch;
 
-		/* A dispatch whose three group counts are in a buffer at an offset (vkCmdDispatchIndirect, ws101-p007). */
+		/* A dispatch whose three group counts are in a buffer at an offset (vkCmdDispatchIndirect). */
 		struct {
 			struct i915_gfx_buffer *buffer;
 			uint64_t offset;
@@ -820,7 +820,7 @@ struct i915_gfx_draw_state {
 	struct i915_gfx_pipeline *pipeline;
 
 	/*
-	 * What is bound at the compute bind point (ws101-p003): the pipeline,
+	 * What is bound at the compute bind point: the pipeline,
 	 * the descriptor sets and their dynamic offsets, apart from the
 	 * graphics ones as Vulkan keeps them.  The push constants are shared.
 	 */

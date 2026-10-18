@@ -102,7 +102,7 @@ drv_i915_gfx_rect_prepare(
 	unsigned graphics_ver;
 	int error;
 
-	/* The kernels are compiled for the GT's version, Gen12 unless it is Gen9 (ws229-p004). */
+	/* The kernels are compiled for the GT's version, Gen12 unless it is Gen9. */
 	graphics_ver = 12U;
 	if (session->vk->i915->gt.graphics_ver == GEN9_GRAPHICS_VER)
 		graphics_ver = GEN9_GRAPHICS_VER;
@@ -978,7 +978,7 @@ i915_blit_build_batch(
 	drv_i915_gfx_emit_context_setup(batch, state_va, space->window_va, 0U, mocs);
 
 	/*
-	 * Takes the forms of the batch's version (ws229-p004): Gen9 has no L3
+	 * Takes the forms of the batch's version: Gen9 has no L3
 	 * bypass bit, its null depth buffer has the format in bits 20:18, and
 	 * its stencil buffer is five dwords.
 	 */

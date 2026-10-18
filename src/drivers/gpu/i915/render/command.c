@@ -122,7 +122,7 @@ struct i915_gfx_cmdbuf {
 
 	/*
 	 * Nonzero once an object an operation named was destroyed before the
-	 * buffer (BUG-260): the operations are gone, and a submission does not
+	 * buffer: the operations are gone, and a submission does not
 	 * run the buffer.  A begin or a reset clears it.
 	 */
 	int stale;
@@ -170,7 +170,7 @@ static void i915_command_forget_one(void *object, void *argument);
 
 /*
  * An object being destroyed and how many command buffers lost their
- * operations for it (BUG-260), for one walk of the session's command
+ * operations for it, for one walk of the session's command
  * buffers.  It lives on the stack of the destroy.
  */
 struct i915_command_forget {
@@ -468,7 +468,7 @@ i915_command_pool_destroy(
 /*
  * Empties every command buffer of the session that recorded an object
  * being destroyed and marks it stale, so that none of its operations
- * names the freed object and a submission does not run it (BUG-260).
+ * names the freed object and a submission does not run it.
  * Reports how many buffers were emptied.
  */
 unsigned
@@ -843,7 +843,7 @@ i915_command_ops_clear(
 	cmdbuf->op_count = 0U;
 }
 
-/* Empties a command buffer one of whose operations names the object being destroyed (a visit of drv_i915_object_each, BUG-260). */
+/* Empties a command buffer one of whose operations names the object being destroyed (a visit of drv_i915_object_each). */
 static void
 i915_command_forget_one(
 	void *object,
@@ -1617,7 +1617,7 @@ i915_record_bind_descriptor_sets(
 		identity = drv_i915_wire_read_u64(reader);
 		op->u.descriptor.dset = drv_i915_object_lookup(session, I915_VK_OBJ_DESCRIPTOR_SET, identity);
 
-		/* Says so when the identity names no set of the session (BUG-117): the draws that sample it are refused. */
+		/* Says so when the identity names no set of the session: the draws that sample it are refused. */
 		if (op->u.descriptor.dset == NULL)
 			i915_command_unknown_set(first + (uint32_t)index, identity);
 	}
@@ -1646,7 +1646,7 @@ i915_record_bind_descriptor_sets(
 }
 
 
-/* Logs a bind of an identity that names no descriptor set of the session, the first 16 of them (BUG-117). */
+/* Logs a bind of an identity that names no descriptor set of the session, the first 16 of them. */
 static void
 i915_command_unknown_set(
 	uint32_t set,
@@ -1777,7 +1777,7 @@ i915_record_set_blend_constants(
 
 /*
  * vkCmdSetLineWidth: [width]; vkCmdSetDepthBias: [constant][clamp][slope].
- * The values are decoded and dropped (WS068 p006: OpenGL ES sets them with
+ * The values are decoded and dropped (OpenGL ES sets them with
  * every pipeline).
  *
  * XXX: the draws have no depth bias and only one-pixel lines; a width other
@@ -2099,14 +2099,14 @@ i915_record_command(
 		op->u.draw.first_instance = drv_i915_wire_read_u32(reader);
 		break;
 	case GPU_OP_CMD_DISPATCH:
-		/* vkCmdDispatch: [groups x][groups y][groups z] (ws101-p003). */
+		/* vkCmdDispatch: [groups x][groups y][groups z]. */
 		op = i915_command_op(cmdbuf, I915_GFX_OP_DISPATCH);
 		op->u.dispatch.groups[0] = drv_i915_wire_read_u32(reader);
 		op->u.dispatch.groups[1] = drv_i915_wire_read_u32(reader);
 		op->u.dispatch.groups[2] = drv_i915_wire_read_u32(reader);
 		break;
 	case GPU_OP_CMD_DISPATCH_INDIRECT:
-		/* vkCmdDispatchIndirect: [buffer][offset] (ws101-p007). */
+		/* vkCmdDispatchIndirect: [buffer][offset]. */
 		op = i915_command_op(cmdbuf, I915_GFX_OP_DISPATCH_INDIRECT);
 		identity = drv_i915_wire_read_u64(reader);
 		op->u.dispatch_indirect.buffer = drv_i915_object_lookup(session, I915_VK_OBJ_BUFFER, identity);
@@ -2322,9 +2322,9 @@ i915_image_plane_surface(
 /*
  * Describes the image of a render pass attachment: the level and the layer
  * its view starts at, in the format the view reads the texels as (a clear
- * of an SRGB view of an UNORM image encodes as the draw does, ws031-p033).
+ * of an SRGB view of an UNORM image encodes as the draw does).
  * A clear of several layers describes each layer through a view of that one
- * layer (ws075-p007b).
+ * layer.
  */
 static int
 i915_attachment_surface(
@@ -3698,7 +3698,7 @@ i915_command_buffer_execute(
 		case I915_GFX_OP_VIDEO_CONTROL:
 		case I915_GFX_OP_VIDEO_DECODE:
 		case I915_GFX_OP_VIDEO_END:
-			/* A video command on the graphics family breaks the API's rules: the submission is lost (D18). */
+			/* A video command on the graphics family breaks the API's rules: the submission is lost. */
 			kern_logf("i915: vk: video command submitted on the graphics queue family\n");
 			error = EIO;
 			break;
@@ -3799,7 +3799,7 @@ i915_queue_submit(
 			identity = drv_i915_wire_read_u64(reader);
 			cmdbuf = drv_i915_object_lookup(session, I915_VK_OBJ_COMMAND_BUFFER, identity);
 
-			/* A buffer whose objects were destroyed (BUG-260) does not run. */
+			/* A buffer whose objects were destroyed does not run. */
 			if (cmdbuf != NULL && cmdbuf->stale) {
 				kern_logf("i915: vk: vkQueueSubmit: a command buffer whose objects were destroyed is not run\n");
 				cmdbuf = NULL;
@@ -3827,7 +3827,7 @@ i915_queue_submit(
 
 	/*
 	 * A submission on the video decode family runs in the video part, with
-	 * the render batch open for its query resets (ws083-p003b).
+	 * the render batch open for its query resets.
 	 */
 	if (family == 1U) {
 		for (index = 0U; index < total; index++) {
@@ -3902,7 +3902,7 @@ i915_execute_set_stencil(
 /*
  * Binds a pipeline at its own bind point: a compute pipeline replaces the
  * bound compute pipeline and leaves the graphics one bound, as Vulkan keeps
- * the two apart (ws101-p003).
+ * the two apart.
  */
 static void
 i915_execute_bind_pipeline(
@@ -3935,7 +3935,7 @@ i915_execute_bind_set(
 	if (set >= I915_GFX_MAX_SETS)
 		return;
 
-	/* The compute bind point has its own sets (ws101-p003). */
+	/* The compute bind point has its own sets. */
 	if (op->u.descriptor.bind_point == VK_PIPELINE_BIND_POINT_COMPUTE) {
 		state->compute_dset[set] = op->u.descriptor.dset;
 		state->compute_dynamic_count[set] = op->u.descriptor.dynamic_count;
@@ -3961,7 +3961,7 @@ i915_execute_bind_set(
 
 /*
  * Runs a recorded vkCmdDispatch: the bound compute pipeline over the
- * groups (ws101-p003, ws101-p004).
+ * groups.
  *
  * A dispatch needs a prepared compute pipeline; a dispatch of no group does
  * nothing.  Returns EINVAL for a dispatch without a pipeline or past the
@@ -4005,7 +4005,7 @@ i915_execute_dispatch(
 }
 
 /*
- * Runs a recorded vkCmdDispatchIndirect (ws101-p007): the bound compute
+ * Runs a recorded vkCmdDispatchIndirect: the bound compute
  * pipeline over the three group counts the buffer holds at the offset,
  * which the GPU reads when the dispatch runs (an earlier operation of the
  * submission may write them).

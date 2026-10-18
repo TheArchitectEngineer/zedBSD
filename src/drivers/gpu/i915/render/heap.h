@@ -24,7 +24,7 @@
  *           3DSTATE_CONSTANT_VS): push constants, then uniform blocks
  *   0x2400  the pixel stage's push data, laid out the same way
  *   0x2800  the three vertices of a rectangle
- *   0x2c00  the geometry stage's push data (ws075-p007b), laid out the
+ *   0x2c00  the geometry stage's push data, laid out the
  *           same way
  *   0x3000  scratch for the post-sync writes
  *
@@ -98,7 +98,7 @@
 /*
  * The kernel offsets from the start of an instruction window, and the
  * window's size: 16 KiB for the vertex kernel, 16 KiB for the geometry
- * kernel (ws075-p007b) and 32 KiB for the pixel kernel.  A compute kernel,
+ * kernel and 32 KiB for the pixel kernel.  A compute kernel,
  * or a blit's, has a window to itself.
  */
 #define I915_GFX_VS_KERNEL		0x0000U
@@ -162,20 +162,19 @@
 /*
  * The thread ids the scratch memory of the compute stage has to cover
  * (Mesa 25.0.7 intel_device_info.c, init_max_scratch_ids() on Gen12:
- * 16 * 8 ids a subslice, and 6 subslices for a GT2 whatever the fuses left)
- * (ws101-p004).
+ * 16 * 8 ids a subslice, and 6 subslices for a GT2 whatever the fuses left).
  */
 #define I915_GFX_CS_SCRATCH_IDS			(16U * 8U * 6U)
 
 /*
  * The thread ids the scratch memory of the geometry stage has to cover:
  * its max_gs_threads (Mesa 25.0.7 intel_device_info.c,
- * init_max_scratch_ids(), as for the vertex stage) (ws075-p007b b4).
+ * init_max_scratch_ids(), as for the vertex stage).
  */
 #define I915_GFX_GS_SCRATCH_IDS			I915_GFX_MAX_GS_THREADS
 
 /*
- * Where a dispatch writes in its slot (ws101-p004), as offsets from the
+ * Where a dispatch writes in its slot, as offsets from the
  * dynamic state base (the slot's dynamic heap): the interface descriptor,
  * the three group counts gl_NumWorkGroups reads, and the CURBE -- the
  * cross-thread push data, then each thread's own -- which may take up to
@@ -190,7 +189,7 @@
  * The Gen12 MOCS table entry the render paths use for their surfaces,
  * vertex buffers and state: index 3, uncached (see GEN12_MOCS()).  Gen9's
  * uncached entry is index 0; the render paths take the version's through
- * drv_i915_gfx_mocs_uncached() (ws229-p004).
+ * drv_i915_gfx_mocs_uncached().
  */
 #define I915_MOCS_UNCACHED_INDEX	3U
 

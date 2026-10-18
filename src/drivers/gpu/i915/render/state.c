@@ -35,7 +35,7 @@
 /*
  * The push constant space (32 KiB) of every draw: 8 KiB to the vertex
  * stage from 0, 8 KiB to the geometry stage from 8 KiB, 16 KiB to the pixel
- * stage from 16 KiB (ws075-p007b), the same whether or not the draw has a
+ * stage from 16 KiB, the same whether or not the draw has a
  * geometry stage, so the allocation never changes between draws.  Each
  * stage's push data is at most I915_GFX_PUSH_DATA_BYTES.
  */
@@ -126,7 +126,7 @@ static const uint32_t i915_gfx_eot_only[4] = {
 	0x00030032U, 0x00001004U, 0x58007024U, 0x00c40000U,
 };
 
-/* The same thread in the Gen9 encoding (genxml-gen9.h, ws229-p004). */
+/* The same thread in the Gen9 encoding (genxml-gen9.h). */
 static const uint32_t i915_gfx_eot_only_gen9[4] = {
 	GEN9_EOT_ONLY_DWORD0, GEN9_EOT_ONLY_DWORD1, GEN9_EOT_ONLY_DWORD2, GEN9_EOT_ONLY_DWORD3,
 };
@@ -310,8 +310,8 @@ static int i915_vertex_format(uint32_t format, const struct i915_gfx_vertex_form
 /*
  * What of an image a surface state shows: the view's type, its levels and
  * its layers (a 3D image's slices for a render target), the VkFormat its
- * texels are read as (0: the image's; a colour view may reinterpret them,
- * ws031-p033), the view's channel select when swizzle_set, and whether it
+ * texels are read as (0: the image's; a colour view may reinterpret them),
+ * the view's channel select when swizzle_set, and whether it
  * is the render target, which writes its first level and layer.
  */
 struct i915_image_range {
@@ -479,7 +479,7 @@ drv_i915_gfx_write_state(
 
 /*
  * Writes the state of a draw as drv_i915_gfx_write_state() does, in the form
- * of the graphics version (9 for Gen9, any other the Gen12 one; ws229-p004).
+ * of the graphics version (9 for Gen9, any other the Gen12 one).
  */
 int
 drv_i915_gfx_write_state_gen(
@@ -539,7 +539,7 @@ drv_i915_gfx_write_state_gen(
  * constants, the uniform blocks' ranges and the storage buffers' addresses
  * (see i915_state_write_push()).
  *
- * A dispatch fills its cross-thread data with it (ws101-p004), with the
+ * A dispatch fills its cross-thread data with it, with the
  * compute bind point's sets in place of the graphics ones.
  */
 int
@@ -590,7 +590,7 @@ drv_i915_gfx_surface_write(
 /*
  * Writes the RENDER_SURFACE_STATE of a 2D one-level surface as
  * drv_i915_gfx_surface_write() does, for the graphics version: Gen9 has no
- * unorm path bit (ws229-p004).
+ * unorm path bit.
  */
 int
 drv_i915_gfx_surface_write_gen(
@@ -899,7 +899,7 @@ drv_i915_gfx_instruction_heap_clear_gen(
 
 /*
  * Returns the MOCS field value of uncached memory on the graphics version:
- * index 3 of the Gen12 table, index 0 of the Gen9 one (ws229-p004), shifted
+ * index 3 of the Gen12 table, index 0 of the Gen9 one, shifted
  * as every MOCS field holds it.
  */
 uint32_t
@@ -928,7 +928,7 @@ drv_i915_gfx_mocs_uncached(
  * earlier operation of the batch wrote is flushed first, and the caches
  * that hold state or read textures are invalidated after them.
  *
- * A Gen9 batch (ws229-p004) selects the pipeline with anv's Gen9 mask,
+ * A Gen9 batch selects the pipeline with anv's Gen9 mask,
  * programs CACHE_MODE_1 as anv does once a context, has a 19-dword
  * STATE_BASE_ADDRESS, invalidates the vertex fetch cache the way the SKL
  * PRM asks (see i915_state_vf_invalidate()) and has no depth bounds.
@@ -1072,7 +1072,7 @@ drv_i915_gfx_emit_context_setup(
  * Returns the GEN primitive type (GEN12_3DPRIM_*) of a pipeline's Vulkan
  * topology: the point, line and triangle lists, the line and triangle
  * strips and the triangle fan, and the topologies with adjacency for a
- * pipeline with a geometry kernel (ws075-p007b); 0 for one with adjacency
+ * pipeline with a geometry kernel; 0 for one with adjacency
  * and no geometry kernel, or of patches, which the draw path does not take.
  */
 uint32_t
@@ -1228,7 +1228,7 @@ drv_i915_gfx_emit_vertex_input(
 		order[index] = other;
 	}
 
-	/* Gen12 keeps vertex data out of the L3 bypass; Gen9 has no such bit (ws229-p004). */
+	/* Gen12 keeps vertex data out of the L3 bypass; Gen9 has no such bit. */
 	l3_bypass = GEN12_VERTEX_BUFFER_L3_BYPASS_DISABLE;
 	if (batch->graphics_ver == GEN9_GRAPHICS_VER)
 		l3_bypass = 0U;
@@ -1415,7 +1415,7 @@ drv_i915_gfx_emit_index_buffer(
 	if (va == 0U)
 		return EINVAL;
 
-	/* The L3 bypass disable, which only Gen12 has (ws229-p004). */
+	/* The L3 bypass disable, which only Gen12 has. */
 	l3_bypass = GEN12_INDEX_BUFFER_L3_BYPASS_DISABLE;
 	if (batch->graphics_ver == GEN9_GRAPHICS_VER)
 		l3_bypass = 0U;
@@ -1446,7 +1446,7 @@ drv_i915_gfx_emit_index_buffer(
  * geometry stage (gs_entry_size 0) the vertex stage owns the URB past the
  * push constants: entries of vs_entry_size 64-byte units, as many as fit,
  * at most 3576 (a multiple of eight, as Mesa's intel_get_urb_config() keeps
- * the vertex stage's count).  With one (ws075-p007b) the vertex stage keeps
+ * the vertex stage's count).  With one the vertex stage keeps
  * 21 of those chunks and the geometry stage the next 6: entries of
  * gs_entry_size units, at most 1548, a multiple of eight when an entry is
  * smaller than nine units.  The hull and domain stages get none.  Returns
@@ -1466,7 +1466,7 @@ drv_i915_gfx_emit_urb(
 	uint32_t gs_start;
 	int error;
 
-	/* Gen9 allocates the URB with its own packets (ws229-p004). */
+	/* Gen9 allocates the URB with its own packets. */
 	if (batch->graphics_ver == GEN9_GRAPHICS_VER) {
 		error = i915_state_emit_urb_gen9(batch, vs_entry_size, gs_entry_size);
 		if (error != 0)
@@ -1532,7 +1532,7 @@ drv_i915_gfx_emit_urb(
 /*
  * Emits the 3DSTATE_CONSTANT_* packets of all five stages.
  *
- * The vertex, the geometry (ws075-p007b) and the pixel stage each read
+ * The vertex, the geometry and the pixel stage each read
  * their own push data, as many registers as its kernel uses.  Like anv, the
  * buffer goes in the highest slot, so that slot 0 is never the only one in
  * use; a stage that reads nothing is given an empty packet.
@@ -1591,7 +1591,7 @@ drv_i915_gfx_emit_constants(
 	 * Commits the vertex and the geometry stage's push data on Gen9: there
 	 * a 3DSTATE_CONSTANT_* packet takes effect only at the stage's next
 	 * 3DSTATE_BINDING_TABLE_POINTERS_* (anv's cmd_buffer_emit_descriptor_pointers(),
-	 * "on SKL this is what flushes push constants"; ws229-p005, T1-608).
+	 * "on SKL this is what flushes push constants").
 	 * The context setup cleared those stages' pointers before these packets,
 	 * and the pixel stage's pointer comes later with the draw.  Gen12 is
 	 * left as it is.
@@ -1629,7 +1629,7 @@ drv_i915_gfx_samples_log2(
  * A last stage that writes the point size has the setup take the point
  * width from each vertex; any other draws its points one pixel wide.  The
  * clipper takes each primitive's layer from the VUE only when the last
- * stage writes it (a geometry kernel, ws075-p007b), else layer 0; with a
+ * stage writes it (a geometry kernel), else layer 0; with a
  * geometry kernel the setup dereferences the URB a primitive at a time.
  */
 void
@@ -1666,7 +1666,7 @@ drv_i915_gfx_emit_raster(
 	if (kernels->gs_code != NULL)
 		deref = GEN12_URB_DEREF_BLOCK_SIZE_PER_POLY;
 
-	/* Gen9 has no deref block size (ws229-p004). */
+	/* Gen9 has no deref block size. */
 	if (batch->graphics_ver == GEN9_GRAPHICS_VER)
 		deref = 0U;
 
@@ -1798,7 +1798,7 @@ drv_i915_gfx_emit_depth(
 	drv_i915_batch_emit(batch, stencil_masks);
 	drv_i915_batch_emit(batch, stencil_references);
 
-	/* Gen9 describes its depth and stencil buffers in its own forms (ws229-p004). */
+	/* Gen9 describes its depth and stencil buffers in its own forms. */
 	if (batch->graphics_ver == GEN9_GRAPHICS_VER) {
 		error = i915_state_depth_buffer_gen9(batch, state, depth, has_depth, mocs);
 		if (error != 0)
@@ -1896,7 +1896,7 @@ drv_i915_gfx_emit_vertex_shader(
 	/* The scratch space of a kernel that spills: its per-thread size and the stage's buffer. */
 	scratch = i915_state_scratch(kernels->vs_scratch_bytes, kernels->vs_scratch_offset);
 
-	/* The thread count less one, where the version puts it: Gen9 has fewer threads, one bit higher (ws229-p004). */
+	/* The thread count less one, where the version puts it: Gen9 has fewer threads, one bit higher. */
 	threads = (I915_GFX_MAX_VS_THREADS - 1U) << 22;
 	if (batch->graphics_ver == GEN9_GRAPHICS_VER)
 		threads = (GEN9_MAX_VS_THREADS - 1U) << GEN9_VS_MAX_THREADS_SHIFT;
@@ -1918,8 +1918,8 @@ drv_i915_gfx_emit_vertex_shader(
 }
 
 /*
- * Emits 3DSTATE_GS: the geometry kernel when the draw has one
- * (ws075-p007b), as anv programs it, else an empty packet (the stage off).
+ * Emits 3DSTATE_GS: the geometry kernel when the draw has one,
+ * as anv programs it, else an empty packet (the stage off).
  *
  * The kernel starts at the geometry kernel offset and runs SIMD8 with
  * statistics, one input primitive to a channel, with no samplers and no
@@ -2535,7 +2535,7 @@ i915_image_surface_write(
 	if (range->render_target != 0)
 		lod = (range->base_level & GEN12_RSS_LOD_MASK) << GEN12_RSS_MIP_COUNT_SHIFT;
 
-	/* Colour goes through the unorm path on Gen12; Gen9 has no such bit (ws229-p004). */
+	/* Colour goes through the unorm path on Gen12; Gen9 has no such bit. */
 	unorm = GEN12_RSS_UNORM_PATH;
 	if (graphics_ver == GEN9_GRAPHICS_VER)
 		unorm = 0U;
@@ -2667,7 +2667,7 @@ i915_state_write_surfaces(
 				missing = "no view";
 			}
 
-			/* Says which of the three is missing (BUG-117). */
+			/* Says which of the three is missing. */
 			kern_logf("i915: vk: draw refused: set %u binding %u has no image view and sampler (%s)\n",
 				  set_index,
 				  binding,
@@ -2940,7 +2940,7 @@ i915_state_write_push(
 		/*
 		 * A storage buffer is delivered as the GPU address of its range, the
 		 * low word first, and the range's bytes after it, which an
-		 * OpArrayLength reads (ws101-p004).
+		 * OpArrayLength reads.
 		 */
 		if (block->address != 0U) {
 			va = drv_i915_gfx_memory_va(buffer->memory, buffer->offset + descriptor_offset);
@@ -3268,7 +3268,7 @@ i915_blend_equation(
 		second = i915_blend_uses_second_source(pipeline->blend_dst_alpha);
 	}
 
-	/* An equation of the second source blends only when the fragment kernel writes one (dual source, ws031-p032). */
+	/* An equation of the second source blends only when the fragment kernel writes one (dual source). */
 	if (second != 0 && pipeline->dual_source == 0U) {
 		kern_memset(equation, 0, sizeof(*equation));
 		return;
@@ -3765,7 +3765,7 @@ i915_state_push_alloc(
 }
 
 /*
- * Allocates the push constants and the URB of a Gen9 draw (ws229-p004),
+ * Allocates the push constants and the URB of a Gen9 draw,
  * the way drv_i915_gfx_emit_urb() does for Gen12: the vertex stage's
  * entries in its 16 chunks after the push constants, or in the first 10 of
  * them with the geometry stage's in the other 6; the hull and domain stages
@@ -3843,7 +3843,7 @@ i915_state_emit_urb_gen9(
 
 /*
  * Appends the PIPE_CONTROL that invalidates the vertex fetch cache (with the
- * other flags).  On Gen9 (ws229-p004) the SKL PRM wants a null PIPE_CONTROL
+ * other flags).  On Gen9 the SKL PRM wants a null PIPE_CONTROL
  * before it and a post-sync write on it, which goes to post_sync_va (anv
  * writes its workaround address); Gen12 needs neither.
  */
@@ -3922,8 +3922,8 @@ i915_state_depth_layers(
 }
 
 /*
- * Emits the Gen9 3DSTATE_DEPTH_BUFFER and 3DSTATE_STENCIL_BUFFER
- * (ws229-p004), as isl writes them below Gen12 (isl_emit_depth_stencil.c):
+ * Emits the Gen9 3DSTATE_DEPTH_BUFFER and 3DSTATE_STENCIL_BUFFER,
+ * as isl writes them below Gen12 (isl_emit_depth_stencil.c):
  * the depth buffer as on Gen12 with its fields where Gen9 has them, the
  * stencil write enable in the depth buffer, a depth buffer of an attachment
  * with stencil and no depth typed 2D D32_FLOAT with the stencil's extent,

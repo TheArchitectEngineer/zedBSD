@@ -6,10 +6,10 @@
  */
 
 /*
- * Recorded dispatches on the GPU (see compute.h, ws101-p004).
+ * Recorded dispatches on the GPU (see compute.h).
  *
- * A dispatch is laid out as the compute test of tests/execution/eu-test.c,
- * which ran on the Latitude 5330, and as anv programs Gen12.0
+ * A dispatch is laid out as the compute test of tests/execution/eu-test.c
+ * and as anv programs Gen12.0
  * (genX_cmd_compute.c, genX_pipeline.c): in 3D the context setup programs
  * the state bases at the dispatch's slot and the kernel's instruction
  * window (Wa_1607854226 wants them programmed in 3D); a stalling flush of
@@ -26,7 +26,7 @@
  * blocks' ranges and the storage buffers' addresses, from the compute bind
  * point's sets), then the pipeline's table of each thread's IDs.
  *
- * An indirect dispatch (ws101-p007) loads the walker's three counts from the
+ * An indirect dispatch loads the walker's three counts from the
  * application's buffer with MI_LOAD_REGISTER_MEM when it runs (as anv's
  * compute_load_indirect_params), and gl_NumWorkGroups reads that buffer's
  * three words in place of the slot's.  Counts of zero need nothing of their
@@ -229,7 +229,7 @@ drv_i915_gfx_dispatch_write(
 /*
  * Writes a dispatch's slot as drv_i915_gfx_dispatch_write() does, for the
  * graphics version: the Gen9 interface descriptor has no thread preemption
- * disable (ws229-p004).
+ * disable.
  */
 int
 drv_i915_gfx_dispatch_write_gen(
@@ -268,7 +268,7 @@ drv_i915_gfx_dispatch_write_gen(
 	kern_memset(slot, 0, I915_GFX_SLOT_BYTES);
 	dynamic = slot + I915_GFX_DYNAMIC_HEAP;
 
-	/* Turns mid-thread preemption off as anv does; Gen9 has no such bit (ws229-p004). */
+	/* Turns mid-thread preemption off as anv does; Gen9 has no such bit. */
 	preemption = GEN12_IDD_PREEMPTION_DISABLE;
 	if (graphics_ver == GEN9_GRAPHICS_VER)
 		preemption = 0U;
@@ -276,7 +276,7 @@ drv_i915_gfx_dispatch_write_gen(
 	/*
 	 * The interface descriptor: the kernel at the start of its window, no
 	 * mid-thread preemption (anv), the per-thread registers, the threads of
-	 * a group with their shared local memory and barrier (ws101-p006), and
+	 * a group with their shared local memory and barrier, and
 	 * the cross-thread registers.
 	 */
 	descriptor = (uint32_t *)(void *)(dynamic + I915_GFX_DYN_INTERFACE);
@@ -338,7 +338,7 @@ drv_i915_gfx_dispatch_write_gen(
  * counts, the walker over the groups, and the switch back to 3D behind the
  * flushes.
  *
- * A Gen9 batch (ws229-p004) adds what anv does for Gen9 and its shared
+ * A Gen9 batch adds what anv does for Gen9 and its shared
  * local memory, which lives in the L3: an L3 partition with shared local
  * memory around a kernel that uses it, the colour calc pointer cleared and
  * the read caches invalidated before the switch to GPGPU, the Gen9 VFE
@@ -641,8 +641,8 @@ i915_compute_scratch(
 }
 
 /*
- * Encodes the Shared Local Memory Size of the interface descriptor
- * (ws101-p006): 0 for none, else n with 1 KiB << (n - 1) the group's bytes
+ * Encodes the Shared Local Memory Size of the interface descriptor:
+ * 0 for none, else n with 1 KiB << (n - 1) the group's bytes
  * rounded up to a power of two of at least 1 KiB (Mesa 25.0.7
  * src/intel/common/intel_compute_slm.c, sha256
  * 2c5ccd8fdef7e070fd8c14ffa7fa172e29d77c65bee81e3ca3fa2e1a4dfc5ebc,
@@ -674,7 +674,7 @@ i915_compute_slm_size(
 
 /*
  * Changes the Gen9 L3 partition (L3CNTLREG) between the default one and the
- * one with shared local memory (ws229-p004), as anv does: a stalling flush
+ * one with shared local memory, as anv does: a stalling flush
  * of the data cache, an invalidation of the read-only caches, a second
  * stalling flush so the invalidation is complete, then the register.
  */

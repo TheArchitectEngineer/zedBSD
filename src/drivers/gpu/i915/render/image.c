@@ -55,7 +55,7 @@
 #define I915_GFX_IMAGE_LEVEL_ALIGN	4U
 
 /*
- * The video decoder's NV12 pictures (ws083): at most 4096 a side, laid out
+ * The video decoder's NV12 pictures: at most 4096 a side, laid out
  * from an extent rounded up to whole macroblocks, in Y tiles of 128 bytes
  * by 32 rows, the whole image whole pages.
  */
@@ -828,7 +828,7 @@ drv_i915_gfx_format_bytes(
 }
 
 /*
- * Gives the VkFormat a view's surfaces are described in (ws031-p033): the
+ * Gives the VkFormat a view's surfaces are described in: the
  * view's own, reinterpreting the image's texels (VK_IMAGE_CREATE_MUTABLE_
  * FORMAT_BIT, e.g. an UNORM image drawn as SRGB), when both are colour
  * formats the executor lays out with texels of the same size; otherwise the
@@ -988,7 +988,7 @@ i915_gfx_video_image_supported(
 }
 
 /*
- * Lays an NV12 picture out as the video decoder writes it (design §6.4):
+ * Lays an NV12 picture out as the video decoder writes it:
  * the extent rounded up to whole macroblocks, a pitch of whole Y tiles
  * (128 bytes), the Y plane's rows rounded up to whole tile rows (32), the
  * interleaved CbCr plane (half the rows) below it, also of whole tile
@@ -1025,7 +1025,7 @@ i915_gfx_nv12_layout(
 
 /*
  * Describes one plane of an NV12 picture (a private promise of zedBSD, the
- * layout of an optimal image, design N3): VK_IMAGE_ASPECT_PLANE_0_BIT the Y
+ * layout of an optimal image): VK_IMAGE_ASPECT_PLANE_0_BIT the Y
  * plane, VK_IMAGE_ASPECT_PLANE_1_BIT the CbCr plane, each at the image's
  * pitch in Y tiles; the whole image is the array and depth pitch.  Another
  * aspect, level or layer is an empty layout.

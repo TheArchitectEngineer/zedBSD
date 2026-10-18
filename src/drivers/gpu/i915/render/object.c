@@ -61,7 +61,7 @@ struct i915_object_table {
 	 * Serializes every use of the entries: the sessions of the table's
 	 * device run their command streams at once on different CPUs, and an
 	 * insert that grows the array or fills a slot races a removal that
-	 * moves the last entry, losing an object (BUG-117).
+	 * moves the last entry, losing an object.
 	 */
 	struct mutex lock;
 
@@ -448,7 +448,7 @@ drv_i915_object_take(
  * Visits every object of a kind the session recorded.
  *
  * `visit` is given each object and `argument` under the table's lock: it
- * may change the object (BUG-244: a buffer or an image let go of an
+ * may change the object (a buffer or an image let go of an
  * allocation being freed), but not the table, and takes no lock of its own.
  */
 void
