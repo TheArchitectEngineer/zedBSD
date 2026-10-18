@@ -1,5 +1,18 @@
-/* PC-98 ELF32 native MBR-loader payload. */
-/* Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib */
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * A PC-98 ELF32 test kernel for the native loader.
+ *
+ * It checks a cleared BSS, the handoff and a disk read through the BIOS
+ * call the handoff offers, then writes its verdict to I/O port E9 and
+ * halts.
+ */
+
 #include "include/kern/boot.h"
 #include "src/hal/i386/bsp-pc98/handoff.h"
 .code32

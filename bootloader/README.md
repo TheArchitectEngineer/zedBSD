@@ -30,12 +30,12 @@ DOS drive and relocates the body to the same address before taking over the
 machine.  The PC/AT loader accepts ELF32/i386 and ELF64/x86-64 kernels; the
 PC-98 loader accepts ELF32/i386.
 
-Direct DOS invocation is a retained legacy entry stub, not a supported q032
+Direct DOS invocation is a retained legacy entry stub, not a supported
 production path.  PC/AT currently derives a BIOS disk number arithmetically
 from the DOS drive letter, which is not a valid mapping on arbitrary DOS
 systems; PC-98 likewise cannot yet map every DOS volume back to the matching
 native partition.  Production images enter through MBR/partition PBR.  A
-later compatibility Phase must either define an explicit DOS-volume mapping
+later compatibility change must either define an explicit DOS-volume mapping
 or remove both direct-launch stubs rather than treating those guesses as a
 boot contract.
 
@@ -55,8 +55,8 @@ images that `BOOTX64.EFI` selects through UEFI.
 The PC/AT Stage 3 and both Stage 4 loaders classify FAT12, FAT16, and FAT32
 from the BPB and cluster count.  FAT32 root directories and file data use
 their cluster chains; FAT12 entries that straddle physical sectors are decoded
-from a two-sector cache.  The PC-98 production PBR currently remains FAT16 as
-recorded in WS013 p006.  Production image FAT types are fixed by each platform
+from a two-sector cache.  The PC-98 production PBR currently remains FAT16.
+Production image FAT types are fixed by each platform
 layout; the current Noct/C image interface does not expose an arbitrary
 `--fat-type` selector and rejects that unsupported option.
 

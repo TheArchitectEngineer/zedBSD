@@ -6,7 +6,8 @@
  */
 
 /*
- * PC/AT Stage 2 -> amd64 HAL bootstrap handoff.
+ * The handoff the amd64 loaders (the PC/AT BIOS loader and the UEFI loader)
+ * leave for the amd64 HAL's bootstrap.
  */
 
 #ifndef KERN_BOOTLOADER_AMD64_HANDOFF_H
@@ -22,10 +23,12 @@
 #define ZBL6_PARTITION_SCHEME_GPT	4U
 #define ZBL6_PARTITION_INDEX_UNKNOWN	0U
 
+/* The handoff's identity and the size of its first version. */
 #define ZBL6_HANDOFF_MAGIC		0x364c425a
 #define ZBL6_HANDOFF_VERSION		1
 #define ZBL6_HANDOFF_SIZE		24
 
+/* Where the assembly loaders store the first version's fields. */
 #define ZBL6_HANDOFF_MAGIC_OFFSET	0
 #define ZBL6_HANDOFF_VERSION_OFFSET	4
 #define ZBL6_HANDOFF_SIZE_OFFSET	6
@@ -50,6 +53,7 @@
 #define ZBL6_HANDOFF_FRAMEBUFFER_STRIDE_OFFSET	48
 #define ZBL6_HANDOFF_FRAMEBUFFER_FORMAT_OFFSET	52
 
+/* The later versions and their sizes. */
 #define ZBL6_HANDOFF_V2_VERSION			2
 #define ZBL6_HANDOFF_V2_SIZE			88
 #define ZBL6_HANDOFF_V3_VERSION			3
@@ -70,6 +74,7 @@
 #define ZBL6_HANDOFF_V6_UEFI_MEMORY_OFFSET	ZBL6_HANDOFF_V5_UEFI_SIZE
 #define ZBL6_HANDOFF_V6_BIOS_SIZE		(ZBL6_HANDOFF_V5_BIOS_SIZE + ZBL6_MEMORY_HANDOFF_SIZE)
 #define ZBL6_HANDOFF_V6_UEFI_SIZE		(ZBL6_HANDOFF_V5_UEFI_SIZE + ZBL6_MEMORY_HANDOFF_SIZE)
+/* Where the assembly loaders store the memory envelope's fields. */
 #define ZBL6_MEMORY_SOURCE_OFFSET		0
 #define ZBL6_MEMORY_FLAGS_OFFSET		4
 #define ZBL6_MEMORY_COUNT_OFFSET		8
@@ -85,11 +90,13 @@
 #define ZBL6_BOOT_ALLOCATION_SIZE		24
 #define ZBL6_MAX_MEMORY_RANGES			256
 #define ZBL6_MAX_BOOT_ALLOCATIONS		16
+/* The firmware a memory map came from, and its flags. */
 #define ZBL6_MEMORY_SOURCE_BIOS_E820		1
 #define ZBL6_MEMORY_SOURCE_UEFI			2
 #define ZBL6_MEMORY_MAP_COMPLETE		1
 #define ZBL6_RANGE_MIXED_ATTRIBUTES		1
 
+/* Who owns a boot allocation, and how long the kernel must keep it. */
 #define ZBL6_BOOT_OWNER_KERNEL			1
 #define ZBL6_BOOT_OWNER_LOADER			2
 #define ZBL6_BOOT_OWNER_BOOTSTRAP		3
@@ -100,11 +107,13 @@
 #define ZBL6_BOOT_AFTER_PAGING			3
 #define ZBL6_BOOT_AFTER_INIT			4
 
+/* Where the framebuffer fields of the third version are. */
 #define ZBL6_HANDOFF_V3_FRAMEBUFFER_BASE_OFFSET		64
 #define ZBL6_HANDOFF_V3_FRAMEBUFFER_WIDTH_OFFSET	80
 #define ZBL6_HANDOFF_V3_FRAMEBUFFER_HEIGHT_OFFSET	84
 #define ZBL6_HANDOFF_V3_FRAMEBUFFER_STRIDE_OFFSET	88
 
+/* What the handoff carries. */
 #define ZBL6_HANDOFF_FLAG_UEFI			(1U << 0)
 #define ZBL6_HANDOFF_FLAG_MEMORY_MAP		(1U << 1)
 #define ZBL6_HANDOFF_FLAG_ACPI_RSDP		(1U << 2)
@@ -113,10 +122,12 @@
 #define ZBL6_HANDOFF_FLAG_BOOT_PARAMETERS	(1U << 5)
 #define ZBL6_HANDOFF_FLAG_BOOT_ALLOCATIONS	(1U << 6)
 
+/* The framebuffer pixel layouts, and where the HAL maps the framebuffer. */
 #define ZBL6_FRAMEBUFFER_RGBX8888		1U
 #define ZBL6_FRAMEBUFFER_BGRX8888		2U
 #define ZBL6_FRAMEBUFFER_VIRTUAL_BASE		0xffffffffc2000000ULL
 
+/* The memory range types. */
 #define ZBL6_MEMORY_USABLE			1U
 #define ZBL6_MEMORY_RESERVED			2U
 #define ZBL6_MEMORY_ACPI_RECLAIM		3U
@@ -127,6 +138,11 @@
 #ifndef __ASSEMBLER__
 #include <stdint.h>
 
+/*
+ * The first, compact version of the handoff that the BIOS loaders build.
+ *
+ * It is written at a fixed low address and read once by the HAL's bootstrap.
+ */
 struct zbl6_handoff {
 	uint32_t magic;
 	uint16_t version;
@@ -139,6 +155,7 @@ struct zbl6_handoff {
 	uint32_t reserved;
 } __attribute__((packed));
 
+/* The BIOS handoff with the VBE linear framebuffer appended. */
 struct zbl6_handoff_framebuffer {
 	struct zbl6_handoff common;
 	uint64_t framebuffer_base;
@@ -150,8 +167,10 @@ struct zbl6_handoff_framebuffer {
 } __attribute__((packed));
 
 /*
- * The UEFI version preserve their historical MBR/index contract.  It
- * identifies the selected FAT by UUID and carries its actual MBR/GPT
+ * The second version, which the UEFI loader builds.
+ *
+ * The UEFI versions preserve the historical MBR/index contract.  They
+ * identify the selected FAT by UUID and carries its actual MBR/GPT
  * style with both partition-index bytes set to
  * ZBL6_PARTITION_INDEX_UNKNOWN.
  */
@@ -174,6 +193,7 @@ struct zbl6_handoff_v2 {
 	uint64_t reserved[3];
 } __attribute__((packed));
 
+/* The second version with the GOP framebuffer appended. */
 struct zbl6_handoff_v3 {
 	uint32_t magic;
 	uint16_t version;
@@ -198,21 +218,25 @@ struct zbl6_handoff_v3 {
 	uint32_t framebuffer_format;
 } __attribute__((packed));
 
+/* The third version with the boot volume's serial number appended. */
 struct zbl6_handoff_v4 {
 	struct zbl6_handoff_v3 common;
 	uint32_t boot_volume_serial;
 } __attribute__((packed));
 
+/* The BIOS handoff with the boot parameter record appended. */
 struct zbl6_handoff_v5_bios {
 	struct zbl6_handoff_framebuffer common;
 	struct kern_boot_parameter_record parameters;
 } __attribute__((packed));
 
+/* The UEFI handoff with the boot parameter record appended. */
 struct zbl6_handoff_v5_uefi {
 	struct zbl6_handoff_v4 common;
 	struct kern_boot_parameter_record parameters;
 } __attribute__((packed));
 
+/* The framebuffer the HAL keeps from whichever handoff version described it. */
 struct zbl6_framebuffer {
 	uint64_t physical_base;
 	uint64_t size;
@@ -222,6 +246,7 @@ struct zbl6_framebuffer {
 	uint32_t format;
 };
 
+/* One range of the earlier memory map, without firmware attributes. */
 struct zbl6_memory_range {
 	uint64_t base;
 	uint64_t size;
@@ -229,7 +254,11 @@ struct zbl6_memory_range {
 	uint32_t flags;
 } __attribute__((packed));
 
-/* Attributes retain the source firmware's full-width value. */
+/*
+ * One range of the normalized memory map.
+ *
+ * Attributes retain the source firmware's full-width value.
+ */
 struct zbl6_memory_range_v6 {
 	uint64_t base;
 	uint64_t size;
@@ -238,6 +267,10 @@ struct zbl6_memory_range_v6 {
 	uint64_t attributes;
 } __attribute__((packed));
 
+/*
+ * One block of memory the loader handed to the kernel, with its owner and
+ * the point after which the kernel may reuse it.
+ */
 struct zbl6_boot_allocation {
 	uint64_t base;
 	uint64_t size;
@@ -245,6 +278,10 @@ struct zbl6_boot_allocation {
 	uint32_t lifetime;
 } __attribute__((packed));
 
+/*
+ * The memory envelope of the sixth version: where the normalized map and
+ * the boot allocations are, and where the kernel image was placed.
+ */
 struct zbl6_memory_handoff {
 	uint32_t source;
 	uint32_t flags;
@@ -259,11 +296,13 @@ struct zbl6_memory_handoff {
 	uint64_t kernel_phys_end;
 } __attribute__((packed));
 
+/* The BIOS handoff with the memory envelope appended. */
 struct zbl6_handoff_v6_bios {
 	struct zbl6_handoff_v5_bios prefix;
 	struct zbl6_memory_handoff memory;
 } __attribute__((packed));
 
+/* The UEFI handoff with the memory envelope appended. */
 struct zbl6_handoff_v6_uefi {
 	struct zbl6_handoff_v5_uefi prefix;
 	struct zbl6_memory_handoff memory;

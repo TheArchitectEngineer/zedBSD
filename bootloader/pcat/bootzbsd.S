@@ -596,8 +596,10 @@ fat16_mount:
 	add eax, dword ptr [root_lba]
 	jc fatal_fat
 	mov dword ptr [data_lba], eax
-	/* FAT12 and FAT16 share the fixed-root BPB.  Classify by the Microsoft
-	 * data-cluster thresholds instead of trusting the cosmetic type string. */
+	/*
+	 * FAT12 and FAT16 share the fixed-root BPB.  Classify by the Microsoft
+	 * data-cluster thresholds instead of trusting the cosmetic type string.
+	 */
 	mov eax, dword ptr [fat_total_sectors]
 	mov edx, dword ptr [data_lba]
 	sub edx, dword ptr [partition_lba]
@@ -688,9 +690,9 @@ fat32_mount:
 	ret16
 
 /*
- * Resolve a bounded, NUL-terminated selected-volume path.  The p003 parser
- * has already rejected empty, dot, dot-dot, device, and volume components.
- * This resolver still enforces its own component and directory bounds so a
+ * Resolve a bounded, NUL-terminated selected-volume path.  The configuration
+ * parser has already rejected empty, dot, dot-dot, device, and volume
+ * components.  This resolver still enforces its own component and directory bounds so a
  * malformed filesystem cannot widen that contract.
  */
 fat_find_path:
@@ -1293,8 +1295,10 @@ disk_read_one:
 	mov es, ax
 	ret16
 
-/* Preserve the BIOS 8x16 ASCII font before entering protected mode.  The
- * kernel copies this low-memory handoff during its earliest BSP setup. */
+/*
+ * Preserve the BIOS 8x16 ASCII font before entering protected mode.  The
+ * kernel copies this low-memory handoff during its earliest BSP setup.
+ */
 .set VGA_FONT_HANDOFF, 0x7000
 .set VGA_FONT_MAGIC, 0x3854465a        /* "ZFT8" */
 sample_vga_font:
@@ -1341,7 +1345,7 @@ sample_vga_font:
 #include "bootloader/pcat/vbe.inc"
 
 /*
- * The boot logo (ws035-p096 follow-up): the file zedbsd.cfg names with
+ * The boot logo: the file zedbsd.cfg names with
  * logo=PATH, a binary PPM on the boot FAT, drawn on the VBE framebuffer the
  * way the UEFI loader draws it (the screen in the first pixel's colour, the
  * logo in the middle).  Sectors are read one at a time and decoded in C
@@ -1719,8 +1723,10 @@ long_entry:
 	mov rsp, 0x000000000009f000
 	xor rbp, rbp
 	cld
-	/* Clear every ELF64 p_memsz - p_filesz range through the native
-	 * identity map.  Do not depend on unreal-mode segment cache state. */
+	/*
+	 * Clear every ELF64 p_memsz - p_filesz range through the native
+	 * identity map.  Do not depend on unreal-mode segment cache state.
+	 */
 	mov ebx, offset ph_load_count
 	add ebx, 0x10000
 	movzx r8d, word ptr [rbx]

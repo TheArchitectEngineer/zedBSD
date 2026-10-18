@@ -146,7 +146,8 @@ boot_failure:
 
 #if KERN_PC98_IPL_DIAGNOSTIC
 /*
- * Emit P<DX> to QEMU debug port E9 and a finite group of CX short tones.
+ * Emit P<DX> to I/O port E9 (an emulator's debug console) and a finite
+ * group of CX short tones.
  * IRQ0 supplies the delay, so the group remains countable across CPU speeds.
  * The caller has already established the private stack and enabled IRQs.
  */

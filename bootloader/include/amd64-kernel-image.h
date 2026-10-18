@@ -1,5 +1,15 @@
-/* Kernel image placement contract shared by the loaders and the amd64 HAL. */
-/* Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib */
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The kernel image placement contract shared by the loaders and the amd64
+ * HAL.
+ */
+
 #ifndef KERN_BOOTLOADER_AMD64_KERNEL_IMAGE_H
 #define KERN_BOOTLOADER_AMD64_KERNEL_IMAGE_H
 

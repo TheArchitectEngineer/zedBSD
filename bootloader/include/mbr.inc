@@ -1,3 +1,15 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The MBR partition table offsets and the partition types the BIOS
+ * loaders boot from.
+ */
+
 .set MBR_TABLE_OFFSET,    0x01be
 .set MBR_ENTRY_SIZE,      16
 .set MBR_SIGNATURE,       0x01fe

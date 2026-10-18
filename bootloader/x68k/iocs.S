@@ -1,5 +1,13 @@
-﻿/* Minimal IOCS wrappers used only before the kernel takeover boundary. */
-/* Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib */
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Minimal IOCS wrappers used only before the kernel takes over the machine.
+ */
 
 	.text
 	.globl x68k_iocs_read_ext

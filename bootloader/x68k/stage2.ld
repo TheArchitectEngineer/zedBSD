@@ -1,4 +1,15 @@
-﻿OUTPUT_FORMAT("elf32-m68k")
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Links the X68000 secondary loader into its reserved RAM.
+ */
+
+OUTPUT_FORMAT("elf32-m68k")
 OUTPUT_ARCH(m68k)
 ENTRY(_start)
 SECTIONS

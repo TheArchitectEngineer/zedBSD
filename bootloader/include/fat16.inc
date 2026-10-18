@@ -1,3 +1,15 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The FAT boot parameter block offsets and the FAT types the BIOS loaders
+ * read.
+ */
+
 .set BPB_BYTES_PER_SECTOR, 11
 .set BPB_SECTORS_CLUSTER,  13
 .set BPB_RESERVED_SECTORS, 14

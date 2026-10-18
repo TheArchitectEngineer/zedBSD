@@ -1,5 +1,17 @@
-/* PC/AT ELF32 native-loader payload. */
-/* Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib */
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * A PC/AT ELF32 test kernel for the native loader.
+ *
+ * It checks the Multiboot magic and a cleared BSS, then writes its verdict
+ * to I/O port E9 and halts.
+ */
+
 .code32
 .section .text
 .global _start

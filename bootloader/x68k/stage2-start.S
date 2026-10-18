@@ -1,5 +1,13 @@
-﻿/* X68000 stage 2 entry and one-way kernel transfer. */
-/* Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib */
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The X68000 stage 2 entry and its one-way transfer to the kernel.
+ */
 
 #define _ASM_SRC_ 1
 #include "bootloader/x68k/boot-layout.h"

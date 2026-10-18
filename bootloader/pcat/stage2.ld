@@ -1,3 +1,14 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Links the PC/AT Stage 2 that chains the active partition's PBR.
+ */
+
 OUTPUT_FORMAT(elf32-i386)
 ENTRY(stage2_entry)
 SECTIONS

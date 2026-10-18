@@ -1,3 +1,14 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The ELF header and program header values the BIOS loaders check.
+ */
+
 .set EI_CLASS,             4
 .set ELFCLASS32,           1
 .set ELFCLASS64,           2
