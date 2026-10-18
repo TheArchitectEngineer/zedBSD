@@ -1,5 +1,21 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
+# ws074-q20261018-03 / Interop2025 testharness全候補の最新census
+
+Status: active（2026-10-18）
+Owner: このCodex chat単独。
+Approval: ユーザーの[自走の指示](autonomy.md)を本有限範囲へ適用。
+Timebox: 最大90分。期限内のcheckpointを保存し、残りを未実行として残す。
+
+| Attempt | Phase | Exact scope | State | Dependencies |
+| --- | --- | --- | --- | --- |
+| ws074-q20261018-03-i01 | [p189](phase189/phase.md) partial | 固定manifestの1,783 testharness IDを再分類し、既存runner適格1,455 IDを最大128件のshardで全件測定。固定revision/font/5秒settle/20秒process、raw callback/gzip/checkpointを保存。ID・whole/subtest結果と未対応328IDを照合し、共通失敗群と次の有限修正候補を示す。browser/runner/WPT/ABI/Masterは変更しない | in-progress | p173の固定manifest、9b94ebe38の固定browser/libbrowser |
+
+Dependency graph: p173 manifest + p241 frozen output → p189 census partial。
+Upcoming Work Outlook: 静的reftestの全体census、上位の共通原因、scripted/variant/origin/workerのrunner coverage。
+
+---
+
 # ws074-q20261018-02 / flex ratio の stretch cross size
 
 Status: finished（2026-10-18、host部分cleared）

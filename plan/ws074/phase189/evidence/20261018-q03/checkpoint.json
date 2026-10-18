@@ -1,0 +1,29 @@
+{
+  "partial": true,
+  "measured": 390,
+  "outcomes": {
+    "fail": 213,
+    "harness_error": 15,
+    "no_completion": 4,
+    "pass": 158
+  },
+  "groups": {
+    "css/css-anchor-position": {
+      "fail": 128,
+      "harness_error": 5,
+      "no_completion": 4,
+      "pass": 10
+    },
+    "css/css-cascade": {
+      "harness_error": 10,
+      "fail": 12
+    },
+    "css/css-flexbox": {
+      "pass": 148,
+      "fail": 73
+    }
+  },
+  "fixed_binary_commit": "9b94ebe38",
+  "raw_location": "build/ws074-20261018/q03",
+  "resume": "running census.py exec session 29435; inspect completed report.json before rerunning any shard"
+}

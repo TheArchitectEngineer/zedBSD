@@ -4,6 +4,10 @@
 
 Status: uncleared（2026-10-18 Q1: Status の行が無かったので写した。元: uncleared / q1013・q1014・q1015・q1024 partial cleared、shard100件実測）
 
+## ws074-q20261018-03 有限範囲（2026-10-18）
+
+[自走の指示](../autonomy.md)を最大90分で適用。固定1,783 testharness ID中、既存candidate_reasonに適格な1,455 IDを、最大128件ずつの12shardで測定する。固定WPT/metadata/manifest/font、settle5秒・process20秒、固定browser/libbrowserの組を使う。whole/subtest/raw callbackと全ID/checkpointを検証し、未対応328をPASS扱いせず理由付きで残す。runner/製品コードは変更せず、失敗群を後続Phaseへ渡す。binaryはp241の9b94ebe38と同じ出力。Master/共有Queue/GitHubのprojectionはpending。
+
 ## q1189-i01 結果（2026-10-14 13:56 JST）
 
 Event ws074-p189-q1189-partial-clear-20261014: [証拠](evidence/20261014-q1189/README.md)。固定Grid502同条件再測定は189→192 whole PASS、313→310 FAIL、16 callback改善、後退0、未出力0。同一ID/order/hash/checkpoint/rawを確認。改善はnon-static007/008とmargin/border/padding005。残る上位はstretch12件、margin/border/padding11件。q1189有限部分範囲cleared、p189/p173全3,805件100%未達、共有投影/GitHub publication保留。
@@ -257,3 +261,5 @@ Event ws074-p189-q1102-partial-clear-20261014: [証拠](evidence/20261014-q1102/
 ## q1105-i01 結果（2026-10-14 08:36 JST）
 
 Event ws074-p189-q1105-partial-clear-20261014: [証拠](evidence/20261014-q1105/README.md)。固定Grid502件を同条件全再測定し103→110 PASS、399→392 FAIL、no_output0。7 whole FAIL→PASS、旧whole PASS後退0。subtestは127 FAIL→PASS・1 PASS→FAIL（既存whole FAILのfr/gutter `.grid 17` 幅期待200/実120）。全502 ID/hash/checkpoint/gzip raw一致。q1105部分cleared、p189 whole1,783/p173全3,805件100%未達。browser/runner/WPT/ABI/Master/Acid無変更、共有投影/GitHub publication保留。
+
+Design note ws074-p242-proposed-20261018: q03の途中で、anchor/@scopeのcleanupが`replaceChildren`未定義で後続subtestをNOTRUNにしている事実を確認。[p242](../phase242/phase.md)を後続のDOM一般機能の候補として追加。q03の測定とp189の受け入れは変更せず、baselineには現行binaryのharness_errorをそのまま記録する。
