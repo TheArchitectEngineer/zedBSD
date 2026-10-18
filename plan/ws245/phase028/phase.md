@@ -51,3 +51,18 @@ Queue: q1229-i03（P1、ws245-p028 から残りの段を design の順に実装�
 - 旧の host 試験と書き込みの列の比べ: 上。master の Tools の `plan/ws051/tests/host-tc.sh` は 112・34 で失敗 0。**`plan/ws051/tests/host-vbt-pll.sh` は `FAIL pll-count: 0 rows`**（takeover.c の adlp_plls の行を sed で取り出す道具。表は xd の platform の表に移した）。DVO の 2 つの check は PASS。PLL の check は host-xd-dpll-test に移したので、Q1 に Tools の行の更新（道具から adlp_plls の部分を外すか、DVO だけの道具に直す）を頼む（design §6.1 R4）。
 - build（2026-10-16）: `sh build/tmp/kbuild.sh p028` で既定の vmunix と `I915_TESTS=y` の 5 組が rc 0・warning 0。`git diff --check` は空。
 - 5330: 未実施（全部の段の後に 1 回）。
+
+## 判定の材料（2026-10-18 P1、q1241）
+
+証拠: i20 = q1229-i20（T1、2026-10-17、5330 の実機、tip 92f134d99。survey の md は t1 の 396cbfce4 の `plan/ws245/tests/evidence/t1229i20-tip-20261017.md`・`t1229i20-tip-debug-20261017.md`、dmesg と `5330-survey-diff.py` の出力は t1 の worktree の `plan/ws245/temp/5330/t1229i20-*`（git の外））。i21 = q1229-i21（merge 後の main 61dde9d6b、24f2329ea の `t1229i21-main-merged-20261017.md`、dmesg は同じ場所）。基準 = q1229-i18 の main の dmesg（同じ場所の `t1229i18-main-*`）。debug の比べ（`t1229i20-diff-main-debug.txt`）の差は phase046 の q1229-i19 の表の I・H の行だけ（steady の差は PP_CONTROL の survey 2 の 0x6f/0x67 = H7 だけ）、素の起動の比べ（`t1229i20-diff-main.txt`）steady 差 0 PASS。i21 も steady 差 0。
+
+満たした基準:
+
+- 起動の基準（graphical、msgbuf_dropped 0、HANDOFF、lease 1 claimed、picture up、device lost 0、backlight-probe の get・set 100・get）は i20・i21 とも PASS
+- survey の DPLL0 ENABLE 0xcc000000・CFGCR0 0x00e001a5・CFGCR1 0x88 が基準と同じ、`takeover: pipe A stopped: … PLL 1`（5330 の GOP は DPLL1。基準の文の PHY A → DPLL 0 は例の誤り、phase046 で直した）、`not locked` 0
+
+満たしていない・未確認の基準と残る物:
+
+- 5320、外部出力（HDMI の wrpll）: ユーザーの一覧（beta2.md の U19〜U23）の項目で、未実施
+
+P1 の見立て（Status は変えない。判定は Q1）: cleared にしてよい。

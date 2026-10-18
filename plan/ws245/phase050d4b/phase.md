@@ -49,3 +49,18 @@ Q1 の判断（kernel の device の型は既定の案: own の型を display-in
 Q1 に頼む事:
 - 削除: `plan/ws051/tests/host-dpext-link.sh`・`host-dpext-link.c`（消した `drv_i915_lcd_compute_dp_ext` を呼ぶ。master の Tools・未完の Phase からの参照なし。oracle は `host-output-link-test` に移した）。
 - 他の WS の道具の文言: `plan/ws084/tests/reboot-loop.sh:10,71,82` が `LCD-B preflight: the display is not idle` を grep する → `resident display: preflight: the display is not idle`（R11 の基準で直すか消すかは Q1）。`plan/ws075/tests/hdmi-h1-hw.sh:47`・`hdmi/usb-poll.sh:20` の進みの表示の grep の `LCD-B` は他の語も含むので害なし。
+
+## 判定の材料（2026-10-18 P1、q1241）
+
+証拠: i20 = q1229-i20（T1、2026-10-17、5330 の実機、tip 92f134d99。survey の md は t1 の 396cbfce4 の `plan/ws245/tests/evidence/t1229i20-tip-20261017.md`・`t1229i20-tip-debug-20261017.md`、dmesg と `5330-survey-diff.py` の出力は t1 の worktree の `plan/ws245/temp/5330/t1229i20-*`（git の外））。i21 = q1229-i21（merge 後の main 61dde9d6b、24f2329ea の `t1229i21-main-merged-20261017.md`、dmesg は同じ場所）。基準 = q1229-i18 の main の dmesg（同じ場所の `t1229i18-main-*`）。debug の比べ（`t1229i20-diff-main-debug.txt`）の差は phase046 の q1229-i19 の表の I・H の行だけ（steady の差は PP_CONTROL の survey 2 の 0x6f/0x67 = H7 だけ）、素の起動の比べ（`t1229i20-diff-main.txt`）steady 差 0 PASS。i21 も steady 差 0。
+
+満たした基準:
+
+- 起動の基準（graphical、msgbuf_dropped 0、HANDOFF、lease 1 claimed、picture up、device lost 0、backlight-probe の get・set 100・get）は i20・i21 とも PASS
+- resident run（`resident display: preflight`・inputs の行）、show run と picture up
+
+満たしていない・未確認の基準と残る物:
+
+- なし（5330 の範囲で）
+
+P1 の見立て（Status は変えない。判定は Q1）: cleared にしてよい。

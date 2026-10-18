@@ -53,3 +53,18 @@ Q1 に頼む削除（中身を空にした、または参照されない物）:
 - `src/drivers/gpu/i915/display/output-shell.c`、`panel-backlight.c`、`panel-backlight.h`、`color.c`、`color.h`
 - `src/drivers/gpu/i915/tests/display/` の `lcd-run.c`・`lcd-run.h`・`hdmi-output.c`・`lcd-flip.c`・`lcd-gpu.c`・`lcd-gpu.h`・`hdmi-hotplug.c`・`aux.c`・`hpd-model.c`・`hpd-model.h`・`display-ktest.c`・`display-ktest.h`・`edp-ktest.c`・`edp-ktest.h`・`edp-sync-ktest.c`・`lcd-modeset-ktest.c`・`scanout-ktest.c`・`lcd-show-ktest.c`・`lcdg-ktest.c`・`hpd-ktest.c`
 - 他の WS の物（判断は Q1）: `plan/ws051/tests/host-dkl.sh`・`host-dkl-test.c`・`host-dkl-linux.c`（master の Tools・未完の Phase から参照なし、消した pool の関数を呼ぶ）。`plan/ws031/tests/vkloop-hw.sh` の display の scene の行と `plan/tools/hw5330/README.md:302-303` の display の組の記述は、組が無くなったので直すか消す（Q1）。
+
+## 判定の材料（2026-10-18 P1、q1241）
+
+証拠: i20 = q1229-i20（T1、2026-10-17、5330 の実機、tip 92f134d99。survey の md は t1 の 396cbfce4 の `plan/ws245/tests/evidence/t1229i20-tip-20261017.md`・`t1229i20-tip-debug-20261017.md`、dmesg と `5330-survey-diff.py` の出力は t1 の worktree の `plan/ws245/temp/5330/t1229i20-*`（git の外））。i21 = q1229-i21（merge 後の main 61dde9d6b、24f2329ea の `t1229i21-main-merged-20261017.md`、dmesg は同じ場所）。基準 = q1229-i18 の main の dmesg（同じ場所の `t1229i18-main-*`）。debug の比べ（`t1229i20-diff-main-debug.txt`）の差は phase046 の q1229-i19 の表の I・H の行だけ（steady の差は PP_CONTROL の survey 2 の 0x6f/0x67 = H7 だけ）、素の起動の比べ（`t1229i20-diff-main.txt`）steady 差 0 PASS。i21 も steady 差 0。
+
+満たした基準:
+
+- 起動の基準（graphical、msgbuf_dropped 0、HANDOFF、lease 1 claimed、picture up、device lost 0、backlight-probe の get・set 100・get）は i20・i21 とも PASS
+- host 試験・build は phase.md の記録どおり。5330 は起動の基準・survey・digest（差は I・H）
+
+満たしていない・未確認の基準と残る物:
+
+- なし（5330 の範囲で）
+
+P1 の見立て（Status は変えない。判定は Q1）: cleared にしてよい。

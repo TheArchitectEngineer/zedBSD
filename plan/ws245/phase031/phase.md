@@ -51,3 +51,19 @@ Queue: q1229-i04（P1、ws245-p031 から残りの段を design の順に実装�
 - 旧の試験の比べ: `sh plan/ws245/temp/harness/oldtests.sh <tree> <out>` を段の前と後で → dp 72・lcd 124 pass、正規化した出力の diff は空。
 - build（2026-10-16）: `sh build/tmp/kbuild.sh p031` で既定の vmunix と `I915_TESTS=y` の 5 組が rc 0・warning 0。`git diff --check` は空。
 - 5330: 未実施（全部の段の後に 1 回）。
+
+## 判定の材料（2026-10-18 P1、q1241）
+
+証拠: i20 = q1229-i20（T1、2026-10-17、5330 の実機、tip 92f134d99。survey の md は t1 の 396cbfce4 の `plan/ws245/tests/evidence/t1229i20-tip-20261017.md`・`t1229i20-tip-debug-20261017.md`、dmesg と `5330-survey-diff.py` の出力は t1 の worktree の `plan/ws245/temp/5330/t1229i20-*`（git の外））。i21 = q1229-i21（merge 後の main 61dde9d6b、24f2329ea の `t1229i21-main-merged-20261017.md`、dmesg は同じ場所）。基準 = q1229-i18 の main の dmesg（同じ場所の `t1229i18-main-*`）。debug の比べ（`t1229i20-diff-main-debug.txt`）の差は phase046 の q1229-i19 の表の I・H の行だけ（steady の差は PP_CONTROL の survey 2 の 0x6f/0x67 = H7 だけ）、素の起動の比べ（`t1229i20-diff-main.txt`）steady 差 0 PASS。i21 も steady 差 0。
+
+満たした基準:
+
+- 起動の基準（graphical、msgbuf_dropped 0、HANDOFF、lease 1 claimed、picture up、device lost 0、backlight-probe の get・set 100・get）は i20・i21 とも PASS
+- i20 の debug の起動で `display run: debug: xd-dp: the link is trained`、lease 1 claimed、再訓練の log 0、survey の DDI_BUF_CTL・TRANS_CONF が基準と同じ
+
+満たしていない・未確認の基準と残る物:
+
+- M/N は survey の register に無い（M/N の書き込みは debug の比べの列で基準と同じ: 差は I・H の行だけ）
+- USB-C DP・HDMI の 2 画面、5320: ユーザーの一覧（beta2.md の U19〜U23）の項目で、未実施
+
+P1 の見立て（Status は変えない。判定は Q1）: cleared にしてよい。

@@ -37,3 +37,17 @@ Queue: q1229-i14（P1）
 ## 削除と掃除
 
 - 無し。
+
+## 判定の材料（2026-10-18 P1、q1241）
+
+証拠: i20 = q1229-i20（T1、2026-10-17、5330 の実機、tip 92f134d99。survey の md は t1 の 396cbfce4 の `plan/ws245/tests/evidence/t1229i20-tip-20261017.md`・`t1229i20-tip-debug-20261017.md`、dmesg と `5330-survey-diff.py` の出力は t1 の worktree の `plan/ws245/temp/5330/t1229i20-*`（git の外））。i21 = q1229-i21（merge 後の main 61dde9d6b、24f2329ea の `t1229i21-main-merged-20261017.md`、dmesg は同じ場所）。基準 = q1229-i18 の main の dmesg（同じ場所の `t1229i18-main-*`）。debug の比べ（`t1229i20-diff-main-debug.txt`）の差は phase046 の q1229-i19 の表の I・H の行だけ（steady の差は PP_CONTROL の survey 2 の 0x6f/0x67 = H7 だけ）、素の起動の比べ（`t1229i20-diff-main.txt`）steady 差 0 PASS。i21 も steady 差 0。
+
+満たした基準:
+
+- suspend の戻りの code は起動では通らない。5330 の起動の基準（i20・i21）は PASS で、起動の道を壊していない事だけが分かる
+
+満たしていない・未確認の基準と残る物:
+
+- Phase の受け入れの全部（suspend → resume → desktop、backlight、`hpd suspend`・`TC<n> resume`・`resume: vga`・`hpd resume`、resume 後の plug、寝ている間の unplug）: ユーザーの一覧（beta2.md の U19〜U23）の項目で、未実施
+
+P1 の見立て（Status は変えない。判定は Q1）: cleared にしない（実機の証拠が無い。ユーザーの suspend の試験か、Q1 の判断で ユーザーの一覧へ移す決定が要る）。

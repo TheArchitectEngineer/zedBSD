@@ -120,3 +120,18 @@ log の差:
 - 起動・内蔵 eDP・backlight・suspend が今と同じ（TGL の well の木 PW_1〜PW_5、CD clock の relock、DBUF 2 slice、display 12 の DMC、tracker 8・ABOX・buddy）。
 - `i915: TC<n>: declared`・readout の行（display 12 の TC も driven にした: p052）。GOP の出力と内蔵 LCD が変わらない事。
 - USB-C DP（流れ B）は新しい機能（動かなくても p044 は cleared、結果は Bug か Future Work）。
+
+## 判定の材料（2026-10-18 P1、q1241）
+
+証拠: i20 = q1229-i20（T1、2026-10-17、5330 の実機、tip 92f134d99。survey の md は t1 の 396cbfce4 の `plan/ws245/tests/evidence/t1229i20-tip-20261017.md`・`t1229i20-tip-debug-20261017.md`、dmesg と `5330-survey-diff.py` の出力は t1 の worktree の `plan/ws245/temp/5330/t1229i20-*`（git の外））。i21 = q1229-i21（merge 後の main 61dde9d6b、24f2329ea の `t1229i21-main-merged-20261017.md`、dmesg は同じ場所）。基準 = q1229-i18 の main の dmesg（同じ場所の `t1229i18-main-*`）。debug の比べ（`t1229i20-diff-main-debug.txt`）の差は phase046 の q1229-i19 の表の I・H の行だけ（steady の差は PP_CONTROL の survey 2 の 0x6f/0x67 = H7 だけ）、素の起動の比べ（`t1229i20-diff-main.txt`）steady 差 0 PASS。i21 も steady 差 0。
+
+満たした基準:
+
+- 機械の規則・出典の監査・5330 の差の直し（26b307bd9）は i20 で PASS
+
+満たしていない・未確認の基準と残る物:
+
+- 全文の目視の読み通しは q1241 で続ける（下の節）
+- style-check の lock の名前の扱いは Q1 の判断
+
+P1 の見立て（Status は変えない。判定は Q1）: cleared にしない（読み通しが残る）。

@@ -92,3 +92,20 @@ power.c（約 2570 行）は既に xd-power の殻: domain（Linux の enum i915
 - `src/drivers/gpu/i915/tests/display/host-xd-regs-test.c`（空）、`src/drivers/gpu/i915/display/color.h`（空）
 - `src/drivers/gpu/i915/display/watermark.c`・`watermark.h`（空、p043b の帯域）
 - `src/drivers/gpu/i915/display/power.c`・`power.h`（空、p043b の power）、`src/drivers/gpu/i915/display/dc9.c`・`dc9.h`（p025 の削除の行と同じ。この段で空にした）
+
+## 判定の材料（2026-10-18 P1、q1241）
+
+証拠: i20 = q1229-i20（T1、2026-10-17、5330 の実機、tip 92f134d99。survey の md は t1 の 396cbfce4 の `plan/ws245/tests/evidence/t1229i20-tip-20261017.md`・`t1229i20-tip-debug-20261017.md`、dmesg と `5330-survey-diff.py` の出力は t1 の worktree の `plan/ws245/temp/5330/t1229i20-*`（git の外））。i21 = q1229-i21（merge 後の main 61dde9d6b、24f2329ea の `t1229i21-main-merged-20261017.md`、dmesg は同じ場所）。基準 = q1229-i18 の main の dmesg（同じ場所の `t1229i18-main-*`）。debug の比べ（`t1229i20-diff-main-debug.txt`）の差は phase046 の q1229-i19 の表の I・H の行だけ（steady の差は PP_CONTROL の survey 2 の 0x6f/0x67 = H7 だけ）、素の起動の比べ（`t1229i20-diff-main.txt`）steady 差 0 PASS。i21 も steady 差 0。
+
+満たした基準:
+
+- 起動の基準（graphical、msgbuf_dropped 0、HANDOFF、lease 1 claimed、picture up、device lost 0、backlight-probe の get・set 100・get）は i20・i21 とも PASS
+- p043a: `display: PCH type=8 id=0x5180 source=1`（ADP）、`display: CD clock: cdclk=179200 …`、survey lit。p043b: `display power: 29 wells (Alder Lake-P), DC states allowed 0x4000000a, entered when idle 0x2`、`core started: … start reference held`、`serving: wells_on 9 -> 9 … verify_mismatches=0`、well の users の一覧、`TC: power functions … did not come` 0
+
+満たしていない・未確認の基準と残る物:
+
+- `DC_STATE_EN=0x00000002` は未観測（survey 0x0、H6）
+- takeover の後の `wells on 7 -> 2` は基準 `8 -> 3` と 1 つ違う（基準は DDI IO A の request を firmware の後に数えていた見込みだが、理由は未確認。survey の PWR_WELL_CTL は同じ）。基準の `serving` は 0 -> 0（旧の log の欠陥、phase046）なので比べられない
+- SV7 の backlight、suspend の DC9: 未実施・ユーザーの一覧（beta2.md の U19〜U23）の項目で、未実施
+
+P1 の見立て（Status は変えない。判定は Q1）: p043a は cleared にしてよい。p043b は保留（DC6 の H6、well の数の 1 の差の説明、SV7）。
