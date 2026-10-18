@@ -1,0 +1,457 @@
+{
+  "checks": [
+    {
+      "name": "row-content",
+      "expected": [
+        100,
+        100
+      ],
+      "actual": [
+        100.0,
+        100.0
+      ]
+    },
+    {
+      "name": "row-transfer",
+      "expected": [
+        50,
+        100
+      ],
+      "actual": [
+        50.0,
+        100.0
+      ]
+    },
+    {
+      "name": "row-shrink",
+      "expected": [
+        50,
+        100
+      ],
+      "actual": [
+        50.0,
+        100.0
+      ]
+    },
+    {
+      "name": "row-min-zero",
+      "expected": [
+        0,
+        100
+      ],
+      "actual": [
+        0.0,
+        100.0
+      ]
+    },
+    {
+      "name": "row-scroll",
+      "expected": [
+        0,
+        100
+      ],
+      "actual": [
+        0.0,
+        100.0
+      ]
+    },
+    {
+      "name": "row-max-main",
+      "expected": [
+        30,
+        100
+      ],
+      "actual": [
+        30.0,
+        100.0
+      ]
+    },
+    {
+      "name": "row-preferred-main",
+      "expected": [
+        20,
+        100
+      ],
+      "actual": [
+        20.0,
+        100.0
+      ]
+    },
+    {
+      "name": "row-max-cross",
+      "expected": [
+        20,
+        40
+      ],
+      "actual": [
+        20.0,
+        40.0
+      ]
+    },
+    {
+      "name": "row-min-cross",
+      "expected": [
+        60,
+        120
+      ],
+      "actual": [
+        60.0,
+        120.0
+      ]
+    },
+    {
+      "name": "row-border-box",
+      "expected": [
+        180,
+        80
+      ],
+      "actual": [
+        180.0,
+        80.0
+      ]
+    },
+    {
+      "name": "column-content",
+      "expected": [
+        100,
+        100
+      ],
+      "actual": [
+        100.0,
+        100.0
+      ]
+    },
+    {
+      "name": "column-transfer",
+      "expected": [
+        100,
+        50
+      ],
+      "actual": [
+        100.0,
+        50.0
+      ]
+    },
+    {
+      "name": "column-shrink",
+      "expected": [
+        100,
+        50
+      ],
+      "actual": [
+        100.0,
+        50.0
+      ]
+    },
+    {
+      "name": "column-min-zero",
+      "expected": [
+        100,
+        0
+      ],
+      "actual": [
+        100.0,
+        0.0
+      ]
+    },
+    {
+      "name": "column-scroll",
+      "expected": [
+        100,
+        0
+      ],
+      "actual": [
+        100.0,
+        0.0
+      ]
+    },
+    {
+      "name": "column-max-main",
+      "expected": [
+        100,
+        30
+      ],
+      "actual": [
+        100.0,
+        30.0
+      ]
+    },
+    {
+      "name": "column-preferred-main",
+      "expected": [
+        100,
+        20
+      ],
+      "actual": [
+        100.0,
+        20.0
+      ]
+    },
+    {
+      "name": "column-max-cross",
+      "expected": [
+        40,
+        20
+      ],
+      "actual": [
+        40.0,
+        20.0
+      ]
+    },
+    {
+      "name": "column-min-cross",
+      "expected": [
+        120,
+        60
+      ],
+      "actual": [
+        120.0,
+        60.0
+      ]
+    },
+    {
+      "name": "column-border-box",
+      "expected": [
+        80,
+        180
+      ],
+      "actual": [
+        80.0,
+        180.0
+      ]
+    },
+    {
+      "name": "row-content-cross-cap",
+      "expected": [
+        20,
+        40
+      ],
+      "actual": [
+        20.0,
+        40.0
+      ]
+    },
+    {
+      "name": "column-content-cross-cap",
+      "expected": [
+        40,
+        20
+      ],
+      "actual": [
+        40.0,
+        20.0
+      ]
+    },
+    {
+      "name": "row-auto-cross-cap",
+      "expected": [
+        20,
+        40
+      ],
+      "actual": [
+        20.0,
+        40.0
+      ]
+    },
+    {
+      "name": "row-percent-main",
+      "expected": [
+        30,
+        100
+      ],
+      "actual": [
+        30.0,
+        100.0
+      ]
+    },
+    {
+      "name": "column-percent-main",
+      "expected": [
+        100,
+        30
+      ],
+      "actual": [
+        100.0,
+        30.0
+      ]
+    },
+    {
+      "name": "row-percent-cross",
+      "expected": [
+        75,
+        150
+      ],
+      "actual": [
+        75.0,
+        150.0
+      ]
+    },
+    {
+      "name": "column-percent-cross",
+      "expected": [
+        150,
+        75
+      ],
+      "actual": [
+        150.0,
+        75.0
+      ]
+    },
+    {
+      "name": "row-percent-cross-max",
+      "expected": [
+        15,
+        30
+      ],
+      "actual": [
+        15.0,
+        30.0
+      ]
+    },
+    {
+      "name": "column-percent-cross-max",
+      "expected": [
+        30,
+        15
+      ],
+      "actual": [
+        30.0,
+        15.0
+      ]
+    },
+    {
+      "name": "row-stretch",
+      "expected": [
+        200,
+        100
+      ],
+      "actual": [
+        200.0,
+        100.0
+      ]
+    },
+    {
+      "name": "column-stretch",
+      "expected": [
+        100,
+        50
+      ],
+      "actual": [
+        100.0,
+        50.0
+      ]
+    },
+    {
+      "name": "row-stretch-minimum",
+      "expected": [
+        100,
+        100
+      ],
+      "actual": [
+        100.0,
+        100.0
+      ]
+    },
+    {
+      "name": "column-stretch-minimum",
+      "expected": [
+        100,
+        100
+      ],
+      "actual": [
+        100.0,
+        100.0
+      ]
+    },
+    {
+      "name": "row-stretch-border",
+      "expected": [
+        180,
+        80
+      ],
+      "actual": [
+        180.0,
+        80.0
+      ]
+    },
+    {
+      "name": "row-stretch-margin",
+      "expected": [
+        140,
+        70
+      ],
+      "actual": [
+        140.0,
+        70.0
+      ]
+    },
+    {
+      "name": "row-stretch-max",
+      "expected": [
+        120,
+        60
+      ],
+      "actual": [
+        120.0,
+        60.0
+      ]
+    },
+    {
+      "name": "row-stretch-min",
+      "expected": [
+        240,
+        120
+      ],
+      "actual": [
+        240.0,
+        120.0
+      ]
+    },
+    {
+      "name": "row-stretch-auto-margin",
+      "expected": [
+        0,
+        0
+      ],
+      "actual": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "name": "row-wrap-no-transfer",
+      "expected": [
+        0,
+        100
+      ],
+      "actual": [
+        0.0,
+        100.0
+      ]
+    },
+    {
+      "name": "row-start-no-transfer",
+      "expected": [
+        0,
+        0
+      ],
+      "actual": [
+        0.0,
+        0.0
+      ]
+    }
+  ],
+  "passed": 40,
+  "command": [
+    "build/ws074-20261018/q21/final/engine/browser",
+    "--dump=layout",
+    "--font=userland/desktop/fonts/Mahora-Regular.ttf",
+    "build/ws074-20261018/q21/final/ratio/cases.html"
+  ],
+  "preserved_chrome_difference": {
+    "row-content-cross-cap": [
+      100,
+      40
+    ]
+  }
+}

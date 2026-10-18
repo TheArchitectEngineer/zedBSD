@@ -1,0 +1,6 @@
+from pathlib import Path
+import importlib.util,subprocess,re,json
+q=Path('build/ws074-20261018/q21/final/ratio');q.mkdir(exist_ok=True);spec=importlib.util.spec_from_file_location('ratio','plan/ws074/tests/run-flex-ratio-minimum-tests.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);p=q/'cases.html';p.write_text(m.source());cmd=['build/ws074-20261018/q21/final/engine/browser','--dump=layout','--font=userland/desktop/fonts/Mahora-Regular.ttf',str(p)];run=subprocess.run(cmd,capture_output=True,text=True,timeout=20);(q/'layout.out').write_text(run.stdout);(q/'layout.stderr').write_text(run.stderr);assert run.returncode==0;observed=[tuple(map(float,x)) for x in re.findall(r'^ +block <article> -?[\d.]+ -?[\d.]+ ([\d.]+) ([\d.]+)$',run.stdout,re.M)];assert len(observed)==len(m.CASES);checks=[]
+for case,pair in zip(m.CASES,observed):
+ answer=(pair[0]-case[5][0],pair[1]-case[5][1]);assert answer==case[4],(case[0],answer,case[4]);checks.append(dict(name=case[0],expected=case[4],actual=answer))
+(q/'report.json').write_text(json.dumps(dict(checks=checks,passed=len(checks),command=cmd,preserved_chrome_difference=m.CHROMIUM_DIFFERENCES),indent=2)+'\n');print('native ratio',len(checks),'/',len(checks))

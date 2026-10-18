@@ -1,0 +1,50 @@
+build/ws074-20261018/q21/before-layout_flex.c:172: blank-after-brace: gap_main = flex_length(&box->style.column_gap, box->width);
+build/ws074-20261018/q21/before-layout_flex.c:204: blank-after-brace: /* An auto-height, unwrapped column uses its minimum height for free-space placement. */
+build/ws074-20261018/q21/before-layout_flex.c:232: blank-after-brace: start = 0;
+build/ws074-20261018/q21/before-layout_flex.c:284: paragraph-comment: lines[line_count].start = start;
+build/ws074-20261018/q21/before-layout_flex.c:299: blank-after-brace: if (!row)
+build/ws074-20261018/q21/before-layout_flex.c:317: blank-after-brace: if (free_space < 0 && (value == CSS_ALIGN_SPACE_BETWEEN || value == CSS_ALIGN_STRETCH ||
+build/ws074-20261018/q21/before-layout_flex.c:372: blank-after-brace: first_line = 0;
+build/ws074-20261018/q21/before-layout_flex.c:386: conditional: extent = cross_size >= 0 ? cross_size : cross_cursor;
+build/ws074-20261018/q21/before-layout_flex.c:386: paragraph-comment: extent = cross_size >= 0 ? cross_size : cross_cursor;
+build/ws074-20261018/q21/before-layout_flex.c:396: blank-after-brace: free(lines);
+build/ws074-20261018/q21/before-layout_flex.c:418: blank-after-brace: flex_static_positions(box, row, sizing);
+build/ws074-20261018/q21/before-layout_flex.c:434: forward-declaration: flex_side_flip
+build/ws074-20261018/q21/before-layout_flex.c:478: paragraph-comment: if ((box->style.direction != CSS_DIRECTION_LTR && box->style.direction != CSS_DIRECTION_RTL))
+build/ws074-20261018/q21/before-layout_flex.c:487: conditional: inline_start = rtl ? FLEX_SIDE_END : FLEX_SIDE_START;
+build/ws074-20261018/q21/before-layout_flex.c:488: conditional: block_start = box->style.writing_mode == CSS_WRITING_VERTICAL_RL ? FLEX_SIDE_END : FLEX_SIDE_START;
+build/ws074-20261018/q21/before-layout_flex.c:491: conditional: main_axis_start = row ? inline_start : block_start;
+build/ws074-20261018/q21/before-layout_flex.c:492: conditional: cross_axis_start = row ? block_start : inline_start;
+build/ws074-20261018/q21/before-layout_flex.c:493: conditional: main_horizontal = row ? inline_horizontal : !inline_horizontal;
+build/ws074-20261018/q21/before-layout_flex.c:494: conditional: main_start = reverse ? flex_side_flip(main_axis_start) : main_axis_start;
+build/ws074-20261018/q21/before-layout_flex.c:495: conditional: cross_start = wrap_reverse ? flex_side_flip(cross_axis_start) : cross_axis_start;
+build/ws074-20261018/q21/before-layout_flex.c:511: conditional: main_side = flex ? main_start : main_axis_start;
+build/ws074-20261018/q21/before-layout_flex.c:514: conditional: main_side = flex ? flex_side_flip(main_start) : flex_side_flip(main_axis_start);
+build/ws074-20261018/q21/before-layout_flex.c:517: conditional: main_side = (main_horizontal || !inline_horizontal) ? FLEX_SIDE_START : main_axis_start;
+build/ws074-20261018/q21/before-layout_flex.c:520: conditional: main_side = (main_horizontal || !inline_horizontal) ? FLEX_SIDE_END : main_axis_start;
+build/ws074-20261018/q21/before-layout_flex.c:534: blank-after-brace: child_inline_start = child->style.direction == CSS_DIRECTION_RTL ? FLEX_SIDE_END : FLEX_SIDE_START;
+build/ws074-20261018/q21/before-layout_flex.c:534: conditional: child_inline_start = child->style.direction == CSS_DIRECTION_RTL ? FLEX_SIDE_END : FLEX_SIDE_START;
+build/ws074-20261018/q21/before-layout_flex.c:535: conditional: child_block_start = child->style.writing_mode == CSS_WRITING_VERTICAL_RL ? FLEX_SIDE_END : FLEX_SIDE_START;
+build/ws074-20261018/q21/before-layout_flex.c:544: conditional: cross_side = flex ? cross_start : cross_axis_start;
+build/ws074-20261018/q21/before-layout_flex.c:547: conditional: cross_side = flex ? flex_side_flip(cross_start) : flex_side_flip(cross_axis_start);
+build/ws074-20261018/q21/before-layout_flex.c:550: conditional: cross_side = row ? child_block_start : child_inline_start;
+build/ws074-20261018/q21/before-layout_flex.c:553: conditional: cross_side = flex_side_flip(row ? child_block_start : child_inline_start);
+build/ws074-20261018/q21/before-layout_flex.c:561: conditional: horizontal = main_horizontal ? main_side : cross_side;
+build/ws074-20261018/q21/before-layout_flex.c:562: conditional: vertical = main_horizontal ? cross_side : main_side;
+build/ws074-20261018/q21/before-layout_flex.c:575: conditional: safe_cross = (child->style.align_self != CSS_ALIGN_AUTO) ? (child->style.flex_keywords & 128u) != 0 : (box->style.flex_keywords & 64u) != 0;
+build/ws074-20261018/q21/before-layout_flex.c:576: conditional: child->static_x_safe = main_horizontal ? safe_main : safe_cross;
+build/ws074-20261018/q21/before-layout_flex.c:577: conditional: child->static_y_safe = main_horizontal ? safe_cross : safe_main;
+build/ws074-20261018/q21/before-layout_flex.c:579: conditional: if (child->static_x_safe && (main_horizontal ? main_axis_start : cross_axis_start) == FLEX_SIDE_END)
+build/ws074-20261018/q21/before-layout_flex.c:581: conditional: if (child->static_y_safe && (main_horizontal ? cross_axis_start : main_axis_start) == FLEX_SIDE_END)
+build/ws074-20261018/q21/before-layout_flex.c:589: blank-after-brace: if (vertical == FLEX_SIDE_CENTER)
+build/ws074-20261018/q21/before-layout_flex.c:877: blank-after-brace: if (count > 1)
+build/ws074-20261018/q21/before-layout_flex.c:890: blank-after-brace: return;
+build/ws074-20261018/q21/before-layout_flex.c:909: blank-after-brace: if (items[index].maximum >= 0 && items[index].size > items[index].maximum) {
+build/ws074-20261018/q21/before-layout_flex.c:913: blank-after-brace: total_violation += (int64_t)items[index].size - target;
+build/ws074-20261018/q21/before-layout_flex.c:919: conditional: sign = total_violation > 0 ? 1 : -1;
+build/ws074-20261018/q21/before-layout_flex.c:1005: blank-after-brace: if (items[index].maximum >= 0 && items[index].size > items[index].maximum) {
+build/ws074-20261018/q21/before-layout_flex.c:1680: paragraph-comment: for (index = 0; index < count; index++) {
+build/ws074-20261018/q21/before-layout_flex.c:1682: call-in-condition: flex_align_of
+build/ws074-20261018/q21/before-layout_flex.c:1729: blank-after-brace: return 0;
+build/ws074-20261018/q21/before-layout_flex.c:1933: blank-after-brace: break;
+build/ws074-20261018/q21/before-layout_flex.c:1939: blank-after-brace: break;

@@ -1,0 +1,37 @@
+row-auto 200 40 auto
+row-content 80 40 content
+row-percent-preferred 80 40 content
+row-max 60 40 content
+row-min 100 40 content
+row-frame 104 64 content
+row-border 104 64 content
+row-ratio 200 100 content
+row-ratio-auto 50 100 auto
+column-auto 180 150 auto
+column-content 180 40 content
+column-percent-preferred 180 40 content
+column-max 180 25 content
+column-min 180 65 content
+column-frame 204 64 content
+column-border 180 64 content
+column-ratio 180 90 content
+column-ratio-auto 180 20 auto
+negative-percent 0 40 calc(5% - 40px)
+negative-absolute 0 40 0px
+mutate-before 80 40 content
+mutate-after 120 120px 200px
+mutate-auto 200 200px
+mutate-content 120 200px
+value none specified= computed=auto
+value normal specified= computed=auto
+value -1px specified= computed=auto
+value -2% specified= computed=auto
+value content specified=content computed=content
+value auto specified=auto computed=auto
+value fit-content specified=fit-content computed=fit-content
+value min-content specified=min-content computed=min-content
+value max-content specified=max-content computed=max-content
+value calc(10px - 0.5em) specified=calc(10px - 0.5em) computed=0px
+value calc(0% + 10px) specified=calc(0% + 10px) computed=calc(0% + 10px)
+value calc(-5%) specified=calc(-5%) computed=0%
+value calc(10% - 20px) specified=calc(10% - 20px) computed=calc(10% - 20px)

@@ -1,0 +1,146 @@
+userland/desktop/libbrowser/css/values.c:1507: paragraph-comment: wb_arena_init(&arena, 0);
+userland/desktop/libbrowser/css/values.c:1513: blank-after-brace: if (count == 0U) {
+userland/desktop/libbrowser/css/values.c:1517: blank-after-brace: start = 0;
+userland/desktop/libbrowser/css/values.c:1553: paragraph-comment: single = NULL;
+userland/desktop/libbrowser/css/values.c:1563: paragraph-comment: written = 0;
+userland/desktop/libbrowser/css/values.c:1572: blank-after-brace: error = wb_utf8_to_units((const unsigned char *)names[index].name, strlen(names[index].name), out);
+userland/desktop/libbrowser/css/values.c:1752: call-in-condition: css_ident_equal
+userland/desktop/libbrowser/css/values.c:1757: blank-after-brace: if (css_ident_equal(&tokens[0], "from-font")) {
+userland/desktop/libbrowser/css/values.c:1757: call-in-condition: css_ident_equal
+userland/desktop/libbrowser/css/values.c:1762: blank-after-brace: error = values_length(&tokens[0], 0, value);
+userland/desktop/libbrowser/css/values.c:1880: nested-declaration: size_t word;
+userland/desktop/libbrowser/css/values.c:1881: nested-declaration: size_t words;
+userland/desktop/libbrowser/css/values.c:1883: paragraph-comment: words = 0;
+userland/desktop/libbrowser/css/values.c:1894: blank-after-brace: if (words != 2U)
+userland/desktop/libbrowser/css/values.c:1896: call-in-condition: css_ident_equal, css_ident_equal, css_ident_equal
+userland/desktop/libbrowser/css/values.c:1900: conditional: value->keyword = css_ident_equal(parts[0], "last") ? CSS_ALIGN_END : CSS_ALIGN_BASELINE;
+userland/desktop/libbrowser/css/values.c:1903: blank-after-brace: if (!css_ident_equal(parts[0], "safe") && !css_ident_equal(parts[0], "unsafe"))
+userland/desktop/libbrowser/css/values.c:1903: call-in-condition: css_ident_equal, css_ident_equal
+userland/desktop/libbrowser/css/values.c:1907: call-in-condition: css_ident_equal
+userland/desktop/libbrowser/css/values.c:2036: blank-after-brace: value->kind = CSS_VALUE_KEYWORD;
+userland/desktop/libbrowser/css/values.c:2601: blank-after-brace: if (made >= 4 || (tokens[index].type != CSS_TOKEN_NUMBER &&
+userland/desktop/libbrowser/css/values.c:2608: blank-after-brace: if (made < 3 || awaiting || (commas != 0 && (slashes != 0 || commas != made - 1)) ||
+userland/desktop/libbrowser/css/values.c:2609: conditional: (commas == 0 && slashes != (made == 4 ? 1U : 0U)))
+userland/desktop/libbrowser/css/values.c:2617: call-in-condition: css_units_equal_ascii
+userland/desktop/libbrowser/css/values.c:2619: call-in-condition: css_units_equal_ascii
+userland/desktop/libbrowser/css/values.c:2621: call-in-condition: css_units_equal_ascii
+userland/desktop/libbrowser/css/values.c:2623: call-in-condition: css_units_equal_ascii
+userland/desktop/libbrowser/css/values.c:2642: blank-after-brace: if (!isfinite(hue) || !isfinite(saturation) || !isfinite(lightness) || !isfinite(alpha))
+userland/desktop/libbrowser/css/values.c:2642: call-in-condition: isfinite, isfinite, isfinite, isfinite
+userland/desktop/libbrowser/css/values.c:2682: blank-after-brace: *color = (uint32_t)(alpha * 255.0 + 0.5) << 24 |
+userland/desktop/libbrowser/css/values.c:4219: blank-after-brace: if (lengths[index] == 1 && tokens[starts[index]].type == CSS_TOKEN_NUMBER && tokens[starts[index]].number != 0) {
+userland/desktop/libbrowser/css/values.c:4483: paragraph-comment: list = wb_arena_zalloc(parse->arena, sizeof(*list));
+userland/desktop/libbrowser/css/values.c:4488: call-in-condition: css_ident_equal
+userland/desktop/libbrowser/css/values.c:4491: paragraph-comment: error = values_one_shadow(tokens, count, &list->shadows[0]);
+userland/desktop/libbrowser/css/values.c:4733: call-in-condition: css_ident_equal
+userland/desktop/libbrowser/css/values.c:4735: call-in-condition: css_ident_equal
+userland/desktop/libbrowser/css/values.c:4756: blank-after-brace: if (made != 4U)
+userland/desktop/libbrowser/css/values.c:4776: paragraph-comment: direction = -1;
+userland/desktop/libbrowser/css/values.c:4783: call-in-condition: css_ident_equal
+userland/desktop/libbrowser/css/values.c:4787: call-in-condition: css_ident_equal
+userland/desktop/libbrowser/css/values.c:4791: call-in-condition: css_ident_equal
+userland/desktop/libbrowser/css/values.c:4799: blank-after-brace: if (direction < 0 && !dense)
+userland/desktop/libbrowser/css/values.c:4802: conditional: value->keyword = (direction == CSS_GRID_FLOW_COLUMN ? CSS_GRID_FLOW_COLUMN : CSS_GRID_FLOW_ROW) | dense;
+userland/desktop/libbrowser/css/values.c:4949: call-in-condition: css_ident_equal, css_ident_equal
+userland/desktop/libbrowser/css/values.c:4956: blank-after-brace: if (index == count)
+userland/desktop/libbrowser/css/values.c:4976: call-in-condition: css_ident_equal, css_ident_equal
+userland/desktop/libbrowser/css/values.c:4998: blank-after-brace: list->repeat_at = (int)first;
+userland/desktop/libbrowser/css/values.c:5005: blank-after-brace: if (inner >= end || tokens[inner].type != CSS_TOKEN_NUMBER || !tokens[inner].integer || tokens[inner].number < 1)
+userland/desktop/libbrowser/css/values.c:5250: call-in-condition: css_ident_equal
+userland/desktop/libbrowser/css/values.c:5251: call-in-condition: values_function_length
+userland/desktop/libbrowser/css/values.c:5528: call-in-condition: css_ident_equal
+userland/desktop/libbrowser/css/values.c:5528: paragraph-comment: if (count != 1 || !css_ident_equal(&tokens[0], "none"))
+userland/desktop/libbrowser/css/values.c:5556: paragraph-comment: lines = 0;
+userland/desktop/libbrowser/css/values.c:5560: call-in-condition: css_ident_equal
+userland/desktop/libbrowser/css/values.c:5564: call-in-condition: css_ident_equal
+userland/desktop/libbrowser/css/values.c:5566: call-in-condition: css_ident_equal
+userland/desktop/libbrowser/css/values.c:5568: call-in-condition: css_ident_equal
+userland/desktop/libbrowser/css/values.c:5570: call-in-condition: css_ident_equal
+userland/desktop/libbrowser/css/values.c:5572: call-in-condition: css_ident_equal
+userland/desktop/libbrowser/css/values.c:5576: call-in-condition: css_ident_equal
+userland/desktop/libbrowser/css/values.c:5583: blank-after-brace: if (bit != 0 && (lines & bit) != 0)
+userland/desktop/libbrowser/css/values.c:5618: paragraph-comment: components = values_components(tokens, count, starts, lengths, 8);
+userland/desktop/libbrowser/css/values.c:5637: paragraph-comment: for (index = 0; index < components; index++) {
+userland/desktop/libbrowser/css/values.c:5638: nested-declaration: const struct css_token *part;
+userland/desktop/libbrowser/css/values.c:5639: nested-declaration: size_t length;
+userland/desktop/libbrowser/css/values.c:5640: nested-declaration: int keyword;
+userland/desktop/libbrowser/css/values.c:5642: paragraph-comment: part = tokens + starts[index];
+userland/desktop/libbrowser/css/values.c:5656: blank-after-brace: if (lines_seen)
+userland/desktop/libbrowser/css/values.c:5659: call-in-condition: values_keyword
+userland/desktop/libbrowser/css/values.c:5659: paragraph-comment: if (length == 1U && values_keyword(values_decoration_styles, part, &keyword)) {
+userland/desktop/libbrowser/css/values.c:5666: blank-after-brace: if (length == 1U &&
+userland/desktop/libbrowser/css/values.c:5666: call-in-condition: css_ident_equal, css_ident_equal
+userland/desktop/libbrowser/css/values.c:5672: call-in-condition: css_ident_equal
+userland/desktop/libbrowser/css/values.c:5674: call-in-condition: css_ident_equal
+userland/desktop/libbrowser/css/values.c:5681: blank-after-brace: thickness_seen = 1;
+userland/desktop/libbrowser/css/values.c:5684: blank-after-brace: if (color_seen)
+userland/desktop/libbrowser/css/values.c:5706: paragraph-comment: if (part->length == 0U)
+userland/desktop/libbrowser/css/values.c:5713: blank-after-brace: return wb_units_append(out, part->data, part->length);
+userland/desktop/libbrowser/css/values.c:5742: paragraph-comment: wb_arena_init(&arena, 0);
+userland/desktop/libbrowser/css/values.c:5745: goto: goto cleanup;
+userland/desktop/libbrowser/css/values.c:5748: goto: goto cleanup;
+userland/desktop/libbrowser/css/values.c:5750: blank-after-brace: start = 0U;
+userland/desktop/libbrowser/css/values.c:5758: goto: goto cleanup;
+userland/desktop/libbrowser/css/values.c:5765: goto: goto cleanup;
+userland/desktop/libbrowser/css/values.c:5768: goto: goto cleanup;
+userland/desktop/libbrowser/css/values.c:5770: blank-after-brace: component_count = values_components(tokens + start, end - start, starts, lengths, 8U);
+userland/desktop/libbrowser/css/values.c:5773: goto: goto cleanup;
+userland/desktop/libbrowser/css/values.c:5779: goto: goto cleanup;
+userland/desktop/libbrowser/css/values.c:5782: goto: goto cleanup;
+userland/desktop/libbrowser/css/values.c:5785: goto: goto cleanup;
+userland/desktop/libbrowser/css/values.c:5788: goto: goto cleanup;
+userland/desktop/libbrowser/css/values.c:5790: paragraph-comment: for (index = 0U; index < component_count; index++) {
+userland/desktop/libbrowser/css/values.c:5791: nested-declaration: const struct css_token *part;
+userland/desktop/libbrowser/css/values.c:5792: nested-declaration: size_t part_start;
+userland/desktop/libbrowser/css/values.c:5793: nested-declaration: size_t part_end;
+userland/desktop/libbrowser/css/values.c:5794: nested-declaration: struct css_value parsed;
+userland/desktop/libbrowser/css/values.c:5795: nested-declaration: struct wb_units *destination;
+userland/desktop/libbrowser/css/values.c:5797: paragraph-comment: part = tokens + start + starts[index];
+userland/desktop/libbrowser/css/values.c:5800: call-in-condition: values_decoration_line
+userland/desktop/libbrowser/css/values.c:5802: call-in-condition: values_keyword
+userland/desktop/libbrowser/css/values.c:5808: blank-after-brace: error = wb_utf8_to_units((const unsigned char *)values_decoration_styles[style_index].name,
+userland/desktop/libbrowser/css/values.c:5811: goto: goto cleanup;
+userland/desktop/libbrowser/css/values.c:5814: blank-after-brace: if (lengths[index] == 1U &&
+userland/desktop/libbrowser/css/values.c:5814: call-in-condition: css_ident_equal, css_ident_equal
+userland/desktop/libbrowser/css/values.c:5822: blank-after-brace: destination->length = 0U;
+userland/desktop/libbrowser/css/values.c:5825: goto: goto cleanup;
+userland/desktop/libbrowser/css/values.c:5835: goto: goto cleanup;
+userland/desktop/libbrowser/css/values.c:5837: blank-after-brace: if (!(declarations[1].value.kind == CSS_VALUE_KEYWORD && declarations[1].value.keyword == 0)) {
+userland/desktop/libbrowser/css/values.c:5840: goto: goto cleanup;
+userland/desktop/libbrowser/css/values.c:5842: blank-after-brace: if (declarations[2].value.keyword != CSS_DECORATION_SOLID) {
+userland/desktop/libbrowser/css/values.c:5845: goto: goto cleanup;
+userland/desktop/libbrowser/css/values.c:5847: blank-after-brace: if (declarations[3].value.color != CSS_CURRENT_COLOR)
+userland/desktop/libbrowser/css/values.c:5857: forward-declaration: values_transform_add
+userland/desktop/libbrowser/css/values.c:5865: blank-after-brace: if (axis->unit == value->unit)
+userland/desktop/libbrowser/css/values.c:5912: call-in-condition: css_ident_equal
+userland/desktop/libbrowser/css/values.c:5917: blank-after-brace: if (tokens[index].type != CSS_TOKEN_FUNCTION)
+userland/desktop/libbrowser/css/values.c:5930: blank-after-brace: if (depth != 0)
+userland/desktop/libbrowser/css/values.c:5935: call-in-condition: css_ident_equal
+userland/desktop/libbrowser/css/values.c:5937: call-in-condition: css_ident_equal
+userland/desktop/libbrowser/css/values.c:5939: call-in-condition: css_ident_equal
+userland/desktop/libbrowser/css/values.c:5941: call-in-condition: css_ident_equal
+userland/desktop/libbrowser/css/values.c:5946: call-in-condition: css_ident_equal, css_ident_equal, css_ident_equal, css_ident_equal
+userland/desktop/libbrowser/css/values.c:5949: call-in-condition: css_ident_equal
+userland/desktop/libbrowser/css/values.c:5951: call-in-condition: css_ident_equal
+userland/desktop/libbrowser/css/values.c:5963: blank-after-brace: if (arguments == 0)
+userland/desktop/libbrowser/css/values.c:5978: blank-after-brace: scale[1].number *= (float)factor;
+userland/desktop/libbrowser/css/values.c:5981: blank-after-brace: index = end;
+userland/desktop/libbrowser/css/values.c:5984: blank-after-brace: if (which >= 0) {
+userland/desktop/libbrowser/css/values.c:5994: blank-after-brace: if (arguments == 0)
+userland/desktop/libbrowser/css/values.c:6011: blank-after-brace: index = end;
+userland/desktop/libbrowser/css/values.c:6013: blank-after-brace: if (!seen)
+userland/desktop/libbrowser/css/values.c:6044: paragraph-comment: memset(&ratio, 0, sizeof(ratio));
+userland/desktop/libbrowser/css/values.c:6054: call-in-condition: css_ident_equal
+userland/desktop/libbrowser/css/values.c:6060: blank-after-brace: if (tokens[index].type != CSS_TOKEN_NUMBER || have_ratio || tokens[index].number < 0)
+userland/desktop/libbrowser/css/values.c:6076: blank-after-brace: if (!have_ratio && !have_auto)
+userland/desktop/libbrowser/css/values.c:6080: conditional: automatic.number = (have_auto || !have_ratio) ? 1.0f : 0.0f;
+userland/desktop/libbrowser/css/values.c:6088: forward-declaration: values_transform_origin_component
+userland/desktop/libbrowser/css/values.c:6099: call-in-condition: css_ident_equal
+userland/desktop/libbrowser/css/values.c:6102: call-in-condition: css_ident_equal
+userland/desktop/libbrowser/css/values.c:6105: call-in-condition: css_ident_equal
+userland/desktop/libbrowser/css/values.c:6108: call-in-condition: css_ident_equal
+userland/desktop/libbrowser/css/values.c:6111: call-in-condition: css_ident_equal
+userland/desktop/libbrowser/css/values.c:6116: blank-after-brace: *vertical = 0;
+userland/desktop/libbrowser/css/values.c:6122: blank-after-brace: return values_length(token, 0, value);
+userland/desktop/libbrowser/css/values.c:6153: blank-after-brace: if (parts == 0)
+userland/desktop/libbrowser/css/values.c:6178: blank-after-brace: values_add(out, made, first_property, &first);

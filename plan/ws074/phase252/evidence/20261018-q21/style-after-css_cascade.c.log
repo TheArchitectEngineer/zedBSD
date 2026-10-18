@@ -1,0 +1,18 @@
+userland/desktop/libbrowser/css/cascade.c:856: blank-after-brace: if (style->text_shadow_set && style->text_shadow.color == CSS_CURRENT_COLOR)
+userland/desktop/libbrowser/css/cascade.c:2652: call-in-condition: dom_element_find_attribute
+userland/desktop/libbrowser/css/cascade.c:3017: blank-after-brace: if (start + length < value->length) {
+userland/desktop/libbrowser/css/cascade.c:3023: blank-after-brace: for (index = 0; index < length; index++) {
+userland/desktop/libbrowser/css/cascade.c:3433: conditional: return writing_mode == CSS_WRITING_HORIZONTAL_TB ? CSS_PROP_OVERFLOW_X : CSS_PROP_OVERFLOW_Y;
+userland/desktop/libbrowser/css/cascade.c:3435: conditional: return writing_mode == CSS_WRITING_HORIZONTAL_TB ? CSS_PROP_OVERFLOW_Y : CSS_PROP_OVERFLOW_X;
+userland/desktop/libbrowser/css/cascade.c:3439: conditional: return direction == CSS_DIRECTION_RTL ? CSS_PROP_MARGIN_BOTTOM : CSS_PROP_MARGIN_TOP;
+userland/desktop/libbrowser/css/cascade.c:3441: conditional: return direction == CSS_DIRECTION_RTL ? CSS_PROP_MARGIN_TOP : CSS_PROP_MARGIN_BOTTOM;
+userland/desktop/libbrowser/css/cascade.c:3454: conditional: return direction == CSS_DIRECTION_RTL ? CSS_PROP_MARGIN_RIGHT : CSS_PROP_MARGIN_LEFT;
+userland/desktop/libbrowser/css/cascade.c:3456: conditional: return direction == CSS_DIRECTION_RTL ? CSS_PROP_MARGIN_LEFT : CSS_PROP_MARGIN_RIGHT;
+userland/desktop/libbrowser/css/cascade.c:3713: blank-after-brace: break;
+userland/desktop/libbrowser/css/cascade.c:3814: blank-after-brace: break;
+userland/desktop/libbrowser/css/cascade.c:3925: blank-after-brace: break;
+userland/desktop/libbrowser/css/cascade.c:4319: blank-after-brace: if (keyword == CSS_ALIGN_FLEX_START) {
+userland/desktop/libbrowser/css/cascade.c:4326: blank-after-brace: *field = keyword;
+userland/desktop/libbrowser/css/cascade.c:4471: paragraph-comment: style->text_shadow_set = 0;
+userland/desktop/libbrowser/css/cascade.c:4476: conditional: style->text_shadow.x = length.unit == CSS_UNIT_PX ? length.value : 0.0f;
+userland/desktop/libbrowser/css/cascade.c:4478: conditional: style->text_shadow.y = length.unit == CSS_UNIT_PX ? length.value : 0.0f;

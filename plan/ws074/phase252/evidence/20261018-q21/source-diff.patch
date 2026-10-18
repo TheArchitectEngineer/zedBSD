@@ -1,0 +1,418 @@
+diff --git a/userland/desktop/libbrowser/bind/computed.c b/userland/desktop/libbrowser/bind/computed.c
+index 9e072f4be..601fb303d 100644
+--- a/userland/desktop/libbrowser/bind/computed.c
++++ b/userland/desktop/libbrowser/bind/computed.c
+@@ -1657,40 +1657,46 @@ computed_length(
+ {
+ 	int error;
+ 
+-	/* Chooses by the unit. */
++	/* Serializes the computed unit without resolving percentage dependence. */
+ 	switch (length->unit) {
+ 	case CSS_UNIT_PX:
+ 		error = computed_pixels(length->value, out);
+-		return error;
++		break;
+ 	case CSS_UNIT_PERCENT:
+-		/* A percentage, in calc() when pixels are added to it. */
+ 		error = computed_write_percent(length, out);
+-		return error;
++		break;
+ 	case CSS_UNIT_AUTO:
+ 		error = computed_ascii("auto", out);
+-		return error;
++		break;
+ 	case CSS_UNIT_NONE:
+ 		error = computed_ascii("none", out);
+-		return error;
++		break;
+ 	case CSS_UNIT_NORMAL:
+ 		error = computed_ascii("normal", out);
+-		return error;
++		break;
+ 	case CSS_UNIT_NUMBER:
+ 		error = computed_number(length->value, out);
+-		return error;
++		break;
+ 	case CSS_UNIT_MAX_CONTENT:
+ 		error = computed_ascii("max-content", out);
+-		return error;
++		break;
+ 	case CSS_UNIT_MIN_CONTENT:
+ 		error = computed_ascii("min-content", out);
+-		return error;
++		break;
++	case CSS_UNIT_CONTENT:
++		error = computed_ascii("content", out);
++		break;
+ 	default:
++		error = computed_ascii("fit-content", out);
+ 		break;
+ 	}
+ 
+-	/* The last keyword. */
+-	error = computed_ascii("fit-content", out);
+-	return error;
++	/* Propagates a failed append to the computed string. */
++	if (error != 0)
++		return error;
++
++	/* Succeeded: the complete length or keyword is appended. */
++	return 0;
+ }
+ 
+ /* Appends one noninitial computed shorthand component. */
+diff --git a/userland/desktop/libbrowser/css/cascade.c b/userland/desktop/libbrowser/css/cascade.c
+index be2319922..58aac9c21 100644
+--- a/userland/desktop/libbrowser/css/cascade.c
++++ b/userland/desktop/libbrowser/css/cascade.c
+@@ -239,6 +239,7 @@ static struct dom_element *cascade_next_element(struct dom_element *element);
+ static void cascade_apply(struct css_engine *engine, struct css_style *style, const struct css_style *parent, const struct css_declaration *declaration);
+ static int cascade_margin_property(int property, int writing_mode, int direction);
+ static void cascade_inherit(struct css_style *style, const struct css_style *parent, int property);
++static struct css_length cascade_flex_basis(struct css_engine *engine, const struct css_value *value, float font_size);
+ static struct css_length cascade_length(struct css_engine *engine, const struct css_value *value, float font_size);
+ static void cascade_shadows(struct css_engine *engine, struct css_style *style, const struct css_value *value);
+ static void cascade_text_shadow(struct css_engine *engine, struct css_style *style, const struct css_value *value);
+@@ -3864,7 +3865,7 @@ cascade_apply(
+ 		style->flex_shrink = value->number;
+ 		break;
+ 	case CSS_PROP_FLEX_BASIS:
+-		style->flex_basis = cascade_length(engine, value, style->font_size);
++		style->flex_basis = cascade_flex_basis(engine, value, style->font_size);
+ 		break;
+ 	case CSS_PROP_ORDER:
+ 		style->order = (int)value->number;
+@@ -4479,6 +4480,36 @@ cascade_text_shadow(
+ 	style->text_shadow_set = 1;
+ }
+ 
++/* Clamps an absolute computed flex basis without losing percentage dependence. */
++static struct css_length
++cascade_flex_basis(
++	struct css_engine *engine,
++	const struct css_value *value,
++	float font_size)
++{
++	struct css_length basis;
++
++	/* Resolves absolute units while retaining the calc percentage type. */
++	basis = cascade_length(engine, value, font_size);
++
++	/* Absolute math results obey the nonnegative computed range. */
++	if (basis.unit == CSS_UNIT_PX) {
++		/* An absolute negative cannot be represented by this property. */
++		if (basis.value < 0)
++			basis.value = 0;
++	}
++
++	/* A pure percentage can be range-clamped without resolving its basis. */
++	if (basis.unit == CSS_UNIT_PERCENT && basis.offset == 0) {
++		/* No pixel term remains that could offset the negative percentage. */
++		if (basis.value < 0)
++			basis.value = 0;
++	}
++
++	/* Succeeded: mixed expressions defer their range check until use. */
++	return basis;
++}
++
+ /* Converts a declared length to a computed one: pixels, a percentage or a keyword. */
+ static struct css_length
+ cascade_length(
+diff --git a/userland/desktop/libbrowser/css/css.h b/userland/desktop/libbrowser/css/css.h
+index b41670420..51feda1dd 100644
+--- a/userland/desktop/libbrowser/css/css.h
++++ b/userland/desktop/libbrowser/css/css.h
+@@ -71,7 +71,8 @@ enum css_unit {
+ 	CSS_UNIT_NUMBER,
+ 	CSS_UNIT_MAX_CONTENT,
+ 	CSS_UNIT_MIN_CONTENT,
+-	CSS_UNIT_FIT_CONTENT
++	CSS_UNIT_FIT_CONTENT,
++	CSS_UNIT_CONTENT
+ };
+ 
+ /* The values of display. */
+diff --git a/userland/desktop/libbrowser/css/values.c b/userland/desktop/libbrowser/css/values.c
+index 27f66d38a..b2e3e240b 100644
+--- a/userland/desktop/libbrowser/css/values.c
++++ b/userland/desktop/libbrowser/css/values.c
+@@ -108,6 +108,7 @@ struct values_color {
+ static int values_keyword(const struct values_keyword *table, const struct css_token *token, int *value);
+ static int values_unit(const struct css_token *token, int *unit);
+ static int values_length(const struct css_token *token, int allow_keywords, struct css_value *value);
++static int values_flex_basis(const struct css_token *token, struct css_value *value);
+ static int values_single(struct css_parse *parse, int property, const struct css_token *tokens, size_t count, struct css_value *value);
+ static int values_families(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
+ static size_t values_components(const struct css_token *tokens, size_t count, size_t *starts, size_t *lengths, size_t max);
+@@ -1676,6 +1677,43 @@ values_length(
+ 	return 0;
+ }
+ 
++/* Parses the nonnegative width grammar and the separate content basis. */
++static int
++values_flex_basis(
++	const struct css_token *token,
++	struct css_value *value)
++{
++	int content;
++	int error;
++
++	/* Preserves content rather than borrowing the preferred main size. */
++	content = css_ident_equal(token, "content");
++	if (content) {
++		value->kind = CSS_VALUE_KEYWORD;
++		value->keyword = CSS_UNIT_CONTENT;
++		return 0;
++	}
++
++	/* Parses the existing width-like keywords and literal lengths. */
++	error = values_length(token, 1, value);
++	if (error != 0)
++		return error;
++
++	/* The generic length keywords none and normal are not flex bases. */
++	if (value->kind == CSS_VALUE_KEYWORD) {
++		/* These generic keywords do not belong to the width grammar. */
++		if (value->keyword == CSS_UNIT_NONE || value->keyword == CSS_UNIT_NORMAL)
++			return EINVAL;
++	} else {
++		/* Literal negatives are invalid; math functions use a separate parser. */
++		if (value->number < 0)
++			return EINVAL;
++	}
++
++	/* Succeeded: the token is one accepted flex basis. */
++	return 0;
++}
++
+ /* Parses a longhand's value. */
+ static int
+ values_single(
+@@ -2080,17 +2118,10 @@ values_single(
+ 		return values_length(&tokens[0], 0, value);
+ 	}
+ 
+-	/* flex-basis: auto, content (as auto) or a length. */
++	/* Separates the content basis from the width-like keywords and lengths. */
+ 	if (property == CSS_PROP_FLEX_BASIS) {
+-		is_auto = css_ident_equal(&tokens[0], "content");
+-		if (is_auto) {
+-			value->kind = CSS_VALUE_KEYWORD;
+-			value->keyword = CSS_UNIT_AUTO;
+-			return 0;
+-		}
+-
+-		/* auto or a length. */
+-		return values_length(&tokens[0], 1, value);
++		error = values_flex_basis(&tokens[0], value);
++		return error;
+ 	}
+ 
+ 	/* z-index: auto or an integer. */
+diff --git a/userland/desktop/libbrowser/layout/flex.c b/userland/desktop/libbrowser/layout/flex.c
+index 9ac601a53..32d5f9016 100644
+--- a/userland/desktop/libbrowser/layout/flex.c
++++ b/userland/desktop/libbrowser/layout/flex.c
+@@ -67,6 +67,7 @@ struct flex_sizes {
+ };
+ 
+ static int flex_collect(struct layout_box *box, struct flex_item **items, size_t *count);
++static int flex_content_basis(struct layout_tree *tree, struct layout_box *container, struct layout_box *child, int row, layout_unit *basis);
+ static int flex_base_size(struct layout_tree *tree, struct layout_box *box, struct flex_item *item, int row, layout_unit available);
+ static layout_unit flex_ratio_definite_length(const struct css_length *length, layout_unit basis);
+ static layout_unit flex_ratio_cross_size(struct layout_tree *tree, const struct layout_box *container, const struct layout_box *child, int row);
+@@ -682,6 +683,84 @@ flex_collect(
+ 	return 0;
+ }
+ 
++/* Measures a content basis without borrowing or caching the preferred main size. */
++static int
++flex_content_basis(
++	struct layout_tree *tree,
++	struct layout_box *container,
++	struct layout_box *child,
++	int row,
++	layout_unit *basis)
++{
++	struct css_length preferred;
++	struct css_length minimum;
++	struct css_length maximum;
++	struct layout_context context;
++	struct wb_vector floats;
++	layout_unit cached_width;
++	int cached_known;
++	int error;
++
++	/* Saves the preferred size, main limits, and cache owned by ordinary layout. */
++	cached_width = child->max_content;
++	cached_known = child->max_content_known;
++	preferred = child->style.width;
++	minimum = child->style.min_width;
++	maximum = child->style.max_width;
++	if (!row) {
++		preferred = child->style.height;
++		minimum = child->style.min_height;
++		maximum = child->style.max_height;
++	}
++
++	/* Content is measured before main-axis limits or preferred sizes apply. */
++	child->max_content_known = 0;
++	if (row) {
++		child->style.width.unit = CSS_UNIT_AUTO;
++		child->style.min_width.unit = CSS_UNIT_AUTO;
++		child->style.max_width.unit = CSS_UNIT_NONE;
++	} else {
++		child->style.height.unit = CSS_UNIT_AUTO;
++		child->style.min_height.unit = CSS_UNIT_AUTO;
++		child->style.max_height.unit = CSS_UNIT_NONE;
++	}
++
++	/* Isolates intrinsic width or natural height from the surrounding float context. */
++	if (row) {
++		error = layout_max_content(tree, child, basis);
++	} else {
++		tree->measuring++;
++		layout_context_begin(tree, &context, &floats);
++		error = layout_block(tree, child, container->width);
++		layout_context_end(tree, &context);
++		tree->measuring--;
++
++		/* Reads the measured height only after the complete layout succeeded. */
++		if (error == 0)
++			*basis = child->height;
++	}
++
++	/* Restores ordinary layout state even when the measurement failed. */
++	child->max_content = cached_width;
++	child->max_content_known = cached_known;
++	if (row) {
++		child->style.width = preferred;
++		child->style.min_width = minimum;
++		child->style.max_width = maximum;
++	} else {
++		child->style.height = preferred;
++		child->style.min_height = minimum;
++		child->style.max_height = maximum;
++	}
++
++	/* Propagates a failed intrinsic measurement after restoring borrowed state. */
++	if (error != 0)
++		return error;
++
++	/* Succeeded: the base contains only the unconstrained content measurement. */
++	return 0;
++}
++
+ /*
+  * Finds an item's frame and margins along the main axis and its
+  * hypothetical main size: its flex basis (or its width or height), or its
+@@ -699,6 +778,7 @@ flex_base_size(
+ 	const struct css_length *basis;
+ 	layout_unit sizing;
+ 	layout_unit cross;
++	layout_unit resolved;
+ 	int start_side;
+ 	int end_side;
+ 	int error;
+@@ -739,6 +819,8 @@ flex_base_size(
+ 	basis = &child->style.flex_basis;
+ 	if (basis->unit == CSS_UNIT_AUTO) {
+ 		basis = &child->style.width;
++
++		/* A column borrows its preferred height instead of its width. */
+ 		if (!row)
+ 			basis = &child->style.height;
+ 	}
+@@ -751,12 +833,24 @@ flex_base_size(
+ 	item->base = -1;
+ 	if (basis->unit == CSS_UNIT_PX)
+ 		item->base = layout_from_px(basis->value) - sizing;
+-	if (basis->unit == CSS_UNIT_PERCENT && available >= 0 && tree->measuring == 0)
+-		item->base = flex_length(basis, available) - sizing;
++
++	/* A percentage math result is clamped only after its basis becomes definite. */
++	if (basis->unit == CSS_UNIT_PERCENT && available >= 0 && tree->measuring == 0) {
++		resolved = flex_length(basis, available);
++
++		/* A negative used length is zero before the box frame is removed. */
++		if (resolved < 0)
++			resolved = 0;
++
++		/* The base is measured inside the frame for border-box sizing. */
++		item->base = resolved - sizing;
++	}
+ 
+ 	/* A definite cross size supplies the content basis through the ratio. */
+ 	if (item->base < 0) {
++		/* Replaced content keeps its separate intrinsic sizing path. */
+ 		if (!child->replaced) {
++			/* A preferred ratio can transfer a definite cross size. */
+ 			if (child->style.aspect_ratio > 0.0f) {
+ 				/* Include single-line stretch before any flexing takes place. */
+ 				cross = flex_ratio_cross_size(tree, box, child, row);
+@@ -766,12 +860,22 @@ flex_base_size(
+ 		}
+ 	}
+ 
++	/* An explicit content basis ignores the non-replaced preferred main size. */
++	if (item->base < 0 && basis->unit == CSS_UNIT_CONTENT && !child->replaced) {
++		error = flex_content_basis(tree, box, child, row, &item->base);
++		if (error != 0)
++			return error;
++	}
++
+ 	/* Otherwise the content's size: its widest line, or its height at the container's width. */
+ 	if (item->base < 0 && row) {
++		/* Replaced items obtain their width from ordinary replaced layout. */
+ 		if (child->replaced) {
+ 			error = layout_block(tree, child, box->width);
+ 			if (error != 0)
+ 				return error;
++
++			/* Uses the replaced content width as its initial base. */
+ 			item->base = child->width;
+ 		} else {
+ 			/* The content's width without a limit (measured once, its percentages indefinite). */
+@@ -783,6 +887,8 @@ flex_base_size(
+ 		error = layout_block(tree, child, box->width);
+ 		if (error != 0)
+ 			return error;
++
++		/* Uses the natural block height as the column content size. */
+ 		item->base = child->height;
+ 	}
+ 
+@@ -798,14 +904,22 @@ flex_base_size(
+ 	    child->style.min_width.unit == CSS_UNIT_AUTO &&
+ 	    (child->style.overflow_x == CSS_OVERFLOW_VISIBLE || child->style.overflow_x == CSS_OVERFLOW_CLIP))
+ 		item->auto_minimum = 1;
++
++	/* Resolves the main-axis limits after the unconstrained base is measured. */
+ 	if (row) {
++		/* An explicit width minimum limits the eventual hypothetical size. */
+ 		if (child->style.min_width.unit == CSS_UNIT_PX || child->style.min_width.unit == CSS_UNIT_PERCENT)
+ 			item->minimum = flex_length(&child->style.min_width, box->width) - sizing;
++
++		/* A finite width maximum limits the eventual hypothetical size. */
+ 		if (child->style.max_width.unit == CSS_UNIT_PX || child->style.max_width.unit == CSS_UNIT_PERCENT)
+ 			item->maximum = flex_length(&child->style.max_width, box->width) - sizing;
+ 	} else {
++		/* Explicit height limits apply on a column main axis. */
+ 		if (child->style.min_height.unit == CSS_UNIT_PX)
+ 			item->minimum = layout_from_px(child->style.min_height.value) - sizing;
++
++		/* A finite height maximum is independent of the measured base. */
+ 		if (child->style.max_height.unit == CSS_UNIT_PX)
+ 			item->maximum = layout_from_px(child->style.max_height.value) - sizing;
+ 	}
+@@ -823,6 +937,8 @@ flex_base_size(
+ 	item->size = item->base;
+ 	if (item->maximum >= 0 && item->size > item->maximum)
+ 		item->size = item->maximum;
++
++	/* The minimum overrides a conflicting maximum in the hypothetical size. */
+ 	if (item->size < item->minimum)
+ 		item->size = item->minimum;
+ 

@@ -1,0 +1,32 @@
+build/ws074-20261018/q21/before-bind_computed.c:576: call-in-condition: vm_string_equal_ascii
+build/ws074-20261018/q21/before-bind_computed.c:606: paragraph-comment: if (style->display != CSS_DISPLAY_INLINE && style->display != CSS_DISPLAY_INLINE_BLOCK &&
+build/ws074-20261018/q21/before-bind_computed.c:627: blank-after-brace: if (!blockify)
+build/ws074-20261018/q21/before-bind_computed.c:757: goto: goto cleanup;
+build/ws074-20261018/q21/before-bind_computed.c:761: goto: goto cleanup;
+build/ws074-20261018/q21/before-bind_computed.c:767: goto: goto cleanup;
+build/ws074-20261018/q21/before-bind_computed.c:777: goto: goto cleanup;
+build/ws074-20261018/q21/before-bind_computed.c:783: goto: goto cleanup;
+build/ws074-20261018/q21/before-bind_computed.c:946: conditional: style->writing_mode == CSS_WRITING_HORIZONTAL_TB ? style->overflow_x : style->overflow_y, out);
+build/ws074-20261018/q21/before-bind_computed.c:950: conditional: style->writing_mode == CSS_WRITING_HORIZONTAL_TB ? style->overflow_y : style->overflow_x, out);
+build/ws074-20261018/q21/before-bind_computed.c:1073: conditional: error = style->writing_sideways != 0 ? computed_ascii(style->writing_sideways == 1 ? "sideways-lr" : "sideways-rl", out) : computed_name(computed_writing_modes, 3, style->writing_mode, out);
+build/ws074-20261018/q21/before-bind_computed.c:1137: conditional: error = computed_align(style->justify_content == CSS_ALIGN_STRETCH ? CSS_ALIGN_NORMAL : style->justify_content, (style->flex_keywords & 1u) != 0, out);
+build/ws074-20261018/q21/before-bind_computed.c:1157: conditional: error = computed_align(style->align_content == CSS_ALIGN_STRETCH ? CSS_ALIGN_NORMAL : style->align_content, (style->flex_keywords & 2u) != 0, out);
+build/ws074-20261018/q21/before-bind_computed.c:1194: blank-after-brace: break;
+build/ws074-20261018/q21/before-bind_computed.c:1621: paragraph-comment: if (value == CSS_ALIGN_START) {
+build/ws074-20261018/q21/before-bind_computed.c:1622: conditional: error = computed_ascii(flex ? "flex-start" : "start", out);
+build/ws074-20261018/q21/before-bind_computed.c:1625: blank-after-brace: if (value == CSS_ALIGN_END) {
+build/ws074-20261018/q21/before-bind_computed.c:1626: conditional: error = computed_ascii(flex ? "flex-end" : "end", out);
+build/ws074-20261018/q21/before-bind_computed.c:1629: blank-after-brace: error = computed_name(computed_aligns, 10, value, out);
+build/ws074-20261018/q21/before-bind_computed.c:1702: paragraph-comment: if (part->length == 0U)
+build/ws074-20261018/q21/before-bind_computed.c:1709: blank-after-brace: return wb_units_append(out, part->data, part->length);
+build/ws074-20261018/q21/before-bind_computed.c:1720: paragraph-comment: for (index = 0U; index < 4U; index++)
+build/ws074-20261018/q21/before-bind_computed.c:1724: goto: goto cleanup;
+build/ws074-20261018/q21/before-bind_computed.c:1730: goto: goto cleanup;
+build/ws074-20261018/q21/before-bind_computed.c:1733: goto: goto cleanup;
+build/ws074-20261018/q21/before-bind_computed.c:1737: goto: goto cleanup;
+build/ws074-20261018/q21/before-bind_computed.c:1747: goto: goto cleanup;
+build/ws074-20261018/q21/before-bind_computed.c:1749: blank-after-brace: if (style->text_decoration_thickness_kind != 0) {
+build/ws074-20261018/q21/before-bind_computed.c:1752: goto: goto cleanup;
+build/ws074-20261018/q21/before-bind_computed.c:1754: blank-after-brace: if (style->text_decoration_style != CSS_DECORATION_SOLID) {
+build/ws074-20261018/q21/before-bind_computed.c:1757: goto: goto cleanup;
+build/ws074-20261018/q21/before-bind_computed.c:1759: blank-after-brace: if (!style->text_decoration_current_color)

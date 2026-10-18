@@ -1,0 +1,80 @@
+[
+  {
+    "source": "userland/desktop/libbrowser/css/values.c",
+    "counts": {
+      "before": {
+        "paragraph-comment": 18,
+        "blank-after-brace": 48,
+        "call-in-condition": 49,
+        "nested-declaration": 10,
+        "conditional": 4,
+        "goto": 15,
+        "forward-declaration": 2
+      },
+      "after": {
+        "paragraph-comment": 18,
+        "blank-after-brace": 48,
+        "call-in-condition": 49,
+        "nested-declaration": 10,
+        "conditional": 4,
+        "goto": 15,
+        "forward-declaration": 2
+      }
+    }
+  },
+  {
+    "source": "userland/desktop/libbrowser/css/cascade.c",
+    "counts": {
+      "before": {
+        "blank-after-brace": 8,
+        "call-in-condition": 1,
+        "conditional": 8,
+        "paragraph-comment": 1
+      },
+      "after": {
+        "blank-after-brace": 8,
+        "call-in-condition": 1,
+        "conditional": 8,
+        "paragraph-comment": 1
+      }
+    }
+  },
+  {
+    "source": "userland/desktop/libbrowser/bind/computed.c",
+    "counts": {
+      "before": {
+        "call-in-condition": 1,
+        "paragraph-comment": 4,
+        "blank-after-brace": 8,
+        "goto": 12,
+        "conditional": 7
+      },
+      "after": {
+        "call-in-condition": 1,
+        "paragraph-comment": 4,
+        "blank-after-brace": 8,
+        "goto": 12,
+        "conditional": 7
+      }
+    }
+  },
+  {
+    "source": "userland/desktop/libbrowser/layout/flex.c",
+    "counts": {
+      "before": {
+        "blank-after-brace": 18,
+        "paragraph-comment": 4,
+        "conditional": 26,
+        "forward-declaration": 1,
+        "call-in-condition": 1
+      },
+      "after": {
+        "blank-after-brace": 18,
+        "paragraph-comment": 4,
+        "conditional": 26,
+        "forward-declaration": 1,
+        "call-in-condition": 1
+      }
+    }
+  }
+]

@@ -1,0 +1,12 @@
+{
+  "source_commit": "063d87c951ce940f59b61750f1ef046ef9dfe8ff",
+  "independent_lines": 39,
+  "dom": 36,
+  "cssom": 12,
+  "cssom_mutation": 12,
+  "ratio": 40,
+  "generated_function_findings": 0,
+  "target_compile_files": 4,
+  "full_file_legacy_counts_unchanged": true,
+  "global_status": "pending"
+}

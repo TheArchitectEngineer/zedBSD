@@ -283,3 +283,9 @@ Event ws074-p189-q13-start-20261018: q12 verified output後、plain variant36の
 Event ws074-p189-q13-partial-cleared-20261018: [証拠](evidence/20261018-q13/README.md)。追加36を全実行、34 FAIL/2 multiple_completions（initial autofocus error/14 NOTRUN）でPASS増分0。旧1455集合維持・候補1491/未対応292、actual query roundtrip/旧plain5対照同値、raw/hash/checkpoint欠損0。native engine/WPT/result classifier不変、Python syntax/diff通過。variant runner部分cleared、wholeは未達。generated/window・HTTPS/driver/workerとnative autofocus/navigation等が残る。共有投影pending。
 
 Event ws074-p189-q14-census-checkpoint-20261018: [p250 final gate](../phase250/evidence/20261018-q14/README.md)で固定eligible1491全件491 PASS/950 FAIL/3 harness_error/21 no_completion/24 no_output/2 multiple_completions。old489 PASS維持、computed Grid2 whole改善、13 callback改善/16 animation偽陽性露出を記録。候補hash8eb1a5cacf64d34ab0b36d026b6f1335725ce9f9f886ba69b9c286bac8319727、全raw/progress/report一致・名前欠落0。runner自体は未変更でp189 whole未達/未対応292を維持。
+
+## q21中の次候補調査: harness HTTP shutdown待機（未選定）
+
+実環境Python3.13 socketserver.BaseServer.serve_foreverのdefault poll_interval=0.5はselector/shutdown確認周期であり、現在のharnessはtestごとにbrowser subprocess終了→server.shutdown→joinを行う。このpost-browser待機が全1491の反復コストになる。候補はWptServer workerのkwargsでpoll_interval=0.01へ限定し、localhost HTTP/response bytes/variant/結果分類/settle5000/process20/fonts/eligible IDを一切変えず、before=完了したq21全1491と同一frozen pairで全ID/whole/callback/order/欠損/追加を照合する最大45分の新Queue。native C/他runner/WPT/分母/未attempt292は不変。1行tool変更に専用mirror testは追加せず、実測before/after全1491と既存対照を使う。q21終了とexact Queue記録前には実装しない。native源不変なのでstatic/scripted/crashを再計測する必要はない。elapsedの改善は測定前に確定せず、差異があればscope内で診断し未解消ならuncleared。
+
+Event ws074-p189-shutdown-candidate-20261018: q21 native全件gateの進行中にstdlib実sourceから停止待機を確認。次の有限candidateとして残し、現q21/global/native source/承認基準は変更しない。whole p189 coverage1783とnative/API未達を先取りclearしない。shared projection pending。

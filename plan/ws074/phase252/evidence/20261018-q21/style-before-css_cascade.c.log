@@ -1,0 +1,18 @@
+build/ws074-20261018/q21/before-css_cascade.c:855: blank-after-brace: if (style->text_shadow_set && style->text_shadow.color == CSS_CURRENT_COLOR)
+build/ws074-20261018/q21/before-css_cascade.c:2651: call-in-condition: dom_element_find_attribute
+build/ws074-20261018/q21/before-css_cascade.c:3016: blank-after-brace: if (start + length < value->length) {
+build/ws074-20261018/q21/before-css_cascade.c:3022: blank-after-brace: for (index = 0; index < length; index++) {
+build/ws074-20261018/q21/before-css_cascade.c:3432: conditional: return writing_mode == CSS_WRITING_HORIZONTAL_TB ? CSS_PROP_OVERFLOW_X : CSS_PROP_OVERFLOW_Y;
+build/ws074-20261018/q21/before-css_cascade.c:3434: conditional: return writing_mode == CSS_WRITING_HORIZONTAL_TB ? CSS_PROP_OVERFLOW_Y : CSS_PROP_OVERFLOW_X;
+build/ws074-20261018/q21/before-css_cascade.c:3438: conditional: return direction == CSS_DIRECTION_RTL ? CSS_PROP_MARGIN_BOTTOM : CSS_PROP_MARGIN_TOP;
+build/ws074-20261018/q21/before-css_cascade.c:3440: conditional: return direction == CSS_DIRECTION_RTL ? CSS_PROP_MARGIN_TOP : CSS_PROP_MARGIN_BOTTOM;
+build/ws074-20261018/q21/before-css_cascade.c:3453: conditional: return direction == CSS_DIRECTION_RTL ? CSS_PROP_MARGIN_RIGHT : CSS_PROP_MARGIN_LEFT;
+build/ws074-20261018/q21/before-css_cascade.c:3455: conditional: return direction == CSS_DIRECTION_RTL ? CSS_PROP_MARGIN_LEFT : CSS_PROP_MARGIN_RIGHT;
+build/ws074-20261018/q21/before-css_cascade.c:3712: blank-after-brace: break;
+build/ws074-20261018/q21/before-css_cascade.c:3813: blank-after-brace: break;
+build/ws074-20261018/q21/before-css_cascade.c:3924: blank-after-brace: break;
+build/ws074-20261018/q21/before-css_cascade.c:4318: blank-after-brace: if (keyword == CSS_ALIGN_FLEX_START) {
+build/ws074-20261018/q21/before-css_cascade.c:4325: blank-after-brace: *field = keyword;
+build/ws074-20261018/q21/before-css_cascade.c:4470: paragraph-comment: style->text_shadow_set = 0;
+build/ws074-20261018/q21/before-css_cascade.c:4475: conditional: style->text_shadow.x = length.unit == CSS_UNIT_PX ? length.value : 0.0f;
+build/ws074-20261018/q21/before-css_cascade.c:4477: conditional: style->text_shadow.y = length.unit == CSS_UNIT_PX ? length.value : 0.0f;

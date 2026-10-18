@@ -52,3 +52,5 @@ Event ws074-p252-q21-selected-20261018: q20 archive/history read-back後に既�
 
 
 Event ws074-p252-q21-preflight-20261018: geometry24とcomputed13はChromium一致。指定値calc(10px - 0.5em)はnativeが元順、Chromeはcalc(-0.5em + 10px)へcanonicalizeする既存差をraw保存。本scopeのgrammar acceptance/computed/layoutと既存fixed3全callbackは維持、独立fixtureの指定値欄は全値をaccepted Booleanで検証しcanonical serializerの既存未達を別記する。pure negative percentageはChromeとValues §10.13でcomputed0%を確認し、offset0時だけcoefficient clampする内部設計に訂正。mixed percentage/offsetの保持・used非負チェックは不変。旧raw/q21 acceptanceを改竄しない。
+
+Event ws074-p252-q21-native-checkpoint-20261018: source WIP063d87c95/frozen final pair。独立Chrome39行= native、DOM36/36・CSSOM12/12・mutation12/12・既存ratio40/40、変更5 functions全文/format19/style0、full-file legacy count不増、host/target4 source warning0。全error pathでstyle/cache/measuring/context復元をmanual確認。最初のHTTP試験はsandbox socket EPERMで無効、rawを残し既存escalated環境の別verified出力へ再実行中。Acid3 score/inventory100/pixel0維持、固定1491/static1561/strict48/scripted413のterminal gate完了までpartial clearanceは判定しない。既存指定calcのcanonical順序差を修正済みとしない。shared projection pending。

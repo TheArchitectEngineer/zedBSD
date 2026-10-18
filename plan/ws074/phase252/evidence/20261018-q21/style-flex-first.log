@@ -1,0 +1,50 @@
+userland/desktop/libbrowser/layout/flex.c:173: blank-after-brace: gap_main = flex_length(&box->style.column_gap, box->width);
+userland/desktop/libbrowser/layout/flex.c:205: blank-after-brace: /* An auto-height, unwrapped column uses its minimum height for free-space placement. */
+userland/desktop/libbrowser/layout/flex.c:233: blank-after-brace: start = 0;
+userland/desktop/libbrowser/layout/flex.c:285: paragraph-comment: lines[line_count].start = start;
+userland/desktop/libbrowser/layout/flex.c:300: blank-after-brace: if (!row)
+userland/desktop/libbrowser/layout/flex.c:318: blank-after-brace: if (free_space < 0 && (value == CSS_ALIGN_SPACE_BETWEEN || value == CSS_ALIGN_STRETCH ||
+userland/desktop/libbrowser/layout/flex.c:373: blank-after-brace: first_line = 0;
+userland/desktop/libbrowser/layout/flex.c:387: conditional: extent = cross_size >= 0 ? cross_size : cross_cursor;
+userland/desktop/libbrowser/layout/flex.c:387: paragraph-comment: extent = cross_size >= 0 ? cross_size : cross_cursor;
+userland/desktop/libbrowser/layout/flex.c:397: blank-after-brace: free(lines);
+userland/desktop/libbrowser/layout/flex.c:419: blank-after-brace: flex_static_positions(box, row, sizing);
+userland/desktop/libbrowser/layout/flex.c:435: forward-declaration: flex_side_flip
+userland/desktop/libbrowser/layout/flex.c:479: paragraph-comment: if ((box->style.direction != CSS_DIRECTION_LTR && box->style.direction != CSS_DIRECTION_RTL))
+userland/desktop/libbrowser/layout/flex.c:488: conditional: inline_start = rtl ? FLEX_SIDE_END : FLEX_SIDE_START;
+userland/desktop/libbrowser/layout/flex.c:489: conditional: block_start = box->style.writing_mode == CSS_WRITING_VERTICAL_RL ? FLEX_SIDE_END : FLEX_SIDE_START;
+userland/desktop/libbrowser/layout/flex.c:492: conditional: main_axis_start = row ? inline_start : block_start;
+userland/desktop/libbrowser/layout/flex.c:493: conditional: cross_axis_start = row ? block_start : inline_start;
+userland/desktop/libbrowser/layout/flex.c:494: conditional: main_horizontal = row ? inline_horizontal : !inline_horizontal;
+userland/desktop/libbrowser/layout/flex.c:495: conditional: main_start = reverse ? flex_side_flip(main_axis_start) : main_axis_start;
+userland/desktop/libbrowser/layout/flex.c:496: conditional: cross_start = wrap_reverse ? flex_side_flip(cross_axis_start) : cross_axis_start;
+userland/desktop/libbrowser/layout/flex.c:512: conditional: main_side = flex ? main_start : main_axis_start;
+userland/desktop/libbrowser/layout/flex.c:515: conditional: main_side = flex ? flex_side_flip(main_start) : flex_side_flip(main_axis_start);
+userland/desktop/libbrowser/layout/flex.c:518: conditional: main_side = (main_horizontal || !inline_horizontal) ? FLEX_SIDE_START : main_axis_start;
+userland/desktop/libbrowser/layout/flex.c:521: conditional: main_side = (main_horizontal || !inline_horizontal) ? FLEX_SIDE_END : main_axis_start;
+userland/desktop/libbrowser/layout/flex.c:535: blank-after-brace: child_inline_start = child->style.direction == CSS_DIRECTION_RTL ? FLEX_SIDE_END : FLEX_SIDE_START;
+userland/desktop/libbrowser/layout/flex.c:535: conditional: child_inline_start = child->style.direction == CSS_DIRECTION_RTL ? FLEX_SIDE_END : FLEX_SIDE_START;
+userland/desktop/libbrowser/layout/flex.c:536: conditional: child_block_start = child->style.writing_mode == CSS_WRITING_VERTICAL_RL ? FLEX_SIDE_END : FLEX_SIDE_START;
+userland/desktop/libbrowser/layout/flex.c:545: conditional: cross_side = flex ? cross_start : cross_axis_start;
+userland/desktop/libbrowser/layout/flex.c:548: conditional: cross_side = flex ? flex_side_flip(cross_start) : flex_side_flip(cross_axis_start);
+userland/desktop/libbrowser/layout/flex.c:551: conditional: cross_side = row ? child_block_start : child_inline_start;
+userland/desktop/libbrowser/layout/flex.c:554: conditional: cross_side = flex_side_flip(row ? child_block_start : child_inline_start);
+userland/desktop/libbrowser/layout/flex.c:562: conditional: horizontal = main_horizontal ? main_side : cross_side;
+userland/desktop/libbrowser/layout/flex.c:563: conditional: vertical = main_horizontal ? cross_side : main_side;
+userland/desktop/libbrowser/layout/flex.c:576: conditional: safe_cross = (child->style.align_self != CSS_ALIGN_AUTO) ? (child->style.flex_keywords & 128u) != 0 : (box->style.flex_keywords & 64u) != 0;
+userland/desktop/libbrowser/layout/flex.c:577: conditional: child->static_x_safe = main_horizontal ? safe_main : safe_cross;
+userland/desktop/libbrowser/layout/flex.c:578: conditional: child->static_y_safe = main_horizontal ? safe_cross : safe_main;
+userland/desktop/libbrowser/layout/flex.c:580: conditional: if (child->static_x_safe && (main_horizontal ? main_axis_start : cross_axis_start) == FLEX_SIDE_END)
+userland/desktop/libbrowser/layout/flex.c:582: conditional: if (child->static_y_safe && (main_horizontal ? cross_axis_start : main_axis_start) == FLEX_SIDE_END)
+userland/desktop/libbrowser/layout/flex.c:590: blank-after-brace: if (vertical == FLEX_SIDE_CENTER)
+userland/desktop/libbrowser/layout/flex.c:978: blank-after-brace: if (count > 1)
+userland/desktop/libbrowser/layout/flex.c:991: blank-after-brace: return;
+userland/desktop/libbrowser/layout/flex.c:1010: blank-after-brace: if (items[index].maximum >= 0 && items[index].size > items[index].maximum) {
+userland/desktop/libbrowser/layout/flex.c:1014: blank-after-brace: total_violation += (int64_t)items[index].size - target;
+userland/desktop/libbrowser/layout/flex.c:1020: conditional: sign = total_violation > 0 ? 1 : -1;
+userland/desktop/libbrowser/layout/flex.c:1106: blank-after-brace: if (items[index].maximum >= 0 && items[index].size > items[index].maximum) {
+userland/desktop/libbrowser/layout/flex.c:1781: paragraph-comment: for (index = 0; index < count; index++) {
+userland/desktop/libbrowser/layout/flex.c:1783: call-in-condition: flex_align_of
+userland/desktop/libbrowser/layout/flex.c:1830: blank-after-brace: return 0;
+userland/desktop/libbrowser/layout/flex.c:2034: blank-after-brace: break;
+userland/desktop/libbrowser/layout/flex.c:2040: blank-after-brace: break;

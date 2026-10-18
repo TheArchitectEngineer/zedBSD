@@ -1,0 +1,146 @@
+build/ws074-20261018/q21/before-css_values.c:1506: paragraph-comment: wb_arena_init(&arena, 0);
+build/ws074-20261018/q21/before-css_values.c:1512: blank-after-brace: if (count == 0U) {
+build/ws074-20261018/q21/before-css_values.c:1516: blank-after-brace: start = 0;
+build/ws074-20261018/q21/before-css_values.c:1552: paragraph-comment: single = NULL;
+build/ws074-20261018/q21/before-css_values.c:1562: paragraph-comment: written = 0;
+build/ws074-20261018/q21/before-css_values.c:1571: blank-after-brace: error = wb_utf8_to_units((const unsigned char *)names[index].name, strlen(names[index].name), out);
+build/ws074-20261018/q21/before-css_values.c:1714: call-in-condition: css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:1719: blank-after-brace: if (css_ident_equal(&tokens[0], "from-font")) {
+build/ws074-20261018/q21/before-css_values.c:1719: call-in-condition: css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:1724: blank-after-brace: error = values_length(&tokens[0], 0, value);
+build/ws074-20261018/q21/before-css_values.c:1842: nested-declaration: size_t word;
+build/ws074-20261018/q21/before-css_values.c:1843: nested-declaration: size_t words;
+build/ws074-20261018/q21/before-css_values.c:1845: paragraph-comment: words = 0;
+build/ws074-20261018/q21/before-css_values.c:1856: blank-after-brace: if (words != 2U)
+build/ws074-20261018/q21/before-css_values.c:1858: call-in-condition: css_ident_equal, css_ident_equal, css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:1862: conditional: value->keyword = css_ident_equal(parts[0], "last") ? CSS_ALIGN_END : CSS_ALIGN_BASELINE;
+build/ws074-20261018/q21/before-css_values.c:1865: blank-after-brace: if (!css_ident_equal(parts[0], "safe") && !css_ident_equal(parts[0], "unsafe"))
+build/ws074-20261018/q21/before-css_values.c:1865: call-in-condition: css_ident_equal, css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:1869: call-in-condition: css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:1998: blank-after-brace: value->kind = CSS_VALUE_KEYWORD;
+build/ws074-20261018/q21/before-css_values.c:2570: blank-after-brace: if (made >= 4 || (tokens[index].type != CSS_TOKEN_NUMBER &&
+build/ws074-20261018/q21/before-css_values.c:2577: blank-after-brace: if (made < 3 || awaiting || (commas != 0 && (slashes != 0 || commas != made - 1)) ||
+build/ws074-20261018/q21/before-css_values.c:2578: conditional: (commas == 0 && slashes != (made == 4 ? 1U : 0U)))
+build/ws074-20261018/q21/before-css_values.c:2586: call-in-condition: css_units_equal_ascii
+build/ws074-20261018/q21/before-css_values.c:2588: call-in-condition: css_units_equal_ascii
+build/ws074-20261018/q21/before-css_values.c:2590: call-in-condition: css_units_equal_ascii
+build/ws074-20261018/q21/before-css_values.c:2592: call-in-condition: css_units_equal_ascii
+build/ws074-20261018/q21/before-css_values.c:2611: blank-after-brace: if (!isfinite(hue) || !isfinite(saturation) || !isfinite(lightness) || !isfinite(alpha))
+build/ws074-20261018/q21/before-css_values.c:2611: call-in-condition: isfinite, isfinite, isfinite, isfinite
+build/ws074-20261018/q21/before-css_values.c:2651: blank-after-brace: *color = (uint32_t)(alpha * 255.0 + 0.5) << 24 |
+build/ws074-20261018/q21/before-css_values.c:4188: blank-after-brace: if (lengths[index] == 1 && tokens[starts[index]].type == CSS_TOKEN_NUMBER && tokens[starts[index]].number != 0) {
+build/ws074-20261018/q21/before-css_values.c:4452: paragraph-comment: list = wb_arena_zalloc(parse->arena, sizeof(*list));
+build/ws074-20261018/q21/before-css_values.c:4457: call-in-condition: css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:4460: paragraph-comment: error = values_one_shadow(tokens, count, &list->shadows[0]);
+build/ws074-20261018/q21/before-css_values.c:4702: call-in-condition: css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:4704: call-in-condition: css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:4725: blank-after-brace: if (made != 4U)
+build/ws074-20261018/q21/before-css_values.c:4745: paragraph-comment: direction = -1;
+build/ws074-20261018/q21/before-css_values.c:4752: call-in-condition: css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:4756: call-in-condition: css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:4760: call-in-condition: css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:4768: blank-after-brace: if (direction < 0 && !dense)
+build/ws074-20261018/q21/before-css_values.c:4771: conditional: value->keyword = (direction == CSS_GRID_FLOW_COLUMN ? CSS_GRID_FLOW_COLUMN : CSS_GRID_FLOW_ROW) | dense;
+build/ws074-20261018/q21/before-css_values.c:4918: call-in-condition: css_ident_equal, css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:4925: blank-after-brace: if (index == count)
+build/ws074-20261018/q21/before-css_values.c:4945: call-in-condition: css_ident_equal, css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:4967: blank-after-brace: list->repeat_at = (int)first;
+build/ws074-20261018/q21/before-css_values.c:4974: blank-after-brace: if (inner >= end || tokens[inner].type != CSS_TOKEN_NUMBER || !tokens[inner].integer || tokens[inner].number < 1)
+build/ws074-20261018/q21/before-css_values.c:5219: call-in-condition: css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:5220: call-in-condition: values_function_length
+build/ws074-20261018/q21/before-css_values.c:5497: call-in-condition: css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:5497: paragraph-comment: if (count != 1 || !css_ident_equal(&tokens[0], "none"))
+build/ws074-20261018/q21/before-css_values.c:5525: paragraph-comment: lines = 0;
+build/ws074-20261018/q21/before-css_values.c:5529: call-in-condition: css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:5533: call-in-condition: css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:5535: call-in-condition: css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:5537: call-in-condition: css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:5539: call-in-condition: css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:5541: call-in-condition: css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:5545: call-in-condition: css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:5552: blank-after-brace: if (bit != 0 && (lines & bit) != 0)
+build/ws074-20261018/q21/before-css_values.c:5587: paragraph-comment: components = values_components(tokens, count, starts, lengths, 8);
+build/ws074-20261018/q21/before-css_values.c:5606: paragraph-comment: for (index = 0; index < components; index++) {
+build/ws074-20261018/q21/before-css_values.c:5607: nested-declaration: const struct css_token *part;
+build/ws074-20261018/q21/before-css_values.c:5608: nested-declaration: size_t length;
+build/ws074-20261018/q21/before-css_values.c:5609: nested-declaration: int keyword;
+build/ws074-20261018/q21/before-css_values.c:5611: paragraph-comment: part = tokens + starts[index];
+build/ws074-20261018/q21/before-css_values.c:5625: blank-after-brace: if (lines_seen)
+build/ws074-20261018/q21/before-css_values.c:5628: call-in-condition: values_keyword
+build/ws074-20261018/q21/before-css_values.c:5628: paragraph-comment: if (length == 1U && values_keyword(values_decoration_styles, part, &keyword)) {
+build/ws074-20261018/q21/before-css_values.c:5635: blank-after-brace: if (length == 1U &&
+build/ws074-20261018/q21/before-css_values.c:5635: call-in-condition: css_ident_equal, css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:5641: call-in-condition: css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:5643: call-in-condition: css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:5650: blank-after-brace: thickness_seen = 1;
+build/ws074-20261018/q21/before-css_values.c:5653: blank-after-brace: if (color_seen)
+build/ws074-20261018/q21/before-css_values.c:5675: paragraph-comment: if (part->length == 0U)
+build/ws074-20261018/q21/before-css_values.c:5682: blank-after-brace: return wb_units_append(out, part->data, part->length);
+build/ws074-20261018/q21/before-css_values.c:5711: paragraph-comment: wb_arena_init(&arena, 0);
+build/ws074-20261018/q21/before-css_values.c:5714: goto: goto cleanup;
+build/ws074-20261018/q21/before-css_values.c:5717: goto: goto cleanup;
+build/ws074-20261018/q21/before-css_values.c:5719: blank-after-brace: start = 0U;
+build/ws074-20261018/q21/before-css_values.c:5727: goto: goto cleanup;
+build/ws074-20261018/q21/before-css_values.c:5734: goto: goto cleanup;
+build/ws074-20261018/q21/before-css_values.c:5737: goto: goto cleanup;
+build/ws074-20261018/q21/before-css_values.c:5739: blank-after-brace: component_count = values_components(tokens + start, end - start, starts, lengths, 8U);
+build/ws074-20261018/q21/before-css_values.c:5742: goto: goto cleanup;
+build/ws074-20261018/q21/before-css_values.c:5748: goto: goto cleanup;
+build/ws074-20261018/q21/before-css_values.c:5751: goto: goto cleanup;
+build/ws074-20261018/q21/before-css_values.c:5754: goto: goto cleanup;
+build/ws074-20261018/q21/before-css_values.c:5757: goto: goto cleanup;
+build/ws074-20261018/q21/before-css_values.c:5759: paragraph-comment: for (index = 0U; index < component_count; index++) {
+build/ws074-20261018/q21/before-css_values.c:5760: nested-declaration: const struct css_token *part;
+build/ws074-20261018/q21/before-css_values.c:5761: nested-declaration: size_t part_start;
+build/ws074-20261018/q21/before-css_values.c:5762: nested-declaration: size_t part_end;
+build/ws074-20261018/q21/before-css_values.c:5763: nested-declaration: struct css_value parsed;
+build/ws074-20261018/q21/before-css_values.c:5764: nested-declaration: struct wb_units *destination;
+build/ws074-20261018/q21/before-css_values.c:5766: paragraph-comment: part = tokens + start + starts[index];
+build/ws074-20261018/q21/before-css_values.c:5769: call-in-condition: values_decoration_line
+build/ws074-20261018/q21/before-css_values.c:5771: call-in-condition: values_keyword
+build/ws074-20261018/q21/before-css_values.c:5777: blank-after-brace: error = wb_utf8_to_units((const unsigned char *)values_decoration_styles[style_index].name,
+build/ws074-20261018/q21/before-css_values.c:5780: goto: goto cleanup;
+build/ws074-20261018/q21/before-css_values.c:5783: blank-after-brace: if (lengths[index] == 1U &&
+build/ws074-20261018/q21/before-css_values.c:5783: call-in-condition: css_ident_equal, css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:5791: blank-after-brace: destination->length = 0U;
+build/ws074-20261018/q21/before-css_values.c:5794: goto: goto cleanup;
+build/ws074-20261018/q21/before-css_values.c:5804: goto: goto cleanup;
+build/ws074-20261018/q21/before-css_values.c:5806: blank-after-brace: if (!(declarations[1].value.kind == CSS_VALUE_KEYWORD && declarations[1].value.keyword == 0)) {
+build/ws074-20261018/q21/before-css_values.c:5809: goto: goto cleanup;
+build/ws074-20261018/q21/before-css_values.c:5811: blank-after-brace: if (declarations[2].value.keyword != CSS_DECORATION_SOLID) {
+build/ws074-20261018/q21/before-css_values.c:5814: goto: goto cleanup;
+build/ws074-20261018/q21/before-css_values.c:5816: blank-after-brace: if (declarations[3].value.color != CSS_CURRENT_COLOR)
+build/ws074-20261018/q21/before-css_values.c:5826: forward-declaration: values_transform_add
+build/ws074-20261018/q21/before-css_values.c:5834: blank-after-brace: if (axis->unit == value->unit)
+build/ws074-20261018/q21/before-css_values.c:5881: call-in-condition: css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:5886: blank-after-brace: if (tokens[index].type != CSS_TOKEN_FUNCTION)
+build/ws074-20261018/q21/before-css_values.c:5899: blank-after-brace: if (depth != 0)
+build/ws074-20261018/q21/before-css_values.c:5904: call-in-condition: css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:5906: call-in-condition: css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:5908: call-in-condition: css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:5910: call-in-condition: css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:5915: call-in-condition: css_ident_equal, css_ident_equal, css_ident_equal, css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:5918: call-in-condition: css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:5920: call-in-condition: css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:5932: blank-after-brace: if (arguments == 0)
+build/ws074-20261018/q21/before-css_values.c:5947: blank-after-brace: scale[1].number *= (float)factor;
+build/ws074-20261018/q21/before-css_values.c:5950: blank-after-brace: index = end;
+build/ws074-20261018/q21/before-css_values.c:5953: blank-after-brace: if (which >= 0) {
+build/ws074-20261018/q21/before-css_values.c:5963: blank-after-brace: if (arguments == 0)
+build/ws074-20261018/q21/before-css_values.c:5980: blank-after-brace: index = end;
+build/ws074-20261018/q21/before-css_values.c:5982: blank-after-brace: if (!seen)
+build/ws074-20261018/q21/before-css_values.c:6013: paragraph-comment: memset(&ratio, 0, sizeof(ratio));
+build/ws074-20261018/q21/before-css_values.c:6023: call-in-condition: css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:6029: blank-after-brace: if (tokens[index].type != CSS_TOKEN_NUMBER || have_ratio || tokens[index].number < 0)
+build/ws074-20261018/q21/before-css_values.c:6045: blank-after-brace: if (!have_ratio && !have_auto)
+build/ws074-20261018/q21/before-css_values.c:6049: conditional: automatic.number = (have_auto || !have_ratio) ? 1.0f : 0.0f;
+build/ws074-20261018/q21/before-css_values.c:6057: forward-declaration: values_transform_origin_component
+build/ws074-20261018/q21/before-css_values.c:6068: call-in-condition: css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:6071: call-in-condition: css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:6074: call-in-condition: css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:6077: call-in-condition: css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:6080: call-in-condition: css_ident_equal
+build/ws074-20261018/q21/before-css_values.c:6085: blank-after-brace: *vertical = 0;
+build/ws074-20261018/q21/before-css_values.c:6091: blank-after-brace: return values_length(token, 0, value);
+build/ws074-20261018/q21/before-css_values.c:6122: blank-after-brace: if (parts == 0)
+build/ws074-20261018/q21/before-css_values.c:6147: blank-after-brace: values_add(out, made, first_property, &first);
