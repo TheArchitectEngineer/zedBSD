@@ -702,7 +702,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p251](phase251/phase.md) | linear calc zero percentage type | cleared / q14 direct linear type | q12/q13 raw、precode Chrome |
 | [ws074-p252](phase252/phase.md) | flex-basis grammar/computed・non-replaced content base | uncleared / Queue未選定 | p240/p241残り、q14 final output待ち |
 | [ws074-p253](phase253/phase.md) | ordinary attribute mutation records | uncleared / q17 scoped partial cleared・controls15/35DOM/global旧PASS維持 | p209 q16 preflight、p242 observer model |
-| [ws074-p254](phase254/phase.md) | User Timing markの実記録・取得・native entry lifecycle | planning / q23 no-op input欠落のproducer | p077既存clock、p189 q23 source/probe |
+| [ws074-p254](phase254/phase.md) | User Timing markの実記録・取得・native entry lifecycle | in-progress / q25 native mark producer host partial | p077既存clock、p189 q23 source/probe |
 | [ws074-p255](phase255/phase.md) | PerformanceObserver native mark登録・queue・task配信 | planning / q23 held PASSのconsumer | p254 verified native mark output |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。

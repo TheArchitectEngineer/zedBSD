@@ -26,6 +26,7 @@
 #include "net/net.h"
 
 #include <errno.h>
+#include <float.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -111,6 +112,40 @@ struct environment_reveal_entry {
 	int hidden;
 };
 
+/* A performance wrapper owns this managed buffer; its entries retain no native Window pointer. */
+struct environment_timeline {
+	struct vm_cell cell;
+	struct wb_vector entries;
+	struct vm_object *owner_global;
+	struct vm_object *mark_prototype;
+};
+
+/* A saved mark independently retains its immutable name, primitive detail and original timestamp. */
+struct environment_mark {
+	struct vm_cell cell;
+	struct vm_string *name;
+	vm_value detail;
+	double start;
+};
+
+static void environment_timeline_trace(struct vm_heap *heap, struct vm_cell *cell);
+static void environment_timeline_finalize(struct vm_heap *heap, struct vm_cell *cell);
+static void environment_mark_trace(struct vm_heap *heap, struct vm_cell *cell);
+static int environment_timeline_of(struct vm_realm *realm, vm_value receiver, struct environment_timeline **timeline);
+static int environment_mark_of(struct vm_realm *realm, vm_value receiver, struct environment_mark **mark);
+static int environment_mark_create(struct vm_realm *realm, const vm_value *args, unsigned count, struct environment_timeline *timeline, int construct, vm_value *result);
+static int environment_mark_construct(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int environment_performance_mark(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int environment_mark_part(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int environment_mark_json(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int environment_performance_snapshot(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, int mode, vm_value *result);
+static int environment_performance_entries(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int environment_performance_by_type(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int environment_performance_by_name(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int environment_performance_clear_marks(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int environment_install_entry_tag(struct vm_realm *realm, struct vm_object *prototype, const char *name);
+static int environment_install_mark_fields(struct bind_window *window);
+
 static int environment_install_navigator(struct bind_window *window);
 static int environment_install_screen(struct bind_window *window);
 static int environment_install_performance(struct bind_window *window);
@@ -133,7 +168,6 @@ static int environment_navigator_send_beacon(struct vm_realm *realm, vm_value th
 static int environment_screen_size(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int environment_performance_now(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int environment_performance_time_origin(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
-static int environment_performance_entries(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int environment_performance_nothing(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int environment_location_part(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int environment_location_hash_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
@@ -296,6 +330,47 @@ const struct bind_interface bind_screen_interface = {
 	"Screen", BIND_NO_PARENT, 0, NULL, NULL, NULL, NULL
 };
 
+/* The private timeline's type traces buffered wrappers and releases native vector storage. */
+static const struct vm_cell_type environment_timeline_type = {
+	"performance-timeline", environment_timeline_trace, environment_timeline_finalize
+};
+
+/* A mark's independently managed payload remains readable after its owner frame retires. */
+static const struct vm_cell_type environment_mark_type = {
+	"performance-mark", environment_mark_trace, NULL
+};
+
+/* Distinct private native-operation identities brand ordinary extensible wrappers without virtual properties. */
+static const struct vm_native_operations environment_timeline_native = {
+	NULL, NULL, NULL, NULL, NULL
+};
+
+/* Entry branding cannot be obtained through a mutable JS prototype or constructor property. */
+static const struct vm_native_operations environment_mark_native = {
+	NULL, NULL, NULL, NULL, NULL
+};
+
+/* Getter part order is shared only by native installation and the immutable entry reader. */
+static const char *const environment_entry_parts[] = {
+	"name", "entryType", "startTime", "duration", "detail"
+};
+
+/* Entry serialization reports common fields without exposing mark detail or mutable native storage. */
+static const struct bind_operation environment_entry_operations[] = {
+	{ "toJSON", 0, environment_mark_json },
+	{ NULL, 0, NULL }
+};
+
+/* PerformanceEntry instances originate from concrete native timeline producers. */
+const struct bind_interface bind_performance_entry_interface = {
+	"PerformanceEntry", BIND_NO_PARENT, 0, NULL, NULL, environment_entry_operations, NULL
+};
+
+/* Direct construction makes a genuine mark without adding it to any performance buffer. */
+const struct bind_interface bind_performance_mark_interface = {
+	"PerformanceMark", BIND_PERFORMANCE_ENTRY, 1, environment_mark_construct, NULL, NULL, NULL
+};
+
 /*
  * The attributes of Performance.  The table is constant for the life of
  * the program.
@@ -306,18 +381,18 @@ static const struct bind_attribute environment_performance_attributes[] = {
 };
 
 /*
- * The operations of Performance: the clock, the entries (there are none
- * in this pass) and the methods that record them (which record nothing).
+ * Native mark production, selection and clearing share the real timeline.
+ * Other entry producers remain outside this implementation increment.
  * The table is constant for the life of the program.
  */
 static const struct bind_operation environment_performance_operations[] = {
 	{ "now", 0, environment_performance_now },
 	{ "getEntries", 0, environment_performance_entries },
-	{ "getEntriesByType", 1, environment_performance_entries },
-	{ "getEntriesByName", 1, environment_performance_entries },
-	{ "mark", 1, environment_performance_nothing },
+	{ "getEntriesByType", 1, environment_performance_by_type },
+	{ "getEntriesByName", 1, environment_performance_by_name },
+	{ "mark", 1, environment_performance_mark },
 	{ "measure", 1, environment_performance_nothing },
-	{ "clearMarks", 0, environment_performance_nothing },
+	{ "clearMarks", 0, environment_performance_clear_marks },
 	{ "clearMeasures", 0, environment_performance_nothing },
 	{ "clearResourceTimings", 0, environment_performance_nothing },
 	{ "setResourceTimingBufferSize", 1, environment_performance_nothing },
@@ -725,7 +800,7 @@ environment_install_screen(
 	return 0;
 }
 
-/* Makes performance with its timing and navigation records. */
+/* Makes performance with a real managed mark buffer and the existing legacy timing records. */
 static int
 environment_install_performance(
 	struct bind_window *window)
@@ -734,47 +809,99 @@ environment_install_performance(
 	struct vm_object *performance;
 	struct vm_object *timing;
 	struct vm_object *navigation;
+	struct environment_timeline *timeline;
+	struct vm_cell *root;
 	vm_value origin;
 	size_t index;
 	int error;
 
-	/* The window's performance. */
+	/* Install readonly native entry fields after their interface prototypes exist. */
 	realm = window->realm;
+	error = environment_install_mark_fields(window);
+	if (error != 0)
+		return error;
+
+	/* The ordinary global performance property retains this wrapper during initialization. */
 	error = environment_instance(window, BIND_PERFORMANCE, "performance", &performance);
 	if (error != 0)
 		return error;
 
-	/* timing: every moment is the time origin in this pass. */
-	timing = vm_object_create(realm->heap, realm->object_prototype);
-	if (timing == NULL)
+	/* Allocate one empty, independently collectible native timeline per Window. */
+	timeline = vm_heap_alloc(realm->heap, &environment_timeline_type, sizeof(*timeline));
+	if (timeline == NULL)
 		return ENOMEM;
+
+	/* Initialize all traced storage before publishing the payload to the rooted wrapper. */
+	wb_vector_init(&timeline->entries, sizeof(vm_value));
+	timeline->owner_global = realm->global;
+	timeline->mark_prototype = window->prototypes[BIND_PERFORMANCE_MARK];
+	performance->kind = VM_KIND_PLATFORM;
+	performance->internal = vm_value_cell(timeline);
+	performance->native_operations = &environment_timeline_native;
+
+	/* Legacy record objects need temporary ownership while their first property key is allocated. */
+	root = NULL;
+	error = vm_heap_add_root(realm->heap, &root);
+	if (error != 0)
+		return error;
+
+	/* Preserve the existing legacy timing record without changing the page clock. */
+	timing = vm_object_create(realm->heap, realm->object_prototype);
+	if (timing == NULL) {
+		error = ENOMEM;
+		goto cleanup;
+	}
+
+	/* Retain the new record while publishing its first owning reference. */
+	root = &timing->cell;
+
+	/* Publish the record before defining its allocating string keys. */
+	error = js_builtin_value(realm, performance, "timing", vm_value_cell(timing), VM_PROPERTY_DEFAULT);
+	if (error != 0)
+		goto cleanup;
+
+	/* Legacy moments retain their existing shared time-origin values. */
 	origin = vm_value_number(window->time_origin);
 	for (index = 0; environment_timing_names[index] != NULL; index++) {
 		error = js_builtin_value(realm, timing, environment_timing_names[index], origin, VM_PROPERTY_DEFAULT);
 		if (error != 0)
-			return error;
+			goto cleanup;
 	}
 
-	/* The record on performance. */
-	error = js_builtin_value(realm, performance, "timing", vm_value_cell(timing), VM_PROPERTY_DEFAULT);
-	if (error != 0)
-		return error;
-
-	/* navigation: an ordinary navigation (type 0) without redirects. */
+	/* Navigation remains the existing ordinary type with no redirects. */
 	navigation = vm_object_create(realm->heap, realm->object_prototype);
-	if (navigation == NULL)
-		return ENOMEM;
-	error = js_builtin_value(realm, navigation, "type", vm_value_int32(0), VM_PROPERTY_DEFAULT);
-	if (error != 0)
-		return error;
-	error = js_builtin_value(realm, navigation, "redirectCount", vm_value_int32(0), VM_PROPERTY_DEFAULT);
-	if (error != 0)
-		return error;
+	if (navigation == NULL) {
+		error = ENOMEM;
+		goto cleanup;
+	}
+
+	/* The timing record is globally owned; the temporary root now retains navigation. */
+	root = &navigation->cell;
+
+	/* Publish before defining fields so collector pressure cannot orphan this record. */
 	error = js_builtin_value(realm, performance, "navigation", vm_value_cell(navigation), VM_PROPERTY_DEFAULT);
 	if (error != 0)
+		goto cleanup;
+
+	/* Preserve the established navigation type. */
+	error = js_builtin_value(realm, navigation, "type", vm_value_int32(0), VM_PROPERTY_DEFAULT);
+	if (error != 0)
+		goto cleanup;
+
+	/* No navigation entry producer or resource timing feature is implied. */
+	error = js_builtin_value(realm, navigation, "redirectCount", vm_value_int32(0), VM_PROPERTY_DEFAULT);
+	if (error != 0)
+		goto cleanup;
+
+cleanup:
+	/* Preserve no temporary collector roots after either partial or complete installation. */
+	vm_heap_remove_root(realm->heap, &root);
+
+	/* A partially initialized environment remains an installation failure. */
+	if (error != 0)
 		return error;
 
-	/* Succeeded: performance is on the global object. */
+	/* Succeeded: each Window owns an actual native mark buffer. */
 	return 0;
 }
 
@@ -1506,27 +1633,950 @@ environment_performance_time_origin(
 	return 0;
 }
 
-/* Reports the performance entries asked for: none are recorded in this pass. */
+/* Retains the actual relevant global and buffered marks through managed VM references. */
+static void
+environment_timeline_trace(
+	struct vm_heap *heap,
+	struct vm_cell *cell)
+{
+	struct environment_timeline *timeline;
+	vm_value *entries;
+	size_t index;
+
+	/* Every buffered wrapper owns its immutable entry state. */
+	timeline = (struct environment_timeline *)cell;
+	vm_heap_mark(heap, &timeline->owner_global->cell);
+	vm_heap_mark(heap, &timeline->mark_prototype->cell);
+	entries = timeline->entries.items;
+	for (index = 0; index < timeline->entries.count; index++) {
+		vm_heap_mark_value(heap, entries[index]);
+	}
+
+	/* Succeeded: the timeline's relevant realm and current marks remain reachable. */
+	return;
+}
+
+/* Releases the native buffer when its performance wrapper becomes unreachable. */
+static void
+environment_timeline_finalize(
+	struct vm_heap *heap,
+	struct vm_cell *cell)
+{
+	struct environment_timeline *timeline;
+
+	UNUSED_PARAMETER(heap);
+
+	/* No Window or DOM ownership is borrowed by the buffer. */
+	timeline = (struct environment_timeline *)cell;
+	wb_vector_release(&timeline->entries);
+
+	/* Succeeded: no native vector allocation survives the dead timeline. */
+	return;
+}
+
+/* Retains the name and primitive detail of a separately saved native mark. */
+static void
+environment_mark_trace(
+	struct vm_heap *heap,
+	struct vm_cell *cell)
+{
+	struct environment_mark *mark;
+
+	/* Saved entries remain readable after clearMarks and frame retirement. */
+	mark = (struct environment_mark *)cell;
+	vm_heap_mark(heap, &mark->name->cell);
+	vm_heap_mark_value(heap, mark->detail);
+
+	/* Succeeded: a saved entry retains its immutable primitive payload. */
+	return;
+}
+
+/* Refuses prototype lookalikes, proxies and unrelated native wrappers. */
 static int
-environment_performance_entries(
+environment_timeline_of(
 	struct vm_realm *realm,
-	vm_value this_value,
+	vm_value receiver,
+	struct environment_timeline **timeline)
+{
+	struct vm_object *object;
+	struct vm_cell *cell;
+	int is_object;
+	int is_cell;
+	int status;
+
+	/* Only a genuine performance object exposes its private timeline. */
+	is_object = vm_value_is_object(receiver);
+	if (!is_object) {
+		status = bind_throw_illegal(realm);
+		return status;
+	}
+
+	/* Native operations provide an unforgeable wrapper brand. */
+	object = (struct vm_object *)vm_value_as_cell(receiver);
+	if (object->native_operations != &environment_timeline_native) {
+		status = bind_throw_illegal(realm);
+		return status;
+	}
+
+	/* The managed payload must belong to the same native representation. */
+	is_cell = vm_value_is_cell(object->internal);
+	if (!is_cell) {
+		status = bind_throw_illegal(realm);
+		return status;
+	}
+
+	/* A malformed wrapper cannot become a native state pointer. */
+	cell = vm_value_as_cell(object->internal);
+	if (cell->type != &environment_timeline_type) {
+		status = bind_throw_illegal(realm);
+		return status;
+	}
+
+	/* Succeeded: the caller borrows the receiver-owned timeline. */
+	*timeline = (struct environment_timeline *)cell;
+	return 0;
+}
+
+/* Obtains the immutable native state behind an actual PerformanceMark. */
+static int
+environment_mark_of(
+	struct vm_realm *realm,
+	vm_value receiver,
+	struct environment_mark **mark)
+{
+	struct vm_object *object;
+	struct vm_cell *cell;
+	int is_object;
+	int is_cell;
+	int status;
+
+	/* Ordinary objects cannot impersonate entries by changing their prototype. */
+	is_object = vm_value_is_object(receiver);
+	if (!is_object) {
+		status = bind_throw_illegal(realm);
+		return status;
+	}
+
+	/* Entry and timeline brands remain distinct even after prototype mutation. */
+	object = (struct vm_object *)vm_value_as_cell(receiver);
+	if (object->native_operations != &environment_mark_native) {
+		status = bind_throw_illegal(realm);
+		return status;
+	}
+
+	/* The payload's managed type independently validates its layout. */
+	is_cell = vm_value_is_cell(object->internal);
+	if (!is_cell) {
+		status = bind_throw_illegal(realm);
+		return status;
+	}
+
+	/* A foreign managed cell is never interpreted as entry storage. */
+	cell = vm_value_as_cell(object->internal);
+	if (cell->type != &environment_mark_type) {
+		status = bind_throw_illegal(realm);
+		return status;
+	}
+
+	/* Succeeded: the receiver keeps the entry alive throughout the call. */
+	*mark = (struct environment_mark *)cell;
+	return 0;
+}
+
+/* Converts mark arguments and creates an immutable wrapper without buffering it. */
+static int
+environment_mark_create(
+	struct vm_realm *realm,
+	const vm_value *args,
+	unsigned count,
+	struct environment_timeline *timeline,
+	int construct,
+	vm_value *result)
+{
+	struct bind_window *window;
+	struct vm_string *name;
+	struct vm_object *prototype;
+	struct vm_object *object;
+	struct environment_mark *mark;
+	struct vm_cell *roots[5];
+	vm_value options;
+	vm_value detail;
+	vm_value timestamp;
+	double start;
+	size_t index;
+	unsigned registered;
+	int present;
+	int is_object;
+	int is_cell;
+	int equal;
+	int status;
+
+	/* Required arguments are distinct from an explicit undefined name. */
+	*result = VM_VALUE_UNDEFINED;
+	if (count == 0U) {
+		status = vm_throw_type_error(realm, "A mark name is required");
+		return status;
+	}
+
+	/* All slots exist before allocation or user conversion can run the collector. */
+	registered = 0U;
+	for (index = 0; index < 5U; index++) {
+		roots[index] = NULL;
+	}
+
+	/* Preserve intermediate dictionary values across reentrant getters. */
+	for (index = 0; index < 5U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+
+		/* Cleanup releases only slots successfully registered with the heap. */
+		registered++;
+	}
+
+	/* DOMString conversion precedes the dictionary's member reads. */
+	status = vm_to_string(realm, args[0], &name);
+	if (status != 0)
+		goto cleanup;
+
+	/* A newly converted name survives option getters and prototype lookup. */
+	roots[0] = &name->cell;
+	options = VM_VALUE_UNDEFINED;
+	if (count > 1U)
+		options = args[1];
+
+	/* Null and undefined are empty dictionaries; other primitives are rejected. */
+	if (options != VM_VALUE_UNDEFINED && options != VM_VALUE_NULL) {
+		is_object = vm_value_is_object(options);
+		if (!is_object) {
+			status = vm_throw_type_error(realm, "Mark options must be a dictionary");
+			goto cleanup;
+		}
+	}
+
+	/* WebIDL reads dictionary members in lexical order, including absent values. */
+	status = bind_get_option(realm, options, "detail", &present, &detail);
+	if (status != 0)
+		goto cleanup;
+
+	/* The default detail is null, including an explicitly undefined member. */
+	if (!present)
+		detail = VM_VALUE_NULL;
+
+	/* A getter-produced primitive cell needs its own root before the next getter. */
+	is_cell = vm_value_is_cell(detail);
+	if (is_cell)
+		roots[1] = vm_value_as_cell(detail);
+
+	/* Read the optional timestamp without keeping a pointer into a mutable buffer. */
+	status = bind_get_option(realm, options, "startTime", &present, &timestamp);
+	if (status != 0)
+		goto cleanup;
+
+	/* Explicit times use finite nonnegative DOMHighResTimeStamp values. */
+	window = bind_window_of(realm);
+	if (timeline != NULL) {
+		/* Borrowed methods use the actual receiver's retained relevant global and clock. */
+		window = bind_window_of((struct vm_realm *)vm_value_as_cell(timeline->owner_global->internal));
+	}
+
+	/* The receiver's managed global keeps a child host alive across conversions. */
+	start = window->now;
+	if (present) {
+		status = vm_to_number(realm, timestamp, &start);
+		if (status != 0)
+			goto cleanup;
+
+		/* NaN and infinities cannot become an entry timestamp. */
+		if (start != start ||
+		    start > DBL_MAX ||
+		    start < 0.0) {
+			status = vm_throw_type_error(realm, "A mark timestamp must be finite and nonnegative");
+			goto cleanup;
+		}
+	}
+
+	/* Legacy PerformanceTiming member names remain reserved for both creation APIs. */
+	for (index = 0; environment_timing_names[index] != NULL; index++) {
+		equal = vm_string_equal_ascii(name, environment_timing_names[index]);
+		if (equal) {
+			status = bind_throw_dom(realm, "SyntaxError", "A legacy timing name cannot name a mark");
+			goto cleanup;
+		}
+	}
+
+	/* This increment supports clone-free primitives; complex cloning remains explicit residual work. */
+	is_object = vm_value_is_object(detail);
+	if (is_object) {
+		status = bind_throw_dom(realm, "DataCloneError", "Complex mark detail cloning is not supported yet");
+		goto cleanup;
+	}
+
+	/* Symbols are not structured-cloneable even though they are primitive values. */
+	if (is_cell && roots[1]->type == &vm_symbol_type) {
+		status = bind_throw_dom(realm, "DataCloneError", "Symbol mark detail cannot be cloned");
+		goto cleanup;
+	}
+
+	/* Only construction consults new.target; performance.mark uses the relevant realm prototype. */
+	prototype = window->prototypes[BIND_PERFORMANCE_MARK];
+	if (timeline != NULL)
+		prototype = timeline->mark_prototype;
+
+	/* Direct construction resolves the explicit new.target prototype in its own realm. */
+	if (construct) {
+		status = vm_construct_prototype(realm, realm->new_target, prototype, &prototype);
+		if (status != 0)
+			goto cleanup;
+	}
+
+	/* A custom prototype survives the following state and wrapper allocations. */
+	roots[2] = &prototype->cell;
+	mark = vm_heap_alloc(realm->heap, &environment_mark_type, sizeof(*mark));
+	if (mark == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* Initialize the complete traceable payload before another allocation can occur. */
+	mark->name = name;
+	mark->detail = detail;
+	mark->start = start;
+	roots[3] = &mark->cell;
+
+	/* A separately saved wrapper owns its state rather than borrowing a Window pointer. */
+	object = vm_object_create(realm->heap, prototype);
+	if (object == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* Native branding remains private while ordinary own-property semantics remain available. */
+	roots[4] = &object->cell;
+	object->kind = VM_KIND_PLATFORM;
+	object->internal = vm_value_cell(mark);
+	object->native_operations = &environment_mark_native;
+	*result = vm_value_cell(object);
+	status = 0;
+
+cleanup:
+	/* Release construction roots in reverse order after publication or failure. */
+	while (registered > 0U) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* Preserve conversion, allocation or construction failures for the caller. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the caller receives an unbuffered, independently owned native mark. */
+	return 0;
+}
+
+/* Constructs a mark without adding it to the Window's performance buffer. */
+static int
+environment_mark_construct(
+	struct vm_realm *realm,
+	vm_value receiver,
 	const vm_value *args,
 	unsigned count,
 	vm_value *result)
 {
-	int error;
+	int status;
 
-	UNUSED_PARAMETER(this_value);
+	UNUSED_PARAMETER(receiver);
+
+	/* Preserve the ordinary new.target protocol through the shared mark builder. */
+	status = environment_mark_create(realm, args, count, NULL, 1, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: constructing alone did not publish a buffered entry. */
+	return 0;
+}
+
+/* Creates a real mark and inserts it stably into its receiver's timeline. */
+static int
+environment_performance_mark(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct environment_timeline *timeline;
+	struct environment_mark *mark;
+	struct environment_mark *previous;
+	struct vm_object *object;
+	vm_value *entries;
+	vm_value value;
+	size_t index;
+	int status;
+
+	/* Validate the receiver before invoking user argument conversions. */
+	status = environment_timeline_of(realm, receiver, &timeline);
+	if (status != 0)
+		return status;
+
+	/* Conversion may reenter mark or clearMarks; insertion uses the resulting current buffer. */
+	status = environment_mark_create(realm, args, count, timeline, 0, result);
+	if (status != 0)
+		return status;
+
+	/* Native vector growth cannot invoke script or collect the freshly returned wrapper. */
+	value = *result;
+	status = wb_vector_push(&timeline->entries, &value);
+	if (status != 0)
+		return status;
+
+	/* Preserve insertion order among equal timestamps without calling a JS comparator. */
+	object = (struct vm_object *)vm_value_as_cell(value);
+	mark = (struct environment_mark *)vm_value_as_cell(object->internal);
+	entries = timeline->entries.items;
+	index = timeline->entries.count - 1U;
+	while (index > 0U) {
+		object = (struct vm_object *)vm_value_as_cell(entries[index - 1U]);
+		previous = (struct environment_mark *)vm_value_as_cell(object->internal);
+
+		/* An equal or earlier timestamp already belongs before the new entry. */
+		if (previous->start <= mark->start)
+			break;
+
+		/* Shift only references; entry payloads and their JS identities remain unchanged. */
+		entries[index] = entries[index - 1U];
+		index--;
+	}
+
+	/* Publish the entry after every older timestamp and every equal-time predecessor. */
+	entries[index] = value;
+
+	/* Succeeded: the returned mark is the actual buffered object. */
+	return 0;
+}
+
+/* Reads one immutable entry field using the native getter's private part index. */
+static int
+environment_mark_part(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct environment_mark *mark;
+	struct vm_function *callee;
+	int part;
+	int status;
+
 	UNUSED_PARAMETER(args);
 	UNUSED_PARAMETER(count);
 
-	/* An empty list. */
-	error = environment_empty_array(realm, result);
-	if (error != 0)
-		return error;
+	/* Shared prototype getters still require a genuine native entry brand. */
+	status = environment_mark_of(realm, receiver, &mark);
+	if (status != 0)
+		return status;
 
-	/* Succeeded: the list is reported. */
+	/* Select the field recorded when this accessor was installed. */
+	callee = js_builtin_callee(realm);
+	part = vm_value_as_int32(callee->data);
+
+	/* Name and detail preserve their independently traced primitive identities. */
+	if (part == 0) {
+		*result = vm_value_cell(mark->name);
+	} else if (part == 1) {
+		status = bind_string(realm, "mark", result);
+		if (status != 0)
+			return status;
+	} else if (part == 2) {
+		*result = vm_value_number(mark->start);
+	} else if (part == 3) {
+		*result = vm_value_int32(0);
+	} else {
+		*result = mark->detail;
+	}
+
+	/* Succeeded: the readonly native field is reported. */
+	return 0;
+}
+
+/* Serializes the common PerformanceEntry fields as ordinary own data properties. */
+static int
+environment_mark_json(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct environment_mark *mark;
+	struct vm_object *object;
+	struct vm_cell *roots[2];
+	unsigned registered;
+	vm_value type;
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* toJSON cannot serialize an ordinary prototype lookalike as an entry. */
+	status = environment_mark_of(realm, receiver, &mark);
+	if (status != 0)
+		return status;
+
+	/* Reserve the output root before allocation can collect native temporaries. */
+	roots[0] = NULL;
+	roots[1] = NULL;
+	registered = 0U;
+	status = vm_heap_add_root(realm->heap, &roots[0]);
+	if (status != 0)
+		return status;
+
+	/* The output owns one root and the transient type string owns another. */
+	registered++;
+	status = vm_heap_add_root(realm->heap, &roots[1]);
+	if (status != 0)
+		goto cleanup;
+
+	/* Cleanup owns both registered slots before the first object allocation. */
+	registered++;
+
+	/* The common entry dictionary does not serialize mark detail. */
+	object = vm_object_create(realm->heap, realm->object_prototype);
+	if (object == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* Each fallible property definition sees a rooted, partially constructed dictionary. */
+	roots[0] = &object->cell;
+	status = js_builtin_value(realm, object, "name", vm_value_cell(mark->name), VM_PROPERTY_DEFAULT);
+	if (status != 0)
+		goto cleanup;
+
+	/* Construct the fixed entry type before immediately publishing its value. */
+	status = bind_string(realm, "mark", &type);
+	if (status != 0)
+		goto cleanup;
+
+	/* A generated string remains rooted while its property key is allocated. */
+	roots[1] = vm_value_as_cell(type);
+
+	/* The type string remains owned by this property before the next VM allocation. */
+	status = js_builtin_value(realm, object, "entryType", type, VM_PROPERTY_DEFAULT);
+	if (status != 0)
+		goto cleanup;
+
+	/* Explicit times preserve their exact finite numeric value. */
+	status = js_builtin_value(realm, object, "startTime", vm_value_number(mark->start), VM_PROPERTY_DEFAULT);
+	if (status != 0)
+		goto cleanup;
+
+	/* A mark's duration is always zero, independently of subsequent clock changes. */
+	status = js_builtin_value(realm, object, "duration", vm_value_int32(0), VM_PROPERTY_DEFAULT);
+	if (status != 0)
+		goto cleanup;
+
+	/* Publish the complete dictionary before releasing its construction root. */
+	*result = vm_value_cell(object);
+
+cleanup:
+	/* Release temporary ownership on both partial and complete dictionaries. */
+	while (registered > 0U) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* Propagate an incomplete serialization without claiming success. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the caller owns a common-entry snapshot. */
+	return 0;
+}
+
+/* Selects a snapshot after all filter conversions have finished reentering script. */
+static int
+environment_performance_snapshot(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	int mode,
+	vm_value *result)
+{
+	struct environment_timeline *timeline;
+	struct environment_mark *mark;
+	struct vm_object *object;
+	struct vm_object *entry;
+	struct vm_string *name;
+	struct vm_string *type;
+	struct vm_cell *roots[3];
+	vm_value *entries;
+	vm_value value;
+	size_t index;
+	uint32_t output;
+	unsigned registered;
+	int matches;
+	int status;
+
+	/* Validate the actual receiver before any filter invokes user conversions. */
+	*result = VM_VALUE_UNDEFINED;
+	status = environment_timeline_of(realm, receiver, &timeline);
+	if (status != 0)
+		return status;
+
+	/* Filtered variants require an argument even when it is explicitly undefined. */
+	if (mode != 0 && count == 0U) {
+		status = vm_throw_type_error(realm, "An entry filter is required");
+		return status;
+	}
+
+	/* Names and types returned by conversion survive later conversions and allocation. */
+	registered = 0U;
+	for (index = 0; index < 3U; index++) {
+		roots[index] = NULL;
+	}
+
+	/* Register every slot before constructing either filter or the output array. */
+	for (index = 0; index < 3U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+
+		/* The unwind count records ownership of each registered slot. */
+		registered++;
+	}
+
+	/* getEntriesByName converts its required name before its optional type. */
+	name = NULL;
+	type = NULL;
+	if (mode == 2) {
+		status = vm_to_string(realm, args[0], &name);
+		if (status != 0)
+			goto cleanup;
+
+		/* The type getter can collect a newly converted name. */
+		roots[0] = &name->cell;
+	}
+
+	/* getEntriesByType always converts its first argument, including undefined. */
+	if (mode == 1) {
+		status = vm_to_string(realm, args[0], &type);
+		if (status != 0)
+			goto cleanup;
+
+		/* Keep this filter through snapshot construction. */
+		roots[1] = &type->cell;
+	}
+
+	/* An omitted or explicitly undefined optional type leaves name matching unfiltered. */
+	if (mode == 2 &&
+	    count > 1U &&
+	    args[1] != VM_VALUE_UNDEFINED) {
+		status = vm_to_string(realm, args[1], &type);
+		if (status != 0)
+			goto cleanup;
+
+		/* A second converted string has independent temporary ownership. */
+		roots[1] = &type->cell;
+	}
+
+	/* A real array remains rooted until the native snapshot is complete. */
+	object = vm_array_create(realm->heap, realm->array_prototype);
+	if (object == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* No later snapshot step calls script or keeps a pointer across user conversion. */
+	roots[2] = &object->cell;
+	entries = timeline->entries.items;
+	output = 0U;
+	for (index = 0; index < timeline->entries.count; index++) {
+		value = entries[index];
+		entry = (struct vm_object *)vm_value_as_cell(value);
+		mark = (struct environment_mark *)vm_value_as_cell(entry->internal);
+
+		/* Only marks have a producer in this increment. */
+		if (type != NULL) {
+			matches = vm_string_equal_ascii(type, "mark");
+			if (!matches)
+				continue;
+		}
+
+		/* Name matching observes complete converted strings rather than object identity. */
+		if (name != NULL) {
+			matches = vm_string_equal(name, mark->name);
+			if (!matches)
+				continue;
+		}
+
+		/* Own data definitions cannot invoke an inherited Array index setter. */
+		status = vm_object_define(realm->heap, object, vm_value_int32((int32_t)output), value, VM_PROPERTY_DEFAULT);
+		if (status != 0)
+			goto cleanup;
+
+		/* Advance the output only after its current element has been published. */
+		output++;
+	}
+
+	/* The native vector is already stably sorted by start time. */
+	*result = vm_value_cell(object);
+	status = 0;
+
+cleanup:
+	/* Every registered root is released even after a user conversion throws. */
+	while (registered > 0U) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* An incomplete snapshot never becomes a successful result. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the caller owns an independent array of real entry identities. */
+	return 0;
+}
+
+/* Returns all currently recorded entries in stable timestamp order. */
+static int
+environment_performance_entries(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	int status;
+
+	/* The unfiltered snapshot requires no arguments. */
+	status = environment_performance_snapshot(realm, receiver, args, count, 0, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: all native buffered marks were selected. */
+	return 0;
+}
+
+/* Returns native entries matching one required type string. */
+static int
+environment_performance_by_type(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	int status;
+
+	/* Type selection shares the same real timeline snapshot as getEntries. */
+	status = environment_performance_snapshot(realm, receiver, args, count, 1, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the type-filtered snapshot is complete. */
+	return 0;
+}
+
+/* Returns native entries matching a required name and optional type string. */
+static int
+environment_performance_by_name(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	int status;
+
+	/* Name selection preserves conversion order and optional undefined semantics. */
+	status = environment_performance_snapshot(realm, receiver, args, count, 2, result);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the name-filtered snapshot is complete. */
+	return 0;
+}
+
+/* Removes buffered references without invalidating separately saved entries. */
+static int
+environment_performance_clear_marks(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct environment_timeline *timeline;
+	struct environment_mark *mark;
+	struct vm_object *object;
+	struct vm_string *name;
+	vm_value *entries;
+	size_t input;
+	size_t output;
+	int matches;
+	int status;
+
+	/* clearMarks requires the actual performance receiver even with no name. */
+	*result = VM_VALUE_UNDEFINED;
+	status = environment_timeline_of(realm, receiver, &timeline);
+	if (status != 0)
+		return status;
+
+	/* An absent or undefined optional argument clears all buffered marks. */
+	if (count == 0U || args[0] == VM_VALUE_UNDEFINED) {
+		wb_vector_clear(&timeline->entries);
+		return 0;
+	}
+
+	/* Conversion can reenter clear or append; only the resulting current buffer is edited. */
+	status = vm_to_string(realm, args[0], &name);
+	if (status != 0)
+		return status;
+
+	/* Compaction allocates nothing and cannot collect the converted name. */
+	entries = timeline->entries.items;
+	output = 0U;
+	for (input = 0; input < timeline->entries.count; input++) {
+		object = (struct vm_object *)vm_value_as_cell(entries[input]);
+		mark = (struct environment_mark *)vm_value_as_cell(object->internal);
+		matches = vm_string_equal(name, mark->name);
+		if (matches)
+			continue;
+
+		/* Keep unmatched entries in their existing stable order. */
+		entries[output] = entries[input];
+		output++;
+	}
+
+	/* The collector traces only the compacted live portion of the vector. */
+	timeline->entries.count = output;
+
+	/* Succeeded: matching marks no longer belong to the timeline buffer. */
+	return 0;
+}
+
+/* Defines the standard descriptive tag without replacing genuine native brands. */
+static int
+environment_install_entry_tag(
+	struct vm_realm *realm,
+	struct vm_object *prototype,
+	const char *name)
+{
+	struct vm_cell *root;
+	vm_value value;
+	vm_value key;
+	int status;
+
+	/* Keep the generated tag string through property-storage allocation. */
+	root = NULL;
+	status = vm_heap_add_root(realm->heap, &root);
+	if (status != 0)
+		return status;
+
+	/* A tag describes the real native interface rather than supplying its brand. */
+	status = bind_string(realm, name, &value);
+	if (status != 0) {
+		vm_heap_remove_root(realm->heap, &root);
+		return status;
+	}
+
+	/* The well-known symbol itself remains owned by the actual realm. */
+	root = vm_value_as_cell(value);
+	key = vm_symbol_key(realm, VM_SYMBOL_TO_STRING_TAG);
+	status = vm_object_define(realm->heap, prototype, key, value, VM_PROPERTY_CONFIGURABLE);
+	vm_heap_remove_root(realm->heap, &root);
+
+	/* A failed definition leaves interface installation incomplete. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: Object.prototype.toString can report this native interface. */
+	return 0;
+}
+
+/* Publishes real readonly entry fields after the native interface prototypes exist. */
+static int
+environment_install_mark_fields(
+	struct bind_window *window)
+{
+	struct vm_realm *realm;
+	struct vm_object *prototype;
+	struct vm_property property;
+	vm_value key;
+	const char *name;
+	int part;
+	int found;
+	int status;
+
+	/* Part selection stays private to each native getter's function data. */
+	realm = window->realm;
+	for (part = 0; part < 5; part++) {
+		prototype = window->prototypes[BIND_PERFORMANCE_ENTRY];
+		name = environment_entry_parts[part];
+
+		/* Only mark detail belongs to the more specific prototype. */
+		if (part == 4)
+			prototype = window->prototypes[BIND_PERFORMANCE_MARK];
+
+		/* Existing accessor construction roots getter and accessor allocations. */
+		status = environment_part_accessor(realm, prototype, name, environment_mark_part, NULL, part);
+		if (status != 0)
+			return status;
+
+		/* WebIDL attributes are enumerable as well as configurable and readonly. */
+		key = vm_key_from_ascii(realm->heap, name);
+		if (key == VM_VALUE_EMPTY)
+			return ENOMEM;
+
+		/* Read the genuine accessor object without replacing its native getter identity. */
+		found = vm_object_get_own(prototype, key, &property);
+		if (found < 0)
+			return -found;
+
+		/* A missing newly installed field indicates incomplete publication. */
+		if (found == 0)
+			return EINVAL;
+
+		/* Refining one flag preserves the accessor's getter and absent setter. */
+		status = vm_object_define(realm->heap, prototype, key, *property.value, property.attributes | VM_PROPERTY_ENUMERABLE);
+		if (status != 0)
+			return status;
+	}
+
+	/* The common entry serializer is also an enumerable WebIDL operation. */
+	prototype = window->prototypes[BIND_PERFORMANCE_ENTRY];
+	key = vm_key_from_ascii(realm->heap, "toJSON");
+	if (key == VM_VALUE_EMPTY)
+		return ENOMEM;
+
+	/* Preserve the serializer installed from the actual native interface table. */
+	found = vm_object_get_own(prototype, key, &property);
+	if (found < 0)
+		return -found;
+
+	/* An absent serializer cannot be exposed as a complete native interface. */
+	if (found == 0)
+		return EINVAL;
+
+	/* WebIDL methods retain writable and configurable flags while becoming enumerable. */
+	status = vm_object_define(realm->heap, prototype, key, *property.value, property.attributes | VM_PROPERTY_ENUMERABLE);
+	if (status != 0)
+		return status;
+
+	/* Tags describe the actual interface prototypes while native invocation still checks private state. */
+	status = environment_install_entry_tag(realm, window->prototypes[BIND_PERFORMANCE_ENTRY], "PerformanceEntry");
+	if (status != 0)
+		return status;
+
+	/* A concrete mark reports its own tag through the inherited native object protocol. */
+	status = environment_install_entry_tag(realm, window->prototypes[BIND_PERFORMANCE_MARK], "PerformanceMark");
+	if (status != 0)
+		return status;
+
+	/* Succeeded: genuine entry prototypes expose their readonly native data. */
 	return 0;
 }
 

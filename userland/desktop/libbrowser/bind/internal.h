@@ -120,6 +120,8 @@ enum bind_interface_index {
 	BIND_HTML_VIDEO_ELEMENT,
 	BIND_HTML_AUDIO_ELEMENT,
 	BIND_HTML_TEXT_AREA_ELEMENT,
+	BIND_PERFORMANCE_ENTRY,
+	BIND_PERFORMANCE_MARK,
 	BIND_INTERFACES
 };
 
@@ -418,6 +420,8 @@ extern const struct bind_interface bind_wheel_event_interface;
 extern const struct bind_interface bind_navigator_interface;
 extern const struct bind_interface bind_screen_interface;
 extern const struct bind_interface bind_performance_interface;
+extern const struct bind_interface bind_performance_entry_interface;
+extern const struct bind_interface bind_performance_mark_interface;
 extern const struct bind_interface bind_location_interface;
 extern const struct bind_interface bind_html_image_element_interface;
 extern const struct bind_interface bind_html_media_element_interface;
