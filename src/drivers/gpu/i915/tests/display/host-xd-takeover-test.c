@@ -17,12 +17,15 @@
  * PLL), of an HDMI pipe, of two pipes on one PLL, and the VGA plane's;
  * and an Ice Lake's firmware panel on the eDP transcoder (its readout
  * with transcoder A's well off, its output, and its stop) and HDMI on
- * transcoder B (the clock off before the DDI buffer).
+ * transcoder B (the clock off before the DDI buffer); and on every row
+ * of the descriptions the stop of HDMI that the firmware lit on the first
+ * combo port after DDI A (a desktop's firmware lights a monitor there).
  */
 
 #include "host-test.h"
 #include "xd-fake-regs.h"
 
+#include "../../display/xd-clock.h"
 #include "../../display/xd-io.h"
 #include "../../display/xd-platform.h"
 #include "../../display/xd-power.h"
@@ -35,6 +38,7 @@
 #include <uapi/errno.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 /* The 5330's Alder Lake-P. */
@@ -165,10 +169,11 @@ static void i915_xd_to_test_sanitize(void);
 static void i915_xd_to_test_sanitize_unknown(void);
 static void i915_xd_to_test_pps_status(uint32_t offset, uint32_t value, void *context);
 static void i915_xd_to_test_takeover(void);
-static void i915_xd_to_test_icl_light(unsigned trans, unsigned pipe, unsigned ddi, uint32_t function);
+static void i915_xd_to_test_light_trans(unsigned trans, unsigned pipe, unsigned ddi, uint32_t function);
 static int i915_xd_to_test_write_at(uint32_t offset);
 static void i915_xd_to_test_icl_readout(void);
 static void i915_xd_to_test_icl_stop(void);
+static void i915_xd_to_test_rows_hdmi(void);
 static int i915_xd_to_test_power_get(void *context, uint64_t functions);
 static void i915_xd_to_test_power_put(void *context, uint64_t functions);
 
@@ -194,6 +199,7 @@ main(void)
 	i915_xd_to_test_takeover();
 	i915_xd_to_test_icl_readout();
 	i915_xd_to_test_icl_stop();
+	i915_xd_to_test_rows_hdmi();
 
 	/* Reports the result. */
 	failures = i915_host_report("host_xd_takeover_test");
@@ -1245,9 +1251,9 @@ i915_xd_to_test_power_put(
 	record->nputs++;
 }
 
-/* Lights an Ice Lake transcoder on the model: its state, function, the pipe's plane, the DDI buffer and DPLL0. */
+/* Lights a transcoder on the model (any row): its state, function, the pipe's plane, the DDI buffer and DPLL0. */
 static void
-i915_xd_to_test_icl_light(
+i915_xd_to_test_light_trans(
 	unsigned trans,
 	unsigned pipe,
 	unsigned ddi,
@@ -1357,7 +1363,7 @@ i915_xd_to_test_icl_stop(void)
 	if (platform == NULL)
 		return;
 	memset(&i915_xd_to_test_run, 0, sizeof(i915_xd_to_test_run));
-	i915_xd_to_test_icl_light(I915_XD_TRANS_EDP, 0U, 0U, I915_XD_TO_TEST_ICL_FUNC_EDP);
+	i915_xd_to_test_light_trans(I915_XD_TRANS_EDP, 0U, 0U, I915_XD_TO_TEST_ICL_FUNC_EDP);
 	i915_xd_fake_set(I915_XD_FW_TEST_DIP_CTL(I915_XD_TRANS_EDP), 0x11111111U);
 	i915_xd_fake_set(I915_XD_DP_TP_CTL(I915_XD_DP_TP_PORT(0U)), I915_XD_DP_TP_ENABLE);
 	i915_xd_fake_set(I915_XD_DP_TP_CTL(0U), 0x5a5a0000U);
@@ -1391,7 +1397,7 @@ i915_xd_to_test_icl_stop(void)
 	if (platform == NULL)
 		return;
 	memset(&i915_xd_to_test_run, 0, sizeof(i915_xd_to_test_run));
-	i915_xd_to_test_icl_light(1U, 1U, 1U, I915_XD_TO_TEST_ICL_FUNC_HDMI_B);
+	i915_xd_to_test_light_trans(1U, 1U, 1U, I915_XD_TO_TEST_ICL_FUNC_HDMI_B);
 	i915_xd_fake_set(I915_XD_TRANS_CLK_SEL(1U), 0x40000000U);
 	i915_xd_to_test_base(&firmware);
 	firmware.lit_pipes = 2U;
@@ -1405,4 +1411,84 @@ i915_xd_to_test_icl_stop(void)
 			"icl stop HDMI: DDI B (display 11's select 1), DPLL0 off");
 	i915_host_check(clock >= 0 && buffer >= 0 && clock < buffer && i915_xd_fake_get(I915_XD_TRANS_CLK_SEL(1U)) == I915_XD_TRANS_CLK_SEL_NONE,
 			"icl stop HDMI: the transcoder's clock off before the DDI buffer");
+}
+
+/*
+ * On every row: HDMI the firmware lit on pipe B at the first combo port
+ * after DDI A, on DPLL0, stopped by the takeover: the DDI and the mode
+ * read in the row's select field, the transcoder, its function and the
+ * DDI buffer off, the port's clock gated, DPLL0 off, the pipe dark.
+ */
+static void
+i915_xd_to_test_rows_hdmi(void)
+{
+	static char what[128];
+	const struct i915_xd_platform *platform;
+	const struct i915_xd_port_desc *port;
+	struct i915_xd_takeover_report report;
+	struct i915_xd_takeover_hooks hooks;
+	struct i915_xd_firmware firmware;
+	uint32_t function;
+	unsigned select;
+	unsigned rows;
+	unsigned row;
+	unsigned index;
+	int mapped;
+	int stopped;
+	int error;
+
+	/* Each row, from a fresh model. */
+	rows = drv_i915_xd_platform_count();
+	for (row = 0U; row < rows; row++) {
+		/* The row and its first combo port after DDI A. */
+		platform = drv_i915_xd_platform_row(row);
+		port = NULL;
+		for (index = 0U; index < platform->nports; index++) {
+			if (platform->ports[index].phy_kind != I915_XD_PHY_COMBO || platform->ports[index].ddi == 0U)
+				continue;
+			port = &platform->ports[index];
+			break;
+		}
+		(void)snprintf(what, sizeof(what), "rows: %s: HDMI stop", platform->name);
+		if (port == NULL) {
+			i915_host_check(0, what);
+			continue;
+		}
+
+		/* HDMI on transcoder B, its DDI in the row's select field. */
+		function = I915_XD_DDI_FUNC_ENABLE;
+		if (platform->display_ver < 12U) {
+			function |= i915_xd_field_put(I915_XD_DDI_FUNC_SELECT_11, port->ddi);
+		} else {
+			function |= i915_xd_field_put(I915_XD_DDI_FUNC_SELECT, port->ddi + 1U);
+		}
+		(void)i915_xd_to_test_setup();
+		memset(&i915_xd_to_test_run, 0, sizeof(i915_xd_to_test_run));
+		i915_xd_to_test_light_trans(1U, 1U, port->ddi, function);
+		i915_xd_to_test_base(&firmware);
+		firmware.lit_pipes = 2U;
+		firmware.pipe[1].state = I915_XD_FW_PIPE_LIT;
+		firmware.panel_ddi = 0;
+		i915_xd_to_test_hooks(&hooks);
+
+		/* Stops it. */
+		error = drv_i915_xd_takeover_stop(&i915_xd_to_test_io, platform, NULL, &firmware, 1U, &hooks, &report);
+		mapped = drv_i915_xd_dpll_mapped(&i915_xd_to_test_io, platform, port->phy, &select);
+
+		/* The stop's report and the hardware it left. */
+		stopped = 1;
+		if (error != 0 || report.ddi != (int)port->ddi || report.mode != I915_XD_DDI_FUNC_MODE_HDMI || report.pll != 0 || report.late != 0U)
+			stopped = 0;
+		if (i915_xd_fake_get(I915_XD_TRANS_CONF(1U)) != 0U || (i915_xd_fake_get(I915_XD_TRANS_DDI_FUNC_CTL(1U)) & I915_XD_DDI_FUNC_ENABLE) != 0U)
+			stopped = 0;
+		if ((i915_xd_fake_get(I915_XD_DDI_BUF_CTL(port->ddi)) & I915_XD_DDI_BUF_ENABLE) != 0U || mapped)
+			stopped = 0;
+		if ((i915_xd_fake_get(I915_XD_DPLL0_ENABLE) & (I915_XD_PLL_ENABLE | I915_XD_PLL_POWER_ENABLE)) != 0U)
+			stopped = 0;
+		if (firmware.lit_pipes != 0U || i915_xd_to_test_step_at(I915_XD_TO_TEST_SINK_BEFORE) != 0U)
+			stopped = 0;
+
+		/* Checks the row. */
+		i915_host_check(stopped, what);
+	}
 }

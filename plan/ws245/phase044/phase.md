@@ -73,3 +73,11 @@ P1 の見立て（Status は変えない。判定は Q1）: cleared にしない
 - 満たした: 全部の行で eDP の light・dark が xd の部品で通る（host）。5330 の steady 差 0（q1229-i20・i21、前の節）。
 - 満たしていない: 上の「まだ無い物」（Linux の列との比べと 3 種の kind）。
 - P1 の見立て: cleared にしない。
+
+## host の受け入れの続き（2026-10-19 P2、q1259）
+
+- 足した物:
+  - `host-xd-output-test` の `i915_xd_ot_test_cover_ports`: 表の全部の行（11 行）で HDMI（DDI A の後の最初の combo port、DPLL 1、pipe・transcoder B、74.25 MHz）の light と dark。Type-C の PHY（Dekel・MG）の TC1 を持つ行（TGL・TGL-UY・ADL-P・ADL-N・RPL-P・RPL-U・ICL の 2 行）で DP（TC1、自分の TC PLL（MG は 38.4 MHz の参照からの語、Dekel は 5330 の RBR の語）、1.62 GHz × 4 lane）を DP-alt と TBT の 2 つの mode で light と dark。各組で: light が通る（error・lock 0、DP は訓練が通る）、DDI buffer と transcoder の function が on、dark で両方 off、power の get と put の数が同じで held 0、Type-C の link を返す。54 check（89 → 143）。combo の Type-C の口の行（RKL・ADL-S・RPL-S）は Type-C の mode が無いので HDMI だけ。
+  - `host-xd-takeover-test` の `i915_xd_to_test_rows_hdmi`: 全部の行で、GOP が pipe B に灯した HDMI（DDI A の後の最初の combo port、行の select の field、DPLL0）を takeover の stop で止める（デスクトップの RKL・ADL-S の GOP が monitor を灯す場合の列）: report の DDI と mode、transcoder・function・DDI buffer が off、port の clock が gate、DPLL0 off、HDMI の sink の hook が先頭、pipe が dark。11 check（88 → 99）。
+- 確かめた事: `run-xd-host-tests.sh build/p2-ws245-host` all passed（output 143・takeover 99、warning 0）。kernel の source は変えていない（試験だけ）。QEMU・実機は未実施。
+- まだ無い物: 列を Linux の手順・表の値（ADL-P 系は m3 の dump）と書き込みの 1 つずつで比べる事（足したのは各行・各 kind で通る事、on/off、参照と link の釣り合い、stop の後の状態まで）、TGL の流れ B の配線（p052）。
