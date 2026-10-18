@@ -5,13 +5,22 @@
  * SPDX-License-Identifier: Zlib
  */
 
-/* Independent single-operation 4.2 encoding uses fixed MIT Mesa hardware format facts. */
+/*
+ * The encoding of V3D 4.2 QPU instructions.
+ */
 #include <kern/kcrt.h>
 #include <uapi/errno.h>
 
 #include "drivers/gpu/bcm2711/qpu.h"
 
-/* One ALU's native operation fields while a word is assembled; the defaults leave the ALU idle. */
+/*
+ * One ALU's native operation fields while a word is assembled; the defaults
+ * leave the ALU idle.
+ *
+ * Values referenced: Mesa src/broadcom/qpu/qpu_pack.c (the V3D 4.2
+ * instruction word's fields and opcodes).
+ */
+
 struct qpu_alu {
 	uint32_t operation;
 	uint32_t left;

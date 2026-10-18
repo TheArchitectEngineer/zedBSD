@@ -8,8 +8,7 @@
 /*
  * The byte images of V3D 4.2's initial shader-free, one-pixel job.
  *
- * Packet sizes, field positions and opcodes come from the fixed Mesa
- * v3d_packet.xml.  The serializer writes explicit bytes
+ * The serializer writes explicit bytes
  * so unaligned command addresses and host endianness do not affect the
  * images.  It neither allocates memory nor touches hardware registers.
  */
@@ -21,7 +20,16 @@
 
 #include "drivers/gpu/bcm2711/bcm2711-private.h"
 
+/*
+ * The packets' sizes, field positions and opcodes, and the offsets in the
+ * fixed streams below.
+ *
+ * Values referenced: Mesa src/broadcom/cle/v3d_packet.xml (the V3D 4.2
+ * packets).
+ */
+
 /* The exclusive end of V3D's GPU virtual address space. */
+
 #define CL_VIRTUAL_END ((uint64_t)1 << 32)
 
 /* The 64-byte alignment of a tile-list-set base encoded in its packet. */

@@ -15,9 +15,6 @@
  * carries no name.  The table only names a GPU in the stage marks: the chip,
  * and with it the driver's path, is decided by the identity register, so a
  * board missing here is still driven.
- *
- * Values referenced: pci.ids of the PCI ID repository (pci-ids.ucw.cz) of
- * 2026-10-15 (the IDs and names of the NVIDIA devices).
  */
 
 #include <stddef.h>
@@ -30,7 +27,11 @@
  *
  * Each row is the device ID, the chip number in the identity register, the
  * laptop flag and the product name.
+ *
+ * Values referenced: pci.ids of the PCI ID repository (pci-ids.ucw.cz) of
+ * 2026-10-15 (the IDs and names of the NVIDIA devices).
  */
+
 static const struct nvrtx_product products_table[] = {
 	{ 0x1e02U, 0x162U, 0, "TITAN RTX" },
 	{ 0x1e03U, 0x162U, 0, "GeForce RTX 2080 Ti 12GB" },
