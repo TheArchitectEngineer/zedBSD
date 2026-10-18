@@ -576,7 +576,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS255](ws255/ws.md) | MG001 | 試験機（5330・RDNA 機）の zedBSD の試験の image を静的な IP に（2026-10-16 ユーザー） | incomplete（p001 uncleared: 手引き・QEMU で address は確認、main d2a709ba6。route と DNS は BUG-328 待ち） | BUG-328 の修正 |
 | [WS256](ws256/ws.md) | MG008 | StarFive VisionFive 2（JH7110、RISC-V）への移植（2026-10-18 ユーザー） | incomplete（p002 toolchain の RISCV は cleared、他は詳細を Q1 とユーザーで決めてから P2） | 最初の到達目標は UART の login、QEMU の virt から |
 | [WS257](ws257/ws.md) | MG006 | i915 を Haswell・Broadwell（Gen7.5・Gen8）に対応（2026-10-18 ユーザー） | planning（今は取り組まない） | — |
-| [WS258](ws258/ws.md) | MG001 | 全ドライバの出典の表記を guardrail に（file の先頭から block へ）（2026-10-18 ユーザー） | incomplete（p001 を P1、q1248） | p001 |
+| [WS258](ws258/ws.md) | MG001 | 全ドライバの出典の表記を guardrail に（file の先頭から block へ）（2026-10-18 ユーザー） | completed（2026-10-18、残りは WS244・WS259） | — |
 | [WS259](ws259/ws.md) | MG005 | RTL8822B の表（rtl8822b-tables.inc）を値の引用に書き換える（2026-10-18 ユーザー） | planning（WS244 の後） | p001 |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。

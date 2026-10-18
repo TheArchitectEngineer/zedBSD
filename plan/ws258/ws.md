@@ -3,7 +3,7 @@
 # WS258 全ドライバの出典の表記を guardrail に合わせる（file の先頭から block へ）
 
 - ID: ws258、Master: [master.md](../master.md)、Primary Milestone: MG001
-- Status: incomplete（2026-10-18 Q1 作成、p001 を P1）
+- Status: completed（2026-10-18 Q1: p001 cleared。残りは WS244（i915/intel の抜粋・GT の core）と WS259（rtl8822b-tables.inc）へ移した）
 - 起点（2026-10-18 ユーザー）: gen9-ddc.c の先頭の comment「The AUX transfer follows the Linux kernel 6.8.12's …」について「これはルール違反です」「この修正も全ドライバに対してP1で監査してほしいです」。
 - 規則: [Guardrail](../guardrail.md) の「MIT・GPL の出典のデータの引用」（2026-10-15 ユーザー）: file の先頭の comment に参考にした source・引用したデータ・派生の宣言・出典の一覧を一切書かず、該当箇所に block 単位で `Values referenced:`・`Procedure referenced:` で書く。code・comment・構造は写さない。
 - Q1 の直し: gen9-ddc.c（1a9fb5ae3）。先頭の comment から Linux の関数名を外し、各関数の block に出典を移した。
@@ -18,4 +18,4 @@
 
 | Phase | 目的 | 状態 |
 | --- | --- | --- |
-| [p001](phase001/phase.md) | 全ドライバの先頭の comment の監査と直し（P1） | in-progress（q1248） |
+| [p001](phase001/phase.md) | 全ドライバの先頭の comment の監査と直し（P1） | cleared（2026-10-18） |

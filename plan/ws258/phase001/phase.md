@@ -2,7 +2,7 @@
 
 # ws258-p001 全ドライバの先頭の comment の出典の監査と直し
 
-Status: in-progress（2026-10-18 q1248-i01、P1）
+Status: cleared（2026-10-18 Q1 判定: 1,031 file を点検、44 file を直した（merge 181f43b52）、出典の照合と直し（6ff8706b3、merge b8a176065、Linux・Mesa は全部一致、手元に無い出典は未確認と記録）、build 3 組 warning 0 は P1 の報告。直さずに残した i915/intel の抜粋・GT の core は WS244 へ、rtl8822b-tables.inc は WS259 へ移した（2026-10-18 ユーザーの決定））（旧: in-progress（2026-10-18 q1248-i01、P1））
 
 - 親: [WS258](../ws.md)。Queue: q1248-i01。
 - 範囲: `src/drivers/` と `include/drivers/` の .c・.h・.S・.inc（約 1,030 file）。comment だけを変え、動作は変えない。
