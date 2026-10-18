@@ -1579,6 +1579,7 @@ object_to_string(
 	char text[64];
 	const char *tag;
 	unsigned registered;
+	int is_array;
 	int is_string;
 	int status;
 
@@ -1597,7 +1598,6 @@ object_to_string(
 		if (status != 0)
 			return status;
 		object = (struct vm_object *)vm_value_as_cell(value);
-		tag = object_tag(value, object);
 		roots[0] = &object->cell;
 		roots[1] = NULL;
 		roots[2] = NULL;
@@ -1609,6 +1609,15 @@ object_to_string(
 				goto cleanup;
 			registered++;
 		}
+
+		/* Actual array identity is determined before observing a custom tag, including revoked Proxy errors. */
+		status = vm_is_array(realm, value, &is_array);
+		if (status != 0)
+			goto cleanup;
+		if (is_array)
+			tag = "Array";
+		else
+			tag = object_tag(value, object);
 
 		/* A string Symbol.toStringTag names it instead. */
 		status = vm_get(realm, value, vm_symbol_key(realm, VM_SYMBOL_TO_STRING_TAG), &named);

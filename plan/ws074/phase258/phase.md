@@ -2,16 +2,16 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: in-progress（q47 nested noncallable target partial、whole Proxy未達）
+Status: in-progress（q48 IsArray consumer partial、whole Proxy未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
-Queue: ws074-q20261018-47-i01（q30〜q46 partial履歴保持）
+Queue: ws074-q20261018-48-i01（q30〜q47 partial履歴保持）
 Origin: p189/q29 original WebIDL2 parseがProxy未定義で停止。
 
 Objective / own criteria: native managed Proxyを実object internal methodsへ接続し、constructor/revocableと各internal operationのtrap/fallback/invariant/receiver/revocation/callability/GCを正しく実行する。original WebIDL2 actual parse/validatorに必要なget/set/array behaviorを通常APIで提供し、independent controls/原WPTを通す。部分read stageだけでwholeをclearしない。
 Design: vm_native_operationsはscript-free heap interfaceのまま保持。Proxyにはmanaged target/handler recordを持たせ、scriptを実行可能なrealm-aware access/internal methodからtrapを呼ぶ。opaque JS constructor公開前に必要なoperationを段階的に整える。各段階は自走承認に基づく新finite Queueで正確に選定する。
-Current state: q46 object assignment receiver-aware routing/array shrink partial clear、native622/Chrome620は既知huge2のみ差、全1508 q44全whole/callback/completion同一。primitive Set/for-in/other invariant realm化/nested/call/construct/global/upper-index storage等whole未達。
+Current state: q47 nested noncallable target partial clear、native658/Chrome656既知huge2差、actual snapshot payloadが元target実回収後GCを越えて生存/全回収。最新1508 q46再利用、q47全census未測定。for-in/other callers/call/construct/newtarget/global等whole未達。
 Standards: Guardrail/C全文/browser component全文、簡約版無し。一次 https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-proxy-object-internal-methods-and-internal-slots-get-p-receiver 。既存p100がWS全source near-final conformanceを所有し、本partialはnew/changed scopeの全文適合を検証。
 Verification/bounds/affected components: q30 snapshotの通り。private object kind/cell/newborn/trace/revokeとactual receiver/trap/invariant/GCをnative/Chromeで確認し、ordinary whole/callback PASSを守る。target single-source compileのみとfull target runtimeを区別。未達はunclearedとresume。
 
@@ -259,3 +259,19 @@ Archives: harness-all-raw 1676 members SHA2564247433ec00c0cb9f7d6fcae320b1c9dd8f
 [証拠](evidence/20261018-q46/README.md)。次finite scope未選定。
 
 Event ws074-p258-q47-selection: remaining target invariant照会realm化/current snapshot extent前tracingとprivate factory nested bound解除だけ選定。callable/global拒否を保持。[exact Queue](../queue.md)。native sole snapshot payload actualGC/回収と全internal nested実対照、wholeは未達。
+
+## q47 nested target result / resume
+
+Event ws074-p258-q47-partial-cleared-20261018: q47 nested noncallable target scoped partial cleared。selection WIP4e0c49fdb/source WIP0fb5a4c85。Get/Has post-trap target GetOwnをactual realm APIへ、Has/GetOwn/Define target extentをactual IsExtensibleへ接続。Has falseはmissing/fixed先判定、GetOwn undefinedはmissingならextent無しreturn・fixedならextent無しthrow・configurableだけextent。GetOwn非undefined/Define trueはactual targetGetOwn→extent→descriptor conversion/compatibilityの順、current descriptor has0初期化とflagged payload tracerをextent script前に登録。input descriptor/output descriptor/result snapshotsは独立保持、normal/abruptともcleanup。private vm_proxy_createのnested kind拒否だけ解除、callable target拒否/global Proxy・Reflect非公開維持。mainの旧nested拒否assertは明示positiveへ変更。native_operations定義/comment/他VM functions/headers/API2/Wayland/WPT・runner・期待値/SDK/toolchain/sysroot/共有Boards/cache不変。
+old622 prefix同一＋new36 native/genuine Chrome一致、final native658/Chrome656。q46 frozen precodeは622/658で36FAIL、nested target受付制限によるもので36個別bug/公式gainではない。差は既知q43 huge-length2のみ、q36 negative-zero classifier filter継承で全pure genuine equalityとは主張しない。nested Get/Has/GetOwn/Define/Set/Delete/GetProto/SetProto/extent/ownKeys/IsArrayのtrap/fallback/順序/invariant/receiver/revocationを実対照、30 fallback layers保持、旧native budget/cleanup試験を維持。fresh GetPrototypeOf outputがpost-target extent script実GCを越えることも新shared controlで確認。
+native sole snapshot fixtureはactual ordinary fixed data propertyにfresh object値を保存し、inner実IsExtensible trapがinnerをrevokeして元target/handler edgesを切る。そのtarget frame退役後、outer descriptor value getterで実GCし、weak observerで元actualtarget実回収とsole current-descriptor payload生存を同時確認。getterがそのlive objectを返してactual fixed SameValue適合。output-only root後にtarget/handlers/representation/inner/outer graphを実回収、最後のoutput root解放でpayloadも実回収。nativesはvm_callで実行する普通のnative VM functionであってscript-free native_operationsへJSを追加しない。旧版forced-GC differentialは未測定でold native GC failure再現/修復とは主張しない。
+full changed10 C functions manual＋clang-format19/checked styleは許可single forward cleanup125・other0。host warning0、q02 literal access/object2 source -oだけ変更target warning0、versions実取得。focused proxy/delegation10/interp45/factory56/DOM41/CSSOM12+12/marks7/observer10/ErrorEvent9/ErrorReporting19/Acid全exit0、Acid3 score/inventory100/pixel0、Acid2既存873。元WebIDL4positive＋intentionalnegative source/callback q38同一、original validator require-exposed2と意図的FAIL native/Chrome同一。
+最新全1508実測はq46 256.7秒（q44全whole/callback/completion同一）。q47pair全census未実測、公式new gainを主張しない。harness494 PASS/955 FAIL/13 harness_error/20 no_completion/24 no_output/2 multiple、callbacks11540 PASS/20642 FAIL/14 NOTRUN。static844/scripted105/crash39はq28原証拠再利用・newpair全image/crash capture未測定。公式確認済1482/3805（38.948752%）・held0・未attempt275維持。
+whole p258/WS/p100/full target/100%未達。for-in/spread/JSON/Object.prototype.toString/array internal IsArray callers、primitive Set/outer vm_instanceof/BoundFunction/call/construct/newtarget/global Proxy・revocable/Reflect、array upper-index storage/immutable prototype/typed backing等残件維持。既存ObjectToStringがkindを見ることも次caller調査候補で全公開surface適合は未認定。共有Master/Queue/cache/GitHub投影pending Q1、push無し。
+Raw archive86 members SHA256c2f637f90eefaca9a1834fb91463db41acf087e7ae0b1659ea0ac8bfe2f7726e全member read-back。runtime binaryはhash付きbuild保持・archive非同梱。q46 harness1676 member原archive SHA2564247433ec00c0cb9f7d6fcae320b1c9dd8f346ce90517456351ec87d79b60589を参照しq47実測と混同しない。
+
+[証拠](evidence/20261018-q47/README.md)。次finite scope未選定。
+
+Event ws074-p258-integration-direction-20261018（2026-10-18T22:35:53.785505+09:00）: q47 source0fb5a4c85/terminal53563fb51を含むq44〜q47全sourceのmain包含と競合無しを実確認。ユーザー「マージしながら」「ws.md/Phase可・master.md不可」を[自走指示](../autonomy.md)に記録。今後もverified WIP＋main包含/統合確認を継続、master.mdは編集しない。whole p258/WS acceptance未変更。[実出力](evidence/20261018-integration-direction.json)。
+
+Event ws074-p258-q48-selection: ObjectToString/concat/flatten IsArray consumerとboxed-source/fresh output保持partial選定。Species/幅/resource等whole残件を明記。[exact Queue](../queue.md)。main包含確認、master.md編集無しでWS/Phaseに記録。

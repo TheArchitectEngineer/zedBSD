@@ -16,6 +16,13 @@
 #include <stdio.h>
 #include <string.h>
 
+/* A boxed-source lifetime observation contains only an integer address and actual collection counters. */
+struct flat_source_observation {
+	uintptr_t box_address;
+	unsigned length_calls;
+	unsigned depth_collections;
+};
+
 /* Weak addresses observe one synchronous nested descriptor snapshot without retaining any managed participant. */
 struct nested_snapshot_observation {
 	uintptr_t target_address;
@@ -58,6 +65,9 @@ struct extent_observation {
 	unsigned collections;
 	unsigned mode;
 };
+
+/* Only flat_source_pressure owns this synchronous weak observer, which never marks a managed value. */
+static struct flat_source_observation flat_source_case;
 
 /* Only nested_snapshot_pressure activates this weak observer; zero means no native snapshot case is active. */
 static struct nested_snapshot_observation nested_snapshot_case;
@@ -168,6 +178,9 @@ static const struct vm_native_operations proxy_sole_operations = {
 	proxy_sole_get_own, NULL, NULL, NULL, NULL
 };
 
+static int flat_source_length(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int flat_source_depth(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int flat_source_pressure(struct page *page);
 static int nested_snapshot_extent(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int nested_snapshot_descriptor(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int nested_snapshot_value(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
@@ -408,6 +421,11 @@ main(
 
 	/* A nested target may revoke its last payload owner before the outer descriptor conversion collects. */
 	status = nested_snapshot_pressure(page);
+	if (status != 0)
+		goto cleanup;
+
+	/* A primitive receiver's temporary source box must survive later depth conversion and then become reclaimable. */
+	status = flat_source_pressure(page);
 	if (status != 0)
 		goto cleanup;
 
@@ -4428,5 +4446,218 @@ cleanup:
 		return status;
 
 	/* Succeeded: the sole fixed snapshot payload outlived its original target and was finally reclaimed. */
+	return 0;
+}
+
+/* Records the actual Number wrapper used by flat's source length retrieval without retaining that temporary box. */
+static int
+flat_source_length(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct vm_object *box;
+	int is_object;
+
+	UNUSED_PARAMETER(realm);
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* The native length getter must receive the actual converted Number object, not the original primitive. */
+	is_object = vm_value_is_object(receiver);
+	if (!is_object)
+		return EFAULT;
+	box = (struct vm_object *)vm_value_as_cell(receiver);
+	if (box->kind != VM_KIND_NUMBER)
+		return EFAULT;
+	flat_source_case.box_address = (uintptr_t)box;
+	flat_source_case.length_calls++;
+	*result = vm_value_int32(1);
+
+	/* Succeeded: only an integer observation survives the length getter's VM-call frame. */
+	return 0;
+}
+
+/* Collects after array_this has retired its source root and requires the outer flat consumer to own the box. */
+static int
+flat_source_depth(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct vm_cell *found;
+	struct vm_heap_stats before;
+	struct vm_heap_stats after;
+
+	UNUSED_PARAMETER(receiver);
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+
+	/* Depth conversion occurs after the earlier length getter and temporary array_this frame have returned. */
+	vm_heap_stats(realm->heap, &before);
+	vm_heap_collect(realm->heap);
+	vm_heap_stats(realm->heap, &after);
+	if (after.collections <= before.collections)
+		return EFAULT;
+	found = vm_heap_find_cell(realm->heap, flat_source_case.box_address);
+	if (found == NULL)
+		return EFAULT;
+	flat_source_case.depth_collections++;
+	*result = vm_value_int32(1);
+
+	/* Succeeded: the outer consumer retained its sole boxed source through an actual later collection. */
+	return 0;
+}
+
+/* Tests actual flat source boxing, later conversion GC, ordinary result creation and independent reclamation. */
+static int
+flat_source_pressure(
+	struct page *page)
+{
+	struct vm_object *depth;
+	struct vm_cell *roots[2];
+	struct vm_cell *found;
+	struct vm_descriptor prior;
+	vm_value key;
+	vm_value function;
+	vm_value argument;
+	vm_value answer;
+	uintptr_t depth_address;
+	uintptr_t output_address;
+	unsigned registered;
+	unsigned index;
+	int present;
+	int deleted;
+	int installed;
+	int status;
+	int restore;
+
+	/* Only construction and the eventual output use embedding roots; the source box is never one of them. */
+	memset(roots, 0, sizeof(roots));
+	memset(&flat_source_case, 0, sizeof(flat_source_case));
+	registered = 0;
+	installed = 0;
+	for (index = 0; index < 2U; index++) {
+		status = vm_heap_add_root(page->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* The isolated page's Number prototype must have no existing length property for this temporary getter. */
+	key = vm_key_from_ascii(page->heap, "length");
+	if (key == VM_VALUE_EMPTY) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* No preexisting descriptor is replaced or silently lost by this lifetime fixture. */
+	status = vm_get_own_property(page->realm, page->realm->intrinsics[VM_INTRINSIC_NUMBER_PROTOTYPE], key, &prior, &present);
+	if (status != 0)
+		goto cleanup;
+	if (present) {
+		status = EFAULT;
+		goto cleanup;
+	}
+
+	/* A real inherited getter observes the fresh box created only inside the production flat consumer. */
+	status = js_builtin_accessor(page->realm, page->realm->intrinsics[VM_INTRINSIC_NUMBER_PROTOTYPE], "length", flat_source_length, NULL);
+	if (status != 0)
+		goto cleanup;
+	installed = 1;
+	depth = vm_object_create(page->heap, NULL);
+	if (depth == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* Actual depth coercion uses the ordinary native valueOf method and cannot access the source through a closure. */
+	roots[0] = &depth->cell;
+	depth_address = (uintptr_t)depth;
+	status = js_builtin_method(page->realm, depth, "valueOf", 0, flat_source_depth);
+	if (status != 0)
+		goto cleanup;
+	key = vm_key_from_ascii(page->heap, "flat");
+	if (key == VM_VALUE_EMPTY) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* Invoke the actual installed Array.prototype.flat with a primitive Number receiver and the coercible depth. */
+	status = vm_get(page->realm, vm_value_cell(page->realm->array_prototype), key, &function);
+	if (status != 0)
+		goto cleanup;
+	argument = vm_value_cell(depth);
+	roots[0] = NULL;
+	status = vm_call(page->realm, function, vm_value_int32(1), &argument, 1, &answer);
+	if (status != 0)
+		goto cleanup;
+	roots[1] = vm_value_as_cell(answer);
+	output_address = (uintptr_t)roots[1];
+	if (flat_source_case.length_calls != 1U || flat_source_case.depth_collections != 1U) {
+		status = EFAULT;
+		goto cleanup;
+	}
+
+	/* Output-only ownership permits the earlier source box and depth argument to be actually reclaimed. */
+	vm_heap_collect(page->heap);
+	found = vm_heap_find_cell(page->heap, flat_source_case.box_address);
+	if (found != NULL) {
+		status = EFAULT;
+		goto cleanup;
+	}
+
+	/* The depth object's former call ownership also ends with the real consumer invocation. */
+	found = vm_heap_find_cell(page->heap, depth_address);
+	if (found != NULL) {
+		status = EFAULT;
+		goto cleanup;
+	}
+
+	/* Dropping the independent result root leaves the ordinary output array reclaimable as well. */
+	roots[1] = NULL;
+	vm_heap_collect(page->heap);
+	found = vm_heap_find_cell(page->heap, output_address);
+	if (found != NULL) {
+		status = EFAULT;
+		goto cleanup;
+	}
+
+	/* The actual flat wrapper retained its sole box across later script and released both input and output ownership. */
+	status = 0;
+
+cleanup:
+	/* Restore the isolated intrinsic before another fixture or page teardown can observe the temporary length getter. */
+	if (installed) {
+		key = vm_key_from_ascii(page->heap, "length");
+		if (key == VM_VALUE_EMPTY) {
+			if (status == 0)
+				status = ENOMEM;
+		} else {
+			deleted = 0;
+			restore = vm_object_delete(page->heap, page->realm->intrinsics[VM_INTRINSIC_NUMBER_PROTOTYPE], key, &deleted);
+			if (restore != 0 && status == 0)
+				status = restore;
+			if (!deleted && status == 0)
+				status = EFAULT;
+		}
+	}
+
+	/* Weak observations and partial setup roots never outlive the synchronous lifetime case. */
+	memset(&flat_source_case, 0, sizeof(flat_source_case));
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(page->heap, &roots[registered]);
+	}
+
+	/* Preserve lifetime, restoration or native-call errors after all cleanup. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the actual temporary source, depth argument and final result were independently reclaimed. */
 	return 0;
 }

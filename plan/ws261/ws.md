@@ -13,12 +13,19 @@
 - 使っている所: `src/hal/arm64/`（cmain・bsp・page・smp・space、bsp-rpi4 の boot・fdt・gic・cons）、`src/kern/platform/rpi4.c`、`src/drivers/platform/rpi4/`（bt・audio・ethernet・sdhci）、`src/drivers/platform/pc98/`、PC-98 の HAL（`src/hal/i386/` の pc98 の部分）と boot loader（`bootloader/pc98/`）。
 - 範囲外（ユーザーの指示に無い）: 同じ印の `struct kern_sun4u_*`（sparcv9）。扱いはユーザーに聞く。
 
+## 画面の情報（2026-10-18 ユーザー）
+
+- ユーザー:「フィールドごとに文字列の名前があれば、構造体はいらないのでは。amd64ではどうなってますか？」→ Q1 の説明（amd64 の "pcat.framebuffer" も boot loader の struct zbl6_framebuffer を kernel に渡している）→（クリック）「直す、WS261 に含める」。
+- 画面の情報は値ごとの名前で渡す（例 `rpi4.framebuffer.phys`・`.size`・`.width`・`.height`・`.pitch`・`.format`）。構造体の型を HAL と kernel で共有しない。
+- amd64 の `pcat.framebuffer` も同じ形に直し、読む側（`src/drivers/platform/pcat/graphics/backend.c`、`src/drivers/gpu/amdrdna/readout.c`、`src/drivers/gpu/nvrtx/discover.c`、`src/hal/amd64/page.c` など）を追従させる。
+
 ## 完了の条件
 
 1. `include/kern/boot.h` に PC-98・Raspberry Pi の固有の構造体と定数が無い。
 2. HAL → kernel は汎用の `kern_boot_handoff` と、固有の情報は `hal_get_arch_handoff(name)` の名前付きの object だけで渡す。新しく足す名前の一覧と中身を記録する（HAL の責務の追加。hal.h の宣言は変えない）。
 3. boot loader → HAL の固有の構造体は HAL の中（例 `src/hal/arm64/bsp-rpi4/`、PC-98 の HAL の directory）に定義を置く。
-4. 振る舞いは変えない: build（config-rpi4.mk・config-pc98.mk・config-amd64.mk）warning 0。Pi 4 と PC-98 の起動の確かめは T1（QEMU の raspi4b と PC-98 の QEMU）に依頼する。
+4. 画面の情報は Pi 4・amd64 とも値ごとの名前で渡り、kernel が boot loader・HAL の構造体の型を include しない。
+5. 振る舞いは変えない: build（config-rpi4.mk・config-pc98.mk・config-amd64.mk）warning 0。Pi 4 と PC-98 の起動の確かめは T1（QEMU の raspi4b と PC-98 の QEMU）に依頼する。
 
 ## Phase
 
