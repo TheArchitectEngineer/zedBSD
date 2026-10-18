@@ -2,7 +2,7 @@
 
 # ws074-p253: MutationObserverのordinary attribute records
 
-Status: in-progress（q17-i01 ordinary attributes partial）
+Status: uncleared（q17 scoped partial cleared、whole API/standalone等は未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
@@ -45,3 +45,5 @@ source候補へbind/collection.cとprivate empty-list bridgeを追加。DOM hook
 2026-10-18 q17 design correction: WebIDL sequence conversion原典§3.2.21.1と独立Chromium actualを再確認。member ToStringのthrowではIteratorCloseを行わず即abrupt completion（return呼出し0）。前のclose想定を撤回し例外identity/registration保持を検証する。既存MutationObserverとPromiseのmicrotask相対順は今回のordinary attributes partialに含めず、timerから通常deliveryを確認。full observer schedulingは残課題。
 
 Event ws074-q17-preflight-20261018: ordinary attributes・post-font native controls15/15、Chrome新fixtureのpayload/options/GC出力一致、DOM35/35を確認。q17 final frozen pairでglobal1491/static1561とstrict固定48の実測へ進む。global未実行のためterminal clearanceは未判定。
+
+Event ws074-p253-q17-partial-cleared-20261018: [証拠](evidence/20261018-q17/README.md)。全harness1491はwhole491・callback11531 PASS/20226 FAIL/14 NOTRUNを維持し、whole/callback後退・改善・欠損・追加・順序変更0。全static1561は839 PASS/722 FAIL、全reference pixel metrics unchanged。strict48は39 PASS/9 readiness_missing。最終source f1b83fa8f/pair hash read-back一致、固定WPT tracked clean。確認済み1369/3805（35.978975%）、q14から39増。未実行292 harness/413 reftest・native crash依存9は残す。 p253 ordinary Window-owned属性出力・p209 producer再検証の各Queue partialはcleared、whole Phaseは残るAPI/standalone/cross-doc/namespace/IDL/scheduling等を根拠なくclearしない。q15/q16のunclearedは履歴保持。host/target5 warning0・C全文新logic/生成style0・DOM35/35/Chrome22/controls15・budget6/font2/Acid非増加を確認。共有projection pending。

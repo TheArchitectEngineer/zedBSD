@@ -22,4 +22,6 @@ namespace/Attr-node API、standalone/XML/cross-document registrations、multi-ta
 
 ## 終端gate
 
-同じfinal pairの全1491/static1561比較が進行中。old whole491/839維持と全callback診断を記録してからattemptを判定する。p209 producer / p190 strict48はそれぞれの別evidenceへ。現時点のpreflightだけでPhase/WS whole clearanceや確認済み総数の更新はしない。共有projection pending。
+全harness1491はwhole491・callback11531 PASS/20226 FAIL/14 NOTRUNを維持し、whole/callback後退・改善・欠損・追加・順序変更0。全static1561は839 PASS/722 FAIL、全reference pixel metrics unchanged。strict48は39 PASS/9 readiness_missing。最終source f1b83fa8f/pair hash read-back一致、固定WPT tracked clean。確認済み1369/3805（35.978975%）、q14から39増。未実行292 harness/413 reftest・native crash依存9は残す。 [集計](summary.json)・[全callback比較](harness-comparison.json)・[static比較](static-comparison.json)・[全1491 raw archive](harness-raw.tar.gz)。archiveは元gzip bytesをtarからread-backし全件一致、全report/progress/checkpointを照合済み。
+
+q17-i01 ordinary attributes partialはcleared、p253 wholeは未達面を保持。q17-i02 producer partialとi03 coverageもcleared。target全体/link/runtime・WS最終p100・共有projectionはpending。

@@ -1,0 +1,16 @@
+{
+  "eligible": 1561,
+  "eligible_sha256": "0f90e8fac9af5a97e11cce8ac0dfc16fc9360b1903031d742cf8bf1361f48d93",
+  "before_counts": {
+    "fail": 722,
+    "pass": 839
+  },
+  "after_counts": {
+    "fail": 722,
+    "pass": 839
+  },
+  "whole_improvements": [],
+  "whole_regressions": [],
+  "reference_pixel_changes": [],
+  "baseline": "build/ws074-20261018/q14/final/after-static/report.json"
+}

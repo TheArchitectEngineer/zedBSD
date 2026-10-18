@@ -9,7 +9,9 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [ws074-q20261018-14](queue.md) active（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+Queue: [ws074-q20261018-17](queue.md) finished（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+
+Current resume（q17 finished）: 全harness1491はwhole491・callback11531 PASS/20226 FAIL/14 NOTRUNを維持し、whole/callback後退・改善・欠損・追加・順序変更0。全static1561は839 PASS/722 FAIL、全reference pixel metrics unchanged。strict48は39 PASS/9 readiness_missing。最終source f1b83fa8f/pair hash read-back一致、固定WPT tracked clean。確認済み1369/3805（35.978975%）、q14から39増。未実行292 harness/413 reftest・native crash依存9は残す。 ordinary attributes/producer/strict48 coverageの全3 partial cleared。次候補はp190 scripted/variant reftest413のstrict計測、p252等もplanned。whole WS/各API・target full/p100・共有projectionはpending。
 
 Event ws074-q14-percentage-scope-reconciled-20261018: precode Chrome17条件でzero/cancelled %型の依存を確認。p251をi01、p250をi02へ改訂しglobal1491/static1561照合へ拡張、初期snapshot保存/60分deadline維持。
 
@@ -641,8 +643,8 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p186](phase186/phase.md) | sharp text-shadow と見出し影を調べる | cleared（q1009-i01、sharp 単一 scope、Acid3差2451減） | p172〜p185 cleared、q1008 実測出力 |
 | [ws074-p187](phase187/phase.md) | 負の padding と第6色箱の幅を調べる | cleared（q1010-i01、Acid3差900減、negative padding fixture pass） | p172〜p186 cleared、q1009 実測出力 |
 | [ws074-p188](phase188/phase.md) | 同一ページで観測した訪問履歴と :visited の paint color | cleared（q1011-i01、Acid3差801減→0、privacy fixture pass） | p172〜p187 cleared、q1010 実測出力 |
-| [ws074-p189](phase189/phase.md) | Interop 2025 testharness 1,783件の結果取得 runner | uncleared / q14全1491 whole491・未対応292 | p173 q1012 固定manifest出力 |
-| [ws074-p190](phase190/phase.md) | Interop 2025 reftest 1,974件・crashtest48件のrunner coverage | uncleared / q15 retention cleared・strict waitはp209依存、静的839/未対応413 | p173 q1012 固定manifest出力 |
+| [ws074-p189](phase189/phase.md) | Interop 2025 testharness 1,783件の結果取得 runner | uncleared / q17全1491 whole491・未対応292 | p173 q1012 固定manifest出力 |
+| [ws074-p190](phase190/phase.md) | Interop 2025 reftest 1,974件・crashtest48件のrunner coverage | uncleared / q17 strict48 coverage partial cleared・39 PASS/9 missing | p173 q1012 固定manifest出力 |
 | [ws074-p191](phase191/phase.md) | Interop 2025 textdecoration全16 testharnessのCSSOM互換 | cleared / q1023、16件16 PASS/0 FAIL | p173固定manifest、p189 q1015全16件baseline |
 | [ws074-p192](phase192/phase.md) | Interop 2025 Window named properties互換 | uncleared / q1025 partial cleared、一意id live lookup | p173固定manifest、p189 q1024 shard |
 | [ws074-p193](phase193/phase.md) | Interop 2025 details/hidden until-found互換 | uncleared / q1032計測6 PASS/10 FAIL/2 no output、q1035/q1036で2件追加PASS、reftest25/crashtest3未実行 | p189 q1024 shard、p192 q1025一意id output |
@@ -661,7 +663,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p206](phase206/phase.md) | Interop 2025 Flex残3回帰 | cleared / q1059後続証拠で3 ID local PASS | p190 q1056旧8回帰・p205 gap5回復 |
 | [ws074-p207](phase207/phase.md) | Interop 2025 縦textarea小数差 | cleared / q1059固定1 ID差0 | p206 q1058残198差画素 |
 | [ws074-p208](phase208/phase.md) | Interop 2025 Flex base/hypothetical分離 | cleared / q1061固定回帰1 ID差0 | p190 q1060新規FAIL・p206 Flex分配 |
-| [ws074-p209](phase209/phase.md) | Interop 2025 Document FontFaceSet.ready 初期完了 | uncleared / q16 producer preflight14/15・p253待ち、q1065部分cleared | p189 q1064 CSS Grid 280 no_completion |
+| [ws074-p209](phase209/phase.md) | Interop 2025 Document FontFaceSet.ready 初期完了 | uncleared / q17 scoped partial cleared・controls15/35DOM/global旧PASS維持 | p189 q1064 CSS Grid 280 no_completion |
 | [ws074-p210](phase210/phase.md) | Interop 2025 CSS Grid WPT SIGSEGV | cleared / q1067通常・ASan completion | p189 q1066再現process_error |
 | [ws074-p211](phase211/phase.md) | Interop 2025 CSS Grid inline-axis self alignment | cleared / q1070 LTR基本配置・関連静的旧PASS維持 | p189 q1068・p190 q1062 fixed baseline |
 | [ws074-p212](phase212/phase.md) | Interop 2025 CSS Grid horizontal RTL alignment | cleared / q1071代表WPT18/18・静的旧PASS維持 | p211 q1070 LTR出力 |
@@ -699,7 +701,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p250](phase250/phase.md) | computed fit-content bound | cleared / q14 computed own criteria | p246 scalar output、q12 raw、q13 runner |
 | [ws074-p251](phase251/phase.md) | linear calc zero percentage type | cleared / q14 direct linear type | q12/q13 raw、precode Chrome |
 | [ws074-p252](phase252/phase.md) | flex-basis grammar/computed・non-replaced content base | planned / Queue未選定 | p240/p241残り、q14 final output待ち |
-| [ws074-p253](phase253/phase.md) | ordinary attribute mutation records | in-progress / q17 ordinary partial | p209 q16 preflight、p242 observer model |
+| [ws074-p253](phase253/phase.md) | ordinary attribute mutation records | uncleared / q17 scoped partial cleared・controls15/35DOM/global旧PASS維持 | p209 q16 preflight、p242 observer model |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 
@@ -1209,3 +1211,7 @@ Event ws074-q16-uncleared-p253-added-20261018: [q16証拠](phase209/evidence/202
 Event ws074-q17-attribute-combined-selected-20261018: [p253](phase253/phase.md)ordinary attribute records → [p209](phase209/phase.md)新attempt再検証 → [p190](phase190/phase.md) strict48を最大90分で選定。q16 hash/48704d92b read-back後に開始、各Phaseへ自身の設計/resumeを配送。namespace/Attr/multi-target/characterData等は未実装面として明示。latest full q14 rawをbeforeとするcombined final1491/static1561でold whole491/839を確認し、条件/分母/WPTを緩めない。共有projection pending。
 
 Event ws074-p253-native-list-owner-design-20261018: p253新attribute recordではArrayのconstructor名を付けるhelperを使わず、native collection/NodeList brandとempty coreを実装する設計へ確定。source collection.cを同Phase内部providerとして追加、Radio/HTMLCollection既存brandを維持。active Window-owned ordinary setterがfirst partial、standalone/cross-doc/namespace/Attr/multi-target/full IDL等は未実装を明示。p242へ既存snapshot helperの限界も記録し、strict15/1491/static1561 gateは不変。共有projection pending。
+
+Event ws074-p190-q17-strict48-partial-clear-20261018: [p190 evidence](phase190/evidence/20261018-q17/README.md)。controls15/15のverified output後、fixed48をstrict条件で全実行し39 PASS/9 readiness_missing、coverage partial cleared。9件はmodule top-level await4・CSS animationend1・ViewTransition API3・style/child transition event1へnative調査を残す。画像だけを成功扱いせず、current全体はq17 global1491待ち。静的1561は839維持/旧PASS後退0・全reference pixel unchanged。p190 whole/WS whole・共有projection pending。
+
+Event ws074-q17-finished-20261018: [exact history](history/ws074-q20261018-17.md)・[global evidence](phase253/evidence/20261018-q17/README.md)。全harness1491はwhole491・callback11531 PASS/20226 FAIL/14 NOTRUNを維持し、whole/callback後退・改善・欠損・追加・順序変更0。全static1561は839 PASS/722 FAIL、全reference pixel metrics unchanged。strict48は39 PASS/9 readiness_missing。最終source f1b83fa8f/pair hash read-back一致、固定WPT tracked clean。確認済み1369/3805（35.978975%）、q14から39増。未実行292 harness/413 reftest・native crash依存9は残す。 全3 scoped item cleared、p190/p209/p253各whole uncleared・WS incompleteを保持。origin/producer/coverageへ個別event配送済み。次Queueはnative first-ready captureとscripted413を候補へ（まだ未選定）、shared projection pending。

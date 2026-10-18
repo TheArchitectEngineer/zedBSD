@@ -1,0 +1,43 @@
+{
+  "eligible": 1491,
+  "eligible_sha256": "8eb1a5cacf64d34ab0b36d026b6f1335725ce9f9f886ba69b9c286bac8319727",
+  "counts": {
+    "before": {
+      "outcomes": {
+        "fail": 950,
+        "no_completion": 21,
+        "pass": 491,
+        "harness_error": 3,
+        "no_output": 24,
+        "multiple_completions": 2
+      },
+      "callbacks": {
+        "1": 20226,
+        "0": 11531,
+        "3": 14
+      }
+    },
+    "after": {
+      "outcomes": {
+        "fail": 950,
+        "no_completion": 21,
+        "pass": 491,
+        "harness_error": 3,
+        "no_output": 24,
+        "multiple_completions": 2
+      },
+      "callbacks": {
+        "1": 20226,
+        "0": 11531,
+        "3": 14
+      }
+    }
+  },
+  "new_pass": [],
+  "whole_regressions": [],
+  "callback_improvements": [],
+  "callback_regressions": [],
+  "missing": [],
+  "extra": [],
+  "name_order_changed": []
+}

@@ -2,7 +2,7 @@
 
 # ws074-p190: Interop 2025 reftest・crashtest runner coverage
 
-Status: in-progress（q17再検証partial、q16 uncleared履歴保持）
+Status: uncleared（q17 strict48 coverage partial cleared、39 PASS/9 missing・whole未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -203,3 +203,15 @@ Event ws074-p253-attribute-redesign-from-q16-20261018: [p253](../phase253/phase.
 Event ws074-p253-q17-selected-20261018: [p253 q17](../phase253/phase.md)をordinary set/remove attribute records/filter/options/GCの有限partialで選定。本Phaseはそのneeded native outputと全15 controls成立後に新attemptを実行。q16 history/未達は保持し、global1491/static1561は同じcombined final sourceで初めて判定する。q17 exact scope/deadline/順をQueueへ保存、full API/WS/p100/targetは別関門。
 
 Event ws074-q17-preflight-20261018: ordinary attributes・post-font native controls15/15、Chrome新fixtureのpayload/options/GC出力一致、DOM35/35を確認。q17 final frozen pairでglobal1491/static1561とstrict固定48の実測へ進む。global未実行のためterminal clearanceは未判定。
+
+Event ws074-p190-q17-i03-cleared-20261018: [strict48 actual evidence](evidence/20261018-q17/README.md)。final pair/公式controls15/15後に固定48を全件実行、39 pass・9 readiness_missing、signal/timeout0。nonce/URL/single complete/load/fonts/2RAF/test-wait・最終paintを保ち、全raw/checkpoint/PPM保持と全48PNG RGB/read-back hash一致。q17-i03 coverage partial cleared、p190 whole uncleared（9 native依存・dynamic413等）。q15/q16未達は履歴として保持し、i01/i02のglobal1491比較は進行中のためcandidate全体の総数を未確定のままにする。共有projection pending。
+
+## q17後のcandidate / scripted reftest413
+
+q17 sourceの公式font/2RAF/attributes待機が15対照で成立したため、未実行413（script402・script_reference5・URL variant6）のstrict計測を次Queue候補とする。test sourceは全413 plain .html、直接referenceは266 HTMLと1 XHTML unique（chain等は選定前に追加確認）。現在のstatic1561 toolとengineを変えず別の試験toolでpinned test-wait.jsのclassname=reftest-waitを実行し、各test/referenceにload/fonts/2RAF/単一complete/nonce・URL/最終paintを要求する案。各原source bytes・同origin HTTP resource/query・fuzzy/match/mismatch/reference-chainを保ち、missing/duplicate/error/timeoutは非PASSとする。XHTML referenceの正しいMIME/CDATA injectionも独立対照が前提。全raw/console/PPM/PNG/RGB hash・checkpointをcase別に保持する。
+
+実装には次の有限Queueでexact controls（delayed wait/TestRendered/永久wait/child isolation、match/mismatch/fuzzyとchainのfalsePASS拒否、query変種、XHTML）・全413とstatic1561 ID disjoint union1974を定義する。新native依存が出てもWPTや判定を緩めず未達として記録。現Queueの承認scopeを越えてrunnerを変更しておらず、今はread-only inventoryと計画のみ。p252 flex-basisは依存無くplannedのまま、未実行分母を先に計測する価値を次Queue選定時に評価する。
+
+Candidate refinement（q17 read-only source review）: 現CLIの--settle-ms=5000はcomplete通知の後も未来timerをdrainしてから描画する。crashのalive判定には保守的だが、scripted pixel比較では「ready時点は赤、未来timerで緑」の誤PASSリスクがある。次Queueでは既存public <browser.h>だけを使う試験clientを候補へ加え、同じfrozen libbrowserへlinkし、absolute budgetを1ms刻みでsettleして最初の有効readyを観測した外側call直後にdraw_pixelsする案を定義する。callback中は状態保存/console出力だけで同じviewへ再入しない。late timer対照で未来の画素を先取りしないこと、child network/zero-loop/deadline/duplicate/errorで非PASSを保つことを前提にする。新client C全文/format/host/target single-source/boundary検証を次Queueに含め、production engine/app/public ABIは変えない。
+
+同pinned executor base.pyのcheck_pass/get_fuzzy/DFSをread-onlyで確認。動的側はfuzzyの上下限・zero例外・参照ごとのoverrideとmatch/mismatchを含むleafへの成功pathを扱う必要がある。旧static helperのall-mismatch条件は保守的でfull official equivalenceは未達として保持。static1561の直接fuzzy下限>0は2件ともFAILで、今回839 PASSへ影響しないことをinventoryで確認。次Queueで原典に基づく対照と検証boundsを明示し、現Queue中のrunner実装は行わない。

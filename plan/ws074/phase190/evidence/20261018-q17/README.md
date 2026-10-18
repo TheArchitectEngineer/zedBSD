@@ -1,4 +1,4 @@
-# q17 strict crash actual48（終端global gateは別途記録）
+# q17 strict crash actual48（q17終端確認済み）
 
 q15/q16で前提未達だった公式待機を、native post-font pumpとordinary attribute observerを備える同じfinal frozen pairで実行。判定条件を変更せず固定48 IDすべてを実行し、**39 pass / 9 readiness_missing**。exit0/image単独ではPASSへ変換しない。9件は全てexit0だが公式completeなし。signal/timeoutは0。
 
@@ -13,4 +13,8 @@ q15/q16で前提未達だった公式待機を、native post-font pumpとordinar
 * document-element-detached / list-style-position-style-change / root-element-display-none-during-transition: startViewTransitionの呼出しでTypeError。native ViewTransition API/lifecycleが残る。
 * iframe-transition-destroyed-document: style要素load/errorからのhandler起動を含む経路が未到達。無consoleを成功とせず、stylesheetイベント・子Document transitionの独立native調査が必要。
 
-これはp190のstrict48 coverage partialであり、未対応static413やWSの100%を達成したとはしない。global1491/static1561の同一final pair比較が終わるまでq17 terminal clearanceと全体確認済み総数は未確定。共有Master/Queue/GitHub投影はpending、pushなし。
+これはp190のstrict48 coverage partialであり、未対応static413やWSの100%を達成したとはしない。q17前半ではglobal比較待ちでterminal clearance/全体総数を未確定として保持し、末尾の終端結果で確定した。共有Master/Queue/GitHub投影はpending、pushなし。
+
+## q17終端global
+
+全harness1491はwhole491・callback11531 PASS/20226 FAIL/14 NOTRUNを維持し、whole/callback後退・改善・欠損・追加・順序変更0。全static1561は839 PASS/722 FAIL、全reference pixel metrics unchanged。strict48は39 PASS/9 readiness_missing。最終source f1b83fa8f/pair hash read-back一致、固定WPT tracked clean。確認済み1369/3805（35.978975%）、q14から39増。未実行292 harness/413 reftest・native crash依存9は残す。 [global evidence](../../../phase253/evidence/20261018-q17/README.md)。q17-i03 coverage partial cleared・p190 whole unclearedを維持。

@@ -1,0 +1,61 @@
+{
+  "source_commit": "f1b83fa8fab651853bbdf39e4b3ea1dfdf614e2b",
+  "harness": {
+    "before": {
+      "outcomes": {
+        "fail": 950,
+        "no_completion": 21,
+        "pass": 491,
+        "harness_error": 3,
+        "no_output": 24,
+        "multiple_completions": 2
+      },
+      "callbacks": {
+        "1": 20226,
+        "0": 11531,
+        "3": 14
+      }
+    },
+    "after": {
+      "outcomes": {
+        "fail": 950,
+        "no_completion": 21,
+        "pass": 491,
+        "harness_error": 3,
+        "no_output": 24,
+        "multiple_completions": 2
+      },
+      "callbacks": {
+        "1": 20226,
+        "0": 11531,
+        "3": 14
+      }
+    }
+  },
+  "static": {
+    "before": {
+      "fail": 722,
+      "pass": 839
+    },
+    "after": {
+      "fail": 722,
+      "pass": 839
+    }
+  },
+  "crash": {
+    "pass": 39,
+    "readiness_missing": 9
+  },
+  "verified_pass": 1369,
+  "denominator": 3805,
+  "percentage": 35.978975032851515,
+  "unexecuted": {
+    "harness": 292,
+    "reftest": 413
+  },
+  "hashes": {
+    "harness-raw.tar.gz": "eaa074b211567f4c3c909a5da6d04ed753f32c3d4633f04203b158380b849d47",
+    "harness-comparison.json": "0ee0687d4577b925fdb2b783188a39f532fee61bfb84ee6ebaecdf53d7ed9691",
+    "static-comparison.json": "14a72f19f413a18596427f1d068bc41f48ee0cad4aca9ee2f05e59b2dcddb9a8"
+  }
+}
