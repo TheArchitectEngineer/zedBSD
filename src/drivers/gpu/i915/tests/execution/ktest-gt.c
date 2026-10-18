@@ -1432,7 +1432,7 @@ i915_ktest_gt_rc6(
 	kern_memset(&t->rc6, 0, sizeof(t->rc6));
 	drv_i915_rc6_init(&t->rc6, &t->mmio);
 	t->fake.wt_n = 0U;
-	drv_i915_gen11_rc6_enable(&t->rc6, &t->mmio, &t->wa_gt);
+	drv_i915_rc6_enable(&t->rc6, &t->mmio, &t->wa_gt);
 
 	/* Render, media and sampler power gating, plus HCP and MFX for VCS0 and VCS2. */
 	pg_expected = 0x7U | (1U << 3) | (1U << 4) | (1U << 7) | (1U << 8);
@@ -2867,7 +2867,7 @@ i915_ktest_gt_power_sanitize(
 	t->sanitize_rc6.supported = 1;
 	t->sanitize_rc6.enabled = 1;
 	t->fake.wt_n = 0U;
-	drv_i915_rc6_sanitize(&t->sanitize_rc6, &t->mmio);
+	drv_i915_rc6_disable(&t->sanitize_rc6, &t->mmio);
 
 	/* PG_ENABLE, RC_CONTROL and RC_STATE go to 0 before init_hw. */
 	pg_enable = i915_fake_wt_find(&t->fake, 0xa210U, 0U, 0xffffffffU);
@@ -2884,8 +2884,8 @@ i915_ktest_gt_power_sanitize(
 	/* Sanitizes an unsupported RC6, then RPS. */
 	t->sanitize_rc6.supported = 0;
 	t->fake.wt_n = 0U;
-	drv_i915_rc6_sanitize(&t->sanitize_rc6, &t->mmio);
-	drv_i915_rps_sanitize(&t->sanitize_rps, &t->mmio);
+	drv_i915_rc6_disable(&t->sanitize_rc6, &t->mmio);
+	drv_i915_rps_mask_all(&t->sanitize_rps, &t->mmio);
 
 	/* An unsupported RC6 writes nothing; RPS masks every PM interrupt. */
 	rc_control = i915_fake_wt_find(&t->fake, 0xa090U, 0U, 0xffffffffU);

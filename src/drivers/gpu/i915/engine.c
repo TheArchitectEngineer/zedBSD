@@ -530,10 +530,10 @@ drv_i915_gt_resume(
 	 * Nothing was ever submitted, so nothing is abandoned.  Quiets the RPS
 	 * interrupts.
 	 */
-	drv_i915_rps_sanitize(&gi->rps, mmio);
+	drv_i915_rps_mask_all(&gi->rps, mmio);
 
 	/* Turns RC6 and power gating off. */
-	drv_i915_rc6_sanitize(&gi->rc6, mmio);
+	drv_i915_rc6_disable(&gi->rc6, mmio);
 
 	/* Programs the GT workarounds and MOCS. */
 	drv_i915_gt_init_hw_core(gi, gt, mmio);
@@ -565,7 +565,7 @@ drv_i915_gt_resume(
 	}
 
 	/* Enables RC6. */
-	drv_i915_gen11_rc6_enable(&gi->rc6, mmio, gt);
+	drv_i915_rc6_enable(&gi->rc6, mmio, gt);
 
 	/* Succeeded: the GT is resumed. */
 	return 0;
