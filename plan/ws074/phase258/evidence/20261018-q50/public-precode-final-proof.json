@@ -1,0 +1,19 @@
+{
+  "old726_prefix_unchanged": true,
+  "new26_genuine_all_match": true,
+  "precode16_final_native_and_chrome_PASS": true,
+  "precode_gc_returncodes": [
+    -11,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "all6_gc_final_PASS": true,
+  "one_precode_SIGSEGV_final_completed": true,
+  "remaining5_gc_precode_already_PASS": true,
+  "actual_post_coercion_threshold_collection_counter_gate": true,
+  "threshold_gate_old_version_not_measured": true,
+  "no_new_weak_reclamation_or_arbitrary_mid_parse_gc_gate": true
+}

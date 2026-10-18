@@ -23,7 +23,7 @@
 <!-- master:merge:start -->
 - 全担当の成果は main に merge 済み（2026-10-15 15:50 に全 worktree を確かめた、未 merge の commit なし。ユーザー「よほどのことがないかぎりすべてをmainに入れてください。」）。
 - Pi の Bluetooth: 8e8d69ae2 で config/ci/config-rpi4.mk の CONFIG_DRIVER_BCM2711_BT・CONFIG_DRIVER_USB_BT を n（ユーザー「Pi4はBluetoothドライバのカーネルモードエラーでうまく動作しない…一度Bluetoothをmainから外してください」）。その後 ae3bb07c4（10-15 14:10、Q1 以外の commit）で CONFIG_DRIVER_USB_BT を y に戻した。ユーザーの意図した変更として扱う（2026-10-15 ユーザーの承認、Q1 の提案どおり）。
-- 既定: nvrtx は on（config/ci/config-amd64.mk・config/drivers/pci.drivers が y。repo の config.mk は n で、これもユーザーの意図として扱う）、Pi の VCHIQ・VIDEO は on（config/ci/config-rpi4.mk）、Gen9 の display は full（gen9-display.h）。
+- 既定: nvrtx は on（config/ci/config-amd64.mk・config/drivers/pci.drivers が y。repo の config.mk は n で、これもユーザーの意図として扱う）、Pi の VCHIQ・VIDEO は on（config/ci/config-rpi4.mk）、Gen9 の display は常に全部を駆動（WS260 で xd9 に書き直し、起動の語 i915.gen9.display= は 2026-10-18 に廃止）。
 <!-- master:merge:end -->
 
 ### Q1 の次の手順
@@ -579,7 +579,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS258](ws258/ws.md) | MG001 | 全ドライバの出典の表記を guardrail に（file の先頭から block へ）（2026-10-18 ユーザー） | completed（2026-10-18、残りは WS244・WS259） | — |
 | [WS259](ws259/ws.md) | MG005 | RTL8822B の表（rtl8822b-tables.inc）を値の引用に書き換える（2026-10-18 ユーザー） | planning（WS244 の後） | p001 |
 | [WS260](ws260/ws.md) | MG006 | i915 の Gen9 の display（gen9-*.c）を xd と同じく自前で書き直す（2026-10-18 ユーザー） | incomplete（p001 を P1、q1252） | p001 設計 |
-| [WS261](ws261/ws.md) | MG008 | include/kern/boot.h から PC-98・Raspberry Pi の固有の構造体を除く（2026-10-18 ユーザー） | incomplete（p001 を P3、q1254） | p001 |
+| [WS261](ws261/ws.md) | MG008 | include/kern/boot.h から PC-98・Raspberry Pi の固有の構造体を除く（2026-10-18 ユーザー） | completed（2026-10-18） | — |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
@@ -1145,7 +1145,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [plan/tools/switchbot.py](tools/switchbot.py)（2026-10-15） | SwitchBot のプラグで電源を入り切り（`list`・`status ID`・`on|off ID`・`cycle ID [秒]`）。token・secret は `~/.config/switchbot/credentials`（mode 600、tree に入れない）。プラグ AC276E42B252（Plug Mini (JP)「プラグミニ(JP) 52」）＝Pi 4 の電源（2026-10-15 ユーザーがつないだ、on で約 86 mA・100 V を読める）。**Q1 だけが使う**（担当は Pi が戻らない時に Q1 に頼む） |
 | [plan/ws037/tests/nvrtx-sm75-desktop-test.sh](ws037/tests/nvrtx-sm75-desktop-test.sh)・[nvrtx-sm75-host-test.sh](ws037/tests/nvrtx-sm75-host-test.sh)（ws037-p008、2026-10-15） | nvrtx の SM75 の shader compiler: desktop の全 shader と `plan/ws037/tests/sm75/` を compile し、SM75 の interpreter（依存の検査つき）と IR の参照の interpreter で 200 入力ずつ比べる（`--strict`）。host-test は encode の既知の語・compute・QMD・draw の push。部品 `sm75-machine.[ch]`・`sm75-reference.[ch]`・`sm75-desktop-extract.py` |
 | [plan/ws039/tests/amdrdna-compiler-host-test.sh](ws039/tests/amdrdna-compiler-host-test.sh)・[amdrdna-compiler-desktop-test.sh](ws039/tests/amdrdna-compiler-desktop-test.sh)（ws039-p007、2026-10-15） | amdrdna の GFX10 の compiler の回帰: 既知の命令語（llvm-mc と比べる）、compute・graphics の module を GFX10 wave32 の interpreter と IR の参照で比べる、desktop の全 shader（44 module）の差分。llvm-mc-19 が要る | `sh plan/ws039/tests/amdrdna-compiler-host-test.sh`、`sh plan/ws039/tests/amdrdna-compiler-desktop-test.sh` |
-| [plan/ws237/tests/](ws237/tests/)（WS237、2026-10-15 completed） | i915 の Gen9・Gen9.5 の display の host 試験: `run-gen9-flip-host-test.sh`・`run-gen9-backlight-host-test.sh`・`run-gen9-mode-host-test.sh`・`run-gen9-modeset-host-test.sh`・`run-gen9-outputs-host-test.sh`・`run-host-boot-gen9-display.sh`・`run-host-gen9-display-step.sh`（段の上限）。試験の image の config `config-amd64-gen9-flip.mk` |
+| [plan/ws237/tests/](ws237/tests/)（WS237、2026-10-15 completed） | i915 の Gen9・Gen9.5 の display の host 試験: `run-gen9-flip-host-test.sh`・`run-gen9-backlight-host-test.sh`・`run-gen9-mode-host-test.sh`・`run-gen9-modeset-host-test.sh`・`run-gen9-outputs-host-test.sh`（2026-10-18 WS260 で source は xd9-*.c に。段の語の試験 run-host-boot-gen9-display.sh・run-host-gen9-display-step.sh と config-amd64-gen9-flip.mk は語の廃止で削除） |
 | [plan/ws157/tests/run-host-jpeg-scale.py](ws157/tests/run-host-jpeg-scale.py)（ws157-p017、2026-10-13） | libjpeg-compat の 1/2・1/4・1/8 の縮小 decode を djpeg -scale と比べる（大きさ・差 ≤2・PSNR、壊した file で crash 0、ASan・UBSan） | `python3 plan/ws157/tests/run-host-jpeg-scale.py` |
 | [plan/ws172/tests/passkey-linux-host-test.sh](ws172/tests/passkey-linux-host-test.sh)（ws172-p011、2026-10-13） | Linux の Keiland の /opt/keiland/sbin/passkey（password・PIN の登録と照合、/opt/keiland/etc/passkey の行と mode 600、fido2 は fail no-key） | sudo が要る（unshare -m で試験の passwd・shadow を bind mount、host の file は変えない） |
 | [plan/tools/hwsv7/README.md](tools/hwsv7/README.md)・[setup.sh](tools/hwsv7/setup.sh)（ws229-p005、2026-10-14） | 8 世代の Let's Note SV7（10.0.10.27、UHD 620 8086:5917、Gen9.5）の iGPU の passthrough の試験機の手引きと準備（~/bigbang/ への写しと 13 の確かめ、QEMU は起動しない）。試験の script は `I915_MACHINE=sv7` で SV7 を選ぶ（`plan/ws031/tests/hw-machine.sh`、既定は 5330） | SV7 は Linux で起動し iGPU が vfio-pci |

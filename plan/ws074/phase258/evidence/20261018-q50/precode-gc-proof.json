@@ -1,0 +1,47 @@
+[
+  {
+    "case": "json-reviver-gc-nested-root-and-holder",
+    "returncode": -11,
+    "control": []
+  },
+  {
+    "case": "json-reviver-gc-primitive-root-holder",
+    "returncode": 0,
+    "control": [
+      "console: read-proxy json-reviver-gc-primitive-root-holder: PASS",
+      "console: read-proxy controls: 1/1"
+    ]
+  },
+  {
+    "case": "json-reviver-gc-detached-saved-object",
+    "returncode": 0,
+    "control": [
+      "console: read-proxy json-reviver-gc-detached-saved-object: PASS",
+      "console: read-proxy controls: 1/1"
+    ]
+  },
+  {
+    "case": "json-reviver-gc-proxy-keys-and-descriptors",
+    "returncode": 0,
+    "control": [
+      "console: read-proxy json-reviver-gc-proxy-keys-and-descriptors: PASS",
+      "console: read-proxy controls: 1/1"
+    ]
+  },
+  {
+    "case": "json-reviver-gc-fresh-child-replacement",
+    "returncode": 0,
+    "control": [
+      "console: read-proxy json-reviver-gc-fresh-child-replacement: PASS",
+      "console: read-proxy controls: 1/1"
+    ]
+  },
+  {
+    "case": "json-reviver-gc-callback-error-cleanup",
+    "returncode": 0,
+    "control": [
+      "console: read-proxy json-reviver-gc-callback-error-cleanup: PASS",
+      "console: read-proxy controls: 1/1"
+    ]
+  }
+]

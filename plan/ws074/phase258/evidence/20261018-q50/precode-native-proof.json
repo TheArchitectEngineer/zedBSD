@@ -1,0 +1,24 @@
+{
+  "returncode": 1,
+  "failed": [
+    "json-reviver-proxy-array-in-unvisited-sibling",
+    "json-reviver-proxy-object-key-order",
+    "json-reviver-descriptor-snapshot-before-child-callback",
+    "json-reviver-ordinary-enumeration-snapshot",
+    "json-reviver-symbol-skipped-before-descriptor",
+    "json-reviver-revoked-array-rejected",
+    "json-reviver-nested-proxy-array",
+    "json-reviver-array-synthetic-length-get",
+    "json-reviver-ownkeys-error-identity",
+    "json-reviver-descriptor-error-before-child-get",
+    "json-reviver-array-length-error-identity",
+    "json-reviver-define-refusal-ignored",
+    "json-reviver-delete-refusal-ignored",
+    "json-reviver-define-error-identity",
+    "json-reviver-delete-error-identity",
+    "json-reviver-no-tojson-consultation"
+  ],
+  "control": [
+    "read-proxy controls: 730/746"
+  ]
+}

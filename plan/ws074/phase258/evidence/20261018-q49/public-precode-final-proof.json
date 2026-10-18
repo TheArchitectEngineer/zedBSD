@@ -1,0 +1,17 @@
+{
+  "old690_prefix_unchanged": true,
+  "new36_genuine_all_match": true,
+  "precode22_all_final_native_and_chrome_PASS": true,
+  "precode_gc_returncodes": [
+    -11,
+    -11,
+    1,
+    1,
+    1,
+    1
+  ],
+  "all6_gc_final_native_and_chrome_PASS": true,
+  "old_gc2_actual_SIGSEGV": true,
+  "old_gc4_functional_FAIL": true,
+  "no_new_weak_address_reclamation_gate": true
+}

@@ -2,16 +2,16 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: in-progress（q49 JSON stringify partial、whole Proxy未達）
+Status: in-progress（q51 object spread/rest partial、whole Proxy未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
-Queue: ws074-q20261018-49-i01（q30〜q48 partial履歴保持）
+Queue: ws074-q20261018-51-i01（q30〜q50 partial履歴保持）
 Origin: p189/q29 original WebIDL2 parseがProxy未定義で停止。
 
 Objective / own criteria: native managed Proxyを実object internal methodsへ接続し、constructor/revocableと各internal operationのtrap/fallback/invariant/receiver/revocation/callability/GCを正しく実行する。original WebIDL2 actual parse/validatorに必要なget/set/array behaviorを通常APIで提供し、independent controls/原WPTを通す。部分read stageだけでwholeをclearしない。
 Design: vm_native_operationsはscript-free heap interfaceのまま保持。Proxyにはmanaged target/handler recordを持たせ、scriptを実行可能なrealm-aware access/internal methodからtrapを呼ぶ。opaque JS constructor公開前に必要なoperationを段階的に整える。各段階は自走承認に基づく新finite Queueで正確に選定する。
-Current state: q48 Object tag/concat/flat IsArray consumer partial clear、native690/Chrome688は既知huge2差、boxed source actualGC/実回収保持。全1508 q46全callback/completion同一・1482/3805。Species/for-in/JSON/primitive/call/construct/newtarget/global等whole未達。main包含確認・master編集無し。
+Current state: q50 JSON.parse/reviver partial clear、native752/Chrome750既知huge2差、新26一致・precode16FAIL/GC1SIGSEGV解消。dynamic fresh coercion text後actual threshold collection確認。全1508最新q49再利用・q50未測定・1482/3805。source-context/幅/for-in/call/global/p100/whole未達、main統合・master編集無し。
 Standards: Guardrail/C全文/browser component全文、簡約版無し。一次 https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-proxy-object-internal-methods-and-internal-slots-get-p-receiver 。既存p100がWS全source near-final conformanceを所有し、本partialはnew/changed scopeの全文適合を検証。
 Verification/bounds/affected components: q30 snapshotの通り。private object kind/cell/newborn/trace/revokeとactual receiver/trap/invariant/GCをnative/Chromeで確認し、ordinary whole/callback PASSを守る。target single-source compileのみとfull target runtimeを区別。未達はunclearedとresume。
 
@@ -290,3 +290,35 @@ Archives: harness-all-raw 1676 members SHA2565bcd28a197329a988eeba2aa5384441abbb
 [証拠](evidence/20261018-q48/README.md)。次finite scope未選定。
 
 Event ws074-p258-q49-selection: JSON.stringify realm IsArray/ownkeys/descriptor順とwriter/property/list/keyvector callback所有partialを選定。parse/reviver/幅/global等whole未達。[exact Queue](../queue.md)。main統合確認・master.md編集無し。
+
+## q49 JSON.stringify result / resume
+
+Event ws074-p258-q49-partial-cleared-20261018: q49 JSON.stringify scoped partial cleared。selection WIP1a215fd22/source WIP2419e264c。value/replacer array判定をactual IsArrayへ、object enumerationをactual realm OwnKeys/GetOwnへ接続。string keysの全descriptorを最初のvalue Getより前にsnapshotし、Symbolはdescriptor照会前に除外。explicit PropertyListはown/enumerability filter無しでinherited/nonenumerable値もGetする。primitive BigIntもtoJSON Getを行い、その後replacer、actual boxed primitiveのunbox、残存BigInt TypeErrorの順。
+writer tracerは全fields/buffers初期化後・最初のscript前登録、managed realm/replacer/normalized PropertyList/root holder/key/cycle ancestorsを保持。property/list wrapper tracerはfresh value/method/key/holder/coerced list elementを保持しinnerの全early return後に必ず退役。own-key vector tracerは全descriptor callback中に未訪問keyを保持しin-place compactionは既訪問slotだけへ書く。descriptor payloadは属性検査以後読まず、payload保持を偽って要求しない。parse/reviver/space/serialize_array/enter等の全tokensとVM全source/headers/native_operations定義/commentは不変。
+old690 prefix同一、新36 native/genuine Chrome結果一致。precode q48 frozenはfirst30 non-GC条件698/720（追加22FAIL）。隔離6 GC入力のprecode actual returncodesは-11,-11,1,1,1,1、先頭2はdetached ancestor/fresh replacer result経由のactual SIGSEGV、残り4はfunctional FAIL。全入力source/stdout/stderr/status保持。final shared726/726で6件もPASSし完走、Chromium724/726は既知q43巨大length2差だけ。q36negative-zero classifier filter継承、全pure genuine equalityとはしない。6 GC controlsのChrome bridgeはno-opでありnativeのactual collect対照と区別する。新weak-address回収fixtureは未測定、全graph reclaimを新証拠と主張しない。
+full changed9 C functions manual＋clang-format19/checked style許可single forward cleanup26・other0、cleanup一箇所/全jumpがlabel前を確認。host initial/final build warning0、q02 literal builtin_json1 Csource -oだけ変更target warning0、versions実取得。focused proxy/delegation10/interp45/factory56/DOM41/CSSOM12+12/marks7/observer10/ErrorEvent9/ErrorReporting19/Acid全exit0、Acid3 score/inventory100/pixel0、Acid2既存873。元WebIDL4positive＋intentionalnegative source/callback q38同一、validator require-exposed2と意図的FAIL native/Chrome同一。
+固定1508全件をeligible digest82147e6edaec1b3b8d537e46eb71b64f2f03132cc12803e284c6ca72377779e7/settle5000/process20で356.7秒実測、q48全whole/callback/completion object完全同一。494 PASS/955 FAIL/13 harness_error/20 no_completion/24 no_output/2 multiple、callbacks11540 PASS/20642 FAIL/14 NOTRUN、whole gain/loss/old PASS callback loss/差0。static844/scripted105/crash39はq28証拠再利用・newpair全image/crash capture未測定、公式確認済1482/3805（38.948752%）・held0・未attempt275維持。
+最初128件はq48 44.0秒/q49 140.1秒、同じflex-flow-valid1件の限定再実測は両方0.216秒・判定/callback/completion同一。host load変動も観測したが原因を断定せず、全性能同値も主張しない。timing原出力保持。
+JSON.parse/reviverの所有/Proxy routing、uint32/int32幅・JSON_DEPTH_MAX/resource policy・RawJSON、Species/constructor/newtarget/for-in/spread/primitive Set/outer instanceof/BoundFunction/call/construct/global Proxy・revocable/Reflect、upper-index storage/typed backing/immutable prototype/p100/full target/whole p258/WS100%は未達。global Proxy/Reflect非公開・ABI2/Wayland/WPT・runner・期待値/SDK/toolchain/sysroot不変。
+ユーザー「マージしながら」に従いsource2419e264cのmain包含・競合無し・source commitにmaster.md変更無しを実確認。owned WIPとしてmainに統合済み、ws.md/Phaseへ記録しmaster.mdは編集しない。共有Master/Queue/cache/GitHub投影はQ1所有/pending、push無し。p189には本測定validation outputだけ投影、新attempt/whole clearance無し。
+Archives: harness-all-raw 1676 members SHA2565127febd2683798dd849e067f4999f96d78e1b36c1ea152f84b35bf52e6535c5, native-oracle-and-build-raw 119 members SHA256869a70bf94cb76206c273a3de4f588a8475ded0213ec9b7229f4b728293c7e72を全member順次read-back。runtime binaryはhash付きbuild保持・archive非同梱。
+
+[証拠](evidence/20261018-q49/README.md)。次finite scope未選定。
+
+Event ws074-p258-q50-selection: JSON.parse text/recursive frames/reviver所有とactual IsArray/OwNKeys/GetOwn snapshotを選定。new source-context/幅/global等whole未達。[exact Queue](../queue.md)。main統合・master編集無し。
+
+## q50 JSON.parse/reviver result / resume
+
+Event ws074-p258-q50-partial-cleared-20261018: q50 JSON.parse/reviver scoped partial cleared。selection WIPa11be7365/source WIP9a6b5916f。top parser tracerを入力coercion前登録しmanaged realm/coerced text/parsed root/reviver/root holder/keyを保持。object/array wrapper+inner frameはまだparentへinstallしていないcontainer/name/member/keyを再帰allocation中保持し全exitで退役。reviver wrapper+innerはsaved value/holder/key/callback/child result/string keyを独立保持し、parent propertyの削除や置換に依存しない。
+reviver value分類はactual IsArray、arrayはactual lengthのindex snapshot（OwnKeys/GetOwnを呼ばない）。objectはactual OwnKeys→Symbols除外→全GetOwn enumerable string-key snapshot→child recursion、native keyvectorをcallback中trace。Delete/Define falseは規定どおり無視、元throw/errnoは伝播。json_enumerable_keysのin-place compactionは既訪問slotだけを上書き、descriptor payloadは次callback後に読まない。parser grammar/json_value/string/numberとq49 stringify群のtokens不変、VM全source/headers/native_operations定義/comment不変。
+old726 prefix同一、新26 native/genuine Chrome結果一致。precode q49 frozen first20条件730/746（追加16FAIL）、隔離6 GC returncodes -11,0,0,0,0,0。nested reviver collection1入力でactual SIGSEGVを再現し、final同入力完走。他5 GC入力は既存版でもPASSで修復件数に加えない。final native752/Chrome750の差は既知q43huge2のみ、q36negative-zero classifier filter継承。全pure genuine equalityではない。native collect bridgeは実GC/C stack scan無し、Chrome collect bridgeはno-opで結果だけを対照。
+追加private normal VM native pressure bridgeは既存production8MiB thresholdをinert allocationで満たし実collector counterを返すだけ。JSON input toString内でparts.joinによりfresh textを作り、coercion frame退役後のparser allocationにactual collectionが発生したことをcounter増加とparsed outputで確認。初期probeはconstant literalを使っていたためfresh-text根拠にせず、final前にdynamic joinへ直した。初期build/runtime logs保持。旧threshold counterpart/new weak-address回収/任意mid-parser GC coverageは未測定で、その修復/全回収を主張しない。
+full changed15 C functions manual＋clang-format19/checked style許可single forward cleanup48・other0、全jumpが唯一cleanupより前を確認。host initial/final warning0、q02 literal builtin_json1 Csource -oだけ変更target warning0、versions実取得。focused proxy/delegation10/interp45/factory56/DOM41/CSSOM12+12/marks7/observer10/ErrorEvent9/ErrorReporting19/Acid全exit0、Acid3 score/inventory100/pixel0、Acid2既存873。元WebIDL4positive＋intentionalnegative source/callback q38同一、validator require-exposed2と意図的FAIL native/Chrome同一。fresh final source/hash317件凍結照合。
+今回はexact選定どおりfocusedのみ。全1508最新q49 356.7秒を再利用（q48全whole/callback/completion同一）。q50 pair全census未測定、whole gain/同値を新測定と主張しない。harness494 PASS/955 FAIL/13 harness_error/20 no_completion/24 no_output/2 multiple、callbacks11540 PASS/20642 FAIL/14 NOTRUN、static844/scripted105/crash39はq28証拠再利用・newpair全image/crash capture未測定。公式確認済1482/3805（38.948752%）・held0・未attempt275維持。
+新JSON.parse source-context第三引数/parseRecord/source text/RawJSON、uint32/int32幅・JSON_DEPTH_MAX/resource policy、for-in/spread/primitive Set/outer instanceof/BoundFunction/callable/call/construct/newtarget/Species/global Proxy・revocable/Reflect、upper-index storage/typed backing/immutable prototype/p100/full target/whole p258/WS100%は未達。global Proxy/Reflect非公開、ABI2/Wayland/WPT・runner・期待値/SDK/toolchain/sysroot不変。
+ユーザー「マージしながら」に従いsource9a6b5916fのmain包含・競合無し・source commitにmaster.md変更無しを実確認。owned WIPとしてmainに統合済み、ws.md/Phaseへ記録しmaster.md編集無し。共有Master/Queue/cache/GitHub投影はQ1所有/pending、push無し。
+Raw archive107 members SHA2564bae3961e274c47e6d12546483995e5a78feea452751bb8f2da7f8ffb630ce16を全member順次read-back。runtime binaryはhash付きbuild保持・archive非同梱。q49 harness原archive1676 members SHA2565127febd2683798dd849e067f4999f96d78e1b36c1ea152f84b35bf52e6535c5を参照しq50実測とは混同しない。
+
+[証拠](evidence/20261018-q50/README.md)。次finite scope未選定。
+
+Event ws074-p258-q51-selection: CopyDataProperties/rest actual OwnKeys/GetOwn/Define・exclusion順/GC所有partialを選定。for-in/幅/global等whole未達。[exact Queue](../queue.md)。main統合・master編集無し。

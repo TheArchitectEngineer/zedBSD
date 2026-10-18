@@ -372,3 +372,5 @@ Event ws074-p189-q44-verification-output-20261018: p258 Object callers検証で�
 Event ws074-p189-q46-validation-output-20261018: p258 ordinary assignment/array shrink partial検証で全1508を同条件256.7秒実測、q44全whole/callback/completion同一、494 PASS・callback11540 PASS/20642 FAIL/14 NOTRUN、gain/loss/old PASS callback loss/差0。公式1482/3805・held0・未attempt275維持。p189新attempt/clearanceではなくvalidation outputだけ。[証拠](../phase258/evidence/20261018-q46/README.md)。共有投影pending。
 
 Event ws074-p189-q48-validation-output-20261018: p258 array consumer検証で全1508を同条件528.4秒実測しq46全whole/callback/completion同一、494 PASS/callback11540 PASS/20642 FAIL/14 NOTRUN・gain/loss/差0。公式1482/3805・held0・未attempt275維持。p189新attempt/clearance無し、validation outputだけ。[証拠](../phase258/evidence/20261018-q48/README.md)。共有投影pending・master.md編集無し。
+
+Event ws074-p189-q49-validation-output-20261018: p258 JSON.stringify検証で全1508を同条件356.7秒実測しq48全whole/callback/completion同一、494 PASS/callback11540 PASS/20642 FAIL/14 NOTRUN・gain/loss/差0。公式1482/3805・held0・未attempt275維持。新attempt/clearance無し、validation outputだけ。[証拠](../phase258/evidence/20261018-q49/README.md)。共有投影pending・master.md編集無し。

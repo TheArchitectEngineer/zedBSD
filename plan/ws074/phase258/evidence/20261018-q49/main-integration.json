@@ -1,0 +1,13 @@
+{
+  "source": "2419e264c",
+  "main_contains_source": true,
+  "source_paths": [
+    "plan/ws074/tests/proxy-read.js",
+    "plan/ws074/ws.md",
+    "userland/desktop/libbrowser/js/builtin_json.c"
+  ],
+  "no_master_in_source": true,
+  "no_conflicts": true,
+  "branch": "main",
+  "source_parents": "2419e264c cacf122e2"
+}
