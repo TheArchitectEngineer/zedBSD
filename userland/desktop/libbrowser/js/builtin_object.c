@@ -71,8 +71,6 @@ static int object_define_setter(struct vm_realm *realm, vm_value this_value, con
 static int object_lookup_getter(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int object_lookup_setter(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int object_require(struct vm_realm *realm, vm_value value, const char *message, struct vm_object **object);
-static int object_descriptor_field(struct vm_realm *realm, vm_value object, const char *name, uint32_t flag, struct vm_descriptor *descriptor, vm_value *value);
-static int object_from_descriptor(struct vm_realm *realm, const struct vm_descriptor *descriptor, vm_value *result);
 static int object_define_or_throw(struct vm_realm *realm, struct vm_object *object, vm_value key, const struct vm_descriptor *descriptor);
 static int object_own_keys(struct vm_realm *realm, struct vm_object *object, int symbols, struct wb_vector *keys);
 static int object_key_value(struct vm_realm *realm, vm_value key, vm_value *value);
@@ -138,6 +136,7 @@ static const struct object_entry object_methods[] = {
 #define OBJECT_LIST_ENTRIES	2
 
 static int object_to_descriptor(struct vm_realm *realm, vm_value value, struct vm_descriptor *descriptor);
+static int object_from_descriptor(struct vm_realm *realm, const struct vm_descriptor *descriptor, vm_value *result);
 
 /*
  * Installs Object and Object.prototype's methods.
@@ -1783,143 +1782,18 @@ object_to_descriptor(
 	vm_value value,
 	struct vm_descriptor *descriptor)
 {
-	struct vm_object *object;
-	struct vm_cell *value_root;
-	vm_value field;
-	int callable;
-	int is_cell;
-	int truth;
 	int status;
 
-	/* A descriptor is an object. */
-	memset(descriptor, 0, sizeof(*descriptor));
-	descriptor->value = VM_VALUE_UNDEFINED;
-	descriptor->getter = VM_VALUE_UNDEFINED;
-	descriptor->setter = VM_VALUE_UNDEFINED;
-	value_root = NULL;
-	is_cell = vm_value_is_cell(value);
-	if (is_cell)
-		value_root = vm_value_as_cell(value);
-	status = vm_heap_add_root(realm->heap, &value_root);
-	if (status != 0)
-		return status;
-	status = vm_heap_add_tracer(realm->heap, object_trace_descriptor, descriptor);
-	if (status != 0) {
-		vm_heap_remove_root(realm->heap, &value_root);
-		return status;
-	}
-
-	/* The descriptor source must remain valid across its getter sequence. */
-	status = object_require(realm, value, "Property description must be an object", &object);
-	if (status != 0)
-		goto cleanup;
-
-	/* Convert enumerable before observing any later descriptor field. */
-	field = VM_VALUE_FALSE;
-	status = object_descriptor_field(realm, value, "enumerable", VM_HAS_ENUMERABLE, descriptor, &field);
-	if (status != 0)
-		goto cleanup;
-	truth = vm_to_boolean(field);
-	if (truth)
-		descriptor->attributes |= VM_PROPERTY_ENUMERABLE;
-
-	/* Configurable follows enumerable and precedes the data value. */
-	field = VM_VALUE_FALSE;
-	status = object_descriptor_field(realm, value, "configurable", VM_HAS_CONFIGURABLE, descriptor, &field);
-	if (status != 0)
-		goto cleanup;
-	truth = vm_to_boolean(field);
-	if (truth)
-		descriptor->attributes |= VM_PROPERTY_CONFIGURABLE;
-
-	/* The descriptor tracer retains a fresh value through every later getter. */
-	status = object_descriptor_field(realm, value, "value", VM_HAS_VALUE, descriptor, &descriptor->value);
-	if (status != 0)
-		goto cleanup;
-
-	/* Writable is converted before any accessor fields are inspected. */
-	field = VM_VALUE_FALSE;
-	status = object_descriptor_field(realm, value, "writable", VM_HAS_WRITABLE, descriptor, &field);
-	if (status != 0)
-		goto cleanup;
-	truth = vm_to_boolean(field);
-	if (truth)
-		descriptor->attributes |= VM_PROPERTY_WRITABLE;
-
-	/* A bad getter fails immediately, before HasProperty or Get can inspect the setter. */
-	status = object_descriptor_field(realm, value, "get", VM_HAS_GET, descriptor, &descriptor->getter);
-	if (status != 0)
-		goto cleanup;
-	callable = vm_value_is_callable(descriptor->getter);
-	if ((descriptor->has & VM_HAS_GET) != 0U &&
-	    !callable &&
-	    descriptor->getter != VM_VALUE_UNDEFINED) {
-		status = vm_throw_type_error(realm, "Getter must be a function");
-		goto cleanup;
-	}
-
-	/* Validate the setter immediately after its own read. */
-	status = object_descriptor_field(realm, value, "set", VM_HAS_SET, descriptor, &descriptor->setter);
-	if (status != 0)
-		goto cleanup;
-	callable = vm_value_is_callable(descriptor->setter);
-	if ((descriptor->has & VM_HAS_SET) != 0U &&
-	    !callable &&
-	    descriptor->setter != VM_VALUE_UNDEFINED) {
-		status = vm_throw_type_error(realm, "Setter must be a function");
-		goto cleanup;
-	}
-
-	/* A descriptor is an accessor or a data property, not both. */
-	if ((descriptor->has & (VM_HAS_GET | VM_HAS_SET)) != 0U && (descriptor->has & (VM_HAS_VALUE | VM_HAS_WRITABLE)) != 0U) {
-		status = vm_throw_type_error(realm, "Invalid property descriptor. Cannot both specify accessors and a value or writable attribute");
-		goto cleanup;
-	}
-
-cleanup:
-	/* The caller takes the completed descriptor after its getter sequence. */
-	vm_heap_remove_tracer(realm->heap, object_trace_descriptor, descriptor);
-	vm_heap_remove_root(realm->heap, &value_root);
+	/* Share the VM language operation with native Proxy internal methods. */
+	status = vm_to_property_descriptor(realm, value, descriptor);
 	if (status != 0)
 		return status;
 
-	/* Succeeded: the descriptor. */
+	/* Succeeded: the common VM conversion supplied the requested descriptor representation. */
 	return 0;
 }
 
-/* Reads one field of a descriptor object when it has it (on its chain). */
-static int
-object_descriptor_field(
-	struct vm_realm *realm,
-	vm_value object,
-	const char *name,
-	uint32_t flag,
-	struct vm_descriptor *descriptor,
-	vm_value *value)
-{
-	vm_value key;
-	vm_value has;
-	int status;
 
-	/* Whether it has the field. */
-	key = vm_key_from_ascii(realm->heap, name);
-	if (key == VM_VALUE_EMPTY)
-		return ENOMEM;
-	status = vm_in(realm, key, object, &has);
-	if (status != 0)
-		return status;
-	if (has != VM_VALUE_TRUE)
-		return 0;
-
-	/* The field's value. */
-	status = vm_get(realm, object, key, value);
-	if (status != 0)
-		return status;
-
-	/* Succeeded: the descriptor has it. */
-	descriptor->has |= flag;
-	return 0;
-}
 
 /* Makes an object of a descriptor (FromPropertyDescriptor). */
 static int
@@ -1928,49 +1802,14 @@ object_from_descriptor(
 	const struct vm_descriptor *descriptor,
 	vm_value *result)
 {
-	struct vm_object *made;
-	struct vm_cell *made_root;
-	int error;
+	int status;
 
-	/* The object. */
-	error = vm_heap_add_tracer(realm->heap, object_trace_descriptor, (void *)descriptor);
-	if (error != 0)
-		return error;
-	made = vm_object_create(realm->heap, realm->object_prototype);
-	if (made == NULL) {
-		vm_heap_remove_tracer(realm->heap, object_trace_descriptor, (void *)descriptor);
-		return ENOMEM;
-	}
+	/* Share the VM language operation with native Proxy internal methods. */
+	status = vm_from_property_descriptor(realm, descriptor, result);
+	if (status != 0)
+		return status;
 
-	/* The result object stays live while its fields are installed. */
-	made_root = &made->cell;
-	error = vm_heap_add_root(realm->heap, &made_root);
-	if (error != 0) {
-		vm_heap_remove_tracer(realm->heap, object_trace_descriptor, (void *)descriptor);
-		return error;
-	}
-
-	/* value and writable, or get and set; then enumerable and configurable. */
-	error = 0;
-	if ((descriptor->has & VM_HAS_VALUE) != 0U)
-		error = js_builtin_value(realm, made, "value", descriptor->value, VM_PROPERTY_DEFAULT);
-	if (error == 0 && (descriptor->has & VM_HAS_WRITABLE) != 0U)
-		error = js_builtin_value(realm, made, "writable", vm_value_boolean((descriptor->attributes & VM_PROPERTY_WRITABLE) != 0U), VM_PROPERTY_DEFAULT);
-	if (error == 0 && (descriptor->has & VM_HAS_GET) != 0U)
-		error = js_builtin_value(realm, made, "get", descriptor->getter, VM_PROPERTY_DEFAULT);
-	if (error == 0 && (descriptor->has & VM_HAS_SET) != 0U)
-		error = js_builtin_value(realm, made, "set", descriptor->setter, VM_PROPERTY_DEFAULT);
-	if (error == 0)
-		error = js_builtin_value(realm, made, "enumerable", vm_value_boolean((descriptor->attributes & VM_PROPERTY_ENUMERABLE) != 0U), VM_PROPERTY_DEFAULT);
-	if (error == 0)
-		error = js_builtin_value(realm, made, "configurable", vm_value_boolean((descriptor->attributes & VM_PROPERTY_CONFIGURABLE) != 0U), VM_PROPERTY_DEFAULT);
-	vm_heap_remove_root(realm->heap, &made_root);
-	vm_heap_remove_tracer(realm->heap, object_trace_descriptor, (void *)descriptor);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the object. */
-	*result = vm_value_cell(made);
+	/* Succeeded: the common VM conversion supplied the requested descriptor representation. */
 	return 0;
 }
 

@@ -52,6 +52,14 @@ struct access_read_roots {
 	vm_value receiver;
 };
 
+/* One active descriptor operation owns its realm, source, flagged payloads and unpublished output object. */
+struct access_descriptor_roots {
+	struct vm_realm *realm;
+	vm_value source;
+	const struct vm_descriptor *descriptor;
+	vm_value made;
+};
+
 static void access_for_in_trace(struct vm_heap *heap, struct vm_cell *cell);
 static void access_for_in_finalize(struct vm_heap *heap, struct vm_cell *cell);
 static int access_string_property(struct vm_realm *realm, struct vm_string *string, vm_value key, vm_value *result, int *found);
@@ -73,6 +81,9 @@ static const struct vm_cell_type access_for_in_type = {
 	"for-in", access_for_in_trace, access_for_in_finalize
 };
 
+static void access_descriptor_trace(struct vm_heap *heap, void *context);
+static int access_descriptor_field(struct vm_realm *realm, vm_value object, const char *name, uint32_t flag, struct vm_descriptor *descriptor, vm_value *value);
+static int access_descriptor_put(struct vm_realm *realm, struct vm_object *object, const char *name, vm_value value);
 static void access_read_trace(struct vm_heap *heap, void *context);
 static int access_get_receiver(struct vm_realm *realm, vm_value base, vm_value key, vm_value receiver, vm_value *result);
 static int access_has_property(struct vm_realm *realm, struct vm_object *object, vm_value key, int *found);
@@ -1408,6 +1419,275 @@ vm_for_in_next(
 	return 0;
 }
 
+/*
+ * Converts a language object into a partial property descriptor in observable field order.
+ * Native roots retain transient payloads before later getters or traps can collect.
+ */
+int
+vm_to_property_descriptor(
+	struct vm_realm *realm,
+	vm_value value,
+	struct vm_descriptor *descriptor)
+{
+	struct access_descriptor_roots roots;
+	vm_value field;
+	int callable;
+	int is_object;
+	int truth;
+	int status;
+
+	/* Initialize every output payload before its conversion tracer becomes visible. */
+	memset(descriptor, 0, sizeof(*descriptor));
+	descriptor->value = VM_VALUE_UNDEFINED;
+	descriptor->getter = VM_VALUE_UNDEFINED;
+	descriptor->setter = VM_VALUE_UNDEFINED;
+	roots.realm = realm;
+	roots.source = value;
+	roots.descriptor = descriptor;
+	roots.made = VM_VALUE_UNDEFINED;
+	status = vm_heap_add_tracer(realm->heap, access_descriptor_trace, &roots);
+	if (status != 0)
+		return status;
+
+	/* Descriptor sources must be objects, including native Proxy values. */
+	is_object = vm_value_is_object(value);
+	if (!is_object) {
+		status = vm_throw_type_error(realm, "Property description must be an object");
+		goto cleanup;
+	}
+
+	/* Convert enumerable before observing any later descriptor field. */
+	field = VM_VALUE_FALSE;
+	status = access_descriptor_field(realm, value, "enumerable", VM_HAS_ENUMERABLE, descriptor, &field);
+	if (status != 0)
+		goto cleanup;
+	truth = vm_to_boolean(field);
+	if (truth)
+		descriptor->attributes |= VM_PROPERTY_ENUMERABLE;
+
+	/* Configurable follows enumerable and precedes the data value. */
+	field = VM_VALUE_FALSE;
+	status = access_descriptor_field(realm, value, "configurable", VM_HAS_CONFIGURABLE, descriptor, &field);
+	if (status != 0)
+		goto cleanup;
+	truth = vm_to_boolean(field);
+	if (truth)
+		descriptor->attributes |= VM_PROPERTY_CONFIGURABLE;
+
+	/* The descriptor tracer retains a fresh value through every later getter. */
+	status = access_descriptor_field(realm, value, "value", VM_HAS_VALUE, descriptor, &descriptor->value);
+	if (status != 0)
+		goto cleanup;
+
+	/* Writable is converted before any accessor fields are inspected. */
+	field = VM_VALUE_FALSE;
+	status = access_descriptor_field(realm, value, "writable", VM_HAS_WRITABLE, descriptor, &field);
+	if (status != 0)
+		goto cleanup;
+	truth = vm_to_boolean(field);
+	if (truth)
+		descriptor->attributes |= VM_PROPERTY_WRITABLE;
+
+	/* A bad getter fails immediately, before HasProperty or Get can inspect the setter. */
+	status = access_descriptor_field(realm, value, "get", VM_HAS_GET, descriptor, &descriptor->getter);
+	if (status != 0)
+		goto cleanup;
+	callable = vm_value_is_callable(descriptor->getter);
+	if ((descriptor->has & VM_HAS_GET) != 0U &&
+	    !callable &&
+	    descriptor->getter != VM_VALUE_UNDEFINED) {
+		status = vm_throw_type_error(realm, "Getter must be a function");
+		goto cleanup;
+	}
+
+	/* Validate the setter immediately after its own read. */
+	status = access_descriptor_field(realm, value, "set", VM_HAS_SET, descriptor, &descriptor->setter);
+	if (status != 0)
+		goto cleanup;
+	callable = vm_value_is_callable(descriptor->setter);
+	if ((descriptor->has & VM_HAS_SET) != 0U &&
+	    !callable &&
+	    descriptor->setter != VM_VALUE_UNDEFINED) {
+		status = vm_throw_type_error(realm, "Setter must be a function");
+		goto cleanup;
+	}
+
+	/* A descriptor is an accessor or a data property, not both. */
+	if ((descriptor->has & (VM_HAS_GET | VM_HAS_SET)) != 0U && (descriptor->has & (VM_HAS_VALUE | VM_HAS_WRITABLE)) != 0U) {
+		status = vm_throw_type_error(realm, "Invalid property descriptor. Cannot both specify accessors and a value or writable attribute");
+		goto cleanup;
+	}
+
+cleanup:
+	/* The caller takes the completed descriptor after its getter sequence. */
+	vm_heap_remove_tracer(realm->heap, access_descriptor_trace, &roots);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the descriptor. */
+	return 0;
+}
+
+/*
+ * Makes an ordinary object containing exactly the present property-descriptor fields.
+ * A missing descriptor is represented by undefined rather than an allocated object.
+ */
+int
+vm_from_property_descriptor(
+	struct vm_realm *realm,
+	const struct vm_descriptor *descriptor,
+	vm_value *result)
+{
+	struct access_descriptor_roots roots;
+	struct vm_object *made;
+	int truth;
+	int status;
+
+	/* Undefined has no fields to expose or managed inputs to retain. */
+	*result = VM_VALUE_UNDEFINED;
+	if (descriptor == NULL)
+		return 0;
+
+	/* Only fields marked present are traced, so absent C payload slots need not be initialized. */
+	roots.realm = realm;
+	roots.source = VM_VALUE_UNDEFINED;
+	roots.descriptor = descriptor;
+	roots.made = VM_VALUE_UNDEFINED;
+	status = vm_heap_add_tracer(realm->heap, access_descriptor_trace, &roots);
+	if (status != 0)
+		return status;
+
+	/* The operation's realm supplies the new object's ordinary prototype. */
+	made = vm_object_create(realm->heap, realm->object_prototype);
+	if (made == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* The newborn must remain explicitly owned during every output-field allocation. */
+	roots.made = vm_value_cell(made);
+
+	/* A present value retains its identity rather than being cloned. */
+	if ((descriptor->has & VM_HAS_VALUE) != 0U) {
+		status = access_descriptor_put(realm, made, "value", descriptor->value);
+		if (status != 0)
+			goto cleanup;
+	}
+
+	/* Writable is omitted unless the input descriptor actually supplied that field. */
+	if ((descriptor->has & VM_HAS_WRITABLE) != 0U) {
+		truth = 0;
+		if ((descriptor->attributes & VM_PROPERTY_WRITABLE) != 0U)
+			truth = 1;
+		status = access_descriptor_put(realm, made, "writable", vm_value_boolean(truth));
+		if (status != 0)
+			goto cleanup;
+	}
+
+	/* Accessor slots remain ordinary data fields on the representation object. */
+	if ((descriptor->has & VM_HAS_GET) != 0U) {
+		status = access_descriptor_put(realm, made, "get", descriptor->getter);
+		if (status != 0)
+			goto cleanup;
+	}
+
+	/* Setter presence is independent of the getter field. */
+	if ((descriptor->has & VM_HAS_SET) != 0U) {
+		status = access_descriptor_put(realm, made, "set", descriptor->setter);
+		if (status != 0)
+			goto cleanup;
+	}
+
+	/* Enumerable presence is independent of its Boolean value. */
+	if ((descriptor->has & VM_HAS_ENUMERABLE) != 0U) {
+		truth = 0;
+		if ((descriptor->attributes & VM_PROPERTY_ENUMERABLE) != 0U)
+			truth = 1;
+		status = access_descriptor_put(realm, made, "enumerable", vm_value_boolean(truth));
+		if (status != 0)
+			goto cleanup;
+	}
+
+	/* Configurable is likewise emitted only when present, in the standard final position. */
+	if ((descriptor->has & VM_HAS_CONFIGURABLE) != 0U) {
+		truth = 0;
+		if ((descriptor->attributes & VM_PROPERTY_CONFIGURABLE) != 0U)
+			truth = 1;
+		status = access_descriptor_put(realm, made, "configurable", vm_value_boolean(truth));
+		if (status != 0)
+			goto cleanup;
+	}
+
+	/* Publish the complete representation after all of its ordinary fields succeed. */
+	*result = roots.made;
+	status = 0;
+
+cleanup:
+	/* Neither the descriptor pointer nor the newborn object may escape this tracer's C frame. */
+	vm_heap_remove_tracer(realm->heap, access_descriptor_trace, &roots);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the exact partial descriptor is represented by ordinary data properties. */
+	return 0;
+}
+
+/*
+ * Completes a valid partial descriptor with explicit defaults for its property kind.
+ * The operation runs no script and performs no allocation.
+ */
+void
+vm_complete_property_descriptor(
+	struct vm_descriptor *descriptor)
+{
+	int accessor;
+
+	/* Presence of either accessor slot chooses accessor completion; generic descriptors become data descriptors. */
+	accessor = 0;
+	if ((descriptor->has & (VM_HAS_GET | VM_HAS_SET)) != 0U)
+		accessor = 1;
+	if (accessor) {
+		/* Missing accessor slots become explicit undefined payloads. */
+		if ((descriptor->has & VM_HAS_GET) == 0U) {
+			descriptor->getter = VM_VALUE_UNDEFINED;
+			descriptor->has |= VM_HAS_GET;
+		}
+
+		/* Completion makes an omitted setter an explicit undefined slot. */
+		if ((descriptor->has & VM_HAS_SET) == 0U) {
+			descriptor->setter = VM_VALUE_UNDEFINED;
+			descriptor->has |= VM_HAS_SET;
+		}
+	} else {
+		/* Data completion supplies an undefined value and a false writable flag when omitted. */
+		if ((descriptor->has & VM_HAS_VALUE) == 0U) {
+			descriptor->value = VM_VALUE_UNDEFINED;
+			descriptor->has |= VM_HAS_VALUE;
+		}
+
+		/* A missing writable field becomes present with its false default. */
+		if ((descriptor->has & VM_HAS_WRITABLE) == 0U) {
+			descriptor->attributes &= ~VM_PROPERTY_WRITABLE;
+			descriptor->has |= VM_HAS_WRITABLE;
+		}
+	}
+
+	/* Omitted enumerable and configurable fields become present false attributes. */
+	if ((descriptor->has & VM_HAS_ENUMERABLE) == 0U) {
+		descriptor->attributes &= ~VM_PROPERTY_ENUMERABLE;
+		descriptor->has |= VM_HAS_ENUMERABLE;
+	}
+
+	/* Configurable likewise becomes explicitly false when absent. */
+	if ((descriptor->has & VM_HAS_CONFIGURABLE) == 0U) {
+		descriptor->attributes &= ~VM_PROPERTY_CONFIGURABLE;
+		descriptor->has |= VM_HAS_CONFIGURABLE;
+	}
+
+	/* Succeeded: the descriptor has every field required by its property kind. */
+	return;
+}
+
 /* Marks what a for-in state holds: its object and its keys. */
 static void
 access_for_in_trace(
@@ -2391,4 +2671,92 @@ cleanup:
 
 	/* Succeeded: the reported presence respects the target's actual invariants. */
 	return 0;
+}
+
+/* Reads one present descriptor field through the real HasProperty and Get operations. */
+static int
+access_descriptor_field(
+	struct vm_realm *realm,
+	vm_value object,
+	const char *name,
+	uint32_t flag,
+	struct vm_descriptor *descriptor,
+	vm_value *value)
+{
+	vm_value key;
+	vm_value has;
+	int status;
+
+	/* Whether it has the field. */
+	key = vm_key_from_ascii(realm->heap, name);
+	if (key == VM_VALUE_EMPTY)
+		return ENOMEM;
+	status = vm_in(realm, key, object, &has);
+	if (status != 0)
+		return status;
+	if (has != VM_VALUE_TRUE)
+		return 0;
+
+	/* The field's value. */
+	status = vm_get(realm, object, key, value);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the descriptor has it. */
+	descriptor->has |= flag;
+	return 0;
+}
+
+/* Defines one ordinary data field while the surrounding descriptor frame owns both object and value. */
+static int
+access_descriptor_put(
+	struct vm_realm *realm,
+	struct vm_object *object,
+	const char *name,
+	vm_value value)
+{
+	vm_value key;
+	int status;
+
+	/* Representation field names are ordinary interned string keys. */
+	key = vm_key_from_ascii(realm->heap, name);
+	if (key == VM_VALUE_EMPTY)
+		return ENOMEM;
+	status = vm_object_define(realm->heap, object, key, value, VM_PROPERTY_DEFAULT);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the output field is writable, enumerable and configurable. */
+	return 0;
+}
+
+/* Marks only descriptor payloads whose presence flags make their C slots meaningful. */
+static void
+access_descriptor_trace(
+	struct vm_heap *heap,
+	void *context)
+{
+	struct access_descriptor_roots *roots;
+	const struct vm_descriptor *descriptor;
+
+	/* The managed owner, input object and unpublished result belong to this conversion frame. */
+	roots = context;
+	if (roots->realm->managed)
+		vm_heap_mark(heap, &roots->realm->cell);
+	vm_heap_mark_value(heap, roots->source);
+	vm_heap_mark_value(heap, roots->made);
+
+	/* Undefined descriptors have no payload storage to inspect. */
+	descriptor = roots->descriptor;
+	if (descriptor == NULL)
+		return;
+	if ((descriptor->has & VM_HAS_VALUE) != 0U)
+		vm_heap_mark_value(heap, descriptor->value);
+	if ((descriptor->has & VM_HAS_GET) != 0U)
+		vm_heap_mark_value(heap, descriptor->getter);
+	if ((descriptor->has & VM_HAS_SET) != 0U)
+		vm_heap_mark_value(heap, descriptor->setter);
+
+	/* Succeeded: absent descriptor slots were never read as values. */
+	return;
 }
