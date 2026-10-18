@@ -624,6 +624,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-18 22:12（ユーザー、クリック）WS260 の判断 4 の中身は「語を廃止、常に full」: i915.gen9.display= を外し、Gen9 も xd と同じく常に全部を駆動、切り分けは i915.debug=display と i915.start=manual だけ。src/kern/boot.c・include/kern/boot.h の変更を P1 に許可（p014）。
 - 2026-10-18 21:10（ユーザー）: config-rpi4-server.mk の Bluetooth について「PiのBluetoothはまだ動作してないのです。だからnになってます。まだnにしておいてください。動作するようになったらyにします。IntelのBluetoothはPiでは使わないので、nにします。」→ CONFIG_DRIVER_BCM2711_BT・CONFIG_DRIVER_USB_BT を n。menuconfig の試験 MAC-T001 は古い期待（VCHIQ・VIDEO・BT・nvrtx の既定、RISC-V の CPU）を直し、config-intelmac.mk の nvrtx を n（Turing 以降の NVIDIA の Intel Mac は無い）にして PASS。
 - 2026-10-18 21:06（ユーザー、クリック）WS260: log の文言は「揃える」、i915.gen9.display= は「xd の語にまとめる」、SV7 の外部出力は「繋げない（host 試験だけ）」。p001 cleared。
 - 2026-10-18 20:49（ユーザー、クリック）WS260 の実機の確かめは「最後に 1 回」（全部の段の後に T1 が SV7 と 5330 で 1 回、壊れていれば段の境で二分）。
