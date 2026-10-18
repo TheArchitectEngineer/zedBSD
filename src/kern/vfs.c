@@ -1362,7 +1362,8 @@ vfs_log_boot_handoff(
 		VFS_LOG("vfs: boot BIOS=%02x Sun slice=%u devices=%u\n",
 			handoff->boot_bios_id, handoff->boot_partition_index,
 			device_count);
-	} else if (handoff->version == KERN_HANDOFF_VERSION_MULTIBOOT) {
+	} else if (handoff->version == KERN_HANDOFF_VERSION_MULTIBOOT &&
+	    handoff->boot_partition_scheme != KERN_PARTITION_SCHEME_LBA) {
 		/* The partition index is unknown when the loader could not tell. */
 		if (handoff->boot_partition_scheme ==
 		    KERN_PARTITION_SCHEME_MBR &&
@@ -1395,6 +1396,7 @@ vfs_log_boot_handoff(
 			handoff->boot_bios_id, handoff->boot_partition_index,
 			device_count);
 	} else {
+		/* The loader named its partition by a whole-disk LBA. */
 		VFS_LOG("vfs: boot BIOS=%02X partition LBA=%u devices=%u\n",
 			handoff->boot_bios_id, handoff->boot_partition_lba,
 			device_count);
@@ -1509,7 +1511,8 @@ vfs_scan_physical_disks(
 			    entries[slot].p_start_block ==
 			    handoff->boot_partition_lba)
 				matches = 1;
-			else if (handoff->version == KERN_HANDOFF_VERSION_PC98 &&
+			else if (handoff->boot_partition_scheme ==
+			    KERN_PARTITION_SCHEME_LBA &&
 			    entries[slot].p_start_block ==
 			    handoff->boot_partition_lba)
 				matches = 1;
