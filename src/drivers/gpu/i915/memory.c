@@ -190,7 +190,7 @@ drv_i915_gt_object_create(
 		}
 	}
 
-	/* Every slot is taken: the pool grows by a block, whose first slot is claimed (BUG-120). */
+	/* Every slot is taken: the pool grows by a block, whose first slot is claimed. */
 	if (object == NULL)
 		object = gt_object_grow(gm);
 

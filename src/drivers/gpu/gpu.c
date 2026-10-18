@@ -247,7 +247,7 @@ struct gpu_session {
 
 	/*
 	 * The display leases this open holds, each holding the keyboard away
-	 * from the text console (ws035-p097); the close gives back what is left.
+	 * from the text console; the close gives back what is left.
 	 * Changed only by this open's ioctls and its final close.
 	 */
 	unsigned display_claims;
@@ -1227,7 +1227,7 @@ gpu_open(
 
 	/*
 	 * Admits root, and the user the device node belongs to: the graphical
-	 * login gives the node to the seat's user (sessiond, ws035-p094), and
+	 * login gives the node to the seat's user (sessiond), and
 	 * devfs's own owner is root, so without a login only root opens it, as
 	 * in ABI version 1.  Authority is copied rather than borrowed from the
 	 * mutable process credentials.
@@ -1375,7 +1375,7 @@ gpu_close(
 	/*
 	 * A reservation the departed producer never committed is not native work;
 	 * withdrawing it now keeps the drain and the stop below from waiting on it
-	 * until the stop deadline isolates the session (BUG-077: a client killed
+	 * until the stop deadline isolates the session (a client killed
 	 * between reserve and commit).  No ioctl races the final close.
 	 */
 	withdrawn = gpu_session_reclaim(device, session);
@@ -1569,7 +1569,7 @@ gpu_session_leave(
 static int gpu_ioctl_body(struct file *file, unsigned long command, uintptr_t argument);
 
 /*
- * WS031 E-127: with -DGPU_IOCTL_TRACE=1 every failing GPU ioctl is logged by its 'G' number,
+ * With -DGPU_IOCTL_TRACE=1 every failing GPU ioctl is logged by its 'G' number,
  * for backend bring-up (the application only names the Vulkan call it was in).
  */
 static int
@@ -3499,7 +3499,7 @@ gpu_display_ioctl(
 		session->display_claims++;
 		tty_console_input_hold();
 
-		/* The boot's splash under it stops for good (ws035-p107). */
+		/* The boot's splash under it stops for good. */
 		kern_text_progress_end();
 
 		/* Succeeded: this exact open now owns the returned native lease. */
@@ -7207,7 +7207,7 @@ gpu_monitor_step(
 
 	/*
 	 * Reservations the producer never published are not native work: the core
-	 * withdraws them once the stop has begun (BUG-077: a backend that counts a
+	 * withdraws them once the stop has begun (a backend that counts a
 	 * reservation as pending would otherwise never report idle), and again once
 	 * native idle is proven.
 	 */

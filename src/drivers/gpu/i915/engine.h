@@ -150,7 +150,7 @@ struct i915_gt_engines {
 	/* How many L3CC writes the render engine's resume made. */
 	unsigned l3cc_writes_rcs;
 
-	/* How many single-engine resets were made after a hang, and how many of them failed (ws083-p007). */
+	/* How many single-engine resets were made after a hang, and how many of them failed. */
 	unsigned engine_resets;
 	unsigned engine_reset_failures;
 };

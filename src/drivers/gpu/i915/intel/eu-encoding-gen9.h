@@ -19,7 +19,7 @@
  *
  * SPDX-License-Identifier: MIT (the notice of the Mesa sources below)
  *
- * Source: Mesa 25.0.7 (MIT; the release tarball, sha256 592272df..., as plan/ws101/tests/host/mesa-tools.sh fetches it):
+ * Source: Mesa 25.0.7 (MIT; the release tarball, sha256 592272df...):
  *   - src/intel/compiler/brw_eu_inst.h     (sha256 e9feb41a37628b8c117877d626c859083fd58802002246df4da5d28c2bf969f5)
  *                                          the "9+" column of the native instruction: every control and operand
  *                                          field, the JIP (127:96) and UIP (95:64) of a branch, the SEND

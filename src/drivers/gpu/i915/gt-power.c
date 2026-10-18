@@ -11,7 +11,7 @@
  * Every register access here goes through the held accessors: the device
  * start holds every GT forcewake domain across the GT initialization and
  * resume that call these functions, and for as long as the node is
- * published, which covers the RPS work and interrupts (ws075-p020).  The
+ * published, which covers the RPS work and interrupts.  The
  * interrupt handler writes the PM mask with the raw accessor, as the rest of
  * the handler does.
  */
@@ -657,7 +657,7 @@ drv_i915_rps_boost_end(
  * Notes that an engine starts running a request: its busy time counts from
  * now.  A parked evaluation (the GT idle at the minimum) starts again, from
  * the efficient frequency, as Linux's unpark does.  Called by the thread
- * that runs the requests (ws075-p020), not in an interrupt.
+ * that runs the requests, not in an interrupt.
  */
 void
 drv_i915_rps_busy_begin(
@@ -719,7 +719,7 @@ drv_i915_rps_busy_end(
 }
 
 /*
- * Reads the GT's telemetry for hw.gputelemetry (ws134-p007): the busy time
+ * Reads the GT's telemetry for hw.gputelemetry: the busy time
  * the runs added up, with the run under way counted to now, the frequency
  * the driver last wrote, and the range the work moves in.
  *

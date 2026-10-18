@@ -29,7 +29,7 @@ struct i915_gem_object;
 struct i915_ppgtt;
 struct i915_session;
 
-/* The engine records of the node: the render engine, the copy engine and the video decode engine VCS0 (ws083-p003a). */
+/* The engine records of the node: the render engine, the copy engine and the video decode engine VCS0. */
 #define I915_ENGINE_RCS0		0U
 #define I915_ENGINE_BCS0		1U
 #define I915_ENGINE_VCS0		2U

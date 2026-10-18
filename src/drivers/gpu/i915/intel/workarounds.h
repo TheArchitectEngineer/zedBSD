@@ -99,7 +99,7 @@
 
 /*
  * The Gen9 (Skylake, Kaby Lake, Coffee Lake, Comet Lake) workaround,
- * whitelist and GTT-workaround registers (ws229-p002), excerpted by hand from
+ * whitelist and GTT-workaround registers, excerpted by hand from
  * the Linux 6.8.12 reference; values are unchanged.  Sources (SHA-256):
  *   drivers/gpu/drm/i915/gt/intel_gt_regs.h
  *     e0b8207e1799fc7e061eb38fe6ebc3e87bea8eca63040f4214358436ca115a83

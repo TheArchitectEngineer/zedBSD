@@ -219,7 +219,7 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 
 /*
  * 3D_Prim_Topo_Type of the topologies with adjacency, which only a draw
- * with a geometry shader takes (ws075-p007b): the line list and strip, the
+ * with a geometry shader takes: the line list and strip, the
  * triangle list and strip (Mesa 25.0.7 gen70.xml, sha256
  * dd7c942fc12afd2defdc435997ccdb5b48841d344f40625dbb2b4e746eca09ef,
  * 3D_Prim_Topo_Type LINELIST_ADJ .. TRISTRIP_ADJ).
@@ -273,7 +273,7 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
  * 2962677cf69dc947345fd88bd7010427900160eb7a7b076463e6e8d28772439d, start
  * 101): every primitive goes to render target array index 0.  anv sets it
  * unless the last vertex processing stage writes the layer (genX_pipeline.c
- * above, ForceZeroRTAIndexEnable; ws075-p007b).
+ * above, ForceZeroRTAIndexEnable).
  */
 #define GEN12_CLIP_FORCE_ZERO_RTA_INDEX		(1U << 5)
 
@@ -281,7 +281,7 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
  * 3DSTATE_GS dword 7 bits 12:11, Dispatch Mode: SIMD8, one input
  * primitive to a channel (Mesa 25.0.7 gen110.xml, sha256
  * 6598e556ffedf4fe051c78af3bb08030a39af865c76e2784dba5374646fce35d,
- * DISPATCH_MODE_SIMD8; ws075-p007b).
+ * DISPATCH_MODE_SIMD8).
  */
 #define GEN12_GS_DISPATCH_MODE_SIMD8		3U
 
@@ -315,7 +315,7 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_SBE_POINT_SPRITE_ORIGIN_UPPER_LEFT	0U
 
 /*
- * gl_PrimitiveID that no stage writes (ws075-p007b b4): 3DSTATE_SBE dword 1
+ * gl_PrimitiveID that no stage writes: 3DSTATE_SBE dword 1
  * bits 4:0 Primitive ID Override Attribute Select and bits 19:16 Primitive
  * ID Override Component X..W (the same gen90.xml), and the attribute's
  * SF_OUTPUT_ATTRIBUTE_DETAIL in SBE_SWIZ: Constant Source PRIM_ID (3) in
@@ -374,7 +374,7 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_URB_VS_ENTRIES			3576U
 
 /*
- * With a geometry shader (ws075-p007b) the vertex stage's URB is split: the
+ * With a geometry shader the vertex stage's URB is split: the
  * vertex stage keeps 21 of its chunks from chunk 4, the geometry stage the
  * next 6 (48 KiB), so the URB in use does not grow.  A geometry stage needs
  * at least 2 entries (it runs in DUAL_OBJECT mode) and has at most 1548
@@ -632,7 +632,7 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 
 /*
  * RENDER_SURFACE_STATE dword 1 bit 31, Enable Unorm Path In Color Pipe
- * (gen120.xml); Gen9 has no such bit (ws229-p004).
+ * (gen120.xml); Gen9 has no such bit.
  */
 #define GEN12_RSS_UNORM_PATH			(1U << 31)
 
@@ -791,7 +791,7 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_BLENDFUNCTION_MAX			4U
 
 /*
- * The GPGPU pipeline's commands and the interface descriptor (ws101-p004),
+ * The GPGPU pipeline's commands and the interface descriptor,
  * from Mesa 25.0.7 (MIT; Debian source package 25.0.7-2+deb13u1; values are
  * Intel PRM hardware facts).  gen120.xml imports them from:
  *   src/intel/genxml/gen110.xml (MEDIA_VFE_STATE, MEDIA_STATE_FLUSH)
@@ -806,7 +806,7 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
  *     9bf244df1284531767529980909176d09b72db037b6fdaa7f5874d997ebf7545,
  * genX_cmd_compute.c
  *     c0455a006e15a2b719c2545f818e3084a13fb5a959c86d213b2386d976311349)
- * and the compute test that ran on the Latitude 5330 (tests/execution/eu-test.c).
+ * and the compute test (tests/execution/eu-test.c).
  */
 
 /* PIPELINE_SELECT's value for the GPGPU pipeline. */
@@ -868,8 +868,8 @@ _Static_assert(GEN12_PIPELINE_SELECT_DWORD(2U) == 0x69041312U,
 #define GEN12_WALKER_SIMD_SHIFT			30U
 
 /*
- * The registers an indirect GPGPU_WALKER takes its group counts from
- * (ws101-p007): GPGPU_DISPATCHDIMX, _DIMY and _DIMZ of gen120.xml's render
+ * The registers an indirect GPGPU_WALKER takes its group counts from:
+ * GPGPU_DISPATCHDIMX, _DIMY and _DIMZ of gen120.xml's render
  * command streamer, which anv loads with MI_LOAD_REGISTER_MEM from the
  * indirect buffer (genX_cmd_compute.c, compute_load_indirect_params).
  */

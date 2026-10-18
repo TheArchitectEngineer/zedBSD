@@ -15,7 +15,7 @@
  * new.  A buffer is encoded in one layout (struct i915_eu_format) chosen
  * when it is prepared; the emitters ask the layout where each field goes.
  * Every emitter is checked bit for bit against Mesa's assembler and
- * disassembler by plan/ws031/tests/run-vk-gentool-test.sh (--gen=adl for
+ * disassembler (--gen=adl for
  * Gen12, --gen=skl for Gen9).
  *
  * SOFTWARE SCOREBOARD.  Gen12 hardware does not track register dependencies
@@ -1549,7 +1549,7 @@ drv_i915_eu_send_all(
  * the mask.
  *
  * A compute thread ends this way: a one-register message with no
- * destination to the thread spawner (ws101-p002).
+ * destination to the thread spawner.
  */
 void
 drv_i915_eu_send_all_end(
@@ -1579,7 +1579,7 @@ drv_i915_eu_send_all_end(
  *
  * The operands are those of drv_i915_eu_send().  Mesa sends a memory fence
  * this way (brw_memory_fence(), brw_eu_emit.c): one message for the thread,
- * whose one-register reply says the fence is done (ws101-p006).
+ * whose one-register reply says the fence is done.
  */
 void
 drv_i915_eu_send_scalar(
@@ -1608,7 +1608,7 @@ drv_i915_eu_send_scalar(
  * Encodes a sync of function `function` (EU_SYNC_*) with no dependency:
  * sync.bar waits until the thread's workgroup barrier message is answered
  * (Mesa's generate_barrier() on Gfx12, brw_generator.cpp), sync.allwr until
- * every write the thread sent is done (ws101-p006).
+ * every write the thread sent is done.
  *
  * Gen9 has no SYNC.  Its barrier wait is a WAIT on the notification
  * register, which the gateway signals when the group's barrier is complete

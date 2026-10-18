@@ -9,7 +9,7 @@
  * Execlists submission (see submit.h).
  *
  * Gen12 submits through the ELSQ register pair and a control write and
- * keeps 12 CSB entries.  A Gen9 engine (ws229-p002) submits through the
+ * keeps 12 CSB entries.  A Gen9 engine submits through the
  * four-dword ELSP, upper dword first and the higher port first, keeps 6 CSB
  * entries behind status-page dword 0x1f, and reads a promotion from the
  * idle-to-active and preempted bits of an entry (gen8_csb_parse()).
@@ -315,7 +315,7 @@ drv_i915_execlists_reset_rewind(
 	el->inflight[1] = NULL;
 	el->have_active = 0;
 
-	/* A CSB error fails every later request (BUG-077); those of the run that hung end with it. */
+	/* A CSB error fails every later request; those of the run that hung end with it. */
 	el->csb_errors = 0U;
 
 	/* Starts the CSB over and unpauses the engine. */
@@ -561,7 +561,7 @@ i915_enable_error_interrupt(
 }
 
 /*
- * Logs the first CSB events that have nothing to apply to (BUG-077): the
+ * Logs the first CSB events that have nothing to apply to: the
  * event, the walk's head and write pointer, the ports, the counters, the
  * last eight entries (newest last) and the engine's own view: the
  * execlist status, the CSB pointers register, the ring head and tail, the

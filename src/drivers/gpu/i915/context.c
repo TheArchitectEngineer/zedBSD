@@ -14,7 +14,7 @@
  * render power clock state, the two workaround batches and the descriptor)
  * and lrc_reset().
  *
- * A Gen9 engine (ws229-p002) takes the Gen9 branch of each: the gen9 offset
+ * A Gen9 engine takes the Gen9 branch of each: the gen9 offset
  * tables without CS-relative addressing, the Gen9 register-state slots, the
  * pre-Gen11 context control bits, the Gen8 power clock fields, and, on the
  * render engine only, the gen9_init_indirectctx_bb() workaround batch

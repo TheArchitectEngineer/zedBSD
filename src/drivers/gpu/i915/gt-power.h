@@ -12,7 +12,7 @@
  * media power gating let the idle units switch off.  RPS picks the GT clock.
  * Both follow the Linux intel_rc6.c and intel_rps.c paths that Alder Lake-P
  * takes with the GuC disabled: the driver writes the thresholds and the
- * enables itself.  RPS follows the load (ws075-p020) as Linux does for
+ * enables itself.  RPS follows the load as Linux does for
  * graphics version 12: an evaluation every few milliseconds compares the
  * engines' busy time with the thresholds (Linux's rps_timer; the GT's own
  * up/down interrupts, which versions 6 to 11 use and which are kept here,
@@ -169,7 +169,7 @@ struct i915_rps {
 
 	/*
 	 * Nonzero for a GT whose frequency is not followed at all (Gen9 in its
-	 * first version, ws229-p002): the start requests the efficient
+	 * first version): the start requests the efficient
 	 * frequency once and starts neither the work nor the interrupts.
 	 */
 	int fixed;

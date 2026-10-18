@@ -6,7 +6,7 @@
  */
 
 /*
- * The park of the request worker for a suspend (ws052-p009).
+ * The park of the request worker for a suspend.
  *
  * A suspend asks the worker to park: the worker leaves the display window
  * (the output is stopped through the reference's stop path, the lease is

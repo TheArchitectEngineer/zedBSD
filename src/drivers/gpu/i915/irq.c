@@ -893,7 +893,7 @@ i915_gt_identity_handler(
 		}
 	}
 
-	/* GTPM (RPS) goes to its handler (ws075-p020); GuC, KCR and GSC have no bottom half in this port. */
+	/* GTPM (RPS) goes to its handler; GuC, KCR and GSC have no bottom half in this port. */
 	if (engine_class == (unsigned)I915_OTHER_CLASS) {
 		irq->gt_other_intrs++;
 		if (instance == I915_IRQ_GTPM_INSTANCE)
@@ -985,7 +985,7 @@ i915_irq_handler_body(
 	/*
 	 * A Gen9 GT serves its banks and reopens the master control.  Its
 	 * display sources stay disabled except the flip display's flip done
-	 * (display/gen9-flip.c, WS237), which the display table acknowledges
+	 * (display/gen9-flip.c), which the display table acknowledges
 	 * (gen8_irq_handler()).
 	 */
 	if (gen9 != 0) {

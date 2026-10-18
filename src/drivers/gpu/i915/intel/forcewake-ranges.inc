@@ -32,7 +32,7 @@
  *
  * Generated from the Linux 6.8.12 reference (intel_uncore.c, __gen12_fw_ranges,
  * which uncore_forcewake_init() assigns to Alder Lake-P) by
- * plan/ws031/handover/tools/gen_fw_ranges.py; the domain names were renamed
+ * gen_fw_ranges.py; the domain names were renamed
  * for this driver.  The always-on entries are omitted because no match
  * already means always on.  The notice above is the source file's own.
  */

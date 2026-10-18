@@ -215,7 +215,7 @@ struct i915_irq_dev {
 
 	/*
 	 * The GT power management (RPS) handler the GTPM identity's events go
-	 * to, and its argument (ws075-p020).  gt-power.c sets the argument
+	 * to, and its argument.  gt-power.c sets the argument
 	 * before the handler when RPS starts and clears the handler first when
 	 * it stops; a NULL handler leaves the events counted only.
 	 */

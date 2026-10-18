@@ -13,7 +13,7 @@
  * gen8_ggtt_invalidate() writes no register at all -- needs_wc_ggtt_mapping()
  * is false there, and the flush register GFX_FLSH_CNTL_GEN6 belongs to the
  * gen6 path only.  Writing it here would be a deviation, not a safety net.
- * Gen9 (ws229-p002) is before graphics version 11: the reference writes
+ * Gen9 is before graphics version 11: the reference writes
  * GFX_FLSH_CNTL_GEN6 after every update there, and so does this driver,
  * although its window is uncached.
  */
@@ -646,7 +646,7 @@ drv_i915_gt_display_unbind_foreign(
 
 /*
  * Writes every entry of the two windows again after a resume
- * (i915_ggtt_resume(), ws052-p009).
+ * (i915_ggtt_resume()).
  *
  * Each page of the GT window and of the display window points at scratch,
  * then every bound object of the pool and every borrowed display range

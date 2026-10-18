@@ -121,7 +121,7 @@
 /*
  * The per-engine reset domains (GEN11_GRDOM_*, intel_gt_regs.h).  VCS2 is
  * the third video decode instance, so its domain is MEDIA3, not MEDIA2.
- * (ws083-p007: the media and enhancement bits were the Gen6 layout's, which
+ * (the media and enhancement bits were the Gen6 layout's, which
  * named the GuC domain for VCS0.)
  */
 #define I915_GRDOM_RENDER				(1U << 1)
@@ -772,7 +772,7 @@ i915_engine_mask_apply_media_fuses(
 		 * its converter, and an odd one only when the even engine before
 		 * it is fused off (gen11_vdbox_has_sfc(), MEDIA_VER >= 12).  The
 		 * Gen11 rule counted logical instances, which left VCS2 of Alder
-		 * Lake-P without one (ws083-p007).
+		 * Lake-P without one.
 		 */
 		if ((instance % 2U) == 0U) {
 			gt->vdbox_sfc_access |= 1U << instance;

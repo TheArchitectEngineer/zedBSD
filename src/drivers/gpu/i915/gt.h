@@ -148,7 +148,7 @@ struct i915_gt {
 	/* Nonzero while the start holds every forcewake domain for the running device. */
 	unsigned forcewake_held;
 
-	/* The domains a park of the request worker gave back, which the unpark takes again (ws052-p009). */
+	/* The domains a park of the request worker gave back, which the unpark takes again. */
 	unsigned forcewake_parked;
 };
 

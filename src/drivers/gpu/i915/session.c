@@ -66,7 +66,7 @@ drv_i915_session_bind_ops(
  * for each queue of each family (the video decode queue's too).  The
  * submissions run to their end in order, so a timeline only orders fences,
  * and a fence's marker always runs on the render engine, never on a video
- * engine whose context may not exist yet or may have hung (ws083 §4.3).
+ * engine whose context may not exist yet or may have hung.
  */
 int
 drv_i915_engine_for_timeline(

@@ -15,7 +15,7 @@
  * on Alder Lake-P, and a settle delay after the acknowledge.
  *
  * The reset of one engine, which the recovery from a video engine hang
- * issues (ws083-p007): __intel_gt_reset(engine->mask) with the engine's
+ * issues: __intel_gt_reset(engine->mask) with the engine's
  * ready handshake and the lock of the scaler and format converter it uses.
  */
 
