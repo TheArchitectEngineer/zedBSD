@@ -1,54 +1,256 @@
-/* sun4u serial console implementing the existing HAL console contract. */
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The sun4u board's text console.
+ *
+ * The HAL and the kernel print through hal_putc(), which writes each
+ * character to the serial port and here.  The console keeps an 80 by 25
+ * grid of cells from the first character on, so that the lines printed
+ * before the framebuffer is shown appear on it once it is; from then on
+ * each change is drawn as it is made.  Once the kernel publishes its own
+ * console, hal_putc() goes there instead.
+ */
+
 #include <hal/hal.h>
+#include "console.h"
+#include "framebuffer.h"
 #include "uart.h"
 
-static struct hal_cons_state state = { HAL_CONS_TERMINAL, 0, 0, 1 };
-static int input_peek = -1;
+/* Light grey on black, the default text attribute. */
+#define CONS_ATTRIBUTE	0x07U
 
-void sun4u_cons_init(void) {}
-static void console_putc(int c)
+/*
+ * One text cell as the console keeps it.
+ */
+struct cons_cell {
+	uint8_t character;
+	uint8_t attribute;
+};
+
+/*
+ * The grid as it should look, and the cursor.  Changed with interrupts
+ * off, which is enough on the port's one processor; a zero character is
+ * a cell never written, drawn as a blank.
+ */
+static struct cons_cell cons_grid[SUN4U_CONSOLE_ROWS][SUN4U_CONSOLE_COLUMNS];
+static unsigned cons_row;
+static unsigned cons_column;
+
+static void draw_cell_locked(unsigned row, unsigned column);
+static void draw_all_locked(void);
+static void newline_locked(void);
+static void scroll_locked(void);
+static void putc_locked(int character);
+
+/*
+ * Writes one character to the console, or to the kernel's console once the
+ * kernel has published one.
+ */
+void
+hal_putc(
+	int c)
 {
+	void (*kernel_output)(int character);
+	bool enabled;
+
+	/* Delegates to the kernel console after the handover. */
+	kernel_output = __atomic_load_n(&kernel_putc, __ATOMIC_ACQUIRE);
+	if (kernel_output != NULL) {
+		kernel_output(c);
+		return;
+	}
+
+	/* Writes the serial port, which ends its lines itself. */
 	sun4u_uart_putc(c);
-	if (c == '\n') state.row++, state.column = 0;
-	else if (c == '\r') state.column = 0;
-	else if (c == '\b') { if (state.column != 0) state.column--; }
-	else if (c >= 0x20) state.column++;
-	if (state.column >= HAL_CONS_COLUMNS) state.column = 0, state.row++;
-	if (state.row >= HAL_CONS_ROWS) state.row = HAL_CONS_ROWS - 1;
+
+	/* Changes the grid and draws it as one step against interrupt handlers. */
+	enabled = hal_irq_disable();
+
+	putc_locked(c);
+
+	if (enabled)
+		hal_irq_enable();
 }
-static void console_puts(const char *s) { if (s) while (*s) console_putc(*s++); }
-static int console_getc(void) { return sun4u_uart_getc(); }
-void hal_cons_reset(void) { state.mode = HAL_CONS_TERMINAL; state.row = state.column = 0; }
-void hal_putc(int c) { console_putc(c); }
-void hal_cons_clear(void) { console_puts("\033[2J\033[H"); state.row = state.column = 0; }
-void hal_cons_move_cursor(int r, int c) { (void)hal_cons_set_cursor((unsigned)r, (unsigned)c); }
-int hal_cons_getc(void) { struct hal_key_event event; (void)hal_cons_read_event(&event); return (unsigned char)event.symbol[0]; }
-void hal_cons_write(const char *s) { console_puts(s); }
-void hal_cons_write_n(const char *s, unsigned n) { if (s) while (n--) console_putc(*s++); }
-void hal_cons_write_at(unsigned r, unsigned c, const char *s)
-{ (void)hal_cons_set_cursor(r, c); console_puts(s); }
-void hal_cons_clear_row(unsigned r) { (void)r; console_puts("\033[2K"); }
-void hal_cons_clear_to_eol(void) { console_puts("\033[K"); }
-int hal_cons_write_at_attr(unsigned r,unsigned c,const char*s,uint8_t a)
-{ (void)a; hal_cons_write_at(r,c,s); return s ? hal_strlen(s) : -1; }
-int hal_cons_write_n_at(unsigned r,unsigned c,const char*s,unsigned n,uint8_t a)
-{ (void)a; if (!hal_cons_set_cursor(r,c)) return -1; hal_cons_write_n(s,n); return (int)n; }
-int hal_cons_clear_to_eol_at(unsigned r,unsigned c)
-{ if (!hal_cons_set_cursor(r,c)) return 0; hal_cons_clear_to_eol(); return 1; }
-int hal_cons_set_cursor(unsigned r, unsigned c)
+
+/*
+ * Draws the whole grid once the framebuffer is shown, so the lines printed
+ * before it appear.
+ */
+void
+sun4u_console_attach(
+	void)
 {
-	if (r >= HAL_CONS_ROWS || c >= HAL_CONS_COLUMNS) return 0;
-	hal_printf("\033[%u;%uH", r + 1U, c + 1U); state.row=r; state.column=c; return 1;
+	bool enabled;
+
+	/* Repaints every cell and the cursor. */
+	enabled = hal_irq_disable();
+
+	draw_all_locked();
+
+	if (enabled)
+		hal_irq_enable();
 }
-void hal_cons_show_cursor(int visible) { state.cursor_visible = visible != 0; console_puts(visible ? "\033[?25h" : "\033[?25l"); }
-void hal_cons_save_state(struct hal_cons_state *out) { if (out) *out = state; }
-void hal_cons_update_cursor(void) {}
-int hal_cons_poll_event(struct hal_key_event *event)
-{ if (input_peek < 0 && sun4u_uart_poll()) input_peek=console_getc(); if(input_peek<0)return 0;if(event){for(unsigned i=0;i<HAL_KEY_SYMBOL_SIZE;i++)event->symbol[i]='\0';event->symbol[0]=(char)input_peek;event->flags=HAL_KEY_EVENT_PRESS;}return 1; }
-int hal_cons_read_event(struct hal_key_event *event)
-{ while (!hal_cons_poll_event(event)) ; input_peek=-1; return 1; }
-void hal_cons_drain_input(void)
-{ input_peek=-1; while (sun4u_uart_poll()) (void)console_getc(); }
-unsigned hal_cons_modifiers(void) { return 0; }
-void hal_cons_suspend(void) {}
-void hal_cons_resume(void) {}
+
+/* Draws one cell of the grid, a blank for one never written. */
+static void
+draw_cell_locked(
+	unsigned row,
+	unsigned column)
+{
+	const struct cons_cell *cell;
+	int character;
+	uint8_t attribute;
+
+	/* A cell never written is a blank in the default colours. */
+	cell = &cons_grid[row][column];
+	character = cell->character;
+	attribute = cell->attribute;
+	if (character == 0) {
+		character = ' ';
+		attribute = CONS_ATTRIBUTE;
+	}
+
+	/* Draws the cell, with the cursor on it when it is the cursor's. */
+	sun4u_framebuffer_cell(row, column, character, attribute);
+	if (row == cons_row && column == cons_column)
+		sun4u_framebuffer_cursor(row, column);
+}
+
+/* Draws every cell of the grid. */
+static void
+draw_all_locked(
+	void)
+{
+	unsigned row;
+	unsigned column;
+
+	/* Each row, left to right. */
+	for (row = 0; row < SUN4U_CONSOLE_ROWS; row++) {
+		for (column = 0; column < SUN4U_CONSOLE_COLUMNS; column++)
+			draw_cell_locked(row, column);
+	}
+}
+
+/* Moves the cursor to the start of the next line, scrolling at the bottom. */
+static void
+newline_locked(
+	void)
+{
+	unsigned old_row;
+	unsigned old_column;
+
+	/* The cell the cursor leaves loses its cursor. */
+	old_row = cons_row;
+	old_column = cons_column;
+	cons_column = 0;
+	cons_row++;
+	if (old_column < SUN4U_CONSOLE_COLUMNS)
+		draw_cell_locked(old_row, old_column);
+
+	/* Scrolls instead of leaving the last row. */
+	if (cons_row >= SUN4U_CONSOLE_ROWS) {
+		cons_row = SUN4U_CONSOLE_ROWS - 1U;
+		scroll_locked();
+		return;
+	}
+
+	/* Shows the cursor at its new place. */
+	draw_cell_locked(cons_row, cons_column);
+}
+
+/* Moves every row up by one and blanks the bottom row. */
+static void
+scroll_locked(
+	void)
+{
+	unsigned row;
+	unsigned column;
+
+	/* Shifts the rows up. */
+	for (row = 1; row < SUN4U_CONSOLE_ROWS; row++) {
+		for (column = 0; column < SUN4U_CONSOLE_COLUMNS; column++)
+			cons_grid[row - 1U][column] = cons_grid[row][column];
+	}
+
+	/* Blanks the row exposed at the bottom. */
+	for (column = 0; column < SUN4U_CONSOLE_COLUMNS; column++) {
+		cons_grid[SUN4U_CONSOLE_ROWS - 1U][column].character = 0;
+		cons_grid[SUN4U_CONSOLE_ROWS - 1U][column].attribute = 0;
+	}
+
+	/* Repaints the moved screen. */
+	draw_all_locked();
+}
+
+/* Puts one character at the cursor. */
+static void
+putc_locked(
+	int character)
+{
+	unsigned column;
+
+	/* A newline moves to the next line. */
+	if (character == '\n') {
+		newline_locked();
+		return;
+	}
+
+	/* A carriage return moves to the line's start. */
+	if (character == '\r') {
+		column = cons_column;
+		cons_column = 0;
+		if (column < SUN4U_CONSOLE_COLUMNS)
+			draw_cell_locked(cons_row, column);
+		draw_cell_locked(cons_row, cons_column);
+		return;
+	}
+
+	/* A backspace steps back and erases within the line. */
+	if (character == '\b') {
+		column = cons_column;
+		if (cons_column > 0)
+			cons_column--;
+		cons_grid[cons_row][cons_column].character = ' ';
+		cons_grid[cons_row][cons_column].attribute = CONS_ATTRIBUTE;
+		if (column < SUN4U_CONSOLE_COLUMNS)
+			draw_cell_locked(cons_row, column);
+		draw_cell_locked(cons_row, cons_column);
+		return;
+	}
+
+	/* A tab moves to the next eight-column stop, wrapping past the row's end. */
+	if (character == '\t') {
+		column = cons_column;
+		cons_column = (cons_column + 8U) & ~7U;
+		if (column < SUN4U_CONSOLE_COLUMNS)
+			draw_cell_locked(cons_row, column);
+		if (cons_column >= SUN4U_CONSOLE_COLUMNS) {
+			newline_locked();
+			return;
+		}
+		draw_cell_locked(cons_row, cons_column);
+		return;
+	}
+
+	/* Wraps before writing past the end of the row. */
+	if (cons_column >= SUN4U_CONSOLE_COLUMNS)
+		newline_locked();
+
+	/* Stores a printable character, or a question mark for anything else. */
+	cons_grid[cons_row][cons_column].character = '?';
+	if (character >= 0x20 && character < 0x7f)
+		cons_grid[cons_row][cons_column].character = (uint8_t)character;
+	cons_grid[cons_row][cons_column].attribute = CONS_ATTRIBUTE;
+
+	/* Moves the cursor on and draws the written cell and the cursor's. */
+	column = cons_column;
+	cons_column++;
+	draw_cell_locked(cons_row, column);
+	if (cons_column < SUN4U_CONSOLE_COLUMNS)
+		draw_cell_locked(cons_row, cons_column);
+}

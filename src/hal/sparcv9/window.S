@@ -1,5 +1,19 @@
-/* Register-window spill/fill handlers. */
-/* Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib */
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The register-window spill and fill handlers.
+ *
+ * A spill stores the oldest window's locals and ins to the stack frame its
+ * %sp names, past the V9 stack bias; a fill loads them back.  Both run at
+ * the trap level the window trap was taken at.  The trap entry tells a
+ * miss raised inside them by its address lying between
+ * sparcv9_window_spill and sparcv9_window_handlers_end.
+ */
 
 	.section ".text", #alloc, #execinstr
 	.balign 16
@@ -47,16 +61,5 @@ sparcv9_window_fill:
 	retry
 	 nop
 
-	.global sparcv9_window_selftest
-	.type sparcv9_window_selftest, #function
-sparcv9_window_selftest:
-	save %sp, -176, %sp
-	.rept 16
-	save %sp, -176, %sp
-	.endr
-	.rept 16
-	restore
-	.endr
-	ret
-	 restore
-	.size sparcv9_window_selftest, .-sparcv9_window_selftest
+	.global sparcv9_window_handlers_end
+sparcv9_window_handlers_end:

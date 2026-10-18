@@ -1,5 +1,14 @@
-/* Two 512-entry SPARC V9 trap banks (32 bytes per trap type). */
-/* Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib */
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The trap table: two banks of 512 entries of 32 bytes, the first for
+ * traps taken at trap level 0 and the second for those taken above it.
+ */
 
 	.section ".trap_table", #alloc, #execinstr
 	.global sparcv9_trap_table

@@ -6,7 +6,7 @@
  */
 
 /*
- * CMD646 primary-channel ATA PIO driver for QEMU sun4u.
+ * The CMD646 IDE controller's primary channel, driven by programmed I/O.
  */
 
 #ifndef KERN_DRIVERS_SUN4U_CMD646_H
@@ -16,8 +16,20 @@
 
 struct disk;
 
-int drv_sun4u_cmd646_init(uint16_t command_port, uint16_t control_port);
+/*
+ * Resets the channel, identifies its first drive and publishes it as a
+ * disk.
+ */
+int
+drv_sun4u_cmd646_init(
+	uint16_t command_port,
+	uint16_t control_port);
 
-struct disk *drv_sun4u_cmd646_disk(void);
+/*
+ * Reports the published disk, or NULL when none was found.
+ */
+struct disk *
+drv_sun4u_cmd646_disk(
+	void);
 
 #endif

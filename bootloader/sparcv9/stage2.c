@@ -9,7 +9,7 @@
  * The SPARC V9 second-stage FAT16/ELF64 loader.
  *
  * It reads VMUNIX.S9 from the FAT16 partition of the boot disk, builds the
- * handoff from the device tree, loads the kernel into its 4 MiB window and
+ * handoff from the device tree, loads the kernel into its 12 MiB window and
  * enters it.
  */
 
@@ -21,12 +21,12 @@
 
 /* The kernel's physical window and where it is mapped in the direct map. */
 #define KERNEL_PHYS_BASE 0x00400000ULL
-#define KERNEL_WINDOW_SIZE 0x00400000UL
+#define KERNEL_WINDOW_SIZE 0x00c00000UL
 #define KERNEL_DIRECT_BASE 0xfffff80000000000ULL
 #define KERNEL_WINDOW_VA (KERNEL_DIRECT_BASE + KERNEL_PHYS_BASE)
 
 /* Where the handoff is copied for the kernel: the window's last 8 KiB. */
-#define KERNEL_HANDOFF_VA (KERNEL_DIRECT_BASE + 0x007fe000ULL)
+#define KERNEL_HANDOFF_VA (KERNEL_DIRECT_BASE + 0x00ffe000ULL)
 
 /* The ELF64 layout and the program header values the loader checks. */
 #define ELF_HEADER_SIZE 64U

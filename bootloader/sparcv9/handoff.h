@@ -22,9 +22,12 @@
 /* The version the loader writes into the common record. */
 #define SUN4U_HANDOFF_COMMON_VERSION	4U
 
-/* The magic and the version of the sun4u part that follows the common record. */
+/*
+ * The magic and the version of the sun4u part that follows the common
+ * record.  Version 2 adds the PCI memory space and the display.
+ */
 #define SUN4U_HANDOFF_EXTENSION_MAGIC	0x53345548U /* "S4UH" */
-#define SUN4U_HANDOFF_EXTENSION_VERSION	1U
+#define SUN4U_HANDOFF_EXTENSION_VERSION	2U
 
 /* How many installed and how many available memory ranges a handoff holds. */
 #define SUN4U_MAX_MEMORY_RANGES		16U
@@ -45,7 +48,10 @@ struct sun4u_memory_range {
  * The handoff the second stage builds for the HAL.
  *
  * The loader fills one in its own memory and passes its address; the HAL
- * copies it once during early boot.
+ * copies it once during early boot.  The display's framebuffer and its
+ * registers are PCI memory addresses, which lie at pci_memory_base in the
+ * processor's physical space; a zero display_vendor means no display was
+ * found.
  */
 struct sun4u_boot_handoff {
 	struct kern_boot_handoff common;
@@ -67,6 +73,12 @@ struct sun4u_boot_handoff {
 	uint16_t ide_primary_control;
 	uint16_t ide_secondary_command;
 	uint16_t ide_secondary_control;
+	uint64_t pci_memory_base;
+	uint16_t display_vendor;
+	uint16_t display_device;
+	uint32_t display_framebuffer;
+	uint32_t display_framebuffer_size;
+	uint32_t display_registers;
 	char bootpath[SUN4U_BOOTPATH_SIZE];
 } __attribute__((packed));
 

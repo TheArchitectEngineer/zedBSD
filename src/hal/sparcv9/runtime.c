@@ -1,60 +1,578 @@
-/* Freestanding C runtime and diagnostics for SPARC V9. */
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The SPARC V9 HAL's C runtime: memory helpers, formatted output, the stops
+ * on a failed check, the barriers and cache maintenance, and the compiler's
+ * helper calls the kernel needs.
+ */
+
 #include <hal/hal.h>
+#include "defs.h"
+#include "runtime.h"
 
-int hal_strlen(const char*s){int n=0;while(s[n])n++;return n;}
-void *hal_memset(void*p,int c,size_t n){uint8_t*d=p;while(n--)*d++=(uint8_t)c;return p;}
-void *hal_memset16(uint16_t*p,uint16_t c,size_t n){uint16_t*d=p;while(n--)*d++=c;return p;}
-void *hal_memset32(uint32_t*p,uint32_t c,size_t n){uint32_t*d=p;while(n--)*d++=c;return p;}
-void *hal_memcpy(void*d0,const void*s0,size_t n){uint8_t*d=d0;const uint8_t*s=s0;while(n--)*d++=*s++;return d0;}
-static void *(*allocator)(size_t);static void(*deallocator)(void*);
-void hal_set_allocator(void*(*a)(size_t),void(*f)(void*))
-{if(!a||!f||allocator||deallocator)HAL_FATAL("hal_set_allocator must be called exactly once");allocator=a;deallocator=f;}
-void *hal_malloc(size_t n){if(!allocator)HAL_FATAL("allocator unset");return allocator(n);}
-void hal_free(void*p){if(!deallocator)HAL_FATAL("allocator unset");deallocator(p);}
-int hal_putchar(int c){hal_putc(c);return c;}int hal_puts(const char*s){hal_cons_write(s);return 0;}
+static void cons_puts(const char *string);
+static void put_number(uint64_t value, unsigned base, int width);
 
-static uint64_t divide(uint64_t value,unsigned base,uint64_t *remainder)
+/*
+ * Reports the length of a terminated string.
+ */
+int
+hal_strlen(
+	const char *s)
 {
-	uint64_t quotient=0,rem=0;int bit;
-	for(bit=63;bit>=0;bit--){rem=(rem<<1)|((value>>(unsigned)bit)&1U);if(rem>=base){rem-=base;quotient|=1ULL<<(unsigned)bit;}}
-	*remainder=rem;return quotient;
+	int length;
+
+	/* Counts up to the terminator. */
+	length = 0;
+	while (s[length] != '\0')
+		length++;
+
+	/* Succeeded: the length. */
+	return length;
 }
-static void put_number(uint64_t value,unsigned base,int width)
+
+/*
+ * Fills bytes with a value.
+ */
+void *
+hal_memset(
+	void *s,
+	int c,
+	size_t n)
 {
-	char b[24];int n=0;do{uint64_t rem;value=divide(value,base,&rem);b[n++]=(char)(rem<10?'0'+rem:'a'+rem-10);}while(value);
-	while(width-->n)hal_putc('0');
-	while(n)hal_putc(b[--n]);
+	uint8_t *destination;
+	size_t index;
+
+	/* Stores the byte n times. */
+	destination = s;
+	for (index = 0; index < n; index++)
+		destination[index] = (uint8_t)c;
+
+	/* Succeeded: the destination. */
+	return s;
 }
-int hal_printf(const char*fmt,...)
+
+/*
+ * Fills 16-bit words with a value.
+ */
+void *
+hal_memset16(
+	uint16_t *s,
+	uint16_t c,
+	size_t n)
 {
-	__builtin_va_list ap;__builtin_va_start(ap,fmt);
-	while(*fmt){int width=0,long_arg=0;if(*fmt!='%'){hal_putc(*fmt++);continue;}fmt++;if(*fmt=='0')fmt++;
-		while(*fmt>='0'&&*fmt<='9')width=width*10+(*fmt++-'0');
-		if(*fmt=='l'){long_arg=1;fmt++;if(*fmt=='l')fmt++;}
-		switch(*fmt++){
-		case 'c':hal_putc(__builtin_va_arg(ap,int));break;
-		case 's':{const char*s=__builtin_va_arg(ap,const char*);hal_cons_write(s?s:"(null)");break;}
-		case 'u':put_number(long_arg?__builtin_va_arg(ap,uint64_t):__builtin_va_arg(ap,uint32_t),10,width);break;
-		case 'x':put_number(long_arg?__builtin_va_arg(ap,uint64_t):__builtin_va_arg(ap,uint32_t),16,width);break;
-		case 'd':{int64_t v=long_arg?__builtin_va_arg(ap,int64_t):__builtin_va_arg(ap,int32_t);uint64_t u;if(v<0){hal_putc('-');u=(uint64_t)(-(v+1))+1;}else u=(uint64_t)v;put_number(u,10,width);break;}
-		case 'p':put_number((uintptr_t)__builtin_va_arg(ap,void*),16,16);break;
-		case '%':hal_putc('%');break;default:hal_putc('?');break;}
+	size_t index;
+
+	/* Stores the word n times. */
+	for (index = 0; index < n; index++)
+		s[index] = c;
+
+	/* Succeeded: the destination. */
+	return s;
+}
+
+/*
+ * Fills 32-bit words with a value.
+ */
+void *
+hal_memset32(
+	uint32_t *s,
+	uint32_t c,
+	size_t n)
+{
+	size_t index;
+
+	/* Stores the word n times. */
+	for (index = 0; index < n; index++)
+		s[index] = c;
+
+	/* Succeeded: the destination. */
+	return s;
+}
+
+/*
+ * Copies bytes between areas that do not overlap.
+ */
+void *
+hal_memcpy(
+	void *dest,
+	const void *src,
+	size_t n)
+{
+	uint8_t *destination;
+	const uint8_t *source;
+	size_t index;
+
+	/* Copies byte by byte, from the start. */
+	destination = dest;
+	source = src;
+	for (index = 0; index < n; index++)
+		destination[index] = source[index];
+
+	/* Succeeded: the destination. */
+	return dest;
+}
+
+/*
+ * Writes one character, as the C library's putchar does.
+ */
+int
+hal_putchar(
+	int c)
+{
+	/* The early console takes it. */
+	hal_putc(c);
+
+	/* Succeeded: the character written. */
+	return c;
+}
+
+/*
+ * Writes a terminated string.
+ */
+int
+hal_puts(
+	const char *s)
+{
+	/* Writes every byte in order. */
+	cons_puts(s);
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Writes formatted output: %c, %s, %d, %u, %x, %p and %%, with an optional
+ * zero-padded width and l or ll for a 64-bit argument.
+ */
+int
+hal_printf(
+	const char *format,
+	...)
+{
+	__builtin_va_list arguments;
+	const char *string;
+	uint64_t value;
+	int64_t signed_value;
+	int width;
+	int long_argument;
+	char conversion;
+
+	/* Walks the format, writing literal characters and converting the rest. */
+	__builtin_va_start(arguments, format);
+	while (*format != '\0') {
+		/* A literal character. */
+		if (*format != '%') {
+			hal_putc(*format);
+			format++;
+			continue;
+		}
+		format++;
+
+		/* Reads the width, after an optional zero, and the length. */
+		width = 0;
+		long_argument = 0;
+		if (*format == '0')
+			format++;
+		while (*format >= '0' && *format <= '9') {
+			width = width * 10 + (*format - '0');
+			format++;
+		}
+		if (*format == 'l') {
+			long_argument = 1;
+			format++;
+			if (*format == 'l')
+				format++;
+		}
+
+		/* A format that ends inside a conversion ends the output. */
+		conversion = *format;
+		if (conversion == '\0')
+			break;
+		format++;
+
+		/* Converts one argument. */
+		switch (conversion) {
+		case 'c':
+			hal_putc(__builtin_va_arg(arguments, int));
+			break;
+		case 's':
+			string = __builtin_va_arg(arguments, const char *);
+			if (string == NULL)
+				string = "(null)";
+			cons_puts(string);
+			break;
+		case 'd':
+			if (long_argument) {
+				signed_value = __builtin_va_arg(arguments, int64_t);
+			} else {
+				signed_value = __builtin_va_arg(arguments, int32_t);
+			}
+
+			/* A negative number is its sign and its magnitude. */
+			if (signed_value < 0) {
+				hal_putc('-');
+				value = (uint64_t)(-(signed_value + 1)) + 1U;
+			} else {
+				value = (uint64_t)signed_value;
+			}
+			put_number(value, 10, width);
+			break;
+		case 'u':
+		case 'x':
+			if (long_argument) {
+				value = __builtin_va_arg(arguments, uint64_t);
+			} else {
+				value = __builtin_va_arg(arguments, uint32_t);
+			}
+
+			/* Writes the number in the base the conversion names. */
+			if (conversion == 'u') {
+				put_number(value, 10, width);
+			} else {
+				put_number(value, 16, width);
+			}
+			break;
+		case 'p':
+			put_number((uintptr_t)__builtin_va_arg(arguments, void *), 16, 16);
+			break;
+		case '%':
+			hal_putc('%');
+			break;
+		default:
+			hal_putc('?');
+			break;
+		}
 	}
-	__builtin_va_end(ap);return 0;
+	__builtin_va_end(arguments);
+
+	/* Succeeded. */
+	return 0;
 }
-void hal_assert(const char*f,int l,const char*e){hal_printf("assert: %s:%u: %s\n",f,(uint32_t)l,e);(void)hal_irq_disable();for(;;)__asm__ volatile("nop");}
-void hal_fatal(const char*f,int l,const char*s){hal_printf("fatal: %s:%u: %s\n",f,(uint32_t)l,s);(void)hal_irq_disable();for(;;)__asm__ volatile("nop");}
-void hal_mb(void){__asm__ volatile("membar #Sync":::"memory");}
-void hal_rmb(void){__asm__ volatile("membar #LoadLoad | #LoadStore":::"memory");}
-void hal_wmb(void){__asm__ volatile("membar #StoreStore | #LoadStore":::"memory");}
-void hal_io_mb(void){hal_mb();}void hal_io_rmb(void){hal_rmb();}void hal_io_wmb(void){hal_wmb();}
-void hal_icache_invalidate_range(uintptr_t a,size_t n){uintptr_t e=a+n;for(a&=~31UL;a<e;a+=32)__asm__ volatile("flush %0"::"r"(a):"memory");}
-void hal_dcache_clean_range(uintptr_t a,size_t n){hal_icache_invalidate_range(a,n);}
-void hal_dcache_invalidate_range(uintptr_t a,size_t n){hal_icache_invalidate_range(a,n);}
-void hal_dcache_clean_invalidate_range(uintptr_t a,size_t n){hal_icache_invalidate_range(a,n);}
-void hal_sync_instruction_stream(void*a,size_t n){hal_icache_invalidate_range((uintptr_t)a,n);hal_mb();}
-void hal_halt(void){for(;;)__asm__ volatile("nop");}
-void hal_reset(void){HAL_FATAL("sun4u reset is not implemented");}void hal_poweroff(void){HAL_FATAL("sun4u poweroff is not implemented");}void hal_panic(void){HAL_FATAL("kernel panic");}
-bool hal_entropy_fill(void *buffer,size_t size)
-{(void)buffer;(void)size;return false;}
-void hal_pc98_enable_high_memory(void){}void hal_pc98_memory_segments(uint32_t*l,uint32_t*h){if(l)*l=0;if(h)*h=0;}
+
+/*
+ * Stops the processor on a failed assertion.
+ */
+void
+hal_assert(
+	const char *file,
+	int line,
+	const char *exp)
+{
+	/* Prints the failed assertion. */
+	hal_printf("assert: %s:%u: %s\n", file, (uint32_t)line, exp);
+
+	/* Halts with interrupts off for good. */
+	sparcv9_halt_forever();
+}
+
+/*
+ * Stops the processor on a fatal error.
+ */
+void
+hal_fatal(
+	const char *file,
+	int line,
+	const char *s)
+{
+	/* Prints the site and the message. */
+	hal_printf("fatal: %s:%u: %s\n", file, (uint32_t)line, s);
+
+	/* Halts with interrupts off for good. */
+	sparcv9_halt_forever();
+}
+
+/*
+ * Orders every earlier memory access before every later one.
+ */
+void
+hal_mb(
+	void)
+{
+	/* Waits for all outstanding accesses to complete. */
+	__asm__ volatile("membar #Sync" : : : "memory");
+}
+
+/*
+ * Orders earlier loads before later loads and stores.
+ */
+void
+hal_rmb(
+	void)
+{
+	/* Keeps loads ahead of what follows them. */
+	__asm__ volatile("membar #LoadLoad | #LoadStore" : : : "memory");
+}
+
+/*
+ * Orders earlier stores and loads before later stores.
+ */
+void
+hal_wmb(
+	void)
+{
+	/* Keeps stores behind what precedes them. */
+	__asm__ volatile("membar #StoreStore | #LoadStore" : : : "memory");
+}
+
+/*
+ * Orders every earlier device access before every later one.
+ */
+void
+hal_io_mb(
+	void)
+{
+	/* Device accesses complete in the same order as memory accesses. */
+	hal_mb();
+}
+
+/*
+ * Orders earlier device reads before what follows them.
+ */
+void
+hal_io_rmb(
+	void)
+{
+	/* Device reads are ordered as memory reads are. */
+	hal_rmb();
+}
+
+/*
+ * Orders earlier device writes before later ones.
+ */
+void
+hal_io_wmb(
+	void)
+{
+	/* Device writes are ordered as memory writes are. */
+	hal_wmb();
+}
+
+/*
+ * Discards the instruction cache's copy of a range.
+ *
+ * FLUSH keeps the instruction cache coherent with the stores made before
+ * it; one per 32-byte line is enough on the UltraSPARC.
+ */
+void
+hal_icache_invalidate_range(
+	uintptr_t start,
+	size_t size)
+{
+	uintptr_t address;
+	uintptr_t end;
+
+	/* Flushes every line the range touches. */
+	end = start + size;
+	for (address = start & ~(uintptr_t)31U; address < end; address += 32U)
+		__asm__ volatile("flush %0" : : "r"(address) : "memory");
+}
+
+/*
+ * Writes a range back to memory.
+ *
+ * The UltraSPARC's data caches are kept coherent with memory and with the
+ * devices by the hardware, so only the instruction stream needs care.
+ */
+void
+hal_dcache_clean_range(
+	uintptr_t start,
+	size_t size)
+{
+	/* Keeps instructions written through the data cache visible. */
+	hal_icache_invalidate_range(start, size);
+}
+
+/*
+ * Discards the data cache's copy of a range; the hardware keeps it
+ * coherent, so only the instruction stream needs care.
+ */
+void
+hal_dcache_invalidate_range(
+	uintptr_t start,
+	size_t size)
+{
+	/* Keeps instructions written through the data cache visible. */
+	hal_icache_invalidate_range(start, size);
+}
+
+/*
+ * Writes back and discards a range; the hardware keeps the data cache
+ * coherent, so only the instruction stream needs care.
+ */
+void
+hal_dcache_clean_invalidate_range(
+	uintptr_t start,
+	size_t size)
+{
+	/* Keeps instructions written through the data cache visible. */
+	hal_icache_invalidate_range(start, size);
+}
+
+/*
+ * Makes instructions just written visible to instruction fetch.
+ */
+void
+hal_sync_instruction_stream(
+	void *address,
+	size_t size)
+{
+	/* Flushes the range from the instruction cache. */
+	hal_icache_invalidate_range((uintptr_t)address, size);
+
+	/* Completes the flushes before the code is run. */
+	hal_mb();
+}
+
+/*
+ * Waits with interrupts off for good.
+ */
+void
+hal_halt(
+	void)
+{
+	/* The processor has no instruction that waits for an interrupt. */
+	sparcv9_halt_forever();
+}
+
+/*
+ * Reboots the machine; the port has no reset path, so it halts.
+ */
+void
+hal_reset(
+	void)
+{
+	/* Reports the stop, then halts. */
+	hal_puts("SPARCV9 reset is not supported; halted\n");
+	sparcv9_halt_forever();
+}
+
+/*
+ * Turns the power off; the port has no power-off path, so it halts.
+ */
+void
+hal_poweroff(
+	void)
+{
+	/* Reports the stop, then halts. */
+	hal_puts("SPARCV9 power-off is not supported; halted\n");
+	sparcv9_halt_forever();
+}
+
+/*
+ * Stops the processor after a kernel panic.
+ */
+void
+hal_panic(
+	void)
+{
+	/* The panic was already reported. */
+	sparcv9_halt_forever();
+}
+
+/*
+ * Reports that no entropy source is used: the UltraSPARC has no random
+ * number source the HAL reads.
+ */
+bool
+hal_entropy_fill(
+	void *buffer,
+	size_t size)
+{
+	UNUSED_PARAMETER(buffer);
+	UNUSED_PARAMETER(size);
+
+	/* Failed: no source. */
+	return false;
+}
+
+/*
+ * Waits forever with interrupts off.
+ */
+void
+sparcv9_halt_forever(
+	void)
+{
+	/* Masks interrupts, then spins. */
+	(void)hal_irq_disable();
+	for (;;)
+		__asm__ volatile("nop");
+}
+
+/*
+ * Counts the trailing zero bits of a 64-bit word, for the compiler.
+ *
+ * The UltraSPARC has no instruction for it, so the compiler calls this.
+ * The result for zero is undefined, as for __builtin_ctzll(); it is 64
+ * here.
+ */
+int
+__ctzdi2(
+	unsigned long value)
+{
+	int count;
+
+	/* Shifts the word right until its lowest bit is set. */
+	count = 0;
+	while (count < 64 && (value & 1UL) == 0) {
+		value >>= 1;
+		count++;
+	}
+
+	/* Succeeded: the number of zero bits below the lowest set bit. */
+	return count;
+}
+
+/* Writes one terminated string through the console. */
+static void
+cons_puts(
+	const char *string)
+{
+	/* Ignores a missing string. */
+	if (string == NULL)
+		return;
+
+	/* Emits every byte in order. */
+	while (*string != '\0') {
+		hal_putc((unsigned char)*string);
+		string++;
+	}
+}
+
+/* Writes a number in a base, zero-padded to a width. */
+static void
+put_number(
+	uint64_t value,
+	unsigned base,
+	int width)
+{
+	char digits[24];
+	unsigned digit;
+	int count;
+
+	/* Collects the digits, least significant first. */
+	count = 0;
+	do {
+		digit = (unsigned)(value % base);
+		digits[count] = (char)('a' + digit - 10U);
+		if (digit < 10U)
+			digits[count] = (char)('0' + digit);
+		count++;
+		value /= base;
+	} while (value != 0);
+
+	/* Pads, then writes the digits most significant first. */
+	while (width > count) {
+		hal_putc('0');
+		width--;
+	}
+	while (count != 0) {
+		count--;
+		hal_putc(digits[count]);
+	}
+}

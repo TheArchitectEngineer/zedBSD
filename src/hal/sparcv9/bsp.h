@@ -36,8 +36,4 @@ const struct kern_boot_handoff *
 sun4u_kernel_handoff(
 	void);
 
-void
-sun4u_cons_init(
-	void);
-
 #endif

@@ -14,6 +14,22 @@ from ufs_format import create
 
 def build(args: argparse.Namespace) -> None:
     native = args.arch_profile == "sparcv9"
+    if native and args.tree is not None:
+        # A whole root tree, already holding its marker, becomes the image.
+        if not (args.tree / "etc" / "zedbsd-root").is_file():
+            raise SystemExit(f"root tree has no etc/zedbsd-root: {args.tree}")
+        if args.output.exists() and not args.force:
+            raise SystemExit(f"output exists (use --force): {args.output}")
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        data = create(args.size_mib * 1024 * 1024, args.tree)
+        temporary = args.output.with_name(args.output.name + ".tmp")
+        try:
+            temporary.write_bytes(data)
+            temporary.replace(args.output)
+        finally:
+            if temporary.exists():
+                temporary.unlink()
+        return
     if native:
         if args.native_shell is None or not args.native_shell.is_file():
             raise SystemExit("sparcv9 root requires --native-shell")
@@ -87,6 +103,7 @@ def main() -> None:
                         choices=("i386", "amd64", "aarch64", "sparcv9"),
                         required=True)
     parser.add_argument("--arch-image", type=Path)
+    parser.add_argument("--tree", type=Path)
     parser.add_argument("--native-shell", type=Path)
     parser.add_argument("--native-sysctl", type=Path)
     parser.add_argument("--native-rtld", type=Path)

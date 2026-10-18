@@ -18,20 +18,23 @@
 .global __syscall6
 .type __syscall6, #function
 __syscall6:
-	mov %o0, %g1
-	mov %o1, %o0
-	mov %o2, %o1
-	mov %o3, %o2
-	mov %o4, %o3
-	mov %o5, %o4
-	ldx [%sp + 2223], %o5
-	stx %l0, [%sp + 2231]
-	mov %o5, %l0
-	mov %g1, %o5
-	ta 0x6d
-	ldx [%sp + 2231], %l0
-	retl
-	 nop
+	/*
+	 * The call's own window: the number and the first five arguments
+	 * come in %i0-%i5, the sixth on the caller's stack.  The trap takes
+	 * the number in %o5, the arguments in %o0-%o4 and the sixth in %l0,
+	 * and returns the result in %o0.
+	 */
+	save	%sp, -176, %sp
+	mov	%i1, %o0
+	mov	%i2, %o1
+	mov	%i3, %o2
+	mov	%i4, %o3
+	mov	%i5, %o4
+	ldx	[%fp + 2223], %l0
+	mov	%i0, %o5
+	ta	0x6d
+	ret
+	 restore %o0, 0, %o0
 .size __syscall6, .-__syscall6
 
 .global __signal_restorer

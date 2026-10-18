@@ -1,4 +1,15 @@
-/* Opaque SPARC V9 task context switch. */
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The task context switch: every register window and the window registers
+ * of one task are saved and another's loaded, and the first entries of a
+ * new kernel task, a new user task and a forked user task.
+ */
 	.section ".text", #alloc, #execinstr
 	.register %g2, #ignore
 	.register %g3, #ignore
@@ -188,6 +199,13 @@ sparcv9_user_fork_entry:
 	wrpr %g1, 0, %wstate
 	ldx [%g5 + 1024], %g1
 	wrpr %g1, 0, %cwp
+	/* Puts back the parent's user globals; %g5 is the base, so it goes last. */
+	ldx [%g5 + 1080], %g1
+	ldx [%g5 + 1088], %g2
+	ldx [%g5 + 1096], %g3
+	ldx [%g5 + 1104], %g4
+	ldx [%g5 + 1120], %g6
 	ldx [%g5 + 1128], %g7
+	ldx [%g5 + 1112], %g5
 	done
 	 nop
