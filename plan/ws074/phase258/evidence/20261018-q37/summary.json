@@ -1,0 +1,127 @@
+{
+  "source_commit": "0c8033f4b8538b41d9695e8c07fbdebc0f19f540",
+  "protocol_conditions": 323,
+  "final_mixed_oracle_exact": true,
+  "oracle_reconciliation": "inherited q36 canonical-classification negative-zero primitive spelling filter; actual TypedArray public -0.0 mismatch retained separately, no false exotic Chrome equality claim",
+  "old272_source_prefix_identical": true,
+  "public_typed_precode": {
+    "returncode": 0,
+    "old_native": [
+      "number-set-oob-converts 0",
+      "define-oob allowed",
+      "define-readonly-index allowed",
+      "define-accessor-index allowed",
+      "bigint-set-oob-rejects-number allowed",
+      "bigint-set-string TypeError",
+      "bigint-set-boolean TypeError",
+      "bigint-constructor-string TypeError",
+      "dataview-bigint-string TypeError",
+      "number-set-wrap-preserved 1",
+      "noncanonical-negative-zero-known-chrome 5"
+    ],
+    "chrome": [
+      "number-set-oob-converts 1",
+      "define-oob TypeError",
+      "define-readonly-index TypeError",
+      "define-accessor-index TypeError",
+      "bigint-set-oob-rejects-number TypeError",
+      "bigint-set-string 2",
+      "bigint-set-boolean 1",
+      "bigint-constructor-string 3",
+      "dataview-bigint-string 4",
+      "number-set-wrap-preserved 1",
+      "noncanonical-negative-zero-known-chrome TypeError"
+    ],
+    "final_native": [
+      "number-set-oob-converts 1",
+      "define-oob TypeError",
+      "define-readonly-index TypeError",
+      "define-accessor-index TypeError",
+      "bigint-set-oob-rejects-number TypeError",
+      "bigint-set-string 2",
+      "bigint-set-boolean 1",
+      "bigint-constructor-string 3",
+      "dataview-bigint-string 4",
+      "number-set-wrap-preserved 1",
+      "noncanonical-negative-zero-known-chrome 5"
+    ],
+    "first10_exact_chrome": true,
+    "actual_differences_corrected": 9,
+    "negative_zero_spec_exception_retained": true,
+    "original_html_unchanged": true
+  },
+  "native_pressure": [
+    "BigInt fixed-view metadata supplied by real public constructor, native operations table only collecting and forwarding actual storage policy",
+    "bare managed owner and sole converted BigInt survive at least2 forced native validity collections after source/target/owner setup roots dropped",
+    "pure define forwarding wrapper enforces NULL realm and actual converted BigInt input, actual stored54-bit value independently read from real typed bytes",
+    "original managed realm/source/valueOf primitive actually reclaimed while typed graph remains rooted",
+    "last embedding roots release actually reclaims typed object/view/public ArrayBuffer/native backing storage cell/loaded BigInt",
+    "q30-q36 original five-hook Proxy GC, independent value/receiver, From pressure and post-callback ToBigInt parser collection retained"
+  ],
+  "focused_gate_returncodes": {
+    "proxy-read": 0,
+    "delegation": 0,
+    "interpreter": 0,
+    "vm-factory": 0,
+    "dom": 0,
+    "cssom": 0,
+    "cssom-mutation": 0,
+    "marks": 0,
+    "observer": 0,
+    "error-events": 0,
+    "error-reporting": 0,
+    "acid": 0
+  },
+  "acid3_score": 100,
+  "acid3_pixel_diff": 0,
+  "acid2_existing_pixel_diff": 873,
+  "raw_allowed_cleanup": 73,
+  "other_style_flags": 0,
+  "host_target_warnings": 0,
+  "native_operations_definition_byte_identical": true,
+  "native_typed_define_script_free": true,
+  "content_flag": "VM_OBJECT_TYPED_BIGINT; private metadata without VM-to-JS dependency or object/native ABI layout change",
+  "archives": {
+    "harness-all-raw": {
+      "sha256": "51fc5fa098a8a20d13a1d188840fa97a9ca4102e7814618e96d5878eb4495d5e",
+      "members": 1676,
+      "readback_all_members": true
+    },
+    "native-oracle-and-build-raw": {
+      "sha256": "a51bc2dceb07013b1b31d87ed7637b34f84478129a1f6d11e611b371d9db99ff",
+      "members": 66,
+      "readback_all_members": true
+    }
+  },
+  "harness": {
+    "fail": 955,
+    "harness_error": 13,
+    "pass": 494,
+    "no_completion": 20,
+    "no_output": 24,
+    "multiple_completions": 2
+  },
+  "callbacks": {
+    "1": 20642,
+    "0": 11540,
+    "3": 14
+  },
+  "whole_pass_gains": [],
+  "whole_pass_losses": [],
+  "old_pass_callback_losses": [],
+  "changes": 0,
+  "current_raw_lower_bound": 1482,
+  "denominator": 3805,
+  "held": 0,
+  "unattempted_harness": 275,
+  "static_scripted_crash_reused": "q28:844/105/39",
+  "limitations": [
+    "new whole gains require separate prerequisite and negative-control audit before certification",
+    "fixed-buffer Set/Define only; resize/grow/detach/SAB backing APIs and typed Get/Has/Delete/prototype semantics remain",
+    "normal nonProxy assignment routing with exotic prototypes remains pending; private receiver-aware entry handles explicit prototype dispatch",
+    "known Chrome153 -0.0 mismatch is retained with primary-spec/native control; no pure exotic all323 equality claim",
+    "runtime binaries retained in build with hashes, not embedded in archives",
+    "global Proxy/p258/full target/p100/WS100% remain incomplete",
+    "static/scripted/strict q28 evidence reused; no q37 all-image/strict equality claim"
+  ]
+}

@@ -1,5 +1,9 @@
 # WS074 lane の Past Log
 
+## ws074-q20261018-37（2026-10-18）
+
+[履歴](ws074-q20261018-37.md)。fixed-buffer TypedArray Set/Define partial clear、pure native契約回復・content metadata/factory roots、公開9差修正・native/mixed oracle323/実GC graph回収。全1508 q36の全whole/callback/completion同値、1482/3805・held0維持。remaining typed/exotic/global未達、共有投影pending。
+
 ## ws074-q20261018-36（2026-10-18）
 
 [履歴](ws074-q20261018-36.md)。canonical index/ToBigInt共有と公開BigInt3差を修正、272 native/mixed oracle・実GC/回収・focused gates。Chrome153負ゼロ反例は元raw保存。全1508 q31の全whole/callback/completion同値、1482/3805・held0維持。TypedArray Set等/global未達、共有投影pending。
@@ -119,9 +123,5 @@ Follow-up: q23 i01/i02 clearanceは疎checkoutのIDL未配信が判明しunclear
 ## ws074-q20261018-08（2026-10-18）
 
 [履歴](ws074-q20261018-08.md)。独立7/7・静的Grid225→227は通ったが、full502でminmax(auto,0px)の10 callback後退が判明。i01 initial clearanceをinvalidateし、i02/Queueともuncleared。次はminimum rule metadataとeligibilityの修正。q07の値取得改善とknown historyは保持。共有投影pending。
-
-## ws074-q20261018-07（2026-10-18）
-
-[履歴](ws074-q20261018-07.md)。Grid resolved track CSSOMは独立14/14、DOM26/26、公式whole245→247・433 callback改善。一方1 callback後退が固定行spanの既存solver不備を露出し、q07 uncleared。次はp244修正→p243新attemptで全502照合。Acid3差0/Acid2差873、host/target compile warning0。共有投影pending。
 
 以前のindex: [early 2026-10-18](early-20261018.md)。過去standing Queue投影: [原文archive](../queue-archive-through-q30.md)。

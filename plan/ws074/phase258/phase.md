@@ -2,7 +2,7 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: in-progress（q37 fixed-buffer TypedArray Set/Define partial、q30〜q36 verified）
+Status: uncleared（q37 fixed-buffer TypedArray Set/Define partial cleared、whole Proxy未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
@@ -11,7 +11,7 @@ Origin: p189/q29 original WebIDL2 parseがProxy未定義で停止。
 
 Objective / own criteria: native managed Proxyを実object internal methodsへ接続し、constructor/revocableと各internal operationのtrap/fallback/invariant/receiver/revocation/callability/GCを正しく実行する。original WebIDL2 actual parse/validatorに必要なget/set/array behaviorを通常APIで提供し、independent controls/原WPTを通す。部分read stageだけでwholeをclearしない。
 Design: vm_native_operationsはscript-free heap interfaceのまま保持。Proxyにはmanaged target/handler recordを持たせ、scriptを実行可能なrealm-aware access/internal methodからtrapを呼ぶ。opaque JS constructor公開前に必要なoperationを段階的に整える。各段階は自走承認に基づく新finite Queueで正確に選定する。
-Current state: q36 canonical numeric key/ToBigInt prerequisitesと公開BigInt修正までverified。actual TypedArray Set/Define、通常prototype routing、delete/keys/prototype/extent/IsArray/call/construct/global Proxyと原WebIDL2は未達。
+Current state: q37 existing fixed-buffer TypedArray Set/Defineまでverified、native policyはpure。global Proxy/原WebIDL2、IsArray/keys/delete/prototype/extent/call/construct、remaining typed exotic/backing/通常prototype routing/whole conformanceは未達。
 Standards: Guardrail/C全文/browser component全文、簡約版無し。一次 https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-proxy-object-internal-methods-and-internal-slots-get-p-receiver 。既存p100がWS全source near-final conformanceを所有し、本partialはnew/changed scopeの全文適合を検証。
 Verification/bounds/affected components: q30 snapshotの通り。private object kind/cell/newborn/trace/revokeとactual receiver/trap/invariant/GCをnative/Chromeで確認し、ordinary whole/callback PASSを守る。target single-source compileのみとfull target runtimeを区別。未達はunclearedとresume。
 
@@ -111,3 +111,15 @@ harness archive1676 members SHA256dc0144561a9fcee39bf121eb3996733645dabe17e863a4
 [全証拠](evidence/20261018-q36/README.md)。次はVM↔JS依存やnative_operations契約を変えず、typed content-type metadata/専用Set/Defineの正規順を新finite Queueで具体化する。
 
 Event ws074-p258-q37-selected-20261018: native_operations正本は全callbacks script-freeなのに旧typed_defineがrealm変換を行うことを実sourceで確認。q37はToNumericをaccess realm層へ移し、immutable BigInt content flagでVMからJS moduleへの依存無しに区別してpure hookへnormalized primitiveを渡す。fixed-buffer専用Set/Define・factory roots/shared typed_convert consumersをexact max90分に選定。RAB/SAB/detach/otherexotic/routing/global公開未達は明示保持、Chrome153 -0.0反例は標準別対照。
+
+## q37 partial result / resume
+
+Event ws074-p258-q37-partial-cleared-20261018: fixed-buffer TypedArrayの専用Set/Defineをrealm access層へ追加しq35のENOTSUPを解除。same receiverのcanonical numeric keyはToNumber/ToBigIntを先に実行しinvalid/OOBはno-op true、different receiverのinvalidはconversion無しtrue・validは元value/receiverでordinary Set。noncanonical/Symbolはordinary fallback。direct typed assignmentも新pathへ接続し、既存ordinary vm_set bodyはexotic branchを除いて全C tokens同一。Defineはindex validity→mandatory属性/accessor拒否→値変換→pure保存の正規順で、conversion後の無効化はaccepted Defineのno-op successとして扱う。
+VM_OBJECT_TYPED_BIGINTを内部immutable content flagにし、VMからJS moduleの型やhelperへの依存無しに変換を選択。typed_defineの旧callback内user conversionをrealm側へ移し、native callbackはnormalized Number/BigIntのindex/属性検証とbyte storeだけ、NULL realmで呼ぶ。native_operations struct/コメント/契約は全bytes不変。既存shared typed_convertの実consumerはDataViewで、constructorの要素変換は新VM Set経由。双方が正規ToBigIntを使用する。typed_make_viewはrealm/prototype/buffer/new viewをactual allocation中rootにし、DataView pathとBigInt metadataも正しく区別してpublishする。
+同じ323条件がnative/Chrome対照で通過、old272 source prefixはbyte同一。q36由来のcanonical-classification negative-zero primitive filterを継承し、pure genuine exotic全一致とは主張しない。元HTMLの公開API対照はOOB変換省略、Define OOB/readonly/accessor誤受理、BigInt OOB Number誤受理、String/boolean/constructor/DataView入力誤拒否の9差を修正し、first10行がChromeと完全一致・従来数値wrap1も保持。既知Chrome153の"-0.0"拒否だけはnative5/Chrome TypeErrorの元rawを保持し、標準ordinary keyのnative挙動を維持する。
+native C stack保守保持無し。実public constructorが作るBigInt typed objectに、original immutable policyへcollect/forwardするfixture tableを一時設定。owner/source/targetのsetup rootsを落とし、pure get-own内の強制GCを少なくとも2回越えてbare managed realmとsole converted BigIntを保持。forward defineはNULL realm/actual BigIntを検証し実policyへ委譲、保存された54-bit値9007199254740993を実byte getterで独立確認。realm/source/valueOf primitiveはtyped graphだけrootに残して実回収、最後のtarget/output roots解放でTypedArray/view/public ArrayBuffer/native storage cell/loaded BigIntも実回収。既存5-hook Proxy GC/独立value・receiver/From pressure/ToBigInt post-callback parser collection対照を保持した。
+source WIP0c8033f4b、final source/pair/input hash317件照合。host warning0、q02 exact access/builtin_typed2 source target compile warning0。full new/changed Cは許可forward shared cleanup73・他0。DOM41、VM45/factory56、CSSOM12+12、marks7/observer10/ErrorEvent9/ErrorReporting19/delegation10、Acid3 score/inventory100・pixel0/Acid2既存差873を維持。
+固定1508 harnessを同じsettle5000/process20で236.8秒実測。q36 whole判定・全callback/completion object完全同一、494 PASS/955 FAIL/13 harness_error/20 no_completion/24 no_output/2 multiple、callbacks11540 PASS/20642 FAIL/14 NOTRUN、whole gains/losses/old PASS callback losses/差0。static844/scripted105/strict39はq28証拠再利用でcurrent pair全capture同値は未測定。確認済1482/3805（38.948752%）・held0・未attempt275を保持。
+harness archive1676 members SHA25651fc5fa098a8a20d13a1d188840fa97a9ca4102e7814618e96d5878eb4495d5e、native/oracle/build archive66 members SHA256a51bc2dceb07013b1b31d87ed7637b34f84478129a1f6d11e611b371d9db99ffを全member順次read-back。i01 existing fixed-buffer Set/Define partialだけcleared。RAB/grow/detach/SAB backing、新typed Get/Has/Delete invalid-key prototype semantics、通常nonProxy assignmentのexotic prototype routing、Proxy delete/keys/prototype/extent/IsArray/call/construct/global/revocable/原WebIDL2、full target/p100/WS100%未達。constructor callerのelement Get中の新配列ownerなど本partial外のGC面も全体verifiedとは主張しない。共有Master/Queue/next/cache/GitHub投影pending、push無し。
+
+[全証拠](evidence/20261018-q37/README.md)。次は原WebIDL2 blockerの正確な依存をprivate native probeで確認し、必要なIsArray/Reflect等を新finite scopeで優先具体化する候補。全操作完成/global公開/公式PASS増分を先取りしない。

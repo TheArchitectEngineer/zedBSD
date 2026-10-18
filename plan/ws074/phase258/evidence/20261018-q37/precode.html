@@ -1,0 +1,14 @@
+<!doctype html><html><body><script>
+function report(name,fn){try{console.log(name+' '+String(fn()));}catch(e){console.log(name+' '+e.name);}}
+report('number-set-oob-converts',function(){var n=0,a=new Uint8Array(0);a[0]={valueOf:function(){n++;return 7;}};return n;});
+report('define-oob',function(){Object.defineProperty(new Uint8Array(0),'0',{value:1});return 'allowed';});
+report('define-readonly-index',function(){Object.defineProperty(new Uint8Array(1),'0',{writable:false});return 'allowed';});
+report('define-accessor-index',function(){Object.defineProperty(new Uint8Array(1),'0',{get:function(){return 1;}});return 'allowed';});
+report('bigint-set-oob-rejects-number',function(){var a=new BigInt64Array(0);a[0]=1;return 'allowed';});
+report('bigint-set-string',function(){var a=new BigInt64Array(1);a[0]='2';return a[0];});
+report('bigint-set-boolean',function(){var a=new BigInt64Array(1);a[0]=true;return a[0];});
+report('bigint-constructor-string',function(){return new BigInt64Array(['3'])[0];});
+report('dataview-bigint-string',function(){var d=new DataView(new ArrayBuffer(8));d.setBigInt64(0,'4');return d.getBigInt64(0);});
+report('number-set-wrap-preserved',function(){var a=new Uint8Array(1);a[0]='257';return a[0];});
+report('noncanonical-negative-zero-known-chrome',function(){var a=new Uint8Array(0);Object.defineProperty(a,'-0.0',{value:5});return a['-0.0'];});
+</script></body></html>

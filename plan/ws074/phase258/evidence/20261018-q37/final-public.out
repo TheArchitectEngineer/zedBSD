@@ -1,0 +1,11 @@
+number-set-oob-converts 1
+define-oob TypeError
+define-readonly-index TypeError
+define-accessor-index TypeError
+bigint-set-oob-rejects-number TypeError
+bigint-set-string 2
+bigint-set-boolean 1
+bigint-constructor-string 3
+dataview-bigint-string 4
+number-set-wrap-preserved 1
+noncanonical-negative-zero-known-chrome 5

@@ -1,0 +1,18 @@
+{
+  "raw_counterexample": {
+    "key": "-0.0",
+    "chrome153_typedarray_reflect_define": false,
+    "standard_canonical": false,
+    "native_canonical_value": "undefined",
+    "Number": "-0",
+    "String_Number": "0"
+  },
+  "reason": "TypedArray oracle has an independently reproduced Chromium153 negative-zero spelling disagreement; production VM follows authoritative canonical spelling rule",
+  "adjusted_oracle": "genuine TypedArray0 Reflect.defineProperty for all keys, plus genuine Number/Object.is negative zero spelling filter for non-exact -0; no production expectation or shared test source changed",
+  "shared_conditions": 323,
+  "original_protocol_preserved": "oracle-before-negative-zero",
+  "native_source_and_pair_unchanged": true,
+  "script_key_bounds": "String/Symbol only",
+  "inherited_from": "q36 oracle-negative-zero-reconciliation.json",
+  "current_actual_public_counterexample": "q37 precode.html/final-public-proof.json last row: native5 versus Chrome TypeError; first10 lines otherwise match"
+}

@@ -1,0 +1,66 @@
+{
+  "scope": {
+    "userland/desktop/libbrowser/vm/access.c": [
+      "vm_set",
+      "vm_set_receiver",
+      "vm_define_own_property",
+      "access_set_typed",
+      "access_define_typed"
+    ],
+    "userland/desktop/libbrowser/js/builtin_typed.c": [
+      "typed_convert",
+      "typed_define",
+      "typed_make_view",
+      "typed_numeric_index"
+    ],
+    "plan/ws074/tests/host-proxy-read.c": [
+      "main",
+      "typed_collect_get_own",
+      "typed_forward_define",
+      "typed_storage_pressure"
+    ]
+  },
+  "raw_checker_flags": 73,
+  "allowed_forward_cleanup": [
+    {
+      "function": "access_set_typed",
+      "count": 10
+    },
+    {
+      "function": "access_define_typed",
+      "count": 16
+    },
+    {
+      "function": "typed_make_view",
+      "count": 3
+    },
+    {
+      "function": "main",
+      "count": 22
+    },
+    {
+      "function": "typed_storage_pressure",
+      "count": 22
+    }
+  ],
+  "other_checker_flags": 0,
+  "old272_prefix_equal": true,
+  "host_target_warnings": 0,
+  "script_free_native_operations_byte_identical": true,
+  "manual_review": [
+    "realm Typed Set follows same/different receiver conversion order; fixed-view validity uses pure native get_own so invalid numeric keys cannot fall through prototypes",
+    "realm Define validates index/flags before conversion, holds original/converted flagged descriptors and key separately, copies only present attribute bits, calls native policy with NULL realm and normalized primitive",
+    "conversion-time invalidation after initially accepted Define is a no-op success; actual resizable/detach support remains outside fixed-buffer stage",
+    "pure typed_define enforces index/flags/content scalar with no JS or realm conversion; shared canonical formatter/parser allocate only C buffers; typed_convert now used by DataView realm path, constructors reach new VM Set",
+    "immutable content metadata only set for real BigInt TypedArray views; DataView flag remains unset; factory roots managed owner/prototype/buffer/new view before next allocation and publishes wrapper with no later fallible action",
+    "direct Proxy/Typed routing changes only existing exotic branch; ordinary body C tokens unchanged; normal prototype exotic assignment routing remains future work",
+    "native collecting typed get_own forwards actual policy and checks managed bare owner; pure define wrapper rejects nonNULL realm/unconverted BigInt; actual stored54-bit value proves converted input survival through forced collections",
+    "native last-root graph release verifies actual typed object/view/public ArrayBuffer/native storage cell/output BigInt reclamation; original conversion source/primitive/bare realm reclaimed while output graph remains rooted",
+    "all changed function bodies/prototypes/type/flags/paragraph/ANSI/public-static/initializer-needed declaration order checked; raw flags only allowed forward cleanup"
+  ],
+  "limitations": [
+    "fixed buffers only, no resize/grow/detach/SAB APIs or full exotic Get/Has/Delete/prototype routing/global Proxy readiness",
+    "inherited q36 Chrome negative-zero oracle qualification retained; actual TypedArray -0.0 public counterexample separately follows spec instead of falsely claiming exotic Chrome equality",
+    "full target link/runtime and whole-source p100/WS100% remain unverified"
+  ]
+}

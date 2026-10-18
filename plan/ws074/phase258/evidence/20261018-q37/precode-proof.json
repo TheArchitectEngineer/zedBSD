@@ -1,0 +1,19 @@
+{
+  "old_native": "number-set-oob-converts 0\ndefine-oob allowed\ndefine-readonly-index allowed\ndefine-accessor-index allowed\nbigint-set-oob-rejects-number allowed\nbigint-set-string TypeError\nbigint-set-boolean TypeError\nbigint-constructor-string TypeError\ndataview-bigint-string TypeError\nnumber-set-wrap-preserved 1\nnoncanonical-negative-zero-known-chrome 5\n",
+  "chrome": "number-set-oob-converts 1\ndefine-oob TypeError\ndefine-readonly-index TypeError\ndefine-accessor-index TypeError\nbigint-set-oob-rejects-number TypeError\nbigint-set-string 2\nbigint-set-boolean 1\nbigint-constructor-string 3\ndataview-bigint-string 4\nnumber-set-wrap-preserved 1\nnoncanonical-negative-zero-known-chrome TypeError\n",
+  "native_returncode": 0,
+  "chrome_returncode": 0,
+  "command": [
+    "chromium",
+    "--headless",
+    "--no-sandbox",
+    "--disable-gpu",
+    "--allow-file-access-from-files",
+    "--user-data-dir=/tmp/ws074-q37-pre-1792324134500681956",
+    "--enable-logging=stderr",
+    "--v=0",
+    "--virtual-time-budget=5000",
+    "--dump-dom",
+    "file:///home/awe/zedBSD-claude1/build/ws074-20261018/q37/precode.html"
+  ]
+}

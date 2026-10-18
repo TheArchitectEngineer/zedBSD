@@ -1,0 +1,16 @@
+{
+  "prior": "dc2f45278",
+  "native_operations_definition_byte_identical": true,
+  "existing_shared_operation_c_byte_identical": true,
+  "native_typed_define_has_no_user_conversion_calls": true,
+  "forbidden_calls_absent": [
+    "typed_convert(",
+    "vm_to_number(",
+    "vm_to_bigint(",
+    "vm_to_primitive(",
+    "vm_call(",
+    "vm_get("
+  ],
+  "ordinary_vm_set_body_all_C_tokens_equal_after_removing_existing_exotic_branch": true,
+  "content_flag": "VM_OBJECT_TYPED_BIGINT private object flag, no struct/layout/exports change"
+}
