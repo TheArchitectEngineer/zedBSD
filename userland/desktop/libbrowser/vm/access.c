@@ -27,6 +27,15 @@
 /* Native fallback chains and script getters share a finite property-operation budget per realm. */
 #define ACCESS_RECURSION_MAX 256U
 
+/* The four distinct key lists preserve evaluation order before any Proxy own-key invariant is checked. */
+enum access_own_key_list {
+	ACCESS_OWN_TRAP_KEYS,
+	ACCESS_OWN_TARGET_KEYS,
+	ACCESS_OWN_FIXED_KEYS,
+	ACCESS_OWN_CONFIGURABLE_KEYS,
+	ACCESS_OWN_LIST_COUNT
+};
+
 /*
  * The state of one for-in loop: the keys it will visit, found when it
  * started, and how far it has come.
@@ -86,6 +95,9 @@ static const struct vm_cell_type access_for_in_type = {
 	"for-in", access_for_in_trace, access_for_in_finalize
 };
 
+static void access_keys_trace(struct vm_heap *heap, void *context);
+static int access_property_key_list(struct vm_realm *realm, vm_value source, struct wb_vector *keys);
+static int access_proxy_own_keys(struct vm_realm *realm, struct vm_proxy *proxy, struct wb_vector *keys);
 static int access_set_prototype(struct vm_object *object, struct vm_object *prototype);
 static int access_proxy_get_prototype(struct vm_realm *realm, struct vm_proxy *proxy, vm_value *prototype);
 static int access_proxy_set_prototype(struct vm_realm *realm, struct vm_proxy *proxy, vm_value prototype, int *done);
@@ -109,6 +121,62 @@ static int access_get_receiver(struct vm_realm *realm, vm_value base, vm_value k
 static int access_has_property(struct vm_realm *realm, struct vm_object *object, vm_value key, int *found);
 static int access_proxy_has(struct vm_realm *realm, struct vm_proxy *proxy, vm_value key, int *found);
 static int access_proxy_get(struct vm_realm *realm, struct vm_proxy *proxy, vm_value key, vm_value receiver, vm_value *result);
+
+/*
+ * Appends actual own property keys through realm-aware Proxy handling with complete native ownership.
+ */
+int
+vm_own_property_keys(
+	struct vm_realm *realm,
+	struct vm_object *object,
+	struct wb_vector *keys)
+{
+	struct access_read_roots roots;
+	size_t beginning;
+	int status;
+
+	/* Caller prefixes and managed input ownership both survive every trap, native callback and error allocation. */
+	beginning = keys->count;
+	roots.realm = realm;
+	roots.base = vm_value_cell(object);
+	roots.key = VM_VALUE_UNDEFINED;
+	roots.receiver = VM_VALUE_UNDEFINED;
+	status = vm_heap_add_tracer(realm->heap, access_read_trace, &roots);
+	if (status != 0)
+		return status;
+	status = vm_heap_add_tracer(realm->heap, access_keys_trace, keys);
+	if (status != 0) {
+		vm_heap_remove_tracer(realm->heap, access_read_trace, &roots);
+		return status;
+	}
+
+	/* Bound fallback recursion before any target operation while both input and prefix are rooted. */
+	if (realm->property_depth >= ACCESS_RECURSION_MAX) {
+		status = vm_throw_range_error(realm, "Maximum property recursion exceeded");
+		vm_heap_remove_tracer(realm->heap, access_keys_trace, keys);
+		vm_heap_remove_tracer(realm->heap, access_read_trace, &roots);
+		return status;
+	}
+
+	/* Ordinary objects preserve their existing native policy and key order. */
+	realm->property_depth++;
+	if (object->kind == VM_KIND_PROXY)
+		status = access_proxy_own_keys(realm, (struct vm_proxy *)object, keys);
+	else
+		status = vm_object_own_keys(realm->heap, object, keys);
+
+	/* Retire the native depth and discard only this operation's partial append on failure. */
+	realm->property_depth--;
+	if (status != 0)
+		keys->count = beginning;
+	vm_heap_remove_tracer(realm->heap, access_keys_trace, keys);
+	vm_heap_remove_tracer(realm->heap, access_read_trace, &roots);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: only the completed operation's keys were appended to the preserved prefix. */
+	return 0;
+}
 
 /*
  * Gets an object's actual prototype through ordinary storage or native Proxy internal methods.
@@ -4700,5 +4768,328 @@ cleanup:
 		return status;
 
 	/* Succeeded: done reports the accepted or refused transition. */
+	return 0;
+}
+
+/* Marks every meaningful key in a native vector, including existing output prefixes. */
+static void
+access_keys_trace(
+	struct vm_heap *heap,
+	void *context)
+{
+	struct wb_vector *keys;
+	size_t index;
+
+	/* Unused capacity holds no live values and must never become a collector edge. */
+	keys = context;
+	for (index = 0; index < keys->count; index++)
+		vm_heap_mark_value(heap, ((vm_value *)keys->items)[index]);
+}
+
+/* Creates a property-key list from an array-like object without coercing element values into keys. */
+static int
+access_property_key_list(
+	struct vm_realm *realm,
+	vm_value source,
+	struct wb_vector *keys)
+{
+	struct vm_cell *current_root;
+	struct vm_string *string;
+	vm_value length_key;
+	vm_value index_key;
+	vm_value value;
+	vm_value key;
+	double number;
+	uint64_t length;
+	uint64_t index;
+	int is_cell;
+	int is_object;
+	int is_string;
+	int is_symbol;
+	int status;
+
+	/* The caller retains source and the accumulated vector; this slot owns each fresh intermediate value. */
+	current_root = NULL;
+	status = vm_heap_add_root(realm->heap, &current_root);
+	if (status != 0)
+		return status;
+	is_object = vm_value_is_object(source);
+	if (!is_object) {
+		status = vm_throw_type_error(realm, "Proxy ownKeys trap must return an object");
+		goto cleanup;
+	}
+
+	/* LengthOfArrayLike gets length once before applying ToLength's number conversion. */
+	length_key = vm_key_from_ascii(realm->heap, "length");
+	if (length_key == VM_VALUE_EMPTY) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* A fresh length object must survive its own valueOf callback and any collection it performs. */
+	status = vm_get(realm, source, length_key, &value);
+	if (status != 0)
+		goto cleanup;
+	is_cell = vm_value_is_cell(value);
+	if (is_cell)
+		current_root = vm_value_as_cell(value);
+	status = vm_to_number(realm, value, &number);
+	if (status != 0)
+		goto cleanup;
+	current_root = NULL;
+
+	/* NaN and nonpositive lengths produce an empty list, including negative zero and negative infinity. */
+	length = 0;
+	if (number == number && number > 0.0) {
+		if (number >= 9007199254740991.0)
+			length = (uint64_t)9007199254740991.0;
+		else
+			length = (uint64_t)floor(number);
+	}
+
+	/* Read each actual index in order; arbitrary large lengths remain lazy so the first abrupt getter still wins. */
+	for (index = 0; index < length; index++) {
+		if (index <= 2147483647U) {
+			index_key = vm_value_int32((int32_t)index);
+		} else {
+			status = vm_to_string(realm, vm_value_number((double)index), &string);
+			if (status != 0)
+				goto cleanup;
+			current_root = &string->cell;
+			status = vm_key_from_string(realm->heap, string, &index_key);
+			if (status != 0)
+				goto cleanup;
+			current_root = NULL;
+		}
+
+		/* Property-key lists permit only String or Symbol elements, with no object or numeric element coercion. */
+		status = vm_get(realm, source, index_key, &value);
+		if (status != 0)
+			goto cleanup;
+		current_root = NULL;
+		is_cell = vm_value_is_cell(value);
+		if (is_cell)
+			current_root = vm_value_as_cell(value);
+		is_string = vm_value_is_string(value);
+		is_symbol = access_is_symbol(value);
+		if (!is_string && !is_symbol) {
+			status = vm_throw_type_error(realm, "Proxy ownKeys list elements must be strings or symbols");
+			goto cleanup;
+		}
+
+		/* Only primitive strings are canonicalized into the VM's index-or-atom representation. */
+		key = value;
+		if (is_string) {
+			status = vm_key_from_string(realm->heap, (struct vm_string *)vm_value_as_cell(value), &key);
+			if (status != 0)
+				goto cleanup;
+		}
+
+		/* The accumulated vector becomes the owner before the next getter may collect or delete earlier values. */
+		status = wb_vector_push(keys, &key);
+		if (status != 0)
+			goto cleanup;
+		current_root = NULL;
+	}
+
+	/* Every element was evaluated before the caller checks duplicate entries. */
+	status = 0;
+
+cleanup:
+	/* Neither a length object nor an element may remain retained after this list conversion frame ends. */
+	vm_heap_remove_root(realm->heap, &current_root);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: keys preserves the original array-like order as canonical internal property keys. */
+	return 0;
+}
+
+/* Executes Proxy OwnPropertyKeys with complete list evaluation and post-trap target key-set invariants. */
+static int
+access_proxy_own_keys(
+	struct vm_realm *realm,
+	struct vm_proxy *proxy,
+	struct wb_vector *keys)
+{
+	struct vm_cell *roots[4];
+	struct wb_vector lists[ACCESS_OWN_LIST_COUNT];
+	struct vm_descriptor descriptor;
+	struct vm_object *target_object;
+	vm_value target;
+	vm_value handler;
+	vm_value method;
+	vm_value method_key;
+	vm_value produced;
+	vm_value key;
+	size_t item;
+	unsigned index;
+	unsigned registered;
+	unsigned traced;
+	int is_cell;
+	int listed;
+	int extensible;
+	int found;
+	int status;
+
+	/* Original participants survive method lookup and trap revocation independently of the outer Proxy record. */
+	target = proxy->target;
+	handler = proxy->handler;
+	memset(roots, 0, sizeof(roots));
+	is_cell = vm_value_is_cell(target);
+	if (is_cell)
+		roots[0] = vm_value_as_cell(target);
+	is_cell = vm_value_is_cell(handler);
+	if (is_cell)
+		roots[1] = vm_value_as_cell(handler);
+	registered = 0;
+	traced = 0;
+	for (index = 0; index < ACCESS_OWN_LIST_COUNT; index++)
+		wb_vector_init(&lists[index], sizeof(vm_value));
+
+	/* Every acquired root registration is retired even when a later registration fails. */
+	for (index = 0; index < 4U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* Accumulated keys need native vector ownership across later element getters and target policy collections. */
+	for (index = 0; index < ACCESS_OWN_LIST_COUNT; index++) {
+		status = vm_heap_add_tracer(realm->heap, access_keys_trace, &lists[index]);
+		if (status != 0)
+			goto cleanup;
+		traced++;
+	}
+
+	/* Revocation fails before the current handler method is observed. */
+	if (target == VM_VALUE_NULL) {
+		status = vm_throw_type_error(realm, "Cannot list the own keys of a revoked Proxy");
+		goto cleanup;
+	}
+
+	/* GetMethod provides the usual dynamic getter, null fallback and noncallable checks. */
+	method_key = vm_key_from_ascii(realm->heap, "ownKeys");
+	if (method_key == VM_VALUE_EMPTY) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* Missing methods delegate to the original target's actual internal key operation. */
+	status = vm_get_method(realm, handler, method_key, &method);
+	if (status != 0)
+		goto cleanup;
+	if (method == VM_VALUE_UNDEFINED) {
+		status = vm_own_property_keys(realm, (struct vm_object *)vm_value_as_cell(target), keys);
+		goto cleanup;
+	}
+
+	/* Retain both a fresh trap and its otherwise unowned array-like result. */
+	roots[2] = vm_value_as_cell(method);
+	status = vm_call(realm, method, handler, &target, 1, &produced);
+	if (status != 0)
+		goto cleanup;
+	is_cell = vm_value_is_cell(produced);
+	if (is_cell)
+		roots[3] = vm_value_as_cell(produced);
+	status = access_property_key_list(realm, produced, &lists[ACCESS_OWN_TRAP_KEYS]);
+	if (status != 0)
+		goto cleanup;
+
+	/* Duplicate rejection occurs only after the complete array-like list has been evaluated. */
+	for (item = 0; item < lists[ACCESS_OWN_TRAP_KEYS].count; item++) {
+		key = ((vm_value *)lists[ACCESS_OWN_TRAP_KEYS].items)[item];
+		listed = access_key_listed(&lists[ACCESS_OWN_TRAP_KEYS], item, key);
+		if (listed) {
+			status = vm_throw_type_error(realm, "Proxy ownKeys trap returned duplicate keys");
+			goto cleanup;
+		}
+	}
+
+	/* Extensibility is snapshotted before the target key list, after all trap-result getters. */
+	target_object = (struct vm_object *)vm_value_as_cell(target);
+	status = vm_is_extensible(realm, target_object, &extensible);
+	if (status != 0)
+		goto cleanup;
+	status = vm_own_property_keys(realm, target_object, &lists[ACCESS_OWN_TARGET_KEYS]);
+	if (status != 0)
+		goto cleanup;
+
+	/* Classify every target descriptor before checking any missing key, preserving abrupt-operation order. */
+	for (item = 0; item < lists[ACCESS_OWN_TARGET_KEYS].count; item++) {
+		key = ((vm_value *)lists[ACCESS_OWN_TARGET_KEYS].items)[item];
+		status = vm_get_own_property(realm, target_object, key, &descriptor, &found);
+		if (status != 0)
+			goto cleanup;
+		if (found && (descriptor.attributes & VM_PROPERTY_CONFIGURABLE) == 0U)
+			status = wb_vector_push(&lists[ACCESS_OWN_FIXED_KEYS], &key);
+		else
+			status = wb_vector_push(&lists[ACCESS_OWN_CONFIGURABLE_KEYS], &key);
+		if (status != 0)
+			goto cleanup;
+	}
+
+	/* Fixed keys are mandatory regardless of target extensibility. */
+	for (item = 0; item < lists[ACCESS_OWN_FIXED_KEYS].count; item++) {
+		key = ((vm_value *)lists[ACCESS_OWN_FIXED_KEYS].items)[item];
+		listed = access_key_listed(&lists[ACCESS_OWN_TRAP_KEYS], lists[ACCESS_OWN_TRAP_KEYS].count, key);
+		if (!listed) {
+			status = vm_throw_type_error(realm, "Proxy ownKeys trap omitted a fixed target key");
+			goto cleanup;
+		}
+	}
+
+	/* A nonextensible target also requires every configurable key and forbids every extra key. */
+	if (!extensible) {
+		for (item = 0; item < lists[ACCESS_OWN_CONFIGURABLE_KEYS].count; item++) {
+			key = ((vm_value *)lists[ACCESS_OWN_CONFIGURABLE_KEYS].items)[item];
+			listed = access_key_listed(&lists[ACCESS_OWN_TRAP_KEYS], lists[ACCESS_OWN_TRAP_KEYS].count, key);
+			if (!listed) {
+				status = vm_throw_type_error(realm, "Proxy ownKeys trap omitted a nonextensible target key");
+				goto cleanup;
+			}
+		}
+
+		/* Both lists are unique and every target key was matched, so equal size excludes all extras. */
+		if (lists[ACCESS_OWN_TRAP_KEYS].count != lists[ACCESS_OWN_TARGET_KEYS].count) {
+			status = vm_throw_type_error(realm, "Proxy ownKeys trap added a key to a nonextensible target");
+			goto cleanup;
+		}
+	}
+
+	/* Preserve trap order when appending; no ordinary numeric-key sorting is applied to a Proxy list. */
+	for (item = 0; item < lists[ACCESS_OWN_TRAP_KEYS].count; item++) {
+		key = ((vm_value *)lists[ACCESS_OWN_TRAP_KEYS].items)[item];
+		status = wb_vector_push(keys, &key);
+		if (status != 0)
+			goto cleanup;
+	}
+
+	/* Complete list and invariant checks supplied the successfully appended keys. */
+	status = 0;
+
+cleanup:
+	/* Stop tracing vectors before releasing their C storage; unused capacity never retains cells. */
+	while (traced != 0U) {
+		traced--;
+		vm_heap_remove_tracer(realm->heap, access_keys_trace, &lists[traced]);
+	}
+
+	/* Every vector was initialized before any fallible registration or script operation. */
+	for (index = 0; index < ACCESS_OWN_LIST_COUNT; index++)
+		wb_vector_release(&lists[index]);
+
+	/* Original participants and transient trap objects retire after all list storage. */
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* Propagate original errors after retiring snapshots, temporary lists and trap results. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the outer frame now owns the complete appended key sequence. */
 	return 0;
 }

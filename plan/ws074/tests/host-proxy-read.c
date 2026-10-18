@@ -16,6 +16,14 @@
 #include <stdio.h>
 #include <string.h>
 
+/* One own-key observation borrows a heap and stores only weak integer addresses plus native callback counts. */
+struct own_key_observation {
+	struct vm_heap *heap;
+	uintptr_t addresses[6];
+	unsigned mode;
+	unsigned calls;
+};
+
 /* One synchronous deletion observation keeps only integer addresses and callback counts, never managed edges. */
 struct delete_observation {
 	struct vm_heap *heap;
@@ -32,6 +40,9 @@ struct extent_observation {
 	unsigned collections;
 	unsigned mode;
 };
+
+/* Only own_keys_pressure owns this synchronous context; zero means no observation is active. */
+static struct own_key_observation own_case;
 
 /* Only delete_pressure owns this context; zero means no deletion policy observation is active. */
 static struct delete_observation delete_case;
@@ -69,6 +80,13 @@ static uintptr_t typed_case_realm_address;
 /* Counts forced typed validity collections that retained their original managed owner. */
 static unsigned typed_case_collections;
 
+static int own_collect_keys(struct vm_heap *heap, struct vm_object *object, struct wb_vector *keys);
+
+/* The pure native own-key prefix only collects or reports a bounded partial-error result. */
+static const struct vm_native_operations own_collect_operations = {
+	NULL, own_collect_keys, NULL, NULL, NULL
+};
+
 static int delete_collect_get_own(struct vm_object *object, vm_value key, struct vm_property *property);
 static int delete_collect_native(struct vm_heap *heap, struct vm_object *object, vm_value key, int *handled, int *deleted);
 
@@ -99,6 +117,10 @@ static const struct vm_native_operations proxy_sole_operations = {
 	proxy_sole_get_own, NULL, NULL, NULL, NULL
 };
 
+static void proxy_key_values_trace(struct vm_heap *heap, void *context);
+static int proxy_own_keys(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int proxy_note_own_key(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
+static int own_keys_pressure(struct page *page);
 static int prototype_pressure(struct page *page);
 static int delete_collect_participants(void);
 static int delete_pressure(struct page *page);
@@ -197,6 +219,14 @@ main(
 	if (status != 0)
 		goto cleanup;
 
+	/* Private own-key and weak observation bridges leave product enumeration entry points unchanged. */
+	status = js_builtin_method(page->realm, page->realm->global, "ownReadKeys", 1, proxy_own_keys);
+	if (status != 0)
+		goto cleanup;
+	status = js_builtin_method(page->realm, page->realm->global, "noteOwnKey", 1, proxy_note_own_key);
+	if (status != 0)
+		goto cleanup;
+
 	/* The same source reaches native Proxy or Chromium's genuine Proxy without API substitution inside the tests. */
 	wb_buffer_init(&source);
 	status = wb_file_read(source_path, &source);
@@ -288,6 +318,11 @@ main(
 
 	/* Prototype operations retain requested inputs and independently release original protocol graphs. */
 	status = prototype_pressure(page);
+	if (status != 0)
+		goto cleanup;
+
+	/* Own-key lists and preserved prefixes survive later getters, native policy collection and error rollback. */
+	status = own_keys_pressure(page);
 
 cleanup:
 	/* Restore ordinary scanning before retiring the complete Page graph. */
@@ -2776,5 +2811,467 @@ cleanup:
 		return status;
 
 	/* Succeeded: prototypes and original protocol graphs were independently retained and then reclaimed. */
+	return 0;
+}
+
+/* Marks only live values in a fixture vector, without retaining any completed operation owner. */
+static void
+proxy_key_values_trace(
+	struct vm_heap *heap,
+	void *context)
+{
+	struct wb_vector *keys;
+	size_t index;
+
+	/* Stale slots beyond count must not retain rolled-back native output. */
+	keys = context;
+	for (index = 0; index < keys->count; index++)
+		vm_heap_mark_value(heap, ((vm_value *)keys->items)[index]);
+}
+
+/* Compares actual realm own-key enumeration with genuine reflection through an ordinary result array. */
+static int
+proxy_own_keys(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct wb_vector keys;
+	struct vm_cell *realm_root;
+	struct vm_string *string;
+	vm_value object;
+	vm_value key;
+	size_t index;
+	int traced;
+	int is_object;
+	int is_index;
+	int status;
+
+	UNUSED_PARAMETER(receiver);
+
+	/* The bridge owns its managed realm even while producing an invalid-target exception or result array. */
+	realm_root = NULL;
+	if (realm->managed)
+		realm_root = &realm->cell;
+	status = vm_heap_add_root(realm->heap, &realm_root);
+	if (status != 0)
+		return status;
+	wb_vector_init(&keys, sizeof(vm_value));
+	traced = 0;
+	status = vm_heap_add_tracer(realm->heap, proxy_key_values_trace, &keys);
+	if (status != 0)
+		goto cleanup;
+	traced = 1;
+
+	/* Reflective enumeration rejects primitive input rather than boxing it. */
+	object = js_argument(args, count, 0);
+	is_object = vm_value_is_object(object);
+	if (!is_object) {
+		status = vm_throw_type_error(realm, "Own key target must be an object");
+		goto cleanup;
+	}
+
+	/* Only the production VM operation supplies keys and validates traps or invariants. */
+	status = vm_own_property_keys(realm, (struct vm_object *)vm_value_as_cell(object), &keys);
+	if (status != 0)
+		goto cleanup;
+
+	/* Convert internal indices only after the complete validated operation has returned. */
+	for (index = 0; index < keys.count; index++) {
+		key = ((vm_value *)keys.items)[index];
+		is_index = vm_value_is_int32(key);
+		if (!is_index)
+			continue;
+
+		/* Genuine reflection exposes numeric internal keys as primitive strings, preserving vector order. */
+		status = vm_to_string(realm, key, &string);
+		if (status != 0)
+			goto cleanup;
+		((vm_value *)keys.items)[index] = vm_value_cell(string);
+	}
+
+	/* The private result uses the same ordinary array size bound as CreateArrayFromList. */
+	if (keys.count > 4294967295U) {
+		status = vm_throw_range_error(realm, "Own key result exceeds the array length limit");
+		goto cleanup;
+	}
+
+	/* The vector remains rooted while the real ordinary array is allocated and filled. */
+	status = js_builtin_array(realm, keys.items, (unsigned)keys.count, result);
+
+cleanup:
+	/* Temporary vector storage and bridge ownership never escape into the produced array. */
+	if (traced)
+		vm_heap_remove_tracer(realm->heap, proxy_key_values_trace, &keys);
+	wb_vector_release(&keys);
+	vm_heap_remove_root(realm->heap, &realm_root);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the ordinary array represents actual VM own keys. */
+	return 0;
+}
+
+/* Records a fresh Symbol's address without adding any collector edge to it. */
+static int
+proxy_note_own_key(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	vm_value value;
+	int is_cell;
+
+	UNUSED_PARAMETER(receiver);
+
+	/* This observation is active only during the independent synchronous own-key lifetime case. */
+	value = js_argument(args, count, 0);
+	is_cell = vm_value_is_cell(value);
+	if (is_cell && own_case.heap == realm->heap)
+		own_case.addresses[4] = (uintptr_t)vm_value_as_cell(value);
+	*result = value;
+
+	/* Succeeded: the value's only real owners remain its script or production VM frames. */
+	return 0;
+}
+
+/* Collects in pure native own-key policy and verifies otherwise unowned operation participants. */
+static int
+own_collect_keys(
+	struct vm_heap *heap,
+	struct vm_object *object,
+	struct wb_vector *keys)
+{
+	struct vm_symbol *symbol;
+	struct vm_cell *found;
+	vm_value key;
+	unsigned index;
+	int status;
+
+	UNUSED_PARAMETER(object);
+
+	/* This native callback runs no user script; all input and accumulated-list ownership belongs to the VM. */
+	vm_heap_collect(heap);
+	for (index = 0; index < 6U; index++) {
+		if (own_case.addresses[index] == 0U)
+			continue;
+		found = vm_heap_find_cell(heap, own_case.addresses[index]);
+		if (found == NULL)
+			return EFAULT;
+	}
+
+	/* Count only post-trap or fallback collections that retained every expected participant. */
+	own_case.calls++;
+	if (own_case.mode == 3U) {
+		/* A native partial append followed by errno must be rolled back without retaining its stale capacity slot. */
+		symbol = vm_symbol_create(heap, VM_VALUE_UNDEFINED);
+		if (symbol == NULL)
+			return ENOMEM;
+		key = vm_value_cell(symbol);
+		status = wb_vector_push(keys, &key);
+		if (status != 0)
+			return status;
+		own_case.addresses[4] = (uintptr_t)symbol;
+		return EACCES;
+	}
+
+	/* Succeeded: ordinary storage supplies its actual keys after this collecting prefix policy. */
+	return 0;
+}
+
+/* Tests accumulated-list and prefix lifetime, original participants, fallback and native partial-error rollback. */
+static int
+own_keys_pressure(
+	struct page *page)
+{
+	struct vm_realm *realm;
+	struct vm_object *target;
+	struct vm_object *handler;
+	struct vm_symbol *prefix;
+	struct vm_cell *roots[6];
+	struct vm_cell *found;
+	struct wb_vector keys;
+	struct vm_heap_stats before;
+	struct vm_heap_stats after;
+	vm_value proxy;
+	vm_value getter;
+	vm_value key;
+	vm_value owner_key;
+	vm_value prefix_value;
+	vm_value expected_key;
+	unsigned registered;
+	unsigned index;
+	unsigned mode;
+	int traced;
+	int is_string;
+	int matches;
+	int status;
+
+	/* Setup roots retire before the production operation; a caller tracer is acquired only after its return. */
+	memset(&own_case, 0, sizeof(own_case));
+	memset(roots, 0, sizeof(roots));
+	wb_vector_init(&keys, sizeof(vm_value));
+	registered = 0;
+	traced = 0;
+	for (index = 0; index < 6U; index++) {
+		status = vm_heap_add_root(page->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* Complete trap list, duplicate error, native fallback and partial native errno each need independent graphs. */
+	for (mode = 0; mode < 4U; mode++) {
+		status = vm_realm_create_managed(page->heap, &realm);
+		if (status != 0)
+			goto cleanup;
+		roots[0] = &realm->cell;
+		memset(&own_case, 0, sizeof(own_case));
+		own_case.heap = page->heap;
+		own_case.mode = mode;
+		own_case.addresses[0] = (uintptr_t)realm;
+		target = vm_object_create(page->heap, NULL);
+		if (target == NULL) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* The original target policy only collects and delegates actual ordinary key enumeration. */
+		roots[1] = &target->cell;
+		own_case.addresses[1] = (uintptr_t)target;
+		target->native_operations = &own_collect_operations;
+		handler = vm_object_create(page->heap, NULL);
+		if (handler == NULL) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* A caller prefix is a fresh never-stored Symbol, so only the API can retain it during the operation. */
+		roots[2] = &handler->cell;
+		own_case.addresses[2] = (uintptr_t)handler;
+		prefix = vm_symbol_create(page->heap, VM_VALUE_UNDEFINED);
+		if (prefix == NULL) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* No registry or shape cache owns this prefix value. */
+		roots[5] = &prefix->cell;
+		own_case.addresses[5] = (uintptr_t)prefix;
+		prefix_value = vm_value_cell(prefix);
+		status = wb_vector_push(&keys, &prefix_value);
+		if (status != 0)
+			goto cleanup;
+		if (mode >= 2U) {
+			key = vm_key_from_ascii(page->heap, "native");
+			if (key == VM_VALUE_EMPTY) {
+				status = ENOMEM;
+				goto cleanup;
+			}
+
+			/* Native fallback must enumerate a real stored ordinary name after its collecting prefix hook. */
+			status = vm_object_define(page->heap, target, key, VM_VALUE_TRUE, VM_PROPERTY_DEFAULT);
+			if (status != 0)
+				goto cleanup;
+		}
+
+		/* Later getters can collect the fresh Symbol returned by an earlier getter unless the accumulated list owns it. */
+		if (mode == 0U) {
+			status = proxy_script(page->realm, "(function(){revokeReadProxy(this.owner);collectReadProxy();return function(){return {get length(){return {valueOf:function(){collectReadProxy();return 2;}};},get 0(){return noteOwnKey(Symbol('fresh'));},get 1(){collectReadProxy();return 'v';}};};})", &getter);
+		} else if (mode == 1U) {
+			status = proxy_script(page->realm, "(function(){revokeReadProxy(this.owner);collectReadProxy();return function(){return ['x','x'];};})", &getter);
+		} else {
+			status = proxy_script(page->realm, "(function(){revokeReadProxy(this.owner);collectReadProxy();return null;})", &getter);
+		}
+
+		/* The handler accessor is ordinary production storage around a real script function. */
+		if (status != 0)
+			goto cleanup;
+		roots[3] = vm_value_as_cell(getter);
+		key = vm_key_from_ascii(page->heap, "ownKeys");
+		owner_key = vm_key_from_ascii(page->heap, "owner");
+		if (key == VM_VALUE_EMPTY || owner_key == VM_VALUE_EMPTY) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* After lookup revokes the Proxy, only its original operation snapshots retain target and handler. */
+		status = vm_define_accessor(realm, vm_value_cell(handler), key, getter, 0);
+		if (status != 0)
+			goto cleanup;
+		roots[3] = NULL;
+		status = vm_proxy_create(realm, vm_value_cell(target), vm_value_cell(handler), &proxy);
+		if (status != 0)
+			goto cleanup;
+		roots[4] = vm_value_as_cell(proxy);
+		own_case.addresses[3] = (uintptr_t)roots[4];
+		status = vm_object_define(page->heap, handler, owner_key, proxy, VM_PROPERTY_DEFAULT);
+		if (status != 0)
+			goto cleanup;
+
+		/* Neither output vectors nor inputs have an embedding tracer during the actual VM operation. */
+		vm_heap_stats(page->heap, &before);
+		for (index = 0; index < 6U; index++)
+			roots[index] = NULL;
+		status = vm_own_property_keys(realm, (struct vm_object *)vm_value_as_cell(proxy), &keys);
+		vm_heap_stats(page->heap, &after);
+		if (mode == 1U) {
+			if (status != VM_THROWN) {
+				status = 1;
+				goto cleanup;
+			}
+
+			/* A duplicate list is a language error before target native policy is ever consulted. */
+			status = 0;
+		} else if (mode == 3U) {
+			if (status != EACCES) {
+				status = 1;
+				goto cleanup;
+			}
+
+			/* A partial native append preserves errno rather than becoming a completed key list. */
+			status = 0;
+		}
+
+		/* Every outcome restores depth and has survived real getter or target-policy collection. */
+		if (status != 0)
+			goto cleanup;
+		if (after.collections <= before.collections || realm->property_depth != 0U) {
+			status = 1;
+			goto cleanup;
+		}
+
+		/* Only now may an embedding tracer take ownership of the returned or preserved key sequence. */
+		status = vm_heap_add_tracer(page->heap, proxy_key_values_trace, &keys);
+		if (status != 0)
+			goto cleanup;
+		traced = 1;
+		if (mode == 1U) {
+			if (own_case.calls != 0U) {
+				status = 1;
+				goto cleanup;
+			}
+		} else if (own_case.calls != 1U) {
+			status = 1;
+			goto cleanup;
+		}
+
+		/* Original prefixes remain bit-identical on success and every rollback path. */
+		if (keys.count == 0U || ((vm_value *)keys.items)[0] != prefix_value) {
+			status = 1;
+			goto cleanup;
+		}
+
+		/* Successful appends and abrupt rollback each have an exact independent vector-size expectation. */
+		if (mode == 0U) {
+			if (keys.count != 3U || own_case.addresses[4] == 0U) {
+				status = 1;
+				goto cleanup;
+			}
+
+			/* The first trap member is the actual fresh Symbol observed before its getter frame retired. */
+			key = ((vm_value *)keys.items)[1];
+			expected_key = vm_value_cell((void *)own_case.addresses[4]);
+			if (key != expected_key) {
+				status = 1;
+				goto cleanup;
+			}
+		} else if (mode == 2U) {
+			if (keys.count != 2U) {
+				status = 1;
+				goto cleanup;
+			}
+
+			/* This name comes from actual ordinary target storage after the collecting native prefix. */
+			key = ((vm_value *)keys.items)[1];
+			is_string = vm_value_is_string(key);
+			if (!is_string) {
+				status = 1;
+				goto cleanup;
+			}
+
+			/* Verify the independently stored target name without allocating or consulting fixture policy. */
+			matches = vm_string_equal_ascii((struct vm_string *)vm_value_as_cell(key), "native");
+			if (!matches) {
+				status = 1;
+				goto cleanup;
+			}
+		} else if (keys.count != 1U) {
+			status = 1;
+			goto cleanup;
+		}
+
+		/* The output-only tracer cannot retain any original realm, target, handler or Proxy. */
+		vm_heap_collect(page->heap);
+		for (index = 0; index < 4U; index++) {
+			found = vm_heap_find_cell(page->heap, own_case.addresses[index]);
+			if (found != NULL) {
+				status = 1;
+				goto cleanup;
+			}
+		}
+
+		/* A rolled-back partial Symbol must be reclaimed despite its stale bits remaining in vector capacity. */
+		if (own_case.addresses[4] != 0U) {
+			found = vm_heap_find_cell(page->heap, own_case.addresses[4]);
+			if (mode == 3U) {
+				if (found != NULL) {
+					status = 1;
+					goto cleanup;
+				}
+			} else if (found == NULL) {
+				status = 1;
+				goto cleanup;
+			}
+		}
+
+		/* The preserved prefix remains alive until the caller explicitly releases its independent output sequence. */
+		found = vm_heap_find_cell(page->heap, own_case.addresses[5]);
+		if (found == NULL) {
+			status = 1;
+			goto cleanup;
+		}
+
+		/* Releasing only the live count and caller tracer must actually reclaim both never-stored Symbols. */
+		keys.count = 0;
+		vm_heap_remove_tracer(page->heap, proxy_key_values_trace, &keys);
+		traced = 0;
+		vm_heap_collect(page->heap);
+		for (index = 4U; index < 6U; index++) {
+			if (own_case.addresses[index] == 0U)
+				continue;
+			found = vm_heap_find_cell(page->heap, own_case.addresses[index]);
+			if (found != NULL) {
+				status = 1;
+				goto cleanup;
+			}
+		}
+	}
+
+	/* All complete and abrupt operations preserved key-list ownership and exact append semantics. */
+	status = 0;
+
+cleanup:
+	/* The observer and caller tracer are synchronous and never become permanent heap owners. */
+	memset(&own_case, 0, sizeof(own_case));
+	if (traced)
+		vm_heap_remove_tracer(page->heap, proxy_key_values_trace, &keys);
+	wb_vector_release(&keys);
+
+	/* Retire all temporary input root registrations acquired before independent cases began. */
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(page->heap, &roots[registered]);
+	}
+
+	/* Preserve a failure after releasing temporary setup and vector ownership. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: complete lists, rollback, native errno and real participant/Symbol reclamation were all observed. */
 	return 0;
 }
