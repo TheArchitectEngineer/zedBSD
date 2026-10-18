@@ -1259,6 +1259,115 @@ drv_i915_xd9_pipe_wait_vblank(
 	return ETIMEDOUT;
 }
 
+/*
+ * Points a display 9 pipe's first plane at a surface: the stride first
+ * when it differs from the plane's, then the surface, whose write arms
+ * both for the next vertical blank.
+ */
+void
+drv_i915_xd9_plane_flip(
+	struct i915_xd_io *io,
+	unsigned pipe,
+	uint32_t surf,
+	uint32_t stride)
+{
+	/* The stride, only when it changes. */
+	if (drv_i915_xd_io_read(io, I915_XD9_PLANE_STRIDE(pipe)) != stride)
+		drv_i915_xd_io_write(io, I915_XD9_PLANE_STRIDE(pipe), stride);
+
+	/* Succeeded: the surface, which arms them. */
+	drv_i915_xd_io_write(io, I915_XD9_PLANE_SURF(pipe), surf);
+	drv_i915_xd_io_posting_read(io, I915_XD9_PLANE_SURF(pipe));
+}
+
+/* Reports the surface a display 9 pipe's first plane scans out now. */
+uint32_t
+drv_i915_xd9_plane_surf_live(
+	struct i915_xd_io *io,
+	unsigned pipe)
+{
+	/* Succeeded: the live surface's address. */
+	return drv_i915_xd_io_read(io, I915_XD9_PLANE_SURFLIVE(pipe)) & I915_XD9_PLANE_SURF_ADDRESS;
+}
+
+/* Reports a fault of a display 9 pipe's first plane that is pending in the pipe's interrupts (0 for none). */
+uint32_t
+drv_i915_xd9_plane_fault(
+	struct i915_xd_io *io,
+	unsigned pipe)
+{
+	/* Succeeded: the fault bit. */
+	return drv_i915_xd_io_read(io, I915_XD9_DE_PIPE_IIR(pipe)) & I915_XD9_DE_PIPE_FAULT;
+}
+
+/*
+ * Clears a display 9 pipe's pending flip done and plane fault, twice
+ * since the identity register can hold two of each.
+ */
+void
+drv_i915_xd9_flip_irq_clear(
+	struct i915_xd_io *io,
+	unsigned pipe)
+{
+	/* Succeeded: both writes. */
+	drv_i915_xd_io_write(io, I915_XD9_DE_PIPE_IIR(pipe), I915_XD9_FLIP_IRQS);
+	drv_i915_xd_io_write(io, I915_XD9_DE_PIPE_IIR(pipe), I915_XD9_FLIP_IRQS);
+}
+
+/* Enables, then unmasks, a display 9 pipe's flip done and plane fault; the pipe's other sources stay as they are. */
+void
+drv_i915_xd9_flip_irq_unmask(
+	struct i915_xd_io *io,
+	unsigned pipe)
+{
+	/* The enable, then the mask, pushed out. */
+	(void)drv_i915_xd_io_rmw(io, I915_XD9_DE_PIPE_IER(pipe), 0U, I915_XD9_FLIP_IRQS);
+	(void)drv_i915_xd_io_rmw(io, I915_XD9_DE_PIPE_IMR(pipe), I915_XD9_FLIP_IRQS, 0U);
+
+	/* Succeeded: the writes reached the device. */
+	drv_i915_xd_io_posting_read(io, I915_XD9_DE_PIPE_IMR(pipe));
+}
+
+/* Masks, then disables, a display 9 pipe's flip done and plane fault. */
+void
+drv_i915_xd9_flip_irq_mask(
+	struct i915_xd_io *io,
+	unsigned pipe)
+{
+	/* The mask, pushed out. */
+	(void)drv_i915_xd_io_rmw(io, I915_XD9_DE_PIPE_IMR(pipe), 0U, I915_XD9_FLIP_IRQS);
+	drv_i915_xd_io_posting_read(io, I915_XD9_DE_PIPE_IMR(pipe));
+
+	/* Succeeded: the enable off. */
+	(void)drv_i915_xd_io_rmw(io, I915_XD9_DE_PIPE_IER(pipe), I915_XD9_FLIP_IRQS, 0U);
+}
+
+/*
+ * Acknowledges what a display 9 pipe's interrupts report when the master
+ * control names the pipe, and reports it (0 for nothing).
+ */
+uint32_t
+drv_i915_xd9_flip_irq_ack(
+	struct i915_xd_io *io,
+	unsigned pipe,
+	uint32_t master_ctl)
+{
+	uint32_t iir;
+
+	/* Not the pipe's. */
+	if ((master_ctl & I915_XD9_MASTER_DE_PIPE(pipe)) == 0U)
+		return 0U;
+
+	/* Nothing reported. */
+	iir = drv_i915_xd_io_read(io, I915_XD9_DE_PIPE_IIR(pipe));
+	if (iir == 0U)
+		return 0U;
+
+	/* Succeeded: what was seen, acknowledged. */
+	drv_i915_xd_io_write(io, I915_XD9_DE_PIPE_IIR(pipe), iir);
+	return iir;
+}
+
 /* Packs two values into a register's lower and upper halves. */
 static uint32_t
 i915_xd_pipe_pair(

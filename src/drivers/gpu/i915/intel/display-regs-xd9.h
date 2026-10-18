@@ -187,7 +187,8 @@
 
 /*
  * A display 9 transcoder and pipe (transcoders A to C have the number of
- * their pipe, each 0x1000 after the last): the pixel multiplier, the
+ * their pipe, each 0x1000 after the last; the eDP transcoder, 3, is
+ * 0xf000 after A's): the pixel multiplier, the
  * configuration with its enable and state, the DDI function (the enable,
  * the DDI in 30:28, the mode in 26:24, 8 bits a colour, the sync
  * polarities, the DisplayPort lanes less one in 3:1), the pipe's colour
@@ -197,11 +198,13 @@
  * Registers (TRANS_MULT, TRANSCONF, TRANS_DDI_FUNC_CTL, PIPE_MISC,
  * PIPE_FRMCNT).
  */
-#define I915_XD9_TRANS_MULT(trans)		(0x6002cU + 0x1000U * (trans))
-#define I915_XD9_TRANSCONF(trans)		(0x70008U + 0x1000U * (trans))
+#define I915_XD9_TRANS_EDP			3U
+#define I915_XD9_TRANS_OFFSET(trans)		((trans) == I915_XD9_TRANS_EDP ? 0xf000U : 0x1000U * (trans))
+#define I915_XD9_TRANS_MULT(trans)		(0x6002cU + I915_XD9_TRANS_OFFSET(trans))
+#define I915_XD9_TRANSCONF(trans)		(0x70008U + I915_XD9_TRANS_OFFSET(trans))
 #define I915_XD9_TRANSCONF_ENABLE		(1U << 31)
 #define I915_XD9_TRANSCONF_STATE		(1U << 30)
-#define I915_XD9_TRANS_DDI_FUNC(trans)		(0x60400U + 0x1000U * (trans))
+#define I915_XD9_TRANS_DDI_FUNC(trans)		(0x60400U + I915_XD9_TRANS_OFFSET(trans))
 #define I915_XD9_DDI_FUNC_ENABLE		(1U << 31)
 #define I915_XD9_DDI_FUNC_DDI_SHIFT		28U
 #define I915_XD9_DDI_FUNC_DDI_MASK		(7U << 28)
@@ -282,5 +285,77 @@
 #define I915_XD9_PORT_HOTPLUG			0xc4030U
 #define I915_XD9_PORT_HOTPLUG_ENABLE(ddi)	(1U << (4U + 8U * ((ddi) - 1U)))
 #define I915_XD9_SFUSE_DDI_DETECTED(ddi)	(1U << (3U - (ddi)))
+
+/*
+ * What the firmware's display is read from on display 9: power well 2's
+ * state beside power well 1's, the DC states the DMC may enter, the frame
+ * buffer compressor's control, the eDP transcoder's PSR control, a
+ * transcoder's totals (the total less one in 31:16) and DisplayPort link
+ * M and N (24 bits), the DDI function's mode (DisplayPort single or multi
+ * stream) and the eDP transcoder's input pipe in 14:12, the pipe's source
+ * size, the first plane's live surface, the plane control's format,
+ * tiling, rotation and asynchronous flip, the stride's 64-byte units, a
+ * linear surface's 256 KiB alignment, and each pipe's two scalers.
+ *
+ * Values referenced: Intel Kaby Lake PRM Volume 2c, Command Reference:
+ * Registers (PWR_WELL_CTL2, DC_STATE_EN, FBC_CTL, SRD_CTL, TRANS_HTOTAL,
+ * TRANS_VTOTAL, TRANS_LINKM1, TRANS_LINKN1, TRANS_DDI_FUNC_CTL, PIPESRC,
+ * PLANE_SURFLIVE, PLANE_CTL, PLANE_STRIDE, PLANE_SURF, PS_CTRL).
+ */
+#define I915_XD9_PW2_STATE			(1U << 30)
+#define I915_XD9_DC_STATE_EN			0x45504U
+#define I915_XD9_DC_STATE_MASK			0x3U
+#define I915_XD9_FBC_CTL			0x43208U
+#define I915_XD9_FBC_ENABLE			(1U << 31)
+#define I915_XD9_PSR_CTL_EDP			0x6f800U
+#define I915_XD9_PSR_ENABLE			(1U << 31)
+#define I915_XD9_TRANS_HTOTAL(trans)		(0x60000U + I915_XD9_TRANS_OFFSET(trans))
+#define I915_XD9_TRANS_VTOTAL(trans)		(0x6000cU + I915_XD9_TRANS_OFFSET(trans))
+#define I915_XD9_TRANS_LINK_M1(trans)		(0x60040U + I915_XD9_TRANS_OFFSET(trans))
+#define I915_XD9_TRANS_LINK_N1(trans)		(0x60044U + I915_XD9_TRANS_OFFSET(trans))
+#define I915_XD9_TIMING_TOTAL_SHIFT		16U
+#define I915_XD9_TIMING_FIELD_MASK		0xffffU
+#define I915_XD9_LINK_MN_MASK			0x00ffffffU
+#define I915_XD9_DDI_FUNC_MODE_MASK		0x7U
+#define I915_XD9_DDI_FUNC_MODE_DP_MST		3U
+#define I915_XD9_DDI_FUNC_EDP_INPUT_SHIFT	12U
+#define I915_XD9_DDI_FUNC_EDP_INPUT_MASK	0x7U
+#define I915_XD9_DDI_FUNC_EDP_INPUT_A_ON	0U
+#define I915_XD9_DDI_FUNC_EDP_INPUT_A_ONOFF	4U
+#define I915_XD9_DDI_FUNC_EDP_INPUT_B_ONOFF	5U
+#define I915_XD9_DDI_FUNC_EDP_INPUT_C_ONOFF	6U
+#define I915_XD9_PIPESRC(pipe)			(0x6001cU + 0x1000U * (pipe))
+#define I915_XD9_PLANE_SURFLIVE(pipe)		(0x701acU + 0x1000U * (pipe))
+#define I915_XD9_PLANE_SURF_ADDRESS		0xfffff000U
+#define I915_XD9_PLANE_CTL_FORMAT_SHIFT		24U
+#define I915_XD9_PLANE_CTL_FORMAT_MASK		0xfU
+#define I915_XD9_PLANE_FORMAT_XRGB_8888		4U
+#define I915_XD9_PLANE_CTL_TILED_SHIFT		10U
+#define I915_XD9_PLANE_CTL_TILED_MASK		0x7U
+#define I915_XD9_PLANE_TILED_LINEAR		0U
+#define I915_XD9_PLANE_CTL_ROTATE_MASK		0x3U
+#define I915_XD9_PLANE_CTL_ASYNC_FLIP		(1U << 9)
+#define I915_XD9_PLANE_STRIDE_MASK		0xfffU
+#define I915_XD9_PLANE_STRIDE_UNIT		64U
+#define I915_XD9_PLANE_SIZE_FIELD_MASK		0xffffU
+#define I915_XD9_LINEAR_ALIGNMENT		(256U * 1024U)
+#define I915_XD9_PS_CTRL(pipe, scaler)		(0x68180U + 0x800U * (pipe) + 0x100U * (scaler))
+#define I915_XD9_PS_ENABLE			(1U << 31)
+
+/*
+ * A display 9 pipe's interrupts (each pipe's 0x10 after the last): the
+ * mask, the identity and the enable, with the first plane's flip done and
+ * fault; and the pipe's bit in the master interrupt control (A in 16).
+ *
+ * Values referenced: Intel Kaby Lake PRM Volume 2c, Command Reference:
+ * Registers (DE_PIPE_IMR, DE_PIPE_IIR, DE_PIPE_IER, MASTER_INT_CTL).
+ */
+#define I915_XD9_DE_PIPE_IMR(pipe)		(0x44404U + 0x10U * (pipe))
+#define I915_XD9_DE_PIPE_IIR(pipe)		(0x44408U + 0x10U * (pipe))
+#define I915_XD9_DE_PIPE_IER(pipe)		(0x4440cU + 0x10U * (pipe))
+#define I915_XD9_DE_PIPE_FLIP_DONE		(1U << 3)
+#define I915_XD9_DE_PIPE_FAULT			(1U << 7)
+#define I915_XD9_MASTER_DE_PIPE(pipe)		(1U << (16U + (pipe)))
+#define I915_XD9_FLIP_IRQS			(I915_XD9_DE_PIPE_FLIP_DONE | I915_XD9_DE_PIPE_FAULT)
 
 #endif /* DRIVERS_GPU_I915_INTEL_DISPLAY_REGS_XD9_H */
