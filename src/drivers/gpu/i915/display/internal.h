@@ -221,7 +221,7 @@ struct i915_driver_probe {
 	int registered;
 };
 /*
- * The VGA plane and arbiter (takeover.c).
+ * The VGA plane and arbiter (vga.c).
  */
 /* video/internal.h resource flags returned by the decode callback. */
 #define I915_VGA_RSRC_LEGACY_IO   0x01u
@@ -235,7 +235,7 @@ struct i915_vga_client {
 };
 
 /*
- * Legacy VGA I/O accessor (intel_vga_reset_io_mem's get/in/out/put).  In
+ * Legacy VGA I/O accessor (get, in, out, put).  In
  * production these are the real arbiter + port I/O; a GPU-free test injects a
  * recorder so the arbiter get -> MIS_R read -> MIS_W write -> put sequence is
  * checked without touching real VGA ports.  get() returns 1 on success, 0 if
@@ -250,7 +250,7 @@ struct i915_vga_io_ops {
 };
 
 /*
- * The VBT state (vbt.c).
+ * The VBT state (vbt-shell.c).
  */
 /* Where the VBT bytes came from.  An explicit blob is NOT an OpRegion. */
 enum i915_vbt_origin {
@@ -298,7 +298,7 @@ struct i915_vbt_panel {
 	uint16_t t1_t3, t8, t9, t10, t11_t12;
 	/* backlight */
 	int bl_present;
-	int bl_type;                      /* enum intel_backlight_type */
+	int bl_type;                      /* the VBT's backlight type */
 	int bl_controller;
 	int bl_active_low_pwm;
 	uint16_t bl_pwm_freq_hz;
@@ -328,25 +328,22 @@ struct i915_vbt {
 	/* general features the display code consumes */
 	int int_lvds_support, display_clock_mode, lvds_use_ssc, lvds_ssc_freq, crt_ddc_pin;
 	unsigned arena_used, arena_peak, alloc_failures;
-	unsigned log_errors;              /* drm_err / WARN lines the reference emitted */
+	unsigned log_errors;              /* error lines the parse logged */
 	/* the xd parse the values come from (vbt-shell.c), or NULL */
 	const struct i915_xd_vbt *xd;
 };
 
 /*
- * The VBT provider (vbt.c).
+ * The VBT provider (vbt-shell.c).
  */
 /*
- * intel_bios_init (VBT acquisition + parse), see vbt.c.
- *
- * Structure-faithful port of intel_bios_init(): initialise the VBT device/block
- * lists, apply init_vbt_defaults(), then resolve the VBT from (1) the OpRegion
- * (read at the start), else (2) the PCI expansion ROM read for real via config
- * 0x30 + a device mapping.  A found+validated VBT is parsed (BDB blocks, general
- * features/definitions); a genuine absence takes init_vbt_missing_defaults()
- * (default child devices for the non-TC DDI ports).  DGFX SPI flash is NOT read
- * on ADL-P (not IS_DGFX).  This never fabricates a VBT and never fails the probe
- * (intel_bios_init is void): it reports which real source was used.
+ * The VBT acquisition and parse (vbt-shell.c): the VBT is taken from (1) the
+ * OpRegion (read at the start), else (2) the PCI expansion ROM read through
+ * config 0x30 and a device mapping.  A found and validated VBT is parsed
+ * (BDB blocks, general features and definitions); an absent one takes the
+ * default child devices of the non-Type-C DDI ports.  The SPI flash of a
+ * discrete part is not read.  It never makes a VBT up and never fails the
+ * probe: it reports which source was used.
  */
 
 struct i915_pci;
@@ -368,18 +365,18 @@ struct i915_vbt_child {
 	uint32_t device_type;        /* DEVICE_TYPE_* bitmask */
 };
 
-/* VBT-derived display state (drm_i915_private.display.vbt subset). */
+/* The display state the VBT gives. */
 struct i915_vbt_state {
-	int has_display;                 /* HAS_DISPLAY snapshot */
-	uint16_t version;                /* display.vbt.version */
+	int has_display;                 /* the device has a display */
+	uint16_t version;                /* the VBT's version */
 	int vbt_found;                   /* a real VBT was located + validated */
 	int source;                      /* enum i915_vbt_source */
-	int missing_defaults_used;       /* init_vbt_missing_defaults() ran */
+	int missing_defaults_used;       /* the default child devices were used */
 	unsigned num_bdb_blocks;         /* bdb_blocks list length */
 	unsigned num_display_devices;    /* display_devices list length */
 	struct i915_vbt_child display_devices[8];
 
-	/* the reference parser's result (vbt.c); device-owned, released by driver_remove */
+	/* the parser's result (vbt-shell.c); device-owned, released by driver_remove */
 	struct i915_vbt parsed;
 	int parsed_live;
 
@@ -395,21 +392,23 @@ struct i915_vbt_state {
  * Whether the explicit VBT is asked for.
  *
  * Never: no VBT blob is built in, so the kernel takes the VBT from the
- * OpRegion or the PCI ROM, or the Linux defaults.
+ * OpRegion or the PCI ROM, or the defaults.
  *
  * XXX: the explicit-blob bookkeeping it leaves (the EXPLICIT_BLOB source and
- * origin, the blob fields) is dead and can go with the next change of vbt.c.
+ * origin, the blob fields) is dead and can go with the next change of vbt-shell.c.
  */
 #define I915_VBT_EXPLICIT 0
 
 /*
- * The OpRegion VBT source (vbt.c).
+ * The OpRegion VBT source (vbt-shell.c).
  */
 /*
- * Linux-derived -- where the ACPI OpRegion keeps the VBT (intel_opregion_setup(), v6.8.12).  zedBSD project code;
- * the offsets and the decision order are the reference's (struct opregion_header / struct opregion_asle,
- * OPREGION_*_OFFSET, MBOX_*).  Pure: it reads a copy of the 8 KiB OpRegion and says where the VBT is; the caller maps
- * and validates it (intel_bios_is_valid_vbt).  intel_load_vbt_firmware() and the DMI quirk list are not consulted here.
+ * Where the ACPI OpRegion keeps the VBT.  It reads a copy of the 8 KiB
+ * OpRegion and says where the VBT is; the caller maps and validates it.  No
+ * VBT firmware file and no DMI quirk list is consulted.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/i915/display/intel_opregion.c
+ * (struct opregion_header, struct opregion_asle, OPREGION_*_OFFSET, MBOX_*).
  */
 
 #define I915_OPREGION_SIZE        0x2000u
@@ -442,7 +441,7 @@ struct i915_opregion_info {
 	uint32_t asle_ardy, asle_aslc, asle_tche;                         /* struct opregion_asle at 0x300 */
 };
 /*
- * The firmware display check (takeover.c).
+ * The firmware display check (output.c).
  */
 /*
  * The output the firmware (GOP) was scanning out when the driver started
@@ -511,7 +510,7 @@ struct i915_dp_env {
 #define I915_EDP_MAX_EDID_BLOCKS 4u
 
 /*
- * Result codes are the reference's negative errnos in LINUX numbering (zedBSD's
+ * Result codes are negative errnos in a numbering of their own (zedBSD's
  * <errno.h> numbers differ): rc == -I915_EDP_ETIMEDOUT and so on.
  */
 #define I915_EDP_EIO 5
@@ -530,7 +529,7 @@ struct i915_edp_config {
 	uint32_t rawclk_khz;
 	/*
 	 * the VBT panel's eDP power sequence (100 us units) and PPS / backlight controller index;
-	 * all zero when the panel type is not known before the EDID (the reference's "early" state)
+	 * all zero when the panel type is not known before the EDID (the early state)
 	 */
 	uint16_t t1_t3, t8, t9, t10, t11_t12;
 	int bl_controller;
@@ -553,9 +552,9 @@ struct i915_edp_result {
 
 	int pps_idx, pps_valid;
 	struct i915_edp_pps_regs before;       /* as found */
-	struct i915_edp_pps_regs after_init;   /* after intel_pps_init() programmed the delays */
+	struct i915_edp_pps_regs after_init;   /* after the PPS delays were programmed */
 	struct i915_edp_pps_regs after_acquire;/* VDD is expected ON here */
-	struct i915_edp_pps_regs after_end;    /* after intel_pps_vdd_off_sync() */
+	struct i915_edp_pps_regs after_end;    /* after VDD was turned off and waited for */
 	int delay_power_up_ms, delay_power_down_ms, delay_power_cycle_ms, delay_bl_on_ms, delay_bl_off_ms;
 
 	uint8_t dpcd[15];                 /* DP_RECEIVER_CAP_SIZE */
@@ -572,21 +571,21 @@ struct i915_edp_result {
 	/* ownership at the end of each phase */
 	int vdd_wanted, vdd_on_hw, vdd_wakeref_held, vdd_work_pending;
 	unsigned i2c_defers, i2c_nacks;
-	unsigned log_errors;              /* drm_err / WARN lines the reference emitted */
+	unsigned log_errors;              /* error lines the run logged */
 	uint64_t elapsed_ms;
 };
 
 /*
- * The modeset hooks (modeset.c).
+ * The modeset hooks (edp-device.c).
  */
 /* panel power sequencer / backlight-power operations, executed by the resident eDP (edp-device.c) */
 enum i915_lcd_panel_op {
-	I915_LCD_PANEL_ON = 0,          /* intel_pps_on() */
-	I915_LCD_PANEL_OFF,             /* intel_pps_off() */
-	I915_LCD_PANEL_VDD_ON,          /* intel_pps_vdd_on() */
-	I915_LCD_PANEL_VDD_OFF_SYNC,    /* intel_pps_vdd_off_sync() */
-	I915_LCD_PANEL_BACKLIGHT_ON,    /* intel_pps_backlight_on(): the PPS's backlight-enable bit */
-	I915_LCD_PANEL_BACKLIGHT_OFF,   /* intel_pps_backlight_off() */
+	I915_LCD_PANEL_ON = 0,          /* panel power on */
+	I915_LCD_PANEL_OFF,             /* panel power off */
+	I915_LCD_PANEL_VDD_ON,          /* VDD forced on */
+	I915_LCD_PANEL_VDD_OFF_SYNC,    /* VDD off, waited for */
+	I915_LCD_PANEL_BACKLIGHT_ON,    /* the PPS's backlight-enable bit set */
+	I915_LCD_PANEL_BACKLIGHT_OFF,   /* the PPS's backlight-enable bit cleared */
 };
 
 #define I915_LCD_LOCK_DPLL 0           /* i915->display.dpll.lock */
@@ -606,7 +605,7 @@ enum i915_lcd_observe {
 };
 
 /*
- * wait_reg results (Linux numbering, as the reference's callers compare them):
+ * wait_reg results (a numbering of their own, as the callers compare them):
  *   0                    the condition held
  *   I915_LCD_ETIMEDOUT the device did not reach the condition in time
  *   I915_LCD_EIO       the time source / the wait primitive / MMIO access failed: NOT a timeout; the backend has
@@ -623,17 +622,17 @@ enum i915_lcd_observe {
 #define i915_lcd_emit i915_xd_backend
 
 /*
- * The commit observation (diagnostics.c).
+ * The commit observation (run-log.c).
  */
 /*
- * Linux-derived -- what the LCD test LOOKS AT while the reference's modeset runs: the pipe's underrun status
- * (ICL_PIPESTATUS), its frame counter and its interrupt mask.  zedBSD project code; plain C over i915_lcd_ops,
- * so the same code runs on the register model and on the real GPU.
+ * What the LCD check looks at while a modeset runs: the pipe's underrun status (ICL_PIPESTATUS), its frame counter
+ * and its interrupt mask.  Plain C over i915_lcd_ops, so the same code runs on the register model and on the real
+ * GPU.
  *
  * Why it exists: this private, synchronous, one-buffer test does not connect the DRM vblank machinery nor the
- * underrun interrupt (see modeset-internal.h).  In exchange it OWNS the status register for the run:
+ * underrun interrupt.  In exchange it OWNS the status register for the run:
  *   - the value found before the run is saved (not judged: it belongs to whoever ran before);
- *   - the status is cleared where the reference clears it (intel_set_cpu_fifo_underrun_reporting(true));
+ *   - the status is cleared where underrun reporting is turned on;
  *   - it is sampled at every observe() point of the commits and by the caller during the steady picture; bits seen
  *     are RECORDED first and only then cleared, so that a later period can be told from an earlier one and no
  *     occurrence is lost;
@@ -686,7 +685,7 @@ struct i915_lcd_observer {
 };
 
 /*
- * The modeset trace (diagnostics.c).
+ * The modeset trace (run-log.c).
  */
 /*
  * a recorder stacked on any i915_lcd_ops backend (the register / sink model or the
@@ -705,10 +704,10 @@ enum i915_lcd_trace_kind {
 	I915_LCD_T_PANEL,         /* a = op, rc */
 	I915_LCD_T_POWER_GET,     /* a = domain, rc = wakeref */
 	I915_LCD_T_POWER_PUT,     /* a = domain, b = wakeref; asynchronous: d = 1, c = delay in ms */
-	I915_LCD_T_STEP,          /* name: a reference callee that is not ported */
-	I915_LCD_T_ERROR,         /* name: a drm_err / WARN of the reference text */
+	I915_LCD_T_STEP,          /* name: a step that is not implemented */
+	I915_LCD_T_ERROR,         /* name: an error line */
 	I915_LCD_T_PHASE,         /* name: a marker written by the caller */
-	I915_LCD_T_DECIDED,       /* name: a reference callee deliberately not connected (reason in modeset-internal.h) */
+	I915_LCD_T_DECIDED,       /* name: a step deliberately not connected */
 	I915_LCD_T_DBUF,          /* a = the DBUF slices requested (gen9_dbuf_slices_update) */
 	I915_LCD_T_OBSERVE,       /* a = enum i915_lcd_observe: a point of the commit */
 };
@@ -1005,7 +1004,12 @@ struct i915_lcd_kernel {
 /* The size of the VBT copy the parser reads (the largest VBT the provider accepts). */
 #define I915_VBT_MAX 8192u
 
-/* The size of the DMC firmware arena (the Linux DISPLAY_VER13_DMC_MAX_FW_SIZE). */
+/*
+ * The size of the DMC firmware arena.
+ *
+ * Value referenced: Linux v6.19 drivers/gpu/drm/i915/display/intel_dmc.c
+ * (DISPLAY_VER13_DMC_MAX_FW_SIZE).
+ */
 #define I915_DMC_ARENA_SIZE 0x20000u
 
 /* The size of the VBT copy the firmware display check takes out of the OpRegion. */
@@ -1015,10 +1019,10 @@ struct i915_lcd_kernel {
  * The display part of one device.
  *
  * The device owns exactly one; the device start fills it in the order of
- * the Linux display probe and the device stop takes it apart in reverse.
+ * the display probe and the device stop takes it apart in reverse.
  * It holds every long-lived display object: the former static locals of
  * the probe, the former file-scope state of the display files, and one
- * pointer per Linux environment to that environment's own state (whose
+ * pointer per environment to that environment's own state (whose
  * types are complete only inside the environment, so the owner file of
  * the environment allocates it).
  *

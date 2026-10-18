@@ -172,7 +172,7 @@ drv_i915_present(
 
 /*
  * Gives the panel back: the worker leaves the display window and the panel
- * is stopped through the reference's stop path.
+ * is stopped through the display's stop path.
  */
 int
 drv_i915_present_release(
@@ -716,7 +716,7 @@ drv_i915_present_lease_failed(
  *
  * Lights the panel (the resident run); the window serves every request,
  * across the holds between leases, until a hold is over or a stop is asked
- * for, and the reference's stop path follows.  A moved output that did not
+ * for, and the display's stop path follows.  A moved output that did not
  * come up, or did not stop cleanly, gives the firmware's output back and
  * fails the rest of its lease; the next lease lights an
  * output again.  XXX: the firmware's output that did not come up, or did

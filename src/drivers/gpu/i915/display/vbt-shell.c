@@ -409,7 +409,7 @@ drv_i915_opregion_locate_vbt(
 		if (out->major > 2u || out->minor >= 1u)
 			out->rvda_relative = 1;
 
-		/* An offset inside the OpRegion is what Linux warns about. */
+		/* An offset inside the OpRegion is suspect. */
 		out->rvda_inside = 0;
 		if (out->rvda_relative != 0 && out->rvda < I915_OPREGION_SIZE)
 			out->rvda_inside = 1;

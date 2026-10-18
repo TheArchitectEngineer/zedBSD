@@ -198,10 +198,7 @@ struct i915_xd_dp_link {
 /* The most link rates one side offers (8b/10b, the display version 13 table). */
 #define I915_XD_DP_PROBE_MAX_RATES		8u
 
-/*
- * What a probe concluded about the port (the Linux enum
- * drm_connector_status, by meaning).
- */
+/* What a probe concluded about the port. */
 enum i915_xd_dp_probe_status {
 	I915_XD_DP_PROBE_DISCONNECTED = 0,
 	I915_XD_DP_PROBE_CONNECTED,
@@ -226,10 +223,7 @@ enum i915_xd_dp_probe_step {
 	I915_XD_DP_PROBE_STEP_DONE
 };
 
-/*
- * How a mode fares against a branch's downstream limits (the Linux
- * enum drm_mode_status, by meaning).
- */
+/* How a mode fares against a branch's downstream limits. */
 enum i915_xd_dp_probe_mode_status {
 	I915_XD_DP_PROBE_MODE_OK = 0,
 	I915_XD_DP_PROBE_MODE_CLOCK_HIGH,
@@ -241,9 +235,9 @@ enum i915_xd_dp_probe_mode_status {
  * log.
  *
  * The device binds one per port.  The DPCD calls return the bytes
- * transferred or a negative Linux errno; read_caps and probe return 0 or a
- * negative Linux errno; edid_read returns the valid blocks read or a
- * negative Linux errno; ddc_probe returns nonzero when something answers
+ * transferred or a negative errno; read_caps and probe return 0 or a
+ * negative errno; edid_read returns the valid blocks read or a negative
+ * errno; ddc_probe returns nonzero when something answers
  * at the EDID address.
  */
 struct i915_xd_dp_probe_env {
@@ -254,10 +248,10 @@ struct i915_xd_dp_probe_env {
 	long (*dpcd_read)(void *ctx, unsigned offset, uint8_t *buffer, size_t size);
 	long (*dpcd_write)(void *ctx, unsigned offset, const uint8_t *buffer, size_t size);
 
-	/* A throw-away read that wakes the sink (drm_dp_dpcd_probe()). */
+	/* A throw-away read that wakes the sink. */
 	int (*dpcd_probe)(void *ctx, unsigned offset);
 
-	/* The receiver capabilities, the extended ones where the sink has them (drm_dp_read_dpcd_caps()). */
+	/* The receiver capabilities, the extended ones where the sink has them. */
 	int (*read_caps)(void *ctx, uint8_t dpcd[I915_XD_DP_PROBE_DPCD_SIZE]);
 
 	/* The DDC behind the channel (I2C over AUX). */
@@ -271,8 +265,7 @@ struct i915_xd_dp_probe_env {
 /*
  * What the source offers on a port, which the probe meets with the sink.
  *
- * Link rates are in units of 10 kbit/s per lane, as Linux counts them
- * (162000 is RBR, 810000 is HBR3).  max_rate is the platform's highest link
+ * Link rates are in units of 10 kbit/s per lane (162000 is RBR, 810000 is HBR3).  max_rate is the platform's highest link
  * rate for the port (0: no limit); vbt_max_rate and vbt_max_lanes are the
  * VBT's limits (0: none); max_lanes is what the DDI drives; fia_lanes is
  * what the Type-C subsystem assigned to DisplayPort (0: not restricted).
@@ -285,10 +278,7 @@ struct i915_xd_dp_probe_source {
 	int fia_lanes;
 };
 
-/*
- * The identification of a sink or a branch device (the Linux struct
- * drm_dp_desc without the quirks).
- */
+/* The identification of a sink or a branch device. */
 struct i915_xd_dp_probe_desc {
 	/* The IEEE OUI of the vendor. */
 	uint8_t oui[3];
