@@ -65,7 +65,7 @@ struct bcm2711_native_snapshot {
 int bcm2711_native_storage_create(struct bcm2711_v3d_space *space, uint64_t bytes, struct bcm2711_native_storage **storage);
 
 /*
- * How a reused (cached, still mapped) view is given again (ws141-p016 (b)):
+ * How a reused (cached, still mapped) view is given again:
  * zeroed, or as it is, for a caller that writes every byte the device may
  * read before the device reads it (the zeroing is the caller's to skip, by
  * kind; a new allocation is always zeroed).  Either way the caller cleans
@@ -77,8 +77,8 @@ int bcm2711_native_storage_create(struct bcm2711_v3d_space *space, uint64_t byte
 /*
  * Owned by the building session (space->builder): a cached view is given
  * again as it is only when that same session left it, so bytes the device
- * may read but the use does not write can only be the session's own
- * (ws141-p016 (b), review-b2 H1 (a)).  Anything else is zeroed.
+ * may read but the use does not write can only be the session's own.
+ * Anything else is zeroed.
  */
 #define BCM2711_NATIVE_STORAGE_OWNED	2U
 int bcm2711_native_storage_create_as(struct bcm2711_v3d_space *space, uint64_t bytes, unsigned fill, struct bcm2711_native_storage **storage);

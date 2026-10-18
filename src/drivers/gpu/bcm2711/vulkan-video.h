@@ -6,7 +6,7 @@
  */
 
 /*
- * Vulkan Video H.264 decode on the Raspberry Pi 4 (ws236), with the
+ * Vulkan Video H.264 decode on the Raspberry Pi 4, with the
  * VideoCore firmware's decoder doing the decode.
  *
  * The V3D device's one queue family also decodes: the video commands,

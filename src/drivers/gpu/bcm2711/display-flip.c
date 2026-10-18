@@ -1448,7 +1448,7 @@ bcm2711_display_flip_count_cursor(
 }
 
 /*
- * Notes one display event of a cadence kind (WS213): its interval from the
+ * Notes one display event of a cadence kind: its interval from the
  * previous one of the kind, and every two seconds the window's report.
  */
 void
@@ -1922,7 +1922,7 @@ lower_clock(
  *
  * The firmware runs the highest floor of its owners: while a video decoder
  * holds the highest rate, the display's lowering and raising change no
- * clock under the decode (ws236-p011).
+ * clock under the decode.
  */
 static int
 request_clock(

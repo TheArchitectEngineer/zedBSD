@@ -14,7 +14,7 @@
 
 #define BCM2711_NATIVE_PASS_BIN_PREFIX 13U
 
-/* The most tile boxes a pass is narrowed to (ws211-p009); more render every tile of its rectangle. */
+/* The most tile boxes a pass is narrowed to; more render every tile of its rectangle. */
 #define BCM2711_NATIVE_PASS_BOXES 8U
 
 /* Numerical framebuffer and tile state describe one single-layer, single-sample raster pass; no public identities are retained. */
@@ -42,7 +42,7 @@ struct bcm2711_native_pass {
 	uint32_t source_bytes;
 	/*
 	 * The tile boxes (first x, first y, last x, last y, inclusive, inside
-	 * the rectangle above) whose tiles the pass changes (ws211-p009): only
+	 * the rectangle above) whose tiles the pass changes: only
 	 * the supertiles that meet one of them are rendered.  A tile no box
 	 * meets is one whose load and store would write back the bytes it
 	 * holds, so the owner names boxes only for a pass that loads its own

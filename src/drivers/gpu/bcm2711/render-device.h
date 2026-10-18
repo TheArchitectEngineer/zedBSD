@@ -46,7 +46,7 @@ struct bcm2711_render_session {
 	 * bytes the queued executions may hold.
 	 *
 	 * The settling list holds the executions that ran and wait for their
-	 * settle to end, in submission order (ws236 p010): executed counts them
+	 * settle to end, in submission order: executed counts them
 	 * already; their bytes, pending holds and own markers stay until they end.
 	 */
 	struct bcm2711_render_execution *execution_head;

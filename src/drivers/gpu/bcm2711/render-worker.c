@@ -191,7 +191,7 @@ bcm2711_render_worker_submit(
 		return EINVAL;
 	}
 
-	/* Native stop and callback publication share this same guard; a refusal says why (BUG-314). */
+	/* Native stop and callback publication share this same guard; a refusal says why. */
 	reason = bcm2711_render_refusal_reason(controller, session);
 	if (reason != NULL) {
 		spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
@@ -240,7 +240,7 @@ bcm2711_render_worker_submit(
 	 * sequence changes.  The wakeup stays under the guard the worker
 	 * sleeps under: an unlocked wakeup could take the worker's token off
 	 * the queue between its check and its sleep, and the worker would
-	 * sleep past it for good (ws208-p007, a race only with several CPUs).
+	 * sleep past it for good (a race only with several CPUs).
 	 */
 	waitq_wake_one(&worker->available);
 
@@ -1768,8 +1768,8 @@ failure_line(
  * A request with a domain (a producer's marker or a selected context fence)
  * completes only after every execution its session accepted before it, a
  * canceled one too: its completion proves the earlier work retired.  A
- * producer's marker also waits while its own execution settles (ws236
- * p010), so the fence it proves has signaled.  The request's own outcome is
+ * producer's marker also waits while its own execution settles,
+ * so the fence it proves has signaled.  The request's own outcome is
  * kept for the release.  A request without a domain reports decoder
  * progress and completes at once.
  */

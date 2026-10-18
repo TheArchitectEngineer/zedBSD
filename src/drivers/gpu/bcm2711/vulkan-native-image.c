@@ -618,8 +618,8 @@ prepare_copy(
 
 	/*
 	 * A known change narrows the copy to the box around the changed boxes,
-	 * clamped to the image, and to the tiles of the boxes themselves
-	 * (ws211-p009): a frame that drew two places apart copies the two.
+	 * clamped to the image, and to the tiles of the boxes themselves:
+	 * a frame that drew two places apart copies the two.
 	 */
 	if (changed)
 		copy_narrow(pass, destination, boxes, count);
@@ -746,8 +746,8 @@ retain_raster(
 /*
  * Narrows a whole-image copy pass to the changed boxes of its source
  * (pixels, left, top, right, bottom): its area to the box around them,
- * clamped to the destination, and its tiles to the boxes' tiles
- * (ws211-p009).  Boxes left with nothing inside the image leave the copy
+ * clamped to the destination, and its tiles to the boxes' tiles.
+ * Boxes left with nothing inside the image leave the copy
  * whole.
  */
 static void

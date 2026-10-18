@@ -116,7 +116,7 @@ struct bcm2711_v3d_perf {
 	uint64_t decode_command_max;
 	uint64_t step_hold_max;
 	/*
-	 * The decoder on the fine monotonic counter (ws211-p010): the requests
+	 * The decoder on the fine monotonic counter: the requests
 	 * that carried commands, their commands and counts in all, the longest
 	 * request and its command count, the counter's frequency, and the most
 	 * identities a decoding session held.

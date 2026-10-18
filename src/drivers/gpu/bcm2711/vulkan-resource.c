@@ -211,7 +211,7 @@ create_buffer(
 		return ENOTSUP;
 	allowed = VULKAN_BUFFER_USAGE;
 #if CONFIG_DRIVER_BCM2711_VIDEO
-	/* A bitstream buffer is read by the CPU into the video decoder's staging (ws236). */
+	/* A bitstream buffer is read by the CPU into the video decoder's staging. */
 	allowed |= BCM2711_VIDEO_BUFFER_USAGE_DECODE_SRC;
 #endif
 	if ((info.usage & ~allowed) != 0)
@@ -279,7 +279,7 @@ create_image(
 #if CONFIG_DRIVER_BCM2711_VIDEO
 	/*
 	 * An NV12 picture decodes, serves as a reference, is read back, and is
-	 * sampled through views of its planes (ws236, ws236 p011).
+	 * sampled through views of its planes.
 	 */
 	if (info.format == (VkFormat)BCM2711_VIDEO_FORMAT_NV12) {
 		nv12 = true;

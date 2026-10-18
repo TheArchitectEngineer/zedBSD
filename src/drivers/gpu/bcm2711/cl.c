@@ -9,7 +9,7 @@
  * The byte images of V3D 4.2's initial shader-free, one-pixel job.
  *
  * Packet sizes, field positions and opcodes come from the fixed Mesa
- * v3d_packet.xml recorded by WS141.  The serializer writes explicit bytes
+ * v3d_packet.xml.  The serializer writes explicit bytes
  * so unaligned command addresses and host endianness do not affect the
  * images.  It neither allocates memory nor touches hardware registers.
  */

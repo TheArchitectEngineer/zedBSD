@@ -22,7 +22,7 @@ struct bcm2711_vulkan_input_owner {
  *
  * plane is zero for a view of the whole image, or names the plane of a
  * two-plane NV12 picture the view reads: 1 its luma as R8, 2 its chroma as
- * RG8 (ws236 p011).
+ * RG8.
  */
 struct bcm2711_vulkan_image_view {
 	struct bcm2711_vulkan_input_owner owner;

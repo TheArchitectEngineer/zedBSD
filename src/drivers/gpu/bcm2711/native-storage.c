@@ -54,7 +54,7 @@ bcm2711_native_storage_create(
 /*
  * Allocates and maps one complete native upload interval, a reused view
  * zeroed, or as it is for BCM2711_NATIVE_STORAGE_WRITTEN and for
- * BCM2711_NATIVE_STORAGE_OWNED when the building session left it (ws141-p016 (b)).
+ * BCM2711_NATIVE_STORAGE_OWNED when the building session left it.
  */
 int
 bcm2711_native_storage_create_as(

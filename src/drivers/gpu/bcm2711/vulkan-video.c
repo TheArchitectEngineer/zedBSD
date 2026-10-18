@@ -21,7 +21,7 @@
  *
  * A decode runs in the native job like a CPU copy, and only sends its unit:
  * the decode is then in flight, and the next decodes are sent behind it,
- * so the firmware has several pictures at once (ws236 p008).  The frames
+ * so the firmware has several pictures at once.  The frames
  * come back in decode order and are taken whenever the session's decoder is
  * looked at: when a decode is sent, when a command reads (or writes) an
  * image whose frame has not come -- the image's readback waits for it, a
@@ -39,7 +39,7 @@
  * host may read an image's memory once the fence has signaled.  The
  * execution leaves the session's queue as soon as its decodes are sent and
  * waits in the executor's settling list meanwhile, so the next decodes are
- * sent behind it (ws236 p010; libvulkan gives every submission without a
+ * sent behind it (libvulkan gives every submission without a
  * fence a private one, so waiting in the queue held the decoder to one
  * picture).  A later submission's fence does not wait for an earlier
  * submission's decodes; every command that uses an image waits for its
@@ -250,7 +250,7 @@ struct video_copy {
  * window and valid only in it; placed, lost and the frame's fields are
  * written in the window and taken after it, under the controller mutex.
  * direct is the image's memory run when the frame goes there from the
- * VPU (a sampled image, ws236 p011), retained until the decoder's target
+ * VPU (a sampled image), retained until the decoder's target
  * is removed; direct_frame says the frame came that way, so no frame of
  * the decoder's memory is the image's copy.
  */
@@ -847,7 +847,7 @@ bcm2711_vulkan_video_nv12_layout(
  * Reports whether a decoded NV12 image holds the firmware's samples as they
  * are.
  *
- * An image the GPU samples does (ws236 p011: the footroom error makes no
+ * An image the GPU samples does (the footroom error makes no
  * visible difference, and correcting it would cost a CPU copy), and its
  * readback corrects them; any other decode output holds them corrected.
  */
@@ -1320,7 +1320,7 @@ video_format_properties(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* The profiles must all be H.264 decode; usages include picture readback and the sampling of its planes (ws236 p011). */
+	/* The profiles must all be H.264 decode; usages include picture readback and the sampling of its planes. */
 	result = 0;
 	video_usage = BCM2711_VIDEO_USAGE_DECODE_DST | BCM2711_VIDEO_USAGE_DECODE_DPB | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
 	if (!chain.has_profile_list || chain.profile_count == 0U) {
@@ -3556,7 +3556,7 @@ begin_decode(
  * picture's slices come, even with the end-of-frame flag (later pictures
  * come out at their own end of frame); the parameter sets again, an access
  * unit delimiter and an empty end of frame did not give it out, and an end
- * of stream lost the references (T1-631, T1-637).  A Vulkan decode has no
+ * of stream lost the references.  A Vulkan decode has no
  * next picture to give, so a grey non-reference picture of the push's own
  * (drv_rpi4_h264_write_push) follows the first one: it changes no
  * reference and no order count, and its frame comes with time stamp
@@ -4538,7 +4538,7 @@ relayout(
 /*
  * Gives how long a step may wait for the decoder: VIDEO_POLL_MS, or nothing
  * while another session's execution waits behind the step, so the executor
- * goes on with it and the step looks again at its next turn (ws236-p011).
+ * goes on with it and the step looks again at its next turn.
  */
 static unsigned
 poll_ms(

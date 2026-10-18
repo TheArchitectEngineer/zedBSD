@@ -286,7 +286,7 @@ bcm2711_vulkan_buffer_copy_run(
 		/*
 		 * A decoded NV12 picture's rows come from the decoder's cached
 		 * copy of the frame when it still has one; the image's memory is
-		 * uncached and slow to read (ws236).
+		 * uncached and slow to read.
 		 */
 		if (record->opcode == GPU_OP_CMD_COPY_IMAGE_TO_BUFFER &&
 		    resources[0]->format == (VkFormat)BCM2711_VIDEO_FORMAT_NV12) {
@@ -434,7 +434,7 @@ resolve_resources(
 			if (index != 0)
 				usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 #if CONFIG_DRIVER_BCM2711_VIDEO
-			/* A decoded NV12 picture may be read back, plane by plane (ws236). */
+			/* A decoded NV12 picture may be read back, plane by plane. */
 			if (resources[index]->format == (VkFormat)BCM2711_VIDEO_FORMAT_NV12 &&
 			    copy->record.opcode == GPU_OP_CMD_COPY_IMAGE_TO_BUFFER) {
 				/* Accepted. */
@@ -562,7 +562,7 @@ prepare_spans(
 		image = resources[image_slot];
 		image_region = &copy->regions.images[index];
 #if CONFIG_DRIVER_BCM2711_VIDEO
-		/* An NV12 plane has its own size, texel and place (ws236). */
+		/* An NV12 plane has its own size, texel and place. */
 		if (image->format == (VkFormat)BCM2711_VIDEO_FORMAT_NV12) {
 			error = prepare_plane(image_region, image, buffer_slot, image_slot, spans);
 			if (error != 0)

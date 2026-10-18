@@ -14,7 +14,7 @@
  * one native word carries an add ALU operation, a multiply ALU operation and
  * a signal together, and the idle words become explicit distances between
  * the records that need them.  The timing rules are hardware facts of V3D
- * 4.2, recorded with their sources in WS141 p013; this file applies them
+ * 4.2; this file applies them
  * independently.  A finished schedule is checked again by simulating the
  * value each source reads; a program the rules do not cover, or a schedule
  * the check refuses, keeps the source-order words.

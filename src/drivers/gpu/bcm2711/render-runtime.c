@@ -20,7 +20,7 @@
 #if CONFIG_DRIVER_BCM2711_VIDEO
 #include "drivers/gpu/bcm2711/vulkan-video.h"
 
-/* The native word after the vendor suffix ("TANZ" read little endian), and its H.264 decode bit (ws236). */
+/* The native word after the vendor suffix ("TANZ" read little endian), and its H.264 decode bit. */
 #define VULKAN_NATIVE_MAGIC 0x5a4e4154U
 #define VULKAN_NATIVE_VIDEO_H264 1U
 #define VULKAN_NATIVE_CAPSET_BYTES 176U
@@ -363,7 +363,7 @@ execute_command(
 			perf->decode_command_opcode = session->vulkan->longest_opcode;
 		}
 
-		/* Diagnostic (ws211-p010): the same on the fine counter, and the identities the session held, for the per-command cost. */
+		/* Diagnostic: the same on the fine counter, and the identities the session held, for the per-command cost. */
 		if (started_timed && finished_timed)
 			runtime_decode_timed(perf, session->vulkan, finished_counts - started_counts, frequency);
 	}
@@ -435,7 +435,7 @@ runtime_ready(
 
 	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
 
-	/* Stopping or uncertain namespaces cannot publish fresh callbacks, replies or native work; the refusal says why (BUG-314). */
+	/* Stopping or uncertain namespaces cannot publish fresh callbacks, replies or native work; the refusal says why. */
 	if (reason != NULL) {
 		bcm2711_render_refusal_line("command", reason);
 		return EIO;
@@ -483,7 +483,7 @@ capset_word(
 	return;
 }
 
-/* Adds one decoded request's counter time and commands to the window's decode report (ws211-p010). */
+/* Adds one decoded request's counter time and commands to the window's decode report. */
 static void
 runtime_decode_timed(
 	struct bcm2711_v3d_perf *perf,

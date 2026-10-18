@@ -297,7 +297,7 @@ struct bcm2711_flip_state {
 	uint64_t perf_cursor_copies;
 
 	/*
-	 * The cadence of display events (WS213), kept under guard; reporting
+	 * The cadence of display events, kept under guard; reporting
 	 * says one caller is printing the copied window, so no other starts.
 	 */
 	unsigned cadence_state;

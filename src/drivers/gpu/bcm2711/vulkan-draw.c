@@ -189,7 +189,7 @@ walk_records(
 			break;
 		default:
 #if CONFIG_DRIVER_BCM2711_VIDEO
-			/* Video and status query commands run on the CPU outside any render pass (ws236). */
+			/* Video and status query commands run on the CPU outside any render pass. */
 			if (bcm2711_vulkan_video_event(record->opcode)) {
 				if (state->pass != NULL)
 					return EINVAL;

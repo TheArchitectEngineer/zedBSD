@@ -74,7 +74,7 @@ typedef int (*bcm2711_render_execution_settle)(struct bcm2711_render_device *, s
  *
  * An execution with a settle leaves the queue once its actions have run, so
  * the session's next execution runs, and waits in the session's settling
- * list until the settle lets it end (ws236 p010).
+ * list until the settle lets it end.
  */
 struct bcm2711_render_execution {
 	struct bcm2711_render_execution *next;
@@ -158,7 +158,7 @@ struct bcm2711_render_worker {
 	 * Set by the executor before each step, under the native IRQ guard:
 	 * another ready session than the one stepped has an execution queued.
 	 * A step that would wait for the decoder (or a settling execution) then
-	 * only looks, so the executor goes on with the others' work (ws236-p011).
+	 * only looks, so the executor goes on with the others' work.
 	 */
 	bool contended;
 	struct bcm2711_render_request *parked;
@@ -206,7 +206,7 @@ const char *bcm2711_render_refusal_reason(const struct bcm2711_render_device *co
 
 /*
  * Logs a refusal with EIO at site for reason, at most one line a second
- * (BUG-314: a submit's EIO had no line); the caller holds no spinlock.
+ * (a submit's EIO had no line); the caller holds no spinlock.
  */
 void bcm2711_render_refusal_line(const char *site, const char *reason);
 int bcm2711_render_worker_recovered(struct bcm2711_render_device *controller);

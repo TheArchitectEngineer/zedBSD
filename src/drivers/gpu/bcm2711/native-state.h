@@ -43,7 +43,7 @@ struct bcm2711_native_attribute {
 /*
  * The texel formats a native texture has.  RGBA8 is the zero value, so a
  * texture record cleared and filled without naming one is RGBA8.  R8 and
- * RG8 are the planes of a two-plane YUV picture (ws236 p011).
+ * RG8 are the planes of a two-plane YUV picture.
  */
 enum bcm2711_native_texel {
 	BCM2711_NATIVE_TEXEL_RGBA8 = 0,

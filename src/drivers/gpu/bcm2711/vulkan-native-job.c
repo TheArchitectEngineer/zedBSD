@@ -201,7 +201,7 @@ bcm2711_vulkan_native_job_step(
 		 * A copy, blit or upload that names an image whose decode is in
 		 * flight waits for its frame first, a step at a time: the step
 		 * ends at the command, the other sessions take their turns, and
-		 * the next step comes back here (ws236).
+		 * the next step comes back here.
 		 */
 		if (event->opcode == GPU_OP_CMD_COPY_BUFFER_TO_IMAGE ||
 		    event->opcode == GPU_OP_CMD_COPY_IMAGE_TO_BUFFER ||
@@ -278,7 +278,7 @@ bcm2711_vulkan_native_job_step(
 		}
 
 #if CONFIG_DRIVER_BCM2711_VIDEO
-		/* Video and status query events run on the CPU, in order, after every earlier pass (ws236). */
+		/* Video and status query events run on the CPU, in order, after every earlier pass. */
 		if (bcm2711_vulkan_video_event(event->opcode)) {
 			step = clock_ticks();
 			error = bcm2711_vulkan_video_run(controller, event->record);
@@ -805,7 +805,7 @@ report_perf(
 	}
 
 	/*
-	 * The decoder on the fine counter (ws211-p010): the average cost of one
+	 * The decoder on the fine counter: the average cost of one
 	 * command, the longest request and its commands, and the most
 	 * identities a session held (the tick-based command= of the requests
 	 * line names the longest single command).

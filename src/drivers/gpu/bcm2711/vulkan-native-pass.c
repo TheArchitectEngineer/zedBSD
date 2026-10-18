@@ -92,7 +92,7 @@ bcm2711_vulkan_native_pass_create(
 		error = collect_draws(created, begin, &remaining, &following);
 	}
 
-	/* The tiles the draws can change, when the pass may leave the others unrendered (ws211-p009). */
+	/* The tiles the draws can change, when the pass may leave the others unrendered. */
 	if (error == 0)
 		select_boxes(created);
 
@@ -611,7 +611,7 @@ allocate_storage(
 
 /*
  * Narrows a pass that loads its own output to the tiles its draws' clip
- * windows meet (ws211-p009).
+ * windows meet.
  *
  * Every other tile would be loaded and stored back unchanged: no draw
  * writes a pixel outside its window, and a partial clear was written to
@@ -742,7 +742,7 @@ prepare_lists(
 	if (error != 0)
 		return error;
 	prepare_image(storage, &tile);
-	/* The binner writes the tile lists it later reads into the pool; a reused pool is not zeroed (ws141-p016 (b)). */
+	/* The binner writes the tile lists it later reads into the pool; a reused pool is not zeroed. */
 	error = allocate_storage(pass, sizes.pool, BCM2711_NATIVE_STORAGE_WRITTEN, remaining, &storage);
 	if (error != 0)
 		return error;
@@ -774,7 +774,7 @@ prepare_lists(
 	/* Four independently mapped overflow reserves support supervised native binning without allocation in IRQ service. */
 	job = &pass->job.command.cl;
 	for (index = 0; index < 4U; index++) {
-		/* The binner reads only what it wrote into an overflow reserve; a reused one is not zeroed (ws141-p016 (b)). */
+		/* The binner reads only what it wrote into an overflow reserve; a reused one is not zeroed. */
 		error = allocate_storage(pass, 256U * 1024U, BCM2711_NATIVE_STORAGE_WRITTEN, remaining, &storage);
 		if (error != 0)
 			return error;
