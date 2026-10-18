@@ -271,7 +271,7 @@ def check_i386_and_retro() -> None:
     the defaults as they are and with Retro, are then resolved by make -n."""
     values = menu.defaults()
     shown = walk(menu.select_cpu_board, ["CPU: x86_64", "i386", "Back"], values)
-    if shown[1] != ("CPU", ["x86_64", "arm64", "i386"]):
+    if shown[1] != ("CPU", ["x86_64", "arm64", "i386", "RISC-V 64"]):
         fail(f"the CPU menu is {shown[1]}")
     if values["ZEDBSD_PLATFORM"] != "pc98" or values["ZEDBSD_VARIANT"] != "default":
         fail(f"choosing i386 selected {values['ZEDBSD_PLATFORM']}/{values['ZEDBSD_VARIANT']}")
@@ -392,8 +392,8 @@ def check_platform_drivers() -> None:
     Drivers has Bluetooth right after WiFi; every category but Platform is
     the same on every CPU; Platform holds the chosen board's drivers alone,
     the always-built ones too (p003: every PC-98 driver), and choosing the
-    Raspberry Pi 4 turns its Platform drivers on but the experimental
-    VCHIQ and Vulkan Video."""
+    Raspberry Pi 4 turns its Platform drivers on, VCHIQ and Vulkan Video
+    too (2026-10-15 user: the Pi 4 video code is on by default)."""
     categories = ["Disk", "Input", "GPU", "Audio", "Ethernet", "WiFi",
                   "Bluetooth", "USB", "Platform"]
     platforms = ("amd64", "i386", "pc98", "rpi4", "sun4u", "x68k")
@@ -462,18 +462,20 @@ def check_platform_drivers() -> None:
         fail(f"choosing arm64 made {values['ZEDBSD_PLATFORM']}")
     expected = {"CONFIG_DRIVER_BCM2711_GENET": "y", "CONFIG_DRIVER_BCM2711_WIFI": "y",
                 "CONFIG_DRIVER_BCM2711_BT": "y", "CONFIG_DRIVER_BCM2711_AUDIO": "y",
-                "CONFIG_DRIVER_BCM2711_GPU": "y", "CONFIG_DRIVER_BCM2711_VCHIQ": "n",
-                "CONFIG_DRIVER_BCM2711_VIDEO": "n", "CONFIG_DRIVER_USB_BT": "y"}
+                "CONFIG_DRIVER_BCM2711_GPU": "y", "CONFIG_DRIVER_BCM2711_VCHIQ": "y",
+                "CONFIG_DRIVER_BCM2711_VIDEO": "y", "CONFIG_DRIVER_USB_BT": "y"}
     for key, value in expected.items():
         if values.get(key) != value:
             fail(f"the Raspberry Pi 4 chosen from x86_64 has {key}={values.get(key)}")
     # The CI image's file names every Platform driver; VCHIQ and Vulkan Video
-    # are the user's choice there (y since 2026-10-14), so only their lines
-    # are checked.
+    # (y since 2026-10-14) and the built-in Bluetooth (n since 2026-10-15, the
+    # user took it out of main) are the user's choice there, so only their
+    # lines are checked.
     ci = menu.load(menu.REPO / "config" / "ci" / "config-rpi4.mk")
     text = (menu.REPO / "config" / "ci" / "config-rpi4.mk").read_text(encoding="utf-8")
     for key, value in expected.items():
-        if key in ("CONFIG_DRIVER_BCM2711_VCHIQ", "CONFIG_DRIVER_BCM2711_VIDEO"):
+        if key in ("CONFIG_DRIVER_BCM2711_VCHIQ", "CONFIG_DRIVER_BCM2711_VIDEO",
+                   "CONFIG_DRIVER_BCM2711_BT"):
             if f"{key} := {ci.get(key)}" not in text:
                 fail(f"config/ci/config-rpi4.mk does not set {key}")
             continue
@@ -506,9 +508,10 @@ def check_driver_firmware() -> None:
     def selected(values: dict[str, object]) -> set[str]:
         return set(values["ZEDBSD_USER_PROGRAMS"]) & firmware
 
-    # The x86_64 default: the i915 and USB Bluetooth drivers are on.
+    # The x86_64 default: the i915, nvrtx (on by default since 2026-10-15)
+    # and USB Bluetooth drivers are on.
     values = menu.defaults()
-    if selected(values) != {"i915-firmware", "intelbt-firmware"}:
+    if selected(values) != {"i915-firmware", "intelbt-firmware", "nvidia-gsp-firmware"}:
         fail(f"the x86_64 default selects {sorted(selected(values))}")
 
     # Drivers > GPU: the NVIDIA driver brings its firmware and takes it away; so does i915.
@@ -516,12 +519,16 @@ def check_driver_firmware() -> None:
     nvrtx = gpu["CONFIG_DRIVER_PCI_NVRTX"]
     i915 = gpu["CONFIG_DRIVER_PCI_I915"]
     values["ZEDBSD_USER_PROGRAMS"].add("rtl8822b-firmware")
-    walk(menu.drivers_menu, ["GPU", f"[ ] {nvrtx}", "Back", "Back"], values)
-    if "nvidia-gsp-firmware" not in values["ZEDBSD_USER_PROGRAMS"]:
-        fail("turning the NVIDIA driver on did not select nvidia-gsp-firmware")
+    # Both start on (nvrtx by default since 2026-10-15).
     walk(menu.drivers_menu, ["GPU", f"[*] {nvrtx}", f"[*] {i915}", "Back", "Back"], values)
     if selected(values) != {"intelbt-firmware", "rtl8822b-firmware"}:
         fail(f"turning the GPU drivers off left {sorted(selected(values))}")
+    walk(menu.drivers_menu, ["GPU", f"[ ] {nvrtx}", "Back", "Back"], values)
+    if "nvidia-gsp-firmware" not in values["ZEDBSD_USER_PROGRAMS"]:
+        fail("turning the NVIDIA driver on did not select nvidia-gsp-firmware")
+    walk(menu.drivers_menu, ["GPU", f"[*] {nvrtx}", "Back", "Back"], values)
+    if "nvidia-gsp-firmware" in values["ZEDBSD_USER_PROGRAMS"]:
+        fail("turning the NVIDIA driver off left nvidia-gsp-firmware")
     walk(menu.drivers_menu, ["GPU", f"[ ] {i915}", "Back", "Back"], values)
     if "i915-firmware" not in values["ZEDBSD_USER_PROGRAMS"]:
         fail("turning the i915 driver on did not select i915-firmware")
