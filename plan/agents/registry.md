@@ -133,4 +133,4 @@
 | P2 / 2026-10-19 | phase-runner（子なし） | WS267 → WS268 → WS259（q1258）→ q1259 | `/home/awe/zedBSD-worktrees/p2` / `agent/p2-q1258` | q1258 | q1259 | running | 基点 main 9c3033b2b |
 | P1 / 2026-10-19 | phase-runner（Opus 5.5、low、子なし） | WS244 → WS251 p002 → WS252 p001（q1260） | `/home/awe/zedBSD-worktrees/p1` / `agent/p1-q1260` | q1260 | — | returned（2026-10-19、コンテキスト） | 最後 c670aab05 → main f5a4904da |
 | P1 / 2026-10-19 (2) | phase-runner（Opus 5.5、low、子なし） | WS244 p007〜 → WS251 p002 → WS252 p001（q1260-i02） | `/home/awe/zedBSD-worktrees/p1` / `agent/p1-q1260b` | q1260-i02 | — | returned（2026-10-19） | 最後 0736bcc7b → main 731dc0a65 |
-| P1 / 2026-10-19 (3) | phase-runner（Opus 5.5、low、子なし） | WS252 p001（q1262） | `/home/awe/zedBSD-worktrees/p1` / `agent/p1-q1262` | q1262 | — | running | 基点 main 3afba0eb3 |
+| P1 / 2026-10-19 (3) | phase-runner（Opus 5.5、low、子なし） | WS252 p001（q1262） | `/home/awe/zedBSD-worktrees/p1` / `agent/p1-q1262` | q1262 | — | returned（2026-10-19） | 最後 8ef2d626d → main 62abf8bab |

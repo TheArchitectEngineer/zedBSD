@@ -18,6 +18,7 @@
   - WS261 は completed。朝の報告: 事前の承認で入れた HAL の差分の一覧、bootloader/tests/payload*.ld の削除の可否、Pi 4 の CI の image の大きさ（2 の冪）。
   - 朝の判断（追加）: WS259 の license の package（userland/base/licenses/rtl8822b-tables/ と tools/release/license-components.json の項目）を WS244 の i915-driver と同じく外すか（ユーザーの明示の決定が RTL8822B には無い）。
   - 朝の判断（追加）: WS245 p044・p045 の受け入れの読み替え（Linux との書き込み単位の完全一致は oracle が無い。値は表の比べ＋ADL-P の終わりの状態、順は版ごとの anchor に）。
+  - 朝の判断（追加）: WS252 の D1（RKL・ADL-S の ID を足して i915 を付けるか、既定 A 今のまま efifb）・D2（ICL の GT、既定 後回し）・D3（GuC・HuC、既定 使わない）・D4（TGL の MOCS の表を Linux の tgl_mocs_table に合わせるか、既定 変えない、5320 の回帰が要る）・D5（実機の入手）。
   - push はしていない。
 <!-- master:agents:end -->
 
@@ -573,7 +574,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS249](ws249/ws.md) | MG005 | BCM43455（Pi 4 の WiFi）の driver の出典の表記（block ごとの referenced:）と規約の整理（2026-10-15 ユーザー） | incomplete（p001・p002 cleared、main 331d314be。Pi 4 の実機の WiFi の試験待ち） | T の Pi 4 の試験 → completed |
 | [WS250](ws250/ws.md) | MG006 | nvrtx の終わらない GPU の仕事の取り消しと復帰、system は動き続ける（2026-10-15 ユーザー） | incomplete（p001 を P4 が q1206 で設計中） | p001 |
 | [WS251](ws251/ws.md) | MG001 | source の tree 全体から開発の管理情報を削除する（2026-10-15 ユーザー） | incomplete | p002 GPU ドライバ（2026-10-17、P1） |
-| [WS252](ws252/ws.md) | MG006 | i915 の RKL・ADL-S/RPL-S・ICL の GT の対応（2026-10-15 ユーザー、WS245 §7 #20） | planned | p001 設計の担当の割り当て待ち |
+| [WS252](ws252/ws.md) | MG006 | i915 の RKL・ADL-S/RPL-S・ICL の GT の対応（2026-10-15 ユーザー、WS245 §7 #20） | incomplete（p001 の設計は済み、レビューと判断 D1〜D5 待ち） | p001 設計の担当の割り当て待ち |
 | [WS253](ws253/ws.md) | MG001 | 起動の時間の短縮: 通常の起動は sessiond（Wayland）を先に、network・audio・sshd などは後に。debug の起動は今のまま（2026-10-16 ユーザー） | incomplete（p001: 2 段の起動・desktop の表示を待つ late・kernel の disk の待ちの短縮を main に d454d4bd3、QEMU で約 9 s → 約 4 s。5330 の確認待ち） | 5330 の起動の記録（P1 の次の起動で） |
 | [WS254](ws254/ws.md) | MG001 | networkd: DHCP の失敗の後に 1 分おきに取り直す（2026-10-16 ユーザー） | incomplete（p001 cleared: QEMU で確認、main 5cb63ff2a。実機は未実施） | p002 規約の見直し |
 | [WS255](ws255/ws.md) | MG001 | 試験機（5330・RDNA 機）の zedBSD の試験の image を静的な IP に（2026-10-16 ユーザー） | incomplete（p001 uncleared: 手引き・QEMU で address は確認、main d2a709ba6。route と DNS は BUG-328 待ち） | BUG-328 の修正 |
