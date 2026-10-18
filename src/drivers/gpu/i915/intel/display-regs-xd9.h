@@ -140,4 +140,49 @@
 #define I915_XD9_TRANS_DDI_FUNC_CTL_EDP		0x6f400U
 #define I915_XD9_TRANS_DDI_FUNC_ENABLE		(1U << 31)
 
+/*
+ * A display 9 DDI's buffer (DDI_BUF_CTL): the enable, the translation row
+ * it drives (27:24), the lane reversal, the idle state and the width
+ * (lanes less one in 3:1); its translation rows (DDI_BUF_TRANS, two words
+ * a row); and its DisplayPort transport (DP_TP_CTL, DP_TP_STATUS): the
+ * enable, enhanced framing, the training pattern (10:8) and the idle
+ * patterns' end.  Each DDI's registers are 0x100 after the last one's,
+ * its translation rows 0x60.
+ *
+ * Values referenced: Intel Kaby Lake PRM Volume 2c, Command Reference:
+ * Registers (DDI_BUF_CTL, DDI_BUF_TRANS, DP_TP_CTL, DP_TP_STATUS).
+ */
+#define I915_XD9_DDI_BUF_CTL(ddi)		(0x64000U + 0x100U * (ddi))
+#define I915_XD9_DDI_BUF_ENABLE			(1U << 31)
+#define I915_XD9_DDI_BUF_ROW_SHIFT		24U
+#define I915_XD9_DDI_BUF_ROW_MASK		(0xfU << 24)
+#define I915_XD9_DDI_BUF_REVERSAL		(1U << 16)
+#define I915_XD9_DDI_BUF_IDLE			(1U << 7)
+#define I915_XD9_DDI_BUF_WIDTH_SHIFT		1U
+#define I915_XD9_DDI_BUF_TRANS(ddi, row)	(0x64e00U + 0x60U * (ddi) + 8U * (row))
+#define I915_XD9_DP_TP_CTL(ddi)			(0x64040U + 0x100U * (ddi))
+#define I915_XD9_DP_TP_STATUS(ddi)		(0x64044U + 0x100U * (ddi))
+#define I915_XD9_DP_TP_ENABLE			(1U << 31)
+#define I915_XD9_DP_TP_ENHANCED			(1U << 18)
+#define I915_XD9_DP_TP_PATTERN_MASK		(7U << 8)
+#define I915_XD9_DP_TP_PATTERN_1		(0U << 8)
+#define I915_XD9_DP_TP_PATTERN_2		(1U << 8)
+#define I915_XD9_DP_TP_PATTERN_IDLE		(2U << 8)
+#define I915_XD9_DP_TP_PATTERN_NORMAL		(3U << 8)
+#define I915_XD9_DP_TP_PATTERN_3		(4U << 8)
+#define I915_XD9_DP_TP_STATUS_IDLE_DONE		(1U << 25)
+
+/*
+ * The current boost of the DDIs' buffers (DISPIO_CR_TX_BMU_CR0): each
+ * DDI's balance leg (three bits from 8 + 3 x DDI) and its disable bit
+ * (23 + DDI).
+ *
+ * Values referenced: Intel Kaby Lake PRM Volume 2c, Command Reference:
+ * Registers (DISPIO_CR_TX_BMU_CR0).
+ */
+#define I915_XD9_BMU_CR0			0x6c00cU
+#define I915_XD9_BALANCE_LEG_SHIFT(ddi)		(8U + 3U * (ddi))
+#define I915_XD9_BALANCE_LEG_MASK(ddi)		(7U << (8U + 3U * (ddi)))
+#define I915_XD9_BALANCE_LEG_DISABLE(ddi)	(1U << (23U + (ddi)))
+
 #endif /* DRIVERS_GPU_I915_INTEL_DISPLAY_REGS_XD9_H */

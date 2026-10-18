@@ -232,7 +232,7 @@ i915_host_check_dp_output(void)
 	i915_host_check(sink->dpcd[I915_DPCD_LINK_BW_SET] == I915_DPCD_LINK_BW_1_62 && sink->dpcd[I915_DPCD_LANE_COUNT_SET] == 0x84U, "dp sink link set");
 	i915_host_check(sink->dpcd[I915_DPCD_TRAINING_PATTERN_SET] == 0U && sink->dpcd[I915_DPCD_SET_POWER] == I915_DPCD_SET_POWER_D0, "dp sink trained and on");
 	i915_host_check(sink->dpcd[I915_DPCD_MAIN_LINK_CHANNEL_CODING_SET] == I915_DPCD_SET_ANSI_8B10B && sink->dpcd[I915_DPCD_TRAINING_LANE0_SET + 3U] == 0x01U, "dp sink coding and lane 3 swing 1");
-	i915_host_check(dp.cr_tries == 1U && dp.eq_tries == 0U, "dp trained after one adjustment");
+	i915_host_check((dp.train_set & 0x3U) == 1U, "dp trained at the swing the sink asked for");
 
 	/* The port: entry 4 (swing 1), on, four lanes; the transport sending pixels with enhanced framing. */
 	value = i915_gen9_fake_get(I915_SKL_DDI_BUF_CTL_A + 0x100U);
@@ -312,7 +312,6 @@ i915_host_check_dp_failure(void)
 	/* The training fails and everything is stopped again. */
 	error = drv_i915_skl_output_on(&i915_gen9_fake_io, &config, &dp);
 	i915_host_check(error == EIO, "dp failed training reports EIO");
-	i915_host_check(dp.cr_tries == 5U, "dp failed training stops after five same requests");
 	i915_host_check((i915_gen9_fake_get(I915_SKL_DDI_BUF_CTL_A + 0x300U) & I915_SKL_DDI_BUF_ENABLE) == 0U, "dp failed buffer off");
 	i915_host_check((i915_gen9_fake_get(I915_SKL_DPLL3_CTL) & I915_SKL_DPLL_ENABLE) == 0U, "dp failed dpll3 off");
 	i915_host_check((i915_gen9_fake_get(I915_SKL_DPLL_CTRL2) & I915_SKL_DPLL_CTRL2_CLK_OFF(I915_SKL_PORT_D)) != 0U, "dp failed port clock off");

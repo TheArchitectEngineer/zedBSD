@@ -10,10 +10,15 @@
  */
 
 #include "xd-ddi.h"
+#include "xd-aux.h"
+#include "xd-dp.h"
 #include "xd-io.h"
 #include "xd-platform.h"
+#include <kern/kcrt.h>
 
+#include "../intel/display-dpcd-xd.h"
 #include "../intel/display-regs-xd.h"
+#include "../intel/display-regs-xd9.h"
 
 #include <uapi/errno.h>
 #include <stddef.h>
@@ -70,6 +75,41 @@
  */
 #define I915_XD9_DDI_ROWS_NOT_A		9U
 
+/*
+ * The waits of a display 9 DDI: the buffer leaves idle after more than
+ * 518 us, goes idle within 8 us, and the idle patterns go out within
+ * 1 ms.
+ *
+ * Values referenced: Intel Kaby Lake PRM Volume 12, Display Engine (the
+ * DDI buffer's enable and disable times, the idle patterns).
+ */
+#define I915_XD9_DDI_ACTIVE_US		600U
+#define I915_XD9_DDI_IDLE_US		8U
+#define I915_XD9_DDI_IDLE_PATTERNS_US	1000U
+
+/* The boosts a translation row may ask for: off, or a balance leg of 1, 3 or 7. */
+#define I915_XD9_BOOST_1		1U
+#define I915_XD9_BOOST_3		3U
+#define I915_XD9_BOOST_7		7U
+
+/* How many times the sink's power state is written while it wakes, a millisecond apart. */
+#define I915_XD9_WAKE_TRIES		3U
+#define I915_XD9_WAKE_US		1000U
+
+/* The DPCD revision from which a sink has a power state. */
+#define I915_XD9_DPCD_REV_1_1		0x11U
+
+/* The pattern field of a DPCD pattern byte. */
+#define I915_XD9_PATTERN_FIELD		0x7U
+
+/*
+ * The enhanced framing bit of a sink's MAX_LANE_COUNT.
+ *
+ * Values referenced: VESA DisplayPort Standard 1.4 (DPCD MAX_LANE_COUNT,
+ * ENHANCED_FRAME_CAP).
+ */
+#define I915_XD9_DPCD_ENHANCED_CAP	0x80U
+
 static uint32_t i915_xd_combo_base(unsigned phy);
 static int i915_xd_combo_has(uint8_t mask, unsigned phy);
 static int i915_xd_combo_check(struct i915_xd_io *io, uint32_t offset, uint32_t mask, uint32_t value);
@@ -77,6 +117,16 @@ static void i915_xd_combo_init_one(struct i915_xd_io *io, const struct i915_xd_p
 static uint32_t i915_xd_combo_loadgen(const struct i915_xd_combo_levels *levels, unsigned lane);
 static void i915_xd_combo_swing(struct i915_xd_io *io, const struct i915_xd_platform *platform, const struct i915_xd_combo_levels *levels, uint32_t base);
 static unsigned i915_xd_ddi_wait_active(struct i915_xd_io *io, const struct i915_xd_ddi_link *link);
+static void i915_xd9_dp_levels(void *context, const uint8_t set[4]);
+static void i915_xd9_dp_pattern(void *context, uint8_t pattern);
+static void i915_xd9_dp_prepare(void *context);
+static void i915_xd9_dp_idle(void *context);
+static void i915_xd9_dp_sleep(void *context, unsigned min_us, unsigned max_us);
+static int i915_xd9_sink_read(void *context, uint32_t address, uint8_t *buffer, unsigned size);
+static int i915_xd9_sink_write(void *context, uint32_t address, const uint8_t *buffer, unsigned size);
+static int i915_xd9_sink_probe(void *context, uint32_t address);
+static int i915_xd9_sink_caps(void *context, uint8_t *caps);
+static void i915_xd9_dp_link(struct i915_xd9_dp_port *port, uint32_t rate_khz, unsigned lanes, struct i915_xd_dp_link *link);
 
 /*
  * Tells whether a combo PHY reads as brought up: its IO compensation
@@ -490,6 +540,160 @@ drv_i915_xd9_ddi_hdmi_row(
 
 	/* Succeeded: the table's default row. */
 	return platform->ddi_buffers->hdmi_default;
+}
+
+/*
+ * Writes a display 9 DDI's buffer translation rows from a table.
+ */
+void
+drv_i915_xd9_ddi_buffers(
+	struct i915_xd_io *io,
+	unsigned ddi,
+	const struct i915_xd9_buf_trans *table,
+	unsigned rows)
+{
+	unsigned row;
+
+	/* Each row's two words. */
+	for (row = 0U; row < rows; row++) {
+		drv_i915_xd_io_write(io, I915_XD9_DDI_BUF_TRANS(ddi, row), table[row].trans1);
+		drv_i915_xd_io_write(io, I915_XD9_DDI_BUF_TRANS(ddi, row) + 4U, table[row].trans2);
+	}
+}
+
+/*
+ * Drives a translation row on a display 9 DDI: the row's current boost in
+ * the DDI's balance leg (or the leg off for a row without one), then the
+ * row selected in the buffer's word, which is written and pushed out.
+ * A row past the table drives the last one.
+ */
+void
+drv_i915_xd9_ddi_levels(
+	struct i915_xd_io *io,
+	unsigned ddi,
+	const struct i915_xd9_buf_trans *table,
+	unsigned rows,
+	unsigned row,
+	uint32_t *buf_word)
+{
+	unsigned boost;
+
+	/* The last row at most. */
+	if (row >= rows)
+		row = rows - 1U;
+
+	/* The boost: the leg off, or set to the row's 1, 3 or 7; another value leaves the leg as it is. */
+	boost = table[row].iboost;
+	if (boost == 0U) {
+		(void)drv_i915_xd_io_rmw(io, I915_XD9_BMU_CR0, I915_XD9_BALANCE_LEG_MASK(ddi), I915_XD9_BALANCE_LEG_DISABLE(ddi));
+	} else if (boost == I915_XD9_BOOST_1 || boost == I915_XD9_BOOST_3 || boost == I915_XD9_BOOST_7) {
+		(void)drv_i915_xd_io_rmw(io,
+					 I915_XD9_BMU_CR0,
+					 I915_XD9_BALANCE_LEG_MASK(ddi) | I915_XD9_BALANCE_LEG_DISABLE(ddi),
+					 boost << I915_XD9_BALANCE_LEG_SHIFT(ddi));
+	}
+
+	/* The row in the buffer's word. */
+	*buf_word &= ~I915_XD9_DDI_BUF_ROW_MASK;
+	*buf_word |= (uint32_t)row << I915_XD9_DDI_BUF_ROW_SHIFT;
+	drv_i915_xd_io_write(io, I915_XD9_DDI_BUF_CTL(ddi), *buf_word);
+	drv_i915_xd_io_posting_read(io, I915_XD9_DDI_BUF_CTL(ddi));
+}
+
+/*
+ * Stops a display 9 DDI's buffer and its transport, and waits for a
+ * buffer that was on to go idle.
+ */
+void
+drv_i915_xd9_ddi_buffer_off(
+	struct i915_xd_io *io,
+	unsigned ddi)
+{
+	uint32_t buffer;
+	int was_on;
+
+	/* The buffer off. */
+	was_on = 0;
+	buffer = drv_i915_xd_io_read(io, I915_XD9_DDI_BUF_CTL(ddi));
+	if ((buffer & I915_XD9_DDI_BUF_ENABLE) != 0U) {
+		drv_i915_xd_io_write(io, I915_XD9_DDI_BUF_CTL(ddi), buffer & ~I915_XD9_DDI_BUF_ENABLE);
+		was_on = 1;
+	}
+
+	/* The transport off. */
+	(void)drv_i915_xd_io_rmw(io, I915_XD9_DP_TP_CTL(ddi), I915_XD9_DP_TP_ENABLE, 0U);
+	drv_i915_xd_io_posting_read(io, I915_XD9_DP_TP_CTL(ddi));
+
+	/* Succeeded: a buffer that was on goes idle. */
+	if (was_on)
+		(void)drv_i915_xd_io_poll(io, I915_XD9_DDI_BUF_CTL(ddi), I915_XD9_DDI_BUF_IDLE, I915_XD9_DDI_BUF_IDLE, I915_XD9_DDI_IDLE_US, NULL);
+}
+
+/*
+ * Trains a display 9 DisplayPort link at a rate and lane count and leaves
+ * it carrying the stream.
+ *
+ * The training is the xd code's (xd-dp.c), with the DDI as its source: the
+ * transport in pattern 1 and the buffer started before the sink is set
+ * up, the levels of the first lane on every lane through the buffer's
+ * translation rows, the patterns in the transport, and the idle patterns
+ * after it.  The port's word must hold the DDI's width and kept bits.
+ * Returns 0, or EIO when the link did not train (the DDI is left
+ * training, for the caller to stop).
+ */
+int
+drv_i915_xd9_dp_train(
+	struct i915_xd9_dp_port *port,
+	uint32_t rate_khz,
+	unsigned lanes)
+{
+	struct i915_xd_dp_link link;
+	int error;
+
+	/* The training. */
+	i915_xd9_dp_link(port, rate_khz, lanes, &link);
+	error = drv_i915_xd_dp_train(&link);
+	port->set = link.set[0];
+	if (error != 0)
+		return EIO;
+
+	/* Succeeded: the link leaves the training and carries the stream. */
+	drv_i915_xd_dp_train_end(&link);
+	return 0;
+}
+
+/*
+ * Sets a display 9 sink's power state; D0 is written up to three times a
+ * millisecond apart while the sink wakes.  A sink before DPCD 1.1 has
+ * none.  Returns 0, or the error of the last write.
+ */
+int
+drv_i915_xd9_dp_sink_power(
+	struct i915_xd9_dp_port *port,
+	uint8_t state)
+{
+	unsigned tries;
+	int error;
+
+	/* A sink before DPCD 1.1 has no power state. */
+	if (port->caps[I915_XD_DPCD_REV] < I915_XD9_DPCD_REV_1_1)
+		return 0;
+
+	/* The write, again while the sink wakes. */
+	error = EIO;
+	for (tries = 0U; tries < I915_XD9_WAKE_TRIES; tries++) {
+		error = drv_i915_xd_dpcd_write(&port->aux, port->io, I915_XD_DPCD_SET_POWER, &state, 1U);
+		if (error == 0)
+			break;
+		(void)drv_i915_xd_io_delay(port->io, I915_XD9_WAKE_US);
+	}
+
+	/* A sink that never took it. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the sink is in the state. */
+	return 0;
 }
 
 /*
@@ -990,4 +1194,256 @@ i915_xd_ddi_wait_active(
 
 	/* Succeeded: the buffer is active. */
 	return 0U;
+}
+
+/* Fills the xd code's link of a display 9 port: its limits, the sink over its AUX channel, the DDI as its source. */
+static void
+i915_xd9_dp_link(
+	struct i915_xd9_dp_port *port,
+	uint32_t rate_khz,
+	unsigned lanes,
+	struct i915_xd_dp_link *link)
+{
+	kern_memset(link, 0, sizeof(*link));
+
+	/* The link: the rate by its code, the lanes, enhanced framing when the sink takes it. */
+	link->rate_khz = rate_khz;
+	link->lanes = lanes;
+	link->rate_index = -1;
+	if ((port->caps[I915_XD_DPCD_MAX_LANES] & I915_XD9_DPCD_ENHANCED_CAP) != 0U)
+		link->enhanced = 1;
+
+	/* The source: the swing its table reaches, one level on every lane, pattern 3 but not 4, no repeaters. */
+	link->swing_max = drv_i915_xd_dp_swing_max(port->rows);
+	link->preemph_max = 3U;
+	link->per_lane = 0;
+	link->tps3 = 1;
+	link->tps4 = 0;
+	link->find_repeaters = 0;
+	link->caps = port->caps;
+	link->repeater_caps = port->repeater_caps;
+	link->repeater_phy_caps = port->repeater_phy_caps;
+
+	/* The sink over the DDI's AUX channel. */
+	link->sink.read = i915_xd9_sink_read;
+	link->sink.write = i915_xd9_sink_write;
+	link->sink.probe = i915_xd9_sink_probe;
+	link->sink.read_caps = i915_xd9_sink_caps;
+	link->sink.context = port;
+
+	/* Succeeded: the DDI as the source. */
+	link->source.levels = i915_xd9_dp_levels;
+	link->source.pattern = i915_xd9_dp_pattern;
+	link->source.prepare = i915_xd9_dp_prepare;
+	link->source.idle = i915_xd9_dp_idle;
+	link->source.sleep = i915_xd9_dp_sleep;
+	link->source.note = NULL;
+	link->source.context = port;
+}
+
+/* Drives the first lane's levels on the DDI: the translation row of its swing and pre-emphasis. */
+static void
+i915_xd9_dp_levels(
+	void *context,
+	const uint8_t set[4])
+{
+	struct i915_xd9_dp_port *port;
+	unsigned row;
+	int error;
+
+	/* The port the hook belongs to. */
+	port = context;
+
+	/* The row of the levels; one no table has is the first. */
+	error = drv_i915_xd_combo_level_row(set[0], &row);
+	if (error != 0)
+		row = 0U;
+
+	/* Succeeded: the row on the DDI. */
+	drv_i915_xd9_ddi_levels(port->io, port->ddi, port->table, port->rows, row, &port->buf_word);
+}
+
+/* Selects a training pattern on the DDI's transport. */
+static void
+i915_xd9_dp_pattern(
+	void *context,
+	uint8_t pattern)
+{
+	struct i915_xd9_dp_port *port;
+	uint32_t select;
+
+	/* The port the hook belongs to. */
+	port = context;
+
+	/* The transport's field of the DPCD's pattern (an unknown one is pattern 1). */
+	switch (pattern & I915_XD9_PATTERN_FIELD) {
+	case I915_XD_DPCD_PATTERN_NONE:
+		select = I915_XD9_DP_TP_PATTERN_NORMAL;
+		break;
+	case I915_XD_DPCD_PATTERN_2:
+		select = I915_XD9_DP_TP_PATTERN_2;
+		break;
+	case I915_XD_DPCD_PATTERN_3:
+		select = I915_XD9_DP_TP_PATTERN_3;
+		break;
+	default:
+		select = I915_XD9_DP_TP_PATTERN_1;
+		break;
+	}
+
+	/* Succeeded: the field, the rest kept. */
+	(void)drv_i915_xd_io_rmw(port->io, I915_XD9_DP_TP_CTL(port->ddi), I915_XD9_DP_TP_PATTERN_MASK, select);
+}
+
+/*
+ * Starts the DDI in training pattern 1: a transport still running stops
+ * first with its buffer, then the transport in pattern 1 (with enhanced
+ * framing when the sink takes it) and the buffer on, with the time it
+ * takes to leave idle.
+ */
+static void
+i915_xd9_dp_prepare(
+	void *context)
+{
+	struct i915_xd9_dp_port *port;
+	uint32_t transport;
+
+	/* The port the hook belongs to. */
+	port = context;
+
+	/* A running transport stops first. */
+	transport = drv_i915_xd_io_read(port->io, I915_XD9_DP_TP_CTL(port->ddi));
+	if ((transport & I915_XD9_DP_TP_ENABLE) != 0U)
+		drv_i915_xd9_ddi_buffer_off(port->io, port->ddi);
+
+	/* The transport in pattern 1. */
+	transport = I915_XD9_DP_TP_ENABLE | I915_XD9_DP_TP_PATTERN_1;
+	if ((port->caps[I915_XD_DPCD_MAX_LANES] & I915_XD9_DPCD_ENHANCED_CAP) != 0U)
+		transport |= I915_XD9_DP_TP_ENHANCED;
+	drv_i915_xd_io_write(port->io, I915_XD9_DP_TP_CTL(port->ddi), transport);
+	drv_i915_xd_io_posting_read(port->io, I915_XD9_DP_TP_CTL(port->ddi));
+
+	/* Succeeded: the buffer on, out of idle. */
+	port->buf_word |= I915_XD9_DDI_BUF_ENABLE;
+	drv_i915_xd_io_write(port->io, I915_XD9_DDI_BUF_CTL(port->ddi), port->buf_word);
+	drv_i915_xd_io_posting_read(port->io, I915_XD9_DDI_BUF_CTL(port->ddi));
+	(void)drv_i915_xd_io_delay(port->io, I915_XD9_DDI_ACTIVE_US);
+}
+
+/* Sends the idle patterns after the training; DDI A does not wait for them. */
+static void
+i915_xd9_dp_idle(
+	void *context)
+{
+	struct i915_xd9_dp_port *port;
+
+	/* The port the hook belongs to. */
+	port = context;
+
+	/* The idle pattern. */
+	(void)drv_i915_xd_io_rmw(port->io, I915_XD9_DP_TP_CTL(port->ddi), I915_XD9_DP_TP_PATTERN_MASK, I915_XD9_DP_TP_PATTERN_IDLE);
+	if (port->ddi == 0U)
+		return;
+
+	/* Succeeded: the patterns are out. */
+	(void)drv_i915_xd_io_poll(port->io, I915_XD9_DP_TP_STATUS(port->ddi), I915_XD9_DP_TP_STATUS_IDLE_DONE, I915_XD9_DP_TP_STATUS_IDLE_DONE, I915_XD9_DDI_IDLE_PATTERNS_US, NULL);
+}
+
+/* Lets the time between two steps of the training pass. */
+static void
+i915_xd9_dp_sleep(
+	void *context,
+	unsigned min_us,
+	unsigned max_us)
+{
+	struct i915_xd9_dp_port *port;
+
+	UNUSED_PARAMETER(max_us);
+
+	/* The port the hook belongs to. */
+	port = context;
+
+	/* Succeeded: the shortest time asked. */
+	(void)drv_i915_xd_io_delay(port->io, min_us);
+}
+
+/* Reads DPCD bytes for the training: the bytes read, or a negative error. */
+static int
+i915_xd9_sink_read(
+	void *context,
+	uint32_t address,
+	uint8_t *buffer,
+	unsigned size)
+{
+	struct i915_xd9_dp_port *port;
+	int error;
+
+	/* The port the hook belongs to. */
+	port = context;
+
+	/* The read. */
+	error = drv_i915_xd_dpcd_read(&port->aux, port->io, address, buffer, size);
+	if (error != 0)
+		return -error;
+
+	/* Succeeded: every byte. */
+	return (int)size;
+}
+
+/* Writes DPCD bytes for the training: the bytes written, or a negative error. */
+static int
+i915_xd9_sink_write(
+	void *context,
+	uint32_t address,
+	const uint8_t *buffer,
+	unsigned size)
+{
+	struct i915_xd9_dp_port *port;
+	int error;
+
+	/* The port the hook belongs to. */
+	port = context;
+
+	/* The write. */
+	error = drv_i915_xd_dpcd_write(&port->aux, port->io, address, buffer, size);
+	if (error != 0)
+		return -error;
+
+	/* Succeeded: every byte. */
+	return (int)size;
+}
+
+/* Wakes the sink with a read it throws away: 0, or a negative error. */
+static int
+i915_xd9_sink_probe(
+	void *context,
+	uint32_t address)
+{
+	uint8_t thrown;
+	int moved;
+
+	/* Succeeded or not, the outcome of a one-byte read. */
+	moved = i915_xd9_sink_read(context, address, &thrown, 1U);
+	if (moved < 0)
+		return moved;
+
+	/* Succeeded: the sink answered. */
+	return 0;
+}
+
+/* Reads the sink's receiver capabilities: 0, or a negative error. */
+static int
+i915_xd9_sink_caps(
+	void *context,
+	uint8_t *caps)
+{
+	int moved;
+
+	/* The capability bytes. */
+	moved = i915_xd9_sink_read(context, I915_XD_DPCD_REV, caps, I915_XD_DPCD_CAPS_SIZE);
+	if (moved < 0)
+		return moved;
+
+	/* Succeeded: the capabilities. */
+	return 0;
 }

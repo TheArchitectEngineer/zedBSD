@@ -39,6 +39,7 @@
 
 #include <stdint.h>
 
+#include "xd-aux.h"
 #include "xd-io.h"
 #include "xd-platform.h"
 
@@ -92,6 +93,32 @@ struct i915_xd_ddi_link {
 #define I915_XD9_OUTPUT_HDMI		2U
 #define I915_XD9_OUTPUT_EDP		3U
 
+/*
+ * A display 9 DisplayPort port while its link trains and runs: the
+ * registers and the DDI's AUX channel, the DDI and its translation table,
+ * the buffer's word kept between the steps (its width and kept bits; the
+ * row and the enable are added), the level the training left, and the
+ * sink's receiver and repeater capabilities.  The caller owns it for as
+ * long as the link is used.
+ */
+struct i915_xd9_dp_port {
+	struct i915_xd_io *io;
+	struct i915_xd_aux aux;
+	unsigned ddi;
+	const struct i915_xd9_buf_trans *table;
+	unsigned rows;
+	uint32_t buf_word;
+	uint8_t set;
+	uint8_t caps[15];
+	uint8_t repeater_caps[8];
+	uint8_t repeater_phy_caps[8][3];
+};
+
+void drv_i915_xd9_ddi_buffers(struct i915_xd_io *io, unsigned ddi, const struct i915_xd9_buf_trans *table, unsigned rows);
+void drv_i915_xd9_ddi_levels(struct i915_xd_io *io, unsigned ddi, const struct i915_xd9_buf_trans *table, unsigned rows, unsigned row, uint32_t *buf_word);
+void drv_i915_xd9_ddi_buffer_off(struct i915_xd_io *io, unsigned ddi);
+int drv_i915_xd9_dp_train(struct i915_xd9_dp_port *port, uint32_t rate_khz, unsigned lanes);
+int drv_i915_xd9_dp_sink_power(struct i915_xd9_dp_port *port, uint8_t state);
 const struct i915_xd9_buf_trans *drv_i915_xd9_ddi_buf_table(const struct i915_xd_platform *platform, unsigned output, unsigned ddi, unsigned *count);
 unsigned drv_i915_xd9_ddi_hdmi_row(const struct i915_xd_platform *platform);
 int drv_i915_xd_combo_phy_ready(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned phy);
