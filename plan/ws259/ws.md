@@ -19,5 +19,5 @@
 | Phase | 目的 | 状態 |
 | --- | --- | --- |
 | [p001](phase001/phase.md) | 書き換えと表の値の比べ | in-progress（2026-10-19 P2、license の package の判断待ち・実機待ち） |
-| p002 | 規約の全文の見直し（tables.inc の comment と名前） | planned |
+| [p002](phase002/phase.md) | 規約の全文の見直し（tables.inc の comment と名前） | in-progress（P2 実施済み、2026-10-19） |
 - 決定（2026-10-18 ユーザー、クリック）: 実機の WiFi の確かめは「実機は残して待つ」（host の表の比べと build まで済ませ、実機の Phase は in-progress（実機待ち））。
