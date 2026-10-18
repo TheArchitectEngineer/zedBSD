@@ -81,10 +81,7 @@ Parent: [WS251](../ws.md)
 
 ### 残り・再開の手順
 
-- 残り 23 件（群 5 の後。venus 6、compiler 15、amdrdna 2、`include/uapi/gpu-op.h` 3）。
-  i915 の render の image.c「design N3」・video.c「(N4)」、tests/execution/README.md の LCD-G・P7-IPC の類も対象。
-  bcm2711 は `bcm2711_stage_mark` の log が N0・P0・R0 の段の符号を持つ（readout.c ほか）。照合する試験の grep が要る。
-- 手順: 群ごとに `git grep` で文脈を読み、comment を直す → `sh build/tmp/kbuild.sh ws251p002-gN` → `sh build/tmp/ws251-objcmp.sh ws251p002-base ws251p002-gN`
-  （log を変えた file 以外の object が同じ）→ 群の host 試験 → WIP commit。基準の build `build/ws251p002-base2`（0a59b8a8a）を使う（古い `ws251p002-base` は消してよい）。
-- 段の符号の検査（機械の検査の外）: `git grep -nE '\bN[0-9]\b|\bP[0-9]\b|\bR[0-9]\b|\bLCD-[A-Z]|\bF[0-9]+\b|[Ss]tage [0-9]|test build|QEMU|5330'` を群ごとに目視。
-- 掃除（Q1 に依頼）: `build/ws251p002-base`（再開に要るので残すなら後で）・`build/ws251p002-g1`・`build/ws251p002-xd`・`build/ws251p002-h2` と各 .log。
+- 機械の検査は src/drivers/gpu と include/uapi/gpu-op.h で 0 件（2026-10-18、835732198）。
+- 残り: (1) bcm2711 の段の名前（P0〜P5・N0・R0・V0〜V7、boot parameter の値）の扱いはユーザーの判断待ち（群 4）。(2) 完了の条件の「file ごとの目視の記録」: 今回は群ごとの grep（段の符号・design・QEMU・5330・test build）の目視までで、file ごとの記録は無い。(3) WS237 の gen9 の host 試験・WS229 の bootfb の host 試験は未実施（comment だけなので vmunix の比べで代えた）。(4) arm64 の build は群 4 の後で作っていない（群 6 の compiler の .inc）。(5) 範囲の外の include/libc/vulkan/API-PROVENANCE.md・include/kern/tty.h は Q1 の判断。
+- 基準の build: `build/ws251p002-base2`（0a59b8a8a）。手順: 直す → `sh build/tmp/kbuild.sh <名>` → `sh build/tmp/ws251-objcmp.sh ws251p002-base2 <名>`。
+- 掃除（Q1 に依頼）: `build/ws251p002-g5`・`-g5-host`・`-g6` と各 .log。
