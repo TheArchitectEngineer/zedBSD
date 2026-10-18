@@ -1,0 +1,15 @@
+{
+  "final_source_commit": "88713badd",
+  "source_changes_since_initial_target": [
+    "userland/desktop/libbrowser/css/values.c"
+  ],
+  "unchanged_target_sources": [
+    "userland/desktop/libbrowser/css/cascade.c",
+    "userland/desktop/libbrowser/bind/computed.c",
+    "userland/desktop/libbrowser/layout/grid.c",
+    "userland/desktop/libbrowser/css/css.h",
+    "userland/desktop/libbrowser/css/internal.h"
+  ],
+  "final_values_function_candidates": [],
+  "plain_and_frozen_library_equal": true
+}

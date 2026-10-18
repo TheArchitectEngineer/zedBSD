@@ -1,0 +1,4 @@
+animate undefined Animation undefined
+underlying fit-content(5px) fit-content(20px)
+distinct expected fit-content(5px) fit-content(40px)
+collapsed equality false

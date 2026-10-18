@@ -2,7 +2,7 @@
 
 # ws074-p251: linear calcのzero percentage type
 
-Status: in-progress（q14-i01）
+Status: cleared（q14-i01 own criteria、2026-10-18）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
@@ -25,3 +25,7 @@ Event ws074-p251-created-from-fit-diagnosis-20261018: p250生成前の17条件Ch
 Event ws074-p251-scoped-output-prerequisite-20261018: p250のprerequisiteはこのPhaseの独立computed/native type preflightというscoped output。sourceは単独executorが順に変更し、両sourceを含むfinal pairのglobal1491/static1561で各itemのterminal gateを確認する。i01 clearanceを先取りしない。
 
 Event ws074-p251-preflight-20261018: frozen type-preflight pairでdirect/cancelled/scalar/nested ordinary calc等10行・20 computed値がChromiumと完全一致。native engineの実computed queryで確認。全体gateはfinal pairへpending、whole clearanceは未判定。p250のscoped prerequisite outputを確認しi02実行へ。
+
+Checkpoint ws074-p251-q14-final-static-20261018: 88713baddの初期化修正後final frozen pairで全static1561を完走。839 PASS/722 FAIL、old PASS後退0・全reference画素差count変化0。fixed flex-basis-computedのzero% callback改善もraw確認、content/negative calcの既存2 FAILはp252候補へ。full1491 terminal gateは継続中で、item/Phase clearanceは未判定。
+
+Event ws074-p251-q14-cleared-20261018: [証拠](../phase250/evidence/20261018-q14/README.md)。source88713badd final pairで全harness1491 whole489→491・old PASS後退0、callback13改善/16旧animation偽陽性露出・欠落/追加/名前順変化0、全static1561 whole839維持・pixel count変化0。独立20 computed/4実寸・fit17行Chromium一致、DOM33/33/CSSOM各12/12、host/target warning0/C全文/format・Acid非増加。q14既定のown criteriaを満たしPhase/item cleared。native fit cap/nonlinear math/animationの未達をclearせず、p100/target全体/共有remote closureはpending。初版353件の停止診断は保持、terminalは初期化修正後の全件測定。

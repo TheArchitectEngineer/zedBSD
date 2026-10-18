@@ -33,3 +33,5 @@ Event ws074-p240-host-partial-clear-20261018: 有限の host 部分を cleared �
 Phase whole は uncleared。QEMU・実機・GPU、stretchで決まるcross size、flex-basis:contentとautoの区別、画像の自動最小サイズは残る。次の有限範囲の候補はfixed009/045/046のstretch cross sizeと、021/022のbasis区別。Interop全3,805件・WS074 acceptanceの達成は主張しない。新しい製品判断は行っていない。公開ABI/Wayland境界の変更はない。Master・共有Queue/GitHubの投影はpending。
 
 Commit receipt: 実装・試験・証拠は `53f46c61b`（WIP）。`git log` と `git show --stat` で11 fileの保存をread-back確認。pushは未実施。
+
+Event ws074-p252-basis-plan-20261018: [p252](../phase252/phase.md)へ既存content vs autoとgrammar/computedの有限候補を具体化。非置換horizontal content baseと保存・復元/cacheを検証し、replaced/target等の本Phaseの未達は保持。q14 final outputのgate後に新Queue選定が必要、まだ実装しない。

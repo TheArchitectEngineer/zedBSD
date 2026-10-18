@@ -1,0 +1,12 @@
+{
+  "engine_source_commit": "fa7488df5",
+  "binary_sha256": {
+    "browser": "25a66385edb7811c04e5e04fddd6bf3060ef2883f26d2781adbecf9d87debc02",
+    "libbrowser.so": "ae381e800c0b760d10105456ebfb2186ae0f164fd6a3d178f808bdf8afba127c"
+  },
+  "before_1455": "plan/ws074/phase247/evidence/20261018-q12/after-harness",
+  "additional_36": "plan/ws074/phase189/evidence/20261018-q13/variants",
+  "classifier_result_reporter": "q13 kept result classifier/report script unchanged; five existing outcome controls and exact query roundtrip verified",
+  "raw_identity": "baseline-1491.json resolves every ID to retained versioned raw and decoded SHA256",
+  "full_static_baseline": "plan/ws074/phase247/evidence/20261018-q12/after-static/report.json"
+}

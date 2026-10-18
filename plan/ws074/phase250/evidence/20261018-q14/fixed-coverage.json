@@ -1,0 +1,14 @@
+{
+  "fixed_total": 3805,
+  "testharness_total": 1783,
+  "testharness_measured": 1491,
+  "testharness_pass": 491,
+  "testharness_unrun": 292,
+  "reftest_total": 1974,
+  "reftest_measured": 1561,
+  "reftest_pass": 839,
+  "reftest_unrun": 413,
+  "crash_official_unknown": 48,
+  "verified_whole_pass": 1330,
+  "percent": 34.954
+}

@@ -1,0 +1,17 @@
+{
+  "harness_new_pass": [
+    "/css/css-flexbox/getcomputedstyle/flexbox_computedstyle_min-auto-size.html",
+    "/css/css-grid/grid-definition/grid-inline-template-columns-rows-resolved-values-001.html",
+    "/css/css-grid/grid-definition/grid-template-columns-rows-resolved-values-001.html",
+    "/css/css-grid/grid-items/grid-item-min-auto-size-001.html",
+    "/css/css-grid/parsing/grid-auto-columns-computed.html",
+    "/css/css-grid/parsing/grid-auto-rows-computed.html"
+  ],
+  "harness_regressions": [],
+  "static_new_pass": [
+    "css/css-grid/grid-items/grid-minimum-size-grid-items-016.html",
+    "css/css-grid/grid-items/grid-minimum-size-grid-items-020.html",
+    "css/css-grid/grid-items/table-with-infinite-max-intrinsic-width.html"
+  ],
+  "static_regressions": []
+}

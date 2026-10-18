@@ -22,3 +22,5 @@ completionには独立時刻/seek/pause/cancel/GC/lifetime、通常CSS/WA entry 
 Event ws074-p248-planned-from-q11-20261018: q11の24既存PASS lossを隠さず保持し、full native feature設計へ分離。p246/q11はunclearedのまま、ここへの記録だけでclearしない。共有投影pending。
 
 Event ws074-animation-phase-ownership-reconciled-20261018: q14の待機中に既存[p224](../phase224/phase.md) q1135を再確認。新p248とGrid track goalが重複していたため、p224の既存goal/history/未達を保持し、p248をnative timing/DOM lifecycleという前提outputへ限定。p248 verified output → p224 Grid interpolation/compositionと依存を明示。p246/q11未達とq14のcomputed-only scope/criteria/approvalは不変。両Phaseは未選定であり、この設計改訂だけでは実装を開始しない。
+
+Event ws074-q14-animation-fit-collapse-diagnosis-20261018: q14 final全件の途中で同じGrid columns/rows composition/interpolation4 IDの各4 callback、計16が旧PASS→FAIL。独立[probe](../phase250/evidence/20261018-q14/animation-collapse-probe.html)でq12/final両pairのanimate/Animationがundefined、異なるfit(5px)/fit(20px)とfit(5px)/fit(40px)が旧serializerでは両auto autoとなり等しい一方、新serializerで本来の異なる値を保持することを確認。p250既定criteria通り既存native animation未実装の可視化として診断し、q11/p246の24未達やp224/p248をclearしない。全件terminal outcomeは継続待ち、runner/WPT結果判定は変更しない。

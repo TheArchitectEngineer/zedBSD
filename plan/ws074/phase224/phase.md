@@ -2,7 +2,7 @@
 
 # ws074-p224: Grid track animation
 
-Status: in-progress（q1135診断部分cleared、実装未着手）
+Status: uncleared（q1135診断部分cleared、実装未着手・active item無し）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -27,3 +27,7 @@ Event ws074-p224-q1135-partial-clear-20261014: [証拠](evidence/20261014-q1135/
 [p248](../phase248/phase.md)がnative clock/Animation DOM stateとGC/seek/pause/cancel/frame invalidationを提供し、そのverified scoped outputを受けて本PhaseがGrid track list matching・intrinsic/fit/minmaxのinterpolation/compositionとCSS/WA統合を所有する。必要API/timingが実コードで検証されるまで補間の実行Queueは選定しない。p224 q1135診断部分clearedとwhole未達は維持する。固定Grid animation12 ID/全Grid/影響領域のwhole/callback、独立補間・合成/host/target/規約/Acidを検証する。
 
 Event ws074-animation-phase-ownership-reconciled-20261018: q14の待機中に既存[p224](../phase224/phase.md) q1135を再確認。新p248とGrid track goalが重複していたため、p224の既存goal/history/未達を保持し、p248をnative timing/DOM lifecycleという前提outputへ限定。p248 verified output → p224 Grid interpolation/compositionと依存を明示。p246/q11未達とq14のcomputed-only scope/criteria/approvalは不変。両Phaseは未選定であり、この設計改訂だけでは実装を開始しない。
+
+Event ws074-p224-state-reconciled-20261018: q1135診断attemptは終了済みで現在active Queue itemが無いため、古いin-progress表記をwhole未達のunclearedへreconcile。過去の診断部分clearedは保持し、p248 verified prerequisite後の新Queueまで実装を再開しない。実装済み/後退修復の主張は追加しない。
+
+Event ws074-q14-animation-fit-collapse-diagnosis-20261018: q14 final全件の途中で同じGrid columns/rows composition/interpolation4 IDの各4 callback、計16が旧PASS→FAIL。独立[probe](../phase250/evidence/20261018-q14/animation-collapse-probe.html)でq12/final両pairのanimate/Animationがundefined、異なるfit(5px)/fit(20px)とfit(5px)/fit(40px)が旧serializerでは両auto autoとなり等しい一方、新serializerで本来の異なる値を保持することを確認。p250既定criteria通り既存native animation未実装の可視化として診断し、q11/p246の24未達やp224/p248をclearしない。全件terminal outcomeは継続待ち、runner/WPT結果判定は変更しない。

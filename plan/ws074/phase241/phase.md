@@ -31,3 +31,5 @@ Event ws074-p241-host-partial-clear-20261018: [証拠](evidence/20261018/README.
 Commit receipt: `9b94ebe38` WIP。git logのread-backで実装・試験・自走承認・結果の11file保存を確認。
 
 Event ws074-p251-linear-type-design-20261018: [p251](../phase251/phase.md)がdirect linear calcのpercentage存在を保持する。0係数でもCSS_UNIT_PERCENTとなるためdependent computed/used pathsを全1491/static1561と独立値で検証。nonlinear min/max/clampの既存近似は未変更。p250はこのoutput後にcomputed fitを検証し、p246/q11等history/whole残りは維持。
+
+Event ws074-p252-basis-plan-20261018: [p252](../phase252/phase.md)へ既存content vs autoとgrammar/computedの有限候補を具体化。非置換horizontal content baseと保存・復元/cacheを検証し、replaced/target等の本Phaseの未達は保持。q14 final outputのgate後に新Queue選定が必要、まだ実装しない。

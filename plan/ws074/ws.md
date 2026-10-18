@@ -641,8 +641,8 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p186](phase186/phase.md) | sharp text-shadow と見出し影を調べる | cleared（q1009-i01、sharp 単一 scope、Acid3差2451減） | p172〜p185 cleared、q1008 実測出力 |
 | [ws074-p187](phase187/phase.md) | 負の padding と第6色箱の幅を調べる | cleared（q1010-i01、Acid3差900減、negative padding fixture pass） | p172〜p186 cleared、q1009 実測出力 |
 | [ws074-p188](phase188/phase.md) | 同一ページで観測した訪問履歴と :visited の paint color | cleared（q1011-i01、Acid3差801減→0、privacy fixture pass） | p172〜p187 cleared、q1010 実測出力 |
-| [ws074-p189](phase189/phase.md) | Interop 2025 testharness 1,783件の結果取得 runner | uncleared / q12全1455 whole489、q13追加36・候補1491/未対応292 | p173 q1012 固定manifest出力 |
-| [ws074-p190](phase190/phase.md) | Interop 2025 reftest 1,974件・crashtest48件のrunner coverage | uncleared / q12静的1,561件839 PASS/722 FAIL、未対応413。q1040 crash48 local画像PASSの待機条件は未検証 | p173 q1012 固定manifest出力 |
+| [ws074-p189](phase189/phase.md) | Interop 2025 testharness 1,783件の結果取得 runner | uncleared / q14全1491 whole491・未対応292 | p173 q1012 固定manifest出力 |
+| [ws074-p190](phase190/phase.md) | Interop 2025 reftest 1,974件・crashtest48件のrunner coverage | uncleared / q14静的1,561件839 PASS/722 FAIL、未対応413。q1040 crash48 local画像PASSの待機条件は未検証 | p173 q1012 固定manifest出力 |
 | [ws074-p191](phase191/phase.md) | Interop 2025 textdecoration全16 testharnessのCSSOM互換 | cleared / q1023、16件16 PASS/0 FAIL | p173固定manifest、p189 q1015全16件baseline |
 | [ws074-p192](phase192/phase.md) | Interop 2025 Window named properties互換 | uncleared / q1025 partial cleared、一意id live lookup | p173固定manifest、p189 q1024 shard |
 | [ws074-p193](phase193/phase.md) | Interop 2025 details/hidden until-found互換 | uncleared / q1032計測6 PASS/10 FAIL/2 no output、q1035/q1036で2件追加PASS、reftest25/crashtest3未実行 | p189 q1024 shard、p192 q1025一意id output |
@@ -676,7 +676,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p221](phase221/phase.md) | Interop 2025 Grid parsing and CSSOM | in-progress / q1139 computed負calc clamping部分cleared、minmax等残 | p189 q1105固定Grid502・p218 shorthand出力 |
 | [ws074-p222](phase222/phase.md) | Interop 2025 Grid automatic placement | in-progress / q1133固定2 WPT partial cleared、全placement再測定待ち | p221 q1132-i01 CSS state・q1132-i02暗黙track sizing |
 | [ws074-p223](phase223/phase.md) | Empty Grid intrinsic size | in-progress / q1135固定empty-grid部分cleared | p189 q1134後退診断 |
-| [ws074-p224](phase224/phase.md) | Grid track animation | in-progress / q1135診断部分cleared、実装未着手 | p189 q1134後退診断 |
+| [ws074-p224](phase224/phase.md) | Grid track animation | uncleared / q1135診断部分cleared、実装未着手 | p189 q1134後退診断 |
 | [ws074-p225](phase225/phase.md) | Vertical Grid logical axes | in-progress / q1142固定vertical-lr部分実装 | p217 q1141診断・文字itemはp220 q1122出力 |
 | [ws074-p229](phase229/phase.md) | UAT のアドレスバー（compositor 側: launcher の既定 URL、編集中の箱の幅と横 scroll、field の key repeat） | cleared（2026-10-14 Q1、T1-618・T1-620 QEMU PASS、常に箱の表示を含む） | p228（browser の MAIN_HOME_PAGE） |
 | [ws074-p228](phase228/phase.md) | UAT の指摘: inline svg の描画（google.com のロゴと icon）、既定 URL を google.com に | cleared（host、2026-10-14 B1。QEMU・実機は未実施） | p231 の土台 |
@@ -696,8 +696,9 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p247](phase247/phase.md) | zero font glyph advance/ink | cleared / q12 zero glyph own criteria | q11診断、p185 strut |
 | [ws074-p248](phase248/phase.md) | native animation timing/DOM lifecycle | planning / Queue未選定 | p246 scalar output、p224へprimitive提供 |
 | [ws074-p249](phase249/phase.md) | zero line/empty margin eligibility | planned / Queue未選定 | p247 zero ink output、p198 BFC基礎 |
-| [ws074-p250](phase250/phase.md) | computed fit-content bound | in-progress / q14 | p246 scalar output、q12 raw、q13 runner |
-| [ws074-p251](phase251/phase.md) | linear calc zero percentage type | in-progress / q14-i01 | q12/q13 raw、precode Chrome |
+| [ws074-p250](phase250/phase.md) | computed fit-content bound | cleared / q14 computed own criteria | p246 scalar output、q12 raw、q13 runner |
+| [ws074-p251](phase251/phase.md) | linear calc zero percentage type | cleared / q14 direct linear type | q12/q13 raw、precode Chrome |
+| [ws074-p252](phase252/phase.md) | flex-basis grammar/computed・non-replaced content base | planned / Queue未選定 | p240/p241残り、q14 final output待ち |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 
@@ -1185,3 +1186,11 @@ Event ws074-p189-q1147-outcome-20261014: [p189 q1147](phase189/evidence/20261014
 - 残り: inner scroll container、子つきの rotate・skew、flex item の aspect-ratio（31 件）、GPU の経路での sticky の確かめ。
 
 Event ws074-animation-phase-ownership-reconciled-20261018: 既存[p224](phase224/phase.md)へGrid track interpolation/compositionのgoalを維持し、新[p248](phase248/phase.md)はnative timing/DOM lifecycleのprerequisite outputへ限定。重複した受け入れを整理、p248 → p224 → p246再検証の依存を明記。各Phaseへeventを配送。history/未達/固定分母とq14 implementation scopeは変更なし、共有projection pending。
+
+Event ws074-p252-basis-plan-20261018: [p252](phase252/phase.md)をp240/p241からの既存basis残差の次候補として追加。固定computed/invalid/valid 3 IDのraw、native measurement/cache/style復元を設計へ記録。q14 scope/deadline/criteria不変、q14全件gate後の新Queueまでsource実装しない。関連両Phaseへeventを配送、共有投影pending。
+
+Event ws074-p224-state-reconciled-20261018: [p224](phase224/phase.md)のactive item無し/whole未達に合わせin-progressの古いprojectionをunclearedへ訂正。q1135部分clearedのhistoryは保持、p248 → p224の順と新Queueによる再開条件は不変。共有projection pending。
+
+Event ws074-q14-animation-fit-collapse-diagnosis-20261018: q14途中でGrid animation4 IDの16 callback偽陽性を追加可視化。[p250の独立before/after証拠](phase250/evidence/20261018-q14/animation-collapse-probe.html)でserializer collapseを直接確認し、p224/p248/p246へ自身の未達・resumeを記録。q14既定computed-only criteriaを変更せず、全件terminal gateまでclearance未判定。q11履歴は保持、共有投影pending。
+
+Event ws074-q14-both-cleared-20261018: [p251](phase251/phase.md) linear percentage type/[p250](phase250/phase.md) computed fit bound own criteria cleared。source88713badd・[全件証拠](phase250/evidence/20261018-q14/README.md)。harness1491 whole489→491、old whole後退0、callback13改善/16 native animation偽陽性露出。static1561 whole839/pixel count維持、DOM33/33、host/target warning0、Acid非増加。確認済み1330/3805、未対応292/413/crash48正式条件を保持。p224/p248/p246やWS/target/p100未達はclearしない。次候補はp190 crash正式待機/raw retentionを優先しp252へ続く。両Phase/runner所有Phaseへevent配送、共有projection/remote close pending。

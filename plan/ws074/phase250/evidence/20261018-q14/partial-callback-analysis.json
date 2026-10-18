@@ -1,0 +1,92 @@
+{
+  "completed": 786,
+  "callback_improvements": [
+    {
+      "id": "/css/css-flexbox/parsing/flex-basis-computed.html",
+      "name": "Property flex-basis value 'calc(0% + 10px)'"
+    }
+  ],
+  "callback_regressions": [
+    {
+      "id": "/css/css-grid/animation/grid-template-columns-composition.html",
+      "name": "Compositing CSS Animations: property <grid-template-columns> underlying [fit-content(5px) fit-content(20px)] from add [fit-content(5px) fit-content(20px)] to add [fit-content(15px) max-content] at (-0.5) should be [fit-content(5px) fit-content(40px)]",
+      "message": "assert_equals: expected \"fit - content ( 5px ) fit - content ( 40px ) \" but got \"fit - content ( 5px ) fit - content ( 20px ) \""
+    },
+    {
+      "id": "/css/css-grid/animation/grid-template-columns-composition.html",
+      "name": "Compositing CSS Animations: property <grid-template-columns> underlying [fit-content(5px) fit-content(20px)] from add [fit-content(5px) fit-content(20px)] to add [fit-content(15px) max-content] at (0) should be [fit-content(10px) fit-content(40px)]",
+      "message": "assert_equals: expected \"fit - content ( 10px ) fit - content ( 40px ) \" but got \"fit - content ( 5px ) fit - content ( 20px ) \""
+    },
+    {
+      "id": "/css/css-grid/animation/grid-template-columns-composition.html",
+      "name": "Compositing Web Animations: property <grid-template-columns> underlying [fit-content(5px) fit-content(20px)] from add [fit-content(5px) fit-content(20px)] to add [fit-content(15px) max-content] at (-0.5) should be [fit-content(5px) fit-content(40px)]",
+      "message": "assert_equals: expected \"fit - content ( 5px ) fit - content ( 40px ) \" but got \"fit - content ( 5px ) fit - content ( 20px ) \""
+    },
+    {
+      "id": "/css/css-grid/animation/grid-template-columns-composition.html",
+      "name": "Compositing Web Animations: property <grid-template-columns> underlying [fit-content(5px) fit-content(20px)] from add [fit-content(5px) fit-content(20px)] to add [fit-content(15px) max-content] at (0) should be [fit-content(10px) fit-content(40px)]",
+      "message": "assert_equals: expected \"fit - content ( 10px ) fit - content ( 40px ) \" but got \"fit - content ( 5px ) fit - content ( 20px ) \""
+    },
+    {
+      "id": "/css/css-grid/animation/grid-template-columns-interpolation.html",
+      "name": "CSS Transitions: property <grid-template-columns> from [fit-content(10px) fit-content(20px)] to [fit-content(20px) max-content] at (0.6) should be [fit-content(16px) max-content]",
+      "message": "assert_equals: expected \"fit - content ( 16px ) max - content \" but got \"fit - content ( 20px ) max - content \""
+    },
+    {
+      "id": "/css/css-grid/animation/grid-template-columns-interpolation.html",
+      "name": "CSS Transitions: property <grid-template-columns> from [fit-content(10px) fit-content(20px)] to [fit-content(20px) max-content] at (2) should be [fit-content(30px) max-content]",
+      "message": "assert_equals: expected \"fit - content ( 30px ) max - content \" but got \"fit - content ( 20px ) max - content \""
+    },
+    {
+      "id": "/css/css-grid/animation/grid-template-columns-interpolation.html",
+      "name": "CSS Transitions with transition: all: property <grid-template-columns> from [fit-content(10px) fit-content(20px)] to [fit-content(20px) max-content] at (0.6) should be [fit-content(16px) max-content]",
+      "message": "assert_equals: expected \"fit - content ( 16px ) max - content \" but got \"fit - content ( 20px ) max - content \""
+    },
+    {
+      "id": "/css/css-grid/animation/grid-template-columns-interpolation.html",
+      "name": "CSS Transitions with transition: all: property <grid-template-columns> from [fit-content(10px) fit-content(20px)] to [fit-content(20px) max-content] at (2) should be [fit-content(30px) max-content]",
+      "message": "assert_equals: expected \"fit - content ( 30px ) max - content \" but got \"fit - content ( 20px ) max - content \""
+    },
+    {
+      "id": "/css/css-grid/animation/grid-template-rows-composition.html",
+      "name": "Compositing CSS Animations: property <grid-template-rows> underlying [fit-content(5px) fit-content(20px)] from add [fit-content(5px) fit-content(20px)] to add [fit-content(15px) max-content] at (-0.5) should be [fit-content(5px) fit-content(40px)]",
+      "message": "assert_equals: expected \"fit - content ( 5px ) fit - content ( 40px ) \" but got \"fit - content ( 5px ) fit - content ( 20px ) \""
+    },
+    {
+      "id": "/css/css-grid/animation/grid-template-rows-composition.html",
+      "name": "Compositing CSS Animations: property <grid-template-rows> underlying [fit-content(5px) fit-content(20px)] from add [fit-content(5px) fit-content(20px)] to add [fit-content(15px) max-content] at (0) should be [fit-content(10px) fit-content(40px)]",
+      "message": "assert_equals: expected \"fit - content ( 10px ) fit - content ( 40px ) \" but got \"fit - content ( 5px ) fit - content ( 20px ) \""
+    },
+    {
+      "id": "/css/css-grid/animation/grid-template-rows-composition.html",
+      "name": "Compositing Web Animations: property <grid-template-rows> underlying [fit-content(5px) fit-content(20px)] from add [fit-content(5px) fit-content(20px)] to add [fit-content(15px) max-content] at (-0.5) should be [fit-content(5px) fit-content(40px)]",
+      "message": "assert_equals: expected \"fit - content ( 5px ) fit - content ( 40px ) \" but got \"fit - content ( 5px ) fit - content ( 20px ) \""
+    },
+    {
+      "id": "/css/css-grid/animation/grid-template-rows-composition.html",
+      "name": "Compositing Web Animations: property <grid-template-rows> underlying [fit-content(5px) fit-content(20px)] from add [fit-content(5px) fit-content(20px)] to add [fit-content(15px) max-content] at (0) should be [fit-content(10px) fit-content(40px)]",
+      "message": "assert_equals: expected \"fit - content ( 10px ) fit - content ( 40px ) \" but got \"fit - content ( 5px ) fit - content ( 20px ) \""
+    },
+    {
+      "id": "/css/css-grid/animation/grid-template-rows-interpolation.html",
+      "name": "CSS Transitions: property <grid-template-rows> from [fit-content(10px) fit-content(20px)] to [fit-content(20px) max-content] at (0.6) should be [fit-content(16px) max-content]",
+      "message": "assert_equals: expected \"fit - content ( 16px ) max - content \" but got \"fit - content ( 20px ) max - content \""
+    },
+    {
+      "id": "/css/css-grid/animation/grid-template-rows-interpolation.html",
+      "name": "CSS Transitions: property <grid-template-rows> from [fit-content(10px) fit-content(20px)] to [fit-content(20px) max-content] at (2) should be [fit-content(30px) max-content]",
+      "message": "assert_equals: expected \"fit - content ( 30px ) max - content \" but got \"fit - content ( 20px ) max - content \""
+    },
+    {
+      "id": "/css/css-grid/animation/grid-template-rows-interpolation.html",
+      "name": "CSS Transitions with transition: all: property <grid-template-rows> from [fit-content(10px) fit-content(20px)] to [fit-content(20px) max-content] at (0.6) should be [fit-content(16px) max-content]",
+      "message": "assert_equals: expected \"fit - content ( 16px ) max - content \" but got \"fit - content ( 20px ) max - content \""
+    },
+    {
+      "id": "/css/css-grid/animation/grid-template-rows-interpolation.html",
+      "name": "CSS Transitions with transition: all: property <grid-template-rows> from [fit-content(10px) fit-content(20px)] to [fit-content(20px) max-content] at (2) should be [fit-content(30px) max-content]",
+      "message": "assert_equals: expected \"fit - content ( 30px ) max - content \" but got \"fit - content ( 20px ) max - content \""
+    }
+  ],
+  "name_order_changes": []
+}

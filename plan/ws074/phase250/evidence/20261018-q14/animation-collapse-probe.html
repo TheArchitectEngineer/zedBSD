@@ -1,0 +1,10 @@
+<!doctype html><body><script>
+var actual=document.createElement('div'),expected=document.createElement('div');
+actual.style.gridTemplateColumns='fit-content(5px) fit-content(20px)';
+expected.style.gridTemplateColumns='fit-content(5px) fit-content(40px)';
+document.body.appendChild(actual);document.body.appendChild(expected);
+console.log('animate '+typeof Element.prototype.animate+' Animation '+typeof Animation);
+console.log('underlying '+getComputedStyle(actual).gridTemplateColumns);
+console.log('distinct expected '+getComputedStyle(expected).gridTemplateColumns);
+console.log('collapsed equality '+(getComputedStyle(actual).gridTemplateColumns===getComputedStyle(expected).gridTemplateColumns));
+</script>

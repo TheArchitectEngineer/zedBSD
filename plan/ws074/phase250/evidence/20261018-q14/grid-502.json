@@ -1,0 +1,12 @@
+{
+  "eligible": 502,
+  "eligible_sha256": "5fa65ed37998a0958da75da5dc9a69f85bd26a05c2f64a118072c7527f56af23",
+  "outcomes": {
+    "pass": 250,
+    "fail": 252
+  },
+  "callbacks": {
+    "0": 6467,
+    "1": 4538
+  }
+}

@@ -1,0 +1,12 @@
+{'offset': 0, 'exit': 0, 'seconds': 95.7, 'counts': {'fail': 117, 'harness_error': 2, 'no_completion': 4, 'pass': 5}}
+{'offset': 128, 'exit': 0, 'seconds': 176.3, 'counts': {'fail': 75, 'no_completion': 1, 'pass': 52}}
+{'offset': 256, 'exit': 0, 'seconds': 251.8, 'counts': {'fail': 26, 'pass': 102}}
+{'offset': 384, 'exit': 0, 'seconds': 328.3, 'counts': {'fail': 42, 'no_output': 1, 'pass': 85}}
+{'offset': 512, 'exit': 0, 'seconds': 404.9, 'counts': {'fail': 51, 'pass': 77}}
+{'offset': 640, 'exit': 0, 'seconds': 481.1, 'counts': {'fail': 45, 'pass': 83}}
+{'offset': 768, 'exit': 0, 'seconds': 563.8, 'counts': {'fail': 99, 'pass': 29}}
+{'offset': 896, 'exit': 0, 'seconds': 641.2, 'counts': {'fail': 86, 'pass': 42}}
+{'offset': 1024, 'exit': 0, 'seconds': 717.5, 'counts': {'fail': 96, 'harness_error': 1, 'no_completion': 6, 'no_output': 9, 'pass': 16}}
+{'offset': 1152, 'exit': 0, 'seconds': 794.2, 'counts': {'fail': 115, 'multiple_completions': 2, 'no_completion': 2, 'no_output': 9}}
+{'offset': 1280, 'exit': 0, 'seconds': 869.6, 'counts': {'fail': 121, 'no_completion': 3, 'no_output': 4}}
+{'offset': 1408, 'exit': 0, 'seconds': 918.7, 'counts': {'fail': 77, 'no_completion': 5, 'no_output': 1}}
