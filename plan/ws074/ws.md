@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [ws074-q20261018-50](queue.md) finished（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+Queue: [ws074-q20261018-51](queue.md) active（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
 
 Latest verified（q50）: JSON.parse/reviver ownership/internal consumer partial clear。old726＋new26 native752/Chrome750既知huge2差、precode16FAIL/GC1SIGSEGV解消。dynamic coercion text後actual threshold GC確認。全1508最新q49再利用・q50未測定、公式1482/3805・held0・未attempt275。images/crash q28再利用。source9a6b5916f main統合・master編集無し。source-context/幅/for-in/call/global/p100/full target未達。[証拠](phase258/evidence/20261018-q50/README.md)。共有投影pending。
 
@@ -706,7 +706,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p255](phase255/phase.md) | PerformanceObserver native mark登録・queue・task配信 | uncleared / q28 Window consumer/failure/held partial cleared・whole残り | p254 verified native mark output |
 | [ws074-p256](phase256/phase.md) | Window ErrorEvent・uncaught harness fidelity | uncleared / q28 runtime/inline source partial cleared・external/syntax等残り | 既存Event/Window/VM→p255再評価 |
 | [ws074-p257](phase257/phase.md) | synchronous generator yield* delegation | cleared / q29 sync own criteria・Chrome38/native GC10 | q28 VM/GC・p189 pinned WebIDL2 |
-| [ws074-p258](phase258/phase.md) | native Proxy internal methods・GC/revocation | uncleared / q50 JSON.parse/reviver partial cleared | q29 VM/GC・p189 actual Proxy blocker |
+| [ws074-p258](phase258/phase.md) | native Proxy internal methods・GC/revocation | in-progress / q51 object spread/rest partial | q29 VM/GC・p189 actual Proxy blocker |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 
@@ -1385,3 +1385,5 @@ Event ws074-q49-finished-20261018: p258 JSON.stringify partial clear、native726
 Event ws074-q50-selection: p258 JSON.parse/reviver所有とactual internal consumersを選定、whole未達、main統合・master.md編集無し。[Queue](queue.md)。
 
 Event ws074-q50-finished-20261018: p258 JSON.parse/reviver partial clear、native752/Chrome750既知huge2、新26 genuine一致・precode16FAIL/GC1SIGSEGV解消・dynamic text threshold GC確認。最新全1508 q49再利用・q50未測定、1482/3805維持。source9a6b5916f main統合・master.md編集無し。[history](history/ws074-q20261018-50.md)。共有投影pending。
+
+Event ws074-q51-selection: p258 CopyDataProperties/rest internal consumersを選定、for-inは後続、whole未達。main統合・master.md編集無し。[Queue](queue.md)。

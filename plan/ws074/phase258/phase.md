@@ -2,11 +2,11 @@
 
 # ws074-p258: native Proxy internal methods and lifetime
 
-Status: uncleared（q50 JSON.parse/reviver partial cleared、whole Proxy未達）
+Status: in-progress（q51 object spread/rest partial、whole Proxy未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
-Queue: ws074-q20261018-50-i01（q30〜q49 partial履歴保持）
+Queue: ws074-q20261018-51-i01（q30〜q50 partial履歴保持）
 Origin: p189/q29 original WebIDL2 parseがProxy未定義で停止。
 
 Objective / own criteria: native managed Proxyを実object internal methodsへ接続し、constructor/revocableと各internal operationのtrap/fallback/invariant/receiver/revocation/callability/GCを正しく実行する。original WebIDL2 actual parse/validatorに必要なget/set/array behaviorを通常APIで提供し、independent controls/原WPTを通す。部分read stageだけでwholeをclearしない。
@@ -320,3 +320,5 @@ full changed15 C functions manual＋clang-format19/checked style許可single for
 Raw archive107 members SHA2564bae3961e274c47e6d12546483995e5a78feea452751bb8f2da7f8ffb630ce16を全member順次read-back。runtime binaryはhash付きbuild保持・archive非同梱。q49 harness原archive1676 members SHA2565127febd2683798dd849e067f4999f96d78e1b36c1ea152f84b35bf52e6535c5を参照しq50実測とは混同しない。
 
 [証拠](evidence/20261018-q50/README.md)。次finite scope未選定。
+
+Event ws074-p258-q51-selection: CopyDataProperties/rest actual OwnKeys/GetOwn/Define・exclusion順/GC所有partialを選定。for-in/幅/global等whole未達。[exact Queue](../queue.md)。main統合・master編集無し。
