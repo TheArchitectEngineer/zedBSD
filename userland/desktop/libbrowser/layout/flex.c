@@ -17,7 +17,9 @@
  * is auto (the initial value) and whose content does not scroll shrinks
  * no narrower than its content's min-content width, or its width when
  * that is given in pixels and narrower (the automatic minimum size,
- * ws074-p084), measured only for a line that has to shrink.
+ * ws074-p084), measured only for a line that has to shrink. Non-replaced
+ * preferred-ratio items instead establish their content-based minimum in
+ * either axis before line collection, even with a zero flex basis.
  */
 
 #include "layout/layout.h"
@@ -66,6 +68,9 @@ struct flex_sizes {
 
 static int flex_collect(struct layout_box *box, struct flex_item **items, size_t *count);
 static int flex_base_size(struct layout_tree *tree, struct layout_box *box, struct flex_item *item, int row, layout_unit available);
+static layout_unit flex_ratio_definite_length(const struct css_length *length, layout_unit basis);
+static layout_unit flex_ratio_main_size(const struct layout_box *box, int row, layout_unit cross);
+static int flex_ratio_minimum(struct layout_tree *tree, struct layout_box *container, struct flex_item *item, int row, layout_unit available);
 static int flex_auto_minimums(struct layout_tree *tree, struct flex_item *items, size_t count, layout_unit available, layout_unit gap);
 static int flex_min_content(struct layout_tree *tree, struct layout_box *box, layout_unit *width);
 static void flex_grow(struct flex_item *items, size_t count, layout_unit available, layout_unit gap);
@@ -797,6 +802,11 @@ flex_base_size(
 			item->maximum = layout_from_px(child->style.max_height.value) - sizing;
 	}
 
+	/* Ratio items need their content floor before line breaking or flex growth. */
+	error = flex_ratio_minimum(tree, box, item, row, available);
+	if (error != 0)
+		return error;
+
 	/* Neither is the minimum. */
 	if (item->minimum < 0)
 		item->minimum = 0;
@@ -995,6 +1005,260 @@ flex_shrink(
 		if (!violated)
 			return;
 	}
+}
+
+/* Resolves only lengths whose percentage basis is definite. */
+static layout_unit
+flex_ratio_definite_length(
+	const struct css_length *length,
+	layout_unit basis)
+{
+	layout_unit resolved;
+
+	/* Pixel lengths do not depend on a containing size. */
+	if (length->unit == CSS_UNIT_PX) {
+		resolved = layout_from_px(length->value);
+		return resolved;
+	}
+
+	/* Percentages need a definite basis, including when that basis is zero. */
+	if (length->unit != CSS_UNIT_PERCENT)
+		return -1;
+
+	/* An indefinite containing dimension cannot resolve this percentage. */
+	if (basis < 0)
+		return -1;
+
+	/* Succeeded: includes the absolute term of a calculated percentage. */
+	resolved = flex_length(length, basis);
+	return resolved;
+}
+
+/* Converts the ratio box's cross size to its content size on the main axis. */
+static layout_unit
+flex_ratio_main_size(
+	const struct layout_box *box,
+	int row,
+	layout_unit cross)
+{
+	layout_unit frame;
+	layout_unit main;
+
+	/* Apply the preferred width-to-height ratio in the main-axis direction. */
+	if (row) {
+		main = (layout_unit)((float)cross * box->style.aspect_ratio);
+	} else {
+		main = (layout_unit)((float)cross / box->style.aspect_ratio);
+	}
+
+	/* Border-box ratios include the main-axis frame in the converted size. */
+	if (box->style.box_sizing == CSS_BOX_SIZING_BORDER) {
+		if (row) {
+			frame = box->border[CSS_LEFT] + box->padding[CSS_LEFT] + box->padding[CSS_RIGHT] + box->border[CSS_RIGHT];
+		} else {
+			frame = box->border[CSS_TOP] + box->padding[CSS_TOP] + box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
+		}
+
+		/* Leave only the content inside the main-axis frame. */
+		main -= frame;
+	}
+
+	/* A frame larger than its ratio box leaves no content size. */
+	if (main < 0)
+		main = 0;
+
+	/* Succeeded: returns the main-axis content size. */
+	return main;
+}
+
+/* Computes a non-replaced ratio item's automatic main-axis minimum. */
+static int
+flex_ratio_minimum(
+	struct layout_tree *tree,
+	struct layout_box *container,
+	struct flex_item *item,
+	int row,
+	layout_unit available)
+{
+	struct layout_box *child;
+	const struct css_length *main_size;
+	const struct css_length *cross_size;
+	const struct css_length *cross_minimum;
+	const struct css_length *cross_maximum;
+	struct css_length saved_height;
+	struct css_length saved_minimum;
+	struct css_length saved_maximum;
+	layout_unit least;
+	layout_unit cross_basis;
+	layout_unit cross_limit_min;
+	layout_unit cross_limit_max;
+	layout_unit preferred_cross;
+	layout_unit preferred_main;
+	layout_unit main_basis;
+	layout_unit cross;
+	layout_unit converted;
+	layout_unit given;
+	float saved_ratio;
+	int overflow;
+	int error;
+
+	/* Other items retain the existing intrinsic-size algorithm. */
+	child = item->box;
+	if (child->replaced)
+		return 0;
+
+	/* A box without a preferred ratio has no transferred size suggestion. */
+	if (child->style.aspect_ratio <= 0.0f)
+		return 0;
+
+	/* Select the physical dimensions used by this flex axis. */
+	main_size = &child->style.width;
+	cross_size = &child->style.height;
+	cross_minimum = &child->style.min_height;
+	cross_maximum = &child->style.max_height;
+	overflow = child->style.overflow_x;
+	if (row) {
+		/* An explicit main-axis minimum replaces the automatic minimum. */
+		if (child->style.min_width.unit != CSS_UNIT_AUTO)
+			return 0;
+	} else {
+		/* A column uses height as its main dimension. */
+		if (child->style.min_height.unit != CSS_UNIT_AUTO)
+			return 0;
+
+		/* Read the column's width constraints as cross-axis constraints. */
+		main_size = &child->style.height;
+		cross_size = &child->style.width;
+		cross_minimum = &child->style.min_width;
+		cross_maximum = &child->style.max_width;
+		overflow = child->style.overflow_y;
+	}
+
+	/* Scrollable overflow keeps the automatic minimum at zero. */
+	if (overflow != CSS_OVERFLOW_VISIBLE) {
+		if (overflow != CSS_OVERFLOW_CLIP)
+			return 0;
+	}
+
+	/* Cross percentages resolve only against an established container size. */
+	cross_basis = -1;
+	if (tree->measuring == 0) {
+		if (row) {
+			/* A row needs the container's definite content height. */
+			if (tree->containing_height_definite)
+				cross_basis = tree->containing_height;
+		} else {
+			cross_basis = container->width;
+		}
+	}
+
+	/* Intrinsic measurement does not make a percentage main size definite. */
+	main_basis = available;
+	if (tree->measuring != 0)
+		main_basis = -1;
+
+	/* Resolve author constraints before measurement temporarily changes style. */
+	cross_limit_min = flex_ratio_definite_length(cross_minimum, cross_basis);
+	cross_limit_max = flex_ratio_definite_length(cross_maximum, cross_basis);
+	preferred_cross = flex_ratio_definite_length(cross_size, cross_basis);
+	preferred_main = flex_ratio_definite_length(main_size, main_basis);
+
+	/* Measure actual content without letting the ratio manufacture content. */
+	saved_ratio = child->style.aspect_ratio;
+	child->style.aspect_ratio = 0.0f;
+	if (row) {
+		/* Find the narrowest line the contents can occupy. */
+		error = flex_min_content(tree, child, &least);
+	} else {
+		/* Keep the cross width while measuring the contents' natural height. */
+		saved_height = child->style.height;
+		saved_minimum = child->style.min_height;
+		saved_maximum = child->style.max_height;
+		child->style.height.unit = CSS_UNIT_AUTO;
+		child->style.min_height.unit = CSS_UNIT_AUTO;
+		child->style.max_height.unit = CSS_UNIT_NONE;
+
+		/* Lay out the content with no preferred or constrained main size. */
+		error = layout_block(tree, child, container->width);
+		least = child->height;
+		child->style.height = saved_height;
+		child->style.min_height = saved_minimum;
+		child->style.max_height = saved_maximum;
+	}
+
+	/* Restore author style even when the measurement failed. */
+	child->style.aspect_ratio = saved_ratio;
+	if (error != 0)
+		return error;
+
+	/* A definite cross maximum caps the content suggestion through the ratio. */
+	if (cross_limit_max >= 0) {
+		cross = cross_limit_max;
+		converted = flex_ratio_main_size(child, row, cross);
+		if (least > converted)
+			least = converted;
+	}
+
+	/* A definite cross minimum wins over the cross maximum. */
+	if (cross_limit_min >= 0) {
+		cross = cross_limit_min;
+		converted = flex_ratio_main_size(child, row, cross);
+		if (least < converted)
+			least = converted;
+	}
+
+	/* Non-replaced content cannot shrink below a definite cross size's ratio. */
+	if (preferred_cross >= 0) {
+		cross = preferred_cross;
+
+		/* Respect a definite maximum before applying the stronger minimum. */
+		if (cross_limit_max >= 0) {
+			given = cross_limit_max;
+			if (cross > given)
+				cross = given;
+		}
+
+		/* An author-specified minimum can exceed the specified cross size. */
+		if (cross_limit_min >= 0) {
+			given = cross_limit_min;
+			if (cross < given)
+				cross = given;
+		}
+
+		/* Choose the larger content or transferred suggestion. */
+		converted = flex_ratio_main_size(child, row, cross);
+		if (least < converted)
+			least = converted;
+	}
+
+	/* A definite preferred main size caps both suggestions. */
+	if (preferred_main >= 0) {
+		given = preferred_main;
+
+		/* Preferred main sizes include the frame under border-box sizing. */
+		if (child->style.box_sizing == CSS_BOX_SIZING_BORDER)
+			given -= item->frame;
+
+		/* Honor the author's smaller preferred size. */
+		if (least > given)
+			least = given;
+	}
+
+	/* A definite main maximum also caps the automatic minimum. */
+	if (item->maximum >= 0) {
+		if (least > item->maximum)
+			least = item->maximum;
+	}
+
+	/* Publish the floor before hypothetical sizing; basis zero is not a cap. */
+	if (least > item->minimum)
+		item->minimum = least;
+
+	/* The legacy shrink-only pass must not replace the ratio-aware minimum. */
+	item->auto_minimum = 0;
+
+	/* Succeeded: the item has its content-based automatic minimum. */
+	return 0;
 }
 
 /*

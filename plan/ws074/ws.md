@@ -9,7 +9,9 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1198](queue.md) finished（14:15 ごろ Codex の使用量の上限で中断、uncleared、2026-10-14 Q1 が差分を commit）/ p217 framed horizontal Grid second vertical auto-inset child。2026-10-14 14:13 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [ws074-q20261018-01](queue.md) finished（2026-10-18、Codex単独）。p240のhost部分cleared、whole未達。既存の後続有限Queue事前承認と今回の再開指示を適用。
+
+Event ws074-p240-host-partial-clear-20261018: [p240](phase240/phase.md)でflex ratioの自動最小サイズを修正。[証拠](phase240/evidence/20261018/README.md)。同じWPT257 IDで142→149 PASS、後退0、独立29/29、DOM23/23、amd64 build warning0、Acid3差0/Acid2差873。部分cleared、Phase wholeはuncleared（target・stretch cross size・basis区別などが残る）。Chromiumとの28一致/1仕様差を記録。Master/共有Queue/GitHubの投影はpending。
 
 Event ws074-p240-start-20261018: ユーザー「では、WS074を続けてください。」により [p240](phase240/phase.md) を追加。p234/p235 の残りの flex item の aspect-ratio を最大90分の [ws074-q20261018-01](queue.md) で調査・修正する。Codex 単独、Master/共有 Queue/GitHub の projection は pending。全件100%と WS acceptance は未達のまま。
 
@@ -52,7 +54,7 @@ Event ws074-p217-q1188-partial-clear-20261014: [p217](phase217/phase.md) q1188-i
 Event ws074-p217-q1187-partial-clear-20261014: [p217](phase217/phase.md) q1187-i01で固定縦rl Grid直接横RTL absolute子row2/col1 top insetにstatic areaを適用。[証拠](phase217/evidence/20261014-q1187/README.md)。独立矩形Chromium一致、固定non-static007縦rl callback whole PASS、水平2 callback PASS、縦lrは4番目子でfile whole FAIL継続。旧WPT/host/Acid3差0維持。次は縦lr4番目子、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
 
 Event ws074-p217-q1186-partial-clear-20261014: [p217](phase217/phase.md) q1186-i01で固定縦lr/rl Grid直接横LTR absolute子へrow1/col2 static areaとjustify-center Yを適用。[証拠](phase217/evidence/20261014-q1186/README.md)。独立2矩形Chromium一致、固定non-static007縦2 callback先頭2子全PASS、lrは4番目子・rlは3番目子でfile whole FAIL継続。旧WPT/host/Acid3差0維持。次は縦rl Gridの3番目RTL横子、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
-Resume point: Interop 2025 固定3,805 unique ID・19領域。最新の同条件全件測定はtestharness対象1,455の223 PASS/1,232 nonPASS（q1068）、静的reftest1,561の662 PASS/899 pixel FAIL（q1062）、crashtest48 PASS。残るtestharness328とscripted reftest407/variant6はrunner未対応。Grid502最新の全測定はq1177の189 PASS/313 FAIL、q1172比6 whole/27 subtest改善、旧PASS後退0。行track animation旧PASSは偽陽性と判明し一般animation機構不足。Acid3 score100/inventory100/画素差0/480000、Acid2差1865/120000。p189/p190 runner coverage、p173全3,805件100%とp100 wholeは未達。
+Resume point: 2026-10-18 [p240](phase240/phase.md)のhost部分cleared。固定aspect-ratio257 IDは142→149 PASS、後退0。独立29/29、Acid3 score100/差0、Acid2差873。次の候補はstretchのcross size（009/045/046）とbasis:content（021/022）。全Interop2025は固定3,805 unique ID・19領域、runner未対応と全件100%は未達。今回の257件は局所再測定であり全体の最新集計ではない。QEMU/実機は未実施、p100 wholeの残る関門も維持。
 <!-- awesome-plan-current:end -->
 
 Event ws074-p217-q1185-partial-clear-20261014: [p217](phase217/phase.md) q1185-i01で固定縦lr/rl Grid直接横LTR absolute子へrow1/col1 static areaとjustify-right Yを適用。[証拠](phase217/evidence/20261014-q1185/README.md)。独立2矩形Chromium一致、固定non-static007縦2 callback先頭子全PASS、2番目子でfile whole FAIL継続。旧WPT/host/Acid3差0維持。次は縦Grid2番目横子、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
@@ -612,8 +614,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p233](phase233/phase.md) | yahoo.co.jp の feed の画像まわりの枠（`transform: scale` と `transform-origin`、hairline の枠） | cleared（host、2026-10-14 B1。QEMU・実機は未実施） | p232 |
 | [ws074-p234](phase234/phase.md) | WPT Interop 2024・2023 の layout の領域（実 site でよく使う物）の PASS を増やす | cleared（host、2026-10-15 B1。aspect-ratio・object-fit・object-position、aspect-ratio の reftest 73→138。QEMU・実機は未実施） | p233 |
 | [ws074-p235](phase235/phase.md) | position: sticky（ページのスクロール）と、子を持つ箱の transform: scale | cleared（host、2026-10-15 B1。sticky・子つき scale。固定 WPT 483→485、css-position 51→54、css-transforms 221→226（偶然 pass 4 件が後退）。QEMU・実機は未実施。flex の aspect-ratio は未着手） | p234 |
-
-| [ws074-p240](phase240/phase.md) | flex item の aspect-ratio、自動最小サイズと flex basis | in-progress / ws074-q20261018-01 partial | p172 engine・p234 ratio の実装 |
+| [ws074-p240](phase240/phase.md) | flex item の aspect-ratio、自動最小サイズと flex basis | uncleared / ws074-q20261018-01 host partial cleared（WPT142→149、後退0） | p172 engine・p234 ratio の実装 |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 

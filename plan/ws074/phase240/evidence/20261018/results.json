@@ -1,0 +1,1350 @@
+{
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "root": "css/css-sizing/aspect-ratio",
+  "viewport": [
+    800,
+    600
+  ],
+  "same_ids": true,
+  "before_counts": {
+    "fail": 115,
+    "pass": 142
+  },
+  "after_counts": {
+    "fail": 108,
+    "pass": 149
+  },
+  "improved": [
+    "css/css-sizing/aspect-ratio/flex-aspect-ratio-002.html",
+    "css/css-sizing/aspect-ratio/flex-aspect-ratio-004.html",
+    "css/css-sizing/aspect-ratio/flex-aspect-ratio-047.html",
+    "css/css-sizing/aspect-ratio/flex-aspect-ratio-048.html",
+    "css/css-sizing/aspect-ratio/flex-aspect-ratio-052.html",
+    "css/css-sizing/aspect-ratio/flex-aspect-ratio-053.html",
+    "css/css-sizing/aspect-ratio/flex-aspect-ratio-054.html"
+  ],
+  "regressions": [],
+  "geometry": {
+    "before_pass": 5,
+    "after_pass": 29,
+    "total": 29,
+    "chromium_matches": 28,
+    "chromium_differences": {
+      "row-content-cross-cap": {
+        "spec": [
+          20,
+          40
+        ],
+        "chromium": [
+          100,
+          40
+        ]
+      }
+    }
+  },
+  "acid2": {
+    "different_pixels": 873,
+    "pass": false
+  },
+  "acid3": {
+    "score": "100",
+    "different_pixels": 0,
+    "complete": true,
+    "pass": true
+  },
+  "source_sha256": "d36b35bdfb318b937e66aad0fb4adc86aab55696fbb9bb7c72a504964a4c5a80",
+  "binary_sha256": {
+    "build/ws074-20261018/before/browser": "25a66385edb7811c04e5e04fddd6bf3060ef2883f26d2781adbecf9d87debc02",
+    "build/ws074-20261018/before/libbrowser.so": "309dc47b67b9696b70324d4128e81033eafe2ee3a5dd575686da3d72636a67a3",
+    "build/ws074-20261018/plain/browser": "25a66385edb7811c04e5e04fddd6bf3060ef2883f26d2781adbecf9d87debc02",
+    "build/ws074-20261018/plain/libbrowser.so": "97167c4a8b160e2c3411b61a2cd5c29d0221ed42990aad2b2f6105769959ee0b",
+    "build/amd64/dynamic/libbrowser.so": "d8c05a7057f40b587c70caab628c5350977d4e40c8ca43bff56f5ba8a46e004a"
+  },
+  "results": [
+    {
+      "id": "css/css-sizing/aspect-ratio/abspos-001.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/abspos-002.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/abspos-003.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/abspos-004.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/abspos-005.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/abspos-006.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/abspos-007.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/abspos-008.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/abspos-009.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/abspos-010.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/abspos-011.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/abspos-012.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/abspos-013.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/abspos-014.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/abspos-015.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/abspos-016.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/abspos-017.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/abspos-018.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/abspos-019.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/abspos-020.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/abspos-021.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/auto-margins-001.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-001.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-002.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-003.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-004.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-005.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-006.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-007.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-008.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-009.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-010.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-011.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-012.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-013.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-014.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-015.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-016.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-017.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-018.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-019.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-020.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-021.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-022.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-023.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-025.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-026.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-027.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-030.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-032.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-033.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-034.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-035.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-036.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-037.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-038.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-039.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-040.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-041.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-042.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-043.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-044.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-045.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-046.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-047.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-048.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-049.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-050.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-052.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-053.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-054.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-055.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-056.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-057.tentative.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-058.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-with-margin-collapsing-001.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/block-aspect-ratio-with-margin-collapsing-002.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/fieldset-element-001.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/fieldset-element-002.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-001.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-002.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-003.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-004.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-005.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-006.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-007.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-008.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-009.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-010.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-011.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-012.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-013.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-014.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-015.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-016.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-017.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-018.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-019.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-020.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-021.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-022.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-023.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-024.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-025.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-026.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-027.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-028.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-029.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-030.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-031.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-032.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-033.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-034.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-035.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-036.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-037.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-038.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-039.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-040.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-041.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-043.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-044.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-045.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-046.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-047.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-048.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-049.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-050.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-051.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-052.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-053.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-054.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/flex-aspect-ratio-055.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/floats-aspect-ratio-001.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-001.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-002.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-003.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-004.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-005.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-006.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-007.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-008.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-009.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-010.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-011.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-012.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-014.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-015.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-016.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-017.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-018.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-019.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-020.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-021.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-022.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-023.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-024.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-025.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-026.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-027.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-028.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-029.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-030.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-031.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-032.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-033.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-034.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-035.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-036.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-037.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-038.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-039.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-041.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-042.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/grid-aspect-ratio-align-items-center.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/intrinsic-size-001.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/intrinsic-size-002.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/intrinsic-size-003.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/intrinsic-size-004.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/intrinsic-size-005.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/intrinsic-size-006.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/intrinsic-size-007.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/intrinsic-size-009.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/intrinsic-size-010.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/intrinsic-size-011.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/intrinsic-size-012.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/intrinsic-size-013.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/intrinsic-size-014.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/intrinsic-size-015.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/intrinsic-size-016.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/intrinsic-size-017.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/intrinsic-size-018.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/intrinsic-size-019.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/intrinsic-size-020.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/intrinsic-size-021.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/intrinsic-size-022.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/intrinsic-size-023.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/intrinsic-size-024.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/intrinsic-size-025.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/percentage-resolution-001.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/percentage-resolution-002.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/percentage-resolution-003.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/percentage-resolution-004.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/percentage-resolution-005.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-001.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-002.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-003.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-004.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-005.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-006.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-007.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-008.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-009.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-010.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-011.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-012.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-013.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-014.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-015.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-016.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-018.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-019.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-020.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-021.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-024.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-025.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-026.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-027.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-029.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-030.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-031.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-032.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-033.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-034.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-035.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-037.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-039.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-040.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-041.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-045.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-046.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-047.tentative.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-048.tentative.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-049.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/replaced-element-dynamic-aspect-ratio.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/select-element-001.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/table-element-001.html",
+      "before": "fail",
+      "after": "fail"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/zero-or-infinity-001.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/zero-or-infinity-002.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/zero-or-infinity-003.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/zero-or-infinity-004.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/zero-or-infinity-005.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/zero-or-infinity-006.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/zero-or-infinity-007.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/zero-or-infinity-008.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/zero-or-infinity-009.html",
+      "before": "pass",
+      "after": "pass"
+    },
+    {
+      "id": "css/css-sizing/aspect-ratio/zero-or-infinity-010.html",
+      "before": "pass",
+      "after": "pass"
+    }
+  ]
+}
