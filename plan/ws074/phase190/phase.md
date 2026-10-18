@@ -2,11 +2,15 @@
 
 # ws074-p190: Interop 2025 reftest・crashtest runner coverage
 
-Status: uncleared（2026-10-14 q1044 partial、全件coverage未達）
+Status: in-progress（2026-10-18 q06静的census部分、whole未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
 Prerequisites: [p173 q1012 manifest](../phase173/evidence/20261013-q1012/manifest.json) の固定選定出力。p189とは独立。
+
+## q06 最新静的census
+
+Event ws074-p190-q06-start-20261018: [自走指示](../autonomy.md)を最大90分へ適用。d328827f5固定binary、固定manifest全1,974 reftest中1,561静的候補を同一800×600/fontで全件測定する。script402/reference5/variant6の413は未対応のまま保持し、crash48も測定外で未達。共有suiteのsparseに欠けていたquirks参照原本を固定commitから復元済み。runner/product/WPT sourceは変更しない。全ID/checkpoint/参照画素差と旧q1062全ID、q1202既知4後退を照合し次候補を示す。Master/共有Queue/GitHub投影pending。
 
 ## 目的と受け入れ
 
