@@ -2,7 +2,7 @@
 
 # ws244-p003 intel/ の GT の header・表
 
-Status: in-progress（2026-10-18 q1251-i01、P1。途中で中断、WS260 を先にするユーザーの決定）
+Status: in-progress（2026-10-18 q1251-i01、2026-10-19 q1260 P1 で残りの照合を済ませた。cleared は Q1）
 
 - 親: [WS244](../ws.md)。範囲: gt-regs.h・commands.h・gt-power.h・lrc-offsets.h・mocs.h・mocs-table*.inc・workarounds.h・mcr-ranges.inc・engine-table*.inc・forcewake-ranges*.inc・pci-ids.h と、それを使う file。
 
@@ -24,7 +24,14 @@ Status: in-progress（2026-10-18 q1251-i01、P1。途中で中断、WS260 を先
 - 動作の確かめ: 14 file の comment を除いた code の行を、改名の対応を当てた前の版と比べて全部一致（`differ 0`）。
 - build: amd64 の既定・I915_TESTS=y とも rc=0、warning 0、PASS。`git diff --check` 空。
 
+### 段 3: Linux v6.19 の照合（2026-10-19 済み、q1260 P1）
+
+- 取得（2026-10-19 ユーザー許可）: cdn.kernel.org の linux-6.19.tar.xz を worktree の `build/ws244-linux619/` に置いた。SHA-256 `303079a8…21357` は sha256sums.asc の値と一致。linux-6.19.tar.sign は展開した tar に対し gpg で「Good signature from Greg Kroah-Hartman」（鍵 647F 2865 4894 E3BD 4571 99BE 38DB BDC8 6092 693E、WKD で取得、信頼の連鎖は無い）。sha256sums.asc の署名の鍵は手元に無く未確認。展開は drivers/gpu/drm/i915 と include/drm/intel だけ。
+- 照合: `python3 -I plan/ws244/tests/v619-check/chk619.py <worktree> build/ws244-linux619/src/linux-6.19 src/drivers/gpu/i915/intel/{mocs.h,commands.h,gt-regs.h,lrc-offsets.h,pci-ids.h}`。`Values referenced: Linux v6.19` の block（244）ごとに、挙げた名前が v6.19 の file にあること、block の `#define` を rename-map で Linux の名前に戻し、wrapper（`_MMIO`・`REG_BIT`/`BIT`・`BIT_ULL`・`GENMASK*`・`PAGE_SIZE`・`sizeof(u32)`・`## __VA_ARGS__`）をそろえて v6.19 の定義と比べる。結果 `ok 236 diff 0 missing-name 0`。
+- lrc-offsets.h の表 gen12_xcs_offsets・gen12_rcs_offsets と NOP・LRI・POSTED・REG・REG16・END は手で比べて一致（Linux の BUILD_BUG_ON_ZERO の検査は zedBSD に無いだけ）。
+- 値の食い違いは無く、source は変えていない。
+
 ### 残り
 
-- v6.19 の値の照合（v6.19 の tarball の取得は Q1 の判断）。
-- `#define` の列のそろえは直していない。
+- `#define` の列のそろえは直していない（p009 の規約の見直しで扱う）。
+- `plan/ws244/tests/v619-check/` は開発の確かめ用。WS244 の完了で消してよい（path を Q1 へ）。
