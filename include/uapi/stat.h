@@ -88,10 +88,10 @@ _Static_assert(__builtin_offsetof(struct stat, st_size) == 40, "LP64 stat size")
 _Static_assert(__builtin_offsetof(struct stat, st_atim) == 48, "LP64 stat time");
 _Static_assert(__builtin_offsetof(struct stat, st_blksize) == 96,
 	"LP64 stat blksize");
-#elif defined(KERN_USER_ABI_RISCV32)
-/* The 32-bit RISC-V ABI aligns 64-bit members to 8 bytes, so its time has padding. */
-_Static_assert(sizeof(struct timespec) == 16, "riscv32 time64 timespec ABI");
-_Static_assert(sizeof(struct stat) == 92, "riscv32 time64 stat ABI");
+#elif defined(KERN_USER_ABI_RISCV32) || defined(KERN_USER_ABI_PPC32)
+/* The 32-bit RISC-V and PowerPC ABIs align 64-bit members to 8 bytes, so their time has padding. */
+_Static_assert(sizeof(struct timespec) == 16, "time64 timespec ABI with 8-byte alignment");
+_Static_assert(sizeof(struct stat) == 92, "time64 stat ABI with 8-byte alignment");
 #else
 _Static_assert(sizeof(struct timespec) == 12, "ILP32 time64 timespec ABI");
 _Static_assert(sizeof(struct stat) == 80, "ILP32 time64 stat ABI");

@@ -3,7 +3,7 @@
 # WS264 ppc32 の QEMU の machine（「virt」相当）への移植（framebuffer の console・VFS の段まで）
 
 - ID: ws264、Master: [master.md](../master.md)、Primary Milestone: MG008
-- Status: planning（2026-10-18 Q1 作成。担当は未定）
+- Status: incomplete（2026-10-18 Q1 作成。2026-10-19 P1 が q1257 で p001・p002 を実施中）
 - 起点（2026-10-18 ユーザー）:「さらに、virt riscv32, virt ppc32, virt ppc64, virt m68k (68030)も追加してほしいです。それぞれWSを作ってほしいです。フレームバッファでコンソールが出てVFSがマウントできないところまででいいです。」
 - 前提（Q1 の調べ）: **QEMU の PowerPC に「virt」という machine は無い**。32 bit の候補は `ppce500`（generic paravirt e500 platform、virtio・PCI）、`mac99`・`g3beige`（PowerMac、Open Firmware）、`bamboo`・`sam460ex` など。どれを「virt」とするか（画面の device を含めて）は p001 でユーザーに案を出して決める。共有の LLVM は PowerPC の target を持つ。tree に PowerPC の HAL・`include/hal/arch` は無い（WS027 PowerPC 移植は canceled、Future Work）。
 
@@ -18,5 +18,7 @@
 
 | Phase | 目的 | 状態 |
 | --- | --- | --- |
-| p001 | 設計: QEMU の machine と画面の device、firmware・起動の道、toolchain、HAL の構成（既存の HAL との共有）、HAL の API の差分の案、試験の道具、Phase の表。code は書かない | planning |
+| [p001](phase001/phase.md) | 設計（[design.md](design.md)）: mac99、OpenBIOS から flat image、画面は firmware の display | in-progress |
+| [p002](phase002/phase.md) | HAL・mac99 の BSP・vmunix・boot-test の mode、T1 の画面で到達点 | in-progress |
+| p003 | 規約の全文の見直し（書き方だけ） | planned |
 - 決定（2026-10-18 ユーザー）: machine は「mac99にします。」（QEMU の PowerMac G4 相当、OpenBIOS）。HAL の API は形を限った事前の承認（Guardrail の表）。

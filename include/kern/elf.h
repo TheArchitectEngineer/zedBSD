@@ -35,6 +35,7 @@
 #define ET_DYN		3
 #define EM_386		3
 #define EM_68K		4
+#define EM_PPC		20
 #define EM_SPARCV9	43
 #define EM_X86_64	62
 #define EM_AARCH64	183
