@@ -516,8 +516,8 @@ i915_defaults_switch_to_kernel(
 	error = drv_i915_request_create(krq,
 					&es->kernel_ce[index],
 					seqno,
-					(uint32_t)ge->hwsp_ggtt + I915_GEM_HWS_SEQNO_ADDR,
-					&ge->hwsp[I915_GEM_HWS_SEQNO_ADDR / 4U]);
+					(uint32_t)ge->hwsp_ggtt + I915_GT_HWS_SEQNO_ADDR,
+					&ge->hwsp[I915_GT_HWS_SEQNO_ADDR / 4U]);
 	if (error == 0)
 		error = drv_i915_request_add(krq);
 

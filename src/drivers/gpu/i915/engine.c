@@ -349,8 +349,8 @@ drv_i915_engine_dump(
 	    status_lo,
 	    csb_ptr,
 	    *ge->csb_write,
-	    ge->hwsp[I915_GEM_HWS_PREEMPT],
-	    ge->hwsp[I915_GEM_HWS_SEQNO_ADDR / 4U],
+	    ge->hwsp[I915_GT_HWS_PREEMPT],
+	    ge->hwsp[I915_GT_HWS_SEQNO_ADDR / 4U],
 	    ge->csb_head,
 	    submits,
 	    promotes,
@@ -697,7 +697,7 @@ i915_execlists_sanitize(
 	 * The kernel context's timeline lives in the status page, which may
 	 * have been lost, so its seqno is written back (sanitize_hwsp()).
 	 */
-	ge->hwsp[I915_GEM_HWS_SEQNO_ADDR / 4U] = es->kernel_tl_seqno[index];
+	ge->hwsp[I915_GT_HWS_SEQNO_ADDR / 4U] = es->kernel_tl_seqno[index];
 
 	/* Resets the pinned kernel context (intel_engine_reset_pinned_contexts()). */
 	drv_i915_lrc_reset(&es->kernel_ce[index]);

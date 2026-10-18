@@ -2046,9 +2046,9 @@ i915_ktest_gt_execlists_enable(
 		    rcs->resumed == 1,
 		"p6c1: P6C1-ENABLE gen11 disables legacy mode, clears STOP_RING and programs HWS_PGA");
 
-	/* The error interrupt unmasks only I915_ERROR_INSTRUCTION. */
+	/* The error interrupt unmasks only I915_GT_ERROR_INSTRUCTION. */
 	emr_clear = i915_fake_wt_find(&t->fake, 0x20b0U, 0xffffffffU, 0xffffffffU);
-	emr = i915_fake_wt_find(&t->fake, 0x20b4U, ~I915_ERROR_INSTRUCTION, 0xffffffffU);
+	emr = i915_fake_wt_find(&t->fake, 0x20b4U, ~I915_GT_ERROR_INSTRUCTION, 0xffffffffU);
 	drv_i915_ktest_check(
 		ktest,
 		emr_clear >= 0 && emr >= 0,

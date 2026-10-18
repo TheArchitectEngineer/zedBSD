@@ -583,13 +583,13 @@ i915_lrc_init_regs(
 	/* Chooses the layout by the graphics version and the engine class. */
 	gen9 = i915_lrc_gen9(ce);
 	if (gen9 != 0) {
-		offsets = gen9_xcs_offsets;
+		offsets = i915_lrc_gen9_xcs;
 		if (ce->ge->info->class == I915_RENDER_CLASS)
-			offsets = gen9_rcs_offsets;
+			offsets = i915_lrc_gen9_rcs;
 	} else {
-		offsets = gen12_xcs_offsets;
+		offsets = i915_lrc_gen12_xcs;
 		if (ce->ge->info->class == I915_RENDER_CLASS)
-			offsets = gen12_rcs_offsets;
+			offsets = i915_lrc_gen12_rcs;
 	}
 
 	/* Lays out the LRI headers and register offsets. */

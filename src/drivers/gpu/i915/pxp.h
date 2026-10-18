@@ -17,7 +17,7 @@
  *                                              pinned context on the first
  *                                              video decode engine with a
  *                                              4 KiB ring and its timeline at
- *                                              I915_GEM_HWS_PXP_ADDR, and the
+ *                                              I915_GT_HWS_PXP_ADDR, and the
  *                                              TEE component with its
  *                                              streaming command page
  *

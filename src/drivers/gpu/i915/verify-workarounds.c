@@ -355,8 +355,8 @@ drv_i915_engine_verify_wa_submit(
 		rq,
 		&engines->kernel_ce[index],
 		kernel_seqno,
-		(uint32_t)engine->hwsp_ggtt + I915_GEM_HWS_SEQNO_ADDR,
-		&engine->hwsp[I915_GEM_HWS_SEQNO_ADDR / 4U]);
+		(uint32_t)engine->hwsp_ggtt + I915_GT_HWS_SEQNO_ADDR,
+		&engine->hwsp[I915_GT_HWS_SEQNO_ADDR / 4U]);
 	if (error != 0)
 		return i915_verify_wa_fail(verify, error, "i915_request_create");
 
@@ -499,8 +499,8 @@ drv_i915_engine_verify_wa_park(
 		krq,
 		&engines->kernel_ce[index],
 		kernel_seqno,
-		(uint32_t)engine->hwsp_ggtt + I915_GEM_HWS_SEQNO_ADDR,
-		&engine->hwsp[I915_GEM_HWS_SEQNO_ADDR / 4U]);
+		(uint32_t)engine->hwsp_ggtt + I915_GT_HWS_SEQNO_ADDR,
+		&engine->hwsp[I915_GT_HWS_SEQNO_ADDR / 4U]);
 	if (error == 0)
 		error = drv_i915_request_add(krq);
 

@@ -16,7 +16,7 @@
  *   engine set init    intel_engines_init(): per engine the setup, the
  *                      execlists registers (submit.h) and the pinned kernel
  *                      context with a 4 KiB ring, whose timeline lives in the
- *                      status page at I915_GEM_HWS_SEQNO_ADDR;
+ *                      status page at I915_GT_HWS_SEQNO_ADDR;
  *   GT resume          intel_gt_resume() in the reference order (see
  *                      drv_i915_gt_resume());
  *   stop               intel_engine_stop_cs() and the Wa_22011802037 drain of
@@ -26,7 +26,7 @@
  * Facts this rests on: on Gen11+ the CSB write pointer is status-page dword
  * 0x2f and the CSB holds 12 entries; I915_GT_RING_MODE_GEN7 gets
  * I915_GT_GEN11_GFX_DISABLE_LEGACY_MODE, not I915_GT_GFX_RUN_LIST_ENABLE; only
- * I915_ERROR_INSTRUCTION is unmasked, because the hardware already suppresses
+ * I915_GT_ERROR_INSTRUCTION is unmasked, because the hardware already suppresses
  * the privilege error; and with global MOCS the per-engine MOCS table is
  * skipped but the render engine's L3CC table is programmed again on every
  * resume.

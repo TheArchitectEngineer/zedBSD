@@ -69,7 +69,7 @@ struct i915_gt_object;
 /* How many tables below the top the kernel PPGTT can allocate. */
 #define I915_PPGTT_MAX_TABLES		16U
 
-/* The session PPGTT: 48-bit canonical, four levels of 512 entries (I915_PDES). */
+/* The session PPGTT: 48-bit canonical, four levels of 512 entries (I915_GT_PDES). */
 #define I915_PPGTT_LEVELS		4U
 #define I915_PPGTT_ENTRIES		512U
 #define I915_PPGTT_ADDRESS_BITS		48U

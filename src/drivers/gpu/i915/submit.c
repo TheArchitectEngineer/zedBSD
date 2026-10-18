@@ -103,8 +103,8 @@ drv_i915_execlists_submission_setup(
 	if (ge->info->graphics_ver == 9) {
 		ge->submit_reg = I915_GT_RING_ELSP(base);
 		ge->ctrl_reg = 0U;
-		ge->csb_status = (volatile uint64_t *)&ge->hwsp[I915_HWS_CSB_BUF0_INDEX];
-		ge->csb_write = &ge->hwsp[I915_HWS_CSB_WRITE_INDEX];
+		ge->csb_status = (volatile uint64_t *)&ge->hwsp[I915_GT_HWS_CSB_BUF0_INDEX];
+		ge->csb_write = &ge->hwsp[I915_GT_HWS_CSB_WRITE_INDEX];
 		ge->csb_size = I915_GT_GEN8_CSB_ENTRIES;
 		ge->ccid = 0U;
 		return;
@@ -115,7 +115,7 @@ drv_i915_execlists_submission_setup(
 	ge->ctrl_reg = I915_GT_RING_EXECLIST_CONTROL(base);
 
 	/* Points at the CSB entries and the write pointer in the status page. */
-	ge->csb_status = (volatile uint64_t *)&ge->hwsp[I915_HWS_CSB_BUF0_INDEX];
+	ge->csb_status = (volatile uint64_t *)&ge->hwsp[I915_GT_HWS_CSB_BUF0_INDEX];
 	ge->csb_write = &ge->hwsp[I915_GT_ICL_HWS_CSB_WRITE_INDEX];
 	ge->csb_size = I915_GT_GEN11_CSB_ENTRIES;
 
@@ -505,7 +505,7 @@ i915_ring_set_paused(
 		return;
 
 	/* A nonzero PREEMPT holds every breadcrumb tail; a pause must be visible first. */
-	ge->hwsp[I915_GEM_HWS_PREEMPT] = (uint32_t)state;
+	ge->hwsp[I915_GT_HWS_PREEMPT] = (uint32_t)state;
 	if (state != 0)
 		kern_io_write_barrier();
 }
@@ -557,7 +557,7 @@ i915_enable_error_interrupt(
 	 * cases the hardware already suppresses, so the reference leaves it
 	 * masked.
 	 */
-	i915_execlists_write(ge, mmio, I915_GT_RING_EMR(base), ~(uint32_t)I915_ERROR_INSTRUCTION);
+	i915_execlists_write(ge, mmio, I915_GT_RING_EMR(base), ~(uint32_t)I915_GT_ERROR_INSTRUCTION);
 }
 
 /*

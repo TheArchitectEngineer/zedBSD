@@ -8,11 +8,16 @@
 /*
  * GT power management (see power.h).
  *
- * PCODE mailbox: a direct port of Linux's intel_pcode.c.  The caller-owned
- * sideband lock serializes the transaction, the fast stage is an atomic poll
- * and the slow stage may sleep, and the Gen7 mailbox status is turned into an
- * errno.  The mailbox registers are always on, so they are reached without
- * forcewake.
+ * The GT driver mailbox is the driver's channel to the power controller
+ * firmware.  The firmware owns the command register while its run/busy bit
+ * is set; the driver posts a command by loading the two data registers and
+ * then writing the command with run/busy set, and the firmware answers by
+ * clearing run/busy, with the reply in the data registers and a status code
+ * in the low byte of the command register.  The registers are always on, so
+ * they are reached without forcewake.
+ *
+ * Every exchange holds the caller's sideband lock.  Its wait is split in two
+ * stages: a short busy poll, and then a poll that may sleep.
  */
 
 #include "power.h"
@@ -29,51 +34,77 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-/* PCODE mailbox: the GEN6_PCODE_* registers. */
-#define I915_PCODE_MAILBOX		0x138124U
-#define I915_PCODE_DATA			0x138128U
+/*
+ * The mailbox: the command register (run/busy in bit 31, the status code in
+ * 7:0 of the answer) and the two data registers.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (GEN6_PCODE_MAILBOX, GEN6_PCODE_READY, GEN6_PCODE_ERROR_MASK,
+ * GEN6_PCODE_DATA, GEN6_PCODE_DATA1).
+ */
+#define I915_PCODE_COMMAND		0x138124U
+#define I915_PCODE_DATA0		0x138128U
 #define I915_PCODE_DATA1		0x13812cU
-
-/* PCODE mailbox: set by the driver to post a command, cleared by the firmware when done. */
-#define I915_PCODE_READY		0x80000000U
-
-/* PCODE mailbox: the status field of the mailbox register. */
-#define I915_PCODE_ERROR_MASK		0xffU
-
-/* PCODE mailbox: the Gen6/Gen7/Gen11 status codes. */
-#define I915_PCODE_SUCCESS				0x0U
-#define I915_PCODE_ILLEGAL_CMD				0x1U
-#define I915_PCODE_TIMEOUT				0x2U
-#define I915_PCODE_ILLEGAL_DATA				0x3U
-#define I915_PCODE_ILLEGAL_SUBCOMMAND			0x4U
-#define I915_PCODE_LOCKED				0x6U
-#define I915_PCODE_MIN_FREQ_TABLE_GT_RATIO_OUT_OF_RANGE	0x10U
-#define I915_PCODE_REJECTED				0x11U
-
-/* PCODE mailbox: the fast and slow poll limits of snb_pcode_read(). */
-#define I915_PCODE_FAST_US		500U
-#define I915_PCODE_SLOW_MS		20U
-
-/* PCODE mailbox: how long the final, non-preemptible re-request phase lasts. */
-#define I915_PCODE_FINAL_POLL_MS	50U
-
-/* PCODE mailbox: the sleep between re-requests in the preemptible phase (usleep_range(10, 20)). */
-#define I915_PCODE_REQUEST_SLEEP_MIN_US	10U
-#define I915_PCODE_REQUEST_SLEEP_MAX_US	20U
-
-/* PCODE mailbox. */
-static int i915_pcode_status(uint32_t mailbox);
-static int i915_pcode_rw(struct i915_mmio *mmio, uint32_t mbox, uint32_t *val, uint32_t *val1, unsigned fast_us, unsigned slow_ms, int is_read);
-static int i915_pcode_write_timeout(struct mutex *sb_lock, struct i915_mmio *mmio, uint32_t mbox, uint32_t val, unsigned fast_us, unsigned slow_ms);
-static int i915_pcode_try_request(struct i915_mmio *mmio, uint32_t mbox, uint32_t request, uint32_t reply_mask, uint32_t reply, int *status);
-static int i915_pcode_poll(struct i915_mmio *mmio, uint32_t mbox, uint32_t request, uint32_t reply_mask, uint32_t reply, int *status, unsigned ms, int sleep_between);
+#define I915_PCODE_RUN_BUSY		0x80000000U
+#define I915_PCODE_STATUS_MASK		0xffU
 
 /*
- * Reads the response of a PCODE mailbox command (snb_pcode_read()).
+ * The wait limits: the busy poll of every exchange, the sleeping poll of a
+ * read, the last stretch of a request with preemption off, and the nap
+ * between two asks of a request.
  *
- * The command's input is *val (and zero for the second data word); the
- * response replaces *val and, when val1 is not NULL, *val1.  Returns 0, the
- * mailbox status as an errno, ETIMEDOUT, EAGAIN or EIO.
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/intel_pcode.c
+ * (snb_pcode_read, snb_pcode_write_timeout, skl_pcode_request).
+ */
+#define I915_PCODE_BUSY_POLL_US		500U
+#define I915_PCODE_READ_SLEEP_MS	20U
+#define I915_PCODE_LAST_STRETCH_MS	50U
+#define I915_PCODE_NAP_MIN_US		10U
+#define I915_PCODE_NAP_MAX_US		20U
+
+/*
+ * The firmware's status codes and the errno each one is reported as.  Zero
+ * and a code not in the table count as success.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (GEN6_PCODE_ILLEGAL_CMD, GEN7_PCODE_TIMEOUT, GEN7_PCODE_ILLEGAL_DATA,
+ * GEN11_PCODE_ILLEGAL_SUBCOMMAND, GEN11_PCODE_LOCKED,
+ * GEN7_PCODE_MIN_FREQ_TABLE_GT_RATIO_OUT_OF_RANGE, GEN11_PCODE_REJECTED)
+ * and drivers/gpu/drm/i915/intel_pcode.c (gen7_check_mailbox_status).
+ */
+static const struct {
+	uint8_t code;
+	int error;
+} i915_pcode_statuses[] = {
+	{ 0x01U, ENXIO },
+	{ 0x02U, ETIMEDOUT },
+	{ 0x03U, EINVAL },
+	{ 0x04U, ENXIO },
+	{ 0x06U, EBUSY },
+	{ 0x10U, EOVERFLOW },
+	{ 0x11U, EACCES },
+};
+
+/* One exchange: what is sent, how long to wait, and how many reply words are read. */
+struct i915_pcode_exchange {
+	uint32_t command;
+	uint32_t data[2];
+	unsigned busy_us;
+	unsigned sleep_ms;
+	unsigned reply_words;
+};
+
+static int i915_pcode_error(uint32_t answer);
+static int i915_pcode_run(struct i915_mmio *mmio, struct i915_pcode_exchange *ex);
+static bool i915_pcode_ask(struct i915_mmio *mmio, uint32_t command, uint32_t request, uint32_t reply_mask, uint32_t reply, int *status);
+static int i915_pcode_repeat(struct i915_mmio *mmio, uint32_t command, uint32_t request, uint32_t reply_mask, uint32_t reply, int *status, unsigned ms, bool nap);
+
+/*
+ * Reads the reply to a mailbox command.
+ *
+ * *val is sent as the first data word, and *val1 (zero when val1 is NULL)
+ * as the second.  The reply replaces *val and, when val1 is not NULL,
+ * *val1; a reply read before a failing status code is handed back too.
  */
 int
 drv_i915_pcode_read(
@@ -83,59 +114,77 @@ drv_i915_pcode_read(
 	uint32_t *val,
 	uint32_t *val1)
 {
+	struct i915_pcode_exchange ex;
 	int error;
 
-	/* Runs the read transaction under the sideband lock. */
+	/* A read waits through both stages and takes the reply. */
+	ex.command = mbox;
+	ex.data[0] = *val;
+	ex.data[1] = 0U;
+	if (val1 != NULL)
+		ex.data[1] = *val1;
+	ex.busy_us = I915_PCODE_BUSY_POLL_US;
+	ex.sleep_ms = I915_PCODE_READ_SLEEP_MS;
+	ex.reply_words = val1 != NULL ? 2U : 1U;
+
 	mutex_lock(sb_lock);
-
-	error = i915_pcode_rw(mmio, mbox, val, val1, I915_PCODE_FAST_US, I915_PCODE_SLOW_MS, 1);
-
+	error = i915_pcode_run(mmio, &ex);
 	mutex_unlock(sb_lock);
 
-	/* Reports a transaction that failed. */
+	/* The data words hold the reply once it was read, and what was sent otherwise. */
+	*val = ex.data[0];
+	if (val1 != NULL)
+		*val1 = ex.data[1];
+
 	if (error != 0) {
 		kern_logf("i915: pcode read mbox=0x%08x err=%d\n", mbox, error);
 		return error;
 	}
-
-	/* Succeeded: *val (and *val1) hold the response. */
 	return 0;
 }
 
-/*
- * Writes one value to a PCODE mailbox command (snb_pcode_write()).
- *
- * The transaction waits only in the atomic stage, for 500 microseconds.
- * Returns 0, the mailbox status as an errno, ETIMEDOUT, EAGAIN or EIO.
- */
+/* Sends one value with a mailbox command; only the busy poll is waited through. */
 int
-drv_i915_snb_pcode_write(
+drv_i915_pcode_write(
 	struct mutex *sb_lock,
 	struct i915_mmio *mmio,
 	uint32_t mbox,
 	uint32_t val)
 {
+	struct i915_pcode_exchange ex;
 	int error;
 
-	/* Writes with the reference's default limits: 500 microseconds, no slow stage. */
-	error = i915_pcode_write_timeout(sb_lock, mmio, mbox, val, I915_PCODE_FAST_US, 0U);
-	if (error != 0)
-		return error;
+	ex.command = mbox;
+	ex.data[0] = val;
+	ex.data[1] = 0U;
+	ex.busy_us = I915_PCODE_BUSY_POLL_US;
+	ex.sleep_ms = 0U;
+	ex.reply_words = 0U;
 
-	/* Succeeded: the firmware accepted the value. */
+	mutex_lock(sb_lock);
+	error = i915_pcode_run(mmio, &ex);
+	mutex_unlock(sb_lock);
+
+	if (error != 0) {
+		kern_logf("i915: pcode write mbox=0x%08x err=%d\n", mbox, error);
+		return error;
+	}
 	return 0;
 }
 
 /*
- * Sends a PCODE request until its reply matches (skl_pcode_request()).
+ * Asks a mailbox command again and again until the masked reply is the one
+ * wanted.
  *
- * The request is re-sent until (reply & reply_mask) == reply, for
- * timeout_base_ms with a short sleep between requests, and then for another
- * 50 ms with preemption off to send as many requests as possible.  Returns 0,
- * the mailbox status as an errno, ETIMEDOUT, or EIO when the time base failed.
+ * The firmware may take a while to agree (a clock change waits for the
+ * hardware to settle), so the question is asked at once, then repeated with
+ * a nap between two asks for timeout_base_ms, and then repeated without
+ * napping, with preemption off, for a last 50 ms.  The whole run holds the
+ * sideband lock.  The status code of the last ask is reported before a
+ * timeout.
  */
 int
-drv_i915_skl_pcode_request(
+drv_i915_pcode_request(
 	struct mutex *sb_lock,
 	struct i915_mmio *mmio,
 	uint32_t mbox,
@@ -145,281 +194,160 @@ drv_i915_skl_pcode_request(
 	int timeout_base_ms)
 {
 	int status;
-	int matched;
 	int error;
 
-	/* Serializes the whole request sequence. */
 	mutex_lock(sb_lock);
 
-	/* Primes the firmware with a first request, sent at once as the reference does. */
 	status = 0;
-	matched = i915_pcode_try_request(mmio, mbox, request, reply_mask, reply, &status);
-	if (matched != 0) {
+	if (i915_pcode_ask(mmio, mbox, request, reply_mask, reply, &status)) {
 		error = 0;
-		goto out;
-	}
-
-	/* A time base that failed cannot bound any further request. */
-	if (status == EIO) {
+	} else if (status == EIO) {
+		/* The time base failed and can bound nothing more. */
 		error = EIO;
-		goto out;
+	} else {
+		error = i915_pcode_repeat(mmio, mbox, request, reply_mask, reply, &status, (unsigned)timeout_base_ms, true);
+
+		/* The last stretch: as many asks as fit, nothing sleeps. */
+		if (error == ETIMEDOUT) {
+			kern_logf("i915: pcode request mbox=0x%08x timeout, retrying (preempt off)\n", mbox);
+			kern_preempt_disable();
+			error = i915_pcode_repeat(mmio, mbox, request, reply_mask, reply, &status, I915_PCODE_LAST_STRETCH_MS, false);
+			kern_preempt_enable();
+		}
 	}
 
-	/* Re-sends the request, sleeping between requests, for the base timeout. */
-	error = i915_pcode_poll(mmio, mbox, request, reply_mask, reply, &status, (unsigned)timeout_base_ms, 1);
-	if (error == 0)
-		goto out;
-	if (error == EIO)
-		goto out;
-
-	/*
-	 * Retries for another 50 ms with preemption disabled, to maximize the
-	 * number of requests (reference).  Preemption is really disabled -- a
-	 * scheduler preempt count, not an interrupts-off spin -- and nothing
-	 * sleeps in this phase.
-	 */
-	kern_logf("i915: pcode request mbox=0x%08x timeout, retrying (preempt off)\n", mbox);
-	kern_preempt_disable();
-	error = i915_pcode_poll(mmio, mbox, request, reply_mask, reply, &status, I915_PCODE_FINAL_POLL_MS, 0);
-	kern_preempt_enable();
-
-out:
 	mutex_unlock(sb_lock);
 
-	/* Reports the mailbox status first, as the reference does. */
 	if (status != 0)
 		return status;
+	return error;
+}
 
-	/* Reports why no reply matched. */
-	if (error != 0)
-		return error;
+/* The errno of the status code in an answered command register. */
+static int
+i915_pcode_error(
+	uint32_t answer)
+{
+	unsigned code;
+	size_t i;
 
-	/* Succeeded: the firmware replied with the expected value. */
+	code = answer & I915_PCODE_STATUS_MASK;
+	for (i = 0; i < sizeof(i915_pcode_statuses) / sizeof(i915_pcode_statuses[0]); i++) {
+		if (i915_pcode_statuses[i].code == code)
+			return i915_pcode_statuses[i].error;
+	}
 	return 0;
 }
 
-/* Translates a Gen7+ mailbox status into an errno (gen7_check_mailbox_status()). */
-static int
-i915_pcode_status(
-	uint32_t mailbox)
-{
-	/* Picks the errno of the status field; Alder Lake-P is graphics 12. */
-	switch (mailbox & I915_PCODE_ERROR_MASK) {
-	case I915_PCODE_SUCCESS:
-		return 0;
-	case I915_PCODE_ILLEGAL_CMD:
-		return ENXIO;
-	case I915_PCODE_TIMEOUT:
-		return ETIMEDOUT;
-	case I915_PCODE_ILLEGAL_DATA:
-		return EINVAL;
-	case I915_PCODE_ILLEGAL_SUBCOMMAND:
-		return ENXIO;
-	case I915_PCODE_LOCKED:
-		return EBUSY;
-	case I915_PCODE_REJECTED:
-		return EACCES;
-	case I915_PCODE_MIN_FREQ_TABLE_GT_RATIO_OUT_OF_RANGE:
-		return EOVERFLOW;
-	default:
-		/* A status the reference does not know counts as success. */
-		return 0;
-	}
-}
-
 /*
- * Runs one mailbox transaction with the sideband lock held (__snb_pcode_rw()).
- *
- * Returns 0, EAGAIN when the mailbox is still busy, the wait's ETIMEDOUT or
- * EIO, or the mailbox status as an errno.
+ * Runs one exchange with the sideband lock held: refuses a mailbox the
+ * firmware still owns (EAGAIN), posts the command, waits for the answer
+ * (ETIMEDOUT, or EIO when the time base failed), reads the reply words asked,
+ * and reports the status code as an errno.
  */
 static int
-i915_pcode_rw(
+i915_pcode_run(
 	struct i915_mmio *mmio,
-	uint32_t mbox,
-	uint32_t *val,
-	uint32_t *val1,
-	unsigned fast_us,
-	unsigned slow_ms,
-	int is_read)
+	struct i915_pcode_exchange *ex)
 {
-	uint32_t mailbox;
-	uint32_t second_word;
-	uint32_t observed;
+	uint32_t answer;
 	int error;
 
-	/* Refuses to post a command while the previous one is still in the mailbox. */
-	mailbox = drv_i915_raw_read32(mmio, I915_PCODE_MAILBOX);
-	if ((mailbox & I915_PCODE_READY) != 0U)
+	if ((drv_i915_raw_read32(mmio, I915_PCODE_COMMAND) & I915_PCODE_RUN_BUSY) != 0U)
 		return EAGAIN;
 
-	/* The second data word is zero when the caller has none. */
-	second_word = 0U;
-	if (val1 != NULL)
-		second_word = *val1;
+	/* The data first; the command then hands the mailbox to the firmware. */
+	drv_i915_raw_write32(mmio, I915_PCODE_DATA0, ex->data[0]);
+	drv_i915_raw_write32(mmio, I915_PCODE_DATA1, ex->data[1]);
+	drv_i915_raw_write32(mmio, I915_PCODE_COMMAND, I915_PCODE_RUN_BUSY | ex->command);
 
-	/* Loads the data words and posts the command. */
-	drv_i915_raw_write32(mmio, I915_PCODE_DATA, *val);
-	drv_i915_raw_write32(mmio, I915_PCODE_DATA1, second_word);
-	drv_i915_raw_write32(mmio, I915_PCODE_MAILBOX, I915_PCODE_READY | mbox);
-
-	/*
-	 * Waits for the firmware to clear READY: an atomic poll, then a
-	 * sleepable one, which the held mutex allows.  A timeout and a time-base
-	 * failure are passed back as they are.
-	 */
-	observed = 0U;
-	error = drv_i915_wait_reg(mmio, I915_PCODE_MAILBOX, I915_PCODE_READY, 0U, fast_us, slow_ms, &observed);
+	answer = 0U;
+	error = drv_i915_wait_reg(mmio, I915_PCODE_COMMAND, I915_PCODE_RUN_BUSY, 0U, ex->busy_us, ex->sleep_ms, &answer);
 	if (error != 0)
 		return error;
 
-	/* Collects the response of a read. */
-	if (is_read != 0) {
-		*val = drv_i915_raw_read32(mmio, I915_PCODE_DATA);
-		if (val1 != NULL)
-			*val1 = drv_i915_raw_read32(mmio, I915_PCODE_DATA1);
-	}
+	if (ex->reply_words >= 1U)
+		ex->data[0] = drv_i915_raw_read32(mmio, I915_PCODE_DATA0);
+	if (ex->reply_words >= 2U)
+		ex->data[1] = drv_i915_raw_read32(mmio, I915_PCODE_DATA1);
 
-	/* Translates the final mailbox status (graphics version above 6). */
-	error = i915_pcode_status(observed);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the firmware completed the command. */
-	return 0;
-}
-
-/* Writes one value to a PCODE mailbox command with explicit limits (snb_pcode_write_timeout()). */
-static int
-i915_pcode_write_timeout(
-	struct mutex *sb_lock,
-	struct i915_mmio *mmio,
-	uint32_t mbox,
-	uint32_t val,
-	unsigned fast_us,
-	unsigned slow_ms)
-{
-	uint32_t data;
-	int error;
-
-	/* Runs the write transaction under the sideband lock. */
-	data = val;
-	mutex_lock(sb_lock);
-
-	error = i915_pcode_rw(mmio, mbox, &data, NULL, fast_us, slow_ms, 0);
-
-	mutex_unlock(sb_lock);
-
-	/* Reports a transaction that failed. */
-	if (error != 0) {
-		kern_logf("i915: pcode write mbox=0x%08x err=%d\n", mbox, error);
-		return error;
-	}
-
-	/* Succeeded: the firmware accepted the value. */
-	return 0;
+	return i915_pcode_error(answer);
 }
 
 /*
- * Sends one request and reports whether its reply matches (skl_pcode_try_request()).
- *
- * The transaction waits only in the atomic stage.  *status receives its
- * result: 0, the mailbox status as an errno, ETIMEDOUT, EAGAIN or EIO.
+ * Asks once, waiting only through the busy poll.  *status receives the
+ * exchange's result; true when the exchange succeeded and its masked reply
+ * is the one wanted.
  */
-static int
-i915_pcode_try_request(
+static bool
+i915_pcode_ask(
 	struct i915_mmio *mmio,
-	uint32_t mbox,
+	uint32_t command,
 	uint32_t request,
 	uint32_t reply_mask,
 	uint32_t reply,
 	int *status)
 {
-	uint32_t response;
+	struct i915_pcode_exchange ex;
 
-	/* Sends the request and reads the reply back (__snb_pcode_rw(mbox, &request, NULL, 500, 0, true)). */
-	response = request;
-	*status = i915_pcode_rw(mmio, mbox, &response, NULL, I915_PCODE_FAST_US, 0U, 1);
+	ex.command = command;
+	ex.data[0] = request;
+	ex.data[1] = 0U;
+	ex.busy_us = I915_PCODE_BUSY_POLL_US;
+	ex.sleep_ms = 0U;
+	ex.reply_words = 1U;
 
-	/* A failed transaction has no reply to compare. */
+	*status = i915_pcode_run(mmio, &ex);
 	if (*status != 0)
-		return 0;
-
-	/* A reply outside the expected value does not match. */
-	if ((response & reply_mask) != reply)
-		return 0;
-
-	/* Succeeded: the reply matches. */
-	return 1;
+		return false;
+	return (ex.data[0] & reply_mask) == reply;
 }
 
 /*
- * Re-sends a request for a bounded time until its reply matches.
- *
- * The bound is measured on the real-time counter.  Between requests the
- * poll sleeps briefly when sleep_between is nonzero, and only stops the
- * compiler from folding the loop otherwise.  Returns 0 on a match, ETIMEDOUT,
- * or EIO when the time base failed.
+ * Asks until the reply is the one wanted or ms milliseconds of the
+ * real-time counter have passed, napping between two asks when nap is set.
+ * Returns 0, ETIMEDOUT, or EIO when the time base failed.
  */
 static int
-i915_pcode_poll(
+i915_pcode_repeat(
 	struct i915_mmio *mmio,
-	uint32_t mbox,
+	uint32_t command,
 	uint32_t request,
 	uint32_t reply_mask,
 	uint32_t reply,
 	int *status,
 	unsigned ms,
-	int sleep_between)
+	bool nap)
 {
 	uint64_t start;
-	uint64_t frequency;
+	uint64_t hz;
 	uint64_t now;
-	uint64_t now_frequency;
-	uint64_t limit;
-	bool counter_ok;
-	int matched;
+	uint64_t now_hz;
+	uint64_t span;
 
-	/* Reads the start of the time bound and turns the bound into counter ticks. */
 	start = 0U;
-	frequency = 0U;
-	counter_ok = kern_rtc_read_counter(&start, &frequency);
-	if (!counter_ok)
+	hz = 0U;
+	if (!kern_rtc_read_counter(&start, &hz) || hz == 0U)
 		return EIO;
-	if (frequency == 0U)
-		return EIO;
+	span = ((uint64_t)ms * hz) / 1000U;
 
-	limit = ((uint64_t)ms * frequency) / 1000U;
-
-	/* Re-sends the request until it matches, the time runs out, or the time base fails. */
-	now = 0U;
-	now_frequency = 0U;
 	for (;;) {
-		/* Stops at the first matching reply. */
-		matched = i915_pcode_try_request(mmio, mbox, request, reply_mask, reply, status);
-		if (matched != 0)
+		if (i915_pcode_ask(mmio, command, request, reply_mask, reply, status))
 			return 0;
-
-		/* A time-base failure is reported as such, not as a firmware timeout. */
 		if (*status == EIO)
 			return EIO;
 
-		/* Reads the time again; a failed or changed counter is a time-base failure. */
-		counter_ok = kern_rtc_read_counter(&now, &now_frequency);
-		if (!counter_ok)
+		/* A counter that fails or changes its rate is a time-base failure. */
+		now = 0U;
+		now_hz = 0U;
+		if (!kern_rtc_read_counter(&now, &now_hz) || now_hz != hz)
 			return EIO;
-		if (now_frequency != frequency)
-			return EIO;
-
-		/* Gives up once the bound has passed. */
-		if (now - start >= limit)
+		if (now - start >= span)
 			return ETIMEDOUT;
 
-		/* Sleeps between requests only where sleeping is allowed. */
-		if (sleep_between != 0) {
-			kern_usleep_range(I915_PCODE_REQUEST_SLEEP_MIN_US, I915_PCODE_REQUEST_SLEEP_MAX_US);
-		} else {
+		if (nap)
+			kern_usleep_range(I915_PCODE_NAP_MIN_US, I915_PCODE_NAP_MAX_US);
+		else
 			kern_compiler_barrier();
-		}
 	}
 }
