@@ -3,7 +3,7 @@
 # WS211: Pi 4 の compositor の描画の削減（App Home の遷移のクロスフェード、draw の束ね）
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-12 Q1 作成）
+Status: incomplete（2026-10-18 Q1: Phase を実行済みなので planning から直した。旧: planning（2026-10-12 Q1 作成））
 Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)

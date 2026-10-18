@@ -3,7 +3,7 @@
 # WS216: Notes の描く道具（筆・鉛筆・領域の塗りつぶし・水彩）
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-13 Q1 作成。p001 の設計 1 を P1、設計 2 を P3 が書いた。D1〜D12 はユーザーの決定で決まった。review-2 の待ち）
+Status: incomplete（2026-10-18 Q1: Phase を実行済みなので planning から直した。旧: planning（2026-10-13 Q1 作成。p001 の設計 1 を P1、設計 2 を P3 が書いた。D1〜D12 はユーザーの決定で決まった。review-2 の待ち））
 Primary Milestone: MG006
 Related Milestones: なし
 <!-- awesome-plan-current:end -->

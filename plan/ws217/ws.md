@@ -3,7 +3,7 @@
 # WS217: 画面の回転（Settings の Display、縦長で Notes を使う）
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-13 Q1 作成。P4 が p001 の第 1 版、design-reviewer の [review-1](phase001/review-1.md)（致命的 2・重大 6・中 14・軽微 10）、P2 の第 2 版、Q1 の [review-2](phase001/review-2.md)（致命的 2・重大 3・中 10・軽微 15）、P2 の第 3 版、Q1 の [review-3](phase001/review-3.md)（致命的 2・重大 2・中 8・軽微 12）、P4 が全指摘と game mode の決定を入れた第 4 版（[phase001/phase.md](phase001/phase.md)、agent/p4）。Q1 の review-4 と、残る問い D18（video にも game の session の回転の停止を当てるか。推奨は game だけ）待ち）
+Status: incomplete（2026-10-18 Q1: Phase を実行済みなので planning から直した。旧: planning（2026-10-13 Q1 作成。P4 が p001 の第 1 版、design-reviewer の [review-1](phase001/review-1.md)（致命的 2・重大 6・中 14・軽微 10）、P2 の第 2 版、Q1 の [review-2](phase001/review-2.md)（致命的 2・重大 3・中 10・軽微 15）、P2 の第 3 版、Q1 の [review-3](phase001/review-3.md)（致命的 2・重大 2・中 8・軽微 12）、P4 が全指摘と game mode の決定を入れた第 4 版（[phase001/phase.md](phase001/phase.md)、agent/p4）。Q1 の review-4 と、残る問い D18（video にも game の session の回転の停止を当てるか。推奨は game だけ）待ち））
 Resume point: review-3 の判定で p002a（compositor の中核、turn 無し、open の比較は最初から組）と p009-1（Intel の PRM の確認）は第 4 版の後に始められる。p002b・p009 の実装・p010 以降は review-4 の後。p012（game の session）は D18 の後（game だけで先に実装してよい）。D5（Notes の toolbar の幅）は p007 で測る。Pi 4 の 180° は p011、90°・270° は WS141 p015 の後（D7）。
 Primary Milestone: MG006
 Related Milestones: なし

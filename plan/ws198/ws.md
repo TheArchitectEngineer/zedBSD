@@ -3,7 +3,7 @@
 # WS198: zedBSD の上で zedBSD を self-build する（host の clang を使う）
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: incomplete（2026-10-18 Q1: Phase を実行済みなので planning から直した。旧: planning）
 Primary Milestone: MG002
 Related Milestones: MG001
 Objectives: O1

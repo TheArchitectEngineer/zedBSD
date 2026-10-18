@@ -3,7 +3,7 @@
 # WS207: Raspberry Pi 4 のオーディオ（再生と録音）
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-11 Q1 作成、P1 の予約の Queue）
+Status: incomplete（2026-10-18 Q1: Phase を実行済みなので planning から直した。旧: planning（2026-10-11 Q1 作成、P1 の予約の Queue））
 Primary Milestone: MG006
 Related Milestones: —
 Parent: [Master](../master.md)

@@ -5,7 +5,7 @@
 #   python3 -I plan/tools/record-audit/status.py | awk "{print \$1}" | sort | uniq -c
 # Written by the 2026-10-15 records audit (plan/record-integrity.md); the status words are matched by keyword, so treat counts as a guide.
 import re,os,glob
-KW=['planning','planned','incomplete','completed','in-progress','cleared','uncleared','canceled','cancelled']
+KW=['planning','planned','incomplete','completed','closed','in-progress','cleared','uncleared','canceled','cancelled']
 def first_kw(s):
     s=s.lower()
     best=None

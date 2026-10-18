@@ -3,7 +3,7 @@
 # WS231: AHCI（SATA）の driver
 
 <!-- awesome-plan-current:start -->
-Status: planned（2026-10-14 Q1 作成）
+Status: incomplete（2026-10-18 Q1: Phase を実行済みなので planned から直した。旧: planned（2026-10-14 Q1 作成））
 Primary Milestone: MG002
 Related Milestones: なし
 Objectives: O1

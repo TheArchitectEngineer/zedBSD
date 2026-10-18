@@ -3,7 +3,7 @@
 # WS115: upstream GTK4 を zedBSD の desktop package に移植する
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: incomplete（2026-10-18 Q1: Phase を実行済みなので planning から直した。旧: planning）
 Primary Milestone: MG002
 Related Milestones: MG006（GUI動作、compositor互換性）
 Parent: [Master](../master.md)

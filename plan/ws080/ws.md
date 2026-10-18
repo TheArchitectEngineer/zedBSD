@@ -3,7 +3,7 @@
 # WS080: `ld.coff` — Win64 PE/COFF の動的ローダ
 
 <!-- awesome-plan-current:start -->
-Status: planning（要検討・ブロック、2026-10-05 ユーザー「要検討状態にしてブロックする」）。以前: incomplete
+Status: incomplete（2026-10-18 Q1: Phase を実行済みなので planning から直した。旧: planning（要検討・ブロック、2026-10-05 ユーザー「要検討状態にしてブロックする」）。以前: incomplete）
 Primary Milestone: MG002
 Related Milestones: MG006
 Objectives: O1

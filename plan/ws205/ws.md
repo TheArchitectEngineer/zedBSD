@@ -3,7 +3,7 @@
 # WS205: Bluetooth audio（A2DP の SBC・AAC と、headset での HFP 通話）
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-11 Q1 作成、P1 の予約の Queue。p001 の設計を P1 が書いた）
+Status: incomplete（2026-10-18 Q1: Phase を実行済みなので planning から直した。旧: planning（2026-10-11 Q1 作成、P1 の予約の Queue。p001 の設計を P1 が書いた））
 Primary Milestone: MG006
 Related Milestones: —
 Parent: [Master](../master.md)

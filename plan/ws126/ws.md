@@ -3,7 +3,7 @@
 # WS126: Python 3 の package
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: incomplete（2026-10-18 Q1: Phase を実行済みなので planning から直した。旧: planning）
 Primary Milestone: MG002
 Objectives: O2
 Parent: [Master](../master.md)

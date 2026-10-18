@@ -3,7 +3,7 @@
 # WS153: Settings の Apps の頁と third-party の app の repository（package の仕組み）
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: incomplete（2026-10-18 Q1: Phase を実行済みなので planning から直した。旧: planning）
 Primary Milestone: MG007
 Related Milestones: MG006、MG002
 Parent: [Master](../master.md)

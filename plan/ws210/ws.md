@@ -3,7 +3,7 @@
 # WS210: Keiland の app の描画を GPU へ（libkeiland の canvas・文字・画像を Vulkan の draw に）
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-12 Q1 作成）
+Status: incomplete（2026-10-18 Q1: Phase を実行済みなので planning から直した。旧: planning（2026-10-12 Q1 作成））
 Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)

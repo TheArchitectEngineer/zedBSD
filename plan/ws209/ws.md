@@ -3,7 +3,7 @@
 # WS209: audiod の音の endpoint と route（通話・Bluetooth・将来の modem の音の経路）
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-11 Q1 作成、P1）
+Status: incomplete（2026-10-18 Q1: Phase を実行済みなので planning から直した。旧: planning（2026-10-11 Q1 作成、P1））
 Primary Milestone: MG006
 Related Milestones: —
 Parent: [Master](../master.md)
