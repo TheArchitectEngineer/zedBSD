@@ -625,6 +625,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-18 22:44（ユーザー）:「了解です。じゃあbootloader/にヘッダがあってハンドオフ構造体を定義する分には、OKにします。」→ boot loader → HAL の handoff の構造体は bootloader/ の header（例 bootloader/include/amd64-handoff.h）で定義してよい。kernel はそれを include しない（値ごとの名前で受ける）。
 - 2026-10-18 22:43（ユーザー）: Pi 4 の画面の情報の型の置き場所に「フィールドごとに文字列の名前があれば、構造体はいらないのでは。amd64ではどうなってますか？」→ Q1: amd64 も "pcat.framebuffer" で boot loader の struct zbl6_framebuffer を kernel に渡している（pcat の画面の driver・amdrdna・nvrtx が読む）。（クリック）amd64 も「直す、WS261 に含める」→ 画面の情報は値ごとの名前（.phys・.size・.width・.height・.pitch・.format）で渡す。
 - 2026-10-18 22:34（ユーザー）:「P1は私は止めた覚えがないので、継続していいです」→ P1 を新しい世代で再開（q1253-i02、WS260 p011 の途中の未 commit の変更から）。停止の通知の原因は未確認。
 - 2026-10-18 22:34: WS256 #9 はユーザーの規約の指示で (a)（boot.h を変えず、HAL → kernel は汎用の構造体と名前付きの object）。proposed/boot-h-riscv64.md の案 (b) は採らない。

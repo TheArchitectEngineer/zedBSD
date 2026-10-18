@@ -23,7 +23,7 @@
 
 1. `include/kern/boot.h` に PC-98・Raspberry Pi の固有の構造体と定数が無い。
 2. HAL → kernel は汎用の `kern_boot_handoff` と、固有の情報は `hal_get_arch_handoff(name)` の名前付きの object だけで渡す。新しく足す名前の一覧と中身を記録する（HAL の責務の追加。hal.h の宣言は変えない）。
-3. boot loader → HAL の固有の構造体は HAL の中（例 `src/hal/arm64/bsp-rpi4/`、PC-98 の HAL の directory）に定義を置く。
+3. boot loader → HAL の固有の構造体は HAL の中か `bootloader/` の header に定義を置く（2026-10-18 ユーザー「bootloader/にヘッダがあってハンドオフ構造体を定義する分には、OKにします」）。kernel はそれを include しない。
 4. 画面の情報は Pi 4・amd64 とも値ごとの名前で渡り、kernel が boot loader・HAL の構造体の型を include しない。
 5. 振る舞いは変えない: build（config-rpi4.mk・config-pc98.mk・config-amd64.mk）warning 0。Pi 4 と PC-98 の起動の確かめは T1（QEMU の raspi4b と PC-98 の QEMU）に依頼する。
 
