@@ -165,7 +165,7 @@ $(BUILD)/bootloader/bootzbsd.o: $(BIOS_LOADER)/bootzbsd.S \
 	bootloader/include/elf.inc bootloader/include/boot-parameter-handoff.h \
 	bootloader/uefi/zedbsd-config.h \
 	include/kern/boot.h \
-	include/kern/boot.h
+	src/hal/i386/bsp-pc98/handoff.h
 	@mkdir -p $(dir $@)
 	$(CC) -m32 -I. -x assembler-with-cpp -c $< -o $@
 
@@ -225,7 +225,7 @@ $(BUILD)/bootloader/partition-pbr.bin: $(BUILD)/bootloader/partition-pbr.elf
 
 $(BUILD)/bootloader/payload32.o: bootloader/tests/payload32-pc98.S \
 	include/kern/boot.h \
-	include/kern/boot.h
+	src/hal/i386/bsp-pc98/handoff.h
 	@mkdir -p $(dir $@)
 	$(CC) -m32 -I. -c $< -o $@
 

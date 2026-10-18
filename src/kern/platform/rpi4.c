@@ -100,7 +100,11 @@ kern_platform_init(
 	size_t capacity)
 {
 	const struct rpi4_boot_handoff *rpi4;
+	const uint64_t *fdt_object;
+	const uint64_t *sdhci_object;
 	struct kern_boot_device *device;
+	uint64_t fdt_phys;
+	uint64_t sdhci_phys;
 #if CONFIG_DRIVER_BCM2711_GPU
 	struct drv_bcm2711_boot_screen screen;
 #endif
@@ -120,9 +124,20 @@ kern_platform_init(
 	    handoff->size < sizeof(*rpi4) ||
 	    rpi4->extension_magic != KERN_RPI4_HANDOFF_MAGIC ||
 	    rpi4->extension_version != 1 ||
-	    rpi4->extension_size < sizeof(*rpi4) - sizeof(rpi4->common) ||
-	    rpi4->sdhci_phys == 0)
+	    rpi4->extension_size < sizeof(*rpi4) - sizeof(rpi4->common))
 		return 0;
+
+	/* Finds the SD controller the device tree names; without it nothing boots. */
+	sdhci_object = hal_get_arch_handoff("rpi4.sdhci");
+	if (sdhci_object == NULL)
+		return 0;
+	sdhci_phys = *sdhci_object;
+
+	/* Finds the device tree; zero tells the drivers below that none came. */
+	fdt_object = hal_get_arch_handoff("rpi4.fdt");
+	fdt_phys = 0;
+	if (fdt_object != NULL)
+		fdt_phys = *fdt_object;
 
 	/* Publishes the serial console as /dev/console's output. */
 	drv_rpi4_console_init();
@@ -131,14 +146,14 @@ kern_platform_init(
 	partition_set_scheme(&drv_partition_scheme_mbr);
 	disk_registry_reset();
 #if CONFIG_DRIVER_BCM2711_WIFI
-	rpi4_sd_base = (uintptr_t)rpi4->sdhci_phys;
+	rpi4_sd_base = (uintptr_t)sdhci_phys;
 #endif
-	if (drv_rpi4_sdhci_init((uintptr_t)rpi4->sdhci_phys) != 0) {
+	if (drv_rpi4_sdhci_init((uintptr_t)sdhci_phys) != 0) {
 		/*
 		 * QEMU raspi4b currently attaches -drive if=sd to the legacy
 		 * Arasan controller, while real Pi 4 firmware boots from eMMC2.
 		 */
-		if (rpi4->sdhci_phys != 0xfe340000ULL)
+		if (sdhci_phys != 0xfe340000ULL)
 			return 0;
 		if (drv_rpi4_sdhci_init(0xfe300000ULL) != 0)
 			return 0;
@@ -150,15 +165,15 @@ kern_platform_init(
 
 #if CONFIG_DRIVER_BCM2711_WIFI || CONFIG_DRIVER_BCM2711_BT
 	/* Keeps the tree's address for the Wi-Fi and Bluetooth probes discovery starts later. */
-	rpi4_fdt_phys = rpi4->fdt_phys;
+	rpi4_fdt_phys = fdt_phys;
 #endif
 
 	/* Prepares the firmware mailbox and the GPIO block the drivers below share. */
-	prepare_shared_blocks(rpi4->fdt_phys);
+	prepare_shared_blocks(fdt_phys);
 
 #if CONFIG_DRIVER_BCM2711_GENET
 	/* Starts onboard Ethernet independently of USB and PCIe discovery. */
-	ethernet_error = drv_rpi4_ethernet_init(rpi4->fdt_phys);
+	ethernet_error = drv_rpi4_ethernet_init(fdt_phys);
 	if (ethernet_error != 0) {
 		kern_logf(
 			"genet: onboard Ethernet unavailable (%d)\n",
@@ -170,11 +185,11 @@ kern_platform_init(
 	 * Brings up PCIe and what sits behind it.  A board or emulator without
 	 * a usable controller boots without PCI devices.
 	 */
-	(void)drv_rpi4_pcie_init(rpi4->fdt_phys);
+	(void)drv_rpi4_pcie_init(fdt_phys);
 
 #if CONFIG_DRIVER_BCM2711_AUDIO
 	/* Publishes the headphone jack; a board without it boots without sound. */
-	(void)drv_rpi4_audio_init(rpi4->fdt_phys);
+	(void)drv_rpi4_audio_init(fdt_phys);
 #endif
 
 #if CONFIG_DRIVER_BCM2711_VCHIQ
@@ -182,7 +197,7 @@ kern_platform_init(
 	 * Starts the link to the VideoCore firmware's services before the GPU,
 	 * whose video decode uses it; a board without it boots without them.
 	 */
-	(void)drv_rpi4_vchiq_init(rpi4->fdt_phys);
+	(void)drv_rpi4_vchiq_init(fdt_phys);
 #endif
 #if CONFIG_DRIVER_BCM2711_VIDEO_PROBE
 	/* A test kernel publishes the decoder probe's device; a write to it runs the probe. */
@@ -202,7 +217,7 @@ kern_platform_init(
 	 * Finds the display path and the V3D engine.  A board or emulator
 	 * without them, or a boot with rpi4gpu.off=1, goes on without them.
 	 */
-	(void)drv_bcm2711_gpu_attach(rpi4->fdt_phys, &screen);
+	(void)drv_bcm2711_gpu_attach(fdt_phys, &screen);
 #endif
 
 	/* Publishes the SD card as the boot device. */

@@ -53,24 +53,31 @@ kern_platform_init(
 
 	count = 0;
 
-	/* Rejects a handoff that is not a PC-98 or Multiboot device table. */
+	/* Rejects a handoff that is not a common record with a device table. */
 	if (handoff == NULL ||
 	    devices == NULL ||
 	    capacity == 0 ||
 	    handoff->magic != KERN_HANDOFF_MAGIC ||
-	    (handoff->version != KERN_HANDOFF_VERSION_PC98 &&
-	     handoff->version != KERN_HANDOFF_VERSION_MULTIBOOT) ||
+	    handoff->version != KERN_HANDOFF_VERSION_MULTIBOOT ||
 	    handoff->size < sizeof(*handoff) ||
 	    handoff->device_count == 0 ||
 	    handoff->device_table == 0)
 		return 0;
 
-	/* A Multiboot handoff must name a primary MBR boot partition. */
-	if (handoff->version == KERN_HANDOFF_VERSION_MULTIBOOT &&
-	    (handoff->boot_partition_scheme != KERN_PARTITION_SCHEME_MBR ||
-	     handoff->boot_partition_index < 1 ||
-	     handoff->boot_partition_index > 4))
+	/*
+	 * The boot partition is a whole-disk LBA from the native loader or a
+	 * primary MBR partition from a Multiboot loader; nothing else names
+	 * a PC-98 root.
+	 */
+	if (handoff->boot_partition_scheme == KERN_PARTITION_SCHEME_MBR) {
+		/* An MBR boot partition must be one of the four primaries. */
+		if (handoff->boot_partition_index < 1 ||
+		    handoff->boot_partition_index > 4)
+			return 0;
+	} else if (handoff->boot_partition_scheme != KERN_PARTITION_SCHEME_LBA) {
+		/* Refuses a scheme no PC-98 loader reports. */
 		return 0;
+	}
 
 	/* Copies every present floppy, IDE, or SCSI entry that fits. */
 	initial = (const struct kern_boot_device *)handoff->device_table;
