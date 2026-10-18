@@ -9,7 +9,11 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [ws074-q20261018-08](queue.md) active（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+Queue: [ws074-q20261018-08](queue.md) finished（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+
+Event ws074-p244-q08-invalidated-minimum-redesign-20261018: [i02証拠](phase243/evidence/20261018-q08-i02/README.md)。full502の10 callback後退でi01初期clearanceをinvalidate、q08 uncleared。p244のminimum ruleをparse/cascade/layoutで保持する設計へ変更し、p221にinterface影響を記録。修正後p243が新attemptで再検証する。q07/q08 history/whole条件は維持。
+
+Event ws074-p245-planning-20261018: [p245](phase245/phase.md)を後続候補に追加。display:none/祖先noneでboxが無い場合のauto minimum resolved 0pxを、geometry unknownと区別して実装する計画。q08のscopeは不変。
 
 Event ws074-p244-q08-i01-clear-i02-start-20261018: [p244証拠](phase244/evidence/20261018-q08/README.md)。fixed-only host部分cleared、Chromium7/7・DOM27/27・静的Grid225→227/529・後退0。q07対象callback回復をp243の全502検証で確定する。p244 general minimum/autoとtarget等は残る。
 
@@ -86,7 +90,7 @@ Event ws074-p217-q1188-partial-clear-20261014: [p217](phase217/phase.md) q1188-i
 Event ws074-p217-q1187-partial-clear-20261014: [p217](phase217/phase.md) q1187-i01で固定縦rl Grid直接横RTL absolute子row2/col1 top insetにstatic areaを適用。[証拠](phase217/evidence/20261014-q1187/README.md)。独立矩形Chromium一致、固定non-static007縦rl callback whole PASS、水平2 callback PASS、縦lrは4番目子でfile whole FAIL継続。旧WPT/host/Acid3差0維持。次は縦lr4番目子、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
 
 Event ws074-p217-q1186-partial-clear-20261014: [p217](phase217/phase.md) q1186-i01で固定縦lr/rl Grid直接横LTR absolute子へrow1/col2 static areaとjustify-center Yを適用。[証拠](phase217/evidence/20261014-q1186/README.md)。独立2矩形Chromium一致、固定non-static007縦2 callback先頭2子全PASS、lrは4番目子・rlは3番目子でfile whole FAIL継続。旧WPT/host/Acid3差0維持。次は縦rl Gridの3番目RTL横子、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
-Resume point: q03 harness485 PASS、q06静的836 PASS。q07 Grid used CSSOMはwhole245→247、433 callback改善/1後退でuncleared。次はp244の固定行span修正と新p243 attemptで後退ゼロを検証。全3,805、runner未対応、p243 child/vertical、target/p100関門は残る。
+Resume point: q08はstatic Grid225→227ながら全502でminmax-autoの10 callback後退が判明しuncleared。次はp244のminimum metadata/guard eligibility修正と新p243再検証。q03 harness485、q06 static836、q07 Grid247の基準と各historyを維持。全3,805/runner未対応/target/p100関門は未達。
 <!-- awesome-plan-current:end -->
 
 Event ws074-p217-q1185-partial-clear-20261014: [p217](phase217/phase.md) q1185-i01で固定縦lr/rl Grid直接横LTR absolute子へrow1/col1 static areaとjustify-right Yを適用。[証拠](phase217/evidence/20261014-q1185/README.md)。独立2矩形Chromium一致、固定non-static007縦2 callback先頭子全PASS、2番目子でfile whole FAIL継続。旧WPT/host/Acid3差0維持。次は縦Grid2番目横子、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
@@ -649,8 +653,9 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p240](phase240/phase.md) | flex item の aspect-ratio、自動最小サイズと flex basis | uncleared / ws074-q20261018-01 host partial cleared（WPT142→149、後退0） | p172 engine・p234 ratio の実装 |
 | [ws074-p241](phase241/phase.md) | definiteなstretch cross sizeをflex ratioのbase/minimumへ渡す | uncleared / ws074-q20261018-02 host partial cleared、target pending | p234 ratio・p240 minimum |
 | [ws074-p242](phase242/phase.md) | ParentNode.replaceChildren、cleanupのDOM一般操作 | uncleared / q04・q05 host部分cleared、factory/iterator/target等残り | p189 q03のcleanup失敗の実測 |
-| [ws074-p243](phase243/phase.md) | Grid used trackのresolved CSSOM | in-progress / q08-i02全502再検証 | p221のsolver、p189 q03 raw・p190 q06診断 |
-| [ws074-p244](phase244/phase.md) | 固定Grid行spanのoverflow | uncleared / q08-i01 host部分cleared、general minimum等残り | p243 q07で露出したsolver不備 |
+| [ws074-p243](phase243/phase.md) | Grid used trackのresolved CSSOM | uncleared / q08-i02 callback10件未達 | p221のsolver、p189 q03 raw・p190 q06診断 |
+| [ws074-p244](phase244/phase.md) | 固定Grid行spanのoverflow | uncleared / q08初期clearance invalidated、minimum metadataへ | p243 q07で露出したsolver不備 |
+| [ws074-p245](phase245/phase.md) | no-boxのauto minimum resolved value | planned / Queue未選定 | p243/q08のGrid raw、actual box proof |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 

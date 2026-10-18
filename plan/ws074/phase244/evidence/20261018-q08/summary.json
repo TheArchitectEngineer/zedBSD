@@ -1,5 +1,5 @@
 {
-  "state": "i01 host partial cleared; i02 revalidation begins",
+  "state": "uncleared: initial host partial clearance invalidated by i02 ten callback regressions",
   "static_before": {
     "pass": 225,
     "fail": 304
@@ -30,5 +30,7 @@
     "indefinite percentage cycles",
     "large automatic minmax minimum floor",
     "target production link/runtime"
-  ]
+  ],
+  "initial_state": "i01 host partial cleared; i02 revalidation begins",
+  "followup": "phase243/evidence/20261018-q08-i02"
 }

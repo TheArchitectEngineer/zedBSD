@@ -1,6 +1,10 @@
 # WS074 lane の Past Log
 
-## 最新: ws074-q20261018-07（2026-10-18）
+## 最新: ws074-q20261018-08（2026-10-18）
+
+[履歴](ws074-q20261018-08.md)。独立7/7・静的Grid225→227は通ったが、full502でminmax(auto,0px)の10 callback後退が判明。i01 initial clearanceをinvalidateし、i02/Queueともuncleared。次はminimum rule metadataとeligibilityの修正。q07の値取得改善とknown historyは保持。共有投影pending。
+
+## ws074-q20261018-07（2026-10-18）
 
 [履歴](ws074-q20261018-07.md)。Grid resolved track CSSOMは独立14/14、DOM26/26、公式whole245→247・433 callback改善。一方1 callback後退が固定行spanの既存solver不備を露出し、q07 uncleared。次はp244修正→p243新attemptで全502照合。Acid3差0/Acid2差873、host/target compile warning0。共有投影pending。
 

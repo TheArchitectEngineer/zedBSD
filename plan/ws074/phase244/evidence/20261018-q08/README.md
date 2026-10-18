@@ -1,4 +1,4 @@
-# q08-i01 fixed-only Grid row span / host partial cleared
+# q08-i01 fixed-only Grid row span / initial host partial clearance
 
 2026-10-18。grid_size_rowsのspan加算前に、horizontalかつ全行がpx/definite %の固定trackならcontent overflowへ進むguardを追加。end計算はrow_countで上限を先に取り、index加算overflowを避ける。mixed/auto/indefinite %/frは既存の処理へ渡す。公開ABI/solverの他の分配式は変更しない。
 
@@ -11,3 +11,7 @@ controlsのauto-auto/indef-percentは前後同一で、Chromiumとの差は未�
 DOM27/27、host build warning0、production amd64 Grid単体compile warning0、C全文の新helper/変更paragraph review・clang-format19.1.7・diff check。style candidateは138→138（既存領域のみ）。source-final buildで最終commentを含むsourceをcompileし、i02のbinaryはfinal/に固定。i01のstatic rawは同じ論理codeでcomment追加前のbinaryを使用した。Acid3 score100/差0、Acid2差873。production link/target runtimeは未実施。
 
 q08-i01 host partial cleared、verified outputをp243 q08-i02へ渡す。i02が全Grid502/全callbackを再検証するまでp243の未達回復は確定しない。q07 historyはunclearedのまま保持。Master/共有Queue/GitHub projection pending。
+
+## Later follow-up（2026-10-18）
+
+i02の全callback比較でminmax(auto,0px)の10後退が判明し、このinitial clearanceをinvalidateした。current outcomeはuncleared。初期7条件/静的529の結果はそのまま保持する。[i02証拠](../../../phase243/evidence/20261018-q08-i02/README.md)とp244 current recordを参照。

@@ -1,0 +1,182 @@
+{
+  "total": 502,
+  "before_whole": {
+    "pass": 247,
+    "fail": 255
+  },
+  "after_whole": {
+    "pass": 247,
+    "fail": 255
+  },
+  "new_pass": [],
+  "whole_regressions": [],
+  "callbacks_before": {
+    "0": 6410,
+    "1": 4595
+  },
+  "callbacks_after": {
+    "0": 6409,
+    "1": 4596
+  },
+  "callback_improvements": [
+    [
+      "/css/css-grid/grid-items/grid-minimum-size-grid-items-025.html",
+      [
+        ".grid 2",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/grid-items/grid-minimum-size-grid-items-025.html",
+      [
+        ".grid 3",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/grid-items/grid-minimum-size-grid-items-025.html",
+      [
+        ".grid 4",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/grid-items/grid-minimum-size-grid-items-025.html",
+      [
+        ".grid 5",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/grid-items/grid-minimum-size-grid-items-025.html",
+      [
+        ".grid 17",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/grid-items/grid-minimum-size-grid-items-025.html",
+      [
+        ".grid 18",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/grid-items/grid-minimum-size-grid-items-025.html",
+      [
+        ".grid 19",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/grid-items/grid-minimum-size-grid-items-025.html",
+      [
+        ".grid 20",
+        0
+      ]
+    ],
+    [
+      "/css/css-grid/layout-algorithm/grid-intrinsic-track-sizes-001.html",
+      [
+        "'grid' with: grid-template-columns: minmax(auto, 10px) minmax(auto, 10px); and grid-template-rows: minmax(auto, 10px) minmax(auto, 10px);",
+        0
+      ]
+    ]
+  ],
+  "callback_regressions": [
+    [
+      "/css/css-grid/grid-items/grid-minimum-size-grid-items-025.html",
+      [
+        ".grid 6",
+        0
+      ],
+      "",
+      "assert_equals: \n<div class=\"grid\" style=\"grid-template-rows: minmax(auto, 0px) minmax(auto, 0px);\">\n  <div class=\"verticalLR\" data-expected-height=\"10\" style=\"height: 10px;\">XXXXXXXXXX</div>\n  <div data-expected-height=\"10\"></div>\n</div>\nheight expected 10 but got 0"
+    ],
+    [
+      "/css/css-grid/grid-items/grid-minimum-size-grid-items-025.html",
+      [
+        ".grid 8",
+        0
+      ],
+      "",
+      "assert_equals: \n<div class=\"grid\" style=\"grid-template-rows: minmax(auto, 0px) minmax(auto, 0px);\">\n  <div class=\"verticalLR\" data-expected-height=\"0\" style=\"margin: 5px 0px;\"></div>\n  <div data-expected-height=\"10\"></div>\n</div>\nheight expected 10 but got 0"
+    ],
+    [
+      "/css/css-grid/grid-items/grid-minimum-size-grid-items-025.html",
+      [
+        ".grid 10",
+        0
+      ],
+      "",
+      "assert_equals: \n<div class=\"grid\" style=\"grid-template-rows: minmax(auto, 0px) minmax(auto, 0px);\">\n  <div class=\"verticalLR\" data-expected-height=\"10\" style=\"padding: 5px 0px;\"></div>\n  <div data-expected-height=\"10\"></div>\n</div>\nheight expected 10 but got 0"
+    ],
+    [
+      "/css/css-grid/grid-items/grid-minimum-size-grid-items-025.html",
+      [
+        ".grid 12",
+        0
+      ],
+      "",
+      "assert_equals: \n<div class=\"grid\" style=\"grid-template-rows: minmax(auto, 0px) minmax(auto, 0px);\">\n  <div class=\"verticalLR\" data-expected-height=\"10\" style=\"border: solid 5px blue;\"></div>\n  <div data-expected-height=\"10\"></div>\n</div>\nheight expected 10 but got 0"
+    ],
+    [
+      "/css/css-grid/grid-items/grid-minimum-size-grid-items-025.html",
+      [
+        ".grid 14",
+        0
+      ],
+      "",
+      "assert_equals: \n<div class=\"grid\" style=\"grid-template-rows: minmax(auto, 0px) minmax(auto, 0px);\">\n  <div class=\"verticalLR\" data-expected-height=\"8\" style=\"height: 4px; margin: 1px; padding: 1px; border: solid 1px blue;\"></div>\n  <div data-expected-height=\"10\"></div>\n</div>\nheight expected 10 but got 0"
+    ],
+    [
+      "/css/css-grid/grid-items/grid-minimum-size-grid-items-025.html",
+      [
+        ".grid 21",
+        0
+      ],
+      "",
+      "assert_equals: \n<div class=\"grid\" style=\"grid-template-rows: minmax(auto, 0px) minmax(auto, 0px);\">\n  <div class=\"verticalRL\" data-expected-height=\"10\" style=\"height: 10px;\">XXXXXXXXXX</div>\n  <div data-expected-height=\"10\"></div>\n</div>\nheight expected 10 but got 0"
+    ],
+    [
+      "/css/css-grid/grid-items/grid-minimum-size-grid-items-025.html",
+      [
+        ".grid 23",
+        0
+      ],
+      "",
+      "assert_equals: \n<div class=\"grid\" style=\"grid-template-rows: minmax(auto, 0px) minmax(auto, 0px);\">\n  <div class=\"verticalRL\" data-expected-height=\"0\" style=\"margin: 5px 0px;\"></div>\n  <div data-expected-height=\"10\"></div>\n</div>\nheight expected 10 but got 0"
+    ],
+    [
+      "/css/css-grid/grid-items/grid-minimum-size-grid-items-025.html",
+      [
+        ".grid 25",
+        0
+      ],
+      "",
+      "assert_equals: \n<div class=\"grid\" style=\"grid-template-rows: minmax(auto, 0px) minmax(auto, 0px);\">\n  <div class=\"verticalRL\" data-expected-height=\"10\" style=\"padding: 5px 0px;\"></div>\n  <div data-expected-height=\"10\"></div>\n</div>\nheight expected 10 but got 0"
+    ],
+    [
+      "/css/css-grid/grid-items/grid-minimum-size-grid-items-025.html",
+      [
+        ".grid 27",
+        0
+      ],
+      "",
+      "assert_equals: \n<div class=\"grid\" style=\"grid-template-rows: minmax(auto, 0px) minmax(auto, 0px);\">\n  <div class=\"verticalRL\" data-expected-height=\"10\" style=\"border: solid 5px blue;\"></div>\n  <div data-expected-height=\"10\"></div>\n</div>\nheight expected 10 but got 0"
+    ],
+    [
+      "/css/css-grid/grid-items/grid-minimum-size-grid-items-025.html",
+      [
+        ".grid 29",
+        0
+      ],
+      "",
+      "assert_equals: \n<div class=\"grid\" style=\"grid-template-rows: minmax(auto, 0px) minmax(auto, 0px);\">\n  <div class=\"verticalRL\" data-expected-height=\"8\" style=\"height: 4px; margin: 1px; padding: 1px; border: solid 1px blue;\"></div>\n  <div data-expected-height=\"10\"></div>\n</div>\nheight expected 10 but got 0"
+    ]
+  ],
+  "missing": [],
+  "extra": [],
+  "name_order_changed": [],
+  "eligible_sha256": "5fa65ed37998a0958da75da5dc9a69f85bd26a05c2f64a118072c7527f56af23"
+}

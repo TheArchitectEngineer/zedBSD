@@ -1,0 +1,38 @@
+[
+  {
+    "offset": 0,
+    "exit": 0,
+    "seconds": 75.3,
+    "counts": {
+      "fail": 42,
+      "pass": 86
+    }
+  },
+  {
+    "offset": 128,
+    "exit": 0,
+    "seconds": 149.7,
+    "counts": {
+      "fail": 60,
+      "pass": 68
+    }
+  },
+  {
+    "offset": 256,
+    "exit": 0,
+    "seconds": 230.3,
+    "counts": {
+      "fail": 68,
+      "pass": 60
+    }
+  },
+  {
+    "offset": 384,
+    "exit": 0,
+    "seconds": 298.5,
+    "counts": {
+      "fail": 85,
+      "pass": 33
+    }
+  }
+]

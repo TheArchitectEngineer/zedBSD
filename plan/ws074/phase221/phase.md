@@ -121,3 +121,7 @@ Event ws074-p221-q1130-partial-clear-20261014: [証拠](evidence/20261014-q1130/
 ## q1132-i01 結果（2026-10-14 10:13 JST）
 
 Event ws074-p221-q1132-i01-partial-clear-20261014: [証拠](evidence/20261014-q1132/README.md)。単一auto/非負pxのauto-columns/rowsをparse/style/指定・computed CSSOMへ通し、initial/unset/inheritを確認。固定valid各0→3/30、computed各0→3/25 subtest、invalid列16/16・行15/15 whole PASS維持、後退0。最小host・CSS51/JS14・warning0 build。q1132-i01部分cleared、p222-i02へ検証済みCSS stateを渡す。p221/p189/p173全件100%未達、共有投影/GitHub publication保留。
+
+## p244のminimum metadata redesign（2026-10-18）
+
+Event ws074-p221-p244-minimum-rule-interface-20261018: [p244](../phase244/phase.md)のrow guardで、plain fixed lengthとminmaxのautomatic/intrinsic lower boundの区別が必要と判明。次の有限Queueでcss_declared_track/css_trackへminimum ruleを保持し、parse→cascadeで渡す設計とする。新grammarやp221のwhole受け入れを縮めず、既存valid/invalid/serializationを維持する検証を行う。p243はこの出力後に全Grid502を再検証する。[WS summary](../ws.md)。設計の記録であり、このPhaseの実行Queueを増やさない。共有投影pending。
