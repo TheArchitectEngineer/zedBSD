@@ -128,5 +128,6 @@
 | P3 / 2026-10-18 | phase-runner | WS261 p001（q1254） | `/home/awe/zedBSD-worktrees/p3` / `agent/p3-q1254` | q1254 | — | returned（2026-10-18、T1-709 待ち） | 最後 545525e4a → main a0ae568de |
 | P1 / 2026-10-18 (6) | phase-runner（Opus 5.5、low、子なし） | WS260 p011〜（q1253-i02）→ WS244 の残り | `/home/awe/zedBSD-worktrees/p1` / `agent/p1-q1253` | q1253-i02 | WS244 p004〜、q1246 | returned（2026-10-18、T1-710 待ち） | 最後 27a59b24a → main 9978ce98d |
 | P3 / 2026-10-18 (2) | phase-runner | WS261 p002 sparcv9（q1255） | `/home/awe/zedBSD-worktrees/p3` / `agent/p3-q1255` | q1255 | — | returned（2026-10-18） | 最後 c7c0f5c6a → main 49f7fc9a5 |
-| P2 / 2026-10-18 (4) | phase-runner | WS262 p001 boot loader の規約（q1256） | `/home/awe/zedBSD-worktrees/p2` / `agent/p2-q1256` | q1256 | WS256 p008（未承認） | running | 基点 main 86745dbc1 |
+| P2 / 2026-10-18 (4) | phase-runner | WS262 p001 boot loader の規約（q1256） | `/home/awe/zedBSD-worktrees/p2` / `agent/p2-q1256` | q1256 | WS256 p008（未承認） | returned（2026-10-19、T1-712 待ち） | 最後 7108fb9db → main 9c3033b2b |
 | P1 / 2026-10-18 (7) | phase-runner（Opus 5.5、low、子なし） | WS263 → WS266 → WS264 → WS265（q1257） | `/home/awe/zedBSD-worktrees/p1` / `agent/p1-q1257` | q1257 | — | running | 基点 main bcb7d47f1 |
+| P2 / 2026-10-19 | phase-runner（子なし） | WS267 → WS268 → WS259（q1258）→ q1259 | `/home/awe/zedBSD-worktrees/p2` / `agent/p2-q1258` | q1258 | q1259 | running | 基点 main 9c3033b2b |
