@@ -168,6 +168,7 @@ struct i915_xd9_dpll_words {
 
 uint32_t drv_i915_xd9_cdclk_khz(uint32_t lcpll1_ctl, uint32_t dpll_ctrl1, uint32_t cdclk_ctl);
 int drv_i915_xd9_dpll_dp_words(uint32_t port_khz, struct i915_xd9_dpll_words *words);
+uint32_t drv_i915_xd9_dpll_rate_port_khz(uint32_t code);
 int drv_i915_xd9_dpll_hdmi_words(uint32_t pixel_khz, struct i915_xd9_dpll_words *words);
 int drv_i915_xd9_dpll_enable(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned id, const struct i915_xd9_dpll_words *words);
 void drv_i915_xd9_dpll_disable(struct i915_xd_io *io, const struct i915_xd_platform *platform, unsigned id);

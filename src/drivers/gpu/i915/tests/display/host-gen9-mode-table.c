@@ -21,6 +21,8 @@
 
 #include "../../display/gen9-backlight.h"
 #include "../../display/gen9-flip.h"
+#include "../../display/xd-clock.h"
+#include "../../display/xd-takeover.h"
 #include "../../display/gen9-mode.h"
 #include "../../display/gen9-outputs.h"
 #include "../../device-info.h"
@@ -48,8 +50,8 @@ static void i915_table_pwm(FILE *out);
 static void i915_table_readout(FILE *out);
 static void i915_table_flip_numbers(FILE *out);
 static void i915_table_print_wm(FILE *out, unsigned row, int error, const struct i915_skl_pipe_wm pipes[3]);
-static void i915_table_print_readout(FILE *out, unsigned row, int error, const struct i915_skl_readout *readout);
-static void i915_table_sv7(struct i915_skl_registers *registers);
+static void i915_table_print_readout(FILE *out, unsigned row, int error, const struct i915_xd9_fw_readout *readout);
+static void i915_table_sv7(struct i915_xd9_fw_registers *registers);
 static uint32_t i915_table_random(void);
 
 /*
@@ -558,8 +560,8 @@ static void
 i915_table_readout(
 	FILE *out)
 {
-	struct i915_skl_registers registers;
-	struct i915_skl_readout readout;
+	struct i915_xd9_fw_registers registers;
+	struct i915_xd9_fw_readout readout;
 	uint32_t *words;
 	unsigned sample;
 	unsigned changes;
@@ -571,7 +573,7 @@ i915_table_readout(
 	/* The SV7 itself. */
 	i915_table_sv7(&registers);
 	memset(&readout, 0, sizeof(readout));
-	error = drv_i915_skl_readout_decode(&registers, &readout);
+	error = drv_i915_xd9_fw_decode(&registers, &readout);
 	i915_table_print_readout(out, 0U, error, &readout);
 
 	/* Each sample: the SV7 with one to three words flipped in one bit, or replaced. */
@@ -591,7 +593,7 @@ i915_table_readout(
 
 		/* The decode of the changed registers. */
 		memset(&readout, 0, sizeof(readout));
-		error = drv_i915_skl_readout_decode(&registers, &readout);
+		error = drv_i915_xd9_fw_decode(&registers, &readout);
 		i915_table_print_readout(out, sample, error, &readout);
 	}
 }
@@ -614,7 +616,7 @@ i915_table_flip_numbers(
 
 	/* The port clock of every DPLL_CTRL1 link rate code. */
 	for (rate = 0U; rate < 8U; rate++)
-		fprintf(out, "port_khz %u %u\n", rate, drv_i915_skl_port_khz(rate));
+		fprintf(out, "port_khz %u %u\n", rate, drv_i915_xd9_dpll_rate_port_khz(rate));
 
 	/* The pixel clock of pseudo-random link M and N on the DP port clocks. */
 	for (sample = 0U; sample < I915_TABLE_SAMPLES / 4U; sample++) {
@@ -622,8 +624,8 @@ i915_table_flip_numbers(
 		link_n = i915_table_random() & 0xffffffU;
 		if ((sample % 9U) == 0U)
 			link_n = 0U;
-		port_khz = drv_i915_skl_port_khz(i915_table_random() % 6U);
-		fprintf(out, "pixel_khz %u %u %u %u\n", link_m, link_n, port_khz, drv_i915_skl_dp_pixel_khz(link_m, link_n, port_khz));
+		port_khz = drv_i915_xd9_dpll_rate_port_khz(i915_table_random() % 6U);
+		fprintf(out, "pixel_khz %u %u %u %u\n", link_m, link_n, port_khz, drv_i915_xd9_dp_pixel_khz(link_m, link_n, port_khz));
 	}
 }
 
@@ -677,7 +679,7 @@ i915_table_print_readout(
 	FILE *out,
 	unsigned row,
 	int error,
-	const struct i915_skl_readout *readout)
+	const struct i915_xd9_fw_readout *readout)
 {
 	const char *reason;
 
@@ -715,7 +717,7 @@ i915_table_print_readout(
  */
 static void
 i915_table_sv7(
-	struct i915_skl_registers *registers)
+	struct i915_xd9_fw_registers *registers)
 {
 	memset(registers, 0, sizeof(*registers));
 

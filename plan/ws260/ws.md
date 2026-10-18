@@ -31,7 +31,7 @@
 | [p010](phase010/phase.md) | DDI buffer・signal level・iboost・DP_TP と link training を xd-ddi・xd-dp へ（gen9-link.c を殻に） | in-progress（q1253、P1） |
 | [p011](phase011/phase.md) | transcoder・pipe・plane の点灯と消灯を xd-pipe へ（gen9-modeset.c の残り） | in-progress（q1253、P1） |
 | [p012](phase012/phase.md) | WM・DDB の書き込みと順序、hotplug の sense を xd-dbuf・xd-hpd へ | in-progress（q1253、P1） |
-| p013 | firmware の点検と flip（firmware の panel の引き継ぎ、plane の flip、irq）を xd-takeover・xd-screen の display 9 の方針へ（gen9-firmware.c・gen9-flip.c） | planned（6 LW） |
+| [p013](phase013/phase.md) | firmware の点検と flip（firmware の panel の引き継ぎ、plane の flip、irq）を xd-takeover・xd-screen の display 9 の方針へ（gen9-firmware.c・gen9-flip.c） | in-progress（q1253、P1） |
 | p014 | 外の display（gen9-node・gen9-outputs・gen9-display）を xd-screen・xd-display の口へ。bootfb.c・i915.c・device.c・display.c の呼び先を xd に付け替え、殻を全部消す | planned（6 LW） |
 | p015 | 規約の全文の見直し、写しの点検（§1.2 の方法を新しい code に）、T1 に SV7 と 5330 の実機の回帰を 1 回 | planned（3 LW） |
 

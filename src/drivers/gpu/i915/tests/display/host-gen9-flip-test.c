@@ -21,6 +21,8 @@
 #include "host-test.h"
 
 #include "../../display/gen9-flip.h"
+#include "../../display/xd-clock.h"
+#include "../../display/xd-takeover.h"
 #include "../../intel/display-regs-gen9.h"
 
 #include <uapi/errno.h>
@@ -28,11 +30,11 @@
 #include <stdio.h>
 #include <string.h>
 
-static void i915_host_skl_sv7(struct i915_skl_registers *registers);
+static void i915_host_skl_sv7(struct i915_xd9_fw_registers *registers);
 static void i915_host_skl_accepted(void);
 static void i915_host_skl_variants(void);
 static void i915_host_skl_refused(void);
-static void i915_host_skl_refusal(const struct i915_skl_registers *registers, const char *reason);
+static void i915_host_skl_refusal(const struct i915_xd9_fw_registers *registers, const char *reason);
 static void i915_host_skl_clocks(void);
 static void i915_host_skl_window(void);
 
@@ -70,7 +72,7 @@ main(void)
  */
 static void
 i915_host_skl_sv7(
-	struct i915_skl_registers *registers)
+	struct i915_xd9_fw_registers *registers)
 {
 	memset(registers, 0, sizeof(*registers));
 
@@ -113,13 +115,13 @@ i915_host_skl_sv7(
 static void
 i915_host_skl_accepted(void)
 {
-	struct i915_skl_registers registers;
-	struct i915_skl_readout readout;
+	struct i915_xd9_fw_registers registers;
+	struct i915_xd9_fw_readout readout;
 	int error;
 
 	/* The SV7: pipe A on transcoder EDP, 1920x1200, 59.95 Hz measured. */
 	i915_host_skl_sv7(&registers);
-	error = drv_i915_skl_readout_decode(&registers, &readout);
+	error = drv_i915_xd9_fw_decode(&registers, &readout);
 	i915_host_check(error == 0 && readout.reason == NULL, "sv7: flips accepted");
 	i915_host_check(readout.lit_pipes == 1U && readout.pipe == 0U && readout.transcoder == I915_SKL_TRANSCODER_EDP, "sv7: pipe A from transcoder EDP");
 	i915_host_check(readout.width == 1920U && readout.height == 1200U && readout.stride_bytes == 7680U, "sv7: 1920x1200, 7680 bytes a row");
@@ -132,14 +134,14 @@ i915_host_skl_accepted(void)
 static void
 i915_host_skl_variants(void)
 {
-	struct i915_skl_registers registers;
-	struct i915_skl_readout readout;
+	struct i915_xd9_fw_registers registers;
+	struct i915_xd9_fw_readout readout;
 	int error;
 
 	/* eDP input A always-on also names pipe A. */
 	i915_host_skl_sv7(&registers);
 	registers.ddi_func[I915_SKL_TRANSCODER_EDP] = 0x80000000U | (2U << 24) | (0U << 12);
-	error = drv_i915_skl_readout_decode(&registers, &readout);
+	error = drv_i915_xd9_fw_decode(&registers, &readout);
 	i915_host_check(error == 0 && readout.pipe == 0U, "edp input A always-on: pipe A");
 
 	/* eDP input B moves the panel to pipe B, whose plane is then the one flipped. */
@@ -149,7 +151,7 @@ i915_host_skl_variants(void)
 	registers.plane_stride[1] = registers.plane_stride[0];
 	registers.plane_size[1] = registers.plane_size[0];
 	registers.plane_ctl[0] = 0U;
-	error = drv_i915_skl_readout_decode(&registers, &readout);
+	error = drv_i915_xd9_fw_decode(&registers, &readout);
 	i915_host_check(error == 0 && readout.pipe == 1U && readout.transcoder == I915_SKL_TRANSCODER_EDP, "edp input B: pipe B");
 
 	/* An external display alone on transcoder B (HDMI): pipe B, refresh assumed. */
@@ -162,20 +164,20 @@ i915_host_skl_variants(void)
 	registers.plane_stride[1] = registers.plane_stride[0];
 	registers.plane_size[1] = registers.plane_size[0];
 	registers.plane_ctl[0] = 0U;
-	error = drv_i915_skl_readout_decode(&registers, &readout);
+	error = drv_i915_xd9_fw_decode(&registers, &readout);
 	i915_host_check(error == 0 && readout.pipe == 1U && readout.transcoder == 1U, "hdmi on transcoder B: pipe B");
-	i915_host_check(readout.refresh_measured == 0 && readout.refresh_millihz == I915_GEN9_FLIP_REFRESH_ASSUMED, "hdmi: refresh assumed");
+	i915_host_check(readout.refresh_measured == 0 && readout.refresh_millihz == I915_XD9_FW_REFRESH_ASSUMED, "hdmi: refresh assumed");
 
 	/* R G B X order. */
 	i915_host_skl_sv7(&registers);
 	registers.plane_ctl[0] |= I915_SKL_PLANE_CTL_ORDER_RGBX;
-	error = drv_i915_skl_readout_decode(&registers, &readout);
+	error = drv_i915_xd9_fw_decode(&registers, &readout);
 	i915_host_check(error == 0 && readout.rgbx == 1, "rgbx order accepted");
 
 	/* A scaled firmware mode is flipped as it is. */
 	i915_host_skl_sv7(&registers);
 	registers.scaler[0][0] = I915_SKL_PS_SCALER_EN;
-	error = drv_i915_skl_readout_decode(&registers, &readout);
+	error = drv_i915_xd9_fw_decode(&registers, &readout);
 	i915_host_check(error == 0 && readout.scaled == 1, "scaler on: accepted, scaled");
 
 	/* A padded stride and a surface higher up the GGTT. */
@@ -183,31 +185,31 @@ i915_host_skl_variants(void)
 	registers.plane_stride[0] = 128U;
 	registers.plane_surf[0] = 0x00400000U;
 	registers.plane_surflive[0] = 0x00400000U;
-	error = drv_i915_skl_readout_decode(&registers, &readout);
+	error = drv_i915_xd9_fw_decode(&registers, &readout);
 	i915_host_check(error == 0 && readout.stride_bytes == 8192U && readout.surf == 0x00400000U, "padded stride, surface at 4 MiB");
 
 	/* DDI A's clock not overridden in DPLL_CTRL2: refresh assumed. */
 	i915_host_skl_sv7(&registers);
 	registers.dpll_ctrl2 = 0U;
-	error = drv_i915_skl_readout_decode(&registers, &readout);
-	i915_host_check(error == 0 && readout.refresh_measured == 0 && readout.refresh_millihz == I915_GEN9_FLIP_REFRESH_ASSUMED, "no ddi clock override: refresh assumed");
+	error = drv_i915_xd9_fw_decode(&registers, &readout);
+	i915_host_check(error == 0 && readout.refresh_measured == 0 && readout.refresh_millihz == I915_XD9_FW_REFRESH_ASSUMED, "no ddi clock override: refresh assumed");
 
 	/* DPLL0 in HDMI mode: refresh assumed. */
 	i915_host_skl_sv7(&registers);
 	registers.dpll_ctrl1 |= 1U << 5;
-	error = drv_i915_skl_readout_decode(&registers, &readout);
+	error = drv_i915_xd9_fw_decode(&registers, &readout);
 	i915_host_check(error == 0 && readout.refresh_measured == 0, "hdmi-mode dpll: refresh assumed");
 
 	/* A link N of zero: refresh assumed. */
 	i915_host_skl_sv7(&registers);
 	registers.link_n[I915_SKL_TRANSCODER_EDP] = 0U;
-	error = drv_i915_skl_readout_decode(&registers, &readout);
+	error = drv_i915_xd9_fw_decode(&registers, &readout);
 	i915_host_check(error == 0 && readout.refresh_measured == 0 && readout.pixel_khz == 0U, "link n 0: refresh assumed");
 
 	/* A link M that gives an impossible refresh: assumed. */
 	i915_host_skl_sv7(&registers);
 	registers.link_m[I915_SKL_TRANSCODER_EDP] = 0x00ffffffU;
-	error = drv_i915_skl_readout_decode(&registers, &readout);
+	error = drv_i915_xd9_fw_decode(&registers, &readout);
 	i915_host_check(error == 0 && readout.refresh_measured == 0, "out-of-range refresh: assumed");
 
 	/* Power well 2 down: only the eDP transcoder and pipe A were read, which is enough. */
@@ -218,7 +220,7 @@ i915_host_skl_variants(void)
 	registers.transcoder_read[2] = 0;
 	registers.pipe_read[1] = 0;
 	registers.pipe_read[2] = 0;
-	error = drv_i915_skl_readout_decode(&registers, &readout);
+	error = drv_i915_xd9_fw_decode(&registers, &readout);
 	i915_host_check(error == 0 && readout.pipe == 0U, "pw2 down: pipe A still flipped");
 }
 
@@ -226,7 +228,7 @@ i915_host_skl_variants(void)
 static void
 i915_host_skl_refused(void)
 {
-	struct i915_skl_registers registers;
+	struct i915_xd9_fw_registers registers;
 
 	/* Power well 1 down. */
 	i915_host_skl_sv7(&registers);
@@ -321,16 +323,16 @@ i915_host_skl_refused(void)
 /* Checks that the registers are refused for the given reason. */
 static void
 i915_host_skl_refusal(
-	const struct i915_skl_registers *registers,
+	const struct i915_xd9_fw_registers *registers,
 	const char *reason)
 {
-	struct i915_skl_readout readout;
+	struct i915_xd9_fw_readout readout;
 	char what[96];
 	int same;
 	int error;
 
 	/* Decodes and compares the reason. */
-	error = drv_i915_skl_readout_decode(registers, &readout);
+	error = drv_i915_xd9_fw_decode(registers, &readout);
 	snprintf(what, sizeof(what), "refused: %s", reason);
 	same = 0;
 	if (readout.reason != NULL)
@@ -345,18 +347,18 @@ static void
 i915_host_skl_clocks(void)
 {
 	/* Every link rate's port clock is twice its link clock; an unknown rate has none. */
-	i915_host_check(drv_i915_skl_port_khz(I915_SKL_LINK_RATE_810) == 162000U, "port clock RBR 162 MHz");
-	i915_host_check(drv_i915_skl_port_khz(I915_SKL_LINK_RATE_1350) == 270000U, "port clock HBR 270 MHz");
-	i915_host_check(drv_i915_skl_port_khz(I915_SKL_LINK_RATE_2700) == 540000U, "port clock HBR2 540 MHz");
-	i915_host_check(drv_i915_skl_port_khz(I915_SKL_LINK_RATE_1080) == 216000U, "port clock 216 MHz");
-	i915_host_check(drv_i915_skl_port_khz(I915_SKL_LINK_RATE_1620) == 324000U, "port clock 324 MHz");
-	i915_host_check(drv_i915_skl_port_khz(I915_SKL_LINK_RATE_2160) == 432000U, "port clock 432 MHz");
-	i915_host_check(drv_i915_skl_port_khz(7U) == 0U, "unknown rate: no clock");
+	i915_host_check(drv_i915_xd9_dpll_rate_port_khz(I915_SKL_LINK_RATE_810) == 162000U, "port clock RBR 162 MHz");
+	i915_host_check(drv_i915_xd9_dpll_rate_port_khz(I915_SKL_LINK_RATE_1350) == 270000U, "port clock HBR 270 MHz");
+	i915_host_check(drv_i915_xd9_dpll_rate_port_khz(I915_SKL_LINK_RATE_2700) == 540000U, "port clock HBR2 540 MHz");
+	i915_host_check(drv_i915_xd9_dpll_rate_port_khz(I915_SKL_LINK_RATE_1080) == 216000U, "port clock 216 MHz");
+	i915_host_check(drv_i915_xd9_dpll_rate_port_khz(I915_SKL_LINK_RATE_1620) == 324000U, "port clock 324 MHz");
+	i915_host_check(drv_i915_xd9_dpll_rate_port_khz(I915_SKL_LINK_RATE_2160) == 432000U, "port clock 432 MHz");
+	i915_host_check(drv_i915_xd9_dpll_rate_port_khz(7U) == 0U, "unknown rate: no clock");
 
 	/* The pixel clock rounds up, and a zero N gives none. */
-	i915_host_check(drv_i915_skl_dp_pixel_khz(299038U, 0x80000U, 270000U) == 154000U, "pixel 154000 kHz from m/n");
-	i915_host_check(drv_i915_skl_dp_pixel_khz(1U, 3U, 2U) == 1U, "pixel rounds up");
-	i915_host_check(drv_i915_skl_dp_pixel_khz(5U, 0U, 270000U) == 0U, "pixel with n 0: none");
+	i915_host_check(drv_i915_xd9_dp_pixel_khz(299038U, 0x80000U, 270000U) == 154000U, "pixel 154000 kHz from m/n");
+	i915_host_check(drv_i915_xd9_dp_pixel_khz(1U, 3U, 2U) == 1U, "pixel rounds up");
+	i915_host_check(drv_i915_xd9_dp_pixel_khz(5U, 0U, 270000U) == 0U, "pixel with n 0: none");
 }
 
 /* Checks the display window two buffers need. */

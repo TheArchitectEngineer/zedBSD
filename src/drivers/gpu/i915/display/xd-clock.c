@@ -749,6 +749,26 @@ drv_i915_xd9_dpll_dp_words(
 }
 
 /*
+ * Reports the DisplayPort port clock in kHz a DPLL_CTRL1 rate code gives,
+ * or zero for a code that names none.
+ */
+uint32_t
+drv_i915_xd9_dpll_rate_port_khz(
+	uint32_t code)
+{
+	unsigned index;
+
+	/* The code's row. */
+	for (index = 0U; index < sizeof(i915_xd9_link_rates) / sizeof(i915_xd9_link_rates[0]); index++) {
+		if (i915_xd9_link_rates[index].code == code)
+			return i915_xd9_link_rates[index].port_khz;
+	}
+
+	/* Succeeded in learning that the code names no rate. */
+	return 0U;
+}
+
+/*
  * Computes the DPLL words of an HDMI pixel clock on display 9.
  *
  * In HDMI mode the DPLL's DCO runs at a multiple of the AFE clock (five

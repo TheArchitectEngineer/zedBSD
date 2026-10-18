@@ -245,4 +245,126 @@ struct i915_xd_sanitize_report {
 void drv_i915_xd_firmware_sanitize(struct i915_xd_io *io, const struct i915_xd_platform *platform, const struct i915_xd_dmc *dmc, const struct i915_xd_firmware *firmware, struct i915_xd_sanitize_report *report);
 int drv_i915_xd_vga_off(struct i915_xd_io *io, int (*screen_off)(void *context), void *context);
 
+/*
+ * ==== Display 9: the firmware's display as the flips read it ====
+ */
+
+/* The transcoders (A, B, C, and EDP as 3) and pipes display 9 has. */
+#define I915_XD9_FW_TRANSCODERS		4U
+#define I915_XD9_FW_PIPES		3U
+
+/* The refresh reported when the firmware's timing cannot be read, in millihertz. */
+#define I915_XD9_FW_REFRESH_ASSUMED	60000U
+
+/* The largest side a surface the flips stand in for may have. */
+#define I915_XD9_FW_MAX_SIDE		8192U
+
+/*
+ * The display 9 registers the firmware left, as read before anything is
+ * written (drv_i915_xd9_fw_read(), or a host test by hand).  A transcoder
+ * or a pipe whose power well is down is not read and its fields stay
+ * zero.  The transcoders are A, B, C and EDP (3); the pipes A, B and C.
+ */
+struct i915_xd9_fw_registers {
+	/* The power wells' state, the DC states the DMC may enter, and the CD clock. */
+	uint32_t power;
+	uint32_t dc_state;
+	uint32_t cdclk;
+
+	/* The DPLL link rates and the DDI ports' clock selects. */
+	uint32_t dpll_ctrl1;
+	uint32_t dpll_ctrl2;
+
+	/* Every transcoder: whether it was read, its DDI function, configuration, totals and DP link M and N. */
+	int transcoder_read[4];
+	uint32_t ddi_func[4];
+	uint32_t transconf[4];
+	uint32_t htotal[4];
+	uint32_t vtotal[4];
+	uint32_t link_m[4];
+	uint32_t link_n[4];
+
+	/* The eDP transcoder's PSR control, and the frame buffer compressor's control. */
+	uint32_t psr_ctl;
+	uint32_t fbc_ctl;
+
+	/* Every pipe: whether it was read, its source size and its first plane, and its two scalers. */
+	int pipe_read[3];
+	uint32_t pipe_src[3];
+	uint32_t plane_ctl[3];
+	uint32_t plane_stride[3];
+	uint32_t plane_pos[3];
+	uint32_t plane_size[3];
+	uint32_t plane_surf[3];
+	uint32_t plane_offset[3];
+	uint32_t plane_surflive[3];
+	uint32_t scaler[3][2];
+};
+
+/*
+ * What the firmware's display 9 output is, as the flips use it: made by
+ * drv_i915_xd9_fw_decode() from the registers.  reason names the first
+ * condition that keeps the flips from being used, or is NULL when they
+ * can be; the other fields hold what was found either way.
+ */
+struct i915_xd9_fw_readout {
+	/* Why the flips cannot be used (a short word for the log), or NULL. */
+	const char *reason;
+
+	/* How many pipes the firmware lit, and the one used: its transcoder (3 = EDP). */
+	unsigned lit_pipes;
+	unsigned pipe;
+	unsigned transcoder;
+
+	/* The plane's extent in pixels and its row bytes. */
+	uint32_t width;
+	uint32_t height;
+	uint32_t stride_bytes;
+
+	/* Nonzero when a pixel is R, G, B, X in memory; zero for B, G, R, X. */
+	int rgbx;
+
+	/* The surface the firmware's plane scans out (a GGTT offset). */
+	uint32_t surf;
+
+	/* The refresh in millihertz, and whether it was measured from the timing (else assumed). */
+	uint32_t refresh_millihz;
+	int refresh_measured;
+
+	/* The pixel clock in kHz the timing gave, or zero; with it, the line's total, the DDI port and the DPLL clocking it. */
+	uint32_t pixel_khz;
+	uint32_t htotal;
+	unsigned port;
+	unsigned dpll;
+
+	/* Nonzero when one of the pipe's scalers is on (the firmware's mode is scaled to the panel). */
+	int scaled;
+};
+
+/*
+ * What the display 9 check before the GT starts found: the power wells,
+ * each powered pipe's first plane (whether it is on, and where its
+ * picture ends), whether a picture reaches the GGTT pages the driver
+ * writes, and the GPU's VT-d unit in the record's VT-d fields and walls.
+ */
+struct i915_xd9_fw_check {
+	uint32_t well_control;
+	uint32_t edp_transconf;
+	int pipe_read[I915_XD9_FW_PIPES];
+	uint32_t plane_ctl[I915_XD9_FW_PIPES];
+	uint32_t plane_stride[I915_XD9_FW_PIPES];
+	uint32_t plane_size[I915_XD9_FW_PIPES];
+	uint32_t plane_surf[I915_XD9_FW_PIPES];
+	uint64_t plane_end[I915_XD9_FW_PIPES];
+	unsigned overlap_pipes;
+	struct i915_xd_firmware vtd;
+};
+
+void drv_i915_xd9_fw_read(struct i915_xd_io *io, struct i915_xd9_fw_registers *registers);
+int drv_i915_xd9_fw_decode(const struct i915_xd9_fw_registers *registers, struct i915_xd9_fw_readout *readout);
+void drv_i915_xd9_fw_log(const struct i915_xd9_fw_registers *registers, const struct i915_xd9_fw_readout *readout, const char *fb_match);
+uint32_t drv_i915_xd9_dp_pixel_khz(uint32_t link_m, uint32_t link_n, uint32_t port_khz);
+int drv_i915_xd9_fw_runs(struct i915_xd_io *io, const struct i915_xd9_fw_readout *readout, uint32_t *well_control, uint32_t *transconf, uint32_t *plane_ctl);
+int drv_i915_xd9_fw_check(struct i915_xd_io *io, const struct i915_xd_fw_env *env, struct i915_xd9_fw_check *check);
+
 #endif /* DRIVERS_GPU_I915_DISPLAY_XD_TAKEOVER_H */
