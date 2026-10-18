@@ -135,3 +135,12 @@ log の差:
 - style-check の lock の名前の扱いは Q1 の判断
 
 P1 の見立て（Status は変えない。判定は Q1）: cleared にしない（読み通しが残る）。
+
+## 読み通しの続き（2026-10-18 P1、q1241）
+
+範囲: 本番の xd-*.c（27 file、34,888 行）を、style-check が見ない規則で grep と目視で見た（禁止の comment の形、`_local` の名前・`retval`・`function_result`、prose で始まる複数行の comment、`for` の宣言、関数の最後の失敗の return、1 行の 3 つ以上の節の条件）。
+
+- 直した物（書き方だけ、動作は変えない）: 3 つ以上の節を 1 行に書いた条件 16 個を 1 節 1 行に（xd-edp.c・xd-hpd.c・xd-clock.c 2・xd-tc-port.c・xd-output.c 2・xd-picture.c 6・xd-screen.c 3）。xd-edid.c の block の読みは失敗の `return error;` で終わっていたので、ループを break で抜けて失敗と成功（`Succeeded: the block is read.`）を分けた（try の回数・ENXIO で止める所・既定の EIO は同じ）。
+- 見て残した物: xd-aux.c・xd-hpd.c の最後の `return status;` は誤りの code ではなく判断の値（制御の word、connector の状態）を返すので規則 §11 の「分類を返す」形。xd-dp.c の `first_error` も値の選び。
+- 確かめた事: `sh build/tmp/kbuild.sh p046r` default rc=0 warn=0（sha256 の先頭 c5a67928fe15d677）、vke2 rc=0 warn=0、execution rc=0 warn=0。`run-xd-host-tests.sh build/p046r-host` all passed（check-sources 106 file: 旧の file を merge で消した後の数）。`git diff --check` 0。5330・QEMU は起動していない。
+- 残り: 試験の file（tests/display）と xd 以外の本番の file の目視、comment が意味を言っているかの 1 行ずつの目視、関数名の 1 対 1 の写しの目視は未実施。

@@ -653,7 +653,9 @@ i915_xd_edp_choose(
 	/* The VBT's, with the quirk's longer power cycle, counted as the sequencer counts. */
 	vbt = edp->config.vbt;
 	vbt_set = drv_i915_xd_pps_delays_set(&vbt);
-	if (edp->config.long_power_cycle && vbt_set != 0 && vbt.power_cycle < I915_XD_EDP_LONG_CYCLE)
+	if (edp->config.long_power_cycle &&
+	    vbt_set != 0 &&
+	    vbt.power_cycle < I915_XD_EDP_LONG_CYCLE)
 		vbt.power_cycle = I915_XD_EDP_LONG_CYCLE;
 	drv_i915_xd_pps_from_vbt(&vbt);
 

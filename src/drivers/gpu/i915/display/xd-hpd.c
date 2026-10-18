@@ -1020,7 +1020,9 @@ i915_xd_hpd_probe_dp(
 	UNUSED_PARAMETER(hpd);
 
 	/* Only a Type-C port's sink is probed. */
-	if (connector->tc == 0U || env->tc_live == NULL || env->dp_probe == NULL)
+	if (connector->tc == 0U ||
+	    env->tc_live == NULL ||
+	    env->dp_probe == NULL)
 		return I915_XD_HPD_UNKNOWN;
 
 	/* Nothing plugged in: disconnected, without an EDID. */
