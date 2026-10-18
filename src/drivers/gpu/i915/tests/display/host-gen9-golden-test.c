@@ -143,8 +143,11 @@ i915_golden_panel(
 	i915_golden_device.display = &i915_golden_display;
 	i915_golden_device.gt.graphics_ver = 9U;
 	i915_golden_device.gt.info.platform = I915_PLATFORM_KABYLAKE;
-	if (cnp)
+	i915_golden_device.product = 0x5917U;
+	if (cnp) {
 		i915_golden_device.gt.info.platform = I915_PLATFORM_COFFEELAKE;
+		i915_golden_device.product = 0x3e92U;
+	}
 
 	/* The panel is lit. */
 	i915_gen9_fake_set(I915_SKL_PWR_WELL_CTL2, 0xf0000000U);

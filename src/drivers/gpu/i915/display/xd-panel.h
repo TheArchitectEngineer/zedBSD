@@ -87,6 +87,27 @@ struct i915_xd_backlight {
 	int running;
 };
 
+/*
+ * A display 9 backlight PWM as the brightness uses it: whether it runs,
+ * whether its output is inverted, its period and duty, and the duty a
+ * brightness of 0 % maps to.
+ */
+struct i915_xd9_pwm {
+	int running;
+	int active_low;
+	uint32_t period;
+	uint32_t duty;
+	uint32_t floor;
+};
+
+void drv_i915_xd9_pwm_read(struct i915_xd_io *io, int packed, uint32_t *control, uint32_t *period, uint32_t *duty);
+int drv_i915_xd9_pwm_decode(uint32_t control, uint32_t period, uint32_t duty, int packed, struct i915_xd9_pwm *pwm);
+uint32_t drv_i915_xd9_pwm_duty(const struct i915_xd9_pwm *pwm, uint32_t percent);
+uint32_t drv_i915_xd9_pwm_percent(const struct i915_xd9_pwm *pwm, uint32_t duty);
+void drv_i915_xd9_pwm_set(struct i915_xd_io *io, int packed, uint32_t period_word, uint32_t duty);
+int drv_i915_xd9_pwm_pause(struct i915_xd_io *io, uint32_t *control);
+void drv_i915_xd9_pwm_resume(struct i915_xd_io *io, uint32_t control);
+int drv_i915_xd9_panel_lit(struct i915_xd_io *io);
 int drv_i915_xd_backlight_controller_usable(struct i915_xd_io *io, unsigned controller, unsigned controllers, int muxed);
 void drv_i915_xd_backlight_read(struct i915_xd_backlight *backlight, struct i915_xd_io *io, unsigned controller);
 uint32_t drv_i915_xd_backlight_period(unsigned rawclk_khz, unsigned hz);

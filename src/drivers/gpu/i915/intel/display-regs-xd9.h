@@ -99,4 +99,17 @@
 #define I915_XD9_GMBUS_PIN_DDI_D		6U
 #define I915_XD9_GMBUS_UNIT_UNGATE		(1U << 31)
 
+/*
+ * The driver's power well request register (HSW_PWR_WELL_CTL2) and the
+ * state bit of power well 1, and the eDP transcoder's DDI function
+ * control with its enable.
+ *
+ * Values referenced: Intel Kaby Lake PRM Volume 2c, Command Reference:
+ * Registers (PWR_WELL_CTL2, TRANS_DDI_FUNC_CTL_EDP).
+ */
+#define I915_XD9_PWR_WELL_CTL2			0x45404U
+#define I915_XD9_PW1_STATE			(1U << 28)
+#define I915_XD9_TRANS_DDI_FUNC_CTL_EDP		0x6f400U
+#define I915_XD9_TRANS_DDI_FUNC_ENABLE		(1U << 31)
+
 #endif /* DRIVERS_GPU_I915_INTEL_DISPLAY_REGS_XD9_H */
