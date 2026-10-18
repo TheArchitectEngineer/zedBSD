@@ -97,7 +97,7 @@ zedBSD の貢献の規則と標準の索引。Queue・backlog・実行許可で�
 
 ユーザー:「HALからカーネルへは、汎用の構造体しか渡せない規約です。固有の情報は、名前文字列で取得するAPIがありますので、それを使ってください。ブートローダからHALへは、固有の構造体を使えますが、それはHAL内に定義を置きます。また、boot.hのPC98やRPiの構造体は、削除します。この削除対応を、WSを作って別なサブエージェントで進めてください。」
 - HAL → kernel は汎用の構造体（`include/kern/boot.h` の `kern_boot_handoff` など）だけを渡す。platform・architecture に固有の情報は、名前の文字列で取る API（`hal_get_arch_handoff(name)`）で渡す。
-- boot loader → HAL は固有の構造体を使ってよい。その定義は HAL の中か、`bootloader/` の header（例 `bootloader/include/amd64-handoff.h`）に置く（`include/kern/` に置かない。2026-10-18 ユーザー「じゃあbootloader/にヘッダがあってハンドオフ構造体を定義する分には、OKにします。」）。kernel・driver はその header を include せず、値ごとの名前で受ける。
+- boot loader → HAL は固有の構造体を使ってよい。その定義は HAL の中か `bootloader/` の header に置く（`include/kern/` に置かない）。**`bootloader/` の header を include してよいのは HAL だけ**（2026-10-18 ユーザー「bootloader/のヘッダを見ていいのは、HALだけにします。HALからカーネルへは、名前ごとの値でアクセスします」）。kernel・driver は HAL から名前ごとの値（例 `pcat.framebuffer.phys`）で受ける。
 - `include/kern/boot.h` の PC-98・Raspberry Pi の固有の構造体は削除する（WS261）。
 
 ## WS141（Raspberry Pi 4 の GPU）の GPL の参照の扱い（2026-10-04 ユーザー）
