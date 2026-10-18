@@ -2,11 +2,11 @@
 
 # ws074-p252: flex-basisのgrammar/computedとnon-replaced content base
 
-Status: planned
+Status: in-progress（q21 scoped host attempt）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006
-Queue: 未選定（q14後の候補）
+Queue: [ws074-q20261018-21](../queue.md) / i01
 
 ## Existing evidence / own goal
 
@@ -31,3 +31,21 @@ Event ws074-p252-plan-from-existing-basis-residual-20261018: q14全件比較待�
 [Flexbox §9.2](https://drafts.csswg.org/css-flexbox-1/#algo-main-item)（Editor’s Draft 2026-05-08）で、content basisとdefinite cross/ratioの順序、contentをmax-contentとして測る経路、base測定時にmain min/maxを適用しない点を確認。[CSS Values §10.12](https://drafts.csswg.org/css-values-4/#calc-range)でmath rangeを参照する。固定2025 WPT revision/期待値は維持し、新しいwidth grammarをこの候補へ無断追加しない。box-sizingのnegative inner baseや一般intrinsic sizingの既存未達を修正済みとはしない。
 
 Event ws074-p252-q14-output-ready-20261018: q14 final88713badd/WIP98acae7a6でzero% callbackが改善し、固定flex-basis-computedにはcontent/negative calcの2 FAILが残る。q14 prerequisite outputはverified。次の選定は未確認crash48の正式条件をp190で優先するため本Phaseはplanned/未選定を保持し、その後候補へ。scope/criteriaは不変。
+
+
+## q21 exact design / verification
+
+Timebox: 最大90分（17:14 JSTまで）。
+
+| Attempt | Phase | Exact scope | State | Dependencies |
+| --- | --- | --- | --- | --- |
+| ws074-q20261018-21-i01 | [p252](phase252/phase.md) host flex-basis partial | private content unitでcontentをautoから区別。既存accepted length/intrinsic/autoを保ちnone/normal/negative literalを拒否、absolute calcのnonnegative computed rangeをcascadeへ適用しpercentage型/offsetを保持。横書き非置換row/columnでcontent basisをpreferred main/minmaxから分離して測定しstyle/main cache/tree measuring/float contextを全error pathで復元。既存definite cross ratio outputとmin/max hypothetical clampを維持。独立Chromium geometry/grammar/computed、既存fixed parsing3全callback、DOM/CSSOM/CSSOM-mutation、host/target exact single-source warning0、変更関数full C/clang-format19/style0、Acid非増加で確認。最終frozen pairで1491 harness/static1561/strict48/scripted413をq19/q20全ID/callback/pixelと照合しold whole491/839/39/105後退0と全遷移診断、raw/hashを保存 | in-progress | p251 zero-% output88713badd、p240/p241 native ratio output、q19 nativeXML/MO output1c6991441、q20 faithfulheaders/全1474 verified |
+
+Dependency graph: q20 history/source proof → p252 producer → independent controls/parsing → final pair全件/清算。
+Generation bounds: userland/desktop/libbrowser/css/css.h・values.c・cascade.c、bind/computed.c、layout/flex.c、およびWS074 tests/recordsだけ。既存巨大dispatcherはhelper呼出し/単純caseだけを変更、new helper/変更したcomputed_length/flex_base_sizeは全文規約で生成レビュー。private enum append以外のAPI/layout header/SDK/Wayland/shell/他engine/WPT/runner判定/共有board/cache/toolchain/sysroot不変。新memory ownership無し。replaced/縦書き/general intrinsic/negative inner basis/nonlinear calc既存近似/fullWS/target link/runtimeは達成に混ぜない。
+Verification bounds: native source changedなので同一final pairで全eligible/strict/scriptedを再実行。未対応292/環境5/native未達は分母保持。finite native controlsと全件gateを期限までに完了できない/後退未解消ならunclearedとraw/resumeを残す。条件/期待値/分母を緩めない。push/削除/make check/QEMU無し。
+Upcoming Work Outlook: harness generated window・HTTPS/worker/origin未attempt292、driver action/生成環境5、native animation/module/ViewTransition、p249 margin、p100。
+
+Primary standards: Flexbox §9.2とValues §10.12を2026-10-18に再確認。content measurementはmain preferred/minmaxを一時auto/noneにして自分のmax-content cacheを退避・復元し、ratioのdefinite cross shortcutを先に保持。percent calcのnonnegative rangeはused解決後に既存base floorを適用、computed coefficientは壊さない。autoが参照するmain sizeとexplicit contentの区別を独立対照する。巨大dispatcher全部の既存legacyを修正済みとはしない。
+
+Event ws074-p252-q21-selected-20261018: q20 archive/history read-back後に既存planned outcomeを選定。p240/p241のratio outputとp251 percentage metadataを消費し、各Phaseへ自身の依存/再開を記録。

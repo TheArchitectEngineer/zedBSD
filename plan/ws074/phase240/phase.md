@@ -35,3 +35,6 @@ Phase whole は uncleared。QEMU・実機・GPU、stretchで決まるcross size�
 Commit receipt: 実装・試験・証拠は `53f46c61b`（WIP）。`git log` と `git show --stat` で11 fileの保存をread-back確認。pushは未実施。
 
 Event ws074-p252-basis-plan-20261018: [p252](../phase252/phase.md)へ既存content vs autoとgrammar/computedの有限候補を具体化。非置換horizontal content baseと保存・復元/cacheを検証し、replaced/target等の本Phaseの未達は保持。q14 final outputのgate後に新Queue選定が必要、まだ実装しない。
+
+
+Event ws074-p252-q21-selected-20261018: [p252](../phase252/phase.md)でcontentとautoの区別/非置換content baseを選定。本Phaseのverified ratio cross/auto minimum outputを保持し、preferred main/minmaxを測定だけ除去する。replaced/target等本Phaseの未達/historyは不変、dependent final全1491/static1561/strict48/scripted413で後退を検証。shared projection pending。
