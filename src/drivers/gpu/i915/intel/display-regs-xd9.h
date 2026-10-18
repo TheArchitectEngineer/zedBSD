@@ -185,4 +185,70 @@
 #define I915_XD9_BALANCE_LEG_MASK(ddi)		(7U << (8U + 3U * (ddi)))
 #define I915_XD9_BALANCE_LEG_DISABLE(ddi)	(1U << (23U + (ddi)))
 
+/*
+ * A display 9 transcoder and pipe (transcoders A to C have the number of
+ * their pipe, each 0x1000 after the last): the pixel multiplier, the
+ * configuration with its enable and state, the DDI function (the enable,
+ * the DDI in 30:28, the mode in 26:24, 8 bits a colour, the sync
+ * polarities, the DisplayPort lanes less one in 3:1), the pipe's colour
+ * depth word, and the frame counter.
+ *
+ * Values referenced: Intel Kaby Lake PRM Volume 2c, Command Reference:
+ * Registers (TRANS_MULT, TRANSCONF, TRANS_DDI_FUNC_CTL, PIPE_MISC,
+ * PIPE_FRMCNT).
+ */
+#define I915_XD9_TRANS_MULT(trans)		(0x6002cU + 0x1000U * (trans))
+#define I915_XD9_TRANSCONF(trans)		(0x70008U + 0x1000U * (trans))
+#define I915_XD9_TRANSCONF_ENABLE		(1U << 31)
+#define I915_XD9_TRANSCONF_STATE		(1U << 30)
+#define I915_XD9_TRANS_DDI_FUNC(trans)		(0x60400U + 0x1000U * (trans))
+#define I915_XD9_DDI_FUNC_ENABLE		(1U << 31)
+#define I915_XD9_DDI_FUNC_DDI_SHIFT		28U
+#define I915_XD9_DDI_FUNC_DDI_MASK		(7U << 28)
+#define I915_XD9_DDI_FUNC_MODE_SHIFT		24U
+#define I915_XD9_DDI_FUNC_MODE_HDMI		0U
+#define I915_XD9_DDI_FUNC_MODE_DP_SST		2U
+#define I915_XD9_DDI_FUNC_BPC_8			(0U << 20)
+#define I915_XD9_DDI_FUNC_PVSYNC		(1U << 17)
+#define I915_XD9_DDI_FUNC_PHSYNC		(1U << 16)
+#define I915_XD9_DDI_FUNC_WIDTH_SHIFT		1U
+#define I915_XD9_PIPE_MISC(pipe)		(0x70030U + 0x1000U * (pipe))
+#define I915_XD9_PIPE_MISC_BPC_8		(0U << 5)
+#define I915_XD9_PIPE_FRMCOUNT(pipe)		(0x70040U + 0x1000U * (pipe))
+
+/*
+ * A display 9 pipe's first plane (each pipe's 0x1000 after the last):
+ * the control (the enable, the format in 27:24 with XRGB8888 4, the R G B
+ * X order, the plane gamma off), the stride in 64-byte units, the
+ * position, the size (height less one in 31:16), the offset and the
+ * surface, whose write arms the others.
+ *
+ * Values referenced: Intel Kaby Lake PRM Volume 2c, Command Reference:
+ * Registers (PLANE_CTL, PLANE_STRIDE, PLANE_POS, PLANE_SIZE, PLANE_OFFSET,
+ * PLANE_SURF).
+ */
+#define I915_XD9_PLANE_CTL(pipe)		(0x70180U + 0x1000U * (pipe))
+#define I915_XD9_PLANE_STRIDE(pipe)		(0x70188U + 0x1000U * (pipe))
+#define I915_XD9_PLANE_POS(pipe)		(0x7018cU + 0x1000U * (pipe))
+#define I915_XD9_PLANE_SIZE(pipe)		(0x70190U + 0x1000U * (pipe))
+#define I915_XD9_PLANE_SURF(pipe)		(0x7019cU + 0x1000U * (pipe))
+#define I915_XD9_PLANE_OFFSET(pipe)		(0x701a4U + 0x1000U * (pipe))
+#define I915_XD9_PLANE_CTL_ENABLE		(1U << 31)
+#define I915_XD9_PLANE_CTL_XRGB_8888		(4U << 24)
+#define I915_XD9_PLANE_CTL_RGBX			(1U << 20)
+#define I915_XD9_PLANE_CTL_GAMMA_OFF		(1U << 13)
+#define I915_XD9_PLANE_SIZE_HEIGHT_SHIFT	16U
+
+/*
+ * The training override of a DDI's transcoder chicken register
+ * (CHICKEN_TRANS of transcoders A to C, 4 apart), toggled before an HDMI
+ * buffer starts.
+ *
+ * Values referenced: Intel Kaby Lake PRM Volume 2c, Command Reference:
+ * Registers (CHICKEN_TRANS); Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_ddi.c (Display WA #1143).
+ */
+#define I915_XD9_CHICKEN_TRANS(trans)		(0x420c0U + 4U * (trans))
+#define I915_XD9_TRAINING_OVERRIDE		((1U << 19) | (1U << 18))
+
 #endif /* DRIVERS_GPU_I915_INTEL_DISPLAY_REGS_XD9_H */

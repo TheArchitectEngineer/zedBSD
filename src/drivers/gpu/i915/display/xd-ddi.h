@@ -117,6 +117,8 @@ struct i915_xd9_dp_port {
 void drv_i915_xd9_ddi_buffers(struct i915_xd_io *io, unsigned ddi, const struct i915_xd9_buf_trans *table, unsigned rows);
 void drv_i915_xd9_ddi_levels(struct i915_xd_io *io, unsigned ddi, const struct i915_xd9_buf_trans *table, unsigned rows, unsigned row, uint32_t *buf_word);
 void drv_i915_xd9_ddi_buffer_off(struct i915_xd_io *io, unsigned ddi);
+void drv_i915_xd9_ddi_boost(struct i915_xd_io *io, unsigned ddi, unsigned boost);
+void drv_i915_xd9_ddi_hdmi_start(struct i915_xd_io *io, unsigned ddi, const struct i915_xd9_buf_trans *row);
 int drv_i915_xd9_dp_train(struct i915_xd9_dp_port *port, uint32_t rate_khz, unsigned lanes);
 int drv_i915_xd9_dp_sink_power(struct i915_xd9_dp_port *port, uint8_t state);
 const struct i915_xd9_buf_trans *drv_i915_xd9_ddi_buf_table(const struct i915_xd_platform *platform, unsigned output, unsigned ddi, unsigned *count);

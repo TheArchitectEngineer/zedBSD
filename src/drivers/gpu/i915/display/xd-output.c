@@ -19,9 +19,11 @@
 #include "xd-panel.h"
 #include "xd-pipe.h"
 #include "xd-platform.h"
+#include "xd-power.h"
 #include "xd-screen.h"
 
 #include "../intel/display-dpcd-xd.h"
+#include "../intel/display-regs-xd9.h"
 #include "../intel/display-regs-xd.h"
 
 #include <kern/kcrt.h>
@@ -1247,6 +1249,130 @@ drv_i915_xd_output_user_level(
 
 	/* Succeeded: the user's level. */
 	return level;
+}
+
+/*
+ * Lights a display 9 external output on its pipe (whose transcoder has
+ * the same number): the DPLL; for DisplayPort the buffer's word, the DDI
+ * clock, the IO well, the translation rows at the lowest level, the
+ * sink's power and the training, then the transcoder's clock and the
+ * stream's attributes; for HDMI the DDI clock, the IO well and the
+ * transcoder's clock.  Then the pipe and the transcoder, the DDI function
+ * and the transcoder's start, an HDMI port's buffer, and the plane.
+ * Returns 0, or an error with what was started stopped again.
+ */
+int
+drv_i915_xd9_output_on(
+	struct i915_xd_io *io,
+	const struct i915_xd_platform *platform,
+	const struct i915_xd9_output *out,
+	struct i915_xd9_dp_port *port)
+{
+	struct i915_xd_msa msa;
+	uint32_t buffer;
+	int error;
+
+	/* The DPLL; one that does not lock is stopped again. */
+	error = drv_i915_xd9_dpll_enable(io, platform, out->dpll, &out->dpll_words);
+	if (error != 0) {
+		drv_i915_xd9_dpll_disable(io, platform, out->dpll);
+		return error;
+	}
+
+	/* An HDMI port: the clock and the IO well, then the transcoder's clock. */
+	if (out->hdmi) {
+		drv_i915_xd9_ddi_clock(io, out->ddi, out->dpll, 1);
+		error = drv_i915_xd9_power_ddi_io(io, platform, out->ddi, 1);
+		if (error != 0) {
+			drv_i915_xd9_ddi_clock(io, out->ddi, out->dpll, 0);
+			drv_i915_xd9_dpll_disable(io, platform, out->dpll);
+			return error;
+		}
+		drv_i915_xd_pipe_clock_on(io, platform, out->pipe, out->ddi);
+	} else {
+		/* A DisplayPort port: the buffer's word keeps the lane reversal and has the width. */
+		buffer = drv_i915_xd_io_read(io, I915_XD9_DDI_BUF_CTL(out->ddi));
+		port->buf_word = (buffer & I915_XD9_DDI_BUF_REVERSAL) | ((out->lanes - 1U) << I915_XD9_DDI_BUF_WIDTH_SHIFT);
+
+		/* The clock, the IO well, the rows at the lowest level, the sink awake, and the training. */
+		drv_i915_xd9_ddi_clock(io, out->ddi, out->dpll, 1);
+		error = drv_i915_xd9_power_ddi_io(io, platform, out->ddi, 1);
+		if (error == 0) {
+			drv_i915_xd9_ddi_buffers(io, out->ddi, port->table, port->rows);
+			drv_i915_xd9_ddi_levels(io, out->ddi, port->table, port->rows, 0U, &port->buf_word);
+			(void)drv_i915_xd9_dp_sink_power(port, I915_XD_DPCD_POWER_D0);
+			error = drv_i915_xd9_dp_train(port, out->rate_khz, out->lanes);
+		}
+
+		/* A link that did not come up stops what was started. */
+		if (error != 0) {
+			drv_i915_xd9_ddi_buffer_off(io, out->ddi);
+			(void)drv_i915_xd9_power_ddi_io(io, platform, out->ddi, 0);
+			drv_i915_xd9_ddi_clock(io, out->ddi, out->dpll, 0);
+			drv_i915_xd9_dpll_disable(io, platform, out->dpll);
+			return error;
+		}
+
+		/* The transcoder's clock from the DDI, and the stream at 8 bits a colour. */
+		drv_i915_xd_pipe_clock_on(io, platform, out->pipe, out->ddi);
+		kern_memset(&msa, 0, sizeof(msa));
+		msa.bpp = 24U;
+		drv_i915_xd_pipe_msa(io, out->pipe, &msa);
+	}
+
+	/* The pipe and the transcoder for the mode, still off. */
+	if (out->hdmi) {
+		drv_i915_xd9_pipe_configure(io, platform, out->pipe, &out->mode, NULL);
+	} else {
+		drv_i915_xd9_pipe_configure(io, platform, out->pipe, &out->mode, &out->m_n);
+	}
+
+	/* The DDI function, then the transcoder running; one that does not run darkens the output again. */
+	drv_i915_xd9_pipe_func(io, out->pipe, out->ddi, out->hdmi, out->lanes, &out->mode);
+	error = drv_i915_xd9_pipe_start(io, out->pipe);
+	if (error != 0) {
+		drv_i915_xd9_output_off(io, platform, out, port);
+		return error;
+	}
+
+	/* An HDMI port's buffer starts after the transcoder. */
+	if (out->hdmi)
+		drv_i915_xd9_ddi_hdmi_start(io, out->ddi, out->hdmi_row);
+
+	/* Succeeded: the plane shows the first surface. */
+	drv_i915_xd9_plane_on(io, out->pipe, out->surf, out->stride_units, out->mode.hdisplay, out->mode.vdisplay, out->rgbx);
+	return 0;
+}
+
+/*
+ * Darkens a display 9 external output: the plane at a vertical blank,
+ * the transcoder and its DDI function, a DisplayPort sink to sleep, the
+ * transcoder's clock, the buffer, the IO well, the DDI clock and the DPLL.
+ */
+void
+drv_i915_xd9_output_off(
+	struct i915_xd_io *io,
+	const struct i915_xd_platform *platform,
+	const struct i915_xd9_output *out,
+	struct i915_xd9_dp_port *port)
+{
+	/* The plane off at a vertical blank. */
+	drv_i915_xd9_plane_off(io, out->pipe);
+	(void)drv_i915_xd9_pipe_wait_vblank(io, out->pipe);
+
+	/* The transcoder and its function. */
+	drv_i915_xd9_pipe_stop(io, out->pipe);
+
+	/* A DisplayPort sink sleeps before its port stops. */
+	if (!out->hdmi && port != NULL)
+		(void)drv_i915_xd9_dp_sink_power(port, I915_XD_DPCD_POWER_D3);
+
+	/* Succeeded: the clocks, the buffer, the well and the DPLL. */
+	drv_i915_xd_pipe_clock_off(io, out->pipe);
+	drv_i915_xd9_ddi_buffer_off(io, out->ddi);
+	(void)drv_i915_xd9_power_ddi_io(io, platform, out->ddi, 0);
+	drv_i915_xd9_ddi_clock(io, out->ddi, out->dpll, 0);
+	drv_i915_xd9_dpll_disable(io, platform, out->dpll);
 }
 
 /* Returns the index a power use of the output names: its pipe, transcoder, DDI or AUX channel. */

@@ -87,6 +87,9 @@
 #define I915_XD9_DDI_IDLE_US		8U
 #define I915_XD9_DDI_IDLE_PATTERNS_US	1000U
 
+/* The translation row an HDMI port drives: the tenth. */
+#define I915_XD9_DDI_HDMI_ROW		9U
+
 /* The boosts a translation row may ask for: off, or a balance leg of 1, 3 or 7. */
 #define I915_XD9_BOOST_1		1U
 #define I915_XD9_BOOST_3		3U
@@ -562,9 +565,9 @@ drv_i915_xd9_ddi_buffers(
 }
 
 /*
- * Drives a translation row on a display 9 DDI: the row's current boost in
- * the DDI's balance leg (or the leg off for a row without one), then the
- * row selected in the buffer's word, which is written and pushed out.
+ * Drives a translation row on a display 9 DDI: the row's current boost,
+ * then the row selected in the buffer's word, which is written and pushed
+ * out.
  * A row past the table drives the last one.
  */
 void
@@ -576,22 +579,12 @@ drv_i915_xd9_ddi_levels(
 	unsigned row,
 	uint32_t *buf_word)
 {
-	unsigned boost;
-
 	/* The last row at most. */
 	if (row >= rows)
 		row = rows - 1U;
 
-	/* The boost: the leg off, or set to the row's 1, 3 or 7; another value leaves the leg as it is. */
-	boost = table[row].iboost;
-	if (boost == 0U) {
-		(void)drv_i915_xd_io_rmw(io, I915_XD9_BMU_CR0, I915_XD9_BALANCE_LEG_MASK(ddi), I915_XD9_BALANCE_LEG_DISABLE(ddi));
-	} else if (boost == I915_XD9_BOOST_1 || boost == I915_XD9_BOOST_3 || boost == I915_XD9_BOOST_7) {
-		(void)drv_i915_xd_io_rmw(io,
-					 I915_XD9_BMU_CR0,
-					 I915_XD9_BALANCE_LEG_MASK(ddi) | I915_XD9_BALANCE_LEG_DISABLE(ddi),
-					 boost << I915_XD9_BALANCE_LEG_SHIFT(ddi));
-	}
+	/* The row's boost. */
+	drv_i915_xd9_ddi_boost(io, ddi, table[row].iboost);
 
 	/* The row in the buffer's word. */
 	*buf_word &= ~I915_XD9_DDI_BUF_ROW_MASK;
@@ -694,6 +687,70 @@ drv_i915_xd9_dp_sink_power(
 
 	/* Succeeded: the sink is in the state. */
 	return 0;
+}
+
+/*
+ * Starts a display 9 HDMI port's buffer: the HDMI row of the table
+ * written as the DDI's tenth translation row and its boost, the training
+ * override of the DDI's transcoder chicken register on for a microsecond,
+ * then the buffer on with its lane reversal kept, and the time it takes
+ * to leave idle.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_ddi.c
+ * (intel_enable_ddi_hdmi, Display WA #1143).
+ */
+void
+drv_i915_xd9_ddi_hdmi_start(
+	struct i915_xd_io *io,
+	unsigned ddi,
+	const struct i915_xd9_buf_trans *row)
+{
+	uint32_t chicken;
+	uint32_t buffer;
+
+	/* The row as the tenth, and its boost. */
+	drv_i915_xd_io_write(io, I915_XD9_DDI_BUF_TRANS(ddi, I915_XD9_DDI_HDMI_ROW), row->trans1);
+	drv_i915_xd_io_write(io, I915_XD9_DDI_BUF_TRANS(ddi, I915_XD9_DDI_HDMI_ROW) + 4U, row->trans2);
+	drv_i915_xd9_ddi_boost(io, ddi, row->iboost);
+
+	/* The training override on for a microsecond. */
+	chicken = drv_i915_xd_io_rmw(io, I915_XD9_CHICKEN_TRANS(ddi - 1U), 0U, I915_XD9_TRAINING_OVERRIDE);
+	drv_i915_xd_io_posting_read(io, I915_XD9_CHICKEN_TRANS(ddi - 1U));
+	(void)drv_i915_xd_io_delay(io, 1U);
+	drv_i915_xd_io_write(io, I915_XD9_CHICKEN_TRANS(ddi - 1U), chicken & ~I915_XD9_TRAINING_OVERRIDE);
+
+	/* Succeeded: the buffer on, out of idle. */
+	buffer = drv_i915_xd_io_read(io, I915_XD9_DDI_BUF_CTL(ddi));
+	drv_i915_xd_io_write(io, I915_XD9_DDI_BUF_CTL(ddi), (buffer & I915_XD9_DDI_BUF_REVERSAL) | I915_XD9_DDI_BUF_ENABLE);
+	(void)drv_i915_xd_io_delay(io, I915_XD9_DDI_ACTIVE_US);
+}
+
+/*
+ * Sets a display 9 DDI's current boost: the balance leg off for a boost
+ * of 0, or set to a boost of 1, 3 or 7; another value leaves the leg as
+ * it is.
+ */
+void
+drv_i915_xd9_ddi_boost(
+	struct i915_xd_io *io,
+	unsigned ddi,
+	unsigned boost)
+{
+	/* No boost: the leg off. */
+	if (boost == 0U) {
+		(void)drv_i915_xd_io_rmw(io, I915_XD9_BMU_CR0, I915_XD9_BALANCE_LEG_MASK(ddi), I915_XD9_BALANCE_LEG_DISABLE(ddi));
+		return;
+	}
+
+	/* A boost the leg does not take. */
+	if (boost != I915_XD9_BOOST_1 && boost != I915_XD9_BOOST_3 && boost != I915_XD9_BOOST_7)
+		return;
+
+	/* Succeeded: the leg on with the boost. */
+	(void)drv_i915_xd_io_rmw(io,
+				 I915_XD9_BMU_CR0,
+				 I915_XD9_BALANCE_LEG_MASK(ddi) | I915_XD9_BALANCE_LEG_DISABLE(ddi),
+				 boost << I915_XD9_BALANCE_LEG_SHIFT(ddi));
 }
 
 /*

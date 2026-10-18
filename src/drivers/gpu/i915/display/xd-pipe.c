@@ -15,6 +15,7 @@
 #include "xd-platform.h"
 
 #include "../intel/display-regs-xd.h"
+#include "../intel/display-regs-xd9.h"
 
 #include <uapi/errno.h>
 
@@ -61,6 +62,16 @@
  */
 #define I915_XD_PIPE_EVADE_US		100U
 #define I915_XD_PIPE_ZERO_REREADS	100U
+
+/*
+ * How long a display 9 transcoder may take to start or stop, and how long
+ * a vertical blank may take to come (a 24 Hz mode with room).
+ *
+ * Values referenced: Intel Kaby Lake PRM Volume 12, Display Engine (the
+ * transcoder enable and disable sequences).
+ */
+#define I915_XD9_TRANS_WAIT_US		100000U
+#define I915_XD9_VBLANK_WAIT_MS		100U
 
 static uint32_t i915_xd_pipe_pair(uint32_t lower, uint32_t upper);
 static uint32_t i915_xd_pipe_vrr_word(const struct i915_xd_platform *platform, const struct i915_xd_vrr *vrr);
@@ -1045,6 +1056,207 @@ drv_i915_xd_plane_live(
 
 	/* Succeeded: its address. */
 	return live;
+}
+
+/*
+ * Sets a display 9 pipe and its transcoder up for a mode, still off: the
+ * pipe's source size and 8 bits a colour, a DisplayPort link's M/N values
+ * (m_n NULL for HDMI), the progressive timing, no pixel multiplier, and
+ * the transcoder's configuration cleared and pushed out.
+ */
+void
+drv_i915_xd9_pipe_configure(
+	struct i915_xd_io *io,
+	const struct i915_xd_platform *platform,
+	unsigned pipe,
+	const struct i915_display_mode *mode,
+	const struct i915_xd_dp_m_n *m_n)
+{
+	struct i915_xd_timing timing;
+
+	/* The pipe's source and depth. */
+	drv_i915_xd_pipe_source(io, pipe, mode->hdisplay, mode->vdisplay);
+	drv_i915_xd_io_write(io, I915_XD9_PIPE_MISC(pipe), I915_XD9_PIPE_MISC_BPC_8);
+
+	/* A DisplayPort link's M/N values. */
+	if (m_n != NULL)
+		drv_i915_xd_pipe_m_n(io, pipe, m_n);
+
+	/* The timing: the blanks from the end of the active area to the total. */
+	timing.hdisplay = mode->hdisplay;
+	timing.hblank_start = mode->hdisplay;
+	timing.hblank_end = mode->htotal;
+	timing.hsync_start = mode->hsync_start;
+	timing.hsync_end = mode->hsync_end;
+	timing.htotal = mode->htotal;
+	timing.vdisplay = mode->vdisplay;
+	timing.vblank_start = mode->vdisplay;
+	timing.vblank_end = mode->vtotal;
+	timing.vsync_start = mode->vsync_start;
+	timing.vsync_end = mode->vsync_end;
+	timing.vtotal = mode->vtotal;
+	timing.interlaced = 0;
+	drv_i915_xd_pipe_timing(io, platform, pipe, &timing);
+
+	/* Succeeded: no multiplier, the configuration clear. */
+	drv_i915_xd_io_write(io, I915_XD9_TRANS_MULT(pipe), 0U);
+	drv_i915_xd_io_write(io, I915_XD9_TRANSCONF(pipe), 0U);
+	drv_i915_xd_io_posting_read(io, I915_XD9_TRANSCONF(pipe));
+}
+
+/*
+ * Writes a display 9 transcoder's DDI function: on, its DDI, 8 bits a
+ * colour, the mode's sync polarities, and HDMI or single-stream
+ * DisplayPort with its lanes.
+ */
+void
+drv_i915_xd9_pipe_func(
+	struct i915_xd_io *io,
+	unsigned trans,
+	unsigned ddi,
+	int hdmi,
+	unsigned lanes,
+	const struct i915_display_mode *mode)
+{
+	uint32_t word;
+
+	/* On, the DDI, 8 bits a colour. */
+	word = I915_XD9_DDI_FUNC_ENABLE | (ddi << I915_XD9_DDI_FUNC_DDI_SHIFT) | I915_XD9_DDI_FUNC_BPC_8;
+
+	/* The sync polarities. */
+	if (mode->vsync_positive)
+		word |= I915_XD9_DDI_FUNC_PVSYNC;
+	if (mode->hsync_positive)
+		word |= I915_XD9_DDI_FUNC_PHSYNC;
+
+	/* HDMI, or DisplayPort with its lanes. */
+	if (hdmi) {
+		word |= I915_XD9_DDI_FUNC_MODE_HDMI << I915_XD9_DDI_FUNC_MODE_SHIFT;
+	} else {
+		word |= I915_XD9_DDI_FUNC_MODE_DP_SST << I915_XD9_DDI_FUNC_MODE_SHIFT;
+		word |= (lanes - 1U) << I915_XD9_DDI_FUNC_WIDTH_SHIFT;
+	}
+
+	/* Succeeded: the word. */
+	drv_i915_xd_io_write(io, I915_XD9_TRANS_DDI_FUNC(trans), word);
+}
+
+/*
+ * Starts a display 9 transcoder and waits for it to run.  Returns 0, or
+ * ETIMEDOUT.
+ */
+int
+drv_i915_xd9_pipe_start(
+	struct i915_xd_io *io,
+	unsigned trans)
+{
+	int error;
+
+	/* The enable, pushed out. */
+	(void)drv_i915_xd_io_rmw(io, I915_XD9_TRANSCONF(trans), 0U, I915_XD9_TRANSCONF_ENABLE);
+	drv_i915_xd_io_posting_read(io, I915_XD9_TRANSCONF(trans));
+
+	/* The state. */
+	error = drv_i915_xd_io_poll(io, I915_XD9_TRANSCONF(trans), I915_XD9_TRANSCONF_STATE, I915_XD9_TRANSCONF_STATE, I915_XD9_TRANS_WAIT_US, NULL);
+	if (error != 0)
+		return ETIMEDOUT;
+
+	/* Succeeded: the transcoder runs. */
+	return 0;
+}
+
+/*
+ * Stops a display 9 transcoder, waits for it to stop, and turns its DDI
+ * function off with its DDI.
+ */
+void
+drv_i915_xd9_pipe_stop(
+	struct i915_xd_io *io,
+	unsigned trans)
+{
+	/* The enable cleared, and the state. */
+	(void)drv_i915_xd_io_rmw(io, I915_XD9_TRANSCONF(trans), I915_XD9_TRANSCONF_ENABLE, 0U);
+	(void)drv_i915_xd_io_poll(io, I915_XD9_TRANSCONF(trans), I915_XD9_TRANSCONF_STATE, 0U, I915_XD9_TRANS_WAIT_US, NULL);
+
+	/* Succeeded: the function and its DDI off. */
+	(void)drv_i915_xd_io_rmw(io, I915_XD9_TRANS_DDI_FUNC(trans), I915_XD9_DDI_FUNC_ENABLE | I915_XD9_DDI_FUNC_DDI_MASK, 0U);
+}
+
+/*
+ * Shows a linear XRGB8888 surface on a display 9 pipe's first plane
+ * (either byte order, the plane gamma off): the stride, the position, the
+ * size and the offset, then the control, and the surface last, whose
+ * write arms them for the next vertical blank.
+ */
+void
+drv_i915_xd9_plane_on(
+	struct i915_xd_io *io,
+	unsigned pipe,
+	uint32_t surf,
+	uint32_t stride_units,
+	uint32_t width,
+	uint32_t height,
+	int rgbx)
+{
+	uint32_t control;
+
+	/* The control. */
+	control = I915_XD9_PLANE_CTL_ENABLE | I915_XD9_PLANE_CTL_GAMMA_OFF | I915_XD9_PLANE_CTL_XRGB_8888;
+	if (rgbx)
+		control |= I915_XD9_PLANE_CTL_RGBX;
+
+	/* The layout. */
+	drv_i915_xd_io_write(io, I915_XD9_PLANE_STRIDE(pipe), stride_units);
+	drv_i915_xd_io_write(io, I915_XD9_PLANE_POS(pipe), 0U);
+	drv_i915_xd_io_write(io, I915_XD9_PLANE_SIZE(pipe), ((height - 1U) << I915_XD9_PLANE_SIZE_HEIGHT_SHIFT) | (width - 1U));
+	drv_i915_xd_io_write(io, I915_XD9_PLANE_OFFSET(pipe), 0U);
+
+	/* Succeeded: the control, then the surface that arms them. */
+	drv_i915_xd_io_write(io, I915_XD9_PLANE_CTL(pipe), control);
+	drv_i915_xd_io_write(io, I915_XD9_PLANE_SURF(pipe), surf);
+	drv_i915_xd_io_posting_read(io, I915_XD9_PLANE_SURF(pipe));
+}
+
+/*
+ * Turns a display 9 pipe's first plane off: the control, then the surface
+ * that arms it.
+ */
+void
+drv_i915_xd9_plane_off(
+	struct i915_xd_io *io,
+	unsigned pipe)
+{
+	/* Succeeded: the control and the surface. */
+	drv_i915_xd_io_write(io, I915_XD9_PLANE_CTL(pipe), 0U);
+	drv_i915_xd_io_write(io, I915_XD9_PLANE_SURF(pipe), 0U);
+	drv_i915_xd_io_posting_read(io, I915_XD9_PLANE_SURF(pipe));
+}
+
+/*
+ * Waits for the next vertical blank of a running display 9 pipe: its
+ * frame counter moves.  Returns 0, or ETIMEDOUT when the pipe does not
+ * run.
+ */
+int
+drv_i915_xd9_pipe_wait_vblank(
+	struct i915_xd_io *io,
+	unsigned pipe)
+{
+	uint32_t first;
+	uint32_t now;
+	unsigned waited;
+
+	/* The counter now, then again every millisecond. */
+	first = drv_i915_xd_io_read(io, I915_XD9_PIPE_FRMCOUNT(pipe));
+	for (waited = 0U; waited < I915_XD9_VBLANK_WAIT_MS; waited++) {
+		(void)drv_i915_xd_io_delay(io, 1000U);
+		now = drv_i915_xd_io_read(io, I915_XD9_PIPE_FRMCOUNT(pipe));
+		if (now != first)
+			return 0;
+	}
+
+	/* Succeeded in learning that the pipe does not run. */
+	return ETIMEDOUT;
 }
 
 /* Packs two values into a register's lower and upper halves. */

@@ -56,6 +56,7 @@
 #include <stdint.h>
 
 #include "xd-clock.h"
+#include "xd-ddi.h"
 #include "xd-dp.h"
 #include "xd-io.h"
 #include "xd-panel.h"
@@ -315,5 +316,32 @@ void drv_i915_xd_output_backlight_off(struct i915_xd_output *out, const struct i
 void drv_i915_xd_output_brightness(struct i915_xd_output *out, const struct i915_xd_output_env *env, uint32_t user_level, uint32_t user_max);
 void drv_i915_xd_output_brightness_acpi(struct i915_xd_output *out, const struct i915_xd_output_env *env, uint32_t user_level, uint32_t user_max);
 uint32_t drv_i915_xd_output_user_level(const struct i915_xd_output *out, uint32_t user_max);
+
+/*
+ * One display 9 external output to light: whether it is HDMI, its DDI,
+ * its pipe (whose transcoder has the same number) and DPLL with the
+ * DPLL's words, the mode, a DisplayPort link's rate, lanes and M/N, an
+ * HDMI port's translation row, and the plane's first surface (a GGTT
+ * offset), its stride in 64-byte units and whether its pixels are R, G,
+ * B, X.  The caller keeps it for as long as the output is lit.
+ */
+struct i915_xd9_output {
+	int hdmi;
+	unsigned ddi;
+	unsigned pipe;
+	unsigned dpll;
+	struct i915_xd9_dpll_words dpll_words;
+	struct i915_display_mode mode;
+	uint32_t rate_khz;
+	unsigned lanes;
+	struct i915_xd_dp_m_n m_n;
+	const struct i915_xd9_buf_trans *hdmi_row;
+	uint32_t surf;
+	uint32_t stride_units;
+	int rgbx;
+};
+
+int drv_i915_xd9_output_on(struct i915_xd_io *io, const struct i915_xd_platform *platform, const struct i915_xd9_output *out, struct i915_xd9_dp_port *port);
+void drv_i915_xd9_output_off(struct i915_xd_io *io, const struct i915_xd_platform *platform, const struct i915_xd9_output *out, struct i915_xd9_dp_port *port);
 
 #endif /* DRIVERS_GPU_I915_DISPLAY_XD_OUTPUT_H */

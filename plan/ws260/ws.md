@@ -29,7 +29,7 @@
 | [p008](phase008/phase.md) | power well（PW2・DDI IO・AUX）を xd-power へ | in-progress（q1253、P1） |
 | [p009](phase009/phase.md) | DPLL の enable/disable と DDI clock の選択を xd-clock へ | in-progress（q1253、P1） |
 | [p010](phase010/phase.md) | DDI buffer・signal level・iboost・DP_TP と link training を xd-ddi・xd-dp へ（gen9-link.c を殻に） | in-progress（q1253、P1） |
-| p011 | transcoder・pipe・plane の点灯と消灯を xd-pipe へ（gen9-modeset.c の残り） | planned（5 LW） |
+| [p011](phase011/phase.md) | transcoder・pipe・plane の点灯と消灯を xd-pipe へ（gen9-modeset.c の残り） | in-progress（q1253、P1） |
 | p012 | WM・DDB の書き込みと順序、hotplug の sense を xd-dbuf・xd-hpd へ | planned（4 LW） |
 | p013 | firmware の点検と flip（firmware の panel の引き継ぎ、plane の flip、irq）を xd-takeover・xd-screen の display 9 の方針へ（gen9-firmware.c・gen9-flip.c） | planned（6 LW） |
 | p014 | 外の display（gen9-node・gen9-outputs・gen9-display）を xd-screen・xd-display の口へ。bootfb.c・i915.c・device.c・display.c の呼び先を xd に付け替え、殻を全部消す | planned（6 LW） |
