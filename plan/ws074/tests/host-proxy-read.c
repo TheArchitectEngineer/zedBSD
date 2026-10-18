@@ -34,6 +34,7 @@ static const struct vm_native_operations proxy_sole_operations = {
 	proxy_sole_get_own, NULL, NULL, NULL, NULL
 };
 
+static int proxy_define_descriptor(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int descriptor_roundtrip(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int descriptor_pressure(struct page *page);
 static int proxy_make(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
@@ -92,6 +93,11 @@ main(
 
 	/* A fixture bridge exercises the shared VM descriptor operations with arbitrary input. */
 	status = js_builtin_method(page->realm, page->realm->global, "descriptorRoundtrip", 2, descriptor_roundtrip);
+	if (status != 0)
+		goto cleanup;
+
+	/* A private Boolean bridge compares actual VM definition with genuine Chromium reflection. */
+	status = js_builtin_method(page->realm, page->realm->global, "defineReadProperty", 3, proxy_define_descriptor);
 	if (status != 0)
 		goto cleanup;
 
@@ -390,10 +396,11 @@ proxy_gc_edges(
 	struct vm_realm *realm;
 	struct vm_object *target;
 	struct vm_object *handler;
-	struct vm_cell *roots[5];
+	struct vm_cell *roots[6];
 	struct vm_cell *pressure;
 	struct vm_cell *found;
 	struct vm_descriptor own;
+	struct vm_descriptor change;
 	struct vm_heap_stats before;
 	struct vm_heap_stats after;
 	vm_value answer;
@@ -404,16 +411,18 @@ proxy_gc_edges(
 	vm_value payload;
 	uintptr_t realm_address;
 	uintptr_t descriptor_address;
+	uintptr_t define_address;
 	unsigned index;
 	unsigned registered;
 	int status;
 	int same;
 	int present;
+	int done;
 
 	/* Setup ownership is retired deliberately before each product operation takes responsibility. */
 	memset(roots, 0, sizeof(roots));
 	registered = 0;
-	for (index = 0; index < 5U; index++) {
+	for (index = 0; index < 6U; index++) {
 		status = vm_heap_add_root(page->heap, &roots[index]);
 		if (status != 0)
 			goto cleanup;
@@ -479,6 +488,23 @@ proxy_gc_edges(
 
 	/* The fixture trap returns a descriptor and object payload with no persistent script owner. */
 	status = proxy_script(page->realm, "(function(){return {value:{sole:75},writable:true,enumerable:true,configurable:true};})", &answer);
+	if (status != 0)
+		goto cleanup;
+	roots[4] = vm_value_as_cell(answer);
+	status = vm_object_define(page->heap, handler, descriptor_key, answer, VM_PROPERTY_DEFAULT);
+	if (status != 0)
+		goto cleanup;
+	roots[4] = NULL;
+
+	/* Define's trap erases its argument value before returning, leaving only the original native descriptor owner. */
+	descriptor_key = vm_key_from_ascii(page->heap, "defineProperty");
+	if (descriptor_key == VM_VALUE_EMPTY) {
+		status = 2;
+		goto cleanup;
+	}
+
+	/* Script collection precedes the separate post-trap native descriptor collection. */
+	status = proxy_script(page->realm, "(function(t,k,d){var v=d.value;delete d.value;collectReadProxy();return v!==77;})", &answer);
 	if (status != 0)
 		goto cleanup;
 	roots[4] = vm_value_as_cell(answer);
@@ -557,6 +583,62 @@ proxy_gc_edges(
 		goto cleanup;
 	}
 
+	/* Protect setup only while allocating a new object that no target or trap closure will own. */
+	roots[1] = &realm->cell;
+	found = (struct vm_cell *)vm_object_create(page->heap, NULL);
+	if (found == NULL) {
+		status = 2;
+		goto cleanup;
+	}
+
+	/* The temporary setup root is removed immediately before production Define takes responsibility. */
+	roots[5] = found;
+	define_address = (uintptr_t)found;
+	status = vm_object_define(page->heap, (struct vm_object *)found, descriptor_key, vm_value_int32(76), VM_PROPERTY_DEFAULT);
+	if (status != 0)
+		goto cleanup;
+	memset(&change, 0, sizeof(change));
+	change.has = VM_HAS_VALUE | VM_HAS_CONFIGURABLE;
+	change.attributes = VM_PROPERTY_CONFIGURABLE;
+	change.value = vm_value_cell(found);
+	roots[1] = NULL;
+	roots[5] = NULL;
+	status = vm_define_own_property(realm, (struct vm_object *)vm_value_as_cell(made), key, &change, &done);
+	if (status != 0)
+		goto cleanup;
+	if (!done) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* The sole input payload must survive even after the trap deleted its representation field and returned. */
+	found = vm_heap_find_cell(page->heap, define_address);
+	if (found == NULL) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* Let the embedding retain the completed result only after the native ownership observation. */
+	roots[5] = found;
+	status = vm_get(page->realm, vm_value_cell(found), descriptor_key, &payload);
+	if (status != 0)
+		goto cleanup;
+	same = vm_same_value(payload, vm_value_int32(76));
+	if (!same) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* A false trap result must not query the target's native descriptor hook. */
+	change.value = vm_value_int32(77);
+	status = vm_define_own_property(realm, (struct vm_object *)vm_value_as_cell(made), key, &change, &done);
+	if (status != 0)
+		goto cleanup;
+	if (done || sole_realm_alive != 4U) {
+		status = 1;
+		goto cleanup;
+	}
+
 	/* The sole result from Get must also survive the subsequent Has collection. */
 	key = vm_key_from_ascii(page->heap, "sole");
 	if (key == VM_VALUE_EMPTY) {
@@ -570,7 +652,7 @@ proxy_gc_edges(
 		goto cleanup;
 	same = vm_same_value(answer, vm_value_int32(74));
 	if (!same ||
-	    sole_realm_alive != 3U ||
+	    sole_realm_alive != 4U ||
 	    realm->property_depth != 0U) {
 		status = 1;
 		goto cleanup;
@@ -580,6 +662,7 @@ proxy_gc_edges(
 	roots[0] = NULL;
 	roots[3] = NULL;
 	roots[4] = NULL;
+	roots[5] = NULL;
 	vm_heap_collect(page->heap);
 	found = vm_heap_find_cell(page->heap, realm_address);
 	if (found != NULL) {
@@ -589,6 +672,13 @@ proxy_gc_edges(
 
 	/* The fresh descriptor payload must also be actually reclaimed after its last embedding root ends. */
 	found = vm_heap_find_cell(page->heap, descriptor_address);
+	if (found != NULL) {
+		status = 1;
+		goto cleanup;
+	}
+
+	/* The original Define input payload has no owner once the completed embedding root ends. */
+	found = vm_heap_find_cell(page->heap, define_address);
 	if (found != NULL) {
 		status = 1;
 		goto cleanup;
@@ -871,5 +961,62 @@ cleanup:
 		return status;
 
 	/* Succeeded: both descriptor kinds preserved only meaningful values and retired every owned graph. */
+	return 0;
+}
+
+/* Exposes Reflect-style Boolean definition through the actual VM operation for independent fixture comparisons. */
+static int
+proxy_define_descriptor(
+	struct vm_realm *realm,
+	vm_value receiver,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct vm_descriptor descriptor;
+	struct vm_cell *key_root;
+	vm_value object;
+	vm_value key;
+	int is_object;
+	int is_cell;
+	int done;
+	int status;
+
+	UNUSED_PARAMETER(receiver);
+
+	/* Match reflection's target validation before any key or descriptor coercion. */
+	object = js_argument(args, count, 0);
+	is_object = vm_value_is_object(object);
+	if (!is_object) {
+		status = vm_throw_type_error(realm, "Define target must be an object");
+		return status;
+	}
+
+	/* A freshly returned symbol key must survive later descriptor getters. */
+	status = vm_to_key(realm, js_argument(args, count, 1), &key);
+	if (status != 0)
+		return status;
+	key_root = NULL;
+	is_cell = vm_value_is_cell(key);
+	if (is_cell)
+		key_root = vm_value_as_cell(key);
+	status = vm_heap_add_root(realm->heap, &key_root);
+	if (status != 0)
+		return status;
+	status = vm_to_property_descriptor(realm, js_argument(args, count, 2), &descriptor);
+	if (status != 0)
+		goto cleanup;
+	status = vm_define_own_property(realm, (struct vm_object *)vm_value_as_cell(object), key, &descriptor, &done);
+	if (status != 0)
+		goto cleanup;
+	*result = vm_value_boolean(done);
+
+cleanup:
+	/* The fixture does not retain a converted key beyond the product operation. */
+	vm_heap_remove_root(realm->heap, &key_root);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the actual internal definition produced the Boolean result. */
 	return 0;
 }

@@ -80,6 +80,7 @@ static const struct vm_cell_type access_for_in_type = {
 	"for-in", access_for_in_trace, access_for_in_finalize
 };
 
+static int access_proxy_define(struct vm_realm *realm, struct vm_proxy *proxy, vm_value key, const struct vm_descriptor *descriptor, int *done);
 static int access_proxy_get_own(struct vm_realm *realm, struct vm_proxy *proxy, vm_value key, struct vm_descriptor *descriptor, int *found);
 static int access_descriptor_compatible(int extensible, int found, const struct vm_descriptor *current, const struct vm_descriptor *descriptor);
 static int access_descriptor_allowed(const struct vm_object *object, int found, const struct vm_descriptor *current, const struct vm_descriptor *descriptor);
@@ -1203,6 +1204,14 @@ vm_define_own_property(
 	int status;
 	int handled;
 
+	/* Realm-aware Proxy definition owns its traps and leaves heap-only native policy unchanged. */
+	if (object->kind == VM_KIND_PROXY) {
+		status = access_proxy_define(realm, (struct vm_proxy *)object, key, descriptor, done);
+		if (status != 0)
+			return status;
+		return 0;
+	}
+
 	/* Native policy may reject or handle a descriptor before ordinary validation. */
 	*done = 0;
 	if (object->native_operations != NULL && object->native_operations->define != NULL) {
@@ -1238,7 +1247,10 @@ vm_define_own_property(
 
 	/* An array takes no index past a length that cannot change. */
 	is_index = vm_value_is_array_index(key, &index);
-	if (is_array && is_index && !found && index >= object->length) {
+	if (is_array &&
+	    is_index &&
+	    !found &&
+	    index >= object->length) {
 		access_get_length_attributes(object, length_key, &attributes);
 		if ((attributes & VM_PROPERTY_WRITABLE) == 0U)
 			return 0;
@@ -1253,7 +1265,9 @@ vm_define_own_property(
 	is_accessor = 0;
 	if ((descriptor->has & (VM_HAS_GET | VM_HAS_SET)) != 0U)
 		is_accessor = 1;
-	if ((descriptor->has & (VM_HAS_VALUE | VM_HAS_WRITABLE | VM_HAS_GET | VM_HAS_SET)) == 0U && found && (current.has & VM_HAS_GET) != 0U)
+	if ((descriptor->has & (VM_HAS_VALUE | VM_HAS_WRITABLE | VM_HAS_GET | VM_HAS_SET)) == 0U &&
+	    found &&
+	    (current.has & VM_HAS_GET) != 0U)
 		is_accessor = 1;
 
 	/* The enumerability and configurability: given, or kept, or false. */
@@ -3044,5 +3058,204 @@ cleanup:
 		return status;
 
 	/* Succeeded: absence or the fully checked descriptor is available to the caller. */
+	return 0;
+}
+
+/* Executes Proxy definition using the original partial descriptor even when the trap mutates its representation. */
+static int
+access_proxy_define(
+	struct vm_realm *realm,
+	struct vm_proxy *proxy,
+	vm_value key,
+	const struct vm_descriptor *descriptor,
+	int *done)
+{
+	struct vm_cell *roots[8];
+	struct access_descriptor_roots input_roots;
+	struct vm_descriptor current;
+	struct vm_object *target_object;
+	struct vm_string *string;
+	vm_value target;
+	vm_value handler;
+	vm_value method;
+	vm_value method_key;
+	vm_value trap_key;
+	vm_value representation;
+	vm_value produced;
+	vm_value args[3];
+	unsigned index;
+	unsigned registered;
+	int input_registered;
+	int depth_owned;
+	int is_cell;
+	int is_symbol;
+	int truth;
+	int present;
+	int extensible;
+	int setting_fixed;
+	int allowed;
+	int status;
+
+	/* Snapshot protocol participants and clear the Boolean output before any observable method read. */
+	*done = 0;
+	target = proxy->target;
+	handler = proxy->handler;
+	roots[0] = NULL;
+	if (realm->managed)
+		roots[0] = &realm->cell;
+	roots[1] = &proxy->object.cell;
+	roots[2] = NULL;
+	is_cell = vm_value_is_cell(target);
+	if (is_cell)
+		roots[2] = vm_value_as_cell(target);
+	roots[3] = NULL;
+	is_cell = vm_value_is_cell(handler);
+	if (is_cell)
+		roots[3] = vm_value_as_cell(handler);
+	roots[4] = NULL;
+	is_cell = vm_value_is_cell(key);
+	if (is_cell)
+		roots[4] = vm_value_as_cell(key);
+	roots[5] = NULL;
+	roots[6] = NULL;
+	roots[7] = NULL;
+	registered = 0;
+	input_registered = 0;
+	depth_owned = 0;
+	for (index = 0; index < 8U; index++) {
+		status = vm_heap_add_root(realm->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* Retain flagged original input values independently of the separately mutable trap argument object. */
+	input_roots.realm = realm;
+	input_roots.source = VM_VALUE_UNDEFINED;
+	input_roots.descriptor = descriptor;
+	input_roots.made = VM_VALUE_UNDEFINED;
+	status = vm_heap_add_tracer(realm->heap, access_descriptor_trace, &input_roots);
+	if (status != 0)
+		goto cleanup;
+	input_registered = 1;
+	if (realm->property_depth >= ACCESS_RECURSION_MAX) {
+		status = vm_throw_range_error(realm, "Maximum property recursion exceeded");
+		goto cleanup;
+	}
+
+	/* This frame owns one property depth until its normal or abrupt completion. */
+	realm->property_depth++;
+	depth_owned = 1;
+	if (target == VM_VALUE_NULL) {
+		status = vm_throw_type_error(realm, "Cannot define a property of a revoked Proxy");
+		goto cleanup;
+	}
+
+	/* GetMethod observes the current define trap and treats null as absence. */
+	method_key = vm_key_from_ascii(realm->heap, "defineProperty");
+	if (method_key == VM_VALUE_EMPTY) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* Missing traps delegate the unchanged partial descriptor to the original target. */
+	status = vm_get_method(realm, handler, method_key, &method);
+	if (status != 0)
+		goto cleanup;
+	if (method == VM_VALUE_UNDEFINED) {
+		status = vm_define_own_property(realm, (struct vm_object *)vm_value_as_cell(target), key, descriptor, done);
+		goto cleanup;
+	}
+
+	/* Retain a fresh method and normalize internal indices without altering symbol identity. */
+	roots[5] = vm_value_as_cell(method);
+	trap_key = key;
+	is_symbol = access_is_symbol(key);
+	if (!is_symbol) {
+		status = vm_to_string(realm, key, &string);
+		if (status != 0)
+			goto cleanup;
+		trap_key = vm_value_cell(string);
+		roots[6] = &string->cell;
+	}
+
+	/* A trap sees exactly the present descriptor fields as ordinary writable data properties. */
+	status = vm_from_property_descriptor(realm, descriptor, &representation);
+	if (status != 0)
+		goto cleanup;
+	roots[7] = vm_value_as_cell(representation);
+	args[0] = target;
+	args[1] = trap_key;
+	args[2] = representation;
+	status = vm_call(realm, method, handler, args, 3, &produced);
+	if (status != 0)
+		goto cleanup;
+	truth = vm_to_boolean(produced);
+	if (!truth) {
+		status = 0;
+		goto cleanup;
+	}
+
+	/* Successful traps are constrained by the original target's state after the trap has run. */
+	target_object = (struct vm_object *)vm_value_as_cell(target);
+	status = vm_get_own_property(realm, target_object, key, &current, &present);
+	if (status != 0)
+		goto cleanup;
+	extensible = 1;
+	if ((target_object->flags & VM_OBJECT_NOT_EXTENSIBLE) != 0U)
+		extensible = 0;
+	setting_fixed = 0;
+	if ((descriptor->has & VM_HAS_CONFIGURABLE) != 0U && (descriptor->attributes & VM_PROPERTY_CONFIGURABLE) == 0U)
+		setting_fixed = 1;
+	if (!present) {
+		if (!extensible || setting_fixed) {
+			status = vm_throw_type_error(realm, "Proxy define trap cannot invent this property");
+			goto cleanup;
+		}
+	} else {
+		/* Existing properties use the original input fields rather than the trap's mutable object. */
+		allowed = access_descriptor_compatible(extensible, present, &current, descriptor);
+		if (!allowed) {
+			status = vm_throw_type_error(realm, "Proxy define trap accepted an incompatible descriptor");
+			goto cleanup;
+		}
+
+		/* An explicit fixed claim must already hold on the target after the trap. */
+		if (setting_fixed && (current.attributes & VM_PROPERTY_CONFIGURABLE) != 0U) {
+			status = vm_throw_type_error(realm, "Proxy define trap invented a nonconfigurable property");
+			goto cleanup;
+		}
+
+		/* A nonconfigurable data property must already be read-only before a false writable claim succeeds. */
+		if ((current.has & VM_HAS_VALUE) != 0U &&
+		    (current.attributes & VM_PROPERTY_CONFIGURABLE) == 0U &&
+		    (current.attributes & VM_PROPERTY_WRITABLE) != 0U) {
+			if ((descriptor->has & VM_HAS_WRITABLE) != 0U && (descriptor->attributes & VM_PROPERTY_WRITABLE) == 0U) {
+				status = vm_throw_type_error(realm, "Proxy define trap invented a fixed read-only property");
+				goto cleanup;
+			}
+		}
+	}
+
+	/* Report success only after every post-trap invariant agrees with the unchanged input descriptor. */
+	*done = 1;
+	status = 0;
+
+cleanup:
+	/* The original descriptor pointer and depth ownership end with this native frame. */
+	if (depth_owned)
+		realm->property_depth--;
+	if (input_registered)
+		vm_heap_remove_tracer(realm->heap, access_descriptor_trace, &input_roots);
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+
+	/* Preserve errors without changing refusal into successful definition. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: done distinguishes a valid truthy trap result from ordinary refusal. */
 	return 0;
 }
