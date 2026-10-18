@@ -11,11 +11,12 @@
 -->
 
 <!-- master:agents:start -->
-- **2026-10-18**: N=2（ユーザー「N=2で、P1はWS245, WS251の続きを実施します。…」）。P1（Opus 5.5 low、レビューの子なし）は q1241・q1242 を済ませて返却、全部 main に merge（最後 db594efb5）。動いている担当は無い。
-  - WS245: 32 Phase を cleared（ca6df3d9f）。残る 10 Phase は p025・p026・p043（DC6 の H6）、p042・p050d4c（reboot の止める道）、p050d4d（QEMU の boot-test）、p041（suspend）、p044・p045（host の受け入れ）、p046（目視の残り）。
-  - WS251 p002: GPU ドライバの grep は 0 件。残りは bcm2711 の段の名前（ユーザーの判断待ち、Q1 の勧めは (a) 残す）、arm64 の build 1 回、gen9・bootfb の host 試験。
-  - WS256 VisionFive 2: 4 点は決定、5 点の質問がユーザーの答え待ち（ws256/ws.md）。P2 は未起動。
-  - push はしていない（最後の push より後の commit は全部 local）。
+- **2026-10-18 夜〜 自走**（ユーザー「WS260, ws259, WS261, ws262, ws263, ws264, ws265, ws266, ws267, ws268 これらを完了させるまで自走してほしいです。」、N=2、子のエージェントなし、判断は decisions-log の同日の項目）。
+  - P1（q1257）: WS263 riscv32 → WS266 m68k の virt → WS264 ppc32 mac99 → WS265 ppc64 pseries BE。
+  - P2（q1256 → q1258）: WS262 の uefi・sparcv9 → WS267 sun4u → WS268 x68k → WS259。
+  - T1: QEMU の試験を都度。実機（WS260 の T1-710、WS259 の WiFi）は機械の準備待ち（beta2.md の U24・U25）。
+  - WS261 は completed。朝の報告: 事前の承認で入れた HAL の差分の一覧、bootloader/tests/payload*.ld の削除の可否、Pi 4 の CI の image の大きさ（2 の冪）。
+  - push はしていない。
 <!-- master:agents:end -->
 
 ### 統合と試験の待ち
