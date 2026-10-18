@@ -2,7 +2,7 @@
 
 # ws256-p003 HAL の芯（QEMU virt、SBI からの直の起動）
 
-Status: in-progress（2026-10-18 q1249、P2。実装と build（warning 0）と host 試験は済み。QEMU の判定は T1 への依頼の後。T1 の結果を Q1 が判定するまで cleared にしない）
+Status: in-progress、test-wait（2026-10-18 20:4x、q1249、P2。実装と build（warning 0）と host 試験は済み。T1 の依頼は Q1 に送った（番号は Q1）。T1 の結果を Q1 が判定するまで cleared にしない）
 
 - 親: [WS256](../ws.md)。Queue: q1249（承認: 2026-10-18 ユーザー（クリック）「p009 → p003 を今始める」）。
 - 範囲: [design.md](../design.md) §6 の p003。HAL の芯と最小の kernel 側、vmunix の build。loader（p004）・kernel の console と ramdisk（p008）・userland（p007）は範囲の外。
@@ -32,9 +32,10 @@ Status: in-progress（2026-10-18 q1249、P2。実装と build（warning 0）と 
 
 - `make ZEDBSD_CONFIG=config/ci/config-riscv64-virt.mk -j16 build/riscv64-virt/vmunix`: exit 0、`warning:`・`error:` 0 行（log `build/tmp/rv-build3.log`、worktree p2）、`llvm-nm -u` に強い undefined 0。ELF は RISC-V、entry 0xffffffff80000000、最初の PT_LOAD の paddr 0x80200000、image 約 9.2 MB（16 MiB の assert の内）。locore.o の逆 assemble で boot の table の 4 つの loop と satp の値を目で確かめた。
 - `plan/ws256/tests/fdt/run.sh OUTDIR`: 34 件 PASS（virt 風の DTS: hart 2・timebase・`riscv,isa-extensions` と `riscv,isa` の両方・memory・`/memreserve/` と reserved の 3 件・no-map 1 件・PLIC の context 1/3・ns16550a・fw_cfg・bootargs・initrd・短い buffer の拒否。JH7110 風: hart 5 で usable 4（S7 を外す）・timebase 4 MHz・context 2h・DW UART の reg-shift 2・ccache・no fw_cfg）。
+- `plan/ws256/tests/plic/run.sh OUTDIR`: 21 件 PASS（plic.c・irq.c の写しを riscv の命令の無い asm.h・spin.h の代わりと並べ、偽の PLIC の register の配列で: init で priority 0・context 1 の enable 0・threshold 0・残った claim の complete、register は enable を立て priority 0 のまま、unmask で priority 1、mask で priority 0 で enable は残る、claim した source は handler の EOI で 1 回 complete、handler の無い source は mask して complete、local の ack は何も complete しない、unregister、範囲外の source、level-high だけ受ける）。
 - 静的な検査: trap frame の offset（`int.h`）、percpu の `kernel_sp`・`user_sp`（`percpu.h`）、boot block（`smp.c`）、ramfb の設定 28 byte（`framebuffer.c`）の `_Static_assert`。
 - `git diff --check` 0。
-- 未実施: QEMU での起動（T1 に依頼）、PLIC・page table・fw_cfg の byte 列の host の fixture（design §5.4 の一部。HAL の file が riscv の inline asm を含み host で compile できないので、code review と T1 の画面で代える）、amd64 の build（Makefile・elf.c の変更は riscv64 の条件の中だけ）。
+- 未実施: QEMU での起動（T1 に依頼）、page table・fw_cfg の byte 列の host の fixture（design §5.4 の一部。space.c は direct map の高い address に table を書くので host で動かせない。page table は T1 の画面の `RISCV64 PAGING PASS`・`W^X PASS` と code review で、fw_cfg は ramfb の画面が出る事で代える）、amd64 の build（Makefile・elf.c の変更は riscv64 の条件の中だけ）。
 
 ## T1 への依頼（Q1 経由）と合否
 
