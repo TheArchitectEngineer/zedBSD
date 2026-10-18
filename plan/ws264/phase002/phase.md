@@ -2,7 +2,7 @@
 
 # ws264-p002 HAL と mac99 の BSP（OpenBIOS からの起動）
 
-Status: in-progress（2026-10-19 P1、q1257。T1 の判定待ち）
+Status: cleared（2026-10-19 Q1 判定: T1-714 で画面に PPC32 HAL READY DISPLAY FIRMWARE PAGING PASS TIMER TICK・PPC32 CPU 1 ONLINE・VFS initialization failed、exit 0（QEMU mac99、694a74202））（旧: in-progress（2026-10-19 P1、q1257。T1 の判定待ち））
 
 - 親: [WS264](../ws.md)。設計: [design.md](../design.md)。
 - HAL の API の差分（事前の承認の範囲、朝にユーザーへ報告）:
