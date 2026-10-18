@@ -1,5 +1,27 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
+# ws074-q20261018-19 / XHTML inline producer・ready capture・scripted413
+
+Status: active（2026-10-18）
+Owner: このCodex chat単独。
+Approval: [ユーザー自走指示](autonomy.md)を次の有限scopeへ適用。q18 history/hashとterminal WIP4090ecec6をread-back済み。
+Timebox: 最大90分（16:28 JSTまで）。
+
+| Attempt | Phase | Exact scope | State | Dependencies |
+| --- | --- | --- | --- | --- |
+| ws074-q20261018-19-i01 | [p196](phase196/phase.md) top-level XHTML classic inline partial | page/page.cだけでstrict XML parse/project/adopt後、load前にgeneric HTML-namespace lowercase classic inline/CDATAを既存bind inline backendへ接続。全snapshot native nodesとsaved currentScriptをcallback前にrootし、connected/template-inert/started/detached/namespace/type/sourceを守る。currentScriptを設定/復元、self/next removal・GCとload順を確認。外部/module/parser streaming/document.write/full XML scriptingは未実装として保持し、元のXML validationやHTML/ABI/Waylandを変えない。独立Chrome XML lifecycle・native namespace/MIME/CDATA/currentScript/GC/切断、host/target warning0/C全文/format/style新logic0・DOM35/既存XML/Acid、同一final pairで全1491/static1561/strict48 old PASS491/839/39維持・全callback診断 | in-progress | p190 q18 XML positive missing/source proof、p196既存strict parse/project・child inline backend、q17 verified baseline |
+| ws074-q20261018-19-i02 | [p190](phase190/phase.md) first-ready consumer revalidation partial | i01 verified XML outputを得てq18公開SDK clientを同じ新native pairで再検証。元10controls全件・late32赤/TestRendered64緑/delay132緑・probe除去・query/child/XHTML・永久wait/zero-loop非PASS、SDK/C/source hashを保持。q18 unclearedを書換えず新attemptとして記録、native/source判定を緩めない | pending | i01 XML lifecycle/CDATA scoped output、q18 client source/controls |
+| ws074-q20261018-19-i03 | [p190](phase190/phase.md) strict scripted/variant413 partial | i02全10controls後にq18 transportをpixel runnerへ完成。pinned official reftest-waitをtest/referenceへ実行しfirst-ready画面/元bytes・query・probe_removed ackを保ち、pinned executorのfuzzy上下限/zero例外/ref別条件とmixed match/mismatch成功leaf/cycle/depth拒否を独立controlsで検証。固定残413を全attemptしall outcomes/raw/console/source/PPM/PNG/RGB/checkpoint/hashを保持、static1561とのdisjoint union1974を照合。testdriver/remote actions/未対応API等は非PASS、分母から除外しない。Python full専用standard無しを開示。既存static/crash tool/WPT期待値/Masterは変えない | pending | i02 positive output・fixed omitted413、pinned primary wait/executorとq17 raw |
+
+Dependency graph: q18診断 → p196 XML scoped preflight → p190 same10 controls → pixel controls → actual413。i01 global1491/static1561/48 tail gateは同じfinal pairで後続中に実行可、全item/whole WS清算を前倒ししない。
+Upcoming Work Outlook: generated harness292、p252 flex-basis、native module top-level await/animation/ViewTransition/fit、XML external/module/parser timing、p249 margin。
+Generation bounds: engine userland/desktop/libbrowser/page/page.cだけ（private bind internal includeは同engine内）、試験はq18の3fileとXML fixtures/必要build helper/WS074記録。public SDK/他engine C/アプリ/Wayland/shared toolchain/sysroot/他WS/shared board/cacheを変えない。C全文/Guardrail/browser component全文を実際の生成scopeへ適用。全snapshot登録失敗ではscriptを開始せずnative error、同view callback再入はしない。最初の必要producerが成立しないならaffected itemをunclearedとして止める。
+
+Bounds: 元90分、virtual5000ms/client最大5001 calls/process20s。global/prerequisite/actual413が期限までに終わらなければ全rawとunstarted/outcome/resumeを保持しuncleared、時間を自動延長しない。push/削除/make check/QEMUは実行しない。各whole Phase/target full/p100/WS100%は別受け入れ。
+
+---
+<!-- awesome-plan project=zedbsd record=queue -->
+
 # ws074-q20261018-18 / native first-ready capture・scripted reftest413
 
 Status: finished（2026-10-18、i01 uncleared/i02未着手uncleared）

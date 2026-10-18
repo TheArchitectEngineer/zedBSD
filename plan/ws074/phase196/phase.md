@@ -2,7 +2,7 @@
 
 # ws074-p196: top-level XML/XHTML document loading
 
-Status: uncleared（2026-10-14 q1046-i01 partial cleared、全体未達）
+Status: in-progress（q19 scoped native/consumer attempt、以前uncleared履歴保持）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -27,3 +27,11 @@ Event ws074-p196-created-20261014: [p195](../phase195/phase.md)で最上位XHTML
 Event ws074-p196-q1046-outcome-20261014: q1046-i01 partial cleared。10件timeoutを全解消、描画不一致9件と残余XML lifecycleを分離。GitHub publication保留。
 
 Event ws074-p196-q18-xhtml-blocker-and-redesign-20261018: [p190 q18 evidence](../phase190/evidence/20261018-q18/README.md)。公開SDK first-ready clientはnative10対照中9/10、XHTMLのみ未対応。独立XMLでChrome3 lifecycle行/native0を確認、最上位page_load_xhtmlがscriptsを実行せずloadを発火していた。q18-i01 uncleared/i02未着手uncleared、required criterionは弱めない。p196のgeneric HTML-namespace classic inline/CDATA実行をload前へ接続する有限outputを次Queue候補にし、p196 verified output→p190同10対照→scripted413へ依存を改訂。q1046 script-free/q17既存清算は保持。native codeはこのQueueでは変更せず、source不変の1369確認済みPASSを維持。shared projection pending。
+
+## q19 exact redesign / execution scope（2026-10-18、16:28 JST bound）
+
+[Queue](../queue.md)でp196 classic inline producer→p190同10controls→scripted413を選定。engine生成はpage/page.cだけ。既存strict XML parse/project/adoptの後・page_fire_loadの前に、Window-owned XHTMLのHTML namespace/local lowercase scriptをgeneric既存inline backendで実行するpartial。全script snapshotとsaved currentScriptをrootしてからcallbackを開始し、connected/started/template-inert・namespace/type/srcとdetachedを守る。self/next removalとGC、currentScript設定/復元、通常例外で後続が続くことを確認。外部/module・parser streaming timing/document.write等のfull XML scriptingは残りとして保持し、script-free q1046の結果を不当にwhole clearへ変えない。
+
+p190のq18 clientと同じ10 positive/negative対照はXMLをskipせず再実行する。必要outputが成立してからfirst-ready/fuzzy/graph/pixel controls→actual413へ進む。新engine final pairの全1491/static1561/strict48でold whole491/839/39維持・全callbacksを照合し、未対応APIやtestdriverは非PASSとして保存。C全文/browser component全文/format/new logic style0/host/target/DOM/XML/Acidを適用。上限を延ばさず未達ならunclearedとresumeを残す。shared projection pending。
+
+Event ws074-p196-q19-selected-redesign-20261018: q18 XML脚本不足をscopeのあるnative producerへ分離し、必要outputのverified preflight→p190同controls→413へ実行順を確定。origin p190/foreign p196の各自身の依存・検証・resumeを同時更新。q18 mandatory criterionは弱めず、新attemptで再検証する。承認は自走契約、旧1369 PASSは新final source測定が終わるまでlast verifiedとして保持。

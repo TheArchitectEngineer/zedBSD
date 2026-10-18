@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [ws074-q20261018-18](queue.md) finished（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
+Queue: [ws074-q20261018-19](queue.md) active（2026-10-18、Codex単独）。ユーザーが100%までの自走を指示。[契約](autonomy.md)。
 
 Latest verified（q17 finished）: 全harness1491はwhole491・callback11531 PASS/20226 FAIL/14 NOTRUNを維持し、whole/callback後退・改善・欠損・追加・順序変更0。全static1561は839 PASS/722 FAIL、全reference pixel metrics unchanged。strict48は39 PASS/9 readiness_missing。最終source f1b83fa8f/pair hash read-back一致、固定WPT tracked clean。確認済み1369/3805（35.978975%）、q14から39増。未実行292 harness/413 reftest・native crash依存9は残す。 ordinary attributes/producer/strict48 coverageの全3 partial cleared。次候補はp190 scripted/variant reftest413のstrict計測、p252等もplanned。whole WS/各API・target full/p100・共有projectionはpending。
 
@@ -644,13 +644,13 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p187](phase187/phase.md) | 負の padding と第6色箱の幅を調べる | cleared（q1010-i01、Acid3差900減、negative padding fixture pass） | p172〜p186 cleared、q1009 実測出力 |
 | [ws074-p188](phase188/phase.md) | 同一ページで観測した訪問履歴と :visited の paint color | cleared（q1011-i01、Acid3差801減→0、privacy fixture pass） | p172〜p187 cleared、q1010 実測出力 |
 | [ws074-p189](phase189/phase.md) | Interop 2025 testharness 1,783件の結果取得 runner | uncleared / q17全1491 whole491・未対応292 | p173 q1012 固定manifest出力 |
-| [ws074-p190](phase190/phase.md) | Interop 2025 reftest 1,974件・crashtest48件のrunner coverage | uncleared / q18 controls9/10・p196 XHTML script待ち | p173 q1012 固定manifest出力 |
+| [ws074-p190](phase190/phase.md) | Interop 2025 reftest 1,974件・crashtest48件のrunner coverage | uncleared / q19 p196 scoped output待ち、q18履歴保持 | p173 q1012 固定manifest出力 |
 | [ws074-p191](phase191/phase.md) | Interop 2025 textdecoration全16 testharnessのCSSOM互換 | cleared / q1023、16件16 PASS/0 FAIL | p173固定manifest、p189 q1015全16件baseline |
 | [ws074-p192](phase192/phase.md) | Interop 2025 Window named properties互換 | uncleared / q1025 partial cleared、一意id live lookup | p173固定manifest、p189 q1024 shard |
 | [ws074-p193](phase193/phase.md) | Interop 2025 details/hidden until-found互換 | uncleared / q1032計測6 PASS/10 FAIL/2 no output、q1035/q1036で2件追加PASS、reftest25/crashtest3未実行 | p189 q1024 shard、p192 q1025一意id output |
 | [ws074-p194](phase194/phase.md) | Interop 2025 Element.attributes / Attr | uncleared / q1029 partial cleared、beforematch WPT1 PASS | p193 q1028 fragment output |
 | [ws074-p195](phase195/phase.md) | Interop 2025 flexbox XHTML render timeout10件の一般欠陥調査/修正 | cleared / q1046後続証拠でtimeout0・host/Acid受け入れ充足 | p190 q1044 timeout10 ID証拠 |
-| [ws074-p196](phase196/phase.md) | Interop 2025 最上位XML/XHTML document loading | uncleared / q1046 script-free partial保持・q18 native inline不足再確認 | p195 q1045根因証拠 |
+| [ws074-p196](phase196/phase.md) | Interop 2025 最上位XML/XHTML document loading | in-progress / q19 XML native→same controls→413 scoped attempts | p195 q1045根因証拠 |
 | [ws074-p197](phase197/phase.md) | Interop 2025 Flexbox justify-content overflow配置 | cleared / q1052後続証拠で固定残り9件pixel exact PASS | p196 q1046 XHTML描画証拠 |
 | [ws074-p198](phase198/phase.md) | Interop 2025 BFCの親/子縦margin相殺禁止 | cleared / q1052後続証拠で固定残り7件pixel exact PASS | p197 q1047縦方向7 FAIL証拠 |
 | [ws074-p199](phase199/phase.md) | Interop 2025 justify-content物理left/right | cleared / q1052後続証拠で固定10件pixel exact PASS・grid2/2 | p198 q1048参照差証拠 |
@@ -1219,3 +1219,5 @@ Event ws074-q17-finished-20261018: [exact history](history/ws074-q20261018-17.md
 Event ws074-p190-q18-selected-20261018: [Queue](queue.md)でpublic SDK試験clientのfirst-ready撮影→p190 scripted413 runnerを最大90分へ選定。q17 WIP c59655415/history hash read-back済み。必要output/controls/原source・DOM除去・query/fuzzy/graph/全raw保持をp190へ記録、prod engine/ABI不変。確認済み1369/3805を保持し、未検証分は加算しない。shared projection pending。
 
 Event ws074-q18-uncleared-p196-redesign-20261018: [exact history](history/ws074-q20261018-18.md)・[evidence](phase190/evidence/20261018-q18/README.md)。first-ready clientはlate timer先取り防止/SDK/C/target成立、必須10対照中XHTMLのみFAIL。最上位XMLがscriptsを実行せずloadへ進むのでp196 output→p190同対照→413へ依存改訂。origin p190/foreign p196へ自身の変更とresumeを配送済み。両q18 item uncleared、q17 verified1369維持、shared projection pending。
+
+Event ws074-q19-selected-redesign-20261018: [Queue](queue.md)でp196 strict validated XHTML classic inline producer→p190 same10 client controls→scripted413を最大90分/16:28 boundに選定。q18 WIP4090ecec6/history hash確認済み、origin/foreign両Phaseへ自身の設計/検証/resumeを配送。sourceはpage.cと既存試験3file、public ABI/他engine/shared projectionは保護。last verified1369は新final測定まで保持。
