@@ -67,3 +67,5 @@
 8. #13 HAL の差分 3 件は「3 件とも承認」（[Guardrail](../guardrail.md) の表）。
 9. #17 sifive_u の走りは「gdbstub で読んで判定」（WS256 の sifive_u に限る例外。serial の log は使わない）。
 10. #18 試験の道具の変更は「P2 に許可」（p009 で plan/tools の 3 file だけ。既存の mode は変えない。Q1 が merge の前に読む）。
+
+11. #9 は (a): HAL → kernel は汎用の構造体と `hal_get_arch_handoff` の名前付きの object だけ（2026-10-18 ユーザーの規約、[Guardrail](../guardrail.md)「HAL と kernel・boot loader と HAL の受け渡し」）。[proposed/boot-h-riscv64.md](proposed/boot-h-riscv64.md) の案 (b) は採らない。
