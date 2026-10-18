@@ -91,3 +91,14 @@ P1 の見立て（Status は変えない。判定は Q1）: cleared にしない
   3. DDI の clock map（xd 0、machine 0x01e05800）: 使っていない port の gate は firmware と sanitize が残す物で、試験の 2 つの port の bit（DDI A の gate と PLL の選び、TC2 の gate: mask 0x00002403）だけを比べる。
 - 比べていない物: DBUF・WM・DBOX・line time（plan（xd-screen）の出力を試験が入力として渡すので、output の比べにならない）、Dekel PHY の register（dump は index の窓の 1 つの面だけ）、plane（xd-picture の担当）。
 - 確かめた事: `run-xd-host-tests.sh build/p2-ws245-host` all passed（output 187）、warning 0。試験だけの変更（kernel の source は不変）。
+
+## 追加の証拠 2: 版ごとの順の anchor（2026-10-19 P2、Q1 の許可）
+
+- `host-xd-output-test` の `i915_xd_ot_test_order`: display 11（Ice Lake）・12（Tiger Lake）・13（Alder Lake-P）の各行で、eDP（DDI A、display 11 は transcoder EDP）・HDMI（DDI A の後の最初の combo port、DPLL 1）・DP-TC（TC1、DP-alt）・TBT（TC1）の light と dark を xd-output の step で流し、Linux v6.8.12 の `hsw_crtc_enable`・`hsw_crtc_disable`・`tgl_ddi_pre_enable_dp`・`hsw_ddi_pre_enable_dp`・`intel_ddi_pre_enable_hdmi`・`intel_enable_ddi(_hdmi)`・`intel_ddi_post_disable(_dp/_hdmi)` の順から取った要の書き込みが、その順で現れる事を見る（値は表の比べで済んでいるので順だけ）。
+  - light: PLL（TBT は caller の PLL）→ panel の電源（eDP）→ DDI の clock（combo は clock map、TC は DDI_CLK_SEL の MG/TBT の選び）→ display 12 以降は transcoder の clock（PHY+1、版の field）と function の enable 無しの config → DP は sink の D0 → transport の訓練 → DDI buffer → normal pattern → display 11 の DP は訓練の後に transcoder の clock → timing → function の enable → transcoder の start → HDMI は transcoder の後に buffer。
+  - dark: transcoder の stop → function off → DP は sink の D3 → display 11 は buffer の前に transcoder の clock off → buffer の stop → display 12 以降は buffer の後に clock off → panel の電源（eDP）→ DDI の clock → PLL off（TBT は caller の PLL）。
+  - 無い事の確かめ: display 11 の DP で訓練の前に function を書かない・訓練の終わりの前に transcoder の clock を書かない、HDMI で transcoder の前に buffer を始めない、display 12 以降の dark で buffer の前に clock を外さない。
+- 219 check（187 → 406）、全部通る。試験の側の確かめ: dark の「buffer の前に clock を外さない」を display 11 に当てる様に一時的に変えると Ice Lake の HDMI・DP-TC・TBT の 3 つが落ちる（display 11 は Linux どおり buffer の前に外す: 検出できる事の確かめ。変更は戻した）。
+- 確かめた事: `run-xd-host-tests.sh build/p2-ws245-host` all passed（output 406）、warning 0。試験だけの変更。
+- 範囲の外: 行ごとの全部の書き込みの 1 つずつの一致（受け入れの読み替えは朝にユーザーへ: Q1）。RKL・ADL-S・ADL-N・RPL の行は版 12・13 と同じ道（版の分岐だけを見る試験なので代表の 3 行）。
+- 使い捨ての出力 `build/p2-ws245-mut/`（上の確かめの build）が worktree に残る（消すなら Q1 に）。

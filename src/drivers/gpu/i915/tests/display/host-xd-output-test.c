@@ -24,7 +24,11 @@
  * sink on TC1 in DisplayPort alternate and in Thunderbolt mode; and the
  * 5330's two screens (the panel on pipe A, a monitor on the USB-C port
  * TC2 on pipe B) lit one after the other, whose registers must end as
- * the machine's did under Linux.
+ * the machine's did under Linux; and on display 11, 12 and 13 the order
+ * of the steps that differ between the versions (the PLL, the clocks,
+ * the transcoder's function, the link's training and transport, the
+ * buffer, the transcoder) in the panel's, HDMI's, a Type-C DisplayPort
+ * sink's and a Thunderbolt sink's light and dark.
  */
 
 #include "host-test.h"
@@ -165,9 +169,17 @@ static const struct i915_xd_platform *i915_xd_ot_cover_setup(const struct i915_x
 static void i915_xd_ot_cover_output(const struct i915_xd_platform *platform, struct i915_xd_output *out);
 static void i915_xd_ot_cover_run(const struct i915_xd_platform *platform, struct i915_xd_output *out, unsigned tc_mode, const char *kind);
 static void i915_xd_ot_cover_hdmi(const struct i915_xd_platform *platform);
+static int i915_xd_ot_cover_tc1(const struct i915_xd_platform *platform, struct i915_xd_output *out);
 static void i915_xd_ot_cover_type_c(const struct i915_xd_platform *platform, unsigned tc_mode, const char *kind);
 static void i915_xd_ot_test_cover_ports(void);
 static void i915_xd_ot_test_end_state(void);
+static int i915_xd_ot_find_masked(unsigned kind, uint32_t a, uint32_t mask, uint32_t value, unsigned from);
+static void i915_xd_ot_order_step(const struct i915_xd_platform *platform, const char *kind, const char *step, unsigned event, uint32_t a, uint32_t mask, uint32_t value, int *at);
+static void i915_xd_ot_order_absent(const struct i915_xd_platform *platform, const char *kind, const char *step, unsigned event, uint32_t a, uint32_t mask, uint32_t value, unsigned from, int to);
+static void i915_xd_ot_order_watch(const struct i915_xd_output *out, uint32_t pll_enable, uint32_t transport);
+static void i915_xd_ot_order_run(const struct i915_xd_platform *platform, struct i915_xd_output *out, unsigned tc_mode, const char *kind);
+static const struct i915_xd_platform *i915_xd_ot_order_row(const char *name);
+static void i915_xd_ot_test_order(void);
 
 /* The Type-C hooks of the test: each one logged. */
 static const struct i915_xd_output_tc i915_xd_ot_tc = {
@@ -199,6 +211,7 @@ main(void)
 	i915_xd_ot_test_cover();
 	i915_xd_ot_test_cover_ports();
 	i915_xd_ot_test_end_state();
+	i915_xd_ot_test_order();
 
 	/* Reports the result. */
 	failures = i915_host_report("host_xd_output_test");
@@ -1903,16 +1916,14 @@ i915_xd_ot_cover_hdmi(
 	i915_xd_ot_cover_run(platform, &out, I915_XD_OUTPUT_TC_DP_ALT, "HDMI");
 }
 
-/* A DisplayPort sink on a row's TC1 (a Dekel or an MG PHY) at 1.62 GHz on four lanes, in one Type-C mode. */
-static void
-i915_xd_ot_cover_type_c(
+/* Describes a DisplayPort sink on a row's TC1 (a Dekel or an MG PHY) at 1.62 GHz on four lanes; returns 0, or ENODEV without TC1, its PLL or its words. */
+static int
+i915_xd_ot_cover_tc1(
 	const struct i915_xd_platform *platform,
-	unsigned tc_mode,
-	const char *kind)
+	struct i915_xd_output *out)
 {
 	const struct i915_xd_port_desc *port;
 	const struct i915_xd_pll_desc *pll;
-	struct i915_xd_output out;
 	unsigned index;
 	int error;
 
@@ -1931,47 +1942,65 @@ i915_xd_ot_cover_type_c(
 		pll = &platform->plls[index];
 		break;
 	}
-	if (port == NULL || pll == NULL) {
-		i915_host_check(0, "cover: a Type-C row without TC1 or its PLL");
-		return;
-	}
-
-	/* The model, the PLL's power and lock following the request. */
-	if (i915_xd_ot_cover_setup(platform) == NULL)
-		return;
-	i915_xd_fake_rule_mirror(pll->enable, 0x08000000U, pll->enable, -1, 0U);
-	i915_xd_fake_rule_mirror(pll->enable, 0x80000000U, pll->enable, -1, 0U);
+	if (port == NULL || pll == NULL)
+		return ENODEV;
 
 	/* The sink on TC1. */
-	i915_xd_ot_cover_output(platform, &out);
-	out.kind = I915_XD_SCREEN_DP;
-	out.ddi = port->ddi;
-	out.phy = port->phy;
-	out.aux = port->aux;
-	out.tc = 1;
-	out.tc_port = 0U;
-	out.tc_pll = pll->select;
-	out.rate_khz = 162000U;
-	out.lanes = 4U;
+	i915_xd_ot_cover_output(platform, out);
+	out->kind = I915_XD_SCREEN_DP;
+	out->ddi = port->ddi;
+	out->phy = port->phy;
+	out->aux = port->aux;
+	out->tc = 1;
+	out->tc_port = 0U;
+	out->tc_pll = pll->select;
+	out->rate_khz = 162000U;
+	out->lanes = 4U;
 
 	/* The PLL's words: the MG PLL's from the 38.4 MHz reference, the Dekel PLL's of the 5330's RBR. */
-	error = 0;
 	if (port->phy_kind == I915_XD_PHY_MG) {
-		error = drv_i915_xd_mg_pll_words(38400U, 162000U, 0, &out.mg_pll_words);
-	} else {
-		out.tc_pll_words.refclkin = 0x100U;
-		out.tc_pll_words.coreclk = 0xa00U;
-		out.tc_pll_words.hsclk = 0x6200U;
-		out.tc_pll_words.div0 = 0x84269U;
-		out.tc_pll_words.div1 = 0x1c0027U;
-		out.tc_pll_words.ssc = 0x40002000U;
-		out.tc_pll_words.bias = 0x5e000000U;
-		out.tc_pll_words.tdc = 0x52U;
+		error = drv_i915_xd_mg_pll_words(38400U, 162000U, 0, &out->mg_pll_words);
+		if (error != 0)
+			return ENODEV;
+		return 0;
 	}
-	if (error != 0) {
-		i915_host_check(0, "cover: the MG PLL's words at 1.62 GHz");
+	out->tc_pll_words.refclkin = 0x100U;
+	out->tc_pll_words.coreclk = 0xa00U;
+	out->tc_pll_words.hsclk = 0x6200U;
+	out->tc_pll_words.div0 = 0x84269U;
+	out->tc_pll_words.div1 = 0x1c0027U;
+	out->tc_pll_words.ssc = 0x40002000U;
+	out->tc_pll_words.bias = 0x5e000000U;
+	out->tc_pll_words.tdc = 0x52U;
+
+	/* Succeeded: the sink. */
+	return 0;
+}
+
+/* A DisplayPort sink on a row's TC1 in one Type-C mode, lit and darkened. */
+static void
+i915_xd_ot_cover_type_c(
+	const struct i915_xd_platform *platform,
+	unsigned tc_mode,
+	const char *kind)
+{
+	const struct i915_xd_pll_desc *pll;
+	struct i915_xd_output out;
+	int error;
+
+	/* The model and the sink. */
+	if (i915_xd_ot_cover_setup(platform) == NULL)
+		return;
+	error = i915_xd_ot_cover_tc1(platform, &out);
+	pll = drv_i915_xd_dpll_desc(platform, out.tc_pll);
+	if (error != 0 || pll == NULL) {
+		i915_host_check(0, "cover: a Type-C row without TC1, its PLL or its words");
 		return;
 	}
+
+	/* The PLL's power and lock follow the request. */
+	i915_xd_fake_rule_mirror(pll->enable, 0x08000000U, pll->enable, -1, 0U);
+	i915_xd_fake_rule_mirror(pll->enable, 0x80000000U, pll->enable, -1, 0U);
 
 	/* Lights and darkens it. */
 	i915_xd_ot_cover_run(platform, &out, tc_mode, kind);
@@ -2189,5 +2218,350 @@ i915_xd_ot_test_end_state(void)
 		value = i915_xd_fake_get(reg->offset);
 		(void)snprintf(what, sizeof(what), "end state: %s (0x%06x) 0x%08x, the machine's 0x%08x", reg->name, reg->offset, value, reg->value);
 		i915_host_check((value & reg->mask) == (reg->value & reg->mask), what);
+	}
+}
+
+/* Finds the first event of a kind on a register (or step) whose value has the bits asked, from an index; -1 for none. */
+static int
+i915_xd_ot_find_masked(
+	unsigned kind,
+	uint32_t a,
+	uint32_t mask,
+	uint32_t value,
+	unsigned from)
+{
+	const struct i915_xd_ot_event *event;
+	unsigned index;
+
+	/* The first matching event at or after the index. */
+	for (index = from; index < i915_xd_ot_log.count; index++) {
+		event = &i915_xd_ot_log.log[index];
+		if (event->kind != kind || event->a != a)
+			continue;
+		if ((event->b & mask) != value)
+			continue;
+
+		/* Succeeded: its index. */
+		return (int)index;
+	}
+
+	/* No such event. */
+	return -1;
+}
+
+/*
+ * Checks that a step comes after the one before it in the run (at holds
+ * the index of the step before, and then of this one; once a step is
+ * missing the rest are not looked for).
+ */
+static void
+i915_xd_ot_order_step(
+	const struct i915_xd_platform *platform,
+	const char *kind,
+	const char *step,
+	unsigned event,
+	uint32_t a,
+	uint32_t mask,
+	uint32_t value,
+	int *at)
+{
+	static char what[160];
+	int found;
+
+	/* The step at or after the one before. */
+	found = -1;
+	if (*at >= 0)
+		found = i915_xd_ot_find_masked(event, a, mask, value, (unsigned)*at);
+
+	/* Checks it. */
+	(void)snprintf(what, sizeof(what), "order: %s: %s: %s", platform->name, kind, step);
+	i915_host_check(found >= 0, what);
+	*at = found;
+}
+
+/* Checks that a step does not come between two indices of the run (to -1: the end of the run). */
+static void
+i915_xd_ot_order_absent(
+	const struct i915_xd_platform *platform,
+	const char *kind,
+	const char *step,
+	unsigned event,
+	uint32_t a,
+	uint32_t mask,
+	uint32_t value,
+	unsigned from,
+	int to)
+{
+	static char what[160];
+	int found;
+	int absent;
+
+	/* The step anywhere in the range. */
+	found = i915_xd_ot_find_masked(event, a, mask, value, from);
+	absent = found < 0;
+	if (found >= 0 && to >= 0 && found >= to)
+		absent = 1;
+
+	/* Checks it. */
+	(void)snprintf(what, sizeof(what), "order: %s: %s: %s", platform->name, kind, step);
+	i915_host_check(absent, what);
+}
+
+/* Logs the writes of the registers whose order the run checks. */
+static void
+i915_xd_ot_order_watch(
+	const struct i915_xd_output *out,
+	uint32_t pll_enable,
+	uint32_t transport)
+{
+	/* The transcoder's timing, function, configuration and clock, the transport, the DDI's clock and the PLL. */
+	i915_xd_fake_rule_call(0x60000U + 0x1000U * out->trans, i915_xd_ot_watch, NULL);
+	i915_xd_fake_rule_call(I915_XD_TRANS_DDI_FUNC_CTL(out->trans), i915_xd_ot_watch, NULL);
+	i915_xd_fake_rule_call(I915_XD_TRANS_CONF(out->trans), i915_xd_ot_watch, NULL);
+	i915_xd_fake_rule_call(I915_XD_TRANS_CLK_SEL(out->trans), i915_xd_ot_watch, NULL);
+	i915_xd_fake_rule_call(I915_XD_DP_TP_CTL(transport), i915_xd_ot_watch, NULL);
+	i915_xd_fake_rule_call(I915_XD_DDI_CLK_SEL(out->ddi), i915_xd_ot_watch, NULL);
+	i915_xd_fake_rule_call(I915_XD_DPCLKA_CFGCR0, i915_xd_ot_watch, NULL);
+	if (pll_enable != 0U)
+		i915_xd_fake_rule_call(pll_enable, i915_xd_ot_watch, NULL);
+}
+
+/*
+ * Lights and darkens one output and checks the order of its steps
+ * against the order of the version's sequence.
+ *
+ * Light: the PLL, the DDI's clock (the panel's power before it), on
+ * display 12 and later the transcoder's clock and its function without
+ * the enable, then for DisplayPort the sink woken, the training on the
+ * transport, the buffer and the transport's normal pattern, on display
+ * 11 the transcoder's clock after the training; then the transcoder's
+ * timing, its function enabled and the transcoder started.  HDMI takes
+ * the transcoder's clock before the timing and starts the buffer after
+ * the transcoder.  Dark: the transcoder stopped, its function off, a
+ * DisplayPort sink put to sleep, on display 11 the transcoder's clock
+ * off before the buffer, the buffer stopped, from display 12 the clock
+ * off after it, the panel's power, the DDI's clock and the PLL off.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display.c (hsw_crtc_enable,
+ * hsw_crtc_disable), intel_ddi.c (tgl_ddi_pre_enable_dp,
+ * hsw_ddi_pre_enable_dp, intel_ddi_pre_enable_hdmi, intel_enable_ddi,
+ * intel_enable_ddi_hdmi, intel_ddi_post_disable,
+ * intel_ddi_post_disable_dp, intel_ddi_post_disable_hdmi).
+ */
+static void
+i915_xd_ot_order_run(
+	const struct i915_xd_platform *platform,
+	struct i915_xd_output *out,
+	unsigned tc_mode,
+	const char *kind)
+{
+	const struct i915_xd_pll_desc *pll;
+	struct i915_xd_output_env env;
+	uint32_t pll_enable;
+	uint32_t transport;
+	uint32_t clock_mask;
+	uint32_t clock_select;
+	unsigned from;
+	int tbt;
+	int dp;
+	int at;
+
+	/* The PLL's enable (none in Thunderbolt mode, where the caller runs it) and the transport. */
+	tbt = out->tc && tc_mode == I915_XD_OUTPUT_TC_TBT;
+	dp = out->kind != I915_XD_SCREEN_HDMI;
+	pll_enable = 0U;
+	pll = drv_i915_xd_dpll_desc(platform, out->tc ? out->tc_pll : out->pll);
+	if (pll != NULL && !tbt)
+		pll_enable = pll->enable;
+	transport = out->trans;
+	if (platform->display_ver < 12U)
+		transport = I915_XD_DP_TP_PORT(out->ddi);
+
+	/* The transcoder's clock select: the PHY's index plus one, in the version's field. */
+	clock_mask = I915_XD_TRANS_CLK_SEL_FIELD;
+	if (platform->display_ver < 12U)
+		clock_mask = I915_XD_TRANS_CLK_SEL_FIELD_11;
+	clock_select = i915_xd_field_put(clock_mask, out->phy + 1U);
+	if (out->tc && pll != NULL) {
+		i915_xd_fake_rule_mirror(pll->enable, 0x08000000U, pll->enable, -1, 0U);
+		i915_xd_fake_rule_mirror(pll->enable, 0x80000000U, pll->enable, -1, 0U);
+	}
+	i915_xd_ot_order_watch(out, pll_enable, transport);
+
+	/* The environment, with the Type-C hooks in the mode asked. */
+	i915_xd_ot_env(&env, platform);
+	env.tc = &i915_xd_ot_tc;
+	i915_xd_ot_log.tc_mode = tc_mode;
+
+	/* The light. */
+	(void)i915_xd_ot_light(out, &env);
+	at = 0;
+	if (tbt) {
+		i915_xd_ot_order_step(platform, kind, "light: the Thunderbolt PLL", I915_XD_OT_TC, I915_XD_OT_TC_PLL_ON, 0U, 0U, &at);
+	} else {
+		i915_xd_ot_order_step(platform, kind, "light: the PLL", I915_XD_OT_WRITE, pll_enable, 0x80000000U, 0x80000000U, &at);
+	}
+	if (out->kind == I915_XD_SCREEN_PANEL)
+		i915_xd_ot_order_step(platform, kind, "light: the panel's power", I915_XD_OT_PANEL, I915_XD_OUTPUT_PANEL_ON, 0U, 0U, &at);
+	if (out->tc) {
+		i915_xd_ot_order_step(platform, kind, "light: the DDI's clock select", I915_XD_OT_WRITE, I915_XD_DDI_CLK_SEL(out->ddi), 0xf0000000U, tbt ? 0xc0000000U : 0x80000000U, &at);
+	} else {
+		i915_xd_ot_order_step(platform, kind, "light: the DDI's clock map", I915_XD_OT_WRITE, I915_XD_DPCLKA_CFGCR0, 0U, 0U, &at);
+	}
+	if (!dp || platform->display_ver >= 12U) {
+		if (out->trans != I915_XD_TRANS_EDP)
+			i915_xd_ot_order_step(platform, kind, "light: the transcoder's clock", I915_XD_OT_WRITE, I915_XD_TRANS_CLK_SEL(out->trans), clock_mask, clock_select, &at);
+	}
+	if (dp && platform->display_ver >= 12U)
+		i915_xd_ot_order_step(platform, kind, "light: the function without its enable", I915_XD_OT_WRITE, I915_XD_TRANS_DDI_FUNC_CTL(out->trans), I915_XD_DDI_FUNC_ENABLE, 0U, &at);
+	if (dp) {
+		i915_xd_ot_order_step(platform, kind, "light: the sink woken", I915_XD_OT_DPCD_WRITE, I915_XD_DPCD_SET_POWER, 0xffU, I915_XD_DPCD_POWER_D0, &at);
+		i915_xd_ot_order_step(platform, kind, "light: the training on the transport", I915_XD_OT_WRITE, I915_XD_DP_TP_CTL(transport), I915_XD_DP_TP_ENABLE, I915_XD_DP_TP_ENABLE, &at);
+		if (platform->display_ver < 12U)
+			i915_xd_ot_order_absent(platform, kind, "light: no function before the training", I915_XD_OT_WRITE, I915_XD_TRANS_DDI_FUNC_CTL(out->trans), 0U, 0U, 0U, at);
+		i915_xd_ot_order_step(platform, kind, "light: the buffer", I915_XD_OT_WRITE, I915_XD_DDI_BUF_CTL(out->ddi), I915_XD_DDI_BUF_ENABLE, I915_XD_DDI_BUF_ENABLE, &at);
+		i915_xd_ot_order_step(platform, kind, "light: the normal pattern", I915_XD_OT_WRITE, I915_XD_DP_TP_CTL(transport), I915_XD_DP_TP_PATTERN, 0x300U, &at);
+		if (platform->display_ver < 12U)
+			i915_xd_ot_order_absent(platform, kind, "light: no transcoder clock before the training ends", I915_XD_OT_WRITE, I915_XD_TRANS_CLK_SEL(out->trans), 0U, 0U, 0U, at);
+		if (platform->display_ver < 12U && out->trans != I915_XD_TRANS_EDP)
+			i915_xd_ot_order_step(platform, kind, "light: the transcoder's clock after the training", I915_XD_OT_WRITE, I915_XD_TRANS_CLK_SEL(out->trans), clock_mask, clock_select, &at);
+	}
+	i915_xd_ot_order_step(platform, kind, "light: the timing", I915_XD_OT_WRITE, 0x60000U + 0x1000U * out->trans, 0U, 0U, &at);
+	i915_xd_ot_order_step(platform, kind, "light: the function enabled", I915_XD_OT_WRITE, I915_XD_TRANS_DDI_FUNC_CTL(out->trans), I915_XD_DDI_FUNC_ENABLE, I915_XD_DDI_FUNC_ENABLE, &at);
+	i915_xd_ot_order_step(platform, kind, "light: the transcoder started", I915_XD_OT_WRITE, I915_XD_TRANS_CONF(out->trans), I915_XD_TRANS_CONF_ENABLE, I915_XD_TRANS_CONF_ENABLE, &at);
+	if (!dp)
+		i915_xd_ot_order_absent(platform, kind, "light: no buffer before the transcoder", I915_XD_OT_WRITE, I915_XD_DDI_BUF_CTL(out->ddi), I915_XD_DDI_BUF_ENABLE, I915_XD_DDI_BUF_ENABLE, 0U, at);
+	if (!dp)
+		i915_xd_ot_order_step(platform, kind, "light: the buffer after the transcoder", I915_XD_OT_WRITE, I915_XD_DDI_BUF_CTL(out->ddi), I915_XD_DDI_BUF_ENABLE, I915_XD_DDI_BUF_ENABLE, &at);
+
+	/* The dark. */
+	from = i915_xd_ot_log.count;
+	i915_xd_ot_dark(out, &env);
+	at = (int)from;
+	i915_xd_ot_order_step(platform, kind, "dark: the transcoder stopped", I915_XD_OT_WRITE, I915_XD_TRANS_CONF(out->trans), I915_XD_TRANS_CONF_ENABLE, 0U, &at);
+	i915_xd_ot_order_step(platform, kind, "dark: the function off", I915_XD_OT_WRITE, I915_XD_TRANS_DDI_FUNC_CTL(out->trans), I915_XD_DDI_FUNC_ENABLE, 0U, &at);
+	if (dp)
+		i915_xd_ot_order_step(platform, kind, "dark: the sink asleep", I915_XD_OT_DPCD_WRITE, I915_XD_DPCD_SET_POWER, 0xffU, I915_XD_DPCD_POWER_D3, &at);
+	if (platform->display_ver < 12U && out->trans != I915_XD_TRANS_EDP)
+		i915_xd_ot_order_step(platform, kind, "dark: the transcoder's clock before the buffer", I915_XD_OT_WRITE, I915_XD_TRANS_CLK_SEL(out->trans), 0xffffffffU, 0U, &at);
+	i915_xd_ot_order_step(platform, kind, "dark: the buffer stopped", I915_XD_OT_WRITE, I915_XD_DDI_BUF_CTL(out->ddi), I915_XD_DDI_BUF_ENABLE, 0U, &at);
+	if (platform->display_ver >= 12U)
+		i915_xd_ot_order_absent(platform, kind, "dark: no transcoder clock off before the buffer", I915_XD_OT_WRITE, I915_XD_TRANS_CLK_SEL(out->trans), 0xffffffffU, 0U, from, at);
+	if (platform->display_ver >= 12U)
+		i915_xd_ot_order_step(platform, kind, "dark: the transcoder's clock after the buffer", I915_XD_OT_WRITE, I915_XD_TRANS_CLK_SEL(out->trans), 0xffffffffU, 0U, &at);
+	if (out->kind == I915_XD_SCREEN_PANEL)
+		i915_xd_ot_order_step(platform, kind, "dark: the panel's power", I915_XD_OT_PANEL, I915_XD_OUTPUT_PANEL_OFF, 0U, 0U, &at);
+	if (out->tc) {
+		i915_xd_ot_order_step(platform, kind, "dark: the DDI's clock deselected", I915_XD_OT_WRITE, I915_XD_DDI_CLK_SEL(out->ddi), 0xf0000000U, 0U, &at);
+	} else {
+		i915_xd_ot_order_step(platform, kind, "dark: the DDI's clock gated", I915_XD_OT_WRITE, I915_XD_DPCLKA_CFGCR0, 0U, 0U, &at);
+	}
+	if (tbt) {
+		i915_xd_ot_order_step(platform, kind, "dark: the Thunderbolt PLL", I915_XD_OT_TC, I915_XD_OT_TC_PLL_OFF, 0U, 0U, &at);
+	} else {
+		i915_xd_ot_order_step(platform, kind, "dark: the PLL off", I915_XD_OT_WRITE, pll_enable, 0x80000000U, 0U, &at);
+	}
+}
+
+/* Finds the row of a description by its name; NULL for none. */
+static const struct i915_xd_platform *
+i915_xd_ot_order_row(
+	const char *name)
+{
+	const struct i915_xd_platform *platform;
+	unsigned rows;
+	unsigned row;
+
+	/* The row of that name. */
+	rows = drv_i915_xd_platform_count();
+	for (row = 0U; row < rows; row++) {
+		platform = drv_i915_xd_platform_row(row);
+		if (strcmp(platform->name, name) == 0)
+			return platform;
+	}
+
+	/* No such row. */
+	return NULL;
+}
+
+/*
+ * Checks the order of the light's and the dark's steps on display 11
+ * (Ice Lake), 12 (Tiger Lake) and 13 (Alder Lake-P): the panel on DDI A
+ * (on display 11 through the eDP transcoder), HDMI on the first combo
+ * port after DDI A, and DisplayPort on TC1 in DisplayPort alternate and
+ * in Thunderbolt mode.
+ */
+static void
+i915_xd_ot_test_order(void)
+{
+	static const char *const names[] = { "Ice Lake", "Tiger Lake", "Alder Lake-P" };
+	const struct i915_xd_platform *platform;
+	const struct i915_xd_port_desc *port;
+	struct i915_xd_output out;
+	unsigned version;
+	unsigned index;
+
+	/* Each version's row. */
+	for (version = 0U; version < sizeof(names) / sizeof(names[0]); version++) {
+		platform = i915_xd_ot_order_row(names[version]);
+		if (platform == NULL) {
+			i915_host_check(0, "order: a row of the version");
+			continue;
+		}
+
+		/* The panel on DDI A and DPLL 0, through the eDP transcoder on display 11. */
+		if (i915_xd_ot_cover_setup(platform) == NULL)
+			return;
+		i915_xd_ot_panel_output(&out);
+		if (platform->display_ver == 11U) {
+			out.trans = I915_XD_TRANS_EDP;
+			out.dmc_programs = 0U;
+			out.dbuf.slices_after = 0x1U;
+			out.dbuf.joined_after = 0U;
+		}
+		i915_xd_ot_order_run(platform, &out, I915_XD_OUTPUT_TC_DP_ALT, "eDP");
+
+		/* HDMI on the first combo port after DDI A, on DPLL 1. */
+		port = NULL;
+		for (index = 0U; index < platform->nports; index++) {
+			if (platform->ports[index].phy_kind != I915_XD_PHY_COMBO || platform->ports[index].ddi == 0U)
+				continue;
+			port = &platform->ports[index];
+			break;
+		}
+		if (port == NULL) {
+			i915_host_check(0, "order: a second combo port");
+			continue;
+		}
+		if (i915_xd_ot_cover_setup(platform) == NULL)
+			return;
+		i915_xd_ot_cover_output(platform, &out);
+		out.kind = I915_XD_SCREEN_HDMI;
+		out.ddi = port->ddi;
+		out.phy = port->phy;
+		out.aux = port->aux;
+		out.lanes = 4U;
+		out.rate_khz = 74250U;
+		out.bpp = 24U;
+		out.dither = 0;
+		out.pll = 1U;
+		out.hdmi_level = -1;
+		i915_xd_ot_order_run(platform, &out, I915_XD_OUTPUT_TC_DP_ALT, "HDMI");
+
+		/* DisplayPort on TC1, in both Type-C modes. */
+		for (index = 0U; index < 2U; index++) {
+			if (i915_xd_ot_cover_setup(platform) == NULL)
+				return;
+			if (i915_xd_ot_cover_tc1(platform, &out) != 0) {
+				i915_host_check(0, "order: TC1, its PLL and its words");
+				continue;
+			}
+			if (index == 0U) {
+				i915_xd_ot_order_run(platform, &out, I915_XD_OUTPUT_TC_DP_ALT, "DP-TC");
+			} else {
+				i915_xd_ot_order_run(platform, &out, I915_XD_OUTPUT_TC_TBT, "TBT");
+			}
+		}
 	}
 }
