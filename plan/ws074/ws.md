@@ -706,7 +706,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p255](phase255/phase.md) | PerformanceObserver native mark登録・queue・task配信 | uncleared / q28 Window consumer/failure/held partial cleared・whole残り | p254 verified native mark output |
 | [ws074-p256](phase256/phase.md) | Window ErrorEvent・uncaught harness fidelity | uncleared / q28 runtime/inline source partial cleared・external/syntax等残り | 既存Event/Window/VM→p255再評価 |
 | [ws074-p257](phase257/phase.md) | synchronous generator yield* delegation | cleared / q29 sync own criteria・Chrome38/native GC10 | q28 VM/GC・p189 pinned WebIDL2 |
-| [ws074-p258](phase258/phase.md) | native Proxy internal methods・GC/revocation | uncleared / q48 array consumer partial cleared・全1508同値 | q29 VM/GC・p189 actual Proxy blocker |
+| [ws074-p258](phase258/phase.md) | native Proxy internal methods・GC/revocation | in-progress / q49 JSON stringify partial | q29 VM/GC・p189 actual Proxy blocker |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 

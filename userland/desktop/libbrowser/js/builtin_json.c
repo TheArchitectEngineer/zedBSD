@@ -41,16 +41,29 @@ struct json_parser {
  * undefined), the property list (an array or undefined), the indentation
  * unit and the current one, the objects being serialized (for cycles) and
  * the output. Its four C buffers are released before this call returns;
- * VM values follow ordinary realm and conservative native caller ownership.
+ * a registered tracer retains all managed state across reentrant callbacks.
  */
 struct json_writer {
 	struct vm_realm *realm;
 	vm_value replacer;
 	vm_value keys;
+	vm_value holder;
+	vm_value root_key;
 	struct wb_units gap;
 	struct wb_units indent;
 	struct wb_vector stack;
 	struct wb_units out;
+};
+
+/* One property operation retains its receiver, key and callback temporaries until every early return has retired. */
+struct json_property_roots {
+ struct json_writer *writer;
+ vm_value holder;
+ vm_value key;
+ vm_value value;
+ vm_value method;
+ vm_value key_value;
+ vm_value method_key;
 };
 
 static int json_parse(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
@@ -75,6 +88,12 @@ static int json_newline(struct json_writer *writer);
 static int json_key_value(struct vm_realm *realm, vm_value key, vm_value *value);
 static int json_property_list(struct json_writer *writer, vm_value replacer);
 static int json_space(struct json_writer *writer, vm_value space);
+
+static void json_trace_values(struct vm_heap *heap, void *context);
+static void json_trace_writer(struct vm_heap *heap, void *context);
+static void json_trace_property(struct vm_heap *heap, void *context);
+static int json_property_inner(struct json_property_roots *roots, int *written);
+static int json_property_list_inner(struct json_property_roots *roots);
 
 /*
  * Installs JSON.
@@ -108,6 +127,61 @@ js_builtin_install_json(
 
 	/* Succeeded: JSON is installed. */
 	return 0;
+}
+
+/* Trace all initialized values copied into native vectors while callbacks run. */
+static void
+json_trace_values(
+	struct vm_heap *heap,
+	void *context)
+{
+	struct wb_vector *values;
+	size_t index;
+	vm_value value;
+
+	/* Only published vector entries contain valid VM values. */
+	values = context;
+	for (index = 0; index < values->count; index++) {
+		value = *(vm_value *)wb_vector_at(values, index);
+		vm_heap_mark_value(heap, value);
+	}
+}
+
+/* Retain the full active serialization, including objects detached from their original parents. */
+static void
+json_trace_writer(
+	struct vm_heap *heap,
+	void *context)
+{
+	struct json_writer *writer;
+
+	/* Managed realm ownership and serialized ancestors outlive every nested VM call. */
+	writer = context;
+	if (writer->realm->managed)
+		vm_heap_mark(heap, &writer->realm->cell);
+	vm_heap_mark_value(heap, writer->replacer);
+	vm_heap_mark_value(heap, writer->keys);
+	vm_heap_mark_value(heap, writer->holder);
+	vm_heap_mark_value(heap, writer->root_key);
+	json_trace_values(heap, &writer->stack);
+}
+
+/* Retain callback results independently of the VM call frames which produced them. */
+static void
+json_trace_property(
+	struct vm_heap *heap,
+	void *context)
+{
+	struct json_property_roots *roots;
+
+	/* Every slot is initialized before registration, including primitive and absent values. */
+	roots = context;
+	vm_heap_mark_value(heap, roots->holder);
+	vm_heap_mark_value(heap, roots->key);
+	vm_heap_mark_value(heap, roots->value);
+	vm_heap_mark_value(heap, roots->method);
+	vm_heap_mark_value(heap, roots->key_value);
+	vm_heap_mark_value(heap, roots->method_key);
 }
 
 /* JSON.parse(text, reviver). */
@@ -204,6 +278,7 @@ json_stringify(
 	vm_value key;
 	vm_value argument;
 	vm_value replacer;
+	int traced;
 	int written;
 	int callable;
 	int status;
@@ -215,10 +290,20 @@ json_stringify(
 	writer.realm = realm;
 	writer.replacer = VM_VALUE_UNDEFINED;
 	writer.keys = VM_VALUE_UNDEFINED;
+	writer.holder = VM_VALUE_UNDEFINED;
+	writer.root_key = VM_VALUE_UNDEFINED;
 	wb_units_init(&writer.gap);
 	wb_units_init(&writer.indent);
 	wb_units_init(&writer.out);
 	wb_vector_init(&writer.stack, sizeof(vm_value));
+	/* Register fully initialized writer storage before any replacer or spacing callback. */
+	traced = 0;
+	status = vm_heap_add_tracer(realm->heap, json_trace_writer, &writer);
+	if (status != 0)
+		goto cleanup;
+	traced = 1;
+
+	/* Choose callable replacement before considering a property-list array. */
 	replacer = js_argument(args, count, 1);
 	callable = vm_value_is_callable(replacer);
 	status = 0;
@@ -243,15 +328,24 @@ json_stringify(
 		goto cleanup;
 	}
 
+	/* Retain the unpublished holder before allocating its empty key. */
+	writer.holder = vm_value_cell(wrapper);
+
 	/* The key "". */
 	status = js_builtin_string(realm, "", &key);
 	if (status != 0)
 		goto cleanup;
 
+	/* The key remains owned if interning or holder definition collects. */
+	writer.root_key = key;
+
 	/* Interns the key before publishing the original value in its holder. */
 	status = vm_key_from_string(realm->heap, (struct vm_string *)vm_value_as_cell(key), &key);
 	if (status != 0)
 		goto cleanup;
+
+	/* The key remains owned if interning or holder definition collects. */
+	writer.root_key = key;
 
 	/* The original argument remains unchanged until serialization starts. */
 	argument = js_argument(args, count, 0);
@@ -280,6 +374,8 @@ json_stringify(
 
 	/* The writer's buffers are no longer needed. */
 cleanup:
+	if (traced)
+		vm_heap_remove_tracer(realm->heap, json_trace_writer, &writer);
 	wb_units_release(&writer.gap);
 	wb_units_release(&writer.indent);
 	wb_units_release(&writer.out);
@@ -1013,7 +1109,7 @@ cleanup:
 	return 0;
 }
 
-/* Writes one property of a holder (SerializeJSONProperty); written says whether it had a text. */
+/* Retain one holder operation until its callback and recursive serialization finish. */
 static int
 json_property(
 	struct json_writer *writer,
@@ -1021,15 +1117,46 @@ json_property(
 	vm_value key,
 	int *written)
 {
+	struct json_property_roots roots;
+	int status;
+
+	/* Initialize every traced slot before publishing native storage to the collector. */
+	roots.writer = writer;
+	roots.holder = holder;
+	roots.key = key;
+	roots.value = VM_VALUE_UNDEFINED;
+	roots.method = VM_VALUE_UNDEFINED;
+	roots.key_value = VM_VALUE_UNDEFINED;
+	roots.method_key = VM_VALUE_UNDEFINED;
+	status = vm_heap_add_tracer(writer->realm->heap, json_trace_property, &roots);
+	if (status != 0)
+		return status;
+
+	/* All early exits from the property algorithm pass through this ownership boundary. */
+	status = json_property_inner(&roots, written);
+	vm_heap_remove_tracer(writer->realm->heap, json_trace_property, &roots);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the completed property no longer owns callback temporaries. */
+	return 0;
+}
+
+/* Writes one property of a holder (SerializeJSONProperty); written says whether it had a text. */
+static int
+json_property_inner(
+	struct json_property_roots *roots,
+	int *written)
+{
+	struct json_writer *writer;
 	struct vm_realm *realm;
+	struct vm_bigint *bigint;
 	struct vm_object *object;
 	struct vm_string *string;
-	vm_value value;
-	vm_value method;
-	vm_value method_key;
 	vm_value call_args[2];
-	vm_value key_value;
 	double number;
+	int is_array;
+	int has_tojson;
 	int is_object;
 	int is_string;
 	int is_number;
@@ -1037,81 +1164,99 @@ json_property(
 	int callable;
 	int status;
 
-	/* The value. */
+	/* Load the actual holder property into the traced value slot. */
+	writer = roots->writer;
 	realm = writer->realm;
 	*written = 0;
-	status = vm_get(realm, holder, key, &value);
+	status = vm_get(realm, roots->holder, roots->key, &roots->value);
 	if (status != 0)
 		return status;
 
-	/* toJSON, then the replacer. */
-	is_object = vm_value_is_object(value);
-	if (is_object) {
-		method_key = vm_key_from_ascii(realm->heap, "toJSON");
-		if (method_key == VM_VALUE_EMPTY)
+	/* Objects and primitive BigInts consult toJSON before the replacer. */
+	is_object = vm_value_is_object(roots->value);
+	bigint = vm_value_as_bigint(roots->value);
+	has_tojson = is_object;
+	if (bigint != NULL)
+		has_tojson = 1;
+	if (has_tojson) {
+		roots->method_key = vm_key_from_ascii(realm->heap, "toJSON");
+		if (roots->method_key == VM_VALUE_EMPTY)
 			return ENOMEM;
 
 		/* Reads the callback only after its key allocation is checked. */
-		status = vm_get(realm, value, method_key, &method);
+		status = vm_get(realm, roots->value, roots->method_key, &roots->method);
 		if (status != 0)
 			return status;
-		callable = vm_value_is_callable(method);
+		callable = vm_value_is_callable(roots->method);
 		if (callable) {
-			status = json_key_value(realm, key, &key_value);
+			status = json_key_value(realm, roots->key, &roots->key_value);
 			if (status != 0)
 				return status;
 
 			/* Invokes the actual callback after its arguments are ready. */
-			status = vm_call(realm, method, value, &key_value, 1, &value);
+			status = vm_call(realm, roots->method, roots->value, &roots->key_value, 1, &roots->value);
 			if (status != 0)
 				return status;
 		}
 	}
 
-	/* The replacer. */
+	/* The replacer receives the original holder and a string key. */
 	if (writer->replacer != VM_VALUE_UNDEFINED) {
-		status = json_key_value(realm, key, &call_args[0]);
+		status = json_key_value(realm, roots->key, &roots->key_value);
 		if (status != 0)
 			return status;
 
 		/* Calls the replacer after its string key is ready. */
-		call_args[1] = value;
+		call_args[0] = roots->key_value;
+		call_args[1] = roots->value;
 
 		/* Invokes the actual callback after its arguments are ready. */
-		status = vm_call(realm, writer->replacer, holder, call_args, 2, &value);
+		status = vm_call(realm, writer->replacer, roots->holder, call_args, 2, &roots->value);
 		if (status != 0)
 			return status;
 	}
 
 	/* A wrapper stands for its primitive. */
-	is_object = vm_value_is_object(value);
+	is_object = vm_value_is_object(roots->value);
 	if (is_object) {
-		object = (struct vm_object *)vm_value_as_cell(value);
+		object = (struct vm_object *)vm_value_as_cell(roots->value);
 		if (object->kind == VM_KIND_NUMBER) {
-			status = vm_to_number(realm, value, &number);
+			status = vm_to_number(realm, roots->value, &number);
 			if (status != 0)
 				return status;
-			value = vm_value_number(number);
+			roots->value = vm_value_number(number);
 		} else if (object->kind == VM_KIND_STRING) {
-			status = vm_to_string(realm, value, &string);
+			status = vm_to_string(realm, roots->value, &string);
 			if (status != 0)
 				return status;
-			value = vm_value_cell(string);
+			roots->value = vm_value_cell(string);
 		} else if (object->kind == VM_KIND_BOOLEAN) {
-			value = object->internal;
+			roots->value = object->internal;
 		}
 	}
 
-	/* A BigInt has no JSON form. */
-	is_object = vm_value_is_object(value);
-	if (vm_value_as_bigint(value) != NULL || (is_object && ((struct vm_object *)vm_value_as_cell(value))->kind == VM_KIND_BIGINT)) {
+	/* Boxed BigInts expose their stored primitive only after toJSON and replacement. */
+	is_object = vm_value_is_object(roots->value);
+	if (is_object) {
+		object = (struct vm_object *)vm_value_as_cell(roots->value);
+		if (object->kind == VM_KIND_BIGINT)
+			roots->value = object->internal;
+	}
+
+	/* A remaining primitive BigInt has no JSON form. */
+	bigint = vm_value_as_bigint(roots->value);
+	if (bigint != NULL) {
 		status = vm_throw_type_error(realm, "Do not know how to serialize a BigInt");
-		return status;
+		if (status != 0)
+			return status;
+
+		/* Succeeded: the VM accepted the exception report. */
+		return 0;
 	}
 
 	/* The kinds of value. */
 	*written = 1;
-	if (value == VM_VALUE_NULL) {
+	if (roots->value == VM_VALUE_NULL) {
 		status = json_text(writer, "null");
 		if (status != 0)
 			return status;
@@ -1121,7 +1266,7 @@ json_property(
 	}
 
 	/* true and false. */
-	if (value == VM_VALUE_TRUE) {
+	if (roots->value == VM_VALUE_TRUE) {
 		status = json_text(writer, "true");
 		if (status != 0)
 			return status;
@@ -1131,7 +1276,7 @@ json_property(
 	}
 
 	/* false. */
-	if (value == VM_VALUE_FALSE) {
+	if (roots->value == VM_VALUE_FALSE) {
 		status = json_text(writer, "false");
 		if (status != 0)
 			return status;
@@ -1141,9 +1286,9 @@ json_property(
 	}
 
 	/* A string. */
-	is_string = vm_value_is_string(value);
+	is_string = vm_value_is_string(roots->value);
 	if (is_string) {
-		status = json_quote(writer, (struct vm_string *)vm_value_as_cell(value));
+		status = json_quote(writer, (struct vm_string *)vm_value_as_cell(roots->value));
 		if (status != 0)
 			return status;
 
@@ -1152,9 +1297,9 @@ json_property(
 	}
 
 	/* A number. */
-	is_number = vm_value_is_number(value);
+	is_number = vm_value_is_number(roots->value);
 	if (is_number) {
-		number = vm_value_as_number(value);
+		number = vm_value_as_number(roots->value);
 		infinite = isinf(number);
 		if (number != number || infinite) {
 			status = json_text(writer, "null");
@@ -1166,7 +1311,7 @@ json_property(
 		}
 
 		/* Its numeral. */
-		status = vm_to_string(realm, value, &string);
+		status = vm_to_string(realm, roots->value, &string);
 		if (status != 0)
 			return status;
 
@@ -1180,14 +1325,17 @@ json_property(
 	}
 
 	/* An object that is not a function. */
-	is_object = vm_value_is_object(value);
-	callable = vm_value_is_callable(value);
+	is_object = vm_value_is_object(roots->value);
+	callable = vm_value_is_callable(roots->value);
 	if (is_object && !callable) {
-		object = (struct vm_object *)vm_value_as_cell(value);
-		if ((object->flags & VM_OBJECT_ARRAY) != 0U)
-			status = json_serialize_array(writer, value);
+		/* Classify actual Proxy target chains and propagate revoked-array failures. */
+		status = vm_is_array(realm, roots->value, &is_array);
+		if (status != 0)
+			return status;
+		if (is_array)
+			status = json_serialize_array(writer, roots->value);
 		else
-			status = json_serialize_object(writer, value);
+			status = json_serialize_object(writer, roots->value);
 		if (status != 0)
 			return status;
 
@@ -1305,8 +1453,8 @@ json_serialize_object(
 {
 	struct wb_vector keys;
 	struct vm_descriptor descriptor;
-	struct vm_object *source;
 	size_t mark;
+	size_t selected;
 	size_t item;
 	size_t indent_length;
 	uint32_t length;
@@ -1314,6 +1462,7 @@ json_serialize_object(
 	vm_value key;
 	vm_value name;
 	const char *colon;
+	int traced;
 	int first;
 	int found;
 	int written;
@@ -1329,7 +1478,11 @@ json_serialize_object(
 	/* The keys. */
 	wb_vector_init(&keys, sizeof(vm_value));
 	indent_length = writer->indent.length;
-	source = (struct vm_object *)vm_value_as_cell(object);
+	traced = 0;
+	status = vm_heap_add_tracer(writer->realm->heap, json_trace_values, &keys);
+	if (status != 0)
+		goto cleanup;
+	traced = 1;
 	if (writer->keys != VM_VALUE_UNDEFINED) {
 		status = js_builtin_length(writer->realm, writer->keys, &length);
 		if (status != 0)
@@ -1352,9 +1505,35 @@ json_serialize_object(
 				goto cleanup;
 		}
 	} else {
-		status = vm_object_own_keys(writer->realm->heap, source, &keys);
+		status = vm_own_property_keys(writer->realm, (struct vm_object *)vm_value_as_cell(object), &keys);
 		if (status != 0)
 			goto cleanup;
+
+		/* Snapshot every enumerable string key before the first value getter can change another descriptor. */
+		selected = 0;
+		for (item = 0; item < keys.count; item++) {
+			key = *(vm_value *)wb_vector_at(&keys, item);
+			is_index = vm_value_is_int32(key);
+			is_string = vm_value_is_string(key);
+			if (!is_index && !is_string)
+				continue;
+
+			/* Symbols never invoke GetOwnProperty during string-key enumeration. */
+			status = vm_get_own_property(writer->realm, (struct vm_object *)vm_value_as_cell(object), key, &descriptor, &found);
+			if (status != 0)
+				goto cleanup;
+			if (!found)
+				continue;
+			if ((descriptor.attributes & VM_PROPERTY_ENUMERABLE) == 0U)
+				continue;
+
+			/* Retain unvisited keys until classification ends, then expose only selected names. */
+			*(vm_value *)wb_vector_at(&keys, selected) = key;
+			selected++;
+		}
+
+		/* Publish the complete enumerable-string snapshot before reading any value. */
+		keys.count = selected;
 	}
 
 	/* Each property with a text: "key": value (a space after the colon when indenting). */
@@ -1380,17 +1559,6 @@ json_serialize_object(
 		is_string = vm_value_is_string(key);
 		if (!is_index && !is_string)
 			continue;
-		if (writer->keys == VM_VALUE_UNDEFINED) {
-			found = vm_get_own_descriptor(source, key, &descriptor);
-			if (found < 0) {
-				status = -found;
-				goto cleanup;
-			}
-
-			/* A missing descriptor follows the absence path after errors have been excluded. */
-			if (!found || (descriptor.attributes & VM_PROPERTY_ENUMERABLE) == 0U)
-				continue;
-		}
 
 		/* Where the member starts, to take it back when it has no text. */
 		mark = writer->out.length;
@@ -1450,6 +1618,8 @@ json_serialize_object(
 	/* Restores indentation and releases the one key snapshot on either outcome. */
 cleanup:
 	writer->indent.length = indent_length;
+	if (traced)
+		vm_heap_remove_tracer(writer->realm->heap, json_trace_values, &keys);
 	wb_vector_release(&keys);
 	if (status == 0)
 		writer->stack.count--;
@@ -1662,21 +1832,52 @@ json_key_value(
 	return 0;
 }
 
-/* Makes the property list from an array replacer (strings and numbers, and their wrappers, each once). */
+/* Retain freshly returned list elements while their String or Number conversion runs script. */
 static int
 json_property_list(
 	struct json_writer *writer,
 	vm_value replacer)
 {
+	struct json_property_roots roots;
+	int status;
+
+	/* The writer owns the normalized list; this frame owns the current unboxed element. */
+	roots.writer = writer;
+	roots.holder = replacer;
+	roots.key = VM_VALUE_UNDEFINED;
+	roots.value = VM_VALUE_UNDEFINED;
+	roots.method = VM_VALUE_UNDEFINED;
+	roots.key_value = VM_VALUE_UNDEFINED;
+	roots.method_key = VM_VALUE_UNDEFINED;
+	status = vm_heap_add_tracer(writer->realm->heap, json_trace_property, &roots);
+	if (status != 0)
+		return status;
+
+	/* Release the element frame after success or any abrupt coercion. */
+	status = json_property_list_inner(&roots);
+	vm_heap_remove_tracer(writer->realm->heap, json_trace_property, &roots);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the writer retains the completed deduplicated list. */
+	return 0;
+}
+
+/* Makes the property list from an array replacer (strings and numbers, and their wrappers, each once). */
+static int
+json_property_list_inner(
+	struct json_property_roots *roots)
+{
+	struct json_writer *writer;
 	struct vm_object *object;
 	struct vm_object *list;
 	struct vm_string *string;
-	vm_value element;
 	vm_value key;
 	vm_value listed;
 	uint32_t length;
 	uint32_t index;
 	uint32_t other;
+	int is_array;
 	int is_object;
 	int is_string;
 	int is_number;
@@ -1684,12 +1885,12 @@ json_property_list(
 	int same;
 	int status;
 
-	/* Only an array. */
-	is_object = vm_value_is_object(replacer);
-	if (!is_object)
-		return 0;
-	object = (struct vm_object *)vm_value_as_cell(replacer);
-	if ((object->flags & VM_OBJECT_ARRAY) == 0U)
+	/* Actual array classification follows nested targets and rejects revoked replacers. */
+	writer = roots->writer;
+	status = vm_is_array(writer->realm, roots->holder, &is_array);
+	if (status != 0)
+		return status;
+	if (!is_array)
 		return 0;
 
 	/* Each usable element as a string, once. */
@@ -1699,31 +1900,34 @@ json_property_list(
 
 	/* Retains the native property list in the active writer. */
 	writer->keys = vm_value_cell(list);
-	status = js_builtin_length(writer->realm, replacer, &length);
+	status = js_builtin_length(writer->realm, roots->holder, &length);
 	if (status != 0)
 		return status;
 
 	/* Coerces and deduplicates the snapshot of requested indices. */
 	for (index = 0; index < length; index++) {
-		status = vm_get(writer->realm, replacer, vm_value_int32((int32_t)index), &element);
+		status = vm_get(writer->realm, roots->holder, vm_value_int32((int32_t)index), &roots->value);
 		if (status != 0)
 			return status;
-		is_object = vm_value_is_object(element);
+		is_object = vm_value_is_object(roots->value);
 		if (is_object) {
-			object = (struct vm_object *)vm_value_as_cell(element);
+			object = (struct vm_object *)vm_value_as_cell(roots->value);
 			if (object->kind != VM_KIND_STRING && object->kind != VM_KIND_NUMBER)
 				continue;
 		} else {
-			is_string = vm_value_is_string(element);
-			is_number = vm_value_is_number(element);
+			is_string = vm_value_is_string(roots->value);
+			is_number = vm_value_is_number(roots->value);
 			if (!is_string && !is_number)
 				continue;
 		}
 
 		/* As a string. */
-		status = vm_to_string(writer->realm, element, &string);
+		status = vm_to_string(writer->realm, roots->value, &string);
 		if (status != 0)
 			return status;
+		roots->key_value = vm_value_cell(string);
+
+		/* Compare only normalized names while retaining the converted string through definition. */
 		duplicate = 0;
 		for (other = 0; other < list->length; other++) {
 			listed = list->elements[other];
