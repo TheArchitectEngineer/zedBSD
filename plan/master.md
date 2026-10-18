@@ -16,6 +16,7 @@
   - P2（q1256 → q1258）: WS262 の uefi・sparcv9 → WS267 sun4u → WS268 x68k → WS259。
   - T1: QEMU の試験を都度。実機（WS260 の T1-710、WS259 の WiFi）は機械の準備待ち（beta2.md の U24・U25）。
   - WS261 は completed。朝の報告: 事前の承認で入れた HAL の差分の一覧、bootloader/tests/payload*.ld の削除の可否、Pi 4 の CI の image の大きさ（2 の冪）。
+  - 朝の判断（追加）: WS259 の license の package（userland/base/licenses/rtl8822b-tables/ と tools/release/license-components.json の項目）を WS244 の i915-driver と同じく外すか（ユーザーの明示の決定が RTL8822B には無い）。
   - push はしていない。
 <!-- master:agents:end -->
 
