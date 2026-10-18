@@ -80,6 +80,21 @@ const struct i915_host_mmio_hooks i915_gen9_fake_mmio = {
 static FILE *i915_fake_golden;
 static unsigned i915_fake_golden_scenes;
 
+/*
+ * Reports the xd register window that reaches the model, made again on
+ * every call (its record starts empty).
+ */
+struct i915_xd_io *
+i915_gen9_fake_xd(void)
+{
+	static struct i915_xd_io io;
+
+	/* Succeeded: the window on the hooks. */
+	drv_i915_xd_io_init(&io, NULL, NULL);
+	drv_i915_xd_io_set_hooks(&io, &i915_gen9_fake_xd_hooks);
+	return &io;
+}
+
 /* Reports a register's stored value, 0 when never written. */
 uint32_t
 i915_gen9_fake_get(

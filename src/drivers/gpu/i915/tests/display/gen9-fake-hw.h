@@ -97,6 +97,9 @@ extern const struct i915_skl_io i915_gen9_fake_io;
 extern const struct i915_xd_io_hooks i915_gen9_fake_xd_hooks;
 extern const struct i915_host_mmio_hooks i915_gen9_fake_mmio;
 
+/* Reports the xd register window that reaches the model. */
+struct i915_xd_io *i915_gen9_fake_xd(void);
+
 /* Reports a register's stored value, 0 when never written. */
 uint32_t i915_gen9_fake_get(uint32_t offset);
 
