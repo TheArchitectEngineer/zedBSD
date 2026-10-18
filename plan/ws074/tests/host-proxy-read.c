@@ -106,6 +106,20 @@ static const struct vm_native_operations consumer_error_descriptor_operations = 
 	consumer_error_descriptor, NULL, NULL, NULL, NULL
 };
 
+static int assignment_refuse_define(struct vm_realm *realm, struct vm_object *object, vm_value key, const struct vm_descriptor *descriptor, int *handled, int *done);
+
+/* This pure assignment policy collects and refuses without invoking user code or writing a property. */
+static const struct vm_native_operations assignment_refuse_operations = {
+	NULL, NULL, assignment_refuse_define, NULL, NULL
+};
+
+static int array_length_delete(struct vm_heap *heap, struct vm_object *object, vm_value key, int *handled, int *deleted);
+
+/* Native deletion observes actual descending array shrink and delegates descriptor refusal to ordinary storage. */
+static const struct vm_native_operations array_length_operations = {
+	NULL, NULL, NULL, array_length_delete, NULL
+};
+
 static int own_collect_keys(struct vm_heap *heap, struct vm_object *object, struct wb_vector *keys);
 
 /* The pure native own-key prefix only collects or reports a bounded partial-error result. */
@@ -146,6 +160,8 @@ static const struct vm_native_operations proxy_sole_operations = {
 static int consumer_key_primitive(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int object_consumers_pressure(struct page *page);
 static int ordinary_instance_pressure(struct page *page);
+static int assignment_pressure(struct page *page);
+static int array_length_pressure(struct page *page);
 static void proxy_key_values_trace(struct vm_heap *heap, void *context);
 static int proxy_own_keys(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
 static int proxy_note_own_key(struct vm_realm *realm, vm_value receiver, const vm_value *args, unsigned count, vm_value *result);
@@ -362,6 +378,16 @@ main(
 
 	/* The direct ordinary-instance API must own its managed caller and inputs before any collecting descriptor policy. */
 	status = ordinary_instance_pressure(page);
+	if (status != 0)
+		goto cleanup;
+
+	/* Object assignments must keep their direct native participants through callbacks and strict error allocation. */
+	status = assignment_pressure(page);
+	if (status != 0)
+		goto cleanup;
+
+	/* Native array shrink must publish its shorter length, collect safely and stop at the first fixed descriptor. */
+	status = array_length_pressure(page);
 	if (status != 0)
 		goto cleanup;
 
@@ -3769,5 +3795,339 @@ cleanup:
 		return status;
 
 	/* Succeeded: the direct API retained and then released its managed participants. */
+	return 0;
+}
+
+/* Refuses a real receiver definition after collecting its native caller and leaving later error-allocation pressure. */
+static int
+assignment_refuse_define(
+	struct vm_realm *realm,
+	struct vm_object *object,
+	vm_value key,
+	const struct vm_descriptor *descriptor,
+	int *handled,
+	int *done)
+{
+	struct vm_cell *found;
+	struct vm_cell *pressure;
+	struct vm_heap_stats stats;
+
+	UNUSED_PARAMETER(object);
+	UNUSED_PARAMETER(key);
+	UNUSED_PARAMETER(descriptor);
+
+	/* This pure native policy observes weak addresses without creating an owner or running script. */
+	vm_heap_collect(realm->heap);
+	found = vm_heap_find_cell(realm->heap, object_consumer_case.caller_address);
+	if (found == NULL)
+		return EFAULT;
+	found = vm_heap_find_cell(realm->heap, object_consumer_case.input_address);
+	if (found == NULL)
+		return EFAULT;
+	pressure = vm_heap_alloc(realm->heap, &proxy_pressure_type, 8U * 1024U * 1024U);
+	if (pressure == NULL)
+		return ENOMEM;
+
+	/* The outer strict-refusal allocation must cause a strictly later collection after inner Set ownership retires. */
+	vm_heap_stats(realm->heap, &stats);
+	object_consumer_case.callback_collections = stats.collections;
+	object_consumer_case.calls++;
+	*handled = 1;
+	*done = 0;
+
+	/* Succeeded: actual DefineOwnProperty refusal remains Boolean until the assignment wrapper handles strictness. */
+	return 0;
+}
+
+/* Verifies direct object assignment ownership on pure native errno and later strict-refusal collection paths. */
+static int
+assignment_pressure(
+	struct page *page)
+{
+	struct vm_realm *caller;
+	struct vm_object *input;
+	struct vm_object *value;
+	struct vm_symbol *symbol;
+	struct vm_cell *roots[4];
+	struct vm_cell *found;
+	struct vm_heap_stats before;
+	struct vm_heap_stats after;
+	uintptr_t addresses[4];
+	vm_value key;
+	unsigned registered;
+	unsigned index;
+	unsigned mode;
+	int status;
+
+	/* Setup owns construction only; the direct production API receives no outer VM-call protection. */
+	memset(roots, 0, sizeof(roots));
+	memset(&object_consumer_case, 0, sizeof(object_consumer_case));
+	registered = 0;
+	for (index = 0; index < 4U; index++) {
+		status = vm_heap_add_root(page->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* Native GetOwn errno and native Define refusal exercise distinct stages of the real assignment wrapper. */
+	for (mode = 0; mode < 2U; mode++) {
+		memset(&object_consumer_case, 0, sizeof(object_consumer_case));
+		object_consumer_case.heap = page->heap;
+		status = vm_realm_create_managed(page->heap, &caller);
+		if (status != 0)
+			goto cleanup;
+		roots[0] = &caller->cell;
+		input = vm_object_create(page->heap, NULL);
+		if (input == NULL) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* The ordinary receiver has no prototype or registry retaining any test participant. */
+		roots[1] = &input->cell;
+		input->native_operations = &consumer_error_descriptor_operations;
+		if (mode == 1U)
+			input->native_operations = &assignment_refuse_operations;
+		value = vm_object_create(page->heap, NULL);
+		if (value == NULL) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* Both a fresh object value and a never-stored Symbol key must survive the production operation. */
+		roots[2] = &value->cell;
+		symbol = vm_symbol_create(page->heap, VM_VALUE_UNDEFINED);
+		if (symbol == NULL) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+
+		/* Integer observations are weak and do not provide collector ownership. */
+		roots[3] = &symbol->cell;
+		key = vm_value_cell(symbol);
+		object_consumer_case.caller_address = (uintptr_t)caller;
+		object_consumer_case.input_address = (uintptr_t)input;
+		for (index = 0; index < 4U; index++) {
+			addresses[index] = (uintptr_t)roots[index];
+			roots[index] = NULL;
+		}
+
+		/* The direct assignment alone now owns its caller, receiver, write value and Symbol key. */
+		vm_heap_stats(page->heap, &before);
+		status = vm_set(caller, vm_value_cell(input), key, vm_value_cell(value), 1);
+		vm_heap_stats(page->heap, &after);
+		if (mode == 0U) {
+			if (status != EACCES) {
+				status = EFAULT;
+				goto cleanup;
+			}
+		} else {
+			if (status != VM_THROWN || after.collections <= object_consumer_case.callback_collections) {
+				status = EFAULT;
+				goto cleanup;
+			}
+		}
+
+		/* Both callbacks must actually run and collect, including the post-callback strict-error collection. */
+		if (object_consumer_case.calls != 1U || after.collections <= before.collections) {
+			status = EFAULT;
+			goto cleanup;
+		}
+
+		/* All four participants survived the complete direct operation, including strict-refusal error construction. */
+		for (index = 0; index < 4U; index++) {
+			found = vm_heap_find_cell(page->heap, addresses[index]);
+			if (found == NULL) {
+				status = EFAULT;
+				goto cleanup;
+			}
+		}
+
+		/* Completed errno and thrown-error outcomes leave no permanent native owner for their original inputs. */
+		vm_heap_collect(page->heap);
+		for (index = 0; index < 4U; index++) {
+			found = vm_heap_find_cell(page->heap, addresses[index]);
+			if (found != NULL) {
+				status = EFAULT;
+				goto cleanup;
+			}
+		}
+	}
+
+	/* Both native-error and strict-refusal paths retained and then released the full original input graph. */
+	status = 0;
+
+cleanup:
+	/* Retire setup registrations and weak observation context on every result path. */
+	memset(&object_consumer_case, 0, sizeof(object_consumer_case));
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(page->heap, &roots[registered]);
+	}
+
+	/* Preserve an observed error only after every native registration has been retired. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: direct assignment owns all participants through native callbacks and later refusal errors. */
+	return 0;
+}
+
+/* Observes real array deletion order and collection while leaving actual configurability policy unchanged. */
+static int
+array_length_delete(
+	struct vm_heap *heap,
+	struct vm_object *object,
+	vm_value key,
+	int *handled,
+	int *deleted)
+{
+	struct vm_cell *found;
+	int32_t index;
+	int is_index;
+
+	UNUSED_PARAMETER(deleted);
+
+	/* The actual snapshot is traversed descending after publishing the requested shorter metadata. */
+	is_index = vm_value_is_int32(key);
+	if (!is_index)
+		return EFAULT;
+	index = vm_value_as_int32(key);
+	if (index != 3 - (int32_t)object_consumer_case.calls || object->length != 1U)
+		return EFAULT;
+	vm_heap_collect(heap);
+	found = vm_heap_find_cell(heap, object_consumer_case.input_address);
+	if (found == NULL)
+		return EFAULT;
+	found = vm_heap_find_cell(heap, object_consumer_case.key_address);
+	if (found == NULL)
+		return EFAULT;
+	object_consumer_case.calls++;
+	*handled = 0;
+
+	/* Succeeded: ordinary storage still decides whether each real descriptor can be deleted. */
+	return 0;
+}
+
+/* Exercises the heap-level array length contract through real partial deletion, native GC and final reclamation. */
+static int
+array_length_pressure(
+	struct page *page)
+{
+	struct vm_object *array;
+	struct vm_object *payload;
+	struct vm_cell *roots[2];
+	struct vm_cell *found;
+	struct vm_property property;
+	struct vm_heap_stats before;
+	struct vm_heap_stats after;
+	vm_value expected;
+	unsigned registered;
+	unsigned index;
+	int present;
+	int status;
+
+	/* Setup roots retire before the low-level operation; the collector cannot rely on conservative stack scanning. */
+	memset(roots, 0, sizeof(roots));
+	memset(&object_consumer_case, 0, sizeof(object_consumer_case));
+	registered = 0;
+	for (index = 0; index < 2U; index++) {
+		status = vm_heap_add_root(page->heap, &roots[index]);
+		if (status != 0)
+			goto cleanup;
+		registered++;
+	}
+
+	/* A standalone array owns one fresh lower element and both the fixed and removable higher indices. */
+	array = vm_array_create(page->heap, NULL);
+	if (array == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* The lower object payload must remain live even while temporary length metadata is smaller than its index. */
+	roots[0] = &array->cell;
+	payload = vm_object_create(page->heap, NULL);
+	if (payload == NULL) {
+		status = ENOMEM;
+		goto cleanup;
+	}
+
+	/* Actual storage descriptors decide refusal; the callback supplies no mock deletion result. */
+	roots[1] = &payload->cell;
+	status = vm_object_define(page->heap, array, vm_value_int32(1), vm_value_cell(payload), VM_PROPERTY_DEFAULT);
+	if (status != 0)
+		goto cleanup;
+	status = vm_object_define(page->heap, array, vm_value_int32(2), VM_VALUE_TRUE, VM_PROPERTY_WRITABLE);
+	if (status != 0)
+		goto cleanup;
+	status = vm_object_define(page->heap, array, vm_value_int32(3), VM_VALUE_TRUE, VM_PROPERTY_DEFAULT);
+	if (status != 0)
+		goto cleanup;
+	array->native_operations = &array_length_operations;
+	object_consumer_case.input_address = (uintptr_t)array;
+	object_consumer_case.key_address = (uintptr_t)payload;
+	roots[0] = NULL;
+	roots[1] = NULL;
+
+	/* The production heap API alone owns the array while both descending deletions actually collect. */
+	vm_heap_stats(page->heap, &before);
+	status = vm_array_set_length(page->heap, array, 1U);
+	vm_heap_stats(page->heap, &after);
+	if (status != EPERM ||
+	    object_consumer_case.calls != 2U ||
+	    after.collections < before.collections + 2U ||
+	    array->length != 3U) {
+		status = EFAULT;
+		goto cleanup;
+	}
+
+	/* The higher configurable element was deleted before the fixed element stopped further shrinking. */
+	present = vm_object_get_own_ordinary(array, vm_value_int32(3), &property);
+	if (present != 0) {
+		status = EFAULT;
+		goto cleanup;
+	}
+
+	/* The lower payload was never deleted or collected despite the temporarily published shorter length. */
+	expected = vm_value_cell(payload);
+	present = vm_object_get_own_ordinary(array, vm_value_int32(1), &property);
+	if (present != 1 || *property.value != expected) {
+		status = EFAULT;
+		goto cleanup;
+	}
+
+	/* No key snapshot or native registration retains either original object after the operation completes. */
+	vm_heap_collect(page->heap);
+	found = vm_heap_find_cell(page->heap, object_consumer_case.input_address);
+	if (found != NULL) {
+		status = EFAULT;
+		goto cleanup;
+	}
+
+	/* The lower payload is independently reclaimed after its former array owner is gone. */
+	found = vm_heap_find_cell(page->heap, object_consumer_case.key_address);
+	if (found != NULL) {
+		status = EFAULT;
+		goto cleanup;
+	}
+
+	/* Real deletion ordering, partial metadata restoration and complete native ownership all held. */
+	status = 0;
+
+cleanup:
+	/* Weak observation addresses and partial setup registrations retire on every exit. */
+	memset(&object_consumer_case, 0, sizeof(object_consumer_case));
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(page->heap, &roots[registered]);
+	}
+
+	/* Preserve any violated native-array or lifetime observation after cleanup. */
+	if (status != 0)
+		return status;
+
+	/* Succeeded: descending shrink preserves its failed boundary and releases both managed participants. */
 	return 0;
 }

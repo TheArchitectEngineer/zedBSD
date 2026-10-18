@@ -6,7 +6,7 @@
  */
 
 /*
- * Objects (plan/ws074/design.md §11.4): properties found through shapes,
+ * Objects: properties found through shapes,
  * elements kept densely, prototypes, arrays and their length, and the
  * order of an object's own keys.
  *
@@ -18,7 +18,7 @@
  * property, kept equal to the length field.
  *
  * The functions that only need data properties are here; calling an
- * accessor's getter or setter needs the interpreter (ws074-p023), so a
+ * accessor's getter or setter needs the interpreter, so a
  * get reports an accessor's cell and a set refuses to write through one.
  */
 
@@ -73,6 +73,9 @@ static int object_reshape(struct vm_heap *heap, struct vm_object *object, vm_val
 static int object_is_length(struct vm_object *object, vm_value key);
 static void object_sync_length(struct vm_heap *heap, struct vm_object *object);
 static int object_key_compare(const void *left, const void *right);
+static int object_array_index(vm_value key, uint32_t *index);
+static int object_array_key_compare(const void *left, const void *right);
+static void object_array_keys_trace(struct vm_heap *heap, void *context);
 
 /*
  * Marks the cell a value refers to, if it refers to one.
@@ -1031,50 +1034,86 @@ vm_array_set_length(
 {
 	struct wb_vector keys;
 	struct vm_cell *root;
+	vm_value key;
 	uint32_t index;
 	size_t item;
-	vm_value *key;
+	size_t kept;
 	int is_index;
 	int deleted;
+	int traced;
 	int error;
 
-	/* The elements past the new length become holes. */
+	/* Retain the array and every copied key across native enumeration and deletion callbacks. */
 	root = &array->cell;
+	wb_vector_init(&keys, sizeof(vm_value));
+	traced = 0;
 	error = vm_heap_add_root(heap, &root);
 	if (error != 0)
 		return error;
-	for (index = length; index < array->element_capacity; index++)
-		array->elements[index] = VM_VALUE_EMPTY;
+	error = vm_heap_add_tracer(heap, object_array_keys_trace, &keys);
+	if (error != 0)
+		goto cleanup;
+	traced = 1;
 
-	/* And the index properties in slots from the new length on are deleted. */
-	if (length < array->length) {
-		wb_vector_init(&keys, sizeof(vm_value));
-		error = vm_object_own_keys(heap, array, &keys);
-		for (item = 0; error == 0 && item < keys.count; item++) {
-			/* An index below the new length stays. */
-			key = wb_vector_at(&keys, item);
-			is_index = vm_value_is_array_index(*key, &index);
-			if (!is_index || index < length)
-				continue;
+	/* Growth changes no element descriptor and never scans a possibly huge sparse logical length. */
+	if (length >= array->length) {
+		array->length = length;
+		object_sync_length(heap, array);
+		goto cleanup;
+	}
 
-			/* One at or past it goes. */
-			error = vm_object_delete(heap, array, *key, &deleted);
-		}
-
-		/* The list of keys is no longer needed. */
-		wb_vector_release(&keys);
-		if (error != 0) {
-			vm_heap_remove_root(heap, &root);
-			return error;
+	/* Snapshot present own keys before publishing the shorter metadata; absent indices need no deletion. */
+	error = vm_object_own_keys(heap, array, &keys);
+	if (error != 0)
+		goto cleanup;
+	kept = 0;
+	for (item = 0; item < keys.count; item++) {
+		key = ((vm_value *)keys.items)[item];
+		is_index = object_array_index(key, &index);
+		if (is_index && index >= length) {
+			((vm_value *)keys.items)[kept] = key;
+			kept++;
 		}
 	}
 
-	/* The length and its property. */
+	/* Numeric ordering includes atom-backed indices above signed int32 and native-policy prefixes. */
+	keys.count = kept;
+	if (keys.count > 1U)
+		qsort(keys.items, keys.count, sizeof(vm_value), object_array_key_compare);
 	array->length = length;
 	object_sync_length(heap, array);
-	vm_heap_remove_root(heap, &root);
 
-	/* Succeeded: the array has its new length. */
+	/* Delete higher indices first so the first refusal preserves every lower descriptor and earlier higher deletion. */
+	item = keys.count;
+	while (item != 0U) {
+		item--;
+		key = ((vm_value *)keys.items)[item];
+		error = vm_object_delete(heap, array, key, &deleted);
+		if (error != 0)
+			goto cleanup;
+		if (!deleted) {
+			/* The failed index bounds the actual length after the already completed higher deletions. */
+			is_index = object_array_index(key, &index);
+			array->length = index + 1U;
+			object_sync_length(heap, array);
+			error = EPERM;
+			goto cleanup;
+		}
+	}
+
+	/* Every present property at or above the requested bound was deleted. */
+	error = 0;
+
+cleanup:
+	/* Snapshot ownership ends on growth, complete shrink, partial refusal and native allocation errors alike. */
+	if (traced)
+		vm_heap_remove_tracer(heap, object_array_keys_trace, &keys);
+	wb_vector_release(&keys);
+	vm_heap_remove_root(heap, &root);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: metadata and the remaining own elements agree with the requested length. */
 	return 0;
 }
 
@@ -1647,4 +1686,94 @@ object_proxy_trace(
 	vm_object_trace(heap, cell);
 	vm_heap_mark_value(heap, proxy->target);
 	vm_heap_mark_value(heap, proxy->handler);
+}
+
+/* Orders actual array-index keys numerically without signed-int32 truncation or coercion. */
+static int
+object_array_key_compare(
+	const void *left,
+	const void *right)
+{
+	uint32_t first;
+	uint32_t second;
+	int is_index;
+
+	/* Enumeration filtering guarantees both keys are indices; normalization is pure and cannot run script. */
+	is_index = object_array_index(*(const vm_value *)left, &first);
+	if (!is_index)
+		return 0;
+	is_index = object_array_index(*(const vm_value *)right, &second);
+	if (!is_index)
+		return 0;
+
+	/* Smaller numeric indices sort first, including the atom-backed upper half of uint32. */
+	if (first < second)
+		return -1;
+	if (first > second)
+		return 1;
+
+	/* Succeeded: equal numeric indices compare equally. */
+	return 0;
+}
+
+/* Keeps the native array-length key snapshot alive while deletion callbacks may collect. */
+static void
+object_array_keys_trace(
+	struct vm_heap *heap,
+	void *context)
+{
+	struct wb_vector *keys;
+	size_t item;
+
+	/* Vector storage is outside the managed heap and contains only initialized live entries. */
+	keys = context;
+	for (item = 0; item < keys->count; item++)
+		vm_heap_mark_value(heap, ((vm_value *)keys->items)[item]);
+}
+
+/* Recognizes actual uint32 array-index spellings without widening the ordinary storage key representation. */
+static int
+object_array_index(
+	vm_value key,
+	uint32_t *index)
+{
+	struct vm_string *string;
+	uint64_t number;
+	uint32_t position;
+	uint16_t unit;
+	int is_index;
+	int is_string;
+
+	/* Existing small numeric keys already carry their exact nonnegative index. */
+	is_index = vm_value_is_array_index(key, index);
+	if (is_index)
+		return 1;
+	is_string = vm_value_is_string(key);
+	if (!is_string)
+		return 0;
+
+	/* Canonical decimal array indices have at most ten digits and no redundant leading zero. */
+	string = (struct vm_string *)vm_value_as_cell(key);
+	if (string->length == 0U || string->length > 10U)
+		return 0;
+	unit = vm_string_at(string, 0);
+	if (unit == '0' && string->length != 1U)
+		return 0;
+
+	/* Exact integer accumulation excludes nondecimal syntax and the reserved uint32 maximum. */
+	number = 0;
+	for (position = 0; position < string->length; position++) {
+		unit = vm_string_at(string, position);
+		if (unit < '0' || unit > '9')
+			return 0;
+		number = number * 10U + (uint64_t)(unit - '0');
+	}
+
+	/* The string 4294967295 is an ordinary property name rather than an array index. */
+	if (number >= (uint64_t)4294967295U)
+		return 0;
+	*index = (uint32_t)number;
+
+	/* Succeeded: the existing atom names one exact array index, including indices above signed int32. */
+	return 1;
 }

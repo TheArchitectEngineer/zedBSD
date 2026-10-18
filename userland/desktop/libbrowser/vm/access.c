@@ -78,7 +78,6 @@ struct access_descriptor_roots {
 static void access_for_in_trace(struct vm_heap *heap, struct vm_cell *cell);
 static void access_for_in_finalize(struct vm_heap *heap, struct vm_cell *cell);
 static int access_string_property(struct vm_realm *realm, struct vm_string *string, vm_value key, vm_value *result, int *found);
-static int access_set_length(struct vm_realm *realm, struct vm_object *array, vm_value value, int strict);
 static int access_refuse(struct vm_realm *realm, int strict, const char *message);
 static int access_collect(struct vm_heap *heap, struct vm_object *object, struct wb_vector *keys);
 static int access_key_listed(const struct wb_vector *keys, size_t count, vm_value key);
@@ -525,15 +524,9 @@ vm_set(
 	vm_value value,
 	int strict)
 {
-	struct vm_property property;
-	struct vm_accessor *accessor;
+	struct access_write_roots roots;
 	struct vm_object *object;
-	vm_value ignored;
-	vm_value length_key;
-	struct vm_descriptor descriptor;
-	int handled;
 	int is_object;
-	int found;
 	int done;
 	int status;
 
@@ -550,99 +543,34 @@ vm_set(
 		return status;
 	}
 
-	/* Direct Proxy and TypedArray assignment use their actual receiver-aware exotic operations. */
+	/* Every object uses its actual receiver-aware operation, including exotic prototypes of ordinary receivers. */
 	object = (struct vm_object *)vm_value_as_cell(base);
-	if (object->kind == VM_KIND_PROXY || object->kind == VM_KIND_TYPED_ARRAY) {
-		status = vm_set_receiver(realm, object, key, value, base, &done);
-		if (status != 0)
-			return status;
-		if (!done) {
-			if (object->kind == VM_KIND_PROXY) {
-				status = access_refuse(realm, strict, "Proxy set trap returned false");
-			} else {
-				status = access_refuse(realm, strict, "Cannot assign to read only property");
-			}
-
-			/* Strict refusal propagates its error while sloppy assignment remains silent. */
-			if (status != 0)
-				return status;
-
-			/* Succeeded: sloppy assignment deliberately ignores Boolean refusal. */
-			return 0;
-		}
-
-		/* Succeeded: the direct exotic operation accepted this assignment. */
-		return 0;
-	}
-
-	/* An accessor on the chain: its setter is called with the value. */
-	object = (struct vm_object *)vm_value_as_cell(base);
-	found = vm_object_find(object, key, &property);
-	if (found < 0)
-		return -found;
-
-	/* Present descriptors retain their ordinary accessor and attribute rules. */
-	if (found && (property.attributes & VM_PROPERTY_ACCESSOR) != 0U) {
-		accessor = (struct vm_accessor *)vm_value_as_cell(*property.value);
-		if (accessor->setter == VM_VALUE_UNDEFINED) {
-			status = access_refuse(realm, strict, "Cannot set property which has only a getter");
-			return status;
-		}
-
-		/* The setter, called with the value. */
-		status = vm_call(realm, accessor->setter, base, &value, 1, &ignored);
-		if (status != 0)
-			return status;
-		return 0;
-	}
-
-	/* A read-only data property refuses. */
-	if (found && (property.attributes & VM_PROPERTY_WRITABLE) == 0U) {
-		status = access_refuse(realm, strict, "Cannot assign to read only property");
-		return status;
-	}
-
-	/* An array's own length is set by its rules. */
-	length_key = vm_key_from_ascii(realm->heap, "length");
-	if (length_key == VM_VALUE_EMPTY)
-		return ENOMEM;
-	if (found &&
-	    property.holder == object &&
-	    key == length_key &&
-	    (object->flags & VM_OBJECT_ARRAY) != 0U) {
-		status = access_set_length(realm, object, value, strict);
-		if (status != 0)
-			return status;
-		return 0;
-	}
-
-	/* A typed array converts the value in the realm (a valueOf may run, a wrong BigInt type throws). */
-	if (object->kind == VM_KIND_TYPED_ARRAY &&
-	    object->native_operations != NULL &&
-	    object->native_operations->define != NULL) {
-		memset(&descriptor, 0, sizeof(descriptor));
-		descriptor.has = VM_HAS_VALUE | VM_HAS_WRITABLE | VM_HAS_ENUMERABLE | VM_HAS_CONFIGURABLE;
-		descriptor.value = value;
-		descriptor.attributes = VM_PROPERTY_DEFAULT;
-		handled = 0;
-		done = 0;
-		status = object->native_operations->define(realm, object, key, &descriptor, &handled, &done);
-		if (status != 0)
-			return status;
-		if (handled)
-			return 0;
-	}
-
-	/* Otherwise the ordinary assignment; an object that takes no new property refuses. */
-	status = vm_object_set(realm->heap, object, key, value, &done);
+	roots.read.realm = realm;
+	roots.read.base = base;
+	roots.read.key = key;
+	roots.read.receiver = base;
+	roots.value = value;
+	status = vm_heap_add_tracer(realm->heap, access_write_trace, &roots);
 	if (status != 0)
 		return status;
+	status = vm_set_receiver(realm, object, key, value, base, &done);
+	if (status != 0)
+		goto cleanup;
 	if (!done) {
-		status = access_refuse(realm, strict, "Cannot add property, object is not extensible");
-		return status;
+		/* Keep native input ownership until any strict refusal exception has finished allocating. */
+		if (object->kind == VM_KIND_PROXY)
+			status = access_refuse(realm, strict, "Proxy set trap returned false");
+		else
+			status = access_refuse(realm, strict, "Cannot assign to read only property");
 	}
 
-	/* Succeeded: the value is put. */
+cleanup:
+	/* Accepted writes, sloppy refusals and abrupt operations all retire the outer assignment owner. */
+	vm_heap_remove_tracer(realm->heap, access_write_trace, &roots);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the actual operation accepted the write, or sloppy code ignored its refusal. */
 	return 0;
 }
 
@@ -2284,41 +2212,6 @@ access_string_property(
 	return 0;
 }
 
-/* Sets an array's length by assignment: a number that is a valid length, or a RangeError. */
-static int
-access_set_length(
-	struct vm_realm *realm,
-	struct vm_object *array,
-	vm_value value,
-	int strict)
-{
-	double number;
-	uint32_t length;
-	int status;
-
-	UNUSED_PARAMETER(strict);
-
-	/* The new length must be a whole number in uint32's range. */
-	status = vm_to_uint32(realm, value, &length);
-	if (status != 0)
-		return status;
-	status = vm_to_number(realm, value, &number);
-	if (status != 0)
-		return status;
-	if ((double)length != number) {
-		status = vm_throw_range_error(realm, "Invalid array length");
-		return status;
-	}
-
-	/* The array grows or loses its elements past the length. */
-	status = vm_array_set_length(realm->heap, array, length);
-	if (status != 0)
-		return status;
-
-	/* Succeeded: the length is set. */
-	return 0;
-}
-
 /* Refuses an assignment or a deletion: nothing in sloppy code, a TypeError in strict code. */
 static int
 access_refuse(
@@ -2673,9 +2566,12 @@ access_define_length(
 	int *done)
 {
 	struct vm_descriptor rest;
+	struct vm_descriptor latest;
 	vm_value length_key;
 	double number;
 	uint32_t length;
+	int refused;
+	int found;
 	int allowed;
 	int status;
 
@@ -2702,6 +2598,14 @@ access_define_length(
 		rest.value = vm_value_number((double)length);
 	}
 
+	/* Conversion may change the array or make its length read-only; inspect the actual post-conversion descriptor. */
+	found = vm_get_own_descriptor(array, length_key, &latest);
+	if (found < 0)
+		return -found;
+	if (!found)
+		return EINVAL;
+	current = &latest;
+
 	/* The change must be allowed as for any property, and a read-only length cannot change. */
 	allowed = access_descriptor_allowed(array, 1, current, &rest);
 	if (!allowed)
@@ -2709,10 +2613,13 @@ access_define_length(
 	if ((current->attributes & VM_PROPERTY_WRITABLE) == 0U && length != array->length)
 		return 0;
 
-	/* The new length (the elements past it go). */
+	/* A partial shrink preserves higher deletions and reports Boolean refusal after applying requested writability. */
+	refused = 0;
 	if (length != array->length) {
 		status = vm_array_set_length(realm->heap, array, length);
-		if (status != 0)
+		if (status == EPERM)
+			refused = 1;
+		else if (status != 0)
 			return status;
 	}
 
@@ -2722,6 +2629,10 @@ access_define_length(
 		if (status != 0)
 			return status;
 	}
+
+	/* A fixed element prevented the complete shrink even though requested read-only metadata was applied. */
+	if (refused)
+		return 0;
 
 	/* Succeeded: the length is defined. */
 	*done = 1;

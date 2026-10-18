@@ -624,6 +624,7 @@ int vm_object_define(struct vm_heap *heap, struct vm_object *object, vm_value ke
 int vm_object_get(struct vm_object *object, vm_value key, vm_value *value);
 int vm_object_set(struct vm_heap *heap, struct vm_object *object, vm_value key, vm_value value, int *done);
 int vm_object_delete(struct vm_heap *heap, struct vm_object *object, vm_value key, int *deleted);
+/* EPERM reports a fixed-index shrink refusal after higher deletions and length restoration to the failed index plus one. */
 int vm_array_set_length(struct vm_heap *heap, struct vm_object *array, uint32_t length);
 int vm_object_own_keys(struct vm_heap *heap, struct vm_object *object, struct wb_vector *keys);
 int vm_object_prevent_extensions(struct vm_object *object, int *done);
