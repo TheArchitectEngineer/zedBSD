@@ -928,11 +928,6 @@ static const struct values_color values_colors[] = {
 	{ NULL, 0 }
 };
 
-/*
- * Reports the name of the index-th property this pass knows (a longhand
- * or a shorthand), or NULL past the last one: the names the inline style
- * of scripts has members for.
- */
 static int values_keyword(const struct values_keyword *table, const struct css_token *token, int *value);
 static int values_unit(const struct css_token *token, int *unit);
 static int values_length(const struct css_token *token, int allow_keywords, struct css_value *value);
@@ -1001,6 +996,11 @@ static int values_decoration_line(const struct css_token *tokens, size_t count, 
 static int values_text_decoration(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 
 
+/*
+ * Reports the name of the index-th property this pass knows (a longhand
+ * or a shorthand), or NULL past the last one: the names the inline style
+ * of scripts has members for.
+ */
 const char *
 css_property_name(
 	size_t index)
@@ -1531,10 +1531,10 @@ css_number_serialize(
 
 	/* Only one numeric token surrounded by whitespace belongs to this scalar component path. */
 	while (start < end &&
-	    tokens[start].type == CSS_TOKEN_WHITESPACE)
+	       tokens[start].type == CSS_TOKEN_WHITESPACE)
 		start++;
 	while (end > start &&
-	    tokens[end - 1U].type == CSS_TOKEN_WHITESPACE)
+	       tokens[end - 1U].type == CSS_TOKEN_WHITESPACE)
 		end--;
 	if (end - start != 1U)
 		goto cleanup;
@@ -1852,14 +1852,14 @@ values_single(
 
 	/* Skips surrounding whitespace. */
 	while (count > 0 &&
-	    tokens[0].type == CSS_TOKEN_WHITESPACE) {
+	       tokens[0].type == CSS_TOKEN_WHITESPACE) {
 		tokens++;
 		count--;
 	}
 
 	/* Discard trailing whitespace before validating the component count. */
 	while (count > 0 &&
-	    tokens[count - 1U].type == CSS_TOKEN_WHITESPACE)
+	       tokens[count - 1U].type == CSS_TOKEN_WHITESPACE)
 		count--;
 	if (count == 0)
 		return EINVAL;
@@ -2134,9 +2134,9 @@ values_single(
 	/* Alignment properties also take "first baseline", "last baseline" and an overflow position. */
 	if (count > 1U &&
 	    (property == CSS_PROP_JUSTIFY_CONTENT ||
-	    property == CSS_PROP_JUSTIFY_ITEMS ||
-			   property == CSS_PROP_ALIGN_ITEMS || property == CSS_PROP_ALIGN_CONTENT ||
-			   property == CSS_PROP_ALIGN_SELF || property == CSS_PROP_JUSTIFY_SELF)) {
+	     property == CSS_PROP_JUSTIFY_ITEMS ||
+	     property == CSS_PROP_ALIGN_ITEMS || property == CSS_PROP_ALIGN_CONTENT ||
+	     property == CSS_PROP_ALIGN_SELF || property == CSS_PROP_JUSTIFY_SELF)) {
 		/* Read exactly two alignment identifiers, ignoring whitespace tokens. */
 		words = 0;
 		parts[0] = NULL;
@@ -2168,7 +2168,7 @@ values_single(
 		/* The last baseline falls back to the end edge; the first one remains a baseline. */
 		if (is_baseline &&
 		    (is_first ||
-		    is_last)) {
+		     is_last)) {
 			value->kind = CSS_VALUE_KEYWORD;
 			is_last = css_ident_equal(parts[0], "last");
 			value->keyword = CSS_ALIGN_BASELINE;

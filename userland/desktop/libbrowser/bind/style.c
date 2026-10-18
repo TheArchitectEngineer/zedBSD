@@ -516,7 +516,7 @@ style_parse_one(
 	/* The colon between the name and the value. */
 	colon = start;
 	while (colon < end &&
-	    units[colon] != ':')
+	       units[colon] != ':')
 		colon++;
 	if (colon >= end)
 		return 0;

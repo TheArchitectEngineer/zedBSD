@@ -262,20 +262,20 @@ numbers_case(
 		return status;
 	numbers_check(style.flex_grow == (float)0.123456789, "unrelated DOM and CSSOM mutations preserve precise float");
 
-	/* The clone reparses the canonical serialized attribute, as an external attribute input does. */
+	/* Clones retain immutable underlying declaration precision while their mutation fields remain independent. */
 	status = numbers_script(page->realm, "var clone=e.cloneNode(false);clone", &answer);
 	if (status != 0)
 		return status;
 	node = bind_node_of(answer);
 	if (node == NULL)
 		return EINVAL;
-	numbers_check(((struct dom_element *)node)->inline_style_source == NULL, "clone owns no stale source cache");
+	numbers_check(((struct dom_element *)node)->inline_style_source == element->inline_style_source && ((struct dom_element *)node)->inline_style_updating == 0, "clone shares immutable source with a fresh updating flag");
 	/* A direct CSS engine caller begins a new query after native or script mutations. */
 	css_engine_forget_styles(page->css);
 	status = css_engine_compute(page->css, (struct dom_element *)node, NULL, &style);
 	if (status != 0)
 		return status;
-	numbers_check(style.flex_grow == (float)0.123457, "clone uses canonical attribute as its own declared input");
+	numbers_check(style.flex_grow == (float)0.123456789, "clone retains the precise original declared factor");
 
 	/* Even assignment of the identical serialized string invalidates the cached source. */
 	retired = (uintptr_t)element->inline_style_source;
@@ -297,7 +297,15 @@ numbers_case(
 	numbers_check(style.flex_grow == (float)0.123457, "external assignment reparses rounded input");
 	vm_heap_collect(page->heap);
 	found = vm_heap_find_cell(page->heap, retired);
-	numbers_check(found == NULL, "retired source is reclaimed while element remains alive");
+	numbers_check(found != NULL, "clone retains shared source after original external mutation");
+
+	/* Releasing the last clone permits actual reclamation of the retired immutable source. */
+	status = numbers_script(page->realm, "clone=null;true", &answer);
+	if (status != 0)
+		return status;
+	vm_heap_collect(page->heap);
+	found = vm_heap_find_cell(page->heap, retired);
+	numbers_check(found == NULL, "retired shared source is reclaimed after clone release");
 
 	/* Compute fresh native values after representative scalar conversions, independently of getter strings. */
 	for (index = 0; index < sizeof(inputs) / sizeof(inputs[0]); index++) {

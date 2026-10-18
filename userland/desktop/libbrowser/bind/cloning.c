@@ -126,17 +126,20 @@ clone_shallow(
 		/* Native attributes preserve exact identity independently of script expandos. */
 		for (index = 0; index < element->attribute_count; index++) {
 			error = dom_element_add_attribute(
-				copy_element,
-				element->attributes[index].ns,
-				element->attributes[index].prefix,
-				element->attributes[index].name,
-				element->attributes[index].value);
+			    copy_element,
+			    element->attributes[index].ns,
+			    element->attributes[index].prefix,
+			    element->attributes[index].name,
+			    element->attributes[index].value);
 			if (error != 0)
 				return error;
 
 			/* The traced copy retains the exact attribute URI before the next allocation. */
 			copy_element->attributes[index].namespace_uri = element->attributes[index].namespace_uri;
 		}
+
+		/* Immutable inline declarations keep their precision; later mutations replace only the owning element's source edge. */
+		copy_element->inline_style_source = element->inline_style_source;
 
 		/* Dirty input text and caret keep their established independent-buffer semantics. */
 		error = dom_input_clone_value(copy_element, element);
